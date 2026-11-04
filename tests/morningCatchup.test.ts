@@ -14,7 +14,7 @@ import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
 import { MORNING_SECTION_SPECS, catchUpPlan } from "../src/shared/boss/mail/morningSections.mjs";
 import { sends } from "../scripts/ops/lib/email-map.mjs";
-import { attemptedNames, catchUpOutcome, weekdayIn } from "../scripts/ops/morning-catchup.mjs";
+import { attemptedNames, catchUpOutcome, weekdayIn, expectedSections } from "../scripts/ops/morning-catchup.mjs";
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const PKG = JSON.parse(readFileSync(path.join(ROOT, "package.json"), "utf8"));
@@ -61,6 +61,11 @@ describe("catchUpPlan", () => {
     expect(plan.cannotCatchUp).toEqual([]);
   });
 
+  it("runs distinct producers in registry order even when missing sections arrive reversed", () => {
+    expect(catchUpPlan([{ name: "scorecard", label: "Scorecard" }, { name: "archive", label: "Archive" }, { name: "deals", label: "Deals" }]).commands)
+      .toEqual(["capital:grid -- --keep-seen", "archive:audit", "scorecard:monday"]);
+  });
+
   it("names every section with no catchUp, and why", () => {
     const plan = catchUpPlan([{ name: "lp", label: "LP updates" }, { name: "deals", label: "New deals" }]);
     expect(plan.commands).toEqual(["capital:grid -- --keep-seen"]);
@@ -80,6 +85,10 @@ describe("catchUpPlan", () => {
 });
 
 describe("weekdayIn", () => {
+  it("names a stop when no expected section was checked", () => {
+    expect(() => expectedSections("Tuesday", [])).toThrow("MORNING_CATCHUP_NOTHING_CHECKED");
+    expect(expectedSections("Tuesday")).toBeGreaterThan(0);
+  });
   it("reads the weekday MORNING_SECTION_SPECS' expect arrays use, in her zone", () => {
     expect(weekdayIn("America/Chicago", Date.parse("2026-11-03T12:00:00Z"))).toBe("Tuesday"); // 06:00 Central
     expect(weekdayIn("America/Chicago", Date.parse("2026-11-02T04:00:00Z"))).toBe("Sunday"); // late Sat UTC, still Sat/Sun split at Central midnight

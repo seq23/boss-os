@@ -7,7 +7,7 @@
 
 /**
  * THE ONE SECTION REGISTRY. Producers: D writes deals + monique_found; L writes lp, prospects,
- * catchups, eightraise; E the rest. `expect` is the weekdays (Central) whose morning email must carry
+ * catchups; the Worker writes eightraise (L adds the live balance); E the rest. `expect` is the weekdays (Central) whose morning email must carry
  * a copy written within REPORT_IN_MS — the producer's schedule, said once here; a producer with
  * nothing to say posts an empty "all clear" so absence means it did not run (rule 0, 1 Nov 2026).
  * `null` = event-driven, never expected. `label` is the plain name her email uses when one is missing.
@@ -30,7 +30,7 @@ export const MORNING_SECTION_SPECS = Object.freeze([
     catchUpWhy: "lp-prospects.mjs sends prospect outreach; never re-run blind before the email",
   },
   { name: "catchups", label: "Catch up with", expect: DAILY, catchUpWhy: "moved to the cloud (job-catchups.yml, 1 Nov 2026); not a Mac script to re-run" },
-  { name: "eightraise", label: "the 8Raise credits", expect: DAILY, catchUpWhy: "rides the same LP sending pipeline's cadence; never re-run blind before the email" },
+  { name: "eightraise", label: "the 8Raise credits", expect: DAILY, catchUpWhy: "written by the Worker hourly tick, with live balance supplied separately; not a Mac producer to re-run" },
   // risk-watch.mjs daily 08:20 (Mac), so the next morning's email; posts an empty all clear.
   { name: "risk", label: "Toni's money and mail check", expect: DAILY, catchUpWhy: "risk-watch.mjs can send an alert when money is at risk (sendAs); never re-run blind" },
   // archive-audit.mjs Fridays 08:40 (Mac), so Saturday's email; posts an empty all clear. No email: safe to catch up.
@@ -96,7 +96,14 @@ export function notReportedLine(missing) {
 export function catchUpPlan(missing) {
   const commands = [];
   const cannotCatchUp = [];
-  for (const m of missing ?? []) {
+  const ordered = [...(missing ?? [])].sort((a, b) => {
+    const index = (name) => {
+      const i = MORNING_SECTION_SPECS.findIndex((s) => s.name === name);
+      return i < 0 ? MORNING_SECTION_SPECS.length : i;
+    };
+    return index(a.name) - index(b.name);
+  });
+  for (const m of ordered) {
     const spec = MORNING_SECTION_SPECS.find((s) => s.name === m.name);
     if (spec?.catchUp) { if (!commands.includes(spec.catchUp)) commands.push(spec.catchUp); }
     else cannotCatchUp.push({ name: m.name, label: m.label, why: spec?.catchUpWhy ?? "no catch-up is defined for this section" });

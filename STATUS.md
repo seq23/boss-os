@@ -459,7 +459,7 @@ PR, the merge commit and the proof.
 | The queue parks it for the Mac (`parked_for_mac`), never a cloud rung | `queue/consumer.ts` |
 | Her reply = the plan approval; matched on `[rc_…]` in the subject, below the sender refusal | `intake/inboundMail.ts` → `repoChange/answer.ts` |
 | The claim (one live run per task) and the phase reports | `routes/repoChanges.ts` at `/api/repo-changes` |
-| The Mac: lock, caffeinate, hard timeout, vault, one fresh `claude -p` per phase | `scripts/ops/repo-change.sh` → `repo-change.mjs` → `repo-change-prompt.md` |
+| The Mac: lock, caffeinate, hard timeout, vault, one fresh run per phase in the role `src/shared/boss/aiRoles.mjs` names (build on Codex via `ai-run --role worker`; plan and land on Claude) | `scripts/ops/repo-change.sh` → `repo-change.mjs` → `repo-change-prompt.md` |
 | Installed by | `install-agent-launchd.sh` (`com.seq.boss-repo-change`, every 20 min 06:00–22:00 CT) |
 | The screen | Systems → Properties → **Repo changes** |
 

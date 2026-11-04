@@ -1,4 +1,7 @@
 import { orderSeats, isOn, OPENAI_FIRST_KEY, OPENAI_SEAT, CLAUDE_SEAT, isConfidentialDraft, confidentialLadder } from "../duties/seatOrder";
+import { roleFor, CODEX_LIMIT_WAITS, afterCodexLimit } from "../../../shared/boss/aiRoles.mjs";
+import { isPlanSpent } from "../backends/spent";
+import { getBackend } from "../backends/registry";
 import { brainBlockFor } from "../brains/store";
 import type { Env, TaskMessage } from "../env";
 import { newId } from "../lib/id";
@@ -8,6 +11,7 @@ import { writeEvidence } from "../lib/evidence";
 import { getSetting } from "../lib/settings";
 import { loadEnvelope } from "../intake/envelope";
 import { routeCompletion, BudgetExceeded, RoutingBlocked, ProviderFailure, type RouteRequest } from "../router";
+import { scanForModelAccess, privateLexicon } from "../router/modelAccess";
 import { dispatchRunForTask } from "../backends/dispatch";
 import { deliverExecutiveReport } from "../duties/deliverReport";
 import { firmNoticeBlock } from "../prompt/notices";
@@ -185,14 +189,56 @@ export async function handleTask(env: Env, msg: TaskMessage): Promise<void> {
   const confidential = isConfidentialDraft(input as any);
   // A Chrome job (1 Nov 2026) runs in her Chrome through Claude in Chrome: Claude's seat only. Codex
   // has no Chrome, and the "OpenAI first" switch handed the first one to it.
-  const claudeOnly = confidential || input.chrome_job === true;
-  const ladder = claudeOnly ? confidentialLadder(baseLadder) : orderSeats(baseLadder, isOn(await getSetting(env.DB, OPENAI_FIRST_KEY)));
+  /*
+   * THE PRIVACY SCREEN DECIDES WHO MAY SEE THE PROMPT, BEFORE A WORKER IS CHOSEN (3 Nov 2026). A
+   * ChatGPT plan is a setting, not a no-training contract, so Codex is held to the same screen as the
+   * free cloud rungs (the router's `scanForModelAccess`; west-peek-os #326 does the same). A seat
+   * prompt it flags — an LP, investor or deal term, a private name, children's data, or a lexicon it
+   * cannot read — is BRAIN work (aiRoles.mjs "agent_queue.private_prompt"): Claude's seat only, never
+   * Codex, never a cloud rung, fail closed.
+   */
+  let privatePrompt = false;
+  if (baseLadder.length > 0 && !confidential) {
+    const parts = await buildPromptParts(env, task, input, { backendId: OPENAI_SEAT });
+    const verdict = scanForModelAccess(
+      [{ role: "user", content: `${parts.firmContext ?? ""}\n${parts.instruction ?? ""}` }],
+      await privateLexicon(env.DB),
+      { modelAccess: task.model_access ?? null, sensitivity: task.sensitivity ?? null },
+    );
+    privatePrompt = verdict.privateOnly;
+    if (privatePrompt) {
+      await env.DB
+        .prepare(`INSERT INTO task_events (id, task_id, ts, event, detail) VALUES (?,?,?,'ladder_step',?)`)
+        .bind(newId("tev"), task.id, Date.now(), JSON.stringify({ backend_id: OPENAI_SEAT, refused: `the privacy screen kept this prompt off Codex: ${verdict.reason ?? "private"}; it runs on the Claude seat only`, next: CLAUDE_SEAT }))
+        .run();
+    }
+  }
+  const claudeOnly = confidential || privatePrompt || input.chrome_job === true;
+  // Owner, 3 Nov 2026 ("default OpenAI and Claude just be the brains"): Codex is the worker for every
+  // employee duty (aiRoles.mjs "agent_queue.default"), so Codex's seat goes first on every ladder that
+  // has it. This supersedes the 24 Oct "OpenAI first" switch, which now only matters if that row ever
+  // makes agent work a brain job again. A Codex limit WAITS on Codex's seat (`codex_limit_waits`,
+  // honoured at dispatch and at /claim), never Claude, never a cloud rung.
+  const codexWorks = roleFor("agent_queue.default") === "worker";
+  const ladder = privatePrompt ? [CLAUDE_SEAT] : claudeOnly ? confidentialLadder(baseLadder) : orderSeats(baseLadder, codexWorks || isOn(await getSetting(env.DB, OPENAI_FIRST_KEY)));
+  // After a Codex limit: public work → the $0 free rung (never Claude, never paid); the rest waits.
+  const publicFreeRung = afterCodexLimit({ sensitivity: task.sensitivity, confidential: confidential || privatePrompt, chromeJob: input.chrome_job === true }) === "free_rung";
+  const codexLimitWaits = !claudeOnly && codexWorks && CODEX_LIMIT_WAITS && ladder.includes(OPENAI_SEAT) && !publicFreeRung;
+  const codexToFreeRung = !claudeOnly && codexWorks && publicFreeRung && ladder.includes(OPENAI_SEAT) &&
+    isPlanSpent(await getBackend(env.DB, OPENAI_SEAT), Date.now());
+  if (codexToFreeRung) {
+    await env.DB
+      .prepare(`INSERT INTO task_events (id, task_id, ts, event, detail) VALUES (?,?,?,'ladder_step',?)`)
+      .bind(newId("tev"), task.id, Date.now(), JSON.stringify({ backend_id: OPENAI_SEAT, refused: "NAMED STOP [CODEX_LIMIT] Codex is out of usage; public work goes to the $0 free rung, never Claude", next: "free rung" }))
+      .run();
+  }
   const refusals: { backend_id: string; refused: string }[] = [];
   const modelBySeat = input.requested && typeof input.requested === "object" && (input.requested as any).model_by_backend
     ? ((input.requested as any).model_by_backend as Record<string, string | null>)
     : null;
 
   for (const backendId of ladder) {
+    if (codexToFreeRung) break; // Codex is out: public work goes to the $0 free rung below, never Claude.
     const requested = typeof input.requested === "object" && input.requested ? { ...(input.requested as Record<string, unknown>) } : {};
     /*
      * EACH SEAT GETS ITS OWN MODEL. A single `requested.model` carried a Claude model id to whichever
@@ -208,6 +254,8 @@ export async function handleTask(env: Env, msg: TaskMessage): Promise<void> {
     }
     requested.backend_ladder = ladder;
     requested.model_by_backend = modelBySeat ?? undefined;
+    if (codexLimitWaits) requested.codex_limit_waits = true;
+    if (publicFreeRung && codexWorks && !claudeOnly) requested.codex_limit_free_rung = true;
 
     const dispatched = await dispatchRunForTask(env, {
       // Scheduled: a duty made this, so the budget may refuse it. Work she asks for arrives through
@@ -222,6 +270,7 @@ export async function handleTask(env: Env, msg: TaskMessage): Promise<void> {
       kind: task.intake_kind ?? null,
       envelopeId: task.envelope_id ?? null,
       requested,
+      waitOutSpentPlan: codexLimitWaits && backendId === OPENAI_SEAT,
       sensitivity: task.sensitivity ?? null,
       estimatedCostMicros: envelope?.budget_micros ?? 0,
     });
@@ -246,14 +295,14 @@ export async function handleTask(env: Env, msg: TaskMessage): Promise<void> {
     return;
   }
 
-  if (confidential) {
+  if (confidential || privatePrompt) {
     // FAIL CLOSED: an LP / deal-terms draft that Claude's seat did not take is never sent anywhere else.
     await failTask(env, task, employee, envelope, costMode,
       [refusals.map((r) => `${r.backend_id}: ${r.refused}`).join(" | "), "an LP or deal-terms draft runs on the Claude seat only"].filter(Boolean).join(" | "),
       "Run it when the Claude seat on her Mac is free. It is never moved to another seat or a cloud model.");
     return;
   }
-  if (ladder.length > 0 && !input.cloud_fallback) {
+  if (ladder.length > 0 && !input.cloud_fallback && !codexToFreeRung) {
     /*
      * A REFUSAL FAILS THE TASK WITH EVERY REFUSAL SENTENCE ON IT. The alternative — a run recorded
      * as refused while the task sits 'running' for ever — is the shape where the report simply
@@ -314,7 +363,9 @@ export async function handleTask(env: Env, msg: TaskMessage): Promise<void> {
        */
       modelAccess: task.model_access ?? null,
       // A seat duty that reached the cloud is strong-model work: Claude first, OpenAI second, when paid.
-      preferStrongVendors: ladder.length > 0,
+      preferStrongVendors: ladder.length > 0 && !codexToFreeRung,
+      // A Codex limit on public work: $0 only, whatever the lever says (aiRoles.mjs afterCodexLimit).
+      freeOnly: codexToFreeRung || undefined,
       confidentialDraft: confidential,
       costMode,
       budgetMicros: envelope?.budget_micros ?? 0,
@@ -344,7 +395,33 @@ export async function handleTask(env: Env, msg: TaskMessage): Promise<void> {
         }).catch(() => {});
       }
     }
-    if (!result) result = await routeCompletion(env, routeRequest(prompt));
+    if (!result) {
+      try {
+        result = await routeCompletion(env, routeRequest(prompt));
+      } catch (e) {
+        if (!codexToFreeRung) throw e;
+        /*
+         * THE FREE RUNG DECLINED (its privacy screen, no free lane up, or it failed): the public work
+         * then waits for Codex's reset like everything else — parked on Codex's seat, never Claude.
+         */
+        const why = e instanceof Error ? e.message : String(e);
+        const requested: Record<string, unknown> = { ...(typeof input.requested === "object" && input.requested ? (input.requested as Record<string, unknown>) : {}), backend_ladder: ladder, codex_limit_waits: true };
+        if (typeof requested.model === "string" && /claude/i.test(requested.model)) delete requested.model;
+        delete requested.model_by_backend;
+        const parked = await dispatchRunForTask(env, {
+          scheduled: true, taskId: task.id, lane: task.lane, backendId: OPENAI_SEAT, title: task.title,
+          ...(await buildPromptParts(env, task, input, { backendId: OPENAI_SEAT }).then((p) => ({ prompt: p.instruction, firmContext: p.firmContext }))),
+          kind: task.intake_kind ?? null, envelopeId: task.envelope_id ?? null, requested, waitOutSpentPlan: true,
+          sensitivity: task.sensitivity ?? null, estimatedCostMicros: envelope?.budget_micros ?? 0,
+        });
+        await env.DB
+          .prepare(`INSERT INTO task_events (id, task_id, ts, event, detail) VALUES (?,?,?,'codex_limit_wait',?)`)
+          .bind(newId("tev"), task.id, Date.now(), JSON.stringify({ why: `NAMED STOP [CODEX_LIMIT] the free rung declined (${why.slice(0, 200)}); waits on Codex's seat for the reset`, run_id: parked.run_id, refused: parked.refused }))
+          .run();
+        if (parked.refused) throw e;
+        return;
+      }
+    }
 
     const finishedAt = Date.now();
 

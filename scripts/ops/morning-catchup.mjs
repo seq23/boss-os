@@ -17,13 +17,19 @@
  */
 import { execFileSync } from "node:child_process";
 import { bossApi } from "./lib/duty-kit.mjs";
-import { readMorningSections } from "../../src/shared/boss/mail/morning.mjs";
+import { readMorningSections, freshSections } from "../../src/shared/boss/mail/morning.mjs";
 import { MORNING_SECTION_SPECS, sectionsNotReported, catchUpPlan } from "../../src/shared/boss/mail/morningSections.mjs";
 
 const TZ = "America/Chicago";
 const CATCHUP_TIMEOUT_MS = 8 * 60_000;
 
 /** Today's weekday in her zone, the word MORNING_SECTION_SPECS' `expect` arrays use. Pure. */
+export function expectedSections(weekday, specs = MORNING_SECTION_SPECS) {
+  const count = specs.filter((s) => s.expect?.includes(weekday)).length;
+  if (!count) throw new Error(`NAMED STOP [MORNING_CATCHUP_NOTHING_CHECKED] no section expected on ${weekday}`);
+  return count;
+}
+
 export function weekdayIn(tz, now = Date.now()) {
   return new Intl.DateTimeFormat("en-US", { timeZone: tz, weekday: "long" }).format(new Date(now));
 }
@@ -51,17 +57,18 @@ export function catchUpOutcome({ missingBefore, missingAfter, plan }) {
 }
 
 async function readSections(api, now) {
-  const store = await api.get("/morning/sections").then((d) => d?.rows ?? []).catch((e) => {
-    console.error(`morning-catchup: the morning sections in Boss OS not read (${e.message}); the Mac files only`);
-    return null;
-  });
-  return readMorningSections({ now, store });
+  const store = await api.get("/morning/sections");
+  if (!Array.isArray(store?.rows)) throw new Error("NAMED STOP [MORNING_STORE_UNREADABLE] no section rows returned");
+  const local = readMorningSections({ now, store: store.rows });
+  for (const why of local.skipped) console.error(`morning-catchup: ${why}`);
+  // The email now reads the cloud store. A fresh Mac file cannot prove its post succeeded.
+  return freshSections(store.rows.map((r) => ({ name: r.section, obj: r.body })), now, "store");
 }
 
-function runCatchUp(command) {
+function runCatchUp(command, timeout) {
   console.log(`morning-catchup: running npm run ${command}`);
   try {
-    execFileSync("npm", ["run", "--silent", ...command.split(" ")], { stdio: "inherit", timeout: CATCHUP_TIMEOUT_MS });
+    execFileSync("npm", ["run", "--silent", ...command.split(" ")], { stdio: "inherit", timeout });
   } catch (e) {
     console.error(`morning-catchup: "npm run ${command}" failed (${e.message})`);
   }
@@ -70,11 +77,7 @@ function runCatchUp(command) {
 async function main() {
   const now = Date.now();
   const weekday = weekdayIn(TZ, now);
-  const expectedCount = MORNING_SECTION_SPECS.filter((s) => s.expect?.includes(weekday)).length;
-  if (expectedCount === 0) {
-    console.error(`NAMED STOP [MORNING_CATCHUP_NOTHING_CHECKED] no section in the registry is expected on a ${weekday}.`);
-    process.exit(5);
-  }
+  const expectedCount = expectedSections(weekday);
 
   const api = await bossApi();
   const before = await readSections(api, now);
@@ -86,7 +89,12 @@ async function main() {
   }
 
   const plan = catchUpPlan(missingBefore);
-  for (const command of plan.commands) runCatchUp(command);
+  const deadline = Date.now() + CATCHUP_TIMEOUT_MS;
+  for (const command of plan.commands) {
+    const remaining = deadline - Date.now();
+    if (remaining <= 0) break;
+    runCatchUp(command, remaining);
+  }
   for (const c of plan.cannotCatchUp) console.log(`morning-catchup: "${c.label}" stays missing — ${c.why}`);
 
   const after = await readSections(api, Date.now());

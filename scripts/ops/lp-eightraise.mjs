@@ -11,7 +11,7 @@
  *
  * THE KEY NEVER APPEARS. 8r.sh (outside the repo) takes a header FILE. The file is
  * EIGHTRAISE_HDR (default ~/8raise-tools/.hdr-seq-taylor, 0600, outside the repo), or, when the vault
- * injects EIGHTRAISE_API_KEY, a 0600 temp file written here and deleted in `finally`. Nothing prints it.
+ * injects EIGHTRAISE_API_KEY or EIGHTRAISE_SEQ_TAYLOR_API_KEY, a 0600 temp file written here and deleted in `finally`. Nothing prints it.
  *
  *   npm run lp:eightraise              read the balance, write the footer
  */
@@ -28,10 +28,18 @@ export const READ_TOOLS = Object.freeze(["get_usage", "check_enrichment_status",
 export const SPEND_TOOLS = Object.freeze(["enrich_companies", "search_investors", "find_firms", "approve_discovery"]);
 const NEVER = /billing|subscription|upgrade|purchase|buy|checkout|top.?up/i;
 
+export const KEY_NAMES = Object.freeze(["EIGHTRAISE_API_KEY", "EIGHTRAISE_SEQ_TAYLOR_API_KEY"]);
+export const NEVER_KEYS = Object.freeze(["EIGHTRAISE_WESTPEEK_API_KEY", "EIGHTRAISE_TIME_2_READ_API_KEY", "EIGHTRAISE_CRYPTOCLEARR_API_KEY"]);
+
+export function resolveKey(env = process.env, names = KEY_NAMES) {
+  if (names.some((name) => NEVER_KEYS.includes(name) || !KEY_NAMES.includes(name))) throw new Error("NAMED STOP [8RAISE_ACCOUNT_REFUSED] only her own account is allowed");
+  return names.map((name) => env[name]).find((key) => typeof key === "string" && key.trim()) ?? null;
+}
+
 function withHeader(fn) {
   const given = process.env.EIGHTRAISE_HDR ?? path.join(os.homedir(), "8raise-tools", ".hdr-seq-taylor");
   if (fs.existsSync(given)) return fn(given);
-  const key = process.env.EIGHTRAISE_API_KEY;
+  const key = resolveKey();
   if (!key) throw new Error("NAMED STOP [NO_8RAISE_KEY] no header file and no injected key; 8Raise is not called today.");
   const tmp = fs.mkdtempSync(path.join(os.tmpdir(), "e8r-"));
   const file = path.join(tmp, "h");
@@ -58,7 +66,7 @@ export function balanceIn(text) {
   const t = String(text ?? "");
   try {
     const j = JSON.parse(t);
-    for (const k of ["credits_remaining", "remaining_credits", "balance", "credits"]) if (Number.isFinite(Number(j?.[k]))) return Number(j[k]);
+    for (const k of ["credits_remaining", "remaining_credits", "balance", "credits"]) if ((typeof j?.[k] === "number" || (typeof j?.[k] === "string" && j[k].trim())) && Number.isFinite(Number(j[k]))) return Number(j[k]);
   } catch { /* text, not JSON */ }
   const m = /(?:credits?\s*(?:remaining|left|balance)|balance|remaining)\D{0,12}(\d+(?:\.\d+)?)/i.exec(t);
   return m ? Number(m[1]) : null;
@@ -80,25 +88,29 @@ export async function spend8r(api, { purpose, tool, args, credits, company = nul
   return { ok: true, out };
 }
 
-async function main() {
-  const api = await bossApi();
+export async function runEightraiseProducer(api, { readBalance = () => call8r("get_usage"), write = writeMorning } = {}) {
+  let failure = null;
   let balance = null;
   try {
-    balance = balanceIn(call8r("get_usage"));
+    balance = balanceIn(readBalance());
+    if (balance === null) throw new Error("NAMED STOP [8RAISE_BALANCE_UNREADABLE] get_usage returned no numeric balance");
     await api.post("/lp/eightraise", { purpose: "balance_read", tool: "get_usage", balance });
   } catch (e) {
-    console.log(String(e.message).replace(/Bearer\s+\S+/g, "Bearer •••"));
+    failure = String(e.message).replace(/Bearer\s+\S+/g, "Bearer •••");
+    console.log(failure);
   }
   const led = await api.get(`/lp/eightraise?month=${monthOf()}`);
   const lines = [eightRaiseFooter(led.used ?? 0)];
+  if (failure) lines.push(`The live 8Raise balance was not read today: ${failure}.`);
   if (balance !== null && balance < EIGHTRAISE_BUDGET.floor) lines.push(`The 8Raise balance is ${balance}, under the ${EIGHTRAISE_BUDGET.floor} kept for you, so Monique is not using it.`);
-  const file = writeMorning("eightraise", {
+  const file = write("eightraise", {
     section: "eightraise", updated_at: new Date().toISOString(), decide: [], rows: [], lines,
     credits: { used: led.used ?? 0, budget: MONIQUE_MONTHLY, kept: EIGHTRAISE_BUDGET.floor },
   });
   console.log(`LP-EIGHTRAISE-COMPLETE: ${led.used ?? 0} used this month; balance ${balance ?? "unread"}; ${file}`);
+  if (failure) throw new Error(failure);
 }
 
 if (import.meta.url === `file://${process.argv[1]}`) {
-  main().catch((err) => { console.error(`LP-EIGHTRAISE FAILED: ${String(err?.message ?? err).replace(/Bearer\s+\S+/g, "Bearer •••")}`); process.exit(1); });
+  bossApi().then((api) => runEightraiseProducer(api)).catch((err) => { console.error(`LP-EIGHTRAISE FAILED: ${String(err?.message ?? err).replace(/Bearer\s+\S+/g, "Bearer •••")}`); process.exit(1); });
 }

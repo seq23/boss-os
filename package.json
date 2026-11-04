@@ -9,6 +9,7 @@
   "description": "West Peek OS — governed institutional operating system (P0-P12 substrate, P13-P25 operating product).",
   "type": "module",
   "scripts": {
+    "morning:catchup": "node scripts/vault/vault.mjs run -- node scripts/ops/morning-catchup.mjs",
     "backup:local": "node scripts/backup/backup.mjs",
     "baseline": "node scripts/baseline.mjs",
     "build": "vite build",
@@ -172,8 +173,8 @@
     "agent:claim": "bash scripts/ops/agent-claim.sh",
     "drive:pull": "node scripts/vault/vault.mjs run -- node scripts/ops/drive-pull.mjs",
     "capital:book": "node scripts/vault/vault.mjs run -- node scripts/ops/capital-book.mjs",
+    "capital:chain": "node scripts/ops/capital-chain.mjs",
     "capital:grid": "node scripts/vault/vault.mjs run -- node scripts/ops/interest-grid.mjs",
-    "morning:catchup": "node scripts/vault/vault.mjs run -- node scripts/ops/morning-catchup.mjs",
     "capital:senders": "node scripts/vault/vault.mjs run -- node scripts/ops/interest-ledger.mjs --senders",
     "capital:lists-seed": "node scripts/vault/vault.mjs run -- node scripts/ops/interest-lists-seed.mjs",
     "validate:retired-duty-fk": "node scripts/validate/retired-duty-fk.mjs && node scripts/validate/retired-duty-fk.mjs --self-test",

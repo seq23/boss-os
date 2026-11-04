@@ -5669,3 +5669,30 @@ Intake keeps its built-in owner list and also reads `BOSS_EXTRA_OWNER_SENDERS`, 
 **Local proofs:** invented senders exercise both intake inboxes, employee routing from informal prose, unknown-sender refusals, failed/missing DMARC, original senders, empty configuration, and an owner address that also matches an open errand. Node tests cover normalization, environment changes, mount forwarding and vault paths. **Negative proofs run:** the original implementation failed 3 Node and 10 Worker regressions; the vault mapping regression failed with the setting absent. The network scan's new clean fixture failed before this exact declared setting was recognized; foreign storage beside it and undeclared names sharing its prefix remain refusal fixtures. The existing sender-authority validator's mutation fixtures now match the configured call and still reject tag-based authority.
 
 **UNPROVEN live:** receiving mail from a coordinator-configured extra sender. This work does not set the secret, send mail, approve an action, or change production data.
+
+### Boss OS — 8Raise morning section repair (3 November 2026)
+
+The Mac producer now resolves only the explicit own-account vault names (generic name first, then the named personal account); other businesses' account names are refused. It writes a plain balance-unread reason before rejecting the run, so a missing key no longer records a successful duty. An unreadable or null balance cannot become a numeric zero. Existing read/spend tool restrictions are unchanged.
+
+The existing hourly Worker tick now writes the ledger-derived 8Raise section from 05:00 Central. It uses the shared month, budget, footer and section validation rules, including an empty ledger. Any section already written that Central day is preserved, including the Mac's later live-balance copy. The conditional upsert also preserves a same-day copy arriving between the read and write. The existing hourly Schedule row describes this work, matching Open Loops' use of that row; there is no new cron or sender. The mount and outer Worker entry carry the new export to its own waitUntil.
+
+**PROVEN locally:** final `npm run typecheck` (exit 0); production client build; focused Node producer regression (ordered own-account keys, foreign-account refusal, missing/unreadable balance rejected after writing, numeric success); focused Worker/D1 regression (05:00 gate, ledger spend excluding balance reads, valid section, once per day, preservation of a Mac copy, empty month). Tests used temporary cache paths because node_modules points outside this sandbox; those config overrides were removed. The key test is in the Node suite because its producer imports Node filesystem/child-process modules.
+
+**Incomplete validation:** `npm run validate` stopped in the existing device-home scan with EPERM restoring `~/.boss-os/device.json`, outside the writable sandbox. A duplicate scan retry and broad test attempts were stopped; they are not passes. Full green validation is required from the runner before landing. No validators were weakened.
+
+**UNPROVEN live:** deployed tick, numeric balance from the real producer rerun, today's stored section and tomorrow's morning email. These require the normal land/post-land lane; this build made no production calls. No page layout or external link changed; no screenshots or external-link checks were produced.
+
+### Boss OS — morning catch-up repair rc_m6gtk44dhfjq6rvj (3 November 2026)
+
+The existing build adds safe catch-up commands or explicit reasons to MORNING_SECTION_SPECS,
+capital:grid --keep-seen, and the 06:32 Central launchd job with Schedule/Scorecard coverage.
+Review preserved the newer capital-chain resume job and current-main source changes. Catch-up
+commands now follow registry order; zero expected sections raises a named stop. The catch-up
+checks the cloud store rather than allowing a local file to hide a failed post, and shares an
+eight-minute execution budget across producers. Current main already moved 8Raise production
+to the Worker; its catch-up reason reflects that implementation.
+
+PROVEN locally: focused section, catch-up, Schedule and Scorecard tests (66 assertions/tests).
+Full validation and live status are recorded in the change's build.json; a sandbox failure is
+not a passing check. UNPROVEN live: installed launchd job, producer rerun, cloud section freshness,
+and the next morning email. No production command was executed in this BUILD phase.

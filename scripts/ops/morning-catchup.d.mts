@@ -6,3 +6,5 @@ export function catchUpOutcome(opts: {
   missingAfter: Array<{ name: string; label: string }> | null | undefined;
   plan: CatchUpPlan;
 }): { stop: "MORNING_CATCHUP_STILL_MISSING" | null; names: string[]; reRun: number; stillMissing: number };
+
+export function expectedSections(weekday: string, specs?: ReadonlyArray<{ expect: readonly string[] | null }>): number;

@@ -322,7 +322,7 @@ cat > "$CAPITAL_PLIST" <<CAPEOF
   <array>
     <string>/bin/bash</string>
     <string>-lc</string>
-    <string>cd $REPO &amp;&amp; npm run --silent capital:scan; cd $REPO &amp;&amp; bash $REPO/scripts/ops/duty-run.sh interest-extract.mjs -- npm run --silent capital:extract; cd $REPO &amp;&amp; bash $REPO/scripts/ops/duty-run.sh ledger-hunt.mjs -- npm run --silent capital:ledger-hunt -- --send; cd $REPO &amp;&amp; npm run --silent capital:grid; cd $REPO &amp;&amp; npm run --silent capital:match -- --send --pointer</string>
+    <string>cd $REPO &amp;&amp; npm run --silent capital:chain -- --start \$\$; cd $REPO &amp;&amp; npm run --silent capital:scan; cd $REPO &amp;&amp; bash $REPO/scripts/ops/duty-run.sh interest-extract.mjs -- npm run --silent capital:extract; cd $REPO &amp;&amp; bash $REPO/scripts/ops/duty-run.sh ledger-hunt.mjs -- npm run --silent capital:ledger-hunt -- --send; cd $REPO &amp;&amp; bash $REPO/scripts/ops/duty-run.sh interest-grid.mjs -- npm run --silent capital:grid; cd $REPO &amp;&amp; npm run --silent capital:match -- --send --pointer; cd $REPO &amp;&amp; npm run --silent capital:chain -- --done</string>
   </array>
   <key>StartCalendarInterval</key>
   <array>
@@ -339,7 +339,46 @@ lint_plist "$CAPITAL_PLIST"
 launchctl load "$CAPITAL_PLIST"
 # boss fix D (23 Oct 2026): 05:30, so the deals sections are written before Simone's 06:40 email; the
 # hunt runs before the grid so what it finds is in the same morning; no step emails her any more.
+# 3 Nov 2026: a kernel panic mid-chain lost the whole day's monique_found section silently, so the
+# chain now marks itself unfinished from --start to --done (chainMark.mjs) and interest-grid.mjs runs
+# through duty-run.sh so it finally leaves a dated log and a recorded run — see com.seq.boss-capital-resume below.
 echo "Installed $CAPITAL_LABEL — daily 05:30 Central (interest-ledger.mjs, interest-extract.mjs, ledger-hunt.mjs, interest-grid.mjs, interest-match.mjs)."
+
+# ─── The capital chain resumes by itself (3 Nov 2026) ───────────────────────────────────────────
+#
+# A kernel panic (watchdog timeout) rebooted the Mac mid-chain and the day's monique_found section
+# never ran; nothing retried it until 24 hours later. Same pattern as com.seq.boss-sr-resume (25 Oct
+# 2026): a KeepAlive PathState on the mark chainMark.mjs/capital-chain.mjs writes from --start to
+# --done, not a poll — idle (no file) it never runs; while the file exists launchd runs the cheap
+# local check at most every 15 minutes (ThrottleInterval), which resumes a chain whose pid is dead
+# and does nothing beside a live one. This plist names no duty: the chain it resumes already runs
+# through duty-run.sh for interest-grid.mjs, and validate:launchd-duty-link counts that one.
+CAPR_LABEL="com.seq.boss-capital-resume"
+CAPR_PLIST="$HOME/Library/LaunchAgents/$CAPR_LABEL.plist"
+cat > "$CAPR_PLIST" <<CAPREOF
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN"
+  "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0"><dict>
+  <key>Label</key><string>$CAPR_LABEL</string>
+  <key>ProgramArguments</key>
+  <array>
+    <string>/bin/bash</string>
+    <string>-lc</string>
+    <string>cd $REPO &amp;&amp; npm run --silent capital:chain -- --resume-if-unfinished</string>
+  </array>
+  <key>KeepAlive</key>
+  <dict><key>PathState</key><dict><key>$HOME/.boss-os/capital/chain-unfinished.json</key><true/></dict></dict>
+  <key>ThrottleInterval</key><integer>900</integer>
+  <key>StandardOutPath</key><string>$LOGS/capital-resume.log</string>
+  <key>StandardErrorPath</key><string>$LOGS/capital-resume.err</string>
+</dict></plist>
+CAPREOF
+
+launchctl unload "$CAPR_PLIST" 2>/dev/null || true
+lint_plist "$CAPR_PLIST"
+launchctl load "$CAPR_PLIST"
+echo "Installed $CAPR_LABEL — resumes an unfinished capital chain within 15 minutes."
 
 # MORNING CATCH-UP (repair rc_m6gtk44dhfjq6rvj, 3 Nov 2026): a Mac reboot killed com.seq.boss-capital
 # inside ledger-hunt on 3 Nov, so capital:grid never ran and "deals"/"monique_found" missed the email.
@@ -1756,6 +1795,8 @@ require_loaded "$PUBLISH_LABEL"
 require_loaded "$CAPITAL_LABEL"
 require_loaded "$MORNCATCHUP_LABEL"
 require_loaded "$NUDGE_LABEL"
+# ADDED WITH THE JOB (3 Nov 2026): the capital chain's own resume, same reason as every job above it.
+require_loaded "$CAPR_LABEL"
 require_loaded "$SHEET_LABEL"
 # RETIRED BY #116 (boss fix L, 23 Oct 2026): the Tuesday reminder email. Its absence is checked the
 # way kdp-watch's is, because a `require_loaded` left behind made every run end "NOT INSTALLED".

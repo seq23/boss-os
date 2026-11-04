@@ -88,6 +88,8 @@
       "jobs": [
         "inbound-supply",
         "ledger-hunt",
+        "deal-grid",
+        "capital-resume",
         "buyer-hunt",
         "seller-hunt",
         "filing-research",

@@ -58,8 +58,10 @@ fi
 echo $$ > "$LOCK/pid"
 trap 'rm -rf "$LOCK"' EXIT
 
-CLAUDE="$(command -v claude || echo /opt/homebrew/bin/claude)"
-[ -x "$CLAUDE" ] || { say "NAMED STOP [NO_CLAUDE_CLI] $CLAUDE"; exit 4; }
+# THE ENGINE IS ~/bin/ai-run IN THE ROLE src/shared/boss/aiRoles.mjs NAMES ("mailbox_sweep"; owner, 3 Nov 2026).
+AI_RUN="${AI_RUN_BIN:-$HOME/bin/ai-run}"
+[ -x "$AI_RUN" ] || { say "NAMED STOP [AI_RUN_MISSING] $AI_RUN is not installed (seq-bin); the next run retries."; exit 4; }
+AI_ROLE="$(node "$REPO/scripts/ops/lib/ai-run.mjs" role mailbox_sweep)" || { say "NAMED STOP [NO_AI_ROLE] mailbox_sweep"; exit 4; }
 [ -f "$PROMPT_FILE" ] || { say "NAMED STOP [NO_PROMPT_FILE] $PROMPT_FILE"; exit 5; }
 
 # WITHOUT THE MAP THERE IS NO SWEEP, and that is a hard stop rather than a degraded run.
@@ -93,10 +95,10 @@ rm -f "$OUT_DIR/findings.json"
 say "=== mailbox sweep starting (model $MODEL) ==="
 cd "$HOME" || { say "NAMED STOP [NO_HOME]"; exit 8; }
 
-"$CLAUDE" -p "$(cat "$PROMPT_FILE")" \
-  --model "$MODEL" --max-turns "$MAX_TURNS" --dangerously-skip-permissions >> "$RUN_LOG" 2>&1
+AI_RUN_CLAUDE_MODEL="$MODEL" AI_RUN_CLAUDE_ARGS="--max-turns $MAX_TURNS --dangerously-skip-permissions" \
+  "$AI_RUN" --role "$AI_ROLE" --out "$RUN_LOG" < "$PROMPT_FILE"
 RC=$?
-say "=== claude exited rc=$RC ==="
+say "=== ai-run --role $AI_ROLE exited rc=$RC ==="
 
 if ! grep -q "MAILBOX-SWEEP-COMPLETE:" "$RUN_LOG"; then
   say "NAMED STOP [SWEEP_DID_NOT_COMPLETE] no sentinel in the log — the run started and never reached its end,"

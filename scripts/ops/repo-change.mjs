@@ -11,9 +11,10 @@
  *      to `land`, which makes it claimable in the same tick.
  *   3. Claim ONE phase at a time (one live run per task, enforced by the Worker), pull the Drive
  *      package if there is one, read the target repo's RUNBOOK.md (BLOCK if there is none), compose
- *      the phase prompt from `repo-change-prompt.md`, and run a FRESH `claude -p` on the phase's
- *      model with the phase's turn cap and a hard wall-clock cap. Fresh context per phase, the way
- *      the Ahrefs fixer runs.
+ *      the phase prompt from `repo-change-prompt.md`, and run a FRESH model on the engine the phase's
+ *      role names in src/shared/boss/aiRoles.mjs (`runPhaseModel`; owner, 3 Nov 2026): build on Codex
+ *      through `ai-run --role worker`, plan and land on `claude -p` with the phase's model and turn
+ *      cap, all under a hard wall-clock cap. Fresh context per phase.
  *   4. Read the JSON the phase wrote, email her (the plan and its asks; the DONE proof; a named
  *      stop), and report to the Worker with the email's id — the Worker refuses a report that
  *      claims she was told without the id that proves it.
@@ -53,6 +54,8 @@ import { layoutEmail, layoutProblem, refsIn } from "../../src/shared/boss/mail/p
 import { repairReport, plainSentence, ownerTextProblems } from "../../src/shared/boss/repoChange/repairReport.mjs";
 import { addMorningLines } from "../../src/shared/boss/mail/morning.mjs";
 import { detectUsageLimit } from "../lib/seat-usage-limit.mjs";
+import { roleFor } from "../../src/shared/boss/aiRoles.mjs";
+import { runAs, codexLimitNote } from "./lib/ai-run.mjs";
 import { CODEX_BUILD_NOTE, codexExecArgs, codexSeatUsable, finishCodexBuild, helpMentions, runWithCodexFallback } from "../lib/codex-seat.mjs";
 import { resolveDeviceId, missingDeviceIdMessage } from "./device-id.mjs";
 
@@ -356,6 +359,41 @@ function spawnCodex({ phase, prompt, cwd, log, timeoutMin, addDirs }) {
  * Claude failure is the phase's failure, unchanged; a hand-over is written to the job log.
  * UNPROVEN against the live CLI until she runs a repo change with Claude Code out of usage.
  */
+/** The JSON object a worker printed last, when it could not write the result file itself. */
+export function lastJsonObject(text) {
+  const t = String(text ?? "");
+  for (let end = t.lastIndexOf("}"); end > 0; end = t.lastIndexOf("}", end - 1)) {
+    for (let start = t.lastIndexOf("{", end); start >= 0; start = t.lastIndexOf("{", start - 1)) {
+      try { const v = JSON.parse(t.slice(start, end + 1)); if (v && typeof v === "object" && !Array.isArray(v)) return v; } catch { /* keep looking */ }
+    }
+  }
+  return null;
+}
+
+/**
+ * ONE PHASE, ON THE ENGINE ITS ROLE NAMES (owner, 3 Nov 2026). The role is read from
+ * src/shared/boss/aiRoles.mjs (`repo_change.<phase>`), never decided here:
+ *   worker (build)        → `ai-run --role worker` (Codex on her ChatGPT plan). A Codex limit comes back
+ *                           as `codexLimit` and the phase WAITS for the reset; Claude is never called.
+ *   brain (plan, land)    → Claude Code with the phase's named model and turn cap (`runClaude`).
+ * `deps` is injected by the test (tests/aiRolesRunner.test.ts).
+ */
+export async function runPhaseModel(opts, deps = {}) {
+  const key = `repo_change.${opts.phase}`;
+  if (roleFor(key) !== "worker") return (deps.brain ?? runClaude)(opts);
+  // ai-run APPENDS the whole transcript to --out; the last JSON object in it is the result.
+  const lastMessage = opts.outFile ? `${opts.outFile}.last-message.txt` : undefined;
+  const prompt = `${opts.prompt}${opts.phase === "build" ? CODEX_BUILD_NOTE : ""}
+If the job folder is not writable to you, end with the result JSON object as your LAST message instead; the runner saves it.`;
+  if (opts.log) appendFileSync(opts.log, `\n=== ${opts.phase} on ai-run --role worker ${new Date().toISOString()} cwd=${opts.cwd}\n`);
+  const r = await (deps.runAs ?? runAs)(key, { prompt, cwd: opts.cwd, network: true, out: lastMessage, addDirs: opts.addDirs ?? [], timeoutMin: opts.timeoutMin, onOut: opts.log ? (d) => appendFileSync(opts.log, d) : undefined });
+  if (opts.outFile && !existsSync(opts.outFile) && !r.codexLimit) {
+    const saved = lastJsonObject(lastMessage && existsSync(lastMessage) ? readFileSync(lastMessage, "utf8") : r.out);
+    if (saved) writeFileSync(opts.outFile, JSON.stringify(saved, null, 2));
+  }
+  return { code: r.code, rc: r.code, timedOut: r.timedOut, out: r.out, err: r.err, isError: r.code !== 0, servedBy: "codex", codexLimit: r.codexLimit ?? null, unavailable: r.unavailable ?? null };
+}
+
 function runClaude(opts) {
   if (DRY) return spawnClaude(opts);
   return runWithCodexFallback({
@@ -759,13 +797,29 @@ async function runPhase(claim) {
       : "no — ask what policy says to ask.",
   };
   const prompt = phasePrompt(phase, vars);
-  const { rc, timedOut, servedBy, waitForSeat } = unreported
-    ? (say(`reusing the unreported ${phase}.json from the previous tick; claude is not run again`), { rc: 0, timedOut: false })
-    : await runClaude({
-      phase, prompt, cwd: (phase === "build" ? buildPath : repoPath) ?? dir, log,
+  const { rc, timedOut, servedBy, waitForSeat, codexLimit, unavailable } = unreported
+    ? (say(`reusing the unreported ${phase}.json from the previous tick; the model is not run again`), { rc: 0, timedOut: false })
+    : await runPhaseModel({
+      phase, prompt, cwd: (phase === "build" ? buildPath : repoPath) ?? dir, log, outFile,
       model: claim.model ?? PHASE_MODELS[phase], maxTurns: claim.max_turns ?? PHASE_MAX_TURNS[phase], timeoutMin: PHASE_TIMEOUT_MIN[phase],
       addDirs: [dir],
     });
+  // A CODEX LIMIT WAITS FOR ITS RESET (owner, 3 Nov 2026): released as a named note, never failed and
+  // never handed to Claude; the next tick after the reset claims the phase again.
+  if (codexLimit && !existsSync(outFile)) {
+    const note = codexLimitNote(`repo change ${row.id} ${phase}`, codexLimit);
+    appendFileSync(log, `${note}\n`);
+    await release(row, note, log);
+    say(note);
+    return;
+  }
+  if (unavailable && !existsSync(outFile)) {
+    const note = `NAMED STOP [${unavailable}] the ${phase} phase's worker could not start; released for the next tick.`;
+    appendFileSync(log, `${note}\n`);
+    await release(row, note, log);
+    say(note);
+    return;
+  }
   let out = readJson(outFile);
   /*
    * A BUILD CODEX EDITED IS COMMITTED, PUSHED AND OPENED BY THE RUNNER (31 Oct 2026). Codex's sandbox

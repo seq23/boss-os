@@ -272,6 +272,7 @@ export const INSTALLED_LOCAL_JOBS = [
   "filing-hunt.mjs",
   "grid-watch.mjs",
   "interest-extract.mjs",
+  "interest-grid.mjs", // the deal grid and Monique found (owner fix, 3 Nov 2026: a panic lost a day silently)
   "interest-match.mjs",
   "kdp-publish.sh",
   "kdp-surface.sh",

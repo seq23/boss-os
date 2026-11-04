@@ -1102,7 +1102,11 @@
   },
   {
    "domain": "hicksconsulting.org",
-   "owner_approval": "owner, 3 Nov 2026: \"she cares deeply about her site so i need to approve any changes to hicks live published site and published resources\". Every repair of a published page or published Resources post waits for her yes; new scheduled Resources posts still auto-publish and unpublished drafts may be rewritten.",
+   "owner_approval": "owner, 3 Nov 2026: \"she cares deeply about her site so i need to approve any changes to hicks live published site and published resources\". Every repair of a published core page (home, about, services, contact, /black-therapist-memphis/ and the other landing pages), any change to a published post's title or topic, and any unpublishing or deletion waits for her yes; new scheduled Resources posts still auto-publish and unpublished drafts may be rewritten.",
+   "owner_approval_direct_repairs": {
+    "why": "owner, 3 Nov 2026: \"if it has repairs for already published resources they should just fix them not queue\". A repair (broken links, meta, schema, canonical, FAQ, headings, speed, accessibility, a fact the page cannot back) whose every page is a published post under these paths is fixed and landed like any other site. Read by src/shared/boss/searchReadiness/ownerApproval.mjs.",
+    "paths": ["/resources/", "/insights/", "/questions/"]
+   },
    "repo": "hicks-consulting-canonical",
    "category": "client",
    "entity_parent": "client",

@@ -65,10 +65,10 @@ describe("the wrapper reads units in code, after sign-in and before the model", 
     expect((wrapper.match(/node scripts\/ops\/kdp-units\.mjs/g) ?? []).length).toBe(1);
   });
 
-  it("runs it after kdp-signin.mjs and before the claude invocation", () => {
+  it("runs it after kdp-signin.mjs and before the model (ai-run) invocation", () => {
     const signinAt = wrapper.indexOf("kdp-signin.mjs");
     const unitsAt = wrapper.indexOf("kdp-units.mjs");
-    const claudeAt = wrapper.indexOf('"$CLAUDE" -p');
+    const claudeAt = wrapper.indexOf('"$AI_RUN" --role');
     expect(signinAt).toBeGreaterThan(-1);
     expect(unitsAt).toBeGreaterThan(signinAt);
     expect(claudeAt).toBeGreaterThan(unitsAt);
