@@ -28,6 +28,7 @@ import { isAncestralToken, markAncestralHourDone, reminderByToken } from "../spi
 import { inviteGate, sendInvite } from "../lp/schedule";
 import { isScorecardToken, scorecardTapGet, scorecardTapPost } from "./scorecard";
 import { isHicksToken, hicksTapGet, hicksTapPost } from "../clients/hicksUpdate";
+import { sendLpNudge, skipLpNudge } from "../lp/nudge";
 
 export const lpTap = new Hono<{ Bindings: Env; Variables: Vars }>();
 
@@ -68,7 +69,7 @@ async function find(db: D1Database, token: string): Promise<Found | null> {
   return null;
 }
 
-const VERBS: Record<string, string> = { send: "Sending your reply…", skip: "Skipping…", approve: "Approving…", dismiss: "Dismissing…", retry: "Writing a different draft…" };
+const VERBS: Record<string, string> = { send: "Sending your reply…", skip: "Skipping…", approve: "Approving…", dismiss: "Dismissing…", retry: "Writing a different draft…", nudge: "Sending the nudge…", nonudge: "No nudge…" };
 
 lpTap.get("/:token", async (c) => {
   // The Hicks quarterly update: Approve · Change the words · Skip (clients/hicksUpdate.ts).
@@ -173,6 +174,12 @@ lpTap.post("/:token", async (c) => {
     const { forecast } = await prospectPlan(db, now);
     const o = approveOutcome(forecast);
     return c.html(page("Approved", [o.headline.replace(/^Approve → /, ""), ...o.lines].join(" ")));
+  }
+
+  // THE ONE GENTLE NUDGE (lp/nudge.ts): on a reply that already went, so before the "already sent" check.
+  if (f.kind === "lp" && (action === "nudge" || action === "nonudge")) {
+    const r = action === "nudge" ? await sendLpNudge(c.env, f.row, "one_tap", now) : await skipLpNudge(c.env, f.row, now);
+    return c.html(page(r.title, r.line));
   }
 
   const row = f.row;
