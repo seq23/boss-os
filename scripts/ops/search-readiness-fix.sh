@@ -104,7 +104,19 @@ resume_if_unfinished() {
   if [ -f "$STATE_DIR/retry-after" ]; then
     local retry_at retry_epoch now_epoch
     retry_at="$(cat "$STATE_DIR/retry-after")"
-    retry_epoch="$(date -j -f "%I:%M %p" "$retry_at" +%s 2>/dev/null)"
+    retry_epoch="$(node -e '
+      const fs = require("node:fs");
+      const file = process.argv[1], raw = fs.readFileSync(file, "utf8").trim();
+      if (/^\d{10,}(?: |$)/.test(raw)) { console.log(raw.split(" ")[0]); process.exit(); }
+      const modified = fs.statSync(file).mtimeMs;
+      const at = new Date(modified);
+      const m = /^(\d{1,2}):(\d{2}) ([AP]M)$/i.exec(raw);
+      if (m && +m[1] >= 1 && +m[1] <= 12 && +m[2] < 60) {
+        at.setHours(+m[1] % 12 + (/pm/i.test(m[3]) ? 12 : 0), +m[2], 0, 0);
+        if (at.getTime() <= modified) at.setDate(at.getDate() + 1);
+        console.log(Math.floor(at.getTime() / 1000));
+      } else console.log(Math.floor(modified / 1000) + 1800);
+    ' "$STATE_DIR/retry-after")"
     now_epoch="$(date +%s)"
     if [ -n "$retry_epoch" ] && [ "$now_epoch" -lt "$retry_epoch" ]; then
       say "resume check: waiting until $retry_at (the AI allowance resets then)"
@@ -137,12 +149,18 @@ take_run_lock() {
   trap 'rm -rf "$RUN_LOCK" "${RCS:-}"' EXIT
 }
 
-# Each stop with work left is reported ONCE (per stop code, across resumes) to the repair path.
+# Each stop is reported once across resumes. Notes use a distinct receipt so an old repair
+# receipt cannot suppress the new Open Loops note after upgrading.
 report_stop() {
-  local code="$1" sentence="$2"
-  if [ "${REPORTED:-}" = "$code" ]; then say "  (already reported to Danielle: $code)"; return 0; fi
+  local code="$1" sentence="$2" receipt="$1"
+  case "$code" in AI_USAGE_EXHAUSTED|NETWORK_UNREACHABLE) receipt="NOTE:$code";; esac
+  if [ "${REPORTED:-}" = "$receipt" ]; then say "  (already reported: $code)"; return 0; fi
   if npm run --silent vault:run -- node scripts/ops/sr-run-stopped.mjs "$code" "$sentence" >> "$LOG" 2>&1; then
-    REPORTED="$code"; say "  reported to Danielle's repair desk: $code"
+    REPORTED="$receipt"
+    case "$code" in
+      AI_USAGE_EXHAUSTED|NETWORK_UNREACHABLE) say "  NOTE: $code — scheduled resume is armed";;
+      *) say "  reported to Danielle's repair desk: $code";;
+    esac
   else
     say "  NAMED STOP [SR_STOP_NOT_REPORTED] Boss OS was not told about $code; the next resume tries again (see log)."
   fi
@@ -155,7 +173,16 @@ stop_unfinished() {
   mark "$1"
   report_stop "$1" "$2"
   mark "$1"
-  exit 13
+  case "$1" in
+    AI_USAGE_EXHAUSTED|NETWORK_UNREACHABLE) exit 0;;
+    *) exit 13;;
+  esac
+}
+clear_waiting_notes() {
+  local code
+  for code in AI_USAGE_EXHAUSTED NETWORK_UNREACHABLE; do
+    npm run --silent vault:run -- node scripts/ops/sr-run-stopped.mjs --cleared "$code" >> "$LOG" 2>&1 || say "NOTE: could not clear $code in Open Loops (see log)"
+  done
 }
 net_gate() {
   wait_for_network "$1" || stop_unfinished NETWORK_UNREACHABLE "api.github.com did not answer for ${SR_NET_WAIT_MAX_S:-7200}s ($1). This is the network, not the gh login; the run resumes by itself within 15 minutes of the network coming back."
@@ -255,6 +282,7 @@ main() {
     [ "$STALLED" -eq 1 ] && exit 0
     exit 14
   fi
+  clear_waiting_notes
   rm -f "$MARK" "$STATE_DIR/retry-after"
   [ "$START" -gt 0 ] || say "NAMED STOP [QUEUE_EMPTY] nothing workable in the queue today; that is a result, not a skip."
   exit 0

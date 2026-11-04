@@ -10,7 +10,7 @@
  * written. These tests run the REAL scripts/ops/ahrefs-audit-fix.sh and
  * scripts/ops/search-readiness-fix.sh against faked codex/claude/gh/security/curl, and fail if: the
  * echoed template is ever accepted as a real sentinel; a missing findings file crashes with a stack
- * instead of a NAMED STOP; the codex→claude fallback direction does not exist; a round where every
+ * instead of a NAMED STOP; a Codex limit is ever handed to Claude; a round where every
  * pass is waiting on a spent allowance burns the remaining rounds instead of stopping with the mark
  * kept; or --rearm does not write the mark the standing resume job watches.
  */
@@ -45,7 +45,7 @@ if [ "\${FAKE_CODEX_MODE:-usage_limit}" = complete ]; then
   echo "AHREFS-AUDIT-COMPLETE: projects=0 fixed=0 surfaced=0 off_limits=0 no_repo=0 ahrefs_side=0 ahrefs_credits=0 client_repo=0 in_flight=0"
   exit 0
 fi
-echo "${USAGE_LIMIT_LINE}"
+if [ "\${FAKE_CODEX_MODE:-}" = unknown ]; then echo "usage limit with no reset"; elif [ -n "\${FAKE_CODEX_LIMIT_LINE:-}" ]; then echo "$FAKE_CODEX_LIMIT_LINE"; else echo "${USAGE_LIMIT_LINE}"; fi
 exit 1`
   );
   w(
@@ -63,7 +63,7 @@ exit 0`
   return bin;
 }
 
-function runFixer(opts: { claudeSignedIn: boolean; mode: "usage_limit" | "complete"; extra?: Record<string, string> }) {
+function runFixer(opts: { claudeSignedIn: boolean; mode: "usage_limit" | "complete" | "unknown"; extra?: Record<string, string> }) {
   const home = mkdtempSync(join(tmpdir(), "audit-usage-"));
   mkdirSync(join(home, "GitHub"), { recursive: true });
   const bin = fakeAhrefsBin(home);
@@ -104,7 +104,12 @@ describe("ahrefs-audit-fix.sh: the sentinel is a result, not the prompt's own te
     expect(out).toMatch(/NAMED STOP \[CODEX_LIMIT\] resets 12:04 PM/);
     expect(out).not.toMatch(/^sentinel:/m);
     expect(out).not.toMatch(/ENOENT|at Object\.|at async|TypeError|node:internal/);
-    expect(readFileSync(retryAfter, "utf8").trim()).toBe("12:04 PM");
+    const retry = readFileSync(retryAfter, "utf8").trim();
+    expect(retry).toMatch(/^\d+ 12:04 PM$/);
+    const at = new Date(Number(retry.split(" ")[0]) * 1000);
+    expect(at.getTime()).toBeGreaterThan(Date.now());
+    expect(at.getHours()).toBe(12);
+    expect(at.getMinutes()).toBe(4);
     expect(claudeRan).toBe(false);
   }, 60000);
 
@@ -114,6 +119,30 @@ describe("ahrefs-audit-fix.sh: the sentinel is a result, not the prompt's own te
     expect(out).toMatch(/NAMED STOP \[CODEX_LIMIT\] resets 12:04 PM/);
     expect(out).not.toMatch(/^sentinel:/m);
     expect(rc, out).toBe(13);
+  }, 60000);
+
+  it("a reset clock already past is written for tomorrow", () => {
+    const now = new Date();
+    const past = new Date(now.getTime() - 5 * 60000);
+    const time = `${past.getHours() % 12 || 12}:${String(past.getMinutes()).padStart(2, "0")} ${past.getHours() < 12 ? "AM" : "PM"}`;
+    const t = runFixer({ claudeSignedIn: false, mode: "usage_limit", extra: { FAKE_CODEX_LIMIT_LINE: `usage limit; try again at ${time}` } });
+    const retry = readFileSync(t.retryAfter, "utf8").trim();
+    expect(retry).toMatch(/^\d+ /);
+    const epoch = Number(retry.split(" ")[0]);
+    expect(epoch).toBeGreaterThan(Date.now() / 1000);
+    expect(epoch).toBeGreaterThan(now.getTime() / 1000 + 23 * 3600);
+    expect(t.claudeRan).toBe(false);
+  }, 60000);
+
+  it("a limit with no reset backs off thirty minutes, never invoking Claude", () => {
+    const before = Math.floor(Date.now() / 1000);
+    const t = runFixer({ claudeSignedIn: true, mode: "unknown" });
+    expect(t.rc, t.out).toBe(13);
+    expect(t.claudeRan).toBe(false);
+    const retry = readFileSync(t.retryAfter, "utf8").trim();
+    expect(retry).toMatch(/^\d+ no reset time given$/);
+    expect(Number(retry.split(" ")[0])).toBeGreaterThanOrEqual(before + 1800);
+    expect(Number(retry.split(" ")[0])).toBeLessThanOrEqual(Math.floor(Date.now() / 1000) + 1800);
   }, 60000);
 
   it("a real sentinel with real numbers is accepted: never AUDIT_DID_NOT_COMPLETE or AI_USAGE_EXHAUSTED", () => {
@@ -202,10 +231,10 @@ exit 13
 }
 
 describe("search-readiness-fix.sh: a round fully waiting on a spent allowance stops now, mark kept", () => {
-  it("every pass in the round returns 13 with retry-after written: AI_USAGE_EXHAUSTED, exit 13, never SR_QUEUE_STALLED, the mark stays", () => {
+  it("every pass in the round returns 13 with retry-after written: AI_USAGE_EXHAUSTED, exit 0, never SR_QUEUE_STALLED, the mark stays", () => {
     const t = runnerTree({ plans: [FOUR] });
     const { rc, out } = t.run();
-    expect(rc, out).toBe(13);
+    expect(rc, out).toBe(0);
     expect(out).toMatch(/NAMED STOP \[AI_USAGE_EXHAUSTED\]/);
     expect(out).not.toMatch(/SR_QUEUE_STALLED/);
     expect(out).not.toMatch(/fixed nothing; stopping/);

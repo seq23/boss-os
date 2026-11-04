@@ -6,13 +6,12 @@
  * the run ended "fixed=0 left=316" with exit 0, and nothing restarted it. These run the REAL
  * scripts/ops/ahrefs-audit-fix.sh and scripts/ops/search-readiness-fix.sh against a faked network
  * (curl) and a faked gh, and fail if: an outage is ever named a login stop; a real logout stops being
- * named; the wait is unbounded; a dead run is not resumed, or a live one is doubled; a run with work
- * left exits 0 or never reaches the repair path.
+ * named; the wait is unbounded; a dead run is not resumed, or a live one is doubled; a waiting run loses its mark or opens a repair instead of a note.
  */
 import { describe, it, expect } from "vitest";
 import { spawnSync, spawn } from "node:child_process";
 import { FAKE_AI_RUN } from "./fakeAiRun";
-import { rmSync, mkdtempSync, mkdirSync, writeFileSync, readFileSync, copyFileSync, existsSync, chmodSync } from "node:fs";
+import { rmSync, mkdtempSync, mkdirSync, writeFileSync, readFileSync, utimesSync, copyFileSync, existsSync, chmodSync } from "node:fs";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
 
@@ -181,17 +180,18 @@ describe("search-readiness-fix.sh waits out the network and resumes by itself", 
     expect(rc, out).toBe(0);
   }, 60000);
 
-  it("network gone past the wait: exit 13, the mark stays, the stop reaches the repair path once; the tick then resumes it", () => {
+  it("network gone past the wait: exit 0, the mark stays, the waiting note is posted once; the tick then resumes it", () => {
     const t = runnerTree({ plans: [EMPTY], down: "forever" });
     const first = t.run();
-    expect(first.rc, first.out).toBe(13);
+    expect(first.rc, first.out).toBe(0);
+    expect(first.out).toMatch(/NOTE: NETWORK_UNREACHABLE/);
     expect(first.out).toMatch(/NAMED STOP \[NETWORK_UNREACHABLE\]/);
     expect(first.out).not.toMatch(/GH_NOT_AUTHENTICATED/);
     expect(readFileSync(t.mark, "utf8")).toMatch(/"reason": "NETWORK_UNREACHABLE"/);
     expect(t.read("reported").trim()).toBe("NETWORK_UNREACHABLE");
     // Still down at the next tick: resumed, waits again, NOT reported a second time.
     const again = t.run("--resume-if-unfinished");
-    expect(again.rc).toBe(13);
+    expect(again.rc).toBe(0);
     expect(t.read("reported").trim().split("\n")).toEqual(["NETWORK_UNREACHABLE"]);
     // The network comes back: the tick resumes it through duty-run.sh and it finishes.
     writeFileSync(t.net, "0");
@@ -200,6 +200,7 @@ describe("search-readiness-fix.sh waits out the network and resumes by itself", 
     expect(back.rc, back.out).toBe(0);
     expect(t.read("duty-runs")).toMatch(/search-readiness-fix\.sh -- bash scripts\/ops\/search-readiness-fix\.sh --resume/);
     expect(existsSync(t.mark)).toBe(false);
+    expect(t.read("reported")).toContain("--cleared\n--cleared");
   }, 90000);
 
   it("a runner killed mid-run is resumed by the tick, and its stale lock is cleared", async () => {
@@ -273,11 +274,65 @@ describe("search-readiness-fix.sh waits out the network and resumes by itself", 
 describe("the stop reaches Danielle as a failed_task repair", () => {
   it("repairTask is a repair on emp_repo, named so the done mail says which job stopped", async () => {
     const { repairTask, SR_RUN_TITLE } = await import("../scripts/ops/sr-run-stopped.mjs");
-    const t = repairTask("NETWORK_UNREACHABLE", "api.github.com did not answer.");
+    const t = repairTask("SR_ROUNDS_SPENT", "api.github.com did not answer.");
     expect(t.employee_id).toBe("emp_repo");
     expect(t.input).toMatchObject({ origin: "repair", repair_kind: "failed_task" });
     expect(t.title).toBe(SR_RUN_TITLE);
     expect(/^Find why "([^"\n]{3,80})" failed/.exec(t.title)?.[1]).toBe("Search Readiness fix run");
     expect(t.input.prompt).toMatch(/^seq23\/boss-os — /);
   });
+});
+
+
+describe("self-resuming waits are notes, never repairs", () => {
+  it("posts both waiting codes to intake, clears them, and preserves hard-stop repairs", async () => {
+    const { reportStop, repairTask, WAITING_STOPS } = await import("../scripts/ops/sr-run-stopped.mjs");
+    const posts: { path: string; body: any }[] = [];
+    const api = { post: async (path: string, body: any) => { posts.push({ path, body }); } };
+    for (const code of WAITING_STOPS) {
+      expect(() => repairTask(code, "waiting")).toThrow(/note/);
+      expect(await reportStop(api, code, "waiting")).toBe("NOTE");
+      expect(posts.at(-1)).toMatchObject({ path: "/open-loops/intake", body: { repo: "seq23/boss-os", stop: code, owner: "codex", finish_line: "the Search Readiness fix queue reaches zero" } });
+      await reportStop(api, code, "", true);
+      expect(posts.at(-1)?.body.cleared).toBe(true);
+    }
+    await reportStop(api, "SR_ROUNDS_SPENT", "rounds spent");
+    expect(posts.filter(p => p.path === "/tasks")).toHaveLength(1);
+  });
+
+  it("an old repair receipt does not suppress the waiting note after upgrading", () => {
+    const t = runnerTree({ plans: [EMPTY], down: "forever" });
+    mkdirSync(t.state, { recursive: true });
+    writeFileSync(t.mark, JSON.stringify({ pid: 99999999, reason: "NETWORK_UNREACHABLE", reported: "NETWORK_UNREACHABLE" }));
+    const r = t.run("--resume");
+    expect(r.rc, r.out).toBe(0);
+    expect(r.out).toMatch(/NOTE: NETWORK_UNREACHABLE/);
+    expect(t.read("reported").trim()).toBe("NETWORK_UNREACHABLE");
+    expect(readFileSync(t.mark, "utf8")).toContain('"reported": "NOTE:NETWORK_UNREACHABLE"');
+  }, 60000);
+
+  it("the real resume gate waits for epochs, legacy overnight clocks and malformed values, then resumes after the fallback expires", () => {
+    for (const value of [`${Math.floor(Date.now() / 1000) + 3600} 11:59 PM`, "unknown (Codex gave no reset time)", "6:50 PM — the work waits for the reset", "12:01 AM"]) {
+      const t = runnerTree({ plans: [EMPTY] });
+      mkdirSync(t.state, { recursive: true });
+      writeFileSync(t.mark, JSON.stringify({ pid: 99999999, reason: "AI_USAGE_EXHAUSTED" }));
+      const retry = join(t.state, "retry-after");
+      writeFileSync(retry, value);
+      if (value === "12:01 AM") {
+        const afternoon = new Date(); afternoon.setHours(15, 0, 0, 0);
+        utimesSync(retry, afternoon, afternoon);
+      }
+      const r = t.run("--resume-if-unfinished");
+      expect(r.rc, r.out).toBe(0);
+      expect(r.out).toMatch(/waiting until/);
+      expect(t.read("duty-runs")).toBe("");
+      expect(existsSync(t.mark)).toBe(true);
+      if (value.startsWith("unknown")) {
+        const old = new Date(Date.now() - 1900 * 1000); utimesSync(retry, old, old);
+        const resumed = t.run("--resume-if-unfinished");
+        expect(resumed.out).toMatch(/resuming/);
+        expect(existsSync(t.mark)).toBe(false);
+      }
+    }
+  }, 60000);
 });

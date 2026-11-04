@@ -60,3 +60,5 @@ the vault as `BOSS_OPEN_LOOPS_TOKEN` and re-set every adopter's secret.
 ## Adopters
 
 - `seq23/keepmyproof`: `scripts/release-gate.mjs` (the store release gate).
+
+- `seq23/boss-os`: `scripts/ops/sr-run-stopped.mjs` (Search Readiness usage and network waits; owned by Codex, cleared when the queue reaches zero).

@@ -3,22 +3,49 @@
  * A SEARCH READINESS RUN THAT STOPPED WITH WORK LEFT REACHES DANIELLE FIRST (25 Oct 2026).
  *
  * On 25 Oct 2026 the run ended "fixed=0 left=316" and exited 0: a network outage had stopped every
- * pass, and nothing told anyone. scripts/ops/search-readiness-fix.sh now exits non-zero with a NAMED
- * STOP whenever it ends with workable briefs left, and calls this to open the existing repair path:
+ * pass, and nothing told anyone. scripts/ops/search-readiness-fix.sh names every stop
+ * with workable briefs left. Self-resuming waits become Open Loops notes;
+ * other stops open the existing repair path:
  * a "failed_task" repair on Danielle's desk (emp_repo), which she builds and lands herself
  * (repairs never wait on the owner), and which reaches the owner only through Danielle's own
  * report or her spent rework budget. Never a new email from here.
  *
  *   npm run --silent vault:run -- node scripts/ops/sr-run-stopped.mjs <CODE> <sentence>
  *
- * Exits 0 only when Boss OS recorded the task; anything else is a NAMED STOP the runner logs and
+ * Exits 0 only when Boss OS recorded the repair or waiting note; anything else is a NAMED STOP the runner logs and
  * retries on its next pass (the runner reports each stop once, after it is recorded).
  */
 import { bossApi } from "./lib/duty-kit.mjs";
 
 export const SR_RUN_TITLE = 'Find why "Search Readiness fix run" failed';
 
+export const WAITING_STOPS = ["AI_USAGE_EXHAUSTED", "NETWORK_UNREACHABLE"];
+
+export function waitingNote(code, sentence, cleared = false) {
+  if (!WAITING_STOPS.includes(code)) throw new Error(`Not a waiting stop: ${code}`);
+  return {
+    repo: "seq23/boss-os", stop: code, owner: "codex", business: "personal",
+    title: "Search Readiness is waiting to resume",
+    finish_line: "the Search Readiness fix queue reaches zero",
+    next_step: code === "AI_USAGE_EXHAUSTED"
+      ? "Wait for the AI usage reset; the scheduled resume runs the queue again."
+      : "Wait for the network to return; the scheduled resume runs the queue again.",
+    ...(cleared ? { cleared: true } : {}),
+  };
+}
+
+export async function reportStop(api, code, sentence, cleared = false) {
+  if (WAITING_STOPS.includes(code)) {
+    await api.post("/open-loops/intake", waitingNote(code, sentence, cleared));
+    return "NOTE";
+  }
+  if (cleared) throw new Error(`Cannot clear a repair: ${code}`);
+  await api.post("/tasks", repairTask(code, sentence));
+  return "REPAIR";
+}
+
 export function repairTask(code, sentence) {
+  if (WAITING_STOPS.includes(code)) throw new Error(`Waiting stop must be a note: ${code}`);
   return {
     title: SR_RUN_TITLE,
     lane: "ops",
@@ -36,12 +63,15 @@ export function repairTask(code, sentence) {
 }
 
 async function main() {
-  const [code, ...rest] = process.argv.slice(2);
+  const args = process.argv.slice(2);
+  const cleared = args[0] === "--cleared";
+  if (cleared) args.shift();
+  const [code, ...rest] = args;
   if (!code) { console.error("NAMED STOP [NO_STOP_CODE] usage: sr-run-stopped.mjs <CODE> <sentence>"); process.exit(2); }
   try {
     const api = await bossApi();
-    await api.post("/tasks", repairTask(code, rest.join(" ")));
-    console.log(`SR-STOP-REPORTED: ${code} — a repair is on Danielle's desk`);
+    const kind = await reportStop(api, code, rest.join(" "), cleared);
+    console.log(`SR-STOP-${kind}: ${code}${cleared ? " — outcome reached" : ""}`);
   } catch (e) {
     console.error(`NAMED STOP [SR_STOP_NOT_REPORTED] ${e?.message ?? e}`);
     process.exit(3);
