@@ -13,7 +13,9 @@ describe("the LP nudge", () => {
     const [n] = lpNudgeItems([row({})], NOW);
     expect(n.title).toMatch(/^No answer in 8 days: nudge Pat Example\?/);
     expect(n.draft.text).toMatch(/^Hi Pat,\n\nJust floating this back up/);
-    expect(n.buttons.map((b: any) => b.label)).toEqual(["Open their thread to send it"]);
+    expect(n.buttons.map((b: any) => b.label)).toEqual(["Open their thread"]);
+    expect(lpNudgeItems([row({ tap_token: "tok_abcdefghijklmnopqrstu" })], NOW)[0].buttons.map((b: any) => b.label)).toEqual(["Send the nudge", "No nudge", "Open their thread"]);
+    expect(lpNudgeItems([row({ nudged_at: NOW - DAY })], NOW)).toEqual([]);
     expect(lpNudgeItems([row({ sent_at: NOW - 6 * DAY })], NOW)).toEqual([]);
     expect(lpNudgeItems([row({ sent_at: NOW - 15 * DAY })], NOW)).toEqual([]);
     expect(lpNudgeItems([row({ status: "replied_again" }), row({ status: "drafted" })], NOW)).toEqual([]);

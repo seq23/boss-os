@@ -121,8 +121,12 @@ export function lpNudgeItems(rows, now = Date.now()) {
       details: [`Their email: ${r.address}`, `Who: ${lpWho(r)}.`],
       draft: { heading: "The nudge, word for word", text: lpNudgeBody(r) },
       priority: 4,
+      // One tap sends it in their thread and marks them nudged (worker lp/nudge.ts); "No nudge" marks
+      // them without a send. Either way the card never comes back (4 Nov 2026: with only "Open their
+      // thread" she typed the ask to Simone, and it became a research job).
       buttons: [
-        ...(r.thread_id ? [{ label: "Open their thread to send it", url: gmailThreadUrl(r.thread_id, r.reply_from ?? LP_MAILBOX) }] : []),
+        ...(r.tap_token && r.thread_id ? [{ label: "Send the nudge", url: tapUrl(r.tap_token, "nudge") }, { label: "No nudge", url: tapUrl(r.tap_token, "nonudge") }] : []),
+        ...(r.thread_id ? [{ label: "Open their thread", url: gmailThreadUrl(r.thread_id, r.reply_from ?? LP_MAILBOX) }] : []),
       ],
     }));
 }

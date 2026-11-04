@@ -40,6 +40,7 @@ import { recordDriveWatches } from "../service/macWaits";
 import { standingConstraintsIn } from "../../../shared/boss/service/practices.mjs";
 import { dueTimeIn, dueLine, notBeforeIn, heldDue } from "../../../shared/boss/service/dueTime.mjs";
 import { commandFromMail, openErrandFor, errandReplied } from "../commands/run";
+import { nudgeFromWords } from "../lp/nudge";
 
 /**
  * MAIL TO `boss@sequoiataylor.com`.
@@ -587,6 +588,19 @@ export async function handleBossInboundMail(message: BossMailMessage, env: Env):
     const decideReply = [decideAnswer.note, ...(secrets?.line ? ["", secrets.line] : [])].join("\n");
     await finish({ outcome: decideAnswer.outcome, why: decideAnswer.note, taskId: decideAnswer.taskId, employeeId: "emp_chief", objectKey, reply: decideReply });
     return { mailId, outcome: decideAnswer.outcome, employeeId: "emp_chief", taskId: decideAnswer.taskId, reply: decideReply, messageId, signer: "Simone" };
+  }
+
+  /*
+   * HER "NUDGE <their address>" SENDS THE ONE LP NUDGE (4 Nov 2026). The Decide card's nudge had no
+   * send button; she typed the ask, triage gave "send this email" to research, and research wrote a
+   * page. An email of hers with the word "nudge" and the address of someone on the LP tracker is the
+   * whole job: the fixed nudge goes in their thread and they are marked nudged (lp/nudge.ts).
+   */
+  const nudge = own ? await nudgeFromWords(env, own, now) : null;
+  if (nudge) {
+    const nudgeReply = [nudge.note, ...(secrets?.line ? ["", secrets.line] : [])].join("\n");
+    await finish({ outcome: "LP_NUDGE", why: nudge.note, employeeId: "emp_relationship", objectKey, reply: nudgeReply });
+    return { mailId, outcome: "LP_NUDGE", employeeId: "emp_relationship", taskId: null, reply: nudgeReply, messageId, signer: "Monique" };
   }
 
   // R19 — a line she marks `Always:` / `Never:` / `Standing rule:` / `Constraint:` is registered once and rides on every run.
