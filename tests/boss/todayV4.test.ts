@@ -11,6 +11,8 @@ import { pickSide, SIDE_BUSINESSES, brokenLine } from "../../src/worker/boss/tod
 import { confidentialLadder, isConfidentialDraft, orderSeats, CLAUDE_SEAT, OPENAI_SEAT } from "../../src/worker/boss/duties/seatOrder";
 import { routeCompletion } from "../../src/worker/boss/router";
 import { LINES, BANNED_WORDS } from "../../src/worker/boss/practice/lines";
+import { listLpRows } from "../../src/worker/boss/lp/desk";
+import { lpNudgeItems, lpDecideItems } from "../../src/shared/boss/lp/plan.mjs";
 import { lpReplyClosed } from "../../src/worker/boss/routes/lpTap";
 
 /**
@@ -387,4 +389,20 @@ describe("LP and deal-terms drafts: the Claude seat only, failing closed", () =>
       messages: [{ role: "user", content: "Draft a reply to an LP" }],
     })).rejects.toThrow(/Claude seat only/);
   });
+});
+
+
+it("quiet-listed people yield no waiting item, LP decision, nudge or morning notice", async () => {
+  await clean();
+  await lp("lpr_quiet", "drafted", { draft_id: "dr", draft_message_id: "msg", draft_body: "Hello", tap_token: "quiet_token" });
+  await morning(TODAY, [{ id: "decide-quiet001", key: "lp:lpr_quiet", title: `Reply to ${NAME}`, from: "lp" }]);
+  expect((await waitingOnYou(env, TODAY)).items).toHaveLength(1);
+  const original = (await listLpRows(env.DB)).find((r) => r.id === "lpr_quiet");
+  const sent = { ...original, status: "sent", sent_at: Date.now() - 8 * 86400000 };
+  expect(lpNudgeItems([sent])).toHaveLength(1);
+  await env.DB.prepare(`INSERT INTO quiet_people (address) VALUES (?)`).bind("LPR_QUIET@example.org").run();
+  expect((await waitingOnYou(env, TODAY)).items).toHaveLength(0);
+  const row = (await listLpRows(env.DB)).find((r) => r.id === "lpr_quiet");
+  expect(lpNudgeItems([{ ...sent, quiet: row.quiet }])).toHaveLength(0);
+  expect(lpDecideItems([row, { ...row, status: "replied_again" }])).toHaveLength(0);
 });

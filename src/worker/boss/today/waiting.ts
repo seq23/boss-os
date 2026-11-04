@@ -125,13 +125,14 @@ export function foldMornings(mornings: { day: string; decide: any[]; still: any[
 export async function waitingOnYou(env: Env, today: string, opts: { includeSnoozed?: boolean } = {}): Promise<{ items: WaitingItem[]; latest: string | null }> {
   const db = env.DB;
   const since = new Date(Date.parse(`${today}T12:00:00Z`) - CARRY_DAYS * 86_400_000).toISOString().slice(0, 10);
-  const [mornR, disR, snzR, lpR, errR, tplR] = await db.batch([
+  const [mornR, disR, snzR, lpR, errR, tplR, quietR] = await db.batch([
     db.prepare(`SELECT day, json_extract(payload, '$.decide') AS decide, json_extract(payload, '$.still_yours') AS still FROM morning_digests WHERE day >= ? ORDER BY day ASC`).bind(since),
     db.prepare(`SELECT item_id FROM decide_dismissed`),
     db.prepare(`SELECT item_key FROM today_ticks WHERE day_id = ? AND item_key LIKE 'notnow:%'`).bind(today),
-    db.prepare(`SELECT id, address, name, status, decision, draft_id, draft_message_id, draft_body, tap_token, thread_id, reply_from, first_seen, last_reply_at FROM lp_reply_drafts`),
+    db.prepare(`SELECT EXISTS(SELECT 1 FROM quiet_people q WHERE q.address = lower(trim(lp_reply_drafts.address))) AS quiet, id, address, name, status, decision, draft_id, draft_message_id, draft_body, tap_token, thread_id, reply_from, first_seen, last_reply_at FROM lp_reply_drafts`),
     db.prepare(`SELECT id, state, lower(json_extract(spec, '$.to')) AS addr FROM boss_commands WHERE kind = 'errand'`),
     db.prepare(`SELECT COUNT(*) AS n FROM prospect_templates WHERE status = 'pending'`),
+    db.prepare(`SELECT address FROM quiet_people`),
   ]);
   const mornings = ((mornR?.results ?? []) as { day: string; decide: string | null; still: string | null }[])
     .map((r) => ({ day: r.day, decide: json<any[]>(r.decide, []), still: json<any[]>(r.still, []) }));
@@ -143,16 +144,18 @@ export async function waitingOnYou(env: Env, today: string, opts: { includeSnooz
   const templatePending = (((tplR?.results?.[0] ?? {}) as { n?: number }).n ?? 0) > 0;
 
   const lpOf = (r: Raw) => {
-    const k = /^lp(?:-again)?:(.+)$/.exec(r.key ?? "")?.[1];
+    const k = /^(?:lp(?:-again)?|lpnudge):(.+)$/.exec(r.key ?? "")?.[1];
     if (k) return lps.find((x) => x.id === k || x.address === k.toLowerCase()) ?? null;
     const n = lpNameOf(r.title);
     return n ? lps.find((x) => x.name && x.name.toLowerCase() === n.name.toLowerCase()) ?? null : null;
   };
 
+  const quietAddresses = ((quietR?.results ?? []) as { address: string }[]).map((r) => r.address.toLowerCase());
   const items: WaitingItem[] = [];
   const perLp = new Map<string, WaitingItem>();
   for (const r of foldMornings(mornings).values()) {
     if (r.answered || dismissed.has(r.id)) continue;
+    if (quietAddresses.some((a) => `${r.title} ${r.body} ${r.key ?? ""}`.toLowerCase().includes(a)) || lpOf(r)?.quiet) continue;
     if (!opts.includeSnoozed && snoozed.has(r.id)) continue;
     if (isMatchCard(r)) continue;
     // A prospect template card: only while a template is actually waiting for her.
@@ -173,7 +176,7 @@ export async function waitingOnYou(env: Env, today: string, opts: { includeSnooz
       const row = lpOf(r);
       if (row) {
         // Handled underneath: the reply went, was skipped, or is scheduled to go.
-        if (["sent", "skipped", "scheduled"].includes(row.status)) continue;
+        if (row.quiet || ["sent", "skipped", "scheduled"].includes(row.status)) continue;
         // The person's unanswered message, as the LP pipeline counts it (`lp/plan.mjs`).
         const theirs = row.status === "replied_again"
           ? (Number(row.last_reply_at) > 0 ? new Date(Number(row.last_reply_at)).toISOString().slice(0, 10) : null)

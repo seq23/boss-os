@@ -211,6 +211,7 @@ const SNAPSHOT_TABLES = [
   // 0294 (boss fix L) — the LP tracker, prospects and their touches, the approved prospect email,
   // her name rules, the 8Raise ledger and the catch-up record. Parents before children: prospects
   // before prospect_touches. None of it re-derives: decisions she tapped, touches already sent.
+  "quiet_people",
   "lp_reply_drafts", // fix L
   "prospects", // fix L
   "prospect_touches", // fix L

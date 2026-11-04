@@ -9,6 +9,7 @@
 import { env } from "cloudflare:test";
 import { afterEach, describe, expect, it } from "vitest";
 import { upsertLpRows } from "../../src/worker/boss/lp/desk";
+import { mintComposeToken } from "../../src/worker/boss/wealth/gmailDraft";
 import { sendHeldLp, lpRow } from "../../src/worker/boss/lp/heldReply";
 import { setCommandFetch } from "../../src/worker/boss/commands/google";
 import { whereSheIs } from "../../src/worker/boss/lp/schedule";
@@ -135,4 +136,21 @@ describe("the router refuses a non-Claude route for LP scheduling content (fail 
       })).rejects.toThrow(/Claude seat only/);
     }
   });
+});
+
+
+it("a sign-in abort retries before sending, and repeated aborts return a failure instead of throwing", async () => {
+  const creds = JSON.parse(await fakeServiceAccount());
+  let calls = 0;
+  const recover = (async () => {
+    calls++;
+    if (calls === 1) throw new DOMException("The operation was aborted", "AbortError");
+    return new Response(JSON.stringify({ access_token: "recovered" }));
+  }) as typeof fetch;
+  expect(await mintComposeToken(creds, "test@westpeek.ventures", recover)).toEqual({ ok: true, token: "recovered" });
+  expect(calls).toBe(2);
+  calls = 0;
+  const abort = (async () => { calls++; throw new DOMException("The operation was aborted", "AbortError"); }) as typeof fetch;
+  expect(await mintComposeToken(creds, "test@westpeek.ventures", abort)).toMatchObject({ ok: false, status: 504 });
+  expect(calls).toBe(2);
 });

@@ -168,7 +168,7 @@ lp.get("/replies", async (c) => {
   const rows = await listLpRows(c.env.DB);
   return ok(c, {
     rows: rows.map((r) => ({
-      id: r.id, name: r.name, firm: r.firm, address: r.address, bucket: r.bucket, quote: r.quote,
+      id: r.id, name: r.name, firm: r.firm, address: r.address, bucket: r.bucket, quote: r.quote, quiet: Boolean(r.quiet),
       status: r.status, status_label: r.waiting_why ? LP_WAITING_LABEL : (LP_STATUS_LABEL as Record<string, string>)[r.status] ?? r.status, waiting_why: r.waiting_why ?? null,
       first_seen: r.first_seen, drafted_at: r.drafted_at, sent_at: r.sent_at, thread_id: r.thread_id,
       draft_message_id: r.draft_message_id, send_error: r.send_error,
