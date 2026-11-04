@@ -5693,3 +5693,17 @@ Reset times are extracted from the real ai-run line and written as absolute epoc
 **Incomplete full validation:** `npm run validate` stopped at the existing device-home guard with EPERM restoring `~/.boss-os/device.json`, outside this sandbox. Early test attempts also hit the shared node_modules cache permissions; final focused runs used disabled caching (Node) or temporary writable caches (Worker). No guard was weakened. The runner must run full validation before landing.
 
 **Observed resume, independent of this unlanded fix:** the 3 November 19:00:08 local log records an automatic resumed run and subsequent successful passes. The original stop was the external Codex usage allowance, not a network or login failure. **UNPROVEN live:** the new note and retry format after landing. No UI, external link, deployment or production record was changed in this build.
+
+### Boss OS — audit worktree retention (4 November 2026)
+
+`audit-worktree.sh` now removes this repository's clean Danielle audit worktrees only when all
+commits are reachable from origin branches, deleting their audit branches too. Dirty trees and
+unpublished commits are retained with counts on stderr. The duty's source prompt invokes the same
+cleanup through `--prune-only` before its completion sentinel; the Worker prompt is regenerated.
+The temporary-origin regression covers clean, dirty, unpublished, non-default-origin reachability,
+new worktree creation, and completion cleanup.
+
+**PROVEN locally:** the one regression fails against the original script (clean worktree survives)
+and passes with the fix; focused regression and duty-prompt tests, typecheck, prompt freshness,
+audit-fixer validator and its self-tests, shell syntax, and diff whitespace checks passed. Full suites
+and e2e were not run; no live records or existing audit worktrees were touched.

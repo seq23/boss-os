@@ -15,6 +15,8 @@ set -uo pipefail
 
 HERE="$(cd "$(dirname "$0")" && pwd)"
 ROOT="${AUDIT_GITHUB_ROOT:-$HOME/GitHub}"
+PRUNE_ONLY=false
+if [ "${1:-}" = --prune-only ]; then PRUNE_ONLY=true; shift; fi
 ARG="${1:-}"
 [ -n "$ARG" ] || { echo "NAMED STOP [NO_REPO_ARG] usage: audit-worktree.sh <repo>" >&2; exit 2; }
 case "$ARG" in /*) DIR="$ARG" ;; *) DIR="$ROOT/$ARG" ;; esac
@@ -31,6 +33,31 @@ git -C "$DIR" fetch -q origin || { echo "NAMED STOP [FETCH_FAILED] $NAME" >&2; e
 DEFAULT="$(git -C "$DIR" symbolic-ref -q --short refs/remotes/origin/HEAD 2>/dev/null | sed 's#^origin/##')"
 [ -n "$DEFAULT" ] || DEFAULT="$(git -C "$DIR" ls-remote --symref origin HEAD 2>/dev/null | awk '/^ref:/{sub("refs/heads/","",$2);print $2}')"
 [ -n "$DEFAULT" ] || DEFAULT=main
+
+# Only registered audit worktrees of this repository qualify. Never force removal:
+# git rechecks cleanliness, and a locked worktree is preserved too.
+COMMON="$(git -C "$DIR" rev-parse --path-format=absolute --git-common-dir)"
+for OLD in "$ROOT/.wt-danielle-${NAME}-"*; do
+  [ -d "$OLD" ] && [ ! -L "$OLD" ] || continue
+  [ "$(git -C "$OLD" rev-parse --path-format=absolute --git-common-dir 2>/dev/null)" = "$COMMON" ] || continue
+  OLD_BRANCH="$(git -C "$OLD" symbolic-ref -q --short HEAD)" || continue
+  case "$OLD_BRANCH" in danielle/site-audit-*) ;; *) continue ;; esac
+  STATUS="$(git -C "$OLD" status --porcelain --untracked-files=all)" || { echo "kept $OLD (status failed)" >&2; continue; }
+  DIRTY=$(printf '%s\n' "$STATUS" | awk 'NF { n++ } END { print n+0 }')
+  # --remotes=origin compares against EVERY origin branch, not just the default.
+  UNPUSHED="$(git -C "$OLD" rev-list --count HEAD --not --remotes=origin)" || { echo "kept $OLD (history failed)" >&2; continue; }
+  if [ "$DIRTY" -ne 0 ] || [ "$UNPUSHED" -ne 0 ]; then
+    echo "kept $OLD (dirty $DIRTY / unpushed $UNPUSHED)" >&2
+    continue
+  fi
+  if git -C "$DIR" worktree remove "$OLD"; then
+    # The all-origin reachability check above is stronger than branch -d's upstream check.
+    git -C "$DIR" branch -D "$OLD_BRANCH" >&2
+  else
+    echo "kept $OLD (worktree removal failed)" >&2
+  fi
+done
+$PRUNE_ONLY && exit 0
 
 STAMP="$(date +%Y%m%d-%H%M%S)"
 WT="${ROOT}/.wt-danielle-${NAME}-${STAMP}"
