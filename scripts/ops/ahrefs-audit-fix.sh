@@ -48,8 +48,25 @@
 
 set -uo pipefail
 
-# THE WHOLE BODY IS A FUNCTION, called on the last line (25 Oct 2026): bash reads a script as it runs
-# it, so a file rewritten under a running pass shifted the bytes under it. A function is parsed whole.
+# Each function is parsed whole before the last-line main call, so updating the source during
+# a running pass cannot shift the bytes being executed.
+write_retry_after() {
+  # Resolve at write time so an overnight reset cannot be mistaken for a past reset.
+  node -e '
+      const fs = require("node:fs");
+      const [file, time] = process.argv.slice(1);
+      const now = Date.now(); const at = new Date(now);
+      const m = /^(\d{1,2}):(\d{2}) ([AP]M)$/i.exec(time);
+      let epoch = Math.floor(now / 1000) + 1800, label = "no reset time given";
+      if (m && +m[1] >= 1 && +m[1] <= 12 && +m[2] < 60) {
+        at.setHours(+m[1] % 12 + (/pm/i.test(m[3]) ? 12 : 0), +m[2], 0, 0);
+        if (at.getTime() <= now) at.setDate(at.getDate() + 1);
+        epoch = Math.floor(at.getTime() / 1000); label = time;
+      }
+      fs.writeFileSync(file, `${epoch} ${label}\n`);
+    ' "$HOME/.boss-os/search-readiness/retry-after" "$1"
+}
+
 main() {
 
 REPO="${BOSS_OS_REPO:-$(cd "$(dirname "$(readlink -f "${BASH_SOURCE[0]}")")/../.." && pwd)}"  # the checkout this script lives in, symlinks followed (launchd: the runtime)
@@ -205,8 +222,8 @@ RC=$?
 say "=== ai-run --role $REPAIR_ROLE exited rc=$RC ==="
 if [ "$RC" -eq 75 ] || grep -q 'NAMED STOP \[CODEX_LIMIT\]' "$RUN_LOG"; then
   CODEX_LIMIT_LINE="$(grep -o 'NAMED STOP \[CODEX_LIMIT\].*' "$RUN_LOG" | tail -1)"
-  CODEX_RESETS="${CODEX_LIMIT_LINE#*resets }"
-  [ "$CODEX_RESETS" = "$CODEX_LIMIT_LINE" ] && CODEX_RESETS="unknown"
+  CODEX_RESETS="$(printf '%s' "$CODEX_LIMIT_LINE" | sed -nE 's/.*resets ([0-9]{1,2}:[0-9]{2} [AaPp][Mm]).*/\1/p')"
+  CODEX_RESETS="${CODEX_RESETS:-unknown}"
 fi
 
 SENTINEL_OK=1
@@ -227,7 +244,7 @@ if [ "$SENTINEL_OK" -eq 0 ]; then
     USAGE_EXHAUSTED=1
     say "NAMED STOP [CODEX_LIMIT] resets $CODEX_RESETS — this pass waits for the reset; the next scheduled run retries it. Not handed to Claude."
     mkdir -p "$HOME/.boss-os/search-readiness"
-    echo "$CODEX_RESETS" > "$HOME/.boss-os/search-readiness/retry-after"
+    write_retry_after "$CODEX_RESETS"
   elif ! has_sentinel "$RUN_LOG" && usage_exhausted "$RUN_LOG"; then
     USAGE_EXHAUSTED=1
     RETRY_LINE="$(grep -o 'try again at [0-9][0-9:]* *[AaPp][Mm]' "$RUN_LOG" | tail -1)"
@@ -235,7 +252,7 @@ if [ "$SENTINEL_OK" -eq 0 ]; then
     say "NAMED STOP [AI_USAGE_EXHAUSTED] every runner available to this pass is out of usage${RETRY_AT:+; it says to try again at $RETRY_AT}."
     if [ -n "$RETRY_AT" ]; then
       mkdir -p "$HOME/.boss-os/search-readiness"
-      echo "$RETRY_AT" > "$HOME/.boss-os/search-readiness/retry-after"
+      write_retry_after "$RETRY_AT"
     fi
   else
     say "NAMED STOP [AUDIT_DID_NOT_COMPLETE] no sentinel in the log — the run started and never reached"

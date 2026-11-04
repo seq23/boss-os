@@ -5681,3 +5681,15 @@ The existing hourly Worker tick now writes the ledger-derived 8Raise section fro
 **Incomplete validation:** `npm run validate` stopped in the existing device-home scan with EPERM restoring `~/.boss-os/device.json`, outside the writable sandbox. A duplicate scan retry and broad test attempts were stopped; they are not passes. Full green validation is required from the runner before landing. No validators were weakened.
 
 **UNPROVEN live:** deployed tick, numeric balance from the real producer rerun, today's stored section and tomorrow's morning email. These require the normal land/post-land lane; this build made no production calls. No page layout or external link changed; no screenshots or external-link checks were produced.
+
+### Boss OS — Search Readiness self-resuming waits (3 November 2026)
+
+Codex usage exhaustion and a bounded network outage now post deduplicated Open Loops notes owned by Codex, rather than failed-task repairs. The unfinished mark and scheduled resume remain armed; these explained waiting outcomes exit zero so the duty is not recorded failed. Notes have distinct reporting receipts so an older repair receipt cannot suppress the first note after upgrade. Queue completion clears both waiting notes; hard stops retain their repair path.
+
+Reset times are extracted from the real ai-run line and written as absolute epochs, rolling an already-past clock to the next day. Unknown reset times back off thirty minutes. The resume gate reads epochs and legacy bare clocks; malformed legacy values back off from their file modification time. The fake ai-run now includes the real trailing sentence and unknown-time shape.
+
+**PROVEN locally:** typecheck; 99 Node tests across auditFixerUsageLimit, searchReadinessNetworkResume and searchReadiness (real shell scripts, including unknown reset, overnight reset, malformed legacy values, resume, old receipt upgrade, completion clearing and negative repair routing); five Worker/D1 tests across openLoops and searchReadinessRepairIsTuesday; audit-fixer scan and self-tests; shell syntax and diff whitespace checks. Worker tests used a temporary config with writable test/Vite cache paths; the temporary config was removed.
+
+**Incomplete full validation:** `npm run validate` stopped at the existing device-home guard with EPERM restoring `~/.boss-os/device.json`, outside this sandbox. Early test attempts also hit the shared node_modules cache permissions; final focused runs used disabled caching (Node) or temporary writable caches (Worker). No guard was weakened. The runner must run full validation before landing.
+
+**Observed resume, independent of this unlanded fix:** the 3 November 19:00:08 local log records an automatic resumed run and subsequent successful passes. The original stop was the external Codex usage allowance, not a network or login failure. **UNPROVEN live:** the new note and retry format after landing. No UI, external link, deployment or production record was changed in this build.

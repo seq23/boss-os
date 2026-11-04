@@ -24,7 +24,7 @@ if [ "$role" = worker ]; then
   printf '%s\\n' "$res"
   if printf '%s' "$res" | grep -qiE "usage limit"; then
     at="$(printf '%s' "$res" | grep -oE 'try again at [0-9:]+ *[AaPp][Mm]' | tail -1 | sed 's/try again at //')"
-    echo "NAMED STOP [CODEX_LIMIT] resets \${at:-unknown}"; exit 75
+    echo "NAMED STOP [CODEX_LIMIT] resets \${at:-unknown (Codex gave no reset time: usage limit)} — the work waits for the reset; it is never handed to Claude."; exit 75
   fi
   exit $rc
 fi
