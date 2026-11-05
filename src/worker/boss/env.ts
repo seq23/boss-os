@@ -26,6 +26,8 @@ export interface Env {
   OPENROUTER_API_KEY?: string;
   /** Google Gemini direct, free tier (bk_gemini, 4 Nov 2026). A Worker secret; not set by any migration. */
   GEMINI_API_KEY?: string;
+  /** Brave Search, the second meeting-research route (5 Nov 2026). A Worker secret from the vault; 20 searches a day. */
+  BRAVE_SEARCH_API_KEY?: string;
   /**
    * The gsc-bot service account, as the vault holds it, so the Worker can create a Gmail DRAFT in
    * her own mailbox on the green button (`wealth/gmailDraft.ts`). One scope, `gmail.compose`, and

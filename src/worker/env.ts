@@ -17,6 +17,7 @@ export interface Env {
    */
   OPENROUTER_API_KEY?: string;
   GEMINI_API_KEY?: string;
+  BRAVE_SEARCH_API_KEY?: string;
   /** Boss OS's frontier coaching backends (passed through by bossMount.toBossEnv). */
   ANTHROPIC_API_KEY?: string;
   OPENAI_API_KEY?: string;

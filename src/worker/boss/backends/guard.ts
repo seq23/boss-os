@@ -203,7 +203,16 @@ export interface FreeTier {
   basis: string;
 }
 
-const FREE_ROUTES: Record<string, { kind: "included_allowance" | "free_model_slug"; suffix?: string; slugs?: readonly string[]; basis: string }> = {
+const FREE_ROUTES: Record<string, { kind: "included_allowance" | "free_model_slug" | "free_daily_quota"; suffix?: string; slugs?: readonly string[]; dailyCap?: number; basis: string }> = {
+  // Brave Search (owner, 5 Nov 2026), the second meeting-research route. Not a model: a search API
+  // reached by effects/braveSearchClient.ts, never through the router. Free only while it stays under
+  // its daily cap, which is claimed in D1 before every call (research/searchQuota.ts); the 21st
+  // search of a day is skipped, never made.
+  svc_brave_search: {
+    kind: "free_daily_quota",
+    dailyCap: 20,
+    basis: "Brave Search's free allowance, held to 20 searches a day so a month stays well inside it.",
+  },
   // Google's free tier, by exact model id (4 Nov 2026). Any other Gemini slug on this backend is metered.
   bk_gemini: {
     kind: "free_model_slug",
@@ -255,10 +264,16 @@ function freeSlug(rule: { suffix?: string; slugs?: readonly string[] }, slug: st
   return rule.suffix !== undefined && slug.endsWith(rule.suffix);
 }
 
+/** A free service's daily cap, from FREE_ROUTES only; 0 (nothing allowed) for anything not listed. */
+export function freeDailyCap(serviceId: string): number {
+  const rule = FREE_ROUTES[serviceId];
+  return rule?.kind === "free_daily_quota" ? Math.max(0, Math.floor(rule.dailyCap ?? 0)) : 0;
+}
+
 export function routeIsBilled(backendId: string, modelSlug?: string | null): boolean {
   const rule = FREE_ROUTES[backendId];
   if (!rule) return true;
-  if (rule.kind === "included_allowance") return false;
+  if (rule.kind === "included_allowance" || rule.kind === "free_daily_quota") return false;
   const slug = typeof modelSlug === "string" ? modelSlug.trim() : "";
   return !(slug.length > 0 && freeSlug(rule, slug));
 }
@@ -285,7 +300,7 @@ export function freeTier(backend: Backend, model?: string | null): FreeTier {
     };
   }
 
-  if (rule.kind === "included_allowance") {
+  if (rule.kind === "included_allowance" || rule.kind === "free_daily_quota") {
     return { kind: "included_allowance", free: true, rank: 1, basis: rule.basis };
   }
 

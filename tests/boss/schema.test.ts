@@ -6,7 +6,7 @@ import { LOCAL_DEFAULT_MIN_BENCHMARKS } from "../../src/worker/boss/router/polic
 
 describe("schema", () => {
   it("applies every migration and seeds both lanes", async () => {
-    expect(await env.DB.prepare(`SELECT migration FROM schema_version WHERE migration = '0339_boss_committed_lps_stay_private'`).first()).toEqual({ migration: "0339_boss_committed_lps_stay_private" });
+    expect(await env.DB.prepare(`SELECT migration FROM schema_version WHERE migration = '0340_boss_brave_search_quota'`).first()).toEqual({ migration: "0340_boss_brave_search_quota" });
     const lanes = await env.DB.prepare(`SELECT id, isolated FROM lanes ORDER BY id`).all<{ id: string; isolated: number }>();
     expect(lanes.results.map((l) => l.id)).toEqual(["ops", "trading"]);
     expect(lanes.results.find((l) => l.id === "trading")?.isolated).toBe(1);

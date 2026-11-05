@@ -17,6 +17,8 @@ import { routeCompletion } from "../router";
 import { privateLexicon, scanForModelAccess } from "../router/modelAccess";
 import { groundedSearchPrompt, writeFromPagesPrompt, keepGroundedFacts, guestPages } from "../../../shared/boss/meetingPrep/prep.mjs";
 import { browsePage } from "../../effects/browserClient";
+import { braveSearch, type BraveResult } from "../../effects/braveSearchClient";
+import { claimFreeSearch } from "../research/searchQuota";
 
 export const research = new Hono<{ Bindings: Env; Variables: Vars }>();
 
@@ -160,9 +162,12 @@ const sourcedCount = (j: any) => (j && j.found !== false ? ["title", "firm", "ba
  * (model_job_policies, 0338):
  *   1. meeting_prep_search — gemini-2.5-flash with Google Search grounding (the one free model where
  *      search works; it retires 1 Dec 2026). Facts kept only when Google reported the page.
- *   2. else meeting_prep_write — their company site and public pages fetched with the Cloudflare
+ *   2. else Brave Search (owner, 5 Nov 2026), at most 20 searches a day: the top results' pages are
+ *      read with the browser binding (Brave's own snippet when a page will not load), and a free
+ *      Gemini 3 Flash (meeting_prep_write) writes ONLY from that text, citing each result's link.
+ *   3. else meeting_prep_write — their company site and public pages fetched with the Cloudflare
  *      browser binding, and a free Gemini 3 Flash writes ONLY from that text, citing each page.
- *   3. else `{ ok: false, stop, why }`: the prep says "Couldn't research <name>: <why>".
+ *   4. else `{ ok: false, stop, why }`: the prep says "Couldn't research <name>: <why>".
  * A committed LP is private-model-only (owner ruling, 4 Nov 2026) and never reaches Gemini: the answer
  * says `private: true` and the Mac researches on her own seat. Prospects are public.
  *   POST { name, email?, firm?, domain?, today? } → { ok: true, json, sources, via } | { ok: false, stop, why, private? }
@@ -171,6 +176,7 @@ export async function researchPerson(
   env: Env,
   b: { name?: string | null; email?: string | null; firm?: string | null; domain?: string | null; today?: string | null },
   browse: (env: Env, url: string) => Promise<{ ok: boolean; text: string | null; finalUrl: string | null }> = (e, u) => browsePage(e as any, u),
+  search: (env: Env, query: string) => Promise<{ ok: true; results: BraveResult[] } | { ok: false; detail: string }> = (e, q) => braveSearch(e.BRAVE_SEARCH_API_KEY, q),
 ): Promise<any> {
   const name = b.name ?? null, email = b.email ?? null, firm = b.firm ?? null, domain = b.domain ?? null;
   const today = b.today ?? new Date().toISOString().slice(0, 10);
@@ -196,7 +202,46 @@ export async function researchPerson(
     reasons.push(`Google search was not available (${String((e as Error)?.message ?? e).slice(0, 120)})`);
   }
 
-  // 2. Their own pages, fetched; a free model writes from that text only.
+  // Pages → a free model writes from that text only; a fact is kept only when it cites one of them.
+  const writeFrom = async (pages: { url: string; text: string }[]) => {
+    const w = await routeCompletion(env, {
+      ...base, jobKey: "meeting_prep_write", maxOutputTokens: 1200,
+      messages: [{ role: "user", content: writeFromPagesPrompt({ name, pages }) }],
+    });
+    const sources = pages.map((p) => ({ title: p.url, url: p.url }));
+    return { json: keepGroundedFacts(jsonIn(w.text), sources), sources };
+  };
+
+  // 2. Brave Search, at most 20 a day (FREE_ROUTES.svc_brave_search), claimed before the call.
+  if (!env.BRAVE_SEARCH_API_KEY) {
+    reasons.push("Brave Search has no key on this Worker");
+  } else if (!(await claimFreeSearch(env.DB, "svc_brave_search")).ok) {
+    reasons.push("today's 20 Brave searches are used");
+  } else {
+    const query = [name ? `"${name}"` : null, firm, domain && !firm ? domain : null].filter(Boolean).join(" ") || String(email ?? "");
+    const found = await search(env, query).catch((e) => ({ ok: false as const, detail: String((e as Error)?.message ?? e).slice(0, 120) }));
+    if (!found.ok) {
+      reasons.push(found.detail);
+    } else if (!found.results.length) {
+      reasons.push("Brave Search found no pages");
+    } else {
+      const pages: { url: string; text: string }[] = [];
+      for (const r of found.results.slice(0, 3)) {
+        const p = await browse(env, r.url).catch(() => null);
+        if (p?.ok && p.text && p.text.trim().length >= 200) pages.push({ url: r.url, text: p.text });
+        else if (r.text) pages.push({ url: r.url, text: r.text });
+      }
+      try {
+        const { json, sources } = await writeFrom(pages);
+        if (sourcedCount(json)) return { ok: true, json, sources, via: "brave_search" };
+        reasons.push("Brave Search's pages did not say who they are");
+      } catch (e) {
+        reasons.push(`the writing model could not run (${String((e as Error)?.message ?? e).slice(0, 120)})`);
+      }
+    }
+  }
+
+  // 3. Their own pages, fetched; a free model writes from that text only.
   const pages: { url: string; text: string }[] = [];
   for (const url of guestPages(domain)) {
     const p = await browse(env, url).catch(() => null);
@@ -207,12 +252,8 @@ export async function researchPerson(
     return { ok: false, stop: "RESEARCH_NO_SOURCES", why: reasons.join("; ") };
   }
   try {
-    const w = await routeCompletion(env, {
-      ...base, jobKey: "meeting_prep_write", maxOutputTokens: 1200,
-      messages: [{ role: "user", content: writeFromPagesPrompt({ name, pages }) }],
-    });
-    const json = keepGroundedFacts(jsonIn(w.text), pages.map((p) => ({ title: p.url, url: p.url })));
-    if (sourcedCount(json)) return { ok: true, json, sources: pages.map((p) => ({ title: p.url, url: p.url })), via: "their_pages" };
+    const { json, sources } = await writeFrom(pages);
+    if (sourcedCount(json)) return { ok: true, json, sources, via: "their_pages" };
     reasons.push("their pages did not say who they are");
   } catch (e) {
     reasons.push(`the writing model could not run (${String((e as Error)?.message ?? e).slice(0, 120)})`);

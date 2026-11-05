@@ -214,6 +214,8 @@ const SNAPSHOT_TABLES = [
   "quiet_people",
   // 0337 — which models each job may use, as she set them on Settings. Not re-derivable once changed.
   "model_job_policies",
+  // 0340 — Brave Search's searches used per day. Kept so a rebuild cannot hand back a spent day's cap.
+  "free_search_quota_days",
   "lp_reply_drafts", // fix L
   "prospects", // fix L
   "prospect_touches", // fix L

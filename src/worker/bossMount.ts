@@ -112,6 +112,7 @@ export function toBossEnv(env: Env): BossEnv {
     // OpenRouter too, the same seam's same gap (bk_openrouter enabled 17 Sep with its own cap).
     OPENROUTER_API_KEY: env.OPENROUTER_API_KEY,
     GEMINI_API_KEY: env.GEMINI_API_KEY,
+    BRAVE_SEARCH_API_KEY: env.BRAVE_SEARCH_API_KEY,
   };
 }
 
