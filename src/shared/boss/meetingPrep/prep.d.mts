@@ -41,3 +41,7 @@ export declare function eventZone(event: any): string;
 export declare const OWN_FIRMS: string[];
 export declare function isOwnFirm(f: unknown): boolean;
 export declare function guestFirm(rec: any, event: any, email?: string | null): string | null;
+export declare const RESEARCH_FIELDS: Array<[string, string]>;
+export declare function researchPrompt(o: { name: string | null; email?: string | null; firm?: string | null; domain?: string | null; today: string }): string;
+export declare function readResearch(r: any): { ok: true; facts: Array<{ label: string; text: string; url: string }> } | { ok: false; why: string };
+export declare function researchItems(research: any, name: string | null): any[];

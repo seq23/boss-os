@@ -151,7 +151,7 @@ research.post("/summarize", async (c) => {
   try {
     const r = await routeCompletion(c.env, {
       routeId: "rt_ops_default", lane: "ops", sensitivity: "private", risk: "low", employeeId: "emp_chief",
-      intakeKind: "research", maxOutputTokens: 400,
+      intakeKind: "research", maxOutputTokens: 400, jobKey: "summarise",
       messages: [
         { role: "system", content: "Summarise the public episode or article below in exactly five short plain-English bullets, one per line, each starting with '- '. Only what the text says; no opinions, no names that are not in it." },
         { role: "user", content: `${b?.title ? `Title: ${String(b.title).slice(0, 200)}\n\n` : ""}${text}` },

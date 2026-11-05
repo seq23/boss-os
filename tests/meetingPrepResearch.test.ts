@@ -97,9 +97,9 @@ describe("d) subjects decoded once", () => {
     expect(decodeMimeHeader(encodeSubject(replySubject(subject)))).toBe("Re: Pat — your intro");
     const mime = threadReplyMime({ to: "pat@familyoffice.example", subject, body: "Hi Pat" });
     const header = /^Subject: (.*)$/m.exec(mime)![1];
-    expect(decodeMimeHeader(header)).toBe("Re: Pat — your intro");
+    expect(decodeMimeHeader(header!)).toBe("Re: Pat — your intro");
     // Already garbled on the way in: the reply still goes out right.
-    expect(decodeMimeHeader(/^Subject: (.*)$/m.exec(threadReplyMime({ to: "pat@familyoffice.example", subject: GARBLED, body: "x" }))![1])).toBe("Re: Pat — your intro");
+    expect(decodeMimeHeader(/^Subject: (.*)$/m.exec(threadReplyMime({ to: "pat@familyoffice.example", subject: GARBLED, body: "x" }))![1]!)).toBe("Re: Pat — your intro");
     // A Latin-1 encoded word is read in its own charset.
     expect(decodeMimeHeader("=?iso-8859-1?Q?Caf=E9?=")).toBe("Café");
   });

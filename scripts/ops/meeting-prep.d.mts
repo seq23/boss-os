@@ -15,3 +15,5 @@ export declare function planFor(event: any, prep: any, context: any, opts?: any)
 export declare function eventSnapshot(e: any): any;
 export declare function sendPrep(api: any, event: any, data: any, opts?: any): Promise<any>;
 export declare function finishPrep(api: any, p: any, opts?: any): Promise<any>;
+export declare function researchGuest(event: any, data: any, opts?: { ask?: (prompt: string, opts: any) => any; now?: number; log?: (s: string) => void }): any;
+export declare function ownerZone(api: any, log?: (s: string) => void): Promise<string>;
