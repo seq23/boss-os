@@ -370,3 +370,5 @@ AHREFS-AUDIT-COMPLETE: projects=<n> fixed=<n> surfaced=<n> off_limits=<n> no_rep
 ```
 
 The runner treats a missing sentinel as a run that started and never reached its end.
+
+A MERGED PR is not IN_FLIGHT: re-measure the live site; after the pass the runner lands eligible orphan PRs from our own `danielle/site-audit-*` lane through `~/bin/land`.

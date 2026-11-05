@@ -114,7 +114,7 @@ describe("ahrefs-audit-fix.sh tells the network apart from the gh login", () => 
   });
 });
 
-type RunnerOpts = { plans: string[]; fixRcs?: number[]; fixSleep?: number; down?: string };
+type RunnerOpts = { plans: string[]; fixRcs?: number[]; fixSleep?: number; down?: string; findings?: any[] };
 
 /** A stub boss-os around the REAL runner and net-wait.sh. Plans are returned in turn, the last repeating. */
 function runnerTree(o: RunnerOpts) {
@@ -125,6 +125,13 @@ function runnerTree(o: RunnerOpts) {
   mkdirSync(join(repo, "src/shared/boss/searchReadiness"), { recursive: true });
   copyFileSync("scripts/ops/search-readiness-fix.sh", join(ops, "search-readiness-fix.sh"));
   copyFileSync("scripts/ops/lib/net-wait.sh", join(ops, "lib/net-wait.sh"));
+  for (const f of ["orphanPr.mjs", "ownerApproval.mjs"]) copyFileSync(`src/shared/boss/searchReadiness/${f}`, join(repo, "src/shared/boss/searchReadiness", f));
+  mkdirSync(join(repo, "src/shared/boss/siteAudit"), { recursive: true });
+  copyFileSync("src/shared/boss/siteAudit/repoPolicy.mjs", join(repo, "src/shared/boss/siteAudit/repoPolicy.mjs"));
+  if (o.findings) {
+    const dir = join(home, ".boss-os/site-audit/sr-a"); mkdirSync(dir, { recursive: true });
+    writeFileSync(join(home, "fixture-findings.json"), JSON.stringify({ findings: o.findings }));
+  }
   // vault:run = env, so `npm run vault:run -- node x.mjs` runs node x.mjs with no secret.
   writeFileSync(join(repo, "package.json"), JSON.stringify({ name: "stub", scripts: { "sites:audit": "true", "vault:run": "env" } }));
   writeFileSync(join(home, "plans.json"), JSON.stringify(o.plans));
@@ -138,6 +145,7 @@ console.log(plans[Math.min(n, plans.length - 1)]);
   writeFileSync(join(home, "fix-rcs"), (o.fixRcs ?? [0]).join(" "));
   writeFileSync(join(ops, "ahrefs-audit-fix.sh"), `
 echo "$SR_SCOPE_REPO" >> ${JSON.stringify(join(home, "passes"))}
+${o.findings ? `cp ${JSON.stringify(join(home, "fixture-findings.json"))} ${JSON.stringify(join(home, ".boss-os/site-audit/sr-a/findings.json"))}` : ""}
 sleep ${o.fixSleep ?? 0}
 set -- $(cat ${JSON.stringify(join(home, "fix-rcs"))}); rc=$1; [ $# -gt 1 ] && shift; echo "$*" > ${JSON.stringify(join(home, "fix-rcs"))}
 exit $rc
@@ -246,6 +254,31 @@ describe("search-readiness-fix.sh waits out the network and resumes by itself", 
     expect(out).toMatch(/NAMED STOP \[SR_QUEUE_STALLED\] 4 workable briefs left/);
     expect(rc).toBe(0);
     expect(t.read("reported").trim()).toBe("SR_QUEUE_STALLED");
+    expect(existsSync(t.mark)).toBe(false);
+  }, 60000);
+
+  it("names the open PR blockers from the real runner, without calling them fixed nothing", () => {
+    const t = runnerTree({ plans: [FOUR], findings: [{ disposition: "in_flight", pr_url: "https://github.com/seq23/a/pull/7", land: "blocked", land_detail: "draft_left_behind" }] });
+    const r = t.run();
+    expect(r.rc, r.out).toBe(0);
+    expect(r.out).toContain("NAMED STOP [SR_BLOCKED_BY_OPEN_PRS]");
+    expect(r.out).toContain("https://github.com/seq23/a/pull/7: draft_left_behind");
+    expect(r.out).not.toContain("fixed nothing");
+    expect(t.read("reported").trim()).toBe("SR_BLOCKED_BY_OPEN_PRS");
+  }, 60000);
+
+  it("spent AI usage preserves the mark and resumes after its reset", () => {
+    const t = runnerTree({ plans: [FOUR], fixRcs: [13] });
+    mkdirSync(t.state, { recursive: true });
+    writeFileSync(join(t.state, "retry-after"), String(Math.floor(Date.now() / 1000) + 3600));
+    const r = t.run();
+    expect(r.rc, r.out).toBe(0);
+    expect(r.out).toContain("AI_USAGE_EXHAUSTED");
+    expect(r.out).not.toContain("SR_QUEUE_STALLED");
+    expect(existsSync(t.mark)).toBe(true);
+    writeFileSync(join(t.home, "plans.json"), JSON.stringify([EMPTY]));
+    writeFileSync(join(t.state, "retry-after"), String(Math.floor(Date.now() / 1000) - 60));
+    expect(t.run("--resume-if-unfinished").out).toContain("resuming");
     expect(existsSync(t.mark)).toBe(false);
   }, 60000);
 

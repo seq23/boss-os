@@ -5707,3 +5707,18 @@ new worktree creation, and completion cleanup.
 and passes with the fix; focused regression and duty-prompt tests, typecheck, prompt freshness,
 audit-fixer validator and its self-tests, shell syntax, and diff whitespace checks passed. Full suites
 and e2e were not run; no live records or existing audit worktrees were touched.
+
+## Boss OS repair — Search Readiness orphan PRs (5 Nov 2026)
+
+The scoped audit landing step now inspects `in_flight` PRs left by the
+`danielle/site-audit-*` lane. Only registered, policy-allowed repositories with
+non-draft green PRs reach the existing `~/bin/land` door. Client approval and
+owner approval holds remain enforced; merged PRs are recorded for remeasurement.
+`land-orphans` provides the same recovery over saved scoped findings. The queue
+runner snapshots every pass before its findings are overwritten, and names PR
+blockers when all returned findings are blocked, preserving the stalled duty's
+exit 0. Other stalls retain their existing named stop.
+
+Proof is recorded in the repo-change build receipt: pure verdict and injectable
+landing tests plus the real shell runner harness, including AI usage resumption.
+Live orphan landing and deployment remain UNPROVEN until the LAND phase.

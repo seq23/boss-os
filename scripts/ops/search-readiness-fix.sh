@@ -63,12 +63,21 @@ source "$REPO/scripts/ops/lib/net-wait.sh"
 # Each pass's exit code goes to $RCS, so a pass that lost the network (13) is told apart from one
 # that fixed nothing.
 repo_worker() {
-  local round="$1" r="$2" lines="$3" n ids rr rc
+  local round="$1" r="$2" lines="$3" n ids rr rc pass_started
   while read -r rr n ids; do
     [ -n "$rr" ] || continue
     say "round $round: $rr ($n briefs)"
+    pass_started="$(node -e 'console.log(Date.now())')"
     SR_SCOPE_REPO="$rr" SR_SCOPE_BRIEFS="$ids" bash scripts/ops/ahrefs-audit-fix.sh >> "$LOG" 2>&1 < /dev/null
     rc=$?
+    # Snapshot before the next chunk replaces this repo's findings. Missing output is not a blocker proof.
+    node --input-type=module -e '
+      import {readFileSync, writeFileSync, statSync} from "node:fs";
+      const [file, out, started] = process.argv.slice(1);
+      let rows; try { if (statSync(file).mtimeMs >= +started) rows = JSON.parse(readFileSync(file, "utf8")).findings; } catch {}
+      if (!Array.isArray(rows) || !rows.length) rows = [{disposition:"missing"}];
+      writeFileSync(out, JSON.stringify(rows));
+    ' "$HOME/.boss-os/site-audit/sr-$rr/findings.json" "$STATE_DIR/round-rows/$rr-$ids.json" "$pass_started"
     say "  $rr pass exited rc=$rc"
     echo "$rr $rc" >> "$RCS"
   done <<< "$lines"
@@ -228,6 +237,8 @@ main() {
     [ -n "$CHUNKS" ] || break
     BEFORE="$LEFT"
     : > "$RCS"
+    rm -rf "$STATE_DIR/round-rows"
+    mkdir -p "$STATE_DIR/round-rows"
     # One worker per repo, in the plan's order (largest first, so the longest repo starts first),
     # at most $PARALLEL at a time. `jobs -rp` and a short sleep, not `wait -n`: /bin/bash on macOS
     # is 3.2, which has no `wait -n`.
@@ -257,7 +268,18 @@ main() {
       say "round $ROUND: $NET_HIT pass(es) lost the network or hit a usage limit; that is not \"fixed nothing\", so the next round re-runs them"
       continue
     fi
-    [ "$LEFT" -lt "$BEFORE" ] || { STALLED=1; say "round $ROUND fixed nothing; stopping until tomorrow rather than spinning"; break; }
+    if [ "$LEFT" -ge "$BEFORE" ]; then
+      STALLED=1
+      BLOCKERS="$(node --input-type=module -e '
+        import {readdirSync,readFileSync} from "node:fs";
+        import {blockedStopSentence} from "./src/shared/boss/searchReadiness/orphanPr.mjs";
+        const dir=process.argv[1];
+        console.log(blockedStopSentence(readdirSync(dir).flatMap(f=>JSON.parse(readFileSync(`${dir}/${f}`,"utf8")))));
+      ' "$STATE_DIR/round-rows")"
+      if [ -n "$BLOCKERS" ]; then say "round $ROUND blocked by open PRs: $BLOCKERS";
+      else say "round $ROUND fixed nothing; stopping until tomorrow rather than spinning"; fi
+      break
+    fi
   done
 
   Q="$(echo "$P" | grep '^QUEUE')"
@@ -269,6 +291,7 @@ main() {
   # the queue stalled (see below). The run did reach its end, so the mark is cleared.
   if [ "$LEFT" -gt 0 ]; then
     if [ "$STALLED" -eq 1 ]; then CODE=SR_QUEUE_STALLED; WHY="round $ROUND fixed nothing"; else CODE=SR_ROUNDS_SPENT; WHY="all $MAX_ROUNDS rounds ran"; fi
+    if [ "$STALLED" -eq 1 ] && [ -n "${BLOCKERS:-}" ]; then CODE=SR_BLOCKED_BY_OPEN_PRS; WHY="$BLOCKERS"; fi
     say "NAMED STOP [$CODE] $LEFT workable briefs left ($WHY; $FIXED fixed of $START). See $LOG."
     report_stop "$CODE" "$LEFT workable briefs left ($WHY; $FIXED fixed of $START)."
     rm -f "$MARK" "$STATE_DIR/retry-after"
