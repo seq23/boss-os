@@ -15,3 +15,6 @@ export declare function planFor(event: any, prep: any, context: any, opts?: any)
 export declare function eventSnapshot(e: any): any;
 export declare function sendPrep(api: any, event: any, data: any, opts?: any): Promise<any>;
 export declare function finishPrep(api: any, p: any, opts?: any): Promise<any>;
+export declare const CATCHUP_BRAINS: string[];
+export declare function catchUpSince(event: any, last: number | null): number;
+export declare function sendCatchUps(api: any, events: any[], opts?: any): Promise<{ failed: number; built: { subject: string; text: string }[] }>;

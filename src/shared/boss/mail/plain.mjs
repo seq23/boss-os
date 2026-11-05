@@ -44,6 +44,8 @@ export const ACRONYMS = new Set([
   "WTI", "PHP", "CVSS", "CVE", "UAE", "OPEC", "GDP", "CPI", "PCE", "ETF", "ETFS", "FDA", "FTC", "DOJ", "EU", "IMF", "NATO",
   "NAV", "IPOS", "M&A", "SPCX", "S&P", "GPU", "GPUS", "CFO", "COO", "CTO", "LLM", "LLMS", "RCE", "FOMC", "ECB", "BOJ", "UN",
   "EV", "EVS", "ARR", "YTD", "QOQ", "YOY", "LPS", "GPS", "VCS", "SPVS", "NYSE", "NASDAQ", "TSMC", "AMD", "IBM", "AWS", "CEOS",
+  // 5 Nov 2026: her own businesses' names came through as "ket" and "asmr" in the Scooter catch-up.
+  "KET", "ASMR",
 ]);
 
 /**
