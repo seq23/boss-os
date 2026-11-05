@@ -53,6 +53,7 @@ import {
 } from "../../src/shared/boss/lp/schedule.mjs";
 import { herBusyAndZone } from "./lp-calendar.mjs";
 import { replyNeed, replyAllRecipients } from "../../src/shared/boss/mail/replyNeed.mjs";
+import { encodeSubject, replySubject, repairMojibake } from "../../src/shared/boss/mail/subject.mjs";
 
 const MAILBOX = process.env.LP_MAILBOX ?? "sequoia@westpeek.ventures";
 const OUT_DIR = process.env.BOSS_OS_LP_DIR ?? path.join(os.homedir(), ".boss-os", "lp");
@@ -190,7 +191,7 @@ async function threadOf(tok, address) {
   const h = Object.fromEntries((msg?.payload?.headers ?? []).map((x) => [x.name.toLowerCase(), x.value]));
   // Reply-all to their latest message, minus us (owner, 2 Nov 2026): whoever they copied stays on it.
   const recipients = replyAllRecipients({ from: h.from, to: h.to, cc: h.cc, "reply-to": h["reply-to"] }, { ours: [MAILBOX] });
-  return { id: m.id, threadId: m.threadId, messageId: h["message-id"] ?? null, subject: h.subject ?? "", at: Number(msg?.internalDate ?? 0) || null, recipients };
+  return { id: m.id, threadId: m.threadId, messageId: h["message-id"] ?? null, subject: repairMojibake(h.subject ?? ""), at: Number(msg?.internalDate ?? 0) || null, recipients };
 }
 
 /** Who the draft goes to: everyone on their latest message, minus us; their address alone when unread. */
@@ -200,7 +201,8 @@ export function draftRecipients(address, th) {
 }
 
 function rawDraft({ to, cc = [], subject, inReplyTo, body }) {
-  const subj = /^re:/i.test(subject) ? subject : `Re: ${subject || "our conversation"}`;
+  // Repaired, then encoded (4 Nov 2026): a raw 8-bit subject went out garbled in her name.
+  const subj = encodeSubject(replySubject(subject));
   const lines = [
     `To: ${[].concat(to).join(", ")}`,
     ...(cc.length ? [`Cc: ${cc.join(", ")}`] : []),

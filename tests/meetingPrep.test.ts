@@ -74,30 +74,32 @@ describe("meeting prep: one email per meeting, once", () => {
 });
 
 describe("meeting prep: the email", () => {
-  it('subject starts "Prep: " with who, firm, day and time, in her zone (Eastern, labelled)', () => {
-    // 12pm Central is 1pm Eastern: every time she reads is ET (owner, 26 Oct 2026).
-    expect(buildPrep(kate, data, { herAddresses: ME }).subject).toBe("Prep: Kate Example (GEM), Fri 30 Oct, 1pm ET");
-    expect(buildPrep(terri, {}, { herAddresses: ME }).subject).toBe(`${PREP_PREFIX}Terri Sample, Fri 30 Oct, 3pm ET`);
+  it('subject starts "Prep: " with who, firm, day and time, in her zone (Central by default, labelled)', () => {
+    // Her zone is the owner_timezone setting, Central by default (4 Nov 2026; was always Eastern).
+    expect(buildPrep(kate, data, { herAddresses: ME }).subject).toBe("Prep: Kate Example (GEM), Fri 30 Oct, 12pm CT");
+    expect(buildPrep(terri, {}, { herAddresses: ME }).subject).toBe(`${PREP_PREFIX}Terri Sample, Fri 30 Oct, 2pm CT`);
     expect(nameFromTitle("Kate Example <> Sequoia")).toBe("Kate Example");
     // No name on the invite: the title without her name, never a bare address.
     const solo = { ...terri, title: "Sequoia + Jo (Fake Co)", attendees: [{ email: "jo@fakeco.example" }] };
-    expect(buildPrep(solo, {}, { herAddresses: ME }).subject).toBe("Prep: Jo (Fake Co), Fri 30 Oct, 3pm ET");
+    expect(buildPrep(solo, {}, { herAddresses: ME }).subject).toBe("Prep: Jo (Fake Co), Fri 30 Oct, 2pm CT");
     // The invite's name field holding the address is not a name.
-    expect(buildPrep({ ...solo, attendees: [{ email: "jo@fakeco.example", name: "jo@fakeco.example" }] }, {}, { herAddresses: ME }).subject).toBe("Prep: Jo (Fake Co), Fri 30 Oct, 3pm ET");
+    expect(buildPrep({ ...solo, attendees: [{ email: "jo@fakeco.example", name: "jo@fakeco.example" }] }, {}, { herAddresses: ME }).subject).toBe("Prep: Jo (Fake Co), Fri 30 Oct, 2pm CT");
   });
 
   it("carries every section with something real, in order, and passes the plain-email gate", () => {
     const p = prepEmail(kate, data);
-    expect(p.sections.map((s: any) => s.title)).toEqual(["What it's probably about (a guess, from your records)", "Who they are", "Your history", "What you referenced", "What's relevant now", "Goals and questions", "Have ready", "Open between you", "Logistics"]);
+    // No "What's relevant now": she is a fund LP prospect, and grid deals are for brokerage contacts only.
+    expect(p.sections.map((s: any) => s.title)).toEqual(["What it's probably about (a guess, from your records)", "Who they are", "Your history", "What you referenced", "Goals and questions", "Have ready", "Open between you", "Logistics"]);
     expect(p.needsPurpose).toBe(false);
     expect(p.laid.text).toContain("The fund: they are an LP prospect and said they are interested.");
-    expect(p.laid.text).toContain("Fri 30 Oct, 1:00pm to 1:30pm ET.");
+    expect(p.laid.text).toContain("Fri 30 Oct, 12:00pm to 12:30pm CT.");
     const t = p.laid.text;
     expect(t).toContain('You wrote: "I loved your episode on secondaries pricing:');
     expect(t).toContain("41-min listen");
     expect(t).toContain("(from show notes only)");
     expect(t).toContain("Happy to talk Friday");
-    expect(t).toContain("Ask: would they like to see the names on this week's list?");
+    expect(t).not.toContain("this week's list");
+    expect(t).not.toContain("On the grid");
     expect(t).toContain("https://meet.google.com/abc-defg-hij");
     expect(plainProblems({ subject: p.laid.subject, text: p.laid.text, html: p.laid.html })).toEqual([]);
   });

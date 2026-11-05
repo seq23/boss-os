@@ -6,6 +6,7 @@ import { reconcileSpend } from "../spend/reconcile";
 import { logEvent } from "../lib/log";
 import { ok, badRequest, notFound, conflict } from "../lib/http";
 import { getSetting, setSetting } from "../lib/settings";
+import { validZone, HOME_TZ, OWNER_TZ_KEY } from "../../../shared/boss/meetingPrep/prep.mjs";
 import { rollBudgetWindows } from "../router/budget";
 import { COST_MODES, COST_MODE_POLICY, isCostMode } from "../../../shared/boss/governance";
 import { pendingApprovals } from "../approvals/pending";
@@ -389,6 +390,27 @@ system.put("/settings/:key", async (c) => {
     await logEvent(c.env.DB, { level: "warn", scope: "settings", event: "cost_mode_changed", detail: { value } });
   }
   return ok(c, { key, value });
+});
+
+/**
+ * HER CURRENT TIME ZONE (owner, 4 Nov 2026). Meeting prep shows times in it, the other zone in brackets
+ * only when different. Default Central. Her Mac sets it when she travels: PUT { tz: "America/New_York" }.
+ */
+system.get("/owner-timezone", async (c) => {
+  const tz = validZone(await getSetting(c.env.DB, OWNER_TZ_KEY)) ?? HOME_TZ;
+  return ok(c, { tz, default: HOME_TZ });
+});
+
+system.put("/owner-timezone", async (c) => {
+  const body = await c.req.json<{ tz?: unknown; via?: unknown }>().catch(() => null);
+  const tz = validZone(body?.tz);
+  if (!tz) throw badRequest("That is not a time zone", 'Send a zone name such as "America/Chicago" or "America/New_York".');
+  await setSetting(c.env.DB, OWNER_TZ_KEY, tz);
+  await audit(c.env.DB, {
+    actor: "boss", lane: "ops", entityType: "setting", entityId: OWNER_TZ_KEY, action: "updated",
+    detail: { value: tz, ...(typeof body?.via === "string" && body.via.trim() ? { via: body.via.trim().slice(0, 200) } : {}) },
+  });
+  return ok(c, { tz });
 });
 
 system.get("/cost-modes", (c) =>

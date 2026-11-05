@@ -1,4 +1,5 @@
 import type { Env } from "../env";
+import { encodeSubject, replySubject } from "../../../shared/boss/mail/subject.mjs";
 import { newId } from "../lib/id";
 import { audit } from "../lib/audit";
 
@@ -324,14 +325,15 @@ export async function createDraftForOutreach(
  * held draft is replaced in place, so her mailbox never keeps two replies to one person.
  */
 export function threadReplyMime(r: { to: string | string[]; cc?: string[] | null; subject: string; inReplyTo?: string | null; body: string }): string {
-  const subject = /^\s*re:/i.test(r.subject) ? r.subject : `Re: ${r.subject}`.trim();
+  // Built from the repaired subject (4 Nov 2026: a garbled stored subject went out as "Re: …Ã¢Â€Â”").
+  const subject = replySubject(r.subject);
   // Reply-all to their latest message, minus us (owner, 2 Nov 2026; shared/boss/mail/replyNeed.mjs).
   const to = ([] as string[]).concat(r.to).filter(Boolean);
   const cc = (r.cc ?? []).filter(Boolean);
   return [
     `To: ${to.join(", ")}`,
     ...(cc.length ? [`Cc: ${cc.join(", ")}`] : []),
-    `Subject: =?UTF-8?B?${btoa(unescape(encodeURIComponent(subject)))}?=`,
+    `Subject: ${encodeSubject(subject)}`,
     ...(r.inReplyTo ? [`In-Reply-To: ${r.inReplyTo}`, `References: ${r.inReplyTo}`] : []),
     `Content-Type: text/plain; charset="UTF-8"`,
     `Content-Transfer-Encoding: base64`,

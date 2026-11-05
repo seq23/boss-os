@@ -157,13 +157,59 @@ export function replaceSection(md, name, body) {
   return joinSections(head, sections);
 }
 
-/** Add lines to a section. A section that was only [MISSING] loses the placeholder. */
+/**
+ * Add lines to a section. A section that was only [MISSING] loses the placeholder.
+ *
+ * `lines` is ONE string (added as one line, or as its own lines if it holds newlines) or an array of
+ * strings (each added as given). Anything else is a TypeError. Spreading a bare string used to write
+ * every character on its own line (4 Nov 2026, twice in production), so a string is never spread.
+ *
+ *   appendToSection(md, "Settled decisions", "- 2026-11-04 — one decision — why")
+ *   appendToSection(md, "Open questions", ["- first", "- second"])
+ *
+ * @param {string} md
+ * @param {string} name
+ * @param {string | string[]} lines
+ * @returns {string}
+ */
 export function appendToSection(md, name, lines) {
+  let add;
+  if (typeof lines === "string") add = [lines];
+  else if (Array.isArray(lines) && lines.every((l) => typeof l === "string")) add = lines;
+  else throw new TypeError("appendToSection takes a string or an array of strings");
   const want = canonicalSection(name);
   if (!want) throw new Error(`There is no section called "${name}"`);
   const current = sectionBody(md, want) ?? "";
   const kept = current.split("\n").filter((l) => l.trim() && l.trim() !== MISSING && l.trim() !== `- ${MISSING}`);
-  return replaceSection(md, want, [...kept, ...lines].join("\n"));
+  return replaceSection(md, want, [...kept, ...add].join("\n"));
+}
+
+/** A run this long of 1–2 character lines is text split into characters, never real writing. */
+export const SPLIT_RUN_LIMIT = 20;
+
+/** The longest run of consecutive non-blank lines of 1–2 characters in a body. */
+function longestShortRun(body) {
+  let best = 0, run = 0;
+  for (const line of String(body ?? "").split("\n")) {
+    const t = line.trim();
+    if (t.length >= 1 && t.length <= 2) { run += 1; if (run > best) best = run; } else run = 0;
+  }
+  return best;
+}
+
+/**
+ * The sections a save would fill with text one character per line: any section whose longest run of
+ * 1–2 character lines reaches SPLIT_RUN_LIMIT and grew against the stored version. [] when the save is
+ * fine. The PUT route refuses a save with any.
+ */
+export function charSplitSections(beforeMd, afterMd) {
+  const before = new Map(parseSections(beforeMd ?? "").sections.map((s) => [s.name, s.body]));
+  const out = [];
+  for (const s of parseSections(afterMd ?? "").sections) {
+    const now = longestShortRun(s.body);
+    if (now >= SPLIT_RUN_LIMIT && now > longestShortRun(before.get(s.name) ?? "")) out.push(s.name);
+  }
+  return out;
 }
 
 const SECTION_ALIASES = [

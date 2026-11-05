@@ -137,6 +137,8 @@ export function parseIcs(text, now = Date.now(), horizonDays = 28) {
         location,
         ical_uid: uid,
         all_day: allDay,
+        // The zone the meeting was set in (meeting prep shows it in brackets when hers differs).
+        time_zone: /TZID=([^;:]+)/.exec(dtstart.params ?? "")?.[1] ?? null,
         attendees,
         description,
         join_url: joinUrl,

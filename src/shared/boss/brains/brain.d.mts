@@ -32,7 +32,9 @@ export function parseSections(md: string): { head: string; sections: { name: str
 export function joinSections(head: string, sections: { name: string; body: string }[]): string;
 export function sectionBody(md: string, name: string): string | null;
 export function replaceSection(md: string, name: string, body: string): string;
-export function appendToSection(md: string, name: string, lines: string[]): string;
+export function appendToSection(md: string, name: string, lines: string | string[]): string;
+export const SPLIT_RUN_LIMIT: number;
+export function charSplitSections(beforeMd: string, afterMd: string): string[];
 export function canonicalSection(name: string): string | null;
 export function numbersRows(md: string): { metric: string; definition: string; source: string; value: string | null; last_updated: string | null }[];
 export function setNumber(md: string, metric: string, value: string, day: string, opts?: { definition?: string | null; source?: string | null }): string;

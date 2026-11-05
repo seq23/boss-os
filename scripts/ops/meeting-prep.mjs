@@ -25,8 +25,9 @@ import { execFileSync } from "node:child_process";
 import { readAllCalendars } from "./calendar-sync.mjs";
 import { sendAsEmployee } from "./notify.mjs";
 import { layoutEmail, plainProblems, NOTHING_TO_DECIDE } from "../../src/shared/boss/mail/plain.mjs";
-import { buildPrep, dueMeetings, linkResolves, lengthLabel, others, recordsFor, nameFromTitle, companyDomain, shortDate, clock, DISPLAY_ZONE } from "../../src/shared/boss/meetingPrep/prep.mjs";
+import { buildPrep, dueMeetings, linkResolves, lengthLabel, others, recordsFor, nameFromTitle, companyDomain, shortDate, guestFirm, zonedTime, eventZone, DISPLAY_TZ, validZone, researchPrompt, readResearch } from "../../src/shared/boss/meetingPrep/prep.mjs";
 import { askClaudeJson, googleToken, gmailHeaders } from "./lib/duty-kit.mjs";
+import { repairMojibake } from "../../src/shared/boss/mail/subject.mjs";
 
 const ORIGIN = process.env.BOSS_OS_ORIGIN ?? "https://boss.sequoiataylor.com";
 const DIR = path.join(os.homedir(), ".boss-os", "meeting-prep");
@@ -167,7 +168,7 @@ export function contextPrompt({ name, email, domain, firm, title, when, today })
 }
 
 const isoDay = (v) => (/^\d{4}-\d{2}-\d{2}/.test(String(v ?? "")) ? String(v).slice(0, 10) : null);
-const str = (v, n = 200) => (typeof v === "string" && v.trim() ? v.replace(/\s+/g, " ").trim().slice(0, n) : null);
+const str = (v, n = 200) => (typeof v === "string" && v.trim() ? repairMojibake(v).replace(/\s+/g, " ").trim().slice(0, n) : null);
 
 /** The seat's answer, kept only in the shape the prep reads; anything malformed is dropped. Pure. */
 export function readContext(json) {
@@ -185,7 +186,7 @@ export function readContext(json) {
 
 /** Workspace mail (headers only) folded into what the seat found. Pure. */
 export function mergeWorkspaceMail(ctx, hits, { email = null } = {}) {
-  const mine = (hits ?? []).filter((h) => h?.date && h?.subject && !/mailer-daemon|postmaster/i.test(h.from ?? ""));
+  const mine = (hits ?? []).filter((h) => h?.date && h?.subject && !/mailer-daemon|postmaster/i.test(h.from ?? "")).map((h) => ({ ...h, subject: repairMojibake(h.subject) }));
   if (!mine.length) return ctx;
   const mail = { ...(ctx.mail ?? { count: 0, recent: [] }) };
   mail.count = (mail.count ?? 0) + mine.length;
@@ -221,16 +222,16 @@ export async function siteOf(domain, fetchImpl = fetch) {
 }
 
 /** Everything the prep reads about one meeting, with how each source went (said on stderr, never invented). */
-export async function gatherContext(event, data, { api = null, ask = askClaudeJson, fetchImpl = fetch, now = Date.now(), log = console.error } = {}) {
+export async function gatherContext(event, data, { api = null, ask = askClaudeJson, fetchImpl = fetch, now = Date.now(), log = console.error, tz = DISPLAY_TZ } = {}) {
   const lead = others(event, HER_ADDRESSES)[0] ?? null;
   const name = (lead?.name && !lead.name.includes("@") ? lead.name : null) ?? nameFromTitle(event.title);
   const rec = recordsFor({ email: lead?.email ?? null, name }, data);
-  const firm = rec.prospect?.firm ?? rec.lp?.firm ?? rec.person?.organization_name ?? (/\(([^)]+)\)/.exec(String(event.title ?? ""))?.[1] ?? null);
+  const firm = guestFirm(rec, event, lead?.email ?? null);
   const domain = companyDomain(lead?.email);
   const first = name ?? (/\+\s*([A-Z][a-z]+)/.exec(String(event.title ?? ""))?.[1] ?? null);
   let ctx = { mail: { count: 0, recent: [] }, bounces: [], meetings: [], cards: [], unanswered: null, purpose_hint: null, site: null };
 
-  const when = `${shortDate(event.scheduled_at)} at ${clock(event.scheduled_at)} ${DISPLAY_ZONE}`;
+  const when = `${shortDate(event.scheduled_at, tz)} at ${zonedTime(event.scheduled_at, { tz, other: eventZone(event) })}`;
   const today = new Date(now).toISOString().slice(0, 10);
   const r = ask(contextPrompt({ name: first, email: lead?.email ?? null, domain, firm, title: String(event.title ?? ""), when, today }), { model: "sonnet", maxTurns: 30, timeoutMs: 600_000, requireTool: /Gmail/i, toolSearch: CONTEXT_TOOLS });
   if (r.ok) ctx = { ...ctx, ...readContext(r.json) };
@@ -250,6 +251,31 @@ export async function gatherContext(event, data, { api = null, ask = askClaudeJs
   }
   ctx.site = await siteOf(domain, fetchImpl);
   return ctx;
+}
+
+/**
+ * RESEARCH THE GUEST BEFORE THE PREP IS SENT (owner, 4 Nov 2026). Her Claude seat with web search
+ * ($0: her subscription; never the paid OpenAI API), and only a run whose own stream shows a web call
+ * counts. Returns what readResearch keeps: sourced facts, or `{ ok: false, why }` for the one plain line.
+ * Null for a meeting with no outside guest (nobody to research).
+ */
+export function researchGuest(event, data, { ask = askClaudeJson, now = Date.now(), log = console.error } = {}) {
+  const lead = others(event, HER_ADDRESSES)[0] ?? null;
+  const name = (lead?.name && !lead.name.includes("@") ? lead.name : null) ?? nameFromTitle(event.title);
+  if (!lead?.email && !name) return null;
+  const rec = recordsFor({ email: lead?.email ?? null, name }, data);
+  const firm = guestFirm(rec, event, lead?.email ?? null);
+  const r = ask(researchPrompt({ name, email: lead?.email ?? null, firm, domain: companyDomain(lead?.email), today: new Date(now).toISOString().slice(0, 10) }),
+    { model: "sonnet", maxTurns: 20, timeoutMs: 600_000, requireTool: /WebSearch|WebFetch/i, toolSearch: "select:WebSearch,WebFetch" });
+  const out = readResearch(r);
+  if (!out.ok) log(`meeting-prep: ${name ?? lead?.email} not researched (${out.why})`);
+  return out;
+}
+
+/** Her current zone from Boss OS (owner_timezone); Central when it cannot be read. */
+export async function ownerZone(api, log = console.error) {
+  const d = await api.get("/system/owner-timezone").catch((e) => { log(`meeting-prep: her time zone was not read (${e.message}); Central`); return null; });
+  return validZone(d?.tz) ?? DISPLAY_TZ;
 }
 
 /** One line fits her email when the plain gate passes it on its own (no file names, no code words). */
@@ -278,9 +304,9 @@ export function readPlan(json) {
 }
 
 /** The plan for a meeting whose purpose is known. Null (and the evidence-only goals) when the seat fails. */
-export function planFor(event, prep, context, { ask = askClaudeJson, log = console.error } = {}) {
+export function planFor(event, prep, context, { ask = askClaudeJson, log = console.error, tz = DISPLAY_TZ } = {}) {
   if (!prep.purpose?.text) return null;
-  const r = ask(planPrompt({ who: prep.who, purpose: prep.purpose.text, context, when: `${shortDate(event.scheduled_at)} at ${clock(event.scheduled_at)} ${DISPLAY_ZONE}`, minutes: event.duration_min }), { model: "sonnet", maxTurns: 3, timeoutMs: 300_000 });
+  const r = ask(planPrompt({ who: prep.who, purpose: prep.purpose.text, context, when: `${shortDate(event.scheduled_at, tz)} at ${zonedTime(event.scheduled_at, { tz, other: eventZone(event) })}`, minutes: event.duration_min }), { model: "sonnet", maxTurns: 3, timeoutMs: 300_000 });
   if (!r.ok) { log(`meeting-prep: the plan was not written (${r.why}); the prep keeps its evidence-only goals`); return null; }
   return readPlan(r.json);
 }
@@ -296,10 +322,10 @@ export function prepEmail(event, data, opts = {}) {
 export const eventSnapshot = (e) => ({ title: e.title, scheduled_at: e.scheduled_at, duration_min: e.duration_min ?? null, location: e.location ?? null, join_url: e.join_url ?? null, description: e.description ?? null, attendees: e.attendees ?? [], ical_uid: e.ical_uid ?? null, calendar_uid: e.calendar_uid ?? null });
 
 /** Send one prep with its row's code, so her reply in the thread finds it. `{ ok, id, error }`. */
-export async function sendPrep(api, event, data, { context, purpose = null, plan = null, subject = null, thread = [], send = (who, msg) => sendAsEmployee(who, msg), to = process.env.BOSS_NOTIFY_TO ?? "seq.taylor@gmail.com" } = {}) {
-  const draft = buildPrep(event, data, { herAddresses: HER_ADDRESSES, context, purpose, plan });
+export async function sendPrep(api, event, data, { context, purpose = null, plan = null, subject = null, thread = [], tz = DISPLAY_TZ, send = (who, msg) => sendAsEmployee(who, msg), to = process.env.BOSS_NOTIFY_TO ?? "seq.taylor@gmail.com" } = {}) {
+  const draft = buildPrep(event, data, { herAddresses: HER_ADDRESSES, context, purpose, plan, tz });
   const id = (await api.post("/commands/meeting-prep", { key: draft.key, asked: draft.needsPurpose, spec: { who: draft.who, subject: subject ?? draft.subject, event: eventSnapshot(event), context } }))?.id;
-  const m = prepEmail(event, data, { context, purpose, plan, refs: id ? [id] : [], subject: subject ?? draft.subject });
+  const m = prepEmail(event, data, { context, purpose, plan, tz, refs: id ? [id] : [], subject: subject ?? draft.subject });
   const r = await send("Simone", { to, subject: m.laid.subject, prelaid: m.laid, thread });
   return { ...r, cmd: id, prep: m };
 }
@@ -313,10 +339,11 @@ export async function finishPrep(api, p, { ask = askClaudeJson, send = (who, msg
   if (!event?.scheduled_at) return { ok: false, error: "the prep row has no event" };
   const data = await readRecords(api).catch(() => ({}));
   const context = p.spec.context ?? {};
-  const first = buildPrep(event, data, { herAddresses: HER_ADDRESSES, context, purpose: p.purpose });
-  const plan = planFor(event, first, context, { ask, log });
-  const subject = `Re: ${String(p.spec.subject ?? first.subject).replace(/^re:\s*/i, "")}`;
-  const m = prepEmail(event, data, { context, purpose: p.purpose, plan, refs: [p.id], subject });
+  const tz = await ownerZone(api, log);
+  const first = buildPrep(event, data, { herAddresses: HER_ADDRESSES, context, purpose: p.purpose, tz });
+  const plan = planFor(event, first, context, { ask, log, tz });
+  const subject = `Re: ${repairMojibake(String(p.spec.subject ?? first.subject)).replace(/^re:\s*/i, "")}`;
+  const m = prepEmail(event, data, { context, purpose: p.purpose, plan, tz, refs: [p.id], subject });
   const r = await send("Simone", { to: process.env.BOSS_NOTIFY_TO ?? "seq.taylor@gmail.com", subject: m.laid.subject, prelaid: m.laid, thread: p.thread ?? [] });
   if (r.ok) await api.post(`/commands/${p.id}/prep-done`, { message_id: r.id ?? null });
   return { ...r, prep: m };
@@ -379,7 +406,7 @@ async function main() {
       r.verified = okLink ? 1 : false; // never quote a link that does not resolve
       if (okLink) data.summaries[r.url] = await describeLink(r.url, api, cache);
     }
-    const firm = rec.prospect?.firm ?? rec.lp?.firm ?? rec.person?.organization_name ?? null;
+    const firm = guestFirm(rec, e, lead?.email ?? null);
     if (firm && !data.news[firm]) data.news[firm] = await newsFor(firm, now);
   }
   data.references = data.references.filter((r) => r.verified !== 0 && r.verified !== false);
@@ -388,11 +415,14 @@ async function main() {
 
   // What was found for each meeting, then the plan for a meeting whose purpose is known.
   const built = [];
+  const tz = await ownerZone(api);
   for (const e of due) {
-    const context = await gatherContext(e, data, { api, now });
-    const first = buildPrep(e, data, { herAddresses: HER_ADDRESSES, context, purpose: PURPOSE });
-    const plan = planFor(e, first, context);
-    built.push({ e, context, plan, m: prepEmail(e, data, { context, purpose: PURPOSE, plan, subject: SUBJECT }) });
+    const context = await gatherContext(e, data, { api, now, tz });
+    // Every work meeting with an outside guest is researched before anything is sent (4 Nov 2026).
+    context.research = researchGuest(e, data, { now });
+    const first = buildPrep(e, data, { herAddresses: HER_ADDRESSES, context, purpose: PURPOSE, tz });
+    const plan = planFor(e, first, context, { tz });
+    built.push({ e, context, plan, m: prepEmail(e, data, { context, purpose: PURPOSE, plan, tz, subject: SUBJECT }) });
   }
   if (PREVIEW || DRY) {
     const text = built.map(({ m }) => `${m.laid.subject}\n\n${m.laid.text}`).join("\n\n════════════════\n\n");
@@ -403,7 +433,7 @@ async function main() {
 
   let failed = 0;
   for (const { e, context, plan, m } of built) {
-    const r = await sendPrep(api, e, data, { context, purpose: PURPOSE, plan, subject: SUBJECT, thread: THREAD });
+    const r = await sendPrep(api, e, data, { context, purpose: PURPOSE, plan, subject: SUBJECT, thread: THREAD, tz });
     if (!r.ok) { failed += 1; console.error(`NAMED STOP [SEND_REFUSED] "${m.subject}" was not sent: ${r.error}`); continue; }
     sentState.keys = [...new Set([...sentState.keys, m.key])].slice(-2000);
     writeJson(SENT, sentState); // after each send, so a failure later never re-sends this one
