@@ -1,3 +1,5 @@
+import { retryFailedBriefing } from "../duties/deliverReport";
+import { dayIdInZone } from "../../../shared/boss/timezone";
 import type { Env } from "../env";
 import { audit } from "../lib/audit";
 import { logEvent } from "../lib/log";
@@ -76,6 +78,7 @@ export interface SilentRun {
   started_at: number;
   requested: string | null;
   lane: string | null;
+  input: string | null;
 }
 
 /** How long a run may stay silent after its claim before it is a failure. */
@@ -108,7 +111,7 @@ export function isUnclaimed(run: Pick<SilentRun, "claimed_at" | "started_at">, n
 export async function reapSilentRuns(env: Env, now = Date.now()): Promise<{ examined: number; reaped: string[] }> {
   const rows = await env.DB
     .prepare(
-      `SELECT r.id, r.task_id, r.backend_id, r.claimed_by, r.claimed_at, r.started_at, r.requested, t.lane
+      `SELECT r.id, r.task_id, r.backend_id, r.claimed_by, r.claimed_at, r.started_at, r.requested, t.lane, t.input
          FROM backend_runs r
     LEFT JOIN tasks t ON t.id = r.task_id
         WHERE r.status = 'running' AND r.finished_at IS NULL
@@ -119,6 +122,7 @@ export async function reapSilentRuns(env: Env, now = Date.now()): Promise<{ exam
     .all<SilentRun>();
 
   const reaped: string[] = [];
+  let briefingReaped = false;
   for (const run of rows.results ?? []) {
     const neverClaimed = run.claimed_at === null;
     if (neverClaimed ? !isUnclaimed(run, now) : !isSilent(run, now)) continue;
@@ -145,6 +149,9 @@ export async function reapSilentRuns(env: Env, now = Date.now()): Promise<{ exam
     }
     await env.DB.batch(statements);
     reaped.push(run.id);
+    try {
+      if (JSON.parse(run.input ?? "{}")?.delivers === "executive_reports") briefingReaped = true;
+    } catch { /* Malformed task input is not a briefing. */ }
     await audit(env.DB, {
       actor: "system", lane: run.lane ?? "ops", entityType: "backend_run", entityId: run.id,
       action: neverClaimed ? "backend_run_never_claimed" : "backend_run_reaped",
@@ -153,6 +160,14 @@ export async function reapSilentRuns(env: Env, now = Date.now()): Promise<{ exam
     await logEvent(env.DB, {
       level: "error", scope: "backends", event: neverClaimed ? "run_never_claimed" : "run_silent", lane: run.lane ?? "ops", entityId: run.task_id ?? run.id,
       detail: { run_id: run.id, backend_id: run.backend_id, claimed_by: run.claimed_by, silent_hours: hours, never_claimed: neverClaimed },
+    }).catch(() => {});
+  }
+  // Retry once after all failures are recorded, even if several old briefing runs were reaped.
+  if (briefingReaped) {
+    const retry = await retryFailedBriefing(env, dayIdInZone(now), now);
+    await logEvent(env.DB, {
+      level: retry.queued ? "info" : "warn", scope: "backends", event: "reaped_briefing_retry",
+      entityId: "duty_exec_intel", detail: retry,
     }).catch(() => {});
   }
   return { examined: rows.results?.length ?? 0, reaped };
