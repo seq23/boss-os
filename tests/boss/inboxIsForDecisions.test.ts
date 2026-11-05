@@ -280,6 +280,9 @@ describe("a missing briefing names its reason, and the reasons differ", () => {
   it("carries the failure's own error rather than a generic absence", () => {
     const text = reportStaleness({ ...base, task_status: "failed", task_error: "rate limited" }, null, "2026-09-08", NOW);
     expect(text).toContain("rate limited");
+    const afternoon = reportStaleness({ ...base, task_status: "failed", task_error: "rate limited" }, null, "2026-11-04", Date.parse("2026-11-04T18:00:00Z"));
+    expect(afternoon).not.toContain("A retry is queued");
+    expect(afternoon).toContain("tomorrow");
   });
 
   it("says a suspended duty is suspended, so silence is never mistaken for a fault", () => {

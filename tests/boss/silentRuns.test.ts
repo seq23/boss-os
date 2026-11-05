@@ -123,3 +123,28 @@ describe("the reaper on the hourly tick", () => {
     expect((await reapSilentRuns(env as never)).reaped).toEqual([]);
   });
 });
+
+describe("a reaped briefing recovers the morning", () => {
+  it.each([
+    ["briefing before noon", "2026-11-04T15:00:00Z", true, 1, 1],
+    ["several briefings queue only one retry", "2026-11-04T15:00:00Z", true, 2, 1],
+    ["other work", "2026-11-04T15:00:00Z", false, 1, 0],
+    ["briefing at noon", "2026-11-04T18:00:00Z", true, 1, 0],
+    ["briefing after noon", "2026-11-04T19:00:00Z", true, 1, 0],
+    ["three attempts already", "2026-11-04T15:00:00Z", true, 3, 0],
+  ])("%s", async (_label, clock, briefing, count, expected) => {
+    const now = Date.parse(clock);
+    for (let i = 0; i < count; i++) {
+      const task = await insertTask({ status: "running", input: JSON.stringify({ delivers: briefing ? "executive_reports" : "other" }) });
+      await env.DB.prepare(`UPDATE tasks SET created_at = ? WHERE id = ?`).bind(now - 2 * HOUR, task).run();
+      await claimedRun({ task_id: task, claimed_at: now - 2 * HOUR });
+    }
+    const result = await reapSilentRuns(env as never, now);
+    expect(result.reaped).toHaveLength(count);
+    const queued = await all<any>(`SELECT id, input FROM tasks WHERE status = 'queued' AND input LIKE '%"delivers":"executive_reports"%'`);
+    expect(queued).toHaveLength(expected);
+    if (expected) expect(JSON.parse(queued[0].input).delivers).toBe("executive_reports");
+    await reapSilentRuns(env as never, now);
+    expect(await all<any>(`SELECT id FROM tasks WHERE status = 'queued' AND input LIKE '%"delivers":"executive_reports"%'`)).toHaveLength(expected);
+  });
+});

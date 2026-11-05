@@ -404,13 +404,18 @@ export async function deliverPracticeWeek(
   return id;
 }
 
+/** The briefing retry cutoff, in Central time, shared with Today. */
+export function briefingRetryWindowOpen(now: number): boolean {
+  return wallClock(now).h < 12;
+}
+
 /**
  * Re-queue the briefing after a failed delivery, at most three attempts a morning and none after
  * noon Central. Returns whether it did and the sentence her screen carries either way.
  */
 export async function retryFailedBriefing(env: Env, forDay: string, now: number): Promise<{ queued: boolean; why: string }> {
   const wc = wallClock(now);
-  if (wc.h >= 12) return { queued: false, why: "No retry: it is past noon Central; tomorrow's 06:00 run is the next attempt." };
+  if (!briefingRetryWindowOpen(now)) return { queued: false, why: "No retry: it is past noon Central; tomorrow's 06:00 run is the next attempt." };
   const dayStart = now - ((wc.h * 60 + wc.min) * 60_000);
   const attempts = await env.DB
     .prepare(`SELECT COUNT(*) AS n FROM tasks WHERE created_at >= ? AND input LIKE '%"delivers":"executive_reports"%'`)
