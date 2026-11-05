@@ -70,21 +70,21 @@ describe("matches: size, price and age (owner, 24 Oct 2026)", () => {
     expect(rankMatches(big, [s1, s2], { now: NOW }).stack).toBe("2 orders together fill $25M of the $30M");
   });
 
-  it("age: fresher first, over 60 days flagged stale, over 6 months off the email and labelled old", () => {
+  it("age: fresher first, over 30 days flagged stale, over 90 days hidden everywhere", () => {
     expect(ageWords(day(3), NOW)).toBe("3 days ago");
     expect(ageWords(day(35), NOW)).toBe("5 weeks ago");
     const b = grow({ id: "b", company: "Co", size_usd: 5e6, received_on: day(1) });
     const fresh = grow({ id: "f", company: "Co", side: "sell", direction: "sell", size_usd: 5e6, received_on: day(5), from_text: "F" });
-    const stale = grow({ id: "s", company: "Co", side: "sell", direction: "sell", size_usd: 5e6, received_on: day(90), from_text: "S" });
-    const old = grow({ id: "o", company: "Co", side: "sell", direction: "sell", size_usd: 5e6, received_on: day(200), from_text: "O" });
+    const stale = grow({ id: "s", company: "Co", side: "sell", direction: "sell", size_usd: 5e6, received_on: day(31), from_text: "S" });
+    const old = grow({ id: "o", company: "Co", side: "sell", direction: "sell", size_usd: 5e6, received_on: day(91), from_text: "O" });
     const r = rankMatches(b, [old, stale, fresh], { now: NOW }).matches;
-    expect(r.map((m: any) => [m.other.id, m.stale, m.old])).toEqual([["f", false, false], ["s", true, false], ["o", true, true]]);
+    expect(r.map((m: any) => [m.other.id, m.stale, m.old])).toEqual([["f", false, false], ["s", true, false]]);
     const out = moniqueFound({ newRows: [], grid: [b, stale, old], lists: NO_LISTS, now: NOW });
     // A stale match never takes an email slot; it is counted, once, in the line to the Matches screen.
-    expect(out.lines.map((l: any) => l.text)).toEqual(["1 possible trade in all, on 1 company, each buyer and seller counted once; 1 has an order over 60 days old (may be stale — check it's still live)."]);
+    expect(out.lines.map((l: any) => l.text)).toEqual(["1 possible trade in all, on 1 company, each buyer and seller counted once; 1 has an order over 30 days old (may be stale — check it's still live)."]);
     expect(out.lines[0].links).toEqual([{ label: "See the match →", url: "https://boss.sequoiataylor.com/?tab=capital&view=matches" }]);
     expect(out.counts).toEqual({ within: 1, companies: 1, stale: 1, live: 0 });
-    expect(out.matches.find((m: any) => m.key === "b|o")?.old).toBe(true);
+    expect(out.matches.some((m: any) => m.key === "b|o")).toBe(false);
   });
 
   it("never matches two Rainmaker sides", () => {
@@ -102,7 +102,7 @@ describe("matches: size, price and age (owner, 24 Oct 2026)", () => {
 });
 
 describe("the archive: a view by date, never a deletion", () => {
-  it("6–12 months is the archive, older leaves it, and a newer email brings an order back", () => {
+  it("90 days–12 months is the archive, older leaves it, and a newer email brings an order back", () => {
     const r = (id: string, d: number, from = "A") => ({ id, company: "Co", direction: "buy", from_text: from, received_on: day(d) });
     const rows = [r("open", 10), r("arch", 200, "B"), r("gone", 400, "C"), r("back-old", 220), r("back-new", 3, "A")];
     expect(archiveRows(rows, NOW).map((x) => x.id)).toEqual(["arch"]);

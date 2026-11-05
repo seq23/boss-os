@@ -46,6 +46,7 @@
  * prompt still forbids quoting, and that its mail search stays scoped to this case rather than
  * becoming a general mailbox read. A narrow exception that is not held narrow is just a hole.
  */
+import { rainmakerHeaderOnly } from "../lib/rainmaker-mail-privacy.mjs";
 import { readFileSync, readdirSync, existsSync } from "node:fs";
 import { join, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -422,6 +423,10 @@ const installer = existsSync(join(ROOT, "scripts/ops/install-agent-launchd.sh"))
  * never a snippet — through the shared kit, read-only.
  */
 const HEADER_READERS = new Map([
+  ["rainmaker-repliers.mjs", {
+    why: "RR repliers require message references as well as From; reads only those four metadata headers through the existing read-only token tooling.",
+    invariants: [[rainmakerHeaderOnly, "RR reads must remain metadata-only with exactly From, Message-ID, In-Reply-To and References, and never send or reach a model"]],
+  }],
   ["lib/duty-kit.mjs", {
     why: "Toni's charge and lock notices are recognised by sender domain and Subject; no body is read.",
     invariants: [

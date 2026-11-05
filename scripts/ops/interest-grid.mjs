@@ -12,7 +12,7 @@
  *     unclear is "—", and a price that cannot be right is "—" rather than printed.
  *   - "YOURS" is her own supply and demand: what she posts to rrlist@, and any row where she is the
  *     one representing the client. Her addresses and her name are NEVER a counterparty or a broker.
- *   - ~6 MONTHS (owner, 23 Oct: "rough 6 month cut off"): `LOOKBACK_DAYS` in partyLists.mjs. Older
+ *   - 90 DAYS (owner, 4 Nov): `LOOKBACK_DAYS` in partyLists.mjs. Older
  *     rows drop out of the grid and out of matching, hers included.
  *   - Rainmaker x Rainmaker is never suggested; anybody on her do-not-suggest list never appears.
  *
@@ -539,7 +539,7 @@ export function matchFit(buyer, seller, rank, now = Date.now()) {
   const priced = rank?.priced === true && typeof rank?.gap === "number";
   const price = priced && rank.gap <= STAR.maxGap ? "good" : priced && rank.gap <= DEFAULT_TOLERANCE ? "part" : "poor";
   const days = Math.max(daysSince(buyer.received_on, now), daysSince(seller.received_on, now));
-  const age = days < STAR.maxDays ? "good" : days < STALE_DAYS ? "part" : "poor";
+  const age = days < STAR.maxDays ? "good" : days <= STALE_DAYS ? "part" : "poor";
   const star = priced && rank.gap <= STAR.maxGap && fills && days < STAR.maxDays;
   return { size, price, age, star, days };
 }

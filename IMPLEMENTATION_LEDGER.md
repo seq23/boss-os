@@ -5722,3 +5722,15 @@ exit 0. Other stalls retain their existing named stop.
 Proof is recorded in the repo-change build receipt: pure verdict and injectable
 landing tests plus the real shell runner harness, including AI usage resumption.
 Live orphan landing and deployment remain UNPROVEN until the LAND phase.
+
+## Boss OS Friday reminders and deals — 4 Nov 2026
+- Additive 0351 (was 0346; renumbered past main on rebase): delivered reminders keyed by address and private RR-list repliers. Three unanswered daily reminders fill quiet_people; repeated reads/delivery retries do not count. Owner action starts a new streak. Quiet people cannot be nudged.
+- Matches confirms bulk dismissal of pairs over 30 days into capital_dismissed; existing shared readers suppress them until a new order.
+- Local capital:rainmaker-repliers scans sent mail to RRLIST_ADDRESS (existing default), accepts --query override, imports referenced repliers through the authenticated D1 API, and prints counts only. No mailbox read or live import performed: external layer UNPROVEN.
+- Active deals and matches use 30-day stale / 90-day hidden views; orders remain stored. Focused behavioral coverage includes phone confirmation, reset/deduplication, pair refusal and exact age boundaries.
+
+Validation: typecheck PASS; focused unit 55/55 and D1/API 16/16 PASS. Full node run: 2,858 passed and 3 environment failures; the archive failure passes its 13-test rerun using BOSS_OS_SENT_MAIL_DIR in /tmp. Two dutyOwnerEditsMac cases remain blocked by sandbox /dev/fd access. Validator sequence completed in batches except validate:device-home, which attempts to rewrite the machine's real device.json outside the workspace. 390px test could not launch Chromium: macOS MachPortRendezvousServer permission denied (PHONE_390 unproven). No tests were skipped or weakened.
+
+NAMED STOP [GIT_METADATA_WRITE]: git add cannot create the linked worktree's index.lock in the read-only common checkout. Changes remain in codex/boss-fri-6nov for review; no commit, push, PR, merge or deploy was possible in this session.
+
+Full D1 run found missing snapshot coverage for the two new tables (134 suites / 2,052 tests passed, one schema assertion failed). Fixed SNAPSHOT_TABLES at source, leaving the test unchanged. Final rerun: all six relevant schema, vault, leakage and deal/reminder suites passed. Final typecheck and SQL, Gmail metadata, deal-grid, capital staleness and authority/AI/network validators passed.

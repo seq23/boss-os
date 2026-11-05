@@ -1805,15 +1805,15 @@ function HoldersFound() {
 /**
  * MATCHES (owner, 24 Oct 2026): every buy and sell order on the same company that could trade, from
  * Monique's deal reader — size (partial fills included), price within her tolerance, a missing price
- * never hides one ("worth asking"), fresher first. Older than 60 days is flagged; older than her
- * ~6-month lookback is shown only with "Show older matches", labelled old.
+ * never hides one ("worth asking"), fresher first. Older than 30 days is flagged; orders over
+ * 90 days are hidden, without deleting the stored order.
  */
 function Matches() {
   const [data, setData] = useState<{ matches: any[]; updated_at: number | null } | null>(null);
   const [error, setError] = useState<unknown>(null);
   const [tolerance, setTolerance] = useState(0.15);
   const [company, setCompany] = useState(() => new URLSearchParams(window.location.search).get("company") ?? "");
-  const [showOld, setShowOld] = useState(false);
+  const [confirmOlder, setConfirmOlder] = useState(false);
   // "Open ›" in her morning email opens ONE trade's card: the seller's ready email and Dismiss (25 Oct 2026).
   const [only, setOnly] = useState(() => new URLSearchParams(window.location.search).get("match") ?? "");
   const [gone, setGone] = useState<Set<string>>(() => new Set());
@@ -1828,7 +1828,12 @@ function Matches() {
   };
   const live = data.matches.filter((m) => !gone.has(m.key));
   const card = only ? live.find((m) => m.key === only) : null;
-  const shown = card ? [card] : live.filter((m) => (m.gap === null || m.gap <= tolerance) && (showOld || !m.old) && (company === "" || m.company === company));
+  const shown = card ? [card] : live.filter((m) => (m.gap === null || m.gap <= tolerance) && !m.old && (company === "" || m.company === company));
+  const older = live.filter((m) => Number(m.oldest_days) > 30);
+  const dismissOlder = async () => {
+    setBusy("bulk");
+    try { await api.dismissOlderMatches(); setData(await api.dealMatches()); setConfirmOlder(false); } catch (e) { setError(e); } finally { setBusy(""); }
+  };
   const companies = [...new Set(data.matches.map((m) => m.company))].sort((a, b) => a.localeCompare(b));
   const side = (x: any, role: string) => (
     <div className="row-sub">
@@ -1861,13 +1866,17 @@ function Matches() {
             {companies.map((c) => <option key={c} value={c}>{c}</option>)}
           </select>
         </label>
-        <label className="field"><span>Older matches</span>
-          <select value={showOld ? "1" : "0"} onChange={(e) => setShowOld(e.target.value === "1")}>
-            <option value="0">Hide (over 6 months)</option><option value="1">Show, labelled old</option>
-          </select>
-        </label>
+        <div className="field">
+          {confirmOlder ? <>
+            <span>Dismiss {older.length} matches older than 30 days?</span>
+            <div className="btn-row" style={{ flexWrap: "wrap" }}>
+              <button className="btn" disabled={busy === "bulk"} onClick={dismissOlder}>Yes, dismiss {older.length}</button>
+              <button className="btn" disabled={busy === "bulk"} onClick={() => setConfirmOlder(false)}>Keep</button>
+            </div>
+          </> : <button className="btn" disabled={!older.length || !!busy} onClick={() => setConfirmOlder(true)}>Dismiss all older than 30 days</button>}
+        </div>
       </div>
-      {shown.length === 0 ? <Empty title="No matches with these choices" hint="Widen the price tolerance or pick All companies." /> : shown.slice(0, 300).map((m) => (
+      {shown.length === 0 ? <Empty title="No matches with these choices" hint="Widen the price tolerance or pick All companies." /> : shown.map((m) => (
         <div key={m.key} className="duty-card mi-comment">
           <p className="row-title">{m.star ? "⭐ " : ""}{m.company}{m.old ? <span className="pill">old</span> : m.stale ? <span className="pill">may be stale — check it&apos;s still live</span> : null}</p>
           <p className="mi-lede">{m.fill}; {m.price}.</p>

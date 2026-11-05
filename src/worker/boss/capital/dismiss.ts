@@ -7,6 +7,7 @@
  * as id and price. A dismissed pair never comes back while both orders stand; a new order from either
  * side — a new size or a new price is a new order — is a new sig, so it is a new match.
  */
+import { ageDays, OLD_DAYS, STALE_DAYS } from "../../../shared/boss/deals/match.mjs";
 import type { Env } from "../env";
 import { audit } from "../lib/audit";
 
@@ -93,4 +94,11 @@ export async function dismissFromMail(env: Env, text: string, now = Date.now()):
   if (!tap) return { note: `No match has the code ${code}, so nothing was dismissed. The five letters are on the trade's card in Boss OS.` };
   const r = await dismissMatch(env, { pair: tap.pair, sig: tap.sig, company: tap.company, code }, "reply", now);
   return { note: r.dismissed ? `Dismissed the ${tap.company} match (${code}). It will not come back unless one side sends a new order.` : `The ${tap.company} match (${code}) was already dismissed.` };
+}
+
+/** Recompute age on read: a retained push ages without deleting its orders. */
+export function currentMatch(m: any, now = Date.now()) {
+  const ages = [m?.buyer?.received_on, m?.seller?.received_on].map((d) => ageDays(d, now)).filter((d): d is number => d !== null);
+  const days = ages.length ? Math.max(...ages) : Number(m?.oldest_days) || 0;
+  return { ...m, oldest_days: days, stale: days > STALE_DAYS, old: days > OLD_DAYS || Boolean(m?.old) };
 }

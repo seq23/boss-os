@@ -76,7 +76,7 @@ export async function activeLists(env: Env): Promise<PartyLists> {
   ).all<PartyEntry & { list: PartyList }>();
   const all = rows.results ?? [];
   return {
-    same_firm: all.filter((e) => e.list === "same_firm"),
+    same_firm: [...all.filter((e) => e.list === "same_firm"), ...((await env.DB.prepare(`SELECT address, name FROM rainmaker_addresses`).all<{ address: string; name: string | null }>()).results ?? []).map((r) => ({ kind: "email" as const, value: r.address, label: r.name }))],
     do_not_suggest: all.filter((e) => e.list === "do_not_suggest"),
   };
 }

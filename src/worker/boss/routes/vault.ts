@@ -219,6 +219,9 @@ const SNAPSHOT_TABLES = [
   "model_job_policies",
   // 0340 — Brave Search's searches used per day. Kept so a rebuild cannot hand back a spent day's cap.
   "free_search_quota_days",
+  // 0351 — per-person reminder streaks and RR-list repliers (6 Nov 2026).
+  "person_reminders",
+  "rainmaker_addresses",
   "lp_reply_drafts", // fix L
   "prospects", // fix L
   "prospect_touches", // fix L

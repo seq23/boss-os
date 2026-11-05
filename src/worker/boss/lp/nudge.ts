@@ -24,6 +24,7 @@ import { lpNudgeBody, lpReplyRecipients } from "../../../shared/boss/lp/plan.mjs
 export type NudgeResult = { ok: boolean; title: string; line: string };
 
 export function nudgeEligible(row: any): { ok: true } | { ok: false; title: string; line: string } {
+  if (row?.quiet) return { ok: false, title: "No nudge", line: "This person is quiet. Nothing goes." };
   if (!row) return { ok: false, title: "Nothing to nudge", line: "That person is not on the LP replies tracker." };
   if (row.nudged_at) return { ok: false, title: "Already done", line: Number(row.nudge_sent) ? "The one nudge already went. They will not be offered again." : "You chose no nudge for them. They will not be offered again." };
   if (row.status !== "sent" || !(Number(row.sent_at) > 0)) return { ok: false, title: "No nudge needed", line: "Your reply to them has not gone yet, so there is nothing to nudge." };
@@ -33,6 +34,12 @@ export function nudgeEligible(row: any): { ok: true } | { ok: false; title: stri
 }
 
 export async function sendLpNudge(env: Env, row: any, via: "one_tap" | "her_email", now = Date.now(), fetchImpl: typeof fetch = fetch): Promise<NudgeResult> {
+  const recipients = row ? lpReplyRecipients(row) : { to: [], cc: [] };
+  const addresses = [row?.address, ...recipients.to, ...recipients.cc].filter(Boolean)
+    .flatMap((s) => String(s).match(/[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}/g) ?? []).map((s) => s.toLowerCase());
+  for (const address of new Set(addresses)) {
+    if (await env.DB.prepare(`SELECT address FROM quiet_people WHERE address = ?`).bind(address).first()) return { ok: false, title: "No nudge", line: "This person is quiet. Nothing goes." };
+  }
   const gate = nudgeEligible(row);
   if (!gate.ok) return { ok: false, title: gate.title, line: gate.line };
   const who = row.name || "them";
