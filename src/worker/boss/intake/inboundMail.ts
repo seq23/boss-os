@@ -616,7 +616,7 @@ export async function handleBossInboundMail(message: BossMailMessage, env: Env):
   if (command) {
     if (command.commandIds.length === 1) await env.DB.prepare(`UPDATE boss_inbound_mail SET command_id = ?, thread_id = ? WHERE id = ?`).bind(command.commandIds[0], command.commandIds[0], mailId).run();
     const commandReply = [command.reply, ...(secrets?.line ? ["", secrets.line] : [])].join("\n");
-    await finish({ outcome: command.outcome, why: `Simone did it: ${command.commandIds.join(", ")}`, taskId: command.taskId, employeeId: "emp_chief", objectKey, reply: commandReply });
+    await finish({ outcome: command.outcome, why: command.why ?? `Simone did it: ${command.commandIds.join(", ")}`, taskId: command.taskId, employeeId: "emp_chief", objectKey, reply: commandReply });
     return { mailId, outcome: command.outcome, employeeId: "emp_chief", taskId: command.taskId, reply: commandReply, messageId, signer: "Simone", jobs: command.jobs ?? [] };
   }
 
