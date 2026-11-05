@@ -28,6 +28,8 @@ import {
   commandsIn, commandReplyIn, ownWords, readErrandReply, errandAnswerIn, errandFollowUpText, errandCancelText, followUpProblems, partyIn, errandDateIn, bookingAt, bookingWhen, reminderDueAt, ERRAND_TZ, errandReplyNotice, confirmLine, renderUrl, slotText, zoneLabel, OWNER_TZ, DEFAULT_MAILBOX, codeLines, ACCESS_CODE_SHAPE,
 } from "../../../shared/boss/commands/parse.mjs";
 import { recipientLines } from "../../../shared/boss/mail/replyNeed.mjs";
+import { partiesAskIn } from "../../../shared/boss/capital/partiesAsk.mjs";
+import { partiesAnswer } from "../capital/grid";
 import { clashes, createInvite, replaceGuest, deleteInvite, sendOne } from "./google";
 
 export const ORIGIN = "https://boss.sequoiataylor.com";
@@ -340,6 +342,8 @@ async function cantYetLine(env: Env, row: CommandRow, what: string, now: number)
 
 export interface CommandMailResult {
   reply: string; outcome: "COMMAND" | "COMMAND_REPLY"; commandIds: string[]; taskId: string | null;
+  /** The intake's "why" line, when the ids alone say nothing (an answer with no command row). */
+  why?: string;
   /** One row per command for the handoff screen: what it is and who has it (Simone, or Danielle for repo work). */
   jobs?: Array<{ title: string; employeeId: string; employee: string; taskId: string | null; duty: false; failure: null }>;
 }
@@ -400,6 +404,23 @@ export async function commandFromMail(env: Env, input: { subject: string; text: 
     return { reply: said.join("\n"), outcome: "COMMAND_REPLY", commandIds: [], taskId: null };
   }
   if (input.refs.some((r) => !r.startsWith("cmd_"))) return null;
+  /*
+   * "FIND ALL BUYERS OF <COMPANY>" IS A READ OF HER DEAL GRID (5 Nov 2026). It went to a cloud model
+   * with no way into her inbox and failed. The grid is her inbox's deal emails, people and addresses
+   * kept, so Simone answers it in the reply. A company the grid never names goes to the triage.
+   */
+  const partiesAsk = partiesAskIn(input.text) ?? partiesAskIn(input.subject);
+  if (partiesAsk) {
+    const answer = await partiesAnswer(env, partiesAsk, input.now);
+    if (answer) {
+      await audit(env.DB, { actor: "boss", lane: "ops", entityType: "inbound_mail", entityId: input.mailId, action: "deal_parties_answered", detail: { side: partiesAsk.side, count: answer.count } });
+      return {
+        reply: answer.reply, outcome: "COMMAND", commandIds: [], taskId: null,
+        why: `Simone answered it from the deals grid: ${answer.count} ${partiesAsk.side === "buy" ? "buy" : "sell"} order(s).`,
+        jobs: [{ title: `${partiesAsk.side === "buy" ? "Buyers" : "Sellers"} of ${partiesAsk.company}`, employeeId: "emp_chief", employee: "Simone", taskId: null, duty: false, failure: null }],
+      };
+    }
+  }
   const found = commandsIn({ subject: input.subject, text: input.text, now: input.now, sender: input.sender });
   if (found.length === 0) return null;
 
