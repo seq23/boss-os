@@ -24,6 +24,8 @@ export interface Env {
   OPENAI_API_KEY?: string;
   /** The OpenRouter backend's key (bk_openrouter), passed through by bossMount.toBossEnv. */
   OPENROUTER_API_KEY?: string;
+  /** Google Gemini direct, free tier (bk_gemini, 4 Nov 2026). A Worker secret; not set by any migration. */
+  GEMINI_API_KEY?: string;
   /**
    * The gsc-bot service account, as the vault holds it, so the Worker can create a Gmail DRAFT in
    * her own mailbox on the green button (`wealth/gmailDraft.ts`). One scope, `gmail.compose`, and
@@ -56,6 +58,8 @@ export interface Env {
    * point of use. Absent means the backend refuses and says the binding is missing.
    */
   AI?: { run(model: string, inputs: Record<string, unknown>): Promise<unknown> };
+  /** Cloudflare Browser Rendering, passed through by bossMount (meeting-prep research reads guests' pages). */
+  BROWSER?: Fetcher;
 }
 
 export interface TaskMessage {

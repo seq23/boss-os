@@ -46,14 +46,14 @@ describe("a) the guest's firm is never one of hers", () => {
 });
 
 describe("b) the guest is researched before the prep is sent", () => {
-  it("every sourced fact is in Who they are, with its link; an unsourced one is dropped", () => {
-    const calls: any[] = [];
-    const ask = (prompt: string, opts: any) => { calls.push({ prompt, opts }); return RESEARCH_OK; };
-    const research = researchGuest(pat, lpReplyData, { ask, now: Date.parse("2026-10-29T23:00:00Z"), log: () => {} });
-    expect(calls).toHaveLength(1);
-    expect(calls[0].prompt).toContain('"Pat Example"');
-    expect(calls[0].prompt).toContain("familyoffice.example");
-    expect(String(calls[0].opts.requireTool)).toMatch(/WebSearch/);
+  const fakeApi = (answer: any) => { const posts: any[] = []; return { posts, api: { post: async (p: string, body: any) => { posts.push({ p, body }); return answer; } } }; };
+
+  it("every sourced fact is in Who they are, with its link; an unsourced one is dropped", async () => {
+    const { api, posts } = fakeApi(RESEARCH_OK);
+    const asked: any[] = [];
+    const research = await researchGuest(pat, lpReplyData, { api, ask: (...a: any[]) => { asked.push(a); return null; }, now: Date.parse("2026-10-29T23:00:00Z"), log: () => {} });
+    expect(posts).toEqual([{ p: "/research/person", body: { name: "Pat Example", email: "pat@familyoffice.example", firm: "familyoffice.example", domain: "familyoffice.example", today: "2026-10-29" } }]);
+    expect(asked).toEqual([]); // a prospect never goes to her seat: Boss OS's free route did it
     expect(research.ok).toBe(true);
     const m = prepEmail(pat, lpReplyData, { context: { research } });
     const who = m.sections.find((s: any) => s.title === "Who they are").items;
@@ -65,17 +65,27 @@ describe("b) the guest is researched before the prep is sent", () => {
     ]));
     expect(texts.join(" ")).not.toContain("rumour");
     expect(who.find((i: any) => i.text === "Title: Managing Director").links[0].url).toBe("https://familyoffice.example/team");
-    // With research done, the email does not offer to research them.
     expect(m.laid.text).not.toMatch(/Research .* from their website/);
     expect(plainProblems({ subject: m.laid.subject, text: m.laid.text, html: m.laid.html })).toEqual([]);
   });
 
-  it("a failed research run is one plain line, never a confident wrong one", () => {
-    const research = researchGuest(pat, lpReplyData, { ask: () => ({ ok: false, why: "the run never reached web search" }), log: () => {} });
+  it("no source anywhere: one plain line and a named stop, never a confident wrong one", async () => {
+    const logs: string[] = [];
+    const { api } = fakeApi({ ok: false, stop: "RESEARCH_NO_SOURCES", why: "Google search returned no pages; their website (familyoffice.example) could not be read" });
+    const research = await researchGuest(pat, lpReplyData, { api, log: (l) => logs.push(l) });
     const who = buildPrep(pat, lpReplyData, { herAddresses: ME, research }).sections.find((s: any) => s.title === "Who they are").items;
-    expect(who).toContain("Couldn't research Pat Example: the run never reached web search.");
+    expect(who).toContain("Couldn't research Pat Example: Google search returned no pages; their website (familyoffice.example) could not be read.");
+    expect(logs[0]).toMatch(/^NAMED STOP \[RESEARCH_NO_SOURCES\] Pat Example not researched/);
     expect(readResearch({ ok: true, json: { found: true, title: { text: "CEO" } } })).toEqual({ ok: false, why: "no fact came back with a source" });
-    expect(readResearch({ ok: true, json: { found: false, why: "two people share the name" } })).toEqual({ ok: false, why: "two people share the name" });
+  });
+
+  it("a committed LP is researched on her own seat with web search, never on a free model", async () => {
+    const { api } = fakeApi({ ok: false, private: true, stop: "RESEARCH_PRIVATE", why: "committed LP" });
+    const calls: any[] = [];
+    const research = await researchGuest(pat, lpReplyData, { api, ask: (prompt: string, opts: any) => { calls.push({ prompt, opts }); return RESEARCH_OK; }, log: () => {} });
+    expect(calls).toHaveLength(1);
+    expect(String(calls[0].opts.requireTool)).toMatch(/WebSearch/);
+    expect(research.ok).toBe(true);
     expect(researchPrompt({ name: "Pat Example", today: "2026-10-29" })).toMatch(/Every fact needs the https link/);
   });
 });

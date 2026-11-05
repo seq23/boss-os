@@ -203,7 +203,14 @@ export interface FreeTier {
   basis: string;
 }
 
-const FREE_ROUTES: Record<string, { kind: "included_allowance" | "free_model_slug"; suffix?: string; basis: string }> = {
+const FREE_ROUTES: Record<string, { kind: "included_allowance" | "free_model_slug"; suffix?: string; slugs?: readonly string[]; basis: string }> = {
+  // Google's free tier, by exact model id (4 Nov 2026). Any other Gemini slug on this backend is metered.
+  bk_gemini: {
+    kind: "free_model_slug",
+    // The same list as GEMINI_FREE_MODELS (router/backends.ts); a test pins the two together.
+    slugs: ["gemini-2.5-flash", "gemini-3.8-flash", "gemini-3.6-flash", "gemini-3.5-flash-lite", "gemini-3.1-flash-lite", "gemini-3-flash-preview"],
+    basis: "Google's free tier bills nothing for these Gemini models (it may train on what it is sent). Any other model, gemini-4-argon and the 3.1 Pro previews included, is metered.",
+  },
   bk_workers_ai: {
     kind: "included_allowance",
     basis: "Workers AI's included daily allowance on an account already paid for. No key, no egress, no per-call charge.",
@@ -242,12 +249,18 @@ const FREE_ROUTES: Record<string, { kind: "included_allowance" | "free_model_slu
  * a vendor gives away, two readers. A second list would be the defect this file already warns
  * about, and it would be the copy that let something start spending.
  */
+/** A slug is free when it carries the free suffix, or is one of the backend's named free models. */
+function freeSlug(rule: { suffix?: string; slugs?: readonly string[] }, slug: string): boolean {
+  if (rule.slugs) return rule.slugs.includes(slug);
+  return rule.suffix !== undefined && slug.endsWith(rule.suffix);
+}
+
 export function routeIsBilled(backendId: string, modelSlug?: string | null): boolean {
   const rule = FREE_ROUTES[backendId];
   if (!rule) return true;
   if (rule.kind === "included_allowance") return false;
   const slug = typeof modelSlug === "string" ? modelSlug.trim() : "";
-  return !(slug.length > 0 && rule.suffix !== undefined && slug.endsWith(rule.suffix));
+  return !(slug.length > 0 && freeSlug(rule, slug));
 }
 
 export function freeTier(backend: Backend, model?: string | null): FreeTier {
@@ -285,14 +298,14 @@ export function freeTier(backend: Backend, model?: string | null): FreeTier {
       basis: `${backend.display_name} has free models, but this request named none, so nothing shows the route is free.`,
     };
   }
-  if (slug.endsWith(rule.suffix!)) {
+  if (freeSlug(rule, slug)) {
     return { kind: "free_model_slug", free: true, rank: 2, basis: `${slug} — ${rule.basis}` };
   }
   return {
     kind: "metered",
     free: false,
     rank: 3,
-    basis: `${slug} is not a ${rule.suffix} model on ${backend.display_name}, so it is metered.`,
+    basis: `${slug} is not a ${rule.suffix ?? "free-tier"} model on ${backend.display_name}, so it is metered.`,
   };
 }
 

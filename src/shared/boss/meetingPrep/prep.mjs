@@ -392,6 +392,56 @@ export function readResearch(r) {
   return facts.length ? { ok: true, facts } : { ok: false, why: "no fact came back with a source" };
 }
 
+/**
+ * GEMINI FIRST, GROUNDED; THEN THEIR OWN PAGES; THEN A NAMED STOP (owner, 4 Nov 2026).
+ *   1. gemini-2.5-flash with Google Search grounding (the one free model where search works) answers
+ *      in the research JSON; Google reports the pages it grounded on.
+ *   2. Else the Worker fetches their company site and public pages (Cloudflare browser binding) and a
+ *      free Gemini 3 Flash writes ONLY from that fetched text.
+ * Either way a fact is kept only when its link is one of the pages actually used (keepGroundedFacts):
+ * ungrounded free models invented three different founders for one firm. Neither works → "Couldn't
+ * research <name>: <reason>", never research from a model's memory.
+ */
+const RESEARCH_JSON = 'Answer with JSON only, in a ```json block: {"found":true,"title":{"text":"...","url":"<page link>"} or null,"firm":{...} or null,"background":{...} or null,"focus":{...} or null,"upcoming":[{"text":"what, and when","url":"<page link>"}]}. If the pages do not say who they are: {"found":false,"why":"one short reason"}.';
+
+export function groundedSearchPrompt({ name, email = null, firm = null, domain = null, today }) {
+  const who = [name ? `"${name}"` : null, firm ? `of ${firm}` : null, domain ? `(company website ${domain})` : null, email ? `email domain ${String(email).split("@")[1] ?? ""}` : null].filter(Boolean).join(" ");
+  return [
+    `Search Google for ${who}. Today is ${today}.`,
+    "From the pages you find, state: their current title; their firm; their background in one sentence; what they are focused on now; anything public they are doing soon (talks, panels, launches, fund closes) with its date.",
+    "Every fact cites the link of the page that says it. A fact no page says is left out (null). A person with the same name at another firm is not them. Never add from memory.",
+    RESEARCH_JSON,
+  ].join("\n");
+}
+
+/** The fallback's prompt: write from the fetched pages only, citing each fact by its page's link. */
+export function writeFromPagesPrompt({ name, pages }) {
+  const list = pages.map((p, i) => `[${i + 1}] ${p.url}\n"""${String(p.text ?? "").slice(0, 6000)}"""`).join("\n\n");
+  return [
+    `Write what these pages say about ${name ?? "this person"} and their firm. Use ONLY the page text below; never add from memory. If a page does not name them, say nothing about them from it.`,
+    `Pages:\n${list}`,
+    "Every fact cites ONE of those page links, copied exactly. A fact no page supports is left out (null).",
+    RESEARCH_JSON,
+  ].join("\n\n");
+}
+
+/** The facts, keeping only those whose link is one of the pages actually used. */
+export function keepGroundedFacts(json, sources) {
+  const allowed = new Set((sources ?? []).map((s) => String(s.url)));
+  const keep = (f) => (f && allowed.has(String(f.url ?? "")) ? f : null);
+  if (!json || json.found === false) return json;
+  return {
+    ...json,
+    ...Object.fromEntries(RESEARCH_FIELDS.map(([k]) => [k, keep(json[k])])),
+    upcoming: (Array.isArray(json.upcoming) ? json.upcoming : []).map(keep).filter(Boolean),
+  };
+}
+
+/** The guest's public pages to fetch when search is not available: their site, its about and team pages. */
+export function guestPages(domain) {
+  return domain ? [`https://${domain}/`, `https://${domain}/about`, `https://${domain}/team`] : [];
+}
+
 /** The "Who they are" lines from research: one per fact with its link, or the one plain failure line. */
 export function researchItems(research, name) {
   if (!research) return [];

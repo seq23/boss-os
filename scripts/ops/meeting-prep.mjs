@@ -254,21 +254,28 @@ export async function gatherContext(event, data, { api = null, ask = askClaudeJs
 }
 
 /**
- * RESEARCH THE GUEST BEFORE THE PREP IS SENT (owner, 4 Nov 2026). Her Claude seat with web search
- * ($0: her subscription; never the paid OpenAI API), and only a run whose own stream shows a web call
- * counts. Returns what readResearch keeps: sourced facts, or `{ ok: false, why }` for the one plain line.
- * Null for a meeting with no outside guest (nobody to research).
+ * RESEARCH THE GUEST BEFORE THE PREP IS SENT (owner, 4 Nov 2026). Boss OS does it
+ * (POST /api/boss/research/person): free Gemini with Google Search grounding, else their own pages
+ * fetched and written from, every fact with its source link; neither → one plain "Couldn't research"
+ * line and a NAMED STOP on stderr, never research from a model's memory. A committed LP never reaches
+ * a free model: Boss OS says so and her own Claude seat researches them with web search ($0, her
+ * subscription; a run whose stream shows no web call does not count). Never the paid OpenAI API.
+ * Null for a meeting with no outside guest.
  */
-export function researchGuest(event, data, { ask = askClaudeJson, now = Date.now(), log = console.error } = {}) {
+export async function researchGuest(event, data, { api, ask = askClaudeJson, now = Date.now(), log = console.error } = {}) {
   const lead = others(event, HER_ADDRESSES)[0] ?? null;
   const name = (lead?.name && !lead.name.includes("@") ? lead.name : null) ?? nameFromTitle(event.title);
   if (!lead?.email && !name) return null;
   const rec = recordsFor({ email: lead?.email ?? null, name }, data);
   const firm = guestFirm(rec, event, lead?.email ?? null);
-  const r = ask(researchPrompt({ name, email: lead?.email ?? null, firm, domain: companyDomain(lead?.email), today: new Date(now).toISOString().slice(0, 10) }),
-    { model: "sonnet", maxTurns: 20, timeoutMs: 600_000, requireTool: /WebSearch|WebFetch/i, toolSearch: "select:WebSearch,WebFetch" });
+  const today = new Date(now).toISOString().slice(0, 10);
+  const who = { name, email: lead?.email ?? null, firm, domain: companyDomain(lead?.email), today };
+  let r = await api.post("/research/person", who).catch((e) => ({ ok: false, stop: "RESEARCH_UNREACHABLE", why: `Boss OS could not be asked (${String(e.message).slice(0, 80)})` }));
+  if (r?.private) {
+    r = ask(researchPrompt(who), { model: "sonnet", maxTurns: 20, timeoutMs: 600_000, requireTool: /WebSearch|WebFetch/i, toolSearch: "select:WebSearch,WebFetch" });
+  }
   const out = readResearch(r);
-  if (!out.ok) log(`meeting-prep: ${name ?? lead?.email} not researched (${out.why})`);
+  if (!out.ok) log(`NAMED STOP [${r?.stop ?? "RESEARCH_FAILED"}] ${name ?? lead?.email} not researched: ${out.why}`);
   return out;
 }
 
@@ -419,7 +426,7 @@ async function main() {
   for (const e of due) {
     const context = await gatherContext(e, data, { api, now, tz });
     // Every work meeting with an outside guest is researched before anything is sent (4 Nov 2026).
-    context.research = researchGuest(e, data, { now });
+    context.research = await researchGuest(e, data, { api, now });
     const first = buildPrep(e, data, { herAddresses: HER_ADDRESSES, context, purpose: PURPOSE, tz });
     const plan = planFor(e, first, context, { tz });
     built.push({ e, context, plan, m: prepEmail(e, data, { context, purpose: PURPOSE, plan, tz, subject: SUBJECT }) });

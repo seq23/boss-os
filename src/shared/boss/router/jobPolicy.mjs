@@ -15,6 +15,10 @@ export const JOB_POLICY_DEFAULTS = {
   owner_email: { label: "Emails to you", allowed_model_ids: [], paid_allowed: 1, min_capability_tier: "general", on_no_model: "stop" },
   classify: { label: "Sorting and labels", allowed_model_ids: [], paid_allowed: 0, min_capability_tier: "fast", on_no_model: "skip" },
   summarise: { label: "Short summaries", allowed_model_ids: [], paid_allowed: 0, min_capability_tier: "fast", on_no_model: "skip" },
+  // Meeting-prep research (migration 0338): Google-grounded on the free gemini-2.5-flash; else the
+  // guest's fetched pages, written by a free Gemini 3 Flash. A named stop when neither can run.
+  meeting_prep_search: { label: "Meeting prep: Google search", allowed_model_ids: ["mdl_gemini_25_flash_free"], paid_allowed: 0, min_capability_tier: "fast", on_no_model: "stop" },
+  meeting_prep_write: { label: "Meeting prep: writing from their pages", allowed_model_ids: ["mdl_gemini_36_flash_free", "mdl_gemini_3_flash_preview_free"], paid_allowed: 0, min_capability_tier: "general", on_no_model: "stop" },
 };
 
 const tierRank = (t) => CAPABILITY_TIERS.indexOf(String(t ?? ""));

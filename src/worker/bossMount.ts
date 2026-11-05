@@ -80,6 +80,7 @@ export function toBossEnv(env: Env): BossEnv {
      * sends you looking in the wrong file.
      */
     AI: env.AI,
+    BROWSER: env.BROWSER,
     /*
      * THE LIVE LINE IS v21. Owner's decision, 6 Sep 2026: the build in ~/GitHub/boss-os is v21;
      * the v20 build in REPO_OPERATOR_ARCHIVE/deprecated-repos/ is deprecated. The two were
@@ -110,6 +111,7 @@ export function toBossEnv(env: Env): BossEnv {
     OPENAI_API_KEY: env.OPENAI_API_KEY,
     // OpenRouter too, the same seam's same gap (bk_openrouter enabled 17 Sep with its own cap).
     OPENROUTER_API_KEY: env.OPENROUTER_API_KEY,
+    GEMINI_API_KEY: env.GEMINI_API_KEY,
   };
 }
 

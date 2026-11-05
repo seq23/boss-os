@@ -100,8 +100,13 @@ export function isPrivateModelRoute(dataUse: string | null | undefined): boolean
  * because of which half of this Worker's history the table came from, and the owner's ruling named
  * `lp_claim` and `diligence_claim` explicitly.
  */
-export const PRIVATE_SOURCES: readonly { table: string; column: string; what: string }[] = [
-  { table: "lps", column: "name", what: "an LP" },
+export const PRIVATE_SOURCES: readonly { table: string; column: string; what: string; where?: string }[] = [
+  // OWNER RULING, 4 Nov 2026: "private model only" means the names of LPs who have COMMITTED to a
+  // West Peek fund, and deal terms. A prospect (outreach, intros, replies before a commitment,
+  // meeting prep, research on them) is public-model-approved. So the LP tables below are read only
+  // for rows that carry a commitment; `lps` keeps everyone past "prospect" (soft-circled included,
+  // the cautious reading) and drops only prospects and those who passed.
+  { table: "lps", column: "name", what: "an LP", where: "status NOT IN ('prospect', 'passed')" },
   { table: "lp_record", column: "legal_name", what: "an LP" },
   { table: "organizations", column: "name", what: "a counterparty" },
   { table: "deals", column: "name", what: "a deal" },
@@ -109,12 +114,13 @@ export const PRIVATE_SOURCES: readonly { table: string; column: string; what: st
   { table: "investment_opportunity", column: "seller_name", what: "a counterparty" },
   { table: "investment_opportunity", column: "broker_name", what: "a counterparty" },
   { table: "capital_book_line", column: "asset", what: "a position" },
-  // boss fix L (23 Oct 2026): the LPs who answered and the prospects she writes to. Their names reach
-  // no route that may train on them; the drafts are fixed templates and never go to a model at all.
-  { table: "lp_reply_drafts", column: "name", what: "an LP" },
-  { table: "lp_reply_drafts", column: "firm", what: "an LP" },
-  { table: "prospects", column: "name", what: "a counterparty" },
-  { table: "prospects", column: "firm", what: "a counterparty" },
+  // boss fix L (23 Oct 2026), narrowed by the owner on 4 Nov 2026: the people who answered and the
+  // prospects she writes to are PUBLIC until they commit; from `committed_at` (migration 0339) their
+  // names reach no route that may train on them.
+  { table: "lp_reply_drafts", column: "name", what: "an LP", where: "committed_at IS NOT NULL" },
+  { table: "lp_reply_drafts", column: "firm", what: "an LP", where: "committed_at IS NOT NULL" },
+  { table: "prospects", column: "name", what: "an LP", where: "committed_at IS NOT NULL" },
+  { table: "prospects", column: "firm", what: "an LP", where: "committed_at IS NOT NULL" },
 ];
 
 /**
@@ -259,7 +265,7 @@ export async function privateLexicon(db: D1Database): Promise<PrivateLexicon> {
   try {
     const results = await db.batch<{ v: string | null }>(
       PRIVATE_SOURCES.map((s) =>
-        db.prepare(`SELECT ${s.column} AS v FROM ${s.table} WHERE ${s.column} IS NOT NULL LIMIT ${LEXICON_CAP + 1}`),
+        db.prepare(`SELECT ${s.column} AS v FROM ${s.table} WHERE ${s.column} IS NOT NULL${s.where ? ` AND ${s.where}` : ""} LIMIT ${LEXICON_CAP + 1}`),
       ),
     );
 

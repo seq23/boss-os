@@ -226,8 +226,16 @@ const MONEY = /\b(pay|purchase|buy|subscribe|invoice|wire|spend|\$\s?\d)/i;
  * (`router/modelAccess.ts`) and can raise a run this missed. Intake labels the card; the router
  * still reads the content.
  */
+/*
+ * LP WORDS ALONE ARE NOT PRIVATE WHEN THE WORK IS ABOUT PROSPECTS (owner ruling, 4 Nov 2026): outreach,
+ * intros, replies before a commitment, meeting prep and research on a prospect are public-model-
+ * approved. Only a committed LP's name and deal terms are private; the router's lexicon still raises
+ * any run that carries a committed LP's name (modelAccess.ts PRIVATE_SOURCES).
+ */
+const LP_WORDS = /\b(lp|lps|limited partners?)\b/i;
+const PROSPECT_WORK = /\b(prospects?|prospective|outreach|intro(duction)?s?|cold email|first email|follow-?up)\b/i;
 const PRIVATE_MODEL_ONLY_TERMS =
-  /\b(lp|lps|limited partner|capital call|drawdown|side letter|term sheet|cap ?table|carried interest|preferred return|clawback|data ?room|diligence|fund (figures?|financials?|ledger)|capital account|subscription agreement|investment memo)\b/i;
+  /\b(capital call|drawdown|side letter|term sheet|cap ?table|carried interest|preferred return|clawback|data ?room|diligence|fund (figures?|financials?|ledger)|capital account|subscription agreement|investment memo)\b/i;
 
 /** Intake kinds whose subject matter is the fund's private side whatever words the title uses. */
 const PRIVATE_MODEL_ONLY_KINDS = new Set<string>(["trading", "west_peek_bridge", "coaching"]);
@@ -257,6 +265,9 @@ export function classifyModelAccess(input: {
     matched.push(`private_kind_${input.intakeKind}`);
   }
   if (PRIVATE_MODEL_ONLY_TERMS.test(input.text)) {
+    access = "private_model_only";
+    matched.push("private_terms");
+  } else if (LP_WORDS.test(input.text) && !PROSPECT_WORK.test(input.text)) {
     access = "private_model_only";
     matched.push("private_terms");
   }

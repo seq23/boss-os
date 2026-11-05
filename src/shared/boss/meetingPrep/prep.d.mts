@@ -45,3 +45,7 @@ export declare const RESEARCH_FIELDS: Array<[string, string]>;
 export declare function researchPrompt(o: { name: string | null; email?: string | null; firm?: string | null; domain?: string | null; today: string }): string;
 export declare function readResearch(r: any): { ok: true; facts: Array<{ label: string; text: string; url: string }> } | { ok: false; why: string };
 export declare function researchItems(research: any, name: string | null): any[];
+export declare function groundedSearchPrompt(o: { name: string | null; email?: string | null; firm?: string | null; domain?: string | null; today: string }): string;
+export declare function writeFromPagesPrompt(o: { name: string | null; pages: Array<{ url: string; text: string }> }): string;
+export declare function guestPages(domain: string | null): string[];
+export declare function keepGroundedFacts(json: any, sources: Array<{ title: string; url: string }>): any;
