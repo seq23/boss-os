@@ -250,6 +250,21 @@ describe("a declared kind is not outvoted by a keyword", () => {
     expect(money.matched).toContain("spend");
   });
 
+  it("reads buyers as people, not spending, and still catches the verb", () => {
+    // 5 Nov 2026: a request to find the buyers of a company in her inbox was ranked high risk as
+    // "money" and failed on every cloud model.
+    const find = classify({ title: "I need to find all buyers of Moonshot AI", prompt: "Go into my inbox and find any buyers for Moonshot. Give me their emails.", lane: "ops" });
+    expect(find.matched).not.toContain("spend");
+    expect(find.risk).not.toBe("high");
+    const buyer = classify({ title: "Who is the buyer here?", prompt: "Name the buyer on this order.", lane: "ops" });
+    expect(buyer.matched).not.toContain("spend");
+    for (const words of ["Buy the domain", "We are buying more seats", "She buys the plan"]) {
+      const spend = classify({ title: words, prompt: words, lane: "ops" });
+      expect(spend.matched).toContain("spend");
+      expect(spend.risk).toBe("high");
+    }
+  });
+
   it("leaves an undeclared task exactly as it was classified before", () => {
     // The whole change is scoped to callers who name a kind. Everything else must be untouched.
     const c = classify({ title: "Draft a note", prompt: "Write something short.", lane: "ops" });
