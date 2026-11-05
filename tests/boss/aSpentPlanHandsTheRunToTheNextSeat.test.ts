@@ -142,7 +142,7 @@ describe("a Codex limit UNDER a run waits for the reset — never Claude (owner,
 
   it("never releases a run whose ladder does not name a later seat — a laddered-less run fails as it always did", async () => {
     // A Claude-only task (an LP draft) is the one ladder with no seat after Claude's.
-    const taskId = await insertTask({ status: "queued", title: "No ladder", input: JSON.stringify({ backend_id: "bk_claude_code", delivers: "tool_suggestions", draft_kind: "lp_reply" }), intake_kind: "research" });
+    const taskId = await insertTask({ status: "queued", title: "No ladder", input: JSON.stringify({ backend_id: "bk_claude_code", delivers: "tool_suggestions", draft_kind: "lp_reply", lp_committed: true }), intake_kind: "research" });
     await handleTask(env as any, { taskId, lane: "ops" });
     const runId = (await claim("bk_claude_code")).data.run.run_id as string;
     const rep = await api("/api/backends/report", { method: "POST", body: spentPacket(runId, taskId, "bk_claude_code") });

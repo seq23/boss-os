@@ -375,7 +375,9 @@ describe("The Morning gate: coaching last, the blood pressure tea in the morning
 
 describe("LP and deal-terms drafts: the Claude seat only, failing closed", () => {
   it("the seat ladder keeps only Claude's seat, and 'OpenAI first' cannot reorder it", () => {
-    expect(isConfidentialDraft({ draft_kind: "lp_reply" })).toBe(true);
+    // Owner ruling, 4 Nov 2026: a COMMITTED LP's reply is confidential; a prospect's is public.
+    expect(isConfidentialDraft({ draft_kind: "lp_reply", lp_committed: true })).toBe(true);
+    expect(isConfidentialDraft({ draft_kind: "lp_reply" })).toBe(false);
     expect(isConfidentialDraft({ confidential_draft: true })).toBe(true);
     expect(isConfidentialDraft({ draft_kind: "briefing" })).toBe(false);
     expect(confidentialLadder([OPENAI_SEAT, CLAUDE_SEAT])).toEqual([CLAUDE_SEAT]);

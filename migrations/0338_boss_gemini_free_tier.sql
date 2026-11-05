@@ -26,13 +26,14 @@ INSERT OR IGNORE INTO execution_backends
    'Egress from the Worker to one host, reached only through the Boss router. Free tier only: Google may train on what it is sent, so no private-model-only work reaches it. Search grounding for research.',
    -- $0 ceiling: free-tier models only. A paid Gemini call goes through OpenRouter, which has its own.
    0, 'enabled',
-   'GEMINI_API_KEY is set as a Worker secret (owner, 4 Nov 2026). Free-tier models only.');
+   'Enabled 4 November 2026: GEMINI_API_KEY is set as a Worker secret by the owner. Free-tier models only.');
 
 -- The six free-tier ids the owner verified live on her key (billing off) on 4 Nov 2026.
 -- gemini-4-argon and gemini-3.1-pro-preview* are NOT free and are not here.
 -- Google Search grounding is free ONLY on gemini-2.5-flash (2.5 Flash Lite is closed to new users;
 -- grounding on 3.x answers 429 on the free tier). It retires 1 Dec 2026, so its row is kept to
--- research work (approved_task_kinds) and it is no default for anything else.
+-- research work (approved_task_kinds) and it is no default for anything else. The two fast Lite
+-- models take only the routine kinds every cheap model takes (0251), never judgement work.
 INSERT OR IGNORE INTO models
   (id, provider_id, slug, display_name, in_micros_1k, out_micros_1k, context_tokens, enabled,
    privacy_class, capability_tier, benchmark_status, max_risk, reasoning, approved_task_kinds,
@@ -60,12 +61,12 @@ VALUES
    'TRAINS_ON_PROMPTS', 'Google Gemini API terms: free-tier content may be used to improve Google products.', 1793836800000),
   ('mdl_gemini_35_flash_lite_free', 'prv_gemini', 'gemini-3.5-flash-lite',
    'Gemini 3.5 Flash Lite (Google, free)', 0, 0, 1048576, 1,
-   'cloud', 'fast', 'unbenchmarked', 'low', 0, NULL,
+   'cloud', 'fast', 'unbenchmarked', 'low', 0, '["one_off","recurring_duty","scheduled_check","triggered_workflow","memory_promotion","model_benchmark","drafting"]',
    'SOURCED', 1793836800000, 'https://ai.google.dev/gemini-api/docs/pricing and the live models list on her key with billing off, read 2026-11-04: free of charge on the free tier (owner, 4 Nov 2026).',
    'TRAINS_ON_PROMPTS', 'Google Gemini API terms: free-tier content may be used to improve Google products.', 1793836800000),
   ('mdl_gemini_31_flash_lite_free', 'prv_gemini', 'gemini-3.1-flash-lite',
    'Gemini 3.1 Flash Lite (Google, free)', 0, 0, 1048576, 1,
-   'cloud', 'fast', 'unbenchmarked', 'low', 0, NULL,
+   'cloud', 'fast', 'unbenchmarked', 'low', 0, '["one_off","recurring_duty","scheduled_check","triggered_workflow","memory_promotion","model_benchmark","drafting"]',
    'SOURCED', 1793836800000, 'https://ai.google.dev/gemini-api/docs/pricing and the live models list on her key with billing off, read 2026-11-04: free of charge on the free tier (owner, 4 Nov 2026).',
    'TRAINS_ON_PROMPTS', 'Google Gemini API terms: free-tier content may be used to improve Google products.', 1793836800000);
 
