@@ -21,7 +21,7 @@
  * moved, main red), watches main to a terminal state and deploys, and that is the only door.
  */
 
-import { readFileSync, writeFileSync, existsSync } from "node:fs";
+import { readFileSync, writeFileSync, existsSync, readdirSync } from "node:fs";
 import { execFileSync, spawnSync } from "node:child_process";
 import { homedir } from "node:os";
 import { join } from "node:path";
@@ -29,6 +29,8 @@ import { mayAutoFix } from "../../src/shared/boss/siteAudit/repoPolicy.mjs";
 import { scopeSnapshot } from "../../src/shared/boss/siteAudit/evidence.mjs";
 import { repoForDomain } from "../../src/shared/boss/siteAudit/domainRepos.mjs";
 import { heldForOwner } from "../../src/shared/boss/searchReadiness/ownerApproval.mjs";
+
+import { orphanVerdict } from "../../src/shared/boss/searchReadiness/orphanPr.mjs";
 
 const SITES = JSON.parse(readFileSync(new URL("../../src/shared/boss/searchReadiness/sites.json", import.meta.url), "utf8")).grid_repos ?? [];
 const repoName = (r) => String(r ?? "").trim().replace(/\/+$/, "").split("/").pop();
@@ -152,7 +154,22 @@ export function landAll(payload, { run = defaultRun, landBin = process.env.AUDIT
    */
   const done = new Map();
   for (const f of payload.findings ?? []) {
-    if (f.disposition !== "fixed_pr" || !f.pr_url || f.land === "landed") continue;
+    if (!["fixed_pr", "in_flight"].includes(f.disposition) || f.land === "landed") continue;
+    if (f.disposition === "in_flight") {
+      let pr = null;
+      // Validate identity and policy before even looking up the remote PR.
+      if (orphanVerdict(f, null, { sites, approvedSites }) === "another_lane") {
+        const view = run("gh", ["pr", "view", f.pr_url, "--json", "state,isDraft,headRefName,statusCheckRollup"], undefined);
+        try { if (view.status === 0) pr = JSON.parse(view.out); } catch { /* fail closed */ }
+      }
+      const verdict = orphanVerdict(f, pr, { sites, approvedSites });
+      if (verdict !== "land") {
+        f.land = verdict === "already_merged" ? "already_merged" : "blocked";
+        f.land_detail = verdict === "another_lane" && !pr ? "refused_policy: PR metadata unavailable" : verdict;
+        continue;
+      }
+    }
+    if (!f.pr_url) continue;
     if (!mayAutoFix(f.repo)) { f.land = "refused_policy"; continue; }
     /*
      * HER YES ON AN `owner_approval` SITE (Hicks, owner 3 Nov 2026). A fix to already-published
@@ -188,6 +205,10 @@ export function landAll(payload, { run = defaultRun, landBin = process.env.AUDIT
         f.suggested_action = `Landed ${f.pr_url} through ~/bin/land: checks green, merged, main watched, deployed. Nothing to do.`;
       }
     }
+    if (f.disposition === "in_flight" && f.land !== "landed") {
+      f.land_detail = `${f.land}: ${f.land_detail}`;
+      f.land = "blocked";
+    }
     done.set(f.pr_url, { land: f.land, land_detail: f.land_detail, suggested_action: f.land === "landed" ? f.suggested_action : null });
   }
   return payload;
@@ -196,7 +217,7 @@ export function landAll(payload, { run = defaultRun, landBin = process.env.AUDIT
 /** One `LAND <repo> <pr>: <outcome>` line per pull request, never one per row. */
 export function landLines(payload) {
   const seen = new Map();
-  for (const f of payload.findings ?? []) if (f.disposition === "fixed_pr" && f.pr_url && !seen.has(f.pr_url)) seen.set(f.pr_url, `LAND ${f.repo} ${f.pr_url}: ${f.land}`);
+  for (const f of payload.findings ?? []) if (["fixed_pr", "in_flight"].includes(f.disposition) && f.pr_url && !seen.has(f.pr_url)) seen.set(f.pr_url, `LAND ${f.repo} ${f.pr_url}: ${f.land}`);
   return [...seen.values()];
 }
 
@@ -232,6 +253,17 @@ if (isMain) {
     landAll(payload);
     writeFileSync(rest[0], JSON.stringify(payload, null, 2));
     for (const l of landLines(payload)) console.log(l);
+  } else if (cmd === "land-orphans") {
+    const root = join(homedir(), ".boss-os/site-audit");
+    for (const dir of readdirSync(root).filter(n => n.startsWith("sr-"))) {
+      const file = join(root, dir, "findings.json");
+      if (!existsSync(file)) continue;
+      const payload = JSON.parse(readFileSync(file, "utf8"));
+      const orphans = { findings: (payload.findings ?? []).filter(f => f.disposition === "in_flight") };
+      landAll(orphans);
+      writeFileSync(file, JSON.stringify(payload, null, 2));
+      for (const line of landLines(orphans)) console.log(line);
+    }
   } else if (cmd === "scope") {
     const queueFile = process.env.SR_QUEUE_FILE ?? join(homedir(), ".boss-os/search-readiness/fix-queue.json");
     const snap = scopeSnapshot({ queue: JSON.parse(readFileSync(queueFile, "utf8")), queueFile, repo: rest[0], briefIds: String(rest[1] ?? "").split(/[\s,]+/).filter(Boolean) });
