@@ -62,7 +62,8 @@ const TODAY = "src/worker/boss/routes/today.ts";
 const FREE_BRAIN = "scripts/validate/the-best-free-model-is-a-candidate.mjs";
 
 /** Secrets this Worker actually holds in production. Stated, because the check is about absence. */
-const PRODUCTION_SECRETS = new Set(["BOSS_PASSCODE", "BOSS_SESSION_SECRET", "OPENROUTER_API_KEY", "AI"]);
+// GEMINI_API_KEY: set as a Worker secret by the owner, 4 Nov 2026 (bk_gemini, migration 0338).
+const PRODUCTION_SECRETS = new Set(["BOSS_PASSCODE", "BOSS_SESSION_SECRET", "OPENROUTER_API_KEY", "AI", "GEMINI_API_KEY"]);
 
 const code = (src) => src.split("\n").filter((l) => !/^\s*(\/\/|\*|\/\*|--)/.test(l)).join("\n");
 
