@@ -50,6 +50,16 @@ import { wantsToMeet } from "../../src/shared/boss/lp/schedule.mjs";
 
 const MAILBOX = "sequoia@westpeek.ventures";
 const SCOPE = "https://www.googleapis.com/auth/gmail.compose";
+/**
+ * READING A THREAD NEEDS A READ SCOPE (4 Nov 2026). gmail.compose can create drafts and send, but
+ * Google refuses threads.get / messages.get with it (403 insufficientPermissions). Every follow-up
+ * looked its thread up with the compose token, the error was swallowed, and from 11 Oct every one was
+ * held as "the thread is not in the mailbox". Headers are read with a second token on gmail.readonly,
+ * the scope West Peek's delegation already grants this mailbox (lp-bounces.mjs, lp-positive.mjs).
+ */
+const READ_SCOPE = "https://www.googleapis.com/auth/gmail.readonly";
+/** Her one step if Google ever refuses the read grant: exact, so the stop can be acted on. */
+export const ADMIN_STEP = "admin.google.com (westpeek.ventures) → Security → Access and data control → API controls → Manage Domain Wide Delegation → the Boss OS service account's client ID → Edit → keep every scope and add https://www.googleapis.com/auth/gmail.readonly → Authorize.";
 const GMAIL = "https://gmail.googleapis.com/gmail/v1/users/me";
 const SOURCE_DIR = process.env.PROSPECT_SOURCE_DIR ?? path.join(os.homedir(), "8raise-tools", "outreach-2026-10-11");
 const MORNING_DIR = process.env.BOSS_OS_MORNING_DIR ?? path.join(os.homedir(), ".boss-os", "morning");
@@ -124,34 +134,58 @@ export function importRows(sentLog, recipients) {
 /* ─── Gmail, the West Peek mailbox only ──────────────────────────────────── */
 
 const b64url = (b) => Buffer.from(b).toString("base64").replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
-async function token() {
-  const creds = JSON.parse(process.env.GSC_SERVICE_ACCOUNT_JSON ?? "null");
+export async function token(scope = SCOPE, { fetchImpl = fetch, env = process.env } = {}) {
+  const creds = JSON.parse(env.GSC_SERVICE_ACCOUNT_JSON ?? "null");
   if (!creds) throw new Error("NAMED STOP [NO_SERVICE_ACCOUNT] run through the vault: npm run lp:prospects");
   const now = Math.floor(Date.now() / 1000);
   const header = b64url(JSON.stringify({ alg: "RS256", typ: "JWT" }));
-  const claims = b64url(JSON.stringify({ iss: creds.client_email, sub: MAILBOX, scope: SCOPE, aud: "https://oauth2.googleapis.com/token", iat: now, exp: now + 3600 }));
+  const claims = b64url(JSON.stringify({ iss: creds.client_email, sub: MAILBOX, scope, aud: "https://oauth2.googleapis.com/token", iat: now, exp: now + 3600 }));
   const signer = crypto.createSign("RSA-SHA256");
   signer.update(`${header}.${claims}`);
-  const res = await fetch("https://oauth2.googleapis.com/token", {
+  const res = await fetchImpl("https://oauth2.googleapis.com/token", {
     method: "POST", headers: { "content-type": "application/x-www-form-urlencoded" },
     body: new URLSearchParams({ grant_type: "urn:ietf:params:oauth:grant-type:jwt-bearer", assertion: `${header}.${claims}.${b64url(signer.sign(creds.private_key))}` }),
   });
-  if (!res.ok) throw new Error(`NAMED STOP [NO_GRANT] the West Peek delegation refused compose (${res.status})`);
+  if (!res.ok) {
+    if (scope === READ_SCOPE) throw new Error(`NAMED STOP [NO_READ_GRANT] the West Peek delegation refused gmail.readonly (${res.status}); no follow-up can find its thread. Her step: ${ADMIN_STEP}`);
+    throw new Error(`NAMED STOP [NO_GRANT] the West Peek delegation refused compose (${res.status})`);
+  }
   return (await res.json()).access_token;
 }
-const call = async (tok, url, init = {}) => {
-  const r = await fetch(url, { ...init, headers: { authorization: `Bearer ${tok}`, ...(init.body ? { "content-type": "application/json" } : {}) } });
+const call = async (tok, url, init = {}, fetchImpl = fetch) => {
+  const r = await fetchImpl(url, { ...init, headers: { authorization: `Bearer ${tok}`, ...(init.body ? { "content-type": "application/json" } : {}) } });
   const j = await r.json().catch(() => ({}));
-  if (!r.ok) throw new Error(`gmail ${r.status}`);
+  if (!r.ok) throw Object.assign(new Error(`gmail ${r.status}${j?.error?.errors?.[0]?.reason ? ` ${j.error.errors[0].reason}` : ""}`), { status: r.status });
   return j;
 };
+
+/**
+ * The last Message-ID and first Subject of a follow-up's thread, read with the READ token. Returns
+ * `{ messageId, subject }`, `{ held }` when the thread really is not in the mailbox (404: that one
+ * prospect waits), or `{ stop }` — a NAMED STOP for the whole run — when Google refuses the read
+ * (401/403) or fails otherwise: never again a swallowed error dressed as a missing thread (Rule 0).
+ */
+export async function threadHeaders(readTok, threadId, { fetchImpl = fetch } = {}) {
+  try {
+    const th = await call(readTok, `${GMAIL}/threads/${threadId}?format=metadata&metadataHeaders=Message-ID&metadataHeaders=Subject`, {}, fetchImpl);
+    const last = th?.messages?.at(-1)?.payload?.headers ?? [];
+    return {
+      messageId: last.find((h) => h.name.toLowerCase() === "message-id")?.value ?? null,
+      subject: (th?.messages?.[0]?.payload?.headers ?? []).find((h) => h.name.toLowerCase() === "subject")?.value ?? null,
+    };
+  } catch (e) {
+    if (e.status === 404) return { held: `the thread is not in ${MAILBOX} (Gmail 404)` };
+    if (e.status === 401 || e.status === 403) return { stop: `NAMED STOP [THREAD_READ_DENIED] Google refused to read a follow-up's thread in ${MAILBOX} (${e.message}); no follow-up can be threaded. Her step: ${ADMIN_STEP}` };
+    return { stop: `NAMED STOP [THREAD_LOOKUP_FAILED] reading a follow-up's thread in ${MAILBOX} failed (${e.message}); follow-ups wait for the next run.` };
+  }
+}
 
 /** Thread and Message-ID of a message she sent — headers only. */
 async function threadOfSent(tok, id) {
   const u = new URL(`${GMAIL}/messages/${id}`);
   u.searchParams.set("format", "metadata");
   for (const h of ["Message-ID", "Subject"]) u.searchParams.append("metadataHeaders", h);
-  const m = await call(tok, u.toString()).catch(() => null);
+  const m = await call(tok, u.toString()).catch((e) => { console.log(`note: message headers not read (${e.message}).`); return null; });
   if (!m) return null;
   const h = Object.fromEntries((m.payload?.headers ?? []).map((x) => [x.name.toLowerCase(), x.value]));
   return { thread_id: m.threadId, message_id: h["message-id"] ?? null, subject: h.subject ?? null };
@@ -292,7 +326,20 @@ export function templateDecide(tpl, { stale = [], forecast = null, released = nu
   };
 }
 
-export function prospectsMorning({ rows, pending, stale, plan, sent, now = Date.now() }) {
+/**
+ * RULE 0 FOR THE SEND STEP. A live run with sends due that sent none never ends "complete": it is a
+ * NAMED STOP with the real reason (exit 2), and her morning says plainly what is held. Pure.
+ */
+export function runVerdict({ due = 0, sent = 0, held = [], stop = null }) {
+  if (stop) return { stop, line: `Prospect follow-ups are held: Boss OS could not read their Gmail threads. ${sent} sent of ${due} due; we are fixing it.` };
+  if (due > 0 && sent === 0) {
+    const why = held[0] ?? "none was accepted by Gmail";
+    return { stop: `NAMED STOP [NOTHING_SENT] ${due} prospect email(s) due, 0 sent; first reason: ${why}`, line: `No prospect email went today: ${due} were due and all were held. We are fixing it.` };
+  }
+  return { stop: null, line: null };
+}
+
+export function prospectsMorning({ rows, pending, stale, plan, sent, problem = null, now = Date.now() }) {
   const decide = [];
   const waiting = rows.filter((r) => ["new", "active"].includes(r.status) && Number(r.touches) === 1);
   const released = waiting.length ? { count: waiting.length, firstSentAt: Math.min(...waiting.map((r) => Number(r.first_sent_at ?? Date.now()))) } : null;
@@ -319,6 +366,7 @@ export function prospectsMorning({ rows, pending, stale, plan, sent, now = Date.
   }));
   const active = rows.filter((r) => ["new", "active"].includes(r.status)).length;
   const lines = [];
+  if (problem) lines.push(problem);
   if (sent) lines.push(`Monique sent ${sent} prospect email${sent === 1 ? "" : "s"} today.`);
   if (plan?.stops?.length && !pending) lines.push(`Prospect emails are paused: ${plan.stops[0]}`);
   if (plan?.note) lines.push(plan.note);
@@ -332,6 +380,7 @@ async function main() {
   const api = await bossApi();
   if (VERIFY_ONLY) { const r = await verifyDue(api); console.log(`LP-PROSPECTS-VERIFIED: ${JSON.stringify(r.marks)}`); return; }
   const tok = await token();
+  const readTok = await token(READ_SCOPE);
 
   // 1. Import the 11 Oct send (idempotent: a known address keeps its history).
   const logFile = path.join(SOURCE_DIR, "sent-log.md");
@@ -341,7 +390,7 @@ async function main() {
     const rows = importRows(sent, recips);
     const known = new Set(((await api.get("/lp/prospects")).rows ?? []).map((r) => r.email));
     const fresh = rows.filter((r) => !known.has(r.email));
-    for (const r of fresh) { const t = await threadOfSent(tok, r.gmail_id); if (t) { r.thread_id = t.thread_id; r.last_message_id = t.message_id; r.subject = t.subject; } }
+    for (const r of fresh) { const t = await threadOfSent(readTok, r.gmail_id); if (t) { r.thread_id = t.thread_id; r.last_message_id = t.message_id; r.subject = t.subject; } }
     const res = await api.post("/lp/prospects/import", { rows: fresh });
     console.log(`import: ${res.added} added, ${res.skipped} already known.`);
   } else {
@@ -425,6 +474,8 @@ async function main() {
   const plan = await api.get("/lp/prospects/plan");
   if (plan.note) console.log(`plan: ${plan.note}`);
   let sent = 0;
+  let stop = null;
+  const held = [];
   if (plan.sends?.length) {
     if (LIVE && !sendDay) {
       console.log(`WEEKEND: ${plan.sends.length} due; held for Monday. Nothing sent.`);
@@ -436,21 +487,19 @@ async function main() {
       const events = [];
       for (const s of plan.sends) {
         let shape = sendShape(s);
-        if (shape.refused) { console.error(`  touch ${s.touch} held: ${shape.refused}`); continue; }
+        if (shape.refused) { held.push(shape.refused); console.error(`  touch ${s.touch} held: ${shape.refused}`); continue; }
         const mtok = tok;
-        // Thread it properly: the follow-up answers the last message in their thread.
+        // Thread it properly: the follow-up answers the last message in their thread (read token).
         if (shape.threadId && !shape.message.inReplyTo) {
-          const th = await call(mtok, `${GMAIL}/threads/${shape.threadId}?format=metadata&metadataHeaders=Message-ID&metadataHeaders=Subject`).catch(() => null);
-          const last = th?.messages?.at(-1)?.payload?.headers ?? [];
-          const mid = last.find((h) => h.name.toLowerCase() === "message-id")?.value ?? null;
-          const subj = (th?.messages?.[0]?.payload?.headers ?? []).find((h) => h.name.toLowerCase() === "subject")?.value ?? null;
-          if (!th) { console.error(`  touch ${s.touch} held: the thread is not in ${shape.mailbox}`); continue; }
-          shape = sendShape({ ...s, subject: s.subject ?? subj }, { inReplyTo: mid });
+          const th = await threadHeaders(readTok, shape.threadId);
+          if (th.stop) { stop = th.stop; console.error(th.stop); break; }
+          if (th.held) { held.push(th.held); console.error(`  touch ${s.touch} held: ${th.held}`); continue; }
+          shape = sendShape({ ...s, subject: s.subject ?? th.subject }, { inReplyTo: th.messageId });
         }
         const raw = b64url(mime(shape.message));
         const m = await call(mtok, `${GMAIL}/messages/send`, { method: "POST", body: JSON.stringify({ raw, ...(shape.threadId ? { threadId: shape.threadId } : {}) }) }).catch((e) => ({ error: e.message }));
         if (!m?.id) { console.error(`  touch ${s.touch} refused: ${m?.error ?? "no id"}`); continue; }
-        const meta = await threadOfSent(mtok, m.id);
+        const meta = await threadOfSent(readTok, m.id);
         events.push({ prospect_id: s.prospect_id, kind: "sent", touch: s.touch, gmail_id: m.id, thread_id: m.threadId, message_id: meta?.message_id ?? null, subject: shape.message.subject, body: s.body, template_id: s.template_id ?? null, sent_from: shape.mailbox });
         sent++;
       }
@@ -461,7 +510,9 @@ async function main() {
   }
 
   const rows = (await api.get("/lp/prospects?tokens=1")).rows ?? [];
-  const file = writeMorning("prospects", prospectsMorning({ rows, pending, stale, plan, sent }));
+  const verdict = runVerdict({ due: LIVE && sendDay && !plan.dryRun ? plan.sends?.length ?? 0 : 0, sent, held, stop });
+  const file = writeMorning("prospects", prospectsMorning({ rows, pending, stale, plan, sent, problem: verdict.line }));
+  if (verdict.stop) { console.error(verdict.stop); process.exitCode = 2; return; }
   console.log(`LP-PROSPECTS-COMPLETE: ${rows.length} prospects, ${sent} sent; morning section at ${file}`);
 }
 
