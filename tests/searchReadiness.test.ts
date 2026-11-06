@@ -44,6 +44,8 @@ const REQUIRED_DOMAINS = [
   "billionairehighperformancecoach.com", "spryexecutiveos.com",
   // 1 Nov 2026: heygetonmylevel is IN search work; the two wave-3 client sites are audited (never shown).
   "heygetonmylevel.com", "detoxdenver.org", "cynthiabrowndds.com",
+  // 6 Nov 2026: KeepMyProof (a Spry Labs app, live since 1 Nov; SEO/AEO/GEO first priority) runs the loop.
+  "keepmyproof.com",
 ];
 
 describe("the manifest holds every item on the page", () => {
@@ -1044,7 +1046,7 @@ describe("F · the search growth loop on every selling site (owner, 1 Nov 2026)"
     const loop = sites.grid_repos.filter((s: any) => s.search_loop).map((s: any) => s.domain).sort();
     expect(loop).toEqual([
       "aplayermode.com", "approvalprep.com", "billionairehighperformancecoach.com", "cynthiabrowndds.com", "dentistryguides.com", "detoxdenver.org",
-      "heygetonmylevel.com", "hicksconsulting.org", "hormonesivhair.com", "horselegalguide.com", "memphisseniorcarehomes.com", "neuroevalguides.com",
+      "heygetonmylevel.com", "hicksconsulting.org", "hormonesivhair.com", "horselegalguide.com", "keepmyproof.com", "memphisseniorcarehomes.com", "neuroevalguides.com",
       "porchandparty901.com", "spryexecutiveos.com", "theaccidentguides.com", "theindustryguides.com", "time-2-read.com", "uscisexam.com",
       "weddingbudgetspreadsheet.com", "weddingchecklistpdf.com", "weddingseatingchartmaker.com", "weddingtimelinetemplate.com",
     ]);

@@ -215,7 +215,7 @@ site. Pinned by `tests/searchReadiness.test.ts`, which reads this section:
    nothing blocks a reviewer-less page or a frequent date refresh. Pinned by `tests/searchReadiness.test.ts`.
 7. **The search growth loop on every selling site (owner, 1 Nov 2026; spec in the spry brain's
    Settled decisions).** A site with a `search_loop` entry in sites.json (its wave: 1 Industry Guides,
-   ApprovalPrep, Dream Wedding, the Spry HPC sites; 2 Time-2-Read, heygetonmylevel; 3 Porch & Party and
+   ApprovalPrep, Dream Wedding, the Spry HPC sites, KeepMyProof (6 Nov 2026); 2 Time-2-Read, heygetonmylevel; 3 Porch & Party and
    the client sites) is held to the loop's stages, each automatic and reaching only those sites
    (`flag:search_loop`): f2 new pages publish straight away under a quality gate (rewritten from
    "frozen until the query has a number"), f7 low-competition searches found weekly at $0, f8 new pages
