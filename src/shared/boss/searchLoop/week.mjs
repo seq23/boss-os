@@ -117,16 +117,25 @@ export function loopLine(weeks, { actionWord = "form fills" } = {}) {
   if (!ws.length) return null;
   const sum = (k) => (ws.every((w) => num(w[k]) != null) ? ws.reduce((a, w) => a + w[k], 0) : null);
   const p = sum("published"), i = sum("indexed"), ai = sum("ai_visitors"), c = sum("conversions"), w = sum("wins"), u = sum("undone"), m = sum("merged");
-  const capped = ws.every((x) => num(x?.cap?.max_live_pages) != null && num(x.held_by_cap) != null && Array.isArray(x.redirected));
-  const capMax = capped ? ws.reduce((a, x) => a + x.cap.max_live_pages, 0) : null, held = capped ? ws.reduce((a, x) => a + x.held_by_cap, 0) : null;
-  const sent = capped ? ws.reduce((a, x) => a + x.redirected.length, 0) : null;
+  /*
+   * THE CAP IS READ PER SITE (6 Nov 2026). One business can run several sites on different engines: the
+   * six canonical guide sites (local-guides-generator) pin engine v1.2.6 and publish to a weekly cadence,
+   * with no cap in their report, while theindustryguides.com runs v1.6 under a cap. One site without a
+   * cap used to blank the whole business ("the page cap not read (7 sites)") although the cap was read
+   * for the other. Now the caps that were read are added up and the line says how many sites have none.
+   */
+  const hasCap = (x) => num(x?.cap?.max_live_pages) != null && num(x.held_by_cap) != null && Array.isArray(x.redirected);
+  const withCap = ws.filter(hasCap), noCap = ws.length - withCap.length;
+  const capped = withCap.length > 0;
+  const capMax = capped ? withCap.reduce((a, x) => a + x.cap.max_live_pages, 0) : null, held = capped ? withCap.reduce((a, x) => a + x.held_by_cap, 0) : null;
+  const sent = capped ? withCap.reduce((a, x) => a + x.redirected.length, 0) : null;
   const parts = [
     p == null ? "pages published not read" : `Published ${plural(p, "page")}`,
     i == null ? "indexing not read" : `${i} indexed`,
     ai == null ? "AI visitors not read" : `${plural(ai, "AI visitor")}`,
     c == null ? `${actionWord} not read` : `${c} ${actionWord}`,
     w == null || u == null ? "the 2/4/8-week checks not read" : `${plural(w, "win")}, ${u} undone${m ? `, ${m} merged` : ""}`,
-    capMax == null ? "the page cap not read" : `cap ${capMax} pages, ${held} waiting${sent ? `, ${sent} sent to existing pages` : ""}`,
+    capMax == null ? "the page cap not read" : `cap ${capMax} pages, ${held} waiting${sent ? `, ${sent} sent to existing pages` : ""}${noCap ? ` (${noCap} of ${ws.length} sites report no cap)` : ""}`,
   ];
   const line = parts.join(" · ");
   return (ws.length > 1 ? `${line} (${ws.length} sites)` : line).replace(/^./, (ch) => ch.toUpperCase());
