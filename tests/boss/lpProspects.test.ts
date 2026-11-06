@@ -400,7 +400,9 @@ describe("routes and the one-tap links", () => {
     const t = await proposeTemplate(env.DB, null, NAMES);
     const id = (t as any).template.id;
     await approveTemplate(env.DB, id);
-    await env.DB.prepare(`UPDATE prospect_templates SET follow_up_2 = NULL, follow_up_3 = NULL WHERE id = ?`).bind(id).run();
+    // As a row approved before 6 Nov: no emails 3 and 4, and the hash of its three fields.
+    const oldShape = { subject: DEFAULT_PROSPECT_TEMPLATE.subject, body: DEFAULT_PROSPECT_TEMPLATE.body, follow_up: DEFAULT_PROSPECT_TEMPLATE.follow_up };
+    await env.DB.prepare(`UPDATE prospect_templates SET follow_up_2 = NULL, follow_up_3 = NULL, hash = ? WHERE id = ?`).bind(templateHash(oldShape, NAMES), id).run();
     const t0 = WED_10AM - 7 * DAY;
     await importProspects(env.DB, [
       { email: "due.two@example.com", name: "Du Two", source: "x", touches: 1, first_sent_at: WED_10AM - 3 * DAY, last_touch_at: WED_10AM - 3 * DAY, status: "active", thread_id: "ta", last_message_id: "<a@example.com>", subject: "Re: x" },
