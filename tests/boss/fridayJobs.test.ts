@@ -19,15 +19,22 @@ async function person() {
 }
 it("third delivered unanswered reminder makes the person quiet across Today, plans and sending", async () => {
   const row = await person();
-  const payload = { decide: [{ id: "decide-example", key: `lp:${row.id}`, title: "Waiting", body: "A reply" }] };
-  for (const day of ["2026-11-01", "2026-11-02", "2026-11-03"]) {
+  // The real shape: the full card on day 1, then the thin "Still yours to answer" line (your-day.mjs).
+  const full = { decide: [{ id: "decide-example", key: `lp:${row.id}`, title: "Waiting", body: "A reply" }] };
+  const thin = { decide: [], still_yours: [{ id: "decide-example", key: `lp:${row.id}`, title: "Waiting", line: "Still yours" }] };
+  for (const [i, day] of ["2026-11-01", "2026-11-02", "2026-11-03"].entries()) {
+    const payload = i === 0 ? full : thin;
+    if (i === 1) {
+      // Two mornings in, the person is still on her list: not quiet yet.
+      expect(await env.DB.prepare("SELECT COUNT(*) AS n FROM quiet_people").first("n")).toBe(0);
+    }
     await apiJson("/api/morning", { method: "POST", body: { day, payload } });
     await apiJson(`/api/morning/${day}/sent`, { method: "POST" });
     // Delivery retry on the same day must not count again.
     await apiJson(`/api/morning/${day}/sent`, { method: "POST" });
   }
   expect(await env.DB.prepare("SELECT reminder_count FROM person_reminders").first("reminder_count")).toBe(3);
-  expect((await apiJson<any>("/api/morning/latest")).body.data.payload.decide).toEqual([]);
+  expect((await apiJson<any>("/api/morning/latest")).body.data.payload.still_yours).toEqual([]);
   const quiet = (await listLpRows(env.DB))[0];
   expect(quiet.quiet).toBe(1);
   expect(lpDecideItems([quiet], now)).toEqual([]);

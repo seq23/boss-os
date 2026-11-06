@@ -19,6 +19,8 @@ test("bulk dismissal confirms in place at 390 px and keeps fresh pairs", async (
   await page.getByRole("button", { name: "Dismiss all older than 30 days", exact: true }).click();
   await page.getByRole("button", { name: "Yes, dismiss 1", exact: true }).click();
   await expect(page.locator(".duty-card.mi-comment")).toHaveCount(1);
+  await expect(page.getByText("Dismissed 1 older match. Each comes back only if one side sends a new order.")).toBeVisible();
+  await expect(page.getByRole("button", { name: "Dismiss all older than 30 days", exact: true })).toHaveCount(0);
   expect(queryLocalD1<{ pair: string }>("SELECT pair FROM capital_dismissed").map((r) => r.pair)).toEqual(["example|old"]);
   await expectNoSidewaysScroll(page);
 });

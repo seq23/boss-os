@@ -1808,12 +1808,16 @@ function HoldersFound() {
  * never hides one ("worth asking"), fresher first. Older than 30 days is flagged; orders over
  * 90 days are hidden, without deleting the stored order.
  */
+/** A phone cannot render thousands of cards; the company pull-down reaches the rest. */
+const MAX_MATCH_CARDS = 300;
+
 function Matches() {
   const [data, setData] = useState<{ matches: any[]; updated_at: number | null } | null>(null);
   const [error, setError] = useState<unknown>(null);
   const [tolerance, setTolerance] = useState(0.15);
   const [company, setCompany] = useState(() => new URLSearchParams(window.location.search).get("company") ?? "");
   const [confirmOlder, setConfirmOlder] = useState(false);
+  const [bulkNote, setBulkNote] = useState("");
   // "Open ›" in her morning email opens ONE trade's card: the seller's ready email and Dismiss (25 Oct 2026).
   const [only, setOnly] = useState(() => new URLSearchParams(window.location.search).get("match") ?? "");
   const [gone, setGone] = useState<Set<string>>(() => new Set());
@@ -1832,7 +1836,11 @@ function Matches() {
   const older = live.filter((m) => Number(m.oldest_days) > 30);
   const dismissOlder = async () => {
     setBusy("bulk");
-    try { await api.dismissOlderMatches(); setData(await api.dealMatches()); setConfirmOlder(false); } catch (e) { setError(e); } finally { setBusy(""); }
+    try {
+      const r = await api.dismissOlderMatches();
+      setData(await api.dealMatches()); setConfirmOlder(false);
+      setBulkNote(`Dismissed ${r.dismissed} older ${r.dismissed === 1 ? "match" : "matches"}. Each comes back only if one side sends a new order.`);
+    } catch (e) { setError(e); } finally { setBusy(""); }
   };
   const companies = [...new Set(data.matches.map((m) => m.company))].sort((a, b) => a.localeCompare(b));
   const side = (x: any, role: string) => (
@@ -1866,17 +1874,23 @@ function Matches() {
             {companies.map((c) => <option key={c} value={c}>{c}</option>)}
           </select>
         </label>
-        <div className="field">
-          {confirmOlder ? <>
-            <span>Dismiss {older.length} matches older than 30 days?</span>
-            <div className="btn-row" style={{ flexWrap: "wrap" }}>
-              <button className="btn" disabled={busy === "bulk"} onClick={dismissOlder}>Yes, dismiss {older.length}</button>
-              <button className="btn" disabled={busy === "bulk"} onClick={() => setConfirmOlder(false)}>Keep</button>
-            </div>
-          </> : <button className="btn" disabled={!older.length || !!busy} onClick={() => setConfirmOlder(true)}>Dismiss all older than 30 days</button>}
-        </div>
       </div>
-      {shown.length === 0 ? <Empty title="No matches with these choices" hint="Widen the price tolerance or pick All companies." /> : shown.map((m) => (
+      {/* Destructive, so it sits apart from the filters and asks once, in place (make-it-calm §8). */}
+      <div className="field">
+        {confirmOlder ? <>
+          <span>Dismiss {older.length} {older.length === 1 ? "match" : "matches"} older than 30 days?</span>
+          <p className="row-sub">Every company, whatever is picked above. Each comes back only if one side sends a new order.</p>
+          <div className="btn-row" style={{ flexWrap: "wrap" }}>
+            <button className="btn" disabled={busy === "bulk"} onClick={dismissOlder}>Yes, dismiss {older.length}</button>
+            <button className="btn" disabled={busy === "bulk"} onClick={() => setConfirmOlder(false)}>Keep</button>
+          </div>
+        </> : older.length
+          ? <button className="btn" disabled={!!busy} onClick={() => { setBulkNote(""); setConfirmOlder(true); }}>Dismiss all older than 30 days</button>
+          : <p className="row-sub">{bulkNote || "No match is older than 30 days."}</p>}
+        {bulkNote && older.length ? <p className="row-sub">{bulkNote}</p> : null}
+      </div>
+      {shown.length > MAX_MATCH_CARDS ? <p className="row-sub">Showing the first {MAX_MATCH_CARDS} of {shown.length}. Pick a company to see the rest.</p> : null}
+      {shown.length === 0 ? <Empty title="No matches with these choices" hint="Widen the price tolerance or pick All companies." /> : shown.slice(0, MAX_MATCH_CARDS).map((m) => (
         <div key={m.key} className="duty-card mi-comment">
           <p className="row-title">{m.star ? "⭐ " : ""}{m.company}{m.old ? <span className="pill">old</span> : m.stale ? <span className="pill">may be stale — check it&apos;s still live</span> : null}</p>
           <p className="mi-lede">{m.fill}; {m.price}.</p>
