@@ -79,6 +79,19 @@ describe("b) the guest is researched before the prep is sent", () => {
     expect(readResearch({ ok: true, json: { found: true, title: { text: "CEO" } } })).toEqual({ ok: false, why: "no fact came back with a source" });
   });
 
+  it("never lists an event that is already over under Coming up (Sam's prep, 6 Nov 2026)", () => {
+    const now = Date.parse("2026-11-06T12:00:00Z");
+    const u = (text: string) => ({ text, url: "https://example.com/talk" });
+    const r = readResearch({ ok: true, json: { found: true, upcoming: [
+      u("A talk on AI in the investment office on Tuesday, 6 May 2025 at 4:00 PM"),
+      u("Panel at a 2024 conference"),
+      u("Keynote on December 3, 2026"),
+      u("Speaks at the spring summit"),
+    ] } }, { now }) as any;
+    expect(r.ok).toBe(true);
+    expect(r.facts.map((f: any) => f.text)).toEqual(["Keynote on December 3, 2026", "Speaks at the spring summit"]);
+  });
+
   it("a committed LP is researched on her own seat with web search, never on a free model", async () => {
     const { api } = fakeApi({ ok: false, private: true, stop: "RESEARCH_PRIVATE", why: "committed LP" });
     const calls: any[] = [];
@@ -141,16 +154,16 @@ describe("e) grid deals only for brokerage contacts", () => {
   });
 });
 
-// 6 Nov 2026: the invite "Ned (Arnel & Affiliates) <> Sequoia Taylor" went to his assistant; the
-// research looked up the assistant and the prep said "Couldn't research Cecelia Stewart".
+// 6 Nov 2026: the invite "Sam (Example Holdings) <> Sequoia Taylor" went to his assistant; the
+// research looked up the assistant and the prep said "Couldn't research Alex Assist".
 describe("research looks up the person the invite names", () => {
-  it("asks about Ned at the firm, not the assistant's address", async () => {
+  it("asks about Sam at the firm, not the assistant's address", async () => {
     const asked: any[] = [];
     const api = { post: async (_p: string, b: any) => { asked.push(b); return { ok: false, why: "nothing public" }; } };
-    const ned = { calendar_uid: "n1", title: "Ned (Arnel & Affiliates) <> Sequoia Taylor, West Peek", scheduled_at: Date.parse("2026-11-17T17:00:00Z"), attendees: [{ email: "cstewart@arnel.example", name: "Cecelia Stewart" }] };
-    await researchGuest(ned, {}, { api, log: () => {} });
-    expect(asked[0].name).toBe("Ned");
+    const sam = { calendar_uid: "n1", title: "Sam (Example Holdings) <> Sequoia Taylor, West Peek", scheduled_at: Date.parse("2026-11-17T17:00:00Z"), attendees: [{ email: "alex@holdings.example", name: "Alex Assist" }] };
+    await researchGuest(sam, {}, { api, log: () => {} });
+    expect(asked[0].name).toBe("Sam");
     expect(asked[0].email).toBeNull();
-    expect(asked[0].firm).toBe("Arnel & Affiliates");
+    expect(asked[0].firm).toBe("Example Holdings");
   });
 });

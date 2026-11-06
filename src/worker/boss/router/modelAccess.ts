@@ -61,6 +61,7 @@ import {
   type ModelAccess,
 } from "../../../shared/boss/governance";
 import type { ChatMessage } from "./types";
+import { hasConfidential } from "../../../shared/boss/brains/brain.mjs";
 
 /**
  * The three states a route's data-use terms can be in, matching `models.data_use` from 0249.
@@ -106,22 +107,19 @@ export const PRIVATE_SOURCES: readonly { table: string; column: string; what: st
   // meeting prep, research on them) is public-model-approved. So the LP tables below are read only
   // for rows that carry a commitment; `lps` keeps everyone past "prospect" (soft-circled included,
   // the cautious reading) and drops only prospects and those who passed.
+  //
+  // NARROWED TO COMMITTED LPs ONLY, 6 Nov 2026. This list also held `organizations`, `deals`,
+  // `investment_opportunity` (title, seller, broker) and `capital_book_line.asset`: every firm and
+  // company Boss OS had ever recorded. A public page about a meeting guest names companies, so every
+  // meeting prep matched one and said "Couldn't research". A company or contact name is not a
+  // committed LP; deal TERMS are caught by the patterns below, wherever the party is named.
   { table: "lps", column: "name", what: "an LP", where: "status NOT IN ('prospect', 'passed')" },
   { table: "lp_record", column: "legal_name", what: "an LP" },
-  { table: "organizations", column: "name", what: "a counterparty" },
-  { table: "deals", column: "name", what: "a deal" },
-  { table: "investment_opportunity", column: "title", what: "a deal" },
-  { table: "investment_opportunity", column: "seller_name", what: "a counterparty" },
-  { table: "investment_opportunity", column: "broker_name", what: "a counterparty" },
-  { table: "capital_book_line", column: "asset", what: "a position" },
-  // boss fix L (23 Oct 2026), narrowed by the owner on 4 Nov 2026: the people who answered and the
-  // prospects she writes to are PUBLIC until they commit; from `committed_at` (migration 0339) their
-  // names reach no route that may train on them.
   { table: "lp_reply_drafts", column: "name", what: "an LP", where: "committed_at IS NOT NULL" },
   { table: "lp_reply_drafts", column: "firm", what: "an LP", where: "committed_at IS NOT NULL" },
   { table: "prospects", column: "name", what: "an LP", where: "committed_at IS NOT NULL" },
   { table: "prospects", column: "firm", what: "an LP", where: "committed_at IS NOT NULL" },
-];
+]
 
 /**
  * How many names the lexicon may hold before the scan declares itself unestablished.
@@ -345,6 +343,16 @@ export interface DeclaredAccess {
    * RECIPIENT and it must never again decide which models may see the work.
    */
   sensitivity?: string | null;
+  /**
+   * TEXT THIS RUN FETCHED FROM THE PUBLIC WEB (6 Nov 2026), each an exact substring of a message.
+   *
+   * A news page saying a guest's company "raised $5M at a $20M valuation" is public, not a deal term
+   * of ours, yet it trips the term patterns. So the PATTERN tiers do not read these spans. The
+   * committed-LP lexicon and the private-brain marks still read EVERYTHING, and a span that is not
+   * found verbatim in a message exempts nothing. It narrows where patterns look; it never lowers a
+   * declared label, an unestablished lexicon, or a name hit.
+   */
+  publicWebText?: readonly string[] | null;
 }
 
 /**
@@ -381,7 +389,13 @@ export function scanForModelAccess(
     return privateVerdict(["scan unavailable"], lexicon.note);
   }
 
-  const haystack = messages.map((m) => m.content).join("\n").toLowerCase();
+  const joined = messages.map((m) => m.content).join("\n");
+  // A private brain section is cut before any route (router/index.ts); one that is still here is
+  // refused here too, so the scan alone never calls it public.
+  if (hasConfidential(joined)) {
+    return privateVerdict(["a private part of a brain"], "this content carries a private part of a brain");
+  }
+  const haystack = joined.toLowerCase();
   if (!haystack) return PUBLIC_VERDICT;
 
   // ONE GENERIC LABEL FOR EVERY NAME HIT, deliberately. The lexicon is flat, and saying "an LP"
@@ -396,7 +410,13 @@ export function scanForModelAccess(
     }
   }
 
-  const instrument = FUND_INSTRUMENT_PATTERNS.filter((p) => p.re.test(haystack)).map((p) => p.what);
+  // Patterns read only what Boss OS itself wrote: public web text this run fetched is removed first.
+  let ours = haystack;
+  for (const span of declared.publicWebText ?? []) {
+    const t = typeof span === "string" ? span.toLowerCase() : "";
+    if (t.trim().length >= 40) ours = ours.split(t).join("\n");
+  }
+  const instrument = FUND_INSTRUMENT_PATTERNS.filter((p) => p.re.test(ours)).map((p) => p.what);
   if (instrument.length) {
     return privateVerdict([...new Set(instrument)], `this content carries ${[...new Set(instrument)].join(", ")}`);
   }
@@ -409,7 +429,7 @@ export function scanForModelAccess(
    * commitment wording is two different things saying the same thing, which is what corroboration
    * means.
    */
-  const ambiguous = [...new Set(AMBIGUOUS_TERM_PATTERNS.filter((p) => p.re.test(haystack)).map((p) => p.what))];
+  const ambiguous = [...new Set(AMBIGUOUS_TERM_PATTERNS.filter((p) => p.re.test(ours)).map((p) => p.what))];
   if (ambiguous.length >= AMBIGUOUS_CORROBORATION) {
     return privateVerdict(
       ambiguous,

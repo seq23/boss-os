@@ -154,6 +154,33 @@ function jsonIn(text: string): any {
   const m = /```json\s*([\s\S]*?)```/.exec(text) ?? /(\{[\s\S]*\})\s*$/.exec(text.trim());
   try { return m ? JSON.parse(m[1]!) : null; } catch { return null; }
 }
+/**
+ * GOOGLE'S GROUNDING LINKS ARE REDIRECTS (6 Nov 2026). Each source arrives as a ~250-character
+ * vertexaisearch.cloud.google.com link that expires; her prep showed those as "Source". Each is
+ * followed once (no body read) and replaced by the page it points to; one that will not resolve
+ * keeps Google's link, so a fact never loses its source.
+ */
+const GROUNDING_REDIRECT = /^https:\/\/vertexaisearch\.cloud\.google\.com\/grounding-api-redirect\//;
+async function followRedirect(url: string): Promise<string | null> {
+  const r = await fetch(url, { method: "HEAD", redirect: "manual" }).catch(() => null);
+  const loc = r?.headers.get("location") ?? null;
+  return loc && /^https:\/\//.test(loc) ? loc : null;
+}
+export async function realLinks(json: any, sources: { title: string; url: string }[], follow: (url: string) => Promise<string | null>) {
+  const urls = [...new Set(sources.map((s) => s.url).filter((u) => GROUNDING_REDIRECT.test(u)))];
+  const to = new Map<string, string>();
+  await Promise.all(urls.map(async (u) => { const real = await follow(u).catch(() => null); if (real) to.set(u, real); }));
+  const fix = (f: any) => (f && typeof f.url === "string" && to.has(f.url) ? { ...f, url: to.get(f.url) } : f);
+  const out = { ...json };
+  for (const k of ["title", "firm", "background", "focus"]) out[k] = fix(json[k]);
+  out.upcoming = Array.isArray(json.upcoming) ? json.upcoming.map(fix) : json.upcoming;
+  return { json: out, sources: sources.map((s) => (to.has(s.url) ? { ...s, url: to.get(s.url)! } : s)) };
+}
+
+/** Each page's text exactly as the prompt quotes it, so the router can find it verbatim. */
+export function publicSpans(prompt: string, pages: { text: string }[]): string[] {
+  return pages.map((p) => String(p.text ?? "").slice(0, 6000)).filter((t) => t.length && prompt.includes(t));
+}
 const sourcedCount = (j: any) => (j && j.found !== false ? ["title", "firm", "background", "focus"].filter((k) => j[k]).length + (j.upcoming?.length ?? 0) : 0);
 
 /**
@@ -177,6 +204,7 @@ export async function researchPerson(
   b: { name?: string | null; email?: string | null; firm?: string | null; domain?: string | null; today?: string | null },
   browse: (env: Env, url: string) => Promise<{ ok: boolean; text: string | null; finalUrl: string | null }> = (e, u) => browsePage(e as any, u),
   search: (env: Env, query: string) => Promise<{ ok: true; results: BraveResult[] } | { ok: false; detail: string }> = (e, q) => braveSearch(e.BRAVE_SEARCH_API_KEY, q),
+  follow: (url: string) => Promise<string | null> = followRedirect,
 ): Promise<any> {
   const name = b.name ?? null, email = b.email ?? null, firm = b.firm ?? null, domain = b.domain ?? null;
   const today = b.today ?? new Date().toISOString().slice(0, 10);
@@ -194,9 +222,10 @@ export async function researchPerson(
       messages: [{ role: "user", content: groundedSearchPrompt({ name, email, firm, domain, today }) }],
     });
     const sources = (r.sources ?? []).filter((s) => /^https:\/\//.test(s.url)).slice(0, 20);
-    const json = sources.length ? keepGroundedFacts(jsonIn(r.text), sources) : null;
+    const grounded = sources.length ? keepGroundedFacts(jsonIn(r.text), sources) : null;
+    const { json, sources: realSources } = grounded ? await realLinks(grounded, sources, follow) : { json: grounded, sources };
     if (json && json.found === false) return { ok: false, stop: "RESEARCH_NOT_FOUND", why: String(json.why ?? "Google found nothing that says who they are").slice(0, 160) };
-    if (sourcedCount(json)) return { ok: true, json, sources, via: "google_search" };
+    if (sourcedCount(json)) return { ok: true, json, sources: realSources, via: "google_search" };
     reasons.push(sources.length ? "Google search found nothing it could source" : "Google search returned no pages");
   } catch (e) {
     reasons.push(`Google search was not available (${String((e as Error)?.message ?? e).slice(0, 120)})`);
@@ -204,9 +233,12 @@ export async function researchPerson(
 
   // Pages → a free model writes from that text only; a fact is kept only when it cites one of them.
   const writeFrom = async (pages: { url: string; text: string }[]) => {
+    const content = writeFromPagesPrompt({ name, pages });
     const w = await routeCompletion(env, {
       ...base, jobKey: "meeting_prep_write", maxOutputTokens: 1200,
-      messages: [{ role: "user", content: writeFromPagesPrompt({ name, pages }) }],
+      messages: [{ role: "user", content }],
+      // The pages are public web text; deal-term patterns skip them, committed-LP names do not.
+      publicWebText: publicSpans(content, pages),
     });
     const sources = pages.map((p) => ({ title: p.url, url: p.url }));
     return { json: keepGroundedFacts(jsonIn(w.text), sources), sources };
