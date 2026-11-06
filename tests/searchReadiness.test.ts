@@ -136,7 +136,7 @@ describe("every grid repo site has a coverage manifest", () => {
   it("the two hyperlocal sites are seeded in full: towns in the radius, neighborhoods, anchors, service × town", () => {
     const senior = sites.grid_repos.find((s: any) => s.domain === "memphisseniorcarehomes.com");
     const pnp = sites.grid_repos.find((s: any) => s.domain === "porchandparty901.com");
-    for (const s of [senior, pnp]) {
+    for (const s of [senior]) {
       expect(s.kind).toBe("hyperlocal");
       for (const t of s.coverage.towns) expect(haversineMiles(s.coverage.center, t)).toBeLessThanOrEqual(s.coverage.radius_miles);
       const kinds = new Set(expandCoverage(s).map((t: any) => t.kind));
@@ -154,7 +154,25 @@ describe("every grid repo site has a coverage manifest", () => {
     expect(paths).toContain("/tunica-ms/");
     expect(paths).not.toContain("/assisted-living-tunica-ms/");
     expect(paths.filter((p: string) => /^\/(assisted-living|memory-care)-/.test(p)).length).toBe(28);
-    expect(expandCoverage(pnp).map((t: any) => t.path)).toContain("/areas/cordova-tn-grazing-tables");
+    // Porch & Party folded its locality pages into the service hubs with 301s (p-n-p #180, 4 Nov 2026):
+    // its coverage is the hubs the towns now land on, never the folded /areas/ matrix.
+    expect(pnp.kind).toBe("hyperlocal");
+    for (const t of pnp.coverage.towns) expect(haversineMiles(pnp.coverage.center, t)).toBeLessThanOrEqual(pnp.coverage.radius_miles);
+    const pnpTargets = expandCoverage(pnp);
+    expect(pnpTargets.map((t: any) => t.kind).every((k: string) => k === "hub")).toBe(true);
+    expect(pnpTargets.map((t: any) => t.path)).toEqual(expect.arrayContaining(["/areas/", "/services/celebration-setups", "/services/hotel-room-decor-memphis"]));
+    expect(pnpTargets.map((t: any) => t.path)).not.toContain("/areas/cordova-tn-grazing-tables");
+    expect(coverageProblems(pnp)).toEqual([]);
+  });
+
+  it("a hyperlocal site may drop neighborhoods and anchors only when it says they were folded and names the hubs", () => {
+    const base = { domain: "x.com", coverage: { model: "hyperlocal", why: "a hyperlocal test site with five towns", center: { lat: 35, lng: -90 }, radius_miles: 35, towns: Array.from({ length: 5 }, (_, i) => ({ name: `T${i}`, slug: `t${i}`, lat: 35, lng: -90, services: [], services_why: "folded into the service hubs with 301s" })), services: [{ name: "S", slug: "s" }], url_patterns: { service_town: "/areas/{town}-{service}" } } };
+    expect(coverageProblems(base)).toEqual(expect.arrayContaining(["hyperlocal needs neighborhoods", "hyperlocal needs local anchors (hospitals, venues)"]));
+    const folded = { ...base, coverage: { ...base.coverage, folded_why: "folded into the service hubs with 301s, p-n-p #180, 4 Nov 2026" } };
+    expect(coverageProblems(folded)).toContain("a folded hyperlocal site names the hubs its places now land on (hubs)");
+    const withHubs = { ...folded, coverage: { ...folded.coverage, hubs: [{ name: "Areas", path: "/areas/" }] } };
+    expect(coverageProblems(withHubs)).toEqual([]);
+    expect(expandCoverage(withHubs)).toEqual([{ kind: "hub", name: "Areas", path: "/areas/" }]);
   });
 
   it("a town that narrows its services must say why", () => {

@@ -603,7 +603,7 @@
    "label": "Porch & Party",
    "coverage": {
     "model": "hyperlocal",
-    "why": "Memphis and its suburbs: every service in every town is an /areas/ page, plus the Memphis neighborhoods and the hotels people book room setups in.",
+    "why": "Memphis and its suburbs. The per-town /areas/ pages, the neighborhood pages and the hotel pages were folded into the service hubs with 301s (p-n-p #180, 4 Nov 2026); the freeze on its pages was lifted 1 Nov 2026. The hubs are what a town search now lands on.",
     "center": {
      "name": "Memphis, TN",
      "lat": 35.1495,
@@ -615,137 +615,105 @@
       "name": "Memphis, TN",
       "slug": "memphis-tn",
       "lat": 35.1495,
-      "lng": -90.049
+      "lng": -90.049,
+      "services": [],
+      "services_why": "folded into the service hubs with 301s, p-n-p #180, 4 Nov 2026"
      },
      {
       "name": "Germantown, TN",
       "slug": "germantown-tn",
       "lat": 35.0868,
-      "lng": -89.8101
+      "lng": -89.8101,
+      "services": [],
+      "services_why": "folded into the service hubs with 301s, p-n-p #180, 4 Nov 2026"
      },
      {
       "name": "Collierville, TN",
       "slug": "collierville-tn",
       "lat": 35.042,
-      "lng": -89.6645
+      "lng": -89.6645,
+      "services": [],
+      "services_why": "folded into the service hubs with 301s, p-n-p #180, 4 Nov 2026"
      },
      {
       "name": "Bartlett, TN",
       "slug": "bartlett-tn",
       "lat": 35.2045,
-      "lng": -89.874
+      "lng": -89.874,
+      "services": [],
+      "services_why": "folded into the service hubs with 301s, p-n-p #180, 4 Nov 2026"
      },
      {
       "name": "Cordova, TN",
       "slug": "cordova-tn",
       "lat": 35.1557,
-      "lng": -89.7762
+      "lng": -89.7762,
+      "services": [],
+      "services_why": "folded into the service hubs with 301s, p-n-p #180, 4 Nov 2026"
      },
      {
       "name": "Arlington, TN",
       "slug": "arlington-tn",
       "lat": 35.2962,
-      "lng": -89.6615
+      "lng": -89.6615,
+      "services": [],
+      "services_why": "folded into the service hubs with 301s, p-n-p #180, 4 Nov 2026"
      },
      {
       "name": "Lakeland, TN",
       "slug": "lakeland-tn",
       "lat": 35.2306,
-      "lng": -89.7406
+      "lng": -89.7406,
+      "services": [],
+      "services_why": "folded into the service hubs with 301s, p-n-p #180, 4 Nov 2026"
      },
      {
       "name": "Millington, TN",
       "slug": "millington-tn",
       "lat": 35.3415,
-      "lng": -89.8973
+      "lng": -89.8973,
+      "services": [],
+      "services_why": "folded into the service hubs with 301s, p-n-p #180, 4 Nov 2026"
      },
      {
       "name": "Oakland, TN",
       "slug": "oakland-tn",
       "lat": 35.229,
-      "lng": -89.5151
+      "lng": -89.5151,
+      "services": [],
+      "services_why": "folded into the service hubs with 301s, p-n-p #180, 4 Nov 2026"
      },
      {
       "name": "Southaven, MS",
       "slug": "southaven-ms",
       "lat": 34.9889,
-      "lng": -90.0126
+      "lng": -90.0126,
+      "services": [],
+      "services_why": "folded into the service hubs with 301s, p-n-p #180, 4 Nov 2026"
      },
      {
       "name": "Olive Branch, MS",
       "slug": "olive-branch-ms",
       "lat": 34.9618,
-      "lng": -89.8295
+      "lng": -89.8295,
+      "services": [],
+      "services_why": "folded into the service hubs with 301s, p-n-p #180, 4 Nov 2026"
      },
      {
       "name": "Horn Lake, MS",
       "slug": "horn-lake-ms",
       "lat": 34.9554,
-      "lng": -90.0348
+      "lng": -90.0348,
+      "services": [],
+      "services_why": "folded into the service hubs with 301s, p-n-p #180, 4 Nov 2026"
      },
      {
       "name": "Hernando, MS",
       "slug": "hernando-ms",
       "lat": 34.824,
-      "lng": -89.9937
-     }
-    ],
-    "neighborhoods": [
-     {
-      "name": "East Memphis",
-      "slug": "east-memphis-tn"
-     },
-     {
-      "name": "Midtown",
-      "slug": "midtown-memphis-tn"
-     },
-     {
-      "name": "Downtown",
-      "slug": "downtown-memphis-tn"
-     },
-     {
-      "name": "Cooper-Young",
-      "slug": "cooper-young-memphis-tn"
-     },
-     {
-      "name": "Whitehaven",
-      "slug": "whitehaven-memphis-tn"
-     },
-     {
-      "name": "Raleigh",
-      "slug": "raleigh-memphis-tn"
-     }
-    ],
-    "anchors": [
-     {
-      "name": "The Peabody Memphis",
-      "slug": "the-peabody-memphis",
-      "type": "hotel"
-     },
-     {
-      "name": "The Guest House at Graceland",
-      "slug": "guest-house-at-graceland",
-      "type": "hotel"
-     },
-     {
-      "name": "The Central Station Memphis",
-      "slug": "the-central-station-memphis",
-      "type": "hotel"
-     },
-     {
-      "name": "Hu. Hotel",
-      "slug": "hu-hotel-memphis",
-      "type": "hotel"
-     },
-     {
-      "name": "The Westin Memphis Beale Street",
-      "slug": "westin-memphis-beale-street",
-      "type": "hotel"
-     },
-     {
-      "name": "The Madison Hotel",
-      "slug": "the-madison-hotel-memphis",
-      "type": "hotel"
+      "lng": -89.9937,
+      "services": [],
+      "services_why": "folded into the service hubs with 301s, p-n-p #180, 4 Nov 2026"
      }
     ],
     "services": [
@@ -767,10 +735,39 @@
      }
     ],
     "url_patterns": {
-     "service_town": "/areas/{town}-{service}",
-     "neighborhood": "/areas/{slug}-party-decor",
-     "anchor": "/areas/{slug}-hotel-room-decor"
-    }
+     "service_town": "/areas/{town}-{service}"
+    },
+    "folded_why": "folded into the service hubs with 301s, p-n-p #180, 4 Nov 2026",
+    "hubs": [
+     {
+      "name": "Service areas directory",
+      "path": "/areas/"
+     },
+     {
+      "name": "Celebration setups (where the town party pages now land)",
+      "path": "/services/celebration-setups"
+     },
+     {
+      "name": "Hotel room decor (where the hotel pages now land)",
+      "path": "/services/hotel-room-decor-memphis"
+     },
+     {
+      "name": "Party decor",
+      "path": "/services/party-decor-memphis"
+     },
+     {
+      "name": "Grazing tables",
+      "path": "/services/grazing-tables-memphis"
+     },
+     {
+      "name": "Porch decorating",
+      "path": "/services/porch-decorating"
+     },
+     {
+      "name": "Party game rentals",
+      "path": "/rentals/giant-lawn-games-memphis"
+     }
+    ]
    },
    "search_loop": {
     "wave": 3
@@ -1105,7 +1102,11 @@
    "owner_approval": "owner, 3 Nov 2026: \"she cares deeply about her site so i need to approve any changes to hicks live published site and published resources\". Every repair of a published core page (home, about, services, contact, /black-therapist-memphis/ and the other landing pages), any change to a published post's title or topic, and any unpublishing or deletion waits for her yes; new scheduled Resources posts still auto-publish and unpublished drafts may be rewritten.",
    "owner_approval_direct_repairs": {
     "why": "owner, 3 Nov 2026: \"if it has repairs for already published resources they should just fix them not queue\". A repair (broken links, meta, schema, canonical, FAQ, headings, speed, accessibility, a fact the page cannot back) whose every page is a published post under these paths is fixed and landed like any other site. Read by src/shared/boss/searchReadiness/ownerApproval.mjs.",
-    "paths": ["/resources/", "/insights/", "/questions/"]
+    "paths": [
+     "/resources/",
+     "/insights/",
+     "/questions/"
+    ]
    },
    "repo": "hicks-consulting-canonical",
    "category": "client",
