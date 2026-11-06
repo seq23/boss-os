@@ -249,7 +249,7 @@ export async function runFreeResearch(
 /** File Camille's page from a free rung, complete the task and write the "Done" notice. */
 async function fileFreePage(
   env: Env, task: any, input: Record<string, unknown>, t: { id: string; lane: string; title: string },
-  out: Extract<GroundedOutcome, { state: "done" }>, employeeName: string | null, via: string,
+  out: Extract<GroundedOutcome, { state: "done" }>, _employeeName: string | null, via: string,
 ): Promise<void> {
   const now = Date.now();
   const { researchPageUrl } = await import("../../../shared/boss/research/page.mjs");
@@ -270,19 +270,5 @@ async function fileFreePage(
     env.DB.prepare(`INSERT INTO task_events (id, task_id, ts, event, detail) VALUES (?,?,?,'completed',?)`)
       .bind(newId("tev"), t.id, now, JSON.stringify({ via, model: out.model, research_page_id: pageId, sources: out.page.sources.length, gaps: out.page.gaps.length })),
   ]);
-  await noticeOnce(env, {
-    task: t, fromName: employeeName ?? "Camille", kind: `done#${Number(task.attempts ?? 0)}`,
-    subject: `Done: ${out.page.title.slice(0, 120)}`,
-    lines: [
-      `Your research is ready: ${out.page.title}.`,
-      "",
-      "Nothing to decide — this is just so you know.",
-      "",
-      out.page.summary.replace(/\s*\[\d+\]/g, ""),
-      "",
-      `Read the full page: ${url}`,
-      "",
-      `Every fact on it is tied to a page a search found (${out.page.sources.length} sources).${out.page.gaps.length ? ` What I could not confirm is listed at the end (${out.page.gaps.length} items).` : ""}`,
-    ],
-  });
+  // The Done notice is written by fileResearchPage, the one place every rung and seat files a page.
 }

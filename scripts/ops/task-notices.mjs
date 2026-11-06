@@ -36,6 +36,8 @@
 import { sendersFor, employeeMail, postEmployeeMail, FALLBACK_STOP } from "./notify.mjs";
 import { vaultLookup } from "../lib/vault-env.mjs";
 import { layoutProblem } from "../../src/shared/boss/mail/plain.mjs";
+import { researchDoneLayout, researchPageIdIn } from "../../src/shared/boss/research/doneEmail.mjs";
+import { researchPageUrl } from "../../src/shared/boss/research/page.mjs";
 
 /*
  * ─── A "STOPPED" EMAIL IS A PROBLEM EMAIL, AND ONLY WHILE IT IS TRUE (owner, 23 Oct 2026, rule 3) ───
@@ -129,6 +131,27 @@ async function api(path, body) {
   return { ok: res.ok, status: res.status, data: json?.data ?? null, error: json?.error ?? null };
 }
 
+/**
+ * A RESEARCH PAGE'S DONE NOTICE IS LAID OUT FROM THE PAGE (repair, 6 Nov 2026): the answer, the
+ * 1-minute summary, the key numbers and the gaps in the body, one "Open the full report ›" link
+ * (`researchDoneLayout`). Pure: `page` is the filed page as data, or null to send the row's own text.
+ */
+export function researchDoneEmail(notice, page, who) {
+  if (!String(notice?.kind ?? "").startsWith("done") || !page || page.state !== "delivered") return null;
+  const id = researchPageIdIn(notice.body);
+  if (!id || id !== page.id) return null;
+  return researchDoneLayout({ who: who ?? notice.from_name ?? "Camille", subject: notice.subject, page, url: researchPageUrl(id), refs: [String(notice.task_id ?? "")].filter((r) => /^tsk_/.test(r)) });
+}
+
+/** The filed page behind a research Done notice, as data; null when it is not one or cannot be read. */
+async function researchPageOf(notice) {
+  const id = String(notice?.kind ?? "").startsWith("done") ? researchPageIdIn(notice.body) : null;
+  if (!id) return null;
+  const res = await fetch(`${ORIGIN}/api/boss/research/pages/${encodeURIComponent(id)}?format=json`, { headers: { cookie } }).catch(() => null);
+  if (!res?.ok) return null;
+  return (await res.json().catch(() => ({})))?.data ?? null;
+}
+
 /** The task behind a notice, read fresh: `{ read, task }`. A failed read sends the notice as before. */
 async function taskOf(id) {
   if (!id) return { read: false, task: null };
@@ -144,10 +167,10 @@ async function taskOf(id) {
  * Returns the refusal text, or null when it went. Every sender on the roster's list is tried before
  * it is called a failure — the second is The Industry Guides fallback, and using it is itself reported.
  */
-export async function sendNotice(notice, { fetchImpl = fetch, to = TO, task = null } = {}) {
+export async function sendNotice(notice, { fetchImpl = fetch, to = TO, task = null, page = null } = {}) {
   const senders = sendersFor(notice.from_name);
   if (senders.length === 0) return "no Resend key in the environment (BOSS_OS_MAIL_KEY / BOSS_OS_FALLBACK_MAIL_KEY)";
-  const prelaid = notice.kind === "stopped" ? stoppedEmail(notice, task) : null;
+  const prelaid = notice.kind === "stopped" ? stoppedEmail(notice, task) : researchDoneEmail(notice, page, senders[0]?.name);
   let last = "";
   for (const sender of senders) {
     const res = await postEmployeeMail(sender, employeeMail(sender, { to, subject: notice.subject, text: notice.body, prelaid }), fetchImpl);
@@ -227,7 +250,8 @@ async function main() {
       continue;
     }
     if (ask.body) notice.body = ask.body;
-    const error = await sendNotice(notice, { task });
+    const page = await researchPageOf(notice);
+    const error = await sendNotice(notice, { task, page });
     for (const n of [notice, ...also]) {
       const report = error ? await api(`/${n.id}/failed`, { error }) : await api(`/${n.id}/sent`, { from: n === notice ? notice.from_name : `merged into the email for ${notice.id}` });
       if (!report.ok) say(`could not record the outcome of ${n.id}: ${report.status} ${report.error ?? ""}`);

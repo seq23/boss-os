@@ -89,11 +89,11 @@ describe("the one-tap page path reaches the tap route", () => {
     expect(tapPageToBossPath(`/tap/${"a".repeat(24)}`)).toBe(`/api/boss/auth/tap/${"a".repeat(24)}`);
     for (const p of ["/tap/short", `/tap/${"a".repeat(24)}/x`, "/taps/" + "a".repeat(24), "/api/boss/auth/tap/" + "a".repeat(24)]) expect(tapPageToBossPath(p), p).toBeNull();
   });
-  it("wrangler runs the Worker first for /tap/* and /api/* in every environment (a tapped link is a navigation)", () => {
+  it("wrangler runs the Worker first for /tap/*, /research/* and /api/* in every environment (a tapped link is a navigation)", () => {
     const toml = readFileSync(join(__dirname, "..", "wrangler.toml"), "utf8");
     const blocks = toml.split(/\n\[/).filter((b) => /^(?:env\.production\.)?assets\]/.test(b));
     expect(blocks).toHaveLength(2);
-    for (const b of blocks) expect(b).toMatch(/run_worker_first = \["\/tap\/\*", "\/api\/\*"\]/);
+    for (const b of blocks) expect(b).toMatch(/run_worker_first = \["\/tap\/\*", "\/research\/\*", "\/api\/\*"\]/);
   });
 });
 
