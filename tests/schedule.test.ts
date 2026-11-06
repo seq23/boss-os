@@ -262,6 +262,21 @@ describe("the Spry Labs weekly", () => {
       expect(section.items).toContain("Industry Guides: Published 22 pages · 76 indexed · 8 AI visitors · 4 form fills · 4 wins, 2 undone, 3 merged · cap 40 pages, 4 waiting, 1 sent to existing pages (2 sites).");
     });
 
+    it("a business whose sites run different engines adds up the caps it read and says how many sites have none", () => {
+      const loop = all({ weeks: [], adopted: false });
+      loop["local-guides-citation-velocity"] = { weeks: [week("theindustryguides.com", { published: 13, cap: { max_live_pages: 13, live: 13, room: 0, why: "start" }, held_by_cap: 0, redirected: [] })], adopted: true };
+      loop["local-guides-generator"] = { weeks: [week("uscisexam.com", { published: 0, cap: undefined, held_by_cap: undefined, redirected: undefined }), week("dentistryguides.com", { published: 0, cap: undefined, held_by_cap: undefined, redirected: undefined })], adopted: true };
+      const { section } = loopSection(loop, { now });
+      const ig = section.items.find((i: string) => i.startsWith("Industry Guides"))!;
+      expect(ig).toMatch(/cap 13 pages, 0 waiting \(2 of 3 sites report no cap\) \(3 sites\)\.$/);
+      expect(ig).not.toMatch(/the page cap not read/);
+      // Every site without a cap: still not read, never a 0 cap.
+      loop["local-guides-citation-velocity"] = { weeks: [], adopted: false };
+      const only = loopSection(loop, { now }).section.items.find((i: string) => i.startsWith("Industry Guides"))!;
+      expect(only).toMatch(/the page cap not read/);
+      expect(only).not.toMatch(/cap 0 pages/);
+    });
+
     it("rule 0: not adopted says not started yet; adopted with nothing fresh says it did not arrive; a missing number is not read, never 0", () => {
       const loop = all({ weeks: [], adopted: false });
       loop["dailystory"] = { weeks: [week("time-2-read.com", { generated_at: "2026-10-20T12:00:00Z" })], adopted: true };
