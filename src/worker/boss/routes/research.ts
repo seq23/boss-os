@@ -19,6 +19,7 @@ import { groundedSearchPrompt, writeFromPagesPrompt, keepGroundedFacts, guestPag
 import { browsePage } from "../../effects/browserClient";
 import { braveSearch, type BraveResult } from "../../effects/braveSearchClient";
 import { claimFreeSearch } from "../research/searchQuota";
+import { GROUNDING_REDIRECT, followGroundingLink } from "../../effects/groundingLinkClient";
 
 export const research = new Hono<{ Bindings: Env; Variables: Vars }>();
 
@@ -160,12 +161,6 @@ function jsonIn(text: string): any {
  * followed once (no body read) and replaced by the page it points to; one that will not resolve
  * keeps Google's link, so a fact never loses its source.
  */
-const GROUNDING_REDIRECT = /^https:\/\/vertexaisearch\.cloud\.google\.com\/grounding-api-redirect\//;
-async function followRedirect(url: string): Promise<string | null> {
-  const r = await fetch(url, { method: "HEAD", redirect: "manual" }).catch(() => null);
-  const loc = r?.headers.get("location") ?? null;
-  return loc && /^https:\/\//.test(loc) ? loc : null;
-}
 export async function realLinks(json: any, sources: { title: string; url: string }[], follow: (url: string) => Promise<string | null>) {
   const urls = [...new Set(sources.map((s) => s.url).filter((u) => GROUNDING_REDIRECT.test(u)))];
   const to = new Map<string, string>();
@@ -204,7 +199,7 @@ export async function researchPerson(
   b: { name?: string | null; email?: string | null; firm?: string | null; domain?: string | null; today?: string | null },
   browse: (env: Env, url: string) => Promise<{ ok: boolean; text: string | null; finalUrl: string | null }> = (e, u) => browsePage(e as any, u),
   search: (env: Env, query: string) => Promise<{ ok: true; results: BraveResult[] } | { ok: false; detail: string }> = (e, q) => braveSearch(e.BRAVE_SEARCH_API_KEY, q),
-  follow: (url: string) => Promise<string | null> = followRedirect,
+  follow: (url: string) => Promise<string | null> = followGroundingLink,
 ): Promise<any> {
   const name = b.name ?? null, email = b.email ?? null, firm = b.firm ?? null, domain = b.domain ?? null;
   const today = b.today ?? new Date().toISOString().slice(0, 10);
