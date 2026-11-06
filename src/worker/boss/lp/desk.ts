@@ -12,9 +12,11 @@ import { storeWarmReferences } from "./references";
 import { pauseReason, inSendWindow, dailyCap, DAY_MS } from "../outreach/brakes";
 import { isSuppressed, suppress } from "../outreach/suppression";
 import { readSettings } from "../outreach/engine";
+import { getNumber } from "../lib/settings";
+import { complaintStop } from "../../../shared/boss/outreach/cadence.mjs";
 import {
   DEFAULT_PROSPECT_TEMPLATE, MAX_NEW_PER_DAY, MAX_TOUCHES, dueTouch, nextTouchAt, excluded, prospectProblems, renderProspect,
-  templateHash, verdictGate, PROSPECT_VARIANTS, templateAsksForCall, applyTemplateNotes, featuredNamesProblems, type Template, type ProspectForecast,
+  templateHash, verdictGate, hasTouchWords, PROSPECT_VARIANTS, templateAsksForCall, applyTemplateNotes, featuredNamesProblems, type Template, type ProspectForecast,
 } from "../../../shared/boss/lp/plan.mjs";
 
 /** 144 random bits, url-safe. The tap links carry it and nothing else. */
@@ -206,7 +208,10 @@ export async function proposeTemplate(db: D1Database, t: Template | null, names:
   const sample = renderProspect(template, { first: "Alex", names });
   const follow = renderProspect(template, { first: "Alex", names, touch: 2 });
   // Her standing rules (names as examples, no fake "Re:") are part of the check (25 Oct 2026).
-  const problems = [...prospectProblems(sample, names), ...prospectProblems({ subject: "", body: follow.body }, names).map((p) => `follow-up ${p}`)];
+  // Touches 3 and 4 (6 Nov 2026) are checked by the same rules, word for word, before she sees them.
+  const later = [3, 4].filter((n) => hasTouchWords(template, n))
+    .flatMap((n) => prospectProblems({ subject: "", body: renderProspect(template, { first: "Alex", names, touch: n }).body }, names).map((p) => `email ${n} ${p}`));
+  const problems = [...prospectProblems(sample, names), ...prospectProblems({ subject: "", body: follow.body }, names).map((p) => `follow-up ${p}`), ...later];
   if (problems.length) return { ok: false as const, problems };
   const hash = templateHash(template, names);
   const existing = await db.prepare(`SELECT * FROM prospect_templates WHERE hash = ?`).bind(hash).first<any>();
@@ -223,9 +228,9 @@ export async function proposeTemplate(db: D1Database, t: Template | null, names:
   await db.batch([
     db.prepare(`UPDATE prospect_templates SET status = 'retired' WHERE status = 'pending'`),
     db.prepare(
-      `INSERT INTO prospect_templates (id, hash, subject, body, follow_up, names_json, status, tap_token, created_at, variant, change_notes, parent_id)
-       VALUES (?,?,?,?,?,?, 'pending', ?, ?, ?, ?, ?)`,
-    ).bind(row.id, hash, template.subject, template.body, template.follow_up, JSON.stringify(names), row.tap_token, now,
+      `INSERT INTO prospect_templates (id, hash, subject, body, follow_up, follow_up_2, follow_up_3, names_json, status, tap_token, created_at, variant, change_notes, parent_id)
+       VALUES (?,?,?,?,?,?,?,?, 'pending', ?, ?, ?, ?, ?)`,
+    ).bind(row.id, hash, template.subject, template.body, template.follow_up, template.follow_up_2 ?? null, template.follow_up_3 ?? null, JSON.stringify(names), row.tap_token, now,
       Number(meta.variant ?? 0), meta.notes?.length ? JSON.stringify(meta.notes.slice(-50)) : null, meta.parentId ?? null),
   ]);
   return { ok: true as const, template: await db.prepare(`SELECT * FROM prospect_templates WHERE id = ?`).bind(row.id).first<any>(), created: true };
@@ -264,7 +269,7 @@ export async function redraftTemplate(db: D1Database, id: string, input: { notes
   const note = String(input.notes ?? "").trim();
   const notes = [...prior, ...(note ? [note] : []), ...(input.tryAgain ? ["try again"] : [])];
   const variant = input.tryAgain ? (Number(row.variant ?? 0) + 1) % PROSPECT_VARIANTS.length : Number(row.variant ?? 0);
-  const stored: Template = { subject: row.subject, body: row.body, follow_up: row.follow_up };
+  const stored: Template = storedTemplate(row);
   // A draft written before a standing rule existed (a "Re:" subject, a closed list of names) starts
   // again from its own template as the rules now write it, then takes her words.
   const breaksStanding = featuredNamesProblems(renderProspect(stored, { first: "Alex", names }), names).length > 0
@@ -276,12 +281,30 @@ export async function redraftTemplate(db: D1Database, id: string, input: { notes
   return { ok: true as const, template: r.template, applied: edited.applied, kept: edited.kept, created: r.created };
 }
 
-/** Health over the last 14 days of prospect touches, for the shared bounce brake. */
+/** A template row's words, touches 3 and 4 included when she approved them (6 Nov 2026). */
+export function storedTemplate(row: any): Template {
+  return {
+    subject: row.subject, body: row.body, follow_up: row.follow_up,
+    ...(row.follow_up_2 ? { follow_up_2: row.follow_up_2 } : {}),
+    ...(row.follow_up_3 ? { follow_up_3: row.follow_up_3 } : {}),
+  };
+}
+
+/** Lifting a complaint pause is hers: this setting holds the moment she lifted it (ms). */
+export const PROSPECT_COMPLAINT_LIFTED_KEY = "prospects.complaint_pause_lifted_at";
+
+/**
+ * Health over the last 14 days of prospect touches, for the shared bounce brake, and every spam
+ * complaint since she last lifted the pause (owner, 6 Nov 2026): a complaint pauses the whole
+ * sequence and the pause never lifts itself.
+ */
 async function prospectHealth(db: D1Database, now: number) {
   const since = now - 14 * DAY_MS;
   const sent = await db.prepare(`SELECT COUNT(*) AS n FROM prospect_touches WHERE sent_at >= ?`).bind(since).first<{ n: number }>();
   const bounced = await db.prepare(`SELECT COUNT(*) AS n FROM prospects WHERE status = 'bounced' AND updated_at >= ?`).bind(since).first<{ n: number }>();
-  return { sent: Number(sent?.n ?? 0), bounced: Number(bounced?.n ?? 0), complaints: 0 };
+  const lifted = await getNumber(db, PROSPECT_COMPLAINT_LIFTED_KEY, 0);
+  const complaints = await db.prepare(`SELECT COUNT(*) AS n FROM outreach_suppression WHERE reason = 'complaint' AND source = 'prospects' AND created_at > ?`).bind(lifted).first<{ n: number }>();
+  return { sent: Number(sent?.n ?? 0), bounced: Number(bounced?.n ?? 0), complaints: Number(complaints?.n ?? 0) };
 }
 
 const chicagoDay = (ms: number) => new Intl.DateTimeFormat("en-CA", { timeZone: "America/Chicago" }).format(new Date(ms));
@@ -305,7 +328,11 @@ export async function prospectPlan(db: D1Database, now = Date.now()) {
   if (settings.killSwitch) blocked.push("the outreach kill switch is on.");
   const dryRun = settings.sending !== "live";
   if (dryRun) blocked.push("outreach sending is not switched to live.");
-  const paused = pauseReason(await prospectHealth(db, now));
+  const health = await prospectHealth(db, now);
+  // A spam complaint stops EVERY prospect email, confirmed-valid or not, until she lifts it (6 Nov 2026).
+  const complaint = health.complaints > 0 ? complaintStop("the brokerage prospect sequence", health.complaints) : null;
+  if (complaint) { stops.push(complaint); blocked.push(complaint); }
+  const paused = complaint ? null : pauseReason(health);
   if (!inSendWindow(now)) stops.push("Outside the sending window (weekdays 9 to 5 Central).");
   const lists = await readExclusions(db);
   if (!lists.established) blocked.push(`her lists could not be read (${lists.note}).`);
@@ -329,10 +356,14 @@ export async function prospectPlan(db: D1Database, now = Date.now()) {
     FROM prospects p WHERE p.status IN ('new','active') ORDER BY p.touches DESC, p.created_at ASC LIMIT 400`).all<any>()).results ?? [];
   const go: Array<{ p: any; touch: number }> = [];
   const count = { invalid: 0, risky: 0, unverified: 0 };
-  if (lists.established) {
+  let awaiting = 0;
+  const words: Template | null = tpl ? storedTemplate(tpl) : null;
+  if (lists.established && !complaint) {
     for (const p of rows) {
       const touch = dueTouch(p, now);
       if (!touch) continue;
+      // Emails 3 and 4 go only in words she approved; until then they wait, and the card says so.
+      if (touch >= 3 && !hasTouchWords(words, touch)) { awaiting++; continue; }
       if (dayLeft <= 0) break;
       if (touch === 1 && newLeft <= 0) continue;
       // A follow-up is a reply in the thread it follows, or it does not go.
@@ -355,18 +386,24 @@ export async function prospectPlan(db: D1Database, now = Date.now()) {
     first: blocked.length ? 0 : go.filter((g) => g.touch === 1).length,
     follow: blocked.length ? 0 : go.filter((g) => g.touch > 1).length,
     invalid: Number(stopped?.invalid ?? 0) + count.invalid, risky: count.risky, unverified: count.unverified,
-    bounced: Number(stopped?.bounced ?? 0), paused: paused ?? null, blocked,
+    bounced: Number(stopped?.bounced ?? 0), paused: paused ?? null, blocked, awaiting, complaint,
   };
   // The brake on and nothing confirmed valid: nothing goes, and it says why.
   if (paused && !go.length) stops.push(paused);
   if (stops.length) return { sends: [], stops, dryRun, template: tpl ?? null, forecast, held: count };
 
   const names = JSON.parse(tpl!.names_json ?? "[]");
-  const approved: Template = { subject: tpl!.subject, body: tpl!.body, follow_up: tpl!.follow_up };
+  const approved: Template = storedTemplate(tpl);
   // Approved before agents stopped suggesting calls (owner, 1 Nov 2026): its own variant's words as
   // they are now written, with the names she approved. Nothing that asks for a call goes out.
   const template: Template = templateAsksForCall(approved)
-    ? { ...(PROSPECT_VARIANTS[Number(tpl!.variant ?? 0) % PROSPECT_VARIANTS.length] as Template), subject: approved.subject }
+    ? (() => {
+        // The variant's words stand in for a call-asking template; emails 3 and 4 only if she approved some.
+        const v = { ...(PROSPECT_VARIANTS[Number(tpl!.variant ?? 0) % PROSPECT_VARIANTS.length] as Template), subject: approved.subject };
+        if (!approved.follow_up_2) delete v.follow_up_2;
+        if (!approved.follow_up_3) delete v.follow_up_3;
+        return v;
+      })()
     : approved;
   const sends = go.map(({ p, touch }, i) => {
     const r = renderProspect(template, { first: (p.name ?? "").split(/\s+/)[0], names, touch, variant: i });
@@ -483,7 +520,7 @@ export async function backfillTouches(db: D1Database, touches: Array<{ email: st
 
 export interface ProspectEvent {
   prospect_id?: string; email?: string;
-  kind: "sent" | "interested" | "replied" | "opt_out" | "bounce" | "ooo";
+  kind: "sent" | "interested" | "replied" | "opt_out" | "bounce" | "ooo" | "complaint";
   touch?: number; gmail_id?: string | null; thread_id?: string | null; message_id?: string | null; subject?: string | null;
   side?: string | null; note?: string | null; draft_id?: string | null; body?: string | null; template_id?: string | null;
 }
@@ -499,7 +536,7 @@ export async function recordProspectEvents(db: D1Database, events: ProspectEvent
     n++;
     if (e.kind === "sent") {
       const touch = Number(e.touch ?? p.touches + 1);
-      if (touch !== Number(p.touches) + 1 || touch > MAX_TOUCHES) continue; // one follow-up at most, never a third
+      if (touch !== Number(p.touches) + 1 || touch > MAX_TOUCHES) continue; // four emails at most, never a fifth
       await db.batch([
         // The words that went, kept (0296): her morning email and the Prospects screen show each send.
         db.prepare(`INSERT OR IGNORE INTO prospect_touches (id, prospect_id, touch_no, gmail_id, template_id, sent_at, subject, body, sent_from) VALUES (?,?,?,?,?,?,?,?,?)`)
@@ -514,12 +551,19 @@ export async function recordProspectEvents(db: D1Database, events: ProspectEvent
       continue;
     }
     if (e.kind === "ooo") continue; // an autoresponder is not a reply; the sequence carries on
-    const status = e.kind === "interested" ? "interested" : e.kind === "opt_out" ? "opted_out" : e.kind === "bounce" ? "bounced" : "replied";
+    // A complaint is an opt-out for that person AND pauses the whole sequence (prospectHealth).
+    const status = e.kind === "interested" ? "interested" : e.kind === "opt_out" || e.kind === "complaint" ? "opted_out" : e.kind === "bounce" ? "bounced" : "replied";
     const side = ["buyer", "seller", "both", "unknown"].includes(String(e.side)) ? e.side : p.side ?? "unknown";
     await db.prepare(`UPDATE prospects SET status = ?, side = ?, reply_note = COALESCE(?, reply_note), draft_id = COALESCE(?, draft_id),
         draft_tap_token = CASE WHEN ? = 'interested' THEN COALESCE(draft_tap_token, ?) ELSE draft_tap_token END, updated_at = ? WHERE id = ?`)
       .bind(status, side, e.note ? String(e.note).slice(0, 240) : null, e.draft_id ?? null, status, tapToken(), now, p.id).run();
-    if (e.kind === "opt_out" || e.kind === "bounce") await suppress(db, p.email, e.kind === "opt_out" ? "opted_out" : "bounced", "prospects", now);
+    if (e.kind === "opt_out" || e.kind === "bounce" || e.kind === "complaint") {
+      await suppress(db, p.email, e.kind === "opt_out" ? "opted_out" : e.kind === "complaint" ? "complaint" : "bounced", "prospects", now);
+    }
+    if (e.kind === "complaint") {
+      // Already suppressed for another reason: the complaint still counts, so the pause is never missed.
+      await db.prepare(`UPDATE outreach_suppression SET reason = 'complaint', source = 'prospects', created_at = ? WHERE value = ? AND kind = 'email'`).bind(now, String(p.email).toLowerCase()).run();
+    }
   }
   return n;
 }

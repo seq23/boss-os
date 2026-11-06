@@ -49,6 +49,7 @@ export const GUIDES_SIGNER = "S.L. Taylor";
 
 
 import { FOLLOW_UP_AFTER_DAYS, GROUPS_KEY, NEW_GROUPS_PER_WEEKDAY } from "../../../shared/boss/t2rGroups/rules.mjs";
+import * as CADENCE from "../../../shared/boss/outreach/cadence.mjs";
 
 export type BusinessKind = "local_guide" | "affiliate" | "direct";
 
@@ -120,17 +121,26 @@ export interface Segment {
 }
 
 /**
- * ONE FOLLOW-UP, EVERY BUSINESS (standing rule, risk brain R-EML-04, 1 Nov 2026): the first email and
- * one follow-up, never a second. The engine stops every sequence here and compose refuses a later step.
+ * UP TO THREE FOLLOW-UPS, EVERY BUSINESS (owner ruling 6 Nov 2026, risk brain R-EML-04; replaces "one
+ * follow-up" of 1 Nov): the first email and at most three follow-ups, on day 3, 7 and 14, then never
+ * again (src/shared/boss/outreach/cadence.mjs). The engine stops every sequence here and compose
+ * refuses a later step. Emails 3 and 4 (steps 2 and 3) carry `approvalKey` and go only once she has
+ * approved those words on a Decide card (engine.ts `laterWordsApproved`); until then a sequence waits
+ * at email 2.
  */
-export const MAX_FOLLOW_UPS = 1;
+export const MAX_FOLLOW_UPS: number = CADENCE.MAX_FOLLOW_UPS;
 
 export interface Step {
-  /** Days after the previous step. Step 0 is 0. */
+  /** Days after the previous step. Step 0 is 0; follow-ups are `CADENCE.afterDaysFor(n)` (3, 4, 7). */
   afterDays: number;
   subject: string;
   body: string;
+  /** Steps 2 and 3 only: the key of the Decide card on which she approved these words. */
+  approvalKey?: string;
 }
+
+/** A sequence: the first email, one approved follow-up, and up to two more she approves first. */
+export type Steps = [Step, Step, ...Step[]];
 
 export interface Business {
   key: string;
@@ -147,7 +157,7 @@ export interface Business {
    * follow-up (her standing rule, risk brain R-EML-04, 1 Nov 2026). The engine never sends past
    * `MAX_FOLLOW_UPS` whatever this array holds (engine.ts `lastStepOf`, compose.ts refuses).
    */
-  steps: [Step, Step];
+  steps: Steps;
   /** At most this many FIRST emails a weekday, on top of the ramp (Time-2-Read groups: 10). */
   newPerDay?: number;
   /** What the owner's card suggests when someone says yes. */
@@ -160,7 +170,7 @@ export interface Business {
    * `steps` (pitch A, the seat). Seat taken → `taken` (pitch B, the open round). Placeholder
    * {seat_end_month} is the seat's end, e.g. "March 2027".
    */
-  seat?: { url: string; taken: [Step, Step] };
+  seat?: { url: string; taken: Steps };
   /**
    * A licensed-facility directory the business's own site publishes (public JSON, $0): ONE list,
    * kept in one place. Read daily by lists.ts: a row with a public business email becomes a
@@ -200,10 +210,10 @@ interface GuideVoice {
 
 const GUIDE_PRICE = "It's free for the first two months, then $249 a month.";
 
-/** The one follow-up (day 4): it stands alone and re-explains everything, in the approved wording. */
+/** The first follow-up (day 3): it stands alone and re-explains everything, in the approved wording. */
 const GUIDE_FOLLOW_UP = (g: GuideVoice): [Step] => [
   {
-    afterDays: 4,
+    afterDays: CADENCE.afterDaysFor(1),
     subject: "Re: {subject}",
     body:
       "Hi {org} team,\n\nI wrote last week but know inboxes get busy, so here's the short version. I run " +
@@ -213,6 +223,41 @@ const GUIDE_FOLLOW_UP = (g: GuideVoice): [Step] => [
       `${g.price}\n\nReply here and I'll set it up.`,
   },
 ];
+
+/*
+ * EMAILS 3 AND 4 FOR EVERY GUIDE (drafted 6 Nov 2026 for her approval; NOT approved yet). Short, each
+ * adds something new (email 3: forward it to whoever handles new business; email 4: a clean close,
+ * the door left open), never a guilt line, no price, no new claim, no link (only day 3 links the offer
+ * page). Like every guide email they stand alone: what the guide is, its domain, 60-110 words. The same
+ * pattern for every guide, so ONE Decide card approves them all (GUIDE_LATER_KEY); they go only once
+ * that card is approved (engine.ts `laterWordsApproved`).
+ */
+const GUIDE_LATER_WORDS = (g: GuideVoice): Array<Omit<Step, "approvalKey">> => [
+  {
+    afterDays: CADENCE.afterDaysFor(2),
+    subject: "Re: {subject}",
+    body:
+      "Hi {org} team,\n\nOne more note, in case this reached the wrong person. I run " +
+      `${g.brand} (${g.domain}), a digital guide built to come up when ${g.who} ask ChatGPT, Google and other AI ` +
+      `assistants about ${g.topic}, and it sends them to ${g.providers} in their area.${g.listing ? ` ${g.listing}` : ""}\n\n` +
+      "If someone else at {org} looks after marketing or new business, feel free to forward this to them. " +
+      `Reply here and I'll set ${g.yours} up on our {metro} pages.`,
+  },
+  {
+    afterDays: CADENCE.afterDaysFor(3),
+    subject: "Re: {subject}",
+    body:
+      "Hi {org} team,\n\nI'll leave it here so I'm not crowding your inbox. " +
+      `${g.brand} (${g.domain}) is a digital guide built to come up when ${g.who} ask ChatGPT, Google and other AI ` +
+      `assistants about ${g.topic}, and ${g.yours} is welcome on our {metro} pages whenever the timing suits.${g.listing ? ` ${g.listing}` : ""}\n\n` +
+      "If it ever does, a reply to this email is all it takes. All the best.",
+  },
+];
+/** The pattern's own key: the words with every guide's details as placeholders, so one card covers all. */
+export const GUIDE_LATER_KEY = `guides-emails-3-4:${CADENCE.wordsHash(JSON.stringify(GUIDE_LATER_WORDS({
+  brand: "<brand>", domain: "<domain>", who: "<who>", topic: "<topic>", providers: "<providers>", yours: "<yours>", price: "", listing: "<listing>",
+})))}`;
+const GUIDE_LATER = (g: GuideVoice): Step[] => GUIDE_LATER_WORDS(g).map((w) => ({ ...w, approvalKey: GUIDE_LATER_KEY }));
 
 const SENIOR_VOICE = (topic: string, price: string): GuideVoice => ({
   brand: "Memphis Senior Care Homes", domain: "memphisseniorcarehomes.com", who: "families", topic,
@@ -259,6 +304,7 @@ export const BUSINESSES: Business[] = [
           "{metro} pages and I'd like your practice on them. Want me to set up a listing for you? Just reply here.",
       },
       ...GUIDE_FOLLOW_UP({ brand: "USCIS Exam Guides", domain: "uscisexam.com", who: "people", topic: "the I-693 medical exam", providers: "civil surgeons", yours: "your practice", price: GUIDE_PRICE }),
+      ...GUIDE_LATER({ brand: "USCIS Exam Guides", domain: "uscisexam.com", who: "people", topic: "the I-693 medical exam", providers: "civil surgeons", yours: "your practice", price: GUIDE_PRICE }),
     ],
     nextStep: "Reply with the setup link from /for-providers/ and start their 2 free months.",
   },
@@ -287,6 +333,7 @@ export const BUSINESSES: Business[] = [
           "out our {metro} pages and I'd like your practice on them. Want me to set up a listing for you? Just reply here.",
       },
       ...GUIDE_FOLLOW_UP({ brand: "The Dentistry Guides", domain: "dentistryguides.com", who: "people", topic: "implants, veneers and what they cost", providers: "practices", yours: "your practice", price: GUIDE_PRICE }),
+      ...GUIDE_LATER({ brand: "The Dentistry Guides", domain: "dentistryguides.com", who: "people", topic: "implants, veneers and what they cost", providers: "practices", yours: "your practice", price: GUIDE_PRICE }),
     ],
     nextStep: "Reply with the setup link from /for-providers/ and start their 2 free months.",
   },
@@ -315,6 +362,7 @@ export const BUSINESSES: Business[] = [
           "is one I'd like to include. Want me to set up a listing for you? Just reply here.",
       },
       ...GUIDE_FOLLOW_UP({ brand: "Hormone Optimization Guides", domain: "hormonesivhair.com", who: "people", topic: "TRT, HRT and IV therapy", providers: "clinics", yours: "your clinic", price: GUIDE_PRICE }),
+      ...GUIDE_LATER({ brand: "Hormone Optimization Guides", domain: "hormonesivhair.com", who: "people", topic: "TRT, HRT and IV therapy", providers: "clinics", yours: "your clinic", price: GUIDE_PRICE }),
     ],
     nextStep: "Reply with the setup link from /for-providers/ and start their 2 free months.",
   },
@@ -363,6 +411,7 @@ export const BUSINESSES: Business[] = [
           "pages and I'd like your practice on them. Want me to set up a listing for you? Just reply here.",
       },
       ...GUIDE_FOLLOW_UP({ brand: "Neuro Evaluation Guides", domain: "neuroevalguides.com", who: "families", topic: "ADHD/autism evaluations and ongoing therapy", providers: "practices", yours: "your practice", price: GUIDE_PRICE, listing: NEURO_LISTING }),
+      ...GUIDE_LATER({ brand: "Neuro Evaluation Guides", domain: "neuroevalguides.com", who: "families", topic: "ADHD/autism evaluations and ongoing therapy", providers: "practices", yours: "your practice", price: GUIDE_PRICE, listing: NEURO_LISTING }),
     ],
     nextStep: "Reply with the setup link from /for-providers/ and start their 2 free months.",
   },
@@ -392,6 +441,7 @@ export const BUSINESSES: Business[] = [
           "your firm listed on them. Want me to set up a listing for you? Just reply here.",
       },
       ...GUIDE_FOLLOW_UP({ brand: "The Accident Guides", domain: "theaccidentguides.com", who: "people", topic: "what to do after a car or work accident", providers: "firms", yours: "your firm", price: "It's free for the first two months, then $499/month per firm for a statewide listing. It isn't exclusive: other firms may list too." }),
+      ...GUIDE_LATER({ brand: "The Accident Guides", domain: "theaccidentguides.com", who: "people", topic: "what to do after a car or work accident", providers: "firms", yours: "your firm", price: "It's free for the first two months, then $499/month per firm for a statewide listing. It isn't exclusive: other firms may list too." }),
     ],
     nextStep: "Reply with the setup link from /for-providers/ and start their 2 free months ($499/month per firm after, statewide, not exclusive).",
   },
@@ -432,6 +482,7 @@ export const BUSINESSES: Business[] = [
           "If that might be you, just reply here.",
       },
       ...GUIDE_FOLLOW_UP(SENIOR_VOICE("assisted living and memory care", "It's free for the first two months, then $249 a month on a six-month term, plus one month's rent when a family we send moves in.")),
+      ...GUIDE_LATER(SENIOR_VOICE("assisted living and memory care", "It's free for the first two months, then $249 a month on a six-month term, plus one month's rent when a family we send moves in.")),
     ],
     seat: {
       url: "https://memphisseniorcarehomes.com/_seat.json",
@@ -448,6 +499,7 @@ export const BUSINESSES: Business[] = [
             "in. Want the next family who fits? Just reply here.",
         },
         ...GUIDE_FOLLOW_UP(SENIOR_VOICE("senior care", "Meeting a family is a flat $800, or one month's rent only if they move in. Nothing monthly.")),
+        ...GUIDE_LATER(SENIOR_VOICE("senior care", "Meeting a family is a flat $800, or one month's rent only if they move in. Nothing monthly.")),
       ],
     },
     nextStep: "Reply with the setup link from /for-providers/: the exclusive seat (2 free months, then $249/month) if it is open, otherwise the open round (teasers, $800 or one month's rent).",
@@ -477,7 +529,7 @@ export const BUSINESSES: Business[] = [
           "Reply \"yes\" and we will send your code.",
       },
       {
-        afterDays: 4,
+        afterDays: CADENCE.afterDaysFor(1),
         subject: "Re: {subject}",
         body:
           "Hi {org} team,\n\nFollowing up on the referral partnership: 30% of first-year revenue for each " +
@@ -549,7 +601,7 @@ export const BUSINESSES: Business[] = [
           "personal code.\n\nHave a look: {offer_url}\n\nReply \"yes\" and we will send your code.",
       },
       {
-        afterDays: 4,
+        afterDays: CADENCE.afterDaysFor(1),
         subject: "Re: {subject}",
         body: "Hi {org} team,\n\nFollowing up: 30% of first-year revenue per referred client. Reply \"yes\" for your code.",
       },
@@ -588,7 +640,7 @@ export const BUSINESSES: Business[] = [
           "refer, through a personal code.\n\nHave a look: {offer_url}\n\nReply \"yes\" and we will send your code.",
       },
       {
-        afterDays: 4,
+        afterDays: CADENCE.afterDaysFor(1),
         subject: "Re: {subject}",
         body: "Hi {org} team,\n\nFollowing up: 30% of first-year revenue per referral, tracked by your code. Reply \"yes\" for yours.",
       },
@@ -619,7 +671,7 @@ export const BUSINESSES: Business[] = [
           "through a personal code.\n\nHave a look: {offer_url}\n\nReply \"yes\" and we will send your code.",
       },
       {
-        afterDays: 4,
+        afterDays: CADENCE.afterDaysFor(1),
         subject: "Re: {subject}",
         body: "Hi {org} team,\n\nFollowing up: 30% of first-year revenue per couple you refer. Reply \"yes\" for your code.",
       },

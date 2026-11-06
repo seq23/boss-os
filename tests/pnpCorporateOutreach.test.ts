@@ -43,10 +43,12 @@ describe("sequence limits", () => {
     const attempted = rows.slice(0, 12).map((r) => ({ ...r, first_attempt_at: NOW }));
     expect(planSends([...attempted, ...rows.slice(12)], status(), NOW)).toHaveLength(0);
   });
-  it("follow-up max 1, after five days and in the first thread", async () => {
-    const sent = prospect(1, { state: "sent1", first_message_id: "<first-synthetic>", first_sent_at: NOW - 5 * 86400000 });
+  it("the follow-up on day 3 (owner, 6 Nov 2026), in the first thread, and no email past the approved two", async () => {
+    const sent = prospect(1, { state: "sent1", first_message_id: "<first-synthetic>", first_sent_at: NOW - 3 * 86400000 });
     expect(planSends([sent], status(), NOW).map((s) => s.touch)).toEqual([2]);
-    for (const change of [{ first_sent_at: NOW - 4 * 86400000 }, { first_message_id: null }, { state: "sent2" }, { followup_attempt_at: NOW }, { followup_sent_at: NOW }]) expect(planSends([{ ...sent, ...change }], status(), NOW)).toEqual([]);
+    for (const change of [{ first_sent_at: NOW - 3 * 86400000 + 1 }, { first_sent_at: NOW - 2 * 86400000 }, { first_message_id: null }, { state: "sent2" }, { followup_attempt_at: NOW }, { followup_sent_at: NOW }]) expect(planSends([{ ...sent, ...change }], status(), NOW)).toEqual([]);
+    // After the follow-up nothing more is planned, however long it has been: the contract holds two emails.
+    expect(planSends([{ ...sent, state: "sent2", followup_sent_at: NOW - 30 * 86400000, first_sent_at: NOW - 60 * 86400000 }], status(), NOW)).toEqual([]);
     const h = harness([sent]); await runOutreach(h);
     expect(h.sender.send.mock.calls[0][0].in_reply_to).toBe("<first-synthetic>");
     expect(planSends(Array.from({ length: 30 }, (_, i) => ({ ...sent, id: `follow_${i}` })), status(), NOW)).toHaveLength(15);

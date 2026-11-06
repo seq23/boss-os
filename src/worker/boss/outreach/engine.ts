@@ -38,7 +38,7 @@ import { crawlCandidates, randomToken, readDirectories, readNextSlice } from "./
 import { isSuppressed, suppress } from "./suppression";
 import { fixBounces, recordBounce, recordRestart } from "./bounceFix";
 import { ensurePartner, runMonthlyPayouts } from "./referrals";
-import { SEAT_OPEN, isSeatHolder, pitchFor, readSeat, type Seat } from "./seat";
+import { SEAT_OPEN, isSeatHolder, pitchFor, readSeat, type Pitch, type Seat } from "./seat";
 import { feedScoreboard, groupSendGate, queueReady, summary as groupSummary } from "./groups";
 import { GROUPS_KEY, groupSizeIn, suggestedPrice, wantsPrice } from "../../../shared/boss/t2rGroups/rules.mjs";
 import { recipientLines, replyAllRecipients, replyNeed } from "../../../shared/boss/mail/replyNeed.mjs";
@@ -396,11 +396,52 @@ async function recordSend(
 
 /**
  * The last step a business sends: the first email is step 0, so this is never past MAX_FOLLOW_UPS
- * (one follow-up, risk brain R-EML-04), whatever a catalog entry holds. A prospect already past it is
- * marked done by the send loop below and never written to again.
+ * (three follow-ups, risk brain R-EML-04, 6 Nov 2026), whatever a catalog entry holds. A prospect
+ * already past it is marked done by the send loop below and never written to again. A seat
+ * business's pitch B counts its own steps.
  */
-export function lastStepOf(b: Business): number {
-  return Math.min(b.steps.length - 1, MAX_FOLLOW_UPS);
+export function lastStepOf(b: Business, pitch: Pitch = "A"): number {
+  const steps = pitch === "B" && b.seat ? b.seat.taken : b.steps;
+  return Math.min(steps.length - 1, MAX_FOLLOW_UPS);
+}
+
+/** The resume kind of the Decide card that approves emails 3 and 4 (approvals/resume.ts). */
+export const LATER_WORDS_KIND = "outreach_copy";
+
+/**
+ * EMAILS 3 AND 4 GO ONLY IN WORDS SHE APPROVED (owner, 6 Nov 2026: "never invent-and-send"). A step
+ * with an `approvalKey` is sent only once the Decide card for that key is approved. The first time a
+ * prospect reaches it, the card is raised (once per key, whatever she answers): the words, word for
+ * word, as this business would send them. "approved" | "waiting".
+ */
+export async function laterWordsApproved(env: Env, b: Business, step: number, pitch: Pitch, now: number): Promise<"approved" | "waiting"> {
+  const steps = pitch === "B" && b.seat ? b.seat.taken : b.steps;
+  const key = steps[step]?.approvalKey;
+  if (!key) return step <= 1 ? "approved" : "waiting"; // an email 3 or 4 without a card is never sent
+  const r = await env.DB.prepare(
+    `SELECT a.status FROM judgement_calls j JOIN approvals a ON a.id = j.approval_id
+      WHERE j.resume_kind = ? AND json_extract(j.resume_detail, '$.copy_key') = ? ORDER BY j.created_at DESC LIMIT 1`,
+  ).bind(LATER_WORDS_KIND, key).first<{ status: string }>();
+  if (r?.status === "approved") return "approved";
+  if (!r) {
+    const later = steps.map((s, i) => ({ s, i })).filter((x) => x.s.approvalKey === key);
+    const { raiseJudgementCall } = await import("../approvals/raise");
+    await raiseJudgementCall(env, {
+      title: `Approve emails ${later.map((x) => x.i + 1).join(" and ")} of the guides' outreach`,
+      question:
+        `Your rule now allows up to three follow-ups (day 3, 7 and 14), then never again. The guides send the first two emails as you approved them; ` +
+        `these next ones go only if you approve the words. The same words go for every guide, with each guide's own name, site and topic. ` +
+        `Here they are as ${b.brand} would send them to a business called Acme in Houston (signature and unsubscribe footer as on every email):\n\n` +
+        later.map((x) => `Email ${x.i + 1} (day ${[0, 3, 7, 14][x.i]}):\n${x.s.body.replace(/\{brand\}/g, b.brand).replace(/\{org\}/g, "Acme").replace(/\{metro\}/g, "Houston")}`).join("\n\n") +
+        `\n\nApprove and they start going to anyone due them. Try again and the sequences stay at two emails.`,
+      resumeKind: LATER_WORDS_KIND,
+      employeeId: "emp_relationship",
+      lane: "ops",
+      risk: "low",
+      resumeDetail: { copy_key: key, business_key: b.key, steps: later.map((x) => x.i) },
+    }, now);
+  }
+  return "waiting";
 }
 
 /** First emails still allowed today under a business's own weekday limit. Pure. */
@@ -477,7 +518,7 @@ async function sendForBusiness(
   ).bind(b.key, now, n).all<any>();
 
   let sent = 0;
-  const last = lastStepOf(b);
+  const last = lastStepOf(b, pitch);
   for (const p of due.results ?? []) {
     if (p.step === 0 && newLeft <= 0) continue;
     if (await isSuppressed(db, p.email)) {
@@ -500,7 +541,13 @@ async function sendForBusiness(
       await db.prepare(`UPDATE outreach_prospects SET state = 'done', next_due_at = NULL, updated_at = ? WHERE id = ?`).bind(now, p.id).run();
       continue;
     }
-    const step = p.step as 0 | 1;
+    const step = Number(p.step);
+    // Emails 3 and 4 wait for her approved words; a waiting one steps aside a day so it never starves the queue.
+    if (step >= 2 && (await laterWordsApproved(env, b, step, pitch, now)) !== "approved") {
+      await db.prepare(`UPDATE outreach_prospects SET next_due_at = ?, updated_at = ? WHERE id = ?`).bind(now + DAY_MS, now, p.id).run();
+      refused[`${b.key}:later`] = `Emails 3 and 4 wait for your approval of their words.`;
+      continue;
+    }
     let groupCode: string | null = null;
     if (b.key === GROUPS_KEY) {
       const gate = await groupSendGate(db, p.id);
@@ -520,7 +567,8 @@ async function sendForBusiness(
     });
     const res = await mailbox.send(b, mail.raw, p.thread_id);
     const messageId = step === 0 ? await mailbox.messageIdOf(res.id).catch(() => null) : p.last_message_id;
-    const next = step < last ? now + (b.steps[step + 1]?.afterDays ?? 4) * DAY_MS : null;
+    const pitchSteps = pitch === "B" && b.seat ? b.seat.taken : b.steps;
+    const next = step < last ? now + (pitchSteps[step + 1]?.afterDays ?? 7) * DAY_MS : null;
     await db.prepare(
       `UPDATE outreach_prospects SET state = ?, step = ?, next_due_at = ?, thread_id = ?, last_message_id = COALESCE(?, last_message_id),
               last_subject = COALESCE(last_subject, ?), updated_at = ? WHERE id = ?`,

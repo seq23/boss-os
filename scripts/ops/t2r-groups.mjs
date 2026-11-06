@@ -12,7 +12,7 @@
  *      table (simone-commands.mjs `runCode`, the service key injected from the vault by name).
  *   4. THE CODES' USE, read back from the table's signups view, per group.
  *   5. QUEUE: ready groups become prospects of the hourly outreach tick, which sends from
- *      st@time-2-read.com, at most 10 new groups a weekday and one follow-up (the Worker's rules).
+ *      st@time-2-read.com, at most 10 new groups a weekday and a day-3 follow-up (the Worker's rules).
  *
  * Every rule is src/shared/boss/t2rGroups/rules.mjs; the Worker half is src/worker/boss/outreach/groups.ts.
  */

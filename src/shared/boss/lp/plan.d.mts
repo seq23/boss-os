@@ -32,7 +32,10 @@ export const PROSPECT_WORD_CAP: number;
 export const OPT_OUT_LINE: string;
 export const SIGNATURE: string;
 export type Named = string | { name: string; why?: string };
-export interface Template { subject: string; body: string; follow_up: string }
+export interface Template { subject: string; body: string; follow_up: string; follow_up_2?: string | null; follow_up_3?: string | null }
+export const TOUCH_FIELD: Readonly<Record<number, string>>;
+export function hasTouchWords(t: Partial<Template> | null | undefined, n: number): boolean;
+export const PROSPECT_COMPLAINT: RegExp;
 export function namesLine(names: Named[], variant?: number): string;
 export const DEFAULT_PROSPECT_TEMPLATE: Readonly<Template>;
 export function subjectNames(names: Named[]): string;
@@ -73,7 +76,7 @@ export function sayName(n: string): string;
 export function withoutNeverNamed(text: string): string;
 export const NB_FRESH_DAYS: number;
 export function verdictGate(p: any, opts?: { paused?: boolean; now?: number }): "go" | "invalid" | "risky" | "unverified";
-export type ProspectForecast = { go: number; first: number; follow: number; invalid: number; risky: number; unverified: number; bounced: number; paused: string | null; blocked: string[] };
+export type ProspectForecast = { go: number; first: number; follow: number; invalid: number; risky: number; unverified: number; bounced: number; paused: string | null; blocked: string[]; awaiting?: number; complaint?: string | null };
 export function approveOutcome(f: ProspectForecast | null | undefined): { headline: string; lines: string[] };
 export declare const LP_NUDGE_DAYS: number;
 export declare function lpNudgeBody(r: { name?: string | null; bucket?: string | null }): string;

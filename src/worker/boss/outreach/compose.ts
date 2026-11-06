@@ -37,7 +37,8 @@ export const UNSUBSCRIBE_BASE = "https://boss.sequoiataylor.com/api/boss/outreac
 
 export interface ComposeInput {
   business: Business;
-  step: 0 | 1;
+  /** 0 = the first email; 1, 2 and 3 are the follow-ups (never more: MAX_FOLLOW_UPS). */
+  step: number;
   to: string;
   org: string;
   metro: string;
@@ -93,8 +94,8 @@ export function composeEmail(i: ComposeInput): Composed {
   if (i.pitch === "B" && !(i.seatEnd && /^\d{4}-\d{2}-\d{2}$/.test(i.seatEnd))) {
     throw new Error("Refused: pitch B names the month the exclusive seat ends, and no end date was given.");
   }
-  if (!(i.step >= 0 && i.step <= MAX_FOLLOW_UPS)) {
-    throw new Error(`Refused: email number ${i.step + 1} would be a second follow-up; outreach sends the first email and one follow-up only.`);
+  if (!(Number.isInteger(i.step) && i.step >= 0 && i.step <= MAX_FOLLOW_UPS)) {
+    throw new Error(`Refused: email number ${i.step + 1} would be a follow-up past the third; outreach sends the first email and up to ${MAX_FOLLOW_UPS} follow-ups, then never again.`);
   }
   const steps = i.pitch === "B" && i.business.seat ? i.business.seat.taken : i.business.steps;
   const step = steps[i.step];

@@ -3449,7 +3449,7 @@
     {
       "id": "prospects",
       "name": "Prospect emails",
-      "what": "Monique's approved note and its one follow-up, weekdays only, under the limits.",
+      "what": "Monique's approved note and up to three follow-ups (day 3, 7, 14), weekdays only, under the limits.",
       "business": "west-peek-ventures",
       "brand": "West Peek Ventures",
       "system": "mac",

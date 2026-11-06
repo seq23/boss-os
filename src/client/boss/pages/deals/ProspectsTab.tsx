@@ -2,7 +2,7 @@
  * Deals page → "Prospects" (Boss fix L, rulings 11 and 12; mock-up board 6, bottom half).
  *
  * Everyone Monique writes to on the prospect sequence: where they were found, how many touches
- * (the first email and ONE follow-up, then the sequence is complete; owner, 24 Oct 2026), their side once they reply (Buyer / Seller / Both), and the
+ * (the first email and up to three follow-ups on day 3, 7 and 14, then the sequence is complete; owner, 6 Nov 2026), their side once they reply (Buyer / Seller / Both), and the
  * 8Raise credits used this month. Filters are pull-downs. Builder D mounts this in Capital.tsx.
  */
 import { useEffect, useMemo, useState } from "react";
@@ -31,7 +31,7 @@ export function nextTouchLabel(p: any): string {
   if (p.touches >= MAX_TOUCHES) return "— sequence complete";
   if (!p.first_sent_at) return "Next sending day";
   const due = Math.max(p.first_sent_at + (TOUCH_DAYS[p.touches] ?? 0) * DAY, (p.last_touch_at ?? 0) + MIN_TOUCH_GAP_DAYS * DAY);
-  return `${day(due)}${p.touches + 1 === MAX_TOUCHES ? " (the one follow-up, the last)" : ""}`;
+  return `${day(due)}${p.touches + 1 === MAX_TOUCHES ? " (the last email)" : ""}`;
 }
 
 export function ProspectsTab() {
@@ -110,7 +110,7 @@ export function ProspectsTab() {
         </table>
       </div>
       <p className="row-sub">
-        {MAX_TOUCHES} emails at most (the first and one follow-up), then they stop. Anyone who replies or opts out is never emailed again. At most 20 new a day.
+        {MAX_TOUCHES} emails at most (the first, then follow-ups on day 3, 7 and 14; emails 3 and 4 only in words you approved), then they stop. Anyone who replies, bounces or opts out is never emailed again; a spam complaint pauses everyone. At most 20 new a day.
         {credits ? ` ${eightRaiseFooter(credits.used)}.` : ""}
       </p>
     </div>

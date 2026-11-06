@@ -1,4 +1,5 @@
 /** Campaign decisions shared by the Mac runner and its authenticated D1 desk. No contact data. */
+import { DAY_MS, TOUCH_DAYS } from "../outreach/cadence.mjs";
 export const DAILY_FIRST_CAP = 12;
 export const DAILY_FOLLOWUP_CAP = 15;
 export const chicagoDay = (now) => new Intl.DateTimeFormat("en-CA", { timeZone: "America/Chicago", year: "numeric", month: "2-digit", day: "2-digit" }).format(new Date(now));
@@ -73,7 +74,10 @@ export function planSends(rows, status, now) {
   const first = eligible.filter((r) => r.state === "verified" && !r.first_attempt_at)
     .sort((a, b) => Number(b.kind === "lobby") - Number(a.kind === "lobby"))
     .slice(0, Math.max(0, DAILY_FIRST_CAP - Math.max(status.sent_today, usedFirst)));
-  const follow = eligible.filter((r) => r.state === "sent1" && r.first_message_id && r.first_sent_at && !r.followup_attempt_at && !r.followup_sent_at && now - r.first_sent_at >= 5 * 86400000)
+  // The follow-up goes on day 3 (owner ruling 6 Nov 2026, cadence.mjs). Emails 3 and 4 are not sent:
+  // the approved contract holds only one follow-up, so the sequence stays at two emails until she
+  // approves more words there (the rule allows four emails at most, never more).
+  const follow = eligible.filter((r) => r.state === "sent1" && r.first_message_id && r.first_sent_at && !r.followup_attempt_at && !r.followup_sent_at && now - r.first_sent_at >= TOUCH_DAYS[1] * DAY_MS)
     .slice(0, Math.max(0, DAILY_FOLLOWUP_CAP - Math.max(status.followups_today, usedFollow)));
   return [...first.map((row) => ({ row, touch: 1 })), ...follow.map((row) => ({ row, touch: 2 }))];
 }

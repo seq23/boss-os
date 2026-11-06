@@ -461,7 +461,7 @@ const DRAFT_WRITERS = new Map([
  */
 const PROSPECT_SENDERS = new Map([
   ["lp-prospects.mjs", {
-    why: "Sends the soft prospect email she approved, and its one follow-up, under the outreach brakes.",
+    why: "Sends the soft prospect email she approved, and its follow-ups (four emails at most), under the outreach brakes.",
     invariants: [
       [(src) => /const MAILBOX = "[^"]+@westpeek\.ventures"/.test(src) && /sub: MAILBOX/.test(src), "the mailbox must be the pinned westpeek.ventures constant in the JWT's sub claim"],
       [(src) => /gmail\.compose/.test(src) && !/gmail\.send|gmail\.modify|mail\.google\.com/.test(src), "compose and nothing wider"],

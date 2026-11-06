@@ -309,9 +309,12 @@ describe("every email carries the unsubscribe link and the postal address", () =
     }
     expect(BUSINESSES.length).toBeGreaterThan(0);
     for (const b of BUSINESSES) {
-      // Every step a business HAS: the first email and ONE follow-up (R-EML-04, 1 Nov 2026).
-      expect(b.steps.length, b.key).toBe(MAX_FOLLOW_UPS + 1);
-      for (const step of [...b.steps.keys()] as Array<0 | 1>) {
+      // Every step a business HAS: the first email, a follow-up, and at most two more, each of those
+      // carrying the key of the card she approves its words on (R-EML-04, 6 Nov 2026).
+      expect(b.steps.length, b.key).toBeGreaterThanOrEqual(2);
+      expect(b.steps.length, b.key).toBeLessThanOrEqual(MAX_FOLLOW_UPS + 1);
+      for (const s of b.steps.slice(2)) expect(s.approvalKey, b.key).toBeTruthy();
+      for (const step of [...b.steps.keys()]) {
         const m = composeEmail({ business: b, step, to: "a@acme.example", org: "Acme", metro: "Houston", unsubToken: "tok123", postalAddress: addr, firstSubject: "Hello", groupCode: "ACME15K7Q" });
         const plainFooter = m.body.slice(m.body.lastIndexOf("\n--\n"));
         const htmlFooter = /<p style="([^"]*)"[^>]*>([\s\S]*?)<\/p>\s*<\/body>/.exec(m.html)![2]!;
@@ -471,31 +474,48 @@ describe("the tick", () => {
     expect(g.sends.filter((s) => !s.to.startsWith("cryptoclearr")).length).toBe(10);
   });
 
-  it("ONE follow-up, whatever a catalog holds: a sequence with two follow-ups never sends or schedules the second (R-EML-04)", async () => {
+  it("four emails at most, whatever a catalog holds; emails 3 and 4 only after she approves their words (R-EML-04, 6 Nov 2026)", async () => {
     await readyWithAddress("time2read");
-    // A catalog entry that still carries a second follow-up (as the guides did until 1 Nov 2026).
+    // A catalog entry carrying three more steps than its two approved emails; the last would be a fifth email.
     const steps = T2R.steps as unknown as Array<(typeof T2R.steps)[0]>;
-    steps.push({ afterDays: 7, subject: "Re: {subject}", body: "Hi {org} team,\n\nA second follow-up." });
+    const KEY = "test-later-words";
+    steps.push(
+      { afterDays: 4, subject: "Re: {subject}", body: "Hi {org} team,\n\nEmail three.", approvalKey: KEY },
+      { afterDays: 7, subject: "Re: {subject}", body: "Hi {org} team,\n\nEmail four.", approvalKey: KEY },
+      { afterDays: 7, subject: "Re: {subject}", body: "Hi {org} team,\n\nA fifth email.", approvalKey: KEY },
+    );
     try {
-      expect(MAX_FOLLOW_UPS).toBe(1);
-      await addProspect("time2read", "first@school.example", { state: "in_sequence", step: 1, thread_id: "th-first", next_due_at: TUESDAY_10AM });
-      await addProspect("time2read", "queued@school.example", { state: "in_sequence", step: 2, thread_id: "th-queued", next_due_at: TUESDAY_10AM });
+      expect(MAX_FOLLOW_UPS).toBe(3);
+      await addProspect("time2read", "third@school.example", { state: "in_sequence", step: 2, thread_id: "th-third", next_due_at: TUESDAY_10AM });
+      await addProspect("time2read", "queued@school.example", { state: "in_sequence", step: 4, thread_id: "th-queued", next_due_at: TUESDAY_10AM });
       const g = fakeGmail();
       await runOutreachTick(await tickEnv(), TUESDAY_10AM, g.fetchImpl);
-      for (let d = 1; d <= 14; d++) await runOutreachTick(await tickEnv(), TUESDAY_10AM + d * DAY_MS, g.fetchImpl);
-      // The one follow-up goes; the sequence then ends with nothing scheduled.
-      expect(g.sends.filter((s) => s.to === "first@school.example")).toHaveLength(1);
-      expect(await row<any>(`SELECT state, step, next_due_at FROM outreach_prospects WHERE email = 'first@school.example'`))
-        .toEqual({ state: "done", step: 2, next_due_at: null });
-      // A second follow-up already queued is cancelled, never sent.
+      // Not approved: email 3 does not go, it steps aside a day, and ONE card goes to her with the words.
+      expect(g.sends.filter((s) => s.to === "third@school.example")).toHaveLength(0);
+      expect((await row<any>(`SELECT state, step, next_due_at FROM outreach_prospects WHERE email = 'third@school.example'`)))
+        .toEqual({ state: "in_sequence", step: 2, next_due_at: TUESDAY_10AM + DAY_MS });
+      await runOutreachTick(await tickEnv(), TUESDAY_10AM + DAY_MS, g.fetchImpl);
+      const cards = (await env.DB.prepare(`SELECT j.question, a.id AS approval_id FROM judgement_calls j JOIN approvals a ON a.id = j.approval_id WHERE j.resume_kind = 'outreach_copy' AND json_extract(j.resume_detail, '$.copy_key') = ?`).bind(KEY).all<any>()).results;
+      expect(cards).toHaveLength(1);
+      expect(cards[0].question).toContain("Email three.");
+      expect(cards[0].question).toContain("Email four.");
+      expect(g.sends.filter((s) => s.to === "third@school.example")).toHaveLength(0);
+      // She approves: email 3 goes on the next tick, email 4 after it, and the sequence ends at four.
+      await env.DB.prepare(`UPDATE approvals SET status = 'approved', decided_at = ? WHERE id = ?`).bind(TUESDAY_10AM, cards[0].approval_id).run();
+      for (let d = 2; d <= 30; d++) await runOutreachTick(await tickEnv(), TUESDAY_10AM + d * DAY_MS, g.fetchImpl);
+      const third = g.sends.filter((s) => s.to === "third@school.example");
+      expect(third).toHaveLength(2);
+      expect(await row<any>(`SELECT state, step, next_due_at FROM outreach_prospects WHERE email = 'third@school.example'`))
+        .toEqual({ state: "done", step: 4, next_due_at: null });
+      // A fifth email already queued is cancelled, never sent.
       expect(g.sends.filter((s) => s.to === "queued@school.example")).toHaveLength(0);
       expect(await row<any>(`SELECT state, next_due_at FROM outreach_prospects WHERE email = 'queued@school.example'`))
         .toEqual({ state: "done", next_due_at: null });
       // And compose refuses to write it at all.
-      expect(() => composeEmail({ business: T2R, step: 2 as 1, to: "a@acme.example", org: "Acme", metro: "Houston", unsubToken: "tok123", postalAddress: "1 Example Street, Houston, TX 77002", firstSubject: "Hello" }))
-        .toThrow(/second follow-up/);
+      expect(() => composeEmail({ business: T2R, step: 4, to: "a@acme.example", org: "Acme", metro: "Houston", unsubToken: "tok123", postalAddress: "1 Example Street, Houston, TX 77002", firstSubject: "Hello" }))
+        .toThrow(/past the third/);
     } finally {
-      steps.pop();
+      steps.splice(2);
     }
   });
 
@@ -974,7 +994,9 @@ describe("Memphis Senior Care Homes: the seat decides the pitch", () => {
 
   it("every email it composes, both pitches, carries the guides footer and the unsubscribe link — or is refused", () => {
     for (const pitch of ["A", "B"] as const) {
-      for (const step of [0, 1] as const) {
+      const steps = pitch === "B" ? MSCH.seat!.taken : MSCH.steps;
+      expect(steps.length).toBe(4);
+      for (const step of [...steps.keys()]) {
         const m = composeEmail({
           business: MSCH, step, to: "a@acme.example", org: "Oak Court", metro: "Memphis", unsubToken: "tok123",
           postalAddress: ADDR, firstSubject: "Hello", pitch, seatEnd: pitch === "B" ? "2027-03-31" : null,
@@ -1149,7 +1171,7 @@ describe("the Industry Guides read like a person, signed S.L. Taylor (owner, 16 
     for (const b of guides) {
       const pitches: Array<"A" | "B"> = b.seat ? ["A", "B"] : ["A"];
       for (const pitch of pitches) {
-        for (const step of [0, 1] as const) {
+        for (const step of [...(pitch === "B" ? b.seat!.taken : b.steps).keys()]) {
           const m = composeEmail({
             business: b, step, to: "a@acme.example", org: "Acme Dental", metro: "Houston", unsubToken: "tok123",
             postalAddress: addr, firstSubject: "quick question for Acme Dental", pitch, seatEnd: pitch === "B" ? "2027-03-31" : null,
@@ -1187,15 +1209,16 @@ describe("the Industry Guides read like a person, signed S.L. Taylor (owner, 16 
         }
       }
     }
-    expect(checked).toBe(GUIDE_KEYS.length * 2 + 2); // hard-fail on zero; pitch B counted
+    expect(checked).toBe(GUIDE_KEYS.length * 4 + 4); // hard-fail on zero; emails 3 and 4 and pitch B counted
   });
 
   it("the other businesses keep their own team's signature, and never S.L. Taylor", () => {
     const others = BUSINESSES.filter((b) => b.kind !== "local_guide");
     expect(others.length).toBeGreaterThan(0);
     for (const b of others) {
-      expect(b.steps.length, b.key).toBe(MAX_FOLLOW_UPS + 1);
-      for (const step of [...b.steps.keys()] as Array<0 | 1>) {
+      expect(b.steps.length, b.key).toBeGreaterThanOrEqual(2);
+      expect(b.steps.length, b.key).toBeLessThanOrEqual(MAX_FOLLOW_UPS + 1);
+      for (const step of [...b.steps.keys()]) {
         const m = composeEmail({ business: b, step, to: "a@acme.example", org: "Acme", metro: "Houston", unsubToken: "tok123", postalAddress: addr, firstSubject: "Hello", groupCode: "ACME15K7Q" });
         expect(m.body, b.key).toContain(`\n\n— The ${b.brand} team\n${b.domain}\n\n--\n`);
         expect(m.body, b.key).not.toContain("S.L. Taylor");
@@ -1249,7 +1272,7 @@ describe("Neuro Evaluation Guides writes to evaluators AND therapy practices (ow
   it("every step names both audiences and that a listing shows evaluation, therapy or both", () => {
     const b = businessByKey("neuroevalguides")!;
     let checked = 0;
-    for (const step of [0, 1] as const) {
+    for (const step of [...b.steps.keys()]) {
       const m = composeEmail({
         business: b, step, to: "a@acme.example", org: "Acme Therapy", metro: "Houston", unsubToken: "tok123",
         postalAddress: "PO Box 1, Houston, TX 77002", firstSubject: "families looking for ADHD and autism care in Houston", pitch: "A", seatEnd: null,
@@ -1263,7 +1286,7 @@ describe("Neuro Evaluation Guides writes to evaluators AND therapy practices (ow
       }
       checked++;
     }
-    expect(checked).toBe(2);
+    expect(checked).toBe(4);
   });
 });
 

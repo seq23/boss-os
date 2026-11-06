@@ -68,7 +68,7 @@ import path from "node:path";
 import os from "node:os";
 import { addressIn, bulkReason, headersFromRaw, ownDomainReason, replyEvidence } from "./mail-bulk.mjs";
 import { followUps } from "./lp-followups.mjs";
-import { sideFromReply } from "../../src/shared/boss/lp/plan.mjs";
+import { sideFromReply, PROSPECT_COMPLAINT } from "../../src/shared/boss/lp/plan.mjs";
 
 const MAILBOX = process.env.LP_MAILBOX ?? "sequoia@westpeek.ventures";
 /** The campaign's first send was 23 July 2026. July 1 is a deliberate margin, not a guess. */
@@ -443,7 +443,9 @@ export async function readProspectReplies(addresses, sinceYmd) {
       if (!wanted.has(address) || out.get(address)?.at > r.at) continue;
       const text = readableText(r.raw);
       const { bucket } = classify(text);
-      const kind = bucket === "auto" ? "ooo" : bucket === "negative" ? "opt_out" : (bucket === "call" || bucket === "warm") ? "interested"
+      // A spam complaint first (owner, 6 Nov 2026): it stops this person AND pauses the whole sequence.
+      const kind = bucket !== "auto" && PROSPECT_COMPLAINT.test(text) ? "complaint"
+        : bucket === "auto" ? "ooo" : bucket === "negative" ? "opt_out" : (bucket === "call" || bucket === "warm") ? "interested"
         : /\bno thanks\b/i.test(text) ? "opt_out" : "replied";
       out.set(address, { kind, side: sideFromReply(text), note: kind === "interested" ? quoteOf(text) : null, at: r.at, thread: r.thread });
     }

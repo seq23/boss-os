@@ -17,8 +17,8 @@
  */
 import type { Env } from "../env";
 import { audit } from "../lib/audit";
-import { approveTemplate, redraftTemplate, followUpsReleased } from "./desk";
-import { renderProspect, tapUrl } from "../../../shared/boss/lp/plan.mjs";
+import { approveTemplate, redraftTemplate, followUpsReleased, storedTemplate } from "./desk";
+import { renderProspect, tapUrl, hasTouchWords } from "../../../shared/boss/lp/plan.mjs";
 import { ownWords } from "../../../shared/boss/intake/messageBody.mjs";
 import { decideCardOf } from "./decideReply";
 
@@ -32,22 +32,25 @@ const GENERAL = /\b(?:never|always|every(?:\s+(?:email|template|time))?|from now
 /** The one reply she gets: the new email word for word and the three links. Plain. */
 export function redraftReply(tpl: any, opts: { applied?: string[]; kept?: string[]; released?: { count: number; firstSentOn: string | null }; headline?: string }) {
   const names = JSON.parse(tpl.names_json ?? "[]");
-  const t = { subject: tpl.subject, body: tpl.body, follow_up: tpl.follow_up };
+  const t = storedTemplate(tpl);
   const first = renderProspect(t, { first: "Alex", names });
   const follow = renderProspect(t, { first: "Alex", names, touch: 2 });
+  // Emails 3 and 4 (6 Nov 2026), word for word when the draft has them.
+  const later = [3, 4].filter((n) => hasTouchWords(t, n)).map((n) => ({ n, body: renderProspect(t, { first: "Alex", names, touch: n }).body }));
   const day = opts.released?.firstSentOn ? new Date(`${opts.released.firstSentOn}T12:00:00Z`).toLocaleDateString("en-US", { day: "numeric", month: "short", timeZone: "UTC" }).replace(/^(\w+) (\d+)$/, "$2 $1") : null;
   return [
     opts.headline ?? "Here is the new prospect email, word for word. Nothing goes out until you tap Approve.",
     ...(opts.applied?.length ? [`What I changed: ${opts.applied.join("; ")}.`] : []),
     ...(opts.kept?.length ? [`Kept on record as your note: ${opts.kept.map((k) => `"${k}"`).join("; ")}.`] : []),
-    ...(opts.released?.count ? [`Approving this also sends one follow-up to the ${opts.released.count} people who got your first email${day ? ` on ${day}` : ""}.`] : []),
+    ...(opts.released?.count ? [`Approving this also lets the follow-ups go to the ${opts.released.count} people who got your first email${day ? ` on ${day}` : ""}.`] : []),
     "",
     "The email, word for word:",
     ...[`Subject: ${first.subject}`, ...first.body.split("\n").filter((l) => l.trim())].map((l) => `> ${l}`),
     "",
-    "The one follow-up, word for word:",
+    later.length ? "Email 2 (day 3), word for word:" : "The follow-up (email 2, day 3), word for word:",
     ...follow.body.split("\n").filter((l) => l.trim()).map((l) => `> ${l}`),
     "",
+    ...later.flatMap((l) => [`Email ${l.n} (day ${l.n === 3 ? 7 : 14}), word for word:`, ...l.body.split("\n").filter((x) => x.trim()).map((x) => `> ${x}`), ""]),
     `Tap to approve: ${tapUrl(tpl.tap_token, "approve")}`,
     `Tap to change it: ${tapUrl(tpl.tap_token, "edit")} (or reply with your changes)`,
     `Tap to try again: ${tapUrl(tpl.tap_token, "retry")}`,

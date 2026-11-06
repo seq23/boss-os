@@ -12,7 +12,12 @@
  *   4. The weekly Tuesday reminder is gone and the connector digest is retired: nothing in the
  *      installer schedules `lp:positive -- --email` or lp-replies.sh.
  *   5. A GET on a one-tap link never acts (mail scanners fetch links).
- *   6. The sequence stops at two emails — the first and ONE follow-up (owner, 24 Oct 2026) — five days apart at least.
+ *   6. THE CADENCE (owner ruling 6 Nov 2026, risk brain R-EML-04; replaced "one follow-up", 24 Oct):
+ *      four emails to a person at most — the first and up to three follow-ups on day 3, 7 and 14 from
+ *      the first send, never two under three days apart, never a fifth. A reply, an opt-out, a bounce
+ *      or a complaint stops a person at once; any spam complaint pauses the WHOLE prospect sequence
+ *      (desk.ts, a named stop); emails 3 and 4 never go in words she did not approve (the prospect
+ *      card's follow_up_2 / follow_up_3, and the guides' Decide card in engine.ts).
  *   7. No address outside our own domains or example.com in any file this fix owns (public repo).
  *
  * RULE 0: every check examines something; an empty scan fails. `--self-test` breaks each rule and
@@ -32,11 +37,11 @@ const OWNED = [
   "src/client/boss/pages/deals/LpTab.tsx", "src/client/boss/pages/deals/ProspectsTab.tsx", "tests/boss/lpProspects.test.ts",
 ];
 
-export function check({ template, lpBody, installer, tapSrc, eightSrc, files, P = plan }) {
+export function check({ template, lpBody, installer, tapSrc, eightSrc, files, deskSrc = "", engineSrc = "", P = plan }) {
   const bad = [];
   let examined = 0;
   const names = [{ name: "Alpha" }, { name: "Beta" }, { name: "Gamma" }];
-  for (const touch of [1, 2]) {
+  for (const touch of [1, 2, 3, 4]) {
     examined++;
     const r = P.renderProspect(template, { first: "Alex", names, touch });
     for (const p of P.prospectProblems(r)) bad.push(`prospect email touch ${touch}: ${p}`);
@@ -72,10 +77,26 @@ export function check({ template, lpBody, installer, tapSrc, eightSrc, files, P 
   examined++;
   const DAY = 86_400_000;
   const t0 = Date.UTC(2026, 9, 11);
-  if (P.MAX_TOUCHES !== 2) bad.push(`MAX_TOUCHES is ${P.MAX_TOUCHES}; her rule is the first email and ONE follow-up`);
-  if (P.dueTouch({ status: "active", touches: 2, first_sent_at: t0, last_touch_at: t0 + 5 * DAY }, t0 + 60 * DAY) !== null) bad.push("a third touch is due");
-  if (P.dueTouch({ status: "active", touches: 1, first_sent_at: t0, last_touch_at: t0 + 4 * DAY }, t0 + 6 * DAY) !== null) bad.push("two touches two days apart");
-  if (P.dueTouch({ status: "replied", touches: 1, first_sent_at: t0 }, t0 + 30 * DAY) !== null) bad.push("a reply did not stop the sequence");
+  if (P.MAX_TOUCHES !== 4) bad.push(`MAX_TOUCHES is ${P.MAX_TOUCHES}; her rule is four emails at most (the first and up to three follow-ups)`);
+  if (JSON.stringify([...(P.TOUCH_DAYS ?? [])]) !== "[0,3,7,14]") bad.push(`TOUCH_DAYS is ${JSON.stringify(P.TOUCH_DAYS)}; her rule is day 0, 3, 7 and 14 from the first send`);
+  const due = (touches, last, now, status = "active") => P.dueTouch({ status, touches, first_sent_at: t0, last_touch_at: t0 + last * DAY }, t0 + now * DAY);
+  if (due(4, 14, 400) !== null) bad.push("a fifth email is due");
+  for (const [touches, last, day, n] of [[1, 0, 3, 2], [2, 3, 7, 3], [3, 7, 14, 4]]) {
+    if (due(touches, last, day - 0.01) !== null) bad.push(`email ${n} is due before day ${day}`);
+    if (due(touches, last, day) !== n) bad.push(`email ${n} is not due on day ${day}`);
+  }
+  if (due(2, 6, 8) !== null) bad.push("two emails under three days apart");
+  for (const status of ["replied", "interested", "opted_out", "bounced", "done"]) {
+    for (const touches of [1, 2, 3]) if (due(touches, touches * 3, 60, status) !== null) bad.push(`a ${status} prospect is still due email ${touches + 1}`);
+  }
+  try {
+    P.renderProspect({ subject: template.subject, body: template.body, follow_up: template.follow_up }, { first: "Alex", names, touch: 3 });
+    bad.push("email 3 renders from a template without words she approved for it");
+  } catch { /* refused: right */ }
+  if (!P.PROSPECT_COMPLAINT?.test("Stop spamming me") || P.PROSPECT_COMPLAINT.test("Thanks, not for us right now")) bad.push("a spam complaint in a reply is not told apart from a polite no");
+  if (!/complaintStop\(/.test(deskSrc) || !/reason = 'complaint' AND source = 'prospects'/.test(deskSrc)) bad.push("desk.ts: a spam complaint does not pause the whole prospect sequence");
+  if (!/hasTouchWords\(words, touch\)/.test(deskSrc)) bad.push("desk.ts: emails 3 and 4 are not held for words she approved");
+  if (!/laterWordsApproved\(env, b, step, pitch, now\)/.test(engineSrc)) bad.push("engine.ts: the guides' emails 3 and 4 are not held for her approved words");
 
   examined++;
   for (const [f, src] of Object.entries(files)) {
@@ -100,6 +121,8 @@ function real() {
     installer: read("scripts/ops/install-agent-launchd.sh"),
     tapSrc: read("src/worker/boss/routes/lpTap.ts"),
     eightSrc: read("scripts/ops/lp-eightraise.mjs"),
+    deskSrc: read("src/worker/boss/lp/desk.ts"),
+    engineSrc: read("src/worker/boss/outreach/engine.ts"),
     files,
   });
 }
@@ -118,6 +141,17 @@ if (process.argv.includes("--self-test")) {
     ["a GET that sends", { tapSrc: 'lpTap.get("/:token", async (c) => {\n  await sendDraft(c.env, "m", "d");\n});' }, /a GET acts/],
     ["a billing tool", { eightSrc: 'call8r("manage_subscription")' }, /billing tool/],
     ["a real address", { files: { "x.ts": "to: someone@realfirm.com" } }, /outside our own/],
+    ["five emails allowed", { P: { ...plan, MAX_TOUCHES: 5 } }, /four emails at most/],
+    ["the old day-5 spacing", { P: { ...plan, TOUCH_DAYS: [0, 5] } }, /TOUCH_DAYS/],
+    ["a fifth email due", { P: { ...plan, dueTouch: (p, now) => (Number(p.touches) >= 4 ? 5 : plan.dueTouch(p, now)) } }, /fifth email/],
+    ["a follow-up the next day", { P: { ...plan, dueTouch: (p) => (["new", "active"].includes(p.status) && p.touches < 4 ? Number(p.touches) + 1 : null) } }, /before day/],
+    ["a reply that does not stop it", { P: { ...plan, dueTouch: (p, now) => plan.dueTouch({ ...p, status: "active" }, now) } }, /still due/],
+    ["email 3 in unapproved words", { P: { ...plan, renderProspect: (t, a) => plan.renderProspect({ ...t, follow_up_2: t.follow_up_2 ?? t.follow_up, follow_up_3: t.follow_up_3 ?? t.follow_up }, a) } }, /without words she approved/],
+    ["email 3 asks for a call", { template: { ...T, follow_up_2: T.follow_up_2.replace("One more thought", "Could we find 15 minutes for a quick call? One more thought") } }, /touch 3: suggests a call/],
+    ["a complaint read as a polite no", { P: { ...plan, PROSPECT_COMPLAINT: /$^/ } }, /spam complaint in a reply/],
+    ["the complaint pause removed", { deskSrc: read("src/worker/boss/lp/desk.ts").replaceAll("complaintStop(", "String(") }, /does not pause the whole/],
+    ["emails 3 and 4 not held", { deskSrc: read("src/worker/boss/lp/desk.ts").replace("hasTouchWords(words, touch)", "true") }, /not held for words she approved/],
+    ["the guides' emails 3 and 4 not held", { engineSrc: read("src/worker/boss/outreach/engine.ts").replace("laterWordsApproved(env, b, step, pitch, now)", "Promise.resolve(\"approved\")") }, /guides' emails 3 and 4/],
   ];
   let fails = 0;
   if (base.bad.length) { console.error(`SELF-TEST: the real repo is not clean first:\n  ${base.bad.join("\n  ")}`); process.exit(1); }
@@ -125,6 +159,7 @@ if (process.argv.includes("--self-test")) {
     template: plan.DEFAULT_PROSPECT_TEMPLATE, lpBody: plan.lpReplyBody({ name: "Alex", bucket: "call" }),
     installer: read("scripts/ops/install-agent-launchd.sh"), tapSrc: read("src/worker/boss/routes/lpTap.ts"),
     eightSrc: read("scripts/ops/lp-eightraise.mjs"), files: {},
+    deskSrc: read("src/worker/boss/lp/desk.ts"), engineSrc: read("src/worker/boss/outreach/engine.ts"),
   };
   for (const [name, patch, want] of cases) {
     const r = check({ ...real0, ...patch });
@@ -141,4 +176,4 @@ if (bad.length) {
   console.error(`LP RULES FAILED (${bad.length}):\n  ${bad.join("\n  ")}`);
   process.exit(1);
 }
-console.log(`LP RULES PASSED: ${examined} checks — soft side-neutral prospect email, her LP voice, the 8Raise budget, no Tuesday reminder, no acting GET, one follow-up at most, no outside address.`);
+console.log(`LP RULES PASSED: ${examined} checks — soft side-neutral prospect email, her LP voice, the 8Raise budget, no Tuesday reminder, no acting GET, four emails at most on day 0/3/7/14 with replies, bounces, opt-outs and complaints stopping it, no outside address.`);
