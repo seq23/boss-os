@@ -24,6 +24,8 @@ import { OPENAI_SEAT } from "../duties/seatOrder";
 import { scanForModelAccess, privateLexicon } from "../router/modelAccess";
 
 const KENDRA = "emp_continuity";
+/** The queue row's note that only the hourly tick may drain it (bossMount.ts drainBossTasks). */
+export const TICK_ONLY = "tick-only: long research waits for the hourly tick";
 /** The longest a re-queued task sleeps before it looks again (a Cloudflare Queue's own ceiling). */
 const MAX_SLEEP_S = 12 * 3600;
 
@@ -122,7 +124,12 @@ export async function runGroundedRung(
     await env.DB.prepare(`UPDATE tasks SET status = 'queued' WHERE id = ?`).bind(t.id).run();
     await env.DB.prepare(`INSERT INTO task_events (id, task_id, ts, event, detail) VALUES (?,?,?,'ladder_step',?)`)
       .bind(newId("tev"), t.id, Date.now(), JSON.stringify({ next: "free Google search", why: "long research runs on the hourly tick, never in a request's 30-second tail" })).run();
-    await env.TASKS.send({ taskId: t.id, lane: t.lane }, { delaySeconds: Math.round((nextTickAt(Date.now()) - Date.now()) / 1000) });
+    // Marked TICK-ONLY, so the next request's drain cannot take it first and defer it again (13:00, 6
+    // Nov 2026: a request drained it six seconds after the tick and it waited another hour).
+    await env.DB.prepare(
+      `INSERT INTO boss_task_queue (id, task_id, lane, attempt, state, visible_at, enqueued_at, last_error)
+       VALUES (?, ?, ?, 0, 'pending', ?, ?, ?)`,
+    ).bind(crypto.randomUUID(), t.id, t.lane, nextTickAt(Date.now()), Date.now(), TICK_ONLY).run();
     return true;
   }
   /*

@@ -135,10 +135,10 @@ describe("the research ladder walks past a spent Codex seat to free Google searc
     await handleTask(withKey(), { taskId, lane: "ops", fromRequest: true });
     expect(calls).toHaveLength(0);
     expect((await row<any>(`SELECT status FROM tasks WHERE id = ?`, taskId)).status).toBe("queued");
-    expect(sent.filter((m) => m.taskId === taskId), "handed to the hourly tick").toHaveLength(1);
-    // Visible by the next top of the hour, when the tick fires — never a minute after it.
-    const due = Date.now() + sent[0]!.delaySeconds * 1000;
-    expect(due, "due after the tick fires").toBeLessThanOrEqual(Math.ceil(Date.now() / 3600_000) * 3600_000 + 1000);
+    // Queued for the hourly tick ONLY, visible by the next top of the hour when the tick fires.
+    const q = await row<any>(`SELECT visible_at, last_error FROM boss_task_queue WHERE task_id = ? AND state = 'pending'`, taskId);
+    expect(q.last_error, "a request's drain could take it again").toMatch(/^tick-only/);
+    expect(q.visible_at, "due after the tick fires").toBeLessThanOrEqual(Math.ceil(Date.now() / 3600_000) * 3600_000);
   });
 
   it("NEGATIVE: private-model-only research never reaches Gemini and is never parked on a seat", async () => {

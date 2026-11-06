@@ -253,9 +253,10 @@ export async function drainBossTasks(
        WHERE q.state = 'pending' AND q.visible_at <= ?
          AND COALESCE(json_extract(t.input, '$.hunt'), '') = ''
          AND COALESCE(json_extract(t.input, '$.grid_fix'), '') = ''
+         AND (? = 0 OR COALESCE(q.last_error, '') NOT LIKE 'tick-only%')
        ORDER BY q.enqueued_at LIMIT ?`,
     )
-    .bind(now.getTime(), limit)
+    .bind(now.getTime(), opts.fromRequest ? 1 : 0, limit)
     .all<{ id: string; task_id: string; lane: string; attempt: number }>();
 
   let ran = 0;
