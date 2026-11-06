@@ -10,6 +10,8 @@
  *   npm run sites:audit                       look at every site, print, write the results
  *   npm run sites:audit -- --site uscisexam.com   one site
  *   npm run sites:audit -- --morning          also write the morning email's "grid repos" section
+ *   npm run sites:audit -- --dry-run          audit for real, post nothing to Boss OS, no morning section
+ *                                             (with SEARCH_READINESS_DIR=<copy> nothing of hers is written)
  *   npm run sites:fix-queue                   print the fix queue Danielle's Thursday run reads
  *
  * `sites:audit` runs through the vault (`npm run -s vault:run`) so GSC_SERVICE_ACCOUNT_JSON is in
@@ -37,7 +39,7 @@ import { existsSync, mkdirSync, readFileSync, readdirSync, writeFileSync, rename
 import { homedir } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
-import { passingItems,
+import { passingItems, auditHost, currentBriefs, failureSplit, splitLine,
   loadChecklist, loadSites, applies, runChecks, expandCoverage, fixBriefs, morningLines, searchLanes, summaryLines, liveSameAs, hostOf, bare, entityFor, ENTITY_WATCH_RE,
   metaContent, links, tags, FRESH_FILE_NAMES, indexnowKeyFiles, definitionChoice, CHECKLIST_PATH, SITES_PATH,
 } from "../../src/shared/boss/searchReadiness/audit.mjs";
@@ -61,6 +63,11 @@ const args = process.argv.slice(2);
 const flag = (n) => args.includes(n);
 const opt = (n) => { const i = args.indexOf(n); return i >= 0 ? args[i + 1] : null; };
 const SAMPLE = Number(opt("--sample") ?? 12);
+/**
+ * --dry-run: audit for real, print, and write results only under SEARCH_READINESS_DIR; post nothing to
+ * Boss OS (no approval card, no cleared findings) and write no morning section.
+ */
+const DRY = flag("--dry-run");
 const CRAWL_CAP = 300;
 const say = (...a) => console.log(...a);
 const stop = (code, tag, why) => { console.error(`NAMED STOP [${tag}] ${why}`); process.exit(code); };
@@ -266,6 +273,19 @@ function lastWeekRows(today) {
   return out;
 }
 
+/**
+ * Every earlier dated run (results-<day>.json before `today`, last 60 days), for the weekly split.
+ * An unreadable file is skipped; no history at all makes every site "new", which the split says.
+ */
+function earlierRuns(today) {
+  const days = existsSync(OUT) ? readdirSync(OUT).map((f) => /^results-(\d{4}-\d{2}-\d{2})\.json$/.exec(f)?.[1]).filter((d) => d && d < today && Date.parse(today) - Date.parse(d) <= 60 * 86_400_000) : [];
+  const out = [];
+  for (const day of days) {
+    try { const r = JSON.parse(readFileSync(join(OUT, `results-${day}.json`), "utf8")); out.push({ day, sites: (r.sites ?? []).map((x) => ({ site: { domain: x.site?.domain }, results: (x.results ?? []).map((y) => ({ id: y.id, status: y.status })) })) }); } catch { /* skipped */ }
+  }
+  return out;
+}
+
 // ─── PageSpeed Insights (free, keyless) ───────────────────────────────────────
 
 async function psi(host) {
@@ -377,7 +397,9 @@ async function readRepo(name) {
 async function auditSite(site, checklist, g, gscSites, portfolio, firstSeen = {}, lastWeekSite = null) {
   const t0 = Date.now();
   const start = await get(`https://${site.domain}/`);
-  const host = start.final ? new URL(start.final).hostname : site.domain;
+  // The same site only (www ↔ apex): a home page that redirects to ANOTHER site keeps this site's own
+  // host, so its sitemap and pages are read, never the other site's (spryexecutiveos.com, 6 Nov 2026).
+  const host = auditHost(site.domain, start.final);
   // `final` is where the HTML actually came from. A host whose / answers 308 to
   // its one money page returns that page's HTML here, and the canonical check
   // must compare against the page it got, not the URL it asked for.
@@ -504,7 +526,8 @@ async function main() {
     const q = join(OUT, "fix-queue.json");
     if (!existsSync(q)) stop(3, "NO_QUEUE", `${q} does not exist yet; run npm run sites:audit first.`);
     const { workQueue } = await import("../../src/shared/boss/searchReadiness/audit.mjs");
-    const w = workQueue(JSON.parse(readFileSync(q, "utf8")).briefs);
+    // Only items the checklist still holds: a queue written before an item was removed never works it.
+    const w = workQueue(currentBriefs(definitions().checklist, JSON.parse(readFileSync(q, "utf8")).briefs));
     for (const r of w.repos) console.log(`REPO ${r.repo} ${r.n}`);
     for (const c of w.chunks) console.log(`CHUNK ${c.repo} ${c.ids.length} ${c.ids.join(",")}`);
     for (const c of w.once) console.log(`ONCE ${c.repo} ${c.ids.length} ${c.ids.join(",")}`);
@@ -515,6 +538,7 @@ async function main() {
     const q = join(OUT, "fix-queue.json");
     if (!existsSync(q)) stop(3, "NO_QUEUE", `${q} does not exist yet; run npm run sites:audit first.`);
     const v = JSON.parse(readFileSync(q, "utf8"));
+    v.briefs = currentBriefs(definitions().checklist, v.briefs);
     say(`${v.briefs.length} fix briefs, written ${v.written_at}`);
     for (const b of v.briefs) say(`- ${b.domain} [${b.repo ?? "no repo"}] ${b.item_id} ${b.item_title}${b.protected ? " (PROTECTED)" : ""}: ${b.failure.slice(0, 160)}${b.missing_urls.length ? ` | ${b.missing_urls.length} missing URLs` : ""}`);
     return;
@@ -560,6 +584,10 @@ async function main() {
   const gold = slipLines(siteResults);
   const prevPath = join(OUT, "latest.json");
   const previous = existsSync(prevPath) ? JSON.parse(readFileSync(prevPath, "utf8")) : null;
+  // Why each failure is on the list (owner, 6 Nov 2026): new site, slipped back, new item, still open,
+  // counted from this run against the earlier dated runs.
+  const history = earlierRuns(day);
+  const split = failureSplit(checklist, siteResults, { history });
   const report = {
     day, at: new Date().toISOString(), checklist_items: checklist.items.length,
     // Which definition measured this run, so a brief can always be traced to the sites.json that made it.
@@ -568,16 +596,17 @@ async function main() {
     red_lines: red,
     // Gold (3 Nov 2026): a quarter or more down two weeks running, each with its diagnosis.
     gold_lines: gold,
+    failure_split: { ...split, line: splitLine(split), history_runs: history.length },
     sites: siteResults.map((s) => ({ ...s, failing: s.results.filter((r) => r.status === "fail").map((r) => r.id) })),
   };
   writeJson(join(OUT, `results-${day}.json`), report);
   if (!only) writeJson(prevPath, report);
   // Her yes (Hicks, 3 Nov 2026): an approved plan for a site in the last 14 days lets its briefs be worked.
-  const boss = await bossSession();
+  const boss = DRY ? { ok: false, why: "dry run: nothing is posted" } : await bossSession();
   const approvedOrigins = boss.ok ? await approvedPlanOrigins(boss) : null;
   for (const s of siteResults) if (s.site?.owner_approval) s.approved = Boolean(approvedOrigins?.some((o) => o.startsWith(`sr-${s.site.domain}-`)));
   const briefs = [...fixBriefs(checklist, siteResults), ...weeklyBriefs(siteResults)];
-  if (!only) for (const s of siteResults) {
+  if (!only && !DRY) for (const s of siteResults) {
     const card = approvalCard(s, briefs);
     if (!card) continue;
     const r = boss.ok ? await raiseApproval(boss, card) : { ok: false, why: boss.why };
@@ -587,7 +616,7 @@ async function main() {
   if (!only) writeJson(join(OUT, "fix-queue.json"), { written_at: report.at, from: `results-${day}.json`, definition: defs.source, approved_sites: siteResults.filter((s) => s.site?.owner_approval && s.approved).map((s) => s.site.domain), consumer: "Danielle's Tuesday repair run (scripts/ops/search-readiness-fix.sh, one site's repo at a time through scripts/ops/ahrefs-audit-fix.sh) and her Thursday repair run, section 'The Search Readiness fix queue' of its prompt", briefs });
 
   // What passes now clears its old open finding in Boss OS, so nothing asks her for what is already true.
-  if (!only) {
+  if (!only && !DRY) {
     const passes = passingItems(siteResults);
     const cleared = await postCleared(passes, report.at);
     say(cleared.ok ? `Boss OS: ${cleared.archived} old finding(s) cleared by checks that now pass.` : `Boss OS: old findings not cleared (${cleared.why}).`);
@@ -600,13 +629,14 @@ async function main() {
   for (const r of gold) say(`  GOLD ${r.line}`);
   for (const s of siteResults) for (const l of s.diagnosis?.text ?? []) say(`    ${s.site.domain} · ${l}`);
   for (const s of siteResults) if (s.outcome?.status === "not_read") say(`  ${s.site.domain}: search results not read: ${s.outcome.why}`);
-  say(`\nSEARCH-READINESS: sites=${siteResults.length} checks=${ran} failing=${fails} briefs=${briefs.length} → ${join(OUT, `results-${day}.json`)}`);
+  say(`\nSPLIT (against ${history.length} earlier runs): ${splitLine(split)}`);
+  say(`\nSEARCH-READINESS: sites=${siteResults.length} checks=${ran} failing=${fails} new_sites=${split.new_sites} slipped_back=${split.slipped_back} new_items=${split.new_items} still_open=${split.still_open} briefs=${briefs.length}${DRY ? " DRY-RUN (nothing posted)" : ""} → ${join(OUT, `results-${day}.json`)}`);
 
-  if (flag("--morning") && !only) {
+  if (flag("--morning") && !only && !DRY) {
     const { writeMorningSection } = await import("../../src/shared/boss/mail/morning.mjs");
     const statusPath = join(OUT, "fix-status.json");
     const lastRepair = existsSync(statusPath) ? JSON.parse(readFileSync(statusPath, "utf8")) : null;
-    const lines = morningLines(checklist, siteResults, { redLines: red, goldLines: gold, categories: readRepoCategories(), previous: previous?.day !== day ? previous : null, queued: briefs.filter((b) => b.disposition === "fix").length, lastRepair });
+    const lines = morningLines(checklist, siteResults, { redLines: red, goldLines: gold, categories: readRepoCategories(), previous: previous?.day !== day ? previous : null, history, queued: briefs.filter((b) => b.disposition === "fix").length, lastRepair });
     writeMorningSection("grid_repos", { lines, link: { label: "See every site's checks →", url: "https://boss.sequoiataylor.com/?view=morning" } });
     say(`Morning section written: ${lines.length} lines.`);
   }

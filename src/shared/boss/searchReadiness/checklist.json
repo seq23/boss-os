@@ -1,7 +1,7 @@
 {
- "_why": "THE SEARCH READINESS CHECKLIST AS DATA. One definition: scripts/ops/search-readiness-audit.mjs runs every auto check against every site in sites.json (the grid repos) each Monday, and scripts/ops/search-readiness-page.mjs renders the pinned checklist page from this file. tests/searchReadiness.test.ts fails if an item is lost (88 = the page's 71 plus j9, the four 26 Oct 2026 lessons (b10, e9, h6, j10), the six authority items k1-k6 of 31 Oct 2026 and the six search growth loop stages f7-f12 of 1 Nov 2026, when f2 was rewritten from 'frozen until measured' to 'publish straight away under a quality gate'; plus i11, paid endpoints gated, 3 Nov 2026) or a site has no coverage entry. Owner, 25 Oct 2026: make the checklist enforce itself on all her sites.",
+ "_why": "THE SEARCH READINESS CHECKLIST AS DATA. One definition: scripts/ops/search-readiness-audit.mjs runs every auto check against every site in sites.json (the grid repos) each Monday, and scripts/ops/search-readiness-page.mjs renders the pinned checklist page from this file. tests/searchReadiness.test.ts fails if an item is lost (86 = the page's 70 (71 less a6) plus j9, the four 26 Oct 2026 lessons (b10, e9, h6, j10), the authority items k1-k4 and k6 of 31 Oct 2026 and the six search growth loop stages f7-f12 of 1 Nov 2026, when f2 was rewritten from 'frozen until measured' to 'publish straight away under a quality gate'; plus i11, paid endpoints gated, 3 Nov 2026) or a site has no coverage entry. Owner, 25 Oct 2026: make the checklist enforce itself on all her sites. Owner, 6 Nov 2026: a6 (lastmod from content) and k5 (a named reviewer on medical, legal or financial pages) are removed and never checked: refresh often and keep moving; no real reviewer is coming. Every item carries `added`, the day it entered the checklist: 11 Oct 2026 for the page as first written, 13 Oct for phase J (the page says so), and the day of the commit that added it for every later item (git), so the weekly report can say which failures come from new items.",
  "version": 1,
- "page_item_count": 71,
+ "page_item_count": 70,
  "kinds": [
   "guide",
   "hyperlocal",
@@ -86,6 +86,7 @@
    "burned": true,
    "why_html": "Google treats www and apex, and any old domain, as separate sites unless told otherwise. Split signals rank nothing.",
    "how_html": "<code>curl -sI https://www.site.com/ | grep -i location</code> → the apex. Repeat for every alias domain.",
+   "added": "2026-10-11",
    "check": {
     "mode": "auto",
     "type": "host_redirect",
@@ -107,6 +108,7 @@
    "burned": true,
    "why_html": "The canonical is the page's statement of its own address. Pointing it anywhere else hands the page away.",
    "how_html": "Sample 10 pages: <code>curl -sL URL | grep -o 'rel=\"canonical\" href=\"[^\"]*\"'</code>. A validator should assert canonical = own URL on every generated page.",
+   "added": "2026-10-11",
    "check": {
     "mode": "auto",
     "type": "canonical_self",
@@ -128,6 +130,7 @@
    "burned": true,
    "why_html": "A single noindex on the homepage hides the site. Legal pages that are indexable absorb impressions a content page should get.",
    "how_html": "Grep every built page for <code>name=\"robots\"</code>; allowlist the pages that may carry noindex; fail on any other.",
+   "added": "2026-10-11",
    "check": {
     "mode": "auto",
     "type": "indexable_pages",
@@ -149,6 +152,7 @@
    "burned": false,
    "why_html": "Answer engines (OAI-SearchBot, PerplexityBot, ClaudeBot, Google-Extended) obey robots. Blocking them by default is why a site never gets cited.",
    "how_html": "<code>curl -s https://site.com/robots.txt</code> → 200, text/plain, <code>Sitemap:</code> line present, per-agent Allow for the AI crawlers you want.",
+   "added": "2026-10-11",
    "check": {
     "mode": "auto",
     "type": "robots_ok",
@@ -179,32 +183,12 @@
    "burned": false,
    "why_html": "Redirecting or noindexed URLs in the sitemap are \"errors\" in Search Console and waste the crawl budget on a new domain.",
    "how_html": "Validator: sitemap URL count equals indexable page count; no sitemap URL redirects; none noindexed.",
+   "added": "2026-10-11",
    "check": {
     "mode": "auto",
     "type": "sitemap_valid",
     "source": "sitemap",
     "how": "sitemap.xml (and every child of an index) parses and is not empty; every URL is on the canonical host; sampled URLs answer 200 without a redirect.",
-    "applies_to": [
-     "guide",
-     "hyperlocal",
-     "brand",
-     "authority"
-    ]
-   }
-  },
-  {
-   "id": "a6",
-   "phase": "A",
-   "title": "lastmod comes from content, not from the build date",
-   "title_html": "lastmod comes from content, not from the build date",
-   "burned": true,
-   "why_html": "Dates that change daily on every page teach Google the sitemap is noise.",
-   "how_html": "Test: build twice with no content change; every lastmod is identical. Header, footer and nav changes must not count as content.",
-   "check": {
-    "mode": "auto",
-    "type": "lastmod_from_content",
-    "source": "sitemap",
-    "how": "Fails when 90% or more of a sitemap's URLs (20 or more) carry the same lastmod dated within the last two days: that is a build date, not a content date.",
     "applies_to": [
      "guide",
      "hyperlocal",
@@ -221,6 +205,7 @@
    "burned": false,
    "why_html": "The plain-text summary AI engines read first: what the site is, what it offers, where the key pages are, how to cite it.",
    "how_html": "<code>curl -s https://site.com/llms.txt</code> → 200 text/plain, under ~2,000 words, links resolve.",
+   "added": "2026-10-11",
    "check": {
     "mode": "auto",
     "type": "llms_txt",
@@ -242,6 +227,7 @@
    "burned": true,
    "why_html": "A restructure that drops ranked URLs throws away the rankings. Google does not forward them to the new page on its own.",
    "how_html": "Generate redirects from the Search Console page export on every build; a validator fails if any measured URL would 404; a post-deploy script checks live.",
+   "added": "2026-10-11",
    "check": {
     "mode": "auto",
     "type": "gsc_pages_live",
@@ -263,6 +249,7 @@
    "burned": false,
    "why_html": "Missing icons are console errors and a Lighthouse best-practices hit; a soft-404 (every unknown path 301s home) hides broken links from you.",
    "how_html": "<code>curl -sI site/favicon.ico</code> → 200; <code>curl -sI site/nonexistent</code> → 404.",
+   "added": "2026-10-11",
    "check": {
     "mode": "auto",
     "type": "site_basics",
@@ -284,6 +271,7 @@
    "burned": false,
    "why_html": "It is the floor, not the goal. A perfect score with the switches above off still gets zero traffic.",
    "how_html": "<code>npx lighthouse URL --form-factor=mobile --only-categories=performance,seo,accessibility</code>, or pagespeed.web.dev.",
+   "added": "2026-10-11",
    "check": {
     "mode": "auto",
     "type": "lighthouse_mobile",
@@ -310,6 +298,7 @@
    "burned": false,
    "why_html": "The title is the search result. \"Memphis Vendor Library | Memphis Vendor Library\" wastes the whole line.",
    "how_html": "Validator: length band, no duplicate titles sitewide, suffix never equals prefix.",
+   "added": "2026-10-11",
    "check": {
     "mode": "auto",
     "type": "title_band",
@@ -331,6 +320,7 @@
    "burned": false,
    "why_html": "It is the snippet. Some frameworks only inject it for a bot list (Next.js did; Lighthouse's crawler wasn't on it).",
    "how_html": "<code>curl -sL URL -A \"Mozilla/5.0\" | grep -c 'name=\"description\"'</code> → 1.",
+   "added": "2026-10-11",
    "check": {
     "mode": "auto",
     "type": "meta_description",
@@ -352,6 +342,7 @@
    "burned": false,
    "why_html": "Question headings are what answer engines lift into \"People also ask\" and voice results.",
    "how_html": "Grep for <code>&lt;h1</code> count = 1; read the H2s aloud as questions.",
+   "added": "2026-10-11",
    "check": {
     "mode": "auto",
     "type": "one_h1",
@@ -373,6 +364,7 @@
    "burned": false,
    "why_html": "The sentence a snippet, a voice answer and an AI citation all want. If the page makes the reader scroll for it, the engine moves on.",
    "how_html": "Validator: first paragraph after H1 starts with the entity name + \"is\", 40–60 words.",
+   "added": "2026-10-11",
    "check": {
     "mode": "auto",
     "type": "definition_paragraph",
@@ -393,6 +385,7 @@
    "burned": false,
    "why_html": "Answers at snippet length are what gets quoted. Two FAQPage blocks on one page void the rich result; FAQ markup with no visible Q&amp;A is a spam signal.",
    "how_html": "Validator: FAQPage count per page ≤ 1, and every question in the schema appears in the visible text.",
+   "added": "2026-10-11",
    "check": {
     "mode": "auto",
     "type": "faq_schema_visible",
@@ -413,6 +406,7 @@
    "burned": false,
    "why_html": "Shares and AI previews render from these. An image hosted on another domain is a dependency you don't control.",
    "how_html": "<code>curl -sL URL | grep -o 'property=\"og:[a-z:]*\"' | sort -u</code>; <code>curl -sI site/og.png</code> → 200.",
+   "added": "2026-10-11",
    "check": {
     "mode": "auto",
     "type": "social_tags",
@@ -434,6 +428,7 @@
    "burned": true,
    "why_html": "A page in the sitemap that no page links to is a page Google crawls last and ranks lowest, if at all.",
    "how_html": "Crawl the built site from \"/\" and diff against the sitemap; a validator fails on any orphan.",
+   "added": "2026-10-11",
    "check": {
     "mode": "auto",
     "type": "no_orphans",
@@ -455,6 +450,7 @@
    "burned": false,
    "why_html": "Anchor text tells Google what the target page is about. \"Click here\" tells it nothing.",
    "how_html": "Spot check 10 pages; validator for empty alt attributes.",
+   "added": "2026-10-11",
    "check": {
     "mode": "auto",
     "type": "img_alt",
@@ -476,6 +472,7 @@
    "burned": false,
    "why_html": "\"Crawled, currently not indexed\" is Google's verdict on thin or near-duplicate pages. Volume of pages is not a strategy.",
    "how_html": "Report word counts per page from the build; list everything under 300 words with zero impressions.",
+   "added": "2026-10-11",
    "check": {
     "mode": "auto",
     "type": "word_count",
@@ -499,6 +496,7 @@
    "burned": true,
    "why_html": "A shared template once stamped one site's brand onto another's pages. The search result then credits the wrong site, and the two sites compete for one name.",
    "how_html": "Validator: every built title contains the host's own brand (its name, <code>og:site_name</code> or Organization name) and no other portfolio site's name.",
+   "added": "2026-10-26",
    "check": {
     "mode": "auto",
     "type": "title_names_own_site",
@@ -520,6 +518,7 @@
    "burned": false,
    "why_html": "This is how AI engines decide what entity a page belongs to. Consistent naming across every page is what makes the site citable as one thing.",
    "how_html": "Rich Results test on the homepage; grep JSON-LD for <code>\"@type\":\"Organization\"</code> on every page.",
+   "added": "2026-10-11",
    "check": {
     "mode": "auto",
     "type": "organization_node",
@@ -541,6 +540,7 @@
    "burned": false,
    "why_html": "Sitelinks, breadcrumbs in results, and the page-to-site relationship engines use for attribution.",
    "how_html": "Validator: required types per page kind.",
+   "added": "2026-10-11",
    "check": {
     "mode": "auto",
     "type": "page_types",
@@ -562,6 +562,7 @@
    "burned": false,
    "why_html": "An Offer with a real price is what puts the price in the result; a LocalBusiness with a phone and map link is what the local pack reads.",
    "how_html": "Prices in schema must equal prices on the page and in the pricing config; pin with a test.",
+   "added": "2026-10-11",
    "check": {
     "mode": "auto",
     "type": "business_type",
@@ -581,6 +582,7 @@
    "burned": false,
    "why_html": "Marks the sentences voice assistants and AI readers may read aloud or quote.",
    "how_html": "The cssSelector in the schema must resolve to an element on the page; validator checks it.",
+   "added": "2026-10-11",
    "check": {
     "mode": "auto",
     "type": "speakable",
@@ -600,6 +602,7 @@
    "burned": false,
    "why_html": "Markup without matching content is treated as deceptive and can cost all rich results on the domain.",
    "how_html": "Validator: every FAQ/HowTo/Offer in schema has visible counterpart text.",
+   "added": "2026-10-11",
    "check": {
     "mode": "auto",
     "type": "schema_supported",
@@ -621,6 +624,7 @@
    "burned": false,
    "why_html": "AI engines weight who is speaking. An unnamed page with no About is the last thing they cite.",
    "how_html": "About page exists and is linked sitewide; author node matches the byline.",
+   "added": "2026-10-11",
    "check": {
     "mode": "auto",
     "type": "about_page",
@@ -642,6 +646,7 @@
    "burned": false,
    "why_html": "Snippets and AI answers are extracted from the top of the page. A page that earns the click with a tease loses the citation.",
    "how_html": "Read the first screen of each template page type.",
+   "added": "2026-10-11",
    "check": {
     "mode": "manual",
     "reason": "Whether the first 100 words answer the question is a reader's judgement; a word-position heuristic would pass a story that happens to contain the keyword.",
@@ -660,6 +665,7 @@
    "burned": false,
    "why_html": "List and table snippets are extracted from literal lists and tables, never from prose.",
    "how_html": "Any \"how to\" page has an ordered list; any \"X vs Y\" page has a table.",
+   "added": "2026-10-11",
    "check": {
     "mode": "auto",
     "type": "steps_and_tables",
@@ -680,6 +686,7 @@
    "burned": false,
    "why_html": "AI engines prefer citable specifics over generalities. \"Starting at $350\" beats \"affordable\".",
    "how_html": "Each page carries at least three specific, sourced facts.",
+   "added": "2026-10-11",
    "check": {
     "mode": "manual",
     "reason": "\"Specific, sourced facts\" needs a reader to tell a real figure with its source from a number in a sentence.",
@@ -698,6 +705,7 @@
    "burned": false,
    "why_html": "Freshness is a signal only when it is true; faked dates are the sitemap problem again.",
    "how_html": "Date in the page and in Article/WebPage schema agree.",
+   "added": "2026-10-11",
    "check": {
     "mode": "auto",
     "type": "dates_visible",
@@ -718,6 +726,7 @@
    "burned": false,
    "why_html": "Without it you are guessing. Every number that matters comes from here, and the API needs the service account on the property.",
    "how_html": "<code>sites.list</code> with the service account returns the property.",
+   "added": "2026-10-11",
    "check": {
     "mode": "auto",
     "type": "gsc_property",
@@ -739,6 +748,7 @@
    "burned": false,
    "why_html": "Three sites had none registered. Registration is one API call; the daily cycle should check it.",
    "how_html": "<code>sitemaps.list</code> daily; submit if absent; record the response.",
+   "added": "2026-10-11",
    "check": {
     "mode": "auto",
     "type": "gsc_sitemap",
@@ -760,6 +770,7 @@
    "burned": false,
    "why_html": "Bing, DuckDuckGo and others index within hours instead of weeks. New key files return 403 for a few minutes; retry.",
    "how_html": "<code>curl -sI site/&lt;key&gt;.txt</code> → 200; deploy log shows the ping accepted.",
+   "added": "2026-10-11",
    "check": {
     "mode": "auto",
     "type": "indexnow_key",
@@ -781,6 +792,7 @@
    "burned": false,
    "why_html": "A query that drops out of 28 days is not gone; a validator that forgets it reddens the build.",
    "how_html": "<code>gsc_truth.json</code> fresh daily, totals equal to the export, timestamp real (not 1970).",
+   "added": "2026-10-11",
    "check": {
     "mode": "auto",
     "type": "gsc_truth_fresh",
@@ -802,6 +814,7 @@
    "burned": false,
    "why_html": "The only way to know whether Google is declining your pages (quality) or not finding them (discovery). The answer decides what to do next.",
    "how_html": "<code>index_coverage.json</code> fresh, counts sum to the sitemap; quota is 2,000 inspections a day across all properties.",
+   "added": "2026-10-11",
    "check": {
     "mode": "auto",
     "type": "index_coverage_fresh",
@@ -823,6 +836,7 @@
    "burned": false,
    "why_html": "Without session data you cannot see that visitors leave in 14 seconds.",
    "how_html": "The project id appears on the live page (or in its loader file); Clarity shows sessions within a day.",
+   "added": "2026-10-11",
    "check": {
     "mode": "auto",
     "type": "clarity",
@@ -844,6 +858,7 @@
    "burned": false,
    "why_html": "A CTA you can't measure is a guess. A write-only token recorded clicks nobody could read.",
    "how_html": "The daily click file shows status ok, not a 403.",
+   "added": "2026-10-11",
    "check": {
     "mode": "manual",
     "reason": "Click data sits behind each repo's own short-link token; the auditor holds no such token, and reading it would widen what it can see.",
@@ -863,6 +878,7 @@
    "burned": false,
    "why_html": "For local intent, the map pack is where the clicks are. A listing with no phone and no photos, or no listing at all, is the biggest single gap a local site can have.",
    "how_html": "Search Maps for the business name and phone; the site links <code>maps.google.com/?cid=…</code>.",
+   "added": "2026-10-11",
    "check": {
     "mode": "auto",
     "type": "gbp_maps_link",
@@ -881,6 +897,7 @@
    "burned": false,
    "why_html": "Session recording is for watching people get stuck on the step that earns money. Anywhere else it is page weight, a consent question and data nobody reads.",
    "how_html": "Load the Clarity tag from the form and checkout templates only. <code>curl -s HOST/some-article/ | grep -c clarity</code> → 0 on a page with no form.",
+   "added": "2026-10-26",
    "check": {
     "mode": "auto",
     "type": "clarity_scoped",
@@ -902,6 +919,7 @@
    "burned": true,
    "why_html": "Keyword-tool lists with no number produced hundreds of pages Google never showed once.",
    "how_html": "Every target carries source + number; a validator drops unmeasured ones with the reason.",
+   "added": "2026-10-11",
    "check": {
     "mode": "manual",
     "reason": "Whether a target query came from a measured source lives in each repo's targeting data, in a different shape per repo.",
@@ -920,6 +938,7 @@
    "burned": false,
    "why_html": "Owner, 3 Nov 2026 (supersedes the 1 Nov pace): WPP-llm, theindustryguides.com, spryexecutiveos.com, weddingbudgetspreadsheet.com and howweknowdeep.com lost most of their Google exposure under thousands of near-identical template pages, and recovered only by cutting to a few dozen to a few hundred distinct pages. Volume of look-alike pages makes Google distrust the whole site; one strong page beats ten variants.",
    "how_html": "The shared search-loop engine publishes a new page only when it answers a question no existing page on that site answers (same intent becomes a strengthen brief for the existing page), and only while the site is under its live-page cap. The cap rises only when the site's Google impressions beat the previous 28 days. The weekly <code>search-loop-week</code> report says how many pages were published, held by the cap, or turned into strengthen briefs.",
+   "added": "2026-10-11",
    "check": {
     "mode": "auto",
     "type": "publish_straight_away",
@@ -938,6 +957,7 @@
    "burned": false,
    "why_html": "Page two to page one is the cheapest ranking move there is: aligned title and H1, definition, FAQ from the real queries, links from the homepage.",
    "how_html": "List pages with impressions and position ≤15 from the daily data; each has had a pass.",
+   "added": "2026-10-11",
    "check": {
     "mode": "manual",
     "reason": "Search Console can list the position 5 to 15 pages, but whether each has had a pass is a record only the repo's content log holds.",
@@ -956,6 +976,7 @@
    "burned": false,
    "why_html": "Fewer, fuller pages get indexed; a hundred thin ones get declined and drag the site's topic score down.",
    "how_html": "A consolidation ledger (page, words, impressions, hub) exists; merges happen after two weeks of coverage data, with a validator that every old URL 301s to a 200.",
+   "added": "2026-10-11",
    "check": {
     "mode": "auto",
     "type": "consolidation_ledger",
@@ -976,6 +997,7 @@
    "burned": false,
    "why_html": "Dentists checking licences were the listing buyers; people searching USCIS offices needed the civil-surgeon exam. Both were \"wrong\" traffic until a block addressed them.",
    "how_html": "Top queries by impressions reviewed monthly against who the page serves.",
+   "added": "2026-10-11",
    "check": {
     "mode": "manual",
     "reason": "Reading who arrives and turning the wrong audience toward the buyer is a monthly human review.",
@@ -995,6 +1017,7 @@
    "burned": false,
    "why_html": "virtualagency-os.com ranked 78th for \"west peak\", its own brand misspelled.",
    "how_html": "Site name in WebSite schema, title and og:site_name; alternateName for misspellings; search your own name.",
+   "added": "2026-10-11",
    "check": {
     "mode": "auto",
     "type": "brand_capture",
@@ -1016,6 +1039,7 @@
    "burned": false,
    "why_html": "New pages only win if they aim at searches the site can actually win. A weekly pass keeps the queue full of them without anyone choosing by hand, and $0 keeps the loop running for ever.",
    "how_html": "The engine's weekly run scores candidate searches from measured Search Console rows or free signals (autocomplete, related searches, questions people ask), each with its source and score. No paid keyword tool.",
+   "added": "2026-11-01",
    "check": {
     "mode": "auto",
     "type": "loop_discovery_weekly",
@@ -1034,6 +1058,7 @@
    "burned": false,
    "why_html": "Publishing more pages than search rewards builds a pile of near-duplicates nobody sees. A cap tied to results lets a site grow only while Google shows it more, and sending a same-intent search to the page that already answers it keeps every page distinct (owner, 3 Nov 2026, engine v1.3.0).",
    "how_html": "The engine starts each site at its distinct live pages (at least 20), raises the cap 10% a week only when the last 28 days of Google impressions beat the 28 before, lowers it 10% on a drop (never under 10) and holds it when Search Console has no numbers. At most 10 new pages a day as a run guard. A search with the same intent as an existing page becomes a strengthen brief for that page. The weekly report carries the cap and why, the searches it held back, and each search sent to an existing page.",
+   "added": "2026-11-01",
    "check": {
     "mode": "auto",
     "type": "loop_pace",
@@ -1052,6 +1077,7 @@
    "burned": false,
    "why_html": "A visit that ends on a page with no next step earns nothing. Each site has one thing it wants a visitor to do (buy, book, sign up, fill the form), and every page leads there.",
    "how_html": "The site's <code>search-loop.config.json</code> names its one action as <code>action.url</code>; the engine ends every page with it, and the sampled content pages must link or post to it.",
+   "added": "2026-11-01",
    "check": {
     "mode": "auto",
     "type": "one_action_every_page",
@@ -1070,6 +1096,7 @@
    "burned": false,
    "why_html": "Publishing straight away is only safe if what does not work is taken back. The checks keep the winners growing and stop thin pages piling up.",
    "how_html": "The engine reads each page's indexing, impressions and clicks at 2, 4 and 8 weeks: a page that is moving is strengthened, one that is not indexed or shown is undone (noindex or removed), and near-duplicates are merged with a redirect. The weekly report counts wins, undone and merged.",
+   "added": "2026-11-01",
    "check": {
     "mode": "auto",
     "type": "loop_checks_248",
@@ -1088,6 +1115,7 @@
    "burned": false,
    "why_html": "Answer engines are half the goal (AEO and GEO). Visits sent by ChatGPT, Perplexity, Gemini or Copilot, and the AI crawlers that read the pages, are the only way to see whether that half is working.",
    "how_html": "Visits are counted by referrer (chatgpt.com, perplexity.ai, gemini.google.com, copilot.microsoft.com and similar); bot reads from the host's request logs by user agent (GPTBot, ClaudeBot, PerplexityBot, Google-Extended and similar). Both go into the weekly report; an unread source is said as not read, never 0.",
+   "added": "2026-11-01",
    "check": {
     "mode": "auto",
     "type": "ai_measured",
@@ -1106,6 +1134,7 @@
    "burned": false,
    "why_html": "One engine for every selling site means a fix or a better rule reaches all of them at once, instead of each repo growing its own loop that drifts.",
    "how_html": "The repo carries <code>search-loop.config.json</code> (<code>schema: search-loop-config-v1</code>, <code>site</code> = the host, <code>action.url</code>; or the path a caller passes as <code>with: config:</code>) and a workflow with <code>uses: seq23/search-loop/.github/workflows/search-loop.yml@v1</code> on a schedule. Sites marked so set <code>menu_pages_need_approval: true</code> and a health gate. The engine uploads the <code>search-loop-week</code> report every run.",
+   "added": "2026-11-01",
    "check": {
     "mode": "auto",
     "type": "search_loop_adopted",
@@ -1124,6 +1153,7 @@
    "burned": true,
    "why_html": "rel=\"nofollow\" and rel=\"sponsored\" are the explicit instruction to pass no ranking value. Reserve them for paid links and sites you do not vouch for.",
    "how_html": "Crawl the linking site: <code>grep -o '&lt;a [^&gt;]*target-domain[^&gt;]*&gt;'</code> and read the rel attribute. A validator on the linking site's build.",
+   "added": "2026-10-11",
    "check": {
     "mode": "auto",
     "type": "links_followed",
@@ -1143,6 +1173,7 @@
    "burned": false,
    "why_html": "A sitewide footer link is a pattern; a sentence in a matching article is a recommendation.",
    "how_html": "Anchor = target title; target answers 200; post-deploy live check.",
+   "added": "2026-10-11",
    "check": {
     "mode": "auto",
     "type": "deep_links_live",
@@ -1162,6 +1193,7 @@
    "burned": false,
    "why_html": "141 links from one site to one target is a footprint search engines read as a scheme.",
    "how_html": "Validator on the linking site's build.",
+   "added": "2026-10-11",
    "check": {
     "mode": "auto",
     "type": "link_concentration",
@@ -1181,6 +1213,7 @@
    "burned": false,
    "why_html": "Undisclosed ownership inside an endorsement is what the FTC acts on, and the ownership is visible to Google anyway through shared accounts and hosting.",
    "how_html": "One line near citations and in the footer; no parent name needed.",
+   "added": "2026-10-11",
    "check": {
     "mode": "auto",
     "type": "ownership_disclosure",
@@ -1200,6 +1233,7 @@
    "burned": false,
    "why_html": "Owned networks are a start, not a substitute. The links that move a domain come from sites you don't control.",
    "how_html": "Track referring domains monthly from Search Console's Links report.",
+   "added": "2026-10-11",
    "check": {
     "mode": "manual",
     "reason": "Third-party citations and directory listings accrue over time off the site; Search Console's Links report has no API.",
@@ -1219,6 +1253,7 @@
    "burned": false,
    "why_html": "A fix without a guard is undone by the next rebuild. Every defect in the seven switches was a regression nobody could see.",
    "how_html": "Pass count goes up with the fix; the validator fails with the fix reverted.",
+   "added": "2026-10-11",
    "check": {
     "mode": "manual",
     "reason": "Proving a validator by breaking it is a one-time act inside each repo; this weekly audit is itself the live check for every automated item.",
@@ -1238,6 +1273,7 @@
    "burned": false,
    "why_html": "Generated sites regenerate; what isn't in the generator's data disappears.",
    "how_html": "A registry file plus a test that reads it.",
+   "added": "2026-10-11",
    "check": {
     "mode": "manual",
     "reason": "Whether a tag lives in a registry the build reads is a code review question per repo.",
@@ -1257,6 +1293,7 @@
    "burned": false,
    "why_html": "Validation hell is when validators drive decisions instead of catching harm. A check that fails on a new favicon is noise.",
    "how_html": "A blocker cap (40 worked), and each blocker names the harm it prevents.",
+   "added": "2026-10-11",
    "check": {
     "mode": "manual",
     "reason": "Whether a validator pins a real harm is a judgement about each validator.",
@@ -1276,6 +1313,7 @@
    "burned": false,
    "why_html": "The build can pass and the edge can still serve the wrong thing (a Worker that 301'd robots.txt did).",
    "how_html": "A script that curls the live host after every deploy and fails the job on a miss.",
+   "added": "2026-10-11",
    "check": {
     "mode": "auto",
     "type": "post_deploy_check",
@@ -1297,6 +1335,7 @@
    "burned": false,
    "why_html": "A slow gate taxes every fix, so fixes stop happening.",
    "how_html": "Read the last run's duration; cancel anything past 1.5× it.",
+   "added": "2026-10-11",
    "check": {
     "mode": "auto",
     "type": "merge_gate_fast",
@@ -1318,6 +1357,7 @@
    "burned": true,
    "why_html": "A key that leaves out a committed file lets a commit that changed only that file restore the previous commit's build over its own (sprylabs-hpc-site, 25 Oct 2026). Too broad costs a rebuild; too narrow ships a stale site.",
    "how_html": "The key is a hash of <code>git ls-files -s</code> with only <code>.github/workflows/</code> left out (or <code>hashFiles('**', '!.github/workflows/**')</code>), and a guard proves the listing covers the tree.",
+   "added": "2026-10-26",
    "check": {
     "mode": "auto",
     "type": "build_cache_key",
@@ -1339,6 +1379,7 @@
    "burned": true,
    "why_html": "The first senior-living brief put the guides on the wrong site and gave the companion site the wrong link pattern. Ten minutes of measuring the uscis build (15 guides at 2,100–2,800 words, a fixed H2 set, a three-link conversion block with tracking params, four intake links per companion piece) would have prevented both.",
    "how_html": "The brief cites measured numbers from the existing build: guide count and word band, H2 set, CTA URL and params, companion-site link counts and targets.",
+   "added": "2026-10-13",
    "check": {
     "mode": "manual",
     "reason": "A brief written before an agent runs is not on the live site; the check is on the brief.",
@@ -1356,6 +1397,7 @@
    "burned": false,
    "why_html": "The canonical is where the lead is captured. A companion piece that answers the question itself, or links only to city pages, ends the visit on the wrong host.",
    "how_html": "Per companion piece: a canonical link in the first 150 words, ≥4 links to the canonical intake with tracking params, a home link, ≥1 matching guide link, a city-page link; validator on the companion build.",
+   "added": "2026-10-13",
    "check": {
     "mode": "auto",
     "type": "companion_routes",
@@ -1374,6 +1416,7 @@
    "burned": false,
    "why_html": "The shape is what the answer engines already quote from the five existing sites and what the lead attribution reads. A guide in a different shape is a guide the funnel cannot credit.",
    "how_html": "Validator: guide count ≥ N, body words ≥ 1,800, the H2 ids present, FAQPage ≤ 1, the CTA params present and attributable in the lead table.",
+   "added": "2026-10-13",
    "check": {
     "mode": "auto",
     "type": "guide_shape",
@@ -1395,6 +1438,7 @@
    "burned": false,
    "why_html": "A new domain has no Search Console rows to seed discovery from, so item F1 would leave it with nothing. The universe (every phrase people type × every locality covered) gives the city pages, guides and FAQ their questions on day one; Monday discovery takes over once impressions arrive.",
    "how_html": "Fan-out records ≥ 600 for the vertical, every record mapped to an existing route, every covered locality ≥ 20 records; the companion site compiles ≥ 400 of them into its question sets; no new page without an impression (F2 still holds).",
+   "added": "2026-10-13",
    "check": {
     "mode": "manual",
     "reason": "The fan-out record counts come out of the generator's compile step, not off the live site.",
@@ -1411,6 +1455,7 @@
    "burned": false,
    "why_html": "The registry is the whole market (Shelby County had 31 licensed facilities, not the 47 a playbook claimed, because memory care is licensed as beds, not buildings). Lead delivery runs on the listing's email: 7 of 31 with an email means 24 facilities that can never take a lead.",
    "how_html": "Validator: row count ≥ the registry count, every row has phone, zip and the care-type flags; ≥ 80% rows with an email (hard floor below that); each listing's schema has telephone, address, geo, hasMap.",
+   "added": "2026-10-13",
    "check": {
     "mode": "auto",
     "type": "directory_listings",
@@ -1429,6 +1474,7 @@
    "burned": false,
    "why_html": "Search Console says people came; only the funnel says whether the form was reached. The expensive failure is a page that ranks and never shows the intake.",
    "how_html": "A token-guarded funnel endpoint with no PII (tested with a fixture lead); the Monday report row carries the funnel columns and per-page lead attribution; RED rule: clicks ≥ 20 in a week and intake starts = 0 opens the usual self-closing issue; fetch failure prints \"funnel: unavailable\", never red.",
+   "added": "2026-10-13",
    "check": {
     "mode": "manual",
     "reason": "The funnel endpoint is token-guarded with no personal data; the auditor holds no funnel token, and the Monday report is where the funnel lives.",
@@ -1445,6 +1491,7 @@
    "burned": false,
    "why_html": "Teasers, releases, pass notices and family follow-ups go out by the hundred without a human. An unmapped sender is one nobody can switch off, and a teaser with a name in it gives the lead away for free.",
    "how_html": "Email-map test passes with the new rows; compose refuses an email without the footer; a fixture lead's teaser contains no name, phone or email field.",
+   "added": "2026-10-13",
    "check": {
     "mode": "manual",
     "reason": "The outbound email map is checked by Boss OS's own email-map test, which this audit does not duplicate.",
@@ -1461,6 +1508,7 @@
    "burned": false,
    "why_html": "A lead-gen guide listed as a business gets removed by Google and costs the domain trust. The map-pack opportunity belongs to the listed businesses, which the directory links to.",
    "how_html": "E8 ticked as n/a with the reason recorded; every listing's hasMap resolves to a Maps result.",
+   "added": "2026-10-13",
    "check": {
     "mode": "auto",
     "type": "listing_maps",
@@ -1478,6 +1526,7 @@
    "burned": true,
    "why_html": "A hyperlocal site that covers three towns out of fifteen loses every search in the other twelve, and nobody notices because nothing lists the twelve. On 25 Oct 2026 memphisseniorcarehomes.com had two empty sitemaps and no neighborhood, extra-town or hospital pages.",
    "how_html": "The site's coverage manifest names the radius, the towns inside it, the neighborhoods, the local anchors (hospitals, venues) and the service × town pages. Every one of those URLs must be in the sitemap and answer 200; the weekly audit lists each missing one.",
+   "added": "2026-10-25",
    "check": {
     "mode": "auto",
     "type": "hyperlocal_coverage",
@@ -1497,6 +1546,7 @@
    "burned": false,
    "why_html": "The repos are public and the list names real organisations. A blocklist in code publishes who is being turned away and needs a deploy to change.",
    "how_html": "Every lead endpoint reads the deployment variable <code>BLOCKED_LEAD_DOMAINS</code> (comma-separated) and drops a match quietly; no source file holds a list of blocked email domains.",
+   "added": "2026-10-26",
    "check": {
     "mode": "auto",
     "type": "blocked_lead_domains",
@@ -1518,6 +1568,7 @@
    "burned": false,
    "why_html": "Public repos run Actions free. Everything else below runs in Actions.",
    "how_html": "<code>gh repo view --json visibility</code> says PUBLIC. Grep the full history for addresses, keys and client data before flipping, rewrite if anything is there.",
+   "added": "2026-10-11",
    "check": {
     "mode": "auto",
     "type": "repo_public",
@@ -1539,6 +1590,7 @@
    "burned": false,
    "why_html": "Git integration deploys every push for free; a workflow deploy needs a token and can ship a stale build.",
    "how_html": "Push to main, watch the Pages deployment go live; a release validator asserts <code>no_direct_cloudflare_deploy</code>.",
+   "added": "2026-10-11",
    "check": {
     "mode": "auto",
     "type": "no_deploy_step",
@@ -1559,6 +1611,7 @@
    "burned": false,
    "why_html": "If any script can name its own model, one of them will name a paid one. The router is the only door.",
    "how_html": "A test fails when a non-<code>:free</code> id is put in the config; grep the repo for <code>anthropic/</code>, <code>openai/</code>, <code>claude-</code> outside comments and find nothing.",
+   "added": "2026-10-11",
    "check": {
     "mode": "auto",
     "type": "llm_routing_free",
@@ -1580,6 +1633,7 @@
    "burned": false,
    "why_html": "The repo's $0 posture is enforced in code; the dashboard cap is the second lock that holds when code is wrong. Free models still work on a $0-limited key; paid ones return \"Key limit exceeded\".",
    "how_html": "Every receipt records <code>key_label</code>; a paid model called with the key is refused.",
+   "added": "2026-10-11",
    "check": {
     "mode": "manual",
     "reason": "The $0 limit is set in the OpenRouter dashboard on her account; the auditor reads no OpenRouter account.",
@@ -1599,6 +1653,7 @@
    "burned": false,
    "why_html": "A schedule is a standing order to spend. Dispatch is a decision each time.",
    "how_html": "Dispatch without the flag and read the stop line in the log; cost in the run's receipt is 0.",
+   "added": "2026-10-11",
    "check": {
     "mode": "manual",
     "reason": "Whether a lane is paid depends on what each workflow calls; reading that needs a review, and dispatching it to test the stop line would spend a run.",
@@ -1618,6 +1673,7 @@
    "burned": false,
    "why_html": "The only true numbers; free; and once they land in the repo every other job can read them instead of guessing.",
    "how_html": "The key is never on a laptop or in a vault. Files appear daily: <code>gsc_truth.json</code>, <code>index_coverage.json</code>, <code>gsc_sitemaps.json</code>.",
+   "added": "2026-10-11",
    "check": {
     "mode": "auto",
     "type": "gsc_daily_workflow",
@@ -1639,6 +1695,7 @@
    "burned": false,
    "why_html": "Discovery is where paid tools creep back in. A host allowlist and a receipt make it visible.",
    "how_html": "The Monday run's receipt shows model calls 0, cost $0, and only allowlisted hosts.",
+   "added": "2026-10-11",
    "check": {
     "mode": "manual",
     "reason": "The discovery receipt is per repo, in its own shape; its hosts and cost lines need reading.",
@@ -1657,6 +1714,7 @@
    "burned": false,
    "why_html": "Behaviour, change notification and Bing's view, all free and all needed before the first content job.",
    "how_html": "<code>curl -s HOST/</code> contains the Clarity loader; <code>curl -s HOST/KEY.txt</code> returns the key; Bing shows the sitemap.",
+   "added": "2026-10-11",
    "check": {
     "mode": "auto",
     "type": "clarity_indexnow",
@@ -1678,6 +1736,7 @@
    "burned": false,
    "why_html": "Without a report nobody notices a drop for a month. Without self-closing issues the list rots.",
    "how_html": "Dispatch the weekly workflow; the email arrives; the issue appears for a red site and closes on recovery.",
+   "added": "2026-10-11",
    "check": {
     "mode": "auto",
     "type": "weekly_report_workflow",
@@ -1699,6 +1758,7 @@
    "burned": false,
    "why_html": "A rule no code reads is a wish; the next agent in the repo needs to find the rule where it works.",
    "how_html": "The test imports the doc and the routing config and fails if either names a paid model.",
+   "added": "2026-10-11",
    "check": {
     "mode": "auto",
     "type": "zero_paid_doc",
@@ -1720,6 +1780,7 @@
    "burned": true,
    "why_html": "3 Nov 2026: an outside scanner found Time-2-Read's ElevenLabs voice callable with no login and no limit (bill run-up), and the sweep after it found an open email relay, open AI voice and video routes, and an admin password hash committed in a public repo. A public repo plus an open paid route is a bill anyone can run up.",
    "how_html": "One shared helper wraps every paid route (LLM, TTS, image/video, email/SMS send, Stripe, scraping, maps): auth (session or signed guest token, never an anon key or an <code>Origin</code> check), <code>rateLimit(key, perHour)</code> and <code>dailyCeiling(name, max)</code>; a behaviour test per route: no auth → 401, over limit → 429, ceiling → 503 named stop, valid → passes. Also: no recipient, link or body of an email taken from the request; no secret, service-role key or password hash in code; Supabase <code>verify_jwt</code> on and RLS on every user table (no <code>using (true)</code>); user uploads land pending; webhooks verify signatures; admin routes check an admin session and lock out repeated wrong passwords; no <code>*</code> CORS on paid routes. The full check and fix recipe is the <code>app-security</code> skill; run it before launch.",
+   "added": "2026-11-03",
    "check": {
     "mode": "auto",
     "type": "paid_routes_gated",
@@ -1741,6 +1802,7 @@
    "burned": false,
    "why_html": "Search engines and AI knowledge graphs reconcile a brand against one consistent identity. When name, logo, description and profiles are written in several generators, they drift apart (the authority audit of 30 Oct 2026 found 16 of 24 sites with no external identity at all).",
    "how_html": "One <code>entity.json</code> per site in the repo: <code>@id</code>, name, logo, a one-line description, <code>sameAs[]</code> (real profiles only), <code>parentOrganization</code> and <code>profiles_pending[]</code>. A multi-site repo keys each site under <code>sites</code> or keeps one file per site.",
+   "added": "2026-10-31",
    "check": {
     "mode": "auto",
     "type": "entity_json",
@@ -1762,6 +1824,7 @@
    "burned": false,
    "why_html": "sameAs says 'this entity is also that profile'. A sameAs to the site's own pages, or to one of its own hosts, tells the knowledge graph nothing and reads as padding.",
    "how_html": "No <code>sameAs</code> URL in <code>entity.json</code> or in the live JSON-LD is on this site's own host (or any host the entity lists in <code>own_hosts</code>).",
+   "added": "2026-10-31",
    "check": {
     "mode": "auto",
     "type": "same_as_not_self",
@@ -1783,6 +1846,7 @@
    "burned": false,
    "why_html": "Without one live profile outside the site (a Pinterest, YouTube, Facebook, store or company page), the brand has nothing independent to be reconciled against. A dead profile in sameAs is worse than none.",
    "how_html": "Fetch every external <code>sameAs</code> URL in the live JSON-LD; at least one answers 2xx after redirects. Grid sibling sites do not count: they are the same owner, not an external profile.",
+   "added": "2026-10-31",
    "check": {
     "mode": "auto",
     "type": "same_as_resolves",
@@ -1804,6 +1868,7 @@
    "burned": false,
    "why_html": "The businesses were islands. One parent entity (Spry Labs, home at billionairehighperformancecoach.com/spry-labs) ties them into one graph. Client sites belong to their own firms, and Porch & Party is its own local business, so they must never carry that parent.",
    "how_html": "<code>entity_parent</code> in <code>sites.json</code> says which: <code>spry-labs</code> sites set <code>parentOrganization</code> (to Spry Labs, or to a grid parent that itself points there) in <code>entity.json</code> and in the live JSON-LD; <code>client</code> and <code>own</code> sites reference Spry Labs nowhere.",
+   "added": "2026-10-31",
    "check": {
     "mode": "auto",
     "type": "parent_organization",
@@ -1818,24 +1883,6 @@
    }
   },
   {
-   "id": "k5",
-   "phase": "K",
-   "title": "A medical, legal or financial page names a real reviewer",
-   "title_html": "A medical, legal or financial page names a real reviewer",
-   "burned": false,
-   "why_html": "Google weighs experience and expertise most on pages that affect health, money or legal outcomes. An organization byline is honest but weak; an invented person is worse than none.",
-   "how_html": "Each sampled content page of a YMYL site (<code>ymyl: true</code> in <code>sites.json</code>) carries a <code>reviewedBy</code> Person, or an author Person with a credential, who is listed in the repo's <code>reviewers.json</code> with written consent. Until a real reviewer agrees in writing this is a named stop for the owner, never a fix: nobody invents a person.",
-   "check": {
-    "mode": "auto",
-    "type": "ymyl_reviewer",
-    "source": "schema",
-    "how": "Every sampled content page of a YMYL site names a Person (reviewedBy, or a credentialed author); a Person not in the repo's reviewers.json with written consent fails. No reviewer yet is a named stop for the owner.",
-    "applies_to": [
-     "flag:ymyl"
-    ]
-   }
-  },
-  {
    "id": "k6",
    "phase": "K",
    "title": "The weekly link-back watch exists and is green",
@@ -1843,6 +1890,7 @@
    "burned": false,
    "why_html": "Profiles die, get renamed or stop linking back, and nothing notices. A scheduled watch that fetches every sameAs, checks the link-back and promotes pending profiles keeps the identity from drifting.",
    "how_html": "A workflow named <code>entity-backlink-watch</code> (or <code>entity_backlink_watch</code>) with a <code>schedule</code> and <code>workflow_dispatch</code>; its newest run is a success and less than eight days old.",
+   "added": "2026-10-31",
    "check": {
     "mode": "auto",
     "type": "entity_watch_green",

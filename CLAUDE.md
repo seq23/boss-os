@@ -166,7 +166,7 @@ pinned by `tests/plainEmail.test.ts` ("the rules in CLAUDE.md"), which reads thi
 Owner, 25 Oct 2026. Her pinned Search Readiness Checklist is data, run every week on every grid repo
 site. Pinned by `tests/searchReadiness.test.ts`, which reads this section:
 1. **One definition.** `src/shared/boss/searchReadiness/checklist.json` holds every item (the page's
-   71 plus j9, hyperlocal coverage) as an automatic check or a manual item with its reason.
+   70, 71 less a6, plus j9, hyperlocal coverage) as an automatic check or a manual item with its reason.
    `npm run sites:page -- --out <path>` renders the pinned page from it; edit the JSON, never the page.
    The page also carries "Where every site stands", one row per site counted from the newest
    `results-<day>.json` (`--results <file>` to pick one). Four lessons of 26 Oct 2026 are automatic
@@ -207,11 +207,12 @@ site. Pinned by `tests/searchReadiness.test.ts`, which reads this section:
    never Spry Labs, so the friends' businesses and Porch & Party never carry it; the three authority-network
    publications are `own` too, because the owner withdrew their parent-company claim on 11 Oct 2026 and
    `authority-backlink-network` fails its own build if it reappears, so a side business may hold `own` when
-   `entity_parent_why` on its row says why), k5 a `ymyl: true` site's
-   content pages name a reviewer listed with written consent in the repo's `reviewers.json`, k6 the weekly
-   entity-backlink-watch is green and under eight days old. a1-a6 were taken, hence K. k5 with no
-   reviewer is a **named stop** (`OWNER_REVIEWER_NEEDED`, disposition `named_stop`): said every week,
-   never worked, because nobody invents a person. Pinned by `tests/searchReadiness.test.ts`.
+   `entity_parent_why` on its row says why), k6 the weekly
+   entity-backlink-watch is green and under eight days old. a1-a6 were taken, hence K. **k5 (a named
+   reviewer on medical, legal or financial pages) was removed on 6 Nov 2026** ("I'm never getting a real
+   reviewer so take that off and do not check for that"), and so was **a6 (lastmod from content, not the
+   build date)** ("just refresh it often and keep moving but not a failure"): neither is checked, and
+   nothing blocks a reviewer-less page or a frequent date refresh. Pinned by `tests/searchReadiness.test.ts`.
 7. **The search growth loop on every selling site (owner, 1 Nov 2026; spec in the spry brain's
    Settled decisions).** A site with a `search_loop` entry in sites.json (its wave: 1 Industry Guides,
    ApprovalPrep, Dream Wedding, the Spry HPC sites; 2 Time-2-Read, heygetonmylevel; 3 Porch & Party and
@@ -271,6 +272,14 @@ site. Pinned by `tests/searchReadiness.test.ts`, which reads this section:
    zero leads is plain, "too few visits to judge"). In latest.json, the
    site's row on the checklist page and the Monday email. **Client sites are never read or reported.**
    Pinned by `tests/siteLeads.test.ts`.
+10. **The weekly split (owner, 6 Nov 2026).** The Monday line and `latest.json` (`failure_split`) split
+   the failures four ways, counted from this run only (`failureSplit`, `splitLine` in audit.mjs): on
+   **new sites** (first audited within 14 days, or new to sites.json), **slipped back** (passed on the
+   site's last run that judged it), from **new checklist items** (`added` within 14 days; every item
+   carries `added`), and **still open**. No older run's "all clear" is ever repeated. The fix queue
+   holds only items checklist.json still holds; a queue written before a removal is filtered again on
+   every read (`currentBriefs`). A site whose home page redirects to another site is audited on its
+   own host (`auditHost`).
 
 ## Brains: one document per business, read first
 

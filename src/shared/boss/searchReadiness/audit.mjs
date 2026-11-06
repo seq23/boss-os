@@ -61,7 +61,8 @@ export const STATUS = Object.freeze(["pass", "fail", "not_checked", "no_repo", "
 
 export function applies(item, site) {
   const a = item.check?.applies_to ?? [];
-  // `flag:ymyl` reaches only the sites sites.json marks ymyl: true (medical, legal, financial; k5).
+  // `flag:ymyl` reaches only the sites sites.json marks ymyl: true (medical, legal, financial). No item
+  // uses it since k5 (a named reviewer) was removed on 6 Nov 2026; it stays for YMYL care items.
   // `flag:search_loop` reaches only the selling sites sites.json gives a `search_loop` entry (1 Nov 2026).
   return a.includes(site.kind) || (site.roles ?? []).some((r) => a.includes(`role:${r}`)) || (site.ymyl === true && a.includes("flag:ymyl"))
     || (!!site.search_loop && a.includes("flag:search_loop"));
@@ -310,19 +311,6 @@ export const CHECKS = {
     const redirected = ctx.pages.filter((p) => p.fromSitemap && (p.redirected || p.status !== 200)).map((p) => `${p.url} (${p.status}${p.redirected ? ", redirects" : ""})`);
     if (redirected.length) { why.push(`sampled sitemap URLs not a clean 200: ${list(redirected, 3)}`); evidence.push(...redirected); }
     return why.length ? fail(list(why, 6), { evidence }) : pass(`${s.urls.size} URLs across ${s.children.length || 1} sitemap file(s), none empty`);
-  },
-  lastmod_from_content(ctx) {
-    const s = ctx.sitemap; if (!s?.ok) return notChecked("no sitemap");
-    const bad = [];
-    for (const c of s.children) {
-      const lm = (c.lastmods ?? []).map((x) => String(x).slice(0, 10));
-      if (lm.length < 20) continue;
-      const counts = {}; for (const d of lm) counts[d] = (counts[d] ?? 0) + 1;
-      const [top, n] = Object.entries(counts).sort((a, b) => b[1] - a[1])[0];
-      const age = (ctx.now - Date.parse(top)) / 86_400_000;
-      if (n / lm.length >= 0.9 && age <= 2) bad.push(`${c.url}: ${n} of ${lm.length} lastmod = ${top}`);
-    }
-    return bad.length ? fail(`lastmod looks like the build date: ${list(bad, 3)}`) : pass("lastmod dates vary with content");
   },
   llms_txt(ctx) {
     const f = ctx.files["/llms.txt"];
@@ -928,22 +916,6 @@ export const CHECKS = {
     if (!live.length) why.push(`none of ${pages.length} sampled pages' JSON-LD carries parentOrganization pointing at Spry Labs or a grid parent`);
     return why.length ? fail(why.join("; "), { evidence: pages.filter((p) => !live.includes(p)).map((p) => p.final ?? p.url).slice(0, 10) }) : pass(`parent set in ${e.path} and on ${live.length} of ${pages.length} pages`);
   },
-  ymyl_reviewer(ctx) {
-    // Content pages only: the home page and the pages about the site itself (about, editorial policy,
-    // methodology, how we verify) give no medical, legal or financial advice of their own.
-    const pages = okPages(ctx).filter((p) => { try { const u = new URL(p.final ?? p.url); return u.pathname !== "/" && !isUtility(u.href) && !SELF_PAGE.test(u.pathname); } catch { return false; } });
-    if (!pages.length) return notChecked("no sampled content page to read");
-    const consent = reviewerRoster(ctx.repo);
-    const missing = [], invented = [];
-    for (const p of pages) {
-      const names = namedPeople(jsonLd(p.html).nodes);
-      if (!names.length) { missing.push(p.final ?? p.url); continue; }
-      if (consent) for (const nm of names) if (!consent.has(nm.toLowerCase())) invented.push(`${p.final ?? p.url}: ${nm}`);
-    }
-    if (invented.length) return fail(`a page names a person who is not in reviewers.json with written consent (remove the person from the page; never invent one): ${list(invented)}`, { evidence: invented });
-    if (missing.length) return fail(`${missing.length} of ${pages.length} content pages name no reviewer: ${list(missing, 3)}`, { evidence: missing, named_stop: REVIEWER_STOP });
-    return pass(`${pages.length} content pages each name a reviewer${consent ? " listed with written consent" : ""}`);
-  },
   entity_watch_green(ctx) {
     const r = ctx.repo; if (!r?.ok) return r?.noRepo ? { status: "no_repo", detail: r.why } : notChecked(r?.why ?? "repo not read");
     const w = r.workflows.find((x) => ENTITY_WATCH_RE.test(x.name));
@@ -1100,8 +1072,21 @@ export function actionMatches(target, action, base) {
   let t, a;
   try { t = new URL(target, base); a = new URL(action, base); } catch { return false; }
   if (bare(t.hostname) !== bare(a.hostname)) return false;
-  const ap = a.pathname.replace(/\/+$/, "");
-  return ap === "" ? t.pathname.replace(/\/+$/, "") === "" : t.pathname.replace(/\/+$/, "") === ap || t.pathname.startsWith(`${ap}/`);
+  // A static site links its pages as files: /download.html (or /download/index.html) IS /download.
+  const path = (u) => u.pathname.replace(/\/index\.html$/i, "/").replace(/\.html$/i, "").replace(/\/+$/, "");
+  const ap = path(a), tp = path(t);
+  return ap === "" ? tp === "" : tp === ap || tp.startsWith(`${ap}/`);
+}
+
+/**
+ * THE HOST A SITE IS AUDITED ON (6 Nov 2026). spryexecutiveos.com's home page answers 301 to
+ * billionairehighperformancecoach.com, and the audit took that host as the site's: it read the other
+ * site's sitemap and failed f9 on twelve of ITS pages. Following the home page is right for the same
+ * site (www ↔ apex); a redirect to another site never makes that site's pages this one's.
+ */
+export function auditHost(domain, finalUrl) {
+  let h; try { h = finalUrl ? new URL(finalUrl).hostname : null; } catch { h = null; }
+  return h && bare(h) === bare(domain) ? h : domain;
 }
 
 /** The site's newest usable weekly report, or `{ result }`: the status to return instead. */
@@ -1140,8 +1125,6 @@ export const ENTITY_FILE_RE = /(^|\/)entity\.json$/;
 export const ENTITY_WATCH_RE = /^entity[-_]backlink[-_]watch\.ya?ml$/;
 /** Platforms that refuse a robot or render in JS: a non-404 answer is unverifiable, not dead. */
 export const JS_WALLED = /(^|\.)(instagram\.com|facebook\.com|linkedin\.com|gumroad\.com|tiktok\.com|x\.com|twitter\.com|maps\.google\.com|g\.page|crunchbase\.com)$|^google\.com$/;
-const SELF_PAGE = /^\/(about|editorial-policy|methodology|how-we-verify|how-we-work|corrections|authors?|team)(\/|\.html)?$/i;
-export const REVIEWER_STOP = "OWNER_REVIEWER_NEEDED: a real, credentialed reviewer agrees in writing and is added to the repo's reviewers.json; until then the page keeps its honest editorial-desk byline. Never a fix brief: nobody invents a person.";
 
 export const bare = (h) => String(h ?? "").toLowerCase().replace(/^www\./, "");
 export const hostOf = (u) => { try { return bare(new URL(u).hostname); } catch { return ""; } };
@@ -1188,32 +1171,6 @@ function deepNodesAny(x, out = [], seen = new Set()) {
 
 function ownHosts(ctx, e) {
   return new Set([bare(ctx.host), bare(ctx.site?.domain), ...(e?.root?.own_hosts ?? []), ...(e?.node?.own_hosts ?? [])].map(bare).filter(Boolean));
-}
-
-/** Named people on a page: every reviewedBy Person, and every author Person with a credential. */
-export function namedPeople(nodes) {
-  const all = deepNodes(nodes, /./);
-  const byId = new Map(all.filter((n) => n["@id"]).map((n) => [n["@id"], n]));
-  const person = (v) => { const n = typeof v === "string" ? byId.get(v) : v?.["@id"] && !v.name ? byId.get(v["@id"]) ?? v : v; return n && typesOf(n).includes("Person") && n.name ? n : null; };
-  const out = new Set();
-  for (const n of all) {
-    for (const v of [].concat(n.reviewedBy ?? [])) { const p = person(v); if (p) out.add(String(p.name).trim()); }
-    for (const v of [].concat(n.author ?? [])) { const p = person(v); if (p && (p.jobTitle || p.hasCredential || p.honorificSuffix || p.hasOccupation)) out.add(String(p.name).trim()); }
-  }
-  return [...out];
-}
-
-/** Names in the repo's reviewers.json files with written consent; null when the repo keeps none. */
-export function reviewerRoster(repo) {
-  if (!repo?.ok) return null;
-  const files = repo.files.filter((f) => /(^|\/)reviewers\.json$/.test(f) && !/node_modules\//.test(f));
-  if (!files.length) return null;
-  const names = new Set();
-  for (const f of files) {
-    let j; try { j = JSON.parse(repo.show(f) ?? ""); } catch { continue; }
-    for (const r of Array.isArray(j) ? j : j?.reviewers ?? []) if (r?.name && r?.consent?.written === true) names.add(String(r.name).trim().toLowerCase());
-  }
-  return names;
 }
 
 export const CLARITY_RE = /clarity\.ms|clarity\.js|\/clarity[-.]/i;
@@ -1352,7 +1309,8 @@ export function fixBriefs(checklist, siteResults, { now = Date.now() } = {}) {
   const byId = Object.fromEntries(checklist.items.map((i) => [i.id, i]));
   const briefs = [];
   for (const s of siteResults) {
-    for (const r of s.results.filter((x) => x.status === "fail")) {
+    // Only items the checklist still holds (6 Nov 2026: a6 and k5 removed): a stale result is dropped.
+    for (const r of s.results.filter((x) => x.status === "fail" && byId[x.id])) {
       const item = byId[r.id];
       // A KNOWN LIMIT is a failure the repo cannot fix at source (the host decides it, or it waits on a
       // named stop), recorded on the site in sites.json with its reason. It stays in the results and
@@ -1376,7 +1334,7 @@ export function fixBriefs(checklist, siteResults, { now = Date.now() } = {}) {
         missing_urls: r.missing ?? [],
         evidence: (r.evidence ?? []).slice(0, 25),
         protected: prot.length ? prot.map((pp) => ({ path: pp.path, rule: pp.rule, buy_link: pp.buy_link, sha256: pp.sha256 })) : null,
-        // A NAMED STOP is a failure only the owner can clear (k5: a real reviewer's written consent).
+        // A NAMED STOP is a failure only the owner can clear (a check that sets `named_stop`).
         // It stays in the queue so it is said every week, but no fix pass is ever spent on it.
         // A repo the fixer may never branch (a client's report-only repo, repoPolicy NO_AUTO_FIX) is
         // recorded, never worked: its site reports in its own repo (1 Nov 2026).
@@ -1394,6 +1352,78 @@ export function fixBriefs(checklist, siteResults, { now = Date.now() } = {}) {
   return briefs;
 }
 
+/** Brief kinds that are not checklist items (search-outcomes.mjs `weeklyBriefs`): kept as they are. */
+const WEEKLY_BRIEF_KINDS = ["outcome", "quality", "consolidate"];
+
+/**
+ * THE QUEUE AS READ (6 Nov 2026). A fix-queue.json written last Monday may hold briefs for items the
+ * owner has since removed (a6, k5); the Tuesday run reads that file, so the queue is filtered again
+ * on every read: a checklist brief stays only while its item does. Zero items is a blind filter.
+ */
+export function currentBriefs(checklist, briefs) {
+  const ids = new Set((checklist?.items ?? []).map((i) => i.id));
+  if (!ids.size) throw Object.assign(new Error("NAMED STOP [CHECKLIST_EMPTY] the checklist holds no items, so no brief can be kept or dropped; read checklist.json again"), { code: 2 });
+  return (Array.isArray(briefs) ? briefs : []).filter((b) => WEEKLY_BRIEF_KINDS.includes(b?.kind) || ids.has(b?.item_id));
+}
+
+// ─── The weekly split: why each failure is on the list (owner, 6 Nov 2026) ─────
+
+export const NEW_WINDOW_DAYS = 14;
+const DAY_MS = 86_400_000;
+
+/**
+ * Every failure this run, in one of four groups, each counted once, in this order:
+ *   new_sites     the site was first audited within NEW_WINDOW_DAYS, or never before (new to sites.json).
+ *                 A site in the OLDEST run on record is the baseline, never new: the audit itself began
+ *                 on 25 Oct 2026, so "first audited" there means "already there when we started".
+ *   slipped_back  the site's most recent earlier run that judged the item passed it
+ *   new_items     the item entered the checklist (`added`) within NEW_WINDOW_DAYS
+ *   still_open    everything else
+ * `history` is the earlier runs (results-<day>.json: `{ day, sites }`), never this run. Only items the
+ * checklist still holds are counted. Every number comes from `siteResults`, this run's results.
+ */
+export function failureSplit(checklist, siteResults, { history = [], now = Date.now(), windowDays = NEW_WINDOW_DAYS } = {}) {
+  const byId = new Map((checklist?.items ?? []).map((i) => [i.id, i]));
+  const recent = (day) => Number.isFinite(Date.parse(day)) && now - Date.parse(day) < windowDays * DAY_MS;
+  const runs = (history ?? []).filter((h) => h?.day && Array.isArray(h.sites)).sort((a, b) => String(b.day).localeCompare(String(a.day)));
+  const firstSeen = new Map();
+  for (const h of runs) for (const s of h.sites) { const d = s?.site?.domain; if (d) firstSeen.set(d, h.day); } // newest → oldest: the last write is the earliest
+  const baseline = runs.length ? runs[runs.length - 1].day : null;
+  const isNewSite = (d) => { const first = firstSeen.get(d); return !first || (first !== baseline && recent(first)); };
+  const lastVerdict = (domain, id) => {
+    for (const h of runs) {
+      const r = h.sites.find((s) => s?.site?.domain === domain)?.results?.find((x) => x.id === id && (x.status === "pass" || x.status === "fail"));
+      if (r) return r.status;
+    }
+    return null;
+  };
+  const groups = { new_sites: [], slipped_back: [], new_items: [], still_open: [] };
+  for (const s of siteResults ?? []) {
+    const d = s?.site?.domain;
+    for (const r of (s?.results ?? []).filter((x) => x.status === "fail" && byId.has(x.id))) {
+      const key = `${d}|${r.id}`;
+      if (isNewSite(d)) groups.new_sites.push(key);
+      else if (lastVerdict(d, r.id) === "pass") groups.slipped_back.push(key);
+      else if (recent(byId.get(r.id).added)) groups.new_items.push(key);
+      else groups.still_open.push(key);
+    }
+  }
+  const n = Object.fromEntries(Object.entries(groups).map(([k, v]) => [k, v.length]));
+  return { total: n.new_sites + n.slipped_back + n.new_items + n.still_open, ...n, groups };
+}
+
+/** The split in plain words, from this run's numbers only. */
+export function splitLine(split) {
+  if (!split?.total) return "Nothing is failing this week.";
+  const parts = [
+    split.new_sites ? `${split.new_sites} on new sites` : null,
+    split.new_items ? `${split.new_items} from new checklist items` : null,
+    split.slipped_back ? `${split.slipped_back} slipped back` : null,
+    split.still_open ? `${split.still_open} still open` : null,
+  ].filter(Boolean);
+  return `${split.total} ${split.total === 1 ? "check" : "checks"} failing: ${parts.join(", ")}.`;
+}
+
 // ─── Plain words for the morning email ───────────────────────────────────────
 
 const short = (s) => s.domain;
@@ -1403,7 +1433,7 @@ const short = (s) => s.domain;
  * broken, what was fixed, what is being built; plain words, no ids, no commands). `previous` is
  * last week's result so a fix can be named as fixed.
  */
-export function morningLines(checklist, allResults, { previous = null, queued = 0, lastRepair = null, max = 4, categories = null, redLines = [], goldLines = [] } = {}) {
+export function morningLines(checklist, allResults, { previous = null, history = null, now = Date.now(), queued = 0, lastRepair = null, max = 4, categories = null, redLines = [], goldLines = [] } = {}) {
   // Her own sites carry the routine lines; a friend's site only when it needs her (a named stop).
   const mine = (x) => siteSection(x.site, categories) === "mine";
   const siteResults = (allResults ?? []).filter(mine);
@@ -1413,7 +1443,9 @@ export function morningLines(checklist, allResults, { previous = null, queued = 
   const failing = siteResults.map((s) => ({ s, f: s.results.filter((r) => r.status === "fail") }));
   const clean = failing.filter((x) => !x.f.length).length;
   const lines = [];
-  lines.push(`We checked all ${siteResults.length} grid repo sites against your Search Readiness Checklist this week. ${clean} pass every check${clean === siteResults.length ? "." : `; ${siteResults.length - clean} have gaps.`}`);
+  // Why each failure is on the list (6 Nov 2026), counted from THIS run: never an older run's words.
+  const split = splitLine(failureSplit(checklist, siteResults, { history: (history ?? (previous ? [previous] : [])).map((h) => ({ ...h, sites: (h.sites ?? []).filter(mine) })), now }));
+  lines.push(`We checked all ${siteResults.length} grid repo sites against your Search Readiness Checklist this week. ${clean} pass every check${clean === siteResults.length ? "." : `; ${siteResults.length - clean} have gaps.`} ${split}`);
   const worst = failing.filter((x) => x.f.length).sort((a, b) => b.f.length - a.f.length);
   const cov = worst.map((x) => ({ s: x.s, c: x.f.find((r) => r.id === "j9") })).filter((x) => x.c);
   if (cov.length) lines.push(`Missing local pages: ${cov.slice(0, 3).map((x) => `${short(x.s.site)} is missing ${x.c.missing?.length ?? 0}`).join(", ")}${cov.length > 3 ? `, and ${cov.length - 3} more sites` : ""}.`);
