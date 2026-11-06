@@ -35,7 +35,7 @@ describe("matches: size, price and age (owner, 24 Oct 2026)", () => {
   it("an unpriced $25M seller and $5M buyer are a grid row in the email; its card holds both contacts and a note to each", () => {
     const out = moniqueFound({ newRows: [], grid: [sell, buy], lists: NO_LISTS, now: NOW });
     expect(out.grid).toEqual([expect.objectContaining({
-      company: "Company Q", trade: "Pat Seller, Seller Co $25M at price? → Bo Buyer, Buyer Co $5M at price?", fit: "size fits, price unknown or far, fresh",
+      company: "Company Q", trade: "Pat Seller, Seller Co $25M, no price given → Bo Buyer, Buyer Co $5M, no price given", fit: "size fits, price unknown or far, fresh",
       url: "https://boss.sequoiataylor.com/?tab=capital&view=matches&match=b5%7Cs25", url_label: "Open ›", star: false,
     })]);
     const m = out.matches[0];
@@ -250,6 +250,11 @@ describe("prospect emails: only what is new, and stuck follow-ups are a decision
     expect(d.map((x: any) => x.title)).toEqual(["1 prospect follow-up is due and cannot go out"]);
     expect(d[0].details[0]).toBe("Waiting: Due Today (d@x.example).");
     expect(d[0].body).toBe("No prospect email is approved, and Monique has fewer than three fresh names on your list to write one, so nothing goes.");
+  });
+  it("follow-ups overdue for days say since when, so a stuck send never reads like a same-morning hiccup (6 Nov 2026 live read)", () => {
+    const stale = { ...a, approved: { id: "t" }, stops: ["Outside the sending window (weekdays 9 to 5 Central)."], next: [{ name: "Old Due", email: "o@x.example", next_touch: 2, next_at: NOW - 23 * 86_400_000 }] };
+    const items = prospectSection(stale, NOW)!.items.map((i: any) => (typeof i === "string" ? i : i.text));
+    expect(items.find((t: string) => /follow-up is due/.test(t))).toMatch(/^1 follow-up is due since [A-Z][a-z]+ \d+ \(23 days\) and not going out\. Why: Outside the sending window/);
   });
   it("a template waiting for her OK is a decision with its full text and Approve / Change / Try again", () => {
     const pending = { id: "pt1", tap_token: "p".repeat(24), subject: "Up to $1B secondary inquiry: {subject_names}", body: "Hi {first},\n\n{names_line}\n\nSequoia Taylor", follow_up: "Hi {first}, again.", names_json: JSON.stringify([{ name: "Co A" }, { name: "Co B" }, { name: "Co C" }]) };

@@ -191,7 +191,10 @@ export function triage({ subject = "", text = "", roster = [] } = {}) {
 
 /** One line per job for the reply: who has what. */
 export function triageLines(jobs) {
-  return jobs.map((j) => `${j.seat.name} has: ${oneLine(j.ask)}${j.closest ? " (closest fit — say so if you meant someone else)" : ""}`);
+  // "Closest fit" only when she did not name the seat herself (6 Nov 2026: "Monique has: Monique needs
+  // to go into my inbox… (closest fit — say so if you meant someone else)").
+  const named = (j) => new RegExp(`\\b${j.seat.name}\\b`, "i").test(String(j.ask ?? ""));
+  return jobs.map((j) => `${j.seat.name} has: ${oneLine(j.ask)}${j.closest && !named(j) ? " (closest fit — say so if you meant someone else)" : ""}`);
 }
 
 /**

@@ -97,7 +97,7 @@ async function main() {
   const loopLate = SPRY_WEEKLY.search_loop.sites.filter((x) => mail.loopLate.includes(x.key));
   if (late.length || loopLate.length) {
     const why = await fixJob(await bossApi().catch(() => null), {
-      title: `Spry Labs weekly: ${late.length + loopLate.length} report(s) did not arrive`,
+      title: `Spry Labs weekly: ${late.length + loopLate.length === 1 ? "1 report" : `${late.length + loopLate.length} reports`} did not arrive`,
       prompt: [
         ...late.map((s) => `${s.label} (seq23/${s.repo}, ${s.workflow}): ${got[s.key].problem}. Find why the Wednesday run did not upload the ${SPRY_WEEKLY.artifact} artifact, fix it at source, and dispatch the workflow.`),
         ...loopLate.map((x) => `${x.label} search loop (${x.repos.map((r) => `seq23/${r}`).join(", ")}): the site runs the shared search-loop engine but uploaded no search-loop-week report in the last eight days. Find why its loop run did not upload it, fix it at source, and dispatch the workflow.`),

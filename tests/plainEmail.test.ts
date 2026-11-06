@@ -547,3 +547,18 @@ describe("layoutEmail: a long section is cut to the cap, never held", () => {
     for (let i = 1; i <= 30; i += 1) expect(decideSec.text).toContain(`Ask line ${i}:`);
   });
 });
+
+describe("the 6 Nov 2026 live read: what the cleaner did to real emails", () => {
+  it("short capitals are names and units, kept; long capitals and loud English words are lowered", () => {
+    const out = cleanText("Mac disk: 15 GB free. AABB-accredited DNA labs; E&O insurance. NOT STARTED. IMPORTANT update.");
+    for (const kept of ["15 GB", "AABB", "DNA", "E&O"]) expect(out).toContain(kept);
+    expect(out).toContain("not started");
+    expect(out).toContain("important update");
+    expect(plainProblems({ subject: "Mac disk: 15 GB free", text: "x" }).join(" ")).not.toMatch(/capitals/);
+    expect(plainProblems({ subject: "URGENT stuff", text: "x" }).join(" ")).toMatch(/capitals/);
+  });
+  it("a count with '(s)' agrees with its word", () => {
+    expect(cleanText("Spry Labs weekly: 1 report(s) did not arrive")).toBe("Spry Labs weekly: 1 report did not arrive");
+    expect(cleanText("3 report(s) did not arrive")).toBe("3 reports did not arrive");
+  });
+});

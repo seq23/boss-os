@@ -66,19 +66,34 @@ export function mergeNotices(items) {
   return [...groups.values()];
 }
 
+/**
+ * THE ROUTER'S REFUSAL IN HER WORDS (6 Nov 2026 live read: "No model on this place satisfied policy: 8
+ * of 15 refused at capability — model is cleared to low risk, task is high"). Pure.
+ */
+export function plainStopWhy(why) {
+  const w = String(why ?? "").replace(/^NAMED STOP \[[A-Z_]+\]\s*/, "").trim();
+  if (!w) return null;
+  if (/satisf(?:y|ied) policy|refused at capability|cleared to \w+ risk/i.test(w)) {
+    return "none of the AI models this job is allowed to use was cleared for work this important";
+  }
+  if (/usage limit|CODEX_LIMIT|out of usage/i.test(w)) return "the AI it was given had run out of usage";
+  return w;
+}
+
 /** The stopped notice as a problem email. Pure; tested. */
 export function stoppedEmail(notice, task = null) {
   const body = String(notice.body ?? "");
   const title = String(task?.title ?? /^"([^"]+)"/.exec(body)?.[1] ?? String(notice.subject).replace(/^Stopped:\s*/i, "")).replace(/\s*\[?tsk_[a-z0-9]+\]?\s*$/i, "");
   const tried = /I tried this (.+?) and could not finish/.exec(body)?.[1] ?? "more than once";
-  const why = /could not finish:\s*(.+?)\.\s*To clear it by email/s.exec(body)?.[1]?.replace(/\s+/g, " ").slice(0, 240) ?? null;
+  const why = plainStopWhy(/could not finish:\s*(.+?)\.\s*To clear it by email/s.exec(body)?.[1]?.replace(/\s+/g, " ").slice(0, 240));
+  const taskId = /^tsk_[a-z0-9]+$/.test(String(notice.task_id ?? "")) ? String(notice.task_id) : null;
   return layoutProblem({
     who: notice.from_name,
     subject: `Stopped: ${title}`,
     happened: `"${title}" stopped before it finished${why ? `: ${why.replace(/[.!?]?$/, ".")}` : "."}`,
     did: `Tried it ${tried}, kept everything as it was, and sent nothing to anyone outside Boss OS.`,
     status: "Waiting for your word. Reply to this email with try again, or with drop it to close it.",
-    decide: [{ title: "Run it again, change it, or drop it?", body: "Reply to this email with your answer; it goes straight back to this job.", buttons: [{ label: "See the job in Boss OS", url: `${ORIGIN_URL}/` }] }],
+    decide: [{ title: "Run it again, change it, or drop it?", body: "Reply to this email with your answer; it goes straight back to this job.", buttons: [{ label: "See the job in Boss OS", url: taskId ? `${ORIGIN_URL}/?task=${taskId}` : `${ORIGIN_URL}/` }] }],
     refs: [String(notice.task_id ?? "")].filter((r) => /^tsk_/.test(r)),
   });
 }

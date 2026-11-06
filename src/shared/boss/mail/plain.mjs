@@ -196,11 +196,27 @@ function protect(s) {
   return { out, restore: (t) => t.replace(/\u0000(\d+)\u0000/g, (_, i) => kept[Number(i)]) };
 }
 
+/**
+ * SHORT CAPITALS ARE NAMES, LONG ONES ARE SHOUTING (6 Nov 2026 live read: "Mac disk: 15 gb free" — the
+ * cleaner lowercased GB because it was not on ACRONYMS, and a report on DNA collection would have read
+ * "dna", "aabb"). A run of capitals of four letters or fewer is an abbreviation unless it is an
+ * ordinary English word written loud (SHOUT_WORDS); five or more is shouting unless it is on ACRONYMS.
+ */
+export const SHOUT_WORDS = new Set([
+  "A", "ALL", "AND", "ANY", "ARE", "ASK", "BUT", "CAN", "DID", "DO", "DONE", "DONT", "FAIL", "FOR", "FROM", "GO", "HAS", "HELD",
+  "HER", "HOW", "IF", "IN", "INTO", "IS", "IT", "JUST", "LAST", "MAY", "ME", "MUST", "MY", "NEED", "NEW", "NEXT", "NO", "NONE",
+  "NOT", "NOW", "OF", "OFF", "ON", "ONE", "ONLY", "OR", "OUR", "OUT", "OVER", "READ", "RUN", "SEE", "SENT", "SO", "STOP", "THAT",
+  "THE", "THEM", "THEN", "THIS", "TO", "TWO", "UP", "WAIT", "WAS", "WE", "WHAT", "WHEN", "WHO", "WHY", "WILL", "WITH", "YES", "YOU",
+  "YOUR", "BE", "AT", "BY", "AN", "AS", "LIVE", "DEAD", "LATE", "SAFE", "SEND", "SKIP", "KEEP", "HOLD", "NOTE", "WARN", "TODO",
+]);
+export function isShouting(bare) {
+  if (bare.length < 2 || !/^[A-Z][A-Z0-9]*$/.test(bare) || !/[A-Z]{2}/.test(bare)) return false;
+  if (ACRONYMS.has(bare) || ACRONYMS.has(bare.toUpperCase())) return false;
+  const letters = bare.replace(/[0-9]/g, "");
+  return letters.length >= 5 || SHOUT_WORDS.has(letters);
+}
 function capsWord(w) {
-  const bare = w.replace(/[^A-Za-z0-9]/g, "");
-  if (bare.length < 2 || !/^[A-Z][A-Z0-9]*$/.test(bare) || !/[A-Z]{2}/.test(bare)) return w;
-  if (ACRONYMS.has(bare) || ACRONYMS.has(bare.toUpperCase())) return w;
-  return w.toLowerCase();
+  return isShouting(w.replace(/[^A-Za-z0-9]/g, "")) ? w.toLowerCase() : w;
 }
 
 /**
@@ -215,6 +231,9 @@ export function cleanText(input, { prose = false } = {}) {
   // A byte lost upstream (a client that lied about its charset) is a replacement character here,
   // never shown as a black diamond: dropped, with the spacing around it tidied to one space.
   let s = out.replace(/\s*�\s*/g, " ");
+  // "1 report(s)" is a count the code could not be bothered to agree with (6 Nov 2026 live read: the
+  // morning said "1 reports did not arrive"): the count picks the word.
+  s = s.replace(/\b(\d[\d,]*)\s+([A-Za-z]+)\(s\)/g, (_, n, w) => `${n} ${n === "1" ? w : `${w}s`}`);
   const wasAllCaps = /[A-Z]{3}/.test(s) && !/[a-z]/.test(s.replace(/\u0000\d+\u0000/g, ""));
   // A whole sentence that reads as a command to type — bare, backticked, bracketed or quoted —
   // is dropped here so every sender agrees with the gate, not only `fromLegacy`'s own line pass.
@@ -829,7 +848,7 @@ export function plainProblems({ subject, text, html, kind = null }) {
   const problems = [...contentProblems(seen), ...proseProblems(visibleText({ text, html }, { prose: "only" }))];
   const hit = (name, re, where = seen) => { const m = re.exec(where); if (m) problems.push(`${name}: "${m[0].trim()}"`); };
   hit("brackets in the subject", /[[\]]/, subj);
-  const shout = subj.split(/\s+/).map((w) => w.replace(/[^A-Za-z0-9]/g, "")).find((w) => w.length >= 2 && /^[A-Z][A-Z0-9]*$/.test(w) && /[A-Z]{2}/.test(w) && !ACRONYMS.has(w));
+  const shout = subj.split(/\s+/).map((w) => w.replace(/[^A-Za-z0-9]/g, "")).find(isShouting);
   if (shout) problems.push(`capitals in the subject: "${shout}"`);
   for (const seg of subj.split(/\s+[—–]\s+/)) {
     const items = seg.split(/,|\band\b/).map((x) => x.trim().toLowerCase()).filter(Boolean);

@@ -97,7 +97,18 @@ describe("a Stopped email is a problem email, and only while it is true (rule 3)
     expect(e.text).toContain("What we did: Tried it 3 times, kept everything as it was");
     expect(e.text).toMatch(/^Status: Waiting for your word\./m);
     expect(e.refs).toEqual(["tsk_m5jh8bjbxmhtfz1w"]);
-    expect(`${e.subject}${e.text}`).not.toMatch(/tsk_/);
+    // The code never shows as words; the one place it rides is the button's link to the job's own
+    // screen (as in the morning email's taskUrl), so the button opens that job, not the home page.
+    expect(`${e.subject}${e.text.replace(/https?:\/\/\S+/g, "")}`).not.toMatch(/tsk_/);
+    expect(e.text).toContain("See the job in Boss OS: https://boss.sequoiataylor.com/?task=tsk_m5jh8bjbxmhtfz1w");
+  });
+  it("the router's refusal is said in her words, and the button opens the job itself (6 Nov 2026 live read)", () => {
+    const refused = { ...notice, body: notice.body.replace("the model answered without the file", "No model on this place satisfied policy: 8 of 15 refused at capability — model is cleared to low risk, task is high") };
+    const e = stoppedEmail(refused);
+    expect(e.problems).toEqual([]);
+    expect(e.text).not.toMatch(/satisf|policy|capability|cleared to low risk/i);
+    expect(e.text).toContain("none of the AI models this job is allowed to use was cleared for work this important");
+    expect(e.text).not.toMatch(/See the job in Boss OS: https:\/\/boss\.sequoiataylor\.com\/\s*$/m);
   });
   it("a task that is running or done again is a false alarm; duplicates are one email", () => {
     expect(stillStopped({ status: "running" })).toBe(false);
@@ -107,5 +118,18 @@ describe("a Stopped email is a problem email, and only while it is true (rule 3)
     const groups = mergeNotices([notice, { ...notice, subject: "Stopped: Make the cover" }, { ...notice, from_name: "Toni" }]);
     expect(groups.length).toBe(2);
     expect(groups[0]!.also.length).toBe(1);
+  });
+});
+
+import { doneSubject, shortJobTitle } from "../src/shared/boss/service/doneSubject.mjs";
+describe("a finished job's subject says whether it was done (6 Nov 2026 live read)", () => {
+  it("a result that did not do the thing is 'Needs you', never 'Done'; no address or half title in the subject", () => {
+    const title = "Send one gentle nudge to Lauren Taylor (lauren@bearimpactfund.com), in our existing thread from the West Peek address";
+    const s = doneSubject(title, "The nudge to Lauren has not been sent, and she is not marked as nudged.\n\nDetails…");
+    expect(s).toMatch(/^Needs you: Send one gentle nudge to Lauren Taylor, in our existing thread/);
+    expect(s).not.toContain("@");
+    expect(s.length).toBeLessThanOrEqual(82);
+    expect(doneSubject("Find buyers of Moonshot AI", "Here they are: two buyers.")).toBe("Done: Find buyers of Moonshot AI");
+    expect(shortJobTitle("x ".repeat(60))).toMatch(/…$/);
   });
 });

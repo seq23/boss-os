@@ -71,6 +71,14 @@ describe("never bounced to her", () => {
     expect(triageLines(jobs)[0]).toMatch(/closest fit/);
   });
 
+  it("no 'closest fit' note when she named the seat herself (6 Nov 2026 live read)", () => {
+    const seat = { id: "emp_relationship", name: "Monique" };
+    const line = triageLines([{ seat, ask: "Monique needs to go into my inbox and find any buyers for moonshot", closest: true }])[0]!;
+    expect(line).not.toMatch(/closest fit/);
+    const other = triageLines([{ seat, ask: "can you take care of the thing", closest: true }])[0]!;
+    expect(other).toMatch(/closest fit/);
+  });
+
   it("a seat missing from the live roster is never picked", () => {
     const pick = seatForAsk("Research the cheapest hosting", ROSTER.filter((s) => s.id !== "emp_research"));
     expect(pick?.seat.id).not.toBe("emp_research");

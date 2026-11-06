@@ -81,14 +81,35 @@ export function doneForYou(items, { told = new Set(), max = 3 } = {}) {
   return { shown: fresh.slice(0, max), more: Math.max(0, fresh.length - max), keys: fresh.map((f) => f.key), all: fresh };
 }
 
+/** The text before the first ":" or "—" that is not inside a quotation ("Change how X handles "A: b"?" keeps the quote whole). */
+function headOutsideQuotes(t) {
+  let inQ = false;
+  for (let i = 0; i < t.length; i++) {
+    const c = t[i];
+    if (c === '"') inQ = !inQ;
+    else if (c === "“") inQ = true;
+    else if (c === "”") inQ = false;
+    else if (!inQ && (c === ":" || c === "—")) return t.slice(0, i);
+  }
+  return t;
+}
+/** True when a quotation is opened and not closed. */
+function openQuote(t) {
+  const straight = (t.match(/"/g) ?? []).length;
+  return straight % 2 === 1 || (t.match(/“/g) ?? []).length > (t.match(/”/g) ?? []).length;
+}
+
 /** The short label for a Decide item: "Waiting 12 days: Answer Kenneth Goodwin: they wrote…" → "Kenneth Goodwin (LP)". */
 export function decideLabel(d) {
   let t = String(d?.title ?? "").replace(/^Waiting \d+ days?:\s*/i, "");
   const answer = /^(?:Answer|Reply to)\s+([^:—]+?)(?:\s*[:—]|$)/i.exec(t);
   if (answer) t = answer[1];
-  else t = t.split(/\s*[:—]\s*/)[0];
+  else t = headOutsideQuotes(t);
   t = t.trim();
   if (t.length > 48) t = t.slice(0, 48).replace(/\s+\S*$/, "");
+  // 6 Nov 2026 live read: 'Change how Camille handles "Porch & Party' — a cut inside a quotation
+  // leaves it open; it is closed with an ellipsis so the line never reads as a typo.
+  if (openQuote(t)) t = `${t.replace(/[\s,;:—-]+$/, "")}…”`.replace(/"([^"]*)…”$/, "“$1…”");
   return /^lp/i.test(String(d?.key ?? "")) && answer ? `${t} (LP)` : t;
 }
 

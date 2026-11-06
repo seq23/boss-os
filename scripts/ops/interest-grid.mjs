@@ -555,7 +555,15 @@ const FIT_WORDS = {
 export const fitWords = (f) => `${FIT_WORDS.size[f.size]}, ${FIT_WORDS.price[f.price]}, ${FIT_WORDS.age[f.age]}`;
 /** The trade's own card in Boss OS: the seller's ready email and Dismiss. */
 export const cardUrl = (m) => `${MATCHES_PAGE}&match=${encodeURIComponent(m.key)}`;
-const terms = (x) => `${x.size !== "—" ? x.size : "size?"} at ${x.price !== "—" ? x.price : "price?"}`;
+// No "?" placeholders (6 Nov 2026 live read: "$15M at price?" made her guess): a missing term is said.
+const terms = (x) => {
+  const size = x.size !== "—" ? x.size : null;
+  const price = x.price !== "—" ? x.price : null;
+  if (size && price) return `${size} at ${price}`;
+  if (size) return `${size}, no price given`;
+  if (price) return `size not given, at ${price}`;
+  return "no size or price given";
+};
 
 /**
  * THE GRID ROWS FOR THE EMAIL (owner, 25 Oct 2026, mock-up v2): every live match within her
