@@ -122,6 +122,8 @@ export function expandCoverage(site, repoCities = null) {
     }
     if (p.neighborhood) for (const n of c.neighborhoods ?? []) out.push({ kind: "neighborhood", name: n.name, path: fill(p.neighborhood, { slug: n.slug }) });
     if (p.anchor) for (const a of c.anchors ?? []) out.push({ kind: "anchor", name: a.name, path: fill(p.anchor, { slug: a.slug }) });
+    // A site that folded its place pages into hubs (`folded_why`) is held to the hubs they land on.
+    for (const h of c.hubs ?? []) out.push({ kind: "hub", name: h.name, path: h.path });
     return out;
   }
   throw new Error(`${site.domain}: unknown coverage model "${c.model}"`);
@@ -140,8 +142,12 @@ export function coverageProblems(site) {
     if (!c.center || typeof c.radius_miles !== "number") p.push("hyperlocal needs a center and radius_miles");
     if (!(c.towns?.length >= 5)) p.push("hyperlocal needs the towns inside its radius (at least five)");
     for (const t of c.towns ?? []) if (c.center && haversineMiles(c.center, t) > c.radius_miles) p.push(`${t.name} is ${haversineMiles(c.center, t).toFixed(1)} miles out, past the ${c.radius_miles}-mile radius`);
-    if (!(c.neighborhoods?.length >= 1)) p.push("hyperlocal needs neighborhoods");
-    if (!(c.anchors?.length >= 1)) p.push("hyperlocal needs local anchors (hospitals, venues)");
+    // FOLDED (p-n-p #180, 4 Nov 2026): place pages folded into service hubs by 301s need no
+    // neighborhood or anchor list, but must say so (`folded_why`) and name the hubs they land on.
+    const folded = String(c.folded_why ?? "").length >= 20;
+    if (folded && !(c.hubs?.length >= 1 && c.hubs.every((h) => h?.name && /^\//.test(String(h?.path ?? ""))))) p.push("a folded hyperlocal site names the hubs its places now land on (hubs)");
+    if (!folded && !(c.neighborhoods?.length >= 1)) p.push("hyperlocal needs neighborhoods");
+    if (!folded && !(c.anchors?.length >= 1)) p.push("hyperlocal needs local anchors (hospitals, venues)");
     if (!(c.services?.length >= 1) || !c.url_patterns?.service_town) p.push("hyperlocal needs services and a service_town pattern");
     for (const t of c.towns ?? []) if (Array.isArray(t.services) && !(String(t.services_why ?? "").length >= 20)) p.push(`town ${t.slug} narrows its services without a reason (services_why)`);
   } else if (c.model !== "not_local") p.push(`unknown coverage model ${c.model}`);
