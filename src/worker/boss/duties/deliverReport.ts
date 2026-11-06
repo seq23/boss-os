@@ -3,6 +3,8 @@ import {
   withheldForSourcing, missingSections, groundInsight, reportStanding, sectionKeyOf,
 } from "../today/briefing";
 import { newId } from "../lib/id";
+import { noticeOnce, noticeBody } from "../service/notices";
+import { taskToken } from "../../../shared/boss/service/waits.mjs";
 import { logEvent } from "../lib/log";
 import { dayIdInZone, wallClock, weekIdInZone, OWNER_TIMEZONE } from "@shared/boss/timezone";
 import { materialiseDueDuties } from "./materialise";
@@ -808,4 +810,40 @@ export async function fileResearchPage(
     ).bind(newId("dlw"), p.title, researchPageUrl(a.pageId), a.now, a.now),
   ]);
   await logEvent(env.DB, { level: "info", scope: "duties", event: "research_page_delivered", entityId: a.pageId, detail: { task_id: a.taskId, run_id: a.runId, sources: p.sources.length, status: p.status } });
+  await noticeResearchDone(env, a);
+}
+
+/**
+ * EVERY FILED PAGE TELLS HER, WHOEVER WROTE IT (repair, 6 Nov 2026). The deep research for Valerie
+ * was filed by the Claude seat and no Done email was written: only the free rung wrote one, and the
+ * seat's follow-through (`service/afterResult.ts`) writes one only for a task she sent by email. The
+ * notice is written HERE, where every rung and seat files its page, so no path can skip it.
+ *
+ * ONE notice per delivery: the kind is `done#<attempt>`, the same key afterResult uses. When a mailed
+ * task's generic Done notice is already waiting, it becomes this one (research words, page link);
+ * one already sent is left alone, never a second email.
+ */
+async function noticeResearchDone(
+  env: Env,
+  a: { pageId: string; taskId: string; page: { title: string; summary: string; markdown: string; sources: unknown[]; gaps: unknown[]; status: string } },
+): Promise<void> {
+  const task = await env.DB.prepare(`SELECT t.id, t.lane, t.title, t.attempts, e.name AS employee_name FROM tasks t LEFT JOIN employees e ON e.id = t.employee_id WHERE t.id = ?`)
+    .bind(a.taskId).first<{ id: string; lane: string; title: string; attempts: number | null; employee_name: string | null }>();
+  if (!task) return;
+  const { researchPageUrl } = await import("../../../shared/boss/research/page.mjs");
+  const { researchDoneLines, researchDoneSubject } = await import("../../../shared/boss/research/doneEmail.mjs");
+  const kind = `done#${Number(task.attempts ?? 0)}`;
+  const url = researchPageUrl(a.pageId);
+  const subject = researchDoneSubject(a.page);
+  const lines = researchDoneLines(a.page, url);
+  const waiting = await env.DB.prepare(`SELECT id, sent_at FROM boss_task_notices WHERE task_id = ? AND kind = ? LIMIT 1`)
+    .bind(task.id, kind).first<{ id: string; sent_at: number | null }>();
+  if (waiting) {
+    if (waiting.sent_at == null) {
+      await env.DB.prepare(`UPDATE boss_task_notices SET subject = ?, body = ? WHERE id = ?`)
+        .bind(`${subject} ${taskToken(task.id)}`, noticeBody(lines, null, task.id), waiting.id).run();
+    }
+    return;
+  }
+  await noticeOnce(env, { task: { id: task.id, lane: task.lane, title: task.title }, fromName: task.employee_name ?? "Camille", kind, subject, lines });
 }

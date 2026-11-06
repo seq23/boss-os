@@ -1294,7 +1294,18 @@ export async function handleRequest(
   if (researchPath) {
     const inner = new URL(url.toString());
     inner.pathname = researchPath;
-    return handleBossRequest(new Request(inner.toString(), request), env);
+    const res = await handleBossRequest(new Request(inner.toString(), request), env);
+    // Locked (no session on this browser): a calm page that says how in, never a JSON error.
+    if (res.status === 401) {
+      return new Response(
+        `<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>Research page</title></head>`
+        + `<body style="font:17px/1.5 -apple-system,system-ui,sans-serif;max-width:34rem;margin:3rem auto;padding:0 1.2rem;color:#2b2622;background:#fdf8f4">`
+        + `<p>This research page is private. Unlock Boss OS on this browser, then tap the link in your email again.</p>`
+        + `<p><a href="/" style="display:inline-block;padding:.6rem 1rem;border-radius:.6rem;background:#2b2622;color:#fff;text-decoration:none">Open Boss OS ›</a></p></body></html>`,
+        { status: 401, headers: { "content-type": "text/html; charset=utf-8", "cache-control": "no-store" } },
+      );
+    }
+    return res;
   }
 
   if (!url.pathname.startsWith("/api/")) {

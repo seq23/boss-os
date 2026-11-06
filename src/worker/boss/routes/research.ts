@@ -97,6 +97,13 @@ research.get("/pages/:id", async (c) => {
   }
   const { renderResearchPageHtml } = await import("../../../shared/boss/research/page.mjs");
   const parse = (s: string | null) => { try { return s ? JSON.parse(s) : []; } catch { return []; } };
+  // Her Mac's notice sender reads the page as data to lay out the Done email (`?format=json`).
+  if (c.req.query("format") === "json") {
+    return ok(c, {
+      id: row.id, task_id: row.task_id, state: row.state, status: row.status, title: row.title, summary: row.summary ?? "",
+      markdown: row.markdown ?? "", sources: parse(row.sources), gaps: parse(row.gaps), delivered_at: row.delivered_at,
+    });
+  }
   return c.html(renderResearchPageHtml({
     title: row.title, summary: row.summary ?? "", markdown: row.markdown ?? "", sources: parse(row.sources),
     gaps: parse(row.gaps), question: row.question, delivered_at: row.delivered_at,
