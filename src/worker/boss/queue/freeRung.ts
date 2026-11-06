@@ -21,6 +21,7 @@ import { noticeOnce } from "../service/notices";
 import { runGroundedResearch } from "../research/grounded";
 import { getBackend } from "../backends/registry";
 import { OPENAI_SEAT } from "../duties/seatOrder";
+import { scanForModelAccess, privateLexicon } from "../router/modelAccess";
 
 const KENDRA = "emp_continuity";
 /** The longest a re-queued task sleeps before it looks again (a Cloudflare Queue's own ceiling). */
@@ -30,8 +31,12 @@ const isObj = (v: unknown): v is Record<string, unknown> => Boolean(v) && typeof
 
 /** Research work: the task's kind, or a research page. */
 export function isResearchWork(task: { intake_kind?: string | null }, input: Record<string, unknown>): boolean {
-  return (task.intake_kind === "research" || isObj(input.research_page)) && input.delivers !== "executive_reports" &&
-    !isObj(input.firm_scan) && !isObj(input.repo_change) && input.chrome_job !== true;
+  // A research page, or a research ask that names nothing else. A duty with its own delivery (the
+  // briefing, tool suggestions, link prospects…) keeps its own contract and is not this.
+  const page = isObj(input.research_page) && input.delivers === "research_page";
+  const bare = task.intake_kind === "research" && input.delivers === undefined && input.backend_id === undefined &&
+    input.backend_ladder === undefined && input.spec_module === undefined;
+  return (page || bare) && !isObj(input.firm_scan) && !isObj(input.repo_change) && input.chrome_job !== true;
 }
 
 /** The ask, in her words: the composed prompt is the page contract, not the question. */
@@ -128,35 +133,48 @@ export function nextTickAt(now: number): number {
 /**
  * THE FREE GOOGLE-GROUNDED RUNG. Long work (one grounded call per part of the brief), so it never
  * runs in a request's 30-second tail: a drain started by a request hands it to the hourly tick.
- * Returns true when it handled the task (done, stopped by name, or handed to the tick).
+ * Returns true when it handled the task (done, stopped by name, or handed to the tick); false when
+ * the grounded route cannot answer, so the caller walks on to the other free routes.
  */
 export async function runGroundedRung(
   env: Env,
   task: any,
   input: Record<string, unknown>,
   o: { fromRequest?: boolean; employeeName?: string | null },
-): Promise<void> {
+): Promise<boolean> {
   const t = { id: String(task.id), lane: String(task.lane), title: String(task.title ?? task.id) };
   if (o.fromRequest) {
     await env.DB.prepare(`UPDATE tasks SET status = 'queued' WHERE id = ?`).bind(t.id).run();
     await env.DB.prepare(`INSERT INTO task_events (id, task_id, ts, event, detail) VALUES (?,?,?,'ladder_step',?)`)
       .bind(newId("tev"), t.id, Date.now(), JSON.stringify({ next: "free Google search", why: "long research runs on the hourly tick, never in a request's 30-second tail" })).run();
     await env.TASKS.send({ taskId: t.id, lane: t.lane }, { delaySeconds: Math.round((nextTickAt(Date.now()) - Date.now()) / 1000) });
-    return;
+    return true;
+  }
+  /*
+   * THE PRIVACY SCREEN FIRST, FAIL CLOSED. The free tier trains on prompts; an ask the screen flags
+   * waits for Codex's seat by name and is never sent to Google (the router would refuse it too).
+   */
+  const ask = researchAskOf(task, input);
+  const verdict = scanForModelAccess([{ role: "user", content: ask }], await privateLexicon(env.DB),
+    { modelAccess: task.model_access ?? null, sensitivity: task.sensitivity ?? null });
+  if (verdict.privateOnly) {
+    const reset = await codexResetAt(env);
+    await namedStop(env, t, { code: "NO_SEAT_AVAILABLE", tell: true, resumeAt: reset,
+      why: `NAMED STOP [NO_SEAT_AVAILABLE] the privacy screen keeps this off free Google search (${verdict.reason ?? "private"}); Codex is out${reset ? ` until ${new Date(reset).toISOString()}` : ""}` });
+    return true;
   }
   await env.DB.prepare(`INSERT INTO task_events (id, task_id, ts, event, detail) VALUES (?,?,?,'ladder_step',?)`)
     .bind(newId("tev"), t.id, Date.now(), JSON.stringify({ backend_id: "bk_gemini", next: "free Google search", why: "the seats are spent or not allowed; research walks to Gemini with Google Search grounding, free" })).run();
 
-  const out = await runGroundedResearch(env, task, researchAskOf(task, input));
+  const out = await runGroundedResearch(env, task, ask);
+  if (out.state === "unavailable") {
+    await env.DB.prepare(`INSERT INTO task_events (id, task_id, ts, event, detail) VALUES (?,?,?,'ladder_step',?)`)
+      .bind(newId("tev"), t.id, Date.now(), JSON.stringify({ backend_id: "bk_gemini", refused: out.why, next: "other free routes" })).run();
+    return false;
+  }
   if (out.state === "stop") {
-    if (out.code === "FREE_ROUTE_REFUSED") {
-      // The free route may not see it (its privacy screen): the work waits for Codex, by name.
-      const reset = await codexResetAt(env);
-      await namedStop(env, t, { code: "NO_SEAT_AVAILABLE", why: `${out.why}; Codex is out${reset ? ` until ${new Date(reset).toISOString()}` : ""}`, resumeAt: reset, tell: true });
-      return;
-    }
     await namedStop(env, t, { code: out.code, why: out.why, resumeAt: out.resumeAt, tell: false });
-    return;
+    return true;
   }
 
   const now = Date.now();
@@ -193,4 +211,5 @@ export async function runGroundedRung(
       `Every fact on it is tied to a page Google found (${out.page.sources.length} sources).${out.page.gaps.length ? ` What I could not confirm is listed at the end (${out.page.gaps.length} items).` : ""}`,
     ],
   });
+  return true;
 }

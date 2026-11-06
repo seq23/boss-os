@@ -137,7 +137,9 @@ async function landingUrl(url: string): Promise<string> {
 
 export type GroundedOutcome =
   | { state: "done"; page: { title: string; summary: string; markdown: string; sources: { title: string; url: string }[]; gaps: string[]; status: "complete" | "partial" }; model: string }
-  | { state: "stop"; code: "FREE_SEARCH_CAP" | "FREE_ROUTE_REFUSED"; why: string; resumeAt: number | null };
+  | { state: "stop"; code: "FREE_SEARCH_CAP"; why: string; resumeAt: number | null }
+  /** The grounded route cannot answer (no key, Google down): the ladder moves on to the other free routes. */
+  | { state: "unavailable"; why: string };
 
 interface SectionDone { n: number; ask: string; lines: string[]; sources: { title: string; url: string }[]; dropped: number; notFound: string[]; failed?: string }
 
@@ -208,10 +210,9 @@ export async function runGroundedResearch(
         return { state: "stop", code: "FREE_SEARCH_CAP", resumeAt: freeTierResetAt(now()),
           why: `NAMED STOP [FREE_SEARCH_CAP] Google's free tier refused more searches today (${why.slice(0, 160)}); ${done.size} of ${brief.sections.length} parts are done and kept` };
       }
-      if (/privacy|private|no candidate|refus|blocked|not allowed|no model/i.test(why)) {
-        return { state: "stop", code: "FREE_ROUTE_REFUSED", resumeAt: null, why: `NAMED STOP [FREE_ROUTE_REFUSED] the free Google route declined this work: ${why.slice(0, 240)}` };
-      }
-      throw e; // transient: the queue retries with backoff, and the parts already done are kept
+      // Anything else (no key, Google down, the router found no free model): the next free route.
+      // The parts already done stay recorded for the next time this rung is reached.
+      return { state: "unavailable", why: why.slice(0, 300) };
     }
     await env.DB.prepare(`INSERT INTO task_events (id, task_id, ts, event, detail) VALUES (?,?,?,'grounded_section',?)`)
       .bind(newId("tev"), task.id, now(), JSON.stringify(rec)).run();

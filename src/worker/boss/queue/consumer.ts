@@ -233,9 +233,9 @@ export async function handleTask(env: Env, msg: TaskMessage): Promise<void> {
   const codexWorks = roleFor("agent_queue.default") === "worker";
   const ladder = privatePrompt ? [CLAUDE_SEAT] : claudeOnly ? confidentialLadder(baseLadder) : orderSeats(baseLadder, codexWorks || isOn(await getSetting(env.DB, OPENAI_FIRST_KEY)));
   // After a Codex limit: public work → the $0 free rung (never Claude, never paid); the rest waits.
-  const publicFreeRung = afterCodexLimit({ sensitivity: task.sensitivity, modelAccess: task.model_access ?? null, confidential: confidential || privatePrompt, chromeJob: input.chrome_job === true }) === "free_rung";
+  const publicFreeRung = afterCodexLimit({ sensitivity: task.sensitivity, modelAccess: researchWork ? task.model_access ?? null : null, confidential: confidential || privatePrompt, chromeJob: input.chrome_job === true }) === "free_rung";
   const codexLimitWaits = !claudeOnly && codexWorks && CODEX_LIMIT_WAITS && ladder.includes(OPENAI_SEAT) && !publicFreeRung;
-  const codexToFreeRung = !claudeOnly && codexWorks && publicFreeRung && ladder.includes(OPENAI_SEAT) &&
+  let codexToFreeRung = !claudeOnly && codexWorks && publicFreeRung && ladder.includes(OPENAI_SEAT) &&
     isPlanSpent(await getBackend(env.DB, OPENAI_SEAT), Date.now());
   if (codexToFreeRung) {
     await env.DB
@@ -253,8 +253,8 @@ export async function handleTask(env: Env, msg: TaskMessage): Promise<void> {
   const handedToFree = groundedOk && !codexToFreeRung && Boolean(await env.DB
     .prepare(`SELECT 1 AS x FROM task_events WHERE task_id = ? AND event = 'codex_limit_free_rung' LIMIT 1`).bind(task.id).first());
   if (groundedOk && (codexToFreeRung || handedToFree)) {
-    await runGroundedRung(env, task, input, { fromRequest: msg.fromRequest === true, employeeName: employee?.name ?? null });
-    return;
+    if (await runGroundedRung(env, task, input, { fromRequest: msg.fromRequest === true, employeeName: employee?.name ?? null })) return;
+    codexToFreeRung = true; // the grounded route could not answer: the other free routes, below
   }
   const refusals: { backend_id: string; refused: string }[] = [];
   const modelBySeat = input.requested && typeof input.requested === "object" && (input.requested as any).model_by_backend
@@ -330,8 +330,8 @@ export async function handleTask(env: Env, msg: TaskMessage): Promise<void> {
   }
 
   // Every seat declined public research: the free Google-grounded rung, never a failure.
-  if (groundedOk && refusals.length > 0) {
-    await runGroundedRung(env, task, input, { fromRequest: msg.fromRequest === true, employeeName: employee?.name ?? null });
+  if (groundedOk && refusals.length > 0 &&
+      await runGroundedRung(env, task, input, { fromRequest: msg.fromRequest === true, employeeName: employee?.name ?? null })) {
     return;
   }
   // Every seat declined other public work: the $0 cloud rungs, never a failure, never paid.
