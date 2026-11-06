@@ -26,11 +26,20 @@
 import { assignedSearch, assetKey } from "../interest-match.mjs";
 import { priceGap, DEFAULT_TOLERANCE, STALE_DAYS } from "../../../src/shared/boss/deals/match.mjs";
 import { withinLookback } from "../../../src/shared/boss/capital/partyLists.mjs";
+import { MATCHES_PAGE, HOLDERS_PAGE } from "../interest-grid.mjs";
 
 const DAY = 86_400_000;
 /** Per company, so the email stays short enough to read on a phone. */
 export const MAX_PEOPLE = 5;
 export const MAX_FUNDS = 5;
+/**
+ * Across ALL companies, per section (5 Nov 2026 held mail: twelve buy orders × five hits × two
+ * sources ran to 18,797 characters, twice the plain-email cap, and the email was held). Her orders
+ * arrive freshest first (`orderLots`), so the cap keeps her newest; the rest are counted and linked.
+ * A company that found nobody, or whose source failed, keeps its own short line (Rule 0).
+ */
+export const MAX_PEOPLE_LINES = 10;
+export const MAX_FUND_LINES = 10;
 
 export const huntTitle = (side) => (side === "sell" ? "Sellers for what your LPs want to buy" : "Buyers for what you're selling");
 
@@ -112,13 +121,15 @@ const lotLine = (lot, side) => {
  * `hunts` is `[{ lot, people: { hits, error? }, funds: { holders, error?, total?, scanned? } }]`.
  * `failed` lists each source that could not be read, for the run's own exit status.
  */
-export function buildHuntEmail({ side, hunts, now = Date.now() }) {
+export function buildHuntEmail({ side, hunts, now = Date.now(), maxPeopleLines = MAX_PEOPLE_LINES, maxFundLines = MAX_FUND_LINES }) {
   const title = huntTitle(side);
   const dateWords = new Date(now).toLocaleDateString("en-US", { weekday: "long", day: "numeric", month: "long", timeZone: "America/Chicago" });
   const failed = [];
   const peopleItems = [];
   const fundItems = [];
   let nPeople = 0, nFunds = 0;
+  let peopleShown = 0, peopleHidden = 0, peopleLast = null;
+  let fundsShown = 0, fundsHidden = 0, fundsLast = null;
   for (const { lot, people, funds } of hunts) {
     const head = lotLine(lot, side);
     if (people.error) {
@@ -129,11 +140,14 @@ export function buildHuntEmail({ side, hunts, now = Date.now() }) {
     } else {
       for (const h of people.hits) {
         nPeople += 1;
+        if (peopleShown >= maxPeopleLines) { peopleHidden += 1; continue; }
+        const lead = peopleShown > 0 && peopleLast === lot ? `${lot.asset}, also:` : `${head}.`;
+        peopleShown += 1; peopleLast = lot;
         const r = h.row;
         const who = [r.principal, r.intermediated_by ? `via ${r.intermediated_by}` : null].filter(Boolean).join(", ");
         const said = String(r.quote ?? r.evidence ?? "").replace(/\s+/g, " ").slice(0, 160);
         peopleItems.push({
-          text: `${head}. ${who} ${side === "sell" ? "has" : "wants"} ${h.fill}; ${h.price}; said ${agoWords(h.ageDays)}: "${said}"`,
+          text: `${lead} ${who} ${side === "sell" ? "has" : "wants"} ${h.fill}; ${h.price}; said ${agoWords(h.ageDays)}: "${said}"`,
           links: r.email_url ? [{ label: "Open their email", url: r.email_url }] : [],
         });
       }
@@ -146,15 +160,21 @@ export function buildHuntEmail({ side, hunts, now = Date.now() }) {
     } else {
       for (const h of funds.holders) {
         nFunds += 1;
+        if (fundsShown >= maxFundLines) { fundsHidden += 1; continue; }
+        const lead = fundsShown > 0 && fundsLast === lot ? `${lot.asset}, also:` : `${head}.`;
+        fundsShown += 1; fundsLast = lot;
         const name = h.fund ?? h.filer;
         const mgr = h.manager && h.manager !== name ? ` (${h.manager})` : "";
         fundItems.push({
-          text: `${head}. ${name}${mgr} holds ${money(h.valUSD) ?? "an amount not stated"}${h.as_of ? ` as of ${h.as_of}` : ""}: ${VERDICT[side][h.capacity?.verdict] ?? "worth a look"}${h.contact ? `. Phone: ${h.contact}` : ""}`,
+          text: `${lead} ${name}${mgr} holds ${money(h.valUSD) ?? "an amount not stated"}${h.as_of ? ` as of ${h.as_of}` : ""}: ${VERDICT[side][h.capacity?.verdict] ?? "worth a look"}${h.contact ? `. Phone: ${h.contact}` : ""}`,
           links: h.url ? [{ label: "The filing", url: h.url }] : [],
         });
       }
     }
   }
+  const more = (n, what) => `And ${n} more ${n === 1 ? what[0] : what[1]} not shown here.`;
+  if (peopleHidden) peopleItems.push({ text: more(peopleHidden, ["name", "names"]), links: [{ label: "See every match on the Matches screen →", url: MATCHES_PAGE }] });
+  if (fundsHidden) fundItems.push({ text: more(fundsHidden, ["fund", "funds"]), links: [{ label: "See every holder on the Holders screen →", url: HOLDERS_PAGE }] });
   const names = hunts.length;
   const happened = hunts.length
     ? `${title}, ${dateWords}: ${names} ${names === 1 ? "company" : "companies"}, ${nPeople} ${nPeople === 1 ? "person" : "people"} you know and ${nFunds} ${nFunds === 1 ? "fund" : "funds"} worth a look. Nobody has been contacted.`

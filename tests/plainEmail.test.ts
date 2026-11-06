@@ -19,7 +19,7 @@ import { mkdtempSync, readFileSync, readdirSync, statSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, relative } from "node:path";
 import { describe, expect, it } from "vitest";
-import { plainProblems, fromLegacy, layoutEmail, layoutProblem, lineProblems, JARGON, cleanSubject, cleanText, refsIn, DECIDE_HEADING, NOTHING_TO_DECIDE, simplifyForOwner } from "../src/shared/boss/mail/plain.mjs";
+import { plainProblems, fromLegacy, layoutEmail, layoutProblem, lineProblems, JARGON, cleanSubject, cleanText, refsIn, DECIDE_HEADING, NOTHING_TO_DECIDE, simplifyForOwner, MAX_TEXT_CHARS } from "../src/shared/boss/mail/plain.mjs";
 import { sendersFor, employeeMail, namesOnce, postEmployeeMail, mailGate, plainOrSimplified } from "../scripts/ops/notify.mjs";
 import { INBOX } from "../scripts/validate/email-plain.mjs";
 
@@ -507,5 +507,43 @@ describe("Camille's research page link, never an /api path (repair, 1 Nov 2026)"
     expect(s.text).not.toMatch(/\/api\//);
     expect(s.details.some((d: string) => /\/api\//.test(d))).toBe(true);
     expect(plainProblems({ subject: s.subject, text: s.text, html: s.html })).toEqual([]);
+  });
+});
+
+/*
+ * THE CAP HOLDS FOR SECTIONS TOO (5 Nov 2026: a sender writing its body as sections ran to 18,797
+ * characters; the cap only ever cut "details", so the gate held the email instead of sending it).
+ */
+describe("layoutEmail: a long section is cut to the cap, never held", () => {
+  const long = (n: number, tag: string) => Array.from({ length: n }, (_, i) => `${tag} line ${i + 1}: a company, a person you know who has offered it, their size and price against yours, and what they said when they wrote.`);
+  const base = {
+    who: "Monique", subject: "A long week", happened: "A long week: many names worth a look. Nobody has been contacted.",
+    decide: [{ title: "Reply to the seller about the block", body: "They asked for an answer by Friday." }],
+    sections: [{ title: "People you know who have it", items: long(60, "People") }, { title: "Funds that hold it", items: long(60, "Funds") }],
+  };
+
+  it("fits under the cap, passes the gate, keeps Decide and the summary, says how many are missing", () => {
+    const laid = layoutEmail(base);
+    expect(laid.text.length).toBeLessThanOrEqual(MAX_TEXT_CHARS);
+    expect(plainProblems(laid)).toEqual([]);
+    expect(laid.text).toContain(base.happened);
+    expect(laid.text).toContain("Reply to the seller about the block");
+    expect(laid.text).toMatch(/And \d+ more lines not shown here\./);
+    // Both sections survive with at least one line; the first (fresher) section keeps the most.
+    expect(laid.text).toContain("People line 1:");
+    expect(laid.text).toContain("Funds line 1:");
+    expect(laid.text).not.toContain("Funds line 60:");
+    // Text and HTML say the same thing: a line cut from the text is cut from the HTML too.
+    const lastShown = Math.max(...[...laid.text.matchAll(/People line (\d+):/g)].map((m) => Number(m[1])));
+    expect(laid.html).toContain(`People line ${lastShown}:`);
+    expect(laid.html).not.toContain(`People line ${lastShown + 1}:`);
+    expect(laid.html).toMatch(/more lines? not shown here/);
+  });
+
+  it("negative proof: a short email is untouched, and a Decide-toned section is never cut", () => {
+    const short = layoutEmail({ ...base, sections: [{ title: "People you know who have it", items: long(3, "People") }] });
+    expect(short.text).not.toMatch(/not shown here/);
+    const decideSec = layoutEmail({ ...base, sections: [{ title: "Yours to answer", tone: "decide", items: long(30, "Ask") }, ...base.sections] });
+    for (let i = 1; i <= 30; i += 1) expect(decideSec.text).toContain(`Ask line ${i}:`);
   });
 });

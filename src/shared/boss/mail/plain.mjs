@@ -542,7 +542,7 @@ export function layoutEmail({ who, subject, happened, decide = [], needs = [], d
   const moreLine = extra > 0 ? cleanText(moreDecide ?? `And ${extra} more on your Today page.`) : null;
   const detailListFull = (details ?? []).map((d) => (d && typeof d === "object" && "heading" in d ? { heading: cleanText(d.heading) } : cleanText(d)))
     .filter((d) => (typeof d === "string" ? d : d.heading));
-  const sectionList = (sections ?? []).map(cleanSection).filter((sec) => sec.title);
+  let sectionList = (sections ?? []).map(cleanSection).filter((sec) => sec.title);
   const foot = footer ? cleanText(footer) : null;
   const ps = postscript ? cleanText(postscript) : null;
   const cap = kind === "morning" ? MORNING_MAX_TEXT_CHARS : MAX_TEXT_CHARS;
@@ -550,7 +550,7 @@ export function layoutEmail({ who, subject, happened, decide = [], needs = [], d
   const decideLines = shown.length
     ? [`${DECIDE_HEADING} (${allDecide.length})`, ...shown.flatMap((c, i) => [...cardText(c, i + 1), ""]), ...(moreLine ? [moreLine] : [])]
     : [NOTHING_TO_DECIDE];
-  const sectionLines = sectionList.flatMap(sectionText);
+  let sectionLines = sectionList.flatMap(sectionText);
   const detailLines = (list, cutNote) => (list.length || cutNote ? ["", "Details:", ...list.map((d) => (typeof d === "string" ? `- ${d}` : `${d.heading}`)), ...(cutNote ? [`- ${cutNote}`] : [])] : []);
   const buildText = (list, cutNote) => [first, "", ...decideLines, ...sectionLines, ...detailLines(list, cutNote), "", ...(foot ? [foot, ""] : []), `— ${name}`, ...(ps ? ["", ps] : [])]
     .join("\n").replace(/\n{3,}/g, "\n\n");
@@ -570,6 +570,33 @@ export function layoutEmail({ who, subject, happened, decide = [], needs = [], d
     const dropped = detailListFull.length - detailList.length;
     cutNote = `${dropped} more line${dropped === 1 ? "" : "s"} not shown here.`;
     text = buildText(detailList, cutNote);
+  }
+
+  /*
+   * …AND SECTIONS TOO (5 Nov 2026 held mail: "Sellers for what your LPs want to buy" wrote its body
+   * as sections, 18,797 characters, and the detail loop above had nothing to cut, so the gate held
+   * it). Still over the cap: section items are dropped from the tail, last section first, keeping
+   * at least one item in each so no section turns into "Nothing here today". Each section that lost
+   * lines ends with one line saying how many. A Decide-toned section is never cut, nor is the
+   * summary line or a Decide item. The HTML below is built from this same trimmed list.
+   */
+  if (text.length > cap) {
+    const fullItems = sectionList.map((sec) => sec.items);
+    const kept = fullItems.map((items) => items.length);
+    const withNotes = () => sectionList.map((sec, i) => {
+      const dropped = fullItems[i].length - kept[i];
+      if (!dropped) return sec;
+      return { ...sec, items: [...fullItems[i].slice(0, kept[i]), { text: `And ${dropped} more line${dropped === 1 ? "" : "s"} not shown here.`, links: [] }] };
+    });
+    for (let i = sectionList.length - 1; i >= 0 && text.length > cap; i -= 1) {
+      if (sectionList[i].tone === "decide") continue;
+      while (kept[i] > 1 && text.length > cap) {
+        kept[i] -= 1;
+        sectionLines = withNotes().flatMap(sectionText);
+        text = buildText(detailList, cutNote);
+      }
+    }
+    sectionList = withNotes();
   }
 
   let detailHtml = "";
