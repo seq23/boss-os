@@ -59,6 +59,8 @@ export function Settings({ onLock }: { onLock: () => void }) {
 
           <SpendLever budgets={asList(status?.budgets)} />
 
+          <JobModels onError={setError} />
+
           <p className="eyebrow">Budgets</p>
           {asList(status?.budgets).map((b: any) => (
             <div className="row" key={b.id}>
@@ -814,6 +816,70 @@ function OpenAiFirst(_props: { onError: (e: unknown) => void }) {
           <div className="row-sub">Your call, 3 November. When Codex is out of usage the work waits for it to reset; it never moves to Claude.</div>
         </div>
       </div>
+    </>
+  );
+}
+
+/* ─── Models for each job (owner approved, 4 Nov 2026) ─────────────────────── */
+
+const TIER_WORDS: Record<string, string> = { fast: "Fast (any)", general: "Good writer", frontier: "Strongest only" };
+const NO_MODEL_WORDS: Record<string, string> = { stop: "Stop and tell me", skip: "Skip it this time" };
+
+/**
+ * ONE ROW PER JOB, FOUR PULL-DOWNS: which model (or any), paid models or free only, the weakest kind
+ * allowed, and what happens when none fits. The seeded choice reads "(Default)". Plain names only:
+ * no model or job ids on screen. Stacked fields, full width, so it reads at 390 px.
+ */
+function JobModels({ onError }: { onError: (e: unknown) => void }) {
+  const [data, setData] = useState<any>(null);
+  const load = () => { api.jobPolicies().then(setData).catch(onError); };
+  useEffect(load, []);
+  if (!data) return null;
+  const jobs: any[] = asList(data.jobs);
+  const models: any[] = asList(data.models);
+  const save = async (job: string, body: unknown) => {
+    try { await api.setJobPolicy(job, body); load(); } catch (e) { onError(e); }
+  };
+  const mark = (on: boolean) => (on ? " (Default)" : "");
+  return (
+    <>
+      <p className="eyebrow">Models for each job</p>
+      {jobs.map((j) => {
+        const d = j.default ?? {};
+        const pick = j.allowed_model_ids.length === 1 ? j.allowed_model_ids[0] : j.allowed_model_ids.length ? "__list" : "__any";
+        return (
+          <div className="panel" key={j.job_key} data-testid="job-models">
+            <div className="row-title">
+              {j.label}
+              {j.is_default && <span className="pill">Default</span>}
+            </div>
+            <label className="field"><span>Model</span>
+              <select value={pick} onChange={(e) => save(j.job_key, { allowed_model_ids: e.target.value === "__any" ? [] : [e.target.value] })}>
+                <option value="__any">Any model that fits{mark((d.allowed_model_ids ?? []).length === 0)}</option>
+                {pick === "__list" && <option value="__list">{j.allowed_model_ids.length} chosen models</option>}
+                {models.map((m) => <option key={m.id} value={m.id}>{m.display_name}</option>)}
+              </select>
+            </label>
+            <label className="field"><span>Paid models</span>
+              <select value={String(j.paid_allowed)} onChange={(e) => save(j.job_key, { paid_allowed: Number(e.target.value) })}>
+                <option value="1">Allowed{mark(d.paid_allowed === 1)}</option>
+                <option value="0">Free only{mark(d.paid_allowed === 0)}</option>
+              </select>
+            </label>
+            <label className="field"><span>Weakest model allowed</span>
+              <select value={j.min_capability_tier} onChange={(e) => save(j.job_key, { min_capability_tier: e.target.value })}>
+                {["fast", "general", "frontier"].map((t) => <option key={t} value={t}>{TIER_WORDS[t]}{mark(d.min_capability_tier === t)}</option>)}
+              </select>
+            </label>
+            <label className="field"><span>When no model fits</span>
+              <select value={j.on_no_model} onChange={(e) => save(j.job_key, { on_no_model: e.target.value })}>
+                {["stop", "skip"].map((t) => <option key={t} value={t}>{NO_MODEL_WORDS[t]}{mark(d.on_no_model === t)}</option>)}
+              </select>
+            </label>
+            {!j.is_default && <button className="btn" style={{ width: "100%" }} onClick={() => save(j.job_key, { reset: true })}>Back to default</button>}
+          </div>
+        );
+      })}
     </>
   );
 }

@@ -340,6 +340,9 @@ export const api = {
   proposals: () => call<any[]>("/intake/proposals"),
 
   models: () => call<any[]>("/models"),
+  // Models for each job (Settings, 4 Nov 2026).
+  jobPolicies: () => call<any>("/models/job-policies"),
+  setJobPolicy: (job: string, body: unknown) => call<any>(`/models/job-policies/${job}`, { method: "PUT", body: JSON.stringify(body) }),
   routes: () => call<any[]>("/models/routes"),
   decisions: () => call<any[]>("/models/decisions"),
   benchmarks: () => call<any[]>("/models/benchmarks"),

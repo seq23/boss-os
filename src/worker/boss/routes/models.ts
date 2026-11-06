@@ -14,8 +14,54 @@ import { BenchRefused, runBench } from "../router/bench";
 import { bypassFor, isLive, predictSpend, type BypassRow } from "../router/bypass";
 import { getNumber } from "../lib/settings";
 import { laneAllowance } from "../backends/guard";
+import { readJobPolicy, isDefaultPolicy, validJobPolicyPatch, JOB_POLICY_DEFAULTS } from "../../../shared/boss/router/jobPolicy.mjs";
 
 export const models = new Hono<{ Bindings: Env; Variables: Vars }>();
+
+/**
+ * MODELS FOR EACH JOB (owner approved, 4 Nov 2026). One row per job (model_job_policies): which models
+ * it may use, whether paid ones are allowed, the weakest kind allowed, and what happens when none fits.
+ * GET lists them with the model choices in plain names; PUT /job-policies/:job changes one. The router
+ * reads the same rows (router/index.ts loadJobPolicy).
+ */
+models.get("/job-policies", async (c) => {
+  const rows = await c.env.DB.prepare(`SELECT * FROM model_job_policies ORDER BY rowid`).all<any>();
+  const choices = await c.env.DB.prepare(
+    `SELECT m.id, m.display_name, m.capability_tier FROM models m JOIN providers p ON p.id = m.provider_id
+      WHERE m.enabled = 1 AND p.enabled = 1 ORDER BY m.display_name`,
+  ).all<any>();
+  const jobs = (rows.results ?? []).map((r) => {
+    const p = readJobPolicy(r)!;
+    return { ...p, is_default: isDefaultPolicy(p), default: JOB_POLICY_DEFAULTS[p.job_key] ?? null, set_by: r.set_by, updated_at: r.updated_at };
+  });
+  return ok(c, { jobs, models: choices.results ?? [] });
+});
+
+models.put("/job-policies/:job", async (c) => {
+  const job = c.req.param("job");
+  const row = await c.env.DB.prepare(`SELECT * FROM model_job_policies WHERE job_key = ?`).bind(job).first<any>();
+  if (!row) throw notFound("There is no job by that name");
+  const body = await c.req.json<any>().catch(() => null);
+  let patch: any;
+  if (body?.reset === true) {
+    const d = JOB_POLICY_DEFAULTS[job];
+    if (!d) throw badRequest("That job has no default to go back to");
+    patch = { allowed_model_ids: d.allowed_model_ids, paid_allowed: d.paid_allowed, min_capability_tier: d.min_capability_tier, on_no_model: d.on_no_model };
+  } else {
+    const ids = (await c.env.DB.prepare(`SELECT id FROM models`).all<{ id: string }>()).results?.map((r) => r.id) ?? [];
+    const v = validJobPolicyPatch(body, ids);
+    if (!v.ok) throw badRequest((v as { error: string }).error);
+    patch = (v as { value: any }).value;
+  }
+  const cur = readJobPolicy(row)!;
+  const next = { ...cur, ...patch };
+  await c.env.DB.prepare(
+    `UPDATE model_job_policies SET allowed_model_ids = ?, paid_allowed = ?, min_capability_tier = ?, on_no_model = ?, set_by = 'owner', updated_at = ? WHERE job_key = ?`,
+  ).bind(JSON.stringify(next.allowed_model_ids), next.paid_allowed, next.min_capability_tier, next.on_no_model, Date.now(), job).run();
+  await audit(c.env.DB, { actor: "boss", lane: "ops", entityType: "model_job_policy", entityId: job, action: "updated", detail: patch });
+  const p = readJobPolicy(await c.env.DB.prepare(`SELECT * FROM model_job_policies WHERE job_key = ?`).bind(job).first<any>())!;
+  return ok(c, { ...p, is_default: isDefaultPolicy(p) });
+});
 
 /** Model Registry. Benchmark status is shown because it decides what may run. */
 models.get("/", async (c) => {

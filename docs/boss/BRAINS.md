@@ -78,3 +78,17 @@ route), `dispatchRunForTask` (any other seat's run row) and `/backends/claim` (a
 passcode is injected by the caller. A file whose brain Boss OS no longer lists (and that the pull wrote:
 headed `Source: Boss OS`) is moved into `<out>/_retired/`, timestamped if a copy is already there;
 nothing is deleted, other files are left alone.
+
+## In code: adding lines to a section
+
+`appendToSection(md, section, lines)` takes ONE string or an array of strings; anything else throws a
+TypeError (4 Nov 2026: a single string was spread into one character per line, twice, in production).
+
+```js
+appendToSection(md, "Settled decisions", "- 2026-11-04 — one price for every guide — simpler to sell");
+appendToSection(md, "Open questions", ["- Which town next?", "- Who reviews the medical pages?"]);
+```
+
+`PUT /api/boss/brains/:slug` refuses any save where a section gains a run of 20+ consecutive lines of
+1–2 characters against the stored brain (`charSplitSections`): 400 "This save would write text one
+character per line; nothing was saved."

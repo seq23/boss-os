@@ -74,30 +74,32 @@ describe("meeting prep: one email per meeting, once", () => {
 });
 
 describe("meeting prep: the email", () => {
-  it('subject starts "Prep: " with who, firm, day and time, in her zone (Eastern, labelled)', () => {
-    // 12pm Central is 1pm Eastern: every time she reads is ET (owner, 26 Oct 2026).
-    expect(buildPrep(kate, data, { herAddresses: ME }).subject).toBe("Prep: Kate Example (GEM), Fri 30 Oct, 1pm ET");
-    expect(buildPrep(terri, {}, { herAddresses: ME }).subject).toBe(`${PREP_PREFIX}Terri Sample, Fri 30 Oct, 3pm ET`);
+  it('subject starts "Prep: " with who, firm, day and time, in her zone (Central by default, labelled)', () => {
+    // Her zone is the owner_timezone setting, Central by default (4 Nov 2026; was always Eastern).
+    expect(buildPrep(kate, data, { herAddresses: ME }).subject).toBe("Prep: Kate Example (GEM), Fri 30 Oct, 12pm CT");
+    expect(buildPrep(terri, {}, { herAddresses: ME }).subject).toBe(`${PREP_PREFIX}Terri Sample, Fri 30 Oct, 2pm CT`);
     expect(nameFromTitle("Kate Example <> Sequoia")).toBe("Kate Example");
     // No name on the invite: the title without her name, never a bare address.
     const solo = { ...terri, title: "Sequoia + Jo (Fake Co)", attendees: [{ email: "jo@fakeco.example" }] };
-    expect(buildPrep(solo, {}, { herAddresses: ME }).subject).toBe("Prep: Jo (Fake Co), Fri 30 Oct, 3pm ET");
+    expect(buildPrep(solo, {}, { herAddresses: ME }).subject).toBe("Prep: Jo (Fake Co), Fri 30 Oct, 2pm CT");
     // The invite's name field holding the address is not a name.
-    expect(buildPrep({ ...solo, attendees: [{ email: "jo@fakeco.example", name: "jo@fakeco.example" }] }, {}, { herAddresses: ME }).subject).toBe("Prep: Jo (Fake Co), Fri 30 Oct, 3pm ET");
+    expect(buildPrep({ ...solo, attendees: [{ email: "jo@fakeco.example", name: "jo@fakeco.example" }] }, {}, { herAddresses: ME }).subject).toBe("Prep: Jo (Fake Co), Fri 30 Oct, 2pm CT");
   });
 
   it("carries every section with something real, in order, and passes the plain-email gate", () => {
     const p = prepEmail(kate, data);
-    expect(p.sections.map((s: any) => s.title)).toEqual(["What it's probably about (a guess, from your records)", "Who they are", "Your history", "What you referenced", "What's relevant now", "Goals and questions", "Have ready", "Open between you", "Logistics"]);
+    // No "What's relevant now": she is a fund LP prospect, and grid deals are for brokerage contacts only.
+    expect(p.sections.map((s: any) => s.title)).toEqual(["What it's probably about (a guess, from your records)", "Who they are", "Your history", "What you referenced", "Goals and questions", "Have ready", "Open between you", "Logistics"]);
     expect(p.needsPurpose).toBe(false);
     expect(p.laid.text).toContain("The fund: they are an LP prospect and said they are interested.");
-    expect(p.laid.text).toContain("Fri 30 Oct, 1:00pm to 1:30pm ET.");
+    expect(p.laid.text).toContain("Fri 30 Oct, 12:00pm to 12:30pm CT.");
     const t = p.laid.text;
     expect(t).toContain('You wrote: "I loved your episode on secondaries pricing:');
     expect(t).toContain("41-min listen");
     expect(t).toContain("(from show notes only)");
     expect(t).toContain("Happy to talk Friday");
-    expect(t).toContain("Ask: would they like to see the names on this week's list?");
+    expect(t).not.toContain("this week's list");
+    expect(t).not.toContain("On the grid");
     expect(t).toContain("https://meet.google.com/abc-defg-hij");
     expect(plainProblems({ subject: p.laid.subject, text: p.laid.text, html: p.laid.html })).toEqual([]);
   });
@@ -139,5 +141,60 @@ describe("warm references", () => {
     expect(mig).toContain("'Meeting prep, the evening before each call'");
     expect(mig).toContain("'local_job', 'meeting-prep.mjs'");
     expect(readFileSync("scripts/ops/install-agent-launchd.sh", "utf8")).toMatch(/install_l_job com\.seq\.boss-meeting-prep "duty-run\.sh meeting-prep\.mjs/);
+  });
+});
+
+// A reminder she set for herself is not a meeting (6 Nov 2026: "Shirley 501(c)(3): follow-up email
+// (tell Claude "email Shirley")", no guests, got a call prep with "Say thanks" and "After the call").
+describe("a reminder to herself gets no prep", () => {
+  const at = Date.parse("2026-11-07T16:00:00Z");
+  const now = Date.parse("2026-11-07T01:00:00Z");
+  const reminder = { calendar_uid: "r1", title: "Shirley 501(c)(3): follow-up email (tell Claude \"email Shirley\")", scheduled_at: at, duration_min: 15, attendees: [{ email: "seq.taylor@gmail.com", self: true }] };
+  it("a task with no guests is skipped", () => {
+    expect(dueMeetings([reminder], { now, day: "2026-11-07", herAddresses: ["seq.taylor@gmail.com"] })).toHaveLength(0);
+  });
+  it("the same title with a guest is still prepped", () => {
+    const withGuest = { ...reminder, calendar_uid: "r2", attendees: [{ email: "shirley@wha.example", name: "Shirley Brown" }] };
+    expect(dueMeetings([withGuest], { now, day: "2026-11-07", herAddresses: ["seq.taylor@gmail.com"] })).toHaveLength(1);
+  });
+  it("a call with no guests on the invite is still prepped", () => {
+    const call = { ...reminder, calendar_uid: "r3", title: "Call- Terri Burns" };
+    expect(dueMeetings([call], { now, day: "2026-11-07", herAddresses: ["seq.taylor@gmail.com"] })).toHaveLength(1);
+  });
+});
+
+describe("an invite title arrives as written", () => {
+  it("unescapes the ICS commas and semicolons in a title and place", () => {
+    const ics = ["BEGIN:VCALENDAR", "BEGIN:VEVENT", "UID:ned1", "SUMMARY:Ned (Arnel & Affiliates) <> Sequoia Taylor\\, West Peek", "LOCATION:Room 1\; floor 2", "DTSTART:20261117T170000Z", "DTEND:20261117T173000Z", "END:VEVENT", "END:VCALENDAR"].join("\r\n");
+    const [e] = parseIcs(ics, Date.parse("2026-11-10T00:00:00Z"), 28).events;
+    expect(e?.title).toBe("Ned (Arnel & Affiliates) <> Sequoia Taylor, West Peek");
+    expect(e?.location).toBe("Room 1; floor 2");
+  });
+});
+
+// The real prep for 17 Nov read as she would (6 Nov 2026): wrong person in the heading, her own
+// reports listed as history, a garbled subject, and a path in the research line.
+describe("the Ned prep reads right", () => {
+  const ned = { calendar_uid: "ned1", title: "Ned (Arnel & Affiliates) <> Sequoia Taylor, West Peek", scheduled_at: Date.parse("2026-11-17T17:00:00Z"), duration_min: 30, attendees: [{ email: "cstewart@arnel.example", name: "Cecelia Stewart" }] };
+  const context = {
+    mail: { count: 3, first: { date: "2026-10-14", subject: "x" }, recent: [
+      { date: "2026-11-06", subject: "West Peek LP Outreach — Morning Report, 6 November 2026 (6 sent · 1 reply · 8 bounces)", from_them: false },
+      { date: "2026-11-02", subject: "re: Ned ÃƒÂƒÃ‚Â¢ÃƒÂ‚Ã¢Â‚Â¬ÃƒÂ‚Ã¢Â€Â Arnel & Affiliates' investment strategy", from_them: true },
+    ] },
+    cards: [{ title: "Tuesday: 3 decisions, 6 new deals, Valerie's list" }],
+  };
+  const p = buildPrep(ned, {}, { herAddresses: ME, context, research: { ok: false, why: "Boss OS could not be asked (/research/person → 404)" } });
+  const all = JSON.stringify(p.sections);
+  it("is headed with the person the invite names, and says who it went to", () => {
+    expect(p.subject.startsWith("Prep: Ned (")).toBe(true);
+    expect(all).toContain("it went to Cecelia Stewart");
+  });
+  it("leaves her own reports out of the history", () => {
+    expect(all).not.toContain("Morning Report");
+    expect(all).not.toContain("3 decisions");
+  });
+  it("shows no garble and no path", () => {
+    expect(all).not.toMatch(/Ã|Â/);
+    expect(all).not.toContain("/research/person");
   });
 });

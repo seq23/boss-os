@@ -7,6 +7,7 @@
  * (routes/lpTap.ts), from the address the LP wrote to.
  */
 import { newId } from "../lib/id";
+import { repairMojibake } from "../../../shared/boss/mail/subject.mjs";
 import { storeWarmReferences } from "./references";
 import { pauseReason, inSendWindow, dailyCap, DAY_MS } from "../outreach/brakes";
 import { isSuppressed, suppress } from "../outreach/suppression";
@@ -138,7 +139,7 @@ export async function upsertLpRows(db: D1Database, rows: LpRowIn[], now = Date.n
                             ELSE excluded.waiting_why END`,
     ).bind(
       newId("lpr"), address, r.name ?? null, r.firm ?? null, r.bucket, r.quote ? String(r.quote).slice(0, 300) : null,
-      String(r.reply_from).toLowerCase(), r.thread_id ?? null, r.in_reply_to ?? null, r.subject ?? null,
+      String(r.reply_from).toLowerCase(), r.thread_id ?? null, r.in_reply_to ?? null, r.subject ? repairMojibake(r.subject) : null,
       r.draft_id ?? null, r.draft_message_id ?? null, r.body_hash ?? null, stored.status, tapToken(),
       r.first_seen, r.drafted_at ?? (r.status === "drafted" ? now : null), r.sent_at ?? null, r.last_reply_at ?? null, now, now,
       r.draft_body ? String(r.draft_body).slice(0, 6000) : null, r.said ? String(r.said).slice(0, 1200) : null,
@@ -156,7 +157,8 @@ export async function upsertLpRows(db: D1Database, rows: LpRowIn[], now = Date.n
 
 export async function listLpRows(db: D1Database): Promise<any[]> {
   const rows = await db.prepare(`SELECT l.*, EXISTS(SELECT 1 FROM quiet_people q WHERE q.address = lower(trim(l.address))) AS quiet FROM lp_reply_drafts l ORDER BY first_seen ASC`).all<any>();
-  return rows.results ?? [];
+  // A subject stored garbled before 4 Nov 2026 reads right (and seeds no garbled "Re:").
+  return (rows.results ?? []).map((r) => (r.subject ? { ...r, subject: repairMojibake(r.subject) } : r));
 }
 
 /* ─── Prospects ──────────────────────────────────────────────────────────── */
@@ -180,7 +182,7 @@ export async function importProspects(db: D1Database, rows: ProspectIn[], now = 
       r.source_ref ? String(r.source_ref).slice(0, 300) : null,
       r.status && ["new", "active", "replied", "bounced", "done"].includes(r.status) ? r.status : (Number(r.touches ?? 0) > 0 ? "active" : "new"),
       Math.min(3, Math.max(0, Number(r.touches ?? 0))), r.first_sent_at ?? null, r.last_touch_at ?? null,
-      r.thread_id ?? null, r.last_message_id ?? null, r.subject ?? null, now, now,
+      r.thread_id ?? null, r.last_message_id ?? null, r.subject ? repairMojibake(r.subject) : null, now, now,
     ).run();
     if ((res.meta?.changes ?? 0) > 0) added++; else skipped++;
   }

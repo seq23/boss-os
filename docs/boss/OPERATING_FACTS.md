@@ -15,6 +15,27 @@ they live in the repo, not only in someone's memory. Non-confidential. `STATUS.m
   made with `wrangler d1 execute --remote` also writes the `audit_log` and `system_events` rows the
   endpoint would have written.
 
+- **Models for each job** (4 Nov 2026, migration 0337): `model_job_policies`, one row per job
+  (`RouteRequest.jobKey`), edited on Settings → Models for each job (`/api/boss/models/job-policies`).
+  The router applies it right after privacy and it only removes candidates; a `stop` job with no
+  model ends in `NAMED STOP [NO_MODEL_FOR_JOB]`, never a weaker model's output.
+- **Gemini direct, free tier** (4 Nov 2026, migration 0338): `bk_gemini` / `prv_gemini`, host
+  `GEMINI_HOST`, secret `GEMINI_API_KEY`. Free ids are `GEMINI_FREE_MODELS` (backends.ts) and guard.ts
+  `FREE_ROUTES`; every row is `TRAINS_ON_PROMPTS`. Google Search grounding is free only on
+  `gemini-2.5-flash`, which retires **1 Dec 2026**: after that `POST /api/boss/research/person` falls
+  back to Brave Search, then the guest's fetched pages, then to "Couldn't research <name>: <reason>".
+- **Brave Search, the second research route** (5 Nov 2026, migration 0340): `effects/braveSearchClient.ts`,
+  secret `BRAVE_SEARCH_API_KEY` (vault → Worker through `vault:sync`). Capped at 20 searches a day
+  (Central), stated once in guard.ts `FREE_ROUTES.svc_brave_search` and claimed in
+  `free_search_quota_days` before each call; the 21st is skipped and research moves on. A free Gemini 3
+  Flash writes only from the result pages; a fact citing any other link is dropped.
+- **Private model only** means a COMMITTED LP's name and deal terms (owner, 4 Nov 2026): prospects
+  are public. `committed_at` on `prospects` and `lp_reply_drafts` (migration 0339) puts a name back
+  in the router's private lexicon.
+- **Her time zone**: setting `owner_timezone` (default `America/Chicago`), `GET/PUT
+  /api/boss/system/owner-timezone` `{ tz }`. Meeting prep shows times in it, the meeting's own zone
+  in brackets only when different.
+
 ## Inherited West Peek chassis code
 - The repo carries West Peek's email intake (`src/shared/intake/emailTriggers.ts`,
   `src/worker/effects/inboundEmail.ts`). Treat it as foreign: copy and diverge, never import it or

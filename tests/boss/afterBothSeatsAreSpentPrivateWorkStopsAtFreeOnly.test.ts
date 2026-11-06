@@ -115,7 +115,7 @@ describe("both seats out of usage: the work waits on Codex's seat (owner, 3 Nov 
     await bothSeatsSpent();
     const taskId = await insertTask({
       status: "queued", title: "LP reply", intake_kind: "research", sensitivity: "private",
-      input: JSON.stringify({ backend_ladder: ["bk_claude_code", "bk_codex"], draft_kind: "lp_reply", prompt: "Draft the reply." }),
+      input: JSON.stringify({ backend_ladder: ["bk_claude_code", "bk_codex"], draft_kind: "lp_reply", lp_committed: true, prompt: "Draft the reply." }),
     });
     const hosts: string[] = [];
     restore = stubFetch((req) => { hosts.push(new URL(req.url).hostname); return completionResponse("no"); });

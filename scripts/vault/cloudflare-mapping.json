@@ -16,7 +16,8 @@
     "GOOGLE_OAUTH_CLIENT_SECRET",
     "RUNWARE_API_KEY",
     "GSC_SERVICE_ACCOUNT_JSON",
-    "BOSS_OS_SECRET_HANDOFF_KEY"
+    "BOSS_OS_SECRET_HANDOFF_KEY",
+    "BRAVE_SEARCH_API_KEY"
   ],
   "not_synced": {
     "CLOUDFLARE_API_TOKEN": "The credential this sync authenticates WITH. Uploading it to the Worker would put the key that can rewrite every secret inside the thing it rewrites.",
@@ -39,6 +40,7 @@
   },
   "synced_reasons": {
     "GSC_SERVICE_ACCOUNT_JSON": "Moved from not_synced on 19 Sep 2026. Owner: \"it should never send \u2014 the green button should be to create the draft.\" The Worker creates a Gmail DRAFT in her own mailbox on her press (src/worker/boss/wealth/gmailDraft.ts), which needs the gsc-bot service account under the gmail.compose scope she granted the same day. One scope, one endpoint (drafts.create); spry-vc-never-sends.mjs and the-inbox-draft-never-sends.mjs fail the build if a send scope or send endpoint appears on that path. Until this is synced the card prints the NAMED STOP \"the Worker holds no Google key\".",
-    "BOSS_OS_SECRET_HANDOFF_KEY": "Added 6 Oct 2026 (docs/SERVICE_RULES.md R3). The AES-256 key the Worker encrypts a key she emails as `SECRET NAME=value` under, until her Mac moves it into the vault. Without it on the Worker the secret door fails closed."
+    "BOSS_OS_SECRET_HANDOFF_KEY": "Added 6 Oct 2026 (docs/SERVICE_RULES.md R3). The AES-256 key the Worker encrypts a key she emails as `SECRET NAME=value` under, until her Mac moves it into the vault. Without it on the Worker the secret door fails closed.",
+    "BRAVE_SEARCH_API_KEY": "Added 5 Nov 2026 (owner: Brave Search, the second meeting-research route). Read only by src/worker/effects/braveSearchClient.ts, at most 20 searches a day; without it the route is skipped and research moves to the guest's own pages."
   }
 }

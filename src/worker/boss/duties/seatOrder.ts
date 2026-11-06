@@ -28,8 +28,15 @@ export const isOn = (v: string | null | undefined) => v === "on" || v === "true"
  * without Claude's seat becomes EMPTY: the task fails closed, it is never moved to another seat.
  */
 export const CONFIDENTIAL_DRAFT_KINDS = ["lp_reply", "lp_scheduling", "deal_terms"] as const;
-export function isConfidentialDraft(input: { confidential_draft?: unknown; draft_kind?: unknown } | null | undefined): boolean {
-  return input?.confidential_draft === true || (CONFIDENTIAL_DRAFT_KINDS as readonly string[]).includes(String(input?.draft_kind ?? ""));
+/**
+ * OWNER RULING, 4 Nov 2026: an LP reply or scheduling draft is confidential only for an LP who has
+ * COMMITTED (`lp_committed: true` on the task, from `committed_at`); a prospect's reply is
+ * public-model-approved. Deal terms are always confidential, and so is anything marked so outright.
+ */
+export function isConfidentialDraft(input: { confidential_draft?: unknown; draft_kind?: unknown; lp_committed?: unknown } | null | undefined): boolean {
+  const kind = String(input?.draft_kind ?? "");
+  if (input?.confidential_draft === true || kind === "deal_terms") return true;
+  return (kind === "lp_reply" || kind === "lp_scheduling") && input?.lp_committed === true;
 }
 export function confidentialLadder(ladder: string[]): string[] {
   return ladder.filter((x) => x === CLAUDE_SEAT);

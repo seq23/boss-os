@@ -21,6 +21,7 @@ import { dirname, join } from "node:path";
 import { spawnSync } from "node:child_process";
 import { createSign } from "node:crypto";
 import { seatEnv } from "./seat-env.mjs";
+import { repairMojibake } from "../../../src/shared/boss/mail/subject.mjs";
 import { sendersFor, employeeMail, postEmployeeMail } from "../notify.mjs";
 import { addMorningLines } from "../../../src/shared/boss/mail/morning.mjs";
 
@@ -156,7 +157,7 @@ export async function gmailHeaders(token, q, max = 25, fetchImpl = fetch) {
   for (const m of list.messages ?? []) {
     const msg = await g(`https://gmail.googleapis.com/gmail/v1/users/me/messages/${m.id}?format=metadata&metadataHeaders=From&metadataHeaders=Subject&metadataHeaders=Date`);
     const h = Object.fromEntries((msg.payload?.headers ?? []).map((x) => [x.name.toLowerCase(), x.value]));
-    out.push({ id: m.id, from: h.from ?? "", subject: (h.subject ?? "").slice(0, 160), date: new Date(Number(msg.internalDate ?? Date.now())).toISOString().slice(0, 10) });
+    out.push({ id: m.id, from: h.from ?? "", subject: repairMojibake(h.subject ?? "").slice(0, 160), date: new Date(Number(msg.internalDate ?? Date.now())).toISOString().slice(0, 10) });
   }
   return out;
 }

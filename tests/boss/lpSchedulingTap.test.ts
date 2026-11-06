@@ -124,7 +124,8 @@ describe("her tap on a confirmation sends the reply and the invite, once, only i
 
 describe("the router refuses a non-Claude route for LP scheduling content (fail closed)", () => {
   it("a scheduling draft is a confidential kind: Claude's seat only, never moved to another", () => {
-    expect(isConfidentialDraft({ draft_kind: "lp_scheduling" })).toBe(true);
+    // Owner ruling, 4 Nov 2026: confidential for a COMMITTED LP; a prospect's scheduling is public.
+    expect(isConfidentialDraft({ draft_kind: "lp_scheduling", lp_committed: true })).toBe(true);
     expect(confidentialLadder(["bk_codex", "bk_claude_code"])).toEqual(["bk_claude_code"]);
     expect(confidentialLadder(["bk_codex"])).toEqual([]);
   });

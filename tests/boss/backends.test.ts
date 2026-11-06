@@ -133,7 +133,7 @@ afterEach(restoreSeed);
 // ─────────────────────────────────────────────────────────────────────────────
 
 describe("Stage 1 — the registry as seeded", () => {
-  it("holds eight backends, and every enabled one has something built for it", async () => {
+  it("holds nine backends, and every enabled one has something built for it", async () => {
     const rows = await listBackends(env.DB);
     /*
      * SEVEN SINCE 0211. The two frontier providers were added for coaching alone, on her
@@ -143,7 +143,7 @@ describe("Stage 1 — the registry as seeded", () => {
      * and the new rows obey it: registering is not commissioning.
      */
     expect(rows.map((b) => b.id).sort()).toEqual([
-      "bk_anthropic", "bk_claude_code", "bk_codex", "bk_fireworks", "bk_local_runtime",
+      "bk_anthropic", "bk_claude_code", "bk_codex", "bk_fireworks", "bk_gemini", "bk_local_runtime",
       "bk_openai", "bk_openrouter", "bk_workers_ai",
     ]);
     for (const b of rows) {
@@ -185,7 +185,8 @@ describe("Stage 1 — the registry as seeded", () => {
      * for them and must stay shut.
      */
     const enabled = rows.filter((b) => b.status === "enabled").map((b) => b.id).sort();
-    expect(enabled).toEqual(["bk_claude_code", "bk_codex", "bk_openrouter"]);
+    // bk_gemini since 0338: its key (GEMINI_API_KEY) was set by the owner on 4 Nov 2026, free tier only.
+    expect(enabled).toEqual(["bk_claude_code", "bk_codex", "bk_gemini", "bk_openrouter"]);
     const claude = rows.find((b) => b.id === "bk_claude_code")!;
     expect(claude.status_reason).toMatch(/Stage 2 shipped/);
 
@@ -199,7 +200,8 @@ describe("Stage 1 — the registry as seeded", () => {
      */
     for (const b of rows.filter((x) => x.status === "enabled")) {
       expect(b.status_reason ?? "", `${b.id} is enabled with no reason recorded`).not.toHaveLength(0);
-      expect(b.status_reason, b.id).toMatch(/Stage 2 shipped|Enabled 17 September 2026/);
+      // The reason names when and why it was enabled; the exact words are not the rule.
+      expect(b.status_reason, b.id).toMatch(/Stage 2 shipped|Enabled \d{1,2} [A-Z][a-z]+ 2026/);
     }
     // And the converse, which is the half that actually guards the money: nothing is enabled that
     // has no executor and no key.
@@ -748,14 +750,14 @@ describe("Stage 1 — eligibleFor", () => {
   it("returns nothing permitted, and every reason, when nothing is enabled", async () => {
     // 0256 ships three backends enabled, so "nothing is enabled" is now a posture this test has to
     // create rather than inherit. Stating it here is what keeps the subject of the test honest.
-    await forceShut("bk_claude_code", "bk_codex", "bk_openrouter");
+    await forceShut("bk_claude_code", "bk_codex", "bk_openrouter", "bk_gemini");
 
     const result = await eligibleFor(env as any, "research");
     expect(result.order).toHaveLength(0);
     // EIGHT since 0256 added bk_codex: every backend in the registry is refused BY NAME, which is
     // the property under test — a backend that is off must appear as a refusal with a sentence,
     // never be silently missing from the list.
-    expect(result.refused).toHaveLength(8);
+    expect(result.refused).toHaveLength(9); // nine since 0338 added bk_gemini
     expect(new Set(result.refused.map((r) => r.code))).toEqual(new Set(["backend_not_enabled"]));
     // The count above is only meaningful if it matches the registry, so tie the two together.
     expect(result.refused).toHaveLength((await listBackends(env.DB)).length);
@@ -778,7 +780,7 @@ describe("Stage 1 — /api/backends", () => {
     expect(text).not.toContain("test-key-not-a-real-credential");
 
     const body = JSON.parse(text);
-    expect(body.data.backends).toHaveLength(8);
+    expect(body.data.backends).toHaveLength(9);
     expect(body.data.lever.position).toBe("MODERATE");
     // Five route-order criteria, which is a different five and does not move.
     expect(body.data.route_order).toHaveLength(5);

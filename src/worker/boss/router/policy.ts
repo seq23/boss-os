@@ -1,5 +1,6 @@
 import { riskAllows, type CostModePolicy } from "../../../shared/boss/governance";
 import { isPrivateModelRoute } from "./modelAccess";
+import { jobPolicyAllows, type JobPolicy } from "../../../shared/boss/router/jobPolicy.mjs";
 import type { ModelAccess } from "../../../shared/boss/governance";
 
 /**
@@ -59,6 +60,13 @@ export interface PolicyContext {
   modelAccess: ModelAccess;
   /** What kind of thing was found, for the refusal. NEVER the thing itself. */
   modelAccessReason: string;
+  /**
+   * THE JOB'S OWN MODEL LIST (model_job_policies, 4 Nov 2026), or null when the run names no job or the
+   * job has no row. Checked right after privacy; it only ever removes a candidate.
+   */
+  jobPolicy?: JobPolicy | null;
+  /** Whether this model's route charges money (guard.ts routeIsBilled); absent means billed. */
+  isBilled?: (model: ModelRow) => boolean;
 }
 
 /**
@@ -74,7 +82,7 @@ export interface PolicyContext {
  * ORDERS what survived the earlier ones, and it can never return a candidate the
  * privacy stage rejected.
  */
-export type RouteStage = "privacy" | "capability" | "availability" | "budget" | "cost";
+export type RouteStage = "privacy" | "job" | "capability" | "availability" | "budget" | "cost";
 
 export interface Verdict {
   eligible: boolean;
@@ -132,6 +140,15 @@ export function evaluateModel(model: ModelRow, ctx: PolicyContext): Verdict {
       approvable: true,
       reason: "restricted content cannot go to a cloud model without an approved routing card",
     };
+  }
+
+  // ── Stage 1b · THE JOB'S MODEL LIST (owner approved, 4 Nov 2026) ───────────
+  //
+  // After privacy, before kind, risk and budget. It can only REMOVE a candidate: a model it passes
+  // still answers to every rule below, and nothing here reorders anything.
+  if (ctx.jobPolicy) {
+    const j = jobPolicyAllows(ctx.jobPolicy, model, ctx.isBilled ? ctx.isBilled(model) : true);
+    if (!j.ok) return { eligible: false, stage: "job", reason: (j as { reason: string }).reason };
   }
 
   // ── Stage 2 · REQUIRED CAPABILITY ──────────────────────────────────────────

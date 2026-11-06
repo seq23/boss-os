@@ -24,6 +24,14 @@ import {
 import { experienceFor, mayBePreferredForProtectedWork, rank as experienceRank, recordOutcome } from "./experience";
 import { getNumber } from "../lib/settings";
 import { hasConfidential, stripConfidential } from "../../../shared/boss/brains/brain.mjs";
+import { readJobPolicy, type JobPolicy } from "../../../shared/boss/router/jobPolicy.mjs";
+
+/** The job's model list, or null (no job named, no row, or the table unreadable: then nothing extra filters). */
+export async function loadJobPolicy(db: D1Database, jobKey: string | null | undefined): Promise<JobPolicy | null> {
+  if (!jobKey) return null;
+  const row = await db.prepare(`SELECT * FROM model_job_policies WHERE job_key = ?`).bind(jobKey).first<any>().catch(() => null);
+  return readJobPolicy(row);
+}
 
 /**
  * Refusal codes from the backend guard that mean "money", as opposed to "not
@@ -201,6 +209,11 @@ export interface RouteRequest {
    * has no Claude seat, so the router refuses it outright: FAIL CLOSED (`confidentialDraftRefusal`).
    */
   confidentialDraft?: boolean;
+  /**
+   * WHICH JOB THIS IS, for its model list (`model_job_policies`, 4 Nov 2026): "meeting_prep",
+   * "lp_reply", "summarise"… A run without one, or whose job has no row, routes exactly as before.
+   */
+  jobKey?: string | null;
 }
 
 /**
@@ -554,6 +567,11 @@ export async function routeCompletion(env: Env, rawOpts: RouteRequest): Promise<
     cloudForRestrictedAllowed: opts.cloudForRestrictedAllowed ?? false,
     modelAccess: access.access,
     modelAccessReason: access.reason,
+    jobPolicy: await loadJobPolicy(db, opts.jobKey),
+    isBilled: (m: ModelRow) => {
+      const b = WIRING_BY_PROVIDER.get(m.provider_id)?.backendId;
+      return b ? routeIsBilled(b, m.slug) : true;
+    },
   };
 
   // Read ONCE and hand to the guard, so every candidate in one routing decision
@@ -1249,6 +1267,26 @@ export async function routeCompletion(env: Env, rawOpts: RouteRequest): Promise<
    */
   if (freeOnlyStop) {
     throw new RoutingBlocked(freeOnlyStop.message, "blocked_budget", freeOnlyStop.hint);
+  }
+
+  /*
+   * THE JOB SAID WHAT HAPPENS WHEN NO MODEL FITS (model_job_policies, 4 Nov 2026). `stop`: a named
+   * stop she sees, never a weaker model's output. `skip`: the job sits this run out.
+   */
+  if (ctx.jobPolicy) {
+    const jp = ctx.jobPolicy;
+    if (jp.on_no_model === "stop") {
+      throw new RoutingBlocked(
+        `NAMED STOP [NO_MODEL_FOR_JOB] No model allowed for ${jp.label} could run, so nothing was written.`,
+        "blocked_no_model",
+        `Open Settings → Models for each job and widen the list for ${jp.label}, or wait for a model on it to be free again.`,
+      );
+    }
+    throw new RoutingBlocked(
+      `${jp.label} was skipped this time: no model on its list could run.`,
+      "skipped_by_job",
+      `Settings → Models for each job sets which models ${jp.label} may use.`,
+    );
   }
 
   if (budgetRefusal) {

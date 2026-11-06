@@ -367,6 +367,8 @@ export async function handleTask(env: Env, msg: TaskMessage): Promise<void> {
       // A Codex limit on public work: $0 only, whatever the lever says (aiRoles.mjs afterCodexLimit).
       freeOnly: codexToFreeRung || undefined,
       confidentialDraft: confidential,
+      // The job's own model list (model_job_policies): the task names it, or its draft kind does.
+      jobKey: typeof (input as any)?.job_key === "string" ? (input as any).job_key : typeof (input as any)?.draft_kind === "string" ? (input as any).draft_kind : null,
       costMode,
       budgetMicros: envelope?.budget_micros ?? 0,
       cloudForRestrictedAllowed: Boolean(envelope?.cloud_for_restricted_allowed),

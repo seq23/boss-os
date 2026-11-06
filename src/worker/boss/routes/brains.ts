@@ -1,7 +1,7 @@
 import { Hono } from "hono";
 import type { Env, Vars } from "../env";
 import { ok, badRequest } from "../lib/http";
-import { canonicalSection, replaceSection, parseSections, resolveBrainSlug, SECTIONS, BRAIN_SLUGS } from "../../../shared/boss/brains/brain.mjs";
+import { canonicalSection, charSplitSections, replaceSection, parseSections, resolveBrainSlug, SECTIONS, BRAIN_SLUGS } from "../../../shared/boss/brains/brain.mjs";
 import { allBrains, currentCohesion, recordMacCohesion, listEntry, oneBrain, revisions, saveBrain, scoreboard } from "../brains/store";
 
 /**
@@ -67,6 +67,8 @@ brains.put("/:slug", async (c) => {
     throw badRequest("Send the brain or one section to save");
   }
   if (next.length > MAX_BODY) throw badRequest("That brain is too long to save", "Keep each brain under 200,000 characters.");
+  // 4 Nov 2026: twice a save wrote a sentence one character per line. Refuse it; the stored brain stays.
+  if (charSplitSections(current.body_md, next).length) throw badRequest("This save would write text one character per line; nothing was saved.");
   const revision = await saveBrain(c.env, slug, next, "Sequoia", note);
   const b = await oneBrain(c.env, slug);
   return ok(c, { ...listEntry(b), body_md: b.body_md, sections: parseSections(b.body_md).sections, revision });

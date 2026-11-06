@@ -114,6 +114,7 @@ export async function readCalendar(creds, subject, horizonDays) {
         // For Simone's meeting prep only (never posted to the diary): who, how to join, the notes.
         ical_uid: e.iCalUID ?? null,
         all_day: !e.start.dateTime,
+        time_zone: e.start.timeZone ?? null,
         attendees: (e.attendees ?? []).map((a) => ({ email: a.email ?? null, name: a.displayName ?? null, self: Boolean(a.self), organizer: Boolean(a.organizer) })),
         join_url: e.hangoutLink ?? (e.conferenceData?.entryPoints ?? []).find((p) => p.entryPointType === "video")?.uri ?? null,
         description: e.description ? String(e.description).slice(0, 4000) : null,
