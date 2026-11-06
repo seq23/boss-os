@@ -65,3 +65,16 @@ describe("the catch-up roundup leaves out housekeeping", () => {
     expect(r.decided).toEqual([]);
   });
 });
+
+// Her zone, Central in brackets when away (6 Nov 2026: the catch-up always said "CT").
+describe("the catch-up's time is in her zone", () => {
+  it("in New York: 4pm ET (3pm CT), and the logistics line the same", () => {
+    const p = buildCatchUp(sync, null, { herAddresses: ME, since, tz: "America/New_York" });
+    expect(p.subject).toBe("Prep: Catch-up with Scooter, Thu 5 Nov, 4pm ET (3pm CT)");
+    expect(JSON.stringify(p.sections)).toContain("Thu 5 Nov, 4:00pm to 5:00pm ET (3:00pm to 4:00pm CT).");
+  });
+  it("at home or unset: Central alone", () => {
+    expect(buildCatchUp(sync, null, { herAddresses: ME, since, tz: "America/Chicago" }).subject).toBe("Prep: Catch-up with Scooter, Thu 5 Nov, 3pm CT");
+    expect(buildCatchUp(sync, null, { herAddresses: ME, since }).subject).toBe("Prep: Catch-up with Scooter, Thu 5 Nov, 3pm CT");
+  });
+});

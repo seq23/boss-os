@@ -14,6 +14,7 @@
  */
 
 import { repairMojibake } from "../mail/subject.mjs";
+import { HOME_TZ, OWNER_TZ_KEY, validZone, zoneWord, ownerTime } from "../ownerTime.mjs";
 
 export const PREP_PREFIX = "Prep: ";
 export const PREP_TZ = "America/Chicago";
@@ -24,33 +25,17 @@ export const PREP_TZ = "America/Chicago";
  * another zone (the calendar's own zone, else her home zone), that zone follows in brackets:
  * "1pm ET (12pm CT)". Same zone, no brackets. The length is the calendar's own end minus start.
  */
-export const HOME_TZ = "America/Chicago";
-/** The settings key that holds her current zone (GET/PUT /api/boss/system/owner-timezone). */
-export const OWNER_TZ_KEY = "owner_timezone";
+// Her zone, the zone words and the Central bracket live in ONE helper (../ownerTime.mjs, 6 Nov 2026).
+export { HOME_TZ, OWNER_TZ_KEY, validZone, zoneWord };
 export const DISPLAY_TZ = HOME_TZ;
 export const DISPLAY_ZONE = "CT";
-const ZONE_WORDS = { "America/New_York": "ET", "America/Chicago": "CT", "America/Denver": "MT", "America/Phoenix": "MT", "America/Los_Angeles": "PT", "Pacific/Honolulu": "HT", "America/Anchorage": "AKT" };
-/** "CT", "ET", or the zone's own short name ("GMT+1") for anywhere else. */
-export function zoneWord(tz, at = Date.now()) {
-  if (ZONE_WORDS[tz]) return ZONE_WORDS[tz];
-  try {
-    return new Intl.DateTimeFormat("en-US", { timeZone: tz, timeZoneName: "short" }).formatToParts(new Date(at)).find((x) => x.type === "timeZoneName")?.value ?? tz;
-  } catch { return tz; }
-}
-/** A valid IANA zone, or null. */
-export function validZone(tz) {
-  if (typeof tz !== "string" || !tz.trim() || tz.length > 64) return null;
-  try { new Intl.DateTimeFormat("en-US", { timeZone: tz.trim() }); return tz.trim(); } catch { return null; }
-}
 /**
- * "1pm ET (12pm CT)": the time in her zone, the other zone in brackets only when it shows another
- * clock. `full` for "1:00pm".
+ * "1pm ET (12pm CT)": the time in her zone, Central in brackets only when it shows another clock
+ * (her rule: jobs are defined in Central, times are shown in her zone with CT in brackets). `full` for
+ * "1:00pm". `other` is accepted for old callers and ignored: the bracket is always Central.
  */
-export function zonedTime(at, { tz = DISPLAY_TZ, other = HOME_TZ, full = false } = {}) {
-  const here = `${clock(at, { tz, full })} ${zoneWord(tz, at)}`;
-  const o = validZone(other);
-  if (!o || o === tz || zoneWord(o, at) === zoneWord(tz, at) || clock(at, { tz: o }) === clock(at, { tz })) return here;
-  return `${here} (${clock(at, { tz: o, full })} ${zoneWord(o, at)})`;
+export function zonedTime(at, { tz = DISPLAY_TZ, full = false } = {}) {
+  return ownerTime(at, { tz, clock: (h, m) => `${h % 12 === 0 ? 12 : h % 12}${m || full ? `:${String(m).padStart(2, "0")}` : ""}${h >= 12 ? "pm" : "am"}` });
 }
 
 /** The evening run: from 18:00 Central, tomorrow's meetings are due. */
@@ -493,7 +478,7 @@ export const PREP_QUESTION = "What's this meeting about? Reply in a line and I'l
 export function buildPrep(event, data = {}, { herAddresses = [], context = {}, purpose = null, plan = null, tz = DISPLAY_TZ, research = null } = {}) {
   const herTz = validZone(tz) ?? DISPLAY_TZ;
   research = research ?? context?.research ?? null;
-  const otherTz = eventZone(event);
+  const otherTz = HOME_TZ; // the bracket is always Central (her rule, 6 Nov 2026), never the meeting's zone
   const guests = others(event, herAddresses);
   const lead = guests[0] ?? null;
   const titleName = nameFromTitle(event.title);
@@ -511,7 +496,7 @@ export function buildPrep(event, data = {}, { herAddresses = [], context = {}, p
   const forOther = Boolean(named && name && named.toLowerCase() !== String(name).split(/\s+/)[0].toLowerCase() && !(firm ?? "").toLowerCase().startsWith(named.toLowerCase()));
   const headName = forOther ? named : name;
   const who = headName ? `${headName}${firm && !headName.includes(firm) ? ` (${firm})` : ""}` : (counterpartFromTitle(event.title) ?? lead?.email ?? (String(event.title ?? "").trim() || "Meeting"));
-  const when = `${shortDate(event.scheduled_at, herTz)}, ${zonedTime(event.scheduled_at, { tz: herTz, other: otherTz })}`;
+  const when = `${shortDate(event.scheduled_at, herTz)}, ${zonedTime(event.scheduled_at, { tz: herTz })}`;
   const subject = `${PREP_PREFIX}${who}, ${when}`;
   const about = purposeOf(event, { purpose, context: ctx, rec, role });
   const sections = [];
@@ -760,8 +745,10 @@ export function roundupFrom({ loops = [], brains = [], since, now = Date.now() }
 const capList = (items, n, rest) => (items.length > n ? [...items.slice(0, n), `And ${items.length - n} more ${rest}.`] : items);
 
 /** The catch-up email's parts, in the same shape as buildPrep. `since`: the start of the roundup. */
-export function buildCatchUp(event, roundup, { herAddresses = [], since } = {}) {
-  const when = `${shortDate(event.scheduled_at)}, ${clock(event.scheduled_at)} ${DISPLAY_ZONE}`;
+export function buildCatchUp(event, roundup, { herAddresses = [], since, tz = DISPLAY_TZ } = {}) {
+  // In her zone with Central in brackets when away (was "CT" always, 6 Nov 2026).
+  const herTz = validZone(tz) ?? DISPLAY_TZ;
+  const when = `${shortDate(event.scheduled_at, herTz)}, ${zonedTime(event.scheduled_at, { tz: herTz })}`;
   const subject = `${PREP_PREFIX}Catch-up with Scooter, ${when}`;
   const sinceText = shortDate(since);
   const r = roundup ?? { done: [], decided: [], started: [], coming: [] };
@@ -774,7 +761,9 @@ export function buildCatchUp(event, roundup, { herAddresses = [], since } = {}) 
   const guests = others(event, herAddresses);
   const join = event.join_url ?? (/^https:\/\/\S+$/.test(String(event.location ?? "")) ? event.location : null);
   const end = event.duration_min ? event.scheduled_at + event.duration_min * 60_000 : null;
-  const logi = [`${shortDate(event.scheduled_at)}, ${clock(event.scheduled_at, { full: true })}${end ? ` to ${clock(end, { full: true })}` : ""} ${DISPLAY_ZONE}.`];
+  const span = (z) => `${clock(event.scheduled_at, { tz: z, full: true })}${end ? ` to ${clock(end, { tz: z, full: true })}` : ""} ${zoneWord(z, event.scheduled_at)}`;
+  const homeSpan = herTz !== HOME_TZ && clock(event.scheduled_at, { tz: HOME_TZ }) !== clock(event.scheduled_at, { tz: herTz }) ? ` (${span(HOME_TZ)})` : "";
+  const logi = [`${shortDate(event.scheduled_at, herTz)}, ${span(herTz)}${homeSpan}.`];
   if (join) logi.push({ text: "Join the call", links: [{ label: "Join", url: join }] });
   if (guests.length) logi.push(`Who is on it: ${guests.map((g) => (g.name && !String(g.name).includes("@") ? g.name : g.email)).join(", ")}.`);
   sections.push({ title: "Logistics", items: logi });

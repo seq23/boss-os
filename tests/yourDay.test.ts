@@ -59,7 +59,7 @@ describe("the one morning email", () => {
     expect(idx.every((n) => n >= 0), JSON.stringify(idx)).toBe(true);
     expect([...idx].sort((a, b) => a - b)).toEqual(idx);
     expect(e.subject).toBe("Friday: 4 decisions, 2 new deals, Valerie's list");
-    expect(e.text.split("\n")[0]).toBe("Good morning. Here is your Friday, October 23. On your calendar: 10 am Call with Example Partners with A. Person.");
+    expect(e.text.split("\n")[0]).toBe("Good morning. Here is your Friday, October 23. On your calendar: 10 am CT Call with Example Partners with A. Person.");
     // Owner, 24 Oct 2026: the 8Raise footer only when something is wrong (3 of 75 used is fine).
     expect(e.text).not.toMatch(/8Raise/);
   });
@@ -233,5 +233,16 @@ describe("a duty-change approval and its task are one plain decision (2 Nov 2026
     expect(e.text).toMatch(/Yes lets Danielle make the change; no keeps it as it is\./);
     expect(e.text).not.toMatch(/Intake assigned|execution authority|USER_ONLY|Risk: high|is waiting for your word/i);
     expect(plainProblems({ subject: e.subject, text: e.text })).toEqual([]);
+  });
+});
+
+// Times follow her Mac's zone, Central in brackets when away (6 Nov 2026; was Central with no label).
+describe("the morning email's times are in her zone", () => {
+  it("in New York: Eastern first, Central in brackets", () => {
+    expect(buildDay({ ...DATA, ownerTz: "America/New_York" }, NOW).text.split("\n")[0]).toContain("On your calendar: 11 am ET (10 am CT) Call with Example Partners");
+  });
+  it("at home, or unread: Central", () => {
+    expect(buildDay({ ...DATA, ownerTz: "America/Chicago" }, NOW).text.split("\n")[0]).toContain("On your calendar: 10 am CT Call");
+    expect(buildDay({ ...DATA, ownerTz: null }, NOW).text.split("\n")[0]).toContain("On your calendar: 10 am CT Call");
   });
 });

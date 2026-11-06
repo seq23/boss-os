@@ -25,7 +25,7 @@ import { execFileSync } from "node:child_process";
 import { readAllCalendars } from "./calendar-sync.mjs";
 import { sendAsEmployee } from "./notify.mjs";
 import { layoutEmail, plainProblems, NOTHING_TO_DECIDE } from "../../src/shared/boss/mail/plain.mjs";
-import { buildPrep, buildCatchUp, isScooterCatchUp, roundupFrom, CATCHUP_DEFAULT_DAYS, dueMeetings, linkResolves, lengthLabel, others, recordsFor, nameFromTitle, companyDomain, shortDate, clock, DISPLAY_ZONE, guestFirm, zonedTime, eventZone, DISPLAY_TZ, validZone, researchPrompt, readResearch } from "../../src/shared/boss/meetingPrep/prep.mjs";
+import { buildPrep, buildCatchUp, isScooterCatchUp, roundupFrom, CATCHUP_DEFAULT_DAYS, dueMeetings, linkResolves, lengthLabel, others, recordsFor, nameFromTitle, companyDomain, shortDate, clock, guestFirm, zonedTime, DISPLAY_TZ, validZone, researchPrompt, readResearch } from "../../src/shared/boss/meetingPrep/prep.mjs";
 import { askClaudeJson, googleToken, gmailHeaders } from "./lib/duty-kit.mjs";
 import { repairMojibake } from "../../src/shared/boss/mail/subject.mjs";
 
@@ -231,7 +231,7 @@ export async function gatherContext(event, data, { api = null, ask = askClaudeJs
   const first = name ?? (/\+\s*([A-Z][a-z]+)/.exec(String(event.title ?? ""))?.[1] ?? null);
   let ctx = { mail: { count: 0, recent: [] }, bounces: [], meetings: [], cards: [], unanswered: null, purpose_hint: null, site: null };
 
-  const when = `${shortDate(event.scheduled_at, tz)} at ${zonedTime(event.scheduled_at, { tz, other: eventZone(event) })}`;
+  const when = `${shortDate(event.scheduled_at, tz)} at ${zonedTime(event.scheduled_at, { tz })}`;
   const today = new Date(now).toISOString().slice(0, 10);
   const r = ask(contextPrompt({ name: first, email: lead?.email ?? null, domain, firm, title: String(event.title ?? ""), when, today }), { model: "sonnet", maxTurns: 30, timeoutMs: 600_000, requireTool: /Gmail/i, toolSearch: CONTEXT_TOOLS });
   if (r.ok) ctx = { ...ctx, ...readContext(r.json) };
@@ -313,7 +313,7 @@ export function readPlan(json) {
 /** The plan for a meeting whose purpose is known. Null (and the evidence-only goals) when the seat fails. */
 export function planFor(event, prep, context, { ask = askClaudeJson, log = console.error, tz = DISPLAY_TZ } = {}) {
   if (!prep.purpose?.text) return null;
-  const r = ask(planPrompt({ who: prep.who, purpose: prep.purpose.text, context, when: `${shortDate(event.scheduled_at, tz)} at ${zonedTime(event.scheduled_at, { tz, other: eventZone(event) })}`, minutes: event.duration_min }), { model: "sonnet", maxTurns: 3, timeoutMs: 300_000 });
+  const r = ask(planPrompt({ who: prep.who, purpose: prep.purpose.text, context, when: `${shortDate(event.scheduled_at, tz)} at ${zonedTime(event.scheduled_at, { tz })}`, minutes: event.duration_min }), { model: "sonnet", maxTurns: 3, timeoutMs: 300_000 });
   if (!r.ok) { log(`meeting-prep: the plan was not written (${r.why}); the prep keeps its evidence-only goals`); return null; }
   return readPlan(r.json);
 }
@@ -374,12 +374,13 @@ export async function sendCatchUps(api, events, { now = Date.now(), dry = false,
     catch (e) { console.error(`meeting-prep: the ${slug} brain was not read for the catch-up (${e.message})`); }
   }
   const state = readJson(CATCHUP_FILE, { last: null });
+  const tz = await ownerZone(api);
   let failed = 0;
   const out = [];
   for (const e of events) {
     const since = catchUpSince(e, state.last);
     const roundup = roundupFrom({ loops, brains, since, now });
-    const p = buildCatchUp(e, roundup, { herAddresses: HER_ADDRESSES, since });
+    const p = buildCatchUp(e, roundup, { herAddresses: HER_ADDRESSES, since, tz });
     const laid = layoutEmail({ who: "Simone", subject: p.subject, happened: p.happened, decide: [], sections: p.sections });
     out.push({ subject: laid.subject, text: laid.text });
     if (dry || preview) continue;

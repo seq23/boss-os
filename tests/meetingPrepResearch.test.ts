@@ -99,6 +99,12 @@ describe("c) times in her current zone, the other zone in brackets only when dif
     expect(p.sections.at(-1).items[0]).toBe("Fri 30 Oct, 1:00pm to 1:30pm ET (12:00pm to 12:30pm CT).");
     expect(buildPrep(pat, {}, { herAddresses: ME }).sections.at(-1).items[0]).toBe("Fri 30 Oct, 12:00pm to 12:30pm CT.");
   });
+  it("the bracket is always Central, never the meeting's own zone (her rule, 6 Nov 2026)", () => {
+    // She is home in Chicago, the meeting is set in Los Angeles: no bracket.
+    expect(buildPrep({ ...pat, time_zone: "America/Los_Angeles" }, {}, { herAddresses: ME, tz: "America/Chicago" }).subject).toBe("Prep: Pat Example (familyoffice.example), Fri 30 Oct, 12pm CT");
+    // She is in Los Angeles: Pacific first, Central in brackets.
+    expect(buildPrep(pat, {}, { herAddresses: ME, tz: "America/Los_Angeles" }).subject).toBe("Prep: Pat Example (familyoffice.example), Fri 30 Oct, 10am PT (12pm CT)");
+  });
 });
 
 describe("d) subjects decoded once", () => {
