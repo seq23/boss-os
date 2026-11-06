@@ -182,7 +182,14 @@ export async function runGroundedResearch(
     .prepare(`SELECT detail FROM task_events WHERE task_id = ? AND event = 'grounded_section' ORDER BY ts`)
     .bind(task.id).all<{ detail: string }>();
   const done = new Map<number, SectionDone>();
-  for (const r of prior.results ?? []) { try { const d = JSON.parse(r.detail) as SectionDone; done.set(d.n, d); } catch { /* unreadable: redo it */ } }
+  // A part recorded with nothing in it (no line, no source, no gap) is not done: it is redone (6 Nov
+  // 2026, part 1 of the DNA research came back empty and was kept as if answered).
+  for (const r of prior.results ?? []) {
+    try {
+      const d = JSON.parse(r.detail) as SectionDone;
+      if (d.lines.some((l) => l.trim()) || d.sources.length || d.notFound.length) done.set(d.n, d);
+    } catch { /* unreadable: redo it */ }
+  }
 
   const base = {
     routeId: "rt_ops_default", lane: task.lane, taskId: task.id, employeeId: task.employee_id ?? null,
@@ -203,7 +210,12 @@ export async function runGroundedResearch(
       const r = await routeCompletion(env, { ...base, jobKey: GROUNDED_SEARCH_JOB, webSearch: true, maxOutputTokens: 2500, messages: [{ role: "user", content: sectionPrompt(brief, s, today) }] });
       model = r.modelDisplayName || model;
       const kept = keepSupported(r.text, r.supports ?? []);
-      rec = { n: s.n, ask: s.ask, lines: kept.lines, sources: (r.sources ?? []).map((x) => ({ title: x.title, url: x.url })), dropped: kept.dropped, notFound: kept.notFound };
+      rec = { n: s.n, ask: s.ask, lines: kept.lines.filter((l) => l.trim()), sources: (r.sources ?? []).map((x) => ({ title: x.title, url: x.url })), dropped: kept.dropped, notFound: kept.notFound };
+      // RULE 0: an empty answer is not an answer. It is said under "What I could not confirm", never
+      // filed as a part with nothing in it.
+      if (!r.text.trim() || (rec.lines.length === 0 && rec.notFound.length === 0 && rec.dropped === 0)) {
+        rec.notFound = [`Google search gave no answer for this part (${r.text.trim() ? "nothing usable" : "an empty reply"}); ask again to retry it`];
+      }
     } catch (e) {
       const why = e instanceof Error ? e.message : String(e);
       if (/\b429\b|RESOURCE_EXHAUSTED|quota/i.test(why)) {
