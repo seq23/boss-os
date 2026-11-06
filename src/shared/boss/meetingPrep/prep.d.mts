@@ -54,3 +54,6 @@ export declare function isScooterCatchUp(event: any, herAddresses?: string[]): b
 export declare function decisionHeadline(text: string): string;
 export declare function roundupFrom(opts: { loops?: any[]; brains?: { slug: string; body_md: string }[]; since: number; now?: number }): { done: string[]; decided: string[]; started: string[]; coming: string[] };
 export declare function buildCatchUp(event: any, roundup: { done: string[]; decided: string[]; started: string[]; coming: string[] } | null, opts?: { herAddresses?: string[]; since: number; tz?: string | null }): { key: string; subject: string; who: string; sections: any[]; happened: string; decide: any[]; needsPurpose: boolean; purpose: { text: string; from: string; guess: boolean } };
+export declare function titleFirstName(title: unknown, herNames?: string[]): string | null;
+export declare function invitePerson(title: unknown, guestName: string | null, firm: string | null): string | null;
+export declare function isOwnReport(subject: unknown): boolean;

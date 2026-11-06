@@ -140,3 +140,17 @@ describe("e) grid deals only for brokerage contacts", () => {
     expect(prepEmail(pat, buyer).laid.text).toContain("On the grid now that fits a buyer: Acme AI $10M.");
   });
 });
+
+// 6 Nov 2026: the invite "Ned (Arnel & Affiliates) <> Sequoia Taylor" went to his assistant; the
+// research looked up the assistant and the prep said "Couldn't research Cecelia Stewart".
+describe("research looks up the person the invite names", () => {
+  it("asks about Ned at the firm, not the assistant's address", async () => {
+    const asked: any[] = [];
+    const api = { post: async (_p: string, b: any) => { asked.push(b); return { ok: false, why: "nothing public" }; } };
+    const ned = { calendar_uid: "n1", title: "Ned (Arnel & Affiliates) <> Sequoia Taylor, West Peek", scheduled_at: Date.parse("2026-11-17T17:00:00Z"), attendees: [{ email: "cstewart@arnel.example", name: "Cecelia Stewart" }] };
+    await researchGuest(ned, {}, { api, log: () => {} });
+    expect(asked[0].name).toBe("Ned");
+    expect(asked[0].email).toBeNull();
+    expect(asked[0].firm).toBe("Arnel & Affiliates");
+  });
+});

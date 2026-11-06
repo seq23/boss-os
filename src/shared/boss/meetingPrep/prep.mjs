@@ -218,6 +218,15 @@ export function titleFirstName(title, herNames = ["sequoia", "taylor", "seq"]) {
   return null;
 }
 
+/** The person the invite names when the guest is someone else (an assistant who set it up); else null. */
+export function invitePerson(title, guestName, firm) {
+  const named = titleFirstName(title);
+  if (!named || !guestName) return null;
+  if (named.toLowerCase() === String(guestName).split(/\s+/)[0].toLowerCase()) return null;
+  if (String(firm ?? "").toLowerCase().startsWith(named.toLowerCase())) return null;
+  return named;
+}
+
 /*
  * HER OWN SYSTEM'S EMAILS ARE NOT HISTORY WITH THEM (6 Nov 2026: a prep for Ned listed "West Peek LP
  * Outreach — Morning Report" and the morning email "Tuesday: 3 decisions, 6 new deals…" under "How you
@@ -492,8 +501,8 @@ export function buildPrep(event, data = {}, { herAddresses = [], context = {}, p
 
   // The person the invite names, when the guest is someone else who set it up (6 Nov 2026: "Ned (Arnel &
   // Affiliates) <> Sequoia Taylor" went to Cecelia, his assistant; the prep was headed "Cecelia Stewart").
-  const named = titleFirstName(event.title);
-  const forOther = Boolean(named && name && named.toLowerCase() !== String(name).split(/\s+/)[0].toLowerCase() && !(firm ?? "").toLowerCase().startsWith(named.toLowerCase()));
+  const named = invitePerson(event.title, name, firm);
+  const forOther = Boolean(named);
   const headName = forOther ? named : name;
   const who = headName ? `${headName}${firm && !headName.includes(firm) ? ` (${firm})` : ""}` : (counterpartFromTitle(event.title) ?? lead?.email ?? (String(event.title ?? "").trim() || "Meeting"));
   const when = `${shortDate(event.scheduled_at, herTz)}, ${zonedTime(event.scheduled_at, { tz: herTz })}`;
@@ -511,7 +520,7 @@ export function buildPrep(event, data = {}, { herAddresses = [], context = {}, p
     whoItems.push(`${name}${roleBits ? `, ${roleBits}` : ""}${role ? `. ${role[0].toUpperCase()}${role.slice(1)}${kind}` : ""}.`);
   }
   if (forOther) whoItems.push(`The invite names ${named}; it went to ${name}${lead?.email ? ` (${lead.email})` : ""}, who set it up.`);
-  whoItems.push(...researchItems(research, name ?? lead?.email ?? null));
+  whoItems.push(...researchItems(research, headName ?? lead?.email ?? null));
   if (rec.prospect?.status === "interested") whoItems.push("They said they are interested.");
   if (rec.lp?.bucket === "call") whoItems.push("They asked for a call.");
   if (ctx.site?.domain && (ctx.site.title || ctx.site.about)) {
