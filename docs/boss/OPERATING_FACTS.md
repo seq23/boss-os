@@ -29,6 +29,16 @@ they live in the repo, not only in someone's memory. Non-confidential. `STATUS.m
   (Central), stated once in guard.ts `FREE_ROUTES.svc_brave_search` and claimed in
   `free_search_quota_days` before each call; the 21st is skipped and research moves on. A free Gemini 3
   Flash writes only from the result pages; a fact citing any other link is dropped.
+  Also held to **900 searches a calendar month** (`FREE_ROUTES.svc_brave_search.monthlyCap`; the
+  plan is "Free credits only", about 1,000 a month, and cannot charge): past it NAMED STOP
+  [BRAVE_MONTHLY_CAP]. A Brave 402/429 is a capped rung, not a failure.
+- **The research chain** (owner, 6 Nov 2026: "it started with all free tiers and if they were all out
+  then it uses an allowance on the paid models i have subscriptions to"): Gemini free with Google
+  Search → OpenRouter `:free` writing only from Brave results → Codex's seat if not spent → the Claude
+  seat → NAMED STOP with the reset. A seat is used only when her Mac was seen in the last 30 minutes
+  (`sync_device.last_seen_at`, stamped by the agent's poll and `/claim`). Code: `queue/freeRung.ts`,
+  `queue/consumer.ts`, `aiRoles.mjs afterCodexLimit`. OpenRouter `:free` calls carry `max_price` 0 and
+  stop on any reported cost (`router/openrouter.ts`); its web plugin is never used.
 - **Private model only** means a COMMITTED LP's name and deal terms (owner, 4 Nov 2026): prospects
   are public. `committed_at` on `prospects` and `lp_reply_drafts` (migration 0339) puts a name back
   in the router's private lexicon.

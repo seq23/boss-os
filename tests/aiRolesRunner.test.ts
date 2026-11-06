@@ -72,7 +72,7 @@ describe("Boss OS employees: Codex works, Claude is the brain", () => {
     expect(existsSync(outFile)).toBe(false);
   });
 
-  it("after a Codex limit, public work goes to the $0 free rung; confidential, LP/deal, Chrome and non-public work wait", () => {
+  it("after a Codex limit, public work goes to the $0 free rung; confidential, LP/deal, Chrome and non-public work go to the Claude seat", () => {
     expect(afterCodexLimit({ sensitivity: "public" })).toBe("free_rung");
     expect(afterCodexLimit({ sensitivity: "public", confidential: true })).toBe("claude_seat");
     expect(afterCodexLimit({ sensitivity: "public", chromeJob: true })).toBe("claude_seat");
