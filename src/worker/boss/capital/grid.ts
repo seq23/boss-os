@@ -4,6 +4,8 @@ import { audit } from "../lib/audit";
 import {
   LOOKBACK_DAYS, ARCHIVE_DAYS, archiveRows, isDoNotSuggest, parseListEdits, confirmEdit,
 } from "../../../shared/boss/capital/partyLists.mjs";
+import { partiesReply, rowsForCompany } from "../../../shared/boss/capital/partiesAsk.mjs";
+import type { PartiesAsk } from "../../../shared/boss/capital/partiesAsk.mjs";
 import type { ListEdit, PartyEntry, PartyList, PartyLists } from "../../../shared/boss/capital/partyLists.mjs";
 
 /**
@@ -156,6 +158,24 @@ export async function dealGrid(env: Env, now = Date.now()) {
   const open = rows.filter((r) => r.received_on >= openFrom);
   const archive = archiveRows(rows, now);
   return { rows: open, archive, counts: { open: open.length, archived: archive.length }, lookback_days: LOOKBACK_DAYS, archive_days: ARCHIVE_DAYS, updated_at: updated || null };
+}
+
+/**
+ * "Find all buyers of <company>" from her email (5 Nov 2026): the twelve-month window with the
+ * do-not-suggest list applied, people kept, for `partiesReply`. Null when the grid never names the
+ * company, so an ask that is not about her deals goes to the ordinary triage.
+ */
+export async function partiesAnswer(env: Env, ask: PartiesAsk, now = Date.now()): Promise<{ reply: string; count: number } | null> {
+  const cutoff = new Date(now - ARCHIVE_DAYS * 86_400_000).toISOString().slice(0, 10);
+  const res = await env.DB.prepare(
+    `SELECT company, side, size_text, price_text, from_text, received_on, parties
+       FROM capital_deal_rows WHERE received_on >= ? AND side IN ('buy','sell')`,
+  ).bind(cutoff).all<DealRow>();
+  const named = rowsForCompany(res.results ?? [], ask.company);
+  if (named.length === 0) return null;
+  const lists = await activeLists(env);
+  const rows = named.filter((r) => !isDoNotSuggest({ parties: r.parties, from_text: r.from_text }, lists));
+  return { reply: partiesReply(ask, rows, now), count: rows.filter((r) => r.side === ask.side).length };
 }
 
 /** The holders for one company, replaced as a set. */

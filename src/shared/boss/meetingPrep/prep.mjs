@@ -657,3 +657,93 @@ export async function deadLinks(body, fetchImpl = fetch) {
   for (const { url } of extractWarmReferences(body)) if (!(await linkResolves(url, fetchImpl))) dead.push(url);
   return dead;
 }
+
+// ─── Catch-ups with Scooter ──────────────────────────────────────────────────
+
+/*
+ * EVERY MEETING WITH SCOOTER IS A CATCH-UP BETWEEN THE TWO OF THEM (owner, 5 Nov 2026: "everytime
+ * there is a meeting w/scooter she should know its a catch up meeting between us (even if its not on
+ * wednesday) and she needs a roundup of what ive been up to"). The 5 Nov sync moved to a Thursday and
+ * the prep asked "what's this meeting about?" and offered to research his own fund. A Scooter meeting
+ * never asks: the purpose is known, and the body is her roundup since the last catch-up.
+ */
+export const CATCHUP_DEFAULT_DAYS = 7;
+const SCOOTER_RE = /\bscooter\b/i;
+
+/** True when the title names Scooter, or a guest is Scooter (by name or the address's own name). */
+export function isScooterCatchUp(event, herAddresses = []) {
+  if (SCOOTER_RE.test(String(event?.title ?? ""))) return true;
+  return others(event, herAddresses).some((a) => SCOOTER_RE.test(String(a.name ?? "")) || SCOOTER_RE.test(String(a.email ?? "").split("@")[0]));
+}
+
+const CONFIDENTIAL_RE = /<!--\s*confidential\s*-->[\s\S]*?<!--\s*\/confidential\s*-->/gi;
+/** Rows that are the team's housekeeping, not her work: never in her roundup. */
+const HOUSEKEEPING_RE = /^(?:Unsaved edits\b|Search Readiness is waiting)/i;
+/** Brain lines that were moved or reorganised, not decided that day. */
+const MOVED_RE = /moved from the old HANDOFF|brain restructure|folded into/i;
+const DECISION_RE = /^-\s*(\d{4}-\d{2}-\d{2})\s*[—-]+\s*(.+)$/;
+const BRAIN_NAMES = { brokerage: "Spry Ventures", "west-peek-ventures": "West Peek Ventures", "west-peek": "West Peek", "porch-and-party": "Porch & Party", "time-2-read": "Time-2-Read", spry: "Spry Labs", friends: "Friends", personal: "Boss OS" };
+
+/** One decision line, short: its bold headline when it has one, else the first 160 characters. */
+export function decisionHeadline(text) {
+  const t = String(text ?? "");
+  const bold = /\*\*(.+?)\*\*/.exec(t)?.[1];
+  const plain = (bold ?? t.split(/ — /)[0]).replace(/\*\*/g, "").replace(/\s+/g, " ").trim();
+  return clip(plain, 160);
+}
+
+/**
+ * Her roundup since `since` (ms). `loops`: Open Loops rows (open + recently closed). `brains`:
+ * [{ slug, body_md }]. Confidential parts of a brain are never read. Pure.
+ * Returns { done, decided, started, coming } as plain lines.
+ */
+export function roundupFrom({ loops = [], brains = [], since, now = Date.now() }) {
+  loops = loops.filter((l) => !HOUSEKEEPING_RE.test(String(l.title ?? "")));
+  const sinceDay = dayOfCt(since);
+  const done = loops.filter((l) => l.status === "closed" && Number(l.closed_at) >= since && !/duplicate|dupe/i.test(String(l.closed_reason ?? "")))
+    .sort((a, b) => b.closed_at - a.closed_at).map((l) => clip(l.title, 140));
+  const started = loops.filter((l) => l.status === "open" && Number(l.created_at) >= since)
+    .sort((a, b) => b.created_at - a.created_at).map((l) => clip(l.title, 140));
+  const weekOut = dayOfCt(now + 7 * DAY_MS);
+  const today = dayOfCt(now);
+  const coming = loops.filter((l) => l.status === "open" && l.section !== "parked" && l.next_date && l.next_date >= today && l.next_date <= weekOut)
+    .sort((a, b) => String(a.next_date).localeCompare(String(b.next_date))).map((l) => `${shortDate(Date.parse(`${l.next_date}T17:00:00Z`))}: ${clip(l.title, 120)}`);
+  const decided = [];
+  for (const b of brains) {
+    const md = String(b.body_md ?? "").replace(CONFIDENTIAL_RE, "");
+    const start = md.search(/^## Settled decisions\s*$/m);
+    const rest = start === -1 ? "" : md.slice(start).replace(/^## Settled decisions[^\n]*\n?/, "");
+    const next = rest.search(/^## /m);
+    const sec = next === -1 ? rest : rest.slice(0, next);
+    for (const line of sec.split("\n")) {
+      const m = DECISION_RE.exec(line.trim());
+      if (m && m[1] >= sinceDay && !MOVED_RE.test(m[2])) decided.push({ day: m[1], text: `${BRAIN_NAMES[b.slug] ?? b.slug}: ${decisionHeadline(m[2])}` });
+    }
+  }
+  decided.sort((a, b) => b.day.localeCompare(a.day));
+  return { done, decided: decided.map((d) => d.text), started, coming };
+}
+
+const capList = (items, n, rest) => (items.length > n ? [...items.slice(0, n), `And ${items.length - n} more ${rest}.`] : items);
+
+/** The catch-up email's parts, in the same shape as buildPrep. `since`: the start of the roundup. */
+export function buildCatchUp(event, roundup, { herAddresses = [], since } = {}) {
+  const when = `${shortDate(event.scheduled_at)}, ${clock(event.scheduled_at)} ${DISPLAY_ZONE}`;
+  const subject = `${PREP_PREFIX}Catch-up with Scooter, ${when}`;
+  const sinceText = shortDate(since);
+  const r = roundup ?? { done: [], decided: [], started: [], coming: [] };
+  const sections = [{ title: "What it's about", items: [`Your catch-up with Scooter. Below is what you've been up to since ${sinceText}, to go over with him.`] }];
+  if (r.done.length) sections.push({ title: `Done since ${sinceText} (${r.done.length})`, items: capList(r.done, 12, "on your Open Loops page") });
+  if (r.decided.length) sections.push({ title: `Decided since ${sinceText} (${r.decided.length})`, items: capList(r.decided, 15, "in the business notes") });
+  if (r.started.length) sections.push({ title: `Started since ${sinceText} (${r.started.length})`, items: capList(r.started, 12, "on your Open Loops page") });
+  if (r.coming.length) sections.push({ title: `Coming up this week (${r.coming.length})`, items: capList(r.coming, 10, "on your Open Loops page") });
+  if (!r.done.length && !r.decided.length && !r.started.length) sections.push({ title: "Roundup", items: [`Nothing was recorded as done, decided or started since ${sinceText}.`] });
+  const guests = others(event, herAddresses);
+  const join = event.join_url ?? (/^https:\/\/\S+$/.test(String(event.location ?? "")) ? event.location : null);
+  const end = event.duration_min ? event.scheduled_at + event.duration_min * 60_000 : null;
+  const logi = [`${shortDate(event.scheduled_at)}, ${clock(event.scheduled_at, { full: true })}${end ? ` to ${clock(end, { full: true })}` : ""} ${DISPLAY_ZONE}.`];
+  if (join) logi.push({ text: "Join the call", links: [{ label: "Join", url: join }] });
+  if (guests.length) logi.push(`Who is on it: ${guests.map((g) => (g.name && !String(g.name).includes("@") ? g.name : g.email)).join(", ")}.`);
+  sections.push({ title: "Logistics", items: logi });
+  return { key: prepKey(event), subject, who: "Scooter", happened: `Your catch-up with Scooter, ${when}: your roundup since ${sinceText}.`, decide: [], sections, needsPurpose: false, purpose: { text: "Catch-up with Scooter", from: "you", guess: false } };
+}

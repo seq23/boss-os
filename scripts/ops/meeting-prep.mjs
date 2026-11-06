@@ -25,7 +25,7 @@ import { execFileSync } from "node:child_process";
 import { readAllCalendars } from "./calendar-sync.mjs";
 import { sendAsEmployee } from "./notify.mjs";
 import { layoutEmail, plainProblems, NOTHING_TO_DECIDE } from "../../src/shared/boss/mail/plain.mjs";
-import { buildPrep, dueMeetings, linkResolves, lengthLabel, others, recordsFor, nameFromTitle, companyDomain, shortDate, guestFirm, zonedTime, eventZone, DISPLAY_TZ, validZone, researchPrompt, readResearch } from "../../src/shared/boss/meetingPrep/prep.mjs";
+import { buildPrep, buildCatchUp, isScooterCatchUp, roundupFrom, CATCHUP_DEFAULT_DAYS, dueMeetings, linkResolves, lengthLabel, others, recordsFor, nameFromTitle, companyDomain, shortDate, clock, DISPLAY_ZONE, guestFirm, zonedTime, eventZone, DISPLAY_TZ, validZone, researchPrompt, readResearch } from "../../src/shared/boss/meetingPrep/prep.mjs";
 import { askClaudeJson, googleToken, gmailHeaders } from "./lib/duty-kit.mjs";
 import { repairMojibake } from "../../src/shared/boss/mail/subject.mjs";
 
@@ -356,6 +356,45 @@ export async function finishPrep(api, p, { ask = askClaudeJson, send = (who, msg
   return { ...r, prep: m };
 }
 
+export const CATCHUP_BRAINS = ["brokerage", "west-peek-ventures", "west-peek", "porch-and-party", "time-2-read", "spry", "personal"];
+const CATCHUP_FILE = path.join(DIR, "catchup.json");
+
+/** The roundup's start: the last catch-up prep sent, else a week before the meeting. */
+export function catchUpSince(event, last) {
+  const week = event.scheduled_at - CATCHUP_DEFAULT_DAYS * 86_400_000;
+  return last && last < event.scheduled_at - 86_400_000 ? last : week;
+}
+
+/** Read Open Loops and the brains, build each catch-up, and send it (or write it to the preview). */
+export async function sendCatchUps(api, events, { now = Date.now(), dry = false, preview = null, force = false, sentState = { keys: [] }, send = (who, msg) => sendAsEmployee(who, msg), to = process.env.BOSS_NOTIFY_TO ?? "seq.taylor@gmail.com" } = {}) {
+  const loops = (await api.get("/open-loops"))?.loops ?? [];
+  const brains = [];
+  for (const slug of CATCHUP_BRAINS) {
+    try { const b = await api.get(`/brains/${slug}`); if (b?.body_md) brains.push({ slug, body_md: b.body_md }); }
+    catch (e) { console.error(`meeting-prep: the ${slug} brain was not read for the catch-up (${e.message})`); }
+  }
+  const state = readJson(CATCHUP_FILE, { last: null });
+  let failed = 0;
+  const out = [];
+  for (const e of events) {
+    const since = catchUpSince(e, state.last);
+    const roundup = roundupFrom({ loops, brains, since, now });
+    const p = buildCatchUp(e, roundup, { herAddresses: HER_ADDRESSES, since });
+    const laid = layoutEmail({ who: "Simone", subject: p.subject, happened: p.happened, decide: [], sections: p.sections });
+    out.push({ subject: laid.subject, text: laid.text });
+    if (dry || preview) continue;
+    const r = await send("Simone", { to, subject: laid.subject, prelaid: laid, thread: [] });
+    if (!r.ok) { failed += 1; console.error(`NAMED STOP [SEND_REFUSED] "${laid.subject}" was not sent: ${r.error}`); continue; }
+    sentState.keys = [...new Set([...sentState.keys, p.key])].slice(-2000);
+    writeJson(SENT, sentState);
+    writeJson(CATCHUP_FILE, { last: e.scheduled_at });
+    console.log(`meeting-prep: sent "${laid.subject}" from ${r.from} (catch-up: ${roundup.done.length} done, ${roundup.decided.length} decided, ${roundup.started.length} started)`);
+  }
+  if (preview) fs.writeFileSync(`${preview}.catchup.txt`, out.map((o) => `${o.subject}\n\n${o.text}`).join("\n\n════════\n\n"), { mode: 0o600 });
+  if (dry) for (const o of out) console.log(`${o.subject}\n\n${o.text}`);
+  return { failed, built: out };
+}
+
 async function main() {
   const argv = process.argv;
   const DRY = argv.includes("--dry-run");
@@ -398,6 +437,15 @@ async function main() {
       console.log(`meeting-prep: ${rows.length} warm line(s) from her sent mail stored`);
     } catch (e) { console.error(`meeting-prep: sent mail not scanned for warm lines (${e.message})`); }
   }
+  // A catch-up with Scooter needs no research and no question: it is her roundup (owner, 5 Nov 2026).
+  const catchUps = due.filter((e) => isScooterCatchUp(e, HER_ADDRESSES));
+  if (catchUps.length) {
+    const r = await sendCatchUps(api, catchUps, { now, dry: DRY, preview: PREVIEW, force: FORCE, sentState });
+    if (r.failed) process.exitCode = 9;
+  }
+  const rest = due.filter((e) => !isScooterCatchUp(e, HER_ADDRESSES));
+  if (rest.length === 0) return;
+  due.length = 0; due.push(...rest);
   const data = await readRecords(api);
   const cache = readJson(CACHE, {});
   data.summaries = {};

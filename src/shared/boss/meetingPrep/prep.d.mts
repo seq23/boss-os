@@ -49,3 +49,8 @@ export declare function groundedSearchPrompt(o: { name: string | null; email?: s
 export declare function writeFromPagesPrompt(o: { name: string | null; pages: Array<{ url: string; text: string }> }): string;
 export declare function guestPages(domain: string | null): string[];
 export declare function keepGroundedFacts(json: any, sources: Array<{ title: string; url: string }>): any;
+export declare const CATCHUP_DEFAULT_DAYS: number;
+export declare function isScooterCatchUp(event: any, herAddresses?: string[]): boolean;
+export declare function decisionHeadline(text: string): string;
+export declare function roundupFrom(opts: { loops?: any[]; brains?: { slug: string; body_md: string }[]; since: number; now?: number }): { done: string[]; decided: string[]; started: string[]; coming: string[] };
+export declare function buildCatchUp(event: any, roundup: { done: string[]; decided: string[]; started: string[]; coming: string[] } | null, opts?: { herAddresses?: string[]; since: number }): { key: string; subject: string; who: string; sections: any[]; happened: string; decide: any[]; needsPurpose: boolean; purpose: { text: string; from: string; guess: boolean } };

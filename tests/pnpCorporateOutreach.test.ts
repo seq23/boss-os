@@ -4,7 +4,7 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { blocked, contactRules, parseContract, renderEmail, planSends, stopReason, validProspect, chicagoDay, assertStatus } from "../src/shared/boss/pnp/outreach.mjs";
-import { runOutreach, publishedProspect, research, senderClient, writeProgress } from "../scripts/ops/pnp-corporate-outreach.mjs";
+import { runOutreach, publishedProspect, publishedCheck, research, senderClient, writeProgress } from "../scripts/ops/pnp-corporate-outreach.mjs";
 import { renderPlist } from "../scripts/ops/render-pnp-outreach-plist.mjs";
 import { readMorningSections, clearToldSections } from "../src/shared/boss/mail/morning.mjs";
 import { buildDay } from "../scripts/ops/your-day.mjs";
@@ -152,6 +152,46 @@ describe("published research", () => {
       expect(rows).toEqual([]); expect(calls).toEqual(["codex", "claude"]);
       expect(runSpawn.mock.calls[0][1][0]).toBe("--search"); expect(runSpawn.mock.calls[1][1]).toContain("--max-turns");
       expect(fs.readdirSync(root)).toEqual([]);
+    } finally { fs.rmSync(root, { recursive: true, force: true }); }
+  });
+  it("a live run that plans nothing is a NAMED STOP with where the prospects were lost", async () => {
+    const h = harness([prospect(1, { state: "skipped", nb_verdict: "unknown" })]);
+    h.discover.mockResolvedValue([prospect(1), prospect(2), { ...prospect(3), source_url: "" }]);
+    h.published.mockResolvedValue("email_not_on_page");
+    h.verify.mockResolvedValue({ verdicts: [] });
+    const r = await runOutreach(h);
+    expect(r.sent).toBe(0);
+    expect(r.noWork).toMatch(/^NAMED STOP \[NO_PROSPECTS\]/);
+    expect(r.noWork).toContain("researched 3, valid 2, new 1, allowed 1, published 0 (lost: 1 email_not_on_page)");
+    // Known domains are handed to research so it looks for new companies instead of the same ones.
+    expect(h.discover.mock.calls[0][0]).toContain("office1.example.test");
+    // A full day (cap used) is not a no-work day.
+    const full = harness([], { }); full.sender.status.mockResolvedValue(status({ sent_today: 12 }));
+    expect((await runOutreach(full)).noWork).toBeUndefined();
+    // A day with a valid prospect plans and sends; no stop.
+    expect((await runOutreach(harness())).noWork).toBeUndefined();
+  });
+  it("published pages: redirects followed only over public https, Cloudflare-hidden addresses decoded, line backed by a quote", async () => {
+    const email = prospect().contact_email;
+    const key = 0x42; const cf = key.toString(16) + [...email].map((c) => (c.charCodeAt(0) ^ key).toString(16).padStart(2, "0")).join("");
+    const quote = "The team moved into the new Poplar Avenue tower this spring.";
+    const pages = { "https://example.test/contact": () => new Response("", { status: 301, headers: { location: "https://www.example.test/contact/" } }),
+      "https://www.example.test/contact/": () => new Response(`<a href="/cdn-cgi/l/email-protection" data-cfemail="${cf}">[email protected]</a><p>${quote}</p>`, { headers: { "content-type": "text/html" } }),
+      "https://evil.example.test/": () => new Response("", { status: 302, headers: { location: "http://127.0.0.1/" } }) };
+    const f = vi.fn(async (u) => (pages[String(u)] ?? (() => new Response("no", { status: 404 })))());
+    const row = { ...prospect(), line: "I saw your team just moved into the Poplar Avenue tower.", line_quote: quote, line_source_url: "https://example.test/contact" };
+    expect(await publishedCheck(row, f)).toBe(true);
+    expect(f.mock.calls[0][1].redirect).toBe("manual");
+    expect(await publishedCheck({ ...row, line_quote: "An invented claim that appears nowhere on the page." }, f)).toBe("line_not_on_page");
+    expect(await publishedCheck({ ...row, line: "Something unrelated entirely here." }, f)).toBe("line_unsupported");
+    expect(await publishedCheck({ ...row, contact_email: "guessed@office1.example.test" }, f)).toBe("email_not_on_page");
+    expect(await publishedCheck({ ...row, source_url: "https://evil.example.test/" }, f)).toBe("email_page_unreadable");
+  });
+  it("research keeps the findings of a seat stopped on its leash", async () => {
+    const root = fs.mkdtempSync(path.join(os.tmpdir(), "pnp-seat-"));
+    try {
+      const partial = async () => async () => ({ error: "killed on timeout", delivers: { status: "partial", prospects: [prospect(2)] } });
+      expect(await research([], { scratchRoot: root, usable: () => ({ ok: false }), executors: { bk_claude_code: partial } })).toEqual([prospect(2)]);
     } finally { fs.rmSync(root, { recursive: true, force: true }); }
   });
   it("bearer token is sent only to the outreach service", async () => {

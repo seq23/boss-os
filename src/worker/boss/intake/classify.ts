@@ -197,7 +197,12 @@ const RULES: Rule[] = [
 
 /** Anything that would leave the private boundary escalates. */
 const OUTBOUND = /\b(send|publish|post to|email (her|him|them|it)|submit|share with|deliver to)\b/i;
-const MONEY = /\b(pay|purchase|buy|subscribe|invoice|wire|spend|\$\s?\d)/i;
+/*
+ * "buyer"/"buyers" is a counterparty, not a purchase (5 Nov 2026: "find all buyers of Moonshot AI"
+ * in her inbox was read as spending, ranked high risk, and failed on every cloud model). The verb
+ * forms (buy, buys, buying, buy-in) still count; the brokerage's own noun does not.
+ */
+const MONEY = /\b(pay|purchase|buy(?!ers?\b)|subscribe|invoice|wire|spend|\$\s?\d)/i;
 
 
 /* ═══════════════════════════════════════════════════════════════════════════════════════════════
