@@ -107,6 +107,8 @@ if ! grep -q "MAILBOX-SWEEP-COMPLETE:" "$RUN_LOG"; then
 fi
 
 say "sentinel: $(grep -o 'MAILBOX-SWEEP-COMPLETE:.*' "$RUN_LOG" | tail -1)"
+# The census line duty-run.sh reads (0350): the threads the sweep read, from its own sentinel.
+echo "OUTPUT $(grep -o 'MAILBOX-SWEEP-COMPLETE:.*' "$RUN_LOG" | tail -1 | grep -oE 'from [0-9]+ thread' | grep -oE '[0-9]+' || echo 0) threads read"
 ln -sf "$RUN_LOG" "$LOG_DIR/latest.log"
 
 # `;` NOT `&&`, AND THE EXIT CODE IS THE SWEEP'S. A Boss OS that is unreachable on a Sunday evening

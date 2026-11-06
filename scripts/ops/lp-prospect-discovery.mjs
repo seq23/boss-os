@@ -31,6 +31,7 @@ import path from "node:path";
 import { bossApi } from "./lib/duty-kit.mjs";
 import { OUR_DOMAINS } from "./mail-bulk.mjs";
 import { INBOX_LOOKBACK_DAYS, excluded } from "../../src/shared/boss/lp/plan.mjs";
+import { outputLine } from "../../src/shared/boss/alarms/rules.mjs";
 
 const LIVE = process.argv.includes("--live");
 const MORNING_DIR = process.env.BOSS_OS_MORNING_DIR ?? path.join(os.homedir(), ".boss-os", "morning");
@@ -151,6 +152,7 @@ async function main() {
   const merged = [...prev, ...leads.filter((l) => !prev.some((p) => p.firm.toLowerCase() === l.firm.toLowerCase()))];
   fs.writeFileSync(LEADS, JSON.stringify({ updated_at: new Date(now).toISOString(), leads: merged }, null, 2), { mode: 0o600 });
   console.log(`SEC: ${leads.length} firm leads this week (${merged.length} on file). A lead becomes a prospect only with a published address.`);
+  console.log(outputLine(leads.length, "firm leads found"));
 
   if (!LIVE) {
     console.log("DRY RUN: no 8Raise credit spent.");

@@ -46,6 +46,7 @@ import {
   withheldForSourcing, reportStanding,
 } from "../today/briefing";
 import { dutyStaleness, staleDutyAlertText } from "../duties/staleness";
+import { herAlarms } from "../alarms/kendra";
 import { roster, type EmployeeDutyRow, type EmployeeRow } from "../today/roster";
 import { adjustToday } from "../today/adjust";
 import { anchorStreak, stalledDeals } from "../today/close";
@@ -1125,6 +1126,15 @@ export async function assembleDayFlow(env: Env, day: DayRow, only?: readonly Blo
     const late = dutyStaleness(d, now);
     if (!late.stale) continue;
     alerts.push({ severity: "high", text: staleDutyAlertText(d, late), source_type: "tasks", source_id: d.id });
+  }
+  /*
+   * KENDRA'S ALARMS THAT ONLY SHE CAN CLEAR (0350). Every other Systems alarm is Kendra's to fix and
+   * stays off this screen; one marked `hers` (a sending key refused, which only she can renew) is here.
+   */
+  if (A) {
+    for (const a of await herAlarms(env.DB)) {
+      alerts.push({ severity: "high", text: a.text, source_type: "tasks", source_id: a.alarm_key });
+    }
   }
   /*
    * ── AND WHAT THE PASS FOUND THAT SHE HAS TO DECIDE ────────────────────────

@@ -118,3 +118,23 @@ morning assembly honour it, including stale section files. Records and manual re
 It now retries sign-in once (before any Gmail send), then returns a structured failure that the
 held-reply path records. The send itself is never blindly retried. This reproduces the reported
 error in a test; production traces for the two reported requests were not available locally.
+
+### Output floors and Kendra's alarms (6 Nov 2026)
+Owner, 5 Nov 2026: stop "green but did nothing" (P&P outreach ran green 2-5 Nov and sent 0; Wynn's
+owner emails failed 236 times 2-6 Nov; a task read "running" for hours on a spent seat).
+- **Every scheduled job names its output**: `output` on each row of
+  `src/shared/boss/schedule/manifest.json` (metric, floor, runs; or floor 0 with a reason), and the
+  same floor on its duty (`standing_duties.output_*`, migration 0350). `npm run validate:output-floors`
+  fails CI otherwise, and when a producing duty's script prints no `OUTPUT <n> <metric>` line
+  (`outputLine` in `src/shared/boss/alarms/rules.mjs`; `PENDING` in the validator names the three
+  scripts still to add one).
+- **`duty-run.sh` reads the line** into `duty_runs.output_count` (no line = unknown = below floor).
+- **Kendra's alarms** (`system_alarms`, `src/worker/boss/alarms/kendra.ts`, hourly tick; API
+  `/api/boss/alarms`): a duty below its floor `output_runs` runs in a row; a task "running" over twice
+  its usual duration or 2 h with no progress (title and seat); an owner-bound email failing twice in a
+  row in any app (`scripts/ops/owner-mail-watch.mjs`, launchd `com.seq.boss-owner-mail-watch`, 07:50 and
+  15:50 Central; her addresses in `~/.boss-os/owner-mail/addresses.txt`, never the repo). Each opens one
+  repair task for Kendra and closes itself when the condition clears. Only an alarm she alone can fix
+  (`hers`: a sending key refused) shows on Today.
+- **A new duty gets a first-run check**: an Open Loops row "Check <job> produced <metric> by
+  <created + 2 days>", owner Kendra, closed by its first above-floor run.

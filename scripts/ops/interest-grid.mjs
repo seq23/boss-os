@@ -32,6 +32,7 @@ import os from "node:os";
 import { createHash } from "node:crypto";
 import { writeMorningSection } from "../../src/shared/boss/mail/morning.mjs";
 import { rankMatches, ageWords, moneyShort, parsePrice, DEFAULT_TOLERANCE, STALE_DAYS } from "../../src/shared/boss/deals/match.mjs";
+import { outputLine } from "../../src/shared/boss/alarms/rules.mjs";
 import {
   FIRM_DOMAIN, LOOKBACK_DAYS, withinLookback, withinArchive, isSameFirm, isDoNotSuggest, pairAllowed,
 } from "../../src/shared/boss/capital/partyLists.mjs";
@@ -797,6 +798,7 @@ async function main() {
   }
   fs.writeFileSync(seenFile, JSON.stringify({ updated_at: new Date().toISOString(), ids: grid.map((g) => g.id) }, null, 2));
   console.log(`CAPITAL-GRID-COMPLETE: ${grid.length} row(s), ${newRows.length} new, morning sections written${pushed ? ", Deals page updated" : ""}.`);
+  console.log(outputLine(grid.length, "grid rows"));
 }
 
 if (import.meta.url === `file://${process.argv[1]}`) {

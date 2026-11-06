@@ -47,6 +47,7 @@ import path from "node:path";
 import os from "node:os";
 import { sendersFor, employeeMail, postEmployeeMail } from "./notify.mjs";
 import { observedCadence } from "./lib/cadence.mjs";
+import { outputLine } from "../../src/shared/boss/alarms/rules.mjs";
 
 const IN_DIR = process.env.BOSS_OS_SOURCING_WORKSPACE ?? path.join(os.homedir(), ".boss-os", "sourcing");
 const OUT_DIR = process.env.BOSS_OS_PEOPLE_DIR ?? path.join(os.homedir(), ".boss-os", "people");
@@ -388,6 +389,7 @@ async function main() {
   await noteInInbox({ count: picks.length, examined: contacts.length, considered: all.length });
 
   console.log(`PEOPLE-WORTH-A-CALL-COMPLETE: ${picks.length} recommended${sent ? "" : " (email not sent — see above)"}`);
+  console.log(outputLine(picks.length, "people recommended"));
   if (!sent) process.exit(8);
 }
 

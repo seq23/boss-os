@@ -32,3 +32,6 @@ export function slotTimes(slot: string): Array<{ day: string; mins: number }>;
 export function weekProblems(m: any): { problems: string[]; pending: string[] };
 
 export function ghApiRetrying(p: string, o?: { run?: (args: string[]) => string; waitMs?: number; tries?: number }): any;
+export function outputProblems(m: any): string[];
+export function migrationFloors(sql: string): Map<string, { metric: string | null; floor: number; runs: number; reason: string | null }>;
+export function dutyFloorProblems(m: any, floors: Map<string, { metric: string | null; floor: number; runs: number; reason: string | null }>): string[];

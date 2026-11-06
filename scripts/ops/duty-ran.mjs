@@ -68,6 +68,9 @@ async function main() {
       exit_code: env("EXIT_CODE") ? Number(env("EXIT_CODE")) : null,
       started_at: env("STARTED_AT") ? Number(env("STARTED_AT")) : null,
       source: process.argv.includes("--manual") ? "manual" : "launchd",
+      // From the job's `OUTPUT <n> <metric>` line (duty-run.sh). Absent = null = unknown, never 0.
+      output_count: env("OUTPUT_COUNT") !== null && /^\d{1,9}$/.test(env("OUTPUT_COUNT")) ? Number(env("OUTPUT_COUNT")) : null,
+      output_metric: env("OUTPUT_METRIC"),
     }),
   });
 
@@ -79,7 +82,7 @@ async function main() {
   const { data } = await res.json();
   console.log(
     outcome === "ok"
-      ? `Recorded against ${data.duty_id}: ran, and its clock moved.`
+      ? `Recorded against ${data.duty_id}: ran, and its clock moved (output: ${data.output_count ?? "unknown"}).`
       : `Recorded against ${data.duty_id}: FAILED. last_run_at was deliberately left where it was — the duty is still due.`,
   );
 }

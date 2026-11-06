@@ -29,7 +29,7 @@ import {
 } from "./services/lpCommitments";
 import { resolveFirmUser } from "./auth";
 import { Router, json, type RouteContext } from "./router";
-import { isBossRoute, handleBossRequest, tapPageToBossPath, researchPageToBossPath, drainBossTasks, runBossNightly, runBossDuties, runBossReaper, runBossOutreach, runBossOpenLoops, runBossEightraise, toBossEnv as toBossEnvForCron } from "./bossMount";
+import { isBossRoute, handleBossRequest, tapPageToBossPath, researchPageToBossPath, drainBossTasks, runBossNightly, runBossDuties, runBossReaper, runBossOutreach, runBossOpenLoops, runBossEightraise, runBossKendra, toBossEnv as toBossEnvForCron } from "./bossMount";
 import {
   handleAcceptCandidate,
   handleAddAlias,
@@ -1635,6 +1635,16 @@ export default {
         if (r.ran || /NAMED STOP/.test(r.reason ?? "")) console.log("boss open loops", JSON.stringify(r));
       }).catch((err) => {
         console.error("boss open loops failed", err);
+      }),
+    );
+    // Kendra's alarms (owner, 5 Nov 2026: stop "green but did nothing"): output floors, first-run
+    // checks and tasks stuck "running". Its own waitUntil, so it can neither swallow nor be swallowed.
+    ctx.waitUntil(
+      runBossKendra(toBossEnvForCron(env), now.getTime()).then((r) => {
+        const moved = r.floors.opened.length + r.floors.cleared.length + r.first_run.opened.length + r.first_run.closed.length + r.stale.opened.length + r.stale.cleared.length;
+        if (moved) console.log("boss kendra", JSON.stringify(r));
+      }).catch((err) => {
+        console.error("boss kendra failed", err);
       }),
     );
     ctx.waitUntil(

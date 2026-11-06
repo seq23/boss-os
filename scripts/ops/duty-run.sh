@@ -142,6 +142,22 @@ else
   [ -n "$REASON" ] || REASON="the job exited $RC and printed nothing."
 fi
 
+# ─── WHAT IT PRODUCED (0350, owner 5 Nov 2026: stop "green but did nothing") ──
+#
+# The job's census line `OUTPUT <n> <metric>` (the last one it printed). No line = unknown, sent as
+# nothing, which Kendra's floor check counts as below the floor: P&P outreach ran green 2-5 Nov and
+# sent 0, and only whether it ran was ever recorded. src/shared/boss/alarms/rules.mjs parseOutputLine
+# is the same pattern.
+OUTPUT_LINE="$(grep -E '^OUTPUT [0-9]{1,9} .{1,80}$' "$RUN_LOG" | tail -1)"
+OUTPUT_COUNT=""
+OUTPUT_METRIC=""
+if [ -n "$OUTPUT_LINE" ]; then
+  OUTPUT_COUNT="$(printf '%s' "$OUTPUT_LINE" | awk '{print $2}')"
+  OUTPUT_METRIC="$(printf '%s' "$OUTPUT_LINE" | cut -d' ' -f3-)"
+else
+  echo "NOTE [NO_OUTPUT_LINE] $LOCAL_JOB printed no OUTPUT line, so what it produced is unknown (counts below its floor)." | tee -a "$RUN_LOG"
+fi
+
 # ─── REPORTED SECOND, AND ITS FAILURE IS ITS OWN ────────────────────────────
 #
 # `;` not `&&`, and the exit code below is the JOB'S. A Boss OS that is unreachable at 09:23 must
@@ -149,7 +165,7 @@ fi
 # separate claim and it fails separately and loudly, in this log.
 if [ -d "$REPO" ]; then
   cd "$REPO" && LOCAL_JOB="$LOCAL_JOB" OUTCOME="$OUTCOME" REASON="$REASON" EXIT_CODE="$RC" \
-    STARTED_AT="$STARTED_AT" FINISHED_AT="$FINISHED_AT" \
+    STARTED_AT="$STARTED_AT" FINISHED_AT="$FINISHED_AT" OUTPUT_COUNT="$OUTPUT_COUNT" OUTPUT_METRIC="$OUTPUT_METRIC" \
     npm run --silent vault:run -- node scripts/ops/duty-ran.mjs >> "$RUN_LOG" 2>&1
   RRC=$?
   [ $RRC -eq 0 ] || echo "NAMED STOP [RUN_NOT_RECORDED] rc=$RRC - $LOCAL_JOB ran and D1 was not told. See $RUN_LOG." | tee -a "$RUN_LOG" >&2

@@ -70,6 +70,7 @@ import { mirrorOrStop } from "./lib/book-mirror.mjs";
 import { herLots } from "./lib/her-lots.mjs";
 import { gmailUrl } from "./interest-grid.mjs";
 import { orderLots, peopleFor, fundsFor, buildHuntEmail, huntTitle } from "./lib/side-hunt.mjs";
+import { outputLine } from "../../src/shared/boss/alarms/rules.mjs";
 
 const DIR = process.env.BOSS_OS_CAPITAL_DIR ?? path.join(os.homedir(), ".boss-os", "capital");
 const LEDGER = path.join(DIR, "ledger.json");
@@ -449,6 +450,7 @@ async function weeklyEmail(side, sections) {
     }
     console.log(`\nSent "${huntTitle(side)}" to you, from ${res.from}.`);
   }
+  console.log(outputLine(SEND ? 1 : 0, "emails sent"));
   if (mail.failed.length) {
     console.error(`NAMED STOP [SOURCE_FAILED] part of "${huntTitle(side)}" did not run, and the email says so: ${mail.failed.join("; ")}`);
     process.exitCode = 3;

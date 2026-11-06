@@ -258,6 +258,7 @@ const pad = (n) => String(n).padStart(2, "0");
  * draft is a NAMED STOP that says exactly that.
  */
 export const INSTALLED_LOCAL_JOBS = [
+  "owner-mail-watch.mjs",
   "meeting-prep.mjs",
   "mac-cleanup.mjs",
   "preseed-watch.mjs",

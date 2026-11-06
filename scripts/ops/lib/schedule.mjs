@@ -485,3 +485,53 @@ export function weekProblems(m) {
   }
   return { problems, pending };
 }
+
+// ─── Output floors (owner, 5 Nov 2026: stop "green but did nothing") ─────────────────────────────
+
+/**
+ * Every row says what it produces. A producing job names `metric`, a whole `floor` above 0 and `runs`
+ * (low runs in a row before Kendra's alarm); a job that only checks declares `floor: 0` with the
+ * `reason`. Zero rows examined is a problem: the guard would see nothing. Pure.
+ */
+export function outputProblems(m) {
+  const rows = m?.rows ?? [];
+  if (rows.length === 0) return ["the Schedule has no rows, so no output floor could be checked"];
+  const out = [];
+  for (const r of rows) {
+    const o = r.output;
+    if (!o || typeof o !== "object") { out.push(`${r.id}: names no output (a metric and floor, or floor 0 with a reason)`); continue; }
+    if (!Number.isInteger(o.floor) || o.floor < 0) { out.push(`${r.id}: output floor must be a whole number, 0 or more`); continue; }
+    if (o.floor > 0) {
+      if (typeof o.metric !== "string" || !o.metric.trim()) out.push(`${r.id}: produces something (floor ${o.floor}) but names no metric`);
+      if (!Number.isInteger(o.runs) || o.runs < 1) out.push(`${r.id}: output runs (low runs in a row before the alarm) must be 1 or more`);
+    } else if (typeof o.reason !== "string" || o.reason.trim().length < 20) {
+      out.push(`${r.id}: floor 0 needs the reason it only checks, in a sentence`);
+    }
+  }
+  return out;
+}
+
+/** The duty floors a migration writes: `UPDATE standing_duties SET output_metric = …, output_floor = … WHERE id = '…'`. Pure. */
+export function migrationFloors(sql) {
+  const out = new Map();
+  const re = /UPDATE standing_duties SET output_metric = (NULL|'(?:[^']|'')*'), output_floor = (\d+), output_runs = (\d+), output_reason = (NULL|'(?:[^']|'')*'),[^;]*? WHERE id = '([a-z0-9_]+)';/g;
+  const str = (v) => (v === "NULL" ? null : v.slice(1, -1).replace(/''/g, "'"));
+  for (const m of String(sql ?? "").matchAll(re)) out.set(m[5], { metric: str(m[1]), floor: Number(m[2]), runs: Number(m[3]), reason: str(m[4]) });
+  return out;
+}
+
+/** Each duty row's `output` against the floors the migration wrote: one value, two places, kept equal. Pure. */
+export function dutyFloorProblems(m, floors) {
+  if (!floors || floors.size === 0) return ["no migration writes a duty's output floor, so the duties' floors could not be compared"];
+  const out = [];
+  for (const r of m.rows ?? []) {
+    const d = r.trigger?.duty;
+    if (!d) continue;
+    const f = floors.get(d);
+    if (!f) { out.push(`${r.id}: duty ${d} has no floor in the migration`); continue; }
+    const o = r.output ?? {};
+    if (o.floor !== f.floor) out.push(`${r.id}: Schedule floor ${o.floor}, the duty's floor ${f.floor}`);
+    else if (f.floor > 0 && (o.metric !== f.metric || o.runs !== f.runs)) out.push(`${r.id}: Schedule says ${o.runs}× "${o.metric}", the duty ${f.runs}× "${f.metric}"`);
+  }
+  return out;
+}
