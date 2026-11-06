@@ -7,8 +7,8 @@
  * re-claimed its spent seat every 30 minutes. Three rules, here and in consumer.ts:
  *
  *   1. RESEARCH WALKS Codex seat → Claude seat (only where her rules allow) → free Google-grounded
- *      search → stop by name. A research ask with no seat named is made a research page
- *      (`asResearchPage`), so it gets the same ladder and the same delivery as one she emailed.
+ *      search → the other free routes → stop by name. A research ask with no seat named starts at
+ *      the grounded rung (it needs no Mac) and is delivered as Camille's page.
  *   2. The grounded rung (`runGroundedRung`) files Camille's page, completes the task and writes the
  *      "Done" notice her Mac sends (task-notices.mjs) — the normal Boss OS way.
  *   3. A rung that cannot run is NAMED STOP [<CODE>] with its reset time: recorded on the task, put
@@ -45,34 +45,6 @@ export function researchAskOf(task: { title?: string | null }, input: Record<str
   const parts = [input.instruction, input.body, page?.question, input.prompt]
     .filter((x): x is string => typeof x === "string" && x.trim().length > 0);
   return (parts[0] ?? String(task.title ?? "")).trim();
-}
-
-/**
- * A RESEARCH ASK THAT NAMED NO SEAT BECOMES A RESEARCH PAGE (additive: the task's input gains the
- * page fields admitTask gives an emailed "research:" ask; a research_pages row is created). Returns
- * the new input, or null when the task already names where it runs.
- */
-export async function asResearchPage(env: Env, task: { id: string; title?: string | null }, input: Record<string, unknown>): Promise<Record<string, unknown> | null> {
-  if (input.backend_id !== undefined || input.backend_ladder !== undefined || input.delivers !== undefined || isObj(input.research_page)) return null;
-  const { composeResearchPrompt, RESEARCH_PAGE_DELIVERS, RESEARCH_PAGE_BACKEND, RESEARCH_PAGE_REQUESTED } = await import("../../../shared/boss/research/page.mjs");
-  const question = researchAskOf(task, input).slice(0, 4000);
-  const pageId = newId("rpg");
-  const now = Date.now();
-  const next = {
-    ...input,
-    research_page: { page_id: pageId, question },
-    delivers: RESEARCH_PAGE_DELIVERS,
-    backend_id: RESEARCH_PAGE_BACKEND,
-    requested: { ...RESEARCH_PAGE_REQUESTED, allowed_paths: [...RESEARCH_PAGE_REQUESTED.allowed_paths], web_tools: [...RESEARCH_PAGE_REQUESTED.web_tools] },
-    prompt: composeResearchPrompt({ id: pageId, question }),
-  };
-  await env.DB.batch([
-    env.DB.prepare(`INSERT INTO research_pages (id, task_id, question, state, requested_at, updated_at) VALUES (?,?,?,'queued',?,?)`).bind(pageId, task.id, question.slice(0, 2000), now, now),
-    env.DB.prepare(`UPDATE tasks SET input = ? WHERE id = ?`).bind(JSON.stringify(next), task.id),
-    env.DB.prepare(`INSERT INTO task_events (id, task_id, ts, event, detail) VALUES (?,?,?,'ladder_step',?)`)
-      .bind(newId("tev"), task.id, now, JSON.stringify({ made_research_page: pageId, why: "a research ask with no seat named gets the research ladder: Codex, then Claude where allowed, then free Google search" })),
-  ]);
-  return next;
 }
 
 function centralTime(ms: number): string {

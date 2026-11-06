@@ -138,19 +138,36 @@ describe("the research ladder walks past a spent Codex seat to free Google searc
     expect(sent.filter((m) => m.taskId === taskId), "handed to the hourly tick").toHaveLength(1);
   });
 
-  it("NEGATIVE: private-model-only research never reaches Gemini; it goes to Claude's seat, fail closed", async () => {
+  it("NEGATIVE: private-model-only research never reaches Gemini and is never parked on a seat", async () => {
     await spendCodex();
     const calls = stubGoogle();
     const taskId = await researchTask({ model_access: "private_model_only" });
-    await handleTask(withKey(), { taskId, lane: "ops" });
+    await handleTask(withKey(), { taskId, lane: "ops" }).catch(() => null);
     expect(calls, "private research reached a training route").toHaveLength(0);
-    const runs = await all<any>(`SELECT backend_id FROM backend_runs WHERE task_id = ?`, taskId);
-    expect(runs.map((r) => r.backend_id)).toEqual(["bk_claude_code"]);
+    expect(await all(`SELECT 1 FROM backend_runs WHERE task_id = ?`, taskId)).toHaveLength(0);
   });
 
-  it("NEGATIVE: with Codex free, research still goes to Codex's seat first", async () => {
+  it("with Codex free, a bare research ask still goes to free Google search: it needs no Mac", async () => {
     const calls = stubGoogle();
     const taskId = await researchTask();
+    await handleTask(withKey(), { taskId, lane: "ops" });
+    expect(await all(`SELECT 1 FROM backend_runs WHERE task_id = ?`, taskId), "parked on a seat nobody may claim").toHaveLength(0);
+    expect(calls.some((c) => c.grounded)).toBe(true);
+    expect((await row<any>(`SELECT status FROM tasks WHERE id = ?`, taskId)).status).toBe("done");
+  });
+
+  it("no Gemini key and no model behind it: the bare research ask ends by name, never 'running' (the e2e machine)", async () => {
+    restore = stubFetch(async () => new Response("no model here", { status: 500 }));
+    const taskId = await researchTask();
+    await handleTask(env as any, { taskId, lane: "ops" }).catch(() => null);
+    expect(await all(`SELECT 1 FROM backend_runs WHERE task_id = ?`, taskId)).toHaveLength(0);
+    const t = await row<any>(`SELECT status FROM tasks WHERE id = ?`, taskId);
+    expect(t.status, "left running with nothing that will finish it").not.toBe("running");
+  });
+
+  it("NEGATIVE: a research page that names its seat still goes to Codex's seat first", async () => {
+    const calls = stubGoogle();
+    const taskId = await researchTask({ input: JSON.stringify({ research_page: { page_id: "rpg_test_seat", question: "Lighthouses?" }, delivers: "research_page", backend_id: "bk_claude_code", prompt: "In two sentences, explain what a lighthouse does." }) });
     await handleTask(withKey(), { taskId, lane: "ops" });
     expect(calls).toHaveLength(0);
     const run = await row<any>(`SELECT backend_id, requested FROM backend_runs WHERE task_id = ?`, taskId);

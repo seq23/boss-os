@@ -15,6 +15,8 @@ const TITLE = "E2E: find three buyers for the OpenAI block";
 
 function cleanSql(): string {
   return [
+    // A seat run references its task (backend_runs.task_id → tasks.id), so it goes first.
+    `DELETE FROM backend_runs WHERE task_id IN (SELECT id FROM tasks WHERE title = '${TITLE}')`,
     `DELETE FROM task_events WHERE task_id IN (SELECT id FROM tasks WHERE title = '${TITLE}')`,
     `DELETE FROM boss_task_queue WHERE task_id IN (SELECT id FROM tasks WHERE title = '${TITLE}')`,
     `DELETE FROM evidence_packets WHERE task_id IN (SELECT id FROM tasks WHERE title = '${TITLE}')`,
