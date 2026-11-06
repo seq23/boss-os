@@ -20,7 +20,7 @@ import { afterResult } from "../service/afterResult";
 import { noticeOnce } from "../service/notices";
 import { taskToken, threeParts, bossWait } from "../../../shared/boss/service/waits.mjs";
 import { dueLine } from "../../../shared/boss/service/dueTime.mjs";
-import { isResearchWork, asResearchPage, runGroundedRung, namedStop, codexResetAt } from "./freeRung";
+import { isResearchWork, runGroundedRung, namedStop, codexResetAt } from "./freeRung";
 /*
  * The rule that recognises a completion which is transparently a non-answer. Deterministic, and it
  * reads the model's own reply rather than guessing from her request — see the module for why.
@@ -183,15 +183,12 @@ export async function handleTask(env: Env, msg: TaskMessage): Promise<void> {
    * task with every refusal on it, as before.
    */
   /*
-   * RESEARCH GETS THE RESEARCH LADDER, WHOEVER ADMITTED IT (6 Nov 2026). A research ask that named no
-   * seat used to fall straight to the plain cloud rung — no web, no sources. It is made a research page
-   * first, so it walks Codex → Claude where allowed → free Google search, and is delivered as a page.
+   * RESEARCH THAT NAMED NO SEAT GOES TO FREE GOOGLE SEARCH FIRST (6 Nov 2026). It used to fall straight
+   * to the plain cloud rung — no web, no sources. It needs no Mac: the grounded rung researches it and
+   * files Camille's page; when that route cannot answer, the other free routes; when none can, it
+   * fails by name. It is never parked on a seat no one may be there to claim (e2e: no Mac, no model).
    */
   const researchWork = isResearchWork(task, input);
-  if (researchWork) {
-    const upgraded = await asResearchPage(env, task, input);
-    if (upgraded) Object.assign(input, upgraded);
-  }
   const baseLadder: string[] = Array.isArray(input.backend_ladder) && input.backend_ladder.length
     ? input.backend_ladder.filter((x: unknown): x is string => typeof x === "string")
     : typeof input.backend_id === "string" ? [input.backend_id] : [];
@@ -252,9 +249,12 @@ export async function handleTask(env: Env, msg: TaskMessage): Promise<void> {
   const groundedOk = freeOk && researchWork;
   const handedToFree = groundedOk && !codexToFreeRung && Boolean(await env.DB
     .prepare(`SELECT 1 AS x FROM task_events WHERE task_id = ? AND event = 'codex_limit_free_rung' LIMIT 1`).bind(task.id).first());
-  if (groundedOk && (codexToFreeRung || handedToFree)) {
+  let groundedFell = false;
+  if (groundedOk && (codexToFreeRung || handedToFree || ladder.length === 0)) {
     if (await runGroundedRung(env, task, input, { fromRequest: msg.fromRequest === true, employeeName: employee?.name ?? null })) return;
-    codexToFreeRung = true; // the grounded route could not answer: the other free routes, below
+    // The grounded route could not answer: the other free routes, below. With seats on the ladder a
+    // free-rung failure then waits on Codex's seat; with none, the router's failure is the task's.
+    if (ladder.length > 0) codexToFreeRung = true; else groundedFell = true;
   }
   const refusals: { backend_id: string; refused: string }[] = [];
   const modelBySeat = input.requested && typeof input.requested === "object" && (input.requested as any).model_by_backend
@@ -407,7 +407,7 @@ export async function handleTask(env: Env, msg: TaskMessage): Promise<void> {
       // A seat duty that reached the cloud is strong-model work: Claude first, OpenAI second, when paid.
       preferStrongVendors: ladder.length > 0 && !codexToFreeRung && !fellToFree,
       // A Codex limit on public work: $0 only, whatever the lever says (aiRoles.mjs afterCodexLimit).
-      freeOnly: codexToFreeRung || fellToFree || undefined,
+      freeOnly: codexToFreeRung || fellToFree || groundedFell || undefined,
       confidentialDraft: confidential,
       // The job's own model list (model_job_policies): the task names it, or its draft kind does.
       jobKey: typeof (input as any)?.job_key === "string" ? (input as any).job_key : typeof (input as any)?.draft_kind === "string" ? (input as any).draft_kind : null,
