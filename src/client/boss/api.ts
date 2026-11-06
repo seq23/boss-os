@@ -462,6 +462,8 @@ export const api = {
   rewriteProgress: () => call<RewriteProgress>("/wealth/outreach/rewrites"),
   /** "Find firms that did X and draft the ask" — the scans her instructions started. Polling drains the queue. */
   /** Monique's reads of her personal LP search — the daily digest (kept by her word, 19 Sep 2026). */
+  /** Research pages, newest first (state, title, summary, status, delivered_at). */
+  researchPages: () => call<{ items: Array<{ id: string; state: string; title: string | null; summary: string | null; status: string | null; question: string | null; delivered_at: number | null }> }>("/research/pages"),
   firmScans: () => call<{ items: any[] }>("/research/firm-scans"),
   firmScan: (id: string) => call<any>(`/research/firm-scans/${id}`),
   startFirmScan: (instruction: string) => call<{ task_id: string; scan_id: string | null; find: string; ask: string; queued: boolean }>("/research/firm-scans", post("", { instruction })),

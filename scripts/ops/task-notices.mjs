@@ -36,8 +36,8 @@
 import { sendersFor, employeeMail, postEmployeeMail, FALLBACK_STOP } from "./notify.mjs";
 import { vaultLookup } from "../lib/vault-env.mjs";
 import { layoutProblem } from "../../src/shared/boss/mail/plain.mjs";
-import { researchDoneLayout, researchPageIdIn } from "../../src/shared/boss/research/doneEmail.mjs";
-import { researchPageUrl } from "../../src/shared/boss/research/page.mjs";
+import { researchFullEmail, researchPageIdIn } from "../../src/shared/boss/research/doneEmail.mjs";
+import { researchPageUrl, markdownToHtml } from "../../src/shared/boss/research/page.mjs";
 
 /*
  * ─── A "STOPPED" EMAIL IS A PROBLEM EMAIL, AND ONLY WHILE IT IS TRUE (owner, 23 Oct 2026, rule 3) ───
@@ -140,7 +140,8 @@ export function researchDoneEmail(notice, page, who) {
   if (!String(notice?.kind ?? "").startsWith("done") || !page || page.state !== "delivered") return null;
   const id = researchPageIdIn(notice.body);
   if (!id || id !== page.id) return null;
-  return researchDoneLayout({ who: who ?? notice.from_name ?? "Camille", subject: notice.subject, page, url: researchPageUrl(id), refs: [String(notice.task_id ?? "")].filter((r) => /^tsk_/.test(r)) });
+  // The whole report, not a summary (owner, 6 Nov 2026: the summary email "wasnt helpful").
+  return researchFullEmail({ who: who ?? notice.from_name ?? "Camille", subject: notice.subject, page, url: researchPageUrl(id), refs: [String(notice.task_id ?? "")].filter((r) => /^tsk_/.test(r)), markdownToHtml });
 }
 
 /** The filed page behind a research Done notice, as data; null when it is not one or cannot be read. */

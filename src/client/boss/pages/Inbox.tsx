@@ -6,6 +6,7 @@ import { Docket } from "../components/Docket";
 import { JudgementDocket } from "../components/JudgementDocket";
 import { Empty, Loading } from "../components/Shell";
 import { ErrorNotice } from "../components/Notice";
+import { ReportsReady } from "../components/ReportsReady";
 
 /**
  * THE INBOX — what is waiting on her, by lane, with one act for many.
@@ -411,6 +412,9 @@ export function Inbox({ onCountChange, onOpen, onBack }: {
           {oldest !== null && waiting !== 0 ? ` · oldest ${ageWords(Date.now() - oldest)}` : ""}
         </div>
       </div>
+
+      {/* Finished research waits here, not only in an email (owner, 6 Nov 2026). */}
+      <ReportsReady />
 
       {rewrites?.sentence && (
         <div className="notice" data-testid="rewrite-progress" style={{ borderColor: "var(--gold)" }}>

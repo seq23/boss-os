@@ -189,3 +189,106 @@ export function researchDoneLayout({ who, subject, page, url, refs = [] }) {
 export function researchPageIdIn(text) {
   return /\/research\/(rpg_[A-Za-z0-9_-]{3,60})\b/.exec(String(text ?? ""))?.[1] ?? null;
 }
+
+/*
+ * THE WHOLE REPORT, IN THE EMAIL (owner, 6 Nov 2026: "why did i get a partial email that wasnt
+ * helpful it was noting like the artifact i received at first"). The Done email for a research page
+ * carries the page itself: the 1-minute answer in a box, then every section with its headings,
+ * tables and links, then what could not be confirmed, then one "Open in Boss OS ›" button. It is
+ * built here, not by `layoutEmail`, because that layout is for short owner notes (a 9,000-character
+ * cap, Decide cards, plain-line cleaning) and turned this report into a stub. No Decide section: a
+ * finished report waits on nothing. Words keep their case. Inline styles only, so Gmail keeps them.
+ */
+export const FULL_EMAIL_MAX_HTML = 95_000; // under Gmail's 102 KB clip, with room for the headers
+
+const STYLE = {
+  h2: "font-size:19px;line-height:1.3;margin:26px 0 8px;font-weight:700;color:#1f1d1a",
+  h3: "font-size:16px;line-height:1.35;margin:20px 0 6px;font-weight:700;color:#1f1d1a",
+  h4: "font-size:15px;line-height:1.35;margin:16px 0 6px;font-weight:700;color:#1f1d1a",
+  p: "margin:0 0 12px",
+  ul: "margin:0 0 12px;padding-left:20px",
+  ol: "margin:0 0 12px;padding-left:22px",
+  li: "margin:0 0 6px",
+  table: "border-collapse:collapse;width:100%;margin:8px 0 16px;font-size:13px",
+  th: "border:1px solid #e4dfd4;padding:6px 8px;text-align:left;vertical-align:top;background:#f6f4ef;font-weight:700",
+  td: "border:1px solid #e4dfd4;padding:6px 8px;text-align:left;vertical-align:top",
+  a: "color:#1d4ed8",
+};
+const styled = (html) => html.replace(/<(h2|h3|h4|p|ul|ol|li|table|th|td|a)(\s|>)/g, (_, t, after) => `<${t} style="${STYLE[t]}"${after}`);
+const escHtml = (s) => String(s ?? "").replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
+
+/** Markdown → the plain-text part: same words, links as "text (url)", no Markdown marks. */
+export function researchPlainText(md) {
+  return String(md ?? "")
+    .replace(/\[([^\]]+)\]\((https?:\/\/[^\s)]+)\)/g, "$1 ($2)")
+    .replace(/\*\*([^*]+)\*\*/g, "$1")
+    .replace(/(^|[^*])\*([^*\s][^*]*)\*/g, "$1$2")
+    .replace(/^#{1,4}\s+(.*)$/gm, (_, h) => `\n${String(h).toUpperCase()}`)
+    .replace(/^\s*\|?\s*:?-{3,}[-|:\s]*$/gm, "")
+    .replace(/^\s*\|(.*)\|\s*$/gm, (_, row) => `- ${row.split("|").map((c) => c.trim()).filter(Boolean).join(" · ")}`)
+    .replace(/\n{3,}/g, "\n\n")
+    .trim();
+}
+
+/** Split the report at its "## " headings, so a report too long for one email keeps whole sections. */
+function reportSectionsOf(md) {
+  const out = [];
+  for (const line of String(md ?? "").split(/\r?\n/)) {
+    if (/^##\s/.test(line) || out.length === 0) out.push([]);
+    out[out.length - 1].push(line);
+  }
+  return out.map((l) => l.join("\n"));
+}
+
+/**
+ * The research Done email with the full report: `{ subject, text, html, refs, kind }`, the shape
+ * `employeeMail` sends as `prelaid`. Pure. `markdownToHtml` is the same renderer the Boss OS page uses.
+ */
+export function researchFullEmail({ who, subject, page, url, refs = [], markdownToHtml }) {
+  const p = researchDoneParts(page);
+  const name = String(who ?? "").trim() || "Camille";
+  const gaps = Array.isArray(page?.gaps) ? page.gaps.map((g) => String(g)) : [];
+  const sources = Array.isArray(page?.sources) ? page.sources : [];
+  const partialLine = p.partial && gaps.length
+    ? `${gaps.length} thing${gaps.length === 1 ? "" : "s"} couldn't be confirmed (listed at the end).`
+    : null;
+  const button = `<p style="margin:22px 0 8px"><a href="${escHtml(url)}" style="display:inline-block;background:#1f1d1a;color:#ffffff;text-decoration:none;font-weight:700;padding:11px 18px;border-radius:8px">Open in Boss OS ›</a></p>`;
+  // The report usually ends with its own "What I could not confirm" section; never list the gaps twice.
+  const ownGaps = /^#{1,4}\s+.*(could not|couldn.t) confirm/im.test(String(page?.markdown ?? ""));
+  const gapHtml = gaps.length && !ownGaps ? `<h2 style="${STYLE.h2}">What couldn't be confirmed</h2><ul style="${STYLE.ul}">${gaps.map((g) => `<li style="${STYLE.li}">${escHtml(g)}</li>`).join("")}</ul>` : "";
+  const srcHtml = sources.length ? `<h2 style="${STYLE.h2}">Sources (${sources.length})</h2><ol style="${STYLE.ol}">${sources.map((s) => `<li style="${STYLE.li}"><a href="${escHtml(s?.url)}" style="${STYLE.a}">${escHtml(s?.title || s?.url)}</a></li>`).join("")}</ol>` : "";
+  const head = `<!doctype html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"></head><body style="margin:0;padding:0;background:#f6f4ef"><div style="max-width:640px;margin:0 auto;padding:16px;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;font-size:15px;line-height:1.6;color:#1f1d1a;background:#ffffff">`
+    + `<h1 style="font-size:23px;line-height:1.25;margin:4px 0 6px">${escHtml(p.title)}</h1>`
+    + `<p style="margin:0 0 14px;color:#6b665e;font-size:13px">Research by ${escHtml(name)}${partialLine ? ` · ${escHtml(partialLine)}` : ""}</p>`
+    + (p.answer ? `<div style="background:#fbf6ea;border:1px solid #eadfc4;border-radius:8px;padding:12px 14px;margin:0 0 8px"><p style="margin:0 0 4px;font-size:12px;font-weight:700;letter-spacing:.08em;text-transform:uppercase;color:#8a5a00">In one minute</p><p style="margin:0;font-weight:600">${escHtml(p.answer)}</p></div>` : "")
+    + button;
+  const foot = `${gapHtml}${srcHtml}${button}<p style="margin:16px 0 0;color:#6b665e;font-size:13px">Reply to this email and your answer goes straight back to this job.</p><p style="margin:12px 0 0">— ${escHtml(name)}</p></div></body></html>`;
+
+  // Whole sections until the email would be clipped; the rest is named, never silently dropped.
+  const parts = reportSectionsOf(page?.markdown);
+  let body = "";
+  let shown = 0;
+  for (const s of parts) {
+    const next = styled(markdownToHtml(s));
+    if ((head + body + next + foot).length > FULL_EMAIL_MAX_HTML && shown > 0) break;
+    body += next;
+    shown += 1;
+  }
+  const cut = parts.length - shown;
+  const cutHtml = cut ? `<p style="${STYLE.p};font-weight:600">${cut} more section${cut === 1 ? "" : "s"} in Boss OS ›</p>` : "";
+  const html = head + body + cutHtml + foot;
+
+  const text = [
+    p.title, `Research by ${name}${partialLine ? ` · ${partialLine}` : ""}`, "",
+    ...(p.answer ? ["IN ONE MINUTE", p.answer, ""] : []),
+    `Open in Boss OS: ${url}`, "",
+    researchPlainText(parts.slice(0, shown).join("\n")),
+    ...(cut ? ["", `${cut} more section${cut === 1 ? "" : "s"} in Boss OS: ${url}`] : []),
+    ...(gaps.length && !ownGaps ? ["", "WHAT COULDN'T BE CONFIRMED", ...gaps.map((g) => `- ${g}`)] : []),
+    ...(sources.length ? ["", `SOURCES (${sources.length})`, ...sources.map((s, i) => `${i + 1}. ${s?.title || s?.url} (${s?.url})`)] : []),
+    "", "Reply to this email and your answer goes straight back to this job.", "", `— ${name}`,
+  ].join("\n");
+  const subj = String(subject ?? "").replace(/\s*\[?tsk_[a-z0-9]+\]?\s*$/i, "").trim() || researchDoneSubject(page);
+  const token = (refs ?? []).find((r) => /^tsk_/.test(r));
+  return { subject: token ? `${subj} [${token}]` : subj, text, html, refs: refs ?? [], kind: "plain" };
+}
