@@ -139,6 +139,8 @@ const SOCIAL_WORDS = "brunch|lunch|dinner|supper|breakfast|drinks|happy hour|coc
 const SOCIAL_RE = new RegExp(`\\b(?:${SOCIAL_WORDS})\\b`, "i");
 const WORK_RE = /\b(?:LPs?|investors?|fund|pitch|diligence|term sheet|deal|board|partnership|sponsor(?:ship)?|brand|client|customer|sales|demo|interview|onboarding|kick-?off|secondar(?:y|ies)|allocation|raise|capital|contract|proposal|negotiation|webinar|panel|podcast|portfolio|founder|vc)\b/i;
 
+const SELF_TASK_RE = /\b(?:e-?mail(?:ing)?|send|draft|write|tell claude|to-?do|remind(?:er)?|submit)\b/i;
+
 const normTitle = (t) => String(t ?? "").toLowerCase().replace(/[^a-z0-9]+/g, " ").trim();
 const seriesOf = (e) => String(e.ical_uid || e.calendar_uid || "").toLowerCase();
 
@@ -153,6 +155,9 @@ export function meetingKind(event, { herAddresses = [], personal = null } = {}) 
     if ((s && (personal.series ?? []).some((x) => String(x).toLowerCase() === s)) || (personal.titles ?? []).some((x) => normTitle(x) === normTitle(title) && normTitle(title))) return "personal";
   }
   if (event?.all_day || NOT_A_MEETING.test(title)) return "personal";
+  // A task she set for herself ("follow-up email (tell Claude …)") with nobody else on it is a
+  // reminder, not a meeting (6 Nov 2026: such a reminder got a call prep with "After the call").
+  if (others(event, herAddresses).length === 0 && SELF_TASK_RE.test(title)) return "personal";
   const workGuest = others(event, herAddresses).some((a) => companyDomain(a.email));
   const workWord = WORK_RE.test(title);
   if (SOCIAL_RE.test(title)) return workWord || workGuest ? "work" : "personal";
@@ -215,6 +220,27 @@ export function counterpartFromTitle(title) {
   const t = String(title ?? "").replace(/\bsequoia(\s+taylor)?\b/gi, " ").replace(/^\s*(call|meeting|sync|intro|zoom|coffee)\s*[-–—:]?\s*/i, "")
     .replace(/^\s*(\+|<>|\/|&|\||x|and|with|-|–|—|:)\s*/i, "").replace(/\s*(\+|<>|\/|&|\||x|and|with|-|–|—|:)\s*$/i, "").replace(/\s+/g, " ").trim();
   return t && t.length <= 80 ? t : null;
+}
+
+/** "Ned (Arnel & Affiliates) <> Sequoia Taylor" → "Ned": the single first name leading the invite, else null. */
+export function titleFirstName(title, herNames = ["sequoia", "taylor", "seq"]) {
+  const pieces = String(title ?? "").split(/<>|\/\/|\||\+|\s[-–—x&]\s/);
+  for (const p of pieces) {
+    const m = /^\s*([A-Z][a-z'’-]+)\s*(?:\(|$)/.exec(p.replace(/^\s*(?:call|meeting|sync|intro|zoom|coffee)\s*[-–—:]?\s*/i, ""));
+    if (m && !herNames.includes(m[1].toLowerCase()) && !FILLER.test(m[1])) { FILLER.lastIndex = 0; return m[1]; }
+    FILLER.lastIndex = 0;
+  }
+  return null;
+}
+
+/*
+ * HER OWN SYSTEM'S EMAILS ARE NOT HISTORY WITH THEM (6 Nov 2026: a prep for Ned listed "West Peek LP
+ * Outreach — Morning Report" and the morning email "Tuesday: 3 decisions, 6 new deals…" under "How you
+ * know them", because the reports mention the guest's address).
+ */
+const OWN_REPORT_RE = /\b(?:morning report|weekly roundup|daily digest|nightly report)\b|^(?:mon|tues|wednes|thurs|fri|satur|sun)day: .*\b(?:decisions?|nothing to decide|new deals?|list)\b/i;
+export function isOwnReport(subject) {
+  return OWN_REPORT_RE.test(String(subject ?? "").replace(/^\s*(?:re|fwd?):\s*/i, ""));
 }
 
 /** The attendees who are not her (her addresses, her calendar's own row, rooms). */
@@ -445,7 +471,8 @@ export function guestPages(domain) {
 /** The "Who they are" lines from research: one per fact with its link, or the one plain failure line. */
 export function researchItems(research, name) {
   if (!research) return [];
-  if (!research.ok) return [`Couldn't research ${name ?? "them"}: ${research.why}.`.replace(/\.\.$/, ".")];
+  // The reason in plain words: never a path or a status code (6 Nov 2026: "(/research/person → 404)").
+  if (!research.ok) return [`Couldn't research ${name ?? "them"}: ${String(research.why ?? "").replace(/\s*\([^)]*(?:\/|→|\d{3})[^)]*\)/g, "").trim() || "it did not run"}.`.replace(/\.\.$/, ".")];
   return research.facts.map((f) => ({ text: `${f.label}: ${f.text}`, links: [{ label: "Source", url: f.url }] }));
 }
 
@@ -478,7 +505,12 @@ export function buildPrep(event, data = {}, { herAddresses = [], context = {}, p
   const role = roleOf(rec);
   const ctx = context ?? {};
 
-  const who = name ? `${name}${firm && !name.includes(firm) ? ` (${firm})` : ""}` : (counterpartFromTitle(event.title) ?? lead?.email ?? (String(event.title ?? "").trim() || "Meeting"));
+  // The person the invite names, when the guest is someone else who set it up (6 Nov 2026: "Ned (Arnel &
+  // Affiliates) <> Sequoia Taylor" went to Cecelia, his assistant; the prep was headed "Cecelia Stewart").
+  const named = titleFirstName(event.title);
+  const forOther = Boolean(named && name && named.toLowerCase() !== String(name).split(/\s+/)[0].toLowerCase() && !(firm ?? "").toLowerCase().startsWith(named.toLowerCase()));
+  const headName = forOther ? named : name;
+  const who = headName ? `${headName}${firm && !headName.includes(firm) ? ` (${firm})` : ""}` : (counterpartFromTitle(event.title) ?? lead?.email ?? (String(event.title ?? "").trim() || "Meeting"));
   const when = `${shortDate(event.scheduled_at, herTz)}, ${zonedTime(event.scheduled_at, { tz: herTz, other: otherTz })}`;
   const subject = `${PREP_PREFIX}${who}, ${when}`;
   const about = purposeOf(event, { purpose, context: ctx, rec, role });
@@ -493,6 +525,7 @@ export function buildPrep(event, data = {}, { herAddresses = [], context = {}, p
     const kind = rec.prospect?.kind && KIND_WORDS[rec.prospect.kind] ? `, ${KIND_WORDS[rec.prospect.kind]}` : "";
     whoItems.push(`${name}${roleBits ? `, ${roleBits}` : ""}${role ? `. ${role[0].toUpperCase()}${role.slice(1)}${kind}` : ""}.`);
   }
+  if (forOther) whoItems.push(`The invite names ${named}; it went to ${name}${lead?.email ? ` (${lead.email})` : ""}, who set it up.`);
   whoItems.push(...researchItems(research, name ?? lead?.email ?? null));
   if (rec.prospect?.status === "interested") whoItems.push("They said they are interested.");
   if (rec.lp?.bucket === "call") whoItems.push("They asked for a call.");
@@ -505,13 +538,13 @@ export function buildPrep(event, data = {}, { herAddresses = [], context = {}, p
   const knowItems = [];
   const m = ctx.mail ?? {};
   if (m.count > 0 && m.first?.date) knowItems.push(`You have emailed each other since ${monthYear(m.first.date)}: ${m.count}${m.more ? "+" : ""} email${m.count === 1 ? "" : "s"} found.`);
-  for (const r of (m.recent ?? []).slice(0, 3)) {
+  for (const r of (m.recent ?? []).filter((x) => !isOwnReport(x?.subject)).slice(0, 3)) {
     if (!r?.date || !r?.subject) continue;
     knowItems.push(`${niceDate(r.date)}, ${r.from_them ? "from them" : "from you"}: "${clip(r.subject, 90)}"${r.snippet ? `. ${clip(r.snippet, 140)}` : ""}`);
   }
   const met = (ctx.meetings ?? []).filter((x) => x?.date).slice(0, 3);
   if (met.length) knowItems.push(`Met before: ${met.map((x) => `${niceDate(x.date)}${x.title ? ` ("${clip(x.title, 60)}")` : ""}`).join("; ")}.`);
-  const cards = (ctx.cards ?? []).filter((x) => x?.title).slice(0, 3);
+  const cards = (ctx.cards ?? []).filter((x) => x?.title && !isOwnReport(x.title)).slice(0, 3);
   if (cards.length) knowItems.push(`In Boss OS: ${cards.map((x) => `"${clip(x.title, 70)}"`).join("; ")}.`);
   if (knowItems.length) sections.push({ title: "How you know them", items: knowItems });
 

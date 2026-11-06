@@ -15,6 +15,9 @@ const CP1252 = { 0x20ac: 0x80, 0x201a: 0x82, 0x0192: 0x83, 0x201e: 0x84, 0x2026:
 /** A UTF-8 lead byte as Latin-1 (Â Ã â ð …) followed by a continuation byte as Latin-1/1252. */
 const SUSPECT = /[Â-ô][\u0080-¿€‚ƒ„…†‡ˆ‰Š‹ŒŽ‘’“”•–—˜™š›œžŸ]/;
 
+/** A run of mis-decoded UTF-8: lead-byte characters and 1252 continuation characters, spaces inside allowed. */
+const GARBLE_RUN = /[ÂÃâƒ‚][\u0080-\u00ff€‚ƒ„…†‡ˆ‰Š‹ŒŽ‘’“”•–—˜™š›œžŸ]+(?:[ÂÃâƒ‚][\u0080-\u00ff€‚ƒ„…†‡ˆ‰Š‹ŒŽ‘’“”•–—˜™š›œžŸ]*)*/g;
+
 function undoOnce(s) {
   const bytes = [];
   for (const ch of s) {
@@ -34,6 +37,9 @@ export function repairMojibake(value) {
     if (next === null || next === s) break;
     s = next;
   }
+  // Bytes lost on the way (1252 has no 0x81/0x8D/0x8F/0x90/0x9D) make a deep garble undecodable; a run
+  // of it is replaced by a dash rather than shown (6 Nov 2026: "re: Ned ÃƒÂƒÃ‚Â¢ÃƒÂ‚Ã¢Â‚Â¬… Arnel").
+  if (SUSPECT.test(s)) s = s.replace(GARBLE_RUN, (run) => (run.length >= 6 ? "–" : run)).replace(/\s*–\s*/g, " – ").replace(/\s{2,}/g, " ");
   return s;
 }
 

@@ -92,6 +92,11 @@ function icsTime(value, params) {
  * yearly rules, BYSETPOS, EXDATE and the rest are real work and are not pretended at: a repeat this
  * does not understand appears once rather than disappearing.
  */
+/** An ICS TEXT value unescaped: \\n → newline, \\, \\; \\\\ → the character. */
+export function icsText(v) {
+  return v == null ? v : String(v).replace(/\\([nN,;\\])/g, (_, c) => (c === "n" || c === "N" ? "\n" : c));
+}
+
 export function parseIcs(text, now = Date.now(), horizonDays = 28) {
   const until = now + horizonDays * 86_400_000;
   const from = now - 86_400_000;
@@ -106,7 +111,8 @@ export function parseIcs(text, now = Date.now(), horizonDays = 28) {
     };
 
     const uid = field("UID")?.value?.trim();
-    const summary = field("SUMMARY")?.value?.trim();
+    // RFC 5545 escapes "," ";" and "\\" in text (6 Nov 2026: a title reached her prep as "Ned <> Sequoia Taylor\\, West Peek").
+    const summary = icsText(field("SUMMARY")?.value)?.trim();
     const dtstart = field("DTSTART");
     if (!uid || !summary || !dtstart) continue;
     // A cancelled event that stays in the diary is worse than one that never arrived.
@@ -117,7 +123,7 @@ export function parseIcs(text, now = Date.now(), horizonDays = 28) {
     const dtend = field("DTEND");
     const end = dtend ? icsTime(dtend.value, dtend.params) : null;
     const duration = end && end > start ? Math.round((end - start) / 60000) : null;
-    const location = field("LOCATION")?.value?.trim() || null;
+    const location = icsText(field("LOCATION")?.value)?.trim() || null;
     // For Simone's meeting prep: who is invited, the notes, a join link (never posted to the diary).
     const attendees = [...body.matchAll(/^ATTENDEE([^:\n]*):(?:mailto:)?([^\s]+)$/gim)].map((m) => ({
       email: m[2].toLowerCase(), name: (/CN="?([^;":]+)"?/.exec(m[1])?.[1] ?? null), self: false, organizer: false,

@@ -19,3 +19,5 @@ export function parseIcs(
   now?: number,
   horizonDays?: number,
 ): { events: IcsEvent[]; unexpanded: number };
+
+export function icsText(v: string | null | undefined): string | null | undefined;

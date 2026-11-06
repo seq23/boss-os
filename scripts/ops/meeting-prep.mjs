@@ -410,7 +410,9 @@ async function main() {
   const ONLY = arg("--only");
   const FORCE = argv.includes("--force");
 
-  const cal = await readAllCalendars({ horizonDays: 3, now });
+  // --day reads far enough ahead to reach that day (a preview of a meeting next week, 6 Nov 2026).
+  const horizonDays = DAY ? Math.max(3, Math.ceil((Date.parse(`${DAY}T23:59:59Z`) - now) / 86_400_000) + 1) : 3;
+  const cal = await readAllCalendars({ horizonDays, now });
   for (const l of cal.log) (l.includes("✗") ? console.error : console.log)(l);
   if (cal.read === 0) { console.error("NAMED STOP [NO_FEED_READ] not one calendar could be read, so no meeting prep was possible."); process.exit(6); }
 
