@@ -136,6 +136,9 @@ describe("the research ladder walks past a spent Codex seat to free Google searc
     expect(calls).toHaveLength(0);
     expect((await row<any>(`SELECT status FROM tasks WHERE id = ?`, taskId)).status).toBe("queued");
     expect(sent.filter((m) => m.taskId === taskId), "handed to the hourly tick").toHaveLength(1);
+    // Visible by the next top of the hour, when the tick fires — never a minute after it.
+    const due = Date.now() + sent[0]!.delaySeconds * 1000;
+    expect(due, "due after the tick fires").toBeLessThanOrEqual(Math.ceil(Date.now() / 3600_000) * 3600_000 + 1000);
   });
 
   it("NEGATIVE: private-model-only research never reaches Gemini and is never parked on a seat", async () => {
