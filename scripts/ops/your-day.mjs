@@ -429,10 +429,14 @@ export function prospectSection(a, now = Date.now()) {
   const endOfToday = now + 18 * 3_600_000;
   const due = (a.next ?? []).filter((r) => r.next_at && r.next_at <= endOfToday);
   if (due.length) {
+    // How long they have waited (6 Nov 2026 live read: 34 follow-ups due since 14 Oct read like a
+    // same-morning hiccup — "not going out. Why: outside the sending window" at 6:45 am).
+    const oldest = Math.min(...due.map((r) => Number(r.next_at)));
+    const late = now - oldest > 36 * 3_600_000 ? ` since ${shortDate(oldest)} (${Math.floor((now - oldest) / 86_400_000)} days)` : "";
     items.push(!a.approved && !a.pending
-      ? `${plural(due.length, "follow-up is", "follow-ups are")} due and not going out; why, and what unblocks them, is in Decide above.`
+      ? `${plural(due.length, "follow-up is", "follow-ups are")} due${late} and not going out; why, and what unblocks them, is in Decide above.`
       : (a.stops ?? []).length
-      ? `${plural(due.length, "follow-up is", "follow-ups are")} due and not going out. Why: ${(a.stops ?? []).join(" ")}`
+      ? `${plural(due.length, "follow-up is", "follow-ups are")} due${late} and not going out. Why: ${(a.stops ?? []).join(" ")}`
       : `Going out today: ${plural(due.length, "follow-up")} (${due.slice(0, 5).map(nameOf).join(", ")}${due.length > 5 ? ` and ${due.length - 5} more` : ""}).`);
   }
   if (!sent.length && !(a.replies ?? []).length && !due.length) items.push("Nothing new on prospect emails since yesterday.");

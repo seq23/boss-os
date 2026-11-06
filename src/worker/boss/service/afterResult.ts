@@ -20,6 +20,7 @@ import { missingKeysIn } from "../../../shared/boss/service/practices.mjs";
 import { deferFromResult } from "./deferred";
 import { recordSecretWait } from "./secretHandoff";
 import { noticeOnce } from "./notices";
+import { doneSubject } from "../../../shared/boss/service/doneSubject.mjs";
 
 export interface ResultTask {
   id: string;
@@ -48,7 +49,7 @@ export async function afterResult(env: Env, task: ResultTask, text: string, o: {
     if (o.done && mailed && text.trim()) {
       const id = await noticeOnce(env, {
         task, fromName: o.fromName, kind: `done#${Number(task.attempts ?? 0)}`,
-        subject: `Done: ${task.title.slice(0, 140)}`,
+        subject: doneSubject(task.title, text),
         lines: [
           text.trim().slice(0, 20_000),
           ...(out.deferred.length ? ["", `Deferred, each as its own task on its date: ${out.deferred.join(", ")}.`] : []),

@@ -842,10 +842,10 @@
     },
     {
       "id": "mac-disk", "business": "personal",
-      "what": "Mac disk: how much space is free after the Sunday clean-up",
+      "what": "Mac disk: how much space is free after the daily clean-up",
       "sender": "Simone (for Kendra)", "owner": "Kendra",
       "from": "Simone <simone@sequoiataylor.com>", "to": "You",
-      "when": "Sundays 9:00 AM",
+      "when": "Daily 9:00 AM, only while under 20 GB free after the clean-up",
       "runs": "mac", "trigger": "Mac job com.seq.boss-mac-cleanup",
       "pause": "launchctl bootout gui/501/com.seq.boss-mac-cleanup",
       "launchd": ["com.seq.boss-mac-cleanup"],

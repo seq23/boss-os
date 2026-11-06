@@ -72,7 +72,11 @@ describe("Kendra keeps the Mac's disk from filling up", () => {
     expect(pickRenders(files, ["deep-sea"], NOW).map((f: any) => f.name)).toEqual(["01-deep-sea-final.mp4"]);
     expect(pickPlaywright(["chromium-1200", "chromium-1243", "chromium_headless_shell-1243", "ffmpeg-1011"])).toEqual(["chromium-1200"]);
     expect(lowDiskLine(25, 3, [])).toBeNull();
-    expect(lowDiskLine(14.2, 6.5, ["Caches 40 GB"], 6.1)).toContain("Trash 6.1 GB");
+    expect(lowDiskLine(14.2, 6.5, ["Caches 40 GB"], 6.1)).toContain("Trash holds 6.1 GB");
+    // 6 Nov 2026 live read: no "not read" filler and no empty folders listed.
+    const unread = lowDiskLine(15, 3, ["GitHub 63 GB", "Downloads 0 GB", "Caches 0 GB"], NaN)!;
+    expect(unread).not.toMatch(/not read|(?<![\d.])0 GB/);
+    expect(unread).toContain("Biggest folders: GitHub 63 GB.");
   });
   it("removes a render working folder only when old, its episode has a final, and no render process names it", () => {
     const w = (over: any) => ({ path: "x/7c44241361c4", kind: "hash", episode: "what-is-inside-honey", final: true, newest: NOW - 3 * DAY, ...over });

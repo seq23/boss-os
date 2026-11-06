@@ -117,8 +117,10 @@ export function pickPlaywright(dirs) {
 /** The one line for her, only when the disk is still low. */
 export function lowDiskLine(freeGb, cleanedGb, biggest, trashGb) {
   if (freeGb >= LOW_GB) return null;
-  const trash = Number.isFinite(trashGb) ? `${trashGb.toFixed(1)} GB` : "not read";
-  return `Mac disk: ${Math.round(freeGb)} GB free; cleaned ${cleanedGb.toFixed(1)} GB; Trash ${trash}; biggest: ${biggest.join(", ") || "nothing stood out"}.`;
+  // In words (6 Nov 2026 live read: "Trash not read; biggest: GitHub 63 gb, Downloads 0 gb").
+  const trash = Number.isFinite(trashGb) ? ` Your Trash holds ${trashGb.toFixed(1)} GB; emptying it frees that.` : "";
+  const big = biggest.filter((b) => !/\b0 GB$/.test(b));
+  return `Mac disk: ${Math.round(freeGb)} GB free after today's clean-up, which cleared ${cleanedGb.toFixed(1)} GB.${trash} Biggest folders: ${big.join(", ") || "nothing stood out"}.`;
 }
 
 // ─── Reading the Mac ─────────────────────────────────────────────────────────

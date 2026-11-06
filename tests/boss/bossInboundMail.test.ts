@@ -150,6 +150,10 @@ describe("an unknown tag is never guessed and never dropped", () => {
     expect(res.taskId).toBeTruthy();
     expect(res.reply).toMatch(/^Simone here\. Got it/);
     expect(res.reply).not.toContain("Nobody here answers to");
+    // 6 Nov 2026 live read: "Simone here" arrived signed by the seat that got the job, with a #tag
+    // hint and a stray "Boss OS" line. The acknowledgement is Simone's, and says neither.
+    expect(res.signer).toBe("Simone");
+    expect(res.reply).not.toMatch(/#danielle|— Boss OS/);
   });
 
   /*
@@ -921,7 +925,9 @@ describe("Simone triages untagged mail (owner, 22 Oct 2026: \"i should not have 
     }), env as never);
     expect(reply.outcome).toBe("FOLLOWED_UP");
     expect(reply.employeeId).toBe("emp_research");
-    expect(reply.reply).toContain(`Camille has your reply — it went to the job it answers (${first.taskId})`);
+    expect(reply.reply).toContain("Camille has your reply — it went to the job it answers, not a new pile.");
+    // Her screen never shows a task code (6 Nov 2026 live read).
+    expect(reply.reply).not.toContain(first.taskId!);
     const t = await one<any>(`SELECT json_extract(input, '$.follows_task') AS f FROM tasks WHERE id = ?`, reply.taskId);
     expect(t.f).toBe(first.taskId);
   });

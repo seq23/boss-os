@@ -1192,7 +1192,12 @@ function headline(text: string): string {
       : taskId || (admitFailure && !question && !filedByVerb)
         ? [{ title: shortTitle(strippedSubject(trueSubject) || readable), employeeId: route.seat.id, employee: route.seat.name, taskId, duty: false, failure: taskId ? null : admitFailure }]
         : [];
-  return { mailId, outcome, employeeId: signerId, taskId, reply, messageId, signer: nameOf(signerId), jobs };
+  /*
+   * THE ACKNOWLEDGEMENT IS SIMONE'S (6 Nov 2026 live read: "Simone here. Got it…" arrived signed
+   * "— Monique", because the signer was the seat that got the job). Triage is Simone's work: she signs it.
+   */
+  const signer = triaged.length && !dutyNote ? "Simone" : nameOf(signerId);
+  return { mailId, outcome, employeeId: signerId, taskId, reply, messageId, signer, jobs };
 }
 
 /**
@@ -1217,16 +1222,14 @@ export function triageReply(
     ...tasks.map((t, i) => `  ${lines[i]}${t.failure ? ` — NOT STARTED: ${t.failure}` : ""}`),
     "",
     "Each one reports back by email when it is done, or if it needs a decision from you.",
-    "To steer: reply on this thread — \"changes: …\" to change it, \"stop\" to stop it. A tag (#danielle) is optional; you never need one.",
+    "To steer: reply on this thread — \"changes: …\" to change it, \"stop\" to stop it.",
     ...typo,
-    "",
-    "— Boss OS",
   ].join("\n");
 }
 
 /** The reply to a reply that went back to its job. */
 export function followReply(f: { taskId: string; seat: { name: string } }): string {
-  return [`${f.seat.name} has your reply — it went to the job it answers (${f.taskId}), not a new pile.`, "", "— Boss OS"].join("\n");
+  return `${f.seat.name} has your reply — it went to the job it answers, not a new pile.`;
 }
 
 /**
