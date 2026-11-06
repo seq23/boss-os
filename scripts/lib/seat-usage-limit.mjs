@@ -79,7 +79,9 @@ export function retryAfterFrom(text, nowMs = Date.now()) {
     return clamp(Number(rel[1]) * unit);
   }
   // "resets Oct 2 at 8am (America/Chicago)" / "resets on Oct 2, 8:30 pm" / "resets 3pm (America/Chicago)".
-  const abs = /resets?\s+(?:on\s+)?(?:(mon|tue|wed|thu|fri|sat|sun)[a-z]*,?\s+)?(?:([A-Za-z]{3,9})\.?\s+(\d{1,2})(?:st|nd|rd|th)?,?\s+)?(?:at\s+)?(\d{1,2})(?::(\d{2}))?\s*(am|pm)\b(?:\s*\(([A-Za-z0-9_+\-]+(?:\/[A-Za-z0-9_+\-]+)*)\))?/i.exec(text);
+  // Codex (6 Nov 2026): "try again at Nov 10th, 2026 6:35 PM" — read as null, so the spent seat was
+  // re-tried every 30 minutes for four days. "try again at" and a year are read too.
+  const abs = /(?:resets?|try\s+again)\s+(?:on\s+|at\s+)?(?:(mon|tue|wed|thu|fri|sat|sun)[a-z]*,?\s+)?(?:([A-Za-z]{3,9})\.?\s+(\d{1,2})(?:st|nd|rd|th)?,?\s+(?:(\d{4}),?\s+)?)?(?:at\s+)?(\d{1,2})(?::(\d{2}))?\s*(am|pm)\b(?:\s*\(([A-Za-z0-9_+\-]+(?:\/[A-Za-z0-9_+\-]+)*)\))?/i.exec(text);
   if (abs) {
     const at = resetAt(abs, nowMs);
     if (at !== null) return clamp(Math.round((at - nowMs) / 1000));
@@ -102,7 +104,7 @@ function zoneOffsetMs(utcMs, zone) {
 
 /** The instant (ms) a matched reset phrase names, or null when it cannot be read as a real time. */
 function resetAt(m, nowMs) {
-  const [, weekday, mon, day, hh, mm, ap, zone] = m;
+  const [, weekday, mon, day, year, hh, mm, ap, zone] = m;
   let hour = Number(hh);
   if (!(hour >= 1 && hour <= 12)) return null;
   hour = (hour % 12) + (ap.toLowerCase() === "pm" ? 12 : 0);
@@ -124,6 +126,7 @@ function resetAt(m, nowMs) {
   if (mon && day) {
     const mo = MONTHS.indexOf(mon.slice(0, 3).toLowerCase());
     if (mo < 0 || Number(day) < 1 || Number(day) > 31) return null;
+    if (year) return wall(Number(year), mo, Number(day));
     let t = wall(today.y, mo, Number(day));
     if (t < nowMs - 60_000) t = wall(today.y + 1, mo, Number(day));
     return t;

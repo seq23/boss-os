@@ -1341,7 +1341,7 @@ export async function handleRequest(
       (url.pathname === "/api/boss/wealth/outreach/rewrites" || url.pathname.startsWith("/api/boss/research/firm-scans"));
     if (ctx && ((request.method !== "GET" && request.method !== "HEAD") || drainsOnRead)) {
       ctx.waitUntil(
-        drainBossTasks(env, new Date()).catch((err) => {
+        drainBossTasks(env, new Date(), 25, { fromRequest: true }).catch((err) => {
           console.error("boss task drain (on request) failed", err);
         }),
       );

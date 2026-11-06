@@ -20,6 +20,7 @@ import { afterResult } from "../service/afterResult";
 import { noticeOnce } from "../service/notices";
 import { taskToken, threeParts, bossWait } from "../../../shared/boss/service/waits.mjs";
 import { dueLine } from "../../../shared/boss/service/dueTime.mjs";
+import { isResearchWork, asResearchPage, runGroundedRung, namedStop, codexResetAt } from "./freeRung";
 /*
  * The rule that recognises a completion which is transparently a non-answer. Deterministic, and it
  * reads the model's own reply rather than guessing from her request — see the module for why.
@@ -181,6 +182,16 @@ export async function handleTask(env: Env, msg: TaskMessage): Promise<void> {
    * the delivery names which rung wrote it. Without `cloud_fallback`, exhausting the seats fails the
    * task with every refusal on it, as before.
    */
+  /*
+   * RESEARCH GETS THE RESEARCH LADDER, WHOEVER ADMITTED IT (6 Nov 2026). A research ask that named no
+   * seat used to fall straight to the plain cloud rung — no web, no sources. It is made a research page
+   * first, so it walks Codex → Claude where allowed → free Google search, and is delivered as a page.
+   */
+  const researchWork = isResearchWork(task, input);
+  if (researchWork) {
+    const upgraded = await asResearchPage(env, task, input);
+    if (upgraded) Object.assign(input, upgraded);
+  }
   const baseLadder: string[] = Array.isArray(input.backend_ladder) && input.backend_ladder.length
     ? input.backend_ladder.filter((x: unknown): x is string => typeof x === "string")
     : typeof input.backend_id === "string" ? [input.backend_id] : [];
@@ -222,7 +233,7 @@ export async function handleTask(env: Env, msg: TaskMessage): Promise<void> {
   const codexWorks = roleFor("agent_queue.default") === "worker";
   const ladder = privatePrompt ? [CLAUDE_SEAT] : claudeOnly ? confidentialLadder(baseLadder) : orderSeats(baseLadder, codexWorks || isOn(await getSetting(env.DB, OPENAI_FIRST_KEY)));
   // After a Codex limit: public work → the $0 free rung (never Claude, never paid); the rest waits.
-  const publicFreeRung = afterCodexLimit({ sensitivity: task.sensitivity, confidential: confidential || privatePrompt, chromeJob: input.chrome_job === true }) === "free_rung";
+  const publicFreeRung = afterCodexLimit({ sensitivity: task.sensitivity, modelAccess: task.model_access ?? null, confidential: confidential || privatePrompt, chromeJob: input.chrome_job === true }) === "free_rung";
   const codexLimitWaits = !claudeOnly && codexWorks && CODEX_LIMIT_WAITS && ladder.includes(OPENAI_SEAT) && !publicFreeRung;
   const codexToFreeRung = !claudeOnly && codexWorks && publicFreeRung && ladder.includes(OPENAI_SEAT) &&
     isPlanSpent(await getBackend(env.DB, OPENAI_SEAT), Date.now());
@@ -231,6 +242,19 @@ export async function handleTask(env: Env, msg: TaskMessage): Promise<void> {
       .prepare(`INSERT INTO task_events (id, task_id, ts, event, detail) VALUES (?,?,?,'ladder_step',?)`)
       .bind(newId("tev"), task.id, Date.now(), JSON.stringify({ backend_id: OPENAI_SEAT, refused: "NAMED STOP [CODEX_LIMIT] Codex is out of usage; public work goes to the $0 free rung, never Claude", next: "free rung" }))
       .run();
+  }
+  /*
+   * THE FREE GOOGLE-GROUNDED RUNG (6 Nov 2026). Public research whose Codex seat is spent — or whose
+   * seat run was handed back to the free rung mid-run — is researched with Google Search on the free
+   * tier, never Claude, never paid, never the plain cloud rung that cannot open a page.
+   */
+  const freeOk = !claudeOnly && publicFreeRung;
+  const groundedOk = freeOk && researchWork;
+  const handedToFree = groundedOk && !codexToFreeRung && Boolean(await env.DB
+    .prepare(`SELECT 1 AS x FROM task_events WHERE task_id = ? AND event = 'codex_limit_free_rung' LIMIT 1`).bind(task.id).first());
+  if (groundedOk && (codexToFreeRung || handedToFree)) {
+    await runGroundedRung(env, task, input, { fromRequest: msg.fromRequest === true, employeeName: employee?.name ?? null });
+    return;
   }
   const refusals: { backend_id: string; refused: string }[] = [];
   const modelBySeat = input.requested && typeof input.requested === "object" && (input.requested as any).model_by_backend
@@ -292,8 +316,26 @@ export async function handleTask(env: Env, msg: TaskMessage): Promise<void> {
       level: "info", scope: "queue", event: "task_dispatched_to_backend", lane: task.lane, entityId: task.id,
       detail: { run_id: dispatched.run_id, backend_id: backendId, refused_before: refusals.map((r) => r.backend_id) },
     });
+    // Parked on a spent Codex seat because nothing else may do it: said by name, with the reset, once.
+    if (codexLimitWaits && backendId === OPENAI_SEAT) {
+      const reset = await codexResetAt(env);
+      if (reset) {
+        await namedStop(env, { id: task.id, lane: task.lane, title: String(task.title ?? task.id) }, {
+          code: "NO_SEAT_AVAILABLE", requeue: false, tell: true, resumeAt: reset,
+          why: `NAMED STOP [NO_SEAT_AVAILABLE] Codex is out until ${new Date(reset).toISOString()} and no other worker may do this work (not public); it waits on Codex's seat`,
+        });
+      }
+    }
     return;
   }
+
+  // Every seat declined public research: the free Google-grounded rung, never a failure.
+  if (groundedOk && refusals.length > 0) {
+    await runGroundedRung(env, task, input, { fromRequest: msg.fromRequest === true, employeeName: employee?.name ?? null });
+    return;
+  }
+  // Every seat declined other public work: the $0 cloud rungs, never a failure, never paid.
+  const fellToFree = ladder.length > 0 && !input.cloud_fallback && !codexToFreeRung && freeOk && refusals.length > 0;
 
   if (confidential || privatePrompt) {
     // FAIL CLOSED: an LP / deal-terms draft that Claude's seat did not take is never sent anywhere else.
@@ -302,7 +344,7 @@ export async function handleTask(env: Env, msg: TaskMessage): Promise<void> {
       "Run it when the Claude seat on her Mac is free. It is never moved to another seat or a cloud model.");
     return;
   }
-  if (ladder.length > 0 && !input.cloud_fallback && !codexToFreeRung) {
+  if (ladder.length > 0 && !input.cloud_fallback && !codexToFreeRung && !fellToFree) {
     /*
      * A REFUSAL FAILS THE TASK WITH EVERY REFUSAL SENTENCE ON IT. The alternative — a run recorded
      * as refused while the task sits 'running' for ever — is the shape where the report simply
@@ -363,9 +405,9 @@ export async function handleTask(env: Env, msg: TaskMessage): Promise<void> {
        */
       modelAccess: task.model_access ?? null,
       // A seat duty that reached the cloud is strong-model work: Claude first, OpenAI second, when paid.
-      preferStrongVendors: ladder.length > 0 && !codexToFreeRung,
+      preferStrongVendors: ladder.length > 0 && !codexToFreeRung && !fellToFree,
       // A Codex limit on public work: $0 only, whatever the lever says (aiRoles.mjs afterCodexLimit).
-      freeOnly: codexToFreeRung || undefined,
+      freeOnly: codexToFreeRung || fellToFree || undefined,
       confidentialDraft: confidential,
       // The job's own model list (model_job_policies): the task names it, or its draft kind does.
       jobKey: typeof (input as any)?.job_key === "string" ? (input as any).job_key : typeof (input as any)?.draft_kind === "string" ? (input as any).draft_kind : null,
@@ -401,6 +443,14 @@ export async function handleTask(env: Env, msg: TaskMessage): Promise<void> {
       try {
         result = await routeCompletion(env, routeRequest(prompt));
       } catch (e) {
+        if (fellToFree) {
+          const reset = await codexResetAt(env);
+          await namedStop(env, { id: task.id, lane: task.lane, title: String(task.title ?? task.id) }, {
+            code: "NO_SEAT_AVAILABLE", tell: true, resumeAt: reset ?? Date.now() + 3600_000,
+            why: `NAMED STOP [NO_SEAT_AVAILABLE] every seat declined (${refusals.map((r) => r.backend_id).join(", ")}) and the free rungs failed: ${(e instanceof Error ? e.message : String(e)).slice(0, 200)}`,
+          });
+          return;
+        }
         if (!codexToFreeRung) throw e;
         /*
          * THE FREE RUNG DECLINED (its privacy screen, no free lane up, or it failed): the public work
@@ -421,6 +471,11 @@ export async function handleTask(env: Env, msg: TaskMessage): Promise<void> {
           .bind(newId("tev"), task.id, Date.now(), JSON.stringify({ why: `NAMED STOP [CODEX_LIMIT] the free rung declined (${why.slice(0, 200)}); waits on Codex's seat for the reset`, run_id: parked.run_id, refused: parked.refused }))
           .run();
         if (parked.refused) throw e;
+        const reset = await codexResetAt(env);
+        await namedStop(env, { id: task.id, lane: task.lane, title: String(task.title ?? task.id) }, {
+          code: "NO_SEAT_AVAILABLE", requeue: false, tell: true, resumeAt: reset,
+          why: `NAMED STOP [NO_SEAT_AVAILABLE] Codex is out and the free rung declined (${why.slice(0, 160)}); it waits on Codex's seat for the reset`,
+        });
         return;
       }
     }

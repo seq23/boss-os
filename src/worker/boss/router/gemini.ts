@@ -55,15 +55,31 @@ export const gemini: ProviderAdapter = {
       throw new ProviderCallError(`Gemini returned no answer${json?.promptFeedback?.blockReason ? ` (${json.promptFeedback.blockReason})` : ""}`, null, false);
     }
     const text = (cand.content?.parts ?? []).map((p: any) => (typeof p?.text === "string" ? p.text : "")).join("");
-    const sources = (cand.groundingMetadata?.groundingChunks ?? [])
-      .map((g: any) => g?.web)
-      .filter((w: any) => typeof w?.uri === "string" && /^https:\/\//.test(w.uri))
-      .map((w: any) => ({ title: String(w.title ?? w.uri).slice(0, 200), url: String(w.uri) }));
+    // Chunk index → position in `sources`, so a support still points at the right page after a
+    // non-web chunk is dropped.
+    const chunks: any[] = cand.groundingMetadata?.groundingChunks ?? [];
+    const sources: { title: string; url: string }[] = [];
+    const at = new Map<number, number>();
+    chunks.forEach((g: any, i: number) => {
+      const w = g?.web;
+      if (typeof w?.uri !== "string" || !/^https:\/\//.test(w.uri)) return;
+      at.set(i, sources.length);
+      sources.push({ title: String(w.title ?? w.uri).slice(0, 200), url: String(w.uri) });
+    });
+    const supports = (cand.groundingMetadata?.groundingSupports ?? [])
+      .map((s: any) => ({
+        start: Number(s?.segment?.startIndex ?? 0),
+        end: Number(s?.segment?.endIndex ?? 0),
+        sources: (Array.isArray(s?.groundingChunkIndices) ? s.groundingChunkIndices : [])
+          .map((i: unknown) => at.get(Number(i))).filter((i: unknown): i is number => typeof i === "number"),
+      }))
+      .filter((s: { start: number; end: number; sources: number[] }) => Number.isFinite(s.end) && s.end > s.start && s.sources.length > 0);
     return {
       text,
       inTokens: json?.usageMetadata?.promptTokenCount ?? 0,
       outTokens: json?.usageMetadata?.candidatesTokenCount ?? 0,
       ...(sources.length ? { sources } : {}),
+      ...(supports.length ? { supports } : {}),
     };
   },
 };

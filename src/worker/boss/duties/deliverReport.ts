@@ -766,7 +766,7 @@ export async function deliverResearchPage(
   if (!task) return null;
   let input: Record<string, unknown> = {};
   try { input = task.input ? (JSON.parse(task.input) as Record<string, unknown>) : {}; } catch { input = {}; }
-  const { RESEARCH_PAGE_DELIVERS, readResearchDelivery, researchPageUrl } = await import("../../../shared/boss/research/page.mjs");
+  const { RESEARCH_PAGE_DELIVERS, readResearchDelivery } = await import("../../../shared/boss/research/page.mjs");
   if (input.delivers !== RESEARCH_PAGE_DELIVERS) return null;
   const ref = input.research_page && typeof input.research_page === "object" ? (input.research_page as { page_id?: unknown }) : null;
   const pageId = typeof ref?.page_id === "string" ? ref.page_id : null;
@@ -782,18 +782,30 @@ export async function deliverResearchPage(
     await logEvent(env.DB, { level: "error", scope: "duties", event: "research_page_failed", entityId: pageId, detail: { task_id: args.taskId, run_id: args.runId, why: read.why } });
     return { state: "failed", page_id: pageId, why: read.why };
   }
-  const p = read.page;
+  await fileResearchPage(env, { pageId, taskId: args.taskId, runId: args.runId, page: read.page, now });
+  return { state: "delivered", page_id: pageId };
+}
+
+/**
+ * File a checked page: the research_pages row delivered, and one line on `delivered_work`. Shared by
+ * a seat's delivery above and the free Google-grounded rung (queue/freeRung.ts), so both file alike.
+ */
+export async function fileResearchPage(
+  env: Env,
+  a: { pageId: string; taskId: string; runId: string; now: number; page: { title: string; summary: string; markdown: string; sources: unknown[]; gaps: unknown[]; status: string } },
+): Promise<void> {
+  const { researchPageUrl } = await import("../../../shared/boss/research/page.mjs");
+  const p = a.page;
   await env.DB.batch([
     env.DB.prepare(
       `UPDATE research_pages SET state = 'delivered', title = ?, summary = ?, markdown = ?, sources = ?, gaps = ?, status = ?,
               run_id = ?, failure_reason = NULL, delivered_at = ?, updated_at = ? WHERE id = ?`,
-    ).bind(p.title, p.summary, p.markdown, JSON.stringify(p.sources), JSON.stringify(p.gaps), p.status, args.runId, now, now, pageId),
+    ).bind(p.title, p.summary, p.markdown, JSON.stringify(p.sources), JSON.stringify(p.gaps), p.status, a.runId, a.now, a.now, a.pageId),
     env.DB.prepare(
       `INSERT INTO delivered_work (id, kind, title, location, owner_seat, delivered_at, filed_at, filed_by)
        VALUES (?, 'research_page', ?, ?, 'emp_research', ?, ?, 'deliverResearchPage')
        ON CONFLICT(location) DO UPDATE SET title = excluded.title, delivered_at = excluded.delivered_at`,
-    ).bind(newId("dlw"), p.title, researchPageUrl(pageId), now, now),
+    ).bind(newId("dlw"), p.title, researchPageUrl(a.pageId), a.now, a.now),
   ]);
-  await logEvent(env.DB, { level: "info", scope: "duties", event: "research_page_delivered", entityId: pageId, detail: { task_id: args.taskId, run_id: args.runId, sources: p.sources.length, status: p.status } });
-  return { state: "delivered", page_id: pageId };
+  await logEvent(env.DB, { level: "info", scope: "duties", event: "research_page_delivered", entityId: a.pageId, detail: { task_id: a.taskId, run_id: a.runId, sources: p.sources.length, status: p.status } });
 }

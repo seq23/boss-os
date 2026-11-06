@@ -47,6 +47,12 @@ export interface CompletionResult {
   /** The pages a search-enabled call actually cited, as the provider reported them. */
   sources?: { title: string; url: string }[];
   /**
+   * WHICH STRETCH OF THE ANSWER EACH SOURCE BACKS (Gemini's groundingSupports, 6 Nov 2026): UTF-8
+   * byte offsets into `text` and indexes into `sources`. Read by research/grounded.ts, which keeps
+   * only lines Google itself tied to a page.
+   */
+  supports?: { start: number; end: number; sources: number[] }[];
+  /**
    * Charges the token counts do not carry. OpenAI bills each web-search call separately from tokens,
    * so a run that searched twenty times cost more than its tokens say; the router adds this to the
    * figure it records.

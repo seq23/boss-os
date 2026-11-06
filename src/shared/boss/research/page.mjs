@@ -107,8 +107,25 @@ function inline(s) {
 export function markdownToHtml(md) {
   const out = [];
   let list = null;
+  let table = null; // rows of cells, the first the header when a separator followed it
+  const cells = (l) => l.trim().replace(/^\|/, "").replace(/\|$/, "").split("|").map((c) => inline(esc(c.trim())));
+  const flushTable = () => {
+    if (!table) return;
+    const [head, ...body] = table.rows;
+    out.push(`<table>${table.header ? `<thead><tr>${head.map((c) => `<th>${c}</th>`).join("")}</tr></thead>` : ""}<tbody>${(table.header ? body : table.rows).map((r) => `<tr>${r.map((c) => `<td>${c}</td>`).join("")}</tr>`).join("")}</tbody></table>`);
+    table = null;
+  };
   const close = () => { if (list) { out.push(`</${list}>`); list = null; } };
   for (const raw of String(md ?? "").split(/\r?\n/)) {
+    // A Markdown table (6 Nov 2026: research pages compare fees, costs and competitors in tables).
+    if (/^\s*\|.*\|\s*$/.test(raw)) {
+      close();
+      if (/^\s*\|?\s*:?-{3,}/.test(raw) && table && table.rows.length === 1) { table.header = true; continue; }
+      if (!table) table = { rows: [], header: false };
+      table.rows.push(cells(raw));
+      continue;
+    }
+    flushTable();
     const line = esc(raw.trimEnd());
     const h = /^(#{1,4})\s+(.*)$/.exec(line);
     const ul = /^\s*[-*•]\s+(.*)$/.exec(line);
@@ -119,6 +136,7 @@ export function markdownToHtml(md) {
     else if (!line.trim()) close();
     else { close(); out.push(`<p>${inline(line)}</p>`); }
   }
+  flushTable();
   close();
   return out.join("\n");
 }
@@ -167,7 +185,7 @@ export function renderResearchPageHtml({ title, summary, markdown, sources = [],
     : "";
   const gap = (gaps ?? []).length ? `<h2>What I could not confirm</h2><ul>${gaps.map((g) => `<li>${esc(g)}</li>`).join("")}</ul>` : "";
   return `<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>${esc(title)}</title>
-<style>body{margin:0;background:#f6f4ef;color:#1f1d1a;font:16px/1.6 -apple-system,BlinkMacSystemFont,"Segoe UI",Helvetica,Arial,sans-serif}main{max-width:720px;margin:0 auto;padding:24px 16px 48px;background:#fff}h1{font-size:26px;line-height:1.25;margin:0 0 6px}h2{font-size:19px;margin:28px 0 8px}h3,h4{font-size:16px;margin:20px 0 6px}.meta{color:#6b665e;font-size:13px;margin:0 0 16px}.summary{background:#fbf6ea;border:1px solid #eadfc4;border-radius:8px;padding:12px 14px}a{color:#1d4ed8}code{background:#f1efe9;padding:0 4px;border-radius:3px}@media (prefers-color-scheme:dark){body{background:#151412;color:#ece9e2}main{background:#1d1c19}.summary{background:#26231c;border-color:#3b3528}.meta{color:#a39d92}a{color:#93b4ff}code{background:#2a2824}}</style>
+<style>body{margin:0;background:#f6f4ef;color:#1f1d1a;font:16px/1.6 -apple-system,BlinkMacSystemFont,"Segoe UI",Helvetica,Arial,sans-serif}main{max-width:720px;margin:0 auto;padding:24px 16px 48px;background:#fff}h1{font-size:26px;line-height:1.25;margin:0 0 6px}h2{font-size:19px;margin:28px 0 8px}h3,h4{font-size:16px;margin:20px 0 6px}.meta{color:#6b665e;font-size:13px;margin:0 0 16px}.summary{background:#fbf6ea;border:1px solid #eadfc4;border-radius:8px;padding:12px 14px}a{color:#1d4ed8}code{background:#f1efe9;padding:0 4px;border-radius:3px}table{border-collapse:collapse;width:100%;margin:8px 0 16px;font-size:14px;display:block;overflow-x:auto}th,td{border:1px solid #e4dfd4;padding:6px 8px;text-align:left;vertical-align:top}th{background:#f6f4ef}@media (prefers-color-scheme:dark){body{background:#151412;color:#ece9e2}main{background:#1d1c19}.summary{background:#26231c;border-color:#3b3528}.meta{color:#a39d92}a{color:#93b4ff}code{background:#2a2824}th,td{border-color:#3b3528}th{background:#26231c}}</style>
 </head><body><main><h1>${esc(title)}</h1><p class="meta">Research by Camille${when ? ` · ${esc(when)}` : ""}${question ? ` · asked: “${esc(question)}”` : ""}</p>${summary ? `<p class="summary"><strong>${esc(summary)}</strong></p>` : ""}
 ${markdownToHtml(markdown)}
 ${gap}${src}</main></body></html>`;

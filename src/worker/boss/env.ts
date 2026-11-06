@@ -68,6 +68,8 @@ export interface TaskMessage {
   taskId: string;
   lane: string;
   attempt?: number;
+  /** Drained inside a request's 30-second tail: long work (grounded research) waits for the hourly tick. */
+  fromRequest?: boolean;
 }
 
 export type Vars = { session: { id: string; issuedAt: number } };
