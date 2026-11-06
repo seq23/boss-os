@@ -12,10 +12,10 @@ import { describe, expect, it } from "vitest";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 // @ts-expect-error -- untyped node script
-import { orderLots, peopleFor, fundsFor, fillWords, buildHuntEmail, huntTitle } from "../scripts/ops/lib/side-hunt.mjs";
+import { orderLots, peopleFor, fundsFor, fillWords, buildHuntEmail, huntTitle, MAX_PEOPLE, MAX_FUNDS, MAX_PEOPLE_LINES, MAX_FUND_LINES } from "../scripts/ops/lib/side-hunt.mjs";
 import { isSendDay } from "../scripts/ops/lp-prospects.mjs";
 import { MAX_TOUCHES } from "../src/shared/boss/lp/plan.mjs";
-import { plainProblems, layoutEmail } from "../src/shared/boss/mail/plain.mjs";
+import { plainProblems, layoutEmail, MAX_TEXT_CHARS } from "../src/shared/boss/mail/plain.mjs";
 
 const ROOT = join(__dirname, "..");
 const NOW = Date.parse("2026-11-05T13:00:00Z"); // a Thursday, 07:00 Central
@@ -128,6 +128,59 @@ describe("one email per side, two calm sections", () => {
     expect(JSON.stringify(empty.layout.sections)).not.toEqual(JSON.stringify(broken.layout.sections));
     expect(empty.failed).toEqual([]);
     expect(broken.failed.length).toBeGreaterThan(0);
+  });
+});
+
+/*
+ * THE HEAVY WEEK (5 Nov 2026: "Sellers for what your LPs want to buy" was held at 18,797
+ * characters, twelve buy orders × five people × five funds). The email must fit the plain-email cap
+ * BY ITS OWN BOUND, say how many more and where, and still quote the true totals.
+ */
+describe("a heavy week fits the cap and says what it left out", () => {
+  const said = "we hold a block of this company and can move it this month at a price close to the last round, let us know if your client is still keen on it and what size";
+  const heavy = Array.from({ length: 12 }, (_, c) => ({
+    lot: { asset: `Company ${String.fromCharCode(65 + c)} Holdings`, size_text: "size not set", ageDays: c * 3 },
+    people: { hits: Array.from({ length: MAX_PEOPLE }, (_, i) => ({
+      row: row({ principal: `Broker Number ${i}`, intermediated_by: `Placement Desk ${i}`, quote: said, email_url: `https://mail.google.com/mail/u/0/#search/rfc822msgid%3Amessage-${c}-${i}%40broker.example` }),
+      ageDays: 20, fill: "size not said, worth asking", price: "price not known on one side, worth asking" })) },
+    funds: { holders: Array.from({ length: MAX_FUNDS }, (_, i) => ({
+      fund: `Growth Opportunities Fund ${i} LP`, manager: `Manager Group ${i} Advisors`, valUSD: 12e6, as_of: "2026-06-30",
+      capacity: { verdict: "PLAUSIBLY" }, url: `https://www.sec.gov/Archives/edgar/data/100${c}${i}/000000000026000${i}/primary_doc.xml` })) },
+  }));
+  const rawChars = (mail: any) => mail.layout.sections.flatMap((s: any) => s.items).map((i: any) => (typeof i === "string" ? i : `${i.text} ${(i.links ?? []).map((l: any) => l.url).join(" ")}`)).join("\n").length;
+
+  it("fits under the cap, passes the gate, and names how many more and where", () => {
+    const mail = buildHuntEmail({ side: "sell", now: NOW, hunts: heavy });
+    const [people, funds] = mail.layout.sections;
+    expect(people.items).toHaveLength(MAX_PEOPLE_LINES + 1);
+    expect(funds.items).toHaveLength(MAX_FUND_LINES + 1);
+    expect(people.items.at(-1).text).toBe(`And ${12 * MAX_PEOPLE - MAX_PEOPLE_LINES} more names not shown here.`);
+    expect(people.items.at(-1).links[0].url).toMatch(/view=matches/);
+    expect(funds.items.at(-1).text).toBe(`And ${12 * MAX_FUNDS - MAX_FUND_LINES} more funds not shown here.`);
+    expect(funds.items.at(-1).links[0].url).toMatch(/view=holders/);
+    // The true totals stay in the summary line.
+    expect(mail.layout.happened).toContain(`12 companies, ${12 * MAX_PEOPLE} people you know and ${12 * MAX_FUNDS} funds`);
+    // A company's second line does not repeat the whole head.
+    expect(people.items[1].text).toMatch(/^Company A Holdings, also: /);
+    expect(people.items[0].text).toMatch(/^Company A Holdings: your LP wants/);
+    const laid = layoutEmail({ who: "Monique", subject: mail.subject, ...mail.layout });
+    expect(laid.text.length).toBeLessThan(MAX_TEXT_CHARS);
+    expect(laid.text).not.toMatch(/more lines? not shown here/); // the sender's own bound did the work
+    expect(plainProblems(laid)).toEqual([]);
+  });
+
+  it("negative proof: with the caps raised the same week blows the cap", () => {
+    const loose = buildHuntEmail({ side: "sell", now: NOW, hunts: heavy, maxPeopleLines: Infinity, maxFundLines: Infinity });
+    expect(rawChars(loose)).toBeGreaterThan(MAX_TEXT_CHARS);
+    expect(loose.layout.sections[0].items).toHaveLength(12 * MAX_PEOPLE);
+  });
+
+  it("a company that found nobody or failed keeps its own line past the cap (Rule 0)", () => {
+    const tail = { lot: { asset: "Late Co", size_usd: 5e6, ageDays: 90 }, people: { hits: [], error: "your email records could not be opened" }, funds: { holders: [], total: 3, scanned: 3 } };
+    const mail = buildHuntEmail({ side: "sell", now: NOW, hunts: [...heavy, tail] });
+    expect(JSON.stringify(mail.layout.sections[0].items)).toMatch(/Late Co: .*This part did not run this week/);
+    expect(JSON.stringify(mail.layout.sections[1].items)).toMatch(/Late Co: .*No fund reports a usable position/);
+    expect(mail.failed).toEqual(["people: your email records could not be opened"]);
   });
 });
 
