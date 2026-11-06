@@ -97,9 +97,12 @@ export async function codexResetAt(env: Env, now = Date.now()): Promise<number |
   return typeof until === "number" && until > now ? until : null;
 }
 
-/** The next top of the hour plus a minute: when the hourly tick, which may run long work, drains. */
+/**
+ * The next top of the hour: the hourly tick ("0 * * * *") drains rows visible at or before the moment
+ * it fires, so the row must be visible AT :00. (It was :01, so the :00 tick skipped it for an hour.)
+ */
 export function nextTickAt(now: number): number {
-  return Math.floor(now / 3600_000) * 3600_000 + 3600_000 + 60_000;
+  return Math.floor(now / 3600_000) * 3600_000 + 3600_000;
 }
 
 /**
