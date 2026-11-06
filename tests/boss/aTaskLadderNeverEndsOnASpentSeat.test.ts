@@ -109,8 +109,12 @@ describe("the research ladder walks past a spent Codex seat to free Google searc
     expect(page.summary, "an uncited figure in the summary").not.toMatch(/\$9,000/);
     expect(page.summary).toMatch(/\$40 per collection \[1\]/);
     const notice = await row<any>(`SELECT from_name, subject, body FROM boss_task_notices WHERE task_id = ? AND kind LIKE 'done#%'`, taskId);
-    expect(notice.subject).toMatch(/^Done: Mobile DNA collection/);
+    // The page has a gap, so it is partial, and the one Done notice says so and names the gap (6 Nov 2026).
+    expect(notice.subject).toMatch(/^Done \(partial\): Mobile DNA collection/);
     expect(notice.body).toMatch(/\/research\/rpg_/);
+    expect(notice.body).toMatch(/^Your research is ready, partial: \d+ things? I could not confirm\./);
+    expect(notice.body.split("\n").filter((l: string) => /^Partial\. Not confirmed: \S/.test(l))).toHaveLength(1);
+    expect(await row<any>(`SELECT COUNT(*) AS n FROM boss_task_notices WHERE task_id = ?`, taskId)).toEqual({ n: 1 });
     expect(await row(`SELECT 1 AS x FROM delivered_work WHERE location LIKE '%' || ? || '%'`, JSON.parse(task.output).research_page_id)).toBeTruthy();
   });
 
