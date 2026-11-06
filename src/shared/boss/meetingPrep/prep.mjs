@@ -207,7 +207,7 @@ export function counterpartFromTitle(title) {
   return t && t.length <= 80 ? t : null;
 }
 
-/** "Ned (Arnel & Affiliates) <> Sequoia Taylor" → "Ned": the single first name leading the invite, else null. */
+/** "Sam (Example Holdings) <> Sequoia Taylor" → "Sam": the single first name leading the invite, else null. */
 export function titleFirstName(title, herNames = ["sequoia", "taylor", "seq"]) {
   const pieces = String(title ?? "").split(/<>|\/\/|\||\+|\s[-–—x&]\s/);
   for (const p of pieces) {
@@ -228,7 +228,7 @@ export function invitePerson(title, guestName, firm) {
 }
 
 /*
- * HER OWN SYSTEM'S EMAILS ARE NOT HISTORY WITH THEM (6 Nov 2026: a prep for Ned listed "West Peek LP
+ * HER OWN SYSTEM'S EMAILS ARE NOT HISTORY WITH THEM (6 Nov 2026: a prep for Sam listed "West Peek LP
  * Outreach — Morning Report" and the morning email "Tuesday: 3 decisions, 6 new deals…" under "How you
  * know them", because the reports mention the guest's address).
  */
@@ -402,13 +402,30 @@ const fact = (v, n = 220) => (v && typeof v.text === "string" && v.text.trim() &
  * The seat's answer → `{ ok: true, facts: [{ label, text, url }] }`, keeping only sourced facts, or
  * `{ ok: false, why }` (nothing sourced is a failure too: never an empty "Who they are"). Pure.
  */
-export function readResearch(r) {
+const MONTHS = "january|february|march|april|may|june|july|august|september|october|november|december";
+/**
+ * Is a "Coming up" line already over? Its latest stated date is before today (a whole year counts as
+ * its last day). A line with no date is kept. 6 Nov 2026: Sam's prep said "Coming up: … 6 May 2025".
+ */
+export function isPast(text, now = Date.now()) {
+  const t = String(text ?? "").toLowerCase();
+  const today = new Date(now).toISOString().slice(0, 10);
+  const days = [];
+  for (const m of t.matchAll(new RegExp(`\\b(\\d{1,2})(?:st|nd|rd|th)? (${MONTHS}),? (20\\d\\d)\\b`, "g"))) days.push(Date.parse(`${m[2]} ${m[1]}, ${m[3]} UTC`));
+  for (const m of t.matchAll(new RegExp(`\\b(${MONTHS}) (\\d{1,2})(?:st|nd|rd|th)?,? (20\\d\\d)\\b`, "g"))) days.push(Date.parse(`${m[1]} ${m[2]}, ${m[3]} UTC`));
+  const dated = days.filter(Number.isFinite);
+  if (dated.length) return new Date(Math.max(...dated)).toISOString().slice(0, 10) < today;
+  const years = [...t.matchAll(/\b(20\d\d)\b/g)].map((m) => Number(m[1]));
+  return years.length > 0 && Math.max(...years) < Number(today.slice(0, 4));
+}
+
+export function readResearch(r, { now = Date.now() } = {}) {
   if (!r || r.ok === false) return { ok: false, why: clip(r?.why ?? "the research did not run", 140) };
   const j = r.json ?? r;
   if (!j || j.found === false) return { ok: false, why: clip(j?.why ?? "nothing public says who they are", 140) };
   const facts = [];
   for (const [k, label] of RESEARCH_FIELDS) { const f = fact(j[k]); if (f) facts.push({ label, ...f }); }
-  for (const u of (Array.isArray(j.upcoming) ? j.upcoming : []).slice(0, 3)) { const f = fact(u, 180); if (f) facts.push({ label: "Coming up", ...f }); }
+  for (const u of (Array.isArray(j.upcoming) ? j.upcoming : []).filter((u) => !isPast(u?.text, now)).slice(0, 3)) { const f = fact(u, 180); if (f) facts.push({ label: "Coming up", ...f }); }
   return facts.length ? { ok: true, facts } : { ok: false, why: "no fact came back with a source" };
 }
 
@@ -499,8 +516,8 @@ export function buildPrep(event, data = {}, { herAddresses = [], context = {}, p
   const role = roleOf(rec);
   const ctx = context ?? {};
 
-  // The person the invite names, when the guest is someone else who set it up (6 Nov 2026: "Ned (Arnel &
-  // Affiliates) <> Sequoia Taylor" went to Cecelia, his assistant; the prep was headed "Cecelia Stewart").
+  // The person the invite names, when the guest is someone else who set it up (6 Nov 2026: "Sam (Example Holdings &
+  // Affiliates) <> Sequoia Taylor" went to Alex, his assistant; the prep was headed "Alex Assist").
   const named = invitePerson(event.title, name, firm);
   const forOther = Boolean(named);
   const headName = forOther ? named : name;

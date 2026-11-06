@@ -4,6 +4,23 @@ import { ProviderCallError, statusIsRetryable, type ProviderAdapter } from "./ty
 const FREE_SEARCH = new Set(["gemini-2.5-flash"]);
 
 /**
+ * THINKING HAS ITS OWN ALLOWANCE, ON TOP OF THE ANSWER'S (6 Nov 2026).
+ *
+ * On the 2.5 and 3.x models `maxOutputTokens` counts thinking AND answer together. A grounded
+ * search on a famous founder thought for ~1,700 tokens against a 1,500 cap, stopped at MAX_TOKENS
+ * mid-JSON, and Google returns `groundingChunks` only on a finished answer: every prep said "Google
+ * search returned no pages". So the caller's cap is the ANSWER's, and thinking gets a bounded budget
+ * added to it. Free tier only (this adapter), so the extra tokens cost nothing.
+ */
+export const THINKING_ALLOWANCE = 4096;
+export const thinks = (slug: string) => /^gemini-(2\.5|[3-9])/.test(slug);
+export function generationConfig(slug: string, maxOutputTokens: number, temperature: number | undefined) {
+  return thinks(slug)
+    ? { maxOutputTokens: maxOutputTokens + THINKING_ALLOWANCE, temperature, thinkingConfig: { thinkingBudget: THINKING_ALLOWANCE } }
+    : { maxOutputTokens, temperature };
+}
+
+/**
  * GOOGLE GEMINI, DIRECT, ON THE FREE TIER (owner, 4 Nov 2026).
  *
  * One host (`GEMINI_HOST` in backends.ts, never read from a request), one key (`GEMINI_API_KEY`, a
@@ -41,7 +58,7 @@ export const gemini: ProviderAdapter = {
       body: JSON.stringify({
         ...(system ? { systemInstruction: { parts: [{ text: system }] } } : {}),
         contents,
-        generationConfig: { maxOutputTokens: req.maxOutputTokens, temperature: req.temperature },
+        generationConfig: generationConfig(req.modelSlug, req.maxOutputTokens, req.temperature),
         ...(req.webSearch ? { tools: [{ google_search: {} }] } : {}),
       }),
     });

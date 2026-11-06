@@ -196,6 +196,12 @@ export interface RouteRequest {
    * lever, the ceilings and the per-run cap all still decide whether it runs.
    */
   webSearch?: boolean;
+  /**
+   * Text this run fetched from public web pages, each an exact substring of a message (meeting-prep
+   * research). The deal-term PATTERNS skip it; the committed-LP names and brain marks still read it.
+   * See `DeclaredAccess.publicWebText` in modelAccess.ts.
+   */
+  publicWebText?: readonly string[];
   /** Overrides the route's output limit. A briefing is far longer than the route's default reply. */
   maxOutputTokens?: number;
   /**
@@ -558,6 +564,7 @@ export async function routeCompletion(env: Env, rawOpts: RouteRequest): Promise<
   const access = scanForModelAccess(opts.messages, lexicon, {
     modelAccess: opts.modelAccess ?? null,
     sensitivity: opts.sensitivity,
+    publicWebText: opts.publicWebText ?? null,
   });
 
   base.modelAccess = access.access;

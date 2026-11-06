@@ -8,7 +8,7 @@ import { env } from "cloudflare:test";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { freeDailyCap, routeIsBilled } from "../../src/worker/boss/backends/guard";
 import { GEMINI_HOST } from "../../src/worker/boss/router/backends";
-import { researchPerson } from "../../src/worker/boss/routes/research";
+import { realLinks, researchPerson } from "../../src/worker/boss/routes/research";
 import { claimFreeSearch, centralDay } from "../../src/worker/boss/research/searchQuota";
 import { BRAVE_SEARCH_HOST, braveSearch } from "../../src/worker/effects/braveSearchClient";
 import { stubFetch } from "./helpers";
@@ -169,5 +169,19 @@ describe("meeting-prep research: Google, then Brave, then their pages", () => {
     const r = await researchPerson(keys(), who, async () => ({ ok: false, text: null, finalUrl: null }), async () => { searched = true; return { ok: true, results }; });
     expect(r).toMatchObject({ ok: false, private: true });
     expect(searched).toBe(false);
+  });
+});
+
+describe("Google's grounding links reach her prep as the real pages", () => {
+  it("replaces each redirect with the page it points to, and keeps Google's link when one will not resolve", async () => {
+    const R = (n: number) => `https://vertexaisearch.cloud.google.com/grounding-api-redirect/ABC${n}`;
+    const sources = [{ title: "example.org", url: R(1) }, { title: "example.net", url: R(2) }];
+    const json = { found: true, title: { text: "CEO", url: R(1) }, firm: null, background: { text: "Founded it", url: R(2) }, focus: null, upcoming: [{ text: "Talk", url: R(1) }] };
+    const follow = async (u: string) => (u === R(1) ? "https://example.org/about" : null);
+    const out = await realLinks(json, sources, follow);
+    expect(out.json.title.url).toBe("https://example.org/about");
+    expect(out.json.upcoming[0].url).toBe("https://example.org/about");
+    expect(out.json.background.url).toBe(R(2));
+    expect(out.sources.map((s) => s.url)).toEqual(["https://example.org/about", R(2)]);
   });
 });

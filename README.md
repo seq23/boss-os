@@ -88,7 +88,8 @@ transport, the Network OS client, the SEC EDGAR client, the Google client — OA
 read-only scopes, reachable only for a partner who granted consent to their own account — and the
 Runware client, which turns a prompt into an image and sends nothing but that prompt — and the Brave
 Search client, read-only, which sends a meeting guest's name and firm as a search phrase, at most 20
-times a day. External
+times a day — and the grounding-link client, which asks Google's own grounding redirects where they point
+(one HEAD each, no body read), so a meeting prep cites the real page. External
 *effects* (anything leaving the firm) execute only in `src/worker/effects/executor.ts`, only against
 an approved receipt.
 

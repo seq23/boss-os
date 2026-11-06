@@ -165,29 +165,29 @@ describe("a reminder to herself gets no prep", () => {
 
 describe("an invite title arrives as written", () => {
   it("unescapes the ICS commas and semicolons in a title and place", () => {
-    const ics = ["BEGIN:VCALENDAR", "BEGIN:VEVENT", "UID:ned1", "SUMMARY:Ned (Arnel & Affiliates) <> Sequoia Taylor\\, West Peek", "LOCATION:Room 1\; floor 2", "DTSTART:20261117T170000Z", "DTEND:20261117T173000Z", "END:VEVENT", "END:VCALENDAR"].join("\r\n");
+    const ics = ["BEGIN:VCALENDAR", "BEGIN:VEVENT", "UID:sam1", "SUMMARY:Sam (Example Holdings) <> Sequoia Taylor\\, West Peek", "LOCATION:Room 1\; floor 2", "DTSTART:20261117T170000Z", "DTEND:20261117T173000Z", "END:VEVENT", "END:VCALENDAR"].join("\r\n");
     const [e] = parseIcs(ics, Date.parse("2026-11-10T00:00:00Z"), 28).events;
-    expect(e?.title).toBe("Ned (Arnel & Affiliates) <> Sequoia Taylor, West Peek");
+    expect(e?.title).toBe("Sam (Example Holdings) <> Sequoia Taylor, West Peek");
     expect(e?.location).toBe("Room 1; floor 2");
   });
 });
 
 // The real prep for 17 Nov read as she would (6 Nov 2026): wrong person in the heading, her own
 // reports listed as history, a garbled subject, and a path in the research line.
-describe("the Ned prep reads right", () => {
-  const ned = { calendar_uid: "ned1", title: "Ned (Arnel & Affiliates) <> Sequoia Taylor, West Peek", scheduled_at: Date.parse("2026-11-17T17:00:00Z"), duration_min: 30, attendees: [{ email: "cstewart@arnel.example", name: "Cecelia Stewart" }] };
+describe("the Sam prep reads right", () => {
+  const sam = { calendar_uid: "sam1", title: "Sam (Example Holdings) <> Sequoia Taylor, West Peek", scheduled_at: Date.parse("2026-11-17T17:00:00Z"), duration_min: 30, attendees: [{ email: "alex@holdings.example", name: "Alex Assist" }] };
   const context = {
     mail: { count: 3, first: { date: "2026-10-14", subject: "x" }, recent: [
       { date: "2026-11-06", subject: "West Peek LP Outreach — Morning Report, 6 November 2026 (6 sent · 1 reply · 8 bounces)", from_them: false },
-      { date: "2026-11-02", subject: "re: Ned ÃƒÂƒÃ‚Â¢ÃƒÂ‚Ã¢Â‚Â¬ÃƒÂ‚Ã¢Â€Â Arnel & Affiliates' investment strategy", from_them: true },
+      { date: "2026-11-02", subject: "re: Sam ÃƒÂƒÃ‚Â¢ÃƒÂ‚Ã¢Â‚Â¬ÃƒÂ‚Ã¢Â€Â Example Holdings' investment strategy", from_them: true },
     ] },
     cards: [{ title: "Tuesday: 3 decisions, 6 new deals, Valerie's list" }],
   };
-  const p = buildPrep(ned, {}, { herAddresses: ME, context, research: { ok: false, why: "Boss OS could not be asked (/research/person → 404)" } });
+  const p = buildPrep(sam, {}, { herAddresses: ME, context, research: { ok: false, why: "Boss OS could not be asked (/research/person → 404)" } });
   const all = JSON.stringify(p.sections);
   it("is headed with the person the invite names, and says who it went to", () => {
-    expect(p.subject.startsWith("Prep: Ned (")).toBe(true);
-    expect(all).toContain("it went to Cecelia Stewart");
+    expect(p.subject.startsWith("Prep: Sam (")).toBe(true);
+    expect(all).toContain("it went to Alex Assist");
   });
   it("leaves her own reports out of the history", () => {
     expect(all).not.toContain("Morning Report");

@@ -269,14 +269,14 @@ export async function researchGuest(event, data, { api, ask = askClaudeJson, now
   const rec = recordsFor({ email: lead?.email ?? null, name }, data);
   const firm = guestFirm(rec, event, lead?.email ?? null);
   const today = new Date(now).toISOString().slice(0, 10);
-  // The person the invite names, not the assistant it went to (6 Nov 2026: Ned's prep researched Cecelia).
+  // The person the invite names, not the assistant it went to (6 Nov 2026: Sam's prep researched Alex).
   const named = invitePerson(event.title, name, firm);
   const who = named ? { name: named, email: null, firm, domain: companyDomain(lead?.email), today } : { name, email: lead?.email ?? null, firm, domain: companyDomain(lead?.email), today };
   let r = await api.post("/research/person", who).catch((e) => ({ ok: false, stop: "RESEARCH_UNREACHABLE", why: `Boss OS could not be asked (${String(e.message).slice(0, 80)})` }));
   if (r?.private) {
     r = ask(researchPrompt(who), { model: "sonnet", maxTurns: 20, timeoutMs: 600_000, requireTool: /WebSearch|WebFetch/i, toolSearch: "select:WebSearch,WebFetch" });
   }
-  const out = readResearch(r);
+  const out = readResearch(r, { now });
   if (!out.ok) log(`NAMED STOP [${r?.stop ?? "RESEARCH_FAILED"}] ${who.name ?? lead?.email} not researched: ${out.why}`);
   return out;
 }

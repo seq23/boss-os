@@ -160,14 +160,14 @@ describe("2 · the detector does not misfire on ordinary firm writing", () => {
 });
 
 describe("3 · a name this system holds is still caught, and never quoted back", () => {
-  it("catches a name from the lexicon with no deal vocabulary anywhere near it", async () => {
+  it("catches a committed LP's name with no deal vocabulary anywhere near it", async () => {
     /*
      * THE NAME IS PUT THERE BY THIS TEST, because the shipped seed holds no LPs and a scan over an
      * empty lexicon would pass this assertion for a reason that has nothing to do with the rule.
-     * `Northgate Partners` appears in no pattern on either tier — the only thing that can catch it
-     * is the lexicon, which is exactly what is being proven.
+     * `Northgate Partners` (a made-up placeholder) appears in no pattern on either tier — the only
+     * thing that can catch it is the lexicon, which is exactly what is being proven.
      */
-    await env.DB.prepare(`INSERT INTO organizations (id, lane, name, created_at, updated_at) VALUES ('org_test_lex', 'ops', 'Northgate Partners', 1, 1)`).run();
+    await env.DB.prepare(`INSERT INTO lps (id, name, status, created_at, updated_at) VALUES ('lp_test_lex', 'Northgate Partners', 'committed', 1, 1)`).run();
     const lexicon = await privateLexicon(env.DB);
     const name = "northgate partners";
     expect(lexicon.established).toBe(true);
@@ -250,5 +250,56 @@ describe("4 · the labels reach the work card", () => {
       .toBe("external+public_model_approved");
     expect(corner("Send the drawdown notice to the limited partner on the list."))
       .toBe("external+private_model_only");
+  });
+});
+
+/**
+ * MEETING-PREP RESEARCH REACHES THE FREE ROUTE (6 Nov 2026).
+ *
+ * Every prep said "Couldn't research": the scan read any firm Boss OS held (organizations, deals,
+ * holdings) as private, and a public page's "$5M" next to "committed to" or "40%" as a deal term.
+ * Her rulings (4 Nov 2026): only COMMITTED LPs' names and deal terms are private model only, plus
+ * children and private brain sections; a prospect or guest is public. Placeholders only.
+ */
+describe("4 · public research on a guest goes free; only the confidential classes are refused", () => {
+  const PAGE =
+    "Dana Placeholder is the founder of Brightwell Labs. Brightwell raised $5M in a seed round led by " +
+    "Acorn Example Ventures and has grown revenue 40% a year. The team is committed to open tooling, " +
+    "and its subscription product now serves 2,000 companies at a $20M valuation.";
+  const prompt = `Write what these pages say about Dana Placeholder.\n[1] https://example.com/about\n"""${PAGE}"""`;
+
+  it("sends a public page about a guest, $5M and their firm on file included, to the free route; refuses the confidential classes; fails closed when unknown", async () => {
+    // The guest's firm and the round's lead are ordinary contacts Boss OS holds, not committed LPs.
+    await env.DB.prepare(`INSERT INTO organizations (id, lane, name, created_at, updated_at) VALUES ('org_guest', 'ops', 'Brightwell Labs', 1, 1)`).run();
+    await env.DB.prepare(`INSERT INTO lps (id, name, status, created_at, updated_at) VALUES ('lp_prospect', 'Acorn Example Ventures', 'prospect', 1, 1)`).run();
+    await env.DB.prepare(`INSERT INTO lps (id, name, status, created_at, updated_at) VALUES ('lp_committed', 'Harbourline Family Office', 'committed', 1, 1)`).run();
+    const lexicon = await privateLexicon(env.DB);
+    expect(lexicon.established).toBe(true);
+    expect(lexicon.names.length).toBeGreaterThan(0); // never a pass over an empty lexicon
+
+    // ALLOWED: the public page, as the research route sends it.
+    const allowed = scanForModelAccess(msg(prompt), lexicon, { publicWebText: [PAGE] });
+    expect(allowed.access, allowed.reason).toBe("public_model_approved");
+
+    // REFUSED: a committed LP's name, even inside a public page.
+    expect(scanForModelAccess(msg(`${prompt} Harbourline Family Office backs them.`), lexicon, { publicWebText: [PAGE] }).access)
+      .toBe("private_model_only");
+    // REFUSED: deal-term text Boss OS wrote (not fetched from a page).
+    expect(scanForModelAccess(msg(`${prompt}\nOur side letter gives them MFN; the capital call is Friday.`), lexicon, { publicWebText: [PAGE] }).access)
+      .toBe("private_model_only");
+    expect(scanForModelAccess(msg("Her commitment is $5m, payable in two tranches."), lexicon).access).toBe("private_model_only");
+    // A span the prompt does not hold verbatim exempts nothing.
+    expect(scanForModelAccess(msg("Her commitment is $5m, payable in two tranches."), lexicon, { publicWebText: ["Her commitment is $5m, payable in two tranches. (altered)"] }).access)
+      .toBe("private_model_only");
+    // REFUSED: a child's name and writing — Time-2-Read callers label it, and no scan lowers that.
+    expect(scanForModelAccess(msg("Child A wrote: my dog is called Biscuit."), lexicon, { modelAccess: "private_model_only", publicWebText: ["Child A wrote: my dog is called Biscuit."] }).access)
+      .toBe("private_model_only");
+    expect(scanForModelAccess(msg("Child A wrote a story."), lexicon, { sensitivity: "restricted" }).access).toBe("private_model_only");
+    // REFUSED: a private brain section that reached the scan.
+    expect(scanForModelAccess(msg(`${prompt}\n<!-- confidential -->a private note<!-- /confidential -->`), lexicon, { publicWebText: [PAGE] }).access)
+      .toBe("private_model_only");
+    // UNKNOWN: a lexicon that could not be read fails closed, public page or not.
+    expect(scanForModelAccess(msg(prompt), { names: [], established: false, note: "unread" }, { publicWebText: [PAGE] }).access)
+      .toBe("private_model_only");
   });
 });

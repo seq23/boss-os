@@ -38,7 +38,7 @@ export function repairMojibake(value) {
     s = next;
   }
   // Bytes lost on the way (1252 has no 0x81/0x8D/0x8F/0x90/0x9D) make a deep garble undecodable; a run
-  // of it is replaced by a dash rather than shown (6 Nov 2026: "re: Ned ÃƒÂƒÃ‚Â¢ÃƒÂ‚Ã¢Â‚Â¬… Arnel").
+  // of it is replaced by a dash rather than shown (6 Nov 2026: "re: Sam ÃƒÂƒÃ‚Â¢ÃƒÂ‚Ã¢Â‚Â¬… Example Holdings").
   if (SUSPECT.test(s)) s = s.replace(GARBLE_RUN, (run) => (run.length >= 6 ? "–" : run)).replace(/\s*–\s*/g, " – ").replace(/\s{2,}/g, " ");
   return s;
 }
