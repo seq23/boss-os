@@ -44,12 +44,16 @@ import { ProviderCallError, statusIsRetryable, type ProviderAdapter } from "./ty
  * is recorded TRAINS_ON_PROMPTS, so `policy.ts` has already refused it any private work before this
  * file runs. The two mechanisms guard the same line from opposite sides.
  */
+/** A `:free` variant: the suffix is what proves the route free (backends.ts). */
+export const isFreeSlug = (slug: string | null | undefined) => typeof slug === "string" && slug.endsWith(":free");
+
 export const openrouter: ProviderAdapter = {
   id: "prv_openrouter",
   async complete(req, ctx) {
     if (!ctx.apiKey) {
       throw new ProviderCallError("OPENROUTER_API_KEY is not set on this Worker", null, false);
     }
+    const free = isFreeSlug(req.modelSlug);
     const res = await fetch(`${ctx.baseUrl}/chat/completions`, {
       method: "POST",
       // The call is abandoned when the router's deadline fires; see deadlines.ts.
@@ -66,7 +70,15 @@ export const openrouter: ProviderAdapter = {
         messages: req.messages,
         max_tokens: req.maxOutputTokens,
         temperature: req.temperature,
-        ...(req.requireNoTraining ? { provider: { data_collection: "deny" } } : {}),
+        /*
+         * A `:free` LANE NEVER COSTS A CENT (owner, 6 Nov 2026: free tiers first, never a paid API).
+         * `max_price` 0 tells OpenRouter not to route it to a priced endpoint, and the usage it
+         * reports is read below: any reported cost stops the lane.
+         */
+        ...(req.requireNoTraining || free
+          ? { provider: { ...(req.requireNoTraining ? { data_collection: "deny" } : {}), ...(free ? { max_price: { prompt: 0, completion: 0 } } : {}) } }
+          : {}),
+        ...(free ? { usage: { include: true } } : {}),
       }),
     });
 
@@ -86,6 +98,14 @@ export const openrouter: ProviderAdapter = {
     if (json?.error) {
       throw new ProviderCallError(
         `OpenRouter returned an error body: ${String(json.error?.message ?? json.error).slice(0, 300)}`,
+        null,
+        false,
+      );
+    }
+    const cost = Number(json?.usage?.cost ?? 0);
+    if (free && Number.isFinite(cost) && cost > 0) {
+      throw new ProviderCallError(
+        `NAMED STOP [OPENROUTER_COST] the free lane ${req.modelSlug} reported a cost of $${cost}; a :free lane must cost nothing, so its answer is not used`,
         null,
         false,
       );

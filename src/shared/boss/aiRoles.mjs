@@ -8,9 +8,10 @@
  *
  *   worker → `ai-run --role worker` (codex exec)      brain → `ai-run --role brain` (claude -p)
  *
- * A CODEX LIMIT WAITS. `ai-run` exits 75 with `NAMED STOP [CODEX_LIMIT] resets <time>`; the run ends
- * as a named note (not red, not a failed duty) and the next scheduled run retries it. A worker job is
- * NEVER handed to Claude because Codex is out (`CODEX_LIMIT_WAITS`). Read by:
+ * A CODEX LIMIT NO LONGER WAITS (owner, 6 Nov 2026, replacing the 3 Nov rule): the work walks on to the
+ * free tiers and the Claude seat (`afterCodexLimit` below). In the agent queue a Codex-limited job
+ * waits on Codex's seat only when no Claude seat is ready to take it (`CODEX_LIMIT_WAITS` is that
+ * last resort). Read by:
  *   scripts/ops/lib/ai-run.mjs        (runAs: the Mac runners' one launcher)
  *   scripts/ops/repo-change.mjs       (Danielle's repo changes, per phase)
  *   scripts/ops/ahrefs-audit-fix.sh   (duty_site_audit_repair and the Search Readiness passes)
@@ -25,7 +26,7 @@ export const BRAIN = "brain";
 /** ai-run's exit code for a Codex usage limit (EX_TEMPFAIL): the run waits for the reset. */
 export const CODEX_LIMIT_EXIT = 75;
 
-/** A Codex limit is waited out, never handed to Claude. */
+/** The last resort only: a Codex-limited job waits for the reset when no later rung (free, Claude seat) can run. */
 export const CODEX_LIMIT_WAITS = true;
 
 export const AI_ROLES = Object.freeze({
@@ -53,20 +54,36 @@ export const AI_ROLES = Object.freeze({
 });
 
 /**
- * AFTER A CODEX LIMIT, PUBLIC WORK GOES TO A $0 FREE MODEL; EVERYTHING ELSE WAITS (coordinator, 3 Nov
- * 2026, on her ruling). The ruling bans a CLAUDE fallback, not a $0 one, and a public duty waiting
- * hours for Codex's reset is how the 07:45 briefing goes missing. So work DECLARED public (and not an
- * LP/deal draft, not a Chrome job) is answered by the queue's free cloud rung with `freeOnly` — never
- * Claude, never a paid model. Confidential, LP, deal, children's or any non-public work has no
- * fallback at all and waits for the reset (private-data-routing: fail closed).
- * Read by src/worker/boss/queue/consumer.ts (at dispatch) and routes/backends.ts (a limit mid-run).
+ * AFTER A CODEX LIMIT: ALL FREE TIERS FIRST, THEN HER SUBSCRIPTION SEATS, NEVER A WAIT WHILE A LATER
+ * RUNG CAN RUN (owner, 6 Nov 2026, replacing the 3 Nov "public work → free rung, never Claude; the rest
+ * waits"): "it started with all free tiers and if they were all out then it uses an allowance on the
+ * paid models i have subscriptions to". And (CLAUDE.md, her yes 6 Nov 2026): "A Codex usage limit
+ * hands the work to Claude, then the free routes; it never waits for the reset."
+ *
+ * The chain, read by src/worker/boss/queue/consumer.ts (at dispatch) and routes/backends.ts (a limit
+ * mid-run), with the free rungs in src/worker/boss/queue/freeRung.ts:
+ *   1. Gemini free (research: with Google Search grounding)
+ *   2. OpenRouter `:free` models (max price 0; any reported cost stops the call). Research hands them
+ *      Brave Search results, the repo's $0 search source; with no Brave key rung 2 is skipped by name
+ *      ("no free search source for OpenRouter"). OpenRouter's web plugin costs money: never used.
+ *   3. Codex's seat, if it is not spent
+ *   4. the Claude seat (bk_claude_code on her Mac), only when her Mac was seen recently and the seat
+ *      is not marked spent
+ *   5. NAMED STOP with the reset
+ * Never a paid API.
+ *
+ * "free_rung": work DECLARED public, or cleared for public models on its card (and not an LP/deal
+ *   draft, not a Chrome job) walks the whole chain from rung 1.
+ * "claude_seat": everything else (confidential, LP, deal, children's, private) never touches a free
+ *   rung (private-data-routing: fail closed) and goes to the Claude seat; it waits only when no
+ *   Claude seat can take it.
  */
 export function afterCodexLimit({ sensitivity, modelAccess = null, confidential = false, chromeJob = false } = {}) {
   // Public = declared public, OR cleared for public models on its card (owner, 6 Nov 2026: the
   // deep research for Valerie was "public_model_approved" and sat waiting four days for Codex). The
   // router's privacy screen still reads every prompt and keeps private text off the free rung.
   const isPublic = sensitivity === "public" || modelAccess === "public_model_approved";
-  return isPublic && !confidential && !chromeJob ? "free_rung" : "wait";
+  return isPublic && !confidential && !chromeJob ? "free_rung" : "claude_seat";
 }
 
 /** The role for a job key. An unknown key is a programming error, so it throws rather than guesses. */

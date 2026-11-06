@@ -18,6 +18,7 @@ import { reapOrphanedRuns } from "../../src/worker/bossMount";
 import { GEMINI_HOST } from "../../src/worker/boss/router/backends";
 import { keepSupported, groundedSections } from "../../src/worker/boss/research/grounded";
 import { centralDay } from "../../src/worker/boss/research/searchQuota";
+import { BRAVE_SEARCH_HOST } from "../../src/worker/effects/braveSearchClient";
 import { all, insertTask, row, stubFetch } from "./helpers";
 
 let restore: (() => void) | null = null;
@@ -31,7 +32,7 @@ const withKey = () => {
 };
 const reset = () => env.DB.prepare(`UPDATE execution_backends SET status = 'enabled', exhausted_until = NULL, exhausted_reason = NULL, spent_micros = 0, window_started_at = NULL WHERE id IN ('bk_claude_code','bk_codex')`).run();
 const spendCodex = () => env.DB.prepare(`UPDATE execution_backends SET exhausted_until = ?, exhausted_reason = 'try again at Nov 10th' WHERE id = 'bk_codex'`).bind(Date.now() + 4 * 86400_000).run();
-beforeEach(async () => { sent = []; await reset(); await env.DB.prepare(`DELETE FROM free_search_quota_days`).run(); });
+beforeEach(async () => { sent = []; await reset(); await env.DB.prepare(`DELETE FROM free_search_quota_days`).run(); await env.DB.prepare(`DELETE FROM sync_device`).run(); });
 afterEach(async () => { restore?.(); restore = null; await reset(); });
 
 const enc = new TextEncoder();
@@ -168,14 +169,130 @@ describe("the research ladder walks past a spent Codex seat to free Google searc
     expect(t.status, "left running with nothing that will finish it").not.toBe("running");
   });
 
-  it("NEGATIVE: a research page that names its seat still goes to Codex's seat first", async () => {
+  it("free first: a research page that names its seat goes to free Google search even with both seats free and her Mac seen", async () => {
+    await macSeenNow();
     const calls = stubGoogle();
-    const taskId = await researchTask({ input: JSON.stringify({ research_page: { page_id: "rpg_test_seat", question: "Lighthouses?" }, delivers: "research_page", backend_id: "bk_claude_code", prompt: "In two sentences, explain what a lighthouse does." }) });
+    await env.DB.prepare(`INSERT INTO research_pages (id, task_id, question, state, requested_at, updated_at) VALUES ('rpg_test_seat', NULL, 'q', 'queued', 0, 0)`).run().catch(() => null);
+    const taskId = await researchTask({ input: JSON.stringify({ instruction: BRIEF, research_page: { page_id: "rpg_test_seat", question: "Lighthouses?" }, delivers: "research_page", backend_id: "bk_claude_code", prompt: "In two sentences, explain what a lighthouse does." }) });
     await handleTask(withKey(), { taskId, lane: "ops" });
-    expect(calls).toHaveLength(0);
-    const run = await row<any>(`SELECT backend_id, requested FROM backend_runs WHERE task_id = ?`, taskId);
-    expect(run.backend_id).toBe("bk_codex");
-    expect(JSON.parse(run.requested).codex_limit_free_rung, "a mid-run limit would not hand it to the free rung").toBe(true);
+    expect(await all(`SELECT 1 FROM backend_runs WHERE task_id = ?`, taskId), "a seat was used while a free tier could answer").toHaveLength(0);
+    expect(calls.some((c) => c.grounded)).toBe(true);
+    expect((await row<any>(`SELECT status FROM tasks WHERE id = ?`, taskId)).status).toBe("done");
+  });
+});
+
+/** Her Mac's agent polled just now (the heartbeat routes/backends.ts stamps). */
+const macSeenNow = () => env.DB.prepare(`INSERT OR REPLACE INTO sync_device (device_id, kind, label, last_seen_at) VALUES ('dev_test_mac', 'private', 'test mac', ?)`).bind(Date.now()).run();
+const capGoogle = () => env.DB.prepare(`INSERT OR REPLACE INTO free_search_quota_days (service, day, used, updated_at) VALUES ('svc_gemini_grounded', ?, 20, ?)`).bind(centralDay(Date.now()), Date.now()).run();
+/** Brave's month used up: 900 searches across earlier days of this calendar month (or today, on the 1st). */
+const capBraveMonth = async () => {
+  const today = centralDay(Date.now());
+  const earlier = today.endsWith("-01") ? today : `${today.slice(0, 7)}-01`;
+  await env.DB.prepare(`INSERT OR REPLACE INTO free_search_quota_days (service, day, used, updated_at) VALUES ('svc_brave_search', ?, 900, ?)`).bind(earlier, Date.now()).run();
+};
+const withAllKeys = () => {
+  const e = withKey() as any;
+  e.OPENROUTER_API_KEY = "test-or-key-not-a-real-credential";
+  e.BRAVE_SEARCH_API_KEY = "test-brave-key-not-real";
+  return e as typeof env;
+};
+const BRAVE_URLS = ["https://brave-one.example/collector-fees", "https://brave-two.example/custody-rules"];
+/** Google answers nothing (capped); Brave returns two pages; OpenRouter's free model writes from them. */
+function stubFree(o: { braveStatus?: number } = {}) {
+  const hits = { brave: 0, openrouter: 0, google: 0 };
+  restore = stubFetch(async (req) => {
+    if (req.url.startsWith(BRAVE_SEARCH_HOST)) {
+      hits.brave++;
+      if (o.braveStatus) return new Response("nope", { status: o.braveStatus });
+      return new Response(JSON.stringify({ web: { results: BRAVE_URLS.map((url, i) => ({ url, title: `Result ${i + 1}`, description: `Collectors are paid about $40 per collection, page ${i + 1}.` })) } }), { status: 200, headers: { "content-type": "application/json" } });
+    }
+    if (req.url.startsWith("https://openrouter.ai/")) {
+      hits.openrouter++;
+      const body = await req.json() as any;
+      const prompt = String(body.messages?.at(-1)?.content ?? "");
+      const text = /search phrase/.test(prompt) ? "mobile DNA collector pay per collection"
+        : /THE SEARCH RESULTS/.test(prompt) ? ["Collectors are paid about $40 per collection. [1]", "Chain of custody is signed at every step. [2]", "Most collectors earn $10,000 a month.", "A made-up source says otherwise. [7]", "Not found: Memphis prices."].join("\n")
+        : JSON.stringify({ title: "Mobile DNA collection", summary: "Collectors are paid about $40 per collection [1]." });
+      return new Response(JSON.stringify({ choices: [{ message: { content: text } }], usage: { prompt_tokens: 10, completion_tokens: 10, cost: 0 } }), { status: 200, headers: { "content-type": "application/json" } });
+    }
+    if (req.url.startsWith(GEMINI_HOST)) { hits.google++; return new Response("{}", { status: 429 }); }
+    return new Response("not here", { status: 500 });
+  });
+  return hits;
+}
+
+describe("the chain after a Codex limit: free tiers first, then her seats, then a named stop (owner, 6 Nov 2026)", () => {
+  it("Google capped → OpenRouter free with Brave Search files the page; every cited source is a URL Brave returned", async () => {
+    await spendCodex(); await macSeenNow(); await capGoogle();
+    const hits = stubFree();
+    const taskId = await researchTask();
+    await handleTask(withAllKeys(), { taskId, lane: "ops" });
+    expect(hits.brave).toBeGreaterThan(0);
+    expect(await all(`SELECT 1 FROM backend_runs WHERE task_id = ?`, taskId), "a seat was used while rung 2 could answer").toHaveLength(0);
+    expect((await row<any>(`SELECT status FROM tasks WHERE id = ?`, taskId)).status).toBe("done");
+    const page = await row<any>(`SELECT state, markdown, sources FROM research_pages WHERE task_id = ?`, taskId);
+    expect(page.state).toBe("delivered");
+    const cited = JSON.parse(page.sources).map((x: any) => x.url);
+    expect(cited.length).toBeGreaterThan(0);
+    for (const u of cited) expect(BRAVE_URLS, `cited a URL Brave never returned: ${u}`).toContain(u);
+    expect(page.markdown).toMatch(/\$40 per collection\. \[1\]/);
+    expect(page.markdown, "an uncited line reached the page").not.toMatch(/\$10,000/);
+    expect(page.markdown, "a line citing a result that does not exist reached the page").not.toMatch(/made-up source/);
+  });
+
+  it("Google capped + Brave's month at 900 → NAMED STOP [BRAVE_MONTHLY_CAP] on rung 2, then the Claude seat (Codex spent, Mac seen)", async () => {
+    await spendCodex(); await macSeenNow(); await capGoogle(); await capBraveMonth();
+    const hits = stubFree();
+    const taskId = await researchTask();
+    await handleTask(withAllKeys(), { taskId, lane: "ops" });
+    expect(hits.brave, "a Brave search past the monthly cap").toBe(0);
+    const steps = (await all<any>(`SELECT detail FROM task_events WHERE task_id = ? AND event = 'ladder_step'`, taskId)).map((r) => r.detail).join(" ");
+    expect(steps).toMatch(/BRAVE_MONTHLY_CAP/);
+    const runs = await all<any>(`SELECT backend_id FROM backend_runs WHERE task_id = ?`, taskId);
+    expect(runs.map((r) => r.backend_id)).toEqual(["bk_claude_code"]);
+    const t = await row<any>(`SELECT input FROM tasks WHERE id = ?`, taskId);
+    const input = JSON.parse(t.input);
+    expect(input.delivers, "the seat run would deliver no page").toBe("research_page");
+    expect(await row(`SELECT 1 AS x FROM research_pages WHERE id = ?`, input.research_page.page_id)).toBeTruthy();
+  });
+
+  it("Brave answering 429 is a capped rung, not a failure: the walk reaches the Claude seat", async () => {
+    await spendCodex(); await macSeenNow(); await capGoogle();
+    stubFree({ braveStatus: 429 });
+    const taskId = await researchTask();
+    await handleTask(withAllKeys(), { taskId, lane: "ops" });
+    expect((await all<any>(`SELECT backend_id FROM backend_runs WHERE task_id = ?`, taskId)).map((r) => r.backend_id)).toEqual(["bk_claude_code"]);
+    expect((await row<any>(`SELECT status FROM tasks WHERE id = ?`, taskId)).status).not.toBe("failed");
+  });
+
+  it("free tiers capped + Codex spent + no Mac seen → NAMED STOP with the reset, never parked on a seat", async () => {
+    await spendCodex(); await capGoogle(); await capBraveMonth();
+    stubFree();
+    const taskId = await researchTask();
+    await handleTask(withAllKeys(), { taskId, lane: "ops" });
+    expect(await all(`SELECT 1 FROM backend_runs WHERE task_id = ?`, taskId), "parked on a seat nobody can claim").toHaveLength(0);
+    const stop = JSON.parse((await row<any>(`SELECT detail FROM task_events WHERE task_id = ? AND event = 'named_stop'`, taskId)).detail);
+    expect(["FREE_SEARCH_CAP", "BRAVE_MONTHLY_CAP"]).toContain(stop.code);
+    expect(stop.resume_at).toBeGreaterThan(Date.now());
+    expect((await row<any>(`SELECT status FROM tasks WHERE id = ?`, taskId)).status).toBe("queued");
+    expect(sent.filter((m) => m.taskId === taskId)).toHaveLength(1);
+  });
+
+  it("Codex not spent, free tiers capped, Mac seen → Codex's seat before the Claude seat", async () => {
+    await macSeenNow(); await capGoogle(); await capBraveMonth();
+    stubFree();
+    const taskId = await researchTask();
+    await handleTask(withAllKeys(), { taskId, lane: "ops" });
+    expect((await all<any>(`SELECT backend_id FROM backend_runs WHERE task_id = ?`, taskId)).map((r) => r.backend_id)).toEqual(["bk_codex"]);
+  });
+
+  it("NEGATIVE: private research goes to the Claude seat only, never a free tier, never Codex", async () => {
+    await spendCodex(); await macSeenNow();
+    const hits = stubFree();
+    const taskId = await researchTask({ model_access: "private_model_only", input: JSON.stringify({ instruction: BRIEF, research_page: { page_id: "rpg_test_private", question: "q" }, delivers: "research_page", backend_id: "bk_claude_code", prompt: BRIEF }) });
+    await handleTask(withAllKeys(), { taskId, lane: "ops" });
+    expect(hits.google + hits.brave + hits.openrouter, "private research reached a free route").toBe(0);
+    expect((await all<any>(`SELECT backend_id FROM backend_runs WHERE task_id = ?`, taskId)).map((r) => r.backend_id)).toEqual(["bk_claude_code"]);
   });
 });
 

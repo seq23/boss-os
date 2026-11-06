@@ -203,7 +203,7 @@ export interface FreeTier {
   basis: string;
 }
 
-const FREE_ROUTES: Record<string, { kind: "included_allowance" | "free_model_slug" | "free_daily_quota"; suffix?: string; slugs?: readonly string[]; dailyCap?: number; basis: string }> = {
+const FREE_ROUTES: Record<string, { kind: "included_allowance" | "free_model_slug" | "free_daily_quota"; suffix?: string; slugs?: readonly string[]; dailyCap?: number; monthlyCap?: number; basis: string }> = {
   // Brave Search (owner, 5 Nov 2026), the second meeting-research route. Not a model: a search API
   // reached by effects/braveSearchClient.ts, never through the router. Free only while it stays under
   // its daily cap, which is claimed in D1 before every call (research/searchQuota.ts); the 21st
@@ -211,7 +211,10 @@ const FREE_ROUTES: Record<string, { kind: "included_allowance" | "free_model_slu
   svc_brave_search: {
     kind: "free_daily_quota",
     dailyCap: 20,
-    basis: "Brave Search's free allowance, held to 20 searches a day so a month stays well inside it.",
+    // Brave's plan is "Free credits only" ($5 a month, about 1,000 searches; it cannot charge). Held to
+    // 900 a calendar month (Central), NAMED STOP [BRAVE_MONTHLY_CAP] past it (owner's coordinator, 6 Nov 2026).
+    monthlyCap: 900,
+    basis: "Brave Search's free credits (about 1,000 searches a month, the plan cannot charge), held to 20 a day and 900 a month.",
   },
   // Gemini 2.5 Flash with Google Search grounding on the free key (6 Nov 2026): the research rung
   // (research/grounded.ts) claims one slot per grounded call; the free key held ~20 a day on 5 Nov.
@@ -275,6 +278,12 @@ function freeSlug(rule: { suffix?: string; slugs?: readonly string[] }, slug: st
 export function freeDailyCap(serviceId: string): number {
   const rule = FREE_ROUTES[serviceId];
   return rule?.kind === "free_daily_quota" ? Math.max(0, Math.floor(rule.dailyCap ?? 0)) : 0;
+}
+
+/** A free search service's monthly ceiling (calendar month, Central), or null when it has none. */
+export function freeMonthlyCap(serviceId: string): number | null {
+  const rule = FREE_ROUTES[serviceId];
+  return rule?.kind === "free_daily_quota" && typeof rule.monthlyCap === "number" ? Math.max(0, Math.floor(rule.monthlyCap)) : null;
 }
 
 export function routeIsBilled(backendId: string, modelSlug?: string | null): boolean {

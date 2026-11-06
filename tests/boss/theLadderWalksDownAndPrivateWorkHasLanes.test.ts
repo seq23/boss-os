@@ -201,7 +201,22 @@ describe("the privacy claim is asked of the vendor, not merely written down", ()
 
     // Not a hole: a :free lane is TRAINS_ON_PROMPTS, so policy.ts refused it any private work long
     // before an adapter ran. Asking anyway would refuse the lane for public work too.
-    expect(body.provider).toBeUndefined();
+    expect(body.provider?.data_collection).toBeUndefined();
+    // A :free lane is held to a price of zero and asked to report its cost (6 Nov 2026).
+    expect(body.provider).toEqual({ max_price: { prompt: 0, completion: 0 } });
+    expect(body.usage).toEqual({ include: true });
+  });
+
+  it("a :free lane that reports any cost is stopped by name and its answer is not used", async () => {
+    restore = stubFetch(async () => new Response(JSON.stringify({ choices: [{ message: { content: "hi" } }], usage: { cost: 0.0004 } }), {
+      status: 200, headers: { "content-type": "application/json" },
+    }));
+    await expect(openrouter.complete(req("nvidia/nemotron-3-ultra-550b-a55b:free"), ctx)).rejects.toThrow(/OPENROUTER_COST/);
+    restore();
+    restore = stubFetch(async () => new Response(JSON.stringify({ choices: [{ message: { content: "hi" } }], usage: { cost: 0 } }), {
+      status: 200, headers: { "content-type": "application/json" },
+    }));
+    await expect(openrouter.complete(req("nvidia/nemotron-3-ultra-550b-a55b:free"), ctx)).resolves.toMatchObject({ text: "hi" });
   });
 
   it("drives the flag off the row's data_use, so no caller has to remember", async () => {

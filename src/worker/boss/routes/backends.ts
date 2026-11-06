@@ -100,6 +100,11 @@ backends.get("/", async (c) => {
 
 // Registered BEFORE `/:id`, so a request for the run ledger is never read as a backend called
 // "runs". Hono matches in registration order and this is the only thing keeping them apart.
+/** `sync_device.last_seen_at` for a registered, unrevoked device. A device not registered is not stamped. */
+async function stampDeviceSeen(db: D1Database, deviceId: string): Promise<void> {
+  await db.prepare(`UPDATE sync_device SET last_seen_at = ? WHERE device_id = ? AND revoked_at IS NULL`).bind(Date.now(), deviceId).run().catch(() => null);
+}
+
 backends.get("/runs", async (c) => {
   const status = c.req.query("status");
   const backendId = c.req.query("backend_id");
@@ -120,6 +125,9 @@ backends.get("/runs", async (c) => {
    * cases apart rather than guessing from `claimed_at` alone.
    */
   if (c.req.query("unclaimed") === "1") {
+    // HER MAC'S HEARTBEAT (6 Nov 2026): this is the agent's five-minute poll. The queue parks work on
+    // a seat only when a private device was seen recently (queue/freeRung.ts macSeen).
+    if (heldBy) await stampDeviceSeen(c.env.DB, heldBy);
     if (heldBy) { where.push(`(r.claimed_at IS NULL OR r.claimed_by = ?) AND r.finished_at IS NULL`); params.push(heldBy); }
     else { where.push(`r.claimed_at IS NULL AND r.finished_at IS NULL`); }
   }
@@ -396,6 +404,7 @@ backends.post("/claim", async (c) => {
   const deviceId = optionalText(b?.device_id);
   const backendId = optionalText(b?.backend_id) ?? "bk_claude_code";
   if (!deviceId) throw badRequest("A claim needs a device", "Send { device_id, backend_id }.");
+  await stampDeviceSeen(c.env.DB, deviceId);
 
   /*
    * ─── A DEVICE RELEASES THE RUNS IT IS RECORDED AS HOLDING, AT THE START OF ITS OWN CYCLE (3 Nov
