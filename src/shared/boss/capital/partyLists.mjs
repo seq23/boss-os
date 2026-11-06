@@ -17,13 +17,13 @@
 /** Her firm. Built in, because it is the one same-firm entry that can never be removed. */
 export const FIRM_DOMAIN = "rainmakersecurities.com";
 
-/** Owner, 23 Oct 2026: "rough 6 month cut off". One constant for every inbox lookback. */
-export const LOOKBACK_DAYS = 183;
+/** Owner, 4 Nov 2026: 90-day active view. One constant for every inbox lookback. */
+export const LOOKBACK_DAYS = 90;
 /**
  * THE ARCHIVE (owner, 24 Oct 2026): an order whose source email is older than the lookback leaves
  * the main grid for the Archive view, and leaves that too at twelve months. Nothing is deleted: both
- * are views by the source email's date. Only main-grid orders are matched; an archived one may show
- * on the Matches screen labelled "old". A new email about it is a new row with a fresh date.
+ * are views by the source email's date. Only main-grid orders are matched; archived orders never appear
+ * on the Matches screen. A new email about it is a new row with a fresh date.
  */
 export const ARCHIVE_DAYS = 365;
 const DAY = 86_400_000;
@@ -46,8 +46,8 @@ export function archiveRows(rows, now = Date.now()) {
 }
 
 export function withinLookback(date, now = Date.now()) {
-  const t = Date.parse(String(date ?? ""));
-  return Number.isFinite(t) && now - t <= LOOKBACK_DAYS * DAY;
+  const t = Date.parse(`${String(date ?? "").slice(0, 10)}T12:00:00Z`);
+  return Number.isFinite(t) && Math.floor((now - t) / DAY) <= LOOKBACK_DAYS;
 }
 
 const EMAIL_RE = /[a-z0-9._%+-]+@[a-z0-9.-]+\.[a-z]{2,}/i;

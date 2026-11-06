@@ -51,7 +51,7 @@ const walk = (dir, out = []) => {
  * A new name here needs a sentence, because "it's fine" is how the report table stayed empty.
  */
 const WRITTEN_BY_MIGRATION_ONLY = new Map([
-  ["quiet_people", "Owner-maintained no-notices list, seeded by name in migration 0336; runtime notices only read it."],
+  ["quiet_people", "No-notices list filled automatically by lp/reminders.ts after three delivered unanswered reminders."],
   ["lanes", "The four lanes are fixed by canon and seeded by 0152. Code that could add a lane would be code that could invent one."],
   ["schema_version", "Written by every migration's last line, which is SQL rather than application code."],
   ["data_policy", "Every entity's classification is declared in the migration that creates it, on purpose: a residency a running system could change is not a classification."],

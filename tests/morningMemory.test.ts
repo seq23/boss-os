@@ -41,6 +41,9 @@ describe("a Decide item she has already seen is one thin line", () => {
     expect(thinDecideLine(lpDecide, "2026-10-26", TUE).length).toBeLessThan(120);
     expect(day2.html).toContain("Still yours to answer");
     expect(day2.digest.still_yours).toHaveLength(1);
+    // The thin line keeps the person's key, so the third-reminder rule can count it (6 Nov 2026).
+    expect(day2.digest.still_yours[0].key).toBe(day1.digest.decide[0].key);
+    expect(day2.digest.still_yours[0].key).toBeTruthy();
   });
 });
 

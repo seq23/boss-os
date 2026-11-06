@@ -122,11 +122,11 @@ describe("prices and sizes are sane or '—' (rule 5)", () => {
   });
 });
 
-describe("the ~6-month window (owner, 23 Oct 2026)", () => {
-  it("is one constant of about six months", () => {
-    expect(LOOKBACK_DAYS).toBe(183);
-    expect(withinLookback(day(182), NOW)).toBe(true);
-    expect(withinLookback(day(184), NOW)).toBe(false);
+describe("the 90-day window (owner, 23 Oct 2026)", () => {
+  it("is one constant of 90 days", () => {
+    expect(LOOKBACK_DAYS).toBe(90);
+    expect(withinLookback(day(90), NOW)).toBe(true);
+    expect(withinLookback(day(91), NOW)).toBe(false);
   });
 
   it("drops older rows from the grid, hers included, and from matching and searches", () => {

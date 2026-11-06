@@ -29,12 +29,12 @@ import { Hono } from "hono";
 import type { Env, Vars } from "../env";
 import { ok, badRequest } from "../lib/http";
 import { currentBook, currentBookLines } from "../capital/book";
-import { dismissedSet, tapsFor, tapByCode, dismissMatch, refKey } from "../capital/dismiss";
+import { dismissedSet, tapsFor, tapByCode, dismissMatch, refKey, currentMatch } from "../capital/dismiss";
 import {
   activeLists, applyListEdit, cleanDealRow, cleanHolder, dealGrid, holdersList, storeDeals, storeHolders,
   type DealRow, type HolderRow,
 } from "../capital/grid";
-import { targetOf, confirmEdit } from "../../../shared/boss/capital/partyLists.mjs";
+import { targetOf, confirmEdit, pairAllowed } from "../../../shared/boss/capital/partyLists.mjs";
 import type { ListEdit } from "../../../shared/boss/capital/partyLists.mjs";
 
 export const capital = new Hono<{ Bindings: Env; Variables: Vars }>();
@@ -183,8 +183,9 @@ capital.get("/matches", async (c) => {
   const r = await c.env.DB.prepare(`SELECT payload, updated_at FROM capital_matches ORDER BY rank ASC LIMIT 2000`).all<{ payload: string; updated_at: number }>();
   // A dismissed match stays off the screen until either side posts a new order (25 Oct 2026).
   const dismissed = await dismissedSet(c.env);
-  const rows = (r.results ?? []).map((x) => { try { return JSON.parse(x.payload); } catch { return null; } })
-    .filter((m) => m && !(m.pair && dismissed.has(refKey(m.pair, String(m.sig ?? "")))));
+  const lists = await activeLists(c.env);
+  const rows = (r.results ?? []).map((x) => { try { return currentMatch(JSON.parse(x.payload)); } catch { return null; } })
+    .filter((m) => m && !m.old && pairAllowed({ from: m.buyer?.email }, { from: m.seller?.email }, lists, { aIsHers: m.buyer?.rainmaker, bIsHers: m.seller?.rainmaker }) && !(m.pair && dismissed.has(refKey(m.pair, String(m.sig ?? "")))));
   return ok(c, { matches: rows, updated_at: (r.results ?? []).reduce((n, x) => Math.max(n, x.updated_at), 0) || null });
 });
 
@@ -234,6 +235,32 @@ capital.post("/dismiss", async (c) => {
   const company = String(b?.company ?? "").trim();
   if (!pair || !sig || !company) throw badRequest("Which match?", "{ code } from the card, or { pair, sig, company }.");
   return ok(c, await dismissMatch(c.env, { pair, sig, company }, "owner_session"));
+});
+
+capital.post("/rainmaker-repliers", async (c) => {
+  const body = await c.req.json<{ rows?: { address: string; name?: string }[] }>();
+  if (!Array.isArray(body.rows) || body.rows.length > 500) throw badRequest("rows[] required, at most 500");
+  const rows = body.rows.map((r) => ({ address: String(r.address ?? "").trim().toLowerCase(), name: r.name ?? null }));
+  if (rows.some((r) => !/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(r.address))) throw badRequest("Invalid address");
+  for (let i = 0; i < rows.length; i += 100) await c.env.DB.batch(rows.slice(i, i + 100).map((r) => c.env.DB.prepare(
+    `INSERT INTO rainmaker_addresses (address, name, updated_at) VALUES (?,?,?) ON CONFLICT(address) DO UPDATE SET name = excluded.name, updated_at = excluded.updated_at`
+  ).bind(r.address, r.name, Date.now())));
+  return ok(c, { stored: rows.length });
+});
+
+capital.post("/dismiss-older", async (c) => {
+  const body = await c.req.json<{ confirmed?: boolean }>().catch(() => null);
+  if (body?.confirmed !== true) throw badRequest("Confirm dismissal first");
+  const records = await c.env.DB.prepare(`SELECT payload FROM capital_matches`).all<{ payload: string }>();
+  const dismissed = await dismissedSet(c.env);
+  let count = 0;
+  for (const row of records.results ?? []) {
+    const m = currentMatch(JSON.parse(row.payload));
+    if (!(Number(m.oldest_days) > 30) || !m.pair || !m.sig || m.old || Number(m.oldest_days) > 90 || dismissed.has(refKey(m.pair, m.sig))) continue;
+    const result = await dismissMatch(c.env, m, "screen");
+    if (result.dismissed) count++;
+  }
+  return ok(c, { dismissed: count });
 });
 
 capital.get("/lists", async (c) => ok(c, await activeLists(c.env)));

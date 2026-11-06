@@ -898,7 +898,8 @@ export function buildDay(data, now = Date.now()) {
     found: found.map(({ id, text, links, deal, holders, screen }) => ({ id, text, links: links ?? [], deal: deal ?? null, holders, screen })),
     found_grid: foundGrid,
     done: done.map(({ id, text, full, links, screen }) => ({ id, text: full ?? text, links: links ?? [], screen })),
-    still_yours: stillYours.map(({ id, title, thin, screen }) => ({ id, title, line: thin, screen })),
+    // `key` rides here too: a thin line is still a reminder about that person (lp/reminders.ts counts it).
+    still_yours: stillYours.map(({ id, key, title, thin, screen }) => ({ id, key: key ?? null, title, line: thin, screen })),
     catchups: catchCards.map(({ id, title, body, details, draft, buttons, screen }) => ({ id, title, body: body ?? "", details: details ?? [], draft: draft ?? null, buttons, screen })),
     briefing: raw ? { for_day: data.briefing.for_day, top: raw.map((l) => proseText(proseRuns(l)).replace(/⁣/g, "")) } : null,
     prospects: prospects ? { items: prospects.items.map((i) => (typeof i === "string" ? i : i.text)), sent: (data.prospects?.sent ?? []).map((r) => ({ name: r.name, firm: r.firm, email: r.email, touch: r.touch_no, sent_at: r.sent_at, subject: r.sent_subject ?? r.subject, body: r.body ?? null })) } : null,

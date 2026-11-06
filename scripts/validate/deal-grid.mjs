@@ -87,9 +87,9 @@ export function checkNport(hunt) {
 
 export function checkWindow(sources, lookbackDays) {
   const out = [];
-  if (lookbackDays < 150 || lookbackDays > 200) out.push(`LOOKBACK_DAYS is ${lookbackDays}; her rule is about six months`);
+  if (lookbackDays !== 90) out.push(`LOOKBACK_DAYS is ${lookbackDays}; her active view is exactly 90 days`);
   for (const [f, src] of Object.entries(sources)) {
-    if (!/withinLookback|LOOKBACK_DAYS/.test(src)) out.push(`${f} reads the inbox ledger without the ~6-month window`);
+    if (!/withinLookback|LOOKBACK_DAYS/.test(src)) out.push(`${f} reads the inbox ledger without the 90-day window`);
     if (/const\s+LOOKBACK_DAYS\s*=/.test(src)) out.push(`${f} defines its own LOOKBACK_DAYS; there is one, in partyLists.mjs`);
   }
   return out;
@@ -129,8 +129,11 @@ async function main() {
       ["her name as a counterparty is caught", checkHerself({ ...lib, gridRow: (r, c) => ({ ...lib.gridRow(r, c), side: "buy", from_text: "Sequoia Taylor" }) }).length >= 1],
       ["an absurd price printed is caught", checkPrice({ priceWords: (s) => s }).length === 3],
       ["a filing reader that throws is caught", checkNport({ positionFromXml: () => { throw new ReferenceError("assetKey is not defined"); } }).length === 1],
-      ["a reader with no window is caught", checkWindow({ "y.mjs": "interests.filter(Boolean)" }, 183).length === 1],
-      ["a second window constant is caught", checkWindow({ "y.mjs": "const LOOKBACK_DAYS = 90; withinLookback" }, 183).length === 1],
+      ["a shorter window is caught", checkWindow({}, 89).length === 1],
+      ["a longer window is caught", checkWindow({}, 91).length === 1],
+      ["the old six-month window is caught", checkWindow({}, 183).length === 1],
+      ["a reader with no window is caught", checkWindow({ "y.mjs": "interests.filter(Boolean)" }, 90).length === 1],
+      ["a second window constant is caught", checkWindow({ "y.mjs": "const LOOKBACK_DAYS = 90; withinLookback" }, 90).length === 1],
       ["a wrong window length is caught", checkWindow({}, 30).length === 1],
       ["a seeded entry in a tracked file is caught", checkNoSeededNames(["f"], () => "ping someone@private.example", new Set([sha("someone@private.example")])).length === 1],
     ];

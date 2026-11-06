@@ -12,9 +12,9 @@
  */
 
 /** An order older than this may no longer be live: flagged, and its note asks first. */
-export const STALE_DAYS = 60;
-/** Older than her ~6-month lookback: off the email, kept on the Matches screen as "old". */
-export const OLD_DAYS = 183;
+export const STALE_DAYS = 30;
+/** Older than 90 days: hidden from every current match view. */
+export const OLD_DAYS = 90;
 const DAY = 86_400_000;
 
 /** Days since the source email, from "YYYY-MM-DD". */
@@ -116,6 +116,7 @@ export function rankMatches(deal, candidates, { tolerance = DEFAULT_TOLERANCE, n
     if (g && g.gap > tolerance) continue;
     const ages = [ageDays(deal.received_on, now), ageDays(o.received_on, now)].map((d) => d ?? 0);
     const oldest = Math.max(...ages);
+    if (oldest > OLD_DAYS) continue;
     rows.push({
       other: o, gap: g ? g.gap : null, priced: Boolean(g),
       gap_words: gapWords(buyerOf(o), sellerOf(o)), fill_words: fillWords(deal, o),

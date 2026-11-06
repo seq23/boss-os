@@ -21,6 +21,7 @@
  * Names stay in D1 (`morning_digests`, LOCAL_ONLY for models); nothing here reaches a model.
  */
 
+import { recordPersonReminders, pruneQuietPeople } from "../lp/reminders";
 import { Hono } from "hono";
 import type { Env, Vars } from "../env";
 import { ok, badRequest, notFound } from "../lib/http";
@@ -125,13 +126,15 @@ morning.post("/:day/sent", async (c) => {
   if (!DAY_RE.test(day)) throw badRequest("The day is YYYY-MM-DD");
   const r = await c.env.DB.prepare(`UPDATE morning_digests SET sent_at = ? WHERE day = ?`).bind(Date.now(), day).run();
   if (!r.meta.changes) throw notFound(`No morning kept for ${day}`);
+  const digest = await c.env.DB.prepare(`SELECT payload FROM morning_digests WHERE day = ?`).bind(day).first<{ payload: string }>();
+  if (digest) await recordPersonReminders(c.env, day, JSON.parse(digest.payload));
   return ok(c, { day, sent: true });
 });
 
 morning.get("/latest", async (c) => {
   const r = await c.env.DB.prepare(`SELECT * FROM morning_digests ORDER BY day DESC LIMIT 1`).first<Row>();
   // What she has dismissed since leaves Today and the item screens at once (25 Oct 2026).
-  return ok(c, r ? pruneDismissed(view(r), await dismissedSet(c.env)) : null);
+  return ok(c, r ? await pruneQuietPeople(c.env, pruneDismissed(view(r), await dismissedSet(c.env))) : null);
 });
 
 morning.get("/:day", async (c) => {
@@ -139,5 +142,5 @@ morning.get("/:day", async (c) => {
   if (!DAY_RE.test(day)) throw badRequest("The day is YYYY-MM-DD");
   const r = await c.env.DB.prepare(`SELECT * FROM morning_digests WHERE day = ?`).bind(day).first<Row>();
   if (!r) throw notFound(`No morning kept for ${day}`);
-  return ok(c, pruneDismissed(view(r), await dismissedSet(c.env)));
+  return ok(c, await pruneQuietPeople(c.env, pruneDismissed(view(r), await dismissedSet(c.env))));
 });

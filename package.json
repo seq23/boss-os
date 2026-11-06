@@ -175,6 +175,7 @@
     "drive:pull": "node scripts/vault/vault.mjs run -- node scripts/ops/drive-pull.mjs",
     "capital:book": "node scripts/vault/vault.mjs run -- node scripts/ops/capital-book.mjs",
     "capital:chain": "node scripts/ops/capital-chain.mjs",
+    "capital:rainmaker-repliers": "node scripts/ops/rainmaker-repliers.mjs",
     "capital:grid": "node scripts/vault/vault.mjs run -- node scripts/ops/interest-grid.mjs",
     "capital:senders": "node scripts/vault/vault.mjs run -- node scripts/ops/interest-ledger.mjs --senders",
     "capital:lists-seed": "node scripts/vault/vault.mjs run -- node scripts/ops/interest-lists-seed.mjs",

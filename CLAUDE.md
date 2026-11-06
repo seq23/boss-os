@@ -68,10 +68,12 @@ Owner, 24 Oct 2026. In code in `src/shared/boss/deals/match.mjs` (size, price, a
 1. **A buy and a sell on the same company match** when sizes fit (partial fills say "fills $15M of
    their $100M"; small orders stack) and prices are within 15% (`DEFAULT_TOLERANCE`; the Matches
    screen offers 5–30%). **A missing price never hides a match**: it ranks below, "worth asking".
-   Never two Rainmaker sides, never anyone on her do-not-suggest list (`pairAllowed`).
-2. **Age counts.** Fresher first; an order over 60 days is "may be stale — check it's still live";
-   over 6 months it leaves the email and shows on the Matches screen as "old".
-3. **The grid is six months; the Archive is six to twelve.** A view by the source email's date, never
+   Never two Rainmaker sides, never anyone on her do-not-suggest list (`pairAllowed`). RR-list
+   repliers count as Rainmaker through `rainmaker_addresses`, read into `activeLists`; the local
+   `capital:rainmaker-repliers` importer uses the existing RR address or an explicit query override.
+2. **Age counts.** Fresher first; an order over 30 days is "may be stale — check it's still live";
+   over 90 days it leaves the email, grid and Matches (a view, never a deletion).
+3. **The grid is 90 days; the Archive is 90 days to twelve months.** A view by the source email's date, never
    a deletion; only the main grid is matched; a new email about an archived order is a fresh row.
 4. **Her own deals read "Yours: buyer" / "Yours: seller"** everywhere.
 5. **A match is one buyer and one seller on one company, counted once** (24 Oct 2026: "1,305 in all;
@@ -92,7 +94,8 @@ Owner, 24 Oct 2026. In code in `src/shared/boss/deals/match.mjs` (size, price, a
 6a. **Dismiss is one table** (`capital_dismissed`, `src/worker/boss/capital/dismiss.ts`): the card's
    button, the one-tap link and her reply "dismiss <code>" all write it; the Matches screen, Today
    (the kept morning) and her Mac's morning run all read it. A dismissed pair comes back only on a new
-   order (a new size or price). Pinned by `tests/boss/dismissMatch.test.ts`.
+   order (a new size or price). “Dismiss all older than 30 days” confirms its count in-page first
+   and writes the same table. Pinned by `tests/boss/dismissMatch.test.ts` and `tests/boss/fridayJobs.test.ts`.
 7. **Outward words call her buyers "LPs"** (owner, 24 Oct 2026): match notes, prospect emails, LP
    replies and deal drafts never say "buyer"; a prospect email never names Anthropic (it alludes:
    `NEVER_NAMED`, `src/shared/boss/lp/plan.mjs`). Pinned by `tests/outboundWords.test.ts`.
@@ -131,7 +134,7 @@ pinned by `tests/plainEmail.test.ts` ("the rules in CLAUDE.md"), which reads thi
    task is re-checked first; chores (vault, tokens, DNS, unreadable sources) are fix jobs, never her mail.
 4. **Where it stands (combined boss fix, 23 Oct 2026):** One morning email from Simone; Mac emails pass
    the plain-email gate before sending. LP replies run daily through the delegation with one-tap send;
-   the Tuesday reminder and the connector digest are retired. Deals grid live; ~6-month lookback;
+   the Tuesday reminder and the connector digest are retired. Deals grid live; 90-day lookback;
    Rainmaker and do-not-suggest lists edited by reply. Every morning section goes through
    `writeMorningSection`; a one-tap button is a page (`/tap/<token>`), never an /api link.
 5. **The gate makes a failing email plain before it ever holds it** (owner, 25 Oct 2026: every email
