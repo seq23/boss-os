@@ -1210,3 +1210,18 @@ describe("a site is audited on its own pages, never on the site its home page re
     expect(actionMatches("https://billionairehighperformancecoach.com/downloads.html", "https://billionairehighperformancecoach.com/download", "https://spryexecutiveos.com/x")).toBe(false);
   });
 });
+
+describe("c3 accepts an honest price-on-request Offer, never an empty one (owner, 6 Nov 2026)", () => {
+  const ld = (node: any) => `<html><head><script type="application/ld+json">${JSON.stringify({ "@context": "https://schema.org", "@graph": [node] })}</script></head><body>x</body></html>`;
+  const run = (offer: any, type = "Service") => CHECKS.business_type!({ site: { domain: "detoxdenver.org", kind: "brand" }, host: "detoxdenver.org", pages: [{ url: "https://detoxdenver.org/", status: 200, html: ld({ "@type": type, name: "Detox", offers: offer }) }], files: {} } as any);
+  it("a Service whose Offer says to call or request a quote, with a url, passes", () => {
+    expect(run({ "@type": "Offer", description: "Pricing on request: call or contact us for a quote", url: "https://detoxdenver.org/contact" }).status).toBe("pass");
+    expect(run({ "@type": "Offer", description: "Price on request", url: "https://detoxdenver.org/contact" }, "Product").status).toBe("pass");
+  });
+  it("an Offer with neither a price nor a price-on-request description (and url) still fails", () => {
+    expect(run({ "@type": "Offer", url: "https://detoxdenver.org/contact" }).status).toBe("fail");
+    expect(run({ "@type": "Offer", description: "Our detox programme" , url: "https://detoxdenver.org/" }).status).toBe("fail");
+    expect(run({ "@type": "Offer", description: "Call us for a quote" }).status).toBe("fail");
+    expect(run({ "@type": "Offer", price: "0", priceCurrency: "USD" }).status).toBe("pass");
+  });
+});
