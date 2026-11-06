@@ -175,6 +175,19 @@ describe("the next firing with Codex known to be out", () => {
     expect(await row(`SELECT 1 FROM task_events WHERE task_id = ? AND event = 'ladder_step'`, taskId)).toBeNull();
   });
 
+  it("owner, 6 Nov 2026: with her Mac seen, a Codex limit hands the duty to the Claude seat — it never waits for the reset", async () => {
+    await env.DB.prepare(`UPDATE execution_backends SET exhausted_until = ?, exhausted_reason = 'usage limit reached' WHERE id = 'bk_codex'`).bind(Date.now() + 3600_000).run();
+    await env.DB.prepare(`INSERT OR REPLACE INTO sync_device (device_id, kind, label, last_seen_at) VALUES ('dev_test_mac', 'private', 'test mac', ?)`).bind(Date.now()).run();
+    try {
+      const { taskId } = await fire("duty_tool_scout");
+      const runs = await all<any>(`SELECT backend_id, requested FROM backend_runs WHERE task_id = ? AND status = 'running'`, taskId);
+      expect(runs.map((r) => r.backend_id), "parked on a spent Codex while the Claude seat could run").toEqual(["bk_claude_code"]);
+      expect(JSON.parse(runs[0].requested).codex_limit_waits).toBeUndefined();
+    } finally {
+      await env.DB.prepare(`DELETE FROM sync_device WHERE device_id = 'dev_test_mac'`).run();
+    }
+  });
+
   it("a spent Claude seat is not in the way: the duty parks on Codex as usual", async () => {
     await env.DB.prepare(`UPDATE execution_backends SET exhausted_until = ?, exhausted_reason = 'usage limit reached' WHERE id = 'bk_claude_code'`).bind(Date.now() + 3600_000).run();
     const { taskId } = await fire("duty_tool_scout");

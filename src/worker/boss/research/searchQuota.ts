@@ -1,4 +1,4 @@
-import { freeDailyCap } from "../backends/guard";
+import { freeDailyCap, freeMonthlyCap } from "../backends/guard";
 
 /**
  * A FREE SEARCH SERVICE'S DAILY ALLOWANCE, CLAIMED BEFORE THE CALL (owner, 5 Nov 2026: Brave Search
@@ -14,10 +14,20 @@ export async function claimFreeSearch(
   db: D1Database,
   service: string,
   now: number = Date.now(),
-): Promise<{ ok: true; used: number; cap: number } | { ok: false; used: number; cap: number }> {
+): Promise<{ ok: true; used: number; cap: number } | { ok: false; used: number; cap: number; monthly?: boolean }> {
   const cap = freeDailyCap(service);
   const day = centralDay(now);
   if (cap <= 0) return { ok: false, used: 0, cap: 0 };
+  // A monthly ceiling too (Brave: 900 a calendar month, Central). Checked before the day's slot.
+  const month = freeMonthlyCap(service);
+  if (month !== null) {
+    const m = await db
+      .prepare(`SELECT COALESCE(SUM(used), 0) AS used FROM free_search_quota_days WHERE service = ?1 AND day LIKE ?2`)
+      .bind(service, `${day.slice(0, 7)}-%`)
+      .first<{ used: number }>();
+    const usedMonth = Number(m?.used ?? 0);
+    if (usedMonth >= month) return { ok: false, used: usedMonth, cap: month, monthly: true };
+  }
   const res = await db
     .prepare(
       `INSERT INTO free_search_quota_days (service, day, used, updated_at) VALUES (?1, ?2, 1, ?3)

@@ -6,10 +6,11 @@
  * that died, and nothing ever looked at it again. Codex was out until 10 Nov and the Mac's poll
  * re-claimed its spent seat every 30 minutes. Three rules, here and in consumer.ts:
  *
- *   1. RESEARCH WALKS Codex seat → Claude seat (only where her rules allow) → free Google-grounded
- *      search → the other free routes → stop by name. A research ask with no seat named starts at
- *      the grounded rung (it needs no Mac) and is delivered as Camille's page.
- *   2. The grounded rung (`runGroundedRung`) files Camille's page, completes the task and writes the
+ *   1. RESEARCH WALKS THE FREE TIERS FIRST, THEN HER SUBSCRIPTION SEATS (owner, 6 Nov 2026, replacing
+ *      the earlier seat-first walk): Gemini free with Google Search → OpenRouter `:free` models with
+ *      Brave Search → Codex's seat if not spent → the Claude seat (her Mac seen recently) → NAMED STOP
+ *      with the reset. Never a paid API; never a wait while a later rung can run.
+ *   2. A free rung (`runFreeResearch`) files Camille's page, completes the task and writes the
  *      "Done" notice her Mac sends (task-notices.mjs) — the normal Boss OS way.
  *   3. A rung that cannot run is NAMED STOP [<CODE>] with its reset time: recorded on the task, put
  *      on Kendra's (Systems) list in system_events, re-queued for the reset — never a silent loop.
@@ -18,9 +19,10 @@ import type { Env } from "../env";
 import { newId } from "../lib/id";
 import { logEvent } from "../lib/log";
 import { noticeOnce } from "../service/notices";
-import { runGroundedResearch } from "../research/grounded";
+import { runGroundedResearch, type FreeSearchEngine, type GroundedOutcome } from "../research/grounded";
 import { getBackend } from "../backends/registry";
-import { OPENAI_SEAT } from "../duties/seatOrder";
+import { isPlanSpent } from "../backends/spent";
+import { OPENAI_SEAT, CLAUDE_SEAT } from "../duties/seatOrder";
 import { scanForModelAccess, privateLexicon } from "../router/modelAccess";
 
 const KENDRA = "emp_continuity";
@@ -107,18 +109,86 @@ export function nextTickAt(now: number): number {
   return Math.floor(now / 3600_000) * 3600_000 + 3600_000;
 }
 
+/** How recently her Mac's agent must have polled for a seat on it to be worth parking work on. */
+export const MAC_SEEN_MS = 30 * 60_000;
+
 /**
- * THE FREE GOOGLE-GROUNDED RUNG. Long work (one grounded call per part of the brief), so it never
- * runs in a request's 30-second tail: a drain started by a request hands it to the hourly tick.
- * Returns true when it handled the task (done, stopped by name, or handed to the tick); false when
- * the grounded route cannot answer, so the caller walks on to the other free routes.
+ * HER MAC IS THERE TO CLAIM IT. The agent's five-minute poll stamps `sync_device.last_seen_at`
+ * (routes/backends.ts, GET /runs?held_by= and POST /claim). No private device seen within
+ * MAC_SEEN_MS means no seat run will be claimed: work is never parked on a seat nobody can claim
+ * (the e2e machine has no Mac at all).
  */
-export async function runGroundedRung(
+export async function macSeen(env: Env, now = Date.now()): Promise<boolean> {
+  const row = await env.DB
+    .prepare(`SELECT MAX(last_seen_at) AS seen FROM sync_device WHERE kind = 'private' AND revoked_at IS NULL`)
+    .first<{ seen: number | null }>().catch(() => null);
+  return typeof row?.seen === "number" && now - row.seen < MAC_SEEN_MS;
+}
+
+/** A seat that can take work now: enabled, not marked spent, and her Mac seen recently. */
+export async function seatReady(env: Env, backendId: string, now = Date.now()): Promise<boolean> {
+  const seat = await getBackend(env.DB, backendId).catch(() => null) as { status?: string; exhausted_until?: number | null } | null;
+  if (!seat || seat.status !== "enabled" || isPlanSpent(seat, now)) return false;
+  return macSeen(env, now);
+}
+
+/**
+ * THE SEATS RESEARCH MAY WALK TO, IN ORDER, after every free rung is out (owner, 6 Nov 2026): Codex's
+ * seat if it is not spent, then the Claude seat. Each only when her Mac is seen. `claudeOnly` (private
+ * work) leaves Codex out.
+ */
+export async function researchSeats(env: Env, o: { claudeOnly?: boolean } = {}, now = Date.now()): Promise<string[]> {
+  const out: string[] = [];
+  if (!o.claudeOnly && await seatReady(env, OPENAI_SEAT, now)) out.push(OPENAI_SEAT);
+  if (await seatReady(env, CLAUDE_SEAT, now)) out.push(CLAUDE_SEAT);
+  return out;
+}
+
+/**
+ * A BARE RESEARCH ASK BECOMES CAMILLE'S RESEARCH PAGE before it goes to a seat: the seat run delivers
+ * `delivers.json` with a `research_page`, which `deliverResearchPage` files only for a task that
+ * carries `research_page.page_id` and `delivers: "research_page"` (the same shape admit.ts writes).
+ * Mutates `input` and the task row. Parts the free rungs already finished stay on the task's events.
+ */
+export async function asResearchPage(env: Env, task: any, input: Record<string, unknown>): Promise<void> {
+  const page = await import("../../../shared/boss/research/page.mjs");
+  if (isObj(input.research_page) && typeof input.research_page.page_id === "string" && input.delivers === page.RESEARCH_PAGE_DELIVERS) return;
+  const now = Date.now();
+  const question = researchAskOf(task, input).slice(0, 2000);
+  const id = newId("rpg");
+  await env.DB.prepare(`INSERT INTO research_pages (id, task_id, question, state, requested_at, updated_at) VALUES (?,?,?,'queued',?,?)`)
+    .bind(id, String(task.id), question, now, now).run();
+  Object.assign(input, {
+    research_page: { page_id: id, question },
+    delivers: page.RESEARCH_PAGE_DELIVERS,
+    requested: { ...page.RESEARCH_PAGE_REQUESTED, allowed_paths: [...page.RESEARCH_PAGE_REQUESTED.allowed_paths], web_tools: [...page.RESEARCH_PAGE_REQUESTED.web_tools] },
+    prompt: page.composeResearchPrompt({ id, question }),
+  });
+  await env.DB.prepare(`UPDATE tasks SET input = ? WHERE id = ?`).bind(JSON.stringify(input), String(task.id)).run();
+}
+
+export type FreeResearchOutcome =
+  | { handled: true }
+  /** Every free rung is out. `capped`: a daily allowance ran out (the earliest reset); `privateAsk`: the screen kept it off free routes. */
+  | { handled: false; why: string; capped: { code: string; why: string; resumeAt: number | null } | null; privateAsk?: boolean };
+
+/**
+ * THE FREE RUNGS FOR RESEARCH, IN HER ORDER (owner, 6 Nov 2026: "it started with all free tiers and if
+ * they were all out then it uses an allowance on the paid models i have subscriptions to"):
+ *   1. Gemini free with Google Search grounding;
+ *   2. OpenRouter `:free` models writing from Brave Search results (the repo's $0 search source;
+ *      OpenRouter's own web plugin costs money and is never used). No Brave key → rung 2 is skipped
+ *      with a ladder_step saying "no free search source for OpenRouter".
+ * Long work, so a request's 30-second tail hands it to the hourly tick. Returns handled when the page
+ * was filed (or the task was handed to the tick); otherwise why every free rung is out, so the
+ * caller walks on to the seats (consumer.ts) and only then stops by name.
+ */
+export async function runFreeResearch(
   env: Env,
   task: any,
   input: Record<string, unknown>,
   o: { fromRequest?: boolean; employeeName?: string | null },
-): Promise<boolean> {
+): Promise<FreeResearchOutcome> {
   const t = { id: String(task.id), lane: String(task.lane), title: String(task.title ?? task.id) };
   if (o.fromRequest) {
     await env.DB.prepare(`UPDATE tasks SET status = 'queued' WHERE id = ?`).bind(t.id).run();
@@ -130,35 +200,57 @@ export async function runGroundedRung(
       `INSERT INTO boss_task_queue (id, task_id, lane, attempt, state, visible_at, enqueued_at, last_error)
        VALUES (?, ?, ?, 0, 'pending', ?, ?, ?)`,
     ).bind(crypto.randomUUID(), t.id, t.lane, nextTickAt(Date.now()), Date.now(), TICK_ONLY).run();
-    return true;
+    return { handled: true };
   }
   /*
-   * THE PRIVACY SCREEN FIRST, FAIL CLOSED. The free tier trains on prompts; an ask the screen flags
-   * waits for Codex's seat by name and is never sent to Google (the router would refuse it too).
+   * THE PRIVACY SCREEN FIRST, FAIL CLOSED. The free tiers train on prompts; an ask the screen flags
+   * never reaches Google or OpenRouter. It goes to the Claude seat only (the caller), never Codex.
    */
   const ask = researchAskOf(task, input);
   const verdict = scanForModelAccess([{ role: "user", content: ask }], await privateLexicon(env.DB),
     { modelAccess: task.model_access ?? null, sensitivity: task.sensitivity ?? null });
   if (verdict.privateOnly) {
-    const reset = await codexResetAt(env);
-    await namedStop(env, t, { code: "NO_SEAT_AVAILABLE", tell: true, resumeAt: reset,
-      why: `NAMED STOP [NO_SEAT_AVAILABLE] the privacy screen keeps this off free Google search (${verdict.reason ?? "private"}); Codex is out${reset ? ` until ${new Date(reset).toISOString()}` : ""}` });
-    return true;
+    return { handled: false, privateAsk: true, capped: null, why: `the privacy screen keeps this off the free routes (${verdict.reason ?? "private"})` };
   }
-  await env.DB.prepare(`INSERT INTO task_events (id, task_id, ts, event, detail) VALUES (?,?,?,'ladder_step',?)`)
-    .bind(newId("tev"), t.id, Date.now(), JSON.stringify({ backend_id: "bk_gemini", next: "free Google search", why: "the seats are spent or not allowed; research walks to Gemini with Google Search grounding, free" })).run();
+  const step = (detail: Record<string, unknown>) => env.DB.prepare(`INSERT INTO task_events (id, task_id, ts, event, detail) VALUES (?,?,?,'ladder_step',?)`)
+    .bind(newId("tev"), t.id, Date.now(), JSON.stringify(detail)).run();
 
-  const out = await runGroundedResearch(env, task, ask);
-  if (out.state === "unavailable") {
-    await env.DB.prepare(`INSERT INTO task_events (id, task_id, ts, event, detail) VALUES (?,?,?,'ladder_step',?)`)
-      .bind(newId("tev"), t.id, Date.now(), JSON.stringify({ backend_id: "bk_gemini", refused: out.why, next: "other free routes" })).run();
-    return false;
+  const reasons: string[] = [];
+  let capped: { code: string; why: string; resumeAt: number | null } | null = null;
+  const rungs: { engine: FreeSearchEngine; backend: string; label: string }[] = [
+    { engine: "google", backend: "bk_gemini", label: "free Google search" },
+    { engine: "brave", backend: "bk_openrouter", label: "OpenRouter free models with Brave Search" },
+  ];
+  for (const rung of rungs) {
+    if (rung.engine === "brave" && !env.BRAVE_SEARCH_API_KEY) {
+      await step({ backend_id: rung.backend, refused: "no free search source for OpenRouter (BRAVE_SEARCH_API_KEY is not on this Worker); its web plugin costs money", next: "the seats" });
+      reasons.push("no free search source for OpenRouter");
+      continue;
+    }
+    await step({ backend_id: rung.backend, next: rung.label, why: "research walks the free tiers first, then the subscription seats" });
+    const out = await runGroundedResearch(env, task, ask, Date.now, rung.engine);
+    if (out.state === "unavailable") {
+      await step({ backend_id: rung.backend, refused: out.why, next: rung.engine === "google" ? "OpenRouter free models with Brave Search" : "the seats" });
+      reasons.push(`${rung.label}: ${out.why.slice(0, 160)}`);
+      continue;
+    }
+    if (out.state === "stop") {
+      await step({ backend_id: rung.backend, refused: out.why, code: out.code, resume_at: out.resumeAt, next: rung.engine === "google" ? "OpenRouter free models with Brave Search" : "the seats" });
+      reasons.push(out.why.slice(0, 200));
+      if (!capped || (out.resumeAt !== null && (capped.resumeAt === null || out.resumeAt < capped.resumeAt))) capped = { code: out.code, why: out.why, resumeAt: out.resumeAt };
+      continue;
+    }
+    await fileFreePage(env, task, input, t, out, o.employeeName ?? null, rung.label);
+    return { handled: true };
   }
-  if (out.state === "stop") {
-    await namedStop(env, t, { code: out.code, why: out.why, resumeAt: out.resumeAt, tell: false });
-    return true;
-  }
+  return { handled: false, capped, why: reasons.join(" | ") };
+}
 
+/** File Camille's page from a free rung, complete the task and write the "Done" notice. */
+async function fileFreePage(
+  env: Env, task: any, input: Record<string, unknown>, t: { id: string; lane: string; title: string },
+  out: Extract<GroundedOutcome, { state: "done" }>, employeeName: string | null, via: string,
+): Promise<void> {
   const now = Date.now();
   const { researchPageUrl } = await import("../../../shared/boss/research/page.mjs");
   let pageId = isObj(input.research_page) && typeof input.research_page.page_id === "string" ? input.research_page.page_id : null;
@@ -176,10 +268,10 @@ export async function runGroundedRung(
     env.DB.prepare(`UPDATE tasks SET status = 'done', output = ?, error = NULL, finished_at = ? WHERE id = ?`)
       .bind(JSON.stringify({ text, model: out.model, research_page_id: pageId, sources: out.page.sources.length, gaps: out.page.gaps.length }), now, t.id),
     env.DB.prepare(`INSERT INTO task_events (id, task_id, ts, event, detail) VALUES (?,?,?,'completed',?)`)
-      .bind(newId("tev"), t.id, now, JSON.stringify({ via: "free Google search", model: out.model, research_page_id: pageId, sources: out.page.sources.length, gaps: out.page.gaps.length })),
+      .bind(newId("tev"), t.id, now, JSON.stringify({ via, model: out.model, research_page_id: pageId, sources: out.page.sources.length, gaps: out.page.gaps.length })),
   ]);
   await noticeOnce(env, {
-    task: t, fromName: o.employeeName ?? "Camille", kind: `done#${Number(task.attempts ?? 0)}`,
+    task: t, fromName: employeeName ?? "Camille", kind: `done#${Number(task.attempts ?? 0)}`,
     subject: `Done: ${out.page.title.slice(0, 120)}`,
     lines: [
       `Your research is ready: ${out.page.title}.`,
@@ -190,8 +282,7 @@ export async function runGroundedRung(
       "",
       `Read the full page: ${url}`,
       "",
-      `Every fact on it is tied to a page Google found (${out.page.sources.length} sources).${out.page.gaps.length ? ` What I could not confirm is listed at the end (${out.page.gaps.length} items).` : ""}`,
+      `Every fact on it is tied to a page a search found (${out.page.sources.length} sources).${out.page.gaps.length ? ` What I could not confirm is listed at the end (${out.page.gaps.length} items).` : ""}`,
     ],
   });
-  return true;
 }

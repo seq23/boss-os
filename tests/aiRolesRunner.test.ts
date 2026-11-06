@@ -72,14 +72,14 @@ describe("Boss OS employees: Codex works, Claude is the brain", () => {
     expect(existsSync(outFile)).toBe(false);
   });
 
-  it("after a Codex limit, public work goes to the $0 free rung; confidential, LP/deal, Chrome and non-public work wait", () => {
+  it("after a Codex limit, public work goes to the $0 free rung; confidential, LP/deal, Chrome and non-public work go to the Claude seat", () => {
     expect(afterCodexLimit({ sensitivity: "public" })).toBe("free_rung");
-    expect(afterCodexLimit({ sensitivity: "public", confidential: true })).toBe("wait");
-    expect(afterCodexLimit({ sensitivity: "public", chromeJob: true })).toBe("wait");
-    for (const sensitivity of ["private", "restricted", "confidential", null, undefined]) expect(afterCodexLimit({ sensitivity })).toBe("wait");
+    expect(afterCodexLimit({ sensitivity: "public", confidential: true })).toBe("claude_seat");
+    expect(afterCodexLimit({ sensitivity: "public", chromeJob: true })).toBe("claude_seat");
+    for (const sensitivity of ["private", "restricted", "confidential", null, undefined]) expect(afterCodexLimit({ sensitivity })).toBe("claude_seat");
     // Cleared for public models on its card (6 Nov 2026) counts as public; LP/deal and Chrome still wait.
     expect(afterCodexLimit({ sensitivity: "internal", modelAccess: "public_model_approved" })).toBe("free_rung");
-    expect(afterCodexLimit({ sensitivity: "internal", modelAccess: "public_model_approved", confidential: true })).toBe("wait");
-    expect(afterCodexLimit({ sensitivity: "internal", modelAccess: "private_model_only" })).toBe("wait");
+    expect(afterCodexLimit({ sensitivity: "internal", modelAccess: "public_model_approved", confidential: true })).toBe("claude_seat");
+    expect(afterCodexLimit({ sensitivity: "internal", modelAccess: "private_model_only" })).toBe("claude_seat");
   });
 });
