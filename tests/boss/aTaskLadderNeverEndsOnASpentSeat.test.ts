@@ -179,6 +179,34 @@ describe("the research ladder walks past a spent Codex seat to free Google searc
   });
 });
 
+describe("an empty Google answer is not an answer (Rule 0)", () => {
+  it("a part recorded empty is redone, and a part Google leaves empty is named under what could not be confirmed", async () => {
+    await spendCodex();
+    let grounded = 0;
+    restore = stubFetch(async (req) => {
+      if (req.url.startsWith("https://vertexaisearch.cloud.google.com/")) return new Response(null, { status: 302, headers: { location: "https://chain.example/custody" } });
+      if (!req.url.startsWith(GEMINI_HOST)) return new Response("not here", { status: 500 });
+      const body = await req.json() as any;
+      if (body.tools?.some((t: any) => t.google_search)) {
+        grounded++;
+        // Part 1 answers; part 2 comes back empty.
+        if (grounded === 1) return groundedAnswer();
+        return new Response(JSON.stringify({ candidates: [{ content: { parts: [{ text: "" }] } }], usageMetadata: {} }), { status: 200, headers: { "content-type": "application/json" } });
+      }
+      return new Response(JSON.stringify({ candidates: [{ content: { parts: [{ text: "{}" }] } }], usageMetadata: {} }), { status: 200, headers: { "content-type": "application/json" } });
+    });
+    const taskId = await researchTask();
+    // A part recorded with nothing in it by an earlier run.
+    await env.DB.prepare(`INSERT INTO task_events (id, task_id, ts, event, detail) VALUES ('tev_empty_part', ?, ?, 'grounded_section', ?)`)
+      .bind(taskId, Date.now() - 60_000, JSON.stringify({ n: 1, ask: "x", lines: [], sources: [], dropped: 0, notFound: [] })).run();
+    await handleTask(withKey(), { taskId, lane: "ops" });
+    expect(grounded, "the empty part 1 was kept as answered").toBe(2);
+    const page = await row<any>(`SELECT markdown, gaps FROM research_pages WHERE task_id = ?`, taskId);
+    expect(page.markdown).toMatch(/chain of custody from swab to lab/);
+    expect(JSON.parse(page.gaps).join(" ")).toMatch(/Part 2: Google search gave no answer for this part/);
+  });
+});
+
 describe("a drain that died does not strand its task", () => {
   it("a 'running' row with no progress for 20 minutes is re-queued; a fresh one is left alone", async () => {
     const old = Date.now() - 3 * 3600_000;
