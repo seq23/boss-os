@@ -567,7 +567,7 @@
     "mode": "auto",
     "type": "business_type",
     "source": "schema",
-    "how": "At least one fully filled business node: LocalBusiness with telephone, address and areaServed (hyperlocal), or SoftwareApplication/Product/Service with an Offer and price (brand).",
+    "how": "At least one fully filled business node: LocalBusiness with telephone, address and areaServed (hyperlocal), or SoftwareApplication/Product/Service with an Offer and price (brand). A business with no set pricing passes with an honest price-on-request Offer: no price, a description saying to call, contact or request a quote, and the url to ask at (owner, 6 Nov 2026); a price is never invented.",
     "applies_to": [
      "hyperlocal",
      "brand"

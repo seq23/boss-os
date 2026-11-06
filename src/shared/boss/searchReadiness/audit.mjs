@@ -469,8 +469,16 @@ export const CHECKS = {
       const lb = deepNodes(all, /LocalBusiness|HomeAndConstructionBusiness|EntertainmentBusiness|FoodEstablishment|ProfessionalService/).find((n) => n.telephone && n.address && n.areaServed);
       return lb ? pass(`${typesOf(lb)[0]} with telephone, address and areaServed`) : fail("no LocalBusiness with telephone, address and areaServed on any sampled page");
     }
-    const prod = deepNodes(all, /^(SoftwareApplication|WebApplication|MobileApplication|Product|Service|Course|Book)$/).find((n) => deepNodes([n], /^(Offer|AggregateOffer)$/).some((o) => o.price !== undefined || o.lowPrice !== undefined));
-    return prod ? pass(`${typesOf(prod)[0]} with an Offer and a price`) : fail("no SoftwareApplication, Product or Service with a priced Offer on any sampled page");
+    // PRICE ON REQUEST (owner, 6 Nov 2026): a business with no set pricing (detoxdenver.org) never
+    // invents one. An Offer with no price counts when it says so honestly (a description naming a
+    // call, contact, request or quote) and gives the url to ask at. An empty Offer still fails.
+    const priced = (o) => o.price !== undefined || o.lowPrice !== undefined;
+    const onRequest = (o) => /contact|call|request|quote/i.test(String(o.description ?? "")) && Boolean(String(o.url ?? "").trim());
+    const nodes = deepNodes(all, /^(SoftwareApplication|WebApplication|MobileApplication|Product|Service|Course|Book)$/);
+    const prod = nodes.find((n) => deepNodes([n], /^(Offer|AggregateOffer)$/).some(priced));
+    if (prod) return pass(`${typesOf(prod)[0]} with an Offer and a price`);
+    const asked = nodes.find((n) => deepNodes([n], /^(Offer|AggregateOffer)$/).some(onRequest));
+    return asked ? pass(`${typesOf(asked)[0]} with a price-on-request Offer and where to ask`) : fail("no SoftwareApplication, Product or Service with a priced Offer, or an honest price-on-request Offer (description and url), on any sampled page");
   },
   speakable(ctx) {
     const bad = []; let any = 0;
