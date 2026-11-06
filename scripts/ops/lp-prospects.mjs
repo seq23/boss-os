@@ -19,8 +19,10 @@
  *      item: Approve / Edit. A stale featured name (supply gone or older than ~45 days) is proposed
  *      as a swap the same way — never swapped silently. Emails only ever use the approved list.
  *   4. SEND. Boss OS decides what is due (plan: approved template, kill switch, bounce brake, window,
- *      ≤20 new a day, touch 2 ≈ day 5, touch 3 ≈ day 12, then never again; replies and opt-outs never
- *      again). Without `--live` nothing is sent: the run writes a preview file and counts.
+ *      ≤20 a day, touches 2, 3 and 4 on day 3, 7 and 14 from the first send, then never again
+ *      (owner, 6 Nov 2026; cadence.mjs). Replies, bounces and opt-outs stop a person at once; a spam
+ *      complaint pauses everyone (NAMED STOP [SPAM_COMPLAINT]). Emails 3 and 4 go only in words she
+ *      approved on the card. Without `--live` nothing is sent: the run writes a preview file and counts.
  *
  * Sends ONLY from the West Peek mailbox (the 11 Oct sender), ONLY what the plan returns, through
  * gmail.compose (`validate:gmail` PROSPECT_SENDERS and `validate:no-spry-sender` hold it narrow).
@@ -44,7 +46,7 @@ import { writeMorning } from "./lp-daily.mjs";
 import { quotedSentence } from "../../src/shared/boss/mail/plain.mjs";
 import {
   DEFAULT_PROSPECT_TEMPLATE, FEATURED_MIN, blur, gmailThreadUrl, proposeFeatured, renderProspect,
-  staleFeatured, tapUrl, MAX_TOUCHES, approveOutcome,
+  staleFeatured, tapUrl, MAX_TOUCHES, approveOutcome, PROSPECT_VARIANTS, hasTouchWords,
 } from "../../src/shared/boss/lp/plan.mjs";
 import { wantsToMeet } from "../../src/shared/boss/lp/schedule.mjs";
 
@@ -297,9 +299,12 @@ const dayMonth = (ms) => new Date(Number(ms)).toLocaleDateString("en-GB", { day:
 
 export function templateDecide(tpl, { stale = [], forecast = null, released = null } = {}) {
   const names = JSON.parse(tpl.names_json ?? "[]");
-  const tplObj = { subject: tpl.subject, body: tpl.body, follow_up: tpl.follow_up };
+  const tplObj = { subject: tpl.subject, body: tpl.body, follow_up: tpl.follow_up, ...(tpl.follow_up_2 ? { follow_up_2: tpl.follow_up_2 } : {}), ...(tpl.follow_up_3 ? { follow_up_3: tpl.follow_up_3 } : {}) };
   const sample = renderProspect(tplObj, { first: "Alex", names });
   const follow = renderProspect(tplObj, { first: "Alex", names, touch: 2 });
+  // Emails 3 and 4 (owner, 6 Nov 2026): shown word for word; approving this card is what lets them go.
+  const later = [3, 4].filter((n) => hasTouchWords(tplObj, n)).map((n) => ({ n, day: n === 3 ? 7 : 14, body: renderProspect(tplObj, { first: "Alex", names, touch: n }).body }));
+  const last = later.length ? later[later.length - 1].n : 2;
   const outcome = approveOutcome(forecast);
   return {
     key: `prospect-template:${tpl.id ?? tpl.hash ?? ""}`,
@@ -310,14 +315,21 @@ export function templateDecide(tpl, { stale = [], forecast = null, released = nu
     // What Approve does, from the plan (24 Oct 2026, Rule 0): never an Approve that silently sends nothing.
     outcome: outcome.headline,
     details: [
-      // Her approval releases the one follow-up to everyone who got a first email (owner, 25 Oct 2026).
-      ...(released?.count ? [`Approving this also sends one follow-up to the ${released.count} people who got your first email${released.firstSentAt ? ` on ${dayMonth(released.firstSentAt)}` : ""}.`] : []),
+      // Her approval releases the follow-ups to everyone who got a first email (owner, 25 Oct 2026).
+      ...(released?.count ? [`Approving this also lets the follow-ups go to the ${released.count} people who got your first email${released.firstSentAt ? ` on ${dayMonth(released.firstSentAt)}` : ""}.`] : []),
       ...outcome.lines,
-      "After that: up to 20 new people a day, ONE gentle follow-up each, then the sequence is complete; every address is checked with NeverBounce first.",
+      `After that: up to 20 emails a day, ${last} emails at most to each person (day 0, 3${last >= 3 ? ", 7" : ""}${last >= 4 ? " and 14" : ""}), then the sequence is complete. A reply, bounce or opt-out stops them at once; a spam complaint pauses everyone. Every address is checked with NeverBounce first.`,
       `Names it mentions: ${names.map((n) => `${n.name} (${n.why ?? "on your list"})`).join("; ")}.`,
       "Change: say what to change by replying with this card's number and your words; nothing is sent meanwhile. Try again: a different draft, with a new opening.",
     ],
-    draft: { heading: "The email, word for word (Alex stands in for each person's first name)", text: `Subject: ${sample.subject}\n\n${sample.body}\n\nThe one follow-up (email 2, the last):\n\n${follow.body}` },
+    draft: {
+      heading: "The emails, word for word (Alex stands in for each person's first name)",
+      text: [
+        `Subject: ${sample.subject}\n\n${sample.body}`,
+        `Email 2, day 3${last === 2 ? " (the last)" : ""}:\n\n${follow.body}`,
+        ...later.map((l) => `Email ${l.n}, day ${l.day}${l.n === last ? " (the last)" : ""}:\n\n${l.body}`),
+      ].join("\n\n"),
+    },
     buttons: [
       { label: "Approve", url: tapUrl(tpl.tap_token, "approve") },
       { label: "Change", url: tapUrl(tpl.tap_token, "edit") },
@@ -366,6 +378,8 @@ export function prospectsMorning({ rows, pending, stale, plan, sent, problem = n
   }));
   const active = rows.filter((r) => ["new", "active"].includes(r.status)).length;
   const lines = [];
+  // A spam complaint is the first thing she reads (owner, 6 Nov 2026): everyone is paused until she lifts it.
+  if (plan?.forecast?.complaint) lines.push(`Prospect emails are paused for everyone: a prospect reported Monique's email as spam. Nobody gets another email until you look at it and lift the pause.`);
   if (problem) lines.push(problem);
   if (sent) lines.push(`Monique sent ${sent} prospect email${sent === 1 ? "" : "s"} today.`);
   if (plan?.stops?.length && !pending) lines.push(`Prospect emails are paused: ${plan.stops[0]}`);
@@ -441,6 +455,25 @@ async function main() {
   let stale = [];
   const approvedNames = state.approved ? JSON.parse(state.approved.names_json ?? "[]") : [];
   if (state.approved && deals) stale = staleFeatured(approvedNames, supply).filter((n) => !byRule("add").includes(n.toLowerCase()));
+  /*
+   * EMAILS 3 AND 4 GO TO HER FIRST (owner, 6 Nov 2026: "never invent-and-send"). An approved template
+   * from before today has no words for them: the same email, the same names and the same follow-up,
+   * plus emails 3 and 4 from its own variant, go to her as a new card. The approved one keeps sending
+   * emails 1 and 2 meanwhile; emails 3 and 4 go only after she taps Approve on this card.
+   */
+  const needsLater = state.approved && !stale.length && !(hasTouchWords(state.approved, 3) && hasTouchWords(state.approved, 4));
+  if (needsLater) {
+    const v = PROSPECT_VARIANTS[Number(state.approved.variant ?? 0) % PROSPECT_VARIANTS.length];
+    const withLater = { subject: state.approved.subject, body: state.approved.body, follow_up: state.approved.follow_up, follow_up_2: v.follow_up_2, follow_up_3: v.follow_up_3 };
+    const waiting = pending && pending.follow_up_2 && pending.follow_up_3 && (pending.names_json ?? "") === (state.approved.names_json ?? "");
+    if (waiting) {
+      console.log("template: emails 3 and 4 are waiting for her Approve.");
+    } else {
+      const r = await api.post("/lp/prospects/template", { template: withLater, names: approvedNames }).catch((e) => ({ error: e.message }));
+      pending = r.template?.status === "pending" ? r.template : pending;
+      console.log(`template: emails 3 and 4 ${r.template?.status === "pending" ? "proposed, waiting for her Approve" : `NOT proposed (${r.error ?? "no pending row came back"}); emails 1 and 2 carry on`}.`);
+    }
+  }
   if (!state.approved || stale.length) {
     const keep = approvedNames.filter((n) => !stale.includes(n.name));
     const proposed = [...keep, ...proposeFeatured(supply, { never: byRule("never"), add: byRule("add"), drop: byRule("drop") }).filter((p) => !keep.some((k) => k.name.toLowerCase() === p.name.toLowerCase()))].slice(0, 5);
@@ -513,6 +546,7 @@ async function main() {
   const verdict = runVerdict({ due: LIVE && sendDay && !plan.dryRun ? plan.sends?.length ?? 0 : 0, sent, held, stop });
   const file = writeMorning("prospects", prospectsMorning({ rows, pending, stale, plan, sent, problem: verdict.line }));
   if (verdict.stop) { console.error(verdict.stop); process.exitCode = 2; return; }
+  if (plan.forecast?.complaint) { console.error(plan.forecast.complaint); process.exitCode = 2; return; }
   console.log(`LP-PROSPECTS-COMPLETE: ${rows.length} prospects, ${sent} sent; morning section at ${file}`);
 }
 

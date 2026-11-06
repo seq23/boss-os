@@ -14,19 +14,24 @@
  *     published addresses only, never a guessed one.
  *   · Outbound words: no price, no call ask, no "no screens" / anti-AI, no medical claims, and no
  *     claim of other languages (the stories are English).
- *   · One follow-up, at most. NeverBounce "valid" before the first send. Never a bounced address.
+ *   · Up to three follow-ups (day 3, 7, 14), then never again. NeverBounce "valid" before the first send. Never a bounced address.
  *   · A reply that asks the price, or wants to pay, goes to her with a suggested price; Monique
  *     never quotes one.
  */
 
 /** The business key in the outreach catalog. One sender, one route: st@time-2-read.com. */
+import * as CADENCE from "../outreach/cadence.mjs";
 export const GROUPS_KEY = "time2read_groups";
 /** New groups written to per weekday, at most (owner, 31 Oct 2026: "start ≤10"). */
 export const NEW_GROUPS_PER_WEEKDAY = 10;
-/** The sequence: a first email and ONE follow-up. Never a third. */
-export const MAX_FOLLOW_UPS = 1;
-/** The follow-up goes this many days after the first email. */
-export const FOLLOW_UP_AFTER_DAYS = 5;
+/**
+ * The sequence (owner ruling 6 Nov 2026, replaces "one follow-up"): the first email and up to three
+ * follow-ups, day 3, 7 and 14, then never again (cadence.mjs). The groups' catalog holds two emails;
+ * any further email goes only in words she approved first.
+ */
+export const MAX_FOLLOW_UPS = CADENCE.MAX_FOLLOW_UPS;
+/** The first follow-up goes this many days after the first email. */
+export const FOLLOW_UP_AFTER_DAYS = CADENCE.afterDaysFor(1);
 /** The group trial: the existing time-2-read access-code mechanism, 15 days (like HOMESCHOOL15). */
 export const GROUP_TRIAL_DAYS = 15;
 

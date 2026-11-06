@@ -28,8 +28,7 @@ describe("the rules in CLAUDE.md are the rules in code", () => {
     }
     expect(section).toMatch(/\(10\) new groups a weekday/);
     expect(R.NEW_GROUPS_PER_WEEKDAY).toBe(10);
-    expect(section).toMatch(/one follow-up/);
-    expect(R.MAX_FOLLOW_UPS).toBe(1);
+    expect(R.MAX_FOLLOW_UPS).toBe(3);
     expect(section).toMatch(/15-day code/);
     expect(R.GROUP_TRIAL_DAYS).toBe(15);
     expect(section).toMatch(/off until Phase 8/);
@@ -39,9 +38,13 @@ describe("the rules in CLAUDE.md are the rules in code", () => {
 
 describe("the catalog business: two emails, the code, no price", () => {
   const b = businessByKey(R.GROUPS_KEY)!;
-  it("is one sequence of a first email and ONE follow-up", () => {
-    expect(b.steps.length - 1).toBe(R.MAX_FOLLOW_UPS);
+  it("is one sequence: a first email and a day-3 follow-up, never past four emails, none past two unapproved", () => {
+    expect(b.steps.length).toBeGreaterThanOrEqual(2);
+    expect(b.steps.length - 1).toBeLessThanOrEqual(R.MAX_FOLLOW_UPS);
+    expect(R.FOLLOW_UP_AFTER_DAYS).toBe(3);
     expect(b.steps[1]!.afterDays).toBe(R.FOLLOW_UP_AFTER_DAYS);
+    // An email 3 or 4 carries the key of the Decide card she approves its words on.
+    for (const s of b.steps.slice(2)) expect(s.approvalKey).toBeTruthy();
     expect(BUSINESSES.filter((x) => x.key === R.GROUPS_KEY)).toHaveLength(1);
   });
   it("every step carries {code}, and none names a price, asks for a call or makes a claim we never make", () => {

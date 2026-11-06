@@ -7,6 +7,7 @@
  *
  * NO NAMES LIVE HERE. Templates carry placeholders; the names come from D1 at runtime.
  */
+import * as CADENCE from "../outreach/cadence.mjs";
 import { quotedSentence } from "../mail/plain.mjs";
 import { isRoleMailbox } from "../people/role.mjs";
 // Function-level use only (schedule.mjs reads firstName from here): the cycle is safe in ESM.
@@ -269,11 +270,23 @@ export function lpStatusFrom({ current, sentAfterReply, scheduled, theirLatest, 
 
 /* ─── Rule 11: prospects ─────────────────────────────────────────────────────── */
 
-// Owner, 24 Oct 2026: ONE follow-up at most — the first email and one more, never a third.
-export const MAX_TOUCHES = 2;              // the first email and ONE follow-up, then the sequence is complete
-export const TOUCH_DAYS = Object.freeze([0, 5]); // days after the first send
+/*
+ * Owner ruling, 6 Nov 2026 (replaces "one follow-up at most", 24 Oct): the first email and up to THREE
+ * follow-ups, on day 3, 7 and 14 from the first send, then never again. Replies, bounces and opt-outs
+ * stop a person at once; a spam complaint pauses the whole sequence (prospectPlan). One source for
+ * every sender: src/shared/boss/outreach/cadence.mjs. Touches 3 and 4 go only in words she approved
+ * on the prospect email card (`follow_up_2`, `follow_up_3`); a template without them stops at two.
+ */
+export const MAX_TOUCHES = CADENCE.MAX_EMAILS_PER_PERSON; // the first email and up to three follow-ups
+export const TOUCH_DAYS = CADENCE.TOUCH_DAYS;              // days after the first send: 0, 3, 7, 14
 export const MAX_NEW_PER_DAY = 20;
-export const MIN_TOUCH_GAP_DAYS = 5;
+export const MIN_TOUCH_GAP_DAYS = CADENCE.MIN_TOUCH_GAP_DAYS;
+/** The template field that holds touch n's words (1 = the first email). */
+export const TOUCH_FIELD = Object.freeze({ 1: "body", 2: "follow_up", 3: "follow_up_2", 4: "follow_up_3" });
+/** Does this (approved) template hold words for touch n? Touches 3 and 4 need her approved words. */
+export const hasTouchWords = (t, n) => Boolean(t && TOUCH_FIELD[n] && String(t[TOUCH_FIELD[n]] ?? "").trim());
+/** A reply that is a spam complaint (the outreach engine's words, outreach/classify.ts). */
+export const PROSPECT_COMPLAINT = /\bspam(ming)?\b|report(ed|ing)? (you|this)|harass|\billegal\b|how did you get (my|this) (email|address)|reported as junk|cease and desist/i;
 export const FEATURED_MIN = 3;
 export const FEATURED_MAX = 5;
 export const FEATURE_FRESH_DAYS = 30;
@@ -310,7 +323,7 @@ export const EITHER_SIDE = /\badd or trim\b|\beither side\b|\bbuying or selling\
 /** A prospect email never suggests a call (owner, 1 Nov 2026); a call happens only when they ask. */
 export const CALL_ASK = /\b(?:\d+|a few) minutes\b|\b(?:quick|short|brief) (?:call|chat)\b|\bhop on\b|\bon a call\b|\bcall work\b|\bfind (?:a )?time\b/i;
 /** True when either email of a template suggests a call (a template written before 1 Nov 2026). */
-export const templateAsksForCall = (t) => CALL_ASK.test(String(t?.body ?? "")) || CALL_ASK.test(String(t?.follow_up ?? ""));
+export const templateAsksForCall = (t) => ["body", "follow_up", "follow_up_2", "follow_up_3"].some((k) => CALL_ASK.test(String(t?.[k] ?? "")));
 export const PROSPECT_WORD_CAP = 90;
 export const OPT_OUT_LINE = "If this isn't relevant, just reply \"no thanks\" and I won't write again.";
 export const SIGNATURE = "Sequoia Taylor\nWest Peek Ventures";
@@ -402,6 +415,25 @@ export const PROSPECT_VARIANTS = Object.freeze([
       "",
       OPT_OUT_LINE,
     ].join("\n"),
+    // Touches 3 and 4 (6 Nov 2026): short, each adds something new, never a guilt line. Sent only once she approves them.
+    follow_up_2: [
+      "Hi {first},",
+      "",
+      "One more thought, in case timing was the issue: new names come across my desk every week, so whenever you're looking to add or trim, a reply here works. We've done more than $100M in secondary transactions.",
+      "",
+      SIGNATURE,
+      "",
+      OPT_OUT_LINE,
+    ].join("\n"),
+    follow_up_3: [
+      "Hi {first},",
+      "",
+      "I'll leave it here so I'm not crowding your inbox. If you're ever looking to add or trim a late-stage position, a reply to this thread reaches me directly. We've done more than $100M in secondary transactions and are glad to help when the timing is right.",
+      "",
+      SIGNATURE,
+      "",
+      OPT_OUT_LINE,
+    ].join("\n"),
   }),
   Object.freeze({
     subject: "Comparing notes on late-stage names",
@@ -420,6 +452,24 @@ export const PROSPECT_VARIANTS = Object.freeze([
       "Hi {first},",
       "",
       "A quick nudge on this. We've done more than $100M in secondary transactions, and I'd value hearing what you're looking to add or trim. A one-line reply is plenty. {names_line}",
+      "",
+      SIGNATURE,
+      "",
+      OPT_OUT_LINE,
+    ].join("\n"),
+    follow_up_2: [
+      "Hi {first},",
+      "",
+      "In case timing was the issue: names come across my desk every week, so a note whenever you're thinking about what to add or trim is welcome. We've done more than $100M in secondary transactions.",
+      "",
+      SIGNATURE,
+      "",
+      OPT_OUT_LINE,
+    ].join("\n"),
+    follow_up_3: [
+      "Hi {first},",
+      "",
+      "This is my last note, so I don't crowd your inbox. We've done more than $100M in secondary transactions; if you ever want to trade notes on what to add or trim, a reply here reaches me.",
       "",
       SIGNATURE,
       "",
@@ -448,6 +498,24 @@ export const PROSPECT_VARIANTS = Object.freeze([
       "",
       OPT_OUT_LINE,
     ].join("\n"),
+    follow_up_2: [
+      "Hi {first},",
+      "",
+      "A quick addition: our book changes week to week, so if those names weren't a fit, others may be. If you're weighing what to add or trim, just reply. We've done more than $100M in secondary transactions.",
+      "",
+      SIGNATURE,
+      "",
+      OPT_OUT_LINE,
+    ].join("\n"),
+    follow_up_3: [
+      "Hi {first},",
+      "",
+      "I'll close the loop here. If you're weighing what to add or trim down the line, reply to this thread any time and I'll share what we're seeing. We've done more than $100M in secondary transactions.",
+      "",
+      SIGNATURE,
+      "",
+      OPT_OUT_LINE,
+    ].join("\n"),
   }),
 ]);
 /** The default template: variant A. */
@@ -459,8 +527,11 @@ export const DEFAULT_PROSPECT_TEMPLATE = PROSPECT_VARIANTS[0];
  * "drop / remove / cut the … line" (the sentence that carries those words). Anything else is kept
  * on the row as her note, and the reply says so; nothing is guessed. Pure.
  */
+const LATER_FIELDS = ["follow_up_2", "follow_up_3"];
 export function applyTemplateNotes(template, note) {
   const t = { subject: String(template.subject), body: String(template.body), follow_up: String(template.follow_up) };
+  for (const k of LATER_FIELDS) if (template[k]) t[k] = String(template[k]);
+  const fields = ["subject", "body", "follow_up", ...LATER_FIELDS.filter((k) => k in t)];
   const applied = [];
   const kept = [];
   const Q = `['"‘’“”]`;
@@ -470,8 +541,8 @@ export function applyTemplateNotes(template, note) {
     if (swap) {
       const [, want, was] = swap;
       const re = new RegExp(was.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"), "gi");
-      const hit = ["subject", "body", "follow_up"].filter((k) => re.test(t[k]));
-      for (const k of ["subject", "body", "follow_up"]) t[k] = t[k].replace(re, want);
+      const hit = fields.filter((k) => re.test(t[k]));
+      for (const k of fields) t[k] = t[k].replace(re, want);
       (hit.length ? applied : kept).push(hit.length ? `said "${want}" instead of "${was}"` : swap[0]);
       const rest = c.slice(swap[0].length).replace(/^[\s,.;]*(?:and\s+)?/i, "").trim();
       if (rest) kept.push(rest);
@@ -481,7 +552,7 @@ export function applyTemplateNotes(template, note) {
     if (drop) {
       const words = drop[1].toLowerCase().split(/[\s-]+/).filter((w) => w.length > 2 && !["the", "and", "that", "this"].includes(w));
       let done = false;
-      for (const k of ["body", "follow_up"]) {
+      for (const k of fields.filter((f) => f !== "subject")) {
         // Paragraph by paragraph, so the greeting, signature and opt-out keep their places.
         t[k] = t[k].split("\n\n").map((para) => {
           if (/^Hi \{first\},$|Sequoia Taylor|no thanks/.test(para)) return para;
@@ -516,7 +587,10 @@ export function renderProspect(template, { first, names, touch = 1, variant = 0 
     .replaceAll("{names_line}", namesLine(names, variant))
     .replaceAll("{subject_names}", subjectNames(names));
   const subject = withoutNeverNamed(fill(template.subject)).replace(/:\s*$/, "");
-  const body = withoutNeverNamed(fill(touch === 1 ? template.body : template.follow_up)).replace(/\n{3,}/g, "\n\n");
+  const field = TOUCH_FIELD[touch];
+  if (!field) throw new Error(`no email number ${touch}: a prospect gets ${MAX_TOUCHES} at most`);
+  if (!hasTouchWords(template, touch)) throw new Error(`no approved words for email ${touch}; it does not go until she approves them`);
+  const body = withoutNeverNamed(fill(template[field])).replace(/\n{3,}/g, "\n\n");
   return { subject, body };
 }
 
@@ -548,7 +622,9 @@ export function prospectProblems({ subject, body }, names = null) {
 
 /** A stable short hash of the template and its names; a change is a new template that re-asks. */
 export function templateHash(template, names) {
-  const s = JSON.stringify([template.subject, template.body, template.follow_up, (names ?? []).map((n) => (typeof n === "string" ? n : n.name))]);
+  // Touches 3 and 4 join the hash only when present, so a template approved before 6 Nov keeps its hash.
+  const later = LATER_FIELDS.filter((k) => template[k]).map((k) => template[k]);
+  const s = JSON.stringify([template.subject, template.body, template.follow_up, (names ?? []).map((n) => (typeof n === "string" ? n : n.name)), ...(later.length ? [later] : [])]);
   let h1 = 0x811c9dc5, h2 = 0x01000193;
   for (let i = 0; i < s.length; i++) {
     h1 = Math.imul(h1 ^ s.charCodeAt(i), 16777619) >>> 0;
@@ -558,33 +634,27 @@ export function templateHash(template, names) {
 }
 
 /**
- * Which touch is due for a prospect today, if any. 1 = the first email (subject to the daily cap),
- * 2 ≈ day 5 (the one follow-up), then the sequence is complete. Replies, opt-outs and bounces end it.
- */
-/**
  * When a prospect's next email is due (ms), by the same rule `dueTouch` sends on: touch 1 as soon as
- * the email is approved (`null`), then TOUCH_DAYS after the first, never under MIN_TOUCH_GAP_DAYS
- * after the last. `null` also when the sequence is over.
+ * the email is approved (`null`), then day 3, 7 and 14 after the first, never under
+ * MIN_TOUCH_GAP_DAYS after the last (cadence.mjs). `null` also when the sequence is over.
  */
 export function nextTouchAt(p) {
-  const touches = Number(p?.touches ?? 0);
-  if (!p || touches >= MAX_TOUCHES || touches === 0 || !p.first_sent_at) return null;
-  const byFirst = Number(p.first_sent_at) + TOUCH_DAYS[touches] * DAY;
-  const byLast = Number(p.last_touch_at ?? p.first_sent_at) + MIN_TOUCH_GAP_DAYS * DAY;
-  return Math.max(byFirst, byLast);
+  if (!p) return null;
+  return CADENCE.nextTouchDueAt({ touches: p.touches, firstSentAt: p.first_sent_at, lastTouchAt: p.last_touch_at });
 }
 
+/**
+ * Which touch is due for a prospect today, if any. 1 = the first email (subject to the daily cap),
+ * then 2, 3 and 4 on day 3, 7 and 14, then the sequence is complete. Replies, opt-outs, bounces and
+ * complaints end it (any status but new/active). Touches 3 and 4 also need her approved words
+ * (`hasTouchWords`), which `prospectPlan` checks against the approved template.
+ */
 export function dueTouch(p, now = Date.now()) {
   if (!p || !["new", "active"].includes(p.status)) return null;
   const touches = Number(p.touches ?? 0);
   if (touches >= MAX_TOUCHES) return null;
   if (touches === 0) return 1;
-  if (!p.first_sent_at) return null;
-  const days = (now - Number(p.first_sent_at)) / DAY;
-  const next = touches + 1;
-  // Each touch is at least five days after the one before it.
-  const sinceLast = p.last_touch_at ? (now - Number(p.last_touch_at)) / DAY : days;
-  return days >= TOUCH_DAYS[next - 1] && sinceLast >= MIN_TOUCH_GAP_DAYS ? next : null;
+  return CADENCE.followUpDue({ touches, firstSentAt: p.first_sent_at, lastTouchAt: p.last_touch_at }, now);
 }
 
 /**
@@ -830,7 +900,8 @@ export function approveOutcome(f) {
   if (f.risky) lines.push(`${plural2(f.risky, "address", "addresses")} held: NeverBounce could not confirm ${f.risky === 1 ? "it (catch-all or unknown); it waits" : "them (catch-all or unknown); they wait"} until the bounce rate is back under 3%.`);
   if (f.unverified) lines.push(`${plural2(f.unverified, "address", "addresses")} not checked yet: NeverBounce checks ${f.unverified === 1 ? "it" : "them"} on Monique's next run, before anything goes.`);
   if (f.bounced) lines.push(`${plural2(f.bounced, "address", "addresses")} already bounced: never written to again.`);
-  if (f.follow) lines.push("This is the one follow-up: after it, the sequence is complete for them and they get no more emails.");
+  if (f.follow) lines.push(`These are follow-ups: four emails at most to anyone (day 0, 3, 7 and 14), then no more; a reply, bounce or opt-out stops them at once.`);
+  if (f.awaiting) lines.push(`${plural2(f.awaiting, "person is", "people are")} due email 3 or 4 and ${f.awaiting === 1 ? "waits" : "wait"} for you to approve its words.`);
   if (f.paused) lines.push(`Why only confirmed addresses: ${String(f.paused).replace(/^Paused automatically:\s*/i, "")}`);
   return { headline, lines };
 }

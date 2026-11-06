@@ -181,7 +181,7 @@
     },
     {
       "id": "monique-prospects", "business": "west-peek-ventures",
-      "what": "Monique's prospect emails to the people you approved: one first email and one follow-up, weekdays only, then never again",
+      "what": "Monique's prospect emails to the people you approved: one first email and up to three follow-ups (day 3, 7 and 14; emails 3 and 4 only in words you approved), weekdays only, then never again",
       "sender": "Monique", "owner": "Monique",
       "from": "Your fund outreach mailbox (through the delegation you OK'd)", "to": "Prospects you approved, at most 20 new a day",
       "when": "Weekdays 9:30 AM (never Saturday or Sunday), once you approved the template",
@@ -265,7 +265,7 @@
 
     {
       "id": "pnp-corporate-outreach", "business": "porch-and-party",
-      "what": "Camille's office Christmas outreach to Memphis offices: one email and one follow-up, plain text; stops at 4 bookings or 5 Dec",
+      "what": "Camille's office Christmas outreach to Memphis offices: one email and one follow-up on day 3 (the approved contract holds no more), plain text; stops at 4 bookings or 5 Dec",
       "sender": "Camille", "owner": "Camille",
       "from": "Porch & Party 901 <sequoia@porchandparty901.com>", "to": "Memphis offices (published addresses, checked first)",
       "when": "Weekdays 10:20 AM",
@@ -361,7 +361,7 @@
 
     {
       "id": "t2r-groups-outreach", "business": "time-2-read",
-      "what": "Monique's emails to homeschool pods, co-ops, microschools, libraries and programs: a free 15-day code each, one follow-up at most",
+      "what": "Monique's emails to homeschool pods, co-ops, microschools, libraries and programs: a free 15-day code each, one follow-up on day 3 (up to three only in words you approved)",
       "sender": "Monique", "owner": "Monique",
       "from": "st@time-2-read.com", "to": "Groups and institutions (published addresses, checked first)",
       "when": "Up to 10 new groups a weekday; the Mac imports weekdays 8:15 AM, the cloud sends hourly",
@@ -473,7 +473,7 @@
 
     {
       "id": "monique-outreach", "business": "industry-guides",
-      "what": "Monique's outreach to businesses for the guides and the side businesses (A Player Mode, ApprovalPrep, the wedding checklist, Time-2-Read): first email, one follow-up on day 4, then never again",
+      "what": "Monique's outreach to businesses for the guides and the side businesses (A Player Mode, ApprovalPrep, the wedding checklist, Time-2-Read): first email, a follow-up on day 3, and for the guides emails 3 and 4 on day 7 and 14 once you approve their words, then never again",
       "sender": "Monique", "owner": "Monique",
       "from": "hello@theindustryguides.com for every guide; hello@aplayermode.com, hello@approvalprep.com, hello@weddingchecklistpdf.com, st@time-2-read.com", "to": "Prospect businesses (about 10 a day per site)",
       "when": "Hourly in the sending window",

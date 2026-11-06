@@ -359,7 +359,7 @@ institutions too"). Rules in `src/shared/boss/t2rGroups/rules.mjs`; the Worker h
    governed path to time-2-read's code table (`runCode`, simone-commands.mjs); no group is emailed
    until its code is live. Each code's use is read back from the signups view, per group.
 5. **Sent by the outreach engine** as business `time2read_groups` from st@time-2-read.com: at most
-   `NEW_GROUPS_PER_WEEKDAY` (10) new groups a weekday, **one follow-up** (two steps, never a third),
+   `NEW_GROUPS_PER_WEEKDAY` (10) new groups a weekday, **up to three follow-ups** (day 3, 7, 14 from the first send, four emails at most; the catalog holds two steps, a third or fourth only in words she approved; `cadence.mjs`),
    automatic like all Monique outreach. The words carry no price, no call ask, no "no screens" or
    anti-AI framing, no medical claim and no other language (`outboundProblems`, checked on every build).
 6. **Replies:** interest or a question is a card for her; "not now", an unsubscribe, an auto-reply

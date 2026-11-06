@@ -6,7 +6,7 @@
  *     sections; a failed source says so (Rule 0); never a Decide item.
  *   - Size matches on OVERLAP, not equality; price within the grid tolerance; older orders lower;
  *     ~6-month lookback.
- *   - Prospect emails go Monday to Friday, Central, only; one follow-up.
+ *   - Prospect emails go Monday to Friday, Central, only; four emails at most (6 Nov 2026).
  */
 import { describe, expect, it } from "vitest";
 import { readFileSync } from "node:fs";
@@ -144,11 +144,11 @@ describe("the week is wired", () => {
     expect(sql).toMatch(/'duty_seller_hunt',[\s\S]*?'emp_relationship', 'ops',\s*7, 0, 'America\/Chicago', 'weekly', 4,/);
     expect(sql).toMatch(/'local_job', 'seller-hunt\.mjs'/);
   });
-  it("prospect emails: weekdays only on the Mac job, one follow-up", () => {
+  it("prospect emails: weekdays only on the Mac job, four emails at most (owner, 6 Nov 2026)", () => {
     const line = installer.split("\n").find((l) => l.startsWith("install_l_job com.seq.boss-prospects ")) ?? "";
     for (const d of [1, 2, 3, 4, 5]) expect(line).toContain(`<dict><key>Weekday</key><integer>${d}</integer><key>Hour</key><integer>9</integer>`);
     expect(line).not.toMatch(/<integer>[06]<\/integer><key>Hour/);
-    expect(MAX_TOUCHES).toBe(2);
+    expect(MAX_TOUCHES).toBe(4);
     expect(isSendDay(Date.parse("2026-11-07T15:30:00Z"))).toBe(false); // Saturday 09:30 Central
     expect(isSendDay(Date.parse("2026-11-08T15:30:00Z"))).toBe(false); // Sunday
     expect(isSendDay(Date.parse("2026-11-09T15:30:00Z"))).toBe(true); // Monday

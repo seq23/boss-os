@@ -328,6 +328,18 @@ export const RESUME_HANDLERS: Record<string, ResumeHandler> = {
     };
   },
 
+  /**
+   * EMAILS 3 AND 4 OF A SEQUENCE (owner, 6 Nov 2026). Approving IS the release: the engine reads this
+   * card's approval (engine.ts `laterWordsApproved`) before every email 3 or 4. Try again leaves every
+   * sequence at two emails; new words come back as a new card.
+   */
+  outreach_copy: async (env, j, verdict, note, now) => {
+    if (verdict === "try_again") {
+      return { detail: note ? `Not sent. Sequences stay at two emails; your note is on the card for the redraft: ${note}` : "Not sent. Sequences stay at two emails until new words are approved." };
+    }
+    return { detail: "Approved. Emails 3 and 4 now go on day 7 and day 14 to anyone due them, then never again." };
+  },
+
   /** The first affiliate payout run. Nothing is ever paid by code; approving records that she saw it. */
   outreach_first_payout: async (env, j, verdict, note, now) => {
     if (verdict === "try_again") {

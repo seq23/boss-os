@@ -242,7 +242,7 @@ describe("prospect emails: only what is new, and stuck follow-ups are a decision
     const sec = prospectSection(a, NOW)!;
     const items = sec.items.map((i: any) => (typeof i === "string" ? i : i.text));
     expect(items.join(" ")).not.toContain("Old Send");
-    expect(items[0]).toBe("Sent: email 2 of 2 to New Send (Firm N, n@x.example), a buyer, October 24.");
+    expect(items[0]).toBe("Sent: email 2 of 4 to New Send (Firm N, n@x.example), a buyer, October 24.");
     expect(items).toContain("1 follow-up is due and not going out; why, and what unblocks them, is in Decide above.");
     expect(items.join(" ")).not.toContain("Later");
     expect(items[items.length - 1]).toBe("So far: 36 emails sent; 35 in the sequence, 0 interested, 0 replied, 0 opted out, 1 bounced.");

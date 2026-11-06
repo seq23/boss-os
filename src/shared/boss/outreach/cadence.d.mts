@@ -1,0 +1,10 @@
+export const DAY_MS: number;
+export const MAX_EMAILS_PER_PERSON: number;
+export const MAX_FOLLOW_UPS: number;
+export const TOUCH_DAYS: readonly number[];
+export const MIN_TOUCH_GAP_DAYS: number;
+export function afterDaysFor(step: number): number;
+export function nextTouchDueAt(p: { touches?: number | null; firstSentAt?: number | null; lastTouchAt?: number | null }): number | null;
+export function followUpDue(p: { touches?: number | null; firstSentAt?: number | null; lastTouchAt?: number | null }, now?: number): number | null;
+export function complaintStop(sender: string, n?: number): string;
+export function wordsHash(text: string): string;

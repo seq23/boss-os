@@ -18,7 +18,7 @@
  *      "Cc: …".
  *
  * Pure and deterministic: no model reads anything here (LP names never reach a model route).
- * Drafts never auto-send and one follow-up max still hold where each caller already enforces them.
+ * Drafts never auto-send and the follow-up cap (four emails at most, cadence.mjs) still hold where each caller already enforces them.
  */
 import { ownWords } from "../intake/messageBody.mjs";
 

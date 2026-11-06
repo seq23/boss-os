@@ -9,7 +9,7 @@ import { apiJson } from "./helpers";
 import {
   DEFAULT_PROSPECT_TEMPLATE, PROSPECT_BANNED, canSpend, dueTouch, eightRaiseFooter, excluded, lpDecideItems,
   CALL_ASK, lpReplyBody, lpStatusFrom, namesLine, nameRulesIn, pickCatchups, proposeFeatured, prospectProblems,
-  renderProspect, sideFromReply, staleFeatured, templateHash, wordCount, INBOX_LOOKBACK_DAYS, MAX_TOUCHES, nextTouchAt,
+  renderProspect, sideFromReply, staleFeatured, templateHash, wordCount, INBOX_LOOKBACK_DAYS, MAX_TOUCHES, nextTouchAt, PROSPECT_VARIANTS, PROSPECT_COMPLAINT,
 } from "../../src/shared/boss/lp/plan.mjs";
 import { prospectPlan, proposeTemplate, approveTemplate, importProspects, recordProspectEvents, suppressAddresses, prospectsToVerify, recordVerdicts } from "../../src/worker/boss/lp/desk";
 import { approveOutcome } from "../../src/shared/boss/lp/plan.mjs";
@@ -88,18 +88,41 @@ describe("featured names: a select few, never a never-feature, swaps proposed no
   });
 });
 
-describe("the sequence: the first email and ONE follow-up, five days apart, replies end it (owner, 24 Oct 2026)", () => {
+describe("the sequence: the first email and up to THREE follow-ups on day 3, 7 and 14, then never again (owner, 6 Nov 2026)", () => {
   const t0 = Date.parse("2026-10-11T20:00:00Z");
-  it("is due on day 5, never twice in a row, never a third", () => {
-    expect(MAX_TOUCHES).toBe(2);
+  const p = (touches: number, lastDay: number, status = "active") => ({ status, touches, first_sent_at: t0, last_touch_at: t0 + lastDay * DAY });
+  it("is due on day 3, 7 and 14 from the first send, never under three days apart, never a fifth", () => {
+    expect(MAX_TOUCHES).toBe(4);
     expect(dueTouch({ status: "new", touches: 0 }, t0)).toBe(1);
-    expect(dueTouch({ status: "active", touches: 1, first_sent_at: t0, last_touch_at: t0 }, t0 + 4 * DAY)).toBeNull();
-    expect(dueTouch({ status: "active", touches: 1, first_sent_at: t0, last_touch_at: t0 }, t0 + 5 * DAY)).toBe(2);
-    expect(dueTouch({ status: "active", touches: 1, first_sent_at: t0, last_touch_at: t0 + 4 * DAY }, t0 + 6 * DAY)).toBeNull();
-    // Two sends: never a third, however long it has been.
-    for (const d of [5, 12, 17, 90, 400]) expect(dueTouch({ status: "active", touches: 2, first_sent_at: t0, last_touch_at: t0 + 5 * DAY }, t0 + d * DAY)).toBeNull();
-    expect(nextTouchAt({ status: "active", touches: 2, first_sent_at: t0, last_touch_at: t0 + 5 * DAY })).toBeNull();
-    for (const s of ["replied", "interested", "opted_out", "bounced", "done"]) expect(dueTouch({ status: s, touches: 1, first_sent_at: t0 }, t0 + 30 * DAY)).toBeNull();
+    // Each touch exactly on its day, not a minute before.
+    for (const [touches, last, day] of [[1, 0, 3], [2, 3, 7], [3, 7, 14]] as const) {
+      expect(dueTouch(p(touches, last), t0 + day * DAY - 60_000), `email ${touches + 1} before day ${day}`).toBeNull();
+      expect(dueTouch(p(touches, last), t0 + day * DAY)).toBe(touches + 1);
+      expect(nextTouchAt(p(touches, last))).toBe(t0 + day * DAY);
+    }
+    // A late send pushes the next one: email 2 sent on day 6 → email 3 not before day 9, never closer than 3 days.
+    expect(dueTouch(p(2, 6), t0 + 8 * DAY)).toBeNull();
+    expect(dueTouch(p(2, 6), t0 + 9 * DAY)).toBe(3);
+    // Four sends: never a fifth, however long it has been.
+    for (const d of [14, 21, 90, 400]) expect(dueTouch(p(4, 14), t0 + d * DAY)).toBeNull();
+    expect(nextTouchAt(p(4, 14))).toBeNull();
+    // A reply, an opt-out (or complaint), a bounce or done stops a person at once, at any touch.
+    for (const s of ["replied", "interested", "opted_out", "bounced", "done"]) {
+      for (const touches of [1, 2, 3]) expect(dueTouch(p(touches, touches * 3, s), t0 + 60 * DAY), `${s} at ${touches}`).toBeNull();
+    }
+  });
+  it("emails 3 and 4 never render from a template without words she approved for them", () => {
+    const old = { subject: DEFAULT_PROSPECT_TEMPLATE.subject, body: DEFAULT_PROSPECT_TEMPLATE.body, follow_up: DEFAULT_PROSPECT_TEMPLATE.follow_up };
+    expect(renderProspect(old, { first: "Alex", names: NAMES, touch: 2 }).body).toMatch(/^Hi Alex,/);
+    expect(() => renderProspect(old, { first: "Alex", names: NAMES, touch: 3 })).toThrow(/approved words/);
+    expect(() => renderProspect(DEFAULT_PROSPECT_TEMPLATE, { first: "Alex", names: NAMES, touch: 5 })).toThrow(/at most/);
+    // A template approved before 6 Nov keeps its hash, so it stays approved and keeps sending emails 1 and 2.
+    expect(templateHash(old, NAMES)).not.toBe(templateHash(DEFAULT_PROSPECT_TEMPLATE, NAMES));
+    expect(templateHash({ ...old, follow_up_2: null, follow_up_3: undefined } as any, NAMES)).toBe(templateHash(old, NAMES));
+    // Every variant's emails 3 and 4 pass the same rules as the first two.
+    for (const v of PROSPECT_VARIANTS) for (const touch of [3, 4]) {
+      expect(prospectProblems(renderProspect(v, { first: "Alex", names: NAMES, touch }), NAMES), `${v.subject} email ${touch}`).toEqual([]);
+    }
   });
   it("reads the side from a reply", () => {
     expect(sideFromReply("We might be selling some of our position")).toBe("seller");
@@ -343,22 +366,86 @@ describe("routes and the one-tap links", () => {
     expect(rows).toEqual([{ email: "warm.ref@example.com", url: "https://pod.example/ep-7", line: "I enjoyed your episode on pricing: https://pod.example/ep-7", verified: null }]);
   });
 
-  it("a prospect with 2 sends never gets a 3rd: the one follow-up completes the sequence (owner, 24 Oct 2026)", async () => {
+  it("four emails at most, on day 3, 7 and 14, then never a fifth (owner, 6 Nov 2026)", async () => {
     const t = await proposeTemplate(env.DB, null, NAMES);
     await approveTemplate(env.DB, (t as any).template.id);
-    const t0 = WED_10AM - 6 * DAY;
-    await importProspects(env.DB, [{ email: "two.sends@example.com", name: "Tw O", source: "8raise_2026_10_11", touches: 1, first_sent_at: t0, last_touch_at: t0, status: "active", thread_id: "t2", last_message_id: "<z@example.com>", subject: "Re: x" }]);
-    await recordVerdicts(env.DB, [{ email: "two.sends@example.com", result: "valid" }], WED_10AM);
+    const t0 = WED_10AM - 3 * DAY;
+    await importProspects(env.DB, [{ email: "four.sends@example.com", name: "Fo Ur", source: "8raise_2026_10_11", touches: 1, first_sent_at: t0, last_touch_at: t0, status: "active", thread_id: "t4", last_message_id: "<z@example.com>", subject: "Re: x" }]);
+    await recordVerdicts(env.DB, [{ email: "four.sends@example.com", result: "valid" }], WED_10AM);
+    const send = async (at: number, touch: number) => {
+      const plan = await prospectPlan(env.DB, at);
+      expect(plan.sends.map((s: any) => [s.email, s.touch]), `email ${touch}`).toEqual([["four.sends@example.com", touch]]);
+      expect(plan.sends[0]!.thread_id).toBe("t4");
+      await recordProspectEvents(env.DB, [{ prospect_id: plan.sends[0]!.prospect_id, kind: "sent", touch, gmail_id: `g${touch}`, thread_id: "t4", body: plan.sends[0]!.body } as any], at);
+      return plan.sends[0]!.body;
+    };
+    // Day 3 (a Wednesday): email 2. Day 7 and day 14 fall on Sundays, so emails 3 and 4 go on a later weekday.
+    const b2 = await send(WED_10AM, 2);
+    expect((await prospectPlan(env.DB, WED_10AM + 2 * DAY)).sends).toEqual([]); // day 5, a Friday: not yet
+    const b3 = await send(WED_10AM + 6 * DAY, 3); // day 9, a Tuesday
+    expect((await prospectPlan(env.DB, WED_10AM + 9 * DAY)).sends).toEqual([]); // day 12, a Friday: not yet
+    const b4 = await send(WED_10AM + 13 * DAY, 4); // day 16, a Tuesday
+    expect(new Set([b2, b3, b4]).size).toBe(3); // each follow-up says something new
+    expect(await env.DB.prepare(`SELECT status, touches FROM prospects WHERE email = 'four.sends@example.com'`).first<any>()).toEqual({ status: "done", touches: 4 });
+    expect((await env.DB.prepare(`SELECT touch_no FROM prospect_touches t JOIN prospects p ON p.id = t.prospect_id WHERE p.email = 'four.sends@example.com' ORDER BY touch_no`).all<any>()).results.map((r: any) => r.touch_no)).toEqual([2, 3, 4]);
+    // Weeks later, nothing; and a fifth send is refused even if something tried to record one.
+    for (const d of [20, 34, 90]) expect((await prospectPlan(env.DB, WED_10AM + d * DAY)).sends).toEqual([]);
+    await env.DB.prepare(`UPDATE prospects SET status = 'active' WHERE email = 'four.sends@example.com'`).run();
+    expect((await prospectPlan(env.DB, WED_10AM + 34 * DAY)).sends).toEqual([]);
+    await recordProspectEvents(env.DB, [{ email: "four.sends@example.com", kind: "sent", touch: 5, gmail_id: "g5" } as any]);
+    expect((await env.DB.prepare(`SELECT COUNT(*) AS n FROM prospect_touches t JOIN prospects p ON p.id = t.prospect_id WHERE p.email = 'four.sends@example.com' AND t.touch_no >= 5`).first<any>()).n).toBe(0);
+  });
+
+  it("a template approved before 6 Nov sends emails 1 and 2 only: emails 3 and 4 wait for her words, and the card says so", async () => {
+    const t = await proposeTemplate(env.DB, null, NAMES);
+    const id = (t as any).template.id;
+    await approveTemplate(env.DB, id);
+    // As a row approved before 6 Nov: no emails 3 and 4, and the hash of its three fields.
+    const oldShape = { subject: DEFAULT_PROSPECT_TEMPLATE.subject, body: DEFAULT_PROSPECT_TEMPLATE.body, follow_up: DEFAULT_PROSPECT_TEMPLATE.follow_up };
+    await env.DB.prepare(`UPDATE prospect_templates SET follow_up_2 = NULL, follow_up_3 = NULL, hash = ? WHERE id = ?`).bind(templateHash(oldShape, NAMES), id).run();
+    const t0 = WED_10AM - 7 * DAY;
+    await importProspects(env.DB, [
+      { email: "due.two@example.com", name: "Du Two", source: "x", touches: 1, first_sent_at: WED_10AM - 3 * DAY, last_touch_at: WED_10AM - 3 * DAY, status: "active", thread_id: "ta", last_message_id: "<a@example.com>", subject: "Re: x" },
+      { email: "due.three@example.com", name: "Du Three", source: "x", touches: 2, first_sent_at: t0, last_touch_at: t0 + 3 * DAY, status: "active", thread_id: "tb", last_message_id: "<b@example.com>", subject: "Re: x" },
+    ]);
+    await recordVerdicts(env.DB, [{ email: "due.two@example.com", result: "valid" }, { email: "due.three@example.com", result: "valid" }], WED_10AM);
     const plan = await prospectPlan(env.DB, WED_10AM);
-    expect(plan.sends.map((s: any) => [s.email, s.touch])).toEqual([["two.sends@example.com", 2]]);
-    await recordProspectEvents(env.DB, [{ prospect_id: plan.sends[0]!.prospect_id, email: "two.sends@example.com", kind: "sent", touch: 2, gmail_id: "g2", thread_id: "t2" } as any]);
-    expect(await env.DB.prepare(`SELECT status, touches FROM prospects WHERE email = 'two.sends@example.com'`).first<any>()).toEqual({ status: "done", touches: 2 });
-    // Weeks later, nothing; and a third send is refused even if something tried to record one.
-    for (const d of [7, 14, 60]) expect((await prospectPlan(env.DB, WED_10AM + d * DAY)).sends).toEqual([]);
-    await env.DB.prepare(`UPDATE prospects SET status = 'active' WHERE email = 'two.sends@example.com'`).run();
-    expect((await prospectPlan(env.DB, WED_10AM + 14 * DAY)).sends).toEqual([]);
-    await recordProspectEvents(env.DB, [{ email: "two.sends@example.com", kind: "sent", touch: 3, gmail_id: "g3" } as any]);
-    expect((await env.DB.prepare(`SELECT COUNT(*) AS n FROM prospect_touches t JOIN prospects p ON p.id = t.prospect_id WHERE p.email = 'two.sends@example.com' AND t.touch_no >= 3`).first<any>()).n).toBe(0);
+    expect(plan.sends.map((s: any) => [s.email, s.touch])).toEqual([["due.two@example.com", 2]]);
+    expect(plan.forecast.awaiting).toBe(1);
+    expect(approveOutcome(plan.forecast).lines.join(" ")).toMatch(/1 person is due email 3 or 4 and waits for you to approve its words/);
+    // She approves a version with emails 3 and 4: the same first two emails, and email 3 goes.
+    const withLater = await proposeTemplate(env.DB, { ...DEFAULT_PROSPECT_TEMPLATE }, NAMES);
+    expect((withLater as any).template.follow_up_2).toBeTruthy();
+    await approveTemplate(env.DB, (withLater as any).template.id);
+    expect((await prospectPlan(env.DB, WED_10AM)).sends.map((s: any) => [s.email, s.touch]).sort()).toEqual([["due.three@example.com", 3], ["due.two@example.com", 2]]);
+  });
+
+  it("a reply, an opt-out or a bounce stops that person at once; a spam complaint pauses everyone until she lifts it (owner, 6 Nov 2026)", async () => {
+    const t = await proposeTemplate(env.DB, null, NAMES);
+    await approveTemplate(env.DB, (t as any).template.id);
+    const at = WED_10AM - 3 * DAY;
+    const row = (email: string) => ({ email, name: "Pe Rson", source: "x", touches: 1, first_sent_at: at, last_touch_at: at, status: "active", thread_id: `t-${email}`, last_message_id: "<m@example.com>", subject: "Re: x" });
+    const emails = ["replied.p@example.com", "optout.p@example.com", "bounce.p@example.com", "complain.p@example.com", "fine.a@example.com", "fine.b@example.com"];
+    await importProspects(env.DB, emails.map(row));
+    await recordVerdicts(env.DB, emails.map((email) => ({ email, result: "valid" })), WED_10AM);
+    expect((await prospectPlan(env.DB, WED_10AM)).sends).toHaveLength(6);
+    await recordProspectEvents(env.DB, [
+      { email: "replied.p@example.com", kind: "replied" }, { email: "optout.p@example.com", kind: "opt_out" }, { email: "bounce.p@example.com", kind: "bounce" },
+    ] as any, WED_10AM);
+    expect((await prospectPlan(env.DB, WED_10AM)).sends.map((s: any) => s.email).sort()).toEqual(["complain.p@example.com", "fine.a@example.com", "fine.b@example.com"]);
+    // One complaint: nobody gets anything, confirmed valid or not, days later too, and it is a named stop.
+    expect(PROSPECT_COMPLAINT.test("Stop spamming me, I will report this.")).toBe(true);
+    await recordProspectEvents(env.DB, [{ email: "complain.p@example.com", kind: "complaint" }] as any, WED_10AM + 1000);
+    for (const d of [0, 1, 7, 30]) {
+      const plan = await prospectPlan(env.DB, WED_10AM + d * DAY + 2000);
+      expect(plan.sends, `day ${d}`).toEqual([]);
+      expect(plan.stops.join(" ")).toMatch(/NAMED STOP \[SPAM_COMPLAINT\]/);
+      expect(plan.forecast.complaint).toMatch(/SPAM_COMPLAINT/);
+    }
+    expect((await env.DB.prepare(`SELECT status FROM prospects WHERE email = 'complain.p@example.com'`).first<any>()).status).toBe("opted_out");
+    // She lifts it: the others carry on; the person who complained never hears again.
+    await env.DB.prepare(`INSERT INTO settings (key, value, updated_at) VALUES ('prospects.complaint_pause_lifted_at', ?, ?)`).bind(String(WED_10AM + 5000), WED_10AM + 5000).run();
+    expect((await prospectPlan(env.DB, WED_10AM + 6000)).sends.map((s: any) => s.email).sort()).toEqual(["fine.a@example.com", "fine.b@example.com"]);
   });
 
   /*
@@ -408,7 +495,7 @@ describe("routes and the one-tap links", () => {
       "3 addresses held: NeverBounce could not confirm them (catch-all or unknown); they wait until the bounce rate is back under 3%.",
       "1 address not checked yet: NeverBounce checks it on Monique's next run, before anything goes.",
       "2 addresses already bounced: never written to again.",
-      "This is the one follow-up: after it, the sequence is complete for them and they get no more emails.",
+      "These are follow-ups: four emails at most to anyone (day 0, 3, 7 and 14), then no more; a reply, bounce or opt-out stops them at once.",
       "Why only confirmed addresses: bounce rate 9.1% (2 of 22 in 14 days) is over 3%.",
     ]);
     // The tap page says the same thing the moment she approves.
