@@ -54,6 +54,7 @@ import os from "node:os";
 import { createHash } from "node:crypto";
 import { loadIdentity, isHers, RRLIST } from "./interest-grid.mjs";
 import { decideSide, isRelayedNote } from "../../src/shared/boss/deals/side.mjs";
+import { outputLine } from "../../src/shared/boss/alarms/rules.mjs";
 
 const DIR = process.env.BOSS_OS_CAPITAL_DIR ?? path.join(os.homedir(), ".boss-os", "capital");
 const BATCH_DIR = path.join(DIR, "candidates");
@@ -646,6 +647,7 @@ async function main() {
     console.log(`      ${String(n).padStart(5)}  ${why}`);
   }
   console.log(`CAPITAL-EXTRACT-COMPLETE: ${interests.length} interest(s), ${principals.size} principal(s)`);
+  console.log(outputLine(interests.length, "interests read"));
 }
 
 if (import.meta.url === `file://${process.argv[1]}`) {

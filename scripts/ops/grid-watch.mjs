@@ -64,6 +64,7 @@
 
 import { GRID, EXCLUDED, GRID_OWNER, isExcluded, whyExcluded } from "../../src/shared/boss/grid.mjs";
 import { mkdirSync, writeFileSync, renameSync } from "node:fs";
+import { outputLine } from "../../src/shared/boss/alarms/rules.mjs";
 
 const ARGS = process.argv.slice(2);
 const POST = ARGS.includes("--post");
@@ -529,7 +530,8 @@ async function main() {
     console.error(`\nNAMED STOP [READINGS_NOT_FILED] ${posted?.status ?? "no response"} — ${readings.length} health reading(s) were taken and Boss OS was not told: ${await posted?.text().catch(() => "")}`);
     process.exit(9);
   }
-  console.log(`Health readings filed: ${readings.length} (${readings.filter((r) => r.reader === "github").length} GitHub, ${readings.filter((r) => r.reader === "cloudflare").length} Cloudflare).`);
+  console.log(`Health readings filed: ${readings.length} (${readings.filter((r) => r.reader === "github").length} GitHub, ${readings.filter((r) => r.reader === "cloudflare").length} Cloudflare).`)
+  console.log(outputLine(readings.length, "health readings filed"));
 
   /*
    * RULE 0, AT THE EXIT CODE. A run that reached nothing must go RED on the duty row, because the

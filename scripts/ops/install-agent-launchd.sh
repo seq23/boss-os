@@ -1390,6 +1390,10 @@ install_l_job com.seq.boss-prospect-discovery "duty-run.sh lp-prospect-discovery
 # MONIQUE: TIME-2-READ GROUPS & INSTITUTIONS (owner, 31 Oct 2026). Weekdays 08:15 Central, before the
 # 09:00 outreach window: research, NeverBounce, each group's own code, queue. Reports to duty_t2r_groups (0324).
 install_l_job com.seq.boss-t2r-groups "duty-run.sh t2r-groups.mjs -- npm run --silent t2r:groups -- --live" '<dict><key>Weekday</key><integer>1</integer><key>Hour</key><integer>8</integer><key>Minute</key><integer>15</integer></dict><dict><key>Weekday</key><integer>2</integer><key>Hour</key><integer>8</integer><key>Minute</key><integer>15</integer></dict><dict><key>Weekday</key><integer>3</integer><key>Hour</key><integer>8</integer><key>Minute</key><integer>15</integer></dict><dict><key>Weekday</key><integer>4</integer><key>Hour</key><integer>8</integer><key>Minute</key><integer>15</integer></dict><dict><key>Weekday</key><integer>5</integer><key>Hour</key><integer>8</integer><key>Minute</key><integer>15</integer></dict>' t2r-groups
+# KENDRA: EMAILS TO HER THAT FAIL, IN EVERY APP (owner, 6 Nov 2026). 07:50 and 15:50 Central, daily.
+# Reads West Peek OS and Boss OS failed owner-bound sends, raises a Kendra alarm on 2 in a row. Reports
+# to duty_owner_mail_watch (0350).
+install_l_job com.seq.boss-owner-mail-watch "duty-run.sh owner-mail-watch.mjs -- npm run --silent owner-mail:watch" '<dict><key>Hour</key><integer>7</integer><key>Minute</key><integer>50</integer></dict><dict><key>Hour</key><integer>15</integer><key>Minute</key><integer>50</integer></dict>' owner-mail-watch
 # Seasonal corporate outreach. The renderer shares the checked-in plist template, and only writes.
 # The template runs duty-run.sh pnp-corporate-outreach.mjs -- npm run --silent pnp:outreach -- --live
 PNP_PLIST="$HOME/Library/LaunchAgents/com.seq.boss-pnp-outreach.plist"
@@ -1796,6 +1800,8 @@ require_loaded "$COHESION_LABEL"
 require_loaded "$PNP_PHOTOS_LABEL"
 require_loaded "$SCORECARD_LABEL"
 require_loaded "$SCSWEEP_LABEL"
+# WITH THE JOB, 6 November: Kendra's owner-mail watch.
+require_loaded com.seq.boss-owner-mail-watch
 
 # THE SYMLINKS ARE VERIFIED TOO. An installer that loaded a job pointing at a prompt that is not
 # there would exit 0 having installed something inert, which is Rule 0's exact prohibition.

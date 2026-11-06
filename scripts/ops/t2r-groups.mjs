@@ -26,6 +26,7 @@ import { runCode } from "./simone-commands.mjs";
 import { AGENT_EXECUTORS } from "../sync-agent/runner.mjs";
 import { codexSeatUsable } from "../lib/codex-seat.mjs";
 import { GROUP_TRIAL_DAYS, groupProspectProblems } from "../../src/shared/boss/t2rGroups/rules.mjs";
+import { outputLine } from "../../src/shared/boss/alarms/rules.mjs";
 
 const privateDir = path.join(os.homedir(), ".boss-os", "t2r-groups");
 /** Research runs only while fewer than this many groups wait to be written to. */
@@ -159,6 +160,7 @@ async function main() {
   const r = await runGroups({ live, api, log: (m) => console.log(m) });
   for (const s of r.stops) console.error(s);
   console.log(`t2r-groups ${live ? "LIVE" : "DRY RUN"}: ${r.researched} researched, ${r.imported} new, ${r.verdicts} checked, ${r.codes} codes made, ${r.usage} codes read, ${r.queued} queued for the outreach tick.`);
+  console.log(outputLine(r.researched, "groups researched"));
   if (r.stops.length) process.exitCode = 1;
 }
 if (import.meta.url === `file://${process.argv[1]}`) {

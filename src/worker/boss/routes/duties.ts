@@ -172,6 +172,15 @@ duties.post("/ran", async (c) => {
   const exitCode = Number.isFinite(Number(b?.exit_code)) ? Math.trunc(Number(b.exit_code)) : null;
   const startedAt = Number.isFinite(Number(b?.started_at)) ? Math.trunc(Number(b.started_at)) : null;
   const source = b?.source === "manual" ? "manual" : "launchd";
+  /*
+   * WHAT THE RUN PRODUCED (0350): the wrapper reads the job's `OUTPUT <n> <metric>` line. Absent is
+   * NULL, never 0 — "printed nothing" and "produced nothing" are different findings, and both count
+   * below the floor in Kendra's check (alarms/kendra.ts).
+   */
+  const outputCount = b?.output_count === null || b?.output_count === undefined || b?.output_count === ""
+    ? null
+    : Number.isInteger(Number(b.output_count)) && Number(b.output_count) >= 0 ? Number(b.output_count) : null;
+  const outputMetric = outputCount === null ? null : text(b?.output_metric, 80);
 
   if (outcome === "failed" && !reason) {
     throw badRequest(
@@ -183,10 +192,10 @@ duties.post("/ran", async (c) => {
   const runId = newId("dr");
   await c.env.DB
     .prepare(
-      `INSERT INTO duty_runs (id, duty_id, local_job, started_at, finished_at, outcome, exit_code, reason, source, created_at)
-       VALUES (?,?,?,?,?,?,?,?,?,?)`,
+      `INSERT INTO duty_runs (id, duty_id, local_job, started_at, finished_at, outcome, exit_code, reason, source, created_at, output_count, output_metric)
+       VALUES (?,?,?,?,?,?,?,?,?,?,?,?)`,
     )
-    .bind(runId, duty.id, localJob, startedAt, now, outcome, exitCode, reason, source, now)
+    .bind(runId, duty.id, localJob, startedAt, now, outcome, exitCode, reason, source, now, outputCount, outputMetric)
     .run();
 
   if (outcome === "ok") {
@@ -224,7 +233,7 @@ duties.post("/ran", async (c) => {
     action: outcome === "ok" ? "local_run_ok" : "local_run_failed", detail: { local_job: localJob, run_id: runId },
   });
 
-  return ok(c, { run_id: runId, duty_id: duty.id, outcome, last_run_at: outcome === "ok" ? now : duty.last_run_at }, 201);
+  return ok(c, { run_id: runId, duty_id: duty.id, outcome, output_count: outputCount, last_run_at: outcome === "ok" ? now : duty.last_run_at }, 201);
 });
 
 /**

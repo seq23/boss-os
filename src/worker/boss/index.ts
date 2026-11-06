@@ -74,6 +74,7 @@ import { brains } from "./routes/brains";
 import { validators } from "./routes/validators";
 import { scorecardRoutes } from "./routes/scorecard";
 import { openLoops, INTAKE_PATH as OPEN_LOOPS_INTAKE, runOpenLoopsDaily } from "./routes/openLoops";
+import { alarms } from "./routes/alarms";
 import { runBrainsCohesion } from "./brains/store";
 
 const app = new Hono<{ Bindings: Env; Variables: Vars }>();
@@ -264,6 +265,8 @@ app.route("/api/validators", validators);
 app.route("/api/scorecard", scorecardRoutes);
 // Open Loops (1 Nov 2026): everything approved but not finished, chased each morning (routes/openLoops.ts).
 app.route("/api/open-loops", openLoops);
+// Kendra's alarms (5 Nov 2026): output floors, stuck tasks, owner emails that fail (routes/alarms.ts).
+app.route("/api/alarms", alarms);
 // The Hicks quarterly website update: the notice the errand-reminders tick sends her, and its config.
 app.route("/api/clients/hicks-update", hicksUpdateRoutes);
 //
@@ -456,6 +459,12 @@ export async function runOutreach(env: Env, now = Date.now()) {
 /** Open Loops' daily chase: the morning section and the overdue repairs (routes/openLoops.ts). */
 export async function runOpenLoops(env: Env, now = Date.now()) {
   return runOpenLoopsDaily(env, now);
+}
+
+/** Kendra's alarms, every tick: output floors, first-run checks, stale tasks (alarms/kendra.ts). */
+export async function runKendra(env: Env, now = Date.now()) {
+  const { runKendraChecks } = await import("./alarms/kendra");
+  return runKendraChecks(env, now);
 }
 
 export async function runReaper(env: Env, now = Date.now()) {

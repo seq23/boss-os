@@ -1523,6 +1523,10 @@
     "hicks-quarterly-update": {
       "kind": "helper",
       "why": "Works for you directly (a list, a prep, a reminder); you judge it, not a customer."
+    },
+    "owner-mail-watch": {
+      "kind": "system",
+      "why": "Kendra's watch over every app's failed emails to her: it checks the system, with no customer result of its own."
     }
   }
 }

@@ -11,6 +11,7 @@ import { AGENT_EXECUTORS } from "../sync-agent/runner.mjs";
 import { codexSeatUsable } from "../lib/codex-seat.mjs";
 import { writeMorningSection, morningDir } from "../../src/shared/boss/mail/morning.mjs";
 import { DAILY_FIRST_CAP, assertStatus, blocked, chicagoDay, contactRules, parseContract, planSends, renderEmail, stopReason, validProspect, weekday } from "../../src/shared/boss/pnp/outreach.mjs";
+import { outputLine } from "../../src/shared/boss/alarms/rules.mjs";
 
 const home = path.join(os.homedir(), ".boss-os");
 const privateDir = path.join(home, "pnp-outreach");
@@ -292,6 +293,7 @@ async function main() {
     });
     if (result.noWork) { console.log(result.noWork); process.exitCode = 3; return; }
     console.log(`${live ? "LIVE" : "DRY RUN"}: ${result.sent} sent, ${result.planned ?? 0} planned${result.candidates !== undefined ? `, ${result.candidates} new candidates researched` : ""}${result.stopped ? "; " + result.stopped : ""}.${live ? "" : ` Preview: ${path.join(privateDir, "preview.txt")}`}`);
+    console.log(outputLine(live ? result.sent : 0, "emails sent"));
   } finally { fs.closeSync(fd); fs.unlinkSync(lock); }
 }
 if (process.argv[1] && fileURLToPath(import.meta.url) === path.resolve(process.argv[1])) {
