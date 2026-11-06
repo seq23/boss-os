@@ -158,6 +158,47 @@ export async function handleBossRequest(request: Request, env: Env): Promise<Res
   return bossApp.fetch(inner, toBossEnv(env));
 }
 
+/** A claimed row with no task progress for this long belongs to an invocation that died. */
+export const ORPHAN_AFTER_MS = 20 * 60_000;
+
+/**
+ * A ROW CLAIMED BY A DRAIN THAT DIED IS PUT BACK (6 Nov 2026). The drain marks a row 'running' and
+ * only its own invocation ever moves it on, so an invocation cut short (a request's 30-second tail,
+ * a tick past its limit) left the task 'running' for ever: Camille's deep research for Valerie sat
+ * from 07:00 with no run anywhere and nothing looking. A 'running' row whose task has written no
+ * event for ORPHAN_AFTER_MS is re-queued (its attempt counted); past MAX_ATTEMPTS it goes to the
+ * dead-letter path, which tells her. A task parked on a seat is not this: its row is already 'done'.
+ */
+export async function reapOrphanedRuns(bossEnv: BossEnv, db: D1Database, now: number): Promise<number> {
+  const stale = await db
+    .prepare(
+      `SELECT q.id, q.task_id, q.lane, q.attempt FROM boss_task_queue q
+        WHERE q.state = 'running' AND q.visible_at < ?1
+          AND COALESCE((SELECT MAX(e.ts) FROM task_events e WHERE e.task_id = q.task_id), 0) < ?1`,
+    )
+    .bind(now - ORPHAN_AFTER_MS)
+    .all<{ id: string; task_id: string; lane: string; attempt: number }>();
+  let n = 0;
+  for (const row of stale.results ?? []) {
+    const attempt = row.attempt + 1;
+    const why = `requeued: the run that claimed it stopped with no word for ${Math.round(ORPHAN_AFTER_MS / 60_000)} minutes`;
+    if (attempt >= MAX_ATTEMPTS) {
+      await handleDeadLetter(bossEnv, { taskId: row.task_id, lane: row.lane, attempt }, why).catch(() => {});
+      await db.prepare(`UPDATE boss_task_queue SET state = 'dead', attempt = ?, finished_at = ?, last_error = ? WHERE id = ? AND state = 'running'`)
+        .bind(attempt, now, why, row.id).run();
+    } else {
+      await db.batch([
+        db.prepare(`UPDATE boss_task_queue SET state = 'pending', attempt = ?, visible_at = ?, last_error = ? WHERE id = ? AND state = 'running'`).bind(attempt, now, why, row.id),
+        db.prepare(`UPDATE tasks SET status = 'queued' WHERE id = ? AND status = 'running'`).bind(row.task_id),
+        db.prepare(`INSERT INTO task_events (id, task_id, ts, event, detail) VALUES (?,?,?,'requeued',?)`)
+          .bind(`tev_${crypto.randomUUID().replace(/-/g, "").slice(0, 16)}`, row.task_id, now, JSON.stringify({ why, attempt })),
+      ]);
+    }
+    n++;
+  }
+  return n;
+}
+
 /**
  * Drain the task table. Called from the chassis's single cron entry point.
  *
@@ -169,9 +210,11 @@ export async function drainBossTasks(
   env: Env,
   now: Date,
   limit = 25,
-): Promise<{ ran: number; failed: number; dead: number }> {
+  opts: { fromRequest?: boolean } = {},
+): Promise<{ ran: number; failed: number; dead: number; reaped?: number }> {
   const bossEnv = toBossEnv(env);
   const db = env.WP_OS_DB;
+  const reaped = await reapOrphanedRuns(bossEnv, db, now.getTime());
   /*
    * ─── A HUNT IS NOT A DRAFTING JOB, AND THE MODEL MUST NOT EAT IT ──────────
    *
@@ -220,7 +263,7 @@ export async function drainBossTasks(
   let dead = 0;
 
   for (const row of due.results ?? []) {
-    const msg: TaskMessage = { taskId: row.task_id, lane: row.lane, attempt: row.attempt };
+    const msg: TaskMessage = { taskId: row.task_id, lane: row.lane, attempt: row.attempt, ...(opts.fromRequest ? { fromRequest: true } : {}) };
     /*
      * CLAIMED ATOMICALLY. Two drains can now overlap — the request that queued a rewrite and the
      * progress poll that kicks the queue two seconds later — and before this a plain UPDATE let both
@@ -263,7 +306,7 @@ export async function drainBossTasks(
       }
     }
   }
-  return { ran, failed, dead };
+  return { ran, failed, dead, ...(reaped ? { reaped } : {}) };
 }
 
 export { runBossNightly, runBossDuties, runBossReaper, runBossOutreach, runBossOpenLoops, runBossEightraise, runBossKendra };

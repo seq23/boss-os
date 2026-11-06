@@ -61,8 +61,12 @@ export const AI_ROLES = Object.freeze({
  * fallback at all and waits for the reset (private-data-routing: fail closed).
  * Read by src/worker/boss/queue/consumer.ts (at dispatch) and routes/backends.ts (a limit mid-run).
  */
-export function afterCodexLimit({ sensitivity, confidential = false, chromeJob = false } = {}) {
-  return sensitivity === "public" && !confidential && !chromeJob ? "free_rung" : "wait";
+export function afterCodexLimit({ sensitivity, modelAccess = null, confidential = false, chromeJob = false } = {}) {
+  // Public = declared public, OR cleared for public models on its card (owner, 6 Nov 2026: the
+  // deep research for Valerie was "public_model_approved" and sat waiting four days for Codex). The
+  // router's privacy screen still reads every prompt and keeps private text off the free rung.
+  const isPublic = sensitivity === "public" || modelAccess === "public_model_approved";
+  return isPublic && !confidential && !chromeJob ? "free_rung" : "wait";
 }
 
 /** The role for a job key. An unknown key is a programming error, so it throws rather than guesses. */

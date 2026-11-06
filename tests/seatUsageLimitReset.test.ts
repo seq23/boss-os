@@ -45,4 +45,10 @@ describe("the reset time a notice states", () => {
   it("allows a weekly wait: the longest cooldown is seven days, which the server also accepts", () => {
     expect(MAX_COOLDOWN_SECONDS).toBe(7 * 24 * 60 * 60);
   });
+  it("reads Codex's own words, \"try again at Nov 10th, 2026 6:35 PM\" (6 Nov 2026: read as nothing, so the seat was re-tried every 30 minutes for four days)", () => {
+    const now = Date.UTC(2026, 10, 6, 15, 0);
+    const text = "You've hit your usage limit. Upgrade to Pro (https://chatgpt.com/explore/pro), visit https://chatgpt.com/settings/usage to purchase more credits or try again at Nov 10th, 2026 6:35 PM.";
+    // No zone in the notice: the Mac's own clock, which is what Codex printed it in.
+    expect(retryAfterFrom(text, now)).toBe((new Date(2026, 10, 10, 18, 35).getTime() - now) / 1000);
+  });
 });

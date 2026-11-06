@@ -250,6 +250,8 @@ export interface RouteResult {
   providerId: string;
   /** The pages a search-enabled answer cited, as the provider reported them. */
   sources?: { title: string; url: string }[];
+  /** Which stretch of `text` each source backs, when the provider said (Gemini grounding). */
+  supports?: { start: number; end: number; sources: number[] }[];
   usedFallback: boolean;
   decisionId: string;
   backendId: string | null;
@@ -1064,7 +1066,7 @@ export async function routeCompletion(env: Env, rawOpts: RouteRequest): Promise<
     // Bounded retries: the same backend is tried again ONLY for an error the
     // provider itself marked as temporary. A 400 or a 500 fails identically on a
     // second call and spending a retry on it only delays the fallback.
-    let called: { text: string; inTokens: number; outTokens: number; sources?: { title: string; url: string }[]; extraCostMicros?: number } | null = null;
+    let called: { text: string; inTokens: number; outTokens: number; sources?: { title: string; url: string }[]; supports?: { start: number; end: number; sources: number[] }[]; extraCostMicros?: number } | null = null;
     let attempt = 0;
     let attemptError: Error | null = null;
     while (attempt < MAX_ATTEMPTS_PER_BACKEND) {
@@ -1201,6 +1203,7 @@ export async function routeCompletion(env: Env, rawOpts: RouteRequest): Promise<
       modelDisplayName: model.display_name,
       providerId: model.provider_id,
       sources: called.sources,
+      supports: called.supports,
       usedFallback: degraded,
       decisionId,
       backendId: def.backendId,

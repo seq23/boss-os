@@ -77,5 +77,9 @@ describe("Boss OS employees: Codex works, Claude is the brain", () => {
     expect(afterCodexLimit({ sensitivity: "public", confidential: true })).toBe("wait");
     expect(afterCodexLimit({ sensitivity: "public", chromeJob: true })).toBe("wait");
     for (const sensitivity of ["private", "restricted", "confidential", null, undefined]) expect(afterCodexLimit({ sensitivity })).toBe("wait");
+    // Cleared for public models on its card (6 Nov 2026) counts as public; LP/deal and Chrome still wait.
+    expect(afterCodexLimit({ sensitivity: "internal", modelAccess: "public_model_approved" })).toBe("free_rung");
+    expect(afterCodexLimit({ sensitivity: "internal", modelAccess: "public_model_approved", confidential: true })).toBe("wait");
+    expect(afterCodexLimit({ sensitivity: "internal", modelAccess: "private_model_only" })).toBe("wait");
   });
 });

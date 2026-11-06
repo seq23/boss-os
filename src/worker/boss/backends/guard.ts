@@ -213,6 +213,13 @@ const FREE_ROUTES: Record<string, { kind: "included_allowance" | "free_model_slu
     dailyCap: 20,
     basis: "Brave Search's free allowance, held to 20 searches a day so a month stays well inside it.",
   },
+  // Gemini 2.5 Flash with Google Search grounding on the free key (6 Nov 2026): the research rung
+  // (research/grounded.ts) claims one slot per grounded call; the free key held ~20 a day on 5 Nov.
+  svc_gemini_grounded: {
+    kind: "free_daily_quota",
+    dailyCap: 20,
+    basis: "Google's free tier answers Gemini 2.5 Flash with Search grounding at no charge, about 20 requests a day on her key.",
+  },
   // Google's free tier, by exact model id (4 Nov 2026). Any other Gemini slug on this backend is metered.
   bk_gemini: {
     kind: "free_model_slug",
