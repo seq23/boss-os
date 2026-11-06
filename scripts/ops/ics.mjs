@@ -167,6 +167,15 @@ export function parseIcs(text, now = Date.now(), horizonDays = 28) {
     }
 
     const step = (freq === "DAILY" ? 1 : 7) * interval * 86_400_000;
+    // A repeat keeps its WALL CLOCK in the zone it was set in (6 Nov 2026: a weekly 8am Central
+    // sync set in October came out at 7am after the clocks went back, so the prep said 7am).
+    const tzid = /TZID=([^;:]+)/.exec(dtstart.params ?? "")?.[1] ?? null;
+    const next = (t) => {
+      if (!tzid) return t + step;
+      const wall = t + offsetMinutes(tzid, t) * 60000 + step;
+      const first = wall - offsetMinutes(tzid, wall) * 60000;
+      return wall - offsetMinutes(tzid, first) * 60000;
+    };
     let at = start;
     let n = 0;
     // Bounded hard: a malformed or infinite rule must not spin. The horizon is four weeks, so a
@@ -174,7 +183,7 @@ export function parseIcs(text, now = Date.now(), horizonDays = 28) {
     while (at <= Math.min(stopAt, until) && n < 400) {
       if (count && n >= count) break;
       push(at, n === 0 ? "" : `#${n}`);
-      at += step;
+      at = next(at);
       n += 1;
     }
   }

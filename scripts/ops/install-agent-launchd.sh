@@ -1823,3 +1823,9 @@ else
   echo "NOT INSTALLED:$missing — launchd does not list these after load."
   exit 1
 fi
+
+# HER ZONE, TOLD TO BOSS OS (6 Nov 2026). Times shown to her follow the Mac's zone (ownerTime.mjs);
+# tz-watch re-runs this installer when the zone changes, and also runs owner-zone.mjs on its own
+# ("boss-owner-zone") so a failure here is retried within the hour. Not fatal: the jobs are installed.
+(cd "$REPO" && npm run --silent vault:run -- node scripts/ops/owner-zone.mjs) \
+  || echo "NOTE [OWNER_ZONE_NOT_SET] Boss OS was not told the Mac's zone; tz-watch retries within the hour."

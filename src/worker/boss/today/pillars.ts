@@ -5,6 +5,8 @@ import { PROJECTS, activeProjects, firstMoneyProject, type Project } from "./pro
 import { gratitudeFor, MANIFESTATION_SEQUENCE, HARD_DAY_FLOOR } from "../spirit/practice";
 import { isWestPeekDay } from "../spirit/arcs";
 import { stalledDeals, anchorStreak } from "./close";
+import { ownerTime, OWNER_TZ_KEY } from "../../../shared/boss/ownerTime.mjs";
+import { getSetting } from "../lib/settings";
 
 /**
  * THE THREE PILLAR CONTRACTS THAT SAID `available: false`.
@@ -186,9 +188,8 @@ export async function brokerageMove(
       .run()
       .catch(() => null);
 
-    const clock = new Intl.DateTimeFormat("en-GB", {
-      hour: "2-digit", minute: "2-digit", hour12: false, timeZone: "America/Chicago",
-    }).format(new Date(pointer.sent_at));
+    // Her clock, Central in brackets when she is away (ownerTime.mjs, 6 Nov 2026; was a bare 24-hour Central time).
+    const clock = ownerTime(pointer.sent_at, { tz: await getSetting(env.DB, OWNER_TZ_KEY).catch(() => null) });
     const n = pointer.crossings;
     const noun = pointer.kind === "cross"
       ? `crossing${n === 1 ? "" : "s"} from your book`

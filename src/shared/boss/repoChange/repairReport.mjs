@@ -17,6 +17,8 @@
  * never held. tests/boss/repairsNeverWait.test.ts runs every kind through the check.
  */
 
+import { ownerZone } from "../ownerTime.mjs";
+
 /** The longest sentence she is sent. */
 export const MAX_WORDS_PER_LINE = 25;
 
@@ -86,9 +88,9 @@ export const STOCK = Object.freeze({
 });
 const STOCK_DEFAULT = { broke: "Something in Boss OS stopped working properly.", did: "We found the cause and fixed it." };
 
-/** "Sunday 25 October", in New York time, the way she reads a date. */
-export function dayWords(ms) {
-  return new Date(ms).toLocaleDateString("en-US", { timeZone: "America/New_York", weekday: "long", day: "numeric", month: "long" })
+/** "Sunday 25 October", in her zone (ownerTime.mjs; Central when unset — was hard-coded New York until 6 Nov 2026). */
+export function dayWords(ms, tz = null) {
+  return new Date(ms).toLocaleDateString("en-US", { timeZone: ownerZone(tz), weekday: "long", day: "numeric", month: "long" })
     .replace(/^(\w+), (\w+) (\d+)$/, "$1 $3 $2");
 }
 

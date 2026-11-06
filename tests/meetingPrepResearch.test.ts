@@ -99,6 +99,12 @@ describe("c) times in her current zone, the other zone in brackets only when dif
     expect(p.sections.at(-1).items[0]).toBe("Fri 30 Oct, 1:00pm to 1:30pm ET (12:00pm to 12:30pm CT).");
     expect(buildPrep(pat, {}, { herAddresses: ME }).sections.at(-1).items[0]).toBe("Fri 30 Oct, 12:00pm to 12:30pm CT.");
   });
+  it("the bracket is always Central, never the meeting's own zone (her rule, 6 Nov 2026)", () => {
+    // She is home in Chicago, the meeting is set in Los Angeles: no bracket.
+    expect(buildPrep({ ...pat, time_zone: "America/Los_Angeles" }, {}, { herAddresses: ME, tz: "America/Chicago" }).subject).toBe("Prep: Pat Example (familyoffice.example), Fri 30 Oct, 12pm CT");
+    // She is in Los Angeles: Pacific first, Central in brackets.
+    expect(buildPrep(pat, {}, { herAddresses: ME, tz: "America/Los_Angeles" }).subject).toBe("Prep: Pat Example (familyoffice.example), Fri 30 Oct, 10am PT (12pm CT)");
+  });
 });
 
 describe("d) subjects decoded once", () => {
@@ -132,5 +138,19 @@ describe("e) grid deals only for brokerage contacts", () => {
     expect(t).not.toContain("Acme AI");
     const buyer = { people: [{ email: "pat@familyoffice.example", full_name: "Pat Example", relationship_kind: "investor" }], deals };
     expect(prepEmail(pat, buyer).laid.text).toContain("On the grid now that fits a buyer: Acme AI $10M.");
+  });
+});
+
+// 6 Nov 2026: the invite "Ned (Arnel & Affiliates) <> Sequoia Taylor" went to his assistant; the
+// research looked up the assistant and the prep said "Couldn't research Cecelia Stewart".
+describe("research looks up the person the invite names", () => {
+  it("asks about Ned at the firm, not the assistant's address", async () => {
+    const asked: any[] = [];
+    const api = { post: async (_p: string, b: any) => { asked.push(b); return { ok: false, why: "nothing public" }; } };
+    const ned = { calendar_uid: "n1", title: "Ned (Arnel & Affiliates) <> Sequoia Taylor, West Peek", scheduled_at: Date.parse("2026-11-17T17:00:00Z"), attendees: [{ email: "cstewart@arnel.example", name: "Cecelia Stewart" }] };
+    await researchGuest(ned, {}, { api, log: () => {} });
+    expect(asked[0].name).toBe("Ned");
+    expect(asked[0].email).toBeNull();
+    expect(asked[0].firm).toBe("Arnel & Affiliates");
   });
 });

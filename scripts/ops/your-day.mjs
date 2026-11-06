@@ -46,6 +46,7 @@ import os from "node:os";
 import path from "node:path";
 import { sendAsEmployee } from "./notify.mjs";
 import { createHash } from "node:crypto";
+import { ownerTime } from "../../src/shared/boss/ownerTime.mjs";
 import { layoutEmail, clockWords, lineProblems, proseRuns, proseText, cleanText, quotedSentence } from "../../src/shared/boss/mail/plain.mjs";
 import { readMorningSections, clearToldSections } from "../../src/shared/boss/mail/morning.mjs";
 import { sectionsNotReported, notReportedLine } from "../../src/shared/boss/mail/morningSections.mjs";
@@ -66,7 +67,8 @@ function parts(at) {
   return { date: `${g("year")}-${g("month")}-${g("day")}`, weekday: g("weekday"), hour: Number(g("hour")) % 24, minute: Number(g("minute")) };
 }
 export const dayOf = (at) => parts(at).date;
-export const timeOf = (at) => { const p = parts(at); return clockWords(p.hour, p.minute); };
+// A time she reads: her current zone, Central in brackets when away ("10 am ET (9 am CT)"); 6 Nov 2026.
+export const timeOf = (at, tz = null) => ownerTime(at, { tz, clock: clockWords });
 const MONTHS = ["January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December"];
 export function dayWords(iso, { weekday = true } = {}) {
   const d = new Date(`${iso}T12:00:00Z`);
@@ -823,7 +825,7 @@ export function buildDay(data, now = Date.now()) {
   const notReported = notReportedLine(data.notReported);
   // Every call and meeting of the day, once (the diary merges a copy on a second calendar), with who
   // and the join link when there is one (owner, 26 Oct 2026: "tell me when i have calls").
-  const calls = callsOn(data.diary, today).map((c) => `${timeOf(c.scheduled_at)} ${c.title}${c.with ? ` with ${c.with}` : ""}${/^https:\/\/\S+$/.test(String(c.location ?? "")) ? ` (join: ${c.location})` : ""}`);
+  const calls = callsOn(data.diary, today).map((c) => `${timeOf(c.scheduled_at, data.ownerTz)} ${c.title}${c.with ? ` with ${c.with}` : ""}${/^https:\/\/\S+$/.test(String(c.location ?? "")) ? ` (join: ${c.location})` : ""}`);
   // While her "OpenAI first" switch is on, one small line says so (owner, 24 Oct 2026).
   const openaiFirst = (data.settings ?? []).find((r) => r.key === "seat_order_openai_first");
   const openaiLine = openaiFirst && /^(on|true)$/.test(String(openaiFirst.value))
@@ -873,7 +875,7 @@ export function buildDay(data, now = Date.now()) {
       // "add to my list: …" or "done: …" to change it.
       ...(yours.length ? [{ title: "Yours this week", note: "Reply \"add to my list: …\" or \"done: …\" to change it.", items: yours.map((i) => `${i.what}${i.due_on ? ` (by ${dayWords(i.due_on, { weekday: false })})` : ""}`), empty: null }] : []),
       ...(monday ? [{ title: "This week", items: deadlines, empty: "No deadlines this week." }] : []),
-      { title: "Porch & Party: To do for Valerie", note: val ? `From the Porch & Party site at ${timeOf(now)}. Valerie gets her own copy at 7 am.` : null, boxed: true, items: val ?? [], empty: val ? "All clear for Valerie today." : "Valerie's list did not load this morning; the team is fixing it and Valerie still gets her own copy at 7 am." },
+      { title: "Porch & Party: To do for Valerie", note: val ? `From the Porch & Party site at ${timeOf(now, data.ownerTz)}. Valerie gets her own copy at 7 am CT.` : null, boxed: true, items: val ?? [], empty: val ? "All clear for Valerie today." : "Valerie's list did not load this morning; the team is fixing it and Valerie still gets her own copy at 7 am." },
     ],
     footer: 'Reply to change anything, for example "move the intro to Monday".',
     postscript: ps,
@@ -988,7 +990,9 @@ async function read(api, now) {
   // A section expected today that did not report in is said in one line and repaired (rule 0).
   const reported = sectionsNotReported(sections, { weekday: parts(now).weekday, now });
   for (const m of reported.missing) console.error(`your-day: morning section not reported in — ${m.name}`);
-  return { quietPeople, brainsCheck, t2rGroups, scoreboard, diary: diary?.rows ?? null, tasks: withDue, approvals, repoChanges: rc?.items ?? [], briefing: briefingOf(today), law: lawOf(today), bounceFixes, commentWatch, prospects, spirit, practiceWeek, settings, waiting, carried, morning: reported.sections, notReported: reported.missing };
+  // Her zone for the times shown (Central when unread: never a guess).
+  const ownerTz = await api.get("/system/owner-timezone").then((d) => d?.tz ?? null).catch((e) => { console.error(`your-day: her time zone not read (${e.message}); times in Central`); return null; });
+  return { ownerTz, quietPeople, brainsCheck, t2rGroups, scoreboard, diary: diary?.rows ?? null, tasks: withDue, approvals, repoChanges: rc?.items ?? [], briefing: briefingOf(today), law: lawOf(today), bounceFixes, commentWatch, prospects, spirit, practiceWeek, settings, waiting, carried, morning: reported.sections, notReported: reported.missing };
 }
 
 async function feedOf(range) {

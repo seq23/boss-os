@@ -159,16 +159,16 @@ describe("her reply: the finished prep in the same thread", () => {
 });
 
 describe("the length is read right and shown in her zone", () => {
-  it("an ICS event 10:00 to 12:30 New York time is 150 minutes, shown in her zone with New York's in brackets", () => {
+  it("an ICS event 10:00 to 12:30 New York time is 150 minutes, shown in her zone with Central in brackets when away (her rule, 6 Nov 2026)", () => {
     const ics = "BEGIN:VCALENDAR\nBEGIN:VEVENT\nUID:len1@google.com\nSUMMARY:Sequoia + Jo (Fake Co)\nDTSTART;TZID=America/New_York:20261027T100000\nDTEND;TZID=America/New_York:20261027T123000\nEND:VEVENT\nEND:VCALENDAR";
     const e = parseIcs(ics, Date.parse("2026-10-26T12:00:00Z"), 5).events[0]!;
     expect(e.scheduled_at).toBe(TUE_10_ET);
     expect(e.duration_min).toBe(150);
     const logi = buildPrep(e, {}, {}).sections.find((s: any) => s.title === "Logistics").items[0];
-    expect(logi).toBe("Tue 27 Oct, 9:00am to 11:30am CT (10:00am to 12:30pm ET).");
+    expect(logi).toBe("Tue 27 Oct, 9:00am to 11:30am CT.");
     // A half-hour meeting is a half hour; a UTC end is read the same way.
     const half = parseIcs(ics.replace("DTEND;TZID=America/New_York:20261027T123000", "DTEND:20261027T143000Z"), Date.parse("2026-10-26T12:00:00Z"), 5).events[0]!;
     expect(half.duration_min).toBe(30);
-    expect(buildPrep(half, {}, { tz: "America/New_York" }).sections.at(-1).items[0]).toBe("Tue 27 Oct, 10:00am to 10:30am ET.");
+    expect(buildPrep(half, {}, { tz: "America/New_York" }).sections.at(-1).items[0]).toBe("Tue 27 Oct, 10:00am to 10:30am ET (9:00am to 9:30am CT).");
   });
 });

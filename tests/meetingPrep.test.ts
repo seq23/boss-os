@@ -198,3 +198,11 @@ describe("the Ned prep reads right", () => {
     expect(all).not.toContain("/research/person");
   });
 });
+
+describe("a weekly invite keeps its hour across the clock change", () => {
+  it("8am Central in October is still 8am Central in November", () => {
+    const ics = ["BEGIN:VCALENDAR", "BEGIN:VEVENT", "UID:sync1", "SUMMARY:Sequoia // Scooter Sync", "DTSTART;TZID=America/Chicago:20261028T080000", "DTEND;TZID=America/Chicago:20261028T084500", "RRULE:FREQ=WEEKLY", "END:VEVENT", "END:VCALENDAR"].join("\r\n");
+    const evs = parseIcs(ics, Date.parse("2026-10-27T12:00:00Z"), 28).events;
+    expect(evs.map((e) => new Date(e.scheduled_at).toISOString())).toEqual(["2026-10-28T13:00:00.000Z", "2026-11-04T14:00:00.000Z", "2026-11-11T14:00:00.000Z", "2026-11-18T14:00:00.000Z"]);
+  });
+});
