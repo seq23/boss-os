@@ -1286,6 +1286,33 @@
      "referer_host": "spryexecutiveos.com"
     }
    }
+  },
+  {
+   "domain": "keepmyproof.com",
+   "repo": "keepmyproof",
+   "category": "side_business",
+   "entity_parent": "spry-labs",
+   "kind": "brand",
+   "roles": [],
+   "label": "KeepMyProof",
+   "coverage": {
+    "model": "not_local",
+    "why": "A national phone app for private papers; its state pages are topical, not a service radius."
+   },
+   "search_loop": {
+    "wave": 1
+   },
+   "lead_source": {
+    "kind": "cf_web_analytics",
+    "action": "visits to the free printable checklists, the site's one action",
+    "code": "keepmyproof search-loop.config.json (action: keepmyproof.com/checklists)",
+    "params": {
+     "host": "keepmyproof.com",
+     "paths": [
+      "/checklists"
+     ]
+    }
+   }
   }
  ]
 }

@@ -11,8 +11,9 @@ import { readFileSync } from "node:fs";
 import {
   loadChecklist, loadSites, CHECKS, applies, expandCoverage, coverageProblems, runChecks, fixBriefs,
   morningLines, haversineMiles, workQueue, queueRunLine, repairLine, definitionChoice, nextFixStatus,
-  indexnowKeyFiles, INDEXNOW_KEY_NAME, entityFor, namedPeople, SPRY_LABS_ID, ENTITY_PARENTS,
+  indexnowKeyFiles, INDEXNOW_KEY_NAME, entityFor, SPRY_LABS_ID, ENTITY_PARENTS,
   siteSection, loopConfigFor, oneActionOf, actionMatches, searchLanes,
+  failureSplit, splitLine, currentBriefs, auditHost,
 } from "../src/shared/boss/searchReadiness/audit.mjs";
 import { parseRepoCategories } from "../src/shared/boss/repos/categories.mjs";
 import { renderChecklistPage, loadTemplate, standingsSummary, renderStandings } from "../src/shared/boss/searchReadiness/page.mjs";
@@ -22,9 +23,12 @@ import { MORNING_SECTIONS } from "../src/shared/boss/mail/morning.mjs";
 const checklist = loadChecklist();
 const sites = loadSites();
 
-/** The 71 items on the pinned page as published on 25 Oct 2026. Losing any one fails. */
+/**
+ * The items on the pinned page as published on 25 Oct 2026, less a6 (lastmod from content), which the
+ * owner removed on 6 Nov 2026 ("not a failure"). Losing any other one fails.
+ */
 const PAGE_IDS = [
-  ..."a1 a2 a3 a4 a5 a6 a7 a8 a9 a10".split(" "), ..."b1 b2 b3 b4 b5 b6 b7 b8 b9".split(" "),
+  ..."a1 a2 a3 a4 a5 a7 a8 a9 a10".split(" "), ..."b1 b2 b3 b4 b5 b6 b7 b8 b9".split(" "),
   ..."c1 c2 c3 c4 c5 c6".split(" "), ..."d1 d2 d3 d4".split(" "), ..."e1 e2 e3 e4 e5 e6 e7 e8".split(" "),
   ..."f1 f2 f3 f4 f5 f6".split(" "), ..."g1 g2 g3 g4 g5".split(" "), ..."h1 h2 h3 h4 h5".split(" "),
   ..."j1 j2 j3 j4 j5 j6 j7 j8".split(" "), ..."i1 i2 i3 i4 i5 i6 i7 i8 i9 i10".split(" "),
@@ -40,19 +44,21 @@ const REQUIRED_DOMAINS = [
   "billionairehighperformancecoach.com", "spryexecutiveos.com",
   // 1 Nov 2026: heygetonmylevel is IN search work; the two wave-3 client sites are audited (never shown).
   "heygetonmylevel.com", "detoxdenver.org", "cynthiabrowndds.com",
+  // 6 Nov 2026: KeepMyProof (a Spry Labs app, live since 1 Nov; SEO/AEO/GEO first priority) runs the loop.
+  "keepmyproof.com",
 ];
 
 describe("the manifest holds every item on the page", () => {
-  it("has at least the page's 71 items, every page id, plus j9 (hyperlocal coverage)", () => {
-    expect(PAGE_IDS).toHaveLength(71);
-    expect(checklist.page_item_count).toBe(71);
+  it("has the page's 70 items (71 less a6), every page id, plus j9 (hyperlocal coverage)", () => {
+    expect(PAGE_IDS).toHaveLength(70);
+    expect(checklist.page_item_count).toBe(70);
     const ids = checklist.items.map((i: any) => i.id);
-    expect(ids.length).toBeGreaterThanOrEqual(72);
+    expect(ids.length).toBeGreaterThanOrEqual(71);
     expect(new Set(ids).size).toBe(ids.length);
     for (const id of PAGE_IDS) expect(ids, `item ${id} was lost from the manifest`).toContain(id);
-    // The four lessons of 26 Oct 2026, each an automatic check (never prose only); k1-k6 (31 Oct);
-    // the search growth loop's six stages f7-f12 (1 Nov 2026).
-    expect(ids.length).toBeGreaterThanOrEqual(88);
+    // The four lessons of 26 Oct 2026, each an automatic check (never prose only); k1-k4 and k6 (31 Oct);
+    // the search growth loop's six stages f7-f12 (1 Nov 2026); i11 (3 Nov 2026).
+    expect(ids.length).toBeGreaterThanOrEqual(87);
     const lessons = { b10: ["B", "title_names_own_site", "html"], e9: ["E", "clarity_scoped", "html"], h6: ["H", "build_cache_key", "repo"], j10: ["J", "blocked_lead_domains", "repo"] } as const;
     for (const [id, [phase, type, source]] of Object.entries(lessons)) {
       const it = checklist.items.find((i: any) => i.id === id);
@@ -753,14 +759,14 @@ describe("the page shows where every site stands, counted from the results file"
 });
 
 describe("K · authority and entity: the grid-wide gate (31 Oct 2026, authority audit)", () => {
-  const AUTH = { k1: ["entity_json", "repo"], k2: ["same_as_not_self", "schema"], k3: ["same_as_resolves", "http"], k4: ["parent_organization", "schema"], k5: ["ymyl_reviewer", "schema"], k6: ["entity_watch_green", "github"] } as const;
+  const AUTH = { k1: ["entity_json", "repo"], k2: ["same_as_not_self", "schema"], k3: ["same_as_resolves", "http"], k4: ["parent_organization", "schema"], k6: ["entity_watch_green", "github"] } as const;
   const SPRY = "https://billionairehighperformancecoach.com/spry-labs#organization";
   const ld = (...nodes: any[]) => `<html><head><script type="application/ld+json">${JSON.stringify({ "@context": "https://schema.org", "@graph": nodes })}</script></head><body>x</body></html>`;
   const page = (url: string, html: string) => ({ url, final: url, status: 200, html });
   const repo = (files: Record<string, any>, extra: any = {}) => ({ ok: true, files: Object.keys(files), show: (f: string) => (f in files ? (typeof files[f] === "string" ? files[f] : JSON.stringify(files[f])) : null), workflows: [], ...extra });
   const ctxOf = (o: any) => ({ host: o.site.domain, pages: [], files: {}, portfolio: sites.grid_repos.map((x: any) => x.domain), now: Date.parse("2026-10-31T12:00:00Z"), ...o }) as any;
 
-  it("six automatic items, every one implemented, in their own phase (a1–a6 were taken by Host and crawl)", () => {
+  it("five automatic items, every one implemented, in their own phase (a1–a6 were taken by Host and crawl; k5 removed 6 Nov 2026)", () => {
     expect(checklist.phases.map((p: any) => p.id)).toContain("K");
     for (const [id, [type, source]] of Object.entries(AUTH)) {
       const it = checklist.items.find((i: any) => i.id === id);
@@ -769,7 +775,6 @@ describe("K · authority and entity: the grid-wide gate (31 Oct 2026, authority 
       expect(it.check).toMatchObject({ mode: "auto", type, source });
       expect(typeof CHECKS[type]).toBe("function");
     }
-    expect(checklist.items.find((i: any) => i.id === "k5").check.applies_to).toEqual(["flag:ymyl"]);
   });
 
   it("every grid site names its entity_parent; friends' businesses are client and Porch & Party is never Spry Labs", () => {
@@ -800,10 +805,9 @@ describe("K · authority and entity: the grid-wide gate (31 Oct 2026, authority 
     expect(SPRY_LABS_ID).toBe(SPRY);
   });
 
-  it("k5 reaches only the YMYL sites; k4 reaches every site", () => {
-    const k5 = checklist.items.find((i: any) => i.id === "k5");
-    expect(applies(k5, { kind: "guide", ymyl: true })).toBe(true);
-    expect(applies(k5, { kind: "guide" })).toBe(false);
+  it("k4 reaches every site; `flag:ymyl` still reaches only the YMYL sites", () => {
+    expect(applies({ check: { applies_to: ["flag:ymyl"] } }, { kind: "guide", ymyl: true })).toBe(true);
+    expect(applies({ check: { applies_to: ["flag:ymyl"] } }, { kind: "guide" })).toBe(false);
     expect(applies(checklist.items.find((i: any) => i.id === "k4"), { kind: "brand" })).toBe(true);
   });
 
@@ -861,30 +865,19 @@ describe("K · authority and entity: the grid-wide gate (31 Oct 2026, authority 
     expect(CHECKS.parent_organization!(ctxOf({ site: { domain: "x.com" }, repo: repo({}) })).detail).toMatch(/no entity_parent/);
   });
 
-  it("k5: no reviewer is a named stop never worked; a person not in reviewers.json with written consent is a fix; a consenting reviewer passes", () => {
-    const site = { domain: "dentistryguides.com", repo: "local-guides-generator", category: "side_business", ymyl: true };
-    const art = (person?: any) => page("https://dentistryguides.com/guides/x/", ld({ "@type": "MedicalWebPage", name: "x", ...(person ? { reviewedBy: person } : {}) }));
-    const about = page("https://dentistryguides.com/about/", ld({ "@type": "AboutPage" }));
-    const roster = (reviewers: any[]) => repo({ "data/entity/dentistry/reviewers.json": { reviewers } });
-    const none = CHECKS.ymyl_reviewer!(ctxOf({ site, repo: roster([]), pages: [about, art()] }));
-    expect(none.status).toBe("fail");
-    expect(none.named_stop).toMatch(/^OWNER_REVIEWER_NEEDED/);
-    expect(none.detail).toMatch(/1 of 1 content pages/);
-    const briefs = fixBriefs(checklist, [{ site, host: site.domain, results: [{ id: "k5", ...none }] }]);
-    expect(briefs[0]).toMatchObject({ disposition: "named_stop", named_stop: expect.stringMatching(/Never a fix brief/) });
-    expect(workQueue(briefs)).toMatchObject({ total: 1, workable: 0 });
-    const invented = CHECKS.ymyl_reviewer!(ctxOf({ site, repo: roster([]), pages: [art({ "@type": "Person", name: "Dr. Nobody" })] }));
-    expect(invented.status).toBe("fail");
-    expect(invented.named_stop).toBeUndefined();
-    expect(invented.detail).toMatch(/not in reviewers\.json/);
-    const real = roster([{ name: "Dr. Real", credential: "DDS", consent: { written: true, date: "2026-10-31", record: "x" } }]);
-    expect(CHECKS.ymyl_reviewer!(ctxOf({ site, repo: real, pages: [art({ "@type": "Person", name: "Dr. Real" })] })).status).toBe("pass");
-    const unsigned = roster([{ name: "Dr. Real", consent: { written: false } }]);
-    expect(CHECKS.ymyl_reviewer!(ctxOf({ site, repo: unsigned, pages: [art({ "@type": "Person", name: "Dr. Real" })] })).status).toBe("fail");
-    expect(CHECKS.ymyl_reviewer!(ctxOf({ site, repo: real, pages: [about] })).status).toBe("not_checked");
-    // An author counts only with a credential; an uncredentialed byline is not a reviewer.
-    expect(namedPeople([{ "@type": "Article", author: { "@type": "Person", name: "A" } }])).toEqual([]);
-    expect(namedPeople([{ "@type": "Article", author: { "@type": "Person", name: "A", jobTitle: "Attorney" } }])).toEqual(["A"]);
+  it("k5 is gone (owner, 6 Nov 2026: \"I'm never getting a real reviewer… do not check for that\"): a YMYL site with no reviewer fails nothing and stops nothing", () => {
+    expect(checklist.items.map((i: any) => i.id)).not.toContain("k5");
+    expect(checklist.items.some((i: any) => i.check.type === "ymyl_reviewer")).toBe(false);
+    expect((CHECKS as any).ymyl_reviewer).toBeUndefined();
+    const site = { domain: "dentistryguides.com", repo: "local-guides-generator", category: "side_business", kind: "guide", ymyl: true, entity_parent: "spry-labs" };
+    const noReviewer = page("https://dentistryguides.com/guides/x/", ld({ "@type": "MedicalWebPage", name: "x", author: { "@type": "Organization", name: "The Dentistry Guides editorial desk" } }));
+    const results = runChecks(checklist, ctxOf({ site, repo: repo({ "README.md": "x" }), pages: [page("https://dentistryguides.com/", ld({ "@type": "Organization", name: "D" })), noReviewer] }));
+    expect(results.length).toBeGreaterThan(20);
+    expect(results.filter((r: any) => r.named_stop)).toEqual([]);
+    expect(results.map((r: any) => r.id)).not.toContain("k5");
+    for (const r of results.filter((x: any) => x.status === "fail")) expect(String(r.detail), r.id).not.toMatch(/reviewer/i);
+    const briefs = fixBriefs(checklist, [{ site, host: site.domain, results }]);
+    expect(briefs.filter((b: any) => b.disposition === "named_stop")).toEqual([]);
   });
 
   it("k6: no watch, no schedule, a red or stale newest run fails; a green run this week passes", () => {
@@ -1053,7 +1046,7 @@ describe("F · the search growth loop on every selling site (owner, 1 Nov 2026)"
     const loop = sites.grid_repos.filter((s: any) => s.search_loop).map((s: any) => s.domain).sort();
     expect(loop).toEqual([
       "aplayermode.com", "approvalprep.com", "billionairehighperformancecoach.com", "cynthiabrowndds.com", "dentistryguides.com", "detoxdenver.org",
-      "heygetonmylevel.com", "hicksconsulting.org", "hormonesivhair.com", "horselegalguide.com", "memphisseniorcarehomes.com", "neuroevalguides.com",
+      "heygetonmylevel.com", "hicksconsulting.org", "hormonesivhair.com", "horselegalguide.com", "keepmyproof.com", "memphisseniorcarehomes.com", "neuroevalguides.com",
       "porchandparty901.com", "spryexecutiveos.com", "theaccidentguides.com", "theindustryguides.com", "time-2-read.com", "uscisexam.com",
       "weddingbudgetspreadsheet.com", "weddingchecklistpdf.com", "weddingseatingchartmaker.com", "weddingtimelinetemplate.com",
     ]);
@@ -1085,8 +1078,8 @@ describe("F · the search growth loop on every selling site (owner, 1 Nov 2026)"
     expect(page).toContain("pal.example");
     // The email: routine failures on a friend's site stay out; one that needs her (a named stop) comes in.
     expect(morningLines(checklist, results, { categories: CATS }).join(" ")).not.toContain("pal.example");
-    const stop = results.map((r) => (r.site === friend ? { ...r, results: [{ id: "k5", status: "fail", detail: "z", named_stop: "a reviewer's written consent" }] } : r));
-    expect(morningLines(checklist, stop, { categories: CATS }).join(" ")).toMatch(/pal\.example \(a reviewer's written consent\)/);
+    const stop = results.map((r) => (r.site === friend ? { ...r, results: [{ id: "k4", status: "fail", detail: "z", named_stop: "the client's written yes" }] } : r));
+    expect(morningLines(checklist, stop, { categories: CATS }).join(" ")).toMatch(/pal\.example \(the client's written yes\)/);
     expect(morningLines(checklist, results, { categories: CATS })[0]).toContain("all 2 grid repo sites");
     // Categories that cannot be read hide nothing: every site shows as hers, and the page says why.
     const bad = parseRepoCategories("");
@@ -1097,5 +1090,123 @@ describe("F · the search growth loop on every selling site (owner, 1 Nov 2026)"
     expect(briefs.length).toBeGreaterThan(0);
     for (const b of briefs) expect(b.disposition).toBe("client_repo");
     expect(workQueue(briefs).workable).toBe(0);
+  });
+});
+
+// ─── Owner rulings, 6 Nov 2026 ─────────────────────────────────────────────────
+
+describe("a6 is gone: a fresh lastmod is never a failure (owner, 6 Nov 2026: \"refresh it often and keep moving\")", () => {
+  it("no item checks lastmod against the build date, and a sitemap stamped today fails nothing", () => {
+    expect(checklist.items.map((i: any) => i.id)).not.toContain("a6");
+    expect(checklist.items.some((i: any) => i.check.type === "lastmod_from_content")).toBe(false);
+    expect((CHECKS as any).lastmod_from_content).toBeUndefined();
+    const today = "2026-11-06";
+    const sitemap = { ok: true, children: [{ url: "https://a.com/sitemap.xml", status: 200, count: 40, lastmods: Array(40).fill(today) }], urls: new Set(Array.from({ length: 40 }, (_, i) => `https://a.com/p${i}/`)) };
+    const results = runChecks(checklist, { site: { domain: "a.com", kind: "guide" }, host: "a.com", pages: [], files: {}, sitemap, portfolio: [], now: Date.parse(`${today}T12:00:00Z`) } as any);
+    expect(results.length).toBeGreaterThan(20);
+    for (const r of results.filter((x: any) => x.status === "fail")) expect(String(r.detail), r.id).not.toMatch(/lastmod|build date/i);
+  });
+});
+
+describe("the fix queue carries only items the checklist still holds (6 Nov 2026)", () => {
+  const site = { domain: "approvalprep.com", repo: "approvalprep", category: "side_business" };
+  it("a stale result for a removed id is dropped when briefs are made, and again when an older queue is read", () => {
+    const results = [{ id: "a6", status: "fail", detail: "lastmod looks like the build date" }, { id: "k5", status: "fail", detail: "no reviewer", named_stop: "OWNER_REVIEWER_NEEDED" }, { id: "a1", status: "fail", detail: "y" }];
+    const briefs = fixBriefs(checklist, [{ site, host: site.domain, results }]);
+    expect(briefs.map((b: any) => b.item_id)).toEqual(["a1"]);
+    // Last Monday's queue still holds a6 and k5: the Tuesday run must not work them.
+    const old = [
+      { id: "sr-approvalprep.com-a6", item_id: "a6", repo: "approvalprep", disposition: "fix" },
+      { id: "sr-approvalprep.com-k5", item_id: "k5", repo: "approvalprep", disposition: "named_stop" },
+      { id: "sr-approvalprep.com-a1", item_id: "a1", repo: "approvalprep", disposition: "fix" },
+      { id: "so-approvalprep.com-outcome", item_id: "o1", kind: "outcome", repo: "approvalprep", disposition: "weekly" },
+    ];
+    const kept = currentBriefs(checklist, old);
+    expect(kept.map((b: any) => b.id)).toEqual(["sr-approvalprep.com-a1", "so-approvalprep.com-outcome"]);
+    expect(workQueue(kept)).toMatchObject({ total: 2, workable: 1, weekly: 1 });
+    expect(() => currentBriefs({ items: [] }, old)).toThrow(/NAMED STOP/);
+  });
+  it("the runner filters the queue it reads (--plan, --queue) through currentBriefs", () => {
+    const runner = readFileSync("scripts/ops/search-readiness-audit.mjs", "utf8");
+    expect(runner.match(/currentBriefs\(/g)?.length ?? 0).toBeGreaterThanOrEqual(2);
+  });
+});
+
+describe("the weekly report splits failures four ways (owner, 6 Nov 2026)", () => {
+  const now = Date.parse("2026-11-06T12:00:00Z");
+  const S = (domain: string) => ({ domain, repo: domain, category: "side_business" });
+  const fail = (id: string) => ({ id, status: "fail", detail: "x" });
+  const passR = (id: string) => ({ id, status: "pass", detail: "ok" });
+  const chk = { items: [
+    { id: "a1", added: "2026-10-11", check: {} }, { id: "a2", added: "2026-10-11", check: {} },
+    { id: "a3", added: "2026-10-11", check: {} }, { id: "k1", added: "2026-10-31", check: {} },
+  ] };
+  const history = [
+    { day: "2026-10-20", sites: [{ site: S("old.com"), results: [passR("a1"), fail("a2"), passR("a3")] }] },
+    { day: "2026-11-02", sites: [{ site: S("old.com"), results: [fail("a1"), fail("a2"), passR("a3")] }, { site: S("young.com"), results: [fail("a1")] }] },
+  ];
+  it("new sites, new checklist items, slipped back and still open, each counted once", () => {
+    const current = [
+      { site: S("old.com"), results: [fail("a1"), fail("a2"), fail("a3"), fail("k1"), fail("gone")] },
+      { site: S("young.com"), results: [fail("a1"), fail("a2")] }, // first audited 2 Nov: new
+      { site: S("brand-new.com"), results: [fail("a1")] }, // never audited: new
+    ];
+    const s = failureSplit(chk, current, { history, now });
+    expect(s).toMatchObject({ total: 7, new_sites: 3, new_items: 1, slipped_back: 1, still_open: 2 });
+    expect(s.groups.slipped_back).toEqual(["old.com|a3"]);
+    expect(s.groups.new_items).toEqual(["old.com|k1"]);
+    expect(s.groups.still_open.sort()).toEqual(["old.com|a1", "old.com|a2"]);
+    expect(s.new_sites + s.new_items + s.slipped_back + s.still_open).toBe(s.total);
+    const line = splitLine(s);
+    expect(line).toMatch(/7 checks failing/);
+    expect(line).toMatch(/3 on new sites/);
+    expect(line).toMatch(/1 from new checklist items/);
+    expect(line).toMatch(/1 slipped back/);
+    expect(line).toMatch(/2 still open/);
+    expect(lineProblems(line)).toEqual([]);
+  });
+  it("an item that passed two runs ago but failed last run is still open, not slipped back", () => {
+    const s = failureSplit(chk, [{ site: S("old.com"), results: [fail("a1")] }], { history, now });
+    expect(s).toMatchObject({ total: 1, still_open: 1, slipped_back: 0 });
+  });
+  it("a site already in the first run on record is the baseline, never new, even inside 14 days", () => {
+    const h = [{ day: "2026-10-25", sites: [{ site: S("base.com"), results: [fail("a1")] }] }, { day: "2026-11-02", sites: [{ site: S("base.com"), results: [fail("a1")] }, { site: S("late.com"), results: [fail("a1")] }] }];
+    const s = failureSplit(chk, [{ site: S("base.com"), results: [fail("a1")] }, { site: S("late.com"), results: [fail("a1")] }], { history: h, now });
+    expect(s.groups.new_sites).toEqual(["late.com|a1"]);
+    expect(s.groups.still_open).toEqual(["base.com|a1"]);
+  });
+  it("a removed item's failure is never counted", () => {
+    expect(failureSplit(chk, [{ site: S("old.com"), results: [fail("gone")] }], { history, now }).total).toBe(0);
+  });
+  it("the completion words come from this run only, never an older run's all-clear", () => {
+    const allClear = { day: "2026-11-02", sites: [{ site: S("old.com"), results: [passR("a1")] }] };
+    const current = [{ site: S("old.com"), results: [fail("a1")] }];
+    const older = { day: "2026-10-20", sites: [{ site: S("old.com"), results: [passR("a1")] }] };
+    const lines = morningLines(chk, current, { previous: allClear, history: [older, allClear], now });
+    const text = lines.join(" ");
+    expect(text).not.toMatch(/nothing is failing|1 pass every check\.|all pass/i);
+    expect(text).toMatch(/1 check failing: 1 slipped back/);
+    // And the reverse: an older run's failures never keep this run from saying it is clear.
+    const clear = morningLines(chk, [{ site: S("old.com"), results: [passR("a1")] }], { previous: { day: "2026-11-02", sites: current }, history, now }).join(" ");
+    expect(clear).toMatch(/Nothing is failing this week/);
+    expect(clear).toMatch(/Fixed since last week: 1 gaps closed/);
+  });
+  it("every checklist item carries the day it was added", () => {
+    for (const i of checklist.items) expect(i.added, i.id).toMatch(/^2026-\d{2}-\d{2}$/);
+    expect(checklist.items.filter((i: any) => /^f(7|8|9|10|11|12)$/.test(i.id)).map((i: any) => i.added)).toEqual(Array(6).fill("2026-11-01"));
+  });
+});
+
+describe("a site is audited on its own pages, never on the site its home page redirects to (f9, 6 Nov 2026)", () => {
+  it("auditHost follows www and apex, never a redirect to another site", () => {
+    expect(auditHost("spryexecutiveos.com", "https://billionairehighperformancecoach.com/")).toBe("spryexecutiveos.com");
+    expect(auditHost("hicksconsulting.org", "https://www.hicksconsulting.org/")).toBe("www.hicksconsulting.org");
+    expect(auditHost("a.com", null)).toBe("a.com");
+    const runner = readFileSync("scripts/ops/search-readiness-audit.mjs", "utf8");
+    expect(runner).toMatch(/const host = auditHost\(site\.domain, start\.final\)/);
+  });
+  it("f9 counts a link to the action's .html file as leading to the action", () => {
+    expect(actionMatches("https://billionairehighperformancecoach.com/download.html?page_kind=guide", "https://billionairehighperformancecoach.com/download", "https://spryexecutiveos.com/x")).toBe(true);
+    expect(actionMatches("https://billionairehighperformancecoach.com/downloads.html", "https://billionairehighperformancecoach.com/download", "https://spryexecutiveos.com/x")).toBe(false);
   });
 });
