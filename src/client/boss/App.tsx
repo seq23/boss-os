@@ -19,6 +19,7 @@ import { EmailMap } from "./pages/EmailMap";
 import { Schedule } from "./pages/Schedule";
 import { Scorecard } from "./pages/Scorecard";
 import { OpenLoops } from "./pages/OpenLoops";
+import { Updates } from "./pages/Updates";
 import { Validators } from "./pages/Validators";
 import { Trading } from "./pages/Trading";
 import { Vault } from "./pages/Vault";
@@ -47,7 +48,7 @@ import { readRoute, readFocus, readGateFocus, type Route } from "./nav";
  */
 const TITLES: Record<TabId, string> = {
   today: "Today", inbox: "Inbox", capital: "Capital",
-  spirit: "Spirit", team: "Team", brains: "Brains", emails: "Email Map", schedule: "Schedule", scorecard: "Scorecard", loops: "Open Loops", validators: "Validators", memory: "Memory", trading: "Trading", vault: "Vault",
+  spirit: "Spirit", team: "Team", brains: "Brains", emails: "Email Map", schedule: "Schedule", scorecard: "Scorecard", loops: "Open Loops", updates: "Updates", validators: "Validators", memory: "Memory", trading: "Trading", vault: "Vault",
   systems: "Systems",
 };
 
@@ -304,6 +305,8 @@ export default function App() {
         <Scorecard />
       ) : tab === "loops" ? (
         <OpenLoops />
+      ) : tab === "updates" ? (
+        <Updates />
       ) : tab === "validators" ? (
         <Validators />
       ) : tab === "memory" ? (

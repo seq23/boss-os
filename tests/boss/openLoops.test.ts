@@ -12,7 +12,7 @@ import { runOpenLoopsDaily } from "../../src/worker/boss/routes/openLoops";
  *      once that step is closed;
  *   3. an overdue row Danielle can do opens ONE silent repair (never a second on the next tick); one
  *      that needs her (her row, her account, a step only she holds, or nothing written) opens no job
- *      and sends ONE reminder email per slot (owner, 2 Nov 2026).
+ *      and writes ONE reminder per slot (owner, 2 Nov 2026), a row on the Updates page since 7 Nov 2026.
  */
 const raw = async (path: string, init: { method?: string; body?: unknown; headers?: Record<string, string> } = {}) => {
   const ctx = createExecutionContext();
@@ -67,7 +67,7 @@ describe("Open Loops", () => {
     expect(visibleLoops(d.loops).shown.map((l: any) => l.id)).toContain(hers.id);
   });
 
-  it("an overdue row Danielle can do is one silent repair; one that needs her is a reminder email and no job (2 Nov 2026)", async () => {
+  it("an overdue row Danielle can do is one silent repair; one that needs her is a reminder (on the Updates page) and no job (2 Nov 2026)", async () => {
     // Doable: a team row with a written step and nothing only she holds, four days late.
     const team = await create({ title: "Fix the sitemap build", next_step: "Fix the sitemap script and run it again.", owner: "claude", next_date: "2026-11-06" });
     // Needs her: a named-stop row about her Play account, one day late (team-owned, still hers).
@@ -84,8 +84,10 @@ describe("Open Loops", () => {
     const sec = await env.DB.prepare(`SELECT body FROM morning_sections WHERE section = 'open_loops'`).first<{ body: string }>();
     expect(JSON.parse(sec!.body).lines.map((l: any) => l.text).join("\n")).toContain("Pay for the accounts");
 
-    // The reminder is three plain parts and reaches the notice drain; no job was opened for it.
-    const notes = await env.DB.prepare(`SELECT task_id, subject, body FROM boss_task_notices WHERE kind = 'open_loop_reminder'`).all<any>();
+    // The reminder is three plain parts on the Updates page (needs_her 0: never emailed, 7 Nov 2026); no job was opened for it.
+    const notes = await env.DB.prepare(`SELECT task_id, subject, body, needs_her FROM boss_task_notices WHERE kind = 'open_loop_reminder'`).all<any>();
+    expect(notes.results.length).toBeGreaterThan(0);
+    expect(notes.results.every((n: any) => n.needs_her === 0)).toBe(true);
     const playNote = notes.results.find((n: any) => n.task_id === play.id);
     expect(playNote.subject).toBe("Reminder: KeepMyProof on Google Play");
     expect(playNote.body).toMatch(/What is waiting: .*\nWhy it is yours: .*\nWhat clears it: Finish the Google Play ID check\./);

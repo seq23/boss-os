@@ -164,6 +164,16 @@ pinned by `tests/plainEmail.test.ts` ("the rules in CLAUDE.md"), which reads thi
    (`practice_engagement`), never what she said: coaching stays LOCAL_ONLY. Pinned by
    `tests/boss/practiceLapse.test.ts`.
 
+8. **Email only when she must act** (owner, 7 Nov 2026: "either consolidate the emails or make those
+   notifications on some page inside boss os only"). One gate: every Simone/Kendra notice carries
+   `needs_her` (`boss_task_notices`, migration 0353), set where it is written by `needsHer`
+   (`src/shared/boss/mail/noticeGate.mjs`) from its kind and who asked — never its words. The drain
+   (`scripts/ops/task-notices.mjs` `sendNotice`) emails only `needs_her = 1`: a stop, a could-not-do,
+   a missing key, an empty Drive folder, or the answer to work she asked for by email. Reminders,
+   pauses, Done notices for work a job or alarm started, and the Mac disk line are rows on
+   ☰ More → Updates (`/?tab=updates`), and the morning email's "Done for you" carries ONE count line
+   read from the same route. Pinned by `tests/noticeGate.test.ts`.
+
 ## Search Readiness: the checklist enforces itself on the grid repos
 
 Owner, 25 Oct 2026. Her pinned Search Readiness Checklist is data, run every week on every grid repo
@@ -462,8 +472,9 @@ Owner ruling, 1 Nov 2026 (personal brain, Settled decisions). Pinned by `tests/b
    copy is flagged). An overdue row splits (owner, 2 Nov 2026: "if Danielle can do it she should but
    if not stop and remind me"; `overdueRoute`): one Danielle can do is one silent repair once 3 days
    late (one per date); one that needs her (her row, her account, a key, money, legal, her decision,
-   or nothing written) opens no job and sends ONE plain reminder through the notice drain on day 1,
-   then every 3 days, at most 3 per date.
+   or nothing written) opens no job and writes ONE plain reminder on day 1, then every 3 days, at
+   most 3 per date — a row on the Updates page, never an email (owner, 7 Nov 2026); the overdue rows
+   are already the morning email's folded Open loops list.
 3. **Repos' named stops report in** through `POST /api/boss/open-loops/intake` with the machine token
    `BOSS_OPEN_LOOPS_TOKEN` (vault): upsert by `repo#STOP`, closed "outcome reached" when cleared.
    How to adopt: `docs/open-loops.md`. Seed rows are posted at runtime, never written in the repo.

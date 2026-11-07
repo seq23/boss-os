@@ -4,6 +4,7 @@ import { describe, expect, it, vi } from "vitest";
 // Each pass reads every live duty (42) and may admit a repair: give the end-to-end runs room.
 vi.setConfig({ testTimeout: 60_000 });
 import { runKendraChecks, raiseAlarm, herAlarms } from "../../src/worker/boss/alarms/kendra";
+import { isResearchWork } from "../../src/worker/boss/queue/freeRung";
 
 /**
  * KENDRA'S ALARMS, END TO END OVER THE REAL MIGRATIONS (0350; owner, 5 Nov 2026: stop "green but
@@ -98,6 +99,36 @@ describe("G2: a task that sits running", () => {
     await E.DB.prepare(`UPDATE tasks SET status = 'failed' WHERE id = 'tsk_test_stuck'`).run();
     r = await runKendraChecks(E, now + H);
     expect(r.stale.cleared).toContain("tsk_test_stuck");
+  });
+});
+
+describe("G2: a stale-task alarm goes to the repair path, never research, and never feeds itself (7 Nov 2026)", () => {
+  it("its repair is not research work, opens no research page, and a stale repair raises no alarm of its own", async () => {
+    const now = Date.now();
+    await E.DB.prepare(`INSERT INTO tasks (id, lane, employee_id, title, status, created_at, started_at, intake_kind) VALUES ('tsk_test_dna','ops','emp_research','Deep research: a mobile DNA collection business for a relative','running',?,?,'research')`)
+      .bind(now - 3 * H, now - 2.5 * H).run();
+    const r = await runKendraChecks(E, now);
+    expect(r.stale.opened).toContain("tsk_test_dna");
+    const repairId = (await alarm("task:tsk_test_dna")).task_id as string;
+    expect(repairId).toMatch(/^tsk_/);
+    const repair = await E.DB.prepare(`SELECT id, title, intake_kind, input, started_at FROM tasks WHERE id = ?`).bind(repairId).first();
+    const input = JSON.parse(repair.input);
+    expect(input).toMatchObject({ origin: "repair", repair_kind: "kendra_alarm" });
+    // The title says "research", so the classifier may call it research: the queue must still not.
+    expect(isResearchWork(repair, input)).toBe(false);
+    expect(input.research_page).toBeUndefined();
+    expect((await E.DB.prepare(`SELECT COUNT(*) AS n FROM research_pages WHERE task_id = ?`).bind(repairId).first()).n).toBe(0);
+
+    // The repair itself sits running past the stale line: no alarm on it, no repair of the repair.
+    await E.DB.prepare(`UPDATE tasks SET status = 'running', started_at = ? WHERE id = ?`).bind(now - 3 * H, repairId).run();
+    const before = (await E.DB.prepare(`SELECT COUNT(*) AS n FROM tasks WHERE title LIKE 'Kendra''s alarm:%'`).first()).n;
+    const r2 = await runKendraChecks(E, now + 1000);
+    expect(r2.stale.opened).not.toContain(repairId);
+    expect(await alarm(`task:${repairId}`)).toBeNull();
+    expect(r2.stale.repairs).toBeGreaterThanOrEqual(1);
+    expect((await E.DB.prepare(`SELECT COUNT(*) AS n FROM tasks WHERE title LIKE 'Kendra''s alarm:%'`).first()).n).toBe(before);
+    expect((await E.DB.prepare(`SELECT COUNT(*) AS n FROM tasks WHERE title LIKE 'Kendra''s alarm: %Kendra''s alarm:%'`).first()).n).toBe(0);
+    await E.DB.prepare(`UPDATE tasks SET status = 'done' WHERE id IN (?, ?)`).bind("tsk_test_dna", repairId).run();
   });
 });
 

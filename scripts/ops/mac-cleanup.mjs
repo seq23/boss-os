@@ -290,11 +290,28 @@ async function main() {
 
   const big = ["Library/Caches", "GitHub", "Library/Developer", "Downloads"].map((d) => ({ d, b: sizeOf(path.join(HOME, d)) })).sort((a, b) => b.b - a.b).slice(0, 3).map((x) => `${x.d.split("/").pop()} ${Math.round(x.b / 1e9)} GB`);
   const line = lowDiskLine(after, cleaned, big, trashGb);
+  /*
+   * ON THE UPDATES PAGE, NEVER AN EMAIL (owner, 7 Nov 2026: "Mac disk: N GB free" every day said
+   * "nothing to decide"; the team fixes disk, she does not). One row a day on ☰ More → Updates,
+   * counted in the morning email's one Updates line.
+   */
   if (line && !DRY) {
-    const { sendAsEmployee } = await import("./notify.mjs");
-    const r = await sendAsEmployee("Simone", { to: process.env.BOSS_NOTIFY_TO ?? "seq.taylor@gmail.com", subject: `Mac disk: ${Math.round(after)} GB free`, text: line });
-    if (!r.ok) { console.error(`NAMED STOP [SEND_REFUSED] the low-disk line was not sent: ${r.error}`); process.exit(9); }
+    const r = await postUpdate({ key: `mac-disk:${today}`, from_name: "Simone", subject: `Mac disk: ${Math.round(after)} GB free`, body: line });
+    if (!r.ok) { console.error(`NAMED STOP [UPDATE_REFUSED] the low-disk line did not reach the Updates page: ${r.error}`); process.exit(9); }
+    console.log(`OUTPUT updates=1 (${r.already ? "already on the Updates page today" : "on the Updates page"})`);
   }
+}
+
+/** Post one Updates-page row to Boss OS (passcode from the vault). `{ ok, already?, error? }`. */
+export async function postUpdate(body, { fetchImpl = fetch, origin = process.env.BOSS_OS_ORIGIN ?? "https://boss.sequoiataylor.com" } = {}) {
+  if (!process.env.BOSS_PASSCODE) return { ok: false, error: "NO_PASSCODE: run through the vault (npm run mac:cleanup)" };
+  const u = await fetchImpl(`${origin}/api/boss/auth/unlock`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ passcode: process.env.BOSS_PASSCODE }) }).catch((e) => ({ ok: false, status: String(e?.message ?? e) }));
+  if (!u.ok) return { ok: false, error: `unlock refused (${u.status})` };
+  const cookie = (u.headers.get("set-cookie") ?? "").split(";")[0];
+  const r = await fetchImpl(`${origin}/api/boss/task-notices/update`, { method: "POST", headers: { cookie, "content-type": "application/json" }, body: JSON.stringify(body) }).catch((e) => ({ ok: false, status: String(e?.message ?? e) }));
+  if (!r.ok) return { ok: false, error: `the Updates page refused it (${r.status})` };
+  const j = await r.json().catch(() => ({}));
+  return { ok: true, already: Boolean(j?.data?.already) };
 }
 
 if (import.meta.url === `file://${process.argv[1]}`) {

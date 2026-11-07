@@ -39,6 +39,7 @@
  *   npm run your-day -- --dry-run    # print what would be sent, send nothing
  *   npm run your-day -- --preview <dir>   # write the HTML and text to <dir>, send nothing
  */
+import { UPDATES_PATH } from "../../src/shared/boss/mail/noticeGate.mjs";
 import { doneForYou, failedDoneLine, jobFamily, jobName, splitRepeats, fixJobsToOpen } from "../../src/shared/boss/mail/morningMemory.mjs";
 import { MAX_TOUCHES } from "../../src/shared/boss/lp/plan.mjs";
 import fs from "node:fs";
@@ -788,6 +789,9 @@ export function buildDay(data, now = Date.now()) {
   const done = doneOnce.all.map((l) => { const id = idFor("done", l.text); return { ...l, id, screen: itemUrl(today, id) }; });
   const doneShown = done.slice(0, MAX_DONE).map((l) => ({ text: l.text, links: [{ label: "See it", url: l.screen }] }));
   if (doneOnce.more > 0) doneShown.push({ text: `+${doneOnce.more} more on Today`, links: [{ label: "Open ›", url: `${ORIGIN}/?view=morning` }] });
+  // The Updates page (owner, 7 Nov 2026: email only when she must act): ONE count line, the same
+  // count and words the page shows (noticeGate.mjs updatesLine, read from /task-notices/updates).
+  if (data.updates?.line) doneShown.push({ text: data.updates.line, links: [{ label: "Open ›", url: `${ORIGIN}${UPDATES_PATH}` }] });
 
   // 4b. The grid repos: the weekly Search Readiness check (Mondays; owner, 25 Oct 2026). Its own short
   // section — what is broken, what was fixed, what is being built — never pooled into "Done for you",
@@ -996,8 +1000,9 @@ async function read(api, now) {
   const reported = sectionsNotReported(sections, { weekday: parts(now).weekday, now });
   for (const m of reported.missing) console.error(`your-day: morning section not reported in — ${m.name}`);
   // Her zone for the times shown (Central when unread: never a guess).
+  const updates = await api.get("/task-notices/updates?summary=1").catch((e) => { console.error(`your-day: the Updates count not read (${e.message})`); return null; });
   const ownerTz = await api.get("/system/owner-timezone").then((d) => d?.tz ?? null).catch((e) => { console.error(`your-day: her time zone not read (${e.message}); times in Central`); return null; });
-  return { ownerTz, quietPeople, brainsCheck, t2rGroups, scoreboard, diary: diary?.rows ?? null, tasks: withDue, approvals, repoChanges: rc?.items ?? [], briefing: briefingOf(today), law: lawOf(today), bounceFixes, commentWatch, prospects, spirit, practiceWeek, settings, waiting, carried, morning: reported.sections, notReported: reported.missing };
+  return { updates, ownerTz, quietPeople, brainsCheck, t2rGroups, scoreboard, diary: diary?.rows ?? null, tasks: withDue, approvals, repoChanges: rc?.items ?? [], briefing: briefingOf(today), law: lawOf(today), bounceFixes, commentWatch, prospects, spirit, practiceWeek, settings, waiting, carried, morning: reported.sections, notReported: reported.missing };
 }
 
 async function feedOf(range) {

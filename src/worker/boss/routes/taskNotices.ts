@@ -24,6 +24,8 @@ import { Hono } from "hono";
 import type { Env, Vars } from "../env";
 import { ok, badRequest, notFound } from "../lib/http";
 import { logEvent } from "../lib/log";
+import { newId } from "../lib/id";
+import { UPDATES_DAYS, updateRow, updatesSummary, updatesLine } from "../../../shared/boss/mail/noticeGate.mjs";
 
 export const taskNotices = new Hono<{ Bindings: Env; Variables: Vars }>();
 
@@ -55,7 +57,7 @@ taskNotices.get("/pending", async (c) => {
   const rows = await c.env.DB
     .prepare(
       `SELECT * FROM boss_task_notices
-        WHERE sent_at IS NULL AND attempts < ? AND holds < ?
+        WHERE sent_at IS NULL AND needs_her = 1 AND attempts < ? AND holds < ?
         ORDER BY created_at LIMIT 20`,
     )
     .bind(MAX_SEND_ATTEMPTS, MAX_HOLDS)
@@ -65,7 +67,7 @@ taskNotices.get("/pending", async (c) => {
       `SELECT COALESCE(SUM(attempts >= ?1 OR holds >= ?2), 0) AS n,
               COALESCE(SUM(holds >= ?2), 0) AS held_out,
               COALESCE(SUM(holds > 0 AND holds < ?2 AND attempts < ?1), 0) AS held
-         FROM boss_task_notices WHERE sent_at IS NULL`,
+         FROM boss_task_notices WHERE sent_at IS NULL AND needs_her = 1`,
     )
     .bind(MAX_SEND_ATTEMPTS, MAX_HOLDS)
     .first<{ n: number; held_out: number; held: number }>();
@@ -132,4 +134,62 @@ taskNotices.post("/:id/failed", async (c) => {
     detail: { notice_id: id, kind: row.kind, attempts: row.attempts + 1, error },
   });
   return ok(c, { id, attempts: row.attempts + 1, gave_up: row.attempts + 1 >= MAX_SEND_ATTEMPTS });
+});
+
+// ─── The Updates page (owner, 7 Nov 2026: email only when she must act) ─────────────────────────
+
+/**
+ * GET /updates — every notice that does not need her (needs_her = 0) from the last UPDATES_DAYS days,
+ * newest first, shaped for the page, with the ONE count the morning email also reads (`summary`,
+ * `line`): the page and the email cannot disagree. `?summary=1` returns the count alone.
+ */
+export async function readUpdates(db: D1Database, now = Date.now()) {
+  const { results } = await db
+    .prepare(`SELECT id, task_id, from_name, kind, subject, body, created_at, read_at FROM boss_task_notices
+               WHERE needs_her = 0 AND created_at >= ? ORDER BY created_at DESC LIMIT 200`)
+    .bind(now - UPDATES_DAYS * 86_400_000)
+    .all<Record<string, unknown>>();
+  const rows = (results ?? []).map((r) => updateRow(r));
+  const summary = updatesSummary(rows);
+  return { rows, summary, line: updatesLine(summary), days: UPDATES_DAYS };
+}
+
+taskNotices.get("/updates", async (c) => {
+  const u = await readUpdates(c.env.DB);
+  if (c.req.query("summary")) return ok(c, { summary: u.summary, line: u.line, days: u.days });
+  return ok(c, u);
+});
+
+/** POST /:id/read { read?: boolean } — her tick on the page (false un-ticks). Only a page row. */
+taskNotices.post("/:id/read", async (c) => {
+  const id = c.req.param("id");
+  const body = await c.req.json<{ read?: boolean }>().catch(() => ({} as { read?: boolean }));
+  const at = body?.read === false ? null : Date.now();
+  const r = await c.env.DB.prepare(`UPDATE boss_task_notices SET read_at = ? WHERE id = ? AND needs_her = 0`).bind(at, id).run();
+  if (!(r.meta.changes ?? 0)) throw notFound("No such update");
+  return ok(c, { id, read_at: at });
+});
+
+/**
+ * POST /update { key, from_name, subject, body } — a Mac job's "just so you know" line (the daily
+ * disk check) as a page row, never an email. One row per key: the same key again is a no-op.
+ */
+const UPDATE_SENDERS = new Set(["Simone", "Kendra", "Danielle", "Camille", "Monique"]);
+taskNotices.post("/update", async (c) => {
+  const b = await c.req.json<{ key?: string; from_name?: string; subject?: string; body?: string }>().catch(() => ({} as Record<string, string>));
+  const key = String(b?.key ?? "").trim();
+  const from = String(b?.from_name ?? "").trim();
+  const subject = String(b?.subject ?? "").trim();
+  const text = String(b?.body ?? "").trim();
+  if (!/^[a-z0-9][a-z0-9:._-]{2,80}$/.test(key) || !UPDATE_SENDERS.has(from) || !subject || subject.length > 160 || !text || text.length > 2000) {
+    throw badRequest("An update needs key, from_name, subject and body", "key: a-z 0-9 : . _ - ; from_name: an employee's first name; subject ≤160; body ≤2000.");
+  }
+  const already = await c.env.DB.prepare(`SELECT id FROM boss_task_notices WHERE task_id = ? AND kind = 'update' LIMIT 1`).bind(key).first<{ id: string }>();
+  if (already) return ok(c, { id: already.id, already: true });
+  const id = newId("tnt");
+  await c.env.DB
+    .prepare(`INSERT INTO boss_task_notices (id, task_id, lane, from_name, kind, subject, body, created_at, needs_her) VALUES (?,?,'ops',?,'update',?,?,?,0)`)
+    .bind(id, key, from, subject, text, Date.now())
+    .run();
+  return ok(c, { id }, 201);
 });

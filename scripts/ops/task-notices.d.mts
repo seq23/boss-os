@@ -10,3 +10,4 @@ export function researchDoneEmail(notice: { kind?: string; from_name?: string; t
 export const GATE_HOLD: string;
 export function gateHoldOf(status: number, text: string): string | null;
 export function isGateHold(error: unknown): boolean;
+export const ON_PAGE: string;

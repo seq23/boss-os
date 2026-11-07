@@ -38,6 +38,7 @@ import { vaultLookup } from "../lib/vault-env.mjs";
 import { layoutProblem } from "../../src/shared/boss/mail/plain.mjs";
 import { researchFullEmail, researchPageIdIn } from "../../src/shared/boss/research/doneEmail.mjs";
 import { researchPageUrl, markdownToHtml } from "../../src/shared/boss/research/page.mjs";
+import { emailsHer } from "../../src/shared/boss/mail/noticeGate.mjs";
 
 /*
  * ─── A "STOPPED" EMAIL IS A PROBLEM EMAIL, AND ONLY WHILE IT IS TRUE (owner, 23 Oct 2026, rule 3) ───
@@ -185,7 +186,15 @@ export const isGateHold = (error) => typeof error === "string" && error.startsWi
  * Returns the refusal text, or null when it went. Every sender on the roster's list is tried before
  * it is called a failure — the second is The Industry Guides fallback, and using it is itself reported.
  */
+/** What sendNotice answers for a notice that belongs on the Updates page: never an email. */
+export const ON_PAGE = "on the Updates page: nothing here needs her, so it is not emailed";
+
 export async function sendNotice(notice, { fetchImpl = fetch, to = TO, task = null, page = null } = {}) {
+  /*
+   * THE ONE GATE (owner, 7 Nov 2026: email only when she must act). `needs_her` is set where the
+   * notice was written (src/shared/boss/mail/noticeGate.mjs); 0 never reaches the mail sender.
+   */
+  if (!emailsHer(notice)) return ON_PAGE;
   const senders = sendersFor(notice.from_name);
   if (senders.length === 0) return "no Resend key in the environment (BOSS_OS_MAIL_KEY / BOSS_OS_FALLBACK_MAIL_KEY)";
   const prelaid = notice.kind === "stopped" ? stoppedEmail(notice, task) : researchDoneEmail(notice, page, senders[0]?.name);
@@ -277,6 +286,12 @@ async function main() {
       continue;
     }
     if (ask.body) notice.body = ask.body;
+    if (!emailsHer(notice)) {
+      // /pending already leaves these out; a row that slips through is closed as a page row, not sent.
+      for (const n of [notice, ...also]) await api(`/${n.id}/sent`, { from: ON_PAGE });
+      say(`not emailed "${notice.subject}": ${ON_PAGE}`);
+      continue;
+    }
     const page = await researchPageOf(notice);
     const error = await sendNotice(notice, { task, page });
     for (const n of [notice, ...also]) {
