@@ -2384,6 +2384,30 @@
       }
     },
     {
+      "id": "how-we-know-loop-whisper-author",
+      "name": "loop · Wed 14:00 CT · whisper almanac author",
+      "what": "Whisper Almanac: writes the next whispered sleep episode and the week's affirmations, $0 free models",
+      "business": "spry",
+      "brand": "Whisper Almanac",
+      "system": "github",
+      "slots": [
+        "wed 14:00"
+      ],
+      "emails": false,
+      "heavy": true,
+      "trigger": {
+        "repo": "how-we-know",
+        "file": ".github/workflows/loop-whisper-author.yml",
+        "crons": [
+          "CRON_TZ=America/Chicago 0 14 * * 3"
+        ]
+      },
+      "output": {
+        "floor": 0,
+        "reason": "Writes only while the Mac's runway has room (two sleep scripts, one affirmations script waiting); a full runway is the self-resolving stop WHISPER_RUNWAY_FULL. It prints OUTPUT <n> whisper scripts written."
+      }
+    },
+    {
       "id": "how-we-know-loop-fri-measure",
       "name": "loop · Fri 17:00 · measure",
       "what": "loop · Fri 17:00 · measure",
