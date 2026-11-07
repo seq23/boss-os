@@ -113,21 +113,31 @@ async function details(page, book) {
   const [firstName, lastName] = [book.author.split(" ").slice(0, -1).join(" "), book.author.split(" ").at(-1)];
   await fillField(page, "author first name", ['input[name="data[primary_author][first_name]"]', "#data-primary-author-first-name"], firstName);
   await fillField(page, "author last name", ['input[name="data[primary_author][last_name]"]', "#data-primary-author-last-name"], lastName);
-  // Description: KDP's rich editor writes into a hidden textarea; set both, then read the textarea back.
-  const set = await page.evaluate((html) => {
-    let done = false;
+  // Description: KDP's description is a CKEditor 4 instance ("editor1", inside an iframe) that loads
+  // AFTER the title boxes, backed by a hidden INPUT data[description] (not a textarea). 7 Nov 2026: the
+  // first live run filled title/subtitle/author, then found no editor because CKEditor wasn't ready yet.
+  // So wait for a ready instance, set it, and read the editor back.
+  await page.waitForFunction(() => {
     const C = window.CKEDITOR;
-    if (C?.instances) for (const k of Object.keys(C.instances)) { C.instances[k].setData(html); done = true; }
-    for (const ta of document.querySelectorAll('textarea[name="data[description]"], textarea[id*="description"]')) { ta.value = html; ta.dispatchEvent(new Event("change", { bubbles: true })); done = true; }
-    const ed = document.querySelector('[contenteditable="true"][aria-label*="escription"], .ql-editor, [id*="description"] [contenteditable="true"]');
-    if (ed) { ed.innerHTML = html; ed.dispatchEvent(new Event("input", { bubbles: true })); done = true; }
-    return done;
+    return !!C?.instances && Object.values(C.instances).some((e) => e.status === "ready");
+  }, null, { timeout: 30000 }).catch(() => {});
+  const set = await page.evaluate((html) => {
+    const C = window.CKEDITOR;
+    const eds = C?.instances ? Object.values(C.instances).filter((e) => e.status === "ready") : [];
+    for (const e of eds) e.setData(html);
+    for (const el of document.querySelectorAll('input[name="data[description]"], textarea[name="data[description]"]')) { el.value = html; el.dispatchEvent(new Event("change", { bubbles: true })); }
+    return eds.length > 0;
   }, book.description_html);
+  if (set) {
+    await page.waitForTimeout(500);
+    const back = await page.evaluate(() => Object.values(window.CKEDITOR.instances).map((e) => e.getData()).join(""));
+    if (!back || back.replace(/<[^>]+>|\s/g, "").length < 40) throw stop("FIELD_DID_NOT_TAKE", "the description editor reads empty after filling it; nothing was saved.");
+  }
   if (!set) throw stop("FIELD_NOT_FOUND", "the description editor is not on the page; nothing was saved.");
-  await clickOne(page, "own-the-copyright choice", ['input[name="data[is_public_domain]"][value="false"]', "#non-public-domain", (p) => p.getByLabel(/I own the copyright/i)]);
+  await clickOne(page, "own-the-copyright choice", ['input[name="data-is-public-domain"][value="false"]', 'input[name="data[is_public_domain]"][value="false"]', "#non-public-domain", (p) => p.getByLabel(/I own the copyright/i)]);
   for (let i = 0; i < 7; i += 1) await fillField(page, `keyword ${i + 1}`, [`input[name="data[keywords][${i}]"]`, `#data-keywords-${i}`], book.keywords[i]);
   await categories(page, book.categories);
-  const adult = await first(page, ['input[name="data[is_adult_content]"][value="false"]', "#data-is-adult-content-false"]);
+  const adult = await first(page, ['input[name="data[is_adult_content]-radio"][value="false"]', 'input[name="data[is_adult_content]"][value="false"]', "#data-is-adult-content-false"]);
   if (adult) await adult.check();
   if (DRY) say("DRY_RUN", "details filled; Save and Continue is pressed even in a dry run (a KDP draft is left)");
   await clickOne(page, "Save and Continue", ["#save-and-continue-announce", (p) => p.getByRole("button", { name: /Save and Continue/i })]);
