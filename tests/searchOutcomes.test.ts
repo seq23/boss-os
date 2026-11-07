@@ -12,7 +12,7 @@ import { outcomeVerdict, outcomeWindows, redLines, slipLines, weeklyBriefs, pick
 import { diagnoseDrop } from "../src/shared/boss/searchReadiness/drop-diagnosis.mjs";
 import { parseRepoCategories } from "../src/shared/boss/repos/categories.mjs";
 import { renderStandings } from "../src/shared/boss/searchReadiness/page.mjs";
-import { qualitySample, pickSample, repeatedSlots, similarity } from "../src/shared/boss/searchReadiness/page-quality-sample.mjs";
+import { qualitySample, pickSample, repeatedSlots, similarity, scorePage } from "../src/shared/boss/searchReadiness/page-quality-sample.mjs";
 import { consolidationQueue, nextFirstSeen } from "../src/shared/boss/searchReadiness/consolidation-queue.mjs";
 import { loadChecklist, loadSites, morningLines, workQueue, fixBriefs } from "../src/shared/boss/searchReadiness/audit.mjs";
 import { lineProblems } from "../src/shared/boss/mail/plain.mjs";
@@ -132,6 +132,19 @@ describe("quality sampling", () => {
     expect(repeatedSlots(GOOD(3).replace(/<[^>]+>/g, " "))).toEqual([]);
     expect(similarity(FILLER("Memphis"), FILLER("Austin"))).toBeGreaterThan(0.5);
     expect(similarity(GOOD(1), FILLER("Austin"))).toBeLessThan(0.1);
+  });
+  it("a byline keyword counts in any case, but only when a capitalised name follows", () => {
+    const c6 = (byline: string) => scorePage({ url: "https://hicksconsulting.org/atlas/x", html: `<main><h1>Atlas</h1><p>${byline}</p></main>` }).c6;
+    expect(c6("Author: Monika Hicks, LCSW")).toEqual({ ok: true });
+    expect(c6("BY José Núñez")).toEqual({ ok: true });
+    expect(c6("Author: the editorial team")!.ok).toBe(false);
+    expect(c6("by our staff")!.ok).toBe(false);
+  });
+  it("accented words stay whole: distinct Spanish sentences are not a repeat, a real one is named intact", () => {
+    const distinct = ["está", "esté"].flatMap((a) => ["será", "seré"].map((b) => `La capacitación ${a} lista y la licencia ${b} válida en Texas.`)).join(" ");
+    expect(repeatedSlots(distinct)).toEqual([]);
+    const real = Array.from({ length: 4 }, (_, i) => `Paso ${i + 1}. La capacitación anual del personal se registra ante el Departamento estatal.`).join(" ");
+    expect(repeatedSlots(real)[0]!.phrase).toContain("capacitación anual");
   });
   it("no readable page is not read, never a pass; the sample skips the home and utility pages and rotates by week", () => {
     const q = qualitySample({ site, host: "x", checklist, pages: [{ url: "https://x/a", status: 503 }] });

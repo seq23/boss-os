@@ -57,7 +57,11 @@ export function bodyText(html) {
   return visibleText(main ?? h.replace(/<(nav|header|footer)\b[\s\S]*?<\/\1>/gi, " "));
 }
 
-const wordsOf = (t) => String(t).toLowerCase().match(/[a-z0-9][\w'’-]*/g) ?? [];
+// Unicode letters and marks, so "capacitación" stays one word (an ASCII class split it into "capacitaci n").
+const wordsOf = (t) => String(t).toLowerCase().match(/[\p{L}\p{N}][\p{L}\p{M}\p{N}_'’-]*/gu) ?? [];
+// A byline keyword in any case ("Author:", "BY", "reviewed by"), followed by a capitalised name.
+const hasByline = (vis) => [...vis.matchAll(/\b(?:written by|reviewed by|by|author:?)\s+/gi)]
+  .some((m) => /^\p{Lu}[\p{L}\p{M}.'’-]+/u.test(vis.slice(m.index + m[0].length)));
 const QUESTION = /\?\s*$|^(what|how|why|when|where|who|which|is|are|can|does|do|should|will|was|were)\b/i;
 const ANSWER = /\b(is|are|means|costs?|takes?|requires?|depends|yes|no|can|should|will|must)\b/i;
 const FIGURE = /\$\s?\d|\b\d+(?:\.\d+)?\s?%|\b\d{1,3}(?:,\d{3})+\b|\b\d+(?:\.\d+)?\s?(?:days?|weeks?|months?|years?|hours?|minutes?|miles?|mg|kg|lbs?|percent)\b/gi;
@@ -99,7 +103,7 @@ export function scorePage(page, { host = "" } = {}) {
   } else out.c4 = isGuide ? { ok: false, note: "a guide page with no speakable markup" } : null;
   const authors = deepNodes(nodes, /./).flatMap((n) => [].concat(n.author ?? [])).map((a) => (typeof a === "string" ? a : a?.name)).filter(Boolean).map(String);
   const vis = visibleText(html);
-  const named = authors.some((a) => vis.includes(a)) || /\b(?:by|written by|reviewed by|author:?)\s+[A-Z][\w.'-]+(?:\s+[A-Z][\w.'-]+)?/.test(vis) || /rel=["']author["']/i.test(html);
+  const named = authors.some((a) => vis.includes(a)) || hasByline(vis) || /rel=["']author["']/i.test(html);
   out.c6 = named ? { ok: true } : { ok: false, note: "no named author or reviewer is visible" };
   const lead = wordsOf(body.split(/\s+/).slice(0, 100).join(" ")).join(" ");
   const tw = wordsOf(title).filter((w) => w.length > 3 && !/^(what|how|does|your|with|from|that|this|guide|best|near)$/.test(w));
