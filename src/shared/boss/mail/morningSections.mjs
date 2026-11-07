@@ -97,7 +97,14 @@ export function notReportedLine(missing) {
 export function catchUpPlan(missing) {
   const commands = [];
   const cannotCatchUp = [];
-  for (const m of missing ?? []) {
+  const ordered = [...(missing ?? [])].sort((a, b) => {
+    const index = (name) => {
+      const i = MORNING_SECTION_SPECS.findIndex((s) => s.name === name);
+      return i < 0 ? MORNING_SECTION_SPECS.length : i;
+    };
+    return index(a.name) - index(b.name);
+  });
+  for (const m of ordered) {
     const spec = MORNING_SECTION_SPECS.find((s) => s.name === m.name);
     if (spec?.catchUp) { if (!commands.includes(spec.catchUp)) commands.push(spec.catchUp); }
     else cannotCatchUp.push({ name: m.name, label: m.label, why: spec?.catchUpWhy ?? "no catch-up is defined for this section" });

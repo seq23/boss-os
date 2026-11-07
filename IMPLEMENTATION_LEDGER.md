@@ -5750,3 +5750,20 @@ The LP launchd job keeps its 06:15 Central primary slot and adds 06:30 and 08:45
 **PROVEN locally:** the LP retry, LP follow-up, Schedule and scorecard suites pass (62 tests), with negative fixtures for a missing due gate, an installer-only tick, a send endpoint and empty inputs. The retry guard uses the existing installer parser and Email Map sending patterns across all four LP producer files. Installer shell syntax, typecheck, plist validation, launchd-duty linkage and duty-delivery checks pass. The existing LP follow-up assertion now requires the due-gated command. **UNPROVEN:** installed launchd entries, a fresh LP section and production receipt after rerunning the producer; these remain post-land Mac proofs. Full `npm run validate` was attempted but stopped on sandbox-denied access to `~/.boss-os/device.json`; the runner must repeat the full check outside this sandbox.
 
 The broad Node run before updating that assertion reported 213 passing files and 4 failing files: the outdated LP assertion (subsequently fixed and rerun green), two sandbox-denied `/dev/fd` accesses in duty-owner tests, sandbox-denied sent-mail storage, and a `simoneCommands` missing-key fixture that returned success instead of the expected missing-key refusal. The Worker suite could not start because its dependency cache resolves outside the writable sandbox. Full green validation remains required from the runner; no failed check is recorded as passing.
+
+### Boss OS — morning catch-up repair rc_m6gtk44dhfjq6rvj (3 November 2026)
+
+The existing build adds safe catch-up commands or explicit reasons to MORNING_SECTION_SPECS,
+capital:grid --keep-seen, and the 06:32 Central launchd job with Schedule/Scorecard coverage.
+Review preserved the newer capital-chain resume job and current-main source changes. Catch-up
+commands now follow registry order; zero expected sections raises a named stop. The catch-up
+checks the cloud store rather than allowing a local file to hide a failed post, and shares an
+eight-minute execution budget across producers. Current main already moved 8Raise production
+to the Worker; its catch-up reason reflects that implementation.
+
+PROVEN locally: focused section, catch-up, Schedule and Scorecard tests (66 assertions/tests).
+Full validation and live status are recorded in the change's build.json; a sandbox failure is
+not a passing check. UNPROVEN live: installed launchd job, producer rerun, cloud section freshness,
+and the next morning email. No production command was executed in this BUILD phase.
+
+Rebased onto main 7 Nov 2026 alongside the capital chain's own resume (#270): the resume restarts the chain, the 06:32 catch-up re-runs only the missing safe producers before the 06:40 email.
