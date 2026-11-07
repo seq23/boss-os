@@ -150,7 +150,7 @@ export function check() {
   // plain, and holds only what is still failing — all before anything is posted.
   const sendPart = post.slice(0, post.indexOf("export function plainOrSimplified") === -1 ? post.length : post.indexOf("export function plainOrSimplified"));
   const simplifier = post.slice(post.indexOf("export function plainOrSimplified"));
-  if (!/const ready = plainOrSimplified\(payload\);\s*\n\s*if \(ready\.held\) return holdMail\(/.test(sendPart) || !/payload = ready\.payload;/.test(sendPart) || sendPart.indexOf("plainOrSimplified(") > sendPart.indexOf("fetchImpl(RESEND")) fails.push("postEmployeeMail does not hold a failing email before it posts");
+  if (!/const ready = plainOrSimplified\(payload\);\s*\n\s*if \(ready\.held\) return holdMail\(/.test(sendPart) || !/payload = (?:ready\.payload;|\{ \.\.\.ready\.payload, )/.test(sendPart) || sendPart.indexOf("plainOrSimplified(") > sendPart.indexOf("fetchImpl(RESEND")) fails.push("postEmployeeMail does not hold a failing email before it posts");
   if (!/const problems = mailGate\(payload\)/.test(simplifier) || !/simplifyForOwner\(/.test(simplifier) || !/const still = mailGate\(next\)/.test(simplifier)) fails.push("plainOrSimplified does not re-check what it simplified before it may be sent");
   if (!/if \(laid\.problems\.length\) \{[\s\S]{0,400}reply_held/.test(read("src/worker/boss/intake/mailRefs.ts"))) fails.push("the Worker's plainReply does not hold a failing reply");
   for (const f of ["scripts/ops/archive-audit.mjs", "scripts/ops/outside-locks.mjs", "scripts/ops/boss-mail-tail-report.mjs"]) {
