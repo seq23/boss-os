@@ -3956,6 +3956,28 @@
       }
     },
     {
+      "id": "morning-catchup",
+      "name": "Morning catch-up",
+      "what": "Before the 06:40 morning email: whatever the registry (morningSections.mjs) still expects today gets one safe re-run, or a named stop.",
+      "business": "personal",
+      "brand": "Boss OS",
+      "system": "mac",
+      "slots": [
+        "daily 06:32"
+      ],
+      "emails": false,
+      "heavy": false,
+      "trigger": {
+        "launchd": [
+          "com.seq.boss-morning-catchup"
+        ]
+      },
+      "output": {
+        "floor": 0,
+        "reason": "A catch-up: it re-runs a producer only when an expected morning section is missing; most days it re-runs nothing."
+      }
+    },
+    {
       "id": "scorecard",
       "name": "Scorecard",
       "what": "Reads every initiative's real number and judges it on Mondays: version B once, then pause; no number goes to repairs. Its section is in Monday's morning email.",

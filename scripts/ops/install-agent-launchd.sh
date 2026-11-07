@@ -380,6 +380,39 @@ lint_plist "$CAPR_PLIST"
 launchctl load "$CAPR_PLIST"
 echo "Installed $CAPR_LABEL — resumes an unfinished capital chain within 15 minutes."
 
+# MORNING CATCH-UP (repair rc_m6gtk44dhfjq6rvj, 3 Nov 2026): a Mac reboot killed com.seq.boss-capital
+# inside ledger-hunt on 3 Nov, so capital:grid never ran and "deals"/"monique_found" missed the email.
+# 06:32, eight minutes before Simone's 06:40 morning email and after the capital chain's normal ~06:10
+# finish: whatever the registry (morningSections.mjs) still expects today gets one safe re-run before
+# the email, or a named stop. scripts/ops/morning-catchup.mjs.
+MORNCATCHUP_LABEL="com.seq.boss-morning-catchup"
+MORNCATCHUP_PLIST="$HOME/Library/LaunchAgents/$MORNCATCHUP_LABEL.plist"
+
+cat > "$MORNCATCHUP_PLIST" <<MORNCATCHUPEOF
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN"
+  "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0"><dict>
+  <key>Label</key><string>$MORNCATCHUP_LABEL</string>
+  <key>ProgramArguments</key>
+  <array>
+    <string>/bin/bash</string>
+    <string>-lc</string>
+    <string>cd $REPO &amp;&amp; npm run --silent morning:catchup</string>
+  </array>
+  <key>StartCalendarInterval</key>
+  <dict><key>Hour</key><integer>6</integer><key>Minute</key><integer>32</integer></dict>
+  <key>StandardOutPath</key><string>$LOGS/morning-catchup.log</string>
+  <key>StandardErrorPath</key><string>$LOGS/morning-catchup.err</string>
+  <key>RunAtLoad</key><false/>
+</dict></plist>
+MORNCATCHUPEOF
+
+launchctl unload "$MORNCATCHUP_PLIST" 2>/dev/null || true
+lint_plist "$MORNCATCHUP_PLIST"
+launchctl load "$MORNCATCHUP_PLIST"
+echo "Installed $MORNCATCHUP_LABEL — daily 06:32 Central."
+
 NUDGE_LABEL="com.seq.boss-capital-nudge"
 NUDGE_PLIST="$HOME/Library/LaunchAgents/$NUDGE_LABEL.plist"
 
@@ -1767,6 +1800,7 @@ require_loaded "$PUBLISH_LABEL"
 # were installed on 9 September and the "Verified" line named none of them: it loaded them, said
 # nothing about them, and would have kept reporting a clean install if any had failed to load.
 require_loaded "$CAPITAL_LABEL"
+require_loaded "$MORNCATCHUP_LABEL"
 require_loaded "$NUDGE_LABEL"
 # ADDED WITH THE JOB (3 Nov 2026): the capital chain's own resume, same reason as every job above it.
 require_loaded "$CAPR_LABEL"
