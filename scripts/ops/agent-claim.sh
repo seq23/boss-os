@@ -29,7 +29,7 @@
 # ─── Never two at once, and the lock is ownership-safe (review of #61) ──────
 #
 # A briefing can run for fifteen minutes; a second Claude Code or Codex session on the same Mac while the first works is
-# the failure. The lock is a directory holding "<pid>|<process start time>" (the start time guards against a reused PID).
+# the failure. The lock is a directory holding "<pid>|<stamp>" (see started_of: the stamp guards against a reused PID).
 # EVERY change to the lock happens inside a short-lived GATE directory, so two contenders cannot interleave a check with a
 # removal: a contender that finds a dead or empty lock takes it over INSIDE the gate, where nobody else is looking, and
 # the release removes the lock only if it is still its own. A gate left by a process that died inside it expires after a
@@ -56,21 +56,28 @@ if [ "$mode" = "poll" ]; then
   fi
 fi
 
-# A process's start time, as a stamp that never changes while the process lives. On Linux it is field 22 of
-# /proc/<pid>/stat (clock ticks since boot): `ps -o lstart` there is DERIVED as btime + ticks, and btime moves whenever
-# the wall clock is stepped (NTP, VM time sync), so a live holder's lstart could change between the write and a
-# contender's check, the holder looked dead, and its lock was taken over: two claims at once (7 Nov 2026, CI run
-# 42417606391 on #327; reproduced by stepping the clock 0.3 s). macOS has no /proc and stores the start time at fork,
-# so `ps -o lstart` is stable there. The comm field can hold spaces and parens, so fields are counted after the LAST ")".
+# Who a PID is, as a stamp the WALL CLOCK CANNOT MOVE (7 Nov 2026, CI run 42417606391 on #327, and #328: two claims at
+# once). The stamp used to be `ps -o lstart`. On Linux that is DERIVED as btime + ticks, and btime moves whenever the clock
+# is stepped (NTP, VM time sync; reproduced by stepping the clock 0.3 s), so a live holder's stamp changed between the write
+# and a contender's check, the holder looked dead, and its running claim was taken over. No stamp here reads the clock:
+#   Linux: field 22 of /proc/<pid>/stat, clock ticks since boot, fixed for the life of the process (and a reused PID gets a
+#          new one). The comm field can hold spaces and parens, so fields are counted after the LAST ")".
+#   macOS (her Mac, launchd; no /proc): whether the PID is running this wrapper. A dead holder's PID reused by any other
+#          program is not "claim-wrapper", so the lock is taken over; reused by another copy of this wrapper (a contender
+#          for the same few milliseconds) it reads as alive, which skips one tick and never overlaps.
 started_of() {
-  local stat
+  local stat cmd
   if stat="$(cat "/proc/$1/stat" 2>/dev/null)" && [ -n "$stat" ]; then
     stat="${stat##*) }"
     set -- $stat
     echo "ticks:${20:-}"
     return
   fi
-  ps -o lstart= -p "$1" 2>/dev/null | sed 's/^ *//;s/ *$//'
+  cmd="$(ps -o command= -p "$1" 2>/dev/null)"
+  case "$cmd" in
+    *agent-claim.sh*) echo "claim-wrapper" ;;
+    *) echo "other:${cmd:-gone}" ;;
+  esac
 }
 
 # Is the holder recorded in the lock still the process that wrote it? An empty or unreadable record is NOT alive.

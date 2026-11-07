@@ -250,18 +250,23 @@ export async function wrapperProblems(wrapperPath) {
     rmSync(root, { recursive: true, force: true });
   }
 
-  // 10. A LIVE HOLDER STAYS LIVE WHEN THE WALL CLOCK STEPS (7 Nov 2026, CI run 42417606391 on #327: "two claims ran at the
-  // same moment"). On Linux `ps -o lstart` is btime + ticks, and btime moves when NTP or VM time sync steps the clock, so the
-  // holder's recorded start stopped matching and a contender took over a running claim. A stub `ps` that answers a different
-  // start time on every call stands in for the step; the identity must come from something the clock cannot move
-  // (/proc/<pid>/stat). macOS has no /proc and stores lstart at fork, so there the case is NOT EXAMINED, never passed.
-  if (existsSync("/proc/self/stat")) {
+  // 10. A LIVE HOLDER STAYS LIVE WHEN THE WALL CLOCK STEPS (7 Nov 2026, CI run 42417606391 on #327, and #328: "two claims
+  // ran at the same moment"). On Linux `ps -o lstart` is btime + ticks, and btime moves when NTP or VM time sync steps the
+  // clock, so the holder's recorded start stopped matching and a contender took over a running claim. A `ps` whose lstart
+  // answer moves on every call (everything else goes to the real ps) stands in for the step, on Linux AND on her Mac:
+  // the holder's identity must come from something the clock cannot move.
+  {
     const root = fresh();
     const shift = join(root, "shiftbin");
     mkdirSync(shift, { recursive: true });
+    const realPs = spawnSync("sh", ["-c", "command -v ps"], { encoding: "utf8" }).stdout.trim() || "/bin/ps";
     writeFileSync(join(shift, "ps"), `#!/bin/bash
-n=$(cat "${join(root, "ps-calls")}" 2>/dev/null || echo 0); n=$((n+1)); echo "$n" > "${join(root, "ps-calls")}"
-echo "Sat Nov  7 21:50:$((10 + n % 40)) 2026"
+case "$*" in
+  *lstart*)
+    n=$(cat "${join(root, "ps-calls")}" 2>/dev/null || echo 0); n=$((n+1)); echo "$n" > "${join(root, "ps-calls")}"
+    echo "Sat Nov  7 21:50:$((10 + n % 40)) 2026" ;;
+  *) exec "${realPs}" "$@" ;;
+esac
 `);
     chmodSync(join(shift, "ps"), 0o755);
     const PATH = `${shift}:${stubEnv(root).bin}:${process.env.PATH}`;
@@ -270,10 +275,20 @@ echo "Sat Nov  7 21:50:$((10 + n % 40)) 2026"
     for (let i = 0; i < 100 && claimsIn(logOf(root)) < 1; i++) await new Promise((r) => setTimeout(r, 50));
     runWrapper(wrapperPath, root, ["--poll"], { PATH, BOSS_OS_CLAIM_HOUR: "14" });
     await firstClosed;
-    if (calls(logOf(root)).includes("OVERLAP") || claimsIn(logOf(root)) !== 1) out.push(`A live holder was taken over when the wall clock stepped (its ps start time moved): ${claimsIn(logOf(root))} claims (expected 1).`);
+    if (calls(logOf(root)).includes("OVERLAP") || claimsIn(logOf(root)) !== 1) out.push(`On ${process.platform}, a live holder was taken over when the wall clock stepped (its ps start time moved): ${claimsIn(logOf(root))} claims (expected 1).`);
     rmSync(root, { recursive: true, force: true });
-  } else if (!process.argv.includes("--self-test")) {
-    console.log("the-agent-polls-without-overlap: the clock-step case NOT EXAMINED — no /proc on this machine (macOS stores the start time at fork).");
+  }
+
+  // 11. A DEAD HOLDER WHOSE PID WAS REUSED is still taken over: the PID is alive (this validator's own process), but it is
+  // not the wrapper that wrote the record, on Linux (other start ticks) and on macOS (not running agent-claim.sh).
+  {
+    const root = fresh();
+    mkdirSync(lockOf(root), { recursive: true });
+    writeFileSync(join(lockOf(root), "holder"), `${process.pid}|Thu Jan  1 00:00:00 1970\n`);
+    runWrapper(wrapperPath, root, ["--poll"], { BOSS_OS_CLAIM_HOUR: "14" });
+    if (claimsIn(logOf(root)) !== 1) out.push(`On ${process.platform}, a lock whose holder PID now belongs to another program blocked the claim instead of being taken over.`);
+    if (existsSync(lockOf(root))) out.push("The lock taken over from a reused PID was not released.");
+    rmSync(root, { recursive: true, force: true });
   }
 
   // 9. The release is OWNERSHIP-SAFE: if the lock's record no longer names this process, it is not removed.
@@ -321,7 +336,8 @@ if (selfTest) {
   check("a poll that claims without refreshing the briefing's data is caught", (await plant("norefresh", (t) => t.replace(/  if \[ -z "\$\(find "\$WORKSPACE\/SKY\.json"[\s\S]*?\n  fi\n  if \[ -z "\$\(find "\$WORKSPACE\/MARKETS\.json"[\s\S]*?\n  fi\n/, ""))).length > 0);
   check("a poll that refetches fresh data every tick is caught", (await plant("alwaysfetch", (t) => t.replaceAll('-mmin -"$FRESH_MINUTES"', "-mmin -0"))).length > 0);
   check("a takeover with no gate (the race review of #61 found) is caught", (await plant("nogate", (t) => t.replace('if mkdir "$GATE_DIR" 2>/dev/null; then have_gate=1; break; fi', "have_gate=1; break").replace('rm -rf "$LOCK_DIR"             # the holder is gone', 'sleep 0.3; rm -rf "$LOCK_DIR"             # the holder is gone'))).length > 0);
-  if (existsSync("/proc/self/stat")) check("a holder identity read from the stepping wall clock (ps lstart) is caught", (await plant("lstart", (t) => t.replace(/started_of\(\) \{[\s\S]*?\n\}\n/, "started_of() { ps -o lstart= -p \"$1\" 2>/dev/null | sed 's/^ *//;s/ *$//'; }\n"))).length > 0);
+  check("a holder identity read from the stepping wall clock (ps lstart) is caught", (await plant("lstart", (t) => t.replace(/started_of\(\) \{[\s\S]*?\n\}\n/, "started_of() { ps -o lstart= -p \"$1\" 2>/dev/null | sed 's/^ *//;s/ *$//'; }\n"))).length > 0);
+  check("a holder identity with no reused-PID guard is caught", (await plant("noreuse", (t) => t.replace(/started_of\(\) \{[\s\S]*?\n\}\n/, 'started_of() { kill -0 "$1" 2>/dev/null && echo alive; }\n'))).length > 0);
   rmSync(dir, { recursive: true, force: true });
 
   const failed = results.filter(([, ok]) => !ok);
