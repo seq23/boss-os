@@ -77,7 +77,9 @@ case "$*" in
   *"agent.mjs peek"*) exit "\${STUB_PEEK_RC:-0}" ;;
   *"agent.mjs work-once"*)
     if [ -n "\${STUB_REWRITE_HOLDER:-}" ]; then echo "2147483646|never" > "\${BOSS_OS_HOME}/agent-claim.lock/holder"; fi
-    sleep "\${STUB_HOLD:-0}" ;;
+    mkdir "\${BOSS_OS_HOME}/stub-running" 2>/dev/null || echo "OVERLAP" >> "${log}"
+    sleep "\${STUB_HOLD:-0}"
+    rmdir "\${BOSS_OS_HOME}/stub-running" 2>/dev/null ;;
 esac
 exit 0
 `,
@@ -237,8 +239,11 @@ export async function wrapperProblems(wrapperPath) {
   ]) {
     const root = fresh();
     prepare(root);
-    const procs = Array.from({ length: 8 }, () => spawn("bash", [wrapperPath, "--poll"], { env: envFor(root, { BOSS_OS_CLAIM_HOUR: "14", STUB_HOLD: "1" }), stdio: "ignore" }));
+    const procs = Array.from({ length: 8 }, () => spawn("bash", [wrapperPath, "--poll"], { env: envFor(root, { BOSS_OS_CLAIM_HOUR: "14", STUB_HOLD: "4" }), stdio: "ignore" }));
     await Promise.all(procs.map((p) => new Promise((r) => p.on("close", r))));
+    // The hold outlasts the 3 s gate wait, so a contender a slow runner starts late still finds a LIVE holder: a second
+    // claim then means the lock failed, not that the first run had already finished (the CI flake of 6 Nov 2026, #307).
+    if (calls(logOf(root)).includes("OVERLAP")) out.push(`Eight simultaneous ticks on ${label}: two claims ran at the same moment.`);
     const n = claimsIn(logOf(root));
     if (n !== 1) out.push(`Eight simultaneous ticks on ${label} produced ${n} claims (expected exactly 1): two agents ran at once.`);
     if (existsSync(lockOf(root)) || existsSync(`${lockOf(root)}.gate`)) out.push(`Eight simultaneous ticks on ${label} left a lock or gate behind.`);
