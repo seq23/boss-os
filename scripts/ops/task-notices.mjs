@@ -163,6 +163,23 @@ async function taskOf(id) {
 }
 
 /**
+ * A GATE HOLD IS NOT A FAILED SEND (repair, 6 Nov 2026). `postEmployeeMail` answers a held email
+ * with 422 `{ held: true, problems }` after writing the held copy and opening a fix job. The drain
+ * reports that as a hold (`/failed` with `held: true`), which keeps the notice's send attempts for
+ * the run after the sender is fixed. Pure: the problems as one line, or null when it was not a hold.
+ */
+export const GATE_HOLD = "held by the plain-email gate:";
+export function gateHoldOf(status, text) {
+  if (status !== 422) return null;
+  let body = null;
+  try { body = JSON.parse(String(text ?? "")); } catch { return null; }
+  if (body?.held !== true) return null;
+  const problems = Array.isArray(body.problems) ? body.problems.map(String).filter(Boolean) : [];
+  return (problems.join("; ") || "no problems named").slice(0, 400);
+}
+export const isGateHold = (error) => typeof error === "string" && error.startsWith(GATE_HOLD);
+
+/**
  * One notice, sent as the employee who owns the work.
  *
  * Returns the refusal text, or null when it went. Every sender on the roster's list is tried before
@@ -180,7 +197,14 @@ export async function sendNotice(notice, { fetchImpl = fetch, to = TO, task = nu
       if (sender.fallback) say(FALLBACK_STOP);
       return null;
     }
-    last = `${res.status} ${(await res.text().catch(() => "")).slice(0, 200)}`;
+    const said = await res.text().catch(() => "");
+    const hold = gateHoldOf(res.status, said);
+    if (hold) {
+      // The same words would be held from every sender: stop here, and say it was a hold, not a refusal.
+      say(`held by the plain-email gate, not sent: "${notice.subject}" (${hold}); a repair job is open for its sender`);
+      return `${GATE_HOLD} ${hold}`;
+    }
+    last = `${res.status} ${said.slice(0, 200)}`;
     say(`${sender.from} refused: ${last}`);
   }
   return last || "every sender was refused with no message";
@@ -212,9 +236,11 @@ async function main() {
 
   const items = pending.data?.items ?? [];
   const gaveUp = pending.data?.gave_up ?? 0;
+  const heldNow = pending.data?.held ?? 0;
+  if (heldNow > 0) say(`${heldNow} notice(s) are held by the plain-email gate and wait for their sender's repair (up to ${pending.data?.max_holds} tries each)`);
   if (gaveUp > 0) {
     // Loud, because these are things she was told about and never was.
-    console.error(`NAMED STOP [NOTICES_GAVE_UP] ${gaveUp} notice(s) hit ${pending.data?.max_attempts} failed sends and are no longer offered.`);
+    console.error(`NAMED STOP [NOTICES_GAVE_UP] ${gaveUp} notice(s) hit ${pending.data?.max_attempts} failed sends or ${pending.data?.max_holds} gate holds (${pending.data?.gave_up_held ?? 0} of them holds) and are no longer offered.`);
     console.error("  Read boss_task_notices.error for the last refusal. She has NOT been told about those tasks.");
   }
   if (items.length === 0) {
@@ -254,7 +280,7 @@ async function main() {
     const page = await researchPageOf(notice);
     const error = await sendNotice(notice, { task, page });
     for (const n of [notice, ...also]) {
-      const report = error ? await api(`/${n.id}/failed`, { error }) : await api(`/${n.id}/sent`, { from: n === notice ? notice.from_name : `merged into the email for ${notice.id}` });
+      const report = error ? await api(`/${n.id}/failed`, isGateHold(error) ? { error, held: true } : { error }) : await api(`/${n.id}/sent`, { from: n === notice ? notice.from_name : `merged into the email for ${notice.id}` });
       if (!report.ok) say(`could not record the outcome of ${n.id}: ${report.status} ${report.error ?? ""}`);
     }
     if (error) failed += 1;

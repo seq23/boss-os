@@ -7,3 +7,6 @@ export function stoppedEmail(notice: { from_name: string; subject: string; body:
 export function sendNotice(notice: unknown, opts?: { fetchImpl?: typeof fetch; to?: string; task?: unknown }): Promise<string | null>;
 export function askOrResolve(notice: unknown, opts?: unknown): Promise<{ resolved: boolean; body: string | null; searched?: string }>;
 export function researchDoneEmail(notice: { kind?: string; from_name?: string; task_id?: string; subject: string; body: string }, page: unknown, who?: string): { subject: string; text: string; html: string; refs: string[]; kind?: string } | null;
+export const GATE_HOLD: string;
+export function gateHoldOf(status: number, text: string): string | null;
+export function isGateHold(error: unknown): boolean;
