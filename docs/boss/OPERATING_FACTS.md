@@ -24,6 +24,8 @@ they live in the repo, not only in someone's memory. Non-confidential. `STATUS.m
   `FREE_ROUTES`; every row is `TRAINS_ON_PROMPTS`. Google Search grounding is free only on
   `gemini-2.5-flash`, which retires **1 Dec 2026**: after that `POST /api/boss/research/person` falls
   back to Brave Search, then the guest's fetched pages, then to "Couldn't research <name>: <reason>".
+  The writer for those pages (`meeting_prep_write`, migration 0354) walks the next free Gemini models,
+  then OpenRouter's free models (`MEETING_PREP_WRITERS` in jobPolicy.mjs); never a paid one.
 - **Brave Search, the second research route** (5 Nov 2026, migration 0340): `effects/braveSearchClient.ts`,
   secret `BRAVE_SEARCH_API_KEY` (vault → Worker through `vault:sync`). Capped at 20 searches a day
   (Central), stated once in guard.ts `FREE_ROUTES.svc_brave_search` and claimed in
