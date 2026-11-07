@@ -57,7 +57,7 @@ taskNotices.get("/pending", async (c) => {
   const rows = await c.env.DB
     .prepare(
       `SELECT * FROM boss_task_notices
-        WHERE sent_at IS NULL AND needs_her = 1 AND attempts < ? AND holds < ?
+        WHERE sent_at IS NULL AND attempts < ? AND holds < ? AND needs_her = 1
         ORDER BY created_at LIMIT 20`,
     )
     .bind(MAX_SEND_ATTEMPTS, MAX_HOLDS)
