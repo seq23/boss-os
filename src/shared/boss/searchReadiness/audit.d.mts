@@ -29,6 +29,10 @@ export function canonicalOf(html: string): string | null;
 export function h1Count(html: string): number;
 export function visibleText(html: string): string;
 export function wordCount(text: string): number;
+/** Owner ruling 2 Nov 2026: a word floor fails only below this share of it. */
+export const FLOOR_FAIL_SHARE: number;
+/** The smallest word count that does not fail for a given floor (75% of it, rounded up). */
+export function hardFloor(floor: number): number;
 export function jsonLd(html: string): { nodes: any[]; errors: string[] };
 export function typesOf(n: any): string[];
 export function deepNodes(nodes: any, re: RegExp): any[];

@@ -179,6 +179,16 @@ export function visibleText(html) {
     .replace(/<[^>]+>/g, " ")).replace(/\s+/g, " ").trim();
 }
 export const wordCount = (text) => (String(text).match(/[A-Za-z0-9][\w'’-]*/g) ?? []).length;
+/*
+ * Word limits follow the owner's ruling of 2 Nov 2026 (personal brain, Settled decisions): "over a
+ * word limit never fails; under one fails only below 75% of it". A page a few words short of a
+ * target is a note, not a defect a reader would notice. Before this, guide_shape failed
+ * dentistryguides.com guides at 1,679-1,796 words against an 1,800 target (93-99.8% of it) and
+ * queued them as fix work; the generator's own guide floor already applied the cushion.
+ */
+export const FLOOR_FAIL_SHARE = 0.75;
+export const hardFloor = (floor) => Math.ceil(floor * FLOOR_FAIL_SHARE);
+const shortNote = (rows, target) => rows.length ? `; ${rows.length} under the ${target.toLocaleString("en-US")}-word target but not below ${hardFloor(target).toLocaleString("en-US")}, not blocking: ${list(rows)}` : "";
 
 /** Every JSON-LD node on the page, @graph flattened. Unparseable blocks are returned as errors. */
 export function jsonLd(html) {
@@ -330,7 +340,8 @@ export const CHECKS = {
     if (/<html/i.test(f.text.slice(0, 400))) return fail("/llms.txt serves HTML (a catch-all), not the file");
     if (!/text\/plain|text\/markdown/i.test(f.type ?? "")) return fail(`/llms.txt is served as ${f.type}`);
     const w = wordCount(f.text);
-    return w > 2400 ? fail(`/llms.txt is ${w} words; keep it under about 2,000`) : pass(`/llms.txt is ${w} words`);
+    // Over a word limit never fails (owner, 2 Nov 2026): a long llms.txt is a note.
+    return pass(w > 2400 ? `/llms.txt is ${w} words; note: about 2,000 reads best, not blocking` : `/llms.txt is ${w} words`);
   },
   gsc_pages_live(ctx) {
     const g = ctx.gsc; if (!g?.ok) return notChecked(g?.why ?? "Search Console not read");
@@ -395,16 +406,18 @@ export const CHECKS = {
   definition_paragraph(ctx) {
     const guides = okPages(ctx).filter((p) => /\/guides?\/[^/]+/.test(new URL(p.url).pathname));
     if (!guides.length) return notChecked("no guide page in the sample");
-    const bad = [];
+    const bad = [], notes = [];
     for (const p of guides) {
       const after = p.html.split(/<\/h1>/i)[1] ?? "";
       // The first real paragraph: a one-line disclaimer or byline above it is not the definition.
       const paras = [...after.matchAll(/<p\b[^>]*>([\s\S]*?)<\/p>/gi)].map((m) => visibleText(m[1]));
       const para = paras.find((x) => wordCount(x) >= 20) ?? paras[0] ?? "";
       const w = wordCount(para);
-      if (w < 40 || w > 60 || !/\b(is|are)\b/.test(para)) bad.push(`${p.url} first paragraph ${w} words`);
+      if (w < hardFloor(40) || !/\b(is|are)\b/.test(para)) bad.push(`${p.url} first paragraph ${w} words`);
+      else if (w < 40 || w > 60) notes.push(`${p.url} (${w} words)`);
     }
-    return bad.length ? fail(list(bad), { evidence: bad }) : pass(`${guides.length} guide pages open with a 40–60 word definition`);
+    return bad.length ? fail(list(bad), { evidence: bad })
+      : pass(`${guides.length} guide pages open with a definition${notes.length ? `; ${notes.length} outside the 40–60 word target, not blocking: ${list(notes)}` : ""}`);
   },
   faq_schema_visible(ctx) {
     const bad = [];
@@ -451,8 +464,10 @@ export const CHECKS = {
   },
   word_count(ctx, params) {
     const min = params?.min_words ?? 300;
-    const bad = okPages(ctx).filter((p) => !isUtility(p.url) && new URL(p.url).pathname !== "/").map((p) => ({ u: p.url, w: wordCount(visibleText(p.html)) })).filter((x) => x.w < min).map((x) => `${x.u} (${x.w} words)`);
-    return bad.length ? fail(`thin pages: ${list(bad)}`, { evidence: bad }) : pass(`no sampled content page under ${min} words`);
+    const measured = okPages(ctx).filter((p) => !isUtility(p.url) && new URL(p.url).pathname !== "/").map((p) => ({ u: p.url, w: wordCount(visibleText(p.html)) }));
+    const bad = measured.filter((x) => x.w < hardFloor(min)).map((x) => `${x.u} (${x.w} words)`);
+    const short = measured.filter((x) => x.w >= hardFloor(min) && x.w < min).map((x) => `${x.u} (${x.w} words)`);
+    return bad.length ? fail(`thin pages: ${list(bad)}`, { evidence: bad }) : pass(`no sampled content page under ${hardFloor(min)} words${shortNote(short, min)}`);
   },
   organization_node(ctx) {
     const bad = [];
@@ -722,16 +737,17 @@ export const CHECKS = {
   guide_shape(ctx, params) {
     const guides = okPages(ctx).filter((p) => /\/guides\/[^/]+/.test(new URL(p.url).pathname));
     if (!guides.length) return notChecked("no /guides/ page in the sample");
-    const bad = [];
+    const bad = [], short = [], min = params?.min_words ?? 1800;
     for (const p of guides) {
       const w = wordCount(visibleText(p.html)), why = [];
-      if (w < (params?.min_words ?? 1800)) why.push(`${w} words`);
+      if (w < hardFloor(min)) why.push(`${w} words`);
       if (!/<h2[^>]*>[^<]*quick answer/i.test(p.html)) why.push("no Quick answer H2");
       if (deepNodes(jsonLd(p.html).nodes, /^FAQPage$/).length > 1) why.push("more than one FAQPage");
       if (!links(p.html, p.url).some((l) => /request-assistance/.test(l.url) && /vertical=/.test(l.url) && /(kind|page_kind)=/.test(l.url) && /slug=/.test(l.url))) why.push("no CTA with vertical, kind and slug");
       if (why.length) bad.push(`${p.url}: ${why.join(", ")}`);
+      else if (w < min) short.push(`${p.url} (${w} words)`);
     }
-    return bad.length ? fail(list(bad), { evidence: bad }) : pass(`${guides.length} guides in the house shape`);
+    return bad.length ? fail(list(bad), { evidence: bad }) : pass(`${guides.length} guides in the house shape${shortNote(short, min)}`);
   },
   directory_listings(ctx) {
     const towns = okPages(ctx).filter((p) => p.coverageKind === "town");
