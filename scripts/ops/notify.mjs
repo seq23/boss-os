@@ -216,7 +216,7 @@ export function employeeMail(sender, { to, subject, text, html: _html, files, la
   const threadHeaders = ids.length ? { "In-Reply-To": ids[ids.length - 1], References: ids.join(" ") } : {};
   const headers = {
     ...(laid.refs.length ? { "X-Boss-Ref": laid.refs.join(" ") } : {}),
-    ...(laid.kind === "problem" || laid.kind === "morning" ? { "X-Boss-Kind": laid.kind } : {}),
+    ...(laid.kind === "problem" || laid.kind === "morning" || laid.kind === "report" ? { "X-Boss-Kind": laid.kind } : {}),
     ...threadHeaders,
   };
   return {

@@ -10,7 +10,7 @@
  * the 1-minute summary, the key numbers and the gaps are in the body; ONE link opens the full page.
  * A partial page says "partial" and names its gaps in one line.
  */
-import { layoutEmail } from "../mail/plain.mjs";
+import { layoutEmail, NOTHING_TO_DECIDE } from "../mail/plain.mjs";
 
 const strip = (s) => String(s ?? "")
   .replace(/\[([^\]]+)\]\((?:https?:)?[^)]*\)/g, "$1")   // [text](url) → text
@@ -259,7 +259,8 @@ export function researchFullEmail({ who, subject, page, url, refs = [], markdown
   const srcHtml = sources.length ? `<h2 style="${STYLE.h2}">Sources (${sources.length})</h2><ol style="${STYLE.ol}">${sources.map((s) => `<li style="${STYLE.li}"><a href="${escHtml(s?.url)}" style="${STYLE.a}">${escHtml(s?.title || s?.url)}</a></li>`).join("")}</ol>` : "";
   const head = `<!doctype html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"></head><body style="margin:0;padding:0;background:#f6f4ef"><div style="max-width:640px;margin:0 auto;padding:16px;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;font-size:15px;line-height:1.6;color:#1f1d1a;background:#ffffff">`
     + `<h1 style="font-size:23px;line-height:1.25;margin:4px 0 6px">${escHtml(p.title)}</h1>`
-    + `<p style="margin:0 0 14px;color:#6b665e;font-size:13px">Research by ${escHtml(name)}${partialLine ? ` · ${escHtml(partialLine)}` : ""}</p>`
+    + `<p style="margin:0 0 4px;color:#6b665e;font-size:13px">Research by ${escHtml(name)}${partialLine ? ` · ${escHtml(partialLine)}` : ""}</p>`
+    + `<p style="margin:0 0 14px;color:#6b665e;font-size:13px">${NOTHING_TO_DECIDE}</p>`
     + (p.answer ? `<div style="background:#fbf6ea;border:1px solid #eadfc4;border-radius:8px;padding:12px 14px;margin:0 0 8px"><p style="margin:0 0 4px;font-size:12px;font-weight:700;letter-spacing:.08em;text-transform:uppercase;color:#8a5a00">In one minute</p><p style="margin:0;font-weight:600">${escHtml(p.answer)}</p></div>` : "")
     + button;
   const foot = `${gapHtml}${srcHtml}${button}<p style="margin:16px 0 0;color:#6b665e;font-size:13px">Reply to this email and your answer goes straight back to this job.</p><p style="margin:12px 0 0">— ${escHtml(name)}</p></div></body></html>`;
@@ -279,7 +280,7 @@ export function researchFullEmail({ who, subject, page, url, refs = [], markdown
   const html = head + body + cutHtml + foot;
 
   const text = [
-    p.title, `Research by ${name}${partialLine ? ` · ${partialLine}` : ""}`, "",
+    p.title, `Research by ${name}${partialLine ? ` · ${partialLine}` : ""}`, NOTHING_TO_DECIDE, "",
     ...(p.answer ? ["IN ONE MINUTE", p.answer, ""] : []),
     `Open in Boss OS: ${url}`, "",
     researchPlainText(parts.slice(0, shown).join("\n")),
@@ -289,6 +290,6 @@ export function researchFullEmail({ who, subject, page, url, refs = [], markdown
     "", "Reply to this email and your answer goes straight back to this job.", "", `— ${name}`,
   ].join("\n");
   const subj = String(subject ?? "").replace(/\s*\[?tsk_[a-z0-9]+\]?\s*$/i, "").trim() || researchDoneSubject(page);
-  const token = (refs ?? []).find((r) => /^tsk_/.test(r));
-  return { subject: token ? `${subj} [${token}]` : subj, text, html, refs: refs ?? [], kind: "plain" };
+  // The task travels in the X-Boss-Ref header (refs), never in the subject she reads.
+  return { subject: subj.slice(0, 90), text, html, refs: refs ?? [], kind: "report" };
 }
