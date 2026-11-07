@@ -337,7 +337,7 @@ if (selfTest) {
   check("a poll that refetches fresh data every tick is caught", (await plant("alwaysfetch", (t) => t.replaceAll('-mmin -"$FRESH_MINUTES"', "-mmin -0"))).length > 0);
   check("a takeover with no gate (the race review of #61 found) is caught", (await plant("nogate", (t) => t.replace('if mkdir "$GATE_DIR" 2>/dev/null; then have_gate=1; break; fi', "have_gate=1; break").replace('rm -rf "$LOCK_DIR"             # the holder is gone', 'sleep 0.3; rm -rf "$LOCK_DIR"             # the holder is gone'))).length > 0);
   check("a holder identity read from the stepping wall clock (ps lstart) is caught", (await plant("lstart", (t) => t.replace(/started_of\(\) \{[\s\S]*?\n\}\n/, "started_of() { ps -o lstart= -p \"$1\" 2>/dev/null | sed 's/^ *//;s/ *$//'; }\n"))).length > 0);
-  check("a holder identity with no reused-PID guard is caught", (await plant("noreuse", (t) => t.replace(/started_of\(\) \{[\s\S]*?\n\}\n/, 'started_of() { kill -0 "$1" 2>/dev/null && echo alive; }\n'))).length > 0);
+  check("a liveness check with no reused-PID guard (kill -0 alone) is caught", (await plant("noreuse", (t) => t.replace('[ "$(started_of "$pid")" = "$started" ]', "true"))).length > 0);
   rmSync(dir, { recursive: true, force: true });
 
   const failed = results.filter(([, ok]) => !ok);
