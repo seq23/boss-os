@@ -101,6 +101,14 @@ if [ -d "$REPO" ]; then
     || say "NAMED STOP [UNITS_NOT_READ] units sold could not be read today — see the KDP-UNITS line above; the Scorecard shows the KDP row as No number until a later run reads it."
 fi
 
+# ─── BOOKS PER LINE, INTO THE SPRY BRAIN (owner, 7 Nov 2026) ──────────────────
+# One Numbers row per Kindle line (ApprovalPrep, Dream Wedding, A Player Mode, KeepMyProof), counted
+# from kdp-register.json by code; an unreadable register writes "not read: <reason>", never 0.
+if [ -d "$REPO" ]; then
+  ( cd "$REPO" && npm run --silent vault:run -- node scripts/ops/kdp-line-counts.mjs ) >> "$RUN_LOG" 2>&1 \
+    || say "NAMED STOP [LINE_COUNTS_NOT_RECORDED] the Kindle book counts did not reach the spry brain — see the lines above; the next monthly run writes them again."
+fi
+
 AI_RUN_CLAUDE_MODEL="$MODEL" "$AI_RUN" --role "$AI_ROLE" --out "$RUN_LOG" < "$PROMPT_FILE"
 RC=$?
 say "=== ai-run --role $AI_ROLE exited rc=$RC ==="
