@@ -1437,6 +1437,8 @@ export function fixBriefs(checklist, siteResults, { now = Date.now() } = {}) {
         missing_urls: r.missing ?? [],
         evidence: (r.evidence ?? []).slice(0, 25),
         protected: prot.length ? prot.map((pp) => ({ path: pp.path, rule: pp.rule, buy_link: pp.buy_link, sha256: pp.sha256 })) : null,
+        // A SUNSETTING site (sites.json `sunsetting`, owner 7 Nov 2026: spryexecutiveos.com lapses with
+        // its domain) is audited and reported, and its briefs are recorded, never worked.
         // A NAMED STOP is a failure only the owner can clear (a check that sets `named_stop`).
         // It stays in the queue so it is said every week, but no fix pass is ever spent on it.
         // A repo the fixer may never branch (a client's report-only repo, repoPolicy NO_AUTO_FIX) is
@@ -1446,7 +1448,7 @@ export function fixBriefs(checklist, siteResults, { now = Date.now() } = {}) {
         // repair whose every page is an already-published post under the site's direct-repair paths
         // (owner, 3 Nov 2026: "if it has repairs for already published resources they should just fix
         // them not queue"): that one is worked like any other site (`heldForOwner`, ownerApproval.mjs).
-        disposition: !s.site.repo ? "no_repo" : !mayAutoFix(s.site.repo) ? "client_repo" : heldForOwner(s.site, { approved: s.approved, texts: [r.detail, ...(r.evidence ?? []), ...(r.missing ?? [])] }) ? "owner_approval" : s.site.client_approval ? "client_draft" : limit ? "known_limit" : r.named_stop ? "named_stop" : "fix",
+        disposition: !s.site.repo ? "no_repo" : !mayAutoFix(s.site.repo) ? "client_repo" : s.site.sunsetting ? "sunsetting" : heldForOwner(s.site, { approved: s.approved, texts: [r.detail, ...(r.evidence ?? []), ...(r.missing ?? [])] }) ? "owner_approval" : s.site.client_approval ? "client_draft" : limit ? "known_limit" : r.named_stop ? "named_stop" : "fix",
         ...(limit ? { known_limit: limit.why } : {}),
         ...(r.named_stop ? { named_stop: r.named_stop } : {}),
       });
@@ -1529,7 +1531,8 @@ export function splitLine(split) {
 
 // ─── Plain words for the morning email ───────────────────────────────────────
 
-const short = (s) => s.domain;
+// The business first (owner, 7 Nov 2026): "Industry Guides (dentistryguides.com)", never a vertical alone.
+const short = (s) => (s.business ? `${s.business} (${s.domain})` : s.domain);
 
 /**
  * The lines for the morning email's "The grid repos" section (owner's make-it-calm rules: what is

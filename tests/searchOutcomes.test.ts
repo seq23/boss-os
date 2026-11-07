@@ -86,7 +86,8 @@ describe("the outcome alarm", () => {
 
   it("a report-only client repo's brief is recorded, never worked", () => {
     const outcome = outcomeVerdict({ read: { ok: true, rows: wpp.rows }, sitemapUrls: null, now: T("2026-09-11") });
-    const b = weeklyBriefs([{ site: siteOf("detoxdenver.org"), host: "detoxdenver.org", outcome }]);
+    // detoxdenver.org is a friends' site since 7 Nov 2026 (fixed); a still report-only repo stands in.
+    const b = weeklyBriefs([{ site: { ...siteOf("detoxdenver.org"), repo: "sheila-bruce" }, host: "detoxdenver.org", outcome }]);
     expect(b[0].disposition).toBe("client_repo");
     expect(workQueue(b).once).toEqual([]);
   });

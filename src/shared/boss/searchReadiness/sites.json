@@ -1,17 +1,78 @@
 {
  "_why": "THE GRID REPOS: every site the Search Readiness checklist is enforced on, with its category, kind and coverage. Owner, 25 Oct 2026: the side businesses on her Side Business Review page, plus Porch & Party, Virtual Agency OS, the Spry HPC sites and the two client sites (horselegalguide.com, hicksconsulting.org), all on the full auto-fix lane. Never anything West Peek, never Shirley Brown's senior housing work. tests/searchReadiness.test.ts fails if a site has no coverage entry. entity_parent (31 Oct 2026, authority audit): spry-labs = a side business whose entity points parentOrganization at Spry Labs (https://billionairehighperformancecoach.com/spry-labs#organization), directly or through a grid parent such as The Industry Guides; client = a friend's business, never the Spry Labs parent; own = her own business outside Spry Labs (Porch & Party, Virtual Agency OS) or a side business whose parent claim the owner has withdrawn (the three authority-network publications, 11 Oct 2026; entity_parent_why says so on the row), never the Spry Labs parent. ymyl: true marks a medical, legal or financial site whose pages need a named reviewer (k5). entity_file names the entity file when it is not called entity.json. search_loop (1 Nov 2026, owner: the search growth loop on every selling site): the site runs the shared seq23/search-loop engine and every growth-loop item (f2, f7-f12, applies_to flag:search_loop) is enforced on it; wave is the rollout order she approved (1 Industry Guides, ApprovalPrep, Dream Wedding, the Spry HPC sites; 2 Time-2-Read and heygetonmylevel; 3 Porch & Party and the client sites). Where a site shows is decided by its repo's category in the personal brain's \"Repo categories\" (1 Nov 2026): her own sites in the standings and her email; Friends & clients in a separate \"Friends' sites\" section, in her email only when one needs her (siteSection).",
+ "_groups": {
+  "_why": "WHAT SEARCH READINESS COVERS (owner, 7 Nov 2026, personal brain Settled decisions 'Names and groups'): friends' sites + selling sites + all of the Divine 9. Every grid row names its `group` and its `business`; reports name the business first, so an Industry Guides vertical (dentistryguides.com) is never shown as a business of its own. Support systems (the authority backlink network) serve her businesses and stay audited. `sunsetting` on a row: audited and reported, its briefs never worked. Pinned by tests/searchReadinessGroups.test.ts.",
+  "divine_9": [
+   "Time-2-Read",
+   "heygetonmylevel",
+   "Industry Guides",
+   "KeepMyProof",
+   "ApprovalPrep",
+   "Dream Wedding",
+   "A Player Mode",
+   "How We Know",
+   "Whisper Almanac"
+  ],
+  "selling": [
+   "Porch & Party"
+  ],
+  "friends": [
+   "Horse",
+   "Hicks",
+   "Cynthia Brown DDS",
+   "WPP-llm",
+   "Detox Denver"
+  ],
+  "support": [
+   "Authority backlink network"
+  ],
+  "gaps": {
+   "Whisper Almanac": "whisperalmanac.com is owned (6 Nov 2026) but has no site or repo yet; it joins the grid with its first page."
+  }
+ },
  "never": [
   "westpeek.",
   "joinwestpeek.",
   "Shirley Brown",
   "WHA"
  ],
- "excluded": [],
+ "excluded": [
+  {
+   "repo": "901johnsons-site",
+   "why": "No search work on private or non-search sites (owner, 3 Nov 2026): a private family reunion site."
+  },
+  {
+   "repo": "creator-studios",
+   "why": "No search work (owner, 3 Nov 2026): the creator studios."
+  },
+  {
+   "repo": "justbeingmercedes",
+   "why": "No search work (owner, 3 Nov 2026): a creator studio."
+  },
+  {
+   "repo": "sheila-bruce",
+   "why": "No search work (owner, 3 Nov 2026): a creator studio."
+  },
+  {
+   "repo": "topbarz-voting",
+   "why": "A friends' site that gets no Search Readiness (owner, 7 Nov 2026)."
+  },
+  {
+   "repo": "charm-nest",
+   "why": "Parked (owner, 7 Nov 2026): off Search Readiness and every job."
+  },
+  {
+   "repo": "courtscope",
+   "why": "Parked (owner, 7 Nov 2026): off Search Readiness and every job."
+  }
+ ],
  "grid_repos": [
   {
    "domain": "theindustryguides.com",
    "repo": "local-guides-citation-velocity",
    "category": "side_business",
+   "group": "divine_9",
+   "business": "Industry Guides",
    "entity_parent": "spry-labs",
    "kind": "guide",
    "roles": [
@@ -35,6 +96,8 @@
    "domain": "uscisexam.com",
    "repo": "local-guides-generator",
    "category": "side_business",
+   "group": "divine_9",
+   "business": "Industry Guides",
    "entity_parent": "spry-labs",
    "ymyl": true,
    "kind": "guide",
@@ -84,6 +147,8 @@
    ],
    "repo": "local-guides-generator",
    "category": "side_business",
+   "group": "divine_9",
+   "business": "Industry Guides",
    "entity_parent": "spry-labs",
    "ymyl": true,
    "kind": "guide",
@@ -121,6 +186,8 @@
    "domain": "theaccidentguides.com",
    "repo": "local-guides-generator",
    "category": "side_business",
+   "group": "divine_9",
+   "business": "Industry Guides",
    "entity_parent": "spry-labs",
    "ymyl": true,
    "kind": "guide",
@@ -158,6 +225,8 @@
    "domain": "neuroevalguides.com",
    "repo": "local-guides-generator",
    "category": "side_business",
+   "group": "divine_9",
+   "business": "Industry Guides",
    "entity_parent": "spry-labs",
    "ymyl": true,
    "kind": "guide",
@@ -195,6 +264,8 @@
    "domain": "hormonesivhair.com",
    "repo": "local-guides-generator",
    "category": "side_business",
+   "group": "divine_9",
+   "business": "Industry Guides",
    "entity_parent": "spry-labs",
    "ymyl": true,
    "kind": "guide",
@@ -232,6 +303,8 @@
    "domain": "memphisseniorcarehomes.com",
    "repo": "local-guides-generator",
    "category": "side_business",
+   "group": "divine_9",
+   "business": "Industry Guides",
    "entity_parent": "spry-labs",
    "ymyl": true,
    "kind": "hyperlocal",
@@ -598,6 +671,8 @@
    ],
    "repo": "p-n-p",
    "category": "own_business",
+   "group": "selling",
+   "business": "Porch & Party",
    "entity_parent": "own",
    "kind": "hyperlocal",
    "roles": [],
@@ -787,6 +862,8 @@
    "domain": "approvalprep.com",
    "repo": "approvalprep",
    "category": "side_business",
+   "group": "divine_9",
+   "business": "ApprovalPrep",
    "entity_parent": "spry-labs",
    "ymyl": true,
    "kind": "brand",
@@ -813,6 +890,8 @@
    "domain": "weddingchecklistpdf.com",
    "repo": "dream-wedding-builder",
    "category": "side_business",
+   "group": "divine_9",
+   "business": "Dream Wedding",
    "entity_parent": "spry-labs",
    "kind": "brand",
    "roles": [],
@@ -838,6 +917,8 @@
    "domain": "weddingbudgetspreadsheet.com",
    "repo": "dream-wedding-builder",
    "category": "side_business",
+   "group": "divine_9",
+   "business": "Dream Wedding",
    "entity_parent": "spry-labs",
    "kind": "brand",
    "roles": [],
@@ -863,6 +944,8 @@
    "domain": "weddingseatingchartmaker.com",
    "repo": "dream-wedding-builder",
    "category": "side_business",
+   "group": "divine_9",
+   "business": "Dream Wedding",
    "entity_parent": "spry-labs",
    "kind": "brand",
    "roles": [],
@@ -888,6 +971,8 @@
    "domain": "weddingtimelinetemplate.com",
    "repo": "dream-wedding-builder",
    "category": "side_business",
+   "group": "divine_9",
+   "business": "Dream Wedding",
    "entity_parent": "spry-labs",
    "kind": "brand",
    "roles": [],
@@ -914,6 +999,8 @@
    "_repo_why": "The apex is NOT served by seq23/aplayer-mode (that repo is the Expo app and the API, on app.aplayermode.com and api.aplayermode.com). aplayermode.com/* is answered by workers/aplayermode-com in sprylabs-hpc-site, whose aplayermode/ directory holds the page, its robots.txt, sitemap.xml, llms.txt and its OWN IndexNow key. Corrected 25 Oct 2026 after the repo-side items (e3, e4, e5, i3, i6, i8) all failed against a repo that never served this host.",
    "repo": "sprylabs-hpc-site",
    "category": "side_business",
+   "group": "divine_9",
+   "business": "A Player Mode",
    "entity_parent": "spry-labs",
    "kind": "brand",
    "roles": [],
@@ -942,6 +1029,8 @@
    "domain": "time-2-read.com",
    "repo": "dailystory",
    "category": "side_business",
+   "group": "divine_9",
+   "business": "Time-2-Read",
    "entity_parent": "spry-labs",
    "kind": "brand",
    "roles": [],
@@ -976,6 +1065,8 @@
    "domain": "heygetonmylevel.com",
    "repo": "heygetonmylevel",
    "category": "side_business",
+   "group": "divine_9",
+   "business": "heygetonmylevel",
    "entity_parent": "spry-labs",
    "kind": "brand",
    "roles": [],
@@ -997,6 +1088,8 @@
    "domain": "howweknowdeep.com",
    "repo": "how-we-know",
    "category": "side_business",
+   "group": "divine_9",
+   "business": "How We Know",
    "entity_parent": "spry-labs",
    "kind": "brand",
    "roles": [],
@@ -1017,6 +1110,8 @@
    "domain": "professionalresourcelibrary.com",
    "repo": "authority-backlink-network",
    "category": "side_business",
+   "group": "support",
+   "business": "Authority backlink network",
    "entity_parent": "own",
    "entity_parent_why": "The three authority-network publications name NO parent: the owner withdrew the parent-company claim on 11 Oct 2026 ('followed links, no Spry Labs mention') and the network is separately owned (owner, 27 Oct 2026). authority-backlink-network enforces it with scripts/validators/validate_no_parent_company.py, which fails the build if the name or a parentOrganization key reappears in published output. 'own' is what that makes true; 'spry-labs' here asked the repo to republish a withdrawn claim.",
    "entity_file": "data/entities/professionalresourcelibrary.com.json",
@@ -1039,6 +1134,8 @@
    "domain": "founderoperatorlibrary.com",
    "repo": "authority-backlink-network",
    "category": "side_business",
+   "group": "support",
+   "business": "Authority backlink network",
    "entity_parent": "own",
    "entity_parent_why": "The three authority-network publications name NO parent: the owner withdrew the parent-company claim on 11 Oct 2026 ('followed links, no Spry Labs mention') and the network is separately owned (owner, 27 Oct 2026). authority-backlink-network enforces it with scripts/validators/validate_no_parent_company.py, which fails the build if the name or a parentOrganization key reappears in published output. 'own' is what that makes true; 'spry-labs' here asked the repo to republish a withdrawn claim.",
    "entity_file": "data/entities/founderoperatorlibrary.com.json",
@@ -1061,6 +1158,8 @@
    "domain": "memphisvendorlibrary.com",
    "repo": "authority-backlink-network",
    "category": "side_business",
+   "group": "support",
+   "business": "Authority backlink network",
    "entity_parent": "own",
    "entity_parent_why": "The three authority-network publications name NO parent: the owner withdrew the parent-company claim on 11 Oct 2026 ('followed links, no Spry Labs mention') and the network is separately owned (owner, 27 Oct 2026). authority-backlink-network enforces it with scripts/validators/validate_no_parent_company.py, which fails the build if the name or a parentOrganization key reappears in published output. 'own' is what that makes true; 'spry-labs' here asked the repo to republish a withdrawn claim.",
    "entity_file": "data/entities/memphisvendorlibrary.com.json",
@@ -1084,6 +1183,8 @@
    "client_approval": "owner, 3 Nov 2026: \"horse owners want to approve everything that goes live - so we can use the engine but it needs to fill the queue still and be approved by them\". Repairs are drafted (encouraged: a velocity site) and go live only once the Horse owners approve them in their approval queue; new pages and edits to live pages alike.",
    "repo": "horse-legal-guide-velocity",
    "category": "client",
+   "group": "friends",
+   "business": "Horse",
    "entity_parent": "client",
    "ymyl": true,
    "kind": "guide",
@@ -1111,6 +1212,8 @@
    },
    "repo": "hicks-consulting-canonical",
    "category": "client",
+   "group": "friends",
+   "business": "Hicks",
    "entity_parent": "client",
    "entity_file": "data/entities/org_schema.json",
    "kind": "brand",
@@ -1129,6 +1232,8 @@
    "domain": "detoxdenver.org",
    "repo": "dianne-place-recovery-services",
    "category": "client",
+   "group": "friends",
+   "business": "Detox Denver",
    "entity_parent": "client",
    "ymyl": true,
    "kind": "brand",
@@ -1147,6 +1252,8 @@
    "domain": "cynthiabrowndds.com",
    "repo": "cynthia-brown-dds-site",
    "category": "client",
+   "group": "friends",
+   "business": "Cynthia Brown DDS",
    "entity_parent": "client",
    "ymyl": true,
    "clarity": false,
@@ -1166,32 +1273,24 @@
   {
    "domain": "virtualagency-os.com",
    "repo": "WPP-llm",
-   "category": "own_business",
-   "entity_parent": "own",
+   "category": "client",
+   "group": "friends",
+   "business": "WPP-llm",
+   "entity_parent": "client",
    "kind": "brand",
    "roles": [],
    "label": "Virtual Agency OS",
    "coverage": {
     "model": "not_local",
     "why": "A national software product; no place-based pages."
-   },
-   "lead_source": {
-    "kind": "cf_web_analytics",
-    "action": "visits to the West Peek Productions inquiry site sent from this site",
-    "code": "WPP-llm search-loop.config.json (action: westpeekproductions.com, linked from every page)",
-    "params": {
-     "host": "westpeekproductions.com",
-     "paths": [
-      "/*"
-     ],
-     "referer_host": "virtualagency-os.com"
-    }
    }
   },
   {
    "domain": "billionairehighperformancecoach.com",
    "repo": "sprylabs-hpc-site",
    "category": "own_business",
+   "group": "divine_9",
+   "business": "A Player Mode",
    "entity_parent": "spry-labs",
    "kind": "brand",
    "roles": [],
@@ -1241,6 +1340,8 @@
    "domain": "spryexecutiveos.com",
    "repo": "sprylabs-hpc-site",
    "category": "own_business",
+   "group": "divine_9",
+   "business": "A Player Mode",
    "entity_parent": "spry-labs",
    "kind": "brand",
    "roles": [],
@@ -1287,12 +1388,15 @@
      ],
      "referer_host": "spryexecutiveos.com"
     }
-   }
+   },
+   "sunsetting": "Sunset when its domain expires (owner, 7 Nov 2026): audited until then, no new fix work."
   },
   {
    "domain": "keepmyproof.com",
    "repo": "keepmyproof",
    "category": "side_business",
+   "group": "divine_9",
+   "business": "KeepMyProof",
    "entity_parent": "spry-labs",
    "kind": "brand",
    "roles": [],

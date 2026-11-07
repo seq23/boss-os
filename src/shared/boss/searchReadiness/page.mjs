@@ -60,7 +60,9 @@ export function standingsSummary(results, { categories = null, section = "mine" 
 
 function standingRows(sites, title) {
   return [...sites]
-    .sort((a, b) => (b.failing?.length ?? 0) - (a.failing?.length ?? 0) || String(a.site?.domain).localeCompare(String(b.site?.domain)))
+    // Grouped by business (owner, 7 Nov 2026: an Industry Guides vertical such as dentistryguides.com
+    // is never a business of its own), then the most failing first within it.
+    .sort((a, b) => String(a.site?.business ?? a.site?.domain).localeCompare(String(b.site?.business ?? b.site?.domain)) || (b.failing?.length ?? 0) - (a.failing?.length ?? 0) || String(a.site?.domain).localeCompare(String(b.site?.domain)))
     .map((s) => {
       const res = s.results ?? [];
       const passed = res.filter((r) => r.status === "pass").length;
@@ -75,8 +77,15 @@ function standingRows(sites, title) {
       const leads = s.leads?.line ? `<br><span class="${s.leads.red ? "bad" : "muted"}" data-leads="${esc(s.leads.status)}">${esc(s.leads.line)}</span>` : "";
       // Which searches win (engine v1.6.0 lanes, 3 Nov 2026): "not read" or "lanes start with engine v1.6", never 0.
       const lanes = s.lanes?.line ? `<br><span class="muted" data-lanes>${esc(s.lanes.line)}</span>` : "";
-      return `      <tr data-site="${esc(s.site?.domain ?? "")}"><td>${esc(s.site?.domain ?? "")}${leads}${lanes}${outcomeCell(s)}</td><td><code>${esc(s.site?.repo ?? "no repo")}</code></td><td>${passed} of ${judged}</td><td>${cell}${loopNote ? `<br><span class="muted">${esc(loopNote)}</span>` : ""}</td></tr>`;
+      return `      <tr data-site="${esc(s.site?.domain ?? "")}"><td>${siteName(s.site)}${leads}${lanes}${outcomeCell(s)}</td><td><code>${esc(s.site?.repo ?? "no repo")}</code></td><td>${passed} of ${judged}</td><td>${cell}${loopNote ? `<br><span class="muted">${esc(loopNote)}</span>` : ""}</td></tr>`;
     });
+}
+
+/** "Industry Guides · dentistryguides.com", with a "sunsetting" note when the site is being let go. */
+export function siteName(site) {
+  const d = esc(site?.domain ?? "");
+  const name = site?.business ? `<b>${esc(site.business)}</b> · ${d}` : d;
+  return site?.sunsetting ? `${name} <span class="muted" data-sunsetting>sunsetting</span>` : name;
 }
 
 /**

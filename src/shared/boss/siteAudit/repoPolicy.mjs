@@ -45,8 +45,12 @@ const CLIENT_WHY =
  * needing her there is client-facing — but their site defects are fixed, not reported and left.
  * The repositories below are clients who are not grid repo sites; they stay report-only.
  */
+/*
+ * dianne-place-recovery-services LEFT THIS LIST on 7 Nov 2026 (owner ruling, personal brain): Detox
+ * Denver (detoxdenver.org) and Dianne's Place are one business and a friends' site, fixed like Horse
+ * and Hicks under the strict health gate. Her patients' data still never feeds her own businesses.
+ */
 export const NO_AUTO_FIX = [
-  { repo: "dianne-place-recovery-services", kind: "client", why: CLIENT_WHY },
   { repo: "sheila-creator-dashboard", kind: "client", why: CLIENT_WHY },
   { repo: "sheila-bruce", kind: "client", why: CLIENT_WHY },
   { repo: "mercedes-creator-dashboard", kind: "client", why: CLIENT_WHY },
