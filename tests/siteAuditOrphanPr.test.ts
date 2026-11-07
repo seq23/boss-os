@@ -1,5 +1,5 @@
 import { it, expect } from 'vitest';
-import { orphanVerdict, blockedStopSentence } from '../src/shared/boss/searchReadiness/orphanPr.mjs';
+import { orphanVerdict, blockedStopSentence, fixedNothingCause } from '../src/shared/boss/searchReadiness/orphanPr.mjs';
 // @ts-expect-error Node-only ops module has no declaration.
 import { landAll } from '../scripts/ops/site-audit-lib.mjs';
 const row = { repo: 'approvalprep', disposition: 'in_flight', pr_url: 'https://github.com/seq23/approvalprep/pull/1' };
@@ -29,4 +29,24 @@ it('lands through the existing door once per PR; blocked and merged PRs never re
     expect(calls.filter(c => c.includes('/test/land'))).toHaveLength(pr === green ? 1 : 0);
     expect(payload.findings[0].land).toBe(pr === green ? 'landed' : pr.state === 'MERGED' ? 'already_merged' : 'blocked');
   }
+});
+
+it('7 Nov 2026: a MERGED PR is already_merged whoever opened it, never another_lane or blocked', () => {
+  expect(orphanVerdict(row, { ...green, state: 'MERGED', headRefName: 'fix/sr-heygetonmylevel-6nov' }, { sites })).toBe('already_merged');
+  // NEGATIVE: an OPEN PR off another branch is still refused.
+  expect(orphanVerdict(row, { ...green, headRefName: 'fix/sr-heygetonmylevel-6nov' }, { sites })).toBe('another_lane');
+  // The pre-fetch probe (no PR yet) still asks for the PR to be read.
+  expect(orphanVerdict(row, null, { sites })).toBe('another_lane');
+  const payload: any = { findings: [{ ...row }] };
+  landAll(payload, { sites, run: (cmd: string) => ({ status: 0, out: cmd === 'gh' ? JSON.stringify({ ...green, state: 'MERGED', headRefName: 'work/other' }) : 'ok' }), landBin: '/test/land' });
+  expect(payload.findings[0].land).toBe('already_merged');
+});
+it('fixedNothingCause names an all-merged round, a blocked round, and nothing else', () => {
+  const m = { ...row, land: 'already_merged' };
+  expect(fixedNothingCause([m, { ...m, pr_url: 'https://github.com/seq23/approvalprep/pull/2' }]).code).toBe('SR_AWAITING_HOST_PUBLISH');
+  expect(fixedNothingCause([m]).sentence).toContain('pull/1');
+  expect(fixedNothingCause([{ ...row, land: 'blocked', land_detail: 'checks_red' }, m])).toMatchObject({ code: 'SR_BLOCKED_BY_OPEN_PRS', sentence: expect.stringContaining('checks_red') });
+  expect(fixedNothingCause([]).code).toBe('');
+  expect(fixedNothingCause([m, { disposition: 'surfaced' }]).code).toBe('');
+  expect(fixedNothingCause([{ ...row }]).code).toBe('');
 });

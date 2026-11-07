@@ -9,3 +9,8 @@ export function waitingNote(code: string, sentence: string, cleared?: boolean): 
   finish_line: string; next_step: string; cleared?: boolean;
 };
 export function reportStop(api: { post(path: string, body: unknown): Promise<unknown> }, code: string, sentence: string, cleared?: boolean): Promise<"NOTE" | "REPAIR">;
+export const OWNER_STOPS: readonly string[];
+export function ownerNote(code: string, sentence: string, cleared?: boolean): {
+  repo: string; stop: string; owner: string; business: string; title: string;
+  finish_line: string; next_step: string; cleared?: boolean;
+};

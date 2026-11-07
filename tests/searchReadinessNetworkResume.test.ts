@@ -145,7 +145,7 @@ console.log(plans[Math.min(n, plans.length - 1)]);
   writeFileSync(join(home, "fix-rcs"), (o.fixRcs ?? [0]).join(" "));
   writeFileSync(join(ops, "ahrefs-audit-fix.sh"), `
 echo "$SR_SCOPE_REPO" >> ${JSON.stringify(join(home, "passes"))}
-${o.findings ? `cp ${JSON.stringify(join(home, "fixture-findings.json"))} ${JSON.stringify(join(home, ".boss-os/site-audit/sr-a/findings.json"))}` : ""}
+${o.findings ? `mkdir -p "${join(home, ".boss-os/site-audit")}/sr-$SR_SCOPE_REPO" && cp ${JSON.stringify(join(home, "fixture-findings.json"))} "${join(home, ".boss-os/site-audit")}/sr-$SR_SCOPE_REPO/findings.json"` : ""}
 sleep ${o.fixSleep ?? 0}
 set -- $(cat ${JSON.stringify(join(home, "fix-rcs"))}); rc=$1; [ $# -gt 1 ] && shift; echo "$*" > ${JSON.stringify(join(home, "fix-rcs"))}
 exit $rc
@@ -267,6 +267,44 @@ describe("search-readiness-fix.sh waits out the network and resumes by itself", 
     expect(t.read("reported").trim()).toBe("SR_BLOCKED_BY_OPEN_PRS");
   }, 60000);
 
+  /*
+   * 7 NOV 2026: round 3 held two heygetonmylevel briefs, both fixed by MERGED pull requests that Lovable
+   * had not published. #15 (opened off another branch) was logged "blocked", #17 "already_merged", and
+   * the run called it "fixed nothing" / SR_QUEUE_STALLED, opening a repair nobody but her can finish.
+   */
+  const HGOML = "QUEUE total=2 workable=2 protected=0 no_repo=0\nCHUNK heygetonmylevel 2 sr-a9,sr-b10";
+  const merged = (n: number) => ({ repo: "heygetonmylevel", disposition: "in_flight", pr_url: `https://github.com/seq23/heygetonmylevel/pull/${n}`, land: "already_merged", land_detail: "already_merged" });
+
+  it("7 Nov round reproduced (one row blocked, one merged): the stop names a cause, never \"fixed nothing\"", () => {
+    const t = runnerTree({ plans: [HGOML], findings: [{ ...merged(15), land: "blocked", land_detail: "another_lane" }, merged(17)] });
+    const r = t.run();
+    expect(r.rc, r.out).toBe(0);
+    expect(r.out).not.toContain("fixed nothing");
+    expect(r.out).not.toContain("SR_QUEUE_STALLED");
+    expect(r.out).toContain("NAMED STOP [SR_BLOCKED_BY_OPEN_PRS]");
+    expect(r.out).toContain("pull/15: another_lane");
+  }, 60000);
+
+  it("every fix merged but the host not republished: SR_AWAITING_HOST_PUBLISH, PRs named, exit 0, mark cleared, reported as that code", () => {
+    const t = runnerTree({ plans: [HGOML], findings: [merged(15), merged(17)] });
+    const r = t.run();
+    expect(r.rc, r.out).toBe(0);
+    expect(r.out).toContain("NAMED STOP [SR_AWAITING_HOST_PUBLISH] 2 workable briefs left");
+    expect(r.out).toContain("https://github.com/seq23/heygetonmylevel/pull/15");
+    expect(r.out).toContain("https://github.com/seq23/heygetonmylevel/pull/17");
+    expect(r.out).not.toContain("fixed nothing");
+    expect(r.out).toContain("NOTE: SR_AWAITING_HOST_PUBLISH");
+    expect(t.read("reported").trim()).toBe("SR_AWAITING_HOST_PUBLISH");
+    expect(existsSync(t.mark)).toBe(false);
+  }, 60000);
+
+  it("a queue that reaches zero clears the publish note with the waiting notes", () => {
+    const t = runnerTree({ plans: [EMPTY] });
+    const r = t.run();
+    expect(r.rc, r.out).toBe(0);
+    expect(t.read("reported").trim().split("\n")).toEqual(["--cleared", "--cleared", "--cleared"]);
+  }, 60000);
+
   it("spent AI usage preserves the mark and resumes after its reset", () => {
     const t = runnerTree({ plans: [FOUR], fixRcs: [13] });
     mkdirSync(t.state, { recursive: true });
@@ -331,6 +369,23 @@ describe("self-resuming waits are notes, never repairs", () => {
     }
     await reportStop(api, "SR_ROUNDS_SPENT", "rounds spent");
     expect(posts.filter(p => p.path === "/tasks")).toHaveLength(1);
+  });
+
+  it("the publish wait is HER Open Loops row, never a repair and never a self-resuming wait (7 Nov 2026)", async () => {
+    const { reportStop, repairTask, WAITING_STOPS } = await import("../scripts/ops/sr-run-stopped.mjs");
+    const { overdueRoute } = await import("../src/shared/boss/openLoops/openLoops.mjs");
+    expect(WAITING_STOPS).not.toContain("SR_AWAITING_HOST_PUBLISH");
+    expect(() => repairTask("SR_AWAITING_HOST_PUBLISH", "x")).toThrow(/note/);
+    const posts: { path: string; body: any }[] = [];
+    const api = { post: async (path: string, body: any) => { posts.push({ path, body }); } };
+    expect(await reportStop(api, "SR_AWAITING_HOST_PUBLISH", "the fixes are merged (https://github.com/seq23/heygetonmylevel/pull/17)")).toBe("NOTE");
+    expect(posts).toHaveLength(1);
+    expect(posts[0]!).toMatchObject({ path: "/open-loops/intake", body: { stop: "SR_AWAITING_HOST_PUBLISH", owner: "sequoia", finish_line: "heygetonmylevel.com serves the merged build" } });
+    expect(posts[0]!.body.next_step).toMatch(/Publish/);
+    expect(overdueRoute(posts[0]!.body)).toBe("her");
+    await reportStop(api, "SR_AWAITING_HOST_PUBLISH", "", true);
+    expect(posts.at(-1)?.body.cleared).toBe(true);
+    expect(posts.filter(p => p.path === "/tasks")).toHaveLength(0);
   });
 
   it("an old repair receipt does not suppress the waiting note after upgrading", () => {

@@ -1075,6 +1075,13 @@
     "model": "not_local",
     "why": "An app companion to Time-2-Read; no place-based pages. In search work since 1 Nov 2026 (reverses the 25 Oct exclusion); its pages lead to the Time-2-Read free week."
    },
+   "known_limits": [
+    {
+     "item": "a9",
+     "why": "Hosted on Lovable, which serves the app shell with 200 for every unknown path (probed 7 Nov 2026: /this-does-not-exist-zz9 answered 200, as on time-2-read.com); a real 404 status is not configurable from the repo. The in-repo mitigation, a noindex 404 page, is merged (heygetonmylevel #15).",
+     "review_after": "2027-02-07"
+    }
+   ],
    "search_loop": {
     "wave": 2
    },

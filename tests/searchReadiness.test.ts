@@ -701,6 +701,15 @@ describe("known limits and one page counted once (25 Oct 2026)", () => {
     expect(workQueue(briefs)).toMatchObject({ total: 6, workable: 4 });
   });
 
+  it("heygetonmylevel.com's a9 is a dated known limit, like time-2-read.com's on the same Lovable host (7 Nov 2026)", () => {
+    const site = sites.grid_repos.find((s: any) => s.domain === "heygetonmylevel.com");
+    const a9 = site.known_limits.find((k: any) => k.item === "a9");
+    expect(a9.review_after).toMatch(/^\d{4}-\d{2}-\d{2}$/);
+    const results = [{ id: "a9", status: "fail", detail: "200 on a made-up path" }];
+    expect(fixBriefs(checklist, [{ site, host: site.domain, results }], { now: Date.parse("2026-11-07T12:00:00Z") })[0].disposition).toBe("known_limit");
+    expect(fixBriefs(checklist, [{ site, host: site.domain, results }], { now: Date.parse(a9.review_after) + 86400000 })[0].disposition).toBe("fix");
+  });
+
   it("a known limit set from a measurement or a dated decision expires on review_after and is worked again (26 Oct 2026)", () => {
     const dent = sites.grid_repos.find((s: any) => s.domain === "dentistryguides.com");
     expect(dent.known_limits.map((k: any) => k.item).sort()).toEqual(["a3", "j9"]);
