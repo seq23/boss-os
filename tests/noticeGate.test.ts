@@ -63,3 +63,43 @@ describe("the one gate: a notice that needs nothing from her never calls the mai
     expect(calls.length).toBeGreaterThan(0);
   });
 });
+
+describe("a repair's stop never reaches her inbox, even on a row from before needs_her (7 Nov 2026)", () => {
+  it("the drain answers ON_PAGE without posting anything; her own task's stop still emails", async () => {
+    const { sendNotice, ON_PAGE } = await import("../scripts/ops/task-notices.mjs");
+    process.env.BOSS_OS_MAIL_KEY = process.env.BOSS_OS_MAIL_KEY ?? "test-key-not-real";
+    // The send's archive copy goes to a temp folder, never her Mac's real pending-mail folder.
+    const { mkdtempSync } = await import("node:fs"); const { tmpdir } = await import("node:os"); const { join } = await import("node:path");
+    process.env.BOSS_OS_SENT_MAIL_DIR = mkdtempSync(join(tmpdir(), "notice-gate-sent-"));
+    const posts: string[] = [];
+    const fetchImpl = (async (url: string) => { posts.push(String(url)); return new Response(JSON.stringify({ id: "x" }), { status: 200 }); }) as any;
+    const notice = { kind: "stopped", from_name: "Danielle", task_id: "tsk_m5repair01", subject: "Stopped: Fix a held email", body: '"Fix a held email" — I tried this three times and could not finish: it stopped. To clear it by email, reply.', needs_her: 1 };
+    const repair = { id: "tsk_m5repair01", title: "Fix a held email", input: JSON.stringify({ origin: "repair", repair_kind: "held_mail" }) };
+    expect(await sendNotice(notice, { fetchImpl, to: "o@example.com", task: repair })).toBe(ON_PAGE);
+    expect(posts).toEqual([]);
+    // Negative proof: the same stop on work she asked for is emailed.
+    const hers = { ...repair, input: JSON.stringify({ origin: "email" }) };
+    expect(await sendNotice(notice, { fetchImpl, to: "o@example.com", task: hers })).toBeNull();
+    expect(posts.some((u) => u.includes("resend"))).toBe(true);
+  });
+});
+
+describe("a job of hers that never started is the team's, not her email (7 Nov 2026)", () => {
+  it("never claimed → page row; claimed and then failed → her email", async () => {
+    const { sendNotice, ON_PAGE, neverStarted } = await import("../scripts/ops/task-notices.mjs");
+    const { mkdtempSync } = await import("node:fs"); const { tmpdir } = await import("node:os"); const { join } = await import("node:path");
+    process.env.BOSS_OS_SENT_MAIL_DIR = mkdtempSync(join(tmpdir(), "notice-never-started-"));
+    process.env.BOSS_OS_MAIL_KEY = process.env.BOSS_OS_MAIL_KEY ?? "test-key-not-real";
+    const posts: string[] = [];
+    const fetchImpl = (async (url: string) => { posts.push(String(url)); return new Response(JSON.stringify({ id: "x" }), { status: 200 }); }) as any;
+    const notice = { kind: "stopped", from_name: "Kendra", task_id: "tsk_m5never01", subject: "Stopped: Tools worth knowing about", body: '"Tools worth knowing about" — I tried this three times and could not finish: it did not run. To clear it by email, reply.', needs_her: 1 };
+    const idle = { id: "tsk_m5never01", title: "Tools worth knowing about", input: "{}", error: "No device claimed this run in the 25 hours since it was parked. The claimer on her Mac (com.seq.boss-agent) is not picking work up; the work did not happen." };
+    expect(neverStarted(idle)).toBe(true);
+    expect(await sendNotice(notice, { fetchImpl, to: "o@example.com", task: idle })).toBe(ON_PAGE);
+    expect(posts).toEqual([]);
+    const ran = { ...idle, error: "The research came back empty twice." };
+    expect(neverStarted(ran)).toBe(false);
+    expect(await sendNotice(notice, { fetchImpl, to: "o@example.com", task: ran })).toBeNull();
+    expect(posts.some((u) => u.includes("resend"))).toBe(true);
+  });
+});

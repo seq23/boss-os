@@ -4,3 +4,4 @@ export function summaryProblem(summary: unknown, opts?: { now?: number; maxAgeHo
 export function sectionFor(source: unknown, summary: unknown, problem?: string | null): { title: string; items: string[]; link?: { label: string; url: string } };
 export function loopSection(loop: Record<string, unknown> | null | undefined, opts?: { now?: number; sites?: Array<{ key: string; label: string; repos: string[]; action_word: string }> }): { section: { title: string; items: string[] }; late: string[] };
 export function composeSpryWeekly(got: Record<string, unknown>, opts?: { now?: number; loop?: Record<string, unknown> | null }): { subject: string; happened: string; sections: Array<{ title: string; items: string[] }>; missing: number; looks: number; loopLate: string[] };
+export function chicagoWeekOf(ms: number): string;

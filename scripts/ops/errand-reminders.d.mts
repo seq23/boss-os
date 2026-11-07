@@ -1,2 +1,4 @@
 export function ancestralReminder(api: any, fetchImpl?: typeof fetch, senders?: (who: string) => any[]): Promise<{ line: string; sent: boolean; failed?: string }>;
 export function hicksUpdateNotice(api: any, fetchImpl?: typeof fetch, senders?: (who: string) => any[]): Promise<{ line: string; sent: boolean; failed?: string }>;
+export function ancestralMail(notice: Record<string, any>): any;
+export function hicksMail(notice: Record<string, any>, version?: number | null): any;

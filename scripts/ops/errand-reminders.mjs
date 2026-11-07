@@ -23,7 +23,7 @@ async function main() {
   const failed = [];
   for (const r of reminders ?? []) {
     if ((await api.get(`/commands/${r.id}`)).result?.owner_handling) continue;
-    const res = await postEmployeeMail(simone, employeeMail(simone, noticeArgs(r.id, r.notice)));
+    const res = await postEmployeeMail(simone, employeeMail(simone, noticeArgs(r.id, r.notice, OWNER_TO, { layout: "note" })));
     if (res.ok) { await api.post(`/commands/${r.id}/reminded`); sent++; }
     else failed.push(`${r.id} (${res.status ?? res.error ?? "refused"})`);
   }
@@ -38,6 +38,16 @@ async function main() {
   console.log(`${sent ? `ERRAND-REMINDERS: ${sent} reminder(s) sent.` : "ERRAND-REMINDERS: checked; no booking is 28 hours away."} ${ancestral.line} ${practice.line} ${hicks.line}`);
 }
 
+/** The ancestral hour's reminder, in the owner layout (7 Nov 2026): a Note with one tap. Pure. */
+export function ancestralMail(notice) {
+  return { to: OWNER_TO, subject: notice.subject, layout: { happened: notice.happened, details: notice.details ?? [], decide: notice.decide ?? [] }, owner: { layout: "note", why: notice.happened } };
+}
+
+/** The Hicks update for her approval, in the owner layout (7 Nov 2026): approve this (A), vN on the draft. Pure. */
+export function hicksMail(notice, version = null) {
+  return { to: OWNER_TO, subject: notice.subject, layout: { happened: notice.happened, details: notice.details ?? [], decide: notice.decide ?? [] }, owner: { layout: "approve", why: notice.happened, version: version ?? null } };
+}
+
 /**
  * THE ANCESTRAL HOUR (owner, 31 Oct 2026: "on the last day of the month and 3 days before ... maybe
  * email a reminder"). Rides this tick rather than a scheduler of its own. Boss OS decides whether one
@@ -49,7 +59,7 @@ export async function ancestralReminder(api, fetchImpl = fetch, senders = sender
   const r = await api.post("/spirit/ancestral-hour/reminder");
   if (!r?.due) return { line: `Ancestral hour: no reminder due (${r?.reason ?? "no answer"}).`, sent: false };
   const [imani] = senders("Imani");
-  const res = await postEmployeeMail(imani, employeeMail(imani, { to: OWNER_TO, subject: r.notice.subject, layout: { happened: r.notice.happened, details: r.notice.details ?? [], decide: r.notice.decide ?? [] } }), fetchImpl);
+  const res = await postEmployeeMail(imani, employeeMail(imani, ancestralMail(r.notice)), fetchImpl);
   if (!res.ok) return { line: "Ancestral hour: reminder NOT sent.", failed: `ancestral-hour ${r.day} (${res.status ?? res.error ?? "refused"})`, sent: false };
   await api.post(`/spirit/ancestral-hour/reminder/${r.day}/sent`);
   return { line: `Ancestral hour: reminder sent for ${r.day}.`, sent: true };
@@ -76,7 +86,7 @@ export async function hicksUpdateNotice(api, fetchImpl = fetch, senders = sender
   }
   if (!r?.due) return { line: `Hicks update: nothing waiting (${r?.reason ?? "no answer"}).`, sent: false };
   const [camille] = senders("Camille");
-  const res = await postEmployeeMail(camille, employeeMail(camille, { to: OWNER_TO, subject: r.notice.subject, layout: { happened: r.notice.happened, details: r.notice.details ?? [], decide: r.notice.decide ?? [] } }), fetchImpl);
+  const res = await postEmployeeMail(camille, employeeMail(camille, hicksMail(r.notice, r.version)), fetchImpl);
   if (!res.ok) return { line: "Hicks update: approval email NOT sent.", failed: `hicks-update ${r.id} (${res.status ?? res.error ?? "refused"})`, sent: false };
   await api.post(`/clients/hicks-update/${r.id}/emailed?version=${r.version ?? 0}`);
   return { line: "Hicks update: approval email sent to you.", sent: true };

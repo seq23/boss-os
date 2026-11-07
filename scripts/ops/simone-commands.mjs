@@ -135,9 +135,14 @@ export function buildErrand(json) {
  * second list), so a row still `notice_state = 'due'` from before this change sends correctly on
  * the next tick rather than needing a one-off fix.
  */
-export function noticeArgs(id, notice, to = OWNER_TO) {
+export function noticeArgs(id, notice, to = OWNER_TO, { layout = null } = {}) {
   const decide = notice.decide ?? (notice.morning?.decide ? [notice.morning.decide] : []);
-  return { to, subject: notice.subject, layout: { happened: notice.happened, details: notice.details ?? [], decide }, refs: [id] };
+  // The owner layout (7 Nov 2026): a command is work she asked for, so its answer is "here's what
+  // you asked for" (D), or "approve this" (A) when it waits on her word; a reminder is a Note.
+  return {
+    to, subject: notice.subject, layout: { happened: notice.happened, details: notice.details ?? [], decide }, refs: [id],
+    owner: { layout: layout ?? (decide.length ? "approve" : "delivered"), why: notice.happened },
+  };
 }
 
 async function main() {

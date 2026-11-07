@@ -26,6 +26,7 @@ import { ok, badRequest, notFound } from "../lib/http";
 import { logEvent } from "../lib/log";
 import { newId } from "../lib/id";
 import { UPDATES_DAYS, updateRow, updatesSummary, updatesLine } from "../../../shared/boss/mail/noticeGate.mjs";
+import { notesLine } from "../../../shared/boss/mail/ownerLayout.mjs";
 
 export const taskNotices = new Hono<{ Bindings: Env; Variables: Vars }>();
 
@@ -151,7 +152,16 @@ export async function readUpdates(db: D1Database, now = Date.now()) {
     .all<Record<string, unknown>>();
   const rows = (results ?? []).map((r) => updateRow(r));
   const summary = updatesSummary(rows);
-  return { rows, summary, line: updatesLine(summary), days: UPDATES_DAYS };
+  /*
+   * THE WEEK'S NOTES (owner, 7 Nov 2026: "a weekly count of Notes shows when a new layout is
+   * needed"). Emails to her that fit no layout went out as a Note; one line here counts them. A
+   * failed read says so, never 0 (rule 0).
+   */
+  const notes = await db.prepare(`SELECT COUNT(*) AS n FROM boss_sent_mail WHERE layout = 'note' AND delivery_state = 'sent' AND sent_at >= ?`)
+    .bind(now - UPDATES_DAYS * 86_400_000).first<{ n: number }>()
+    .then((r) => ({ count: Number(r?.n ?? 0), line: notesLine(Number(r?.n ?? 0), UPDATES_DAYS) }))
+    .catch(() => ({ count: null, line: "The count of plain notes this week did not load." }));
+  return { rows, summary, line: updatesLine(summary), days: UPDATES_DAYS, notes };
 }
 
 taskNotices.get("/updates", async (c) => {

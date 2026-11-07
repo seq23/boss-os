@@ -329,7 +329,8 @@ async function emailHer({ optedOut, replied, bounced, tally, scanned, sentRows }
   for (const sx of SENDERS) for (const to of RECIPIENTS) attempts.push([sx, to]);
   for (const [sender, TO] of attempts) {
     const { from, key } = sender;
-    const res = await postEmployeeMail(sender, employeeMail(sender, { to: TO, subject: `LP outcomes: ${optedOut.length} to suppress, ${replied.length} replied, ${bounced.length} bounced`, text: body }));
+    const res = await postEmployeeMail(sender, employeeMail(sender, { to: TO, subject: `LP outcomes: ${optedOut.length} to suppress, ${replied.length} replied, ${bounced.length} bounced`, text: body,
+      owner: outcomesOwner(optedOut.length, replied.length, bounced.length) }));
     if (res.ok) {
       console.log(`Emailed ${TO} from ${from}: ${optedOut.length} to suppress, ${replied.length} replied, ${bounced.length} bounced.`);
       await noteInInbox({
@@ -700,7 +701,14 @@ async function main() {
   console.log(`LP-OUTCOMES-COMPLETE: written${sent ? " and emailed" : " (email not sent — see above)"}`);
 }
 
-main().catch((err) => {
-  console.error(`LP-OUTCOMES FAILED: ${err?.message ?? err}`);
-  process.exit(1);
-});
+/** The owner layout (7 Nov 2026): a duty's report she did not ask for this time is a Note. Pure. */
+export function outcomesOwner(optedOut, replied, bounced) {
+  return { layout: "note", why: `Monique read the replies to your LP outreach: ${optedOut} asked to be removed, ${replied} replied, ${bounced} bounced`, act: "Nothing to do. Both spreadsheets already carry these outcomes" };
+}
+
+if (import.meta.url === `file://${process.argv[1]}`) {
+  main().catch((err) => {
+    console.error(`LP-OUTCOMES FAILED: ${err?.message ?? err}`);
+    process.exit(1);
+  });
+}

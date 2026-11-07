@@ -875,7 +875,7 @@
     },
     {
       "id": "service-tick", "business": "personal",
-      "what": "Vault intake: a confirmation for a key you emailed in",
+      "what": "Vault intake: a key you emailed in is saved to the vault on the Mac. Sends no email of its own (7 Nov 2026): the confirmation is the line in Simone's reply to your email",
       "sender": "Kendra", "owner": "Kendra",
       "from": "name@sequoiataylor.com", "to": "You",
       "when": "Every 5 minutes, only when a key arrived",

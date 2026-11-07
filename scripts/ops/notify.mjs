@@ -38,6 +38,7 @@ import { homedir } from "node:os";
 import { basename, join } from "node:path";
 import { outboundFilesPlan } from "../../src/shared/boss/service/files.mjs";
 import { layoutEmail, fromLegacy, plainProblems, simplifyForOwner } from "../../src/shared/boss/mail/plain.mjs";
+import { ownerEmail, layoutOf } from "../../src/shared/boss/mail/ownerLayout.mjs";
 
 const ARGS = process.argv.slice(2);
 /** Every value of a repeatable flag (`--file a.csv --file b.png`). */
@@ -196,7 +197,7 @@ export function sendersFor(who, { fallback = industryGuidesFallback } = {}) {
  * in the `X-Boss-Ref` header and, after the send, against the Message-ID her client will quote back
  * (`postEmployeeMail` → `/api/boss/mail-refs`).
  */
-export function employeeMail(sender, { to, subject, text, html: _html, files, layout = null, refs = [], prelaid = null, thread = [] }) {
+export function employeeMail(sender, { to, subject, text, html: _html, files, layout = null, refs = [], prelaid = null, thread = [], owner = null }) {
   /*
    * R18 (docs/SERVICE_RULES.md) — FILES FOR HER RIDE ON THE EMAIL. Every Mac lane sends through this
    * one function, so every lane can hand her a file: listed by name always, attached up to 10 MB in
@@ -207,7 +208,14 @@ export function employeeMail(sender, { to, subject, text, html: _html, files, la
   const who = sender.name ?? "Simone";
   const fileLines = plan.lines.length ? [{ heading: "Files" }, ...plan.lines] : [];
   // `prelaid` is an email a caller already built with `layoutEmail` (Simone's daily): used as it is.
-  const laid = prelaid ?? (layout
+  /*
+   * `owner` IS THE OWNER LAYOUT (owner, 7 Nov 2026): `{ layout, why, act?, ref?, … }` — line 1 says why
+   * she is getting it and whether she must act, the REF goes in the subject where a reply matters
+   * (src/shared/boss/mail/ownerLayout.mjs). Every sender to her passes it; one that does not is a Note.
+   */
+  const laid = prelaid ?? (owner
+    ? ownerEmail({ who, subject, ...(layout ?? { text: String(text ?? "").slice(0, 60_000) }), ...owner, refs: [...refs, ...(owner.refs ?? [])], details: [...(owner.details ?? layout?.details ?? []), ...fileLines] })
+    : layout
     ? layoutEmail({ who, subject, ...layout, details: [...(layout.details ?? []), ...fileLines], refs })
     : fromLegacy({ who, subject, text: String(text ?? "").slice(0, 60_000) + (plan.lines.length ? `\n\nFiles:\n${plan.lines.map((l) => `- ${l}`).join("\n")}` : ""), refs }));
   // IN HER THREAD (26 Oct 2026, the finished meeting prep): `thread` is the Message-IDs of the emails
@@ -217,9 +225,12 @@ export function employeeMail(sender, { to, subject, text, html: _html, files, la
   const headers = {
     ...(laid.refs.length ? { "X-Boss-Ref": laid.refs.join(" ") } : {}),
     ...(laid.kind === "problem" || laid.kind === "morning" || laid.kind === "report" ? { "X-Boss-Kind": laid.kind } : {}),
+    // The layout it was sent in; the Updates page counts the week's Notes from the sent-mail record.
+    "X-Boss-Layout": layoutOf(laid.layout),
+    ...(laid.minimum ? { "X-Boss-Owner-Line": "1" } : {}),
     ...threadHeaders,
   };
-  return {
+  const payload = {
     from: sender.from,
     to: Array.isArray(to) ? to : [to],
     reply_to: sender.reply_to,
@@ -229,6 +240,9 @@ export function employeeMail(sender, { to, subject, text, html: _html, files, la
     ...(Object.keys(headers).length ? { headers } : {}),
     ...(attachments.length ? { attachments } : {}),
   };
+  // The owner layout's minimum rides beside the payload for tests/ownerEmailMinimum.test.ts; never sent.
+  if (laid.minimum) Object.defineProperty(payload, "minimum", { value: laid.minimum, enumerable: false });
+  return payload;
 }
 
 const RESEND = "https://api.resend.com/emails";
@@ -252,7 +266,8 @@ export async function archiveSentMail(payload, id, fetchImpl = fetch, { commandI
   const file = join(directory, `${createHash("sha256").update(id).digest("hex")}.json`);
   const refs = String(payload.headers?.["X-Boss-Ref"] ?? "").split(/\s+/);
   const record = { provider_id: id, message_id: id, from: payload.from, employee_address: payload.reply_to ?? payload.from, to: [...(payload.to ?? []), ...(payload.cc ?? []), ...(payload.bcc ?? [])].join(", "), subject: payload.subject, text: payload.text ?? "", html: payload.html ?? null,
-    command_id: commandId ?? refs.find((r) => r.startsWith("cmd_")) ?? null, in_reply_to: payload.headers?.["In-Reply-To"] ?? null, sent_at: Date.now() };
+    command_id: commandId ?? refs.find((r) => r.startsWith("cmd_")) ?? null, in_reply_to: payload.headers?.["In-Reply-To"] ?? null, sent_at: Date.now(),
+    layout: payload.headers?.["X-Boss-Layout"] ?? null };
   writeFileSync(file, JSON.stringify(record), { mode: 0o600 });
   // The provider receipt id is not the RFC Message-ID her reply will carry in References.
   if (key) {
@@ -286,7 +301,8 @@ export async function postEmployeeMail(sender, payload, fetchImpl = fetch, { con
   const ready = plainOrSimplified(payload);
   if (ready.held) return holdMail(sender, payload, ready.held, fetchImpl);
   if (ready.simplified) console.error(`SIMPLIFIED "${payload?.subject}" before sending: ${ready.simplified.join("; ")} — the technical lines ride as an attached file.`);
-  payload = ready.payload;
+  // The gate's invisible prose marks (U+2063) have done their job: never in what she receives (7 Nov 2026).
+  payload = { ...ready.payload, text: String(ready.payload.text ?? "").replace(/\u2063/g, "") };
   const res = await fetchImpl(RESEND, {
     method: "POST",
     headers: { "content-type": "application/json", authorization: `Bearer ${sender.key}` },
@@ -339,7 +355,9 @@ export function plainOrSimplified(payload) {
 
 export function mailGate(payload) {
   const kind = payload?.headers?.["X-Boss-Kind"] ?? null;
-  return plainProblems({ subject: payload?.subject, text: payload?.text, html: payload?.html, kind });
+  // Only an email laid out with an owner line (line 1 = why + whether to act) is read in that shape.
+  const layout = payload?.headers?.["X-Boss-Owner-Line"] ? payload?.headers?.["X-Boss-Layout"] ?? null : null;
+  return plainProblems({ subject: payload?.subject, text: payload?.text, html: payload?.html, kind, layout });
 }
 
 export const heldDir = () => process.env.BOSS_OS_HELD_MAIL_DIR ?? join(homedir(), ".boss-os", "held-mail");

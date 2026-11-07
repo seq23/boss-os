@@ -101,7 +101,7 @@ describe("meeting prep: the email", () => {
     expect(t).not.toContain("this week's list");
     expect(t).not.toContain("On the grid");
     expect(t).toContain("https://meet.google.com/abc-defg-hij");
-    expect(plainProblems({ subject: p.laid.subject, text: p.laid.text, html: p.laid.html })).toEqual([]);
+    expect(plainProblems({ subject: p.laid.subject, text: p.laid.text, html: p.laid.html, layout: p.laid.layout })).toEqual([]);
   });
 
   it("omits every section with nothing real and never invents; with no purpose it asks instead", () => {

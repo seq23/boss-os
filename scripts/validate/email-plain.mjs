@@ -150,14 +150,14 @@ export function check() {
   // plain, and holds only what is still failing — all before anything is posted.
   const sendPart = post.slice(0, post.indexOf("export function plainOrSimplified") === -1 ? post.length : post.indexOf("export function plainOrSimplified"));
   const simplifier = post.slice(post.indexOf("export function plainOrSimplified"));
-  if (!/const ready = plainOrSimplified\(payload\);\s*\n\s*if \(ready\.held\) return holdMail\(/.test(sendPart) || !/payload = ready\.payload;/.test(sendPart) || sendPart.indexOf("plainOrSimplified(") > sendPart.indexOf("fetchImpl(RESEND")) fails.push("postEmployeeMail does not hold a failing email before it posts");
+  if (!/const ready = plainOrSimplified\(payload\);\s*\n\s*if \(ready\.held\) return holdMail\(/.test(sendPart) || !/payload = (?:ready\.payload;|\{ \.\.\.ready\.payload, )/.test(sendPart) || sendPart.indexOf("plainOrSimplified(") > sendPart.indexOf("fetchImpl(RESEND")) fails.push("postEmployeeMail does not hold a failing email before it posts");
   if (!/const problems = mailGate\(payload\)/.test(simplifier) || !/simplifyForOwner\(/.test(simplifier) || !/const still = mailGate\(next\)/.test(simplifier)) fails.push("plainOrSimplified does not re-check what it simplified before it may be sent");
   if (!/if \(laid\.problems\.length\) \{[\s\S]{0,400}reply_held/.test(read("src/worker/boss/intake/mailRefs.ts"))) fails.push("the Worker's plainReply does not hold a failing reply");
   for (const f of ["scripts/ops/archive-audit.mjs", "scripts/ops/outside-locks.mjs", "scripts/ops/boss-mail-tail-report.mjs"]) {
     if (/\bsendAs\(|employeeMail\(|sendAsEmployee\(/.test(read(f))) fails.push(`${f} still sends its own email (rule 1: it folds into the morning email)`);
   }
   if ((read("scripts/ops/risk-watch.mjs").match(/\bsendAs\(/g) ?? []).length !== 1 || !/sendAs\("Toni", \{ subject: laid\.subject, text: laid\.text, prelaid: laid \}\)/.test(read("scripts/ops/risk-watch.mjs"))) fails.push("risk-watch sends anything but the one money-at-risk problem email");
-  if (!/if \(t\.read && !stillStopped\(task\)\)/.test(read("scripts/ops/task-notices.mjs"))) fails.push("task-notices does not re-check a stopped task before emailing");
+  if (!/if \((?:notice\.kind === "stopped" && )?t\.read && !stillStopped\(task\)\)/.test(read("scripts/ops/task-notices.mjs"))) fails.push("task-notices does not re-check a stopped task before emailing");
   return { fails, examined };
 }
 

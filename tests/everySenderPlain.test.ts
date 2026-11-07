@@ -9,7 +9,7 @@ import { employeeMail, sendersFor, plainOrSimplified, mailGate } from "../script
 // @ts-expect-error — plain ESM with no declaration file
 import { planMail, stoppedMail, repairDoneMail } from "../scripts/ops/repo-change.mjs";
 import { stoppedEmail, researchDoneEmail } from "../scripts/ops/task-notices.mjs";
-import { NOTHING_TO_DECIDE } from "../src/shared/boss/mail/plain.mjs";
+import { NOTHING_TO_DECIDE, NOTHING_TO_DO } from "../src/shared/boss/mail/plain.mjs";
 import { buildDay } from "../scripts/ops/your-day.mjs";
 import { approvalNotice, composeDraft } from "../src/shared/boss/clients/hicksUpdate.mjs";
 
@@ -109,9 +109,10 @@ describe("the research full report goes as written (held 6 Nov 2026: the DNA rep
     expect(r.held).toBeNull();
     expect(r.simplified, "sent as written, never simplified").toBeNull();
   });
-  it("says there is nothing to decide: line 3 of the text, and in the HTML", () => {
-    expect(String(payload.text).split("\n")[2]).toBe(NOTHING_TO_DECIDE);
-    expect(String(payload.html)).toContain(NOTHING_TO_DECIDE);
+  it("says on line 1 why she has it and that there is nothing to do, in the text and the HTML (owner layout, 7 Nov 2026)", () => {
+    expect(String(payload.text).split("\n")[0]).toBe(`The research you asked for is ready: ${HEAVY_PAGE.title} ${NOTHING_TO_DO}`);
+    expect(String(payload.html)).toContain(`${NOTHING_TO_DO}</p>`);
+    expect(String(payload.text)).not.toContain(NOTHING_TO_DECIDE);
   });
   it("negative proof: without the report kind the same words are held", () => {
     const { ["X-Boss-Kind"]: _gone, ...rest } = payload.headers ?? {};

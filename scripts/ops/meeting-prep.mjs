@@ -24,7 +24,8 @@ import path from "node:path";
 import { execFileSync } from "node:child_process";
 import { readAllCalendars } from "./calendar-sync.mjs";
 import { sendAsEmployee } from "./notify.mjs";
-import { layoutEmail, plainProblems, NOTHING_TO_DECIDE } from "../../src/shared/boss/mail/plain.mjs";
+import { plainProblems, NOTHING_TO_DECIDE } from "../../src/shared/boss/mail/plain.mjs";
+import { ownerEmail } from "../../src/shared/boss/mail/ownerLayout.mjs";
 import { buildPrep, buildCatchUp, isScooterCatchUp, roundupFrom, CATCHUP_DEFAULT_DAYS, dueMeetings, linkResolves, lengthLabel, others, recordsFor, nameFromTitle, companyDomain, shortDate, clock, guestFirm, zonedTime, DISPLAY_TZ, validZone, researchPrompt, readResearch, invitePerson } from "../../src/shared/boss/meetingPrep/prep.mjs";
 import { askClaudeJson, googleToken, gmailHeaders } from "./lib/duty-kit.mjs";
 import { repairMojibake } from "../../src/shared/boss/mail/subject.mjs";
@@ -323,7 +324,8 @@ export function planFor(event, prep, context, { ask = askClaudeJson, log = conso
 /** The finished email for one meeting: layoutEmail, so it passes the same plain gate as every email. */
 export function prepEmail(event, data, opts = {}) {
   const p = buildPrep(event, data, { herAddresses: HER_ADDRESSES, ...opts });
-  const laid = layoutEmail({ who: "Simone", subject: opts.subject ?? p.subject, happened: p.happened, decide: p.decide, sections: p.sections, refs: opts.refs ?? [] });
+  // The owner layout (7 Nov 2026): a prep is what she asked for (D); line 1 says so and whether she must act.
+  const laid = ownerEmail({ who: "Simone", layout: "delivered", why: p.happened, subject: opts.subject ?? p.subject, happened: p.happened, decide: p.decide, sections: p.sections, refs: opts.refs ?? [] });
   return { ...p, laid };
 }
 
@@ -383,7 +385,7 @@ export async function sendCatchUps(api, events, { now = Date.now(), dry = false,
     const since = catchUpSince(e, state.last);
     const roundup = roundupFrom({ loops, brains, since, now });
     const p = buildCatchUp(e, roundup, { herAddresses: HER_ADDRESSES, since, tz });
-    const laid = layoutEmail({ who: "Simone", subject: p.subject, happened: p.happened, decide: [], sections: p.sections });
+    const laid = ownerEmail({ who: "Simone", layout: "delivered", why: p.happened, subject: p.subject, happened: p.happened, decide: [], sections: p.sections });
     out.push({ subject: laid.subject, text: laid.text });
     if (dry || preview) continue;
     const r = await send("Simone", { to, subject: laid.subject, prelaid: laid, thread: [] });

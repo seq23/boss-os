@@ -35,10 +35,11 @@
 
 import { sendersFor, employeeMail, postEmployeeMail, FALLBACK_STOP } from "./notify.mjs";
 import { vaultLookup } from "../lib/vault-env.mjs";
-import { layoutProblem } from "../../src/shared/boss/mail/plain.mjs";
+import { legacyParts } from "../../src/shared/boss/mail/plain.mjs";
+import { ownerEmail } from "../../src/shared/boss/mail/ownerLayout.mjs";
 import { researchFullEmail, researchPageIdIn } from "../../src/shared/boss/research/doneEmail.mjs";
 import { researchPageUrl, markdownToHtml } from "../../src/shared/boss/research/page.mjs";
-import { emailsHer } from "../../src/shared/boss/mail/noticeGate.mjs";
+import { emailsHer, needsHer } from "../../src/shared/boss/mail/noticeGate.mjs";
 
 /*
  * ─── A "STOPPED" EMAIL IS A PROBLEM EMAIL, AND ONLY WHILE IT IS TRUE (owner, 23 Oct 2026, rule 3) ───
@@ -80,6 +81,10 @@ export function plainStopWhy(why) {
     return "none of the AI models this job is allowed to use was cleared for work this important";
   }
   if (/usage limit|CODEX_LIMIT|out of usage/i.test(w)) return "the AI it was given had run out of usage";
+  // The reaper's two log sentences (backends/reap.ts), said to her (7 Nov 2026 live read: "The
+  // claimer on her Mac (com.seq.boss-agent) is not picking work up").
+  if (/No device claimed this run/i.test(w)) return "your Mac did not pick the work up, so it never started";
+  if (/claimed this run .* and never reported/i.test(w)) return "the Mac running it stopped before it finished";
   return w;
 }
 
@@ -90,11 +95,16 @@ export function stoppedEmail(notice, task = null) {
   const tried = /I tried this (.+?) and could not finish/.exec(body)?.[1] ?? "more than once";
   const why = plainStopWhy(/could not finish:\s*(.+?)\.\s*To clear it by email/s.exec(body)?.[1]?.replace(/\s+/g, " ").slice(0, 240));
   const taskId = /^tsk_[a-z0-9]+$/.test(String(notice.task_id ?? "")) ? String(notice.task_id) : null;
-  return layoutProblem({
+  // The owner layout (7 Nov 2026): a stop on her work is an alarm (C), the REF in the subject.
+  return ownerEmail({
     who: notice.from_name,
+    layout: "alarm",
+    why: `"${title}" stopped before it finished, and only you can say whether it runs again`,
+    act: "Reply try again, or drop it",
     subject: `Stopped: ${title}`,
-    happened: `"${title}" stopped before it finished${why ? `: ${why.replace(/[.!?]?$/, ".")}` : "."}`,
-    did: `Tried it ${tried}, kept everything as it was, and sent nothing to anyone outside Boss OS.`,
+    broke: `"${title}" stopped before it finished${why ? `: ${why.replace(/[.!?]?$/, ".")}` : "."}`,
+    lost: "Nothing. Everything was kept as it was.",
+    doing: `Tried it ${tried}, and sent nothing to anyone outside Boss OS.`,
     status: "Waiting for your word. Reply to this email with try again, or with drop it to close it.",
     decide: [{ title: "Run it again, change it, or drop it?", body: "Reply to this email with your answer; it goes straight back to this job.", buttons: [{ label: "See the job in Boss OS", url: taskId ? `${ORIGIN_URL}/?task=${taskId}` : `${ORIGIN_URL}/` }] }],
     refs: [String(notice.task_id ?? "")].filter((r) => /^tsk_/.test(r)),
@@ -186,6 +196,38 @@ export const isGateHold = (error) => typeof error === "string" && error.startsWi
  * Returns the refusal text, or null when it went. Every sender on the roster's list is tried before
  * it is called a failure — the second is The Industry Guides fallback, and using it is itself reported.
  */
+/**
+ * THE OWNER LAYOUT FOR A NOTICE WITHOUT ITS OWN BUILDER (owner, 7 Nov 2026). Its kind picks the
+ * layout, never its words: a Done for work she asked for is "here's what you asked for" (D); anything
+ * else is a Note, and a could-not-do, a missing key or an empty folder says she must reply. Line 1 is the notice's own first sentence, then whether she must act. Pure.
+ */
+export function noticeOwner(notice) {
+  const kind = String(notice?.kind ?? "");
+  // A could-not-do or a missing key arrives as one block of words, not the alarm's parts: a Note, counted.
+  const layout = /^done(#|$)/.test(kind) ? "delivered" : "note";
+  const hers = ["could_not_do", "missing_secret", "drive_empty"].includes(kind) || kind.startsWith("stop:");
+  const why = legacyParts({ who: notice?.from_name ?? "Simone", subject: notice?.subject ?? "", text: String(notice?.body ?? "") }).happened;
+  const ref = /^tsk_[a-z0-9]+$/i.test(String(notice?.task_id ?? "")) ? String(notice.task_id).toLowerCase() : null;
+  return hers ? { layout, why, ref, act: "Reply to this email with what it needs; your reply goes straight back to the job" } : { layout, why, ref };
+}
+
+/** A task Boss OS opened itself to repair something (its input says origin "repair"; a waiting-on check-in is hers). Pure. */
+export function repairTask(task) {
+  let input = task?.input ?? null;
+  if (typeof input === "string") { try { input = JSON.parse(input); } catch { input = null; } }
+  return input?.origin === "repair" && input?.repair_kind !== "waiting_on";
+}
+
+/**
+ * A STOP THAT NEVER STARTED IS THE TEAM'S (owner via the coordinator, 7 Nov 2026): no device claimed
+ * the run (backends/reap.ts), so nothing ran and there is nothing for her to decide. The drain runs on
+ * her Mac, so the Mac is back: it requeues the task and leaves one Updates row. Only a stop after the
+ * work ran reaches her email. Pure.
+ */
+export function neverStarted(task) {
+  return /No device claimed this run/i.test(String(task?.error ?? ""));
+}
+
 /** What sendNotice answers for a notice that belongs on the Updates page: never an email. */
 export const ON_PAGE = "on the Updates page: nothing here needs her, so it is not emailed";
 
@@ -195,12 +237,16 @@ export async function sendNotice(notice, { fetchImpl = fetch, to = TO, task = nu
    * notice was written (src/shared/boss/mail/noticeGate.mjs); 0 never reaches the mail sender.
    */
   if (!emailsHer(notice)) return ON_PAGE;
+  // A REPAIR NEVER EMAILS HER (job 1, 7 Nov 2026), even on a row written before needs_her existed (its
+  // default is 1): the task read here decides, through the same rule the Worker uses.
+  if (repairTask(task) && !needsHer({ kind: notice.kind, repair: true })) return ON_PAGE;
+  if (notice.kind === "stopped" && neverStarted(task)) return ON_PAGE;
   const senders = sendersFor(notice.from_name);
   if (senders.length === 0) return "no Resend key in the environment (BOSS_OS_MAIL_KEY / BOSS_OS_FALLBACK_MAIL_KEY)";
   const prelaid = notice.kind === "stopped" ? stoppedEmail(notice, task) : researchDoneEmail(notice, page, senders[0]?.name);
   let last = "";
   for (const sender of senders) {
-    const res = await postEmployeeMail(sender, employeeMail(sender, { to, subject: notice.subject, text: notice.body, prelaid }), fetchImpl);
+    const res = await postEmployeeMail(sender, employeeMail(sender, { to, subject: notice.subject, text: notice.body, prelaid, owner: prelaid ? null : noticeOwner(notice) }), fetchImpl);
     if (res.ok) {
       say(`sent "${notice.subject}" from ${sender.from}`);
       if (sender.fallback) say(FALLBACK_STOP);
@@ -262,11 +308,12 @@ async function main() {
   for (const { first: notice, also } of mergeNotices(items)) {
     if (DRY) { say(`DRY RUN — would send "${notice.subject}" as ${notice.from_name}${also.length ? ` (and ${also.length} duplicate(s) with it)` : ""}`); continue; }
     // Kill false alarms: a stopped task that is running or done again gets no "Stopped" email.
+    // The task is read for every notice that would email her: a repair's never does (sendNotice).
     let task = null;
-    if (notice.kind === "stopped") {
+    if (emailsHer(notice) && notice.task_id) {
       const t = await taskOf(notice.task_id);
       task = t.task;
-      if (t.read && !stillStopped(task)) {
+      if (notice.kind === "stopped" && t.read && !stillStopped(task)) {
         for (const n of [notice, ...also]) await api(`/${n.id}/sent`, { from: `not sent: the task is ${task?.status ?? "gone"} again` });
         say(`not sent "${notice.subject}": the task is ${task?.status ?? "gone"} now — a false alarm`);
         continue;
@@ -286,8 +333,17 @@ async function main() {
       continue;
     }
     if (ask.body) notice.body = ask.body;
-    if (!emailsHer(notice)) {
-      // /pending already leaves these out; a row that slips through is closed as a page row, not sent.
+    if (notice.kind === "stopped" && neverStarted(task)) {
+      const rq = await fetch(`${ORIGIN}/api/boss/tasks/${encodeURIComponent(notice.task_id)}/requeue`, { method: "POST", headers: { cookie } }).catch(() => null);
+      const line = rq?.ok ? "It never started because your Mac was not picking work up. The Mac is back, so it is running again; nothing for you." : "It never started because your Mac was not picking work up. The team is starting it again; nothing for you.";
+      await fetch(`${ORIGIN}/api/boss/task-notices/update`, { method: "POST", headers: { cookie, "content-type": "application/json" }, body: JSON.stringify({ key: `requeued-${notice.task_id}`, from_name: ["Simone", "Kendra", "Danielle", "Camille", "Monique"].includes(notice.from_name) ? notice.from_name : "Kendra", subject: `Started again: ${String(notice.subject ?? "").replace(/^Stopped:\s*/i, "").slice(0, 120)}`, body: line }) }).catch(() => null);
+      for (const n of [notice, ...also]) await api(`/${n.id}/sent`, { from: `${ON_PAGE} (never started; ${rq?.ok ? "requeued" : "requeue refused, the team has it"})` });
+      say(`not emailed "${notice.subject}": it never started; ${rq?.ok ? "requeued now the Mac is back" : `requeue refused (${rq?.status ?? "no answer"})`}`);
+      continue;
+    }
+    if (!emailsHer(notice) || (repairTask(task) && !needsHer({ kind: notice.kind, repair: true }))) {
+      // /pending already leaves these out; a row that slips through (or a repair's, written before
+      // needs_her existed) is closed as a page row, not sent.
       for (const n of [notice, ...also]) await api(`/${n.id}/sent`, { from: ON_PAGE });
       say(`not emailed "${notice.subject}": ${ON_PAGE}`);
       continue;

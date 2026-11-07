@@ -27,7 +27,6 @@ import { rememberHandedOff } from "../lib/vault-env.mjs";
 const HERE = dirname(fileURLToPath(import.meta.url));
 const REPO = join(HERE, "..", "..");
 const ORIGIN = process.env.BOSS_OS_ORIGIN ?? "https://boss.sequoiataylor.com";
-const TO = process.env.BOSS_NOTIFY_TO ?? "seq.taylor@gmail.com";
 const say = (...a) => console.log(`[${new Date().toISOString().slice(11, 19)}] service-tick:`, ...a);
 
 let cookie = "";
@@ -138,19 +137,6 @@ export async function checkDriveWatches() {
     }
   }
   return { loaded, failed: 0 };
-}
-
-/** One email, signed by the employee, through the one send every Mac lane uses. Returns true when it went. */
-async function emailHer(fromName, subject, text) {
-  const { sendersFor, employeeMail, postEmployeeMail, FALLBACK_STOP } = await import("./notify.mjs");
-  for (const sender of sendersFor(fromName)) {
-    const res = await postEmployeeMail(sender, employeeMail(sender, { to: TO, subject, text }));
-    if (res.ok) {
-      if (sender.fallback) say(FALLBACK_STOP);
-      return true;
-    }
-  }
-  return false;
 }
 
 async function main() {

@@ -40,7 +40,8 @@ describe("no purpose found: the prep asks, and offers to help", () => {
       const m = prepEmail(meeting, {}, { context });
       const t = m.laid.text;
       expect(m.needsPurpose).toBe(true);
-      expect(t.split("\n")[0]).toBe(PREP_QUESTION);
+      // Owner layout (7 Nov 2026): the question, then whether she must act, on line 1.
+      expect(t.split("\n")[0]).toBe(`${PREP_QUESTION} One thing for you to answer below.`);
       expect(t).toContain("Decide (1)");
       expect(t).not.toContain(NOTHING_TO_DECIDE);
       const offers = m.decide[0].details as string[];
@@ -99,8 +100,8 @@ describe("a purpose found: the real prep", () => {
     expect(goals.length).toBeLessThanOrEqual(5);
     expect(m.laid.text).toContain("Their website, fakeco.example.org: Fake Co. Legal services for creative businesses.");
     expect(m.laid.text).toContain("Met before: 2 Mar 2025");
-    expect(m.laid.text.split("\n")[0]).toBe("Your prep for Jo (Fake Co), Tue 27 Oct, 9am CT.");
-    expect(plainProblems({ subject: m.laid.subject, text: m.laid.text, html: m.laid.html })).toEqual([]);
+    expect(m.laid.text.split("\n")[0]).toBe("Your prep for Jo (Fake Co), Tue 27 Oct, 9am CT. Nothing to do.");
+    expect(plainProblems({ subject: m.laid.subject, text: m.laid.text, html: m.laid.html, layout: m.laid.layout })).toEqual([]);
   });
 
   it("the invite's own notes are a purpose; join boilerplate is not", () => {

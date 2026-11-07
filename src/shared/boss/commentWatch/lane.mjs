@@ -179,7 +179,8 @@ export function digestEmail(digest, token) {
     lines.push("");
   });
   lines.push("— Monique, Director of Relationships");
-  return { subject, text: lines.join("\n") };
+  // The owner layout (7 Nov 2026): drafted replies wait on her word (A), the REF in the subject.
+  return { subject, text: lines.join("\n"), owner: { layout: "approve", ref: token, why: `${n === 1 ? "One comment" : `${n} comments`} on the channel need${n === 1 ? "s" : ""} your word; nothing has been posted or hidden`, act: "Reply with one line per number to approve, change or skip." } };
 }
 
 /** One line per action, after `act` has run. */
@@ -188,7 +189,7 @@ export function confirmationEmail(results, token) {
   const lines = ["Sequoia,", "", "Applied, as you instructed:", ""];
   results.forEach((r, i) => lines.push(`${i + 1}. ${r.n ? `#${r.n} ` : ""}${r.result}${r.author ? ` — ${r.author}` : ""}`));
   lines.push("", "— Monique");
-  return { subject, text: lines.join("\n") };
+  return { subject, text: lines.join("\n"), owner: { layout: "delivered", ref: token, why: `Monique did the ${results.length === 1 ? "comment action" : `${results.length} comment actions`} you asked for`, act: "Nothing to do." } };
 }
 
 function countLine(byClass) {

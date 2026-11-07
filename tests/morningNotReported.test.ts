@@ -31,8 +31,9 @@ describe("morning sections that did not report in", () => {
     expect(r.missing.map((m) => m.name).sort()).toEqual(["lp", "risk"]);
     expect(r.sections.risk).toBeUndefined();
     const email = buildDay({ morning: r.sections, notReported: r.missing }, NOW);
-    const first = email.text.split("\n").find((l: string) => l.trim()) ?? "";
-    expect(first).toContain("Not in today's email: LP updates and Toni's money and mail check");
+    // The team's note goes to the Updates page, never her email (7 Nov 2026); the run posts it.
+    expect(email.text).not.toContain("Not in today's email");
+    expect(email.teamNotes.join(" ")).toContain("Not in today's email: LP updates and Toni's money and mail check");
     expect(email.text).not.toContain("yesterday's line");
     expect(email.problems).toEqual([]);
     const repairs = notReportedRepairs(r.missing, []);

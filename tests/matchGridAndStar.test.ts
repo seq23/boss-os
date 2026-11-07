@@ -65,7 +65,9 @@ describe("no match ever reaches Decide (25 Oct 2026)", () => {
     expect(found.decide).toEqual([]);
     expect(e.digest.decide).toEqual([]);
     expect(e.text).not.toMatch(/a buyer and a seller who could trade/);
-    expect(e.text.split("\n")[2]).toBe("Nothing to decide — this is just so you know.");
+    // Owner layout (7 Nov 2026): line 1 says there is nothing to do, and no Decide list is drawn.
+    expect(e.text.split("\n")[0]).toMatch(/ Nothing to do\./);
+    expect(e.text).not.toMatch(/^Decide \(\d+\)$/m);
   });
   it("the grid shape: company | seller → buyer | fit dots | Open › to the trade's card, in text and HTML", () => {
     expect(e.text).toContain("- ⭐ Company Z · Broker Two, Firm Y $300M at $101 a share → Broker One, Firm X $1B at $100 a share · fills part, prices close, fresh — Open ›: https://boss.sequoiataylor.com/?tab=capital&view=matches&match=b%7Cs");

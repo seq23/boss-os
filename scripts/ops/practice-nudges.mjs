@@ -20,7 +20,9 @@ import { sendersFor, employeeMail, postEmployeeMail } from "./notify.mjs";
  * which carries none. Signed "Imani, Director of Practice", who owns Body and Spirit.
  */
 export function practiceLayout(notice) {
-  return { to: OWNER_TO, subject: notice.subject, layout: { happened: notice.happened, details: notice.details ?? [], decide: notice.decide ?? [] } };
+  // The owner layout (7 Nov 2026): a nudge is a Note; its one tiny action is what line 1 asks of her.
+  const decide = notice.decide ?? [];
+  return { to: OWNER_TO, subject: notice.subject, layout: { happened: notice.happened, details: notice.details ?? [], decide }, owner: { layout: "note", why: notice.happened, act: decide.length ? "One small thing to do, below." : null } };
 }
 
 export async function practiceNudges(api, deliver = (imani, notice) => postEmployeeMail(imani, employeeMail(imani, practiceLayout(notice))), senders = sendersFor) {

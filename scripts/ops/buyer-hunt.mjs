@@ -443,7 +443,7 @@ async function weeklyEmail(side, sections) {
   if (!SEND) {
     console.log(`\nDRY RUN: "${huntTitle(side)}" was not sent. Re-run with --send --email to send it.`);
   } else {
-    const res = await sendAsEmployee("monique", { to, subject: mail.subject, layout: mail.layout });
+    const res = await sendAsEmployee("monique", { to, subject: mail.subject, layout: mail.layout, owner: mail.owner });
     if (!res.ok) {
       console.error(`NAMED STOP [HUNT_EMAIL_NOT_SENT] "${huntTitle(side)}" could not be sent: ${res.error}`);
       process.exit(2);

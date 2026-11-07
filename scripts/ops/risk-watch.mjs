@@ -34,7 +34,8 @@ import {
   askClaudeJson, bossApi, fromDomain, gmailHeaders, googleToken, loadState, movedReadings,
   readNothingStop, saveState, sendAs, stateMap, toMorning, fixJob,
 } from "./lib/duty-kit.mjs";
-import { layoutProblem, gmailSearchLink } from "../../src/shared/boss/mail/plain.mjs";
+import { gmailSearchLink } from "../../src/shared/boss/mail/plain.mjs";
+import { ownerEmail } from "../../src/shared/boss/mail/ownerLayout.mjs";
 
 const DRY = process.argv.includes("--dry");
 /** The one model this duty names (its duty row says the same): a short Haiku run on her Claude seat, mail headers or the gallery only. */
@@ -233,6 +234,12 @@ const RISK_LABELS = [
 ];
 const labelOf = (key) => { for (const [re, f] of RISK_LABELS) { const m = re.exec(key); if (m) return f(m); } return key.split(":")[0]; };
 
+/** Money at risk is an alarm (C, owner layout 7 Nov 2026): line 1 says why and that the team has it. Pure. */
+export function urgentEmail(urgent) {
+  return ownerEmail({ who: "Toni", layout: "alarm", subject: urgent.subject, why: "Money is at risk: a job is paying for AI calls that should be free",
+    act: "Nothing to do. The team is switching it back to a free model", broke: urgent.happened, doing: urgent.did, status: urgent.status });
+}
+
 /**
  * `{ urgent, decide, lines, fixes }` for the readings that moved. `urgent` is the one problem email
  * (money at risk now); everything else goes into the morning email or to the team.
@@ -331,7 +338,7 @@ async function main() {
       reported = true;
     }
     if (plan.urgent) {
-      const laid = layoutProblem({ who: "Toni", ...plan.urgent });
+      const laid = urgentEmail(plan.urgent);
       if (!(await sendAs("Toni", { subject: laid.subject, text: laid.text, prelaid: laid }))) { console.error("NAMED STOP [NO_MAIL_SENT] money at risk and no email could be sent; state not saved so the next run says it again."); process.exit(8); }
     }
   }

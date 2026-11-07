@@ -5,7 +5,7 @@
 import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
 import { ownerTextProblems, repairReport, STOCK, MAX_WORDS_PER_LINE } from "../src/shared/boss/repoChange/repairReport.mjs";
-import { layoutProblem, plainProblems } from "../src/shared/boss/mail/plain.mjs";
+import { layoutProblem, plainProblems, refCode } from "../src/shared/boss/mail/plain.mjs";
 // @ts-expect-error — plain ESM with no declaration file
 import { repairDoneMail, planMail } from "../scripts/ops/repo-change.mjs";
 
@@ -31,12 +31,14 @@ describe("the Mac runner sends no plan email for a repair (25 Oct 2026)", () => 
     const mail = repairDoneMail({ id: "rc_m5sd0byy3678wdjc", repair_kind: "held_mail" }, { in_plain: { what_broke: "a `--self-test` flag in plain.mjs", what_we_did: "Fixed the cleaner." } }, at);
     expect(mail.problems).toEqual([]);
     expect(ownerTextProblems(mail.text)).toEqual([]);
-    expect(mail.text.split("\n")[0]).toBe("What broke: An email we meant to send you was stopped before it reached you.");
+    // Owner layout (7 Nov 2026): line 1 says why and that there is nothing to do; the three parts follow.
+    expect(mail.text.split("\n")[0]).toBe("Danielle fixed something that broke. Nothing to do.");
+    expect(mail.text.split("\n")[2]).toBe("What broke: An email we meant to send you was stopped before it reached you.");
     expect(mail.refs).toEqual(["rc_m5sd0byy3678wdjc"]);
     // A failed job is named by its own title when the plan wrote nothing plain.
     const failed = repairDoneMail({ id: "rc_m5sbr6thvrbg6cxc", repair_kind: "failed_task", instruction: 'Find why "Executive Intelligence Report" failed\nseq23/boss-os — the task failed' }, {}, at);
     expect(failed.problems).toEqual([]);
-    expect(failed.text.split("\n").slice(0, 3)).toEqual([
+    expect(failed.text.split("\n").slice(2, 5)).toEqual([
       'What broke: Your "Executive Intelligence Report" job stopped before it finished.',
       "What we did: We found what stopped it, fixed it, and set the job to run again.",
       "Status: Live since Sunday 25 October. Nothing needed from you.",
@@ -110,7 +112,7 @@ describe("Danielle's plan email reads in plain words (owner, 25 Oct 2026)", () =
   const out = { publish_ready: true, plan_text: "## Plan\n- plain.mjs: layoutEmail trims details\n- run `npm run validate:email-plain -- --self-test`", in_plain: { change: "the morning email's deal list", so_that: "each deal reads as one short row you can open", bullets: ["Each new deal becomes one row with its size and price.", "Tap Open on a row to see the whole deal."] } };
   it("\"I want to change X so that Y. Reply approved to go ahead.\" first, then 2 to 4 plain bullets; the plan is attached, not in the body", () => {
     const m = planMail({ row: { id: "rc_m5sexample1" }, out, chosen: "boss-os", asks: [{ question: "Show ten deals or five?", default: "ten" }], ready: true });
-    expect(m.subject).toBe("Plan for boss-os: reply approved to go ahead");
+    expect(m.subject).toBe(`Plan for boss-os: reply approved to go ahead · REF ${refCode("rc_m5sexample1")}`);
     expect(m.text.split("\n")[0]).toBe("I want to change the morning email's deal list so that each deal reads as one short row you can open. Reply approved to go ahead.");
     const bullets = m.text.slice(m.text.indexOf("Details:")).split("\n").filter((l: string) => l.startsWith("- "));
     expect(bullets.length).toBeGreaterThanOrEqual(2);

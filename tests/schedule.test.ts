@@ -199,7 +199,10 @@ describe("the Spry Labs weekly", () => {
     const notes = ["Sales: 1 paid order this week.", "Search: not read: no record.", "Pinterest (week to Oct 31): 2 visits from pins.", "Pages this week: 3 pages refreshed."];
     const mail = composeSpryWeekly({ approvalprep: fresh([{ host: "approvalprep.com", state: "fine", why: [] }], { notes }) }, { now });
     const section = mail.sections.find((s: any) => s.title === "ApprovalPrep");
-    for (const n of notes) expect(section!.items).toContain(n);
+    // Every line reaches her; the system word "not read" says "not measured" on her email (7 Nov 2026).
+    for (const n of notes) expect(section!.items).toContain(n.replace(/\bnot read\b/gi, "not measured"));
+    expect(section!.items).toContain("Search: not measured: no record.");
+    expect(section!.items.join(" ")).not.toMatch(/not read/);
     expect(mail.sections.find((s: any) => s.title === "Dream Wedding")!.items[0]).toMatch(/^No report this week/);
   });
 
@@ -251,7 +254,7 @@ describe("the Spry Labs weekly", () => {
       const loop = all({ weeks: [], adopted: false });
       loop["approvalprep"] = { weeks: [week("approvalprep.com")], adopted: true };
       const { section, late } = loopSection(loop, { now });
-      expect(section.items).toContain("ApprovalPrep: Published 21 pages · 38 indexed · 4 AI visitors · 2 sales · 2 wins, 1 undone · cap 20 pages, 2 waiting.");
+      expect(section.items).toContain("ApprovalPrep: 21 new pages, 2 more queued, 38 showing in Google, 4 visits from AI tools, 2 sales, 2 improved, 1 rolled back.");
       expect(late).toEqual([]);
     });
 
@@ -259,7 +262,7 @@ describe("the Spry Labs weekly", () => {
       const loop = all({ weeks: [], adopted: false });
       loop["local-guides-generator"] = { weeks: [week("uscisexam.com"), week("uscisexam.com", { generated_at: "2026-11-02T12:00:00Z", published: 99 }), week("dentistryguides.com", { published: 1, merged: 3, redirected: [{ query: "q", strengthen: "https://dentistryguides.com/guides/x/" }] })], adopted: true };
       const { section } = loopSection(loop, { now });
-      expect(section.items).toContain("Industry Guides: Published 22 pages · 76 indexed · 8 AI visitors · 4 form fills · 4 wins, 2 undone, 3 merged · cap 40 pages, 4 waiting, 1 sent to existing pages (2 sites).");
+      expect(section.items).toContain("Industry Guides: 22 new pages, 4 more queued, 1 folded into existing pages, 76 showing in Google, 8 visits from AI tools, 4 form fills, 4 improved, 2 rolled back, 3 merged into others (across 2 sites).");
     });
 
     it("a business whose sites run different engines adds up the caps it read and says how many sites have none", () => {
@@ -268,13 +271,14 @@ describe("the Spry Labs weekly", () => {
       loop["local-guides-generator"] = { weeks: [week("uscisexam.com", { published: 0, cap: undefined, held_by_cap: undefined, redirected: undefined }), week("dentistryguides.com", { published: 0, cap: undefined, held_by_cap: undefined, redirected: undefined })], adopted: true };
       const { section } = loopSection(loop, { now });
       const ig = section.items.find((i: string) => i.startsWith("Industry Guides"))!;
-      expect(ig).toMatch(/cap 13 pages, 0 waiting \(2 of 3 sites report no cap\) \(3 sites\)\.$/);
-      expect(ig).not.toMatch(/the page cap not read/);
+      // The queue read on one site counts; the two without one do not blank it (7 Nov 2026: plain words).
+      expect(ig).toMatch(/^Industry Guides: 13 new pages, 0 more queued, .* \(across 3 sites\)\.$/);
+      expect(ig).not.toMatch(/not measured yet: [^.]*the queue/);
       // Every site without a cap: still not read, never a 0 cap.
       loop["local-guides-citation-velocity"] = { weeks: [], adopted: false };
       const only = loopSection(loop, { now }).section.items.find((i: string) => i.startsWith("Industry Guides"))!;
-      expect(only).toMatch(/the page cap not read/);
-      expect(only).not.toMatch(/cap 0 pages/);
+      expect(only).toMatch(/not measured yet: [^.]*the queue/);
+      expect(only).not.toMatch(/0 more queued/);
     });
 
     it("rule 0: not adopted says not started yet; adopted with nothing fresh says it did not arrive; a missing number is not read, never 0", () => {
@@ -286,10 +290,10 @@ describe("the Spry Labs weekly", () => {
       expect(section.items).toContain("Time-2-Read: this week's report did not arrive. The team checks why.");
       expect(late).toEqual(["time-2-read"]);
       const ap = section.items.find((i: string) => i.startsWith("ApprovalPrep"))!;
-      expect(ap).toMatch(/AI visitors not read/);
-      expect(ap).toMatch(/sales not read/);
-      expect(ap).toMatch(/the page cap not read/);
-      expect(ap).not.toMatch(/\b0 (AI|sales)/);
+      expect(ap).toMatch(/not measured yet: [^.]*AI visits/);
+      expect(ap).toMatch(/not measured yet: [^.]*sales/);
+      expect(ap).toMatch(/not measured yet: [^.]*the queue/);
+      expect(ap).not.toMatch(/\b0 (visits|sales)|\bnot read\b/);
     });
   });
 

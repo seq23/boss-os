@@ -183,7 +183,8 @@ export function buildHuntEmail({ side, hunts, now = Date.now(), maxPeopleLines =
     { title: side === "sell" ? "People you know who have it" : "People you know who want it", note: "From your own email, the last six months. Their size and price against yours.", items: peopleItems, empty: null },
     { title: "Funds that hold it", note: "From public SEC fund filings. Free to read; a filing shows the fund holds it, not that it will trade.", items: fundItems, empty: null },
   ] : [];
-  return { subject: title, layout: { happened, decide: [], sections }, failed };
+  // The owner layout (7 Nov 2026): the weekly hunt is new leads for her (D); nobody was contacted.
+  return { subject: title, layout: { happened, decide: [], sections }, owner: { layout: "delivered", why: happened }, failed };
 }
 
 export { assetKey };

@@ -88,6 +88,40 @@ export const JARGON = [
 /** The reply tokens a lane reads back from her answer. Pulled out of the text into `refs`. */
 export const REF_RE = /\b(?:rc|dd|tsk|cw|kml|yd|cmd)_[a-z0-9]{3,40}\b/gi;
 
+/**
+ * THE REF CODE SHE SEES (owner, 7 Nov 2026: "subject says what it is, plus a REF code where a reply
+ * matters"). The job token (`tsk_…`, `rc_…`) stays out of sight, in `X-Boss-Ref`; what she sees is a
+ * short code made from it, `BOS-` and six letters or digits with no 0/O/1/I to misread. The Worker
+ * finds the job from it (`boss_mail_refs.ref_code`) when a reply has lost its thread. Pure, the same
+ * on her Mac and in the Worker.
+ */
+export const REF_CODE_RE = /\bBOS-[2-9A-HJ-NP-Z]{6}\b/;
+const REF_ALPHABET = "23456789ABCDEFGHJKLMNPQRSTUVWXYZ";
+export function refCode(jobRef) {
+  const s = String(jobRef ?? "").trim().toLowerCase();
+  if (!s) return null;
+  let h = 0x811c9dc5;
+  for (let i = 0; i < s.length; i += 1) { h ^= s.charCodeAt(i); h = Math.imul(h, 0x01000193) >>> 0; }
+  let out = "";
+  for (let i = 0; i < 6; i += 1) { out += REF_ALPHABET[h & 31]; h = (h >>> 5) | ((Math.imul(h, 0x9e3779b1) & 31) << 27); h >>>= 0; }
+  return `BOS-${out}`;
+}
+/**
+ * AN EMAIL TO HER SAYS "YOU" (7 Nov 2026 live read: a Decide card read "senders in her personal Gmail
+ * she never opens"). Task titles are written by agents about her; on her own email they are turned to
+ * the second person: her own things, and what she does. Narrow on purpose: "her" alone may be anyone.
+ */
+export function toYou(text) {
+  return String(text ?? "")
+    .replace(/\bher (own |personal )?(Gmail|inbox|email|emails|calendar|Mac|account|accounts|phone|word|list|seat|reply)\b/gi, (_, a = "", b) => `your ${a}${b}`)
+    .replace(/\bshe (never|always|often|rarely) ([a-z]+?)(e?s)\b/g, (_, adv, verb, end) => `you ${adv} ${end === "es" && /(?:sh|ch|ss|x|o)$/.test(verb) ? verb : `${verb}${end === "es" ? "e" : ""}`}`)
+    .replace(/\bshe (asked|said|wrote|wanted|sent|approved|chose|opened|replied)\b/g, "you $1")
+    .replace(/\bshe is\b/g, "you are").replace(/\bshe has\b/g, "you have").replace(/\bshe does\b/g, "you do");
+}
+
+/** The words that say she has nothing to do; an owner line ends with them, or with what to do. */
+export const NOTHING_TO_DO = "Nothing to do.";
+
 /** Every internal id shape: a known prefix, or a short prefix and an underscore with a digit in it. */
 const ID_RE = /\b(?:(?:rc|dd|tsk|wc|cw|kml|apr|iml|emp|cred|yd|mail|run|cmd)_[a-z0-9_]{3,}|[a-z]{2,5}_[a-z0-9]*\d[a-z0-9]*)\b/gi;
 const BRACKETED_ID_RE = /\[[a-z]{2,5}_[^\]\s]*\]/i;
@@ -161,7 +195,7 @@ export const MAX_DECIDE = 3;
 
 export const DECIDE_HEADING = "Decide";
 export const NOTHING_TO_DECIDE = "Nothing to decide — this is just so you know.";
-export const PROBLEM_PARTS = Object.freeze({ happened: "What happened:", did: "What we did:", status: "Status:" });
+export const PROBLEM_PARTS = Object.freeze({ happened: "What happened:", did: "What we did:", status: "Status:", lost: "What was lost:" });
 
 const MONTHS = ["January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December"];
 
@@ -192,7 +226,8 @@ function protect(s) {
   const kept = [];
   const keep = (m) => { kept.push(m); return `\u0000${kept.length - 1}\u0000`; };
   // `SECRET NAME=<value>` is a line she types exactly, so the key's name is kept as written.
-  const out = String(s).replace(SECRET_LINE_RE, keep).replace(URL_RE, (u) => keep(pageLinkFor(u))).replace(EMAIL_RE, keep);
+  // A REF code ("BOS-7K2M9Q") is how her reply finds its job: kept exactly, never lower-cased as shouting.
+  const out = String(s).replace(SECRET_LINE_RE, keep).replace(URL_RE, (u) => keep(pageLinkFor(u))).replace(EMAIL_RE, keep).replace(new RegExp(REF_CODE_RE.source, "g"), keep);
   return { out, restore: (t) => t.replace(/\u0000(\d+)\u0000/g, (_, i) => kept[Number(i)]) };
 }
 
@@ -247,8 +282,10 @@ export function cleanText(input, { prose = false } = {}) {
   for (const j of JARGON) s = s.replace(j.find, j.plain);
   // /api paths, with or without their verb or brackets.
   s = s.replace(/\s*\(\s*(?:(?:GET|POST|PUT|PATCH|DELETE)\s+)?\/api\/[^)]*\)/g, "");
+  // The word a removed path leaves dangling ("see /api/x." → "see.") goes with it — only right where a
+  // path was cut (7 Nov 2026 live read: "Amazon needs you to sign in." had read "…to sign.").
+  s = s.replace(/(\s+\b(?:via|at|see|through|in|from))?(?:\s*\(\s*(?:(?:GET|POST|PUT|PATCH|DELETE)\s+)?\/api\/[^)]*\)|\s*(?:\b(?:GET|POST|PUT|PATCH|DELETE)\s+)?(?<![\w.])\/api\/[\w/:.?=&-]*)(?=\s*(?:[.,;:]|$))/g, "");
   s = s.replace(/(?:\b(?:GET|POST|PUT|PATCH|DELETE)\s+)?(?<![\w.])\/api\/[\w/:.?=&-]*/g, "");
-  s = s.replace(/\s+\b(?:via|at|see|through|in|from)\s*(?=[.,;:]|$)/g, "");
   // PR numbers: "(#112)" and "(PR #112)" go, "PR #12" is "the change".
   s = s.replace(/\s*\(\s*(?:PR|pull request)?\s*#\d+\s*\)/gi, "").replace(/\b(?:PR|pull request)\s*#?\d+\b/gi, "the change").replace(/(^|\s)#\d+\b/g, "$1");
   // #tags: "#simone" is Simone.
@@ -272,6 +309,8 @@ export function cleanText(input, { prose = false } = {}) {
   s = s.replace(MAC_PATH_RE, "a file on your Mac");
   // File names ("plain.mjs", "scripts/ops/notify.mjs") say nothing to her: "a file" (25 Oct 2026).
   s = s.replace(new RegExp(FILE_NAME_RE.source, "gi"), (m) => `${/^[\s(]/.test(m) ? m[0] : ""}a file`);
+  // "wrote no result.json" is "wrote no file", never "wrote no a file" (7 Nov 2026 live read).
+  s = s.replace(/\b(no|any|the|that|this|each|every|one) a file\b/gi, "$1 file");
   s = s.replace(/^\s*#{1,6}\s+/gm, "").replace(/\*\*/g, "");
   // snake_case and UPPER_SNAKE become words.
   s = s.replace(/\b[A-Za-z][A-Za-z0-9]*(?:_[A-Za-z0-9]+)+\b/g, (m) => m.replace(/_/g, " ").toLowerCase());
@@ -551,10 +590,20 @@ function page(inner) {
  *   details   strings (bullets) or `{ heading }`, under "Details" (what `fromLegacy` writes).
  *   footer    a small line above the name; `postscript` a small line below it (the 8Raise line).
  */
-export function layoutEmail({ who, subject, happened, decide = [], needs = [], details = [], sections = [], refs = [], footer = null, postscript = null, moreDecide = null, maxDecide = MAX_DECIDE, kind = "plain" }) {
+export function layoutEmail({ who, subject, happened, decide = [], needs = [], details = [], sections = [], refs = [], footer = null, postscript = null, moreDecide = null, maxDecide = MAX_DECIDE, kind = "plain", lead = null, leadNotes = [] }) {
   const name = String(who ?? "").trim() || "Simone";
   const subj = cleanSubject(subject);
-  const first = cleanText(happened) || subj;
+  /*
+   * `lead` IS LINE 1 OF THE OWNER LAYOUT (owner, 7 Nov 2026: line 1 says why she is getting it and
+   * whether she must do anything). With a lead, `happened` becomes the first paragraph after Decide
+   * and the "Nothing to decide" line goes: line 1 already said so. src/shared/boss/mail/ownerLayout.mjs.
+   */
+  const leadLine = lead ? cleanText(lead) : "";
+  const first = leadLine || cleanText(happened) || subj;
+  const after = leadLine ? cleanText(happened) : "";
+  // Short lines that stay above the fold, each on its own line right under line 1 (the morning's law,
+  // the ancestral hour, her calendar; 7 Nov 2026: "give each its own line").
+  const notes = leadLine ? (leadNotes ?? []).map((x) => cleanText(x)).filter(Boolean) : [];
   const allDecide = [...(Array.isArray(decide) ? decide : [decide]), ...(Array.isArray(needs) ? needs : [needs])].map(cleanCard).filter((c) => c.title);
   // The morning email shows EVERY decision (owner, 24 Oct 2026: "6 decisions" with 3 shown); other
   // emails keep three. The heading's count is always the number shown when nothing is held back.
@@ -570,10 +619,10 @@ export function layoutEmail({ who, subject, happened, decide = [], needs = [], d
 
   const decideLines = shown.length
     ? [`${DECIDE_HEADING} (${allDecide.length})`, ...shown.flatMap((c, i) => [...cardText(c, i + 1), ""]), ...(moreLine ? [moreLine] : [])]
-    : [NOTHING_TO_DECIDE];
+    : leadLine ? [] : [NOTHING_TO_DECIDE];
   let sectionLines = sectionList.flatMap(sectionText);
   const detailLines = (list, cutNote) => (list.length || cutNote ? ["", "Details:", ...list.map((d) => (typeof d === "string" ? `- ${d}` : `${d.heading}`)), ...(cutNote ? [`- ${cutNote}`] : [])] : []);
-  const buildText = (list, cutNote) => [first, "", ...decideLines, ...sectionLines, ...detailLines(list, cutNote), "", ...(foot ? [foot, ""] : []), `— ${name}`, ...(ps ? ["", ps] : [])]
+  const buildText = (list, cutNote) => [first, ...notes, "", ...decideLines, ...(after && after !== first ? ["", after] : []), ...sectionLines, ...detailLines(list, cutNote), "", ...(foot ? [foot, ""] : []), `— ${name}`, ...(ps ? ["", ps] : [])]
     .join("\n").replace(/\n{3,}/g, "\n\n");
 
   /*
@@ -633,10 +682,11 @@ export function layoutEmail({ who, subject, happened, decide = [], needs = [], d
     detailHtml += "</div>";
   }
   const html = page(
-    `<div style="background:#ffffff;border-radius:10px;padding:12px 14px;border:1px solid ${C.line}"><p style="margin:0;font-size:16px;line-height:1.45;font-weight:600">${linkify(first)}</p></div>`
+    `<div style="background:#ffffff;border-radius:10px;padding:12px 14px;border:1px solid ${C.line}"><p style="margin:0;font-size:16px;line-height:1.45;font-weight:600">${linkify(first)}</p>${notes.map((x) => `<p style="margin:8px 0 0">${linkify(x)}</p>`).join("")}</div>`
     + (shown.length
       ? `<p ${SEC(C.decideInk)}>${DECIDE_HEADING} (${allDecide.length})</p>${shown.map((c, i) => cardHtml(c, i + 1)).join("")}${moreLine ? `<p style="margin:0 0 8px;font-size:13px;color:${C.muted}">${esc(moreLine)}</p>` : ""}`
-      : `<p style="margin:14px 2px;font-size:14px;color:${C.muted}">${NOTHING_TO_DECIDE}</p>`)
+      : leadLine ? "" : `<p style="margin:14px 2px;font-size:14px;color:${C.muted}">${NOTHING_TO_DECIDE}</p>`)
+    + (after && after !== first ? `<p style="margin:14px 2px">${linkify(after)}</p>` : "")
     + sectionList.map(sectionHtml).join("")
     + detailHtml
     + (foot ? `<p style="margin:16px 2px 0;font-size:13px;color:${C.muted}">${linkify(foot)}</p>` : "")
@@ -644,7 +694,7 @@ export function layoutEmail({ who, subject, happened, decide = [], needs = [], d
     + (ps ? `<p style="margin:14px 2px 0;font-size:12px;color:${C.muted}">${esc(ps)}</p>` : ""),
   );
 
-  return finish({ subject: subj, text, html, refs: [...new Set(refs.map((r) => String(r).toLowerCase()))], kind: kind === "morning" ? "morning" : "plain" });
+  return finish({ subject: subj, text, html, refs: [...new Set(refs.map((r) => String(r).toLowerCase()))], kind: kind === "morning" ? "morning" : "plain", ...(leadLine ? { layout: "note" } : {}) });
 }
 
 /**
@@ -652,7 +702,7 @@ export function layoutEmail({ who, subject, happened, decide = [], needs = [], d
  * when). Sent only once the fix is running. `decide` — one item, one button — only when she alone can
  * act (an account or key only she holds); it then comes first, as every Decide does.
  */
-export function layoutProblem({ who, subject, happened, did, status, done = false, decide = [], refs = [], happenedLabel = PROBLEM_PARTS.happened }) {
+export function layoutProblem({ who, subject, happened, did, status, done = false, decide = [], refs = [], happenedLabel = PROBLEM_PARTS.happened, lead = null, lost = null }) {
   const name = String(who ?? "").trim() || "Simone";
   const subj = cleanSubject(subject);
   // A sentence the cleaner had to drop whole (a command, a code dump) never leaves a bare label.
@@ -661,9 +711,14 @@ export function layoutProblem({ who, subject, happened, did, status, done = fals
   const statusLine = cleanText(status) || (done ? "Done. Nothing needed from you." : "");
   const ask = (Array.isArray(decide) ? decide : [decide]).map(cleanCard).filter((c) => c.title).slice(0, 1);
   const statusWord = done ? "Status: done." : PROBLEM_PARTS.status;
+  // The owner layout's alarm (C): line 1 says why and the one thing to do; "What was lost:" when anything was.
+  const leadLine = lead ? cleanText(lead) : "";
+  const lostLine = lost ? cleanText(lost) : "";
   const text = [
+    ...(leadLine ? [leadLine, ""] : []),
     ...(ask.length ? [`${DECIDE_HEADING} (1)`, ...cardText(ask[0], 1), ""] : []),
     `${happenedLabel} ${what}`,
+    ...(lostLine ? [`${PROBLEM_PARTS.lost} ${lostLine}`] : []),
     `${PROBLEM_PARTS.did} ${didLine}`,
     `${statusWord} ${statusLine}`,
     "", `— ${name}`,
@@ -675,13 +730,15 @@ export function layoutProblem({ who, subject, happened, did, status, done = fals
       + `<p style="margin:0;font-size:14px;line-height:1.55;color:${C.ink}">${linkify(body)}</p></div>`;
   };
   const html = page(
-    (ask.length ? `<p ${SEC(C.decideInk)}>${DECIDE_HEADING} (1)</p>${cardHtml(ask[0], 1)}` : "")
+    (leadLine ? `<div style="margin:0 0 12px;background:#ffffff;border-radius:10px;padding:12px 14px;border:1px solid ${C.line}"><p style="margin:0;font-size:16px;line-height:1.45;font-weight:600">${linkify(leadLine)}</p></div>` : "")
+    + (ask.length ? `<p ${SEC(C.decideInk)}>${DECIDE_HEADING} (1)</p>${cardHtml(ask[0], 1)}` : "")
     + part(happenedLabel.replace(/:$/, ""), what)
+    + (lostLine ? part(PROBLEM_PARTS.lost.replace(/:$/, ""), lostLine) : "")
     + part(PROBLEM_PARTS.did.replace(/:$/, ""), didLine)
     + part(done ? "Status: done" : "Status", statusLine, done ? "done" : null)
     + `<p style="margin:12px 2px 0;font-size:14px;color:${C.ink}">— ${esc(name)}</p>`,
   );
-  return finish({ subject: subj, text, html, refs: [...new Set(refs.map((r) => String(r).toLowerCase()))], kind: "problem" });
+  return finish({ subject: subj, text, html, refs: [...new Set(refs.map((r) => String(r).toLowerCase()))], kind: "problem", ...(leadLine ? { layout: "alarm" } : {}) });
 }
 
 /** Every laid-out email carries the gate's verdict, so the sender holds it rather than sends it. */
@@ -707,7 +764,12 @@ const DROP_LINE = [
  * the lines that ask her for something become Decide items, and the rest become short bullets — all
  * of it cleaned.
  */
-export function fromLegacy({ who, subject, text, refs = [] }) {
+export function fromLegacy(input) {
+  return layoutEmail(legacyParts(input));
+}
+
+/** The parts `fromLegacy` reads out of one block of text, for a sender that adds its own owner line. */
+export function legacyParts({ who, subject, text, refs = [] }) {
   const raw = String(text ?? "").replace(/\r/g, "");
   const allRefs = [...new Set([...refs, ...refsIn(subject), ...refsIn(raw)])];
   const name = String(who ?? "").trim();
@@ -758,7 +820,7 @@ export function fromLegacy({ who, subject, text, refs = [] }) {
   }
   // A trailing heading with nothing under it says nothing.
   while (details.length && typeof details[details.length - 1] === "object") details.pop();
-  return layoutEmail({ who: name || "Simone", subject, happened: happened || subject, needs, details, refs: allRefs });
+  return { who: name || "Simone", subject, happened: happened || subject, needs, details, refs: allRefs };
 }
 
 /** The words she sees: subject, the plain text, and the HTML with its tags, urls and addresses removed. */
@@ -841,14 +903,14 @@ export function lineProblems(line) {
   return contentProblems(visibleText({ text: cleanText(line) }));
 }
 
-export function plainProblems({ subject, text, html, kind = null }) {
+export function plainProblems({ subject, text, html, kind = null, layout = null }) {
   const seen = visibleText({ subject, text, html }, { prose: "drop" });
   const subj = String(subject ?? "");
   const body = String(text ?? "");
   const problems = [...contentProblems(seen), ...proseProblems(visibleText({ text, html }, { prose: "only" }))];
   const hit = (name, re, where = seen) => { const m = re.exec(where); if (m) problems.push(`${name}: "${m[0].trim()}"`); };
   hit("brackets in the subject", /[[\]]/, subj);
-  const shout = subj.split(/\s+/).map((w) => w.replace(/[^A-Za-z0-9]/g, "")).find(isShouting);
+  const shout = subj.replace(new RegExp(REF_CODE_RE.source, "g"), "").split(/\s+/).map((w) => w.replace(/[^A-Za-z0-9]/g, "")).find(isShouting);
   if (shout) problems.push(`capitals in the subject: "${shout}"`);
   for (const seg of subj.split(/\s+[—–]\s+/)) {
     const items = seg.split(/,|\band\b/).map((x) => x.trim().toLowerCase()).filter(Boolean);
@@ -873,13 +935,20 @@ export function plainProblems({ subject, text, html, kind = null }) {
     if (!/^What (?:happened|broke):/m.test(body)) problems.push('a problem email without "What happened"');
     if (!/^What we did:/m.test(body)) problems.push('a problem email without "What we did"');
     if (!/^Status(?::| done)/m.test(body)) problems.push("a problem email without its status");
-    if (!(/^What (?:happened|broke):/.test(lines[0] ?? "") || /^Decide \(\d+\)$/.test(lines[0] ?? ""))) problems.push("Decide is not first");
+    // An owner-layout alarm opens with its line 1 (why, and the one thing to do), then the parts.
+    const at = layout && lines[0] && !/^(?:What |Decide \()/.test(lines[0]) ? 2 : 0;
+    if (!(/^What (?:happened|broke):/.test(lines[at] ?? "") || /^Decide \(\d+\)$/.test(lines[at] ?? ""))) problems.push("Decide is not first");
+  } else if (layout) {
+    // The owner layout (7 Nov 2026): line 1 says whether she must act, so a Decide heading, when
+    // there is one, is line 3, and there is no separate "Nothing to decide" line.
+    if (!String(lines[0] ?? "").trim()) problems.push("line 1 is empty");
   } else if (!(/^Decide \(\d+\)$/.test(lines[2] ?? "") || lines[2] === NOTHING_TO_DECIDE)) {
     problems.push("Decide is not first");
   }
   const decideAt = lines.findIndex((l) => /^Decide \(\d+\)$/.test(l));
-  if (decideAt > 2 && !problem) problems.push("Decide is not first");
-  if (html !== undefined && html !== null && !/Decide \(\d+\)|Nothing to decide|What happened|What broke/.test(String(html))) problems.push("the HTML has no Decide line");
+  // In the owner layout line 1 already says whether she must act; its notes may sit above Decide.
+  if (!layout && decideAt > 2 && !problem) problems.push("Decide is not first");
+  if (!layout && html !== undefined && html !== null && !/Decide \(\d+\)|Nothing to decide|What happened|What broke/.test(String(html))) problems.push("the HTML has no Decide line");
   // A research report is real-world prose about the outside world (6 Nov 2026, the DNA report: a
   // fee table's "Route" column and "5830 Mt. Moriah Rd #9" read as jargon and a PR number). Its
   // words are the research's; ids, brackets, API links, length and shape are still checked.
@@ -897,7 +966,7 @@ export function plainProblems({ subject, text, html, kind = null }) {
  * from the plain text, so the two always agree. Only what still fails after that is held (and handed
  * to Danielle as a repair). Pure.
  */
-const STRUCTURE_RE = /^(?:Decide \(\d+\)|Nothing to decide — this is just so you know\.|What (?:happened|broke|we did|you need to do):|Status(?::| done)|Details:|— [A-Z][a-z]+)/;
+const STRUCTURE_RE = /^(?:Decide \(\d+\)|Nothing to decide — this is just so you know\.|What (?:happened|broke|we did|was lost|you need to do):|Status(?::| done)|Details:|— [A-Z][a-z]+)/;
 export function simplifyForOwner({ subject, text, html = null, kind = null }) {
   const moved = [];
   const out = [];
@@ -913,12 +982,22 @@ export function simplifyForOwner({ subject, text, html = null, kind = null }) {
     // The line as written, not as the cleaner would have it: what she would read is what is checked.
     const probs = line.trim() ? [...contentProblems(visibleText({ text: line }, { prose: "drop" })), ...(linksIn({ text: line }).some(isApiLink) ? ["API path"] : [])] : [];
     if (!probs.length) { out.push(line); continue; }
+    /*
+     * SAID PLAINLY BEFORE IT IS MOVED (7 Nov 2026 live read: a research line about the STALE_TASK
+     * alarm became "1. One item; its technical details are in the attached file."). The line cleaned
+     * in place, its number or bullet kept, stays when that passes; only a line still failing moves.
+     */
+    const lead = /^\s*(?:\d+\.|[-*•])\s+/.exec(line)?.[0] ?? "";
+    const cleaned = cleanText(line.slice(lead.length));
+    if (cleaned && i > 0 && !contentProblems(visibleText({ text: cleaned }, { prose: "drop" })).length && !linksIn({ text: cleaned }).some(isApiLink)) {
+      moved.push(line); out.push(`${lead}${cleaned}`); continue;
+    }
     moved.push(line);
     const label = /^((?:\d+\. )?[A-Z][A-Za-z ]{2,30}:)\s/.exec(line)?.[1];
     // The opening line is what the email is about: it is never left out, only said plainly.
     if (i === 0) out.push(label && STRUCTURE_RE.test(label) ? `${label} the technical details are in the attached file.` : "An update for you; the technical details are in the attached file.");
     else if (label && STRUCTURE_RE.test(label)) out.push(`${label} the technical details are in the attached file.`);
-    else if (/^\d+\. /.test(line)) out.push(`${line.match(/^\d+\. /)[0]}One item; its technical details are in the attached file.`);
+    else if (/^\d+\. /.test(line)) out.push(`${line.match(/^\d+\. /)[0]}This point is technical, so it is in the attached file for the team.`);
   }
   if (moved.length) {
     const sign = out.findLastIndex((l) => /^— [A-Z]/.test(l));

@@ -24,9 +24,9 @@ import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync
 import { homedir, tmpdir } from "node:os";
 import { join } from "node:path";
 import { composeSpryWeekly, SPRY_WEEKLY, summaryProblem } from "../../src/shared/boss/spryWeekly/compose.mjs";
-import { layoutEmail } from "../../src/shared/boss/mail/plain.mjs";
 import { bossApi, fixJob, sendAs } from "./lib/duty-kit.mjs";
 import { fetchLoopWeeks } from "./lib/search-loop-week.mjs";
+import { ownerEmail } from "../../src/shared/boss/mail/ownerLayout.mjs";
 
 const gh = (args) => execFileSync("gh", args, { encoding: "utf8", maxBuffer: 32 << 20, stdio: ["ignore", "pipe", "pipe"] });
 
@@ -85,7 +85,7 @@ async function main() {
   // The search loop line (1 Nov 2026): each repo's newest search-loop-week reports, read once.
   const loop = Object.fromEntries([...new Set(SPRY_WEEKLY.search_loop.sites.flatMap((x) => x.repos))].map((r) => [r, fetchLoopWeeks(r)]));
   const mail = composeSpryWeekly(got, { loop });
-  const laid = layoutEmail({ who: "Camille", subject: mail.subject, happened: mail.happened, sections: mail.sections });
+  const laid = spryLaid(mail);
   if (dry) { console.log(laid.subject); console.log(laid.text); return; }
   if (!(await sendAs("Camille", { subject: laid.subject, text: laid.text, html: laid.html, prelaid: laid }))) {
     console.error("NAMED STOP [NO_MAIL_SENT] the Spry Labs weekly could not be sent; not recorded, so the next run tries again.");
@@ -108,6 +108,11 @@ async function main() {
   mkdirSync(STATE_DIR, { recursive: true });
   writeFileSync(sentFile, JSON.stringify({ ...sent, [key]: new Date().toISOString() }, null, 2));
   console.log(`sent: ${SPRY_WEEKLY.sources.length} sections, ${mail.looks} to look at, ${mail.missing} missing.`);
+}
+
+/** The weekly report nobody asked for this time is a Note (owner layout, 7 Nov 2026). Pure. */
+export function spryLaid(mail) {
+  return ownerEmail({ who: "Camille", layout: "note", why: mail.happened, subject: mail.subject, happened: mail.happened, sections: mail.sections });
 }
 
 if (import.meta.url === `file://${process.argv[1]}`) await main();

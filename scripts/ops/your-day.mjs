@@ -48,7 +48,8 @@ import path from "node:path";
 import { sendAsEmployee } from "./notify.mjs";
 import { createHash } from "node:crypto";
 import { ownerTime } from "../../src/shared/boss/ownerTime.mjs";
-import { layoutEmail, clockWords, lineProblems, proseRuns, proseText, cleanText, quotedSentence } from "../../src/shared/boss/mail/plain.mjs";
+import { clockWords, lineProblems, proseRuns, proseText, cleanText, quotedSentence, NOTHING_TO_DO, toYou } from "../../src/shared/boss/mail/plain.mjs";
+import { ownerEmail } from "../../src/shared/boss/mail/ownerLayout.mjs";
 import { readMorningSections, clearToldSections } from "../../src/shared/boss/mail/morning.mjs";
 import { sectionsNotReported, notReportedLine } from "../../src/shared/boss/mail/morningSections.mjs";
 import { templateDecide } from "./lp-prospects.mjs";
@@ -146,6 +147,27 @@ function approvalTaskId(a) {
  * A change to a teammate's standing duty, in plain words: who wants what, and what yes and no do
  * (2 Nov 2026). Null when the item is not a duty change. Pure.
  */
+/**
+ * THE CHANGE ITSELF, IN ONE LINE (7 Nov 2026 live read: the card quoted "Change to Camille's
+ * Marketplace listings duty (my ruling, 1 Nov)." — a label, so she could not say yes or no). Her
+ * words' label and sign-off sentences are skipped; the first sentence that says what to do is kept.
+ * Pure.
+ */
+export function theChange(words) {
+  const sentences = String(words ?? "").replace(/\s+/g, " ").trim().split(/(?<=[.!?])\s+/).map((x) => x.trim()).filter(Boolean);
+  const label = (x) => /^(?:change (?:to|for)\b|re:|your call\b|no need to ask\b|thanks?\b|thank you\b|ok\b)/i.test(x) || x.split(/\s+/).length < 4;
+  const kept = sentences.filter((x) => !label(x));
+  // Strongest cue first: "Add this:", "instead", "from now on"; then a verb that changes something.
+  // "Keep doing it as now" is what stays, never the change.
+  const cues = [/^(?:add this|change this|new rule)\s*:/i, /\b(?:instead|from now on|no longer)\b/i, /\b(?:add|stop|start|only|never|always|should|must|drop|move|ask)\b/i];
+  const changes = kept.filter((x) => !/\bkeep (?:doing|it|them)\b.*\bas (?:now|is|before)\b/i.test(x));
+  const pick = cues.map((re) => changes.find((x) => re.test(x))).find(Boolean) ?? changes[0];
+  if (!pick) return null;
+  // A run of shouted words is her emphasis, said in ordinary case ("OUR REAL WORK" → "our real work").
+  const one = pick.replace(/^(?:add this|change this|new rule|also|and)\s*:\s*/i, "").replace(/\b[A-Z]{2,}(?:\s+[A-Z]{2,})+\b/g, (m) => m.toLowerCase()).replace(/^./, (c) => c.toUpperCase());
+  return one.length > 200 ? `${one.slice(0, 199).replace(/\s+\S*$/, "")}…` : one;
+}
+
 export function dutyChangeCard(title, task, worker) {
   const t = String(title ?? "");
   const m = /^Change how (?:the )?(?:(.+?)(?:'s)? )?duty "(.+)" works$/.exec(t) ?? /^Change (.+?)'s duty\s*[:—-]\s*(.+)$/.exec(t);
@@ -155,12 +177,13 @@ export function dutyChangeCard(title, task, worker) {
   const input = inputOf(task);
   const raw = String(input.body ?? input.prompt ?? "");
   const words = /Her words:\s*([\s\S]+)/.exec(raw)?.[1]?.replace(/\s+/g, " ").trim() ?? "";
-  const said = words ? (/^(.{20,200}?[.!?])(\s|$)/.exec(words)?.[1] ?? words.slice(0, 200).replace(/\s+\S*$/, "…")) : null;
+  const said = theChange(words);
   const who = worker ?? "Danielle";
   const whose = seat ? `${seat}'s` : "a";
   return {
     title: `Change how ${seat ?? "your team"} handles "${duty}"?`,
-    body: `${who} wants to change ${whose} duty "${duty}", as you asked${said ? `: "${said}"` : ""}. Yes lets ${who} make the change; no keeps it as it is.`,
+    // The duty is named once, in the title (7 Nov 2026 live read: the long name came twice in one breath).
+    body: `${said ? `The change: ${cleanText(said).replace(/[.!?…]*$/, ".")} ` : ""}${who} makes it as you asked. Yes lets ${who} make it; no keeps ${whose === "a" ? "the duty" : `${whose} duty`} as it is.`,
   };
 }
 
@@ -217,7 +240,7 @@ export function bossDecisions(data) {
     }
     const duty = dutyChangeCard(t.title, t, t.employee_name ?? null);
     out.push({
-      key: `task:${t.id}`, title: duty?.title ?? `${t.employee_name ?? "Your team"} is waiting for your word: ${t.title}`,
+      key: `task:${t.id}`, title: duty?.title ?? `${t.employee_name ?? "Your team"} is waiting for your word: ${toYou(t.title)}`,
       body: duty?.body ?? "Nothing happens on it until you answer.",
       buttons: [{ label: "Open it", url: taskUrl(t.id) }], priority: 1,
     });
@@ -817,8 +840,13 @@ export function buildDay(data, now = Date.now()) {
 
   // 4b''. Open Loops (owner ruling, 1 Nov 2026): every morning, "Open loops: N, M overdue" and one line
   // per overdue row with its link (written by the Worker's tick, routes/openLoops.ts). Quiet = the title alone.
-  const olLines = (m.open_loops?.lines ?? []).map((l) => (typeof l === "string" ? { text: l, links: [] } : { links: [], ...l }));
-  const openLoopsSection = m.open_loops?.title ? { title: m.open_loops.title, tone: olLines.length ? undefined : "done", items: olLines, link: m.open_loops.link ?? null, empty: null } : null;
+  // At most five rows, whatever copy the section carries (7 Nov 2026 live read: an older writer's copy
+  // listed 17); the rest is one line to the page. The writer puts her own rows first.
+  const olAll = (m.open_loops?.lines ?? []).map((l) => (typeof l === "string" ? { text: l, links: [] } : { links: [], ...l }));
+  const olLines = olAll.length > MAX_OPEN_LOOP_LINES + 1
+    ? [...olAll.slice(0, MAX_OPEN_LOOP_LINES), { text: `+${olAll.length - MAX_OPEN_LOOP_LINES} more overdue on Open Loops.`, links: m.open_loops?.link?.url ? [{ label: "See all ›", url: m.open_loops.link.url }] : [] }]
+    : olAll;
+  const openLoopsSection = m.open_loops?.title ? { title: m.open_loops.title, tone: olLines.length ? undefined : "done", items: olLines, link: olLines.length < olAll.length ? null : (m.open_loops.link ?? null), empty: null } : null;
 
   // 4c. Brains (31 Oct 2026): Mondays one plain line, never red; the 1st of the month the scoreboard.
   const brainsSection = brainsSectionFor(data, now);
@@ -865,12 +893,23 @@ export function buildDay(data, now = Date.now()) {
    * the prospect emails' words, then Monique's lines to three, then the deal rows to five — each
    * "See all N" on its screen. Decisions are never cut. Measured in bytes, as Gmail measures.
    */
-  const lay = ({ prospectWords = true, foundMax = MAX_FOUND_LINES, dealMax = MAX_DEAL_ROWS } = {}) => layoutEmail({
+  /*
+   * THE OWNER LAYOUT'S DIGEST (B, owner 7 Nov 2026): line 1 says why (her morning) and whether she must
+   * do anything (the Decide count, or "Nothing to do."); the day's law, a report that did not arrive,
+   * the ancestral hour and her calendar follow, each on its own line, above the fold (31 Oct 2026).
+   */
+  // Each its own line under line 1. A section that did not report in is the team's: it goes to the
+  // Updates page (`teamNotes`, posted by the run), never her email (7 Nov 2026).
+  const morningRest = [lawLine(data.law), ancestral, calls.length ? `On your calendar: ${calls.join("; ")}.` : null].filter(Boolean);
+  const lay = ({ prospectWords = true, foundMax = MAX_FOUND_LINES, dealMax = MAX_DEAL_ROWS } = {}) => ownerEmail({
     who: "Simone",
+    layout: "digest",
+    why: `Good morning. Here is your ${dayWords(today)}`,
+    act: decide.length ? `${decide.length === 1 ? "One thing" : `${decide.length} things`} to decide, below.` : NOTHING_TO_DO,
     kind: "morning",
     maxDecide: Infinity,
     subject,
-    happened: `${lawLine(data.law) ? `${lawLine(data.law)} ` : ""}Good morning. Here is your ${dayWords(today)}.${notReported ? ` ${notReported}` : ""}${ancestral ? ` ${ancestral}` : ""}${calls.length ? ` On your calendar: ${calls.join("; ")}.` : ""}`,
+    lineTail: morningRest,
     decide,
     sections: [
       ...(stillYours.length ? [{ title: "Still yours to answer", items: stillYours.map((d) => ({
@@ -926,7 +965,7 @@ export function buildDay(data, now = Date.now()) {
   };
   // What this email told her, so tomorrow's says it once more at most as a thin line (morningMemory.mjs).
   const memory = { decide: repeats.memory, done: [...new Set([...(data.told?.done ?? []), ...doneOnce.keys])].slice(-500) };
-  return { ...laid, dropped, digest, cuts, bytes: bytes(laid), memory, yoursTold: yours.map((i) => i.id) };
+  return { ...laid, dropped, digest, cuts, bytes: bytes(laid), memory, yoursTold: yours.map((i) => i.id), teamNotes: notReported ? [notReported] : [] };
 }
 
 /**
@@ -995,6 +1034,9 @@ const lawOf = (today) => today.blocks.find((b) => b.key === "coaching_focus")?.c
  * morning email's first line"). The same law as the bold card on Today, read from the same block.
  * `null` when the coaching focus did not load: the email then opens as it always did.
  */
+/** The most open-loop rows the morning email shows; the rest is one "See all ›" line. */
+export const MAX_OPEN_LOOP_LINES = 5;
+
 export function lawLine(law) {
   if (!law?.n || !law?.title || !law?.text) return null;
   return `Today's law, Law ${law.n}, ${law.title}: "${law.text}" Read it aloud.`;
@@ -1100,7 +1142,8 @@ async function main() {
   if (PREVIEW) {
     fs.mkdirSync(PREVIEW, { recursive: true });
     fs.writeFileSync(path.join(PREVIEW, "your-day.html"), email.html, { mode: 0o600 });
-    fs.writeFileSync(path.join(PREVIEW, "your-day.txt"), `${email.subject}\n\n${email.text}`, { mode: 0o600 });
+    // The preview is what ships: the gate's invisible prose marks are stripped here as at the send.
+    fs.writeFileSync(path.join(PREVIEW, "your-day.txt"), `${email.subject}\n\n${email.text.replace(/\u2063/g, "")}`, { mode: 0o600 });
     fs.writeFileSync(path.join(PREVIEW, "your-day.digest.json"), JSON.stringify(email.digest, null, 2), { mode: 0o600 });
     // --post-digest: keep the morning in Boss OS too (its screens and Today), still sending nothing.
     if (process.argv.includes("--post-digest")) await postDigest(api, email.digest);
@@ -1124,6 +1167,11 @@ async function main() {
   try { fs.mkdirSync(SENT_DIR, { recursive: true }); fs.writeFileSync(failMarks, JSON.stringify(failTold.slice(-500))); } catch { /* best effort */ }
 
   for (const r of notReportedRepairs(data.notReported, data.tasks)) await fixJob(api, r.title, r.prompt);
+  // The team's own note (a section that did not report in) is a row on ☰ More → Updates, once a day.
+  for (const line of email.teamNotes ?? []) {
+    await api.post("/task-notices/update", { key: `morning-not-reported-${day}`, from_name: "Simone", subject: "Not in this morning's email", body: line })
+      .catch((e) => console.error(`your-day: the Updates row for "${line}" was not written: ${e?.message ?? e}`));
+  }
   if (d.error) await fixJob(api, "Valerie's list did not load for the morning email", `the Porch & Party owner feed answered: ${d.error}. Simone's morning email said so in one line. Fix the read (PNP_OWNER_FEED_TOKEN, ${FEED}).`);
 
   // The morning goes to Boss OS FIRST: every link in the email opens one of its items, and Today

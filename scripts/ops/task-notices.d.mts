@@ -11,3 +11,7 @@ export const GATE_HOLD: string;
 export function gateHoldOf(status: number, text: string): string | null;
 export function isGateHold(error: unknown): boolean;
 export const ON_PAGE: string;
+export function noticeOwner(notice: Record<string, any>): { layout: string; why: string; ref: string | null; act?: string };
+export function repairTask(task: { input?: unknown } | null | undefined): boolean;
+export function plainStopWhy(why: unknown): string | null;
+export function neverStarted(task: { error?: unknown } | null | undefined): boolean;
