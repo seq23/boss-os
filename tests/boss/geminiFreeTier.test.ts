@@ -158,6 +158,41 @@ describe("meeting-prep research: Google-grounded, then their pages, then a named
     expect(r.why).toMatch(/their website \(familyoffice.example\) could not be read/);
   });
 
+  // Loop olp_m6mnjapa3tdhv3d3: gemini-2.5-flash retires 1 Dec 2026. Its errors must not end prep.
+  const PAGE2 = "Example Family Office invests in late-stage software. Pat Example, Managing Director, leads secondaries. ".repeat(4);
+  const WRITTEN = '```json\n{"found":true,"title":{"text":"Managing Director","url":"https://familyoffice.example/team"},"firm":null,"background":null,"focus":null,"upcoming":[]}\n```';
+  const readsPages = async (_e: unknown, url: string) => ({ ok: url.endsWith("/team"), text: PAGE2, finalUrl: url });
+
+  it("2.5-flash retired (404): the next free Gemini writes the prep from their pages", async () => {
+    const g = stubGemini((model) => (model === "gemini-2.5-flash" ? new Response("models/gemini-2.5-flash is not found", { status: 404 }) : geminiAnswer(WRITTEN)));
+    const r = await researchPerson(withKey(), who, readsPages);
+    expect(r).toMatchObject({ ok: true, via: "their_pages" });
+    expect(r.json.title.url).toBe("https://familyoffice.example/team");
+    const writers = g.calls.filter((c) => c.model !== "gemini-2.5-flash");
+    expect(writers.length).toBeGreaterThan(0);
+    expect(["gemini-3.8-flash", "gemini-3.6-flash", "gemini-3-flash-preview"]).toContain(writers[0]!.model);
+    expect(writers[0]!.grounded).toBe(false);
+    expect(g.calls.filter((c) => c.grounded).map((c) => c.model)).toEqual(["gemini-2.5-flash"]); // never a billed grounded search
+  });
+
+  it("every free Gemini failing: an OpenRouter free model writes it, never a paid one", async () => {
+    const e = withKey() as any; e.OPENROUTER_API_KEY = "test-key-not-a-real-credential";
+    const gem: string[] = [], or: string[] = [];
+    restore = stubFetch(async (req) => {
+      if (req.url.startsWith(GEMINI_HOST)) { gem.push(req.url); return new Response("gone", { status: 404 }); }
+      if (req.url.includes("openrouter.ai")) {
+        const body = await req.json() as any; or.push(body.model);
+        return new Response(JSON.stringify({ choices: [{ message: { content: WRITTEN } }], usage: { cost: 0 } }), { status: 200, headers: { "content-type": "application/json" } });
+      }
+      return new Response("not here", { status: 500 });
+    });
+    const r = await researchPerson(e, who, readsPages);
+    expect(r).toMatchObject({ ok: true, via: "their_pages" });
+    expect(gem.length).toBeGreaterThan(1); // 2.5-flash, then the next free Gemini models, before OpenRouter
+    expect(or.length).toBeGreaterThan(0);
+    for (const m of or) expect(m).toMatch(/:free$/);
+  });
+
   it("a committed LP never reaches Gemini: the answer says private", async () => {
     await env.DB.prepare(`INSERT INTO prospects (id, email, name, firm, source, created_at, updated_at, committed_at) VALUES ('prs_t2', 'pat@familyoffice.example', 'Pat Example', 'Example Family Office', 'test', 0, 0, ?)`).bind(Date.now()).run();
     const g = stubGemini(() => geminiAnswer(GROUNDED));

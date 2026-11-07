@@ -190,7 +190,10 @@ const sourcedCount = (j: any) => (j && j.found !== false ? ["title", "firm", "ba
  * meeting prep (scripts/ops/meeting-prep.mjs). Free Gemini only, each step pinned by its job row
  * (model_job_policies, 0338):
  *   1. meeting_prep_search — gemini-2.5-flash with Google Search grounding (the one free model where
- *      search works; it retires 1 Dec 2026). Facts kept only when Google reported the page.
+ *      search works; it retires 1 Dec 2026). Facts kept only when Google reported the page. When it
+ *      errors (retired, quota) research goes on to 2 and 3, never to a billed grounded search.
+ *   Writing (meeting_prep_write, steps 2 and 3) walks the next free Gemini models (3.8, 3.6, 3 Flash
+ *   preview), then OpenRouter's free models (migration 0354), so prep survives 2.5-flash retiring.
  *   2. else Brave Search (owner, 5 Nov 2026), at most 20 searches a day: the top results' pages are
  *      read with the browser binding (Brave's own snippet when a page will not load), and a free
  *      Gemini 3 Flash (meeting_prep_write) writes ONLY from that text, citing each result's link.
@@ -214,13 +217,13 @@ export async function researchPerson(
   if (access.access === "private_model_only") {
     return { ok: false, private: true, stop: "RESEARCH_PRIVATE", why: "they are a committed LP, so their name stays off free models" };
   }
-  const base = { routeId: "rt_ops_default", lane: "ops", sensitivity: "private", risk: "low", employeeId: "emp_chief", intakeKind: "research", onlyProviderId: "prv_gemini" } as const;
+  const base = { routeId: "rt_ops_default", lane: "ops", sensitivity: "private", risk: "low", employeeId: "emp_chief", intakeKind: "research" } as const;
   const reasons: string[] = [];
 
   // 1. Google-grounded.
   try {
     const r = await routeCompletion(env, {
-      ...base, jobKey: "meeting_prep_search", webSearch: true, maxOutputTokens: 1500,
+      ...base, onlyProviderId: "prv_gemini", jobKey: "meeting_prep_search", webSearch: true, maxOutputTokens: 1500,
       messages: [{ role: "user", content: groundedSearchPrompt({ name, email, firm, domain, today }) }],
     });
     const sources = (r.sources ?? []).filter((s) => /^https:\/\//.test(s.url)).slice(0, 20);
