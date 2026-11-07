@@ -168,6 +168,7 @@ report_stop() {
     REPORTED="$receipt"
     case "$code" in
       AI_USAGE_EXHAUSTED|NETWORK_UNREACHABLE) say "  NOTE: $code — scheduled resume is armed";;
+      SR_AWAITING_HOST_PUBLISH) say "  NOTE: $code — an Open Loops row for her publish, not a repair";;
       *) say "  reported to Danielle's repair desk: $code";;
     esac
   else
@@ -189,7 +190,8 @@ stop_unfinished() {
 }
 clear_waiting_notes() {
   local code
-  for code in AI_USAGE_EXHAUSTED NETWORK_UNREACHABLE; do
+  # SR_AWAITING_HOST_PUBLISH too: a queue at zero means the publish happened (7 Nov 2026).
+  for code in AI_USAGE_EXHAUSTED NETWORK_UNREACHABLE SR_AWAITING_HOST_PUBLISH; do
     npm run --silent vault:run -- node scripts/ops/sr-run-stopped.mjs --cleared "$code" >> "$LOG" 2>&1 || say "NOTE: could not clear $code in Open Loops (see log)"
   done
 }
@@ -270,13 +272,19 @@ main() {
     fi
     if [ "$LEFT" -ge "$BEFORE" ]; then
       STALLED=1
-      BLOCKERS="$(node --input-type=module -e '
+      # WHY IT FIXED NOTHING, NAMED (7 Nov 2026): "CODE<TAB>SENTENCE" from fixedNothingCause, empty
+      # for a genuine stall. Open PRs still blocking -> SR_BLOCKED_BY_OPEN_PRS; every fix merged but the
+      # live host not yet republished -> SR_AWAITING_HOST_PUBLISH (her Open Loops note, never a repair).
+      CAUSE="$(node --input-type=module -e '
         import {readdirSync,readFileSync} from "node:fs";
-        import {blockedStopSentence} from "./src/shared/boss/searchReadiness/orphanPr.mjs";
+        import {fixedNothingCause} from "./src/shared/boss/searchReadiness/orphanPr.mjs";
         const dir=process.argv[1];
-        console.log(blockedStopSentence(readdirSync(dir).flatMap(f=>JSON.parse(readFileSync(`${dir}/${f}`,"utf8")))));
+        const c=fixedNothingCause(readdirSync(dir).flatMap(f=>JSON.parse(readFileSync(`${dir}/${f}`,"utf8"))));
+        if (c.code) console.log(`${c.code}\t${c.sentence}`);
       ' "$STATE_DIR/round-rows")"
-      if [ -n "$BLOCKERS" ]; then say "round $ROUND blocked by open PRs: $BLOCKERS";
+      CAUSE_CODE="$(printf '%s' "$CAUSE" | cut -f1)"; BLOCKERS="$(printf '%s' "$CAUSE" | cut -f2-)"
+      if [ "$CAUSE_CODE" = SR_BLOCKED_BY_OPEN_PRS ]; then say "round $ROUND blocked by open PRs: $BLOCKERS";
+      elif [ "$CAUSE_CODE" = SR_AWAITING_HOST_PUBLISH ]; then say "round $ROUND: $BLOCKERS";
       else say "round $ROUND fixed nothing; stopping until tomorrow rather than spinning"; fi
       break
     fi
@@ -291,7 +299,7 @@ main() {
   # the queue stalled (see below). The run did reach its end, so the mark is cleared.
   if [ "$LEFT" -gt 0 ]; then
     if [ "$STALLED" -eq 1 ]; then CODE=SR_QUEUE_STALLED; WHY="round $ROUND fixed nothing"; else CODE=SR_ROUNDS_SPENT; WHY="all $MAX_ROUNDS rounds ran"; fi
-    if [ "$STALLED" -eq 1 ] && [ -n "${BLOCKERS:-}" ]; then CODE=SR_BLOCKED_BY_OPEN_PRS; WHY="$BLOCKERS"; fi
+    if [ "$STALLED" -eq 1 ] && [ -n "${CAUSE_CODE:-}" ]; then CODE="$CAUSE_CODE"; WHY="$BLOCKERS"; fi
     say "NAMED STOP [$CODE] $LEFT workable briefs left ($WHY; $FIXED fixed of $START). See $LOG."
     report_stop "$CODE" "$LEFT workable briefs left ($WHY; $FIXED fixed of $START)."
     rm -f "$MARK" "$STATE_DIR/retry-after"

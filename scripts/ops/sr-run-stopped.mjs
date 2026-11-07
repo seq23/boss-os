@@ -34,7 +34,32 @@ export function waitingNote(code, sentence, cleared = false) {
   };
 }
 
+/**
+ * THE FIXES ARE MERGED; THE LIVE SITE WAS NOT REPUBLISHED (7 Nov 2026). heygetonmylevel.com is
+ * published by hand on Lovable (Share -> Publish, signed in as her; no API, CLI or token exists), so a
+ * round whose every brief is fixed by a merged pull request cannot clear until she publishes. That is
+ * her Open Loops row (owner "sequoia": overdueRoute makes it a reminder on Updates, never an email),
+ * never a Danielle repair that would reopen every week. Not a WAITING_STOP: the 15-minute resume tick
+ * cannot publish, so the run still ends and clears its mark.
+ */
+export const OWNER_STOPS = ["SR_AWAITING_HOST_PUBLISH"];
+
+export function ownerNote(code, sentence, cleared = false) {
+  if (!OWNER_STOPS.includes(code)) throw new Error(`Not an owner stop: ${code}`);
+  return {
+    repo: "seq23/boss-os", stop: code, owner: "sequoia", business: "spry",
+    title: "A merged site fix is waiting to be published",
+    finish_line: "heygetonmylevel.com serves the merged build",
+    next_step: `Open lovable.dev for heygetonmylevel and Share → Publish from main.${sentence ? ` (${String(sentence).slice(0, 300)})` : ""}`,
+    ...(cleared ? { cleared: true } : {}),
+  };
+}
+
 export async function reportStop(api, code, sentence, cleared = false) {
+  if (OWNER_STOPS.includes(code)) {
+    await api.post("/open-loops/intake", ownerNote(code, sentence, cleared));
+    return "NOTE";
+  }
   if (WAITING_STOPS.includes(code)) {
     await api.post("/open-loops/intake", waitingNote(code, sentence, cleared));
     return "NOTE";
@@ -45,7 +70,7 @@ export async function reportStop(api, code, sentence, cleared = false) {
 }
 
 export function repairTask(code, sentence) {
-  if (WAITING_STOPS.includes(code)) throw new Error(`Waiting stop must be a note: ${code}`);
+  if (WAITING_STOPS.includes(code) || OWNER_STOPS.includes(code)) throw new Error(`Waiting stop must be a note: ${code}`);
   return {
     title: SR_RUN_TITLE,
     lane: "ops",
