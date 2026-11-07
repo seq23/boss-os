@@ -1450,6 +1450,28 @@
       }
     },
     {
+      "id": "disk-sweep",
+      "name": "Mac disk sweep",
+      "what": "Removes leaked Chrome code-sign clones, old repair-fixture folders and merged worktrees; one alert under 15 GB free.",
+      "business": "personal",
+      "brand": "Mac",
+      "system": "mac",
+      "slots": [
+        "daily 07:15"
+      ],
+      "emails": true,
+      "heavy": false,
+      "trigger": {
+        "launchd": [
+          "com.seq.disk-sweep"
+        ]
+      },
+      "output": {
+        "floor": 0,
+        "reason": "Housekeeping: a disk with nothing leaked needs nothing removed; the OUTPUT line still reports free space."
+      }
+    },
+    {
       "id": "ci-sweep-resume",
       "name": "CI sweep resume",
       "what": "Resumes a sweep the Mac's sleep interrupted.",

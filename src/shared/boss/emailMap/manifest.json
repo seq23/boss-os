@@ -845,11 +845,11 @@
       "what": "Mac disk: how much space is free after the daily clean-up",
       "sender": "Simone (for Kendra)", "owner": "Kendra",
       "from": "Simone <simone@sequoiataylor.com>", "to": "You",
-      "when": "Daily 9:00 AM, only while under 20 GB free after the clean-up",
-      "runs": "mac", "trigger": "Mac job com.seq.boss-mac-cleanup",
-      "pause": "launchctl bootout gui/501/com.seq.boss-mac-cleanup",
-      "launchd": ["com.seq.boss-mac-cleanup"],
-      "code": [{ "repo": "boss-os", "paths": ["scripts/ops/mac-cleanup.mjs"] }]
+      "when": "Daily 7:15 AM (disk sweep, under 15 GB free, once a day) and 9:00 AM (clean-up, under 20 GB free)",
+      "runs": "mac", "trigger": "Mac jobs com.seq.disk-sweep and com.seq.boss-mac-cleanup",
+      "pause": "launchctl bootout gui/501/com.seq.disk-sweep; launchctl bootout gui/501/com.seq.boss-mac-cleanup",
+      "launchd": ["com.seq.boss-mac-cleanup", "com.seq.disk-sweep"],
+      "code": [{ "repo": "boss-os", "paths": ["scripts/ops/mac-cleanup.mjs"] }, { "repo": "~/bin", "paths": ["disk-sweep.sh"] }]
     },
     {
       "id": "boss-task-notices", "business": "personal",
