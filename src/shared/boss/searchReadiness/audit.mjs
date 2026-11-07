@@ -1024,7 +1024,7 @@ export const CHECKS = {
     const cfg = loopConfigFor(r, ctx.site.domain);
     if (cfg.error) why.push(`${cfg.path} ${cfg.error}`);
     const caller = loopCaller(r);
-    if (!caller) why.push(`no workflow calls the shared engine (uses: ${LOOP_ENGINE_USES})`);
+    if (!caller) { const u = unreadWorkflows(r); if (u) return notChecked(u); why.push(`no workflow calls the shared engine (uses: ${LOOP_ENGINE_USES})`); }
     // A site whose menu pages need her approval (sites.json) must say so to the engine.
     if (ctx.site.search_loop?.menu_pages_need_approval === true && cfg.node?.menu_pages_need_approval !== true) why.push(`${cfg.path} does not set menu_pages_need_approval: true, so the engine may edit its menu pages`);
     if (ctx.site.search_loop?.strict_health_gate === true && !["health", "dental"].includes(cfg.node?.health_gate)) why.push(`${cfg.path} does not set health_gate to health or dental, so health claims are not gated`);
@@ -1042,7 +1042,7 @@ export const CHECKS = {
     const r = ctx.repo; if (!r?.ok) return r?.noRepo ? { status: "no_repo", detail: r.why } : notChecked(r?.why ?? "repo not read");
     const na = notAdopted(ctx); if (na) return na;
     const caller = loopCaller(r);
-    if (!caller) return fail(`no workflow calls the shared engine, so nothing finds new searches (uses: ${LOOP_ENGINE_USES})`);
+    if (!caller) { const u = unreadWorkflows(r); if (u) return notChecked(u); return fail(`no workflow calls the shared engine, so nothing finds new searches (uses: ${LOOP_ENGINE_USES})`); }
     if (!/schedule:/.test(caller.text) || !/cron:/.test(caller.text)) return fail(`${caller.name} has no schedule, so discovery is not weekly`);
     const cfg = loopConfigFor(r, ctx.site.domain);
     const paid = [caller.text, cfg?.raw ?? ""].join("\n").match(PAID_SEO_RE);
@@ -1111,6 +1111,16 @@ export function notAdopted(ctx) {
 }
 /** Paid search-data services; the loop is $0. */
 export const PAID_SEO_RE = /(?<![a-z])(ahrefs|semrush|dataforseo|moz_?api|serpapi|spyfu|openseo|similarweb)(?![a-z])/i;
+
+/**
+ * Workflows whose contents could not be read from the clone (a blobless clone's fetch failed). With one
+ * unread, "no workflow calls the engine" is unproven, so the loop checks say "not checked" by name
+ * instead of failing a site that may well run it (7 Nov 2026, time-2-read.com f7/f12). Null when all read.
+ */
+export function unreadWorkflows(repo) {
+  const u = (repo?.workflows ?? []).filter((w) => w.unread).map((w) => w.name);
+  return u.length ? `could not read ${u.slice(0, 3).join(", ")}${u.length > 3 ? ` and ${u.length - 3} more` : ""} from the clone, so whether a workflow calls the shared engine is unproven` : null;
+}
 
 export function loopCaller(repo) {
   return (repo?.workflows ?? []).find((w) => LOOP_CALLER_RE.test(w.text ?? "")) ?? null;

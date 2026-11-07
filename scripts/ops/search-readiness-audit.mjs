@@ -354,8 +354,12 @@ async function readRepo(name) {
   // A bare clone's refs are refs/heads/*; a fetch above updates refs/remotes/origin/*. Prefer the newer.
   const ref = git(dir, "rev-parse", "--verify", "-q", `refs/remotes/origin/${head}`).status === 0 ? `refs/remotes/origin/${head}` : head;
   const files = git(dir, "ls-tree", "-r", "--name-only", ref).stdout.split("\n").filter(Boolean);
-  const show = (p) => { const o = git(dir, "show", `${ref}:${p}`); return o.status === 0 ? o.stdout : null; };
-  const workflows = files.filter((f) => /^\.github\/workflows\/.+\.ya?ml$/.test(f)).map((f) => ({ name: f.split("/").pop(), text: show(f) ?? "" }));
+  // A blobless clone fetches each file's contents on first read; that fetch can fail for a moment
+  // (7 Nov 2026: dailystory's search-loop.yml read as empty and f7/f12 said "no workflow calls the
+  // shared engine" while it ran daily). One retry; a file still unread is marked `unread`, never ""
+  // (an empty text would read as "this workflow does not do it" and fail the site falsely).
+  const show = (p) => { for (let i = 0; i < 2; i++) { const o = git(dir, "show", `${ref}:${p}`); if (o.status === 0) return o.stdout; } return null; };
+  const workflows = files.filter((f) => /^\.github\/workflows\/.+\.ya?ml$/.test(f)).map((f) => { const text = show(f); return text == null ? { name: f.split("/").pop(), text: "", unread: true } : { name: f.split("/").pop(), text }; });
   const fresh = {};
   for (const want of FRESH_FILE_NAMES) {
     fresh[want] = files.filter((f) => f.endsWith(want)).slice(0, 40).map((p) => ({ path: p, at: Number(git(dir, "log", "-1", "--format=%ct", ref, "--", p).stdout.trim()) * 1000 })).filter((x) => x.at);
@@ -599,7 +603,10 @@ async function main() {
     failure_split: { ...split, line: splitLine(split), history_runs: history.length },
     sites: siteResults.map((s) => ({ ...s, failing: s.results.filter((r) => r.status === "fail").map((r) => r.id) })),
   };
-  writeJson(join(OUT, `results-${day}.json`), report);
+  // A one-site run (--site) never overwrites the day's full results: they are the history the next
+  // runs split against and the file fix-queue.json names as its source (7 Nov 2026: a --site run
+  // replaced 28 sites with 1).
+  writeJson(join(OUT, only ? `site-${String(only).replace(/[^a-z0-9.-]/gi, "_")}-${day}.json` : `results-${day}.json`), report);
   if (!only) writeJson(prevPath, report);
   // Her yes (Hicks, 3 Nov 2026): an approved plan for a site in the last 14 days lets its briefs be worked.
   const boss = DRY ? { ok: false, why: "dry run: nothing is posted" } : await bossSession();
@@ -630,7 +637,7 @@ async function main() {
   for (const s of siteResults) for (const l of s.diagnosis?.text ?? []) say(`    ${s.site.domain} · ${l}`);
   for (const s of siteResults) if (s.outcome?.status === "not_read") say(`  ${s.site.domain}: search results not read: ${s.outcome.why}`);
   say(`\nSPLIT (against ${history.length} earlier runs): ${splitLine(split)}`);
-  say(`\nSEARCH-READINESS: sites=${siteResults.length} checks=${ran} failing=${fails} new_sites=${split.new_sites} slipped_back=${split.slipped_back} new_items=${split.new_items} still_open=${split.still_open} briefs=${briefs.length}${DRY ? " DRY-RUN (nothing posted)" : ""} → ${join(OUT, `results-${day}.json`)}`);
+  say(`\nSEARCH-READINESS: sites=${siteResults.length} checks=${ran} failing=${fails} new_sites=${split.new_sites} slipped_back=${split.slipped_back} new_items=${split.new_items} still_open=${split.still_open} briefs=${briefs.length}${DRY ? " DRY-RUN (nothing posted)" : ""} → ${join(OUT, only ? `site-${String(only).replace(/[^a-z0-9.-]/gi, "_")}-${day}.json` : `results-${day}.json`)}`);
 
   if (flag("--morning") && !only && !DRY) {
     const { writeMorningSection } = await import("../../src/shared/boss/mail/morning.mjs");

@@ -65,6 +65,7 @@ export const LOOP_ENGINE_USES: string;
 export const LOOP_CONFIG_RE: RegExp;
 export const PAID_SEO_RE: RegExp;
 export function loopCaller(repo: any): { name: string; text: string } | null;
+export function unreadWorkflows(repo: any): string | null;
 export function loopConfigFor(repo: any, domain: string): { path: string; raw?: string; cfg?: any; node?: any; error?: string } | null;
 export function oneActionOf(cfg: any): string | null;
 export function actionMatches(target: string, action: string, base: string): boolean;
