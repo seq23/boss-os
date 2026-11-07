@@ -1,3 +1,4 @@
+import { briefingRetryWindowOpen } from "../duties/deliverReport";
 import { editionStamp } from "../duties/briefingSpec";
 import { Hono, type Context } from "hono";
 import type { Env, Vars } from "../env";
@@ -415,12 +416,10 @@ export function reportStaleness(
     return `${carried}The ${at} report duty has never fired.`;
   }
   if (duty.task_status === "failed") {
-    /*
-     * A FAILED RUN NAMES ITS REASON AND ITS RETRY. The retry is real: the duty is re-materialised on
-     * delivery of a failed report (see `deliverReport.ts`), and the Mac's next slot is when the new
-     * task is claimed. A notice that says "failed" and stops teaches her to stop looking at 7am.
-     */
-    return `${carried}The ${at} run failed: ${duty.task_error ?? "no error was recorded"}. A retry is queued for your Mac's next slot, ${nextClaimSlot(now)}.`;
+    const retry = briefingRetryWindowOpen(now)
+      ? `Morning retries are limited to three attempts; the next Mac slot is ${nextClaimSlot(now)}.`
+      : `No retry after noon Central; tomorrow's ${at} run is the next attempt.`;
+    return `${carried}The ${at} run failed: ${duty.task_error ?? "no error was recorded"}. ${retry}`;
   }
   if (duty.task_status === "cancelled") {
     return `${carried}The ${at} run was cancelled: ${duty.task_error ?? "no reason was recorded"}.`;
