@@ -199,7 +199,10 @@ describe("the Spry Labs weekly", () => {
     const notes = ["Sales: 1 paid order this week.", "Search: not read: no record.", "Pinterest (week to Oct 31): 2 visits from pins.", "Pages this week: 3 pages refreshed."];
     const mail = composeSpryWeekly({ approvalprep: fresh([{ host: "approvalprep.com", state: "fine", why: [] }], { notes }) }, { now });
     const section = mail.sections.find((s: any) => s.title === "ApprovalPrep");
-    for (const n of notes) expect(section!.items).toContain(n);
+    // Every line reaches her; the system word "not read" says "not measured" on her email (7 Nov 2026).
+    for (const n of notes) expect(section!.items).toContain(n.replace(/\bnot read\b/gi, "not measured"));
+    expect(section!.items).toContain("Search: not measured: no record.");
+    expect(section!.items.join(" ")).not.toMatch(/not read/);
     expect(mail.sections.find((s: any) => s.title === "Dream Wedding")!.items[0]).toMatch(/^No report this week/);
   });
 
