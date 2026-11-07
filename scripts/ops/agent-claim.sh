@@ -56,7 +56,22 @@ if [ "$mode" = "poll" ]; then
   fi
 fi
 
-started_of() { ps -o lstart= -p "$1" 2>/dev/null | sed 's/^ *//;s/ *$//'; }
+# A process's start time, as a stamp that never changes while the process lives. On Linux it is field 22 of
+# /proc/<pid>/stat (clock ticks since boot): `ps -o lstart` there is DERIVED as btime + ticks, and btime moves whenever
+# the wall clock is stepped (NTP, VM time sync), so a live holder's lstart could change between the write and a
+# contender's check, the holder looked dead, and its lock was taken over: two claims at once (7 Nov 2026, CI run
+# 42417606391 on #327; reproduced by stepping the clock 0.3 s). macOS has no /proc and stores the start time at fork,
+# so `ps -o lstart` is stable there. The comm field can hold spaces and parens, so fields are counted after the LAST ")".
+started_of() {
+  local stat
+  if stat="$(cat "/proc/$1/stat" 2>/dev/null)" && [ -n "$stat" ]; then
+    stat="${stat##*) }"
+    set -- $stat
+    echo "ticks:${20:-}"
+    return
+  fi
+  ps -o lstart= -p "$1" 2>/dev/null | sed 's/^ *//;s/ *$//'
+}
 
 # Is the holder recorded in the lock still the process that wrote it? An empty or unreadable record is NOT alive.
 holder_alive() {
