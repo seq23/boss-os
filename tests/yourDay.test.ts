@@ -274,7 +274,9 @@ describe("the morning shows at most five open loops, then See all (7 Nov 2026 li
     const e = buildDay({ diary: [], tasks: [], approvals: [], repoChanges: [], briefing: null, feed: { items: [] }, morning: { open_loops: { section: "open_loops", at: new Date(NOW).toISOString(), title: "Open loops: 47, 31 overdue", lines, link: { label: "See every open loop →", url: "https://boss.sequoiataylor.com/?tab=loops" } } } } as any, NOW);
     expect(e.text).toContain("Loop 5 (due");
     expect(e.text).not.toContain("Loop 6 (due");
-    expect(e.text).toContain("+12 more on Open Loops.");
+    expect(e.text).toContain("+12 more overdue on Open Loops.");
+    // One way to the page, not two (7 Nov 2026 live read: "See all ›" then "See every open loop →").
+    expect(e.text.split("https://boss.sequoiataylor.com/?tab=loops").length - 1).toBe(1);
     // Negative proof: five or six rows are shown as they are.
     const six = buildDay({ diary: [], tasks: [], approvals: [], repoChanges: [], briefing: null, feed: { items: [] }, morning: { open_loops: { section: "open_loops", at: new Date(NOW).toISOString(), title: "Your open loops: 6, 6 overdue", lines: lines.slice(0, 6) } } } as any, NOW);
     expect(six.text).toContain("Loop 6 (due");

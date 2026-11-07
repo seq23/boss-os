@@ -844,9 +844,9 @@ export function buildDay(data, now = Date.now()) {
   // listed 17); the rest is one line to the page. The writer puts her own rows first.
   const olAll = (m.open_loops?.lines ?? []).map((l) => (typeof l === "string" ? { text: l, links: [] } : { links: [], ...l }));
   const olLines = olAll.length > MAX_OPEN_LOOP_LINES + 1
-    ? [...olAll.slice(0, MAX_OPEN_LOOP_LINES), { text: `+${olAll.length - MAX_OPEN_LOOP_LINES} more on Open Loops.`, links: m.open_loops?.link?.url ? [{ label: "See all ›", url: m.open_loops.link.url }] : [] }]
+    ? [...olAll.slice(0, MAX_OPEN_LOOP_LINES), { text: `+${olAll.length - MAX_OPEN_LOOP_LINES} more overdue on Open Loops.`, links: m.open_loops?.link?.url ? [{ label: "See all ›", url: m.open_loops.link.url }] : [] }]
     : olAll;
-  const openLoopsSection = m.open_loops?.title ? { title: m.open_loops.title, tone: olLines.length ? undefined : "done", items: olLines, link: m.open_loops.link ?? null, empty: null } : null;
+  const openLoopsSection = m.open_loops?.title ? { title: m.open_loops.title, tone: olLines.length ? undefined : "done", items: olLines, link: olLines.length < olAll.length ? null : (m.open_loops.link ?? null), empty: null } : null;
 
   // 4c. Brains (31 Oct 2026): Mondays one plain line, never red; the 1st of the month the scoreboard.
   const brainsSection = brainsSectionFor(data, now);
