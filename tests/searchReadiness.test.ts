@@ -233,6 +233,53 @@ describe("checks catch what they guard", () => {
     expect(r.missing).toEqual(["https://memphisseniorcarehomes.com/memphis-va-medical-center/"]);
   });
 
+  it("a whole coverage kind absent is called a url_pattern mismatch, not a coverage gap", () => {
+    // memphisseniorcarehomes.com, 25-26 Oct 2026: service_town was
+    // /{town}/{service}/ on a site that serves flat /{service}-{town}/, so j9
+    // reported "54 of 106 coverage pages missing" when 20 were live and the
+    // real gap was 34, and two passes were sent to build existing pages.
+    const towns = Array.from({ length: 6 }, (_, i) => ({
+      kind: "town", url: `https://memphisseniorcarehomes.com/town-${i}-tn/`, inSitemap: true, status: 200,
+    }));
+    const serviceTowns = Array.from({ length: 6 }, (_, i) => ({
+      kind: "service_town", url: `https://memphisseniorcarehomes.com/town-${i}-tn/memory-care/`, inSitemap: false, status: 404,
+    }));
+    const r = CHECKS.hyperlocal_coverage(baseCtx({ coverage: { targets: [...towns, ...serviceTowns] } }));
+    expect(r.status).toBe("fail");
+    expect(r.detail).toMatch(/url_patterns\.service_town does not match this site/);
+    expect(r.detail).not.toMatch(/coverage pages missing/);
+    expect(r.evidence!.join(" ")).toMatch(/read the real URL shape off the live site/);
+    // It still lists them, so the brief keeps its URLs.
+    expect(r.missing).toHaveLength(6);
+  });
+
+  it("a real coverage gap is still reported as a count, not as a pattern mismatch", () => {
+    // The same shape with the kind only PARTLY missing is a genuine gap: this
+    // is memphisseniorcarehomes.com after the pattern was corrected, where 17
+    // of 28 towns had no care-type pages built.
+    const towns = Array.from({ length: 6 }, (_, i) => ({
+      kind: "town", url: `https://memphisseniorcarehomes.com/town-${i}-tn/`, inSitemap: true, status: 200,
+    }));
+    const serviceTowns = Array.from({ length: 6 }, (_, i) => ({
+      kind: "service_town", url: `https://memphisseniorcarehomes.com/memory-care-town-${i}-tn/`, inSitemap: i < 2, status: i < 2 ? 200 : 404,
+    }));
+    const r = CHECKS.hyperlocal_coverage(baseCtx({ coverage: { targets: [...towns, ...serviceTowns] } }));
+    expect(r.status).toBe("fail");
+    expect(r.detail).toMatch(/4 of 12 coverage pages missing/);
+    expect(r.detail).not.toMatch(/does not match this site/);
+  });
+
+  it("memphisseniorcarehomes.com expands service_town to the flat URLs the site serves", () => {
+    // The guard above reports the mismatch; this pins the corrected pattern, so
+    // reintroducing a nested one fails here rather than in a weekly brief.
+    const site = loadSites().grid_repos.find((s: any) => s.domain === "memphisseniorcarehomes.com");
+    expect(site!.coverage.url_patterns.service_town).toBe("/{service}-{town}/");
+    const paths = expandCoverage(site).filter((t: any) => t.kind === "service_town").map((t: any) => t.path);
+    expect(paths).toContain("/memory-care-memphis-tn/");
+    expect(paths).toContain("/assisted-living-germantown-tn/");
+    for (const p of paths) expect(p, `${p} must be a flat single-segment path`).toMatch(/^\/[a-z0-9-]+\/$/);
+  });
+
   it("a canonical pointing elsewhere fails a2", () => {
     const ctx = baseCtx({ pages: [page("https://memphisseniorcarehomes.com/a/", "<h1>A</h1>", '<link rel="canonical" href="https://other.com/a/">')] });
     expect(CHECKS.canonical_self(ctx).status).toBe("fail");

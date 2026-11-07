@@ -222,7 +222,13 @@ export function links(html, base) {
 }
 
 const norm = (u) => { try { const x = new URL(u); return `${x.protocol}//${x.hostname}${x.pathname.replace(/\/+$/, "") || ""}${x.search}`; } catch { return String(u); } };
-export const isUtility = (url) => /\/(privacy|terms|legal|cookie|disclaimer|accessibility|contact|thank|thanks|login|signin|404|search|unsubscribe|sitemap)/i.test(new URL(url).pathname);
+// A page that exists because something requires it to, not to be found in search.
+// `editorial-policy` joined the list on 3 Nov 2026: it is the page a publication
+// points its byline at, required for the authorship disclosure, and never a search
+// target - but it was missing here, so the consolidation queue offered
+// uscisexam.com/editorial-policy/ and dentistryguides.com/editorial-policy/ as
+// pages to 301 into their home pages.
+export const isUtility = (url) => /\/(privacy|terms|legal|cookie|disclaimer|editorial-policy|accessibility|contact|thank|thanks|login|signin|404|search|unsubscribe|sitemap)/i.test(new URL(url).pathname);
 
 // ─── The checks ───────────────────────────────────────────────────────────────
 // Each takes the fetched context and returns { status, detail, evidence?, missing? }.
@@ -471,10 +477,15 @@ export const CHECKS = {
   },
   business_type(ctx) {
     const all = okPages(ctx).flatMap((p) => jsonLd(p.html).nodes);
-    if (ctx.site.kind === "hyperlocal") {
-      const lb = deepNodes(all, /LocalBusiness|HomeAndConstructionBusiness|EntertainmentBusiness|FoodEstablishment|ProfessionalService/).find((n) => n.telephone && n.address && n.areaServed);
-      return lb ? pass(`${typesOf(lb)[0]} with telephone, address and areaServed`) : fail("no LocalBusiness with telephone, address and areaServed on any sampled page");
-    }
+    // "The business type THAT FITS, fully filled" (the item's own title). A fully filled
+    // LocalBusiness counts wherever it is found, not only on a site whose kind is "hyperlocal".
+    // 3 Nov 2026: cynthiabrowndds.com is kind "brand", a dentist with two real offices and no product;
+    // dental advertising rules (risk brain R-ADV-08 / R-CLI-07) bar the cost promises a priced Offer
+    // would be, so the brand branch was unpassable by any honest fix. Not a loosening: a site with
+    // none of these still fails, and telephone + address + areaServed is harder to fake than a price.
+    const lb = deepNodes(all, /LocalBusiness|HomeAndConstructionBusiness|EntertainmentBusiness|FoodEstablishment|ProfessionalService/).find((n) => n.telephone && n.address && n.areaServed);
+    if (lb) return pass(`${typesOf(lb)[0]} with telephone, address and areaServed`);
+    if (ctx.site.kind === "hyperlocal") return fail("no LocalBusiness with telephone, address and areaServed on any sampled page");
     // PRICE ON REQUEST (owner, 6 Nov 2026): a business with no set pricing (detoxdenver.org) never
     // invents one. An Offer with no price counts when it says so honestly (a description naming a
     // call, contact, request or quote) and gives the url to ask at. An empty Offer still fails.
@@ -484,7 +495,7 @@ export const CHECKS = {
     const prod = nodes.find((n) => deepNodes([n], /^(Offer|AggregateOffer)$/).some(priced));
     if (prod) return pass(`${typesOf(prod)[0]} with an Offer and a price`);
     const asked = nodes.find((n) => deepNodes([n], /^(Offer|AggregateOffer)$/).some(onRequest));
-    return asked ? pass(`${typesOf(asked)[0]} with a price-on-request Offer and where to ask`) : fail("no SoftwareApplication, Product or Service with a priced Offer, or an honest price-on-request Offer (description and url), on any sampled page");
+    return asked ? pass(`${typesOf(asked)[0]} with a price-on-request Offer and where to ask`) : fail("no SoftwareApplication, Product or Service with a priced Offer, or an honest price-on-request Offer (description and url), and no LocalBusiness with telephone, address and areaServed, on any sampled page");
   },
   speakable(ctx) {
     const bad = []; let any = 0;
@@ -746,6 +757,43 @@ export const CHECKS = {
     if (!c.targets.length) return pass("no place-based targets for this site (coverage model not_local)");
     const missing = c.targets.filter((t) => !t.inSitemap || t.status !== 200);
     const byKind = {}; for (const t of missing) byKind[t.kind] = (byKind[t.kind] ?? 0) + 1;
+    const totalByKind = {}; for (const t of c.targets) totalByKind[t.kind] = (totalByKind[t.kind] ?? 0) + 1;
+
+    // A url_pattern that does not match the site's real routing misses EVERY
+    // page of its kind, and the plain count reads it as a coverage gap. That
+    // happened to memphisseniorcarehomes.com on 25 and 26 Oct 2026: the
+    // service_town pattern was /{town}/{service}/ on a site that has only ever
+    // served flat /{service}-{town}/ URLs, so the brief said "54 of 106
+    // coverage pages missing" when 20 of those 54 were live and in the sitemap
+    // the whole time, and the real gap was 34. Two passes were sent to build
+    // pages that already existed.
+    //
+    // The tell is the shape of the miss, not its size: one kind wholly absent
+    // while another kind is almost entirely present means the site is healthy
+    // and the pattern is wrong, because a site that really had built none of
+    // one kind would not have built its towns either. Say that instead of a
+    // count, and name the pattern to read off the live site.
+    const suspectKinds = Object.keys(totalByKind).filter((k) => {
+      if (totalByKind[k] < 4 || (byKind[k] ?? 0) !== totalByKind[k]) return false;
+      const others = Object.keys(totalByKind).filter((o) => o !== k);
+      const otherTotal = others.reduce((n, o) => n + totalByKind[o], 0);
+      const otherMissing = others.reduce((n, o) => n + (byKind[o] ?? 0), 0);
+      return otherTotal >= 4 && otherMissing / otherTotal <= 0.1;
+    });
+    if (suspectKinds.length) {
+      const k = suspectKinds[0];
+      return fail(
+        `url_patterns.${k} does not match this site: all ${totalByKind[k]} ${k.replace("_", " × ")} URLs are absent while the rest of the coverage is live`,
+        {
+          missing: missing.map((t) => t.url),
+          evidence: [
+            `every ${k} URL expanded from url_patterns.${k} is missing, and ${Object.keys(totalByKind).filter((o) => o !== k).map((o) => `${totalByKind[o] - (byKind[o] ?? 0)} of ${totalByKind[o]} ${o}`).join(", ")} are live and in the sitemap.`,
+            `A site that had built none of one kind would not have built the others, so read the real URL shape off the live site and correct url_patterns.${k} in sites.json before treating this as a coverage gap.`,
+            ...missing.filter((t) => t.kind === k).slice(0, 5).map((t) => `${t.url}: ${t.status === 200 ? "not in sitemap" : `answered ${t.status ?? t.error}`}`),
+          ],
+        },
+      );
+    }
     return missing.length
       ? fail(`${missing.length} of ${c.targets.length} coverage pages missing (${Object.entries(byKind).map(([k, n]) => `${n} ${k.replace("_", " × ")}`).join(", ")})`, { missing: missing.map((t) => t.url), evidence: missing.slice(0, 20).map((t) => `${t.url}: ${t.status === 200 ? "not in sitemap" : `answered ${t.status ?? t.error}`}`) })
       : pass(`all ${c.targets.length} coverage pages live and in the sitemap`);
