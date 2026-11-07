@@ -41,7 +41,7 @@ const REQUIRED_DOMAINS = [
   "weddingchecklistpdf.com", "weddingbudgetspreadsheet.com", "weddingseatingchartmaker.com", "weddingtimelinetemplate.com",
   "aplayermode.com", "founderoperatorlibrary.com", "memphisvendorlibrary.com", "professionalresourcelibrary.com",
   "howweknowdeep.com", "porchandparty901.com", "virtualagency-os.com", "horselegalguide.com", "hicksconsulting.org",
-  "billionairehighperformancecoach.com", "spryexecutiveos.com",
+  "billionairehighperformancecoach.com",
   // 1 Nov 2026: heygetonmylevel is IN search work; the two wave-3 client sites are audited (never shown).
   "heygetonmylevel.com", "detoxdenver.org", "cynthiabrowndds.com",
   // 6 Nov 2026: KeepMyProof (a Spry Labs app, live since 1 Nov; SEO/AEO/GEO first priority) runs the loop.
@@ -192,7 +192,7 @@ describe("every grid repo site has a coverage manifest", () => {
   });
 
   it("the Spry Labs download page is protected, with its hash and buy link", () => {
-    for (const d of ["billionairehighperformancecoach.com", "spryexecutiveos.com"]) {
+    for (const d of ["billionairehighperformancecoach.com"]) {
       const s = sites.grid_repos.find((x: any) => x.domain === d);
       expect(s.protected_pages[0]).toMatchObject({ path: "/download", sha256: expect.stringMatching(/^[0-9a-f]{64}$/), buy_link: expect.stringMatching(/^https:\/\/sprylabs\.gumroad\.com\//) });
       expect(s.protected_pages[0].rule).toMatch(/single-page change/);
@@ -400,7 +400,7 @@ describe("checks catch what they guard", () => {
   });
 
   it("b2 and c1 on the Spry Labs download page are accepted exceptions: only that page, only those two checks (26 Oct 2026)", () => {
-    for (const domain of ["billionairehighperformancecoach.com", "spryexecutiveos.com"]) {
+    for (const domain of ["billionairehighperformancecoach.com"]) {
       const s = sites.grid_repos.find((x: any) => x.domain === domain);
       const exc = s.protected_pages.find((p: any) => p.path === "/download").accepted_exceptions.map((x: any) => x.item);
       expect(exc).toEqual(["b2", "c1"]);
@@ -417,7 +417,7 @@ describe("checks catch what they guard", () => {
     }
     // No other site, and no other page, carries an exception.
     const all = sites.grid_repos.flatMap((x: any) => (x.protected_pages ?? []).filter((p: any) => p.accepted_exceptions?.length).map((p: any) => `${x.domain}${p.path}`));
-    expect(all.sort()).toEqual(["billionairehighperformancecoach.com/download", "spryexecutiveos.com/download"]);
+    expect(all.sort()).toEqual(["billionairehighperformancecoach.com/download"]);
   });
 
   it("every applicable automatic item gets a verdict line (nothing silently skipped)", () => {
@@ -1131,7 +1131,7 @@ describe("F · the search growth loop on every selling site (owner, 1 Nov 2026)"
     expect(loop).toEqual([
       "aplayermode.com", "approvalprep.com", "billionairehighperformancecoach.com", "cynthiabrowndds.com", "dentistryguides.com", "detoxdenver.org",
       "heygetonmylevel.com", "hicksconsulting.org", "hormonesivhair.com", "horselegalguide.com", "keepmyproof.com", "memphisseniorcarehomes.com", "neuroevalguides.com",
-      "porchandparty901.com", "spryexecutiveos.com", "theaccidentguides.com", "theindustryguides.com", "time-2-read.com", "uscisexam.com",
+      "porchandparty901.com", "theaccidentguides.com", "theindustryguides.com", "time-2-read.com", "uscisexam.com",
       "weddingbudgetspreadsheet.com", "weddingchecklistpdf.com", "weddingseatingchartmaker.com", "weddingtimelinetemplate.com",
     ]);
     for (const s of sites.grid_repos.filter((x: any) => x.search_loop)) expect([1, 2, 3], s.domain).toContain(s.search_loop.wave);

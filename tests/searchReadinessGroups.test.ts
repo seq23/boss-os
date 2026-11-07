@@ -32,13 +32,17 @@ describe("Search Readiness groups (7 Nov 2026)", () => {
     const excluded = ((sites as any).excluded as any[]).map((x) => x.repo);
     expect(excluded).toEqual(expect.arrayContaining(["901johnsons-site", "topbarz-voting", "charm-nest", "courtscope"]));
     for (const r of rows) expect(excluded, r.domain).not.toContain(r.repo);
+    // A dropped domain (owner, 7 Nov 2026: spryexecutiveos.com) is never audited.
+    const dropped = ((sites as any).dropped as any[]).map((x) => x.domain);
+    expect(dropped).toContain("spryexecutiveos.com");
+    for (const r of rows) expect(dropped, r.domain).not.toContain(r.domain);
   });
 
   it("a sunsetting site is audited and its briefs are never worked; the same site without the flag is", () => {
     const checklist = loadChecklist();
-    const spry = rows.find((r) => r.domain === "spryexecutiveos.com");
-    expect(spry.sunsetting).toBeTruthy();
-    const result = [{ id: "b3", status: "fail", detail: "https://spryexecutiveos.com/about: no description" }];
+    // No live site is sunsetting since spryexecutiveos.com was dropped (7 Nov 2026); the flag is exercised on a copy.
+    const spry = { ...rows.find((r) => r.domain === "billionairehighperformancecoach.com"), sunsetting: "Sunset when its domain expires" };
+    const result = [{ id: "b3", status: "fail", detail: "https://billionairehighperformancecoach.com/about: no description" }];
     const sun = fixBriefs(checklist, [{ site: spry, host: spry.domain, results: result }]);
     expect(sun.map((b: any) => b.disposition)).toEqual(["sunsetting"]);
     expect(workQueue(sun)).toMatchObject({ workable: 0, chunks: [] });
@@ -48,9 +52,10 @@ describe("Search Readiness groups (7 Nov 2026)", () => {
 
   it("the standings name the business first and mark a sunsetting site", () => {
     const site = (d: string) => ({ site: rows.find((r) => r.domain === d), results: [{ id: "b3", status: "fail", detail: "x" }], failing: [{}] });
-    const html = renderStandings({ day: "2026-11-09", sites: [site("dentistryguides.com"), site("spryexecutiveos.com")] }, loadChecklist());
+    const sun = { ...site("billionairehighperformancecoach.com"), site: { ...rows.find((r) => r.domain === "billionairehighperformancecoach.com"), sunsetting: "Sunset when its domain expires" } };
+    const html = renderStandings({ day: "2026-11-09", sites: [site("dentistryguides.com"), sun] }, loadChecklist());
     expect(html).toMatch(/<b>Industry Guides<\/b> · dentistryguides\.com/);
-    expect(html).toMatch(/spryexecutiveos\.com <span class="muted" data-sunsetting>sunsetting<\/span>/);
+    expect(html).toMatch(/billionairehighperformancecoach\.com <span class="muted" data-sunsetting>sunsetting<\/span>/);
     expect(html).not.toMatch(/<td>dentistryguides\.com/);
   });
 });
