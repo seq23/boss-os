@@ -1151,6 +1151,21 @@ export function auditHost(domain, finalUrl) {
   return h && bare(h) === bare(domain) ? h : domain;
 }
 
+/**
+ * THE PAGE WHOSE SOCIAL CARD IS THIS SITE'S (7 Nov 2026, item b6). The og:image probe read the home
+ * page as fetched, redirects followed. spryexecutiveos.com/ answers 301 to
+ * billionairehighperformancecoach.com, so b6 graded the OTHER site's card ("og:image is on
+ * billionairehighperformancecoach.com") while every one of the spry host's 55 sitemap pages carried
+ * its own 1200x630 card on its own host. Same rule as auditHost: a redirect to another site never
+ * makes that site's page this one's. The home page counts when it answered on this site (www and
+ * apex alike); otherwise the first sampled page that answered 200 on this site with an og:image.
+ * Returns null when no page of this site states one, which social_tags then fails on its own terms.
+ */
+export function socialCardPage(domain, pages) {
+  const onSite = (p) => { try { return bare(new URL(p.final ?? p.url).hostname) === bare(domain); } catch { return false; } };
+  return (pages ?? []).find((p) => p.status === 200 && p.html && onSite(p) && metaContent(p.html, "og:image")[0]) ?? null;
+}
+
 /** The site's newest usable weekly report, or `{ result }`: the status to return instead. */
 export function loopWeek(ctx) {
   const r = ctx.repo;
