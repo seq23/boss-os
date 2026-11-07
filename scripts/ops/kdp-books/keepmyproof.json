@@ -1,0 +1,190 @@
+{
+  "_what": "The five KeepMyProof front-door Kindle books, one per app folder, in the order they are drafted (owner, 7 Nov 2026: divorce first). kdp-kmp-draft.mjs reads this; the facts, checklists, logo and fonts are read from seq23/keepmyproof at build time, never copied here.",
+  "_why_titles": "Titles and keywords follow the KeepMyProof search volumes in the spry brain's Numbers (Google Ads Keyword Planner, US, Oct 2025 to Sep 2026). No word of 4+ letters is shared between a title and its subtitle: Amazon flagged The Gift Letter for exactly that (kdp-register.json).",
+  "line": "keepmyproof",
+  "author": "S. L. Taylor",
+  "publisher": "Spry Labs",
+  "ai_disclosure": { "text": "ai_generated", "images": "ai_generated", "translations": "none", "tools": "Large language models for first drafts; every page reviewed before publishing" },
+  "language": "English",
+  "currency": "USD",
+  "site": "https://keepmyproof.com",
+  "shared_rules": [
+    "Educational only. Not legal advice. KeepMyProof and Spry Labs are not law firms.",
+    "Never promise an outcome, never say a record proves anything, never call anything court-ready or admissible.",
+    "Keep only what the reader already has or wrote; never snoop, record in secret or take what is not theirs."
+  ],
+  "books": [
+    {
+      "folder": "divorce",
+      "topic_id": "divorce-prep",
+      "slug": "kmp-divorce",
+      "title": "The Co-Parenting Log",
+      "subtitle": "A Custody Documentation Workbook for Divorce Prep, With Printable Checklists and Official Court Links by State",
+      "cover_kicker": "Divorce prep · Custody",
+      "keywords": [
+        "co parenting journal",
+        "custody documentation",
+        "how to document for custody",
+        "divorce preparation checklist",
+        "documents to gather before divorce",
+        "save text messages for divorce",
+        "parenting time and visitation log"
+      ],
+      "_keywords_why": "co parenting app 10K-100K (the book points to the app but is not one, so the term is not used as a keyword); custody documentation app, divorce evidence 10-100; how to document for custody and co parenting log: no data. Volumes: spry brain Numbers, 7 Nov 2026.",
+      "categories": ["Family & Relationships › Divorce & Separation", "Family & Relationships › Parenting › Single Parent"],
+      "price_usd": 4.99,
+      "folder_url": "https://keepmyproof.com/divorce/",
+      "printable_url": "https://keepmyproof.com/tools/co-parenting-log-printable",
+      "facts": [
+        { "file": "custody-and-parenting-plans.json", "label": "Custody and parenting plans", "max": 2 },
+        { "file": "residency-and-where-to-file.json", "label": "Where to file", "max": 2 },
+        { "file": "protective-orders.json", "label": "Protective orders", "max": 1 },
+        { "file": "child-support-guidelines.json", "label": "Child support", "max": 1 },
+        { "file": "divorce-records.json", "label": "Copies of divorce records", "max": 2 }
+      ],
+      "logs": [
+        { "name": "Co-parenting log", "fields": ["Date", "Time", "What was planned", "What happened", "Notes"], "rows": 2 },
+        { "name": "Handoff and visit log", "fields": ["Date", "Planned time and place", "Actual time", "Who did the handoff", "Anything to note"], "rows": 2 },
+        { "name": "Messages received", "fields": ["Date received", "From", "How (text, email, app, voicemail)", "What it was about, in a few words", "Where the copy is saved"], "rows": 2 },
+        { "name": "Child expenses", "fields": ["Date", "What it was for", "Amount", "Who paid", "Receipt saved? Where"], "rows": 2 },
+        { "name": "Papers I have", "fields": ["Paper", "Date on it", "Where the copy is kept", "Copy given to (name of lawyer or office)"], "rows": 2 }
+      ],
+      "chapters": [
+        { "id": "start", "title": "Start here: keep what you already have", "brief": "Why a parent going through divorce or a custody case keeps dated copies and notes: memory fades under stress, and a lawyer, mediator or court self-help center can only work with what the parent can show them. The scope rule: keep copies of papers and messages you already have or that were sent to you, and notes you write yourself. Never go into a spouse's phone, email or accounts, never record anyone in secret, and never move or hide money; ask a lawyer what is allowed where you live. End with what the rest of the book gives them: a checklist, logs and the official court pages for their state." },
+        { "id": "log", "title": "How to keep a co-parenting log", "brief": "How to write log entries that stay useful: the same day, date and time first, what was planned and what actually happened, facts not feelings, the child's words in quotes only if the parent heard them directly, no guesses about the other parent's motives, short entries, corrections added as a new dated line instead of erasing. A good entry and a weak entry side by side, as an invented example with no names (use 'the other parent' and 'our child'). Keep the log in one place: a notebook, the printable log, or an app." },
+        { "id": "messages", "title": "Saving messages, photos and screenshots from your own phone", "brief": "Practical steps for keeping copies of messages that were sent to the reader: screenshot the whole conversation with the date visible, keep the original messages on the phone too, export or email copies to themself where the app allows it, note in the messages log where each copy is saved, keep photos with their original dates, keep a backup in a second place. Never edit or crop a copy in a way that changes what it says. Only the reader's own phone and accounts." },
+        { "id": "papers", "title": "Gathering the papers before you meet a lawyer or mediator", "brief": "Walk through the seven checklist groups in plain words (bank, retirement and debt statements; pay stubs and tax returns; household bills and expenses; home, car and property papers; agreements and court papers you already have; messages sent to you; the co-parenting log) and what a copy of each usually looks like. Suggest making one folder per group and one list of what is in it, and bringing copies, never the only original. Say plainly that what is needed varies by state and by case, and the lawyer or the court's self-help center says what matters for theirs." },
+        { "id": "calm", "title": "Writing to the other parent when things are tense", "brief": "How to keep messages to the other parent short, polite and about the child and the schedule, because anything written may be read later by others. Answer the question asked, confirm times and places in writing, avoid sarcasm, threats and long arguments, wait before replying when angry, and use one channel when possible. No legal advice and no claims about what courts think." },
+        { "id": "help", "title": "Where to get help", "brief": "Point to the kinds of help that exist without promising any: the court's own self-help center or family law facilitator (most state court websites have one; the state pages at the back of this book link to official ones), legal aid organizations for people with lower incomes, the local bar association's lawyer referral service, and mediators. If anyone is in danger, call 911; protective orders are covered for each state at the back. Remind the reader that this book is not legal advice and that rules differ by state." }
+      ]
+    },
+    {
+      "folder": "workplace",
+      "topic_id": "workplace-evidence",
+      "slug": "kmp-workplace",
+      "title": "The Workplace Incident Log",
+      "subtitle": "A Hostile Work Environment Documentation Workbook, With Printable Checklists and State Filing Deadlines",
+      "cover_kicker": "Work · Pay · Complaints",
+      "keywords": ["hostile work environment", "how to document workplace harassment", "workplace documentation journal", "what to save before quitting your job", "unpaid wages final paycheck", "discrimination complaint deadline", "employee incident report log"],
+      "_keywords_why": "hostile work environment 10-100; the rest are the folder's search phrases in topics.json.",
+      "categories": ["Business & Money › Human Resources › Employee Rights", "Law › Labor & Employment Law"],
+      "price_usd": 4.99,
+      "folder_url": "https://keepmyproof.com/workplace/",
+      "printable_url": "https://keepmyproof.com/tools/workplace-incident-log-printable",
+      "facts": [
+        { "file": "discrimination-complaint-deadlines.json", "label": "Discrimination complaint deadlines", "max": 2 },
+        { "file": "unpaid-wages-and-final-paycheck.json", "label": "Unpaid wages and the final paycheck", "max": 2 },
+        { "file": "minimum-wage.json", "label": "Minimum wage", "max": 1 },
+        { "file": "overtime-rules.json", "label": "Overtime", "max": 1 }
+      ],
+      "logs": [
+        { "name": "Workplace incident log", "fields": ["Date and time", "Place", "Who was there", "What was said or done", "What I did after"], "rows": 2 },
+        { "name": "Hours and pay check", "fields": ["Pay period", "Hours I worked", "Hours on the pay stub", "Amount paid", "Pay stub saved? Where"], "rows": 2 },
+        { "name": "Complaints and replies", "fields": ["Date", "To whom", "How (email, form, meeting)", "What I reported", "Reply and date"], "rows": 2 }
+      ],
+      "chapters": [
+        { "id": "start", "title": "Start here: keep what you received or wrote", "brief": "Why a worker facing harassment, unfair treatment or unpaid wages keeps dated notes and copies. Scope: keep what you received or wrote; never record anyone in secret, never copy company systems or files you are not allowed to take. Ask a lawyer or the agency what is allowed." },
+        { "id": "notes", "title": "Writing incident notes that stay useful", "brief": "Same-day notes: date, time, place, who was there, exact words if you remember them, what you did after. Facts, not conclusions. An invented example with no names." },
+        { "id": "pay", "title": "Keeping pay and hours records", "brief": "Compare your own record of hours with pay stubs; keep schedules, stubs and messages about pay that were sent to you." },
+        { "id": "report", "title": "Reporting inside the company, in writing", "brief": "Keep a copy of any complaint you make and every reply; note dates. No legal advice." },
+        { "id": "help", "title": "Where to get help", "brief": "The EEOC, state labor departments and fair employment agencies, legal aid, the bar's lawyer referral service. Deadlines exist and differ by state; the state pages at the back list official sources." }
+      ]
+    },
+    {
+      "folder": "va",
+      "topic_id": "va-disability-papers",
+      "slug": "kmp-va",
+      "title": "The VA Papers Binder",
+      "subtitle": "A Disability Claim Checklist for Veterans and Families, With Printable Logs and State Veterans Office Links",
+      "cover_kicker": "Veterans · Service papers",
+      "keywords": ["va disability claim checklist", "va disability evidence", "buddy statement for va claim", "what to bring to a c&p exam", "dd214 and military records", "veterans service officer help", "veteran records organizer"],
+      "_keywords_why": "va disability evidence 10-100; va disability claim checklist: no data; the rest are the folder's search phrases.",
+      "categories": ["Reference › Military", "Self-Help › Personal Transformation"],
+      "price_usd": 4.99,
+      "folder_url": "https://keepmyproof.com/va/",
+      "printable_url": "https://keepmyproof.com/tools/va-intent-to-file-date-calculator",
+      "facts": [
+        { "file": "free-claim-help.json", "label": "Free claim help", "max": 2 },
+        { "file": "state-veterans-affairs-office.json", "label": "State veterans office", "max": 1 },
+        { "file": "va-regional-office.json", "label": "VA regional office", "max": 1 },
+        { "file": "dd214-and-military-records.json", "label": "DD-214 and military records", "max": 1 }
+      ],
+      "logs": [
+        { "name": "Appointments and exams", "fields": ["Date", "Where", "Who I saw", "What was discussed", "Papers given to me"], "rows": 2 },
+        { "name": "What I sent the VA", "fields": ["Date sent", "What it was", "How sent", "Copy kept where", "Reply and date"], "rows": 2 },
+        { "name": "Statements from people who know", "fields": ["Name of the person", "How they know", "Date of statement", "Copy kept where"], "rows": 2 }
+      ],
+      "chapters": [
+        { "id": "start", "title": "Start here: papers and dates only", "brief": "This book keeps papers and dates. It is not affiliated with the VA and never prepares, files, rates or judges a claim. Free accredited help is listed on va.gov." },
+        { "id": "service", "title": "Service papers and records you already have", "brief": "DD-214 and other service papers, keeping copies, where the originals live." },
+        { "id": "medical", "title": "Medical records and appointment notes", "brief": "Keeping copies of records you have and dated notes after each appointment." },
+        { "id": "sent", "title": "Keeping a copy of everything you send and receive", "brief": "One log of what went to the VA and what came back, with dates." },
+        { "id": "help", "title": "Free help", "brief": "Accredited veterans service officers and state veterans offices help at no cost; the state pages list official ones. Never pay for claim help you can get free." }
+      ]
+    },
+    {
+      "folder": "executor",
+      "topic_id": "executor-papers",
+      "slug": "kmp-executor",
+      "title": "The Executor Binder",
+      "subtitle": "A Checklist Workbook for Settling a Parent's Estate, With Printable Task Lists and State Probate Links",
+      "cover_kicker": "After a parent dies",
+      "keywords": ["executor checklist", "executor of estate checklist", "what to do when someone dies checklist", "documents needed after a death", "heirs property", "small estate affidavit", "estate organizer workbook"],
+      "_keywords_why": "heirs property 1K-10K; executor checklist 100-1K; executor binder: no data.",
+      "categories": ["Law › Estate Planning", "Self-Help › Death, Grief & Loss"],
+      "price_usd": 4.99,
+      "folder_url": "https://keepmyproof.com/executor/",
+      "printable_url": "https://keepmyproof.com/tools/executor-task-list-printable",
+      "facts": [
+        { "file": "probate-process.json", "label": "Probate", "max": 2 },
+        { "file": "small-estate.json", "label": "Small estates", "max": 1 },
+        { "file": "death-certificates.json", "label": "Death certificates", "max": 1 },
+        { "file": "executor-duties.json", "label": "Executor duties", "max": 1 }
+      ],
+      "logs": [
+        { "name": "Executor task list", "fields": ["Task", "Who to contact", "Papers needed", "Date done", "Notes"], "rows": 2 },
+        { "name": "Accounts and property", "fields": ["Account or property", "Where the papers are", "Who to contact", "Status and date"], "rows": 2 },
+        { "name": "Bills and letters to close out", "fields": ["From", "Date received", "What it asks", "Date answered"], "rows": 2 }
+      ],
+      "chapters": [
+        { "id": "start", "title": "Start here: papers, not advice", "brief": "Keeping the papers after a parent dies. No legal or tax advice, no deadlines calculated; the probate court or a lawyer says what applies." },
+        { "id": "first", "title": "The first papers to find", "brief": "Will or trust copies, death certificates, court papers naming the executor." },
+        { "id": "accounts", "title": "Accounts, property and family land", "brief": "Listing accounts and property; family land passed down without a will (heirs' property) and why its papers matter." },
+        { "id": "bills", "title": "Bills and letters", "brief": "Logging what arrives and what was answered." },
+        { "id": "help", "title": "Where to get help", "brief": "The probate court's self-help pages, legal aid, the bar's lawyer referral service." }
+      ]
+    },
+    {
+      "folder": "iep",
+      "topic_id": "iep-binder",
+      "slug": "kmp-iep",
+      "title": "The IEP Binder",
+      "subtitle": "A Special Education Workbook for Parents, With Meeting Notes Templates and State Parent Center Links",
+      "cover_kicker": "Special education · Parents",
+      "keywords": ["iep binder for parents", "iep binder template", "how to prepare for an iep meeting", "iep meeting checklist", "special education records organizer", "parent training and information center", "iep meeting notes"],
+      "_keywords_why": "iep binder 100-1K (high competition); iep binder template: no data; the rest are the folder's search phrases.",
+      "categories": ["Education & Teaching › Schools & Teaching › Special Education", "Parenting & Relationships › Parenting › Special Needs"],
+      "price_usd": 4.99,
+      "folder_url": "https://keepmyproof.com/iep/",
+      "printable_url": "https://keepmyproof.com/tools/iep-meeting-notes-printable",
+      "facts": [
+        { "file": "evaluation-timeline.json", "label": "Evaluation timeline", "max": 2 },
+        { "file": "parent-training-center.json", "label": "Parent center", "max": 1 },
+        { "file": "dispute-resolution.json", "label": "Disagreements", "max": 1 },
+        { "file": "transition-planning.json", "label": "Transition planning", "max": 1 }
+      ],
+      "logs": [
+        { "name": "IEP meeting notes", "fields": ["Topic", "What was said", "Who said it", "What was agreed", "Follow-up by (date)"], "rows": 2 },
+        { "name": "Messages from school", "fields": ["Date", "From", "About", "Reply and date"], "rows": 2 },
+        { "name": "Records I have", "fields": ["Record", "Date on it", "Where kept"], "rows": 2 }
+      ],
+      "chapters": [
+        { "id": "start", "title": "Start here: your child's records stay with you", "brief": "Keeping the IEP, evaluations, progress reports and school messages in one place. No advice about school services." },
+        { "id": "binder", "title": "Setting up the binder", "brief": "Sections and order." },
+        { "id": "meeting", "title": "Before, during and after an IEP meeting", "brief": "Notes, questions, follow-up in writing." },
+        { "id": "messages", "title": "Keeping school messages", "brief": "Copies and a dated log." },
+        { "id": "help", "title": "Where to get help", "brief": "Each state's federally funded Parent Training and Information Center; the state pages list official ones." }
+      ]
+    }
+  ]
+}

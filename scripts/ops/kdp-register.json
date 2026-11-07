@@ -131,6 +131,21 @@
       "status": "LIVE",
       "status_as_of": "2026-09-12",
       "line": "wedding"
+    },
+    {
+      "title_ref": "draft:kmp-divorce",
+      "title": "The Co-Parenting Log",
+      "subtitle": "A Custody Documentation Workbook for Divorce Prep, With Printable Checklists and Official Court Links by State",
+      "author": "S. L. Taylor",
+      "publisher": "Spry Labs",
+      "target": "LIVE",
+      "status": "DRAFT_LOCAL",
+      "status_as_of": "2026-11-07",
+      "line": "keepmyproof",
+      "kmp_folder": "divorce",
+      "ai_disclosure": true,
+      "draft_dir": "~/.boss-os/kdp/keepmyproof/divorce",
+      "note": "Drafted, not on Amazon. Nothing uploads to KDP until she approves it in the Inbox (kdp_new_title); then kdp-new-title.mjs creates it in one pass and presses Publish, never Save as Draft (Save as Draft drops the AI disclosure)."
     }
   ],
   "facts_about_kdp": {

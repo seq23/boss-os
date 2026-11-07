@@ -64,4 +64,11 @@ say "=== publisher exited rc=$RC ==="
 ln -sf "$RUN_LOG" "$LOG_DIR/latest.log"
 grep -o 'KDP-PUBLISH:.*' "$RUN_LOG" | tail -5 | tee -a /dev/stderr
 
+# ─── NEW TITLES SHE APPROVED (kdp_new_title; the KeepMyProof books, owner 7 Nov 2026) ──────────
+# Amazon asks for a fresh sign-in on every title-setup page and no script types her password, so a
+# new title goes up in ONE VISIBLE run she is present for: `npm run kdp:new-title` (kdp-new-title.mjs).
+# This unattended slot never opens that window; it names, on its own line, an approved title waiting.
+npm run --silent vault:run -- node scripts/ops/kdp-new-title.mjs --waiting >> "$RUN_LOG" 2>&1
+grep -o 'KDP-NEW-TITLE:.*' "$RUN_LOG" | tail -3 | tee -a /dev/stderr
+
 exit $RC

@@ -1256,3 +1256,54 @@ kdp.get("/publish", async (c) => {
     .all<any>();
   return ok(c, { attempts: rows.results ?? [] });
 });
+
+/**
+ * NEW KINDLE TITLES SHE HAS APPROVED (`kdp_new_title`, owner 7 Nov 2026: the KeepMyProof books).
+ * `kdp-new-title.mjs` (run by kdp-publish.sh) reads this list; a title is on it from her yes until
+ * an attempt records the bookshelf reading Live. The title is matched to its local draft by the
+ * judgement's title, which is the book's title.
+ */
+kdp.get("/new-titles", async (c) => {
+  const rows = await c.env.DB
+    .prepare(
+      `SELECT j.id, j.title, j.state, j.decided_at, j.her_note, a.decided_by, a.decision_note
+         FROM judgement_calls j JOIN approvals a ON a.id = j.approval_id
+        WHERE j.resume_kind = 'kdp_new_title' AND j.state = 'approved'
+          AND NOT EXISTS (SELECT 1 FROM kdp_publish_attempts p
+                           WHERE p.judgement_id = j.id AND p.resulting_state = 'LIVE')
+        ORDER BY j.decided_at`,
+    )
+    .all<any>();
+  const attempts = await c.env.DB
+    .prepare(`SELECT judgement_id, attempted_at, resulting_state, run_outcome, stop_code, amazon_message FROM kdp_publish_attempts WHERE source = 'new_title' ORDER BY attempted_at DESC LIMIT 40`)
+    .all<any>();
+  return ok(c, { approved: rows.results ?? [], attempts: attempts.results ?? [] });
+});
+
+/** One attempt at a new title, as the run saw it: the bookshelf's state, never "Publish clicked". */
+kdp.post("/new-titles/:id/attempt", async (c) => {
+  const id = c.req.param("id");
+  const b = await c.req.json<any>().catch(() => null);
+  const j = await c.env.DB
+    .prepare(`SELECT id, title FROM judgement_calls WHERE id = ? AND resume_kind = 'kdp_new_title' AND state = 'approved'`)
+    .bind(id).first<{ id: string; title: string }>();
+  if (!j) throw notFound("No approved new Kindle title with that id");
+  const STATES = new Set(["LIVE", "IN_REVIEW", "PUBLISHING", "DRAFT", "BLOCKED", "NOT_FOUND"]);
+  const state = STATES.has(String(b?.resulting_state)) ? String(b.resulting_state) : null;
+    // The table's own two words: a run that could not start is not a run that found nothing.
+  const outcome = b?.run_outcome === "could-not-run" ? "could-not-run" : "attempted";
+  const now = Date.now();
+  await c.env.DB
+    .prepare(
+      `INSERT INTO kdp_publish_attempts (id, attempted_at, judgement_id, title_ref, cover_uploaded, publish_attempted,
+                                         resulting_state, amazon_message, run_outcome, stop_code, source, created_at)
+       VALUES (?,?,?,?,?,?,?,?,?,?, 'new_title', ?)`,
+    )
+    .bind(newId("kpa"), now, id, typeof b?.title_ref === "string" ? b.title_ref.slice(0, 40) : null,
+          b?.cover_uploaded ? 1 : 0, b?.publish_attempted ? 1 : 0, state,
+          typeof b?.amazon_message === "string" ? b.amazon_message.slice(0, 800) : null, outcome,
+          typeof b?.stop_code === "string" ? b.stop_code.slice(0, 60) : null, now)
+    .run();
+  await audit(c.env.DB, { actor: "system", lane: "ops", entityType: "judgement_call", entityId: id, action: "kdp_new_title_attempt", detail: { state, outcome, stop_code: b?.stop_code ?? null } });
+  return ok(c, { id, title: j.title, resulting_state: state, run_outcome: outcome }, 201);
+});
