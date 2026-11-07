@@ -3451,6 +3451,13 @@
       "heavy": false,
       "trigger": {
         "duty": "duty_lp_daily",
+        "ticks": {
+          "com.seq.boss-lp": [
+            "daily 06:15",
+            "daily 06:30",
+            "daily 08:45"
+          ]
+        },
         "launchd": [
           "com.seq.boss-lp"
         ]

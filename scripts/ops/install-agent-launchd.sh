@@ -1314,6 +1314,7 @@ echo "Installed $CW_LABEL — daily 14:05 and 19:05 Central slots; the sweep run
 # mailbox through the claude.ai Gmail connector — bound to her PERSONAL account — and reported zero
 # replies every morning while 50+ arrived. Same label, so the readiness check below still finds it.
 #
+# Due-gated retries at 06:30 and 08:45 recover a reboot or failure without repeating success.
 # 06:15: before Simone's 06:40 morning email reads ~/.boss-os/morning/lp.json.
 LP_LABEL="com.seq.boss-lp"
 LP_PLIST="$HOME/Library/LaunchAgents/$LP_LABEL.plist"
@@ -1332,11 +1333,13 @@ cat > "$LP_PLIST" <<LPEOF
   <array>
     <string>/bin/bash</string>
     <string>-lc</string>
-    <string>cd $REPO &amp;&amp; bash $REPO/scripts/ops/duty-run.sh lp-daily.mjs -- npm run --silent lp:daily</string>
+    <string>cd $REPO &amp;&amp; bash $REPO/scripts/ops/duty-run.sh lp-daily.mjs --only-if-due -- npm run --silent lp:daily</string>
   </array>
   <key>StartCalendarInterval</key>
   <array>
     <dict><key>Hour</key><integer>6</integer><key>Minute</key><integer>15</integer></dict>
+    <dict><key>Hour</key><integer>6</integer><key>Minute</key><integer>30</integer></dict>
+    <dict><key>Hour</key><integer>8</integer><key>Minute</key><integer>45</integer></dict>
   </array>
   <key>StandardOutPath</key><string>$LP_LOGS/launchd.log</string>
   <key>StandardErrorPath</key><string>$LP_LOGS/launchd.err</string>
@@ -1347,7 +1350,7 @@ LPEOF
 launchctl unload "$LP_PLIST" 2>/dev/null || true
 lint_plist "$LP_PLIST"
 launchctl load "$LP_PLIST"
-echo "Installed $LP_LABEL — daily 06:15 Central (lp-daily.mjs: held LP replies for the morning email)."
+echo "Installed $LP_LABEL — daily 06:15, 06:30 and 08:45 Central (lp-daily.mjs: held LP replies for the morning email)."
 
 # boss fix L: prospects (09:30 weekdays-in-window, the brakes decide), discovery (Monday 07:00),
 # catch-ups (06:20), 8Raise balance (06:25). One plist each, all through duty-run.sh.

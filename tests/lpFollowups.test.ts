@@ -77,7 +77,7 @@ describe("follow-ups: never sends, and no model sees a name (fail closed)", () =
   });
   it("the morning job holds the replies, and the Tuesday reminder email is gone (owner, 23 Oct 2026)", () => {
     const installer = src("install-agent-launchd.sh");
-    expect(installer).toContain("duty-run.sh lp-daily.mjs -- npm run --silent lp:daily");
+    expect(installer).toContain("duty-run.sh lp-daily.mjs --only-if-due -- npm run --silent lp:daily");
     expect(installer).not.toMatch(/lp:positive -- --email|duty-run\.sh lp-positive\.mjs|duty-run\.sh lp-replies\.sh/);
     expect(installer).toMatch(/launchctl unload "\$POSITIVE_PLIST"[\s\S]*rm -f "\$POSITIVE_PLIST"/);
     // lp-daily reaches Gmail only through these two pinned files: it calls no Gmail host itself.
