@@ -193,7 +193,8 @@ export function theNoticeReachesHer({ migrations, route, mount, drain, launchd }
     if (!/\/:id\/sent/.test(route) || !/\/:id\/failed/.test(route)) {
       bad.push("the notices route cannot record BOTH outcomes, so a refused send is indistinguishable from a sent one.");
     }
-    if (!/attempts < \?/.test(route)) bad.push("nothing caps the attempts, so a permanently refused notice is retried forever.");
+    // The cap must sit on the pending list itself (6 Nov 2026: a count query elsewhere in the route also reads `attempts < ?`).
+    if (!/WHERE sent_at IS NULL AND attempts < \?/.test(route)) bad.push("nothing caps the attempts on the pending list, so a permanently refused notice is retried forever.");
   }
   if (!mount || !/app\.route\("\/api\/task-notices"/.test(mount)) {
     bad.push(`${MOUNT} does not mount /api/task-notices, so the route exists and is unreachable.`);

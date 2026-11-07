@@ -30,7 +30,7 @@ export const taskNotices = new Hono<{ Bindings: Env; Variables: Vars }>();
 type NoticeRow = {
   id: string; task_id: string; lane: string; from_name: string; kind: string;
   subject: string; body: string; created_at: number; sent_at: number | null;
-  attempts: number; error: string | null;
+  attempts: number; holds: number; error: string | null;
 };
 
 /**
@@ -42,24 +42,42 @@ type NoticeRow = {
  */
 export const MAX_SEND_ATTEMPTS = 5;
 
+/**
+ * A HELD NOTICE KEEPS ITS PLACE (repair, 6 Nov 2026). The plain-email gate on her Mac holds the same
+ * words every run until the code that wrote them is fixed, and a fix job is opened for it. A hold is
+ * therefore not a failed send: it is counted in `holds`, never `attempts`, so a finished report is
+ * still offered once its sender is repaired. It has its own ceiling, so a hold never loops forever,
+ * and both ceilings are named in `/pending` (rule 0).
+ */
+export const MAX_HOLDS = 10;
+
 taskNotices.get("/pending", async (c) => {
   const rows = await c.env.DB
     .prepare(
       `SELECT * FROM boss_task_notices
-        WHERE sent_at IS NULL AND attempts < ?
+        WHERE sent_at IS NULL AND attempts < ? AND holds < ?
         ORDER BY created_at LIMIT 20`,
     )
-    .bind(MAX_SEND_ATTEMPTS)
+    .bind(MAX_SEND_ATTEMPTS, MAX_HOLDS)
     .all<NoticeRow>();
   const stuck = await c.env.DB
-    .prepare(`SELECT COUNT(*) AS n FROM boss_task_notices WHERE sent_at IS NULL AND attempts >= ?`)
-    .bind(MAX_SEND_ATTEMPTS)
-    .first<{ n: number }>();
+    .prepare(
+      `SELECT COALESCE(SUM(attempts >= ?1 OR holds >= ?2), 0) AS n,
+              COALESCE(SUM(holds >= ?2), 0) AS held_out,
+              COALESCE(SUM(holds > 0 AND holds < ?2 AND attempts < ?1), 0) AS held
+         FROM boss_task_notices WHERE sent_at IS NULL`,
+    )
+    .bind(MAX_SEND_ATTEMPTS, MAX_HOLDS)
+    .first<{ n: number; held_out: number; held: number }>();
   return ok(c, {
     items: rows.results ?? [],
     // Named rather than hidden: a notice nobody will retry is a thing she was not told.
     gave_up: stuck?.n ?? 0,
+    // Of those, how many stopped on the hold ceiling; and how many are held now but still offered.
+    gave_up_held: stuck?.held_out ?? 0,
+    held: stuck?.held ?? 0,
     max_attempts: MAX_SEND_ATTEMPTS,
+    max_holds: MAX_HOLDS,
   });
 });
 
@@ -87,9 +105,23 @@ taskNotices.post("/:id/failed", async (c) => {
   const row = await c.env.DB.prepare(`SELECT * FROM boss_task_notices WHERE id = ?`).bind(id).first<NoticeRow>();
   if (!row) throw notFound("No such notice");
 
-  const body = await c.req.json<{ error?: string }>().catch(() => ({} as { error?: string }));
+  const body = await c.req.json<{ error?: string; held?: boolean }>().catch(() => ({} as { error?: string; held?: boolean }));
   const error = typeof body?.error === "string" && body.error.trim() ? body.error.trim().slice(0, 500) : null;
   if (!error) throw badRequest("A failed send must say why", "Post { error: \"<what the sender refused with>\" }.");
+
+  if (body?.held === true) {
+    // The gate held it and opened a fix job: the words are wrong, not the send. Keep its place.
+    await c.env.DB
+      .prepare(`UPDATE boss_task_notices SET holds = holds + 1, error = ? WHERE id = ?`)
+      .bind(error, id)
+      .run();
+    const holds = (row.holds ?? 0) + 1;
+    await logEvent(c.env.DB, {
+      level: "warn", scope: "queue", event: "task_notice_held", lane: row.lane, entityId: row.task_id,
+      detail: { notice_id: id, kind: row.kind, holds, error },
+    });
+    return ok(c, { id, held: true, holds, attempts: row.attempts, gave_up: holds >= MAX_HOLDS });
+  }
 
   await c.env.DB
     .prepare(`UPDATE boss_task_notices SET attempts = attempts + 1, error = ? WHERE id = ?`)
