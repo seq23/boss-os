@@ -1272,6 +1272,112 @@
         "text": "Show the card after the first 5 ticks instead of under the plan, with the next locked window named."
       },
       "pause": []
+    },
+    {
+      "id": "dw-brand-social",
+      "initiative": "Dream Wedding brand social (Instagram + TikTok via Buffer)",
+      "business": "spry",
+      "owner": "Danielle · your morning email",
+      "result": "Posts published, then visits from instagram and tiktok to weddingchecklistpdf.com",
+      "jobs": [],
+      "start": "2026-11-07",
+      "first": {
+        "label": "posts published through Buffer (28 days); not wired until dream-wedding-builder writes data/brand-social/metrics.json",
+        "by": 30,
+        "floor": {
+          "op": ">=",
+          "value": 8
+        },
+        "reader": "repo-json",
+        "params": {
+          "maxAgeDays": 9,
+          "files": [
+            {
+              "repo": "dream-wedding-builder",
+              "path": "data/brand-social/metrics.json",
+              "field": "posts_published_28d",
+              "at": "updatedAt"
+            }
+          ]
+        }
+      },
+      "real": {
+        "label": "site visits from instagram or tiktok to weddingchecklistpdf.com (28 days)",
+        "by": 60,
+        "floor": {
+          "op": ">=",
+          "value": 1
+        },
+        "reader": "repo-json",
+        "params": {
+          "maxAgeDays": 9,
+          "files": [
+            {
+              "repo": "dream-wedding-builder",
+              "path": "data/brand-social/metrics.json",
+              "field": "social_visits_28d",
+              "at": "updatedAt"
+            }
+          ]
+        }
+      },
+      "versionB": {
+        "text": "A new hook format: the checklist's real windows as a 4-slide carousel"
+      },
+      "pause": []
+    },
+    {
+      "id": "ap-brand-social",
+      "initiative": "ApprovalPrep brand social (TikTok via Buffer)",
+      "business": "spry",
+      "owner": "Danielle · your morning email",
+      "result": "Posts published, then visits from tiktok to approvalprep.com",
+      "jobs": [],
+      "start": "2026-11-07",
+      "first": {
+        "label": "posts published through Buffer (28 days); not wired until approvalprep writes data/brand-social/metrics.json",
+        "by": 30,
+        "floor": {
+          "op": ">=",
+          "value": 8
+        },
+        "reader": "repo-json",
+        "params": {
+          "maxAgeDays": 9,
+          "files": [
+            {
+              "repo": "approvalprep",
+              "path": "data/brand-social/metrics.json",
+              "field": "posts_published_28d",
+              "at": "updatedAt"
+            }
+          ]
+        }
+      },
+      "real": {
+        "label": "site visits from tiktok to approvalprep.com (28 days)",
+        "by": 60,
+        "floor": {
+          "op": ">=",
+          "value": 1
+        },
+        "reader": "repo-json",
+        "params": {
+          "maxAgeDays": 9,
+          "files": [
+            {
+              "repo": "approvalprep",
+              "path": "data/brand-social/metrics.json",
+              "field": "social_visits_28d",
+              "at": "updatedAt"
+            }
+          ]
+        }
+      },
+      "versionB": {
+        "text": "Screen-recorded Letter Studio walk-through, 20 seconds"
+      },
+      "pause": []
     }
   ],
   "exempt": {

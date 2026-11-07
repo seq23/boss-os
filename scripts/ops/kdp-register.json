@@ -25,6 +25,22 @@
       "do_not_re_raise": true
     }
   },
+  "lines": {
+    "_why": "Her Kindle lines (owner, 7 Nov 2026, spry brain): Simone's monthly run counts each line's books from `titles` (kdp-line-counts.mjs) into the spry brain's Numbers. A line with no title here counts 0 because the register is the whole list.",
+    "approvalprep": {
+      "label": "ApprovalPrep"
+    },
+    "wedding": {
+      "label": "Dream Wedding"
+    },
+    "a-player-mode": {
+      "label": "A Player Mode"
+    },
+    "keepmyproof": {
+      "label": "KeepMyProof",
+      "plan": "A front-door book per KeepMyProof folder, divorce first: drafts only, S. L. Taylor byline, publisher Spry Labs, AI disclosure on; nothing publishes without the existing KDP approval path (owner, 7 Nov 2026)."
+    }
+  },
   "titles": [
     {
       "title_ref": "A2C99P6JESFOP0",
@@ -32,7 +48,8 @@
       "author": "S. Taylor",
       "target": "LIVE",
       "status": "LIVE",
-      "status_as_of": "2026-09-12"
+      "status_as_of": "2026-09-12",
+      "line": "approvalprep"
     },
     {
       "title_ref": "A1EYXUFGFV7CN6",
@@ -67,7 +84,8 @@
           "approved_subtitle": "A Template for Documenting Family Funds Toward a Home Purchase",
           "reply_template": "Hello,\n\nThank you for the review of \"The Gift Letter (Down Payment)\" (ASIN/title id A1EYXUFGFV7CN6). I would like to address the title concern with Option 1 and update the metadata so no term repeats between the title and subtitle.\n\nTitle (unchanged): The Gift Letter (Down Payment)\nNew subtitle: A Template for Documenting Family Funds Toward a Home Purchase\n\nThe book is currently shown as Blocked on my Bookshelf and the Edit eBook details option is not available, so I am not able to make this change myself. Please apply the updated subtitle (or restore edit access so I can) and release the title for publication. Everything else about the book is unchanged.\n\nThank you,\nS. Taylor"
         }
-      }
+      },
+      "line": "approvalprep"
     },
     {
       "title_ref": "A3O8BGWQ63OSF0",
@@ -75,7 +93,8 @@
       "author": "S. Taylor",
       "target": "LIVE",
       "status": "LIVE",
-      "status_as_of": "2026-09-12"
+      "status_as_of": "2026-09-12",
+      "line": "approvalprep"
     },
     {
       "title_ref": "A746KSQA6VXQ8",
@@ -83,7 +102,8 @@
       "author": "S. Taylor",
       "target": "LIVE",
       "status": "LIVE",
-      "status_as_of": "2026-09-12"
+      "status_as_of": "2026-09-12",
+      "line": "approvalprep"
     },
     {
       "title_ref": "A14601U7XU2FCM",
@@ -91,7 +111,8 @@
       "author": "S. Taylor",
       "target": "LIVE",
       "status": "LIVE",
-      "status_as_of": "2026-09-12"
+      "status_as_of": "2026-09-12",
+      "line": "approvalprep"
     },
     {
       "title_ref": "AZUTRW0LN8GDM",
@@ -99,7 +120,8 @@
       "author": "Lanae Taylor",
       "target": "LIVE",
       "status": "LIVE",
-      "status_as_of": "2026-09-12"
+      "status_as_of": "2026-09-12",
+      "line": "wedding"
     },
     {
       "title_ref": "A12Z8RECXCYT3S",
@@ -107,7 +129,8 @@
       "author": "Lanae Taylor",
       "target": "LIVE",
       "status": "LIVE",
-      "status_as_of": "2026-09-12"
+      "status_as_of": "2026-09-12",
+      "line": "wedding"
     }
   ],
   "facts_about_kdp": {
