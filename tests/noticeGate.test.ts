@@ -32,10 +32,11 @@ describe("the one gate: a notice that needs nothing from her never calls the mai
     expect(calls).toEqual([]);
   });
 
-  it("a Done notice for work nobody asked for by email, and a pause that restarts itself, stay off email", async () => {
+  it("a Done notice for work an alarm started by itself, and a pause that restarts itself, stay off email", async () => {
     for (const kind of ["done#0", "stop:CODEX_LIMIT"]) {
       const { calls, fetchImpl } = counting();
-      const notice = { kind, from_name: "Kendra", task_id: "tsk_synthetic03", subject: "Done (partial): a synthetic alarm", body: "Synthetic.", needs_her: needsHer({ kind }) ? 1 : 0 };
+      const notice = { kind, from_name: "Kendra", task_id: "tsk_synthetic03", subject: "Done (partial): a synthetic alarm", body: "Synthetic.", needs_her: needsHer({ kind, systemStarted: true }) ? 1 : 0 };
+      expect(needsHer({ kind }), `${kind} for work she asked for`).toBe(true);
       expect(await sendNotice(notice, { fetchImpl, to: "o@example.com" })).toBe(ON_PAGE);
       expect(calls).toEqual([]);
     }
@@ -44,7 +45,8 @@ describe("the one gate: a notice that needs nothing from her never calls the mai
   it("a notice that needs her still calls the mail sender (negative proof)", async () => {
     for (const n of [
       { kind: "stopped", needs_her: needsHer({ kind: "stopped" }) ? 1 : 0 },
-      { kind: "done#0", needs_her: needsHer({ kind: "done#0", mailedByHer: true }) ? 1 : 0 },
+      // Work she asked for, however she asked (research, a prep, a reply): its answer is emailed.
+      { kind: "done#0", needs_her: needsHer({ kind: "done#0" }) ? 1 : 0 },
       { kind: "missing_secret", needs_her: 1 },
     ]) {
       expect(n.needs_her).toBe(1);

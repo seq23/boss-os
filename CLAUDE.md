@@ -169,8 +169,9 @@ pinned by `tests/plainEmail.test.ts` ("the rules in CLAUDE.md"), which reads thi
    `needs_her` (`boss_task_notices`, migration 0353), set where it is written by `needsHer`
    (`src/shared/boss/mail/noticeGate.mjs`) from its kind and who asked — never its words. The drain
    (`scripts/ops/task-notices.mjs` `sendNotice`) emails only `needs_her = 1`: a stop, a could-not-do,
-   a missing key, an empty Drive folder, or the answer to work she asked for by email. Reminders,
-   pauses, Done notices for work a job or alarm started, and the Mac disk line are rows on
+   a missing key, an empty Drive folder, or anything about work she asked for (research, a prep, a
+   reply to her email), however she asked. Open-loop reminders, notices about repairs and duties Boss
+   OS started by itself, and the Mac disk line are rows on
    ☰ More → Updates (`/?tab=updates`), and the morning email's "Done for you" carries ONE count line
    read from the same route. Pinned by `tests/noticeGate.test.ts`.
 

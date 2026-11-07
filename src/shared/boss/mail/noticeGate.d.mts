@@ -1,7 +1,7 @@
 /** Types for the one email-or-page gate. See noticeGate.mjs. */
 export const EMAIL_KINDS: readonly string[];
 export const PAGE_KINDS: readonly string[];
-export function needsHer(n?: { kind?: string | null; mailedByHer?: boolean; repair?: boolean }): boolean;
+export function needsHer(n?: { kind?: string | null; systemStarted?: boolean; repair?: boolean }): boolean;
 export function emailsHer(notice: { needs_her?: number | boolean | string | null } | null | undefined): boolean;
 export const UPDATES_DAYS: number;
 export const UPDATES_PATH: string;

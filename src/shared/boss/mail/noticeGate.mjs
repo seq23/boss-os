@@ -22,21 +22,23 @@ export const PAGE_KINDS = Object.freeze(["open_loop_reminder", "update"]);
 /**
  * Does this notice need her? Pure.
  *   · stopped / could_not_do / missing_secret / drive_empty → yes (she alone can act);
- *   · "done#<n>" → only when she asked for the work herself by email (the answer is her reply);
- *     work a job or an alarm started is told on the page;
- *   · "stop:<CODE>" (paused until a seat is back; it restarts on its own), reminders, updates → no;
+ *   · "done#<n>" → yes for work she asked for, however she asked (owner, 7 Nov 2026: research she
+ *     requested, a prep she asked for, a reply to her email are not noise); work a duty or an alarm
+ *     started by itself (`systemStarted`) is told on the page;
+ *   · "stop:<CODE>" (paused until a seat is back) → only for work she asked for; reminders, updates → no;
  *   · any notice about a repair Boss OS opened itself → no, unless it needs a key only she holds;
  *   · any kind not named here → yes: an unknown kind fails toward telling her, never toward silence.
  */
-export function needsHer({ kind, mailedByHer = false, repair = false } = {}) {
+export function needsHer({ kind, systemStarted = false, repair = false } = {}) {
   const k = String(kind ?? "");
   // REPAIRS NEVER WAIT ON HER (owner, 7 Nov 2026: Kendra's reports "should not need my constant
   // approval"). A repair Boss OS opened itself that stops, could not finish or proposes a fix goes back
   // to the team's rework, never to her inbox. Only a key or account she alone holds is hers.
   if (repair) return k === "missing_secret";
   if (EMAIL_KINDS.includes(k)) return true;
-  if (/^done(#|$)/.test(k)) return Boolean(mailedByHer);
-  if (k.startsWith("stop:")) return false;
+  // Work SHE asked for (by email, on a screen, or through Claude) is never noise: its answer is emailed.
+  if (/^done(#|$)/.test(k)) return !systemStarted;
+  if (k.startsWith("stop:")) return !systemStarted;
   if (PAGE_KINDS.includes(k)) return false;
   return true;
 }

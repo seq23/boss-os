@@ -831,14 +831,14 @@ async function noticeResearchDone(
     .bind(a.taskId).first<{ id: string; lane: string; title: string; attempts: number | null; input: string | null; employee_name: string | null }>();
   if (!task) return;
   /*
-   * EMAIL ONLY WHEN SHE ASKED (owner, 7 Nov 2026). A page she asked for by email is her answer and is
-   * emailed whole; a page a job or an alarm started (Kendra's "Done (partial): Fixing the Stale Task
+   * EMAIL ONLY WHEN SHE ASKED (owner, 7 Nov 2026). A page she asked for, however she asked, is her
+   * answer and is emailed whole; a page a duty or an alarm started by itself (Kendra's "Done (partial): Fixing the Stale Task
    * System Alarm", five in twelve hours) is a row on the Updates page. A field, never the words.
    */
   const { needsHer } = await import("../../../shared/boss/mail/noticeGate.mjs");
-  let from: unknown = null;
-  try { from = (JSON.parse(task.input ?? "{}") as { from?: unknown })?.from ?? null; } catch { from = null; }
-  const her = needsHer({ kind: "done", mailedByHer: typeof from === "string" && from.includes("@") });
+  let input: { origin?: unknown; duty_id?: unknown } = {};
+  try { input = JSON.parse(task.input ?? "{}") ?? {}; } catch { input = {}; }
+  const her = needsHer({ kind: "done", systemStarted: input.origin === "repair" || input.duty_id != null });
   const { researchPageUrl } = await import("../../../shared/boss/research/page.mjs");
   const { researchDoneLines, researchDoneSubject } = await import("../../../shared/boss/research/doneEmail.mjs");
   const kind = `done#${Number(task.attempts ?? 0)}`;
