@@ -832,6 +832,77 @@
       ]
     },
     {
+      "id": "whisper-almanac-youtube",
+      "initiative": "Whisper Almanac (YouTube, sleep)",
+      "business": "spry",
+      "owner": "Spry Labs · Sunday digest",
+      "result": "Subscribers per 1,000 views (watch hours come easily on 2-3 hour videos; subscribers are the real gate)",
+      "jobs": [
+        "how-we-know-loop-whisper-author"
+      ],
+      "start": null,
+      "startWhen": {
+        "label": "the first upload",
+        "reader": "repo-json",
+        "params": {
+          "files": [
+            {
+              "repo": "how-we-know",
+              "path": "loop/state/whisper_channel.json",
+              "field": "first_upload_at",
+              "date": true
+            }
+          ]
+        }
+      },
+      "first": {
+        "label": "median views per long episode in its first 14 days",
+        "by": 30,
+        "floor": {
+          "op": ">=",
+          "value": 150
+        },
+        "reader": "repo-json",
+        "params": {
+          "maxAgeDays": 9,
+          "files": [
+            {
+              "repo": "how-we-know",
+              "path": "loop/state/whisper_channel.json",
+              "field": "median_views_first_14_days_long",
+              "at": "at"
+            }
+          ]
+        }
+      },
+      "real": {
+        "label": "subscribers in total (and per 1,000 views alongside)",
+        "by": 60,
+        "floor": {
+          "op": ">=",
+          "value": 100
+        },
+        "reader": "repo-json",
+        "params": {
+          "maxAgeDays": 9,
+          "files": [
+            {
+              "repo": "how-we-know",
+              "path": "loop/state/whisper_channel.json",
+              "field": "subscribers",
+              "at": "at"
+            }
+          ]
+        }
+      },
+      "versionB": {
+        "text": "Day 30 miss: new titles and thumbnails only, same scripts. Day 60 miss (under 300 median views in 28 days or under 100 subscribers): switch the lead topic or go to 60-90 minute episodes; if affirmations get twice the views, they lead. Day 90 (4 Feb 2027 if launched 6 Nov): under 400 subscribers pauses new long episodes, never deletes, keeps 1 affirmation a week and gives the Mac back to How We Know. Night split 5:2 re-checked at day 30 with both channels' real views (her ruling 6 Nov 2026)."
+      },
+      "pause": [
+        "how-we-know-loop-whisper-author"
+      ]
+    },
+    {
       "id": "keepmyproof-app",
       "initiative": "KeepMyProof app",
       "business": "spry",
