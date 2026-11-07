@@ -604,9 +604,9 @@
     },
     {
       "id": "approvalprep-email-nurture", "business": "industry-guides",
-      "what": "ApprovalPrep free-sample series: the sample at once, then one email every 3 days about one paid kit, stopping on purchase, unsubscribe or the last step",
+      "what": "ApprovalPrep free-item series: the free Letter of Explanation sample or the free credit starter (\"Before you pay a credit repair company\", from 7 Nov 2026) at once, then one email every 3 days about one paid kit (5 after the sample, 2 after the starter), stopping on purchase, unsubscribe or the last step",
       "sender": "The site (no employee)", "owner": "Danielle",
-      "from": "ApprovalPrep <hello@approvalprep.com>", "to": "A person who asked for the free sample",
+      "from": "ApprovalPrep <hello@approvalprep.com>", "to": "A person who typed their address for the free sample or the free credit starter",
       "when": "Due steps sent at 8:17, 13:17 and 18:17 Central",
       "runs": "github", "trigger": "GitHub Action email-nurture.yml (calls the site's /api/nurture-run)",
       "pause": "Disable email-nurture.yml in approvalprep",

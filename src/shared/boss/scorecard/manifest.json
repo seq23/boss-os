@@ -1108,6 +1108,170 @@
         "text": "A new free-trial path."
       },
       "pause": []
+    },
+    {
+      "id": "ap-credit-starter",
+      "initiative": "ApprovalPrep free credit starter by email (her yes 7 Nov 2026, look 1A)",
+      "business": "spry",
+      "owner": "Spry Labs · Wednesday Spry Labs email",
+      "result": "Credit starter signups, then paid kits",
+      "jobs": [],
+      "start": "2026-11-07",
+      "first": {
+        "label": "credit starter signups a week",
+        "by": 30,
+        "floor": {
+          "op": ">=",
+          "value": 3
+        },
+        "reader": "d1",
+        "params": {
+          "db": "approvalprep-products",
+          "sql": "SELECT COUNT(*) AS n FROM email_signups WHERE source = 'starter:credit-repair' AND datetime(created_at) >= datetime(:since_iso)",
+          "days": 7
+        }
+      },
+      "real": {
+        "label": "paid ApprovalPrep kits this month",
+        "by": 60,
+        "floor": {
+          "op": ">=",
+          "value": 1
+        },
+        "reader": "d1",
+        "params": {
+          "db": "approvalprep-products",
+          "sql": "SELECT COUNT(*) AS n FROM download_entitlements WHERE payment_status = 'paid' AND revoked_at IS NULL AND datetime(created_at) >= datetime(:since_iso)",
+          "days": 30
+        }
+      },
+      "versionB": {
+        "text": "Swap the starter for the 2-page Letter of Explanation sample on credit pages, and lead the box with the free-dispute fact."
+      },
+      "pause": []
+    },
+    {
+      "id": "ap-three-reasons",
+      "initiative": "ApprovalPrep three reasons row on the home page (her yes 7 Nov 2026, look 2)",
+      "business": "spry",
+      "owner": "Spry Labs · Wednesday Spry Labs email",
+      "result": "Clicks from the row into the three pages, then kit checkouts started",
+      "jobs": [],
+      "start": "2026-11-07",
+      "first": {
+        "label": "three-reasons clicks a week",
+        "by": 30,
+        "floor": {
+          "op": ">=",
+          "value": 10
+        },
+        "reader": "d1",
+        "params": {
+          "db": "approvalprep-products",
+          "sql": "SELECT COUNT(*) AS n FROM conversion_events WHERE event = 'related_link_click' AND path = '/' AND (target_url LIKE '%not-a-credit-repair-company%' OR target_url LIKE '%#company-or-yourself%' OR target_url LIKE '%complete-approvalprep-bundle%') AND datetime(created_at) >= datetime(:since_iso)",
+          "days": 7
+        }
+      },
+      "real": {
+        "label": "kit checkouts started this month",
+        "by": 60,
+        "floor": {
+          "op": ">=",
+          "value": 5
+        },
+        "reader": "d1",
+        "params": {
+          "db": "approvalprep-products",
+          "sql": "SELECT COUNT(*) AS n FROM conversion_events WHERE event = 'checkout_start' AND datetime(created_at) >= datetime(:since_iso)",
+          "days": 30
+        }
+      },
+      "versionB": {
+        "text": "Put the price card first (Credit repair costs too much?) and make each card a button with the price in it."
+      },
+      "pause": []
+    },
+    {
+      "id": "dw-planner-line",
+      "initiative": "Dream Wedding planner line + free planner button on the 3 tool sites (her yes 7 Nov 2026, look 3)",
+      "business": "spry",
+      "owner": "Spry Labs · Wednesday Spry Labs email",
+      "result": "Free planner signups that came from a tool site's button",
+      "jobs": [],
+      "start": "2026-11-07",
+      "first": {
+        "label": "tool-site planner signups a week",
+        "by": 30,
+        "floor": {
+          "op": ">=",
+          "value": 2
+        },
+        "reader": "d1",
+        "params": {
+          "db": "dream-wedding-builder",
+          "sql": "SELECT COUNT(*) AS n FROM builder_signups WHERE source LIKE 'free-wedding-planner:%' AND datetime(created_at) >= datetime(:since_iso)",
+          "days": 7
+        }
+      },
+      "real": {
+        "label": "tool-site planner signups this month",
+        "by": 60,
+        "floor": {
+          "op": ">=",
+          "value": 10
+        },
+        "reader": "d1",
+        "params": {
+          "db": "dream-wedding-builder",
+          "sql": "SELECT COUNT(*) AS n FROM builder_signups WHERE source LIKE 'free-wedding-planner:%' AND datetime(created_at) >= datetime(:since_iso)",
+          "days": 30
+        }
+      },
+      "versionB": {
+        "text": "Move the button into the top strip on each tool site and name the tool in it (Plan your seating in the free planner)."
+      },
+      "pause": []
+    },
+    {
+      "id": "dw-full-plan-card",
+      "initiative": "Dream Wedding full-plan card under the free plan (her yes 7 Nov 2026, look 4)",
+      "business": "spry",
+      "owner": "Spry Labs · Wednesday Spry Labs email",
+      "result": "Paid Wedding Checklist PDF and bundle orders",
+      "jobs": [],
+      "start": "2026-11-07",
+      "first": {
+        "label": "paid PDF or bundle orders this month",
+        "by": 30,
+        "floor": {
+          "op": ">=",
+          "value": 1
+        },
+        "reader": "d1",
+        "params": {
+          "db": "dream-wedding-builder",
+          "sql": "SELECT COUNT(*) AS n FROM orders WHERE payment_status = 'paid' AND product_id IN ('checklist-pdf','operations-suite') AND datetime(created_at) >= datetime(:since_iso)",
+          "days": 30
+        }
+      },
+      "real": {
+        "label": "paid PDF or bundle orders this month",
+        "by": 60,
+        "floor": {
+          "op": ">=",
+          "value": 3
+        },
+        "reader": "d1",
+        "params": {
+          "db": "dream-wedding-builder",
+          "sql": "SELECT COUNT(*) AS n FROM orders WHERE payment_status = 'paid' AND product_id IN ('checklist-pdf','operations-suite') AND datetime(created_at) >= datetime(:since_iso)",
+          "days": 30
+        }
+      },
+      "versionB": {
+        "text": "Show the card after the first 5 ticks instead of under the plan, with the next locked window named."
+      },
+      "pause": []
     }
   ],
   "exempt": {
