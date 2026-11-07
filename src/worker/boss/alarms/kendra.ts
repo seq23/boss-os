@@ -69,21 +69,47 @@ export async function raiseAlarm(env: Env, a: RaiseInput, now = Date.now()): Pro
     ).bind(id, a.key, a.kind, KENDRA, a.subject_id ?? null, text, hers, now, now).run();
   }
   if (!hers) {
+    /*
+     * THE REPAIR GOES TO DANIELLE'S REPAIR LANE, NEVER A MODEL'S PROSE (7 Nov 2026). Until now the
+     * repair was a one-off on Kendra's desk: a free cloud model with no tools and no data, asked to
+     * "find why at source". It invented a "Morning System Report: 31 Oct 2026" (a "Task D", a
+     * "dev-sandbox-04", "84GB headroom") and ended "Waiting for Partner approval", which put it in her
+     * Inbox. Now it is a repo-change repair on Danielle's desk (kind `kendra_alarm` in REPAIR_KINDS):
+     * real code, real reads, no plan approval (repairs never wait on her, 25 Oct 2026), one plain
+     * line after. The prompt carries the recorded facts and nothing else (`alarmFacts`).
+     */
+    const facts = alarmFacts({ id, key: a.key, kind: a.kind, text, subject_id: a.subject_id ?? null, at: now });
     const r = await admitTask(env, {
-      title: `Kendra's alarm: ${text.replace(/^(?:"?Kendra's alarm:\s*)+/i, "").slice(0, 140)}`,
+      title: `Fix Kendra's alarm: ${text.replace(/^(?:"?(?:Fix )?Kendra's alarm:\s*)+/i, "").slice(0, 140)}`,
       lane: "ops",
-      employee_id: KENDRA,
+      employee_id: REPAIR_SEAT,
       input: {
-        origin: "repair", repair_kind: "kendra_alarm", alarm_id: id, alarm_key: a.key,
-        prompt: `Systems alarm (${a.kind}): ${text} Find why at source and fix it, then let the next run prove it: ` +
+        origin: "repair", repair_kind: "kendra_alarm", alarm_id: id, alarm_key: a.key, build_ask: true,
+        prompt: `seq23/boss-os — Kendra's Systems alarm (${a.kind}). Recorded facts, the only facts:\n${facts}\n` +
+          `Find why at source in the code and the live records, and fix it, then let the next run prove it: ` +
           `the alarm closes itself when the condition clears. A floor that is simply wrong is changed on the duty row ` +
-          `(standing_duties.output_floor) and in its Schedule row's "output", with the reason.`,
+          `(standing_duties.output_floor) and in its Schedule row's "output", with the reason. A stuck claim, lock or ` +
+          `hung run is cleared, re-run or reaped by you, logged, never put to her. Write only what you read; a value you ` +
+          `did not read is "not read: <reason>". Ask her only for money, her own accounts or sign-ins, legal steps, or ` +
+          `publishing that cannot be undone.`,
       },
     } as any).catch((err: unknown) => ({ created: false, reason: err instanceof Error ? err.message : String(err) }) as any);
     if (r?.created && r.task_id) await env.DB.prepare(`UPDATE system_alarms SET task_id = ? WHERE id = ?`).bind(r.task_id, id).run();
     else console.error(`kendra: the repair for alarm ${a.key} was not admitted (${r?.reason ?? "no reason"})`);
   }
   return { action: row ? "reopened" : "opened", id };
+}
+
+/** Danielle's desk: every repair Boss OS opens itself runs there (lane.mjs REPAIR_KINDS). */
+export const REPAIR_SEAT = "emp_repo";
+
+/** The alarm's recorded facts, one per line: what the repair is told and what its report may say. Pure. */
+export function alarmFacts(a: { id: string; key: string; kind: string; text: string; subject_id: string | null; at: number }): string {
+  return [
+    `- alarm ${a.id} (${a.kind}), key ${a.key}, opened ${new Date(a.at).toISOString()}`,
+    `- what Kendra's check read: ${a.text}`,
+    a.subject_id ? `- about: ${a.subject_id}` : null,
+  ].filter(Boolean).join("\n");
 }
 
 /** Is this task's input one of Kendra's own alarm repairs? Pure. */

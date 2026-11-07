@@ -132,7 +132,7 @@ export function repairDoneMail(row, plan, at = Date.now()) {
   // Intelligence Report" job stopped before it finished." says which one; the stock line does not.
   const job = /^Find why "([^"\n]{3,80})" failed/.exec(String(row.instruction ?? ""))?.[1];
   const named = job && row.repair_kind === "failed_task" ? `Your "${job}" job stopped before it finished.` : null;
-  const r = repairReport({ kind: row.repair_kind, whatBroke: plain.what_broke ?? named, whatWeDid: plain.what_we_did, live: true, at });
+  const r = repairReport({ kind: row.repair_kind, whatBroke: plain.what_broke ?? named, whatWeDid: plain.what_we_did, live: true, at, facts: factsFor(row) });
   if (named && r.whatBroke !== plainSentence(plain.what_broke) && plainSentence(named)) r.whatBroke = plainSentence(named);
   return layoutProblem({ who: "Danielle", subject: r.subject, happenedLabel: "What broke:", happened: r.whatBroke, did: r.whatWeDid, status: r.status, refs: [String(row.id).toLowerCase()] });
 }
@@ -144,8 +144,13 @@ export function repairDoneMail(row, plan, at = Date.now()) {
  */
 export function repairDoneLine(row, plan, at = Date.now()) {
   const plain = plan?.in_plain && typeof plan.in_plain === "object" ? plan.in_plain : {};
-  const r = repairReport({ kind: row.repair_kind, whatBroke: plain.what_broke, whatWeDid: plain.what_we_did, live: true, at });
+  const r = repairReport({ kind: row.repair_kind, whatBroke: plain.what_broke, whatWeDid: plain.what_we_did, live: true, at, facts: factsFor(row) });
   return `Danielle fixed it: ${r.whatWeDid}`;
+}
+
+/** An alarm repair's report may say only what its recorded facts hold (the instruction carries them). */
+function factsFor(row) {
+  return row?.repair_kind === "kendra_alarm" ? String(row.instruction ?? "") : null;
 }
 
 /**

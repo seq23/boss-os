@@ -1,3 +1,4 @@
+import { needsHer } from "../../../shared/boss/mail/noticeGate.mjs";
 import { orderSeats, isOn, OPENAI_FIRST_KEY, OPENAI_SEAT, CLAUDE_SEAT, isConfidentialDraft, confidentialLadder } from "../duties/seatOrder";
 import { roleFor, CODEX_LIMIT_WAITS, afterCodexLimit } from "../../../shared/boss/aiRoles.mjs";
 import { isPlanSpent } from "../backends/spent";
@@ -1119,8 +1120,8 @@ async function cannotDoTask(
    */
   await env.DB
     .prepare(
-      `INSERT INTO boss_task_notices (id, task_id, lane, from_name, kind, subject, body, created_at)
-       VALUES (?,?,?,?,'could_not_do',?,?,?)`,
+      `INSERT INTO boss_task_notices (id, task_id, lane, from_name, kind, subject, body, created_at, needs_her)
+       VALUES (?,?,?,?,'could_not_do',?,?,?,?)`,
     )
     .bind(
       newId("tnt"), task.id, task.lane, employee?.name ?? "Boss OS",
@@ -1138,6 +1139,8 @@ async function cannotDoTask(
         `Reply to this email and your answer goes straight back to this job. Nothing was sent to anyone outside Boss OS. ${task.id}`,
       ].join("\n"),
       finishedAt,
+      // A repair Boss OS opened itself never waits on her (noticeGate.mjs); her own ask does.
+      needsHer({ kind: "could_not_do", repair: input.origin === "repair" }) ? 1 : 0,
     )
     .run();
 

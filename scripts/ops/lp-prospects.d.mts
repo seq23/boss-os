@@ -15,3 +15,6 @@ export const ADMIN_STEP: string;
 export function token(scope?: string, opts?: { fetchImpl?: any; env?: Record<string, string | undefined> }): Promise<string>;
 export function threadHeaders(readTok: string, threadId: string, opts?: { fetchImpl?: any }): Promise<{ messageId?: string | null; subject?: string | null; held?: string; stop?: string }>;
 export function runVerdict(r: { due?: number; sent?: number; held?: string[]; stop?: string | null }): { stop: string | null; line: string | null };
+export const WINDOW_OPENS_HOUR: number;
+export const WAIT_MAX_MS: number;
+export function waitForWindowMs(now?: number): number;

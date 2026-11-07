@@ -79,6 +79,21 @@ export function isSendDay(now = Date.now()) {
   const day = new Intl.DateTimeFormat("en-US", { timeZone: "America/Chicago", weekday: "short" }).format(new Date(now));
   return day !== "Sat" && day !== "Sun";
 }
+/**
+ * AN EARLY RUN WAITS FOR THE WINDOW, IT DOES NOT GIVE UP THE DAY (7 Nov 2026). launchd reads the
+ * job's 9:30 in the Mac's own zone; on 5 and 6 Nov her Mac was on Eastern with a plist written for
+ * Central, so the run started at 8:30 Central, the plan said "Outside the sending window (weekdays 9 to
+ * 5 Central)", and 34 due follow-ups waited another day, twice. Before 9:00 Central on a send day
+ * the run waits for 9:00 (at most WAIT_MAX_MS); earlier than that is a named stop. Pure: ms to wait.
+ */
+export const WINDOW_OPENS_HOUR = 9;
+export const WAIT_MAX_MS = 2 * 3_600_000;
+export function waitForWindowMs(now = Date.now()) {
+  const p = Object.fromEntries(new Intl.DateTimeFormat("en-US", { timeZone: "America/Chicago", hour: "numeric", minute: "numeric", second: "numeric", hourCycle: "h23" }).formatToParts(new Date(now)).map((x) => [x.type, x.value]));
+  const into = (Number(p.hour) * 3600 + Number(p.minute) * 60 + Number(p.second)) * 1000;
+  const opens = WINDOW_OPENS_HOUR * 3_600_000 + 30_000;
+  return into >= opens ? 0 : opens - into;
+}
 const VERIFY_ONLY = process.argv.includes("--verify-only");
 
 /* ─── The 11 Oct files (pure parsers, tested with synthetic text) ─────────── */
@@ -502,6 +517,9 @@ async function main() {
   const sendDay = isSendDay();
   if (LIVE && !sendDay) console.log("WEEKEND: no prospect email goes on Saturday or Sunday (Central); anything due goes on Monday.");
   if (LIVE && sendDay) {
+    const wait = waitForWindowMs();
+    if (wait > WAIT_MAX_MS) { console.error(`NAMED STOP [BEFORE_WINDOW] the run started ${Math.round(wait / 60_000)} minutes before 9:00 Central; the launchd time is wrong for this Mac's zone (re-run scripts/ops/install-agent-launchd.sh).`); process.exitCode = 2; return; }
+    if (wait > 0) { console.log(`window: early by ${Math.round(wait / 60_000)} min; waiting for 9:00 Central before sending.`); await new Promise((r) => setTimeout(r, wait)); }
     try { await verifyDue(api); } catch (e) { console.log(`note: NeverBounce did not run (${e.message}); unchecked addresses wait.`); }
   }
   const plan = await api.get("/lp/prospects/plan");

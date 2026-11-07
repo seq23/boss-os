@@ -52,6 +52,11 @@ export async function noticeOnce(env: Env, n: NoticeInput): Promise<string | nul
   if (already) return null;
   const id = newId("tnt");
   const token = taskToken(n.task.id);
+  // A repair Boss OS opened itself never waits on her (noticeGate.mjs needsHer `repair`).
+  const row = await env.DB.prepare(`SELECT input FROM tasks WHERE id = ?`).bind(n.task.id).first<{ input: string | null }>().catch(() => null);
+  let repair = false;
+  try { repair = (JSON.parse(row?.input ?? "{}") as { origin?: unknown })?.origin === "repair"; } catch { repair = false; }
+  const her = repair ? needsHer({ kind: n.kind, repair }) : (n.needsHer ?? needsHer({ kind: n.kind }));
   const subject = n.subject.includes(token) ? n.subject : `${n.subject.slice(0, 160)} ${token}`;
   await env.DB
     .prepare(
@@ -59,7 +64,7 @@ export async function noticeOnce(env: Env, n: NoticeInput): Promise<string | nul
        VALUES (?,?,?,?,?,?,?,?,?,?)`,
     )
     .bind(id, n.task.id, n.task.lane, n.fromName, n.kind, subject, noticeBody(n.lines, n.wait, n.task.id), Date.now(), n.secretName ?? null,
-      (n.needsHer ?? needsHer({ kind: n.kind })) ? 1 : 0)
+      her ? 1 : 0)
     .run();
   return id;
 }
