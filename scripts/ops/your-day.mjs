@@ -776,10 +776,18 @@ export function buildDay(data, now = Date.now()) {
   const bl = bounceLine(data.bounceFixes);
   if (bl) doneRaw.push({ text: bl, links: [] });
   doneRaw.push(...commentDoneLines(data, now));
+  /*
+   * A TEAM JOB THAT STOPPED IS ONE COUNT LINE, NEVER A LINE EACH (owner, 7 Nov 2026: "Fix a held
+   * email…", "Zora's archive audit", "Tools worth knowing about" in her Done for you). Danielle's
+   * repairs and the duties' own runs live on Systems; only a job she asked for gets its own line.
+   */
+  let teamStops = 0;
   for (const f of failedTaskLines(data.tasks, now)) {
     const t = (data.tasks ?? []).find((x) => x.id === f.id) ?? {};
+    if (isTeamJob(t)) { teamStops++; continue; }
     doneRaw.push({ key: `failed:${jobFamily(t.title).toLowerCase()}`, text: failedDoneLine(t), full: f.text, links: [] });
   }
+  if (teamStops) doneRaw.push({ key: `team-stops:${today}`, text: `${teamStops} team job${teamStops === 1 ? "" : "s"} stopped and ${teamStops === 1 ? "is" : "are"} being fixed by Danielle; nothing needed from you.`, links: [{ label: "Open ›", url: `${ORIGIN}/?tab=systems` }] });
   const prospects = prospectSection(data.prospects ?? null, now);
   const spirit = spiritSection(data.spirit ?? null, data.practiceWeek ?? null, now);
   const ancestral = ancestralLine(data.spirit ?? null);
@@ -837,7 +845,7 @@ export function buildDay(data, now = Date.now()) {
   // While her "OpenAI first" switch is on, one small line says so (owner, 24 Oct 2026).
   const openaiFirst = (data.settings ?? []).find((r) => r.key === "seat_order_openai_first");
   const openaiLine = openaiFirst && /^(on|true)$/.test(String(openaiFirst.value))
-    ? `OpenAI goes first for every job (saves Claude usage), on since ${dayWords(dayOf(Number(openaiFirst.updated_at) || now), { weekday: false })}. Turn it off in Settings.`
+    ? `Codex, on your ChatGPT plan, goes before Claude on every job (saves Claude usage; the free models still go first, and no paid API is used), on since ${dayWords(dayOf(Number(openaiFirst.updated_at) || now), { weekday: false })}. Turn it off in Settings.`
     : null;
   const ps = [eightRaiseLine(m.eightraise?.credits ?? null), openaiLine].filter(Boolean).join(" ") || null;
 
@@ -940,6 +948,14 @@ export function carriedLines(carried, { shown = new Set(), keys = new Set(), tod
       thin: `Still yours to answer: ${c.title} · waiting ${c.days} day${c.days === 1 ? "" : "s"}`,
       buttons: [], first_day: c.first_day ?? today,
     }));
+}
+
+/** A job the team started (a repair, a duty's run, Danielle's desk), not one she asked for. Pure. */
+export function isTeamJob(t) {
+  let input = {};
+  try { input = typeof t?.input === "string" ? JSON.parse(t.input) : (t?.input ?? {}); } catch { input = {}; }
+  if (typeof input?.from === "string" && input.from.includes("@") && input.origin !== "repair") return false;
+  return t?.employee_id === "emp_repo" || input?.origin === "repair" || input?.delivers !== undefined || input?.duty_id !== undefined;
 }
 
 export function replyContext(text) {

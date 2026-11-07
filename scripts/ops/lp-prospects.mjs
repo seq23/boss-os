@@ -332,7 +332,7 @@ export function templateDecide(tpl, { stale = [], forecast = null, released = nu
     details: [
       // Her approval releases the follow-ups to everyone who got a first email (owner, 25 Oct 2026).
       ...(released?.count ? [`Approving this also lets the follow-ups go to the ${released.count} people who got your first email${released.firstSentAt ? ` on ${dayMonth(released.firstSentAt)}` : ""}.`] : []),
-      ...outcome.lines,
+      ...outcome.lines.filter((l) => !/^These are follow-ups:/.test(l)),
       `After that: up to 20 emails a day, ${last} emails at most to each person (day 0, 3${last >= 3 ? ", 7" : ""}${last >= 4 ? " and 14" : ""}), then the sequence is complete. A reply, bounce or opt-out stops them at once; a spam complaint pauses everyone. Every address is checked with NeverBounce first.`,
       `Names it mentions: ${names.map((n) => `${n.name} (${n.why ?? "on your list"})`).join("; ")}.`,
       "Change: say what to change by replying with this card's number and your words; nothing is sent meanwhile. Try again: a different draft, with a new opening.",
@@ -366,10 +366,12 @@ export function runVerdict({ due = 0, sent = 0, held = [], stop = null }) {
   return { stop: null, line: null };
 }
 
-export function prospectsMorning({ rows, pending, stale, plan, sent, problem = null, now = Date.now() }) {
+export function prospectsMorning({ rows, pending, stale, plan, sent, problem = null, approved = false, now = Date.now() }) {
   const decide = [];
   const waiting = rows.filter((r) => ["new", "active"].includes(r.status) && Number(r.touches) === 1);
-  const released = waiting.length ? { count: waiting.length, firstSentAt: Math.min(...waiting.map((r) => Number(r.first_sent_at ?? Date.now()))) } : null;
+  // Only true when no approved email exists: with one, emails 1 and 2 go without this card (7 Nov
+  // 2026: the card said approving released 34 follow-ups that were really waiting on the window).
+  const released = waiting.length && !approved ? { count: waiting.length, firstSentAt: Math.min(...waiting.map((r) => Number(r.first_sent_at ?? Date.now()))) } : null;
   if (pending) decide.push(templateDecide(pending, { stale, forecast: plan?.forecast ?? null, released }));
   for (const p of rows.filter((r) => r.status === "interested" && r.draft_tap_token)) {
     decide.push({
@@ -469,7 +471,7 @@ async function main() {
   let pending = state.pending;
   let stale = [];
   const approvedNames = state.approved ? JSON.parse(state.approved.names_json ?? "[]") : [];
-  if (state.approved && deals) stale = staleFeatured(approvedNames, supply).filter((n) => !byRule("add").includes(n.toLowerCase()));
+  if (state.approved && deals) stale = staleFeatured(approvedNames, supply).filter((n) => !byRule("add").map((x) => String(x).toLowerCase()).includes(n.toLowerCase()));
   /*
    * EMAILS 3 AND 4 GO TO HER FIRST (owner, 6 Nov 2026: "never invent-and-send"). An approved template
    * from before today has no words for them: the same email, the same names and the same follow-up,
@@ -562,7 +564,7 @@ async function main() {
 
   const rows = (await api.get("/lp/prospects?tokens=1")).rows ?? [];
   const verdict = runVerdict({ due: LIVE && sendDay && !plan.dryRun ? plan.sends?.length ?? 0 : 0, sent, held, stop });
-  const file = writeMorning("prospects", prospectsMorning({ rows, pending, stale, plan, sent, problem: verdict.line }));
+  const file = writeMorning("prospects", prospectsMorning({ rows, pending, stale, plan, sent, problem: verdict.line, approved: Boolean(state.approved) }));
   if (verdict.stop) { console.error(verdict.stop); process.exitCode = 2; return; }
   if (plan.forecast?.complaint) { console.error(plan.forecast.complaint); process.exitCode = 2; return; }
   console.log(`LP-PROSPECTS-COMPLETE: ${rows.length} prospects, ${sent} sent; morning section at ${file}`);

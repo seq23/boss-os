@@ -80,6 +80,8 @@ describe("featured names: a select few, never a never-feature, swaps proposed no
   });
   it("names a stale featured name for a swap", () => {
     expect(staleFeatured([{ name: "Alpha" }, { name: "Stale" }, { name: "Gone" }], supply, now)).toEqual(["Stale", "Gone"]);
+    // A name she asked for is never "no longer fresh" (7 Nov 2026), even when it is not on her list.
+    expect(staleFeatured([{ name: "Gone", why: "you asked for it" }, { name: "Stale" }], supply, now)).toEqual(["Stale"]);
   });
   it("reads her plain-words edits", () => {
     expect(nameRulesIn("add Kappa Labs, drop Beta and never feature Secret please")).toEqual([
