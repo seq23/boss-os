@@ -144,7 +144,9 @@ function codexPass() {
   fake("curl", "printf 200");
   fake("claude", "exit 1");
   fake("security", "exit 1");
-  fake("npm", 'exec node "$BOSS_OS_REPO/scripts/ops/ahrefs-audit-report.mjs"');
+  // `npm run vault:run -- <cmd…>` stands in for the vault: it runs exactly the command after `--`
+  // (the land step and the reporter both go through it since 7 Nov 2026).
+  fake("npm", 'while [ "$#" -gt 0 ] && [ "$1" != -- ]; do shift; done; shift; exec "$@"');
   fake("codex", `if [ "$1" = login ]; then exit 0; fi
 printf '%s' "$AUDIT_FIXTURE_SUMMARY" > "$BOSS_OS_SITE_AUDIT_DIR/findings.json"
 echo 'AHREFS-AUDIT-COMPLETE: projects=3 fixed=0 surfaced=0 off_limits=0 no_repo=1 ahrefs_side=0 ahrefs_credits=0 client_repo=0 in_flight=1'`);

@@ -153,6 +153,8 @@ DIGEST_ROLE="$(role_of site_audit.mail_digest)" || { say "NAMED STOP [NO_AI_ROLE
 NO_AUTO_FIX="$(node -e 'import("'"$REPO"'/src/shared/boss/siteAudit/repoPolicy.mjs").then(m=>console.log(m.NO_AUTO_FIX_REPOS.join(" ")))' 2>/dev/null)"
 [ -n "$NO_AUTO_FIX" ] || { say "NAMED STOP [NO_POLICY] could not read the off-limits list; refusing to run without it."; exit 11; }
 say "off limits to the fixer: $NO_AUTO_FIX"
+# Parked repos (the personal brain's Repo categories "Parked …" lines), read by the one parser.
+say "parked (off limits too): $(node -e 'import("'"$REPO"'/scripts/ops/lib/repo-categories.mjs").then(m=>{const p=m.parkedRepos();console.log(p.problem?`none read (${p.problem})`:p.parked.join(" ")||"none")})' 2>/dev/null)"
 
 # THE PREVIOUS FILE IS REMOVED BEFORE THE RUN, NOT AFTER.
 #
@@ -287,7 +289,11 @@ say "sentinel: $(grep -oE 'AHREFS-AUDIT-COMPLETE: projects=[0-9].*' "$RUN_LOG" |
 ln -sf "$RUN_LOG" "$LOG_DIR/latest.log"
 
 # LAND EVERY FIX. Deterministic, not left to the model: checks to green, then ~/bin/land.
-node "$REPO/scripts/ops/site-audit-lib.mjs" land "$OUT_DIR/findings.json" 2>&1 | tee -a "$RUN_LOG" | grep '^LAND ' || true
+# Under the vault (7 Nov 2026): a land's post-merge steps run wrangler (p-n-p's D1 check, boss-os's
+# deploy), and under launchd there is no interactive login, so p-n-p #201/#202 and boss-os #318 merged
+# and were then recorded "land_refused" for a missing CLOUDFLARE_API_TOKEN. landAll hands ~/bin/land
+# only the Cloudflare names (envForRepoRun), never the rest of the vault.
+(cd "$REPO" && npm run --silent vault:run -- node "$REPO/scripts/ops/site-audit-lib.mjs" land "$OUT_DIR/findings.json") 2>&1 | tee -a "$RUN_LOG" | grep '^LAND ' || true
 
 # Report even when the pass's verdict is red. Delivery and repair are separate claims; check both
 # before exiting so a completed pass whose report never arrived cannot quietly succeed.

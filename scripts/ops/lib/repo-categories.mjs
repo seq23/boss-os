@@ -5,7 +5,7 @@
 import { existsSync, readFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { join } from "node:path";
-import { parseRepoCategories } from "../../../src/shared/boss/repos/categories.mjs";
+import { parseRepoCategories, isParkedRepo } from "../../../src/shared/boss/repos/categories.mjs";
 
 let cached = null;
 export function readRepoCategories({ home = homedir(), fresh = false } = {}) {
@@ -15,3 +15,14 @@ export function readRepoCategories({ home = homedir(), fresh = false } = {}) {
   cached = { home, cats };
   return cats;
 }
+
+/**
+ * PARKED REPOS ARE OFF LIMITS TO THE AUTOMATIC FIXER (7 Nov 2026). The brain's "Parked …" lines
+ * ("no work, no jobs … until she un-parks it") are read here, never copied into code. An unreadable
+ * brain parks nothing and says why (`problem`), so the caller can print it.
+ */
+export function parkedRepos(opts) {
+  const cats = readRepoCategories(opts);
+  return { parked: cats.problem ? [] : (cats.parked ?? []), problem: cats.problem ?? null };
+}
+export const isParked = (repo, opts) => isParkedRepo(repo, readRepoCategories(opts));

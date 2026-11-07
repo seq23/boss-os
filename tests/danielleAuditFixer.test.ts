@@ -20,7 +20,8 @@ import { createServer, type Server } from "node:http";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 // @ts-expect-error — plain .mjs with no types; the functions under test are the ones the runner calls.
-import { runVerdict, landAll, matchInFlight } from "../scripts/ops/site-audit-lib.mjs";
+import { runVerdict, landAll, matchInFlight, landReason } from "../scripts/ops/site-audit-lib.mjs";
+import { parseRepoCategories, isParkedRepo } from "../src/shared/boss/repos/categories.mjs";
 import { mayAutoFix, NO_AUTO_FIX_REPOS } from "../src/shared/boss/siteAudit/repoPolicy.mjs";
 
 const ROOT = join(__dirname, "..");
@@ -292,4 +293,58 @@ describe("her own crawl supplies the URLs the Ahrefs mail never carries", () => 
     expect(urls("duplicate_title").sort()).toEqual(["/", "/a"]);
     expect(existsSync(out)).toBe(true);
   }, 60000);
+});
+
+/*
+ * LAND TRUTH (7 Nov 2026). p-n-p #201/#202 and boss-os #318 MERGED, then a post-merge wrangler step
+ * found no CLOUDFLARE_API_TOKEN under launchd and the run said "land_refused"; boss-os #319 (fixing a
+ * sprylabs-hpc-site brief) was landed from the sprylabs-hpc-site checkout and never found.
+ */
+describe("landing tells the truth and lands from the PR's own repo", () => {
+  const WRANGLER = "✘ [ERROR] In a non-interactive environment, it's necessary to set a CLOUDFLARE_API_TOKEN environment variable for wrangler to work.\n🪵  Logs were written to \"/x/wrangler.log\"\n";
+  const stub = (state: string, calls: any[] = []) => (c: string, a: string[], cwd: string, env: any) => {
+    calls.push({ argv: [c, ...a], cwd, env });
+    if (a.includes("checks")) return { status: 0, out: "" };
+    if (a[0] === "pr" && a[1] === "view") return { status: 0, out: `${state}\n` };
+    return { status: 1, out: WRANGLER };
+  };
+  const row = () => ({ disposition: "fixed_pr", repo: "sprylabs-hpc-site", project: "checklist:spryexecutiveos.com", headline: "b6", pr_url: "https://github.com/seq23/boss-os/pull/319", worktree: "/nonexistent", crawl: { pages_crawled: 1 } });
+
+  it("a merged PR whose deploy failed is 'merged, deploy failed: <reason>', never NOT_LANDED; an unmerged one stays land_refused", () => {
+    const merged = { findings: [row()] };
+    landAll(merged, { run: stub("MERGED"), parked: () => false, env: {} });
+    expect((merged.findings[0] as any).land).toBe("merged_deploy_failed");
+    expect((merged.findings[0] as any).land_detail).toMatch(/^merged, deploy failed: In a non-interactive environment/);
+    const v = runVerdict(merged).reasons.join("\n");
+    expect(v).toMatch(/^DEPLOY_FAILED: .*merged, deploy failed/m);
+    expect(v).not.toMatch(/NOT_LANDED/);
+    const open = { findings: [row()] };
+    landAll(open, { run: stub("OPEN"), parked: () => false, env: {} });
+    expect((open.findings[0] as any).land).toBe("land_refused");
+    expect(runVerdict(open).reasons.join("\n")).toMatch(/^NOT_LANDED/m);
+    expect(landReason(WRANGLER)).toMatch(/^In a non-interactive environment/);
+  });
+
+  it("lands from the PR's repo with the Cloudflare token in its environment", () => {
+    const calls: any[] = [];
+    const prev = process.env.CLOUDFLARE_API_TOKEN;
+    process.env.CLOUDFLARE_API_TOKEN = "test-token";
+    try { landAll({ findings: [row()] }, { run: stub("MERGED", calls), parked: () => false }); }
+    finally { if (prev === undefined) delete process.env.CLOUDFLARE_API_TOKEN; else process.env.CLOUDFLARE_API_TOKEN = prev; }
+    const land = calls.find((c) => c.argv.includes("319") && !c.argv.includes("checks"));
+    expect(land.cwd).toMatch(/\/boss-os$/);
+    expect(land.cwd).not.toMatch(/sprylabs-hpc-site/);
+    expect(land.env.CLOUDFLARE_API_TOKEN).toBe("test-token");
+  });
+
+  it("a parked repo (the brain's Repo categories) is never landed", () => {
+    const cats = parseRepoCategories("## Repo categories\n**Mine**\n- A: alpha\n**Friends & clients**\n- F: pal\n- Parked indefinitely (her ruling): sleepy-site, other-sleepy\n**The system**\n- boss-os\n");
+    expect(isParkedRepo("seq23/sleepy-site", cats)).toBe(true);
+    expect(isParkedRepo("pal", cats)).toBe(false);
+    const calls: any[] = [];
+    const p = { findings: [{ ...row(), repo: "sleepy-site", pr_url: "https://github.com/seq23/sleepy-site/pull/2" }] };
+    landAll(p, { run: stub("OPEN", calls), parked: (r: string) => isParkedRepo(r, cats), env: {} });
+    expect(calls).toEqual([]);
+    expect((p.findings[0] as any).land).toBe("refused_policy");
+  });
 });
