@@ -415,7 +415,7 @@
               "reader": "d1",
               "params": {
                 "db": "dream-wedding-builder",
-                "sql": "SELECT COUNT(*) AS n FROM builder_signups WHERE source LIKE '%pinterest%' AND datetime(created_at) >= datetime(:since_iso)",
+                "sql": "SELECT COUNT(*) AS n FROM builder_signups WHERE email NOT LIKE 'seq.taylor+aptest%' AND source LIKE '%pinterest%' AND datetime(created_at) >= datetime(:since_iso)",
                 "days": 30
               }
             },
@@ -423,7 +423,7 @@
               "reader": "d1",
               "params": {
                 "db": "approvalprep-products",
-                "sql": "SELECT COUNT(*) AS n FROM email_signups WHERE source LIKE '%pinterest%' AND datetime(created_at) >= datetime(:since_iso)",
+                "sql": "SELECT COUNT(*) AS n FROM email_signups WHERE email NOT LIKE 'seq.taylor+aptest%' AND source LIKE '%pinterest%' AND datetime(created_at) >= datetime(:since_iso)",
                 "days": 30
               }
             }
@@ -548,7 +548,7 @@
               "reader": "d1",
               "params": {
                 "db": "dream-wedding-builder",
-                "sql": "SELECT COUNT(*) AS n FROM builder_signups WHERE datetime(created_at) >= datetime(:since_iso)",
+                "sql": "SELECT COUNT(*) AS n FROM builder_signups WHERE email NOT LIKE 'seq.taylor+aptest%' AND datetime(created_at) >= datetime(:since_iso)",
                 "days": 7
               }
             },
@@ -556,7 +556,7 @@
               "reader": "d1",
               "params": {
                 "db": "approvalprep-products",
-                "sql": "SELECT COUNT(*) AS n FROM email_signups WHERE datetime(created_at) >= datetime(:since_iso)",
+                "sql": "SELECT COUNT(*) AS n FROM email_signups WHERE email NOT LIKE 'seq.taylor+aptest%' AND datetime(created_at) >= datetime(:since_iso)",
                 "days": 7
               }
             }
@@ -584,7 +584,7 @@
               "reader": "d1",
               "params": {
                 "db": "dream-wedding-builder",
-                "sql": "SELECT COUNT(*) AS n FROM orders WHERE payment_status = 'paid' AND datetime(created_at) >= datetime(:since_iso)",
+                "sql": "SELECT COUNT(*) AS n FROM orders WHERE payment_status = 'paid' AND customer_email NOT LIKE 'seq.taylor+aptest%' AND datetime(created_at) >= datetime(:since_iso)",
                 "days": 30
               }
             },
@@ -1127,7 +1127,7 @@
         "reader": "d1",
         "params": {
           "db": "approvalprep-products",
-          "sql": "SELECT COUNT(*) AS n FROM email_signups WHERE source = 'starter:credit-repair' AND datetime(created_at) >= datetime(:since_iso)",
+          "sql": "SELECT COUNT(*) AS n FROM email_signups WHERE email NOT LIKE 'seq.taylor+aptest%' AND source = 'starter:credit-repair' AND datetime(created_at) >= datetime(:since_iso)",
           "days": 7
         }
       },
@@ -1209,7 +1209,7 @@
         "reader": "d1",
         "params": {
           "db": "dream-wedding-builder",
-          "sql": "SELECT COUNT(*) AS n FROM builder_signups WHERE source LIKE 'free-wedding-planner:%' AND datetime(created_at) >= datetime(:since_iso)",
+          "sql": "SELECT COUNT(*) AS n FROM builder_signups WHERE email NOT LIKE 'seq.taylor+aptest%' AND source LIKE 'free-wedding-planner:%' AND datetime(created_at) >= datetime(:since_iso)",
           "days": 7
         }
       },
@@ -1223,7 +1223,7 @@
         "reader": "d1",
         "params": {
           "db": "dream-wedding-builder",
-          "sql": "SELECT COUNT(*) AS n FROM builder_signups WHERE source LIKE 'free-wedding-planner:%' AND datetime(created_at) >= datetime(:since_iso)",
+          "sql": "SELECT COUNT(*) AS n FROM builder_signups WHERE email NOT LIKE 'seq.taylor+aptest%' AND source LIKE 'free-wedding-planner:%' AND datetime(created_at) >= datetime(:since_iso)",
           "days": 30
         }
       },
@@ -1250,7 +1250,7 @@
         "reader": "d1",
         "params": {
           "db": "dream-wedding-builder",
-          "sql": "SELECT COUNT(*) AS n FROM orders WHERE payment_status = 'paid' AND product_id IN ('checklist-pdf','operations-suite') AND datetime(created_at) >= datetime(:since_iso)",
+          "sql": "SELECT COUNT(*) AS n FROM orders WHERE payment_status = 'paid' AND customer_email NOT LIKE 'seq.taylor+aptest%' AND product_id IN ('checklist-pdf','operations-suite') AND datetime(created_at) >= datetime(:since_iso)",
           "days": 30
         }
       },
@@ -1264,7 +1264,7 @@
         "reader": "d1",
         "params": {
           "db": "dream-wedding-builder",
-          "sql": "SELECT COUNT(*) AS n FROM orders WHERE payment_status = 'paid' AND product_id IN ('checklist-pdf','operations-suite') AND datetime(created_at) >= datetime(:since_iso)",
+          "sql": "SELECT COUNT(*) AS n FROM orders WHERE payment_status = 'paid' AND customer_email NOT LIKE 'seq.taylor+aptest%' AND product_id IN ('checklist-pdf','operations-suite') AND datetime(created_at) >= datetime(:since_iso)",
           "days": 30
         }
       },
