@@ -59,7 +59,8 @@ describe("the one morning email", () => {
     expect(idx.every((n) => n >= 0), JSON.stringify(idx)).toBe(true);
     expect([...idx].sort((a, b) => a - b)).toEqual(idx);
     expect(e.subject).toBe("Friday: 4 decisions, 2 new deals, Valerie's list");
-    expect(e.text.split("\n")[0]).toBe("Good morning. Here is your Friday, October 23. On your calendar: 10 am CT Call with Example Partners with A. Person.");
+    // Owner layout (7 Nov 2026): line 1 says whether she must act, then her calendar, above the fold.
+    expect(e.text.split("\n").slice(0, 2)).toEqual(["Good morning. Here is your Friday, October 23. 4 things to decide, below.", "On your calendar: 10 am CT Call with Example Partners with A. Person."]);
     // Owner, 24 Oct 2026: the 8Raise footer only when something is wrong (3 of 75 used is fine).
     expect(e.text).not.toMatch(/8Raise/);
   });
@@ -126,7 +127,9 @@ describe("the one morning email", () => {
     process.env.BOSS_OS_MAIL_KEY = "test-key-not-real";
     const p = employeeMail(sendersFor("Simone")[0]!, { to: "owner@example.com", subject: e.subject, text: e.text, prelaid: e });
     expect(p.html).toBe(e.html);
-    expect(p.headers).toEqual({ "X-Boss-Ref": "yd_20261023", "X-Boss-Kind": "morning" });
+    expect(p.headers).toEqual({ "X-Boss-Ref": "yd_20261023", "X-Boss-Kind": "morning", "X-Boss-Layout": "digest", "X-Boss-Owner-Line": "1" });
+    // The digest shows no REF: each of its cards has its own reply form.
+    expect(p.subject).not.toMatch(/REF BOS-/);
     delete process.env.BOSS_OS_MAIL_KEY;
   });
 });
@@ -136,7 +139,8 @@ describe("an empty or broken morning still reads plainly", () => {
     const empty = buildDay({ diary: [], tasks: [], approvals: [], repoChanges: [], briefing: null, feed: null, feedError: "the site answered 401", morning: {} }, NOW);
     expect(empty.problems).toEqual([]);
     expect(empty.subject).toBe("Friday: nothing to decide");
-    expect(empty.text.split("\n")[2]).toBe("Nothing to decide — this is just so you know.");
+    expect(empty.text.split("\n")[0]).toBe("Good morning. Here is your Friday, October 23. Nothing to do.");
+    expect(empty.text).not.toMatch(/^Decide \(\d+\)$/m);
     expect(empty.text).not.toMatch(/New deals|Monique found|Done for you|Catch up with|8Raise/);
     expect(empty.text).toContain("Briefing late — it will be on your Today page.");
     expect(empty.text).toContain("Valerie's list did not load this morning; the team is fixing it");
@@ -226,23 +230,53 @@ describe("a duty-change approval and its task are one plain decision (2 Nov 2026
     const approval = { id: "apr_dc1", title, summary: "Intake assigned this USER_ONLY. Trading lane work. No model receives execution authority here.", risk: "high", origin_type: "tasks", origin_id: "tsk_dc1", payload: JSON.stringify({ task_id: "tsk_dc1" }) };
     const e = buildDay({ ...DATA, tasks: [task], approvals: [approval], repoChanges: [], morning: {} }, NOW);
     const decide = e.text.slice(e.text.indexOf("Decide ("), e.text.indexOf("\n\n", e.text.indexOf("Decide (") + 1 + 200));
-    expect(e.text.match(/Example listings: renew and keep them true/g)?.length).toBe(2); // title + body of ONE item
+    expect(e.text.match(/Example listings: renew and keep them true/g)?.length).toBe(1); // named once, in the title (7 Nov 2026)
     expect(decide).toMatch(/^Decide \(1\)/);
-    expect(e.text).toContain("Danielle wants to change Robin's duty");
-    expect(e.text).toContain('"Renew the listings every Monday instead."');
-    expect(e.text).toMatch(/Yes lets Danielle make the change; no keeps it as it is\./);
+    // The change itself, in one line (7 Nov 2026): she can say yes or no to it.
+    expect(e.text).toContain("The change: Renew the listings every Monday instead. Danielle makes it as you asked.");
+    expect(e.text).toMatch(/Yes lets Danielle make it; no keeps Robin's duty as it is\./);
     expect(e.text).not.toMatch(/Intake assigned|execution authority|USER_ONLY|Risk: high|is waiting for your word/i);
-    expect(plainProblems({ subject: e.subject, text: e.text })).toEqual([]);
+    expect(plainProblems({ subject: e.subject, text: e.text, layout: e.layout })).toEqual([]);
   });
 });
 
 // Times follow her Mac's zone, Central in brackets when away (6 Nov 2026; was Central with no label).
 describe("the morning email's times are in her zone", () => {
   it("in New York: Eastern first, Central in brackets", () => {
-    expect(buildDay({ ...DATA, ownerTz: "America/New_York" }, NOW).text.split("\n")[0]).toContain("On your calendar: 11 am ET (10 am CT) Call with Example Partners");
+    expect(buildDay({ ...DATA, ownerTz: "America/New_York" }, NOW).text.split("\n")[1]).toContain("On your calendar: 11 am ET (10 am CT) Call with Example Partners");
   });
   it("at home, or unread: Central", () => {
-    expect(buildDay({ ...DATA, ownerTz: "America/Chicago" }, NOW).text.split("\n")[0]).toContain("On your calendar: 10 am CT Call");
-    expect(buildDay({ ...DATA, ownerTz: null }, NOW).text.split("\n")[0]).toContain("On your calendar: 10 am CT Call");
+    expect(buildDay({ ...DATA, ownerTz: "America/Chicago" }, NOW).text.split("\n")[1]).toContain("On your calendar: 10 am CT Call");
+    expect(buildDay({ ...DATA, ownerTz: null }, NOW).text.split("\n")[1]).toContain("On your calendar: 10 am CT Call");
+  });
+});
+
+describe("a task title on her card says you, not her (7 Nov 2026 live read)", () => {
+  it("her own things and what she does turn to the second person; another woman's do not", async () => {
+    const { toYou } = await import("../src/shared/boss/mail/plain.mjs");
+    expect(toYou("senders in her personal Gmail she never opens")).toBe("senders in your personal Gmail you never open");
+    expect(toYou("Valerie gets her own copy")).toBe("Valerie gets her own copy");
+  });
+});
+
+describe("a duty-change card names the change, not its label (7 Nov 2026 live read)", () => {
+  it("skips the label and the keep-as-now line; keeps what changes", async () => {
+    const { theChange } = await import("../scripts/ops/your-day.mjs");
+    expect(theChange("Change to Robin's listings duty (my ruling, 1 Nov). Your call, no need to ask me back. The listings work well; keep doing them as now. Add this: the listings should show more real work.")).toBe("The listings should show more real work.");
+    expect(theChange("Change to Robin's duty.")).toBeNull();
+    expect(theChange("Add this: show more of OUR REAL WORK.")).toBe("Show more of our real work.");
+  });
+});
+
+describe("the morning shows at most five open loops, then See all (7 Nov 2026 live read: 17 rows)", () => {
+  it("an older writer's long list is cut to five and one line to the page", () => {
+    const lines = Array.from({ length: 17 }, (_, i) => ({ text: `Loop ${i + 1} (due Mon 2 Nov). Did this happen?`, links: [] }));
+    const e = buildDay({ diary: [], tasks: [], approvals: [], repoChanges: [], briefing: null, feed: { items: [] }, morning: { open_loops: { section: "open_loops", at: new Date(NOW).toISOString(), title: "Open loops: 47, 31 overdue", lines, link: { label: "See every open loop →", url: "https://boss.sequoiataylor.com/?tab=loops" } } } } as any, NOW);
+    expect(e.text).toContain("Loop 5 (due");
+    expect(e.text).not.toContain("Loop 6 (due");
+    expect(e.text).toContain("+12 more on Open Loops.");
+    // Negative proof: five or six rows are shown as they are.
+    const six = buildDay({ diary: [], tasks: [], approvals: [], repoChanges: [], briefing: null, feed: { items: [] }, morning: { open_loops: { section: "open_loops", at: new Date(NOW).toISOString(), title: "Your open loops: 6, 6 overdue", lines: lines.slice(0, 6) } } } as any, NOW);
+    expect(six.text).toContain("Loop 6 (due");
   });
 });

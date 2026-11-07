@@ -18,8 +18,9 @@ const when = (ms: number) => new Intl.DateTimeFormat("en-GB", { weekday: "short"
 export function Updates() {
   const [rows, setRows] = useState<UpdateRow[] | undefined>(undefined);
   const [days, setDays] = useState(7);
+  const [notes, setNotes] = useState<string | null>(null);
   const [failed, setFailed] = useState(false);
-  const load = useCallback(() => api.updates().then((d) => { setRows(d.rows); setDays(d.days); setFailed(false); }).catch(() => { setFailed(true); setRows((r) => r ?? []); }), []);
+  const load = useCallback(() => api.updates().then((d) => { setRows(d.rows); setDays(d.days); setNotes(d.notes?.line ?? null); setFailed(false); }).catch(() => { setFailed(true); setRows((r) => r ?? []); }), []);
   useEffect(() => { void load(); }, [load]);
   if (rows === undefined) return <Loading />;
   const line = updatesLine(updatesSummary(rows));
@@ -35,6 +36,8 @@ export function Updates() {
       </p>
       <p className="brain-hint">News from the team that needs nothing from you, from the last {days} days. Anything you must decide still comes by email.</p>
       {!failed && rows.length === 0 && <p className="brain-hint">No updates this week.</p>}
+      {/* The week's plain notes, one line (owner, 7 Nov 2026: a weekly count shows when a new layout is needed). */}
+      {!failed && notes && <p className="brain-hint" data-testid="updates-notes">{notes}</p>}
       {rows.map((r) => (
         <div key={r.id} className="t-row" data-testid={`update-${r.id}`}>
           <div className="t-row-top">

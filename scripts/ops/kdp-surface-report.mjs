@@ -187,12 +187,12 @@ async function api(path, cookie, body) {
   return JSON.parse(text).data;
 }
 
-async function sendAsSimone({ subject, text }) {
+async function sendAsSimone({ subject, text, owner = null }) {
   const senders = sendersFor("Simone");
   if (senders.length === 0) return { id: null, error: "NO_RESEND_KEY" };
   let lastErr = "";
   for (const sender of senders) {
-    const res = await postEmployeeMail(sender, employeeMail(sender, { to: TO, subject, text }));
+    const res = await postEmployeeMail(sender, employeeMail(sender, { to: TO, subject, text, owner }));
     if (res.ok) {
       const j = await res.json().catch(() => ({}));
       if (sender.fallback) console.log(FALLBACK_STOP);
@@ -203,7 +203,7 @@ async function sendAsSimone({ subject, text }) {
   return { id: null, error: lastErr };
 }
 
-function askEmail(row, item, register) {
+export function askEmail(row, item, register) {
   const t = (register.titles ?? []).find((x) => x.title_ref === item.title_ref);
   const due = row.due_at ? ` Amazon's deadline: ${new Date(row.due_at).toISOString().slice(0, 10)}.` : "";
   if (messageShape(item) === "stop") {
@@ -214,6 +214,7 @@ function askEmail(row, item, register) {
         `What I did: ${item.action_taken}\n\n` +
         `What only you can do: ${item.owner_ask}${due}\n\n` +
         `No reply is needed — once it is done my next run picks it up and carries on. I chase this every day until it is.\n\n— Simone`,
+      owner: { layout: "note", ref: String(row.id).toLowerCase(), why: item.note, act: `One thing only you can do: ${item.owner_ask}` },
     };
   }
   return {
@@ -224,10 +225,11 @@ function askEmail(row, item, register) {
       `What I need from you: ${item.owner_ask}${due}\n\n` +
       `Reply with one word — approved — and I do it on my next run and report the result from the bookshelf. ` +
       `Reply with different wording and I use yours. Reply "hold" and I leave it.\n\n— Simone`,
+    owner: { layout: "approve", ref: String(row.id).toLowerCase(), why: item.note, act: "Reply approved, or with your own wording, or hold" },
   };
 }
 
-function chaseEmail(p, register) {
+export function chaseEmail(p, register) {
   const t = (register.titles ?? []).find((x) => x.title_ref === p.title_ref);
   const days = Math.ceil((p.due_at - Date.now()) / DAY_MS);
   const when = days < 0 ? `${-days} day(s) PAST Amazon's deadline` : days === 0 ? "due TODAY" : `due in ${days} day(s)`;
@@ -237,6 +239,7 @@ function chaseEmail(p, register) {
       `${p.note}\n\nThis is ${when} and I have no answer from you on it.\n\n` +
       (p.owner_ask ? `What I need: ${p.owner_ask}\n\nReply with one word — approved.` : `What is happening: ${p.action_taken}`) +
       `\n\nI chase this every day until it is resolved.\n\n— Simone`,
+    owner: { layout: p.owner_ask ? "approve" : "note", ref: String(p.id).toLowerCase(), why: `Still open, ${when}, with no answer from you: ${p.note}`, act: p.owner_ask ? "Reply approved to go ahead" : "Nothing to do; this is where it stands" },
   };
 }
 
@@ -386,7 +389,9 @@ async function main() {
   if (payload.blocked) process.exitCode = 17;
 }
 
-main().catch((err) => {
-  console.error(`kdp surface report failed: ${err?.message ?? err}`);
-  process.exitCode = 1;
-});
+if (import.meta.url === `file://${process.argv[1]}`) {
+  main().catch((err) => {
+    console.error(`kdp surface report failed: ${err?.message ?? err}`);
+    process.exitCode = 1;
+  });
+}

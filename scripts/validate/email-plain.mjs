@@ -157,7 +157,7 @@ export function check() {
     if (/\bsendAs\(|employeeMail\(|sendAsEmployee\(/.test(read(f))) fails.push(`${f} still sends its own email (rule 1: it folds into the morning email)`);
   }
   if ((read("scripts/ops/risk-watch.mjs").match(/\bsendAs\(/g) ?? []).length !== 1 || !/sendAs\("Toni", \{ subject: laid\.subject, text: laid\.text, prelaid: laid \}\)/.test(read("scripts/ops/risk-watch.mjs"))) fails.push("risk-watch sends anything but the one money-at-risk problem email");
-  if (!/if \(t\.read && !stillStopped\(task\)\)/.test(read("scripts/ops/task-notices.mjs"))) fails.push("task-notices does not re-check a stopped task before emailing");
+  if (!/if \((?:notice\.kind === "stopped" && )?t\.read && !stillStopped\(task\)\)/.test(read("scripts/ops/task-notices.mjs"))) fails.push("task-notices does not re-check a stopped task before emailing");
   return { fails, examined };
 }
 

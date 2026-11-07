@@ -9,7 +9,9 @@ export function employeeMail(
     to: string | string[]; subject: string; text?: string; html?: string; refs?: string[];
     files?: Array<{ name: string; bytes: number; path?: string | null; drive_url?: string | null }>;
     layout?: { happened: string; needs?: string[]; details?: Array<string | { heading: string }>; sections?: unknown[]; footer?: string | null } | null;
-    prelaid?: { subject: string; text: string; html: string; refs: string[] } | null;
+    prelaid?: { subject: string; text: string; html: string; refs: string[]; layout?: string; minimum?: import("../../src/shared/boss/mail/ownerLayout.mjs").OwnerMinimum } | null;
+    /** The owner layout (7 Nov 2026): why she is getting it, whether she must act, the layout. */
+    owner?: Omit<import("../../src/shared/boss/mail/ownerLayout.mjs").OwnerSpec, "who" | "subject"> | null;
     context?: string | null;
     /** Message-IDs this answers, oldest first: In-Reply-To the newest, References all. */
     thread?: string[];

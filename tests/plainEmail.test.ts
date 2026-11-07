@@ -58,7 +58,6 @@ const SAMPLES: Record<string, Array<{ who: string; subject: string; text: string
     { who: "Danielle", subject: "example-site is live [rc_m5jh89zfkeyv3tmd]", text: "Sequoia,\n\nThis is Danielle. example-site is landed and proven live.\n\nPull request: https://github.com/example/example-site/pull/12\nMerge commit: 0123abc\n\nLIVE PROOF\n- home_status: 200\n\n— Danielle" },
   ],
   "scripts/ops/task-notices.mjs": [{ who: "Simone", subject: "One key only you hold: EXAMPLE_API_KEY [tsk_m5jh8bjbxmhtfz1w]", text: "The cover job needs a key only you hold.\n\nWhat you asked: Make the cover\n\nWhat I need from you: reply with SECRET EXAMPLE_API_KEY=<value>.\n\nReply to this email and your answer goes straight back to this job. Nothing was sent to anyone outside Boss OS. tsk_m5jh8bjbxmhtfz1w" }],
-  "scripts/ops/service-tick.mjs": [{ who: "Simone", subject: "Key received: EXAMPLE_API_KEY", text: "Your key EXAMPLE_API_KEY is in the vault on your Mac and the work that waited for it is running again." }],
   "scripts/ops/kdp-surface-report.mjs": [{ who: "Simone", subject: "The Example Book: one decision, reply approved [kml_m331j7a4gqr6qz47]", text: "Amazon flagged the subtitle.\n\nWhat I did: drafted a shorter subtitle.\n\nWhat I need from you: approve the new subtitle. Amazon's deadline: 2026-10-30.\n\nReply with one word — approved — and I do it on my next run.\n\n— Simone" }],
   "scripts/ops/youtube-comment-watch.mjs": [{ who: "Monique", subject: "3 comments worth a reply [cw_m5abc123]", text: "Three new comments on How We Know are worth a reply.\n\n1. \"Great video\" — reply as drafted: Thank you!\n\nReply with one line per number: `1 delete`, `2 reply as drafted`, `3 reply: <your words>`, `4 ignore` — or `your call`." }],
   "scripts/ops/lp-outcomes.mjs": [{ who: "Monique", subject: "LP outcomes: 2 to suppress, 3 replied, 1 bounced", text: "Two people asked not to be written to again, three replied and one address bounced.\n\nOPTED OUT (2) - remove from the list\n- a.person@example.com\n\nBOUNCED (1) - the address did not accept mail\n- b.person@example.com" }],
@@ -271,7 +270,7 @@ describe("the layout itself", () => {
   it("the job code rides in a header, never in what she reads", () => {
     const sender = sendersFor("Danielle")[0]!;
     const p = employeeMail(sender, { to: "owner@example.com", subject: "Plan for example-site: reply approved to start [rc_abc123]", text: "Here is my plan. (Keep [rc_abc123] in the subject; replying keeps it.)" });
-    expect(p.headers).toEqual({ "X-Boss-Ref": "rc_abc123" });
+    expect(p.headers).toEqual({ "X-Boss-Ref": "rc_abc123", "X-Boss-Layout": "note" });
     expect(`${p.subject}\n${p.text}\n${p.html}`).not.toMatch(/rc_abc123/);
     expect(p.reply_to).toBe("danielle@sequoiataylor.com");
   });
@@ -419,7 +418,8 @@ describe("Danielle's plan email", () => {
     // full rides ONLY as the attached file — `planMail` never reads the plan's own text.
     expect(src).toMatch(/const laid = planMail\(\{/);
     const fn = src.slice(src.indexOf("export function planMail("), src.indexOf("async function email("));
-    expect(fn).toMatch(/return layoutEmail\(\{/);
+    // 7 Nov 2026: over the owner layout (`ownerEmail`, itself over `layoutEmail`): approve this, with its REF.
+    expect(fn).toMatch(/return ownerEmail\(\{/);
     expect(fn).not.toMatch(/plan_text|renderPlanLines/);
     expect(src).toMatch(/filesAt\(\[planFile\]\)/);
     expect(src).not.toMatch(/"THE PLAN", "", String\(out\.plan_text/);
@@ -559,5 +559,23 @@ describe("the 6 Nov 2026 live read: what the cleaner did to real emails", () => 
   it("a count with '(s)' agrees with its word", () => {
     expect(cleanText("Spry Labs weekly: 1 report(s) did not arrive")).toBe("Spry Labs weekly: 1 report did not arrive");
     expect(cleanText("3 report(s) did not arrive")).toBe("3 reports did not arrive");
+  });
+});
+
+describe("a sentence ending in a preposition keeps it (7 Nov 2026 live read: \"to sign in.\" read \"to sign.\")", () => {
+  it("only the word a removed /api path left dangling goes", () => {
+    expect(cleanText("Amazon needs you to sign in.")).toBe("Amazon needs you to sign in.");
+    expect(cleanText("Recorded (GET /api/x) at last.")).toBe("Recorded at last.");
+    expect(cleanText("Posted via POST /api/boss/tasks, then done.")).toBe("Posted, then done.");
+    expect(cleanText("It wrote no result.json.")).toBe("It wrote no file.");
+  });
+});
+
+describe("the simplifier says a line plainly before it moves it (7 Nov 2026 live read)", () => {
+  it("a line with one code word stays, cleaned, number kept; a command still moves", () => {
+    const r = simplifyForOwner({ subject: "x", text: "Line one.\n\n1. A STALE_TASK alarm means a task ran too long.\n2. Run npm run fix -- --all now." });
+    expect(r.text).toContain("1. A stale task alarm means a task ran too long.");
+    expect(r.text).not.toMatch(/npm run|STALE_TASK/);
+    expect(r.details.join("\n")).toContain("npm run fix");
   });
 });

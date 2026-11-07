@@ -51,3 +51,5 @@ export function scoreboardSectionFor(data: Record<string, unknown>, now?: number
 export function notReportedRepairs(missing: Array<{ name: string; label: string }> | null | undefined, tasks?: Array<{ title?: string; status?: string }>): Array<{ title: string; prompt: string }>;
 export function dutyChangeCard(title: string, task: any, worker: string | null): { title: string; body: string } | null;
 export function bossDecisions(data: Record<string, unknown>): Array<{ key: string; title: string; body: string; details?: string[]; buttons: any[]; priority: number }>;
+export function theChange(words: unknown): string | null;
+export const MAX_OPEN_LOOP_LINES: number;

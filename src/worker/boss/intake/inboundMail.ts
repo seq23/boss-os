@@ -1,6 +1,6 @@
 import { replyAllRecipients } from "../../../shared/boss/mail/replyNeed.mjs";
 import type { Env } from "../env";
-import { refsForChain, chainIds, refTail } from "./mailRefs";
+import { refsForChain, refsForCode, chainIds, refTail } from "./mailRefs";
 import { newId } from "../lib/id";
 import { audit } from "../lib/audit";
 import { logEvent } from "../lib/log";
@@ -538,7 +538,9 @@ export async function handleBossInboundMail(message: BossMailMessage, env: Env):
    * it is read here and handed to every lane below as the bracketed tail their readers already
    * accept. A code she typed or kept in the subject still wins: it is already in the text.
    */
-  const threadRefs = await refsForChain(env.DB, chainIds(message.headers.get("references"), message.headers.get("in-reply-to")));
+  const chainRefs = await refsForChain(env.DB, chainIds(message.headers.get("references"), message.headers.get("in-reply-to")));
+  // No thread we know: the REF code she kept in the subject (or typed) finds the job (owner, 7 Nov 2026).
+  const threadRefs = chainRefs.refs.length ? chainRefs : await refsForCode(env.DB, `${subject}\n${readable}`);
   const laneTail = refTail(threadRefs.refs.filter((r) => !`${subject}\n${readable}`.toLowerCase().includes(r)));
   /*
    * ─── boss fix D: HER RAINMAKER AND DO-NOT-SUGGEST LISTS, IN HER OWN WORDS (23 Oct 2026) ───

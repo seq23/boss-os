@@ -10,7 +10,8 @@
  * the 1-minute summary, the key numbers and the gaps are in the body; ONE link opens the full page.
  * A partial page says "partial" and names its gaps in one line.
  */
-import { layoutEmail, NOTHING_TO_DECIDE } from "../mail/plain.mjs";
+import { refCode, NOTHING_TO_DO } from "../mail/plain.mjs";
+import { ownerEmail, ownerLine } from "../mail/ownerLayout.mjs";
 
 const strip = (s) => String(s ?? "")
   .replace(/\[([^\]]+)\]\((?:https?:)?[^)]*\)/g, "$1")   // [text](url) → text
@@ -172,8 +173,8 @@ export function researchDoneLines(page, url) {
 /** The laid-out email (`layoutEmail`): what her Mac's sender posts for a research Done notice. */
 export function researchDoneLayout({ who, subject, page, url, refs = [] }) {
   const p = researchDoneParts(page);
-  return layoutEmail({
-    who, subject, refs,
+  return ownerEmail({
+    who, subject, refs, layout: "delivered", why: happenedOf(p),
     happened: happenedOf(p),
     sections: [
       { title: "The answer", tone: "done", items: [p.answer] },
@@ -252,15 +253,18 @@ export function researchFullEmail({ who, subject, page, url, refs = [], markdown
   const partialLine = p.partial && gaps.length
     ? `${gaps.length} thing${gaps.length === 1 ? "" : "s"} couldn't be confirmed (listed at the end).`
     : null;
+  // The owner layout (7 Nov 2026), "here's what you asked for" (D): line 1 says why and that she has nothing to do.
+  const why = `The research you asked for is ready: ${p.title}`;
+  const lead = ownerLine(why, NOTHING_TO_DO);
   const button = `<p style="margin:22px 0 8px"><a href="${escHtml(url)}" style="display:inline-block;background:#1f1d1a;color:#ffffff;text-decoration:none;font-weight:700;padding:11px 18px;border-radius:8px">Open in Boss OS ›</a></p>`;
   // The report usually ends with its own "What I could not confirm" section; never list the gaps twice.
   const ownGaps = /^#{1,4}\s+.*(could not|couldn.t) confirm/im.test(String(page?.markdown ?? ""));
   const gapHtml = gaps.length && !ownGaps ? `<h2 style="${STYLE.h2}">What couldn't be confirmed</h2><ul style="${STYLE.ul}">${gaps.map((g) => `<li style="${STYLE.li}">${escHtml(g)}</li>`).join("")}</ul>` : "";
   const srcHtml = sources.length ? `<h2 style="${STYLE.h2}">Sources (${sources.length})</h2><ol style="${STYLE.ol}">${sources.map((s) => `<li style="${STYLE.li}"><a href="${escHtml(s?.url)}" style="${STYLE.a}">${escHtml(s?.title || s?.url)}</a></li>`).join("")}</ol>` : "";
   const head = `<!doctype html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"></head><body style="margin:0;padding:0;background:#f6f4ef"><div style="max-width:640px;margin:0 auto;padding:16px;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;font-size:15px;line-height:1.6;color:#1f1d1a;background:#ffffff">`
+    + `<p style="margin:0 0 12px;font-size:16px;font-weight:600">${escHtml(lead)}</p>`
     + `<h1 style="font-size:23px;line-height:1.25;margin:4px 0 6px">${escHtml(p.title)}</h1>`
-    + `<p style="margin:0 0 4px;color:#6b665e;font-size:13px">Research by ${escHtml(name)}${partialLine ? ` · ${escHtml(partialLine)}` : ""}</p>`
-    + `<p style="margin:0 0 14px;color:#6b665e;font-size:13px">${NOTHING_TO_DECIDE}</p>`
+    + `<p style="margin:0 0 14px;color:#6b665e;font-size:13px">Research by ${escHtml(name)}${partialLine ? ` · ${escHtml(partialLine)}` : ""}</p>`
     + (p.answer ? `<div style="background:#fbf6ea;border:1px solid #eadfc4;border-radius:8px;padding:12px 14px;margin:0 0 8px"><p style="margin:0 0 4px;font-size:12px;font-weight:700;letter-spacing:.08em;text-transform:uppercase;color:#8a5a00">In one minute</p><p style="margin:0;font-weight:600">${escHtml(p.answer)}</p></div>` : "")
     + button;
   const foot = `${gapHtml}${srcHtml}${button}<p style="margin:16px 0 0;color:#6b665e;font-size:13px">Reply to this email and your answer goes straight back to this job.</p><p style="margin:12px 0 0">— ${escHtml(name)}</p></div></body></html>`;
@@ -280,7 +284,7 @@ export function researchFullEmail({ who, subject, page, url, refs = [], markdown
   const html = head + body + cutHtml + foot;
 
   const text = [
-    p.title, `Research by ${name}${partialLine ? ` · ${partialLine}` : ""}`, NOTHING_TO_DECIDE, "",
+    lead, "", p.title, `Research by ${name}${partialLine ? ` · ${partialLine}` : ""}`, "",
     ...(p.answer ? ["IN ONE MINUTE", p.answer, ""] : []),
     `Open in Boss OS: ${url}`, "",
     researchPlainText(parts.slice(0, shown).join("\n")),
@@ -291,5 +295,5 @@ export function researchFullEmail({ who, subject, page, url, refs = [], markdown
   ].join("\n");
   const subj = String(subject ?? "").replace(/\s*\[?tsk_[a-z0-9]+\]?\s*$/i, "").trim() || researchDoneSubject(page);
   // The task travels in the X-Boss-Ref header (refs), never in the subject she reads.
-  return { subject: subj.slice(0, 90), text, html, refs: refs ?? [], kind: "report" };
+  return { subject: subj.slice(0, 90), text, html, refs: refs ?? [], kind: "report", layout: "delivered", minimum: { why, act: NOTHING_TO_DO, ref: refs?.[0] ? refCode(refs[0]) : null, refShown: false, declared: true } };
 }

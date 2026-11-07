@@ -174,6 +174,20 @@ pinned by `tests/plainEmail.test.ts` ("the rules in CLAUDE.md"), which reads thi
    OS started by itself, and the Mac disk line are rows on
    ☰ More → Updates (`/?tab=updates`), and the morning email's "Done for you" carries ONE count line
    read from the same route. Pinned by `tests/noticeGate.test.ts`.
+9. **One minimum on every email to her; layouts when they fit, never a gate** (owner, 7 Nov 2026,
+   personal brain, Settled decisions). `ownerEmail` (`src/shared/boss/mail/ownerLayout.mjs`) is the one
+   layout every sender to her uses (Mac senders pass `owner` to `employeeMail`; the Worker's reply uses
+   it in `plainReply`): (1) the subject says what it is, with a REF code (`BOS-XXXXXX`, `refCode`) where
+   a reply matters; (2) line 1 says why she is getting it and whether she must do anything ("Nothing to
+   do." counts); (3) a reply reaches the job (Reply-To the employee, the job token in `X-Boss-Ref`, the
+   REF found by `refsForCode` when the thread is lost, `boss_mail_refs.ref_code`, migration 0355).
+   Layouts: approve (A: vN, REF, the thing inline, what changed), delivered (D: what she asked for),
+   digest (B: the morning email), alarm (C: what broke, what was lost, what is being done, the one
+   thing to do), note (the catch-all). An unknown layout is a Note, never refused. The layout rides in
+   `X-Boss-Layout` onto `boss_sent_mail.layout`, and ☰ More → Updates shows ONE line counting the
+   week's Notes (`notesLine`), so she sees when a new layout is due. Scooter is copied on none. Pinned
+   by `tests/ownerEmailMinimum.test.ts`, which builds every sender's real output, fails on a sending
+   file with no case and on zero senders, and proves itself on a broken subject, line 1 and reply path.
 
 ## Search Readiness: the checklist enforces itself on the grid repos
 

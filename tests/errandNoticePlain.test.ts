@@ -19,7 +19,7 @@ import { describe, expect, it } from "vitest";
 import { readErrandReply, errandReplyNotice, bookingAt, errandDateIn } from "../src/shared/boss/commands/parse.mjs";
 import { noticeArgs } from "../scripts/ops/simone-commands.mjs";
 import { sendersFor, employeeMail, mailGate } from "../scripts/ops/notify.mjs";
-import { DECIDE_HEADING, NOTHING_TO_DECIDE } from "../src/shared/boss/mail/plain.mjs";
+import { DECIDE_HEADING } from "../src/shared/boss/mail/plain.mjs";
 import { OPTIONS_REPLY, VENUE } from "./fixtures/errandReplyOptions.mjs";
 
 process.env.BOSS_OS_MAIL_KEY = "test-key-not-real";
@@ -70,10 +70,11 @@ describe("the confirmed notice (nothing to decide, and it is true this time)", (
     expect(notice.decide).toEqual([]);
     expect(notice.morning.line).toMatch(/it's booked/);
   });
-  it("passes the real gate, with 'Nothing to decide'", () => {
+  it("passes the real gate, and line 1 says there is nothing to do (owner layout, 7 Nov 2026)", () => {
     const laid = laidFor(notice);
     expect(mailGate(laid)).toEqual([]);
-    expect(laid.text.split("\n")[2]).toBe(NOTHING_TO_DECIDE);
+    expect(laid.text.split("\n")[0]).toMatch(/ Nothing to do\.$/);
+    expect(laid.text).not.toMatch(new RegExp(`^${DECIDE_HEADING} \\(`, "m"));
   });
 });
 

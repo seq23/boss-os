@@ -50,7 +50,8 @@ import { vaultLookup, envForRepoRun } from "../lib/vault-env.mjs";
 import { servicePracticesBlock } from "../../src/shared/boss/service/practices.mjs";
 import { waitDetail, threeParts, missingSecretLine } from "../../src/shared/boss/service/waits.mjs";
 import { seatEnv } from "./lib/seat-env.mjs";
-import { layoutEmail, layoutProblem, refsIn } from "../../src/shared/boss/mail/plain.mjs";
+import { refsIn } from "../../src/shared/boss/mail/plain.mjs";
+import { ownerEmail } from "../../src/shared/boss/mail/ownerLayout.mjs";
 import { repairReport, plainSentence, ownerTextProblems } from "../../src/shared/boss/repoChange/repairReport.mjs";
 import { addMorningLines } from "../../src/shared/boss/mail/morning.mjs";
 import { detectUsageLimit } from "../lib/seat-usage-limit.mjs";
@@ -110,11 +111,15 @@ async function api(path, body) {
  */
 export function stoppedMail({ id, repo, reason, happened, did, origin = ORIGIN }) {
   const subject = `Stopped work on ${repo ?? "your package"}: ${reason} ${changeToken(id)}`;
-  return layoutProblem({
+  // The owner layout (7 Nov 2026): a stop on her own request is an alarm (C), with its REF.
+  return ownerEmail({
     who: "Danielle",
+    layout: "alarm",
+    why: `Danielle stopped work on the ${repo ?? "package"} change you asked for`,
+    act: "Open the change to try again or drop it, below",
     subject,
-    happened,
-    did,
+    broke: happened,
+    doing: did,
     status: "Stopped, waiting on you. Open the change to try again, say what to change, or drop it. Replying to this email works too.",
     decide: [{ title: `Try again or drop the ${repo ?? "package"} change`, body: "One tap opens it with both choices and a box for what to change.", buttons: [{ label: "Open the change", url: `${origin}/?tab=systems&change=${encodeURIComponent(id)}` }] }],
     refs: refsIn(subject),
@@ -134,7 +139,7 @@ export function repairDoneMail(row, plan, at = Date.now()) {
   const named = job && row.repair_kind === "failed_task" ? `Your "${job}" job stopped before it finished.` : null;
   const r = repairReport({ kind: row.repair_kind, whatBroke: plain.what_broke ?? named, whatWeDid: plain.what_we_did, live: true, at, facts: factsFor(row) });
   if (named && r.whatBroke !== plainSentence(plain.what_broke) && plainSentence(named)) r.whatBroke = plainSentence(named);
-  return layoutProblem({ who: "Danielle", subject: r.subject, happenedLabel: "What broke:", happened: r.whatBroke, did: r.whatWeDid, status: r.status, refs: [String(row.id).toLowerCase()] });
+  return ownerEmail({ who: "Danielle", layout: "alarm", why: "Danielle fixed something that broke", act: "Nothing to do", subject: r.subject, happenedLabel: "What broke:", broke: r.whatBroke, doing: r.whatWeDid, status: r.status, done: /^done\b/i.test(String(r.status ?? "")), refs: [String(row.id).toLowerCase()] });
 }
 
 /**
@@ -188,9 +193,12 @@ export function planMail({ row, out, chosen, asks = [], step = null, ready = tru
   if (step) bullets.push("One more step runs after it goes live; the attached plan says which.");
   const askText = (a) => (typeof a === "string" ? a : `${a.question ?? ""} My pick: ${a.default ?? "none given, say which"}.`);
   const subject = pre ? `Building ${chosen} now, as you said` : `Plan for ${chosen}: reply approved to go ahead`;
-  return layoutEmail({
-    who: "Danielle", subject,
-    happened: pre ? `${head}${notReady} You pre-approved this, so I am building it now. Reply stop within the build to hold it.` : `${head}${notReady} Reply approved to go ahead.`,
+  // The owner layout (7 Nov 2026): a plan waiting on her word is "approve this" (A), with its REF.
+  return ownerEmail({
+    who: "Danielle", subject, layout: pre ? "delivered" : "approve",
+    // Not publish-ready is said in line 1 (25 Oct 2026), and a pre-approved build says how to stop it.
+    why: pre ? `${head}${notReady} You pre-approved this, so I am building it now` : `${head}${notReady}`,
+    act: pre ? "Nothing to do. Reply stop within the build to hold it" : "Reply approved to go ahead",
     decide: pre ? [] : [{
       title: "Reply approved to go ahead",
       body: [asks.length ? `Approved takes my pick on ${asks.length === 1 ? "the question" : `all ${asks.length} questions`} below. Reply with your own answers to change one.` : "Reply no to hold it, or changes: and what you want different.", ...(ready ? ["Reply preview to see it before it goes live."] : [])].join(" "),
@@ -202,13 +210,13 @@ export function planMail({ row, out, chosen, asks = [], step = null, ready = tru
   });
 }
 
-async function email(subject, text, files = [], prelaid = null) {
+async function email(subject, text, files = [], prelaid = null, owner = null) {
   if (DRY) { say(`DRY RUN — would email "${subject}"`); return "dry_run"; }
   const senders = sendersFor("Danielle");
   if (senders.length === 0) return null;
   for (const sender of senders) {
     const { from, key } = sender;
-    const res = await postEmployeeMail(sender, employeeMail(sender, { to: TO, subject, text, files, prelaid }));
+    const res = await postEmployeeMail(sender, employeeMail(sender, { to: TO, subject, text, files, prelaid, owner }));
     if (res.ok) {
       const id = (await res.json().catch(() => ({})))?.id ?? "sent";
       say(`emailed ${TO} from ${from}: ${subject}`);
@@ -609,7 +617,7 @@ async function askForDns(row, repo, records, log) {
       `This is Danielle. ${repo} is built; one thing at your DNS provider makes ${rec.host} reach it.`, "",
       waitDetail("DNS_RECORD", { record: { host: rec.host, type: rec.type, name: rec.name, target: rec.target, txtName: rec.txt_name ?? null, txtValue: rec.txt_value ?? null, liveAt: rec.live_at ?? null } }),
       "", `Run log on your Mac: ${log}`, "", "— Danielle, Technical Program Manager",
-    ].join("\n"));
+    ].join("\n"), [], null, { layout: "note", ref: String(row.id).toLowerCase(), why: `${repo} is built, and one DNS record at your DNS provider makes ${rec.host} reach it`, act: "Add the one record below; your Mac checks it by itself" });
   }
 }
 
@@ -1055,7 +1063,7 @@ async function runPhase(claim) {
     const repairMail = isRepair(row) && !doneLine ? repairDoneMail(row, readJson(join(dir, "plan.json"))) : null;
     const messageId = doneLine ? null : repairMail
       ? await email(repairMail.subject, repairMail.text, [], repairMail)
-      : await email(subject, text, filesAt(screenshotPaths(row.proof ?? {}, row)));
+      : await email(subject, text, filesAt(screenshotPaths(row.proof ?? {}, row)), null, { layout: "delivered", ref: String(row.id).toLowerCase(), why: `The ${repo} change you asked for is live`, act: "Nothing to do" });
     if (!messageId && !doneLine) { say("NAMED STOP [DONE_NOT_SENT] landed, and the DONE email could not be sent; the row stays in land until it can."); await release(row, "landed; DONE email not sent — retry the email next tick", log); writeFileSync(join(dir, "landed-unreported.json"), JSON.stringify(out)); return; }
     const r = await api(`/${row.id}/land`, { device_id: DEVICE, merge_sha: out.merge_sha, live_proof: postLand ? { ...proof, post_land: postLand } : proof, done_message_id: messageId ?? undefined, done_line: doneLine ?? undefined, run_log: log });
     if (!r.ok) say(`NAMED STOP [LAND_NOT_RECORDED] ${r.status} ${r.error ?? ""} — it landed and she was told; Boss OS was not.`);
@@ -1121,7 +1129,7 @@ async function sendPreview(row, log) {
     "", "— Danielle, Technical Program Manager",
   ].join("\n");
   // R18: the screenshots ride on the email (attached up to 10 MB, the rest named with where they are).
-  const messageId = await email(subject, text, filesAt(screenshotPaths(proof, row)));
+  const messageId = await email(subject, text, filesAt(screenshotPaths(proof, row)), null, { layout: "approve", ref: String(row.id).toLowerCase(), why: `A preview of the ${row.repo} change you asked for is ready`, act: "Reply approved to make it live, or changes: and what to change" });
   if (!messageId) { await release(row, "preview ready but the email could not be sent; will retry next tick", log); say("NAMED STOP [PREVIEW_NOT_SENT] Resend refused every sender; the claim is released."); return; }
   const r = await api(`/${row.id}/preview`, { device_id: DEVICE, preview_url: found?.url ?? null, preview_message_id: messageId, run_log: log });
   if (!r.ok) say(`NAMED STOP [PREVIEW_NOT_RECORDED] ${r.status} ${r.error ?? ""} — the preview was emailed and Boss OS was not told.`);

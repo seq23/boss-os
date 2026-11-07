@@ -66,7 +66,7 @@ describe("b) the guest is researched before the prep is sent", () => {
     expect(texts.join(" ")).not.toContain("rumour");
     expect(who.find((i: any) => i.text === "Title: Managing Director").links[0].url).toBe("https://familyoffice.example/team");
     expect(m.laid.text).not.toMatch(/Research .* from their website/);
-    expect(plainProblems({ subject: m.laid.subject, text: m.laid.text, html: m.laid.html })).toEqual([]);
+    expect(plainProblems({ subject: m.laid.subject, text: m.laid.text, html: m.laid.html, layout: m.laid.layout })).toEqual([]);
   });
 
   it("no source anywhere: one plain line and a named stop, never a confident wrong one", async () => {

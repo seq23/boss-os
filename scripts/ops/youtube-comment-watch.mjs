@@ -64,14 +64,14 @@ async function api(path, body) {
 
 // ─── Email, as Monique ────────────────────────────────────────────────────────
 
-async function email(subject, text) {
+async function email(subject, text, owner = null) {
   if (DRY) { say(`DRY RUN — would email "${subject}"`); return "dry_run"; }
   const senders = sendersFor("Monique");
   if (senders.length === 0) stop(6, "NO_RESEND_KEY", "neither BOSS_OS_MAIL_KEY nor BOSS_OS_FALLBACK_MAIL_KEY is set; run through the vault.");
   let last = "";
   for (const sender of senders) {
     const { from, key } = sender;
-    const res = await postEmployeeMail(sender, employeeMail(sender, { to: TO, subject, text }));
+    const res = await postEmployeeMail(sender, employeeMail(sender, { to: TO, subject, text, owner }));
     if (res.ok) {
       const id = (await res.json().catch(() => ({})))?.id ?? "sent";
       say(`emailed ${TO} from ${from}: ${subject} (${id})`);
@@ -154,7 +154,7 @@ async function actHalf() {
   const token = rows[0].digest_id;
   const lines = reported.map((r) => ({ n: byId.get(r.comment_id)?.n, author: byId.get(r.comment_id)?.author, result: r.result }));
   const mail = confirmationEmail(lines, token);
-  await email(mail.subject, mail.text);
+  await email(mail.subject, mail.text, mail.owner);
   return reported.length;
 }
 
@@ -196,7 +196,7 @@ async function sweepHalf() {
   // Number the items as Boss OS numbered its rows, so her "2 delete" means the same row here and there.
   const numbered = { ...digest, items: posted.data.items.map((row) => ({ ...digest.items.find((it) => it.comment_id === row.comment_id), n: row.n })) };
   const mail = digestEmail(numbered, posted.data.id);
-  const mailId = await email(mail.subject, mail.text);
+  const mailId = await email(mail.subject, mail.text, mail.owner);
   await api(`/comment-watch-items/${posted.data.id}/mailed`, { mail_id: String(mailId) });
   say(`digest ${posted.data.id}: ${numbered.items.length} item(s) emailed; task ${posted.data.task_id}`);
 }
@@ -211,4 +211,6 @@ async function main() {
   console.log("COMMENT-WATCH-COMPLETE");
 }
 
-main().catch((e) => stop(1, "CRASHED", e?.stack ?? String(e)));
+if (import.meta.url === `file://${process.argv[1]}`) {
+  main().catch((e) => stop(1, "CRASHED", e?.stack ?? String(e)));
+}

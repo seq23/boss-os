@@ -9,7 +9,7 @@ import { planLocks } from "../scripts/ops/outside-locks.mjs";
 import { planArchive } from "../scripts/ops/archive-audit.mjs";
 import { tailLine } from "../scripts/ops/boss-mail-tail-report.mjs";
 import { stoppedEmail, stillStopped, mergeNotices } from "../scripts/ops/task-notices.mjs";
-import { layoutProblem, lineProblems } from "../src/shared/boss/mail/plain.mjs";
+import { layoutProblem, lineProblems, refCode } from "../src/shared/boss/mail/plain.mjs";
 
 describe("the bounce agent finds a replacement at the same organisation, never a guess (rule 4)", () => {
   const base = { bounced: "old.person@clinic-example.com", website: "https://www.clinic-example.com", suppressed: new Set<string>() };
@@ -92,9 +92,12 @@ describe("a Stopped email is a problem email, and only while it is true (rule 3)
   it("What happened → What we did → Status, one Decide, the job code hidden in the header", () => {
     const e = stoppedEmail(notice);
     expect(e.problems).toEqual([]);
-    expect(e.subject).toBe("Stopped: Make the cover");
+    // The owner layout (7 Nov 2026): a stop waits on her reply, so its subject carries the REF code.
+    expect(e.subject).toBe(`Stopped: Make the cover · REF ${refCode("tsk_m5jh8bjbxmhtfz1w")}`);
+    expect(e.text.split("\n")[0]).toMatch(/^"Make the cover" stopped before it finished.* Reply try again, or drop it\.$/);
     expect(e.text).toContain('What happened: "Make the cover" stopped before it finished: the model answered without the file.');
-    expect(e.text).toContain("What we did: Tried it 3 times, kept everything as it was");
+    expect(e.text).toContain("What we did: Tried it 3 times, and sent nothing to anyone outside Boss OS.");
+    expect(e.text).toContain("What was lost: Nothing. Everything was kept as it was.");
     expect(e.text).toMatch(/^Status: Waiting for your word\./m);
     expect(e.refs).toEqual(["tsk_m5jh8bjbxmhtfz1w"]);
     // The code never shows as words; the one place it rides is the button's link to the job's own
@@ -131,5 +134,14 @@ describe("a finished job's subject says whether it was done (6 Nov 2026 live rea
     expect(s.length).toBeLessThanOrEqual(82);
     expect(doneSubject("Find buyers of Moonshot AI", "Here they are: two buyers.")).toBe("Done: Find buyers of Moonshot AI");
     expect(shortJobTitle("x ".repeat(60))).toMatch(/…$/);
+  });
+});
+
+describe("the reaper's log sentence is said to her plainly (7 Nov 2026 live read)", () => {
+  it("never the claimer, a launchd label or 'her Mac'", async () => {
+    const { plainStopWhy } = await import("../scripts/ops/task-notices.mjs");
+    const said = plainStopWhy("No device claimed this run in the 25 hours since it was parked. The claimer on her Mac (com.seq.boss-agent) is not picking work up; the work did not happen.");
+    expect(said).toBe("your Mac did not pick the work up, so it never started");
+    expect(plainStopWhy("mac-mini claimed this run 3 hours ago and never reported. The runner most likely stopped with the machine; the work did not happen.")).toBe("the Mac running it stopped before it finished");
   });
 });

@@ -29,13 +29,28 @@ export function hostAllowed(host, parked = SPRY_WEEKLY.parked_hosts) {
   return !parked.some((p) => h === p || h.endsWith(`.${p}`));
 }
 
-/** Why a fetched summary cannot be used, or null. */
+/** The Monday that starts the week holding `ms`, on her clock (America/Chicago), as YYYY-MM-DD. Pure. */
+export function chicagoWeekOf(ms) {
+  const [y, m, d] = new Date(ms).toLocaleDateString("en-CA", { timeZone: "America/Chicago" }).split("-").map(Number);
+  const day = new Date(Date.UTC(y, m - 1, d));
+  day.setUTCDate(day.getUTCDate() - ((day.getUTCDay() + 6) % 7));
+  return day.toISOString().slice(0, 10);
+}
+
+/**
+ * Why a fetched summary cannot be used, or null. A report from this week (Monday to Sunday, her clock)
+ * always counts; an older one counts only inside its source's age limit (7 Nov 2026 live read: a
+ * re-send on Saturday called that Wednesday's reports "from Wednesday, Nov 4, not this week").
+ */
 export function summaryProblem(summary, { now = Date.now(), maxAgeHours = 36 } = {}) {
   if (!summary || typeof summary !== "object") return "it could not be read";
   if (summary.schema !== SPRY_WEEKLY.schema) return "it was in a format Boss OS does not know";
   const at = Date.parse(summary.generated_at ?? "");
   if (Number.isNaN(at)) return "it carried no date";
-  if (now - at > maxAgeHours * 3_600_000) return `the newest one is from ${new Date(at).toLocaleDateString("en-US", { timeZone: "America/Chicago", weekday: "long", month: "short", day: "numeric" })}, not this week`;
+  // A source that runs before Monday (How We Know on Sunday: `max_age_hours` past the default 36) gets
+  // that much slack before the week's Monday too, so its report counts all week.
+  const weekStart = Date.parse(`${chicagoWeekOf(now)}T06:00:00Z`) - Math.max(0, maxAgeHours - 36) * 3_600_000;
+  if (now - at > maxAgeHours * 3_600_000 && at < weekStart) return `the newest one is from ${new Date(at).toLocaleDateString("en-US", { timeZone: "America/Chicago", weekday: "long", month: "short", day: "numeric" })}, not this week`;
   return null;
 }
 
@@ -61,23 +76,33 @@ export function sectionFor(source, summary, problem = null) {
     const fine = sites.filter((s) => s.state === "fine").length;
     const look = sites.filter((s) => s.state === "needs-a-look");
     const watch = sites.filter((s) => s.state === "watch");
-    if (!look.length && !watch.length) items.push(sites.length === 1 ? "The site is fine." : `All ${sites.length} sites are fine.`);
+    if (!look.length && !watch.length) items.push(sites.length === 1 ? "The site is fine." : sites.length === 2 ? "Both sites are fine." : `All ${sites.length} sites are fine.`);
     else items.push([fine ? `${fine} fine` : null, watch.length ? `${watch.length} to watch` : null, look.length ? `${look.length} worth a look` : null].filter(Boolean).join(", ").replace(/^./, (c) => c.toUpperCase()) + ".");
     for (const s of [...look, ...watch].slice(0, MAX_LOOKS)) {
       const why = (s.why ?? []).filter(Boolean)[0];
       items.push(`${s.label ?? s.host}: ${why ? String(why) : s.state === "watch" ? "worth watching" : "worth a look"}.`.replace(/\.\.$/, "."));
     }
     const more = look.length + watch.length - MAX_LOOKS;
-    if (more > 0) items.push(`And ${more} more in the full report.`);
+    if (more > 0) items.push(`And ${more} more; the team has them.`);
     const clicks = clicksLine(sites);
     if (clicks) items.push(clicks);
   }
-  // "Needs you" from a repo's own wording becomes "waiting on you": this email asks nothing of her
-  // (its decisions live in Simone's morning email), and the plain-email gate holds the contradiction.
-  for (const note of (summary.notes ?? []).slice(0, MAX_NOTES)) items.push(String(note).replace(/\bneeds you\b/gi, "waiting on you"));
+  /*
+   * THIS EMAIL ASKS NOTHING OF HER (its decisions live in Simone's morning email), so a repo's note
+   * that asks her for something, or sends her to GitHub, is the team's: counted in one line, never
+   * shown as her task (7 Nov 2026 live read: "waiting on you: read the stop issue on GitHub" under a
+   * "Nothing to do" headline).
+   */
+  // "not read" is the system's word; on her email a number nobody measured is "not measured" (7 Nov 2026).
+  const notes = (summary.notes ?? []).map((t) => String(t).replace(/\bnot read\b/gi, "not measured"));
+  const asksHer = (t) => /\b(?:needs you|waiting on you|for you to|you (?:need|must|should))\b|github/i.test(t);
+  const team = notes.filter(asksHer);
+  for (const note of notes.filter((t) => !asksHer(t)).slice(0, MAX_NOTES)) items.push(note);
+  if (team.length) items.push(`The team has ${team.length === 1 ? "one thing" : `${team.length} things`} to clear here; nothing for you.`);
   if (!items.length) items.push(hidden ? "Ran. Nothing of yours to report." : "Ran. Nothing to report.");
   if (summary.state === "needs-a-look" && !sites.length) items.unshift("Worth a look this week.");
-  return { title, items, link: summary.run_url ? { label: "Full report", url: summary.run_url } : undefined };
+  // No link to the repo's run: GitHub pages are never in her email (7 Nov 2026).
+  return { title, items };
 }
 
 /**

@@ -239,6 +239,11 @@ export function weeklyNote(picks, examined, considered) {
   ].join("\n");
 }
 
+/** The owner layout (7 Nov 2026): new leads for her to follow up (D); nothing goes out for her. Pure. */
+export function peopleOwner(n) {
+  return { layout: "delivered", why: `Monique's ${n} people worth a conversation this week, each with why now and what to say`, act: "Nothing to do. Write to any you like; nothing is sent for you" };
+}
+
 /**
  * The note itself. Real names, real addresses, real dates — on her machine, to her own inbox.
  *
@@ -260,7 +265,8 @@ async function emailHer(picks, examined, considered) {
   for (const sender of SENDERS) {
     const { from, key } = sender;
     for (const TO of RECIPIENTS) {
-      const res = await postEmployeeMail(sender, employeeMail(sender, { to: TO, subject: `${picks.length} people worth a conversation this week`, text: body }));
+      const res = await postEmployeeMail(sender, employeeMail(sender, { to: TO, subject: `${picks.length} people worth a conversation this week`, text: body,
+        owner: peopleOwner(picks.length) }));
       if (res.ok) {
         console.log(`Emailed ${TO} from ${from}: ${picks.length} recommendation(s).`);
         if (from.includes("westpeek.ventures")) {

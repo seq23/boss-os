@@ -29,5 +29,5 @@ export interface Digest { new_comments?: number; by_class?: Record<string, numbe
 export function tokenIn(text: string | null | undefined): string | null;
 export function shouldEmail(digest: Digest | null | undefined): boolean;
 export function parseReply(text: string | null | undefined, items: DigestItem[]): ParsedReply;
-export function digestEmail(digest: Digest, token: string): { subject: string; text: string };
-export function confirmationEmail(results: Array<{ n?: number | null; result: string; author?: string | null }>, token: string): { subject: string; text: string };
+export function digestEmail(digest: Digest, token: string): { subject: string; text: string; owner: { layout: string; ref: string; why: string; act: string } };
+export function confirmationEmail(results: Array<{ n?: number | null; result: string; author?: string | null }>, token: string): { subject: string; text: string; owner: { layout: string; ref: string; why: string; act: string } };

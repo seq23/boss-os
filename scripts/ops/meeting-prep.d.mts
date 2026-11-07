@@ -1,7 +1,7 @@
 /** Types for Simone's meeting-prep runner (meeting-prep.mjs). */
 export declare const HER_ADDRESSES: string[];
 export declare function dealRowsOf(grid: any): Array<{ company: string; side: string; size: string | null; price: string | null; from_email: string | null; hers: boolean }>;
-export declare function prepEmail(event: any, data: any, opts?: any): { key: string; subject: string; who: string; sections: any[]; happened: string; decide: any[]; needsPurpose: boolean; purpose: any; laid: { subject: string; text: string; html: string; refs: string[] } };
+export declare function prepEmail(event: any, data: any, opts?: any): { key: string; subject: string; who: string; sections: any[]; happened: string; decide: any[]; needsPurpose: boolean; purpose: any; laid: { subject: string; text: string; html: string; refs: string[]; layout?: string; minimum?: import("../../src/shared/boss/mail/ownerLayout.mjs").OwnerMinimum } };
 export declare const WORKSPACE_MAILBOXES: string[];
 export declare function contextPrompt(o: { name?: string | null; email?: string | null; domain?: string | null; firm?: string | null; title: string; when: string; today: string }): string;
 export declare function readContext(json: any): any;

@@ -17,7 +17,8 @@
 import { Hono } from "hono";
 import type { Env, Vars } from "../env";
 import { ok, badRequest } from "../lib/http";
-import { refsIn, fromLegacy, layoutEmail } from "../../../shared/boss/mail/plain.mjs";
+import { refsIn, legacyParts, REF_CODE_RE } from "../../../shared/boss/mail/plain.mjs";
+import { ownerEmail } from "../../../shared/boss/mail/ownerLayout.mjs";
 import { logEvent } from "../lib/log";
 import type { LaidOutEmail } from "../../../shared/boss/mail/plain.mjs";
 
@@ -31,9 +32,11 @@ export async function recordMailRefs(
   const refs = refsIn(input.refs.join(" "));
   if (!id || refs.length === 0) return false;
   await db.prepare(
-    `INSERT INTO boss_mail_refs (message_id, refs, subject, sender, context, created_at) VALUES (?,?,?,?,?,?)
-     ON CONFLICT(message_id) DO UPDATE SET refs = excluded.refs, subject = excluded.subject, sender = excluded.sender, context = excluded.context`,
-  ).bind(id, refs.join(" "), input.subject?.slice(0, 300) ?? null, input.sender?.slice(0, 200) ?? null, input.context?.slice(0, 6000) ?? null, input.now ?? Date.now()).run();
+    `INSERT INTO boss_mail_refs (message_id, refs, subject, sender, context, created_at, ref_code) VALUES (?,?,?,?,?,?,?)
+     ON CONFLICT(message_id) DO UPDATE SET refs = excluded.refs, subject = excluded.subject, sender = excluded.sender, context = excluded.context, ref_code = excluded.ref_code`,
+  ).bind(id, refs.join(" "), input.subject?.slice(0, 300) ?? null, input.sender?.slice(0, 200) ?? null, input.context?.slice(0, 6000) ?? null, input.now ?? Date.now(),
+    // The REF code she saw in the subject (BOS-XXXXXX): her reply finds the job by it when the thread is lost.
+    REF_CODE_RE.exec(String(input.subject ?? ""))?.[0] ?? null).run();
   return true;
 }
 
@@ -51,6 +54,19 @@ export async function refsForChain(db: D1Database, ids: string[]): Promise<{ ref
   const refs: string[] = [];
   for (const r of rows.results ?? []) for (const ref of String(r.refs).split(/\s+/)) if (ref && !refs.includes(ref)) refs.push(ref);
   return { refs, context: rows.results?.[0]?.context ?? null };
+}
+
+/**
+ * THE JOB A REF CODE NAMES (owner, 7 Nov 2026: a reply reaches the job that sent it). When her reply
+ * carries no thread we know — a forward, a new email, a client that dropped References — the
+ * `BOS-XXXXXX` code she kept in the subject or typed finds the email that showed it, and its job codes.
+ */
+export async function refsForCode(db: D1Database, text: string): Promise<{ refs: string[]; context: string | null }> {
+  const code = REF_CODE_RE.exec(String(text ?? ""))?.[0];
+  if (!code) return { refs: [], context: null };
+  const row = await db.prepare(`SELECT refs, context FROM boss_mail_refs WHERE ref_code = ? ORDER BY created_at DESC LIMIT 1`).bind(code)
+    .first<{ refs: string; context: string | null }>().catch(() => null);
+  return row ? { refs: String(row.refs).split(/\s+/).filter(Boolean), context: row.context ?? null } : { refs: [], context: null };
 }
 
 /** The bracketed tail the lanes read: " [rc_x] [tsk_y]". Never shown to her; only lanes read it. */
@@ -80,7 +96,10 @@ export async function plainReply(
   db: D1Database,
   input: { text: string; subject: string; signer?: string | null; messageId?: string | null; from: string },
 ): Promise<LaidOutEmail> {
-  let laid = fromLegacy({ who: input.signer ?? "Simone", subject: input.subject, text: input.text });
+  // The owner layout (7 Nov 2026): her answer is line 1, then whether she must do anything.
+  const who = input.signer ?? "Simone";
+  const answer = legacyParts({ who, subject: input.subject, text: input.text }).happened;
+  let laid: LaidOutEmail = ownerEmail({ who, subject: input.subject, layout: "delivered", why: answer, text: input.text });
   /*
    * THE GATE, ON THE WORKER'S SIDE TOO (rule 13, 23 Oct 2026). A reply that fails the plain-email
    * check is held: what it would have said is logged as an error (it surfaces on Today for the team to
@@ -89,7 +108,7 @@ export async function plainReply(
    */
   if (laid.problems.length) {
     await logEvent(db, { level: "error", scope: "mail", event: "reply_held", detail: { subject: input.subject, problems: laid.problems, text: input.text.slice(0, 2000) } }).catch(() => {});
-    laid = layoutEmail({ who: input.signer ?? "Simone", subject: input.subject, happened: "Got your email — I'm on it.", footer: "The full answer will be on your Today page.", refs: laid.refs });
+    laid = ownerEmail({ who, subject: input.subject, layout: "note", why: "Got your email — I'm on it", act: "Nothing to do. The full answer will be on your Today page.", refs: laid.refs });
   }
   if (laid.refs.length && input.messageId) {
     await recordMailRefs(db, { messageId: input.messageId, refs: laid.refs, subject: input.subject, sender: input.from, context: laid.text })

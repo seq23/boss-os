@@ -109,8 +109,8 @@ const plural = (k, one, many = `${one}s`) => `${k} ${k === 1 ? one : many}`;
 
 /**
  * The one plain line for her email, from the fresh reports of one site of hers (several when a
- * business runs several sites). Any number a report did not carry is said as "not read", never 0.
- *   "Published 21 pages · 38 indexed · 4 AI visitors · 2 form fills · 2 wins, 1 undone · cap 40 pages, 2 waiting"
+ * business runs several sites). Any number a report did not carry is "not measured yet", never 0.
+ *   "21 new pages, 2 more queued, 38 showing in Google, 4 visits from AI tools, 2 form fills, 2 improved, 1 rolled back"
  */
 export function loopLine(weeks, { actionWord = "form fills" } = {}) {
   const ws = (weeks ?? []).filter(Boolean);
@@ -129,16 +129,21 @@ export function loopLine(weeks, { actionWord = "form fills" } = {}) {
   const capped = withCap.length > 0;
   const capMax = capped ? withCap.reduce((a, x) => a + x.cap.max_live_pages, 0) : null, held = capped ? withCap.reduce((a, x) => a + x.held_by_cap, 0) : null;
   const sent = capped ? withCap.reduce((a, x) => a + x.redirected.length, 0) : null;
-  const parts = [
-    p == null ? "pages published not read" : `Published ${plural(p, "page")}`,
-    i == null ? "indexing not read" : `${i} indexed`,
-    ai == null ? "AI visitors not read" : `${plural(ai, "AI visitor")}`,
-    c == null ? `${actionWord} not read` : `${c} ${actionWord}`,
-    w == null || u == null ? "the 2/4/8-week checks not read" : `${plural(w, "win")}, ${u} undone${m ? `, ${m} merged` : ""}`,
-    capMax == null ? "the page cap not read" : `cap ${capMax} pages, ${held} waiting${sent ? `, ${sent} sent to existing pages` : ""}${noCap ? ` (${noCap} of ${ws.length} sites report no cap)` : ""}`,
-  ];
-  const line = parts.join(" · ");
-  return (ws.length > 1 ? `${line} (${ws.length} sites)` : line).replace(/^./, (ch) => ch.toUpperCase());
+  /*
+   * PLAIN WORDS (7 Nov 2026 live read: "cap 22 pages, 38 waiting, 36 sent to existing pages",
+   * "indexing not read"). What was measured, in her words; what was not, named once as "not measured
+   * yet" — never a 0 (rule 0).
+   */
+  const said = [], unread = [];
+  const put = (v, words, missing) => (v == null ? unread.push(missing) : said.push(words(v)));
+  put(p, (x) => plural(x, "new page"), "new pages");
+  if (capMax != null) { said.push(`${held} more queued`); if (sent) said.push(`${sent} folded into existing pages`); } else unread.push("the queue");
+  put(i, (x) => `${x} showing in Google`, "Google");
+  put(ai, (x) => plural(x, "visit from AI tools", "visits from AI tools"), "AI visits");
+  put(c, (x) => `${x} ${actionWord}`, actionWord);
+  if (w == null || u == null) unread.push("the page checks"); else said.push(`${w} improved, ${u} rolled back${m ? `, ${m} merged into others` : ""}`);
+  const line = [said.join(", "), unread.length ? `not measured yet: ${unread.join(", ")}` : null].filter(Boolean).join("; ");
+  return (ws.length > 1 ? `${line} (across ${ws.length} sites)` : line).replace(/^./, (ch) => ch.toUpperCase());
 }
 
 /**

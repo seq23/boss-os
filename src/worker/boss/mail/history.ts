@@ -4,11 +4,14 @@ import { ok, badRequest, notFound } from "../lib/http";
 import { audit } from "../lib/audit";
 import { extractAddress } from "../../../shared/boss/intake/mail.mjs";
 import { readableText } from "../../../shared/boss/intake/messageBody.mjs";
+import { layoutOf } from "../../../shared/boss/mail/ownerLayout.mjs";
 
 export interface SentMail {
   message_id: string; employee_address?: string; from: string; to: string; subject: string; text: string;
   html?: string; raw?: string; delivery_state?: "pending" | "sent" | "failed"; provider_id?: string; employee_id?: string | null; command_id?: string | null;
   in_reply_to?: string | null; thread_id?: string | null; sent_at?: number;
+  /** The owner layout it went out in (approve, delivered, digest, alarm, note); the Updates page counts the Notes. */
+  layout?: string | null;
 }
 
 /** Persist the exact accepted payload. A replay records the same send once. */
@@ -20,10 +23,11 @@ export async function recordSentMail(env: Env, mail: SentMail): Promise<void> {
   const command = commandId ? await env.DB.prepare(`SELECT id FROM boss_commands WHERE id = ?`).bind(commandId).first<{ id: string }>() : null;
   const employee = !mail.employee_id ? await env.DB.prepare(`SELECT id FROM employees WHERE lower(name) = ? LIMIT 1`).bind((extractAddress(mail.employee_address ?? mail.from) ?? "").split("@")[0]).first<{ id: string }>() : null;
   await env.VAULT.put(key, JSON.stringify({ text: mail.text, html: mail.html ?? null, raw: mail.raw ?? null }), { httpMetadata: { contentType: "application/json" } });
-  await env.DB.prepare(`INSERT INTO boss_sent_mail (id, message_id, sent_at, delivery_state, from_addr, to_addr, employee_id, subject, object_key, thread_id, in_reply_to, command_id)
-    VALUES (?,?,?,?,?,?,?,?,?,?,?,?) ON CONFLICT(message_id) DO NOTHING`).bind(
+  await env.DB.prepare(`INSERT INTO boss_sent_mail (id, message_id, sent_at, delivery_state, from_addr, to_addr, employee_id, subject, object_key, thread_id, in_reply_to, command_id, layout)
+    VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?) ON CONFLICT(message_id) DO NOTHING`).bind(
     id, mail.message_id, mail.sent_at ?? Date.now(), mail.delivery_state ?? "sent", extractAddress(mail.from), mail.to, mail.employee_id ?? employee?.id ?? null, mail.subject, key,
     command?.id ?? parent?.thread_id ?? mail.thread_id ?? mail.in_reply_to ?? id, mail.in_reply_to ?? null, command?.id ?? null,
+    mail.layout ? layoutOf(mail.layout) : null,
   ).run();
 }
 

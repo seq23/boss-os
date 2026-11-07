@@ -12,13 +12,16 @@ export interface EmailSection {
   link?: Button | null;
   empty?: string | null;
 }
-export interface LaidOutEmail { subject: string; text: string; html: string; refs: string[]; kind: "plain" | "problem" | "morning"; problems: string[] }
+export interface LaidOutEmail { subject: string; text: string; html: string; refs: string[]; kind: "plain" | "problem" | "morning" | "report"; problems: string[]; layout?: string; minimum?: import("./ownerLayout.mjs").OwnerMinimum }
 export const ACRONYMS: Set<string>;
 export const JARGON: Array<{ ban: RegExp; find: RegExp; plain: string | ((...a: string[]) => string); sample: string }>;
 export const REF_RE: RegExp;
+export const REF_CODE_RE: RegExp;
+export function refCode(jobRef: unknown): string | null;
+export const NOTHING_TO_DO: string;
 export const DECIDE_HEADING: string;
 export const NOTHING_TO_DECIDE: string;
-export const PROBLEM_PARTS: { happened: string; did: string; status: string };
+export const PROBLEM_PARTS: { happened: string; did: string; status: string; lost: string };
 export const MAX_TEXT_CHARS: number;
 export const MORNING_MAX_TEXT_CHARS: number;
 export const PROSE_MARK: string;
@@ -36,15 +39,17 @@ export function refsIn(text: unknown): string[];
 export function linkLabel(url: string): string;
 export function layoutEmail(input: {
   who: string; subject: string; happened: string; decide?: Array<DecideItem | string>; needs?: string[] | string;
-  details?: DetailItem[]; sections?: EmailSection[]; refs?: string[]; footer?: string | null; postscript?: string | null; moreDecide?: string | null; maxDecide?: number; kind?: "plain" | "morning";
+  details?: DetailItem[]; sections?: EmailSection[]; refs?: string[]; footer?: string | null; postscript?: string | null; moreDecide?: string | null; maxDecide?: number; kind?: "plain" | "morning"; lead?: string | null; leadNotes?: string[];
 }): LaidOutEmail;
 export function layoutProblem(input: {
-  who: string; subject: string; happened: string; did: string; status?: string; done?: boolean; decide?: Array<DecideItem | string>; refs?: string[]; happenedLabel?: string;
+  who: string; subject: string; happened: string; did: string; status?: string; done?: boolean; decide?: Array<DecideItem | string>; refs?: string[]; happenedLabel?: string; lead?: string | null; lost?: string | null;
 }): LaidOutEmail;
 export function fromLegacy(input: { who: string; subject: string; text: string; refs?: string[] }): LaidOutEmail;
+export function legacyParts(input: { who: string; subject: string; text: string; refs?: string[] }): { who: string; subject: string; happened: string; needs: string[]; details: DetailItem[]; refs: string[] };
 export function visibleText(input: { subject?: string; text?: string; html?: string | null }, opts?: { prose?: "keep" | "drop" | "only" }): string;
 export function linksIn(input: { text?: string; html?: string | null }): string[];
-export function plainProblems(input: { subject?: string; text?: string; html?: string | null; kind?: string | null }): string[];
+export function plainProblems(input: { subject?: string; text?: string; html?: string | null; kind?: string | null; layout?: string | null }): string[];
 export function simplifyForOwner(input: { subject?: string; text?: string; html?: string | null; kind?: string | null }): { subject: string; text: string; html: string; kind: string | null; details: string[] };
 export function lineProblems(line: unknown): string[];
 export function gmailSearchLink(subject: string): string;
+export function toYou(text: unknown): string;
