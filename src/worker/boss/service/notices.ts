@@ -16,6 +16,7 @@
 import type { Env } from "../env";
 import { newId } from "../lib/id";
 import { taskToken, waitDetail, type BossWaitKind, type BossWaitFill } from "../../../shared/boss/service/waits.mjs";
+import { needsHer } from "../../../shared/boss/mail/noticeGate.mjs";
 
 export interface NoticeInput {
   task: { id: string; lane: string; title: string };
@@ -26,6 +27,11 @@ export interface NoticeInput {
   /** The wait in three parts. Omitted only for a DONE notice, where nothing waits on her. */
   wait?: { kind: BossWaitKind; fill?: BossWaitFill } | null;
   secretName?: string | null;
+  /**
+   * Email or the Updates page (owner, 7 Nov 2026: email only when she must act). Omitted → read from
+   * the kind by `needsHer` (noticeGate.mjs). The drain on her Mac reads this field and nothing else.
+   */
+  needsHer?: boolean;
 }
 
 /** The notice body: what happened, then the three parts. Exported so the tests read the same text. */
@@ -46,13 +52,20 @@ export async function noticeOnce(env: Env, n: NoticeInput): Promise<string | nul
   if (already) return null;
   const id = newId("tnt");
   const token = taskToken(n.task.id);
+  // A repair Boss OS opened itself never waits on her (noticeGate.mjs needsHer `repair`).
+  const row = await env.DB.prepare(`SELECT input FROM tasks WHERE id = ?`).bind(n.task.id).first<{ input: string | null }>().catch(() => null);
+  let repair = false;
+  // A dated waiting-on check-in can need her own account (the Friday unsubscribe taps): not a repair here.
+  try { const i = JSON.parse(row?.input ?? "{}") as { origin?: unknown; repair_kind?: unknown }; repair = i?.origin === "repair" && i?.repair_kind !== "waiting_on"; } catch { repair = false; }
+  const her = repair ? needsHer({ kind: n.kind, repair }) : (n.needsHer ?? needsHer({ kind: n.kind }));
   const subject = n.subject.includes(token) ? n.subject : `${n.subject.slice(0, 160)} ${token}`;
   await env.DB
     .prepare(
-      `INSERT INTO boss_task_notices (id, task_id, lane, from_name, kind, subject, body, created_at, secret_name)
-       VALUES (?,?,?,?,?,?,?,?,?)`,
+      `INSERT INTO boss_task_notices (id, task_id, lane, from_name, kind, subject, body, created_at, secret_name, needs_her)
+       VALUES (?,?,?,?,?,?,?,?,?,?)`,
     )
-    .bind(id, n.task.id, n.task.lane, n.fromName, n.kind, subject, noticeBody(n.lines, n.wait, n.task.id), Date.now(), n.secretName ?? null)
+    .bind(id, n.task.id, n.task.lane, n.fromName, n.kind, subject, noticeBody(n.lines, n.wait, n.task.id), Date.now(), n.secretName ?? null,
+      her ? 1 : 0)
     .run();
   return id;
 }

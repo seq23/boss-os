@@ -556,9 +556,19 @@ export const fitWords = (f) => `${FIT_WORDS.size[f.size]}, ${FIT_WORDS.price[f.p
 /** The trade's own card in Boss OS: the seller's ready email and Dismiss. */
 export const cardUrl = (m) => `${MATCHES_PAGE}&match=${encodeURIComponent(m.key)}`;
 // No "?" placeholders (6 Nov 2026 live read: "$15M at price?" made her guess): a missing term is said.
+/**
+ * ONE MONEY FORMAT ON SCREEN (7 Nov 2026: "$1000 PPS" beside "$1,000 per share" in one match line).
+ * Words only: the stored price text (and so every match's dismiss signature) is left as it was. Pure.
+ */
+export function sharePriceWords(text) {
+  return String(text ?? "").replace(/\$?\s*([\d][\d,]*(?:\.\d+)?)\s*(?:pps|\/\s*sh(?:are)?\b|per\s+share|a\s+share)\b/gi, (_, n) => {
+    const v = Number(String(n).replace(/,/g, ""));
+    return `$${v.toLocaleString("en-US", { minimumFractionDigits: v % 1 ? 2 : 0, maximumFractionDigits: 2 })} a share`;
+  });
+}
 const terms = (x) => {
   const size = x.size !== "—" ? x.size : null;
-  const price = x.price !== "—" ? x.price : null;
+  const price = x.price !== "—" ? sharePriceWords(x.price) : null;
   if (size && price) return `${size} at ${price}`;
   if (size) return `${size}, no price given`;
   if (price) return `size not given, at ${price}`;

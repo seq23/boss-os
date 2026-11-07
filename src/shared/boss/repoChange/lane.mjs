@@ -353,7 +353,7 @@ export function parseRepoChange(text, opts = {}) {
  * `planWaitsForOwner` is the one reader: the Worker's /plan route and the Mac runner both ask it,
  * and tests/boss/repairsNeverWait.test.ts pins both directions.
  */
-export const REPAIR_KINDS = Object.freeze(["held_mail", "failed_task", "refused_run", "red_check", "self_repair", "rework", "waiting_on", "open_loop_overdue"]);
+export const REPAIR_KINDS = Object.freeze(["held_mail", "failed_task", "refused_run", "red_check", "self_repair", "rework", "waiting_on", "open_loop_overdue", "kendra_alarm"]);
 export const REPAIR_ANSWER_TEXT = "repair — Boss OS opened this to fix something broken, and repairs never wait on the owner (25 Oct 2026): every ask takes the recommended default";
 export const REPAIR_APPROVED_BY = "standing rule: repairs never wait on the owner (25 Oct 2026)";
 

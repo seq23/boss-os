@@ -124,7 +124,7 @@ describe("matches are counted once and the email carries the best few", () => {
     expect(out.grid).toHaveLength(MAX_EMAIL_MATCHES);
     // Fresh, 1% apart and filled: every one of these earns the star, so the order is freshest first.
     expect(out.grid.map((r: any) => r.company)).toEqual(["⭐ Co 0 (+1 more)", "⭐ Co 1 (+1 more)", "⭐ Co 2 (+1 more)", "⭐ Co 3 (+1 more)", "⭐ Co 4 (+1 more)"]);
-    expect(out.grid[0].trade).toMatch(/^Seller 0near .* at \$101\/share → Buyer 0 .* at \$100\/share$/);
+    expect(out.grid[0].trade).toMatch(/^Seller 0near .* at \$101 a share → Buyer 0 .* at \$100 a share$/);
     expect(out.lines.filter((l: any) => /^Match, /.test(l.text))).toEqual([]);
     const last = out.lines[out.lines.length - 1];
     expect(last.text).toBe("16 possible trades in all, on 8 companies, each buyer and seller counted once.");

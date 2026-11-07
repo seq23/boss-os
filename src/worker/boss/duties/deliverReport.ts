@@ -827,9 +827,18 @@ async function noticeResearchDone(
   env: Env,
   a: { pageId: string; taskId: string; page: { title: string; summary: string; markdown: string; sources: unknown[]; gaps: unknown[]; status: string } },
 ): Promise<void> {
-  const task = await env.DB.prepare(`SELECT t.id, t.lane, t.title, t.attempts, e.name AS employee_name FROM tasks t LEFT JOIN employees e ON e.id = t.employee_id WHERE t.id = ?`)
-    .bind(a.taskId).first<{ id: string; lane: string; title: string; attempts: number | null; employee_name: string | null }>();
+  const task = await env.DB.prepare(`SELECT t.id, t.lane, t.title, t.attempts, t.input, e.name AS employee_name FROM tasks t LEFT JOIN employees e ON e.id = t.employee_id WHERE t.id = ?`)
+    .bind(a.taskId).first<{ id: string; lane: string; title: string; attempts: number | null; input: string | null; employee_name: string | null }>();
   if (!task) return;
+  /*
+   * EMAIL ONLY WHEN SHE ASKED (owner, 7 Nov 2026). A page she asked for, however she asked, is her
+   * answer and is emailed whole; a page a duty or an alarm started by itself (Kendra's "Done (partial): Fixing the Stale Task
+   * System Alarm", five in twelve hours) is a row on the Updates page. A field, never the words.
+   */
+  const { needsHer } = await import("../../../shared/boss/mail/noticeGate.mjs");
+  let input: { origin?: unknown; duty_id?: unknown } = {};
+  try { input = JSON.parse(task.input ?? "{}") ?? {}; } catch { input = {}; }
+  const her = needsHer({ kind: "done", systemStarted: input.origin === "repair" || input.duty_id != null });
   const { researchPageUrl } = await import("../../../shared/boss/research/page.mjs");
   const { researchDoneLines, researchDoneSubject } = await import("../../../shared/boss/research/doneEmail.mjs");
   const kind = `done#${Number(task.attempts ?? 0)}`;
@@ -840,10 +849,10 @@ async function noticeResearchDone(
     .bind(task.id, kind).first<{ id: string; sent_at: number | null }>();
   if (waiting) {
     if (waiting.sent_at == null) {
-      await env.DB.prepare(`UPDATE boss_task_notices SET subject = ?, body = ? WHERE id = ?`)
-        .bind(`${subject} ${taskToken(task.id)}`, noticeBody(lines, null, task.id), waiting.id).run();
+      await env.DB.prepare(`UPDATE boss_task_notices SET subject = ?, body = ?, needs_her = ? WHERE id = ?`)
+        .bind(`${subject} ${taskToken(task.id)}`, noticeBody(lines, null, task.id), her ? 1 : 0, waiting.id).run();
     }
     return;
   }
-  await noticeOnce(env, { task: { id: task.id, lane: task.lane, title: task.title }, fromName: task.employee_name ?? "Camille", kind, subject, lines });
+  await noticeOnce(env, { task: { id: task.id, lane: task.lane, title: task.title }, fromName: task.employee_name ?? "Camille", kind, subject, lines, needsHer: her });
 }

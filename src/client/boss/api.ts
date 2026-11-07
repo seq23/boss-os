@@ -125,6 +125,9 @@ export const api = {
   openLoops: () => call<{ loops: import("@shared/boss/openLoops/openLoops.mjs").Loop[]; waiting: number; names: Record<string, string>; today: string }>("/open-loops"),
   createOpenLoop: (body: Record<string, unknown>) => call<{ loop: any }>("/open-loops", post("", body)),
   updateOpenLoop: (id: string, body: Record<string, unknown>) => call<{ loop: any }>(`/open-loops/${encodeURIComponent(id)}`, { method: "PUT", body: JSON.stringify(body) }),
+  // Updates (7 Nov 2026): the notices that need nothing from her (routes/taskNotices.ts /updates).
+  updates: () => call<{ rows: import("@shared/boss/mail/noticeGate.mjs").UpdateRow[]; summary: import("@shared/boss/mail/noticeGate.mjs").UpdatesSummary; line: string | null; days: number }>("/task-notices/updates"),
+  markUpdateRead: (id: string, read: boolean) => call<{ id: string; read_at: number | null }>(`/task-notices/${encodeURIComponent(id)}/read`, post("", { read })),
   closeOpenLoop: (id: string, reason: string) => call<{ closed: string }>(`/open-loops/${encodeURIComponent(id)}/close`, post("", { reason })),
   scorecard: () => call<{ state: { at: number; week: string; rows: Record<string, any> } | null; strays: any[] }>("/scorecard"),
   validators: () => call<{ matrix: import("@shared/boss/validators/matrix.mjs").Matrix | null; summary: string | null; flagged: string | null }>("/validators"),

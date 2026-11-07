@@ -18,6 +18,7 @@
  */
 
 import { ownerZone } from "../ownerTime.mjs";
+import { ungroundedClaims } from "../alarms/grounded.mjs";
 
 /** The longest sentence she is sent. */
 export const MAX_WORDS_PER_LINE = 25;
@@ -85,6 +86,7 @@ export const STOCK = Object.freeze({
   red_check: { broke: "One of our automatic checks found a problem after an update.", did: "We fixed the problem the check found and the check passes again." },
   self_repair: { broke: "Part of Boss OS stopped doing its job properly.", did: "We found the cause and fixed it." },
   rework: { broke: "A step that runs after an update did not finish.", did: "We fixed the step and ran it again." },
+  kendra_alarm: { broke: "One of Kendra's checks found a job that was stuck or doing nothing.", did: "We found the cause and fixed it; the alarm closes itself once the next check passes." },
 });
 const STOCK_DEFAULT = { broke: "Something in Boss OS stopped working properly.", did: "We found the cause and fixed it." };
 
@@ -98,10 +100,13 @@ export function dayWords(ms, tz = null) {
  * The report itself: { subject, whatBroke, whatWeDid, status, text }. `live` true once it landed
  * and was proven; false while it is still being worked on.
  */
-export function repairReport({ kind, whatBroke = null, whatWeDid = null, live, at = Date.now(), who = "Danielle" }) {
+export function repairReport({ kind, whatBroke = null, whatWeDid = null, live, at = Date.now(), who = "Danielle", facts = null }) {
   const stock = STOCK[kind] ?? STOCK_DEFAULT;
-  const broke = plainSentence(whatBroke) ?? stock.broke;
-  const did = plainSentence(whatWeDid) ?? stock.did;
+  // A REPORT SAYS ONLY WHAT WAS READ (7 Nov 2026): given the recorded facts, a sentence naming a task,
+  // host, name or number they do not hold is refused for the stock sentence (alarms/grounded.mjs).
+  const grounded = (x) => (facts == null || ungroundedClaims(x, facts).length === 0 ? x : null);
+  const broke = grounded(plainSentence(whatBroke)) ?? stock.broke;
+  const did = grounded(plainSentence(whatWeDid)) ?? stock.did;
   const status = live ? `Live since ${dayWords(at)}. Nothing needed from you.` : `Still working on it, as of ${dayWords(at)}. Nothing needed from you.`;
   const subject = live ? "Fixed: something that had stopped working" : "Fixing: something that had stopped working";
   const text = [`What broke: ${broke}`, `What we did: ${did}`, `Status: ${status}`, "", `— ${who}`].join("\n");

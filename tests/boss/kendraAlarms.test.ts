@@ -4,6 +4,9 @@ import { describe, expect, it, vi } from "vitest";
 // Each pass reads every live duty (42) and may admit a repair: give the end-to-end runs room.
 vi.setConfig({ testTimeout: 60_000 });
 import { runKendraChecks, raiseAlarm, herAlarms } from "../../src/worker/boss/alarms/kendra";
+import { isResearchWork } from "../../src/worker/boss/queue/freeRung";
+import { noticeOnce } from "../../src/worker/boss/service/notices";
+import { repairOriginOf, planWaitsForOwner } from "../../src/shared/boss/repoChange/lane.mjs";
 
 /**
  * KENDRA'S ALARMS, END TO END OVER THE REAL MIGRATIONS (0350; owner, 5 Nov 2026: stop "green but
@@ -98,6 +101,57 @@ describe("G2: a task that sits running", () => {
     await E.DB.prepare(`UPDATE tasks SET status = 'failed' WHERE id = 'tsk_test_stuck'`).run();
     r = await runKendraChecks(E, now + H);
     expect(r.stale.cleared).toContain("tsk_test_stuck");
+  });
+});
+
+describe("G2: a stale-task alarm goes to the repair path, never research, and never feeds itself (7 Nov 2026)", () => {
+  it("its repair is not research work, opens no research page, and a stale repair raises no alarm of its own", async () => {
+    const now = Date.now();
+    await E.DB.prepare(`INSERT INTO tasks (id, lane, employee_id, title, status, created_at, started_at, intake_kind) VALUES ('tsk_test_dna','ops','emp_research','Deep research: a mobile DNA collection business for a relative','running',?,?,'research')`)
+      .bind(now - 3 * H, now - 2.5 * H).run();
+    const r = await runKendraChecks(E, now);
+    expect(r.stale.opened).toContain("tsk_test_dna");
+    const repairId = (await alarm("task:tsk_test_dna")).task_id as string;
+    expect(repairId).toMatch(/^tsk_/);
+    const repair = await E.DB.prepare(`SELECT id, title, intake_kind, input, started_at, employee_id, status FROM tasks WHERE id = ?`).bind(repairId).first();
+    const input = JSON.parse(repair.input);
+    expect(input).toMatchObject({ origin: "repair", repair_kind: "kendra_alarm" });
+    // Danielle's repair lane, a repair by kind: no plan approval, never waiting on her.
+    expect(repair.employee_id).toBe("emp_repo");
+    expect(repair.status).not.toBe("awaiting_approval");
+    expect(repairOriginOf(input)).toEqual({ origin: "repair", repair_kind: "kendra_alarm" });
+    expect(planWaitsForOwner({ origin: "repair" })).toBe(false);
+    // The title says "research", so the classifier may call it research: the queue must still not.
+    expect(isResearchWork(repair, input)).toBe(false);
+    expect(input.research_page).toBeUndefined();
+    expect((await E.DB.prepare(`SELECT COUNT(*) AS n FROM research_pages WHERE task_id = ?`).bind(repairId).first()).n).toBe(0);
+
+    // The repair itself sits running past the stale line: no alarm on it, no repair of the repair.
+    await E.DB.prepare(`UPDATE tasks SET status = 'running', started_at = ? WHERE id = ?`).bind(now - 3 * H, repairId).run();
+    const before = (await E.DB.prepare(`SELECT COUNT(*) AS n FROM tasks WHERE title LIKE '%Kendra''s alarm:%'`).first()).n;
+    const r2 = await runKendraChecks(E, now + 1000);
+    expect(r2.stale.opened).not.toContain(repairId);
+    expect(await alarm(`task:${repairId}`)).toBeNull();
+    expect(r2.stale.repairs).toBeGreaterThanOrEqual(1);
+    expect((await E.DB.prepare(`SELECT COUNT(*) AS n FROM tasks WHERE title LIKE '%Kendra''s alarm:%'`).first()).n).toBe(before);
+    expect((await E.DB.prepare(`SELECT COUNT(*) AS n FROM tasks WHERE title LIKE '%Kendra''s alarm:%Kendra''s alarm:%'`).first()).n).toBe(0);
+    await E.DB.prepare(`UPDATE tasks SET status = 'done' WHERE id IN (?, ?)`).bind("tsk_test_dna", repairId).run();
+  });
+});
+
+describe("repairs never wait on her (owner, 7 Nov 2026: Kendra's reports \"should not need my constant approval\")", () => {
+  it("a repair's proposal, stop or could-not-do never becomes a needs-her notice; a key only she holds still does", async () => {
+    await raiseAlarm(E, { key: "output:duty_test_repair_never_waits", kind: "output_floor", text: "A synthetic duty ran but produced 0 rows (needs 1), 2 runs in a row." });
+    const repairId = (await alarm("output:duty_test_repair_never_waits")).task_id as string;
+    expect(repairId).toMatch(/^tsk_/);
+    const task = { id: repairId, lane: "ops", title: "Fix Kendra's alarm: a synthetic duty" };
+    for (const kind of ["stopped", "could_not_do", "proposal", "done#0"]) {
+      await noticeOnce(E, { task, fromName: "Kendra", kind, subject: `Proposal: clear the lock (${kind})`, lines: ["Reply with \"Reset\" and I will clear the lock."] });
+    }
+    await noticeOnce(E, { task, fromName: "Kendra", kind: "missing_secret", secretName: "SYNTHETIC_KEY", subject: "Needs a key", lines: ["Needs SYNTHETIC_KEY."] });
+    const rows = (await E.DB.prepare(`SELECT kind, needs_her FROM boss_task_notices WHERE task_id = ?`).bind(repairId).all()).results as any[];
+    expect(rows.length).toBe(5);
+    expect(rows.filter((r) => r.needs_her === 1).map((r) => r.kind)).toEqual(["missing_secret"]);
   });
 });
 

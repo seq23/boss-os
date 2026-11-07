@@ -842,7 +842,7 @@
     },
     {
       "id": "mac-disk", "business": "personal",
-      "what": "Mac disk: how much space is free after the daily clean-up",
+      "what": "Mac disk: how much space is free after the daily clean-up. Not an email since 7 Nov 2026: a row on the Updates page (☰ More → Updates), counted in the morning email",
       "sender": "Simone (for Kendra)", "owner": "Kendra",
       "from": "Simone <simone@sequoiataylor.com>", "to": "You",
       "when": "Daily 7:15 AM (disk sweep, under 15 GB free, once a day) and 9:00 AM (clean-up, under 20 GB free)",

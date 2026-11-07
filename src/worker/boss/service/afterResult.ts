@@ -48,7 +48,8 @@ export async function afterResult(env: Env, task: ResultTask, text: string, o: {
     const mailed = typeof task.input.from === "string" && task.input.from.includes("@");
     if (o.done && mailed && text.trim()) {
       const id = await noticeOnce(env, {
-        task, fromName: o.fromName, kind: `done#${Number(task.attempts ?? 0)}`,
+        // She asked for it by email, so the answer is her reply (noticeGate.mjs needsHer).
+        task, fromName: o.fromName, kind: `done#${Number(task.attempts ?? 0)}`, needsHer: true,
         subject: doneSubject(task.title, text),
         lines: [
           text.trim().slice(0, 20_000),

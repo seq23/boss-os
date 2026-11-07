@@ -64,3 +64,13 @@ describe("Rule 0: a live run with sends due never ends complete having sent none
     expect(runVerdict({ due: 0, sent: 0 }).stop).toBeNull();
   });
 });
+
+describe("an early run waits for the 9:00 Central window instead of giving up the day (7 Nov 2026)", () => {
+  it("8:30 Central waits 30 minutes; 9:30 and 16:00 send now", async () => {
+    const { waitForWindowMs } = await import("../scripts/ops/lp-prospects.mjs");
+    // Fri 6 Nov 2026: 14:30 UTC = 8:30 Central (CST, UTC-6).
+    expect(waitForWindowMs(Date.UTC(2026, 10, 6, 14, 30, 0))).toBe(30 * 60_000 + 30_000);
+    expect(waitForWindowMs(Date.UTC(2026, 10, 6, 15, 30, 0))).toBe(0);
+    expect(waitForWindowMs(Date.UTC(2026, 10, 6, 22, 0, 0))).toBe(0);
+  });
+});

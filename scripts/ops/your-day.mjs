@@ -39,6 +39,7 @@
  *   npm run your-day -- --dry-run    # print what would be sent, send nothing
  *   npm run your-day -- --preview <dir>   # write the HTML and text to <dir>, send nothing
  */
+import { UPDATES_PATH } from "../../src/shared/boss/mail/noticeGate.mjs";
 import { doneForYou, failedDoneLine, jobFamily, jobName, splitRepeats, fixJobsToOpen } from "../../src/shared/boss/mail/morningMemory.mjs";
 import { MAX_TOUCHES } from "../../src/shared/boss/lp/plan.mjs";
 import fs from "node:fs";
@@ -176,6 +177,7 @@ export function bossDecisions(data) {
   const covered = new Set((data.approvals ?? []).map(approvalTaskId).filter(Boolean));
   for (const a of data.approvals ?? []) {
     const task = tasks.find((t) => t.id === approvalTaskId(a)) ?? null;
+    if (task && isRepairTask(task)) continue; // a repair is the team's, never her decision (7 Nov 2026)
     const worker = a.employee_name ?? task?.employee_name ?? null;
     const duty = dutyChangeCard(a.title, task, worker);
     const own = [a.summary, a.reason].find((x) => typeof x === "string" && x.trim() && !SYSTEM_TEXT.test(x));
@@ -193,7 +195,9 @@ export function bossDecisions(data) {
       ? { key: `rc:${r.id}`, title: `Start Danielle's plan for ${r.repo ?? "your change"}?`, body: `${firstLine ? `You asked: "${firstLine}". ` : ""}Danielle wrote a plan and builds nothing until you say yes.`, details: ["Yes: reply approved to her email and she starts the build.", "No: reply with what to change, or drop it."], plan: r.plan_text ?? null, buttons: [], priority: 1 }
       : { key: `rc:${r.id}`, title: `Make Danielle's preview of ${r.repo ?? "your change"} live?`, body: `${firstLine ? `You asked: "${firstLine}". ` : ""}The preview is built; nothing is live until you say so.`, details: ["Yes: reply approved to her email and it goes live.", "No: reply with what to change."], plan: r.plan_text ?? null, buttons: [], priority: 1 });
   }
-  for (const t of tasks.filter((x) => x.status === "awaiting_approval" && !covered.has(x.id) && !approvalIds.has(x.approval_id))) {
+  // A REPAIR IS NEVER A DECISION (owner, 7 Nov 2026: Kendra's reports "should not need my constant
+  // approval"). A task Boss OS opened to fix itself that stops on approval is the team's to unblock.
+  for (const t of tasks.filter((x) => x.status === "awaiting_approval" && !covered.has(x.id) && !approvalIds.has(x.approval_id) && !isRepairTask(x))) {
     const dg = digestOf(data, t);
     if (dg) {
       const items = dg.items ?? [];
@@ -775,10 +779,18 @@ export function buildDay(data, now = Date.now()) {
   const bl = bounceLine(data.bounceFixes);
   if (bl) doneRaw.push({ text: bl, links: [] });
   doneRaw.push(...commentDoneLines(data, now));
+  /*
+   * A TEAM JOB THAT STOPPED IS ONE COUNT LINE, NEVER A LINE EACH (owner, 7 Nov 2026: "Fix a held
+   * email…", "Zora's archive audit", "Tools worth knowing about" in her Done for you). Danielle's
+   * repairs and the duties' own runs live on Systems; only a job she asked for gets its own line.
+   */
+  let teamStops = 0;
   for (const f of failedTaskLines(data.tasks, now)) {
     const t = (data.tasks ?? []).find((x) => x.id === f.id) ?? {};
+    if (isTeamJob(t)) { teamStops++; continue; }
     doneRaw.push({ key: `failed:${jobFamily(t.title).toLowerCase()}`, text: failedDoneLine(t), full: f.text, links: [] });
   }
+  if (teamStops) doneRaw.push({ key: `team-stops:${today}`, text: `${teamStops} team job${teamStops === 1 ? "" : "s"} stopped and ${teamStops === 1 ? "is" : "are"} being fixed by Danielle; nothing needed from you.`, links: [{ label: "Open ›", url: `${ORIGIN}/?tab=systems` }] });
   const prospects = prospectSection(data.prospects ?? null, now);
   const spirit = spiritSection(data.spirit ?? null, data.practiceWeek ?? null, now);
   const ancestral = ancestralLine(data.spirit ?? null);
@@ -788,6 +800,9 @@ export function buildDay(data, now = Date.now()) {
   const done = doneOnce.all.map((l) => { const id = idFor("done", l.text); return { ...l, id, screen: itemUrl(today, id) }; });
   const doneShown = done.slice(0, MAX_DONE).map((l) => ({ text: l.text, links: [{ label: "See it", url: l.screen }] }));
   if (doneOnce.more > 0) doneShown.push({ text: `+${doneOnce.more} more on Today`, links: [{ label: "Open ›", url: `${ORIGIN}/?view=morning` }] });
+  // The Updates page (owner, 7 Nov 2026: email only when she must act): ONE count line, the same
+  // count and words the page shows (noticeGate.mjs updatesLine, read from /task-notices/updates).
+  if (data.updates?.line) doneShown.push({ text: data.updates.line, links: [{ label: "Open ›", url: `${ORIGIN}${UPDATES_PATH}` }] });
 
   // 4b. The grid repos: the weekly Search Readiness check (Mondays; owner, 25 Oct 2026). Its own short
   // section — what is broken, what was fixed, what is being built — never pooled into "Done for you",
@@ -833,7 +848,7 @@ export function buildDay(data, now = Date.now()) {
   // While her "OpenAI first" switch is on, one small line says so (owner, 24 Oct 2026).
   const openaiFirst = (data.settings ?? []).find((r) => r.key === "seat_order_openai_first");
   const openaiLine = openaiFirst && /^(on|true)$/.test(String(openaiFirst.value))
-    ? `OpenAI goes first for every job (saves Claude usage), on since ${dayWords(dayOf(Number(openaiFirst.updated_at) || now), { weekday: false })}. Turn it off in Settings.`
+    ? `Codex (your ChatGPT plan) goes before Claude on every job, after the free models; no paid API. On since ${dayWords(dayOf(Number(openaiFirst.updated_at) || now), { weekday: false })}. Turn it off in Settings.`
     : null;
   const ps = [eightRaiseLine(m.eightraise?.credits ?? null), openaiLine].filter(Boolean).join(" ") || null;
 
@@ -938,13 +953,31 @@ export function carriedLines(carried, { shown = new Set(), keys = new Set(), tod
     }));
 }
 
+/**
+ * A task Boss OS opened to repair itself (input.origin "repair"). A dated waiting-on check-in is not:
+ * its result can need her own account (the Friday unsubscribe taps in her personal Gmail). Pure.
+ */
+export function isRepairTask(t) {
+  let input = {};
+  try { input = typeof t?.input === "string" ? JSON.parse(t.input) : (t?.input ?? {}); } catch { input = {}; }
+  return input?.origin === "repair" && input?.repair_kind !== "waiting_on";
+}
+
+/** A job the team started (a repair, a duty's run, Danielle's desk), not one she asked for. Pure. */
+export function isTeamJob(t) {
+  let input = {};
+  try { input = typeof t?.input === "string" ? JSON.parse(t.input) : (t?.input ?? {}); } catch { input = {}; }
+  if (typeof input?.from === "string" && input.from.includes("@") && input.origin !== "repair") return false;
+  return t?.employee_id === "emp_repo" || input?.origin === "repair" || input?.delivers !== undefined || input?.duty_id !== undefined;
+}
+
 export function replyContext(text) {
   return String(text).split("\n").map((line) => line.replace(/\s*On your calendar: .*$/, "")).join("\n");
 }
 
 // ─── Reading ───────────────────────────────────────────────────────────────────
 
-async function session() {
+export async function session() {
   if (!process.env.BOSS_PASSCODE) throw new Error("NAMED STOP [NO_PASSCODE] run through the vault: npm run your-day");
   const u = await fetch(`${ORIGIN}/api/boss/auth/unlock`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ passcode: process.env.BOSS_PASSCODE }) });
   if (!u.ok) throw new Error(`NAMED STOP [UNLOCK_FAILED] Boss OS refused the passcode (${u.status})`);
@@ -967,7 +1000,7 @@ export function lawLine(law) {
   return `Today's law, Law ${law.n}, ${law.title}: "${law.text}" Read it aloud.`;
 }
 
-async function read(api, now) {
+export async function read(api, now) {
   const [today, diary, tasks, approvals, rc] = await Promise.all([api.get("/today"), api.get("/diary"), api.get("/tasks"), api.get("/approvals"), api.get("/repo-changes")]);
   const withDue = tasks.map((t) => { let input = {}; try { input = typeof t.input === "string" ? JSON.parse(t.input) : (t.input ?? {}); } catch { input = {}; } return { ...t, due: input?.due ?? null }; });
   // The bounce agent's last day (rule 4): one "done" line. A failed read is said in the log, not to her.
@@ -996,11 +1029,12 @@ async function read(api, now) {
   const reported = sectionsNotReported(sections, { weekday: parts(now).weekday, now });
   for (const m of reported.missing) console.error(`your-day: morning section not reported in — ${m.name}`);
   // Her zone for the times shown (Central when unread: never a guess).
+  const updates = await api.get("/task-notices/updates?summary=1").catch((e) => { console.error(`your-day: the Updates count not read (${e.message})`); return null; });
   const ownerTz = await api.get("/system/owner-timezone").then((d) => d?.tz ?? null).catch((e) => { console.error(`your-day: her time zone not read (${e.message}); times in Central`); return null; });
-  return { ownerTz, quietPeople, brainsCheck, t2rGroups, scoreboard, diary: diary?.rows ?? null, tasks: withDue, approvals, repoChanges: rc?.items ?? [], briefing: briefingOf(today), law: lawOf(today), bounceFixes, commentWatch, prospects, spirit, practiceWeek, settings, waiting, carried, morning: reported.sections, notReported: reported.missing };
+  return { updates, ownerTz, quietPeople, brainsCheck, t2rGroups, scoreboard, diary: diary?.rows ?? null, tasks: withDue, approvals, repoChanges: rc?.items ?? [], briefing: briefingOf(today), law: lawOf(today), bounceFixes, commentWatch, prospects, spirit, practiceWeek, settings, waiting, carried, morning: reported.sections, notReported: reported.missing };
 }
 
-async function feedOf(range) {
+export async function feedOf(range) {
   if (!process.env.PNP_OWNER_FEED_TOKEN) return { feed: null, error: "the feed key is not in the vault" };
   const r = await fetch(`${FEED}?range=${range}`, { headers: { authorization: `Bearer ${process.env.PNP_OWNER_FEED_TOKEN}` } }).catch((e) => ({ ok: false, status: String(e?.message ?? e) }));
   return r.ok ? { feed: await r.json() } : { feed: null, error: `the site answered ${r.status}` };

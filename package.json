@@ -117,6 +117,7 @@
     "lp:positive": "node scripts/vault/vault.mjs run -- node scripts/ops/lp-positive.mjs",
     "calendar:sync": "node scripts/vault/vault.mjs run -- node scripts/ops/calendar-sync.mjs",
     "notify": "node scripts/vault/vault.mjs run -- node scripts/ops/notify.mjs",
+    "update:post": "node scripts/vault/vault.mjs run -- node scripts/ops/post-update.mjs",
     "notices:send": "node scripts/vault/vault.mjs run -- node scripts/ops/task-notices.mjs",
     "app:install": "bash scripts/ops/install-desktop-app.sh",
     "local:pull": "node scripts/ops/pull-production.mjs",

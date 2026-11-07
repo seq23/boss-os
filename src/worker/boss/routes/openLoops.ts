@@ -27,6 +27,7 @@ import { BRAIN_SLUGS } from "../../../shared/boss/brains/brain.mjs";
 import { MORNING_SECTIONS, morningSectionProblems } from "../../../shared/boss/mail/morningSections.mjs";
 import { loopProblems, morningSection, repairsDue, remindersDue, reminderEmail, sourceKeyOf, visibleLoops, isOwner, isDay, type Loop } from "../../../shared/boss/openLoops/openLoops.mjs";
 import { admitTask } from "../tasks/admit";
+import { needsHer } from "../../../shared/boss/mail/noticeGate.mjs";
 
 export const openLoops = new Hono<{ Bindings: Env; Variables: Vars }>();
 
@@ -220,6 +221,10 @@ export async function runOpenLoopsDaily(env: Env, now = Date.now()): Promise<{ r
    * she should but if not stop and remind me"). No Danielle job, no Decide, no plan: one plain
    * three-part reminder through the existing notice drain (boss_task_notices → task-notices.mjs on
    * her Mac), once per slot (`<next_date>#<n>` in secret_name keeps it to one per slot).
+   *
+   * ON THE UPDATES PAGE, NOT BY EMAIL (owner, 7 Nov 2026: fifteen "Reminder:" emails in one minute).
+   * The overdue rows are already one folded list in this morning section; the reminder is a row on
+   * ☰ More → Updates and counted in the morning email's one Updates line (noticeGate.mjs).
    */
   const reminded: string[] = [];
   for (const { loop: l, slot, nth, late } of remindersDue(loops, today)) {
@@ -227,8 +232,8 @@ export async function runOpenLoopsDaily(env: Env, now = Date.now()): Promise<{ r
     if (already) continue;
     const mail = reminderEmail(l, { origin: ORIGIN, late, nth, names });
     await env.DB.prepare(
-      `INSERT INTO boss_task_notices (id, task_id, lane, from_name, kind, subject, body, created_at, secret_name) VALUES (?,?,?,?,?,?,?,?,?)`,
-    ).bind(newId("tnt"), l.id, "ops", "Simone", "open_loop_reminder", mail.subject, mail.body, now, slot).run();
+      `INSERT INTO boss_task_notices (id, task_id, lane, from_name, kind, subject, body, created_at, secret_name, needs_her) VALUES (?,?,?,?,?,?,?,?,?,?)`,
+    ).bind(newId("tnt"), l.id, "ops", "Simone", "open_loop_reminder", mail.subject, mail.body, now, slot, needsHer({ kind: "open_loop_reminder" }) ? 1 : 0).run();
     reminded.push(l.id);
   }
   return { ran: true, shown: visibleLoops(loops).shown.length, overdue: sec.lines.length, repairs: opened, reminders: reminded };

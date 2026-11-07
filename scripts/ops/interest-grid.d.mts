@@ -57,3 +57,4 @@ export const STAR: Readonly<{ maxGap: number; minFillShare: number; minFillUsd: 
 export const NEW_MATCH_MS: number;
 export const MAX_EMAIL_MATCHES: number;
 export const NEW_MATCH_MS: number;
+export function sharePriceWords(text: unknown): string;

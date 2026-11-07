@@ -91,15 +91,28 @@ export function dayWords(d) {
  * step are neither counted nor chased. Written every morning, an empty list included, so a missing
  * copy means the writer did not run (rule 0). Pure.
  */
+/*
+ * ONLY HER OWN ROWS IN HER EMAIL (owner, 7 Nov 2026: the morning email listed 28 rows, mostly Claude's
+ * own tasks asking her "Did this happen?"). Her overdue rows are one short list; the team's rows are
+ * ONE count line to the Open Loops page. A row with no title is never drawn (it read "(Claude, due Fri
+ * Nov 6). Did this happen?").
+ */
+export const MAX_HER_LINES = 5;
 export function morningSection(loops, today, { origin, names = {} } = {}) {
   const { shown } = visibleLoops(loops);
-  const overdue = sortLoops(shown.filter((l) => isOverdue(l, today)), today);
+  const titled = shown.filter((l) => String(l.title ?? "").trim());
+  const mine = titled.filter((l) => l.owner === HER);
+  const overdue = sortLoops(mine.filter((l) => isOverdue(l, today)), today);
+  const team = titled.filter((l) => l.owner !== HER);
+  const teamLate = team.filter((l) => isOverdue(l, today)).length;
   const url = `${origin ?? ""}${PAGE_PATH}`;
-  const title = `Open loops: ${shown.length}${overdue.length ? `, ${overdue.length} overdue` : ", none overdue"}`;
-  const lines = overdue.map((l) => ({
-    text: `${l.title}: ${l.next_step ? `${l.next_step} ` : ""}(${ownerWords(l.owner, names)}, due ${dayWords(l.next_date)}). Did this happen?`,
+  const title = `Your open loops: ${mine.length}${overdue.length ? `, ${overdue.length} overdue` : ", none overdue"}`;
+  const lines = overdue.slice(0, MAX_HER_LINES).map((l) => ({
+    text: `${String(l.title).trim()} (due ${dayWords(l.next_date)}). Did this happen?`,
     links: [{ label: "Open ›", url: `${url}&loop=${encodeURIComponent(l.id)}` }],
   }));
+  if (overdue.length > MAX_HER_LINES) lines.push({ text: `+${overdue.length - MAX_HER_LINES} more of yours on Open Loops.`, links: [{ label: "Open ›", url }] });
+  if (team.length) lines.push({ text: `The team has ${team.length} more${teamLate ? `, ${teamLate} past their date` : ""}, and is working on them.`, links: [{ label: "Open ›", url }] });
   return { title, lines, link: { label: "See every open loop →", url } };
 }
 

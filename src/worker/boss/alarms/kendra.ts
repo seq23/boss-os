@@ -69,21 +69,54 @@ export async function raiseAlarm(env: Env, a: RaiseInput, now = Date.now()): Pro
     ).bind(id, a.key, a.kind, KENDRA, a.subject_id ?? null, text, hers, now, now).run();
   }
   if (!hers) {
+    /*
+     * THE REPAIR GOES TO DANIELLE'S REPAIR LANE, NEVER A MODEL'S PROSE (7 Nov 2026). Until now the
+     * repair was a one-off on Kendra's desk: a free cloud model with no tools and no data, asked to
+     * "find why at source". It invented a "Morning System Report: 31 Oct 2026" (a "Task D", a
+     * "dev-sandbox-04", "84GB headroom") and ended "Waiting for Partner approval", which put it in her
+     * Inbox. Now it is a repo-change repair on Danielle's desk (kind `kendra_alarm` in REPAIR_KINDS):
+     * real code, real reads, no plan approval (repairs never wait on her, 25 Oct 2026), one plain
+     * line after. The prompt carries the recorded facts and nothing else (`alarmFacts`).
+     */
+    const facts = alarmFacts({ id, key: a.key, kind: a.kind, text, subject_id: a.subject_id ?? null, at: now });
     const r = await admitTask(env, {
-      title: `Kendra's alarm: ${text.slice(0, 140)}`,
+      title: `Fix Kendra's alarm: ${text.replace(/^(?:"?(?:Fix )?Kendra's alarm:\s*)+/i, "").slice(0, 140)}`,
       lane: "ops",
-      employee_id: KENDRA,
+      employee_id: REPAIR_SEAT,
       input: {
-        origin: "repair", repair_kind: "kendra_alarm", alarm_id: id, alarm_key: a.key,
-        prompt: `Systems alarm (${a.kind}): ${text} Find why at source and fix it, then let the next run prove it: ` +
+        origin: "repair", repair_kind: "kendra_alarm", alarm_id: id, alarm_key: a.key, build_ask: true,
+        prompt: `seq23/boss-os — Kendra's Systems alarm (${a.kind}). Recorded facts, the only facts:\n${facts}\n` +
+          `Find why at source in the code and the live records, and fix it, then let the next run prove it: ` +
           `the alarm closes itself when the condition clears. A floor that is simply wrong is changed on the duty row ` +
-          `(standing_duties.output_floor) and in its Schedule row's "output", with the reason.`,
+          `(standing_duties.output_floor) and in its Schedule row's "output", with the reason. A stuck claim, lock or ` +
+          `hung run is cleared, re-run or reaped by you, logged, never put to her. Write only what you read; a value you ` +
+          `did not read is "not read: <reason>". Ask her only for money, her own accounts or sign-ins, legal steps, or ` +
+          `publishing that cannot be undone.`,
       },
     } as any).catch((err: unknown) => ({ created: false, reason: err instanceof Error ? err.message : String(err) }) as any);
     if (r?.created && r.task_id) await env.DB.prepare(`UPDATE system_alarms SET task_id = ? WHERE id = ?`).bind(r.task_id, id).run();
     else console.error(`kendra: the repair for alarm ${a.key} was not admitted (${r?.reason ?? "no reason"})`);
   }
   return { action: row ? "reopened" : "opened", id };
+}
+
+/** Danielle's desk: every repair Boss OS opens itself runs there (lane.mjs REPAIR_KINDS). */
+export const REPAIR_SEAT = "emp_repo";
+
+/** The alarm's recorded facts, one per line: what the repair is told and what its report may say. Pure. */
+export function alarmFacts(a: { id: string; key: string; kind: string; text: string; subject_id: string | null; at: number }): string {
+  return [
+    `- alarm ${a.id} (${a.kind}), key ${a.key}, opened ${new Date(a.at).toISOString()}`,
+    `- what Kendra's check read: ${a.text}`,
+    a.subject_id ? `- about: ${a.subject_id}` : null,
+  ].filter(Boolean).join("\n");
+}
+
+/** Is this task's input one of Kendra's own alarm repairs? Pure. */
+export function isKendraRepair(input: unknown): boolean {
+  let v: any = input;
+  if (typeof v === "string") { try { v = JSON.parse(v); } catch { return false; } }
+  return Boolean(v) && typeof v === "object" && v.origin === "repair" && v.repair_kind === "kendra_alarm";
 }
 
 /** Close an open alarm whose condition cleared. Returns whether one was open. */
@@ -151,14 +184,14 @@ export interface KendraResult {
   duties: number;
   floors: { opened: string[]; kept: string[]; cleared: string[] };
   first_run: { opened: string[]; closed: string[] };
-  stale: { opened: string[]; kept: string[]; cleared: string[] };
+  stale: { opened: string[]; kept: string[]; cleared: string[]; repairs?: number };
   running: number;
 }
 
 export async function runKendraChecks(env: Env, now = Date.now()): Promise<KendraResult> {
   const out: KendraResult = {
     duties: 0, floors: { opened: [], kept: [], cleared: [] }, first_run: { opened: [], closed: [] },
-    stale: { opened: [], kept: [], cleared: [] }, running: 0,
+    stale: { opened: [], kept: [], cleared: [], repairs: 0 }, running: 0,
   };
 
   // ── A and B: every live duty that declares a floor ─────────────────────────────────────────
@@ -202,16 +235,23 @@ export async function runKendraChecks(env: Env, now = Date.now()): Promise<Kendr
 
   // ── G2: tasks that sit "running" ───────────────────────────────────────────────────────────
   const { results: running } = await env.DB.prepare(
-    `SELECT t.id, t.title, t.intake_kind, t.started_at,
+    `SELECT t.id, t.title, t.intake_kind, t.started_at, t.input,
             (SELECT MAX(ts) FROM task_events e WHERE e.task_id = t.id) AS last_event_at,
             (SELECT MAX(COALESCE(r.claimed_at, r.started_at)) FROM backend_runs r WHERE r.task_id = t.id) AS last_claim_at,
             (SELECT r.backend_id FROM backend_runs r WHERE r.task_id = t.id ORDER BY COALESCE(r.claimed_at, r.started_at) DESC LIMIT 1) AS seat
        FROM tasks t WHERE t.status = 'running'`,
-  ).all<{ id: string; title: string; intake_kind: string | null; started_at: number | null; last_event_at: number | null; last_claim_at: number | null; seat: string | null }>();
+  ).all<{ id: string; title: string; intake_kind: string | null; started_at: number | null; input?: string | null; last_event_at: number | null; last_claim_at: number | null; seat: string | null }>();
   out.running = (running ?? []).length;
   const usualByKind = new Map<string, number | null>();
   const stillStale = new Set<string>();
   for (const t of running ?? []) {
+    /*
+     * NO ALARM ON KENDRA'S OWN REPAIR (7 Nov 2026). Each repair of a stale task ran long, went stale
+     * itself, and opened a repair of the repair: "Kendra's alarm: Kendra's alarm: Kendra's alarm: …",
+     * one an hour from 20:00 to 03:00 UTC on 6-7 Nov. The alarm it serves is still open and is the
+     * record; the repair is counted here, never raised again.
+     */
+    if (isKendraRepair(t.input)) { out.stale.repairs = (out.stale.repairs ?? 0) + 1; continue; }
     const kind = t.intake_kind ?? "";
     if (!usualByKind.has(kind)) {
       const { results: done } = await env.DB.prepare(

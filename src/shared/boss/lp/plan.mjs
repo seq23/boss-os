@@ -691,7 +691,7 @@ export function proposeFeatured(supply, { never = [], add = [], drop = [] } = {}
   }));
 }
 
-/** Featured names whose supply row is gone or older than ~45 days: each becomes a swap proposal. */
+/** Featured names whose supply row is gone or older than ~45 days, except names she asked for: each becomes a swap proposal. */
 export function staleFeatured(featured, supply, now = Date.now()) {
   const fresh = new Map();
   for (const r of supply ?? []) {
@@ -700,6 +700,9 @@ export function staleFeatured(featured, supply, now = Date.now()) {
     fresh.set(k, Math.min(age, fresh.get(k) ?? 999));
   }
   return (featured ?? []).filter((f) => {
+    // A name she asked for is hers to drop, never "no longer fresh" (7 Nov 2026: the card said
+    // OpenAI, Anduril and Databricks were stale and offered a "swap" that named the same three).
+    if (f.asked || f.why === "you asked for it") return false;
     const age = fresh.get(String(f.name).toLowerCase());
     return age === undefined || age > FEATURE_STALE_DAYS;
   }).map((f) => f.name);

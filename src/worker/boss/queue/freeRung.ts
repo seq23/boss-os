@@ -40,6 +40,10 @@ export function isResearchWork(task: { intake_kind?: string | null }, input: Rec
   const page = isObj(input.research_page) && input.delivers === "research_page";
   const bare = task.intake_kind === "research" && input.delivers === undefined && input.backend_id === undefined &&
     input.backend_ladder === undefined && input.spec_module === undefined;
+  // A REPAIR IS NEVER RESEARCH (7 Nov 2026). Kendra's alarm repair for the stuck DNA research was
+  // classified "research" from its own title, ran as a free research page and emailed her "Done
+  // (partial): Fixing the Stale Task System Alarm" five times. A repair goes to the repair path.
+  if (input.origin === "repair") return false;
   return (page || bare) && !isObj(input.firm_scan) && !isObj(input.repo_change) && input.chrome_job !== true;
 }
 

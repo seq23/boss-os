@@ -9,3 +9,4 @@ export declare function lowDiskLine(freeGb: number, cleanedGb: number, biggest: 
 export declare function pickRenderWork(dirs: Array<{ path: string; rel?: string; kind: "work" | "hash"; episode: string; final: boolean; newest: number }>, procs: string[] | null, now?: number): Array<{ path: string; rel?: string; kind: "work" | "hash"; episode: string; final: boolean; newest: number }>;
 export declare const workEpisode: (name: string) => string;
 export declare function spaceNotice(freeGb: number, trashGb: number): string | null;
+export function postUpdate(body: { key: string; from_name: string; subject: string; body: string }, opts?: { fetchImpl?: typeof fetch; origin?: string }): Promise<{ ok: boolean; already?: boolean; error?: string }>;

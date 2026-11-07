@@ -87,7 +87,8 @@ describe("a prospect-template card is the live one or nothing (26 Oct 2026)", ()
 
 describe("a job with an empty title is named, never empty quotes (2 Nov 2026)", () => {
   it("drops wordless quoted parts and falls back to the job's kind", () => {
-    const blank = { id: "t9", title: 'Finish the job from her email "; "', status: "failed", employee_name: "Danielle", finished_at: MON - 1_000, input: JSON.stringify({ origin: "repair", repair_kind: "self_repair" }) };
+    // Jobs she asked for by email keep their own line (a team repair is one count line since 7 Nov 2026).
+    const blank = { id: "t9", title: 'Finish the job from her email "; "', status: "failed", employee_name: "Danielle", finished_at: MON - 1_000, input: JSON.stringify({ from: "owner@example.com", kind: "repair" }) };
     const none = { ...blank, id: "t8", title: '""' };
     const e = buildDay({ ...base(MON), tasks: [blank], morning: {} }, MON);
     expect(e.text).toContain('Danielle\'s "Finish the job from her email" job stopped');
@@ -95,5 +96,31 @@ describe("a job with an empty title is named, never empty quotes (2 Nov 2026)", 
     const e2 = buildDay({ ...base(MON), tasks: [none], morning: {} }, MON);
     expect(e2.text).toContain("Danielle's repair job stopped");
     expect(e2.text).not.toContain('""');
+  });
+
+  it("a team repair that stopped is one count line, never its own line (7 Nov 2026)", () => {
+    const rep = { id: "t7", title: "Fix a held email: a synthetic one", status: "failed", employee_name: "Danielle", employee_id: "emp_repo", finished_at: MON - 1_000, input: JSON.stringify({ origin: "repair", repair_kind: "held_mail" }) };
+    const duty = { id: "t6", title: "Tools worth knowing about", status: "failed", employee_name: "Kendra", finished_at: MON - 2_000, input: JSON.stringify({ delivers: "tool_suggestions" }) };
+    const e = buildDay({ ...base(MON), tasks: [rep, duty], morning: {} }, MON);
+    expect(e.text).toContain("2 team jobs stopped and are being fixed by Danielle; nothing needed from you.");
+    expect(e.text).not.toContain("Fix a held email");
+    expect(e.text).not.toContain("Tools worth knowing about");
+  });
+});
+
+describe("a repair is never a decision (owner, 7 Nov 2026)", () => {
+  it("a repair task waiting on approval is not in Decide; her own task waiting on approval is", () => {
+    const rep = { id: "t5", title: "Fix Kendra's alarm: a synthetic duty", status: "awaiting_approval", employee_name: "Kendra", input: JSON.stringify({ origin: "repair", repair_kind: "kendra_alarm" }) };
+    const hers = { id: "t4", title: "Friday unsubscribe suggestions", status: "awaiting_approval", employee_name: "Danielle", input: JSON.stringify({ from: "owner@example.com" }) };
+    const e = buildDay({ ...base(MON), tasks: [rep, hers], approvals: [], morning: {} }, MON);
+    expect(e.text).not.toContain("Fix Kendra's alarm");
+    expect(e.text).toContain("Friday unsubscribe suggestions");
+  });
+});
+
+describe("a dated check-in that needs her own account is still hers (7 Nov 2026)", () => {
+  it("the Friday unsubscribe taps stay in Decide", () => {
+    const wo = { id: "t3", title: "Friday unsubscribe suggestions: senders she never opens", status: "awaiting_approval", employee_name: "Danielle", input: JSON.stringify({ origin: "repair", repair_kind: "waiting_on" }) };
+    expect(buildDay({ ...base(MON), tasks: [wo], approvals: [], morning: {} }, MON).text).toContain("Friday unsubscribe suggestions");
   });
 });
