@@ -857,7 +857,8 @@ export function plainProblems({ subject, text, html, kind = null }) {
   }
   if (/\bneeds? (?:a look|you)\b/i.test(seen) && /\bnothing (?:needed|to decide)\b|\bno reply needed\b/i.test(seen)) problems.push('"needs a look" beside "nothing needed"');
   if (subj.length > MAX_SUBJECT_CHARS) problems.push(`subject longer than ${MAX_SUBJECT_CHARS} characters`);
-  const cap = kind === "morning" ? MORNING_MAX_TEXT_CHARS : MAX_TEXT_CHARS;
+  // A research report (kind "report", 6 Nov 2026) is the whole page by design, like the morning email.
+  const cap = kind === "morning" || kind === "report" ? MORNING_MAX_TEXT_CHARS : MAX_TEXT_CHARS;
   if (body.length > cap) problems.push(`longer than ${cap} characters`);
   const bare = body.split("\n").filter((l) => /^\s*(?:[-*•]\s*)?(?:https?:\/\/|mailto:)\S+\s*$/.test(l)).length;
   if (bare >= 3) problems.push(`a dump of ${bare} bare links`);
@@ -879,6 +880,10 @@ export function plainProblems({ subject, text, html, kind = null }) {
   const decideAt = lines.findIndex((l) => /^Decide \(\d+\)$/.test(l));
   if (decideAt > 2 && !problem) problems.push("Decide is not first");
   if (html !== undefined && html !== null && !/Decide \(\d+\)|Nothing to decide|What happened|What broke/.test(String(html))) problems.push("the HTML has no Decide line");
+  // A research report is real-world prose about the outside world (6 Nov 2026, the DNA report: a
+  // fee table's "Route" column and "5830 Mt. Moriah Rd #9" read as jargon and a PR number). Its
+  // words are the research's; ids, brackets, API links, length and shape are still checked.
+  if (kind === "report") return [...new Set(problems)].filter((p) => !/^(?:jargon |PR number)/.test(p));
   return [...new Set(problems)];
 }
 

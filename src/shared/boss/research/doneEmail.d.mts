@@ -14,3 +14,6 @@ export function researchDoneSubject(page: DonePage): string;
 export function researchDoneLines(page: DonePage, url: string): string[];
 export function researchDoneLayout(args: { who: string; subject: string; page: DonePage; url: string; refs?: string[] }): { subject: string; text: string; html: string; refs: string[]; kind?: string };
 export function researchPageIdIn(text: string | null | undefined): string | null;
+export const FULL_EMAIL_MAX_HTML: number;
+export function researchPlainText(md: string): string;
+export function researchFullEmail(args: { who: string; subject: string; page: DonePage; url: string; refs?: string[]; markdownToHtml: (md: string) => string }): { subject: string; text: string; html: string; refs: string[]; kind: string };
