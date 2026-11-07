@@ -1089,6 +1089,15 @@ describe("F · the search growth loop on every selling site (owner, 1 Nov 2026)"
 
   it("f12: a v1 config names the site and a workflow pins the shared engine @v1; site rules reach the config", () => {
     expect(run("search_loop_adopted").status).toBe("pass");
+    // A workflow the clone could not read is not proof of absence (7 Nov 2026, time-2-read.com).
+    const unread = { workflows: [{ name: "search-loop.yml", text: "", unread: true }] };
+    expect(run("search_loop_adopted", unread).status).toBe("not_checked");
+    expect(run("search_loop_adopted", unread).detail).toMatch(/search-loop\.yml/);
+    expect(run("loop_discovery_weekly", unread).status).toBe("not_checked");
+    // ...and a read caller still passes when another workflow is unread.
+    expect(run("search_loop_adopted", { workflows: [{ name: "x.yml", text: "", unread: true }, { name: "search-loop.yml", text: CALLER }] }).status).toBe("pass");
+    // All workflows read and none calls the engine stays a fail.
+    expect(run("loop_discovery_weekly", { workflows: [{ name: "x.yml", text: "on: push\n" }] }).status).toBe("fail");
     expect(run("search_loop_adopted", { workflows: [{ name: "own.yml", text: "jobs:\n  x:\n    uses: seq23/search-loop/.github/workflows/loop.yml@main\n" }] }).status).toBe("fail");
     expect(run("search_loop_adopted", { files: { "search-loop.config.json": CONFIG({ schema: undefined }) } }).status).toBe("fail");
     expect(run("search_loop_adopted", { files: { "search-loop.config.json": "{" } }).status).toBe("fail");
