@@ -36,7 +36,7 @@ describe("the Spry Labs weekly never asks her, and never sends her to GitHub (7 
   const summary = { schema: SPRY_WEEKLY.schema, generated_at: "2026-11-04T13:20:00Z", run_url: "https://github.com/seq23/x/actions/runs/1",
     sites: [{ host: "approvalprep.com", state: "fine", why: [] }, { host: "dreamweddingbuilder.com", state: "fine", why: [] }],
     notes: ["Needs you: read the stop issue on GitHub — +2 more waiting on you", "23 new pages published this week."] };
-  const mail = composeSpryWeekly({ [src.key]: { summary } }, { now: SAT });
+  const mail = composeSpryWeekly({ [src!.key]: { summary } }, { now: SAT });
   const words = JSON.stringify(mail.sections);
   it("a repo's ask becomes the team's line; its other notes stay", () => {
     expect(words).not.toMatch(/github/i);
@@ -45,7 +45,7 @@ describe("the Spry Labs weekly never asks her, and never sends her to GitHub (7 
     expect(words).toMatch(/The team has one thing to clear here/);
   });
   it("negative proof: with no such note, no team line is invented", () => {
-    const quiet = composeSpryWeekly({ [src.key]: { summary: { ...summary, notes: ["23 new pages published this week."] } } }, { now: SAT });
+    const quiet = composeSpryWeekly({ [src!.key]: { summary: { ...summary, notes: ["23 new pages published this week."] } } }, { now: SAT });
     expect(JSON.stringify(quiet.sections)).not.toMatch(/The team has/);
   });
 });
