@@ -185,7 +185,7 @@ Billionairehighperformancecoach → `sprylabs-hpc-site`.
 ### CLIENT REPOSITORIES ARE REPORT-ONLY
 
 The list is `src/shared/boss/siteAudit/repoPolicy.mjs` (`NO_AUTO_FIX`, kind `client`): today
-dianne-place-recovery-services and the sheila / mercedes repositories. **horselegalguide.com
+the sheila / mercedes repositories. **detoxdenver.org (dianne-place-recovery-services) is a friends' site since 7 Nov 2026 and is fixed like the rest, under the strict health gate.** **horselegalguide.com
 (horse-legal-guide-velocity) and hicksconsulting.org (hicks-consulting-canonical) are NOT on it**
 (owner, 25 Oct 2026): fix them like every other grid repo site.
 A finding there is `disposition: "client_repo"`, headline starting `CLIENT_REPO:` — no branch, no

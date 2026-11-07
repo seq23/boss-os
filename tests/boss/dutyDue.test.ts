@@ -203,7 +203,9 @@ describe("duty_site_audit_repair after 0246", () => {
       .first<{ never: string; model: string; success_criteria: string }>();
 
     expect(duty?.never).toMatch(/Client repos that are not grid repo sites are off limits to the fixer entirely/);
-    expect(duty?.never).toMatch(/dianne-place-recovery-services/);
+    // 7 Nov 2026: Detox Denver / Dianne's Place is a friends' site, fixed like Horse and Hicks.
+    expect(duty?.never).toMatch(/dianne-place-recovery-services \(detoxdenver\.org, a friends' site/);
+    expect(duty?.never).not.toMatch(/entirely \(dianne-place-recovery-services/);
     // Owner, 25 Oct 2026: the two client grid repo sites are fixed like every other.
     expect(duty?.never).toMatch(/hicks-consulting-canonical and horse-legal-guide-velocity are grid repo sites and are fixed/);
     expect(duty?.never).toMatch(/protected page .* single-page change/);

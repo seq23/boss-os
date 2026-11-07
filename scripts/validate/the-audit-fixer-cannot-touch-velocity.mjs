@@ -207,7 +207,7 @@ export function velocityCannotBeAutoFixed(files) {
   const bad = [];
 
   if (NO_AUTO_FIX.length === 0) return ["the off-limits list is EMPTY, so this guard would examine nothing and pass."];
-  for (const client of ["dianne-place-recovery-services", "sheila-creator-dashboard", "mercedes-creator-dashboard"]) {
+  for (const client of ["sheila-bruce", "sheila-creator-dashboard", "mercedes-creator-dashboard"]) {
     if (!isClientRepo(client)) bad.push(`${client} is not on the list as a client repo. Client repos stay out of Boss OS; the fixer may never branch one.`);
     if (mayAutoFix(client)) bad.push(`mayAutoFix() allowed the client repo ${client}.`);
     if (mayAutoFix(`/Users/sequoiataylor/GitHub/${client}`)) bad.push(`mayAutoFix() allowed ${client} as a full path — the form the local job holds.`);
@@ -226,7 +226,7 @@ export function velocityCannotBeAutoFixed(files) {
       bad.push(`mayAutoFix() refused ${fixable}, which IS fixable. Owner, 16 Oct 2026: "fix danielle's job so she can actually fix things"; collisions are handled by the worktree and the IN_FLIGHT check, not by a ban.`);
     }
   }
-  if (!whyNoAutoFix("dianne-place-recovery-services")) {
+  if (!whyNoAutoFix("sheila-bruce")) {
     bad.push("whyNoAutoFix() gives no reason for a client repo, so a refusal cannot explain itself.");
   }
   for (const d of ["off_limits", "none", "ahrefs_side", "client_repo", "in_flight", "ahrefs_credits"]) {

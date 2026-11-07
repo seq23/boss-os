@@ -36,7 +36,36 @@
   "Shirley Brown",
   "WHA"
  ],
- "excluded": [],
+ "excluded": [
+  {
+   "repo": "901johnsons-site",
+   "why": "No search work on private or non-search sites (owner, 3 Nov 2026): a private family reunion site."
+  },
+  {
+   "repo": "creator-studios",
+   "why": "No search work (owner, 3 Nov 2026): the creator studios."
+  },
+  {
+   "repo": "justbeingmercedes",
+   "why": "No search work (owner, 3 Nov 2026): a creator studio."
+  },
+  {
+   "repo": "sheila-bruce",
+   "why": "No search work (owner, 3 Nov 2026): a creator studio."
+  },
+  {
+   "repo": "topbarz-voting",
+   "why": "A friends' site that gets no Search Readiness (owner, 7 Nov 2026)."
+  },
+  {
+   "repo": "charm-nest",
+   "why": "Parked (owner, 7 Nov 2026): off Search Readiness and every job."
+  },
+  {
+   "repo": "courtscope",
+   "why": "Parked (owner, 7 Nov 2026): off Search Readiness and every job."
+  }
+ ],
  "grid_repos": [
   {
    "domain": "theindustryguides.com",

@@ -1161,10 +1161,13 @@ describe("F · the search growth loop on every selling site (owner, 1 Nov 2026)"
     expect(renderStandings({ sites: results }, checklist, { categories: bad })).toMatch(/could not be read/);
     expect(standingsSummary({ sites: results }, { categories: bad }).sites).toBe(3);
     // A report-only repo's briefs are recorded, never worked (the fixer's permission, unchanged).
-    const briefs = fixBriefs(checklist, sites.grid_repos.filter((x: any) => x.repo === "dianne-place-recovery-services").map((x: any) => ({ site: x, results: [{ id: "a1", status: "fail", detail: "y" }] })));
+    const detox = sites.grid_repos.find((x: any) => x.domain === "detoxdenver.org");
+    const briefs = fixBriefs(checklist, [{ site: { ...detox, repo: "sheila-bruce" }, results: [{ id: "a1", status: "fail", detail: "y" }] }]);
     expect(briefs.length).toBeGreaterThan(0);
     for (const b of briefs) expect(b.disposition).toBe("client_repo");
     expect(workQueue(briefs).workable).toBe(0);
+    // Detox Denver / Dianne's Place is a friends' site since 7 Nov 2026: its briefs are worked.
+    expect(fixBriefs(checklist, [{ site: detox, results: [{ id: "a1", status: "fail", detail: "y" }] }]).map((b: any) => b.disposition)).toEqual(["fix"]);
   });
 });
 

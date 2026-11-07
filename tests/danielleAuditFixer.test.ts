@@ -83,7 +83,7 @@ describe("the two client grid repo sites are on the full auto-fix lane (owner, 2
       expect(mayAutoFix(`seq23/${repo}`)).toBe(true);
       expect(mayAutoFix(`/Users/sequoiataylor/GitHub/${repo}`)).toBe(true);
     }
-    for (const repo of ["dianne-place-recovery-services", "sheila-creator-dashboard", "sheila-bruce", "mercedes-creator-dashboard", "justbeingmercedes"]) {
+    for (const repo of ["sheila-creator-dashboard", "sheila-bruce", "mercedes-creator-dashboard", "justbeingmercedes"]) {
       expect(mayAutoFix(repo)).toBe(false);
     }
   });
@@ -91,8 +91,8 @@ describe("the two client grid repo sites are on the full auto-fix lane (owner, 2
 
 describe("client repo → report only, never a branch or a land", () => {
   it("audit-worktree refuses with CLIENT_REPO and cuts nothing", () => {
-    const { root } = fakeRoot("dianne-place-recovery-services");
-    const r = spawnSync("bash", [WORKTREE, "dianne-place-recovery-services"], { env: { ...GIT_ENV, AUDIT_GITHUB_ROOT: root }, encoding: "utf8" });
+    const { root } = fakeRoot("sheila-bruce");
+    const r = spawnSync("bash", [WORKTREE, "sheila-bruce"], { env: { ...GIT_ENV, AUDIT_GITHUB_ROOT: root }, encoding: "utf8" });
     expect(r.status).toBe(20);
     expect(r.stderr).toMatch(/NAMED STOP \[CLIENT_REPO\]/);
     expect(readdirSync(root).filter((d) => d.startsWith(".wt-danielle"))).toEqual([]);
@@ -101,12 +101,12 @@ describe("client repo → report only, never a branch or a land", () => {
 
   it("landAll never runs checks or land for a client repo, and a client_repo row is not red", () => {
     const calls: string[][] = [];
-    const payload = { findings: [{ disposition: "fixed_pr", repo: "dianne-place-recovery-services", pr_url: "https://github.com/x/y/pull/1" }] };
+    const payload = { findings: [{ disposition: "fixed_pr", repo: "sheila-bruce", pr_url: "https://github.com/x/y/pull/1" }] };
     landAll(payload, { run: (c: string, a: string[]) => { calls.push([c, ...a]); return { status: 0, out: "" }; } });
     expect(calls).toEqual([]);
     expect((payload.findings[0] as any).land).toBe("refused_policy");
 
-    const v = runVerdict({ findings: [{ disposition: "client_repo", repo: "dianne-place-recovery-services", project: "Dianne", headline: "CLIENT_REPO: 4 broken links" }] });
+    const v = runVerdict({ findings: [{ disposition: "client_repo", repo: "sheila-bruce", project: "Sheila", headline: "CLIENT_REPO: 4 broken links" }] });
     expect(v.red).toBe(false);
   });
 });

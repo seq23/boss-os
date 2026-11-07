@@ -138,7 +138,7 @@ describe("Today says only what is still true", () => {
   it("a domain no list knows still alerts; an off-limits client repo says why", () => {
     const a = auditFindingAlerts([
       { disposition: "no_repo", project: "Brandnewsite", domain: "brandnewsite.com", repo: null, errors: 5 },
-      { disposition: "off_limits", project: "Dianne", domain: "dianne.example", repo: "dianne-place-recovery-services", errors: 2 },
+      { disposition: "off_limits", project: "Dianne", domain: "dianne.example", repo: "sheila-bruce", errors: 2 },
     ]);
     expect(a[0]!.text).toMatch(/brandnewsite\.com/);
     expect(a[1]!.text).toMatch(/Why it is off limits: A client's repository/);

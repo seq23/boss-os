@@ -28,6 +28,10 @@ describe("Search Readiness groups (7 Nov 2026)", () => {
       expect(rows.find((r) => r.domain === d)?.business, d).toBe("Industry Guides");
     }
     expect(rows.find((r) => r.domain === "heygetonmylevel.com")?.group).toBe("divine_9");
+    // The explicit exclusions (3 Nov no-search sites, topbarz-voting, the parked repos) never reach the grid.
+    const excluded = ((sites as any).excluded as any[]).map((x) => x.repo);
+    expect(excluded).toEqual(expect.arrayContaining(["901johnsons-site", "topbarz-voting", "charm-nest", "courtscope"]));
+    for (const r of rows) expect(excluded, r.domain).not.toContain(r.repo);
   });
 
   it("a sunsetting site is audited and its briefs are never worked; the same site without the flag is", () => {
