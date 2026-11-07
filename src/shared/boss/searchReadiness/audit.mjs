@@ -443,7 +443,7 @@ export const CHECKS = {
     }
     const img = ctx.files.__og_image;
     if (img && img.status !== 200) bad.push(`og:image ${img.url} answered ${img.status}`);
-    if (img?.url) { try { if (new URL(img.url).hostname.replace(/^www\./, "") !== ctx.host.replace(/^www\./, "")) bad.push(`og:image is on ${new URL(img.url).hostname}, not the site's own host`); } catch { /* malformed */ } }
+    if (img?.url) { try { if (new URL(img.url).hostname.replace(/^www\./, "") !== ctx.host.replace(/^www\./, "")) bad.push(`og:image is on ${new URL(img.url).hostname}, not the site's own host${img.page ? ` (${img.page})` : ""}`); } catch { /* malformed */ } }
     return bad.length ? fail(list(bad), { evidence: bad }) : pass("complete social tags, og:image on the own host");
   },
   no_orphans(ctx) {
@@ -1165,6 +1165,29 @@ export function actionMatches(target, action, base) {
 export function auditHost(domain, finalUrl) {
   let h; try { h = finalUrl ? new URL(finalUrl).hostname : null; } catch { h = null; }
   return h && bare(h) === bare(domain) ? h : domain;
+}
+
+/*
+ * The page b6 reads og:image from: the first sampled page (the homepage comes first) that answered
+ * 200 ON THIS SITE'S OWN HOST and declares an og:image. Our fetches follow redirects, so a homepage
+ * that 301s to another site hands back that site's HTML: spryexecutiveos.com/ is a deliberate 301 to
+ * billionairehighperformancecoach.com/ (one 200 per route across the two hosts), and on 7 Nov 2026 b6
+ * reported "og:image is on billionairehighperformancecoach.com, not the site's own host" while all 55
+ * spryexecutiveos.com sitemap pages carried an og:image on spryexecutiveos.com. The image belongs to
+ * the page that declares it, so it is judged against the host that page was served on. A page served
+ * on this host with a foreign og:image is still picked, and still fails.
+ * Returns { page, image } with the image resolved against the URL the HTML came from, or null.
+ */
+export function ogImageSource(pages, host) {
+  for (const p of pages ?? []) {
+    if (p?.status !== 200 || !p.html) continue;
+    const served = p.final ?? p.url;
+    if (hostOf(served) !== bare(host)) continue;
+    const og = metaContent(p.html, "og:image").find(Boolean);
+    if (!og) continue;
+    try { return { page: served, image: new URL(og, served).href }; } catch { continue; }
+  }
+  return null;
 }
 
 /** The site's newest usable weekly report, or `{ result }`: the status to return instead. */

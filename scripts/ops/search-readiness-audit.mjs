@@ -41,7 +41,7 @@ import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { passingItems, auditHost, currentBriefs, failureSplit, splitLine,
   loadChecklist, loadSites, applies, runChecks, expandCoverage, fixBriefs, morningLines, searchLanes, summaryLines, liveSameAs, hostOf, bare, entityFor, ENTITY_WATCH_RE,
-  metaContent, links, tags, FRESH_FILE_NAMES, indexnowKeyFiles, definitionChoice, CHECKLIST_PATH, SITES_PATH,
+  metaContent, links, tags, ogImageSource, FRESH_FILE_NAMES, indexnowKeyFiles, definitionChoice, CHECKLIST_PATH, SITES_PATH,
 } from "../../src/shared/boss/searchReadiness/audit.mjs";
 import { fetchLoopWeeks } from "./lib/search-loop-week.mjs";
 import { outcomeVerdict, outcomeWindows, redLines, slipLines, weeklyBriefs, pickLastWeekDay, approvalCard } from "../../src/shared/boss/searchReadiness/search-outcomes.mjs";
@@ -442,8 +442,8 @@ async function auditSite(site, checklist, g, gscSites, portfolio, firstSeen = {}
   for (const t of (coverage.targets ?? []).filter((x) => x.kind === "town" && x.html).slice(0, 2)) pages.push({ url: t.url, final: t.url, status: 200, html: t.html, headers: {}, fromSitemap: t.inSitemap, coverageKind: "town" });
 
   // og:image, Clarity loader, IndexNow key, portfolio link targets.
-  const ogUrl = metaContent(home.html, "og:image")[0];
-  if (ogUrl) { const abs = new URL(ogUrl, home.url).href; const r = await get(abs, { text: false }); files.__og_image = { url: abs, status: r.status }; }
+  const og = ogImageSource(pages, host);
+  if (og) { const r = await get(og.image, { text: false }); files.__og_image = { url: og.image, status: r.status, page: og.page }; }
   const loader = tags(home.html, "script").map((t) => t.src).find((s) => s && /clarity/i.test(s));
   if (loader) files.__clarity_loader = true;
   // Probe every key the repo holds: this host answers at most one of them (readRepo, indexnowKeys).
