@@ -28,6 +28,7 @@ export const AUDITED_ELSEWHERE = [
   { domain: "hicksconsulting.com", repo: null, why: "Not ours: an Apache host we do not run. The client's own site is hicksconsulting.org (hicks-consulting-canonical)." },
   { domain: "spry.vc", repo: null, why: "A redirect-only domain: it 301s to sequoiataylor.com at Cloudflare, so there is no page and no repository to fix." },
   { domain: "westpeekproductions.com", repo: null, why: "A West Peek property. Boss OS never changes West Peek work (the businesses stay separate); its own repository and owner handle it." },
+  { domain: "spryexecutiveos.com", repo: null, why: "Dropped from Search Readiness and every automatic fix (owner, 7 Nov 2026): sunset when its domain expires; billionairehighperformancecoach.com carries the same Spry Labs page." },
   { domain: "thedentistryguides.com", repo: null, why: "A redirect-only domain: it 301s to dentistryguides.com (local-guides-generator), where the pages and their fixes live." },
 ];
 
