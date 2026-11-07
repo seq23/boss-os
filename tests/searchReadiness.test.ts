@@ -388,12 +388,13 @@ describe("checks catch what they guard", () => {
   });
 
   it("a protected page is left out of cosmetic items, and its failure brief carries the rule", () => {
-    const spry = sites.grid_repos.find((s: any) => s.domain === "spryexecutiveos.com");
-    const bare = page("https://spryexecutiveos.com/download", "<h1>Buy</h1><img src=a.png>");
-    const ctx = { ...baseCtx({ site: spry, host: "spryexecutiveos.com", pages: [bare], protectedPaths: ["/download"] }) };
+    // spryexecutiveos.com is sunsetting (7 Nov 2026), its briefs never worked; BHPC carries the same page.
+    const spry = sites.grid_repos.find((s: any) => s.domain === "billionairehighperformancecoach.com");
+    const bare = page("https://billionairehighperformancecoach.com/download", "<h1>Buy</h1><img src=a.png>");
+    const ctx = { ...baseCtx({ site: spry, host: "billionairehighperformancecoach.com", pages: [bare], protectedPaths: ["/download"] }) };
     const results = runChecks(checklist, ctx);
     expect(results.find((r: any) => r.id === "b8").status).not.toBe("fail");
-    const briefs = fixBriefs(checklist, [{ site: spry, host: "spryexecutiveos.com", results: [{ id: "a2", status: "fail", detail: "https://spryexecutiveos.com/download has no canonical", evidence: ["https://spryexecutiveos.com/download has no canonical"] }] }]);
+    const briefs = fixBriefs(checklist, [{ site: spry, host: "billionairehighperformancecoach.com", results: [{ id: "a2", status: "fail", detail: "https://billionairehighperformancecoach.com/download has no canonical", evidence: ["https://billionairehighperformancecoach.com/download has no canonical"] }] }]);
     expect(briefs[0].protected[0]).toMatchObject({ path: "/download", buy_link: expect.stringContaining("gumroad") });
     expect(briefs[0]).toMatchObject({ repo: "sprylabs-hpc-site", item_id: "a2", disposition: "fix" });
   });
@@ -440,7 +441,7 @@ describe("the morning email section", () => {
     ];
     const lines = morningLines(checklist, results, { queued: 2 });
     expect(lines[0]).toMatch(/We checked all 2 grid repo sites/);
-    expect(lines.join(" ")).toMatch(/memphisseniorcarehomes\.com is missing 2/);
+    expect(lines.join(" ")).toMatch(/Industry Guides \(memphisseniorcarehomes\.com\) is missing 2/);
     expect(lines.join(" ")).toMatch(/Danielle fixes these every Tuesday: no repair run on record yet, 2 left\./);
     expect(lines.join(" ")).not.toMatch(/Thursday/);
     for (const l of lines) expect(lineProblems(l), l).toEqual([]);
@@ -847,8 +848,8 @@ describe("K · authority and entity: the grid-wide gate (31 Oct 2026, authority 
     for (const s of sites.grid_repos.filter((x: any) => x.category === "client")) expect(s.entity_parent, s.domain).toBe("client");
     const by = Object.fromEntries(sites.grid_repos.map((x: any) => [x.domain, x]));
     expect(by["porchandparty901.com"].entity_parent).toBe("own");
-    expect(by["virtualagency-os.com"].entity_parent).toBe("own");
-    for (const d of ["horselegalguide.com", "hicksconsulting.org"]) expect(by[d].entity_parent).toBe("client");
+    // WPP-llm is a friends' site since 7 Nov 2026 (Scooter's agency site; personal brain).
+    for (const d of ["horselegalguide.com", "hicksconsulting.org", "virtualagency-os.com"]) expect(by[d].entity_parent).toBe("client");
     // Every side business names Spry Labs as its parent EXCEPT the three authority-network
     // publications, whose parent claim the owner withdrew on 11 Oct 2026 (and which
     // authority-backlink-network's validate_no_parent_company.py refuses to republish). A side
