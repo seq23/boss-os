@@ -1275,6 +1275,10 @@
     }
   ],
   "exempt": {
+    "dream-wedding-builder-email-health": {
+      "kind": "system",
+      "why": "Keeps the system running or checks it; it has no customer result of its own."
+    },
     "agent": {
       "kind": "system",
       "why": "Keeps the system running or checks it; it has no customer result of its own."

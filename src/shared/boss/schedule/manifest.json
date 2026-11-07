@@ -1998,6 +1998,30 @@
       }
     },
     {
+      "id": "dream-wedding-builder-email-health",
+      "name": "Email health (marketing email really sends)",
+      "what": "Asks the live site whether the last free-sample email run sent; goes red on a named stop or when no run is recorded in 3 hours.",
+      "business": "spry",
+      "brand": "Dream Wedding",
+      "system": "github",
+      "slots": [
+        "daily 08:35"
+      ],
+      "emails": false,
+      "heavy": false,
+      "trigger": {
+        "repo": "dream-wedding-builder",
+        "file": ".github/workflows/email-health.yml",
+        "crons": [
+          "CRON_TZ=America/Chicago 35 8 * * *"
+        ]
+      },
+      "output": {
+        "floor": 0,
+        "reason": "A check: its result is pass or fail, and a fail is already its own red run."
+      }
+    },
+    {
       "id": "dream-wedding-builder-ci",
       "name": "CI - Build and Validate",
       "what": "Builds the site and runs its checks.",
