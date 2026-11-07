@@ -3971,6 +3971,10 @@
         "launchd": [
           "com.seq.boss-morning-catchup"
         ]
+      },
+      "output": {
+        "floor": 0,
+        "reason": "A catch-up: it re-runs a producer only when an expected morning section is missing; most days it re-runs nothing."
       }
     },
     {

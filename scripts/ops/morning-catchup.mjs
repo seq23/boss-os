@@ -17,6 +17,7 @@
  */
 import { execFileSync } from "node:child_process";
 import { bossApi } from "./lib/duty-kit.mjs";
+import { outputLine } from "../../src/shared/boss/alarms/rules.mjs";
 import { readMorningSections, freshSections } from "../../src/shared/boss/mail/morning.mjs";
 import { MORNING_SECTION_SPECS, sectionsNotReported, catchUpPlan } from "../../src/shared/boss/mail/morningSections.mjs";
 
@@ -85,6 +86,7 @@ async function main() {
 
   if (missingBefore.length === 0) {
     console.log(`MORNING-CATCHUP-COMPLETE: ${expectedCount} expected, 0 re-run, 0 still missing.`);
+    console.log(outputLine(0, "sections re-run"));
     return;
   }
 
@@ -102,6 +104,7 @@ async function main() {
   const outcome = catchUpOutcome({ missingBefore, missingAfter, plan });
 
   console.log(`MORNING-CATCHUP-COMPLETE: ${expectedCount} expected, ${outcome.reRun} re-run, ${outcome.stillMissing} still missing.`);
+  console.log(outputLine(outcome.reRun, "sections re-run"));
   if (outcome.stop) {
     console.error(`NAMED STOP [${outcome.stop}] ${outcome.names.join(", ")} ran again and is still missing.`);
     process.exit(6);
