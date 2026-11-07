@@ -13,7 +13,7 @@ import {
   morningLines, haversineMiles, workQueue, queueRunLine, repairLine, definitionChoice, nextFixStatus,
   indexnowKeyFiles, INDEXNOW_KEY_NAME, entityFor, SPRY_LABS_ID, ENTITY_PARENTS,
   siteSection, loopConfigFor, oneActionOf, actionMatches, searchLanes,
-  failureSplit, splitLine, currentBriefs, auditHost,
+  failureSplit, splitLine, currentBriefs, auditHost, socialCardPage,
 } from "../src/shared/boss/searchReadiness/audit.mjs";
 import { parseRepoCategories } from "../src/shared/boss/repos/categories.mjs";
 import { renderChecklistPage, loadTemplate, standingsSummary, renderStandings } from "../src/shared/boss/searchReadiness/page.mjs";
@@ -1269,6 +1269,22 @@ describe("a site is audited on its own pages, never on the site its home page re
     expect(auditHost("a.com", null)).toBe("a.com");
     const runner = readFileSync("scripts/ops/search-readiness-audit.mjs", "utf8");
     expect(runner).toMatch(/const host = auditHost\(site\.domain, start\.final\)/);
+  });
+  it("b6 reads the social card from a page of this site, never the one its home page redirects to (7 Nov 2026)", () => {
+    const card = (host: string) => `<meta property="og:image" content="https://${host}/assets/og/card.png">`;
+    const home = { url: "https://spryexecutiveos.com/", final: "https://billionairehighperformancecoach.com/", status: 200, html: card("billionairehighperformancecoach.com") };
+    const own = { url: "https://spryexecutiveos.com/about", final: "https://spryexecutiveos.com/about", status: 200, html: card("spryexecutiveos.com") };
+    const off = { url: "https://spryexecutiveos.com/x", final: "https://billionairehighperformancecoach.com/x", status: 200, html: card("billionairehighperformancecoach.com") };
+    expect(socialCardPage("spryexecutiveos.com", [home, off, own])).toBe(own);
+    // A home page that answered on this site (www and apex alike) is still the card's page.
+    const www = { url: "https://hicksconsulting.org/", final: "https://www.hicksconsulting.org/", status: 200, html: card("www.hicksconsulting.org") };
+    expect(socialCardPage("hicksconsulting.org", [www, own])).toBe(www);
+    // No page of this site with a card: nothing to probe, never the other site's card.
+    expect(socialCardPage("spryexecutiveos.com", [home, off])).toBeNull();
+    expect(socialCardPage("spryexecutiveos.com", [{ ...own, status: 404 }])).toBeNull();
+    const runner = readFileSync("scripts/ops/search-readiness-audit.mjs", "utf8");
+    expect(runner).toMatch(/const cardPage = socialCardPage\(host, pages\)/);
+    expect(runner).not.toMatch(/metaContent\(home\.html, "og:image"\)/);
   });
   it("f9 counts a link to the action's .html file as leading to the action", () => {
     expect(actionMatches("https://billionairehighperformancecoach.com/download.html?page_kind=guide", "https://billionairehighperformancecoach.com/download", "https://spryexecutiveos.com/x")).toBe(true);

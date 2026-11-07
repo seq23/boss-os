@@ -73,6 +73,7 @@ export function isUtility(url: string): boolean;
 export function searchLanes(ctx: any): { line: string } | null;
 export function laneMorningLines(siteResults: any[]): string[];
 export function auditHost(domain: string, finalUrl: string | null | undefined): string;
+export function socialCardPage<P extends { url: string; final?: string | null; status: unknown; html?: string | null }>(domain: string, pages: P[] | null | undefined): P | null;
 export function currentBriefs(checklist: any, briefs: unknown[]): any[];
 export const NEW_WINDOW_DAYS: number;
 export type FailureSplit = { total: number; new_sites: number; slipped_back: number; new_items: number; still_open: number; groups: { new_sites: string[]; slipped_back: string[]; new_items: string[]; still_open: string[] } };

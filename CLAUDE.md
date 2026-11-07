@@ -307,7 +307,8 @@ site. Pinned by `tests/searchReadiness.test.ts`, which reads this section:
    carries `added`), and **still open**. No older run's "all clear" is ever repeated. The fix queue
    holds only items checklist.json still holds; a queue written before a removal is filtered again on
    every read (`currentBriefs`). A site whose home page redirects to another site is audited on its
-   own host (`auditHost`).
+   own host (`auditHost`), and its social card (b6) is read from a page of that host, never the
+   other site's home page (`socialCardPage`, 7 Nov 2026).
 
 ## Brains: one document per business, read first
 
