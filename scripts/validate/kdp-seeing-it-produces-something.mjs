@@ -69,7 +69,12 @@ export function check(files) {
   if (mapRefs.size === 0) p.push("RULE 0: the cover map lists no titles to compare against.");
   for (const t of titles) {
     if (t.target !== "LIVE") p.push(`register: "${t.title}" has target ${t.target}; her goal is every book published and working.`);
-    if (!mapRefs.has(t.title_ref)) p.push(`register: "${t.title}" (${t.title_ref}) is not a title_ref the cover map knows.`);
+    // A `draft:` row is a book drafted on her Mac and not on Amazon yet (the KeepMyProof books, 7 Nov
+    // 2026): it has no Amazon reference for the cover map to know, so it must instead name its line
+    // and folder. Every Amazon title is still one the cover map knows.
+    if (String(t.title_ref).startsWith("draft:")) {
+      if (!t.line || !t.kmp_folder || t.ai_disclosure !== true) p.push(`register: draft row "${t.title}" must name its line, its folder and ai_disclosure: true.`);
+    } else if (!mapRefs.has(t.title_ref)) p.push(`register: "${t.title}" (${t.title_ref}) is not a title_ref the cover map knows.`);
   }
   for (const r of mapRefs) if (!titles.some((t) => t.title_ref === r)) p.push(`register: cover-map title ${r} is missing from the register.`);
   if (!register.settled?.covers?.do_not_re_raise || !register.settled?.case_51496198?.do_not_re_raise) p.push("register: the covers and case #51496198 must be settled with do_not_re_raise.");
@@ -138,6 +143,8 @@ function selfTest() {
     ["the mixed-message refusal removed", { ...good, report: good.report.replace("MIXED_MESSAGE", "X") }, 1],
     ["readReply judging the whole message again", { ...good, lane: good.lane.replace("const raw = herWords(text)", "const raw = String(text ?? \"\").trim()") }, 1],
     ["the reply path unwired", { ...good, intake: good.intake.replace(/answerKdpFromMail/g, "nothing") }, 1],
+    ["a draft row with no folder", { ...good, register: good.register.replace('"kmp_folder": "divorce"', '"kmp_folder": ""') }, 1],
+    ["an Amazon title the cover map does not know", { ...good, register: good.register.replace('"title_ref": "A2C99P6JESFOP0"', '"title_ref": "AZZZZZZZZZZZZ"') }, 1],
     ["RULE 0: an empty register", { ...good, register: JSON.stringify({ titles: [], settled: {} }) }, 1],
     ["the register read after Gmail", { ...good, prompt: good.prompt.replace(/kdp-register\.json/g, "x").concat("\nLoad the Gmail tools ... then read kdp-register.json") }, 1],
   ];

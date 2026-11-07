@@ -109,6 +109,34 @@ if [ -d "$REPO" ]; then
     || say "NAMED STOP [LINE_COUNTS_NOT_RECORDED] the Kindle book counts did not reach the spry brain — see the lines above; the next monthly run writes them again."
 fi
 
+# ─── THE NEXT KEEPMYPROOF KINDLE BOOK, DRAFTED (owner, 7 Nov 2026) ─────────────────────────────
+# One front-door book per KeepMyProof folder, in kdp-books/keepmyproof.json's order, one per monthly
+# run until all five exist: kdp-kmp-draft.mjs --next (free models first, Claude review, claim gate),
+# then its row on the register by a landed PR, then its card in her Inbox (kdp_new_title). Nothing
+# reaches Amazon until she approves; the upload is a visible run she is present for.
+# OUTPUT 1 = a book drafted; ALL_FIVE_DRAFTED is the duty's end; any other stop fails this run.
+KMP_RC=0
+# The register as it is on origin/main (where kdp-register-pr.sh lands rows), never a stale checkout's:
+# a stale copy would pick a folder already drafted and raise a second card for it.
+KMP_REG="$(mktemp)"
+if git -C "$REPO" fetch -q origin main && git -C "$REPO" show origin/main:scripts/ops/kdp-register.json > "$KMP_REG"; then
+  KMP_OUT="$( cd "$REPO" && BOSS_OS_KDP_REGISTER="$KMP_REG" npm run --silent vault:run -- node scripts/ops/kdp-kmp-draft.mjs --next --review 2>&1 )"; KMP_RC=$?
+else
+  KMP_OUT="NAMED STOP [REGISTER_UNREAD] could not read the register from origin/main"; KMP_RC=2
+fi
+rm -f "$KMP_REG"
+echo "$KMP_OUT" >> "$RUN_LOG"
+KMP_FOLDER="$(echo "$KMP_OUT" | sed -n 's/^OUTPUT 1 kmp-kindle-drafts //p' | tail -1)"
+if [ -n "$KMP_FOLDER" ]; then
+  ( cd "$REPO" && bash scripts/ops/kdp-register-pr.sh "$KMP_FOLDER" ) >> "$RUN_LOG" 2>&1 || KMP_RC=2
+  ( cd "$REPO" && npm run --silent vault:run -- node scripts/ops/kdp-kmp-raise.mjs --folder "$KMP_FOLDER" ) >> "$RUN_LOG" 2>&1 || KMP_RC=2
+  say "KeepMyProof Kindle draft: $KMP_FOLDER (register rc and Inbox card above)"
+elif echo "$KMP_OUT" | grep -q 'ALL_FIVE_DRAFTED'; then
+  say "NAMED STOP [ALL_FIVE_DRAFTED] all five KeepMyProof Kindle books are drafted; this step has nothing left to do."
+else
+  say "NAMED STOP [KMP_DRAFT_FAILED] rc=$KMP_RC — see the KeepMyProof lines above; the next monthly run tries again."
+fi
+
 AI_RUN_CLAUDE_MODEL="$MODEL" "$AI_RUN" --role "$AI_ROLE" --out "$RUN_LOG" < "$PROMPT_FILE"
 RC=$?
 say "=== ai-run --role $AI_ROLE exited rc=$RC ==="
@@ -141,4 +169,6 @@ SENTINEL="$(grep -o 'KDP-SURFACE-COMPLETE:.*' "$RUN_LOG" | tail -1)"
 ln -sf "$RUN_LOG" "$LOG_DIR/latest.log"
 
 [ $RC -eq 0 ] || exit $RC
-exit $RRC
+[ $RRC -eq 0 ] || exit $RRC
+# A failed KeepMyProof draft fails the run, so duty-run.sh records it on the duty row (seen on Today).
+exit $KMP_RC

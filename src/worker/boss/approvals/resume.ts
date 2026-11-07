@@ -313,6 +313,39 @@ export const RESUME_HANDLERS: Record<string, ResumeHandler> = {
    * suggested reply; approving puts it in st@time-2-read.com's DRAFTS, addressed to them. Like every
    * other green button here it makes a draft and never sends.
    */
+  /**
+   * A NEW KINDLE BOOK, DRAFTED ON HER MAC, PUT ON AMAZON ONLY ON HER YES (owner, 7 Nov 2026: a
+   * KeepMyProof front-door book per folder, drafts only, nothing publishes without her approval).
+   *
+   * THE RUN THIS HANDS TO IS `kdp-publish.sh`, owned by `duty_kdp_publish`, installed by
+   * install-agent-launchd.sh: it runs `kdp-new-title.mjs`, which reads `GET /api/boss/kdp/new-titles`
+   * (approved and not yet Live), creates the title in ONE pass (never Save as Draft: it drops the AI
+   * disclosure), checks the disclosure on the last step, presses Publish and reports the BOOKSHELF's
+   * state to `POST /api/boss/kdp/new-titles/:id/attempt`. Amazon asks for a fresh sign-in on every
+   * title-setup page, so the run is a visible one she is present for; it never types her password.
+   */
+  kdp_new_title: async (env, j, verdict, note, now) => {
+    const day = new Date(now).toISOString().slice(0, 10);
+    if (verdict === "approved") {
+      await recordDeliverableActivity(env, {
+        id: j.deliverable_id ?? "del_kdp_new_titles",
+        blocked: true,
+        status: `${j.title}: approved by you on ${day}. kdp-publish.sh creates it on Kindle in one pass with the AI disclosure on, presses Publish and reports what the bookshelf says.` + (note ? ` Your words: ${note}` : ""),
+        statusKind: "determined",
+        now,
+      });
+      return { detail: "Approved. The book goes on Kindle in one visible run, with the AI disclosure checked before Publish; it is reported Live only when the bookshelf says so." };
+    }
+    await recordDeliverableActivity(env, {
+      id: j.deliverable_id ?? "del_kdp_new_titles",
+      blocked: true,
+      status: `${j.title}: sent back on ${day}. ` + (note ? `Your reason: ${note} It is redrafted to that; nothing was uploaded.` : "No reason was given; nothing was uploaded."),
+      statusKind: "determined",
+      now,
+    });
+    return { detail: note ? "Sent back with your reason. Nothing was uploaded to Amazon." : "Sent back. Nothing was uploaded to Amazon." };
+  },
+
   outreach_interested: async (env, j, verdict, note, now) => {
     const row = await env.DB.prepare(`SELECT resume_detail FROM judgement_calls WHERE id = ?`).bind(j.id).first<{ resume_detail: string | null }>();
     let d: { to?: string; cc?: string[]; subject?: string; body?: string; prospect_id?: string } | null = null;
