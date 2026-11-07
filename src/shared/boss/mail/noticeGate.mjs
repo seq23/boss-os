@@ -72,7 +72,7 @@ export function updatesLine(summary) {
   if (s.updates) bits.push(plural(s.updates, "update"));
   if (s.reminders) bits.push(plural(s.reminders, "reminder"));
   if (!bits.length) return null;
-  return `${bits.join(", ")} on your Updates page. Nothing there needs you.`;
+  return `${bits.join(", ")} on your Updates page, all just so you know.`;
 }
 
 /** The row's "Open ›": the loop, the research page, the task, or Systems. Pure. */

@@ -31,7 +31,7 @@ export function Updates() {
   return (
     <div className="brains" data-testid="updates">
       <p className="brain-summary" data-testid="updates-summary">
-        {failed ? "Updates did not load. Try again in a minute." : line ?? "All read. Nothing here needs you."}
+        {failed ? "Updates did not load. Try again in a minute." : line ?? "All read. Nothing new from the team."}
       </p>
       <p className="brain-hint">News from the team that needs nothing from you, from the last {days} days. Anything you must decide still comes by email.</p>
       {!failed && rows.length === 0 && <p className="brain-hint">No updates this week.</p>}

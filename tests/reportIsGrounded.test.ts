@@ -38,7 +38,7 @@ describe("a report naming what its input does not hold is refused", () => {
 
   it("an alarm repair's report falls back to the stock sentence for an invented claim", () => {
     const r = repairReport({ kind: "kendra_alarm", whatBroke: "Task D on dev-sandbox-04 hung for 9 minutes.", whatWeDid: "We cleared a lock and the job ran again.", live: true, facts });
-    expect(r.whatBroke).toBe(STOCK.kendra_alarm.broke);
+    expect(r.whatBroke).toBe(STOCK.kendra_alarm!.broke);
     expect(r.whatWeDid).toBe("We cleared a lock and the job ran again.");
     // Without facts (every other repair kind) the plain sentence is kept as before.
     expect(repairReport({ kind: "self_repair", whatBroke: "The job hung for 9 minutes.", live: true }).whatBroke).toBe("The job hung for 9 minutes.");

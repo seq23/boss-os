@@ -55,7 +55,8 @@ export async function noticeOnce(env: Env, n: NoticeInput): Promise<string | nul
   // A repair Boss OS opened itself never waits on her (noticeGate.mjs needsHer `repair`).
   const row = await env.DB.prepare(`SELECT input FROM tasks WHERE id = ?`).bind(n.task.id).first<{ input: string | null }>().catch(() => null);
   let repair = false;
-  try { repair = (JSON.parse(row?.input ?? "{}") as { origin?: unknown })?.origin === "repair"; } catch { repair = false; }
+  // A dated waiting-on check-in can need her own account (the Friday unsubscribe taps): not a repair here.
+  try { const i = JSON.parse(row?.input ?? "{}") as { origin?: unknown; repair_kind?: unknown }; repair = i?.origin === "repair" && i?.repair_kind !== "waiting_on"; } catch { repair = false; }
   const her = repair ? needsHer({ kind: n.kind, repair }) : (n.needsHer ?? needsHer({ kind: n.kind }));
   const subject = n.subject.includes(token) ? n.subject : `${n.subject.slice(0, 160)} ${token}`;
   await env.DB

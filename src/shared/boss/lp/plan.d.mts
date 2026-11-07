@@ -53,7 +53,7 @@ export function dueTouch(p: any, now?: number): number | null;
 export function nextTouchAt(p: any): number | null;
 export function lpWho(r: any): string;
 export function proposeFeatured(supply: any[], rules?: { never?: string[]; add?: string[]; drop?: string[] }, now?: number): { name: string; why: string }[];
-export function staleFeatured(featured: { name: string }[], supply: any[], now?: number): string[];
+export function staleFeatured(featured: { name: string; why?: string; asked?: boolean }[], supply: any[], now?: number): string[];
 export function sideFromReply(text: string): "buyer" | "seller" | "both" | "unknown";
 export function nameRulesIn(text: string): { rule: "never" | "add" | "drop"; name: string }[];
 export function fmtUsd(n: unknown): string;

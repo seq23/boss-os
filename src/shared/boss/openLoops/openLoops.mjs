@@ -108,11 +108,11 @@ export function morningSection(loops, today, { origin, names = {} } = {}) {
   const url = `${origin ?? ""}${PAGE_PATH}`;
   const title = `Your open loops: ${mine.length}${overdue.length ? `, ${overdue.length} overdue` : ", none overdue"}`;
   const lines = overdue.slice(0, MAX_HER_LINES).map((l) => ({
-    text: `${String(l.title).trim()}: ${l.next_step ? `${l.next_step} ` : ""}(due ${dayWords(l.next_date)}). Did this happen?`,
+    text: `${String(l.title).trim()} (due ${dayWords(l.next_date)}). Did this happen?`,
     links: [{ label: "Open ›", url: `${url}&loop=${encodeURIComponent(l.id)}` }],
   }));
   if (overdue.length > MAX_HER_LINES) lines.push({ text: `+${overdue.length - MAX_HER_LINES} more of yours on Open Loops.`, links: [{ label: "Open ›", url }] });
-  if (team.length) lines.push({ text: `The team has ${team.length} more${teamLate ? ` (${teamLate} past their date, being worked on)` : ""}; nothing there needs you.`, links: [{ label: "Open ›", url }] });
+  if (team.length) lines.push({ text: `The team has ${team.length} more${teamLate ? `, ${teamLate} past their date` : ""}, and is working on them.`, links: [{ label: "Open ›", url }] });
   return { title, lines, link: { label: "See every open loop →", url } };
 }
 
