@@ -136,9 +136,11 @@ async function details(page, book) {
   if (!set) throw stop("FIELD_NOT_FOUND", "the description editor is not on the page; nothing was saved.");
   await clickOne(page, "own-the-copyright choice", ['input[name="data-is-public-domain"][value="false"]', 'input[name="data[is_public_domain]"][value="false"]', "#non-public-domain", (p) => p.getByLabel(/I own the copyright/i)]);
   for (let i = 0; i < 7; i += 1) await fillField(page, `keyword ${i + 1}`, [`input[name="data[keywords][${i}]"]`, `#data-keywords-${i}`], book.keywords[i]);
-  await categories(page, book.categories);
+  // The adult question first: KDP refuses to open the category chooser until it is answered
+  // ("Answer the Adult-only question before choosing a category", live page 7 Nov 2026).
   const adult = await first(page, ['input[name="data[is_adult_content]-radio"][value="false"]', 'input[name="data[is_adult_content]"][value="false"]', "#data-is-adult-content-false"]);
   if (adult) await adult.check();
+  await categories(page, book.categories);
   if (DRY) say("DRY_RUN", "details filled; Save and Continue is pressed even in a dry run (a KDP draft is left)");
   await clickOne(page, "Save and Continue", ["#save-and-continue-announce", (p) => p.getByRole("button", { name: /Save and Continue/i })]);
   await page.waitForURL(/\/content/, { timeout: STEP_MS }).catch(() => {});
@@ -151,26 +153,37 @@ async function details(page, book) {
  * to tick the two named categories in the open window, and waits up to 10 minutes for both to show.
  */
 async function categories(page, cats) {
-  const leaves = cats.map((c) => c.split("›").at(-1).trim());
-  const shown = async () => { const t = await page.locator("body").innerText(); return leaves.every((l) => t.includes(l)); };
-  if (await shown()) return;
-  await clickOne(page, "Choose categories", [(p) => p.getByRole("button", { name: /(Choose|Set|Edit) categories/i }), "#categories-modal-button"]);
+  // KDP's Kindle chooser (read live 7 Nov 2026): a modal with a "Category" select, a "Subcategory"
+  // select, then checkboxes for the leaves; up to 3 placements; Save closes it and the page button
+  // turns from "Choose categories" to "Edit categories". That button text is what "set" means here,
+  // so categories she picks by hand count too (the names in the book file may not exist on KDP).
+  const btn = page.locator("#categories-modal-button");
+  const isSet = async () => /Edit categories/i.test((await btn.innerText().catch(() => "")) || "");
+  if (await isSet()) return;
+  await clickOne(page, "Choose categories", ["#categories-modal-button", (p) => p.getByRole("button", { name: /(Choose|Edit) categories/i })]);
+  const modal = page.locator('.a-popover[aria-hidden="false"]').last();
+  let ticked = 0;
   for (const path of cats) {
-    for (const part of path.split("›").map((s) => s.trim())) {
-      const opt = page.getByRole("option", { name: part, exact: true }).or(page.getByText(part, { exact: true }));
-      if (await opt.count()) await opt.first().click().catch(() => {});
-    }
-    const leaf = path.split("›").at(-1).trim();
-    const box = page.getByRole("checkbox", { name: new RegExp(`^${leaf.replace(/[.*+?^${}()|[\]\\&]/g, "\\$&")}$`, "i") });
-    if (await box.count()) await box.first().check().catch(() => {});
+    const [top, sub, leaf] = path.split("›").map((x) => x.trim());
+    const sels = modal.locator("select");
+    const pick = await sels.nth(0).selectOption({ label: top }).then(() => true).catch(() => false);
+    if (!pick) continue;
+    await page.waitForTimeout(800);
+    if (sub && !(await sels.nth(1).selectOption({ label: sub }).then(() => true).catch(() => false))) continue;
+    await page.waitForTimeout(800);
+    const box = modal.locator("label").filter({ hasText: new RegExp(`^\\s*${(leaf ?? sub).replace(/[.*+?^${}()|[\]\\&]/g, "\\$&")}\\s*$`) }).locator('input[type="checkbox"]');
+    if (await box.count()) { if (await box.first().check({ force: true }).then(() => true).catch(() => false)) ticked += 1; }
   }
-  const save = await first(page, [(p) => p.getByRole("button", { name: /^(Save categories|Save)$/i })]);
-  if (save) await save.click().catch(() => {});
-  if (await shown()) return;
-  console.log(`\n>>> CATEGORIES: the category box did not take them automatically. In the window, choose these two and press Save in that box:\n    1. ${cats[0]}\n    2. ${cats[1]}\n    This run waits up to 10 minutes and then carries on.\n`);
+  if (ticked) {
+    const save = modal.locator("button, input[type=submit]").filter({ hasText: /save/i });
+    if (await save.count()) await save.first().click().catch(() => {});
+    await page.waitForTimeout(1500);
+    if (await isSet()) return;
+  }
+  console.log(`\n>>> CATEGORIES: pick up to 3 categories in the open window and press Save in that box (suggested:\n    1. ${cats[0]}\n    2. ${cats[1]}).\n    Any categories you choose count. This run waits up to 10 minutes and then carries on.\n`);
   const deadline = Date.now() + SIGNIN_WAIT_MS;
-  while (Date.now() < deadline) { await page.waitForTimeout(3000); if (await shown()) return; }
-  throw stop("CATEGORIES_NOT_SET", `the two categories (${leaves.join(", ")}) were not set within 10 minutes; nothing was saved past the details step.`);
+  while (Date.now() < deadline) { await page.waitForTimeout(3000); if (await isSet()) return; }
+  throw stop("CATEGORIES_NOT_SET", "no categories were saved within 10 minutes; nothing was saved past the details step.");
 }
 
 async function upload(page, name, sels, file, done) {
