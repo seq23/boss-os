@@ -38,6 +38,8 @@ import { repoForDomain } from "../../src/shared/boss/siteAudit/domainRepos.mjs";
 import { heldForOwner } from "../../src/shared/boss/searchReadiness/ownerApproval.mjs";
 
 import { orphanVerdict } from "../../src/shared/boss/searchReadiness/orphanPr.mjs";
+import { envForRepoRun } from "../lib/vault-env.mjs";
+import { isParked } from "./lib/repo-categories.mjs";
 
 const SITES = JSON.parse(readFileSync(new URL("../../src/shared/boss/searchReadiness/sites.json", import.meta.url), "utf8")).grid_repos ?? [];
 const repoName = (r) => String(r ?? "").trim().replace(/\/+$/, "").split("/").pop();
@@ -63,6 +65,7 @@ const NEEDS_CRAWL = new Set(["surfaced", "fixed_pr"]);
  *   IN_FLIGHT_STALE       skipped as "in flight" on a branch with no commits of its own, or a merged
  *                         or closed PR — dead evidence, not work in progress — the 30 Oct shape
  *   NOT_LANDED            a PR was opened and did not land: work left waiting on her
+ *   DEPLOY_FAILED         the PR merged but land's deploy step failed: "merged, deploy failed: <reason>"
  *   NOT_CRAWLED           a row claims a defect (or a fix) with no crawl of the live site behind it
  *   NOT_PROBED            an Ahrefs-side crawl failure asserted with no outside probe behind it
  *   OWNER_ASKED           a row's next action is the owner's: Danielle decides, she never parks it
@@ -99,7 +102,9 @@ export function runVerdict(payload) {
         reasons.push(`IN_FLIGHT_STALE: ${who}: skipped on ${f.in_flight?.ref ?? "a pull request"}, which is already ${prState.toLowerCase()} — not work in progress.`);
       }
     }
-    if (f.disposition === "fixed_pr" && f.land !== "landed") {
+    if (f.disposition === "fixed_pr" && f.land === "merged_deploy_failed") {
+      reasons.push(`DEPLOY_FAILED: ${who}: ${f.pr_url} ${f.land_detail ?? "merged, deploy failed"}`);
+    } else if (f.disposition === "fixed_pr" && f.land !== "landed") {
       reasons.push(`NOT_LANDED: ${who}: ${f.pr_url ?? "no PR"} is ${f.land ?? "not landed"}${f.land_detail ? ` (${f.land_detail})` : ""}`);
     }
     if (NEEDS_CRAWL.has(f.disposition) && !(f.crawl && Number(f.crawl.pages_crawled) > 0)) {
@@ -188,7 +193,29 @@ export function inflight(repo, terms) {
  * worktree. The result is written onto the row (`land`, `land_detail`) so the verdict and Boss OS
  * both see it. `run` is injectable for the test.
  */
-export function landAll(payload, { run = defaultRun, landBin = process.env.AUDIT_LAND_BIN ?? join(homedir(), "bin/land"), sites = SITES, approvedSites = approvedSitesFromQueue() } = {}) {
+/** The repository a pull request URL belongs to (`seq23/boss-os/pull/318` → "boss-os"), or null. */
+export const prRepoOf = (url) => /github\.com\/[^/]+\/([^/]+)\/pull\/\d+/.exec(String(url ?? ""))?.[1] ?? null;
+
+/*
+ * THE REASON A LAND FAILED, NOT ITS LAST LINE (7 Nov 2026). boss-os #318's land_detail was wrangler's
+ * "Logs were written to …" line; the error two lines above it was the reason.
+ */
+const REASON_LINE = /✘ \[ERROR\]|NAMED STOP|STOPPED|refus|not green|failed|error/i;
+export function landReason(out) {
+  const lines = String(out ?? "").split("\n").map((l) => l.trim()).filter(Boolean);
+  const hit = [...lines].reverse().find((l) => REASON_LINE.test(l) && !/^🪵|Logs were written/.test(l));
+  return (hit ?? lines.pop() ?? "").replace(/^✘ \[ERROR\]\s*/, "").slice(0, 300);
+}
+
+/*
+ * ~/bin/land GETS THE CLOUDFLARE NAMES AND NOTHING ELSE FROM THE VAULT (7 Nov 2026). The land step
+ * runs under `vault:run` (ahrefs-audit-fix.sh); a land's post-merge steps run wrangler, which under
+ * launchd has no login and refused ("In a non-interactive environment, it's necessary to set a
+ * CLOUDFLARE_API_TOKEN"). `envForRepoRun` strips every other vault name.
+ */
+export const LAND_VAULT_NAMES = Object.freeze(["CLOUDFLARE_API_TOKEN", "CLOUDFLARE_ACCOUNT_ID"]);
+
+export function landAll(payload, { run = defaultRun, landBin = process.env.AUDIT_LAND_BIN ?? join(homedir(), "bin/land"), sites = SITES, approvedSites = approvedSitesFromQueue(), parked = isParked, env = envForRepoRun(process.env, LAND_VAULT_NAMES) } = {}) {
   /*
    * ONE LAND PER PULL REQUEST (26 Oct 2026). A PR that fixes five briefs is five `fixed_pr` rows, and
    * this used to watch checks and run ~/bin/land once per ROW: five lands of one PR, four of them
@@ -213,7 +240,15 @@ export function landAll(payload, { run = defaultRun, landBin = process.env.AUDIT
       }
     }
     if (!f.pr_url) continue;
-    if (!mayAutoFix(f.repo)) { f.land = "refused_policy"; continue; }
+    /*
+     * THE PR LANDS FROM ITS OWN REPOSITORY (7 Nov 2026). A brief fixed in the checker carries the
+     * site's repo on the row and a boss-os PR: `land 319` ran in sprylabs-hpc-site ("Could not resolve
+     * to a PullRequest with the number of 319"), and a row renamed to boss-os to dodge that was then
+     * refused by Boss OS as unmapped. The row's repo stays the site's; the PR link says where to land.
+     */
+    const prRepo = prRepoOf(f.pr_url) ?? String(f.repo);
+    if (!mayAutoFix(f.repo) || !mayAutoFix(prRepo)) { f.land = "refused_policy"; continue; }
+    if (parked(f.repo) || parked(prRepo)) { f.land = "refused_policy"; f.land_detail = `${parked(prRepo) ? prRepo : f.repo} is parked in the personal brain's Repo categories`; continue; }
     /*
      * HER YES ON AN `owner_approval` SITE (Hicks, owner 3 Nov 2026). A fix to already-published
      * Resources posts lands like any other ("if it has repairs for already published resources they
@@ -234,21 +269,33 @@ export function landAll(payload, { run = defaultRun, landBin = process.env.AUDIT
       continue;
     }
     const num = /\/pull\/(\d+)/.exec(f.pr_url)?.[1];
-    const cwd = f.worktree && existsSync(f.worktree) ? f.worktree
-      : join(process.env.AUDIT_GITHUB_ROOT ?? join(homedir(), "GitHub"), String(f.repo));
-    const checks = run("timeout", ["1800", "gh", "pr", "checks", f.pr_url, "--watch", "--fail-fast"], cwd);
+    const repoDir = join(process.env.AUDIT_GITHUB_ROOT ?? join(homedir(), "GitHub"), prRepo);
+    const cwd = f.worktree && existsSync(f.worktree) && prRepo === repoName(f.repo) ? f.worktree : repoDir;
+    const checks = run("timeout", ["1800", "gh", "pr", "checks", f.pr_url, "--watch", "--fail-fast"], cwd, env);
     if (checks.status !== 0) {
       f.land = "checks_red";
       f.land_detail = lastLine(checks.out);
     } else {
-      const landed = run("timeout", ["3600", landBin, num], cwd);
+      const landed = run("timeout", ["3600", landBin, num], cwd, env);
       f.land = landed.status === 0 ? "landed" : "land_refused";
-      f.land_detail = lastLine(landed.out);
+      f.land_detail = landReason(landed.out);
+      /*
+       * A MERGED PR IS NEVER "NOT LANDED" (7 Nov 2026: p-n-p #201/#202 and boss-os #318 were merged,
+       * /hotels was live, and the run said land_refused). When land fails, GitHub is asked whether the
+       * merge happened; merged means "merged, deploy failed: <reason>" — the deploy is still owed.
+       */
+      if (f.land === "land_refused") {
+        const st = run("gh", ["pr", "view", f.pr_url, "--json", "state", "-q", ".state"], cwd, env);
+        if (st.status === 0 && /^MERGED$/m.test(String(st.out).trim())) {
+          f.land = "merged_deploy_failed";
+          f.land_detail = `merged, deploy failed: ${f.land_detail}`;
+        }
+      }
       if (f.land === "landed") {
         f.suggested_action = `Landed ${f.pr_url} through ~/bin/land: checks green, merged, main watched, deployed. Nothing to do.`;
       }
     }
-    if (f.disposition === "in_flight" && f.land !== "landed") {
+    if (f.disposition === "in_flight" && f.land !== "landed" && f.land !== "merged_deploy_failed") {
       f.land_detail = `${f.land}: ${f.land_detail}`;
       f.land = "blocked";
     }
@@ -260,12 +307,12 @@ export function landAll(payload, { run = defaultRun, landBin = process.env.AUDIT
 /** One `LAND <repo> <pr>: <outcome>` line per pull request, never one per row. */
 export function landLines(payload) {
   const seen = new Map();
-  for (const f of payload.findings ?? []) if (["fixed_pr", "in_flight"].includes(f.disposition) && f.pr_url && !seen.has(f.pr_url)) seen.set(f.pr_url, `LAND ${f.repo} ${f.pr_url}: ${f.land}`);
+  for (const f of payload.findings ?? []) if (["fixed_pr", "in_flight"].includes(f.disposition) && f.pr_url && !seen.has(f.pr_url)) seen.set(f.pr_url, `LAND ${prRepoOf(f.pr_url) ?? f.repo} ${f.pr_url}: ${f.land === "merged_deploy_failed" ? f.land_detail : f.land}`);
   return [...seen.values()];
 }
 
-function defaultRun(cmd, args, cwd) {
-  const r = spawnSync(cmd, args, { cwd, encoding: "utf8", maxBuffer: 64 * 1024 * 1024 });
+function defaultRun(cmd, args, cwd, env) {
+  const r = spawnSync(cmd, args, { cwd, encoding: "utf8", maxBuffer: 64 * 1024 * 1024, ...(env ? { env } : {}) });
   const out = `${r.stdout ?? ""}${r.stderr ?? ""}`;
   process.stdout.write(out.split("\n").slice(-15).join("\n") + "\n");
   return { status: r.status ?? 1, out };

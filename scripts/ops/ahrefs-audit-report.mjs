@@ -130,7 +130,19 @@ async function main() {
    * endpoint refused a whole pass for writing "wrangler_toml" there.
    */
   for (const f of findings) {
-    if (f?.repo && f.mapped_by !== "repo_identity" && repoForDomain(domainOfRow(f))?.repo === f.repo) f.mapped_by = "grid_manifest";
+    /*
+     * A FIX MADE ELSEWHERE IS STILL THE SITE'S ROW (7 Nov 2026). dentistryguides.com's j3 brief was a
+     * false positive fixed in the checker (boss-os #318); the row was written under repo "boss-os" and
+     * Boss OS refused the whole report as unmapped (REPORT_NOT_DELIVERED). The lander now follows the
+     * PR link, so a row whose repo is only its PR's repo goes back to the repo the list maps the site to.
+     */
+    const listed = repoForDomain(domainOfRow(f))?.repo;
+    const prRepo = /github\.com\/[^/]+\/([^/]+)\/pull\/\d+/.exec(String(f?.pr_url ?? ""))?.[1];
+    if (f?.repo && listed && f.repo !== listed && f.repo === prRepo && f.mapped_by !== "repo_identity") {
+      f.fix_repo = f.repo;
+      f.repo = listed;
+    }
+    if (f?.repo && f.mapped_by !== "repo_identity" && listed === f.repo) f.mapped_by = "grid_manifest";
   }
 
   for (const [i, f] of findings.entries()) {
@@ -223,7 +235,7 @@ async function main() {
   const byPr = new Map();
   for (const f of fixes) if (!byPr.has(f.pr_url)) byPr.set(f.pr_url, f);
   for (const f of byPr.values()) {
-    console.log(`  PR ${f.repo}: ${f.pr_url} — ${f.land === "landed" ? "LANDED (merged, main watched, deployed)" : `NOT landed (${f.land ?? "never attempted"})`}`);
+    console.log(`  PR ${f.repo}: ${f.pr_url} — ${f.land === "landed" ? "LANDED (merged, main watched, deployed)" : f.land === "merged_deploy_failed" ? `MERGED, deploy failed (${f.land_detail ?? "no reason recorded"})` : `NOT landed (${f.land ?? "never attempted"})`}`);
   }
   if (findings.length === 1 && findings[0].disposition === "none") {
     console.log("Nothing to fix this week, and that is a report. Danielle's clock advanced and the screen will say the audits were read.");

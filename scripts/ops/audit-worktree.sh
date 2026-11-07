@@ -27,6 +27,13 @@ if ! node -e 'import(process.argv[1]).then(m=>process.exit(m.mayAutoFix(process.
   echo "NAMED STOP [CLIENT_REPO] $NAME is off limits to the fixer; report it, never branch it." >&2
   exit 20
 fi
+# PARKED REPOS TOO (7 Nov 2026): the personal brain's "Parked …" lines in Repo categories, read
+# through the one parser — "no work, no jobs until she un-parks it".
+if node -e 'import(process.argv[1]).then(m=>process.exit(m.isParked(process.argv[2])?1:0))' \
+     "$HERE/lib/repo-categories.mjs" "$NAME"; then :; else
+  echo "NAMED STOP [PARKED_REPO] $NAME is parked in the personal brain's Repo categories; never branch it." >&2
+  exit 20
+fi
 git -C "$DIR" rev-parse --git-dir >/dev/null 2>&1 || { echo "NAMED STOP [NOT_A_REPO] $DIR" >&2; exit 3; }
 
 git -C "$DIR" fetch -q origin || { echo "NAMED STOP [FETCH_FAILED] $NAME" >&2; exit 4; }

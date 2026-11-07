@@ -190,6 +190,25 @@ describe("ahrefs-audit-report.mjs delivers a queue pass and refuses a thin mailb
     expect(sent.findings[0].mapped_by).toBe("grid_manifest");
   });
 
+  it("a fix made in the checker stays the site's row (7 Nov 2026: boss-os #318 refused as unmapped)", async () => {
+    const fix = { project: "checklist:dentistryguides.com", domain: "dentistryguides.com", disposition: "fixed_pr", headline: "j3: guides under target", because: "The checker failed guides the 75% ruling passes.", suggested_action: "Landed; nothing to do.", crawl: { pages_crawled: 25 }, repo: "boss-os" };
+    const write = (rows: object[]) => {
+      const dir = mkdtempSync(join(tmpdir(), "sr-"));
+      writeFileSync(join(dir, "findings.json"), JSON.stringify({ run_id: "t", searched: { mailbox: null, queries: [] }, findings: rows }));
+      writeFileSync(join(dir, "scope.json"), JSON.stringify({ mode: "queue", queue_file: "/x/fix-queue.json", queue_written_at: "2026-11-07T00:00:00Z", repo: "local-guides-generator", item_ids: ["sr-dentistryguides.com-j3"] }));
+      return dir;
+    };
+    const before = posts.length;
+    const ok = await run(write([{ ...fix, pr_url: "https://github.com/seq23/boss-os/pull/318" }]), { SR_SCOPE_REPO: "local-guides-generator" });
+    expect(ok.code).toBe(0);
+    expect(posts.length).toBe(before + 1);
+    expect(posts.at(-1).findings[0]).toMatchObject({ repo: "local-guides-generator", mapped_by: "grid_manifest", fix_repo: "boss-os", pr_url: "https://github.com/seq23/boss-os/pull/318" });
+    // Negative: a repo that is not the PR's own is never rewritten; it still stops as unmapped.
+    const bad = await run(write([{ ...fix, pr_url: "https://github.com/seq23/other/pull/1" }]), { SR_SCOPE_REPO: "local-guides-generator" });
+    expect(bad.code).toBe(17);
+    expect(posts.length).toBe(before + 1);
+  });
+
   it("mailbox mode: a searched with no date range stops NO_SEARCH_EVIDENCE rc 11 and posts nothing", async () => {
     const dir = mkdtempSync(join(tmpdir(), "sr-"));
     writeFileSync(join(dir, "findings.json"), JSON.stringify({ run_id: "t", searched: { mailbox: "the owner's mailbox", queries: ["q"], messages: 3 }, findings: [{ ...finding, project: "Porchandparty901" }] }));

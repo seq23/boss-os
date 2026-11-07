@@ -341,7 +341,9 @@ in THIS run as the gsc-bot service account: `sites.list` (is `sc-domain:<domain>
 cache-busted GET of the sitemap plus its Search Console entry. A refused token is a vault chore, never
 "no property". A sitemap that answers 200 with URLs is not dead. Quote the re-read in `because`; an
 ask without it is not written.
-`fixed_pr` requires `pr_url` and `mapped_by: "repo_identity"` or `"grid_manifest"`. `(project, headline)` is unique: give
+`fixed_pr` requires `pr_url` and `mapped_by: "repo_identity"` or `"grid_manifest"`. **`repo` is always
+the repository that serves the site**, even when the fix landed elsewhere (a false positive fixed in the
+boss-os checker): the runner lands the PR from the repository its `pr_url` names, so never rename the row. `(project, headline)` is unique: give
 each distinct defect its own headline.
 
 **No addresses anywhere in the file.** Public domains and repository names only. An email address in

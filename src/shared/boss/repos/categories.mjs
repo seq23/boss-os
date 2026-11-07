@@ -27,7 +27,7 @@ const bareRepo = (r) => String(r ?? "").trim().replace(/\/+$/, "").split("/").po
 export function parseRepoCategories(md) {
   const m = /^## Repo categories[^\n]*\n([\s\S]*?)(?=^## |(?![\s\S]))/m.exec(String(md ?? ""));
   if (!m) return { problem: "the personal brain has no \"## Repo categories\" section" };
-  const out = { mine: [], friends: [], system: [] };
+  const out = { mine: [], friends: [], system: [], parked: [] };
   let cat = null;
   for (const raw of m[1].split("\n")) {
     const line = raw.trim();
@@ -36,6 +36,9 @@ export function parseRepoCategories(md) {
     if (/^\*\*/.test(line)) { cat = null; continue; } // any other bold line ends the lists
     if (!cat || !/^[-*]\s/.test(line)) continue;
     let body = line.replace(/^[-*]\s+/, "");
+    // A "Parked …:" line (her ruling 1 Nov 2026: "no work, no jobs … until she un-parks it") keeps its
+    // repos in their category AND lists them in `parked`, which the automatic fixer never touches.
+    const parkedLine = /^parked\b/i.test(body);
     while (/\([^()]*\)/.test(body)) body = body.replace(/\([^()]*\)/g, " ");
     const colon = body.indexOf(":");
     if (colon >= 0) body = body.slice(colon + 1);
@@ -45,11 +48,18 @@ export function parseRepoCategories(md) {
     for (const part of body.split(/,| and |\s\.(?=\s|$)/)) {
       const name = part.trim().replace(/[.;]+$/, "");
       if (REPO_NAME.test(name) && !out[cat].includes(name)) out[cat].push(name);
+      if (parkedLine && REPO_NAME.test(name) && !out.parked.includes(name)) out.parked.push(name);
     }
   }
   const empty = CATEGORIES.filter((c) => !out[c].length);
   if (empty.length) return { problem: `the Repo categories section lists no repo under ${empty.join(", ")}` };
   return out;
+}
+
+/** Is this repo parked in the brain's Repo categories (owner/name and trailing slashes allowed)? */
+export function isParkedRepo(repo, cats) {
+  const name = bareRepo(repo);
+  return Boolean(name && cats && !cats.problem && (cats.parked ?? []).some((r) => r.toLowerCase() === name));
 }
 
 /** "mine" | "friends" | "system" | null for a repo name (owner/name and trailing slashes allowed). */
