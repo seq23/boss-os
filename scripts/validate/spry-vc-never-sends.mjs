@@ -100,6 +100,13 @@ const PROSPECT_SENDER = "scripts/ops/lp-prospects.mjs";
  */
 const COMMAND_SENDER = "src/worker/boss/commands/google.ts";
 const COMMAND_RUNNER = "src/worker/boss/commands/run.ts";
+/**
+ * THE SEVENTH (owner-approved plan, 8 Nov 2026: Simone's Go? card, "her tap is the OK to send").
+ * INVITE_TAP may call sendOne, held to: it names no spry.vc in code, every send sits inside `act`, `act`
+ * is called exactly once — in `inviteTapPost`, AFTER `claimTap` has turned the row from open/unsure to
+ * her answer and refused a row already answered. The tap is the approval; nothing else reaches act.
+ */
+const INVITE_TAP = "src/worker/boss/invitations/tap.ts";
 
 /** Drop comments and doc prose so a rule can be DESCRIBED in a file without the scan reading it as code. */
 function stripProse(src) {
@@ -226,7 +233,22 @@ export function violations(files) {
       const mint = sendFn.search(/mintComposeToken\(creds/);
       if (code.search(/export async function sendOne\b/) === -1 || guard === -1 || mint === -1 || guard > mint) bad.push(`${rel}: sendOne must refuse a mailbox off the Workspace list BEFORE minting a token.`);
       const callers = Object.entries(files).filter(([f, src]) => f !== COMMAND_SENDER && /\bsendOne\s*\(/.test(stripProse(src))).map(([f]) => f);
-      if (callers.some((f) => f !== COMMAND_RUNNER)) bad.push(`${rel}: sendOne is called from ${callers.filter((f) => f !== COMMAND_RUNNER).join(", ")}; only ${COMMAND_RUNNER} (after her Send) may call it.`);
+      const allowed = new Set([COMMAND_RUNNER, INVITE_TAP]);
+      if (callers.some((f) => !allowed.has(f))) bad.push(`${rel}: sendOne is called from ${callers.filter((f) => !allowed.has(f)).join(", ")}; only ${COMMAND_RUNNER} (after her Send) and ${INVITE_TAP} (after her claimed tap) may call it.`);
+      const tap = stripProse(files[INVITE_TAP] ?? "");
+      if (callers.includes(INVITE_TAP)) {
+        if (DOMAIN_RE.test(tap)) bad.push(`${INVITE_TAP}: names ${DOMAIN} in code. A Go? card never sends from it.`);
+        const actDef = tap.search(/async function act\(/);
+        const post = tap.slice(Math.max(0, tap.search(/export async function inviteTapPost\b/)));
+        const claimAt = post.search(/await claimTap\(/);
+        const refuseAt = post.search(/if \(!row\)/);
+        const actAt = post.search(/await act\(/);
+        const actCalls = (tap.match(/\bact\(/g) ?? []).length;
+        const firstSend = tap.search(/\bsendOne\s*\(/);
+        if (actDef === -1 || firstSend < actDef) bad.push(`${INVITE_TAP}: sendOne must be called only inside act().`);
+        if (tap.search(/export async function inviteTapPost\b/) === -1 || claimAt === -1 || refuseAt === -1 || actAt === -1 || !(claimAt < refuseAt && refuseAt < actAt)) bad.push(`${INVITE_TAP}: inviteTapPost must claim her tap (claimTap) and refuse an answered row BEFORE act() can send.`);
+        if (actCalls !== 2) bad.push(`${INVITE_TAP}: act() must be defined once and called once (from inviteTapPost); found ${actCalls} uses.`);
+      }
       const runner = stripProse(files[COMMAND_RUNNER] ?? "");
       const approvedAt = runner.search(/state !== "approved"/);
       const callAt = runner.search(/\bsendOne\s*\(/);
@@ -293,6 +315,7 @@ if (process.argv.includes("--self-test")) {
   ].join("\n");
   const CMD_OK = 'import { mintComposeToken } from "../wealth/gmailDraft";\nexport async function sendOne(env, input) {\nif (!mailboxAllowed(input.from)) return x;\nconst tok = await mintComposeToken(creds, input.from, f);\nawait f("https://gmail.googleapis.com/gmail/v1/users/me/messages/send");\n}';
   const RUN_OK = 'async function sendApprovedEmail(row) {\nif (row.state !== "approved") return no;\nawait sendOne(env, m);\n}';
+  const TAP_OK = 'export async function claimTap(db, t) { return row; }\nasync function act(env, row) { await sendOne(env, m); }\nexport async function inviteTapPost(c, t) {\nconst row = await claimTap(db, t);\nif (!row) return gone;\nawait act(env, row);\n}';
   const cases = [
     ["a from field on the domain",
      { "scripts/ops/x.mjs": 'const payload = { from: "Monique <monique@spry.vc>", to };' }, true],
@@ -342,6 +365,16 @@ if (process.argv.includes("--self-test")) {
      { [COMMAND_SENDER]: CMD_OK.replace('if (!mailboxAllowed(input.from)) return x;', "").replace("await f(", 'if (!mailboxAllowed(input.from)) return x;\nawait f('), [COMMAND_RUNNER]: RUN_OK }, true],
     ["Simone's runner sending without checking her Send",
      { [COMMAND_SENDER]: CMD_OK, [COMMAND_RUNNER]: RUN_OK.replace('if (row.state !== "approved") return no;', "") }, true],
+    ["the Go? card tap, claiming before it acts, which is allowed",
+     { [COMMAND_SENDER]: CMD_OK, [COMMAND_RUNNER]: RUN_OK, [INVITE_TAP]: TAP_OK }, false],
+    ["the Go? card tap acting before it claims her tap",
+     { [COMMAND_SENDER]: CMD_OK, [COMMAND_RUNNER]: RUN_OK, [INVITE_TAP]: TAP_OK.replace("const row = await claimTap(db, t);\nif (!row) return gone;\nawait act(env, row);", "await act(env, {});\nconst row = await claimTap(db, t);\nif (!row) return gone;") }, true],
+    ["the Go? card tap sending outside act()",
+     { [COMMAND_SENDER]: CMD_OK, [COMMAND_RUNNER]: RUN_OK, [INVITE_TAP]: "async function early() { await sendOne(env, m); }\n" + TAP_OK }, true],
+    ["the Go? card tap naming spry.vc in code",
+     { [COMMAND_SENDER]: CMD_OK, [COMMAND_RUNNER]: RUN_OK, [INVITE_TAP]: TAP_OK + '\nconst FROM = "staylor@spry.vc";' }, true],
+    ["a third file calling sendOne",
+     { [COMMAND_SENDER]: CMD_OK, [COMMAND_RUNNER]: RUN_OK, "src/worker/boss/x.ts": "await sendOne(env, m);" }, true],
     ["another file calling Simone's sendOne",
      { [COMMAND_SENDER]: CMD_OK, [COMMAND_RUNNER]: RUN_OK, "src/worker/boss/routes/x.ts": "await sendOne(env, m);" }, true],
     ["another file borrowing the compose token to send",

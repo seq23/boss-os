@@ -538,7 +538,8 @@
     "Time-2-Read: Monique contacts homeschool pods and institutions, weekdays 8:15",
     "Porch & Party: Camille's Christmas office outreach, weekdays 10:20, until 4 bookings or 5 Dec",
     "Spry Labs: each site publishes and checks its pages through the day (no emails)",
-    "West Peek: West Peek OS employees work through their cards every few minutes"
+    "West Peek: West Peek OS employees work through their cards every few minutes",
+    "Simone: one Go? card for each new invitation in your morning email and on Today (Yes, go / No / Not sure); nothing is sent until you tap"
   ],
   "notShown": [
     "Client sites: their jobs are recorded only in their own repos, never here (your rule).",
@@ -6139,6 +6140,27 @@
       "output": {
         "floor": 0,
         "reason": "A check: its result is pass or fail, and a fail is already its own red run."
+      }
+    },
+    {
+      "id": "invitations",
+      "name": "Invitations: a Go? card for each one",
+      "what": "Simone reads new mail in every inbox and your calendars and puts one Go? card per invitation in your morning email and on Today: Yes, go / No / Not sure.",
+      "business": "personal",
+      "brand": "Boss OS",
+      "system": "boss-os",
+      "slots": [
+        "daily 06:00"
+      ],
+      "emails": false,
+      "heavy": false,
+      "trigger": {
+        "duty": "duty_invitations"
+      },
+      "output": {
+        "metric": "invitations",
+        "floor": 0,
+        "reason": "A morning with no new invitation is normal; an unread inbox is a named stop, never a zero."
       }
     }
   ]

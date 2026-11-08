@@ -1057,6 +1057,16 @@
       "runs": "not-email", "trigger": "The shared search-loop workflow's last step (v1.7.0)",
       "pause": "Unset BOSS_OPEN_LOOPS_TOKEN on the site's repo",
       "code": [{ "repo": "search-loop", "paths": ["bin/report-stops.mjs", "bin/open-loops.mjs", ".github/workflows/search-loop.yml"] }]
+    },
+    {
+      "id": "invitation-answers", "business": "personal",
+      "what": "Your answer to an invitation, only when you tap it on its Go? card: Yes accepts a calendar invite or sends your short yes (shown word for word on the card); No declines only when the invitation asks for an answer. Event sites' RSVP pages are never opened for you.",
+      "sender": "Simone", "owner": "Simone",
+      "from": "The inbox the invitation came to (never Spry Ventures)", "to": "The person who invited you",
+      "when": "Only when you tap Yes, go or No",
+      "runs": "cloud-event", "trigger": "Your one-tap page (/tap/…) from the Go? card in the morning email or Today",
+      "pause": "Do not tap; Not sure holds it",
+      "code": [{ "repo": "boss-os", "paths": ["src/worker/boss/invitations/tap.ts", "src/worker/boss/commands/google.ts"] }]
     }
   ]
 }
