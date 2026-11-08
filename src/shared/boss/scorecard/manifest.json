@@ -1453,6 +1453,10 @@
       "kind": "system",
       "why": "Keeps the system running or checks it; it has no customer result of its own."
     },
+    "mac-snapshot": {
+      "kind": "system",
+      "why": "Keeps the system running or checks it; it has no customer result of its own."
+    },
     "ci-sweep-resume": {
       "kind": "system",
       "why": "Keeps the system running or checks it; it has no customer result of its own."
