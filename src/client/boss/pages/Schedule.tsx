@@ -76,6 +76,8 @@ export function Schedule() {
   return (
     <div className="brains" data-testid="schedule">
       <p className="brain-summary">{summaryLine()}</p>
+      <FromRepoLine tab="schedule" />
+      {only ? null : <>
       <p className="brain-hint">Tap a day to open it. "✉ emails you" marks the jobs that write to you.</p>
       {SCHEDULE.week.map((d) => {
         const mails = d.items.filter((i) => i.emails).length;
@@ -108,9 +110,9 @@ export function Schedule() {
         <summary><span className="email-map-business-name">Not shown on this page</span><span className="email-map-count">Tap to open ▾</span></summary>
         <ul className="schedule-list">{SCHEDULE.notShown.map((t, i) => <li key={i}>{t}</li>)}</ul>
       </details>
-      <FromRepoLine tab="schedule" />
+      </>}
       <details className="brain-expander" data-testid="schedule-all-jobs" open={Boolean(only)}>
-        <summary><span className="email-map-business-name">Every scheduled job</span><span className="email-map-count">{SCHEDULE.rows.length} jobs, by where they run — tap to open ▾</span></summary>
+        <summary><span className="email-map-business-name">Every scheduled job</span><span className="email-map-count">{only ? SCHEDULE.rows.filter((r) => scheduleRepos(r, REPOS as any).includes(only)).length : SCHEDULE.rows.length} jobs, by where they run — tap to open ▾</span></summary>
         {Object.entries(SCHEDULE.systems).map(([key, label]) => {
           const rows = SCHEDULE.rows.filter((r) => r.system === key && (!only || scheduleRepos(r, REPOS as any).includes(only)));
           if (!rows.length) return null;

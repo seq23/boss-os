@@ -93,6 +93,9 @@ function Group({ title, count, open, children }: { title: string; count: string;
   );
 }
 
+/** "Mon 11 Jan 2027" from "2027-01-11": her dates are plain words. */
+export const plainDate = (iso?: string | null) => (iso ? new Date(`${iso}T12:00:00Z`).toLocaleDateString("en-GB", { weekday: "short", day: "numeric", month: "short", year: "numeric", timeZone: "UTC" }).replace(",", "") : "");
+
 // ─── Repos (the front door) ──────────────────────────────────────────────────────────────────
 
 export function reposSummary(): string {
@@ -167,7 +170,8 @@ export function DomainsMap() {
       <p className="brain-summary">{domainsSummary()}</p>
       <Filtered tab="domains" words={only ?? (repo ? `the domains of ${repoLabel(repo)}` : null)} />
       {order.map((t) => {
-        const shown = rows.filter((d: Row) => d.tier === t);
+        // A kept domain that is set to lapse is the one thing here that needs her: it sorts first.
+        const shown = rows.filter((d: Row) => d.tier === t).sort((a: Row, b: Row) => Number(lapses(b)) - Number(lapses(a)));
         if (!shown.length) return null;
         return (
           <Group key={t} title={D.tiers[t]} count={plural(shown.length, "domain", "domains")} open={Boolean(only || repo) || t === "keep"}>
@@ -180,7 +184,7 @@ export function DomainsMap() {
 }
 
 function renewWords(d: Row): string {
-  const when = d.expires ? `expires ${d.expires}` : "expiry not read";
+  const when = d.expires ? `expires ${plainDate(d.expires)}` : "expiry not read";
   const ar = d.auto_renew === true ? "auto-renew on" : d.auto_renew === false ? "auto-renew off" : "auto-renew not known yet";
   return `${d.registrar} · ${when} · ${ar}`;
 }
@@ -189,11 +193,11 @@ function DomainCard({ d }: { d: Row }) {
   const site = S.rows.find((s: Row) => s.id === d.site);
   return (
     <Card id={d.domain} title={d.domain}
-      sub={<>{d.tier_why}{lapses(d) ? <span className="maps-lapse"> Kept, but set to lapse{d.expires ? ` on ${d.expires}` : ""}: turn auto-renew on.</span> : null}</>}
+      sub={<>{d.tier_why}{lapses(d) ? <span className="maps-lapse"> Kept, but set to lapse{d.expires ? ` on ${plainDate(d.expires)}` : ""}: turn auto-renew on.</span> : null}</>}
       links={<>
         <From repo={d.repo} />
         {site ? <L to={href("sites", "site", site.id)}>{d.redirects_to ? `Forwards to ${d.redirects_to} ›` : `Site: ${site.name} ›`}</L> : null}
-        <L to={href("accounts", "account", d.dns === "second" ? "cloudflare-second" : d.dns === "main" ? "cloudflare-main" : registrarAccount(d.registrar))}>{D.dns[d.dns]} ›</L>
+        <L to={href("accounts", "account", d.dns === "second" ? "cloudflare-second" : d.dns === "main" ? "cloudflare-main" : registrarAccount(d.registrar))}>DNS: {D.dns[d.dns]} ›</L>
       </>}>
       <dt>Registrar</dt><dd>{renewWords(d)}{d.renew_read ? ` (read ${d.renew_read})` : ""}</dd>
       <dt>Mail</dt><dd>{d.mail_words}</dd>

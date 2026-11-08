@@ -169,9 +169,9 @@
       "dns": "main",
       "mail": "routing",
       "mail_words": "Cloudflare Email Routing: 3 addresses forward to an inbox.",
-      "site": "aplayermode-api",
+      "site": "aplayermode",
       "tier": "keep",
-      "tier_why": "Serves aplayermode-api.",
+      "tier_why": "Serves A Player Mode.",
       "expires": "2027-04-08",
       "mail_to": [
         "cr**@gmail.com"
@@ -187,7 +187,7 @@
       "mail_words": "Cloudflare Email Routing: 2 addresses forward to an inbox.",
       "site": "approvalprep",
       "tier": "keep",
-      "tier_why": "Serves approvalprep.",
+      "tier_why": "Serves ApprovalPrep.",
       "expires": "2027-07-07",
       "mail_to": [
         "cr**@gmail.com"
@@ -309,7 +309,7 @@
       "mail_words": "No mail.",
       "site": "billionairehighperformancecoach",
       "tier": "keep",
-      "tier_why": "Serves billionairehighperformancecoach.",
+      "tier_why": "Serves Spry Labs coaching page.",
       "expires": "2027-03-18"
     },
     {
@@ -336,7 +336,7 @@
       "mail_words": "No mail.",
       "site": "courtscope",
       "tier": "keep",
-      "tier_why": "Serves courtscope.",
+      "tier_why": "Serves CourtScope.",
       "expires": "2027-07-11"
     },
     {
@@ -408,9 +408,9 @@
       "dns": "second",
       "mail": "routing",
       "mail_words": "Cloudflare Email Routing: 3 addresses forward to an inbox.",
-      "site": "founderoperatorlibrary-wp",
+      "site": "founderoperatorlibrary",
       "tier": "keep",
-      "tier_why": "Serves founderoperatorlibrary-wp.",
+      "tier_why": "Serves Founder Operator Library.",
       "stale_copy": "An old, inactive copy of this domain also sits in the main Cloudflare account (status: moved). It does nothing; it can be deleted there.",
       "expires": "2027-06-28",
       "mail_to": [
@@ -517,7 +517,7 @@
       "mail_words": "Cloudflare Email Routing: 1 address forward to an inbox.",
       "site": "howweknowdeep",
       "tier": "keep",
-      "tier_why": "Serves howweknowdeep.",
+      "tier_why": "Serves How We Know.",
       "expires": "2027-08-30",
       "mail_to": [
         "cr**@gmail.com"
@@ -531,7 +531,7 @@
       "dns": "main",
       "mail": "routing",
       "mail_words": "Cloudflare Email Routing: 1 address forward to a Worker.",
-      "site": "pitch-lab",
+      "site": "joinwestpeek",
       "tier": "keep",
       "tier_why": "A West Peek domain: never retired.",
       "expires": "2027-02-04"
@@ -557,9 +557,9 @@
       "dns": "main",
       "mail": "routing",
       "mail_words": "Cloudflare Email Routing: 1 address forward to an inbox.",
-      "site": "keepmyproof-blogger",
+      "site": "keepmyproof",
       "tier": "keep",
-      "tier_why": "Serves keepmyproof-blogger.",
+      "tier_why": "Serves KeepMyProof.",
       "expires": "2027-11-01",
       "auto_renew": true,
       "renew_read": "8 Nov 2026, by hand",
@@ -623,7 +623,7 @@
       "mail_words": "No mail.",
       "site": "memphisseniorcarehomes",
       "tier": "keep",
-      "tier_why": "Serves memphisseniorcarehomes.",
+      "tier_why": "Serves Memphis senior care guide.",
       "expires": "2027-10-13"
     },
     {
@@ -634,9 +634,9 @@
       "dns": "second",
       "mail": "routing",
       "mail_words": "Cloudflare Email Routing: 3 addresses forward to an inbox.",
-      "site": "memphisvendorlibrary-wp",
+      "site": "memphisvendorlibrary",
       "tier": "keep",
-      "tier_why": "Serves memphisvendorlibrary-wp.",
+      "tier_why": "Serves Memphis Vendor Library.",
       "stale_copy": "An old, inactive copy of this domain also sits in the main Cloudflare account (status: moved). It does nothing; it can be deleted there.",
       "expires": "2027-06-28",
       "mail_to": [
@@ -730,7 +730,7 @@
       "mail_words": "Cloudflare Email Routing: 2 addresses forward to inboxes and a Worker.",
       "site": "porchandparty901",
       "tier": "keep",
-      "tier_why": "Serves porchandparty901.",
+      "tier_why": "Serves Porch & Party.",
       "expires": "2027-03-22",
       "mail_to": [
         "va**@gmail.com"
@@ -744,9 +744,9 @@
       "dns": "second",
       "mail": "routing",
       "mail_words": "Cloudflare Email Routing: 3 addresses forward to an inbox.",
-      "site": "professionalresourcelibrary-wp",
+      "site": "professionalresourcelibrary",
       "tier": "keep",
-      "tier_why": "Serves professionalresourcelibrary-wp.",
+      "tier_why": "Serves Professional Resource Library.",
       "stale_copy": "An old, inactive copy of this domain also sits in the main Cloudflare account (status: moved). It does nothing; it can be deleted there.",
       "expires": "2027-06-28",
       "mail_to": [
@@ -780,7 +780,7 @@
       "mail_words": "Google Workspace inboxes.",
       "site": "heyscootertaylor",
       "tier": "keep",
-      "tier_why": "Serves heyscootertaylor.",
+      "tier_why": "Serves Hey Scooter Taylor.",
       "expires": "2027-03-01"
     },
     {
@@ -920,7 +920,7 @@
       "dns": "main",
       "mail": "none",
       "mail_words": "No mail.",
-      "site": "aplayermode-api",
+      "site": "aplayermode",
       "redirects_to": "aplayermode.com",
       "tier": "retire",
       "tier_why": "Only forwards to aplayermode.com.",
@@ -937,7 +937,7 @@
       "mail_words": "Cloudflare Email Routing: 1 address forward to an inbox.",
       "site": "thecharmnest",
       "tier": "keep",
-      "tier_why": "Serves thecharmnest.",
+      "tier_why": "Serves The Charm Nest.",
       "expires": "2027-08-02",
       "mail_to": [
         "th**@gmail.com"
@@ -1000,7 +1000,7 @@
       "mail_words": "Cloudflare Email Routing: 2 addresses forward to inboxes and a Worker.",
       "site": "theindustryguides",
       "tier": "keep",
-      "tier_why": "Serves theindustryguides.",
+      "tier_why": "Serves The Industry Guides hub.",
       "expires": "2027-02-12",
       "mail_to": [
         "cr**@gmail.com"
@@ -1032,7 +1032,7 @@
       "mail_words": "Google Workspace inboxes.",
       "site": "time-2-read",
       "tier": "keep",
-      "tier_why": "Serves time-2-read.",
+      "tier_why": "Serves Time-2-Read.",
       "note": "Stays on Squarespace (your rule): its DNS is Squarespace's (Google Domains servers), and it points at the Time-2-Read app in Lovable.",
       "expires": "2028-07-23"
     },
@@ -1320,7 +1320,7 @@
       "dns": "main",
       "mail": "none",
       "mail_words": "No mail.",
-      "site": "pitch-lab",
+      "site": "joinwestpeek",
       "redirects_to": "joinwestpeek.com",
       "tier": "keep",
       "tier_why": "A West Peek domain: never retired.",
