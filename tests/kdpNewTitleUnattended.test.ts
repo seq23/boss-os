@@ -88,6 +88,23 @@ describe("unattended sign-in: she is told at once, the window stays, the wait ha
     const page = { url: () => (n++ < 3 ? "https://www.amazon.com/ap/mfa" : "https://kdp.amazon.com/en_US/bookshelf"), waitForTimeout: async () => {}, waitForLoadState: async () => {} };
     await expect(waitForHer(page, { unattended: true, handoffMs: 60_000, signinMs: 1, tellSignin: async () => {} })).resolves.toBeUndefined();
   });
+  it("Simone signs in herself first: signed in → carries on and no email to her", async () => {
+    let url = "https://www.amazon.com/ap/signin?max_auth_age=0";
+    const page = { url: () => url, waitForTimeout: async () => {}, waitForLoadState: async () => {} };
+    const tellSignin = vi.fn(async () => {});
+    const autoSignin = vi.fn(async (_p: any, target: string) => { url = target; return { code: 0, state: "ok", detail: "signed in" }; });
+    await expect(waitForHer(page, { unattended: true, handoffMs: 60_000, signinMs: 1, tellSignin, autoSignin, lastUrl: "https://kdp.amazon.com/en_US/title-setup/kindle/new/details" })).resolves.toBeUndefined();
+    expect(autoSignin).toHaveBeenCalledTimes(1);
+    expect(tellSignin).not.toHaveBeenCalled();
+  });
+  it("her sign-in fails, or Amazon shows a picture check → the existing stop email, once, and the bounded wait", async () => {
+    for (const r of [{ code: 7, state: "wrong_password", detail: "refused" }, { code: 6, state: "challenge_needs_her", detail: "CAPTCHA" }]) {
+      const page = signinPage();
+      const tellSignin = vi.fn(async () => {});
+      await expect(waitForHer(page, { unattended: true, handoffMs: 10_000, signinMs: 1, tellSignin, autoSignin: async () => r, lastUrl: null })).rejects.toMatchObject({ stop: "SIGNIN_NOT_DONE" });
+      expect(tellSignin).toHaveBeenCalledTimes(1);
+    }
+  });
   it("a person at the terminal is not emailed", async () => {
     const tellSignin = vi.fn(async () => {});
     await expect(waitForHer(signinPage(), { unattended: false, handoffMs: 1, signinMs: 4000, tellSignin })).rejects.toMatchObject({ stop: "SIGNIN_NOT_DONE" });

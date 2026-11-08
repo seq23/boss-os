@@ -68,7 +68,8 @@ grep -o 'KDP-PUBLISH:.*' "$RUN_LOG" | tail -5 | tee -a /dev/stderr
 # ─── NEW TITLES SHE APPROVED (kdp_new_title; the KeepMyProof books, owner 7 Nov 2026) ──────────
 # Simone publishes them on her own, every day while the saved Amazon sign-in lasts (owner, 8 Nov 2026:
 # "Yes, publish on her own"). kdp-new-title.mjs --unattended reads the bookshelf first, emails her a
-# heads-up 30 minutes before it opens Chrome, never types her password, keeps the window open for her
+# heads-up 30 minutes before it opens Chrome, signs in to Amazon for her (her ruling 8 Nov 2026; the
+# existing kdp-signin.mjs steps, never a picture check), keeps the window open for her
 # on any stop and emails her the one thing to do, and emails the Amazon link when the book is Live.
 # With nothing approved it opens nothing and says so.
 npm run --silent vault:run -- node scripts/ops/kdp-new-title.mjs --unattended >> "$RUN_LOG" 2>&1
