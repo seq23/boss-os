@@ -2626,7 +2626,7 @@
     {
       "id": "how-we-know-loop-repackage",
       "name": "Repackage and upkeep",
-      "what": "Every evening repackages published episodes; most mornings at 11:30, after the day's upload, applies the upkeep.",
+      "what": "Every evening repackages published episodes; most mornings at 11:30, after the day's episode is up, does the upkeep.",
       "business": "spry",
       "brand": "How We Know",
       "system": "github",
@@ -5900,7 +5900,7 @@
     {
       "id": "how-we-know-loop-daily-runway",
       "name": "Runway check",
-      "what": "Every evening: writes tomorrow's scripts if the calendar is running short, so the Mac never sits idle.",
+      "what": "Every evening: writes tomorrow's scripts when the calendar is running low, so the Mac never sits idle.",
       "business": "spry",
       "brand": "How We Know",
       "system": "github",
