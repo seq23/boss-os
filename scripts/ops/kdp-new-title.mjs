@@ -460,6 +460,23 @@ async function boss() {
   };
 }
 
+/** After a stop: leave the Amazon window up for her to finish by hand; return when she is done. */
+async function handOff(context, page, dir, ans) {
+  console.error(`
+>>> THE AMAZON WINDOW STAYS OPEN — finish by hand from where it stopped.
+    Files for this book: ${join(dir, "book.epub")} (manuscript) and ${join(dir, "cover.jpg")} (cover).
+    Cover: choose "Upload a cover you already have", then "Upload your cover file" and pick cover.jpg.
+    AI question: Yes; Texts "${ans.texts}"; Images "${ans.images}"; Translations "${ans.translations}"; tools "${ans.tools}".
+    When you're done (or want to stop), close the Amazon window or press Enter here.`);
+  await new Promise((resolve) => {
+    context.once("close", resolve);
+    page.once("close", resolve);
+    process.stdin.resume();
+    process.stdin.once("data", resolve);
+  });
+  process.stdin.pause();
+}
+
 async function main() {
   const api = await boss();
   const spec = JSON.parse(await readFile(join(HERE, "kdp-books/keepmyproof.json"), "utf8"));
@@ -498,6 +515,10 @@ async function main() {
       report.stop_code = e.stop ?? "FAILED"; report.amazon_message = String(e.message).slice(0, 800);
       if (!/stop-/.test(e.message)) await snapshot(page, dir, `stop-${String(e.stop ?? "failed").toLowerCase()}`);
       say("STOPPED", e.message); code = e.code ?? 1;
+      // Her call, 8 Nov 2026: "why can't you keep the screen up so I can just continue manually?"
+      // A stop never closes Amazon's window on her: it stays up, signed in, on the step that
+      // stopped, until she closes it or presses Enter here.
+      if (process.stdin.isTTY) await handOff(context, page, dir, ans);
     } finally {
       if (!(await api.attempt(a.id, report))) console.error("NAMED STOP [ATTEMPT_NOT_RECORDED] Boss OS did not keep this attempt; the line above is the record.");
       await context.close().catch(() => {});
