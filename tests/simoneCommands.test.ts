@@ -126,7 +126,8 @@ describe("time-2-read codes: pinned to the real table", () => {
   });
   it("NEGATIVE: no key in the vault is a sentence naming the key, and no call is made", async () => {
     let called = false;
-    const r = await runCode({ op: "count", code: null }, { key: undefined, fetchImpl: (async () => { called = true; return new Response("[]"); }) as any });
+    // "" not undefined: undefined falls through to the real env key on a vault-run shell.
+    const r = await runCode({ op: "count", code: null }, { key: "", fetchImpl: (async () => { called = true; return new Response("[]"); }) as any });
     expect(r).toEqual({ ok: false, why: `time-2-read's Supabase service key (${SUPABASE_KEY_NAME}) is not in the vault` });
     expect(called).toBe(false);
     expect(SUPABASE_KEY_NAME).toMatch(/^DAILYSTORY_/);
