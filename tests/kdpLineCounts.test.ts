@@ -15,8 +15,8 @@ describe("kdp-line-counts", () => {
     expect(Object.keys(v)).toEqual(["Kindle books: ApprovalPrep", "Kindle books: Dream Wedding", "Kindle books: A Player Mode", "Kindle books: KeepMyProof"]);
     expect(v["Kindle books: ApprovalPrep"]).toMatch(/^5 \(\d live\)$/);
     expect(v["Kindle books: Dream Wedding"]).toMatch(/^2 \(\d live\)$/);
-    // The divorce book is drafted and registered (7 Nov 2026), not yet Live.
-    expect(v["Kindle books: KeepMyProof"]).toBe("1 (0 live)");
+    // The divorce book (The Co-Parenting Log) is Live since 7 Nov 2026, confirmed on the bookshelf 8 Nov.
+    expect(v["Kindle books: KeepMyProof"]).toBe("1 (1 live)");
     expect(register.lines.keepmyproof.plan).toMatch(/divorce first/);
   });
 
@@ -41,7 +41,7 @@ describe("kdp-line-counts", () => {
     const put = JSON.parse(calls.at(-1).init.body);
     expect(put.section).toBe("Numbers");
     expect(put.text).toMatch(/\| Sales \|/);
-    expect(put.text).toMatch(/\| Kindle books: KeepMyProof \|.*\| 1 \(0 live\) \| 2026-12-01 \|/);
+    expect(put.text).toMatch(/\| Kindle books: KeepMyProof \|.*\| 1 \(1 live\) \| 2026-12-01 \|/);
     await expect(run({ env: {}, fetchImpl })).rejects.toThrow(/NO_PASSCODE/);
   });
 });

@@ -139,13 +139,14 @@
       "author": "S. L. Taylor",
       "publisher": "Spry Labs",
       "target": "LIVE",
-      "status": "DRAFT_LOCAL",
-      "status_as_of": "2026-11-07",
+      "status": "LIVE",
+      "status_as_of": "2026-11-08",
+      "asin": "B0HQVR4HD3",
       "line": "keepmyproof",
       "kmp_folder": "divorce",
       "ai_disclosure": true,
       "draft_dir": "~/.boss-os/kdp/keepmyproof/divorce",
-      "note": "Drafted, not on Amazon. Nothing uploads to KDP until she approves it in the Inbox (kdp_new_title); then kdp-new-title.mjs creates it in one pass and presses Publish, never Save as Draft (Save as Draft drops the AI disclosure)."
+      "note": "Live on Amazon since 7 Nov 2026 at $4.99 (ASIN B0HQVR4HD3), confirmed on her bookshelf 8 Nov 2026. Two duplicate drafts from re-runs were deleted on 8 Nov; kdp-new-title.mjs now reads the bookshelf before it creates anything."
     }
   ],
   "facts_about_kdp": {

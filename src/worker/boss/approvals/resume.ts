@@ -334,7 +334,7 @@ export const RESUME_HANDLERS: Record<string, ResumeHandler> = {
         statusKind: "determined",
         now,
       });
-      return { detail: "Approved. The book goes on Kindle in one visible run, with the AI disclosure checked before Publish; it is reported Live only when the bookshelf says so." };
+      return { detail: "Approved. Simone puts the book on Kindle on her next morning run, with a heads-up email 30 minutes before and the AI disclosure checked before Publish; it is reported Live only when the bookshelf says so." };
     }
     await recordDeliverableActivity(env, {
       id: j.deliverable_id ?? "del_kdp_new_titles",

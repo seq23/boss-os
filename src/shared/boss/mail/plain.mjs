@@ -247,6 +247,9 @@ export const SHOUT_WORDS = new Set([
 export function isShouting(bare) {
   if (bare.length < 2 || !/^[A-Z][A-Z0-9]*$/.test(bare) || !/[A-Z]{2}/.test(bare)) return false;
   if (ACRONYMS.has(bare) || ACRONYMS.has(bare.toUpperCase())) return false;
+  // A product code (an Amazon ASIN, "B0HQVR4HD3") is letters and digits mixed; it is not shouting, and
+  // lower-cased it is wrong (8 Nov 2026: the Kindle "live" email showed the ASIN as b0hqvr4hd3).
+  if ((bare.match(/[0-9]/g) ?? []).length >= 2) return false;
   const letters = bare.replace(/[0-9]/g, "");
   return letters.length >= 5 || SHOUT_WORDS.has(letters);
 }
