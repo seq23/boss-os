@@ -103,10 +103,17 @@ async function gsc(params, ctx) {
   for (const d of domains) {
     const site = [`sc-domain:${d}`, `https://${d}/`, `https://www.${d}/`].find((s) => have.has(s));
     if (!site) { unread.push(d); continue; }
-    const r = await ctx.fetch(`https://www.googleapis.com/webmasters/v3/sites/${encodeURIComponent(site)}/searchAnalytics/query`, { method: "POST", headers: h, body: JSON.stringify({ startDate: start, endDate: end }) });
-    const j = await r.json().catch(() => ({}));
-    if (!r.ok) { unread.push(d); continue; }
-    total += Number(j.rows?.[0]?.[params.metric] ?? 0);
+    // `pages`: only the pages whose address contains one of these (a launch of a few pages on a bigger
+    // site, 8 Nov 2026: the WPP Hopin and community answers). Each is its own query, summed.
+    const filters = params.pages?.length ? params.pages.map((pg) => ({ dimensionFilterGroups: [{ filters: [{ dimension: "page", operator: "contains", expression: pg }] }] })) : [{}];
+    let bad = false;
+    for (const extra of filters) {
+      const r = await ctx.fetch(`https://www.googleapis.com/webmasters/v3/sites/${encodeURIComponent(site)}/searchAnalytics/query`, { method: "POST", headers: h, body: JSON.stringify({ startDate: start, endDate: end, ...extra }) });
+      const j = await r.json().catch(() => ({}));
+      if (!r.ok) { bad = true; break; }
+      total += Number(j.rows?.[0]?.[params.metric] ?? 0);
+    }
+    if (bad) { unread.push(d); continue; }
   }
   if (unread.length === domains.length) throw new NamedStop("GSC_UNREADABLE", `Search Console would not give numbers for ${unread.join(", ")}.`);
   return { raw: total, note: unread.length ? `not read: ${unread.join(", ")}` : undefined };
@@ -190,6 +197,16 @@ async function repoJson(params, ctx) {
     try { text = ctx.gh(["api", `repos/seq23/${f.repo}/contents/${f.path}`, "-H", "Accept: application/vnd.github.raw"]); }
     catch { throw new NamedStop("REPORT_MISSING", `${f.repo} has no ${f.path} on its default branch.`); }
     let j; try { j = JSON.parse(text); } catch { throw new NamedStop("REPORT_UNREADABLE", `${f.repo}'s report is not JSON.`); }
+    if (f.countSince) {
+      // A ledger (an array of posts, each with a date at `countSince`): how many fall in the last
+      // `params.days` days (8 Nov 2026: the publications' and KeepMyProof's daily posts are counted
+      // from the ledgers their posting jobs already commit, never from the job's own success line).
+      const list = f.field ? pick(j, f.field) : j;
+      if (!Array.isArray(list)) throw new NamedStop("REPORT_EMPTY", `${f.repo}'s ${f.path} is not a list.`);
+      const since = ctx.now - (params.days ?? 28) * DAY_MS;
+      vals.push(list.filter((e) => Date.parse(pick(e, f.countSince)) >= since).length);
+      continue;
+    }
     if (f.date) {
       // A start condition: a "YYYY-MM-DD" date once it has happened, null while it has not.
       const d = pick(j, f.field);

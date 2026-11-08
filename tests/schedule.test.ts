@@ -172,7 +172,10 @@ describe("the Schedule page", () => {
     const doc = readFileSync(path.join(ROOT, m.approved.doc), "utf8");
     expect(doc).toContain("☰ More → Schedule");
     expect(doc).toContain(m.approved.artifact);
-    for (const d of m.week) for (const it of d.items) expect(doc, `${d.label} ${it.time}`).toContain(it.text);
+    // No per-line wording pin (8 Nov 2026): the doc is the plan as approved and is "not edited when a time
+    // moves (the page is)", so a pin on its words made a real move (How We Know's food nights, 2 Nov)
+    // impossible to show. weekProblems still holds every line to the jobs and times that really run.
+    expect(weekProblems(m).problems).toEqual([]);
   });
 });
 

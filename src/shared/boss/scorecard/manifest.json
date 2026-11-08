@@ -28,6 +28,10 @@
     {
       "key": "time-2-read",
       "label": "Time-2-Read"
+    },
+    {
+      "key": "friends",
+      "label": "Friends' sites"
     }
   ],
   "defaults": {
@@ -365,7 +369,8 @@
       "jobs": [
         "approvalprep-pinterest-metrics",
         "approvalprep-pinterest-refill",
-        "dream-wedding-builder-pinterest-drip"
+        "dream-wedding-builder-pinterest-drip",
+        "sprylabs-hpc-site-aplayermode-pin-drip"
       ],
       "start": "2026-11-01",
       "first": {
@@ -460,10 +465,7 @@
         "local-guides-citation-velocity-search-intelligence-loop",
         "local-guides-citation-velocity-search-outcomes-weekly",
         "local-guides-generator-rotating-refresh",
-        "sprylabs-hpc-site-search-intelligence",
         "sprylabs-hpc-site-search-loop",
-        "sprylabs-hpc-site-spry-content-release",
-        "sprylabs-hpc-site-daily-citation-intelligence",
         "wpp-llm-query-intelligence",
         "wpp-llm-search-repair-retest",
         "search-readiness-repair",
@@ -472,7 +474,8 @@
         "wpp-llm-search-loop",
         "local-guides-generator-search-loop",
         "local-guides-citation-velocity-search-loop",
-        "dream-wedding-builder-search-loop"
+        "dream-wedding-builder-search-loop",
+        "sprylabs-hpc-site-search-measurements"
       ],
       "start": "2026-11-01",
       "first": {
@@ -698,9 +701,9 @@
         "authority-backlink-network-authority-post-publish-distributi",
         "authority-backlink-network-authority-v4-autopilot",
         "authority-backlink-network-journalist-query-scan",
-        "authority-backlink-network-social-autopost",
         "authority-backlink-network-uscis-changelog",
-        "link-prospects"
+        "link-prospects",
+        "authority-backlink-network-deploy-publications"
       ],
       "start": "2026-11-01",
       "first": {
@@ -777,7 +780,8 @@
         "howweknow-food-resume",
         "howweknow-nightquit",
         "shorts-arm",
-        "youtube-comment-watch"
+        "youtube-comment-watch",
+        "how-we-know-loop-daily-runway"
       ],
       "start": "2026-11-01",
       "first": {
@@ -976,7 +980,11 @@
       "business": "spry",
       "owner": "Spry Labs · Wednesday Spry Labs email",
       "result": "Search clicks to keepmyproof.com per week",
-      "jobs": [],
+      "jobs": [
+        "keepmyproof-search-loop",
+        "keepmyproof-facts-refresh",
+        "keepmyproof-monthly-watch"
+      ],
       "start": "2026-11-02",
       "first": {
         "label": "Google search clicks to keepmyproof.com (last 7 days)",
@@ -1013,7 +1021,9 @@
       "versionB": {
         "text": "The engine shifts from new pages to strengthening pages Google shows but nobody clicks, and every printable PDF carries the store link on every sheet."
       },
-      "pause": []
+      "pause": [
+        "keepmyproof-search-loop"
+      ]
     },
     {
       "id": "t2r-institutional",
@@ -1075,7 +1085,9 @@
       "result": "Paid subscriptions",
       "jobs": [
         "dailystory-lifecycle-emails",
-        "heygetonmylevel-search-loop"
+        "heygetonmylevel-search-loop",
+        "dailystory-search-loop",
+        "dailystory-guides-deploy"
       ],
       "start": "2026-11-01",
       "first": {
@@ -1376,6 +1388,167 @@
       },
       "versionB": {
         "text": "Screen-recorded Letter Studio walk-through, 20 seconds"
+      },
+      "pause": []
+    },
+    {
+      "id": "publication-social-posts",
+      "initiative": "The three publications' daily posts (Bluesky + WordPress.com)",
+      "business": "spry",
+      "owner": "Spry Labs · Wednesday Spry Labs email",
+      "result": "Posts that go out every day, then Google clicks to the three libraries rising",
+      "jobs": [
+        "authority-backlink-network-social-autopost"
+      ],
+      "start": "2026-11-07",
+      "first": {
+        "label": "posts published to Bluesky and WordPress.com (28 days)",
+        "by": 30,
+        "floor": {
+          "op": ">=",
+          "value": 60
+        },
+        "reader": "repo-json",
+        "params": {
+          "days": 28,
+          "files": [
+            {
+              "repo": "authority-backlink-network",
+              "path": "data/publication-social-ledger.json",
+              "countSince": "at"
+            }
+          ]
+        }
+      },
+      "real": {
+        "label": "Google clicks to the three libraries (28 days), rising",
+        "by": 60,
+        "floor": {
+          "op": "rising"
+        },
+        "reader": "gsc",
+        "params": {
+          "sites": [
+            "professionalresourcelibrary.com",
+            "founderoperatorlibrary.com",
+            "memphisvendorlibrary.com"
+          ],
+          "metric": "clicks",
+          "days": 28
+        }
+      },
+      "versionB": {
+        "text": "Post a question from the page with its one-line answer instead of the page title."
+      },
+      "pause": [
+        "authority-backlink-network-social-autopost"
+      ]
+    },
+    {
+      "id": "keepmyproof-syndication",
+      "initiative": "KeepMyProof guides on Blogger and WordPress.com",
+      "business": "spry",
+      "owner": "Spry Labs · Wednesday Spry Labs email",
+      "result": "One guide a day on each blog, then Google clicks to keepmyproof.com's guides rising",
+      "jobs": [
+        "keepmyproof-syndicate"
+      ],
+      "start": "2026-11-08",
+      "first": {
+        "label": "guides posted to Blogger and WordPress.com (28 days)",
+        "by": 30,
+        "floor": {
+          "op": ">=",
+          "value": 40
+        },
+        "reader": "repo-json",
+        "params": {
+          "days": 28,
+          "files": [
+            {
+              "repo": "keepmyproof",
+              "path": "data/syndication-ledger.json",
+              "countSince": "at"
+            }
+          ]
+        }
+      },
+      "real": {
+        "label": "Google clicks to keepmyproof.com (28 days), rising",
+        "by": 60,
+        "floor": {
+          "op": "rising"
+        },
+        "reader": "gsc",
+        "params": {
+          "sites": [
+            "keepmyproof.com"
+          ],
+          "metric": "clicks",
+          "days": 28
+        }
+      },
+      "versionB": {
+        "text": "Post the guide's printable checklist as the summary, with the store link, instead of a plain summary."
+      },
+      "pause": [
+        "keepmyproof-syndicate"
+      ]
+    },
+    {
+      "id": "wpp-hopin-community-pages",
+      "initiative": "virtualagency-os.com Hopin and community answer pages",
+      "business": "friends",
+      "owner": "Claude · Open Loops day-30 and day-60 checks",
+      "result": "Google impressions, then clicks, on the Hopin page and the three community pages",
+      "jobs": [],
+      "start": "2026-11-07",
+      "first": {
+        "label": "Google impressions on the 4 pages (28 days)",
+        "by": 30,
+        "floor": {
+          "op": ">=",
+          "value": 100
+        },
+        "reader": "gsc",
+        "params": {
+          "sites": [
+            "virtualagency-os.com"
+          ],
+          "metric": "impressions",
+          "days": 28,
+          "pages": [
+            "/answers/hopin-alternatives-virtual-events",
+            "/answers/how-to-build-a-community-around-your-business",
+            "/answers/community-manager-vs-community-agency",
+            "/answers/what-is-community-led-growth"
+          ]
+        }
+      },
+      "real": {
+        "label": "Google clicks on the 4 pages (28 days)",
+        "by": 60,
+        "floor": {
+          "op": ">=",
+          "value": 5
+        },
+        "reader": "gsc",
+        "params": {
+          "sites": [
+            "virtualagency-os.com"
+          ],
+          "metric": "clicks",
+          "days": 28,
+          "pages": [
+            "/answers/hopin-alternatives-virtual-events",
+            "/answers/how-to-build-a-community-around-your-business",
+            "/answers/community-manager-vs-community-agency",
+            "/answers/what-is-community-led-growth"
+          ]
+        }
+      },
+      "versionB": {
+        "text": "Rewrite the four titles and first lines around the searches Google already shows them for (the day-30 Open Loops check)."
       },
       "pause": []
     }
@@ -1745,10 +1918,6 @@
       "kind": "system",
       "why": "Keeps the system running or checks it; it has no customer result of its own."
     },
-    "sprylabs-hpc-site-main-validation-sentinel": {
-      "kind": "system",
-      "why": "Keeps the system running or checks it; it has no customer result of its own."
-    },
     "sprylabs-hpc-site-weekly-outcome-report": {
       "kind": "system",
       "why": "Measures or reports; the rows it feeds are judged instead."
@@ -1884,6 +2053,38 @@
     "owner-mail-watch": {
       "kind": "system",
       "why": "Kendra's watch over every app's failed emails to her: it checks the system, with no customer result of its own."
+    },
+    "keepmyproof-entity-backlink-watch": {
+      "kind": "system",
+      "why": "Keeps the system running or checks it; it has no customer result of its own."
+    },
+    "keepmyproof-open-loops": {
+      "kind": "system",
+      "why": "Keeps the system running or checks it; it has no customer result of its own."
+    },
+    "keepmyproof-search-console-daily": {
+      "kind": "system",
+      "why": "Keeps the system running or checks it; it has no customer result of its own."
+    },
+    "heygetonmylevel-entity-backlink-watch": {
+      "kind": "system",
+      "why": "Keeps the system running or checks it; it has no customer result of its own."
+    },
+    "heygetonmylevel-post-deploy-live-check": {
+      "kind": "system",
+      "why": "Keeps the system running or checks it; it has no customer result of its own."
+    },
+    "heygetonmylevel-search-console-daily": {
+      "kind": "system",
+      "why": "Keeps the system running or checks it; it has no customer result of its own."
+    },
+    "heygetonmylevel-weekly-outcome-report": {
+      "kind": "system",
+      "why": "Keeps the system running or checks it; it has no customer result of its own."
+    },
+    "join-west-peek-main-forms-mailer": {
+      "kind": "system",
+      "why": "Keeps the system running or checks it; it has no customer result of its own."
     }
   }
 }
