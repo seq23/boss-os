@@ -32,6 +32,10 @@
     {
       "key": "friends",
       "label": "Friends' sites"
+    },
+    {
+      "key": "personal",
+      "label": "You (Boss OS)"
     }
   ],
   "defaults": {
@@ -1807,6 +1811,50 @@
         "text": "Retitle the pages around the hotel searches Search Console already shows them for, and move the done-for-you block and the three package prices above the photos (the day-30 Open Loops check)."
       },
       "pause": []
+    },
+    {
+      "id": "simone-invitations",
+      "initiative": "Simone's Go? card for every invitation (her yes 8 Nov 2026)",
+      "business": "personal",
+      "owner": "Simone · your morning email and Today",
+      "result": "Invitations answered (Yes, go or No) before the event",
+      "jobs": [
+        "invitations"
+      ],
+      "start": "2026-11-09",
+      "first": {
+        "label": "invitations answered before the event (last 30 days)",
+        "unit": "%",
+        "by": 30,
+        "floor": {
+          "op": ">=",
+          "value": 80
+        },
+        "reader": "d1",
+        "params": {
+          "db": "boss-os",
+          "sql": "SELECT CASE WHEN COUNT(*) = 0 THEN NULL ELSE ROUND(100.0 * SUM(answered_before_event = 1 AND status IN ('yes','no')) / COUNT(*), 1) END AS n FROM owner_invitations WHERE starts_at >= :since_ms AND starts_at < strftime('%s','now') * 1000",
+          "days": 30
+        }
+      },
+      "real": {
+        "label": "invitations answered before the event (last 30 days)",
+        "unit": "%",
+        "by": 60,
+        "floor": {
+          "op": ">=",
+          "value": 90
+        },
+        "reader": "d1",
+        "params": {
+          "db": "boss-os",
+          "sql": "SELECT CASE WHEN COUNT(*) = 0 THEN NULL ELSE ROUND(100.0 * SUM(answered_before_event = 1 AND status IN ('yes','no')) / COUNT(*), 1) END AS n FROM owner_invitations WHERE starts_at >= :since_ms AND starts_at < strftime('%s','now') * 1000",
+          "days": 30
+        }
+      },
+      "versionB": {
+        "text": "Fewer than 80% answered before the event: the cards move to ONE Friday digest of the next 2 weeks' invitations instead of the daily morning cards."
+      }
     }
   ],
   "exempt": {

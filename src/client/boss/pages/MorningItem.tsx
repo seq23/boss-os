@@ -32,7 +32,7 @@ function LinkButton({ b, primary = false }: { b: Btn; primary?: boolean }) {
 }
 
 function Buttons({ list }: { list: Btn[] }) {
-  const shown = (list ?? []).filter((b) => !/^See everything about this$/i.test(b.label));
+  const shown = (list ?? []).filter((b) => !/^See everything(?: about this| ›)$/i.test(b.label));
   if (!shown.length) return null;
   return <div className="btn-row mi-buttons">{shown.map((b, i) => <LinkButton key={i} b={b} primary={i === 0} />)}</div>;
 }

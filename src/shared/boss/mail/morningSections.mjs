@@ -56,6 +56,9 @@ export const MORNING_SECTION_SPECS = Object.freeze([
   // the Worker's hourly tick (src/worker/boss/routes/openLoops.ts runOpenLoopsDaily; owner ruling, 1 Nov 2026).
   // Carries its own `title`; an empty list is still written, so absence means the tick did not run.
   { name: "open_loops", label: "Open loops", expect: DAILY, catchUpWhy: "written by the Worker's hourly tick (runOpenLoopsDaily); not a Mac script to re-run" },
+  // Every morning at 06:00 Central: Simone's Go? cards, one per invitation (duty_invitations, a Worker
+  // duty: src/worker/boss/invitations/run.ts; owner-approved 8 Nov 2026). Written even when empty.
+  { name: "invitations", label: "Invitations", expect: DAILY, catchUpWhy: "written by the Worker's invitations duty (duty_invitations); run it from Team → Duties, not a Mac script" },
 ].map((s) => Object.freeze(s)));
 export const MORNING_SECTIONS = Object.freeze(MORNING_SECTION_SPECS.map((s) => s.name));
 

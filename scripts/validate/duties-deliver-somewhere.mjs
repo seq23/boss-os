@@ -182,6 +182,20 @@ export function localJobScript(text) {
  * the delivered table → a route reads it. Same shape rule as `localJobScript`: the value must look
  * like a reader name, so the json_object key cannot be confused with a column.
  */
+/** The Worker job a `worker` duty names (`worker_job`, 0359), if it is one. */
+export function workerJob(text) {
+  const m = /'worker_job'\s*,\s*'([a-z][a-z0-9_]*)'/.exec(text) ?? /"worker_job"\s*:\s*"([a-z][a-z0-9_]*)"/.exec(text);
+  return m ? m[1] : null;
+}
+/** A worker job's code, comments dropped: every .ts file in src/worker/boss/<job>/. Null when none. */
+function workerJobCode(job) {
+  const dir = join(ROOT, "src/worker/boss", job);
+  if (!existsSync(dir)) return null;
+  const files = readdirSync(dir).filter((f) => f.endsWith(".ts"));
+  if (!files.length) return null;
+  return files.map((f) => read(`src/worker/boss/${job}/${f}`)).join("\n").split("\n").filter((line) => !/^\s*(#|\/\/|\*|\/\*)/.test(line)).join("\n");
+}
+
 export function workerReader(text) {
   const m = /'worker_reader'\s*,\s*'([a-z][a-z0-9_]*)'/.exec(text)
     ?? /"worker_reader"\s*:\s*"([a-z][a-z0-9_]*)"/.exec(text);
@@ -327,9 +341,10 @@ function scan() {
      * its model like everyone else.
      */
     const readerName = workerReader(duty.text);
+    const jobName = workerJob(duty.text);
     const readerCode = readerName && existsSync(join(ROOT, READERS))
       ? read(READERS).split("\n").filter((line) => !/^\s*(#|\/\/|\*|\/\*)/.test(line)).join("\n")
-      : null;
+      : jobName ? workerJobCode(jobName) : null;
     const reachesAModel = readerCode !== null
       ? /\bclaude\b|run_ai|routeCompletion|api\.anthropic|CLAUDE_/.test(readerCode)
       : jobScript === null || /\bclaude\b|run_ai|api\.anthropic|CLAUDE_/.test(jobCode);
@@ -359,6 +374,25 @@ function scan() {
      * the delivered table, and a route reads that table. Each link is its own named failure — a
      * duty naming a reader that the registry lacks would "run", record ok, and write nothing.
      */
+    /*
+     * A WORKER JOB (0359, Simone's invitations): the duty runs `worker_job` inside materialise, from the
+     * module directory `src/worker/boss/<job>/`. Same chain as a reader: materialise dispatches it by
+     * name, the module writes INTO the delivered table, a migration creates that table, a route reads it.
+     */
+    if (jobName) {
+      const materialiseSrc = read(MATERIALISE);
+      const code = workerJobCode(jobName);
+      if (!new RegExp(`job === "${jobName}"`).test(materialiseSrc)) problems.push(`${duty.id} (${duty.file}): names worker job '${jobName}' and ${MATERIALISE} never dispatches it.`);
+      if (!code) { problems.push(`${duty.id} (${duty.file}): names worker job '${jobName}' and src/worker/boss/${jobName}/ holds no module.`); continue; }
+      if (!key) { problems.push(`${duty.id} (${duty.file}): is a worker job and declares no \`delivers\` table.`); continue; }
+      if (!new RegExp(`INTO\\s+${key}\\b`, "i").test(code)) problems.push(`${duty.id} (${duty.file}): delivers '${key}' and src/worker/boss/${jobName}/ writes to no table of that name.`);
+      if (!tables.has(key)) problems.push(`${duty.id} (${duty.file}): delivers '${key}' and no migration creates a table called '${key}'.`);
+      const routeFiles = readdirSync(join(ROOT, "src/worker/boss/routes")).filter((f) => f.endsWith(".ts"));
+      const routeSrc = routeFiles.map((f) => read(`src/worker/boss/routes/${f}`)).join("\n");
+      if (!new RegExp(`FROM\\s+${key}\\b`, "i").test(routeSrc)) problems.push(`${duty.id} (${duty.file}): delivers '${key}' and no route reads it, so the reading lands where no screen can see it.`);
+      continue;
+    }
+
     if (reader) {
       const readersSrc = existsSync(join(ROOT, READERS)) ? read(READERS) : "";
       const materialiseSrc = read(MATERIALISE);

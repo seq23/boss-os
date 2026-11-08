@@ -187,8 +187,14 @@ export async function materialiseDueDuties(
       let input: Record<string, unknown> = {};
       try { input = duty.task_input ? (JSON.parse(duty.task_input) as Record<string, unknown>) : {}; } catch { input = {}; }
       const readerName = typeof input.worker_reader === "string" ? input.worker_reader : "";
+      // A Worker JOB (not a grid reader): Simone's invitations (0359). Same ok/failed record, same audit
+      // row Kendra reads (`written` = the run's OUTPUT count).
+      const job = typeof input.worker_job === "string" ? input.worker_job : "";
       try {
-        const result = await runWorkerReader(env, readerName, now);
+        const result = job === "invitations"
+          ? await (await import("../invitations/run")).runInvitations(env, now)
+          : job ? (() => { throw new Error(`No Worker job is called "${job}".`); })()
+          : await runWorkerReader(env, readerName, now);
         await env.DB
           .prepare(`UPDATE standing_duties SET last_outcome = 'ok', last_outcome_at = ?, last_failure_reason = NULL WHERE id = ?`)
           .bind(Date.now(), duty.id).run();

@@ -29,6 +29,7 @@ import { inviteGate, sendInvite } from "../lp/schedule";
 import { isScorecardToken, scorecardTapGet, scorecardTapPost } from "./scorecard";
 import { isHicksToken, hicksTapGet, hicksTapPost } from "../clients/hicksUpdate";
 import { sendLpNudge, skipLpNudge } from "../lp/nudge";
+import { isInviteToken, inviteTapGet, inviteTapPost } from "../invitations/tap";
 
 export const lpTap = new Hono<{ Bindings: Env; Variables: Vars }>();
 
@@ -72,6 +73,8 @@ async function find(db: D1Database, token: string): Promise<Found | null> {
 const VERBS: Record<string, string> = { send: "Sending your reply…", skip: "Skipping…", approve: "Approving…", dismiss: "Dismissing…", retry: "Writing a different draft…", nudge: "Sending the nudge…", nonudge: "No nudge…" };
 
 lpTap.get("/:token", async (c) => {
+  // Simone's Go? card on an invitation: Yes, go · No · Not sure (invitations/tap.ts). A GET never acts.
+  if (isInviteToken(c.req.param("token"))) return inviteTapGet(c, c.req.param("token"));
   // The Hicks quarterly update: Approve · Change the words · Skip (clients/hicksUpdate.ts).
   if (isHicksToken(c.req.param("token"))) return hicksTapGet(c, c.req.param("token"));
   // The Scorecard's "Restart it" (owner ruling, 1 Nov 2026). A GET never acts: it posts itself.
@@ -130,6 +133,7 @@ export function lpReplyClosed(row: { status: string; draft_body?: string | null 
 }
 
 lpTap.post("/:token", async (c) => {
+  if (isInviteToken(c.req.param("token"))) return inviteTapPost(c, c.req.param("token"));
   if (isHicksToken(c.req.param("token"))) return hicksTapPost(c, c.req.param("token"));
   if (isScorecardToken(c.req.param("token"))) return scorecardTapPost(c, c.req.param("token"));
   if (isCommandToken(c.req.param("token"))) return commandTapPost(c, c.req.param("token"));

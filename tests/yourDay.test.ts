@@ -77,7 +77,7 @@ describe("the one morning email", () => {
     const numbered = decide.split("\n").filter((l) => /^\d+\. /.test(l));
     expect(numbered).toHaveLength(4);
     // Every decision carries a link to its own screen, and the digest Boss OS keeps holds the same four.
-    const screens = [...decide.matchAll(/See everything about this: (\S+)/g)].map((m) => m[1]);
+    const screens = [...decide.matchAll(/See everything ›: (\S+)/g)].map((m) => m[1]);
     expect(screens).toHaveLength(4);
     expect(screens.every((u) => /^https:\/\/boss\.sequoiataylor\.com\/\?morning=2026-10-23&item=decide-[0-9a-f]{10}$/.test(u!))).toBe(true);
     expect(e.digest.decide.map((d: any) => d.screen)).toEqual(screens);

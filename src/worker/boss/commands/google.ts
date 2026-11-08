@@ -139,10 +139,12 @@ export async function deleteInvite(env: Env, input: { mailbox: string; eventId: 
   return res.ok || res.status === 410 ? { ok: true } : { ok: false, why: `Google Calendar refused the delete (${res.status})` };
 }
 
-function mime(input: { from: string; to: string; subject: string; text: string }): string {
+function mime(input: { from: string; to: string; subject: string; text: string; inReplyTo?: string | null }): string {
   const enc = (s: string) => btoa(unescape(encodeURIComponent(s)));
+  // A reply on the person's own thread (an invitation she answered): In-Reply-To and References.
+  const thread = input.inReplyTo ? [`In-Reply-To: ${input.inReplyTo}`, `References: ${input.inReplyTo}`] : [];
   return [
-    `From: Sequoia Taylor <${input.from}>`, `To: ${input.to}`, `Subject: =?UTF-8?B?${enc(input.subject)}?=`,
+    `From: Sequoia Taylor <${input.from}>`, `To: ${input.to}`, `Subject: =?UTF-8?B?${enc(input.subject)}?=`, ...thread,
     `MIME-Version: 1.0`, `Content-Type: text/plain; charset="UTF-8"`, `Content-Transfer-Encoding: base64`, ``, enc(input.text),
   ].join("\r\n");
 }
@@ -150,19 +152,97 @@ function mime(input: { from: string; to: string; subject: string; text: string }
 /**
  * Send one email she approved. Called ONLY from `sendApprovedEmail` (./run.ts) after her Send.
  */
-export async function sendOne(env: Env, input: { from: string; to: string; subject: string; text: string; command_id?: string }): Promise<{ ok: true; messageId: string } | { ok: false; why: string }> {
+export async function sendOne(env: Env, input: { from: string; to: string; subject: string; text: string; command_id?: string; inReplyTo?: string | null; threadId?: string | null }): Promise<{ ok: true; messageId: string } | { ok: false; why: string }> {
   if (!mailboxAllowed(input.from)) return { ok: false, why: `${input.from} is not a mailbox Simone may send from` };
   const creds = serviceAccountFrom(env);
   if (!creds) return { ok: false, why: "the Google key is not on the Worker" };
   const tok = await mintComposeToken(creds, input.from, fetchImpl);
   if (!tok.ok) return { ok: false, why: `Google refused the sign-in (${tok.status})` };
-  const receipt = await stageSentMail(env, { ...input, employee_id: "emp_chief" });
+  const { inReplyTo, threadId, ...mail } = input;
+  const receipt = await stageSentMail(env, { ...mail, in_reply_to: inReplyTo ?? null, employee_id: "emp_chief" });
   const res = await fetchImpl(GMAIL_SEND, {
     method: "POST", headers: { authorization: `Bearer ${tok.token}`, "content-type": "application/json" },
-    body: JSON.stringify({ raw: b64url(mime(input)) }),
+    body: JSON.stringify(threadId ? { raw: b64url(mime(input)), threadId } : { raw: b64url(mime(input)) }),
   });
   if (!res.ok) { await receipt.failed(); return { ok: false, why: `Gmail refused it (${res.status})` }; }
   const j = (await res.json().catch(() => ({}))) as { id?: string };
   await receipt.accepted(String(j.id));
   return { ok: true, messageId: String(j.id ?? "") };
+}
+
+/*
+ * ─── INVITATIONS (Simone's "Go?" card, 8 Nov 2026) ───────────────────────────────────────────
+ * Three calendar hands, each used only from invitations/tap.ts after HER tap, and two reads the morning
+ * duty uses. Same Workspace list, same delegation; spry.vc is never on the list, so never written.
+ */
+
+/** Events on a Workspace calendar still waiting for her answer (self attendee, needsAction). */
+export async function awaitingReply(env: Env, mailbox: string, from: number, to: number):
+  Promise<{ ok: true; events: Array<{ id: string; uid: string | null; title: string; start: number; end: number | null; allDay: boolean; where: string | null; organizer: { name: string | null; email: string } | null }> } | { ok: false; why: string }> {
+  const cal = await calendarFor(env, mailbox);
+  if (!cal.ok) return cal;
+  const q = new URLSearchParams({ timeMin: new Date(from).toISOString(), timeMax: new Date(to).toISOString(), singleEvents: "true", orderBy: "startTime", maxResults: "100" });
+  const res = await fetchImpl(`${CALENDAR}/primary/events?${q}`, { headers: { authorization: `Bearer ${cal.token}` } });
+  if (!res.ok) return { ok: false, why: `the calendar could not be read (${res.status})` };
+  const j = (await res.json().catch(() => ({}))) as { items?: Array<any> };
+  const events = [];
+  for (const e of j.items ?? []) {
+    if (e.status === "cancelled") continue;
+    const me = (e.attendees ?? []).find((a: any) => a.self);
+    if (!me || me.responseStatus !== "needsAction" || me.organizer) continue;
+    const allDay = !e.start?.dateTime;
+    const start = allDay ? Date.parse(`${e.start?.date}T06:00:00Z`) : Date.parse(e.start.dateTime);
+    if (!Number.isFinite(start)) continue;
+    const end = e.end?.dateTime ? Date.parse(e.end.dateTime) : null;
+    events.push({
+      id: String(e.id), uid: e.iCalUID ? String(e.iCalUID) : null, title: String(e.summary ?? "An event").slice(0, 140), start, end, allDay,
+      where: e.location ? String(e.location).slice(0, 160) : null,
+      organizer: e.organizer?.email ? { name: e.organizer.displayName ?? null, email: String(e.organizer.email).toLowerCase() } : null,
+    });
+  }
+  return { ok: true, events };
+}
+
+/** Has she already answered the event with this UID on that calendar? status null = not on it. */
+export async function selfAnswer(env: Env, mailbox: string, uid: string): Promise<{ ok: true; status: string | null; eventId: string | null } | { ok: false; why: string }> {
+  const cal = await calendarFor(env, mailbox);
+  if (!cal.ok) return cal;
+  const res = await fetchImpl(`${CALENDAR}/primary/events?${new URLSearchParams({ iCalUID: uid, maxResults: "1" })}`, { headers: { authorization: `Bearer ${cal.token}` } });
+  if (!res.ok) return { ok: false, why: `the calendar could not be read (${res.status})` };
+  const e = (((await res.json().catch(() => ({}))) as { items?: any[] }).items ?? [])[0];
+  if (!e) return { ok: true, status: null, eventId: null };
+  const me = (e.attendees ?? []).find((a: any) => a.self);
+  return { ok: true, status: me?.responseStatus ?? null, eventId: String(e.id) };
+}
+
+/** Her answer to a calendar invite: accepted or declined, sent to the organizer (sendUpdates=all). */
+export async function answerInvite(env: Env, input: { mailbox: string; uid: string; response: "accepted" | "declined" }): Promise<{ ok: true } | { ok: false; why: string; notOnCalendar?: boolean }> {
+  const cal = await calendarFor(env, input.mailbox);
+  if (!cal.ok) return cal;
+  const found = await fetchImpl(`${CALENDAR}/primary/events?${new URLSearchParams({ iCalUID: input.uid, maxResults: "1" })}`, { headers: { authorization: `Bearer ${cal.token}` } });
+  if (!found.ok) return { ok: false, why: `the calendar could not be read (${found.status})` };
+  const e = (((await found.json().catch(() => ({}))) as { items?: any[] }).items ?? [])[0];
+  if (!e) return { ok: false, why: "the invite is not on that calendar", notOnCalendar: true };
+  const attendees = (e.attendees ?? []).map((a: any) => (a.self ? { ...a, responseStatus: input.response } : a));
+  const res = await fetchImpl(`${CALENDAR}/primary/events/${encodeURIComponent(e.id)}?sendUpdates=all`, {
+    method: "PATCH", headers: { authorization: `Bearer ${cal.token}`, "content-type": "application/json" }, body: JSON.stringify({ attendees }),
+  });
+  return res.ok ? { ok: true } : { ok: false, why: `Google Calendar refused the answer (${res.status})` };
+}
+
+/** Put an event on her own calendar with no guests: nobody is emailed (sendUpdates=none). */
+export async function putOnCalendar(env: Env, input: { mailbox: string; title: string; start: number; end: number | null; allDay: boolean; where: string | null; note: string }):
+  Promise<{ ok: true; eventId: string } | { ok: false; why: string }> {
+  const cal = await calendarFor(env, input.mailbox);
+  if (!cal.ok) return cal;
+  const day = (ms: number) => new Date(ms).toLocaleDateString("en-CA", { timeZone: "America/Chicago" });
+  const body = input.allDay
+    ? { summary: input.title, location: input.where ?? undefined, description: input.note, start: { date: day(input.start) }, end: { date: day(input.start + 86_400_000) } }
+    : { summary: input.title, location: input.where ?? undefined, description: input.note, start: { dateTime: new Date(input.start).toISOString() }, end: { dateTime: new Date(input.end && input.end > input.start ? input.end : input.start + 3_600_000).toISOString() } };
+  const res = await fetchImpl(`${CALENDAR}/primary/events?sendUpdates=none`, {
+    method: "POST", headers: { authorization: `Bearer ${cal.token}`, "content-type": "application/json" }, body: JSON.stringify(body),
+  });
+  if (!res.ok) return { ok: false, why: `Google Calendar refused the event (${res.status})` };
+  const e = (await res.json().catch(() => ({}))) as any;
+  return { ok: true, eventId: String(e.id ?? "") };
 }

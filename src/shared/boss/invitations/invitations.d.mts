@@ -1,0 +1,37 @@
+export const OWNER_TZ: string;
+export const SECTION: string;
+export const FIRST_LOOKBACK_DAYS: number;
+export const EXCERPT_CHARS: number;
+export const REASK_DAYS_BEFORE: number;
+export const MAX_PER_MAILBOX: number;
+export const INVITE_INBOXES: readonly { address: string; label: string; writable: boolean }[];
+export const HER_CALENDAR: string;
+export const PLATFORMS: readonly { name: string; re: RegExp; link: RegExp }[];
+export function mailQuery(afterSec: number): string;
+export function centralDay(ms: number): string;
+export function addDays(day: string, n: number): string;
+export function wallToUtc(y: number, mo: number, d: number, h: number, mi: number, tz?: string): number;
+export function whenWords(start: number, end?: number | null, allDay?: boolean): string;
+export function dayWords(day: string): string;
+export interface Ics {
+  method: string | null; uid: string | null; title: string | null; location: string | null; status: string | null;
+  start: number; end: number | null; allDay: boolean; organizer: { name: string | null; email: string } | null;
+  attendees: { email: string; partstat: string; rsvp: boolean }[];
+}
+export function parseIcs(text: string): Ics | null;
+export function domainOf(addr: string): string;
+export function platformOf(fromAddress: string): { name: string; re: RegExp; link: RegExp } | null;
+export function notInvitation(msg: any, self?: string[]): string | null;
+export function asksForAnswer(text: string): boolean;
+export function proseDate(text: string, now: number): { ms: number; allDay: boolean } | null;
+export function rsvpLinkOf(platform: { link: RegExp }, text: string): string | null;
+export function dedupeKey(x: { uid?: string | null; fromAddress?: string; start: number; title?: string }): string;
+export function readInvitation(msg: any, opts?: { now: number; model?: any }): { invitation: any | null; why: string | null };
+export function firstName(name: string | null | undefined): string;
+export function yesWords(inv: { fromName?: string | null }): string;
+export function noWords(inv: { fromName?: string | null }): string;
+export function unsureAskDay(start: number, today: string): string;
+export function askPlan(inv: any, today: string, now?: number | null): { show: boolean; drop: boolean; ask: "first" | "again" | "unsure" | null };
+export function gmailLink(inv: any): string;
+export function cardFor(inv: any, opts: { origin: string; ask?: string; today: string }): any;
+export function outputLine(n: number): string;
