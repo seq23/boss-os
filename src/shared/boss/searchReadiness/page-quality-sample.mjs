@@ -62,7 +62,8 @@ const wordsOf = (t) => String(t).toLowerCase().match(/[\p{L}\p{N}][\p{L}\p{M}\p{
 // A byline keyword in any case ("Author:", "BY", "reviewed by"), followed by a capitalised name.
 const hasByline = (vis) => [...vis.matchAll(/\b(?:written by|reviewed by|by|author:?)\s+/gi)]
   .some((m) => /^\p{Lu}[\p{L}\p{M}.'’-]+/u.test(vis.slice(m.index + m[0].length)));
-const QUESTION = /\?\s*$|^(what|how|why|when|where|who|which|is|are|can|does|do|should|will|was|were)\b/i;
+// A question mark in any script: "?" and the full-width "？" Chinese and Japanese headings end with.
+const QUESTION = /[?？]\s*$|^(what|how|why|when|where|who|which|is|are|can|does|do|should|will|was|were)\b/i;
 const ANSWER = /\b(is|are|means|costs?|takes?|requires?|depends|yes|no|can|should|will|must)\b/i;
 const FIGURE = /\$\s?\d|\b\d+(?:\.\d+)?\s?%|\b\d{1,3}(?:,\d{3})+\b|\b\d+(?:\.\d+)?\s?(?:days?|weeks?|months?|years?|hours?|minutes?|miles?|mg|kg|lbs?|percent)\b/gi;
 const DATE_TEXT = /\b(?:jan|feb|mar|apr|may|jun|jul|aug|sep|sept|oct|nov|dec)[a-z]*\.?\s+\d{1,2},?\s+\d{4}\b|\b\d{1,2}\s+(?:jan|feb|mar|apr|may|jun|jul|aug|sep|sept|oct|nov|dec)[a-z]*\s+\d{4}\b|\b\d{4}-\d{2}-\d{2}\b|\b(?:updated|published|reviewed|last (?:updated|reviewed))\b[^.]{0,30}\b(?:19|20)\d{2}\b/i;
