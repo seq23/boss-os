@@ -14,6 +14,7 @@
     "kdp-login": "The Amazon login saved in the vault for KDP (one of your personal Google addresses)",
     "friend": "A friend's own account (theirs, not yours)",
     "no-person": "No person: a Google service account",
+    "sequoia": "You, in your own name: only your sign-in can act (which address is not recorded yet)",
     "unknown": "not known yet"
   },
   "rows": [
@@ -163,7 +164,7 @@
     {
       "id": "cloudflare-main",
       "service": "Cloudflare (main account)",
-      "owner": "unknown",
+      "owner": "sequoia",
       "business": "personal",
       "repos": [
         "boss-os",
@@ -441,7 +442,7 @@
     {
       "id": "lovable",
       "service": "Lovable",
-      "owner": "unknown",
+      "owner": "sequoia",
       "business": "time-2-read",
       "repos": [
         "dailystory",
@@ -608,7 +609,7 @@
     {
       "id": "youtube-whisper",
       "service": "YouTube (Whisper Almanac)",
-      "owner": "unknown",
+      "owner": "google-guides",
       "business": "spry",
       "repos": [
         "how-we-know"
@@ -616,7 +617,7 @@
       "vault_keys": [],
       "used_by": "The @whisperalmanac channel (live, no uploads yet).",
       "security": "not known yet",
-      "login": "not known yet"
+      "login": "cr**@gmail.com"
     },
     {
       "id": "youtube-sheila",
@@ -636,7 +637,7 @@
     {
       "id": "openai",
       "service": "OpenAI (ChatGPT plan and Codex)",
-      "owner": "unknown",
+      "owner": "sequoia",
       "business": "personal",
       "repos": [
         "boss-os",
@@ -652,7 +653,7 @@
     {
       "id": "anthropic",
       "service": "Anthropic (Claude)",
-      "owner": "unknown",
+      "owner": "sequoia",
       "business": "personal",
       "repos": [
         "boss-os"
@@ -794,7 +795,7 @@
     {
       "id": "gumroad",
       "service": "Gumroad",
-      "owner": "unknown",
+      "owner": "sequoia",
       "business": "spry",
       "repos": [
         "boss-os",
@@ -812,7 +813,7 @@
     {
       "id": "revenuecat",
       "service": "RevenueCat",
-      "owner": "unknown",
+      "owner": "sequoia",
       "business": "spry",
       "repos": [
         "keepmyproof",
@@ -831,7 +832,7 @@
     {
       "id": "apple-developer",
       "service": "Apple Developer (individual)",
-      "owner": "unknown",
+      "owner": "sequoia",
       "business": "spry",
       "repos": [
         "keepmyproof",
@@ -845,7 +846,7 @@
     {
       "id": "google-play",
       "service": "Google Play Console (individual)",
-      "owner": "unknown",
+      "owner": "sequoia",
       "business": "spry",
       "repos": [
         "keepmyproof",
