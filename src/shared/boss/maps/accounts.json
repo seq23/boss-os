@@ -15,7 +15,8 @@
     "friend": "A friend's own account (theirs, not yours)",
     "no-person": "No person: a Google service account",
     "sequoia": "You, in your own name: only your sign-in can act (which address is not recorded yet)",
-    "unknown": "not known yet"
+    "unknown": "not known yet",
+    "kmp-inbox": "KeepMyProof's own address"
   },
   "rows": [
     {
@@ -330,7 +331,7 @@
     {
       "id": "stripe-approvalprep",
       "service": "Stripe (ApprovalPrep)",
-      "owner": "unknown",
+      "owner": "google-personal",
       "business": "spry",
       "repos": [
         "approvalprep"
@@ -347,12 +348,12 @@
       ],
       "used_by": "ApprovalPrep checkout.",
       "security": "not known yet",
-      "login": "not known yet"
+      "login": "se**@gmail.com"
     },
     {
       "id": "stripe-industry-guides",
       "service": "Stripe (Industry Guides)",
-      "owner": "unknown",
+      "owner": "google-personal",
       "business": "spry",
       "repos": [
         "local-guides-generator",
@@ -366,12 +367,12 @@
       ],
       "used_by": "The guides' and Dream Wedding's checkout.",
       "security": "not known yet",
-      "login": "not known yet"
+      "login": "se**@gmail.com"
     },
     {
       "id": "stripe-t2r",
       "service": "Stripe (Time-2-Read)",
-      "owner": "unknown",
+      "owner": "google-personal",
       "business": "time-2-read",
       "repos": [
         "dailystory",
@@ -382,7 +383,7 @@
       ],
       "used_by": "Time-2-Read subscriptions (only a test-mode key is in the vault).",
       "security": "not known yet",
-      "login": "not known yet"
+      "login": "se**@gmail.com"
     },
     {
       "id": "kdp",
@@ -403,7 +404,7 @@
     {
       "id": "squarespace-domains",
       "service": "Squarespace Domains",
-      "owner": "unknown",
+      "owner": "google-personal",
       "business": "personal",
       "repos": [
         "outside"
@@ -411,12 +412,12 @@
       "vault_keys": [],
       "used_by": "Registrar for time-2-read.com, heygetonmylevel.com, sequoiataylor.com, westpeek.ventures and 6 more.",
       "security": "not known yet",
-      "login": "not known yet"
+      "login": "se**@gmail.com"
     },
     {
       "id": "namecheap",
       "service": "Namecheap",
-      "owner": "unknown",
+      "owner": "google-personal",
       "business": "spry",
       "repos": [
         "outside"
@@ -424,12 +425,12 @@
       "vault_keys": [],
       "used_by": "Registrar for 31 guide domains (most only forward).",
       "security": "not known yet",
-      "login": "not known yet"
+      "login": "se**@gmail.com"
     },
     {
       "id": "godaddy",
       "service": "GoDaddy",
-      "owner": "unknown",
+      "owner": "google-personal",
       "business": "personal",
       "repos": [
         "outside"
@@ -437,7 +438,7 @@
       "vault_keys": [],
       "used_by": "Registrar for scootertaylor.com.",
       "security": "not known yet",
-      "login": "not known yet"
+      "login": "se**@gmail.com"
     },
     {
       "id": "lovable",
@@ -456,7 +457,7 @@
     {
       "id": "supabase",
       "service": "Supabase",
-      "owner": "unknown",
+      "owner": "google-personal",
       "business": "time-2-read",
       "repos": [
         "dailystory"
@@ -466,7 +467,7 @@
       ],
       "used_by": "The Time-2-Read database and sign-ins.",
       "security": "not known yet",
-      "login": "not known yet"
+      "login": "se**@gmail.com or st**@time-2-read.com (one of the two)"
     },
     {
       "id": "wordpress-libraries",
@@ -488,7 +489,7 @@
     {
       "id": "wordpress-kmp",
       "service": "WordPress.com (KeepMyProof)",
-      "owner": "unknown",
+      "owner": "kmp-inbox",
       "business": "spry",
       "repos": [
         "keepmyproof"
@@ -500,7 +501,7 @@
       ],
       "used_by": "Posts KeepMyProof guide copies to keepmyproof.wordpress.com.",
       "security": "not known yet",
-      "login": "not known yet"
+      "login": "su**@keepmyproof.com"
     },
     {
       "id": "blogger-kmp",
@@ -596,7 +597,7 @@
     {
       "id": "youtube-howweknow",
       "service": "YouTube (How We Know)",
-      "owner": "unknown",
+      "owner": "google-guides",
       "business": "spry",
       "repos": [
         "how-we-know"
@@ -604,7 +605,7 @@
       "vault_keys": [],
       "used_by": "The @howweknowdeep channel's uploads.",
       "security": "not known yet",
-      "login": "not known yet"
+      "login": "cr**@gmail.com"
     },
     {
       "id": "youtube-whisper",
@@ -668,7 +669,7 @@
     {
       "id": "gemini",
       "service": "Google AI Studio (Gemini, free)",
-      "owner": "unknown",
+      "owner": "google-personal",
       "business": "personal",
       "repos": [
         "boss-os",
@@ -682,12 +683,12 @@
       ],
       "used_by": "The free model route first in every app (20 grounded requests a day).",
       "security": "not known yet",
-      "login": "not known yet"
+      "login": "se**@gmail.com"
     },
     {
       "id": "openrouter",
       "service": "OpenRouter",
-      "owner": "unknown",
+      "owner": "google-personal",
       "business": "personal",
       "repos": [
         "boss-os",
@@ -700,7 +701,7 @@
       ],
       "used_by": "The second free model route.",
       "security": "not known yet",
-      "login": "not known yet"
+      "login": "se**@gmail.com"
     },
     {
       "id": "appetize",
@@ -720,7 +721,7 @@
     {
       "id": "neverbounce",
       "service": "NeverBounce",
-      "owner": "unknown",
+      "owner": "google-personal",
       "business": "brokerage",
       "repos": [
         "boss-os"
@@ -730,7 +731,7 @@
       ],
       "used_by": "Checks every address before a first outreach email.",
       "security": "not known yet",
-      "login": "not known yet"
+      "login": "se**@gmail.com"
     },
     {
       "id": "eightraise-personal",
@@ -915,7 +916,7 @@
     {
       "id": "elevenlabs",
       "service": "ElevenLabs",
-      "owner": "unknown",
+      "owner": "google-personal",
       "business": "spry",
       "repos": [
         "how-we-know",
@@ -926,12 +927,12 @@
       ],
       "used_by": "Voice (paid voice is off for new channels).",
       "security": "not known yet",
-      "login": "not known yet"
+      "login": "se**@gmail.com"
     },
     {
       "id": "heygen",
       "service": "HeyGen",
-      "owner": "unknown",
+      "owner": "google-personal",
       "business": "spry",
       "repos": [
         "boss-os"
@@ -941,12 +942,12 @@
       ],
       "used_by": "Video avatars (no AI avatars for the brands).",
       "security": "not known yet",
-      "login": "not known yet"
+      "login": "se**@gmail.com"
     },
     {
       "id": "fish-audio",
       "service": "Fish Audio",
-      "owner": "unknown",
+      "owner": "google-personal",
       "business": "spry",
       "repos": [
         "how-we-know"
@@ -956,12 +957,12 @@
       ],
       "used_by": "Voice.",
       "security": "not known yet",
-      "login": "not known yet"
+      "login": "se**@gmail.com"
     },
     {
       "id": "runway",
       "service": "Runway",
-      "owner": "unknown",
+      "owner": "google-personal",
       "business": "spry",
       "repos": [
         "boss-os"
@@ -971,12 +972,12 @@
       ],
       "used_by": "Video generation.",
       "security": "not known yet",
-      "login": "not known yet"
+      "login": "se**@gmail.com"
     },
     {
       "id": "runware",
       "service": "Runware",
-      "owner": "unknown",
+      "owner": "google-personal",
       "business": "time-2-read",
       "repos": [
         "dailystory"
@@ -986,12 +987,12 @@
       ],
       "used_by": "Story pictures for Time-2-Read.",
       "security": "not known yet",
-      "login": "not known yet"
+      "login": "se**@gmail.com"
     },
     {
       "id": "huggingface",
       "service": "Hugging Face",
-      "owner": "unknown",
+      "owner": "google-personal",
       "business": "spry",
       "repos": [
         "how-we-know"
@@ -1001,12 +1002,12 @@
       ],
       "used_by": "Downloads the free voice models.",
       "security": "not known yet",
-      "login": "not known yet"
+      "login": "se**@gmail.com"
     },
     {
       "id": "perplexity",
       "service": "Perplexity",
-      "owner": "unknown",
+      "owner": "google-personal",
       "business": "personal",
       "repos": [
         "boss-os"
@@ -1016,12 +1017,12 @@
       ],
       "used_by": "Research.",
       "security": "not known yet",
-      "login": "not known yet"
+      "login": "se**@gmail.com"
     },
     {
       "id": "brave-search",
       "service": "Brave Search",
-      "owner": "unknown",
+      "owner": "google-personal",
       "business": "personal",
       "repos": [
         "boss-os"
@@ -1031,12 +1032,12 @@
       ],
       "used_by": "Web search for research jobs.",
       "security": "not known yet",
-      "login": "not known yet"
+      "login": "se**@gmail.com"
     },
     {
       "id": "firecrawl",
       "service": "Firecrawl",
-      "owner": "unknown",
+      "owner": "google-personal",
       "business": "personal",
       "repos": [
         "boss-os"
@@ -1046,7 +1047,7 @@
       ],
       "used_by": "Reads web pages for research.",
       "security": "not known yet",
-      "login": "not known yet"
+      "login": "se**@gmail.com"
     },
     {
       "id": "hunter-sheila",

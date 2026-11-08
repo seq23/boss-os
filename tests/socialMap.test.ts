@@ -172,3 +172,13 @@ describe("the Social Map covers every account and posting job", () => {
     expect(m._note).toMatch(/same PR/);
   });
 });
+
+describe("Social Map: a client's own account (owner 8 Nov 2026: 'for clients - theirs not mine')", () => {
+  it("'theirs' is accepted and never counted as a personal account to move", async () => {
+    const { accountEmailProblems, personalMoveRows, THEIRS } = await import("../scripts/ops/lib/social-map.mjs");
+    const m = { rows: [{ id: "x-client-ig", account_email: THEIRS }] } as any;
+    expect(accountEmailProblems(m, sites)).toEqual([]);
+    expect(personalMoveRows(m)).toEqual([]);
+    expect(accountEmailProblems({ rows: [{ id: "y", account_email: "theirs!" }] } as any, sites).length).toBe(1);
+  });
+});
