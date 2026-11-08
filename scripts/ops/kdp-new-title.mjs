@@ -385,13 +385,22 @@ async function aiDisclosure(page, ans, { write }) {
   return result;
 }
 
+const COVER_CHOICE_MS = 8 * 60_000;
 /** KDP's cover choice is an AUI accordion; open the "Upload a cover you already have" row and prove it is open. */
 async function chooseCoverUpload(page, dir) {
   const row = page.locator('[data-a-accordion-row-name="upload"]').first();
   const isOpen = async () => (await row.locator("[aria-expanded]").first().getAttribute("aria-expanded").catch(() => null)) === "true"
     || /a-icon-radio-active/.test((await row.locator("i.a-accordion-radio").first().getAttribute("class").catch(() => "")) ?? "");
   if (await row.count()) {
-    if (!(await isOpen())) { await row.locator("a.a-accordion-row").first().click(); await page.waitForTimeout(1000); }
+    // KDP keeps this row disabled while the manuscript is still "Processing your file…"
+    // (8 Nov 2026 stop page: data[cover_upload_disabled]), so a single click is ignored.
+    // Keep trying until it opens, up to COVER_CHOICE_MS; force past the "Save Successful!" overlay.
+    const deadline = Date.now() + COVER_CHOICE_MS;
+    while (Date.now() < deadline) {
+      if (await isOpen()) return;
+      await row.locator("a.a-accordion-row").first().click({ force: true, timeout: 5000 }).catch(() => {});
+      await page.waitForTimeout(5000);
+    }
     if (await isOpen()) return;
   } else {
     const alt = await first(page, [(p) => p.getByLabel(/Upload a cover you already have/i), (p) => p.getByText(/Upload a cover you already have/i)]);
