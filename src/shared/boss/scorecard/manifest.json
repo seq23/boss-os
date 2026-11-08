@@ -1551,6 +1551,62 @@
         "text": "Rewrite the four titles and first lines around the searches Google already shows them for (the day-30 Open Loops check)."
       },
       "pause": []
+    },
+    {
+      "id": "pnp-hotel-room-pages",
+      "initiative": "Porch & Party hotel room setups pages (hub + 10 pages, her yes 8 Nov 2026)",
+      "business": "porch-and-party",
+      "owner": "Claude · Open Loops day-30 and day-60 checks",
+      "result": "Google impressions and clicks on the 11 hotel pages, then hotel-setup requests",
+      "jobs": [],
+      "start": "2026-11-08",
+      "first": {
+        "label": "Google impressions on the 11 hotel pages (28 days)",
+        "by": 30,
+        "floor": {
+          "op": ">=",
+          "value": 100
+        },
+        "reader": "gsc",
+        "params": {
+          "sites": [
+            "porchandparty901.com"
+          ],
+          "metric": "impressions",
+          "days": 28,
+          "pages": [
+            "/services/hotel-room-decor-memphis",
+            "/services/anniversary-hotel-room-setup-memphis",
+            "/services/birthday-hotel-room-decorations-for-him-memphis",
+            "/services/birthday-hotel-room-decorations-for-her-memphis",
+            "/services/proposal-hotel-room-setup-memphis",
+            "/services/valentines-day-hotel-room-setup-memphis",
+            "/guides/memphis-hotels-with-jacuzzi-in-room",
+            "/guides/couples-staycation-ideas-memphis",
+            "/questions/how-many-rose-petals-for-a-hotel-room",
+            "/questions/can-you-use-rose-petals-and-candles-in-a-hotel",
+            "/questions/how-to-set-up-a-hotel-room-for-a-romantic-night"
+          ]
+        }
+      },
+      "real": {
+        "label": "hotel-setup requests in the last 30 days (October baseline: 4)",
+        "by": 60,
+        "floor": {
+          "op": ">=",
+          "value": 6
+        },
+        "reader": "d1",
+        "params": {
+          "db": "pnp-admin",
+          "sql": "SELECT COUNT(*) AS n FROM requests WHERE is_test = 0 AND lower(answers) LIKE '%hotel%' AND datetime(submitted_at) >= datetime(:since_iso)",
+          "days": 30
+        }
+      },
+      "versionB": {
+        "text": "Retitle the pages around the hotel searches Search Console already shows them for, and move the done-for-you block and the three package prices above the photos (the day-30 Open Loops check)."
+      },
+      "pause": []
     }
   ],
   "exempt": {
