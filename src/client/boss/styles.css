@@ -1917,6 +1917,18 @@ a.btn { text-decoration: none; text-align: center; display: inline-block; }
 .social-status { align-self: flex-start; font-size: 13px; border: 1px solid var(--line); border-radius: 3px; padding: 1px 6px; color: var(--muted); }
 .social-status-auto { color: var(--ok); border-color: color-mix(in srgb, var(--ok) 45%, var(--line)); }
 .social-open { align-self: flex-start; font-size: 15px; color: var(--gold-deep, var(--ink)); min-height: 44px; display: inline-flex; align-items: center; }
+/* The maps (8 Nov 2026): Repos → Domains → Sites → Accounts, then Emails, Social, Schedule. */
+.maps-chain { font-size: 14px; color: var(--muted); line-height: 1.8; }
+.maps-chain a { color: var(--gold-deep); }
+.maps-chain-here { color: var(--ink); }
+.maps-chain-sep { color: var(--muted); }
+.maps-filtered { font-size: 14px; color: var(--ink); margin: 0; }
+.maps-filtered a { color: var(--gold-deep); }
+.maps-links { display: flex; flex-wrap: wrap; gap: 4px 14px; }
+.maps-link { font-size: 15px; color: var(--gold-deep); min-height: 44px; display: inline-flex; align-items: center; }
+.maps-from { font-size: 14px; color: var(--muted); min-height: 44px; display: inline-flex; align-items: center; }
+.maps-lapse { color: var(--reject); }
+.maps-move { color: var(--gold-deep); }
 /* The Schedule (☰ More → Schedule, 1 Nov 2026): the approved week, one section per day. */
 .schedule-day > summary { display: flex; flex-direction: column; gap: 2px; }
 .schedule-rows { display: flex; flex-direction: column; margin-top: 8px; }

@@ -1,0 +1,1185 @@
+{
+  "_note": "THE ACCOUNTS MAP (owner, 8 Nov 2026). Every outside service login: which login owns it (a label, and the address masked the owner's way, 8 Nov 2026: the first two letters, ** and the full domain, e.g. st**@time-2-read.com; a full address is never written, and tests/infraMaps.test.ts fails on one), the business, what uses it (repos and vault key NAMES, never values) and its 2-step / recovery state if known. Never guess an owner: an unknown one is `unknown` (\"not known yet\"). `internal_keys` are the apps' own secrets, not outside logins. A new login or vault key goes here in the same PR.",
+  "owners": {
+    "google-personal": "Your personal Google account",
+    "google-second": "Your second personal Google account",
+    "google-guides": "The guides' Google account (Industry Guides and Dream Wedding)",
+    "t2r-inbox": "Time-2-Read inbox (its Google Workspace)",
+    "wpv-inbox": "West Peek Ventures inbox (its Google Workspace)",
+    "brokerage-inbox": "Brokerage inbox (spry.vc Google Workspace)",
+    "pnp-inbox": "Porch & Party's own address",
+    "library-inbox": "The Founder Operator Library's own address",
+    "library-own": "Each library's own address",
+    "github-login": "Your GitHub login",
+    "kdp-login": "The Amazon login saved in the vault for KDP (one of your personal Google addresses)",
+    "friend": "A friend's own account (theirs, not yours)",
+    "no-person": "No person: a Google service account",
+    "unknown": "not known yet"
+  },
+  "rows": [
+    {
+      "id": "google-personal",
+      "service": "Google (Gmail, Drive, Calendar)",
+      "owner": "google-personal",
+      "business": "personal",
+      "repos": [
+        "boss-os",
+        "seq-bin"
+      ],
+      "vault_keys": [
+        "CAL_ICS_SEQ_TAYLOR",
+        "SEQ_TAYLOR_GMAIL_APP_PASSWORD",
+        "RCLONE_MAC_BACKUP_OAUTH_CLIENT_ID",
+        "RCLONE_MAC_BACKUP_OAUTH_CLIENT_SECRET"
+      ],
+      "used_by": "The team's emails to you land here; the nightly Mac backup goes to its Drive; its calendar feeds Simone.",
+      "security": "A password change revokes the app password and Gmail sign-ins at once (personal brain).",
+      "login": "se**@gmail.com"
+    },
+    {
+      "id": "google-second",
+      "service": "Google (second personal account)",
+      "owner": "google-second",
+      "business": "personal",
+      "repos": [
+        "seq-bin"
+      ],
+      "vault_keys": [],
+      "used_by": "Holds the twice-monthly encrypted Mac snapshots on its Drive, the second Buffer and the second Cloudflare account.",
+      "security": "not known yet",
+      "login": "se**@gmail.com"
+    },
+    {
+      "id": "google-guides",
+      "service": "Google (the guides' account)",
+      "owner": "google-guides",
+      "business": "spry",
+      "repos": [
+        "boss-os"
+      ],
+      "vault_keys": [
+        "CAL_ICS_CRYPTOCLEARR",
+        "CRYPTOCLEARR_IMAP_PASSWORD"
+      ],
+      "used_by": "Receives the guides' hello mail; its inbox is read by Boss OS.",
+      "security": "not known yet",
+      "login": "cr**@gmail.com"
+    },
+    {
+      "id": "workspace-t2r",
+      "service": "Google Workspace (Time-2-Read)",
+      "owner": "t2r-inbox",
+      "business": "time-2-read",
+      "repos": [
+        "boss-os",
+        "dailystory"
+      ],
+      "vault_keys": [],
+      "used_by": "Monique's outreach for Time-2-Read; owns the KeepMyProof Blogger blog since 8 Nov 2026.",
+      "security": "not known yet",
+      "login": "st**@time-2-read.com"
+    },
+    {
+      "id": "workspace-wpv",
+      "service": "Google Workspace (West Peek Ventures)",
+      "owner": "wpv-inbox",
+      "business": "west-peek-ventures",
+      "repos": [
+        "boss-os",
+        "west-peek-os"
+      ],
+      "vault_keys": [
+        "CAL_ICS_WESTPEEK",
+        "GMAIL_WESTPEEK_VENTURES_OAUTH_CLIENT_ID",
+        "GMAIL_WESTPEEK_VENTURES_OAUTH_CLIENT_SECRET",
+        "GMAIL_WESTPEEK_VENTURES_REFRESH_TOKEN"
+      ],
+      "used_by": "The fund's mail and LP outreach; read on your Mac through the service account.",
+      "security": "not known yet",
+      "login": "se**@westpeek.ventures"
+    },
+    {
+      "id": "workspace-spry",
+      "service": "Google Workspace (Spry Ventures)",
+      "owner": "brokerage-inbox",
+      "business": "brokerage",
+      "repos": [
+        "boss-os"
+      ],
+      "vault_keys": [
+        "CAL_ICS_STAYLOR_SPRY"
+      ],
+      "used_by": "Brokerage mail, read only on your Mac (never the Claude Gmail connector); draft-only.",
+      "security": "not known yet",
+      "login": "st**@spry.vc"
+    },
+    {
+      "id": "google-service-account",
+      "service": "Google Cloud service accounts",
+      "owner": "no-person",
+      "business": "personal",
+      "repos": [
+        "boss-os",
+        "approvalprep",
+        "west-peek-network-os"
+      ],
+      "vault_keys": [
+        "GSC_SERVICE_ACCOUNT_JSON",
+        "GOOGLE_APPROVALPREP_SERVICE_ACCOUNT_JSON",
+        "WP_NETWORK_OS_GOOGLE_SA_PRIVATE_KEY",
+        "WP_NETWORK_OS_GOOGLE_SA_PRIVATE_KEY_ID"
+      ],
+      "used_by": "Search Console reads for the Monday audit; mailbox reads with domain-wide delegation; the network's sheet.",
+      "security": "not known yet",
+      "note": "Which Google login owns the Cloud project is not known yet."
+    },
+    {
+      "id": "google-cloud-oauth",
+      "service": "Google Cloud sign-in apps (OAuth clients)",
+      "owner": "unknown",
+      "business": "personal",
+      "repos": [
+        "boss-os",
+        "keepmyproof",
+        "west-peek-network-os",
+        "creator-studios"
+      ],
+      "vault_keys": [
+        "GOOGLE_OAUTH_CLIENT_ID",
+        "GOOGLE_OAUTH_CLIENT_SECRET",
+        "WP_NETWORK_OS_GOOGLE_OAUTH_CLIENT_ID",
+        "WP_NETWORK_OS_GOOGLE_OAUTH_CLIENT_SECRET",
+        "KMP_BLOGGER_CLIENT_ID",
+        "KMP_BLOGGER_CLIENT_SECRET",
+        "KMP_BLOGGER_REFRESH_TOKEN",
+        "KMP_BLOGGER_BLOG_ID",
+        "UNKNOWN_GOOGLE_1"
+      ],
+      "used_by": "The 'Sign in with Google' and Blogger posting apps.",
+      "security": "not known yet",
+      "note": "UNKNOWN_GOOGLE_1 is a key nobody has named yet.",
+      "login": "not known yet"
+    },
+    {
+      "id": "cloudflare-main",
+      "service": "Cloudflare (main account)",
+      "owner": "unknown",
+      "business": "personal",
+      "repos": [
+        "boss-os",
+        "west-peek-os",
+        "westpeek-live",
+        "dailystory",
+        "dream-wedding-builder",
+        "local-guides-generator",
+        "west-peek-pitch-lab",
+        "join-west-peek-main"
+      ],
+      "vault_keys": [
+        "CLOUDFLARE_API_TOKEN",
+        "CLOUDFLARE_ALL_ZONES_TOKEN_A",
+        "CLOUDFLARE_ALL_ZONES_TOKEN_B",
+        "CLOUDFLARE_ANALYTICS_READ_TOKEN",
+        "CLOUDFLARE_ACCOUNT_ID",
+        "CLOUDFLARE_STREAM_WESTPEEK_LIVE_API_TOKEN",
+        "T2R_CLOUDFLARE_WORKERS_AI_TOKEN",
+        "CF_ACCESS_CLIENT_ID",
+        "CF_ACCESS_CLIENT_SECRET",
+        "UNKNOWN_CLOUDFLARE_1",
+        "DWB_TURNSTILE_SECRET_KEY",
+        "DWB_TURNSTILE_SITE_KEY",
+        "LOCAL_GUIDES_TURNSTILE_SECRET_KEY",
+        "LOCAL_GUIDES_TURNSTILE_SITE_KEY",
+        "PITCH_LAB_TURNSTILE_SECRET_KEY",
+        "PITCH_LAB_TURNSTILE_SITE_KEY",
+        "WEST_PEEK_VENTURES_TURNSTILE_SECRET_KEY",
+        "WEST_PEEK_VENTURES_TURNSTILE_SITE_KEY"
+      ],
+      "used_by": "Holds 92 of your domains, every Pages site and Worker, D1, Stream and Workers AI (Workers Paid since 16 Sep 2026).",
+      "security": "not known yet",
+      "note": "UNKNOWN_CLOUDFLARE_1 is refused by Cloudflare (dead key); none of these keys can read Registrar (expiry, auto-renew, price).",
+      "login": "not known yet"
+    },
+    {
+      "id": "cloudflare-second",
+      "service": "Cloudflare (second, older account)",
+      "owner": "google-second",
+      "business": "spry",
+      "repos": [
+        "authority-backlink-network"
+      ],
+      "vault_keys": [
+        "CLOUDFLARE_PUBLICATIONS_API_TOKEN"
+      ],
+      "used_by": "Holds the three library domains and their Pages sites.",
+      "security": "not known yet",
+      "login": "se**@gmail.com"
+    },
+    {
+      "id": "github",
+      "service": "GitHub",
+      "owner": "github-login",
+      "business": "personal",
+      "repos": [
+        "boss-os",
+        "seq-bin"
+      ],
+      "vault_keys": [
+        "GITHUB_SEQ23_PAT"
+      ],
+      "used_by": "Every repo (all public), every workflow and land.",
+      "security": "not known yet"
+    },
+    {
+      "id": "resend-personal",
+      "service": "Resend (account 1)",
+      "owner": "google-personal",
+      "business": "personal",
+      "repos": [
+        "boss-os",
+        "aplayer-mode",
+        "creator-studios"
+      ],
+      "vault_keys": [
+        "RESEND_ADMIN__SEQ_TAYLOR_GMAIL",
+        "BOSS_OS_MAIL_KEY",
+        "RESEND_SEND__CREATOR_STUDIOS"
+      ],
+      "used_by": "Sends as sequoiataylor.com (the team), mail.aplayermode.com and mail.spryexecutiveos.com (the studios). Full, 3 of 3 domains.",
+      "security": "not known yet",
+      "move_to_brand": "Sends for the team and two brands from an account on your personal Gmail; a brand inbox would survive a personal password change.",
+      "login": "se**@gmail.com"
+    },
+    {
+      "id": "resend-guides",
+      "service": "Resend (account 2)",
+      "owner": "google-guides",
+      "business": "spry",
+      "repos": [
+        "boss-os",
+        "p-n-p",
+        "dream-wedding-builder",
+        "local-guides-citation-velocity"
+      ],
+      "vault_keys": [
+        "RESEND_ADMIN__CRYPTOCLEARR_GMAIL",
+        "BOSS_OS_FALLBACK_MAIL_KEY",
+        "PNP_RESEND_SMTP_KEY"
+      ],
+      "used_by": "Sends as mail.weddingchecklistpdf.com, porchandparty901.com and theindustryguides.com. Full.",
+      "security": "not known yet",
+      "login": "cr**@gmail.com"
+    },
+    {
+      "id": "resend-westpeek",
+      "service": "Resend (account 3)",
+      "owner": "wpv-inbox",
+      "business": "west-peek",
+      "repos": [
+        "west-peek-os",
+        "westpeek-live",
+        "join-west-peek-main",
+        "topbarz-voting"
+      ],
+      "vault_keys": [
+        "RESEND_ADMIN__SEQUOIA_WESTPEEK_VENTURES",
+        "RESEND_API_KEY",
+        "WP_FORMS_RESEND_API_KEY",
+        "WP_RESEND_WESTPEEK_TEAM_API_KEY",
+        "T2R_RESEND_ADMIN_KEY",
+        "WESTPEEK_RESEND_ADMIN_KEY"
+      ],
+      "used_by": "Sends as joinwestpeek.com, westpeek.ventures and events.westpeek.live. Full.",
+      "security": "not known yet",
+      "login": "se**@westpeek.ventures"
+    },
+    {
+      "id": "resend-t2r",
+      "service": "Resend (account 4)",
+      "owner": "t2r-inbox",
+      "business": "spry",
+      "repos": [
+        "approvalprep",
+        "keepmyproof"
+      ],
+      "vault_keys": [
+        "RESEND_ADMIN__ST_TIME2READ",
+        "RESEND_SEND__APPROVALPREP",
+        "APPROVALPREP_RESEND_SEND_KEY",
+        "RESEND_SEND__KEEPMYPROOF"
+      ],
+      "used_by": "Sends as mail.approvalprep.com; mail.keepmyproof.com is ready; one slot held.",
+      "security": "not known yet",
+      "login": "st**@time-2-read.com"
+    },
+    {
+      "id": "resend-sheila",
+      "service": "Resend (Sheila's)",
+      "owner": "friend",
+      "business": "friends",
+      "repos": [
+        "creator-studios"
+      ],
+      "vault_keys": [
+        "RESEND_SHEILA_API_KEY"
+      ],
+      "used_by": "Sheila's studio mail.",
+      "security": "not known yet"
+    },
+    {
+      "id": "stripe-approvalprep",
+      "service": "Stripe (ApprovalPrep)",
+      "owner": "unknown",
+      "business": "spry",
+      "repos": [
+        "approvalprep"
+      ],
+      "vault_keys": [
+        "STRIPE_APPROVALPREP_LIVE_PUBLISHABLE",
+        "STRIPE_APPROVALPREP_LIVE_SECRET",
+        "STRIPE_APPROVALPREP_LIVE_WEBHOOK_ENDPOINT_ID",
+        "STRIPE_APPROVALPREP_LIVE_WEBHOOK_SECRET",
+        "STRIPE_APPROVALPREP_TEST_PUBLISHABLE",
+        "STRIPE_APPROVALPREP_TEST_SECRET",
+        "STRIPE_APPROVALPREP_TEST_WEBHOOK_ENDPOINT_ID",
+        "STRIPE_APPROVALPREP_TEST_WEBHOOK_SECRET"
+      ],
+      "used_by": "ApprovalPrep checkout.",
+      "security": "not known yet",
+      "login": "not known yet"
+    },
+    {
+      "id": "stripe-industry-guides",
+      "service": "Stripe (Industry Guides)",
+      "owner": "unknown",
+      "business": "spry",
+      "repos": [
+        "local-guides-generator",
+        "dream-wedding-builder"
+      ],
+      "vault_keys": [
+        "STRIPE_INDUSTRY_GUIDES_LIVE_PUBLISHABLE",
+        "STRIPE_INDUSTRY_GUIDES_LIVE_SECRET",
+        "STRIPE_INDUSTRY_GUIDES_TEST_PUBLISHABLE",
+        "STRIPE_INDUSTRY_GUIDES_WEBHOOK_SECRET"
+      ],
+      "used_by": "The guides' and Dream Wedding's checkout.",
+      "security": "not known yet",
+      "login": "not known yet"
+    },
+    {
+      "id": "stripe-t2r",
+      "service": "Stripe (Time-2-Read)",
+      "owner": "unknown",
+      "business": "time-2-read",
+      "repos": [
+        "dailystory",
+        "boss-os"
+      ],
+      "vault_keys": [
+        "T2R_STRIPE_TEST_SECRET_KEY"
+      ],
+      "used_by": "Time-2-Read subscriptions (only a test-mode key is in the vault).",
+      "security": "not known yet",
+      "login": "not known yet"
+    },
+    {
+      "id": "kdp",
+      "service": "Amazon KDP",
+      "owner": "kdp-login",
+      "business": "spry",
+      "repos": [
+        "boss-os"
+      ],
+      "vault_keys": [
+        "KDP_ACCOUNT_EMAIL",
+        "KDP_ACCOUNT_PASSWORD"
+      ],
+      "used_by": "Simone publishes approved Kindle titles and signs in for you.",
+      "security": "not known yet",
+      "login": "se**@gmail.com"
+    },
+    {
+      "id": "squarespace-domains",
+      "service": "Squarespace Domains",
+      "owner": "unknown",
+      "business": "personal",
+      "repos": [
+        "outside"
+      ],
+      "vault_keys": [],
+      "used_by": "Registrar for time-2-read.com, heygetonmylevel.com, sequoiataylor.com, westpeek.ventures and 6 more.",
+      "security": "not known yet",
+      "login": "not known yet"
+    },
+    {
+      "id": "namecheap",
+      "service": "Namecheap",
+      "owner": "unknown",
+      "business": "spry",
+      "repos": [
+        "outside"
+      ],
+      "vault_keys": [],
+      "used_by": "Registrar for 31 guide domains (most only forward).",
+      "security": "not known yet",
+      "login": "not known yet"
+    },
+    {
+      "id": "godaddy",
+      "service": "GoDaddy",
+      "owner": "unknown",
+      "business": "personal",
+      "repos": [
+        "outside"
+      ],
+      "vault_keys": [],
+      "used_by": "Registrar for scootertaylor.com.",
+      "security": "not known yet",
+      "login": "not known yet"
+    },
+    {
+      "id": "lovable",
+      "service": "Lovable",
+      "owner": "unknown",
+      "business": "time-2-read",
+      "repos": [
+        "dailystory",
+        "heygetonmylevel"
+      ],
+      "vault_keys": [],
+      "used_by": "Builds and publishes the Time-2-Read app and heygetonmylevel.com.",
+      "security": "not known yet",
+      "login": "not known yet"
+    },
+    {
+      "id": "supabase",
+      "service": "Supabase",
+      "owner": "unknown",
+      "business": "time-2-read",
+      "repos": [
+        "dailystory"
+      ],
+      "vault_keys": [
+        "DAILYSTORY_SUPABASE_SERVICE_ROLE_KEY"
+      ],
+      "used_by": "The Time-2-Read database and sign-ins.",
+      "security": "not known yet",
+      "login": "not known yet"
+    },
+    {
+      "id": "wordpress-libraries",
+      "service": "WordPress.com (the libraries)",
+      "owner": "library-inbox",
+      "business": "spry",
+      "repos": [
+        "authority-backlink-network"
+      ],
+      "vault_keys": [
+        "WPCOM_FOUNDER_ACCESS_TOKEN",
+        "WPCOM_FOUNDER_CLIENT_ID",
+        "WPCOM_FOUNDER_CLIENT_SECRET"
+      ],
+      "used_by": "One account posts to all three library blogs (decided 8 Nov 2026).",
+      "security": "not known yet",
+      "login": "he**@founderoperatorlibrary.com"
+    },
+    {
+      "id": "wordpress-kmp",
+      "service": "WordPress.com (KeepMyProof)",
+      "owner": "unknown",
+      "business": "spry",
+      "repos": [
+        "keepmyproof"
+      ],
+      "vault_keys": [
+        "KMP_WPCOM_ACCESS_TOKEN",
+        "KMP_WPCOM_CLIENT_ID",
+        "KMP_WPCOM_CLIENT_SECRET"
+      ],
+      "used_by": "Posts KeepMyProof guide copies to keepmyproof.wordpress.com.",
+      "security": "not known yet",
+      "login": "not known yet"
+    },
+    {
+      "id": "blogger-kmp",
+      "service": "Blogger (KeepMyProof)",
+      "owner": "t2r-inbox",
+      "business": "spry",
+      "repos": [
+        "keepmyproof"
+      ],
+      "vault_keys": [],
+      "used_by": "keepmyproof.blogspot.com; moved off your personal Google on 8 Nov 2026 (its keys sit on the Google sign-in apps row).",
+      "security": "not known yet",
+      "login": "st**@time-2-read.com"
+    },
+    {
+      "id": "bluesky-libraries",
+      "service": "Bluesky (three library accounts)",
+      "owner": "library-own",
+      "business": "spry",
+      "repos": [
+        "authority-backlink-network"
+      ],
+      "vault_keys": [
+        "BLUESKY_FOUNDER_APP_PASSWORD",
+        "BLUESKY_MEMPHIS_APP_PASSWORD",
+        "BLUESKY_PROFESSIONAL_APP_PASSWORD"
+      ],
+      "used_by": "Each library posts to its own Bluesky account.",
+      "security": "not known yet",
+      "login": "he**@founderoperatorlibrary.com, he**@memphisvendorlibrary.com, he**@professionalresourcelibrary.com"
+    },
+    {
+      "id": "buffer-pnp",
+      "service": "Buffer (Porch & Party)",
+      "owner": "google-personal",
+      "business": "porch-and-party",
+      "repos": [
+        "p-n-p"
+      ],
+      "vault_keys": [
+        "BUFFER_ACCESS_TOKEN"
+      ],
+      "used_by": "P&P Studio posts to TikTok, Instagram and the Facebook page (free plan, 3 of 3).",
+      "security": "not known yet",
+      "move_to_brand": "Better on a brand address: every social and blog account sits under its own site's or brand's address (your ruling, 8 Nov 2026).",
+      "login": "se**@gmail.com"
+    },
+    {
+      "id": "buffer-brands",
+      "service": "Buffer (brands)",
+      "owner": "google-second",
+      "business": "spry",
+      "repos": [
+        "outside"
+      ],
+      "vault_keys": [],
+      "used_by": "Dream Wedding TikTok and Instagram, ApprovalPrep Instagram (free plan, 3 of 3).",
+      "security": "not known yet",
+      "move_to_brand": "Better on a brand address: every social and blog account sits under its own site's or brand's address (your ruling, 8 Nov 2026).",
+      "login": "se**@gmail.com"
+    },
+    {
+      "id": "buffer-creators",
+      "service": "Buffer (the four creators)",
+      "owner": "unknown",
+      "business": "spry",
+      "repos": [
+        "boss-os"
+      ],
+      "vault_keys": [
+        "BUFFER_API_KEY_CAMILLE_ROSE",
+        "BUFFER_API_KEY_MARCUS_VALE",
+        "BUFFER_API_KEY_MAYA_REYES",
+        "BUFFER_API_KEY_NIA_BROOKS"
+      ],
+      "used_by": "One Buffer per creator persona, never merged; waits on their social accounts.",
+      "security": "not known yet",
+      "login": "not known yet"
+    },
+    {
+      "id": "pinterest",
+      "service": "Pinterest (one login, three business accounts)",
+      "owner": "unknown",
+      "business": "spry",
+      "repos": [
+        "outside"
+      ],
+      "vault_keys": [],
+      "used_by": "Wedding Checklist PDF, ApprovalPrep and A Player Mode pin feeds (3 pins a day each).",
+      "security": "not known yet",
+      "login": "not known yet"
+    },
+    {
+      "id": "youtube-howweknow",
+      "service": "YouTube (How We Know)",
+      "owner": "unknown",
+      "business": "spry",
+      "repos": [
+        "how-we-know"
+      ],
+      "vault_keys": [],
+      "used_by": "The @howweknowdeep channel's uploads.",
+      "security": "not known yet",
+      "login": "not known yet"
+    },
+    {
+      "id": "youtube-whisper",
+      "service": "YouTube (Whisper Almanac)",
+      "owner": "unknown",
+      "business": "spry",
+      "repos": [
+        "how-we-know"
+      ],
+      "vault_keys": [],
+      "used_by": "The @whisperalmanac channel (live, no uploads yet).",
+      "security": "not known yet",
+      "login": "not known yet"
+    },
+    {
+      "id": "youtube-sheila",
+      "service": "YouTube (Sheila's key)",
+      "owner": "friend",
+      "business": "friends",
+      "repos": [
+        "creator-studios"
+      ],
+      "vault_keys": [
+        "YOUTUBE_SHEILA_API_KEY",
+        "GOOGLE_SHEILA_OAUTH_CLIENT_SECRET"
+      ],
+      "used_by": "Sheila's studio reads her channel and signs in to her Google.",
+      "security": "not known yet"
+    },
+    {
+      "id": "openai",
+      "service": "OpenAI (ChatGPT plan and Codex)",
+      "owner": "unknown",
+      "business": "personal",
+      "repos": [
+        "boss-os",
+        "seq-bin"
+      ],
+      "vault_keys": [
+        "OPENAI_API_KEY"
+      ],
+      "used_by": "Codex is the default worker on your ChatGPT plan; the paid API is off (4 Nov 2026).",
+      "security": "not known yet",
+      "login": "not known yet"
+    },
+    {
+      "id": "anthropic",
+      "service": "Anthropic (Claude)",
+      "owner": "unknown",
+      "business": "personal",
+      "repos": [
+        "boss-os"
+      ],
+      "vault_keys": [
+        "ANTHROPIC_API_KEY"
+      ],
+      "used_by": "Claude plans, reviews and writes the brains.",
+      "security": "not known yet",
+      "login": "not known yet"
+    },
+    {
+      "id": "gemini",
+      "service": "Google AI Studio (Gemini, free)",
+      "owner": "unknown",
+      "business": "personal",
+      "repos": [
+        "boss-os",
+        "dailystory",
+        "west-peek-os"
+      ],
+      "vault_keys": [
+        "GEMINI_API_KEY",
+        "T2R_GEMINI_API_KEY",
+        "WP_GEMINI_API_KEY"
+      ],
+      "used_by": "The free model route first in every app (20 grounded requests a day).",
+      "security": "not known yet",
+      "login": "not known yet"
+    },
+    {
+      "id": "openrouter",
+      "service": "OpenRouter",
+      "owner": "unknown",
+      "business": "personal",
+      "repos": [
+        "boss-os",
+        "dailystory",
+        "creator-studios"
+      ],
+      "vault_keys": [
+        "OPENROUTER_API_KEY",
+        "T2R_OPENROUTER_API_KEY"
+      ],
+      "used_by": "The second free model route.",
+      "security": "not known yet",
+      "login": "not known yet"
+    },
+    {
+      "id": "appetize",
+      "service": "Appetize",
+      "owner": "unknown",
+      "business": "spry",
+      "repos": [
+        "keepmyproof"
+      ],
+      "vault_keys": [
+        "APPETIZE_API_TOKEN"
+      ],
+      "used_by": "Your last tap-through of an app before a store submission (agents never spend its minutes).",
+      "security": "not known yet",
+      "login": "not known yet"
+    },
+    {
+      "id": "neverbounce",
+      "service": "NeverBounce",
+      "owner": "unknown",
+      "business": "brokerage",
+      "repos": [
+        "boss-os"
+      ],
+      "vault_keys": [
+        "NEVERBOUNCE_API_KEY"
+      ],
+      "used_by": "Checks every address before a first outreach email.",
+      "security": "not known yet",
+      "login": "not known yet"
+    },
+    {
+      "id": "eightraise-personal",
+      "service": "8Raise (account 1)",
+      "owner": "google-personal",
+      "business": "brokerage",
+      "repos": [
+        "boss-os"
+      ],
+      "vault_keys": [
+        "EIGHTRAISE_SEQ_TAYLOR_API_KEY"
+      ],
+      "used_by": "Investor search for the brokerage.",
+      "security": "not known yet",
+      "login": "se**@gmail.com"
+    },
+    {
+      "id": "eightraise-guides",
+      "service": "8Raise (account 2)",
+      "owner": "google-guides",
+      "business": "brokerage",
+      "repos": [
+        "boss-os"
+      ],
+      "vault_keys": [
+        "EIGHTRAISE_CRYPTOCLEARR_API_KEY"
+      ],
+      "used_by": "Investor search.",
+      "security": "not known yet",
+      "login": "cr**@gmail.com"
+    },
+    {
+      "id": "eightraise-t2r",
+      "service": "8Raise (account 3)",
+      "owner": "t2r-inbox",
+      "business": "brokerage",
+      "repos": [
+        "boss-os"
+      ],
+      "vault_keys": [
+        "EIGHTRAISE_TIME_2_READ_API_KEY"
+      ],
+      "used_by": "Investor search.",
+      "security": "not known yet",
+      "login": "st**@time-2-read.com"
+    },
+    {
+      "id": "eightraise-wpv",
+      "service": "8Raise (account 4)",
+      "owner": "wpv-inbox",
+      "business": "west-peek-ventures",
+      "repos": [
+        "boss-os"
+      ],
+      "vault_keys": [
+        "EIGHTRAISE_WESTPEEK_API_KEY"
+      ],
+      "used_by": "LP search for the fund.",
+      "security": "not known yet",
+      "login": "se**@westpeek.ventures"
+    },
+    {
+      "id": "gumroad",
+      "service": "Gumroad",
+      "owner": "unknown",
+      "business": "spry",
+      "repos": [
+        "boss-os",
+        "sprylabs-hpc-site"
+      ],
+      "vault_keys": [
+        "GUMROAD_ACCESS_TOKEN",
+        "GUMROAD_APP_ID",
+        "GUMROAD_APP_SECRET"
+      ],
+      "used_by": "Sells A Player Mode's BHPC and the digital products.",
+      "security": "not known yet",
+      "login": "not known yet"
+    },
+    {
+      "id": "revenuecat",
+      "service": "RevenueCat",
+      "owner": "unknown",
+      "business": "spry",
+      "repos": [
+        "keepmyproof",
+        "aplayer-mode"
+      ],
+      "vault_keys": [
+        "REVENUECAT_KMP_ANDROID_PUBLIC_KEY",
+        "REVENUECAT_KMP_TEST_PUBLIC_KEY",
+        "REVENUECAT_KMP_V2_SECRET_KEY",
+        "REVENUECAT_V2_SECRET_KEY"
+      ],
+      "used_by": "In-app purchases for KeepMyProof (and the A Player Mode app).",
+      "security": "not known yet",
+      "login": "not known yet"
+    },
+    {
+      "id": "apple-developer",
+      "service": "Apple Developer (individual)",
+      "owner": "unknown",
+      "business": "spry",
+      "repos": [
+        "keepmyproof",
+        "aplayer-mode"
+      ],
+      "vault_keys": [],
+      "used_by": "Your apps' App Store account ($99 a year, in your name for now).",
+      "security": "not known yet",
+      "login": "not known yet"
+    },
+    {
+      "id": "google-play",
+      "service": "Google Play Console (individual)",
+      "owner": "unknown",
+      "business": "spry",
+      "repos": [
+        "keepmyproof",
+        "aplayer-mode"
+      ],
+      "vault_keys": [],
+      "used_by": "Your apps' Play Store account (paid $25, in your name for now).",
+      "security": "not known yet",
+      "login": "not known yet"
+    },
+    {
+      "id": "expo",
+      "service": "Expo (EAS builds)",
+      "owner": "unknown",
+      "business": "spry",
+      "repos": [
+        "keepmyproof",
+        "aplayer-mode"
+      ],
+      "vault_keys": [],
+      "used_by": "Builds the phone apps in the cloud.",
+      "security": "not known yet",
+      "login": "not known yet"
+    },
+    {
+      "id": "ahrefs",
+      "service": "Ahrefs",
+      "owner": "unknown",
+      "business": "spry",
+      "repos": [
+        "boss-os"
+      ],
+      "vault_keys": [],
+      "used_by": "One account only; its site audits feed Danielle's weekly repair run.",
+      "security": "not known yet",
+      "login": "not known yet"
+    },
+    {
+      "id": "bing-webmaster",
+      "service": "Bing Webmaster Tools",
+      "owner": "unknown",
+      "business": "spry",
+      "repos": [
+        "boss-os"
+      ],
+      "vault_keys": [
+        "BING_WEBMASTER_API_KEY"
+      ],
+      "used_by": "Bing indexing for the sites.",
+      "security": "not known yet",
+      "login": "not known yet"
+    },
+    {
+      "id": "openseo",
+      "service": "OpenSEO / DataForSEO",
+      "owner": "unknown",
+      "business": "spry",
+      "repos": [
+        "outside"
+      ],
+      "vault_keys": [],
+      "used_by": "Keyword and search research credits.",
+      "security": "not known yet",
+      "login": "not known yet"
+    },
+    {
+      "id": "elevenlabs",
+      "service": "ElevenLabs",
+      "owner": "unknown",
+      "business": "spry",
+      "repos": [
+        "how-we-know",
+        "boss-os"
+      ],
+      "vault_keys": [
+        "ELEVENLABS_API_KEY"
+      ],
+      "used_by": "Voice (paid voice is off for new channels).",
+      "security": "not known yet",
+      "login": "not known yet"
+    },
+    {
+      "id": "heygen",
+      "service": "HeyGen",
+      "owner": "unknown",
+      "business": "spry",
+      "repos": [
+        "boss-os"
+      ],
+      "vault_keys": [
+        "HEYGEN_API_KEY"
+      ],
+      "used_by": "Video avatars (no AI avatars for the brands).",
+      "security": "not known yet",
+      "login": "not known yet"
+    },
+    {
+      "id": "fish-audio",
+      "service": "Fish Audio",
+      "owner": "unknown",
+      "business": "spry",
+      "repos": [
+        "how-we-know"
+      ],
+      "vault_keys": [
+        "FISH_API_KEY"
+      ],
+      "used_by": "Voice.",
+      "security": "not known yet",
+      "login": "not known yet"
+    },
+    {
+      "id": "runway",
+      "service": "Runway",
+      "owner": "unknown",
+      "business": "spry",
+      "repos": [
+        "boss-os"
+      ],
+      "vault_keys": [
+        "RUNWAY_API_KEY"
+      ],
+      "used_by": "Video generation.",
+      "security": "not known yet",
+      "login": "not known yet"
+    },
+    {
+      "id": "runware",
+      "service": "Runware",
+      "owner": "unknown",
+      "business": "time-2-read",
+      "repos": [
+        "dailystory"
+      ],
+      "vault_keys": [
+        "RUNWARE_API_KEY"
+      ],
+      "used_by": "Story pictures for Time-2-Read.",
+      "security": "not known yet",
+      "login": "not known yet"
+    },
+    {
+      "id": "huggingface",
+      "service": "Hugging Face",
+      "owner": "unknown",
+      "business": "spry",
+      "repos": [
+        "how-we-know"
+      ],
+      "vault_keys": [
+        "HUGGINGFACE_TOKEN"
+      ],
+      "used_by": "Downloads the free voice models.",
+      "security": "not known yet",
+      "login": "not known yet"
+    },
+    {
+      "id": "perplexity",
+      "service": "Perplexity",
+      "owner": "unknown",
+      "business": "personal",
+      "repos": [
+        "boss-os"
+      ],
+      "vault_keys": [
+        "PERPLEXITY_API_KEY"
+      ],
+      "used_by": "Research.",
+      "security": "not known yet",
+      "login": "not known yet"
+    },
+    {
+      "id": "brave-search",
+      "service": "Brave Search",
+      "owner": "unknown",
+      "business": "personal",
+      "repos": [
+        "boss-os"
+      ],
+      "vault_keys": [
+        "BRAVE_SEARCH_API_KEY"
+      ],
+      "used_by": "Web search for research jobs.",
+      "security": "not known yet",
+      "login": "not known yet"
+    },
+    {
+      "id": "firecrawl",
+      "service": "Firecrawl",
+      "owner": "unknown",
+      "business": "personal",
+      "repos": [
+        "boss-os"
+      ],
+      "vault_keys": [
+        "FIRECRAWL_SEQ_API_KEY"
+      ],
+      "used_by": "Reads web pages for research.",
+      "security": "not known yet",
+      "login": "not known yet"
+    },
+    {
+      "id": "hunter-sheila",
+      "service": "Hunter (Sheila's)",
+      "owner": "friend",
+      "business": "friends",
+      "repos": [
+        "creator-studios"
+      ],
+      "vault_keys": [
+        "HUNTER_SHEILA_API_KEY"
+      ],
+      "used_by": "Sheila's studio finds contact addresses.",
+      "security": "not known yet"
+    },
+    {
+      "id": "airtable",
+      "service": "Airtable",
+      "owner": "unknown",
+      "business": "spry",
+      "repos": [
+        "local-guides-generator"
+      ],
+      "vault_keys": [
+        "AIRTABLE_LKG_LEADS_TOKEN"
+      ],
+      "used_by": "The guides' lead table.",
+      "security": "not known yet",
+      "login": "not known yet"
+    },
+    {
+      "id": "livekit",
+      "service": "LiveKit",
+      "owner": "unknown",
+      "business": "west-peek",
+      "repos": [
+        "westpeek-live"
+      ],
+      "vault_keys": [
+        "LIVEKIT_WESTPEEK_LIVE_API_KEY",
+        "LIVEKIT_WESTPEEK_LIVE_API_SECRET",
+        "LIVEKIT_WESTPEEK_LIVE_WEBHOOK_SECRET"
+      ],
+      "used_by": "Live rooms for westpeek.live (Build plan, $0).",
+      "security": "not known yet",
+      "login": "not known yet"
+    },
+    {
+      "id": "zoom",
+      "service": "Zoom",
+      "owner": "unknown",
+      "business": "west-peek",
+      "repos": [
+        "westpeek-live"
+      ],
+      "vault_keys": [
+        "ZOOM_WESTPEEK_LIVE_SDK_KEY",
+        "ZOOM_WESTPEEK_LIVE_SDK_SECRET"
+      ],
+      "used_by": "Zoom inside westpeek.live (Basic plan).",
+      "security": "not known yet",
+      "login": "not known yet"
+    },
+    {
+      "id": "daily",
+      "service": "Daily (video)",
+      "owner": "unknown",
+      "business": "west-peek",
+      "repos": [
+        "westpeek-live"
+      ],
+      "vault_keys": [
+        "DAILY_WESTPEEK_LIVE_API_KEY"
+      ],
+      "used_by": "Video rooms for westpeek.live.",
+      "security": "not known yet",
+      "login": "not known yet"
+    },
+    {
+      "id": "sos-mailbox",
+      "service": "An IMAP mailbox (SOS)",
+      "owner": "unknown",
+      "business": "personal",
+      "repos": [
+        "boss-os"
+      ],
+      "vault_keys": [
+        "SOS_IMAP_PASSWORD"
+      ],
+      "used_by": "A mailbox Boss OS reads; which one is not known yet.",
+      "security": "not known yet",
+      "login": "not known yet"
+    }
+  ],
+  "internal_keys": [
+    {
+      "pattern": "^BOSS_(PASSCODE|OPEN_LOOPS_TOKEN|OS_SECRET_HANDOFF_KEY)$",
+      "why": "Boss OS's own passcode and machine tokens."
+    },
+    {
+      "pattern": "^WP_OS_",
+      "why": "West Peek OS's own Access and session secrets."
+    },
+    {
+      "pattern": "^WESTPEEK_LIVE_",
+      "why": "westpeek.live's own access codes and passwords."
+    },
+    {
+      "pattern": "^WP_FORMS_",
+      "why": "The West Peek forms mailer's own secrets and alarm settings."
+    },
+    {
+      "pattern": "^WP_NETWORK_OS_(GOOGLE_SHEET_ID|INTAKE_SECRET)$",
+      "why": "The network app's sheet id and intake secret."
+    },
+    {
+      "pattern": "^(CYNTHIA_DDS|SHEILA_BRUCE|JUSTBEINGMERCEDES)_",
+      "why": "A friend's site's own admin password or session secret."
+    },
+    {
+      "pattern": "^APPROVALPREP_(ADMIN_GATE_PASSWORD|NURTURE_SECRET)$",
+      "why": "ApprovalPrep's own admin gate and nurture secret."
+    },
+    {
+      "pattern": "^PITCH_LAB_(ADMIN_TOKEN|RENDER_SIGNING_SECRET)$",
+      "why": "Pitch Lab's own admin token and signing secret."
+    },
+    {
+      "pattern": "^PNP_(MAILER_SECRET|OWNER_FEED_TOKEN)$",
+      "why": "Porch & Party's own mailer secret and feed token."
+    },
+    {
+      "pattern": "^(CREATOR_STATE_API_TOKEN|SENIOR_TICK_TOKEN|INDEXNOW_SPRYLABS_HPC_KEY|DWB_AI_DRAFT_ENABLED)$",
+      "why": "A token or switch one of your own apps made."
+    }
+  ]
+}

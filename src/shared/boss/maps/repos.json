@@ -1,0 +1,336 @@
+{
+  "_note": "THE REPOS MAP, the front door of the maps (owner, 8 Nov 2026: \"do all the maps we maybe missing\"; read in this order: Repos, Domains, Sites, Accounts, Emails, Social, Schedule). One row per GitHub repo, with its category and business. The categories follow the personal brain's Repo categories (the ONE list). Every other map joins on these keys: `repo` (a row here, or \"outside\" for something no repo holds), `business` (a brain slug) and `domain` (a Domains map row). A new repo goes here in the same PR. Public repo: no email address, no login name, no person's private details.",
+  "categories": {
+    "mine": "Your businesses",
+    "friends": "Friends' sites and studios",
+    "system": "The system",
+    "parked": "Parked",
+    "retired": "Retired"
+  },
+  "businesses": {
+    "brokerage": "Brokerage (Spry Ventures)",
+    "west-peek-ventures": "West Peek Ventures (the fund)",
+    "west-peek": "West Peek (the community)",
+    "porch-and-party": "Porch & Party",
+    "time-2-read": "Time-2-Read",
+    "spry": "Spry Labs",
+    "friends": "Friends' businesses",
+    "personal": "You and the system"
+  },
+  "outside": "Outside any repo: a login or a domain no code of yours holds.",
+  "rows": [
+    {
+      "repo": "spry-vc",
+      "label": "Spry Ventures site",
+      "category": "mine",
+      "business": "brokerage",
+      "what": "The old brokerage page at spryvc.com."
+    },
+    {
+      "repo": "secondaries",
+      "label": "Venture deals",
+      "category": "mine",
+      "business": "brokerage",
+      "what": "The secondaries deal room at venturedeals.joinwestpeek.com."
+    },
+    {
+      "repo": "west-peek-os",
+      "label": "West Peek OS",
+      "category": "mine",
+      "business": "west-peek-ventures",
+      "what": "The fund's operating system (Porter) at os.joinwestpeek.com, and West Peek's jobs."
+    },
+    {
+      "repo": "founder-dilution-dashboard",
+      "label": "Founder dilution dashboard",
+      "category": "mine",
+      "business": "west-peek-ventures",
+      "what": "The dilution calculator at dilution.joinwestpeek.com."
+    },
+    {
+      "repo": "westpeek-live",
+      "label": "westpeek.live",
+      "category": "mine",
+      "business": "west-peek",
+      "what": "Rooms & TLC live events: westpeek.live and its app."
+    },
+    {
+      "repo": "join-west-peek-main",
+      "label": "West Peek sites",
+      "category": "mine",
+      "business": "west-peek",
+      "what": "joinwestpeek.com, the productions site and the West Peek Ventures site."
+    },
+    {
+      "repo": "west-peek-network-os",
+      "label": "West Peek Network",
+      "category": "mine",
+      "business": "west-peek",
+      "what": "The network app at network.joinwestpeek.com."
+    },
+    {
+      "repo": "west-peek-pitch-lab",
+      "label": "Pitch Lab",
+      "category": "mine",
+      "business": "west-peek",
+      "what": "Pitch Lab at pitch.joinwestpeek.com."
+    },
+    {
+      "repo": "p-n-p",
+      "label": "Porch & Party",
+      "category": "mine",
+      "business": "porch-and-party",
+      "what": "porchandparty901.com, its admin, quotes and P&P Studio."
+    },
+    {
+      "repo": "dailystory",
+      "label": "Time-2-Read app",
+      "category": "mine",
+      "business": "time-2-read",
+      "what": "The Time-2-Read reading app (built in Lovable) and its guides site."
+    },
+    {
+      "repo": "heygetonmylevel",
+      "label": "heygetonmylevel",
+      "category": "mine",
+      "business": "time-2-read",
+      "what": "heygetonmylevel.com (Lovable) and its learn site."
+    },
+    {
+      "repo": "local-guides-generator",
+      "label": "The six guide sites",
+      "category": "mine",
+      "business": "spry",
+      "what": "The Industry Guides' six guide sites and the old guide domains' redirects."
+    },
+    {
+      "repo": "local-guides-citation-velocity",
+      "label": "The Industry Guides hub",
+      "category": "mine",
+      "business": "spry",
+      "what": "theindustryguides.com, the hub for the six guides."
+    },
+    {
+      "repo": "approvalprep",
+      "label": "ApprovalPrep",
+      "category": "mine",
+      "business": "spry",
+      "what": "approvalprep.com and its two letter sites."
+    },
+    {
+      "repo": "dream-wedding-builder",
+      "label": "Dream Wedding",
+      "category": "mine",
+      "business": "spry",
+      "what": "weddingchecklistpdf.com, its three tool sites and the Builder."
+    },
+    {
+      "repo": "sprylabs-hpc-site",
+      "label": "A Player Mode sites",
+      "category": "mine",
+      "business": "spry",
+      "what": "aplayermode.com and billionairehighperformancecoach.com."
+    },
+    {
+      "repo": "aplayer-mode",
+      "label": "A Player Mode app",
+      "category": "mine",
+      "business": "spry",
+      "what": "The A Player Mode app and its API (app. and api.aplayermode.com)."
+    },
+    {
+      "repo": "how-we-know",
+      "label": "How We Know",
+      "category": "mine",
+      "business": "spry",
+      "what": "The How We Know YouTube lanes and howweknowdeep.com."
+    },
+    {
+      "repo": "keepmyproof",
+      "label": "KeepMyProof",
+      "category": "mine",
+      "business": "spry",
+      "what": "keepmyproof.com, the app, and its blog copies."
+    },
+    {
+      "repo": "authority-backlink-network",
+      "label": "The three libraries",
+      "category": "mine",
+      "business": "spry",
+      "what": "The three library sites (a support system for your sites)."
+    },
+    {
+      "repo": "creator-network",
+      "label": "Creator network",
+      "category": "mine",
+      "business": "spry",
+      "what": "On standby since 5 Nov 2026."
+    },
+    {
+      "repo": "creator-studios",
+      "label": "Creator studios",
+      "category": "friends",
+      "business": "spry",
+      "what": "Every creator studio (Hadiyah, Sheila, Mercedes, Ashly, P&P Studio)."
+    },
+    {
+      "repo": "sheila-bruce",
+      "label": "Sheila Bruce studio site",
+      "category": "friends",
+      "business": "friends",
+      "what": "Sheila's studio page."
+    },
+    {
+      "repo": "sheila-creator-dashboard",
+      "label": "Sheila's old dashboard",
+      "category": "retired",
+      "business": "friends",
+      "what": "Retired: moved into Creator studios on 23 Oct 2026."
+    },
+    {
+      "repo": "justbeingmercedes",
+      "label": "Just Being Mercedes",
+      "category": "friends",
+      "business": "friends",
+      "what": "justbeingmercedes.com, Mercedes' creator site."
+    },
+    {
+      "repo": "mercedes-creator-dashboard",
+      "label": "Mercedes' old dashboard",
+      "category": "retired",
+      "business": "friends",
+      "what": "Retired: moved into Creator studios on 23 Oct 2026."
+    },
+    {
+      "repo": "horse-legal-guide-velocity",
+      "label": "Horse legal guide",
+      "category": "friends",
+      "business": "friends",
+      "what": "horselegalguide.com (Claire)."
+    },
+    {
+      "repo": "hicks-consulting-canonical",
+      "label": "Hicks Consulting",
+      "category": "friends",
+      "business": "friends",
+      "what": "hicksconsulting.org (Monika)."
+    },
+    {
+      "repo": "WPP-llm",
+      "label": "Virtual agency (WPP)",
+      "category": "friends",
+      "business": "friends",
+      "what": "virtualagency-os.com, Scooter's site for his WPP agency work."
+    },
+    {
+      "repo": "topbarz-voting",
+      "label": "Top Barz voting",
+      "category": "friends",
+      "business": "friends",
+      "what": "voting.topbarz.xyz, Scooter's voting site."
+    },
+    {
+      "repo": "cynthia-brown-dds-site",
+      "label": "Cynthia Brown DDS",
+      "category": "friends",
+      "business": "friends",
+      "what": "cynthiabrowndds.com."
+    },
+    {
+      "repo": "dianne-place-recovery-services",
+      "label": "Dianne's Place / Detox Denver",
+      "category": "friends",
+      "business": "friends",
+      "what": "detoxdenver.org."
+    },
+    {
+      "repo": "shannon-armstrong-bail-network",
+      "label": "Shannon Armstrong bail network",
+      "category": "parked",
+      "business": "personal",
+      "what": "Parked: no work until you un-park it."
+    },
+    {
+      "repo": "901johnsons-site",
+      "label": "901 Johnsons",
+      "category": "parked",
+      "business": "personal",
+      "what": "Parked: the family reunion site."
+    },
+    {
+      "repo": "charm-nest",
+      "label": "The Charm Nest",
+      "category": "parked",
+      "business": "personal",
+      "what": "Parked: thecharmnest.com."
+    },
+    {
+      "repo": "courtscope",
+      "label": "CourtScope",
+      "category": "parked",
+      "business": "personal",
+      "what": "Parked: courtscope.org."
+    },
+    {
+      "repo": "hey-scooter-taylor",
+      "label": "Hey Scooter Taylor",
+      "category": "parked",
+      "business": "personal",
+      "what": "Parked for good: your own static page."
+    },
+    {
+      "repo": "sequoiataylor",
+      "label": "sequoiataylor.com page",
+      "category": "parked",
+      "business": "personal",
+      "what": "Parked for good: the static page. The domain itself is critical (Boss OS and the team's mail)."
+    },
+    {
+      "repo": "the-hairstylista",
+      "label": "The Hairstylista",
+      "category": "parked",
+      "business": "personal",
+      "what": "Parked for good."
+    },
+    {
+      "repo": "william-hurley",
+      "label": "William Hurley",
+      "category": "parked",
+      "business": "personal",
+      "what": "Parked for good."
+    },
+    {
+      "repo": "boss-os",
+      "label": "Boss OS",
+      "category": "system",
+      "business": "personal",
+      "what": "Your dashboard, the team's emails and jobs, and the one vault."
+    },
+    {
+      "repo": "search-loop",
+      "label": "Search loop",
+      "category": "system",
+      "business": "spry",
+      "what": "The shared search engine every selling site runs."
+    },
+    {
+      "repo": "seq-bin",
+      "label": "Mac scripts",
+      "category": "system",
+      "business": "personal",
+      "what": "land, the CI sweep, backups and housekeeping on your Mac.",
+      "launchd": [
+        "com.seq.drive-backup",
+        "com.seq.mac-snapshot",
+        "com.seq.housekeeping",
+        "com.seq.disk-sweep",
+        "com.seq.ci-sweep-resume",
+        "com.seq.ci-sweep-retry",
+        "com.seq.dev-housekeeping",
+        "com.seq.scooter-watch",
+        "com.seq.scooter-watch-digest",
+        "com.seq.shorts-arm"
+      ]
+    }
+  ]
+}

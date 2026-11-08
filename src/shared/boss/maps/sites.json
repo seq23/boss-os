@@ -1,0 +1,891 @@
+{
+  "_note": "THE SITES MAP (owner, 8 Nov 2026). Every live site and app: its domain, business, repo, where it is hosted, how it ships, and its Search Readiness row. Read from both Cloudflare accounts on 8 Nov 2026; `unaddressed` and `workers_no_site` hold the projects with no address of their own. tests/infraMaps.test.ts fails when a Search Readiness site has no row or a key points at nothing. A new site goes here in the same PR. time-2-read.com stays on Squarespace for its domain (her rule); the app itself is published from Lovable.",
+  "hosts": {
+    "cloudflare-pages": "Cloudflare Pages",
+    "cloudflare-worker": "Cloudflare Workers",
+    "lovable": "Lovable",
+    "wordpress-com": "WordPress.com",
+    "blogger": "Blogger",
+    "squarespace": "Squarespace"
+  },
+  "statuses": {
+    "live": "Live",
+    "redirect": "Forwards to another site",
+    "parked": "Parked"
+  },
+  "rows": [
+    {
+      "id": "theindustryguides",
+      "name": "The Industry Guides hub",
+      "url": "https://theindustryguides.com",
+      "domain": "theindustryguides.com",
+      "business": "spry",
+      "repo": "local-guides-citation-velocity",
+      "host": "cloudflare-pages",
+      "project": "local-guides-citation-velocity",
+      "deploy": "Cloudflare Pages: ships itself on every push to main (land merges)",
+      "status": "live"
+    },
+    {
+      "id": "uscisexam",
+      "name": "USCIS medical exam guide",
+      "url": "https://uscisexam.com",
+      "domain": "uscisexam.com",
+      "business": "spry",
+      "repo": "local-guides-generator",
+      "host": "cloudflare-pages",
+      "project": "local-guides-generator-uscis-medical",
+      "deploy": "Cloudflare Pages: ships itself on every push to main (land merges)",
+      "status": "live"
+    },
+    {
+      "id": "dentistryguides",
+      "name": "Dentistry guide",
+      "url": "https://dentistryguides.com",
+      "domain": "dentistryguides.com",
+      "business": "spry",
+      "repo": "local-guides-generator",
+      "host": "cloudflare-pages",
+      "project": "local-guides-generator-dentistry",
+      "deploy": "Cloudflare Pages: ships itself on every push to main (land merges)",
+      "status": "live",
+      "aliases": [
+        "thedentistryguides.com"
+      ]
+    },
+    {
+      "id": "theaccidentguides",
+      "name": "Accident guide",
+      "url": "https://theaccidentguides.com",
+      "domain": "theaccidentguides.com",
+      "business": "spry",
+      "repo": "local-guides-generator",
+      "host": "cloudflare-pages",
+      "project": "local-guides-generator-pi",
+      "deploy": "Cloudflare Pages: ships itself on every push to main (land merges)",
+      "status": "live"
+    },
+    {
+      "id": "neuroevalguides",
+      "name": "Neuro evaluation guide",
+      "url": "https://neuroevalguides.com",
+      "domain": "neuroevalguides.com",
+      "business": "spry",
+      "repo": "local-guides-generator",
+      "host": "cloudflare-pages",
+      "project": "local-guides-generator-neuro",
+      "deploy": "Cloudflare Pages: ships itself on every push to main (land merges)",
+      "status": "live"
+    },
+    {
+      "id": "hormonesivhair",
+      "name": "Hormone, IV and hair guide",
+      "url": "https://hormonesivhair.com",
+      "domain": "hormonesivhair.com",
+      "business": "spry",
+      "repo": "local-guides-generator",
+      "host": "cloudflare-pages",
+      "project": "local-guides-generator-trt",
+      "deploy": "Cloudflare Pages: ships itself on every push to main (land merges)",
+      "status": "live"
+    },
+    {
+      "id": "memphisseniorcarehomes",
+      "name": "Memphis senior care guide",
+      "url": "https://memphisseniorcarehomes.com",
+      "domain": "memphisseniorcarehomes.com",
+      "business": "spry",
+      "repo": "local-guides-generator",
+      "host": "cloudflare-pages",
+      "project": "local-guides-generator-senior-living",
+      "deploy": "Cloudflare Pages: ships itself on every push to main (land merges)",
+      "status": "live"
+    },
+    {
+      "id": "old-guide-domains",
+      "name": "Old guide domains (they forward to the guides)",
+      "url": "https://adhdevaluationsatl.com",
+      "domain": "adhdevaluationsatl.com",
+      "business": "spry",
+      "repo": "local-guides-generator",
+      "host": "cloudflare-worker",
+      "project": "lkg-redirector",
+      "deploy": "A Worker on each old domain forwards visitors to the right guide; set up once from the guides repo's redirect runbook",
+      "status": "redirect",
+      "aliases": [
+        "adhdevaluationsatx.com",
+        "adhdevaluationschi.com",
+        "adhdevaluationssf.com",
+        "atlantauscismedical.com",
+        "autismevaluationsatl.com",
+        "autismevaluationsatx.com",
+        "autismevaluationschi.com",
+        "autismevaluationssf.com",
+        "houstonuscismedical.com",
+        "lauscismedical.com",
+        "nycuscismedical.com",
+        "phoenixaccidentguide.com",
+        "teethguides.com",
+        "thedentalguides.com",
+        "theinjuryguides.com",
+        "trtclinicsatx.com",
+        "trtclinicsdfw.com",
+        "trtclinicslosangeles.com",
+        "trtclinicsmia.com",
+        "trtclinicsscottsdale.com",
+        "ultimateguidetoaccidents.com",
+        "ultimateguidetopersonalinjury.com"
+      ]
+    },
+    {
+      "id": "porchandparty901",
+      "name": "Porch & Party",
+      "url": "https://porchandparty901.com",
+      "domain": "porchandparty901.com",
+      "business": "porch-and-party",
+      "repo": "p-n-p",
+      "host": "cloudflare-pages",
+      "project": "p-n-p",
+      "deploy": "Cloudflare Pages: ships itself on every push to main (land merges)",
+      "status": "live"
+    },
+    {
+      "id": "approvalprep",
+      "name": "ApprovalPrep",
+      "url": "https://approvalprep.com",
+      "domain": "approvalprep.com",
+      "business": "spry",
+      "repo": "approvalprep",
+      "host": "cloudflare-pages",
+      "project": "approvalprep",
+      "deploy": "Cloudflare Pages: ships itself on every push to main (land merges)",
+      "status": "live",
+      "aliases": [
+        "employmentverificationletter.com",
+        "letterofexplanation.com"
+      ]
+    },
+    {
+      "id": "weddingchecklistpdf",
+      "name": "Wedding Checklist PDF and the Builder",
+      "url": "https://weddingchecklistpdf.com",
+      "domain": "weddingchecklistpdf.com",
+      "business": "spry",
+      "repo": "dream-wedding-builder",
+      "host": "cloudflare-worker",
+      "project": "dream-wedding-builder",
+      "deploy": "Cloudflare Workers Builds: ships itself on every push to main (land merges)",
+      "status": "live",
+      "aliases": [
+        "weddingpdfchecklist.com",
+        "weddingplannerfree.com",
+        "weddingplanningtimeline.com",
+        "aiweddingplannerfree.com"
+      ]
+    },
+    {
+      "id": "weddingbudgetspreadsheet",
+      "name": "Wedding budget spreadsheet",
+      "url": "https://weddingbudgetspreadsheet.com",
+      "domain": "weddingbudgetspreadsheet.com",
+      "business": "spry",
+      "repo": "dream-wedding-builder",
+      "host": "cloudflare-worker",
+      "project": "dream-wedding-builder",
+      "deploy": "Cloudflare Workers Builds: ships itself on every push to main (land merges)",
+      "status": "live"
+    },
+    {
+      "id": "weddingseatingchartmaker",
+      "name": "Wedding seating chart maker",
+      "url": "https://weddingseatingchartmaker.com",
+      "domain": "weddingseatingchartmaker.com",
+      "business": "spry",
+      "repo": "dream-wedding-builder",
+      "host": "cloudflare-worker",
+      "project": "dream-wedding-builder",
+      "deploy": "Cloudflare Workers Builds: ships itself on every push to main (land merges)",
+      "status": "live"
+    },
+    {
+      "id": "weddingtimelinetemplate",
+      "name": "Wedding timeline template",
+      "url": "https://weddingtimelinetemplate.com",
+      "domain": "weddingtimelinetemplate.com",
+      "business": "spry",
+      "repo": "dream-wedding-builder",
+      "host": "cloudflare-worker",
+      "project": "dream-wedding-builder",
+      "deploy": "Cloudflare Workers Builds: ships itself on every push to main (land merges)",
+      "status": "live"
+    },
+    {
+      "id": "aplayermode",
+      "name": "A Player Mode",
+      "url": "https://aplayermode.com",
+      "domain": "aplayermode.com",
+      "business": "spry",
+      "repo": "sprylabs-hpc-site",
+      "host": "cloudflare-worker",
+      "project": "aplayermode-com",
+      "deploy": "A Worker in the A Player Mode sites repo; land merges, the repo ships it",
+      "status": "live"
+    },
+    {
+      "id": "aplayermode-app",
+      "name": "A Player Mode app",
+      "url": "https://app.aplayermode.com",
+      "domain": "aplayermode.com",
+      "business": "spry",
+      "repo": "aplayer-mode",
+      "host": "cloudflare-worker",
+      "project": "aplayermode-app",
+      "deploy": "land merges, then runs the app's web deploy script",
+      "status": "live"
+    },
+    {
+      "id": "aplayermode-api",
+      "name": "A Player Mode API",
+      "url": "https://api.aplayermode.com/v1/health",
+      "domain": "aplayermode.com",
+      "business": "spry",
+      "repo": "aplayer-mode",
+      "host": "cloudflare-worker",
+      "project": "aplayer-mode-api",
+      "deploy": "land merges, then runs the app's API deploy script and checks it answers",
+      "status": "live"
+    },
+    {
+      "id": "billionairehighperformancecoach",
+      "name": "Spry Labs coaching page",
+      "url": "https://billionairehighperformancecoach.com",
+      "domain": "billionairehighperformancecoach.com",
+      "business": "spry",
+      "repo": "sprylabs-hpc-site",
+      "host": "cloudflare-pages",
+      "project": "sprylabs-hpc-site",
+      "deploy": "Cloudflare Pages: ships itself on every push to main (land merges)",
+      "status": "live",
+      "aliases": [
+        "spryexecutiveos.com"
+      ]
+    },
+    {
+      "id": "time-2-read",
+      "name": "Time-2-Read",
+      "url": "https://time-2-read.com",
+      "domain": "time-2-read.com",
+      "business": "time-2-read",
+      "repo": "dailystory",
+      "host": "lovable",
+      "project": "Lovable project",
+      "deploy": "Ships when someone presses Publish in Lovable; the domain stays at Squarespace (your rule)",
+      "status": "live"
+    },
+    {
+      "id": "time-2-read-guides",
+      "name": "Time-2-Read guides",
+      "url": "https://guides.time-2-read.com",
+      "domain": "time-2-read.com",
+      "business": "time-2-read",
+      "repo": "dailystory",
+      "host": "cloudflare-pages",
+      "project": "time-2-read-guides",
+      "deploy": "Its own guides deploy workflow uploads it on push to main",
+      "status": "live"
+    },
+    {
+      "id": "heygetonmylevel",
+      "name": "heygetonmylevel",
+      "url": "https://heygetonmylevel.com",
+      "domain": "heygetonmylevel.com",
+      "business": "time-2-read",
+      "repo": "heygetonmylevel",
+      "host": "lovable",
+      "project": "Lovable project",
+      "deploy": "Ships when someone presses Publish in Lovable",
+      "status": "live"
+    },
+    {
+      "id": "heygetonmylevel-learn",
+      "name": "heygetonmylevel learn",
+      "url": "https://learn.heygetonmylevel.com",
+      "domain": "heygetonmylevel.com",
+      "business": "time-2-read",
+      "repo": "heygetonmylevel",
+      "host": "cloudflare-pages",
+      "project": "heygetonmylevel-learn",
+      "deploy": "Cloudflare Pages: ships itself on every push to main (land merges)",
+      "status": "live"
+    },
+    {
+      "id": "howweknowdeep",
+      "name": "How We Know",
+      "url": "https://howweknowdeep.com",
+      "domain": "howweknowdeep.com",
+      "business": "spry",
+      "repo": "how-we-know",
+      "host": "cloudflare-pages",
+      "project": "how-we-know",
+      "deploy": "Its own site workflow uploads it from main",
+      "status": "live"
+    },
+    {
+      "id": "keepmyproof",
+      "name": "KeepMyProof",
+      "url": "https://keepmyproof.com",
+      "domain": "keepmyproof.com",
+      "business": "spry",
+      "repo": "keepmyproof",
+      "host": "cloudflare-pages",
+      "project": "keepmyproof",
+      "deploy": "Cloudflare Pages: ships itself on every push to main (land merges)",
+      "status": "live"
+    },
+    {
+      "id": "keepmyproof-wordpress",
+      "name": "KeepMyProof on WordPress.com",
+      "url": "https://keepmyproof.wordpress.com",
+      "domain": "keepmyproof.com",
+      "business": "spry",
+      "repo": "keepmyproof",
+      "host": "wordpress-com",
+      "project": "keepmyproof.wordpress.com",
+      "deploy": "Copies posted by the KeepMyProof syndicate workflow (WordPress.com API)",
+      "status": "live"
+    },
+    {
+      "id": "keepmyproof-blogger",
+      "name": "KeepMyProof on Blogger",
+      "url": "https://keepmyproof.blogspot.com",
+      "domain": "keepmyproof.com",
+      "business": "spry",
+      "repo": "keepmyproof",
+      "host": "blogger",
+      "project": "keepmyproof.blogspot.com",
+      "deploy": "Copies posted by the KeepMyProof syndicate workflow (Blogger API)",
+      "status": "live"
+    },
+    {
+      "id": "professionalresourcelibrary",
+      "name": "Professional Resource Library",
+      "url": "https://professionalresourcelibrary.com",
+      "domain": "professionalresourcelibrary.com",
+      "business": "spry",
+      "repo": "authority-backlink-network",
+      "host": "cloudflare-pages",
+      "project": "professionalresourcelibrary",
+      "deploy": "Its own Deploy Publications workflow uploads it to the second Cloudflare account on push to main",
+      "status": "live"
+    },
+    {
+      "id": "founderoperatorlibrary",
+      "name": "Founder Operator Library",
+      "url": "https://founderoperatorlibrary.com",
+      "domain": "founderoperatorlibrary.com",
+      "business": "spry",
+      "repo": "authority-backlink-network",
+      "host": "cloudflare-pages",
+      "project": "founderoperatorlibrary",
+      "deploy": "Its own Deploy Publications workflow uploads it to the second Cloudflare account on push to main",
+      "status": "live"
+    },
+    {
+      "id": "memphisvendorlibrary",
+      "name": "Memphis Vendor Library",
+      "url": "https://memphisvendorlibrary.com",
+      "domain": "memphisvendorlibrary.com",
+      "business": "spry",
+      "repo": "authority-backlink-network",
+      "host": "cloudflare-pages",
+      "project": "memphisvendorlibrary",
+      "deploy": "Its own Deploy Publications workflow uploads it to the second Cloudflare account on push to main",
+      "status": "live"
+    },
+    {
+      "id": "professionalresourcelibrary-wp",
+      "name": "Professional Resource Library on WordPress.com",
+      "url": "https://professionalresourcelibrary.wordpress.com",
+      "domain": "professionalresourcelibrary.com",
+      "business": "spry",
+      "repo": "authority-backlink-network",
+      "host": "wordpress-com",
+      "project": "professionalresourcelibrary.wordpress.com",
+      "deploy": "Posts from the libraries' social auto-post workflow (WordPress.com API)",
+      "status": "live"
+    },
+    {
+      "id": "founderoperatorlibrary-wp",
+      "name": "Founder Operator Library on WordPress.com",
+      "url": "https://founderoperatorlibrary.wordpress.com",
+      "domain": "founderoperatorlibrary.com",
+      "business": "spry",
+      "repo": "authority-backlink-network",
+      "host": "wordpress-com",
+      "project": "founderoperatorlibrary.wordpress.com",
+      "deploy": "Posts from the libraries' social auto-post workflow (WordPress.com API)",
+      "status": "live"
+    },
+    {
+      "id": "memphisvendorlibrary-wp",
+      "name": "Memphis Vendor Library on WordPress.com",
+      "url": "https://memphisvendorlibrary.wordpress.com",
+      "domain": "memphisvendorlibrary.com",
+      "business": "spry",
+      "repo": "authority-backlink-network",
+      "host": "wordpress-com",
+      "project": "memphisvendorlibrary.wordpress.com",
+      "deploy": "Posts from the libraries' social auto-post workflow (WordPress.com API)",
+      "status": "live"
+    },
+    {
+      "id": "spryvc",
+      "name": "Spry Ventures (old page)",
+      "url": "https://spryvc.com",
+      "domain": "spryvc.com",
+      "business": "brokerage",
+      "repo": "spry-vc",
+      "host": "cloudflare-pages",
+      "project": "spry-vc",
+      "deploy": "Cloudflare Pages: ships itself on every push to main (land merges)",
+      "status": "live"
+    },
+    {
+      "id": "venturedeals",
+      "name": "Venture deals",
+      "url": "https://venturedeals.joinwestpeek.com",
+      "domain": "joinwestpeek.com",
+      "business": "brokerage",
+      "repo": "secondaries",
+      "host": "cloudflare-pages",
+      "project": "secondaries",
+      "deploy": "Main goes to a preview; land --promote moves production",
+      "status": "live"
+    },
+    {
+      "id": "west-peek-os",
+      "name": "West Peek OS",
+      "url": "https://os.joinwestpeek.com",
+      "domain": "joinwestpeek.com",
+      "business": "west-peek-ventures",
+      "repo": "west-peek-os",
+      "host": "cloudflare-worker",
+      "project": "west-peek-os",
+      "deploy": "land merges, then runs its production deploy",
+      "status": "live"
+    },
+    {
+      "id": "dilution",
+      "name": "Founder dilution dashboard",
+      "url": "https://dilution.joinwestpeek.com",
+      "domain": "joinwestpeek.com",
+      "business": "west-peek-ventures",
+      "repo": "founder-dilution-dashboard",
+      "host": "cloudflare-pages",
+      "project": "founder-dilution-dashboard",
+      "deploy": "Main goes to a preview; land --promote moves production",
+      "status": "live"
+    },
+    {
+      "id": "westpeek-ventures-site",
+      "name": "West Peek Ventures site",
+      "url": "https://westpeekventures.com",
+      "domain": "westpeek.ventures",
+      "business": "west-peek-ventures",
+      "repo": "join-west-peek-main",
+      "host": "cloudflare-pages",
+      "project": "west-peek-ventures",
+      "deploy": "Cloudflare Pages: ships itself on every push to main (land merges)",
+      "status": "live",
+      "aliases": [
+        "westpeekventures.com",
+        "ventures.joinwestpeek.com",
+        "ventures.westpeek.co"
+      ]
+    },
+    {
+      "id": "joinwestpeek",
+      "name": "West Peek",
+      "url": "https://joinwestpeek.com",
+      "domain": "joinwestpeek.com",
+      "business": "west-peek",
+      "repo": "join-west-peek-main",
+      "host": "cloudflare-pages",
+      "project": "west-peek-community",
+      "deploy": "Cloudflare Pages: ships itself on every push to main (land merges)",
+      "status": "live",
+      "aliases": [
+        "westpeek.co"
+      ]
+    },
+    {
+      "id": "westpeek-productions",
+      "name": "West Peek Productions",
+      "url": "https://westpeekproductions.com",
+      "domain": "westpeekproductions.com",
+      "business": "west-peek",
+      "repo": "join-west-peek-main",
+      "host": "cloudflare-pages",
+      "project": "west-peek-productions",
+      "deploy": "Cloudflare Pages: ships itself on every push to main (land merges)",
+      "status": "live",
+      "aliases": [
+        "westpeek-productions.com",
+        "productions.joinwestpeek.com",
+        "productions.westpeek.co"
+      ]
+    },
+    {
+      "id": "westpeek-live",
+      "name": "westpeek.live",
+      "url": "https://westpeek.live",
+      "domain": "westpeek.live",
+      "business": "west-peek",
+      "repo": "westpeek-live",
+      "host": "cloudflare-worker",
+      "project": "west-peek-live",
+      "deploy": "Its own Deploy Cloudflare Worker workflow on green main; land waits for it",
+      "status": "live"
+    },
+    {
+      "id": "network",
+      "name": "West Peek Network",
+      "url": "https://network.joinwestpeek.com",
+      "domain": "joinwestpeek.com",
+      "business": "west-peek",
+      "repo": "west-peek-network-os",
+      "host": "cloudflare-pages",
+      "project": "west-peek-network-os",
+      "deploy": "Cloudflare Pages: ships itself on every push to main (land merges)",
+      "status": "live"
+    },
+    {
+      "id": "pitch-lab",
+      "name": "Pitch Lab",
+      "url": "https://pitch.joinwestpeek.com",
+      "domain": "joinwestpeek.com",
+      "business": "west-peek",
+      "repo": "west-peek-pitch-lab",
+      "host": "cloudflare-pages",
+      "project": "west-peek-pitch-lab",
+      "deploy": "Cloudflare Pages: ships itself on every push to main (land merges)",
+      "status": "live",
+      "aliases": [
+        "pitchlab.joinwestpeek.com"
+      ]
+    },
+    {
+      "id": "boss",
+      "name": "Boss OS",
+      "url": "https://boss.sequoiataylor.com",
+      "domain": "sequoiataylor.com",
+      "business": "personal",
+      "repo": "boss-os",
+      "host": "cloudflare-worker",
+      "project": "boss-os",
+      "deploy": "land merges, then runs its production deploy",
+      "status": "live"
+    },
+    {
+      "id": "studios",
+      "name": "Creator studios",
+      "url": "https://hadiyah-studio.spryexecutiveos.com",
+      "domain": "spryexecutiveos.com",
+      "business": "spry",
+      "repo": "creator-studios",
+      "host": "cloudflare-worker",
+      "project": "hadiyahstudio",
+      "deploy": "Its own deploy workflow ships every studio on a green check on main",
+      "status": "live",
+      "aliases": [
+        "sheila-studio.spryexecutiveos.com",
+        "ashly-studio.spryexecutiveos.com",
+        "pnpstudio.spryexecutiveos.com",
+        "sample1-studio.spryexecutiveos.com",
+        "sample2-studio.spryexecutiveos.com",
+        "sample3-studio.spryexecutiveos.com",
+        "dashboard.justbeingmercedes.com"
+      ]
+    },
+    {
+      "id": "sheila-bruce",
+      "name": "Sheila Bruce studio site",
+      "url": "https://sheila-bruce.pages.dev",
+      "domain": null,
+      "business": "friends",
+      "repo": "sheila-bruce",
+      "host": "cloudflare-pages",
+      "project": "sheila-bruce",
+      "deploy": "Cloudflare Pages: ships itself on every push to main (land merges)",
+      "status": "live",
+      "no_domain_why": "It has no domain of its own yet; it lives at its free pages.dev address."
+    },
+    {
+      "id": "justbeingmercedes",
+      "name": "Just Being Mercedes",
+      "url": "https://justbeingmercedes.com",
+      "domain": "justbeingmercedes.com",
+      "business": "friends",
+      "repo": "justbeingmercedes",
+      "host": "cloudflare-pages",
+      "project": "justbeingmercedes",
+      "deploy": "Main goes to a preview; land --promote moves production",
+      "status": "live"
+    },
+    {
+      "id": "horselegalguide",
+      "name": "Horse legal guide",
+      "url": "https://horselegalguide.com",
+      "domain": "horselegalguide.com",
+      "business": "friends",
+      "repo": "horse-legal-guide-velocity",
+      "host": "cloudflare-pages",
+      "project": "horse-legal-guide-velocity",
+      "deploy": "Cloudflare Pages: ships itself on every push to main (land merges)",
+      "status": "live"
+    },
+    {
+      "id": "hicksconsulting",
+      "name": "Hicks Consulting",
+      "url": "https://hicksconsulting.org",
+      "domain": "hicksconsulting.org",
+      "business": "friends",
+      "repo": "hicks-consulting-canonical",
+      "host": "cloudflare-pages",
+      "project": "hicks-consulting-canonical",
+      "deploy": "Cloudflare Pages: ships itself on every push to main (land merges)",
+      "status": "live"
+    },
+    {
+      "id": "virtualagency-os",
+      "name": "Virtual agency (WPP)",
+      "url": "https://virtualagency-os.com",
+      "domain": "virtualagency-os.com",
+      "business": "friends",
+      "repo": "WPP-llm",
+      "host": "cloudflare-pages",
+      "project": "wpp-llm",
+      "deploy": "Cloudflare Pages: ships itself on every push to main (land merges)",
+      "status": "live"
+    },
+    {
+      "id": "topbarz-voting",
+      "name": "Top Barz voting",
+      "url": "https://voting.topbarz.xyz",
+      "domain": "topbarz.xyz",
+      "business": "friends",
+      "repo": "topbarz-voting",
+      "host": "cloudflare-pages",
+      "project": "topbarz-voting",
+      "deploy": "land merges, then runs its production deploy",
+      "status": "live"
+    },
+    {
+      "id": "cynthiabrowndds",
+      "name": "Cynthia Brown DDS",
+      "url": "https://cynthiabrowndds.com",
+      "domain": "cynthiabrowndds.com",
+      "business": "friends",
+      "repo": "cynthia-brown-dds-site",
+      "host": "cloudflare-pages",
+      "project": "cynthia-brown-dds-site",
+      "deploy": "Cloudflare Pages: ships itself on every push to main (land merges)",
+      "status": "live"
+    },
+    {
+      "id": "detoxdenver",
+      "name": "Dianne's Place / Detox Denver",
+      "url": "https://detoxdenver.org",
+      "domain": "detoxdenver.org",
+      "business": "friends",
+      "repo": "dianne-place-recovery-services",
+      "host": "cloudflare-pages",
+      "project": "dianne-place-recovery-services",
+      "deploy": "Cloudflare Pages: ships itself on every push to main (land merges)",
+      "status": "live"
+    },
+    {
+      "id": "901johnsons",
+      "name": "901 Johnsons",
+      "url": "https://901johnsons.com",
+      "domain": "901johnsons.com",
+      "business": "personal",
+      "repo": "901johnsons-site",
+      "host": "cloudflare-pages",
+      "project": "901johnsons-site",
+      "deploy": "Cloudflare Pages: ships itself on every push to main (land merges)",
+      "status": "parked"
+    },
+    {
+      "id": "thecharmnest",
+      "name": "The Charm Nest",
+      "url": "https://thecharmnest.com",
+      "domain": "thecharmnest.com",
+      "business": "personal",
+      "repo": "charm-nest",
+      "host": "cloudflare-worker",
+      "project": "charmnest",
+      "deploy": "Parked: nothing deploys it",
+      "status": "parked"
+    },
+    {
+      "id": "courtscope",
+      "name": "CourtScope",
+      "url": "https://courtscope.org",
+      "domain": "courtscope.org",
+      "business": "personal",
+      "repo": "courtscope",
+      "host": "cloudflare-worker",
+      "project": "courtscope",
+      "deploy": "Parked: nothing deploys it",
+      "status": "parked"
+    },
+    {
+      "id": "sequoiataylor",
+      "name": "sequoiataylor.com page",
+      "url": "https://sequoiataylor.com",
+      "domain": "sequoiataylor.com",
+      "business": "personal",
+      "repo": "sequoiataylor",
+      "host": "cloudflare-pages",
+      "project": "sequoiataylor",
+      "deploy": "Parked for good: nothing deploys it",
+      "status": "parked",
+      "aliases": [
+        "bestsequoia.com",
+        "bettersequoia.com",
+        "sequoialtaylor.com"
+      ]
+    },
+    {
+      "id": "heyscootertaylor",
+      "name": "Hey Scooter Taylor",
+      "url": "https://heyscootertaylor.com",
+      "domain": "heyscootertaylor.com",
+      "business": "personal",
+      "repo": "hey-scooter-taylor",
+      "host": "cloudflare-pages",
+      "project": "hey-scooter-taylor",
+      "deploy": "Parked for good: nothing deploys it",
+      "status": "parked",
+      "aliases": [
+        "scootertaylor.com"
+      ]
+    },
+    {
+      "id": "thehairstylista",
+      "name": "The Hairstylista",
+      "url": "https://thehairstylista.com",
+      "domain": "thehairstylista.com",
+      "business": "personal",
+      "repo": "the-hairstylista",
+      "host": "cloudflare-pages",
+      "project": "the-hairstylista",
+      "deploy": "Parked for good: nothing deploys it",
+      "status": "parked"
+    },
+    {
+      "id": "williamhurley",
+      "name": "William Hurley",
+      "url": "https://williamhurley.org",
+      "domain": "williamhurley.org",
+      "business": "personal",
+      "repo": "william-hurley",
+      "host": "cloudflare-pages",
+      "project": "william-hurley",
+      "deploy": "Parked for good: nothing deploys it",
+      "status": "parked"
+    }
+  ],
+  "unaddressed": [
+    {
+      "project": "local-guides-generator",
+      "why": "The guides repo's base Pages project: no address of its own; the six guide projects carry the sites."
+    },
+    {
+      "project": "porchandparty-docs",
+      "why": "An old upload of Porch & Party documents with no address of its own (last upload 14 Oct 2026)."
+    },
+    {
+      "project": "local-guides-portfolio",
+      "why": "An old project from a repo that no longer exists (last upload 13 Jan 2026)."
+    },
+    {
+      "project": "memphisvendorlibrary",
+      "account": "main",
+      "why": "An old copy in the main Cloudflare account; the live library is in the second account."
+    },
+    {
+      "project": "professionalresourcelibrary",
+      "account": "main",
+      "why": "An old copy in the main Cloudflare account; the live library is in the second account."
+    },
+    {
+      "project": "founderoperatorlibrary",
+      "account": "main",
+      "why": "An old copy in the main Cloudflare account; the live library is in the second account."
+    }
+  ],
+  "workers_no_site": [
+    {
+      "worker": "industry-guides-mail-fanout",
+      "repo": "boss-os",
+      "why": "Mail to the guides' hello address, fanned out to two inboxes; no web address."
+    },
+    {
+      "worker": "pnp-mailer",
+      "repo": "p-n-p",
+      "why": "Porch & Party's mail sender; no web address."
+    },
+    {
+      "worker": "west-peek-forms-mailer",
+      "repo": "join-west-peek-main",
+      "why": "The West Peek sites' form mailer; no web address."
+    },
+    {
+      "worker": "west-peek-intro-send-guard",
+      "repo": "west-peek-network-os",
+      "why": "The network's intro send guard; no web address."
+    },
+    {
+      "worker": "creator-network-state",
+      "repo": "creator-network",
+      "why": "The creator network's state store (on standby)."
+    },
+    {
+      "worker": "mercedesstudio",
+      "repo": "creator-studios",
+      "why": "Mercedes' studio, at dashboard.justbeingmercedes.com (on the Creator studios row)."
+    },
+    {
+      "worker": "mercedesstudio-staging",
+      "repo": "creator-studios",
+      "why": "Mercedes' studio preview."
+    },
+    {
+      "worker": "samplestudio",
+      "repo": "creator-studios",
+      "why": "A sample studio with no address."
+    },
+    {
+      "worker": "sample1studio",
+      "repo": "creator-studios",
+      "why": "Serves the P&P and sample 1 studios (on the Creator studios row)."
+    },
+    {
+      "worker": "sample2studio",
+      "repo": "creator-studios",
+      "why": "Serves Ashly's and the sample 2 studios (on the Creator studios row)."
+    },
+    {
+      "worker": "sample3studio",
+      "repo": "creator-studios",
+      "why": "Serves the sample 3 studio (on the Creator studios row)."
+    },
+    {
+      "worker": "sheilastudio",
+      "repo": "creator-studios",
+      "why": "Sheila's studio (on the Creator studios row)."
+    }
+  ]
+}

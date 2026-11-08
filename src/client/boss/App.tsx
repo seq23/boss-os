@@ -17,6 +17,7 @@ import { Memory } from "./pages/Memory";
 import { Brains } from "./pages/Brains";
 import { EmailMap } from "./pages/EmailMap";
 import { SocialMap } from "./pages/SocialMap";
+import { ReposMap, DomainsMap, SitesMap, AccountsMap } from "./pages/Maps";
 import { Schedule } from "./pages/Schedule";
 import { Scorecard } from "./pages/Scorecard";
 import { OpenLoops } from "./pages/OpenLoops";
@@ -49,7 +50,7 @@ import { readRoute, readFocus, readGateFocus, type Route } from "./nav";
  */
 const TITLES: Record<TabId, string> = {
   today: "Today", inbox: "Inbox", capital: "Capital",
-  spirit: "Spirit", team: "Team", brains: "Brains", emails: "Email Map", social: "Social Map", schedule: "Schedule", scorecard: "Scorecard", loops: "Open Loops", updates: "Updates", validators: "Validators", memory: "Memory", trading: "Trading", vault: "Vault",
+  spirit: "Spirit", team: "Team", brains: "Brains", repos: "Repos", domains: "Domains", sites: "Sites", accounts: "Accounts", emails: "Email Map", social: "Social Map", schedule: "Schedule", scorecard: "Scorecard", loops: "Open Loops", updates: "Updates", validators: "Validators", memory: "Memory", trading: "Trading", vault: "Vault",
   systems: "Systems",
 };
 
@@ -300,6 +301,14 @@ export default function App() {
         <Brains />
       ) : tab === "emails" ? (
         <EmailMap />
+      ) : tab === "repos" ? (
+        <ReposMap />
+      ) : tab === "domains" ? (
+        <DomainsMap />
+      ) : tab === "sites" ? (
+        <SitesMap />
+      ) : tab === "accounts" ? (
+        <AccountsMap />
       ) : tab === "social" ? (
         <SocialMap />
       ) : tab === "schedule" ? (
