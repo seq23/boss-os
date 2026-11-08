@@ -17,11 +17,12 @@
  *   It is read again in the visible run right before acting, so a book she finished by hand in the
  *   meantime is never created twice.
  *
- * ─── Sign-in: her hands, in the window ─────────────────────────────────────
- * Amazon asks for a fresh sign-in on every title-setup page (`ap/signin?max_auth_age=0`). No script
- * types her password, reads a code or solves a picture check (her coordinator, 7 Nov 2026). The
- * unattended run sends her a heads-up HEADS_UP_LEAD_MS before it opens Chrome; when Amazon asks her to
- * sign in, or anything else stops it, the window STAYS OPEN on that step, she is emailed at once with
+ * ─── Sign-in: Simone first, then her hands in the window ──────────────────
+ * Amazon asks for a fresh sign-in on every title-setup page (`ap/signin?max_auth_age=0`). Attended
+ * runs leave it to the person at the Mac. Nothing ever solves a picture check. The
+ * unattended run sends her a heads-up HEADS_UP_LEAD_MS before it opens Chrome; when Amazon asks for a
+ * sign-in, Simone signs in once herself with the existing kdp-signin.mjs steps (her ruling 8 Nov 2026);
+ * when that fails, Amazon shows a picture check, or anything else stops it, the window STAYS OPEN on that step, she is emailed at once with
  * the one thing to do there, and the run waits for her up to HANDOFF_MS: a sign-in done → it carries
  * on; a book she finished by hand → seen on the bookshelf, recorded, "done". Otherwise one
  * "still waiting" note, an Open Loops row the next good run clears, and the window closes cleanly.
@@ -308,19 +309,28 @@ async function snapshot(page, dir, name) {
   } catch { return null; }
 }
 
-/* ── Sign-in: her hands, in the window; this run only waits ─────────────────────────────────── */
+/* ── Sign-in: Simone once (unattended), else her hands in the window ────────────────────────── */
 /**
  * What the run does while Amazon shows a sign-in, MFA, CAPTCHA or challenge page. `run` is the
  * run's own settings (exported for the test): attended → print one line, wait SIGNIN_WAIT_MS;
- * unattended → tell her at once by email (`run.tellSignin`, once per page visit, BEFORE any wait),
- * leave the window up, and wait up to `run.handoffMs`. Never types, never solves; a page that is
+ * unattended → Simone signs in once (`run.autoSignin`, the existing kdp-signin.mjs steps); if that
+ * fails or Amazon shows a picture check, tell her at once by email (`run.tellSignin`, BEFORE any
+ * wait), leave the window up, and wait up to `run.handoffMs`. Never solves a picture check; a page that is
  * still a sign-in at the ceiling is the named stop SIGNIN_NOT_DONE.
  */
-export const RUN = { unattended: false, handoffMs: HANDOFF_MS, signinMs: SIGNIN_WAIT_MS, tellSignin: async () => {}, title: null };
+export const RUN = { unattended: false, handoffMs: HANDOFF_MS, signinMs: SIGNIN_WAIT_MS, tellSignin: async () => {}, autoSignin: null, lastUrl: null, title: null };
 export async function waitForHer(page, run = RUN) {
   if (!SIGNIN.test(page.url())) return;
   const ceiling = run.unattended ? run.handoffMs : run.signinMs;
   const mins = Math.round(ceiling / 60_000);
+  // SIMONE SIGNS IN FIRST (her ruling 8 Nov 2026, "it is okay for simone to sign in to amazon kdp for
+  // me", reaffirming 21 Sep): the existing kdp-signin.mjs steps on this same window, once per visit.
+  // Signed in → carry on, no email. A picture check, a phone push or any failure → she is told.
+  if (run.unattended && run.autoSignin) {
+    const r = await run.autoSignin(page, run.lastUrl).catch((e) => ({ code: 1, state: "failed", detail: String(e?.message ?? e).slice(0, 200) }));
+    console.log(`KDP-SIGNIN: ${r.state} — ${String(r.detail ?? "").slice(0, 200)}`);
+    if (r.code === 0 && !SIGNIN.test(page.url())) { console.log(">>> Simone signed in. Carrying on.\n"); return; }
+  }
   if (run.unattended) await run.tellSignin();
   else console.log(`\n>>> SIGN IN NEEDED: Amazon is asking you to sign in again. Do it in the Chrome window that is open (password, code, or picture check). This run waits up to ${mins} minutes and then carries on by itself.\n`);
   for (let waited = 0; waited < ceiling; waited += 2000) {
@@ -329,7 +339,7 @@ export async function waitForHer(page, run = RUN) {
   }
   throw stop("SIGNIN_NOT_DONE", `Amazon's sign-in was not finished within ${mins} minutes. Nothing was published.`, 3);
 }
-async function go(page, url) { await page.goto(url, { waitUntil: "domcontentloaded", timeout: STEP_MS }); await waitForHer(page); }
+async function go(page, url) { RUN.lastUrl = url; await page.goto(url, { waitUntil: "domcontentloaded", timeout: STEP_MS }); await waitForHer(page); }
 
 /** The first selector that exists and is visible. */
 async function first(page, sels) {
@@ -682,10 +692,10 @@ export function headsUpMail({ titles, startAt, zone }) {
     subject: `Kindle: at ${when.split(" (")[0]} I open Chrome to ${titles.length === 1 ? `publish ${titles[0]}` : `publish ${titles.length} books`}`,
     layout: { happened: `At ${when} a Chrome window for Amazon KDP opens on your Mac and I ${what}. You approved ${titles.length === 1 ? "it" : "them"}.`, details: [
       "Please keep the Mac awake and on until it is done (about 20 minutes).",
-      "If Amazon asks you to sign in, do it in that window. I never type your password; I email you the moment it asks.",
+      "If Amazon asks for a sign-in, I sign in for you; I only need you if Amazon shows a picture check, and then I email you at once.",
       "When it is up I email you the Amazon link.",
     ] },
-    owner: { layout: "note", why: `In ${Math.round(HEADS_UP_LEAD_MS / 60_000)} minutes I put your approved Kindle book${titles.length === 1 ? "" : "s"} up on Amazon.`, act: "Nothing to do now; keep the Mac awake and be ready to sign in if Amazon asks" },
+    owner: { layout: "note", why: `In ${Math.round(HEADS_UP_LEAD_MS / 60_000)} minutes I put your approved Kindle book${titles.length === 1 ? "" : "s"} up on Amazon.`, act: "Nothing to do now; keep the Mac awake" },
   };
 }
 
@@ -694,7 +704,7 @@ export function stopMail({ title, code, said, waitMs = HANDOFF_MS, id = null }) 
   const signin = code === "SIGNIN";
   const hours = waitMs >= 3_600_000 ? `${Math.round(waitMs / 3_600_000)} hour${waitMs >= 7_200_000 ? "s" : ""}` : `${Math.round(waitMs / 60_000)} minutes`;
   const happened = signin
-    ? `Amazon is asking you to sign in before I can put "${title}" up. The Chrome window is open on your Mac at Amazon's sign-in page.`
+    ? `I tried to sign in to Amazon for you to put "${title}" up, and Amazon needs you: it is showing a picture check, or it did not accept my sign-in. The Chrome window is open on your Mac at that page.`
     : `I stopped part way through putting "${title}" up: ${plainStop(code, said)} Nothing is published yet. The Chrome window is open on your Mac on that step.`;
   return {
     subject: signin ? `Kindle: Amazon wants you to sign in to publish ${title}` : `Kindle: ${title} stopped part way, one thing to finish`,
@@ -794,6 +804,14 @@ export function profileBusy(dir, { lstat = lstatSync, readlink = readlinkSync, a
 const dayCT = (ms = Date.now()) => new Intl.DateTimeFormat("en-CA", { timeZone: CT }).format(new Date(ms));
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
+/** Simone's own sign-in on the open window: the existing kdp-signin.mjs steps, with the vault's launch env. */
+async function autoSignin(page, target) {
+  const email = process.env.KDP_ACCOUNT_EMAIL ?? "", password = process.env.KDP_ACCOUNT_PASSWORD ?? "";
+  if (!email || !password) return { code: 3, state: "no_credentials", detail: "the KDP sign-in is not in this launch (run through the vault)" };
+  const { signInOnPage } = await import("./kdp-signin.mjs");
+  return signInOnPage(page, { email, password, editUrl: target ?? `${KDP}/bookshelf` });
+}
+
 async function main() {
   const api = await boss();
   const spec = JSON.parse(await readFile(join(HERE, "kdp-books/keepmyproof.json"), "utf8"));
@@ -888,6 +906,7 @@ async function main() {
       Object.assign(RUN, {
         unattended: UNATTENDED, title: book.title,
         tellSignin: () => tell(`stop:${a.id}:SIGNIN:${dayCT()}`, stopMail({ title: book.title, code: "SIGNIN", id: a.id })),
+        autoSignin: autoSignin,
       });
       const report = { title_ref: null, cover_uploaded: false, publish_attempted: false, resulting_state: null, run_outcome: "attempted", stop_code: null, amazon_message: null };
       try {

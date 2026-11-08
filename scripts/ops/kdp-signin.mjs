@@ -135,28 +135,24 @@ async function readOtpFromGmail(sinceIso) {
   return { code: null, attempt };
 }
 
-async function main() {
-  const email = process.env.KDP_ACCOUNT_EMAIL ?? "";
-  const password = process.env.KDP_ACCOUNT_PASSWORD ?? "";
-  let context;
-  try { ({ context } = await openProfile(PROFILE, { headed: false })); }
-  catch (err) { return out("browser_unavailable", String(err?.message ?? err).slice(0, 200), 5); }
-  const page = context.pages()[0] ?? (await context.newPage());
-  const editUrl = `https://kdp.amazon.com/en_US/title-setup/kindle/${REF}/details`;
+/**
+ * THE SIGN-IN ITSELF, ON A PAGE ALREADY OPEN (8 Nov 2026: her ruling "it is okay for simone to sign
+ * in to amazon kdp for me", reaffirming 21 Sep). Used by this script's own run and by
+ * kdp-new-title.mjs on the window it already has open (Amazon's max_auth_age=0 wants the sign-in in
+ * that same session). The address and password come from the caller's environment (the vault's
+ * governed launch) and are only ever typed into Amazon's own boxes: never logged, printed or put on
+ * a command line. A CAPTCHA, a phone push or a step it cannot read is hers; it never solves one.
+ * `editUrl` is where the caller was going. Returns { state, detail, code } (code 0 = signed in).
+ */
+export async function signInOnPage(page, { email, password, editUrl, readOtp = readOtpFromGmail }) {
+  const res = (state, detail, code = 0) => ({ state, detail, code });
   try {
-    await page.goto(editUrl, { waitUntil: "domcontentloaded", timeout: TIMEOUT_MS });
-    await page.waitForTimeout(6000);
-    let kind = classifyPage(page.url(), await visibleOn(page));
-    if (kind === "editable") return out("ok_already", `the saved session can edit ${REF} (${safeUrl(page.url())}); nothing typed.`);
-    if (kind === "elsewhere" && /\/bookshelf/.test(page.url()) && (await canEditOnShelf(page))) return out("ok_already", `the saved session can edit (the bookshelf offers Edit eBook details); ${REF} itself has no edit entry — a BLOCKED title is not editable on KDP. Nothing typed.`);
-    if (!email || !password) return out("no_credentials", `the session cannot edit and KDP_ACCOUNT_EMAIL / KDP_ACCOUNT_PASSWORD are not in this launch — run through the vault. Fallback, once: ${HEADED_LINE}`, 3);
-
     const startedAt = new Date().toISOString();
     for (let step = 0; step < 6; step += 1) {
-      kind = classifyPage(page.url(), await visibleOn(page));
+      const kind = classifyPage(page.url(), await visibleOn(page));
       if (kind === "editable") break;
-      if (kind === "captcha") return out("challenge_needs_her", `Amazon is showing a CAPTCHA at ${safeUrl(page.url())}; only a person can answer it. Once: ${HEADED_LINE}`, 6);
-      if (kind === "push_approval") return out("challenge_needs_her", `Amazon wants the sign-in approved on your phone (${safeUrl(page.url())}). Approve it there, or once: ${HEADED_LINE}`, 6);
+      if (kind === "captcha") return res("challenge_needs_her", `Amazon is showing a CAPTCHA at ${safeUrl(page.url())}; only a person can answer it. Once: ${HEADED_LINE}`, 6);
+      if (kind === "push_approval") return res("challenge_needs_her", `Amazon wants the sign-in approved on your phone (${safeUrl(page.url())}). Approve it there, or once: ${HEADED_LINE}`, 6);
       if (kind === "email") {
         const f = page.locator("#ap_email, input[name=email]").first();
         if (await f.count()) { await f.fill(email); }
@@ -175,13 +171,13 @@ async function main() {
         await page.waitForTimeout(7000);
         const html = await page.content();
         if (/There was a problem|Your password is incorrect|We cannot find an account/i.test(html) && /\/ap\/signin/.test(page.url())) {
-          return out("wrong_password", `Amazon refused the vault's credentials at ${safeUrl(page.url())}. Update KDP_ACCOUNT_PASSWORD in the vault, or once: ${HEADED_LINE}`, 7);
+          return res("wrong_password", `Amazon refused the vault's credentials at ${safeUrl(page.url())}. Update KDP_ACCOUNT_PASSWORD in the vault, or once: ${HEADED_LINE}`, 7);
         }
         continue;
       }
       if (kind === "otp") {
-        const { code, attempt } = await readOtpFromGmail(startedAt);
-        if (!code) return out("otp_not_found", `Amazon asked for a one-time code and none arrived in her Gmail within ${Math.round(OTP_WINDOW_MS / 1000)}s (${attempt} read(s)). If Amazon's 2FA is an authenticator app or a phone push rather than email, that is the fallback she needs: ${HEADED_LINE}`, 8);
+        const { code, attempt } = await readOtp(startedAt);
+        if (!code) return res("otp_not_found", `Amazon asked for a one-time code and none arrived in her Gmail within ${Math.round(OTP_WINDOW_MS / 1000)}s (${attempt} read(s)). If Amazon's 2FA is an authenticator app or a phone push rather than email, that is the fallback she needs: ${HEADED_LINE}`, 8);
         const f = page.locator("#auth-mfa-otpcode, input[name=otpCode], #cvf-input-code, input[name=code]").first();
         await f.fill(code);
         const trust = page.locator("#auth-mfa-remember-device, input[name=rememberDevice]").first();
@@ -190,17 +186,40 @@ async function main() {
         await page.waitForTimeout(8000);
         continue;
       }
-      if (kind === "other_challenge") return out("challenge_needs_her", `Amazon is showing a step this cannot read at ${safeUrl(page.url())}. Once: ${HEADED_LINE}`, 6);
+      if (kind === "other_challenge") return res("challenge_needs_her", `Amazon is showing a step this cannot read at ${safeUrl(page.url())}. Once: ${HEADED_LINE}`, 6);
       // elsewhere: go back to the edit page and re-check.
       await page.goto(editUrl, { waitUntil: "domcontentloaded", timeout: TIMEOUT_MS });
       await page.waitForTimeout(6000);
     }
     await page.goto(editUrl, { waitUntil: "domcontentloaded", timeout: TIMEOUT_MS });
     await page.waitForTimeout(6000);
-    kind = classifyPage(page.url(), await visibleOn(page));
-    if (kind === "editable") return out("ok", `signed in headless as Simone; ${REF}'s details page opens for editing (${safeUrl(page.url())}).`);
-    if (/\/bookshelf/.test(page.url()) && (await canEditOnShelf(page))) return out("ok", `signed in headless as Simone; the bookshelf offers Edit eBook details (${REF} itself has none — a BLOCKED title is not editable on KDP).`);
-    return out("failed", `after sign-in the edit page still answers ${kind} at ${safeUrl(page.url())}. Once: ${HEADED_LINE}`, 9);
+    let kind = classifyPage(page.url(), await visibleOn(page));
+    if (kind === "editable") return res("ok", `signed in headless as Simone; ${REF}'s details page opens for editing (${safeUrl(page.url())}).`);
+    if (/\/bookshelf/.test(page.url()) && (await canEditOnShelf(page))) return res("ok", `signed in headless as Simone; the bookshelf offers Edit eBook details (${REF} itself has none — a BLOCKED title is not editable on KDP).`);
+    return res("failed", `after sign-in the edit page still answers ${kind} at ${safeUrl(page.url())}. Once: ${HEADED_LINE}`, 9);
+  } catch (err) {
+    return res("failed", String(err?.message ?? err).slice(0, 300), 1);
+  }
+}
+
+async function main() {
+  const email = process.env.KDP_ACCOUNT_EMAIL ?? "";
+  const password = process.env.KDP_ACCOUNT_PASSWORD ?? "";
+  let context;
+  try { ({ context } = await openProfile(PROFILE, { headed: false })); }
+  catch (err) { return out("browser_unavailable", String(err?.message ?? err).slice(0, 200), 5); }
+  const page = context.pages()[0] ?? (await context.newPage());
+  const editUrl = `https://kdp.amazon.com/en_US/title-setup/kindle/${REF}/details`;
+  try {
+    await page.goto(editUrl, { waitUntil: "domcontentloaded", timeout: TIMEOUT_MS });
+    await page.waitForTimeout(6000);
+    let kind = classifyPage(page.url(), await visibleOn(page));
+    if (kind === "editable") return out("ok_already", `the saved session can edit ${REF} (${safeUrl(page.url())}); nothing typed.`);
+    if (kind === "elsewhere" && /\/bookshelf/.test(page.url()) && (await canEditOnShelf(page))) return out("ok_already", `the saved session can edit (the bookshelf offers Edit eBook details); ${REF} itself has no edit entry — a BLOCKED title is not editable on KDP. Nothing typed.`);
+    if (!email || !password) return out("no_credentials", `the session cannot edit and KDP_ACCOUNT_EMAIL / KDP_ACCOUNT_PASSWORD are not in this launch — run through the vault. Fallback, once: ${HEADED_LINE}`, 3);
+
+    const r = await signInOnPage(page, { email, password, editUrl });
+    return out(r.state, r.detail, r.code);
   } catch (err) {
     return out("failed", String(err?.message ?? err).slice(0, 300), 1);
   } finally {
