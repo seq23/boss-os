@@ -1,7 +1,7 @@
 import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
 // @ts-expect-error — plain .mjs ops lib, no types
-import { parseUnits, daysFromCapturedJson, daysFromPageText, mergeDays } from "../scripts/ops/lib/kdp-units.mjs";
+import { parseUnits, daysFromCapturedJson, daysFromPageText, mergeDays, parseReports, fromReports, withWindow, reportWindow, salesLine } from "../scripts/ops/lib/kdp-units.mjs";
 
 /**
  * UNITS SOLD IS READ BY CODE, NOT BY A PARAGRAPH IN A PROMPT (owner ruling, 1 Nov 2026: "nothing
@@ -58,20 +58,75 @@ describe("the units parsers hard-fail on an unread page, but a recognised widget
   });
 });
 
-describe("the wrapper reads units in code, after sign-in and before the model", () => {
-  const wrapper = read("scripts/ops/kdp-surface.sh");
+describe("the reports read: units AND Kindle Unlimited pages per title (root cause confirmed live 8 Nov 2026)", () => {
+  // The bodies are the live shapes kdpreports.amazon.com returned on 8 Nov 2026 (KENP: 41 + 17 pages).
+  const meta = { reportsMetadata: { books: {
+    "DIGITAL=B0HJKNMRGX:::": { titleName: "The Credit Dispute Letter", asins: { digital: "B0HJKNMRGX", print: null } },
+    "DIGITAL=B0HHFK6W76:::": { titleName: "The Wedding Day Timeline", asins: { digital: "B0HHFK6W76", print: "B0PRINT001" } },
+    "DIGITAL=B0HQVR4HD3:::": { titleName: "The Co-Parenting Log", asins: { digital: "B0HQVR4HD3" } },
+  } } };
+  const kenp = { histogram: { data: [{ bin: "B0HJKNMRGX", values: { TotalKENP: 41 } }, { bin: "B0HHFK6W76", values: { TotalKENP: 17 } }], props: {}, title: "KENPTableTitles" } };
+  const kenpDays = { nestedHistogram: { histogramList: [{ data: [{ bin: "Amazon.com", values: { TotalKENP: 41 } }], title: "2026-09-26" }, { data: [{ bin: "Amazon.com", values: { TotalKENP: 17 } }], title: "2026-10-09" }] } };
+  const orders = (data: unknown[]) => ({ histogram: { data, props: {}, title: "OrdersTableTitles" } });
 
-  it("invokes kdp-units.mjs exactly once", () => {
-    expect((wrapper.match(/node scripts\/ops\/kdp-units\.mjs/g) ?? []).length).toBe(1);
+  it("the capture keeps kdpreports.amazon.com, where every number lives — the old /kdp\\.amazon\\.com/ test dropped it", () => {
+    expect(fromReports("https://kdpreports.amazon.com/reports/kenp/table/titles")).toBe(true);
+    expect(fromReports("https://unagi.amazon.com/1/events")).toBe(false);
+    expect(fromReports("not a url")).toBe(false);
+    expect(/kdp\.amazon\.com/.test("https://kdpreports.amazon.com/x")).toBe(false); // the defect, pinned
+    expect(read("scripts/ops/kdp-units.mjs")).toMatch(/fromReports\(res\.url\(\)\)/);
   });
 
-  it("runs it after kdp-signin.mjs and before the model (ai-run) invocation", () => {
-    const signinAt = wrapper.indexOf("kdp-signin.mjs");
-    const unitsAt = wrapper.indexOf("kdp-units.mjs");
-    const claudeAt = wrapper.indexOf('"$AI_RUN" --role');
-    expect(signinAt).toBeGreaterThan(-1);
-    expect(unitsAt).toBeGreaterThan(signinAt);
-    expect(claudeAt).toBeGreaterThan(unitsAt);
+  it("records units and KU pages per title, named from the reports' own metadata, with every catalogue title present", () => {
+    const r = parseReports({ captured: [
+      { path: "/metadata/reports/reportsMetadata", body: meta },
+      { path: "/reports/orders/table/titles", body: orders([{ bin: "B0HHFK6W76", values: { TotalOrders: 3, TotalRoyalty: 2.04 } }]) },
+      { path: "/reports/kenp/table/titles", body: kenp },
+      { path: "/reports/kenp/marketplaceHistogramV2", body: kenpDays },
+    ] });
+    expect(r.titles.B0HJKNMRGX).toEqual({ title: "The Credit Dispute Letter", units: 0, free_units: 0, kenp: 41 });
+    expect(r.titles.B0HHFK6W76).toEqual({ title: "The Wedding Day Timeline", units: 3, free_units: 0, kenp: 17 });
+    expect(r.titles.B0HQVR4HD3).toEqual({ title: "The Co-Parenting Log", units: 0, free_units: 0, kenp: 0 });
+    expect([r.units_total, r.kenp_total]).toEqual([3, 58]);
+    expect(r.kenp_days).toEqual({ "2026-09-26": 41, "2026-10-09": 17 });
+    expect(salesLine(r)).toBe("3 sold · 58 KU pages");
+  });
+
+  it("never counts money as units, and splits out free promo units when Amazon does", () => {
+    const r = parseReports({ captured: [
+      { path: "/reports/orders/table/titles", body: orders([{ bin: "B0X", values: { TotalRoyalty: 99, TotalPaidOrders: 0, TotalFreeOrders: 7, TotalOrders: 7 } }]) },
+      { path: "/reports/kenp/table/titles", body: { histogram: { data: [] } } },
+    ] });
+    expect(r.titles.B0X).toMatchObject({ units: 7, free_units: 7, kenp: 0 });
+  });
+
+  it("two tables read and empty are a real zero; a missing table is an unread page, never a zero", () => {
+    const empty = [{ path: "/reports/orders/table/titles", body: orders([]) }, { path: "/reports/kenp/table/titles", body: { histogram: { data: [] } } }];
+    expect(parseReports({ captured: empty })).toMatchObject({ units_total: 0, kenp_total: 0 });
+    expect(() => parseReports({ captured: [empty[0]] })).toThrow(/KENP/);
+    expect(() => parseReports({ captured: [empty[1]] })).toThrow(/Orders/);
+    expect(() => parseReports({ captured: [{ path: "/reports/dashboard/overview", body: { overviewWidget: {} } }] })).toThrow();
+  });
+
+  it("asks Amazon for the same window on every report call", () => {
+    const win = reportWindow(Date.parse("2026-11-09T15:45:00Z"), 60);
+    expect(win).toEqual({ startDate: "2026-09-10T00:00:00Z", endDate: "2026-11-09T23:59:59Z" });
+    expect(JSON.parse(withWindow(JSON.stringify({ startDate: "2026-11-01T00:00:00Z", endDate: "x", filterBy: {} }), win))).toEqual({ ...win, filterBy: {} });
+    expect(withWindow("not json", win)).toBe("not json");
+  });
+});
+
+describe("the weekly Monday run reads units in code, before it publishes", () => {
+  const wrapper = read("scripts/ops/kdp-publish.sh");
+
+  it("invokes kdp-units.mjs exactly once, and the monthly triage no longer does", () => {
+    expect((wrapper.match(/node scripts\/ops\/kdp-units\.mjs/g) ?? []).length).toBe(1);
+    expect(read("scripts/ops/kdp-surface.sh")).not.toMatch(/node scripts\/ops\/kdp-units\.mjs/);
+  });
+
+  it("reads sales before the publisher, so a publish stop never costs the week's numbers", () => {
+    expect(wrapper.indexOf("kdp-units.mjs")).toBeGreaterThan(-1);
+    expect(wrapper.indexOf("kdp-units.mjs")).toBeLessThan(wrapper.indexOf("node scripts/ops/kdp-publish.mjs"));
   });
 
   it("names a reason rather than letting the run crash on a failed read", () => {
@@ -103,7 +158,7 @@ describe("the scorecard reader refuses to turn an unread page into a number", ()
   });
 
   it("the missing-file sentence names the daily read, not a monthly check that never had the job", () => {
-    expect(readers).toMatch(/kdp-units\.mjs.*kdp-surface\.sh/s);
+    expect(readers).toMatch(/kdp-units\.mjs.*kdp-publish\.sh/s);
     expect(readers).not.toMatch(/Simone's monthly KDP check/);
   });
 });

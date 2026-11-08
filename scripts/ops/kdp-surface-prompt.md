@@ -204,8 +204,8 @@ about it is refused (`IN_REVIEW_IS_PROGRESS`).
 
 ## Units sold, for the Scorecard (owner ruling, 1 Nov 2026: "nothing runs unmeasured")
 
-The wrapper reads units sold itself, in code, before you run (`scripts/ops/kdp-units.mjs`, wired into
-`kdp-surface.sh` right after sign-in). **You never write `~/.boss-os/kdp/units.json` — one writer,
+Units sold and Kindle Unlimited pages are read in code by Simone's weekly publish run
+(`scripts/ops/kdp-units.mjs`, wired into `kdp-publish.sh`, Monday 09:45). **You never write `~/.boss-os/kdp/units.json` — one writer,
 and it is not you.** This never changes what you report about Amazon's mail.
 
 ## The file — every run, before your final line

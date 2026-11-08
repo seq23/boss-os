@@ -58,6 +58,13 @@ fi
 say "=== KDP publish starting ==="
 cd "$REPO" || { say "NAMED STOP [NO_REPO_CD]"; exit 5; }
 
+# ─── SALES FIRST (KDP strategy, spry brain 8 Nov 2026) ───────────────────────
+# Units and Kindle Unlimited pages per title, read in code from the KDP reports before anything is
+# published, so a publish stop never costs the week's numbers. An unread page writes a named reason
+# (scripts/ops/kdp-units.mjs); the Scorecard shows "No number", never 0.
+node scripts/ops/kdp-units.mjs >> "$RUN_LOG" 2>&1 \
+  || say "NAMED STOP [UNITS_NOT_READ] sales could not be read this week — see the KDP-UNITS line; the Scorecard shows No number until a later run reads it."
+
 npm run --silent vault:run -- node scripts/ops/kdp-publish.mjs "$@" >> "$RUN_LOG" 2>&1
 RC=$?
 say "=== publisher exited rc=$RC ==="
@@ -76,8 +83,12 @@ npm run --silent vault:run -- node scripts/ops/kdp-new-title.mjs --unattended >>
 NRC=$?
 say "=== new titles exited rc=$NRC ==="
 grep -o 'KDP-NEW-TITLE:.*' "$RUN_LOG" | tail -3 | tee -a /dev/stderr
+# ─── HER MONDAY LINE: sales, KU pages and companion-page visits, on the run's OUTPUT line ────────
+npm run --silent vault:run -- node scripts/ops/kdp-week.mjs >> "$RUN_LOG" 2>&1 || say "NAMED STOP [WEEK_NOT_READ] see the KDP-WEEK line."
+WEEK="$(grep -o 'KDP-WEEK: .*' "$RUN_LOG" | tail -1 | sed 's/^KDP-WEEK: //' | cut -c1-54)"
 # For duty-run.sh: the census line, and the named stop that names the failure (it reads the last of each).
-grep -E '^OUTPUT [0-9]+ ' "$RUN_LOG" | tail -1
+N="$(grep -E '^OUTPUT [0-9]+ kindle-titles-submitted' "$RUN_LOG" | tail -1 | awk '{print $2}')"
+echo "OUTPUT ${N:-0} kindle titles submitted · ${WEEK:-sales not read}" | tee -a "$RUN_LOG"
 grep -o 'NAMED STOP \[[A-Z_]*\].*' "$RUN_LOG" | tail -1 >&2
 
 # The run failed if either half failed; the publisher's own code wins when both did.

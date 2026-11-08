@@ -3026,7 +3026,7 @@
     {
       "id": "kdp-publish",
       "name": "Kindle: publish",
-      "what": "Puts approved Kindle books up on Amazon and follows them to Live; heads-up email first, an email when one is live or stops.",
+      "what": "Reads each book's sales and Kindle Unlimited pages, puts approved Kindle books up on Amazon and follows them to Live; heads-up email first, an email when one is live or stops.",
       "business": "spry",
       "brand": "KDP books",
       "system": "mac",

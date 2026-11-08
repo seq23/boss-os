@@ -122,3 +122,120 @@ export function parseUnits({ captured = [], text = "" } = {}) {
   if (anyWidgetRecognised(captured)) return { days: {}, source: "capture" };
   throw new Error("no day of units could be parsed from the captured JSON or the page text");
 }
+
+// ─── THE REPORTS PAGES, PER TITLE: UNITS AND KINDLE UNLIMITED PAGES (8 Nov 2026) ─────────────────
+//
+// ROOT CAUSE of "no day of units could be parsed" (every run since 2 Nov 2026): the dashboard lives
+// on kdpreports.amazon.com, and kdp-units.mjs kept only responses whose URL matched /kdp\.amazon\.com/,
+// which that host does not contain. Nothing was ever captured, and the text fallback looks for
+// "Nov 1, 2026  3" lines the dashboard never prints ("01 Nov" axis labels). CONFIRMED live 8 Nov 2026.
+//
+// The dashboard also says nothing per title and nothing about Kindle Unlimited pages, which the KDP
+// strategy (spry brain, 8 Nov 2026) judges each line by. So the read is now the Orders and KENP
+// reports' own table calls, captured per title:
+//   /reports/orders/table/titles        { histogram: { data: [{ bin: <ASIN>, values: {...} }] } }
+//   /reports/kenp/table/titles          { histogram: { data: [{ bin: <ASIN>, values: { TotalKENP } }] } }   CONFIRMED live (41 + 17 pages)
+//   /reports/{orders,kenp}/marketplaceHistogramV2  { nestedHistogram: { histogramList: [{ title: <day>, data: [{ bin: <marketplace>, values }] }] } }
+//   /metadata/reports/reportsMetadata   { reportsMetadata: { books: { <key>: { titleName, asins: { digital, print } } } } }
+// The orders row's value names were not seen with a sale in them (none since July); `unitsOf` takes
+// Amazon's Total* order/unit field and never adds a royalty or a currency amount. SUSPECTED until the
+// first sale is read; the KENP shape is CONFIRMED.
+
+const ORDERS_TABLE = /\/reports\/orders\/table\/titles$/;
+const KENP_TABLE = /\/reports\/kenp\/table\/titles$/;
+const ORDERS_DAYS = /\/reports\/orders\/marketplaceHistogramV2$/;
+const KENP_DAYS = /\/reports\/kenp\/marketplaceHistogramV2$/;
+const METADATA = /\/metadata\/reports\/reportsMetadata$/;
+
+const num = (v) => (Number.isFinite(Number(v)) ? Number(v) : 0);
+
+/** Units in one orders row's `values`: Amazon's total order/unit count, never money. Pure. */
+export function unitsOf(values = {}) {
+  for (const k of ["TotalOrders", "TotalUnits", "TotalUnitsOrdered", "NetUnitsSold", "UnitsSold"]) if (k in values) return num(values[k]);
+  const k = Object.keys(values).find((x) => /^total/i.test(x) && /order|unit/i.test(x) && !/royalt|amount|price|kenp/i.test(x));
+  return k ? num(values[k]) : 0;
+}
+/** Free (promotion) units in one orders row, when Amazon splits them out. Pure. */
+export const freeUnitsOf = (values = {}) => Object.entries(values).filter(([k]) => /free/i.test(k) && /order|unit/i.test(k)).reduce((a, [, v]) => a + num(v), 0);
+export const kenpOf = (values = {}) => num(values.TotalKENP ?? values.TotalMarketplaceKENP ?? values.KENP ?? 0);
+
+const rowsOf = (body) => (Array.isArray(body?.histogram?.data) ? body.histogram.data : null);
+function seriesOf(body, valueOf) {
+  const list = body?.nestedHistogram?.histogramList;
+  if (!Array.isArray(list)) return null;
+  const out = {};
+  for (const h of list) {
+    const day = String(h?.title ?? "").slice(0, 10);
+    if (!DAY_RE.test(day)) continue;
+    out[day] = (out[day] ?? 0) + (h.data ?? []).reduce((a, r) => a + valueOf(r?.values ?? {}), 0);
+  }
+  return out;
+}
+
+/** ASIN → title, from the reports' own metadata call. Pure. */
+export function titlesByAsin(meta) {
+  const out = {};
+  for (const b of Object.values(meta?.reportsMetadata?.books ?? {})) {
+    for (const a of Object.values(b?.asins ?? {})) if (typeof a === "string" && /^[A-Z0-9]{10}$/.test(a)) out[a] = b.titleName ?? null;
+    if (b?.marketplaceAsin) out[b.marketplaceAsin] ??= b.titleName ?? null;
+  }
+  return out;
+}
+
+/**
+ * The one entry point for the reports read. `captured` is `[{ path, body }]` (path = URL pathname)
+ * for every kdpreports.amazon.com JSON response while /orders and /kenpc loaded. The last body for
+ * each path wins (the page re-asks with the same window).
+ *
+ * Throws (an unread page, never a zero) when either per-title table is missing. Two tables that were
+ * read and are empty are a real zero.
+ */
+export function parseReports({ captured = [], window = null } = {}) {
+  const last = (re) => [...captured].reverse().find((c) => re.test(String(c?.path ?? "")))?.body;
+  const orders = rowsOf(last(ORDERS_TABLE));
+  const kenp = rowsOf(last(KENP_TABLE));
+  if (!orders && !kenp) throw new Error("neither the Orders nor the KENP per-title table came back from kdpreports.amazon.com");
+  if (!orders) throw new Error("the KENP table came back but the Orders per-title table did not");
+  if (!kenp) throw new Error("the Orders table came back but the KENP per-title table did not");
+  const names = titlesByAsin(last(METADATA));
+  const titles = {};
+  const row = (asin) => (titles[asin] ??= { title: names[asin] ?? null, units: 0, free_units: 0, kenp: 0 });
+  for (const r of orders) { if (!r?.bin) continue; const t = row(r.bin); t.units += unitsOf(r.values); t.free_units += freeUnitsOf(r.values); }
+  for (const r of kenp) { if (!r?.bin) continue; row(r.bin).kenp += kenpOf(r.values); }
+  for (const [asin, title] of Object.entries(names)) if (title && !titles[asin]) titles[asin] = { title, units: 0, free_units: 0, kenp: 0 };
+  const sum = (k) => Object.values(titles).reduce((a, t) => a + t[k], 0);
+  return {
+    window,
+    days: seriesOf(last(ORDERS_DAYS), unitsOf) ?? {},
+    kenp_days: seriesOf(last(KENP_DAYS), kenpOf) ?? {},
+    titles,
+    units_total: sum("units"),
+    free_units_total: sum("free_units"),
+    kenp_total: sum("kenp"),
+    source: "reports",
+  };
+}
+
+/** The window the reader asks Amazon for: `days` back from `now`, as the reports' own body fields. Pure. */
+export function reportWindow(now, days) {
+  const end = new Date(now);
+  const start = new Date(end.getTime() - days * 86_400_000);
+  return { startDate: `${start.toISOString().slice(0, 10)}T00:00:00Z`, endDate: `${end.toISOString().slice(0, 10)}T23:59:59Z` };
+}
+
+/** Rewrites a reports POST body to ask for `win`; anything not a JSON body with dates passes through. Pure. */
+export function withWindow(postData, win) {
+  try { const j = JSON.parse(postData); if (j && typeof j === "object" && "startDate" in j) return JSON.stringify({ ...j, ...win }); } catch {}
+  return postData;
+}
+
+/** Is this response from the reports host? The root cause of the 2 Nov–8 Nov blank was this test. Pure. */
+export function fromReports(url) {
+  try { return /(^|\.)kdpreports\.amazon\.com$/.test(new URL(url).hostname); } catch { return false; }
+}
+
+/** One short line for the Monday OUTPUT line: "3 sold · 58 KU pages". Pure. */
+export function salesLine(r) {
+  if (!r || r.unread) return "sales not read";
+  return `${r.units_total} sold · ${r.kenp_total} KU pages`;
+}
