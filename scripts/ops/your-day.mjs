@@ -703,7 +703,7 @@ export function buildDay(data, now = Date.now()) {
   }
   const used = new Set();
   const idFor = (kind, key) => { let id = itemId(kind, key); let n = 2; while (used.has(id)) id = itemId(kind, `${key}#${n++}`); used.add(id); return id; };
-  const more = (url) => ({ label: "See everything about this", url });
+  const more = (url) => ({ label: "See everything ›", url });
 
   // 1. Decide: Boss OS's own, then every producer's (catch-ups have their own section). ALL of them.
   const decideRaw = [...bossDecisions(data)];

@@ -240,7 +240,7 @@ export async function runInvitations(env: Env, now = Date.now(), fetchImpl: type
   const { results } = await env.DB.prepare(`SELECT * FROM owner_invitations WHERE status IN ('open','unsure') ORDER BY starts_at`).all<any>();
   const decide: any[] = [];
   for (const inv of results ?? []) {
-    const plan = askPlan(inv, today);
+    const plan = askPlan(inv, today, now);
     if (plan.drop) {
       await env.DB.prepare(`UPDATE owner_invitations SET status = 'dropped', reply_text = NULL, decline_text = NULL, rsvp_url = NULL, subject = NULL, updated_at = ? WHERE id = ? AND status IN ('open','unsure')`).bind(now, inv.id).run();
       continue;

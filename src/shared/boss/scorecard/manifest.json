@@ -32,6 +32,10 @@
     {
       "key": "friends",
       "label": "Friends' sites"
+    },
+    {
+      "key": "personal",
+      "label": "You (Boss OS)"
     }
   ],
   "defaults": {

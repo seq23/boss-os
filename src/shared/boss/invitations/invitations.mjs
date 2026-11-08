@@ -14,6 +14,8 @@
  *   · The system never clicks an outside RSVP link: the card carries it for HER tap.        → cardFor
  */
 
+import { DEFAULT_MAILBOX, BRAND_MAILBOXES } from "../commands/parse.mjs";
+
 export const OWNER_TZ = "America/Chicago";
 export const SECTION = "invitations";
 export const FIRST_LOOKBACK_DAYS = 7;
@@ -24,13 +26,13 @@ export const MAX_PER_MAILBOX = 40;
 
 /** The inboxes Boss OS already reads through the service account, with the words her card uses. */
 export const INVITE_INBOXES = Object.freeze([
-  Object.freeze({ address: "sequoia@westpeek.ventures", label: "your West Peek inbox", writable: true }),
-  Object.freeze({ address: "st@time-2-read.com", label: "your Time-2-Read inbox", writable: true }),
+  Object.freeze({ address: DEFAULT_MAILBOX, label: "your West Peek inbox", writable: true }),
+  ...BRAND_MAILBOXES.map((b) => Object.freeze({ address: b.mailbox, label: "your Time-2-Read inbox", writable: true })),
   // Read only, ever: nothing is sent from it and its calendar is never written (spry-vc-never-sends.mjs).
   Object.freeze({ address: "staylor@spry.vc", label: "your Spry Ventures inbox", writable: false }),
 ]);
 /** The calendar a Yes lands on when the invitation's own calendar cannot be answered. */
-export const HER_CALENDAR = "sequoia@westpeek.ventures";
+export const HER_CALENDAR = DEFAULT_MAILBOX;
 
 export const PLATFORMS = Object.freeze([
   Object.freeze({ name: "Luma", re: /(?:^|\.)(?:lu\.ma|luma-mail\.com|luma\.com)$/i, link: /^https:\/\/(?:[\w-]+\.)?(?:lu\.ma|luma\.com)\//i }),
@@ -79,9 +81,11 @@ export function wallToUtc(y, mo, d, h, mi, tz = OWNER_TZ) {
 const MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
 function clock(p) {
   const h12 = p.h % 12 === 0 ? 12 : p.h % 12;
-  return `${h12}:${pad(p.min)}`;
+  // "12–12:30 pm": whole hours drop ":00" (one format on every surface; the email gate reads "12:00"
+  // with no am/pm as a 24-hour clock and would print "12 pm–12:30 pm").
+  return p.min === 0 ? String(h12) : `${h12}:${pad(p.min)}`;
 }
-/** "Mon 26 Oct, 12:00–12:30 pm Central" — her clock, her format (make-it-calm §5). */
+/** "Mon 26 Oct, 12–12:30 pm Central" — her clock, her format (make-it-calm §5). */
 export function whenWords(start, end = null, allDay = false) {
   const s = parts(start);
   const day = `${s.wd} ${s.d} ${MONTHS[s.m - 1]}`;
@@ -342,16 +346,18 @@ export function unsureAskDay(start, today) {
  *   unsure: shown on its ask day (unsureAskDay), exactly once; dropped after that day passes, and on
  *           any day after the event.
  */
-export function askPlan(inv, today) {
+export function askPlan(inv, today, now = null) {
   const eventDay = centralDay(inv.starts_at);
+  // An invitation first read on the morning of the event, still ahead: asked once, that morning.
+  const laterToday = today === eventDay && now !== null && inv.starts_at > now;
   // Already asked this morning (the duty run again by hand): the same card, the same asking, no new count.
-  if (inv.last_asked_day === today && today < eventDay && (inv.status === "open" || inv.status === "unsure")) {
+  if (inv.last_asked_day === today && (today < eventDay || laterToday) && (inv.status === "open" || inv.status === "unsure")) {
     const ask = inv.status === "unsure" ? (inv.unsure_asks >= 1 ? "unsure" : null) : inv.asks >= 2 ? "again" : "first";
     if (ask) return { show: true, drop: false, ask };
   }
   if (inv.status === "open") {
+    if (!inv.asks && (today < eventDay || laterToday)) return { show: true, drop: false, ask: "first" };
     if (today >= eventDay) return { show: false, drop: true, ask: null };
-    if (!inv.asks) return { show: true, drop: false, ask: "first" };
     const again = addDays(eventDay, -REASK_DAYS_BEFORE);
     if (inv.asks === 1 && today >= again && inv.last_asked_day && inv.last_asked_day < again) return { show: true, drop: false, ask: "again" };
     return { show: false, drop: false, ask: null };
@@ -394,14 +400,15 @@ export function cardFor(inv, { origin, ask = "first", today }) {
     : inv.kind === "personal" && inv.asks_answer === 1 && writable
       ? "No: Simone sends the short note below and the card goes away."
       : "No: the card goes away; nothing is sent.";
+  const tooClose = unsureDay > centralDay(inv.starts_at);
   const details = [
-    `When: ${when}`,
     `From: ${from}`,
     `Where: ${inv.location || "not said"}`,
     `How it came in: ${inv.how}`,
     yes,
     no,
-    ask === "unsure" ? "Not sure again: the card goes away now; it is not asked a third time." : `Not sure: Simone asks again on ${dayWords(unsureDay)}.`,
+    ask === "unsure" ? "Not sure again: the card goes away now; it is not asked a third time."
+      : tooClose ? "Not sure: the card goes away; it is too close to ask again." : `Not sure: Simone asks again on ${dayWords(unsureDay)}.`,
   ];
   if (inv.kind === "personal" && inv.asks_answer === 1 && writable) details.push(`If you tap No, Simone sends: "${noWords({ fromName: inv.from_name }).replace(/\n+/g, " ")}"`);
   const buttons = [
@@ -415,7 +422,7 @@ export function cardFor(inv, { origin, ask = "first", today }) {
   return {
     key: `invite:${inv.id}:${ask}`,
     title: `Go? ${inv.title}`,
-    body: `${lead}${when} · from ${inv.from_name || inv.from_address}.`,
+    body: `${lead}${when}`,
     details,
     ...(inv.kind === "personal" && writable ? { draft: { heading: "If you tap Yes, Simone sends", text: inv.reply_text ?? yesWords({ fromName: inv.from_name }) } } : {}),
     buttons,

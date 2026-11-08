@@ -11,7 +11,10 @@ import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import worker from "../../src/worker/boss/index";
 import { setCommandFetch } from "../../src/worker/boss/commands/google";
 import { runInvitations, setInviteModel } from "../../src/worker/boss/invitations/run";
-import { addDays, centralDay, wallToUtc } from "../../src/shared/boss/invitations/invitations.mjs";
+import { addDays, centralDay, wallToUtc, INVITE_INBOXES } from "../../src/shared/boss/invitations/invitations.mjs";
+
+// Her own inbox is read from the module, never written in a test (the repo is public).
+const HER = INVITE_INBOXES[0]!.address;
 
 const DAY = 86_400_000;
 // Mon 9 Nov 2026, 06:00 Central.
@@ -30,7 +33,7 @@ const ics = [
   "BEGIN:VCALENDAR", "METHOD:REQUEST", "BEGIN:VEVENT",
   "DTSTART:20261120T000000Z", "DTEND:20261120T010000Z",
   "ORGANIZER;CN=Avery Host:mailto:avery@example.com", "UID:abc-123@google.com",
-  "ATTENDEE;PARTSTAT=NEEDS-ACTION;RSVP=TRUE;CN=Sequoia:mailto:sequoia@westpeek.ventures",
+  `ATTENDEE;PARTSTAT=NEEDS-ACTION;RSVP=TRUE;CN=Her:mailto:${HER}`,
   "SUMMARY:Board dinner", "LOCATION:The Peabody\\, Memphis", "STATUS:CONFIRMED", "END:VEVENT", "END:VCALENDAR",
 ].join("\r\n");
 const msg = (id: string, headers: Record<string, string>, parts: any[]) => ({
@@ -60,7 +63,7 @@ function fakeGoogle(opts: { failGmail?: boolean } = {}) {
     calls.push({ method, url, body: typeof init?.body === "string" ? init.body : "" });
     if (url.includes("oauth2.googleapis.com/token")) return Response.json({ access_token: "t" });
     if (url.includes("/calendar/v3/") && method === "GET" && url.includes("iCalUID")) {
-      return Response.json({ items: [{ id: "ev1", attendees: [{ email: "sequoia@westpeek.ventures", self: true, responseStatus: "needsAction" }] }] });
+      return Response.json({ items: [{ id: "ev1", attendees: [{ email: HER, self: true, responseStatus: "needsAction" }] }] });
     }
     if (url.includes("/calendar/v3/") && method === "GET") {
       return Response.json({ items: [{ id: "ev1", iCalUID: "abc-123@google.com", summary: "Board dinner", start: { dateTime: "2026-11-20T00:00:00Z" }, end: { dateTime: "2026-11-20T01:00:00Z" }, organizer: { email: "avery@example.com", displayName: "Avery Host" }, attendees: [{ self: true, responseStatus: "needsAction" }] }] });
@@ -112,7 +115,9 @@ describe("the morning pass", () => {
     for (const d of s.decide) {
       expect(d.title).toMatch(/^Go\? /);
       expect(d.buttons.slice(0, 3).map((b: any) => b.label)).toEqual(["✓ Yes, go", "No", "Not sure"]);
-      expect(d.details.some((x: string) => /^When: .* Central$/.test(x))).toBe(true);
+      expect(d.body).toMatch(/ Central$/);
+      expect(d.details.some((x: string) => /^From: /.test(x))).toBe(true);
+      expect(d.details.some((x: string) => /^Where: /.test(x))).toBe(true);
       expect(d.details.some((x: string) => /^How it came in: /.test(x))).toBe(true);
     }
     const personal = s.decide.find((d: any) => /Dana/.test(d.title));

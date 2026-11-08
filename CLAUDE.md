@@ -545,3 +545,25 @@ Owner ruling, 1 Nov 2026 (personal brain, Settled decisions). Pinned by `tests/b
 3. **Repos' named stops report in** through `POST /api/boss/open-loops/intake` with the machine token
    `BOSS_OPEN_LOOPS_TOKEN` (vault): upsert by `repo#STOP`, closed "outcome reached" when cleared.
    How to adopt: `docs/open-loops.md`. Seed rows are posted at runtime, never written in the repo.
+
+## Invitations: Simone's Go? card
+
+Owner-approved plan, 8 Nov 2026. Rules in `src/shared/boss/invitations/invitations.mjs`; the duty is
+`duty_invitations` (migration 0359), a Worker job on the hourly tick at 06:00 Central
+(`src/worker/boss/invitations/run.ts`); her taps are `src/worker/boss/invitations/tap.ts`. Pinned by
+`tests/boss/invitations.test.ts` and `scripts/validate/spry-vc-never-sends.mjs`:
+1. **One card per invitation** in the "invitations" morning section (so in Simone's email and on Today,
+   never an email of its own): title, when in Central, from, where, how it came in; Yes, go · No · Not
+   sure. Deduped by calendar UID, or sender + day + title. Not invitations: newsletters, list webinars,
+   ticket receipts, anything already answered.
+2. **Her tap is the only OK to send.** The duty reads read-only (gmail.readonly, every inbox Boss OS
+   reads, Spry Ventures included, plus her Workspace calendars) and never sends; a GET never acts; the
+   POST claims the row (`claimTap`) before `act` can send. Spry Ventures mail is never sent from and its
+   calendar never written: a Yes there puts it on her calendar and she answers in Gmail.
+3. **An outside RSVP page is never fetched**: it is a button for her.
+4. **Asked at most twice**: first morning, once more 3 days before, dropped on the event day. Not sure
+   comes back exactly once (3 days before, or the day after under 3 days away).
+5. **A free model reads a personal email's subject and first 800 characters only**; Spry Ventures mail
+   and LP names only a no-training route; none answering → the prose rules. Nothing of a body is stored.
+6. **Rule 0**: `OUTPUT n invitations`; an inbox it cannot read is NAMED STOP [INVITES_MAILBOX_UNREAD]:
+   a line in her email, the duty marked failed, one fix job a day.

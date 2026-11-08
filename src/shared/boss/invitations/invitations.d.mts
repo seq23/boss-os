@@ -31,7 +31,7 @@ export function firstName(name: string | null | undefined): string;
 export function yesWords(inv: { fromName?: string | null }): string;
 export function noWords(inv: { fromName?: string | null }): string;
 export function unsureAskDay(start: number, today: string): string;
-export function askPlan(inv: any, today: string): { show: boolean; drop: boolean; ask: "first" | "again" | "unsure" | null };
+export function askPlan(inv: any, today: string, now?: number | null): { show: boolean; drop: boolean; ask: "first" | "again" | "unsure" | null };
 export function gmailLink(inv: any): string;
 export function cardFor(inv: any, opts: { origin: string; ask?: string; today: string }): any;
 export function outputLine(n: number): string;

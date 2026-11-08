@@ -11,6 +11,10 @@
 --    it cannot read is NAMED STOP [INVITES_MAILBOX_UNREAD]. Floor 0: a morning with no invitation is
 --    normal. Kendra opens the first-run Open Loops row (output_since before created_at).
 --
+-- 3. Model: a free route first (Gemini free, then OpenRouter free) reads a personal email's subject
+--    and first 800 characters; Spry Ventures mail and LP names reach only a no-training route; when
+--    none answers, the prose rules decide. `requested.model` says so for the roster.
+--
 -- Additive only: one new table, INSERT OR IGNORE.
 
 CREATE TABLE IF NOT EXISTS owner_invitations (
@@ -60,8 +64,7 @@ ON CONFLICT(entity) DO NOTHING;
 
 INSERT OR IGNORE INTO standing_duties
   (id, name, employee_id, lane, local_hour, local_minute, timezone, cadence, weekday,
-   next_due_at, executor, task_kind, task_title, task_input, success_criteria, suspended,
-   output_metric, output_floor, output_runs, output_reason, output_since) VALUES
+   next_due_at, executor, task_kind, task_title, task_input, success_criteria, suspended) VALUES
   ('duty_invitations',
    'Invitations: a Go? card for each one',
    'emp_chief', 'ops',
@@ -70,11 +73,15 @@ INSERT OR IGNORE INTO standing_duties
    'Invitations: a Go? card for each one',
    json_object(
      'worker_job', 'invitations',
+     'delivers', 'morning_sections',
+     'requested', json_object('model', 'free-route'),
      'sends', 'nothing on its own: a Yes, No or decline goes only when she taps it (invitations/tap.ts)'
    ),
    'Every morning (06:00 Central) Simone reads new mail in each inbox Boss OS already reads and her calendars, finds the invitations (calendar invites, Luma/Eventbrite/Partiful/Paperless Post events, personal "would you join us" emails) and puts ONE Go? card per invitation in the morning email and on Today: Yes, go / No / Not sure. An inbox it cannot read is a named stop shown in the email.',
-   0,
-   'invitations', 0, 2, 'A morning with no new invitation is normal; an unread inbox is a named stop, never a zero.',
-   unixepoch() * 1000 - 60000);
+   0);
+
+-- Its floor, mirrored by its Schedule row (tests/outputFloors.test.ts). output_since sits a minute
+-- before the row's created_at, so Kendra opens its first-run Open Loops row.
+UPDATE standing_duties SET output_metric = 'invitations', output_floor = 0, output_runs = 2, output_reason = 'A morning with no new invitation is normal; an unread inbox is a named stop, never a zero.', output_since = unixepoch() * 1000 - 60000 WHERE id = 'duty_invitations';
 
 INSERT OR IGNORE INTO schema_version (migration) VALUES ('0359_boss_simone_invitations');
