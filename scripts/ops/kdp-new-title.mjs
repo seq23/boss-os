@@ -50,6 +50,7 @@ import { existsSync, lstatSync, readlinkSync } from "node:fs";
 import { join, dirname } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { openProfile, profilePath } from "./browser.mjs";
+import { findSeriesBook, BOOKS_DIR } from "./kdp-build.mjs";
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const ORIGIN = process.env.BOSS_OS_ORIGIN ?? "https://boss.sequoiataylor.com";
@@ -193,6 +194,30 @@ export function shelfRowsIn(doc) {
  *   resume    a Draft exists: continue THAT draft (never a second one); `extra` are duplicates to name
  *   create    nothing on the shelf: Create
  */
+/** Amazon's caps (KDP help, 8 Nov 2026): at most 10 unpublished drafts; a small daily publish cap. */
+export const KDP_DRAFT_CAP = 10;
+export const PUBLISH_PER_RUN = Number(process.env.KDP_PUBLISH_PER_RUN ?? 5);
+
+/**
+ * Which approved titles this run may act on, under Amazon's caps. `todo` are titles not yet In review
+ * or Live, each with its bookshelf plan; `drafts` is how many unpublished drafts the bookshelf holds
+ * now. A title that resumes its own draft never adds one; a new title (Create) needs a free draft
+ * slot. At most `perRun` are submitted; the rest stay approved and QUEUED for the next run. Pure.
+ */
+export function underCaps(todo, { drafts = 0, perRun = PUBLISH_PER_RUN, draftCap = KDP_DRAFT_CAP } = {}) {
+  const go = [], queued = [];
+  let free = Math.max(0, draftCap - drafts);
+  for (const t of todo) {
+    if (go.length >= perRun) { queued.push({ ...t, why: `the run's publish cap (${perRun})` }); continue; }
+    if (t.plan?.action !== "resume") {
+      if (free <= 0) { queued.push({ ...t, why: `KDP's ${draftCap}-draft cap` }); continue; }
+      free -= 1;
+    }
+    go.push(t);
+  }
+  return { go, queued };
+}
+
 export function planTitle(title, rows, { kindleOnPage = 0 } = {}) {
   const mine = (rows ?? []).map((r) => ({ ...r, ...parseShelfRow(r.lines) })).filter((r) => titleMatches(title, r.title));
   const drafts = mine.filter((r) => r.state === "DRAFT");
@@ -301,7 +326,7 @@ export function categoryStep(root, label, boxesOnly = false) {
 }
 
 /** On a stop, keep what the page showed (HTML + screenshot) next to the draft, for the next root cause. */
-async function snapshot(page, dir, name) {
+export async function snapshot(page, dir, name) {
   try {
     await writeFile(join(dir, `${name}.html`), await page.content());
     await page.screenshot({ path: join(dir, `${name}.png`), fullPage: true });
@@ -339,24 +364,24 @@ export async function waitForHer(page, run = RUN) {
   }
   throw stop("SIGNIN_NOT_DONE", `Amazon's sign-in was not finished within ${mins} minutes. Nothing was published.`, 3);
 }
-async function go(page, url) { RUN.lastUrl = url; await page.goto(url, { waitUntil: "domcontentloaded", timeout: STEP_MS }); await waitForHer(page); }
+export async function go(page, url) { RUN.lastUrl = url; await page.goto(url, { waitUntil: "domcontentloaded", timeout: STEP_MS }); await waitForHer(page); }
 
 /** The first selector that exists and is visible. */
-async function first(page, sels) {
+export async function first(page, sels) {
   for (const s of sels) {
     const l = typeof s === "string" ? page.locator(s) : s(page);
     if (await l.count().catch(() => 0)) { const f = l.first(); if (await f.isVisible().catch(() => false)) return f; }
   }
   return null;
 }
-async function fillField(page, name, sels, value) {
+export async function fillField(page, name, sels, value) {
   const el = await first(page, sels);
   if (!el) throw stop("FIELD_NOT_FOUND", `the ${name} box is not on the page; nothing was saved past this step.`);
   await el.fill(String(value));
   const back = await el.inputValue();
   if (back !== String(value)) throw stop("FIELD_DID_NOT_TAKE", `the ${name} box reads "${back}" after filling "${value}".`);
 }
-async function clickOne(page, name, sels) {
+export async function clickOne(page, name, sels) {
   const el = await first(page, sels);
   if (!el) throw stop("CONTROL_NOT_FOUND", `the ${name} control is not on the page.`);
   await el.click();
@@ -372,6 +397,7 @@ async function details(page, book, dir, ref = null) {
   const [firstName, lastName] = [book.author.split(" ").slice(0, -1).join(" "), book.author.split(" ").at(-1)];
   await fillField(page, "author first name", ['input[name="data[primary_author][first_name]"]', "#data-primary-author-first-name"], firstName);
   await fillField(page, "author last name", ['input[name="data[primary_author][last_name]"]', "#data-primary-author-last-name"], lastName);
+  if (book.series?.name) await seriesStep(page, book.series, dir);
   // Description: KDP's description is a CKEditor 4 instance ("editor1", inside an iframe) that loads
   // AFTER the title boxes, backed by a hidden INPUT data[description] (not a textarea). 7 Nov 2026: the
   // first live run filled title/subtitle/author, then found no editor because CKEditor wasn't ready yet.
@@ -408,10 +434,50 @@ async function details(page, book, dir, ref = null) {
 }
 
 /**
+ * Series (KDP strategy, 8 Nov 2026: each line is an Amazon series). The series itself is created once
+ * per line by kdp-series.mjs; here the title joins it: "Add to series" → Existing series → pick it →
+ * Main content (live page, 8 Nov 2026). A title already in a series shows "Edit series" instead and
+ * is left alone. A series missing from the list is a NAMED STOP, never a guessed one.
+ */
+async function seriesStep(page, series, dir) {
+  if (await page.locator('[data-test-id="edit-series-details-button"], #edit_series_buttons:visible').count().catch(() => 0)) { console.log(`series: already set on this title.`); return; }
+  await clickOne(page, "Add to series", ['[data-test-id="add-series-details-button"]', (p) => p.getByRole("button", { name: /^\s*Add to series\s*$/i })]);
+  await page.waitForTimeout(2500);
+  const pop = () => page.locator('.a-popover[aria-hidden="false"]').last();
+  await pop().getByRole("button", { name: /^\s*Select series\s*$/i }).click({ timeout: 15_000 });
+  await page.waitForTimeout(3000);
+  // By the id kdp-series.mjs recorded for this series when there is one (the picker lowercases names).
+  let known = null;
+  try { known = Object.values(JSON.parse(await readFile(join(process.env.BOSS_OS_KDP_DIR ?? `${process.env.HOME}/.boss-os/kdp`, "series.json"), "utf8"))).find((x) => normTitle(x.name) === normTitle(series.name))?.id ?? null; } catch {}
+  const search = pop().locator('input[name="series-search-input"]');
+  if (await search.count().catch(() => 0)) { await search.fill(series.name).catch(() => {}); await search.press("Enter").catch(() => {}); await page.waitForTimeout(2500); }
+  const pick = known && (await pop().locator(`[data-test-id="series-search-result-${known}"]`).count().catch(() => 0))
+    ? pop().locator(`[data-test-id="series-search-result-${known}"]`)
+    : pop().getByText(series.name, { exact: false }).first();
+  if (!(await pick.count().catch(() => 0))) {
+    const shot = await snapshot(page, dir, "stop-series");
+    throw stop("SERIES_NOT_FOUND", `the series "${series.name}" is not in KDP's list; run kdp-series.mjs for its line first. Page kept at ${shot ?? "(screenshot failed)"}.`);
+  }
+  await pick.click();
+  await page.waitForTimeout(2500);
+  const next = pop().getByRole("button", { name: /^\s*(Select|Next|Continue|Add)\s*$/i }).last();
+  if (await next.count().catch(() => 0)) { await next.click().catch(() => {}); await page.waitForTimeout(2500); }
+  const main = pop().getByRole("button", { name: /^\s*Main content\s*$/i }).last();
+  if (await main.count().catch(() => 0)) { await main.click(); await page.waitForTimeout(2500); }
+  const confirm = pop().getByRole("button", { name: /^\s*(Confirm|Add|Save|Done|Confirm and add)\b/i }).last();
+  if (await confirm.count().catch(() => 0)) { await confirm.click().catch(() => {}); await page.waitForTimeout(2500); }
+  if (!(await page.getByText(series.name, { exact: false }).count().catch(() => 0))) {
+    const shot = await snapshot(page, dir, "stop-series");
+    throw stop("SERIES_NOT_SET", `the title did not join "${series.name}". Page kept at ${shot ?? "(screenshot failed)"}.`);
+  }
+  console.log(`series: joined "${series.name}" as main content.`);
+}
+
+/**
  * Categories: set by the run itself, never by her (her coordinator, 7 Nov 2026, after a run that
  * waited 10 minutes on her and stopped CATEGORIES_NOT_SET).
  */
-async function categories(page, cats, dir) {
+export async function categories(page, cats, dir) {
   // KDP's Kindle chooser (read live 7 Nov 2026): a modal with a "Category" select, a "Subcategory"
   // select, then checkboxes for the leaves; up to 3 placements; Save closes it and the page button
   // turns from "Choose categories" to "Edit categories". That button text is what "set" means here.
@@ -459,7 +525,7 @@ async function categories(page, cats, dir) {
 }
 
 const UPLOAD_MS = 6 * 60_000;
-async function upload(page, kind, sels, file, dir) {
+export async function upload(page, kind, sels, file, dir) {
   const name = kind === "cover" ? "cover" : "manuscript";
   const sel = sels.join(", ");
   const input = page.locator(sel);
@@ -509,7 +575,7 @@ export function aiState(doc) {
 }
 
 /** Sets the AI answers (Yes, texts, images, translations, tool names) and reads them back. */
-async function aiDisclosure(page, ans, { write }) {
+export async function aiDisclosure(page, ans, { write }) {
   const read = () => page.evaluate(`(${aiState})(document)`);
   let st = await read();
   if (!st.found) throw stop("AI_DISCLOSURE_NOT_FOUND", "the AI-generated content question is not on the content step; nothing was published.");
@@ -589,10 +655,20 @@ async function pricingAndPublish(page, book, ans) {
   const seen = await aiDisclosure(page, ans, { write: false });
   console.log(`AI disclosure read back before Publish: ${JSON.stringify(seen)}`);
   await go(page, `${base}/pricing`);
-  const royalty = await first(page, [(p) => p.getByLabel(/^70%/), 'input[value="SEVENTY"]', 'input[name*="royalty"][value*="70"]']);
-  if (!royalty) throw stop("FIELD_NOT_FOUND", "the 70% royalty choice is not on the pricing step.");
+  // KDP Select (KDP strategy, 8 Nov 2026: every series book is in Select for KU page reads and the free days).
+  if (book.kdp_select) {
+    const sel = await first(page, ["#data-is-select", 'input[name="data[is_select]-check"]']);
+    if (sel) { await sel.check().catch(() => {}); if (!(await sel.isChecked().catch(() => false))) throw stop("FIELD_DID_NOT_TAKE", "the KDP Select box reads unticked after ticking it; nothing was published."); }
+    else console.log("KDP Select: no enrol box on the pricing step (already enrolled, or managed on the Promotions page).");
+  }
+  // 70% from $2.99; a $0.99–$2.98 book can only take 35% (KDP's own bands).
+  const pct = Number(book.royalty ?? (book.price_usd >= 2.99 ? 70 : 35));
+  const royalty = pct === 35
+    ? await first(page, [(p) => p.getByLabel(/^35%/), 'input[value="THIRTY_FIVE"]', 'input[name*="royalty"][value*="35"]'])
+    : await first(page, [(p) => p.getByLabel(/^70%/), 'input[value="SEVENTY"]', 'input[name*="royalty"][value*="70"]']);
+  if (!royalty) throw stop("FIELD_NOT_FOUND", `the ${pct}% royalty choice is not on the pricing step.`);
   await royalty.check();
-  if (!(await royalty.isChecked().catch(() => false))) throw stop("FIELD_DID_NOT_TAKE", "the 70% royalty choice reads unticked after choosing it; nothing was published.");
+  if (!(await royalty.isChecked().catch(() => false))) throw stop("FIELD_DID_NOT_TAKE", `the ${pct}% royalty choice reads unticked after choosing it; nothing was published.`);
   await fillField(page, "Amazon.com price", ['input[name="data[digital_list_price][USD]"]', 'input[id*="price"][id*="US"]', (p) => p.locator("tr, .a-row").filter({ hasText: "Amazon.com" }).locator('input[type="text"]')], book.price_usd.toFixed(2));
   // Read the price back as Amazon will use it (the box, not what was typed), right before Publish.
   const priceBox = await first(page, ['input[name="data[digital_list_price][USD]"]', 'input[id*="price"][id*="US"]']);
@@ -607,7 +683,7 @@ async function pricingAndPublish(page, book, ans) {
 }
 
 /** Reads the bookshelf rows on the page as it is (no navigation), and how many Kindle books it shows. */
-async function rowsOnPage(page) {
+export async function rowsOnPage(page) {
   const rows = await page.evaluate(`(${shelfRowsIn})(document)`).catch(() => []);
   const kindleOnPage = await page.evaluate(() => (document.body?.innerText ?? "").split("\n").filter((l) => /^\s*kindle e-?book\s*$/i.test(l)).length).catch(() => 0);
   return Object.assign(rows, { kindleOnPage });
@@ -805,7 +881,7 @@ const dayCT = (ms = Date.now()) => new Intl.DateTimeFormat("en-CA", { timeZone: 
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
 /** Simone's own sign-in on the open window: the existing kdp-signin.mjs steps, with the vault's launch env. */
-async function autoSignin(page, target) {
+export async function autoSignin(page, target) {
   const email = process.env.KDP_ACCOUNT_EMAIL ?? "", password = process.env.KDP_ACCOUNT_PASSWORD ?? "";
   if (!email || !password) return { code: 3, state: "no_credentials", detail: "the KDP sign-in is not in this launch (run through the vault)" };
   const { signInOnPage } = await import("./kdp-signin.mjs");
@@ -824,15 +900,18 @@ async function main() {
   let code = 0;
   for (const a of approved) {
     const book0 = spec.books.find((b) => normTitle(b.title) === normTitle(a.title));
-    const dir = book0 ? join(DRAFTS, book0.folder) : null;
-    if (!book0 || !existsSync(join(dir, "book.epub")) || !existsSync(join(dir, "listing.json"))) {
-      say("NO_DRAFT", `"${a.title}" has no draft on this Mac (${dir ?? "no folder"}); run kdp-kmp-draft.mjs first.`);
+    // A series book (kdp-books/<line>.json `series_books`), built by kdp-build.mjs into ~/.boss-os/kdp/books/<slug>.
+    const series = book0 ? null : await findSeriesBook(a.title);
+    const folder = book0?.folder ?? series?.book.slug ?? null;
+    const dir = book0 ? join(DRAFTS, book0.folder) : series ? join(BOOKS_DIR, series.book.slug) : null;
+    if (!folder || !existsSync(join(dir, "book.epub")) || !existsSync(join(dir, "listing.json"))) {
+      say("NO_DRAFT", `"${a.title}" has no draft on this Mac (${dir ?? "no folder"}); run ${series ? "kdp-build.mjs" : "kdp-kmp-draft.mjs"} first.`);
       console.error(`NAMED STOP [NO_DRAFT] "${a.title}" is approved and its draft is not on this Mac.`);
       await api.attempt(a.id, { run_outcome: "could-not-run", stop_code: "NO_DRAFT", amazon_message: null });
       code = 4; continue;
     }
     const listing = JSON.parse(await readFile(join(dir, "listing.json"), "utf8"));
-    books.push({ a, folder: book0.folder, dir, book: { ...listing }, ans: aiAnswers(spec, listing) });
+    books.push({ a, folder, dir, book: { ...listing }, ans: aiAnswers(series ? {} : spec, listing) });
   }
 
   if (!books.length) { console.log("OUTPUT 0 kindle-titles-submitted"); return code; }
@@ -881,9 +960,16 @@ async function main() {
     } catch (e) { console.log(`bookshelf not read headless (${String(e.message).slice(0, 120)}); the visible run reads it first.`); }
     await context.close().catch(() => {});
     for (const b of books) {
-      if (rows && (await settle(b, plan(b.book.title, rows)))) continue;
-      todo.push(b);
+      const p = rows ? plan(b.book.title, rows) : null;
+      if (p && (await settle(b, p))) continue;
+      todo.push(Object.assign(b, { plan: p }));
     }
+    // Amazon's caps: whatever they hold back stays approved and is the next run's work.
+    const drafts = rows ? rows.map((r) => parseShelfRow(r.lines)).filter((r) => r.state === "DRAFT").length : 0;
+    const { go, queued } = underCaps(todo, { drafts });
+    for (const q of queued) say("QUEUED", `${q.book.title}: approved and waiting for the next run (${q.why}).`);
+    todo.splice(0, todo.length, ...go);
+    console.log(`queue: ${queued.length} approved title(s) wait for the next run; ${drafts} unpublished draft(s) on the bookshelf.`);
   }
   if (!todo.length) { console.log(`OUTPUT ${submitted} kindle-titles-submitted`); return code; }
 
