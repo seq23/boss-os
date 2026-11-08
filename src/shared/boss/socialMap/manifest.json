@@ -1189,13 +1189,14 @@
       "platform": "Website (in sameAs)",
       "handle": "wisecovington.com",
       "url": "https://wisecovington.com",
-      "account_email": "unknown",
+      "account_email": "no account",
       "status": "live_manual",
       "posts": {
         "by": "hand",
         "what": "The client."
       },
-      "decision": "Client site in sameAs."
+      "decision": "Client site in sameAs.",
+      "account_email_note": "A website or a public record in sameAs, not a social account."
     },
     {
       "id": "horse-x",
@@ -1294,13 +1295,14 @@
       "platform": "Website (sister site, in sameAs)",
       "handle": "diannesplacerecoveryservices.com",
       "url": "https://www.diannesplacerecoveryservices.com/",
-      "account_email": "unknown",
+      "account_email": "no account",
       "status": "live_manual",
       "posts": {
         "by": "hand",
         "what": "The client."
       },
-      "decision": "Client site in sameAs."
+      "decision": "Client site in sameAs.",
+      "account_email_note": "A website or a public record in sameAs, not a social account."
     },
     {
       "id": "cbdds-provider",
@@ -1309,13 +1311,14 @@
       "platform": "Provider page (Aspen Dental)",
       "handle": "aspendental.com provider page",
       "url": "https://www.aspendental.com/providers/cynthia-brown/1194138503/",
-      "account_email": "unknown",
+      "account_email": "no account",
       "status": "live_manual",
       "posts": {
         "by": "hand",
         "what": "The practice."
       },
-      "decision": "In entity.json sameAs."
+      "decision": "In entity.json sameAs.",
+      "account_email_note": "A website or a public record in sameAs, not a social account."
     },
     {
       "id": "wpp-website",
@@ -1324,13 +1327,14 @@
       "platform": "Website (in sameAs)",
       "handle": "westpeekproductions.com",
       "url": "https://www.westpeekproductions.com/",
-      "account_email": "unknown",
+      "account_email": "no account",
       "status": "live_manual",
       "posts": {
         "by": "hand",
         "what": "By hand."
       },
-      "decision": "In the WPP-llm entity sameAs."
+      "decision": "In the WPP-llm entity sameAs.",
+      "account_email_note": "A website or a public record in sameAs, not a social account."
     },
     {
       "id": "wpp-linkedin",
@@ -1354,13 +1358,14 @@
       "platform": "Wikidata",
       "handle": "Q140357096",
       "url": "https://www.wikidata.org/wiki/Q140357096",
-      "account_email": "unknown",
+      "account_email": "no account",
       "status": "live_manual",
       "posts": {
         "by": "hand",
         "what": "By hand."
       },
-      "decision": "In the WPP-llm entity sameAs."
+      "decision": "In the WPP-llm entity sameAs.",
+      "account_email_note": "A website or a public record in sameAs, not a social account."
     },
     {
       "id": "wpp-instagram",
