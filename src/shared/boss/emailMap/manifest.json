@@ -720,7 +720,7 @@
       "what": "Kindle: a heads-up before Chrome opens to publish an approved book, a stop with the one thing to do, a still-waiting note, and the Amazon link when it is live",
       "sender": "Simone", "owner": "Simone",
       "from": "Simone <simone@sequoiataylor.com>", "to": "You",
-      "when": "Daily at 9:45 AM, only when a book you approved is not yet live",
+      "when": "Mondays at 9:45 AM, only when a book you approved is not yet live",
       "runs": "mac", "trigger": "Mac job com.seq.kdp-publish",
       "pause": "launchctl bootout gui/501/com.seq.kdp-publish",
       "launchd": ["com.seq.kdp-publish"],

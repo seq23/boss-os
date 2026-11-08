@@ -1015,8 +1015,9 @@ echo "Installed $SURFACE_LABEL — daily 09:30 Central."
 # and this one runs with the day's determination already filed.
 #
 # IT ASKS HER FOR NOTHING. Her approval is found and acted on; no judgement call is raised and
-# nothing she has not approved is ever published. DAILY since 8 Nov 2026 (migration 0357): an approved
-# book no longer waits for the 1st, and with nothing approved the run opens and sends nothing.
+# nothing she has not approved is ever published. WEEKLY, Monday 09:45, since 8 Nov 2026 (migration 0358;
+# owner: "simone kdp needs to be weekly or less"): daily signed in to Amazon ~30 times a month for a line
+# with no sales, and every sign-in risks a picture check that lands on her.
 PUBLISH_LABEL="com.seq.kdp-publish"
 PUBLISH_PLIST="$HOME/Library/LaunchAgents/$PUBLISH_LABEL.plist"
 PUBLISH_LOGS="$HOME/Library/Logs/kdp-publish"
@@ -1038,7 +1039,7 @@ cat > "$PUBLISH_PLIST" <<PUBEOF
   </array>
   <key>StartCalendarInterval</key>
   <array>
-    <dict><key>Hour</key><integer>9</integer><key>Minute</key><integer>45</integer></dict>
+    <dict><key>Weekday</key><integer>1</integer><key>Hour</key><integer>9</integer><key>Minute</key><integer>45</integer></dict>
   </array>
   <key>EnvironmentVariables</key>
   <dict><key>BOSS_OS_REPO</key><string>$REPO</string></dict>
@@ -1051,7 +1052,7 @@ PUBEOF
 launchctl unload "$PUBLISH_PLIST" 2>/dev/null || true
 lint_plist "$PUBLISH_PLIST"
 launchctl load "$PUBLISH_PLIST"
-echo "Installed $PUBLISH_LABEL — daily 09:45 Central."
+echo "Installed $PUBLISH_LABEL — Mondays 09:45 Central."
 
 # ─── Monique's mailbox sweep ─────────────────────────────────────────────────
 #
