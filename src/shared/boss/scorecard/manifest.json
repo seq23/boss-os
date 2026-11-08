@@ -1596,6 +1596,50 @@
       "pause": []
     },
     {
+      "id": "bhpc-search-blitz",
+      "initiative": "BHPC search blitz + redesign (billionairehighperformancecoach.com)",
+      "business": "spry",
+      "owner": "Danielle · your morning email",
+      "result": "Google showings on the big problem searches, then clicks to the BHPC pages",
+      "jobs": [],
+      "start": "2026-11-08",
+      "first": {
+        "label": "Google impressions on billionairehighperformancecoach.com (28 days); target 5,000 by mid-Dec, 10,000 by mid-Jan",
+        "by": 35,
+        "floor": {
+          "op": ">=",
+          "value": 5000
+        },
+        "reader": "gsc",
+        "params": {
+          "sites": [
+            "billionairehighperformancecoach.com"
+          ],
+          "metric": "impressions",
+          "days": 28
+        }
+      },
+      "real": {
+        "label": "Google clicks to billionairehighperformancecoach.com (28 days); target 100 by mid-Dec, 300 by mid-Jan",
+        "by": 66,
+        "floor": {
+          "op": ">=",
+          "value": 300
+        },
+        "reader": "gsc",
+        "params": {
+          "sites": [
+            "billionairehighperformancecoach.com"
+          ],
+          "metric": "clicks",
+          "days": 28
+        }
+      },
+      "versionB": {
+        "text": "Rewrite titles and descriptions of the most-shown, least-clicked pages; extend the blitz on the topics that index"
+      }
+    },
+    {
       "id": "publication-social-posts",
       "initiative": "The three publications' daily posts (Bluesky + WordPress.com)",
       "business": "spry",
