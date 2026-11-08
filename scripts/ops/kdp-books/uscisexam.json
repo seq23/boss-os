@@ -31,8 +31,8 @@
         "citizenship interview what to bring"
       ],
       "categories": [
-        "Law › Immigration",
-        "Reference › Test Preparation › Citizenship",
+        "Education & Teaching › Test Preparation › Citizenship",
+        "Law › Administrative Law › Emigration & Immigration",
         "Politics & Social Sciences › Social Sciences › Emigration & Immigration"
       ],
       "price_usd": 2.99,
@@ -50,5 +50,6 @@
         "preview": "docs/kdp/books/assets/covers/naturalization-interview-medical-exam.jpg"
       }
     }
-  ]
+  ],
+  "_categories_note": "Category paths checked against KDP's own Kindle chooser on 8 Nov 2026 (read from the live chooser, not guessed); 3 per book."
 }

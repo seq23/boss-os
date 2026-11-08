@@ -31,8 +31,9 @@
         "decodable books first grade"
       ],
       "categories": [
-        "Children's eBooks › Education & Reference › Language Arts › Phonics",
-        "Children's eBooks › Early Learning › Beginner Readers"
+        "Children's eBooks › Early Learning › Beginner Readers",
+        "Children's eBooks › Literature & Fiction › Beginner Readers",
+        "Reference › Words, Language & Grammar › Phonetics & Phonics"
       ],
       "price_usd": 2.99,
       "min_words": 1200,
@@ -53,5 +54,6 @@
         "preview": "docs/kdp/books/assets/covers/decodable-stories-1.jpg"
       }
     }
-  ]
+  ],
+  "_categories_note": "Category paths checked against KDP's own Kindle chooser on 8 Nov 2026 (read from the live chooser, not guessed); 3 per book."
 }

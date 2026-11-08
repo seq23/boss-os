@@ -172,3 +172,37 @@ describe("the batch's scorecard rows read one line's books out of the weekly sal
     expect(() => kdpLineValue(o, { metric: "free_units" }, ["Some Other Book"])).toThrow(/KDP_LINE_NOT_ON_SALE|none of this line/);
   });
 });
+
+describe("her Monday line: the bookshelf, then the sales, never a 0 for something not read", () => {
+  // @ts-expect-error — plain .mjs ops lib
+  const load = () => import("../scripts/ops/kdp-week.mjs");
+  const titles = ["Parallel Parenting", "Executive Dysfunction", "Writing Your Wedding Vows", "The Maid of Honor Handbook"];
+  const rows = [
+    { title: "Parallel Parenting: A Simple Record Book", state: "IN_REVIEW" },
+    { title: "Executive Dysfunction: A Five-Role System", state: "LIVE" },
+    { title: "The Maid of Honor Handbook: x", state: "BLOCKED" },
+    { title: "The Credit Dispute Letter: y", state: "LIVE" },
+  ];
+
+  it("counts the series books from the live bookshelf rows: live, in review, queued (not on the shelf), stopped", async () => {
+    const { shelfCounts } = await load();
+    expect(shelfCounts(titles, rows)).toEqual({ live: 1, review: 1, queued: 1, stopped: 1, stoppedTitles: ["The Maid of Honor Handbook"] });
+  });
+
+  it("reads like her example and fits Today's 80 bytes, which the census line's grep counts", async () => {
+    const { weekLine, OUTPUT_MAX } = await load();
+    const line = weekLine({ shelf: { live: 2, review: 0, queued: 7, stopped: 0 }, units: { units_total: 3, kenp_total: 410 }, visits: { total: 120 } });
+    expect(line).toBe("2 live, 0 in review, 7 queued, 0 stopped | 3 sold, 410 KU pages, 120 visits");
+    expect(Buffer.byteLength(weekLine({ shelf: { live: 1234, review: 1234, queued: 1234, stopped: 1234 }, units: { units_total: 123456, kenp_total: 1234567 }, visits: { total: 123456 } }))).toBeLessThanOrEqual(OUTPUT_MAX);
+  });
+
+  it("a source not read says so, never 0", async () => {
+    const { weekLine } = await load();
+    expect(weekLine({ shelf: { unread: "signed out" }, units: { unread: "x" }, visits: { unread: "y" } })).toBe("bookshelf not read | sales not read, visits not read");
+  });
+
+  it("names a book stopped two Mondays running, and only that one", async () => {
+    const { stoppedTwoWeeks } = await load();
+    expect(stoppedTwoWeeks(["The Maid of Honor Handbook", "Gone Now"], ["The Maid of Honor Handbook", "New Stop"])).toEqual(["The Maid of Honor Handbook"]);
+  });
+});

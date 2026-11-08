@@ -23,6 +23,7 @@
 import { readFile, writeFile, mkdir, rm, readdir } from "node:fs/promises";
 import { existsSync } from "node:fs";
 import { execFileSync } from "node:child_process";
+import { createHash } from "node:crypto";
 import { join, dirname } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { openProfile } from "./browser.mjs";
@@ -63,6 +64,12 @@ export function relinkHtml(html, { companion, link, also = [] }) {
     return depth ? part : part.replace(plain, (m) => `<a href="${amp}">${m.replace(/^https?:\/\//, "").replace(/\/$/, "")}</a>`);
   }).join("");
   return out;
+}
+
+/** The version of one existing-books row: what it asks KDP to hold. Pure. */
+export function specHash(spec) {
+  const pick = { subtitle: spec.subtitle ?? null, keywords: spec.keywords ?? null, categories: spec.categories ?? null, price_usd: spec.price_usd ?? null, cover: spec.cover?.preview ?? null, link: spec.in_book_link_fix ?? null };
+  return createHash("sha256").update(JSON.stringify(pick)).digest("hex").slice(0, 16);
 }
 
 /** What one existing-books row changes against the bookshelf row it matches. Pure. */
@@ -122,6 +129,16 @@ async function replaceCategories(page, cats, dir) {
   await categories(page, cats, dir);
 }
 
+/** Save and Continue, and one more press when the page did not move (seen live, 8 Nov 2026). */
+async function saveAndGo(page, next) {
+  for (let i = 0; i < 2 && !next.test(page.url()); i += 1) {
+    await page.locator("#save-and-continue-announce").scrollIntoViewIfNeeded().catch(() => {});
+    await clickOne(page, "Save and Continue", ["#save-and-continue-announce", (p) => p.getByRole("button", { name: /Save and Continue/i })]);
+    await page.waitForURL(next, { timeout: STEP_MS }).catch(() => {});
+    if (!next.test(page.url()) && (await page.getByText(/Confirm your answers are accurate and check the box/i).first().isVisible().catch(() => false))) await confirmAiAnswers(page);
+  }
+}
+
 async function update(page, spec, row, todo, dir) {
   await go(page, `${KDP}/title-setup/kindle/${row.id}/details`);
   await page.waitForTimeout(2500);
@@ -131,9 +148,8 @@ async function update(page, spec, row, todo, dir) {
   if (todo.includes("subtitle")) await fillField(page, "subtitle", ['input[name="data[subtitle]"]', "#data-subtitle"], spec.subtitle);
   if (todo.includes("keywords")) for (let i = 0; i < 7; i += 1) await fillField(page, `keyword ${i + 1}`, [`input[name="data[keywords][${i}]"]`, `#data-keywords-${i}`], spec.keywords[i]);
   if (todo.includes("categories")) await replaceCategories(page, spec.categories, dir).catch((e) => { console.log(`  ${spec.slug}: categories kept as they were (${String(e.message).slice(0, 160)})`); todo.splice(todo.indexOf("categories"), 1); });
-  await clickOne(page, "Save and Continue", ["#save-and-continue-announce", (p) => p.getByRole("button", { name: /Save and Continue/i })]);
-  await page.waitForURL(/\/content/, { timeout: STEP_MS }).catch(() => {});
-  if (!/\/content/.test(page.url())) throw stop("DETAILS_NOT_SAVED", `Amazon did not move on from the details step: ${(await page.locator(".a-alert-content, .a-color-error").allInnerTexts().catch(() => [])).join(" ").slice(0, 300) || "no message shown"}.`, 9);
+  await saveAndGo(page, /\/content/);
+  if (!/\/content/.test(page.url())) throw stop("DETAILS_NOT_SAVED", `Amazon did not move on from the details step: ${(await page.locator(".a-alert-error:visible .a-alert-content, .a-alert-inline-error:visible").allInnerTexts().catch(() => [])).join(" ").slice(0, 300) || "no message shown"}.`, 9);
   if (todo.includes("manuscript")) await upload(page, "manuscript", ["#data-assets-interior-file-upload-AjaxInput", 'input[type="file"][id*="interior"]'], join(dir, "book.epub"), dir);
   if (todo.includes("cover")) {
     const choose = await first(page, [(p) => p.getByLabel(/Upload a cover you already have/i), (p) => p.getByText(/Upload a cover you already have/i)]);
@@ -142,13 +158,12 @@ async function update(page, spec, row, todo, dir) {
   }
   // A new file asks to re-affirm the AI answers (they are unchanged); a forced tick does not reach the page.
   if (todo.includes("manuscript") || todo.includes("cover")) await confirmAiAnswers(page);
-  await clickOne(page, "Save and Continue", ["#save-and-continue-announce", (p) => p.getByRole("button", { name: /Save and Continue/i })]);
-  await page.waitForURL(/\/pricing/, { timeout: STEP_MS }).catch(() => {});
+  await saveAndGo(page, /\/pricing/);
   if (!/\/pricing/.test(page.url())) throw stop("CONTENT_NOT_SAVED", "Amazon did not move on from the content step.", 9);
   await tickAui(page, 'input[name="data[is_select]-check"]');
   if (todo.includes("price")) {
     await tickAui(page, `input[name="data[digital][royalty_rate]-radio"][value="${spec.price_usd >= 2.99 ? 70 : 35}_PERCENT"]`);
-    await fillField(page, "Amazon.com price", ['input[name="data[digital_list_price][USD]"]', 'input[id*="price"][id*="US"]'], spec.price_usd.toFixed(2));
+    await fillField(page, "Amazon.com price", ['input[name="data[digital_list_price][USD]"]', 'input[id*="price"][id*="US"]', (p) => p.locator("tr, .a-row").filter({ hasText: "Amazon.com" }).locator('input[type="text"]')], spec.price_usd.toFixed(2));
     await page.keyboard.press("Tab").catch(() => {});
     await page.waitForTimeout(3000);
   }
@@ -160,9 +175,26 @@ async function update(page, spec, row, todo, dir) {
   return "submitted";
 }
 
-async function bookshelfRows(page) {
+/** The bookshelf searched by title (its own search box), rows parsed. */
+async function searchShelf(page, title) {
+  await go(page, `${KDP}/bookshelf`);
+  await page.waitForTimeout(4000);
+  const box = await first(page, ["#podbookshelftable-search-input", 'input[name="search"]', 'input[placeholder*="Search" i]']);
+  if (!box) return [];
+  await box.fill(title).catch(() => {}); await box.press("Enter").catch(() => {});
+  await page.waitForTimeout(5000);
+  return (await page.evaluate(`(${shelfRowsIn})(document)`).catch(() => [])).map((r) => ({ id: r.id, ...parseShelfRow(r.lines) }));
+}
+
+export async function bookshelfRows(page) {
   await go(page, `${KDP}/bookshelf`);
   await page.waitForTimeout(5000);
+  // 50 a page (the bookshelf's own "Per Page" choice), so a title on page 2 is not read as missing.
+  const per = page.locator("select").filter({ has: page.locator("option", { hasText: /50 Per Page/i }) }).first();
+  if (await per.count().catch(() => 0)) {
+    const v = await per.locator("option", { hasText: /50 Per Page/i }).first().getAttribute("value").catch(() => null);
+    if (v) { await per.selectOption(v, { force: true }).catch(() => {}); await page.waitForTimeout(5000); }
+  }
   const rows = [];
   for (let p = 0; p < 4; p += 1) {
     rows.push(...(await page.evaluate(`(${shelfRowsIn})(document)`).catch(() => [])));
@@ -178,7 +210,7 @@ async function recordRegister(spec, row, todo, state) {
   const t = reg.titles.find((x) => x.title_ref === row.id || x.asin === row.asin || normTitle(x.title) === normTitle(spec.title));
   const entry = { on: new Date().toISOString().slice(0, 10), changed: todo, state_after: state, subtitle: spec.subtitle, price_usd: spec.price_usd };
   if (t) t.updated = entry;
-  else reg.titles.push({ title_ref: row.id, title: spec.title, author: spec.author, target: "LIVE", status: "LIVE", status_as_of: entry.on, asin: row.asin, line: spec.line, updated: entry });
+  else reg.titles.push({ title_ref: row.id, title: spec.title, author: spec.author, target: "LIVE", status: "LIVE", status_as_of: entry.on, asin: row.asin, line: spec.line, cover_source: "existing-books.json", updated: entry });
   await writeFile(REGISTER, JSON.stringify(reg, null, 2) + "\n");
 }
 
@@ -196,8 +228,12 @@ export async function run({ only = flag("slug") } = {}) {
     for (const spec of specs) {
       const dir = join(WORK, spec.slug);
       await mkdir(dir, { recursive: true });
-      if (record[spec.slug]?.state === "submitted") { console.log(`KDP-UPDATE: ${spec.slug} — already updated on ${record[spec.slug].at.slice(0, 10)}`); continue; }
-      const row = rows.find((r) => normTitle(r.title).startsWith(normTitle(spec.title)));
+      // Done once per version of the row: an edited row (a new subtitle, keywords, categories…) goes again.
+      const hash = specHash(spec);
+      if (record[spec.slug]?.state === "submitted" && record[spec.slug]?.hash === hash) { console.log(`KDP-UPDATE: ${spec.slug} — already updated on ${record[spec.slug].at.slice(0, 10)}`); continue; }
+      // The bookshelf pages its list (10 a page); a title not on the first pages is searched for by name.
+      let row = rows.find((r) => normTitle(r.title).startsWith(normTitle(spec.title)));
+      if (!row) row = (await searchShelf(page, spec.title)).find((r) => normTitle(r.title).startsWith(normTitle(spec.title)));
       if (!row) { console.log(`KDP-UPDATE: ${spec.slug} — not on the bookshelf; nothing changed.`); continue; }
       if (row.state !== "LIVE") { console.log(`KDP-UPDATE: ${spec.slug} — left alone: ${row.state ?? "state unread"} on the bookshelf.`); continue; }
       const todo = changesFor(spec, row);
@@ -213,7 +249,7 @@ export async function run({ only = flag("slug") } = {}) {
           else await relinkEpub(src, join(dir, "book.epub"), spec).catch((e) => { todo.splice(todo.indexOf("manuscript"), 1); console.log(`  ${spec.slug}: manuscript kept (${String(e.message).slice(0, 160)})`); });
         }
         const r = await update(page, spec, row, todo, dir);
-        record[spec.slug] = { at: new Date().toISOString(), state: r, changed: todo, title_ref: row.id };
+        record[spec.slug] = { at: new Date().toISOString(), state: r, changed: todo, title_ref: row.id, hash };
         if (r === "submitted") { await recordRegister(spec, row, todo, "IN_REVIEW"); n += 1; }
         console.log(`KDP-UPDATE: ${spec.slug} — ${todo.join(", ")} → ${r}`);
       } catch (e) {

@@ -162,8 +162,12 @@ export async function run({ only = flag("slug") } = {}) {
         await tickAui(page, 'input[name="data-print-book-is-public-domain"][value="false"]');
         await tickAui(page, 'input[name="data[print_book][is_adult_content]-radio"][value="false"]');
         await categories(page, b.listing.categories, b.dir);
-        await clickOne(page, "Save and Continue", ["#save-and-continue-announce", (p) => p.getByRole("button", { name: /Save and Continue/i })]);
-        await page.waitForURL(/\/content/, { timeout: STEP_MS }).catch(() => {});
+        // The first press after the category box can do nothing (seen live on Kindle and print, 8 Nov 2026): at most two.
+        for (let i = 0; i < 2 && !/\/content/.test(page.url()); i += 1) {
+          await page.locator("#save-and-continue-announce").scrollIntoViewIfNeeded().catch(() => {});
+          await clickOne(page, "Save and Continue", ["#save-and-continue-announce", (p) => p.getByRole("button", { name: /Save and Continue/i })]);
+          await page.waitForURL(/\/content/, { timeout: STEP_MS }).catch(() => {});
+        }
         if (!/\/content/.test(page.url())) { const shot = await snapshot(page, b.dir, "stop-paperback-details"); throw stop("DETAILS_NOT_SAVED", `Amazon did not move on from the paperback details step. Page kept at ${shot}.`, 9); }
         await content(page, b);
         const published = await pricing(page, b);

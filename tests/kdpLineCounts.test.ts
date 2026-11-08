@@ -12,11 +12,17 @@ const register = JSON.parse(readFileSync("scripts/ops/kdp-register.json", "utf8"
 describe("kdp-line-counts", () => {
   it("counts the real register by line, KeepMyProof included", () => {
     const v = lineCounts(register);
-    expect(Object.keys(v)).toEqual(["Kindle books: ApprovalPrep", "Kindle books: Dream Wedding", "Kindle books: A Player Mode", "Kindle books: KeepMyProof"]);
-    expect(v["Kindle books: ApprovalPrep"]).toMatch(/^5 \(\d live\)$/);
-    expect(v["Kindle books: Dream Wedding"]).toMatch(/^2 \(\d live\)$/);
-    // The divorce book (The Co-Parenting Log) is Live since 7 Nov 2026, confirmed on the bookshelf 8 Nov.
-    expect(v["Kindle books: KeepMyProof"]).toBe("1 (1 live)");
+    // The KDP overhaul (8 Nov 2026): two new lines, and the 11 series books are on the register with
+    // their true state (2 In review, 9 approved and queued behind Amazon's weekly title limit).
+    expect(Object.keys(v)).toEqual(["Kindle books: ApprovalPrep", "Kindle books: Dream Wedding", "Kindle books: A Player Mode", "Kindle books: KeepMyProof", "Kindle books: Time-2-Read", "Kindle books: Industry Guides (uscisexam)"]);
+    expect(v["Kindle books: ApprovalPrep"]).toMatch(/^6 \(\d live\)$/);
+    expect(v["Kindle books: Dream Wedding"]).toMatch(/^6 \(\d live\)$/);
+    expect(v["Kindle books: A Player Mode"]).toMatch(/^1 \(\d live\)$/);
+    expect(v["Kindle books: Time-2-Read"]).toMatch(/^1 \(\d live\)$/);
+    expect(v["Kindle books: Industry Guides (uscisexam)"]).toMatch(/^1 \(\d live\)$/);
+    // The divorce book (The Co-Parenting Log) is Live since 7 Nov 2026, confirmed on the bookshelf 8 Nov;
+    // five KeepMyProof series books joined it on 8 Nov (one In review, four queued).
+    expect(v["Kindle books: KeepMyProof"]).toBe("6 (1 live)");
     expect(register.lines.keepmyproof.plan).toMatch(/divorce first/);
   });
 
@@ -41,7 +47,7 @@ describe("kdp-line-counts", () => {
     const put = JSON.parse(calls.at(-1).init.body);
     expect(put.section).toBe("Numbers");
     expect(put.text).toMatch(/\| Sales \|/);
-    expect(put.text).toMatch(/\| Kindle books: KeepMyProof \|.*\| 1 \(1 live\) \| 2026-12-01 \|/);
+    expect(put.text).toMatch(/\| Kindle books: KeepMyProof \|.*\| 6 \(1 live\) \| 2026-12-01 \|/);
     await expect(run({ env: {}, fetchImpl })).rejects.toThrow(/NO_PASSCODE/);
   });
 });

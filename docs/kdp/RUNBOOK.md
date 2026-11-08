@@ -15,9 +15,10 @@ In order, each step ending in a named stop rather than failing silently:
 | 2 | `kdp-publish.mjs` | The old cover batch (it ends quietly) |
 | 3 | `kdp-series.mjs` | Makes sure each line's Amazon series exists (it creates one at most once) |
 | 4 | `kdp-new-title.mjs --unattended` | Publishes the approved titles: heads-up email, Kindle details (series included), EPUB, cover, AI answers, KDP Select, price, then Publish, and follows each title to Live |
+| 5a | `kdp-update-live.mjs` | Applies `existing-books.json` to the live titles, each version of a row once (titles In review wait for the next Monday) |
 | 5 | `kdp-paperback.mjs` | Puts up the paperback for each book whose Kindle edition is on the bookshelf |
 | 6 | `kdp-promo.mjs` | Schedules the 5 free days for each new book once it is Live in Select |
-| 7 | `kdp-week.mjs` | Her Monday line: `N sold · N KU pages · N companion visits`, on the run's OUTPUT line |
+| 7 | `kdp-week.mjs` | Her Monday line on the run's OUTPUT line (Today), read from the live bookshelf: `2 live, 0 in review, 7 queued, 0 stopped \| 3 sold, 410 KU pages, 120 visits` (80 bytes at most). A part that was not read says "not read", never 0. A book stopped two Mondays running is named in `NAMED STOP [STOPPED_TWO_WEEKS]` |
 
 The Scorecard reads units.json: one `spry-kdp` row, plus one `kdp-batch1-<line>` row for each line
 (day 30: 100 free downloads; day 60: 500 KU pages a month or a sale a week).
@@ -48,17 +49,17 @@ The Scorecard reads units.json: one `spry-kdp` row, plus one `kdp-batch1-<line>`
 
 ## Changing a live book
 
-`existing-books.json` holds one row per title on the bookshelf. Edit the row, then run
+`existing-books.json` holds one row per title on the bookshelf. Edit the row and the Monday run
+applies it (each version of a row once). To apply it now:
 `npm run -s vault:run -- node scripts/ops/kdp-update-live.mjs [--slug <slug>]`.
 It changes the subtitle, keywords, categories, price, KDP Select, cover and the in-book link
 (re-linked with the utm tag) and then presses Publish. It **never changes the author**. It leaves a
 title alone while it is In review or Blocked. Each change is recorded in
 `~/.boss-os/kdp/live-updates.json` and in `kdp-register.json` (`updated`); land the register change
-in a PR. To redo a title, delete its entry in live-updates.json.
+in a PR.
 
 **Rebuild one cover**: replace `assets/covers/<slug>.jpg`. For a new book, rerun `kdp-build.mjs
---slug <slug>`. For a live book, delete its entry in live-updates.json and rerun `kdp-update-live.mjs
---slug <slug>`.
+--slug <slug>`. For a live book, the changed file goes up on the next Monday run.
 
 ## Amazon's caps
 
@@ -80,6 +81,7 @@ in a PR. To redo a title, delete its entry in live-updates.json.
 | `UNITS_NOT_READ` | The reports page was not read | The Scorecard shows "No number", never 0. Check the KDP-UNITS line. The next run retries |
 | `BLOCKED` / rejection email | Amazon refused a title (read the triage, kdp-surface.sh) | Fix the reason in the spec or manuscript, rebuild, and let the next run resume the draft. Never create a second draft. Wording that is her decision goes to her as one ask |
 | `SERIES_NOT_FOUND` | The line's series does not exist on KDP yet | Run `kdp-series.mjs --line <line>`, then the next run |
+| `categories: closest offered …` (a log line, not a stop) | A category path in the spec is not in KDP's Kindle chooser, so the run used the closest option the chooser offered (`categories-used.json` in the book's folder) | Write that path into the spec so the next build and run match |
 | `CATEGORIES_NOT_SET`, `FIELD_NOT_FOUND`, `UPLOAD_*`, `PREVIEWER` | KDP changed a page | The snapshot (`stop-*.png/.html`) is in the book's folder. Treat it as a repair (fix-and-report), not her job |
 | `PRICE_BELOW_PRINT_COST` | The paperback price is under the print cost | Raise `paperback.price_usd` in the spec (still under $9.99 if possible), rebuild, rerun |
 | `PROFILE_IN_USE` | The KDP Chrome window is already open | Nothing to do. The next run tries again |

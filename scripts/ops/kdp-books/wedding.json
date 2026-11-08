@@ -32,7 +32,7 @@
       ],
       "categories": [
         "Crafts, Hobbies & Home › Weddings",
-        "Reference › Etiquette › Weddings",
+        "Reference › Consumer Guides",
         "Self-Help › Time Management"
       ],
       "price_usd": 2.99,
@@ -79,8 +79,8 @@
       ],
       "categories": [
         "Crafts, Hobbies & Home › Weddings",
-        "Reference › Writing, Research & Publishing Guides › Writing › Speech",
-        "Reference › Etiquette › Weddings"
+        "Reference › Words, Language & Grammar › Public Speaking & Speech Writing",
+        "Reference › Writing, Research & Publishing Guides › Writing Skills"
       ],
       "price_usd": 2.99,
       "paperback": {
@@ -126,8 +126,8 @@
       ],
       "categories": [
         "Crafts, Hobbies & Home › Weddings",
-        "Reference › Etiquette › Weddings",
-        "Crafts, Hobbies & Home › Entertaining & Holidays › Parties"
+        "Reference › Consumer Guides",
+        "Self-Help › Communication & Social Skills"
       ],
       "price_usd": 2.99,
       "paperback": {
@@ -156,5 +156,6 @@
         "preview": "docs/kdp/books/assets/covers/maid-of-honor-handbook.jpg"
       }
     }
-  ]
+  ],
+  "_categories_note": "Category paths checked against KDP's own Kindle chooser on 8 Nov 2026 (read from the live chooser, not guessed); 3 per book."
 }

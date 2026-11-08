@@ -206,6 +206,22 @@ export async function tickAui(page, inputSel) {
   return (await input.isChecked().catch(() => false)) ? "checked" : "unchecked";
 }
 
+/** The option KDP's chooser offers that shares the most words with what was asked; null when none shares one. Pure. */
+export function closestOption(want, offered, above = []) {
+  const words = (t) => new Set(String(t).toLowerCase().replace(/&/g, " ").match(/[a-z]{4,}/g) ?? []);
+  // A word the path's higher levels already carry ("Business" under "Business & Money") says nothing.
+  const said = new Set(above.flatMap((a) => [...words(a)]));
+  const w = new Set([...words(want)].filter((x) => !said.has(x)));
+  const skip = new Set(above.map((a) => String(a).trim().toLowerCase()));
+  let best = null, score = 0;
+  for (const o of offered ?? []) {
+    if (/^select one$/i.test(String(o).trim()) || skip.has(String(o).trim().toLowerCase())) continue;
+    const n = [...words(o)].filter((x) => w.has(x)).length;
+    if (n > score) { best = o; score = n; }
+  }
+  return best;
+}
+
 /** Is Amazon showing its weekly title-creation limit? (the modal's own words, live 8 Nov 2026) */
 export async function titleLimitReached(page) {
   return page.getByText(/title creation limit/i).first().isVisible().catch(() => false);
@@ -547,11 +563,21 @@ export async function categories(page, cats, dir) {
   const step = (label, boxesOnly = false) => `(${categoryStep})(document.querySelector('[data-kmp-cat="1"]'), ${JSON.stringify(label)}, ${boxesOnly})`;
   let ticked = 0;
   const missed = [];
+  const used = [];
+  const tops = new Set();
   for (const path of cats) {
     const parts = path.split("›").map((x) => x.trim()).filter(Boolean);
     for (const [i, part] of parts.entries()) {
       let r = { did: "missing", seen: [] };
       for (let t = 0; t < 12 && r.did === "missing"; t += 1) { r = await page.evaluate(step(part)).catch(() => r); if (r.did === "missing") await page.waitForTimeout(700); }
+      if (i === 0 && !tops.size) for (const o of r.seen) tops.add(o);
+      if (r.did === "missing") {
+        // Not in KDP's chooser: take the closest option the chooser itself OFFERS at this level (shared
+        // words), never an invented one, and record it so the spec can be corrected (her coordinator, 8 Nov 2026).
+        // Below the top level, a top-level name is never "closest" (8 Nov 2026: "Family & Health Law" → "Health, Fitness & Dieting").
+        const best = i === 0 ? null : closestOption(part, r.seen.filter((o) => !tops.has(o)), parts.slice(0, i));
+        if (best) { r = await page.evaluate(step(best)).catch(() => r); if (r.did !== "missing") { used.push({ path, part, chose: best }); parts[i] = best; } }
+      }
       if (r.did === "missing") { missed.push(`"${part}" (in ${path}); the box offered: ${r.seen.slice(0, 15).join(", ") || "nothing"}`); break; }
       const last = i === parts.length - 1;
       // A leaf KDP lists as a dropdown option may then offer its own tick box; tick it if so.
@@ -568,6 +594,10 @@ export async function categories(page, cats, dir) {
     ]);
     if (save) await save.click().catch(() => {});
     for (let t = 0; t < 10 && !(await isSet()); t += 1) await page.waitForTimeout(1000);
+    if (used.length) {
+      console.log(`categories: closest offered by KDP's chooser used for ${used.map((u) => `"${u.part}" → "${u.chose}"`).join("; ")}.`);
+      await writeFile(join(dir, "categories-used.json"), JSON.stringify({ at: new Date().toISOString(), used }, null, 2) + "\n").catch(() => {});
+    }
     if (await isSet()) { console.log(`categories set: ${ticked} of ${cats.length}${missed.length ? ` (not found: ${missed.join("; ")})` : ""}.`); return; }
   }
   const shot = await snapshot(page, dir, "stop-categories");
@@ -695,18 +725,17 @@ async function chooseCoverUpload(page, dir) {
 
 /** After a new file KDP asks to confirm the AI answers are still accurate: tick it when it is shown. */
 export async function confirmAiAnswers(page) {
-  // A React control ("By clicking this, I confirm that my answers are accurate", user_affirmed), live
-  // 8 Nov 2026: a forced tick on its hidden input does not reach the page's state, so it is clicked
-  // the way a person would: the checkbox by its name, else its label text.
-  const re = /confirm that my answers are accurate/i;
-  const role = page.getByRole("checkbox", { name: re }).last();
-  if (await role.count().catch(() => 0)) {
-    if (!(await role.isChecked().catch(() => false))) await role.click({ timeout: 10_000 }).catch(() => {});
-    console.log(`AI answers re-confirmed after the new file (${(await role.isChecked().catch(() => false)) ? "ticked" : "NOT ticked"}).`);
-    return;
+  // The control is a <div role="checkbox" aria-checked> inside a <label> (live markup, 8 Nov 2026).
+  // Clicking the label's text can toggle it twice; the div itself is clicked, only while it reads
+  // unchecked, and read back. A forced tick on a hidden input never reaches the page's state.
+  const box = page.locator('[role="checkbox"]').filter({ hasText: /confirm that my answers are accurate/i }).last();
+  if (!(await box.waitFor({ state: "attached", timeout: 10_000 }).then(() => true).catch(() => false))) return;
+  for (let i = 0; i < 2; i += 1) {
+    if ((await box.getAttribute("aria-checked").catch(() => null)) === "true") break;
+    await box.click({ timeout: 10_000 }).catch(() => {});
+    await page.waitForTimeout(800);
   }
-  const label = page.getByText(re).last();
-  if (await label.isVisible().catch(() => false)) { await label.click({ timeout: 10_000 }).catch(() => {}); console.log("AI answers re-confirmed after the new file (label clicked)."); }
+  console.log(`AI answers re-confirmed after the new file (${(await box.getAttribute("aria-checked").catch(() => null)) === "true" ? "ticked" : "NOT ticked"}).`);
 }
 
 async function content(page, dir, ans) {
@@ -725,10 +754,7 @@ async function content(page, dir, ans) {
   await waitForHer(page);
   // KDP's answer to an un-ticked affirmation is this sentence; one more tick and one more Save, never a loop.
   if (!/\/pricing/.test(page.url()) && (await page.getByText(/Confirm your answers are accurate and check the box/i).first().isVisible().catch(() => false))) {
-    const box = page.getByRole("checkbox", { name: /confirm that my answers are accurate/i }).last();
-    if (await box.count().catch(() => 0)) { await box.check({ timeout: 10_000 }).catch(() => box.click().catch(() => {})); }
-    else await page.getByText(/By clicking this, I confirm that my answers are accurate/i).last().click().catch(() => {});
-    console.log(`AI affirmation ticked again after KDP asked (${(await box.isChecked().catch(() => false)) ? "ticked" : "state unread"}).`);
+    await confirmAiAnswers(page);
     await clickOne(page, "Save and Continue", ["#save-and-continue-announce", (p) => p.getByRole("button", { name: /Save and Continue/i })]);
     await page.waitForURL(/\/pricing/, { timeout: STEP_MS }).catch(() => {});
   }
