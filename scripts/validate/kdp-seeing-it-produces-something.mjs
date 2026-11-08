@@ -72,9 +72,12 @@ export function check(files) {
     // A `draft:` row is a book drafted on her Mac and not on Amazon yet (the KeepMyProof books, 7 Nov
     // 2026): it has no Amazon reference for the cover map to know, so it must instead name its line
     // and folder. Every Amazon title is still one the cover map knows.
+    // A series book (KDP strategy, 8 Nov 2026) is built by kdp-build.mjs from its line spec: its folder
+    // is its `slug`, and once on Amazon its cover comes from that build or from existing-books.json
+    // (`cover_source`), never from the 9 Sep cover batch the cover map holds.
     if (String(t.title_ref).startsWith("draft:")) {
-      if (!t.line || !t.kmp_folder || t.ai_disclosure !== true) p.push(`register: draft row "${t.title}" must name its line, its folder and ai_disclosure: true.`);
-    } else if (!mapRefs.has(t.title_ref)) p.push(`register: "${t.title}" (${t.title_ref}) is not a title_ref the cover map knows.`);
+      if (!t.line || !(t.kmp_folder || t.slug) || t.ai_disclosure !== true) p.push(`register: draft row "${t.title}" must name its line, its folder and ai_disclosure: true.`);
+    } else if (!mapRefs.has(t.title_ref) && !(t.line && ["kdp-build", "existing-books.json"].includes(t.cover_source))) p.push(`register: "${t.title}" (${t.title_ref}) is not a title_ref the cover map knows, and names no line and cover_source.`);
   }
   for (const r of mapRefs) if (!titles.some((t) => t.title_ref === r)) p.push(`register: cover-map title ${r} is missing from the register.`);
   if (!register.settled?.covers?.do_not_re_raise || !register.settled?.case_51496198?.do_not_re_raise) p.push("register: the covers and case #51496198 must be settled with do_not_re_raise.");

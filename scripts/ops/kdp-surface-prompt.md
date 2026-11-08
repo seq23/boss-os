@@ -34,8 +34,9 @@ records the sentinel — derived from your file. Do not run `kdp-surface-report.
    matter. Her goal, in her words on 21 Sep 2026: *every book published and working*. A title that
    is not Live is a problem until it is; nothing is "draft by her choice". The report step refuses a
    file that contradicts the register, so read it before you decide anything.
-   Rows whose `title_ref` starts `draft:` (the KeepMyProof books) are NOT on Amazon yet: they wait
-   for her yes (`status` DRAFT_LOCAL) and are put up by `npm run kdp:new-title`. A draft row is
+   Rows whose `title_ref` starts `draft:` are NOT on Amazon yet: the KeepMyProof drafter's books wait
+   for her yes (`status` DRAFT_LOCAL), and the series books she approved wait behind Amazon's weekly
+   title limit (`status` APPROVED_QUEUED). The Monday run (`kdp-publish.sh`) puts them up. A draft row is
    never a problem and never a reason to email her.
 1. **Then read what is still open: `~/.boss-os/kdp/open.json`.** Every problem Boss OS has that is
    not resolved, with Amazon's deadline (`due_at`), what was done, what she was asked

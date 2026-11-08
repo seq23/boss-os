@@ -32,8 +32,8 @@
       ],
       "categories": [
         "Self-Help › Time Management",
-        "Self-Help › Personal Transformation",
-        "Health, Fitness & Dieting › Mental Health › Attention Deficit & Attention Deficit Hyperactivity Disorders"
+        "Self-Help › Self-Management",
+        "Self-Help › Personal Transformation"
       ],
       "price_usd": 2.99,
       "companion_url": "https://aplayermode.com/amazon/executive-dysfunction/",
@@ -50,5 +50,6 @@
         "preview": "docs/kdp/books/assets/covers/executive-dysfunction.jpg"
       }
     }
-  ]
+  ],
+  "_categories_note": "Category paths checked against KDP's own Kindle chooser on 8 Nov 2026 (read from the live chooser, not guessed); 3 per book."
 }

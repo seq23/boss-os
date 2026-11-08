@@ -86,6 +86,12 @@ npm run --silent vault:run -- node scripts/ops/kdp-new-title.mjs --unattended >>
 NRC=$?
 say "=== new titles exited rc=$NRC ==="
 grep -o 'KDP-NEW-TITLE:.*' "$RUN_LOG" | tail -3 | tee -a /dev/stderr
+# ─── THE LIVE TITLES MATCH existing-books.json (kdp-update-live.mjs) ────────────────────────────
+# Each row is applied once per version; a title In review is left alone and done the next Monday.
+npm run --silent vault:run -- node scripts/ops/kdp-update-live.mjs >> "$RUN_LOG" 2>&1 \
+  || say "NAMED STOP [LIVE_UPDATE_STOPPED] see the KDP-UPDATE lines; the next run tries again."
+grep -o 'KDP-UPDATE:.*' "$RUN_LOG" | tail -14 | tee -a /dev/stderr
+
 # ─── PAPERBACKS, once their Kindle edition is on the bookshelf (kdp-paperback.mjs) ────────────────
 npm run --silent vault:run -- node scripts/ops/kdp-paperback.mjs >> "$RUN_LOG" 2>&1 \
   || say "NAMED STOP [PAPERBACK_NOT_SUBMITTED] see the KDP-PAPERBACK lines; the next run tries again."
@@ -98,10 +104,17 @@ grep -o 'KDP-PROMO:.*' "$RUN_LOG" | tail -12 | tee -a /dev/stderr
 
 # ─── HER MONDAY LINE: sales, KU pages and companion-page visits, on the run's OUTPUT line ────────
 npm run --silent vault:run -- node scripts/ops/kdp-week.mjs >> "$RUN_LOG" 2>&1 || say "NAMED STOP [WEEK_NOT_READ] see the KDP-WEEK line."
-WEEK="$(grep -o 'KDP-WEEK: .*' "$RUN_LOG" | tail -1 | sed 's/^KDP-WEEK: //' | cut -c1-54)"
-# For duty-run.sh: the census line, and the named stop that names the failure (it reads the last of each).
-N="$(grep -E '^OUTPUT [0-9]+ kindle-titles-submitted' "$RUN_LOG" | tail -1 | awk '{print $2}')"
-echo "OUTPUT ${N:-0} kindle titles submitted · ${WEEK:-sales not read}" | tee -a "$RUN_LOG"
+# kdp-week.mjs fits the line to Today's 80 characters itself: "2 live, 0 in review, 7 queued, 0 stopped | 3 sold, …".
+WEEK="$(grep -o 'KDP-WEEK: .*' "$RUN_LOG" | tail -1 | sed 's/^KDP-WEEK: //' | cut -c1-80)"
+# For duty-run.sh: the census line, read on Today as "<count> <metric>", so the count is the books
+# Live and the metric is the rest of her line ("2" + " live, 0 in review, …"). Unread: 0 + the reason.
+SUBMITTED="$(grep -E '^OUTPUT [0-9]+ kindle-titles-submitted' "$RUN_LOG" | tail -1 | awk '{print $2}')"
+say "titles submitted this run: ${SUBMITTED:-0}"
+if [[ "$WEEK" =~ ^([0-9]+)\ (live.*)$ ]]; then
+  echo "OUTPUT ${BASH_REMATCH[1]} ${BASH_REMATCH[2]}" | tee -a "$RUN_LOG"
+else
+  echo "OUTPUT 0 ${WEEK:-bookshelf not read | sales not read}" | tee -a "$RUN_LOG"
+fi
 grep -o 'NAMED STOP \[[A-Z_]*\].*' "$RUN_LOG" | tail -1 >&2
 
 # The run failed if either half failed; the publisher's own code wins when both did.

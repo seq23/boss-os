@@ -39,6 +39,12 @@
     "keepmyproof": {
       "label": "KeepMyProof",
       "plan": "A front-door book per KeepMyProof folder, divorce first: drafts only, S. L. Taylor byline, publisher Spry Labs, AI disclosure on; nothing publishes without the existing KDP approval path (owner, 7 Nov 2026)."
+    },
+    "time2read": {
+      "label": "Time-2-Read"
+    },
+    "uscisexam": {
+      "label": "Industry Guides (uscisexam)"
     }
   },
   "titles": [
@@ -49,15 +55,29 @@
       "target": "LIVE",
       "status": "LIVE",
       "status_as_of": "2026-09-12",
-      "line": "approvalprep"
+      "line": "approvalprep",
+      "updated": {
+        "on": "2026-11-08",
+        "changed": [
+          "subtitle",
+          "keywords",
+          "categories",
+          "cover",
+          "manuscript",
+          "select"
+        ],
+        "state_after": "IN_REVIEW",
+        "subtitle": "Self-Help Templates to Challenge a Report Error in Writing, Track Every Reply and Keep Copies",
+        "price_usd": 2.99
+      }
     },
     {
       "title_ref": "A1EYXUFGFV7CN6",
       "title": "The Gift Letter (Down Payment)",
       "author": "S. Taylor",
       "target": "LIVE",
-      "status": "IN_REVIEW",
-      "status_as_of": "2026-10-07",
+      "status": "LIVE",
+      "status_as_of": "2026-11-08",
       "in_review": {
         "since": "2026-10-07",
         "facts": [
@@ -85,7 +105,9 @@
           "reply_template": "Hello,\n\nThank you for the review of \"The Gift Letter (Down Payment)\" (ASIN/title id A1EYXUFGFV7CN6). I would like to address the title concern with Option 1 and update the metadata so no term repeats between the title and subtitle.\n\nTitle (unchanged): The Gift Letter (Down Payment)\nNew subtitle: A Template for Documenting Family Funds Toward a Home Purchase\n\nThe book is currently shown as Blocked on my Bookshelf and the Edit eBook details option is not available, so I am not able to make this change myself. Please apply the updated subtitle (or restore edit access so I can) and release the title for publication. Everything else about the book is unchanged.\n\nThank you,\nS. Taylor"
         }
       },
-      "line": "approvalprep"
+      "line": "approvalprep",
+      "asin": "B0HM8GGVML",
+      "status_note": "Live on the bookshelf (read 8 Nov 2026), KDP Select enrolled, $2.99."
     },
     {
       "title_ref": "A3O8BGWQ63OSF0",
@@ -103,7 +125,21 @@
       "target": "LIVE",
       "status": "LIVE",
       "status_as_of": "2026-09-12",
-      "line": "approvalprep"
+      "line": "approvalprep",
+      "updated": {
+        "on": "2026-11-08",
+        "changed": [
+          "subtitle",
+          "keywords",
+          "categories",
+          "cover",
+          "manuscript",
+          "select"
+        ],
+        "state_after": "IN_REVIEW",
+        "subtitle": "The Papers Lenders and Landlords Ask Freelancers For, With Sample Letters and a Two-Year Folder Plan",
+        "price_usd": 2.99
+      }
     },
     {
       "title_ref": "A14601U7XU2FCM",
@@ -112,7 +148,21 @@
       "target": "LIVE",
       "status": "LIVE",
       "status_as_of": "2026-09-12",
-      "line": "approvalprep"
+      "line": "approvalprep",
+      "updated": {
+        "on": "2026-11-08",
+        "changed": [
+          "subtitle",
+          "keywords",
+          "categories",
+          "cover",
+          "manuscript",
+          "select"
+        ],
+        "state_after": "IN_REVIEW",
+        "subtitle": "Everything a Landlord Asks For in One Folder: Checklists, Sample Letters and a Plan for Thin Credit",
+        "price_usd": 2.99
+      }
     },
     {
       "title_ref": "AZUTRW0LN8GDM",
@@ -121,7 +171,21 @@
       "target": "LIVE",
       "status": "LIVE",
       "status_as_of": "2026-09-12",
-      "line": "wedding"
+      "line": "wedding",
+      "updated": {
+        "on": "2026-11-08",
+        "changed": [
+          "subtitle",
+          "keywords",
+          "categories",
+          "cover",
+          "manuscript",
+          "select"
+        ],
+        "state_after": "IN_REVIEW",
+        "subtitle": "Seat Every Guest Calmly: Family Tensions, Plus-Ones, Kids' Tables and a Template for Any Room",
+        "price_usd": 2.99
+      }
     },
     {
       "title_ref": "A12Z8RECXCYT3S",
@@ -130,7 +194,21 @@
       "target": "LIVE",
       "status": "LIVE",
       "status_as_of": "2026-09-12",
-      "line": "wedding"
+      "line": "wedding",
+      "updated": {
+        "on": "2026-11-08",
+        "changed": [
+          "subtitle",
+          "keywords",
+          "categories",
+          "cover",
+          "manuscript",
+          "select"
+        ],
+        "state_after": "IN_REVIEW",
+        "subtitle": "Before You Sign Anything: Scripts for Venues, Photographers, Caterers and Florists, Plus Contract Red Flags",
+        "price_usd": 2.99
+      }
     },
     {
       "title_ref": "draft:kmp-divorce",
@@ -146,7 +224,301 @@
       "kmp_folder": "divorce",
       "ai_disclosure": true,
       "draft_dir": "~/.boss-os/kdp/keepmyproof/divorce",
-      "note": "Live on Amazon since 7 Nov 2026 at $4.99 (ASIN B0HQVR4HD3), confirmed on her bookshelf 8 Nov 2026. Two duplicate drafts from re-runs were deleted on 8 Nov; kdp-new-title.mjs now reads the bookshelf before it creates anything."
+      "note": "Live on Amazon since 7 Nov 2026 at $4.99 (ASIN B0HQVR4HD3), confirmed on her bookshelf 8 Nov 2026. Two duplicate drafts from re-runs were deleted on 8 Nov; kdp-new-title.mjs now reads the bookshelf before it creates anything.",
+      "updated": {
+        "on": "2026-11-08",
+        "changed": [
+          "keywords",
+          "categories",
+          "price",
+          "cover",
+          "manuscript",
+          "select"
+        ],
+        "state_after": "IN_REVIEW",
+        "subtitle": "Keep a Calm, Dated Record of Handoffs, Messages and Expenses, With Printable Pages and Official Court Links by State",
+        "price_usd": 2.99
+      }
+    },
+    {
+      "title_ref": "A2IYPMU5DB5PJO",
+      "title": "The Wedding Day Timeline",
+      "author": "Lanae Taylor",
+      "target": "LIVE",
+      "status": "LIVE",
+      "status_as_of": "2026-11-08",
+      "asin": "B0HHFK6W76",
+      "line": "wedding",
+      "updated": {
+        "on": "2026-11-08",
+        "changed": [
+          "subtitle",
+          "keywords",
+          "categories",
+          "cover",
+          "manuscript",
+          "select"
+        ],
+        "state_after": "IN_REVIEW",
+        "subtitle": "An Hour-by-Hour Plan From Hair and Makeup to Send-Off, With Templates for Morning, Evening and Small Celebrations",
+        "price_usd": 2.99
+      },
+      "cover_source": "existing-books.json"
+    },
+    {
+      "title_ref": "A3MFH48MNGX93O",
+      "title": "The Letter of Explanation",
+      "author": "S. Taylor",
+      "target": "LIVE",
+      "status": "LIVE",
+      "status_as_of": "2026-11-08",
+      "asin": "B0HHHLKDD4",
+      "line": "approvalprep",
+      "updated": {
+        "on": "2026-11-08",
+        "changed": [
+          "subtitle",
+          "keywords",
+          "categories",
+          "cover",
+          "manuscript",
+          "select"
+        ],
+        "state_after": "IN_REVIEW",
+        "subtitle": "How to Answer an Underwriter's Questions About Deposits, Late Payments and Job Gaps, With Samples",
+        "price_usd": 2.99
+      },
+      "cover_source": "existing-books.json"
+    },
+    {
+      "title_ref": "A3963CGLMXDJPS",
+      "title": "Executive Dysfunction",
+      "subtitle": "A Five-Role System for Adults Carrying Too Much: Start the Task, Remember the Plan and Finish the Day",
+      "author": "Tomas Wexley",
+      "publisher": "Spry Labs",
+      "target": "LIVE",
+      "status": "IN_REVIEW",
+      "status_as_of": "2026-11-08",
+      "line": "a-player-mode",
+      "series": "A Player Mode Field Guides",
+      "slug": "executive-dysfunction",
+      "ai_disclosure": true,
+      "kdp_select": true,
+      "price_usd": 2.99,
+      "draft_dir": "~/.boss-os/kdp/books/executive-dysfunction",
+      "cover_source": "kdp-build"
+    },
+    {
+      "title_ref": "A1X13YAW52ZSZ",
+      "title": "Parallel Parenting",
+      "subtitle": "A Simple Record Book for High-Conflict Co-Parents: Calm Message Rules, Handoff Logs and One Place for Every Paper",
+      "author": "Reid Calloway",
+      "publisher": "Spry Labs",
+      "target": "LIVE",
+      "status": "IN_REVIEW",
+      "status_as_of": "2026-11-08",
+      "line": "keepmyproof",
+      "series": "KeepMyProof Record Books",
+      "slug": "parallel-parenting",
+      "ai_disclosure": true,
+      "kdp_select": true,
+      "price_usd": 2.99,
+      "paperback": {
+        "price_usd": 8.99,
+        "status": "NOT_STARTED"
+      },
+      "draft_dir": "~/.boss-os/kdp/books/parallel-parenting",
+      "cover_source": "kdp-build"
+    },
+    {
+      "title_ref": "draft:hostile-work-environment",
+      "title": "Hostile Work Environment",
+      "subtitle": "Keep a Clear, Dated Record of What Happened at Your Job: Incident Logs, Pay Checks and the Written Complaint",
+      "author": "Reid Calloway",
+      "publisher": "Spry Labs",
+      "target": "LIVE",
+      "status": "APPROVED_QUEUED",
+      "status_as_of": "2026-11-08",
+      "line": "keepmyproof",
+      "series": "KeepMyProof Record Books",
+      "slug": "hostile-work-environment",
+      "ai_disclosure": true,
+      "kdp_select": true,
+      "price_usd": 2.99,
+      "paperback": {
+        "price_usd": 8.99,
+        "status": "NOT_STARTED"
+      },
+      "draft_dir": "~/.boss-os/kdp/books/hostile-work-environment",
+      "queued_why": "Amazon's weekly limit on new Kindle titles (reached 8 Nov 2026; resets Sunday 00:00 UTC); approved, built, published by the next Monday run"
+    },
+    {
+      "title_ref": "draft:va-disability-rating",
+      "title": "Your VA Disability Rating",
+      "subtitle": "The Papers to Gather Before You Claim, Appeal or Ask for an Increase, With Logs for Exams, Mail and Buddy Statements",
+      "author": "Reid Calloway",
+      "publisher": "Spry Labs",
+      "target": "LIVE",
+      "status": "APPROVED_QUEUED",
+      "status_as_of": "2026-11-08",
+      "line": "keepmyproof",
+      "series": "KeepMyProof Record Books",
+      "slug": "va-disability-rating",
+      "ai_disclosure": true,
+      "kdp_select": true,
+      "price_usd": 2.99,
+      "paperback": {
+        "price_usd": 8.99,
+        "status": "NOT_STARTED"
+      },
+      "draft_dir": "~/.boss-os/kdp/books/va-disability-rating",
+      "queued_why": "Amazon's weekly limit on new Kindle titles (reached 8 Nov 2026; resets Sunday 00:00 UTC); approved, built, published by the next Monday run"
+    },
+    {
+      "title_ref": "draft:504-plan-iep-meeting",
+      "title": "The 504 Plan & IEP Meeting Binder",
+      "subtitle": "A Parent's Record of School Notes, Requests and Follow-Ups, With the Questions to Ask Each Time You Sit Down",
+      "author": "Reid Calloway",
+      "publisher": "Spry Labs",
+      "target": "LIVE",
+      "status": "APPROVED_QUEUED",
+      "status_as_of": "2026-11-08",
+      "line": "keepmyproof",
+      "series": "KeepMyProof Record Books",
+      "slug": "504-plan-iep-meeting",
+      "ai_disclosure": true,
+      "kdp_select": true,
+      "price_usd": 2.99,
+      "paperback": {
+        "price_usd": 8.99,
+        "status": "NOT_STARTED"
+      },
+      "draft_dir": "~/.boss-os/kdp/books/504-plan-iep-meeting",
+      "queued_why": "Amazon's weekly limit on new Kindle titles (reached 8 Nov 2026; resets Sunday 00:00 UTC); approved, built, published by the next Monday run"
+    },
+    {
+      "title_ref": "draft:what-to-do-when-someone-dies",
+      "title": "What to Do When Someone Dies",
+      "subtitle": "The Executor's Checklist for the First Week, the First Month and Settling the Estate, With Space for Every Account",
+      "author": "Reid Calloway",
+      "publisher": "Spry Labs",
+      "target": "LIVE",
+      "status": "APPROVED_QUEUED",
+      "status_as_of": "2026-11-08",
+      "line": "keepmyproof",
+      "series": "KeepMyProof Record Books",
+      "slug": "what-to-do-when-someone-dies",
+      "ai_disclosure": true,
+      "kdp_select": true,
+      "price_usd": 2.99,
+      "paperback": {
+        "price_usd": 9.99,
+        "status": "NOT_STARTED"
+      },
+      "draft_dir": "~/.boss-os/kdp/books/what-to-do-when-someone-dies",
+      "queued_why": "Amazon's weekly limit on new Kindle titles (reached 8 Nov 2026; resets Sunday 00:00 UTC); approved, built, published by the next Monday run"
+    },
+    {
+      "title_ref": "draft:decodable-stories-1",
+      "title": "Decodable Stories for Early Readers, Book 1",
+      "subtitle": "Seven Short Phonics Tales, From Short A to SH and CH, With Sound Lists to Practice Together",
+      "author": "Nell Bramble",
+      "publisher": "Spry Labs",
+      "target": "LIVE",
+      "status": "APPROVED_QUEUED",
+      "status_as_of": "2026-11-08",
+      "line": "time2read",
+      "series": "Time-2-Read Decodable Stories",
+      "slug": "decodable-stories-1",
+      "ai_disclosure": true,
+      "kdp_select": true,
+      "price_usd": 2.99,
+      "draft_dir": "~/.boss-os/kdp/books/decodable-stories-1",
+      "queued_why": "Amazon's weekly limit on new Kindle titles (reached 8 Nov 2026; resets Sunday 00:00 UTC); approved, built, published by the next Monday run"
+    },
+    {
+      "title_ref": "draft:naturalization-interview-medical-exam",
+      "title": "The Naturalization Interview & Immigration Medical Exam Guide",
+      "subtitle": "What to Bring, What Happens in the Room and How to Find a Civil Surgeon, Step by Step",
+      "author": "Ines Calder",
+      "publisher": "Spry Labs",
+      "target": "LIVE",
+      "status": "APPROVED_QUEUED",
+      "status_as_of": "2026-11-08",
+      "line": "uscisexam",
+      "series": "Green Card and Citizenship Paperwork Guides",
+      "slug": "naturalization-interview-medical-exam",
+      "ai_disclosure": true,
+      "kdp_select": true,
+      "price_usd": 2.99,
+      "draft_dir": "~/.boss-os/kdp/books/naturalization-interview-medical-exam",
+      "queued_why": "Amazon's weekly limit on new Kindle titles (reached 8 Nov 2026; resets Sunday 00:00 UTC); approved, built, published by the next Monday run"
+    },
+    {
+      "title_ref": "draft:courthouse-wedding-planner",
+      "title": "The Courthouse Wedding Planner",
+      "subtitle": "Plan a Small Civil Ceremony in Weeks, Not Months: License Steps, Guest List, Photos and a Day-Of Timeline",
+      "author": "June Hollister",
+      "publisher": "Spry Labs",
+      "target": "LIVE",
+      "status": "APPROVED_QUEUED",
+      "status_as_of": "2026-11-08",
+      "line": "wedding",
+      "series": "Dream Wedding Planning Guides",
+      "slug": "courthouse-wedding-planner",
+      "ai_disclosure": true,
+      "kdp_select": true,
+      "price_usd": 2.99,
+      "paperback": {
+        "price_usd": 7.99,
+        "status": "NOT_STARTED"
+      },
+      "draft_dir": "~/.boss-os/kdp/books/courthouse-wedding-planner",
+      "queued_why": "Amazon's weekly limit on new Kindle titles (reached 8 Nov 2026; resets Sunday 00:00 UTC); approved, built, published by the next Monday run"
+    },
+    {
+      "title_ref": "draft:wedding-vows",
+      "title": "Writing Your Wedding Vows",
+      "subtitle": "Find the Words in One Evening: Prompts, Real-Sounding Examples and a Simple Shape for Promises You Can Say Out Loud",
+      "author": "June Hollister",
+      "publisher": "Spry Labs",
+      "target": "LIVE",
+      "status": "APPROVED_QUEUED",
+      "status_as_of": "2026-11-08",
+      "line": "wedding",
+      "series": "Dream Wedding Planning Guides",
+      "slug": "wedding-vows",
+      "ai_disclosure": true,
+      "kdp_select": true,
+      "price_usd": 2.99,
+      "paperback": {
+        "price_usd": 7.99,
+        "status": "NOT_STARTED"
+      },
+      "draft_dir": "~/.boss-os/kdp/books/wedding-vows",
+      "queued_why": "Amazon's weekly limit on new Kindle titles (reached 8 Nov 2026; resets Sunday 00:00 UTC); approved, built, published by the next Monday run"
+    },
+    {
+      "title_ref": "draft:maid-of-honor-handbook",
+      "title": "The Maid of Honor Handbook",
+      "subtitle": "Every Duty From the Engagement to the Last Dance, With a Shower Plan, Toast Builder and Day-Of Checklist",
+      "author": "June Hollister",
+      "publisher": "Spry Labs",
+      "target": "LIVE",
+      "status": "APPROVED_QUEUED",
+      "status_as_of": "2026-11-08",
+      "line": "wedding",
+      "series": "Dream Wedding Planning Guides",
+      "slug": "maid-of-honor-handbook",
+      "ai_disclosure": true,
+      "kdp_select": true,
+      "price_usd": 2.99,
+      "paperback": {
+        "price_usd": 7.99,
+        "status": "NOT_STARTED"
+      },
+      "draft_dir": "~/.boss-os/kdp/books/maid-of-honor-handbook",
+      "queued_why": "Amazon's weekly limit on new Kindle titles (reached 8 Nov 2026; resets Sunday 00:00 UTC); approved, built, published by the next Monday run"
     }
   ],
   "facts_about_kdp": {

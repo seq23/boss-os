@@ -35,8 +35,8 @@
         "credit bureau letter"
       ],
       "categories": [
-        "Business & Money › Personal Finance › Credit & Debt",
-        "Business & Money › Personal Finance › Budgeting & Money Management",
+        "Business & Money › Personal Finance › Credit Ratings & Repair",
+        "Business & Money › Finance › Budgeting",
         "Reference › Consumer Guides"
       ],
       "price_usd": 2.99,
@@ -85,7 +85,8 @@
       ],
       "categories": [
         "Business & Money › Real Estate › Mortgages",
-        "Business & Money › Real Estate › Buying & Selling Homes"
+        "Business & Money › Real Estate › Buying & Selling Homes",
+        "Business & Money › Personal Finance › Financial Planning"
       ],
       "price_usd": 2.99,
       "paperback": null,
@@ -131,7 +132,8 @@
       ],
       "categories": [
         "Business & Money › Real Estate › Buying & Selling Homes",
-        "Reference › Consumer Guides"
+        "Reference › Consumer Guides",
+        "Law › Practical Guides › Real Estate"
       ],
       "price_usd": 2.99,
       "paperback": null,
@@ -176,8 +178,9 @@
         "gig worker apartment application"
       ],
       "categories": [
-        "Business & Money › Personal Finance › General",
-        "Business & Money › Small Business & Entrepreneurship › Accounting"
+        "Business & Money › Personal Finance › Financial Planning",
+        "Business & Money › Skills › Bookkeeping",
+        "Reference › Consumer Guides"
       ],
       "price_usd": 2.99,
       "paperback": null,
@@ -222,7 +225,8 @@
       ],
       "categories": [
         "Business & Money › Real Estate › Buying & Selling Homes",
-        "Reference › Consumer Guides"
+        "Reference › Consumer Guides",
+        "Law › Practical Guides › Real Estate"
       ],
       "price_usd": 2.99,
       "paperback": null,
@@ -267,7 +271,8 @@
       ],
       "categories": [
         "Business & Money › Real Estate › Mortgages",
-        "Reference › Consumer Guides"
+        "Reference › Consumer Guides",
+        "Business & Money › Personal Finance › Credit Ratings & Repair"
       ],
       "price_usd": 2.99,
       "paperback": null,
@@ -312,8 +317,9 @@
         "work verification document"
       ],
       "categories": [
-        "Business & Money › Job Hunting & Careers › Job Hunting",
-        "Business & Money › Skills › Business Communication"
+        "Business & Money › Job Hunting & Careers › Career Guides",
+        "Business & Money › Skills › Business Writing",
+        "Reference › Consumer Guides"
       ],
       "price_usd": 2.99,
       "paperback": null,
@@ -359,7 +365,8 @@
       ],
       "categories": [
         "Crafts, Hobbies & Home › Weddings",
-        "Reference › Etiquette › Weddings"
+        "Reference › Consumer Guides",
+        "Crafts, Hobbies & Home › Crafts & Hobbies › Decorating"
       ],
       "price_usd": 2.99,
       "paperback": null,
@@ -413,7 +420,8 @@
       ],
       "categories": [
         "Crafts, Hobbies & Home › Weddings",
-        "Reference › Consumer Guides"
+        "Reference › Consumer Guides",
+        "Business & Money › Skills › Negotiating"
       ],
       "price_usd": 2.99,
       "paperback": null,
@@ -466,7 +474,8 @@
       ],
       "categories": [
         "Crafts, Hobbies & Home › Weddings",
-        "Reference › Etiquette › Weddings"
+        "Reference › Consumer Guides",
+        "Self-Help › Time Management"
       ],
       "price_usd": 2.99,
       "paperback": null,
@@ -521,8 +530,8 @@
       ],
       "categories": [
         "Parenting & Relationships › Family Relationships › Divorce",
-        "Parenting & Relationships › Parenting › General",
-        "Law › Family Law › Child Custody"
+        "Law › Family & Health Law › Divorce & Separation",
+        "Law › Family & Health Law › Children"
       ],
       "price_usd": 2.99,
       "paperback": {
@@ -551,6 +560,66 @@
         "subtitle": "Described the book instead of promising something.",
         "interior": "keep; the companion link is folder_url https://keepmyproof.com/divorce/ (live) — add the utm tag. No /amazon/co-parenting-log/ page exists, so the folder page stays the companion."
       }
+    },
+    {
+      "slug": "executive-dysfunction",
+      "line": "aplayermode",
+      "title": "Executive Dysfunction",
+      "author": "Tomas Wexley",
+      "status_on_kdp": "IN_REVIEW",
+      "subtitle": "A Five-Role System for Adults Carrying Too Much: Start the Task, Remember the Plan and Finish the Day",
+      "keywords": [
+        "executive function workbook for adults",
+        "task paralysis",
+        "adhd planner for adults",
+        "time blindness",
+        "how to stop procrastinating",
+        "overwhelmed mom planner",
+        "daily routine for adults with adhd"
+      ],
+      "categories": [
+        "Self-Help › Time Management",
+        "Self-Help › Self-Management",
+        "Self-Help › Personal Transformation"
+      ],
+      "price_usd": 2.99,
+      "paperback": null,
+      "companion_url": "https://aplayermode.com/amazon/executive-dysfunction/",
+      "why": {
+        "categories": "Submitted 8 Nov 2026 with only the category paths KDP's chooser had; these are the 3 checked paths, applied once it is Live."
+      }
+    },
+    {
+      "slug": "parallel-parenting",
+      "line": "keepmyproof",
+      "title": "Parallel Parenting",
+      "author": "Reid Calloway",
+      "status_on_kdp": "IN_REVIEW",
+      "subtitle": "A Simple Record Book for High-Conflict Co-Parents: Calm Message Rules, Handoff Logs and One Place for Every Paper",
+      "keywords": [
+        "high conflict co parenting",
+        "co parenting with a narcissist",
+        "parallel parenting plan",
+        "co parenting journal",
+        "custody documentation log",
+        "gray rock method co parenting",
+        "communication log for custody"
+      ],
+      "categories": [
+        "Parenting & Relationships › Family Relationships › Divorce",
+        "Law › Family & Health Law › Divorce & Separation",
+        "Law › Family & Health Law › Children"
+      ],
+      "price_usd": 2.99,
+      "paperback": {
+        "price_usd": 8.99,
+        "trim": "6x9"
+      },
+      "companion_url": "https://keepmyproof.com/amazon/parallel-parenting/",
+      "why": {
+        "categories": "Submitted 8 Nov 2026 with only the category paths KDP's chooser had; these are the 3 checked paths, applied once it is Live."
+      }
     }
-  ]
+  ],
+  "_categories_note": "Category paths checked against KDP's own Kindle chooser on 8 Nov 2026 (read from the live chooser, not guessed); 3 per book."
 }
