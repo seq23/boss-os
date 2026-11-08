@@ -7,11 +7,11 @@
  */
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import { checkLaunchd, checkOtherRepos, categoryProblems, readManifest } from "./lib/email-map.mjs";
+import { checkLaunchd, checkOtherRepos, categoryProblems, readManifest, siblingRepos } from "./lib/email-map.mjs";
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..", "..");
 const manifest = readManifest(ROOT);
-const repos = checkOtherRepos(manifest, ROOT);
+const repos = checkOtherRepos(manifest, ROOT, { alsoScan: [...siblingRepos(ROOT), "~/bin"] });
 const launchd = checkLaunchd(manifest);
 if (repos.checked.length === 0) {
   console.error("NAMED STOP [EMAIL_MAP_NOTHING_CHECKED] no other repo checkout was found next to this one, in ~/GitHub or in ~.");

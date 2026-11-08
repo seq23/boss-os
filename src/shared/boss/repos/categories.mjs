@@ -14,7 +14,11 @@
  * The one firm line stays in code where it is enforced: client data never feeds her own networks.
  */
 export const CATEGORIES = Object.freeze(["mine", "friends", "system"]);
-const HEADINGS = [[/^\*\*\s*mine\b/i, "mine"], [/^\*\*\s*friends\b/i, "friends"], [/^\*\*\s*the system\b/i, "system"]];
+// "**Support systems**" (KDP, the backlink network, creator-network…) are plumbing that serves her and her
+// friends' businesses: they read as "system". A repo listed there AND under Mine or Friends keeps the earlier
+// category (categoryOf checks mine, friends, system in that order). 8 Nov 2026: creator-network sat only
+// there and every map called it "in no repo category".
+const HEADINGS = [[/^\*\*\s*mine\b/i, "mine"], [/^\*\*\s*friends\b/i, "friends"], [/^\*\*\s*the system\b/i, "system"], [/^\*\*\s*support systems\b/i, "system"]];
 const REPO_NAME = /^[A-Za-z0-9][A-Za-z0-9._-]*$/;
 
 const bareRepo = (r) => String(r ?? "").trim().replace(/\/+$/, "").split("/").pop()?.toLowerCase() ?? "";
@@ -32,13 +36,28 @@ export function parseRepoCategories(md) {
   for (const raw of m[1].split("\n")) {
     const line = raw.trim();
     const head = HEADINGS.find(([re]) => re.test(line));
-    if (head) { cat = head[1]; continue; }
-    if (/^\*\*/.test(line)) { cat = null; continue; } // any other bold line ends the lists
-    if (!cat || !/^[-*]\s/.test(line)) continue;
-    let body = line.replace(/^[-*]\s+/, "");
+    let body;
+    if (head) {
+      cat = head[1];
+      // A heading that carries its own list ("**Support systems** (…): KDP, authority-backlink-network, …").
+      const rest = line.replace(/^\*\*[^*]*\*\*/, "");
+      if (!/:\s*\S/.test(rest.replace(/\([^()]*\)/g, " "))) continue;
+      body = rest;
+    } else {
+      if (/^\*\*/.test(line)) { cat = null; continue; } // any other bold line ends the lists
+      if (!cat || !/^[-*]\s/.test(line)) continue;
+      body = line.replace(/^[-*]\s+/, "");
+    }
     // A "Parked …:" line (her ruling 1 Nov 2026: "no work, no jobs … until she un-parks it") keeps its
     // repos in their category AND lists them in `parked`, which the automatic fixer never touches.
     const parkedLine = /^parked\b/i.test(body);
+    // A repo named inside a note ("Dianne's Place / Detox Denver (one business…; repo dianne-place-recovery-services)")
+    // is kept before the notes are dropped: 8 Nov 2026 that repo was uncategorised and every map read it as hers.
+    const named = [...body.matchAll(/\(([^()]*)\)/g)].flatMap((p) => [...p[1].matchAll(/\brepo\s+([A-Za-z0-9][A-Za-z0-9._-]*)/g)].map((x) => x[1].replace(/[.;]+$/, "")));
+    for (const name of named) {
+      if (REPO_NAME.test(name) && !out[cat].includes(name)) out[cat].push(name);
+      if (parkedLine && !out.parked.includes(name)) out.parked.push(name);
+    }
     while (/\([^()]*\)/.test(body)) body = body.replace(/\([^()]*\)/g, " ");
     const colon = body.indexOf(":");
     if (colon >= 0) body = body.slice(colon + 1);

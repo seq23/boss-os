@@ -410,15 +410,16 @@ institutions too"). Rules in `src/shared/boss/t2rGroups/rules.mjs`; the Worker h
 Owner, 31 Oct 2026: "one Email Map page inside Boss OS, all businesses". Pinned by
 `tests/outboundEmailMap.test.ts` ("the Email Map page's manifest covers every sender"):
 1. **One list.** `src/shared/boss/emailMap/manifest.json` holds every automated email anything of hers
-   sends, grouped by business (Brokerage, West Peek Ventures, Porch & Party, Time-2-Read, Industry
-   Guides / Spry, Personal, Friends' businesses & clients): what it is, sender, owner, from, to, when,
+   sends, grouped by business (Brokerage, West Peek (fund and community), Porch & Party, Time-2-Read,
+   Spry Labs, Personal, Creator studios, Friends' sites): what it is, sender, owner, from, to, when,
    where it runs, trigger, how to pause, code paths per repo and launchd labels. The page
    (☰ More → Email Map, `/?tab=emails`, `src/client/boss/pages/EmailMap.tsx`) renders it and nothing else.
 2. **A new sender goes on it in the same PR.** The test fails on any file in this repo that sends (a
    transport, or a call to `sendAsEmployee`, `postEmployeeMail`, `sendAs`, `sendOne`, `createInvite`,
    an outreach send…: `SENDING_PATTERNS` in `scripts/ops/lib/email-map.mjs`) with no row citing it, and
    on a cited path that is gone. `npm run email-map:check` reads the other repos on their default branch
-   and the Mac's launchd jobs the same way (exit 2 when nothing could be checked).
+   and the Mac's launchd jobs the same way (exit 2 when nothing could be checked): every repo checkout
+   of hers in ~/GitHub (parked ones aside) and ~/bin, not only the repos a row already cites (8 Nov 2026).
 3. **Public repo.** Business sending addresses only (`BUSINESS_DOMAINS`); she is "You"; never a
    customer, LP, prospect or investor name.
 4. `docs/OUTBOUND_EMAIL_MAP.md` stays the detailed audit of the Boss OS and side-business paths that

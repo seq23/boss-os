@@ -43,6 +43,12 @@ describe("the Schedule manifest", () => {
     // A client line whose note runs past its parentheses into prose still names its repo (1 Nov 2026).
     const messy = parseRepoCategories("## Repo categories\n**Mine**\n- A: alpha-repo\n**Friends & clients**\n- Clients: client-repo (site **x.org** — note). **Client's Place: x.org is the main site (owner, 1 Nov: \"ok\"); more** (note), other-client\n**The system**\n- boss-os\n");
     expect((messy as any).friends).toEqual(["client-repo", "other-client"]);
+    // 8 Nov 2026: a repo named only inside a note, and a heading that carries its own list, were both
+    // read as "in no category" (dianne-place-recovery-services swept as hers; creator-network flagged).
+    const live = parseRepoCategories("## Repo categories\n**Mine**\n- A: alpha-repo\n**Friends & clients**\n- Friends: pal-repo (Pal), Pal's Place / Other Name (one business; repo noted-repo)\n**Support systems** (not businesses; serve both): KDP, alpha-repo, standby-repo (on standby)\n**The system**\n- boss-os\n");
+    expect([...(live as any).friends].sort()).toEqual(["noted-repo", "pal-repo"]);
+    expect((live as any).system).toEqual(["KDP", "alpha-repo", "standby-repo", "boss-os"]);
+    expect(scheduleCategoryProblems({ rows: [{ trigger: { repo: "standby-repo" } }, { trigger: { repo: "noted-repo" } }] }, [], live)).toEqual([]);
     expect(scheduleCategoryProblems(rows, [], parseRepoCategories("# no section"))[0]).toMatch(/NAMED STOP \[NO_REPO_CATEGORIES\]/);
   });
 
