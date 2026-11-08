@@ -140,7 +140,7 @@ describe("the Social Map covers every account and posting job", () => {
     expect(accountEmailProblems(m, sites)).toEqual([]);
     const bad = clone();
     bad.rows[0]!.account_email = "someone@gmail.com";
-    bad.rows[1]!.account_email = "sequoia@porchandparty901.com";
+    bad.rows[1]!.account_email = "someone@porchandparty901.com";
     bad.rows[2]!.account_email = "";
     bad.rows[3]!.account_email = "nowhere.example mailbox";
     const p = accountEmailProblems(bad, sites);
