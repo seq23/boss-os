@@ -11,7 +11,7 @@
  * waits up to 10 minutes for her to do it in that window, then carries on in the same run.
  *
  * ─── What it does, in one pass ─────────────────────────────────────────────
- *   details  title, subtitle, author, description, own-the-rights, keywords, categories, not adult
+ *   details  title, subtitle, author, description, own-the-rights, keywords, not adult, categories (set by the run)
  *   content  the EPUB, the cover, the AI disclosure (text and cover: yes; translations: none)
  *   pricing  70% royalty, the approved US price, then — after reading the AI disclosure back on the
  *            content step — Publish. NEVER "Save as Draft": it silently drops the AI disclosure.
@@ -70,6 +70,105 @@ export function shelfState(text) {
   return null;
 }
 
+/**
+ * In-page (and fixture-tested in tests/kdpNewTitleUpload.test.ts): what an upload on KDP's content
+ * step shows right now. Runs inside the page via `page.evaluate`, so it is self-contained.
+ *
+ * 7 Nov 2026 the cover upload stopped as UPLOAD_NOT_CONFIRMED after 6 minutes. The old wait was
+ * `getByText(/Cover uploaded successfully/).first().waitFor()`: the FIRST matching element in the
+ * page, waited on until visible. KDP's page (Amazon AUI) keeps its status messages in the DOM,
+ * hidden with `aok-hidden`/`a-hidden` until they apply, so a hidden copy earlier in the DOM never
+ * becomes visible and the wait runs out even after Amazon shows "Cover uploaded successfully!"
+ * with the cover thumbnail (KDP help G200641240). Here only SHOWN elements count, the new cover
+ * thumbnail counts too, and a shown error is Amazon's refusal, named with its own words.
+ *
+ * @returns {{ state: "done"|"refused"|"working"|"waiting", via: string|null, text: string }}
+ */
+export function uploadStatus(doc, kind, inputSel, beforeSrcs = []) {
+  const shown = (el) => {
+    if (typeof el.checkVisibility === "function" && !el.checkVisibility({ checkVisibilityCSS: true })) return false;
+    for (let e = el; e && e.nodeType === 1; e = e.parentElement) {
+      const cls = typeof e.className === "string" ? e.className : (e.getAttribute("class") ?? "");
+      if (e.hidden || /(^|\s)(aok-hidden|a-hidden|hidden|a-hide)(\s|$)/.test(cls)) return false;
+      const cs = doc.defaultView?.getComputedStyle?.(e);
+      if (cs && (cs.display === "none" || cs.visibility === "hidden")) return false;
+    }
+    return true;
+  };
+  const text = (el) => String(el.textContent ?? "").replace(/\s+/g, " ").trim();
+  const okRe = kind === "cover" ? /cover\b[^.!]{0,80}uploaded successfully/i : /manuscript\b[^!]{0,200}uploaded successfully/i;
+  const word = kind === "cover" ? /cover/i : /manuscript|e-?book file|interior/i;
+  const input = doc.querySelector(inputSel);
+  // The upload's own section: the input's nearest ancestor holding a heading-ish mention of it.
+  let section = input?.parentElement ?? doc.body;
+  for (let e = section, i = 0; e && i < 8; e = e.parentElement, i += 1) { section = e; if (word.test(text(e)) && e.querySelector("img, .a-alert, [class*='alert']")) break; }
+  // Leaf-most shown element whose text says it uploaded.
+  for (const el of doc.querySelectorAll("body *")) {
+    if (!okRe.test(text(el)) || [...el.children].some((c) => okRe.test(text(c)))) continue;
+    if (shown(el)) return { state: "done", via: "message", text: text(el).slice(0, 200) };
+  }
+  const errs = [...doc.querySelectorAll(".a-alert-error, .a-color-error, [role='alert']")].filter((el) => shown(el) && text(el) && (section.contains(el) || word.test(text(el))));
+  if (errs.length) return { state: "refused", via: "error", text: errs.map(text).join(" ").slice(0, 400) };
+  const busy = [...section.querySelectorAll("*")].some((el) => shown(el) && /^(uploading|processing|converting)\b/i.test(text(el)) && el.children.length === 0);
+  if (busy) return { state: "working", via: null, text: "" };
+  if (kind === "cover") {
+    const thumb = [...section.querySelectorAll("img")].find((im) => {
+      const src = im.getAttribute("src") ?? "";
+      return src && !beforeSrcs.includes(src) && !/spinner|loading|placeholder|transparent|grey-pixel|blank/i.test(src) && shown(im);
+    });
+    if (thumb) return { state: "done", via: "thumbnail", text: "" };
+  }
+  return { state: "waiting", via: null, text: "" };
+}
+
+/**
+ * In-page (and fixture-tested): one step of KDP's category chooser. Picks `label` in the first
+ * dropdown that offers it, else ticks the checkbox carrying it. Names compare loosely ("&" = "and",
+ * case and punctuation ignored), because the book file says "Family & Relationships" and AUI pages
+ * vary. AUI dropdowns are a native <select> behind a styled button, so the select itself may be
+ * visually hidden; it is set and its change event fired, which is what AUI listens to.
+ * `boxesOnly` skips the dropdowns (a leaf just chosen in one may then offer its own tick box).
+ * @returns {{ did: "selected"|"ticked"|"already"|"missing", seen: string[] }}
+ */
+export function categoryStep(root, label, boxesOnly = false) {
+  const norm = (s) => String(s ?? "").toLowerCase().replace(/&/g, " and ").replace(/[^a-z0-9]+/g, " ").trim();
+  const want = norm(label);
+  const off = (el) => { for (let e = el; e && e !== root; e = e.parentElement) { const c = e.getAttribute("class") ?? ""; if (e.hidden || /(^|\s)(aok-hidden|a-hidden)(\s|$)/.test(c)) return true; } return false; };
+  const seen = [];
+  for (const sel of boxesOnly ? [] : root.querySelectorAll("select")) {
+    if (off(sel)) continue;
+    const opts = [...sel.options];
+    seen.push(...opts.map((o) => o.text.trim()).filter(Boolean));
+    const opt = opts.find((o) => norm(o.text) === want);
+    if (!opt) continue;
+    if (sel.value === opt.value) return { did: "already", seen };
+    sel.value = opt.value;
+    sel.dispatchEvent(new Event("change", { bubbles: true }));
+    sel.dispatchEvent(new Event("input", { bubbles: true }));
+    return { did: "selected", seen };
+  }
+  for (const box of root.querySelectorAll('input[type="checkbox"]')) {
+    if (off(box)) continue;
+    const doc = box.ownerDocument;
+    const name = (box.id && doc.querySelector(`label[for="${box.id}"]`)?.textContent) || box.closest("label")?.textContent || box.getAttribute("aria-label") || box.parentElement?.textContent || "";
+    seen.push(String(name).trim());
+    if (norm(name) !== want) continue;
+    if (box.checked) return { did: "already", seen };
+    box.click();
+    return { did: "ticked", seen };
+  }
+  return { did: "missing", seen: [...new Set(seen)].slice(0, 40) };
+}
+
+/** On a stop, keep what the page showed (HTML + screenshot) next to the draft, for the next root cause. */
+async function snapshot(page, dir, name) {
+  try {
+    await writeFile(join(dir, `${name}.html`), await page.content());
+    await page.screenshot({ path: join(dir, `${name}.png`), fullPage: true });
+    return join(dir, `${name}.png`);
+  } catch { return null; }
+}
+
 /* ── Sign-in: her hands, in the window; this run only waits ─────────────────────────────────── */
 async function waitForHer(page) {
   if (!SIGNIN.test(page.url())) return;
@@ -106,7 +205,7 @@ async function clickOne(page, name, sels) {
 }
 
 /* ── The three steps ────────────────────────────────────────────────────────────────────────── */
-async function details(page, book) {
+async function details(page, book, dir) {
   await go(page, `${KDP}/title-setup/kindle/new/details`);
   await fillField(page, "title", ['input[name="data[title]"]', "#data-title", (p) => p.getByLabel(/^Book Title/i)], book.title);
   await fillField(page, "subtitle", ['input[name="data[subtitle]"]', "#data-subtitle", (p) => p.getByLabel(/^Subtitle/i)], book.subtitle);
@@ -140,7 +239,7 @@ async function details(page, book) {
   // ("Answer the Adult-only question before choosing a category", live page 7 Nov 2026).
   const adult = await first(page, ['input[name="data[is_adult_content]-radio"][value="false"]', 'input[name="data[is_adult_content]"][value="false"]', "#data-is-adult-content-false"]);
   if (adult) await adult.check();
-  await categories(page, book.categories);
+  await categories(page, book.categories, dir);
   if (DRY) say("DRY_RUN", "details filled; Save and Continue is pressed even in a dry run (a KDP draft is left)");
   await clickOne(page, "Save and Continue", ["#save-and-continue-announce", (p) => p.getByRole("button", { name: /Save and Continue/i })]);
   await page.waitForURL(/\/content/, { timeout: STEP_MS }).catch(() => {});
@@ -149,48 +248,76 @@ async function details(page, book) {
 }
 
 /**
- * Categories: automatic where the chooser has a search box; otherwise the run asks her, on screen,
- * to tick the two named categories in the open window, and waits up to 10 minutes for both to show.
+ * Categories: set by the run itself, never by her (her coordinator, 7 Nov 2026, after a run that
+ * waited 10 minutes on her and stopped CATEGORIES_NOT_SET).
  */
-async function categories(page, cats) {
+async function categories(page, cats, dir) {
   // KDP's Kindle chooser (read live 7 Nov 2026): a modal with a "Category" select, a "Subcategory"
   // select, then checkboxes for the leaves; up to 3 placements; Save closes it and the page button
-  // turns from "Choose categories" to "Edit categories". That button text is what "set" means here,
-  // so categories she picks by hand count too (the names in the book file may not exist on KDP).
+  // turns from "Choose categories" to "Edit categories". That button text is what "set" means here.
+  // Old faults: a two-level path ("Family & Relationships › Divorce & Separation") gave up when the
+  // second name was a checkbox rather than a subcategory option; the label match was exact text;
+  // and Save was looked for as <button>/<input> WITH text, which an AUI button (a text-less
+  // input.a-button-input under a span) never is, so even ticked boxes were never saved.
   const btn = page.locator("#categories-modal-button");
   const isSet = async () => /Edit categories/i.test((await btn.innerText().catch(() => "")) || "");
   if (await isSet()) return;
   await clickOne(page, "Choose categories", ["#categories-modal-button", (p) => p.getByRole("button", { name: /(Choose|Edit) categories/i })]);
-  const modal = page.locator('.a-popover[aria-hidden="false"]').last();
+  await page.waitForTimeout(1500);
+  const modal = (await page.locator('.a-popover[aria-hidden="false"]').count()) ? page.locator('.a-popover[aria-hidden="false"]').last() : page.locator('[role="dialog"]').last();
+  // Mark the open box, then run the step as a page expression (a string evaluate needs no eval in
+  // the page, which Amazon's content-security policy may forbid).
+  await modal.evaluate((el) => { document.querySelectorAll("[data-kmp-cat]").forEach((x) => x.removeAttribute("data-kmp-cat")); el.setAttribute("data-kmp-cat", "1"); }).catch(() => {});
+  const step = (label, boxesOnly = false) => `(${categoryStep})(document.querySelector('[data-kmp-cat="1"]'), ${JSON.stringify(label)}, ${boxesOnly})`;
   let ticked = 0;
+  const missed = [];
   for (const path of cats) {
-    const [top, sub, leaf] = path.split("›").map((x) => x.trim());
-    const sels = modal.locator("select");
-    const pick = await sels.nth(0).selectOption({ label: top }).then(() => true).catch(() => false);
-    if (!pick) continue;
-    await page.waitForTimeout(800);
-    if (sub && !(await sels.nth(1).selectOption({ label: sub }).then(() => true).catch(() => false))) continue;
-    await page.waitForTimeout(800);
-    const box = modal.locator("label").filter({ hasText: new RegExp(`^\\s*${(leaf ?? sub).replace(/[.*+?^${}()|[\]\\&]/g, "\\$&")}\\s*$`) }).locator('input[type="checkbox"]');
-    if (await box.count()) { if (await box.first().check({ force: true }).then(() => true).catch(() => false)) ticked += 1; }
+    const parts = path.split("›").map((x) => x.trim()).filter(Boolean);
+    for (const [i, part] of parts.entries()) {
+      let r = { did: "missing", seen: [] };
+      for (let t = 0; t < 12 && r.did === "missing"; t += 1) { r = await page.evaluate(step(part)).catch(() => r); if (r.did === "missing") await page.waitForTimeout(700); }
+      if (r.did === "missing") { missed.push(`"${part}" (in ${path}); the box offered: ${r.seen.slice(0, 15).join(", ") || "nothing"}`); break; }
+      const last = i === parts.length - 1;
+      // A leaf KDP lists as a dropdown option may then offer its own tick box; tick it if so.
+      if (last && r.did === "selected") { await page.waitForTimeout(900); const b = await page.evaluate(step(part, true)).catch(() => null); if (b && b.did !== "missing") r = b; }
+      if (last && r.did !== "missing") ticked += 1;
+      await page.waitForTimeout(900);
+    }
   }
   if (ticked) {
-    const save = modal.locator("button, input[type=submit]").filter({ hasText: /save/i });
-    if (await save.count()) await save.first().click().catch(() => {});
-    await page.waitForTimeout(1500);
-    if (await isSet()) return;
+    const save = await first(page, [
+      (p) => modal.getByRole("button", { name: /^\s*save/i }),
+      (p) => modal.locator(".a-button").filter({ hasText: /^\s*save/i }).locator("input, button"),
+      (p) => modal.locator("button, input[type=submit], .a-button-text").filter({ hasText: /save/i }),
+    ]);
+    if (save) await save.click().catch(() => {});
+    for (let t = 0; t < 10 && !(await isSet()); t += 1) await page.waitForTimeout(1000);
+    if (await isSet()) { console.log(`categories set: ${ticked} of ${cats.length}${missed.length ? ` (not found: ${missed.join("; ")})` : ""}.`); return; }
   }
-  console.log(`\n>>> CATEGORIES: pick up to 3 categories in the open window and press Save in that box (suggested:\n    1. ${cats[0]}\n    2. ${cats[1]}).\n    Any categories you choose count. This run waits up to 10 minutes and then carries on.\n`);
-  const deadline = Date.now() + SIGNIN_WAIT_MS;
-  while (Date.now() < deadline) { await page.waitForTimeout(3000); if (await isSet()) return; }
-  throw stop("CATEGORIES_NOT_SET", "no categories were saved within 10 minutes; nothing was saved past the details step.");
+  const shot = await snapshot(page, dir, "stop-categories");
+  throw stop("CATEGORIES_NOT_SET", `KDP's category box did not take ${cats.join(" and ")}${missed.length ? `: not found ${missed.join("; ")}` : ticked ? ": ticked but Save did not close the box" : ""}. Nothing was saved past the details step. Page kept at ${shot ?? "(screenshot failed)"}.`);
 }
 
-async function upload(page, name, sels, file, done) {
-  const input = page.locator(sels.join(", "));
+const UPLOAD_MS = 6 * 60_000;
+async function upload(page, kind, sels, file, dir) {
+  const name = kind === "cover" ? "cover" : "manuscript";
+  const sel = sels.join(", ");
+  const input = page.locator(sel);
   if (!(await input.count())) throw stop("FIELD_NOT_FOUND", `the ${name} upload is not on the page.`);
+  const before = await page.evaluate(() => [...document.images].map((i) => i.getAttribute("src") ?? ""));
   await input.first().setInputFiles(file);
-  await page.getByText(done).first().waitFor({ timeout: 6 * 60_000 }).catch(() => { throw stop("UPLOAD_NOT_CONFIRMED", `Amazon did not confirm the ${name} upload within 6 minutes.`, 9); });
+  const probe = `(${uploadStatus})(document, ${JSON.stringify(kind)}, ${JSON.stringify(sel)}, ${JSON.stringify(before)})`;
+  const deadline = Date.now() + UPLOAD_MS;
+  let last = { state: "waiting" };
+  while (Date.now() < deadline) {
+    await page.waitForTimeout(2000);
+    await waitForHer(page);
+    last = await page.evaluate(probe).catch(() => last);
+    if (last.state === "done") { console.log(`${name} upload confirmed by Amazon (${last.via}${last.text ? `: "${last.text}"` : ""}).`); return last; }
+    if (last.state === "refused") { await snapshot(page, dir, `stop-${kind}-refused`); throw stop("UPLOAD_REFUSED", `Amazon refused the ${name}: ${last.text}`, 9); }
+  }
+  const shot = await snapshot(page, dir, `stop-${kind}-not-confirmed`);
+  throw stop("UPLOAD_NOT_CONFIRMED", `Amazon showed neither "${name} uploaded successfully" nor a ${kind === "cover" ? "cover thumbnail" : "confirmation"} within 6 minutes (last seen: ${last.state}). Page kept at ${shot ?? "(screenshot failed)"}.`, 9);
 }
 
 /** Sets the AI answers inside the AI section, and reads them back. Returns what the page shows. */
@@ -237,10 +364,10 @@ async function aiDisclosure(page, ans, { write }) {
 
 async function content(page, dir, ans) {
   if (!/\/content/.test(page.url())) throw stop("WRONG_STEP", `expected the content step, at ${page.url()}.`);
-  await upload(page, "manuscript", ['#data-assets-interior-file-upload-AjaxInput', 'input[type="file"][id*="interior"]', 'input[type="file"][name*="interior"]'], join(dir, "book.epub"), /Manuscript .* uploaded successfully|uploaded successfully/i);
+  await upload(page, "manuscript", ['#data-assets-interior-file-upload-AjaxInput', 'input[type="file"][id*="interior"]', 'input[type="file"][name*="interior"]'], join(dir, "book.epub"), dir);
   const coverChoice = await first(page, [(p) => p.getByLabel(/Upload a cover you already have/i), (p) => p.getByText(/Upload a cover you already have/i)]);
   if (coverChoice) await coverChoice.click();
-  await upload(page, "cover", ['#data-assets-cover-file-upload-AjaxInput', 'input[type="file"][id*="cover"]', 'input[type="file"][name*="cover"]'], join(dir, "cover.jpg"), /Cover uploaded successfully/i);
+  await upload(page, "cover", ['#data-assets-cover-file-upload-AjaxInput', 'input[type="file"][id*="cover"]', 'input[type="file"][name*="cover"]'], join(dir, "cover.jpg"), dir);
   await aiDisclosure(page, ans, { write: true });
   await clickOne(page, "Save and Continue", ["#save-and-continue-announce", (p) => p.getByRole("button", { name: /Save and Continue/i })]);
   await page.waitForURL(/\/pricing/, { timeout: STEP_MS }).catch(() => {});
@@ -310,7 +437,7 @@ async function main() {
     const page = context.pages()[0] ?? (await context.newPage());
     const report = { title_ref: null, cover_uploaded: false, publish_attempted: false, resulting_state: null, run_outcome: "attempted", stop_code: null, amazon_message: null };
     try {
-      await details(page, book);
+      await details(page, book, dir);
       await content(page, dir, ans);
       report.cover_uploaded = true;
       const { published } = await pricingAndPublish(page, book, ans);
@@ -322,6 +449,7 @@ async function main() {
       await writeFile(join(dir, "publish.json"), JSON.stringify({ at: new Date().toISOString(), judgement_id: a.id, ...report, shelf }, null, 2));
     } catch (e) {
       report.stop_code = e.stop ?? "FAILED"; report.amazon_message = String(e.message).slice(0, 800);
+      if (!/stop-/.test(e.message)) await snapshot(page, dir, `stop-${String(e.stop ?? "failed").toLowerCase()}`);
       say("STOPPED", e.message); code = e.code ?? 1;
     } finally {
       if (!(await api.attempt(a.id, report))) console.error("NAMED STOP [ATTEMPT_NOT_RECORDED] Boss OS did not keep this attempt; the line above is the record.");
