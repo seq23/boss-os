@@ -8,7 +8,7 @@
  * names i dont want to incl in the emails we need to come up with a select few good ones"; "these
  * prospects are buyers but some times can be sellers".
  *
- *   1. IMPORT. The 11 Oct send lives OUTSIDE the repo (~/8raise-tools/outreach-2026-10-11: sent-log.md
+ *   1. IMPORT. The 11 Oct send lives OUTSIDE the repo (~/Work/8raise-tools/outreach-2026-10-11: sent-log.md
  *      with Gmail ids, recipients*.csv). It is read here at runtime and posted to D1; no name is
  *      ever committed. Each imported row is touch 1, threaded on the message she sent.
  *   2. REPLIES. Bounces and opt-outs are suppressed the same moment; an out-of-office changes nothing;
@@ -63,7 +63,7 @@ const READ_SCOPE = "https://www.googleapis.com/auth/gmail.readonly";
 /** Her one step if Google ever refuses the read grant: exact, so the stop can be acted on. */
 export const ADMIN_STEP = "admin.google.com (westpeek.ventures) → Security → Access and data control → API controls → Manage Domain Wide Delegation → the Boss OS service account's client ID → Edit → keep every scope and add https://www.googleapis.com/auth/gmail.readonly → Authorize.";
 const GMAIL = "https://gmail.googleapis.com/gmail/v1/users/me";
-const SOURCE_DIR = process.env.PROSPECT_SOURCE_DIR ?? path.join(os.homedir(), "8raise-tools", "outreach-2026-10-11");
+const SOURCE_DIR = process.env.PROSPECT_SOURCE_DIR ?? path.join(os.homedir(), "Work", "8raise-tools", "outreach-2026-10-11");
 const MORNING_DIR = process.env.BOSS_OS_MORNING_DIR ?? path.join(os.homedir(), ".boss-os", "morning");
 const PREVIEW = path.join(os.homedir(), ".boss-os", "lp", "prospect-preview.txt");
 const LIVE = process.argv.includes("--live");

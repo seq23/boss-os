@@ -10,7 +10,7 @@
  * and SPEND_TOOLS below, and none of them is billing (tests/boss/lpProspects.test.ts pins that).
  *
  * THE KEY NEVER APPEARS. 8r.sh (outside the repo) takes a header FILE. The file is
- * EIGHTRAISE_HDR (default ~/8raise-tools/.hdr-seq-taylor, 0600, outside the repo), or, when the vault
+ * EIGHTRAISE_HDR (default ~/Work/8raise-tools/.hdr-seq-taylor, 0600, outside the repo), or, when the vault
  * injects EIGHTRAISE_API_KEY or EIGHTRAISE_SEQ_TAYLOR_API_KEY, a 0600 temp file written here and deleted in `finally`. Nothing prints it.
  *
  *   npm run lp:eightraise              read the balance, write the footer
@@ -23,7 +23,7 @@ import { bossApi } from "./lib/duty-kit.mjs";
 import { writeMorning } from "./lp-daily.mjs";
 import { EIGHTRAISE_BUDGET, MONIQUE_MONTHLY, eightRaiseFooter, monthOf } from "../../src/shared/boss/lp/plan.mjs";
 
-const HELPER = process.env.EIGHTRAISE_HELPER ?? path.join(os.homedir(), "8raise-tools", "8r.sh");
+const HELPER = process.env.EIGHTRAISE_HELPER ?? path.join(os.homedir(), "Work", "8raise-tools", "8r.sh");
 export const READ_TOOLS = Object.freeze(["get_usage", "check_enrichment_status", "refine_query"]);
 export const SPEND_TOOLS = Object.freeze(["enrich_companies", "search_investors", "find_firms", "approve_discovery"]);
 const NEVER = /billing|subscription|upgrade|purchase|buy|checkout|top.?up/i;
@@ -37,7 +37,7 @@ export function resolveKey(env = process.env, names = KEY_NAMES) {
 }
 
 function withHeader(fn) {
-  const given = process.env.EIGHTRAISE_HDR ?? path.join(os.homedir(), "8raise-tools", ".hdr-seq-taylor");
+  const given = process.env.EIGHTRAISE_HDR ?? path.join(os.homedir(), "Work", "8raise-tools", ".hdr-seq-taylor");
   if (fs.existsSync(given)) return fn(given);
   const key = resolveKey();
   if (!key) throw new Error("NAMED STOP [NO_8RAISE_KEY] no header file and no injected key; 8Raise is not called today.");

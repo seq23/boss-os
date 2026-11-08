@@ -24,7 +24,7 @@ function keep(file, data) {
 
 /** No sender identity or customer details in git: the approved artifact stays on the Mac. */
 export function localConfig(env = process.env) {
-  const contractFile = env.PNP_OUTREACH_CONTRACT ?? path.join(os.homedir(), "codex-briefs", "corp", "CONTRACT.md");
+  const contractFile = env.PNP_OUTREACH_CONTRACT ?? path.join(os.homedir(), "Work", "codex-briefs", "corp", "CONTRACT.md");
   const contract = fs.readFileSync(contractFile, "utf8");
   const host = /\\n([a-z0-9.-]+)\/request/.exec(contract)?.[1];
   const origin = env.PNP_OUTREACH_ORIGIN ?? (host ? `https://${host}` : null);
