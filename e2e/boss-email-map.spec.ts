@@ -18,7 +18,8 @@ for (const vp of [PHONE, LAPTOP]) {
       await unlock(page);
       await tab(page, "Email Map");
       const map = page.getByTestId("email-map");
-      await expect(map.getByText(/automated emails across 7 businesses/)).toBeVisible();
+      // The count comes from the manifest it renders, never a typed number (8 Nov 2026: a new business made "7" stale and main red).
+      await expect(map.getByText(new RegExp(`automated emails across ${manifest.businesses.length} businesses`))).toBeVisible();
       await expect(map.locator("details.email-map-business")).toHaveCount(manifest.businesses.length);
       await expect(map.locator(".email-map-card")).toHaveCount(manifest.rows.length);
       await expectNoSidewaysScroll(page);
