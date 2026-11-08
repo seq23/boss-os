@@ -612,6 +612,8 @@ export function cohesionCheckLine(brains, mac, now = Date.now()) {
     // The Social Map (8 Nov 2026): an account, sameAs or posting job missing from the map, a dead URL or a
     // stale live_auto job is one clause here, never an email (scripts/ops/lib/social-map.mjs).
     if (typeof mac.social_map_flag === "string" && mac.social_map_flag) problems.push(mac.social_map_flag);
+    // The Email Map and the Schedule against what really sends and runs (8 Nov 2026), never blocking.
+    if (typeof mac.maps_flag === "string" && mac.maps_flag) problems.push(mac.maps_flag);
     const unchecked = Array.isArray(mac.unchecked) ? mac.unchecked : [];
     if (unchecked.length) problems.push(`${names(unchecked, 5)} could not be checked`);
   }

@@ -2385,8 +2385,8 @@
     },
     {
       "id": "how-we-know-loop-demand",
-      "name": "loop · daily demand + Mon 08:30 CT email",
-      "what": "loop · daily demand + Mon 08:30 CT email",
+      "name": "Demand read",
+      "what": "Daily: reads which videos strangers click and stay on; on Mondays emails you the verdict.",
       "business": "spry",
       "brand": "How We Know",
       "system": "github",
@@ -2433,7 +2433,7 @@
     },
     {
       "id": "how-we-know-loop-whisper-author",
-      "name": "loop · Wed 14:00 CT · whisper almanac author",
+      "name": "Whisper Almanac author",
       "what": "Whisper Almanac: writes the next whispered sleep episode and the week's affirmations, $0 free models",
       "business": "spry",
       "brand": "Whisper Almanac",
@@ -2457,8 +2457,8 @@
     },
     {
       "id": "how-we-know-loop-fri-measure",
-      "name": "loop · Fri 17:00 · measure",
-      "what": "loop · Fri 17:00 · measure",
+      "name": "Friday measure",
+      "what": "Fridays: reads how long people watched and what each video earned; can pause the line if it falls too far.",
       "business": "spry",
       "brand": "How We Know",
       "system": "github",
@@ -2481,8 +2481,8 @@
     },
     {
       "id": "how-we-know-loop-fri-publish",
-      "name": "loop · Fri 09:00 · flip to public",
-      "what": "loop · Fri 09:00 · flip to public",
+      "name": "Friday publish",
+      "what": "Fridays: makes the week's finished episodes public.",
       "business": "spry",
       "brand": "How We Know",
       "system": "github",
@@ -2505,8 +2505,8 @@
     },
     {
       "id": "how-we-know-loop-imagery-harvest",
-      "name": "loop · Sat 04:00 UTC · grow the rights-cleared footage pool",
-      "what": "loop · Sat 04:00 UTC · grow the rights-cleared footage pool",
+      "name": "Footage harvest",
+      "what": "Friday night: adds rights-cleared footage to the pool the episodes draw from.",
       "business": "spry",
       "brand": "How We Know",
       "system": "github",
@@ -2529,8 +2529,8 @@
     },
     {
       "id": "how-we-know-loop-mon-draft",
-      "name": "loop · Mon 00:00 CT · draft, validate, gate",
-      "what": "Builds the site and runs its checks.",
+      "name": "Monday draft",
+      "what": "Just after midnight on Monday: drafts next week's videos and checks them before anything is made.",
       "business": "spry",
       "brand": "How We Know",
       "system": "github",
@@ -2553,8 +2553,8 @@
     },
     {
       "id": "how-we-know-loop-monthly-review",
-      "name": "loop · 1st 07:00 · monthly review",
-      "what": "loop · 1st 07:00 · monthly review",
+      "name": "Monthly review",
+      "what": "On the 1st: reads the month's numbers and says what to change (emails you).",
       "business": "spry",
       "brand": "How We Know",
       "system": "github",
@@ -2577,8 +2577,8 @@
     },
     {
       "id": "how-we-know-loop-quarterly-taxonomy-refresh",
-      "name": "loop · Quarterly · refresh the candidate-niche taxonomy",
-      "what": "loop · Quarterly · refresh the candidate-niche taxonomy",
+      "name": "Topic list refresh",
+      "what": "On the 1st of a quarter: refreshes the list of candidate topics.",
       "business": "spry",
       "brand": "How We Know",
       "system": "github",
@@ -2601,8 +2601,8 @@
     },
     {
       "id": "how-we-know-loop-reach",
-      "name": "loop · daily 10:00 CT · reach",
-      "what": "loop · daily 10:00 CT · reach",
+      "name": "Reach",
+      "what": "Daily: adds captions, other languages and search details to videos already up.",
       "business": "spry",
       "brand": "How We Know",
       "system": "github",
@@ -2651,8 +2651,8 @@
     },
     {
       "id": "how-we-know-loop-sat-score",
-      "name": "loop · Sat 06:00 · score demand ÷ competition",
-      "what": "loop · Sat 06:00 · score demand ÷ competition",
+      "name": "Saturday scoring",
+      "what": "Saturdays: scores each topic's demand against its competition.",
       "business": "spry",
       "brand": "How We Know",
       "system": "github",
@@ -2675,8 +2675,8 @@
     },
     {
       "id": "how-we-know-loop-shorts-cloud",
-      "name": "loop · daily 18:00 CT · publish a Short from R2",
-      "what": "Publishes the next pages.",
+      "name": "Daily Short",
+      "what": "Every evening: publishes the next Short.",
       "business": "spry",
       "brand": "How We Know",
       "system": "github",
@@ -2725,8 +2725,8 @@
     },
     {
       "id": "how-we-know-loop-sun-rank",
-      "name": "loop · Sun 06:00 · rank topics",
-      "what": "loop · Sun 06:00 · rank topics",
+      "name": "Sunday ranking",
+      "what": "Sundays: ranks next week's topics.",
       "business": "spry",
       "brand": "How We Know",
       "system": "github",
@@ -2749,8 +2749,8 @@
     },
     {
       "id": "how-we-know-loop-upload-cloud",
-      "name": "loop · daily 09:00 CT · upload from R2",
-      "what": "loop · daily 09:00 CT · upload from R2",
+      "name": "Daily upload",
+      "what": "Every morning: uploads the day's episode.",
       "business": "spry",
       "brand": "How We Know",
       "system": "github",
@@ -2895,7 +2895,7 @@
       "brand": "How We Know",
       "system": "mac",
       "slots": [
-        "sun,mon,wed,thu 22:58"
+        "mon,wed,thu,sun 22:58"
       ],
       "emails": false,
       "heavy": true,

@@ -19,17 +19,21 @@ import { join } from "node:path";
 import { execFileSync } from "node:child_process";
 import { pathToFileURL } from "node:url";
 import { REVIEW_FILE, buildMatrix, parseReviewFile, registryFrom } from "../../src/shared/boss/validators/matrix.mjs";
+import { readRepoCategories } from "./lib/repo-categories.mjs";
 
 const isDir = (p) => { try { return statSync(p).isDirectory(); } catch { return false; } };
 const git = (dir, args) => execFileSync("git", ["-C", dir, ...args], { encoding: "utf8", stdio: ["ignore", "pipe", "ignore"], maxBuffer: 64 * 1024 * 1024 });
 
 /** Every repo this Mac holds: name → dir. A worktree (.git is a file) is skipped. */
-export function reposOnMac(home = homedir()) {
+export function reposOnMac(home = homedir(), cats = readRepoCategories()) {
   const out = new Map();
+  const parked = new Set((cats && !cats.problem ? cats.parked ?? [] : []).map((r) => r.toLowerCase()));
   const root = join(home, "GitHub");
   if (isDir(root)) for (const d of readdirSync(root)) {
     const dir = join(root, d);
-    if (d.startsWith("_") || !isDir(dir) || !isDir(join(dir, ".git"))) continue;
+    // Hidden folders (".hwk-runner", worktrees) and parked repos are not hers to review (8 Nov 2026:
+    // both were counted as "not imported yet").
+    if (/^[._]/.test(d) || !isDir(dir) || !isDir(join(dir, ".git")) || parked.has(d.toLowerCase())) continue;
     out.set(d, dir);
   }
   const apm = join(home, "aplayer-mode");
@@ -48,11 +52,16 @@ export function readRegistry(dir, { fetch = true } = {}) {
   try { files = git(dir, ["ls-tree", "-r", "--name-only", ref]).split("\n").filter(Boolean); } catch { return null; }
   let scripts = {};
   try { scripts = JSON.parse(git(dir, ["show", `${ref}:package.json`])).scripts ?? {}; } catch { /* no package.json */ }
+  let registry = [];
+  try {
+    const j = JSON.parse(git(dir, ["show", `${ref}:validators.registry.json`]));
+    registry = (Array.isArray(j) ? j : j.validators ?? []).map((v) => (typeof v === "string" ? v : v?.name)).filter(Boolean);
+  } catch { /* no registry file */ }
   const steps = [];
   for (const f of files.filter((x) => /^\.github\/workflows\/[^/]+\.ya?ml$/.test(x))) {
     try { for (const m of git(dir, ["show", `${ref}:${f}`]).matchAll(/^\s*(?:-\s*)?name:\s*["']?(.+?)["']?\s*$/gm)) steps.push(m[1]); } catch { /* unreadable workflow */ }
   }
-  return registryFrom({ scripts, files, steps });
+  return registryFrom({ scripts, files, steps, registry });
 }
 
 export function readMatrix({ home = homedir(), reviewsDir = process.env.BOSS_REVIEWS_DIR ?? join(home, ".boss-os", "reviews"), repos = reposOnMac(home), read = readRegistry } = {}) {

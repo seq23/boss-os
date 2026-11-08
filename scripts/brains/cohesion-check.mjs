@@ -32,7 +32,7 @@
 import { existsSync, mkdirSync, readFileSync, readdirSync, renameSync, statSync } from "node:fs";
 import { homedir } from "node:os";
 import { join } from "node:path";
-import { execFileSync } from "node:child_process";
+import { execFileSync, spawnSync } from "node:child_process";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { isClientRepo } from "../ops/lib/email-map.mjs";
 import { readRepoCategories } from "../ops/lib/repo-categories.mjs";
@@ -230,8 +230,35 @@ async function waitForCopy(home) {
   return copyAgeHours(home);
 }
 
+/**
+ * 6. The two living maps' Mac checks (8 Nov 2026): `npm run email-map:check` and `npm run schedule:check`
+ * read the other repos, ~/bin and the installed launchd jobs, which CI cannot see; until today nothing
+ * ran them on a schedule, so a sender or job with no row went unseen (six senders and eighteen jobs
+ * that day). Flagged in the Monday line, never blocking, like the matrix. Exit 0 clean, 1 problems
+ * (counted from their indented lines), anything else "could not be checked".
+ */
+export function mapCheckWords(results) {
+  const said = [];
+  const unchecked = [];
+  for (const { what, status, stdout = "" } of results) {
+    if (status === 0) continue;
+    const n = String(stdout).split("\n").filter((l) => /^ {2}\S/.test(l) && !/^ {2}WAITING /.test(l)).length;
+    if (status === 1 && n > 0) said.push(`${n} ${n === 1 ? "thing is" : "things are"} missing or wrong on ${what}`);
+    else unchecked.push(what);
+  }
+  return { maps_flag: said.length ? said.join("; ") : null, unchecked };
+}
+
+export function runMapChecks({ root = fileURLToPath(new URL("../..", import.meta.url)) } = {}) {
+  const run = (what, script) => {
+    const r = spawnSync(process.execPath, [join(root, "scripts", "ops", script)], { cwd: root, encoding: "utf8", timeout: 15 * 60_000, maxBuffer: 16 << 20 });
+    return { what, status: r.status, stdout: `${r.stdout ?? ""}\n${r.stderr ?? ""}` };
+  };
+  return mapCheckWords([run("the Email Map", "email-map-check.mjs"), run("the Schedule", "schedule-check.mjs")]);
+}
+
 /** Every check, merged into the record the Worker keeps. */
-export async function runChecks({ home = homedir(), now = Date.now(), dryRun = false, lastCommit, restart, wait, validators = () => readMatrix({ home }), social = () => socialMapFlag({ home }) } = {}) {
+export async function runChecks({ home = homedir(), now = Date.now(), dryRun = false, lastCommit, restart, wait, validators = () => readMatrix({ home }), social = () => socialMapFlag({ home }), maps = home === homedir() ? runMapChecks : () => ({ maps_flag: null, unchecked: [] }) } = {}) {
   const today = new Date(now).toISOString().slice(0, 10);
   const m = checkMemory({ home, today, dryRun });
   const r = checkRepos({ home, now, ...(lastCommit ? { lastCommit } : {}) });
@@ -247,7 +274,9 @@ export async function runChecks({ home = homedir(), now = Date.now(), dryRun = f
   const v = { validators_checked: matrix ? matrix.rows.length : 0, validators_flag: matrixFlagWords(matrix) };
   let social_map_flag = null;
   try { social_map_flag = await social(); } catch (e) { social_map_flag = `the Social Map check stopped (${String(e?.message ?? e).slice(0, 120)})`; }
-  return { ...m, ...r, ...s, ...rs, ...c, ...v, social_map_flag, matrix, unchecked: [...m.unchecked, ...r.unchecked, ...s.unchecked, ...rs.unchecked] };
+  let mp;
+  try { mp = maps(); } catch { mp = { maps_flag: null, unchecked: ["the Email Map", "the Schedule"] }; }
+  return { ...m, ...r, ...s, ...rs, ...c, ...v, social_map_flag, maps_flag: mp.maps_flag ?? null, matrix, unchecked: [...m.unchecked, ...r.unchecked, ...s.unchecked, ...rs.unchecked, ...(mp.unchecked ?? [])] };
 }
 
 export async function post(record, { passcode = process.env.BOSS_PASSCODE, fetchImpl = fetch, origin = ORIGIN, matrix = null } = {}) {
@@ -278,6 +307,7 @@ if (import.meta.url === pathToFileURL(process.argv[1] ?? "").href) {
       if (rec.unchecked.length) console.log(`unchecked: ${rec.unchecked.join(", ")}`);
       console.log(`validators: ${rec.validators_checked} in the matrix; ${rec.validators_flag ?? "nothing flagged"}`);
       console.log(`social map: ${rec.social_map_flag ?? "every account, sameAs and posting job is on the map"}`);
+      console.log(`maps: ${rec.maps_flag ?? "the Email Map and the Schedule match what runs"}`);
       if (dryRun) return;
       const { matrix, ...record } = rec;
       const out = await post(record, { matrix });

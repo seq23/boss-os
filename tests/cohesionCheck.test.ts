@@ -7,7 +7,7 @@ import { describe, expect, it } from "vitest";
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, utimesSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { checkMemory, checkRepos, checkSkills, checkCopy, checkRestating, runChecks, MEMORY_INDEX_MAX_LINES } from "../scripts/brains/cohesion-check.mjs";
+import { checkMemory, checkRepos, checkSkills, checkCopy, checkRestating, mapCheckWords, runChecks, MEMORY_INDEX_MAX_LINES } from "../scripts/brains/cohesion-check.mjs";
 import { cohesionCheckLine, cohesionLine } from "../src/shared/boss/brains/brain.mjs";
 
 const NOW = Date.parse("2026-11-02T12:05:00Z");
@@ -103,6 +103,23 @@ describe("the Mac half", () => {
     const r = await runChecks({ home, now: NOW, restart: () => {}, wait: async () => null });
     expect(r.unchecked).toEqual(["memory", "the repos", "the skills", "the house rules"]);
     expect(cohesionCheckLine([], r, NOW)).not.toMatch(/all clear/);
+  });
+});
+
+describe("the living maps ride in the Sunday check (8 Nov 2026)", () => {
+  it("a map with problems is said in plain words; a check that could not run is 'could not be checked'", () => {
+    expect(mapCheckWords([{ what: "the Email Map", status: 0, stdout: "ok" }, { what: "the Schedule", status: 0, stdout: "ok" }])).toEqual({ maps_flag: null, unchecked: [] });
+    const r = mapCheckWords([
+      { what: "the Email Map", status: 1, stdout: "Email Map: 99 rows\n  x: a.js sends email and no Email Map row cites it\n  launchd y is not installed\n" },
+      { what: "the Schedule", status: 2, stdout: "NAMED STOP [SCHEDULE_NOTHING_CHECKED]" },
+    ]);
+    expect(r).toEqual({ maps_flag: "2 things are missing or wrong on the Email Map", unchecked: ["the Schedule"] });
+    expect(mapCheckWords([{ what: "the Schedule", status: 1, stdout: "  WAITING a line\n" }]).unchecked).toEqual(["the Schedule"]);
+  });
+  it("the Monday line carries it", async () => {
+    const home = mkdtempSync(join(tmpdir(), "cohesion-maps-"));
+    const rec = await runChecks({ home, now: NOW, restart: () => {}, wait: async () => null, maps: () => ({ maps_flag: "1 thing is missing or wrong on the Schedule", unchecked: [] }) });
+    expect(cohesionCheckLine([], rec, NOW)).toMatch(/1 thing is missing or wrong on the Schedule/);
   });
 });
 
