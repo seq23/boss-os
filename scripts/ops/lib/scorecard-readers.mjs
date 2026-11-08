@@ -247,8 +247,37 @@ function kdpUnits(params, ctx) {
   if (o.unread) throw new NamedStop("KDP_UNITS_UNREAD", `not read: ${o.unread}`);
   const at = Date.parse(o.at);
   if (!Number.isFinite(at) || ctx.now - at > (params.maxAgeDays ?? 35) * DAY_MS) throw new NamedStop("SOURCE_STALE", "the KDP units count is more than a month old.");
+  if (params.line) return { raw: kdpLineValue(o, params, lineTitles(params.line)) };
   const since = new Date(sinceMs(ctx.now, params.days)).toISOString().slice(0, 10);
   return { raw: Object.entries(o.days ?? {}).filter(([d]) => d >= since).reduce((a, [, u]) => a + Number(u || 0), 0) };
+}
+
+/** A Kindle line's series titles, from its spec (scripts/ops/kdp-books/<line>.json `series_books`). */
+function lineTitles(line) {
+  const file = join(new URL("../kdp-books/", import.meta.url).pathname, `${line}.json`);
+  if (!existsSync(file)) throw new NamedStop("KDP_LINE_UNKNOWN", `there is no Kindle line spec for ${line}.`);
+  return (JSON.parse(readFileSync(file, "utf8")).series_books ?? []).map((b) => b.title);
+}
+
+/**
+ * One Kindle line's number from units.json's per-title totals (the 60-day window kdp-units.mjs reads),
+ * for the batch's scorecard rows (KDP strategy, spry brain 8 Nov 2026). Titles are matched by name.
+ *   free_units  free downloads (the day-30 floor: 100)
+ *   day60_pct   share of the day-60 floor: 500 KU pages a month OR a sale a week, whichever is nearer,
+ *               as a percentage (100 = met). Pure.
+ */
+export function kdpLineValue(o, params, titles) {
+  const norm = (t) => String(t ?? "").toLowerCase().replace(/[^a-z0-9]+/g, " ").trim();
+  const want = titles.map(norm);
+  const mine = Object.values(o.titles ?? {}).filter((t) => want.some((w) => norm(t.title).startsWith(w)));
+  if (!mine.length) throw new NamedStop("KDP_LINE_NOT_ON_SALE", "none of this line's books is in the KDP reports yet.");
+  const sum = (k) => mine.reduce((a, t) => a + Number(t[k] || 0), 0);
+  if (params.metric === "free_units") return sum("free_units");
+  if (params.metric === "day60_pct") {
+    const months = 2, weeks = 60 / 7;
+    return Math.round(100 * Math.max(sum("kenp") / (500 * months), (sum("units") - sum("free_units")) / weeks));
+  }
+  return sum(params.metric ?? "units");
 }
 
 async function t2r(params, ctx) {

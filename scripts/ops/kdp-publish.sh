@@ -79,10 +79,23 @@ grep -o 'KDP-PUBLISH:.*' "$RUN_LOG" | tail -5 | tee -a /dev/stderr
 # existing kdp-signin.mjs steps, never a picture check), keeps the window open for her
 # on any stop and emails her the one thing to do, and emails the Amazon link when the book is Live.
 # With nothing approved it opens nothing and says so.
+# Each line's Amazon series exists before its books join it (kdp-series.mjs; created once, never twice).
+npm run --silent vault:run -- node scripts/ops/kdp-series.mjs >> "$RUN_LOG" 2>&1 \
+  || say "NAMED STOP [SERIES_NOT_READY] see the KDP-SERIES lines; a book whose series is missing stops at that step and is retried next run."
 npm run --silent vault:run -- node scripts/ops/kdp-new-title.mjs --unattended >> "$RUN_LOG" 2>&1
 NRC=$?
 say "=== new titles exited rc=$NRC ==="
 grep -o 'KDP-NEW-TITLE:.*' "$RUN_LOG" | tail -3 | tee -a /dev/stderr
+# ─── PAPERBACKS, once their Kindle edition is on the bookshelf (kdp-paperback.mjs) ────────────────
+npm run --silent vault:run -- node scripts/ops/kdp-paperback.mjs >> "$RUN_LOG" 2>&1 \
+  || say "NAMED STOP [PAPERBACK_NOT_SUBMITTED] see the KDP-PAPERBACK lines; the next run tries again."
+grep -o 'KDP-PAPERBACK:.*' "$RUN_LOG" | tail -12 | tee -a /dev/stderr
+
+# ─── THE 5 FREE DAYS, once each new book is Live in KDP Select (KDP strategy, 8 Nov 2026) ─────────
+npm run --silent vault:run -- node scripts/ops/kdp-promo.mjs >> "$RUN_LOG" 2>&1 \
+  || say "NAMED STOP [PROMO_NOT_SCHEDULED] see the KDP-PROMO lines; the next run tries again."
+grep -o 'KDP-PROMO:.*' "$RUN_LOG" | tail -12 | tee -a /dev/stderr
+
 # ─── HER MONDAY LINE: sales, KU pages and companion-page visits, on the run's OUTPUT line ────────
 npm run --silent vault:run -- node scripts/ops/kdp-week.mjs >> "$RUN_LOG" 2>&1 || say "NAMED STOP [WEEK_NOT_READ] see the KDP-WEEK line."
 WEEK="$(grep -o 'KDP-WEEK: .*' "$RUN_LOG" | tail -1 | sed 's/^KDP-WEEK: //' | cut -c1-54)"

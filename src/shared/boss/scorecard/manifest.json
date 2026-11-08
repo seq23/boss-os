@@ -649,6 +649,206 @@
       }
     },
     {
+      "id": "kdp-batch1-keepmyproof",
+      "initiative": "Kindle batch 1: KeepMyProof",
+      "business": "spry",
+      "owner": "Simone · Monday KDP run",
+      "result": "Free downloads, then KU pages or sales",
+      "jobs": [],
+      "start": "2026-11-09",
+      "first": {
+        "label": "free downloads (5 free days; also 2 reviews and companion-page visits, read by hand)",
+        "by": 30,
+        "floor": {
+          "op": ">=",
+          "value": 100
+        },
+        "reader": "kdp-units",
+        "params": {
+          "line": "keepmyproof",
+          "metric": "free_units",
+          "maxAgeDays": 9
+        }
+      },
+      "real": {
+        "label": "% of the day-60 floor (500 KU pages a month or a sale a week)",
+        "by": 60,
+        "floor": {
+          "op": ">=",
+          "value": 100
+        },
+        "reader": "kdp-units",
+        "params": {
+          "line": "keepmyproof",
+          "metric": "day60_pct",
+          "maxAgeDays": 9
+        }
+      },
+      "versionB": {
+        "text": "A new cover, subtitle and keywords for the line's books and one more free run; if day 60 is still missed, no new books in this line (the books stay up)."
+      }
+    },
+    {
+      "id": "kdp-batch1-aplayermode",
+      "initiative": "Kindle batch 1: A Player Mode",
+      "business": "spry",
+      "owner": "Simone · Monday KDP run",
+      "result": "Free downloads, then KU pages or sales",
+      "jobs": [],
+      "start": "2026-11-09",
+      "first": {
+        "label": "free downloads (5 free days; also 2 reviews and companion-page visits, read by hand)",
+        "by": 30,
+        "floor": {
+          "op": ">=",
+          "value": 100
+        },
+        "reader": "kdp-units",
+        "params": {
+          "line": "aplayermode",
+          "metric": "free_units",
+          "maxAgeDays": 9
+        }
+      },
+      "real": {
+        "label": "% of the day-60 floor (500 KU pages a month or a sale a week)",
+        "by": 60,
+        "floor": {
+          "op": ">=",
+          "value": 100
+        },
+        "reader": "kdp-units",
+        "params": {
+          "line": "aplayermode",
+          "metric": "day60_pct",
+          "maxAgeDays": 9
+        }
+      },
+      "versionB": {
+        "text": "A new cover, subtitle and keywords for the line's books and one more free run; if day 60 is still missed, no new books in this line (the books stay up)."
+      }
+    },
+    {
+      "id": "kdp-batch1-time2read",
+      "initiative": "Kindle batch 1: Time-2-Read",
+      "business": "time-2-read",
+      "owner": "Simone · Monday KDP run",
+      "result": "Free downloads, then KU pages or sales",
+      "jobs": [],
+      "start": "2026-11-09",
+      "first": {
+        "label": "free downloads (5 free days; also 2 reviews and companion-page visits, read by hand)",
+        "by": 30,
+        "floor": {
+          "op": ">=",
+          "value": 100
+        },
+        "reader": "kdp-units",
+        "params": {
+          "line": "time2read",
+          "metric": "free_units",
+          "maxAgeDays": 9
+        }
+      },
+      "real": {
+        "label": "% of the day-60 floor (500 KU pages a month or a sale a week)",
+        "by": 60,
+        "floor": {
+          "op": ">=",
+          "value": 100
+        },
+        "reader": "kdp-units",
+        "params": {
+          "line": "time2read",
+          "metric": "day60_pct",
+          "maxAgeDays": 9
+        }
+      },
+      "versionB": {
+        "text": "A new cover, subtitle and keywords for the line's books and one more free run; if day 60 is still missed, no new books in this line (the books stay up)."
+      }
+    },
+    {
+      "id": "kdp-batch1-wedding",
+      "initiative": "Kindle batch 1: Dream Wedding",
+      "business": "spry",
+      "owner": "Simone · Monday KDP run",
+      "result": "Free downloads, then KU pages or sales",
+      "jobs": [],
+      "start": "2026-11-09",
+      "first": {
+        "label": "free downloads (5 free days; also 2 reviews and companion-page visits, read by hand)",
+        "by": 30,
+        "floor": {
+          "op": ">=",
+          "value": 100
+        },
+        "reader": "kdp-units",
+        "params": {
+          "line": "wedding",
+          "metric": "free_units",
+          "maxAgeDays": 9
+        }
+      },
+      "real": {
+        "label": "% of the day-60 floor (500 KU pages a month or a sale a week)",
+        "by": 60,
+        "floor": {
+          "op": ">=",
+          "value": 100
+        },
+        "reader": "kdp-units",
+        "params": {
+          "line": "wedding",
+          "metric": "day60_pct",
+          "maxAgeDays": 9
+        }
+      },
+      "versionB": {
+        "text": "A new cover, subtitle and keywords for the line's books and one more free run; if day 60 is still missed, no new books in this line (the books stay up)."
+      }
+    },
+    {
+      "id": "kdp-batch1-uscisexam",
+      "initiative": "Kindle batch 1: Industry Guides (uscisexam)",
+      "business": "spry",
+      "owner": "Simone · Monday KDP run",
+      "result": "Free downloads, then KU pages or sales",
+      "jobs": [],
+      "start": "2026-11-09",
+      "first": {
+        "label": "free downloads (5 free days; also 2 reviews and companion-page visits, read by hand)",
+        "by": 30,
+        "floor": {
+          "op": ">=",
+          "value": 100
+        },
+        "reader": "kdp-units",
+        "params": {
+          "line": "uscisexam",
+          "metric": "free_units",
+          "maxAgeDays": 9
+        }
+      },
+      "real": {
+        "label": "% of the day-60 floor (500 KU pages a month or a sale a week)",
+        "by": 60,
+        "floor": {
+          "op": ">=",
+          "value": 100
+        },
+        "reader": "kdp-units",
+        "params": {
+          "line": "uscisexam",
+          "metric": "day60_pct",
+          "maxAgeDays": 9
+        }
+      },
+      "versionB": {
+        "text": "A new cover, subtitle and keywords for the line's books and one more free run; if day 60 is still missed, no new books in this line (the books stay up)."
+      }
+    },
+    {
       "id": "industry-guides-leads",
       "initiative": "Industry guides lead pages",
       "business": "spry",

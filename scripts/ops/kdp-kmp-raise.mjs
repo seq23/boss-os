@@ -4,6 +4,7 @@
  * judgement call with the cover on it), so nothing reaches Amazon without her yes.
  *
  *   npm run kdp:kmp-raise -- --folder divorce
+ *   npm run kdp:kmp-raise -- --slug wedding-vows        a series book built by kdp-build.mjs
  *       raises the card (cover attached, listing in the question); she approves or sends it back.
  *   npm run kdp:kmp-raise -- --folder divorce --approved-in-chat "approve the book" --on 2026-11-07
  *       she has ALREADY said yes in words (7 Nov 2026, in chat, after reading the preview page): the
@@ -21,10 +22,12 @@ import { pathToFileURL } from "node:url";
 
 const ORIGIN = process.env.BOSS_OS_ORIGIN ?? "https://boss.sequoiataylor.com";
 const DRAFTS = process.env.KMP_KDP_DIR ?? join(process.env.HOME ?? ".", ".boss-os/kdp/keepmyproof");
+const BOOKS_DIR = process.env.KDP_BOOKS_DIR ?? join(process.env.HOME ?? ".", ".boss-os/kdp/books");
 const stop = (code, msg, exit) => Object.assign(new Error(`NAMED STOP [${code}] ${msg}`), { code: exit });
 
 /** Pure: the card's question, in her words — what the book is, what approve does, what it costs her. */
 export function question(meta, { preview } = {}) {
+  if (meta.slug && meta.series !== undefined) return seriesQuestion(meta, { preview });
   return [
     `A KeepMyProof Kindle book, drafted: "${meta.title}: ${meta.subtitle}" by ${meta.author}, published by ${meta.publisher}, $${Number(meta.price_usd).toFixed(2)}.`,
     `Inside: a short guide, a checklist, fill-in logs and ${meta.facts} sourced facts for ${meta.where}. AI disclosure on.`,
@@ -34,9 +37,20 @@ export function question(meta, { preview } = {}) {
   ].join("\n");
 }
 
-export async function raise({ folder, approvedInChat = null, on = null, preview = null, env = process.env, fetchImpl = fetch }) {
-  const dir = join(DRAFTS, folder);
-  if (!existsSync(join(dir, "listing.json")) || !existsSync(join(dir, "cover.jpg"))) throw stop("NO_DRAFT", `no draft for ${folder} on this Mac; run kdp-kmp-draft.mjs --folder ${folder} first.`, 2);
+/** Pure: the card's question for a series book (kdp-build.mjs), in her words. */
+export function seriesQuestion(meta, { preview } = {}) {
+  return [
+    `A Kindle book for ${meta.series?.name ?? meta.line}: "${meta.title}: ${meta.subtitle}" by ${meta.author} (pen name), published by ${meta.publisher}, $${Number(meta.price_usd).toFixed(2)} Kindle in KDP Select${meta.paperback ? `, paperback $${Number(meta.paperback.price_usd).toFixed(2)}` : ""}.`,
+    `The link in the book goes to ${meta.companion_url}. AI disclosure on.`,
+    `Keywords: ${meta.keywords.join(", ")}. Categories: ${meta.categories.join("; ")}.`,
+    preview ? `Read the whole book: ${preview}` : `The whole book is on this Mac: ~/.boss-os/kdp/books/${meta.slug}/preview.html`,
+    "Approve and Simone puts it on Kindle on her Monday run, follows it to Live and schedules its 5 free days. Send it back with a sentence and it is redone.",
+  ].join("\n");
+}
+
+export async function raise({ folder, slug = null, approvedInChat = null, on = null, preview = null, env = process.env, fetchImpl = fetch }) {
+  const dir = slug ? join(BOOKS_DIR, slug) : join(DRAFTS, folder);
+  if (!existsSync(join(dir, "listing.json")) || !existsSync(join(dir, "cover.jpg"))) throw stop("NO_DRAFT", `no draft for ${slug ?? folder} on this Mac; run ${slug ? `kdp-build.mjs --slug ${slug}` : `kdp-kmp-draft.mjs --folder ${folder}`} first.`, 2);
   const meta = JSON.parse(await readFile(join(dir, "listing.json"), "utf8"));
   if (!env.BOSS_PASSCODE) throw stop("NO_PASSCODE", "run through the vault: npm run kdp:kmp-raise", 3);
   const u = await fetchImpl(`${ORIGIN}/api/boss/auth/unlock`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ passcode: env.BOSS_PASSCODE }) });
@@ -66,8 +80,8 @@ export async function raise({ folder, approvedInChat = null, on = null, preview 
 if (import.meta.url === pathToFileURL(process.argv[1] ?? "").href) {
   const a = process.argv.slice(2);
   const val = (n) => { const i = a.indexOf(`--${n}`); return i >= 0 ? a[i + 1] : null; };
-  const folder = val("folder");
-  raise({ folder, approvedInChat: val("approved-in-chat"), on: val("on"), preview: val("preview") })
+  const folder = val("folder") ?? val("slug");
+  raise({ folder, slug: val("slug"), approvedInChat: val("approved-in-chat"), on: val("on"), preview: val("preview") })
     .then((r) => { console.log(`${r.decided ? "approved (her words recorded)" : "raised in her Inbox"}: ${r.id} / ${r.approval_id}`); console.log(`OUTPUT 1 kmp-kindle-approvals ${folder}`); })
     .catch((e) => { console.error(String(e?.message ?? e)); console.log(`OUTPUT 0 kmp-kindle-approvals ${folder ?? "-"}`); process.exit(e?.code ?? 1); });
 }

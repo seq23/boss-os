@@ -50,6 +50,7 @@ import { existsSync, lstatSync, readlinkSync } from "node:fs";
 import { join, dirname } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { openProfile, profilePath } from "./browser.mjs";
+import { findSeriesBook, BOOKS_DIR } from "./kdp-build.mjs";
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const ORIGIN = process.env.BOSS_OS_ORIGIN ?? "https://boss.sequoiataylor.com";
@@ -193,6 +194,52 @@ export function shelfRowsIn(doc) {
  *   resume    a Draft exists: continue THAT draft (never a second one); `extra` are duplicates to name
  *   create    nothing on the shelf: Create
  */
+/** Ticks an AUI checkbox or radio by its label (the input itself is hidden). "checked" | "unchecked" | "missing". */
+export async function tickAui(page, inputSel) {
+  const input = page.locator(inputSel).first();
+  if (!(await input.count().catch(() => 0))) return "missing";
+  if (await input.isChecked().catch(() => false)) return "checked";
+  const label = page.locator(`label:has(${inputSel})`).first();
+  if (await label.count().catch(() => 0)) await label.click({ timeout: 10_000 }).catch(() => {});
+  if (!(await input.isChecked().catch(() => false))) await input.check({ force: true, timeout: 5000 }).catch(() => {});
+  await page.waitForTimeout(500);
+  return (await input.isChecked().catch(() => false)) ? "checked" : "unchecked";
+}
+
+/** Is Amazon showing its weekly title-creation limit? (the modal's own words, live 8 Nov 2026) */
+export async function titleLimitReached(page) {
+  return page.getByText(/title creation limit/i).first().isVisible().catch(() => false);
+}
+
+/** The HTTP status of a book's companion page (0 when unreachable). */
+export async function companionStatus(url, fetchImpl = fetch) {
+  try { return (await fetchImpl(url, { method: "GET", redirect: "follow", signal: AbortSignal.timeout(15_000) })).status; } catch { return 0; }
+}
+
+/** Amazon's caps (KDP help, 8 Nov 2026): at most 10 unpublished drafts; a small daily publish cap. */
+export const KDP_DRAFT_CAP = 10;
+export const PUBLISH_PER_RUN = Number(process.env.KDP_PUBLISH_PER_RUN ?? 5);
+
+/**
+ * Which approved titles this run may act on, under Amazon's caps. `todo` are titles not yet In review
+ * or Live, each with its bookshelf plan; `drafts` is how many unpublished drafts the bookshelf holds
+ * now. A title that resumes its own draft never adds one; a new title (Create) needs a free draft
+ * slot. At most `perRun` are submitted; the rest stay approved and QUEUED for the next run. Pure.
+ */
+export function underCaps(todo, { drafts = 0, perRun = PUBLISH_PER_RUN, draftCap = KDP_DRAFT_CAP } = {}) {
+  const go = [], queued = [];
+  let free = Math.max(0, draftCap - drafts);
+  for (const t of todo) {
+    if (go.length >= perRun) { queued.push({ ...t, why: `the run's publish cap (${perRun})` }); continue; }
+    if (t.plan?.action !== "resume") {
+      if (free <= 0) { queued.push({ ...t, why: `KDP's ${draftCap}-draft cap` }); continue; }
+      free -= 1;
+    }
+    go.push(t);
+  }
+  return { go, queued };
+}
+
 export function planTitle(title, rows, { kindleOnPage = 0 } = {}) {
   const mine = (rows ?? []).map((r) => ({ ...r, ...parseShelfRow(r.lines) })).filter((r) => titleMatches(title, r.title));
   const drafts = mine.filter((r) => r.state === "DRAFT");
@@ -247,7 +294,10 @@ export function uploadStatus(doc, kind, inputSel, beforeSrcs = []) {
     if (!okRe.test(text(el)) || [...el.children].some((c) => okRe.test(text(c)))) continue;
     if (shown(el)) return { state: "done", via: "message", text: text(el).slice(0, 200) };
   }
-  const errs = [...doc.querySelectorAll(".a-alert-error, .a-color-error, [role='alert']")].filter((el) => shown(el) && text(el) && (section.contains(el) || word.test(text(el))));
+  // "It looks like you've uploaded a new manuscript or book cover … I confirm that my answers are
+  // accurate" is KDP asking to re-confirm the AI answers after a new file (8 Nov 2026), not a refusal.
+  const reconfirm = /uploaded a new manuscript or book cover|confirm that my answers are accurate/i;
+  const errs = [...doc.querySelectorAll(".a-alert-error, .a-color-error, [role='alert']")].filter((el) => shown(el) && text(el) && !reconfirm.test(text(el)) && (section.contains(el) || word.test(text(el))));
   if (errs.length) return { state: "refused", via: "error", text: errs.map(text).join(" ").slice(0, 400) };
   const busy = [...section.querySelectorAll("*")].some((el) => shown(el) && /^(uploading|processing|converting)\b/i.test(text(el)) && el.children.length === 0);
   if (busy) return { state: "working", via: null, text: "" };
@@ -301,7 +351,7 @@ export function categoryStep(root, label, boxesOnly = false) {
 }
 
 /** On a stop, keep what the page showed (HTML + screenshot) next to the draft, for the next root cause. */
-async function snapshot(page, dir, name) {
+export async function snapshot(page, dir, name) {
   try {
     await writeFile(join(dir, `${name}.html`), await page.content());
     await page.screenshot({ path: join(dir, `${name}.png`), fullPage: true });
@@ -339,24 +389,24 @@ export async function waitForHer(page, run = RUN) {
   }
   throw stop("SIGNIN_NOT_DONE", `Amazon's sign-in was not finished within ${mins} minutes. Nothing was published.`, 3);
 }
-async function go(page, url) { RUN.lastUrl = url; await page.goto(url, { waitUntil: "domcontentloaded", timeout: STEP_MS }); await waitForHer(page); }
+export async function go(page, url) { RUN.lastUrl = url; await page.goto(url, { waitUntil: "domcontentloaded", timeout: STEP_MS }); await waitForHer(page); }
 
 /** The first selector that exists and is visible. */
-async function first(page, sels) {
+export async function first(page, sels) {
   for (const s of sels) {
     const l = typeof s === "string" ? page.locator(s) : s(page);
     if (await l.count().catch(() => 0)) { const f = l.first(); if (await f.isVisible().catch(() => false)) return f; }
   }
   return null;
 }
-async function fillField(page, name, sels, value) {
+export async function fillField(page, name, sels, value) {
   const el = await first(page, sels);
   if (!el) throw stop("FIELD_NOT_FOUND", `the ${name} box is not on the page; nothing was saved past this step.`);
   await el.fill(String(value));
   const back = await el.inputValue();
   if (back !== String(value)) throw stop("FIELD_DID_NOT_TAKE", `the ${name} box reads "${back}" after filling "${value}".`);
 }
-async function clickOne(page, name, sels) {
+export async function clickOne(page, name, sels) {
   const el = await first(page, sels);
   if (!el) throw stop("CONTROL_NOT_FOUND", `the ${name} control is not on the page.`);
   await el.click();
@@ -365,13 +415,14 @@ async function clickOne(page, name, sels) {
 
 /* ── The three steps ────────────────────────────────────────────────────────────────────────── */
 /** `ref`: the KDP id of the draft being resumed, or null to Create (only when the bookshelf has none). */
-async function details(page, book, dir, ref = null) {
+export async function details(page, book, dir, ref = null) {
   await go(page, `${KDP}/title-setup/kindle/${ref ?? "new"}/details`);
   await fillField(page, "title", ['input[name="data[title]"]', "#data-title", (p) => p.getByLabel(/^Book Title/i)], book.title);
   await fillField(page, "subtitle", ['input[name="data[subtitle]"]', "#data-subtitle", (p) => p.getByLabel(/^Subtitle/i)], book.subtitle);
   const [firstName, lastName] = [book.author.split(" ").slice(0, -1).join(" "), book.author.split(" ").at(-1)];
   await fillField(page, "author first name", ['input[name="data[primary_author][first_name]"]', "#data-primary-author-first-name"], firstName);
   await fillField(page, "author last name", ['input[name="data[primary_author][last_name]"]', "#data-primary-author-last-name"], lastName);
+  if (book.series?.name) await seriesStep(page, book.series, dir);
   // Description: KDP's description is a CKEditor 4 instance ("editor1", inside an iframe) that loads
   // AFTER the title boxes, backed by a hidden INPUT data[description] (not a textarea). 7 Nov 2026: the
   // first live run filled title/subtitle/author, then found no editor because CKEditor wasn't ready yet.
@@ -404,14 +455,79 @@ async function details(page, book, dir, ref = null) {
   await clickOne(page, "Save and Continue", ["#save-and-continue-announce", (p) => p.getByRole("button", { name: /Save and Continue/i })]);
   await page.waitForURL(/\/content/, { timeout: STEP_MS }).catch(() => {});
   await waitForHer(page);
-  if (!/\/content/.test(page.url())) throw stop("DETAILS_NOT_SAVED", `Amazon did not move on from the details step: ${(await page.locator(".a-alert-content, .a-color-error").allInnerTexts().catch(() => [])).join(" ").slice(0, 300) || "no message shown"}.`, 9);
+  // 8 Nov 2026, headed window: the first press after the category box sometimes does nothing and
+  // shows nothing (the same page saved headless at once). One more press before it is a stop.
+  if (!/\/content/.test(page.url())) {
+    await page.locator("#save-and-continue-announce").scrollIntoViewIfNeeded().catch(() => {});
+    await clickOne(page, "Save and Continue", ["#save-and-continue-announce", (p) => p.getByRole("button", { name: /Save and Continue/i })]);
+    await page.waitForURL(/\/content/, { timeout: STEP_MS }).catch(() => {});
+  }
+  if (!/\/content/.test(page.url())) {
+    const said = [...new Set((await page.locator(".a-alert-error .a-alert-content:visible, .a-alert-inline-error .a-alert-content:visible").allInnerTexts().catch(() => [])).flatMap((t) => t.split("\n")).map((t) => t.trim()).filter(Boolean))];
+    throw stop("DETAILS_NOT_SAVED", `Amazon did not move on from the details step: ${said.join(" · ").slice(0, 300) || "no message shown"}.`, 9);
+  }
+}
+
+/**
+ * Series (KDP strategy, 8 Nov 2026: each line is an Amazon series). The series itself is created once
+ * per line by kdp-series.mjs; here the title joins it: "Add to series" → Existing series → pick it →
+ * Main content (live page, 8 Nov 2026). A title already in a series shows "Edit series" instead and
+ * is left alone. A series missing from the list is a NAMED STOP, never a guessed one.
+ */
+async function seriesStep(page, series, dir) {
+  // "Already in a series" is the Edit button SHOWING; both buttons are always in the page (live page, 8 Nov 2026).
+  if (await page.locator('[data-test-id="edit-series-details-button"]').first().isVisible().catch(() => false)) { console.log(`series: already set on this title.`); return; }
+  await clickOne(page, "Add to series", ['[data-test-id="add-series-details-button"]', (p) => p.getByRole("button", { name: /^\s*Add to series\s*$/i })]);
+  await page.waitForTimeout(2500);
+  // The series picker is a React modal, not an AUI popover: its controls are found on the page (live, 8 Nov 2026).
+  const pop = () => page;
+  // The picker can be slow to draw; one more press of "Add to series" if it has not appeared (never a loop).
+  const selectBtn = page.getByRole("button", { name: /^\s*Select series\s*$/i }).last();
+  if (!(await selectBtn.waitFor({ state: "visible", timeout: 20_000 }).then(() => true).catch(() => false))) {
+    await page.locator('[data-test-id="add-series-details-button"]').first().click({ timeout: 10_000 }).catch(() => {});
+    await selectBtn.waitFor({ state: "visible", timeout: 20_000 }).catch(() => {});
+  }
+  await selectBtn.click({ timeout: 15_000 });
+  await page.waitForTimeout(3000);
+  // By the id kdp-series.mjs recorded for this series when there is one (the picker lowercases names).
+  let known = null;
+  try { known = Object.values(JSON.parse(await readFile(join(process.env.BOSS_OS_KDP_DIR ?? `${process.env.HOME}/.boss-os/kdp`, "series.json"), "utf8"))).find((x) => normTitle(x.name) === normTitle(series.name))?.id ?? null; } catch {}
+  const search = pop().locator('input[name="series-search-input"]');
+  if (await search.count().catch(() => 0)) { await search.fill(series.name).catch(() => {}); await search.press("Enter").catch(() => {}); await page.waitForTimeout(2500); }
+  const pick = known && (await pop().locator(`[data-test-id="series-search-result-${known}"]`).count().catch(() => 0))
+    ? pop().locator(`[data-test-id="series-search-result-${known}"]`)
+    : pop().getByText(series.name, { exact: false }).first();
+  if (!(await pick.count().catch(() => 0))) {
+    const shot = await snapshot(page, dir, "stop-series");
+    throw stop("SERIES_NOT_FOUND", `the series "${series.name}" is not in KDP's list; run kdp-series.mjs for its line first. Page kept at ${shot ?? "(screenshot failed)"}.`);
+  }
+  await pick.click();
+  await page.waitForTimeout(2500);
+  const next = pop().getByRole("button", { name: /^\s*(Select|Next|Continue|Add)\s*$/i }).last();
+  if (await next.count().catch(() => 0)) { await next.click().catch(() => {}); await page.waitForTimeout(2500); }
+  const main = pop().getByRole("button", { name: /^\s*Main content\s*$/i }).last();
+  if (await main.count().catch(() => 0)) { await main.click(); await page.waitForTimeout(2500); }
+  const confirm = pop().getByRole("button", { name: /^\s*(Confirm|Add|Save|Done|Confirm and add)\b/i }).last();
+  if (await confirm.count().catch(() => 0)) { await confirm.click().catch(() => {}); await page.waitForTimeout(2500); }
+  // KDP confirms with "Your series updates have been submitted" and a Done button that must be pressed.
+  // It can take several seconds to appear, and until it is closed it covers the whole page.
+  const done = page.getByRole("button", { name: /^\s*Done\s*$/i }).last();
+  await done.waitFor({ state: "visible", timeout: 20_000 }).catch(() => {});
+  if (await done.isVisible().catch(() => false)) { await done.click().catch(() => {}); }
+  await page.locator(".a-modal-scroller").last().waitFor({ state: "hidden", timeout: 10_000 }).catch(() => {});
+  await page.waitForTimeout(1000);
+  if (!(await page.getByText(series.name, { exact: false }).count().catch(() => 0))) {
+    const shot = await snapshot(page, dir, "stop-series");
+    throw stop("SERIES_NOT_SET", `the title did not join "${series.name}". Page kept at ${shot ?? "(screenshot failed)"}.`);
+  }
+  console.log(`series: joined "${series.name}" as main content.`);
 }
 
 /**
  * Categories: set by the run itself, never by her (her coordinator, 7 Nov 2026, after a run that
  * waited 10 minutes on her and stopped CATEGORIES_NOT_SET).
  */
-async function categories(page, cats, dir) {
+export async function categories(page, cats, dir) {
   // KDP's Kindle chooser (read live 7 Nov 2026): a modal with a "Category" select, a "Subcategory"
   // select, then checkboxes for the leaves; up to 3 placements; Save closes it and the page button
   // turns from "Choose categories" to "Edit categories". That button text is what "set" means here.
@@ -459,7 +575,7 @@ async function categories(page, cats, dir) {
 }
 
 const UPLOAD_MS = 6 * 60_000;
-async function upload(page, kind, sels, file, dir) {
+export async function upload(page, kind, sels, file, dir) {
   const name = kind === "cover" ? "cover" : "manuscript";
   const sel = sels.join(", ");
   const input = page.locator(sel);
@@ -509,7 +625,7 @@ export function aiState(doc) {
 }
 
 /** Sets the AI answers (Yes, texts, images, translations, tool names) and reads them back. */
-async function aiDisclosure(page, ans, { write }) {
+export async function aiDisclosure(page, ans, { write }) {
   const read = () => page.evaluate(`(${aiState})(document)`);
   let st = await read();
   if (!st.found) throw stop("AI_DISCLOSURE_NOT_FOUND", "the AI-generated content question is not on the content step; nothing was published.");
@@ -533,14 +649,21 @@ async function aiDisclosure(page, ans, { write }) {
     for (const [key, p] of Object.entries({ text: "e.g. ChatGPT", images: "e.g. DALL-E" })) {
       if (/^none$/i.test(want[key])) continue;
       const inp = root.locator(`input[placeholder="${p}"], textarea[placeholder="${p}"]`).first();
-      if ((await inp.count()) && !(await inp.inputValue())) await inp.fill(ans.tools);
+      if (!(await inp.count()) || (await inp.inputValue().catch(() => ""))) continue;
+      // 8 Nov 2026: the tool box can sit outside the visible fold of the accordion; type when it is
+      // visible, else set it the way the page's own input handler reads it. Never wait 30 s on it.
+      if (await inp.isVisible().catch(() => false)) await inp.fill(ans.tools, { timeout: 5000 }).catch(() => {});
+      if (!(await inp.inputValue().catch(() => ""))) await inp.evaluate((el, v) => { el.value = v; el.dispatchEvent(new Event("input", { bubbles: true })); el.dispatchEvent(new Event("change", { bubbles: true })); }, ans.tools).catch(() => {});
     }
     await page.waitForTimeout(800);
     st = await read();
   }
   const result = { yes: st.yes, selects: st.selects, tools: st.tools };
   const eq = (a, b) => String(a ?? "").toLowerCase() === String(b ?? "").toLowerCase();
-  const ok = st.yes && eq(st.selects.text, ans.texts) && eq(st.selects.images, ans.images) && eq(st.selects.translations, ans.translations);
+  // KDP's new affirmation UI (8 Nov 2026) has no separate Yes row once answers are chosen: an answer
+  // other than None in any select is the Yes.
+  const yes = st.yes || Object.values(st.selects ?? {}).some((v) => v && !/^none$/i.test(String(v)));
+  const ok = (yes || !ans.used) && eq(st.selects.text, ans.texts) && eq(st.selects.images, ans.images) && eq(st.selects.translations, ans.translations);
   if (!ok) throw stop("AI_DISCLOSURE_NOT_SET", `the AI answers read back as ${JSON.stringify(result)}; nothing was published.`);
   return result;
 }
@@ -570,30 +693,92 @@ async function chooseCoverUpload(page, dir) {
   throw stop("COVER_CHOICE_NOT_SET", `"Upload a cover you already have" did not open; nothing was published. Page kept at ${shot ?? "(screenshot failed)"}.`);
 }
 
+/** After a new file KDP asks to confirm the AI answers are still accurate: tick it when it is shown. */
+export async function confirmAiAnswers(page) {
+  // A React control ("By clicking this, I confirm that my answers are accurate", user_affirmed), live
+  // 8 Nov 2026: a forced tick on its hidden input does not reach the page's state, so it is clicked
+  // the way a person would: the checkbox by its name, else its label text.
+  const re = /confirm that my answers are accurate/i;
+  const role = page.getByRole("checkbox", { name: re }).last();
+  if (await role.count().catch(() => 0)) {
+    if (!(await role.isChecked().catch(() => false))) await role.click({ timeout: 10_000 }).catch(() => {});
+    console.log(`AI answers re-confirmed after the new file (${(await role.isChecked().catch(() => false)) ? "ticked" : "NOT ticked"}).`);
+    return;
+  }
+  const label = page.getByText(re).last();
+  if (await label.isVisible().catch(() => false)) { await label.click({ timeout: 10_000 }).catch(() => {}); console.log("AI answers re-confirmed after the new file (label clicked)."); }
+}
+
 async function content(page, dir, ans) {
   if (!/\/content/.test(page.url())) throw stop("WRONG_STEP", `expected the content step, at ${page.url()}.`);
   await upload(page, "manuscript", ['#data-assets-interior-file-upload-AjaxInput', 'input[type="file"][id*="interior"]', 'input[type="file"][name*="interior"]'], join(dir, "book.epub"), dir);
   await chooseCoverUpload(page, dir);
   await upload(page, "cover", ['#data-assets-cover-file-upload-AjaxInput', 'input[type="file"][id*="cover"]', 'input[type="file"][name*="cover"]'], join(dir, "cover.jpg"), dir);
-  await aiDisclosure(page, ans, { write: true });
+  RUN.aiWritten = await aiDisclosure(page, ans, { write: true });
+  await confirmAiAnswers(page);
+  // Digital Rights Management: KDP will not save the content step without an answer (8 Nov 2026).
+  // No DRM: a reader may keep their copy; it changes nothing about price or royalty.
+  const drm = page.locator('input[name="data[is_drm]-radio"][value="false"]').first();
+  if (await drm.count().catch(() => 0)) await drm.check({ force: true }).catch(() => {});
   await clickOne(page, "Save and Continue", ["#save-and-continue-announce", (p) => p.getByRole("button", { name: /Save and Continue/i })]);
   await page.waitForURL(/\/pricing/, { timeout: STEP_MS }).catch(() => {});
   await waitForHer(page);
-  if (!/\/pricing/.test(page.url())) throw stop("CONTENT_NOT_SAVED", "Amazon did not move on from the content step.", 9);
+  // KDP's answer to an un-ticked affirmation is this sentence; one more tick and one more Save, never a loop.
+  if (!/\/pricing/.test(page.url()) && (await page.getByText(/Confirm your answers are accurate and check the box/i).first().isVisible().catch(() => false))) {
+    const box = page.getByRole("checkbox", { name: /confirm that my answers are accurate/i }).last();
+    if (await box.count().catch(() => 0)) { await box.check({ timeout: 10_000 }).catch(() => box.click().catch(() => {})); }
+    else await page.getByText(/By clicking this, I confirm that my answers are accurate/i).last().click().catch(() => {});
+    console.log(`AI affirmation ticked again after KDP asked (${(await box.isChecked().catch(() => false)) ? "ticked" : "state unread"}).`);
+    await clickOne(page, "Save and Continue", ["#save-and-continue-announce", (p) => p.getByRole("button", { name: /Save and Continue/i })]);
+    await page.waitForURL(/\/pricing/, { timeout: STEP_MS }).catch(() => {});
+  }
+  if (!/\/pricing/.test(page.url())) {
+    const said = [...new Set((await page.locator(".a-alert-inline-error:visible, .a-alert-error:visible").allInnerTexts().catch(() => [])).flatMap((t) => t.split("\n")).map((t) => t.trim()).filter(Boolean))];
+    throw stop("CONTENT_NOT_SAVED", `Amazon did not move on from the content step: ${said.join(" · ").slice(0, 300) || "no message shown"}.`, 9);
+  }
 }
 
 /** The last step: read the AI disclosure back on the content step, then price, then Publish. */
 async function pricingAndPublish(page, book, ans) {
   const base = page.url().replace(/\/pricing.*$/, "");
   await go(page, `${base}/content`);
-  const seen = await aiDisclosure(page, ans, { write: false });
+  // After the content step is saved, KDP's new AI UI can show the answers as a summary rather than
+  // the question (8 Nov 2026): then the summary's own words are the read-back.
+  const seen = await aiDisclosure(page, ans, { write: false }).catch(async (e) => {
+    if (e.stop !== "AI_DISCLOSURE_NOT_FOUND") throw e;
+    const body = await page.locator("body").innerText().catch(() => "");
+    const want = [ans.texts, ans.images].filter((x) => !/^none$/i.test(x));
+    if (want.length && want.every((w) => body.toLowerCase().includes(w.toLowerCase()))) return { summary: want };
+    // The new UI does not draw the question once saved (8 Nov 2026). KDP marks the content step
+    // "Complete" only after it accepted the answers, and this same run wrote and read them back
+    // before that Save, so the tab's own word is the read-back.
+    const html = (await page.content().catch(() => "")).replace(/<script[\s\S]*?<\/script>|<style[\s\S]*?<\/style>/g, "").replace(/<[^>]+>/g, " ").replace(/\s+/g, " ");
+    if (RUN.aiWritten && /Kindle eBook Content Complete/i.test(html)) { console.log("AI answers: saved in this run and the content step reads Complete."); return { saved_in_this_run: true }; }
+    console.log(`AI read-back: aiWritten=${Boolean(RUN.aiWritten)}, content tab: ${/Kindle eBook Content (\S+)/.exec(html)?.[1] ?? "not found"}`);
+    const shot = await snapshot(page, join(BOOKS_DIR, "_readback"), "ai-readback").catch(() => null);
+    throw stop("AI_DISCLOSURE_NOT_READ_BACK", `the AI answers could not be read back on the content step; nothing was published.${shot ? ` Page kept at ${shot}.` : ""}`);
+  });
   console.log(`AI disclosure read back before Publish: ${JSON.stringify(seen)}`);
   await go(page, `${base}/pricing`);
-  const royalty = await first(page, [(p) => p.getByLabel(/^70%/), 'input[value="SEVENTY"]', 'input[name*="royalty"][value*="70"]']);
-  if (!royalty) throw stop("FIELD_NOT_FOUND", "the 70% royalty choice is not on the pricing step.");
-  await royalty.check();
-  if (!(await royalty.isChecked().catch(() => false))) throw stop("FIELD_DID_NOT_TAKE", "the 70% royalty choice reads unticked after choosing it; nothing was published.");
+  // KDP Select (KDP strategy, 8 Nov 2026: every series book is in Select for KU page reads and the free days).
+  // KDP draws its tick boxes and radios as AUI controls whose <input> is hidden: the LABEL is what a
+  // person clicks, and what reaches the page's state (live pricing step, 8 Nov 2026).
+  if (book.kdp_select) {
+    const st = await tickAui(page, 'input[name="data[is_select]-check"]');
+    if (st === "missing") console.log("KDP Select: no enrol box on the pricing step (already enrolled, or managed on the Promotions page).");
+    else if (st !== "checked") throw stop("FIELD_DID_NOT_TAKE", "the KDP Select box reads unticked after ticking it; nothing was published.");
+    else console.log("KDP Select: enrolled.");
+  }
+  // 70% from $2.99; a $0.99–$2.98 book can only take 35% (KDP's own bands).
+  const pct = Number(book.royalty ?? (book.price_usd >= 2.99 ? 70 : 35));
+  const rst = await tickAui(page, `input[name="data[digital][royalty_rate]-radio"][value="${pct}_PERCENT"]`);
+  if (rst === "missing") throw stop("FIELD_NOT_FOUND", `the ${pct}% royalty choice is not on the pricing step.`);
+  if (rst !== "checked") throw stop("FIELD_DID_NOT_TAKE", `the ${pct}% royalty choice reads unticked after choosing it; nothing was published.`);
   await fillField(page, "Amazon.com price", ['input[name="data[digital_list_price][USD]"]', 'input[id*="price"][id*="US"]', (p) => p.locator("tr, .a-row").filter({ hasText: "Amazon.com" }).locator('input[type="text"]')], book.price_usd.toFixed(2));
+  // KDP fills every other marketplace from the US price when the box loses focus (8 Nov 2026: without
+  // it, Publish is refused with "Set a list price for Amazon.co.uk …").
+  await page.keyboard.press("Tab").catch(() => {});
+  await page.waitForTimeout(3000);
   // Read the price back as Amazon will use it (the box, not what was typed), right before Publish.
   const priceBox = await first(page, ['input[name="data[digital_list_price][USD]"]', 'input[id*="price"][id*="US"]']);
   const shown = priceBox ? Number(String(await priceBox.inputValue().catch(() => "")).replace(/[^0-9.]/g, "")) : NaN;
@@ -601,13 +786,15 @@ async function pricingAndPublish(page, book, ans) {
   if (DRY) return { published: false };
   await clickOne(page, "Publish Your Kindle eBook", [(p) => p.getByRole("button", { name: /Publish Your Kindle eBook/i }), "#save-and-publish-announce"]);
   await page.waitForTimeout(8000);
-  const err = (await page.locator(".a-alert-error .a-alert-content, .a-color-error").allInnerTexts().catch(() => [])).join(" ").trim();
-  if (err) throw stop("PUBLISH_REFUSED", `Amazon refused Publish: ${err.slice(0, 400)}`, 9);
+  // Only an error box that is SHOWN counts (8 Nov 2026: a hidden ".a-color-error" reading "Deleting"
+  // stopped a book that Amazon had in fact accepted; the bookshelf read after this is the truth).
+  const err = (await page.locator(".a-alert-error:visible .a-alert-content").allInnerTexts().catch(() => [])).join(" ").trim();
+  if (err && /fix the highlighted|set a list price|refused|cannot be published/i.test(err)) throw stop("PUBLISH_REFUSED", `Amazon refused Publish: ${err.slice(0, 400)}`, 9);
   return { published: true };
 }
 
 /** Reads the bookshelf rows on the page as it is (no navigation), and how many Kindle books it shows. */
-async function rowsOnPage(page) {
+export async function rowsOnPage(page) {
   const rows = await page.evaluate(`(${shelfRowsIn})(document)`).catch(() => []);
   const kindleOnPage = await page.evaluate(() => (document.body?.innerText ?? "").split("\n").filter((l) => /^\s*kindle e-?book\s*$/i.test(l)).length).catch(() => 0);
   return Object.assign(rows, { kindleOnPage });
@@ -805,7 +992,7 @@ const dayCT = (ms = Date.now()) => new Intl.DateTimeFormat("en-CA", { timeZone: 
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
 /** Simone's own sign-in on the open window: the existing kdp-signin.mjs steps, with the vault's launch env. */
-async function autoSignin(page, target) {
+export async function autoSignin(page, target) {
   const email = process.env.KDP_ACCOUNT_EMAIL ?? "", password = process.env.KDP_ACCOUNT_PASSWORD ?? "";
   if (!email || !password) return { code: 3, state: "no_credentials", detail: "the KDP sign-in is not in this launch (run through the vault)" };
   const { signInOnPage } = await import("./kdp-signin.mjs");
@@ -824,15 +1011,18 @@ async function main() {
   let code = 0;
   for (const a of approved) {
     const book0 = spec.books.find((b) => normTitle(b.title) === normTitle(a.title));
-    const dir = book0 ? join(DRAFTS, book0.folder) : null;
-    if (!book0 || !existsSync(join(dir, "book.epub")) || !existsSync(join(dir, "listing.json"))) {
-      say("NO_DRAFT", `"${a.title}" has no draft on this Mac (${dir ?? "no folder"}); run kdp-kmp-draft.mjs first.`);
+    // A series book (kdp-books/<line>.json `series_books`), built by kdp-build.mjs into ~/.boss-os/kdp/books/<slug>.
+    const series = book0 ? null : await findSeriesBook(a.title);
+    const folder = book0?.folder ?? series?.book.slug ?? null;
+    const dir = book0 ? join(DRAFTS, book0.folder) : series ? join(BOOKS_DIR, series.book.slug) : null;
+    if (!folder || !existsSync(join(dir, "book.epub")) || !existsSync(join(dir, "listing.json"))) {
+      say("NO_DRAFT", `"${a.title}" has no draft on this Mac (${dir ?? "no folder"}); run ${series ? "kdp-build.mjs" : "kdp-kmp-draft.mjs"} first.`);
       console.error(`NAMED STOP [NO_DRAFT] "${a.title}" is approved and its draft is not on this Mac.`);
       await api.attempt(a.id, { run_outcome: "could-not-run", stop_code: "NO_DRAFT", amazon_message: null });
       code = 4; continue;
     }
     const listing = JSON.parse(await readFile(join(dir, "listing.json"), "utf8"));
-    books.push({ a, folder: book0.folder, dir, book: { ...listing }, ans: aiAnswers(spec, listing) });
+    books.push({ a, folder, dir, book: { ...listing }, ans: aiAnswers(series ? {} : spec, listing) });
   }
 
   if (!books.length) { console.log("OUTPUT 0 kindle-titles-submitted"); return code; }
@@ -881,9 +1071,23 @@ async function main() {
     } catch (e) { console.log(`bookshelf not read headless (${String(e.message).slice(0, 120)}); the visible run reads it first.`); }
     await context.close().catch(() => {});
     for (const b of books) {
-      if (rows && (await settle(b, plan(b.book.title, rows)))) continue;
-      todo.push(b);
+      const p = rows ? plan(b.book.title, rows) : null;
+      if (p && (await settle(b, p))) continue;
+      todo.push(Object.assign(b, { plan: p }));
     }
+    // Amazon's caps: whatever they hold back stays approved and is the next run's work.
+    const drafts = rows ? rows.map((r) => parseShelfRow(r.lines)).filter((r) => r.state === "DRAFT").length : 0;
+    // The link printed in the book must open (her coordinator, 8 Nov 2026): a series book whose
+    // companion page does not answer 200 is held, approved, for the next run. Nothing is created for it.
+    for (const b of [...todo]) {
+      if (!b.book.companion_url) continue;
+      const st = await companionStatus(b.book.companion_url);
+      if (st !== 200) { todo.splice(todo.indexOf(b), 1); say("QUEUED", `${b.book.title}: held — its companion page ${b.book.companion_url} answers ${st}; it goes when the page is live.`); }
+    }
+    const { go, queued } = underCaps(todo, { drafts });
+    for (const q of queued) say("QUEUED", `${q.book.title}: approved and waiting for the next run (${q.why}).`);
+    todo.splice(0, todo.length, ...go);
+    console.log(`queue: ${queued.length} approved title(s) wait for the next run; ${drafts} unpublished draft(s) on the bookshelf.`);
   }
   if (!todo.length) { console.log(`OUTPUT ${submitted} kindle-titles-submitted`); return code; }
 
@@ -896,7 +1100,8 @@ async function main() {
     if (profileBusy(profile)) { console.error("NAMED STOP [PROFILE_IN_USE] the KDP Chrome window was opened by someone during the heads-up; nothing typed. The next run tries again."); console.log(`OUTPUT ${submitted} kindle-titles-submitted`); return 5; }
   }
 
-  const { context } = await openProfile("kdp", { headed: true });
+  // KDP_HEADLESS=1: nothing opens on her screen (her coordinator, 8 Nov 2026, while she works in Chrome).
+  const { context } = await openProfile("kdp", { headed: process.env.KDP_HEADLESS !== "1" });
   let closed = false;
   context.once("close", () => { closed = true; });
   const page = context.pages()[0] ?? (await context.newPage());
@@ -928,7 +1133,18 @@ async function main() {
         const after = plan(book.title, await bookshelf(page, book.title));
         report.resulting_state = after.row?.state ?? "NOT_FOUND";
         if (!(await settle(b, after))) throw stop("PUBLISH_NOT_CONFIRMED", `after Publish the bookshelf reads ${report.resulting_state} for "${book.title}".`, 9);
-      } catch (e) {
+      } catch (e0) {
+        // Amazon's WEEKLY title-creation limit (live, 8 Nov 2026: "You have reached your weekly title
+        // creation limit for this format. Your limit resets on Sunday at 12:00 AM UTC"). Not a fault:
+        // this title and every one after it stay approved and QUEUED, and the next Monday run goes on.
+        const e = (await titleLimitReached(page)) ? stop("WEEKLY_TITLE_LIMIT", "Amazon's weekly limit on new Kindle titles is reached; it resets Sunday 00:00 UTC.", 0) : e0;
+        if (e.stop === "WEEKLY_TITLE_LIMIT") {
+          const left = todo.slice(todo.indexOf(b));
+          for (const q of left) say("QUEUED", `${q.book.title}: approved and waiting for the next run (Amazon's weekly limit on new Kindle titles).`);
+          console.log(`queue: ${left.length} approved title(s) wait for the next run (weekly title limit).`);
+          await snapshot(page, dir, "stop-weekly_title_limit");
+          break;
+        }
         report.stop_code = e.stop ?? "FAILED"; report.amazon_message = String(e.message).slice(0, 800);
         if (!closed) await snapshot(page, dir, `stop-${String(e.stop ?? "failed").toLowerCase()}`);
         say("STOPPED", e.message);
