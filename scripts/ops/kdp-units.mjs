@@ -15,8 +15,8 @@
  * ─── What it reads, and what it refuses to ──────────────────────────────────
  *
  * It opens Simone's own profile through `openProfile` — never a second launcher
- * (`validate:shared-browser` allows exactly one) — navigates the KDP reports page, and captures the
- * dashboard's own JSON network responses while it loads. `lib/kdp-units.mjs` parses those bodies, or
+ * (`validate:shared-browser` allows exactly one) — navigates the KDP Orders and KENP reports (kdpreports.amazon.com), and captures
+ * their own per-title JSON responses while they load. `lib/kdp-units.mjs` parses those bodies, or
  * falls back to the rendered page text, into units sold per day. Numbers only: no title, no buyer,
  * no money, matching the rest of this file's rule for anything it touches.
  *
@@ -29,20 +29,23 @@
 import { writeFile, mkdir } from "node:fs/promises";
 import { join } from "node:path";
 import { openProfile } from "./browser.mjs";
-import { parseUnits } from "./lib/kdp-units.mjs";
+import { parseReports, reportWindow, withWindow, salesLine, fromReports } from "./lib/kdp-units.mjs";
 
 const OUT_DIR = process.env.BOSS_OS_KDP_DIR ?? `${process.env.HOME}/.boss-os/kdp`;
 const OUT = join(OUT_DIR, "units.json");
-const REPORTS_URL = "https://kdp.amazon.com/en_US/reports-new";
+/** The reports pages themselves (8 Nov 2026): the dashboard says nothing per title or about KU pages. */
+const REPORTS = ["https://kdpreports.amazon.com/orders", "https://kdpreports.amazon.com/kenpc"];
 const PROFILE = process.env.KDP_UNITS_PROFILE ?? "simone";
 const TIMEOUT_MS = Number(process.env.KDP_BROWSER_TIMEOUT_MS ?? 60_000);
+/** 60 days: the Scorecard's longest window (manifest spry-kdp `first`), and the KDP strategy's day-60 check. */
+const WINDOW_DAYS = Number(process.env.KDP_UNITS_WINDOW_DAYS ?? 60);
 
 async function out(result, code = 0) {
   await mkdir(OUT_DIR, { recursive: true }).catch(() => {});
   await writeFile(OUT, JSON.stringify(result, null, 2) + "\n").catch(() => {});
   const line = result.unread
     ? `not read: ${result.unread}`
-    : `${Object.keys(result.days).length} day(s) via ${result.source}`;
+    : `${salesLine(result)} over the last ${WINDOW_DAYS} days, ${Object.keys(result.titles).length} title(s), via ${result.source}`;
   console.log(`KDP-UNITS: ${line}`);
   process.exitCode = code;
 }
@@ -52,6 +55,7 @@ const safeUrl = (u) => String(u ?? "").split("?")[0].slice(0, 120);
 
 async function main() {
   const at = new Date().toISOString();
+  const win = reportWindow(Date.now(), WINDOW_DAYS);
   let context;
   try {
     ({ context } = await openProfile(PROFILE, { headed: false }));
@@ -60,24 +64,32 @@ async function main() {
   }
   const page = context.pages()[0] ?? (await context.newPage());
   const captured = [];
+  // The reports pages ask for month-to-date; every report POST is asked for the same WINDOW_DAYS window.
+  await page.route(/kdpreports\.amazon\.com\/reports\//, (route) => {
+    const req = route.request();
+    const post = req.method() === "POST" ? req.postData() : null;
+    return post ? route.continue({ postData: withWindow(post, win) }) : route.continue();
+  });
   page.on("response", async (res) => {
     try {
-      if (!/kdp\.amazon\.com/.test(res.url())) return;
-      if (!(res.headers()["content-type"] ?? "").includes("application/json")) return;
-      captured.push(await res.json());
+      // kdpreports.amazon.com is where the numbers are; the old /kdp\.amazon\.com/ test never matched it.
+      if (!fromReports(res.url())) return;
+      const url = new URL(res.url());
+      if (!(res.headers()["content-type"] ?? "").includes("json")) return;
+      captured.push({ path: url.pathname, body: await res.json() });
     } catch {
       // Not JSON, or the body was already consumed elsewhere — skipped, not fatal.
     }
   });
   try {
-    await page.goto(REPORTS_URL, { waitUntil: "domcontentloaded", timeout: TIMEOUT_MS });
-    await page.waitForTimeout(8000);
-    if (/\/ap\/(signin|mfa|cvf)/.test(page.url())) {
-      return out({ at, unread: `the session is signed out at ${safeUrl(page.url())}; kdp-signin.mjs runs before this and should have fixed it` }, 6);
+    for (const url of REPORTS) {
+      await page.goto(url, { waitUntil: "domcontentloaded", timeout: TIMEOUT_MS });
+      if (/\/ap\/(signin|mfa|cvf)/.test(page.url())) {
+        return out({ at, unread: `the session is signed out at ${safeUrl(page.url())}; kdp-signin.mjs runs before this and should have fixed it` }, 6);
+      }
+      await page.waitForTimeout(10_000);
     }
-    const text = await page.locator("body").innerText({ timeout: 5000 }).catch(() => "");
-    const { days, source } = parseUnits({ captured, text });
-    return out({ at, days, source });
+    return out({ at, window: win, ...parseReports({ captured, window: win }) });
   } catch (err) {
     return out({ at, unread: String(err?.message ?? err).slice(0, 300) }, 7);
   } finally {
