@@ -64,7 +64,11 @@ in a PR. To redo a title, delete its entry in live-updates.json.
 
 - **At most 10 unpublished drafts.** A new title only starts if a draft slot is free. A title that
   resumes its own draft never takes a slot.
-- **Daily publish cap**: at most `KDP_PUBLISH_PER_RUN` titles (5) go in one run.
+- **Weekly title-creation limit, per format** (seen live on 8 Nov 2026 after 2 new Kindle titles):
+  Amazon shows "Title creation limit reached", and the limit resets on Sunday at 00:00 UTC. The run
+  logs `WEEKLY_TITLE_LIMIT`, marks that title and every later one `QUEUED` and exits cleanly; the next
+  Monday run carries on. Paperbacks are a separate format with their own limit.
+- **Per-run cap**: at most `KDP_PUBLISH_PER_RUN` titles (5) go in one run.
 - Whatever a cap holds back is logged `QUEUED`, stays approved and goes in the next run. The
   `queue:` line in the run log gives the count.
 

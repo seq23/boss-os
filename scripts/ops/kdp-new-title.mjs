@@ -206,6 +206,11 @@ export async function tickAui(page, inputSel) {
   return (await input.isChecked().catch(() => false)) ? "checked" : "unchecked";
 }
 
+/** Is Amazon showing its weekly title-creation limit? (the modal's own words, live 8 Nov 2026) */
+export async function titleLimitReached(page) {
+  return page.getByText(/title creation limit/i).first().isVisible().catch(() => false);
+}
+
 /** The HTTP status of a book's companion page (0 when unreachable). */
 export async function companionStatus(url, fetchImpl = fetch) {
   try { return (await fetchImpl(url, { method: "GET", redirect: "follow", signal: AbortSignal.timeout(15_000) })).status; } catch { return 0; }
@@ -1128,7 +1133,18 @@ async function main() {
         const after = plan(book.title, await bookshelf(page, book.title));
         report.resulting_state = after.row?.state ?? "NOT_FOUND";
         if (!(await settle(b, after))) throw stop("PUBLISH_NOT_CONFIRMED", `after Publish the bookshelf reads ${report.resulting_state} for "${book.title}".`, 9);
-      } catch (e) {
+      } catch (e0) {
+        // Amazon's WEEKLY title-creation limit (live, 8 Nov 2026: "You have reached your weekly title
+        // creation limit for this format. Your limit resets on Sunday at 12:00 AM UTC"). Not a fault:
+        // this title and every one after it stay approved and QUEUED, and the next Monday run goes on.
+        const e = (await titleLimitReached(page)) ? stop("WEEKLY_TITLE_LIMIT", "Amazon's weekly limit on new Kindle titles is reached; it resets Sunday 00:00 UTC.", 0) : e0;
+        if (e.stop === "WEEKLY_TITLE_LIMIT") {
+          const left = todo.slice(todo.indexOf(b));
+          for (const q of left) say("QUEUED", `${q.book.title}: approved and waiting for the next run (Amazon's weekly limit on new Kindle titles).`);
+          console.log(`queue: ${left.length} approved title(s) wait for the next run (weekly title limit).`);
+          await snapshot(page, dir, "stop-weekly_title_limit");
+          break;
+        }
         report.stop_code = e.stop ?? "FAILED"; report.amazon_message = String(e.message).slice(0, 800);
         if (!closed) await snapshot(page, dir, `stop-${String(e.stop ?? "failed").toLowerCase()}`);
         say("STOPPED", e.message);
