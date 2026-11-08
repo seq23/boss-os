@@ -1,0 +1,54 @@
+{
+  "line": "uscisexam",
+  "author": "Ines Calder",
+  "_author_why": "Pen name for this line (contract 8 Nov 2026). Check: docs/kdp/books/pen-names.md.",
+  "publisher": "Spry Labs",
+  "series": {
+    "name": "Green Card and Citizenship Paperwork Guides",
+    "description": "Plain guides to the paperwork and appointments of the green card and citizenship process. Not affiliated with any government agency."
+  },
+  "site": "https://uscisexam.com",
+  "ai_disclosure": {
+    "text": "all",
+    "images": "none",
+    "tool_names": "Anthropic Claude"
+  },
+  "disclaimer": "legal",
+  "series_books": [
+    {
+      "slug": "naturalization-interview-medical-exam",
+      "series_number": 1,
+      "title": "The Naturalization Interview & Immigration Medical Exam Guide",
+      "subtitle": "What to Bring, What Happens in the Room and How to Find a Civil Surgeon, Step by Step",
+      "description": "Two appointments make many people nervous on the way to a green card and citizenship: the immigration medical exam with a civil surgeon, and the naturalization interview. This guide walks you through both in plain words so you arrive with the right papers and know what will happen.\n\nInside:\n- The immigration medical exam: who a civil surgeon is, how to find one, what to bring, what happens at the visit and the sealed form afterwards\n- Vaccination records and what to gather before you book\n- The naturalization interview: the day in order, from security to the decision paper\n- Practising for the English and civics parts, with a study plan\n- Answering questions about your application honestly and calmly\n- What to bring, a packing checklist and a log for your appointments and mail\n- Where to get free or low-cost legal help, and how to avoid scams\n\nNot affiliated with U.S. Citizenship and Immigration Services or any government agency. Educational only; not legal or medical advice. Every case is different; for advice about yours, speak to an immigration attorney or an accredited representative.\n\nPublished by Spry Labs.",
+      "keywords": [
+        "us citizenship test study guide",
+        "naturalization interview questions",
+        "n-400 interview preparation",
+        "green card medical exam",
+        "civil surgeon appointment",
+        "i-693 medical exam",
+        "citizenship interview what to bring"
+      ],
+      "categories": [
+        "Law › Immigration",
+        "Reference › Test Preparation › Citizenship",
+        "Politics & Social Sciences › Social Sciences › Emigration & Immigration"
+      ],
+      "price_usd": 2.99,
+      "companion_url": "https://uscisexam.com/amazon/naturalization-interview-medical-exam/",
+      "manuscript": "docs/kdp/books/naturalization-interview-medical-exam.md",
+      "claim_gate": true,
+      "_risk": "R-LEAD-10: never imply affiliation with USCIS or give immigration/medical advice. The cover carries no seal, flag or eagle and the word USCIS is not on it.",
+      "cover": {
+        "kicker": "Green card · Citizenship",
+        "promise": "Two appointments, no surprises.",
+        "bg": "#F2EBDD",
+        "fg": "#1F3A2E",
+        "accent": "#C8892B",
+        "concept": "Calm sand and deep green, a simple two-step checklist motif (1 Medical exam, 2 Interview). No seals, flags, eagles or government look (R-LEAD-10). Type only.",
+        "preview": "docs/kdp/books/assets/covers/naturalization-interview-medical-exam.jpg"
+      }
+    }
+  ]
+}

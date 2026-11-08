@@ -1,0 +1,556 @@
+{
+  "_what": "Fixes for every title on the KDP bookshelf on 8 Nov 2026 (11: the register's 8 plus Letter of Explanation, Employment Verification Letter and Wedding Day Timeline, which the register misses). Owner ruling 8 Nov 2026: they join the hostile review and may be adjusted. ENGINE applies these on KDP after this lands.",
+  "_rules": [
+    "Never change the author on a live title (KDP locks it): pen names are for new books only.",
+    "Keep what works: Credit Dispute Letter (41 KU pages) and Wedding Day Timeline (17) keep their titles and nearly all keywords.",
+    "Gift Letter is in review: nothing changes until Amazon finishes.",
+    "Subtitles: a promise, never the raw search phrase; no 4+ letter word shared with the title (Amazon's repetitive-terms flag).",
+    "Covers: new previews under docs/kdp/books/assets/covers/<slug>.jpg, the old one beside it as <slug>-before.jpg."
+  ],
+  "sales_60_days": {
+    "units": 0,
+    "ku_pages": 58,
+    "by_title": {
+      "The Credit Dispute Letter": 41,
+      "The Wedding Day Timeline": 17
+    },
+    "source": "ENGINE's sales reader, 8 Nov 2026"
+  },
+  "books": [
+    {
+      "slug": "credit-dispute-letter",
+      "line": "approvalprep",
+      "title": "The Credit Dispute Letter",
+      "author": "S. Taylor",
+      "status_on_kdp": "LIVE",
+      "subtitle_now": "credit dispute letter",
+      "subtitle": "Self-Help Templates to Challenge a Report Error in Writing, Track Every Reply and Keep Copies",
+      "keywords": [
+        "credit dispute letter",
+        "credit report error",
+        "dispute letter template",
+        "credit reporting accuracy",
+        "fcra dispute process",
+        "how to dispute a collection",
+        "credit bureau letter"
+      ],
+      "categories": [
+        "Business & Money › Personal Finance › Credit & Debt",
+        "Business & Money › Personal Finance › Budgeting & Money Management",
+        "Reference › Consumer Guides"
+      ],
+      "price_usd": 2.99,
+      "paperback": null,
+      "companion_url": "https://approvalprep.com/amazon/credit-dispute-letter/",
+      "in_book_link_now": "plain text, no utm",
+      "in_book_link_fix": "Print the companion URL as a live link with the utm tag (?utm_source=kindle&utm_medium=book&utm_campaign=<slug>) on the how-to-use page and the last page.",
+      "interior": {
+        "source": "~/Work/kindle-front-door-v2-byline/epub/06.epub",
+        "verdict": "keep: 13k words, disclaimers say no outcome is promised; the companion URL is printed as plain text with a full stop after it."
+      },
+      "cover": {
+        "bg": "#F7F3EA",
+        "fg": "#1D1C21",
+        "accent": "#FF7A3D",
+        "decoration": "#FFE066",
+        "concept": "ApprovalPrep brand (paper, carbon Archivo 800 title, highlighter block, orange ticked box, IBM Plex Mono kicker). Replaces the slate/teal covers: teal is off-brand and the five near-identical dark covers could not be told apart at thumbnail size.",
+        "kicker": "ApprovalPrep · Credit",
+        "promise": "Dispute it yourself. Skip the monthly fee.",
+        "preview_before": "docs/kdp/books/assets/covers/credit-dispute-letter-before.jpg",
+        "preview": "docs/kdp/books/assets/covers/credit-dispute-letter.jpg"
+      },
+      "why": {
+        "cover": "Old subtitle 'Templates that get errors removed' promised a removal (risk R-ADV-13) and was unreadable at 160 px.",
+        "subtitle": "KDP subtitle was the raw search phrase.",
+        "interior": "keep: 13k words, disclaimers say no outcome is promised; the companion URL is printed as plain text with a full stop after it."
+      },
+      "keep_what_works": "41 KU pages read in 60 days: title and 6 of 7 keywords kept; only 'dispute documentation' swapped for 'how to dispute a collection'."
+    },
+    {
+      "slug": "gift-letter-down-payment",
+      "line": "approvalprep",
+      "title": "The Gift Letter (Down Payment)",
+      "author": "S. Taylor",
+      "status_on_kdp": "IN_REVIEW",
+      "subtitle_now": "gift letter for mortgage",
+      "subtitle": "What Your Lender Asks the Donor to Sign, With a Full Sample, Bank Statement Tips and a Paper Trail Checklist",
+      "keywords": [
+        "gift letter for mortgage",
+        "down payment gift documentation",
+        "mortgage gift funds letter",
+        "gift money for house purchase",
+        "fha gift letter",
+        "donor statement no repayment",
+        "first time home buyer guide"
+      ],
+      "categories": [
+        "Business & Money › Real Estate › Mortgages",
+        "Business & Money › Real Estate › Buying & Selling Homes"
+      ],
+      "price_usd": 2.99,
+      "paperback": null,
+      "companion_url": "https://approvalprep.com/amazon/gift-letter-down-payment/",
+      "in_book_link_now": "plain text, no utm",
+      "in_book_link_fix": "Print the companion URL as a live link with the utm tag (?utm_source=kindle&utm_medium=book&utm_campaign=<slug>) on the how-to-use page and the last page.",
+      "interior": {
+        "source": "~/Work/kindle-front-door-v2-byline/epub/09.epub",
+        "verdict": "keep"
+      },
+      "cover": {
+        "bg": "#F7F3EA",
+        "fg": "#1D1C21",
+        "accent": "#FF7A3D",
+        "decoration": "#FFE066",
+        "concept": "ApprovalPrep brand (paper, carbon Archivo 800 title, highlighter block, orange ticked box, IBM Plex Mono kicker). Replaces the slate/teal covers: teal is off-brand and the five near-identical dark covers could not be told apart at thumbnail size.",
+        "kicker": "ApprovalPrep · Mortgage",
+        "promise": "One sample. Every paper around it.",
+        "preview_before": "docs/kdp/books/assets/covers/gift-letter-down-payment-before.jpg",
+        "preview": "docs/kdp/books/assets/covers/gift-letter-down-payment.jpg"
+      },
+      "why": {
+        "subtitle": "Raw search phrase; also Amazon flagged this title for repeating title words (register). The new subtitle shares no 4+ letter word with the title.",
+        "timing": "In review: change nothing until Amazon finishes; then apply as one edit."
+      }
+    },
+    {
+      "slug": "landlord-reference-letter",
+      "line": "approvalprep",
+      "title": "The Landlord Reference Letter",
+      "author": "S. Taylor",
+      "status_on_kdp": "LIVE",
+      "subtitle_now": "landlord reference letter",
+      "subtitle": "How to Ask for One, What It Should Say, and Ready Samples to Hand Your Old Property Manager",
+      "keywords": [
+        "rental reference letter",
+        "tenant reference letter sample",
+        "apartment application reference",
+        "rental history verification",
+        "former tenant recommendation",
+        "rental payment history letter",
+        "first apartment checklist"
+      ],
+      "categories": [
+        "Business & Money › Real Estate › Buying & Selling Homes",
+        "Reference › Consumer Guides"
+      ],
+      "price_usd": 2.99,
+      "paperback": null,
+      "companion_url": "https://approvalprep.com/amazon/landlord-reference-letter/",
+      "in_book_link_now": "plain text, no utm",
+      "in_book_link_fix": "Print the companion URL as a live link with the utm tag (?utm_source=kindle&utm_medium=book&utm_campaign=<slug>) on the how-to-use page and the last page.",
+      "interior": {
+        "source": "~/Work/kindle-front-door-v2-byline/epub/08.epub",
+        "verdict": "keep"
+      },
+      "cover": {
+        "bg": "#F7F3EA",
+        "fg": "#1D1C21",
+        "accent": "#FF7A3D",
+        "decoration": "#FFE066",
+        "concept": "ApprovalPrep brand (paper, carbon Archivo 800 title, highlighter block, orange ticked box, IBM Plex Mono kicker). Replaces the slate/teal covers: teal is off-brand and the five near-identical dark covers could not be told apart at thumbnail size.",
+        "kicker": "ApprovalPrep · Renting",
+        "promise": "Ask for it the easy way.",
+        "preview_before": "docs/kdp/books/assets/covers/landlord-reference-letter-before.jpg",
+        "preview": "docs/kdp/books/assets/covers/landlord-reference-letter.jpg"
+      },
+      "why": {
+        "cover": "Old subtitle 'Templates that get you approved' promised an outcome.",
+        "subtitle": "Raw search phrase."
+      }
+    },
+    {
+      "slug": "proof-of-income-self-employed",
+      "line": "approvalprep",
+      "title": "Proof of Income When You're Self-Employed",
+      "author": "S. Taylor",
+      "status_on_kdp": "LIVE",
+      "subtitle_now": "proof of income self employed",
+      "subtitle": "The Papers Lenders and Landlords Ask Freelancers For, With Sample Letters and a Two-Year Folder Plan",
+      "keywords": [
+        "proof of income self employed",
+        "self employed mortgage documents",
+        "1099 income verification",
+        "freelancer proof of income",
+        "profit and loss statement template",
+        "bank statement income proof",
+        "gig worker apartment application"
+      ],
+      "categories": [
+        "Business & Money › Personal Finance › General",
+        "Business & Money › Small Business & Entrepreneurship › Accounting"
+      ],
+      "price_usd": 2.99,
+      "paperback": null,
+      "companion_url": "https://approvalprep.com/amazon/proof-of-income-self-employed/",
+      "in_book_link_now": "home page only (https://approvalprep.com)",
+      "in_book_link_fix": "Print the companion URL as a live link with the utm tag (?utm_source=kindle&utm_medium=book&utm_campaign=<slug>) on the how-to-use page and the last page.",
+      "interior": {
+        "source": "~/Work/kindle-front-door-v2-byline/epub/05.epub",
+        "verdict": "fix the link: it points at the home page, not /amazon/proof-of-income-self-employed/."
+      },
+      "cover": {
+        "bg": "#F7F3EA",
+        "fg": "#1D1C21",
+        "accent": "#FF7A3D",
+        "decoration": "#FFE066",
+        "concept": "ApprovalPrep brand (paper, carbon Archivo 800 title, highlighter block, orange ticked box, IBM Plex Mono kicker). Replaces the slate/teal covers: teal is off-brand and the five near-identical dark covers could not be told apart at thumbnail size.",
+        "kicker": "ApprovalPrep · Income",
+        "promise": "For freelancers, gig and contract work.",
+        "preview_before": "docs/kdp/books/assets/covers/proof-of-income-self-employed-before.jpg",
+        "preview": "docs/kdp/books/assets/covers/proof-of-income-self-employed.jpg"
+      },
+      "why": {
+        "interior": "fix the link: it points at the home page, not /amazon/proof-of-income-self-employed/."
+      }
+    },
+    {
+      "slug": "rental-application-packet",
+      "line": "approvalprep",
+      "title": "The Rental Application Packet",
+      "author": "S. Taylor",
+      "status_on_kdp": "LIVE",
+      "subtitle_now": "rental application requirements",
+      "subtitle": "Everything a Landlord Asks For in One Folder: Checklists, Sample Letters and a Plan for Thin Credit",
+      "keywords": [
+        "rental application requirements",
+        "rental application checklist",
+        "proof of income for apartment",
+        "renting with bad credit",
+        "tenant screening prep",
+        "first apartment checklist",
+        "renter resume"
+      ],
+      "categories": [
+        "Business & Money › Real Estate › Buying & Selling Homes",
+        "Reference › Consumer Guides"
+      ],
+      "price_usd": 2.99,
+      "paperback": null,
+      "companion_url": "https://approvalprep.com/amazon/rental-application-packet/",
+      "in_book_link_now": "plain text, no utm",
+      "in_book_link_fix": "Print the companion URL as a live link with the utm tag (?utm_source=kindle&utm_medium=book&utm_campaign=<slug>) on the how-to-use page and the last page.",
+      "interior": {
+        "source": "~/Work/kindle-front-door-v2-byline/epub/07.epub",
+        "verdict": "keep"
+      },
+      "cover": {
+        "bg": "#F7F3EA",
+        "fg": "#1D1C21",
+        "accent": "#FF7A3D",
+        "decoration": "#FFE066",
+        "concept": "ApprovalPrep brand (paper, carbon Archivo 800 title, highlighter block, orange ticked box, IBM Plex Mono kicker). Replaces the slate/teal covers: teal is off-brand and the five near-identical dark covers could not be told apart at thumbnail size.",
+        "kicker": "ApprovalPrep · Renting",
+        "promise": "Apply once, with everything ready.",
+        "preview_before": "docs/kdp/books/assets/covers/rental-application-packet-before.jpg",
+        "preview": "docs/kdp/books/assets/covers/rental-application-packet.jpg"
+      },
+      "why": {
+        "subtitle": "Raw search phrase."
+      }
+    },
+    {
+      "slug": "letter-of-explanation",
+      "line": "approvalprep",
+      "title": "The Letter of Explanation",
+      "author": "S. Taylor",
+      "status_on_kdp": "LIVE",
+      "subtitle_now": "letter of explanation",
+      "subtitle": "How to Answer an Underwriter's Questions About Deposits, Late Payments and Job Gaps, With Samples",
+      "keywords": [
+        "letter of explanation mortgage",
+        "underwriter letter of explanation",
+        "large deposit explanation letter",
+        "explain late payment to lender",
+        "employment gap explanation",
+        "credit inquiry explanation letter",
+        "first time home buyer guide"
+      ],
+      "categories": [
+        "Business & Money › Real Estate › Mortgages",
+        "Reference › Consumer Guides"
+      ],
+      "price_usd": 2.99,
+      "paperback": null,
+      "companion_url": "https://approvalprep.com/amazon/letter-of-explanation/",
+      "in_book_link_now": "plain text, no utm",
+      "in_book_link_fix": "Print the companion URL as a live link with the utm tag (?utm_source=kindle&utm_medium=book&utm_campaign=<slug>) on the how-to-use page and the last page.",
+      "interior": {
+        "source": "~/Work/kindle-front-door-v2-byline/epub/03.epub",
+        "verdict": "keep"
+      },
+      "cover": {
+        "bg": "#F7F3EA",
+        "fg": "#1D1C21",
+        "accent": "#FF7A3D",
+        "decoration": "#FFE066",
+        "concept": "ApprovalPrep brand (paper, carbon Archivo 800 title, highlighter block, orange ticked box, IBM Plex Mono kicker). Replaces the slate/teal covers: teal is off-brand and the five near-identical dark covers could not be told apart at thumbnail size.",
+        "kicker": "ApprovalPrep · Mortgage",
+        "promise": "Answer the underwriter in one page.",
+        "preview_before": "docs/kdp/books/assets/covers/letter-of-explanation-before.jpg",
+        "preview": "docs/kdp/books/assets/covers/letter-of-explanation.jpg"
+      },
+      "why": {
+        "subtitle": "Raw search phrase.",
+        "register": "Missing from kdp-register.json; found on the bookshelf 8 Nov 2026."
+      }
+    },
+    {
+      "slug": "employment-verification-letter",
+      "line": "approvalprep",
+      "title": "The Employment Verification Letter",
+      "author": "S. Taylor",
+      "status_on_kdp": "LIVE",
+      "subtitle_now": "employment verification letter",
+      "subtitle": "How to Request One, What It Should Include and Samples for Renters, Lenders and HR",
+      "keywords": [
+        "employment verification letter template",
+        "proof of employment letter",
+        "job verification letter",
+        "salary verification letter",
+        "employer letter for apartment",
+        "hr letter request",
+        "work verification document"
+      ],
+      "categories": [
+        "Business & Money › Job Hunting & Careers › Job Hunting",
+        "Business & Money › Skills › Business Communication"
+      ],
+      "price_usd": 2.99,
+      "paperback": null,
+      "companion_url": "https://approvalprep.com/amazon/employment-verification-letter/",
+      "in_book_link_now": "plain text, no utm",
+      "in_book_link_fix": "Print the companion URL as a live link with the utm tag (?utm_source=kindle&utm_medium=book&utm_campaign=<slug>) on the how-to-use page and the last page.",
+      "interior": {
+        "source": "~/Work/kindle-front-door-v2-byline/epub/01.epub",
+        "verdict": "keep"
+      },
+      "cover": {
+        "bg": "#F7F3EA",
+        "fg": "#1D1C21",
+        "accent": "#FF7A3D",
+        "decoration": "#FFE066",
+        "concept": "ApprovalPrep brand (paper, carbon Archivo 800 title, highlighter block, orange ticked box, IBM Plex Mono kicker). Replaces the slate/teal covers: teal is off-brand and the five near-identical dark covers could not be told apart at thumbnail size.",
+        "kicker": "ApprovalPrep · Income",
+        "promise": "Ask HR once. Get what you need.",
+        "preview_before": "docs/kdp/books/assets/covers/employment-verification-letter-before.jpg",
+        "preview": "docs/kdp/books/assets/covers/employment-verification-letter.jpg"
+      },
+      "why": {
+        "subtitle": "Raw search phrase.",
+        "register": "Missing from kdp-register.json; found on the bookshelf 8 Nov 2026."
+      }
+    },
+    {
+      "slug": "wedding-seating-chart",
+      "line": "wedding",
+      "title": "The Wedding Seating Chart",
+      "author": "Lanae Taylor",
+      "status_on_kdp": "LIVE",
+      "subtitle_now": "wedding seating chart",
+      "subtitle": "Seat Every Guest Calmly: Family Tensions, Plus-Ones, Kids' Tables and a Template for Any Room",
+      "keywords": [
+        "wedding seating chart template",
+        "wedding seating plan",
+        "seating divorced parents at wedding",
+        "reception table layout",
+        "wedding guest list organizer",
+        "escort cards ideas",
+        "wedding planning book"
+      ],
+      "categories": [
+        "Crafts, Hobbies & Home › Weddings",
+        "Reference › Etiquette › Weddings"
+      ],
+      "price_usd": 2.99,
+      "paperback": null,
+      "companion_url": "https://weddingchecklistpdf.com/amazon/wedding-seating-chart/",
+      "in_book_link_now": "plain text, no utm",
+      "in_book_link_fix": "Print the companion URL as a live link with the utm tag (?utm_source=kindle&utm_medium=book&utm_campaign=<slug>) on the how-to-use page and the last page.",
+      "interior": {
+        "source": "~/Work/kindle-front-door-v2-byline/epub/10.epub",
+        "verdict": "keep"
+      },
+      "cover": {
+        "bg": "#FAF7F2",
+        "fg": "#1B1F3B",
+        "accent": "#2747D9",
+        "decoration": "#F28C6B",
+        "photo": {
+          "path": "docs/kdp/books/assets/wedding-seating-chart-photo.jpg",
+          "source": "https://unsplash.com/photos/yWTqcUpHBWo",
+          "licence": "Unsplash License (free; never Unsplash+), https://unsplash.com/license",
+          "creator": "Christina Victoria Craft",
+          "title": "Handwritten name cards for wedding seating",
+          "via": "dream-wedding-builder data/pinterest/topic_art.json (photo rules of 6 Nov 2026: free licence, >=1000px, no watermark, checked by eye)"
+        },
+        "concept": "Dream Wedding brand (ivory, midnight Instrument Serif title, blue/coral binder tabs, object photo band; no stock couple, no blush palette). Replaces the blush/teal blob covers whose subtitle and author vanished at thumbnail size.",
+        "kicker": "Dream Wedding guide",
+        "promise": "Seat everyone. Keep the peace.",
+        "preview_before": "docs/kdp/books/assets/covers/wedding-seating-chart-before.jpg",
+        "preview": "docs/kdp/books/assets/covers/wedding-seating-chart.jpg"
+      },
+      "why": {
+        "subtitle": "Raw search phrase; old cover line 'A calm way to sit 150 people' unreadable at thumbnail.",
+        "keywords": "metadata had none recorded."
+      }
+    },
+    {
+      "slug": "wedding-vendor-questions",
+      "line": "wedding",
+      "title": "Questions to Ask Every Wedding Vendor",
+      "author": "Lanae Taylor",
+      "status_on_kdp": "LIVE",
+      "subtitle_now": "wedding vendor questions",
+      "subtitle": "Before You Sign Anything: Scripts for Venues, Photographers, Caterers and Florists, Plus Contract Red Flags",
+      "keywords": [
+        "wedding vendor questions to ask",
+        "wedding venue questions checklist",
+        "wedding photographer questions",
+        "wedding caterer questions",
+        "wedding contract checklist",
+        "hiring wedding vendors",
+        "wedding planning on a budget"
+      ],
+      "categories": [
+        "Crafts, Hobbies & Home › Weddings",
+        "Reference › Consumer Guides"
+      ],
+      "price_usd": 2.99,
+      "paperback": null,
+      "companion_url": "https://weddingchecklistpdf.com/amazon/wedding-vendor-questions/",
+      "in_book_link_now": "plain text, no utm",
+      "in_book_link_fix": "Print the companion URL as a live link with the utm tag (?utm_source=kindle&utm_medium=book&utm_campaign=<slug>) on the how-to-use page and the last page.",
+      "interior": {
+        "source": "~/Work/kindle-front-door-v2-byline/epub/04.epub",
+        "verdict": "keep"
+      },
+      "cover": {
+        "bg": "#FAF7F2",
+        "fg": "#1B1F3B",
+        "accent": "#2747D9",
+        "decoration": "#F28C6B",
+        "photo": {
+          "path": "docs/kdp/books/assets/wedding-vendor-questions-photo.jpg",
+          "source": "https://unsplash.com/photos/RpUcPmG46vw",
+          "licence": "Unsplash License (free; never Unsplash+), https://unsplash.com/license",
+          "creator": "Keenan Barber",
+          "title": "Ceremony chairs between white columns and florals",
+          "via": "dream-wedding-builder data/pinterest/topic_art.json (photo rules of 6 Nov 2026: free licence, >=1000px, no watermark, checked by eye)"
+        },
+        "concept": "Dream Wedding brand (ivory, midnight Instrument Serif title, blue/coral binder tabs, object photo band; no stock couple, no blush palette). Replaces the blush/teal blob covers whose subtitle and author vanished at thumbnail size.",
+        "kicker": "Dream Wedding guide",
+        "promise": "Ask before you sign.",
+        "preview_before": "docs/kdp/books/assets/covers/wedding-vendor-questions-before.jpg",
+        "preview": "docs/kdp/books/assets/covers/wedding-vendor-questions.jpg"
+      },
+      "why": {
+        "subtitle": "Raw search phrase."
+      }
+    },
+    {
+      "slug": "wedding-day-timeline",
+      "line": "wedding",
+      "title": "The Wedding Day Timeline",
+      "author": "Lanae Taylor",
+      "status_on_kdp": "LIVE",
+      "subtitle_now": "wedding timeline template",
+      "subtitle": "An Hour-by-Hour Plan From Hair and Makeup to Send-Off, With Templates for Morning, Evening and Small Celebrations",
+      "keywords": [
+        "wedding day timeline template",
+        "wedding schedule planner",
+        "wedding day itinerary",
+        "wedding timeline hour by hour",
+        "bridal party schedule",
+        "wedding vendor schedule",
+        "day of coordinator checklist"
+      ],
+      "categories": [
+        "Crafts, Hobbies & Home › Weddings",
+        "Reference › Etiquette › Weddings"
+      ],
+      "price_usd": 2.99,
+      "paperback": null,
+      "companion_url": "https://weddingchecklistpdf.com/amazon/wedding-day-timeline/",
+      "in_book_link_now": "plain text, no utm",
+      "in_book_link_fix": "Print the companion URL as a live link with the utm tag (?utm_source=kindle&utm_medium=book&utm_campaign=<slug>) on the how-to-use page and the last page.",
+      "interior": {
+        "source": "~/Work/kindle-front-door-v2-byline/epub/02.epub",
+        "verdict": "keep"
+      },
+      "cover": {
+        "bg": "#FAF7F2",
+        "fg": "#1B1F3B",
+        "accent": "#2747D9",
+        "decoration": "#F28C6B",
+        "photo": {
+          "path": "docs/kdp/books/assets/wedding-day-timeline-photo.jpg",
+          "source": "https://unsplash.com/photos/ebvCsRypmxM",
+          "licence": "Unsplash License (free; never Unsplash+), https://unsplash.com/license",
+          "creator": "Renáta-Adrienn",
+          "title": "Open planner and pen on a cork mat",
+          "via": "dream-wedding-builder data/pinterest/topic_art.json (photo rules of 6 Nov 2026: free licence, >=1000px, no watermark, checked by eye)"
+        },
+        "concept": "Dream Wedding brand (ivory, midnight Instrument Serif title, blue/coral binder tabs, object photo band; no stock couple, no blush palette). Replaces the blush/teal blob covers whose subtitle and author vanished at thumbnail size.",
+        "kicker": "Dream Wedding guide",
+        "promise": "Every hour planned, start to send-off.",
+        "preview_before": "docs/kdp/books/assets/covers/wedding-day-timeline-before.jpg",
+        "preview": "docs/kdp/books/assets/covers/wedding-day-timeline.jpg"
+      },
+      "why": {
+        "subtitle": "Raw search phrase.",
+        "register": "Missing from kdp-register.json; found on the bookshelf 8 Nov 2026."
+      },
+      "keep_what_works": "17 KU pages read in 60 days: title and all 7 keywords kept except 'wedding day of coordination' → 'day of coordinator checklist' (the searched form)."
+    },
+    {
+      "slug": "co-parenting-log",
+      "line": "keepmyproof",
+      "title": "The Co-Parenting Log",
+      "author": "S. L. Taylor",
+      "status_on_kdp": "LIVE",
+      "subtitle_now": "A Custody Documentation Workbook for Divorce Prep, With Printable Checklists and Official Court Links by State",
+      "subtitle": "Keep a Calm, Dated Record of Handoffs, Messages and Expenses, With Printable Pages and Official Court Links by State",
+      "keywords": [
+        "co parenting journal",
+        "custody documentation",
+        "how to document for custody",
+        "divorce preparation checklist",
+        "documents to gather before divorce",
+        "save text messages for divorce",
+        "parenting time and visitation log"
+      ],
+      "categories": [
+        "Parenting & Relationships › Family Relationships › Divorce",
+        "Parenting & Relationships › Parenting › General",
+        "Law › Family Law › Child Custody"
+      ],
+      "price_usd": 2.99,
+      "paperback": {
+        "price_usd": 8.99,
+        "trim": "6x9"
+      },
+      "companion_url": "https://keepmyproof.com/divorce/",
+      "in_book_link_now": "https://keepmyproof.com/divorce/ (live link, no utm)",
+      "in_book_link_fix": "Print the companion URL as a live link with the utm tag (?utm_source=kindle&utm_medium=book&utm_campaign=<slug>) on the how-to-use page and the last page.",
+      "interior": {
+        "source": "~/.boss-os/kdp/keepmyproof/divorce/book.epub",
+        "verdict": "keep; the companion link is folder_url https://keepmyproof.com/divorce/ (live) — add the utm tag. No /amazon/co-parenting-log/ page exists, so the folder page stays the companion."
+      },
+      "cover": {
+        "bg": "#F3F4F1",
+        "fg": "#1E2326",
+        "accent": "#0B6E4F",
+        "concept": "Same KeepMyProof brand; the subtitle paragraph is replaced by a short promise so the title and the card read at thumbnail.",
+        "kicker": "Divorce prep · Custody",
+        "promise": "A calm, dated record.",
+        "preview_before": "docs/kdp/books/assets/covers/co-parenting-log-before.jpg",
+        "preview": "docs/kdp/books/assets/covers/co-parenting-log.jpg"
+      },
+      "why": {
+        "price": "Was $4.99; the contract puts Kindle at $0.99-$2.99.",
+        "subtitle": "Described the book instead of promising something.",
+        "interior": "keep; the companion link is folder_url https://keepmyproof.com/divorce/ (live) — add the utm tag. No /amazon/co-parenting-log/ page exists, so the folder page stays the companion."
+      }
+    }
+  ]
+}

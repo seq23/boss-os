@@ -1,0 +1,57 @@
+{
+  "line": "time2read",
+  "author": "Nell Bramble",
+  "_author_why": "Pen name for this line (contract 8 Nov 2026). Check: docs/kdp/books/pen-names.md.",
+  "publisher": "Spry Labs",
+  "series": {
+    "name": "Time-2-Read Decodable Stories",
+    "description": "Short decodable stories for children learning to read, each using only the sounds taught so far."
+  },
+  "site": "https://time-2-read.com",
+  "ai_disclosure": {
+    "text": "all",
+    "images": "none",
+    "tool_names": "Anthropic Claude"
+  },
+  "disclaimer": "education",
+  "series_books": [
+    {
+      "slug": "decodable-stories-1",
+      "series_number": 1,
+      "title": "Decodable Stories for Early Readers, Book 1",
+      "subtitle": "Seven Short Phonics Tales, From Short A to SH and CH, With Sound Lists to Practice Together",
+      "description": "Your child has learned some letter sounds. Now they need something to read that only uses those sounds, so every word can be sounded out and every page feels like a win.\n\nThis book has seven short decodable stories that build one step at a time:\n- Story 1: short a (A Cat Nap)\n- Story 2: short i (Pip Can Dig)\n- Story 3: short o (The Hot Pot)\n- Story 4: short e (Get Set, Ted)\n- Story 5: short u (Bud and the Bus)\n- Story 6: sh, ck, ll and ss (The Fish Shop)\n- Story 7: ch and th (Chip and the Chick)\n\nEach story starts with its sound list and its few tricky words to practise first, and ends with two questions to talk about. A short note for grown-ups explains how to read together, what to do when a word is hard, and when to move on.\n\nFor children about four to seven who are starting to blend sounds, at home or alongside school. This is reading practice, not a program or a treatment for any learning difference.\n\nPublished by Spry Labs, the makers of Time-2-Read.",
+      "keywords": [
+        "decodable readers kindergarten",
+        "phonics books for kids",
+        "cvc word stories",
+        "learn to read books ages 4-6",
+        "science of reading books",
+        "beginning reader books set",
+        "decodable books first grade"
+      ],
+      "categories": [
+        "Children's eBooks › Education & Reference › Language Arts › Phonics",
+        "Children's eBooks › Early Learning › Beginner Readers"
+      ],
+      "price_usd": 2.99,
+      "min_words": 1200,
+      "reading_age": "4-7",
+      "grade_range": "Preschool - 1",
+      "companion_url": "https://time-2-read.com/amazon/decodable-stories-1/",
+      "manuscript": "docs/kdp/books/decodable-stories-1.md",
+      "claim_gate": false,
+      "layout": "story_book",
+      "_layout_why": "ENGINE: a children's story book, not a workbook. Each '# ' is a story; '## Sounds in this story' and '## Tricky words' are short boxed lists before it; story lines are short paragraphs set large (one or two sentences per paragraph), page break between stories.",
+      "cover": {
+        "kicker": "Read it myself",
+        "promise": "Short vowels to SH and CH",
+        "bg": "#FFD84D",
+        "fg": "#1D2B53",
+        "accent": "#E4572E",
+        "concept": "Bright children's reader: huge rounded title in Andika (made for beginning readers: single-storey a), a big BOOK 1 badge, a drawn cat on a mat (the first decodable words), one line naming the sounds. Type and simple vector shapes only.",
+        "preview": "docs/kdp/books/assets/covers/decodable-stories-1.jpg"
+      }
+    }
+  ]
+}

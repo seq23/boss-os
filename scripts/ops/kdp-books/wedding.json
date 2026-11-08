@@ -1,0 +1,160 @@
+{
+  "line": "wedding",
+  "author": "June Hollister",
+  "_author_why": "Pen name for NEW books in this line (contract 8 Nov 2026). The live wedding titles keep Lanae Taylor: KDP locks the author on a live title. Check: docs/kdp/books/pen-names.md.",
+  "publisher": "Spry Labs",
+  "series": {
+    "name": "Dream Wedding Planning Guides",
+    "description": "Short, practical wedding planning guides for couples planning without a planner, from the makers of the Dream Wedding Builder."
+  },
+  "site": "https://weddingchecklistpdf.com",
+  "ai_disclosure": {
+    "text": "all",
+    "images": "none",
+    "tool_names": "Anthropic Claude"
+  },
+  "disclaimer": "none",
+  "series_books": [
+    {
+      "slug": "courthouse-wedding-planner",
+      "series_number": 1,
+      "title": "The Courthouse Wedding Planner",
+      "subtitle": "Plan a Small Civil Ceremony in Weeks, Not Months: License Steps, Guest List, Photos and a Day-Of Timeline",
+      "description": "A courthouse or city hall wedding is small, but it still has moving parts: the license, the appointment, the witnesses, what to wear, who to invite, photos on the steps and a meal afterwards.\n\nThis planner puts them in order so you can plan it in weeks, not months, and still have a day that feels like yours.\n\nInside:\n- Is a courthouse wedding right for you: the honest trade-offs\n- The marriage license, step by step, and what to check with your county clerk\n- Booking the ceremony, witnesses and what happens in the room\n- The small guest list, how to tell people, and what to say to hurt feelings\n- Outfits, flowers, rings and photos on a small budget\n- Lunch, dinner or a party later\n- A countdown checklist and a day-of timeline you fill in\n\nRules for licenses and ceremonies differ by state and county and change; this book shows you what to ask, and your county clerk's office has the final word.\n\nPublished by Spry Labs, the makers of the Dream Wedding Builder.",
+      "keywords": [
+        "courthouse wedding ideas",
+        "city hall wedding planning",
+        "small wedding planner book",
+        "elopement planning guide",
+        "how to get a marriage license",
+        "civil ceremony wedding",
+        "simple wedding checklist"
+      ],
+      "categories": [
+        "Crafts, Hobbies & Home › Weddings",
+        "Reference › Etiquette › Weddings",
+        "Self-Help › Time Management"
+      ],
+      "price_usd": 2.99,
+      "paperback": {
+        "price_usd": 7.99,
+        "trim": "6x9"
+      },
+      "companion_url": "https://weddingchecklistpdf.com/amazon/courthouse-wedding-planner/",
+      "manuscript": "docs/kdp/books/courthouse-wedding-planner.md",
+      "claim_gate": false,
+      "cover": {
+        "kicker": "Dream Wedding guide",
+        "promise": "Plan it in weeks, not months.",
+        "bg": "#FAF7F2",
+        "fg": "#1B1F3B",
+        "accent": "#2747D9",
+        "decoration": "#F28C6B",
+        "photo": {
+          "path": "docs/kdp/books/assets/courthouse-wedding-planner-photo.jpg",
+          "source": "https://www.pexels.com/photo/30657138/",
+          "licence": "Pexels License (free), https://www.pexels.com/license/",
+          "creator": "Edu Raw",
+          "title": "Wedding rings and a pen on a signed marriage document",
+          "via": "dream-wedding-builder data/pinterest/topic_art.json (photo rules of 6 Nov 2026: free licence, >=1000px, no watermark, checked by eye)"
+        },
+        "concept": "Dream Wedding brand: ivory, midnight Instrument Serif title, blue/coral binder tabs; top photo band of rings and pen on the signed marriage paper (the courthouse is paperwork; no stock couple, per the brand).",
+        "preview": "docs/kdp/books/assets/covers/courthouse-wedding-planner.jpg"
+      }
+    },
+    {
+      "slug": "wedding-vows",
+      "series_number": 2,
+      "title": "Writing Your Wedding Vows",
+      "subtitle": "Find the Words in One Evening: Prompts, Real-Sounding Examples and a Simple Shape for Promises You Can Say Out Loud",
+      "description": "You have been asked to write your own vows, and the page is still blank. This short guide gets you from blank page to vows you can say out loud without shaking, in one evening.\n\nInside:\n- The simple four-part shape most good vows share\n- Forty prompts to dig up the memories and promises that are yours\n- Example vows in different voices (funny, classic, short, faith-friendly, second marriage) to show what the shape sounds like, never to copy\n- How long vows should be, and how to match your partner without reading each other's\n- Editing out cliches and inside jokes no one else gets\n- Practising, printing and what to do if you cry\n- Fill-in pages to draft, cut and finish\n\nPublished by Spry Labs, the makers of the Dream Wedding Builder.",
+      "keywords": [
+        "how to write wedding vows",
+        "wedding vow examples",
+        "personal wedding vows book",
+        "vow writing prompts",
+        "funny wedding vows",
+        "short wedding vows",
+        "vow renewal ideas"
+      ],
+      "categories": [
+        "Crafts, Hobbies & Home › Weddings",
+        "Reference › Writing, Research & Publishing Guides › Writing › Speech",
+        "Reference › Etiquette › Weddings"
+      ],
+      "price_usd": 2.99,
+      "paperback": {
+        "price_usd": 7.99,
+        "trim": "6x9"
+      },
+      "companion_url": "https://weddingchecklistpdf.com/amazon/wedding-vows/",
+      "manuscript": "docs/kdp/books/wedding-vows.md",
+      "claim_gate": false,
+      "cover": {
+        "kicker": "Dream Wedding guide",
+        "promise": "From blank page to vows tonight.",
+        "bg": "#FAF7F2",
+        "fg": "#1B1F3B",
+        "accent": "#2747D9",
+        "decoration": "#F28C6B",
+        "photo": {
+          "path": "docs/kdp/books/assets/wedding-vows-photo.jpg",
+          "source": "https://unsplash.com/photos/YeJWDWeIZho",
+          "licence": "Unsplash License (free; never Unsplash+), https://unsplash.com/license",
+          "creator": "Sandy Millar",
+          "title": "Two gold wedding rings on a dictionary page open at \"marriage\"",
+          "via": "dream-wedding-builder data/pinterest/topic_art.json (photo rules of 6 Nov 2026: free licence, >=1000px, no watermark, checked by eye)"
+        },
+        "concept": "Dream Wedding brand; photo band of two rings on a dictionary page open at 'marriage' (words + rings = vows).",
+        "preview": "docs/kdp/books/assets/covers/wedding-vows.jpg"
+      }
+    },
+    {
+      "slug": "maid-of-honor-handbook",
+      "series_number": 3,
+      "title": "The Maid of Honor Handbook",
+      "subtitle": "Every Duty From the Engagement to the Last Dance, With a Shower Plan, Toast Builder and Day-Of Checklist",
+      "description": "You said yes. Now what? This handbook lays out the whole job, month by month, so you can show up for your friend without losing your mind or your budget.\n\nInside:\n- What the role really involves, and what it does not\n- Talking money early: the conversation nobody wants and everyone needs\n- Helping with the dress, the details and the group chat\n- Planning the shower and the bachelorette: a simple plan, a budget split and games that do not embarrass anyone\n- Writing and giving the toast: a fill-in toast builder, timing and delivery\n- The wedding day: an hour-by-hour checklist and an emergency kit list\n- When things go wrong: clashing bridesmaids, a stressed couple, your own limits\n\nWorks for a maid of honor, matron of honor or anyone standing beside the couple.\n\nPublished by Spry Labs, the makers of the Dream Wedding Builder.",
+      "keywords": [
+        "maid of honor duties",
+        "maid of honor speech",
+        "bridal shower planning",
+        "bachelorette party planning",
+        "matron of honor gift",
+        "bridesmaid duties checklist",
+        "wedding day emergency kit"
+      ],
+      "categories": [
+        "Crafts, Hobbies & Home › Weddings",
+        "Reference › Etiquette › Weddings",
+        "Crafts, Hobbies & Home › Entertaining & Holidays › Parties"
+      ],
+      "price_usd": 2.99,
+      "paperback": {
+        "price_usd": 7.99,
+        "trim": "6x9"
+      },
+      "companion_url": "https://weddingchecklistpdf.com/amazon/maid-of-honor-handbook/",
+      "manuscript": "docs/kdp/books/maid-of-honor-handbook.md",
+      "claim_gate": false,
+      "cover": {
+        "kicker": "Dream Wedding guide",
+        "promise": "Every duty, month by month.",
+        "bg": "#FAF7F2",
+        "fg": "#1B1F3B",
+        "accent": "#2747D9",
+        "decoration": "#F28C6B",
+        "photo": {
+          "path": "docs/kdp/books/assets/maid-of-honor-handbook-photo.jpg",
+          "source": "https://unsplash.com/photos/zllBDtma74E",
+          "licence": "Unsplash License (free; never Unsplash+), https://unsplash.com/license",
+          "creator": "Nataliya Melnychuk",
+          "title": "Brunch plate, coffee and white flowers on linen",
+          "via": "dream-wedding-builder data/pinterest/topic_art.json (photo rules of 6 Nov 2026: free licence, >=1000px, no watermark, checked by eye)"
+        },
+        "concept": "Dream Wedding brand; photo band of a shower brunch flat lay with rings (the shower is her biggest job).",
+        "preview": "docs/kdp/books/assets/covers/maid-of-honor-handbook.jpg"
+      }
+    }
+  ]
+}
