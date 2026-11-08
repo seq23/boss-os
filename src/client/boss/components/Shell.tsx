@@ -101,7 +101,7 @@ function useReadingPosition() {
   return { progress, scrollable, atEnd };
 }
 
-export type TabId = "today" | "inbox" | "capital" | "spirit" | "team" | "brains" | "emails" | "schedule" | "scorecard" | "loops" | "updates" | "validators" | "memory" | "trading" | "vault" | "systems";
+export type TabId = "today" | "inbox" | "capital" | "spirit" | "team" | "brains" | "emails" | "social" | "schedule" | "scorecard" | "loops" | "updates" | "validators" | "memory" | "trading" | "vault" | "systems";
 
 const ICONS: Record<TabId, ReactNode> = {
   today: <path d="M12 3a9 9 0 100 18 9 9 0 000-18zM12 7v5l3.5 2" />,
@@ -111,6 +111,7 @@ const ICONS: Record<TabId, ReactNode> = {
   team: <path d="M8 11a3 3 0 100-6 3 3 0 000 6zM3 20a5 5 0 0110 0M16 12a3 3 0 100-6M15 20a5 5 0 016-4" />,
   brains: <path d="M9 4a3 3 0 00-3 3 3 3 0 00-2 5 3 3 0 002 5 3 3 0 006 1V5a3 3 0 00-3-1zM15 4a3 3 0 013 3 3 3 0 012 5 3 3 0 01-2 5 3 3 0 01-6 1" />,
   emails: <path d="M3 6h18v12H3zM3 6l9 7 9-7" />,
+  social: <path d="M6 9a3 3 0 100-6 3 3 0 000 6zM18 21a3 3 0 100-6 3 3 0 000 6zM18 9a3 3 0 100-6 3 3 0 000 6zM8.6 7.5l6.8 3.5M8.6 4.5l6.8-1M15.5 16.5L8.6 9" />,
   schedule: <path d="M4 5h16v15H4zM4 10h16M9 3v4M15 3v4" />,
   scorecard: <path d="M4 20V10M10 20V4M16 20v-7M22 20H2" />,
   loops: <path d="M4 6h11M4 12h11M4 18h7M18 5l2 2 3-3" />,
@@ -125,17 +126,17 @@ const ICONS: Record<TabId, ReactNode> = {
 /** Canon §15: Today is the default operating screen, and so the first tab. */
 const LABELS: Record<TabId, string> = {
   today: "Today", inbox: "Inbox", capital: "Capital",
-  spirit: "Spirit", team: "Team", brains: "Brains", emails: "Email Map", schedule: "Schedule", scorecard: "Scorecard", loops: "Open Loops", updates: "Updates", validators: "Validators", memory: "Memory", trading: "Trading", vault: "Vault",
+  spirit: "Spirit", team: "Team", brains: "Brains", emails: "Email Map", social: "Social Map", schedule: "Schedule", scorecard: "Scorecard", loops: "Open Loops", updates: "Updates", validators: "Validators", memory: "Memory", trading: "Trading", vault: "Vault",
   systems: "Systems",
 };
 
 /*
  * FIVE TABS AND "☰ MORE" (owner approved the new Today, 31 Oct 2026). Nine tabs in two rows took
- * ~250 of the phone's 844px. Today, Inbox, Capital and Spirit stay one tap away; Team, Brains, Email Map (31 Oct 2026), Schedule (1 Nov 2026), Validators (1 Nov 2026), Memory,
+ * ~250 of the phone's 844px. Today, Inbox, Capital and Spirit stay one tap away; Team, Brains, Email Map (31 Oct 2026), Social Map (8 Nov 2026), Schedule (1 Nov 2026), Validators (1 Nov 2026), Memory,
  * Trading, Vault, Systems and Operations (the settings) are in "☰ More", two taps away.
  */
 export const PRIMARY_TABS: readonly TabId[] = ["today", "inbox", "capital", "spirit"];
-export const MORE_TABS: readonly TabId[] = ["team", "brains", "emails", "schedule", "scorecard", "loops", "updates", "validators", "memory", "trading", "vault", "systems"];
+export const MORE_TABS: readonly TabId[] = ["team", "brains", "emails", "schedule", "social", "scorecard", "loops", "updates", "validators", "memory", "trading", "vault", "systems"];
 
 export function Shell({
   tab, onTab, title, lane, pending, onSettings, settingsOpen, offline, waiting, onBack, children,

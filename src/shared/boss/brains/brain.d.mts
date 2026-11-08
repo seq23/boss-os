@@ -69,6 +69,7 @@ export interface MacCheck {
   unchecked?: string[];
   validators_checked?: number;
   validators_flag?: string | null;
+  social_map_flag?: string | null;
 }
 export function cohesionCheckLine(brains: { slug: string; title: string; body_md: string; updated_at: number }[], mac: MacCheck | null, now?: number): string;
 export function staleBit(brains: { slug: string; title: string; updated_at: number }[], now?: number): string | null;

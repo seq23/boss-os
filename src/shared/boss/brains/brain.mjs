@@ -609,6 +609,9 @@ export function cohesionCheckLine(brains, mac, now = Date.now()) {
     // The validator matrix (1 Nov 2026): a validator missing from its repo's list or from the matrix is
     // said here, never blocking (`matrixFlagWords`, src/shared/boss/validators/matrix.mjs).
     if (typeof mac.validators_flag === "string" && mac.validators_flag) problems.push(mac.validators_flag);
+    // The Social Map (8 Nov 2026): an account, sameAs or posting job missing from the map, a dead URL or a
+    // stale live_auto job is one clause here, never an email (scripts/ops/lib/social-map.mjs).
+    if (typeof mac.social_map_flag === "string" && mac.social_map_flag) problems.push(mac.social_map_flag);
     const unchecked = Array.isArray(mac.unchecked) ? mac.unchecked : [];
     if (unchecked.length) problems.push(`${names(unchecked, 5)} could not be checked`);
   }

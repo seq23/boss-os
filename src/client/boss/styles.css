@@ -1911,6 +1911,12 @@ a.btn { text-decoration: none; text-align: center; display: inline-block; }
 .email-map-dl dt { color: var(--muted); margin-top: 6px; }
 .email-map-dl dd { margin: 0; color: var(--ink); overflow-wrap: anywhere; }
 .email-map-code { font-family: var(--mono); font-size: 12px; }
+/* The Social Map (☰ More → Social Map, 8 Nov 2026): three sections, one expander per business. */
+.social-section { display: flex; flex-direction: column; gap: 10px; margin-top: 8px; }
+.social-section-title { font-family: var(--mono); font-size: 12px; font-weight: 400; letter-spacing: .12em; text-transform: uppercase; color: var(--muted); margin: 12px 0 0; }
+.social-status { align-self: flex-start; font-size: 13px; border: 1px solid var(--line); border-radius: 3px; padding: 1px 6px; color: var(--muted); }
+.social-status-auto { color: var(--ok); border-color: color-mix(in srgb, var(--ok) 45%, var(--line)); }
+.social-open { align-self: flex-start; font-size: 15px; color: var(--gold-deep, var(--ink)); min-height: 44px; display: inline-flex; align-items: center; }
 /* The Schedule (☰ More → Schedule, 1 Nov 2026): the approved week, one section per day. */
 .schedule-day > summary { display: flex; flex-direction: column; gap: 2px; }
 .schedule-rows { display: flex; flex-direction: column; margin-top: 8px; }

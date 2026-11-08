@@ -33,11 +33,27 @@ import { existsSync, mkdirSync, readFileSync, readdirSync, renameSync, statSync 
 import { homedir } from "node:os";
 import { join } from "node:path";
 import { execFileSync } from "node:child_process";
-import { pathToFileURL } from "node:url";
+import { fileURLToPath, pathToFileURL } from "node:url";
 import { isClientRepo } from "../ops/lib/email-map.mjs";
 import { readRepoCategories } from "../ops/lib/repo-categories.mjs";
 import { readMatrix } from "../ops/validator-matrix.mjs";
 import { matrixFlagWords } from "../../src/shared/boss/validators/matrix.mjs";
+import { runSocialMapCheck, socialMapFlagWords } from "../ops/lib/social-map.mjs";
+
+const BOSS_ROOT = join(fileURLToPath(new URL(".", import.meta.url)), "..", "..");
+
+/**
+ * 6. The Social Map (owner, 8 Nov 2026): `npm run social-map:check` runs here once a week, and a gap
+ * is one clause in the Monday line, never an email. Only where her repos are (~/GitHub under `home`);
+ * anywhere else it is said, never a quiet pass.
+ */
+export async function socialMapFlag({ home = homedir() } = {}) {
+  if (!existsSync(join(home, "GitHub"))) return "the Social Map check found no ~/GitHub to read";
+  const cats = readRepoCategories({ home });
+  const repos = cats.problem ? [] : [...cats.mine, ...cats.system].filter((r) => r !== "boss-os");
+  try { return socialMapFlagWords(await runSocialMapCheck({ root: BOSS_ROOT, home, repos })); }
+  catch (e) { return `the Social Map check stopped (${String(e?.message ?? e).slice(0, 120)})`; }
+}
 
 const ORIGIN = process.env.BOSS_ORIGIN ?? "https://boss.sequoiataylor.com";
 export const HOME_PROJECT = "-Users-sequoiataylor";
@@ -215,7 +231,7 @@ async function waitForCopy(home) {
 }
 
 /** Every check, merged into the record the Worker keeps. */
-export async function runChecks({ home = homedir(), now = Date.now(), dryRun = false, lastCommit, restart, wait, validators = () => readMatrix({ home }) } = {}) {
+export async function runChecks({ home = homedir(), now = Date.now(), dryRun = false, lastCommit, restart, wait, validators = () => readMatrix({ home }), social = () => socialMapFlag({ home }) } = {}) {
   const today = new Date(now).toISOString().slice(0, 10);
   const m = checkMemory({ home, today, dryRun });
   const r = checkRepos({ home, now, ...(lastCommit ? { lastCommit } : {}) });
@@ -229,7 +245,9 @@ export async function runChecks({ home = homedir(), now = Date.now(), dryRun = f
   let matrix = null;
   try { matrix = validators(); } catch { matrix = null; }
   const v = { validators_checked: matrix ? matrix.rows.length : 0, validators_flag: matrixFlagWords(matrix) };
-  return { ...m, ...r, ...s, ...rs, ...c, ...v, matrix, unchecked: [...m.unchecked, ...r.unchecked, ...s.unchecked, ...rs.unchecked] };
+  let social_map_flag = null;
+  try { social_map_flag = await social(); } catch (e) { social_map_flag = `the Social Map check stopped (${String(e?.message ?? e).slice(0, 120)})`; }
+  return { ...m, ...r, ...s, ...rs, ...c, ...v, social_map_flag, matrix, unchecked: [...m.unchecked, ...r.unchecked, ...s.unchecked, ...rs.unchecked] };
 }
 
 export async function post(record, { passcode = process.env.BOSS_PASSCODE, fetchImpl = fetch, origin = ORIGIN, matrix = null } = {}) {
@@ -259,6 +277,7 @@ if (import.meta.url === pathToFileURL(process.argv[1] ?? "").href) {
       console.log(`brains copy: ${rec.copy_age_hours ?? "none"} h old${rec.copy_restarted ? `; restarted, ${rec.copy_fresh_after ? "fresh now" : "still stale"}` : ""}`);
       if (rec.unchecked.length) console.log(`unchecked: ${rec.unchecked.join(", ")}`);
       console.log(`validators: ${rec.validators_checked} in the matrix; ${rec.validators_flag ?? "nothing flagged"}`);
+      console.log(`social map: ${rec.social_map_flag ?? "every account, sameAs and posting job is on the map"}`);
       if (dryRun) return;
       const { matrix, ...record } = rec;
       const out = await post(record, { matrix });
