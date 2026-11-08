@@ -285,13 +285,14 @@
       "platform": "Google Business Profile",
       "handle": "Porch and Party",
       "url": "https://www.google.com/maps?cid=1437103205402862394",
-      "account_email": "unknown",
+      "account_email": "personal — move",
       "status": "live_manual",
       "posts": {
         "by": "hand",
         "what": "Sequoia, by hand (the photos are hers)."
       },
-      "decision": "Facebook matches Google (hours, cities, services, bio, links), 21 Oct 2026."
+      "decision": "Facebook matches Google (hours, cities, services, bio, links), 21 Oct 2026.",
+      "account_email_note": "On Valerie's own Gmail (Porch & Party brain); the address is never written here."
     },
     {
       "id": "pnp-pinterest",
@@ -777,7 +778,7 @@
       "platform": "YouTube",
       "handle": "@whisperalmanac",
       "url": "https://www.youtube.com/@whisperalmanac",
-      "account_email": "unknown",
+      "account_email": "personal — move",
       "status": "planned",
       "posts": {
         "by": "job",
@@ -792,7 +793,8 @@
           }
         ]
       },
-      "decision": "The ASMR channel is Whisper Almanac (8 Nov 2026, supersedes Safe Now Whispers)."
+      "decision": "The ASMR channel is Whisper Almanac (8 Nov 2026, supersedes Safe Now Whispers).",
+      "account_email_note": "On the guides' Google account (cryptoclearr), where the channel was created 6 Nov 2026 (Spry brain)."
     },
     {
       "id": "wa-old-handle",
