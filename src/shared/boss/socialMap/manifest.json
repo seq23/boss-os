@@ -1,0 +1,1464 @@
+{
+  "_note": "THE SOCIAL MAP (owner, 8 Nov 2026: \"a canonical map of what repos and sites have social media pages\"). The ONE list of every social or profile account of every business and friends' site: who it belongs to, its status, what posts to it and the decision behind it. The Social Map page (More, then Social Map, /?tab=social) renders it and nothing else. A new account, a new sameAs in any site's entity.json, or a new posting job goes here in the same PR: tests/socialMap.test.ts fails on a boss-os posting file or posting Schedule job no row cites, and `npm run social-map:check` does the same for every site's entity.json sameAs and every repo's posting code on its default branch, then checks each URL and each live_auto job's last run. Brains keep the rulings; this keeps the list. Public repo: business accounts only, handles and public profile URLs only; never a person's own profile, and an email only as `account_email`: a role address (hello@, support@…) on one of the grid's own domains, \"<domain> mailbox\", \"personal — move\" (the personal address itself is never written), \"no account\" or \"unknown\". Her ruling, 8 Nov 2026: every social and blog account sits under an address of its own site or brand, never her personal Gmail.",
+  "statuses": {
+    "live_auto": "Live, and a job posts to it",
+    "live_manual": "Live, posted by hand (or a profile only)",
+    "planned": "Decided or being set up; not posting yet",
+    "paused": "Switched off on purpose, or its route is broken",
+    "dead": "Gone, or never existed",
+    "never": "Decided: no account"
+  },
+  "groups": {
+    "selling": "Your selling business",
+    "divine_9": "Spry Labs side businesses",
+    "other": "Your other businesses",
+    "support": "Support systems",
+    "friends": "Friends' sites"
+  },
+  "businesses": [
+    {
+      "key": "porch-and-party",
+      "label": "Porch & Party",
+      "group": "selling",
+      "blurb": "Valerie's porch and party business in Memphis. P&P Studio posts to Facebook, Instagram and TikTok through its own Buffer.",
+      "grid_business": "Porch & Party"
+    },
+    {
+      "key": "dream-wedding",
+      "label": "Dream Wedding",
+      "group": "divine_9",
+      "blurb": "The four wedding planning sites (weddingchecklistpdf.com and its three tool sites).",
+      "grid_business": "Dream Wedding"
+    },
+    {
+      "key": "approvalprep",
+      "label": "ApprovalPrep",
+      "group": "divine_9",
+      "blurb": "Letters and checklists for loan, rental and job approvals.",
+      "grid_business": "ApprovalPrep"
+    },
+    {
+      "key": "a-player-mode",
+      "label": "A Player Mode",
+      "group": "divine_9",
+      "blurb": "aplayermode.com and the app.",
+      "grid_business": "A Player Mode"
+    },
+    {
+      "key": "keepmyproof",
+      "label": "KeepMyProof",
+      "group": "divine_9",
+      "blurb": "keepmyproof.com: sourced state pages and the app.",
+      "grid_business": "KeepMyProof"
+    },
+    {
+      "key": "how-we-know",
+      "label": "How We Know",
+      "group": "divine_9",
+      "blurb": "The evidence-first YouTube channel and howweknowdeep.com.",
+      "grid_business": "How We Know"
+    },
+    {
+      "key": "whisper-almanac",
+      "label": "Whisper Almanac",
+      "group": "divine_9",
+      "blurb": "The whispered sleep channel on YouTube (no site yet).",
+      "grid_business": "Whisper Almanac"
+    },
+    {
+      "key": "industry-guides",
+      "label": "Industry Guides",
+      "group": "divine_9",
+      "blurb": "theindustryguides.com and the six guide sites.",
+      "grid_business": "Industry Guides"
+    },
+    {
+      "key": "time-2-read",
+      "label": "Time-2-Read",
+      "group": "divine_9",
+      "blurb": "time-2-read.com. No social accounts.",
+      "grid_business": "Time-2-Read"
+    },
+    {
+      "key": "heygetonmylevel",
+      "label": "heygetonmylevel",
+      "group": "divine_9",
+      "blurb": "heygetonmylevel.com. No social accounts.",
+      "grid_business": "heygetonmylevel"
+    },
+    {
+      "key": "spry-labs",
+      "label": "Spry Labs",
+      "group": "other",
+      "blurb": "The umbrella for every side business (billionairehighperformancecoach.com/spry-labs)."
+    },
+    {
+      "key": "creator-network",
+      "label": "Spry Labs Creator Network",
+      "group": "other",
+      "blurb": "Four virtual creators, one Buffer each. Waiting since 5 Nov 2026."
+    },
+    {
+      "key": "west-peek",
+      "label": "West Peek (community)",
+      "group": "other",
+      "blurb": "westpeek.live, Rooms and TLC. westpeek.live lists no profiles on purpose."
+    },
+    {
+      "key": "authority-network",
+      "label": "Authority backlink network",
+      "group": "support",
+      "blurb": "The three publications and the network's shared accounts. A support system, not a business.",
+      "grid_business": "Authority backlink network"
+    },
+    {
+      "key": "horse",
+      "label": "Horse",
+      "group": "friends",
+      "blurb": "horselegalguide.com. The client posts.",
+      "grid_business": "Horse"
+    },
+    {
+      "key": "hicks",
+      "label": "Hicks",
+      "group": "friends",
+      "blurb": "hicksconsulting.org. The client posts.",
+      "grid_business": "Hicks"
+    },
+    {
+      "key": "detox-denver",
+      "label": "Detox Denver",
+      "group": "friends",
+      "blurb": "detoxdenver.org.",
+      "grid_business": "Detox Denver"
+    },
+    {
+      "key": "cynthia-brown-dds",
+      "label": "Cynthia Brown DDS",
+      "group": "friends",
+      "blurb": "cynthiabrowndds.com.",
+      "grid_business": "Cynthia Brown DDS"
+    },
+    {
+      "key": "wpp-llm",
+      "label": "West Peek Productions (WPP-llm)",
+      "group": "friends",
+      "blurb": "virtualagency-os.com and West Peek Productions.",
+      "grid_business": "WPP-llm"
+    },
+    {
+      "key": "topbarz",
+      "label": "TopBarz",
+      "group": "friends",
+      "blurb": "TopBarz voting (no search work)."
+    }
+  ],
+  "rows": [
+    {
+      "id": "pnp-facebook",
+      "business": "porch-and-party",
+      "site": "porchandparty901.com",
+      "platform": "Facebook Page",
+      "handle": "porchandparty901",
+      "url": "https://www.facebook.com/porchandparty901",
+      "account_email": "unknown",
+      "status": "live_auto",
+      "posts": {
+        "by": "job",
+        "what": "P&P Studio posts through the P&P Buffer (free, 3 of 3 channels).",
+        "code": [
+          {
+            "repo": "creator-studios",
+            "paths": [
+              "worker/services/buffer.ts"
+            ]
+          }
+        ],
+        "check": {
+          "kind": "worker",
+          "why": "P&P Studio runs in the creator-studios Worker; its hourly posting sync has no run history a script can read without her Buffer login."
+        },
+        "jobs": [
+          "creator-studios-wrangler-jsonc"
+        ]
+      },
+      "decision": "Old Spry Ventures Page repurposed 13 Oct 2026; the Page never mentions Spry. Name change to \"Porch & Party 901\" is with Facebook for review (7 Nov)."
+    },
+    {
+      "id": "pnp-marketplace",
+      "business": "porch-and-party",
+      "site": "porchandparty901.com",
+      "platform": "Facebook Marketplace listings",
+      "handle": null,
+      "url": null,
+      "account_email": "unknown",
+      "status": "live_auto",
+      "posts": {
+        "by": "job",
+        "what": "The Mac renews and posts the six bundle listings every day at 13:40 Central.",
+        "code": [
+          {
+            "repo": "~/bin",
+            "paths": [
+              "pnp-listings.sh"
+            ]
+          }
+        ],
+        "check": {
+          "kind": "launchd",
+          "label": "com.seq.boss-fb-renew",
+          "log_dir": "Library/Logs/fb-renew",
+          "max_age_days": 2
+        },
+        "jobs": [
+          "pnp-marketplace",
+          "pnp-photo-ask"
+        ]
+      },
+      "decision": "Listings stay email-only, hold only the six bundles, edited in place, never deleted (15 Oct 2026).",
+      "no_url_why": "Marketplace listings have no profile page of their own."
+    },
+    {
+      "id": "pnp-instagram",
+      "business": "porch-and-party",
+      "site": "porchandparty901.com",
+      "platform": "Instagram",
+      "handle": "@porchandparty901",
+      "url": "https://www.instagram.com/porchandparty901/",
+      "account_email": "hello@porchandparty901.com",
+      "status": "live_auto",
+      "posts": {
+        "by": "job",
+        "what": "P&P Studio posts through the P&P Buffer.",
+        "code": [
+          {
+            "repo": "creator-studios",
+            "paths": [
+              "worker/services/buffer.ts"
+            ]
+          }
+        ],
+        "check": {
+          "kind": "worker",
+          "why": "Same Worker as the Facebook Page."
+        },
+        "jobs": [
+          "creator-studios-wrangler-jsonc"
+        ]
+      },
+      "decision": "Instagram and TikTok YES via P&P Studio (22 Oct 2026); own accounts, separate from hers (7 Nov). Was under appeal from 7 Nov; the profile showed active on 8 Nov, so it is in sameAs."
+    },
+    {
+      "id": "pnp-tiktok",
+      "business": "porch-and-party",
+      "site": "porchandparty901.com",
+      "platform": "TikTok",
+      "handle": "@porch.party.901",
+      "url": "https://www.tiktok.com/@porch.party.901",
+      "account_email": "porchandparty901.com mailbox",
+      "status": "live_auto",
+      "posts": {
+        "by": "job",
+        "what": "P&P Studio posts through the P&P Buffer (17 clips approved 7 Nov).",
+        "code": [
+          {
+            "repo": "creator-studios",
+            "paths": [
+              "worker/services/buffer.ts"
+            ]
+          }
+        ],
+        "check": {
+          "kind": "worker",
+          "why": "Same Worker as the Facebook Page."
+        },
+        "jobs": [
+          "creator-studios-wrangler-jsonc"
+        ]
+      },
+      "decision": "Instagram and TikTok YES via P&P Studio (22 Oct 2026)."
+    },
+    {
+      "id": "pnp-google",
+      "business": "porch-and-party",
+      "site": "porchandparty901.com",
+      "platform": "Google Business Profile",
+      "handle": "Porch and Party",
+      "url": "https://www.google.com/maps?cid=1437103205402862394",
+      "account_email": "unknown",
+      "status": "live_manual",
+      "posts": {
+        "by": "hand",
+        "what": "Sequoia, by hand (the photos are hers)."
+      },
+      "decision": "Facebook matches Google (hours, cities, services, bio, links), 21 Oct 2026."
+    },
+    {
+      "id": "pnp-pinterest",
+      "business": "porch-and-party",
+      "site": "porchandparty901.com",
+      "platform": "Pinterest",
+      "handle": null,
+      "url": null,
+      "account_email": "no account",
+      "status": "never",
+      "posts": {
+        "by": "none",
+        "what": "Nothing."
+      },
+      "decision": "P&P never posts to Pinterest: too local (her words, 7 Nov 2026)."
+    },
+    {
+      "id": "pnp-bing",
+      "business": "porch-and-party",
+      "site": "porchandparty901.com",
+      "platform": "Bing Places",
+      "handle": null,
+      "url": null,
+      "account_email": "no account",
+      "status": "paused",
+      "posts": {
+        "by": "none",
+        "what": "Nothing yet."
+      },
+      "decision": "Bing, Apple and Nextdoor listings tabled until she says \"Porch & Party listings\"."
+    },
+    {
+      "id": "pnp-nextdoor",
+      "business": "porch-and-party",
+      "site": "porchandparty901.com",
+      "platform": "Nextdoor business page",
+      "handle": null,
+      "url": null,
+      "account_email": "no account",
+      "status": "paused",
+      "posts": {
+        "by": "none",
+        "what": "Nothing yet."
+      },
+      "decision": "Tabled with Bing Places until she says \"Porch & Party listings\"."
+    },
+    {
+      "id": "dw-pinterest",
+      "business": "dream-wedding",
+      "site": "weddingchecklistpdf.com (+ budget, seating, timeline sites)",
+      "platform": "Pinterest",
+      "handle": "weddingchecklistpdf",
+      "url": "https://www.pinterest.com/weddingchecklistpdf/",
+      "account_email": "unknown",
+      "status": "live_auto",
+      "posts": {
+        "by": "job",
+        "what": "Pinterest auto-publish reads one RSS feed per board; the daily drip keeps the queue stocked.",
+        "code": [
+          {
+            "repo": "dream-wedding-builder",
+            "paths": [
+              ".github/workflows/pinterest-drip.yml",
+              "app/pinfeed.xml/route.ts",
+              "app/pinfeed/[board]/route.ts",
+              "app/pinfeed/route.ts",
+              "lib/pinfeed.ts"
+            ]
+          }
+        ],
+        "check": {
+          "kind": "feed",
+          "feeds": [
+            "https://weddingchecklistpdf.com/pinfeed.xml"
+          ],
+          "workflow": {
+            "repo": "dream-wedding-builder",
+            "file": "pinterest-drip.yml"
+          },
+          "max_age_days": 3
+        },
+        "jobs": [
+          "dream-wedding-builder-pinterest-drip"
+        ]
+      },
+      "decision": "3 pins a day per account across topic boards, one feed per board (1 Nov 2026); Wedding Checklist PDF has 4 boards."
+    },
+    {
+      "id": "dw-instagram",
+      "business": "dream-wedding",
+      "site": "weddingchecklistpdf.com (+ budget, seating, timeline sites)",
+      "platform": "Instagram",
+      "handle": "@dreamweddingbuilder",
+      "url": "https://www.instagram.com/dreamweddingbuilder/",
+      "account_email": "unknown",
+      "status": "planned",
+      "posts": {
+        "by": "none",
+        "what": "Connected to the second Buffer; nothing queued."
+      },
+      "decision": "Starts posting only against its scorecard row dw-brand-social (7 Nov 2026)."
+    },
+    {
+      "id": "dw-tiktok",
+      "business": "dream-wedding",
+      "site": "weddingchecklistpdf.com (+ budget, seating, timeline sites)",
+      "platform": "TikTok",
+      "handle": "@dreamweddingbuilder",
+      "url": "https://www.tiktok.com/@dreamweddingbuilder",
+      "account_email": "unknown",
+      "status": "planned",
+      "posts": {
+        "by": "none",
+        "what": "Connected to the second Buffer; nothing queued."
+      },
+      "decision": "The old persona account repurposed, followers kept (her call, 7 Nov 2026); starts against dw-brand-social."
+    },
+    {
+      "id": "ap-pinterest",
+      "business": "approvalprep",
+      "site": "approvalprep.com",
+      "platform": "Pinterest",
+      "handle": "approvalprep",
+      "url": "https://www.pinterest.com/approvalprep/",
+      "account_email": "unknown",
+      "status": "live_auto",
+      "posts": {
+        "by": "job",
+        "what": "Pinterest auto-publish reads five board feeds (/pinfeed.xml and /pinfeed/<board>.xml); the daily refill keeps the queue stocked.",
+        "code": [
+          {
+            "repo": "approvalprep",
+            "paths": [
+              ".github/workflows/pinterest-refill.yml",
+              "functions/pinfeed.xml.js",
+              "functions/pinfeed/[board].js",
+              "src/lib/pinfeed-core.mjs",
+              "src/lib/pinfeed.mjs",
+              "src/pages/pinfeed.xml.ts"
+            ]
+          }
+        ],
+        "check": {
+          "kind": "feed",
+          "feeds": [
+            "https://approvalprep.com/pinfeed.xml",
+            "https://approvalprep.com/pinfeed/apartment-rental.xml",
+            "https://approvalprep.com/pinfeed/letter-of-explanation.xml",
+            "https://approvalprep.com/pinfeed/income-employment.xml",
+            "https://approvalprep.com/pinfeed/small-business-loans.xml"
+          ],
+          "workflow": {
+            "repo": "approvalprep",
+            "file": "pinterest-refill.yml"
+          },
+          "max_age_days": 3
+        },
+        "jobs": [
+          "approvalprep-pinterest-refill",
+          "approvalprep-pinterest-metrics"
+        ]
+      },
+      "decision": "5 boards, 3 pins a day across them (1 Nov 2026). Checked 8 Nov: all 5 board feeds are live and 3 pins a day reach them; /pinfeed.xml is the first board, so it only gets pins no other board matches (newest 4 Nov is expected). 7 Nov had none: the held pins were released from the next day."
+    },
+    {
+      "id": "ap-instagram",
+      "business": "approvalprep",
+      "site": "approvalprep.com",
+      "platform": "Instagram",
+      "handle": "@approvalprep",
+      "url": "https://www.instagram.com/approvalprep/",
+      "account_email": "unknown",
+      "status": "planned",
+      "posts": {
+        "by": "none",
+        "what": "Connected to the second Buffer; nothing queued."
+      },
+      "decision": "Starts posting only against its scorecard row ap-brand-social (7 Nov 2026)."
+    },
+    {
+      "id": "ap-linkedin",
+      "business": "approvalprep",
+      "site": "approvalprep.com",
+      "platform": "LinkedIn company page",
+      "handle": "approvalprep",
+      "url": "https://www.linkedin.com/company/approvalprep/",
+      "account_email": "unknown",
+      "status": "planned",
+      "posts": {
+        "by": "none",
+        "what": "Nothing; the page is not created."
+      },
+      "decision": "Pending in entity.json; waits on her LinkedIn (restricted since 9 Oct)."
+    },
+    {
+      "id": "apm-pinterest",
+      "business": "a-player-mode",
+      "site": "aplayermode.com",
+      "platform": "Pinterest",
+      "handle": "aplayermode",
+      "url": "https://www.pinterest.com/aplayermode/",
+      "account_email": "unknown",
+      "status": "live_auto",
+      "posts": {
+        "by": "job",
+        "what": "Pinterest auto-publish reads /pinfeed.xml and 4 board feeds built from the pin queue.",
+        "code": [
+          {
+            "repo": "sprylabs-hpc-site",
+            "paths": [
+              "scripts/aplayermode/pinfeed_lib.mjs",
+              "config/aplayermode_pinfeed.json"
+            ]
+          }
+        ],
+        "check": {
+          "kind": "feed",
+          "feeds": [
+            "https://aplayermode.com/pinfeed.xml"
+          ],
+          "max_age_days": 3
+        }
+      },
+      "decision": "Spry's Pinterest became the aplayermode account (16 Oct 2026); 4 boards, 3 pins a day (1 Nov)."
+    },
+    {
+      "id": "spry-gumroad",
+      "business": "spry-labs",
+      "site": "billionairehighperformancecoach.com/spry-labs",
+      "platform": "Gumroad store",
+      "handle": "sprylabs",
+      "url": "https://sprylabs.gumroad.com/",
+      "account_email": "unknown",
+      "status": "live_manual",
+      "posts": {
+        "by": "hand",
+        "what": "A store listing (BHPC OS); affiliates on."
+      },
+      "decision": "In the Spry Labs sameAs."
+    },
+    {
+      "id": "spry-linkedin",
+      "business": "spry-labs",
+      "site": "billionairehighperformancecoach.com/spry-labs",
+      "platform": "LinkedIn company page",
+      "handle": "Spry Labs",
+      "url": null,
+      "account_email": "unknown",
+      "status": "paused",
+      "posts": {
+        "by": "none",
+        "what": "Nothing."
+      },
+      "decision": "Locked out and parked (her words, 8 Nov 2026). Never in any sameAs."
+    },
+    {
+      "id": "spry-crunchbase",
+      "business": "spry-labs",
+      "site": "billionairehighperformancecoach.com/spry-labs",
+      "platform": "Crunchbase",
+      "handle": "Spry Labs",
+      "url": null,
+      "account_email": "no account",
+      "status": "never",
+      "posts": {
+        "by": "none",
+        "what": "Nothing."
+      },
+      "decision": "Not created (her words, 8 Nov 2026). Never in any sameAs."
+    },
+    {
+      "id": "grid-linkedin",
+      "business": "spry-labs",
+      "site": "the grid brands",
+      "platform": "LinkedIn company pages (about 10)",
+      "handle": null,
+      "url": null,
+      "account_email": "no account",
+      "status": "planned",
+      "posts": {
+        "by": "none",
+        "what": "Nothing."
+      },
+      "decision": "A session after the LinkedIn unlock (spry brain)."
+    },
+    {
+      "id": "creator-buffer",
+      "business": "creator-network",
+      "site": "-",
+      "platform": "Buffer, 4 persona channels",
+      "handle": "Marcus, Nia, Camille Rose, Maya",
+      "url": null,
+      "account_email": "no account",
+      "status": "paused",
+      "posts": {
+        "by": "job",
+        "what": "The daily Creator Network job would post through each persona's Buffer.",
+        "code": [
+          {
+            "repo": "creator-network",
+            "paths": [
+              "distribution/buffer/client.mjs",
+              "scripts/buffer-discovery.mjs"
+            ]
+          }
+        ],
+        "jobs": [
+          "creator-network-daily-creator-network"
+        ]
+      },
+      "decision": "The Creator Network waits: the AI creators cost too much (5 Nov 2026). No accounts exist.",
+      "no_url_why": "No persona account was ever created."
+    },
+    {
+      "id": "kmp-blogger",
+      "business": "keepmyproof",
+      "site": "keepmyproof.com",
+      "platform": "Blogger",
+      "handle": "keepmyproof.blogspot.com",
+      "url": "https://keepmyproof.blogspot.com/",
+      "account_email": "time-2-read.com mailbox",
+      "status": "live_auto",
+      "posts": {
+        "by": "job",
+        "what": "The syndication job cross-posts daily.",
+        "code": [
+          {
+            "repo": "keepmyproof",
+            "paths": [
+              ".github/workflows/syndicate.yml",
+              "scripts/syndicate.mjs"
+            ]
+          }
+        ],
+        "check": {
+          "kind": "workflow",
+          "workflow": {
+            "repo": "keepmyproof",
+            "file": "syndicate.yml"
+          },
+          "max_age_days": 2
+        }
+      },
+      "decision": "Blogger back on (owner, 8 Nov 2026); distribution plan approved 2 Nov.",
+      "account_email_note": "Moved off her personal Google account to the Time-2-Read outreach mailbox (8 Nov 2026)."
+    },
+    {
+      "id": "kmp-wordpress",
+      "business": "keepmyproof",
+      "site": "keepmyproof.com",
+      "platform": "WordPress.com",
+      "handle": "keepmyproof.wordpress.com",
+      "url": "https://keepmyproof.wordpress.com/",
+      "account_email": "unknown",
+      "status": "live_auto",
+      "posts": {
+        "by": "job",
+        "what": "The syndication job cross-posts each new KeepMyProof page.",
+        "code": [
+          {
+            "repo": "keepmyproof",
+            "paths": [
+              ".github/workflows/syndicate.yml",
+              "scripts/syndicate.mjs"
+            ]
+          }
+        ],
+        "check": {
+          "kind": "workflow",
+          "workflow": {
+            "repo": "keepmyproof",
+            "file": "syndicate.yml"
+          },
+          "max_age_days": 2
+        }
+      },
+      "decision": "Distribution plan approved in full, 2 Nov 2026; WordPress.com posting on (8 Nov).",
+      "account_email_note": "On its own KeepMyProof account, off her personal Gmail (8 Nov 2026); the address is not recorded here."
+    },
+    {
+      "id": "kmp-pinterest",
+      "business": "keepmyproof",
+      "site": "keepmyproof.com",
+      "platform": "Pinterest",
+      "handle": null,
+      "url": null,
+      "account_email": "no account",
+      "status": "planned",
+      "posts": {
+        "by": "none",
+        "what": "Nothing; no account is named yet."
+      },
+      "decision": "Automated Pinterest from the checklists on an existing Spry Labs account (the plan)."
+    },
+    {
+      "id": "kmp-medium",
+      "business": "keepmyproof",
+      "site": "keepmyproof.com",
+      "platform": "Medium",
+      "handle": null,
+      "url": null,
+      "account_email": "no account",
+      "status": "never",
+      "posts": {
+        "by": "none",
+        "what": "Nothing."
+      },
+      "decision": "Skipped: Medium gives no integration token."
+    },
+    {
+      "id": "kmp-github",
+      "business": "keepmyproof",
+      "site": "keepmyproof.com",
+      "platform": "GitHub (code repo)",
+      "handle": "seq23/keepmyproof",
+      "url": "https://github.com/seq23/keepmyproof",
+      "account_email": "unknown",
+      "status": "live_manual",
+      "posts": {
+        "by": "none",
+        "what": "A public code repo in sameAs; nothing posts."
+      },
+      "decision": "In site/data/entity.json sameAs."
+    },
+    {
+      "id": "hwk-youtube",
+      "business": "how-we-know",
+      "site": "howweknowdeep.com",
+      "platform": "YouTube",
+      "handle": "@howweknowdeep",
+      "url": "https://www.youtube.com/@howweknowdeep",
+      "account_email": "unknown",
+      "status": "live_auto",
+      "posts": {
+        "by": "job",
+        "what": "Uploads daily at 09:00 Central and a Short at 18:00 Central from R2; the Mac renders.",
+        "code": [
+          {
+            "repo": "how-we-know",
+            "paths": [
+              ".github/workflows/loop-upload-cloud.yml",
+              ".github/workflows/loop-shorts-cloud.yml",
+              "loop/upload.py",
+              "loop/publish.py",
+              "loop/backfill.py",
+              "loop/quota.py",
+              "loop/supersede_swap.py",
+              "auth/check_auth.py",
+              "site/production/automation/upload_youtube.py"
+            ]
+          }
+        ],
+        "check": {
+          "kind": "workflow",
+          "workflow": {
+            "repo": "how-we-know",
+            "file": "loop-upload-cloud.yml"
+          },
+          "max_age_days": 2
+        },
+        "jobs": [
+          "how-we-know-loop-upload-cloud",
+          "how-we-know-loop-shorts-cloud",
+          "howweknow-backfill",
+          "shorts-arm"
+        ]
+      },
+      "decision": "Evidence-first YouTube with affiliate links. Never more than 3 YouTube channels in total (5 Nov 2026)."
+    },
+    {
+      "id": "wa-youtube",
+      "business": "whisper-almanac",
+      "site": "whisperalmanac.com (no site yet)",
+      "platform": "YouTube",
+      "handle": "@whisperalmanac",
+      "url": "https://www.youtube.com/@whisperalmanac",
+      "account_email": "unknown",
+      "status": "planned",
+      "posts": {
+        "by": "job",
+        "what": "The whisper lane uploads from the Mac once the first episode is ready (0 uploads).",
+        "code": [
+          {
+            "repo": "how-we-know",
+            "paths": [
+              "loop/whisper_upload.py",
+              "loop/whisper_lane.py"
+            ]
+          }
+        ]
+      },
+      "decision": "The ASMR channel is Whisper Almanac (8 Nov 2026, supersedes Safe Now Whispers)."
+    },
+    {
+      "id": "wa-old-handle",
+      "business": "whisper-almanac",
+      "site": "-",
+      "platform": "YouTube (old name)",
+      "handle": "@safenowwhispers",
+      "url": "https://www.youtube.com/@safenowwhispers",
+      "account_email": "no account",
+      "status": "dead",
+      "posts": {
+        "by": "none",
+        "what": "Nothing."
+      },
+      "decision": "Never created (404); the channel is @whisperalmanac."
+    },
+    {
+      "id": "ig-linkedin",
+      "business": "industry-guides",
+      "site": "theindustryguides.com (+6 guide sites)",
+      "platform": "LinkedIn company page",
+      "handle": "theindustryguides",
+      "url": "https://www.linkedin.com/company/theindustryguides",
+      "account_email": "unknown",
+      "status": "planned",
+      "posts": {
+        "by": "none",
+        "what": "Nothing."
+      },
+      "decision": "Pending in entity.json; waits on her LinkedIn (restricted since 9 Oct)."
+    },
+    {
+      "id": "ig-pinterest",
+      "business": "industry-guides",
+      "site": "theindustryguides.com (+6 guide sites)",
+      "platform": "Pinterest",
+      "handle": "theindustryguides",
+      "url": "https://www.pinterest.com/theindustryguides/",
+      "account_email": "no account",
+      "status": "planned",
+      "posts": {
+        "by": "none",
+        "what": "Nothing; the account does not exist yet."
+      },
+      "decision": "Optional, pending in entity.json."
+    },
+    {
+      "id": "ig-github-velocity",
+      "business": "industry-guides",
+      "site": "theindustryguides.com",
+      "platform": "GitHub (code repo)",
+      "handle": "seq23/local-guides-citation-velocity",
+      "url": "https://github.com/seq23/local-guides-citation-velocity",
+      "account_email": "unknown",
+      "status": "live_manual",
+      "posts": {
+        "by": "none",
+        "what": "A public code repo in sameAs; nothing posts."
+      },
+      "decision": "In entity.json sameAs."
+    },
+    {
+      "id": "ig-github-generator",
+      "business": "industry-guides",
+      "site": "the six guide sites",
+      "platform": "GitHub (code repo)",
+      "handle": "seq23/local-guides-generator",
+      "url": "https://github.com/seq23/local-guides-generator",
+      "account_email": "unknown",
+      "status": "live_manual",
+      "posts": {
+        "by": "none",
+        "what": "A public code repo in sameAs; nothing posts."
+      },
+      "decision": "In each guide's entity.json sameAs."
+    },
+    {
+      "id": "t2r-github",
+      "business": "time-2-read",
+      "site": "time-2-read.com",
+      "platform": "GitHub (code repo)",
+      "handle": "seq23/dailystory",
+      "url": "https://github.com/seq23/dailystory",
+      "account_email": "unknown",
+      "status": "live_manual",
+      "posts": {
+        "by": "none",
+        "what": "A public code repo in sameAs; nothing posts."
+      },
+      "decision": "In src/seo/entity.json sameAs."
+    },
+    {
+      "id": "hgoml-github",
+      "business": "heygetonmylevel",
+      "site": "heygetonmylevel.com",
+      "platform": "GitHub (code repo)",
+      "handle": "seq23/heygetonmylevel",
+      "url": "https://github.com/seq23/heygetonmylevel",
+      "account_email": "unknown",
+      "status": "live_manual",
+      "posts": {
+        "by": "none",
+        "what": "A public code repo in sameAs; nothing posts."
+      },
+      "decision": "In entity.json sameAs."
+    },
+    {
+      "id": "wp-instagram",
+      "business": "west-peek",
+      "site": "westpeek.live",
+      "platform": "Instagram",
+      "handle": "@westpeek",
+      "url": "https://www.instagram.com/westpeek/",
+      "account_email": "unknown",
+      "status": "live_manual",
+      "posts": {
+        "by": "hand",
+        "what": "By hand (who posts is not recorded)."
+      },
+      "decision": "westpeek.live serves no sameAs, by design."
+    },
+    {
+      "id": "wp-x",
+      "business": "west-peek",
+      "site": "westpeek.live",
+      "platform": "X",
+      "handle": "@WestPeek",
+      "url": "https://x.com/WestPeek",
+      "account_email": "unknown",
+      "status": "live_manual",
+      "posts": {
+        "by": "hand",
+        "what": "By hand (who posts is not recorded)."
+      },
+      "decision": "westpeek.live serves no sameAs, by design."
+    },
+    {
+      "id": "abn-x",
+      "business": "authority-network",
+      "site": "15 network brands",
+      "platform": "X (via Buffer)",
+      "handle": "@sequoia_ta12767",
+      "url": "https://x.com/sequoia_ta12767",
+      "account_email": "unknown",
+      "status": "paused",
+      "posts": {
+        "by": "job",
+        "what": "social-autopost.yml runs 4 times a day but posts nothing: Buffer has no X channel.",
+        "code": [
+          {
+            "repo": "authority-backlink-network",
+            "paths": [
+              ".github/workflows/social-autopost.yml",
+              "scripts/social_publisher.py",
+              "scripts/lib/buffer_route.py"
+            ]
+          }
+        ],
+        "jobs": [
+          "authority-backlink-network-social-autopost",
+          "authority-backlink-network-authority-v4-autopilot"
+        ]
+      },
+      "decision": "X dropped; no Buffer channel (8 Nov 2026). 481 deferred, 0 posted."
+    },
+    {
+      "id": "abn-linkedin",
+      "business": "authority-network",
+      "site": "15 network brands",
+      "platform": "LinkedIn",
+      "handle": null,
+      "url": null,
+      "account_email": "no account",
+      "status": "paused",
+      "posts": {
+        "by": "job",
+        "what": "The same publisher; 581 queued, dormant since 29 Aug.",
+        "code": [
+          {
+            "repo": "authority-backlink-network",
+            "paths": [
+              ".github/workflows/social-autopost.yml",
+              "scripts/social_publisher.py",
+              "scripts/lib/buffer_route.py"
+            ]
+          }
+        ]
+      },
+      "decision": "Dormant since 29 Aug 2026.",
+      "no_url_why": "The network never had its own LinkedIn page."
+    },
+    {
+      "id": "abn-fol-bluesky",
+      "business": "authority-network",
+      "site": "founderoperatorlibrary.com",
+      "platform": "Bluesky",
+      "handle": "@founderoperatorlibrary.com",
+      "url": "https://bsky.app/profile/did:plc:qwhjyy7jqvlscz526b6fknf4",
+      "account_email": "hello@founderoperatorlibrary.com",
+      "status": "live_auto",
+      "posts": {
+        "by": "job",
+        "what": "Each publication posts its own new articles (at most 2 a day) from social-autopost.yml.",
+        "code": [
+          {
+            "repo": "authority-backlink-network",
+            "paths": [
+              "scripts/publication_autopost.py"
+            ]
+          }
+        ],
+        "check": {
+          "kind": "workflow",
+          "workflow": {
+            "repo": "authority-backlink-network",
+            "file": "social-autopost.yml"
+          },
+          "max_age_days": 2
+        },
+        "jobs": [
+          "authority-backlink-network-social-autopost"
+        ]
+      },
+      "decision": "Own Bluesky account per publication, handle = its domain; first posts 8 Nov 2026 (publications PRs #159, #160)."
+    },
+    {
+      "id": "abn-fol-wordpress",
+      "business": "authority-network",
+      "site": "founderoperatorlibrary.com",
+      "platform": "WordPress.com",
+      "handle": "founderoperatorlibrary.wordpress.com",
+      "url": "https://founderoperatorlibrary.wordpress.com",
+      "account_email": "hello@founderoperatorlibrary.com",
+      "status": "live_auto",
+      "posts": {
+        "by": "job",
+        "what": "Each publication posts its own new articles (at most 1 a day per site) from social-autopost.yml.",
+        "code": [
+          {
+            "repo": "authority-backlink-network",
+            "paths": [
+              "scripts/publication_autopost.py"
+            ]
+          }
+        ],
+        "check": {
+          "kind": "workflow",
+          "workflow": {
+            "repo": "authority-backlink-network",
+            "file": "social-autopost.yml"
+          },
+          "max_age_days": 2
+        },
+        "jobs": [
+          "authority-backlink-network-social-autopost"
+        ]
+      },
+      "decision": "One WordPress.com account owns all three library sites, by decision (8 Nov 2026); public and auto-posting (publications PR #161).",
+      "account_email_note": "The 3 publications are one family and share one WordPress.com account by decision (8 Nov 2026)."
+    },
+    {
+      "id": "abn-mvl-bluesky",
+      "business": "authority-network",
+      "site": "memphisvendorlibrary.com",
+      "platform": "Bluesky",
+      "handle": "@memphisvendorlibrary.com",
+      "url": "https://bsky.app/profile/did:plc:h7kgmjhjxa2wdzp7c4xpowgc",
+      "account_email": "hello@memphisvendorlibrary.com",
+      "status": "live_auto",
+      "posts": {
+        "by": "job",
+        "what": "Each publication posts its own new articles (at most 2 a day) from social-autopost.yml.",
+        "code": [
+          {
+            "repo": "authority-backlink-network",
+            "paths": [
+              "scripts/publication_autopost.py"
+            ]
+          }
+        ],
+        "check": {
+          "kind": "workflow",
+          "workflow": {
+            "repo": "authority-backlink-network",
+            "file": "social-autopost.yml"
+          },
+          "max_age_days": 2
+        },
+        "jobs": [
+          "authority-backlink-network-social-autopost"
+        ]
+      },
+      "decision": "Own Bluesky account per publication, handle = its domain; first posts 8 Nov 2026 (publications PRs #159, #160)."
+    },
+    {
+      "id": "abn-mvl-wordpress",
+      "business": "authority-network",
+      "site": "memphisvendorlibrary.com",
+      "platform": "WordPress.com",
+      "handle": "memphisvendorlibrary.wordpress.com",
+      "url": "https://memphisvendorlibrary.wordpress.com",
+      "account_email": "hello@founderoperatorlibrary.com",
+      "status": "live_auto",
+      "posts": {
+        "by": "job",
+        "what": "Each publication posts its own new articles (at most 1 a day per site) from social-autopost.yml.",
+        "code": [
+          {
+            "repo": "authority-backlink-network",
+            "paths": [
+              "scripts/publication_autopost.py"
+            ]
+          }
+        ],
+        "check": {
+          "kind": "workflow",
+          "workflow": {
+            "repo": "authority-backlink-network",
+            "file": "social-autopost.yml"
+          },
+          "max_age_days": 2
+        },
+        "jobs": [
+          "authority-backlink-network-social-autopost"
+        ]
+      },
+      "decision": "One WordPress.com account owns all three library sites, by decision (8 Nov 2026); public and auto-posting (publications PR #161).",
+      "account_email_note": "The 3 publications are one family and share one WordPress.com account by decision (8 Nov 2026)."
+    },
+    {
+      "id": "abn-prl-bluesky",
+      "business": "authority-network",
+      "site": "professionalresourcelibrary.com",
+      "platform": "Bluesky",
+      "handle": "@professionalresourcelibrary.com",
+      "url": "https://bsky.app/profile/did:plc:2ltbq4ijnoxdwqofgmjhna7b",
+      "account_email": "hello@professionalresourcelibrary.com",
+      "status": "live_auto",
+      "posts": {
+        "by": "job",
+        "what": "Each publication posts its own new articles (at most 2 a day) from social-autopost.yml.",
+        "code": [
+          {
+            "repo": "authority-backlink-network",
+            "paths": [
+              "scripts/publication_autopost.py"
+            ]
+          }
+        ],
+        "check": {
+          "kind": "workflow",
+          "workflow": {
+            "repo": "authority-backlink-network",
+            "file": "social-autopost.yml"
+          },
+          "max_age_days": 2
+        },
+        "jobs": [
+          "authority-backlink-network-social-autopost"
+        ]
+      },
+      "decision": "Own Bluesky account per publication, handle = its domain; first posts 8 Nov 2026 (publications PRs #159, #160)."
+    },
+    {
+      "id": "abn-prl-wordpress",
+      "business": "authority-network",
+      "site": "professionalresourcelibrary.com",
+      "platform": "WordPress.com",
+      "handle": "professionalresourcelibrary.wordpress.com",
+      "url": "https://professionalresourcelibrary.wordpress.com",
+      "account_email": "hello@founderoperatorlibrary.com",
+      "status": "live_auto",
+      "posts": {
+        "by": "job",
+        "what": "Each publication posts its own new articles (at most 1 a day per site) from social-autopost.yml.",
+        "code": [
+          {
+            "repo": "authority-backlink-network",
+            "paths": [
+              "scripts/publication_autopost.py"
+            ]
+          }
+        ],
+        "check": {
+          "kind": "workflow",
+          "workflow": {
+            "repo": "authority-backlink-network",
+            "file": "social-autopost.yml"
+          },
+          "max_age_days": 2
+        },
+        "jobs": [
+          "authority-backlink-network-social-autopost"
+        ]
+      },
+      "decision": "One WordPress.com account owns all three library sites, by decision (8 Nov 2026); public and auto-posting (publications PR #161).",
+      "account_email_note": "The 3 publications are one family and share one WordPress.com account by decision (8 Nov 2026)."
+    },
+    {
+      "id": "horse-website",
+      "business": "horse",
+      "site": "horselegalguide.com",
+      "platform": "Website (in sameAs)",
+      "handle": "wisecovington.com",
+      "url": "https://wisecovington.com",
+      "account_email": "unknown",
+      "status": "live_manual",
+      "posts": {
+        "by": "hand",
+        "what": "The client."
+      },
+      "decision": "Client site in sameAs."
+    },
+    {
+      "id": "horse-x",
+      "business": "horse",
+      "site": "horselegalguide.com",
+      "platform": "X",
+      "handle": "@WiseCovington",
+      "url": "https://x.com/WiseCovington",
+      "account_email": "unknown",
+      "status": "live_manual",
+      "posts": {
+        "by": "hand",
+        "what": "The client (approved copy is emailed to them)."
+      },
+      "decision": "Client account."
+    },
+    {
+      "id": "horse-instagram",
+      "business": "horse",
+      "site": "horselegalguide.com",
+      "platform": "Instagram",
+      "handle": "@legally__sound",
+      "url": "https://www.instagram.com/legally__sound/",
+      "account_email": "unknown",
+      "status": "live_manual",
+      "posts": {
+        "by": "hand",
+        "what": "The client."
+      },
+      "decision": "Client account."
+    },
+    {
+      "id": "hicks-instagram",
+      "business": "hicks",
+      "site": "hicksconsulting.org",
+      "platform": "Instagram",
+      "handle": "@hicksconsulting",
+      "url": "https://www.instagram.com/hicksconsulting",
+      "account_email": "unknown",
+      "status": "live_manual",
+      "posts": {
+        "by": "hand",
+        "what": "The client."
+      },
+      "decision": "Client account."
+    },
+    {
+      "id": "hicks-facebook",
+      "business": "hicks",
+      "site": "hicksconsulting.org",
+      "platform": "Facebook",
+      "handle": "Hicks Consulting",
+      "url": "https://www.facebook.com/profile.php?id=61563824221571",
+      "account_email": "unknown",
+      "status": "live_manual",
+      "posts": {
+        "by": "hand",
+        "what": "The client."
+      },
+      "decision": "Client account."
+    },
+    {
+      "id": "hicks-linkedin",
+      "business": "hicks",
+      "site": "hicksconsulting.org",
+      "platform": "LinkedIn company page",
+      "handle": "hicks-consulting-llc",
+      "url": "https://www.linkedin.com/company/hicks-consulting-llc",
+      "account_email": "unknown",
+      "status": "live_manual",
+      "posts": {
+        "by": "hand",
+        "what": "The client."
+      },
+      "decision": "Client account; not in sameAs."
+    },
+    {
+      "id": "hicks-gumroad",
+      "business": "hicks",
+      "site": "hicksconsulting.org",
+      "platform": "Gumroad store",
+      "handle": "hicksconsulting",
+      "url": "https://hicksconsulting.gumroad.com/",
+      "account_email": "unknown",
+      "status": "live_manual",
+      "posts": {
+        "by": "hand",
+        "what": "The client."
+      },
+      "decision": "Client store; not in sameAs."
+    },
+    {
+      "id": "detox-sister",
+      "business": "detox-denver",
+      "site": "detoxdenver.org",
+      "platform": "Website (sister site, in sameAs)",
+      "handle": "diannesplacerecoveryservices.com",
+      "url": "https://www.diannesplacerecoveryservices.com/",
+      "account_email": "unknown",
+      "status": "live_manual",
+      "posts": {
+        "by": "hand",
+        "what": "The client."
+      },
+      "decision": "Client site in sameAs."
+    },
+    {
+      "id": "cbdds-provider",
+      "business": "cynthia-brown-dds",
+      "site": "cynthiabrowndds.com",
+      "platform": "Provider page (Aspen Dental)",
+      "handle": "aspendental.com provider page",
+      "url": "https://www.aspendental.com/providers/cynthia-brown/1194138503/",
+      "account_email": "unknown",
+      "status": "live_manual",
+      "posts": {
+        "by": "hand",
+        "what": "The practice."
+      },
+      "decision": "In entity.json sameAs."
+    },
+    {
+      "id": "wpp-website",
+      "business": "wpp-llm",
+      "site": "virtualagency-os.com",
+      "platform": "Website (in sameAs)",
+      "handle": "westpeekproductions.com",
+      "url": "https://www.westpeekproductions.com/",
+      "account_email": "unknown",
+      "status": "live_manual",
+      "posts": {
+        "by": "hand",
+        "what": "By hand."
+      },
+      "decision": "In the WPP-llm entity sameAs."
+    },
+    {
+      "id": "wpp-linkedin",
+      "business": "wpp-llm",
+      "site": "virtualagency-os.com",
+      "platform": "LinkedIn company page",
+      "handle": "west-peek-productions",
+      "url": "https://www.linkedin.com/company/west-peek-productions/",
+      "account_email": "unknown",
+      "status": "live_manual",
+      "posts": {
+        "by": "hand",
+        "what": "By hand."
+      },
+      "decision": "In the WPP-llm entity sameAs."
+    },
+    {
+      "id": "wpp-wikidata",
+      "business": "wpp-llm",
+      "site": "virtualagency-os.com",
+      "platform": "Wikidata",
+      "handle": "Q140357096",
+      "url": "https://www.wikidata.org/wiki/Q140357096",
+      "account_email": "unknown",
+      "status": "live_manual",
+      "posts": {
+        "by": "hand",
+        "what": "By hand."
+      },
+      "decision": "In the WPP-llm entity sameAs."
+    },
+    {
+      "id": "wpp-instagram",
+      "business": "wpp-llm",
+      "site": "westpeekproductions.com",
+      "platform": "Instagram",
+      "handle": "@westpeek_productions",
+      "url": "https://www.instagram.com/westpeek_productions/",
+      "account_email": "unknown",
+      "status": "live_manual",
+      "posts": {
+        "by": "hand",
+        "what": "By hand."
+      },
+      "decision": "Not in sameAs."
+    },
+    {
+      "id": "wpp-crunchbase",
+      "business": "wpp-llm",
+      "site": "westpeekproductions.com",
+      "platform": "Crunchbase",
+      "handle": "west-peek-productions",
+      "url": "https://www.crunchbase.com/organization/west-peek-productions",
+      "account_email": "unknown",
+      "status": "live_manual",
+      "posts": {
+        "by": "hand",
+        "what": "By hand."
+      },
+      "decision": "Not in sameAs."
+    },
+    {
+      "id": "wpp-github",
+      "business": "wpp-llm",
+      "site": "virtualagency-os.com",
+      "platform": "GitHub (code repo)",
+      "handle": "seq23/WPP-llm",
+      "url": "https://github.com/seq23/WPP-llm",
+      "account_email": "unknown",
+      "status": "live_manual",
+      "posts": {
+        "by": "none",
+        "what": "A public code repo in sameAs; nothing posts."
+      },
+      "decision": "In the WPP-llm entity sameAs."
+    },
+    {
+      "id": "topbarz-instagram",
+      "business": "topbarz",
+      "site": "topbarz-voting",
+      "platform": "Instagram",
+      "handle": "@topbarz.xyz",
+      "url": "https://www.instagram.com/topbarz.xyz",
+      "account_email": "unknown",
+      "status": "live_manual",
+      "posts": {
+        "by": "hand",
+        "what": "By hand."
+      },
+      "decision": "Friends' project, no search work."
+    },
+    {
+      "id": "abn-blogger",
+      "business": "authority-network",
+      "site": "the publications",
+      "platform": "Blogger",
+      "handle": null,
+      "url": null,
+      "account_email": "no account",
+      "status": "never",
+      "posts": {
+        "by": "none",
+        "what": "Nothing."
+      },
+      "decision": "The 3 publications have no Blogger, by decision (8 Nov 2026)."
+    }
+  ],
+  "code_exempt": [
+    {
+      "repo": "creator-studios",
+      "path": "jobs/ytupload.py",
+      "why": "Uploads to a studio owner's own YouTube channel (a client of the studios), never a business account of hers."
+    },
+    {
+      "repo": "creator-studios",
+      "path": "worker/domain/youtubeDirect.ts",
+      "why": "A studio owner's own YouTube channel, not one of her accounts."
+    },
+    {
+      "repo": "creator-studios",
+      "path": "worker/jobs/ytupload.ts",
+      "why": "A studio owner's own YouTube channel, not one of her accounts."
+    }
+  ],
+  "schedule_exempt": [
+    {
+      "id": "spry-weekly",
+      "why": "Reads each business's week (its Pinterest numbers included) for one email; posts nothing."
+    }
+  ]
+}

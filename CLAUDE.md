@@ -424,6 +424,35 @@ Owner, 31 Oct 2026: "one Email Map page inside Boss OS, all businesses". Pinned 
 4. `docs/OUTBOUND_EMAIL_MAP.md` stays the detailed audit of the Boss OS and side-business paths that
    Team → Duties reads; every Id there is a manifest row with the same owner.
 
+## The Social Map: every social account, every business
+
+Owner, 8 Nov 2026: "a canonical map of what repos and sites have social media pages". Pinned by
+`tests/socialMap.test.ts` ("the Social Map covers every account and posting job"), which reads this section:
+1. **One list.** `src/shared/boss/socialMap/manifest.json` holds every social and profile account of
+   every business and friends' site, grouped by business (groups from sites.json `_groups`; friends'
+   sites in their own section): site, platform, handle, public URL, status (live_auto, live_manual,
+   planned, paused, dead, never), what posts to it (a job with its code and Schedule ids, by hand, or
+   nothing) and the decision behind it. The page (☰ More → Social Map, `/?tab=social`,
+   `src/client/boss/pages/SocialMap.tsx`) renders it and nothing else. Brains keep the rulings; their
+   handle lists point here.
+2. **A new account, sameAs or posting job goes on it in the same PR.** The test fails on any file in
+   this repo that posts (a platform write endpoint or a Pinterest feed file: `POSTING_PATTERNS` in
+   `scripts/ops/lib/social-map.mjs`) or any posting Schedule job (`POSTING_JOB_RE`) with no row citing
+   it. `npm run social-map:check` reads every grid site's entity.json sameAs and every repo's posting
+   code on its default branch, curls each URL (a login wall is "unverifiable", never dead) and checks
+   each live_auto row's job (its feed's newest pin, its workflow's last run, its launchd log); exit 2
+   `NAMED STOP [SOCIAL_MAP_NOTHING_CHECKED]` when no repo could be read.
+3. **Weekly, inside the Sunday cohesion check** (`scripts/brains/cohesion-check.mjs`, `socialMapFlag`):
+   a gap is one clause in Simone's Monday cohesion line, never an email.
+4. **Public repo.** Business accounts only: handles and public profile URLs, never an email address
+   outside `account_email`, never a person's own profile (`privacyProblems`).
+5. **Every account sits under its own brand's address** (her ruling, 8 Nov 2026): never her personal
+   Gmail. Each row's `account_email` is a role address on one of the grid's own domains (hello@, support@…),
+   "<domain> mailbox" for a named mailbox there, "personal — move" (the personal address itself is never
+   written), "no account" or "unknown" (`accountEmailProblems`). The rows still "personal — move" are one
+   clause in the Monday cohesion line until they move (`personalMoveRows`). The three publications share
+   one WordPress.com account, hello@founderoperatorlibrary.com, by decision.
+
 ## The Schedule: every scheduled job, every system
 
 Owner approved the rebalanced week, 1 Nov 2026 ("record it somewhere the brain and the system doesn't
