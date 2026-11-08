@@ -140,6 +140,11 @@ describe("quality sampling", () => {
     expect(c6("Author: the editorial team")!.ok).toBe(false);
     expect(c6("by our staff")!.ok).toBe(false);
   });
+  it("a heading that ends in the full-width question mark is a question; a statement still is not", () => {
+    const b3 = (h2s: string[]) => scorePage({ url: "https://keepmyproof.com/zh/x", html: `<main><h1>清单</h1>${h2s.map((h) => `<h2>${h}</h2>`).join("")}</main>` }).b3;
+    expect(b3(["美国各州的离婚规定", "如何保存这些文件？", "常见问题"])).toEqual({ ok: true });
+    expect(b3(["美国各州的离婚规定", "常见问题"])!.ok).toBe(false);
+  });
   it("accented words stay whole: distinct Spanish sentences are not a repeat, a real one is named intact", () => {
     const distinct = ["está", "esté"].flatMap((a) => ["será", "seré"].map((b) => `La capacitación ${a} lista y la licencia ${b} válida en Texas.`)).join(" ");
     expect(repeatedSlots(distinct)).toEqual([]);
