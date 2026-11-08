@@ -198,7 +198,7 @@ const manifest = [];
 for (const b of books) {
   if (only.size && !only.has(b.slug)) continue;
   const sizes = [["kindle", 1600, 2560]];
-  if (b.paperback) sizes.push(["paperback", 1600, b.paperback.trim === "8.5x11" ? 2071 : 2400]);
+  // Kindle front only: ENGINE builds the paperback wrap (blurb, spine, barcode) around this front.
   for (const [kind, W, H] of sizes) {
     const p = await br.newPage({ viewport: { width: W, height: H } });
     await p.setContent(tpl[b.line](b, W, H), { waitUntil: "networkidle" });
@@ -207,7 +207,7 @@ for (const b of books) {
     await p.screenshot({ path: full });
     await p.close();
     const name = kind === "kindle" ? `${b.slug}.jpg` : `${b.slug}-paperback.jpg`;
-    await sharp(full).resize({ width: 640 }).jpeg({ quality: 82, progressive: true }).toFile(join(OUT, name));
+    await sharp(full).jpeg({ quality: 88, progressive: true }).toFile(join(OUT, name)); // full size, 1600x2560 (KDP needs 1000+ px)
     await sharp(full).resize({ height: 160 }).png().toFile(join(SCR, `${b.slug}-${kind}-160.png`));
     manifest.push({ slug: b.slug, kind, file: name });
   }

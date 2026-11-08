@@ -7,7 +7,7 @@ Owner approved the plan on 8 Nov 2026 and the covers the same day ("ok they look
 | Line specs (binding format) | `scripts/ops/kdp-books/{keepmyproof,aplayermode,time2read,wedding,uscisexam}.json` → `series_books` |
 | Fixes to the 11 books already on the KDP bookshelf | `scripts/ops/kdp-books/existing-books.json` |
 | Manuscripts | `docs/kdp/books/<slug>.md`: `# ` chapter, `## ` section, `- [ ] ` checklist, table = fill-in log, `{{companion}}` = the companion link |
-| Approved cover previews (640 px) | `docs/kdp/books/assets/covers/<slug>.jpg`, `-paperback.jpg`, and `-before.jpg` for the existing books |
+| Approved Kindle fronts, full size 1600 x 2560 (all 22) | `docs/kdp/books/assets/covers/<slug>.jpg`; the old cover of each existing book is beside it as `<slug>-before.jpg` (preview size) |
 | Cover templates that made them | `docs/kdp/books/cover-templates.mjs`, for the engine to move into the pipeline |
 | Licensed photos | `docs/kdp/books/assets/<slug>-photo.jpg` |
 
@@ -61,7 +61,7 @@ Every manuscript passes `lib.mjs` `claimProblems`. The KeepMyProof and uscisexam
 ## What the engine needs to support (fields lib.mjs does not read yet)
 
 - `series_books[].author` overrides the line's `author`. It is needed in `keepmyproof.json` only.
-- A paperback (`paperback.price_usd` and `paperback.trim`, `6x9` or `8.5x11`): a print PDF interior, plus a full wrap cover whose spine width comes from the page count. The fronts approved here are `<slug>-paperback.jpg`.
+- A paperback (`paperback.price_usd` and `paperback.trim`, `6x9` or `8.5x11`): a print PDF interior, plus a full wrap cover (blurb, spine sized from the page count, barcode box) built by the engine around the approved front `<slug>.jpg`.
 - `{{companion}}` becomes `companion_url` plus `?utm_source=kindle&utm_medium=book&utm_campaign=<slug>`, set as a live link.
 - `layout: "story_book"` (Time-2-Read): one story per `# `, large type, a page break between stories, and the `## Sounds` / `## Tricky words` lists shown as boxes.
 - Claim gate: digits that appear in the book's own title (504) are allowed in prose.
