@@ -1081,7 +1081,7 @@
     {
       "id": "livekit",
       "service": "LiveKit",
-      "owner": "unknown",
+      "owner": "wpv-inbox",
       "business": "west-peek",
       "repos": [
         "westpeek-live"
@@ -1093,12 +1093,12 @@
       ],
       "used_by": "Live rooms for westpeek.live (Build plan, $0).",
       "security": "not known yet",
-      "login": "not known yet"
+      "login": "se**@westpeek.ventures"
     },
     {
       "id": "zoom",
       "service": "Zoom",
-      "owner": "unknown",
+      "owner": "wpv-inbox",
       "business": "west-peek",
       "repos": [
         "westpeek-live"
@@ -1109,12 +1109,12 @@
       ],
       "used_by": "Zoom inside westpeek.live (Basic plan).",
       "security": "not known yet",
-      "login": "not known yet"
+      "login": "se**@westpeek.ventures"
     },
     {
       "id": "daily",
       "service": "Daily (video)",
-      "owner": "unknown",
+      "owner": "wpv-inbox",
       "business": "west-peek",
       "repos": [
         "westpeek-live"
@@ -1124,7 +1124,7 @@
       ],
       "used_by": "Video rooms for westpeek.live.",
       "security": "not known yet",
-      "login": "not known yet"
+      "login": "se**@westpeek.ventures"
     },
     {
       "id": "sos-mailbox",
