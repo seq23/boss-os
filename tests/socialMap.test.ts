@@ -136,17 +136,17 @@ describe("the Social Map covers every account and posting job", () => {
     expect(socialMapFlagWords(null)).toMatch(/did not run/);
   });
 
-  it("every account sits under its brand's address; a personal or owner address is refused; 'personal — move' rows are one Monday clause", () => {
+  it("every account sits under its brand's address, always masked; a personal or full address is refused; 'personal — move' rows are one Monday clause", () => {
     expect(accountEmailProblems(m, sites)).toEqual([]);
     const bad = clone();
-    bad.rows[0]!.account_email = "someone@gmail.com";
+    bad.rows[0]!.account_email = "so**@gmail.com";
     bad.rows[1]!.account_email = "someone@porchandparty901.com";
     bad.rows[2]!.account_email = "";
     bad.rows[3]!.account_email = "nowhere.example mailbox";
     const p = accountEmailProblems(bad, sites);
     expect(p).toHaveLength(4);
     expect(p[0]).toMatch(/not on one of the grid's own domains/);
-    expect(p[1]).toMatch(/named mailbox; write "porchandparty901.com mailbox"/);
+    expect(p[1]).toMatch(/is not a masked address/);
     expect(p[2]).toMatch(/account_email is empty/);
     expect(accountEmailProblems(m, {})[0]).toMatch(/cannot see anything/);
     bad.rows[4]!.account_email = "personal — move";

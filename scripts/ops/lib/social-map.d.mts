@@ -20,7 +20,6 @@ export function profileUrls(json: unknown): string[];
 export function uncoveredSameAs(docs: Array<{ repo: string; path: string; json: unknown }>, manifest: SocialManifest): string[];
 export function shapeProblems(manifest: SocialManifest, sites: any): string[];
 export const PERSONAL_MOVE: string;
-export const ROLE_LOCAL: RegExp;
 export function brandDomains(sites: any): Set<string>;
 export function accountEmailProblems(manifest: SocialManifest, sites: any): string[];
 export function personalMoveRows(manifest: SocialManifest): string[];

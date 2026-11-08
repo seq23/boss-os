@@ -448,11 +448,12 @@ Owner, 8 Nov 2026: "a canonical map of what repos and sites have social media pa
 4. **Public repo.** Business accounts only: handles and public profile URLs, never an email address
    outside `account_email`, never a person's own profile (`privacyProblems`).
 5. **Every account sits under its own brand's address** (her ruling, 8 Nov 2026): never her personal
-   Gmail. Each row's `account_email` is a role address on one of the grid's own domains (hello@, support@…),
+   Gmail. Each row's `account_email` is an address on one of the grid's own domains, always masked (owner,
+   8 Nov 2026: `he**@founderoperatorlibrary.com`, the first 2 characters, `**`, `@`, the domain; never a full address),
    "<domain> mailbox" for a named mailbox there, "personal — move" (the personal address itself is never
    written), "no account" or "unknown" (`accountEmailProblems`). The rows still "personal — move" are one
    clause in the Monday cohesion line until they move (`personalMoveRows`). The three publications share
-   one WordPress.com account, hello@founderoperatorlibrary.com, by decision.
+   one WordPress.com account, he**@founderoperatorlibrary.com, by decision.
 
 ## The Schedule: every scheduled job, every system
 
