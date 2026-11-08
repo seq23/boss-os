@@ -3,7 +3,7 @@ import { describe, expect, it, vi } from "vitest";
 
 // Each pass reads every live duty (42) and may admit a repair: give the end-to-end runs room.
 vi.setConfig({ testTimeout: 60_000 });
-import { runKendraChecks, raiseAlarm, herAlarms } from "../../src/worker/boss/alarms/kendra";
+import { runKendraChecks, raiseAlarm, herAlarms, runsFor } from "../../src/worker/boss/alarms/kendra";
 import { isResearchWork } from "../../src/worker/boss/queue/freeRung";
 import { noticeOnce } from "../../src/worker/boss/service/notices";
 import { repairOriginOf, planWaitsForOwner } from "../../src/shared/boss/repoChange/lane.mjs";
@@ -160,5 +160,64 @@ describe("G1: an owner email she alone can fix reaches her Today", () => {
     await raiseAlarm(E, { key: "mail:west-peek-os#test", kind: "owner_mail", text: "West Peek OS: owner emails failed 2 times in a row (auth (HTTP 401)).", hers: true });
     expect((await herAlarms(E.DB)).map((a) => a.alarm_key)).toContain("mail:west-peek-os#test");
     expect((await alarm("mail:west-peek-os#test")).task_id).toBeNull();
+  });
+});
+
+describe("an agent duty is judged by what it delivered, not by tasks.output (8 Nov 2026, alarm output:duty_exec_intel)", () => {
+  // The seat path (/backends/report) closes a task done and never writes tasks.output; the report
+  // lands in the table the task declares. Two delivered mornings scored 0 and raised a false alarm.
+  const duty = async (id: string) =>
+    E.DB.prepare(`SELECT id, name, executor, created_at, output_metric, output_floor, output_runs, output_since FROM standing_duties WHERE id = ?`).bind(id).first();
+  const materialised = async (dutyId: string, taskId: string, delivers: string, at: number) => {
+    await E.DB.prepare(`INSERT INTO tasks (id, lane, title, input, status, created_at, finished_at) VALUES (?, 'ops', 'Duty run', ?, 'done', ?, ?)`)
+      .bind(taskId, JSON.stringify({ delivers }), at, at + 60_000).run();
+    await E.DB.prepare(`INSERT INTO audit_log (id, ts, actor, lane, entity_type, entity_id, action, detail) VALUES (?,?, 'system', 'ops', 'standing_duty', ?, 'materialised', ?)`)
+      .bind(`aud_${taskId}`, at, dutyId, JSON.stringify({ task_id: taskId })).run();
+  };
+  const report = (taskId: string, day: string, at: number, status = "partial") =>
+    E.DB.prepare(`INSERT INTO executive_reports (id, day_id, generated_at, task_id, status) VALUES (?,?,?,?,?)`).bind(`rep_${taskId}`, day, at, taskId, status).run();
+
+  it("the morning report: two delivered runs with tasks.output NULL raise nothing; two runs that delivered nothing still alarm", async () => {
+    const d = await duty("duty_exec_intel");
+    expect(d).toMatchObject({ executor: "agent", output_floor: 1, output_runs: 2 });
+    const t0 = Number(d.output_since) + 1000;
+    await materialised("duty_exec_intel", "tsk_ei_7nov", "executive_reports", t0);
+    await report("tsk_ei_7nov", "2099-11-07", t0 + 30_000);
+    await materialised("duty_exec_intel", "tsk_ei_8nov", "executive_reports", t0 + 24 * H);
+    await report("tsk_ei_8nov", "2099-11-08", t0 + 24 * H + 30_000);
+    expect((await runsFor(E, d)).map((r) => r.output_count)).toEqual([1, 1]);
+    let r = await runKendraChecks(E, t0 + 25 * H);
+    expect(r.floors.opened).not.toContain("duty_exec_intel");
+    expect(await alarm("output:duty_exec_intel")).toBeNull();
+
+    // The proof it is not switched off: two done runs that wrote no report row (or only a failed one) alarm.
+    await materialised("duty_exec_intel", "tsk_ei_9nov", "executive_reports", t0 + 48 * H);
+    await report("tsk_ei_9nov", "2099-11-09", t0 + 48 * H + 30_000, "failed");
+    await materialised("duty_exec_intel", "tsk_ei_10nov", "executive_reports", t0 + 72 * H);
+    expect((await runsFor(E, d)).map((x) => x.output_count)).toEqual([0, 0, 1, 1]);
+    r = await runKendraChecks(E, t0 + 73 * H);
+    expect(r.floors.opened).toContain("duty_exec_intel");
+    expect((await alarm("output:duty_exec_intel")).text).toMatch(/produced 0 reports delivered \(needs 1\), 2 runs in a row/);
+
+    // And it closes itself once a run delivers again.
+    await materialised("duty_exec_intel", "tsk_ei_11nov", "executive_reports", t0 + 96 * H);
+    await report("tsk_ei_11nov", "2099-11-11", t0 + 96 * H + 30_000, "complete");
+    r = await runKendraChecks(E, t0 + 97 * H);
+    expect(r.floors.cleared).toContain("duty_exec_intel");
+  });
+
+  it("a run_id table counts the rows each run delivered, through backend_runs", async () => {
+    const d = await duty("duty_link_prospects");
+    expect(d).toMatchObject({ executor: "agent", output_floor: 1 });
+    const t0 = Number(d.output_since) + 1000;
+    await materialised("duty_link_prospects", "tsk_lp_a", "link_prospects", t0);
+    await materialised("duty_link_prospects", "tsk_lp_b", "link_prospects", t0 + 24 * H);
+    await E.DB.prepare(`INSERT INTO backend_runs (id, task_id, backend_id, requested, cost_micros, started_at, status) VALUES ('brn_lp_a','tsk_lp_a','bk_claude_code','{}',0,?,'succeeded')`).bind(t0).run();
+    for (const [i, url] of ["https://a.example/", "https://b.example/"].entries()) {
+      await E.DB.prepare(`INSERT INTO link_prospects (id, property, url, status, run_id, created_at, updated_at) VALUES (?, 'time2read', ?, 'new', 'brn_lp_a', ?, ?)`)
+        .bind(`lnk_t_${i}`, url, t0 + 1000, t0 + 1000).run();
+    }
+    // Run b found nothing: it is a real 0, newest first.
+    expect((await runsFor(E, d)).map((r) => r.output_count)).toEqual([0, 2]);
   });
 });

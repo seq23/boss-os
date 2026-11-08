@@ -135,11 +135,46 @@ interface DutyFloorRow {
 
 const MAX_RUNS = 12;
 
+/*
+ * WHAT AN AGENT DUTY DELIVERED (8 Nov 2026, alarm output:duty_exec_intel). The agent branch used to
+ * score a done task by `tasks.output`, which only the cloud completion paths write. Every agent duty is
+ * dispatched to a seat and finishes through POST /backends/report, which closes the task and never
+ * writes `output` — so the morning report, delivered at 06:15 Central both days, scored 0 two runs in
+ * a row and raised a false alarm (and the four other agent duties would have followed). A run's real
+ * output is the rows it wrote into the table its task declares in `input.delivers`, the one contract
+ * duties/deliverReport.ts guards on. Each statement is STATIC so validate:sql EXPLAINs it against the
+ * real schema (an interpolated table name is skipped by that validator). Bounded by `output_since`,
+ * grouped by task. scripts/validate/duties-deliver-somewhere.mjs check 11 fails the build when a
+ * floored agent duty declares a key this map does not hold.
+ */
+export const DELIVERY_CENSUS = {
+  executive_reports:
+    `SELECT task_id, COUNT(*) AS n FROM executive_reports WHERE task_id IS NOT NULL AND status <> 'failed' AND generated_at >= ? GROUP BY task_id`,
+  practice_week:
+    `SELECT task_id, COUNT(*) AS n FROM practice_week WHERE task_id IS NOT NULL AND status <> 'failed' AND generated_at >= ? GROUP BY task_id`,
+  sourcing_candidates:
+    `SELECT r.task_id AS task_id, COUNT(*) AS n FROM sourcing_candidates x JOIN backend_runs r ON r.id = x.run_id WHERE x.updated_at >= ? GROUP BY r.task_id`,
+  link_prospects:
+    `SELECT r.task_id AS task_id, COUNT(*) AS n FROM link_prospects x JOIN backend_runs r ON r.id = x.run_id WHERE x.updated_at >= ? GROUP BY r.task_id`,
+  tool_suggestions:
+    `SELECT r.task_id AS task_id, COUNT(*) AS n FROM tool_suggestions x JOIN backend_runs r ON r.id = x.run_id WHERE x.updated_at >= ? GROUP BY r.task_id`,
+} as const;
+export type DeliveryKey = keyof typeof DELIVERY_CENSUS;
+
+/** Rows delivered per task into one declared table since the floor was set. */
+async function deliveredByTask(env: Env, key: DeliveryKey, since: number): Promise<Map<string, number>> {
+  const { results } = await env.DB.prepare(DELIVERY_CENSUS[key]).bind(since).all<{ task_id: string | null; n: number }>();
+  const m = new Map<string, number>();
+  for (const r of results ?? []) if (r.task_id) m.set(r.task_id, Number(r.n) || 0);
+  return m;
+}
+
 /**
  * The duty's runs since its floor was set, newest first. A Mac or cloud job reports through
  * /duties/ran (duty_runs.output_count, from its OUTPUT line). A Worker reader's run is its
  * `ran_in_worker` audit row (the rows it wrote). An agent duty's run is the task it materialised:
- * done with an output is 1 report delivered, failed is a failed run, still open is not judged yet.
+ * done counts the rows it delivered into the table its task declares (`delivers`, DELIVERY_CENSUS),
+ * failed is a failed run, still open is not judged yet.
  */
 export async function runsFor(env: Env, d: DutyFloorRow): Promise<Run[]> {
   const since = Number(d.output_since ?? 0);
@@ -155,14 +190,27 @@ export async function runsFor(env: Env, d: DutyFloorRow): Promise<Run[]> {
   }
   if (d.executor === "agent") {
     const { results } = await env.DB.prepare(
-      `SELECT a.ts, t.status, t.output FROM audit_log a JOIN tasks t ON t.id = json_extract(a.detail, '$.task_id')
+      `SELECT a.ts, t.id AS task_id, t.status, t.output, json_extract(t.input, '$.delivers') AS delivers
+         FROM audit_log a JOIN tasks t ON t.id = json_extract(a.detail, '$.task_id')
         WHERE a.entity_type = 'standing_duty' AND a.entity_id = ? AND a.action = 'materialised' AND a.ts >= ?
         ORDER BY a.ts DESC LIMIT ?`,
-    ).bind(d.id, since, MAX_RUNS).all<{ ts: number; status: string; output: string | null }>();
+    ).bind(d.id, since, MAX_RUNS).all<{ ts: number; task_id: string; status: string; output: string | null; delivers: string | null }>();
+    // ONE grouped read per delivery table this duty's runs declare, not one per run.
+    const delivered = new Map<string, Map<string, number>>();
+    for (const r of results ?? []) {
+      if (r.status !== "done" || !r.delivers || !(r.delivers in DELIVERY_CENSUS) || delivered.has(r.delivers)) continue;
+      delivered.set(r.delivers, await deliveredByTask(env, r.delivers as DeliveryKey, since));
+    }
     const out: Run[] = [];
     for (const r of results ?? []) {
       if (r.status === "failed" || r.status === "cancelled") out.push({ outcome: "failed", output_count: 0, finished_at: r.ts });
-      else if (r.status === "done") out.push({ outcome: "ok", output_count: r.output && r.output.trim() ? 1 : 0, finished_at: r.ts });
+      else if (r.status === "done") {
+        const census = r.delivers ? delivered.get(r.delivers) : undefined;
+        // A declared delivery table is the truth: a done task with no row delivered nothing and still scores 0.
+        // Only a task that declares no table the census holds falls back to the cloud path's `tasks.output`.
+        const n = census ? (census.get(r.task_id) ?? 0) : (r.output && r.output.trim() ? 1 : 0);
+        out.push({ outcome: "ok", output_count: n, finished_at: r.ts });
+      }
       // queued / running / awaiting approval: not finished, so not judged — and not a reason to stop counting.
     }
     return out;

@@ -121,7 +121,8 @@ export async function deliverSourcingCandidates(
            source_url = excluded.source_url,
            source_name = excluded.source_name,
            read_at = excluded.read_at,
-           updated_at = excluded.updated_at`,
+           updated_at = excluded.updated_at,
+           run_id = excluded.run_id`,
       )
       .bind(
         newId("src"), name,
@@ -188,7 +189,8 @@ export async function deliverLinkProspects(
          rationale = excluded.rationale,
          approach = excluded.approach,
          authority_note = excluded.authority_note,
-         updated_at = excluded.updated_at`,
+         updated_at = excluded.updated_at,
+           run_id = excluded.run_id`,
     ).bind(
       newId("lnk"), property, url,
       typeof p?.site_name === "string" ? p.site_name : null,
@@ -264,7 +266,8 @@ export async function deliverToolSuggestions(
        VALUES (?,?,?,?,?,?,?,?,?,?,?, 'new', ?,?,?)
        ON CONFLICT(url) DO UPDATE SET
          verdict = excluded.verdict, evidence = excluded.evidence, evidence_url = excluded.evidence_url,
-         price_note = excluded.price_note, instead_of = excluded.instead_of, updated_at = excluded.updated_at`,
+         price_note = excluded.price_note, instead_of = excluded.instead_of, updated_at = excluded.updated_at,
+         run_id = excluded.run_id`,
     ).bind(
       newId("tol"), name, url,
       typeof t?.serves === "string" && SERVES.includes(t.serves) ? t.serves : "ops",

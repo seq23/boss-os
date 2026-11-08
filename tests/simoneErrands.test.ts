@@ -7,7 +7,7 @@
  * is proven negatively: a guessed address, money, fund/LP work, a West Peek address and any other
  * sender are NOT errands. Fixtures only (example.test); no real business or address appears here.
  */
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { ERRAND_SENDERS, errandIn, errandRefusal, errandText, errandProblems, readErrandReply, commandsIn } from "../src/shared/boss/commands/parse.mjs";
 import { errandMail, errandPayloadProblems, postErrandMail, ERRAND_FROM, ERRAND_REPLY_TO } from "../scripts/ops/notify.mjs";
 import { buildErrand, errandPrompt } from "../scripts/ops/simone-commands.mjs";
@@ -90,6 +90,8 @@ describe("the send: from Simone, Reply-To Simone, no Cc to the owner by default"
   });
 
   it("NEGATIVE: a payload that copies the owner, or answers elsewhere, is refused and never reaches Resend", async () => {
+    // A vault-run shell carries BOSS_PASSCODE, which adds the sent-mail archive call; this pins the send alone.
+    vi.stubEnv("BOSS_PASSCODE", "");
     const calls: string[] = [];
     const fake = (async (u: string) => { calls.push(String(u)); return Response.json({ id: "em_1" }); }) as unknown as typeof fetch;
     const cc = errandMail({ to: "res@club.example.test", subject: "s", text: "t", cc: ["owner@example.test"] });
@@ -100,6 +102,7 @@ describe("the send: from Simone, Reply-To Simone, no Cc to the owner by default"
     const ok = await postErrandMail(errandMail({ to: "res@club.example.test", subject: "s", text: "t" }), fake, { key: "k" });
     expect(ok).toEqual({ ok: true, id: "em_1" });
     expect(calls).toEqual(["https://api.resend.com/emails", "https://api.resend.com/emails/em_1"]);
+    vi.unstubAllEnvs();
   });
 });
 

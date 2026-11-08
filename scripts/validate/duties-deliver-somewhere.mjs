@@ -64,6 +64,14 @@
  *      one of those missing is a task that is opened, queued, and never picked up — the executive
  *      report's original defect, one lane over.
  *
+ * And for the floor Kendra judges (8 Nov 2026, alarm output:duty_exec_intel):
+ *
+ *  11. An AGENT duty (no local job, no Worker reader) with an output floor above 0 declares a
+ *      `delivers` key that `DELIVERY_CENSUS` in `src/worker/boss/alarms/kendra.ts` can count. Kendra
+ *      scores an agent run by the rows it delivered into that table; a key the census lacks falls
+ *      back to `tasks.output`, which the seat path never writes — every delivered report scored 0
+ *      and the morning briefing raised a false alarm two days running.
+ *
  * RULE 0: examining zero duties is a failure, not a pass. A loop over an empty set is how a
  * validator ends up green for ever while the thing it guards rots.
  *
@@ -495,7 +503,55 @@ function scan() {
     }
   }
 
+  // ── 11. Every floored agent duty's delivery is one Kendra can count ───────────────────────
+  const censusKeys = censusKeysIn(read(KENDRA));
+  if (!censusKeys || censusKeys.size === 0) {
+    problems.push(`${KENDRA}: DELIVERY_CENSUS was not found or holds no key, so no agent duty's floor can be judged.`);
+  } else {
+    problems.push(...censusProblems(duties.map((d) => ({ ...d, floor: effectiveFloor(d.id, ALL_MIGRATION_STATEMENTS) })), censusKeys));
+  }
+
   return { duties, problems };
+}
+
+// ─── Kendra's census (check 11) ──────────────────────────────────────────────
+
+const KENDRA = "src/worker/boss/alarms/kendra.ts";
+
+/** The keys DELIVERY_CENSUS holds, read from kendra.ts's source. */
+export function censusKeysIn(source) {
+  const m = /export const DELIVERY_CENSUS\s*=\s*\{([\s\S]*?)\}\s*as const/.exec(source);
+  if (!m) return null;
+  return new Set([...m[1].matchAll(/^\s*([a-z_][a-z0-9_]*)\s*:/gm)].map((x) => x[1]));
+}
+
+/** The output floor the migration history leaves on a duty: the last statement naming both. */
+export function effectiveFloor(dutyId, statements) {
+  let floor = null;
+  for (const st of statements) {
+    if (!st.includes(`'${dutyId}'`)) continue;
+    const f = /output_floor\s*=\s*(\d+)/i.exec(st);
+    if (f) floor = Number(f[1]);
+  }
+  return floor;
+}
+
+/** Check 11. `duties` carry { id, file, text, floor }. Pure. */
+export function censusProblems(duties, censusKeys) {
+  const problems = [];
+  for (const d of duties) {
+    if (localJobScript(d.text) || workerReader(d.text)) continue;
+    if (!(Number(d.floor) > 0)) continue;
+    const key = deliversKey(d.text);
+    if (!key || !censusKeys.has(key)) {
+      problems.push(
+        `${d.id} (${d.file}): an agent duty with output floor ${d.floor} delivers ${key ? `'${key}'` : "nothing declared"}, ` +
+        `which DELIVERY_CENSUS in ${KENDRA} cannot count.\n` +
+        `      Kendra would score every delivered run 0 from tasks.output and raise a false alarm. Add a static census statement.`,
+      );
+    }
+  }
+  return problems;
 }
 
 // ─── The on-demand lane (check 10) ────────────────────────────────────────────
@@ -662,11 +718,23 @@ function selfTest() {
   if (laneProblems(lane, { ...good, [INSTALLER]: "nothing" }).length === 0) { console.error("  ✗ a lane the installer does not name passes"); failed += 1; }
   if (laneProblems(lane, { ...good, [CONSUMER]: "routeCompletion(everything)" }).length === 0) { console.error("  ✗ a consumer that no longer parks the kind passes"); failed += 1; }
 
+  // Check 11: a floored agent duty the census counts passes; one it cannot count fails; a local job,
+  // a Worker reader and a floor of 0 are not its business; the census and the floor are read as written.
+  const census = new Set(["executive_reports"]);
+  const agent = (key, floor) => ({ id: "duty_q", file: "x.sql", floor, text: `json_object('delivers', '${key}')` });
+  if (censusProblems([agent("executive_reports", 1)], census).length !== 0) { console.error("  ✗ check 11: a counted agent duty fails"); failed += 1; }
+  if (censusProblems([agent("widgets", 1)], census).length !== 1) { console.error("  ✗ check 11: an agent duty the census cannot count passes"); failed += 1; }
+  if (censusProblems([agent("widgets", 0)], census).length !== 0) { console.error("  ✗ check 11: a floor of 0 is judged"); failed += 1; }
+  if (censusProblems([{ ...agent("widgets", 1), text: `json_object('local_job', 'a.mjs', 'delivers', 'widgets')` }], census).length !== 0) { console.error("  ✗ check 11: a local job is judged as an agent duty"); failed += 1; }
+  const keys = censusKeysIn("export const DELIVERY_CENSUS = {\n  a_b:\n    `SELECT 1`,\n  c: `x`,\n} as const;");
+  if (!keys || keys.size !== 2 || !keys.has("a_b") || !keys.has("c")) { console.error("  ✗ check 11: census keys not read"); failed += 1; }
+  if (effectiveFloor("duty_q", ["UPDATE s SET output_floor = 0 WHERE id = 'duty_q'", "UPDATE s SET output_floor = 1 WHERE id = 'duty_qq'", "UPDATE s SET output_floor = 2 WHERE id = 'duty_q'"]) !== 2) { console.error("  ✗ check 11: the last floor is not the one read"); failed += 1; }
+
   if (failed) {
     console.error(`\nSELF-TEST FAILED: ${failed} case(s)`);
     process.exit(1);
   }
-  console.log(`SELF-TEST PASSED: ${FIXTURES.length + 8}/${FIXTURES.length + 8} cases.`);
+  console.log(`SELF-TEST PASSED: ${FIXTURES.length + 14}/${FIXTURES.length + 14} cases.`);
 }
 
 // ─── Run ──────────────────────────────────────────────────────────────────────
