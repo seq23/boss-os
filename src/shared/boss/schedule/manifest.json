@@ -193,15 +193,6 @@
           "refs": [
             "wpos-productions-hire-search"
           ]
-        },
-        {
-          "time": "10pm",
-          "tag": "sl",
-          "text": "How We Know: records the next food episode (also Thursday)",
-          "emails": false,
-          "refs": [
-            "howweknow-food"
-          ]
         }
       ]
     },
@@ -289,6 +280,15 @@
           "refs": [
             "youtube-comment-watch"
           ]
+        },
+        {
+          "time": "10pm",
+          "tag": "sl",
+          "text": "How We Know: records the week's second food episode (Wednesday and Thursday nights)",
+          "emails": false,
+          "refs": [
+            "howweknow-food"
+          ]
         }
       ]
     },
@@ -342,15 +342,6 @@
           "emails": true,
           "refs": [
             "tool-scout"
-          ]
-        },
-        {
-          "time": "10pm",
-          "tag": "sl",
-          "text": "How We Know: food episode session",
-          "emails": false,
-          "refs": [
-            "howweknow-food"
           ]
         }
       ]
@@ -528,13 +519,22 @@
           "refs": [
             "cohesion"
           ]
+        },
+        {
+          "time": "10pm",
+          "tag": "sl",
+          "text": "How We Know: records a food episode (Sunday and Monday nights)",
+          "emails": false,
+          "refs": [
+            "howweknow-food"
+          ]
         }
       ]
     }
   ],
   "everyDay": [
     "Your morning emails from Simone (Executive briefing, Spirit, decisions), at their usual times",
-    "Spry Ventures: Monique's morning LP run, with drafts for you to approve; new inbox supply matched to buyers and routed the same day; prospect emails on weekdays only (first note + 1 follow-up)",
+    "Spry Ventures: Monique's morning LP run, with drafts for you to approve; new inbox supply matched to buyers and routed the same day; prospect emails on weekdays only (a first note and up to 3 follow-ups)",
     "Time-2-Read: Monique contacts homeschool pods and institutions, weekdays 8:15",
     "Porch & Party: Camille's Christmas office outreach, weekdays 10:20, until 4 bookings or 5 Dec",
     "Spry Labs: each site publishes and checks its pages through the day (no emails)",
@@ -1692,7 +1692,7 @@
       "slots": [
         "daily 07:30",
         "hourly :00",
-        "mon 05:00-06:00/20m"
+        "mon 05:00-06:20/20m"
       ],
       "emails": false,
       "heavy": true,
@@ -1703,6 +1703,7 @@
           "0 * * * *",
           "30 13 * * *",
           "0 12 * * 1",
+          "20 12 * * 1",
           "0 11 * * 1",
           "20 11 * * 1",
           "40 11 * * 1"
@@ -2384,8 +2385,8 @@
     },
     {
       "id": "how-we-know-loop-demand",
-      "name": "loop · daily demand + Mon 08:30 CT email",
-      "what": "loop · daily demand + Mon 08:30 CT email",
+      "name": "Demand read",
+      "what": "Daily: reads which videos strangers click and stay on; on Mondays emails you the verdict.",
       "business": "spry",
       "brand": "How We Know",
       "system": "github",
@@ -2408,13 +2409,13 @@
     },
     {
       "id": "how-we-know-loop-food-author",
-      "name": "loop · Mon 14:00 CT · food author",
-      "what": "loop · Mon 14:00 CT · food author",
+      "name": "Food author",
+      "what": "Mondays and Thursdays: writes the next food episode's script ($0 free models).",
       "business": "spry",
       "brand": "How We Know",
       "system": "github",
       "slots": [
-        "mon 14:00"
+        "mon,thu 14:00"
       ],
       "emails": false,
       "heavy": true,
@@ -2422,7 +2423,7 @@
         "repo": "how-we-know",
         "file": ".github/workflows/loop-food-author.yml",
         "crons": [
-          "CRON_TZ=America/Chicago 0 14 * * 1"
+          "CRON_TZ=America/Chicago 0 14 * * 1,4"
         ]
       },
       "output": {
@@ -2432,7 +2433,7 @@
     },
     {
       "id": "how-we-know-loop-whisper-author",
-      "name": "loop · Wed 14:00 CT · whisper almanac author",
+      "name": "Whisper Almanac author",
       "what": "Whisper Almanac: writes the next whispered sleep episode and the week's affirmations, $0 free models",
       "business": "spry",
       "brand": "Whisper Almanac",
@@ -2456,8 +2457,8 @@
     },
     {
       "id": "how-we-know-loop-fri-measure",
-      "name": "loop · Fri 17:00 · measure",
-      "what": "loop · Fri 17:00 · measure",
+      "name": "Friday measure",
+      "what": "Fridays: reads how long people watched and what each video earned; can pause the line if it falls too far.",
       "business": "spry",
       "brand": "How We Know",
       "system": "github",
@@ -2480,8 +2481,8 @@
     },
     {
       "id": "how-we-know-loop-fri-publish",
-      "name": "loop · Fri 09:00 · flip to public",
-      "what": "loop · Fri 09:00 · flip to public",
+      "name": "Friday publish",
+      "what": "Fridays: makes the week's finished episodes public.",
       "business": "spry",
       "brand": "How We Know",
       "system": "github",
@@ -2504,8 +2505,8 @@
     },
     {
       "id": "how-we-know-loop-imagery-harvest",
-      "name": "loop · Sat 04:00 UTC · grow the rights-cleared footage pool",
-      "what": "loop · Sat 04:00 UTC · grow the rights-cleared footage pool",
+      "name": "Footage harvest",
+      "what": "Friday night: adds rights-cleared footage to the pool the episodes draw from.",
       "business": "spry",
       "brand": "How We Know",
       "system": "github",
@@ -2528,8 +2529,8 @@
     },
     {
       "id": "how-we-know-loop-mon-draft",
-      "name": "loop · Mon 00:00 CT · draft, validate, gate",
-      "what": "Builds the site and runs its checks.",
+      "name": "Monday draft",
+      "what": "Just after midnight on Monday: drafts next week's videos and checks them before anything is made.",
       "business": "spry",
       "brand": "How We Know",
       "system": "github",
@@ -2552,8 +2553,8 @@
     },
     {
       "id": "how-we-know-loop-monthly-review",
-      "name": "loop · 1st 07:00 · monthly review",
-      "what": "loop · 1st 07:00 · monthly review",
+      "name": "Monthly review",
+      "what": "On the 1st: reads the month's numbers and says what to change (emails you).",
       "business": "spry",
       "brand": "How We Know",
       "system": "github",
@@ -2576,8 +2577,8 @@
     },
     {
       "id": "how-we-know-loop-quarterly-taxonomy-refresh",
-      "name": "loop · Quarterly · refresh the candidate-niche taxonomy",
-      "what": "loop · Quarterly · refresh the candidate-niche taxonomy",
+      "name": "Topic list refresh",
+      "what": "On the 1st of a quarter: refreshes the list of candidate topics.",
       "business": "spry",
       "brand": "How We Know",
       "system": "github",
@@ -2600,8 +2601,8 @@
     },
     {
       "id": "how-we-know-loop-reach",
-      "name": "loop · daily 10:00 CT · reach",
-      "what": "loop · daily 10:00 CT · reach",
+      "name": "Reach",
+      "what": "Daily: adds captions, other languages and search details to videos already up.",
       "business": "spry",
       "brand": "How We Know",
       "system": "github",
@@ -2624,14 +2625,14 @@
     },
     {
       "id": "how-we-know-loop-repackage",
-      "name": "loop · daily 18:30 CT",
-      "what": "loop · daily 18:30 CT",
+      "name": "Repackage and upkeep",
+      "what": "Every evening repackages published episodes; most mornings at 11:30, after the day's episode is up, does the upkeep.",
       "business": "spry",
       "brand": "How We Know",
       "system": "github",
       "slots": [
         "daily 18:30",
-        "tue,wed,thu,fri,sat,sun 03:30"
+        "tue,wed,thu,fri,sat,sun 11:30"
       ],
       "emails": false,
       "heavy": true,
@@ -2640,7 +2641,7 @@
         "file": ".github/workflows/loop-repackage.yml",
         "crons": [
           "CRON_TZ=America/Chicago 30 18 * * *",
-          "CRON_TZ=America/Chicago 30 3 * * 0,2-6"
+          "CRON_TZ=America/Chicago 30 11 * * 0,2-6"
         ]
       },
       "output": {
@@ -2650,8 +2651,8 @@
     },
     {
       "id": "how-we-know-loop-sat-score",
-      "name": "loop · Sat 06:00 · score demand ÷ competition",
-      "what": "loop · Sat 06:00 · score demand ÷ competition",
+      "name": "Saturday scoring",
+      "what": "Saturdays: scores each topic's demand against its competition.",
       "business": "spry",
       "brand": "How We Know",
       "system": "github",
@@ -2674,8 +2675,8 @@
     },
     {
       "id": "how-we-know-loop-shorts-cloud",
-      "name": "loop · daily 18:00 CT · publish a Short from R2",
-      "what": "Publishes the next pages.",
+      "name": "Daily Short",
+      "what": "Every evening: publishes the next Short.",
       "business": "spry",
       "brand": "How We Know",
       "system": "github",
@@ -2724,8 +2725,8 @@
     },
     {
       "id": "how-we-know-loop-sun-rank",
-      "name": "loop · Sun 06:00 · rank topics",
-      "what": "loop · Sun 06:00 · rank topics",
+      "name": "Sunday ranking",
+      "what": "Sundays: ranks next week's topics.",
       "business": "spry",
       "brand": "How We Know",
       "system": "github",
@@ -2748,8 +2749,8 @@
     },
     {
       "id": "how-we-know-loop-upload-cloud",
-      "name": "loop · daily 09:00 CT · upload from R2",
-      "what": "loop · daily 09:00 CT · upload from R2",
+      "name": "Daily upload",
+      "what": "Every morning: uploads the day's episode.",
       "business": "spry",
       "brand": "How We Know",
       "system": "github",
@@ -2894,7 +2895,7 @@
       "brand": "How We Know",
       "system": "mac",
       "slots": [
-        "tue,thu 22:58"
+        "mon,wed,thu,sun 22:58"
       ],
       "emails": false,
       "heavy": true,
@@ -4538,30 +4539,6 @@
       }
     },
     {
-      "id": "sprylabs-hpc-site-daily-citation-intelligence",
-      "name": "Daily Citation Intelligence",
-      "what": "Reads Search Console and finds what to improve.",
-      "business": "spry",
-      "brand": "Spry Labs site",
-      "system": "github",
-      "slots": [
-        "daily 07:37"
-      ],
-      "emails": false,
-      "heavy": true,
-      "trigger": {
-        "repo": "sprylabs-hpc-site",
-        "file": ".github/workflows/daily-citation-intelligence.yml",
-        "crons": [
-          "37 13 * * *"
-        ]
-      },
-      "output": {
-        "floor": 0,
-        "reason": "A reader: what it finds feeds another job, which carries the floor."
-      }
-    },
-    {
       "id": "sprylabs-hpc-site-entity-backlink-watch",
       "name": "Entity Backlink Watch",
       "what": "Checks who links to the site and that it is named right.",
@@ -4583,79 +4560,6 @@
       "output": {
         "floor": 0,
         "reason": "A check: its result is pass or fail, and a fail is already its own red run."
-      }
-    },
-    {
-      "id": "sprylabs-hpc-site-main-validation-sentinel",
-      "name": "Main Validation Sentinel",
-      "what": "Main Validation Sentinel",
-      "business": "spry",
-      "brand": "Spry Labs site",
-      "system": "github",
-      "slots": [
-        "daily 02:17-22:17/240m"
-      ],
-      "emails": false,
-      "heavy": true,
-      "trigger": {
-        "repo": "sprylabs-hpc-site",
-        "file": ".github/workflows/main-validation-sentinel.yml",
-        "crons": [
-          "17 */4 * * *"
-        ]
-      },
-      "output": {
-        "floor": 0,
-        "reason": "A check: its result is pass or fail, and a fail is already its own red run."
-      }
-    },
-    {
-      "id": "sprylabs-hpc-site-search-intelligence",
-      "name": "Search Intelligence Cycle",
-      "what": "Reads Search Console and finds what to improve.",
-      "business": "spry",
-      "brand": "Spry Labs site",
-      "system": "github",
-      "slots": [
-        "daily 07:23"
-      ],
-      "emails": false,
-      "heavy": true,
-      "trigger": {
-        "repo": "sprylabs-hpc-site",
-        "file": ".github/workflows/search-intelligence.yml",
-        "crons": [
-          "23 13 * * *"
-        ]
-      },
-      "output": {
-        "floor": 0,
-        "reason": "A reader: what it finds feeds another job, which carries the floor."
-      }
-    },
-    {
-      "id": "sprylabs-hpc-site-spry-content-release",
-      "name": "Spry Content Release",
-      "what": "Publishes the next pages.",
-      "business": "spry",
-      "brand": "Spry Labs site",
-      "system": "github",
-      "slots": [
-        "daily 08:17"
-      ],
-      "emails": false,
-      "heavy": true,
-      "trigger": {
-        "repo": "sprylabs-hpc-site",
-        "file": ".github/workflows/spry-content-release.yml",
-        "crons": [
-          "17 14 * * *"
-        ]
-      },
-      "output": {
-        "metric": "pages published",
-        "floor": 1,
-        "runs": 3
       }
     },
     {
@@ -5799,6 +5703,442 @@
         "metric": "apps read",
         "floor": 2,
         "runs": 2
+      }
+    },
+    {
+      "id": "keepmyproof-entity-backlink-watch",
+      "name": "Entity backlink watch",
+      "what": "Checks that every profile linking to KeepMyProof still works and names it right.",
+      "business": "spry",
+      "brand": "KeepMyProof",
+      "system": "github",
+      "slots": [
+        "mon 07:17"
+      ],
+      "emails": false,
+      "heavy": false,
+      "trigger": {
+        "repo": "keepmyproof",
+        "file": ".github/workflows/entity-backlink-watch.yml",
+        "crons": [
+          "17 13 * * 1"
+        ]
+      },
+      "output": {
+        "floor": 0,
+        "reason": "A check: its result is pass or fail, and a fail is already its own red run."
+      }
+    },
+    {
+      "id": "keepmyproof-facts-refresh",
+      "name": "Facts refresh",
+      "what": "Re-reads the official sources behind the state pages and drops any fact whose quote is gone.",
+      "business": "spry",
+      "brand": "KeepMyProof",
+      "system": "github",
+      "slots": [
+        "mon 03:23"
+      ],
+      "emails": false,
+      "heavy": false,
+      "trigger": {
+        "repo": "keepmyproof",
+        "file": ".github/workflows/facts-refresh.yml",
+        "crons": [
+          "23 9 * * 1"
+        ]
+      },
+      "output": {
+        "floor": 0,
+        "reason": "Acts only when there is something to act on; Kendra sets a floor once it prints an OUTPUT line."
+      }
+    },
+    {
+      "id": "keepmyproof-monthly-watch",
+      "name": "Monthly watch",
+      "what": "On the 1st: finds a competitor's new pages and re-counts complaints in rival apps' reviews.",
+      "business": "spry",
+      "brand": "KeepMyProof",
+      "system": "github",
+      "slots": [
+        "day1 04:37"
+      ],
+      "emails": false,
+      "heavy": false,
+      "trigger": {
+        "repo": "keepmyproof",
+        "file": ".github/workflows/monthly-watch.yml",
+        "crons": [
+          "37 10 1 * *"
+        ]
+      },
+      "output": {
+        "floor": 0,
+        "reason": "A reader: what it finds feeds another job, which carries the floor."
+      }
+    },
+    {
+      "id": "keepmyproof-open-loops",
+      "name": "Release gate to Open Loops",
+      "what": "Puts each thing still blocking the app-store release on Open Loops, and closes it the day it clears.",
+      "business": "spry",
+      "brand": "KeepMyProof",
+      "system": "github",
+      "slots": [
+        "daily 04:17"
+      ],
+      "emails": false,
+      "heavy": false,
+      "trigger": {
+        "repo": "keepmyproof",
+        "file": ".github/workflows/open-loops.yml",
+        "crons": [
+          "17 10 * * *"
+        ]
+      },
+      "output": {
+        "floor": 0,
+        "reason": "A reporter: it posts what blocks the release; nothing blocking is the goal."
+      }
+    },
+    {
+      "id": "keepmyproof-search-console-daily",
+      "name": "Search Console daily",
+      "what": "Reads Search Console and finds what to improve.",
+      "business": "spry",
+      "brand": "KeepMyProof",
+      "system": "github",
+      "slots": [
+        "daily 05:23"
+      ],
+      "emails": false,
+      "heavy": false,
+      "trigger": {
+        "repo": "keepmyproof",
+        "file": ".github/workflows/search-console-daily.yml",
+        "crons": [
+          "23 11 * * *"
+        ]
+      },
+      "output": {
+        "floor": 0,
+        "reason": "A reader: what it finds feeds another job, which carries the floor."
+      }
+    },
+    {
+      "id": "keepmyproof-search-loop",
+      "name": "Search loop",
+      "what": "Finds easy searches and publishes gated question pages (the shared search loop) on keepmyproof.com.",
+      "business": "spry",
+      "brand": "KeepMyProof",
+      "system": "github",
+      "slots": [
+        "daily 08:07"
+      ],
+      "emails": false,
+      "heavy": false,
+      "trigger": {
+        "repo": "keepmyproof",
+        "file": ".github/workflows/search-loop.yml",
+        "crons": [
+          "7 14 * * *"
+        ]
+      },
+      "output": {
+        "floor": 0,
+        "reason": "Publishes only searches that pass its quality gate; the weekly search-loop-week report and Search Readiness f7-f10 judge what it made."
+      }
+    },
+    {
+      "id": "keepmyproof-syndicate",
+      "name": "Blogger and WordPress posts",
+      "what": "Posts one KeepMyProof guide a day to its own Blogger blog and its own WordPress.com blog, each linking back.",
+      "business": "spry",
+      "brand": "KeepMyProof",
+      "system": "github",
+      "slots": [
+        "daily 09:41"
+      ],
+      "emails": false,
+      "heavy": false,
+      "trigger": {
+        "repo": "keepmyproof",
+        "file": ".github/workflows/syndicate.yml",
+        "crons": [
+          "CRON_TZ=America/Chicago 41 9 * * *"
+        ]
+      },
+      "output": {
+        "floor": 0,
+        "reason": "Acts only when there is something to act on; Kendra sets a floor once it prints an OUTPUT line."
+      }
+    },
+    {
+      "id": "authority-backlink-network-deploy-publications",
+      "name": "Deploy the publications",
+      "what": "Every 3 hours: puts the three publications' newest pages live on their own Cloudflare account.",
+      "business": "spry",
+      "brand": "Authority network",
+      "system": "github",
+      "slots": [
+        "daily 00:17-21:17/180m"
+      ],
+      "emails": false,
+      "heavy": false,
+      "trigger": {
+        "repo": "authority-backlink-network",
+        "file": ".github/workflows/deploy-publications.yml",
+        "crons": [
+          "CRON_TZ=America/Chicago 17 */3 * * *"
+        ]
+      },
+      "output": {
+        "floor": 0,
+        "reason": "Acts only when there is something to act on; Kendra sets a floor once it prints an OUTPUT line."
+      }
+    },
+    {
+      "id": "how-we-know-loop-daily-runway",
+      "name": "Runway check",
+      "what": "Every evening: writes tomorrow's scripts when the calendar is running low, so the Mac never sits idle.",
+      "business": "spry",
+      "brand": "How We Know",
+      "system": "github",
+      "slots": [
+        "daily 19:00"
+      ],
+      "emails": false,
+      "heavy": false,
+      "trigger": {
+        "repo": "how-we-know",
+        "file": ".github/workflows/loop-daily-runway.yml",
+        "crons": [
+          "CRON_TZ=America/Chicago 0 19 * * *"
+        ]
+      },
+      "output": {
+        "floor": 0,
+        "reason": "Acts only when there is something to act on; Kendra sets a floor once it prints an OUTPUT line."
+      }
+    },
+    {
+      "id": "sprylabs-hpc-site-aplayermode-pin-drip",
+      "name": "A Player Mode pin queue",
+      "what": "Mondays: refills A Player Mode's Pinterest queue and counts the visits each pin brought.",
+      "business": "spry",
+      "brand": "A Player Mode",
+      "system": "github",
+      "slots": [
+        "mon 07:37"
+      ],
+      "emails": false,
+      "heavy": false,
+      "trigger": {
+        "repo": "sprylabs-hpc-site",
+        "file": ".github/workflows/aplayermode-pin-drip.yml",
+        "crons": [
+          "37 13 * * 1"
+        ]
+      },
+      "output": {
+        "floor": 0,
+        "reason": "Acts only when there is something to act on; Kendra sets a floor once it prints an OUTPUT line."
+      }
+    },
+    {
+      "id": "sprylabs-hpc-site-search-measurements",
+      "name": "Search measurements",
+      "what": "Reads Search Console for both Spry Labs sites; the weekly report and the Spry Labs weekly read it.",
+      "business": "spry",
+      "brand": "Spry Labs site",
+      "system": "github",
+      "slots": [
+        "daily 07:23"
+      ],
+      "emails": false,
+      "heavy": false,
+      "trigger": {
+        "repo": "sprylabs-hpc-site",
+        "file": ".github/workflows/search-measurements.yml",
+        "crons": [
+          "23 13 * * *"
+        ]
+      },
+      "output": {
+        "floor": 0,
+        "reason": "A reader: what it finds feeds another job, which carries the floor."
+      }
+    },
+    {
+      "id": "heygetonmylevel-entity-backlink-watch",
+      "name": "Entity backlink watch",
+      "what": "Checks who links to the site and that it is named right.",
+      "business": "time-2-read",
+      "brand": "Time-2-Read",
+      "system": "github",
+      "slots": [
+        "thu 07:00"
+      ],
+      "emails": false,
+      "heavy": false,
+      "trigger": {
+        "repo": "heygetonmylevel",
+        "file": ".github/workflows/entity-backlink-watch.yml",
+        "crons": [
+          "CRON_TZ=America/Chicago 0 7 * * 4"
+        ]
+      },
+      "output": {
+        "floor": 0,
+        "reason": "A check: its result is pass or fail, and a fail is already its own red run."
+      }
+    },
+    {
+      "id": "heygetonmylevel-post-deploy-live-check",
+      "name": "Post-deploy live check",
+      "what": "Checks the live site still works.",
+      "business": "time-2-read",
+      "brand": "Time-2-Read",
+      "system": "github",
+      "slots": [
+        "daily 06:20"
+      ],
+      "emails": false,
+      "heavy": false,
+      "trigger": {
+        "repo": "heygetonmylevel",
+        "file": ".github/workflows/post-deploy-live-check.yml",
+        "crons": [
+          "20 12 * * *"
+        ]
+      },
+      "output": {
+        "floor": 0,
+        "reason": "A check: its result is pass or fail, and a fail is already its own red run."
+      }
+    },
+    {
+      "id": "heygetonmylevel-search-console-daily",
+      "name": "Search Console daily",
+      "what": "Reads Search Console and finds what to improve.",
+      "business": "time-2-read",
+      "brand": "Time-2-Read",
+      "system": "github",
+      "slots": [
+        "daily 01:55"
+      ],
+      "emails": false,
+      "heavy": false,
+      "trigger": {
+        "repo": "heygetonmylevel",
+        "file": ".github/workflows/search-console-daily.yml",
+        "crons": [
+          "CRON_TZ=America/Chicago 55 1 * * *"
+        ]
+      },
+      "output": {
+        "floor": 0,
+        "reason": "A reader: what it finds feeds another job, which carries the floor."
+      }
+    },
+    {
+      "id": "heygetonmylevel-weekly-outcome-report",
+      "name": "Weekly outcome report",
+      "what": "Measures the week and keeps one self-closing issue for anything that dropped (no email of its own).",
+      "business": "time-2-read",
+      "brand": "Time-2-Read",
+      "system": "github",
+      "slots": [
+        "mon 06:40",
+        "mon 07:40"
+      ],
+      "emails": false,
+      "heavy": false,
+      "trigger": {
+        "repo": "heygetonmylevel",
+        "file": ".github/workflows/weekly-outcome-report.yml",
+        "crons": [
+          "40 12 * * 1",
+          "40 13 * * 1"
+        ]
+      },
+      "output": {
+        "metric": "weekly summaries written",
+        "floor": 1,
+        "runs": 2
+      }
+    },
+    {
+      "id": "dailystory-guides-deploy",
+      "name": "Guides deploy",
+      "what": "Daily: puts the newest Time-2-Read question pages live on guides.time-2-read.com.",
+      "business": "time-2-read",
+      "brand": "Time-2-Read",
+      "system": "github",
+      "slots": [
+        "daily 07:17"
+      ],
+      "emails": false,
+      "heavy": false,
+      "trigger": {
+        "repo": "dailystory",
+        "file": ".github/workflows/guides-deploy.yml",
+        "crons": [
+          "17 13 * * *"
+        ]
+      },
+      "output": {
+        "floor": 0,
+        "reason": "Acts only when there is something to act on; Kendra sets a floor once it prints an OUTPUT line."
+      }
+    },
+    {
+      "id": "dailystory-search-loop",
+      "name": "Search loop",
+      "what": "Finds easy searches and publishes gated question pages (the shared search loop) on guides.time-2-read.com.",
+      "business": "time-2-read",
+      "brand": "Time-2-Read",
+      "system": "github",
+      "slots": [
+        "daily 05:41"
+      ],
+      "emails": false,
+      "heavy": false,
+      "trigger": {
+        "repo": "dailystory",
+        "file": ".github/workflows/search-loop.yml",
+        "crons": [
+          "41 11 * * *"
+        ]
+      },
+      "output": {
+        "floor": 0,
+        "reason": "Publishes only searches that pass its quality gate; the weekly search-loop-week report and Search Readiness f7-f10 judge what it made."
+      }
+    },
+    {
+      "id": "join-west-peek-main-forms-mailer",
+      "name": "Forms test submission",
+      "what": "Sends a signed test through the West Peek site forms and alarms if it does not arrive: westpeek.ventures daily, the other two sites on Mondays. It wakes at 7 and 8 AM and runs only at 8 (the cloud clock does not move with daylight saving).",
+      "business": "west-peek-ventures",
+      "brand": "West Peek Ventures",
+      "system": "cloudflare",
+      "slots": [
+        "daily 07:00",
+        "daily 08:00"
+      ],
+      "emails": true,
+      "heavy": false,
+      "trigger": {
+        "repo": "join-west-peek-main",
+        "file": "workers/forms-mailer/wrangler.toml",
+        "crons": [
+          "0 13,14 * * *"
+        ]
+      },
+      "output": {
+        "floor": 0,
+        "reason": "A check: its result is pass or fail, and a fail is already its own red run."
       }
     }
   ]

@@ -2,12 +2,13 @@
   "_note": "THE EMAIL MAP (owner, 31 Oct 2026: \"one Email Map page inside Boss OS, all businesses\"). The ONE list of every automated email anything of hers sends, in every business, the fund included (her ruling: Boss OS may handle anything she wants). The Email Map page renders it; docs/OUTBOUND_EMAIL_MAP.md keeps the detailed audit of the Boss OS and side-business paths, and every Id there is a row here with the same owner (tests/emailMap.test.ts). A new sending path goes here in the same PR: the test fails on a sending file in boss-os that no row cites, and `npm run email-map:check` does the same for the other repos and the Mac's launchd jobs. Public repo: business sending addresses only; you are 'You'; never a customer, LP, prospect or investor name.",
   "businesses": [
     { "key": "brokerage", "label": "Brokerage", "blurb": "Deals, matches and the people worth a call." },
-    { "key": "west-peek-ventures", "label": "West Peek Ventures", "blurb": "The fund, TLC and Rooms, westpeek.live: the West Peek OS team (Porter, Wynn, Parker) and Monique's LP work." },
+    { "key": "west-peek-ventures", "label": "West Peek (fund and community)", "blurb": "The fund, TLC and Rooms, westpeek.live: the West Peek OS team (Porter, Wynn, Parker) and Monique's LP work." },
     { "key": "porch-and-party", "label": "Porch & Party", "blurb": "Valerie's business: her admin emails, customer emails, Camille's office outreach and the P&P Studio." },
     { "key": "time-2-read", "label": "Time-2-Read", "blurb": "Monique's groups and institutions outreach, and the app's own emails." },
-    { "key": "industry-guides", "label": "Industry Guides / Spry", "blurb": "The guides, their lead forms and outreach, and the Spry side businesses (ApprovalPrep, the wedding checklist, A Player Mode, How We Know, Kindle)." },
+    { "key": "industry-guides", "label": "Spry Labs", "blurb": "The side businesses under Spry Labs: the Industry Guides' lead forms and outreach, ApprovalPrep, Dream Wedding, A Player Mode, KeepMyProof, How We Know, Kindle books and the backlink network." },
     { "key": "personal", "label": "Personal", "blurb": "Boss OS to you: Simone's morning email, Spirit, Brains, errands, practice and lapse emails, meeting prep, and the team's notices." },
-    { "key": "spry", "label": "Creator studios", "blurb": "Spry's creator studios: the shared studio app and the creator dashboards it runs for clients, with their sign-in codes, briefs, clips and weekly recaps." }
+    { "key": "spry", "label": "Creator studios", "blurb": "Spry's creator studios: the shared studio app and the creator dashboards it runs for clients, with their sign-in codes, briefs, clips and weekly recaps." },
+    { "key": "friends", "label": "Friends' sites", "blurb": "Emails the friends' sites send to their own owners (Claire at Horse, Monika at Hicks). Their results stay in their own repos." }
   ],
   "runs": {
     "cloud-cron": "In the cloud, on a schedule. Your Mac can be off.",
@@ -217,10 +218,10 @@
       "sender": "Monique", "owner": "Monique",
       "from": "Inside Simone's morning email", "to": "You",
       "when": "Daily (LP run 6:15 AM, catch-ups 6:20 AM, 8Raise 6:25 AM)",
-      "runs": "folded", "trigger": "Mac jobs com.seq.boss-lp, com.seq.boss-catchups, com.seq.boss-eightraise write morning sections",
-      "pause": "launchctl bootout gui/501/com.seq.boss-lp (and -catchups, -eightraise)",
-      "launchd": ["com.seq.boss-lp", "com.seq.boss-catchups", "com.seq.boss-eightraise"],
-      "code": [{ "repo": "boss-os", "paths": ["scripts/ops/lp-daily.mjs", "scripts/ops/lp-catchups.mjs", "scripts/ops/lp-eightraise.mjs"] }]
+      "runs": "folded", "trigger": "Mac jobs com.seq.boss-lp and com.seq.boss-eightraise, and the GitHub Action job-catchups.yml (the catch-ups, off the Mac since 1 Nov 2026), write morning sections",
+      "pause": "Turn off the Mac jobs com.seq.boss-lp and com.seq.boss-eightraise; disable job-catchups.yml in boss-os",
+      "launchd": ["com.seq.boss-lp", "com.seq.boss-eightraise"],
+      "code": [{ "repo": "boss-os", "paths": ["scripts/ops/lp-daily.mjs", "scripts/ops/lp-catchups.mjs", "scripts/ops/lp-eightraise.mjs", ".github/workflows/job-catchups.yml"] }]
     },
     {
       "id": "wpv-site-lead", "business": "west-peek-ventures",
@@ -228,9 +229,9 @@
       "sender": "The site (no employee)", "owner": "Porter",
       "from": "The site's EMAIL_FROM setting", "to": "A managing partner, and the network sheet",
       "when": "When someone submits the form",
-      "runs": "cloud-event", "trigger": "Pages Function /api/lead on join-west-peek-main",
+      "runs": "cloud-event", "trigger": "Pages Function /api/lead on join-west-peek-main, delivered through the west-peek-forms-mailer Worker (Resend as the backup)",
       "pause": "Unset EMAIL_FROM on the join-west-peek-main Pages project",
-      "code": [{ "repo": "join-west-peek-main", "paths": ["functions/api/lead.js"] }]
+      "code": [{ "repo": "join-west-peek-main", "paths": ["functions/api/lead.js", "workers/forms-mailer/src/index.js"] }]
     },
     {
       "id": "wpv-topbarz-code", "business": "west-peek-ventures",
@@ -596,17 +597,17 @@
       "id": "approvalprep-download-email", "business": "industry-guides",
       "what": "ApprovalPrep download link after a purchase",
       "sender": "The site (no employee)", "owner": "Danielle",
-      "from": "ApprovalPrep <hello@approvalprep.com>", "to": "The buyer",
+      "from": "ApprovalPrep <hello@mail.approvalprep.com>", "to": "The buyer",
       "when": "On a purchase or a resend request",
-      "runs": "cloud-event", "trigger": "Pages Function /api/resend-download-email",
+      "runs": "cloud-event", "trigger": "Pages Function /api/resend-download-email (the work is in functions/_runtime/resend-download.js)",
       "pause": "Remove RESEND_API_KEY from the approvalprep Pages project",
-      "code": [{ "repo": "approvalprep", "paths": ["functions/api/resend-download-email.js"] }]
+      "code": [{ "repo": "approvalprep", "paths": ["functions/api/resend-download-email.js", "functions/_runtime/resend-download.js"] }]
     },
     {
       "id": "approvalprep-email-nurture", "business": "industry-guides",
       "what": "ApprovalPrep free-item series: the free Letter of Explanation sample or the free credit starter (\"Before you pay a credit repair company\", from 7 Nov 2026) at once, then one email every 3 days about one paid kit (5 after the sample, 2 after the starter), stopping on purchase, unsubscribe or the last step",
       "sender": "The site (no employee)", "owner": "Danielle",
-      "from": "ApprovalPrep <hello@approvalprep.com>", "to": "A person who typed their address for the free sample or the free credit starter",
+      "from": "ApprovalPrep <hello@mail.approvalprep.com>", "to": "A person who typed their address for the free sample or the free credit starter",
       "when": "Due steps sent at 8:17, 13:17 and 18:17 Central",
       "runs": "github", "trigger": "GitHub Action email-nurture.yml (calls the site's /api/nurture-run)",
       "pause": "Disable email-nurture.yml in approvalprep",
@@ -731,11 +732,10 @@
       "what": "Your one morning email: Decide, new deals and Monique found, Spirit, Camille's briefing in five lines, Done for you, Catch up with, Porch & Party to-do for Valerie",
       "sender": "Simone", "owner": "Simone",
       "from": "Simone <simone@sequoiataylor.com>", "to": "You",
-      "when": "Daily, as Camille's briefing lands; 6:45 AM at the latest",
-      "runs": "mac", "trigger": "Mac job com.seq.boss-your-day",
-      "pause": "launchctl bootout gui/501/com.seq.boss-your-day",
-      "launchd": ["com.seq.boss-your-day"],
-      "code": [{ "repo": "boss-os", "paths": ["scripts/ops/your-day.mjs", "scripts/ops/notify.mjs", "src/shared/boss/mail/morning.mjs", "src/shared/boss/mail/plain.mjs"] }]
+      "when": "Daily at 6:40 AM; a 7:50 AM safety run sends it only if the first did not",
+      "runs": "github", "trigger": "GitHub Action job-your-day.yml in boss-os (off the Mac since 1 Nov 2026)",
+      "pause": "Disable job-your-day.yml in boss-os",
+      "code": [{ "repo": "boss-os", "paths": [".github/workflows/job-your-day.yml", "scripts/ops/your-day.mjs", "scripts/ops/notify.mjs", "src/shared/boss/mail/morning.mjs", "src/shared/boss/mail/plain.mjs"] }]
     },
     {
       "id": "spirit-in-morning", "business": "personal",
@@ -997,6 +997,66 @@
       "trigger": "Drafted by the Boss OS hourly tick; sent by GitHub Actions job-errand-reminders.yml (every 10 minutes)",
       "pause": "Tap Skip this quarter",
       "code": [{"repo": "boss-os", "paths": ["scripts/ops/errand-reminders.mjs", "src/worker/boss/clients/hicksUpdate.ts", "src/shared/boss/clients/hicksUpdate.mjs"]}]
+    },
+    {
+      "id": "wpv-forms-alarm", "business": "west-peek-ventures",
+      "what": "West Peek site forms: an alarm when a form submission could not be delivered (and a \"fixed\" email once it works again), plus the 8 AM test submission that proves the forms still reach you",
+      "sender": "The site (no employee)", "owner": "Porter",
+      "from": "West Peek forms <forms@joinwestpeek.com>", "to": "The West Peek forms alarm list (three addresses, kept in the West Peek OS vault)",
+      "when": "At most one alarm an hour per problem; the test runs daily at 8 AM for westpeek.ventures and on Mondays for the other two sites",
+      "runs": "cloud-cron", "trigger": "The west-peek-forms-mailer Worker: its 8 AM cron, and each form's outcome report",
+      "pause": "Remove FORMS_ALARM_TO from the west-peek-forms-mailer Worker",
+      "code": [{ "repo": "join-west-peek-main", "paths": ["workers/forms-mailer/src/index.js", "workers/forms-mailer/wrangler.toml", "functions/_lib/lead-delivery.mjs"] }]
+    },
+    {
+      "id": "wedding-email-nurture", "business": "industry-guides",
+      "what": "Dream Wedding free-sample series: the checklist sample at once, then one email every 3 days about one paid product, stopping on purchase, unsubscribe or the last step; a buyer gets one review ask a few days after buying",
+      "sender": "The site (no employee)", "owner": "Danielle",
+      "from": "Dream Wedding Builder <hello@mail.weddingchecklistpdf.com>", "to": "A person who typed their address for the free sample; a buyer for the one review ask",
+      "when": "Due steps checked every hour; at most 60 a day",
+      "runs": "cloud-cron", "trigger": "The dream-wedding-builder Worker's hourly cron (runNurture)",
+      "pause": "Remove RESEND_API_KEY from the dream-wedding-builder Worker (this also stops order delivery)",
+      "code": [{ "repo": "dream-wedding-builder", "paths": ["lib/nurture.ts"] }]
+    },
+    {
+      "id": "creator-login-link", "business": "spry",
+      "what": "A one-time sign-in link to the photo upload page of a creator's own site",
+      "sender": "The site (no employee)", "owner": "Danielle",
+      "from": "The site's own studio address (its EMAIL_FROM setting)", "to": "The site's owner only (nobody else can be sent one)",
+      "when": "When the owner asks for a link on the upload page; at most 5 an hour, 20 a day",
+      "runs": "cloud-event", "trigger": "Pages Function /login/email on justbeingmercedes",
+      "pause": "Remove RESEND_API_KEY from the justbeingmercedes Pages project",
+      "code": [{ "repo": "justbeingmercedes", "paths": ["functions/login/email.js"] }]
+    },
+    {
+      "id": "friends-horse-approved-content", "business": "friends",
+      "what": "Horse Legal Guide: links to newly approved pages and ready-to-post social copy",
+      "sender": "The site (no employee)", "owner": "Danielle",
+      "from": "Horse Legal Guide's own mail account (a repo secret)", "to": "Claire (her address is a repo secret)",
+      "when": "Daily at 9:17 AM, and after an approval or publish run, only when something new was approved",
+      "runs": "github", "trigger": "GitHub Action approved-content-email.yml in horse-legal-guide-velocity",
+      "pause": "Disable approved-content-email.yml in horse-legal-guide-velocity",
+      "code": [{ "repo": "horse-legal-guide-velocity", "paths": ["scripts/social/send_approved_content_email.py", ".github/workflows/approved-content-email.yml"] }]
+    },
+    {
+      "id": "friends-hicks-published", "business": "friends",
+      "what": "Hicks Consulting: what the site published on its own, why, and an optional request to double-check it",
+      "sender": "The site (no employee)", "owner": "Danielle",
+      "from": "Hicks Consulting's sender (a repo secret)", "to": "Monika (her address is a repo secret)",
+      "when": "After a publishing run that published something",
+      "runs": "github", "trigger": "GitHub Action indexnow-submit.yml in hicks-consulting-canonical (runs after a publish)",
+      "pause": "Remove PUBLICATION_NOTIFICATION_TO from the hicks-consulting-canonical repo secrets",
+      "code": [{ "repo": "hicks-consulting-canonical", "paths": ["scripts/autonomy/lib/notification.mjs", "scripts/autonomy/run_post_publish_email.mjs"] }]
+    },
+    {
+      "id": "search-loop-stops", "business": "industry-guides",
+      "what": "Search Loop's stops (no free model, a hung run, a missing key) become rows on Open Loops, not emails",
+      "sender": "Nobody", "owner": "Danielle",
+      "from": "No email", "to": "Open Loops in Boss OS",
+      "when": "After a site's daily Search Loop run that stopped",
+      "runs": "not-email", "trigger": "The shared search-loop workflow's last step (v1.7.0)",
+      "pause": "Unset BOSS_OPEN_LOOPS_TOKEN on the site's repo",
+      "code": [{ "repo": "search-loop", "paths": ["bin/report-stops.mjs", "bin/open-loops.mjs", ".github/workflows/search-loop.yml"] }]
     }
   ]
 }

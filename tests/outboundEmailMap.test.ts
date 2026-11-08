@@ -7,7 +7,9 @@ import { describe, expect, it } from "vitest";
 import { FUND_SIDE_CHASSIS_SENDERS } from "../scripts/ops/notify.mjs";
 import { BUSINESSES } from "../src/worker/boss/outreach/catalog";
 import { OWNER_OK_CROSSINGS, fundCrossings } from "./helpers/fundCrossings";
-import { addressProblems, categoryProblems, checkOtherRepos, citedIn, isClientRepo, isScanned as mapScanned, readManifest, sends, shapeProblems, uncovered } from "../scripts/ops/lib/email-map.mjs";
+import { addressProblems, categoryProblems, checkOtherRepos, citedIn, isClientRepo, isScanned as mapScanned, isScannedBin, readManifest, sends, shapeProblems, siblingRepos, uncovered } from "../scripts/ops/lib/email-map.mjs";
+import { mkdirSync, mkdtempSync } from "node:fs";
+import { tmpdir } from "node:os";
 
 /**
  * docs/OUTBOUND_EMAIL_MAP.md is read by code, so it is a rule and not a wish (owner, 12 Oct 2026:
@@ -387,7 +389,7 @@ describe("the 22 Oct 2026 repairs stay repaired", () => {
       expect(row).toContain("Cloudflare Email Service");
       expect(row).toMatch(/\| p-n-p /);
     }
-    expect(rowOf("pnp-marketplace-renew")).toMatch(/seq\.taylor@gmail\.com.*every 7th day from Fri 23 Oct 2026/);
+    expect(rowOf("pnp-marketplace-renew")).toMatch(/your personal Gmail.*every 7th day from Fri 23 Oct 2026/);
     expect(rowOf("pnp-valerie-todo")).toMatch(/7 AM.*Your week/);
   });
 
@@ -482,6 +484,24 @@ describe("the Email Map page's manifest covers every sender", () => {
     expect(uncovered([{ file: "tests/x.test.ts", source: "sendAsEmployee(" }], manifest, "boss-os")).toEqual([]);
     expect(addressProblems({ rows: [{ to: "someone@gmail.com" }] })).toHaveLength(1);
     expect(shapeProblems({ ...manifest, rows: [...manifest.rows, { ...manifest.rows[0]!, pause: "" }] }).length).toBeGreaterThan(0);
+  });
+
+  // 8 Nov 2026: the Mac check read only repos a row already cited, so a sender in a repo with no row
+  // (Horse's SMTP email, Hicks's publish notice, a creator site's sign-in link) was never seen.
+  it("the Mac scan reaches every repo checkout of hers, ~/bin's extensionless scripts and SMTP senders", () => {
+    const base = mkdtempSync(path.join(tmpdir(), "email-map-"));
+    for (const n of ["boss-os", "uncited-repo", "parked-repo", ".wt-something", "_archive", "not-a-repo"]) {
+      mkdirSync(path.join(base, n, n === "not-a-repo" ? "x" : ".git"), { recursive: true });
+    }
+    const cats = parseRepoCategories("## Repo categories\n**Mine**\n- A: uncited-repo\n**Friends & clients**\n- Parked indefinitely (x): parked-repo\n**The system**\n- boss-os\n");
+    const found = siblingRepos(path.join(base, "boss-os"), cats);
+    expect(found).toContain("uncited-repo");
+    expect(found).not.toContain("parked-repo");
+    expect(found.filter((r) => /^[._]|^boss-os$|^not-a-repo$/.test(r))).toEqual([]);
+    expect(isScannedBin("land")).toBe(true);
+    expect(isScannedBin("README.md")).toBe(false);
+    expect(sends("with smtplib.SMTP_SSL(host, port) as s:")).toBe(true);
+    expect(sends("import smtplib  # mentioned only")).toBe(false);
   });
 
   // Owner, 1 Nov 2026: the client-repo ban is replaced by her repo categories (personal brain).

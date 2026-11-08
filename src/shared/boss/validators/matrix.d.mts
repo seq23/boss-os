@@ -18,7 +18,7 @@ export const REVIEW_FILE: RegExp;
 export function keyOf(name: string): string;
 export function runsWords(runs: string | null | undefined): string;
 export function parseReviewFile(fileName: string, json: unknown): Review;
-export function registryFrom(input?: { scripts?: string[] | Record<string, string>; files?: string[]; steps?: string[] }): Registry;
+export function registryFrom(input?: { scripts?: string[] | Record<string, string>; files?: string[]; steps?: string[]; registry?: string[] }): Registry;
 export function buildMatrix(input?: { reviews?: Review[]; registries?: Record<string, Registry | null>; otherRepos?: string[] }): Matrix;
 export function matrixFlagWords(m: Matrix | null | undefined): string | null;
 export function matrixSummary(m: Matrix): string;

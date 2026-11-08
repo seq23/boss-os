@@ -60,6 +60,7 @@ describe("Industry Guides mail fan-out (owner, 13 Oct 2026)", () => {
     expect(lines.map((l) => l.split("=")[0]!.trim()).sort()).toEqual(["compatibility_date", "main", "name", "workers_dev"]);
     expect(readFileSync("scripts/deploy/production.mjs", "utf8")).toContain('run("node scripts/deploy/mail-fanout.mjs")');
     const map = readFileSync("docs/OUTBOUND_EMAIL_MAP.md", "utf8");
-    expect(map).toContain("hello@theindustryguides.com → industry-guides-mail-fanout Worker → cryptoclearr@gmail.com and st@time-2-read.com");
+    expect(map).toContain("hello@theindustryguides.com → industry-guides-mail-fanout Worker →");
+    expect(map).not.toMatch(/@gmail\.com/); // the repo is public: no owner inbox in the map (8 Nov 2026)
   });
 });

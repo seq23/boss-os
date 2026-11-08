@@ -195,6 +195,7 @@ export async function recordMacCohesion(env: Env, body: unknown, now = Date.now(
     validators_checked: Number(b.validators_checked) || 0,
     validators_flag: typeof b.validators_flag === "string" && b.validators_flag ? str(b.validators_flag, 400) : null,
     social_map_flag: typeof b.social_map_flag === "string" && b.social_map_flag ? str(b.social_map_flag, 400) : null,
+    maps_flag: typeof b.maps_flag === "string" && b.maps_flag ? str(b.maps_flag, 400) : null,
   };
   await setSetting(env.DB, MAC_COHESION_KEY, JSON.stringify(rec));
   await audit(env.DB, { actor: "mac", lane: "ops", entityType: "brain", entityId: "cohesion", action: "mac_cohesion_recorded", detail: { week: rec.week } });

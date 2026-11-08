@@ -7,10 +7,10 @@
  * jobs, on her Mac where those checkouts live).
  */
 import { execFileSync } from "node:child_process";
-import { existsSync, readFileSync } from "node:fs";
+import { existsSync, readdirSync, readFileSync, statSync } from "node:fs";
 import { homedir } from "node:os";
 import path from "node:path";
-import { categoryOf } from "../../../src/shared/boss/repos/categories.mjs";
+import { categoryOf, isParkedRepo } from "../../../src/shared/boss/repos/categories.mjs";
 import { readRepoCategories } from "./repo-categories.mjs";
 
 /**
@@ -28,6 +28,8 @@ export const SENDING_PATTERNS = [
   /\/api\/outreach\/send\b/,
   /\.send\((b|business|biz)\b/,
   /\bresend\.emails\.send\(|\bnew Resend\(|\bcreateTransport\(|\bnodemailer\b/,
+  // Python's SMTP client (8 Nov 2026: Horse's approved-content email to Claire sent through it, unseen).
+  /\bsmtplib\.SMTP(_SSL)?\(/,
 ];
 
 /** Code files only; tests, fixtures, validators, docs, generated content and type stubs name senders without sending. */
@@ -56,7 +58,7 @@ export function uncovered(files, manifest, repo) {
  */
 export const BUSINESS_DOMAINS = [
   "sequoiataylor.com", "joinwestpeek.com", "westpeek.ventures", "events.westpeek.live", "porchandparty901.com",
-  "time-2-read.com", "time2read.com", "time2read.app", "theindustryguides.com", "aplayermode.com", "approvalprep.com",
+  "mail.approvalprep.com", "time-2-read.com", "time2read.com", "time2read.app", "theindustryguides.com", "aplayermode.com", "approvalprep.com",
   "weddingchecklistpdf.com", "mail.weddingchecklistpdf.com", "github.com",
 ];
 export function addressProblems(manifest) {
@@ -136,8 +138,31 @@ function defaultRef(dir) {
  * The other repos, read on their default branch (never a stale working tree): every cited path
  * exists there, and every file there that sends is cited. ~/bin is not a repo: its files must exist.
  */
-export function checkOtherRepos(manifest, root, { scanSenders = true } = {}) {
-  const repos = [...new Set(manifest.rows.flatMap((r) => r.code.map((c) => c.repo)))].filter((r) => r !== "boss-os" && r !== "external");
+/**
+ * Every repo checkout of hers on this Mac (siblings of this checkout and ~/GitHub/*), except worktrees,
+ * archives and parked repos. 8 Nov 2026: the scan read only the repos a row already cited, so a sender
+ * in a repo with no row at all could never be found. The map now scans them all; a row is what it needs.
+ */
+export function siblingRepos(root, cats = readRepoCategories()) {
+  const out = new Set();
+  for (const base of [path.resolve(root, ".."), path.join(homedir(), "GitHub")]) {
+    let names = [];
+    try { names = readdirSync(base); } catch { continue; }
+    for (const n of names) {
+      if (/^[._]/.test(n) || n === "boss-os" || !existsSync(path.join(base, n, ".git"))) continue;
+      if (cats && !cats.problem && isParkedRepo(n, cats)) continue;
+      out.add(n);
+    }
+  }
+  return [...out].sort();
+}
+
+/** ~/bin's own files: scripts there often have no extension (`land`), so any file but docs and tests is read. */
+export const isScannedBin = (file) => !/\.(md|json|txt|log|plist)$/.test(file) && !/(^|\/)(tests?|docs|node_modules)\//.test(file) && !/\.test\.[a-z]+$/.test(file);
+
+export function checkOtherRepos(manifest, root, { scanSenders = true, alsoScan = [] } = {}) {
+  const cited_repos = manifest.rows.flatMap((r) => r.code.map((c) => c.repo));
+  const repos = [...new Set([...cited_repos, ...alsoScan])].filter((r) => r !== "boss-os" && r !== "external");
   const checked = [];
   const missingRepos = [];
   const problems = [];
@@ -148,6 +173,16 @@ export function checkOtherRepos(manifest, root, { scanSenders = true } = {}) {
     const cited = citedIn(manifest, repo);
     if (repo === "~/bin") {
       for (const p of cited) if (!existsSync(path.join(dir, p))) problems.push(`${repo}/${p} does not exist`);
+      if (!scanSenders) continue;
+      let binFiles = [];
+      try { binFiles = execFileSync("git", ["-C", dir, "ls-files"], { encoding: "utf8", maxBuffer: 16 << 20 }).split("\n").filter(Boolean); }
+      catch { binFiles = readdirSync(dir).filter((f) => { try { return statSync(path.join(dir, f)).isFile(); } catch { return false; } }); }
+      for (const f of binFiles.filter(isScannedBin)) {
+        if (cited.has(f)) continue;
+        let source = "";
+        try { source = readFileSync(path.join(dir, f), "utf8"); } catch { continue; }
+        if (sends(source)) problems.push(`${repo}: ${f} sends email and no Email Map row cites it`);
+      }
       continue;
     }
     const ref = defaultRef(dir);

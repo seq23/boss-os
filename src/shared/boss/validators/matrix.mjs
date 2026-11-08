@@ -88,7 +88,7 @@ const SKIP = /(^|\/)(node_modules|fixtures?|__fixtures__|dist|build|_archive|arc
  * `entries` are the validator-shaped ones (compared against the matrix); `known` is every key the
  * repo carries in any form (a matrix row found there is "listed").
  */
-export function registryFrom({ scripts = {}, files = [], steps = [] } = {}) {
+export function registryFrom({ scripts = {}, files = [], steps = [], registry = [] } = {}) {
   // scripts: { name: command } (a list of names is accepted too).
   const cmds = Array.isArray(scripts) ? Object.fromEntries(scripts.map((n) => [n, ""])) : scripts;
   const entries = new Map();
@@ -100,6 +100,9 @@ export function registryFrom({ scripts = {}, files = [], steps = [] } = {}) {
     if (commandText.includes(f)) continue; // a file a package script runs is that script's validator, not a second one
     add(f, "file");
   }
+  // A repo's own validators.registry.json (one runner, many named checks: keepmyproof's
+  // scripts/validate.mjs) IS its list; 8 Nov 2026 the matrix ignored it and read "no validator".
+  for (const n of registry) add(n, "registry");
   const known = new Set(entries.keys());
   for (const f of files) if (!/(^|\/)node_modules\//.test(f)) known.add(keyOf(f));
   for (const s of Object.keys(cmds)) known.add(keyOf(s));

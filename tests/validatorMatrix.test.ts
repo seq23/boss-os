@@ -7,7 +7,7 @@ import { mkdtempSync, mkdirSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { buildMatrix, keyOf, matrixFlagWords, matrixSummary, parseReviewFile, registryFrom, snapshotProblems } from "../src/shared/boss/validators/matrix.mjs";
-import { readMatrix } from "../scripts/ops/validator-matrix.mjs";
+import { readMatrix, reposOnMac } from "../scripts/ops/validator-matrix.mjs";
 import { cohesionCheckLine } from "../src/shared/boss/brains/brain.mjs";
 
 const row = (name: string, kind = "safety") => ({ name, protects: `${name} holds`, why: "an incident", kind, runs: "pr" });
@@ -100,6 +100,22 @@ describe("the Mac reader", () => {
     expect(m.repos).toEqual(["alpha", "delta"]);
     expect(m.rows).toHaveLength(2);
     expect(matrixFlagWords(m)).toBeNull();
+  });
+});
+
+describe("what counts as a repo's list (8 Nov 2026)", () => {
+  it("a repo's own validators.registry.json is its list", () => {
+    const reg = registryFrom({ scripts: { validate: "node scripts/validate.mjs" }, registry: ["public-data", "local-only"] });
+    expect(reg.entries.map((e) => e.name)).toEqual(["public-data", "local-only"]);
+    const m = buildMatrix({ reviews: [review("kmp", [row("public-data")])], registries: { kmp: reg } });
+    expect(m.problems).toEqual([]);
+    expect(buildMatrix({ reviews: [review("kmp", [row("public-data")])], registries: { kmp: registryFrom({ scripts: { validate: "x" } }) } }).problems.join(" ")).toMatch(/no validator could be read/);
+  });
+  it("hidden folders and parked repos are not repos to import", () => {
+    const home = mkdtempSync(join(tmpdir(), "vm-"));
+    for (const d of ["mine", ".hwk-runner", "parked-one"]) mkdirSync(join(home, "GitHub", d, ".git"), { recursive: true });
+    const cats = { mine: ["mine"], friends: ["parked-one"], system: ["boss-os"], parked: ["parked-one"] };
+    expect([...reposOnMac(home, cats as any).keys()]).toEqual(["mine"]);
   });
 });
 

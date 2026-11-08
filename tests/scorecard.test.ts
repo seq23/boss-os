@@ -6,6 +6,7 @@
  * fine; a pause goes through each job's own switch and never deletes; the Monday run cannot pass on
  * nothing; the email lists only what needs a look.
  */
+import { generateKeyPairSync } from "node:crypto";
 import { readFileSync } from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
@@ -159,6 +160,26 @@ describe("the five states", () => {
     expect(await read('{"launchedOn":"2027-01-15T09:00:00Z"}')).toEqual({ raw: "2027-01-15" });
     await expect(read('{"launchedOn":12}')).rejects.toThrow(/REPORT_EMPTY/);
     await expect(read("{}")).rejects.toThrow(/REPORT_EMPTY/);
+  });
+
+  it("a ledger is counted by date, and Search Console can be read for named pages only", async () => {
+    const now = Date.parse("2026-11-08T12:00:00Z");
+    const ledger = JSON.stringify([{ day: "2026-11-08" }, { day: "2026-11-01" }, { day: "2026-09-01" }]);
+    const count = (days: number) => READERS["repo-json"]!({ days, files: [{ repo: "r", path: "p", countSince: "day" }] }, { gh: () => ledger, now });
+    expect(await count(28)).toEqual({ raw: 2 });
+    expect(await count(3)).toEqual({ raw: 1 });
+    await expect(READERS["repo-json"]!({ days: 28, files: [{ repo: "r", path: "p", countSince: "day" }] }, { gh: () => "{}", now })).rejects.toThrow(/REPORT_EMPTY/);
+    const bodies: any[] = [];
+    const fetch = async (url: string, init?: any) => {
+      if (/oauth2|token/.test(url)) return { ok: true, json: async () => ({ access_token: "t" }) };
+      if (url.endsWith("/webmasters/v3/sites")) return { ok: true, json: async () => ({ siteEntry: [{ siteUrl: "sc-domain:x.com" }] }) };
+      bodies.push(JSON.parse(init.body));
+      return { ok: true, json: async () => ({ rows: [{ clicks: 4 }] }) };
+    };
+    const { privateKey } = generateKeyPairSync("rsa", { modulusLength: 2048, privateKeyEncoding: { type: "pkcs8", format: "pem" }, publicKeyEncoding: { type: "spki", format: "pem" } });
+    const ctx: any = { now, fetch, env: { GSC_SERVICE_ACCOUNT_JSON: JSON.stringify({ client_email: "probe@x.iam", private_key: privateKey }) } };
+    expect(await READERS.gsc!({ sites: ["x.com"], metric: "clicks", days: 28, pages: ["/a/", "/b/"] }, ctx)).toEqual({ raw: 8, note: undefined });
+    expect(bodies.map((b) => b.dimensionFilterGroups[0].filters[0].expression)).toEqual(["/a/", "/b/"]);
   });
 
   it("a delta metric needs history before it can be judged, then judges the change", () => {

@@ -513,7 +513,10 @@
             "https://aplayermode.com/pinfeed.xml"
           ],
           "max_age_days": 3
-        }
+        },
+        "jobs": [
+          "sprylabs-hpc-site-aplayermode-pin-drip"
+        ]
       },
       "decision": "Spry's Pinterest became the aplayermode account (16 Oct 2026); 4 boards, 3 pins a day (1 Nov)."
     },
@@ -633,7 +636,10 @@
             "file": "syndicate.yml"
           },
           "max_age_days": 2
-        }
+        },
+        "jobs": [
+          "keepmyproof-syndicate"
+        ]
       },
       "decision": "Blogger back on (owner, 8 Nov 2026); distribution plan approved 2 Nov.",
       "account_email_note": "Moved off her personal Google account to the Time-2-Read outreach mailbox (8 Nov 2026)."
@@ -666,7 +672,10 @@
             "file": "syndicate.yml"
           },
           "max_age_days": 2
-        }
+        },
+        "jobs": [
+          "keepmyproof-syndicate"
+        ]
       },
       "decision": "Distribution plan approved in full, 2 Nov 2026; WordPress.com posting on (8 Nov).",
       "account_email_note": "On its own KeepMyProof account, off her personal Gmail (8 Nov 2026); the address is not recorded here."
