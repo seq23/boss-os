@@ -54,7 +54,7 @@ export function aiAnswers(spec) {
   return {
     used: true,
     texts: /extensive/i.test(spec?.ai_disclosure?.text_detail ?? "") ? spec.ai_disclosure.text_detail : "Some sections, with extensive editing",
-    images: spec?.ai_disclosure?.images_detail ?? "Entire work, with extensive editing",
+    images: spec?.ai_disclosure?.images_detail ?? "One or a few AI-generated images, with minimal or no editing",
     translations: "None",
     tools: spec?.ai_disclosure?.tool_names ?? "Google Gemini; Anthropic Claude",
   };
@@ -320,53 +320,91 @@ async function upload(page, kind, sels, file, dir) {
   throw stop("UPLOAD_NOT_CONFIRMED", `Amazon showed neither "${name} uploaded successfully" nor a ${kind === "cover" ? "cover thumbnail" : "confirmation"} within 6 minutes (last seen: ${last.state}). Page kept at ${shot ?? "(screenshot failed)"}.`, 9);
 }
 
-/** Sets the AI answers inside the AI section, and reads them back. Returns what the page shows. */
-async function aiDisclosure(page, ans, { write }) {
-  // The smallest element holding both the AI question and its radio buttons is the section.
-  const found = await page.evaluate(() => {
-    const re = /AI[- ]generated content|use AI(?:-based)? tools/i;
-    const all = [...document.querySelectorAll("fieldset, section, div")].filter((el) => re.test(el.innerText ?? "") && el.querySelector('input[type="radio"]'));
-    all.sort((x, y) => x.querySelectorAll("*").length - y.querySelectorAll("*").length);
-    document.querySelectorAll("[data-kmp-ai]").forEach((el) => el.removeAttribute("data-kmp-ai"));
-    if (all[0]) all[0].setAttribute("data-kmp-ai", "1");
-    return !!all[0];
-  });
-  if (!found) throw stop("AI_DISCLOSURE_NOT_FOUND", "the AI-generated content question is not on the content step; nothing was published.");
-  const section = page.locator('[data-kmp-ai="1"]');
-  if (write) {
-    const yes = section.getByRole("radio", { name: /^Yes$/i });
-    if (!(await yes.count())) throw stop("AI_DISCLOSURE_NOT_FOUND", "no Yes answer in the AI question.");
-    await yes.first().check();
-    await page.waitForTimeout(1000);
+/**
+ * In-page (and fixture-tested): reads KDP's AI question. Amazon draws it as an AUI accordion
+ * (8 Nov 2026 stop page): "Yes"/"No" are `[data-a-accordion-row-name]` rows whose `role="radio"`
+ * div carries aria-checked, NOT radio inputs, and each answer is a native <select> inside a span
+ * labelled `generative-ai-questionnaire-<text|images|translations>-label`.
+ * @returns {{ found: boolean, yes: boolean, selects: Record<string,string>, options: Record<string,string[]>, tools: Record<string,string|null> }}
+ */
+export function aiState(doc) {
+  const root = doc.querySelector('[data-a-accordion-name="generative-ai-questionnaire-accordion"], [aria-labelledby="generative-ai-questionnaire-question"]');
+  const out = { found: !!root, yes: false, selects: {}, options: {}, tools: {} };
+  if (!root) return out;
+  const yesRow = root.querySelector('[data-a-accordion-row-name="yes"]');
+  const radio = yesRow?.querySelector('[role="radio"]');
+  out.yes = radio?.getAttribute("aria-checked") === "true" || /a-icon-radio-active/.test(yesRow?.querySelector("i")?.getAttribute("class") ?? "");
+  for (const key of ["text", "images", "translations"]) {
+    const sel = root.querySelector(`[aria-labelledby="generative-ai-questionnaire-${key}-label"] select`);
+    if (!sel) continue;
+    out.options[key] = [...sel.options].map((o) => o.text.trim());
+    out.selects[key] = sel.selectedIndex > 0 ? sel.options[sel.selectedIndex].text.trim() : "";
   }
-  const result = await section.evaluate((root, { a, w }) => {
-    const checked = root.querySelector('input[type="radio"]:checked');
-    const label = checked ? (checked.closest("label")?.innerText ?? document.querySelector(`label[for="${checked.id}"]`)?.innerText ?? checked.value) : "";
-    const out = { yes: /^(yes|true)$/i.test(String(label).trim()), selects: {} };
-    const want = { text: a.texts, image: a.images, translat: a.translations };
-    for (const sel of root.querySelectorAll("select")) {
-      const ctx = (sel.closest("div")?.parentElement?.innerText ?? "").toLowerCase();
-      const key = Object.keys(want).find((k) => ctx.includes(k) && !(k in out.selects));
-      if (!key) continue;
-      if (w) {
-        const opt = [...sel.options].find((o) => o.text.trim().toLowerCase() === want[key].toLowerCase()) ?? (key === "translat" ? [...sel.options].find((o) => /^(none|no)\b/i.test(o.text.trim())) : null);
-        if (opt) { sel.value = opt.value; sel.dispatchEvent(new Event("change", { bubbles: true })); }
-      }
-      out.selects[key] = sel.options[sel.selectedIndex]?.text.trim() ?? "";
+  const ph = { text: "e.g. ChatGPT", images: "e.g. DALL-E" };
+  for (const [key, p] of Object.entries(ph)) {
+    const inp = root.querySelector(`input[placeholder="${p}"], textarea[placeholder="${p}"]`);
+    out.tools[key] = inp ? (inp.value ?? "") : null;
+  }
+  return out;
+}
+
+/** Sets the AI answers (Yes, texts, images, translations, tool names) and reads them back. */
+async function aiDisclosure(page, ans, { write }) {
+  const read = () => page.evaluate(`(${aiState})(document)`);
+  let st = await read();
+  if (!st.found) throw stop("AI_DISCLOSURE_NOT_FOUND", "the AI-generated content question is not on the content step; nothing was published.");
+  const root = page.locator('[data-a-accordion-name="generative-ai-questionnaire-accordion"], [aria-labelledby="generative-ai-questionnaire-question"]').first();
+  if (write) {
+    if (!st.yes) {
+      const yes = root.locator('[data-a-accordion-row-name="yes"] a.a-accordion-row, [data-a-accordion-row-name="yes"] [role="radio"]').first();
+      if (!(await yes.count())) throw stop("AI_DISCLOSURE_NOT_FOUND", "no Yes answer in the AI question.");
+      await yes.click();
+      await page.waitForTimeout(1000);
     }
-    if (w) for (const inp of root.querySelectorAll('input[type="text"], textarea')) if (!inp.value) { inp.value = a.tools; inp.dispatchEvent(new Event("input", { bubbles: true })); inp.dispatchEvent(new Event("change", { bubbles: true })); }
-    return out;
-  }, { a: ans, w: write });
-  const ok = result.yes && result.selects.text?.toLowerCase() === ans.texts.toLowerCase() && result.selects.image?.toLowerCase() === ans.images.toLowerCase();
+    const want = { text: ans.texts, images: ans.images, translations: ans.translations };
+    for (const [key, label] of Object.entries(want)) {
+      const sel = root.locator(`[aria-labelledby="generative-ai-questionnaire-${key}-label"] select`).first();
+      if (!(await sel.count())) throw stop("AI_DISCLOSURE_NOT_FOUND", `no ${key} answer in the AI question.`);
+      const opts = st.options[key] ?? (await read()).options[key] ?? [];
+      if (opts.length && !opts.some((o) => o.toLowerCase() === label.toLowerCase())) throw stop("AI_DISCLOSURE_NOT_SET", `KDP's ${key} answer offers ${JSON.stringify(opts)}, not "${label}"; nothing was published.`);
+      await sel.selectOption({ label }, { force: true });
+      await page.waitForTimeout(600);
+    }
+    for (const [key, p] of Object.entries({ text: "e.g. ChatGPT", images: "e.g. DALL-E" })) {
+      if (/^none$/i.test(want[key])) continue;
+      const inp = root.locator(`input[placeholder="${p}"], textarea[placeholder="${p}"]`).first();
+      if ((await inp.count()) && !(await inp.inputValue())) await inp.fill(ans.tools);
+    }
+    await page.waitForTimeout(800);
+    st = await read();
+  }
+  const result = { yes: st.yes, selects: st.selects, tools: st.tools };
+  const eq = (a, b) => String(a ?? "").toLowerCase() === String(b ?? "").toLowerCase();
+  const ok = st.yes && eq(st.selects.text, ans.texts) && eq(st.selects.images, ans.images) && eq(st.selects.translations, ans.translations);
   if (!ok) throw stop("AI_DISCLOSURE_NOT_SET", `the AI answers read back as ${JSON.stringify(result)}; nothing was published.`);
   return result;
+}
+
+/** KDP's cover choice is an AUI accordion; open the "Upload a cover you already have" row and prove it is open. */
+async function chooseCoverUpload(page, dir) {
+  const row = page.locator('[data-a-accordion-row-name="upload"]').first();
+  const isOpen = async () => (await row.locator("[aria-expanded]").first().getAttribute("aria-expanded").catch(() => null)) === "true"
+    || /a-icon-radio-active/.test((await row.locator("i.a-accordion-radio").first().getAttribute("class").catch(() => "")) ?? "");
+  if (await row.count()) {
+    if (!(await isOpen())) { await row.locator("a.a-accordion-row").first().click(); await page.waitForTimeout(1000); }
+    if (await isOpen()) return;
+  } else {
+    const alt = await first(page, [(p) => p.getByLabel(/Upload a cover you already have/i), (p) => p.getByText(/Upload a cover you already have/i)]);
+    if (alt) { await alt.click(); return; }
+  }
+  const shot = await snapshot(page, dir, "stop-cover-choice");
+  throw stop("COVER_CHOICE_NOT_SET", `"Upload a cover you already have" did not open; nothing was published. Page kept at ${shot ?? "(screenshot failed)"}.`);
 }
 
 async function content(page, dir, ans) {
   if (!/\/content/.test(page.url())) throw stop("WRONG_STEP", `expected the content step, at ${page.url()}.`);
   await upload(page, "manuscript", ['#data-assets-interior-file-upload-AjaxInput', 'input[type="file"][id*="interior"]', 'input[type="file"][name*="interior"]'], join(dir, "book.epub"), dir);
-  const coverChoice = await first(page, [(p) => p.getByLabel(/Upload a cover you already have/i), (p) => p.getByText(/Upload a cover you already have/i)]);
-  if (coverChoice) await coverChoice.click();
+  await chooseCoverUpload(page, dir);
   await upload(page, "cover", ['#data-assets-cover-file-upload-AjaxInput', 'input[type="file"][id*="cover"]', 'input[type="file"][name*="cover"]'], join(dir, "cover.jpg"), dir);
   await aiDisclosure(page, ans, { write: true });
   await clickOne(page, "Save and Continue", ["#save-and-continue-announce", (p) => p.getByRole("button", { name: /Save and Continue/i })]);
