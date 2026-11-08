@@ -1406,6 +1406,29 @@
       }
     },
     {
+      "id": "mac-snapshot",
+      "name": "Mac snapshot",
+      "what": "Encrypted (AES-256) snapshot of the Mac-only files, the vault and its key, to sequoialtaylor's Drive; newest 2 kept.",
+      "business": "personal",
+      "brand": "Mac",
+      "system": "mac",
+      "slots": [
+        "day1,day15 10:00"
+      ],
+      "emails": false,
+      "heavy": true,
+      "trigger": {
+        "launchd": [
+          "com.seq.mac-snapshot"
+        ]
+      },
+      "output": {
+        "metric": "verified snapshots uploaded",
+        "floor": 1,
+        "runs": 1
+      }
+    },
+    {
       "id": "tz-watch",
       "name": "Time zone watch",
       "what": "Re-runs the launchd installers when the Mac changes zone, so every job stays on its Central time.",
