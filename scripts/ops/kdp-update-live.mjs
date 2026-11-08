@@ -28,7 +28,7 @@ import { fileURLToPath, pathToFileURL } from "node:url";
 import { openProfile } from "./browser.mjs";
 import { companionLink } from "./kdp-books/series.mjs";
 import { jpegHeight } from "./kdp-build.mjs";
-import { snapshot, go, first, fillField, clickOne, categories, upload, autoSignin, RUN, normTitle, shelfRowsIn, parseShelfRow } from "./kdp-new-title.mjs";
+import { snapshot, go, first, fillField, clickOne, categories, upload, autoSignin, RUN, normTitle, shelfRowsIn, parseShelfRow, tickAui, confirmAiAnswers } from "./kdp-new-title.mjs";
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const ROOT = join(HERE, "../..");
@@ -140,22 +140,23 @@ async function update(page, spec, row, todo, dir) {
     if (choose) await choose.click().catch(() => {});
     await upload(page, "cover", ["#data-assets-cover-file-upload-AjaxInput", 'input[type="file"][id*="cover"]'], join(dir, "cover.jpg"), dir);
   }
+  // A new file asks to re-affirm the AI answers (they are unchanged); a forced tick does not reach the page.
+  if (todo.includes("manuscript") || todo.includes("cover")) await confirmAiAnswers(page);
   await clickOne(page, "Save and Continue", ["#save-and-continue-announce", (p) => p.getByRole("button", { name: /Save and Continue/i })]);
   await page.waitForURL(/\/pricing/, { timeout: STEP_MS }).catch(() => {});
   if (!/\/pricing/.test(page.url())) throw stop("CONTENT_NOT_SAVED", "Amazon did not move on from the content step.", 9);
-  const sel = await first(page, ["#data-is-select"]);
-  if (sel && !(await sel.isChecked().catch(() => true))) await sel.check().catch(() => {});
+  await tickAui(page, 'input[name="data[is_select]-check"]');
   if (todo.includes("price")) {
-    const pct = spec.price_usd >= 2.99 ? /^70%/ : /^35%/;
-    const r = await first(page, [(p) => p.getByLabel(pct)]);
-    if (r) await r.check().catch(() => {});
+    await tickAui(page, `input[name="data[digital][royalty_rate]-radio"][value="${spec.price_usd >= 2.99 ? 70 : 35}_PERCENT"]`);
     await fillField(page, "Amazon.com price", ['input[name="data[digital_list_price][USD]"]', 'input[id*="price"][id*="US"]'], spec.price_usd.toFixed(2));
+    await page.keyboard.press("Tab").catch(() => {});
+    await page.waitForTimeout(3000);
   }
   if (DRY) return "DRY_RUN";
   await clickOne(page, "Publish Your Kindle eBook", [(p) => p.getByRole("button", { name: /Publish Your Kindle eBook/i }), "#save-and-publish-announce"]);
   await page.waitForTimeout(8000);
-  const err = (await page.locator(".a-alert-error .a-alert-content, .a-color-error").allInnerTexts().catch(() => [])).join(" ").trim();
-  if (err) throw stop("PUBLISH_REFUSED", `Amazon refused the update: ${err.slice(0, 300)}`, 9);
+  const err = (await page.locator(".a-alert-error:visible .a-alert-content").allInnerTexts().catch(() => [])).join(" ").trim();
+  if (err && /fix the highlighted|set a list price|refused|cannot be published/i.test(err)) throw stop("PUBLISH_REFUSED", `Amazon refused the update: ${err.slice(0, 300)}`, 9);
   return "submitted";
 }
 

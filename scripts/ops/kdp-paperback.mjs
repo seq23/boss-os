@@ -24,7 +24,7 @@ import { join } from "node:path";
 import { pathToFileURL } from "node:url";
 import { openProfile } from "./browser.mjs";
 import { BOOKS_DIR } from "./kdp-build.mjs";
-import { snapshot, go, first, fillField, clickOne, categories, upload, aiDisclosure, aiAnswers, autoSignin, RUN, normTitle, shelfState } from "./kdp-new-title.mjs";
+import { snapshot, go, first, fillField, clickOne, categories, upload, aiDisclosure, aiAnswers, autoSignin, RUN, normTitle, shelfState, confirmAiAnswers, tickAui } from "./kdp-new-title.mjs";
 
 const KDP = "https://kdp.amazon.com";
 const STEP_MS = 90_000;
@@ -98,6 +98,7 @@ async function content(page, b) {
   if (own) await own.click().catch(() => {});
   await upload(page, "cover", ['input[type="file"][id*="cover"]', 'input[type="file"][name*="cover"]', "#data-print-book-publisher-cover-file-upload-AjaxInput"], join(dir, "paperback-cover.pdf"), dir);
   await aiDisclosure(page, aiAnswers({}, listing), { write: true });
+  await confirmAiAnswers(page);
   // The previewer: KDP will not move on until the printed book is approved in it.
   await clickOne(page, "Launch Previewer", [(p) => p.getByRole("button", { name: /Launch Previewer/i }), "#print-preview-confirm-button"]);
   const approve = page.getByRole("button", { name: /^\s*Approve\s*$/i }).first();
@@ -114,14 +115,17 @@ async function content(page, b) {
 
 async function pricing(page, b) {
   const want = Number(b.listing.paperback.price_usd).toFixed(2);
+  await page.waitForTimeout(1000);
   await fillField(page, "paperback Amazon.com price", ['input[name="data[print_book][amazon_channel][us][price_vat_exclusive]"]', 'input[id*="price"][id*="us"]', (p) => p.locator("tr, .a-row").filter({ hasText: "Amazon.com" }).locator('input[type="text"]')], want);
-  const err = (await page.locator(".a-alert-error .a-alert-content, .a-color-error").allInnerTexts().catch(() => [])).join(" ").trim();
+  await page.keyboard.press("Tab").catch(() => {});
+  await page.waitForTimeout(3000);
+  const err = (await page.locator(".a-alert-error:visible .a-alert-content, .a-alert-inline-error:visible").allInnerTexts().catch(() => [])).join(" ").trim();
   if (err && /minimum|printing cost/i.test(err)) throw stop("PRICE_BELOW_PRINT_COST", `KDP says $${want} is under the print cost: ${err.slice(0, 200)}`, 9);
   if (DRY) return false;
   await clickOne(page, "Publish Your Paperback Book", [(p) => p.getByRole("button", { name: /Publish Your Paperback/i }), "#save-and-publish-announce"]);
   await page.waitForTimeout(8000);
-  const refused = (await page.locator(".a-alert-error .a-alert-content").allInnerTexts().catch(() => [])).join(" ").trim();
-  if (refused) throw stop("PUBLISH_REFUSED", `Amazon refused the paperback: ${refused.slice(0, 300)}`, 9);
+  const refused = (await page.locator(".a-alert-error:visible .a-alert-content").allInnerTexts().catch(() => [])).join(" ").trim();
+  if (refused && /fix the highlighted|set a list price|refused|cannot be published/i.test(refused)) throw stop("PUBLISH_REFUSED", `Amazon refused the paperback: ${refused.slice(0, 300)}`, 9);
   return true;
 }
 
@@ -155,9 +159,8 @@ export async function run({ only = flag("slug") } = {}) {
         if (!item) throw stop("NO_ITEM_SET", `the bookshelf did not show the format link for "${b.listing.title}".`);
         await go(page, `${KDP}/action/dualbookshelf.addprintformat/title-setup/paperback/new/details?existing=${row.id}&item=${item}`);
         await page.waitForTimeout(4000);
-        await clickOne(page, "own-the-copyright choice", ["#non-public-domain", 'input[name="data-print-book-is-public-domain"][value="false"]']);
-        const adult = await first(page, ['input[name="data[print_book][is_adult_content]-radio"][value="false"]']);
-        if (adult) await adult.check().catch(() => {});
+        await tickAui(page, 'input[name="data-print-book-is-public-domain"][value="false"]');
+        await tickAui(page, 'input[name="data[print_book][is_adult_content]-radio"][value="false"]');
         await categories(page, b.listing.categories, b.dir);
         await clickOne(page, "Save and Continue", ["#save-and-continue-announce", (p) => p.getByRole("button", { name: /Save and Continue/i })]);
         await page.waitForURL(/\/content/, { timeout: STEP_MS }).catch(() => {});
