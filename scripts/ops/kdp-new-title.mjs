@@ -476,7 +476,13 @@ async function seriesStep(page, series, dir) {
   await page.waitForTimeout(2500);
   // The series picker is a React modal, not an AUI popover: its controls are found on the page (live, 8 Nov 2026).
   const pop = () => page;
-  await page.getByRole("button", { name: /^\s*Select series\s*$/i }).last().click({ timeout: 15_000 });
+  // The picker can be slow to draw; one more press of "Add to series" if it has not appeared (never a loop).
+  const selectBtn = page.getByRole("button", { name: /^\s*Select series\s*$/i }).last();
+  if (!(await selectBtn.waitFor({ state: "visible", timeout: 20_000 }).then(() => true).catch(() => false))) {
+    await page.locator('[data-test-id="add-series-details-button"]').first().click({ timeout: 10_000 }).catch(() => {});
+    await selectBtn.waitFor({ state: "visible", timeout: 20_000 }).catch(() => {});
+  }
+  await selectBtn.click({ timeout: 15_000 });
   await page.waitForTimeout(3000);
   // By the id kdp-series.mjs recorded for this series when there is one (the picker lowercases names).
   let known = null;
