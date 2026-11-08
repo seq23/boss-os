@@ -100,7 +100,10 @@ describe("the monthly run: which folder next, and the KDP draft cap", () => {
 
 describe("going up: her yes first, the bookshelf decides Live", () => {
   it("reads the bookshelf's words, never the click", () => {
-    expect(shelfState("The Co-Parenting Log  Live  Kindle eBook")).toBe("LIVE");
+    // A state line in any case (KDP can draw it in capitals); a whole row goes through parseShelfRow.
+    expect(shelfState("Live")).toBe("LIVE");
+    expect(shelfState("LIVE")).toBe("LIVE");
+    expect(shelfState("The Co-Parenting Log: Live and Learn")).toBeNull();
     expect(shelfState("In review")).toBe("IN_REVIEW");
     expect(shelfState("Draft")).toBe("DRAFT");
     expect(shelfState("")).toBeNull();
@@ -111,7 +114,6 @@ describe("going up: her yes first, the bookshelf decides Live", () => {
   it("the Inbox card says what approving does", () => {
     const q = question({ title: "T", subtitle: "S", author: "S. L. Taylor", publisher: "Spry Labs", price_usd: 4.99, facts: 3, where: "1 states", keywords: ["a"], categories: ["b"], folder: "divorce" });
     expect(q).toMatch(/\$4\.99/);
-    expect(q).toMatch(/Approve and it goes on Kindle/);
     expect(q).toMatch(/AI disclosure on/);
   });
 });

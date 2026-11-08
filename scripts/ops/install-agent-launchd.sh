@@ -1015,7 +1015,8 @@ echo "Installed $SURFACE_LABEL — daily 09:30 Central."
 # and this one runs with the day's determination already filed.
 #
 # IT ASKS HER FOR NOTHING. Her approval is found and acted on; no judgement call is raised and
-# nothing she has not approved is ever published.
+# nothing she has not approved is ever published. DAILY since 8 Nov 2026 (migration 0357): an approved
+# book no longer waits for the 1st, and with nothing approved the run opens and sends nothing.
 PUBLISH_LABEL="com.seq.kdp-publish"
 PUBLISH_PLIST="$HOME/Library/LaunchAgents/$PUBLISH_LABEL.plist"
 PUBLISH_LOGS="$HOME/Library/Logs/kdp-publish"
@@ -1037,7 +1038,7 @@ cat > "$PUBLISH_PLIST" <<PUBEOF
   </array>
   <key>StartCalendarInterval</key>
   <array>
-    <dict><key>Day</key><integer>1</integer><key>Hour</key><integer>9</integer><key>Minute</key><integer>45</integer></dict>
+    <dict><key>Hour</key><integer>9</integer><key>Minute</key><integer>45</integer></dict>
   </array>
   <key>EnvironmentVariables</key>
   <dict><key>BOSS_OS_REPO</key><string>$REPO</string></dict>

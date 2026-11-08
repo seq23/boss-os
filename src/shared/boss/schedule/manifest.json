@@ -3002,14 +3002,14 @@
     {
       "id": "kdp-publish",
       "name": "Kindle: publish",
-      "what": "Puts the approved covers up and publishes.",
+      "what": "Puts approved Kindle books up on Amazon and follows them to Live; heads-up email first, an email when one is live or stops.",
       "business": "spry",
       "brand": "KDP books",
       "system": "mac",
       "slots": [
-        "day1 09:45"
+        "daily 09:45"
       ],
-      "emails": false,
+      "emails": true,
       "heavy": true,
       "trigger": {
         "duty": "duty_kdp_publish",

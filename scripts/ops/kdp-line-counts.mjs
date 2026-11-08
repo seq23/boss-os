@@ -46,6 +46,21 @@ export function lineCounts(register, problem = null) {
   return out;
 }
 
+/**
+ * What the publish run saw on the bookshelf, over the committed register (hostile review, 8 Nov 2026:
+ * "The Co-Parenting Log" was Live from 7 Nov and the register still said DRAFT_LOCAL, so the brain
+ * read "KeepMyProof 0 live"). A title with a `kmp_folder` whose `<drafts>/<folder>/publish.json`
+ * (written by kdp-new-title.mjs from the bookshelf) reads LIVE counts as live. Pure but for `read`.
+ */
+export function withPublished(register, { drafts = KMP_DRAFTS, read = (f) => readFileSync(f, "utf8") } = {}) {
+  if (!register || !Array.isArray(register.titles)) return register;
+  return { ...register, titles: register.titles.map((t) => {
+    if (!t?.kmp_folder || t.status === "LIVE") return t;
+    try { const p = JSON.parse(read(join(drafts, t.kmp_folder, "publish.json"))); return p?.resulting_state === "LIVE" ? { ...t, status: "LIVE" } : t; } catch { return t; }
+  }) };
+}
+const KMP_DRAFTS = process.env.KMP_KDP_DIR ?? join(process.env.HOME ?? ".", ".boss-os/kdp/keepmyproof");
+
 export function readRegister(path = REGISTER) {
   try { return { register: JSON.parse(readFileSync(path, "utf8")), problem: null }; }
   catch (e) { return { register: null, problem: `could not read the KDP register (${String(e?.code ?? e?.message ?? e).slice(0, 80)})` }; }
@@ -55,7 +70,7 @@ const centralDay = (now) => new Intl.DateTimeFormat("en-CA", { timeZone: "Americ
 
 export async function run({ dryRun = false, env = process.env, now = Date.now(), fetchImpl = fetch, path = REGISTER } = {}) {
   const { register, problem } = readRegister(path);
-  const values = lineCounts(register, problem);
+  const values = lineCounts(withPublished(register), problem);
   if (dryRun) return { values, written: false };
   if (!env.BOSS_PASSCODE) throw Object.assign(new Error("NAMED STOP [NO_PASSCODE] BOSS_PASSCODE is not set; run through the vault."), { code: 3 });
   const u = await fetchImpl(`${ORIGIN}/api/boss/auth/unlock`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ passcode: env.BOSS_PASSCODE }) });

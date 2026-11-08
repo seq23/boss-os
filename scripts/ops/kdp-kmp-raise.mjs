@@ -30,7 +30,7 @@ export function question(meta, { preview } = {}) {
     `Inside: a short guide, a checklist, fill-in logs and ${meta.facts} sourced facts for ${meta.where}. AI disclosure on.`,
     `Keywords: ${meta.keywords.join(", ")}. Categories: ${meta.categories.join("; ")}.`,
     preview ? `Read the whole book: ${preview}` : `The whole book is on this Mac: ~/.boss-os/kdp/keepmyproof/${meta.folder}/preview.html`,
-    "Approve and it goes on Kindle in one visible run with the AI disclosure checked before Publish (you sign in to Amazon in that window). Send it back with a sentence and it is redrafted.",
+    "Approve and Simone puts it on Kindle on her next morning run, with a heads-up email 30 minutes before; if Amazon asks you to sign in, you do it in the Chrome window that opens. Send it back with a sentence and it is redrafted.",
   ].join("\n");
 }
 

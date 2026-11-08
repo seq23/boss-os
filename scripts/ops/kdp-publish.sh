@@ -13,8 +13,9 @@
 # This one runs Playwright directly against Simone's own persistent Chrome profile. Different
 # executable, different requirements, so it is its own duty rather than a flag on an existing one.
 #
-# 09:45, after the case watch (09:23) and the triage (09:30), so the three never race for a session
-# and this one runs with the day's determination already filed.
+# 09:45 Central DAILY since 8 Nov 2026 (migration 0357; it was the 1st of the month, which left an
+# approved book waiting up to a month). On the 1st it still runs after the triage (09:30). With
+# nothing approved it opens no window and sends nothing.
 #
 # ─── IT DOES NOT ASK HER FOR ANYTHING ───────────────────────────────────────
 #
@@ -65,10 +66,19 @@ ln -sf "$RUN_LOG" "$LOG_DIR/latest.log"
 grep -o 'KDP-PUBLISH:.*' "$RUN_LOG" | tail -5 | tee -a /dev/stderr
 
 # ─── NEW TITLES SHE APPROVED (kdp_new_title; the KeepMyProof books, owner 7 Nov 2026) ──────────
-# Amazon asks for a fresh sign-in on every title-setup page and no script types her password, so a
-# new title goes up in ONE VISIBLE run she is present for: `npm run kdp:new-title` (kdp-new-title.mjs).
-# This unattended slot never opens that window; it names, on its own line, an approved title waiting.
-npm run --silent vault:run -- node scripts/ops/kdp-new-title.mjs --waiting >> "$RUN_LOG" 2>&1
+# Simone publishes them on her own, every day while the saved Amazon sign-in lasts (owner, 8 Nov 2026:
+# "Yes, publish on her own"). kdp-new-title.mjs --unattended reads the bookshelf first, emails her a
+# heads-up 30 minutes before it opens Chrome, never types her password, keeps the window open for her
+# on any stop and emails her the one thing to do, and emails the Amazon link when the book is Live.
+# With nothing approved it opens nothing and says so.
+npm run --silent vault:run -- node scripts/ops/kdp-new-title.mjs --unattended >> "$RUN_LOG" 2>&1
+NRC=$?
+say "=== new titles exited rc=$NRC ==="
 grep -o 'KDP-NEW-TITLE:.*' "$RUN_LOG" | tail -3 | tee -a /dev/stderr
+# For duty-run.sh: the census line, and the named stop that names the failure (it reads the last of each).
+grep -E '^OUTPUT [0-9]+ ' "$RUN_LOG" | tail -1
+grep -o 'NAMED STOP \[[A-Z_]*\].*' "$RUN_LOG" | tail -1 >&2
 
+# The run failed if either half failed; the publisher's own code wins when both did.
+[ "$RC" -eq 0 ] && RC=$NRC
 exit $RC
