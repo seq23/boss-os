@@ -164,7 +164,7 @@ describe("the Schedule page", () => {
     const page = readFileSync(path.join(ROOT, "src/client/boss/pages/Schedule.tsx"), "utf8");
     expect(page).toContain('from "@shared/boss/schedule/manifest.json"');
     const shell = readFileSync(path.join(ROOT, "src/client/boss/components/Shell.tsx"), "utf8");
-    expect(shell).toMatch(/MORE_TABS[^\n]*"emails", "schedule"/);
+    expect(shell).toMatch(/MORE_TABS[^\n]*"emails", "social", "schedule"/);
     expect(readFileSync(path.join(ROOT, "src/client/boss/App.tsx"), "utf8")).toMatch(/tab === "schedule" \? \(\s*<Schedule \/>/);
   });
 

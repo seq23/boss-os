@@ -193,6 +193,8 @@ export function shapeProblems(manifest, sites) {
  */
 export const PERSONAL_MOVE = "personal — move";
 export const ROLE_LOCAL = /^(hello|support|info|contact|team|admin|social|press|studio)$/;
+/** Addresses are written masked (her ruling, 8 Nov 2026): the first two letters, "**", "@" and the full domain. */
+export const MASKED_LOCAL = /^[a-z0-9._%+-]{1,2}\*\*$/;
 export function brandDomains(sites) {
   return new Set((sites?.grid_repos ?? []).map((s) => String(s.domain ?? "").toLowerCase().replace(/^www\./, "")).filter(Boolean));
 }
@@ -206,10 +208,12 @@ export function accountEmailProblems(manifest, sites) {
     if ([PERSONAL_MOVE, "no account", "unknown"].includes(v)) continue;
     const mailbox = /^([a-z0-9.-]+\.[a-z]{2,}) mailbox$/.exec(v);
     if (mailbox) { if (!domains.has(mailbox[1])) out.push(`${r.id}: ${mailbox[1]} is not one of the grid's own domains`); continue; }
-    const at = /^([a-z0-9._%+-]+)@([a-z0-9.-]+\.[a-z]{2,})$/.exec(v);
+    const at = /^([a-z0-9._%+*-]+)@([a-z0-9.-]+\.[a-z]{2,})$/.exec(v);
     if (!at) out.push(`${r.id}: account_email "${v}" is not an address, "<domain> mailbox", "${PERSONAL_MOVE}", "no account" or "unknown"`);
     else if (!domains.has(at[2])) out.push(`${r.id}: ${v} is not on one of the grid's own domains (a personal address is written "${PERSONAL_MOVE}")`);
-    else if (!ROLE_LOCAL.test(at[1])) out.push(`${r.id}: ${v} is a named mailbox; write "${at[2]} mailbox" (no owner addresses in a public repo)`);
+    else if (MASKED_LOCAL.test(at[1])) continue;
+    else if (ROLE_LOCAL.test(at[1])) out.push(`${r.id}: ${v} is written in full; write it masked, ${at[1].slice(0, 2)}**@${at[2]} (her ruling, 8 Nov 2026)`);
+    else out.push(`${r.id}: ${v} is a named mailbox; write "${at[2]} mailbox" (no owner addresses in a public repo)`);
   }
   return out;
 }

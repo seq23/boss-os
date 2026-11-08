@@ -1,4 +1,7 @@
 import { useState } from "react";
+import sitesMap from "@shared/boss/maps/sites.json";
+import { socialRepos } from "@shared/boss/maps/chain.mjs";
+import { FromRepoLine, repoOnly } from "./Maps";
 import manifest from "@shared/boss/socialMap/manifest.json";
 
 /**
@@ -66,9 +69,11 @@ export function SocialMap() {
   const q = typeof window === "undefined" ? new URLSearchParams() : new URLSearchParams(window.location.search);
   const start = q.get("business");
   const [pick, setPick] = useState<string>(SOCIAL_MAP.businesses.some((b) => b.key === start) ? (start as string) : "all");
+  const only = repoOnly();
   return (
     <div className="brains" data-testid="social-map">
       <p className="brain-summary">{summaryLine()}</p>
+      <FromRepoLine tab="social" />
       <p className="brain-hint">Tap a business to see its accounts. Each one says its status and who posts to it; "Show details ▾" says why.</p>
       <label className="email-map-filter">
         <span>Show:</span>
@@ -84,10 +89,11 @@ export function SocialMap() {
           <section key={sec.key} className="social-section" data-testid={`social-section-${sec.key}`}>
             <h2 className="social-section-title">{sec.label}</h2>
             {shown.map((b) => {
-              const rows = SOCIAL_MAP.rows.filter((r) => r.business === b.key);
+              const rows = SOCIAL_MAP.rows.filter((r) => r.business === b.key && (!only || socialRepos(r, sitesMap as any).includes(only)));
+              if (only && !rows.length) return null;
               const auto = count(rows, "live_auto");
               return (
-                <details key={`${pick}-${b.key}`} className="brain-expander email-map-business" open={pick !== "all"} data-testid={`social-business-${b.key}`}>
+                <details key={`${pick}-${b.key}`} className="brain-expander email-map-business" open={pick !== "all" || Boolean(only)} data-testid={`social-business-${b.key}`}>
                   <summary>
                     <span className="email-map-business-name">{b.label}</span>
                     <span className="email-map-count">{rows.length} listed{auto ? ` · ${auto} ${auto === 1 ? "posts" : "post"} by ${auto === 1 ? "itself" : "themselves"}` : ""} — tap to open ▾</span>

@@ -520,7 +520,7 @@ describe("the Email Map page's manifest covers every sender", () => {
     const page = readFileSync(path.join(ROOT, "src/client/boss/pages/EmailMap.tsx"), "utf8");
     expect(page).toContain('from "@shared/boss/emailMap/manifest.json"');
     const shell = readFileSync(path.join(ROOT, "src/client/boss/components/Shell.tsx"), "utf8");
-    expect(shell).toMatch(/MORE_TABS[^\n]*"brains", "emails"/);
+    expect(shell).toMatch(/MORE_TABS[^\n]*"brains", "repos", "domains", "sites", "accounts", "emails"/);
   });
 
   // The other repos are read where their checkouts are (her Mac); CI has only this repo.

@@ -1,4 +1,6 @@
 import { useState } from "react";
+import { emailRepos } from "@shared/boss/maps/chain.mjs";
+import { FromRepoLine, repoOnly } from "./Maps";
 import manifest from "@shared/boss/emailMap/manifest.json";
 
 /**
@@ -59,10 +61,12 @@ export function EmailMap() {
   const q = typeof window === "undefined" ? new URLSearchParams() : new URLSearchParams(window.location.search);
   const start = q.get("business");
   const [pick, setPick] = useState<string>(EMAIL_MAP.businesses.some((b) => b.key === start) ? (start as string) : "all");
+  const only = repoOnly();
   const shown = EMAIL_MAP.businesses.filter((b) => pick === "all" || b.key === pick);
   return (
     <div className="brains" data-testid="email-map">
       <p className="brain-summary">{summaryLine()}</p>
+      <FromRepoLine tab="emails" />
       <p className="brain-hint">Tap a business to see its emails. Each one says who sends it, to whom and when; "Show details ▾" says where it runs and how to pause it.</p>
       <label className="email-map-filter">
         <span>Show:</span>
@@ -72,10 +76,11 @@ export function EmailMap() {
         </select>
       </label>
       {shown.map((b) => {
-        const rows = EMAIL_MAP.rows.filter((r) => r.business === b.key);
+        const rows = EMAIL_MAP.rows.filter((r) => r.business === b.key && (!only || emailRepos(r).includes(only)));
+        if (only && !rows.length) return null;
         const live = rows.filter(SENDS).length;
         return (
-          <details key={`${pick}-${b.key}`} className="brain-expander email-map-business" open={pick !== "all"} data-testid={`email-business-${b.key}`}>
+          <details key={`${pick}-${b.key}`} className="brain-expander email-map-business" open={pick !== "all" || Boolean(only)} data-testid={`email-business-${b.key}`}>
             <summary>
               <span className="email-map-business-name">{b.label}</span>
               <span className="email-map-count">{live} {live === 1 ? "email" : "emails"}{rows.length > live ? ` · ${rows.length - live} more listed` : ""} — tap to open ▾</span>

@@ -448,11 +448,25 @@ Owner, 8 Nov 2026: "a canonical map of what repos and sites have social media pa
 4. **Public repo.** Business accounts only: handles and public profile URLs, never an email address
    outside `account_email`, never a person's own profile (`privacyProblems`).
 5. **Every account sits under its own brand's address** (her ruling, 8 Nov 2026): never her personal
-   Gmail. Each row's `account_email` is a role address on one of the grid's own domains (hello@, support@…),
+   Gmail. Each row's `account_email` is a role address on one of the grid's own domains, written masked (her
+   ruling, 8 Nov 2026: the first two letters, `**`, `@` and the full domain, he**@porchandparty901.com),
    "<domain> mailbox" for a named mailbox there, "personal — move" (the personal address itself is never
    written), "no account" or "unknown" (`accountEmailProblems`). The rows still "personal — move" are one
    clause in the Monday cohesion line until they move (`personalMoveRows`). The three publications share
-   one WordPress.com account, hello@founderoperatorlibrary.com, by decision.
+   one WordPress.com account, he**@founderoperatorlibrary.com, by decision.
+
+## The maps: Repos, Domains, Sites, Accounts
+
+Owner, 8 Nov 2026 ("do all the maps we maybe missing"; read in this order: Repos → Domains → Sites →
+Accounts → Emails → Social → Schedule). One manifest each in `src/shared/boss/maps/` (`repos.json`,
+`domains.json`, `sites.json`, `accounts.json`), rendered by `src/client/boss/pages/Maps.tsx`
+(☰ More → Repos, Domains, Sites, Accounts; deep links `/?tab=sites&repo=<repo>` and the like). They
+join the older maps on three keys, `repo`, `business` (a brain slug) and `domain`, in
+`src/shared/boss/maps/chain.mjs`; a row of the older maps whose repo cannot be derived is "not linked",
+counted, never guessed. ONE guard, `tests/infraMaps.test.ts`: every key resolves, and no map holds an
+unmasked email address (addresses are written masked, her ruling: `st**@time-2-read.com`). A new repo,
+domain, site, login or vault key goes on its map in the same PR. No weekly drift job (her rule: the
+simplest thing that works); a refresh is a by-hand read of Cloudflare and the vault's key names.
 
 ## The Schedule: every scheduled job, every system
 

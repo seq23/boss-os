@@ -1,5 +1,5 @@
 {
-  "_note": "THE SOCIAL MAP (owner, 8 Nov 2026: \"a canonical map of what repos and sites have social media pages\"). The ONE list of every social or profile account of every business and friends' site: who it belongs to, its status, what posts to it and the decision behind it. The Social Map page (More, then Social Map, /?tab=social) renders it and nothing else. A new account, a new sameAs in any site's entity.json, or a new posting job goes here in the same PR: tests/socialMap.test.ts fails on a boss-os posting file or posting Schedule job no row cites, and `npm run social-map:check` does the same for every site's entity.json sameAs and every repo's posting code on its default branch, then checks each URL and each live_auto job's last run. Brains keep the rulings; this keeps the list. Public repo: business accounts only, handles and public profile URLs only; never a person's own profile, and an email only as `account_email`: a role address (hello@, support@…) on one of the grid's own domains, \"<domain> mailbox\", \"personal — move\" (the personal address itself is never written), \"no account\" or \"unknown\". Her ruling, 8 Nov 2026: every social and blog account sits under an address of its own site or brand, never her personal Gmail.",
+  "_note": "THE SOCIAL MAP (owner, 8 Nov 2026: \"a canonical map of what repos and sites have social media pages\"). The ONE list of every social or profile account of every business and friends' site: who it belongs to, its status, what posts to it and the decision behind it. The Social Map page (More, then Social Map, /?tab=social) renders it and nothing else. A new account, a new sameAs in any site's entity.json, or a new posting job goes here in the same PR: tests/socialMap.test.ts fails on a boss-os posting file or posting Schedule job no row cites, and `npm run social-map:check` does the same for every site's entity.json sameAs and every repo's posting code on its default branch, then checks each URL and each live_auto job's last run. Brains keep the rulings; this keeps the list. Public repo: business accounts only, handles and public profile URLs only; never a person's own profile, and an email only as `account_email`, masked (her ruling, 8 Nov 2026: he**@founderoperatorlibrary.com): a role address on one of the grid's own domains, \"<domain> mailbox\", \"personal — move\" (the personal address itself is never written), \"no account\" or \"unknown\". Her ruling, 8 Nov 2026: every social and blog account sits under an address of its own site or brand, never her personal Gmail.",
   "statuses": {
     "live_auto": "Live, and a job posts to it",
     "live_manual": "Live, posted by hand (or a profile only)",
@@ -225,7 +225,7 @@
       "platform": "Instagram",
       "handle": "@porchandparty901",
       "url": "https://www.instagram.com/porchandparty901/",
-      "account_email": "hello@porchandparty901.com",
+      "account_email": "he**@porchandparty901.com",
       "status": "live_auto",
       "posts": {
         "by": "job",
@@ -991,7 +991,7 @@
       "platform": "Bluesky",
       "handle": "@founderoperatorlibrary.com",
       "url": "https://bsky.app/profile/did:plc:qwhjyy7jqvlscz526b6fknf4",
-      "account_email": "hello@founderoperatorlibrary.com",
+      "account_email": "he**@founderoperatorlibrary.com",
       "status": "live_auto",
       "posts": {
         "by": "job",
@@ -1025,7 +1025,7 @@
       "platform": "WordPress.com",
       "handle": "founderoperatorlibrary.wordpress.com",
       "url": "https://founderoperatorlibrary.wordpress.com",
-      "account_email": "hello@founderoperatorlibrary.com",
+      "account_email": "he**@founderoperatorlibrary.com",
       "status": "live_auto",
       "posts": {
         "by": "job",
@@ -1060,7 +1060,7 @@
       "platform": "Bluesky",
       "handle": "@memphisvendorlibrary.com",
       "url": "https://bsky.app/profile/did:plc:h7kgmjhjxa2wdzp7c4xpowgc",
-      "account_email": "hello@memphisvendorlibrary.com",
+      "account_email": "he**@memphisvendorlibrary.com",
       "status": "live_auto",
       "posts": {
         "by": "job",
@@ -1094,7 +1094,7 @@
       "platform": "WordPress.com",
       "handle": "memphisvendorlibrary.wordpress.com",
       "url": "https://memphisvendorlibrary.wordpress.com",
-      "account_email": "hello@founderoperatorlibrary.com",
+      "account_email": "he**@founderoperatorlibrary.com",
       "status": "live_auto",
       "posts": {
         "by": "job",
@@ -1129,7 +1129,7 @@
       "platform": "Bluesky",
       "handle": "@professionalresourcelibrary.com",
       "url": "https://bsky.app/profile/did:plc:2ltbq4ijnoxdwqofgmjhna7b",
-      "account_email": "hello@professionalresourcelibrary.com",
+      "account_email": "he**@professionalresourcelibrary.com",
       "status": "live_auto",
       "posts": {
         "by": "job",
@@ -1163,7 +1163,7 @@
       "platform": "WordPress.com",
       "handle": "professionalresourcelibrary.wordpress.com",
       "url": "https://professionalresourcelibrary.wordpress.com",
-      "account_email": "hello@founderoperatorlibrary.com",
+      "account_email": "he**@founderoperatorlibrary.com",
       "status": "live_auto",
       "posts": {
         "by": "job",

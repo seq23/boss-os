@@ -143,8 +143,10 @@ describe("the Social Map covers every account and posting job", () => {
     bad.rows[1]!.account_email = "someone@porchandparty901.com";
     bad.rows[2]!.account_email = "";
     bad.rows[3]!.account_email = "nowhere.example mailbox";
+    bad.rows[5]!.account_email = "hello@porchandparty901.com";
     const p = accountEmailProblems(bad, sites);
-    expect(p).toHaveLength(4);
+    expect(p).toHaveLength(5);
+    expect(p[4]).toMatch(/written in full; write it masked, he\*\*@porchandparty901.com/);
     expect(p[0]).toMatch(/not on one of the grid's own domains/);
     expect(p[1]).toMatch(/named mailbox; write "porchandparty901.com mailbox"/);
     expect(p[2]).toMatch(/account_email is empty/);
@@ -160,7 +162,7 @@ describe("the Social Map covers every account and posting job", () => {
     const page = readFileSync(path.join(ROOT, "src/client/boss/pages/SocialMap.tsx"), "utf8");
     expect(page).toMatch(/import manifest from "@shared\/boss\/socialMap\/manifest\.json"/);
     const shell = readFileSync(path.join(ROOT, "src/client/boss/components/Shell.tsx"), "utf8");
-    expect(shell).toMatch(/MORE_TABS[^\n]*"schedule", "social"/);
+    expect(shell).toMatch(/MORE_TABS[^\n]*"emails", "social", "schedule"/);
     const doc = readFileSync(path.join(ROOT, "CLAUDE.md"), "utf8");
     const sec = /^## The Social Map[^\n]*\n([\s\S]*?)(?=^## )/m.exec(doc)?.[1] ?? "";
     expect(sec.length).toBeGreaterThan(200);

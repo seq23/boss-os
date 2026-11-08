@@ -1,5 +1,8 @@
 import type { CSSProperties } from "react";
 import manifest from "@shared/boss/schedule/manifest.json";
+import REPOS from "@shared/boss/maps/repos.json";
+import { scheduleRepos } from "@shared/boss/maps/chain.mjs";
+import { FromRepoLine, repoOnly } from "./Maps";
 
 /**
  * THE SCHEDULE (owner approved the rebalanced week, 1 Nov 2026: "a Schedule page in Boss OS, next to
@@ -68,6 +71,7 @@ function Tag({ tag }: { tag: string }) {
 }
 
 export function Schedule() {
+  const only = repoOnly();
   const today = new Date().toLocaleDateString("en-US", { timeZone: "America/Chicago", weekday: "short" }).toLowerCase().slice(0, 3);
   return (
     <div className="brains" data-testid="schedule">
@@ -104,13 +108,14 @@ export function Schedule() {
         <summary><span className="email-map-business-name">Not shown on this page</span><span className="email-map-count">Tap to open ▾</span></summary>
         <ul className="schedule-list">{SCHEDULE.notShown.map((t, i) => <li key={i}>{t}</li>)}</ul>
       </details>
-      <details className="brain-expander" data-testid="schedule-all-jobs">
+      <FromRepoLine tab="schedule" />
+      <details className="brain-expander" data-testid="schedule-all-jobs" open={Boolean(only)}>
         <summary><span className="email-map-business-name">Every scheduled job</span><span className="email-map-count">{SCHEDULE.rows.length} jobs, by where they run — tap to open ▾</span></summary>
         {Object.entries(SCHEDULE.systems).map(([key, label]) => {
-          const rows = SCHEDULE.rows.filter((r) => r.system === key);
+          const rows = SCHEDULE.rows.filter((r) => r.system === key && (!only || scheduleRepos(r, REPOS as any).includes(only)));
           if (!rows.length) return null;
           return (
-            <details key={key} className="brain-expander schedule-system">
+            <details key={key} className="brain-expander schedule-system" open={Boolean(only)}>
               <summary><span className="schedule-text">{label}</span><span className="email-map-count">{rows.length} jobs ▾</span></summary>
               <div className="brain-cards">
                 {rows.map((r) => (
