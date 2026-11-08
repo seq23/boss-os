@@ -186,5 +186,336 @@
         { "id": "help", "title": "Where to get help", "brief": "Each state's federally funded Parent Training and Information Center; the state pages list official ones." }
       ]
     }
+  ],
+  "series": {
+    "name": "KeepMyProof Record Books",
+    "description": "Short, plain record books for people gathering papers under pressure: co-parenting, work, VA claims, school plans and estates. Each one pairs a short guide with fill-in logs and official sources by state."
+  },
+  "series_author": "Reid Calloway",
+  "_series_author_why": "Pen name for the new KMP books (contract 8 Nov 2026). The top-level author stays S. L. Taylor because the live Co-Parenting Log is drafted from it and KDP locks the author on a live title; each series_books entry names its own author. Pen-name check: docs/kdp/books/pen-names.md.",
+  "ai_disclosure_series": {
+    "text": "all",
+    "images": "none",
+    "tool_names": "Anthropic Claude"
+  },
+  "disclaimer": "legal",
+  "_series_books_supersede": {
+    "kmp-workplace": "hostile-work-environment",
+    "kmp-va": "va-disability-rating",
+    "kmp-executor": "what-to-do-when-someone-dies",
+    "kmp-iep": "504-plan-iep-meeting",
+    "_why": "The four undrafted books in `books` are replaced by these series books on the same folders; the drafter should not draft both."
+  },
+  "series_books": [
+    {
+      "slug": "parallel-parenting",
+      "author": "Reid Calloway",
+      "series_number": 2,
+      "folder": "divorce",
+      "topic_id": "divorce-prep",
+      "title": "Parallel Parenting",
+      "subtitle": "A Simple Record Book for High-Conflict Co-Parents: Calm Message Rules, Handoff Logs and One Place for Every Paper",
+      "description": "When every message turns into an argument, co-parenting the usual way stops working. Parallel parenting is the quieter alternative: each parent runs their own time, contact shrinks to the logistics, and everything is written down.\n\nThis short record book shows you how to set that up and keep it going, without becoming a full-time investigator of the other parent.\n\nInside:\n- What parallel parenting is, and when it helps\n- Written rules for one channel, short replies and set response times, with the BIFF reply shape and invented examples\n- Handoffs without a scene: places, timing and what to note afterwards\n- How to write log entries that stay useful: dated, factual, boring\n- Keeping your child out of the middle\n- Fill-in logs for handoffs, messages, schedule changes, expenses and reply drafts\n- A checklist of the papers to keep in one place, and official sources by state\n\nEvery log can also be printed free from the KeepMyProof website.\n\nThis book is educational only and is not legal advice. It makes no predictions about any case, and a record you keep is your own account, nothing more. Rules differ by state; ask your court's self-help center or a lawyer.\n\nPublished by Spry Labs, the makers of KeepMyProof, a private phone app for keeping these papers in dated folders.",
+      "keywords": [
+        "high conflict co parenting",
+        "co parenting with a narcissist",
+        "parallel parenting plan",
+        "co parenting journal",
+        "custody documentation log",
+        "gray rock method co parenting",
+        "communication log for custody"
+      ],
+      "categories": [
+        "Parenting & Relationships › Family Relationships › Divorce",
+        "Parenting & Relationships › Parenting › Single Parents",
+        "Law › Family Law › Child Custody"
+      ],
+      "price_usd": 2.99,
+      "paperback": {
+        "price_usd": 8.99,
+        "trim": "6x9"
+      },
+      "companion_url": "https://keepmyproof.com/amazon/parallel-parenting/",
+      "printable_url": "https://keepmyproof.com/tools/co-parenting-log-printable",
+      "manuscript": "docs/kdp/books/parallel-parenting.md",
+      "claim_gate": true,
+      "facts": [
+        {
+          "file": "custody-and-parenting-plans.json",
+          "label": "Custody and parenting plans",
+          "max": 2
+        },
+        {
+          "file": "protective-orders.json",
+          "label": "Protective orders",
+          "max": 1
+        },
+        {
+          "file": "child-support-guidelines.json",
+          "label": "Child support",
+          "max": 1
+        }
+      ],
+      "cover": {
+        "kicker": "High-conflict co-parenting",
+        "promise": "Fewer fights. A clear record.",
+        "bg": "#F3F4F1",
+        "fg": "#1E2326",
+        "accent": "#0B6E4F",
+        "concept": "KeepMyProof archive-box brand (lib.mjs coverHtml): huge serif title, one promise line, the checklist card, green author band. Type only, no photo (brand: no stock photos).",
+        "preview": "docs/kdp/books/assets/covers/parallel-parenting.jpg"
+      }
+    },
+    {
+      "slug": "hostile-work-environment",
+      "author": "Reid Calloway",
+      "series_number": 3,
+      "folder": "workplace",
+      "topic_id": "workplace-evidence",
+      "title": "Hostile Work Environment",
+      "subtitle": "Keep a Clear, Dated Record of What Happened at Your Job: Incident Logs, Pay Checks and the Written Complaint",
+      "description": "Something is wrong at your job: comments, threats, being singled out, hours cut after you spoke up. You are told to \"document everything\", but nobody says how.\n\nThis short workbook shows you how to keep a calm, dated record of what happened, using only what you received or wrote yourself, so the people helping you (HR, an agency, a lawyer) can see it clearly.\n\nInside:\n- What the phrase means in everyday words, and what this book can and cannot do\n- Same-day incident notes: who, what, where, exact words, with a weak and a good example\n- Saving messages and papers you are allowed to keep, and what never to take\n- Comparing your own hours with your pay stubs\n- Putting a complaint in writing and keeping every reply\n- Looking after yourself while it is going on\n- Fill-in logs for incidents, pay, complaints and time off, plus official agency sources by state\n\nThis book is educational only and is not legal advice. It makes no predictions about any outcome. Deadlines differ by state and agency; check the official sources at the back or ask a lawyer.\n\nPublished by Spry Labs, the makers of KeepMyProof.",
+      "keywords": [
+        "how to document workplace harassment",
+        "workplace harassment journal",
+        "toxic workplace survival",
+        "how to report a toxic boss to hr",
+        "eeoc complaint process",
+        "workplace incident report log",
+        "documenting discrimination at work"
+      ],
+      "categories": [
+        "Law › Labor & Employment Law",
+        "Business & Money › Human Resources › Employee Rights",
+        "Self-Help › Stress Management"
+      ],
+      "price_usd": 2.99,
+      "paperback": {
+        "price_usd": 8.99,
+        "trim": "6x9"
+      },
+      "companion_url": "https://keepmyproof.com/amazon/hostile-work-environment/",
+      "printable_url": "https://keepmyproof.com/tools/workplace-incident-log-printable",
+      "manuscript": "docs/kdp/books/hostile-work-environment.md",
+      "claim_gate": true,
+      "facts": [
+        {
+          "file": "discrimination-complaint-deadlines.json",
+          "label": "Discrimination complaint deadlines",
+          "max": 2
+        },
+        {
+          "file": "unpaid-wages-and-final-paycheck.json",
+          "label": "Unpaid wages and the final paycheck",
+          "max": 2
+        },
+        {
+          "file": "overtime-rules.json",
+          "label": "Overtime",
+          "max": 1
+        }
+      ],
+      "cover": {
+        "kicker": "Harassment · Unfair treatment",
+        "promise": "Write it down the right way.",
+        "bg": "#F3F4F1",
+        "fg": "#1E2326",
+        "accent": "#0B6E4F",
+        "concept": "KeepMyProof archive-box brand (lib.mjs coverHtml): huge serif title, one promise line, the checklist card, green author band. Type only, no photo (brand: no stock photos).",
+        "preview": "docs/kdp/books/assets/covers/hostile-work-environment.jpg"
+      }
+    },
+    {
+      "slug": "va-disability-rating",
+      "author": "Reid Calloway",
+      "series_number": 4,
+      "folder": "va",
+      "topic_id": "va-disability-papers",
+      "title": "Your VA Disability Rating",
+      "subtitle": "The Papers to Gather Before You Claim, Appeal or Ask for an Increase, With Logs for Exams, Mail and Buddy Statements",
+      "description": "A VA disability decision is made from paper: service records, medical records, statements and exam notes. Missing papers are one of the most common reasons veterans wait longer or try again.\n\nThis short binder walks you through gathering, copying and keeping those papers in order, whether you are filing a first claim, asking for an increase or reviewing a decision. It never predicts a rating.\n\nInside:\n- How a rating is decided, in plain words\n- Service papers and records: what to request and how to keep originals safe\n- Medical records and getting ready for the exam, including how to describe bad days honestly\n- Statements from people who know: who can write one and what it covers\n- The review lanes after a decision, and which papers each one needs\n- Free, accredited help, and warning signs of people who charge for what is free\n- Fill-in logs for appointments, mail, statements and symptoms, plus official sources by state\n\nNot affiliated with the Department of Veterans Affairs. Educational only; not legal or medical advice.\n\nPublished by Spry Labs, the makers of KeepMyProof.",
+      "keywords": [
+        "va disability claim checklist",
+        "va disability evidence",
+        "buddy statement for va claim",
+        "c&p exam preparation",
+        "va rating increase",
+        "va supplemental claim",
+        "veteran records organizer"
+      ],
+      "categories": [
+        "Reference › Consumer Guides",
+        "History › Military › Veterans",
+        "Law › Administrative Law"
+      ],
+      "price_usd": 2.99,
+      "paperback": {
+        "price_usd": 8.99,
+        "trim": "6x9"
+      },
+      "companion_url": "https://keepmyproof.com/amazon/va-disability-rating/",
+      "printable_url": "https://keepmyproof.com/tools/va-intent-to-file-date-calculator",
+      "manuscript": "docs/kdp/books/va-disability-rating.md",
+      "claim_gate": true,
+      "facts": [
+        {
+          "file": "free-claim-help.json",
+          "label": "Free claim help",
+          "max": 2
+        },
+        {
+          "file": "state-veterans-affairs-office.json",
+          "label": "State veterans office",
+          "max": 1
+        },
+        {
+          "file": "va-regional-office.json",
+          "label": "VA regional office",
+          "max": 1
+        },
+        {
+          "file": "dd214-and-military-records.json",
+          "label": "DD-214 and military records",
+          "max": 1
+        }
+      ],
+      "cover": {
+        "kicker": "Veterans · Families",
+        "promise": "Every paper, in order.",
+        "bg": "#F3F4F1",
+        "fg": "#1E2326",
+        "accent": "#0B6E4F",
+        "concept": "KeepMyProof archive-box brand (lib.mjs coverHtml): huge serif title, one promise line, the checklist card, green author band. Type only, no photo (brand: no stock photos).",
+        "preview": "docs/kdp/books/assets/covers/va-disability-rating.jpg"
+      }
+    },
+    {
+      "slug": "504-plan-iep-meeting",
+      "author": "Reid Calloway",
+      "series_number": 5,
+      "folder": "iep",
+      "topic_id": "iep-binder",
+      "title": "The 504 Plan & IEP Meeting Binder",
+      "subtitle": "A Parent's Record of School Notes, Requests and Follow-Ups, With the Questions to Ask Each Time You Sit Down",
+      "description": "Walking into a school meeting about your child's support can feel like walking into a room where everyone else has the papers. This binder makes sure you have them too.\n\nIt explains the difference between a 504 plan and an IEP in plain words, then shows you how to keep your own record: what you asked for, what was agreed, and whether it is actually happening in the classroom.\n\nInside:\n- 504 plan or IEP: the difference in plain words\n- Setting up the binder in one afternoon\n- Asking in writing, and keeping every reply\n- Before, during and after the meeting, with questions to bring\n- A weekly check to see whether the plan is followed\n- Where parents get free help\n- Fill-in pages for meeting notes, written requests, school messages and weekly checks, plus official parent centers by state\n\nThe paperback is 8.5 x 11 inches so pages can be hole-punched and filed with school papers.\n\nEducational only; not legal advice and no advice about which services a child should get.\n\nPublished by Spry Labs, the makers of KeepMyProof.",
+      "keywords": [
+        "iep binder for parents",
+        "504 plan accommodations",
+        "how to prepare for an iep meeting",
+        "iep meeting checklist",
+        "special education parent guide",
+        "504 plan vs iep",
+        "iep meeting notes template"
+      ],
+      "categories": [
+        "Education & Teaching › Schools & Teaching › Special Education",
+        "Parenting & Relationships › Parenting › Special Needs",
+        "Education & Teaching › Schools & Teaching › Parent Participation"
+      ],
+      "price_usd": 2.99,
+      "paperback": {
+        "price_usd": 8.99,
+        "trim": "8.5x11"
+      },
+      "companion_url": "https://keepmyproof.com/amazon/504-plan-iep-meeting/",
+      "printable_url": "https://keepmyproof.com/tools/iep-meeting-notes-printable",
+      "manuscript": "docs/kdp/books/504-plan-iep-meeting.md",
+      "claim_gate": true,
+      "facts": [
+        {
+          "file": "evaluation-timeline.json",
+          "label": "Evaluation timeline",
+          "max": 2
+        },
+        {
+          "file": "parent-training-center.json",
+          "label": "Parent center",
+          "max": 1
+        },
+        {
+          "file": "dispute-resolution.json",
+          "label": "Disagreements",
+          "max": 1
+        },
+        {
+          "file": "transition-planning.json",
+          "label": "Transition planning",
+          "max": 1
+        }
+      ],
+      "cover": {
+        "kicker": "Special education · Parents",
+        "promise": "Walk in ready. Leave with it in writing.",
+        "bg": "#F3F4F1",
+        "fg": "#1E2326",
+        "accent": "#0B6E4F",
+        "concept": "KeepMyProof archive-box brand (lib.mjs coverHtml): huge serif title, one promise line, the checklist card, green author band. Type only, no photo (brand: no stock photos).",
+        "preview": "docs/kdp/books/assets/covers/504-plan-iep-meeting.jpg"
+      }
+    },
+    {
+      "slug": "what-to-do-when-someone-dies",
+      "author": "Reid Calloway",
+      "series_number": 6,
+      "folder": "executor",
+      "topic_id": "executor-papers",
+      "title": "What to Do When Someone Dies",
+      "subtitle": "The Executor's Checklist for the First Week, the First Month and Settling the Estate, With Space for Every Account",
+      "description": "When someone close to you dies, the paperwork arrives while you are still in shock. This checklist book takes it one step at a time: what really needs doing in the first week, what can wait a month, and how to keep track of every account until the estate is settled.\n\nInside:\n- You do not have to do it all today: what the first days really need\n- The first week: death certificates, securing the home, mail, telling people\n- The first month: the will, whether probate may be needed, benefits, employers and pensions\n- Finding every account and property, including family land passed down without a will\n- Bills and debts, and why not to pay from your own pocket before asking\n- Closing the estate and keeping the records afterwards\n- Looking after yourself while you do it\n- Fill-in pages for tasks, accounts, calls and money in and out, plus official probate sources by state\n\nThe paperback is 8.5 x 11 inches, with room to write.\n\nEducational only; not legal or tax advice. The probate court or a lawyer says what applies to your estate.\n\nPublished by Spry Labs, the makers of KeepMyProof.",
+      "keywords": [
+        "executor checklist",
+        "executor of estate checklist",
+        "what to do when a parent dies",
+        "after death checklist",
+        "estate settlement organizer",
+        "small estate affidavit",
+        "probate guide for executors"
+      ],
+      "categories": [
+        "Law › Estate Planning",
+        "Self-Help › Death, Grief & Loss",
+        "Business & Money › Personal Finance › Estate Planning"
+      ],
+      "price_usd": 2.99,
+      "paperback": {
+        "price_usd": 9.99,
+        "trim": "8.5x11"
+      },
+      "companion_url": "https://keepmyproof.com/amazon/what-to-do-when-someone-dies/",
+      "printable_url": "https://keepmyproof.com/tools/executor-task-list-printable",
+      "manuscript": "docs/kdp/books/what-to-do-when-someone-dies.md",
+      "claim_gate": true,
+      "facts": [
+        {
+          "file": "probate-process.json",
+          "label": "Probate",
+          "max": 2
+        },
+        {
+          "file": "small-estate.json",
+          "label": "Small estates",
+          "max": 1
+        },
+        {
+          "file": "death-certificates.json",
+          "label": "Death certificates",
+          "max": 1
+        },
+        {
+          "file": "executor-duties.json",
+          "label": "Executor duties",
+          "max": 1
+        }
+      ],
+      "cover": {
+        "kicker": "After a death · Executors",
+        "promise": "One step at a time.",
+        "bg": "#F3F4F1",
+        "fg": "#1E2326",
+        "accent": "#0B6E4F",
+        "concept": "KeepMyProof archive-box brand (lib.mjs coverHtml): huge serif title, one promise line, the checklist card, green author band. Type only, no photo (brand: no stock photos).",
+        "preview": "docs/kdp/books/assets/covers/what-to-do-when-someone-dies.jpg"
+      }
+    }
   ]
 }

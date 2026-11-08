@@ -1,0 +1,54 @@
+{
+  "line": "aplayermode",
+  "author": "Tomas Wexley",
+  "_author_why": "Pen name for this line (contract 8 Nov 2026). Check: docs/kdp/books/pen-names.md.",
+  "publisher": "Spry Labs",
+  "series": {
+    "name": "A Player Mode Field Guides",
+    "description": "Short field guides for adults carrying too much, built on one idea: run your day with a five-person executive team."
+  },
+  "site": "https://aplayermode.com",
+  "ai_disclosure": {
+    "text": "all",
+    "images": "none",
+    "tool_names": "Anthropic Claude"
+  },
+  "disclaimer": "medical",
+  "series_books": [
+    {
+      "slug": "executive-dysfunction",
+      "series_number": 1,
+      "title": "Executive Dysfunction",
+      "subtitle": "A Five-Role System for Adults Carrying Too Much: Start the Task, Remember the Plan and Finish the Day",
+      "description": "You know what to do. You just cannot make yourself start, you forget the thing you promised, and by evening the day has gone somewhere without you. That is not laziness. It is a brain trying to be the whole executive team at once.\n\nThis field guide gives the job back to a team: five roles you play on paper, each with one job and one page.\n\n- The Executive Assistant gets everything out of your head\n- The Chief of Staff decides tomorrow tonight\n- The Executive Coach gets you started when you cannot start\n- The Accountability Partner turns a promise into something someone hears\n- The Mindset Coach answers the voice that says you have already failed\n\nInside you will find a short chapter for each role, a one-week plan to try them together, and fill-in pages for the morning briefing, start log, check-ins, thought checks and the weekly review.\n\nThe examples are invented. This book is educational only. It does not diagnose or treat ADHD or any other condition and it is not medical advice; if you think you have a condition, talk to a doctor or licensed clinician.\n\nPublished by Spry Labs, the makers of the A Player Mode app.",
+      "keywords": [
+        "executive function workbook for adults",
+        "task paralysis",
+        "adhd planner for adults",
+        "time blindness",
+        "how to stop procrastinating",
+        "overwhelmed mom planner",
+        "daily routine for adults with adhd"
+      ],
+      "categories": [
+        "Self-Help › Time Management",
+        "Self-Help › Personal Transformation",
+        "Health, Fitness & Dieting › Mental Health › Attention Deficit & Attention Deficit Hyperactivity Disorders"
+      ],
+      "price_usd": 2.99,
+      "companion_url": "https://aplayermode.com/amazon/executive-dysfunction/",
+      "manuscript": "docs/kdp/books/executive-dysfunction.md",
+      "claim_gate": false,
+      "cover": {
+        "kicker": "A Player Mode field guide",
+        "promise": "Your five-person team, on paper.",
+        "bg": "#E9E5DE",
+        "fg": "#1E1C19",
+        "accent": "#3E4B3C",
+        "decoration": "#A39780",
+        "concept": "A Player Mode brand (stone, ink, moss, brass; Outfit 600 + Nunito Sans): huge two-line title, five brass bars for the five roles, one promise line, ink author band. Type only.",
+        "preview": "docs/kdp/books/assets/covers/executive-dysfunction.jpg"
+      }
+    }
+  ]
+}
