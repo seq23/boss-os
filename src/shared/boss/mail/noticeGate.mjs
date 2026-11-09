@@ -89,7 +89,8 @@ export function updateLink(row) {
 
 /** A row as the page shows it: a title with no job code, and one grey sub line. Pure. */
 export function updateRow(row) {
-  const title = String(row?.subject ?? "").replace(/\s*\[?tsk_[a-z0-9]+\]?\s*$/i, "").trim();
+  // The job code a notice's subject ends with: a task's (tsk_…), or a campaign's ([cmp_…], [guess_…]).
+  const title = String(row?.subject ?? "").replace(/\s*(?:\[?tsk_[a-z0-9]+\]?|\[[a-z]+_[a-z0-9_-]+\])\s*$/i, "").trim();
   const first = String(row?.body ?? "").split("\n").map((l) => l.trim()).find((l) => l && !/^Reply to this email/.test(l)) ?? "";
   const line = first.replace(/^What is waiting:\s*/, "").replace(/https?:\/\/\S+/g, "").replace(/\s+/g, " ").trim();
   return {

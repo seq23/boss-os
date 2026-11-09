@@ -15,7 +15,7 @@ import { macWork, cancelCommand, errandTap, handleErrandSelf, codeAnswered, look
 
 export const commands = new Hono<{ Bindings: Env; Variables: Vars }>();
 
-// Partner campaigns ride on the same tick: addresses to check with NeverBounce, and Monique's notices (outreach/campaign.ts).
+// Partner campaigns ride on the same tick: people to research, addresses to check with NeverBounce, and Monique's notices (outreach/campaign.ts).
 commands.post("/tick", async (c) => ok(c, { ...(await macWork(c.env)), ...(await macCampaignWork(c.env)) }));
 
 // Simone's meeting prep: one row per prep, so her reply in its thread finds it (meeting-prep.mjs).

@@ -3,7 +3,9 @@ import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import worker from "../../src/worker/boss/index";
 import { handleBossInboundMail } from "../../src/worker/boss/intake/inboundMail";
 import { BOSS_INTAKE_MAILBOX } from "../../src/shared/boss/intake/mail.mjs";
-import { advancePartnerOrgs, campaignVerified, holdOrgs, staggerHold, stopCompany } from "../../src/worker/boss/outreach/campaign";
+import { advancePartnerOrgs, campaignResearched, campaignVerified, holdOrgs, macCampaignWork, researchFound, staggerHold, stopCompany } from "../../src/worker/boss/outreach/campaign";
+import { processReplies } from "../../src/worker/boss/outreach/engine";
+import { isSuppressed } from "../../src/worker/boss/outreach/suppression";
 import { businessByKey, PARTNERS_KEY } from "../../src/worker/boss/outreach/catalog";
 import { composeEmail } from "../../src/worker/boss/outreach/compose";
 import { outboundProblems } from "../../src/shared/boss/t2rGroups/rules.mjs";
@@ -53,9 +55,23 @@ beforeEach(() => {
 afterEach(() => restore());
 
 beforeEach(async () => {
-  await env.DB.exec("DELETE FROM outreach_settings WHERE key LIKE 'probe:%'; DELETE FROM boss_inbound_mail; DELETE FROM outreach_campaigns; DELETE FROM outreach_partner_orgs; DELETE FROM outreach_sends;");
+  await env.DB.exec("DELETE FROM outreach_settings WHERE key LIKE 'probe:%'; DELETE FROM boss_inbound_mail; DELETE FROM outreach_campaigns; DELETE FROM outreach_partner_orgs; DELETE FROM outreach_sends; DELETE FROM outreach_suppression; DELETE FROM outreach_replies; DELETE FROM outreach_bounce_fixes; DELETE FROM boss_task_notices;");
   await env.DB.prepare(`DELETE FROM outreach_prospects WHERE business_key = ?`).bind(PARTNERS_KEY).run();
 });
+
+/** The Mac's research came back: `people` found published (none = nothing found). */
+const researched = (id: string, people: Array<{ name: string; email: string; source_url: string }> = [], seen: Array<{ name: string; email: string }> = [], at = MON_10AM_CT) =>
+  campaignResearched(env as never, id, { people, seen }, at);
+
+/** Every address in a person's line fails the check ("invalid"), one Mac tick each. */
+async function outOfAddresses(id: string, first: string) {
+  for (let i = 0; i < 4; i++) {
+    const spec = JSON.parse((await row<any>(`SELECT spec FROM outreach_campaigns WHERE id = ?`, id)).spec);
+    const p = spec.contacts.find((x: any) => x.first.toLowerCase() === first);
+    if (p.no_address) return;
+    await campaignVerified(env as never, id, [{ email: p.email, result: "invalid" }], MON_10AM_CT);
+  }
+}
 
 async function campaignFromHer() {
   const r = await handleBossInboundMail(mail(HER_REQUEST) as never, env as never);
@@ -88,6 +104,7 @@ describe("her drip-campaign email becomes a campaign, end to end", () => {
 
   it("all three are sequenced one at a time, seven days apart; four emails each with no card; a reply stops everyone", async () => {
     const { c } = await campaignFromHer();
+    await researched(c.id);
     await campaignVerified(env as never, c.id, [
       { email: "dana.fakename@acmelearn.example", result: "valid" },
       { email: "robin.sample@acmelearn.example", result: "valid" },
@@ -138,31 +155,34 @@ describe("her drip-campaign email becomes a campaign, end to end", () => {
     expect((await all<any>(`SELECT state FROM outreach_prospects WHERE id IN (?, ?)`, ps[1].id, ps[2].id)).map((r) => r.state)).toEqual(["done", "done"]);
   });
 
-  it("an address the check does not call valid is never queued, and she is told who and why", async () => {
+  it("research first: nothing is checked or queued before each person's research is back", async () => {
     const { c } = await campaignFromHer();
-    await campaignVerified(env as never, c.id, [
-      { email: "dana.fakename@acmelearn.example", result: "catchall" },
-      { email: "robin.sample@acmelearn.example", result: "invalid" }, { email: "pat.placeholder@acmelearn.example", result: "invalid" },
-    ], MON_10AM_CT);
+    const before = await macCampaignWork(env as never, MON_10AM_CT);
+    expect(before.campaign_research.find((r) => r.id === c.id)?.people.map((p) => p.name)).toEqual(["Dana Fakename", "Robin Sample", "Pat Placeholder"]);
+    expect(before.campaigns.find((x) => x.id === c.id)).toBeUndefined();
+    // A verdict before the research is back is not acted on.
+    await campaignVerified(env as never, c.id, [{ email: "dana.fakename@acmelearn.example", result: "valid" }], MON_10AM_CT);
     expect(await all(`SELECT 1 FROM outreach_prospects WHERE campaign_id = ?`, c.id)).toHaveLength(0);
-    const n = JSON.parse((await row<any>(`SELECT notice FROM outreach_campaigns WHERE id = ?`, c.id)).notice);
-    expect(n.happened).toMatch(/did not start/);
-    expect(n.details.join("\n")).toMatch(/Dana Fakename: address check said catchall/);
-    expect(n.thread).toHaveLength(1);
+    await researched(c.id);
+    const after = await macCampaignWork(env as never, MON_10AM_CT);
+    expect(after.campaign_research.find((r) => r.id === c.id)).toBeUndefined();
+    expect(after.campaigns.find((x) => x.id === c.id)?.emails).toEqual(["dana.fakename@acmelearn.example", "robin.sample@acmelearn.example", "pat.placeholder@acmelearn.example"]);
   });
 
-  it("a person she named whose address check gets no answer ('unknown') is written to anyway; catchall and invalid never are", async () => {
+  it("valid, unknown and catchall are written to; the done reply says which check said what", async () => {
     const { c } = await campaignFromHer();
+    await researched(c.id);
     await campaignVerified(env as never, c.id, [
       { email: "dana.fakename@acmelearn.example", result: "unknown" },
-      { email: "robin.sample@acmelearn.example", result: "catchall" }, { email: "pat.placeholder@acmelearn.example", result: "invalid" },
+      { email: "robin.sample@acmelearn.example", result: "catchall" }, { email: "pat.placeholder@acmelearn.example", result: "valid" },
     ], MON_10AM_CT);
-    const queued = await all<any>(`SELECT email FROM outreach_prospects WHERE campaign_id = ?`, c.id);
-    expect(queued.map((q) => q.email)).toEqual(["dana.fakename@acmelearn.example"]);
+    const queued = await all<any>(`SELECT email FROM outreach_prospects WHERE campaign_id = ? ORDER BY created_at`, c.id);
+    expect(queued.map((q) => q.email)).toEqual(["dana.fakename@acmelearn.example", "robin.sample@acmelearn.example", "pat.placeholder@acmelearn.example"]);
     const n = JSON.parse((await row<any>(`SELECT notice FROM outreach_campaigns WHERE id = ?`, c.id)).notice);
     expect(n.happened).toMatch(/is queued/);
-    expect(n.details.join("\n")).toMatch(/Dana Fakename: the address check got no answer .* queued anyway/);
-    expect(n.details.join("\n")).toMatch(/Robin Sample: address check said catchall, so not emailed/);
+    expect(n.details.join("\n")).toMatch(/Dana Fakename: no other published address found, so the one you gave; the check got no answer/);
+    expect(n.details.join("\n")).toMatch(/Robin Sample: .*accepts all mail/);
+    expect(n.thread).toHaveLength(1);
   });
 
   it("the one-pager is public, names the company, and holds no person", async () => {
@@ -221,6 +241,7 @@ describe("the HeyGetOnMyLevel line shows only while its level check really works
     expect(calls).toBe(2);
     // The done reply runs a fresh probe whatever the hour; a fail says so in one line.
     restore(); restore = stubFetch(counting(401));
+    await researched(c.id);
     await campaignVerified(env as never, c.id, [{ email: "dana.fakename@acmelearn.example", result: "valid" }, { email: "robin.sample@acmelearn.example", result: "valid" }, { email: "pat.placeholder@acmelearn.example", result: "valid" }], MON_10AM_CT + 30 * H + 1);
     expect(calls).toBe(3);
     const n = JSON.parse((await row<any>(`SELECT notice FROM outreach_campaigns WHERE id = ?`, c.id)).notice);
@@ -243,6 +264,7 @@ describe("a request typed in from her session gets the same receipt, as Monique'
     expect(receipt.details.join("\n")).toMatch(/email 1 goes to Dana Fakename .* Central/);
     expect(receipt.details.join("\n")).toMatch(/What comes back/);
     // The Mac is off: the addresses are checked before the receipt has gone. The receipt is kept.
+    await researched(c.id);
     await campaignVerified(env as never, c.id, [{ email: "dana.fakename@acmelearn.example", result: "valid" }, { email: "robin.sample@acmelearn.example", result: "valid" }, { email: "pat.placeholder@acmelearn.example", result: "valid" }], MON_10AM_CT);
     expect(JSON.parse((await row<any>(`SELECT notice FROM outreach_campaigns WHERE id = ?`, c.id)).notice)).toEqual(receipt);
     // The receipt goes; the done reply, queued behind it, is due next; then nothing is left.
@@ -275,6 +297,7 @@ describe("nothing is queued without today's features", () => {
   it("an unreadable capabilities document holds the campaign; the tick queues it once the document reads", async () => {
     features = null;
     const { c } = await campaignFromHer();
+    await researched(c.id);
     await campaignVerified(env as never, c.id, [
       { email: "dana.fakename@acmelearn.example", result: "valid" },
       { email: "robin.sample@acmelearn.example", result: "valid" }, { email: "pat.placeholder@acmelearn.example", result: "valid" },
@@ -290,6 +313,7 @@ describe("nothing is queued without today's features", () => {
 describe("the next organisation starts only when the live campaign ends", () => {
   it("nothing starts while Acmelearn is live; when it ends, the first org held after it is researched", async () => {
     const { c } = await campaignFromHer();
+    await researched(c.id);
     await campaignVerified(env as never, c.id, [
       { email: "dana.fakename@acmelearn.example", result: "valid" },
       { email: "robin.sample@acmelearn.example", result: "valid" }, { email: "pat.placeholder@acmelearn.example", result: "valid" },
@@ -314,7 +338,10 @@ describe("the next organisation starts only when the live campaign ends", () => 
 
   it("a campaign with no reply ends 14 days after its last email, not before", async () => {
     const { c } = await campaignFromHer();
-    await campaignVerified(env as never, c.id, [{ email: "dana.fakename@acmelearn.example", result: "valid" }, { email: "robin.sample@acmelearn.example", result: "invalid" }, { email: "pat.placeholder@acmelearn.example", result: "invalid" }], MON_10AM_CT);
+    await researched(c.id);
+    // Robin and Pat's every address fails the check: they are out of addresses, and Dana carries on.
+    for (const p of ["robin", "pat"]) await outOfAddresses(c.id, p);
+    await campaignVerified(env as never, c.id, [{ email: "dana.fakename@acmelearn.example", result: "valid" }], MON_10AM_CT);
     const b = businessByKey(PARTNERS_KEY)!;
     await holdOrgs(env as never, b, ["Second Org"], "Acmelearn", MON_10AM_CT);
     const dana = await row<any>(`SELECT * FROM outreach_prospects WHERE campaign_id = ?`, c.id);
@@ -339,5 +366,196 @@ describe("the next organisation starts only when the live campaign ends", () => 
     expect(r.outcome).toBe("ORGS_HELD");
     const order = await all<any>(`SELECT org_name FROM outreach_partner_orgs WHERE business_key = ? ORDER BY position`, PARTNERS_KEY);
     expect(order.map((o) => o.org_name)).toEqual(["Acmelearn", "Second Org", "Abeka Two", "Secular, Eclectic, Academic (SEA) Homeschoolers"]);
+  });
+});
+
+/**
+ * "IF THOSE EMAILS BOUNCE IT SHOULD DO SOME RESEARCH FOR THE REAL EMAIL OR IT CAN DO RESEARCH FIRST AND
+ * IF FIND NOTHING JUST GUESS AND IT CAN KEEP GUESSING AT THE EMAILS" (owner, 9 Nov 2026).
+ */
+describe("research first, then guess, and keep guessing", () => {
+  const spec = async (id: string) => JSON.parse((await row<any>(`SELECT spec FROM outreach_campaigns WHERE id = ?`, id)).spec);
+  const person = async (id: string, first: string) => (await spec(id)).contacts.find((x: any) => x.first === first);
+  const toCheck = async (id: string) => (await macCampaignWork(env as never, MON_10AM_CT)).campaigns.find((x) => x.id === id)?.emails ?? [];
+  const prospects = (id: string) => all<any>(`SELECT email, state, step FROM outreach_prospects WHERE campaign_id = ? ORDER BY created_at, email`, id);
+  const updates = (id: string) => all<any>(`SELECT kind, body, needs_her FROM boss_task_notices WHERE task_id = ? ORDER BY created_at`, id);
+  /** A hard bounce for `to`, as the outreach mailbox shows it. */
+  const bounceFor = (to: string) => ({
+    list: async (q: string) => (q.includes("mailer-daemon") ? [{ id: `bounce-${to}`, threadId: `th-bounce-${to}` }] : []),
+    read: async (id: string) => ({ id, threadId: `th-bounce-${to}`, labelIds: [], internalDate: MON_10AM_CT,
+      headers: { from: "Mail Delivery Subsystem <mailer-daemon@googlemail.com>", subject: "Delivery Status Notification (Failure)" }, body: `Final-Recipient: rfc822; ${to}` }),
+  });
+  /** Her three, researched (nothing found unless given), every address valid: all live. */
+  async function liveCampaign(found: Array<{ name: string; email: string; source_url: string }> = []) {
+    const { c } = await campaignFromHer();
+    await researched(c.id, found);
+    await campaignVerified(env as never, c.id, (await toCheck(c.id)).map((email) => ({ email, result: "valid" })), MON_10AM_CT);
+    expect((await row<any>(`SELECT state FROM outreach_campaigns WHERE id = ?`, c.id)).state).toBe("live");
+    await env.DB.prepare(`UPDATE outreach_campaigns SET notice_state = 'sent' WHERE id = ?`).bind(c.id).run();
+    return c;
+  }
+
+  it("an address research finds published wins over the one she gave, and the done reply names the page", async () => {
+    const { c } = await campaignFromHer();
+    await researched(c.id, [{ name: "Dana Fakename", email: "dana.f@acmelearn.example", source_url: "https://acmelearn.example/press" }]);
+    expect(await toCheck(c.id)).toEqual(["dana.f@acmelearn.example", "robin.sample@acmelearn.example", "pat.placeholder@acmelearn.example"]);
+    await campaignVerified(env as never, c.id, (await toCheck(c.id)).map((email) => ({ email, result: "valid" })), MON_10AM_CT);
+    const dana = await row<any>(`SELECT email, source_url FROM outreach_prospects WHERE campaign_id = ? AND contact_first = 'Dana'`, c.id);
+    expect(dana).toEqual({ email: "dana.f@acmelearn.example", source_url: "https://acmelearn.example/press" });
+    const n = JSON.parse((await row<any>(`SELECT notice FROM outreach_campaigns WHERE id = ?`, c.id)).notice);
+    expect(n.details.join("\n")).toMatch(/Dana Fakename: found published at https:\/\/acmelearn\.example\/press/);
+  });
+
+  it("nothing found for a person research turned up: first.last at the company's domain is tried first, and the reply says it is a guess", async () => {
+    const b = businessByKey(PARTNERS_KEY)!;
+    await holdOrgs(env as never, b, ["Second Org"], null, MON_10AM_CT);
+    expect((await advancePartnerOrgs(env as never, MON_10AM_CT)).started).toEqual([`${PARTNERS_KEY}:Second Org`]);
+    const org = await row<any>(`SELECT id FROM outreach_partner_orgs WHERE org_name = 'Second Org'`);
+    const r = await researchFound(env as never, org.id, [{ name: "Lee Example", title: "VP, Partnerships" }], MON_10AM_CT, { domain: "secondorg.example" });
+    expect(r.campaignId).toBeTruthy();
+    expect(await toCheck(r.campaignId!)).toEqual(["lee.example@secondorg.example"]);
+    expect((await person(r.campaignId!, "Lee")).queue.map((q: any) => q.email)).toEqual(["lexample@secondorg.example", "lee@secondorg.example", "leeexample@secondorg.example"]);
+    await campaignVerified(env as never, r.campaignId!, [{ email: "lee.example@secondorg.example", result: "unknown" }], MON_10AM_CT);
+    expect((await prospects(r.campaignId!)).map((p) => p.email)).toEqual(["lee.example@secondorg.example"]);
+    const n = JSON.parse((await row<any>(`SELECT notice FROM outreach_campaigns WHERE id = ?`, r.campaignId)).notice);
+    expect(n.subject).toMatch(/Second Org has started/);
+    expect(n.details.join("\n")).toMatch(/Lee Example: no published address found, so lee\.example@secondorg\.example is a guess/);
+  });
+
+  it("a shape seen published at the company comes before the usual ones", async () => {
+    const b = businessByKey(PARTNERS_KEY)!;
+    await holdOrgs(env as never, b, ["Second Org"], null, MON_10AM_CT);
+    await advancePartnerOrgs(env as never, MON_10AM_CT);
+    const org = await row<any>(`SELECT id FROM outreach_partner_orgs WHERE org_name = 'Second Org'`);
+    const r = await researchFound(env as never, org.id, [{ name: "Lee Example", title: "VP, Partnerships" }], MON_10AM_CT,
+      { domain: "secondorg.example", seen: [{ name: "Kim Press", email: "kpress@secondorg.example" }] });
+    expect(await toCheck(r.campaignId!)).toEqual(["lexample@secondorg.example"]);
+  });
+
+  it("'invalid' from the check is skipped without sending, and the next address is checked", async () => {
+    const { c } = await campaignFromHer();
+    await researched(c.id);
+    await campaignVerified(env as never, c.id, [{ email: "dana.fakename@acmelearn.example", result: "invalid" }], MON_10AM_CT);
+    expect(await prospects(c.id)).toEqual([]);
+    // Her address was first.last, so the next shape is flast.
+    expect(await toCheck(c.id)).toContain("dfakename@acmelearn.example");
+    expect(await toCheck(c.id)).not.toContain("dana.fakename@acmelearn.example");
+    await campaignVerified(env as never, c.id, [{ email: "dfakename@acmelearn.example", result: "valid" }], MON_10AM_CT);
+    expect((await prospects(c.id)).map((p) => p.email)).toEqual(["dfakename@acmelearn.example"]);
+    expect(await all(`SELECT 1 FROM outreach_sends`)).toHaveLength(0);
+  });
+
+  it("a hard bounce moves that person to their next address, from email 1; one address in flight; suppressed; a row on Updates, no email", async () => {
+    const c = await liveCampaign();
+    const dana = await row<any>(`SELECT * FROM outreach_prospects WHERE campaign_id = ? AND contact_first = 'Dana'`, c.id);
+    await env.DB.prepare(`UPDATE outreach_prospects SET state = 'in_sequence', step = 2 WHERE id = ?`).bind(dana.id).run();
+    await env.DB.prepare(`INSERT INTO outreach_sends (id, business_key, prospect_id, to_email, step, is_test, status, sent_at) VALUES ('osd_b1', ?, ?, ?, 0, 0, 'sent', ?)`).bind(PARTNERS_KEY, dana.id, dana.email, MON_10AM_CT).run();
+    await processReplies(env as never, bounceFor("dana.fakename@acmelearn.example") as never, MON_10AM_CT + DAY);
+    expect(await isSuppressed(env.DB, "dana.fakename@acmelearn.example")).toBe(true);
+    expect((await row<any>(`SELECT state FROM outreach_prospects WHERE id = ?`, dana.id)).state).toBe("bounced");
+    // The bounce agent never adds a second address for her: the campaign's next address is the only one.
+    expect(await all(`SELECT 1 FROM outreach_bounce_fixes`)).toHaveLength(0);
+    expect(await toCheck(c.id)).toEqual(["dfakename@acmelearn.example"]);
+    expect((await all<any>(`SELECT 1 FROM outreach_prospects WHERE campaign_id = ? AND contact_first = 'Dana' AND state IN ('new','in_sequence')`, c.id))).toHaveLength(0);
+    await campaignVerified(env as never, c.id, [{ email: "dfakename@acmelearn.example", result: "valid" }], MON_10AM_CT + DAY);
+    const next = await row<any>(`SELECT * FROM outreach_prospects WHERE campaign_id = ? AND email = 'dfakename@acmelearn.example'`, c.id);
+    expect([next.state, next.step]).toEqual(["new", 0]);
+    // She keeps her place in line: first, with no wait behind the bounced email.
+    expect(await staggerHold(env.DB, businessByKey(PARTNERS_KEY)!, next, MON_10AM_CT + DAY)).toBeNull();
+    const u = await updates(c.id);
+    expect(u.map((x) => [x.kind, x.needs_her])).toEqual([["campaign_update", 0]]);
+    expect(u[0].body).toMatch(/Dana Fakename: dana\.fakename@acmelearn\.example bounced\. Next I check a guess \(dfakename@acmelearn\.example\)/);
+    expect((await row<any>(`SELECT notice_state FROM outreach_campaigns WHERE id = ?`, c.id)).notice_state).toBe("sent");
+  });
+
+  it("after the cap of four the person is marked 'no working address found' and the others carry on; everyone out = one email", async () => {
+    const c = await liveCampaign();
+    const robin = await row<any>(`SELECT * FROM outreach_prospects WHERE campaign_id = ? AND contact_first = 'Robin'`, c.id);
+    await processReplies(env as never, bounceFor(robin.email) as never, MON_10AM_CT + DAY);
+    await outOfAddresses(c.id, "robin");
+    const r = await person(c.id, "Robin");
+    expect(r.no_address).toBe(true);
+    expect(r.tried).toHaveLength(4);
+    expect(await toCheck(c.id)).toEqual([]);
+    expect((await prospects(c.id)).filter((p) => p.state === "new").map((p) => p.email)).toEqual(["dana.fakename@acmelearn.example", "pat.placeholder@acmelearn.example"]);
+    expect((await updates(c.id)).at(-1)!.body).toMatch(/Robin Sample: .*no working address was found after 4 tries\. The others carry on\./);
+    expect((await row<any>(`SELECT state, notice_state FROM outreach_campaigns WHERE id = ?`, c.id))).toEqual({ state: "live", notice_state: "sent" });
+    // Dana and Pat run out too: now, and only now, one email to her.
+    for (const first of ["Dana", "Pat"]) {
+      const p = await row<any>(`SELECT * FROM outreach_prospects WHERE campaign_id = ? AND contact_first = ? AND state = 'new'`, c.id, first);
+      await processReplies(env as never, bounceFor(p.email) as never, MON_10AM_CT + DAY);
+      await outOfAddresses(c.id, first.toLowerCase());
+    }
+    const end = await row<any>(`SELECT state, notice_state, notice FROM outreach_campaigns WHERE id = ?`, c.id);
+    expect([end.state, end.notice_state]).toEqual(["ended", "due"]);
+    expect(JSON.parse(end.notice).happened).toMatch(/no working address was found for anyone there/);
+  });
+
+  it("people already live on her addresses before this flow keep going; only a bounce sends one to research, then their next address", async () => {
+    const c = await liveCampaign();
+    // As a campaign built before research-first: no research, no line of addresses.
+    const sp = await spec(c.id);
+    sp.contacts = sp.contacts.map(({ researched_at, how, given, queue, ...rest }: any) => rest);
+    await env.DB.prepare(`UPDATE outreach_campaigns SET spec = ? WHERE id = ?`).bind(JSON.stringify(sp), c.id).run();
+    const before = await prospects(c.id);
+    expect((await macCampaignWork(env as never, MON_10AM_CT)).campaign_research.find((r) => r.id === c.id)).toBeUndefined();
+    expect(await toCheck(c.id)).toEqual([]);
+    const robin = await row<any>(`SELECT * FROM outreach_prospects WHERE campaign_id = ? AND contact_first = 'Robin'`, c.id);
+    await processReplies(env as never, bounceFor(robin.email) as never, MON_10AM_CT + DAY);
+    expect((await macCampaignWork(env as never, MON_10AM_CT + DAY)).campaign_research.find((r) => r.id === c.id)?.people.map((p) => p.name)).toEqual(["Robin Sample"]);
+    await researched(c.id, [], [], MON_10AM_CT + DAY);
+    expect(await toCheck(c.id)).toEqual(["rsample@acmelearn.example"]);
+    // Nobody else was touched: same rows, same states, no new sends.
+    expect((await prospects(c.id)).filter((p) => p.email !== robin.email)).toEqual(before.filter((p) => p.email !== robin.email));
+  });
+
+  it("a campaign stays open while someone is still on their way to a working address", async () => {
+    const c = await liveCampaign();
+    const b = businessByKey(PARTNERS_KEY)!;
+    await holdOrgs(env as never, b, ["Second Org"], "Acmelearn", MON_10AM_CT);
+    const robin = await row<any>(`SELECT * FROM outreach_prospects WHERE campaign_id = ? AND contact_first = 'Robin'`, c.id);
+    await processReplies(env as never, bounceFor(robin.email) as never, MON_10AM_CT + DAY);
+    await env.DB.prepare(`UPDATE outreach_prospects SET state = 'done' WHERE campaign_id = ? AND state = 'new'`).bind(c.id).run();
+    expect((await advancePartnerOrgs(env as never, MON_10AM_CT + 40 * DAY)).started).toEqual([]);
+    expect((await row<any>(`SELECT state FROM outreach_campaigns WHERE id = ?`, c.id)).state).toBe("live");
+  });
+
+  it("a reply from anyone there stops everyone, a person mid-guess included", async () => {
+    const c = await liveCampaign();
+    const robin = await row<any>(`SELECT * FROM outreach_prospects WHERE campaign_id = ? AND contact_first = 'Robin'`, c.id);
+    await processReplies(env as never, bounceFor(robin.email) as never, MON_10AM_CT + DAY);
+    expect(await toCheck(c.id)).toEqual(["rsample@acmelearn.example"]);
+    const dana = await row<any>(`SELECT * FROM outreach_prospects WHERE campaign_id = ? AND contact_first = 'Dana'`, c.id);
+    await env.DB.prepare(`UPDATE outreach_prospects SET state = 'replied' WHERE id = ?`).bind(dana.id).run();
+    await stopCompany(env.DB, dana, MON_10AM_CT + 2 * DAY);
+    expect(await toCheck(c.id)).toEqual([]);
+    expect((await macCampaignWork(env as never, MON_10AM_CT)).campaign_research.find((r) => r.id === c.id)).toBeUndefined();
+    await campaignVerified(env as never, c.id, [{ email: "rsample@acmelearn.example", result: "valid" }], MON_10AM_CT + 2 * DAY);
+    expect((await prospects(c.id)).filter((p) => p.state === "new" || p.state === "in_sequence")).toEqual([]);
+  });
+
+  it("the bounce brake pauses guessing for the sender (a named stop on Updates); her own addresses still go", async () => {
+    const { c } = await campaignFromHer();
+    await researched(c.id);
+    // Three hard bounces in the window from this sender: the outreach brake's own limit.
+    for (const n of [1, 2, 3]) {
+      await env.DB.prepare(`INSERT INTO outreach_sends (id, business_key, prospect_id, to_email, step, is_test, status, sent_at) VALUES (?, ?, 'opr_x', ?, 0, 0, 'bounced', ?)`).bind(`osd_bb${n}`, PARTNERS_KEY, `gone${n}@other.example`, MON_10AM_CT - DAY).run();
+    }
+    await campaignVerified(env as never, c.id, [{ email: "dana.fakename@acmelearn.example", result: "invalid" }, { email: "robin.sample@acmelearn.example", result: "valid" }], MON_10AM_CT);
+    const work = await macCampaignWork(env as never, MON_10AM_CT);
+    // Dana's next address is a guess: not checked while paused. Pat's (hers) still is.
+    expect(work.campaigns.find((x) => x.id === c.id)?.emails).toEqual(["pat.placeholder@acmelearn.example"]);
+    expect(work.campaign_stops.join("\n")).toMatch(/NAMED STOP \[GUESSING_PAUSED\]/);
+    expect((await prospects(c.id)).map((p) => p.email)).toEqual(["robin.sample@acmelearn.example"]);
+    // A guess already checked is held, not queued, while the brake is on.
+    await campaignVerified(env as never, c.id, [{ email: "dfakename@acmelearn.example", result: "valid" }], MON_10AM_CT);
+    expect((await prospects(c.id)).map((p) => p.email)).toEqual(["robin.sample@acmelearn.example"]);
+    const stop = await all<any>(`SELECT kind, needs_her, subject FROM boss_task_notices WHERE kind = 'stop:guessing_paused'`);
+    expect(stop).toHaveLength(1);
+    expect(stop[0].needs_her).toBe(0);
+    // The window clears: the hourly retry queues the held guess.
+    const { retryHeldCampaigns } = await import("../../src/worker/boss/outreach/campaign");
+    await retryHeldCampaigns(env as never, MON_10AM_CT + 15 * DAY);
+    expect((await prospects(c.id)).map((p) => p.email)).toContain("dfakename@acmelearn.example");
   });
 });

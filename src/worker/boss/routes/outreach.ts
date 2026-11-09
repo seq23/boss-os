@@ -30,7 +30,7 @@ import { suppress } from "../outreach/suppression";
 import { normaliseHolderDomain } from "../outreach/seat";
 import { recordConversion } from "../outreach/referrals";
 import { bounceSummary } from "../outreach/bounceFix";
-import { campaignNoticed, campaignVerified, holdOrgs, onePagerFor, researchDue, researchFound } from "../outreach/campaign";
+import { campaignNoticed, campaignResearched, campaignVerified, holdOrgs, onePagerFor, researchDue, researchFound } from "../outreach/campaign";
 
 export const outreach = new Hono<{ Bindings: Env; Variables: Vars }>();
 
@@ -232,15 +232,20 @@ outreach.post("/campaigns/:id/verdicts", async (c) => {
   if (!b || !Array.isArray(b.verdicts)) throw badRequest("verdicts[] is required");
   return ok(c, await campaignVerified(c.env, c.req.param("id"), b.verdicts, Date.now()));
 });
+outreach.post("/campaigns/:id/research", async (c) => {
+  const b = await c.req.json<{ people?: Array<{ name?: string; email?: string; source_url?: string }>; seen?: Array<{ name?: string; email?: string }>; domain?: string; failed?: string }>().catch(() => null);
+  if (!b || (!Array.isArray(b.people) && !b.failed)) throw badRequest("people[] is required (an empty list means nothing was found), or failed");
+  return ok(c, await campaignResearched(c.env, c.req.param("id"), b, Date.now()));
+});
 outreach.post("/campaigns/:id/noticed", async (c) => {
   await campaignNoticed(c.env, c.req.param("id"));
   return ok(c, { recorded: true });
 });
 outreach.get("/partner-orgs/research-due", async (c) => ok(c, { orgs: await researchDue(c.env) }));
 outreach.post("/partner-orgs/:id/found", async (c) => {
-  const b = await c.req.json<{ found?: Array<{ name: string; title?: string; email: string; source_url: string; verdict: string }> }>().catch(() => null);
+  const b = await c.req.json<{ found?: Array<{ name: string; title?: string; email?: string; source_url?: string; verdict?: string }>; domain?: string; seen?: Array<{ name?: string; email?: string }> }>().catch(() => null);
   if (!b || !Array.isArray(b.found)) throw badRequest("found[] is required (an empty list means nobody was found)");
-  return ok(c, await researchFound(c.env, c.req.param("id"), b.found, Date.now()));
+  return ok(c, await researchFound(c.env, c.req.param("id"), b.found, Date.now(), { domain: b.domain ?? null, seen: b.seen ?? [] }));
 });
 /** The organisations a business targets next, in order (her "hold these orgs for later" by API). */
 outreach.get("/partner-orgs", async (c) => ok(c, { orgs: (await c.env.DB.prepare(`SELECT id, business_key, org_name, position, state, campaign_id, note FROM outreach_partner_orgs ORDER BY business_key, position`).all()).results ?? [] }));
