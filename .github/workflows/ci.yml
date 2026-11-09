@@ -51,8 +51,9 @@ jobs:
   validate:
     name: Typecheck, scans, and client build
     runs-on: ubuntu-latest
-    # Normal: ~2m30s (install 0m16s, typecheck 0m26s, scans 0m57s, named scans ~0m15s, build 0m04s).
-    timeout-minutes: 6
+    # Normal: ~5m50s on main by 8 Nov 2026 (it was ~2m30s; the scans grew). At 6 minutes it was cancelled
+    # on a green run (PR #360, 6m03s), so the hang guard is back to about twice the normal wall time.
+    timeout-minutes: 12
     permissions:
       contents: read
 
