@@ -261,7 +261,7 @@ describe("a request typed in from her session gets the same receipt, as Monique'
     expect(c.notice_state).toBe("due");
     expect(receipt.from).toBe("Monique");
     expect(receipt.subject).toBe("Acmelearn drip");
-    expect(receipt.details.join("\n")).toMatch(/email 1 goes to Dana Fakename .* Central/);
+    expect(receipt.details.join("\n")).toMatch(/email 1 goes to Dana Fakename .*\bCentral\b/); // "within the hour (Central)" in a weekday 9-17 Central hour, "Monday, Nov 9, at 9 a.m. Central" outside it
     expect(receipt.details.join("\n")).toMatch(/What comes back/);
     // The Mac is off: the addresses are checked before the receipt has gone. The receipt is kept.
     await researched(c.id);

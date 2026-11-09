@@ -21,7 +21,12 @@ import { createTestDb, disposeTestDb, type TestDb } from "./helpers/db";
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const m = readSchedule(ROOT);
-const SH = readFileSync(path.join(ROOT, "scripts/ops/install-agent-launchd.sh"), "utf8");
+/**
+ * The installer's text plus the per-job installers it calls whose plists the parser can read
+ * (9 Nov 2026: the morning catch-up moved to its own installer, and its 06:32 pin moved with it).
+ */
+const LAUNCHD_INSTALLERS = ["scripts/ops/install-agent-launchd.sh", "scripts/ops/install-morning-catchup.sh"];
+const SH = LAUNCHD_INSTALLERS.map((f) => readFileSync(path.join(ROOT, f), "utf8")).join("\n");
 const clone = () => JSON.parse(JSON.stringify(m));
 
 /** Installer jobs whose times are computed in shell (a loop), so the parser cannot read them; the Mac check reads the installed plist. */
@@ -55,6 +60,9 @@ describe("the Schedule manifest", () => {
   it("every launchd job the installer writes has a row, at the Central time the installer writes", () => {
     const jobs = installerJobs(SH);
     expect(Object.keys(jobs).length).toBeGreaterThan(30);
+    // Each per-job installer read here must still contribute its job, or its pin is silently gone.
+    for (const f of LAUNCHD_INSTALLERS.slice(1)) expect(Object.keys(installerJobs(readFileSync(path.join(ROOT, f), "utf8"))).length, f).toBeGreaterThan(0);
+    expect(jobs["com.seq.boss-morning-catchup"]).toBeTruthy();
     // Every Label stanza and every install_l_job line is read: a job the parser cannot see is one the guard cannot govern.
     const stanzas = (SH.match(/<key>Label<\/key><string>\$[A-Z0-9_]+<\/string>/g) ?? []).length + (SH.match(/^install_l_job \S+ "/gm) ?? []).length;
     expect(Object.keys(jobs).length).toBe(stanzas);

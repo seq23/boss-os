@@ -3983,7 +3983,7 @@
     {
       "id": "morning-catchup",
       "name": "Morning catch-up",
-      "what": "Before the 06:40 morning email: whatever the registry (morningSections.mjs) still expects today gets one safe re-run, or a named stop.",
+      "what": "Before the 06:40 morning email, and again whenever the Mac comes up: whatever the registry (morningSections.mjs) still expects today gets one safe re-run, or a named stop.",
       "business": "personal",
       "brand": "Boss OS",
       "system": "mac",
