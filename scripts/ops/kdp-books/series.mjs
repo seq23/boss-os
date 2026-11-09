@@ -24,6 +24,7 @@ export const KDP_LIMITS = Object.freeze({ unpublishedDrafts: 10, keywords: 7, ke
 
 /** The link printed in the book: the fixed companion page, tagged with the book's slug. Pure. */
 export function companionLink(book) {
+  if (!book.companion_url) return null;
   const u = new URL(book.companion_url);
   for (const [k, v] of Object.entries(UTM)) u.searchParams.set(k, v);
   u.searchParams.set("utm_campaign", book.slug);
@@ -31,6 +32,13 @@ export function companionLink(book) {
 }
 /** The link as printed for a reader to type: no scheme, no tracking. Pure. */
 export const shortLink = (url) => String(url).replace(/^https?:\/\//, "").replace(/\?.*$/, "").replace(/\/$/, "");
+
+/**
+ * A line with no companion page (`companion: false`): the book prints no site link and the gate
+ * asks for none. Ambitious Grads (owner, 9 Nov 2026): "just opportunistically post them to amazon
+ * publishing no extra landing pages". Pure.
+ */
+export const hasCompanion = (line, book) => (book.companion ?? line.companion) !== false;
 
 /** The author of a book: its own pen name, else the line's. Pure. */
 export const authorOf = (line, book) => book.author ?? line.author;
@@ -147,12 +155,16 @@ export const DISCLAIMERS = Object.freeze({
   education: [
     "This book is for general information and practice. It is not medical, psychological or professional advice; if something in your life feels unsafe or unmanageable, talk to a qualified professional.",
   ],
+  careers: [
+    "This book is general career information. Pay, recruiting dates, company names and tax rules change; check a current source before you rely on a figure, and talk to a tax professional before you exercise stock options.",
+  ],
   none: [],
 });
 
 /** The AI note printed in every book (KDP strategy: AI disclosure always). Pure. */
 export function aiNote(line) {
   const d = line.ai_disclosure ?? {};
+  if (d.note) return d.note;
   if (d.text === "none") return "";
   return d.text === "some"
     ? "Parts of this book were drafted with AI writing tools and then reviewed and edited by the author."
@@ -165,17 +177,18 @@ export function aiNote(line) {
  */
 export function seriesSections(line, book, chapters, { year, siblings = [] } = {}) {
   const author = authorOf(line, book);
-  const companion = companionLink(book);
+  const companion = hasCompanion(line, book) ? companionLink(book) : null;
   const ctx = { companion };
   const series = line.series?.name ? `${line.series.name}, Book ${book.series_number ?? 1}` : null;
   const disclaimer = (DISCLAIMERS[book.disclaimer ?? line.disclaimer ?? "none"] ?? []).map((d) => `<p>${esc(d)}</p>`).join("");
   const out = [];
   out.push({ id: "title", title: "Title page", toc: false, html: `<div class="titlepage"><h1>${esc(book.title)}</h1>${book.subtitle ? `<p class="subtitle">${esc(book.subtitle)}</p>` : ""}${series ? `<p class="series">${esc(series)}</p>` : ""}<p class="author">${esc(author)}</p><p class="publisher">${PUBLISHER}</p></div>` });
   out.push({ id: "copyright", title: "Copyright", toc: false, html: `<h2>Copyright</h2><p>Copyright © ${year} ${esc(author)}. Published by ${PUBLISHER}. All rights reserved, except that you may copy the checklists, logs and worksheets in this book for your own use.</p>${disclaimer}${aiNote(line) ? `<p>${esc(aiNote(line))}</p>` : ""}` });
-  out.push({ id: "companion-front", title: "Free printables for this book", html: `<h2>Free printables for this book</h2><p>The checklists and pages in this book are also free to print, with updates, at <a href="${esc(companion)}">${esc(shortLink(companion))}</a>.</p>` });
+  if (companion) out.push({ id: "companion-front", title: "Free printables for this book", html: `<h2>Free printables for this book</h2><p>The checklists and pages in this book are also free to print, with updates, at <a href="${esc(companion)}">${esc(shortLink(companion))}</a>.</p>` });
   chapters.forEach((c, i) => out.push({ id: `ch${i + 1}`, title: c.title || `Part ${i + 1}`, html: `${c.title ? `<h2>${inline(c.title, ctx)}</h2>` : ""}${c.blocks.map((b) => blockHtml(b, ctx)).join("")}` }));
-  out.push({ id: "next", title: "Your next step", html: `<h2>Your next step</h2><p>Everything in this book, ready to print or fill in on screen, is at <a href="${esc(companion)}">${esc(shortLink(companion))}</a>.</p>${siblings.length ? `<p>Also in ${esc(line.series?.name ?? "this series")}:</p><ul>${siblings.map((s) => `<li>${esc(s.title)}</li>`).join("")}</ul>` : ""}` });
-  out.push({ id: "author", title: "About the author", html: `<h2>About the author</h2><p>${esc(author)} writes short, practical books, published by ${PUBLISHER}.</p><p>If this book helped, a short review on Amazon helps the next reader find it.</p>` });
+  if (companion) out.push({ id: "next", title: "Your next step", html: `<h2>Your next step</h2><p>Everything in this book, ready to print or fill in on screen, is at <a href="${esc(companion)}">${esc(shortLink(companion))}</a>.</p>${siblings.length ? `<p>Also in ${esc(line.series?.name ?? "this series")}:</p><ul>${siblings.map((s) => `<li>${esc(s.title)}</li>`).join("")}</ul>` : ""}` });
+  else if (siblings.length) out.push({ id: "next", title: `Also in ${line.series?.name ?? "this series"}`, html: `<h2>Also in ${esc(line.series?.name ?? "this series")}</h2><ul>${siblings.map((sb) => `<li>${esc(sb.title)}${sb.subtitle ? `: ${esc(sb.subtitle)}` : ""}</li>`).join("")}</ul>` });
+  out.push({ id: "author", title: "About the author", html: `<h2>About the author</h2><p>${esc(line.about_author ?? `${author} writes short, practical books, published by ${PUBLISHER}.`)}</p><p>If this book helped, a short review on Amazon helps the next reader find it.</p>` });
   return out;
 }
 
@@ -188,9 +201,11 @@ export function seriesSections(line, book, chapters, { year, siblings = [] } = {
 export function seriesProblems(line, book, chapters) {
   const p = [];
   const author = authorOf(line, book);
-  for (const f of ["slug", "title", "subtitle", "description", "companion_url", "manuscript"]) if (!book[f]) p.push(`no ${f}`);
+  const linked = hasCompanion(line, book);
+  for (const f of ["slug", "title", "subtitle", "description", ...(linked ? ["companion_url"] : []), "manuscript"]) if (!book[f]) p.push(`no ${f}`);
   if (!author) p.push("no author (pen name)");
-  if (author && /\btaylor\b|\bsequoia\b/i.test(author)) p.push("the pen name is related to the owner");
+  // Her own byline only on her own writing (`own_name`, a line of books she wrote herself); every other line keeps a pen name.
+  if (author && !(book.own_name ?? line.own_name) && /\btaylor\b|\bsequoia\b/i.test(author)) p.push("the pen name is related to the owner");
   if (author && /^(dr|prof|attorney|esq)\.?\s|\b(phd|md|jd|esq|lcsw|lpc)\b/i.test(author)) p.push("the pen name carries a credential");
   if (`${book.title}${book.subtitle ?? ""}`.length > KDP_LIMITS.titleSubtitleChars) p.push("title + subtitle over 200 characters");
   const rep = repeatedTerms(book.title ?? "", book.subtitle ?? "");
@@ -204,13 +219,17 @@ export function seriesProblems(line, book, chapters) {
   if (book.paperback && !TRIMS[book.paperback.trim]) p.push(`paperback trim "${book.paperback.trim}" is not one of ${Object.keys(TRIMS).join(", ")}`);
   if (!book.description || book.description.length > KDP_LIMITS.descriptionChars) p.push("description missing or over 4,000 characters");
   if (/<[a-z]/i.test(book.description ?? "")) p.push("description carries HTML (plain paragraphs only)");
-  try { const u = new URL(book.companion_url); if (!/\/amazon\/[a-z0-9-]+\/$/.test(u.pathname) || u.search) p.push("companion_url is not a bare /amazon/<slug>/ page"); } catch { p.push("companion_url is not a URL"); }
-  if (book.companion_url && !String(book.companion_url).includes(`/amazon/${book.slug}/`)) p.push("companion_url does not end in the book's own slug");
+  if (linked) try { const u = new URL(book.companion_url); if (!/\/amazon\/[a-z0-9-]+\/$/.test(u.pathname) || u.search) p.push("companion_url is not a bare /amazon/<slug>/ page"); } catch { p.push("companion_url is not a URL"); }
+  if (linked && book.companion_url && !String(book.companion_url).includes(`/amazon/${book.slug}/`)) p.push("companion_url does not end in the book's own slug");
   const text = manuscriptText(chapters);
   const words = wordCount(text);
   const floor = book.min_words ?? line.min_words ?? MIN_WORDS;
   if (words < floor) p.push(`${words} words: under the ${floor}-word floor for a short but real book (20–40 pages)`);
-  if (!/\{\{companion\}\}/.test(JSON.stringify(chapters))) p.push("the manuscript never prints {{companion}}");
+  if (linked && !/\{\{companion\}\}/.test(JSON.stringify(chapters))) p.push("the manuscript never prints {{companion}}");
+  if (!linked && /\{\{companion\}\}/.test(JSON.stringify(chapters))) p.push("the manuscript prints {{companion}} but this line has no companion page");
+  // A placeholder left for her words (e.g. "[HER LINE]") never reaches Amazon.
+  const placeholder = /\[(?:HER|HIS|TODO|TBD|PLACEHOLDER|INSERT)[A-Z ]*\]|\bTODO\b|\bTBD\b/.exec(text);
+  if (placeholder) p.push(`the manuscript still holds the placeholder "${placeholder[0]}"`);
   if (/<[a-z][^>]*>/i.test(text)) p.push("raw HTML in the manuscript");
   const gated = book.claim_gate ?? line.claim_gate ?? false;
   if (gated) for (const x of claimProblems(`${text}\n${book.title} ${book.subtitle} ${book.description} ${(book.keywords ?? []).join(" ")}`)) p.push(`claim gate: ${x}`);
@@ -231,7 +250,7 @@ export function descriptionHtml(text) {
 /** The KDP AI-disclosure answers for a series book, from its line's `ai_disclosure`. Pure. */
 export function seriesAi(line) {
   const d = line.ai_disclosure ?? {};
-  const texts = d.text === "none" ? "None" : d.text === "some" ? "Some sections, with extensive editing" : "Entire work, with extensive editing";
+  const texts = d.text === "none" ? "None" : d.text === "some_minimal" ? "Some sections, with minimal or no editing" : d.text === "some" ? "Some sections, with extensive editing" : "Entire work, with extensive editing";
   const images = d.images === "ai_generated" ? "One or a few AI-generated images, with minimal or no editing" : "None";
   return { text_detail: texts, images_detail: images, tool_names: d.tool_names ?? "Anthropic Claude" };
 }
@@ -246,7 +265,7 @@ export function seriesListing(line, book, { built_on, pages = null } = {}) {
     keywords: book.keywords, categories: book.categories,
     price_usd: book.price_usd, royalty: book.price_usd >= 2.99 ? 70 : 35, kdp_select: true,
     paperback: book.paperback ? { ...book.paperback, pages } : null,
-    companion_url: book.companion_url, companion_link: companionLink(book),
+    companion_url: hasCompanion(line, book) ? book.companion_url : null, companion_link: hasCompanion(line, book) ? companionLink(book) : null,
     ai_disclosure: seriesAi(line), models: [], built_on,
   };
 }
@@ -328,7 +347,7 @@ export function wrapCoverHtml(line, book, { pages, dpi = 300, photo = null, fron
   const back = `<div style="position:absolute;left:0;top:0;width:${px(trim.w + BLEED_IN)}px;height:${px(height)}px;background:${c.accent};color:${c.bg};font-family:'Noto Sans',system-ui,sans-serif;padding:${px(0.75)}px ${px(0.6)}px ${px(0.75)}px ${px(0.6 + BLEED_IN)}px">
 <div style="font-family:'Noto Serif',Georgia,serif;font-weight:800;font-size:${px(0.34)}px;line-height:1.1;margin-bottom:${px(0.3)}px">${esc(book.title)}</div>
 <div style="font-size:${px(0.15)}px;line-height:1.45;max-width:${px(trim.w - 1.4)}px">${blurb}</div>
-<div style="font-size:${px(0.14)}px;margin-top:${px(0.25)}px;font-weight:600">Free printables: ${esc(shortLink(book.companion_url))}</div>
+${book.companion_url && hasCompanion(line, book) ? `<div style="font-size:${px(0.14)}px;margin-top:${px(0.25)}px;font-weight:600">Free printables: ${esc(shortLink(book.companion_url))}</div>` : ""}
 <div style="position:absolute;right:${px(0.25)}px;bottom:${px(0.25 + BLEED_IN)}px;width:${px(2)}px;height:${px(1.2)}px;background:#FFFFFF"></div>
 <div style="position:absolute;left:${px(0.6 + BLEED_IN)}px;bottom:${px(0.45 + BLEED_IN)}px;font-size:${px(0.13)}px;opacity:.9">${PUBLISHER}</div></div>`;
   const spineHtml = `<div style="position:absolute;left:${px(trim.w + BLEED_IN)}px;top:0;width:${Math.max(1, px(spine))}px;height:${px(height)}px;background:${c.fg};color:${c.bg};display:flex;align-items:center;justify-content:center;overflow:hidden">${spineHasText(pages) ? `<div style="transform:rotate(90deg);white-space:nowrap;font-family:'Noto Serif',Georgia,serif;font-weight:700;font-size:${Math.min(px(spine) * 0.55, px(0.22))}px">${esc(book.title)} · ${esc(authorOf(line, book))}</div>` : ""}</div>`;

@@ -96,9 +96,18 @@ async function photoFor(root, book) {
   return `data:${MIME[extname(file).toLowerCase()] ?? "image/jpeg"};base64,${(await readFile(file)).toString("base64")}`;
 }
 
+/**
+ * Where a book's manuscript is: in the checkout (docs/kdp/books/<slug>.md), or, for a book whose text
+ * must never sit in this public repo, under the home folder ("~/.boss-os/kdp/..."). Pure.
+ */
+export function manuscriptPath(root, book, home = process.env.HOME ?? ".") {
+  const m = book.manuscript ?? `docs/kdp/books/${book.slug}.md`;
+  return m.startsWith("~/") ? join(home, m.slice(2)) : join(root, m);
+}
+
 /** Builds one book. Returns { slug, built, problems, pages }. */
 export async function buildBook(browser, root, line, book, { now = new Date() } = {}) {
-  const md = join(root, book.manuscript ?? `docs/kdp/books/${book.slug}.md`);
+  const md = manuscriptPath(root, book);
   if (!existsSync(md)) return { slug: book.slug, built: false, problems: [`no manuscript at ${book.manuscript ?? md}`] };
   const chapters = S.parseManuscript(await readFile(md, "utf8"));
   const problems = S.seriesProblems(line, book, chapters);
