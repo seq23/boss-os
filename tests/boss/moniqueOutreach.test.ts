@@ -214,7 +214,7 @@ describe("the brakes, as pure functions", () => {
     const uscis = businessByKey("uscisexam")!;
     expect(() => assertSenderAllowed({ ...uscis, sender: "hello@uscisexam.com" })).toThrow(/every guide sends from/);
     expect(Object.fromEntries(BUSINESSES.filter((b) => b.kind !== "local_guide").map((b) => [b.key, b.sender]))).toEqual({
-      time2read: "st@time-2-read.com", time2read_groups: "st@time-2-read.com", aplayermode: "hello@aplayermode.com", approvalprep: "hello@approvalprep.com", weddingchecklist: "hello@weddingchecklistpdf.com",
+      time2read: "st@time-2-read.com", time2read_groups: "st@time-2-read.com", time2read_partners: "st@time-2-read.com", aplayermode: "hello@aplayermode.com", approvalprep: "hello@approvalprep.com", weddingchecklist: "hello@weddingchecklistpdf.com",
     });
     // Every guide email answers to the umbrella address; a side business's does not.
     const m = composeEmail({ business: uscis, step: 0, to: "a@acme.example", org: "Acme", metro: "Houston", unsubToken: "t", postalAddress: "PO Box 1, Houston, TX 77002" });
@@ -315,7 +315,7 @@ describe("every email carries the unsubscribe link and the postal address", () =
       expect(b.steps.length, b.key).toBeLessThanOrEqual(MAX_FOLLOW_UPS + 1);
       for (const s of b.steps.slice(2)) expect(s.approvalKey, b.key).toBeTruthy();
       for (const step of [...b.steps.keys()]) {
-        const m = composeEmail({ business: b, step, to: "a@acme.example", org: "Acme", metro: "Houston", unsubToken: "tok123", postalAddress: addr, firstSubject: "Hello", groupCode: "ACME15K7Q" });
+        const m = composeEmail({ business: b, step, to: "a@acme.example", org: "Acme", metro: "Houston", unsubToken: "tok123", postalAddress: addr, firstSubject: "Hello", groupCode: "ACME15K7Q", contactFirst: "Alex", angle: "brand", pageUrl: "https://example.test/p" });
         const plainFooter = m.body.slice(m.body.lastIndexOf("\n--\n"));
         const htmlFooter = /<p style="([^"]*)"[^>]*>([\s\S]*?)<\/p>\s*<\/body>/.exec(m.html)![2]!;
         // The guides are signed by S.L. Taylor over the umbrella company and the guide's domain (owner,
@@ -789,7 +789,9 @@ describe("outreach rules (owner, 9 Oct 2026)", () => {
     expect(makeCode("heygetonmylevel").startsWith("HGO-"), `${HGO} referrals.ts still carries its code prefix.`).toBe(false);
     expect(/heygetonmylevel/i.test(REFERRALS_SOURCE), `${HGO} referrals.ts names it.`).toBe(false);
     // The only place the catalog may name it is the never-list itself.
-    const mentions = CATALOG_SOURCE.split("\n").filter((l) => /heygetonmylevel/i.test(l) && !/^\s*(\*|\/\/|\/\*)/.test(l));
+    // A bonus line INSIDE the Time2Read offer (owner, 8 Nov 2026) is not a target, sender or domain:
+    // only the partner page's probe-gated `bonus:` line may name it; every other line stays as strict.
+    const mentions = CATALOG_SOURCE.split("\n").filter((l) => /heygetonmylevel/i.test(l) && !/^\s*(\*|\/\/|\/\*)/.test(l) && !/^\s*bonus: \{ probe: "hgoml_level_check", text: "Included with Time2Read Premium: HeyGetOnMyLevel,/.test(l));
     expect(mentions, HGO).toEqual(['export const NEVER_OUTREACH_DOMAINS = ["heygetonmylevel.com"] as const;']);
     // Put it back and the send-time guard and the setup guard both refuse it.
     const smuggled = { ...BUSINESSES[0]!, key: "heygetonmylevel", domain: "heygetonmylevel.com", sender: "hello@heygetonmylevel.com" };
@@ -1219,7 +1221,7 @@ describe("the Industry Guides read like a person, signed S.L. Taylor (owner, 16 
       expect(b.steps.length, b.key).toBeGreaterThanOrEqual(2);
       expect(b.steps.length, b.key).toBeLessThanOrEqual(MAX_FOLLOW_UPS + 1);
       for (const step of [...b.steps.keys()]) {
-        const m = composeEmail({ business: b, step, to: "a@acme.example", org: "Acme", metro: "Houston", unsubToken: "tok123", postalAddress: addr, firstSubject: "Hello", groupCode: "ACME15K7Q" });
+        const m = composeEmail({ business: b, step, to: "a@acme.example", org: "Acme", metro: "Houston", unsubToken: "tok123", postalAddress: addr, firstSubject: "Hello", groupCode: "ACME15K7Q", contactFirst: "Alex", angle: "brand", pageUrl: "https://example.test/p" });
         expect(m.body, b.key).toContain(`\n\n— The ${b.brand} team\n${b.domain}\n\n--\n`);
         expect(m.body, b.key).not.toContain("S.L. Taylor");
       }

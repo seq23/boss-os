@@ -50,6 +50,11 @@ export const GUIDES_SIGNER = "S.L. Taylor";
 
 import { FOLLOW_UP_AFTER_DAYS, GROUPS_KEY, NEW_GROUPS_PER_WEEKDAY } from "../../../shared/boss/t2rGroups/rules.mjs";
 import * as CADENCE from "../../../shared/boss/outreach/cadence.mjs";
+import { T2R_LOGO } from "./partnerLogos";
+import { STAGGER_DAYS as CAMPAIGN_STAGGER_DAYS } from "../../../shared/boss/outreach/campaign.mjs";
+
+/** The Time-2-Read partner sequence's business key (outreach/campaign.ts builds its prospects). */
+export const PARTNERS_KEY = "time2read_partners";
 
 export type BusinessKind = "local_guide" | "affiliate" | "direct";
 
@@ -179,6 +184,53 @@ export interface Business {
   directory?: string;
   /** States this business never writes to, each with its reason (PI_NO_OUTREACH_STATES). */
   noOutreachStates?: Readonly<Record<string, string>>;
+  /**
+   * A PARTNER SEQUENCE TO NAMED PEOPLE AT ONE COMPANY (owner, 8 Nov 2026), built from her email by
+   * outreach/campaign.ts, never from public listings. Placeholders also {first} {angle_line}
+   * {onepager_url}. Several people at one company go `staggerDays` apart, each in their own thread;
+   * any human reply from anyone there stops every sequence at that company and goes to her.
+   */
+  partner?: PartnerSequence;
+}
+
+export type PartnerAngle = "brand" | "distribution";
+
+export interface PartnerSequence {
+  /** The brand her email must name for this sequence to be chosen ("time 2 read" matches). */
+  forBrand: string;
+  staggerDays: number;
+  /** One sentence per angle, {org} filled; chosen per person from their title and her note. */
+  angles: Readonly<Record<PartnerAngle, string>>;
+  /** The one-pager, rendered at /api/boss/outreach/p/<token> (routes/outreach.ts), {org} filled. */
+  page: PartnerPage;
+}
+
+export interface PartnerPage {
+  /** The brand's mark for the header band (a data URI, so the public page needs no hosting). */
+  logo?: string;
+  /** One short line beside the mark. */
+  tagline?: string;
+  title: string;
+  intro: string;
+  /**
+   * What the brand does TODAY, read at build time from the product's own capabilities document
+   * (campaign.mjs `capabilitiesFrom`), never a copy frozen in this repo. An unreadable or empty list
+   * holds the campaign: nothing is queued without it.
+   */
+  capabilitiesUrl: string;
+  models: Array<{ name: string; how: string; theyBring: string; weBring: string; status?: string }>;
+  /** "How it is different": against KINDS of reading app, never a named brand, never "best". */
+  different: { intro: string; rows: Array<{ usual: string; ours: string }> };
+  /**
+   * A bonus line that shows only while a LIVE probe passes, re-checked at every render (campaign.ts
+   * `bonusLive`): the sister tool must really work before the page names it.
+   */
+  bonus?: { text: string; probe: "hgoml_level_check" };
+  /** What a partner's families and the partner get: named, never a figure (pageProblems). */
+  offer: string[];
+  privacy: string[];
+  next: string;
+  notAffiliated: string;
 }
 
 /*
@@ -277,6 +329,35 @@ export const NEURO_QUALIFY =
 
 /** What every Neuro Evaluation Guides email says a listing shows (owner, 16 Oct 2026). */
 const NEURO_LISTING = "Listings show evaluation, therapy or both.";
+
+/*
+ * EMAILS 3 AND 4 OF THE TIME-2-READ PARTNER SEQUENCE (drafted 8 Nov 2026 for her approval; NOT
+ * approved yet). They go only once the Decide card for PARTNER_LATER_KEY is approved.
+ */
+const PARTNER_LATER_WORDS: Array<Omit<Step, "approvalKey">> = [
+  {
+    afterDays: CADENCE.afterDaysFor(2),
+    subject: "Re: {subject}",
+    body:
+      "Hi {first},\n\nOne more note, in case this is better with someone else at {org}. If another person looks " +
+      "after partnerships or new things for families, I'd be grateful if you passed it along. The page of ideas " +
+      "is here: {onepager_url}",
+  },
+  {
+    afterDays: CADENCE.afterDaysFor(3),
+    subject: "Re: {subject}",
+    body:
+      "Hi {first},\n\nI'll leave it here so I'm not crowding your inbox. If a reading add-on for {org} families " +
+      "ever becomes a priority, a reply to this email is all it takes. Thank you for reading.",
+  },
+];
+export const PARTNER_LATER_KEY = `t2r-partners-emails-3-4:${CADENCE.wordsHash(JSON.stringify(PARTNER_LATER_WORDS))}`;
+const PARTNER_LATER: Step[] = PARTNER_LATER_WORDS.map((w) => ({ ...w, approvalKey: PARTNER_LATER_KEY }));
+
+/** Every partner sequence, for her email's "which business" (campaign.mjs `businessIn`). */
+export function partnerBusinesses(): Array<{ key: string; brand: string; domain: string }> {
+  return BUSINESSES.filter((b) => b.partner).map((b) => ({ key: b.key, brand: b.partner!.forBrand, domain: b.domain }));
+}
 
 export const BUSINESSES: Business[] = [
   {
@@ -576,6 +657,112 @@ export const BUSINESSES: Business[] = [
       },
     ],
     nextStep: "Answer their question in your own words. If they ask the price or want to pay, the card carries a suggested price; Monique never quotes one.",
+  },
+  {
+    /*
+     * TIME-2-READ PARTNERSHIPS (owner, 8 Nov 2026: "create a drip campaign to try to sell a time 2
+     * read partnership for these people"). Named people at one company, from her email
+     * (outreach/campaign.ts). Words from the T2R brain's Voice and dailystory docs/sales (partnership,
+     * capabilities, privacy-security): built facts only, no price, no call ask, no partner or result
+     * we do not have (outboundProblems on every build). Emails 3 and 4 go only once she approves them.
+     */
+    key: PARTNERS_KEY,
+    domain: "time-2-read.com",
+    brand: "Time2Read",
+    kind: "direct",
+    sender: "st@time-2-read.com",
+    offerUrl: "https://time-2-read.com/",
+    offer: "A reading partnership with a company that serves families (named contacts from her email)",
+    segments: [],
+    newPerDay: 3,
+    steps: [
+      {
+        afterDays: 0,
+        subject: "A reading idea for {org} families",
+        body:
+          "Hi {first},\n\nI'm writing from Time2Read (time-2-read.com). It writes a new story for each child, with " +
+          "their name and interests in it, at their own reading level from Pre-K to 10th grade. The level moves " +
+          "with the reader: one tap makes a story easier or harder, and a read-aloud coach listens as they read.\n\n{angle_line}\n\n" +
+          "If that's worth exploring, just reply and I'll send a short page of ideas.",
+      },
+      {
+        afterDays: CADENCE.afterDaysFor(1),
+        subject: "Re: {subject}",
+        body:
+          "Hi {first},\n\nA short follow-up in case my note got buried. I put the ideas on one page: {onepager_url}\n\n" +
+          "It sets out how Time2Read differs from the usual reading apps, three ways Time2Read and {org} could work " +
+          "together, and how children's data is handled. If any of it is worth a closer look, a reply is all it takes.",
+      },
+      ...PARTNER_LATER,
+    ],
+    partner: {
+      forBrand: "Time2Read",
+      staggerDays: CAMPAIGN_STAGGER_DAYS,
+      angles: {
+        brand:
+          "I think Time2Read could sit alongside what {org} already gives families: offered to your members " +
+          "as a reading add-on, or shared with your audience in a way that fits your brand.",
+        distribution:
+          "I think Time2Read could fit into what {org} offers schools and families: bundled as a reading " +
+          "add-on, included in a package for districts or co-ops, or linked from the tools you already provide.",
+      },
+      page: {
+        logo: T2R_LOGO,
+        tagline: "Stories at your child's reading level",
+        title: "Time2Read × {org}: partnership ideas",
+        intro:
+          "Three ways Time2Read and {org} could work together, written for a first conversation. " +
+          "Nothing here is a commitment on either side.",
+        // What Time2Read does TODAY is read from its own repo at build time, never copied here.
+        capabilitiesUrl: "https://raw.githubusercontent.com/seq23/dailystory/main/docs/sales/capabilities.md",
+        models: [
+          {
+            name: "A reading add-on for your members",
+            how: "{org} offers Time2Read to its families as an add-on or as part of a package.",
+            theyBring: "Your families, and a place for reading in what you already offer.",
+            weBring: "The reader, family set-up and support, and an access code of your own to count sign-ups.",
+          },
+          {
+            name: "Co-marketing to your audience",
+            how: "A reading feature in your newsletter, blog or member area, with a free start for your families.",
+            theyBring: "Your channels and your voice with families.",
+            weBring: "Sample stories, copy and images to use, and a trial code so you can see how many families start.",
+          },
+          {
+            name: "A link from your tools",
+            how: "Time2Read appears inside or beside {org}'s product, for example from a reading or language arts unit. One example: a unit's vocabulary, added as a list, turns up in each child's stories. Families and teachers can add lists by hand today; a direct link from your units would be built together.",
+            theyBring: "A place in your product or curriculum where reading time fits.",
+            weBring: "A simple link-in to start with, and partner access codes (a trial of a set length, or Premium with no card). Anything deeper is scoped with you first.",
+            status: "Single sign-on, Clever or ClassLink rostering and live data exchange are not built today; they would be planned together.",
+          },
+        ],
+        different: {
+          intro: "Most reading apps families already know are a fixed library of e-books, a phonics game, or a set of levelled readers. Time2Read works differently.",
+          rows: [
+            { usual: "A fixed library: every child picks from the same books.", ours: "Made for each child: a new story with their name, their interests and a special request." },
+            { usual: "A level set once, or moved by hand.", ours: "The level moves with the reader: one tap makes a story easier or harder for every reader, and on Premium, readers in 6th to 10th grade step up automatically as they read." },
+            { usual: "The child reads what is on the page.", ours: "The child picks what happens next, from three choices (Premium)." },
+            { usual: "Word lists practised apart from the reading.", ours: "Parents and teachers add their own vocabulary lists, and the stories weave them in (a saved list for each child on Premium)." },
+            { usual: "Reading alone, with no one listening.", ours: "A read-aloud coach listens as the child reads: five sentences a day free, unlimited on Premium." },
+          ],
+        },
+        bonus: { probe: "hgoml_level_check", text: "Included with Time2Read Premium: HeyGetOnMyLevel, a quick reading-level check with practice passages, so each child starts at the right level." },
+        offer: [
+          "Partner pricing for your families.",
+          "A revenue share on every family you bring.",
+          "Terms are agreed together once you reply; nothing is fixed in advance.",
+        ],
+        privacy: [
+          "A parent creates the account and each child's profile, with a consent email, data export and account deletion.",
+          "In school accounts, children's names are masked before any AI step, and no free or training AI model is used.",
+          "No child or student data is shared with a partner by default.",
+          "Any data terms are agreed in writing before a pilot, with children's privacy law (COPPA) in mind.",
+        ],
+        next: "If one of these fits, reply to the email this page came with and say which, and we'll write up a simple first step together.",
+        notAffiliated: "Ideas for discussion. Time2Read is independent and is not affiliated with or endorsed by {org}.",
+      },
+    },
+    nextStep: "Answer in your own words. If they ask the price, it is yours to set; Monique never quotes one.",
   },
   {
     key: "aplayermode",

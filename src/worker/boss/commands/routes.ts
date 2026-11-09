@@ -9,12 +9,14 @@
 import { Hono } from "hono";
 import type { Env, Vars } from "../env";
 import { mailHistory } from "../mail/history";
+import { macCampaignWork } from "../outreach/campaign";
 import { ok, badRequest } from "../lib/http";
 import { macWork, cancelCommand, errandTap, handleErrandSelf, codeAnswered, lookupAnswered, draftReady, bounced, noticeSent, commandFailed, getCommand, errandSent, errandFollowedUp, errandRemindersDue, errandReminded, openMeetingPrep, prepFinished, prepMentions, personalPreps } from "./run";
 
 export const commands = new Hono<{ Bindings: Env; Variables: Vars }>();
 
-commands.post("/tick", async (c) => ok(c, await macWork(c.env)));
+// Partner campaigns ride on the same tick: addresses to check with NeverBounce, and Monique's notices (outreach/campaign.ts).
+commands.post("/tick", async (c) => ok(c, { ...(await macWork(c.env)), ...(await macCampaignWork(c.env)) }));
 
 // Simone's meeting prep: one row per prep, so her reply in its thread finds it (meeting-prep.mjs).
 commands.post("/meeting-prep", async (c) => {

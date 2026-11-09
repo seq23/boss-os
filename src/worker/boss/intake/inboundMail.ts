@@ -15,6 +15,7 @@ import { parseLiveBook, readBookDirective } from "../../../shared/boss/intake/li
 import type { BookDirective } from "../../../shared/boss/intake/liveBook.mjs";
 import { clarificationFor, isReplyMessage } from "../../../shared/boss/intake/clarify.mjs";
 import { handoffFor, seatInDepartment, huntRequestIn } from "../../../shared/boss/intake/handoff.mjs";
+import { campaignFromMail } from "../outreach/campaign";
 import { taskBodyFrom, ownWords, readableText } from "../../../shared/boss/intake/messageBody.mjs";
 import { triage, triageLines, shortTitle, type TriageJob } from "../../../shared/boss/intake/triage.mjs";
 import { parseResearchPage } from "../../../shared/boss/research/page.mjs";
@@ -603,6 +604,21 @@ export async function handleBossInboundMail(message: BossMailMessage, env: Env):
     const nudgeReply = [nudge.note, ...(secrets?.line ? ["", secrets.line] : [])].join("\n");
     await finish({ outcome: "LP_NUDGE", why: nudge.note, employeeId: "emp_relationship", objectKey, reply: nudgeReply });
     return { mailId, outcome: "LP_NUDGE", employeeId: "emp_relationship", taskId: null, reply: nudgeReply, messageId, signer: "Monique" };
+  }
+
+  /*
+   * "HAVE AN AGENT RUN A DRIP CAMPAIGN TO THESE PEOPLE" (owner, 8 Nov 2026: "if i emailed this to
+   * boss@ i need them to take this and do it end 2 end"). Before this lane, triage split her pasted
+   * contact list by keyword: the list to Danielle ("matched repo"), a best-use line to the systems
+   * desk, and Monique, who runs outreach, never saw it. A campaign ask, or "hold these orgs for
+   * later", is Monique's whole job (outreach/campaign.ts), decided by rule before any desk or model.
+   */
+  const campaign = own ? await campaignFromMail(env, { text: own, subject: trueSubjectOf(readable, subject), mailId, messageId: messageId || null, now, viaConsole }) : null;
+  if (campaign) {
+    const campaignReply = [campaign.reply, ...(secrets?.line ? ["", secrets.line] : [])].join("\n");
+    await finish({ outcome: campaign.outcome, why: `Monique took it by rule: ${campaign.outcome.toLowerCase().replace(/_/g, " ")}${campaign.campaignId ? ` ${campaign.campaignId}` : ""}.`, employeeId: "emp_relationship", objectKey, reply: campaignReply });
+    await audit(env.DB, { actor: "boss", lane: "ops", entityType: "inbound_mail", entityId: mailId, action: "campaign", detail: { outcome: campaign.outcome, campaign_id: campaign.campaignId } });
+    return { mailId, outcome: campaign.outcome, employeeId: "emp_relationship", taskId: null, reply: campaignReply, messageId, signer: "Monique" };
   }
 
   // R19 — a line she marks `Always:` / `Never:` / `Standing rule:` / `Constraint:` is registered once and rides on every run.
