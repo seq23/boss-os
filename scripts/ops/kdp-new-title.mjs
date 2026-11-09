@@ -233,6 +233,18 @@ export async function companionStatus(url, fetchImpl = fetch) {
 }
 
 /** Amazon's caps (KDP help, 8 Nov 2026): at most 10 unpublished drafts; a small daily publish cap. */
+/**
+ * Pure: the approved titles in the order the run should try them. Boss OS returns them oldest yes
+ * first; a register title with `queue_priority` (lower first) goes ahead of every title without one,
+ * so a batch she wants out next is the next one Amazon's weekly limit lets through (owner, 9 Nov 2026:
+ * the Ambitious Grads books go at the front of the queue). Ties keep Boss OS's order.
+ */
+export function queueOrder(approved, register) {
+  const prio = new Map((register?.titles ?? []).filter((t) => Number.isFinite(t.queue_priority)).map((t) => [normTitle(t.title), t.queue_priority]));
+  const at = (a) => prio.get(normTitle(a.title)) ?? Infinity;
+  return (approved ?? []).map((a, i) => ({ a, i })).sort((x, y) => at(x.a) - at(y.a) || x.i - y.i).map((x) => x.a);
+}
+
 export const KDP_DRAFT_CAP = 10;
 export const PUBLISH_PER_RUN = Number(process.env.KDP_PUBLISH_PER_RUN ?? 5);
 
@@ -1029,7 +1041,8 @@ async function main() {
   const api = await boss();
   const spec = JSON.parse(await readFile(join(HERE, "kdp-books/keepmyproof.json"), "utf8"));
   const only = flag("title");
-  const approved = (await api.approved()).filter((a) => !only || a.title === only);
+  const register = JSON.parse(await readFile(join(HERE, "kdp-register.json"), "utf8"));
+  const approved = queueOrder((await api.approved()).filter((a) => !only || a.title === only), register);
   if (!approved.length) { say("NOTHING_APPROVED", "no approved new Kindle title is waiting; nothing to do."); console.log("OUTPUT 0 kindle-titles-submitted"); return 0; }
 
   // Each approved title, with its local draft.

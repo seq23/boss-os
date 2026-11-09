@@ -1,0 +1,92 @@
+{
+  "line": "ambitious-grads",
+  "author": "S. L. Taylor",
+  "_author_why": "Her own 2018 career guides, so her own byline, not a pen name (owner, 9 Nov 2026: S. L. Taylor, publisher Spry Labs). own_name lets only this line skip the pen-name rule.",
+  "own_name": true,
+  "publisher": "Spry Labs",
+  "companion": false,
+  "_companion_why": "No site, no landing page (owner, 9 Nov 2026: 'just opportunistically post them to amazon publishing no extra landing pages'). The book prints no link.",
+  "series": {
+    "name": "Ambitious Grads",
+    "description": "Career guides for students and new grads breaking into competitive fields: how the industry works, how to get in, and what to say in the interview."
+  },
+  "ai_disclosure": {
+    "text": "some_minimal",
+    "images": "none",
+    "tool_names": "Anthropic Claude",
+    "note": "The author wrote this guide in 2018. For this 2026 edition, the front note, the updated figures (each from a public source) and a few short additions were drafted with AI tools; the rest is the author’s original text."
+  },
+  "_ai_why": "KDP counts text an AI tool created as AI-generated even when edited; her 2018 text is human-written. Only the refresh is disclosed: 'Some sections, with minimal or no editing'. The cover is drawn by code from type (images: None).",
+  "about_author": "S. L. Taylor wrote the Ambitious Grads guides for students and new grads breaking into Wall Street and tech. Published by Spry Labs.",
+  "disclaimer": "careers",
+  "min_words": 2000,
+  "series_books": [
+    {
+      "slug": "ambitious-grads-wall-street",
+      "series_number": 1,
+      "title": "How to Break Into Investment Banking",
+      "subtitle": "The Ultimate Guide to Landing a Job on Wall Street: Networking Emails, Interview Answers, Resumes and Your First Year",
+      "description": "Wall Street hires the best, the brightest and the most prepared. This guide shows you how to be the most prepared person in the room.\n\nWritten for students and new grads, it covers the whole path into investment banking and the rest of the front office:\n\n- How a bank is built: front, middle and back office, bulge bracket vs. middle market vs. boutique, and which group to pick\n- The blueprint for getting in from a target school, a non-target school, a few years into your career, or business school\n- Networking that works: who to contact, word-for-word emails and follow-ups, and what to ask on the call\n- Interview questions with suggested answers: your story, why banking, accounting, valuation and brain teasers\n- Resumes and cover letters that pass the 15-second test\n- How to survive and stand out in your first internship or job, and what a real week looks like\n\nAt the back: a glossary of Wall Street terms, a reading list, an Excel shortcut cheat sheet and a financial ratio cheat sheet.\n\nThis 2026 edition updates pay, recruiting timing, bank names and tax figures from public sources. Part of the Ambitious Grads series.",
+      "keywords": [
+        "investment banking interview questions and answers",
+        "how to get a job on wall street",
+        "investment banking interview prep",
+        "wall street career guide for college students",
+        "finance internship from a non target school",
+        "networking email templates for finance",
+        "investment banking analyst"
+      ],
+      "categories": [
+        "Business & Money › Job Hunting & Careers › Interviewing",
+        "Business & Money › Job Hunting & Careers › Job Hunting",
+        "Business & Money › Finance › Corporate Finance"
+      ],
+      "price_usd": 2.99,
+      "manuscript": "~/.boss-os/kdp/ambitious-grads/manuscripts/ultimate-guide-wall-street.md",
+      "claim_gate": false,
+      "cover": {
+        "kicker": "Ambitious Grads",
+        "promise": "Networking, interviews and your first year on Wall Street.",
+        "bg": "#F4F5F7",
+        "fg": "#232A3A",
+        "accent": "#384052",
+        "decoration": "#94C43D",
+        "concept": "Ambitious Grads' own 2018 colors (navy #384052, green #94C43D): huge two-line title, one promise line, navy author band. Type only, no images."
+      }
+    },
+    {
+      "slug": "ambitious-grads-silicon-valley",
+      "series_number": 2,
+      "title": "How to Get a Job in Tech",
+      "subtitle": "The Ultimate Guide to Silicon Valley Careers for New Grads: Pick a Role, Land the Interview, Answer the Questions and Understand Your Stock Options",
+      "description": "Tech jobs are some of the most sought-after jobs for new grads, and the path in is rarely written down. This guide writes it down.\n\nIt starts with the three choices that shape everything else (company stage, sector and role) and walks you through each role that drives growth at a tech company: engineering, design, product management, marketing, sales, business development, customer success and business operations.\n\nInside:\n\n- The HUSTLE blueprint: do your homework, unlock openings, stand out, talk to people, level up and explain your story\n- Where to find tech jobs, how to build a resume and portfolio, and a cold email that gets answered\n- Study guides for engineers, designers, product managers, marketers and salespeople\n- Interview questions with suggested answers for every role\n- Everything you need to know about employee stock: options vs. RSUs, vesting, exercising and taxes\n- A day in the life for each role, and how to break into venture capital\n\nAt the back: a glossary of startup terms, free training resources and real take-home interview projects to practice on.\n\nThis 2026 edition updates pay figures, company and product names, and removes resources that have closed. Part of the Ambitious Grads series.",
+      "keywords": [
+        "how to get a job in tech with no experience",
+        "how to break into tech",
+        "tech interview prep",
+        "product manager interview questions",
+        "startup jobs for new grads",
+        "employee stock options explained",
+        "tech sales career"
+      ],
+      "categories": [
+        "Business & Money › Job Hunting & Careers › Interviewing",
+        "Business & Money › Job Hunting & Careers › Job Hunting",
+        "Computers & Technology › Business Technology"
+      ],
+      "price_usd": 2.99,
+      "manuscript": "~/.boss-os/kdp/ambitious-grads/manuscripts/ultimate-guide-silicon-valley.md",
+      "claim_gate": false,
+      "cover": {
+        "kicker": "Ambitious Grads",
+        "promise": "Pick a role, land the interview, understand your stock options.",
+        "bg": "#F4F5F7",
+        "fg": "#232A3A",
+        "accent": "#4E7A1E",
+        "decoration": "#384052",
+        "concept": "Same series layout as book 1 in the series' green (#4E7A1E, a darker shade of #94C43D for white-on-color contrast). Type only, no images."
+      }
+    }
+  ],
+  "_categories_note": "Category paths written from KDP's Kindle Business & Money tree; the run uses the closest option the chooser offers and records it (categories-used.json), per the runbook."
+}

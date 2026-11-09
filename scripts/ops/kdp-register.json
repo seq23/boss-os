@@ -45,9 +45,61 @@
     },
     "uscisexam": {
       "label": "Industry Guides (uscisexam)"
+    },
+    "ambitious-grads": {
+      "label": "Ambitious Grads",
+      "plan": "Her own 2018 career guides (Wall Street; tech), refreshed for 2026 and published as Kindle books only: S. L. Taylor byline, publisher Spry Labs, KDP Select, no companion site (owner, 9 Nov 2026)."
     }
   },
   "titles": [
+    {
+      "title_ref": "draft:ambitious-grads-wall-street",
+      "title": "How to Break Into Investment Banking",
+      "subtitle": "The Ultimate Guide to Landing a Job on Wall Street: Networking Emails, Interview Answers, Resumes and Your First Year",
+      "author": "S. L. Taylor",
+      "publisher": "Spry Labs",
+      "target": "LIVE",
+      "status": "APPROVED_QUEUED",
+      "status_as_of": "2026-11-09",
+      "line": "ambitious-grads",
+      "series": "Ambitious Grads",
+      "slug": "ambitious-grads-wall-street",
+      "ai_disclosure": true,
+      "kdp_select": true,
+      "price_usd": 2.99,
+      "draft_dir": "~/.boss-os/kdp/books/ambitious-grads-wall-street",
+      "cover_source": "kdp-build",
+      "queue_priority": 1,
+      "approved": {
+        "on": "2026-11-09",
+        "her_words": "lets take the open loop for nov 14 about my new kdp books ... called Ambitious grads ... i feel like we should just opportunistically post them to amazon publishing no extra landing pages etc."
+      },
+      "queued_why": "Amazon's weekly limit on new Kindle titles (reached 8 Nov 2026; resets Sunday 00:00 UTC). queue_priority puts these two ahead of every other approved title (owner, 9 Nov 2026)."
+    },
+    {
+      "title_ref": "draft:ambitious-grads-silicon-valley",
+      "title": "How to Get a Job in Tech",
+      "subtitle": "The Ultimate Guide to Silicon Valley Careers for New Grads: Pick a Role, Land the Interview, Answer the Questions and Understand Your Stock Options",
+      "author": "S. L. Taylor",
+      "publisher": "Spry Labs",
+      "target": "LIVE",
+      "status": "APPROVED_QUEUED",
+      "status_as_of": "2026-11-09",
+      "line": "ambitious-grads",
+      "series": "Ambitious Grads",
+      "slug": "ambitious-grads-silicon-valley",
+      "ai_disclosure": true,
+      "kdp_select": true,
+      "price_usd": 2.99,
+      "draft_dir": "~/.boss-os/kdp/books/ambitious-grads-silicon-valley",
+      "cover_source": "kdp-build",
+      "queue_priority": 2,
+      "approved": {
+        "on": "2026-11-09",
+        "her_words": "lets take the open loop for nov 14 about my new kdp books ... called Ambitious grads ... i feel like we should just opportunistically post them to amazon publishing no extra landing pages etc."
+      },
+      "queued_why": "Amazon's weekly limit on new Kindle titles (reached 8 Nov 2026; resets Sunday 00:00 UTC). queue_priority puts these two ahead of every other approved title (owner, 9 Nov 2026)."
+    },
     {
       "title_ref": "A2C99P6JESFOP0",
       "title": "The Credit Dispute Letter",
