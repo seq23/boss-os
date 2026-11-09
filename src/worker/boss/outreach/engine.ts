@@ -40,6 +40,7 @@ import { fixBounces, recordBounce, recordRestart } from "./bounceFix";
 import { ensurePartner, runMonthlyPayouts } from "./referrals";
 import { SEAT_OPEN, isSeatHolder, pitchFor, readSeat, type Pitch, type Seat } from "./seat";
 import { feedScoreboard, groupSendGate, queueReady, summary as groupSummary } from "./groups";
+import { advancePartnerOrgs, pageUrl, refreshBonusProbe, retryHeldCampaigns, staggerHold, stopCompany } from "./campaign";
 import { GROUPS_KEY, groupSizeIn, suggestedPrice, wantsPrice } from "../../../shared/boss/t2rGroups/rules.mjs";
 import { recipientLines, replyAllRecipients, replyNeed } from "../../../shared/boss/mail/replyNeed.mjs";
 
@@ -100,6 +101,8 @@ export interface TickResult {
   groupsQueued?: number;
   /** Queued prospects taken out this tick because their state is one the business never writes to. */
   stateBlocked?: number;
+  /** Partner campaigns this tick (campaign.ts): ended, and the next organisations started. */
+  partnerOrgs?: { ended: number; started: string[] };
 }
 
 export const NAMED_STOP_PREFIX = "NAMED STOP";
@@ -191,6 +194,14 @@ export async function runOutreachTick(env: Env, now = Date.now(), fetchImpl: typ
     out.groupsQueued = await queueReady(db, now);
   } catch (err) {
     out.refused.groups = (err as Error).message;
+  }
+
+  // Partner campaigns (campaign.ts): a finished one ends, and the next organisation on the list starts.
+  try {
+    out.partnerOrgs = await advancePartnerOrgs(env, now);
+    await retryHeldCampaigns(env, now);
+  } catch (err) {
+    out.refused.partnerOrgs = (err as Error).message;
   }
 
   if (mailbox && !settings.killSwitch && settings.sending !== "off") {
@@ -370,6 +381,8 @@ export async function sendTest(
   try {
     const mail = composeEmail({
       business: b, step, to, org: "Test", metro: "New York City", unsubToken: p.unsub_token,
+      // A partner sequence's test send reads as it would to a person (route proofs included).
+      ...(b.partner ? { contactFirst: "Alex", angle: Object.keys(b.partner.angles)[0], pageUrl: "https://boss.sequoiataylor.com/p/test-page-token-0000" } : {}),
       postalAddress: postal.address || "(postal address not yet set — test send only)",
       firstSubject: `[${why}] ${b.brand}`,
     });
@@ -417,7 +430,9 @@ export const LATER_WORDS_KIND = "outreach_copy";
 export async function laterWordsApproved(env: Env, b: Business, step: number, pitch: Pitch, now: number): Promise<"approved" | "waiting"> {
   const steps = pitch === "B" && b.seat ? b.seat.taken : b.steps;
   const key = steps[step]?.approvalKey;
-  if (!key) return step <= 1 ? "approved" : "waiting"; // an email 3 or 4 without a card is never sent
+  // A partner sequence sends all four automatically (owner, 8 Nov 2026), its words checked on every
+  // build (compose.ts); for every other business an email 3 or 4 without a card is never sent.
+  if (!key) return step <= 1 || b.partner ? "approved" : "waiting";
   const r = await env.DB.prepare(
     `SELECT a.status FROM judgement_calls j JOIN approvals a ON a.id = j.approval_id
       WHERE j.resume_kind = ? AND json_extract(j.resume_detail, '$.copy_key') = ? ORDER BY j.created_at DESC LIMIT 1`,
@@ -426,6 +441,25 @@ export async function laterWordsApproved(env: Env, b: Business, step: number, pi
   if (!r) {
     const later = steps.map((s, i) => ({ s, i })).filter((x) => x.s.approvalKey === key);
     const { raiseJudgementCall } = await import("../approvals/raise");
+    if (b.partner) {
+      // A partner sequence: its own words, shown as they would go to a made-up person at a made-up company.
+      const sample = (t: string) => t.replace(/\{first\}/g, "Alex").replace(/\{org\}/g, "Acme Learning").replace(/\{brand\}/g, b.brand)
+        .replace(/\{onepager_url\}/g, "(the one-pager link)").replace(/\{subject\}/g, b.steps[0]!.subject.replace(/\{org\}/g, "Acme Learning"));
+      await raiseJudgementCall(env, {
+        title: `Approve emails ${later.map((x) => x.i + 1).join(" and ")} of the ${b.brand} partnership emails`,
+        question:
+          `Your rule allows up to three follow-ups (day 3, 7 and 14), then never again. Emails 1 and 2 of the ${b.brand} partnership campaigns go as built; ` +
+          `these next ones go only if you approve the words. Here they are as they would go to Alex at a company called Acme Learning (signature and unsubscribe footer as on every email):\n\n` +
+          later.map((x) => `Email ${x.i + 1} (day ${[0, 3, 7, 14][x.i]}), subject "${sample(x.s.subject)}":\n${sample(x.s.body)}`).join("\n\n") +
+          `\n\nApprove and they go to anyone due them. Try again and every partner sequence stops at two emails.`,
+        resumeKind: LATER_WORDS_KIND,
+        employeeId: "emp_relationship",
+        lane: "ops",
+        risk: "low",
+        resumeDetail: { copy_key: key, business_key: b.key, steps: later.map((x) => x.i) },
+      }, now);
+      return "waiting";
+    }
     await raiseJudgementCall(env, {
       title: `Approve emails ${later.map((x) => x.i + 1).join(" and ")} of the guides' outreach`,
       question:
@@ -542,6 +576,9 @@ async function sendForBusiness(
       continue;
     }
     const step = Number(p.step);
+    // A partner campaign writes to one person at a company at a time (campaign.ts `staggerHold`).
+    const wait = await staggerHold(db, b, p, now);
+    if (wait) { refused[`${b.key}:${p.id}`] = wait; continue; }
     // Emails 3 and 4 wait for her approved words; a waiting one steps aside a day so it never starves the queue.
     if (step >= 2 && (await laterWordsApproved(env, b, step, pitch, now)) !== "approved") {
       await db.prepare(`UPDATE outreach_prospects SET next_due_at = ?, updated_at = ? WHERE id = ?`).bind(now + DAY_MS, now, p.id).run();
@@ -560,10 +597,13 @@ async function sendForBusiness(
       }
       groupCode = gate.code;
     }
+    // An email that links the one-pager gets a fresh probe first, so the page it opens is current.
+    if (b.partner?.page.bonus && step >= 1) await refreshBonusProbe(env, b, now, { force: true, fetchImpl }).catch(() => null);
     const mail = composeEmail({
       business: b, step, to: p.email, org: p.org_name ?? "", metro: p.metro ?? "", unsubToken: p.unsub_token,
       postalAddress: postal.address!, firstSubject: p.last_subject, inReplyTo: p.last_message_id,
       pitch, seatEnd: seat.end, groupCode,
+      contactFirst: p.contact_first ?? null, angle: p.angle ?? null, pageUrl: p.page_token ? pageUrl(p.page_token) : null,
     });
     const res = await mailbox.send(b, mail.raw, p.thread_id);
     const messageId = step === 0 ? await mailbox.messageIdOf(res.id).catch(() => null) : p.last_message_id;
@@ -636,7 +676,9 @@ export async function processReplies(env: Env, mailbox: GmailSession, now: numbe
     const biz = prospect ? businessByKey(prospect.business_key) : null;
     const recipients: Recipients = replyAllRecipients(msg.headers, { ours: biz ? [biz.domain, biz.sender] : [] });
     if (!recipients.to.length) recipients.to.push(from);
-    const approvalId = (cls === "interested" || groupPrice) && need?.needed && prospect ? await raiseInterested(env, prospect, from, msg, now, recipients) : null;
+    // A partner campaign (owner, 8 Nov 2026): ANY human reply goes to her, whatever it said.
+    const partnerReply = Boolean(biz?.partner) && cls !== "bounce" && cls !== "auto_reply";
+    const approvalId = prospect && (partnerReply || ((cls === "interested" || groupPrice) && need?.needed)) ? await raiseInterested(env, prospect, from, msg, now, recipients) : null;
     await db.prepare(
       `INSERT INTO outreach_replies (id, gmail_message_id, business_key, prospect_id, from_email, classification, excerpt, approval_id, received_at, reply_need)
        VALUES (?,?,?,?,?,?,?,?,?,?) ON CONFLICT(gmail_message_id) DO NOTHING`,
@@ -652,6 +694,8 @@ async function act(env: Env, cls: ReplyClass, p: any, from: string, msg: { body:
   if (cls === "auto_reply") return;
   // Stop on ANY human reply: the sequence never follows up on someone who wrote back.
   await db.prepare(`UPDATE outreach_prospects SET state = 'replied', next_due_at = NULL, updated_at = ? WHERE id = ?`).bind(now, p.id).run();
+  // A partner campaign: anyone at the company replying stops every sequence there (campaign.ts).
+  if (businessByKey(p.business_key)?.partner) await stopCompany(db, p, now);
   if (cls === "unsubscribe") await suppress(db, p.email, "asked to stop", "reply", now);
   if (cls === "complaint") {
     await suppress(db, p.email, "complaint", "reply", now);
@@ -667,6 +711,7 @@ async function raiseInterested(env: Env, p: any, from: string, msg: { body: stri
   if (!b) return null;
   const { raiseJudgementCall } = await import("../approvals/raise");
   if (b.key === GROUPS_KEY) return raiseGroupReply(env, b, p, from, msg, now, raiseJudgementCall, recipients);
+  if (b.partner) return raisePartnerReply(env, b, p, from, msg, now, raiseJudgementCall, recipients);
   let code: string | null = null;
   if (b.kind === "affiliate") code = (await ensurePartner(env.DB, b, p, now)).code;
   const link = code ? `${b.offerUrl}?ref=${code}` : b.offerUrl;
@@ -720,6 +765,35 @@ async function raiseGroupReply(
       `Their code: ${code ?? "none yet"} (${used}).${totals ? ` All groups so far: ${totals.line}.` : ""}\n\n` +
       (price ? `${suggestion} Monique never quotes a price; this is yours to set.\n\n` : "") +
       `Approve and the reply below goes to your drafts in st@time-2-read.com, to everyone on their email:\n${recipientLines(recipients).join("\n")}\n\n${reply}`,
+    resumeKind: "outreach_interested",
+    employeeId: "emp_relationship",
+    lane: "ops",
+    risk: "low",
+    resumeDetail: { prospect_id: p.id, to: recipients.to.join(", "), cc: recipients.cc, subject: `Re: ${p.last_subject ?? b.brand}`, body: reply, business_key: b.key },
+  }, now);
+  return raised.approvalId;
+}
+
+/**
+ * SOMEONE AT A PARTNER COMPANY WROTE BACK (owner, 8 Nov 2026). Every sequence there has stopped; the
+ * reply is hers, as one Decide card. A question about price is said so: Monique never quotes, and the
+ * draft that goes to her drafts on approval names no number.
+ */
+async function raisePartnerReply(
+  env: Env, b: Business, p: any, from: string, msg: { body: string }, now: number,
+  raise: typeof import("../approvals/raise").raiseJudgementCall, recipients: Recipients,
+): Promise<string | null> {
+  const words = ownWords(msg.body);
+  const price = wantsPrice(words);
+  const who = p.contact_first ? `${p.contact_first}${p.contact_title ? ` (${p.contact_title})` : ""} at ${p.org_name}` : (p.org_name ?? from);
+  const reply = `Hi ${p.contact_first ?? "there"},\n\nThank you for getting back to me. ${price ? "On pricing: " : ""}[your answer here]\n\n${signatureFor(b)}`;
+  const raised = await raise(env, {
+    title: price ? `${b.brand} partnership: ${p.org_name} asked the price` : `${b.brand} partnership: ${p.org_name} replied`,
+    question:
+      `${who} (${from}) replied to the ${b.brand} partnership emails:\n\n"${words.slice(0, 600)}"\n\n` +
+      `Every email to ${p.org_name} has stopped. ` +
+      (price ? "They asked about price: that is yours to set; Monique never quotes one. " : "") +
+      `Approve and the draft below goes to your drafts in ${b.sender}, to everyone on their email, for you to finish:\n${recipientLines(recipients).join("\n")}\n\n${reply}`,
     resumeKind: "outreach_interested",
     employeeId: "emp_relationship",
     lane: "ops",

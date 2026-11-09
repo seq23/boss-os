@@ -148,6 +148,17 @@ export function researchPageToBossPath(pathname: string): string | null {
 }
 
 /**
+ * A PARTNER ONE-PAGER IS A PAGE, NOT AN /api PATH (owner, 8 Nov 2026). The link in Monique's second
+ * partner email and in her notes to the owner is `/p/<token>`, mapped to the ungated one-pager route
+ * (routes/outreach.ts `partnerPage`), the same way as `/tap` and `/research`.
+ */
+export const PARTNER_PAGE_RE = /^\/p\/([A-Za-z0-9_-]{16,40})$/;
+export function partnerPageToBossPath(pathname: string): string | null {
+  const m = PARTNER_PAGE_RE.exec(pathname);
+  return m ? `/api/boss/outreach/p/${m[1]}` : null;
+}
+
+/**
  * Hand the request to Boss OS with the mount prefix removed, so its routes and its tests see the
  * same paths they always did.
  */

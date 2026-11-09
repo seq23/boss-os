@@ -30,6 +30,7 @@ import { suppress } from "../outreach/suppression";
 import { normaliseHolderDomain } from "../outreach/seat";
 import { recordConversion } from "../outreach/referrals";
 import { bounceSummary } from "../outreach/bounceFix";
+import { campaignNoticed, campaignVerified, holdOrgs, onePagerFor, researchDue, researchFound } from "../outreach/campaign";
 
 export const outreach = new Hono<{ Bindings: Env; Variables: Vars }>();
 
@@ -210,4 +211,42 @@ unsubscribe.get("/:token", async (c) => {
 unsubscribe.post("/:token", async (c) => {
   await unsubscribeByToken(c.env, c.req.param("token"));
   return c.html(PAGE);
+});
+
+/**
+ * THE PARTNER ONE-PAGER (owner, 8 Nov 2026). Public by necessity, like the unsubscribe link: the
+ * person it was sent to has no passcode. The token is 144 random bits per campaign; the page holds
+ * only the catalog's words and the organisation's name, never a person's. Unknown token: not found.
+ */
+export const partnerPage = new Hono<{ Bindings: Env; Variables: Vars }>();
+partnerPage.get("/:token", async (c) => {
+  let background: ((p: Promise<unknown>) => void) | undefined;
+  try { const ctx = c.executionCtx; if (typeof ctx?.waitUntil === "function") background = (p) => ctx.waitUntil(p); } catch { /* no context (tests): awaited inline */ }
+  const html = await onePagerFor(c.env, c.req.param("token"), background);
+  return html ? c.html(html) : c.html("<!doctype html><title>Not found</title><p>This page is not available.</p>", 404);
+});
+
+/** The Mac's half of partner campaigns (simone-commands.mjs, t2r-groups.mjs), behind the passcode. */
+outreach.post("/campaigns/:id/verdicts", async (c) => {
+  const b = await c.req.json<{ verdicts?: Array<{ email: string; result: string }> }>().catch(() => null);
+  if (!b || !Array.isArray(b.verdicts)) throw badRequest("verdicts[] is required");
+  return ok(c, await campaignVerified(c.env, c.req.param("id"), b.verdicts, Date.now()));
+});
+outreach.post("/campaigns/:id/noticed", async (c) => {
+  await campaignNoticed(c.env, c.req.param("id"));
+  return ok(c, { recorded: true });
+});
+outreach.get("/partner-orgs/research-due", async (c) => ok(c, { orgs: await researchDue(c.env) }));
+outreach.post("/partner-orgs/:id/found", async (c) => {
+  const b = await c.req.json<{ found?: Array<{ name: string; title?: string; email: string; source_url: string; verdict: string }> }>().catch(() => null);
+  if (!b || !Array.isArray(b.found)) throw badRequest("found[] is required (an empty list means nobody was found)");
+  return ok(c, await researchFound(c.env, c.req.param("id"), b.found, Date.now()));
+});
+/** The organisations a business targets next, in order (her "hold these orgs for later" by API). */
+outreach.get("/partner-orgs", async (c) => ok(c, { orgs: (await c.env.DB.prepare(`SELECT id, business_key, org_name, position, state, campaign_id, note FROM outreach_partner_orgs ORDER BY business_key, position`).all()).results ?? [] }));
+outreach.post("/partner-orgs", async (c) => {
+  const b = await c.req.json<{ business_key?: string; orgs?: string[]; after?: string | null }>().catch(() => null);
+  const biz = b?.business_key ? businessByKey(b.business_key) : null;
+  if (!biz?.partner || !Array.isArray(b?.orgs) || !b!.orgs.length) throw badRequest("business_key of a partner sequence and orgs[] are required");
+  return ok(c, await holdOrgs(c.env, biz, b!.orgs.map(String), b!.after ?? null, Date.now()));
 });

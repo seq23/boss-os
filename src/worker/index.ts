@@ -29,7 +29,7 @@ import {
 } from "./services/lpCommitments";
 import { resolveFirmUser } from "./auth";
 import { Router, json, type RouteContext } from "./router";
-import { isBossRoute, handleBossRequest, tapPageToBossPath, researchPageToBossPath, drainBossTasks, runBossNightly, runBossDuties, runBossReaper, runBossOutreach, runBossOpenLoops, runBossEightraise, runBossKendra, toBossEnv as toBossEnvForCron } from "./bossMount";
+import { isBossRoute, handleBossRequest, tapPageToBossPath, researchPageToBossPath, partnerPageToBossPath, drainBossTasks, runBossNightly, runBossDuties, runBossReaper, runBossOutreach, runBossOpenLoops, runBossEightraise, runBossKendra, toBossEnv as toBossEnvForCron } from "./bossMount";
 import {
   handleAcceptCandidate,
   handleAddAlias,
@@ -1286,6 +1286,14 @@ export async function handleRequest(
   if (tapPath) {
     const inner = new URL(url.toString());
     inner.pathname = tapPath;
+    return handleBossRequest(new Request(inner.toString(), request), env);
+  }
+
+  // A partner one-pager (`/p/<token>`) is a public page, the same way (bossMount.ts).
+  const partnerPath = partnerPageToBossPath(url.pathname);
+  if (partnerPath) {
+    const inner = new URL(url.toString());
+    inner.pathname = partnerPath;
     return handleBossRequest(new Request(inner.toString(), request), env);
   }
 

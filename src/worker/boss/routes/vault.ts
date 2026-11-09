@@ -247,6 +247,8 @@ const SNAPSHOT_TABLES = [
   // not repeatable and a code is a live row in time-2-read's table. Parents first: tiers before groups.
   "t2r_group_tiers",
   "t2r_groups",
+  "outreach_campaigns",
+  "outreach_partner_orgs",
   // 0189 — things to raise with a standing counterpart. Losing these in a restore loses the half
   // that was never derivable: items said in passing that exist nowhere else, including the access
   // grant that unblocks reading LP replies. Everything else in the packet recomputes from records;

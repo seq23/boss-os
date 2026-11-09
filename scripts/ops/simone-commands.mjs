@@ -27,10 +27,13 @@
  * Exit 7 with NAMED STOP [NOTHING_WAITING] when there was nothing to do (Rule 0: never a silent 0).
  *   npm run -s vault:run -- node scripts/ops/simone-commands.mjs
  */
+import os from "node:os";
+import path from "node:path";
 import { bossApi, askClaudeJson, googleToken, gmailHeaders, OWNER_TO } from "./lib/duty-kit.mjs";
 import { sendersFor, employeeMail, postEmployeeMail, flushSentMail, errandMail, postErrandMail } from "./notify.mjs";
 import { addMorningLines } from "../../src/shared/boss/mail/morning.mjs";
 import { finishPrep } from "./meeting-prep.mjs";
+import { neverBounceCheck } from "./lp-prospects.mjs";
 import { PRODUCT_REPOS, ACCESS_CODE_SHAPE, errandText, errandProblems, followUpProblems, OWNER_TZ } from "../../src/shared/boss/commands/parse.mjs";
 
 /*
@@ -142,6 +145,8 @@ export function noticeArgs(id, notice, to = OWNER_TO, { layout = null } = {}) {
   return {
     to, subject: notice.subject, layout: { happened: notice.happened, details: notice.details ?? [], decide }, refs: [id],
     owner: { layout: layout ?? (decide.length ? "approve" : "delivered"), why: notice.happened },
+    // A partner campaign's notice answers her own email, in her thread (outreach/campaign.ts).
+    ...(Array.isArray(notice.thread) && notice.thread.length ? { thread: notice.thread } : {}),
   };
 }
 
@@ -217,8 +222,28 @@ async function main() {
     }
   }
 
+  // Monique's campaign notices, in her own thread, from Monique (the one who did the work). A receipt
+  // waiting from the last tick goes BEFORE this tick's checks, so the done reply never replaces it.
+  const [monique] = sendersFor("Monique");
+  const sendCampaignNotices = async (list) => {
+    for (const n of list ?? []) {
+      const res = await postEmployeeMail(monique, employeeMail(monique, noticeArgs(n.id, n.notice)));
+      if (res.ok) { await api.post(`/outreach/campaigns/${n.id}/noticed`); did++; }
+      else console.error(`NAMED STOP [NOTICE_NOT_SENT] ${n.id}: ${res.status}`);
+    }
+  };
+  await sendCampaignNotices(work.campaign_notices);
+
+  // PARTNER CAMPAIGNS (outreach/campaign.ts): NeverBounce before any first email; only "valid" is queued.
+  for (const c of work.campaigns ?? []) {
+    if (!c.emails?.length) continue;
+    const { verdicts } = await neverBounceCheck(c.emails, { cacheFile: path.join(os.homedir(), ".boss-os", "campaigns", "neverbounce-cache.json") });
+    if (!verdicts.length) { console.error(`NAMED STOP [CAMPAIGN_NOT_VERIFIED] ${c.id}: NeverBounce gave no verdict, so nobody is queued.`); failures.push(c.id); continue; }
+    await api.post(`/outreach/campaigns/${c.id}/verdicts`, { verdicts }); did++;
+  }
+
   // Notices last, so a lookup or draft made this tick goes out this tick.
-  const again = (work.lookups?.length || work.drafts?.length || work.codes?.length || work.errands?.length || work.errand_follow_ups?.length || did) ? await api.post("/commands/tick") : work;
+  const again = (work.lookups?.length || work.drafts?.length || work.codes?.length || work.errands?.length || work.errand_follow_ups?.length || work.campaigns?.length || did) ? await api.post("/commands/tick") : work;
   const [simone] = sendersFor("Simone");
   for (const n of again.notices ?? []) {
     if ((await api.get(`/commands/${n.id}`)).result?.owner_handling) continue;
@@ -234,6 +259,9 @@ async function main() {
     }
     else console.error(`NAMED STOP [NOTICE_NOT_SENT] ${n.id}: ${res.status}`);
   }
+
+  // This tick's done replies, after the checks above.
+  if (again !== work) await sendCampaignNotices(again.campaign_notices);
 
   if (failures.length) console.error(`${failures.length} command(s) failed and went to Danielle as jobs: ${failures.join(", ")}`);
   if (!did && !failures.length) { console.log("NAMED STOP [NOTHING_WAITING] no lookup, draft, errand, prep, bounce or notice was waiting."); process.exit(7); }

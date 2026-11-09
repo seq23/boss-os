@@ -55,6 +55,10 @@ export interface ComposeInput {
   seatEnd?: string | null;
   /** A Time-2-Read group's own trial code ({code}). Absent = the placeholder stays and the email is refused. */
   groupCode?: string | null;
+  /** A partner sequence (catalog `partner`): the person's first name, their angle and the one-pager link. */
+  contactFirst?: string | null;
+  angle?: string | null;
+  pageUrl?: string | null;
 }
 
 export interface Composed {
@@ -110,12 +114,22 @@ export function composeEmail(i: ComposeInput): Composed {
     seat_end_month: i.seatEnd ? seatEndMonth(i.seatEnd) : "",
     ...(i.groupCode ? { code: i.groupCode } : {}),
   };
+  // A partner sequence: no first name, no angle or no page link leaves the placeholder, so it is refused.
+  const partner = i.business.partner;
+  if (partner) {
+    if (i.contactFirst) vars.first = i.contactFirst;
+    const angle = i.angle && i.angle in partner.angles ? partner.angles[i.angle as keyof typeof partner.angles] : null;
+    if (angle) vars.angle_line = fill(angle, { org: vars.org ?? "" });
+    if (i.pageUrl) vars.onepager_url = i.pageUrl;
+  }
   const subject = fill(step.subject, vars).trim();
   const unsub = unsubscribeUrl(i.unsubToken);
   const message = `${fill(step.body, vars)}\n\n${signatureFor(i.business)}`;
   const isGroup = i.business.key === GROUPS_KEY;
   const why = isGroup
     ? `You are receiving this because ${vars.org} publishes this address for its families and members.`
+    : partner
+    ? `You are receiving this because of your role at ${vars.org}, about a possible partnership.`
     : `You are receiving this because ${vars.org} is publicly listed as a business we think we can help.`;
   const body =
     `${message}\n\n--\n${why} Unsubscribe with one click: ${unsub}\n${companyLines(i.business, address).join("\n")}\n`;
@@ -130,10 +144,10 @@ export function composeEmail(i: ComposeInput): Composed {
   const left = /\{\w+\}/.exec(`${subject}\n${message}`);
   if (left) throw new Error(`Refused: ${left[0]} was left unfilled in ${i.business.brand}'s email.`);
   // Time-2-Read groups (owner, 31 Oct 2026): no price, no call ask, no claim we never make.
-  if (isGroup) {
+  if (isGroup || partner) {
     // Their own name is theirs, never our claim ("Reading Therapy Co-op" is not a medical claim).
     const bad = outboundProblems(`${subject}\n${message}`.split(i.org || "there").join(""));
-    if (bad.length) throw new Error(`Refused: the Time2Read group email ${bad.join("; ")}.`);
+    if (bad.length) throw new Error(`Refused: the ${i.business.brand} ${partner ? "partner" : "group"} email ${bad.join("; ")}.`);
   }
   const footerLines = companyLines(i.business, address);
   if (!body.includes(unsub) || !html.includes(`href="${esc(unsub)}"`) || footerLines.some((l) => !body.includes(l) || !html.includes(esc(l)))) {

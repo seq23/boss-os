@@ -57,7 +57,7 @@ import { commands } from "./commands/routes";
 import { service } from "./routes/service";
 import { commentWatch, COMMENT_WATCH_PATH } from "./routes/commentWatch";
 import { gridHealth } from "./routes/gridHealth";
-import { outreach, unsubscribe } from "./routes/outreach";
+import { outreach, partnerPage, unsubscribe } from "./routes/outreach";
 import { surfaceOverdueFollowUps } from "./relationships/follow_ups";
 import { ensureAlmanac } from "./spirit/day";
 import { handleTask, handleDeadLetter } from "./queue/consumer";
@@ -133,9 +133,11 @@ app.get("/api/health", async (c) => {
  * no passcode; it can do one thing only — suppress the address its random token belongs to.
  */
 app.route("/api/outreach/u", unsubscribe);
+/** The partner one-pager linked from Monique's second email (routes/outreach.ts): ungated, read-only. */
+app.route("/api/outreach/p", partnerPage);
 
 app.use("/api/*", async (c, next) => {
-  if (c.req.path.startsWith("/api/auth/") || c.req.path === "/api/health" || c.req.path.startsWith("/api/outreach/u/")) return next();
+  if (c.req.path.startsWith("/api/auth/") || c.req.path === "/api/health" || c.req.path.startsWith("/api/outreach/u/") || c.req.path.startsWith("/api/outreach/p/")) return next();
   // Open Loops' intake checks its own door (the machine token or a session): routes/openLoops.ts.
   if (c.req.path === OPEN_LOOPS_INTAKE && c.req.method === "POST") return next();
   return requireSession(c, next);
