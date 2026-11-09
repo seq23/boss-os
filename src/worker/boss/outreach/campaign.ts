@@ -31,7 +31,7 @@ import { isSuppressed } from "./suppression";
 import { outboundProblems } from "../../../shared/boss/t2rGroups/rules.mjs";
 import { BUSINESSES, businessByKey, partnerBusinesses, type Business, type PartnerPage } from "./catalog";
 import {
-  brandNamedIn, campaignPlan, capabilitiesFrom, holdOrgsIn, pageProblems, isCampaignAsk, researchedContact, type PlannedContact,
+  brandNamedIn, campaignPlan, capabilitiesFrom, holdOrgsIn, pageProblems, isCampaignAsk, researchedContact, sendableVerdict, type PlannedContact,
 } from "../../../shared/boss/outreach/campaign.mjs";
 
 /** What a person is pitched on, in her words. */
@@ -263,7 +263,7 @@ export async function campaignVerified(env: Env, id: string, verdicts: Array<{ e
     const v = by.get(c.email) ?? c.verdict;
     if (!v) continue;
     c.verdict = v;
-    if (v !== "valid" || c.prospect_id || !mayQueue) continue;
+    if (!sendableVerdict(v, row.source) || c.prospect_id || !mayQueue) continue;
     if (await isSuppressed(env.DB, c.email)) { c.verdict = "on the do-not-contact list"; continue; }
     const pid = newId("opr");
     const ins = await env.DB.prepare(
@@ -287,7 +287,9 @@ export async function campaignVerified(env: Env, id: string, verdicts: Array<{ e
     .bind(JSON.stringify(spec), live.length ? "live" : "ended", live.length ? null : "no address passed the address check", live.length ? null : now, now, id).run();
   // In send order, then the skipped (owner, 8 Nov 2026).
   const ordered = [...spec.contacts.filter((c) => c.role === "send").sort((a, b) => (a.order ?? 0) - (b.order ?? 0)), ...spec.contacts.filter((c) => c.role !== "send")];
-  const detail = ordered.map((c) => c.prospect_id ? `${c.name}: address checked, valid, queued.` : `${c.name}: address check said ${c.verdict}, so not emailed.`);
+  const detail = ordered.map((c) => c.prospect_id
+    ? (c.verdict === "valid" ? `${c.name}: address checked, valid, queued.` : `${c.name}: the address check got no answer (their mail filter hides it), so queued anyway, as you asked.`)
+    : `${c.name}: address check said ${c.verdict}, so not emailed.`);
   const first = live[0];
   const happened = first
     ? `The ${b.brand} campaign for ${row.org_name} is queued: email 1 to ${first.name} goes ${firstSendWhen(now)}, from ${b.sender}.${live.slice(1).map((c, i) => ` ${c.name}'s first email goes ${(i + 1) * b.partner!.staggerDays} days after ${first.name}'s, in a separate thread.`).join("")} Up to four emails each, all automatic; any reply stops them all.`

@@ -17,3 +17,5 @@ export function holdOrgsIn(text: string): { orgs: string[]; after: string | null
 export function researchedContact(row: unknown): PlannedContact | null;
 export function capabilitiesFrom(md: string): string[];
 export function pageProblems(text: string, outbound?: (t: string) => string[]): string[];
+
+export function sendableVerdict(verdict: string, source: string): boolean;

@@ -18,9 +18,21 @@
  *     pitched on a wider alliance;
  *   · several people at one company are written to one at a time, STAGGER_DAYS apart, each in their
  *     own thread, never cc'd; any reply from anyone there stops every sequence at that company;
- *   · NeverBounce "valid" before any first send (the Mac checks; the Worker queues only "valid").
+ *   · NeverBounce "valid" before any first send (the Mac checks; the Worker queues only "valid"), except
+ *     that a person SHE named whose address comes back "unknown" (a mail filter such as Mimecast that
+ *     will not say) is written to anyway (owner, 9 Nov 2026: "Send to the 3 anyway"); never "invalid",
+ *     never a researched address (`sendableVerdict`).
  * Plain ESM with a hand-written .d.mts, like its neighbours. Pinned by tests/boss/campaign.test.ts.
  */
+
+/**
+ * May this address be written to? "valid" always. "unknown" only for a person she named herself in her
+ * own request: the address check could not get an answer (a filtering gateway hides it), and she chose
+ * to send anyway (9 Nov 2026). Never "invalid", "disposable" or "catchall", and never a researched one. Pure.
+ */
+export function sendableVerdict(verdict, source) {
+  return verdict === "valid" || (verdict === "unknown" && source === "owner_email");
+}
 
 /** Days between the first email to one person at a company and the first email to the next. */
 export const STAGGER_DAYS = 7;
@@ -190,7 +202,10 @@ export function holdOrgsIn(text) {
     if (!item) continue;
     if (!/^(?:[-•·*–—>]|\d+[.)])/.test(l) && orgs.length) break;
     // A comma list splits on commas (and a last "and"); one name per line is kept whole ("The Good and the Beautiful").
-    const names = item.includes(",") ? item.split(/\s*,\s*(?:and\s+)?|\s*,?\s+and\s+(?=[^,]*$)/) : [item];
+    // A semicolon list splits on semicolons only, so a name with commas in it stays whole
+    // ("Secular, Eclectic, Academic (SEA) Homeschoolers"; 9 Nov 2026, her held list split in three).
+    const names = item.includes(";") ? item.split(/\s*;\s*(?:and\s+)?/)
+      : item.includes(",") ? item.split(/\s*,\s*(?:and\s+)?|\s*,?\s+and\s+(?=[^,]*$)/) : [item];
     for (const name of names) {
       const n = name.replace(/[.;]+$/, "").trim();
       if (n && n.length <= 80 && /[A-Za-z]/.test(n) && !orgs.some((o) => o.toLowerCase() === n.toLowerCase())) orgs.push(n);
