@@ -11,3 +11,4 @@ export function expectedSections(weekday: string, specs?: ReadonlyArray<{ expect
 export const EMAIL_MINUTE_CENTRAL: number;
 export function catchUpWindow(now?: number, tz?: string): "before_email" | "after_email";
 export function windowWords(window: "before_email" | "after_email"): string;
+export function catchUpBudget(window: "before_email" | "after_email" | string): { long: boolean; budgetMs: number };
