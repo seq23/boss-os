@@ -13,6 +13,13 @@
  * to the email, could put a second message in front of a real person. Everything else keeps the
  * existing repair path (your-day.mjs notReportedRepairs), which this does not replace.
  *
+ * 9 Nov 2026 (repair rc_m708yvvt99yvy416): the Mac was OFF through 05:30-06:40 (booted 07:36 Central).
+ * launchd never replays a calendar slot missed across a shutdown, so neither the capital chain nor this
+ * 06:32 run fired, and "deals" missed the email again. The plist now also runs this when the Mac comes
+ * up (RunAtLoad, scripts/ops/install-morning-catchup.sh). A run after 06:40 Central cannot save today's
+ * email (it is already sent): it writes Today and tomorrow's email, and its completion line says so
+ * (`catchUpWindow`), so a boot-time run never claims to have saved the email.
+ *
  *   npm run morning:catchup
  */
 import { execFileSync } from "node:child_process";
@@ -23,6 +30,25 @@ import { MORNING_SECTION_SPECS, sectionsNotReported, catchUpPlan } from "../../s
 
 const TZ = "America/Chicago";
 const CATCHUP_TIMEOUT_MS = 8 * 60_000;
+/** Simone's morning email, minutes after midnight Central (job-your-day.yml, 06:40). */
+export const EMAIL_MINUTE_CENTRAL = 6 * 60 + 40;
+
+/**
+ * Was this run before or after the morning email? Read in Central, whatever zone the Mac is in. Pure.
+ * "before_email" → it can still put a section in today's email; "after_email" → Today and tomorrow's.
+ */
+export function catchUpWindow(now = Date.now(), tz = TZ) {
+  const parts = new Intl.DateTimeFormat("en-US", { timeZone: tz, hour: "2-digit", minute: "2-digit", hourCycle: "h23" }).formatToParts(new Date(now));
+  const hour = Number(parts.find((p) => p.type === "hour")?.value);
+  const minute = Number(parts.find((p) => p.type === "minute")?.value);
+  if (!Number.isFinite(hour) || !Number.isFinite(minute)) throw new Error(`NAMED STOP [MORNING_CATCHUP_CLOCK] could not read the time in ${tz}`);
+  return hour * 60 + minute < EMAIL_MINUTE_CENTRAL ? "before_email" : "after_email";
+}
+
+/** The words for the completion line. Pure. */
+export function windowWords(window) {
+  return window === "before_email" ? "before the 06:40 email" : "after the 06:40 email: for Today and tomorrow's email";
+}
 
 /** Today's weekday in her zone, the word MORNING_SECTION_SPECS' `expect` arrays use. Pure. */
 export function expectedSections(weekday, specs = MORNING_SECTION_SPECS) {
@@ -79,13 +105,14 @@ async function main() {
   const now = Date.now();
   const weekday = weekdayIn(TZ, now);
   const expectedCount = expectedSections(weekday);
+  const when = windowWords(catchUpWindow(now));
 
   const api = await bossApi();
   const before = await readSections(api, now);
   const { missing: missingBefore } = sectionsNotReported(before.sections, { weekday, now });
 
   if (missingBefore.length === 0) {
-    console.log(`MORNING-CATCHUP-COMPLETE: ${expectedCount} expected, 0 re-run, 0 still missing.`);
+    console.log(`MORNING-CATCHUP-COMPLETE: ${expectedCount} expected, 0 re-run, 0 still missing (${when}).`);
     console.log(outputLine(0, "sections re-run"));
     return;
   }
@@ -103,7 +130,7 @@ async function main() {
   const { missing: missingAfter } = sectionsNotReported(after.sections, { weekday, now: Date.now() });
   const outcome = catchUpOutcome({ missingBefore, missingAfter, plan });
 
-  console.log(`MORNING-CATCHUP-COMPLETE: ${expectedCount} expected, ${outcome.reRun} re-run, ${outcome.stillMissing} still missing.`);
+  console.log(`MORNING-CATCHUP-COMPLETE: ${expectedCount} expected, ${outcome.reRun} re-run, ${outcome.stillMissing} still missing (${when}).`);
   console.log(outputLine(outcome.reRun, "sections re-run"));
   if (outcome.stop) {
     console.error(`NAMED STOP [${outcome.stop}] ${outcome.names.join(", ")} ran again and is still missing.`);

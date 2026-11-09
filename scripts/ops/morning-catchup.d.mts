@@ -8,3 +8,6 @@ export function catchUpOutcome(opts: {
 }): { stop: "MORNING_CATCHUP_STILL_MISSING" | null; names: string[]; reRun: number; stillMissing: number };
 
 export function expectedSections(weekday: string, specs?: ReadonlyArray<{ expect: readonly string[] | null }>): number;
+export const EMAIL_MINUTE_CENTRAL: number;
+export function catchUpWindow(now?: number, tz?: string): "before_email" | "after_email";
+export function windowWords(window: "before_email" | "after_email"): string;

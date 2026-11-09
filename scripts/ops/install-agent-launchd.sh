@@ -380,38 +380,14 @@ lint_plist "$CAPR_PLIST"
 launchctl load "$CAPR_PLIST"
 echo "Installed $CAPR_LABEL — resumes an unfinished capital chain within 15 minutes."
 
-# MORNING CATCH-UP (repair rc_m6gtk44dhfjq6rvj, 3 Nov 2026): a Mac reboot killed com.seq.boss-capital
-# inside ledger-hunt on 3 Nov, so capital:grid never ran and "deals"/"monique_found" missed the email.
-# 06:32, eight minutes before Simone's 06:40 morning email and after the capital chain's normal ~06:10
-# finish: whatever the registry (morningSections.mjs) still expects today gets one safe re-run before
-# the email, or a named stop. scripts/ops/morning-catchup.mjs.
+# MORNING CATCH-UP (repair rc_m6gtk44dhfjq6rvj, 3 Nov 2026; RunAtLoad added by repair
+# rc_m708yvvt99yvy416, 9 Nov 2026): 06:32 Central, eight minutes before Simone's 06:40 email, and
+# whenever the Mac comes up. On 9 Nov the Mac was off through 05:30-06:40 and launchd never replays a
+# slot missed across a shutdown, so "deals" missed the email. Its own installer, so it can be
+# reinstalled alone (install-morning-catchup.sh); scripts/ops/morning-catchup.mjs does the work.
+chmod +x "$REPO/scripts/ops/install-morning-catchup.sh"
+BOSS_OS_REPO="$REPO" bash "$REPO/scripts/ops/install-morning-catchup.sh"
 MORNCATCHUP_LABEL="com.seq.boss-morning-catchup"
-MORNCATCHUP_PLIST="$HOME/Library/LaunchAgents/$MORNCATCHUP_LABEL.plist"
-
-cat > "$MORNCATCHUP_PLIST" <<MORNCATCHUPEOF
-<?xml version="1.0" encoding="UTF-8"?>
-<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN"
-  "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
-<plist version="1.0"><dict>
-  <key>Label</key><string>$MORNCATCHUP_LABEL</string>
-  <key>ProgramArguments</key>
-  <array>
-    <string>/bin/bash</string>
-    <string>-lc</string>
-    <string>cd $REPO &amp;&amp; npm run --silent morning:catchup</string>
-  </array>
-  <key>StartCalendarInterval</key>
-  <dict><key>Hour</key><integer>6</integer><key>Minute</key><integer>32</integer></dict>
-  <key>StandardOutPath</key><string>$LOGS/morning-catchup.log</string>
-  <key>StandardErrorPath</key><string>$LOGS/morning-catchup.err</string>
-  <key>RunAtLoad</key><false/>
-</dict></plist>
-MORNCATCHUPEOF
-
-launchctl unload "$MORNCATCHUP_PLIST" 2>/dev/null || true
-lint_plist "$MORNCATCHUP_PLIST"
-launchctl load "$MORNCATCHUP_PLIST"
-echo "Installed $MORNCATCHUP_LABEL — daily 06:32 Central."
 
 NUDGE_LABEL="com.seq.boss-capital-nudge"
 NUDGE_PLIST="$HOME/Library/LaunchAgents/$NUDGE_LABEL.plist"

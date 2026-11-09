@@ -29,12 +29,17 @@
  *   node scripts/validate/the-installer-writes-well-formed-plists.mjs --self-test
  */
 
-import { readFileSync } from "node:fs";
+import { readFileSync, readdirSync } from "node:fs";
 import { join, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), "..", "..");
 const INSTALLER = "scripts/ops/install-agent-launchd.sh";
+
+/** Every launchd installer in scripts/ops (9 Nov 2026: jobs move into their own installers; each is held to the same XML rule). */
+export function installerFiles(root = ROOT) {
+  return readdirSync(join(root, "scripts", "ops")).filter((f) => /^install-.*\.sh$/.test(f)).sort().map((f) => `scripts/ops/${f}`);
+}
 
 /** A bare `&` — one not beginning `&amp;`, `&lt;`, `&gt;`, `&quot;`, `&apos;` or a numeric reference. */
 const BARE_AMPERSAND = /&(?!(?:amp|lt|gt|quot|apos|#\d+|#x[0-9a-fA-F]+);)/;
@@ -90,23 +95,32 @@ export function unverifiedLabels(sh) {
 
 function run() {
   const sh = readFileSync(join(ROOT, INSTALLER), "utf8");
-  const { strings, bad } = findings(sh);
+  const files = installerFiles();
+  if (!files.includes(INSTALLER)) { console.error(`FAIL: ${INSTALLER} is not among the installers read (${files.join(", ") || "none"}).`); process.exit(1); }
+  const strings = [];
+  const bad = [];
+  for (const f of files) {
+    const r = findings(readFileSync(join(ROOT, f), "utf8"));
+    for (const x of r.strings) strings.push({ ...x, file: f });
+    for (const x of r.bad) bad.push({ ...x, file: f });
+  }
+  // The "Verified" list is the main installer's own; a per-job installer verifies its own load.
   const unverified = unverifiedLabels(sh);
   if (unverified.length) {
     console.error(`FAIL: ${INSTALLER} defines ${unverified.join(", ")} and never require_loaded()s it — the job would load and the "Verified" line would not name it. That has happened four times.`);
     process.exit(1);
   }
   if (strings.length === 0) {
-    console.error(`FAIL: no <string> lines found inside any plist heredoc in ${INSTALLER}. That is a lost file, not a clean one.`);
+    console.error(`FAIL: no <string> lines found inside any plist heredoc in ${files.join(", ")}. That is a lost file, not a clean one.`);
     process.exit(1);
   }
   if (bad.length) {
-    console.error(`FAIL: ${bad.length} <string> line(s) in ${INSTALLER} carry a bare '&' — not XML, and launchd's lenient fallback mangles the escaped ones beside it:`);
-    for (const b of bad) console.error(`  line ${b.line} (${b.stanza}): ${b.text.slice(0, 110)}`);
+    console.error(`FAIL: ${bad.length} <string> line(s) in the installers carry a bare '&' — not XML, and launchd's lenient fallback mangles the escaped ones beside it:`);
+    for (const b of bad) console.error(`  ${b.file} line ${b.line} (${b.stanza}): ${b.text.slice(0, 110)}`);
     console.error("  Write every && as &amp;&amp; inside a <string>.");
     process.exit(1);
   }
-  console.log(`OK: ${strings.length} <string> line(s) across the installer's plists are well-formed XML (no bare '&').`);
+  console.log(`OK: ${strings.length} <string> line(s) across ${files.length} installers' plists are well-formed XML (no bare '&').`);
 }
 
 function selfTest() {
