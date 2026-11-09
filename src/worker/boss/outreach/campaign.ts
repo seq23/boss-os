@@ -6,9 +6,9 @@
  *   1. HER EMAIL (`campaignFromMail`, called by the intake before the commands and the triage):
  *      "have an agent create a drip campaign to sell a Time2Read partnership to these people: …".
  *      Monique, who runs every outreach business in the catalog, takes it: the business from her
- *      words, the people from her list (the top executive held, a purchase-order or billing inbox
- *      skipped), the one-pager made, emails 3 and 4 put on her Decide card. She is answered on her
- *      own thread at once.
+ *      words, the people from her list (every named person; a purchase-order or billing inbox
+ *      skipped), the one-pager made. All four emails go automatically. She is answered on her own
+ *      thread at once.
  *   2. NEVERBOUNCE ON THE MAC (`macCampaignWork` → simone-commands.mjs → `campaignVerified`): only
  *      "valid" becomes a prospect of the outreach engine; anything else is named back to her.
  *   3. THE ENGINE SENDS (engine.ts): one person at a company at a time, `staggerDays` apart, each in
@@ -33,6 +33,10 @@ import { BUSINESSES, businessByKey, partnerBusinesses, type Business, type Partn
 import {
   brandNamedIn, campaignPlan, capabilitiesFrom, holdOrgsIn, pageProblems, isCampaignAsk, researchedContact, type PlannedContact,
 } from "../../../shared/boss/outreach/campaign.mjs";
+
+/** What a person is pitched on, in her words. */
+const pitchWords = (angle: string | undefined) =>
+  angle === "alliance" ? "a wider alliance" : angle === "distribution" ? "a bundle or a link from their tools" : "co-marketing to their families";
 
 /** The one-pager's public address: `/p/<token>`, mapped by bossMount.ts to the ungated route (routes/outreach.ts). */
 export const PAGE_BASE = "https://boss.sequoiataylor.com/p/";
@@ -130,12 +134,6 @@ export async function buildCampaign(env: Env, input: {
     await env.DB.prepare(`INSERT INTO outreach_partner_orgs (id, business_key, org_name, position, state, campaign_id, created_at, updated_at) VALUES (?,?,?,?,'active',?,?,?)`)
       .bind(newId("pog"), b.key, input.org, (top?.p ?? 1) - 1, id, now, now).run();
   }
-  // Emails 3 and 4: the card is raised now, so her OK can come before anyone is due them.
-  const later = b.steps.findIndex((s, i) => i >= 2 && s.approvalKey);
-  if (later >= 2) {
-    const { laterWordsApproved } = await import("./engine");
-    await laterWordsApproved(env, b, later, "A", now).catch(() => "waiting");
-  }
   await audit(env.DB, { actor: "boss", lane: "ops", entityType: "outreach_campaign", entityId: id, action: "campaign_built", detail: { business_key: b.key, source: input.source, people: input.contacts.length } });
   return (await env.DB.prepare(`SELECT * FROM outreach_campaigns WHERE id = ?`).bind(id).first<CampaignRow>())!;
 }
@@ -218,18 +216,17 @@ export async function campaignFromMail(env: Env, input: { text: string; subject:
  */
 export function receiptFor(b: Business, org: string, contacts: PlannedContact[], skipped: Array<{ email: string; why: string }>, row: CampaignRow, now: number) {
   const send = contacts.filter((c) => c.role === "send");
-  const held = contacts.filter((c) => c.role === "held");
   const first = send[0];
   return {
     happened: `I have your ${b.brand} partnership campaign for ${org}.`,
     details: [
       `Now: I check ${send.length === 1 ? "the address" : `the ${send.length} addresses`} first. Only a valid one is written to, and nothing is guessed.`,
-      ...(first ? [`Then: email 1 goes to ${first.name} (${first.title || "no title given"}) ${firstSendWhen(now)}, from ${b.sender}, pitched on ${first.angle === "brand" ? "co-marketing to their families" : "a bundle or a link from their tools"}.`] : []),
-      ...send.slice(1).map((c, i) => `${c.name} (${c.title || "no title given"}) starts ${(i + 1) * b.partner!.staggerDays} days after that, in a separate thread, pitched on ${c.angle === "brand" ? "co-marketing to their families" : "a bundle or a link from their tools"}.`),
-      ...held.map((c) => `${c.name} (${c.title}): held, not emailed, until you say so.`),
+      ...(first ? [`Then: email 1 goes to ${first.name} (${first.title || "no title given"}) ${firstSendWhen(now)}, from ${b.sender}, pitched on ${pitchWords(first.angle)}.`] : []),
+      ...send.slice(1).map((c, i) => `${c.name} (${c.title || "no title given"}) starts ${(i + 1) * b.partner!.staggerDays} days after ${first!.name}'s first email, in a separate thread, pitched on ${pitchWords(c.angle)}.`),
+      `Each person gets up to four emails (day 0, 3, 7 and 14 from their first), all automatic.`,
       ...skipped.map((s) => `${s.email}: skipped, ${s.why}.`),
       `The one-pager they get with email 2: ${pageUrl(row.page_token)}`,
-      `What comes back: a reply on this thread once the addresses are checked (within about 10 minutes while your Mac is on), saying who was queued. The card for emails 3 and 4 is in Decide now; they go only with your OK. Any reply from anyone at ${org} stops every email there and comes to you as a card.`,
+      `What comes back: a reply on this thread once the addresses are checked (within about 10 minutes while your Mac is on), saying who was queued. Any reply from anyone at ${org} stops every email there and comes to you as a card.`,
     ],
   };
 }
@@ -288,14 +285,12 @@ export async function campaignVerified(env: Env, id: string, verdicts: Array<{ e
   const live = spec.contacts.filter((c) => c.prospect_id);
   await env.DB.prepare(`UPDATE outreach_campaigns SET spec = ?, state = ?, ended_reason = ?, ended_at = ?, updated_at = ? WHERE id = ?`)
     .bind(JSON.stringify(spec), live.length ? "live" : "ended", live.length ? null : "no address passed the address check", live.length ? null : now, now, id).run();
-  // In send order, then the held, then the skipped (owner, 8 Nov 2026).
+  // In send order, then the skipped (owner, 8 Nov 2026).
   const ordered = [...spec.contacts.filter((c) => c.role === "send").sort((a, b) => (a.order ?? 0) - (b.order ?? 0)), ...spec.contacts.filter((c) => c.role !== "send")];
-  const detail = ordered.map((c) => c.role === "held"
-    ? `${c.name} (${c.title}): held, not emailed.`
-    : c.prospect_id ? `${c.name}: address checked, valid, queued.` : `${c.name}: address check said ${c.verdict}, so not emailed.`);
+  const detail = ordered.map((c) => c.prospect_id ? `${c.name}: address checked, valid, queued.` : `${c.name}: address check said ${c.verdict}, so not emailed.`);
   const first = live[0];
   const happened = first
-    ? `The ${b.brand} campaign for ${row.org_name} is queued: email 1 to ${first.name} goes ${firstSendWhen(now)}, from ${b.sender}.${live.slice(1).map((c, i) => ` ${c.name}'s first email goes ${(i + 1) * b.partner!.staggerDays} days after ${first.name}'s, in a separate thread.`).join("")} Emails 3 and 4 wait for your OK on the card in Decide.`
+    ? `The ${b.brand} campaign for ${row.org_name} is queued: email 1 to ${first.name} goes ${firstSendWhen(now)}, from ${b.sender}.${live.slice(1).map((c, i) => ` ${c.name}'s first email goes ${(i + 1) * b.partner!.staggerDays} days after ${first.name}'s, in a separate thread.`).join("")} Up to four emails each, all automatic; any reply stops them all.`
     : `The ${b.brand} campaign for ${row.org_name} did not start: no address passed the address check, so nobody was emailed and no address was guessed.`;
   await owe(env, id, {
     subject: `Re: ${spec.thread_subject ?? `${row.org_name} partnership campaign`}`,

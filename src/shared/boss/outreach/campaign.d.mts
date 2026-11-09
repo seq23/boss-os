@@ -7,7 +7,7 @@ export function brandNamedIn(text: string, brands: readonly string[]): string | 
 export function angleFor(x?: { title?: string; note?: string }): "brand" | "distribution";
 export function contactLine(line: string): { name: string; first: string; title: string; email: string } | null;
 export function orgNameFor(domain: string, text: string): string;
-export interface PlannedContact { name: string; first: string; title: string; email: string; note: string; role: "send" | "held"; order?: number; why?: string; angle: "brand" | "distribution" }
+export interface PlannedContact { name: string; first: string; title: string; email: string; note: string; role: "send" | "held"; order?: number; why?: string; angle: "brand" | "distribution" | "alliance" }
 export function campaignPlan<T extends { key: string; brand: string; domain: string }>(text: string, businesses: readonly T[]): {
   business: T | null; org: string | null; orgDomain: string | null;
   contacts: PlannedContact[]; skipped: Array<{ email: string; why: string }>; problems: string[];

@@ -313,7 +313,9 @@ describe("every email carries the unsubscribe link and the postal address", () =
       // carrying the key of the card she approves its words on (R-EML-04, 6 Nov 2026).
       expect(b.steps.length, b.key).toBeGreaterThanOrEqual(2);
       expect(b.steps.length, b.key).toBeLessThanOrEqual(MAX_FOLLOW_UPS + 1);
-      for (const s of b.steps.slice(2)) expect(s.approvalKey, b.key).toBeTruthy();
+      // Emails 3 and 4 carry the key of her approval card, except a partner sequence's, which send
+      // automatically (owner, 8 Nov 2026) and are checked against outboundProblems on every build below.
+      for (const s of b.steps.slice(2)) expect(Boolean(s.approvalKey), b.key).toBe(!b.partner);
       for (const step of [...b.steps.keys()]) {
         const m = composeEmail({ business: b, step, to: "a@acme.example", org: "Acme", metro: "Houston", unsubToken: "tok123", postalAddress: addr, firstSubject: "Hello", groupCode: "ACME15K7Q", contactFirst: "Alex", angle: "brand", pageUrl: "https://example.test/p" });
         const plainFooter = m.body.slice(m.body.lastIndexOf("\n--\n"));

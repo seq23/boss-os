@@ -64,7 +64,7 @@ async function campaignFromHer() {
 }
 
 describe("her drip-campaign email becomes a campaign, end to end", () => {
-  it("Monique takes it by rule: two people sequenced in her order, the president held, the PO inbox skipped, no desk triaged", async () => {
+  it("Monique takes it by rule: all three people sequenced (the president last), the PO inbox skipped, no desk triaged, no card", async () => {
     const { r, c, spec } = await campaignFromHer();
     expect(r.outcome).toBe("CAMPAIGN");
     expect(r.signer).toBe("Monique");
@@ -75,56 +75,74 @@ describe("her drip-campaign email becomes a campaign, end to end", () => {
     expect(send.map((x: any) => [x.email, x.order, x.angle])).toEqual([
       ["dana.fakename@acmelearn.example", 0, "brand"],
       ["robin.sample@acmelearn.example", 1, "distribution"],
+      ["pat.placeholder@acmelearn.example", 2, "alliance"],
     ]);
-    expect(spec.contacts.filter((x: any) => x.role === "held").map((x: any) => x.email)).toEqual(["pat.placeholder@acmelearn.example"]);
+    expect(spec.contacts.filter((x: any) => x.role !== "send")).toEqual([]);
     expect(spec.skipped.map((x: any) => x.email)).toEqual(["purchaseorders@acmelearn.example"]);
     // Nobody else got the work: no task was opened on any desk for this email.
     expect(await all(`SELECT id FROM tasks WHERE json_extract(input, '$.mail_id') = ?`, r.mailId)).toHaveLength(0);
     expect(r.reply).toMatch(/email 2: https:\/\/boss\.sequoiataylor\.com\/p\/[A-Za-z0-9_-]{16,}/);
-    // Emails 3 and 4 are on her card from the start.
-    expect(await row(`SELECT 1 AS x FROM judgement_calls WHERE resume_kind = 'outreach_copy' AND json_extract(resume_detail, '$.business_key') = ?`, PARTNERS_KEY)).not.toBeNull();
+    // No approval card for a partner campaign: all four emails go automatically (owner, 8 Nov 2026).
+    expect(await row(`SELECT 1 AS x FROM judgement_calls WHERE resume_kind = 'outreach_copy' AND json_extract(resume_detail, '$.business_key') = ?`, PARTNERS_KEY)).toBeNull();
   });
 
-  it("only a NeverBounce 'valid' address is queued; one person at the company at a time, seven days apart; a reply stops both", async () => {
+  it("all three are sequenced one at a time, seven days apart; four emails each with no card; a reply stops everyone", async () => {
     const { c } = await campaignFromHer();
     await campaignVerified(env as never, c.id, [
       { email: "dana.fakename@acmelearn.example", result: "valid" },
       { email: "robin.sample@acmelearn.example", result: "valid" },
+      { email: "pat.placeholder@acmelearn.example", result: "valid" },
     ], MON_10AM_CT);
     const ps = await all<any>(`SELECT * FROM outreach_prospects WHERE campaign_id = ? ORDER BY created_at`, c.id);
-    expect(ps.map((p) => p.contact_first)).toEqual(["Dana", "Robin"]);
-    expect(await all(`SELECT 1 FROM outreach_prospects WHERE email = 'pat.placeholder@acmelearn.example'`)).toHaveLength(0);
+    expect(ps.map((p) => [p.contact_first, p.angle])).toEqual([["Dana", "brand"], ["Robin", "distribution"], ["Pat", "alliance"]]);
     expect((await row<any>(`SELECT state, notice_state FROM outreach_campaigns WHERE id = ?`, c.id))).toEqual({ state: "live", notice_state: "due" });
 
     const b = businessByKey(PARTNERS_KEY)!;
+    // One at a time: Robin waits for Dana's first email, then 7 days; Pat waits for Robin's.
     expect(await staggerHold(env.DB, b, ps[0], MON_10AM_CT)).toBeNull();
     expect(await staggerHold(env.DB, b, ps[1], MON_10AM_CT)).toMatch(/earlier/);
-    await env.DB.prepare(`UPDATE outreach_prospects SET state = 'in_sequence', step = 1 WHERE id = ?`).bind(ps[0].id).run();
-    await env.DB.prepare(`INSERT INTO outreach_sends (id, business_key, prospect_id, to_email, step, is_test, status, sent_at) VALUES ('osd_t1', ?, ?, ?, 0, 0, 'sent', ?)`)
-      .bind(PARTNERS_KEY, ps[0].id, ps[0].email, MON_10AM_CT).run();
+    expect(await staggerHold(env.DB, b, ps[2], MON_10AM_CT)).toMatch(/earlier/);
+    const sendFirst = async (p: any, at: number, id: string) => {
+      await env.DB.prepare(`UPDATE outreach_prospects SET state = 'in_sequence', step = 1 WHERE id = ?`).bind(p.id).run();
+      await env.DB.prepare(`INSERT INTO outreach_sends (id, business_key, prospect_id, to_email, step, is_test, status, sent_at) VALUES (?, ?, ?, ?, 0, 0, 'sent', ?)`).bind(id, PARTNERS_KEY, p.id, p.email, at).run();
+    };
+    await sendFirst(ps[0], MON_10AM_CT, "osd_t1");
     expect(await staggerHold(env.DB, b, ps[1], MON_10AM_CT + 6 * DAY)).toMatch(/7 days/);
     expect(await staggerHold(env.DB, b, ps[1], MON_10AM_CT + 7 * DAY)).toBeNull();
+    expect(await staggerHold(env.DB, b, ps[2], MON_10AM_CT + 7 * DAY)).toMatch(/earlier/);
+    await sendFirst(ps[1], MON_10AM_CT + 7 * DAY, "osd_t2");
+    expect(await staggerHold(env.DB, b, ps[2], MON_10AM_CT + 13 * DAY)).toMatch(/7 days/);
+    expect(await staggerHold(env.DB, b, ps[2], MON_10AM_CT + 14 * DAY)).toBeNull();
 
-    // The first email, as built: her words' rules hold, the person's name and the angle are in.
-    const m = composeEmail({ business: b, step: 0, to: ps[0].email, org: ps[0].org_name, metro: "", unsubToken: ps[0].unsub_token, postalAddress: "1 Test Street, Testville, TN 00000", contactFirst: "Dana", angle: "brand", pageUrl: "https://example.test/p" });
-    expect(m.body).toMatch(/^Hi Dana,/);
-    expect(m.body).toContain("Acmelearn");
-    expect(outboundProblems(m.body.replace(/Acmelearn/g, ""))).toEqual([]);
-    expect(m.raw).not.toMatch(/^Cc:/m);
-    // Email 2 carries the one-pager.
-    const m2 = composeEmail({ business: b, step: 1, to: ps[0].email, org: ps[0].org_name, metro: "", unsubToken: ps[0].unsub_token, postalAddress: "1 Test Street, Testville, TN 00000", contactFirst: "Dana", angle: "brand", pageUrl: "https://example.test/p", firstSubject: m.subject });
-    expect(m2.body).toContain("https://example.test/p");
+    // Four emails each, all automatic: no card is needed for emails 3 and 4, and none is raised.
+    const { laterWordsApproved } = await import("../../src/worker/boss/outreach/engine");
+    expect(b.steps).toHaveLength(4);
+    expect(b.steps.every((st) => !st.approvalKey)).toBe(true);
+    expect(await laterWordsApproved(env as never, b, 2, "A", MON_10AM_CT)).toBe("approved");
+    expect(await laterWordsApproved(env as never, b, 3, "A", MON_10AM_CT)).toBe("approved");
+    expect(await row(`SELECT 1 AS x FROM judgement_calls WHERE resume_kind = 'outreach_copy' AND json_extract(resume_detail, '$.business_key') = ?`, PARTNERS_KEY)).toBeNull();
+    let first = "";
+    for (const p of ps) for (let step = 0; step < 4; step++) {
+      const m = composeEmail({ business: b, step, to: p.email, org: p.org_name, metro: "", unsubToken: p.unsub_token, postalAddress: "1 Test Street, Testville, TN 00000", contactFirst: p.contact_first, angle: p.angle, pageUrl: "https://example.test/p", firstSubject: first || null });
+      if (step === 0) first = m.subject;
+      expect(m.body).toMatch(new RegExp(`^Hi ${p.contact_first},`));
+      expect(outboundProblems(`${m.subject}\n${m.body}`.replace(/Acmelearn/g, ""))).toEqual([]);
+      expect(m.raw).not.toMatch(/^Cc:/m);
+      if (step === 1) expect(m.body).toContain("https://example.test/p");
+    }
+    // A fifth email is never built.
+    expect(() => composeEmail({ business: b, step: 4, to: ps[0].email, org: "Acmelearn", metro: "", unsubToken: "t", postalAddress: "1 Test Street, Testville, TN 00000", contactFirst: "Dana", angle: "brand", pageUrl: "https://example.test/p" })).toThrow(/past the third/);
 
-    // A reply from Dana stops Robin too.
-    expect(await stopCompany(env.DB, ps[0], MON_10AM_CT + DAY)).toBe(1);
-    expect((await row<any>(`SELECT state FROM outreach_prospects WHERE id = ?`, ps[1].id)).state).toBe("done");
+    // A reply from Dana stops Robin and Pat too.
+    expect(await stopCompany(env.DB, ps[0], MON_10AM_CT + 15 * DAY)).toBe(2);
+    expect((await all<any>(`SELECT state FROM outreach_prospects WHERE id IN (?, ?)`, ps[1].id, ps[2].id)).map((r) => r.state)).toEqual(["done", "done"]);
   });
 
-  it("an address NeverBounce does not call valid is never queued, and she is told who and why", async () => {
+  it("an address the check does not call valid is never queued, and she is told who and why", async () => {
     const { c } = await campaignFromHer();
     await campaignVerified(env as never, c.id, [
       { email: "dana.fakename@acmelearn.example", result: "catchall" },
-      { email: "robin.sample@acmelearn.example", result: "invalid" },
+      { email: "robin.sample@acmelearn.example", result: "invalid" }, { email: "pat.placeholder@acmelearn.example", result: "invalid" },
     ], MON_10AM_CT);
     expect(await all(`SELECT 1 FROM outreach_prospects WHERE campaign_id = ?`, c.id)).toHaveLength(0);
     const n = JSON.parse((await row<any>(`SELECT notice FROM outreach_campaigns WHERE id = ?`, c.id)).notice);
@@ -189,7 +207,7 @@ describe("the HeyGetOnMyLevel line shows only while its level check really works
     expect(calls).toBe(2);
     // The done reply runs a fresh probe whatever the hour; a fail says so in one line.
     restore(); restore = stubFetch(counting(401));
-    await campaignVerified(env as never, c.id, [{ email: "dana.fakename@acmelearn.example", result: "valid" }, { email: "robin.sample@acmelearn.example", result: "valid" }], MON_10AM_CT + 30 * H + 1);
+    await campaignVerified(env as never, c.id, [{ email: "dana.fakename@acmelearn.example", result: "valid" }, { email: "robin.sample@acmelearn.example", result: "valid" }, { email: "pat.placeholder@acmelearn.example", result: "valid" }], MON_10AM_CT + 30 * H + 1);
     expect(calls).toBe(3);
     const n = JSON.parse((await row<any>(`SELECT notice FROM outreach_campaigns WHERE id = ?`, c.id)).notice);
     expect(n.details.join("\n")).toMatch(/HeyGetOnMyLevel is left off the one-pager/);
@@ -211,7 +229,7 @@ describe("a request typed in from her session gets the same receipt, as Monique'
     expect(receipt.details.join("\n")).toMatch(/email 1 goes to Dana Fakename .* Central/);
     expect(receipt.details.join("\n")).toMatch(/What comes back/);
     // The Mac is off: the addresses are checked before the receipt has gone. The receipt is kept.
-    await campaignVerified(env as never, c.id, [{ email: "dana.fakename@acmelearn.example", result: "valid" }, { email: "robin.sample@acmelearn.example", result: "valid" }], MON_10AM_CT);
+    await campaignVerified(env as never, c.id, [{ email: "dana.fakename@acmelearn.example", result: "valid" }, { email: "robin.sample@acmelearn.example", result: "valid" }, { email: "pat.placeholder@acmelearn.example", result: "valid" }], MON_10AM_CT);
     expect(JSON.parse((await row<any>(`SELECT notice FROM outreach_campaigns WHERE id = ?`, c.id)).notice)).toEqual(receipt);
     // The receipt goes; the done reply, queued behind it, is due next; then nothing is left.
     const { campaignNoticed } = await import("../../src/worker/boss/outreach/campaign");
@@ -245,13 +263,13 @@ describe("nothing is queued without today's features", () => {
     const { c } = await campaignFromHer();
     await campaignVerified(env as never, c.id, [
       { email: "dana.fakename@acmelearn.example", result: "valid" },
-      { email: "robin.sample@acmelearn.example", result: "valid" },
+      { email: "robin.sample@acmelearn.example", result: "valid" }, { email: "pat.placeholder@acmelearn.example", result: "valid" },
     ], MON_10AM_CT);
     expect(await all(`SELECT 1 FROM outreach_prospects WHERE campaign_id = ?`, c.id)).toHaveLength(0);
     expect((await row<any>(`SELECT state FROM outreach_campaigns WHERE id = ?`, c.id)).state).toBe("verifying");
     features = "## Live today\n\n- Stories get harder as your child reads.\n";
     const { retryHeldCampaigns } = await import("../../src/worker/boss/outreach/campaign");
-    expect(await retryHeldCampaigns(env as never, MON_10AM_CT + 3_600_000)).toBe(2);
+    expect(await retryHeldCampaigns(env as never, MON_10AM_CT + 3_600_000)).toBe(3);
   });
 });
 
@@ -260,7 +278,7 @@ describe("the next organisation starts only when the live campaign ends", () => 
     const { c } = await campaignFromHer();
     await campaignVerified(env as never, c.id, [
       { email: "dana.fakename@acmelearn.example", result: "valid" },
-      { email: "robin.sample@acmelearn.example", result: "valid" },
+      { email: "robin.sample@acmelearn.example", result: "valid" }, { email: "pat.placeholder@acmelearn.example", result: "valid" },
     ], MON_10AM_CT);
     const b = businessByKey(PARTNERS_KEY)!;
     await holdOrgs(env as never, b, ["Second Org", "Third Org"], "Acmelearn", MON_10AM_CT);
@@ -282,7 +300,7 @@ describe("the next organisation starts only when the live campaign ends", () => 
 
   it("a campaign with no reply ends 14 days after its last email, not before", async () => {
     const { c } = await campaignFromHer();
-    await campaignVerified(env as never, c.id, [{ email: "dana.fakename@acmelearn.example", result: "valid" }, { email: "robin.sample@acmelearn.example", result: "invalid" }], MON_10AM_CT);
+    await campaignVerified(env as never, c.id, [{ email: "dana.fakename@acmelearn.example", result: "valid" }, { email: "robin.sample@acmelearn.example", result: "invalid" }, { email: "pat.placeholder@acmelearn.example", result: "invalid" }], MON_10AM_CT);
     const b = businessByKey(PARTNERS_KEY)!;
     await holdOrgs(env as never, b, ["Second Org"], "Acmelearn", MON_10AM_CT);
     const dana = await row<any>(`SELECT * FROM outreach_prospects WHERE campaign_id = ?`, c.id);

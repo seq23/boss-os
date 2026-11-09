@@ -193,7 +193,7 @@ export interface Business {
   partner?: PartnerSequence;
 }
 
-export type PartnerAngle = "brand" | "distribution";
+export type PartnerAngle = "brand" | "distribution" | "alliance";
 
 export interface PartnerSequence {
   /** The brand her email must name for this sequence to be chosen ("time 2 read" matches). */
@@ -331,8 +331,9 @@ export const NEURO_QUALIFY =
 const NEURO_LISTING = "Listings show evaluation, therapy or both.";
 
 /*
- * EMAILS 3 AND 4 OF THE TIME-2-READ PARTNER SEQUENCE (drafted 8 Nov 2026 for her approval; NOT
- * approved yet). They go only once the Decide card for PARTNER_LATER_KEY is approved.
+ * EMAILS 3 AND 4 OF THE TIME-2-READ PARTNER SEQUENCE (owner, 8 Nov 2026: partner campaigns send all
+ * four emails automatically, like all of Monique's Time-2-Read outreach since 9 Oct). No approval
+ * card: compose.ts checks these words against `outboundProblems` on every build, as for emails 1-2.
  */
 const PARTNER_LATER_WORDS: Array<Omit<Step, "approvalKey">> = [
   {
@@ -351,8 +352,7 @@ const PARTNER_LATER_WORDS: Array<Omit<Step, "approvalKey">> = [
       "ever becomes a priority, a reply to this email is all it takes. Thank you for reading.",
   },
 ];
-export const PARTNER_LATER_KEY = `t2r-partners-emails-3-4:${CADENCE.wordsHash(JSON.stringify(PARTNER_LATER_WORDS))}`;
-const PARTNER_LATER: Step[] = PARTNER_LATER_WORDS.map((w) => ({ ...w, approvalKey: PARTNER_LATER_KEY }));
+const PARTNER_LATER: Step[] = PARTNER_LATER_WORDS;
 
 /** Every partner sequence, for her email's "which business" (campaign.mjs `businessIn`). */
 export function partnerBusinesses(): Array<{ key: string; brand: string; domain: string }> {
@@ -705,6 +705,9 @@ export const BUSINESSES: Business[] = [
         distribution:
           "I think Time2Read could fit into what {org} offers schools and families: bundled as a reading " +
           "add-on, included in a package for districts or co-ops, or linked from the tools you already provide.",
+        alliance:
+          "I think there is room for a wider alliance between Time2Read and {org}: Time2Read as the reading " +
+          "companion across what {org} offers families and schools, shaped together at the level that suits you.",
       },
       page: {
         logo: T2R_LOGO,

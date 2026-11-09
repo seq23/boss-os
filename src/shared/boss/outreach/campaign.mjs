@@ -14,8 +14,8 @@
  * The rules, carried here, not remembered:
  *   · an address that appears only inside a note ("the fallback … is purchaseorders@…") is not a
  *     contact; a purchase-order, billing, support or no-reply inbox is never pitched;
- *   · the top executive (president, CEO, founder, owner, chair) is HELD, never emailed, until she
- *     says otherwise;
+ *   · every named person is written to, the top executive too (owner, 8 Nov 2026: "no one is held"),
+ *     pitched on a wider alliance;
  *   · several people at one company are written to one at a time, STAGGER_DAYS apart, each in their
  *     own thread, never cc'd; any reply from anyone there stops every sequence at that company;
  *   · NeverBounce "valid" before any first send (the Mac checks; the Worker queues only "valid").
@@ -38,7 +38,7 @@ export function neverPitchReason(email) {
   return null;
 }
 
-/** The top executive: held, never emailed until she says so. Vice presidents are not. Pure. */
+/** The top executive (pitched on a wider alliance). Vice presidents are not. Pure. */
 export function isTopExec(title) {
   const t = String(title ?? "");
   if (/\b(?:vice|vp|svp|evp|avp)\b/i.test(t)) return false;
@@ -125,7 +125,7 @@ export function orgNameFor(domain, text) {
 
 /**
  * THE WHOLE PLAN, FROM HER EMAIL ALONE. `{ business, org, orgDomain, contacts, skipped, problems }`:
- *   contacts — every named person, in her order: role "send" (with `order`, 0 first) or "held";
+ *   contacts — every named person, in her order, each role "send" with `order` (0 first);
  *   skipped  — addresses that are never pitched (in a note, or a purchase-order/billing inbox).
  * `problems` non-empty = nothing may be queued (no business, no one to write to). Pure.
  */
@@ -157,11 +157,9 @@ export function campaignPlan(text, businesses) {
   }
   const domains = [...new Set(contacts.map((c) => c.email.split("@")[1]))];
   const orgDomain = domains.length === 1 ? domains[0] : null;
-  let order = 0;
-  const planned = contacts.map((c) => {
-    if (isTopExec(c.title)) return { ...c, role: "held", why: `${c.title || "the top executive"}: held, not emailed, until you say so`, angle: angleFor(c) };
-    return { ...c, role: "send", order: order++, angle: angleFor(c) };
-  });
+  // Her order, with the top executive last (owner, 8 Nov 2026: day 0, +7, then the president +14).
+  const queue = [...contacts.filter((c) => !isTopExec(c.title)), ...contacts.filter((c) => isTopExec(c.title))];
+  const planned = queue.map((c, order) => ({ ...c, role: "send", order, angle: isTopExec(c.title) ? "alliance" : angleFor(c) }));
   const problems = [];
   if (!business) problems.push("it names no business with a partner sequence");
   if (!planned.some((c) => c.role === "send")) problems.push("no named person in it may be written to");
@@ -208,7 +206,7 @@ export function researchedContact(row) {
   const title = String(row?.title ?? "").trim();
   if (!/^[A-Z][\p{L}'’.-]+(?:\s+[A-Z][\p{L}'’.-]+){1,3}$/u.test(name) || !/^[^@\s]+@[^@\s]+\.[a-z]{2,}$/i.test(email)) return null;
   if (neverPitchReason(email)) return null;
-  return { name, first: name.split(/\s+/)[0], title, email, note: "", angle: angleFor({ title }), role: isTopExec(title) ? "held" : "send" };
+  return { name, first: name.split(/\s+/)[0], title, email, note: "", angle: isTopExec(title) ? "alliance" : angleFor({ title }), role: "send" };
 }
 
 /**

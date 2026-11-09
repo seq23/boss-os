@@ -430,7 +430,9 @@ export const LATER_WORDS_KIND = "outreach_copy";
 export async function laterWordsApproved(env: Env, b: Business, step: number, pitch: Pitch, now: number): Promise<"approved" | "waiting"> {
   const steps = pitch === "B" && b.seat ? b.seat.taken : b.steps;
   const key = steps[step]?.approvalKey;
-  if (!key) return step <= 1 ? "approved" : "waiting"; // an email 3 or 4 without a card is never sent
+  // A partner sequence sends all four automatically (owner, 8 Nov 2026), its words checked on every
+  // build (compose.ts); for every other business an email 3 or 4 without a card is never sent.
+  if (!key) return step <= 1 || b.partner ? "approved" : "waiting";
   const r = await env.DB.prepare(
     `SELECT a.status FROM judgement_calls j JOIN approvals a ON a.id = j.approval_id
       WHERE j.resume_kind = ? AND json_extract(j.resume_detail, '$.copy_key') = ? ORDER BY j.created_at DESC LIMIT 1`,
