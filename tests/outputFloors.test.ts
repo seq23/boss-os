@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import { readFileSync, readdirSync } from "node:fs";
 import {
   parseOutputLine, outputLine, floorVerdict, floorAlarmText, firstRunLoop, firstRunMet,
-  staleTaskVerdict, staleTaskText, usualDuration, ownerMailVerdicts, ownerMailText, errorClass,
+  staleTaskVerdict, staleTaskText, usualDuration, pollingHoursMs, NEVER_CLAIMED_POLLING_MS, ownerMailVerdicts, ownerMailText, errorClass,
 } from "../src/shared/boss/alarms/rules.mjs";
 import { outputProblems, migrationFloors, dutyFloorProblems } from "../scripts/ops/lib/schedule.mjs";
 
@@ -104,6 +104,44 @@ describe("a task that sits running (G2)", () => {
   });
   it("trusts a usual duration only from five finished runs", () => {
     expect(usualDuration([1, 2, 3, 4])).toBeNull();
+  });
+
+  // 9 Nov 2026, the recorded instants: "Executive Intelligence Report" entered the cloud at 12:07:09Z,
+  // its run was parked on bk_claude_code at 12:07:10Z, and her Mac was off until ~13:36Z.
+  const eir = {
+    started_at: Date.parse("2026-11-09T12:07:09.298Z"),
+    parked_at: Date.parse("2026-11-09T12:07:10.370Z"),
+    last_progress_at: Date.parse("2026-11-09T12:07:10.653Z"),
+  };
+  const alarmAt = Date.parse("2026-11-09T13:00:31.538Z");
+  const nineMin = 9 * 60_000;
+  it("never calls work parked on a seat that no machine claimed 'running'", () => {
+    const v = staleTaskVerdict({ ...eir, claimed_at: null, parked: true }, nineMin, alarmAt);
+    expect(v).toMatchObject({ stale: false, why: "waiting_for_seat" });
+  });
+  it("measures a claimed run from its claim, and still alarms on it", () => {
+    const claimed = Date.parse("2026-11-09T12:08:00Z");
+    const v = staleTaskVerdict({ ...eir, claimed_at: claimed, parked: false, last_progress_at: claimed }, nineMin, Date.parse("2026-11-09T13:01:00Z"));
+    expect(v).toMatchObject({ stale: true, why: "twice_usual" });
+    expect(v.age).toBe(53 * 60_000);
+    // Claimed 12:50, so 11 minutes of work at 13:01 is not twice nine with the 30-minute floor.
+    expect(staleTaskVerdict({ ...eir, claimed_at: Date.parse("2026-11-09T12:50:00Z"), parked: false }, nineMin, Date.parse("2026-11-09T13:01:00Z")).stale).toBe(false);
+  });
+  it("says a run nobody claims through four polling hours, in the words of waiting", () => {
+    const later = eir.parked_at + 4 * 3_600_000 + 60_000; // 16:08Z = 10:08 Central, all inside the window
+    const v = staleTaskVerdict({ ...eir, claimed_at: null, parked: true }, nineMin, later);
+    expect(v).toMatchObject({ stale: true, why: "never_claimed" });
+    const text = staleTaskText({ title: "Executive Intelligence Report", seat: null, parked_on: "bk_claude_code" }, v);
+    expect(text).toBe('"Executive Intelligence Report" has been waiting 4 h 01 min for bk_claude_code to pick it up; no machine ever claimed it.');
+    expect(text).not.toMatch(/running/);
+  });
+  it("counts only the hours her Mac polls (06:00-22:00 Central)", () => {
+    // 21:00 CST (03:00Z) to 06:05 CST next day (12:05Z): one hour before 22:00, five minutes after 06:00.
+    expect(pollingHoursMs(Date.parse("2026-11-10T03:00:00Z"), Date.parse("2026-11-10T12:05:00Z"))).toBe(65 * 60_000);
+    // A Mac off from 22:00 to 06:00 never makes a parked run stale.
+    const night = { started_at: Date.parse("2026-11-10T04:00:00Z"), parked: true, claimed_at: null };
+    expect(staleTaskVerdict(night, nineMin, Date.parse("2026-11-10T12:00:00Z")).stale).toBe(false);
+    expect(NEVER_CLAIMED_POLLING_MS).toBe(4 * 3_600_000);
   });
 });
 
