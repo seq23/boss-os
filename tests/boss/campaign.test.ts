@@ -151,6 +151,20 @@ describe("her drip-campaign email becomes a campaign, end to end", () => {
     expect(n.thread).toHaveLength(1);
   });
 
+  it("a person she named whose address check gets no answer ('unknown') is written to anyway; catchall and invalid never are", async () => {
+    const { c } = await campaignFromHer();
+    await campaignVerified(env as never, c.id, [
+      { email: "dana.fakename@acmelearn.example", result: "unknown" },
+      { email: "robin.sample@acmelearn.example", result: "catchall" }, { email: "pat.placeholder@acmelearn.example", result: "invalid" },
+    ], MON_10AM_CT);
+    const queued = await all<any>(`SELECT email FROM outreach_prospects WHERE campaign_id = ?`, c.id);
+    expect(queued.map((q) => q.email)).toEqual(["dana.fakename@acmelearn.example"]);
+    const n = JSON.parse((await row<any>(`SELECT notice FROM outreach_campaigns WHERE id = ?`, c.id)).notice);
+    expect(n.happened).toMatch(/is queued/);
+    expect(n.details.join("\n")).toMatch(/Dana Fakename: the address check got no answer .* queued anyway/);
+    expect(n.details.join("\n")).toMatch(/Robin Sample: address check said catchall, so not emailed/);
+  });
+
   it("the one-pager is public, names the company, and holds no person", async () => {
     const { c } = await campaignFromHer();
     const res = await worker.fetch(new Request(`https://boss.test/api/outreach/p/${c.page_token}`), env as never, {} as never);
@@ -317,5 +331,13 @@ describe("the next organisation starts only when the live campaign ends", () => 
     expect(r.outcome).toBe("ORGS_HELD");
     const order = await all<any>(`SELECT org_name, state FROM outreach_partner_orgs WHERE business_key = ? ORDER BY position`, PARTNERS_KEY);
     expect(order.map((o) => o.org_name)).toEqual(["Acmelearn", "Second Org", "The Good and the Third", "Fourth Org"]);
+  });
+
+  it("a semicolon list keeps a name that has commas in it whole", async () => {
+    await campaignFromHer();
+    const r = await handleBossInboundMail(mail("For Time2Read partnerships, hold these organizations for later, after Acmelearn, in this order: Second Org; Abeka Two; Secular, Eclectic, Academic (SEA) Homeschoolers.") as never, env as never);
+    expect(r.outcome).toBe("ORGS_HELD");
+    const order = await all<any>(`SELECT org_name FROM outreach_partner_orgs WHERE business_key = ? ORDER BY position`, PARTNERS_KEY);
+    expect(order.map((o) => o.org_name)).toEqual(["Acmelearn", "Second Org", "Abeka Two", "Secular, Eclectic, Academic (SEA) Homeschoolers"]);
   });
 });
