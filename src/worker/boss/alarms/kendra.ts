@@ -282,13 +282,24 @@ export async function runKendraChecks(env: Env, now = Date.now()): Promise<Kendr
   }
 
   // ── G2: tasks that sit "running" ───────────────────────────────────────────────────────────
+  /*
+   * THE CLOCK IS THE WORK'S (9 Nov 2026). tasks.started_at is stamped when the task enters the cloud,
+   * a second before its run is parked on a seat; a run no machine has claimed is waiting, not running,
+   * and names no seat it "runs on". The newest run's claim decides both.
+   */
   const { results: running } = await env.DB.prepare(
     `SELECT t.id, t.title, t.intake_kind, t.started_at, t.input,
             (SELECT MAX(ts) FROM task_events e WHERE e.task_id = t.id) AS last_event_at,
             (SELECT MAX(COALESCE(r.claimed_at, r.started_at)) FROM backend_runs r WHERE r.task_id = t.id) AS last_claim_at,
-            (SELECT r.backend_id FROM backend_runs r WHERE r.task_id = t.id ORDER BY COALESCE(r.claimed_at, r.started_at) DESC LIMIT 1) AS seat
+            (SELECT COUNT(*) FROM backend_runs r WHERE r.task_id = t.id) AS run_count,
+            (SELECT r.backend_id FROM backend_runs r WHERE r.task_id = t.id ORDER BY r.started_at DESC LIMIT 1) AS run_seat,
+            (SELECT r.claimed_at FROM backend_runs r WHERE r.task_id = t.id ORDER BY r.started_at DESC LIMIT 1) AS claimed_at,
+            (SELECT MAX(r.started_at) FROM backend_runs r WHERE r.task_id = t.id) AS parked_at
        FROM tasks t WHERE t.status = 'running'`,
-  ).all<{ id: string; title: string; intake_kind: string | null; started_at: number | null; input?: string | null; last_event_at: number | null; last_claim_at: number | null; seat: string | null }>();
+  ).all<{
+    id: string; title: string; intake_kind: string | null; started_at: number | null; input?: string | null;
+    last_event_at: number | null; last_claim_at: number | null; run_count: number | null; run_seat: string | null; claimed_at: number | null; parked_at: number | null;
+  }>();
   out.running = (running ?? []).length;
   const usualByKind = new Map<string, number | null>();
   const stillStale = new Set<string>();
@@ -303,16 +314,18 @@ export async function runKendraChecks(env: Env, now = Date.now()): Promise<Kendr
     const kind = t.intake_kind ?? "";
     if (!usualByKind.has(kind)) {
       const { results: done } = await env.DB.prepare(
-        `SELECT finished_at - started_at AS ms FROM tasks WHERE status = 'done' AND COALESCE(intake_kind, '') = ? AND started_at IS NOT NULL
-           AND finished_at IS NOT NULL ORDER BY finished_at DESC LIMIT 50`,
+        `SELECT t.finished_at - COALESCE((SELECT MAX(r.claimed_at) FROM backend_runs r WHERE r.task_id = t.id), t.started_at) AS ms
+           FROM tasks t WHERE t.status = 'done' AND COALESCE(t.intake_kind, '') = ? AND t.started_at IS NOT NULL
+           AND t.finished_at IS NOT NULL ORDER BY t.finished_at DESC LIMIT 50`,
       ).bind(kind).all<{ ms: number }>();
       usualByKind.set(kind, usualDuration((done ?? []).map((r) => r.ms)));
     }
     const last = Math.max(Number(t.last_event_at ?? 0), Number(t.last_claim_at ?? 0)) || null;
-    const v = staleTaskVerdict({ started_at: t.started_at, last_progress_at: last }, usualByKind.get(kind) ?? null, now);
+    const parked = Number(t.run_count ?? 0) > 0 && t.claimed_at == null;
+    const v = staleTaskVerdict({ started_at: t.started_at, claimed_at: t.claimed_at, parked, parked_at: t.parked_at, last_progress_at: last }, usualByKind.get(kind) ?? null, now);
     if (!v.stale) continue;
     stillStale.add(t.id);
-    const r = await raiseAlarm(env, { key: `task:${t.id}`, kind: "stale_task", subject_id: t.id, text: staleTaskText({ title: t.title, seat: t.seat }, v) }, now);
+    const r = await raiseAlarm(env, { key: `task:${t.id}`, kind: "stale_task", subject_id: t.id, text: staleTaskText({ title: t.title, seat: parked ? null : t.run_seat, parked_on: t.run_seat }, v) }, now);
     (r.action === "kept" ? out.stale.kept : out.stale.opened).push(t.id);
   }
   // A stale alarm whose task finished, failed or moved on is cleared.

@@ -10,7 +10,9 @@
  *             `vault.mjs set NAME` reading the value from STDIN (never a command line, never a log),
  *             its NAME is classified for the Worker sync, and the Worker forgets the row;
  *   2 · R27 — DNS records she was asked to add: resolved over DNS-over-HTTPS; the moment one is live
- *             she is emailed once and the wait closes; after seven days it lapses;
+ *             the wait closes and the log says so (no email: this tick sends none of its own, owner
+ *             7 Nov 2026; 9 Nov 2026 a dead `emailHer` default threw on every pass since 6 Oct, so
+ *             neither this nor the Drive pass ran); after seven days it lapses;
  *   3 · R21 — Drive folders named in an ask: pulled read-only; files that arrived are loaded into the
  *             waiting work with no new email from her; "still empty" is said once by the Worker.
  *
@@ -77,8 +79,8 @@ export function fqdnOf(row) {
   return `${name}.${String(row.host).split(".").slice(-2).join(".")}`;
 }
 
-export async function checkDnsWaits({ fetchImpl = fetch, notify = emailHer } = {}) {
-  const pending = await api("/dns-waits/pending");
+export async function checkDnsWaits({ fetchImpl = fetch, apiImpl = api } = {}) {
+  const pending = await apiImpl("/dns-waits/pending");
   if (!pending.ok) { say(`dns waits: could not ask (${pending.status})`); return { live: 0, failed: 1 }; }
   let live = 0;
   for (const row of pending.data?.items ?? []) {
@@ -88,15 +90,11 @@ export async function checkDnsWaits({ fetchImpl = fetch, notify = emailHer } = {
     const want = String(row.record_target).toLowerCase().replace(/\.$/, "");
     const isLive = Array.isArray(body?.Answer) && body.Answer.some((a) => String(a.data ?? "").toLowerCase().replace(/^"|"$/g, "").replace(/\.$/, "") === want);
     if (isLive) {
-      const told = await notify("Danielle", `Live: ${row.host}`, [
-        `${row.host} is live: ${row.record_type} ${name} → ${row.record_target} now resolves.`,
-        "", "Nothing is waiting on you for it any more.", "", "— Danielle, Technical Program Manager",
-      ].join("\n"));
-      await api(`/dns-waits/${row.id}/checked`, { live: 1, told: told ? 1 : 0 });
+      await apiImpl(`/dns-waits/${row.id}/checked`, { live: 1, told: 0 });
       live += 1;
-      say(`dns ${row.host}: live${told ? ", and she was told" : ", but the email did not go — it is retried on the next pass"}`);
+      say(`dns ${row.host}: live — ${row.record_type} ${name} → ${row.record_target} now resolves; the wait is closed`);
     } else {
-      await api(`/dns-waits/${row.id}/checked`, {});
+      await apiImpl(`/dns-waits/${row.id}/checked`, {});
     }
   }
   return { live, failed: 0 };

@@ -131,15 +131,61 @@ export function usualDuration(durations) {
 }
 
 /**
- * Is a running task stale? Running longer than twice its usual duration, or more than two hours with
- * no recorded progress. `last_progress_at` is the newest task event or claim; null = none. Pure.
+ * HER MAC POLLS 06:00–22:00 CENTRAL (scripts/ops/agent-claim.sh --poll, every five minutes). Work
+ * parked on a seat can only be claimed inside that window, so a wait is measured in its hours.
+ */
+export const POLL_WINDOW = Object.freeze([6, 22]);
+/** A run parked on a seat and claimed by no machine through this many polling hours is said. */
+export const NEVER_CLAIMED_POLLING_MS = 4 * 3_600_000;
+
+const chicagoHour = (ms) => Number(new Intl.DateTimeFormat("en-US", { timeZone: "America/Chicago", hour: "numeric", hourCycle: "h23" }).format(new Date(ms))) % 24;
+
+/**
+ * The milliseconds between `from` and `to` that fall inside POLL_WINDOW in Central. Central's offset
+ * is whole hours, so each UTC hour lies wholly inside or outside the window. Pure.
+ */
+export function pollingHoursMs(from, to) {
+  let a = Number(from);
+  const b = Number(to);
+  if (!Number.isFinite(a) || !Number.isFinite(b) || b <= a) return 0;
+  let total = 0;
+  // At most 60 days of hours; a longer wait is long past every floor anyway.
+  for (let i = 0; a < b && i < 24 * 60; i += 1) {
+    const next = Math.min(b, (Math.floor(a / 3_600_000) + 1) * 3_600_000);
+    const h = chicagoHour(a);
+    if (h >= POLL_WINDOW[0] && h < POLL_WINDOW[1]) total += next - a;
+    a = next;
+  }
+  return total;
+}
+
+/**
+ * Is a running task stale? The clock is the WORK's, not the task's (9 Nov 2026: "Executive
+ * Intelligence Report" read "running 53 min on bk_claude_code" while its run sat parked, unclaimed,
+ * on a Mac that was switched off; `tasks.started_at` is stamped a second before the work is parked).
+ *   - `parked` (a backend run exists and no machine has claimed it) is waiting, never running: stale
+ *     only once the wait (from `parked_at`, the newest run's dispatch, else `started_at`) passes
+ *     NEVER_CLAIMED_POLLING_MS counted inside the polling window.
+ *   - otherwise: longer than twice its usual duration, or more than two hours with no recorded
+ *     progress, both measured from `claimed_at` when there is one, else `started_at`.
+ * `last_progress_at` is the newest task event or claim; null = none. Pure.
  */
 export function staleTaskVerdict(task, usualMs, now) {
   const started = Number(task?.started_at);
   if (!Number.isFinite(started)) return { stale: false, why: "not started" };
-  const age = now - started;
+  if (task.parked) {
+    const since = Number(task.parked_at);
+    const from = Number.isFinite(since) && since > 0 ? since : started;
+    const waited = now - from;
+    const polling = pollingHoursMs(from, now);
+    if (polling > NEVER_CLAIMED_POLLING_MS) return { stale: true, why: "never_claimed", waited, polling };
+    return { stale: false, why: "waiting_for_seat", waited, polling };
+  }
+  const claimed = Number(task.claimed_at);
+  const from = Number.isFinite(claimed) && claimed > 0 ? claimed : started;
+  const age = now - from;
   const progress = Number(task.last_progress_at);
-  const quiet = Number.isFinite(progress) && progress > started ? now - progress : age;
+  const quiet = Number.isFinite(progress) && progress > from ? now - progress : age;
   if (usualMs && age > Math.max(2 * usualMs, STALE_FLOOR_MS)) return { stale: true, why: "twice_usual", age, usualMs };
   if (age > STALE_ABSOLUTE_MS && quiet > STALE_ABSOLUTE_MS) return { stale: true, why: "no_progress", age, quiet };
   return { stale: false, why: "fine", age };
@@ -152,11 +198,16 @@ const hm = (ms) => {
 
 /** Kendra's sentence for a stale task, naming the title and the seat. Pure. */
 export function staleTaskText(task, verdict) {
+  const title = String(task.title).slice(0, 120);
+  if (verdict.why === "never_claimed") {
+    const seat = task.parked_on || "a seat";
+    return `"${title}" has been waiting ${hm(verdict.waited)} for ${seat} to pick it up; no machine ever claimed it.`;
+  }
   const seat = task.seat || "no seat recorded";
   const why = verdict.why === "twice_usual"
     ? `more than twice its usual ${hm(verdict.usualMs)}`
     : `with no recorded progress for ${hm(verdict.quiet ?? verdict.age)}`;
-  return `"${String(task.title).slice(0, 120)}" has been running ${hm(verdict.age)} on ${seat}, ${why}.`;
+  return `"${title}" has been running ${hm(verdict.age)} on ${seat}, ${why}.`;
 }
 
 // ─── G1. Owner-bound email that fails ───────────────────────────────────────────────────────

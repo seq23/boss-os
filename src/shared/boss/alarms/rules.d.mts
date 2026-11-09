@@ -22,9 +22,19 @@ export declare const STALE_ABSOLUTE_MS: number;
 export declare const USUAL_MIN_SAMPLES: number;
 export declare const STALE_FLOOR_MS: number;
 export declare function usualDuration(durations: number[]): number | null;
-export interface StaleVerdict { stale: boolean; why: "twice_usual" | "no_progress" | "fine" | "not started"; age?: number; quiet?: number; usualMs?: number }
-export declare function staleTaskVerdict(task: { started_at: number | null; last_progress_at?: number | null }, usualMs: number | null, now: number): StaleVerdict;
-export declare function staleTaskText(task: { title: string; seat?: string | null }, verdict: StaleVerdict): string;
+export declare const POLL_WINDOW: readonly [number, number];
+export declare const NEVER_CLAIMED_POLLING_MS: number;
+export declare function pollingHoursMs(from: number, to: number): number;
+export interface StaleVerdict {
+  stale: boolean;
+  why: "twice_usual" | "no_progress" | "never_claimed" | "waiting_for_seat" | "fine" | "not started";
+  age?: number; quiet?: number; usualMs?: number; waited?: number; polling?: number;
+}
+export declare function staleTaskVerdict(
+  task: { started_at: number | null; claimed_at?: number | null; parked?: boolean; parked_at?: number | null; last_progress_at?: number | null },
+  usualMs: number | null, now: number,
+): StaleVerdict;
+export declare function staleTaskText(task: { title: string; seat?: string | null; parked_on?: string | null }, verdict: StaleVerdict): string;
 
 export declare const MAIL_FAILS_IN_A_ROW: number;
 export declare function errorClass(detail: unknown): string;
