@@ -52,8 +52,8 @@ jobs:
     name: Typecheck, scans, and client build
     runs-on: ubuntu-latest
     # Normal: ~5m50s on main by 8 Nov 2026 (it was ~2m30s; the scans grew). At 6 minutes it was cancelled
-    # on a green run (PR #360, 6m03s), so the hang guard is back to about twice the normal wall time.
-    timeout-minutes: 12
+    # on a green run (PR #360, 6m03s), so the hang guard is the merge gate's ten-minute ceiling (the-merge-gate-is-fast.mjs).
+    timeout-minutes: 10
     permissions:
       contents: read
 
