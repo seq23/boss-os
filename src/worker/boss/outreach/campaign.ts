@@ -86,9 +86,21 @@ export function firstSendWhen(now: number): string {
   return "on the next weekday, from 9 a.m. Central";
 }
 
+/**
+ * A NOTE MONIQUE OWES HER. One waits at a time: if an earlier one has not gone yet (the Mac is off,
+ * a send failed), the new one queues behind it in `spec.pending_notices` and goes after it
+ * (`campaignNoticed`). Nothing is overwritten and nothing is lost.
+ */
 async function owe(env: Env, id: string, notice: Record<string, unknown>, now: number) {
-  await env.DB.prepare(`UPDATE outreach_campaigns SET notice = ?, notice_state = 'due', updated_at = ? WHERE id = ?`)
-    .bind(JSON.stringify({ from: "Monique", ...notice }), now, id).run();
+  const body = JSON.stringify({ from: "Monique", ...notice });
+  const cur = await env.DB.prepare(`SELECT notice_state, spec FROM outreach_campaigns WHERE id = ?`).bind(id).first<{ notice_state: string; spec: string }>();
+  if (cur?.notice_state === "due") {
+    const spec = j(cur.spec);
+    spec.pending_notices = [...(spec.pending_notices ?? []), body];
+    await env.DB.prepare(`UPDATE outreach_campaigns SET spec = ?, updated_at = ? WHERE id = ?`).bind(JSON.stringify(spec), now, id).run();
+    return;
+  }
+  await env.DB.prepare(`UPDATE outreach_campaigns SET notice = ?, notice_state = 'due', updated_at = ? WHERE id = ?`).bind(body, now, id).run();
 }
 
 /**
@@ -217,7 +229,7 @@ export function receiptFor(b: Business, org: string, contacts: PlannedContact[],
       ...held.map((c) => `${c.name} (${c.title}): held, not emailed, until you say so.`),
       ...skipped.map((s) => `${s.email}: skipped, ${s.why}.`),
       `The one-pager they get with email 2: ${pageUrl(row.page_token)}`,
-      `What comes back: a reply on this thread once the addresses are checked (usually within 10 minutes), saying who was queued. The card for emails 3 and 4 is in Decide now; they go only with your OK. Any reply from anyone at ${org} stops every email there and comes to you as a card.`,
+      `What comes back: a reply on this thread once the addresses are checked (within about 10 minutes while your Mac is on), saying who was queued. The card for emails 3 and 4 is in Decide now; they go only with your OK. Any reply from anyone at ${org} stops every email there and comes to you as a card.`,
     ],
   };
 }
@@ -294,7 +306,15 @@ export async function campaignVerified(env: Env, id: string, verdicts: Array<{ e
   return { queued };
 }
 
+/** The note went. The next one waiting behind it, if any, is now due. */
 export async function campaignNoticed(env: Env, id: string): Promise<void> {
+  const cur = await env.DB.prepare(`SELECT spec FROM outreach_campaigns WHERE id = ?`).bind(id).first<{ spec: string }>();
+  const spec = j(cur?.spec);
+  const next = (spec.pending_notices ?? []).shift();
+  if (next) {
+    await env.DB.prepare(`UPDATE outreach_campaigns SET notice = ?, notice_state = 'due', spec = ?, updated_at = ? WHERE id = ?`).bind(next, JSON.stringify(spec), Date.now(), id).run();
+    return;
+  }
   await env.DB.prepare(`UPDATE outreach_campaigns SET notice_state = 'sent' WHERE id = ?`).bind(id).run();
 }
 
@@ -430,7 +450,8 @@ export async function researchFound(env: Env, orgId: string, found: Array<{ name
     ...people.filter((c) => c.source_url).map((c) => `${c.name}'s address was published at ${c.source_url}`),
     ...skippedBefore.map((s) => `${s.org_name} was passed over: ${s.note}.`),
   ];
-  await owe(env, row.id, notice, now);
+  // The note campaignVerified just owed, reworded in place (never owed twice).
+  await env.DB.prepare(`UPDATE outreach_campaigns SET notice = ?, updated_at = ? WHERE id = ?`).bind(JSON.stringify(notice), now, row.id).run();
   return { campaignId: row.id, queued: r.queued };
 }
 

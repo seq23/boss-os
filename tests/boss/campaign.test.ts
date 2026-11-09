@@ -210,9 +210,17 @@ describe("a request typed in from her session gets the same receipt, as Monique'
     expect(receipt.subject).toBe("Acmelearn drip");
     expect(receipt.details.join("\n")).toMatch(/email 1 goes to Dana Fakename .* Central/);
     expect(receipt.details.join("\n")).toMatch(/What comes back/);
-    await env.DB.prepare(`UPDATE outreach_campaigns SET notice_state = 'sent' WHERE id = ?`).bind(c.id).run();
+    // The Mac is off: the addresses are checked before the receipt has gone. The receipt is kept.
     await campaignVerified(env as never, c.id, [{ email: "dana.fakename@acmelearn.example", result: "valid" }, { email: "robin.sample@acmelearn.example", result: "valid" }], MON_10AM_CT);
-    const done = JSON.parse((await row<any>(`SELECT notice FROM outreach_campaigns WHERE id = ?`, c.id)).notice);
+    expect(JSON.parse((await row<any>(`SELECT notice FROM outreach_campaigns WHERE id = ?`, c.id)).notice)).toEqual(receipt);
+    // The receipt goes; the done reply, queued behind it, is due next; then nothing is left.
+    const { campaignNoticed } = await import("../../src/worker/boss/outreach/campaign");
+    await campaignNoticed(env as never, c.id);
+    const after = await row<any>(`SELECT notice, notice_state FROM outreach_campaigns WHERE id = ?`, c.id);
+    expect(after.notice_state).toBe("due");
+    const done = JSON.parse(after.notice);
+    await campaignNoticed(env as never, c.id);
+    expect((await row<any>(`SELECT notice_state FROM outreach_campaigns WHERE id = ?`, c.id)).notice_state).toBe("sent");
     expect(done.subject).toBe("Re: Acmelearn drip");
     expect(done.thread).toEqual(receipt.thread);
   });
