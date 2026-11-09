@@ -129,7 +129,7 @@ describe("her drip-campaign email becomes a campaign, end to end", () => {
     expect(await all(`SELECT 1 FROM outreach_prospects WHERE campaign_id = ?`, c.id)).toHaveLength(0);
     const n = JSON.parse((await row<any>(`SELECT notice FROM outreach_campaigns WHERE id = ?`, c.id)).notice);
     expect(n.happened).toMatch(/did not start/);
-    expect(n.details.join("\n")).toMatch(/Dana Fakename: NeverBounce said catchall/);
+    expect(n.details.join("\n")).toMatch(/Dana Fakename: address check said catchall/);
     expect(n.thread).toHaveLength(1);
   });
 

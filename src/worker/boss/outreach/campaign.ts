@@ -186,7 +186,7 @@ export async function campaignFromMail(env: Env, input: { text: string; subject:
     const order = ((await env.DB.prepare(`SELECT org_name, state FROM outreach_partner_orgs WHERE business_key = ? AND state IN ('active','waiting','researching') ORDER BY position`).bind(b.key).all<{ org_name: string; state: string }>()).results ?? []);
     return {
       reply: `Monique here. Held for ${b.brand} partnerships, in your order: ${sentenceList(r.added)}.${r.already.length ? ` Already on the list: ${sentenceList(r.already)}.` : ""} ` +
-        `Each starts when the one before it ends (a reply, or two weeks after its last email): I'll find the right people's published addresses, check them with NeverBounce, and write to you when each one starts. The order now: ${order.map((o) => o.org_name).join(" → ")}.`,
+        `Each starts when the one before it ends (a reply, or two weeks after its last email): I'll find the right people's published addresses, check each address, and write to you when each one starts. The order now: ${order.map((o) => o.org_name).join(" → ")}.`,
       outcome: "ORGS_HELD", campaignId: null,
     };
   }
@@ -223,7 +223,7 @@ export function receiptFor(b: Business, org: string, contacts: PlannedContact[],
   return {
     happened: `I have your ${b.brand} partnership campaign for ${org}.`,
     details: [
-      `Now: I check ${send.length === 1 ? "the address" : `the ${send.length} addresses`} with NeverBounce. Only a valid one is written to, and nothing is guessed.`,
+      `Now: I check ${send.length === 1 ? "the address" : `the ${send.length} addresses`} first. Only a valid one is written to, and nothing is guessed.`,
       ...(first ? [`Then: email 1 goes to ${first.name} (${first.title || "no title given"}) ${firstSendWhen(now)}, from ${b.sender}, pitched on ${first.angle === "brand" ? "co-marketing to their families" : "a bundle or a link from their tools"}.`] : []),
       ...send.slice(1).map((c, i) => `${c.name} (${c.title || "no title given"}) starts ${(i + 1) * b.partner!.staggerDays} days after that, in a separate thread, pitched on ${c.angle === "brand" ? "co-marketing to their families" : "a bundle or a link from their tools"}.`),
       ...held.map((c) => `${c.name} (${c.title}): held, not emailed, until you say so.`),
@@ -287,14 +287,16 @@ export async function campaignVerified(env: Env, id: string, verdicts: Array<{ e
   }
   const live = spec.contacts.filter((c) => c.prospect_id);
   await env.DB.prepare(`UPDATE outreach_campaigns SET spec = ?, state = ?, ended_reason = ?, ended_at = ?, updated_at = ? WHERE id = ?`)
-    .bind(JSON.stringify(spec), live.length ? "live" : "ended", live.length ? null : "no address passed NeverBounce", live.length ? null : now, now, id).run();
-  const detail = spec.contacts.map((c) => c.role === "held"
+    .bind(JSON.stringify(spec), live.length ? "live" : "ended", live.length ? null : "no address passed the address check", live.length ? null : now, now, id).run();
+  // In send order, then the held, then the skipped (owner, 8 Nov 2026).
+  const ordered = [...spec.contacts.filter((c) => c.role === "send").sort((a, b) => (a.order ?? 0) - (b.order ?? 0)), ...spec.contacts.filter((c) => c.role !== "send")];
+  const detail = ordered.map((c) => c.role === "held"
     ? `${c.name} (${c.title}): held, not emailed.`
-    : c.prospect_id ? `${c.name}: NeverBounce said valid, queued.` : `${c.name}: NeverBounce said ${c.verdict}, so not emailed.`);
+    : c.prospect_id ? `${c.name}: address checked, valid, queued.` : `${c.name}: address check said ${c.verdict}, so not emailed.`);
   const first = live[0];
   const happened = first
     ? `The ${b.brand} campaign for ${row.org_name} is queued: email 1 to ${first.name} goes ${firstSendWhen(now)}, from ${b.sender}.${live.slice(1).map((c, i) => ` ${c.name}'s first email goes ${(i + 1) * b.partner!.staggerDays} days after ${first.name}'s, in a separate thread.`).join("")} Emails 3 and 4 wait for your OK on the card in Decide.`
-    : `The ${b.brand} campaign for ${row.org_name} did not start: no address passed NeverBounce, so nobody was emailed and no address was guessed.`;
+    : `The ${b.brand} campaign for ${row.org_name} did not start: no address passed the address check, so nobody was emailed and no address was guessed.`;
   await owe(env, id, {
     subject: `Re: ${spec.thread_subject ?? `${row.org_name} partnership campaign`}`,
     happened,
@@ -429,7 +431,7 @@ export async function researchFound(env: Env, orgId: string, found: Array<{ name
   }
   const verdicts = (found ?? []).map((f) => ({ email: String(f.email).toLowerCase(), result: String(f.verdict) }));
   if (!people.some((c) => c.role === "send" && verdicts.find((v) => v.email === c.email)?.result === "valid")) {
-    const why = people.length ? "no published address there passed NeverBounce" : "no published address of a partnerships, business development or marketing lead was found on a public page";
+    const why = people.length ? "no published address there passed the address check" : "no published address of a partnerships, business development or marketing lead was found on a public page";
     await env.DB.prepare(`UPDATE outreach_partner_orgs SET state = 'skipped', note = ?, updated_at = ? WHERE id = ?`).bind(why, now, orgId).run();
     // She is told on the next campaign's notice; this one is a line in the log and the org's note.
     await logEvent(env.DB, { level: "warn", scope: "outreach", event: "partner_org_skipped", entityId: orgId, detail: { why } }).catch(() => {});
