@@ -13,7 +13,8 @@
  *   - no number (unreadable, or stuck 3 weeks) opens ONE repair job for the team (fix-first).
  *
  * Runs on her Mac, daily 06:10 Central (launchd com.seq.boss-scorecard, through the vault, because
- * every key lives there). Mondays it judges; other days it only switches back on the workflows of a
+ * every key lives there). Mondays it judges (or the first later day when that Monday was missed:
+ * judgeReason); other days it only switches back on the workflows of a
  * row she restarted with the one-tap link.
  *
  *   npm run scorecard:monday                 the real run (Mondays judge; other days restarts only)
@@ -25,7 +26,7 @@ import { execFileSync } from "node:child_process";
 import { readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
-import { addDays, centralDay, emailSection, isMonday, judge, pauseTargets, shapeProblems } from "../../src/shared/boss/scorecard/scorecard.mjs";
+import { addDays, centralDay, emailSection, judge, judgeReason, mondayOnOrBefore, pauseTargets, shapeProblems } from "../../src/shared/boss/scorecard/scorecard.mjs";
 import { macContext, readMetric } from "./lib/scorecard-readers.mjs";
 import { ORIGIN, bossApi, fixJob } from "./lib/duty-kit.mjs";
 import { writeMorningSection } from "../../src/shared/boss/mail/morning.mjs";
@@ -90,10 +91,12 @@ export async function main(argv = process.argv.slice(2)) {
     state = null;
   }
   const restarts = await applyRestarts(api, state, dry);
-  if (!dry && !isMonday(today)) {
+  const reason = judgeReason(today, state?.week);
+  if (!dry && !reason) {
     console.log(`scorecard: not Monday, nothing judged; ${restarts.length ? restarts.join("; ") : "no restarts waiting"}.`);
     return 0;
   }
+  if (!dry && reason === "missed") console.log(`scorecard: Monday ${mondayOnOrBefore(today)} was missed (the Mac was off); judged now.`);
 
   const ctx = macContext({ now, sites });
   const results = [];
@@ -139,7 +142,7 @@ export async function main(argv = process.argv.slice(2)) {
   catch (e) { console.error(`NAMED STOP [MORNING_SECTION_REFUSED] ${e?.message ?? e}`); return 9; }
 
   const n = (s) => results.filter((r) => r.state === s).length;
-  console.log(`scorecard ${today}: ${results.length} rows — ${n("On track")} on track, ${n("Too early")} too early, ${n("Trying version B")} trying B, ${n("Paused")} paused, ${n("No number")} no number; ${acted.length ? acted.join("; ") : "no switches"}${restarts.length ? `; ${restarts.join("; ")}` : ""}. Next check ${addDays(today, 7)}.`);
+  console.log(`scorecard ${today}: ${results.length} rows — ${n("On track")} on track, ${n("Too early")} too early, ${n("Trying version B")} trying B, ${n("Paused")} paused, ${n("No number")} no number; ${acted.length ? acted.join("; ") : "no switches"}${restarts.length ? `; ${restarts.join("; ")}` : ""}. Next check ${addDays(mondayOnOrBefore(today), 7)}.`);
   if (stop) { console.error(stop); return 2; }
   return 0;
 }

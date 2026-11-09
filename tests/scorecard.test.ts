@@ -12,7 +12,7 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
 import {
-  READER_IDS, STATES, addDays, coverageProblems, emailSection, findStrays, judge, pauseTargets, shapeProblems,
+  READER_IDS, STATES, addDays, coverageProblems, emailSection, findStrays, judge, judgeReason, mondayOnOrBefore, pauseTargets, shapeProblems,
 } from "../src/shared/boss/scorecard/scorecard.mjs";
 import { READERS, d1Sql, spryLabsDomains } from "../scripts/ops/lib/scorecard-readers.mjs";
 import { pauseOne, runStop } from "../scripts/ops/scorecard-monday.mjs";
@@ -292,5 +292,28 @@ describe("Kendra's stray sweep", () => {
     expect(strays.map((s) => s.key)).toEqual(["launchd:com.seq.stray-job", `cron:${wf.trigger.repo}:.github/workflows/new-loop.yml`]);
     const sc = clone(SC); delete sc.exempt[Object.keys(sc.exempt)[0]!];
     expect(findStrays({ schedule: SCHEDULE, scorecard: sc }).length).toBe(1);
+  });
+});
+
+describe("a missed Monday is judged on the next morning (9 Nov 2026: the Mac was off at 06:10)", () => {
+  it("mondayOnOrBefore gives the week's Monday, across a month boundary", () => {
+    expect(mondayOnOrBefore("2026-11-09")).toBe("2026-11-09");
+    expect(mondayOnOrBefore("2026-11-10")).toBe("2026-11-09");
+    expect(mondayOnOrBefore("2026-11-15")).toBe("2026-11-09");
+    expect(mondayOnOrBefore("2026-12-02")).toBe("2026-11-30");
+  });
+  it("judges on Monday, and on a later day only when its week was never recorded", () => {
+    expect(judgeReason("2026-11-09", "2026-11-09")).toBe("monday");
+    expect(judgeReason("2026-11-09", "2026-11-02")).toBe("monday");
+    // this week recorded (on Monday, or by an earlier catch-up day): no second judging
+    expect(judgeReason("2026-11-10", "2026-11-09")).toBeNull();
+    expect(judgeReason("2026-11-12", "2026-11-10")).toBeNull();
+    // Monday missed: the next day judges, whatever day it is
+    expect(judgeReason("2026-11-10", "2026-11-02")).toBe("missed");
+    expect(judgeReason("2026-11-15", "2026-11-02")).toBe("missed");
+    expect(judgeReason("2026-12-01", "2026-11-23")).toBe("missed");
+    // never recorded at all
+    expect(judgeReason("2026-11-11", null)).toBe("missed");
+    expect(judgeReason("2026-11-11", undefined)).toBe("missed");
   });
 });

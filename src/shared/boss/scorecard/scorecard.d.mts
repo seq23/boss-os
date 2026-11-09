@@ -9,6 +9,8 @@ export function addDays(day: string, n: number): string;
 export function daysBetween(a: string, b: string): number;
 export function mondayOnOrAfter(day: string): string;
 export function isMonday(day: string): boolean;
+export function mondayOnOrBefore(day: string): string;
+export function judgeReason(today: string, lastWeek: string | null | undefined): "monday" | "missed" | null;
 export function shortDate(day: string | null | undefined): string;
 export function floorDate(by: number | string, start: string | null): string | null;
 export function sqlOf(m: any): string[];

@@ -43,6 +43,21 @@ export function mondayOnOrAfter(day) {
   return addDays(day, (8 - dow) % 7);
 }
 export const isMonday = (day) => new Date(`${day}T12:00:00Z`).getUTCDay() === 1;
+/** The Monday on or before `day`: the week a day belongs to. */
+export function mondayOnOrBefore(day) {
+  const dow = new Date(`${day}T12:00:00Z`).getUTCDay();
+  return addDays(day, -((dow + 6) % 7));
+}
+/**
+ * Should today's run judge? "monday" on a Monday; "missed" on a later day whose week was never
+ * recorded (9 Nov 2026, repair rc_m708yxv6wxmnj13b: the Mac was off at 06:10 on a Monday, and the
+ * old Monday-only gate left the whole week unmeasured until the next Monday); otherwise null. Pure.
+ */
+export function judgeReason(today, lastWeek) {
+  if (isMonday(today)) return "monday";
+  if (!lastWeek || String(lastWeek) < mondayOnOrBefore(today)) return "missed";
+  return null;
+}
 /** "29 Dec" — how dates read in her email and on the page. */
 export function shortDate(day) {
   if (!day) return "";
