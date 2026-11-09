@@ -14,7 +14,7 @@ import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
 import { MORNING_SECTION_SPECS, catchUpPlan } from "../src/shared/boss/mail/morningSections.mjs";
 import { sends } from "../scripts/ops/lib/email-map.mjs";
-import { attemptedNames, catchUpOutcome, catchUpWindow, weekdayIn, expectedSections, windowWords } from "../scripts/ops/morning-catchup.mjs";
+import { attemptedNames, catchUpBudget, catchUpOutcome, catchUpWindow, weekdayIn, expectedSections, windowWords } from "../scripts/ops/morning-catchup.mjs";
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const PKG = JSON.parse(readFileSync(path.join(ROOT, "package.json"), "utf8"));
@@ -163,5 +163,59 @@ describe("the catch-up runs when the Mac comes up", () => {
     expect(catchUpWindow(Date.parse("2026-11-09T12:45:00Z"))).toBe("after_email");
     expect(windowWords("after_email")).toMatch(/tomorrow/);
     expect(windowWords("before_email")).not.toMatch(/tomorrow/);
+  });
+});
+
+/**
+ * 9 Nov 2026 (repair rc_m708yx6am3k3arpe): the Mac was off at 06:00, so the Monday sites:audit never ran
+ * and "grid_repos" stayed missing. The boot catch-up (07:36) still refused it: "runs longer than the
+ * window before the email" — a deadline already past. A long producer now runs after the email only.
+ */
+describe("a long producer is caught up after the email, never before it", () => {
+  const GRID = [{ name: "grid_repos", label: "the grid repos' search check" }];
+  const bootAt = Date.parse("2026-11-09T13:36:00Z"); // Monday 07:36 Central, the real boot
+
+  it("grid_repos carries the same command its Monday launchd job runs, marked long", () => {
+    const spec = MORNING_SECTION_SPECS.find((s) => s.name === "grid_repos")!;
+    expect(spec.catchUp).toBe("sites:audit -- --morning");
+    expect(spec.catchUpLongWhy!.length).toBeGreaterThan(10);
+    const installer = readFileSync(path.join(ROOT, "scripts/ops/install-agent-launchd.sh"), "utf8");
+    expect(installer).toContain(`npm run --silent ${spec.catchUp}</string>`);
+  });
+
+  it("only a section with a catchUp may be marked long", () => {
+    for (const s of MORNING_SECTION_SPECS.filter((x) => x.catchUpLongWhy)) expect(s.catchUp, s.name).toBeTruthy();
+  });
+
+  it("before the email: named with its reason, no command (the email is never raced)", () => {
+    const plan = catchUpPlan(GRID);
+    expect(plan.commands).toEqual([]);
+    expect(plan.cannotCatchUp).toEqual([{ ...GRID[0], why: expect.stringContaining("runs long") }]);
+    expect(catchUpPlan(GRID, { long: false })).toEqual(plan);
+  });
+
+  it("after the email: it runs, alongside the short ones, in registry order", () => {
+    expect(catchUpPlan(GRID, { long: true })).toEqual({ commands: ["sites:audit -- --morning"], cannotCatchUp: [] });
+    expect(catchUpPlan([...GRID, { name: "deals", label: "New deals" }], { long: true }).commands)
+      .toEqual(["capital:grid -- --keep-seen", "sites:audit -- --morning"]);
+  });
+
+  it("the window decides: 06:32 → short budget, not long; the 07:36 boot → long, with room for the audit", () => {
+    const early = catchUpBudget(catchUpWindow(Date.parse("2026-11-09T12:32:00Z")));
+    expect(early).toEqual({ long: false, budgetMs: 8 * 60_000 });
+    const boot = catchUpBudget(catchUpWindow(bootAt));
+    expect(boot.long).toBe(true);
+    expect(boot.budgetMs).toBeGreaterThan(7 * 60_000 * 2); // the 2 Nov audit took 7 minutes
+    expect(boot.budgetMs).toBeLessThanOrEqual(60 * 60_000); // a boot run never hangs
+    expect(catchUpPlan(GRID, { long: boot.long }).commands).toEqual(["sites:audit -- --morning"]);
+  });
+
+  it("an unknown window takes the cautious budget", () => {
+    expect(catchUpBudget("whatever")).toEqual({ long: false, budgetMs: 8 * 60_000 });
+  });
+
+  it("a long run still names its stop when the section did not come back", () => {
+    const plan = catchUpPlan(GRID, { long: true });
+    expect(catchUpOutcome({ missingBefore: GRID, missingAfter: GRID, plan })).toMatchObject({ stop: "MORNING_CATCHUP_STILL_MISSING", names: ["grid_repos"] });
   });
 });

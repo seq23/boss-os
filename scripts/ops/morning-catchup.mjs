@@ -29,7 +29,15 @@ import { readMorningSections, freshSections } from "../../src/shared/boss/mail/m
 import { MORNING_SECTION_SPECS, sectionsNotReported, catchUpPlan } from "../../src/shared/boss/mail/morningSections.mjs";
 
 const TZ = "America/Chicago";
-const CATCHUP_TIMEOUT_MS = 8 * 60_000;
+/** Before the email: eight minutes, so the email is never raced. After it there is no deadline, so a
+ * long producer (catchUpLongWhy, e.g. the Monday sites:audit: 7 minutes for 27 sites on 2 Nov) runs
+ * too, within 45 minutes so a boot run never hangs (repair rc_m708yx6am3k3arpe, 9 Nov 2026). */
+const BUDGET_MS = Object.freeze({ before_email: 8 * 60_000, after_email: 45 * 60_000 });
+
+/** How long this run may spend, and whether long producers run. Pure. */
+export function catchUpBudget(window) {
+  return { long: window === "after_email", budgetMs: BUDGET_MS[window] ?? BUDGET_MS.before_email };
+}
 /** Simone's morning email, minutes after midnight Central (job-your-day.yml, 06:40). */
 export const EMAIL_MINUTE_CENTRAL = 6 * 60 + 40;
 
@@ -105,7 +113,9 @@ async function main() {
   const now = Date.now();
   const weekday = weekdayIn(TZ, now);
   const expectedCount = expectedSections(weekday);
-  const when = windowWords(catchUpWindow(now));
+  const window = catchUpWindow(now);
+  const when = windowWords(window);
+  const { long, budgetMs } = catchUpBudget(window);
 
   const api = await bossApi();
   const before = await readSections(api, now);
@@ -117,8 +127,8 @@ async function main() {
     return;
   }
 
-  const plan = catchUpPlan(missingBefore);
-  const deadline = Date.now() + CATCHUP_TIMEOUT_MS;
+  const plan = catchUpPlan(missingBefore, { long });
+  const deadline = Date.now() + budgetMs;
   for (const command of plan.commands) {
     const remaining = deadline - Date.now();
     if (remaining <= 0) break;

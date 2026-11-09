@@ -16,6 +16,11 @@
  * that rewrite this section safely before the 06:32 Central catch-up's 06:40 deadline — only a
  * producer that sends nothing (proved against SENDING_PATTERNS by tests/morningCatchup.test.ts).
  * `catchUpWhy` is the plain reason it has none. Every expected section carries exactly one of the two.
+ *
+ * `catchUpLongWhy` (repair rc_m708yx6am3k3arpe, 9 Nov 2026) marks a `catchUp` too long for the eight
+ * minutes before the email, and says why: it is skipped before 06:40 Central and run after it, when
+ * there is no deadline left (the Mac was off at 06:00 on 9 Nov, so the Monday audit never ran and
+ * grid_repos stayed missing all day — the catch-up refused it for a deadline already past).
  */
 const DAILY = Object.freeze(["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"]);
 export const MORNING_SECTION_SPECS = Object.freeze([
@@ -43,7 +48,8 @@ export const MORNING_SECTION_SPECS = Object.freeze([
   // Mondays 06:00: the weekly Search Readiness check of the grid repo sites (scripts/ops/search-readiness-audit.mjs).
   {
     name: "grid_repos", label: "the grid repos' search check", expect: Object.freeze(["Monday"]),
-    catchUpWhy: "the weekly Search Readiness audit (sites:audit) runs long — longer than the window before the email",
+    catchUp: "sites:audit -- --morning",
+    catchUpLongWhy: "the weekly Search Readiness audit (sites:audit) runs long — longer than the window before the email; it is caught up after the email instead",
   },
   // Camille's office outreach: a campaign that ends, so never expected.
   { name: "pnp_outreach", label: "Office outreach", expect: null },
@@ -95,9 +101,10 @@ export function notReportedLine(missing) {
  * THE CATCH-UP PLAN (repair rc_m6gtk44dhfjq6rvj, 3 Nov 2026): the distinct `catchUp` commands the
  * sections in `missing` need, in registry order (so two sections sharing one producer — deals and
  * monique_found both run `capital:grid`— run it once), plus every section with none, named with why.
- * Pure.
+ * `long` (after the email only): a `catchUpLongWhy` section runs too; without it, it is named with
+ * that reason. The default is the cautious before-email plan. Pure.
  */
-export function catchUpPlan(missing) {
+export function catchUpPlan(missing, { long = false } = {}) {
   const commands = [];
   const cannotCatchUp = [];
   const ordered = [...(missing ?? [])].sort((a, b) => {
@@ -109,7 +116,8 @@ export function catchUpPlan(missing) {
   });
   for (const m of ordered) {
     const spec = MORNING_SECTION_SPECS.find((s) => s.name === m.name);
-    if (spec?.catchUp) { if (!commands.includes(spec.catchUp)) commands.push(spec.catchUp); }
+    if (spec?.catchUp && (long || !spec.catchUpLongWhy)) { if (!commands.includes(spec.catchUp)) commands.push(spec.catchUp); }
+    else if (spec?.catchUp) cannotCatchUp.push({ name: m.name, label: m.label, why: spec.catchUpLongWhy });
     else cannotCatchUp.push({ name: m.name, label: m.label, why: spec?.catchUpWhy ?? "no catch-up is defined for this section" });
   }
   return { commands, cannotCatchUp };
