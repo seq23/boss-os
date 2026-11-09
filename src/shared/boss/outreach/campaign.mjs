@@ -18,20 +18,110 @@
  *     pitched on a wider alliance;
  *   · several people at one company are written to one at a time, STAGGER_DAYS apart, each in their
  *     own thread, never cc'd; any reply from anyone there stops every sequence at that company;
- *   · NeverBounce "valid" before any first send (the Mac checks; the Worker queues only "valid"), except
- *     that a person SHE named whose address comes back "unknown" (a mail filter such as Mimecast that
- *     will not say) is written to anyway (owner, 9 Nov 2026: "Send to the 3 anyway"); never "invalid",
- *     never a researched address (`sendableVerdict`).
+ *   · research first, then guess (owner, 9 Nov 2026): each person's published address wins, then the
+ *     one she gave, then the company's own address shapes, at most four addresses per person
+ *     (`addressesToTry`); NeverBounce before any first send ("invalid" moves on unsent, `sendableVerdict`);
+ *     a hard bounce moves the person to their next address, restarting at email 1 (`advanceContact`).
  * Plain ESM with a hand-written .d.mts, like its neighbours. Pinned by tests/boss/campaign.test.ts.
  */
 
 /**
- * May this address be written to? "valid" always. "unknown" only for a person she named herself in her
- * own request: the address check could not get an answer (a filtering gateway hides it), and she chose
- * to send anyway (9 Nov 2026). Never "invalid", "disposable" or "catchall", and never a researched one. Pure.
+ * May this address be written to? NeverBounce's word on it (owner, 9 Nov 2026: "valid, unknown and
+ * catchall may send"): an unknown is a mail filter such as Mimecast that will not say, a catchall a
+ * domain that takes everything. "invalid" or "disposable" never: the next address is tried instead,
+ * with nothing sent. A hard bounce afterwards moves the person on too (`advanceContact`). Pure.
  */
-export function sendableVerdict(verdict, source) {
-  return verdict === "valid" || (verdict === "unknown" && source === "owner_email");
+export function sendableVerdict(verdict) {
+  return verdict === "valid" || verdict === "unknown" || verdict === "catchall";
+}
+
+/**
+ * KEEP GUESSING (owner, 9 Nov 2026: "if those emails bounce it should do some research for the real
+ * email or it can do research first and if find nothing just guess and it can keep guessing").
+ * At most this many addresses are ever tried for one person; then "no working address found".
+ */
+export const MAX_ADDRESSES_PER_PERSON = 4;
+
+/** The usual company address shapes, most likely first (when no pattern is seen published there). */
+export const GUESS_PATTERNS = ["first.last", "flast", "first", "firstlast", "first_last", "firstl", "last.first"];
+
+/** "José O'Neil-Ray" → { first: "jose", last: "oneilray" }: letters only, accents dropped. Pure. */
+export function nameParts(name) {
+  const words = String(name ?? "").normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase()
+    .split(/\s+/).map((w) => w.replace(/[^a-z]/g, "")).filter(Boolean);
+  return { first: words[0] ?? "", last: words.length > 1 ? words[words.length - 1] : "" };
+}
+
+/** One pattern's local part for a person, or "" when the name cannot make it. Pure. */
+export function localFor(pattern, first, last) {
+  if (!first) return "";
+  if (pattern === "first") return first;
+  if (!last) return "";
+  return ({ "first.last": `${first}.${last}`, flast: `${first[0]}${last}`, firstlast: `${first}${last}`, first_last: `${first}_${last}`,
+    firstl: `${first}${last[0]}`, "last.first": `${last}.${first}` })[pattern] ?? "";
+}
+
+/** Which of the usual shapes a published address follows for its person's name, or null. Pure. */
+export function patternOf(email, name) {
+  const local = String(email ?? "").toLowerCase().split("@")[0] ?? "";
+  const { first, last } = nameParts(name);
+  // The longer shapes first, so "first" never claims an address that is really "first.last".
+  return [...GUESS_PATTERNS].sort((a, b) => localFor(b, first, last).length - localFor(a, first, last).length)
+    .find((p) => { const l = localFor(p, first, last); return l && l === local; }) ?? null;
+}
+
+const domainOf = (e) => String(e ?? "").toLowerCase().split("@")[1] ?? "";
+
+/**
+ * THE ADDRESSES TO TRY FOR ONE PERSON, IN ORDER (owner, 9 Nov 2026). An address research found
+ * published (with the page it was on) wins; then the one she gave; then guesses on the company's own
+ * domain, starting with any shape seen published there (`seen`: other people's published addresses
+ * at that domain, `{ name, email }`), then the usual shapes. Never an address already tried, never a
+ * purchase-order or billing inbox, never more than MAX_ADDRESSES_PER_PERSON in all. Pure.
+ */
+export function addressesToTry({ name, given = null, published = null, domain = null, seen = [], tried = [] }) {
+  const out = [];
+  const used = new Set((tried ?? []).map((t) => String(t?.email ?? t).toLowerCase()));
+  const room = MAX_ADDRESSES_PER_PERSON - used.size;
+  const add = (email, how, source_url) => {
+    const e = String(email ?? "").trim().toLowerCase();
+    if (!/^[^@\s]+@[a-z0-9.-]+\.[a-z]{2,}$/.test(e) || used.has(e) || neverPitchReason(e)) return;
+    used.add(e);
+    out.push({ email: e, how, ...(source_url ? { source_url } : {}) });
+  };
+  if (published?.email) add(published.email, "published", published.source_url);
+  if (given) add(given, "her email");
+  const d = String(domain ?? "").toLowerCase().replace(/^www\./, "");
+  const { first, last } = nameParts(name);
+  if (d && first) {
+    const shapes = [...new Set((seen ?? []).filter((s) => domainOf(s?.email) === d).map((s) => patternOf(s.email, s.name)).filter(Boolean))];
+    for (const p of [...shapes, ...GUESS_PATTERNS.filter((x) => !shapes.includes(x))]) {
+      const l = localFor(p, first, last);
+      if (l) add(`${l}@${d}`, "guess");
+    }
+  }
+  return out.slice(0, Math.max(0, room));
+}
+
+/**
+ * THE PERSON'S CURRENT ADDRESS FAILED ("invalid" from the check, a hard bounce, or the do-not-contact
+ * list): it joins `tried`, and the next address in line becomes current, with no verdict yet and no
+ * sequence (a new one starts at email 1). Not researched yet: research comes first. Nothing left, or
+ * the cap reached: `no_address`. Returns the new contact; the input is not changed. Pure.
+ */
+export function advanceContact(c, outcome) {
+  const tried = [...(c.tried ?? []), { email: c.email, how: c.how ?? "her email", outcome }];
+  const rest = (c.queue ?? []).filter((q) => !tried.some((t) => t.email === q.email));
+  const next = tried.length < MAX_ADDRESSES_PER_PERSON ? rest[0] : undefined;
+  const out = { ...c, tried, queue: next ? rest.slice(1) : [], verdict: undefined, prospect_id: undefined };
+  if (next) return { ...out, email: next.email, how: next.how, source_url: next.source_url };
+  if (!c.researched_at && tried.length < MAX_ADDRESSES_PER_PERSON) return out; // research builds the line
+  return { ...out, no_address: true };
+}
+
+/** A person whose address check or research is still to come (not live, not out of addresses). Pure. */
+export function contactPending(c) {
+  return c?.role === "send" && !c.prospect_id && !c.no_address;
 }
 
 /** Days between the first email to one person at a company and the first email to the next. */
@@ -214,13 +304,17 @@ export function holdOrgsIn(text) {
   return orgs.length ? { orgs, after: after ? after[1].trim() : null } : null;
 }
 
-/** A published address's person, read from research: role from the title, angle from the title. Pure. */
+/**
+ * A person research found: name and title from a public page, with their published address when one
+ * was found (owner, 9 Nov 2026: with none, their address is guessed). Role and angle from the title.
+ * Null for no real name, or an address that is a purchase-order or billing inbox. Pure.
+ */
 export function researchedContact(row) {
   const name = String(row?.name ?? "").trim();
   const email = String(row?.email ?? "").trim().toLowerCase();
   const title = String(row?.title ?? "").trim();
-  if (!/^[A-Z][\p{L}'’.-]+(?:\s+[A-Z][\p{L}'’.-]+){1,3}$/u.test(name) || !/^[^@\s]+@[^@\s]+\.[a-z]{2,}$/i.test(email)) return null;
-  if (neverPitchReason(email)) return null;
+  if (!/^[A-Z][\p{L}'’.-]+(?:\s+[A-Z][\p{L}'’.-]+){1,3}$/u.test(name)) return null;
+  if (email && (!/^[^@\s]+@[^@\s]+\.[a-z]{2,}$/i.test(email) || neverPitchReason(email))) return null;
   return { name, first: name.split(/\s+/)[0], title, email, note: "", angle: isTopExec(title) ? "alliance" : angleFor({ title }), role: "send" };
 }
 

@@ -234,7 +234,16 @@ async function main() {
   };
   await sendCampaignNotices(work.campaign_notices);
 
-  // PARTNER CAMPAIGNS (outreach/campaign.ts): NeverBounce before any first email; only "valid" is queued.
+  // PARTNER CAMPAIGNS (outreach/campaign.ts). Research first (owner, 9 Nov 2026): each person's published
+  // address on public pages, one campaign a tick, through the research seats' ladder (t2r-groups.mjs).
+  for (const s of work.campaign_stops ?? []) console.error(s);
+  for (const r of (work.campaign_research ?? []).slice(0, 1)) {
+    const { personResearch } = await import("./t2r-groups.mjs");
+    const found = await personResearch(r).catch((e) => ({ failed: String(e?.message ?? e).slice(0, 300) }));
+    if (found.failed) { console.error(`NAMED STOP [PERSON_RESEARCH_FAILED] ${r.id}: ${found.failed}; asked again in an hour.`); failures.push(r.id); }
+    await api.post(`/outreach/campaigns/${r.id}/research`, found); did++;
+  }
+  // Then NeverBounce before any first email: "invalid" moves the person to their next address, unsent.
   for (const c of work.campaigns ?? []) {
     if (!c.emails?.length) continue;
     const { verdicts } = await neverBounceCheck(c.emails, { cacheFile: path.join(os.homedir(), ".boss-os", "campaigns", "neverbounce-cache.json") });

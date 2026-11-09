@@ -8,7 +8,7 @@ import { describe, expect, it } from "vitest";
 import * as R from "../src/shared/boss/t2rGroups/rules.mjs";
 import { ACCESS_CODE_SHAPE, normaliseCode } from "../src/shared/boss/commands/parse.mjs";
 import { INSTALLED_LOCAL_JOBS } from "../src/shared/boss/duties/lane.mjs";
-import { researchPrompt, runGroups, RESEARCH_BELOW } from "../scripts/ops/t2r-groups.mjs";
+import { personResearch, researchPrompt, runGroups, RESEARCH_BELOW } from "../scripts/ops/t2r-groups.mjs";
 import { t2rGroupsSectionFor } from "../scripts/ops/your-day.mjs";
 import { BUSINESSES, businessByKey } from "../src/worker/boss/outreach/catalog";
 
@@ -180,5 +180,19 @@ describe("Monday's one line in Simone's email", () => {
     expect(s.items[0].text).toBe("Time-2-Read groups: 4 emailed, 1 replied, 1 code in use");
     expect(t2rGroupsSectionFor({ t2rGroups: { line: "x" } }, TUESDAY)).toBeNull();
     expect(t2rGroupsSectionFor({}, MONDAY)!.items[0].text).toMatch(/did not load/);
+  });
+});
+
+describe("a partner campaign's people are researched first (owner, 9 Nov 2026)", () => {
+  it("keeps an address only when its cited page shows it; a person with none keeps their name, for a guess", async () => {
+    const onPage = async (p: { email: string; source_url: string }) => p.source_url === "https://acme.example/press" && p.email === "dana.f@acme.example";
+    const discover = async () => ({ domain: "acme.example", people: [
+      { name: "Dana Fakename", email: "dana.f@acme.example", source_url: "https://acme.example/press" },
+      { name: "Robin Sample", email: "robin@acme.example", source_url: "https://other.example/made-up" },
+    ], seen: [{ name: "Kim Press", email: "kpress@acme.example", source_url: "https://acme.example/news" }] });
+    const r = await personResearch({ id: "cmp_x", org: "Acme", domain: null, brand: "Time2Read", people: [{ name: "Dana Fakename", title: "" }, { name: "Robin Sample", title: "" }] }, { discover, onPage });
+    expect(r.people).toEqual([{ name: "Dana Fakename", title: "", email: "dana.f@acme.example", source_url: "https://acme.example/press" }, { name: "Robin Sample", title: "" }]);
+    expect(r.seen).toEqual([]);
+    expect(r.domain).toBe("acme.example");
   });
 });

@@ -35,12 +35,12 @@ import { composeEmail, signatureFor } from "./compose";
 import { mailAuthRefusal } from "./mailauth";
 import { GmailSession, addressOf } from "./gmail";
 import { crawlCandidates, randomToken, readDirectories, readNextSlice } from "./lists";
-import { isSuppressed, suppress } from "./suppression";
+import { isSuppressed, normaliseEmail, suppress } from "./suppression";
 import { fixBounces, recordBounce, recordRestart } from "./bounceFix";
 import { ensurePartner, runMonthlyPayouts } from "./referrals";
 import { SEAT_OPEN, isSeatHolder, pitchFor, readSeat, type Pitch, type Seat } from "./seat";
 import { feedScoreboard, groupSendGate, queueReady, summary as groupSummary } from "./groups";
-import { advancePartnerOrgs, pageUrl, refreshBonusProbe, retryHeldCampaigns, staggerHold, stopCompany } from "./campaign";
+import { advancePartnerOrgs, campaignBounced, pageUrl, refreshBonusProbe, retryHeldCampaigns, staggerHold, stopCompany } from "./campaign";
 import { GROUPS_KEY, groupSizeIn, suggestedPrice, wantsPrice } from "../../../shared/boss/t2rGroups/rules.mjs";
 import { recipientLines, replyAllRecipients, replyNeed } from "../../../shared/boss/mail/replyNeed.mjs";
 
@@ -630,7 +630,7 @@ async function sendForBusiness(
 export async function processReplies(env: Env, mailbox: GmailSession, now: number): Promise<number> {
   const db = env.DB;
   const threads = await db.prepare(
-    `SELECT id, business_key, email, thread_id, state FROM outreach_prospects WHERE thread_id IS NOT NULL AND updated_at >= ?`,
+    `SELECT id, business_key, email, thread_id, state, campaign_id FROM outreach_prospects WHERE thread_id IS NOT NULL AND updated_at >= ?`,
   ).bind(now - 60 * DAY_MS).all<any>();
   const byThread = new Map((threads.results ?? []).map((p) => [p.thread_id, p]));
   const candidates = [
@@ -652,13 +652,15 @@ export async function processReplies(env: Env, mailbox: GmailSession, now: numbe
         prospect = prospect ?? (await db.prepare(`SELECT * FROM outreach_prospects WHERE email = ? ORDER BY updated_at DESC LIMIT 1`).bind(failed).first<any>());
         subject = failed;
         await suppress(db, failed, "hard bounce", "bounce", now);
-        await recordBounce(db, prospect, failed, now);
         if (prospect) {
           await db.prepare(`UPDATE outreach_prospects SET state = 'bounced', next_due_at = NULL, updated_at = ? WHERE id = ?`).bind(now, prospect.id).run();
           await db.prepare(
             `UPDATE outreach_sends SET status = 'bounced' WHERE id = (SELECT id FROM outreach_sends WHERE prospect_id = ? AND status = 'sent' ORDER BY sent_at DESC LIMIT 1)`,
           ).bind(prospect.id).run();
         }
+        // A partner campaign's person moves to their next address (campaign.ts); the bounce agent never
+        // adds a second address for them. Everyone else: the bounce agent looks for a replacement.
+        if (!(prospect && normaliseEmail(failed) === normaliseEmail(prospect.email) && await campaignBounced(env, prospect, now))) await recordBounce(db, prospect, failed, now);
       }
     } else if (prospect) {
       await act(env, cls, prospect, from, msg, now);
