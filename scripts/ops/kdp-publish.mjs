@@ -434,8 +434,8 @@ async function main() {
           "redirecting to a sign-in that demands a fresh authentication rather than a stored one. " +
           "Reading the shelf and changing a book are two different permissions and only the first was ever saved.",
         action:
-          "Run: cd ~/GitHub/boss-os && npm run kdp:publish -- --headed. A window opens, you sign in once, " +
-          "and the same run goes straight on to upload the covers and publish. Nothing types your password.",
+          "Run: cd ~/GitHub/boss-os && npm run kdp:signin. A window opens, you sign in once, " +
+          "and the next scheduled run uploads the covers and publishes. Nothing types your password.",
       };
     } else {
       // The bookshelf is read once and every pairing is checked against it before anything uploads.

@@ -212,8 +212,8 @@ async function main() {
           "KDP_REAUTH_REQUIRED",
           "the bookshelf opens and Amazon still refuses every title's setup pages, asking for a fresh sign-in " +
             "rather than accepting the stored one. Simone can READ the shelf and cannot CHANGE a book, which is " +
-            "the state that looked healthy for two days. One act fixes it: `npm run kdp:publish -- --headed`, " +
-            "sign in once in the window that opens, and the same run goes on to upload the covers and publish.",
+            "the state that looked healthy for two days. One act fixes it: `npm run kdp:signin`, " +
+            "sign in once in the window that opens, and the next scheduled run publishes.",
           7,
         );
         return;
