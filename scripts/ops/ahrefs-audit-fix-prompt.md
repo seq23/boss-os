@@ -207,6 +207,8 @@ with terms that name the defect: the broken URL's path, `email-protection`, `orp
 `insights`, `atlas`, the image file name, the domain. `IN_FLIGHT pr …` or `IN_FLIGHT branch …` →
 `disposition: "in_flight"`, headline starting `IN_FLIGHT:`, `because` naming the PR or branch, and
 change nothing for that defect. Fix the rest of the site's defects normally.
+`RESUME_OWN pr …` is NOT in flight: it is your own lane's unfinished `danielle/site-audit-*` PR.
+Finish it on its own branch as NEVER LOSE FINISHED WORK says, and record it as `fixed_pr`.
 
 ---
 
@@ -241,7 +243,8 @@ You have a turn limit, and a pass that reaches it ends mid-sentence. On 25 Oct 2
 files changed and nothing committed. So:
 
 - **Before you start a repo, look for a salvaged PR:** `gh pr list --repo <owner>/<repo> --state open
-  --search "Salvaged: in:title"`. If one exists, an earlier pass stopped there. Cut your worktree as
+  --json url,headRefName --jq '.[] | select(.headRefName | startswith("danielle/site-audit-"))'` (a
+  "Salvaged:" draft, or any other PR of your own lane). If one exists, an earlier pass stopped there. Cut your worktree as
   usual, then `git fetch origin <its branch> && git reset --hard origin/<its branch>` inside `$WT`,
   review its diff, keep only correct at-source fixes, finish what is half done, and push to THAT
   branch. Mark it ready (`gh pr ready <pr>`), retitle it, record it as your `fixed_pr`, and close

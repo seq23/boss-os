@@ -112,7 +112,10 @@ describe("salvage is wired in", () => {
   it("the prompt tells every pass to checkpoint and to continue a salvaged PR", () => {
     const prompt = readFileSync("scripts/ops/ahrefs-audit-fix-prompt.md", "utf8");
     expect(prompt).toMatch(/### NEVER LOSE FINISHED WORK/);
-    expect(prompt).toMatch(/Salvaged: in:title/);
+    // 9 Nov 2026: every open PR of our own lane, salvaged or a draft left at a turn limit, is found
+    // by branch, and the runner hands them to the worker before any new brief.
+    expect(prompt).toMatch(/startswith\("danielle\/site-audit-"\)/);
+    expect(sh).toMatch(/site-audit-lib\.mjs" own-open "\$SR_SCOPE_REPO"/);
     expect(prompt).toMatch(/Commit and push after each finished group of briefs/);
   });
 });

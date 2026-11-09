@@ -1194,6 +1194,7 @@
   {
    "domain": "horselegalguide.com",
    "client_approval": "owner, 3 Nov 2026: \"horse owners want to approve everything that goes live - so we can use the engine but it needs to fill the queue still and be approved by them\". Repairs are drafted (encouraged: a velocity site) and go live only once the Horse owners approve them in their approval queue; new pages and edits to live pages alike.",
+   "client_approval_queue_files": ["data/site_changes/queue.json"],
    "repo": "horse-legal-guide-velocity",
    "category": "client",
    "group": "friends",

@@ -200,6 +200,30 @@ Narrower still: work ONLY the briefs whose \`id\` is one of: $SR_SCOPE_BRIEFS. T
 briefs go to the next pass. Open the PR and get it green before you finish, so nothing is lost."
   fi
   say "scoped pass: Search Readiness queue, repo $SR_SCOPE_REPO"
+  # OUR OWN OPEN PRs GO FIRST (9 Nov 2026). A draft left at a turn limit, or a green PR main has moved
+  # past, used to be recorded in_flight by every later pass and skipped: the draft waited on the next
+  # pass and the next pass waited on the draft (p-n-p #179, LGG #161/#166, LGCV #272, 4-6 days). The
+  # runner lists them deterministically and hands them to the worker ahead of the new briefs.
+  OWN_OPEN="$(node "$REPO/scripts/ops/site-audit-lib.mjs" own-open "$SR_SCOPE_REPO" 2>>"$RUN_LOG")" \
+    || say "NOTE: could not list $SR_SCOPE_REPO's own open PRs ($OWN_OPEN); the pass runs on its briefs alone."
+  if printf '%s\n' "$OWN_OPEN" | grep -q '^OWN_OPEN '; then
+    say "own open PRs handed to the worker first: $(printf '%s\n' "$OWN_OPEN" | grep -c '^OWN_OPEN ')"
+    PROMPT_TEXT="## FIRST: FINISH YOUR OWN OPEN PULL REQUESTS (before any new brief)
+
+An earlier pass of yours left these open in $SR_SCOPE_REPO:
+$(printf '%s\n' "$OWN_OPEN" | grep '^OWN_OPEN ' | sed 's/^OWN_OPEN /- /')
+
+For EACH, before anything else: cut your worktree as usual, then \`git fetch origin <its branch> &&
+git reset --hard origin/<its branch>\` inside \$WT, merge origin/main BY HAND (resolve every conflict
+yourself; never a union script), review the diff, keep only correct at-source fixes, finish what is
+half done, run the repo's validators until green, push to THAT branch, \`gh pr ready <pr>\`, and
+record every brief it covers as \`fixed_pr\` with that PR's \`pr_url\` so the runner lands it. On a
+client_approval site keep it to the site's approval queue (section client_draft). Never record
+\`in_flight\` against one of these PRs, and never open a second PR for the same briefs. If one is
+genuinely superseded (its fix is already on main), close it with a one-line reason instead.
+
+$PROMPT_TEXT"
+  fi
 fi
 # THE MAIL PASS: the brain reads the mail and writes the digest; the worker repairs from it.
 if [ -z "${SR_SCOPE_REPO:-}" ] && { [ -z "${AHREFS_DIGEST:-}" ] || [ ! -s "$AHREFS_DIGEST" ]; }; then
