@@ -104,6 +104,46 @@ describe("G2: a task that sits running", () => {
   });
 });
 
+describe("G2: the clock is the work's, and its usual is the job's own (9 Nov 2026, alarm task:tsk_m702ww3013yvqr98)", () => {
+  it("a run parked on a switched-off Mac for two hours raises nothing, and is judged from its claim once claimed", async () => {
+    const now = Date.now();
+    await E.DB.prepare(`INSERT INTO tasks (id, lane, employee_id, title, status, created_at, started_at, intake_kind) VALUES ('tsk_test_parked','ops','emp_research','Parked Sweep','running',?,?,'research')`)
+      .bind(now - 2 * H, now - 2 * H).run();
+    await E.DB.prepare(`INSERT INTO backend_runs (id, task_id, backend_id, requested, started_at, status) VALUES ('brn_test_parked','tsk_test_parked','bk_claude_code','{}',?, 'running')`)
+      .bind(now - 2 * H).run();
+    let r = await runKendraChecks(E, now);
+    expect(r.stale.opened).not.toContain("tsk_test_parked");
+    expect(await alarm("task:tsk_test_parked")).toBeNull();
+    // Claimed five minutes ago: five minutes of work is not stale, whatever the two-hour wait was.
+    await E.DB.prepare(`UPDATE backend_runs SET claimed_at = ? WHERE id = 'brn_test_parked'`).bind(now - 5 * 60_000).run();
+    r = await runKendraChecks(E, now);
+    expect(r.stale.opened).not.toContain("tsk_test_parked");
+    await E.DB.prepare(`UPDATE tasks SET status = 'done', finished_at = ? WHERE id = 'tsk_test_parked'`).bind(now).run();
+  });
+
+  it("reads the title's own work times before the kind's", async () => {
+    const now = Date.now();
+    const done = async (id: string, title: string, kind: string, workMin: number, waitMin: number, endAgo: number) => {
+      const end = now - endAgo;
+      const claimed = end - workMin * 60_000;
+      await E.DB.prepare(`INSERT INTO tasks (id, lane, employee_id, title, status, created_at, started_at, finished_at, intake_kind) VALUES (?,'ops','emp_research',?,'done',?,?,?,?)`)
+        .bind(id, title, claimed - waitMin * 60_000, claimed - waitMin * 60_000, end, kind).run();
+      await E.DB.prepare(`INSERT INTO backend_runs (id, task_id, backend_id, requested, started_at, status, claimed_at, finished_at) VALUES (?,?,'bk_claude_code','{}',?,'succeeded',?,?)`)
+        .bind(`brn_${id}`, id, claimed - waitMin * 60_000, claimed, end).run();
+    };
+    // The job's own runs: 5 minutes of work after a 90-minute wait for the seat. The kind's others: an hour of work.
+    for (let i = 0; i < 5; i++) await done(`tsk_test_own_${i}`, "Title Sweep", "kind_g2_usual", 5, 90, (i + 1) * 24 * H);
+    for (let i = 0; i < 5; i++) await done(`tsk_test_kin_${i}`, `Other job ${i}`, "kind_g2_usual", 60, 0, (i + 1) * 24 * H);
+    await E.DB.prepare(`INSERT INTO tasks (id, lane, employee_id, title, status, created_at, started_at, intake_kind) VALUES ('tsk_test_title','ops','emp_research','Title Sweep','running',?,?,'kind_g2_usual')`)
+      .bind(now - 40 * 60_000, now - 40 * 60_000).run();
+    await E.DB.prepare(`INSERT INTO backend_runs (id, task_id, backend_id, requested, started_at, status, claimed_at) VALUES ('brn_test_title','tsk_test_title','bk_claude_code','{}',?,'running',?)`)
+      .bind(now - 40 * 60_000, now - 40 * 60_000).run();
+    const r = await runKendraChecks(E, now);
+    expect(r.stale.opened).toContain("tsk_test_title");
+    expect((await alarm("task:tsk_test_title")).text).toBe('"Title Sweep" has been running 40 min on bk_claude_code, more than twice its usual 5 min.');
+  });
+});
+
 describe("G2: a stale-task alarm goes to the repair path, never research, and never feeds itself (7 Nov 2026)", () => {
   it("its repair is not research work, opens no research page, and a stale repair raises no alarm of its own", async () => {
     const now = Date.now();

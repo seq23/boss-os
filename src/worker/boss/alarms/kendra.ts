@@ -236,6 +236,18 @@ export interface KendraResult {
   running: number;
 }
 
+/** The last 50 done tasks of one title, or of one intake kind: each one's WORK time (finish minus the newest claim, else the start). */
+const USUAL_BY_TITLE = `SELECT t.finished_at - COALESCE((SELECT MAX(r.claimed_at) FROM backend_runs r WHERE r.task_id = t.id), t.started_at) AS ms
+  FROM tasks t WHERE t.status = 'done' AND t.title = ? AND t.started_at IS NOT NULL AND t.finished_at IS NOT NULL
+  ORDER BY t.finished_at DESC LIMIT 50`;
+const USUAL_BY_KIND = `SELECT t.finished_at - COALESCE((SELECT MAX(r.claimed_at) FROM backend_runs r WHERE r.task_id = t.id), t.started_at) AS ms
+  FROM tasks t WHERE t.status = 'done' AND COALESCE(t.intake_kind, '') = ? AND t.started_at IS NOT NULL AND t.finished_at IS NOT NULL
+  ORDER BY t.finished_at DESC LIMIT 50`;
+async function usualOf(env: Env, sql: typeof USUAL_BY_TITLE | typeof USUAL_BY_KIND, value: string): Promise<number | null> {
+  const { results } = await env.DB.prepare(sql).bind(value).all<{ ms: number }>();
+  return usualDuration((results ?? []).map((r) => r.ms));
+}
+
 export async function runKendraChecks(env: Env, now = Date.now()): Promise<KendraResult> {
   const out: KendraResult = {
     duties: 0, floors: { opened: [], kept: [], cleared: [] }, first_run: { opened: [], closed: [] },
@@ -301,7 +313,7 @@ export async function runKendraChecks(env: Env, now = Date.now()): Promise<Kendr
     last_event_at: number | null; last_claim_at: number | null; run_count: number | null; run_seat: string | null; claimed_at: number | null; parked_at: number | null;
   }>();
   out.running = (running ?? []).length;
-  const usualByKind = new Map<string, number | null>();
+  const usual = new Map<string, number | null>();
   const stillStale = new Set<string>();
   for (const t of running ?? []) {
     /*
@@ -311,18 +323,24 @@ export async function runKendraChecks(env: Env, now = Date.now()): Promise<Kendr
      * record; the repair is counted here, never raised again.
      */
     if (isKendraRepair(t.input)) { out.stale.repairs = (out.stale.repairs ?? 0) + 1; continue; }
+    /*
+     * "ITS USUAL" IS THE JOB'S OWN (9 Nov 2026, alarm task:tsk_m702ww3013yvqr98). The kind's median
+     * mixed every research job (0 to 1,647 min over the last 50) into a 9-minute "usual" for the
+     * Brokerage Sourcing Sweep; the title's own work times come first once it has USUAL_MIN_SAMPLES
+     * finished runs, the kind's only before then. Both are WORK time: finish minus the newest claim.
+     */
     const kind = t.intake_kind ?? "";
-    if (!usualByKind.has(kind)) {
-      const { results: done } = await env.DB.prepare(
-        `SELECT t.finished_at - COALESCE((SELECT MAX(r.claimed_at) FROM backend_runs r WHERE r.task_id = t.id), t.started_at) AS ms
-           FROM tasks t WHERE t.status = 'done' AND COALESCE(t.intake_kind, '') = ? AND t.started_at IS NOT NULL
-           AND t.finished_at IS NOT NULL ORDER BY t.finished_at DESC LIMIT 50`,
-      ).bind(kind).all<{ ms: number }>();
-      usualByKind.set(kind, usualDuration((done ?? []).map((r) => r.ms)));
+    const titleKey = `title:${t.title}`;
+    if (!usual.has(titleKey)) usual.set(titleKey, await usualOf(env, USUAL_BY_TITLE, t.title));
+    let usualMs = usual.get(titleKey) ?? null;
+    if (usualMs == null) {
+      const kindKey = `kind:${kind}`;
+      if (!usual.has(kindKey)) usual.set(kindKey, await usualOf(env, USUAL_BY_KIND, kind));
+      usualMs = usual.get(kindKey) ?? null;
     }
     const last = Math.max(Number(t.last_event_at ?? 0), Number(t.last_claim_at ?? 0)) || null;
     const parked = Number(t.run_count ?? 0) > 0 && t.claimed_at == null;
-    const v = staleTaskVerdict({ started_at: t.started_at, claimed_at: t.claimed_at, parked, parked_at: t.parked_at, last_progress_at: last }, usualByKind.get(kind) ?? null, now);
+    const v = staleTaskVerdict({ started_at: t.started_at, claimed_at: t.claimed_at, parked, parked_at: t.parked_at, last_progress_at: last }, usualMs, now);
     if (!v.stale) continue;
     stillStale.add(t.id);
     const r = await raiseAlarm(env, { key: `task:${t.id}`, kind: "stale_task", subject_id: t.id, text: staleTaskText({ title: t.title, seat: parked ? null : t.run_seat, parked_on: t.run_seat }, v) }, now);
