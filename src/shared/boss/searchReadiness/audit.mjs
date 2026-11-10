@@ -640,7 +640,8 @@ export const CHECKS = {
   /*
    * b10 — EVERY TITLE NAMES ITS OWN SITE, NEVER A SIBLING'S. A shared template once stamped one
    * site's brand onto another's pages, so search results credited the wrong site. The brand is the
-   * host's own name (or the homepage's og:site_name / Organization name); a sibling is any other
+   * host's own name (or the homepage's og:site_name / Organization or WebSite name or alternateName,
+   * the short name a site declares for itself, e.g. BHPC); a sibling is any other
    * grid site whose name is not part of this one's.
    */
   title_names_own_site(ctx) {
@@ -648,7 +649,7 @@ export const CHECKS = {
     const stem = (h) => norm(String(h).replace(/^www\./, "").split(".")[0]);
     const own = stem(ctx.host);
     const home = ctx.home?.html ?? "";
-    const brands = [own, ...metaContent(home, "og:site_name").map(norm), ...deepNodes(jsonLd(home).nodes, /^(Organization|WebSite)$/).map((n) => norm(n?.name))].filter((b) => b.length >= 4);
+    const brands = [own, ...metaContent(home, "og:site_name").map(norm), ...deepNodes(jsonLd(home).nodes, /^(Organization|WebSite)$/).flatMap((n) => [n?.name, ...[n?.alternateName].flat()]).map(norm)].filter((b) => b.length >= 4);
     const siblings = (ctx.portfolio ?? []).map(stem).filter((s) => s.length >= 6 && s !== own && !brands.some((b) => b.includes(s)));
     const bad = [], seen = new Set();
     // Same keying as title_band: the URL the HTML came from, so a 308 root and its target are one

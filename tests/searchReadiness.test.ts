@@ -774,6 +774,13 @@ describe("the 26 Oct 2026 lessons catch what they guard", () => {
     expect(sib.status).toBe("fail");
     expect(sib.detail).toMatch(/names theaccidentguides/);
     expect(CHECKS.title_names_own_site!(ctx("Medicaid dental coverage")).detail).toMatch(/does not name the site/);
+    // A short name counts only when the homepage declares it as the WebSite's alternateName.
+    const short = (alt: unknown) => ({ host: "billionairehighperformancecoach.com", portfolio: ["billionairehighperformancecoach.com", "aplayermode.com"],
+      home: { html: `<html><head><script type="application/ld+json">${JSON.stringify({ "@context": "https://schema.org", "@type": "WebSite", name: "Billionaire High Performance Coach", ...(alt ? { alternateName: alt } : {}) })}</script></head></html>` },
+      pages: [at("https://billionairehighperformancecoach.com/g/", html("Execution scaffolding Glossary | BHPC"))] }) as any;
+    expect(CHECKS.title_names_own_site!(short("BHPC")).status).toBe("pass");
+    expect(CHECKS.title_names_own_site!(short(["BHPC OS", "BHPC"])).status).toBe("pass");
+    expect(CHECKS.title_names_own_site!(short(null)).detail).toMatch(/does not name the site/);
   });
 
   it("h6: a build cache keyed on a subset fails; one keyed on git ls-files minus only the workflows passes; no build cache passes", () => {
