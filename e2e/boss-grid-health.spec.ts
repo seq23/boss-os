@@ -52,10 +52,13 @@ test.describe("Boss OS grid health", () => {
         expect((await cell.innerText()).trim().length).toBeGreaterThan(20);
       }
     }
-    // The three she named without a domain say so by name rather than showing nothing.
-    const yt = page.getByTestId("property-health-youtube");
-    await expect(yt.locator("[data-reader='uptime']")).toContainText("YouTube channel");
-    await expect(yt.locator("[data-reader='uptime']")).toContainText("N/A");
+    // A property with no website says so by name rather than showing nothing. Since #378 (10 Nov
+    // 2026) that is Whisper Almanac, a YouTube channel with no site; `youtube` (How We Know) now has
+    // a domain, so its uptime cell is a wired reader and must NOT claim to be a channel.
+    const channel = page.getByTestId("property-health-whisper_almanac").locator("[data-reader='uptime']");
+    await expect(channel).toContainText("YouTube channel");
+    await expect(channel).toContainText("N/A");
+    await expect(page.getByTestId("property-health-youtube").locator("[data-reader='uptime']")).not.toContainText("N/A");
     // A wired reader that has never run names what runs it.
     await expect(page.getByTestId("property-health-hpc").locator("[data-reader='github']")).toContainText("grid watch");
   });

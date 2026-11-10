@@ -1,6 +1,31 @@
 import { execFileSync } from "node:child_process";
 
 /**
+ * One `wrangler d1 execute` normally finishes in a few seconds. Without a bound, a CLI wedged on the
+ * SQLite file `wrangler dev` holds would block the Playwright worker (execFileSync is synchronous, so
+ * no test timeout can fire) until the CI job is cancelled, and the spec would report nothing. Each
+ * attempt is killed at this bound and the spec fails with a named reason instead.
+ */
+const D1_ATTEMPT_TIMEOUT_MS = 60_000;
+
+function isHung(error: unknown): boolean {
+  const e = error as { code?: string; signal?: string };
+  return e.code === "ETIMEDOUT" || e.signal === "SIGKILL";
+}
+
+function describeFailure(error: unknown, sql: string): string {
+  const e = error as { stderr?: Buffer | string; stdout?: Buffer | string; message?: string; code?: string; signal?: string };
+  const hung = isHung(error);
+  return [
+    hung ? `D1_EXECUTE_HUNG: wrangler d1 execute did not finish within ${D1_ATTEMPT_TIMEOUT_MS / 1000}s and was killed (sql: ${sql.slice(0, 120)})` : "",
+    e.stderr?.toString(), e.stdout?.toString(), e.message,
+  ]
+    .filter((part) => part && part.trim().length > 0)
+    .join("\n")
+    .trim();
+}
+
+/**
  * Insert fixture rows into the SAME local D1 that `wrangler dev` is serving.
  *
  * Two specs need a second identity that the seeds do not create (an INVESTMENT_TEAM member with no
@@ -29,14 +54,14 @@ export function provisionLocalD1(sql: string, attempts = 5): void {
     try {
       execFileSync("npx", ["wrangler", "d1", "execute", "WP_OS_DB", "--local", "--command", sql], {
         stdio: "pipe",
+        timeout: D1_ATTEMPT_TIMEOUT_MS,
+        killSignal: "SIGKILL",
       });
       return;
     } catch (error) {
-      const e = error as { stderr?: Buffer; stdout?: Buffer; message?: string };
-      lastDetail = [e.stderr?.toString(), e.stdout?.toString(), e.message]
-        .filter((part) => part && part.trim().length > 0)
-        .join("\n")
-        .trim();
+      lastDetail = describeFailure(error, sql);
+      // A wedged CLI is not lock contention that clears in a second: fail now, by name.
+      if (isHung(error)) throw new Error(lastDetail);
       // Back off before the next attempt: the holder releases the file in well under a second,
       // and the last attempt must not sleep for nothing.
       if (attempt < attempts) execFileSync("sleep", [String(attempt)]);
@@ -66,17 +91,15 @@ export function queryLocalD1<T = Record<string, unknown>>(sql: string, attempts 
       const out = execFileSync(
         "npx",
         ["wrangler", "d1", "execute", "WP_OS_DB", "--local", "--json", "--command", sql],
-        { encoding: "utf8", stdio: ["ignore", "pipe", "pipe"] },
+        { encoding: "utf8", stdio: ["ignore", "pipe", "pipe"], timeout: D1_ATTEMPT_TIMEOUT_MS, killSignal: "SIGKILL" },
       );
       // wrangler prints an array of statement results; each carries its own `results`.
       const parsed = JSON.parse(out.slice(out.indexOf("["))) as Array<{ results?: T[] }>;
       return parsed.flatMap((r) => r.results ?? []);
     } catch (error) {
-      const e = error as { stderr?: Buffer; stdout?: Buffer; message?: string };
-      lastDetail = [e.stderr?.toString(), e.stdout?.toString(), e.message]
-        .filter((part) => part && part.trim().length > 0)
-        .join("\n")
-        .trim();
+      lastDetail = describeFailure(error, sql);
+      // A wedged CLI is not lock contention that clears in a second: fail now, by name.
+      if (isHung(error)) throw new Error(lastDetail);
       if (attempt < attempts) execFileSync("sleep", [String(attempt)]);
     }
   }
