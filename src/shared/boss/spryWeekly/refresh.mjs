@@ -25,6 +25,19 @@ export function lastMonth(now = Date.now()) {
 /** Is `now` in the first seven days of the month on her clock (the first Wednesday's email)? */
 export const firstWeekOfMonth = (now = Date.now()) => Number(new Date(now).toLocaleDateString("en-CA", { timeZone: "America/Chicago" }).split("-")[2]) <= 7;
 
+/** What one lane did in [from, to], read from its ledger's runs. Pure. */
+export function laneState(read, { from, to }) {
+  if (read.problem || !read.ledger) return { state: "unread" };
+  const runs = (read.ledger.runs ?? []).filter((r) => r.at >= from && r.at <= to);
+  if (!runs.length) return { state: "no_runs" };
+  const changed = runs.some((r) => (r.refreshed ?? 0) > 0);
+  // A run that had pages due (local guides: due > 0; Dream Wedding: anything but QUEUE_EMPTY) and changed none.
+  const stalled = runs.some((r) => (r.refreshed ?? 0) === 0 && (r.due != null ? r.due > 0 : r.outcome !== "QUEUE_EMPTY"));
+  if (changed) return { state: "refreshed" };
+  if (stalled) return { state: "stalled" };
+  return { state: "nothing_due", next_due: read.ledger.next_due ?? runs.at(-1)?.next_due ?? null };
+}
+
 /** Pages refreshed and distinct sites in [from, to], from ledgers read as { ledger } or { problem }. */
 export function refreshCount(reads, { from, to }) {
   const pages = new Set(), sites = new Set(), unread = [];
@@ -42,12 +55,29 @@ export function refreshCount(reads, { from, to }) {
   return { pages: pages.size, sites: sites.size, unread };
 }
 
-/** The line for the email, or null when it is not the month's first weekly. */
+const dayWords = (iso) => new Date(`${iso}T12:00:00Z`).toLocaleDateString("en-US", { month: "short", day: "numeric", timeZone: "UTC" });
+const plural = (k, one) => `${k} ${one}${k === 1 ? "" : "s"}`;
+
+/**
+ * The line for the email, or null when it is not the month's first weekly. A count is never bare:
+ * a lane that changed nothing says why (nothing was due, and when the next is; pages were due and
+ * nothing changed; it did not run; it could not be read).
+ */
 export function refreshLine(reads, { now = Date.now() } = {}) {
   if (!firstWeekOfMonth(now)) return null;
   const month = lastMonth(now);
   const c = refreshCount(reads, month);
-  const plural = (k, one) => `${k} ${one}${k === 1 ? "" : "s"}`;
+  const states = reads.map((r) => laneState(r, month));
+  const count = (s) => states.filter((x) => x.state === s).length;
+  const lanes = (k) => (k === 1 ? "one lane" : `${k} lanes`);
+  const why = [];
+  if (c.pages === 0 && states.every((x) => x.state === "nothing_due")) {
+    const next = states.map((x) => x.next_due).filter(Boolean).sort()[0];
+    why.push(next && next > month.to ? `nothing was due; the next pages come due ${dayWords(next)}` : "nothing was due");
+  }
+  if (count("stalled")) why.push(`${lanes(count("stalled"))} had pages due and changed none; the team checks why`);
+  if (count("no_runs")) why.push(`${lanes(count("no_runs"))} did not run; the team checks why`);
+  if (count("unread")) why.push(`not measured for ${lanes(count("unread"))}; the team checks why`);
   const counted = `${month.label}: ${plural(c.pages, "page")} refreshed across ${plural(c.sites, "site")}`;
-  return c.unread.length ? `${counted} (not measured for ${c.unread.length === 1 ? "one lane" : `${c.unread.length} lanes`}; the team checks why).` : `${counted}.`;
+  return why.length ? `${counted} (${why.join("; ")}).` : `${counted}.`;
 }
