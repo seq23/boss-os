@@ -8,8 +8,8 @@
  *
  * ─── What this fails on ────────────────────────────────────────────────────
  *
- * The four readers — uptime, github, gsc, cloudflare — are a fixed set, and the grid is her twelve
- * properties. That is 48 cells, and each one has to be either WIRED (a real code path writes a
+ * The four readers — uptime, github, gsc, cloudflare — are a fixed set, and the grid is every
+ * property grid.mjs derives from sites.json. Every cell — property × reader — and each one has to be either WIRED (a real code path writes a
  * `property_health_readings` row for that reader) or CANNOT with a sentence. A cell that is neither
  * is a property whose health card would show a blank, and a blank is the one thing the card may
  * not show: "healthy" and "never looked" are opposite facts that look identical.

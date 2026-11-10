@@ -185,8 +185,8 @@ export function gridRepoNames() {
  *
  * R24 registers a repo the first time she names it by its GitHub address; these are the ones she has
  * named as Danielle's to work in for good, so a bare name in her email ("creator-studios: …") is
- * enough. They are NOT grid properties — the grid is her twelve, pinned by
- * `validate:the-grid-is-her-twelve-properties` — and they are recorded beside it, exactly like a
+ * enough. They are NOT grid properties — the grid is sites.json's grid sites (owner, 10 Nov 2026), pinned by
+ * `validate:grid-is-one-list` — and they are recorded beside it, exactly like a
  * `boss_repo_registry` row (migration 0288 writes the same rows there).
  *
  * Owner, 22 Oct 2026: "give Danielle a real executor for repo work in seq23/creator-studios".
@@ -244,7 +244,7 @@ export function excludedRepoIn(text) {
  * West Peek OS, 6 Oct 2026: "'registered west peek repos only' is a problem … any new repo we request
  * is allowed." The same for Danielle: `github.com/<owner>/<name>` (any owner) or `seq23/<name>` names
  * a repository the lane may work in even when it is not on the grid. The grid itself is untouched —
- * it is her twelve properties, pinned by `validate:the-grid-is-her-twelve-properties` — and a
+ * it is sites.json's grid sites, pinned by `validate:grid-is-one-list` — and a
  * registered repo is recorded beside it (`boss_repo_registry`), never added to it.
  *
  * THE NAMED EXCLUSIONS STILL WIN. West Peek's repos and the client repos are out of Boss OS by her

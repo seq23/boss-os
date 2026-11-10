@@ -510,12 +510,11 @@ describe("a package that is not publish-ready lands only after she has seen the 
     expect(rc.property_key).toBe("youtube");
   });
 
-  it("creator-network is on the grid: a #danielle mail naming it is admitted as a repo change", async () => {
+  it("creator-network is parked, off the grid (owner, 10 Nov 2026): a #danielle mail naming it is not admitted as a repo change", async () => {
     const res = await handleBossInboundMail(mail({ subject: "#danielle creator-network", body: "In creator-network, add the runbook link to the README." }), env as never);
-    expect(res.outcome).toBe("ROUTED");
-    const rc = await row<any>(`SELECT repo, property_key FROM repo_changes WHERE task_id = ?`, res.taskId);
-    expect(rc.repo).toBe("creator-network");
-    expect(rc.property_key).toBe("creator_network");
+    expect(res.outcome).toBe("NOT_ADMITTED");
+    const rc = await row<any>(`SELECT COUNT(*) AS n FROM repo_changes WHERE repo = 'creator-network'`);
+    expect(rc.n).toBe(0);
   });
 });
 

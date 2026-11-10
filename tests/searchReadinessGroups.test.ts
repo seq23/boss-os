@@ -1,6 +1,6 @@
 /*
  * WHAT SEARCH READINESS COVERS (owner, 7 Nov 2026, personal brain "Names and groups"): friends' sites
- * + selling sites + all of the Divine 9, each grid row naming its group and business; an Industry
+ * + all of the Divine 9 + support (no selling group since 10 Nov 2026: Porch & Party is friends & clients), each grid row naming its group and business; an Industry
  * Guides vertical is never a business of its own; a sunsetting site is audited, never worked.
  */
 import { describe, it, expect } from "vitest";
@@ -10,12 +10,20 @@ import sites from "../src/shared/boss/searchReadiness/sites.json";
 
 const groups = (sites as any)._groups;
 const rows = (sites as any).grid_repos as any[];
-const GROUPS = ["divine_9", "selling", "friends", "support"];
+const GROUPS = ["divine_9", "friends", "support"];
 
 describe("Search Readiness groups (7 Nov 2026)", () => {
   it("every grid row names a group and a business that group lists; every named business has a site or a named gap", () => {
     expect(rows.length).toBeGreaterThan(0);
-    expect(groups.divine_9).toHaveLength(9);
+    // Owner, 10 Nov 2026: Time-2-Read is one business with two apps; heygetonmylevel is not a business of its own.
+    expect(groups.divine_9).toHaveLength(8);
+    expect(groups.divine_9).not.toContain("heygetonmylevel");
+    expect(rows.filter((r) => r.business === "Time-2-Read").map((r) => r.domain).sort()).toEqual(["heygetonmylevel.com", "time-2-read.com"]);
+    // Owner, 10 Nov 2026: the groups are exactly these three; there is no "selling" group, and
+    // Porch & Party is a friends & clients site.
+    expect(Object.keys(groups).filter((k) => !k.startsWith("_") && k !== "gaps").sort()).toEqual([...GROUPS].sort());
+    expect(rows.find((r) => r.domain === "porchandparty901.com")).toMatchObject({ group: "friends", category: "client" });
+    expect(groups.friends).toContain("Porch & Party");
     for (const r of rows) {
       expect(GROUPS, r.domain).toContain(r.group);
       expect(groups[r.group], r.domain).toContain(r.business);

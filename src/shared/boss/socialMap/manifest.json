@@ -9,7 +9,6 @@
     "never": "Decided: no account"
   },
   "groups": {
-    "selling": "Your selling business",
     "divine_9": "Spry Labs side businesses",
     "other": "Your other businesses",
     "support": "Support systems",
@@ -19,7 +18,7 @@
     {
       "key": "porch-and-party",
       "label": "Porch & Party",
-      "group": "selling",
+      "group": "friends",
       "blurb": "Valerie's porch and party business in Memphis. P&P Studio posts to Facebook, Instagram and TikTok through its own Buffer.",
       "grid_business": "Porch & Party"
     },
@@ -81,10 +80,10 @@
     },
     {
       "key": "heygetonmylevel",
-      "label": "heygetonmylevel",
+      "label": "heygetonmylevel (Time-2-Read)",
       "group": "divine_9",
-      "blurb": "heygetonmylevel.com. No social accounts.",
-      "grid_business": "heygetonmylevel"
+      "blurb": "heygetonmylevel.com, Time-2-Read's second app (owner, 10 Nov 2026). No social accounts.",
+      "grid_business": "Time-2-Read"
     },
     {
       "key": "spry-labs",

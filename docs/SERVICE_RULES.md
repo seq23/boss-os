@@ -118,7 +118,7 @@ Each is deliberate; the reason is the line after the dash.
   repo's README; her personal mail is full of "never" and "only" that describe one job, so Boss OS
   registers only `Always:` / `Never:` / `Standing rule:` / `Constraint:` lines.
 - **D9 · R24 — the grid is not widened.** A registered repo is recorded in `boss_repo_registry`
-  beside the grid; the grid stays her twelve properties, pinned by its own validator.
+  beside the grid; the grid stays sites.json's grid sites (owner, 10 Nov 2026), pinned by `validate:grid-is-one-list`.
 - **D10 · R27 — re-checked by resolving.** West Peek OS polls Cloudflare's custom-hostname status;
   Boss OS's repo lane reads the record back when it asks for it, and her Mac re-checks by resolving it
   over DNS-over-HTTPS.

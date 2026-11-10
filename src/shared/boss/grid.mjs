@@ -8,25 +8,22 @@
  *
  * ─── "The grid" is a DEFINED TERM, not a description ───────────────────────
  *
- * Agreed 29 August 2026. It means ONE EXACT SET — the properties in her Phase 6 Readiness grid —
- * and it is KEYED BY CANONICAL DOMAIN, not by repo name, which is why a directory listing does not
- * reproduce it. When she says "the grid", "the repos I care about", "my repos", "the portfolio" or
- * "portfolio-wide", she means this table and nothing else. It is never re-derived from `ls ~/GitHub`
- * and she is never asked which repos she meant.
+ * Owner, 10 Nov 2026 (spry brain, Settled decisions), replacing the 29 Aug 2026 table: the grid is
+ * every site in `searchReadiness/sites.json` `grid_repos` (groups divine_9 / support / friends;
+ * Porch & Party is a friends & clients site, owner 10 Nov 2026) PLUS Whisper Almanac, a YouTube channel with no website, recorded in that file's
+ * `_groups.gaps` with its `repo` and `handle`. It is KEYED BY CANONICAL DOMAIN, not by repo name,
+ * which is why a directory listing does not reproduce it. When she says "the grid", "the repos I care
+ * about", "my repos", "the portfolio" or "portfolio-wide", she means this set and nothing else. It is
+ * never re-derived from `ls ~/GitHub` and she is never asked which repos she meant.
  *
- * ─── What was here before, and why it was wrong ────────────────────────────
+ * ─── ONE LIST ───────────────────────────────────────────────────────────────
  *
- * `today/projects.ts` carried five `lane: "spry"` entries — Industry Guides, SaaS apps, Digital
- * products, How We Know, Authority backlink network — with NO REPO FIELD AND NO DOMAINS. An earlier
- * run read that and concluded she had "4 side hustles". `spry-heartbeat.mjs` kept a SECOND list,
- * eight repos, assembled from `gh repo list` — which included `heygetonmylevel` and `how-we-know`
- * and omitted `WPP-llm`, both client repos and `p-n-p`. Two components each keeping their own list
- * with no link between them, which is the defect this repository names most often, about the one
- * subject where being wrong costs revenue.
- *
- * So the list lives HERE, once, and everything reads it: the Worker's contract, the examination that
- * goes and looks at the repos, the shipping heartbeat, and the validator that checks it against her
- * own table.
+ * Until 10 Nov 2026 this file kept its own table and the grid validator kept a third copy as a
+ * fixture; both had gone stale against sites.json (spryexecutiveos still in, keepmyproof, aplayermode,
+ * memphisseniorcarehomes, the three libraries and two friends' sites missing). So the membership now
+ * lives ONLY in sites.json and this file DERIVES `GRID` from it. The shape every reader uses (key,
+ * label, tier, owner, repos, domains, domain_repos) is kept. `scripts/validate/the-grid-is-one-list.mjs`
+ * fails the build if the two views ever disagree.
  *
  * ─── A `.mjs` beside a `.d.mts`, for the same reason as `repoPolicy.mjs` ────
  *
@@ -34,195 +31,113 @@
  * third process. All three have to mean the same thing by "the grid".
  */
 
+import SITES from "./searchReadiness/sites.json" with { type: "json" };
+
 /**
- * ─── THE GRID ───────────────────────────────────────────────────────────────
+ * ─── HOW A sites.json ROW BECOMES A GRID PROPERTY ──────────────────────────
  *
- * `tier` decides what each property is allowed to put in front of her, and it is the field that
- * does the most work here:
+ * `tier` decides what each property is allowed to put in front of her:
  *
- *   primary        — a live money line. May produce an item for her contract.
- *   secondary      — "we really just include it in case something needs to be fixed but the content
- *                     generator and all the real work is in velocity." It is watched and its breaks
- *                     are fixed; it does not propose work to her in the ordinary course.
- *   infrastructure — plumbing. `today/projects.ts` already says it in terms: "A cost centre, not a
- *                     line — never a day's work." Watched, fixed, never suggested.
+ *   primary        — a live money line (divine_9, friends). May produce an item for her.
+ *   secondary      — a row whose `roles` include "generator" (local-guides-generator). Her words: "we
+ *                     really just include it in case something needs to be fixed but the content
+ *                     generator and all the real work is in velocity." Watched and fixed; never suggests.
+ *   infrastructure — the `support` group (the authority backlink network). Plumbing: "A cost centre,
+ *                     not a line — never a day's work." Watched, fixed, never suggested.
  *
- * `owner` carries the client distinction, which is not decoration: a client property's "needs her"
- * item is a client-facing act — a reply in her name, an approval on someone else's site — and it
- * has to read as one.
+ * `owner` is "client" for the `friends` group and "hers" for every other group: a client property's
+ * "needs her" item is a client-facing act and has to read as one.
+ *
+ * `key` is the identifier stored rows and readers already use. Rows are grouped by it; KEYS only
+ * keeps the old names stable for repos that had one (it decides no membership — a repo absent from
+ * sites.json is absent from the grid whatever this map says). A repo with no entry is keyed by its
+ * business name.
  */
-export const GRID = [
-  {
-    key: "guides_generator",
-    label: "Local Guides generator — the five verticals",
-    domains: [
-      "uscisexam.com",
-      "dentistryguides.com",
-      "theaccidentguides.com",
-      "neuroevalguides.com",
-      "hormonesivhair.com",
-    ],
-    repos: ["local-guides-generator"],
-    owner: "hers",
-    tier: "secondary",
-    why_tier:
-      "Her words: \"we really just include it in case something needs to be fixed but the content " +
-      "generator and all the real work is in velocity.\" Effort goes to local-guides-citation-velocity. " +
-      "This is watched so a break is caught, and it does not generate suggestions for her.",
-  },
-  {
-    key: "citation_velocity",
-    label: "theindustryguides.com — citation velocity",
-    domains: ["theindustryguides.com"],
-    repos: ["local-guides-citation-velocity"],
-    owner: "hers",
-    tier: "primary",
-    why_tier:
-      "The velocity feeder, and where the real work is. Note that `siteAudit/repoPolicy.mjs` bars " +
-      "the automatic fixer from opening a PR here — under active heavy change — which is a rule " +
-      "about FIXING, not about watching. It is examined like everything else.",
-  },
-  {
-    key: "horse_legal",
-    label: "horselegalguide.com",
-    domains: ["horselegalguide.com"],
-    repos: ["horse-legal-guide-velocity"],
-    owner: "client",
-    tier: "primary",
-    why_tier: "A client property. In the grid, and anything needing her here is client-facing.",
-  },
-  {
-    key: "hicks_consulting",
-    label: "hicksconsulting.org",
-    domains: ["hicksconsulting.org"],
-    repos: ["hicks-consulting-canonical"],
-    owner: "client",
-    tier: "primary",
-    why_tier: "A client property. In the grid, and anything needing her here is client-facing.",
-  },
-  {
-    key: "virtual_agency",
-    label: "virtualagency-os.com",
-    domains: ["virtualagency-os.com"],
-    repos: ["WPP-llm"],
-    owner: "hers",
-    tier: "primary",
-  },
-  {
-    /*
-     * ONE PROPERTY, TWO DOMAINS, ONE REPO. `hpc` is high performance coach.
-     * bhpc and spryexecutiveos are the same property — they are not two lines and must never be
-     * counted as two.
-     */
-    key: "hpc",
-    label: "Spry Labs HPC — billionairehighperformancecoach.com and spryexecutiveos.com",
-    domains: ["billionairehighperformancecoach.com", "spryexecutiveos.com"],
-    repos: ["sprylabs-hpc-site"],
-    owner: "hers",
-    tier: "primary",
-    why_tier: "ONE property on one repo, not two. hpc = high performance coach.",
-  },
-  {
-    key: "approvalprep",
-    label: "approvalprep.com",
-    domains: ["approvalprep.com"],
-    repos: ["approvalprep"],
-    owner: "hers",
-    tier: "primary",
-  },
-  {
-    /*
-     * FOUR DOMAINS, AND THIS FILE DOES NOT INVENT THEM. She gave the cluster by name and size —
-     * "wedding cluster ×4" — and not the four canonical domains. Writing four plausible ones here
-     * would put guesses into the thing that is supposed to be the authoritative list, which is
-     * exactly how a grid stops being one. The count is recorded; the domains are recorded when she
-     * gives them.
-     */
-    key: "wedding",
-    label: "Wedding cluster ×4",
-    domains: [],
-    property_count: 4,
-    repos: ["dream-wedding-builder"],
-    owner: "hers",
-    tier: "primary",
-    why_tier: "Four properties on one repo. The four canonical domains are not recorded here because she has not named them, and inventing them would corrupt the list this file exists to be.",
-  },
-  /*
-   * ─── THE THREE SHE NAMED ON 13 SEPTEMBER ─────────────────────────────────
-   *
-   * The grid table was agreed on 29 August and these three are not on it, so the first pass at
-   * this file dropped them out of the spry lane — correctly, by the rule it was given. Asked
-   * directly, she said: "all 3 are mine." They predate the table rather than being excluded by it.
-   *
-   * This is why the exclusions below are written down. A property that is merely absent cannot be
-   * told apart from one deliberately left out, and the difference is exactly what had to be asked.
-   */
-  {
-    key: "youtube",
-    label: "How We Know — YouTube",
-    // A channel handle, not a domain. The field is what the property IS, and pretending this one
-    // has a domain to make the shape uniform would be a small lie in a file that exists to be true.
-    domains: [],
-    handles: ["@howweknowdeep"],
-    repos: ["how-we-know"],
-    owner: "hers",
-    tier: "primary",
-    why_tier:
-      "`today/projects.ts` carried it as \"The channel. Automated loop; not yet revenue.\" Not yet " +
-      "revenue is not the same as not a property — she has an audit waiting on the fourth video and " +
-      "a standing rule never to delete a video, only to make it private.",
-  },
-  {
-    key: "saas_apps",
-    label: "SaaS apps — partnerships",
-    domains: ["heygetonmylevel.com", "time-2-read.com"],
-    /*
-     * TWO DOMAINS, TWO REPOS, ONE EACH. `heygetonmylevel` is heygetonmylevel.com; `dailystory` is
-     * time-2-read.com (Lovable publishes its front end, Actions deploy its edge functions on merge).
-     * Until 25 Oct 2026 this row said time-2-read.com had no repo, so the search-readiness audit
-     * recorded its twelve failing items as "no repo" and nothing ever fixed them. The repo name does
-     * not match the domain, which is exactly why the mapping is written down per domain.
-     * `scripts/validate/the-grid-is-her-twelve-properties.mjs` fails if a domain with a repo is ever
-     * marked as having none again, here or in searchReadiness/sites.json.
-     */
-    repos: ["heygetonmylevel", "dailystory"],
-    domain_repos: { "heygetonmylevel.com": "heygetonmylevel", "time-2-read.com": "dailystory" },
-    owner: "hers",
-    tier: "primary",
-    why_tier:
-      "`today/projects.ts` had these parked: \"Two apps looking for partnership distribution rather " +
-      "than direct sales.\" Parked is a status, not an exclusion.",
-  },
-  {
-    key: "authority_network",
-    label: "Authority / backlink network",
-    domains: [],
-    repos: ["authority-backlink-network", "p-n-p"],
-    owner: "hers",
-    tier: "infrastructure",
-    why_tier:
-      "`today/projects.ts` settles this in terms: \"Plumbing for the properties above. A cost centre, " +
-      "not a line — never a day's work.\" It is watched because when it breaks the others go quiet, " +
-      "and it never proposes work to her.",
-  },
-  {
-    /*
-     * ADDED 21 SEPTEMBER 2026, ON HER INSTRUCTION, so Danielle's repo-change lane may work in it.
-     * Four virtual-employee creators, their social accounts and the state Worker that keeps their
-     * ledger. Private repo; no public domain of its own — the properties it drives are accounts,
-     * not sites. `~/bin/land` already carries its release route (`npm run deploy:state`).
-     */
-    key: "creator_network",
-    label: "Creator Network — four virtual-employee creators",
-    domains: [],
-    repos: ["creator-network"],
-    owner: "hers",
-    tier: "primary",
-    why_tier:
-      "A revenue lane she is building, with a fifteen-phase ledger and a signup kit landed. Not " +
-      "plumbing and not a client's — hers, and it proposes work to her like the others.",
-  },
-];
+const KEYS = Object.freeze({
+  "local-guides-generator": "guides_generator",
+  "local-guides-citation-velocity": "citation_velocity",
+  "horse-legal-guide-velocity": "horse_legal",
+  "hicks-consulting-canonical": "hicks_consulting",
+  "WPP-llm": "virtual_agency",
+  "sprylabs-hpc-site": "hpc",
+  "approvalprep": "approvalprep",
+  "dream-wedding-builder": "wedding",
+  "how-we-know": "youtube",
+  "heygetonmylevel": "saas_apps",
+  "dailystory": "saas_apps",
+  "authority-backlink-network": "authority_network",
+});
+
+const WHY_TIER = Object.freeze({
+  guides_generator:
+    "Her words: \"we really just include it in case something needs to be fixed but the content " +
+    "generator and all the real work is in velocity.\" Effort goes to local-guides-citation-velocity. " +
+    "This is watched so a break is caught, and it does not generate suggestions for her.",
+  authority_network:
+    "`today/projects.ts` settles this in terms: \"Plumbing for the properties above. A cost centre, " +
+    "not a line — never a day's work.\" It is watched because when it breaks the others go quiet, " +
+    "and it never proposes work to her.",
+});
+
+const slug = (s) => String(s ?? "").toLowerCase().replace(/[^a-z0-9]+/g, "_").replace(/^_+|_+$/g, "");
+
+/** The grid channels: every `_groups.gaps` entry that names a repo and a handle (no website). */
+export function gridChannels(sites = SITES) {
+  const gaps = sites?._groups?.gaps ?? {};
+  const out = [];
+  for (const [business, g] of Object.entries(gaps)) {
+    if (!g || typeof g !== "object" || !g.repo || !g.handle) continue;
+    const group = Object.entries(sites._groups).find(([k, v]) => Array.isArray(v) && v.includes(business))?.[0] ?? null;
+    out.push({ business, repo: g.repo, handle: g.handle, group });
+  }
+  return out;
+}
+
+/** Derive the grid from sites.json. Pure, so the validator can feed it a mutated copy. */
+export function deriveGrid(sites = SITES) {
+  const byKey = new Map();
+  const entry = (key, group, business) => {
+    if (!byKey.has(key)) byKey.set(key, { key, group, businesses: [], repos: [], domains: [], handles: [], domain_repos: {}, generator: false });
+    const p = byKey.get(key);
+    if (!p.businesses.includes(business)) p.businesses.push(business);
+    return p;
+  };
+  for (const r of sites?.grid_repos ?? []) {
+    const key = (r.repo && KEYS[r.repo]) || slug(r.business ?? r.repo ?? r.domain);
+    const p = entry(key, r.group, r.business);
+    if (r.repo && !p.repos.includes(r.repo)) p.repos.push(r.repo);
+    if (r.domain) {
+      p.domains.push(r.domain);
+      if (r.repo) p.domain_repos[r.domain] = r.repo;
+      else (p.domains_without_repo ??= []).push(r.domain);
+    }
+    if ((r.roles ?? []).includes("generator")) p.generator = true;
+  }
+  for (const c of gridChannels(sites)) {
+    const p = entry(slug(c.business), c.group, c.business);
+    if (!p.repos.includes(c.repo)) p.repos.push(c.repo);
+    p.handles.push(c.handle);
+  }
+  return [...byKey.values()].map(({ generator, businesses, handles, group, ...p }) => {
+    const tier = group === "support" ? "infrastructure" : generator ? "secondary" : "primary";
+    const where = p.domains.length === 0
+      ? `YouTube ${handles.join(", ")}`
+      : p.domains.length <= 2 ? p.domains.join(" and ") : `${p.domains.length} sites`;
+    return {
+      ...p,
+      ...(handles.length ? { handles } : {}),
+      label: `${businesses.join(" and ")} — ${where}`,
+      group,
+      businesses,
+      owner: group === "friends" ? "client" : "hers",
+      tier,
+      ...(WHY_TIER[p.key] ? { why_tier: WHY_TIER[p.key] } : {}),
+    };
+  });
+}
+
+/** THE GRID, derived once from sites.json. */
+export const GRID = Object.freeze(deriveGrid(SITES));
 
 /**
  * ─── OUT OF SCOPE, NAMED RATHER THAN OMITTED ───────────────────────────────
@@ -246,15 +161,20 @@ export const EXCLUDED = [
       "she said plainly that it does not pertain. Never work in a west-peek repo from here.",
   },
   { match: "join-west-peek-main", why: "West Peek. A different business." },
+  {
+    match: "westpeek",
+    why:
+      "West Peek, spelled without the hyphen: westpeek-live is the events app, a support system and not " +
+      "a business (owner, 10 Nov 2026), and it gets no search work — the West Peek hard stop applies.",
+  },
   { match: "spry-vc", why: "A different business. Her broker-dealer mailbox domain, not a property." },
   { match: "secondaries", why: "A different business." },
   { match: "founder-dilution-dashboard", why: "A different business." },
   { match: "901johnsons-site", why: "An individual client micro-site, not a grid property." },
-  { match: "cynthia-brown-dds-site", why: "An individual client micro-site, not a grid property." },
   { match: "sheila-bruce", why: "An individual client micro-site, not a grid property." },
   { match: "shannon-armstrong-bail-network", why: "An individual client micro-site, not a grid property." },
-  { match: "dianne-place-recovery-services", why: "An individual client micro-site, not a grid property." },
   { match: "charm-nest", why: "An individual client micro-site, not a grid property." },
+  { match: "creator-network", why: "Parked (owner, 10 Nov 2026): not in the grid, off every job." },
   { match: "courtscope", why: "Out of scope. Covers CourtScope_* as well — matched case-insensitively." },
   { match: "agency-event-os", why: "Out of scope." },
 ];
@@ -264,7 +184,7 @@ export const GRID_OWNER = "seq23";
 
 /** Every repo in the grid, flat, `owner/name` form. */
 export function gridRepos() {
-  return GRID.flatMap((p) => p.repos.map((r) => `${GRID_OWNER}/${r}`));
+  return [...new Set(GRID.flatMap((p) => p.repos))].map((r) => `${GRID_OWNER}/${r}`);
 }
 
 /** The grid keys, in order. */
