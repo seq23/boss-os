@@ -920,7 +920,7 @@ export function plainProblems({ subject, text, html, kind = null, layout = null 
     const dup = items.find((x, i) => items.indexOf(x) !== i);
     if (dup) problems.push(`repeated name in the subject: "${dup}"`);
   }
-  if (/\bneeds? (?:a look|you)\b/i.test(seen) && /\bnothing (?:needed|to decide)\b|\bno reply needed\b/i.test(seen)) problems.push('"needs a look" beside "nothing needed"');
+  if (saysNeedsHer(seen) && /\bnothing (?:needed|to decide)\b|\bno reply needed\b/i.test(seen)) problems.push('"needs a look" beside "nothing needed"');
   if (subj.length > MAX_SUBJECT_CHARS) problems.push(`subject longer than ${MAX_SUBJECT_CHARS} characters`);
   // A research report (kind "report", 6 Nov 2026) is the whole page by design, like the morning email.
   const cap = kind === "morning" || kind === "report" ? MORNING_MAX_TEXT_CHARS : MAX_TEXT_CHARS;
@@ -981,6 +981,19 @@ export function plainProblems({ subject, text, html, kind = null, layout = null 
  * touched: beside "needs you" that one is a real contradiction and still holds the email. Pure.
  */
 const NEEDS_HER_RE = /\bneeds? (?:a look|you)\b/i;
+/*
+ * A NEGATED "NEEDS A LOOK" NEEDS NOTHING (repair, 10 Nov 2026, the same held "Tuesday: 2 decisions, 8
+ * new deals"): the Scorecard's clear week reads "Nothing needs a look this week", which the clash check
+ * read as "something needs her" — on a calm week the morning lost its reassurance, and a sender with
+ * the structural "Nothing to decide" line beside it was held outright. A negating subject (nothing,
+ * nobody, no one, none, neither) up to two words before "needs a look / needs you", with no comma or
+ * clause break between, is removed before the test, so "Nothing has changed, but the report needs
+ * you." still needs her. Pure.
+ */
+const NEGATED_NEEDS_RE = /\b(?:nothing|nobody|no one|none|neither)(?:\s+[^\s,;:.!?—–]+){0,2}?\s+needs? (?:a look|you)\b/gi;
+export function saysNeedsHer(seen) {
+  return NEEDS_HER_RE.test(String(seen ?? "").replace(NEGATED_NEEDS_RE, " "));
+}
 export function dropReassurance(s) {
   return String(s ?? "")
     .replace(/\s*[;,]\s*(?:and\s+)?(?:nothing needed from you|no reply needed)\b/gi, "")
@@ -989,7 +1002,7 @@ export function dropReassurance(s) {
 
 const STRUCTURE_RE = /^(?:Decide \(\d+\)|Nothing to decide — this is just so you know\.|What (?:happened|broke|we did|was lost|you need to do):|Status(?::| done)|Details:|— [A-Z][a-z]+)/;
 export function simplifyForOwner({ subject, text, html = null, kind = null }) {
-  if (NEEDS_HER_RE.test(visibleText({ subject, text, html }))) {
+  if (saysNeedsHer(visibleText({ subject, text, html }))) {
     text = dropReassurance(text);
     if (html !== null && html !== undefined) html = dropReassurance(html);
   }
