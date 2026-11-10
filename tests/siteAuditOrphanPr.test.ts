@@ -55,7 +55,7 @@ it('fixedNothingCause names an all-merged round, a blocked round, and nothing el
  * THE DEADLOCK (9 Nov 2026): seven danielle/site-audit-* PRs sat 4-6 days. Each guard below is
  * proved negatively next to its positive case, and each fails on zero items.
  */
-import { NEEDS_WORKER, stagesQueueOnly, mergedOnMain } from '../src/shared/boss/searchReadiness/orphanPr.mjs';
+import { NEEDS_WORKER, clientApprovalHold, mergedOnMain } from '../src/shared/boss/searchReadiness/orphanPr.mjs';
 // @ts-expect-error Node-only ops module has no declaration.
 import { ownOpenPrs, staleGridHandoff } from '../scripts/ops/site-audit-lib.mjs';
 
@@ -76,40 +76,53 @@ it('cause 1+2: a draft or a conflicting own-lane PR is work for the next pass, l
   expect(ownOpenPrs([])).toEqual([]);
 });
 
-const horse = { repo: 'horse-legal-guide-velocity', domain: 'horse.test', client_approval: 'owners approve', client_approval_queue_files: ['data/site_changes/queue.json'] };
+const horse = { repo: 'horse-legal-guide-velocity', domain: 'horse.test', client_approval: 'new posts wait', client_approval_queue_files: ['data/site_changes/queue.json'], client_approval_new_post_paths: ['content/', 'questions/', 'dist/'], client_approval_draft_paths: ['content/drafts/'], client_approval_record_files: ['data/system/editorial_backlog.json'] };
 const hrow = { repo: horse.repo, disposition: 'in_flight', pr_url: `https://github.com/seq23/${horse.repo}/pull/78` };
 const q = (changes: any[]) => JSON.stringify({ changes });
 const approvedOne = { id: 'a', status: 'approved', title: 'live' };
 const staged = { id: 'b', status: 'pending', title: 'waits for the owners' };
-it('cause 3: on a client_approval site only a queue-only PR with unchanged approved entries lands', () => {
-  const proof = (files: string[], base: string | null, head: string | null) => ({ files, contents: Object.fromEntries(files.map(f => [f, { base, head }])) });
+/*
+ * NEW POSTS WAIT FOR THE CLIENT; FIXES SHIP (owner, 9 Nov 2026), replacing the 3 Nov "every live change
+ * waits" reading that held Horse fix PRs. Both land paths (an orphan in_flight PR, a fixed_pr row).
+ */
+it('cause 3: on a client_approval site a fix PR lands; a new post, an approval change or an unread PR is held', () => {
   const QF = 'data/site_changes/queue.json';
-  expect(stagesQueueOnly(horse, proof([QF], q([approvedOne]), q([approvedOne, staged])))).toBe(true);
-  expect(orphanVerdict(hrow, { ...green, queue_proof: proof([QF], q([approvedOne]), q([approvedOne, staged])) }, { sites: [horse] })).toBe('land');
-  // NEGATIVE: flipping an item to approved, touching any other file, an unread or new file, or a
-  // site with no declared queue file all stay held.
-  expect(stagesQueueOnly(horse, proof([QF], q([approvedOne, staged]), q([approvedOne, { ...staged, status: 'approved' }])))).toBe(false);
-  expect(stagesQueueOnly(horse, { files: [QF, 'scripts/lib/render_page.js'], contents: { [QF]: { base: q([]), head: q([staged]) } } })).toBe(false);
-  expect(stagesQueueOnly(horse, proof([QF], null, q([staged])))).toBe(false);
-  expect(stagesQueueOnly(horse, proof([QF], 'not json', q([staged])))).toBe(false);
-  expect(stagesQueueOnly(horse, proof([], q([]), q([])))).toBe(false);
-  expect(stagesQueueOnly({ ...horse, client_approval_queue_files: undefined }, proof([QF], q([]), q([staged])))).toBe(false);
+  const mod = (path: string) => ({ path, status: 'modified' });
+  const add = (path: string) => ({ path, status: 'added' });
+  const hold = (files: any[] | null, contents: any = {}) => clientApprovalHold(horse, { files, contents });
+  expect(hold([mod('scripts/lib/render_page.js'), mod('content/scenarios/a.md'), mod('dist/scenario/a/index.html')])).toBe('');
+  expect(hold([add('content/drafts/generated/2027-03-04__new.md')])).toBe('');
+  expect(hold([mod(QF)], { [QF]: { base: q([approvedOne]), head: q([approvedOne, staged]) } })).toBe('');
+  // NEGATIVE: each of these waits, with its reason.
+  expect(hold([mod('scripts/lib/render_page.js'), add('content/scenarios/new-post.md')])).toMatch(/^adds a new post \(content\/scenarios\/new-post\.md\)/);
+  expect(hold([add('questions/new-q/index.html')])).toMatch(/^adds a new post/);
+  expect(hold([{ path: 'content/hubs/x.md', status: 'renamed' }])).toMatch(/^adds a new post/);
+  expect(hold([mod('data/system/editorial_backlog.json')])).toMatch(/approval record/);
+  expect(hold([mod(QF)], { [QF]: { base: q([staged]), head: q([{ ...staged, status: 'approved' }]) } })).toMatch(/approved entry/);
+  expect(hold([mod(QF)], { [QF]: { base: undefined, head: q([staged]) } })).toMatch(/approved entry/);
+  expect(hold(null)).toMatch(/unclear/);
+  expect(hold([])).toMatch(/unclear/);
+  expect(clientApprovalHold({ ...horse, client_approval_new_post_paths: undefined }, { files: [mod('a.js')] })).toMatch(/unclear/);
   expect(orphanVerdict(hrow, green, { sites: [horse] })).toBe('client_approval');
-  // Through landAll: the PR and both copies of the queue are read from GitHub, then land runs once.
-  const run = (files: string[], base: string, head: string) => {
+  // Through landAll, both paths: the file list (and touched queue files) read from GitHub, then land.
+  const run = (disposition: string, files: any[] | null) => {
     const calls: string[] = [];
-    const payload: any = { findings: [{ ...hrow }] };
-    landAll(payload, { sites: [horse], landBin: '/test/land', run: (cmd: string, args: string[]) => {
+    const payload: any = { findings: [{ ...hrow, disposition }] };
+    landAll(payload, { sites: [horse], parked: () => false, landBin: '/test/land', run: (cmd: string, args: string[]) => {
       calls.push([cmd, ...args].join(' '));
-      if (cmd === 'gh' && args[0] === 'pr' && args[1] === 'view') return { status: 0, out: JSON.stringify({ ...green, baseRefName: 'main', headRefOid: 'h1', files: files.map(path => ({ path })) }) };
-      if (cmd === 'gh' && args[0] === 'api') return { status: 0, out: String(args[1]).endsWith('ref=main') ? base : head };
+      if (cmd === 'gh' && args[0] === 'pr' && args[1] === 'view') return { status: 0, out: JSON.stringify({ ...green, baseRefName: 'main', headRefOid: 'h1' }) };
+      if (cmd === 'gh' && args[0] === 'api' && String(args[1]).includes('/pulls/')) return files ? { status: 0, out: files.map(f => `${f.status}\t${f.path}`).join('\n') } : { status: 1, out: 'HTTP 502' };
+      if (cmd === 'gh' && args[0] === 'api') return { status: 0, out: String(args[1]).endsWith('ref=main') ? q([approvedOne]) : q([approvedOne, staged]) };
       return { status: 0, out: 'ok' };
     } });
     return { land: payload.findings[0].land, lands: calls.filter(c => c.includes('/test/land')).length };
   };
-  expect(run([QF], q([approvedOne]), q([approvedOne, staged]))).toEqual({ land: 'landed', lands: 1 });
-  expect(run([QF, 'scripts/build/write_public_indexes.js'], q([approvedOne]), q([approvedOne, staged]))).toEqual({ land: 'blocked', lands: 0 });
-  expect(run([QF], q([staged]), q([{ ...staged, status: 'approved' }]))).toEqual({ land: 'blocked', lands: 0 });
+  for (const d of ['in_flight', 'fixed_pr']) {
+    expect(run(d, [mod('scripts/build/write_public_indexes.js'), mod('content/scenarios/a.md')])).toEqual({ land: 'landed', lands: 1 });
+    expect(run(d, [mod(QF)])).toEqual({ land: 'landed', lands: 1 });
+    expect(run(d, [add('content/scenarios/new-post.md')])).toEqual({ land: d === 'fixed_pr' ? 'held_client_approval' : 'blocked', lands: 0 });
+    expect(run(d, null)).toEqual({ land: d === 'fixed_pr' ? 'held_client_approval' : 'blocked', lands: 0 });
+  }
 });
 
 it('cause 4: a land refusal for a PR already on main is already_merged and the leftover PR is closed', () => {

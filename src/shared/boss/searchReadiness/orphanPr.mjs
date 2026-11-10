@@ -9,7 +9,7 @@ export function orphanVerdict(row, pr, { sites = [], approvedSites = [] } = {}) 
   const related = sites.filter(s => s.repo === name);
   if (related.some(s => heldForOwner(s, { approved: approvedSites.includes(s.domain), texts: row.pages?.length ? row.pages : [row.headline, row.because] }))) return 'owner_approval';
   // No PR read yet: the caller must read it. A client_approval site is read too (9 Nov 2026), so a
-  // PR that only stages an approval-queue item can be proved and landed; see stagesQueueOnly.
+  // fix PR (anything but a new post) can be proved and landed; see clientApprovalHold.
   if (!pr) return 'another_lane';
   // MERGED IS MERGED, WHOEVER OPENED IT (7 Nov 2026): heygetonmylevel #15, opened off
   // fix/sr-heygetonmylevel-6nov and already merged, was logged "blocked: another_lane".
@@ -28,9 +28,8 @@ export function orphanVerdict(row, pr, { sites = [], approvedSites = [] } = {}) 
   if (pr.mergeable === 'CONFLICTING') return 'conflicting';
   const checks = pr.statusCheckRollup;
   if (!Array.isArray(checks) || !checks.length || checks.some(c => c.status ? c.status !== 'COMPLETED' || !['SUCCESS', 'NEUTRAL', 'SKIPPED'].includes(c.conclusion) : c.state !== 'SUCCESS')) return 'checks_red';
-  // A CLIENT APPROVES WHAT GOES LIVE (Horse, owner 3 Nov 2026). Only a PR proved to change no public
-  // output, by staging an item in the site's own approval queue, lands; anything else stays held.
-  if (related.some(s => s.client_approval) && !related.every(s => !s.client_approval || stagesQueueOnly(s, pr.queue_proof))) return 'client_approval';
+  // NEW POSTS WAIT FOR THE CLIENT; FIXES SHIP (Horse, owner 9 Nov 2026): clientApprovalHold.
+  if (related.some(s => s.client_approval && clientApprovalHold(s, pr.client_proof))) return 'client_approval';
   return 'land';
 }
 
@@ -38,29 +37,41 @@ export function orphanVerdict(row, pr, { sites = [], approvedSites = [] } = {}) 
 export const NEEDS_WORKER = Object.freeze(['draft_left_behind', 'conflicting', 'checks_red']);
 
 /**
- * DOES THIS PR ONLY STAGE AN APPROVAL-QUEUE ITEM? (9 Nov 2026, horse-legal-guide-velocity #77/#78.)
- * `proof` = { files: [changed paths], contents: { [path]: { base: text|null, head: text|null } } }.
- * True only when every changed file is one of the site's `client_approval_queue_files` and, in each,
- * the approved entries (`changes[]` with status "approved") are byte-identical before and after: the
- * repo builds an unapproved change as byte-identical output (its scripts/lib/site_changes.js), so
- * nothing public moves until the client approves it in /admin/. Anything unread, unparsable, new,
- * or touching another file fails closed.
+ * NEW POSTS WAIT FOR THE CLIENT; FIXES SHIP (owner, 9 Nov 2026: "the only thing that waits for the
+ * horse owner's approval is new posts — any fixes I make get pushed without that"). Replaces the
+ * 3 Nov reading that held every change to a live page, which held Horse fix PRs (#77/#78 could land
+ * only by staging a queue item; any at-source fix stayed `client_approval`).
+ * `proof` = { files: [{ path, status }] (GitHub's pulls/<n>/files), contents: { [queueFile]: { base, head } } }.
+ * Returns '' when the PR may land, else the named reason it waits. Held when it:
+ *  - ADDS a post or page (an added .md/.mdx/.html under `client_approval_new_post_paths`, outside
+ *    `client_approval_draft_paths`, which only fill the queue);
+ *  - changes an approval record (`client_approval_record_files`), which would publish without a yes;
+ *  - changes an approved entry of a `client_approval_queue_files` file (staging new items is fine).
+ * Unclear fails closed: no new-post paths declared, or the file list or a queue file unread.
  */
-export function stagesQueueOnly(site, proof) {
-  const allowed = Array.isArray(site?.client_approval_queue_files) ? site.client_approval_queue_files : [];
-  const files = Array.isArray(proof?.files) ? proof.files : [];
-  if (!allowed.length || !files.length || files.some(f => !allowed.includes(f))) return false;
+export function clientApprovalHold(site, proof) {
+  const postPaths = Array.isArray(site?.client_approval_new_post_paths) ? site.client_approval_new_post_paths : [];
+  if (!postPaths.length) return `${site?.domain ?? site?.repo}: no new-post paths declared, so whether the PR adds a new post is unclear`;
+  const files = proof?.files;
+  if (!Array.isArray(files) || !files.length || files.some(f => typeof f?.path !== 'string' || typeof f?.status !== 'string')) return "the PR's changed files could not be read, so whether it adds a new post is unclear";
+  const under = (path, list) => (Array.isArray(list) ? list : []).some(x => path.startsWith(x));
+  const posts = files.filter(f => ['added', 'renamed', 'copied'].includes(f.status) && /\.(md|mdx|html?)$/i.test(f.path) && under(f.path, postPaths) && !under(f.path, site.client_approval_draft_paths));
+  if (posts.length) return `adds a new post (${posts.slice(0, 3).map(f => f.path).join(', ')}${posts.length > 3 ? ` +${posts.length - 3} more` : ''}): new posts wait for the client's approval queue`;
+  const records = files.filter(f => (site.client_approval_record_files ?? []).includes(f.path));
+  if (records.length) return `changes the approval record ${records.map(f => f.path).join(', ')}: only the client's approval changes it`;
+  const queue = Array.isArray(site.client_approval_queue_files) ? site.client_approval_queue_files : [];
+  for (const f of files.filter(x => queue.includes(x.path))) if (!approvedUnchanged(proof.contents?.[f.path])) return `changes an approved entry in ${f.path} (or it could not be read): approving is the client's`;
+  return '';
+}
+
+/** A queue file's approved entries (`changes[]` with status "approved") are byte-identical before and after. Unread = false. */
+function approvedUnchanged(c) {
   const approved = (text) => {
     const doc = JSON.parse(text);
     if (!Array.isArray(doc?.changes)) throw new Error('no changes[]');
-    return JSON.stringify(doc.changes.filter(c => c?.status === 'approved').sort((a, b) => String(a.id).localeCompare(String(b.id))));
+    return JSON.stringify(doc.changes.filter(x => x?.status === 'approved').sort((a, b) => String(a.id).localeCompare(String(b.id))));
   };
-  try {
-    return files.every(f => {
-      const c = proof.contents?.[f];
-      return typeof c?.base === 'string' && typeof c?.head === 'string' && approved(c.base) === approved(c.head);
-    });
-  } catch { return false; }
+  try { return typeof c?.head === 'string' && approved(c.head) === (c.base === null ? approved('{"changes":[]}') : approved(c.base)); } catch { return false; }
 }
 
 /**
