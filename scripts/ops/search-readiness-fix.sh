@@ -295,6 +295,8 @@ main() {
   FIXED=$(( START - LEFT )); [ "$FIXED" -ge 0 ] || FIXED=0
   write_status "$START" "$FIXED" "$LEFT" "${PROT:-0}" "${NOREPO:-0}" 1 | tee -a "$LOG"
   say "SR-QUEUE-COMPLETE: started=$START fixed=$FIXED left=$LEFT protected=${PROT:-0} no_repo=${NOREPO:-0}"
+  # The census line duty-run.sh reads (no line = NOTE [NO_OUTPUT_LINE], counted below the floor).
+  echo "OUTPUT $FIXED search fixes live" | tee -a "$LOG"
   # RULE 0, WITH WORK LEFT: never a quiet exit 0. Named, on Danielle's repair desk, and non-zero unless
   # the queue stalled (see below). The run did reach its end, so the mark is cleared.
   if [ "$LEFT" -gt 0 ]; then
