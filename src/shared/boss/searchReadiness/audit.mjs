@@ -816,12 +816,22 @@ export const CHECKS = {
   },
   repo_public(ctx) {
     const r = ctx.repo; if (!r?.ok) return r?.noRepo ? { status: "no_repo", detail: r.why } : notChecked(r?.why ?? "repo not read");
-    return r.visibility === "PUBLIC" ? pass("repo is public") : r.visibility ? fail(`repo is ${r.visibility}`) : notChecked("visibility not read");
+    if (r.visibility === "PUBLIC") return pass("repo is public");
+    // An owner ruling may keep one repo private (sites.json repo_private_why);
+    // the reason is quoted so the pass is never silent.
+    if (r.visibility === "PRIVATE" && ctx.site?.repo_private_why) return pass(`repo is private by owner ruling: ${ctx.site.repo_private_why}`);
+    return r.visibility ? fail(`repo is ${r.visibility}`) : notChecked("visibility not read");
   },
   no_deploy_step(ctx) {
     const r = ctx.repo; if (!r?.ok) return r?.noRepo ? { status: "no_repo", detail: r.why } : notChecked(r?.why ?? "repo not read");
     const hits = r.workflows.filter((w) => /wrangler(-action)?[^\n]*\b(deploy|pages deploy)\b|cloudflare\/(wrangler|pages)-action/i.test(w.text)).map((w) => w.name);
-    return hits.length ? fail(`deploy step in ${hits.join(", ")}`) : pass("no deploy step in any workflow");
+    if (!hits.length) return pass("no deploy step in any workflow");
+    // A site whose Pages account has no Git connection on purpose deploys by
+    // direct upload from the ONE workflow sites.json names; any other deploy
+    // step still fails.
+    const allowed = ctx.site?.deploy_direct_upload;
+    if (allowed?.workflow && allowed?.why && hits.every((h) => h === allowed.workflow)) return pass(`deploys by direct upload from ${allowed.workflow} by owner ruling: ${allowed.why}`);
+    return fail(`deploy step in ${hits.join(", ")}`);
   },
   llm_routing_free(ctx) {
     const r = ctx.repo; if (!r?.ok) return r?.noRepo ? { status: "no_repo", detail: r.why } : notChecked(r?.why ?? "repo not read");

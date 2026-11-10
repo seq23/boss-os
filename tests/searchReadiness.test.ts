@@ -666,6 +666,26 @@ describe("known limits and one page counted once (25 Oct 2026)", () => {
     expect(r.evidence!.length).toBe(1);
     expect(r.evidence![0]).toContain("/wedding-budget-spreadsheet");
   });
+  it("i1/i2: the private authority network passes with its ruling quoted; every other private repo or deploy step still fails", () => {
+    const abn = sites.grid_repos.filter((s: any) => s.repo === "authority-backlink-network");
+    expect(abn.length).toBe(3);
+    const deployWf = { name: "deploy-publications.yml", text: "npx --yes wrangler@4.131.1 pages deploy . --project-name x" };
+    for (const s of abn) {
+      const pub = CHECKS.repo_public!({ site: s, repo: { ok: true, visibility: "PRIVATE", workflows: [] } } as any);
+      expect(pub.status).toBe("pass");
+      expect(pub.detail).toContain(s.repo_private_why);
+      expect(CHECKS.no_deploy_step!({ site: s, repo: { ok: true, workflows: [deployWf] } } as any).status).toBe("pass");
+      // A second deploy workflow is not covered by the ruling.
+      expect(CHECKS.no_deploy_step!({ site: s, repo: { ok: true, workflows: [deployWf, { ...deployWf, name: "other.yml" }] } } as any).status).toBe("fail");
+    }
+    // The exemption is a ruling with a reason, held by exactly these three sites.
+    const priv = sites.grid_repos.filter((s: any) => s.repo_private_why || s.deploy_direct_upload);
+    expect(priv.map((s: any) => s.domain).sort()).toEqual(["founderoperatorlibrary.com", "memphisvendorlibrary.com", "professionalresourcelibrary.com"]);
+    for (const s of priv) expect(String(s.repo_private_why).length).toBeGreaterThan(40);
+    const other = sites.grid_repos.find((s: any) => s.domain === "time-2-read.com");
+    expect(CHECKS.repo_public!({ site: other, repo: { ok: true, visibility: "PRIVATE", workflows: [] } } as any).status).toBe("fail");
+    expect(CHECKS.no_deploy_step!({ site: other, repo: { ok: true, workflows: [deployWf] } } as any).status).toBe("fail");
+  });
   it("a site marked clarity: false passes the Clarity check with its reason; any other site still needs Clarity", () => {
     const hwk = sites.grid_repos.find((s: any) => s.domain === "howweknowdeep.com");
     expect(hwk.clarity).toBe(false);

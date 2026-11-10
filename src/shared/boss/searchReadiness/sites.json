@@ -1122,6 +1122,8 @@
   {
    "domain": "professionalresourcelibrary.com",
    "repo": "authority-backlink-network",
+   "repo_private_why": "authority-backlink-network is the one private repo, an exception to every repo being public: its name and target list tied the publications to her money sites; its Actions use (~466 min/month) sits under the free 2,000 (owner, 8 Nov 2026, personal brain).",
+   "deploy_direct_upload": { "workflow": "deploy-publications.yml", "why": "The publications moved to their own Cloudflare account in Nov 2026 with no GitHub connection on purpose, so a direct upload from this workflow is the only path a change takes to the live site (Pages direct upload is free)." },
    "category": "side_business",
    "group": "support",
    "business": "Authority backlink network",
@@ -1146,6 +1148,8 @@
   {
    "domain": "founderoperatorlibrary.com",
    "repo": "authority-backlink-network",
+   "repo_private_why": "authority-backlink-network is the one private repo, an exception to every repo being public: its name and target list tied the publications to her money sites; its Actions use (~466 min/month) sits under the free 2,000 (owner, 8 Nov 2026, personal brain).",
+   "deploy_direct_upload": { "workflow": "deploy-publications.yml", "why": "The publications moved to their own Cloudflare account in Nov 2026 with no GitHub connection on purpose, so a direct upload from this workflow is the only path a change takes to the live site (Pages direct upload is free)." },
    "category": "side_business",
    "group": "support",
    "business": "Authority backlink network",
@@ -1170,6 +1174,8 @@
   {
    "domain": "memphisvendorlibrary.com",
    "repo": "authority-backlink-network",
+   "repo_private_why": "authority-backlink-network is the one private repo, an exception to every repo being public: its name and target list tied the publications to her money sites; its Actions use (~466 min/month) sits under the free 2,000 (owner, 8 Nov 2026, personal brain).",
+   "deploy_direct_upload": { "workflow": "deploy-publications.yml", "why": "The publications moved to their own Cloudflare account in Nov 2026 with no GitHub connection on purpose, so a direct upload from this workflow is the only path a change takes to the live site (Pages direct upload is free)." },
    "category": "side_business",
    "group": "support",
    "business": "Authority backlink network",
