@@ -185,7 +185,7 @@ describe("Rule 0: everything awaiting her is in Decide, and only there once", ()
       ],
     }, NOW);
     expect(e.digest.decide).toHaveLength(0);
-    expect(e.digest.done[0].text).toBe("What happened: 1 new comment on How We Know on YouTube, 1 pointing at a fault in a video (pronunciation: a word). What we did: Monique left it alone, as none needed an answer, and Danielle has the fault to fix for future videos. Status: done, nothing needed from you.");
+    expect(e.digest.done[0].text).toBe("What happened: 1 new comment on How We Know on YouTube, 1 pointing at a fault in a video (pronunciation: a word). What we did: Monique left it alone, as none needed an answer, and Danielle has the fault to fix for future videos. Status: done.");
   });
 });
 
