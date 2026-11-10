@@ -32,10 +32,8 @@
  *
  * ─── The property-level reasons a reader cannot reach ──────────────────────
  *
- * These are facts about the grid, not about the readers. A YouTube channel has no domain to GET and
- * no Search Console property; the wedding cluster's four domains are not recorded in the grid
- * because she has not named them, and the grid's own rule is that they are never invented; the
- * authority network is repositories and no site. Each is written out so the card says the true
+ * These are facts about the grid, not about the readers. A YouTube channel with no website has no
+ * domain to GET and no Search Console property. Each is written out so the card says the true
  * sentence rather than an empty box.
  *
  * `.mjs` beside a `.d.mts` for the same reason `grid.mjs` is: the Worker, the Mac script and the
@@ -61,25 +59,12 @@ export const READER_RUNS_ON = {
  * Keyed by property key, then reader. The sentence is what the card prints.
  */
 export const CANNOT = {
-  youtube: {
-    uptime: "No canonical domain recorded — this property is a YouTube channel handle (@howweknowdeep), not a site to probe.",
+  // Owner, 10 Nov 2026: every other grid property now has its canonical domains recorded in
+  // sites.json, so its cells are wired. Whisper Almanac is the one with no website.
+  whisper_almanac: {
+    uptime: "No website — this property is a YouTube channel handle (@whisperalmanac); whisperalmanac.com has no DNS, so there is nothing to probe.",
     gsc: "Not a website: a YouTube channel has no Search Console property.",
     cloudflare: "Nothing of this property is deployed on Cloudflare; the channel is hosted by YouTube.",
-  },
-  wedding: {
-    uptime: "The four canonical domains are not recorded in the grid — she has not named them, and the grid never invents one.",
-    gsc: "The four canonical domains are not recorded in the grid, so there is no Search Console property to read by name.",
-    cloudflare: "The four canonical domains are not recorded in the grid, so no deployment can be matched to this property by name.",
-  },
-  authority_network: {
-    uptime: "No canonical domain recorded — this is plumbing (two repositories), not a public site.",
-    gsc: "No public site of its own, so no Search Console property.",
-    cloudflare: "No public site of its own, so no deployment to read.",
-  },
-  creator_network: {
-    uptime: "No canonical domain recorded — the property is four creators' social accounts and a state Worker, not a public site.",
-    gsc: "No public site of its own, so no Search Console property.",
-    cloudflare: "The state Worker deploys on land, but no domain is recorded for it in the grid, so no deployment can be matched by name.",
   },
 };
 

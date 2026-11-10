@@ -41,8 +41,10 @@ export const SIDE_BUSINESSES: readonly SideBusiness[] = [
   { key: "approvalprep", name: "ApprovalPrep", grid: ["approvalprep"], outreach: ["approvalprep"], lines: ["approvalprep"], href: "/?tab=team&view=outreach" },
   { key: "wedding", name: "Wedding sites", grid: ["wedding"], outreach: ["weddingchecklist"], lines: ["wedding", "digital_products"], href: "/?tab=team&view=outreach" },
   { key: "how_we_know", name: "How We Know", grid: ["youtube"], outreach: [], lines: ["how_we_know"], href: "/?tab=systems&section=health" },
-  { key: "virtual_agency", name: "Virtual Agency OS", grid: ["virtual_agency"], outreach: [], lines: ["virtual_agency"], href: "/?tab=systems&section=health" },
-  { key: "creator_network", name: "Creator Network", grid: ["creator_network"], outreach: [], lines: ["creator_network"], href: "/?tab=systems&section=health" },
+  // Owner, 10 Nov 2026: virtualagency-os.com is a friend's site (never here) and creator-network is
+  // not on the grid; KeepMyProof and Whisper Almanac are.
+  { key: "keepmyproof", name: "KeepMyProof", grid: ["keepmyproof"], outreach: [], lines: [], href: "/?tab=systems&section=health" },
+  { key: "whisper_almanac", name: "Whisper Almanac", grid: ["whisper_almanac"], outreach: [], lines: [], href: "/?tab=systems&section=health" },
 ];
 
 export type SideSignal = "leads" | "broken" | "revenue" | "untouched" | "none";

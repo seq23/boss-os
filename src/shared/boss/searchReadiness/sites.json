@@ -1,10 +1,9 @@
 {
  "_why": "THE GRID REPOS: every site the Search Readiness checklist is enforced on, with its category, kind and coverage. Owner, 25 Oct 2026: the side businesses on her Side Business Review page, plus Porch & Party, Virtual Agency OS, the Spry HPC sites and the two client sites (horselegalguide.com, hicksconsulting.org), all on the full auto-fix lane. Never anything West Peek, never Shirley Brown's senior housing work. tests/searchReadiness.test.ts fails if a site has no coverage entry. entity_parent (31 Oct 2026, authority audit): spry-labs = a side business whose entity points parentOrganization at Spry Labs (https://billionairehighperformancecoach.com/spry-labs#organization), directly or through a grid parent such as The Industry Guides; client = a friend's business, never the Spry Labs parent; own = her own business outside Spry Labs (Porch & Party, Virtual Agency OS) or a side business whose parent claim the owner has withdrawn (the three authority-network publications, 11 Oct 2026; entity_parent_why says so on the row), never the Spry Labs parent. ymyl: true marks a medical, legal or financial site whose pages need a named reviewer (k5). entity_file names the entity file when it is not called entity.json. search_loop (1 Nov 2026, owner: the search growth loop on every selling site): the site runs the shared seq23/search-loop engine and every growth-loop item (f2, f7-f12, applies_to flag:search_loop) is enforced on it; wave is the rollout order she approved (1 Industry Guides, ApprovalPrep, Dream Wedding, the Spry HPC sites; 2 Time-2-Read and heygetonmylevel; 3 Porch & Party and the client sites). Where a site shows is decided by its repo's category in the personal brain's \"Repo categories\" (1 Nov 2026): her own sites in the standings and her email; Friends & clients in a separate \"Friends' sites\" section, in her email only when one needs her (siteSection).",
  "_groups": {
-  "_why": "WHAT SEARCH READINESS COVERS (owner, 7 Nov 2026, personal brain Settled decisions 'Names and groups'): friends' sites + selling sites + all of the Divine 9. Every grid row names its `group` and its `business`; reports name the business first, so an Industry Guides vertical (dentistryguides.com) is never shown as a business of its own. Support systems (the authority backlink network) serve her businesses and stay audited. `sunsetting` on a row: audited and reported, its briefs never worked. Pinned by tests/searchReadinessGroups.test.ts.",
+  "_why": "WHAT SEARCH READINESS COVERS (owner, 7 Nov 2026, personal brain Settled decisions 'Names and groups'): friends' sites + all of the Divine 9 + the support systems (owner, 10 Nov 2026: Porch & Party is a friends & clients site and there is no selling group). Every grid row names its `group` and its `business`; reports name the business first, so an Industry Guides vertical (dentistryguides.com) is never shown as a business of its own. Support systems (the authority backlink network) serve her businesses and stay audited; they are not Spry Labs businesses (owner, 10 Nov 2026), so the libraries are own_business. Time-2-Read is one ed-tech business with two apps, time-2-read.com and heygetonmylevel.com (owner, 10 Nov 2026). `sunsetting` on a row: audited and reported, its briefs never worked. Pinned by tests/searchReadinessGroups.test.ts. THE GRID (owner, 10 Nov 2026) is every grid_repos row plus every gap that names a `repo` and a `handle` (a channel with no website); src/shared/boss/grid.mjs derives from this file and scripts/validate/the-grid-is-one-list.mjs holds it.",
   "divine_9": [
    "Time-2-Read",
-   "heygetonmylevel",
    "Industry Guides",
    "KeepMyProof",
    "ApprovalPrep",
@@ -13,21 +12,23 @@
    "How We Know",
    "Whisper Almanac"
   ],
-  "selling": [
-   "Porch & Party"
-  ],
   "friends": [
    "Horse",
    "Hicks",
    "Cynthia Brown DDS",
    "WPP-llm",
-   "Detox Denver"
+   "Detox Denver",
+   "Porch & Party"
   ],
   "support": [
    "Authority backlink network"
   ],
   "gaps": {
-   "Whisper Almanac": "whisperalmanac.com is owned (6 Nov 2026) but has no site or repo yet; it joins the grid with its first page."
+   "Whisper Almanac": {
+    "why": "A YouTube channel with no website yet: whisperalmanac.com is owned (6 Nov 2026) but has no DNS or site. It is in the grid as the channel (owner, 10 Nov 2026), made in how-we-know, and joins grid_repos with its first page.",
+    "repo": "how-we-know",
+    "handle": "@whisperalmanac"
+   }
   }
  },
  "never": [
@@ -60,6 +61,10 @@
   {
    "repo": "charm-nest",
    "why": "Parked (owner, 7 Nov 2026): off Search Readiness and every job."
+  },
+  {
+   "repo": "creator-network",
+   "why": "Parked (owner, 10 Nov 2026): not in the grid, off Search Readiness and every job."
   },
   {
    "repo": "courtscope",
@@ -676,10 +681,10 @@
     }
    ],
    "repo": "p-n-p",
-   "category": "own_business",
-   "group": "selling",
+   "category": "client",
+   "group": "friends",
    "business": "Porch & Party",
-   "entity_parent": "own",
+   "entity_parent": "client",
    "kind": "hyperlocal",
    "roles": [],
    "label": "Porch & Party",
@@ -853,15 +858,6 @@
    },
    "search_loop": {
     "wave": 3
-   },
-   "lead_source": {
-    "kind": "d1",
-    "action": "quote requests (test requests left out)",
-    "code": "p-n-p functions/_lib/request-submit.mjs (D1 pnp-admin, requests)",
-    "params": {
-     "db": "pnp-admin",
-     "sql": "SELECT COUNT(*) AS n FROM requests WHERE is_test = 0 AND datetime(submitted_at) >= datetime(:since_iso)"
-    }
    }
   },
   {
@@ -1072,7 +1068,7 @@
    "repo": "heygetonmylevel",
    "category": "side_business",
    "group": "divine_9",
-   "business": "heygetonmylevel",
+   "business": "Time-2-Read",
    "entity_parent": "spry-labs",
    "kind": "brand",
    "roles": [],
@@ -1129,7 +1125,7 @@
    "repo": "authority-backlink-network",
    "repo_private_why": "authority-backlink-network is the one private repo, an exception to every repo being public: its name and target list tied the publications to her money sites; its Actions use (~466 min/month) sits under the free 2,000 (owner, 8 Nov 2026, personal brain).",
    "deploy_direct_upload": { "workflow": "deploy-publications.yml", "why": "The publications moved to their own Cloudflare account in Nov 2026 with no GitHub connection on purpose, so a direct upload from this workflow is the only path a change takes to the live site (Pages direct upload is free)." },
-   "category": "side_business",
+   "category": "own_business",
    "group": "support",
    "business": "Authority backlink network",
    "entity_parent": "own",
@@ -1155,7 +1151,7 @@
    "repo": "authority-backlink-network",
    "repo_private_why": "authority-backlink-network is the one private repo, an exception to every repo being public: its name and target list tied the publications to her money sites; its Actions use (~466 min/month) sits under the free 2,000 (owner, 8 Nov 2026, personal brain).",
    "deploy_direct_upload": { "workflow": "deploy-publications.yml", "why": "The publications moved to their own Cloudflare account in Nov 2026 with no GitHub connection on purpose, so a direct upload from this workflow is the only path a change takes to the live site (Pages direct upload is free)." },
-   "category": "side_business",
+   "category": "own_business",
    "group": "support",
    "business": "Authority backlink network",
    "entity_parent": "own",
@@ -1181,7 +1177,7 @@
    "repo": "authority-backlink-network",
    "repo_private_why": "authority-backlink-network is the one private repo, an exception to every repo being public: its name and target list tied the publications to her money sites; its Actions use (~466 min/month) sits under the free 2,000 (owner, 8 Nov 2026, personal brain).",
    "deploy_direct_upload": { "workflow": "deploy-publications.yml", "why": "The publications moved to their own Cloudflare account in Nov 2026 with no GitHub connection on purpose, so a direct upload from this workflow is the only path a change takes to the live site (Pages direct upload is free)." },
-   "category": "side_business",
+   "category": "own_business",
    "group": "support",
    "business": "Authority backlink network",
    "entity_parent": "own",

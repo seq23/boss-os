@@ -34,7 +34,7 @@ export const SOCIAL_MAP = manifest as unknown as SocialManifest;
 
 /** The page's three sections, in order; a group sits in exactly one. */
 export const SECTIONS: Array<{ key: string; label: string; groups: string[] }> = [
-  { key: "mine", label: "Your businesses", groups: ["selling", "divine_9", "other"] },
+  { key: "mine", label: "Your businesses", groups: ["divine_9", "other"] },
   { key: "support", label: "Support systems", groups: ["support"] },
   { key: "friends", label: "Friends' sites", groups: ["friends"] },
 ];

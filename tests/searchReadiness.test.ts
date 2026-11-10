@@ -883,18 +883,21 @@ describe("K · authority and entity: the grid-wide gate (31 Oct 2026, authority 
     for (const s of sites.grid_repos) expect(ENTITY_PARENTS, s.domain).toContain(s.entity_parent);
     for (const s of sites.grid_repos.filter((x: any) => x.category === "client")) expect(s.entity_parent, s.domain).toBe("client");
     const by = Object.fromEntries(sites.grid_repos.map((x: any) => [x.domain, x]));
-    expect(by["porchandparty901.com"].entity_parent).toBe("own");
-    // WPP-llm is a friends' site since 7 Nov 2026 (Scooter's agency site; personal brain).
-    for (const d of ["horselegalguide.com", "hicksconsulting.org", "virtualagency-os.com"]) expect(by[d].entity_parent).toBe("client");
+    // WPP-llm is a friends' site since 7 Nov 2026 (Scooter's agency site; personal brain); Porch &
+    // Party since 10 Nov 2026 (friends & clients, personal brain).
+    for (const d of ["horselegalguide.com", "hicksconsulting.org", "virtualagency-os.com", "porchandparty901.com"]) expect(by[d].entity_parent).toBe("client");
     // Every side business names Spry Labs as its parent EXCEPT the three authority-network
     // publications, whose parent claim the owner withdrew on 11 Oct 2026 (and which
     // authority-backlink-network's validate_no_parent_company.py refuses to republish). A side
     // business may read "own" only as one of those three, and only with entity_parent_why on the
     // row saying which decision made it true — so nothing else can quietly opt out.
     const noParent = ["founderoperatorlibrary.com", "memphisvendorlibrary.com", "professionalresourcelibrary.com"];
+    // Owner, 10 Nov 2026: the authority backlink network is a support system, NOT a Spry Labs
+    // business, so its three publications are own_business and every side business is Spry Labs'.
     for (const s of sites.grid_repos.filter((x: any) => x.category === "side_business")) {
-      expect(s.entity_parent, s.domain).toBe(noParent.includes(s.domain) ? "own" : "spry-labs");
+      expect(s.entity_parent, s.domain).toBe("spry-labs");
     }
+    for (const d of noParent) expect(by[d], d).toMatchObject({ category: "own_business", group: "support", entity_parent: "own" });
     for (const d of noParent) {
       expect(by[d].repo).toBe("authority-backlink-network");
       expect(by[d].entity_parent_why, d).toMatch(/11 Oct 2026/);
@@ -902,7 +905,8 @@ describe("K · authority and entity: the grid-wide gate (31 Oct 2026, authority 
       // k1 finds the entity file only where the row names it: these are data/entities/<domain>.json.
       expect(by[d].entity_file, d).toBe(`data/entities/${d}.json`);
     }
-    expect(sites.grid_repos.filter((x: any) => x.entity_parent === "own" && x.category === "side_business").map((x: any) => x.domain).sort()).toEqual(noParent);
+    expect(sites.grid_repos.filter((x: any) => x.entity_parent === "own" && x.category === "side_business")).toEqual([]);
+    expect(sites.grid_repos.filter((x: any) => x.group === "support").map((x: any) => x.domain).sort()).toEqual(noParent);
     expect(sites.grid_repos.filter((x: any) => x.ymyl).map((x: any) => x.domain).sort()).toEqual(["approvalprep.com", "cynthiabrowndds.com", "dentistryguides.com", "detoxdenver.org", "hormonesivhair.com", "horselegalguide.com", "memphisseniorcarehomes.com", "neuroevalguides.com", "theaccidentguides.com", "uscisexam.com"]);
     expect(SPRY_LABS_ID).toBe(SPRY);
   });

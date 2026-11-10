@@ -16,7 +16,7 @@ import path from "node:path";
 export const STATUSES = Object.freeze(["live_auto", "live_manual", "planned", "paused", "dead", "never"]);
 /** The page's sections. Every group but "other" is a key of sites.json `_groups`, the one place groups are named. */
 export const PAGE_SECTIONS = Object.freeze([
-  { key: "mine", label: "Your businesses", groups: ["selling", "divine_9", "other"] },
+  { key: "mine", label: "Your businesses", groups: ["divine_9", "other"] },
   { key: "support", label: "Support systems", groups: ["support"] },
   { key: "friends", label: "Friends' sites", groups: ["friends"] },
 ]);

@@ -309,8 +309,11 @@ site. Pinned by `tests/searchReadiness.test.ts`, which reads this section:
    every read (`currentBriefs`). A site whose home page redirects to another site is audited on its
    own host (`auditHost`), and its social card (b6) is read from a page of that host, never the
    other site's home page (`socialCardPage`, 7 Nov 2026).
-11. **What it covers (owner, 7 Nov 2026, personal brain "Names and groups").** Friends' sites + selling
-   sites + all of the Divine 9. Every sites.json row names its `group` (divine_9, selling, friends,
+11. **What it covers (owner, 7 Nov 2026, personal brain "Names and groups"; 10 Nov 2026).** Friends'
+   sites + all of the Divine 9 + the support systems; there is no selling group (Porch & Party is a
+   friends & clients site, 10 Nov 2026). This set IS "the grid": `src/shared/boss/grid.mjs` derives
+   from sites.json (plus Whisper Almanac's channel in `_groups.gaps`), held by
+   `validate:grid-is-one-list`. Every sites.json row names its `group` (divine_9, friends,
    support) and its `business` from `_groups`; reports name the business first, so an Industry Guides
    vertical (dentistryguides.com) never reads as a business of its own. heygetonmylevel is in. A row
    with `sunsetting` (spryexecutiveos.com, lapses with its domain) is audited and labelled
