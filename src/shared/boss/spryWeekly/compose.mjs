@@ -13,6 +13,7 @@ import { GRID } from "../grid.mjs";
 const CLIENT_DOMAINS = GRID.filter((p) => p.owner === "client").flatMap((p) => p.domains ?? []);
 import { SPRY_WEEKLY_SOURCES } from "./sources.mjs";
 import { loopLine, weekProblem } from "../searchLoop/week.mjs";
+import { refreshLine } from "./refresh.mjs";
 
 export const SPRY_WEEKLY = SPRY_WEEKLY_SOURCES;
 const MAX_LOOKS = 3;
@@ -132,13 +133,16 @@ export function loopSection(loop, { now = Date.now(), sites = SPRY_WEEKLY.search
 }
 
 /** The whole email's parts. `got` maps source key → { summary } or { problem }. */
-export function composeSpryWeekly(got, { now = Date.now(), loop = null } = {}) {
+export function composeSpryWeekly(got, { now = Date.now(), loop = null, refresh = null } = {}) {
   const sections = SPRY_WEEKLY.sources.map((src) => {
     const g = got[src.key] ?? { problem: "it did not arrive" };
     const problem = g.problem ?? summaryProblem(g.summary, { now, maxAgeHours: src.max_age_hours ?? 36 });
     return sectionFor(src, g.summary, problem);
   });
   const loopPart = loopSection(loop, { now });
+  // The month's refresh count (10 Nov 2026), in the first weekly of the month only.
+  const refreshItem = refresh ? refreshLine(refresh, { now }) : null;
+  if (refreshItem) loopPart.section.items.push(`Page refresh in ${refreshItem}`);
   const missing = sections.filter((s) => s.items[0].startsWith("No report this week")).length;
   const looks = SPRY_WEEKLY.sources.reduce((a, src) => {
     const s = got[src.key]?.summary;
