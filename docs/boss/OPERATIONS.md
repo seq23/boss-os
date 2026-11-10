@@ -112,6 +112,8 @@ com.seq.boss-lp          LP replies → Inbox digest          daily 07:45 (dorma
 
 Reinstall or repair them all with `npm run app:install` and `bash scripts/ops/install-agent-launchd.sh`.
 
+The morning catch-up (`com.seq.boss-morning-catchup`, 06:32 and whenever the Mac comes up, 9 Nov 2026: a Mac off through 05:30–06:40 lost "deals") reinstalls alone with `bash scripts/ops/install-morning-catchup.sh`.
+
 ---
 
 ## What arrives by itself, and what the Inbox is for

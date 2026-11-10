@@ -37,7 +37,7 @@ import { scopeSnapshot } from "../../src/shared/boss/siteAudit/evidence.mjs";
 import { repoForDomain } from "../../src/shared/boss/siteAudit/domainRepos.mjs";
 import { heldForOwner } from "../../src/shared/boss/searchReadiness/ownerApproval.mjs";
 
-import { orphanVerdict } from "../../src/shared/boss/searchReadiness/orphanPr.mjs";
+import { orphanVerdict, mergedOnMain, NEEDS_WORKER } from "../../src/shared/boss/searchReadiness/orphanPr.mjs";
 import { envForRepoRun } from "../lib/vault-env.mjs";
 import { isParked } from "./lib/repo-categories.mjs";
 
@@ -148,7 +148,8 @@ export function matchInFlight(prs, branches, terms) {
   for (const p of prs) {
     const files = (p.files ?? []).map((f) => f.path ?? f).join(" ");
     if (hit(p.title) || hit(p.body) || hit(p.headRefName) || hit(files)) {
-      return { kind: "pr", ref: p.url ?? `#${p.number}`, title: p.title };
+      const own = String(p.headRefName ?? "").startsWith("danielle/site-audit-");
+      return { kind: "pr", ref: p.url ?? `#${p.number}`, title: p.title, ...(own ? { own, branch: p.headRefName } : {}) };
     }
   }
   for (const b of branches) {
@@ -229,8 +230,9 @@ export function landAll(payload, { run = defaultRun, landBin = process.env.AUDIT
       let pr = null;
       // Validate identity and policy before even looking up the remote PR.
       if (orphanVerdict(f, null, { sites, approvedSites }) === "another_lane") {
-        const view = run("gh", ["pr", "view", f.pr_url, "--json", "state,isDraft,headRefName,statusCheckRollup"], undefined);
+        const view = run("gh", ["pr", "view", f.pr_url, "--json", PR_FIELDS], undefined);
         try { if (view.status === 0) pr = JSON.parse(view.out); } catch { /* fail closed */ }
+        if (pr && sites.some((s) => s.repo === repoName(f.repo) && s.client_approval)) pr.queue_proof = queueProof(f.pr_url, pr, run);
       }
       const verdict = orphanVerdict(f, pr, { sites, approvedSites });
       if (verdict !== "land") {
@@ -289,19 +291,88 @@ export function landAll(payload, { run = defaultRun, landBin = process.env.AUDIT
         if (st.status === 0 && /^MERGED$/m.test(String(st.out).trim())) {
           f.land = "merged_deploy_failed";
           f.land_detail = `merged, deploy failed: ${f.land_detail}`;
+        } else {
+          /*
+           * ON MAIN BUT STILL OPEN IS ALREADY MERGED (9 Nov 2026): approvalprep #80's land lost the
+           * network mid-merge; c8833d7 "(#80)" was on main, the PR stayed open and was recorded
+           * land_refused for four days. The leftover PR is closed with a one-line comment.
+           */
+          const sha = onMainSha(f.pr_url, run, cwd, env);
+          if (sha) {
+            f.land = "already_merged";
+            f.land_detail = `already on main as ${sha.slice(0, 7)} (land stopped after the merge); the leftover PR is closed`;
+            run("gh", ["pr", "close", f.pr_url, "--comment", `Already on main as ${sha.slice(0, 7)}: land stopped after the merge, so this leftover PR is closed. (Danielle's audit runner)`], cwd, env);
+          }
         }
       }
       if (f.land === "landed") {
         f.suggested_action = `Landed ${f.pr_url} through ~/bin/land: checks green, merged, main watched, deployed. Nothing to do.`;
       }
     }
-    if (f.disposition === "in_flight" && f.land !== "landed" && f.land !== "merged_deploy_failed") {
+    if (f.disposition === "in_flight" && !["landed", "merged_deploy_failed", "already_merged"].includes(f.land)) {
       f.land_detail = `${f.land}: ${f.land_detail}`;
       f.land = "blocked";
     }
     done.set(f.pr_url, { land: f.land, land_detail: f.land_detail, suggested_action: f.land === "landed" ? f.suggested_action : null });
   }
   return payload;
+}
+
+const PR_FIELDS = "number,state,isDraft,headRefName,headRefOid,baseRefName,mergeable,statusCheckRollup,files,createdAt,url";
+const slugOf = (url) => /github\.com\/([^/]+\/[^/]+)\/pull\/\d+/.exec(String(url ?? ""))?.[1] ?? null;
+
+/** The sha on the PR's base branch that already carries it (mergedOnMain), or null. Unread = null. */
+function onMainSha(url, run, cwd, env) {
+  const view = run("gh", ["pr", "view", url, "--json", "number,headRefOid,baseRefName"], cwd, env);
+  let pr; try { pr = JSON.parse(view.out); } catch { return null; }
+  if (view.status !== 0 || !pr?.baseRefName) return null;
+  const log = run("gh", ["api", `repos/${slugOf(url)}/commits?sha=${pr.baseRefName}&per_page=50`, "--jq", "[.[] | {sha, subject: (.commit.message | split(\"\\n\")[0])}]"], cwd, env);
+  try { return log.status === 0 ? mergedOnMain(pr, JSON.parse(log.out)) : null; } catch { return null; }
+}
+
+/** The changed files and, for each, its text on the base branch and at the PR head (stagesQueueOnly). */
+function queueProof(url, pr, run) {
+  const files = (pr.files ?? []).map((f) => f.path ?? f);
+  const read = (path, ref) => {
+    const r = run("gh", ["api", `repos/${slugOf(url)}/contents/${path}?ref=${ref}`, "-H", "Accept: application/vnd.github.raw"], undefined);
+    return r.status === 0 ? r.out : null;
+  };
+  const contents = {};
+  for (const f of files.slice(0, 5)) contents[f] = { base: read(f, pr.baseRefName), head: read(f, pr.headRefOid) };
+  return { files, contents };
+}
+
+/**
+ * OUR OWN OPEN PRs IN A REPO, FOR THE NEXT PASS TO FINISH FIRST (9 Nov 2026). Pure over `gh pr list`
+ * JSON: the open `danielle/site-audit-*` PRs, each with why it is not landed yet.
+ */
+export function ownOpenPrs(prs) {
+  return (Array.isArray(prs) ? prs : [])
+    .filter((p) => p?.state !== "MERGED" && p?.state !== "CLOSED" && String(p?.headRefName ?? "").startsWith("danielle/site-audit-"))
+    .map((p) => ({ url: p.url, branch: p.headRefName, title: p.title, why: p.isDraft ? "draft_left_behind" : p.mergeable === "CONFLICTING" ? "conflicting" : "open" }));
+}
+
+/**
+ * A STALE GRID PR FROM OUR OWN LANE IS AN ACTION, NOT A REPORT LINE (9 Nov 2026). ci-sweep.sh hands
+ * the grid inbox here: every `pr_stale` row on a `danielle/site-audit-*` PR open for more than 24h
+ * goes through landAll as an orphan (landed if green; already_merged closed) and any that still need
+ * the worker (NEEDS_WORKER) re-arm the Search Readiness run, whose next scoped pass finishes them.
+ * Returns { lines, rearm }. `view` is injectable for the test.
+ */
+export function staleGridHandoff(tsv, { now = Date.now(), run = defaultRun, view = (url) => { const r = run("gh", ["pr", "view", url, "--json", "state,headRefName,createdAt"], undefined); try { return r.status === 0 ? JSON.parse(r.out) : null; } catch { return null; } }, ...opts } = {}) {
+  const rows = [];
+  for (const line of String(tsv ?? "").split("\n")) {
+    const [repo, kind, url] = line.split("\t");
+    if (kind !== "pr_stale" || !/\/pull\/\d+$/.test(url ?? "") || rows.some((r) => r.pr_url === url)) continue;
+    const pr = view(url);
+    if (pr?.state !== "OPEN" || !String(pr.headRefName ?? "").startsWith("danielle/site-audit-")) continue;
+    if (!(now - Date.parse(pr.createdAt) > 24 * 3600 * 1000)) continue;
+    rows.push({ repo: repoName(repo), disposition: "in_flight", pr_url: url });
+  }
+  if (!rows.length) return { lines: ["HANDOFF none: no own-lane (danielle/site-audit-*) PR in the grid inbox has been open more than 24h"], rearm: false };
+  landAll({ findings: rows }, { run, ...opts });
+  const needs = (r) => r.land === "blocked" && NEEDS_WORKER.some((v) => String(r.land_detail ?? "").startsWith(v));
+  return { lines: rows.map((r) => `HANDOFF ${r.pr_url}: ${r.land}${r.land_detail ? ` (${r.land_detail})` : ""}${needs(r) ? " -> the next Search Readiness pass finishes it" : ""}`), rearm: rows.some(needs) };
 }
 
 /** One `LAND <repo> <pr>: <outcome>` line per pull request, never one per row. */
@@ -354,6 +425,19 @@ if (isMain) {
       writeFileSync(file, JSON.stringify(payload, null, 2));
       for (const line of landLines(orphans)) console.log(line);
     }
+  } else if (cmd === "own-open") {
+    const view = spawnSync("gh", ["pr", "list", "-R", repoSlug(rest[0]), "--state", "open", "--limit", "50", "--json", "url,title,headRefName,isDraft,mergeable,state"], { encoding: "utf8" });
+    if (view.status !== 0) { console.log(`NAMED STOP [OWN_OPEN_UNREAD] could not list ${rest[0]}'s open PRs`); process.exit(13); }
+    for (const p of ownOpenPrs(JSON.parse(view.stdout))) console.log(`OWN_OPEN ${p.url} branch ${p.branch} (${p.why}) — ${p.title}`);
+  } else if (cmd === "stale-grid") {
+    if (!existsSync(rest[0])) { console.log(`HANDOFF none: no grid inbox at ${rest[0]}`); process.exit(0); }
+    const { lines, rearm } = staleGridHandoff(readFileSync(rest[0], "utf8"));
+    for (const l of lines) console.log(l);
+    if (rearm) {
+      const r = spawnSync("bash", [new URL("./search-readiness-fix.sh", import.meta.url).pathname, "--rearm"], { encoding: "utf8" });
+      console.log(r.status === 0 ? "HANDOFF rearmed: the Search Readiness run resumes within 15 minutes and finishes them first" : `NAMED STOP [REARM_FAILED] search-readiness-fix.sh --rearm exited ${r.status}`);
+      if (r.status !== 0) process.exit(1);
+    }
   } else if (cmd === "scope") {
     const queueFile = process.env.SR_QUEUE_FILE ?? join(homedir(), ".boss-os/search-readiness/fix-queue.json");
     const snap = scopeSnapshot({ queue: JSON.parse(readFileSync(queueFile, "utf8")), queueFile, repo: rest[0], briefIds: String(rest[1] ?? "").split(/[\s,]+/).filter(Boolean) });
@@ -364,7 +448,9 @@ if (isMain) {
     process.exit(r ? 0 : 3);
   } else if (cmd === "inflight") {
     const hit = inflight(rest[0], rest.slice(1));
-    console.log(hit ? `IN_FLIGHT ${hit.kind} ${hit.ref}${hit.title ? ` — ${hit.title}` : ""}` : "CLEAR");
+    // Our own lane's open PR is not someone else's work in flight: the pass finishes it (9 Nov 2026).
+    if (hit?.own) console.log(`RESUME_OWN pr ${hit.ref} branch ${hit.branch} — your own unfinished PR: finish it on its branch (FINISH YOUR OWN OPEN PULL REQUESTS); never record in_flight against it`);
+    else console.log(hit ? `IN_FLIGHT ${hit.kind} ${hit.ref}${hit.title ? ` — ${hit.title}` : ""}` : "CLEAR");
   } else {
     console.error("usage: site-audit-lib.mjs verdict|land <findings.json> | inflight <repo> <term...> | scope <repo> [ids] | repo-for <domain>");
     process.exit(2);
