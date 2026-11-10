@@ -1083,6 +1083,11 @@
    },
    "known_limits": [
     {
+     "item": "a1",
+     "why": "Hosted on Lovable (www and apex both resolve to 185.158.133.1, as time-2-read.com does), which answers the www host with its own 302 to the apex (probed 10 Nov 2026: https and http www both 302 to https://heygetonmylevel.com/; DNS is on Google Domains, not a Cloudflare zone we hold); the repo cannot set a 301 there. In-repo mitigation is live: every page's rel=canonical and every sitemap <loc> name the apex host.",
+     "review_after": "2027-02-10"
+    },
+    {
      "item": "a9",
      "why": "Hosted on Lovable, which serves the app shell with 200 for every unknown path (probed 7 Nov 2026: /this-does-not-exist-zz9 answered 200, as on time-2-read.com); a real 404 status is not configurable from the repo. The in-repo mitigation, a noindex 404 page, is merged (heygetonmylevel #15).",
      "review_after": "2027-02-07"
