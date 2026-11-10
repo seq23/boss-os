@@ -8,7 +8,7 @@ import { describe, expect, it } from "vitest";
 import { refreshCount, refreshLine, lastMonth, laneState } from "../src/shared/boss/spryWeekly/refresh.mjs";
 import { composeSpryWeekly } from "../src/shared/boss/spryWeekly/compose.mjs";
 
-const lgg = { src: { repo: "local-guides-generator" }, ledger: {
+const lgg = { src: { repo: "local-guides-generator", label: "local guides" }, ledger: {
   next_due: "2026-12-07",
   runs: [{ at: "2026-11-03", due: 3, refreshed: 1 }, { at: "2026-11-20", due: 3, refreshed: 1 }],
   pages: {
@@ -17,12 +17,12 @@ const lgg = { src: { repo: "local-guides-generator" }, ledger: {
     "https://theaccidentguides.com/guides/c/": { checked_at: "2026-11-20", refreshed_at: "2026-11-20" },
     "https://theaccidentguides.com/guides/d/": { checked_at: "2026-10-30", refreshed_at: "2026-10-30" },
   } } };
-const dw = { src: { repo: "dream-wedding-builder", site: "weddingchecklistpdf.com" }, ledger: {
+const dw = { src: { repo: "dream-wedding-builder", site: "weddingchecklistpdf.com", label: "Dream Wedding" }, ledger: {
   runs: [{ at: "2026-11-02", outcome: "REFRESHED", refreshed: 1 }],
   pages: { "/guides/x": { status: "REFRESHED", at: "2026-11-02" }, "/guides/y": { status: "REJECTED", at: "2026-11-02" } } } };
 // The real shape of an idle month: the local-guides lane's 10 Nov 2026 run, and Dream Wedding's QUEUE_EMPTY runs.
-const lggIdle = { src: { repo: "local-guides-generator" }, ledger: { next_due: "2026-12-07", pages: {}, runs: [{ at: "2026-11-10", due: 0, next_due: "2026-12-07", checked: 0, refreshed: 0, sites: 0 }] } };
-const dwIdle = { src: { repo: "dream-wedding-builder", site: "weddingchecklistpdf.com" }, ledger: { pages: {}, runs: [{ at: "2026-11-10", outcome: "QUEUE_EMPTY", refreshed: 0, queued: 0 }] } };
+const lggIdle = { src: { repo: "local-guides-generator", label: "local guides" }, ledger: { next_due: "2026-12-07", pages: {}, runs: [{ at: "2026-11-10", due: 0, next_due: "2026-12-07", checked: 0, refreshed: 0, sites: 0 }] } };
+const dwIdle = { src: { repo: "dream-wedding-builder", site: "weddingchecklistpdf.com", label: "Dream Wedding" }, ledger: { pages: {}, runs: [{ at: "2026-11-10", outcome: "QUEUE_EMPTY", refreshed: 0, queued: 0 }] } };
 const DEC2 = Date.parse("2026-12-02T14:15:00Z"); // first Wednesday of December, 08:15 Central
 
 describe("the monthly refresh count", () => {
@@ -41,12 +41,15 @@ describe("the monthly refresh count", () => {
     const stuck = { ...lggIdle, ledger: { ...lggIdle.ledger, runs: [{ at: "2026-11-12", due: 3, refreshed: 0 }] } };
     expect(laneState(stuck, lastMonth(DEC2)).state).toBe("stalled");
     const line = refreshLine([stuck, dwIdle], { now: DEC2 });
-    expect(line).toMatch(/one lane had pages due and changed none/);
+    expect(line).toBe("November: 0 pages refreshed across 0 sites (the local guides refresh had pages due and changed none this month).");
     expect(line).not.toMatch(/nothing was due/);
   });
   it("a lane that did not run, or could not be read, is said, never counted as zero", () => {
-    expect(refreshLine([{ ...lggIdle, ledger: { pages: {}, runs: [] } }, dwIdle], { now: DEC2 })).toMatch(/one lane did not run/);
-    expect(refreshLine([lgg, { src: { repo: "dream-wedding-builder" }, problem: "not read" }], { now: DEC2 })).toMatch(/not measured for one lane/);
+    expect(refreshLine([{ ...lggIdle, ledger: { pages: {}, runs: [] } }, dw], { now: DEC2 })).toBe("November: 1 page refreshed across 1 site (the local guides refresh did not run this month).");
+    expect(refreshLine([lgg, { src: { repo: "dream-wedding-builder", label: "Dream Wedding" }, problem: "not read" }], { now: DEC2 })).toBe("November: 2 pages refreshed across 2 sites (the Dream Wedding refresh could not be read this month).");
+    const both = refreshLine([{ ...lggIdle, ledger: { pages: {}, runs: [] } }, { ...dwIdle, ledger: { pages: {}, runs: [] } }], { now: DEC2 });
+    expect(both).toBe("November: 0 pages refreshed across 0 sites (the local guides and Dream Wedding refreshes did not run this month).");
+    expect(both).not.toMatch(/team checks|one lane/);
   });
   it("lands in the email's Search loop section", () => {
     const mail = composeSpryWeekly({}, { now: DEC2, refresh: [lgg, dw] });

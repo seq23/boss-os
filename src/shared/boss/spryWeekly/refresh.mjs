@@ -8,10 +8,10 @@
  */
 export const REFRESH_LEDGERS = [
   // scripts/automation/refresh_lane.mjs: pages keyed by full URL, `refreshed_at` on a real change.
-  { repo: "local-guides-generator", path: "data/cadence/refresh_lane_ledger.json" },
+  { repo: "local-guides-generator", path: "data/cadence/refresh_lane_ledger.json", label: "local guides" },
   // scripts/cadence/refresh_lane.mjs: pages keyed by path, `status: "REFRESHED"` and `at`; its guides
   // live on weddingchecklistpdf.com.
-  { repo: "dream-wedding-builder", path: "data/cadence/refresh_lane_ledger.json", site: "weddingchecklistpdf.com" },
+  { repo: "dream-wedding-builder", path: "data/cadence/refresh_lane_ledger.json", site: "weddingchecklistpdf.com", label: "Dream Wedding" },
 ];
 
 /** The calendar month before `now` on her clock: { from, to, label } as YYYY-MM-DD. */
@@ -67,17 +67,19 @@ export function refreshLine(reads, { now = Date.now() } = {}) {
   if (!firstWeekOfMonth(now)) return null;
   const month = lastMonth(now);
   const c = refreshCount(reads, month);
-  const states = reads.map((r) => laneState(r, month));
-  const count = (s) => states.filter((x) => x.state === s).length;
-  const lanes = (k) => (k === 1 ? "one lane" : `${k} lanes`);
+  const states = reads.map((r) => ({ ...laneState(r, month), name: r.src.label ?? r.src.repo }));
+  // Name which refresh, never "one lane", and promise no check nobody is shown doing (owner read, 10 Nov 2026).
+  const names = (s) => states.filter((x) => x.state === s).map((x) => x.name);
+  const and = (xs) => (xs.length <= 1 ? xs.join("") : `${xs.slice(0, -1).join(", ")} and ${xs.at(-1)}`);
+  const refreshes = (xs) => `the ${and(xs)} refresh${xs.length > 1 ? "es" : ""}`;
   const why = [];
   if (c.pages === 0 && states.every((x) => x.state === "nothing_due")) {
     const next = states.map((x) => x.next_due).filter(Boolean).sort()[0];
     why.push(next && next > month.to ? `nothing was due; the next pages come due ${dayWords(next)}` : "nothing was due");
   }
-  if (count("stalled")) why.push(`${lanes(count("stalled"))} had pages due and changed none; the team checks why`);
-  if (count("no_runs")) why.push(`${lanes(count("no_runs"))} did not run; the team checks why`);
-  if (count("unread")) why.push(`not measured for ${lanes(count("unread"))}; the team checks why`);
+  if (names("stalled").length) why.push(`${refreshes(names("stalled"))} had pages due and changed none this month`);
+  if (names("no_runs").length) why.push(`${refreshes(names("no_runs"))} did not run this month`);
+  if (names("unread").length) why.push(`${refreshes(names("unread"))} could not be read this month`);
   const counted = `${month.label}: ${plural(c.pages, "page")} refreshed across ${plural(c.sites, "site")}`;
   return why.length ? `${counted} (${why.join("; ")}).` : `${counted}.`;
 }
