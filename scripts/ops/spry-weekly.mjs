@@ -27,6 +27,7 @@ import { composeSpryWeekly, SPRY_WEEKLY, summaryProblem } from "../../src/shared
 import { bossApi, fixJob, sendAs } from "./lib/duty-kit.mjs";
 import { fetchLoopWeeks } from "./lib/search-loop-week.mjs";
 import { ownerEmail } from "../../src/shared/boss/mail/ownerLayout.mjs";
+import { REFRESH_LEDGERS } from "../../src/shared/boss/spryWeekly/refresh.mjs";
 
 const gh = (args) => execFileSync("gh", args, { encoding: "utf8", maxBuffer: 32 << 20, stdio: ["ignore", "pipe", "pipe"] });
 
@@ -63,6 +64,17 @@ export function fetchAll({ now = Date.now(), run = gh } = {}) {
   return got;
 }
 
+/** Each refresh lane's ledger from its repo's default branch, read through `gh`; `{ problem }` if not. */
+export function fetchRefreshLedgers({ run = gh } = {}) {
+  return REFRESH_LEDGERS.map((src) => {
+    try {
+      return { src, ledger: JSON.parse(run(["api", `repos/${SPRY_WEEKLY.owner}/${src.repo}/contents/${src.path}`, "-H", "Accept: application/vnd.github.raw"])) };
+    } catch {
+      return { src, problem: "not read" };
+    }
+  });
+}
+
 const STATE_DIR = join(homedir(), ".boss-os", "spry-weekly");
 const weekKey = (now) => new Date(now).toLocaleDateString("en-CA", { timeZone: "America/Chicago" });
 
@@ -84,7 +96,8 @@ async function main() {
   }
   // The search loop line (1 Nov 2026): each repo's newest search-loop-week reports, read once.
   const loop = Object.fromEntries([...new Set(SPRY_WEEKLY.search_loop.sites.flatMap((x) => x.repos))].map((r) => [r, fetchLoopWeeks(r)]));
-  const mail = composeSpryWeekly(got, { loop });
+  const refresh = fetchRefreshLedgers();
+  const mail = composeSpryWeekly(got, { loop, refresh });
   const laid = spryLaid(mail);
   if (dry) { console.log(laid.subject); console.log(laid.text); return; }
   if (!(await sendAs("Camille", { subject: laid.subject, text: laid.text, html: laid.html, prelaid: laid }))) {
