@@ -1193,8 +1193,11 @@
   },
   {
    "domain": "horselegalguide.com",
-   "client_approval": "owner, 3 Nov 2026: \"horse owners want to approve everything that goes live - so we can use the engine but it needs to fill the queue still and be approved by them\". Repairs are drafted (encouraged: a velocity site) and go live only once the Horse owners approve them in their approval queue; new pages and edits to live pages alike.",
+   "client_approval": "owner, 9 Nov 2026: \"the only thing that waits for the horse owner's approval is new posts - any fixes I make get pushed without that\". Fixes to the live site (pages, templates, metadata, at-source repairs) land like any other site's; only a NEW post or page waits for the Horse owners' approval in their /admin/ queue. Replaces the 3 Nov reading (every change to a live page waited). Read by clientApprovalHold (orphanPr.mjs).",
    "client_approval_queue_files": ["data/site_changes/queue.json"],
+   "client_approval_new_post_paths": ["content/", "questions/", "dist/"],
+   "client_approval_draft_paths": ["content/drafts/"],
+   "client_approval_record_files": ["data/system/editorial_backlog.json", "data/system/content_calendar.json", "data/search-loop/approvals.json"],
    "repo": "horse-legal-guide-velocity",
    "category": "client",
    "group": "friends",

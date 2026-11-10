@@ -161,13 +161,17 @@ then add the domain to that repo's `REPO_IDENTITY.md` in your PR. If no reposito
 Known-good mappings: Virtualagency-os → `WPP-llm`; Spryexecutiveos and
 Billionairehighperformancecoach → `sprylabs-hpc-site`.
 
-### DRAFTED FOR THE CLIENT'S APPROVAL, AND HELD FOR HERS (owner, 3 Nov 2026)
+### NEW POSTS DRAFTED FOR THE CLIENT'S APPROVAL; FIXES SHIP (owner, 9 Nov 2026)
 
-- `disposition: "client_draft"` (horselegalguide.com, sites.json `client_approval`): work the brief, but
-  NOTHING goes live until the Horse owners approve it in the repo's own approval queue (`/admin/`,
-  RUNBOOK.md), the ONLY approval route there. New content, and every change to a live page or
-  template, goes in as an item in that /admin/ queue awaiting approval; never a PR to be held open,
-  never a merge that changes the live site. Record it as drafted, not fixed.
+- `disposition: "client_draft"` (horselegalguide.com, sites.json `client_approval`): "the only thing
+  that waits for the horse owner's approval is new posts — any fixes I make get pushed without that".
+  A FIX (a repair to a live page, template, metadata, links, schema: anything that is not a new post)
+  is worked and recorded `fixed_pr` like any other site's, and the runner lands it. A NEW post or page
+  goes in as an item in the repo's own /admin/ approval queue (RUNBOOK.md; a draft under
+  `content/drafts/`, or a staged entry in `data/site_changes/queue.json`) and is recorded as drafted;
+  never approve it yourself, and never touch the approval records. The runner holds any PR that adds
+  a post or changes an approval record (`clientApprovalHold`), so keep new posts and fixes in
+  separate PRs.
 - `disposition: "owner_approval"` (hicksconsulting.org, sites.json `owner_approval`): never worked. It
   waits for Sequoia's yes on the fix plan in Decide; the next run's briefs come back as ordinary work.
 - **Hicks's already-published Resources posts are just fixed** (owner, 3 Nov 2026: "if it has repairs

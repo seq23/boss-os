@@ -279,9 +279,9 @@ site. Pinned by `tests/searchReadiness.test.ts`, which reads this section:
    searches, pages Google stopped showing, URL Inspection on the top five losers, sitemap count against
    last week, commits in the site's repo, the quality sample and fold queue; ≤6 lines, most likely
    first, CONFIRMED or SUSPECTED, unread sources "not read". In latest.json (`gold_lines`, each site's
-   `diagnosis`), the site's row on the checklist page and its Monday line. Owner, 3 Nov 2026: Horse
-   (`client_approval`) repairs are drafted, disposition `client_draft`, and go live only once the Horse
-   owners approve them in their approval queue. Hicks (`owner_approval` in sites.json) changes
+   `diagnosis`), the site's row on the checklist page and its Monday line. Owner, 9 Nov 2026: on Horse
+   (`client_approval`, disposition `client_draft`) fixes land like any site's; only a NEW post or page
+   waits for the Horse owners' approval queue (`clientApprovalHold` in orphanPr.mjs). Hicks (`owner_approval` in sites.json) changes
    only with her yes, except repairs to already-published Resources posts (/resources/, /insights/,
    /questions/: `owner_approval_direct_repairs`, `heldForOwner` in ownerApproval.mjs, pinned by
    `tests/hicksResourceRepairs.test.ts`), which are fixed and landed directly (owner, 3 Nov 2026).

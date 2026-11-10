@@ -37,7 +37,7 @@ import { scopeSnapshot } from "../../src/shared/boss/siteAudit/evidence.mjs";
 import { repoForDomain } from "../../src/shared/boss/siteAudit/domainRepos.mjs";
 import { heldForOwner } from "../../src/shared/boss/searchReadiness/ownerApproval.mjs";
 
-import { orphanVerdict, mergedOnMain, NEEDS_WORKER } from "../../src/shared/boss/searchReadiness/orphanPr.mjs";
+import { orphanVerdict, mergedOnMain, NEEDS_WORKER, clientApprovalHold } from "../../src/shared/boss/searchReadiness/orphanPr.mjs";
 import { envForRepoRun } from "../lib/vault-env.mjs";
 import { isParked } from "./lib/repo-categories.mjs";
 
@@ -224,6 +224,7 @@ export function landAll(payload, { run = defaultRun, landBin = process.env.AUDIT
    * outcome is now written onto every row that shares its pr_url.
    */
   const done = new Map();
+  const clientHolds = new Map();
   for (const f of payload.findings ?? []) {
     if (!["fixed_pr", "in_flight"].includes(f.disposition) || f.land === "landed") continue;
     if (f.disposition === "in_flight") {
@@ -232,7 +233,7 @@ export function landAll(payload, { run = defaultRun, landBin = process.env.AUDIT
       if (orphanVerdict(f, null, { sites, approvedSites }) === "another_lane") {
         const view = run("gh", ["pr", "view", f.pr_url, "--json", PR_FIELDS], undefined);
         try { if (view.status === 0) pr = JSON.parse(view.out); } catch { /* fail closed */ }
-        if (pr && sites.some((s) => s.repo === repoName(f.repo) && s.client_approval)) pr.queue_proof = queueProof(f.pr_url, pr, run);
+        if (pr && sites.some((s) => s.repo === repoName(f.repo) && s.client_approval)) pr.client_proof = clientProof(f.pr_url, sites.filter((s) => s.repo === repoName(f.repo)), run);
       }
       const verdict = orphanVerdict(f, pr, { sites, approvedSites });
       if (verdict !== "land") {
@@ -263,6 +264,20 @@ export function landAll(payload, { run = defaultRun, landBin = process.env.AUDIT
       f.land = "held_owner_approval";
       f.land_detail = `${oa.domain}: a repair outside its published posts (${(oa.owner_approval_direct_repairs?.paths ?? []).join(", ") || "none listed"}) waits for her approved fix plan.`;
       continue;
+    }
+    /*
+     * NEW POSTS WAIT FOR THE CLIENT; FIXES SHIP, ON THE fixed_pr PATH TOO (owner, 9 Nov 2026). On a
+     * `client_approval` site (Horse) a fix lands like any other; a PR that adds a new post, or
+     * changes an approval record, is held with the reason (clientApprovalHold, which fails closed).
+     */
+    const clientSites = sites.filter((s) => s.client_approval && s.repo === prRepo);
+    if (clientSites.length) {
+      if (!clientHolds.has(f.pr_url)) {
+        const proof = clientProof(f.pr_url, clientSites, run);
+        clientHolds.set(f.pr_url, clientSites.map((s) => clientApprovalHold(s, proof)).find(Boolean) ?? "");
+      }
+      const why = clientHolds.get(f.pr_url);
+      if (why) { f.land = "held_client_approval"; f.land_detail = `${clientSites[0].domain ?? prRepo}: ${why}`; continue; }
     }
     const prior = done.get(f.pr_url);
     if (prior) {
@@ -330,15 +345,29 @@ function onMainSha(url, run, cwd, env) {
   try { return log.status === 0 ? mergedOnMain(pr, JSON.parse(log.out)) : null; } catch { return null; }
 }
 
-/** The changed files and, for each, its text on the base branch and at the PR head (stagesQueueOnly). */
-function queueProof(url, pr, run) {
-  const files = (pr.files ?? []).map((f) => f.path ?? f);
-  const read = (path, ref) => {
-    const r = run("gh", ["api", `repos/${slugOf(url)}/contents/${path}?ref=${ref}`, "-H", "Accept: application/vnd.github.raw"], undefined);
-    return r.status === 0 ? r.out : null;
-  };
+/**
+ * What clientApprovalHold reads: every changed file with GitHub's status (added, modified, removed,
+ * renamed), and for each touched approval-queue file its text on the base and at the head. An unread
+ * or capped list (GitHub stops at 3000 files) is files: null, which holds the PR.
+ */
+function clientProof(url, clientSites, run) {
+  const num = /\/pull\/(\d+)/.exec(String(url ?? ""))?.[1];
+  const list = run("gh", ["api", `repos/${slugOf(url)}/pulls/${num}/files`, "--paginate", "--jq", ".[] | [.status, .filename] | @tsv"], undefined);
+  let files = list.status === 0 ? String(list.out).split("\n").filter(Boolean).map((l) => { const [status, path] = l.split("\t"); return { status, path }; }) : null;
+  if (files && files.length >= 3000) files = null;
   const contents = {};
-  for (const f of files.slice(0, 5)) contents[f] = { base: read(f, pr.baseRefName), head: read(f, pr.headRefOid) };
+  const queue = new Set(clientSites.flatMap((s) => s.client_approval_queue_files ?? []));
+  const touched = (files ?? []).filter((f) => queue.has(f.path));
+  if (touched.length) {
+    const view = run("gh", ["pr", "view", url, "--json", "baseRefName,headRefOid"], undefined);
+    let pr = null; try { if (view.status === 0) pr = JSON.parse(view.out); } catch { /* unread: the hold fails closed */ }
+    const read = (path, ref) => {
+      if (!ref) return undefined;
+      const r = run("gh", ["api", `repos/${slugOf(url)}/contents/${path}?ref=${ref}`, "-H", "Accept: application/vnd.github.raw"], undefined);
+      return r.status === 0 ? r.out : (/HTTP 404|Not Found/i.test(String(r.out)) ? null : undefined);
+    };
+    for (const f of touched) contents[f.path] = { base: f.status === "added" ? null : read(f.path, pr?.baseRefName), head: read(f.path, pr?.headRefOid) };
+  }
   return { files, contents };
 }
 

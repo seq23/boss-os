@@ -89,6 +89,13 @@ export BOSS_OS_SITE_AUDIT_DIR="$OUT_DIR"
 # this job is judgement over somebody else's repository. `validate:duty-delivery` and
 # `validate:audit-fixer` assert this string equals the duty row's (migration 0287).
 MODEL="${AHREFS_AUDIT_MODEL:-claude-opus-5}"
+# THE TURN LIMIT REACHES THE WORKER (9 Nov 2026). This was set and never passed (shellcheck SC2034),
+# so a pass ran on the engine's own default and stopped part way, leaving half-finished drafts. It is
+# handed to ai-run as AI_RUN_CLAUDE_ARGS (the mailbox-sweep.sh form), which reaches `claude -p` both
+# when the worker runs on Claude and when a Codex limit hands the run to Claude (ai-run re-runs itself
+# with the environment kept). `codex exec` (0.163) has no turn or step limit flag: a Codex pass runs
+# until the model ends its turn, and the nearest equivalent is what already follows a cut-short pass:
+# salvage as a draft PR, finished first by the next pass (own-open). tests/auditFixerMaxTurns.test.ts.
 MAX_TURNS="${AHREFS_AUDIT_MAX_TURNS:-250}"
 LOG_DIR="$HOME/Library/Logs/ahrefs-audit-fix"
 LOCK="$LOG_DIR/.lock${SR_SCOPE_REPO:+-sr-$SR_SCOPE_REPO}"
@@ -218,7 +225,7 @@ git reset --hard origin/<its branch>\` inside \$WT, merge origin/main BY HAND (r
 yourself; never a union script), review the diff, keep only correct at-source fixes, finish what is
 half done, run the repo's validators until green, push to THAT branch, \`gh pr ready <pr>\`, and
 record every brief it covers as \`fixed_pr\` with that PR's \`pr_url\` so the runner lands it. On a
-client_approval site keep it to the site's approval queue (section client_draft). Never record
+client_approval site a new post goes to the site's approval queue; fixes land (section client_draft). Never record
 \`in_flight\` against one of these PRs, and never open a second PR for the same briefs. If one is
 genuinely superseded (its fix is already on main), close it with a one-line reason instead.
 
@@ -243,6 +250,8 @@ Do NOT read Gmail this pass. This week's Ahrefs reports are summarised in $AHREF
 place of the mail, find the exact URLs on each live site, and fix at source as section 1 says."
   say "mail pass from digest: $AHREFS_DIGEST"
 fi
+[[ "$MAX_TURNS" =~ ^[1-9][0-9]*$ ]] || { say "NAMED STOP [BAD_MAX_TURNS] AHREFS_AUDIT_MAX_TURNS='$MAX_TURNS' is not a positive whole number."; exit 5; }
+AI_RUN_CLAUDE_ARGS="--max-turns $MAX_TURNS --dangerously-skip-permissions" \
 "$AI_RUN" --role "$REPAIR_ROLE" --network --cwd "$HOME" --out "$RUN_LOG" -- "$PROMPT_TEXT" >> "$RUN_LOG" 2>&1
 RC=$?
 say "=== ai-run --role $REPAIR_ROLE exited rc=$RC ==="
