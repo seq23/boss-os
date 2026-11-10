@@ -28,9 +28,12 @@ describe("the registry", () => {
       if (!cell.wired) expect((cell.cannot ?? "").length, `${cell.property_key}/${cell.reader} is not wired and gives no reason`).toBeGreaterThan(40);
       else expect(cell.cannot).toBeNull();
     }
-    // The three she named on 13 Sep have no domain and say so; a channel is not a site.
-    expect(cannotReason("youtube", "uptime")).toMatch(/YouTube channel/);
-    expect(cannotReason("wedding", "gsc")).toMatch(/not recorded/);
+    // A channel is not a site and says so (Whisper Almanac, owner 10 Nov 2026); properties with
+    // domains in sites.json (How We Know, the wedding sites) are wired.
+    expect(cannotReason("whisper_almanac", "uptime")).toMatch(/YouTube channel/);
+    expect(cannotReason("whisper_almanac", "gsc")).toMatch(/YouTube channel/);
+    expect(cannotReason("wedding", "gsc")).toBeNull();
+    expect(cannotReason("youtube", "uptime")).toBeNull();
     expect(cannotReason("guides_generator", "uptime")).toBeNull();
   });
 });
@@ -45,7 +48,7 @@ describe("the uptime reader", () => {
     const byKey = (k: string) => readings.filter((r) => r.property_key === k);
     // Every property has at least one row.
     for (const p of GRID) expect(byKey(p.key).length, `${p.key} has no uptime row`).toBeGreaterThan(0);
-    expect(byKey("guides_generator")).toHaveLength(5);
+    expect(byKey("guides_generator")).toHaveLength(6); // 5 guides + memphisseniorcarehomes.com (sites.json)
     const up = byKey("citation_velocity")[0]!;
     expect(up.state).toBe("ok");
     expect(up.numbers.status).toBe(200);
@@ -57,12 +60,10 @@ describe("the uptime reader", () => {
     const gone = byKey("hicks_consulting")[0]!;
     expect(gone.state).toBe("warn");
     expect(gone.summary).toMatch(/did not answer: ECONNRESET/);
-    const yt = byKey("youtube")[0]!;
-    expect(yt.state).toBe("blocked");
-    expect(yt.summary).toMatch(/YouTube channel handle/);
-    const wedding = byKey("wedding")[0]!;
-    expect(wedding.state).toBe("blocked");
-    expect(wedding.summary).toMatch(/not recorded/);
+    const channel = byKey("whisper_almanac")[0]!;
+    expect(channel.state).toBe("blocked");
+    expect(channel.summary).toMatch(/YouTube channel handle/);
+    expect(byKey("wedding")).toHaveLength(4); // the 4 wedding sites, one row each
   });
 });
 
@@ -80,7 +81,7 @@ describe("the Search Console reader", () => {
         expect(r.state).toBe("blocked");
         expect(r.summary).toMatch(/GSC_SERVICE_ACCOUNT_JSON is not bound/);
       }
-      expect(readings.filter((r) => r.property_key === "guides_generator")).toHaveLength(5);
+      expect(readings.filter((r) => r.property_key === "guides_generator")).toHaveLength(6); // 5 guides + memphisseniorcarehomes.com
     } finally {
       (env as any).GSC_SERVICE_ACCOUNT_JSON = saved;
     }

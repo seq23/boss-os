@@ -173,17 +173,12 @@ describe("return-on-effort ledger", () => {
     expect(body.data.lines.map((l: any) => l.line)).toEqual([
       "brokerage",
       // NOT west_peek_raise — owner, 19 Sep 2026: the West Peek raise is not tracked on this tab.
-      // The grid, in its own order — `src/shared/boss/grid.mjs`.
-      "guides_generator", "citation_velocity", "horse_legal", "hicks_consulting",
-      "virtual_agency", "hpc", "approvalprep", "wedding",
-      // Added 13 Sep 2026 when she confirmed all three were hers. This list is pinned ON PURPOSE:
-      // it fails whenever the grid gains or loses a line, so a property can never appear in — or
-      // vanish from — her returns ledger without someone saying so here.
-      "youtube", "saas_apps",
-      "authority_network",
-      // Added 21 Sep 2026 on her instruction ("THE GRID GAINS creator-network"): a revenue lane
-      // she is building, so it is a line on her returns ledger from the day it joined the grid.
-      "creator_network",
+      // The grid, in its own order — `src/shared/boss/grid.mjs`, derived from sites.json (owner,
+      // 10 Nov 2026). Pinned ON PURPOSE: it fails whenever the grid gains or loses a line, so a
+      // property can never appear in — or vanish from — her returns ledger without someone saying so.
+      "citation_velocity", "guides_generator", "porch_party", "approvalprep", "wedding", "hpc",
+      "saas_apps", "youtube", "authority_network", "horse_legal", "hicks_consulting", "detox_denver",
+      "cynthia_brown_dds", "virtual_agency", "keepmyproof", "whisper_almanac",
     ]);
     expect(body.data.ordering_note).toContain("Nothing here ranks them");
   });
