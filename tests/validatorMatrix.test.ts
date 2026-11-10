@@ -27,6 +27,9 @@ describe("a review file", () => {
   it("is read by its name alone and its rows are checked", () => {
     const r = parseReviewFile("validators-alpha.json", [row("validate:no-secrets"), { name: "x", protects: "", kind: "style" }, row("validate:no-secrets")]);
     expect(r.repo).toBe("alpha");
+    const upper = parseReviewFile("validators-WPP-llm.json", [row("validate:no-secrets")]);
+    expect(upper.repo).toBe("WPP-llm");
+    expect(upper.rows).toHaveLength(1);
     expect(r.rows.map((x) => x.name)).toEqual(["validate:no-secrets", "x"]);
     expect(r.problems.join(" | ")).toMatch(/kind "style"/);
     expect(r.problems.join(" | ")).toMatch(/does not say what it protects/);

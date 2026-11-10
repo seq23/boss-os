@@ -21,7 +21,9 @@
 
 export const KINDS = Object.freeze(["safety", "behaviour", "central-seo"]);
 export const KIND_WORDS = Object.freeze({ safety: "Safety", behaviour: "Behaviour", "central-seo": "Search (central)" });
-export const REVIEW_FILE = /^validators-([a-z0-9][a-z0-9._-]*)\.json$/;
+// Case kept as the repo folder spells it (10 Nov 2026: validators-WPP-llm.json, 82 rows, was skipped
+// by a lowercase-only name and WPP-llm read "not imported yet").
+export const REVIEW_FILE = /^validators-([A-Za-z0-9][A-Za-z0-9._-]*)\.json$/;
 const MAX_TEXT = 300;
 
 /** A validator's name as one comparable key: "guard:seo-surfaces", "check-seo-surfaces.mjs" → "seo-surfaces". */
