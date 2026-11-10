@@ -51,6 +51,16 @@ describe("the monthly refresh count", () => {
     expect(both).toBe("November: 0 pages refreshed across 0 sites (the local guides and Dream Wedding refreshes did not run this month).");
     expect(both).not.toMatch(/team checks|one lane/);
   });
+  it("question pages the engine refreshed count once, across their sites; a quiet engine adds no clause", () => {
+    const engine = (repo: string, pages: unknown[]) => ({ src: { repo, kind: "engine" as const, label: "question page" }, ledger: { pages } as never });
+    const reads = [lgg, dw,
+      engine("approvalprep", [{ url: "https://approvalprep.com/questions/a/", refreshed: { at: "2026-11-12", changes: ["question added"] } }, { url: "https://approvalprep.com/questions/b/", refreshed: { at: "2026-11-12", changes: [] } }]),
+      engine("dailystory", [{ url: "https://time-2-read.com/questions/c/", published_at: "2026-11-01" }])];
+    expect(refreshLine(reads, { now: DEC2 })).toBe("November: 4 pages refreshed across 4 sites.");
+    expect(refreshLine([lggIdle, dwIdle, engine("dailystory", [])], { now: DEC2 })).toBe("November: 0 pages refreshed across 0 sites (nothing was due; the next pages come due Dec 7).");
+    expect(refreshLine([lgg, dw, { src: { repo: "keepmyproof", kind: "engine" as const, label: "question page" }, problem: "not read" }], { now: DEC2 })).toBe("November: 3 pages refreshed across 3 sites (the question page refresh could not be read this month).");
+  });
+
   it("lands in the email's Search loop section", () => {
     const mail = composeSpryWeekly({}, { now: DEC2, refresh: [lgg, dw] });
     expect(mail.sections.at(-1)?.items).toContain("Page refresh in November: 3 pages refreshed across 3 sites.");

@@ -12,7 +12,19 @@ export const REFRESH_LEDGERS = [
   // scripts/cadence/refresh_lane.mjs: pages keyed by path, `status: "REFRESHED"` and `at`; its guides
   // live on weddingchecklistpdf.com.
   { repo: "dream-wedding-builder", path: "data/cadence/refresh_lane_ledger.json", site: "weddingchecklistpdf.com", label: "Dream Wedding" },
+  // The shared search-loop engine (v1.10.0) refreshes question pages on every site that runs it;
+  // its pages.json is a list, a page counting when `refreshed.changes` is not empty.
+  ...["local-guides-citation-velocity", "approvalprep", "dream-wedding-builder", "sprylabs-hpc-site", "dailystory", "heygetonmylevel", "keepmyproof"]
+    .map((repo) => ({ repo, path: "data/search-loop/pages.json", kind: "engine", label: "question page" })),
 ];
+
+/** An engine pages.json read as a lane ledger: pages keyed by URL, refreshed_at on a real change. */
+function asLedger(read) {
+  if (read.src.kind !== "engine" || !read.ledger) return read;
+  const pages = {};
+  for (const p of read.ledger.pages ?? []) if (p?.url && p.refreshed?.changes?.length) pages[p.url] = { refreshed_at: p.refreshed.at };
+  return { ...read, ledger: { pages, engine: true } };
+}
 
 /** The calendar month before `now` on her clock: { from, to, label } as YYYY-MM-DD. */
 export function lastMonth(now = Date.now()) {
@@ -28,6 +40,9 @@ export const firstWeekOfMonth = (now = Date.now()) => Number(new Date(now).toLoc
 /** What one lane did in [from, to], read from its ledger's runs. Pure. */
 export function laneState(read, { from, to }) {
   if (read.problem || !read.ledger) return { state: "unread" };
+  // The engine keeps no run list here; a month with no refreshed question page is quiet, not a stop
+  // (its own run line and weekly report carry REFRESH_NOTHING_CHANGED).
+  if (read.ledger.engine) return { state: Object.values(read.ledger.pages).some((e) => e.refreshed_at >= from && e.refreshed_at <= to) ? "refreshed" : "quiet" };
   const runs = (read.ledger.runs ?? []).filter((r) => r.at >= from && r.at <= to);
   if (!runs.length) return { state: "no_runs" };
   const changed = runs.some((r) => (r.refreshed ?? 0) > 0);
@@ -41,7 +56,7 @@ export function laneState(read, { from, to }) {
 /** Pages refreshed and distinct sites in [from, to], from ledgers read as { ledger } or { problem }. */
 export function refreshCount(reads, { from, to }) {
   const pages = new Set(), sites = new Set(), unread = [];
-  for (const { src, ledger, problem } of reads) {
+  for (const { src, ledger, problem } of reads.map(asLedger)) {
     if (problem || !ledger) { unread.push(src.repo); continue; }
     for (const [key, entry] of Object.entries(ledger.pages ?? {})) {
       const day = entry?.refreshed_at ?? (entry?.status === "REFRESHED" ? entry.at : null);
@@ -67,13 +82,20 @@ export function refreshLine(reads, { now = Date.now() } = {}) {
   if (!firstWeekOfMonth(now)) return null;
   const month = lastMonth(now);
   const c = refreshCount(reads, month);
-  const states = reads.map((r) => ({ ...laneState(r, month), name: r.src.label ?? r.src.repo }));
+  // One state per named refresh: the engine's repos read together as the "question page" refresh.
+  const groups = new Map();
+  for (const r of reads.map(asLedger)) { const name = r.src.label ?? r.src.repo; groups.set(name, [...(groups.get(name) ?? []), r]); }
+  const states = [...groups].map(([name, rs]) => {
+    const each = rs.map((r) => laneState(r, month));
+    const pick = each.find((x) => x.state === "unread") ?? each.find((x) => x.state === "refreshed") ?? each[0];
+    return { ...pick, name };
+  });
   // Name which refresh, never "one lane", and promise no check nobody is shown doing (owner read, 10 Nov 2026).
   const names = (s) => states.filter((x) => x.state === s).map((x) => x.name);
   const and = (xs) => (xs.length <= 1 ? xs.join("") : `${xs.slice(0, -1).join(", ")} and ${xs.at(-1)}`);
   const refreshes = (xs) => `the ${and(xs)} refresh${xs.length > 1 ? "es" : ""}`;
   const why = [];
-  if (c.pages === 0 && states.every((x) => x.state === "nothing_due")) {
+  if (c.pages === 0 && states.filter((x) => x.state !== "quiet").every((x) => x.state === "nothing_due")) {
     const next = states.map((x) => x.next_due).filter(Boolean).sort()[0];
     why.push(next && next > month.to ? `nothing was due; the next pages come due ${dayWords(next)}` : "nothing was due");
   }
