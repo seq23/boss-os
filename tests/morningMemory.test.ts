@@ -102,7 +102,7 @@ describe("a job with an empty title is named, never empty quotes (2 Nov 2026)", 
     const rep = { id: "t7", title: "Fix a held email: a synthetic one", status: "failed", employee_name: "Danielle", employee_id: "emp_repo", finished_at: MON - 1_000, input: JSON.stringify({ origin: "repair", repair_kind: "held_mail" }) };
     const duty = { id: "t6", title: "Tools worth knowing about", status: "failed", employee_name: "Kendra", finished_at: MON - 2_000, input: JSON.stringify({ delivers: "tool_suggestions" }) };
     const e = buildDay({ ...base(MON), tasks: [rep, duty], morning: {} }, MON);
-    expect(e.text).toContain("2 team jobs stopped and are being fixed by Danielle; nothing needed from you.");
+    expect(e.text).toContain("2 team jobs stopped and are being fixed by Danielle.");
     expect(e.text).not.toContain("Fix a held email");
     expect(e.text).not.toContain("Tools worth knowing about");
   });

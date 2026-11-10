@@ -87,6 +87,6 @@ describe("a failed task is the team's to fix, told as done", () => {
       { id: "tsk_2", status: "failed", title: "Old one", finished_at: NOW - 5 * 86_400_000 },
       { id: "tsk_3", status: "done", title: "Fine", finished_at: NOW },
     ], NOW);
-    expect(lines).toEqual([{ id: "tsk_1", text: 'What happened: Camille\'s "Weekly report" stopped (stdout was not JSON). What we did: Danielle has a job to find the cause and fix it at source. Status: being fixed; nothing needed from you.' }]);
+    expect(lines).toEqual([{ id: "tsk_1", text: 'What happened: Camille\'s "Weekly report" stopped (stdout was not JSON). What we did: Danielle has a job to find the cause and fix it at source. Status: being fixed.' }]);
   });
 });

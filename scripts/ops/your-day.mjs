@@ -255,7 +255,7 @@ function commentDoneLines(data, now) {
     if (d.task_id || !(d.items ?? []).length || now - Number(d.created_at) > DAY_MS) continue;
     const faults = d.items.filter((i) => i.product_note);
     out.push({
-      text: `What happened: ${plural(d.items.length, "new comment")} on ${CHANNEL}${faults.length ? `, ${faults.length} pointing at a fault in a video (${faults.map((i) => i.product_note).join("; ")})` : ""}. What we did: Monique left ${d.items.length === 1 ? "it" : "them"} alone, as none needed an answer${faults.length ? ", and Danielle has the fault to fix for future videos" : ""}. Status: done, nothing needed from you.`,
+      text: `What happened: ${plural(d.items.length, "new comment")} on ${CHANNEL}${faults.length ? `, ${faults.length} pointing at a fault in a video (${faults.map((i) => i.product_note).join("; ")})` : ""}. What we did: Monique left ${d.items.length === 1 ? "it" : "them"} alone, as none needed an answer${faults.length ? ", and Danielle has the fault to fix for future videos" : ""}. Status: done.`,
     });
   }
   return out;
@@ -592,7 +592,7 @@ export function spiritSection(day, week, now = Date.now()) {
  */
 export function failedTaskLines(tasks, now = Date.now()) {
   return (tasks ?? []).filter((t) => t.status === "failed" && Number(t.finished_at ?? t.created_at) >= now - 26 * 3_600_000)
-    .map((t) => ({ id: t.id, text: `What happened: ${t.employee_name ?? "A teammate"}'s ${((j) => (j.quoted ? `"${j.name.slice(0, 80)}"` : j.name))(jobName(t))} stopped (${String(t.error ?? "no reason given").split("\n")[0].slice(0, 120)}). What we did: Danielle has a job to find the cause and fix it at source. Status: being fixed; nothing needed from you.` }));
+    .map((t) => ({ id: t.id, text: `What happened: ${t.employee_name ?? "A teammate"}'s ${((j) => (j.quoted ? `"${j.name.slice(0, 80)}"` : j.name))(jobName(t))} stopped (${String(t.error ?? "no reason given").split("\n")[0].slice(0, 120)}). What we did: Danielle has a job to find the cause and fix it at source. Status: being fixed.` }));
 }
 
 const DONE_SOURCES = ["pnp_outreach", "bounces", "lp", "prospects", "tail", "notices", "risk", "archive"];
@@ -813,7 +813,7 @@ export function buildDay(data, now = Date.now()) {
     if (isTeamJob(t)) { teamStops++; continue; }
     doneRaw.push({ key: `failed:${jobFamily(t.title).toLowerCase()}`, text: failedDoneLine(t), full: f.text, links: [] });
   }
-  if (teamStops) doneRaw.push({ key: `team-stops:${today}`, text: `${teamStops} team job${teamStops === 1 ? "" : "s"} stopped and ${teamStops === 1 ? "is" : "are"} being fixed by Danielle; nothing needed from you.`, links: [{ label: "Open ›", url: `${ORIGIN}/?tab=systems` }] });
+  if (teamStops) doneRaw.push({ key: `team-stops:${today}`, text: `${teamStops} team job${teamStops === 1 ? "" : "s"} stopped and ${teamStops === 1 ? "is" : "are"} being fixed by Danielle.`, links: [{ label: "Open ›", url: `${ORIGIN}/?tab=systems` }] });
   const prospects = prospectSection(data.prospects ?? null, now);
   const spirit = spiritSection(data.spirit ?? null, data.practiceWeek ?? null, now);
   const ancestral = ancestralLine(data.spirit ?? null);

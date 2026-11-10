@@ -583,3 +583,35 @@ describe("the simplifier says a line plainly before it moves it (7 Nov 2026 live
     expect(r.details.join("\n")).toContain("npm run fix");
   });
 });
+
+describe("a reassurance in one section never holds the whole morning email (repair, 10 Nov 2026)", () => {
+  // The held "Tuesday: 2 decisions, 8 new deals": the Scorecard said "5 need a look" and Done for you
+  // said "nothing needed from you" about five stopped jobs — two subjects, no contradiction.
+  const sender = sendersFor("Simone")[0]!;
+  const text = "Two decisions are yours today.\n\nDecide (2)\n1. Answer Ana about the order.\n2. Approve the card.\n\n📊 Scorecard: 0 on track, 5 need a look\n\nDone for you\n- 5 team jobs stopped and are being fixed by Danielle; nothing needed from you.\n- What happened: 1 new comment. Status: done, nothing needed from you.\n\n— Simone";
+  const html = `<p>Decide (2)</p><p>📊 Scorecard: 0 on track, 5 need a look</p><p>5 team jobs stopped and are being fixed by Danielle; nothing needed from you.</p>`;
+  const morning = { ...employeeMail(sender, { to: "o@example.com", subject: "Tuesday: 2 decisions, 8 new deals", text: "x" }), text, html };
+
+  it("as written it fails the gate for that clash (the fixture must keep producing it)", () => {
+    expect(mailGate(morning)).toContain('"needs a look" beside "nothing needed"');
+  });
+  it("the gate repairs it and SENDS: the reassurance clause gone from text and HTML, the sentences whole", () => {
+    const ready = plainOrSimplified(morning);
+    expect(ready.held).toBeNull();
+    expect(mailGate(ready.payload)).toEqual([]);
+    for (const part of [ready.payload.text, ready.payload.html]) expect(part).not.toMatch(/nothing needed/i);
+    expect(ready.payload.text).toContain("- 5 team jobs stopped and are being fixed by Danielle.");
+    expect(ready.payload.text).toContain("Status: done.");
+    expect(ready.payload.text).toContain("📊 Scorecard: 0 on track, 5 need a look");
+    expect(ready.payload.html).toContain("being fixed by Danielle.</p>");
+  });
+  it("a genuine contradiction — \"Nothing to decide\" on an email that says it needs her — is still held", () => {
+    const bad = { ...employeeMail(sender, { to: "o@example.com", subject: "Ok", text: "x" }), text: "x\n\nNothing to decide — this is just so you know.\nYour request needs you: they want a card.\n\n— Simone" };
+    const ready = plainOrSimplified(bad);
+    expect(ready.held?.join(" ")).toMatch(/needs a look" beside "nothing needed/);
+  });
+  it("nothing is dropped when nothing needs her", () => {
+    const s = simplifyForOwner({ subject: "Ok", text: "Done.\n\nStatus: done, nothing needed from you." });
+    expect(s.text).toContain("nothing needed from you");
+  });
+});

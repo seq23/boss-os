@@ -969,8 +969,30 @@ export function plainProblems({ subject, text, html, kind = null, layout = null 
  * from the plain text, so the two always agree. Only what still fails after that is held (and handed
  * to Danielle as a repair). Pure.
  */
+/**
+ * THE ACTIONABLE SENTENCE WINS OVER A REASSURANCE (repair, 10 Nov 2026: the morning email "Tuesday: 2
+ * decisions, 8 new deals" was held whole — two decisions, eight deals, the briefing — because
+ * "📊 Scorecard: 0 on track, 5 need a look" sat in one section and "5 team jobs stopped and are being
+ * fixed by Danielle; nothing needed from you." in another). Two unrelated sections are no
+ * contradiction, and neither line carries a code word, so the simplifier could not repair it. When an
+ * email says something needs her, the inline reassurance clause ("nothing needed from you", "no reply
+ * needed") is dropped and the sentence stays whole ("Status: done, nothing needed from you." →
+ * "Status: done."). The structural "Nothing to decide — this is just so you know." line is NOT
+ * touched: beside "needs you" that one is a real contradiction and still holds the email. Pure.
+ */
+const NEEDS_HER_RE = /\bneeds? (?:a look|you)\b/i;
+export function dropReassurance(s) {
+  return String(s ?? "")
+    .replace(/\s*[;,]\s*(?:and\s+)?(?:nothing needed from you|no reply needed)\b/gi, "")
+    .replace(/(^|[.!?]\s+|>\s*)(?:Nothing needed from you|No reply needed)\.(?:[ \t]+|(?=\s*(?:<|$)))/gm, "$1");
+}
+
 const STRUCTURE_RE = /^(?:Decide \(\d+\)|Nothing to decide — this is just so you know\.|What (?:happened|broke|we did|was lost|you need to do):|Status(?::| done)|Details:|— [A-Z][a-z]+)/;
 export function simplifyForOwner({ subject, text, html = null, kind = null }) {
+  if (NEEDS_HER_RE.test(visibleText({ subject, text, html }))) {
+    text = dropReassurance(text);
+    if (html !== null && html !== undefined) html = dropReassurance(html);
+  }
   const moved = [];
   const out = [];
   for (const [i, rawLine] of String(text ?? "").split("\n").entries()) {
