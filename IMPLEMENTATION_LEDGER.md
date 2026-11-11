@@ -5767,3 +5767,18 @@ not a passing check. UNPROVEN live: installed launchd job, producer rerun, cloud
 and the next morning email. No production command was executed in this BUILD phase.
 
 Rebased onto main 7 Nov 2026 alongside the capital chain's own resume (#270): the resume restarts the chain, the 06:32 catch-up re-runs only the missing safe producers before the 06:40 email.
+
+### 11 November 2026 — prospects output alarm repair (rc_m75ne22d3gqvgpg0)
+
+The prospects job now prints its actual `emails sent` census once in `finally`, including early
+returns and errors, and no longer sits on the output validator's pending list. Migration 0361
+and the Schedule manifest set its floor to zero with the same reason: a finite cadence can have
+nobody due. Existing due-but-held and complaint stops remain. The migration preserves
+`output_since` so existing runs remain eligible for Kendra's automatic clearing check.
+
+PROVEN locally: output validator and eight self-test fixtures; 24 output-floor tests with cache
+disabled; TypeScript check. Migration fixture also proves target-only updates, preserved observation time, NULL initialization
+and repeat safety. Full validation outcome is recorded in this change's build.json.
+UNPROVEN live: migration application, the next job's census, and automatic alarm closure. No
+production read or write was performed in BUILD; the approved plan records the earlier live read.
+After landing, the runner must use alarm:watch for output:duty_prospects against the merge SHA.
