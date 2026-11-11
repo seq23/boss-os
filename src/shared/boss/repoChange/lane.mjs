@@ -74,7 +74,9 @@ export const PHASE_MODELS = {
  * and ran out of turns before the push and the PR. */
 export const PHASE_MAX_TURNS = { plan: 60, build: 220, land: 40 };
 /** A hard wall-clock cap per phase, in minutes. `timeout` in the shell wrapper enforces it. */
-export const PHASE_TIMEOUT_MIN = { plan: 25, build: 90, land: 30 };
+// A post-land alarm watch may take 180 minutes, after merge/deploy. The old
+// 30-minute cap killed the 150-minute prospects proof before the next hourly tick.
+export const PHASE_TIMEOUT_MIN = { plan: 25, build: 90, land: 210 };
 
 /**
  * ─── A FAILED POST-LAND STEP IS HER EMPLOYEE'S REWORK, NOT HER EMAIL ───────
@@ -114,7 +116,7 @@ export function redChecksAction(row) {
 }
 
 /** How long a claim is honoured before the Worker treats the run as dead and lets another claim it. */
-export const CLAIM_LEASE_MS = 2 * 60 * 60 * 1000;
+export const CLAIM_LEASE_MS = 4 * 60 * 60 * 1000;
 
 /**
  * THE DECISIONS POLICY — what she is asked and what Danielle decides. Rendered into the PLAN prompt

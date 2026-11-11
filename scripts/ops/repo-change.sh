@@ -34,10 +34,10 @@ LOG_DIR="$HOME/Library/Logs/repo-change"
 LOCK="$LOG_DIR/.lock"
 RUN_LOG="$LOG_DIR/$(date +%Y-%m-%d-%H%M%S)-$$.log"
 # The whole tick: three phases could in principle run back to back (plan, then — only if she has
-# already replied — nothing; build then land in one tick when CI is fast). 3 hours covers the
+# already replied — nothing; build then land in one tick when CI is fast). 6 hours covers the
 # per-phase caps in src/shared/boss/repoChange/lane.mjs with room; the runner kills a phase at its
 # own cap long before this.
-TICK_TIMEOUT="${REPO_CHANGE_TICK_TIMEOUT:-3h}"
+TICK_TIMEOUT="${REPO_CHANGE_TICK_TIMEOUT:-6h}"
 NOTHING_CLAIMABLE=7
 
 mkdir -p "$LOG_DIR"
