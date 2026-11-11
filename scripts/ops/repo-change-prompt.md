@@ -247,7 +247,7 @@ The PR's checks are recorded green and her approval is on the record. Land it an
    `{{LAND}}` has finished (or at once, if already landed), and put the command as run, its
    integer exit code `rc`, the tail of its output and the proof it produced (a URL, a file, an
    API response id) under `post_land`. The runner refuses a `post_land` whose command differs
-   from the recorded one or whose `rc` is not an integer. If the step needs a credential the
+   from the recorded one or whose `rc` is not an integer. A background notification or tool timeout is not the command exiting. Keep the original bounded command alive and collect its actual exit; never kill it and substitute a shorter watch (Kendra checks hourly). If the step needs a credential the
    runbook says only she holds, run it anyway and report its own named stop as the output — the
    runner tells her with the exact line. **A post-land step that fails is NOT a block.** Write
    `merge_sha` and `post_land` with its non-zero `rc` and `output_tail` exactly as below; the runner

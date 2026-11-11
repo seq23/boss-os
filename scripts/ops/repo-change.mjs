@@ -599,7 +599,7 @@ export function runRequested(needs, { mayRun, allowed, cwd, log, run = spawnSync
     const env = n?.env === "production" ? "production" : "preview";
     if (!mayRun.includes(script)) { out.push({ script, env, exit: null, line: "refused: not under ## Danielle may run in the runbook" }); continue; }
     const args = Array.isArray(n?.args) ? n.args.map(String).slice(0, 20) : [];
-    const r = run("npm", ["run", script, "--", ...args], { cwd, encoding: "utf8", timeout: 600_000, env: { ...envForRepoRun(process.env, allowed), BOSS_RUN_ENV: env } });
+    const r = run("npm", ["run", script, "--", ...args], { cwd, encoding: "utf8", timeout: script === "alarm:watch" ? (180 + 1) * 60_000 : 600_000, env: { ...envForRepoRun(process.env, allowed), BOSS_RUN_ENV: env } });
     const line = `${(r.stdout ?? "").trim().split("\n").pop() ?? ""}`.slice(0, 300) || `${(r.stderr ?? "").trim().split("\n").pop() ?? ""}`.slice(0, 300);
     if (log) appendFileSync(log, `=== may-run ${script} (${env}) rc=${r.status}\n${(r.stdout ?? "").slice(-4000)}${(r.stderr ?? "").slice(-2000)}\n`);
     out.push({ script, env, exit: r.status, line });

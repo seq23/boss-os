@@ -1,5 +1,7 @@
+import { readFileSync } from "node:fs";
+import { PHASE_TIMEOUT_MIN, CLAIM_LEASE_MS } from "../src/shared/boss/repoChange/lane.mjs";
 import { describe, expect, it } from "vitest";
-import { alarmState, deployState, stopWords } from "../scripts/ops/alarm-watch.mjs";
+import { alarmState, deployState, stopWords, watchMinutes } from "../scripts/ops/alarm-watch.mjs";
 
 /*
  * 8 Nov 2026, rework of output:duty_exec_intel: the post-land watch waited 75 minutes and reported
@@ -29,5 +31,23 @@ describe("alarm-watch: the fix must be live before the alarm is judged", () => {
     const live = stopWords("output:duty_exec_intel", 75, { state: "live", at: Date.UTC(2026, 10, 8, 19) }, open);
     expect(live).toContain("[ALARM_NOT_CLOSED]");
     expect(live).toContain("fix live in production since 2026-11-08T19:00:00.000Z");
+  });
+});
+
+// Reproduce the prospects post-land failure: 150 minutes was killed at 30,
+// then a two-minute probe was misreported as the recorded command's failure.
+describe("the hourly alarm proof gets its bounded observation window", () => {
+  it("rejects a short probe before any request, and lets the runner outlive a full watch", () => {
+    for (const bad of [2, 0, 64, 181, NaN, Infinity, "oops"]) {
+      expect(() => watchMinutes(bad)).toThrow("NAMED STOP [WATCH_WINDOW_TOO_SHORT_OR_INVALID]");
+    }
+    expect(watchMinutes("150")).toBe(150);
+    expect(watchMinutes()).toBe(90);
+    expect(watchMinutes(65)).toBe(65);
+    expect(PHASE_TIMEOUT_MIN.land).toBeGreaterThanOrEqual(watchMinutes(180) + 30);
+    expect(CLAIM_LEASE_MS).toBeGreaterThan(PHASE_TIMEOUT_MIN.land * 60_000);
+    const shell = readFileSync("scripts/ops/repo-change.sh", "utf8");
+    const hours = Number(shell.match(/REPO_CHANGE_TICK_TIMEOUT:-(\d+)h/)?.[1]);
+    expect(hours * 60).toBeGreaterThan(PHASE_TIMEOUT_MIN.plan + PHASE_TIMEOUT_MIN.build + PHASE_TIMEOUT_MIN.land);
   });
 });

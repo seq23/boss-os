@@ -72,6 +72,16 @@ export function alarmState(alarms, key) {
   return { state: "open", text: row.text, seen: row.seen };
 }
 
+// Kendra checks hourly. A two-minute substitute cannot prove a repair failed.
+// Validate before gh or Boss OS receives any request.
+export function watchMinutes(value = 90) {
+  const minutes = Number(value);
+  if (!Number.isFinite(minutes) || minutes < 65 || minutes > 180) {
+    throw new Error("NAMED STOP [WATCH_WINDOW_TOO_SHORT_OR_INVALID] --minutes must be 65..180: allow Kendra's hourly check to observe the live fix; never replace the recorded watch with a shorter probe");
+  }
+  return minutes;
+}
+
 function argText(name) {
   const i = process.argv.indexOf(name);
   return i > -1 && process.argv[i + 1] ? process.argv[i + 1] : null;
@@ -105,7 +115,7 @@ async function main() {
   if (process.argv.includes("--self-test")) return selfTest();
   const key = process.argv.slice(2).find((a) => /^(output|task|mail):/.test(a));
   if (!key) { console.error("usage: alarm-watch.mjs <alarm key, e.g. output:duty_exec_intel> [--sha <merge sha>] [--minutes 90] [--every 60]"); process.exit(1); }
-  const minutes = Math.min(Math.max(arg("--minutes", 90), 1), 180);
+  const minutes = watchMinutes(argText("--minutes") ?? 90);
   const every = Math.min(Math.max(arg("--every", 60), 15), 600);
   const deadline = Date.now() + minutes * 60_000;
   let last = { state: "not read" };
