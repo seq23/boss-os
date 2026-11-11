@@ -17,6 +17,14 @@ const day = (d: string, hm = "16:30") => Date.parse(`2026-11-${d}T${hm}:00Z`);
 const run = (outcome: "ok" | "failed", output_count: number | null, at: number) => ({ outcome, output_count, finished_at: at });
 
 describe("the census line", () => {
+  it("records the prospect census even on early returns or throws, and permits a day with nobody due", () => {
+    const script = readFileSync("scripts/ops/lp-prospects.mjs", "utf8");
+    expect(script).toMatch(/finally\s*\{\s*console\.log\(outputLine\(sent, "emails sent"\)\)/);
+    expect(readFileSync("scripts/validate/every-job-names-its-output.mjs", "utf8")).not.toMatch(/"lp-prospects\.mjs":/);
+    const manifest = JSON.parse(readFileSync("src/shared/boss/schedule/manifest.json", "utf8"));
+    expect(manifest.rows.find((r: any) => r.id === "prospects").output).toEqual({ floor: 0, reason: "Sends only the touches the cadence makes due; a day with nobody due sends none, and a due-but-held day is its own named stop." });
+    expect(floorVerdict({ ...DUTY, output_floor: 0 }, [run("ok", null, 1), run("ok", null, 2)])).toMatchObject({ alarm: false, low: 0 });
+  });
   it("reads the last OUTPUT line a job printed", () => {
     expect(parseOutputLine("LIVE: 8 sent\nOUTPUT 3 emails sent\nOUTPUT 8 emails sent\nRecorded")).toEqual({ count: 8, metric: "emails sent" });
     expect(outputLine(8, "emails sent")).toBe("OUTPUT 8 emails sent");

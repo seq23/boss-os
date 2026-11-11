@@ -48,6 +48,7 @@ import {
   DEFAULT_PROSPECT_TEMPLATE, FEATURED_MIN, blur, gmailThreadUrl, proposeFeatured, renderProspect,
   staleFeatured, tapUrl, MAX_TOUCHES, approveOutcome, PROSPECT_VARIANTS, hasTouchWords,
 } from "../../src/shared/boss/lp/plan.mjs";
+import { outputLine } from "../../src/shared/boss/alarms/rules.mjs";
 import { wantsToMeet } from "../../src/shared/boss/lp/schedule.mjs";
 
 const MAILBOX = "sequoia@westpeek.ventures";
@@ -408,168 +409,173 @@ export function prospectsMorning({ rows, pending, stale, plan, sent, problem = n
 /* ─── The run ───────────────────────────────────────────────────────────── */
 
 async function main() {
-  const api = await bossApi();
-  if (VERIFY_ONLY) { const r = await verifyDue(api); console.log(`LP-PROSPECTS-VERIFIED: ${JSON.stringify(r.marks)}`); return; }
-  const tok = await token();
-  const readTok = await token(READ_SCOPE);
-
-  // 1. Import the 11 Oct send (idempotent: a known address keeps its history).
-  const logFile = path.join(SOURCE_DIR, "sent-log.md");
-  if (fs.existsSync(logFile)) {
-    const sent = parseSentLog(fs.readFileSync(logFile, "utf8"));
-    const recips = fs.readdirSync(SOURCE_DIR).filter((f) => /^recipients.*\.csv$/.test(f)).flatMap((f) => parseCsv(fs.readFileSync(path.join(SOURCE_DIR, f), "utf8")));
-    const rows = importRows(sent, recips);
-    const known = new Set(((await api.get("/lp/prospects")).rows ?? []).map((r) => r.email));
-    const fresh = rows.filter((r) => !known.has(r.email));
-    for (const r of fresh) { const t = await threadOfSent(readTok, r.gmail_id); if (t) { r.thread_id = t.thread_id; r.last_message_id = t.message_id; r.subject = t.subject; } }
-    const res = await api.post("/lp/prospects/import", { rows: fresh });
-    console.log(`import: ${res.added} added, ${res.skipped} already known.`);
-  } else {
-    console.log("import: the 11 Oct files are not on this Mac; nothing imported.");
-  }
-
-  // 1b. WHAT ACTUALLY WENT, from her Sent mail (owner, 24 Oct 2026): every prospect email, whether
-  // Monique sent it or she sent a draft from Gmail herself, is kept with its words, date and thread,
-  // so follow-ups build on it, nobody gets a second first touch, and replies find their prospect.
-  try {
-    const { sentWordsTo } = await import("./lp-positive.mjs");
-    const touches = await sentWordsTo(((await api.get("/lp/prospects")).rows ?? []).map((r) => r.email), { max: MAX_TOUCHES });
-    if (touches.length) console.log(`sent mail: ${(await api.post("/lp/prospects/touches", { touches })).recorded} prospect email(s) on record with their words.`);
-  } catch (e) { console.log(`note: her Sent mail was not read for prospect emails (${e.message}); the tracker keeps what it had.`); }
-
-  // 2. Replies.
-  const list = (await api.get("/lp/prospects?tokens=1")).rows ?? [];
-  const watching = list.filter((r) => ["new", "active", "interested", "replied"].includes(r.status) && r.touches > 0);
-  if (watching.length) {
-    const since = new Date(Math.min(...watching.map((r) => Number(r.first_sent_at ?? Date.now())))).toISOString().slice(0, 10);
-    const { readProspectReplies } = await import("./lp-positive.mjs");
-    const replies = await readProspectReplies(watching.map((r) => r.email), since);
-    const events = [];
-    for (const [email, r] of replies) {
-      const p = watching.find((w) => w.email === email);
-      if (!p || r.kind === "ooo") continue;
-      if (p.status === "interested" && r.kind === "interested") continue;
-      let draft_id = null;
-      if (r.kind === "interested" && p.thread_id) {
-        const first = String(p.name ?? "").split(/\s+/)[0];
-        const raw = b64url(mime({ to: email, subject: `Re: ${p.subject ?? ""}`.replace(/^Re: Re:/, "Re:"), body: interestedReply(first, wantsToMeet(r.note ?? "")), inReplyTo: p.last_message_id }));
-        const d = await call(tok, `${GMAIL}/drafts`, { method: "POST", body: JSON.stringify({ message: { raw, threadId: p.thread_id } }) }).catch(() => null);
-        draft_id = d?.id ?? null;
-      }
-      events.push({ email, kind: r.kind, side: r.side, note: r.note, draft_id });
-    }
-    if (events.length) await api.post("/lp/prospects/events", { events });
-    console.log(`replies: ${events.length} recorded (${[...replies.values()].filter((r) => r.kind === "ooo").length} out-of-office left alone).`);
-  }
-
-  // 3. The email she approves, and stale-name swaps.
-  const deals = readJson(path.join(MORNING_DIR, "deals.json"));
-  const supply = supplyFrom(deals);
-  const rules = (await api.get("/lp/prospects/names")).rules ?? [];
-  const byRule = (k) => rules.filter((r) => r.rule === k).map((r) => r.name);
-  const state = await api.get("/lp/prospects");
-  let pending = state.pending;
-  let stale = [];
-  const approvedNames = state.approved ? JSON.parse(state.approved.names_json ?? "[]") : [];
-  if (state.approved && deals) stale = staleFeatured(approvedNames, supply).filter((n) => !byRule("add").map((x) => String(x).toLowerCase()).includes(n.toLowerCase()));
-  /*
-   * EMAILS 3 AND 4 GO TO HER FIRST (owner, 6 Nov 2026: "never invent-and-send"). An approved template
-   * from before today has no words for them: the same email, the same names and the same follow-up,
-   * plus emails 3 and 4 from its own variant, go to her as a new card. The approved one keeps sending
-   * emails 1 and 2 meanwhile; emails 3 and 4 go only after she taps Approve on this card.
-   */
-  const needsLater = state.approved && !stale.length && !(hasTouchWords(state.approved, 3) && hasTouchWords(state.approved, 4));
-  if (needsLater) {
-    const v = PROSPECT_VARIANTS[Number(state.approved.variant ?? 0) % PROSPECT_VARIANTS.length];
-    const withLater = { subject: state.approved.subject, body: state.approved.body, follow_up: state.approved.follow_up, follow_up_2: v.follow_up_2, follow_up_3: v.follow_up_3 };
-    const waiting = pending && pending.follow_up_2 && pending.follow_up_3 && (pending.names_json ?? "") === (state.approved.names_json ?? "");
-    if (waiting) {
-      console.log("template: emails 3 and 4 are waiting for her Approve.");
-    } else {
-      const r = await api.post("/lp/prospects/template", { template: withLater, names: approvedNames }).catch((e) => ({ error: e.message }));
-      pending = r.template?.status === "pending" ? r.template : pending;
-      console.log(`template: emails 3 and 4 ${r.template?.status === "pending" ? "proposed, waiting for her Approve" : `NOT proposed (${r.error ?? "no pending row came back"}); emails 1 and 2 carry on`}.`);
-    }
-  }
-  if (!state.approved || stale.length) {
-    const keep = approvedNames.filter((n) => !stale.includes(n.name));
-    const proposed = [...keep, ...proposeFeatured(supply, { never: byRule("never"), add: byRule("add"), drop: byRule("drop") }).filter((p) => !keep.some((k) => k.name.toLowerCase() === p.name.toLowerCase()))].slice(0, 5);
-    // A waiting draft whose names no longer match her list (a name she added since, or written in the
-    // wrong case) is replaced; proposeTemplate retires the old one. The same names leave it alone.
-    const waitingNames = pending ? JSON.parse(pending.names_json ?? "[]").map((n) => n.name).join("|") : null;
-    if (pending && waitingNames === proposed.map((n) => n.name).join("|")) {
-      console.log(`template: the draft with ${proposed.length} names is waiting for her Approve.`);
-    } else if (proposed.length >= FEATURED_MIN) {
-      const r = await api.post("/lp/prospects/template", { template: DEFAULT_PROSPECT_TEMPLATE, names: proposed });
-      pending = r.template?.status === "pending" ? r.template : null;
-      console.log(`template: ${pending ? `proposed with ${proposed.length} names, waiting for her Approve` : "NOT proposed"}.`);
-    } else {
-      console.log(`template: only ${proposed.length} fresh names on her list (need ${FEATURED_MIN}); nothing proposed today.`);
-    }
-  }
-
-  // 3b. Bounces from the whole mailbox (Twin's sends too) go on suppression before the plan is read.
-  try {
-    const { syncBounces } = await import("./lp-bounces.mjs");
-    await syncBounces({ days: 3, commit: LIVE, api });
-  } catch (e) { console.log(`note: ${e.message}`); }
-
-  // 4. Her NeverBounce on every address due a touch (first emails and follow-ups), then the plan —
-  // which sends only checked addresses, and only "valid" ones while the bounce brake is on.
-  const sendDay = isSendDay();
-  if (LIVE && !sendDay) console.log("WEEKEND: no prospect email goes on Saturday or Sunday (Central); anything due goes on Monday.");
-  if (LIVE && sendDay) {
-    const wait = waitForWindowMs();
-    if (wait > WAIT_MAX_MS) { console.error(`NAMED STOP [BEFORE_WINDOW] the run started ${Math.round(wait / 60_000)} minutes before 9:00 Central; the launchd time is wrong for this Mac's zone (re-run scripts/ops/install-agent-launchd.sh).`); process.exitCode = 2; return; }
-    if (wait > 0) { console.log(`window: early by ${Math.round(wait / 60_000)} min; waiting for 9:00 Central before sending.`); await new Promise((r) => setTimeout(r, wait)); }
-    try { await verifyDue(api); } catch (e) { console.log(`note: NeverBounce did not run (${e.message}); unchecked addresses wait.`); }
-  }
-  const plan = await api.get("/lp/prospects/plan");
-  if (plan.note) console.log(`plan: ${plan.note}`);
   let sent = 0;
-  let stop = null;
-  const held = [];
-  if (plan.sends?.length) {
-    if (LIVE && !sendDay) {
-      console.log(`WEEKEND: ${plan.sends.length} due; held for Monday. Nothing sent.`);
-    } else if (!LIVE || plan.dryRun) {
-      fs.mkdirSync(path.dirname(PREVIEW), { recursive: true });
-      fs.writeFileSync(PREVIEW, plan.sends.map((s) => `To: ${blur(s.name, s.email)}\nTouch ${s.touch}\nSubject: ${s.subject}\n\n${s.body}\n`).join("\n────────\n"), { mode: 0o600 });
-      console.log(`DRY RUN: ${plan.sends.length} due (${plan.dryRun ? "outreach sending is not live" : "no --live"}); preview at ${PREVIEW}. Nothing sent.`);
+  try {
+    const api = await bossApi();
+    if (VERIFY_ONLY) { const r = await verifyDue(api); console.log(`LP-PROSPECTS-VERIFIED: ${JSON.stringify(r.marks)}`); return sent; }
+    const tok = await token();
+    const readTok = await token(READ_SCOPE);
+
+    // 1. Import the 11 Oct send (idempotent: a known address keeps its history).
+    const logFile = path.join(SOURCE_DIR, "sent-log.md");
+    if (fs.existsSync(logFile)) {
+      const sent = parseSentLog(fs.readFileSync(logFile, "utf8"));
+      const recips = fs.readdirSync(SOURCE_DIR).filter((f) => /^recipients.*\.csv$/.test(f)).flatMap((f) => parseCsv(fs.readFileSync(path.join(SOURCE_DIR, f), "utf8")));
+      const rows = importRows(sent, recips);
+      const known = new Set(((await api.get("/lp/prospects")).rows ?? []).map((r) => r.email));
+      const fresh = rows.filter((r) => !known.has(r.email));
+      for (const r of fresh) { const t = await threadOfSent(readTok, r.gmail_id); if (t) { r.thread_id = t.thread_id; r.last_message_id = t.message_id; r.subject = t.subject; } }
+      const res = await api.post("/lp/prospects/import", { rows: fresh });
+      console.log(`import: ${res.added} added, ${res.skipped} already known.`);
     } else {
+      console.log("import: the 11 Oct files are not on this Mac; nothing imported.");
+    }
+
+    // 1b. WHAT ACTUALLY WENT, from her Sent mail (owner, 24 Oct 2026): every prospect email, whether
+    // Monique sent it or she sent a draft from Gmail herself, is kept with its words, date and thread,
+    // so follow-ups build on it, nobody gets a second first touch, and replies find their prospect.
+    try {
+      const { sentWordsTo } = await import("./lp-positive.mjs");
+      const touches = await sentWordsTo(((await api.get("/lp/prospects")).rows ?? []).map((r) => r.email), { max: MAX_TOUCHES });
+      if (touches.length) console.log(`sent mail: ${(await api.post("/lp/prospects/touches", { touches })).recorded} prospect email(s) on record with their words.`);
+    } catch (e) { console.log(`note: her Sent mail was not read for prospect emails (${e.message}); the tracker keeps what it had.`); }
+
+    // 2. Replies.
+    const list = (await api.get("/lp/prospects?tokens=1")).rows ?? [];
+    const watching = list.filter((r) => ["new", "active", "interested", "replied"].includes(r.status) && r.touches > 0);
+    if (watching.length) {
+      const since = new Date(Math.min(...watching.map((r) => Number(r.first_sent_at ?? Date.now())))).toISOString().slice(0, 10);
+      const { readProspectReplies } = await import("./lp-positive.mjs");
+      const replies = await readProspectReplies(watching.map((r) => r.email), since);
       const events = [];
-      for (const s of plan.sends) {
-        let shape = sendShape(s);
-        if (shape.refused) { held.push(shape.refused); console.error(`  touch ${s.touch} held: ${shape.refused}`); continue; }
-        const mtok = tok;
-        // Thread it properly: the follow-up answers the last message in their thread (read token).
-        if (shape.threadId && !shape.message.inReplyTo) {
-          const th = await threadHeaders(readTok, shape.threadId);
-          if (th.stop) { stop = th.stop; console.error(th.stop); break; }
-          if (th.held) { held.push(th.held); console.error(`  touch ${s.touch} held: ${th.held}`); continue; }
-          shape = sendShape({ ...s, subject: s.subject ?? th.subject }, { inReplyTo: th.messageId });
+      for (const [email, r] of replies) {
+        const p = watching.find((w) => w.email === email);
+        if (!p || r.kind === "ooo") continue;
+        if (p.status === "interested" && r.kind === "interested") continue;
+        let draft_id = null;
+        if (r.kind === "interested" && p.thread_id) {
+          const first = String(p.name ?? "").split(/\s+/)[0];
+          const raw = b64url(mime({ to: email, subject: `Re: ${p.subject ?? ""}`.replace(/^Re: Re:/, "Re:"), body: interestedReply(first, wantsToMeet(r.note ?? "")), inReplyTo: p.last_message_id }));
+          const d = await call(tok, `${GMAIL}/drafts`, { method: "POST", body: JSON.stringify({ message: { raw, threadId: p.thread_id } }) }).catch(() => null);
+          draft_id = d?.id ?? null;
         }
-        const raw = b64url(mime(shape.message));
-        const m = await call(mtok, `${GMAIL}/messages/send`, { method: "POST", body: JSON.stringify({ raw, ...(shape.threadId ? { threadId: shape.threadId } : {}) }) }).catch((e) => ({ error: e.message }));
-        if (!m?.id) { console.error(`  touch ${s.touch} refused: ${m?.error ?? "no id"}`); continue; }
-        const meta = await threadOfSent(readTok, m.id);
-        events.push({ prospect_id: s.prospect_id, kind: "sent", touch: s.touch, gmail_id: m.id, thread_id: m.threadId, message_id: meta?.message_id ?? null, subject: shape.message.subject, body: s.body, template_id: s.template_id ?? null, sent_from: shape.mailbox });
-        sent++;
+        events.push({ email, kind: r.kind, side: r.side, note: r.note, draft_id });
       }
       if (events.length) await api.post("/lp/prospects/events", { events });
+      console.log(`replies: ${events.length} recorded (${[...replies.values()].filter((r) => r.kind === "ooo").length} out-of-office left alone).`);
     }
-  } else if (plan.stops?.length) {
-    console.log(`plan: nothing sent — ${plan.stops.join(" ")}`);
-  }
 
-  const rows = (await api.get("/lp/prospects?tokens=1")).rows ?? [];
-  const verdict = runVerdict({ due: LIVE && sendDay && !plan.dryRun ? plan.sends?.length ?? 0 : 0, sent, held, stop });
-  const file = writeMorning("prospects", prospectsMorning({ rows, pending, stale, plan, sent, problem: verdict.line, approved: Boolean(state.approved) }));
-  if (verdict.stop) { console.error(verdict.stop); process.exitCode = 2; return; }
-  if (plan.forecast?.complaint) { console.error(plan.forecast.complaint); process.exitCode = 2; return; }
-  console.log(`LP-PROSPECTS-COMPLETE: ${rows.length} prospects, ${sent} sent; morning section at ${file}`);
+    // 3. The email she approves, and stale-name swaps.
+    const deals = readJson(path.join(MORNING_DIR, "deals.json"));
+    const supply = supplyFrom(deals);
+    const rules = (await api.get("/lp/prospects/names")).rules ?? [];
+    const byRule = (k) => rules.filter((r) => r.rule === k).map((r) => r.name);
+    const state = await api.get("/lp/prospects");
+    let pending = state.pending;
+    let stale = [];
+    const approvedNames = state.approved ? JSON.parse(state.approved.names_json ?? "[]") : [];
+    if (state.approved && deals) stale = staleFeatured(approvedNames, supply).filter((n) => !byRule("add").map((x) => String(x).toLowerCase()).includes(n.toLowerCase()));
+    /*
+     * EMAILS 3 AND 4 GO TO HER FIRST (owner, 6 Nov 2026: "never invent-and-send"). An approved template
+     * from before today has no words for them: the same email, the same names and the same follow-up,
+     * plus emails 3 and 4 from its own variant, go to her as a new card. The approved one keeps sending
+     * emails 1 and 2 meanwhile; emails 3 and 4 go only after she taps Approve on this card.
+     */
+    const needsLater = state.approved && !stale.length && !(hasTouchWords(state.approved, 3) && hasTouchWords(state.approved, 4));
+    if (needsLater) {
+      const v = PROSPECT_VARIANTS[Number(state.approved.variant ?? 0) % PROSPECT_VARIANTS.length];
+      const withLater = { subject: state.approved.subject, body: state.approved.body, follow_up: state.approved.follow_up, follow_up_2: v.follow_up_2, follow_up_3: v.follow_up_3 };
+      const waiting = pending && pending.follow_up_2 && pending.follow_up_3 && (pending.names_json ?? "") === (state.approved.names_json ?? "");
+      if (waiting) {
+        console.log("template: emails 3 and 4 are waiting for her Approve.");
+      } else {
+        const r = await api.post("/lp/prospects/template", { template: withLater, names: approvedNames }).catch((e) => ({ error: e.message }));
+        pending = r.template?.status === "pending" ? r.template : pending;
+        console.log(`template: emails 3 and 4 ${r.template?.status === "pending" ? "proposed, waiting for her Approve" : `NOT proposed (${r.error ?? "no pending row came back"}); emails 1 and 2 carry on`}.`);
+      }
+    }
+    if (!state.approved || stale.length) {
+      const keep = approvedNames.filter((n) => !stale.includes(n.name));
+      const proposed = [...keep, ...proposeFeatured(supply, { never: byRule("never"), add: byRule("add"), drop: byRule("drop") }).filter((p) => !keep.some((k) => k.name.toLowerCase() === p.name.toLowerCase()))].slice(0, 5);
+      // A waiting draft whose names no longer match her list (a name she added since, or written in the
+      // wrong case) is replaced; proposeTemplate retires the old one. The same names leave it alone.
+      const waitingNames = pending ? JSON.parse(pending.names_json ?? "[]").map((n) => n.name).join("|") : null;
+      if (pending && waitingNames === proposed.map((n) => n.name).join("|")) {
+        console.log(`template: the draft with ${proposed.length} names is waiting for her Approve.`);
+      } else if (proposed.length >= FEATURED_MIN) {
+        const r = await api.post("/lp/prospects/template", { template: DEFAULT_PROSPECT_TEMPLATE, names: proposed });
+        pending = r.template?.status === "pending" ? r.template : null;
+        console.log(`template: ${pending ? `proposed with ${proposed.length} names, waiting for her Approve` : "NOT proposed"}.`);
+      } else {
+        console.log(`template: only ${proposed.length} fresh names on her list (need ${FEATURED_MIN}); nothing proposed today.`);
+      }
+    }
+
+    // 3b. Bounces from the whole mailbox (Twin's sends too) go on suppression before the plan is read.
+    try {
+      const { syncBounces } = await import("./lp-bounces.mjs");
+      await syncBounces({ days: 3, commit: LIVE, api });
+    } catch (e) { console.log(`note: ${e.message}`); }
+
+    // 4. Her NeverBounce on every address due a touch (first emails and follow-ups), then the plan —
+    // which sends only checked addresses, and only "valid" ones while the bounce brake is on.
+    const sendDay = isSendDay();
+    if (LIVE && !sendDay) console.log("WEEKEND: no prospect email goes on Saturday or Sunday (Central); anything due goes on Monday.");
+    if (LIVE && sendDay) {
+      const wait = waitForWindowMs();
+      if (wait > WAIT_MAX_MS) { console.error(`NAMED STOP [BEFORE_WINDOW] the run started ${Math.round(wait / 60_000)} minutes before 9:00 Central; the launchd time is wrong for this Mac's zone (re-run scripts/ops/install-agent-launchd.sh).`); process.exitCode = 2; return sent; }
+      if (wait > 0) { console.log(`window: early by ${Math.round(wait / 60_000)} min; waiting for 9:00 Central before sending.`); await new Promise((r) => setTimeout(r, wait)); }
+      try { await verifyDue(api); } catch (e) { console.log(`note: NeverBounce did not run (${e.message}); unchecked addresses wait.`); }
+    }
+    const plan = await api.get("/lp/prospects/plan");
+    if (plan.note) console.log(`plan: ${plan.note}`);
+    let stop = null;
+    const held = [];
+    if (plan.sends?.length) {
+      if (LIVE && !sendDay) {
+        console.log(`WEEKEND: ${plan.sends.length} due; held for Monday. Nothing sent.`);
+      } else if (!LIVE || plan.dryRun) {
+        fs.mkdirSync(path.dirname(PREVIEW), { recursive: true });
+        fs.writeFileSync(PREVIEW, plan.sends.map((s) => `To: ${blur(s.name, s.email)}\nTouch ${s.touch}\nSubject: ${s.subject}\n\n${s.body}\n`).join("\n────────\n"), { mode: 0o600 });
+        console.log(`DRY RUN: ${plan.sends.length} due (${plan.dryRun ? "outreach sending is not live" : "no --live"}); preview at ${PREVIEW}. Nothing sent.`);
+      } else {
+        const events = [];
+        for (const s of plan.sends) {
+          let shape = sendShape(s);
+          if (shape.refused) { held.push(shape.refused); console.error(`  touch ${s.touch} held: ${shape.refused}`); continue; }
+          const mtok = tok;
+          // Thread it properly: the follow-up answers the last message in their thread (read token).
+          if (shape.threadId && !shape.message.inReplyTo) {
+            const th = await threadHeaders(readTok, shape.threadId);
+            if (th.stop) { stop = th.stop; console.error(th.stop); break; }
+            if (th.held) { held.push(th.held); console.error(`  touch ${s.touch} held: ${th.held}`); continue; }
+            shape = sendShape({ ...s, subject: s.subject ?? th.subject }, { inReplyTo: th.messageId });
+          }
+          const raw = b64url(mime(shape.message));
+          const m = await call(mtok, `${GMAIL}/messages/send`, { method: "POST", body: JSON.stringify({ raw, ...(shape.threadId ? { threadId: shape.threadId } : {}) }) }).catch((e) => ({ error: e.message }));
+          if (!m?.id) { console.error(`  touch ${s.touch} refused: ${m?.error ?? "no id"}`); continue; }
+          const meta = await threadOfSent(readTok, m.id);
+          events.push({ prospect_id: s.prospect_id, kind: "sent", touch: s.touch, gmail_id: m.id, thread_id: m.threadId, message_id: meta?.message_id ?? null, subject: shape.message.subject, body: s.body, template_id: s.template_id ?? null, sent_from: shape.mailbox });
+          sent++;
+        }
+        if (events.length) await api.post("/lp/prospects/events", { events });
+      }
+    } else if (plan.stops?.length) {
+      console.log(`plan: nothing sent — ${plan.stops.join(" ")}`);
+    }
+
+    const rows = (await api.get("/lp/prospects?tokens=1")).rows ?? [];
+    const verdict = runVerdict({ due: LIVE && sendDay && !plan.dryRun ? plan.sends?.length ?? 0 : 0, sent, held, stop });
+    const file = writeMorning("prospects", prospectsMorning({ rows, pending, stale, plan, sent, problem: verdict.line, approved: Boolean(state.approved) }));
+    if (verdict.stop) { console.error(verdict.stop); process.exitCode = 2; return sent; }
+    if (plan.forecast?.complaint) { console.error(plan.forecast.complaint); process.exitCode = 2; return sent; }
+    console.log(`LP-PROSPECTS-COMPLETE: ${rows.length} prospects, ${sent} sent; morning section at ${file}`);
+    return sent;
+  } finally {
+    console.log(outputLine(sent, "emails sent"));
+  }
 }
 
 if (import.meta.url === `file://${process.argv[1]}`) {
-  main().catch((err) => { console.error(`LP-PROSPECTS FAILED: ${err?.message ?? err}`); process.exit(1); });
+  main().catch((err) => { console.error(`LP-PROSPECTS FAILED: ${err?.message ?? err}`); process.exitCode = 1; });
 }

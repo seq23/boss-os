@@ -4201,9 +4201,8 @@
         ]
       },
       "output": {
-        "metric": "emails sent",
-        "floor": 1,
-        "runs": 3
+        "floor": 0,
+        "reason": "Sends only the touches the cadence makes due; a day with nobody due sends none, and a due-but-held day is its own named stop."
       }
     },
     {
