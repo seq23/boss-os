@@ -177,6 +177,17 @@ describe("the registry: every Schedule row names its output", () => {
     expect(dutyFloorProblems(manifest, migrationFloors(sql))).toEqual([]);
     expect(manifest.rows.find((r: any) => r.trigger?.duty === "duty_pnp_corporate_outreach").output).toEqual({ metric: "emails sent", floor: 1, runs: 2 });
   });
+  it("a full Time-2-Read pipeline stays healthy; empty or unread pipelines still alarm", () => {
+    const output = manifest.rows.find((r: any) => r.trigger?.duty === "duty_t2r_groups").output;
+    expect(output).toEqual({ metric: "groups ready to write to", floor: 1, runs: 3 });
+    const duty = { name: "Time-2-Read groups & institutions", output_metric: output.metric, output_floor: output.floor, output_runs: output.runs };
+    // Replay the approved investigation's 9-11 Nov zero-research runs.
+    const history = ["11", "10", "09"].map((d) => run("ok", 0, day(d)));
+    expect(floorVerdict({ ...duty, output_metric: "groups researched" }, history).alarm).toBe(true);
+    expect(floorVerdict(duty, history.map((r) => ({ ...r, output_count: 29 }))).alarm).toBe(false);
+    expect(floorVerdict(duty, history).alarm).toBe(true);
+    expect(floorVerdict(duty, history.map((r) => ({ ...r, output_count: null }))).alarm).toBe(true);
+  });
   it("catches a producing job with no metric, and a check with no reason", () => {
     const bad = { rows: [{ id: "a", output: { floor: 1, runs: 2 } }, { id: "b", output: { floor: 0 } }, { id: "c" }] };
     expect(outputProblems(bad)).toHaveLength(3);

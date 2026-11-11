@@ -5767,3 +5767,24 @@ not a passing check. UNPROVEN live: installed launchd job, producer rerun, cloud
 and the next morning email. No production command was executed in this BUILD phase.
 
 Rebased onto main 7 Nov 2026 alongside the capital chain's own resume (#270): the resume restarts the chain, the 06:32 catch-up re-runs only the missing safe producers before the 06:40 email.
+
+## 11 Nov 2026 — Time-2-Read groups output floor (rc_m75j05srbgavn0xv)
+
+The approved investigation read a full pipeline (0 waiting, 29 queued) and three zero-research
+runs. Research correctly skips at 20 groups; the old per-run research floor therefore alarmed on
+healthy conditional work. The Mac job now reads waiting + queued after queueing and emits that
+census as `groups ready to write to`. Unread or invalid counts remain unknown and emit no census.
+Migration 0361 and the Schedule output retain floor 1 / 3 runs, with a fresh observation window.
+The bounce brake and research threshold stay unchanged. Regression coverage checks a full pipeline,
+a fresh post-work count, unread counts, and healthy/empty/unknown floor verdicts.
+
+Local validation evidence is recorded in this change's build.json. UNPROVEN live: migrated duty,
+installed Mac runtime, next scheduled census and automatic alarm closure. No production command
+was executed during BUILD; the live figures above are the approved investigation's records.
+
+BUILD proof: 42 focused tests passed; typecheck and Vite build passed. SQL schema scan passed
+within validate. Full validate stopped at device-home (EPERM writing ~/.boss-os/device.json).
+Separate npm test: 3,276 passed, 5 failed on sandbox permissions (sent-mail-pending and /dev/fd),
+plus an unwritable Vite results cache; the chained Boss suite therefore did not run. Separate
+test:boss could not start (EPERM unlinking Vite dependency metadata). Full gate is NOT green;
+runner must rerun outside this sandbox before landing. No UI or external link changed.
