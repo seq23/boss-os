@@ -31,7 +31,7 @@
  */
 import { GRID } from "../../src/shared/boss/grid.mjs";
 import {
-  askClaudeJson, bossApi, fromDomain, gmailHeaders, googleToken, loadState, movedReadings,
+  PERSONAL_GMAIL, askClaudeJson, bossApi, fromDomain, gmailHeaders, googleToken, loadState, movedReadings,
   readNothingStop, saveState, sendAs, stateMap, toMorning, fixJob,
 } from "./lib/duty-kit.mjs";
 import { gmailSearchLink } from "../../src/shared/boss/mail/plain.mjs";
@@ -182,7 +182,7 @@ function readChargesPersonal() {
   const a = askClaudeJson(
     "Use the Gmail tool on my mailbox. Search: newer_than:2d (subject:(receipt OR invoice OR \"payment received\" OR \"your order\" OR \"you were charged\" OR \"renewal\")). " +
     "Do not open bodies. Reply with ONLY a JSON array, one object per message: {\"id\":\"<message id>\",\"from_domain\":\"<sender domain>\",\"subject\":\"<subject, max 120 chars>\",\"date\":\"YYYY-MM-DD\"}. An empty mailbox result is [].",
-    { model: MODEL, toolSearch: "gmail", requireTool: /gmail/i },
+    { model: MODEL, ...PERSONAL_GMAIL, evidence: "risk-watch-charges-personal" },
   );
   if (!a.ok || !Array.isArray(a.json)) return [{ key: "charges:personal", state: "stop", line: `Her personal Gmail could not be read for charge notices: ${a.ok ? "the answer was not a list" : a.why}.` }];
   return a.json.slice(0, 20).map((m) => ({ key: `charge:${String(m.id).slice(0, 40)}`, state: "notice", line: `Charge notice ${m.date ?? ""}: ${m.from_domain ?? "unknown"} — "${String(m.subject ?? "").slice(0, 120)}" (personal Gmail).` }))

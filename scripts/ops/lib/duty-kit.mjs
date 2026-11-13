@@ -179,33 +179,95 @@ export function fromDomain(from) {
  * answered `"gmail_tool": true` and the next `false`, with the same prompt). So an answer is accepted
  * only when the run's own event stream shows a call to a tool matching `requireTool` that came back
  * without an error. "[]" from a run that never reached the mailbox is a stop, not an empty mailbox.
- * Connector tools are deferred in headless runs; the prompt is prefixed with the ToolSearch step.
+ * Connector tools are deferred in headless runs; the prompt is prefixed with the ToolSearch step
+ * (`toolSearch`, best an exact `select:<tool>`; `toolSearchFallback` is the keyword tried when the
+ * first search finds nothing).
+ *
+ * ONE BAD ATTEMPT IS NOT A LOST WEEK (13 Nov 2026: Toni's weekly locks check never reached the Gmail
+ * connector once and the whole week's read was gone; the two runs before it and two reproductions that
+ * day all reached it). `attempts` retries a retryable failure — the tool never reached, no JSON, JSON
+ * that does not parse, a non-zero exit. A CLI that could not start is not retried. The guard itself
+ * never loosens: every attempt is judged by `readClaudeStream` exactly as before.
+ *
+ * EVIDENCE, NEVER MAIL. With `evidence` (a slug), a run that never reached the required tool keeps its
+ * event stream at `~/.boss-os/seat-runs/<slug>.jsonl` (overwritten each time), so the next failure is
+ * diagnosable from disk. Only such a run is kept: having never reached the tool, it holds nothing the
+ * tool returned. A failure after a successful call keeps no file.
  */
-export function askClaudeJson(prompt, { model = "claude-haiku-4-5-20251001", maxTurns = 12, timeoutMs = 300_000, requireTool = null, toolSearch = null, run = spawnSync } = {}) {
+export function askClaudeJson(prompt, {
+  model = "claude-haiku-4-5-20251001", maxTurns = 12, timeoutMs = 300_000, requireTool = null, toolSearch = null,
+  toolSearchFallback = null, attempts = 1, evidence = null, evidenceDir = join(homedir(), ".boss-os", "seat-runs"), run = spawnSync,
+} = {}) {
   const bin = process.env.CLAUDE_BIN ?? "claude";
-  const full = toolSearch ? `First call ToolSearch with query "${toolSearch}" to load the tool. ${prompt}` : prompt;
-  const r = run(bin, ["-p", full, "--model", model, "--max-turns", String(maxTurns), "--output-format", "stream-json", "--verbose"], {
-    encoding: "utf8", timeout: timeoutMs, env: seatEnv(process.env), cwd: homedir(), maxBuffer: 32 * 1024 * 1024,
-  });
-  if (r.error) return { ok: false, why: `the claude CLI could not start (${r.error.code ?? r.error.message})` };
-  if (r.status !== 0) return { ok: false, why: `the claude run exited ${r.status}` };
-  return readClaudeStream(String(r.stdout ?? ""), requireTool);
+  const full = toolSearch
+    ? `First call ToolSearch with query "${toolSearch}" to load the tool.` +
+      (toolSearchFallback ? ` If that returns no matching tool, call ToolSearch again with query "${toolSearchFallback}".` : "") +
+      ` Never answer from memory: answer only from what the tool returns. ${prompt}`
+    : prompt;
+  const tries = Math.max(1, Math.floor(Number(attempts) || 1));
+  let last = { ok: false, why: "the claude run did not run" };
+  for (let n = 1; n <= tries; n++) {
+    const r = run(bin, ["-p", full, "--model", model, "--max-turns", String(maxTurns), "--output-format", "stream-json", "--verbose"], {
+      encoding: "utf8", timeout: timeoutMs, env: seatEnv(process.env), cwd: homedir(), maxBuffer: 32 * 1024 * 1024,
+    });
+    if (r.error) return { ok: false, why: `the claude CLI could not start (${r.error.code ?? r.error.message})${tries > 1 ? ` (attempt ${n} of ${tries})` : ""}` };
+    const stdout = String(r.stdout ?? "");
+    const census = streamCensus(stdout);
+    const res = r.status !== 0
+      ? { ok: false, why: `the claude run exited ${r.status}${census.subtype ? ` (${census.subtype})` : ""}; ${calledWords(census.calls)}` }
+      : readClaudeStream(stdout, requireTool);
+    if (res.ok) return res;
+    if (evidence && requireTool && !reachedTool(census.calls, requireTool)) keepEvidence(evidenceDir, evidence, stdout);
+    last = res;
+  }
+  return tries > 1 ? { ok: false, why: `${last.why} (${tries} attempts)` } : last;
 }
 
-/** Pure: the stream-json output of a run → `{ ok, json }` or `{ ok: false, why }`. */
-export function readClaudeStream(stdout, requireTool = null) {
+/**
+ * The one way to read her personal Gmail (a consumer account: her Claude seat's connector is the only
+ * read). The tool is named, not hunted; the keyword search is the fallback; three attempts and room
+ * for a busy mailbox's extra Read turn. Spread into `askClaudeJson`'s options with an `evidence` slug.
+ */
+export const PERSONAL_GMAIL = Object.freeze({
+  toolSearch: "select:mcp__claude_ai_Gmail__search_threads", toolSearchFallback: "gmail", requireTool: /gmail/i, attempts: 3, maxTurns: 20,
+});
+
+/** Pure: the tool calls, final text and result subtype of a stream-json run. */
+function streamCensus(stdout) {
   const calls = new Map();
   let text = "";
+  let subtype = "";
   for (const line of stdout.split("\n")) {
     let e;
     try { e = JSON.parse(line); } catch { continue; }
     const content = Array.isArray(e?.message?.content) ? e.message.content : [];
     if (e.type === "assistant") for (const c of content) if (c?.type === "tool_use") calls.set(c.id, { name: String(c.name ?? ""), ok: null });
     if (e.type === "user") for (const c of content) if (c?.type === "tool_result" && calls.has(c.tool_use_id)) calls.get(c.tool_use_id).ok = c.is_error !== true;
-    if (e.type === "result") text = String(e.result ?? "");
+    if (e.type === "result") { text = String(e.result ?? ""); subtype = String(e.subtype ?? ""); }
   }
-  if (requireTool && ![...calls.values()].some((c) => requireTool.test(c.name) && c.ok === true)) {
-    return { ok: false, why: `the run never reached the tool (no successful ${requireTool} call in its own event stream) — an answer without it would be a guess` };
+  return { calls: [...calls.values()], text, subtype };
+}
+
+const reachedTool = (calls, requireTool) => calls.some((c) => requireTool.test(c.name) && c.ok === true);
+
+/** "it called: ToolSearch (ok), Read (error)" — or "it called no tool". */
+function calledWords(calls) {
+  if (!calls.length) return "it called no tool";
+  return `it called: ${calls.map((c) => `${c.name} (${c.ok === true ? "ok" : c.ok === false ? "error" : "no answer"})`).join(", ")}`;
+}
+
+function keepEvidence(dir, slug, stdout) {
+  try {
+    mkdirSync(dir, { recursive: true });
+    writeFileSync(join(dir, `${String(slug).replace(/[^a-z0-9_-]/gi, "-")}.jsonl`), stdout);
+  } catch { /* evidence is a help, never a reason to fail the read */ }
+}
+
+/** Pure: the stream-json output of a run → `{ ok, json }` or `{ ok: false, why }`. */
+export function readClaudeStream(stdout, requireTool = null) {
+  const { calls, text } = streamCensus(stdout);
+  if (requireTool && !reachedTool(calls, requireTool)) {
+    return { ok: false, why: `the run never reached the tool (no successful ${requireTool} call in its own event stream; ${calledWords(calls)}) — an answer without it would be a guess` };
   }
   const m = /```json\s*([\s\S]*?)```/.exec(text) ?? /(\{[\s\S]*\}|\[[\s\S]*\])\s*$/.exec(text.trim());
   if (!m) return { ok: false, why: "the claude run returned no JSON" };
