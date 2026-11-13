@@ -4,6 +4,9 @@ import { unlock, tab, PHONE, expectNoSidewaysScroll } from "./support/boss";
 
 const ID = "cmd_e2e_mail";
 const ADDRESS = "booking@venue.example.test";
+// The sent log refuses mail addressed only to reserved test domains (history.ts, 13 Nov 2026), so the
+// journey's recorded copy goes to a private-use name: never deliverable, and not one of the reserved ones.
+const SENT_TO = "booking@venue.internal";
 const sql = (v: unknown) => `'${String(v).replace(/'/g, "''")}'`;
 function clean() {
   provisionLocalD1(`DELETE FROM boss_sent_mail WHERE command_id = '${ID}'; DELETE FROM boss_inbound_mail WHERE id = 'iml_e2e_refused'; DELETE FROM boss_commands WHERE id = '${ID}'; DELETE FROM boss_mail_senders WHERE address = '${ADDRESS}'`);
@@ -18,8 +21,15 @@ test.beforeEach(async ({ page }) => {
 test.afterEach(clean);
 
 test("the phone Inbox keeps four sections, admits a refused sender, and reads full sent words", async ({ page }) => {
-  const saved = await page.request.post("/api/boss/mail/sent", { data: { message_id: "<sent-e2e@example.test>", from: "simone@example.test", to: ADDRESS, subject: "Your table request", text: "The exact outgoing words. Card terms: https://pay.example.test/fake", command_id: ID, employee_id: "emp_chief" } });
+  const sent = { message_id: "<sent-e2e@example.test>", from: "simone@example.test", subject: "Your table request", text: "The exact outgoing words. Card terms: https://pay.example.test/fake", command_id: ID, employee_id: "emp_chief" };
+  // A test's mail never enters the sent log: answered 200 so the Mac drops its copy, and nothing is written.
+  const refused = await page.request.post("/api/boss/mail/sent", { data: { ...sent, to: ADDRESS } });
+  expect(refused.ok()).toBe(true);
+  expect((await refused.json()).data.recorded).toBe(false);
+  expect(queryLocalD1<any>(`SELECT id FROM boss_sent_mail WHERE command_id = '${ID}'`)).toEqual([]);
+  const saved = await page.request.post("/api/boss/mail/sent", { data: { ...sent, to: SENT_TO } });
   expect(saved.ok()).toBe(true);
+  expect((await saved.json()).data.recorded).toBe(true);
   await tab(page, "Inbox");
   for (const title of ["Approvals", "Notices", "Emails sent by agents", "Emails sent to you"]) await expect(page.getByRole("heading", { name: title, exact: true })).toBeVisible();
   await page.getByText("Your table request ·", { exact: false }).click();
