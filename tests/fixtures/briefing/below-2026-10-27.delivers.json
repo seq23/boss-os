@@ -1,0 +1,538 @@
+{
+ "_about": "BELOW THE STANDARD. A real briefing from the half-depth week (25 Oct to 1 Nov 2026), the hardest of the eight to catch: all 11 sections, 5 headlines, 22 sources, yet 810 characters of reasoning per headline and 6 unverified gaps. briefingFloor must fail it.",
+ "day_id": "2026-10-27",
+ "status": "partial",
+ "headline": "AI capital demand tests the exit window",
+ "summary": "Treat the opening IPO window as a financing test before raising private marks. Capital availability and capital intensity need to be underwritten together.",
+ "sections": [
+  {
+   "key": "one_minute_summary",
+   "heading": "One-Minute Executive Summary",
+   "so_what": "Reprice the financing burden before marking up an apparent exit opportunity.",
+   "bullets": [
+    "**Anthropic has opened the public exit path, but its loss headline obscures the underwriting.** The newly public filing shows first-half revenue of $16.286 billion and an $80.748 billion net loss, including $72.388 billion of fair-value charges on financing instruments. [10] Those charges are not cash burn; the IPO still has no established offer price. [10]",
+    "**AI capacity is obtaining financing through a supplier-supported capital stack.** The announced $63 billion Broadcom-linked vehicle will buy equipment for lease to Anthropic, with supplier residual-value support protecting the senior financing. Analysis: this enables growth while concentrating technology, customer and collateral risks. [12]",
+    "**Meta is asking equity investors to help fund the buildout.** Its launched offerings total approximately $35 billion; a separate approximately $60 billion ATM is a future plan with no agreement yet. Analysis: distinguish announced capacity to raise capital from proceeds actually received. [11]",
+    "**SpaceX has committed financing, with closing still ahead.** Its approximately $40 billion GPU lease remains conditional, with equipment deliveries expected in the first half of 2027. Analysis: capital access is constructive; it does not establish the eventual return on that capital. [16]"
+   ],
+   "sources": [
+    10,
+    11,
+    12,
+    16
+   ]
+  },
+  {
+   "key": "top_5_headlines",
+   "heading": "Top 5 Headlines",
+   "so_what": "Treat financing structure, transaction status and transferability as inputs to common-equity value.",
+   "items": [
+    {
+     "headline": "Anthropic opens its IPO books as supplier-supported compute financing expands",
+     "as_of": "2026-10-26",
+     "summary": "Fact: the public registration establishes an IPO process, not a completed offering or a priced valuation. Separately, the announced equipment financing adds a new funding channel for its expansion. [10][12]",
+     "numbers": [
+      "**First-half revenue: $16.286 billion.** [10]",
+      "First-half net loss: $80.748 billion. [10]",
+      "Financing-instrument fair-value charges included in that loss: $72.388 billion. [10]",
+      "Separately announced Broadcom equipment-financing transaction: $63 billion. [12]"
+     ],
+     "why_it_matters": "Capital structure before valuation. Analysis: an accounting loss driven substantially by instrument remeasurement is a poor proxy for the cash needed to operate. Equally, a registration does not set the price at which outside investors will accept the company’s future financing burden.\n\nNarrative A: financing access turns demand into deliverable capacity, supporting suppliers and eventual public comparables. This reading can support duration assets and firmer private marks, but does not establish that policy rates should fall. Narrative B: expanding fixed commitments transfer execution risk to future cash flows; higher required returns can outweigh a larger revenue base. That would pressure duration assets and common-equivalent private values even without another rise in rates. These are analytical scenarios, not measured market probabilities.\n\nBroadcom’s residual support for senior equipment financing means the supplier is also part of the credit structure. [12] Inference: underwriting the customer and the supplier as independent exposures can understate correlation. Monitor the priced prospectus and the economics of capacity actually placed into service.",
+     "importance": 8.8
+    },
+    {
+     "headline": "Meta launches equity financing while leaving the larger ATM conditional",
+     "as_of": "2026-10-26",
+     "summary": "Fact: concurrent common-stock forwards and mandatory convertible preferred are launched; the additional ATM remains a plan. Meta says it initially receives no common-forward sale proceeds. [11]",
+     "numbers": [
+      "**Concurrent offerings: approximately $35 billion.** [11]",
+      "Common-stock forward component: approximately $22.5 billion. [11]",
+      "Mandatory convertible preferred component: approximately $12.5 billion. [11]",
+      "Future ATM plan: approximately $60 billion; no program agreement yet. [11]"
+     ],
+     "why_it_matters": "Funding capacity versus dilution. Analysis: a profitable incumbent’s willingness to issue equity is evidence that the financing mix matters alongside product adoption. It is not proof that financing constraints have disappeared.\n\nInfrastructure suppliers benefit if the capital is ultimately raised and spent; existing shareholders bear dilution and execution risk. Private companies competing for investor attention must justify why their security offers better risk-adjusted exposure than a liquid incumbent.\n\nMonitor actual pricing, conversion terms and settlement. Announced financing capacity is not cash received, and headline totals obscure how differently the instruments allocate risk.",
+     "importance": 8.6
+    },
+    {
+     "headline": "SpaceX signs a conditional GPU lease commitment rather than closing a cash raise",
+     "as_of": "2026-10-26",
+     "summary": "Fact: the company announced a binding commitment with an Apollo-managed entity; the lease itself remains subject to closing conditions. Its release therefore supports a more limited claim than reports describing the financing as already closed. [16]",
+     "numbers": [
+      "**Master finance lease commitment: approximately $40 billion.** [16]",
+      "Expected lease closing: before year-end 2026, subject to conditions. [16]",
+      "Expected equipment delivery and lease commencement: first half of 2027. [16]"
+     ],
+     "why_it_matters": "Capital access as competitive advantage. Analysis: the deal can secure equipment without an immediate common-stock issuance. That can improve deployment certainty while adding contractual claims ahead of common equity.\n\nApollo and the financing participants gain exposure to an expanding equipment-finance market; SpaceX shareholders bear utilization, technology replacement and monetization risk. The announcement’s claims about infrastructure payback are management assertions, not independently verified returns.\n\nFor private compute companies, the competitive question becomes whether they can fund capacity on comparable terms. A technically competitive model can still lose if its owner must repeatedly raise expensive equity to keep capacity available.",
+     "importance": 8.4
+    },
+    {
+     "headline": "Treasury publishes proposed outbound-investment rules with direct fund underwriting implications",
+     "as_of": "2026-10-26",
+     "summary": "Fact: the Federal Register publication is a proposed implementing rule. It must not be described as a newly effective final prohibition; its statutory background and existing rules are separate. [17]",
+     "numbers": [
+      "**Comment deadline: December 7, 2026.** [17]",
+      "Technology sectors added in the statutory framework: two — high-performance computing/supercomputing and hypersonic systems. [17]"
+     ],
+     "why_it_matters": "Transferability belongs in the valuation. Analysis: a buyer universe constrained by technology and jurisdiction can change the executable price of a private position without changing its operating forecast. The impact is especially relevant where an LP interest contains indirect exposure that a company-level screen misses.\n\nDo not apply a blanket discount to every cross-border asset. Identify the relevant persons, activities, exceptions and applicable dates in the proposal and current rules; assess transaction-specific treatment with counsel.\n\nMonitor the final scope and implementation. A longer diligence or transfer process can make an apparently attractive secondary discount less valuable to a seller who needs a timely cash exit.",
+     "importance": 8
+    },
+    {
+     "headline": "Nautic reportedly turns to existing investors for a large continuation vehicle",
+     "as_of": "2026-10-26",
+     "summary": "Fact: Secondaries Investor reports a process led by existing LPs Carlyle AlpInvest and HarbourVest. The accessible original article verifies the reported claim, not a completed transaction; asset-level terms were not accessible. [13]",
+     "numbers": [
+      "**Reported continuation vehicle size: approximately $3 billion.** [13]",
+      "Named lead investors: two — Carlyle AlpInvest and HarbourVest. [13]"
+     ],
+     "why_it_matters": "Familiarity is not independent price discovery. Analysis: incumbent buyers may reduce information friction and execution time, but their existing exposure makes the conflict process economically relevant. Do not infer either attractive pricing or asset impairment from the buyer names.\n\nA continuation vehicle can separate a strong company’s need for time from a fund owner’s need for distributions. Ask who sells, who rolls, what capital remains available for growth, and how carry and fees reset.\n\nMonitor the election package, independent price evidence and net cash distribution. A large vehicle can extend duration without producing equivalent liquidity for all original owners.",
+     "importance": 7.5
+    }
+   ],
+   "sources": [
+    10,
+    11,
+    12,
+    13,
+    16,
+    17
+   ]
+  },
+  {
+   "key": "markets_dashboard",
+   "heading": "Markets & Macro Dashboard",
+   "so_what": "The equity rebound does not by itself lower the hurdle rate for illiquid assets.",
+   "bullets": [
+    "🟡 Equities — Monday’s index closes rebounded, with Nasdaq up 0.825% and the S&P 500 up 0.696%; analysis: renewed risk appetite is visible, but its cause and durability are not established by the price snapshot. [1][2]",
+    "🔴 Rates and duration — Monday’s Treasury daily par yields were 5.00% on the long benchmark and 4.68% on the short benchmark; analysis: positive carry in liquid government securities remains a demanding alternative to waiting for private exits. These are daily par yields, not live bond quotes. [4]",
+    "🟡 Oil — the packet’s early-morning futures observations carry a settlement label despite being timestamped before today’s settlement; analysis: no clean daily inflation impulse is inferred from that mismatch. Brent’s reported percentage also conflicts with its stated prior close, so no Brent move is repeated here. [5][6]",
+    "🟡 AI fundamentals and valuations — the IPO filing and committed equipment financing establish capital demand and access, not a market-clearing equity valuation; analysis: supplier finance may support deployment while leaving common equity exposed to utilization. [10][12][16]",
+    "🟡 IPOs, private liquidity and secondaries — the new IPO process and reported continuation vehicle provide routes toward liquidity, not proof of realized distributions; analysis: the opportunity remains security-specific rather than a broad reset in private marks. [10][13]",
+    "Quarter question — what if costly capital is not temporary? Analysis: any private price that requires a cheaper refinancing or a rapid public exit should be tested against delayed liquidity and unchanged required returns; this is a scenario, not a claim about the assumptions embedded in all current marks."
+   ],
+   "sources": [
+    1,
+    2,
+    4,
+    5,
+    6,
+    10,
+    12,
+    13,
+    16,
+    0,
+    3,
+    7,
+    8
+   ],
+   "table": {
+    "columns": [
+     "Indicator",
+     "Tuesday, Oct 27 latest",
+     "Change",
+     "Session"
+    ],
+    "rows": [
+     [
+      "S&P 500",
+      "7,676.8",
+      "+0.70%",
+      "index close, Oct 26"
+     ],
+     [
+      "Nasdaq Composite",
+      "26,169.4",
+      "+0.82%",
+      "index close, Oct 26"
+     ],
+     [
+      "Dow Jones Industrial",
+      "52,361.6",
+      "+0.28%",
+      "index close, Oct 26"
+     ],
+     [
+      "10-year Treasury",
+      "5.00%",
+      "+0.00%",
+      "Treasury par yield, daily, Oct 26"
+     ],
+     [
+      "2-year Treasury",
+      "4.68%",
+      "−0.01%",
+      "Treasury par yield, daily, Oct 26"
+     ],
+     [
+      "Brent crude",
+      "$110.35",
+      "−0.35%",
+      "front-month futures settle, Oct 27"
+     ],
+     [
+      "WTI crude",
+      "$101.38",
+      "−0.37%",
+      "front-month futures settle, Oct 27"
+     ],
+     [
+      "Gold",
+      "$4,021.30",
+      "−0.42%",
+      "front-month futures settle, Oct 27"
+     ],
+     [
+      "Bitcoin",
+      "$79,916.58",
+      "−0.46%",
+      "spot, 24h, Oct 27"
+     ],
+     [
+      "SpaceX (SPCX)",
+      "$146.90",
+      "−0.40%",
+      "regular-session close, Oct 26"
+     ]
+    ]
+   },
+   "table_built_by": "system"
+  },
+  {
+   "key": "spacex_watch",
+   "heading": "SpaceX Watch",
+   "so_what": "Separate the traded equity reference from lease execution, operating performance and sale restrictions.",
+   "bullets": [
+    "SPCX $146.90 (−0.40%), prior close $147.49 — regular-session close. [9]"
+   ],
+   "sources": [
+    9,
+    16,
+    18,
+    8
+   ],
+   "items": [
+    {
+     "headline": "SPCX",
+     "bullets": [
+      "Fact: the packet confirms a public quote and the quarterly filing identifies the exchange-listed security. Monday’s regular-session close was $146.90, down 0.40% from $147.49; its quote timestamp is 15:00 CT. [9][18]",
+      "The IPO price was $135.00; Monday’s close stands 8.81% above that price, calculated from the close and offering price. Volume, session open/high/low, after-hours and a directly sourced current market capitalization were not available at 06:08 CT. [9][18]"
+     ]
+    },
+    {
+     "headline": "Price Map",
+     "bullets": [
+      "Analysis: the packet’s short closing-price sample provides a lower reference at $144.75, a nearby cluster at $146.90–$147.79 and an upper reference at $159.31. The lower and upper points are the sample’s closing extremes; the cluster marks recent closing-price congestion. [9]",
+      "These are provisional closing-price references, not established intraday support or resistance zones; volume and a longer history were unavailable at 06:08 CT. Trading references, not forecasts."
+     ]
+    },
+    {
+     "headline": "Starship Watch",
+     "bullets": [
+      "Fact: the quarterly filing classifies all Starship launches to date as internal launches; they must not be counted as external customer revenue. [18]",
+      "A verified next-flight date, flight-specific regulatory authorization and confirmed objectives were not available at 06:08 CT. The official launch page returned no readable mission detail; no third-party target date is treated as an approved launch."
+     ]
+    },
+    {
+     "headline": "Starlink Watch",
+     "bullets": [
+      "Essential background from the quarterly filing: consumer service lines reached 13.6 million at quarter-end, while quarterly consumer ARPU was $69 versus $83 in the year-earlier period. These are service lines, not unique people, and exclude negotiated enterprise/government accounts. [18]",
+      "Analysis: growth in subscribers and lower revenue per line can coexist; the underwriting question is contribution after capacity and servicing costs. No fresh operating announcement is claimed from those historical results."
+     ]
+    },
+    {
+     "headline": "Supply / Lockup Watch",
+     "bullets": [
+      "Fact: the newly announced GPU lease is a binding commitment subject to closing conditions, not a confirmed completed financing. [16]",
+      "Verified current lockup releases, insider selling and index-rebalance changes were not available at 06:08 CT. Analysis: the lease announcement does not establish anything about near-term equity float."
+     ]
+    }
+   ],
+   "spacex_public": true
+  },
+  {
+   "key": "ai_technology",
+   "heading": "AI & Technology",
+   "so_what": "Measure the moat in deliverable capacity, distribution and financed customer demand, alongside model quality.",
+   "bullets": [
+    "AI capability — this research did not establish a fresh, independently benchmarked capability improvement. No claim that a frontier model has become more capable is inferred from fundraising announcements.",
+    "AI economics — the new compute-financing structure uses a financed equipment owner and supplier support, while SpaceX’s commitment finances future hardware delivery. [12][16] Analysis: scarce capital can be intermediated, but demand risk cannot be eliminated by changing the equipment owner.",
+    "Competitive mechanism — Meta’s announced financing mix is evidence that distribution-rich incumbents also care about funding flexibility. [11] Inference: a private challenger’s moat must include an executable capacity plan, customer retention and enough gross profit to service that plan; model quality alone does not answer the equity question.",
+    "Assurance economics — a financing announcement does not verify that enterprise deployment is secure, compliant or profitable. Analysis: diligence should price the human review, integration and monitoring needed to turn capability into repeatable customer revenue."
+   ],
+   "sources": [
+    11,
+    12,
+    16
+   ]
+  },
+  {
+   "key": "capital_markets",
+   "heading": "Capital Markets / IPO / M&A",
+   "so_what": "Compare cash timing and claims on future equity before comparing headline financing totals.",
+   "bullets": [
+    "Anthropic — the registration names Goldman Sachs and Morgan Stanley as underwriting representatives; offering valuation, price and proceeds remain unset. The first half generated $3.929 billion of operating cash but used $17.181 billion in investing activities, which is not interchangeable with capital expenditure. [10] Analysis: operating cash generation does not remove the need to understand infrastructure funding and future contractual obligations.",
+    "Meta — common-stock forwards delay the issuer’s cash receipt; mandatory conversion creates a different dilution path from an immediate common issue. Dividend and conversion terms were to be set at pricing. [11] Analysis: the market’s eventual execution price and conditions are a stronger private-mark anchor than the announced offering size.",
+    "Broadcom / Anthropic — banks arrange the senior financing, Blackstone supplies the committed junior financing and Broadcom supports senior residual value. [12] Analysis: equipment financing is not company equity proceeds, and the supplier guarantee links credit risk to product economics.",
+    "SpaceX — Apollo and Goldman Sachs lead the financing parties, with Goldman as sole structuring agent; the company describes BlackRock, Goldman Sachs Asset Management and KKR-advised capital as anchor commitments. [16] Analysis: committed finance improves access, while actual deployment and contractual cash payments determine the common-equity outcome."
+   ],
+   "sources": [
+    10,
+    11,
+    12,
+    16
+   ]
+  },
+  {
+   "key": "private_markets",
+   "heading": "VC / Private Markets / Secondaries Roundup",
+   "so_what": "Underwrite the security and the owner’s need for liquidity separately; a financing headline does not establish a secondary clearing price.",
+   "bullets": [
+    "GP-led price discovery — Nautic’s reported process is useful evidence of buyer engagement; its approximately $3 billion reported size is not verified cash distributed to selling LPs. [13] Analysis: without the asset list, sale price, rollover fraction and fee/carry terms, neither a discount nor a good exit can be established.",
+    "LP-led / venture liquidity — essential background: Madara’s proposed listed fund can acquire fund interests in exchange for its own shares, issued to contributors above the IPO offer price; the filing also warns that traded shares may discount NAV. Listing approval and offering completion remain conditional. [19] Analysis: a seller can trade an illiquid fund interest for a security that introduces another layer of discount risk rather than receiving a cash exit.",
+    "Preferred versus common — the Anthropic registration and Meta’s mandatory convertible demonstrate why a headline valuation cannot substitute for security-level economics. [10][11] Analysis: compare liquidation preference, conversion, dilution, transfer restrictions and the cash needed before exit; do not map a preferred price mechanically onto employee common stock.",
+    "Liquidity stress versus impairment — a continuation process alone establishes neither. Analysis: a seller’s distribution deadline can create a bargain in a healthy business; declining retention, weak margins or unfunded capacity commitments instead change the asset’s value. No live common-equivalent secondary quote or executable bid was verified today.",
+    "Quality without liquidity — the setup is a good asset with an owner whose distribution needs, fund life or delayed exit make waiting costly. Analysis: separate ASSET VALUE from OWNER VALUE. A higher risk-free alternative raises the opportunity cost of waiting and can widen the negotiable spread even if the operating forecast is intact; competitive buying can subsequently absorb that spread.",
+    "NAV financing and restructurings — no fresh primary-supported transaction terms were verified in these lanes. Analysis: borrowing against a portfolio can change when an owner receives cash without establishing an independent sale price for the underlying assets."
+   ],
+   "sources": [
+    10,
+    11,
+    13,
+    19
+   ]
+  },
+  {
+   "key": "government_legal",
+   "heading": "Government / Legal / Supreme Court / Regulation",
+   "so_what": "Distinguish proposed rules, examination priorities and voluntary guidance before translating them into underwriting conditions.",
+   "bullets": [
+    "Trade / outbound capital — Treasury’s published proposal would implement the statutory outbound-investment framework; written comments are due December 7, 2026. [17] Analysis: technology scope and indirect fund exposure can affect eligible buyers, transfer timing and legal diligence; the proposed text is not a new final rule in force today.",
+    "Regulation — contextual, rather than a fresh overnight action: the SEC’s examination priorities emphasize private funds, private credit, illiquid products, conflicts and broker-dealer supervision. These are examination priorities, not a new rule or an enforcement finding against any named firm. [20] Analysis: record the rationale and conflicts behind secondary recommendations instead of treating a well-known buyer as sufficient diligence.",
+    "Continuation governance — ILPA recommends at least 20 clear business days for an election, extendable for complexity, and disclosure of conflicts and consideration of recusal. [21] This is industry guidance, not binding federal law and not proof that Nautic has adopted any particular process. Analysis: sale/roll comparability and time to assess the package are components of economic fairness."
+   ],
+   "sources": [
+    17,
+    20,
+    21
+   ]
+  },
+  {
+   "key": "investor_insight",
+   "heading": "Investor Insight",
+   "so_what": "Map who funds, supplies and guarantees the same capacity before treating exposures as diversified.",
+   "bullets": [],
+   "sources": [
+    10,
+    12,
+    16
+   ],
+   "insight": {
+    "synthesis": "The financing moat can grow while the common-equity margin of safety shrinks. Analysis: access to supplier-supported credit makes capacity easier to obtain, but places more contractual claims between operating success and an equity holder’s proceeds.",
+    "how_reached": "The AI section establishes financed future hardware delivery; the capital-markets section identifies supplier support in the equipment structure; the IPO section establishes an exit process without a market-clearing price. [10][12][16] Joining them changes the question from whether capital exists to who is absorbing the downside if utilization disappoints.",
+    "transferable_frame": "Draw the cash-flow chain from paying end customer to model provider, capacity owner, equipment supplier and lender. Then remove the largest external customer and ask which parties still owe cash to which others. Distinct legal entities are not diversification when repayment depends on the same demand pool.",
+    "falsified_by": "This inference weakens if diversified end-customer cash collections cover fixed commitments with ample headroom, equipment retains value without supplier support, and common equity earns attractive returns after all financing costs. Better benchmarks or larger financing announcements alone would not falsify it.",
+    "cites": [
+     {
+      "fact": "The IPO process has no established offer price.",
+      "from": "top_5_headlines"
+     },
+     {
+      "fact": "The equipment financing includes supplier residual-value support.",
+      "from": "capital_markets"
+     },
+     {
+      "fact": "The GPU commitment finances future equipment delivery.",
+      "from": "ai_technology"
+     }
+    ]
+   }
+  },
+  {
+   "key": "key_events",
+   "heading": "Key Events Today",
+   "so_what": "Separate scheduled catalysts from outcomes; financing execution and demand evidence matter more than announcement volume.",
+   "bullets": [
+    "Today, Tuesday — the scheduled FOMC meeting begins and continues into Wednesday; no decision is reported as having happened. The opened calendar confirms the meeting dates but does not state the release time, which was not available at 06:08 CT. [14] WHAT TO WATCH: inflation persistence, the growth assessment and whether the policy language changes the financing hurdle for long-duration assets.",
+    "Thursday, October 29, 07:30 CT — the BEA schedule lists the advance GDP estimate and September personal income/outlays for 08:30 Eastern, converted to Central. [15] WHAT TO WATCH: real final demand versus inventories, real consumption, headline and core PCE, and savings; a strong nominal growth print with sticky prices has a different private-mark implication from durable real demand.",
+    "Thursday, October 29, 16:00 CT — Amazon’s scheduled earnings call, converted from its stated 17:00 Eastern time. [22] WHAT TO WATCH: AWS demand, infrastructure utilization, cash capital spending versus lease commitments, depreciation and the conversion of backlog to cash revenue."
+   ],
+   "sources": [
+    14,
+    15,
+    22
+   ]
+  },
+  {
+   "key": "one_thing_to_watch",
+   "heading": "One Thing to Watch",
+   "so_what": "Test whether financing is advancing customer cash generation or merely advancing equipment purchases.",
+   "bullets": [
+    "The emerging story is the separation of capacity ownership from the business that must monetize it. The Broadcom financing and SpaceX commitment show new contractual paths to equipment; Meta’s offerings add an equity path. [11][12][16] Analysis: this resembles a railway buildout in which track construction is funded before traffic proves the return. More funded track can improve the network and still disappoint its equity owners.",
+    "Investors may underestimate how financing changes competition. Inference: a well-funded platform can accept a lower near-term return to lock in capacity or customers, forcing a private rival to raise again before its own economics mature. That can lower the rival’s secondary common-equity value even while its revenue grows.",
+    "Confirmation would be capacity additions outrunning cash-paying demand, supplier support becoming necessary to fund equipment, or repeated capital raises despite stronger reported operating results. Invalidation would be sustained utilization, diversified customer collections, improving margins after all capacity costs and less reliance on new financing. These are monitoring conditions, not claims that those outcomes have occurred.",
+    "For a secondary, the revenue question comes before the discount: is the revenue repeatable, concentrated in related counterparties or dependent on subsidized usage? Then trace compute commitments, supplier dependency, incremental capital needs and the executable exit timetable. Finally, WHAT DOES THE OWNER NEED? A cash distribution now, freedom from future capital calls and a higher paper mark are different objectives; only the first pair can reliably motivate a price concession without proving that the underlying business is impaired."
+   ],
+   "sources": [
+    11,
+    12,
+    16
+   ]
+  }
+ ],
+ "sources": [
+  {
+   "name": "MARKETS.json — S&P 500",
+   "url": "https://query1.finance.yahoo.com/v8/finance/chart/%5EGSPC?range=5d&interval=1d",
+   "read_at": "2026-10-27T11:05:05.007Z"
+  },
+  {
+   "name": "MARKETS.json — Nasdaq Composite",
+   "url": "https://query1.finance.yahoo.com/v8/finance/chart/%5EIXIC?range=5d&interval=1d",
+   "read_at": "2026-10-27T11:05:05.007Z"
+  },
+  {
+   "name": "MARKETS.json — Dow Jones Industrial",
+   "url": "https://query1.finance.yahoo.com/v8/finance/chart/%5EDJI?range=5d&interval=1d",
+   "read_at": "2026-10-27T11:05:05.007Z"
+  },
+  {
+   "name": "MARKETS.json — 10-year Treasury",
+   "url": "https://home.treasury.gov/resource-center/data-chart-center/interest-rates/daily-treasury-rates.csv/2026/all?type=daily_treasury_yield_curve&field_tdr_date_value=2026&page&_format=csv",
+   "read_at": "2026-10-27T11:05:05.007Z"
+  },
+  {
+   "name": "MARKETS.json — Brent crude",
+   "url": "https://query1.finance.yahoo.com/v8/finance/chart/BZ%3DF?range=5d&interval=1d",
+   "read_at": "2026-10-27T11:05:05.007Z"
+  },
+  {
+   "name": "MARKETS.json — WTI crude",
+   "url": "https://query1.finance.yahoo.com/v8/finance/chart/CL%3DF?range=5d&interval=1d",
+   "read_at": "2026-10-27T11:05:05.007Z"
+  },
+  {
+   "name": "MARKETS.json — Gold",
+   "url": "https://query1.finance.yahoo.com/v8/finance/chart/GC%3DF?range=5d&interval=1d",
+   "read_at": "2026-10-27T11:05:05.007Z"
+  },
+  {
+   "name": "MARKETS.json — Bitcoin",
+   "url": "https://query1.finance.yahoo.com/v8/finance/chart/BTC-USD?range=5d&interval=1d",
+   "read_at": "2026-10-27T11:05:05.007Z"
+  },
+  {
+   "name": "MARKETS.json — SpaceX (SPCX)",
+   "url": "https://query1.finance.yahoo.com/v8/finance/chart/SPCX?range=5d&interval=1d",
+   "read_at": "2026-10-27T11:05:05.007Z"
+  },
+  {
+   "name": "Anthropic public registration statement — SEC S-1",
+   "url": "https://www.sec.gov/Archives/edgar/data/2130357/000162828026067168/anthropicpbc-sx1.htm",
+   "read_at": "2026-10-27T11:04:14.804304Z"
+  },
+  {
+   "name": "Meta launches common forwards and mandatory convertible preferred",
+   "url": "https://investor.atmeta.com/investor-news/press-release-details/2026/Meta-Announces-Launch-of-Offering-of-Depositary-Shares-Representing-Series-A-Mandatory-Convertible-Preferred-Stock-and-Offering-of-Class-A-Common-Stock-in-Connection-with-Forward-Sale-Agreements/default.aspx",
+   "read_at": "2026-10-27T11:06:07Z"
+  },
+  {
+   "name": "Bank of America — Broadcom / Anthropic compute financing",
+   "url": "https://newsroom.bankofamerica.com/content/newsroom/press-releases/2026/10/bank-of-america--blackstone--citi-and-morgan-stanley-announce-la.html",
+   "read_at": "2026-10-27T11:05:16.055035Z"
+  },
+  {
+   "name": "Secondaries Investor — Nautic continuation vehicle",
+   "url": "https://www.pei-secondariesinvestor.com/nautic-taps-existing-lps-alpinvest-harbourvest-to-lead-3bn-cv/?utm_campaign=2026-10-26&utm_medium=email&utm_source=thesecondarybrief",
+   "read_at": "2026-10-27T11:05:16.055191Z"
+  },
+  {
+   "name": "FOMC meeting calendar",
+   "url": "https://www.federalreserve.gov/monetarypolicy/fomccalendars.htm",
+   "read_at": "2026-10-27T11:05:16.285464Z"
+  },
+  {
+   "name": "BEA release schedule",
+   "url": "https://www.bea.gov/news/schedule/full",
+   "read_at": "2026-10-27T11:10:36Z"
+  },
+  {
+   "name": "SpaceX — GPU lease commitment",
+   "url": "https://ir.spacex.com/updates/releases-details/2026/SPACEX-SECURES-40-BILLION-IN-THE-LARGEST-GPU-FINANCING-EVER-2026-EnDqGhTAB3/",
+   "read_at": "2026-10-27T11:06:07Z"
+  },
+  {
+   "name": "Treasury — proposed outbound investment regulations, Federal Register",
+   "url": "https://www.govinfo.gov/content/pkg/FR-2026-10-26/pdf/2026-21786.pdf",
+   "read_at": "2026-10-27T11:06:07Z"
+  },
+  {
+   "name": "SpaceX — quarterly financial statements",
+   "url": "https://www.sec.gov/Archives/edgar/data/1181412/000162828026066880/spcx-20260930.htm",
+   "read_at": "2026-10-27T11:06:07Z"
+  },
+  {
+   "name": "Madara — proposed listed AI fund, SEC registration",
+   "url": "https://www.sec.gov/Archives/edgar/data/2160391/000216039126000004/mxai-n2.htm?utm_campaign=2026-10-26&utm_medium=email&utm_source=thesecondarybrief",
+   "read_at": "2026-10-27T11:10:36Z"
+  },
+  {
+   "name": "SEC — examination priorities",
+   "url": "https://www.sec.gov/newsroom/press-releases/2026-109-sec-announces-fiscal-year-2027-examination-priorities",
+   "read_at": "2026-10-27T11:06:07Z"
+  },
+  {
+   "name": "ILPA — continuation vehicle best practices",
+   "url": "https://ilpa.org/wp-content/uploads/2026/10/ILPA-Continuation-Vehicles-Advancing-Alignment-Through-Best-Practices.pdf",
+   "read_at": "2026-10-27T11:10:36Z"
+  },
+  {
+   "name": "Amazon — earnings call announcement",
+   "url": "https://www.aboutamazon.com/news/company-news/amazon-earnings-q3-2026-report",
+   "read_at": "2026-10-27T11:06:07Z"
+  }
+ ],
+ "gaps": [
+  {
+   "wanted": "Markets & Macro Dashboard — Brent and Bitcoin change reconciliation",
+   "why": "The current packet’s Brent change conflicts with value versus previous_close; Bitcoin’s stated 24-hour move uses a reference not supplied in the packet. Neither percentage is repeated in prose. The system-generated dashboard may still carry these unresolved inputs."
+  },
+  {
+   "wanted": "Markets & Macro Dashboard — futures session labels",
+   "why": "The packet calls the early-morning futures observations settlements, although their as-of times precede today’s settlement. Prices are left to the system table; no early-morning observation is described as today’s settled close."
+  },
+  {
+   "wanted": "SpaceX Watch — full trading and supply detail",
+   "why": "Volume, intraday OHLC, after-hours, directly sourced current market capitalization, a longer price history, current lockup releases, insider transactions and index changes were not verified. Closing sample references are explicitly provisional."
+  },
+  {
+   "wanted": "SpaceX Watch — flight-specific verification",
+   "why": "The official next-flight page returned no readable detail; next-flight date, authorization and objectives could not be verified. This is a verification gap, not an assertion that authorization is absent."
+  },
+  {
+   "wanted": "VC / Private Markets / Secondaries Roundup — transaction economics",
+   "why": "The accessible Nautic original article confirms its reported process and buyer names but restricts full article text. Asset list, price, election package, rollover share, fee/carry reset and completed cash distributions were not verified; no employee-common executable price, fresh NAV financing or LP-led clearing terms were verified."
+  },
+  {
+   "wanted": "Key Events Today — broader calendar and release times",
+   "why": "The Fed calendar confirms meeting dates but not the exact decision release time. The Census schedule timed out, and additional earnings times were not primary-verified; these catalysts were not populated from aggregator calendars."
+  }
+ ],
+ "watching": [
+  {
+   "wanted": "Anthropic final pricing and completed offering",
+   "why": "No offering price or final proceeds established; monitor security conversion and sale restrictions."
+  },
+  {
+   "wanted": "SpaceX lease closing and hardware delivery",
+   "why": "The announced commitment remains conditional; the company expects closing before year-end and deliveries in the following first half. [16]"
+  },
+  {
+   "wanted": "Treasury final outbound-investment rule",
+   "why": "The current publication is a proposal; final scope and implementation remain ahead. [17]"
+  },
+  {
+   "wanted": "Nautic election package and transaction completion",
+   "why": "A reported process is not evidence of closing or realized distributions. [13]"
+  }
+ ],
+ "corrections": []
+}

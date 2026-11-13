@@ -177,3 +177,23 @@ owner emails failed 236 times 2-6 Nov; a task read "running" for hours on a spen
   (`hers`: a sending key refused) shows on Today.
 - **A new duty gets a first-run check**: an Open Loops row "Check <job> produced <metric> by
   <created + 2 days>", owner Kendra, closed by its first above-floor run.
+
+### Delivery floors: the finished work is checked where it lands (13 Nov 2026)
+Owner, 13 Nov 2026: "figure out how ot make sure my briefs get wrriten to the impeccable standard we
+have had". A review found that nothing checked the finished work (a half-depth briefing read
+"partial" like every good day; backlink prospecting "succeeded" weekly with zero rows ever).
+- **One floor per deliverable, run on the real output at `/api/backends/report`**
+  (`src/worker/boss/duties/floors.ts`; the briefing's is `briefingFloor` in `briefingSpec.ts`:
+  11 sections to depth, 5 headlines, 20 sources, 1,000 characters of reasoning per headline, at most
+  3 unverified gaps, no headline repeated word for word, 15 cited sources answering a plain GET).
+  Lists (sourcing, backlinks, tools) need new rows whose links open; a research page needs a source.
+- **A miss is a failed run of that route**: handed up to a stronger seat through `ladder_release`
+  when the ladder has one, counted by the two-failures rule (`seatFailedTwice`), never auto-accepted.
+  No readable `delivers.json`, "blocked on missing input" and zero rows are misses.
+- **The briefing's best attempt of the day stands** (`executive_reports.floor`, migration 0363):
+  status `complete` means at the standard, `partial` means below it, and its first shortfall says
+  what fell short on Today and in the morning email. A late briefing says "arriving by HH:MM".
+- **The briefing starts on Claude's seat** (`HARD_DELIVERS` in `aiRoles.mjs`), Codex as the backup.
+- **The standards are on file**: `tests/fixtures/briefing/standard-2026-10-22` (must pass) and
+  `below-2026-10-27` (must fail), graded by `npm run validate:briefing-on-par`; other deliverables in
+  `tests/fixtures/floors/` (private ones masked to their shape), proven in `tests/boss/floors.test.ts`.

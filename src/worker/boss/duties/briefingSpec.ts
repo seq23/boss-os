@@ -606,6 +606,89 @@ export interface BriefingAssessment {
   excluded_hits: { key: string; rule: string }[];
   /** True when nothing at all was filed — Rule 0's own case. */
   empty: boolean;
+  /** Did this report reach the standard? See `briefingFloor`. */
+  floor: FloorVerdict;
+}
+
+/*
+ * ─── THE FLOOR: IS THIS BRIEFING AT THE STANDARD? (owner, 13 Nov 2026) ───────────────────────────
+ *
+ * "figure out how ot make sure my briefs get wrriten to the impeccable standard we have had". Every
+ * day since 19 Sep read "partial", so the word carried no signal, and the briefs Codex wrote from 25
+ * Oct to 1 Nov, at half the depth, read the same as the best ones. The floor is measured from the
+ * standard run (22 Oct 2026: 11 sections, 5 headlines, 27 sources, 1,736 characters of reasoning
+ * under each headline, no unverified gap) and set a step below it, so a good day passes and a
+ * half-depth day cannot. tests/fixtures/briefing holds both, and the-briefing-is-on-par grades them
+ * with this function.
+ *
+ * `reach` is how many cited sources answered a plain GET when the delivery checked them (floors.ts
+ * `sourcesReachable`); absent or blind (nothing answered at all, so the check itself could not see)
+ * it is not graded and says so. `previousHeadlines` are the last report's, so a headline carried
+ * over word for word is caught.
+ */
+export const BRIEFING_FLOOR = Object.freeze({ sections: 11, headlines: 5, sources: 20, why_chars: 1000, max_gaps: 3, reachable: 15 });
+
+export interface FloorVerdict {
+  pass: boolean;
+  /** What fell short, in words she can read. Empty when it passed. */
+  misses: string[];
+  /** What was counted, so a pass is visible work and a miss is checkable. */
+  measured: Record<string, number | string>;
+}
+
+/** How many items a section carries, the way its shape counts them. */
+function sectionItemCount(sec: Record<string, unknown>, key: string): number {
+  const items = Array.isArray(sec.items) ? sec.items : Array.isArray(sec.bullets) ? sec.bullets : [];
+  return key === "investor_insight"
+    ? (sec.insight && typeof sec.insight === "object" ? 1 : 0)
+    : key === "markets_dashboard"
+      ? items.length + (sec.table && typeof sec.table === "object" ? 1 : 0)
+      : items.length;
+}
+
+const sameHeadline = (v: unknown) => String(v ?? "").toLowerCase().replace(/[^a-z0-9]+/g, " ").trim();
+
+export function briefingFloor(report: { sections?: unknown; sources?: unknown; gaps?: unknown }, opts: {
+  reach?: { reachable: number; answered: number; checked: number } | null;
+  previousHeadlines?: unknown[];
+} = {}): FloorVerdict {
+  const F = BRIEFING_FLOOR;
+  const sections = (Array.isArray(report.sections) ? report.sections : []).filter((x): x is Record<string, unknown> => Boolean(x) && typeof x === "object");
+  // A section counts when it is filled to the depth its shape asks for; a one-line stub is not a section.
+  const toDepth = new Set<string>();
+  for (const sec of sections) {
+    const key = sectionKeyOf(sec);
+    const shape = SECTION_SHAPES.find((sh) => sh.key === key);
+    if (key && shape && sectionItemCount(sec, key) >= shape.min_items) toDepth.add(key);
+  }
+  const present = toDepth.size;
+  const top = sections.find((x) => sectionKeyOf(x) === "top_5_headlines");
+  const heads = (Array.isArray(top?.items) ? (top!.items as unknown[]) : []).filter((x): x is Record<string, unknown> => Boolean(x) && typeof x === "object");
+  const why = heads.length ? Math.round(heads.reduce((n, h) => n + (typeof h.why_it_matters === "string" ? h.why_it_matters.length : 0), 0) / heads.length) : 0;
+  const sources = usableSources({ sources: report.sources }).length;
+  const gaps = Array.isArray(report.gaps) ? report.gaps.length : 0;
+  const before = new Set((opts.previousHeadlines ?? []).map(sameHeadline).filter(Boolean));
+  const repeated = heads.filter((h) => before.has(sameHeadline(h.headline))).length;
+
+  const misses: string[] = [];
+  if (present < F.sections) misses.push(`${present} of ${F.sections} sections are filled to depth`);
+  if (heads.length < F.headlines) misses.push(`${heads.length} of ${F.headlines} headlines`);
+  if (sources < F.sources) misses.push(`${sources} sources (the standard is ${F.sources})`);
+  if (heads.length > 0 && why < F.why_chars) misses.push(`the reasoning under each headline is thinner than usual (about ${why} characters; the standard is ${F.why_chars.toLocaleString("en-US")})`);
+  if (gaps > F.max_gaps) misses.push(`${gaps} things could not be verified (the standard allows ${F.max_gaps})`);
+  if (repeated > 0) misses.push(`${repeated} headline${repeated === 1 ? " repeats" : "s repeat"} the last briefing word for word`);
+  const reach = opts.reach ?? null;
+  const blind = !reach || reach.answered === 0;
+  if (reach && !blind && reach.reachable < Math.min(F.reachable, reach.checked)) misses.push(`only ${reach.reachable} of ${reach.checked} sources opened when they were checked (the standard is ${F.reachable})`);
+
+  return {
+    pass: misses.length === 0,
+    misses,
+    measured: {
+      sections: present, headlines: heads.length, sources, why_chars: why, gaps, repeated,
+      sources_reachable: blind ? "not read: no source answered the check at all" : reach!.reachable,
+    },
+  };
 }
 
 const text = (v: unknown): string => (typeof v === "string" ? v : "");
@@ -640,7 +723,13 @@ export function sectionText(sec: Record<string, unknown>): string {
 export function assessBriefing(report: {
   sections?: unknown;
   sources?: unknown;
+  /** Things that exist and could not be verified; counted by the floor. */
+  gaps?: unknown;
 }, opts: {
+  /** How many cited sources answered a plain GET at delivery; absent means not checked. */
+  reach?: { reachable: number; answered: number; checked: number } | null;
+  /** The last report's headlines, so one carried over word for word is caught. */
+  previousHeadlines?: unknown[];
   /** The day the report is for, YYYY-MM-DD in her zone. Enables the 72-hour freshness check. */
   dayId?: string;
   /** When the run finished. A source read after this was typed, not opened. */
@@ -686,12 +775,7 @@ export function assessBriefing(report: {
 
     if (!key || !shape) continue;
 
-    const items = Array.isArray(sec.items) ? sec.items : Array.isArray(sec.bullets) ? sec.bullets : [];
-    const count = key === "investor_insight"
-      ? (sec.insight && typeof sec.insight === "object" ? 1 : 0)
-      : key === "markets_dashboard"
-        ? items.length + (sec.table && typeof sec.table === "object" ? 1 : 0)
-        : items.length;
+    const count = sectionItemCount(sec, key);
 
     if (count >= Math.min(shape.min_items, 1)) present.add(key);
     if (count > 0 && count < shape.min_items) {
@@ -759,6 +843,7 @@ export function assessBriefing(report: {
     homepage_sources: homepages,
     excluded_hits: excluded,
     empty: sections.length === 0,
+    floor: briefingFloor(report, { reach: opts.reach, previousHeadlines: opts.previousHeadlines }),
   };
 }
 

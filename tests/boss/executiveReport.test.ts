@@ -30,6 +30,8 @@ const SOURCES = [
   { name: "Reuters — S&P 500, Nasdaq advance", url: "https://www.reuters.com/business/wall-st-2026-09-18/", read_at: "2026-09-19T11:12:00Z" },
   { name: "Reuters — Nscale files for US IPO", url: "https://www.reuters.com/technology/nscale-ipo-2026-09-18/", read_at: "2026-09-19T11:14:00Z" },
   { name: "AP — FCC grants Paramount request", url: "https://apnews.com/article/abc123", read_at: "2026-09-19T11:16:00Z" },
+  // The standard is twenty sources (briefingSpec.ts BRIEFING_FLOOR): a report "to the file's depth" carries them.
+  ...Array.from({ length: 17 }, (_, i) => ({ name: `Example Wire — story ${i + 4}`, url: `https://news.example.com/2026/09/18/story-${i + 4}`, read_at: "2026-09-19T11:10:00Z" })),
 ];
 
 /**
@@ -50,7 +52,8 @@ function fullReport() {
             headline: `Headline ${i}`,
             summary: "What happened, versus prior expectations.",
             numbers: [`Revenue $140.6 million, +1,252% [2]`, `Loss $1.02 billion [2]`],
-            why_it_matters: "Second-order effects, beneficiaries, exposure, what to monitor.",
+            // The standard is a thousand characters of reasoning under each headline.
+            why_it_matters: "Second-order effects, beneficiaries, exposure, what to monitor. ".repeat(17),
             importance: 8,
           })),
         };
@@ -165,6 +168,7 @@ describe("delivering the executive intelligence report", () => {
     const report = await row<any>(`SELECT * FROM executive_reports WHERE task_id = ?`, TASK);
     expect(JSON.parse(report.shortfalls)).toEqual([]);
     expect(report.status).toBe("complete");
+    expect(JSON.parse(report.floor)).toMatchObject({ pass: true, misses: [], measured: { sections: 11, headlines: 5, gaps: 0 } });
     expect(JSON.parse(report.watching)).toHaveLength(2);
   });
 
@@ -182,6 +186,8 @@ describe("delivering the executive intelligence report", () => {
     await deliverExecutiveReport(env as any, { taskId: TASK, runId: uid("brn"), runStatus: "succeeded", report: thin, marketData: FULL_MARKET });
     const report = await row<any>(`SELECT * FROM executive_reports WHERE task_id = ?`, TASK);
     expect(report.status).toBe("partial");
+    expect(JSON.parse(report.shortfalls)[0]).toBe("Below the standard today: 10 of 11 sections are filled to depth.");
+    expect(JSON.parse(report.floor)).toMatchObject({ pass: false, measured: { sections: 10, headlines: 5 } });
     expect(JSON.parse(report.shortfalls).join(" ")).toMatch(/One-Minute Executive Summary has 1 item; the specification asks for at least 3/);
   });
 
@@ -819,7 +825,9 @@ describe("the briefing is built and graded against the file's specification", ()
     const shortfalls = JSON.parse(stored.shortfalls).join(" ");
     expect(shortfalls).toMatch(/astrology content and was removed/);
     expect(shortfalls).toMatch(/travel map content and was removed/);
-    expect(stored.status).toBe("partial");
+    // Removed and named; what is left is still at the standard, so the day is not "partial" (13 Nov 2026).
+    expect(stored.status).toBe("complete");
+    expect(JSON.parse(stored.floor)).toMatchObject({ pass: true, misses: [] });
   });
 
   it("names an uncited summary figure and a dangling [n] as shortfalls", async () => {
@@ -834,7 +842,8 @@ describe("the briefing is built and graded against the file's specification", ()
     const shortfalls = JSON.parse(stored.shortfalls).join(" ");
     expect(shortfalls).toMatch(/1 summary item carries a figure with no inline \[n\] citation/);
     expect(shortfalls).toMatch(/Inline citations \[41\] point past the end of the sources list/);
-    expect(stored.status).toBe("partial");
+    // A note she can read, never the status: "partial" now means below the standard and nothing else.
+    expect(stored.status).toBe("complete");
   });
 
   it("derives the edition stamp from the newest evidence, never later than delivery, and records the prompt version", async () => {
@@ -917,12 +926,14 @@ describe("the 19 September live run, delivered", () => {
     expect(stored.checked_through).toBeGreaterThanOrEqual(Date.parse(liveMarkets.fetched_at));
     expect(stored.prompt_version).toBe("2026-09-19.1");
 
-    // Honest: partial, for exactly the two faults the run committed — and nothing invented to hide them.
+    // Honest: the two faults the run committed are named, and nothing invented to hide them. They are
+    // notes: the report is at the standard (11 sections, 5 headlines, 30 sources), so it is complete.
     const shortfalls: string[] = JSON.parse(stored.shortfalls);
     expect(shortfalls.some((s) => /bare homepage/.test(s))).toBe(true);
     expect(shortfalls.some((s) => /after the run finished/.test(s))).toBe(true);
     expect(shortfalls.filter((s) => !/bare homepage|after the run finished/.test(s))).toEqual([]);
-    expect(stored.status).toBe("partial");
+    expect(stored.status).toBe("complete");
+    expect(JSON.parse(stored.floor).pass).toBe(true);
     expect(JSON.parse(stored.consulted).filter((c: any) => c.kind === "market_feed")).toHaveLength(liveMarkets.consulted.length);
   });
 });

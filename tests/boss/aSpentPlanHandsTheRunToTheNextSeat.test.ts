@@ -133,6 +133,8 @@ describe("a Codex limit UNDER a run waits for the reset — never Claude (owner,
           run_id: runId, task_id: taskId, backend_id: "bk_codex", status: "succeeded", summary: "Codex wrote it.",
           files_touched: [], commands: [], checks_run: { run: 0, passed: 0, failed: 0, detail: [] }, remaining_risks: [], violations: [],
           rollback_ref: null, refusal_reason: null, error: null, cost_micros: 0, started_at: NOW, finished_at: NOW + 1000, seat_exhausted: null,
+          // A run "succeeds" only when what it delivers reaches the floor (13 Nov 2026): three new tools.
+          delivers: { tools: [1, 2, 3].map((i) => ({ name: `Tool ${i}`, url: `https://tool-${i}.example.com/`, what_it_does: "Does one thing well.", evidence: "An independent review.", evidence_url: `https://reviews.example.org/tool-${i}` })) },
         },
       },
     });
@@ -270,7 +272,7 @@ describe("the LAST seat runs out mid-run on a duty: it waits for the reset, neve
     expect(newRun).not.toBe(runId);
     const done = await api("/api/backends/report", {
       method: "POST",
-      body: { device_id: "dev_test", evidence: { ...unusable(newRun, taskId).evidence, status: "succeeded", summary: "Found prospects.", error: null } },
+      body: { device_id: "dev_test", evidence: { ...unusable(newRun, taskId).evidence, status: "succeeded", summary: "Found prospects.", error: null, delivers: { prospects: [{ property: "example.com", url: "https://links.example.org/resources", site_name: "Example Resources", kind: "resource_page", rationale: "Lists sites like hers.", approach: "The contact page." }] } } },
     });
     expect(done.status, await done.clone().text()).toBe(200);
     expect((await row<any>(`SELECT status FROM backend_runs WHERE id = ?`, newRun)).status).toBe("succeeded");

@@ -4,6 +4,8 @@ import { runNeedsHerDecision } from "../../src/worker/boss/backends/needsDecisio
 import { deliverExecutiveReport } from "../../src/worker/boss/duties/deliverReport";
 import { reportStaleness } from "../../src/worker/boss/routes/today";
 import { api, apiJson, row, uid, all } from "./helpers";
+// The real briefing of 22 Oct 2026, the standard a delivered briefing is held to.
+import STANDARD_BRIEFING from "../fixtures/briefing/standard-2026-10-22.delivers.json";
 
 /**
  * THE INBOX IS FOR DECISIONS. THE BRIEFING IS NOT ONE.
@@ -194,6 +196,25 @@ describe("an approval exists when her answer changes what happens next", () => {
 });
 
 describe("the reporting endpoint applies that rule", () => {
+  /*
+   * "DELIVERED" MEANS SOMETHING WAS DELIVERED (owner, 13 Nov 2026). Until then a run that said
+   * "succeeded" and filed nothing was closed done and auto-accepted. It is a failed run now, by name.
+   */
+  it("a briefing run that says succeeded and delivered nothing is FAILED, never accepted", async () => {
+    await seedTask(REPORT_TASK, { delivers: "executive_reports" });
+    const runId = await seedRun(REPORT_TASK);
+    const { status } = await apiJson("/api/backends/report", {
+      method: "POST",
+      body: { device_id: "dev_test", evidence: { run_id: runId, status: "succeeded", summary: "Delivered.", files_touched: [], cost_micros: 1000, remaining_risks: ["delivers.json could not be read: Unexpected token"] } },
+    });
+    expect(status).toBe(200);
+    const run = await row<any>(`SELECT status, error FROM backend_runs WHERE id = ?`, runId);
+    expect(run.status).toBe("failed");
+    expect(run.error).toMatch(/^NAMED STOP \[FLOOR_MISSED\] the briefing delivered nothing.*delivers\.json could not be read/);
+    expect((await row<any>(`SELECT status FROM tasks WHERE id = ?`, REPORT_TASK)).status).toBe("failed");
+    expect(await row<any>(`SELECT 1 AS x FROM audit_log WHERE entity_id = ? AND action = 'backend_run_auto_accepted'`, runId)).toBeNull();
+  });
+
   beforeEach(async () => {
     await env.DB.prepare(`DELETE FROM approvals WHERE kind = 'backend_run'`).run();
   });
@@ -206,7 +227,7 @@ describe("the reporting endpoint applies that rule", () => {
       method: "POST",
       body: {
         device_id: "dev_test",
-        evidence: { run_id: runId, status: "succeeded", summary: "Delivered.", files_touched: [], cost_micros: 1000 },
+        evidence: { run_id: runId, status: "succeeded", summary: "Delivered.", files_touched: [], cost_micros: 1000, delivers: STANDARD_BRIEFING },
       },
     });
     expect(status).toBe(200);
@@ -236,7 +257,7 @@ describe("the reporting endpoint applies that rule", () => {
         device_id: "dev_test",
         evidence: {
           run_id: runId, status: "succeeded", summary: "Edited a module.",
-          files_touched: ["/Users/x/GitHub/boss-os/src/worker/boss/index.ts"], cost_micros: 1000,
+          files_touched: ["/Users/x/GitHub/boss-os/src/worker/boss/index.ts"], cost_micros: 1000, delivers: STANDARD_BRIEFING,
         },
       },
     });

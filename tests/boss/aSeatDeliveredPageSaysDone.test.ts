@@ -73,10 +73,19 @@ describe("a seat-delivered research page", () => {
     expect(await notices()).toHaveLength(1);
   });
 
-  it("a report with no source, or with no findings, is filed and not emailed", async () => {
-    const bare = await file({ research_page: { title: "A synthetic report", summary: "Worth a small test.", markdown: BODY, sources: [] }, gaps: [], status: "complete" });
-    expect((await bare.run("brn_no_sources"))?.state).toBe("delivered");
-    expect(await bare.notices()).toMatchObject([{ needs_her: 0 }]);
+  it("a report with no source is never filed as delivered; one with no findings is filed and not emailed", async () => {
+    // 13 Nov 2026: three of six free pages were stored "delivered" with no source. A local file is not a source either.
+    for (const sources of [[], [{ title: "My notes", url: "/Users/someone/notes.md" }, { title: "A file", url: "file:///tmp/a.txt" }]]) {
+      const bare = await file({ research_page: { title: "A synthetic report", summary: "Worth a small test.", markdown: BODY, sources }, gaps: [], status: "complete" });
+      const out = await bare.run("brn_no_sources");
+      expect(out?.state).toBe("failed");
+      expect(out?.why).toMatch(/cites no source/);
+      const page = await env.DB.prepare(`SELECT state, failure_reason, delivered_at FROM research_pages WHERE task_id = ?`).bind(bare.taskId).first<any>();
+      expect(page).toMatchObject({ state: "failed", delivered_at: null });
+      expect(page.failure_reason).toMatch(/cites no source/);
+      expect(await env.DB.prepare(`SELECT 1 FROM delivered_work WHERE location LIKE ?`).bind(`%${out!.page_id}%`).first()).toBeNull();
+      expect(await bare.notices()).toEqual([]);
+    }
     const hollow = await file({ research_page: { title: "A synthetic report", summary: "", markdown: `## Notes\n\n${"- \n".repeat(60)}`, sources: [{ title: "Example", url: "https://example.com/a" }] }, gaps: [], status: "complete" });
     await hollow.run("brn_no_findings");
     expect(await hollow.notices()).toMatchObject([{ needs_her: 0 }]);

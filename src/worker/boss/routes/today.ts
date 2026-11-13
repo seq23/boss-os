@@ -385,6 +385,29 @@ export function briefingRunLine(
   }
 }
 
+/** How long a briefing run takes from its start to the report landing (06:00 to about 07:10, measured). */
+export const BRIEFING_RUN_MS = 75 * 60_000;
+
+/**
+ * WHEN A LATE BRIEFING IS EXPECTED, so the morning email can say "arriving by 8:15 am" instead of
+ * leaving the section out. From the duty's newest task: one that is running lands a run's length
+ * after it started; one waiting for usage lands a run's length after the seat is back. Rounded up to
+ * the quarter hour, never in the past. Null when no run is on its way (failed, cancelled, none): the
+ * email then says so plainly rather than promising a time. Pure.
+ */
+export function briefingArrivingBy(
+  duty: { task_status: string | null; task_created_at: number | null; task_resume_at?: number | null } | null,
+  now: number,
+): number | null {
+  if (!duty?.task_status) return null;
+  const quarter = 15 * 60_000;
+  const up = (t: number) => Math.ceil(Math.max(t, now + quarter) / quarter) * quarter;
+  if (duty.task_status === "running" && duty.task_created_at) return up(duty.task_created_at + BRIEFING_RUN_MS);
+  const resume = Number(duty.task_resume_at);
+  if (duty.task_status === "queued") return up((Number.isFinite(resume) && resume > 0 ? Math.max(resume, now) : now) + BRIEFING_RUN_MS);
+  return null;
+}
+
 export function reportStaleness(
   duty: {
     suspended: number; last_run_at: number | null; next_due_at: number | null;
@@ -537,6 +560,7 @@ export async function assembleDayFlow(env: Env, day: DayRow, only?: readonly Blo
         local_hour: number | null; local_minute: number | null;
         task_status: string | null; task_error: string | null;
         task_created_at: number | null; task_finished_at: number | null; run_claimed_at: number | null; run_exists: number | null;
+        task_resume_at: number | null;
       }>(B, () => env.DB
       .prepare(
         `SELECT d.id, d.name, d.suspended, d.last_run_at, d.next_due_at, d.last_task_id,
@@ -544,6 +568,7 @@ export async function assembleDayFlow(env: Env, day: DayRow, only?: readonly Blo
                 t.status AS task_status, t.error AS task_error,
                 t.created_at AS task_created_at, t.finished_at AS task_finished_at,
                 (SELECT r.claimed_at FROM backend_runs r WHERE r.task_id = d.last_task_id ORDER BY r.started_at DESC LIMIT 1) AS run_claimed_at,
+                (SELECT json_extract(e.detail, '$.resume_at') FROM task_events e WHERE e.task_id = d.last_task_id AND e.event = 'named_stop' ORDER BY e.ts DESC LIMIT 1) AS task_resume_at,
                 EXISTS (SELECT 1 FROM backend_runs r WHERE r.task_id = d.last_task_id) AS run_exists
            FROM standing_duties d
            LEFT JOIN tasks t ON t.id = d.last_task_id
@@ -1558,6 +1583,10 @@ export async function assembleDayFlow(env: Env, day: DayRow, only?: readonly Blo
               watching: parseJson(shown.watching, []),
               /* When it IS partial, which of the four reasons it is. */
               shortfalls: parseJson(shown.shortfalls, []),
+              /* The standard's verdict on this report (0363): { pass, misses, measured }, or null on an older row. */
+              floor: parseJson(shown.floor, null),
+              /* Today's is not in: when it is expected, for "arriving by" in the morning email. Null when no run is on its way. */
+              arriving_by: carried ? briefingArrivingBy(reportDuty, now) : null,
               corrections: parseJson(shown.corrections, []),
               sources: parseJson(shown.sources, []),
               generated_at: shown.generated_at,

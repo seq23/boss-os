@@ -4,6 +4,8 @@ export function timeOf(at: number, tz?: string | null): string;
 export function dayWords(iso: string, opts?: { weekday?: boolean }): string;
 export function bounceLine(b: { replaced?: number; dropped?: number; restarted?: string[] } | null): string | null;
 export function briefingLines(briefing: unknown, today: string): string[] | null;
+export function briefingLateLine(briefing: unknown, now: number, tz?: string | null): string;
+export function briefingBelowLine(briefing: unknown): string | null;
 export function briefingReady(briefing: unknown, today: string): boolean;
 export const BRIEFING_CAP: { hour: number; minute: number };
 export function briefingDecision(briefing: unknown, now: number, opts?: { inProgress?: boolean }): "send" | "wait" | "send_late";
