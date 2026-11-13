@@ -42,6 +42,47 @@ describe("the privacy screen runs before a worker is chosen", () => {
     expect((await row<any>(`SELECT status FROM tasks WHERE id = ?`, taskId)).status).toBe("failed");
   });
 
+  /*
+   * THE SHAPE THAT FAILED "Executive Intelligence Report" (tsk_m7acfrx3r2hc788m, 13 Nov 2026 12:00 UTC):
+   * a duty's run, flagged by the privacy screen, so Claude's seat only; Codex free but refused by the
+   * screen; Claude's plan spent for 57 minutes. It was failed outright although the refusal itself
+   * said "tried again in about 57 minutes". Work Boss OS started itself now WAITS for that seat's
+   * reset (waitForUsage): queued, a USAGE_LIMIT named stop with Claude's reset, still never Codex,
+   * never a cloud rung, no network call, no email to her.
+   */
+  it("a duty's flagged run with Claude's seat spent waits for that seat's reset: never failed, never Codex", async () => {
+    const resetAt = Date.now() + 57 * 60_000;
+    await env.DB.prepare(`UPDATE execution_backends SET exhausted_until = ?, exhausted_reason = 'You have hit your weekly limit' WHERE id = 'bk_claude_code'`).bind(resetAt).run();
+    const taskId = await insertTask({
+      status: "queued", title: "Duty deal memo", intake_kind: "research", sensitivity: "public",
+      input: JSON.stringify({ duty_id: "duty_test_flagged", backend_ladder: ["bk_codex", "bk_claude_code"], cloud_fallback: false, prompt: "Summarise the capital commitment, the carried interest and the allocation of the Fund II subscription at a $40M valuation." }),
+    });
+    await env.DB.prepare(`UPDATE tasks SET model_access = 'public_model_approved' WHERE id = ?`).bind(taskId).run();
+    await handleTask(env as any, { taskId, lane: "ops" });
+    expect(await all<any>(`SELECT 1 FROM backend_runs WHERE task_id = ? AND backend_id = 'bk_codex'`, taskId), "flagged work reached Codex").toHaveLength(0);
+    expect(await all<any>(`SELECT 1 FROM backend_runs WHERE task_id = ? AND status = 'running'`, taskId), "a run was parked on a spent seat").toHaveLength(0);
+    expect(await all<any>(`SELECT 1 FROM routing_decisions WHERE task_id = ?`, taskId), "a cloud rung was asked").toHaveLength(0);
+    expect((await row<any>(`SELECT status FROM tasks WHERE id = ?`, taskId)).status).toBe("queued");
+    const stop = JSON.parse((await row<any>(`SELECT detail FROM task_events WHERE task_id = ? AND event = 'named_stop' ORDER BY ts DESC LIMIT 1`, taskId)).detail);
+    expect(stop.code).toBe("USAGE_LIMIT");
+    expect(stop.resume_at).toBe(resetAt);
+    expect(await all<any>(`SELECT kind, needs_her FROM boss_task_notices WHERE task_id = ?`, taskId)).toEqual([{ kind: "stop:USAGE_LIMIT", needs_her: 0 }]);
+  });
+
+  it("NEGATIVE: the same flagged work with Claude's seat spent, asked for by her, still fails closed by name", async () => {
+    await env.DB.prepare(`UPDATE execution_backends SET exhausted_until = ?, exhausted_reason = 'You have hit your weekly limit' WHERE id = 'bk_claude_code'`).bind(Date.now() + 57 * 60_000).run();
+    const taskId = await insertTask({
+      status: "queued", title: "Her deal memo", intake_kind: "research", sensitivity: "public",
+      input: JSON.stringify({ mail_id: "iml_test_hers", from: "owner@example.test", backend_ladder: ["bk_codex", "bk_claude_code"], cloud_fallback: false, prompt: "Summarise the capital commitment, the carried interest and the allocation of the Fund II subscription at a $40M valuation." }),
+    });
+    await env.DB.prepare(`UPDATE tasks SET model_access = 'public_model_approved' WHERE id = ?`).bind(taskId).run();
+    await handleTask(env as any, { taskId, lane: "ops" });
+    expect(await all<any>(`SELECT 1 FROM backend_runs WHERE task_id = ? AND backend_id = 'bk_codex'`, taskId)).toHaveLength(0);
+    const t = await row<any>(`SELECT status, error FROM tasks WHERE id = ?`, taskId);
+    expect(t.status).toBe("failed");
+    expect(t.error).toMatch(/bk_claude_code: .*out of usage/);
+  });
+
   it("NEGATIVE: a plain public prompt still goes to Codex first", async () => {
     const taskId = await insertTask({
       status: "queued", title: "Lighthouses", intake_kind: "research", sensitivity: "public",

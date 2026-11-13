@@ -84,6 +84,9 @@ describe("a test can never put mail into her Mac's real folders (13 Nov 2026)", 
   });
   it("a real send path with no folder named writes its archive copy outside ~/.boss-os", async () => {
     vi.unstubAllEnvs();
+    // No passcode, so the copy stays where it was written to be read below: a shell carrying her real
+    // BOSS_PASSCODE (the repo-change runner, 13 Nov 2026) uploaded and removed it, and this failed.
+    vi.stubEnv("BOSS_PASSCODE", "");
     const before = existsSync(join(real, "sent-mail-pending")) ? readdirSync(join(real, "sent-mail-pending")).length : 0;
     const { fetcher } = transport();
     await archiveSentMail(employeeMail(sender, { to: "owner@example.test", subject: "An update", text: "A synthetic update." }), "accepted-unnamed-folder", fetcher);
