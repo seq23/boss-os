@@ -3,14 +3,28 @@ name: job · Simone's morning email · daily 06:40 CT
 # Simone's one morning email. Moved off her Mac 1 Nov 2026 (was launchd com.seq.boss-your-day, same
 # 06:40 Central) after a cloud-assembled morning matched the Mac-assembled one line for line (dry, sent
 # nothing). Its sections come from the Boss OS morning sections store (D1 morning_sections), written by
-# every producer on the Mac or a runner. It waits for Camille's briefing up to 07:45, as on the Mac.
-# 07:50 is a SAFETY TICK in case GitHub drops the 06:40 one: the day's sent marker (state your-day)
-# makes it exit "already sent" without sending.
+# every producer on the Mac or a runner.
+#
+# EVERY TICK IS SHORT (13 Nov 2026: the 06:40 run slept an hour waiting for a briefing that could not
+# land, with the 07:50 tick queued behind it). A tick sends when the briefing is in, or when nobody is
+# writing it; while it is still being written the tick ends "not yet" and the next one asks again
+# (07:10, 07:30). 07:50 is past the 07:45 cap: it sends without the briefing, and is the SAFETY TICK
+# in case GitHub drops an earlier one. 09:30 and 12:30 send the email again if it still has not gone
+# (a held or refused send, 10 Nov 2026). The day's sent marker (state your-day) makes every tick after
+# the send exit "already sent".
 on:
   schedule:
     - cron: '40 6 * * *'  # America/Chicago, all year
       timezone: America/Chicago
-    - cron: '50 7 * * *'  # America/Chicago, all year — safety tick
+    - cron: '10 7 * * *'  # America/Chicago, all year — the briefing was still being written at 06:40
+      timezone: America/Chicago
+    - cron: '30 7 * * *'  # America/Chicago, all year — the same
+      timezone: America/Chicago
+    - cron: '50 7 * * *'  # America/Chicago, all year — safety tick, past the briefing cap
+      timezone: America/Chicago
+    - cron: '30 9 * * *'  # America/Chicago, all year — sends it if it still has not gone
+      timezone: America/Chicago
+    - cron: '30 12 * * *'  # America/Chicago, all year — the same
       timezone: America/Chicago
   workflow_dispatch:
 
@@ -28,5 +42,5 @@ jobs:
     with:
       job: your-day
       state: your-day,sent-mail-pending,held-mail
-      timeout: 100
+      timeout: 5
       command: bash scripts/ops/duty-run.sh your-day.mjs -- npm run --silent your-day

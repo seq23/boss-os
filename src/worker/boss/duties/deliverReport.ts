@@ -843,10 +843,8 @@ async function noticeResearchDone(
    * answer and is emailed whole; a page a duty or an alarm started by itself (Kendra's "Done (partial): Fixing the Stale Task
    * System Alarm", five in twelve hours) is a row on the Updates page. A field, never the words.
    */
-  const { needsHer } = await import("../../../shared/boss/mail/noticeGate.mjs");
-  let input: { origin?: unknown; duty_id?: unknown } = {};
-  try { input = JSON.parse(task.input ?? "{}") ?? {}; } catch { input = {}; }
-  const her = needsHer({ kind: "done", systemStarted: input.origin === "repair" || input.duty_id != null });
+  const { needsHer, startedBySystem } = await import("../../../shared/boss/mail/noticeGate.mjs");
+  const her = needsHer({ kind: "done", systemStarted: startedBySystem(task.input) });
   const { researchPageUrl } = await import("../../../shared/boss/research/page.mjs");
   const { researchDoneLines, researchDoneSubject } = await import("../../../shared/boss/research/doneEmail.mjs");
   const kind = `done#${Number(task.attempts ?? 0)}`;

@@ -55,7 +55,7 @@ export function researchAskOf(task: { title?: string | null }, input: Record<str
   return (parts[0] ?? String(task.title ?? "")).trim();
 }
 
-function centralTime(ms: number): string {
+export function centralTime(ms: number): string {
   return new Intl.DateTimeFormat("en-US", { timeZone: "America/Chicago", weekday: "short", month: "short", day: "numeric", hour: "numeric", minute: "2-digit" }).format(new Date(ms));
 }
 

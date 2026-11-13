@@ -6,8 +6,11 @@ export function bounceLine(b: { replaced?: number; dropped?: number; restarted?:
 export function briefingLines(briefing: unknown, today: string): string[] | null;
 export function briefingReady(briefing: unknown, today: string): boolean;
 export const BRIEFING_CAP: { hour: number; minute: number };
-export const BRIEFING_POLL_MS: number;
-export function briefingDecision(briefing: unknown, now: number): "send" | "wait" | "send_late";
+export function briefingDecision(briefing: unknown, now: number, opts?: { inProgress?: boolean }): "send" | "wait" | "send_late";
+export function briefingInProgress(tasks: unknown[] | null | undefined, now: number): boolean;
+export const NOT_YET: number;
+export function selfStartedWaiting(data: any): any[];
+export function selfWaitingRepairs(waiting: any[], tasks?: any[]): { title: string; prompt: string }[];
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 export function buildDay(data: Record<string, unknown>, now?: number): LaidOutEmail & { dropped: string[]; digest: any; cuts: string[]; bytes: number; memory: { decide: Record<string, string>; done: string[] }; yoursTold: string[]; teamNotes: string[] };
 export function briefingFull(briefing: unknown): Array<{ heading: string; lines: unknown[] }>;

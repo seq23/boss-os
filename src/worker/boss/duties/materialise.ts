@@ -275,6 +275,9 @@ export async function materialiseDueDuties(
         input = { ...input, prompt: duty.owner_prompt, prompt_source: "owner_edit" };
       }
       const briefing = input.spec_module === "executive_briefing";
+      // WHO STARTED IT rides on the task (noticeGate.mjs startedBySystem): a duty's own run is never
+      // work she asked for, so its waits and stops are the team's, not her email (13 Nov 2026).
+      input = { ...input, duty_id: duty.id };
       admitted = await admitTask(env, {
         title: duty.task_title,
         lane: duty.lane,

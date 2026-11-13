@@ -53,7 +53,7 @@ afterEach(async () => { await seatsReset(); });
 
 
 describe("both seats out of usage: the work waits on Codex's seat (owner, 3 Nov 2026)", () => {
-  it("the executive briefing reads as deal material, so it is brain work: with Claude out it stops by name — never Codex, never a cloud rung, no network call", async () => {
+  it("the executive briefing reads as deal material, so it is brain work: with Claude out it WAITS for the reset on the Claude seat — never Codex, never a cloud rung, no network call, no email to her (13 Nov 2026)", async () => {
     await setLever("OPEN");
     await bothSeatsSpent();
     await env.DB.prepare(`DELETE FROM tasks WHERE input LIKE '%executive_reports%'`).run();
@@ -65,10 +65,60 @@ describe("both seats out of usage: the work waits on Codex's seat (owner, 3 Nov 
     await handleTask(withKey() as any, { taskId, lane: "ops" });
     expect(hosts).toEqual([]);
     expect(await all<any>(`SELECT 1 FROM backend_runs WHERE task_id = ? AND backend_id = 'bk_codex'`, taskId), "the briefing reached Codex").toHaveLength(0);
+    expect(await all<any>(`SELECT 1 FROM backend_runs WHERE task_id = ? AND status = 'running'`, taskId), "a run was parked on a spent seat").toHaveLength(0);
     expect(await all<any>(`SELECT 1 FROM routing_decisions WHERE task_id = ?`, taskId), "a cloud rung was asked").toHaveLength(0);
-    const t = await row<any>(`SELECT status, error FROM tasks WHERE id = ?`, taskId);
-    expect(t.status).toBe("failed");
-    expect(t.error).toMatch(/bk_claude_code: .*out of usage/);
+    // Boss OS started it, so out of usage is a wait: back in the queue for the reset, not failed.
+    const t = await row<any>(`SELECT status, error, input FROM tasks WHERE id = ?`, taskId);
+    expect(t.status).toBe("queued");
+    expect(JSON.parse(t.input).duty_id, "the run does not say which duty started it").toBe("duty_exec_intel");
+    const stop = JSON.parse((await row<any>(`SELECT detail FROM task_events WHERE task_id = ? AND event = 'named_stop' ORDER BY ts DESC LIMIT 1`, taskId)).detail);
+    expect(stop.code).toBe("USAGE_LIMIT");
+    expect(stop.resume_at).toBe(NOW + 3 * 3600_000);
+    expect(stop.why).toMatch(/bk_claude_code: .*out of usage/);
+    // She is not emailed and is not asked to restart it: one row on the Updates page, nothing else.
+    const notices = await all<any>(`SELECT kind, needs_her FROM boss_task_notices WHERE task_id = ?`, taskId);
+    expect(notices).toEqual([{ kind: "stop:USAGE_LIMIT", needs_her: 0 }]);
+    // A second attempt while the seats are still out waits again and writes no second row.
+    await handleTask(withKey() as any, { taskId, lane: "ops" });
+    expect((await row<any>(`SELECT status FROM tasks WHERE id = ?`, taskId)).status).toBe("queued");
+    expect(await all<any>(`SELECT 1 FROM boss_task_notices WHERE task_id = ?`, taskId)).toHaveLength(1);
+    expect(await all<any>(`SELECT 1 FROM boss_task_notices WHERE kind = 'duty_not_running' AND task_id = 'duty_exec_intel'`), "an alarm on day one").toHaveLength(0);
+  });
+
+  it("only after 2 days running without a run does ONE alarm reach her for the duty, not one per attempt; a finished run ends it", async () => {
+    await setLever("OPEN");
+    await bothSeatsSpent();
+    await env.DB.prepare(`DELETE FROM tasks WHERE input LIKE '%executive_reports%'`).run();
+    await env.DB.prepare(`DELETE FROM boss_task_notices WHERE task_id = 'duty_exec_intel'`).run();
+    const out = await materialiseDueDuties(env as any, NOW, "duty_exec_intel");
+    const taskId = out.fired[0]!.task_id!;
+    restore = stubFetch(() => completionResponse("must not be reached"));
+    // The same run, first made a day ago and still waiting: the duty has missed two days running.
+    await env.DB.prepare(`UPDATE tasks SET created_at = ? WHERE id = ?`).bind(Date.now() - 25 * 3600_000, taskId).run();
+    await handleTask(withKey() as any, { taskId, lane: "ops" });
+    await handleTask(withKey() as any, { taskId, lane: "ops" });
+    const alarms = await all<any>(`SELECT from_name, needs_her, subject, body FROM boss_task_notices WHERE kind = 'duty_not_running' AND task_id = 'duty_exec_intel'`);
+    expect(alarms, "one per duty, not one per attempt").toHaveLength(1);
+    expect(alarms[0].needs_her).toBe(1);
+    expect(alarms[0].from_name).toBe("Kendra");
+    expect(alarms[0].body).toMatch(/^What broke: .*has not run for 2 days/);
+    expect(alarms[0].body).toMatch(/^What is being done: .*by itself/m);
+    expect((await row<any>(`SELECT status FROM tasks WHERE id = ?`, taskId)).status).toBe("queued");
+    // No "stopped" email asking her to restart it, on any attempt.
+    expect(await all<any>(`SELECT 1 FROM boss_task_notices WHERE task_id = ? AND needs_her = 1`, taskId)).toHaveLength(0);
+  });
+
+  it("NEGATIVE: the same refusal on work she asked for herself still fails and tells her, as before", async () => {
+    await setLever("OPEN");
+    await bothSeatsSpent();
+    const taskId = await insertTask({
+      status: "queued", title: "Her own private ask", intake_kind: "research", sensitivity: "private",
+      input: JSON.stringify({ from: "owner@example.test", mail_id: "iml_test_hers", backend_ladder: ["bk_claude_code", "bk_codex"], draft_kind: "lp_reply", lp_committed: true, prompt: "Draft the reply." }),
+    });
+    restore = stubFetch(() => completionResponse("no"));
+    await handleTask(withKey() as any, { taskId, lane: "ops" });
+    expect((await row<any>(`SELECT status FROM tasks WHERE id = ?`, taskId)).status).toBe("failed");
+    expect(await all<any>(`SELECT kind, needs_her FROM boss_task_notices WHERE task_id = ?`, taskId)).toEqual([{ kind: "stopped", needs_her: 1 }]);
   });
 
   it("a duty whose prompt names an LP commitment is brain work too: Claude only, fails closed by name", async () => {

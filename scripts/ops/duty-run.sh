@@ -129,6 +129,17 @@ fi
 RC=${PIPESTATUS[0]}
 FINISHED_AT=$(( $(date +%s) * 1000 ))
 
+# ─── "NOT YET" IS NOT A RUN (13 Nov 2026) ───────────────────────────────────
+#
+# A job that exits 75 has said, by name, that its moment has not come and its next tick will ask
+# again (the morning email while the briefing is still being written). Nothing is recorded: it neither
+# ran nor failed, so the duty's clock, its output floor and its last outcome stay as they were. The
+# named line is required; a 75 without one is an ordinary failure below.
+if [ "$RC" -eq 75 ] && grep -q '^NAMED WAIT \[[A-Z_]*\]' "$RUN_LOG"; then
+  grep '^NAMED WAIT \[[A-Z_]*\]' "$RUN_LOG" | tail -1
+  exit 0
+fi
+
 if [ "$RC" -eq 0 ]; then
   OUTCOME="ok"
   REASON=""

@@ -23,7 +23,7 @@ import type { Env } from "../env";
 import { newId } from "../lib/id";
 import { admitTask } from "../tasks/admit";
 import {
-  KENDRA, floorVerdict, floorAlarmText, firstRunLoop, firstRunMet, usualDuration, staleTaskVerdict, staleTaskText,
+  KENDRA, floorVerdict, floorAlarmText, firstRunLoop, firstRunMet, usualDuration, staleTaskVerdict, staleTaskText, centralDay,
 } from "../../../shared/boss/alarms/rules.mjs";
 
 export type AlarmKind = "output_floor" | "stale_task" | "owner_mail";
@@ -234,6 +234,54 @@ export interface KendraResult {
   first_run: { opened: string[]; closed: string[] };
   stale: { opened: string[]; kept: string[]; cleared: string[]; repairs?: number };
   running: number;
+  morning?: MorningVerdict | "not read";
+}
+
+// ─── C. The morning email that did not go ────────────────────────────────────────────────────
+
+/** From this Central hour a morning email that has not gone is said out loud: the 07:50 safety tick has had its turn. */
+export const MORNING_MISSING_FROM_HOUR = 9;
+export const MORNING_ALARM_KEY = "mail:morning-email";
+export type MorningVerdict = "sent" | "early" | "told" | "already told";
+
+/**
+ * THE MORNING EMAIL CAN NEVER GO MISSING SILENTLY (owner, 13 Nov 2026: on 10 Nov both ticks ended
+ * "send refused" and nothing told her). Read HERE, on the Worker's hourly tick, because it shares
+ * nothing with what failed: not the GitHub runner, not the email's builder, not its plain-words gate.
+ * "Sent" is the day's own mark (`morning_digests.sent_at`, written by the run after the send) or a
+ * digest in the sent log since midnight. Not sent by 09:00 Central: Kendra's alarm opens (ONE repair
+ * for Danielle) and ONE notice a day is written, which her Mac's drain sends as an alarm email
+ * (`morning_missing`, scripts/ops/task-notices.mjs). The email itself is sent by the next tick of
+ * job-your-day.yml that works (09:30, 12:30); the alarm closes when it has gone.
+ */
+export async function morningEmailCheck(env: Env, now = Date.now()): Promise<MorningVerdict> {
+  const day = centralDay(now);
+  const hour = Number(new Intl.DateTimeFormat("en-US", { timeZone: "America/Chicago", hour: "numeric", hourCycle: "h23" }).format(new Date(now)));
+  const marked = await env.DB.prepare(`SELECT sent_at FROM morning_digests WHERE day = ?`).bind(day).first<{ sent_at: number | null }>();
+  const mailed = marked?.sent_at != null || (await env.DB
+    .prepare(`SELECT 1 AS x FROM boss_sent_mail WHERE layout = 'digest' AND delivery_state = 'sent' AND sent_at >= ? LIMIT 1`)
+    .bind(now - (hour + 1) * 3600_000).first<{ x: number }>()) != null;
+  if (mailed) {
+    await clearAlarm(env, MORNING_ALARM_KEY, "the morning email went", now);
+    return "sent";
+  }
+  if (hour < MORNING_MISSING_FROM_HOUR) return "early";
+  await raiseAlarm(env, {
+    key: MORNING_ALARM_KEY, kind: "owner_mail", subject_id: day,
+    text: `Simone's morning email for ${day} had not been sent by ${hour}:00 Central (no sent mark on the day's morning and no digest in the sent log). Read the job's private log (job-your-day.yml, scripts/ops/your-day.mjs), fix the cause at source, and let its next tick send it`,
+  }, now);
+  const noticeKey = `morning-${day}`;
+  const told = await env.DB.prepare(`SELECT id FROM boss_task_notices WHERE task_id = ? AND kind = 'morning_missing' LIMIT 1`).bind(noticeKey).first<{ id: string }>();
+  if (told) return "already told";
+  const body = [
+    "What broke: Your morning email has not gone out today.",
+    "What was lost: Nothing. Today's decisions, deals and briefing are on your Today page in Boss OS.",
+    "What is being done: Danielle has a repair job for it, and the email is tried again later this morning and at midday. It reaches you as soon as it works.",
+  ].join("\n");
+  await env.DB.prepare(
+    `INSERT INTO boss_task_notices (id, task_id, lane, from_name, kind, subject, body, created_at, needs_her) VALUES (?,?,'ops','Kendra','morning_missing',?,?,?,1)`,
+  ).bind(newId("tnt"), noticeKey, "Your morning email did not go out today", body, now).run();
+  return "told";
 }
 
 /** The last 50 done tasks of one title, or of one intake kind: each one's WORK time (finish minus the newest claim, else the start). */
@@ -353,6 +401,8 @@ export async function runKendraChecks(env: Env, now = Date.now()): Promise<Kendr
     if (stillStale.has(a.subject_id)) continue;
     if (await clearAlarm(env, a.alarm_key, "the task is no longer stuck running", now)) out.stale.cleared.push(a.subject_id);
   }
+  // ── C: the morning email ───────────────────────────────────────────────────────────────────
+  out.morning = await morningEmailCheck(env, now).catch((e: unknown) => { console.error(`kendra: the morning email check did not run (${e instanceof Error ? e.message : String(e)})`); return "not read" as const; });
   return out;
 }
 

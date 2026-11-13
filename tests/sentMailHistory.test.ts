@@ -2,7 +2,10 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { mkdtempSync, readdirSync, readFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { archiveSentMail, employeeMail, flushSentMail, postEmployeeMail, postErrandMail, errandMail, ERRAND_FROM, ERRAND_REPLY_TO } from "../scripts/ops/notify.mjs";
+import { archiveSentMail, employeeMail, flushSentMail, postEmployeeMail, postErrandMail, errandMail, ERRAND_FROM, ERRAND_REPLY_TO, mailStateDir, heldDir } from "../scripts/ops/notify.mjs";
+import { homedir } from "node:os";
+import { existsSync } from "node:fs";
+import { onlyTestAddresses } from "../src/shared/boss/mail/testAddress.mjs";
 
 let dir: string;
 const sender = { from: "Agent <agent@example.test>", reply_to: "agent@example.test", key: "fake-key", tag: null };
@@ -63,5 +66,35 @@ describe("every accepted Mac email reaches history", () => {
     expect((await postEmployeeMail(sender, payload, fetcher)).ok).toBe(false);
     expect(sent.some((r) => r.url.endsWith("/mail/sent"))).toBe(false);
     expect(readdirSync(dir)).toEqual([]);
+  });
+});
+
+describe("a test can never put mail into her Mac's real folders (13 Nov 2026)", () => {
+  // tests/noticeGate.test.ts sent "Could not do: a synthetic job" with no folder named; the archive
+  // wrote it into the real ~/.boss-os/sent-mail-pending and the next real send uploaded it.
+  const real = join(homedir(), ".boss-os");
+  it("under the test runner, a folder no test named is a throwaway one; outside it, it is her real one", () => {
+    for (const [name, leaf] of [["BOSS_OS_SENT_MAIL_DIR", "sent-mail-pending"], ["BOSS_OS_HELD_MAIL_DIR", "held-mail"]] as const) {
+      expect(mailStateDir(name, leaf, { VITEST: "true" }).startsWith(real), leaf).toBe(false);
+      expect(mailStateDir(name, leaf, { NODE_ENV: "test" }).startsWith(real), leaf).toBe(false);
+      expect(mailStateDir(name, leaf, { [name]: "/named/by/a/test", VITEST: "true" })).toBe("/named/by/a/test");
+      // Negative proof: with no test runner the same call is her real folder.
+      expect(mailStateDir(name, leaf, {})).toBe(join(real, leaf));
+    }
+  });
+  it("a real send path with no folder named writes its archive copy outside ~/.boss-os", async () => {
+    vi.unstubAllEnvs();
+    const before = existsSync(join(real, "sent-mail-pending")) ? readdirSync(join(real, "sent-mail-pending")).length : 0;
+    const { fetcher } = transport();
+    await archiveSentMail(employeeMail(sender, { to: "owner@example.test", subject: "An update", text: "A synthetic update." }), "accepted-unnamed-folder", fetcher);
+    expect(existsSync(join(real, "sent-mail-pending")) ? readdirSync(join(real, "sent-mail-pending")).length : 0).toBe(before);
+    expect(heldDir().startsWith(real)).toBe(false);
+    const temp = mailStateDir("BOSS_OS_SENT_MAIL_DIR", "sent-mail-pending");
+    expect(readdirSync(temp).length).toBeGreaterThan(0);
+    rmSync(temp, { recursive: true, force: true });
+  });
+  it("the reserved test domains are told apart from real mail", () => {
+    for (const a of ["o@example.com", "Owner <owner@example.test>", "a@b.invalid", "a@example.org, b@example.net"]) expect(onlyTestAddresses(a), a).toBe(true);
+    for (const a of ["someone@gmail.com", "a@example.com, someone@gmail.com", "a@notexample.com", ""]) expect(onlyTestAddresses(a), a).toBe(false);
   });
 });
