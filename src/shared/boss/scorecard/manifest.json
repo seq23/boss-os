@@ -1966,6 +1966,57 @@
       "versionB": {
         "text": "Fewer than 80% answered before the event: the cards move to ONE Friday digest of the next 2 weeks' invitations instead of the daily morning cards."
       }
+    },
+    {
+      "id": "dw-phone-app",
+      "initiative": "Dream Wedding phone app",
+      "business": "spry",
+      "owner": "Spry Labs · Wednesday Spry Labs email",
+      "result": "Confirmed full-plan event unlocks per 100 installations reaching the plan screen",
+      "jobs": [],
+      "start": null,
+      "startWhen": {
+        "label": "the first production phone reaches the plan after launch measurement is enabled",
+        "reader": "d1",
+        "params": {
+          "db": "dream-wedding-builder",
+          "sql": "SELECT date(MIN(reached_at) / 1000, 'unixepoch') AS n FROM app_plan_reach"
+        }
+      },
+      "first": {
+        "label": "confirmed full-plan event unlocks per 100 production plan installations (rolling 30 days)",
+        "unit": "%",
+        "by": 30,
+        "floor": {
+          "op": ">=",
+          "value": 3
+        },
+        "reader": "d1",
+        "params": {
+          "db": "dream-wedding-builder",
+          "days": 30,
+          "sql": "SELECT CASE WHEN (SELECT COUNT(*) FROM app_plan_reach WHERE reached_at >= :since_ms) = 0   THEN NULL   ELSE 100.0 * (SELECT COUNT(*) FROM app_confirmed_unlocks WHERE purchased_at >= :since_ms)     / (SELECT COUNT(*) FROM app_plan_reach WHERE reached_at >= :since_ms)   END AS n"
+        }
+      },
+      "real": {
+        "label": "confirmed full-plan event unlocks per 100 production plan installations (rolling 30 days)",
+        "unit": "%",
+        "by": 60,
+        "floor": {
+          "op": ">=",
+          "value": 6
+        },
+        "reader": "d1",
+        "params": {
+          "db": "dream-wedding-builder",
+          "days": 30,
+          "sql": "SELECT CASE WHEN (SELECT COUNT(*) FROM app_plan_reach WHERE reached_at >= :since_ms) = 0   THEN NULL   ELSE 100.0 * (SELECT COUNT(*) FROM app_confirmed_unlocks WHERE purchased_at >= :since_ms)     / (SELECT COUNT(*) FROM app_plan_reach WHERE reached_at >= :since_ms)   END AS n"
+        }
+      },
+      "versionB": {
+        "text": "After a day-30 miss, set remindersNeedFullPlan=false: reminders free, payments + packet paid. Keep per-event purchases and store prices unchanged. At about 20 real ratings, change full plan and dw_new_event prices in the stores only."
+      },
+      "pause": []
     }
   ],
   "exempt": {
