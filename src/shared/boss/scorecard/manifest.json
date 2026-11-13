@@ -1543,6 +1543,73 @@
       "pause": []
     },
     {
+      "id": "ap-phone-app",
+      "initiative": "ApprovalPrep phone app",
+      "business": "spry",
+      "owner": "Spry Labs · Wednesday Spry Labs email",
+      "result": "Credit Letter Kit purchases in the app (store-confirmed), with installs as the lead-in",
+      "jobs": [],
+      "start": null,
+      "startWhen": {
+        "label": "the app is live in a store",
+        "reader": "repo-json",
+        "params": {
+          "files": [
+            {
+              "repo": "approvalprep",
+              "path": "apps/mobile/release/store-metrics.json",
+              "field": "launchedOn",
+              "date": true
+            }
+          ]
+        }
+      },
+      "first": {
+        "label": "Credit Letter Kit purchases in the last 30 days (lead-in: at least 100 installs)",
+        "by": 30,
+        "floor": {
+          "op": ">=",
+          "value": 3
+        },
+        "reader": "repo-json",
+        "params": {
+          "maxAgeDays": 9,
+          "files": [
+            {
+              "repo": "approvalprep",
+              "path": "apps/mobile/release/store-metrics.json",
+              "field": "kitPurchases30",
+              "at": "at"
+            }
+          ]
+        }
+      },
+      "real": {
+        "label": "Credit Letter Kit purchases in the last 60 days (lead-in: at least 300 installs)",
+        "by": 60,
+        "floor": {
+          "op": ">=",
+          "value": 10
+        },
+        "reader": "repo-json",
+        "params": {
+          "maxAgeDays": 9,
+          "files": [
+            {
+              "repo": "approvalprep",
+              "path": "apps/mobile/release/store-metrics.json",
+              "field": "kitPurchases60",
+              "at": "at"
+            }
+          ]
+        }
+      },
+      "versionB": {
+        "text": "After a day-30 miss, lead the store listing with debt validation: subtitle \"Debt Validation & Goodwill Letters\" and the screenshots in that order. The app, the one-time kit and its price stay as they are. Separate price step, not version B: at about 20 real ratings ap_credit_kit goes from $19.99 to $24.99 by a store price change only."
+      },
+      "pause": []
+    },
+    {
       "id": "ap-brand-social",
       "initiative": "ApprovalPrep brand social (TikTok via Buffer)",
       "business": "spry",
