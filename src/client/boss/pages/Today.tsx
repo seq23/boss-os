@@ -1028,8 +1028,7 @@ function renderDetail(
             */}
           {c.status === "partial" && (c.shortfalls ?? []).length > 0 && (
             <div className="row-sub" style={{ marginBottom: 10 }}>
-              {/* "Below the standard today: ..." leads when the report missed its floor (13 Nov 2026) and says it itself. */}
-              {String((c.shortfalls ?? [])[0] ?? "").startsWith("Below the standard") ? "Best attempt. " : "Partial because: "}{(c.shortfalls ?? []).join(" ")}
+              Partial because: {(c.shortfalls ?? []).join(" ")}
             </div>
           )}
 
