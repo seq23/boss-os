@@ -8,3 +8,4 @@ export function nextTouchDueAt(p: { touches?: number | null; firstSentAt?: numbe
 export function followUpDue(p: { touches?: number | null; firstSentAt?: number | null; lastTouchAt?: number | null }, now?: number): number | null;
 export function complaintStop(sender: string, n?: number): string;
 export function wordsHash(text: string): string;
+export function startOfCentralDay(ms: number): number;
