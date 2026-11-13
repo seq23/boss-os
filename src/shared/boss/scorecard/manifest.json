@@ -2017,6 +2017,55 @@
         "text": "After a day-30 miss, set remindersNeedFullPlan=false: reminders free, payments + packet paid. Keep per-event purchases and store prices unchanged. At about 20 real ratings, change full plan and dw_new_event prices in the stores only."
       },
       "pause": []
+    },
+    {
+      "id": "dw-blend-journey",
+      "initiative": "Dream Wedding free journey: idea or don't-know first, then a dated plan (her yes 13 Nov 2026)",
+      "business": "spry",
+      "owner": "Spry Labs · Wednesday Spry Labs email",
+      "result": "Brides who start at step 1 and reach a dated plan (also watched: step-1 starts and the share who finish)",
+      "jobs": [],
+      "start": null,
+      "startWhen": {
+        "label": "the first real bride answers step 1",
+        "reader": "d1",
+        "params": {
+          "db": "dream-wedding-builder",
+          "sql": "SELECT date(MIN(created_at)) AS n FROM wedding_reads WHERE is_test = 0"
+        }
+      },
+      "first": {
+        "label": "brides reaching a dated plan from step 1, last 30 days (also watched: at least 15 starts, at least 30% finishing)",
+        "by": 30,
+        "floor": {
+          "op": ">=",
+          "value": 5
+        },
+        "reader": "d1",
+        "params": {
+          "db": "dream-wedding-builder",
+          "sql": "SELECT COUNT(*) AS n FROM journey_plan_reach WHERE is_test = 0 AND created_at >= datetime(:since_iso)",
+          "days": 30
+        }
+      },
+      "real": {
+        "label": "brides reaching a dated plan from step 1, last 30 days (also watched: at least 40 starts, at least 35% finishing)",
+        "by": 60,
+        "floor": {
+          "op": ">=",
+          "value": 15
+        },
+        "reader": "d1",
+        "params": {
+          "db": "dream-wedding-builder",
+          "sql": "SELECT COUNT(*) AS n FROM journey_plan_reach WHERE is_test = 0 AND created_at >= datetime(:since_iso)",
+          "days": 30
+        }
+      },
+      "versionB": {
+        "text": "Back to today's date-first order: the date field and dated plan first, with \"Design my day ›\" as a second door into steps 1 and 2. Same counts compared. Step-1 starts for the % read: SELECT COUNT(DISTINCT ip_hash || '|' || day) AS n FROM wedding_reads WHERE is_test = 0 AND created_at >= datetime(:since_iso)"
+      },
+      "pause": []
     }
   ],
   "exempt": {
