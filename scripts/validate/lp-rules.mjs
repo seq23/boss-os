@@ -27,6 +27,7 @@ import { readFileSync, existsSync } from "node:fs";
 import { join, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
 import * as plan from "../../src/shared/boss/lp/plan.mjs";
+import { startOfCentralDay } from "../../src/shared/boss/outreach/cadence.mjs";
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), "..", "..");
 const read = (f) => readFileSync(join(ROOT, f), "utf8");
@@ -82,8 +83,10 @@ export function check({ template, lpBody, installer, tapSrc, eightSrc, files, de
   const due = (touches, last, now, status = "active") => P.dueTouch({ status, touches, first_sent_at: t0, last_touch_at: t0 + last * DAY }, t0 + now * DAY);
   if (due(4, 14, 400) !== null) bad.push("a fifth email is due");
   for (const [touches, last, day, n] of [[1, 0, 3, 2], [2, 3, 7, 3], [3, 7, 14, 4]]) {
-    if (due(touches, last, day - 0.01) !== null) bad.push(`email ${n} is due before day ${day}`);
-    if (due(touches, last, day) !== n) bad.push(`email ${n} is not due on day ${day}`);
+    // Due from the first moment of that Central calendar day (cadence.mjs), never a millisecond of the day before.
+    const dayStart = (startOfCentralDay(t0 + day * DAY) - t0) / DAY;
+    if (due(touches, last, dayStart - 1 / DAY) !== null) bad.push(`email ${n} is due before day ${day}`);
+    if (due(touches, last, dayStart) !== n || due(touches, last, day) !== n) bad.push(`email ${n} is not due on day ${day}`);
   }
   if (due(2, 6, 8) !== null) bad.push("two emails under three days apart");
   for (const status of ["replied", "interested", "opted_out", "bounced", "done"]) {

@@ -11,6 +11,7 @@ import {
   CALL_ASK, lpReplyBody, lpStatusFrom, namesLine, nameRulesIn, pickCatchups, proposeFeatured, prospectProblems,
   renderProspect, sideFromReply, staleFeatured, templateHash, wordCount, INBOX_LOOKBACK_DAYS, MAX_TOUCHES, nextTouchAt, PROSPECT_VARIANTS, PROSPECT_COMPLAINT,
 } from "../../src/shared/boss/lp/plan.mjs";
+import { startOfCentralDay } from "../../src/shared/boss/outreach/cadence.mjs";
 import { prospectPlan, proposeTemplate, approveTemplate, importProspects, recordProspectEvents, suppressAddresses, prospectsToVerify, recordVerdicts } from "../../src/worker/boss/lp/desk";
 import { approveOutcome } from "../../src/shared/boss/lp/plan.mjs";
 import TAP_SOURCE from "../../src/worker/boss/routes/lpTap.ts?raw";
@@ -96,11 +97,15 @@ describe("the sequence: the first email and up to THREE follow-ups on day 3, 7 a
   it("is due on day 3, 7 and 14 from the first send, never under three days apart, never a fifth", () => {
     expect(MAX_TOUCHES).toBe(4);
     expect(dueTouch({ status: "new", touches: 0 }, t0)).toBe(1);
-    // Each touch exactly on its day, not a minute before.
+    // Each touch from the first moment of its Central calendar day, and not one millisecond of the day before
+    // (the daily run's clock drifts by seconds; counted to the millisecond a touch slipped a whole day, 13 Nov 2026).
     for (const [touches, last, day] of [[1, 0, 3], [2, 3, 7], [3, 7, 14]] as const) {
-      expect(dueTouch(p(touches, last), t0 + day * DAY - 60_000), `email ${touches + 1} before day ${day}`).toBeNull();
+      const dayStart = startOfCentralDay(t0 + day * DAY);
+      expect(t0 + day * DAY - dayStart).toBe(15 * 3_600_000); // t0 is 15:00 in Chicago
+      expect(dueTouch(p(touches, last), dayStart - 1), `email ${touches + 1} before day ${day}`).toBeNull();
+      expect(dueTouch(p(touches, last), dayStart)).toBe(touches + 1);
       expect(dueTouch(p(touches, last), t0 + day * DAY)).toBe(touches + 1);
-      expect(nextTouchAt(p(touches, last))).toBe(t0 + day * DAY);
+      expect(nextTouchAt(p(touches, last))).toBe(dayStart);
     }
     // A late send pushes the next one: email 2 sent on day 6 → email 3 not before day 9, never closer than 3 days.
     expect(dueTouch(p(2, 6), t0 + 8 * DAY)).toBeNull();
