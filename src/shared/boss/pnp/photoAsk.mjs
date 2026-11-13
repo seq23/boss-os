@@ -13,6 +13,24 @@ export const STUDIO_URL = "https://pnpstudio.spryexecutiveos.com";
 const DAY = 86_400_000;
 
 /**
+ * WHAT COUNTS AS NEW REAL WORK IN P&P STUDIO: an uploaded photo or video, a clip, AND A PHOTO SET
+ * (13 Nov 2026: photo sets, `pack_photos`, were not counted, so the newest real work read 24 Oct when
+ * photos had come in on 12 Nov, and she was about to be asked again for photos she had just added).
+ * One row: `n` on file, `newest` the latest created_at.
+ */
+export const STUDIO_PHOTOS_SQL = "SELECT COUNT(*) AS n, MAX(created_at) AS newest FROM ("
+  + "SELECT created_at FROM assets WHERE upload_status = 'uploaded' AND (mime_type LIKE 'image/%' OR mime_type LIKE 'video/%')"
+  + " UNION ALL SELECT created_at FROM clips WHERE status IN ('draft','approved')"
+  + " UNION ALL SELECT created_at FROM pack_photos WHERE upload_status = 'uploaded')";
+
+/** A D1 time as ms. `datetime('now')` has no zone: it is UTC. null when there is none. Pure. */
+export function d1Time(value) {
+  if (!value) return null;
+  const t = Date.parse(/[zZ]|[+-]\d\d:?\d\d$/.test(value) ? value : `${String(value).replace(" ", "T")}Z`);
+  return Number.isFinite(t) ? t : null;
+}
+
+/**
  * `newest`: the newest real-work photo or clip time (ms) across every source that was read, or null
  * when the sources hold none. `lastAsked`: when she was last asked (ms) or null. Pure.
  */
