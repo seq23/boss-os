@@ -20,6 +20,7 @@
     "BRAVE_SEARCH_API_KEY"
   ],
   "not_synced": {
+    "BOSS_NOTIFY_TO": "Where the Mac and cloud jobs send her mail (scripts/ops/notify.mjs ownerTo). The repo is public, so the address lives here and in the repo's secrets, never in a file. The Worker sends her nothing by address: it only replies to her own email.",
     "CLOUDFLARE_API_TOKEN": "The credential this sync authenticates WITH. Uploading it to the Worker would put the key that can rewrite every secret inside the thing it rewrites.",
     "RUNWAY_API_KEY": "Video generation, driven from her Mac by the slate tooling. No Worker route reaches it.",
     "CAL_ICS_SEQ_TAYLOR": "Calendar feed URL read by the local calendar:sync job, not by the Worker.",

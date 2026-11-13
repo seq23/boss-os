@@ -67,7 +67,6 @@ const args = process.argv.slice(2);
 const flag = (n) => { const i = args.indexOf(`--${n}`); return i >= 0 ? args[i + 1] : null; };
 const DRY = args.includes("--dry-run");
 const UNATTENDED = args.includes("--unattended");
-const TO = process.env.BOSS_NOTIFY_TO ?? "seq.taylor@gmail.com";
 /** The one command she can run herself (from her boss-os checkout). */
 export const runCommand = (title) => `cd ~/GitHub/boss-os && npm run kdp:new-title -- --title "${title}"`;
 
@@ -1056,8 +1055,8 @@ async function tell(key, msg, { dry = DRY, kind = "note" } = {}) {
     console.log(`on her Updates page: ${msg.subject}`);
     return true;
   }
-  const { sendAsEmployee } = await import("./notify.mjs");
-  const r = await sendAsEmployee("Simone", { to: TO, subject: msg.subject, layout: msg.layout, owner: msg.owner });
+  const { sendAsEmployee, ownerTo } = await import("./notify.mjs");
+  const r = await sendAsEmployee("Simone", { to: ownerTo(), subject: msg.subject, layout: msg.layout, owner: msg.owner });
   if (!r.ok) { console.error(`NAMED STOP [SEND_REFUSED] "${msg.subject}" was not sent: ${r.error}`); return false; }
   OUT.emailed = true;
   await mark();

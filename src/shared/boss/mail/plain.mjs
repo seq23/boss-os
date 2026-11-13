@@ -299,6 +299,8 @@ export function cleanText(input, { prose = false } = {}) {
   s = s.replace(new RegExp(`\\s*${HEX_ID_RE.source}`, "g"), "");
   // UTC times become her clock before any other time is read as Central.
   s = s.replace(/\b([01]?\d|2[0-3]):([0-5]\d)(?::[0-5]\d)?\s*(?:UTC|GMT)\b/g, (_, h, m) => utcClockWords(h, m));
+  // A machine stamp's clock ("14:05:11Z", 13 Nov 2026: it came out "2:05 pm:11Z", the hour read as Central).
+  s = s.replace(/\b([01]?\d|2[0-3]):([0-5]\d)(?::[0-5]\d)?(?:\.\d+)?Z\b/g, (_, h, m) => utcClockWords(h, m));
   s = s.replace(/\s*\(?\b(?:UTC|GMT)\b\)?/g, "");
   // Cron, then "13:00 America/Chicago" → "1 pm".
   s = s.replace(/(?:^|\s)(?:[\d*/,-]+\s+){4}[\d*/,-]+(?=\s|$)/g, (m) => (/\*/.test(m) ? "" : m));

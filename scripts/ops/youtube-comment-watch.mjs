@@ -24,7 +24,7 @@ import { spawnSync } from "node:child_process";
 import { mkdtempSync, readFileSync, writeFileSync, existsSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { sendersFor, employeeMail, postEmployeeMail, FALLBACK_STOP } from "./notify.mjs";
+import { sendersFor, employeeMail, postEmployeeMail, FALLBACK_STOP, ownerTo } from "./notify.mjs";
 import {
   LOCAL_JOB, shouldEmail, digestEmail, confirmationEmail,
 } from "../../src/shared/boss/commentWatch/lane.mjs";
@@ -32,7 +32,7 @@ import {
 const ORIGIN = process.env.BOSS_OS_ORIGIN ?? "https://boss.sequoiataylor.com";
 const HWK = process.env.HOW_WE_KNOW_REPO ?? join(process.env.HOME ?? "", "GitHub", "how-we-know");
 const PY = join(HWK, ".venv", "bin", "python");
-const TO = process.env.BOSS_NOTIFY_TO ?? "seq.taylor@gmail.com";
+const TO = ownerTo();
 const DRY = process.argv.includes("--dry-run");
 const FORCE_SWEEP = process.argv.includes("--sweep");
 

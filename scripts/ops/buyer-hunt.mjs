@@ -63,7 +63,7 @@ import path from "node:path";
 import os from "node:os";
 import { parseLiveBook, describeLot } from "../../src/shared/boss/intake/liveBook.mjs";
 import { assignedSearch, assetKey, atHerBrokerage } from "./interest-match.mjs";
-import { namesOnce, sendAsEmployee } from "./notify.mjs";
+import { namesOnce, sendAsEmployee, ownerTo } from "./notify.mjs";
 import { loadContacts, reachFor } from "./lib/reach.mjs";
 import { researchLot, renderFilings, renderReach, recordFound } from "./filing-hunt.mjs";
 import { mirrorOrStop } from "./lib/book-mirror.mjs";
@@ -439,7 +439,7 @@ export function huntsFor(side, sections, inbox = usableInbox()) {
 
 async function weeklyEmail(side, sections) {
   const mail = buildHuntEmail({ side, hunts: huntsFor(side, sections) });
-  const to = process.env.BOSS_NOTIFY_TO ?? "seq.taylor@gmail.com";
+  const to = ownerTo();
   if (!mail.found) {
     // Nothing found this week (or she has nothing on this side): no email. A source that failed is
     // the team's repair (exit 3 below), never an email to her.

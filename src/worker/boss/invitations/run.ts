@@ -169,6 +169,42 @@ async function upsert(env: Env, inv: any, now: number): Promise<boolean> {
   return (r.meta?.changes ?? 0) > 0;
 }
 
+/**
+ * AN ASK COUNTS ONLY WHEN ITS EMAIL WENT (13 Nov 2026: the one real invitation was put on the 10 Nov
+ * morning email, that email was held and never sent, the card was counted as asked once and dropped on
+ * the day of the event without her ever seeing it in her inbox). Before today's cards are planned, an
+ * ask made on an earlier morning whose email did not go (no sent mark on that morning's record and no
+ * morning email in the sent log that Central day) is taken back, so `askPlan` asks it again. A Not
+ * sure she tapped herself is never taken back: she saw that card. Returns how many were taken back.
+ */
+export async function uncountUnsentAsks(env: Env, today: string): Promise<number> {
+  const { results } = await env.DB.prepare(
+    `SELECT id, status, unsure_asks, last_asked_day FROM owner_invitations WHERE status IN ('open','unsure') AND last_asked_day IS NOT NULL AND last_asked_day < ?`,
+  ).bind(today).all<{ id: string; status: string; unsure_asks: number; last_asked_day: string }>();
+  const went = new Map<string, boolean>();
+  let taken = 0;
+  for (const inv of results ?? []) {
+    const day = inv.last_asked_day;
+    if (!went.has(day)) {
+      const kept = await env.DB.prepare(`SELECT sent_at FROM morning_digests WHERE day = ?`).bind(day).first<{ sent_at: number | null }>();
+      const mailed = kept?.sent_at ? null : await env.DB.prepare(
+        `SELECT 1 AS x FROM boss_sent_mail WHERE layout = 'digest' AND delivery_state = 'sent' AND date(sent_at / 1000, 'unixepoch', '-6 hours') = ? LIMIT 1`,
+      ).bind(day).first<{ x: number }>();
+      went.set(day, Boolean(kept?.sent_at || mailed));
+    }
+    if (went.get(day)) continue;
+    if (inv.status === "unsure" && inv.unsure_asks < 1) continue;
+    await env.DB.prepare(
+      inv.status === "unsure"
+        ? `UPDATE owner_invitations SET unsure_asks = MAX(unsure_asks - 1, 0), last_asked_day = NULL, updated_at = ? WHERE id = ? AND last_asked_day = ?`
+        : `UPDATE owner_invitations SET asks = MAX(asks - 1, 0), last_asked_day = NULL, updated_at = ? WHERE id = ? AND last_asked_day = ?`,
+    ).bind(Date.now(), inv.id, day).run();
+    taken++;
+  }
+  if (taken) console.log(`invitations: ${taken} ask${taken === 1 ? "" : "s"} taken back; the morning email that carried ${taken === 1 ? "it" : "them"} never went`);
+  return taken;
+}
+
 export interface InvitationsRun { written: number; found: number; shown: number; read: Record<string, number>; unread: string[]; skipped: Record<string, number>; output: string }
 
 export async function runInvitations(env: Env, now = Date.now(), fetchImpl: typeof fetch = fetch): Promise<InvitationsRun> {
@@ -235,6 +271,9 @@ export async function runInvitations(env: Env, now = Date.now(), fetchImpl: type
       unread.push(`${box.label.replace(/^your /, "")} (${err instanceof Error ? err.message : String(err)})`);
     }
   }
+
+  // 1c. An ask whose morning email never went is not an ask.
+  await uncountUnsentAsks(env, today);
 
   // 2. Today's cards: first asks, the one ask-again, the one Not-sure return; drops on the event day.
   const { results } = await env.DB.prepare(`SELECT * FROM owner_invitations WHERE status IN ('open','unsure') ORDER BY starts_at`).all<any>();

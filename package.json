@@ -56,6 +56,7 @@
     "vault:import": "node scripts/vault/vault.mjs import",
     "vault:init": "node scripts/vault/vault.mjs init",
     "vault:remove": "node scripts/vault/vault.mjs remove",
+    "owner-mail:count": "node scripts/ops/owner-mail-count.mjs",
     "vault:run": "node scripts/vault/vault.mjs run --",
     "outreach:domains": "node scripts/vault/vault.mjs run -- node scripts/outreach/domains.mjs",
     "vault:set": "node scripts/vault/vault.mjs set",

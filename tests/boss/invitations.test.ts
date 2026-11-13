@@ -17,6 +17,8 @@ import { addDays, centralDay, wallToUtc, INVITE_INBOXES } from "../../src/shared
 const HER = INVITE_INBOXES[0]!.address;
 
 const DAY = 86_400_000;
+/** That morning's email went: its record in Boss OS carries the sent mark (POST /morning/<day>/sent). */
+const morningWent = (day: string, at: number) => env.DB.prepare(`INSERT INTO morning_digests (day, payload, sent_at, created_at, updated_at) VALUES (?, '{}', ?, ?, ?) ON CONFLICT(day) DO UPDATE SET sent_at = excluded.sent_at`).bind(day, at, at, at).run();
 // Mon 9 Nov 2026, 06:00 Central.
 const NOW = Date.parse("2026-11-09T12:00:00Z");
 const EVENT = wallToUtc(2026, 11, 19, 18, 30); // Thu 19 Nov, 6:30 pm Central
@@ -96,7 +98,7 @@ async function section() {
 const rowBy = (kind: string) => env.DB.prepare(`SELECT * FROM owner_invitations WHERE kind = ?`).bind(kind).first<any>();
 
 beforeEach(async () => {
-  await env.DB.exec("DELETE FROM owner_invitations; DELETE FROM morning_sections WHERE section = 'invitations'; DELETE FROM settings WHERE key LIKE 'invitations_%';");
+  await env.DB.exec("DELETE FROM owner_invitations; DELETE FROM morning_sections WHERE section = 'invitations'; DELETE FROM settings WHERE key LIKE 'invitations_%'; DELETE FROM morning_digests; DELETE FROM boss_sent_mail WHERE id = 'sm_w4';");
   (env as any).GSC_SERVICE_ACCOUNT_JSON = JSON.stringify({ client_email: "bot@example.iam.gserviceaccount.com", private_key: await pem() });
   setInviteModel(async () => ({ invitation: true, title: "Dinner at Dana's", date: "2026-11-21", time: "19:00", where: "Dana's house", asks_answer: true }));
   Date.now = () => NOW;
@@ -179,6 +181,8 @@ describe("guard 3: a Not sure comes back exactly once", () => {
       const now = NOW + k * DAY;
       Date.now = () => now;
       await runInvitations(env as any, now, g.f).catch(() => null);
+      // Each morning's email went: only then does a card shown that morning count as asked.
+      await morningWent(centralDay(now), now);
       const s = await section();
       for (const d of s?.decide ?? []) {
         if (/Board dinner/.test(d.title)) shownOn.calendar!.push(centralDay(now));
@@ -197,5 +201,39 @@ describe("guard 3: a Not sure comes back exactly once", () => {
     expect(shownOn.platform).toEqual(["2026-11-09", "2026-11-16"]);
     expect((await rowBy("platform")).status).toBe("dropped");
     expect(sends(g.calls)).toEqual([]);
+  });
+});
+
+describe("an ask counts only when its morning email went (13 Nov 2026: the 10 Nov email was held, the card dropped unseen)", () => {
+  const shownTitles = async () => ((await section())?.decide ?? []).map((d: any) => String(d.title));
+  it("a card on a morning email that never went is asked again the next morning, as a first ask", async () => {
+    const g = fakeGoogle(); setCommandFetch(g.f);
+    await runInvitations(env as any, NOW, g.f);
+    expect((await shownTitles()).some((t: string) => /Founders/.test(t))).toBe(true);
+    expect((await rowBy("platform")).asks).toBe(1);
+    // Tuesday: Monday's email never went (no sent mark, nothing in the sent log).
+    const tue = NOW + DAY; Date.now = () => tue;
+    await runInvitations(env as any, tue, g.f);
+    expect((await shownTitles()).some((t: string) => /Founders/.test(t)), "the card is in Tuesday's email").toBe(true);
+    const row = await rowBy("platform");
+    expect(row.asks, "Monday's unsent ask was taken back; Tuesday's is the first").toBe(1);
+    expect(row.last_asked_day).toBe(centralDay(tue));
+  });
+  it("negative: when the morning email went, the card is NOT asked again the next morning", async () => {
+    const g = fakeGoogle(); setCommandFetch(g.f);
+    await runInvitations(env as any, NOW, g.f);
+    await morningWent(centralDay(NOW), NOW);
+    const tue = NOW + DAY; Date.now = () => tue;
+    await runInvitations(env as any, tue, g.f);
+    expect((await shownTitles()).some((t: string) => /Founders/.test(t))).toBe(false);
+    expect((await rowBy("platform")).asks).toBe(1);
+  });
+  it("the sent log alone proves it went (the morning record was never kept)", async () => {
+    const g = fakeGoogle(); setCommandFetch(g.f);
+    await runInvitations(env as any, NOW, g.f);
+    await env.DB.prepare(`INSERT INTO boss_sent_mail (id, message_id, sent_at, delivery_state, from_addr, to_addr, subject, object_key, thread_id, layout) VALUES ('sm_w4', '<w4@example.com>', ?, 'sent', 'simone@example.com', 'owner@example.com', 'Monday: 2 decisions', 'k', 't', 'digest')`).bind(NOW + 45 * 60_000).run();
+    const tue = NOW + DAY; Date.now = () => tue;
+    await runInvitations(env as any, tue, g.f);
+    expect((await shownTitles()).some((t: string) => /Founders/.test(t))).toBe(false);
   });
 });

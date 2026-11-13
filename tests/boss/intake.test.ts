@@ -218,17 +218,43 @@ describe("Phase 2 — No Agent Sprawl", () => {
 describe("a declared kind is not outvoted by a keyword", () => {
   it("does not read a planetary position as a trading position", () => {
     const prompt = "SKY.json holds every planetary position, computed to about one arcminute.";
-    // Undeclared, the keyword wins — which is the correct default and is left alone.
+    // 13 Nov 2026: one ordinary word is no longer trading, declared or not.
     const inferred = classify({ title: "Executive Intelligence Report", prompt, lane: "ops" });
-    expect(inferred.intakeKind).toBe("trading");
+    expect(inferred.intakeKind).not.toBe("trading");
+    expect(inferred.executionAssignment).not.toBe("USER_ONLY");
 
-    // Declared, the declaration wins, verdict included.
-    const declared = classify({ title: "Executive Intelligence Report", prompt, lane: "ops", intakeKind: "research" });
+    // Real trading wording still infers trading; a declared kind still wins, verdict included.
+    const real = "Close the short position in the fund's portfolio before the open.";
+    expect(classify({ title: "Monday note", prompt: real, lane: "ops" }).intakeKind).toBe("trading");
+    const declared = classify({ title: "Monday note", prompt: real, lane: "ops", intakeKind: "research" });
     expect(declared.intakeKind).toBe("research");
     expect(declared.executionAssignment).not.toBe("USER_ONLY");
     expect(declared.risk).not.toBe("high");
     // The override is recorded rather than silent: a reader can see what was outvoted.
     expect(declared.matched).toContain("inferred_trading_overridden");
+  });
+
+  /*
+   * THE REAL SHAPE (13 Nov 2026): her instruction to change a Porch & Party duty was classified
+   * trading / restricted / USER_ONLY / private_model_only, refused a route, and came back to her as a
+   * second approval. Everyday business words are not a market.
+   */
+  it("an ordinary business duty is not trading: her Marketplace listings instruction", () => {
+    const title = 'Change how Camille duty "Porch & Party Marketplace listings: renew, post for the season, keep them true to the site" works';
+    const prompt = "The listings work well and bring steady leads, so keep them. In short: renew each one before it lapses, post the new ones in order for the season, and do not sell anything the site no longer offers. Buyers ask for long weekends; trade nothing off the price, and keep each listing's position near the top by renewing it. People buy, sell and exchange in those groups every day.";
+    const c = classify({ title, prompt, lane: "ops" });
+    expect(c.intakeKind).not.toBe("trading");
+    expect(c.sensitivity).not.toBe("restricted");
+    expect(c.executionAssignment).not.toBe("USER_ONLY");
+    expect(c.modelAccess).not.toBe("private_model_only");
+    expect(c.matched).not.toContain("private_kind_trading");
+  });
+  it("negative: words that are about a market are still trading", () => {
+    for (const p of ["Buy 200 shares of the ticker at the open", "Place a limit order and set a stop-loss", "Rebalance the portfolio and trim the position", "Sell the calls before expiry", "Ask the broker to execute the trade"]) {
+      const c = classify({ title: "A note", prompt: p, lane: "ops" });
+      expect(c.intakeKind, p).toBe("trading");
+      expect(c.executionAssignment, p).toBe("USER_ONLY");
+    }
   });
 
   it("still refuses to soften the trading LANE, which is a fact and not a guess", () => {

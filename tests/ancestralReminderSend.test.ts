@@ -4,6 +4,7 @@
  */
 import { describe, expect, it } from "vitest";
 import { ancestralReminder, hicksUpdateNotice } from "../scripts/ops/errand-reminders.mjs";
+import { ownerTo } from "../scripts/ops/notify.mjs";
 
 const fakeApi = (answer: any) => {
   const posts: string[] = [];
@@ -21,7 +22,8 @@ describe("the ancestral-hour reminder send", () => {
     // Through postEmployeeMail, so the plain-email gate passed it: one email, to the owner only, from Imani.
     expect(sent).toHaveLength(1);
     expect(sent[0].from).toContain("imani@sequoiataylor.com");
-    expect([sent[0].to].flat()).toEqual([process.env.BOSS_NOTIFY_TO ?? "seq.taylor@gmail.com"]);
+    expect([sent[0].to].flat()).toEqual([ownerTo()]);
+    expect(ownerTo()).toMatch(/@/);
     expect(sent[0].cc ?? sent[0].bcc ?? null).toBeNull();
     expect(sent[0].subject).toBe(notice.subject);
     expect(sent[0].text).toContain("Done ✓");

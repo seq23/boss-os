@@ -15,14 +15,14 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { execFileSync } from "node:child_process";
-import { photoAskDue, photoAskItem } from "../../src/shared/boss/pnp/photoAsk.mjs";
+import { photoAskDue, photoAskItem, STUDIO_PHOTOS_SQL, d1Time } from "../../src/shared/boss/pnp/photoAsk.mjs";
 import { writeMorningSection } from "../../src/shared/boss/mail/morning.mjs";
 
 const GH = path.join(os.homedir(), "GitHub");
 const STATE = path.join(os.homedir(), ".boss-os", "pnp-listings", "photo-ask.json");
 const SOURCES = [
   { name: "P&P Studio uploads", cwd: path.join(GH, "creator-studios"), db: "creator-studios-sample1-db",
-    sql: "SELECT COUNT(*) AS n, MAX(created_at) AS newest FROM (SELECT created_at FROM assets WHERE upload_status = 'uploaded' AND (mime_type LIKE 'image/%' OR mime_type LIKE 'video/%') UNION ALL SELECT created_at FROM clips WHERE status IN ('draft','approved'))" },
+    sql: STUDIO_PHOTOS_SQL },
   { name: "P&P admin job photos", cwd: path.join(GH, "p-n-p"), db: "pnp-admin",
     sql: "SELECT COUNT(*) AS n, MAX(created_at) AS newest FROM (SELECT created_at FROM checklist_photos UNION ALL SELECT created_at FROM inventory_photos)" },
 ];
@@ -33,9 +33,7 @@ function read(src) {
       { cwd: src.cwd, encoding: "utf8", stdio: ["ignore", "pipe", "ignore"], timeout: 90_000 });
     const r = JSON.parse(out)?.[0]?.results?.[0];
     if (!r) return { ...src, error: "no result" };
-    // D1 datetime('now') has no zone: it is UTC.
-    const iso = r.newest ? (/[zZ]|[+-]\d\d:?\d\d$/.test(r.newest) ? r.newest : `${String(r.newest).replace(" ", "T")}Z`) : null;
-    return { ...src, n: Number(r.n ?? 0), newest: iso ? Date.parse(iso) : null };
+    return { ...src, n: Number(r.n ?? 0), newest: d1Time(r.newest) };
   } catch (e) {
     return { ...src, error: String(e?.message ?? e).split("\n")[0].slice(0, 120) };
   }

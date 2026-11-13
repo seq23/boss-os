@@ -48,7 +48,7 @@ import { doneForYou, failedDoneLine, jobFamily, jobName, splitRepeats, fixJobsTo
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
-import { sendAsEmployee } from "./notify.mjs";
+import { sendAsEmployee, ownerTo } from "./notify.mjs";
 import { createHash } from "node:crypto";
 import { ownerTime } from "../../src/shared/boss/ownerTime.mjs";
 import { clockWords, lineProblems, proseRuns, proseText, cleanText, quotedSentence, NOTHING_TO_DO, toYou } from "../../src/shared/boss/mail/plain.mjs";
@@ -1323,7 +1323,7 @@ async function main() {
   // lists its decisions. A failed post still sends (the email carries everything) and opens a fix job.
   const kept = await postDigest(api, email.digest);
   if (!kept) await fixJob(api, "The morning email's screens were not saved", `Simone's morning email (scripts/ops/your-day.mjs) could not post its items to Boss OS (POST /morning), so its "See everything" links and Today's contract are empty for ${email.digest.day}. Find why and fix it at source (src/worker/boss/routes/morning.ts).`);
-  const r = await sendAsEmployee("Simone", { to: process.env.BOSS_NOTIFY_TO ?? "seq.taylor@gmail.com", subject: email.subject, text: email.text, prelaid: email, context: replyContext(email.text) });
+  const r = await sendAsEmployee("Simone", { to: ownerTo(), subject: email.subject, text: email.text, prelaid: email, context: replyContext(email.text) });
   if (!r.ok) { console.error(`NAMED STOP [SEND_REFUSED] "${email.subject}" was not sent: ${r.error}`); process.exit(9); }
   console.log(`your-day: sent "${email.subject}" from ${r.from}`);
   console.log(outputLine(1, "emails sent"));

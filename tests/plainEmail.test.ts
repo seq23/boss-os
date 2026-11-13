@@ -301,7 +301,7 @@ describe("the send-time gate makes a jargon email plain, and holds only what it 
     const sent: any[] = [];
     const fake2 = (async (url: string, init?: RequestInit) => { calls.push(String(url)); if (String(url).includes("api.resend.com")) sent.push(JSON.parse(String(init?.body ?? "{}"))); return new Response("{}", { status: 200 }); }) as unknown as typeof fetch;
     // Jargon: simplified, never silently held.
-    const jargon = { ...employeeMail(sender, { to: "o@example.com", subject: "Ok", text: "x" }), text: "x\n\nNothing to decide — this is just so you know.\nOpen 1a08831e4f in Gmail.\nThe validator plain.mjs ran `--self-test`.\n\n— Monique" };
+    const jargon = { ...employeeMail(sender, { to: "o@example.com", subject: "Your weekly update", text: "x" }), text: "x\n\nNothing to decide — this is just so you know.\nOpen 1a08831e4f in Gmail.\nThe validator plain.mjs ran `--self-test`.\n\n— Monique" };
     expect(mailGate(jargon).join(" ")).toMatch(/Gmail id/);
     const ready = plainOrSimplified(jargon);
     expect(ready.held).toBeNull();
@@ -312,15 +312,22 @@ describe("the send-time gate makes a jargon email plain, and holds only what it 
     expect((await postEmployeeMail(sender, jargon, fake2)).status).toBe(200);
     expect(sent.at(-1).text).not.toMatch(/1a08831e4f/);
     expect(readdirSync(dir).length).toBe(0);
-    // What cannot be made plain (no Decide line where it belongs) is still held: written down, 422.
-    const bad = { ...employeeMail(sender, { to: "o@example.com", subject: "Ok", text: "x" }), text: "x\n\nsomething\nOpen 1a08831e4f in Gmail." };
+    // A line 1 that is missing is WRITTEN, not held (Wave 4, 13 Nov 2026: repair, not block): it goes, plain.
+    const noLine = { ...employeeMail(sender, { to: "o@example.com", subject: "Your weekly update", text: "x" }), text: "x\n\nsomething\nOpen 1a08831e4f in Gmail." };
+    const repaired = await postEmployeeMail(sender, noLine, fake2);
+    expect(repaired.status).toBe(200);
+    expect(sent.at(-1).text.split("\n")[0]).toBe("Your weekly update. Nothing to do.");
+    expect(sent.at(-1).text).not.toMatch(/1a08831e4f/);
+    expect(readdirSync(dir).length).toBe(0);
+    // What cannot be repaired (nothing in it says what it is; every line is a code) is still held: written down, 422.
+    const bad = { ...employeeMail(sender, { to: "o@example.com", subject: "Your weekly update", text: "x" }), subject: "", text: "tsk_m5guard0100 rc_m5guard0101\n\ncmd_m5guard0102", html: "<p>tsk_m5guard0100 rc_m5guard0101</p>" };
     const before = calls.filter((u) => u.includes("api.resend.com")).length;
     const res = await postEmployeeMail(sender, bad, fake);
     expect(res.status).toBe(422);
     expect(calls.filter((u) => u.includes("api.resend.com")).length).toBe(before);
     expect(readdirSync(dir).length).toBe(1);
     // A plain one goes.
-    const good = employeeMail(sender, { to: "o@example.com", subject: "Ok", text: "Something happened today." });
+    const good = employeeMail(sender, { to: "o@example.com", subject: "Your weekly update", text: "Something happened today." });
     expect(mailGate(good)).toEqual([]);
     expect((await postEmployeeMail(sender, good, fake)).status).toBe(200);
     expect(calls.filter((u) => u.includes("api.resend.com")).length).toBe(before + 1);

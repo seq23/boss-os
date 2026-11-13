@@ -33,7 +33,7 @@
  *   node scripts/ops/task-notices.mjs --dry-run
  */
 
-import { sendersFor, employeeMail, postEmployeeMail, FALLBACK_STOP } from "./notify.mjs";
+import { sendersFor, employeeMail, postEmployeeMail, FALLBACK_STOP, ownerTo } from "./notify.mjs";
 import { vaultLookup } from "../lib/vault-env.mjs";
 import { legacyParts } from "../../src/shared/boss/mail/plain.mjs";
 import { ownerEmail } from "../../src/shared/boss/mail/ownerLayout.mjs";
@@ -145,7 +145,7 @@ export function morningDayOf(notice) {
 }
 
 const ORIGIN = process.env.BOSS_OS_ORIGIN ?? "https://boss.sequoiataylor.com";
-const TO = process.env.BOSS_NOTIFY_TO ?? "seq.taylor@gmail.com";
+const TO = ownerTo();
 const DRY = process.argv.includes("--dry-run");
 
 const say = (...a) => console.log(`[${new Date().toISOString().slice(11, 19)}]`, ...a);

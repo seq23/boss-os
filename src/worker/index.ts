@@ -1523,7 +1523,7 @@ export default {
          * in this thread quotes in References, so "approved" still lands on the draft it answers.
          */
         const laid = await plainReply(env.WP_OS_DB, { text: replyText, subject, signer: result.signer, messageId: result.messageId, from: BOSS_INTAKE_MAILBOX });
-        await replyWithHistory(message, toBossEnvForCron(env), { message_id: `reply:${result.mailId}`, from: BOSS_INTAKE_MAILBOX, to: message.from, subject, text: laid.text, html: laid.html, in_reply_to: result.messageId ?? null, employee_id: result.employeeId, layout: (laid as { layout?: string }).layout ?? null }).then(
+        await replyWithHistory(message, toBossEnvForCron(env), { message_id: `reply:${result.mailId}`, from: BOSS_INTAKE_MAILBOX, to: message.from, subject, text: laid.text, html: laid.html, in_reply_to: result.messageId ?? null, employee_id: result.employeeId, layout: (laid as { layout?: string }).layout ?? null, minimum: (laid as { minimum?: any }).minimum ?? null }).then(
           async () => {
             await recordReply("sent", null);
           },

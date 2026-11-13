@@ -150,7 +150,12 @@ export function check() {
   // plain, and holds only what is still failing — all before anything is posted.
   const sendPart = post.slice(0, post.indexOf("export function plainOrSimplified") === -1 ? post.length : post.indexOf("export function plainOrSimplified"));
   const simplifier = post.slice(post.indexOf("export function plainOrSimplified"));
-  if (!/const ready = plainOrSimplified\(payload\);\s*\n\s*if \(ready\.held\) return holdMail\(/.test(sendPart) || !/payload = (?:ready\.payload;|\{ \.\.\.ready\.payload, )/.test(sendPart) || sendPart.indexOf("plainOrSimplified(") > sendPart.indexOf("fetchImpl(RESEND")) fails.push("postEmployeeMail does not hold a failing email before it posts");
+  // Wave 4 (13 Nov 2026): the door is `throughTheDoor` (the required minimum, then the plain gate, both
+  // repair first). An email still failing is held before anything is posted, unless it truly needs her today.
+  const door = notify.slice(notify.indexOf("export function throughTheDoor"), notify.indexOf("export async function postEmployeeMail"));
+  if (!/const door = throughTheDoor\(sender, payload\);/.test(sendPart) || !/if \(door\.problems\.length && !door\.mustGo\) return holdMail\(/.test(sendPart) || !/payload = \{ \.\.\.door\.payload, /.test(sendPart)
+    || sendPart.indexOf("throughTheDoor(") === -1 || sendPart.indexOf("throughTheDoor(") > sendPart.indexOf("fetchImpl(RESEND")
+    || !/ownerDoor\(/.test(door) || !/plainOrSimplified\(/.test(door) || !/mailGate\(last\.payload\)/.test(door)) fails.push("postEmployeeMail does not hold a failing email before it posts");
   if (!/const problems = mailGate\(payload\)/.test(simplifier) || !/simplifyForOwner\(/.test(simplifier) || !/const still = mailGate\(next\)/.test(simplifier)) fails.push("plainOrSimplified does not re-check what it simplified before it may be sent");
   if (!/if \(laid\.problems\.length\) \{[\s\S]{0,400}reply_held/.test(read("src/worker/boss/intake/mailRefs.ts"))) fails.push("the Worker's plainReply does not hold a failing reply");
   for (const f of ["scripts/ops/archive-audit.mjs", "scripts/ops/outside-locks.mjs", "scripts/ops/boss-mail-tail-report.mjs"]) {

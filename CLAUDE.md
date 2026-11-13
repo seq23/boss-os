@@ -194,6 +194,20 @@ pinned by `tests/plainEmail.test.ts` ("the rules in CLAUDE.md"), which reads thi
    week's Notes (`notesLine`), so she sees when a new layout is due. Scooter is copied on none. Pinned
    by `tests/ownerEmailMinimum.test.ts`, which builds every sender's real output, fails on a sending
    file with no case and on zero senders, and proves itself on a broken subject, line 1 and reply path.
+10. **The minimum is enforced at the send: repair, not block** (owner-approved plan, Wave 4, 13 Nov 2026).
+   Every email to her passes `ownerDoor` (`src/shared/boss/mail/ownerDoor.mjs`) on what would be sent:
+   the Mac in `postEmployeeMail` (`throughTheDoor`, `scripts/ops/notify.mjs`), the Worker in
+   `throughOwnerDoor` (`src/worker/boss/mail/ownerDoor.ts`). A sender that states no layout is no
+   longer skipped: it is filed as a Note and line 1 is written. Repaired mechanically: a missing line 1,
+   plain-text part, subject, REF or Reply-To, "Nothing to do" above a Decide list, "needs you" on an
+   email that needs nothing, ids, paths and UTC stamps (`simplifyForOwner`), a copy to someone else, and
+   a second email about the same event in one run. What cannot be repaired is held for the team
+   (`NAMED STOP [OWNER_MAIL_HELD]`, a fix job), never dropped and never a question to her; an email that
+   truly needs her today (`trulyNeedsHer`: she must act, and it is not about the system's own work) is
+   never held: it goes with the best repair and the team gets the fix job. No sender writes her address in this
+   repo: `ownerTo` reads `BOSS_NOTIFY_TO` (the vault; the repo secret on a cloud run). The weekly count
+   is `scripts/ops/owner-mail-count.mjs`. Pinned by `tests/ownerDoor.test.ts`, which fails on any file
+   that holds a mail transport and does not send through the door.
 
 ## Search Readiness: the checklist enforces itself on the grid repos
 
@@ -572,7 +586,9 @@ Owner-approved plan, 8 Nov 2026. Rules in `src/shared/boss/invitations/invitatio
    calendar never written: a Yes there puts it on her calendar and she answers in Gmail.
 3. **An outside RSVP page is never fetched**: it is a button for her.
 4. **Asked at most twice**: first morning, once more 3 days before, dropped on the event day. Not sure
-   comes back exactly once (3 days before, or the day after under 3 days away).
+   comes back exactly once (3 days before, or the day after under 3 days away). **An ask counts only when its
+   morning email went** (13 Nov 2026, `uncountUnsentAsks`): a card on a morning email that was never sent is
+   asked again the next morning.
 5. **A free model reads a personal email's subject and first 800 characters only**; Spry Ventures mail
    and LP names only a no-training route; none answering → the prose rules. Nothing of a body is stored.
 6. **Rule 0**: `OUTPUT n invitations`; an inbox it cannot read is NAMED STOP [INVITES_MAILBOX_UNREAD]:

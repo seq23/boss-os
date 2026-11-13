@@ -17,7 +17,12 @@ export function employeeMail(
     thread?: string[];
   },
 ): { from: string; to: string[]; reply_to: string; subject: string; text: string; html: string; headers?: Record<string, string>; attachments?: Array<{ filename: string; content: string }> };
-export function postEmployeeMail(sender: EmployeeSender, payload: ReturnType<typeof employeeMail>, fetchImpl?: typeof fetch, opts?: { context?: string | null }): Promise<Response>;
+export function postEmployeeMail(sender: EmployeeSender, payload: ReturnType<typeof employeeMail>, fetchImpl?: typeof fetch, opts?: { context?: string | null; seen?: Set<string> }): Promise<Response>;
+/** The door on what would be sent: every repair made, what is still wrong, and whether it must go anyway. */
+export function throughTheDoor(sender: Partial<EmployeeSender> | null, payload: Record<string, any>): { payload: Record<string, any>; repaired: string[]; problems: string[]; mustGo: boolean };
+/** Her address, from BOSS_NOTIFY_TO (the vault or a cloud run's secret); never written in this repo. */
+export function ownerTo(env?: Record<string, string | undefined>): string;
+export const NO_OWNER_ADDRESS: string;
 export function sendAsEmployee(who: string, msg: Parameters<typeof employeeMail>[1], fetchImpl?: typeof fetch): Promise<{ ok: boolean; id?: string | null; from?: string; fallback?: boolean; error?: string }>;
 export function namesOnce(names: readonly string[]): string;
 export function filesAt(paths: readonly string[]): Array<{ name: string; bytes: number; path: string | null }>;
@@ -26,9 +31,9 @@ export const FUND_SIDE_CHASSIS_SENDERS: string[];
 export function mailGate(payload: { subject?: string; text?: string; html?: string; headers?: Record<string, string> }): string[];
 export function heldDir(): string;
 export function mailStateDir(envName: string, leaf: string, env?: Record<string, string | undefined>): string;
-export function holdMail(sender: EmployeeSender, payload: ReturnType<typeof employeeMail>, problems: string[], fetchImpl?: typeof fetch): Promise<Response>;
+export function holdMail(sender: EmployeeSender, payload: ReturnType<typeof employeeMail>, problems: string[], fetchImpl?: typeof fetch, opts?: { sentAnyway?: boolean }): Promise<Response>;
 
-export function plainOrSimplified(payload: any): { payload: any; simplified: string[] | null; held: string[] | null };
+export function plainOrSimplified(payload: any): { payload: any; simplified: string[] | null; held: string[] | null; best?: any };
 export const ERRAND_FROM: string;
 export const ERRAND_REPLY_TO: string;
 export function errandMail(i: { to: string; subject: string; text: string; cc?: string[]; inReplyTo?: string | null }): { from: string; to: string[]; reply_to: string; subject: string; text: string; cc?: string[]; headers?: Record<string, string> };

@@ -34,7 +34,7 @@ import { readFile, stat } from "node:fs/promises";
 import { join, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
 
-import { sendersFor, employeeMail, postEmployeeMail, FALLBACK_STOP } from "./notify.mjs";
+import { sendersFor, employeeMail, postEmployeeMail, FALLBACK_STOP, ownerTo } from "./notify.mjs";
 import { checkAssignment, ownerAskIsATask } from "../../src/shared/boss/duties/executors.mjs";
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), "..", "..");
@@ -44,7 +44,7 @@ const FILE = join(DIR, "surface.json");
 const REGISTER = process.env.BOSS_OS_KDP_REGISTER ?? join(ROOT, "scripts/ops/kdp-register.json");
 const MAX_AGE_MS = Number(process.env.BOSS_OS_KDP_MAX_AGE_MS ?? 2 * 60 * 60 * 1000);
 const SOURCE = process.argv.includes("--manual") ? "manual" : "launchd";
-const TO = process.env.BOSS_NOTIFY_TO ?? "seq.taylor@gmail.com";
+const TO = ownerTo();
 const DAY_MS = 24 * 60 * 60 * 1000;
 const NAG_WINDOW_MS = 2 * DAY_MS;
 const NAG_EVERY_MS = 20 * 60 * 60 * 1000;
