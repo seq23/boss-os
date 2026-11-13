@@ -406,9 +406,9 @@ describe("a task that names a backend leaves the cloud", () => {
 
       const run = await row<any>(`SELECT id, backend_id, status FROM backend_runs WHERE task_id = ?`, taskId);
       expect(run, "no backend run was created — the task fell through to the cloud router").not.toBeNull();
-      // Owner, 3 Nov 2026: Codex is the worker, so a task naming Claude's seat is parked on Codex's
-      // first (aiRoles.mjs "agent_queue.default"), still on her machine and still never the cloud.
-      expect(run.backend_id).toBe("bk_codex");
+      // Owner, 13 Nov 2026: the briefing is hard work (aiRoles.mjs HARD_DELIVERS), so it is parked on
+      // Claude's seat first, still on her machine and still never the cloud.
+      expect(run.backend_id).toBe("bk_claude_code");
       expect(run.status).toBe("running");
       expect(calls, "the consumer called a provider for work that belongs on her machine").toBe(0);
 
