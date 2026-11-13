@@ -49,12 +49,13 @@ describe("a Decide item she has already seen is one thin line", () => {
 
 describe("Done for you: once, never doubled, compact", () => {
   const day1 = buildDay(base(MON), MON);
-  it("three failures of one job are ONE short whole-sentence line; three lines at most, then +N more", () => {
+  it("three failures of one job are ONE short whole-sentence line; three lines at most and nothing after them", () => {
     const lines = doneLines(day1.text);
     expect(lines.filter((l) => /Executive Intelligence Report/.test(l))).toHaveLength(1);
     expect(lines[0]).toMatch(/^- Camille's "Executive Intelligence Report" job stopped; Danielle is fixing it\. — See it/);
-    expect(lines.length).toBeLessThanOrEqual(4);
-    expect(lines.at(-1)).toMatch(/^- \+\d+ more on Today — Open ›/);
+    expect(lines.length).toBeGreaterThan(0);
+    expect(lines.length).toBeLessThanOrEqual(3);
+    for (const l of lines) expect(l).not.toMatch(/\+\d+ more/);
     for (const l of lines) expect(l).not.toMatch(/What happened|What we did|Status:|believed only wi\b/);
   });
   it("never repeats on a later morning", () => {

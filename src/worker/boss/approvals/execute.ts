@@ -95,10 +95,8 @@ export async function executeDecision(
         result = await handleJudgementCall(env, approval, disposition, note);
         break;
       default:
-        result = {
-          status: "not_applicable",
-          detail: { reason: `Nothing to execute for a ${approval.kind} approval` },
-        };
+        // "manual" (intake held it for her word) and any kind with no handler of its own.
+        result = await handleHeldTask(env, approval, disposition);
     }
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err);
@@ -139,6 +137,60 @@ export async function executeDecision(
   });
 
   return result;
+}
+
+// ─── a task held for her word (kind "manual", and any kind with no handler) ──────
+/*
+ * AN ANSWER SHE GIVES ALWAYS RELEASES OR ENDS THE TASK IT BELONGS TO (owner, 13 Nov 2026). Intake
+ * holds a task for her word with a "manual" approval (tasks/admit.ts); nothing executed that kind,
+ * so her yes on 2 Nov changed the approval and left the task in `awaiting_approval` for eleven
+ * days, asked again every morning. Now, for a task still held on this approval:
+ *   yes  → it goes back on the queue and runs (her word is what it waited for). The trading LANE and
+ *          work assigned to a human contractor never go to a model whatever is approved: those end
+ *          as done, hers to do by hand, with that written on the record.
+ *   no / expired → cancelled, with the reason.
+ * An approval with no held task behind it is still "nothing to execute".
+ */
+async function handleHeldTask(
+  env: Env, approval: ApprovalRow, disposition: Disposition,
+): Promise<ExecutionResult> {
+  const p = payloadOf(approval);
+  const taskId = p.task_id ?? (approval.origin_type === "tasks" ? approval.origin_id : null);
+  const task = taskId
+    ? await env.DB.prepare(`SELECT id, lane, status, approval_id FROM tasks WHERE id = ?`).bind(taskId)
+        .first<{ id: string; lane: string; status: string; approval_id: string | null }>()
+    : null;
+  if (!task || task.status !== "awaiting_approval" || task.approval_id !== approval.id) {
+    return { status: "not_applicable", detail: { reason: `Nothing to execute for a ${approval.kind} approval` } };
+  }
+
+  const now = Date.now();
+  if (disposition === "approved") {
+    const byHand = task.lane === "trading" || p.assignment === "HUMAN_CONTRACTOR";
+    if (byHand) {
+      await env.DB.batch([
+        env.DB.prepare(`UPDATE tasks SET status = 'done', finished_at = COALESCE(finished_at, ?) WHERE id = ?`).bind(now, task.id),
+        env.DB.prepare(`INSERT INTO task_events (id, task_id, ts, event, detail) VALUES (?,?,?,'released',?)`)
+          .bind(newId("tev"), task.id, now, JSON.stringify({ approval_id: approval.id, outcome: "hers to do by hand; no model runs this" })),
+      ]);
+      return { status: "executed", detail: { task_id: task.id, task_status: "done", by_hand: true } };
+    }
+    await env.DB.batch([
+      env.DB.prepare(`UPDATE tasks SET status = 'queued', error = NULL, approval_id = NULL WHERE id = ?`).bind(task.id),
+      env.DB.prepare(`INSERT INTO task_events (id, task_id, ts, event, detail) VALUES (?,?,?,'requeued',?)`)
+        .bind(newId("tev"), task.id, now, JSON.stringify({ approval_id: approval.id })),
+    ]);
+    await env.TASKS.send({ taskId: task.id, lane: task.lane });
+    return { status: "executed", detail: { task_id: task.id, task_status: "queued" } };
+  }
+
+  const reason = disposition === "expired" ? "The approval expired" : "She said no";
+  await env.DB.batch([
+    env.DB.prepare(`UPDATE tasks SET status = 'cancelled', finished_at = COALESCE(finished_at, ?), error = ? WHERE id = ?`).bind(now, reason, task.id),
+    env.DB.prepare(`INSERT INTO task_events (id, task_id, ts, event, detail) VALUES (?,?,?,'cancelled',?)`)
+      .bind(newId("tev"), task.id, now, JSON.stringify({ approval_id: approval.id, reason })),
+  ]);
+  return { status: "executed", detail: { task_id: task.id, task_status: "cancelled", reason } };
 }
 
 // ─── task_output ─────────────────────────────────────────────────────────────

@@ -25,7 +25,7 @@ import { readSession } from "../auth";
 import { dayIdInZone } from "../../../shared/boss/timezone";
 import { BRAIN_SLUGS } from "../../../shared/boss/brains/brain.mjs";
 import { MORNING_SECTIONS, morningSectionProblems } from "../../../shared/boss/mail/morningSections.mjs";
-import { loopProblems, morningSection, repairsDue, remindersDue, reminderEmail, sourceKeyOf, visibleLoops, isOwner, isDay, type Loop } from "../../../shared/boss/openLoops/openLoops.mjs";
+import { HER, loopKey, loopProblems, morningSection, systemRow, repairsDue, remindersDue, reminderEmail, sourceKeyOf, visibleLoops, isOwner, isDay, type Loop } from "../../../shared/boss/openLoops/openLoops.mjs";
 import { admitTask } from "../tasks/admit";
 import { needsHer } from "../../../shared/boss/mail/noticeGate.mjs";
 
@@ -72,12 +72,28 @@ openLoops.post("/", async (c) => {
   if (blocker) problems.push(blocker);
   if (problems.length) throw badRequest("That is not an open loop", problems.join("; "));
   const now = Date.now();
-  const id = newId("olp");
   const section = b!.section ?? "not_finished";
+  /*
+   * THE SAME TITLE IS ONE ROW (owner, 13 Nov 2026: a job that stopped posted "Codex stopped … on
+   * Tuesday queue job" every few hours, and her morning email listed it five times). An open row
+   * with the same title, case and spacing aside, is kept and its words refreshed; her edits to its
+   * owner, date and business stand, as on the intake. A closed row is history: a new one opens.
+   */
+  const open = (await c.env.DB.prepare(`SELECT id, title FROM owner_open_loops WHERE status = 'open' ORDER BY created_at`).all<{ id: string; title: string }>()).results ?? [];
+  const same = open.find((l) => loopKey(l.title) === loopKey(b!.title));
+  if (same) {
+    await c.env.DB.prepare(`UPDATE owner_open_loops SET finish_line = ?, next_step = COALESCE(?, next_step), updated_at = ? WHERE id = ?`)
+      .bind(b!.finish_line.trim(), b!.next_step ?? null, now, same.id).run();
+    return ok(c, { loop: await c.env.DB.prepare(`SELECT * FROM owner_open_loops WHERE id = ?`).bind(same.id).first(), deduped: true });
+  }
+  const id = newId("olp");
+  // A row about the system's own work (a stopped job, a queue, an agent's run) is never filed as
+  // hers, whoever posts it: it is the team's row, and overdue it becomes a repair (`systemRow`).
+  const owner = b!.owner === HER && systemRow({ title: b!.title }) ? (/codex/i.test(b!.title) ? "codex" : "claude") : b!.owner;
   await c.env.DB.prepare(
     `INSERT INTO owner_open_loops (id, title, finish_line, next_step, owner, next_date, business, section, status, source, source_key, blocked_by, created_at, updated_at)
      VALUES (?,?,?,?,?,?,?,?,'open',?,NULL,?,?,?)`,
-  ).bind(id, b!.title.trim(), b!.finish_line.trim(), b!.next_step ?? null, b!.owner, section === "parked" ? null : (b!.next_date || null), b!.business, section,
+  ).bind(id, b!.title.trim(), b!.finish_line.trim(), b!.next_step ?? null, owner, section === "parked" ? null : (b!.next_date || null), b!.business, section,
     b!.source ?? "manual", b!.blocked_by || null, now, now).run();
   return ok(c, { loop: await c.env.DB.prepare(`SELECT * FROM owner_open_loops WHERE id = ?`).bind(id).first() }, 201);
 });

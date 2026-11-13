@@ -299,6 +299,14 @@ describe("routes and the one-tap links", () => {
     const plan = await prospectPlan(env.DB, WED_10AM);
     expect(plan.stops).toEqual([]);
     expect(plan.dryRun).toBe(false);
+    // The clock is not a stop (owner, 13 Nov 2026): at 7 am nothing sends and nothing is wrong, so no
+    // stop is reported; the plan only says when the emails go. Inside the window it says nothing.
+    const early = await prospectPlan(env.DB, WED_10AM - 3 * 3_600_000);
+    expect(early.sends).toEqual([]);
+    expect(early.stops).toEqual([]);
+    expect(early.opens).toMatch(/weekdays, 9 to 5 Central/);
+    expect(plan.opens).toBeNull();
+    expect(plan.sends.length).toBeGreaterThan(0);
     const byEmail = Object.fromEntries(plan.sends.map((s: any) => [s.email, s]));
     expect(byEmail["new.one@example.com"].touch).toBe(1);
     expect(byEmail["new.one@example.com"].body).toMatch(/^Hi Nia,/);

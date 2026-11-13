@@ -12,7 +12,7 @@ export const NOT_YET: number;
 export function selfStartedWaiting(data: any): any[];
 export function selfWaitingRepairs(waiting: any[], tasks?: any[]): { title: string; prompt: string }[];
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
-export function buildDay(data: Record<string, unknown>, now?: number): LaidOutEmail & { dropped: string[]; digest: any; cuts: string[]; bytes: number; memory: { decide: Record<string, string>; done: string[] }; yoursTold: string[]; teamNotes: string[] };
+export function buildDay(data: Record<string, unknown>, now?: number): LaidOutEmail & { dropped: string[]; digest: any; cuts: string[]; bytes: number; memory: { decide: Record<string, string>; done: string[]; still: Record<string, number>; loops: Record<string, number> }; yoursTold: string[]; teamNotes: string[] };
 export function briefingFull(briefing: unknown): Array<{ heading: string; lines: unknown[] }>;
 export function briefingSourceUrl(briefing: unknown): (n: number) => string;
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -37,7 +37,6 @@ export const SPIRIT_URL: string;
 export const EMAIL_HTML_BUDGET: number;
 export const MAX_DEAL_ROWS: number;
 export const MAX_FOUND_LINES: number;
-export const MAX_PROSPECT_SENDS: number;
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 export const CUT_ORDER: ReadonlyArray<[string, Record<string, any>]>;
 export function lawLine(law: { n: number; title: string; text: string } | null | undefined): string | null;
@@ -56,3 +55,10 @@ export function dutyChangeCard(title: string, task: any, worker: string | null):
 export function bossDecisions(data: Record<string, unknown>): Array<{ key: string; title: string; body: string; details?: string[]; buttons: any[]; priority: number }>;
 export function theChange(words: unknown): string | null;
 export const MAX_OPEN_LOOP_LINES: number;
+export const MAX_BRIEFING_LINES: number;
+export function plainSummary(a: any): string | null;
+export function companyKey(name: unknown): string;
+export function mergeDealRows<T extends Record<string, any>>(rows: T[]): T[];
+export function read(api: { get: (p: string) => Promise<any> }, now: number): Promise<any>;
+export const HEADLINE_CHARS: number;
+export function headline(line: unknown): string;

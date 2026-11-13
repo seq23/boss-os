@@ -213,6 +213,40 @@ describe("Phase 1 — expiry sweep", () => {
     expect((await row(`SELECT status FROM tasks WHERE id = ?`, taskId))!.status).toBe("cancelled");
   });
 
+  it("an answer she gives always releases or ends the task it belongs to, a held ('manual') one included (13 Nov 2026)", async () => {
+    const held = async (over: Record<string, unknown> = {}, payload: Record<string, unknown> = {}) => {
+      const taskId = await insertTask({ status: "awaiting_approval", ...over });
+      const aprId = await insertApproval({ kind: "manual", origin_type: "tasks", origin_id: taskId, payload: { task_id: taskId, assignment: "USER_ONLY", ...payload } });
+      await env.DB.prepare(`UPDATE tasks SET approval_id = ? WHERE id = ?`).bind(aprId, taskId).run();
+      return { taskId, aprId };
+    };
+    const decide = (id: string, decision: string) => apiJson(`/api/approvals/${id}/decide`, { method: "POST", body: { decision } });
+    const statusOf = async (id: string) => (await row(`SELECT status, approval_id FROM tasks WHERE id = ?`, id))!;
+
+    // Yes: the task runs. Before, the approval changed and the task stayed held for good.
+    const yes = await held();
+    expect((await decide(yes.aprId, "approved")).status).toBe(200);
+    expect(await statusOf(yes.taskId)).toMatchObject({ status: "queued", approval_id: null });
+    // No: it ends.
+    const no = await held();
+    await decide(no.aprId, "rejected");
+    expect((await statusOf(no.taskId)).status).toBe("cancelled");
+    // The trading lane and a human contractor's work never go to a model, whatever is approved.
+    const trade = await held({ lane: "trading" });
+    await decide(trade.aprId, "approved");
+    expect((await statusOf(trade.taskId)).status).toBe("done");
+    const hand = await held({}, { assignment: "HUMAN_CONTRACTOR" });
+    await decide(hand.aprId, "approved");
+    expect((await statusOf(hand.taskId)).status).toBe("done");
+    // One answered before this rule (approved, nothing executed, still held) is released by the sweep, once.
+    const old = await held();
+    await env.DB.prepare(`UPDATE approvals SET status = 'approved', decided_at = 1, execution_status = 'not_applicable' WHERE id = ?`).bind(old.aprId).run();
+    const untouched = await held(); // still pending: the sweep leaves it alone
+    await runExpirySweep(env);
+    expect(await statusOf(old.taskId)).toMatchObject({ status: "queued", approval_id: null });
+    expect((await statusOf(untouched.taskId)).status).toBe("awaiting_approval");
+  });
+
   it("writes an expired event and leaves nothing pending behind", async () => {
     const aprId = await insertApproval({ expires_at: Date.now() - 1000 });
     await runExpirySweep(env);

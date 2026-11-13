@@ -578,8 +578,16 @@ export async function handleTask(env: Env, msg: TaskMessage): Promise<void> {
     }
 
     // The envelope decides, and the employee's own autonomy can only tighten it.
-    const needsApproval =
+    const asksApproval =
       envelope ? envelope.approval_required === 1 : (!employee || employee.autonomy === "ask");
+    /*
+     * WORK BOSS OS STARTED ITSELF NEVER PARKS FOR HER WORD (owner, 2 Nov and 13 Nov 2026). Approving a
+     * finished result applies nothing (approvals/execute.ts: it only marks the task done), so for a
+     * duty's own run or a repair there is no decision of hers in it: the result is accepted where it
+     * lands. Her own asks still come to her. A real decision (money, a send in her name) is raised as
+     * its own approval by the work itself, never by this branch.
+     */
+    const needsApproval = asksApproval && !(await selfStarted(env, task, input)).self;
 
     const afterOf = (done: boolean) => afterResult(env, {
       id: task.id, lane: task.lane, title: String(task.title), employee_id: task.employee_id ?? null, input, attempts: task.attempts ?? 0,
@@ -594,7 +602,9 @@ export async function handleTask(env: Env, msg: TaskMessage): Promise<void> {
           `INSERT INTO approvals (id, lane, title, summary, kind, origin_type, origin_id, risk, payload, status, requested_at, expires_at)
            VALUES (?,?,?,?,'task_output','tasks',?,?,?,'pending',?,?)`,
         ).bind(
-          aprId, task.lane, task.title, result.text.slice(0, 400), task.id,
+          // One plain line, never the model's own words (13 Nov 2026: a card's summary opened "Based on
+          // the provided information, I will outline…"). The result itself is on the card's screen.
+          aprId, task.lane, task.title, approvalSummary(employee?.name), task.id,
           task.risk ?? "low", JSON.stringify({ task_id: task.id }), finishedAt,
           finishedAt + 7 * 24 * 60 * 60 * 1000,
         ),
@@ -690,7 +700,8 @@ export async function handleTask(env: Env, msg: TaskMessage): Promise<void> {
       });
       return;
     }
-    if (err instanceof RoutingBlocked && err.approvable) {
+    // Boss OS's own work never asks her for a route: it ends by name, and the morning's repair picks it up.
+    if (err instanceof RoutingBlocked && err.approvable && !(await selfStarted(env, task, input).catch(() => ({ self: false }))).self) {
       await holdForApproval(env, task, employee, envelope, costMode, {
         kind: "model_route",
         title: `Routing card: ${task.title}`,
@@ -1234,6 +1245,11 @@ async function dutyOf(env: Env, task: any, input: Record<string, any>): Promise<
   const stamped = typeof input.duty_id === "string" ? input.duty_id : null;
   return env.DB.prepare(`SELECT id, name, task_title FROM standing_duties WHERE ${stamped ? "id" : "last_task_id"} = ? LIMIT 1`)
     .bind(stamped ?? task.id).first<{ id: string; name: string; task_title: string }>().catch(() => null);
+}
+
+/** The approval card's one line for a finished result that is hers to release. Plain words only. */
+export function approvalSummary(employeeName?: string | null): string {
+  return `${employeeName ? String(employeeName).split(" ")[0] : "Your team"} finished this and holds the result until you say yes.`;
 }
 
 /** Did Boss OS start this itself (a repair, a duty's own run)? The one rule is `startedBySystem`. */

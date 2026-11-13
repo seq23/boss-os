@@ -1269,6 +1269,35 @@ describe("Stage 2 — POST /report", () => {
     expect(evidence.approval_needed).toBe(1);
   });
 
+  it("a run of work Boss OS started itself is accepted, never parked; the card's summary never carries the run's own words", async () => {
+    // Her own dispatch: a card, whose summary is the reason and nothing the run wrote.
+    const mine = await claimed();
+    const first = await apiJson("/api/backends/report", { method: "POST", body: packet(mine, { summary: "Based on the provided information, I will outline **everything**." }) });
+    const card = await row<any>(`SELECT summary FROM approvals WHERE id = ?`, first.body.data.approval_id);
+    expect(card.summary).not.toMatch(/Based on the provided|I will outline|\*\*/);
+    expect(card.summary).toMatch(/changed 1 file outside its own workspace/);
+
+    // The same run on a duty's own task: done, with nothing for her to approve.
+    const runId = await claimed();
+    const run = await row<any>(`SELECT task_id FROM backend_runs WHERE id = ?`, runId);
+    await env.DB.prepare(`UPDATE tasks SET input = ? WHERE id = ?`).bind(JSON.stringify({ duty_id: "duty_synthetic" }), run.task_id).run();
+    const { body } = await apiJson("/api/backends/report", { method: "POST", body: packet(runId) });
+    expect(body.data.approval_id).toBeNull();
+    const task = await row<any>(`SELECT status, approval_id FROM tasks WHERE id = ?`, run.task_id);
+    expect(task.status).toBe("done");
+    expect(task.approval_id).toBeNull();
+
+    // A delivery nothing handles ends the task by name, not as an approval and not as done.
+    const lostId = await claimed();
+    const lost = await row<any>(`SELECT task_id FROM backend_runs WHERE id = ?`, lostId);
+    await env.DB.prepare(`UPDATE tasks SET input = ? WHERE id = ?`).bind(JSON.stringify({ duty_id: "duty_synthetic", delivers: "nothing_handles_this" }), lost.task_id).run();
+    const third = await apiJson("/api/backends/report", { method: "POST", body: packet(lostId, { files_touched: [] }) });
+    expect(third.body.data.approval_id).toBeNull();
+    const ended = await row<any>(`SELECT status, error FROM tasks WHERE id = ?`, lost.task_id);
+    expect(ended.status).toBe("failed");
+    expect(ended.error).toMatch(/^NAMED STOP \[DELIVERY_UNHANDLED\]/);
+  });
+
   it("records a failure carrying its failure, and raises nothing to approve", async () => {
     const runId = await claimed();
     const { body } = await apiJson("/api/backends/report", {

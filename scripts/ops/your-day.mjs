@@ -9,15 +9,18 @@
  *      word, one-tap buttons and a link to its own screen: her Inbox decisions, Danielle's plans and
  *      previews, work held for her word (the channel's comments by name), and every Decide item the
  *      other producers wrote (an intro to make, an LP reply to send) — highest priority first;
- *   2. New deals since yesterday (each opens its deal screen) and "Monique found" (her own email
- *      first, then public filings and press, labelled "not confirmed", each with one next step);
- *   3. Camille's briefing: five lines, then the WHOLE briefing under "Show the full briefing ▾"
- *      (written out in full in the plain-text copy), citations linked to their sources;
- *   4. Done for you — three lines at most, What happened / What we did / Status where it fits (the
- *      bounce agent, comments left alone, the jobs she emailed, Zora's and Toni's quiet work);
- *   5. Catch up with — 0–3, only when a live reason exists (rule 14);
- *   6. Porch & Party: To do for Valerie — the site's own owner feed, unchanged;
- *   7. the sign-off; the 8Raise line only when something is wrong with Monique's credits.
+ *   2. New deals since yesterday (one row per company and side) and "Monique found" (the matches);
+ *      "Prospect emails" only when someone answered;
+ *   3. Camille's briefing: three one-line headlines and the link to the full briefing;
+ *   4. Done for you — three lines at most (the bounce agent, comments left alone, the jobs she
+ *      emailed, Zora's and Toni's quiet work);
+ *   5. Your open loops — her own rows only, five at most, each for three mornings;
+ *   6. Catch up with — 0–3, only when a live reason exists (rule 14);
+ *   7. Porch & Party: To do for Valerie — only when the site's owner feed has something;
+ *   8. the sign-off; the 8Raise line only when something is wrong with Monique's credits.
+ *
+ * A BLOCK WITH NOTHING IN IT IS LEFT OUT (owner, 13 Nov 2026): no "nothing here" lines. A thin
+ * "Still yours to answer" row and an open-loop row show on three mornings, then leave the email.
  *
  * THE MORNING IS KEPT IN BOSS OS. Before it sends, the run posts every item (POST /morning); each
  * link in the email opens that item's screen (/?morning=<day>&item=<id>) and Today shows the same
@@ -39,10 +42,9 @@
  *   npm run your-day -- --dry-run    # print what would be sent, send nothing
  *   npm run your-day -- --preview <dir>   # write the HTML and text to <dir>, send nothing
  */
-import { UPDATES_PATH, startedBySystem } from "../../src/shared/boss/mail/noticeGate.mjs";
+import { startedBySystem } from "../../src/shared/boss/mail/noticeGate.mjs";
 import { outputLine } from "../../src/shared/boss/alarms/rules.mjs";
-import { doneForYou, failedDoneLine, jobFamily, jobName, splitRepeats, fixJobsToOpen } from "../../src/shared/boss/mail/morningMemory.mjs";
-import { MAX_TOUCHES } from "../../src/shared/boss/lp/plan.mjs";
+import { doneForYou, failedDoneLine, jobFamily, jobName, splitRepeats, fixJobsToOpen, answeredUnderneath, withinShowings } from "../../src/shared/boss/mail/morningMemory.mjs";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
@@ -54,6 +56,7 @@ import { ownerEmail } from "../../src/shared/boss/mail/ownerLayout.mjs";
 import { readMorningSections, clearToldSections } from "../../src/shared/boss/mail/morning.mjs";
 import { sectionsNotReported, notReportedLine } from "../../src/shared/boss/mail/morningSections.mjs";
 import { templateDecide } from "./lp-prospects.mjs";
+import { systemRow } from "../../src/shared/boss/openLoops/openLoops.mjs";
 import { yoursThisWeek } from "../../src/shared/boss/waiting/register.mjs";
 
 const ORIGIN = process.env.BOSS_OS_ORIGIN ?? "https://boss.sequoiataylor.com";
@@ -99,12 +102,10 @@ export const EMAIL_HTML_BUDGET = 80_000;
 /** Long lists stop here in the email; the rest is one tap away on its screen. */
 export const MAX_DEAL_ROWS = 10;
 export const MAX_FOUND_LINES = 8;
-export const MAX_PROSPECT_SENDS = 5;
 /** What goes first when a heavy day is still over budget, in order; each step keeps the ones before. */
 export const CUT_ORDER = Object.freeze([
-  ["prospect email words", { prospectWords: false }],
-  ["Monique's lines to three", { prospectWords: false, foundMax: 3 }],
-  ["deal rows to five", { prospectWords: false, foundMax: 3, dealMax: 5 }],
+  ["Monique's lines to three", { foundMax: 3 }],
+  ["deal rows to five", { foundMax: 3, dealMax: 5 }],
 ]);
 /** A short stable id for an item, from what it is (the same item keeps its screen across re-runs). */
 export function itemId(kind, key) {
@@ -133,6 +134,26 @@ function digestOf(data, task) {
  * authority here." and "Risk: high." reached a Decide item).
  */
 const SYSTEM_TEXT = /\b(?:intake assigned|USER_ONLY|AI_DRAFT|AI_EXECUTE|HUMAN_CONTRACTOR|DEFER|execution authority|lane work|agent creation gate)\b/i;
+
+/**
+ * AN APPROVAL'S OWN LINE, ONLY WHEN IT IS ONE PLAIN LINE (owner, 13 Nov 2026: a card's summary read
+ * "Based on the provided information, I will outline the tasks and responsibilities…", a model's
+ * output). The Worker now writes a plain line (queue/consumer.ts `approvalSummary`, routes/backends.ts);
+ * a row written before that, or by any writer that passes text through, is never printed: a finished
+ * result's old summary is skipped whole, an old run's keeps only the reason before the dash, and
+ * anything with several lines, markup, or a model's opening words is dropped. Null = say nothing. Pure.
+ */
+const MODEL_VOICE = /\*\*|`|^#|^(?:based on|to address|i will|i'll|i have|i am|i'm|here is|here's|here are|sure|certainly|okay|as an ai)\b/i;
+export function plainSummary(a) {
+  if (a?.kind === "task_output") return null;
+  for (const x of [a?.summary, a?.reason]) {
+    if (typeof x !== "string") continue;
+    const t = (a.kind === "backend_run" ? x.split(" — ")[0] : x).trim();
+    if (!t || SYSTEM_TEXT.test(t) || /\n/.test(t) || t.length > 240 || MODEL_VOICE.test(t)) continue;
+    return /[.!?]$/.test(t) ? t : `${t}.`;
+  }
+  return null;
+}
 
 function inputOf(task) {
   try { return typeof task?.input === "string" ? JSON.parse(task.input) : (task?.input ?? {}); } catch { return {}; }
@@ -207,10 +228,10 @@ export function bossDecisions(data) {
     if (task && isRepairTask(task)) continue; // a repair is the team's, never her decision (7 Nov 2026)
     const worker = a.employee_name ?? task?.employee_name ?? null;
     const duty = dutyChangeCard(a.title, task, worker);
-    const own = [a.summary, a.reason].find((x) => typeof x === "string" && x.trim() && !SYSTEM_TEXT.test(x));
+    const own = plainSummary(a);
     out.push({
       key: `approval:${a.id}`, title: duty?.title ?? a.title,
-      body: duty?.body ?? `${own ? `${own.trim()} ` : ""}${worker ?? "Your team"} waits for your word. Yes lets it go ahead; no keeps things as they are.`,
+      body: duty?.body ?? `${own ? `${own} ` : ""}${worker ?? "Your team"} waits for your word. Yes lets it go ahead; no keeps things as they are.`,
       details: [],
       buttons: [{ label: "Open it to approve or decline", url: `${ORIGIN}/?tab=inbox&approval=${encodeURIComponent(a.id)}` }], priority: 2,
     });
@@ -224,7 +245,10 @@ export function bossDecisions(data) {
   }
   // A REPAIR IS NEVER A DECISION (owner, 7 Nov 2026: Kendra's reports "should not need my constant
   // approval"). A task Boss OS opened to fix itself that stops on approval is the team's to unblock.
-  for (const t of tasks.filter((x) => x.status === "awaiting_approval" && !covered.has(x.id) && !approvalIds.has(x.approval_id) && !isRepairTask(x))) {
+  // A task whose approval she already answered (it is no longer pending) is not asking again: it is
+  // held up, and the team's to move (`selfStartedWaiting`; 13 Nov 2026: a change she approved on
+  // 2 Nov came back as a card every morning).
+  for (const t of tasks.filter((x) => x.status === "awaiting_approval" && !covered.has(x.id) && !x.approval_id && !isRepairTask(x))) {
     const dg = digestOf(data, t);
     // WORK BOSS OS STARTED ITSELF NEVER WAITS FOR HER WORD (owner, 2 Nov and 13 Nov 2026): with no
     // approval of hers behind it there is nothing for her to decide. It is one Done line and a repair
@@ -257,14 +281,16 @@ export function bossDecisions(data) {
 }
 
 /**
- * A job Boss OS started itself that sits "awaiting approval" with no approval of hers behind it and no
- * comments to answer: never a Decide card. `read`-shaped data in, the tasks out. Pure.
+ * HELD WITH NOTHING OF HERS TO ANSWER: never a Decide card. A job Boss OS started itself that sits
+ * "awaiting approval" with no approval of hers behind it and no comments to answer (the Worker no
+ * longer parks these; this catches one parked before), and any job whose approval she has already
+ * answered and which still has not moved. `read`-shaped data in, the tasks out. Pure.
  */
 export function selfStartedWaiting(data) {
   const approvalIds = new Set((data.approvals ?? []).map((a) => a.id));
   const covered = new Set((data.approvals ?? []).map(approvalTaskId).filter(Boolean));
   return (data.tasks ?? []).filter((t) => t.status === "awaiting_approval" && !covered.has(t.id) && !approvalIds.has(t.approval_id)
-    && !isRepairTask(t) && !digestOf(data, t) && startedBySystem(t.input));
+    && !isRepairTask(t) && !digestOf(data, t) && (Boolean(t.approval_id) || startedBySystem(t.input)));
 }
 
 /** What Monique did with the comments that did not need her (owner, 24 Oct 2026: fix it, then tell me). */
@@ -340,7 +366,10 @@ export function valerieItems(feed, now = Date.now()) {
   return [...lines, ...loose];
 }
 
-/** The one-minute summary's raw lines (≤5), as Camille wrote them. `null` when today's report is not in. */
+/** How many headlines of Camille's briefing the email carries; the rest is one link away. */
+export const MAX_BRIEFING_LINES = 3;
+
+/** The one-minute summary's first lines, as Camille wrote them. `null` when today's report is not in. */
 function briefingRaw(briefing, today) {
   if (!briefingReady(briefing, today)) return null;
   const sec = (briefing.sections ?? []).find((s) => s?.key === "one_minute_summary" || /one[- ]minute/i.test(String(s?.heading ?? s?.title ?? "")));
@@ -353,17 +382,34 @@ function briefingRaw(briefing, today) {
   }
   if (!raw.length && typeof briefing.summary === "string") raw.push(...briefing.summary.split(/(?<=[.!?])\s+/));
   if (!raw.length && briefing.headline) raw.push(String(briefing.headline));
-  return raw.map((l) => String(l).replace(/^[-*•]\s+/, "").trim()).filter(Boolean).slice(0, 5);
+  return raw.map((l) => String(l).replace(/^[-*•]\s+/, "").trim()).filter(Boolean).slice(0, MAX_BRIEFING_LINES);
 }
 
 /**
- * CAMILLE'S BRIEFING IN FIVE LINES OR FEWER, from the report's One-Minute Executive Summary section
+ * A HEADLINE IS ONE LINE (owner, 13 Nov 2026): a summary line as Camille wrote it when it is short;
+ * a long one stops at its last whole sentence inside HEADLINE_CHARS (its citation kept), or, with no
+ * sentence end there, at a word with "…". Never cut mid-word. Pure.
+ */
+export const HEADLINE_CHARS = 140;
+export function headline(line) {
+  const t = String(line ?? "").replace(/\s+/g, " ").trim();
+  if (t.length <= HEADLINE_CHARS) return t;
+  let end = -1;
+  for (const m of t.matchAll(/[.!?](?:\s*\[\d+\])*(?=\s+["“*A-Z])/g)) {
+    const at = m.index + m[0].length;
+    if (at >= 40 && at <= HEADLINE_CHARS) end = at;
+  }
+  return end > 0 ? t.slice(0, end) : `${t.slice(0, HEADLINE_CHARS).replace(/\s+\S*$/, "")}…`;
+}
+
+/**
+ * CAMILLE'S BRIEFING IN THREE ONE-LINE HEADLINES, from the report's One-Minute Executive Summary section
  * (key `one_minute_summary`, or its heading on older reports); the report's `summary` sentences when
  * the section is absent. `null` when today's report has not landed. Plain words, no markdown.
  */
 export function briefingLines(briefing, today) {
   const raw = briefingRaw(briefing, today);
-  return raw ? raw.map((l) => proseText(proseRuns(l)).replace(/⁣/g, "").replace(/[.!?]?\s*$/, ".")) : null;
+  return raw ? raw.map((l) => proseText(proseRuns(headline(l))).replace(/⁣/g, "").replace(/[.!?]?\s*$/, ".")) : null;
 }
 
 /** Where citation n of a report opens: its source on the web, else the briefing screen. */
@@ -464,51 +510,40 @@ export function bounceLine(b) {
 }
 
 
-const SIDE_WORDS = { buyer: "a buyer", seller: "a seller", both: "buys and sells", unknown: "side not known yet" };
-const shortDate = (ms) => new Date(Number(ms)).toLocaleDateString("en-US", { month: "long", day: "numeric", timeZone: TZ });
 const nameOf = (r) => r.name || r.email || "someone";
 const whoLine = (r) => `${nameOf(r)}${[r.firm, r.email].filter(Boolean).length ? ` (${[r.firm, r.email].filter(Boolean).join(", ")})` : ""}`;
 export const PROSPECTS_URL = `${ORIGIN}/?tab=capital&view=prospects`;
 
 /**
- * "PROSPECT EMAILS" (owner, 24 Oct 2026: "keep me abreast of prospect outreach"): yesterday's sends
- * (who, firm, address, side, which email of three, the words under a fold), the replies, who is next
- * and when, and the totals. Nothing went out: it says exactly why. From GET /lp/prospects/activity.
- * Pure. `null` when the activity did not load (the run says so in its log; Done keeps its line).
+ * "PROSPECT EMAILS": REPLIES ONLY (owner, 13 Nov 2026). Who answered since the last morning and what
+ * they said, and who asked not to be written to again. What was sent, what is due, the totals and
+ * the emails' words are on the Prospects screen; a morning with no reply has no section at all.
+ *
+ * ONE LINE MORE, ONLY FOR A REAL STOP: follow-ups that are due and held by something that is wrong
+ * (a spam complaint's pause, the kill switch, her lists unreadable), with since when. The clock is
+ * never that: before 9 am, after 5 and at weekends they simply go at the next window, so nothing is
+ * said (her 6:45 email read "not going out. Why: outside the sending window" every day). No approved
+ * email at all is already a Decide card (`prospectDecisions`).
+ * From GET /lp/prospects/activity. Pure. `null` when there is nothing to say or it did not load.
  */
+const shortDate = (ms) => new Date(Number(ms)).toLocaleDateString("en-US", { month: "long", day: "numeric", timeZone: TZ });
 export function prospectSection(a, now = Date.now()) {
   if (!a) return null;
-  // Only what is NEW since the last morning (owner, 24 Oct 2026): sends since yesterday, new replies,
-  // touches due today, one totals line. Everything already sent lives on the Prospects screen.
   const items = [];
-  const t = a.totals ?? {};
-  const sent = (a.sent ?? []).filter((r) => Number(r.sent_at) >= now - 30 * 3_600_000);
-  for (const r of sent.slice(0, MAX_PROSPECT_SENDS)) items.push({ text: `Sent: email ${r.touch_no} of ${MAX_TOUCHES} to ${whoLine(r)}, ${SIDE_WORDS[r.side] ?? SIDE_WORDS.unknown}, ${shortDate(r.sent_at)}.`, links: [{ label: "See it on the Prospects screen", url: PROSPECTS_URL }] });
-  if (sent.length > MAX_PROSPECT_SENDS) items.push({ text: `And ${sent.length - MAX_PROSPECT_SENDS} more sent since yesterday.`, links: [{ label: `See all ${sent.length} on the Prospects screen →`, url: PROSPECTS_URL }] });
   for (const r of a.replies ?? []) {
-    const what = r.status === "opted_out" ? "asked not to be written to again (done: they are off every list)" : r.status === "bounced" ? "bounced (done: the address is off the list)" : `answered${r.reply_note ? `: ${quotedSentence(r.reply_note)}` : "."}${r.has_draft ? " Your reply is ready in Decide above." : ""}`;
+    if (r.status === "bounced") continue;
+    const what = r.status === "opted_out" ? "asked not to be written to again (done: they are off every list)." : `answered${r.reply_note ? `: ${quotedSentence(r.reply_note)}` : "."}${r.has_draft ? " Your reply is ready in Decide above." : ""}`;
     items.push(`${whoLine(r)} ${what}`);
   }
-  const endOfToday = now + 18 * 3_600_000;
-  const due = (a.next ?? []).filter((r) => r.next_at && r.next_at <= endOfToday);
-  if (due.length) {
-    // How long they have waited (6 Nov 2026 live read: 34 follow-ups due since 14 Oct read like a
-    // same-morning hiccup — "not going out. Why: outside the sending window" at 6:45 am).
+  const stops = (a.stops ?? []).filter((x) => !/sending window/i.test(String(x)));
+  const due = (a.next ?? []).filter((r) => r.next_at && r.next_at <= now);
+  if (due.length && stops.length && (a.approved || a.pending)) {
     const oldest = Math.min(...due.map((r) => Number(r.next_at)));
-    const late = now - oldest > 36 * 3_600_000 ? ` since ${shortDate(oldest)} (${Math.floor((now - oldest) / 86_400_000)} days)` : "";
-    items.push(!a.approved && !a.pending
-      ? `${plural(due.length, "follow-up is", "follow-ups are")} due${late} and not going out; why, and what unblocks them, is in Decide above.`
-      : (a.stops ?? []).length
-      ? `${plural(due.length, "follow-up is", "follow-ups are")} due${late} and not going out. Why: ${(a.stops ?? []).join(" ")}`
-      : `Going out today: ${plural(due.length, "follow-up")} (${due.slice(0, 5).map(nameOf).join(", ")}${due.length > 5 ? ` and ${due.length - 5} more` : ""}).`);
+    const late = now - oldest > 36 * 3_600_000 ? ` since ${shortDate(oldest)} (${Math.floor((now - oldest) / DAY_MS)} days)` : "";
+    items.push(`${plural(due.length, "follow-up is", "follow-ups are")} due${late} and not going out. Why: ${stops.join(" ")}`);
   }
-  if (!sent.length && !(a.replies ?? []).length && !due.length) items.push("Nothing new on prospect emails since yesterday.");
-  items.push(`So far: ${plural(t.emails_sent ?? 0, "email")} sent; ${(t.new ?? 0) + (t.active ?? 0)} in the sequence, ${t.interested ?? 0} interested, ${t.replied ?? 0} replied, ${t.opted_out ?? 0} opted out, ${t.bounced ?? 0} bounced.`);
-  const blocks = sent.slice(0, MAX_PROSPECT_SENDS).map((r) => ({
-    heading: `Email ${r.touch_no} to ${nameOf(r)}${r.firm ? `, ${r.firm}` : ""}`,
-    lines: r.body ? [`Subject: ${r.sent_subject ?? r.subject ?? ""}`, ...String(r.body).split("\n").filter((l) => l.trim())] : ["Its words are in your Sent mail."],
-  }));
-  return { title: "Prospect emails", items, link: { label: "See every prospect", url: PROSPECTS_URL }, ...(blocks.length ? { full: { summary: "Show the emails ▾", blocks } } : {}), empty: null };
+  if (!items.length) return null;
+  return { title: "Prospect emails", items, link: { label: "See every prospect", url: PROSPECTS_URL }, empty: null };
 }
 
 /**
@@ -710,6 +745,35 @@ export function scoreboardSectionFor(data, now = Date.now()) {
   };
 }
 
+/** A company's name as two rows share it: "Fireworks" and "Fireworks AI, Inc." are one company. Pure. */
+const COMPANY_TAIL = /\s+(?:ai|inc|incorporated|corp|corporation|co|company|llc|ltd|limited|plc|labs?|technologies|technology|holdings|group)$/;
+export function companyKey(name) {
+  let k = String(name ?? "").toLowerCase().replace(/[.,'’()]/g, "").replace(/&/g, " and ").replace(/\s+/g, " ").trim();
+  for (let i = 0; i < 3 && COMPANY_TAIL.test(k); i++) k = k.replace(COMPANY_TAIL, "");
+  return k;
+}
+
+/**
+ * ONE ROW PER COMPANY AND SIDE (owner, 13 Nov 2026: "Fireworks" and "Fireworks AI" were two rows for
+ * one order). Rows that name the same company on the same side fold into the first (the newest): the
+ * fuller name is kept, a missing size or price is filled from the copy that has one, and a second
+ * sender is said as "+N more" in From. Order is kept. Pure.
+ */
+export function mergeDealRows(rows) {
+  const out = new Map();
+  for (const r of rows ?? []) {
+    const k = `${companyKey(r.company)}|${String(r.side ?? "").toLowerCase()}`;
+    const kept = out.get(k);
+    if (!kept) { out.set(k, { ...r, _from: new Set([String(r.from ?? "")]) }); continue; }
+    const blank = (v) => v == null || v === "" || v === "—";
+    if (String(r.company).length > String(kept.company).length) kept.company = r.company;
+    if (blank(kept.size) && !blank(r.size)) kept.size = r.size;
+    if (blank(kept.price) && !blank(r.price)) kept.price = r.price;
+    kept._from.add(String(r.from ?? ""));
+  }
+  return [...out.values()].map(({ _from, ...r }) => (_from.size > 1 && r.from ? { ...r, from: `${r.from} (+${_from.size - 1} more)` } : r));
+}
+
 export function buildDay(data, now = Date.now()) {
   const yours = yoursThisWeek(data.waiting ?? [], now);
   const today = dayOf(now);
@@ -755,8 +819,18 @@ export function buildDay(data, now = Date.now()) {
   for (const [name, sec] of Object.entries(m)) if (name !== "catchups") for (const d of sec.decide ?? []) if (!staleTemplate(d)) decideRaw.push({ priority: 0, from: name, ...d });
   decideRaw.push(...prospectDecisions(data.prospects ?? null, new Set(decideRaw.map((d) => d.key).filter(Boolean)), now));
   for (let i = decideRaw.length - 1; i >= 0; i--) if (isQuiet(decideRaw[i])) decideRaw.splice(i, 1);
-  data = { ...data, carried: (data.carried ?? []).filter((d) => !isQuiet(d)) };
+  // A carried card whose approval she already answered, or whose job no longer waits, is not hers
+  // any more (morningMemory.mjs `answeredUnderneath`; Today applies the same rule).
+  const underneath = { pending: new Set((data.approvals ?? []).map((a) => a.id)), waiting: new Set((data.tasks ?? []).filter((t) => t.status === "awaiting_approval").map((t) => t.id)) };
+  data = { ...data, carried: (data.carried ?? []).filter((d) => !isQuiet(d) && !answeredUnderneath(d.key, underneath)) };
   decideRaw.sort((a, b) => (b.priority ?? 0) - (a.priority ?? 0));
+  // One card per key: the same decision from two producers is one decision.
+  const cardKeys = new Set();
+  for (let i = 0; i < decideRaw.length; i++) {
+    const k = decideRaw[i].key;
+    if (k && cardKeys.has(k)) decideRaw.splice(i--, 1);
+    else if (k) cardKeys.add(k);
+  }
   /*
    * EVERY DECIDE CARD SAYS HOW TO ANSWER IT BY REPLY (owner, 25 Oct 2026): its number in this email.
    * The prospect-email card's reply goes to Monique's template (src/worker/boss/lp/templateReply.ts),
@@ -782,6 +856,10 @@ export function buildDay(data, now = Date.now()) {
     return { ...d, id, screen, buttons: [more(screen)] };
   });
   stillYours.push(...carriedLines(data.carried ?? [], { shown: new Set([...decide, ...stillYours].map((d) => d.id)), keys: new Set(decideRaw.map((d) => d.key).filter(Boolean)), today }));
+  // A row here shows on three mornings, then leaves the email; it stays on Today until she answers it.
+  const stillSeen = withinShowings(stillYours.map((d) => ({ ...d, seenKey: d.id })), data.told?.still ?? {});
+  stillYours.length = 0;
+  stillYours.push(...stillSeen.shown);
   // A held reply rides its line: "✓ Send as is" only with the words shown word for word (CLAUDE.md:
   // "Send as is" never sends what was not shown), then "✎ Change it" on Today.
   for (const d of stillYours) {
@@ -790,7 +868,7 @@ export function buildDay(data, now = Date.now()) {
   }
 
   // 2. Deals: each opens its own screen there; the source email is one more tap from it.
-  const deals = (m.deals?.rows ?? []).map((r) => {
+  const deals = mergeDealRows(m.deals?.rows ?? []).map((r) => {
     const id = idFor("deal", `${r.company}|${r.side}|${r.size}|${r.from}|${r.received_on ?? r.when}`);
     return { ...r, id, screen: itemUrl(today, id) };
   });
@@ -813,20 +891,16 @@ export function buildDay(data, now = Date.now()) {
     return { ...line, id, screen: itemUrl(today, id), holders: (m.monique_found?.rows ?? []).filter((h) => line.deal && h.company === line.deal) };
   });
 
-  // The best few, never hundreds: the count line (it carries its own link) always shows.
-  const isCount = (f) => Boolean(f.counts);
-  const foundItems = found.filter((f) => !isCount(f)).map((f) => ({ text: f.text, links: f.links?.length ? f.links.slice(0, 1).concat([{ label: "See it", url: f.screen }]) : [{ label: "See it", url: f.screen }] }));
-  const foundShown = (max) => [
-    ...foundItems.slice(0, max),
-    ...(foundItems.length > max ? [{ text: `And ${foundItems.length - max} more from Monique.`, links: [{ label: "See them all on Today", url: `${ORIGIN}/?view=morning` }] }] : []),
-    ...found.filter(isCount).map((f) => ({ text: f.text, links: f.links ?? [] })),
-  ];
+  // The matches stay; the totals line and "Still looking" are gone (owner, 13 Nov 2026). A copy
+  // written before the producer stopped sending them is read the same way.
+  const foundItems = found.filter((f) => !f.counts && !/^Still looking:/.test(f.text)).map((f) => ({ text: f.text, links: f.links?.length ? f.links.slice(0, 1).concat([{ label: "See it", url: f.screen }]) : [{ label: "See it", url: f.screen }] }));
+  const foundShown = (max) => foundItems.slice(0, max);
 
-  // 3. Briefing: the top five, and "Read the full briefing →" to its screen. The whole briefing is never
+  // 3. Briefing: three one-line headlines, and "Read the full briefing →" to its screen. The whole briefing is never
   // in the email (owner, 24 Oct 2026: "never risk the size limit"); `briefingFull` is its screen's shape.
   const raw = briefingRaw(data.briefing, today);
   const src = briefingSourceUrl(data.briefing);
-  const briefTop = raw ? raw.map((l) => ({ runs: proseRuns(l, src) })) : null;
+  const briefTop = raw ? raw.map((l) => ({ runs: proseRuns(headline(l), src) })) : null;
 
   /*
    * 4. Done for you (owner, 26 Oct 2026: "no need to repeat ever and do not use a lot of space"): each
@@ -850,20 +924,26 @@ export function buildDay(data, now = Date.now()) {
     doneRaw.push({ key: `failed:${jobFamily(t.title).toLowerCase()}`, text: failedDoneLine(t), full: f.text, links: [] });
   }
   const selfWaiting = selfStartedWaiting(data);
-  if (selfWaiting.length) doneRaw.push({ key: `self-waiting:${today}`, text: `${selfWaiting.length === 1 ? `${selfWaiting[0].employee_name ?? "The team"}'s ${((j) => (j.quoted ? `"${j.name.slice(0, 80)}"` : j.name))(jobName(selfWaiting[0]))} was held up` : `${selfWaiting.length} of the team's own jobs were held up`} and Danielle is getting ${selfWaiting.length === 1 ? "it" : "them"} moving again.`, links: [{ label: "Open ›", url: `${ORIGIN}/?tab=systems` }] });
+  if (selfWaiting.length) {
+    // One job Boss OS started is said by name; one she already answered is said as that (its long
+    // title, cut, read as a typo on 13 Nov 2026); several are one count.
+    const one = selfWaiting.length === 1 ? selfWaiting[0] : null;
+    const what = !one ? `${selfWaiting.length} of the team's jobs were held up`
+      : one.approval_id ? "A job you already answered was held up"
+      : `${one.employee_name ?? "The team"}'s ${((j) => (j.quoted ? `"${j.name.slice(0, 80)}"` : j.name))(jobName(one))} was held up`;
+    doneRaw.push({ key: `self-waiting:${today}`, text: `${what}, and Danielle is getting ${one ? "it" : "them"} moving again.`, links: [] });
+  }
   if (teamStops) doneRaw.push({ key: `team-stops:${today}`, text: `${teamStops} team job${teamStops === 1 ? "" : "s"} stopped and ${teamStops === 1 ? "is" : "are"} being fixed by Danielle.`, links: [{ label: "Open ›", url: `${ORIGIN}/?tab=systems` }] });
   const prospects = prospectSection(data.prospects ?? null, now);
   const spirit = spiritSection(data.spirit ?? null, data.practiceWeek ?? null, now);
   const ancestral = ancestralLine(data.spirit ?? null);
   // The prospects producer's count line is in "Prospect emails" when that loaded; not said twice.
-  for (const name of DONE_SOURCES.filter((n) => !(prospects && n === "prospects"))) for (const l of m[name]?.lines ?? []) doneRaw.push(typeof l === "string" ? { text: l, links: [] } : { links: [], ...l });
+  for (const name of DONE_SOURCES.filter((n) => !(data.prospects && n === "prospects"))) for (const l of m[name]?.lines ?? []) doneRaw.push(typeof l === "string" ? { text: l, links: [] } : { links: [], ...l });
   const doneOnce = doneForYou(doneRaw, { told: new Set(data.told?.done ?? []), max: MAX_DONE });
   const done = doneOnce.all.map((l) => { const id = idFor("done", l.text); return { ...l, id, screen: itemUrl(today, id) }; });
   const doneShown = done.slice(0, MAX_DONE).map((l) => ({ text: l.text, links: [{ label: "See it", url: l.screen }] }));
-  if (doneOnce.more > 0) doneShown.push({ text: `+${doneOnce.more} more on Today`, links: [{ label: "Open ›", url: `${ORIGIN}/?view=morning` }] });
-  // The Updates page (owner, 7 Nov 2026: email only when she must act): ONE count line, the same
-  // count and words the page shows (noticeGate.mjs updatesLine, read from /task-notices/updates).
-  if (data.updates?.line) doneShown.push({ text: data.updates.line, links: [{ label: "Open ›", url: `${ORIGIN}${UPDATES_PATH}` }] });
+  // Three lines and nothing after them (owner, 13 Nov 2026): no "+N more" and no count of the Updates
+  // page. Everything done is on Today, and the updates are on their page.
 
   // 4b. The grid repos: the weekly Search Readiness check (Mondays; owner, 25 Oct 2026). Its own short
   // section — what is broken, what was fixed, what is being built — never pooled into "Done for you",
@@ -876,15 +956,16 @@ export function buildDay(data, now = Date.now()) {
   const scLines = (m.scorecard?.lines ?? []).map((l) => (typeof l === "string" ? { text: l, links: [] } : { links: [], ...l }));
   const scorecardSection = scLines.length ? { title: m.scorecard.title ?? "📊 Scorecard", tone: "done", items: scLines, empty: null } : null;
 
-  // 4b''. Open Loops (owner ruling, 1 Nov 2026): every morning, "Open loops: N, M overdue" and one line
-  // per overdue row with its link (written by the Worker's tick, routes/openLoops.ts). Quiet = the title alone.
-  // At most five rows, whatever copy the section carries (7 Nov 2026 live read: an older writer's copy
-  // listed 17); the rest is one line to the page. The writer puts her own rows first.
-  const olAll = (m.open_loops?.lines ?? []).map((l) => (typeof l === "string" ? { text: l, links: [] } : { links: [], ...l }));
-  const olLines = olAll.length > MAX_OPEN_LOOP_LINES + 1
-    ? [...olAll.slice(0, MAX_OPEN_LOOP_LINES), { text: `+${olAll.length - MAX_OPEN_LOOP_LINES} more overdue on Open Loops.`, links: m.open_loops?.link?.url ? [{ label: "See all ›", url: m.open_loops.link.url }] : [] }]
-    : olAll;
-  const openLoopsSection = m.open_loops?.title ? { title: m.open_loops.title, tone: olLines.length ? undefined : "done", items: olLines, link: olLines.length < olAll.length ? null : (m.open_loops.link ?? null), empty: null } : null;
+  // 4b''. Your open loops (owner, 13 Nov 2026): her own overdue rows only (written by the Worker's
+  // tick, openLoops.mjs `morningSection`), the same row once however many copies the list holds, five
+  // at most, each on three mornings and then only on its page. No counts, no "+N more", no team line
+  // (a copy written before the writer dropped them carries no "Open ›" to a row, and is skipped).
+  // A row about the system's own work is never hers, whatever copy carries it (`systemRow`).
+  const olSeen = withinShowings((m.open_loops?.lines ?? []).map((l) => (typeof l === "string" ? { text: l, links: [] } : { links: [], ...l }))
+    .filter((l) => (l.links ?? []).some((k) => /[?&]loop=/.test(String(k.url ?? ""))) && !systemRow({ title: l.text }))
+    .map((l) => ({ ...l, seenKey: String(l.key ?? l.text).toLowerCase() })), data.told?.loops ?? {});
+  const olLines = olSeen.shown.slice(0, MAX_OPEN_LOOP_LINES).map(({ text, links }) => ({ text, links }));
+  const openLoopsSection = olLines.length ? { title: "Your open loops", items: olLines, link: null, empty: null } : null;
 
   // 4c. Brains (31 Oct 2026): Mondays one plain line, never red; the 1st of the month the scoreboard.
   const brainsSection = brainsSectionFor(data, now);
@@ -911,12 +992,8 @@ export function buildDay(data, now = Date.now()) {
   // Every call and meeting of the day, once (the diary merges a copy on a second calendar), with who
   // and the join link when there is one (owner, 26 Oct 2026: "tell me when i have calls").
   const calls = callsOn(data.diary, today).map((c) => `${timeOf(c.scheduled_at, data.ownerTz)} ${c.title}${c.with ? ` with ${c.with}` : ""}${/^https:\/\/\S+$/.test(String(c.location ?? "")) ? ` (join: ${c.location})` : ""}`);
-  // While her "OpenAI first" switch is on, one small line says so (owner, 24 Oct 2026).
-  const openaiFirst = (data.settings ?? []).find((r) => r.key === "seat_order_openai_first");
-  const openaiLine = openaiFirst && /^(on|true)$/.test(String(openaiFirst.value))
-    ? `Codex (your ChatGPT plan) goes before Claude on every job, after the free models; no paid API. On since ${dayWords(dayOf(Number(openaiFirst.updated_at) || now), { weekday: false })}. Turn it off in Settings.`
-    : null;
-  const ps = [eightRaiseLine(m.eightraise?.credits ?? null), openaiLine].filter(Boolean).join(" ") || null;
+  // The postscript is the 8Raise line, only when something is wrong (the seat-order line left 13 Nov 2026).
+  const ps = eightRaiseLine(m.eightraise?.credits ?? null);
 
   const subjBits = [];
   if (decide.length) subjBits.push(plural(decide.length, "decision"));
@@ -939,7 +1016,7 @@ export function buildDay(data, now = Date.now()) {
   // Each its own line under line 1. A section that did not report in is the team's: it goes to the
   // Updates page (`teamNotes`, posted by the run), never her email (7 Nov 2026).
   const morningRest = [lawLine(data.law), ancestral, calls.length ? `On your calendar: ${calls.join("; ")}.` : null].filter(Boolean);
-  const lay = ({ prospectWords = true, foundMax = MAX_FOUND_LINES, dealMax = MAX_DEAL_ROWS } = {}) => ownerEmail({
+  const lay = ({ foundMax = MAX_FOUND_LINES, dealMax = MAX_DEAL_ROWS } = {}) => ownerEmail({
     who: "Simone",
     layout: "digest",
     why: `Good morning. Here is your ${dayWords(today)}`,
@@ -954,12 +1031,14 @@ export function buildDay(data, now = Date.now()) {
         text: `${d.thin.replace(/^Still yours to answer: /, "")}${d.reply_text ? `. Your reply, word for word: “${oneLine(d.reply_text)}”` : ""}`,
         links: [...(d.send_url ? [{ label: "✓ Send as is", url: d.send_url }, { label: "✎ Change it", url: d.change_url }] : []), { label: "Open ›", url: d.screen }],
       })), empty: null }] : []),
-      { title: `New deals since yesterday (${deals.length})`, note: deals.length > dealMax ? `The ${dealMax} newest are here; all ${deals.length} are on the Deals screen.` : null, rows: dealRowsAll.length ? { columns: [{ key: "company", label: "Company" }, { key: "side", label: "Side" }, { key: "size", label: "Size @ price" }, { key: "from", label: "From" }], data: dealRowsAll.slice(0, dealMax) } : null, link: m.deals?.link ?? null, empty: m.deals ? "No new deals since yesterday." : null },
-      { title: "Monique found", rows: foundGrid.length ? { columns: [{ key: "company", label: "Company" }, { key: "trade", label: "Seller → buyer" }, { key: "fit", label: "Fit" }], data: foundGrid } : null, items: foundShown(foundMax), link: m.monique_found?.link ?? null, empty: null },
-      ...(prospects ? [prospectWords ? prospects : { ...prospects, full: undefined }] : []),
+      // A block with nothing in it is left out, never "nothing here" (owner, 13 Nov 2026).
+      ...(deals.length ? [{ title: `New deals since yesterday (${deals.length})`, note: deals.length > dealMax ? `The ${dealMax} newest are here; all ${deals.length} are on the Deals screen.` : null, rows: { columns: [{ key: "company", label: "Company" }, { key: "side", label: "Side" }, { key: "size", label: "Size @ price" }, { key: "from", label: "From" }], data: dealRowsAll.slice(0, dealMax) }, link: m.deals?.link ?? null, empty: null }] : []),
+      ...(foundGrid.length || foundItems.length ? [{ title: "Monique found", rows: foundGrid.length ? { columns: [{ key: "company", label: "Company" }, { key: "trade", label: "Seller → buyer" }, { key: "fit", label: "Fit" }], data: foundGrid } : null, items: foundShown(foundMax), link: m.monique_found?.link ?? { label: "See every match", url: `${ORIGIN}/?tab=capital&view=matches` }, empty: null }] : []),
+      ...(prospects ? [prospects] : []),
       ...(spirit ? [spirit] : []),
+      // A briefing that is not in is said in one line (rule 0: a failed source says so), with its link.
       { title: "This morning's briefing (Camille)", items: briefTop ?? ["Briefing late — it will be on your Today page."], link: { label: "Read the full briefing →", url: BRIEFING_URL } },
-      { title: "Done for you", tone: "done", items: doneShown, empty: null },
+      ...(doneShown.length ? [{ title: "Done for you", tone: "done", items: doneShown, empty: null }] : []),
       ...(gridRepos ? [gridRepos] : []),
       ...(openLoopsSection ? [openLoopsSection] : []),
       ...(scorecardSection ? [scorecardSection] : []),
@@ -970,8 +1049,10 @@ export function buildDay(data, now = Date.now()) {
       // Her own to-dos (owner, 26 Oct 2026): told once, then Mondays or two days before a date. Reply
       // "add to my list: …" or "done: …" to change it.
       ...(yours.length ? [{ title: "Yours this week", note: "Reply \"add to my list: …\" or \"done: …\" to change it.", items: yours.map((i) => `${i.what}${i.due_on ? ` (by ${dayWords(i.due_on, { weekday: false })})` : ""}`), empty: null }] : []),
-      ...(monday ? [{ title: "This week", items: deadlines, empty: "No deadlines this week." }] : []),
-      { title: "Porch & Party: To do for Valerie", note: val ? `From the Porch & Party site at ${timeOf(now, data.ownerTz)}. Valerie gets her own copy at 7 am CT.` : null, boxed: true, items: val ?? [], empty: val ? "All clear for Valerie today." : "Valerie's list did not load this morning; the team is fixing it and Valerie still gets her own copy at 7 am." },
+      ...(monday && deadlines.length ? [{ title: "This week", items: deadlines, empty: null }] : []),
+      // Valerie's list only when it holds something. A feed that did not load is the team's fix job
+      // (main), never a line here; Valerie still gets her own copy at 7 am.
+      ...(val?.length ? [{ title: "Porch & Party: To do for Valerie", note: `From the Porch & Party site at ${timeOf(now, data.ownerTz)}. Valerie gets her own copy at 7 am CT.`, boxed: true, items: val, empty: null }] : []),
     ],
     footer: 'Reply to change anything, for example "move the intro to Monday".',
     postscript: ps,
@@ -998,11 +1079,11 @@ export function buildDay(data, now = Date.now()) {
     still_yours: stillYours.map(({ id, key, title, thin, screen }) => ({ id, key: key ?? null, title, line: thin, screen })),
     catchups: catchCards.map(({ id, title, body, details, draft, buttons, screen }) => ({ id, title, body: body ?? "", details: details ?? [], draft: draft ?? null, buttons, screen })),
     briefing: raw ? { for_day: data.briefing.for_day, top: raw.map((l) => proseText(proseRuns(l)).replace(/⁣/g, "")) } : null,
-    prospects: prospects ? { items: prospects.items.map((i) => (typeof i === "string" ? i : i.text)), sent: (data.prospects?.sent ?? []).map((r) => ({ name: r.name, firm: r.firm, email: r.email, touch: r.touch_no, sent_at: r.sent_at, subject: r.sent_subject ?? r.subject, body: r.body ?? null })) } : null,
+    prospects: data.prospects ? { items: (prospects?.items ?? []).map((i) => (typeof i === "string" ? i : i.text)), sent: (data.prospects?.sent ?? []).map((r) => ({ name: r.name, firm: r.firm, email: r.email, touch: r.touch_no, sent_at: r.sent_at, subject: r.sent_subject ?? r.subject, body: r.body ?? null })) } : null,
     eightraise: ps,
   };
   // What this email told her, so tomorrow's says it once more at most as a thin line (morningMemory.mjs).
-  const memory = { decide: repeats.memory, done: [...new Set([...(data.told?.done ?? []), ...doneOnce.keys])].slice(-500) };
+  const memory = { decide: repeats.memory, done: [...new Set([...(data.told?.done ?? []), ...doneOnce.keys])].slice(-500), still: stillSeen.memory, loops: olSeen.memory };
   return { ...laid, dropped, digest, cuts, bytes: bytes(laid), memory, yoursTold: yours.map((i) => i.id), teamNotes: notReported ? [notReported] : [] };
 }
 
@@ -1082,12 +1163,16 @@ export function lawLine(law) {
 
 export async function read(api, now) {
   const [today, diary, tasks, approvals, rc] = await Promise.all([api.get("/today"), api.get("/diary"), api.get("/tasks"), api.get("/approvals"), api.get("/repo-changes")]);
+  // Every job still held, however old: the list above is the newest 100 only, so a held job older
+  // than that had no card and no repair (13 Nov 2026).
+  const held = await api.get("/tasks?status=awaiting_approval").catch((e) => { console.error(`your-day: the held jobs were not read (${e.message})`); return []; });
+  const seenTasks = new Set(tasks.map((t) => t.id));
+  for (const t of held ?? []) if (!seenTasks.has(t.id)) { seenTasks.add(t.id); tasks.push(t); }
   const withDue = tasks.map((t) => { let input = {}; try { input = typeof t.input === "string" ? JSON.parse(t.input) : (t.input ?? {}); } catch { input = {}; } return { ...t, due: input?.due ?? null }; });
   // The bounce agent's last day (rule 4): one "done" line. A failed read is said in the log, not to her.
   const bounceFixes = await api.get("/outreach/bounce-fixes").catch((e) => { console.error(`your-day: bounce fixes not read (${e.message})`); return null; });
   // The channel's comment digests: what a comment task is about, and the ones Monique left alone.
   const prospects = await api.get(`/lp/prospects/activity?since=${now - 30 * 3_600_000}`).catch((e) => { console.error(`your-day: prospect activity not read (${e.message})`); return null; });
-  const settings = await api.get("/system/settings").catch(() => []);
   const spirit = await api.get("/spirit/day").catch((e) => { console.error(`your-day: spirit day not read (${e.message})`); return null; });
   const practiceWeek = await api.get("/spirit/practice-week").catch(() => null);
   const waiting = await api.get("/waiting-on").then((d) => d?.items ?? []).catch((e) => { console.error(`your-day: the waiting-on register not read (${e.message})`); return []; });
@@ -1109,13 +1194,12 @@ export async function read(api, now) {
   const reported = sectionsNotReported(sections, { weekday: parts(now).weekday, now });
   for (const m of reported.missing) console.error(`your-day: morning section not reported in — ${m.name}`);
   // Her zone for the times shown (Central when unread: never a guess).
-  const updates = await api.get("/task-notices/updates?summary=1").catch((e) => { console.error(`your-day: the Updates count not read (${e.message})`); return null; });
   const ownerTz = await api.get("/system/owner-timezone").then((d) => d?.tz ?? null).catch((e) => { console.error(`your-day: her time zone not read (${e.message}); times in Central`); return null; });
   // Job 6: an approval whose task is older than the newest 100 is read by id, so a repair's approval is known as one.
   const known = new Set(tasks.map((t) => t.id));
   const approvalTasks = (await Promise.all([...new Set((approvals ?? []).map(approvalTaskId).filter((id) => id && !known.has(id)))].slice(0, 100)
     .map((id) => api.get(`/tasks/${encodeURIComponent(id)}`).then((d) => d?.task ?? null).catch((e) => { console.error(`your-day: the task behind an approval was not read (${e.message})`); return null; })))).filter(Boolean);
-  return { approvalTasks, updates, ownerTz, quietPeople, brainsCheck, t2rGroups, scoreboard, diary: diary?.rows ?? null, tasks: withDue, approvals, repoChanges: rc?.items ?? [], briefing: briefingOf(today), law: lawOf(today), bounceFixes, commentWatch, prospects, spirit, practiceWeek, settings, waiting, carried, morning: reported.sections, notReported: reported.missing };
+  return { approvalTasks, ownerTz, quietPeople, brainsCheck, t2rGroups, scoreboard, diary: diary?.rows ?? null, tasks: withDue, approvals, repoChanges: rc?.items ?? [], briefing: briefingOf(today), law: lawOf(today), bounceFixes, commentWatch, prospects, spirit, practiceWeek, waiting, carried, morning: reported.sections, notReported: reported.missing };
 }
 
 export async function feedOf(range) {
@@ -1148,7 +1232,7 @@ export function selfWaitingRepairs(waiting, tasks = []) {
   const open = new Set((tasks ?? []).filter((t) => OPEN.has(t.status)).map((t) => t.title));
   return (waiting ?? []).map((t) => ({
     title: `Unblock "${String(t.title).slice(0, 80)}": it waits for an approval nobody was asked for`,
-    prompt: `the task ${t.id} ("${t.title}") is one Boss OS started itself (a duty's run) and sits in awaiting_approval with no pending approval row, so nothing can release it and the owner is not asked (her ruling, 2 Nov and 13 Nov 2026: the employee takes her own default). Read its task_events to see what parked it, take the default (accept the result, or run it again), and fix at source whatever parks self-started work without a real owner decision (money, a send in her name, legal and invitations stay approvals).`,
+    prompt: `the task ${t.id} ("${t.title}") sits in awaiting_approval with no pending approval row, so nothing can release it and the owner is not asked. Either Boss OS started it itself (a duty's run; her ruling, 2 Nov and 13 Nov 2026: the employee takes her own default) or she already answered its approval and the task never moved. Read its task_events and its approval to see what parked it; if she approved it, do what she approved; otherwise take the default (accept the result, or run it again). Fix at source whatever left it parked (money, a send in her name, legal and invitations stay approvals).`,
   })).filter((r) => !open.has(r.title));
 }
 

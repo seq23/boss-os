@@ -142,6 +142,41 @@ export function splitRepeats(decide, { told = {}, today, now }) {
 }
 
 /**
+ * A DECIDE ITEM ALREADY ANSWERED UNDERNEATH IS NOT WAITING ON HER (13 Nov 2026: an approval she had
+ * approved six days earlier still read "waiting 4 days"). `key` is the card's own ("approval:<id>",
+ * "task:<id>"); `pending` the approvals still open, `waiting` the tasks still held. Any other card is
+ * judged by its own producer. One rule for Today (today/waiting.ts) and the morning email. Pure.
+ */
+export function answeredUnderneath(key, { pending = new Set(), waiting = new Set() } = {}) {
+  const k = String(key ?? "");
+  if (k.startsWith("approval:")) return !pending.has(k.slice("approval:".length));
+  if (k.startsWith("task:")) return !waiting.has(k.slice("task:".length));
+  return false;
+}
+
+/** How many mornings a thin "Still yours" row or an open-loop row shows before it leaves the email. */
+export const MAX_SHOWINGS = 3;
+
+/**
+ * SHOWN THREE TIMES, THEN IT LEAVES THE EMAIL (owner, 13 Nov 2026). `rows` each carry `seenKey`;
+ * `seen` maps key → mornings already shown. Returns the rows still to show and the counts to keep
+ * once this email has gone (only keys still in play are kept, so the memory cannot grow). The row
+ * stays on its own screen (Today, Open Loops): only the email stops repeating it. Pure.
+ */
+export function withinShowings(rows, seen = {}, max = MAX_SHOWINGS) {
+  const shown = [];
+  const memory = {};
+  for (const r of rows ?? []) {
+    const n = Number(seen?.[r.seenKey] ?? 0);
+    if (n >= max) { memory[r.seenKey] = n; continue; }
+    if (r.seenKey in memory) continue; // the same row twice in one email is one row
+    memory[r.seenKey] = n + 1;
+    shown.push(r);
+  }
+  return { shown, memory };
+}
+
+/**
  * Which failed tasks get a fix job: one per job FAMILY, and none for a family that already has a
  * repair that is not finished (or a fix job opened this run).
  */

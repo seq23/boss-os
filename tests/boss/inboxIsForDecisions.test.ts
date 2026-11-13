@@ -62,6 +62,40 @@ describe("an approval exists when her answer changes what happens next", () => {
     expect(verdict.delivers).toBe("research_page");
   });
 
+  /*
+   * 13 NOV 2026: work Boss OS started itself never parks waiting on her. Wave 1 hid these from her
+   * email; they still sat in awaiting_approval. Approving applies nothing, so there was never a question.
+   */
+  it("a duty's own run and a repair never wait on her: accepted where it lands, or ended by name", () => {
+    const duty = JSON.stringify({ duty_id: "duty_synthetic" });
+    const repair = JSON.stringify({ origin: "repair", repair_kind: "self_repair" });
+    const hers = JSON.stringify({ from: "o@example.com", mail_id: "iml_syn" });
+    const touched = { summary: "Changed a file.", files_touched: ["/Users/x/GitHub/a-repo/file.ts"] };
+    // No delivery, files outside its folder: each parked before. Now none does.
+    for (const input of [duty, repair]) {
+      expect(runNeedsHerDecision(input, { files_touched: [] }, [])).toMatchObject({ needed: false });
+      expect(runNeedsHerDecision(input, touched, [])).toMatchObject({ needed: false });
+      expect(runNeedsHerDecision(input, touched, []).stop).toBeUndefined();
+    }
+    // A duty's run from before the stamp is known by its duty.
+    expect(runNeedsHerDecision("{}", { files_touched: [] }, [], { dutyRun: true }).needed).toBe(false);
+    expect(runNeedsHerDecision("{}", { files_touched: [] }, []).needed).toBe(true);
+    // A delivery nothing handles is not accepted quietly: the task ends under a named stop.
+    const lost = runNeedsHerDecision(JSON.stringify({ duty_id: "duty_synthetic", delivers: "nothing_handles_this" }), { files_touched: [] }, []);
+    expect(lost.needed).toBe(false);
+    expect(lost.stop).toMatch(/^NAMED STOP \[DELIVERY_UNHANDLED\]/);
+    // What still reaches her: a guard that fired, and a duty's run that says the decision is hers.
+    expect(runNeedsHerDecision(duty, { files_touched: [] }, [{ rule: "push" }]).needed).toBe(true);
+    expect(runNeedsHerDecision(duty, { files_touched: [], approval_needed: true }, []).needed).toBe(true);
+    // A repair never asks her; its finding goes to the team.
+    expect(runNeedsHerDecision(repair, { files_touched: [], approval_needed: true }, []).needed).toBe(false);
+    // Her own ask is untouched: it still comes to her.
+    expect(runNeedsHerDecision(hers, touched, []).needed).toBe(true);
+    expect(runNeedsHerDecision(hers, { files_touched: [] }, []).needed).toBe(true);
+    // A dated check-in she set is hers, though it is filed as a repair.
+    expect(runNeedsHerDecision(JSON.stringify({ origin: "repair", repair_kind: "waiting_on" }), { files_touched: [] }, []).needed).toBe(true);
+  });
+
   it("every delivery key the research lane declares is one this rule knows", async () => {
     const { RESEARCH_PAGE_DELIVERS } = await import("../../src/shared/boss/research/page.mjs");
     expect(runNeedsHerDecision(JSON.stringify({ delivers: RESEARCH_PAGE_DELIVERS }), { files_touched: [] }, []).delivers).toBe(RESEARCH_PAGE_DELIVERS);

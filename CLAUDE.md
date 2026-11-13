@@ -87,9 +87,9 @@ Owner, 24 Oct 2026. In code in `src/shared/boss/deals/match.mjs` (size, price, a
    earns the star only when both prices are known and within 10%, the seller fills at least 25% of the
    buyer or $10M, and both orders are under 14 days (`STAR`, `matchFit`). A row stays until she
    dismisses it or one side goes stale. **No match goes to Decide**: Decide is her own moves (LP
-   replies, approvals). Then "Still looking" as one line, the filings and press as one link, and one
-   count line, "See all N matches →". "New deals since yesterday" is a grid too: company | side |
-   size @ price | from | Open ›. Pinned by `tests/matchGridAndStar.test.ts` and
+   replies, approvals). Then the filings and press as one link and one way to the Matches screen; no
+   "Still looking" line and no totals line (13 Nov 2026). "New deals since yesterday" is a grid too: company | side |
+   size @ price | from | Open ›, one row per company and side (`mergeDealRows`). Pinned by `tests/matchGridAndStar.test.ts` and
    `tests/morningSizeAndMatches.test.ts`.
 6a. **Dismiss is one table** (`capital_dismissed`, `src/worker/boss/capital/dismiss.ts`): the card's
    button, the one-tap link and her reply "dismiss <code>" all write it; the Matches screen, Today
@@ -105,13 +105,14 @@ Owner, 24 Oct 2026. In code in `src/shared/boss/deals/match.mjs` (size, price, a
 Owner, 23 Oct 2026 (inbox review: nine Boss OS emails in two days, none useful). Enforced in code and
 pinned by `tests/plainEmail.test.ts` ("the rules in CLAUDE.md"), which reads this section, and by
 `npm run validate:email-plain`:
-1. **One morning email.** Simone's (`scripts/ops/your-day.mjs`): Decide → New deals since yesterday +
-   Monique found (+ Prospect emails) → ✨ Spirit (week, moon, sky, the morning sequence, a new non-body
+1. **One morning email.** Simone's (`scripts/ops/your-day.mjs`): Decide → New deals since yesterday (one
+   row per company and side) + Monique found (the matches only) (+ Prospect emails, replies only) → ✨ Spirit (week, moon, sky, the morning sequence, a new non-body
    gratitude sentence every day, the month, the week's practice in one line; then one link, "See the
-   full sky, body and practice in Boss OS →" — trimmed 25 Oct 2026) → Camille's briefing (five lines and "Read the full briefing →" to its screen — the whole briefing is never
-   in the email; it waits for the report, 07:45 Central at the latest) → Done for you (≤3)
-   → Catch up with → Porch & Party: To do for Valerie → sign-off → the 8Raise line only when something
-   is wrong. Every other producer writes a section file (`src/shared/boss/mail/morning.mjs`) instead of
+   full sky, body and practice in Boss OS →" — trimmed 25 Oct 2026) → Camille's briefing (three one-line headlines and "Read the full briefing →" to its screen — the whole briefing is never
+   in the email; it waits for the report, 07:45 Central at the latest) → Done for you (≤3, nothing after them)
+   → Your open loops (her own overdue rows, five at most) → Catch up with → Porch & Party: To do for
+   Valerie (only when her list holds something) → sign-off → the 8Raise line only when something
+   is wrong. **A block with nothing in it is left out** (owner, 13 Nov 2026): no "nothing here" lines. Every other producer writes a section file (`src/shared/boss/mail/morning.mjs`) instead of
    an email. Another email only when it cannot wait: a decision due today, money at risk, a deal moving now.
    **Every decision is in Decide, all of them** (24 Oct 2026: "6 decisions" showed 3 and Today showed
    none): the count is the number shown, each item says who (with their full address), what they
@@ -122,10 +123,15 @@ pinned by `tests/plainEmail.test.ts` ("the rules in CLAUDE.md"), which reads thi
    line, never a decision — a task that failed is ONE fix job per job family and a done line the next
    morning (`failedTaskLines`, `fixJobsToOpen`). **Told once** (owner, 26 Oct 2026,
    `src/shared/boss/mail/morningMemory.mjs`, pinned by `tests/morningMemory.test.ts`): Done for you
-   shows an item once, never twice in one email, one short whole sentence each, at most three, then
-   "+N more on Today ›" (the full What happened / What we did / Status stays on Today); a Decide item
-   she has already seen is one thin line on later days ("Still yours to answer: name · N days ·
-   Open ›"), kept, and not counted as a fresh decision in the subject. Pinned by
+   shows an item once, never twice in one email, one short whole sentence each, at most three (the
+   full What happened / What we did / Status stays on Today); a Decide item she has already seen is
+   one thin line on later days ("Still yours to answer: name · N days · Open ›"), not counted as a
+   fresh decision in the subject, shown on three mornings and then only on Today (`withinShowings`,
+   13 Nov 2026; an open-loop row the same); a card whose approval she already answered is not carried
+   (`answeredUnderneath`). **No card prints a model's own words** (`plainSummary`; the Worker writes one
+   plain line). **Work Boss OS started itself never parks waiting on her** (13 Nov 2026): a duty's run
+   or a repair is accepted where it lands or ends under a named stop (`runNeedsHerDecision`,
+   queue/consumer.ts); only a guard that fired or a run that says the decision is hers raises a card. Pinned by
    `tests/morningFullContext.test.ts` ("Rule 0: everything awaiting her is in Decide").
 2. **Decide first, one-tap buttons, plain words.** `layoutEmail` / `layoutProblem`
    (`src/shared/boss/mail/plain.mjs`). Never Gmail ids, commands, /api paths, PR numbers, UTC times,
@@ -147,9 +153,8 @@ pinned by `tests/plainEmail.test.ts` ("the rules in CLAUDE.md"), which reads thi
    Every sender's real builder output is pinned by `tests/everySenderPlain.test.ts`.
 6. **Never risk Gmail's clip** (owner, 24 Oct 2026: Gmail hides an email over ~102KB behind "View entire
    message"). The HTML must fit `EMAIL_HTML_BUDGET` (80KB, bytes): styles live on the wrapper, not on
-   every paragraph; long lists stop with "See all N →" on their screen (`MAX_DEAL_ROWS`, `MAX_FOUND_LINES`,
-   `MAX_PROSPECT_SENDS`); past the budget `CUT_ORDER` cuts the prospect emails' words, then Monique's
-   lines to three, then the deal rows to five. **Decisions are never cut.** Pinned by
+   every paragraph; long lists stop on their screen (`MAX_DEAL_ROWS`, `MAX_FOUND_LINES`); past the budget
+   `CUT_ORDER` cuts Monique's lines to three, then the deal rows to five. **Decisions are never cut.** Pinned by
    `tests/morningSizeAndMatches.test.ts` (a heavy-day fixture that fails over 80KB).
 7. **The practice emails** (owner, 31 Oct 2026: "when i go on long streaks of not opening the boss os app
    and not doing coaching and not hitting my gates u should email me … I need tough love sometimes").
@@ -172,8 +177,7 @@ pinned by `tests/plainEmail.test.ts` ("the rules in CLAUDE.md"), which reads thi
    a missing key, an empty Drive folder, or anything about work she asked for (research, a prep, a
    reply to her email), however she asked. Open-loop reminders, notices about repairs and duties Boss
    OS started by itself, and the Mac disk line are rows on
-   ☰ More → Updates (`/?tab=updates`), and the morning email's "Done for you" carries ONE count line
-   read from the same route. Pinned by `tests/noticeGate.test.ts`.
+   ☰ More → Updates (`/?tab=updates`); the morning email no longer counts them (13 Nov 2026). Pinned by `tests/noticeGate.test.ts`.
 9. **One minimum on every email to her; layouts when they fit, never a gate** (owner, 7 Nov 2026,
    personal brain, Settled decisions). `ownerEmail` (`src/shared/boss/mail/ownerLayout.mjs`) is the one
    layout every sender to her uses (Mac senders pass `owner` to `employeeMail`; the Worker's reply uses
@@ -534,7 +538,7 @@ Owner ruling, 1 Nov 2026 (personal brain, Settled decisions). Pinned by `tests/s
 
 Owner ruling, 1 Nov 2026 (personal brain, Settled decisions). Pinned by `tests/boss/openLoops.test.ts`:
 1. **One list in D1** (`owner_open_loops`, migration 0331; `open_loops` is the older Today day-loops
-   table), rules in `src/shared/boss/openLoops/openLoops.mjs`, API `/api/boss/open-loops`, page
+   table; a POST with an open row's title keeps that row, so the same title is one row), rules in `src/shared/boss/openLoops/openLoops.mjs`, API `/api/boss/open-loops`, page
    ☰ More → Open Loops (`/?tab=loops`). Not finished (finish line, next step, owner, date) and Parked
    ideas (no dates, no chasing). Her rows waiting on an open `blocked_by` step are hidden and counted.
 2. **Chased by the Worker's hourly tick** (`runOpenLoopsDaily`, once a day from 05:00 Central): the
@@ -543,8 +547,9 @@ Owner ruling, 1 Nov 2026 (personal brain, Settled decisions). Pinned by `tests/b
    if not stop and remind me"; `overdueRoute`): one Danielle can do is one silent repair once 3 days
    late (one per date); one that needs her (her row, her account, a key, money, legal, her decision,
    or nothing written) opens no job and writes ONE plain reminder on day 1, then every 3 days, at
-   most 3 per date — a row on the Updates page, never an email (owner, 7 Nov 2026); the overdue rows
-   are already the morning email's folded Open loops list.
+   most 3 per date — a row on the Updates page, never an email (owner, 7 Nov 2026); her overdue rows
+   are the morning email's "Your open loops": hers only, the same title once, five at most, each on
+   three mornings (13 Nov 2026).
 3. **Repos' named stops report in** through `POST /api/boss/open-loops/intake` with the machine token
    `BOSS_OPEN_LOOPS_TOKEN` (vault): upsert by `repo#STOP`, closed "outcome reached" when cleared.
    How to adopt: `docs/open-loops.md`. Seed rows are posted at runtime, never written in the repo.

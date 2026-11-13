@@ -68,7 +68,7 @@ describe("the morning email stays under Gmail's clip (owner, 24 Oct 2026: never 
     expect((e.html.match(/The reply, word for word/g) ?? []).length).toBe(14);
     expect(e.problems).toEqual([]);
   });
-  it("the full briefing is never in the email: five lines and one link to its screen", () => {
+  it("the full briefing is never in the email: three headlines and one link to its screen", () => {
     expect(e.html).not.toContain("Section 0");
     expect(e.text).not.toContain("Section 0");
     expect(e.html).toMatch(/<a href="https:\/\/boss\.sequoiataylor\.com\/\?view=briefing"[^>]*>Read the full briefing →<\/a>/);
@@ -77,11 +77,12 @@ describe("the morning email stays under Gmail's clip (owner, 24 Oct 2026: never 
     expect(e.text).toContain("New deals since yesterday (60)");
     expect((e.text.match(/Open the deal:/g) ?? []).length).toBeLessThanOrEqual(10);
     expect(e.text).toMatch(/all 60 are on the Deals screen/);
-    expect(e.text).toMatch(/And \d+ more from Monique\./);
-    expect(e.text).not.toMatch(/Sent: email \d+ of \d+ to Prospect 39\b/); // any cap: the list stops
+    // Owner, 13 Nov 2026: no "N more" line, no totals, and no list of what was sent.
+    expect(e.text).not.toMatch(/more from Monique|possible trades in all|Still looking:/);
+    expect(e.text).not.toMatch(/Sent: email \d+ of \d+ to Prospect/);
   });
   it("cuts go in a fixed order, and a day under the budget keeps everything it carries", () => {
-    expect(CUT_ORDER.map(([n]) => n)).toEqual(["prospect email words", "Monique's lines to three", "deal rows to five"]);
+    expect(CUT_ORDER.map(([n]) => n)).toEqual(["Monique's lines to three", "deal rows to five"]);
     const light = buildDay({ ...heavyDay(), prospects: null, morning: { deals: { section: "deals", at: stamp, rows: [{ company: "Company A", side: "Buy", size: "$1B", from: "Broker One", url: `${G}a` }] } } }, NOW);
     expect(Buffer.byteLength(light.html, "utf8")).toBeLessThan(EMAIL_HTML_BUDGET);
     expect(light.text).toContain("- Company A · Buy · $1B · Broker One");
@@ -114,7 +115,7 @@ describe("matches are counted once and the email carries the best few", () => {
     expect(c.live + c.stale).toBe(c.within);
     expect(new Set(out.matches.map((m: any) => m.pair)).size).toBe(out.matches.length);
   });
-  it("the email: at most five grid rows, one per company, freshest then closest price; then 'See all N matches →'", () => {
+  it("the email: at most five grid rows, one per company, freshest then closest price; then one way to every match", () => {
     const grid: any[] = [];
     for (let c = 0; c < 8; c++) {
       grid.push(row({ id: `b${c}`, company: `Co ${c}`, from_text: `Buyer ${c}`, received_on: day(c + 1), price_text: "$100/share", _row: { from: `b${c}@x.example` } }));
@@ -126,10 +127,10 @@ describe("matches are counted once and the email carries the best few", () => {
     expect(out.grid.map((r: any) => r.company)).toEqual(["⭐ Co 0 (+1 more)", "⭐ Co 1 (+1 more)", "⭐ Co 2 (+1 more)", "⭐ Co 3 (+1 more)", "⭐ Co 4 (+1 more)"]);
     expect(out.grid[0].trade).toMatch(/^Seller 0near .* at \$101 a share → Buyer 0 .* at \$100 a share$/);
     expect(out.lines.filter((l: any) => /^Match, /.test(l.text))).toEqual([]);
-    const last = out.lines[out.lines.length - 1];
-    expect(last.text).toBe("16 possible trades in all, on 8 companies, each buyer and seller counted once.");
-    expect(last.links).toEqual([{ label: "See all 16 matches →", url: "https://boss.sequoiataylor.com/?tab=capital&view=matches" }]);
-    expect(out.link).toBeNull(); // one button to the Matches screen, not two
+    // The totals are counted once for the Matches screen and never printed (owner, 13 Nov 2026).
+    expect(out.counts).toMatchObject({ within: 16, companies: 8 });
+    expect(out.lines).toEqual([]);
+    expect(out.link).toEqual({ label: "See every match", url: "https://boss.sequoiataylor.com/?tab=capital&view=matches" }); // one button to the Matches screen
   });
   it("a row stays until she dismisses it or one side goes stale; a new order brings a dismissed pair back", () => {
     const sell = row({ id: "s", company: "Company Q", side: "sell", direction: "sell", size_usd: 25e6, size_text: "$25M", from_text: "Pat", received_on: day(11), _row: { from: "pat@q.example" } });
@@ -146,7 +147,7 @@ describe("matches are counted once and the email carries the best few", () => {
     const repriced = { ...sell, price_text: "$120/share" };
     expect(moniqueFound({ newRows: [], grid: [repriced, buy], lists: NO_LISTS, now: NOW, dismissed }).grid).toHaveLength(1);
   });
-  it("the email never lists hundreds: a grid of 300 pairs still shows five and one count line", () => {
+  it("the email never lists hundreds: a grid of 300 pairs still shows five rows and no totals line", () => {
     const grid: any[] = [];
     for (let i = 0; i < 300; i++) {
       grid.push(row({ id: `b${i}`, company: `Co ${i % 40}`, from_text: `B${i}`, _row: { from: `b${i}@x.example` } }));
@@ -154,8 +155,12 @@ describe("matches are counted once and the email carries the best few", () => {
     }
     const out = moniqueFound({ newRows: [], grid, lists: NO_LISTS, now: NOW });
     expect(out.grid.length).toBe(MAX_EMAIL_MATCHES);
-    expect(out.lines.length).toBe(1);
-    expect(out.lines[0].links[0].label).toMatch(/^See all \d[\d,]* matches →$/);
+    expect(out.lines).toEqual([]);
+    expect(out.counts.within).toBeGreaterThan(MAX_EMAIL_MATCHES);
+    const e = buildDay({ diary: [], tasks: [], approvals: [], repoChanges: [], briefing: null, feed: { items: [] }, morning: { monique_found: { section: "monique_found", at: new Date(NOW).toISOString(), ...out, matches: [], lines: [{ text: "Still looking: no one in your email yet for $50M Co 1 buyer." }, { text: "300 possible trades in all, on 40 companies, each buyer and seller counted once.", links: [], counts: out.counts }] } } } as any, NOW);
+    expect(e.text).toContain("Monique found");
+    expect((e.text.match(/ — Open ›: /g) ?? []).length).toBe(MAX_EMAIL_MATCHES);
+    expect(e.text).not.toMatch(/possible trades in all|Still looking:/);
   });
 });
 

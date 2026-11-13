@@ -19,7 +19,10 @@ export function sortLoops<T extends Partial<Loop>>(loops: T[] | null | undefined
 export function groupLoops<T extends Partial<Loop>>(loops: T[] | null | undefined, order: readonly string[], today: string): Array<{ key: string; rows: T[] }>;
 export function ownerWords(owner: string, names?: Record<string, string>): string;
 export function dayWords(d: string | null | undefined): string;
-export function morningSection(loops: Partial<Loop>[], today: string, opts?: { origin?: string; names?: Record<string, string> }): { title: string; lines: Array<{ text: string; links: Array<{ label: string; url: string }> }>; link: { label: string; url: string } };
+export function loopKey(title: unknown): string;
+export function systemRow(loop: Partial<Loop> | null | undefined): boolean;
+export function trulyHers(loop: Partial<Loop> | null | undefined): boolean;
+export function morningSection(loops: Partial<Loop>[], today: string, opts?: { origin?: string; names?: Record<string, string> }): { title: string; lines: Array<{ key: string; text: string; links: Array<{ label: string; url: string }> }>; link: { label: string; url: string } };
 export function repairsDue<T extends Partial<Loop>>(loops: T[] | null | undefined, today: string): T[];
 export function loopProblems(b: unknown, opts?: { partial?: boolean; slugs?: readonly string[] }): string[];
 export function sourceKeyOf(repo: unknown, stop: unknown): string | null;

@@ -343,6 +343,24 @@ export async function runExpirySweep(env: Env): Promise<{ expired: number; execu
       level: "info", scope: "cron", event: "expiry_sweep", detail: { expired, executed, failed },
     });
   }
+  /*
+   * AN ANSWER ALREADY GIVEN THAT RELEASED NOTHING IS CARRIED OUT NOW (13 Nov 2026). A task still
+   * held on an approval she has answered is one the executor skipped (a kind with no handler at the
+   * time). Her decision is applied as she gave it, once: the task leaves `awaiting_approval`, so the
+   * next sweep finds nothing.
+   */
+  const stuck = await env.DB
+    .prepare(
+      `SELECT a.* FROM approvals a JOIN tasks t ON t.approval_id = a.id
+        WHERE t.status = 'awaiting_approval' AND a.status IN ('approved','rejected','expired')
+          AND a.execution_status = 'not_applicable' ORDER BY a.decided_at LIMIT 50`,
+    )
+    .all<ApprovalRow>();
+  for (const approval of stuck.results ?? []) {
+    const result = await executeDecision(env, approval, approval.status as "approved" | "rejected" | "expired", null);
+    if (result.status === "executed") executed++;
+    else if (result.status === "failed") failed++;
+  }
   return { expired, executed, failed };
 }
 
