@@ -4653,7 +4653,7 @@
         ]
       },
       "output": {
-        "metric": "groups researched",
+        "metric": "groups ready to write to",
         "floor": 1,
         "runs": 3
       }
