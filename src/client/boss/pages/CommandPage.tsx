@@ -29,13 +29,18 @@ export function CommandPage({ id }: { id: string }) {
   return <div data-testid="command-page">{back}<ErrorNotice error={error} onDismiss={() => setError(null)} />
     {!data ? !error && <Loading /> : <>
       <h2>{data.kind === "errand" ? "Your errand" : data.kind === "meeting_prep" ? "Your meeting prep" : "Your request"}</h2>
-      <section className="panel"><p className="eyebrow">What you asked for</p><MailWords text={data.spec.ask ?? data.spec.title ?? data.spec.name ?? data.spec.who ?? "Your request"} /></section>
+      {data.kind === "meeting_prep" && data.spec.event?.title
+        ? <section className="panel"><p className="eyebrow">The meeting</p><MailWords text={`${data.spec.event.title}${data.spec.event.scheduled_at ? `\n${new Date(data.spec.event.scheduled_at).toLocaleString(undefined, { weekday: "long", month: "short", day: "numeric", hour: "numeric", minute: "2-digit" })}` : ""}`} /></section>
+        : <section className="panel"><p className="eyebrow">What you asked for</p><MailWords text={data.spec.ask ?? data.spec.title ?? data.spec.name ?? data.spec.who ?? "Your request"} /></section>}
       {data.spec.prep?.text
         ? <section className="panel" data-testid="filed-prep"><p className="eyebrow">Your prep</p><MailWords text={data.spec.prep.text} /></section>
         : <p role="status">{commandState(data)}</p>}
       {line && <p role="status">{line}</p>}
-      <h3>Every email in this thread</h3>
-      {data.mail.threads.length ? data.mail.threads.map((t: any) => <MailThread key={t.id} thread={t} onChanged={load} />) : <p>No saved emails in this thread yet.</p>}
+      {/* A prep that was filed and never emailed has no thread: the section is left out, not shown empty. */}
+      {(data.mail.threads.length > 0 || !data.spec.prep?.text) && <>
+        <h3>Every email in this thread</h3>
+        {data.mail.threads.length ? data.mail.threads.map((t: any) => <MailThread key={t.id} thread={t} onChanged={load} />) : <p>No saved emails in this thread yet.</p>}
+      </>}
       {data.kind === "errand" && <section className="panel"><h3>Booking</h3>
         {data.result.booking?.at ? <p>{new Date(data.result.booking.at).toLocaleString("en-US", { timeZone: data.result.booking.tz ?? "America/New_York", timeZoneName: "short" })} · {data.state !== "needs_card" && data.result.booking.confirmed ? "Confirmed by the venue" : "Waiting for the venue to confirm"}</p> : <p>No booking confirmed yet.</p>}
         {(data.result.rules ?? []).map((s: string, i: number) => <p key={i}>{s}</p>)}
