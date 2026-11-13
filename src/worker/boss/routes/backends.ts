@@ -21,7 +21,7 @@ import { logEvent } from "../lib/log";
 import { newId } from "../lib/id";
 import { getSetting } from "../lib/settings";
 import { classify } from "../intake/classify";
-import { deliverExecutiveReport, deliverSourcingCandidates, deliverLinkProspects, deliverToolSuggestions, deliverPracticeWeek, deliverResearchPage } from "../duties/deliverReport";
+import { deliverExecutiveReport, deliverSourcingCandidates, deliverLinkProspects, deliverToolSuggestions, deliverPracticeWeek, deliverResearchPage, deliverQualityReads } from "../duties/deliverReport";
 import { buildEnvelope } from "../intake/envelope";
 import { runNeedsHerDecision } from "../backends/needsDecision";
 import { setSpendLever, spendLeverState, SPEND_LEVER_POSITIONS, type SpendLeverPosition } from "../router/spend";
@@ -50,6 +50,7 @@ import { deepStrip } from "../backends/dispatch";
 import { CLAUDE_SEAT, OPENAI_SEAT, SEAT_OF_TIER } from "../duties/seatOrder";
 import { ROUTE_TIERS } from "../../../shared/boss/aiRoles.mjs";
 import { ROW_FLOOR_KINDS, floorStop, researchPageFloor, rowsFloor } from "../duties/floors";
+import { qualityReadsFloor, recordMeasures } from "../duties/drift";
 import type { FloorVerdict } from "../duties/briefingSpec";
 import { afterResult } from "../service/afterResult";
 import type { AiProcessing } from "../policy/airlock";
@@ -738,6 +739,8 @@ backends.post("/report", async (c) => {
     const kind = typeof tin.delivers === "string" ? tin.delivers : null;
     const unread = (Array.isArray(ev.remaining_risks) ? ev.remaining_risks : []).map(String).find((r: string) => /delivers\.json/.test(r)) ?? null;
     const args = { taskId: run.task_id, runId, payload: delivered as any, runStatus: "succeeded", now: Date.now() };
+    // What this check measured, pass or miss, kept for the weekly drift line (duties/drift.ts).
+    let checked: FloorVerdict | null = null;
     try {
       if (kind === "executive_reports") {
         if (!delivered) {
@@ -750,10 +753,12 @@ backends.post("/report", async (c) => {
             runStatus: "succeeded", now: Date.now(), out,
           });
           reportFiled = true;
+          checked = out.floor ?? null;
           if (out.floor && out.status !== "complete") floorMiss = { stop: floorStop("the briefing", out.floor), verdict: out.floor, bestAttemptFiled: out.status === "partial" };
         }
       } else if (kind && ROW_FLOOR_KINDS.includes(kind)) {
         const verdict = await rowsFloor(c.env, kind, delivered, { why: unread });
+        checked = verdict;
         if (verdict && !verdict.pass) {
           floorMiss = { stop: floorStop(kind, verdict), verdict, bestAttemptFiled: false };
           // The rows that ARE real are kept: the handlers below see a failed run and write nothing.
@@ -765,12 +770,21 @@ backends.post("/report", async (c) => {
         const { readResearchDelivery } = await import("../../../shared/boss/research/page.mjs");
         const read = readResearchDelivery(delivered);
         const verdict = await researchPageFloor(read.ok ? read.page : null, read.ok ? null : read.why);
+        checked = verdict;
         if (!verdict.pass) floorMiss = { stop: floorStop("the research page", verdict), verdict, bestAttemptFiled: false };
+      } else if (kind === "quality_reads") {
+        // The monthly read: a verdict and a checkable reason for every deliverable it was handed.
+        const verdict = qualityReadsFloor(delivered, Array.isArray(tin.expect) ? tin.expect.map(String) : []);
+        checked = verdict;
+        await deliverQualityReads(c.env, { taskId: run.task_id, runId, payload: delivered, route: run.backend_id });
+        if (!verdict.pass) floorMiss = { stop: floorStop("the monthly quality read", verdict), verdict, bestAttemptFiled: false };
       }
     } catch (err) {
       // The check itself broke: said, never read as a pass or as a miss.
       await logEvent(c.env.DB, { level: "error", scope: "backends", event: "floor_check_failed", entityId: run.task_id, detail: { run_id: run.id, delivers: kind, error: err instanceof Error ? err.message : String(err) } }).catch(() => {});
     }
+    if (!checked && floorMiss) checked = floorMiss.verdict;
+    if (checked && kind) await recordMeasures(c.env, { deliverable: kind, taskId: run.task_id, runId, route: run.backend_id, verdict: checked });
     if (floorMiss) {
       await logEvent(c.env.DB, { level: "warn", scope: "backends", event: "floor_missed", entityId: run.task_id, detail: { run_id: run.id, backend_id: run.backend_id, delivers: kind, misses: floorMiss.verdict.misses, measured: floorMiss.verdict.measured } }).catch(() => {});
     }

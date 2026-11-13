@@ -361,3 +361,53 @@ describe("a row-delivering duty's task carries the delivery rules", () => {
     }
   });
 });
+
+/**
+ * GOLDEN REPLAY (owner, 13 Nov 2026, drift prevention). Each deliverable's best example goes through
+ * the REAL report route on every CI run, so a change to a route, a prompt's contract, a floor or the
+ * delivery code that would turn the best work away fails before it is live. The measures it stores
+ * are the ones the weekly drift line reads. CI cannot run a model: this replays the best OUTPUT.
+ */
+describe("golden replay: the best example of each deliverable still passes, and its measures are kept", () => {
+  const GOLDEN: [string, Record<string, unknown>, string][] = [
+    ["executive_reports", STANDARD as Record<string, unknown>, "sources"],
+    ["tool_suggestions", TOOLS as Record<string, unknown>, "new_rows"],
+    ["sourcing_candidates", SOURCING as Record<string, unknown>, "new_rows"],
+    ["research_page", RESEARCH as Record<string, unknown>, "sources"],
+  ];
+  // Backlink prospecting has never delivered a row (13 Nov 2026), so it has no best example yet.
+  const NO_EXAMPLE_YET = ["link_prospects"];
+
+  it("every deliverable is either replayed or named as having no example yet", async () => {
+    const { DELIVERABLES } = await import("../../src/worker/boss/duties/drift");
+    expect([...GOLDEN.map(([k]) => k), ...NO_EXAMPLE_YET].sort()).toEqual(DELIVERABLES.map((d) => d.key).sort());
+  });
+
+  for (const [kind, example, lead] of GOLDEN) {
+    it(`${kind}: passes its floor through the report route and stores what it measured, with the route`, async () => {
+      await seats();
+      answers(() => 200);
+      const t = await task({ delivers: kind });
+      const r = await run(t, "bk_claude_code", ["bk_claude_code", "bk_codex"]);
+      await report(r, t, "bk_claude_code", { delivers: example });
+      const kept = await env.DB.prepare(`SELECT pass, route, misses, measured FROM delivery_measures WHERE run_id = ?`).bind(r).first<{ pass: number; route: string; misses: string; measured: string }>();
+      expect(kept, "the floor check stored nothing for this run").toBeTruthy();
+      expect(kept!.misses).toBe("[]");
+      expect(kept!.pass).toBe(1);
+      expect(kept!.route).toBe("bk_claude_code");
+      expect(Number(JSON.parse(kept!.measured)[lead])).toBeGreaterThan(0);
+      const brn = await env.DB.prepare(`SELECT status FROM backend_runs WHERE id = ?`).bind(r).first<{ status: string }>();
+      expect(brn!.status).not.toBe("failed");
+    });
+  }
+
+  it("a miss is stored too, as a miss (a week of them is what the drift line flags)", async () => {
+    await seats();
+    const t = await task({ delivers: "link_prospects" });
+    const r = await run(t, "bk_claude_code", ["bk_claude_code"]);
+    await report(r, t, "bk_claude_code", { delivers: { prospects: [], gaps: [{ wanted: "PROPERTIES.json", why: "missing" }] } });
+    const kept = await env.DB.prepare(`SELECT pass, measured FROM delivery_measures WHERE run_id = ?`).bind(r).first<{ pass: number; measured: string }>();
+    expect(kept).toMatchObject({ pass: 0 });
+    expect(JSON.parse(kept!.measured).new_rows).toBe(0);
+  });
+});

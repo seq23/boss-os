@@ -296,6 +296,12 @@ export async function runFreeResearch(
       if (!capped || (out.resumeAt !== null && (capped.resumeAt === null || out.resumeAt < capped.resumeAt))) capped = { code: out.code, why: out.why, resumeAt: out.resumeAt };
       continue;
     }
+    // What this free route's page measured, kept for the weekly drift line (duties/drift.ts).
+    const { recordMeasures } = await import("../duties/drift");
+    await recordMeasures(env, {
+      deliverable: "research_page", taskId: t.id, route: rung.backend,
+      verdict: { pass: out.page.sources.length > 0, misses: out.page.sources.length ? [] : ["the page cites no source"], measured: { sources: out.page.sources.length, sources_reachable: "not read: a free route's sources are not fetch-checked" } },
+    });
     // A page with no source is not a delivery (deliverReport.ts fileResearchPage refuses it): the walk goes on.
     if (out.page.sources.length === 0) {
       await step({ backend_id: rung.backend, refused: "the page it wrote cites no source a person can open", next: rung.engine === "google" ? "OpenRouter free models with Brave Search" : "the seats" });

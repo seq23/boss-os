@@ -158,6 +158,8 @@ export const DELIVERY_CENSUS = {
     `SELECT r.task_id AS task_id, COUNT(*) AS n FROM link_prospects x JOIN backend_runs r ON r.id = x.run_id WHERE x.updated_at >= ? GROUP BY r.task_id`,
   tool_suggestions:
     `SELECT r.task_id AS task_id, COUNT(*) AS n FROM tool_suggestions x JOIN backend_runs r ON r.id = x.run_id WHERE x.updated_at >= ? GROUP BY r.task_id`,
+  quality_reads:
+    `SELECT task_id, COUNT(*) AS n FROM quality_reads WHERE task_id IS NOT NULL AND at >= ? GROUP BY task_id`,
 } as const;
 export type DeliveryKey = keyof typeof DELIVERY_CENSUS;
 

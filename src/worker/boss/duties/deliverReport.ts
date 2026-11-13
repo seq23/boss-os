@@ -213,6 +213,30 @@ export async function deliverLinkProspects(
 }
 
 /**
+ * The monthly quality read (drift.ts): her seat's verdict on one real output of each deliverable
+ * beside its best example. Only a read with a verdict and a checkable reason is written.
+ */
+export async function deliverQualityReads(
+  env: Env,
+  args: { taskId: string; runId: string | null; payload: Record<string, unknown> | null; route: string | null; now?: number },
+): Promise<{ inserted: number } | null> {
+  const task = await env.DB.prepare(`SELECT id, input FROM tasks WHERE id = ?`).bind(args.taskId).first<{ id: string; input: string | null }>();
+  if (!task) return null;
+  let input: Record<string, unknown> = {};
+  try { input = task.input ? (JSON.parse(task.input) as Record<string, unknown>) : {}; } catch { input = {}; }
+  if (input.delivers !== "quality_reads") return null;
+  const { validReads } = await import("./drift");
+  const now = args.now ?? Date.now();
+  let inserted = 0;
+  for (const r of validReads(args.payload)) {
+    await env.DB.prepare(`INSERT INTO quality_reads (id, at, deliverable, verdict, why, task_id, run_id, route) VALUES (?,?,?,?,?,?,?,?)`)
+      .bind(newId("qrd"), now, r.deliverable, r.verdict, r.why, args.taskId, args.runId, args.route).run();
+    inserted++;
+  }
+  return { inserted };
+}
+
+/**
  * Kendra's tool suggestions.
  *
  * THE VENDOR CANNOT BE THE EVIDENCE, and that is enforced here rather than only requested. A row

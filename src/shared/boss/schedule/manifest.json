@@ -4705,6 +4705,27 @@
       }
     },
     {
+      "id": "quality-read",
+      "name": "Monthly quality read",
+      "what": "One real output of each deliverable is read beside its best example.",
+      "business": "personal",
+      "brand": "Boss OS",
+      "system": "boss-os",
+      "slots": [
+        "day1 09:00"
+      ],
+      "emails": false,
+      "heavy": true,
+      "trigger": {
+        "duty": "duty_quality_read"
+      },
+      "output": {
+        "metric": "reads delivered",
+        "floor": 1,
+        "runs": 2
+      }
+    },
+    {
       "id": "waiting-on",
       "name": "Waiting on",
       "what": "Nothing that waits goes unowned.",
