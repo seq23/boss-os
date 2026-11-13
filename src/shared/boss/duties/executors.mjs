@@ -205,7 +205,7 @@ export const TASK_EXECUTORS = Object.freeze({
     file: "scripts/ops/buyer-hunt.mjs", marker: "--from-boss", command: "npm run capital:hunts",
   }),
   grid_fix: Object.freeze({
-    who: "the CI sweep (~/bin/ci-sweep.sh, Mon+Fri 08:00): grid-watch writes each open fix to its inbox, and the sweep's probe works it as a lane until it is gone",
+    who: "the CI sweep (~/bin/ci-sweep.sh, Wed+Sat 08:00): grid-watch writes each open fix to its inbox, and the sweep's probe works it as a lane until it is gone",
     file: "scripts/ops/grid-watch.mjs", marker: "GRID_INBOX", command: "npm run grid:post",
   }),
 });
