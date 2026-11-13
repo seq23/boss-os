@@ -28,7 +28,7 @@
  *   npm run risk:locks -- --dry    # read and print only
  */
 import {
-  askClaudeJson, fromDomain, gmailHeaders, googleToken, loadState, movedReadings, readNothingStop,
+  PERSONAL_GMAIL, askClaudeJson, fromDomain, gmailHeaders, googleToken, loadState, movedReadings, readNothingStop,
   saveState, stateMap, toMorning, fixJob, bossApi,
 } from "./lib/duty-kit.mjs";
 import { gmailSearchLink } from "../../src/shared/boss/mail/plain.mjs";
@@ -160,7 +160,7 @@ function readPersonal() {
   const a = askClaudeJson(
     `Use the Gmail tool on my mailbox. Search exactly: ${LOCK_QUERY}. Do not open bodies. ` +
     "Reply with ONLY a JSON array, one object per message: {\"from_domain\":\"<sender domain>\",\"subject\":\"<subject, max 140 chars>\",\"date\":\"YYYY-MM-DD\"}. No results is [].",
-    { model: MODEL, toolSearch: "gmail", requireTool: /gmail/i },
+    { model: MODEL, ...PERSONAL_GMAIL, evidence: "outside-locks-personal" },
   );
   if (!a.ok || !Array.isArray(a.json)) return [{ key: "mailbox:personal", state: "stop", line: `Her personal Gmail could not be read: ${a.ok ? "the answer was not a list" : a.why}.` }];
   CI_NOTICES.push(...a.json.map(githubNotice).filter(Boolean));

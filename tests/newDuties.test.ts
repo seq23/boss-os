@@ -9,7 +9,8 @@ import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import { INSTALLED_LOCAL_JOBS } from "../src/shared/boss/duties/lane.mjs";
-import { movedReadings, readClaudeStream, readNothingStop, stateMap } from "../scripts/ops/lib/duty-kit.mjs";
+import { askClaudeJson, movedReadings, PERSONAL_GMAIL, readClaudeStream, readNothingStop, stateMap } from "../scripts/ops/lib/duty-kit.mjs";
+import { existsSync, readFileSync as readAbs } from "node:fs";
 import { hasDkim, openrouterReading, rdapExpiry, rdapUrl, renewalReading, senderPauseReason } from "../scripts/ops/risk-watch.mjs";
 import { lockReading } from "../scripts/ops/outside-locks.mjs";
 import { citedBossFiles, dateIn, handoffTodayDate, kindOf, NOT_OURS_RE, readGalleryExport } from "../scripts/ops/archive-audit.mjs";
@@ -136,8 +137,88 @@ describe("after the first live run (22 Oct 2026)", () => {
     expect(good).toEqual({ ok: true, json: [] });
   });
 
-  it("both Toni scripts require the Gmail tool to have answered", () => {
-    for (const f of ["scripts/ops/risk-watch.mjs", "scripts/ops/outside-locks.mjs"]) expect(read(f)).toContain('toolSearch: "gmail", requireTool: /gmail/i');
+  it("both Toni scripts require the Gmail tool to have answered, named exactly, through the one shared read", () => {
+    expect(PERSONAL_GMAIL.requireTool.test("mcp__claude_ai_Gmail__search_threads")).toBe(true);
+    expect(PERSONAL_GMAIL.requireTool.test("ToolSearch")).toBe(false);
+    expect(PERSONAL_GMAIL.toolSearch).toBe("select:mcp__claude_ai_Gmail__search_threads");
+    expect(PERSONAL_GMAIL.toolSearchFallback).toBe("gmail");
+    expect(PERSONAL_GMAIL.attempts).toBeGreaterThanOrEqual(2);
+    for (const f of ["scripts/ops/risk-watch.mjs", "scripts/ops/outside-locks.mjs"]) expect(read(f)).toMatch(/askClaudeJson\([\s\S]*?\.\.\.PERSONAL_GMAIL, evidence: "[a-z-]+"/);
+  });
+
+  describe("one bad attempt is not a lost week (13 Nov 2026: Toni's locks check never reached Gmail once)", () => {
+  const ev = (o: unknown) => JSON.stringify(o);
+  const reached = (result = "```json\n[]\n```") => [
+    ev({ type: "assistant", message: { content: [{ type: "tool_use", id: "t1", name: "ToolSearch", input: {} }] } }),
+    ev({ type: "user", message: { content: [{ type: "tool_result", tool_use_id: "t1", is_error: false }] } }),
+    ev({ type: "assistant", message: { content: [{ type: "tool_use", id: "t2", name: "mcp__claude_ai_Gmail__search_threads", input: {} }] } }),
+    ev({ type: "user", message: { content: [{ type: "tool_result", tool_use_id: "t2", is_error: false, content: "MAIL" }] } }),
+    ev({ type: "result", subtype: "success", result }),
+  ].join("\n");
+  const missed = [
+    ev({ type: "assistant", message: { content: [{ type: "tool_use", id: "t1", name: "ToolSearch", input: {} }] } }),
+    ev({ type: "user", message: { content: [{ type: "tool_result", tool_use_id: "t1", is_error: false }] } }),
+    ev({ type: "result", subtype: "success", result: "[]" }),
+  ].join("\n");
+  const runner = (outs: Array<{ stdout?: string; status?: number; error?: { code: string } }>) => {
+    const prompts: string[] = [];
+    const run = (_bin: string, args: string[]) => { prompts.push(String(args[1])); return outs[Math.min(prompts.length - 1, outs.length - 1)]; };
+    return { run, prompts };
+  };
+  const dir = () => mkdtempSync(join(tmpdir(), "seat-runs-"));
+
+  it("a run that never reached the tool is retried, and the next attempt's answer is accepted", () => {
+    const r = runner([{ stdout: missed, status: 0 }, { stdout: reached(), status: 0 }]);
+    const out = askClaudeJson("q", { ...PERSONAL_GMAIL, run: r.run, evidenceDir: dir(), evidence: "t" });
+    expect(out).toEqual({ ok: true, json: [] });
+    expect(r.prompts).toHaveLength(2);
+    expect(r.prompts[0]).toContain('ToolSearch with query "select:mcp__claude_ai_Gmail__search_threads"');
+    expect(r.prompts[0]).toContain('again with query "gmail"');
+    expect(r.prompts[0]).toContain("Never answer from memory");
+  });
+
+  it("a run that reaches the tool first time is run once", () => {
+    const r = runner([{ stdout: reached(), status: 0 }]);
+    expect(askClaudeJson("q", { ...PERSONAL_GMAIL, run: r.run, evidenceDir: dir() }).ok).toBe(true);
+    expect(r.prompts).toHaveLength(1);
+  });
+
+  it("a CLI that cannot start is not retried", () => {
+    const r = runner([{ error: { code: "ENOENT" } }]);
+    const out = askClaudeJson("q", { ...PERSONAL_GMAIL, run: r.run, evidenceDir: dir() });
+    expect(out.ok).toBe(false);
+    expect(r.prompts).toHaveLength(1);
+  });
+
+  it("every attempt missing is still a stop, and the why names the tools called and the attempts", () => {
+    const r = runner([{ stdout: missed, status: 0 }]);
+    const out = askClaudeJson("q", { ...PERSONAL_GMAIL, run: r.run, evidenceDir: dir() });
+    expect(out.ok).toBe(false);
+    expect(r.prompts).toHaveLength(PERSONAL_GMAIL.attempts);
+    if (!out.ok) {
+      expect(out.why).toContain("never reached the tool");
+      expect(out.why).toContain("ToolSearch (ok)");
+      expect(out.why).toContain(`${PERSONAL_GMAIL.attempts} attempts`);
+    }
+    const exited = askClaudeJson("q", { ...PERSONAL_GMAIL, attempts: 1, evidenceDir: dir(), run: runner([{ stdout: [ev({ type: "result", subtype: "error_max_turns", result: "" })].join("\n"), status: 1 }]).run });
+    expect(exited.ok ? "" : exited.why).toMatch(/exited 1 \(error_max_turns\); it called no tool/);
+  });
+
+  it("evidence is kept for a run that never reached the tool, and never after the tool answered (no mail on disk)", () => {
+    const d1 = dir();
+    askClaudeJson("q", { ...PERSONAL_GMAIL, attempts: 1, run: runner([{ stdout: missed, status: 0 }]).run, evidenceDir: d1, evidence: "outside-locks-personal" });
+    expect(readAbs(join(d1, "outside-locks-personal.jsonl"), "utf8")).toBe(missed);
+    const d2 = dir();
+    const out = askClaudeJson("q", { ...PERSONAL_GMAIL, attempts: 1, run: runner([{ stdout: reached("not json"), status: 0 }]).run, evidenceDir: d2, evidence: "outside-locks-personal" });
+    expect(out.ok).toBe(false);
+    expect(existsSync(join(d2, "outside-locks-personal.jsonl"))).toBe(false);
+  });
+
+  it("an existing caller with no attempts runs once, as before", () => {
+    const r = runner([{ stdout: missed, status: 0 }]);
+    expect(askClaudeJson("q", { requireTool: /gmail/i, run: r.run, evidenceDir: dir() }).ok).toBe(false);
+    expect(r.prompts).toHaveLength(1);
+  });
   });
 
   it("RDAP goes to the registry for .com and .org", () => {
