@@ -380,8 +380,8 @@ describe("the 22 Oct 2026 repairs stay repaired", () => {
     expect(row).not.toMatch(/\bdaily 09:30\b/);
   });
 
-  it("Porch & Party's six paths are on the map, from hello@porchandparty901.com through Cloudflare Email Service", () => {
-    const ids = ["pnp-valerie-todo", "pnp-new-request", "pnp-invoices", "pnp-hold-reminders", "pnp-customer-reminders", "pnp-marketplace-renew"];
+  it("Porch & Party's five paths are on the map, from hello@porchandparty901.com through Cloudflare Email Service", () => {
+    const ids = ["pnp-valerie-todo", "pnp-new-request", "pnp-invoices", "pnp-hold-reminders", "pnp-customer-reminders"];
     for (const id of ids) {
       const row = rowOf(id);
       expect(row, `${id} missing`).not.toBe("");
@@ -389,7 +389,8 @@ describe("the 22 Oct 2026 repairs stay repaired", () => {
       expect(row).toContain("Cloudflare Email Service");
       expect(row).toMatch(/\| p-n-p /);
     }
-    expect(rowOf("pnp-marketplace-renew")).toMatch(/your personal Gmail.*every 7th day from Fri 23 Oct 2026/);
+    // The Marketplace "Renew listing" reminder was removed from p-n-p on 13 Nov 2026 (Facebook offers no renew): it must not come back on the map.
+    expect(rowOf("pnp-marketplace-renew")).toBe("");
     expect(rowOf("pnp-valerie-todo")).toMatch(/7 AM.*Your week/);
   });
 
