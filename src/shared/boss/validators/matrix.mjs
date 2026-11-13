@@ -82,6 +82,8 @@ const SCRIPT_NAME = /^(validate|guard|check|verify|presubmit)[:_-]/;
 const AGGREGATE = new Set(["validate", "check", "guard", "verify", "presubmit", "test", "lint", "all", "full", "changed", "release", "ci", "fast", "quick", "pr", "scans", "everything"]);
 const VALIDATOR_DIR = /(^|\/)(validators?|validate|guards|checks)\/[^/]+\.(m?[jt]sx?|cjs|py|sh)$/;
 const VALIDATOR_FILE = /(^|\/)(validate|check|guard)[-_][^/]+\.(m?[jt]sx?|cjs|py|sh)$/;
+/** A test or guard file: a check in its own right when a row names it. */
+const CHECK_FILE = /(^|\/)(tests?|__tests__|guards?|e2e|checks?)\/.+\.(m?[jt]sx?|cjs|py|sh)$|(^|\/)test_[^/]+\.py$|\.(test|spec)\.(m?[jt]sx?|cjs)$/;
 const SKIP = /(^|\/)(node_modules|fixtures?|__fixtures__|dist|build|_archive|archive|_vendor|vendor|tests?|__tests__)\/|__init__\.py$/;
 
 /**
@@ -105,11 +107,26 @@ export function registryFrom({ scripts = {}, files = [], steps = [], registry = 
   // A repo's own validators.registry.json (one runner, many named checks: keepmyproof's
   // scripts/validate.mjs) IS its list; 8 Nov 2026 the matrix ignored it and read "no validator".
   for (const n of registry) add(n, "registry");
-  const known = new Set(entries.keys());
+  // `checks` is what the repo carries AS A CHECK: package scripts, CI steps, its registry, and
+  // validator, guard and test files. `known` adds every other tracked file. A row named like a
+  // package script is looked for in `checks` only (13 Nov 2026: west-peek-os `validate:home` would
+  // have read "listed" after its script was deleted, because a page guide `home.ts` has the same key;
+  // 17 of its 74 rows were hidden that way).
+  const checks = new Set(entries.keys());
+  for (const f of files) if (!/(^|\/)node_modules\//.test(f) && (VALIDATOR_DIR.test(f) || VALIDATOR_FILE.test(f) || CHECK_FILE.test(f))) checks.add(keyOf(f));
+  for (const s of Object.keys(cmds)) checks.add(keyOf(s));
+  for (const s of steps) checks.add(keyOf(s));
+  const known = new Set(checks);
   for (const f of files) if (!/(^|\/)node_modules\//.test(f)) known.add(keyOf(f));
-  for (const s of Object.keys(cmds)) known.add(keyOf(s));
-  for (const s of steps) known.add(keyOf(s));
-  return { entries: [...entries.values()], known };
+  return { entries: [...entries.values()], known, checks };
+}
+
+/**
+ * Does the repo still carry this row? A row named like a package script ("validate:home") must be a
+ * check there; any other row (a file path, a central check's module) may be any tracked file.
+ */
+export function carries(reg, row) {
+  return reg.checks && SCRIPT_NAME.test(String(row.name ?? "").trim()) ? reg.checks.has(row.key) : reg.known.has(row.key);
 }
 
 /**
@@ -129,7 +146,7 @@ export function buildMatrix({ reviews = [], registries = {}, otherRepos = [] } =
   const unmatrixed = [];
   const out = rows.map((r) => {
     const reg = registries[r.repo];
-    const listed = reg ? reg.known.has(r.key) : null;
+    const listed = reg ? carries(reg, r) : null;
     if (reg && !listed) unlisted.push({ repo: r.repo, name: r.name });
     return { ...r, listed, also: (byKey.get(r.key) ?? []).filter((x) => x !== r.repo) };
   });
