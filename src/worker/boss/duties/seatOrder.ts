@@ -4,8 +4,8 @@
  * `orderSeats`, and the Mac's /claim walks the ladder the consumer stamped, so nothing else orders
  * seats. Off: each duty's own order. On: OpenAI's seat (`bk_codex`) is tried before Claude's
  * (`bk_claude_code`) on every ladder that has Claude's seat in it. A seat that cannot do the work
- * refuses and the walk moves on, as it always has. The briefing is OpenAI first either way
- * (`briefingLadder.ts`). Paid cloud rungs are unaffected: they stay unreachable for the briefing.
+ * refuses and the walk moves on, as it always has. The briefing is Claude first either way (hard work, 13 Nov 2026;
+ * `briefingLadder.ts`). Paid cloud rungs are unaffected: they stay unreachable for the briefing.
  */
 export const OPENAI_FIRST_KEY = "seat_order_openai_first";
 export const OPENAI_SEAT = "bk_codex";

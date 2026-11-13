@@ -20,5 +20,6 @@ export declare const ROUTE_TABLE: Readonly<Record<"public" | "private", Readonly
 export declare const WAIT_FOR_CLAUDE: "wait_for_claude";
 export declare const NAMED_STOP: "named_stop";
 export declare function routeOrder(job?: { jobClass?: string | null; privateWork?: boolean; demoted?: readonly RouteTier[] }): { jobClass: JobClass; routes: RouteTier[]; end: "wait_for_claude" | "named_stop" };
-export declare function jobClassOf(job?: { intakeKind?: string | null; repair?: boolean; repoChange?: boolean; confidentialDraft?: boolean; chromeJob?: boolean; brainEdit?: unknown }): JobClass;
+export declare function jobClassOf(job?: { intakeKind?: string | null; repair?: boolean; repoChange?: boolean; confidentialDraft?: boolean; chromeJob?: boolean; brainEdit?: unknown; delivers?: string | null }): JobClass;
+export declare const HARD_DELIVERS: readonly string[];
 export declare function jobClassFor(key: string): JobClass;
