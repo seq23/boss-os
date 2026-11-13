@@ -4,6 +4,7 @@ import { materialiseDueDuties } from "../../src/worker/boss/duties/materialise";
 import { dutyBrief, editDuty, pauseDuty, removeDuty, undoDuty, versionsOf } from "../../src/worker/boss/duties/ownerEdits";
 import { briefDecision } from "../../src/shared/boss/duties/ownerEdits.mjs";
 import { all, apiJson, row } from "./helpers";
+import { deliveryRules } from "../../src/worker/boss/duties/floors";
 
 /**
  * THE OWNER EDITS A DUTY ON THE SITE, AND THE JOB RECEIVES IT (Builder U, 23 Oct 2026, board 8).
@@ -41,16 +42,18 @@ describe("an edit changes what the job receives", () => {
 
   it("the cron's task carries her instructions, not the repository's, once she saves", async () => {
     const repo = JSON.parse((await row<{ task_input: string }>(`SELECT task_input FROM standing_duties WHERE id = '${AGENT}'`))!.task_input).prompt;
-    expect(await firedPrompt(now)).toBe(repo);
+    // The run is handed the duty's words, then how its delivery is checked (floors.ts), and nothing else.
+    const rules = `\n\n${deliveryRules("sourcing_candidates")}`;
+    expect(await firedPrompt(now)).toBe(repo + rules);
 
     const mine = "Only buyers at $20M and up. Name the source you opened for each one.";
     const saved = await editDuty(env as any, AGENT, { instructions: mine }, now);
     expect(saved.changed).toEqual(["instructions"]);
-    expect(await firedPrompt(now + 1000)).toBe(mine);
+    expect(await firedPrompt(now + 1000)).toBe(mine + rules);
 
     // Undo to the last version: back to the repository's words, and the newer version is kept.
     await undoDuty(env as any, AGENT, now + 2000);
-    expect(await firedPrompt(now + 3000)).toBe(repo);
+    expect(await firedPrompt(now + 3000)).toBe(repo + rules);
     const versions = await versionsOf(env as any, AGENT);
     expect(versions.map((v) => v.action)).toEqual(["undo", "edit", "original"]);
     expect(versions.find((v) => v.action === "edit")!.owner_prompt).toBe(mine);
