@@ -297,6 +297,11 @@ describe("your open loops: hers only, the same row once, five at most, three mor
     expect(e.text).not.toContain("Loop 6 (due");
     expect(e.text).not.toMatch(/more of yours|more overdue|The team has|47|31 overdue/);
   });
+  it("a row about the system's own work is never hers, even in a copy that lists it", () => {
+    const e = day([{ text: "Codex stopped (Stopped:) on a synthetic queue job: 06-example (due Wed Nov 11). Did this happen?", links: [{ label: "Open ›", url: `${PAGE}&loop=olp_synsys` }] }, row(2)]);
+    expect(e.text).not.toMatch(/Codex|queue job/);
+    expect(e.text).toContain("Loop 2 (due");
+  });
   it("the same row posted five times is one line", () => {
     const e = day([1, 2, 3, 4, 5].map((n) => ({ ...row(1, `olp_syndup${n}`) })).concat([row(2)]));
     expect(e.text.split("Loop 1 (due").length - 1).toBe(1);

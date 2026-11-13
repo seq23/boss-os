@@ -99,6 +99,23 @@ export function dayWords(d) {
  */
 export const MAX_HER_LINES = 5;
 
+/**
+ * IS THIS ROW TRULY HERS? (owner, 13 Nov 2026: "Codex stopped (Stopped:) on Tuesday queue job … Did
+ * this happen?" was an alarm about the system's own work, in system words, filed under her name.)
+ * A row is hers only when it is in her name AND is not about the system's own work: a stopped or
+ * failed job, an agent, a queue, a Codex or Claude run, a usage limit, a stop code. Those are repairs,
+ * which Boss OS or an employee can check itself. A repo's named stop is hers only when its name says a
+ * key, account, payment or legal step she alone holds. What this cannot place is NOT hers: it stays
+ * on the Open Loops page and off her email. Pure.
+ */
+const SYSTEM_TITLE = /\b(stopped|failed|failing|fails|crashed|timed out|stuck|did not run|not running|queue|queued|agents?|codex|claude|retr(?:y|ies|ying)|alarm|named stop|usage limit|weekly limit|rate limit)\b|\[[A-Z][A-Z0-9_]{3,}\]/i;
+export function systemRow(loop) {
+  if (SYSTEM_TITLE.test(String(loop?.title ?? ""))) return true;
+  const stop = String(loop?.source_key ?? "").split("#")[1] ?? "";
+  return Boolean(loop?.source_key) && !HER_STOP.test(stop.toUpperCase());
+}
+export const trulyHers = (loop) => loop?.owner === HER && Boolean(String(loop?.title ?? "").trim()) && !systemRow(loop);
+
 /** The words two rows share when they are the same loop: the title, case and spacing aside. Pure. */
 export const loopKey = (title) => String(title ?? "").replace(/\s+/g, " ").trim().toLowerCase();
 
@@ -111,7 +128,7 @@ export const loopKey = (title) => String(title ?? "").replace(/\s+/g, " ").trim(
 export function morningSection(loops, today, { origin, names: _names = {} } = {}) {
   const { shown } = visibleLoops(loops);
   const seen = new Set();
-  const mine = sortLoops(shown.filter((l) => String(l.title ?? "").trim() && l.owner === HER), today)
+  const mine = sortLoops(shown.filter(trulyHers), today)
     .filter((l) => { const k = loopKey(l.title); if (seen.has(k)) return false; seen.add(k); return true; });
   const overdue = mine.filter((l) => isOverdue(l, today));
   const url = `${origin ?? ""}${PAGE_PATH}`;

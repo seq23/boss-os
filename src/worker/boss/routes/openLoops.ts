@@ -25,7 +25,7 @@ import { readSession } from "../auth";
 import { dayIdInZone } from "../../../shared/boss/timezone";
 import { BRAIN_SLUGS } from "../../../shared/boss/brains/brain.mjs";
 import { MORNING_SECTIONS, morningSectionProblems } from "../../../shared/boss/mail/morningSections.mjs";
-import { loopKey, loopProblems, morningSection, repairsDue, remindersDue, reminderEmail, sourceKeyOf, visibleLoops, isOwner, isDay, type Loop } from "../../../shared/boss/openLoops/openLoops.mjs";
+import { HER, loopKey, loopProblems, morningSection, systemRow, repairsDue, remindersDue, reminderEmail, sourceKeyOf, visibleLoops, isOwner, isDay, type Loop } from "../../../shared/boss/openLoops/openLoops.mjs";
 import { admitTask } from "../tasks/admit";
 import { needsHer } from "../../../shared/boss/mail/noticeGate.mjs";
 
@@ -87,10 +87,13 @@ openLoops.post("/", async (c) => {
     return ok(c, { loop: await c.env.DB.prepare(`SELECT * FROM owner_open_loops WHERE id = ?`).bind(same.id).first(), deduped: true });
   }
   const id = newId("olp");
+  // A row about the system's own work (a stopped job, a queue, an agent's run) is never filed as
+  // hers, whoever posts it: it is the team's row, and overdue it becomes a repair (`systemRow`).
+  const owner = b!.owner === HER && systemRow({ title: b!.title }) ? (/codex/i.test(b!.title) ? "codex" : "claude") : b!.owner;
   await c.env.DB.prepare(
     `INSERT INTO owner_open_loops (id, title, finish_line, next_step, owner, next_date, business, section, status, source, source_key, blocked_by, created_at, updated_at)
      VALUES (?,?,?,?,?,?,?,?,'open',?,NULL,?,?,?)`,
-  ).bind(id, b!.title.trim(), b!.finish_line.trim(), b!.next_step ?? null, b!.owner, section === "parked" ? null : (b!.next_date || null), b!.business, section,
+  ).bind(id, b!.title.trim(), b!.finish_line.trim(), b!.next_step ?? null, owner, section === "parked" ? null : (b!.next_date || null), b!.business, section,
     b!.source ?? "manual", b!.blocked_by || null, now, now).run();
   return ok(c, { loop: await c.env.DB.prepare(`SELECT * FROM owner_open_loops WHERE id = ?`).bind(id).first() }, 201);
 });

@@ -56,6 +56,7 @@ import { ownerEmail } from "../../src/shared/boss/mail/ownerLayout.mjs";
 import { readMorningSections, clearToldSections } from "../../src/shared/boss/mail/morning.mjs";
 import { sectionsNotReported, notReportedLine } from "../../src/shared/boss/mail/morningSections.mjs";
 import { templateDecide } from "./lp-prospects.mjs";
+import { systemRow } from "../../src/shared/boss/openLoops/openLoops.mjs";
 import { yoursThisWeek } from "../../src/shared/boss/waiting/register.mjs";
 
 const ORIGIN = process.env.BOSS_OS_ORIGIN ?? "https://boss.sequoiataylor.com";
@@ -959,8 +960,9 @@ export function buildDay(data, now = Date.now()) {
   // tick, openLoops.mjs `morningSection`), the same row once however many copies the list holds, five
   // at most, each on three mornings and then only on its page. No counts, no "+N more", no team line
   // (a copy written before the writer dropped them carries no "Open ›" to a row, and is skipped).
+  // A row about the system's own work is never hers, whatever copy carries it (`systemRow`).
   const olSeen = withinShowings((m.open_loops?.lines ?? []).map((l) => (typeof l === "string" ? { text: l, links: [] } : { links: [], ...l }))
-    .filter((l) => (l.links ?? []).some((k) => /[?&]loop=/.test(String(k.url ?? ""))))
+    .filter((l) => (l.links ?? []).some((k) => /[?&]loop=/.test(String(k.url ?? ""))) && !systemRow({ title: l.text }))
     .map((l) => ({ ...l, seenKey: String(l.key ?? l.text).toLowerCase() })), data.told?.loops ?? {});
   const olLines = olSeen.shown.slice(0, MAX_OPEN_LOOP_LINES).map(({ text, links }) => ({ text, links }));
   const openLoopsSection = olLines.length ? { title: "Your open loops", items: olLines, link: null, empty: null } : null;

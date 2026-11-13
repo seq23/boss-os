@@ -54,8 +54,8 @@ describe("Open Loops", () => {
 
   it("the same title is one row: a second post keeps the open row; her section lists it once, hers only (13 Nov 2026)", async () => {
     const { morningSection } = await import("../../src/shared/boss/openLoops/openLoops.mjs");
-    const first = await create({ title: "A synthetic job stopped on the queue", owner: "sequoia", next_date: "2026-11-05", next_step: "Look at it" });
-    const again = await apiJson("/api/open-loops", { method: "POST", body: { business: "spry", finish_line: "Live and selling", owner: "sequoia", title: "  a synthetic JOB stopped   on the queue ", next_date: "2026-11-09", next_step: "Look at it again" } });
+    const first = await create({ title: "Sign the synthetic store papers", owner: "sequoia", next_date: "2026-11-05", next_step: "Look at it" });
+    const again = await apiJson("/api/open-loops", { method: "POST", body: { business: "spry", finish_line: "Live and selling", owner: "sequoia", title: "  sign the SYNTHETIC store   papers ", next_date: "2026-11-09", next_step: "Look at it again" } });
     expect(again.status).toBe(200);
     expect(again.body.data.deduped).toBe(true);
     expect(again.body.data.loop.id).toBe(first.id);
@@ -64,18 +64,46 @@ describe("Open Loops", () => {
     expect((await list()).loops.filter((l: any) => l.status === "open")).toHaveLength(1);
     // A closed row is history: the same title opens a new one.
     await apiJson(`/api/open-loops/${first.id}/close`, { method: "POST", body: { reason: "It ran" } });
-    const fresh = await apiJson("/api/open-loops", { method: "POST", body: { business: "spry", finish_line: "Live and selling", owner: "sequoia", title: "A synthetic job stopped on the queue", next_date: "2026-11-06" } });
+    const fresh = await apiJson("/api/open-loops", { method: "POST", body: { business: "spry", finish_line: "Live and selling", owner: "sequoia", title: "Sign the synthetic store papers", next_date: "2026-11-06" } });
     expect(fresh.status).toBe(201);
     expect(fresh.body.data.loop.id).not.toBe(first.id);
     // Rows that slipped in before the rule (same title, several ids) are still one line in her section.
-    const row = (id: string, over: Record<string, unknown> = {}): any => ({ id, title: "A synthetic job stopped on the queue", owner: "sequoia", status: "open", section: "not_finished", next_date: "2026-11-05", ...over });
+    const row = (id: string, over: Record<string, unknown> = {}): any => ({ id, title: "Sign the synthetic store papers", owner: "sequoia", status: "open", section: "not_finished", next_date: "2026-11-05", ...over });
     const sec = morningSection([row("olp_a"), row("olp_b", { next_date: "2026-11-04" }), row("olp_c"), row("olp_team", { title: "A team row", owner: "claude" }),
       ...Array.from({ length: 7 }, (_, i) => row(`olp_h${i}`, { title: `Her synthetic row ${i}` }))], "2026-11-10", { origin: "https://boss.test" });
-    expect(sec.lines.filter((l: any) => /A synthetic job stopped/.test(l.text))).toHaveLength(1);
+    expect(sec.lines.filter((l: any) => /Sign the synthetic store papers/.test(l.text))).toHaveLength(1);
     expect(sec.lines[0]!.links[0]!.url).toContain("loop=olp_b"); // the oldest date
     expect(sec.lines).toHaveLength(5);
     expect(JSON.stringify(sec.lines)).not.toMatch(/A team row|The team has|more of yours/);
     expect(sec.title).toBe("Your open loops: 8, 8 overdue");
+  });
+
+  it("a row about the system's own work is never hers: not filed under her name, and never in her section (13 Nov 2026)", async () => {
+    const { morningSection, trulyHers } = await import("../../src/shared/boss/openLoops/openLoops.mjs");
+    // At source: posted in her name, it is saved as the team's.
+    const posted = await create({ title: "Codex stopped (Stopped:) on a synthetic queue job: 06-example", owner: "sequoia", next_date: "2026-11-05", next_step: "The queue retries hourly by itself." });
+    expect(posted.owner).toBe("codex");
+    expect((await create({ title: "The nightly synthetic build failed", owner: "sequoia", next_date: "2026-11-05" })).owner).toBe("claude");
+    expect((await create({ title: "Sign the synthetic lease", owner: "sequoia", next_date: "2026-11-05" })).owner).toBe("sequoia");
+    // In her section: rows already filed under her name before the rule are still kept out.
+    const row = (id: string, title: string, over: Record<string, unknown> = {}): any => ({ id, title, owner: "sequoia", status: "open", section: "not_finished", next_date: "2026-11-05", ...over });
+    const system = [
+      row("olp_s1", "Codex stopped (Stopped:) on a synthetic queue job: 06-example"),
+      row("olp_s2", "Claude's run of the synthetic audit did not finish [RUN_HUNG]"),
+      row("olp_s3", "The synthetic agent is stuck"),
+      row("olp_s4", "Retry the synthetic import"),
+      row("olp_s5", "a-repo: a step is stopped", { source_key: "owner/a-repo#BUILD_BROKEN" }),
+    ];
+    const hers = [
+      row("olp_h1", "Sign the synthetic lease"),
+      row("olp_h2", "Pick the canonical synthetic domain", { next_step: "Claude brings the numbers to one sitting; you decide." }),
+      row("olp_h3", "a-repo: the store account is missing", { source_key: "owner/a-repo#PLAY_ACCOUNT_MISSING" }),
+    ];
+    for (const l of system) expect(trulyHers(l), l.title).toBe(false);
+    for (const l of hers) expect(trulyHers(l), l.title).toBe(true);
+    const sec = morningSection([...system, ...hers], "2026-11-10", { origin: "https://boss.test" });
+    expect(sec.lines.map((l: any) => l.links[0].url.split("loop=")[1]).sort()).toEqual(["olp_h1", "olp_h2", "olp_h3"]);
+    expect(sec.title).toBe("Your open loops: 3, 3 overdue");
   });
 
   it("her row waiting on an open step is hidden and counted, then shows once the step is closed", async () => {
