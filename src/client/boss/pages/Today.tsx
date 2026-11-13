@@ -1772,6 +1772,7 @@ function Diary({ content, onChanged, onError }: {
                 })}
                 {r.with ? ` · with ${r.with}` : ""}
                 {r.location ? ` · ${r.location}` : ""}
+                {r.prep_id ? <> · <a href={`/?command=${encodeURIComponent(r.prep_id)}`}>Your prep ›</a></> : null}
               </div>
               <div className="row-sub">
                 {r.source === "recurring" ? "standing" : r.source === "calendar" ? "from your calendar" : r.source === "crm" ? "from your people" : "you added this"}

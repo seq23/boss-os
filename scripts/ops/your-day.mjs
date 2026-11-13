@@ -943,7 +943,8 @@ export function buildDay(data, now = Date.now()) {
   for (const name of DONE_SOURCES.filter((n) => !(data.prospects && n === "prospects"))) for (const l of m[name]?.lines ?? []) doneRaw.push(typeof l === "string" ? { text: l, links: [] } : { links: [], ...l });
   const doneOnce = doneForYou(doneRaw, { told: new Set(data.told?.done ?? []), max: MAX_DONE });
   const done = doneOnce.all.map((l) => { const id = idFor("done", l.text); return { ...l, id, screen: itemUrl(today, id) }; });
-  const doneShown = done.slice(0, MAX_DONE).map((l) => ({ text: l.text, links: [{ label: "See it", url: l.screen }] }));
+  // A line that carries its own links inline (`runs`: the filed meeting preps, each with its "Open ›") keeps them.
+  const doneShown = done.slice(0, MAX_DONE).map((l) => (Array.isArray(l.runs) && l.runs.some((r) => r.url) ? { runs: l.runs, links: [] } : { text: l.text, links: [{ label: "See it", url: l.screen }] }));
   // Three lines and nothing after them (owner, 13 Nov 2026): no "+N more" and no count of the Updates
   // page. Everything done is on Today, and the updates are on their page.
 

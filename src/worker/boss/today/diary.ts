@@ -41,6 +41,22 @@ export interface DiaryRow {
   source: string;
   /** True only for the derived standing fixture, which has no row and cannot be edited or deleted. */
   standing: boolean;
+  /** The filed meeting prep for this meeting, when one holds its words (meeting-prep.mjs `filePrep`). */
+  prep_id?: string | null;
+}
+
+/**
+ * EVERY FILED PREP OPENS FROM ITS MEETING ON TODAY (owner, 13 Nov 2026). A prep past the day's email
+ * cap is filed with its words and never emailed; this ties it to the meeting's row the moment it
+ * exists: the same start, and the same title. Pure.
+ */
+export function attachPreps<T extends { title: string; scheduled_at: number; prep_id?: string | null }>(rows: T[], preps: Array<{ id: string; title: string | null; scheduled_at: number | null }>): T[] {
+  const norm = (t: unknown) => String(t ?? "").toLowerCase().replace(/[^a-z0-9]+/g, "");
+  for (const r of rows) {
+    const hit = preps.find((p) => p.scheduled_at === r.scheduled_at && norm(p.title) === norm(r.title)) ?? preps.find((p) => p.scheduled_at === r.scheduled_at);
+    if (hit) r.prep_id = hit.id;
+  }
+  return rows;
 }
 
 const DAY_MS = 86_400_000;
@@ -174,6 +190,17 @@ export async function diary(env: Env, now = Date.now(), horizonDays = 21): Promi
   const merged = mergeDiaryRows(rows);
   rows.length = 0;
   rows.push(...merged);
+
+  // A filed prep opens from its meeting's row (attachPreps). A read that fails leaves the diary whole.
+  const preps = await env.DB
+    .prepare(
+      `SELECT id, json_extract(spec, '$.event.title') AS title, json_extract(spec, '$.event.scheduled_at') AS scheduled_at
+         FROM boss_commands WHERE kind = 'meeting_prep' AND state <> 'cancelled' AND json_extract(spec, '$.prep.text') IS NOT NULL
+          AND json_extract(spec, '$.event.scheduled_at') BETWEEN ? AND ? ORDER BY created_at DESC LIMIT 100`,
+    )
+    .bind(from, until).all<{ id: string; title: string | null; scheduled_at: number | null }>()
+    .then((r) => r.results ?? []).catch(() => []);
+  attachPreps(rows, preps);
 
   /*
    * ── THE SUMMARY, COMPUTED FROM THE ROWS ABOVE AND NOTHING ELSE ────────────

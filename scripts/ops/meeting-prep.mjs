@@ -369,21 +369,62 @@ export function catchUpSince(event, last) {
   return last && last < event.scheduled_at - 86_400_000 ? last : week;
 }
 
-/** The most prep emails she gets in one Central day; the rest are one line in the morning email. */
+/** The most prep EMAILS she gets in one Central day. Every prep is still made and filed; past the cap only the email is not sent. */
 export const MAX_PREP_EMAILS_PER_DAY = 3;
 const dayKeyCt = (ms) => new Intl.DateTimeFormat("en-CA", { timeZone: "America/Chicago" }).format(new Date(ms));
 
-/** Which preps are emailed and which wait for the morning line, given how many went today. Soonest first. Pure. */
-export function capPreps(items, sentToday = 0, max = MAX_PREP_EMAILS_PER_DAY) {
-  const room = Math.max(0, max - sentToday);
-  return { send: items.slice(0, room), rest: items.slice(room) };
+/**
+ * Does someone from outside sit in this meeting (an LP, an investor, a brand, a customer)? Any other
+ * guest whose address is not on one of her own business domains; or, with no guest list at all, a
+ * person named in the title. Her own team on her own domains is internal. Pure.
+ */
+export function hasOutsideGuest(event, herAddresses = HER_ADDRESSES) {
+  const mine = new Set(herAddresses.map((a) => companyDomain(a)).filter(Boolean));
+  const guests = others(event, herAddresses);
+  if (guests.length) return guests.some((g) => { const at = String(g.email ?? "").toLowerCase().split("@")[1]; return Boolean(at) && !mine.has(at); });
+  return Boolean(nameFromTitle(event?.title));
 }
 
-/** The one morning-email line for the meetings past the cap. Pure. */
-export function overCapLine(events, tz = "America/Chicago") {
+/**
+ * Which preps get an EMAIL, given how many went today: meetings with outside people first, then the
+ * earliest; `items` are `{ e }` (the event). The rest are still made and filed (`filePrep`). Pure.
+ */
+export function capPreps(items, sentToday = 0, max = MAX_PREP_EMAILS_PER_DAY, herAddresses = HER_ADDRESSES) {
+  const ranked = [...items].sort((a, b) => Number(hasOutsideGuest(b.e, herAddresses)) - Number(hasOutsideGuest(a.e, herAddresses)) || a.e.scheduled_at - b.e.scheduled_at);
+  const room = Math.max(0, max - sentToday);
+  const send = new Set(ranked.slice(0, room));
+  // Each list keeps the day's order, earliest first.
+  return { send: items.filter((i) => send.has(i)), rest: items.filter((i) => !send.has(i)) };
+}
+
+/** Where a filed prep opens in Boss OS. */
+export const prepUrl = (id) => `${ORIGIN}/?command=${encodeURIComponent(id)}`;
+
+/**
+ * A PREP PAST THE CAP IS STILL MADE AND FILED; ONLY ITS EMAIL IS NOT SENT (owner, 13 Nov 2026: she
+ * never walks into a meeting without her prep because of an email cap). The same row a sent prep
+ * opens, holding the whole prep in words, so it opens from Today and from the morning line.
+ */
+export async function filePrep(api, event, data, { context, purpose = null, plan = null, subject = null, tz = DISPLAY_TZ } = {}) {
+  const draft = buildPrep(event, data, { herAddresses: HER_ADDRESSES, context, purpose, plan, tz });
+  const spec = { who: draft.who, subject: subject ?? draft.subject, event: eventSnapshot(event), context };
+  const id = (await api.post("/commands/meeting-prep", { key: draft.key, asked: false, spec }))?.id;
+  if (!id) return { ok: false, error: "Boss OS did not file the prep" };
+  const m = prepEmail(event, data, { context, purpose, plan, tz, refs: [id], subject: subject ?? draft.subject });
+  await api.post("/commands/meeting-prep", { key: draft.key, asked: false, spec: { ...spec, prep: { subject: m.laid.subject, text: m.laid.text, emailed: false } } });
+  return { ok: true, id, url: prepUrl(id), prep: m };
+}
+
+/** The one morning-email line for the preps that were filed and not emailed: each meeting, its time, its own link. Pure. */
+export function overCapLine(preps, tz = "America/Chicago") {
   const at = (ms) => new Intl.DateTimeFormat("en-US", { timeZone: tz, hour: "numeric", minute: "2-digit", hour12: true }).format(new Date(ms)).replace(" AM", " am").replace(" PM", " pm");
-  const n = events.length;
-  return `${n} more meeting${n === 1 ? "" : "s"} had no prep email, because three a day is the limit: ${events.map((e) => `${String(e.title ?? "a meeting").slice(0, 80)} (${at(e.scheduled_at)})`).join("; ")}.`;
+  const n = preps.length;
+  const lead = `${n} more prep${n === 1 ? " is" : "s are"} ready: `;
+  const runs = [{ text: lead }];
+  preps.forEach((p, i) => { runs.push({ text: `${i ? "; " : ""}${String(p.title ?? "a meeting").slice(0, 80)} (${at(p.scheduled_at)}) ` }, { text: "Open ›", url: p.url }); });
+  const name = (p) => `${String(p.title ?? "a meeting").slice(0, 80)} (${at(p.scheduled_at)})`;
+  // `key`: told once per set of preps, never mistaken for another day's line with the same count.
+  return { key: `preps-ready:${preps.map((p) => p.url).join(",")}`, text: `${lead}${preps.map((p) => `${name(p)} Open ›`).join("; ")}`, runs, links: preps.map((p) => ({ label: `${name(p)} ›`, url: p.url })) };
 }
 
 /** Read Open Loops and the brains, build each catch-up, and send it (or write it to the preview). */
@@ -510,18 +551,27 @@ async function main() {
     return;
   }
 
-  // AT MOST THREE PREP EMAILS A DAY (owner, 13 Nov 2026); the rest are ONE line in the morning email.
+  // AT MOST THREE PREP EMAILS A DAY (owner, 13 Nov 2026): outside meetings first, then the earliest.
+  // Every other prep is STILL made and filed, and the morning email links each one. The cap is judged
+  // on each run over every meeting due then; an email that already went earlier today is not taken back.
   const prepDay = dayKeyCt(now);
   // A prep she asked for by name, day or force is hers and is never held back by the cap.
   const { send: toSend, rest: overCap } = ONLY || DAY || FORCE ? { send: built, rest: [] } : capPreps(built, sentState.days?.[prepDay] ?? 0);
-  if (overCap.length) {
-    const { addMorningLines } = await import("../../src/shared/boss/mail/morning.mjs");
-    addMorningLines("notices", { lines: [overCapLine(overCap.map(({ e }) => e), tz)] });
-    sentState.keys = [...new Set([...sentState.keys, ...overCap.map(({ m }) => m.key)])].slice(-2000);
-    writeJson(SENT, sentState);
-    console.log(`meeting-prep: ${overCap.length} prep(s) over the daily limit of ${MAX_PREP_EMAILS_PER_DAY}: one line in the morning email, no email.`);
-  }
   let failed = 0;
+  const filed = [];
+  for (const { e, context, plan, m } of overCap) {
+    const r = await filePrep(api, e, data, { context, purpose: PURPOSE, plan, tz }).catch((err) => ({ ok: false, error: String(err?.message ?? err) }));
+    // Not filed: not marked, so the next run makes it again (and emails it if there is room).
+    if (!r.ok) { failed += 1; console.error(`NAMED STOP [PREP_NOT_FILED] the prep for "${m.subject}" was made and could not be filed: ${r.error}`); continue; }
+    filed.push({ title: e.title, scheduled_at: e.scheduled_at, url: r.url });
+    sentState.keys = [...new Set([...sentState.keys, m.key])].slice(-2000);
+    writeJson(SENT, sentState);
+  }
+  if (filed.length) {
+    const { addMorningLines } = await import("../../src/shared/boss/mail/morning.mjs");
+    addMorningLines("notices", { lines: [overCapLine(filed, tz)] });
+    console.log(`meeting-prep: ${filed.length} prep(s) past the ${MAX_PREP_EMAILS_PER_DAY} emails a day were made and filed: on Today now, one line in the morning email, no email.`);
+  }
   for (const { e, context, plan, m } of toSend) {
     const r = await sendPrep(api, e, data, { context, purpose: PURPOSE, plan, subject: SUBJECT, thread: THREAD, tz });
     if (!r.ok) { failed += 1; console.error(`NAMED STOP [SEND_REFUSED] "${m.subject}" was not sent: ${r.error}`); continue; }

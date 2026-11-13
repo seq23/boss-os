@@ -28,9 +28,11 @@ export function CommandPage({ id }: { id: string }) {
   const back = <button className="btn btn-small back-link" onClick={() => window.history.length > 1 ? window.history.back() : go("/")}>← Back</button>;
   return <div data-testid="command-page">{back}<ErrorNotice error={error} onDismiss={() => setError(null)} />
     {!data ? !error && <Loading /> : <>
-      <h2>{data.kind === "errand" ? "Your errand" : "Your request"}</h2>
+      <h2>{data.kind === "errand" ? "Your errand" : data.kind === "meeting_prep" ? "Your meeting prep" : "Your request"}</h2>
       <section className="panel"><p className="eyebrow">What you asked for</p><MailWords text={data.spec.ask ?? data.spec.title ?? data.spec.name ?? data.spec.who ?? "Your request"} /></section>
-      <p role="status">{commandState(data)}</p>
+      {data.spec.prep?.text
+        ? <section className="panel" data-testid="filed-prep"><p className="eyebrow">Your prep</p><MailWords text={data.spec.prep.text} /></section>
+        : <p role="status">{commandState(data)}</p>}
       {line && <p role="status">{line}</p>}
       <h3>Every email in this thread</h3>
       {data.mail.threads.length ? data.mail.threads.map((t: any) => <MailThread key={t.id} thread={t} onChanged={load} />) : <p>No saved emails in this thread yet.</p>}
