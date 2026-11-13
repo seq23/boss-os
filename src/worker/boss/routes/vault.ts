@@ -275,6 +275,10 @@ const SNAPSHOT_TABLES = [
   // 0194 — Kendra's tool suggestions. The status is the value: a restore that lost it would re-suggest
   // things she has already rejected, and paying for a tool twice is the failure this list prevents.
   "tool_suggestions",
+  // 0365 — what every floor check measured, and the monthly reads. The drift line compares this week
+  // with the best earlier week: a restore that lost the history would call a slide "no earlier week".
+  "delivery_measures",
+  "quality_reads",
   // 0202 — the register of owned work. THE MOST IMPORTANT ADDITION TO THIS LIST IN A WHILE: these
   // rows are the commitments she has personally handed people, and a restore that lost them would
   // silently drop every one of them — which is the precise thing the mechanism exists to make

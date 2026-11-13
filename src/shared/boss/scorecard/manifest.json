@@ -2441,6 +2441,10 @@
       "kind": "system",
       "why": "Measures or reports; the rows it feeds are judged instead."
     },
+    "quality-read": {
+      "kind": "system",
+      "why": "Measures or reports; the rows it feeds are judged instead."
+    },
     "tool-scout": {
       "kind": "helper",
       "why": "Works for you directly (a list, a prep, a reminder); you judge it, not a customer."

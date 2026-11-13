@@ -31,6 +31,13 @@ CREATE TABLE IF NOT EXISTS quality_reads (
 );
 CREATE INDEX IF NOT EXISTS idx_quality_reads_at ON quality_reads(at DESC);
 
+INSERT INTO data_policy (entity, subsystem, residency, ai_processing, reason) VALUES
+  ('delivery_measures', 'duties', 'CLOUD_SYNC', 'EXTERNAL_OK',
+   'Counts only: how many sections, sources, rows and links a delivery carried, whether it met its floor, and the id of the route that ran it. No names, no text from the work itself.'),
+  ('quality_reads', 'duties', 'CLOUD_SYNC', 'EXTERNAL_WITH_APPROVAL',
+   'A verdict (holds or slipped) and one or two sentences about one of her deliverables. The sentences may quote a few words from her own business records, so external processing asks first.')
+ON CONFLICT(entity) DO NOTHING;
+
 -- The monthly read. Its prompt is composed when the task is made (duties/drift.ts), from the newest
 -- real output and the best measured one; the words here are only the fallback the row must carry.
 INSERT OR IGNORE INTO standing_duties
