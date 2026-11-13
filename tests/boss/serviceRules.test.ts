@@ -140,11 +140,15 @@ describe("R7/R10/R11 — after the retries, one email in three parts", () => {
 describe("R14 — a dated deferral is its own task, and the duplicate check is equality, not LIKE", () => {
   it("the same line twice makes one task, queued for its date", async () => {
     const src = { id: await insertTask({ status: "done" }), lane: "ops", title: "Plan", employee_id: null, input: {} };
-    const text = "Done today.\nDeferred to 2099-01-15: send the long-form follow-up with every attachment named in the original thread";
+    // The ask is ordinary work, so it IS queued (until 13 Nov 2026 the word "long" classified it as trading,
+    // it was never queued, and this case proved nothing about the queue). The date is years out and inside
+    // what the test runner's queue can carry as a delay in seconds (the live queue is D1: any date).
+    const text = "Done today.\nDeferred to 2031-01-15: send the long-form follow-up with every attachment named in the original thread";
     const first = await deferFromResult(env as never, src, text);
     const second = await deferFromResult(env as never, src, text);
     expect(first.length).toBe(1);
     expect(second.length).toBe(0);
+    expect((await row<any>(`SELECT status FROM tasks WHERE id = ?`, first[0])).status).toBe("queued");
     const q = await row<any>(`SELECT visible_at FROM boss_task_queue WHERE task_id = ?`, first[0]).catch(() => null);
     if (q) expect(Number(q.visible_at)).toBeGreaterThan(Date.now() + 86_400_000);
   });
