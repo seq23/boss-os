@@ -108,15 +108,6 @@
         },
         {
           "time": "8:00",
-          "tag": "me",
-          "text": "CI sweep: finds any repo with failing tests and fixes it (also Friday)",
-          "emails": false,
-          "refs": [
-            "ci-sweep"
-          ]
-        },
-        {
-          "time": "8:00",
           "tag": "wc",
           "text": "Wynn drafts this week's TLC brand emails for your approval",
           "emails": false,
@@ -240,6 +231,15 @@
             "local-guides-generator-weekly-outcome-report",
             "approvalprep-spry-weekly-summary",
             "dream-wedding-builder-spry-weekly-summary"
+          ]
+        },
+        {
+          "time": "8:00",
+          "tag": "me",
+          "text": "CI sweep: finds any repo with failing tests and fixes it (also Saturday)",
+          "emails": false,
+          "refs": [
+            "ci-sweep"
           ]
         },
         {
@@ -387,15 +387,6 @@
           ]
         },
         {
-          "time": "8:00",
-          "tag": "me",
-          "text": "CI sweep: fixes any repo with failing tests",
-          "emails": false,
-          "refs": [
-            "ci-sweep"
-          ]
-        },
-        {
           "time": "8:40",
           "tag": "me",
           "text": "Outside locks: anyone put a lock on your accounts? Emails you only if yes",
@@ -449,6 +440,15 @@
           "emails": false,
           "refs": [
             "how-we-know-loop-sat-score"
+          ]
+        },
+        {
+          "time": "8:00",
+          "tag": "me",
+          "text": "CI sweep: fixes any repo with failing tests",
+          "emails": false,
+          "refs": [
+            "ci-sweep"
           ]
         }
       ]
@@ -1369,7 +1369,7 @@
       "brand": "Repos",
       "system": "mac",
       "slots": [
-        "mon,fri 08:00"
+        "wed,sat 08:00"
       ],
       "emails": true,
       "heavy": true,
@@ -1525,7 +1525,7 @@
       "brand": "Repos",
       "system": "mac",
       "slots": [
-        "mon,fri 09:00"
+        "wed,sat 09:00"
       ],
       "emails": true,
       "heavy": true,
