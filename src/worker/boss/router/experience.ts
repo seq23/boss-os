@@ -403,3 +403,60 @@ export async function recordHumanVerdict(
     note: args.note ?? `decided ${args.decision} in the approval inbox`,
   });
 }
+
+/*
+ * ─── THE FREE TIER REMEMBERS WHAT WORKED, PER KIND OF JOB (owner, 13 Nov 2026) ──────────────────
+ *
+ * "As much daily and routine work as possible needs to find a compatible free model." So a routine
+ * job tries the free candidates in turn before it leaves the tier, and the tier remembers, per kind
+ * of job, which candidate last completed it. NOTHING NEW IS STORED: the memory is the rows the router
+ * already writes to `model_job_outcome` (`source = 'router'`), a `succeeded` when a call's answer
+ * stood and a `rejected` when the call failed or its answer failed the job's own check.
+ *
+ *   · `lastWinner`  the model whose answer most recently stood for this kind: tried first next time.
+ *   · `failedTwice` models whose newest two answers for this kind both failed: passed over, so the
+ *                   kind moves to the next free candidate, and up to a seat only when none is left.
+ *
+ * NO MODEL IS NAMED HERE OR ANYWHERE THAT READS THIS. The candidates are whatever rows `models`
+ * holds; the order among them is what the log says. A week (FREE_MEMORY_MS) or one good run puts a
+ * passed-over model back. Running out of a free allowance is not a failure and writes no row.
+ */
+export const FREE_MEMORY_MS = 7 * 24 * 3600_000;
+
+export interface FreeMemory {
+  lastWinner: string | null;
+  failedTwice: Set<string>;
+}
+
+export async function freeMemory(db: D1Database, taskKind: string | null | undefined, now = Date.now()): Promise<FreeMemory> {
+  const out: FreeMemory = { lastWinner: null, failedTwice: new Set() };
+  const kind = String(taskKind ?? "").trim();
+  if (!kind) return out;
+  try {
+    const rows = await db
+      .prepare(
+        `SELECT model_id, outcome FROM model_job_outcome
+          WHERE task_kind = ? AND source = 'router' AND ts > ?
+          ORDER BY ts DESC, rowid DESC LIMIT 400`,
+      )
+      .bind(kind, now - FREE_MEMORY_MS)
+      .all<{ model_id: string; outcome: string }>();
+    const newest = new Map<string, string[]>();
+    for (const r of rows.results ?? []) {
+      if (!out.lastWinner && r.outcome === "succeeded") out.lastWinner = r.model_id;
+      const seen = newest.get(r.model_id) ?? [];
+      if (seen.length < 2) { seen.push(r.outcome); newest.set(r.model_id, seen); }
+    }
+    for (const [modelId, last] of newest) {
+      if (last.length === 2 && last.every((o) => o === "rejected")) out.failedTwice.add(modelId);
+    }
+  } catch {
+    // An unreadable log is no memory: every candidate is tried in the shipped order.
+  }
+  return out;
+}
+
+/** Why an answer cannot stand whatever the job: it is empty. Null when it may go on to the job's own check. */
+export function emptyAnswer(text: string | null | undefined): string | null {
+  return String(text ?? "").trim() ? null : "the answer was empty";
+}

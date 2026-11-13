@@ -23,7 +23,8 @@ import { startedBySystem } from "../../../shared/boss/mail/noticeGate.mjs";
 import { runGroundedResearch, type FreeSearchEngine, type GroundedOutcome } from "../research/grounded";
 import { getBackend } from "../backends/registry";
 import { isPlanSpent } from "../backends/spent";
-import { OPENAI_SEAT, CLAUDE_SEAT } from "../duties/seatOrder";
+import { OPENAI_SEAT, seatsForRoutes } from "../duties/seatOrder";
+import { routeOrder, SHORT } from "../../../shared/boss/aiRoles.mjs";
 import { scanForModelAccess, privateLexicon } from "../router/modelAccess";
 
 const KENDRA = "emp_continuity";
@@ -186,14 +187,16 @@ export async function seatReady(env: Env, backendId: string, now = Date.now()): 
 }
 
 /**
- * THE SEATS RESEARCH MAY WALK TO, IN ORDER, after every free rung is out (owner, 6 Nov 2026): Codex's
- * seat if it is not spent, then the Claude seat. Each only when her Mac is seen. `claudeOnly` (private
- * work) leaves Codex out.
+ * THE SEATS RESEARCH MAY WALK TO, IN ORDER, after every free rung is out. Research is SHORT work
+ * (aiRoles.mjs ROUTE_TABLE): public → Codex's seat, then Claude's; a PRIVATE ask (the screen kept it
+ * off the free routes) → Claude's seat, then Codex's (owner, 13 Nov 2026). Each only when the seat
+ * is not spent and her Mac is seen.
  */
-export async function researchSeats(env: Env, o: { claudeOnly?: boolean } = {}, now = Date.now()): Promise<string[]> {
+export async function researchSeats(env: Env, o: { privateAsk?: boolean } = {}, now = Date.now()): Promise<string[]> {
   const out: string[] = [];
-  if (!o.claudeOnly && await seatReady(env, OPENAI_SEAT, now)) out.push(OPENAI_SEAT);
-  if (await seatReady(env, CLAUDE_SEAT, now)) out.push(CLAUDE_SEAT);
+  for (const seat of seatsForRoutes(routeOrder({ jobClass: SHORT, privateWork: o.privateAsk === true }).routes)) {
+    if (await seatReady(env, seat, now)) out.push(seat);
+  }
   return out;
 }
 
@@ -257,7 +260,7 @@ export async function runFreeResearch(
   }
   /*
    * THE PRIVACY SCREEN FIRST, FAIL CLOSED. The free tiers train on prompts; an ask the screen flags
-   * never reaches Google or OpenRouter. It goes to the Claude seat only (the caller), never Codex.
+   * never reaches Google or OpenRouter. It goes to the seats (the caller): Claude's, then Codex's.
    */
   const ask = researchAskOf(task, input);
   const verdict = scanForModelAccess([{ role: "user", content: ask }], await privateLexicon(env.DB),

@@ -108,17 +108,26 @@ describe("both seats out of usage: the work waits on Codex's seat (owner, 3 Nov 
     expect(await all<any>(`SELECT 1 FROM boss_task_notices WHERE task_id = ? AND needs_her = 1`, taskId)).toHaveLength(0);
   });
 
-  it("NEGATIVE: the same refusal on work she asked for herself still fails and tells her, as before", async () => {
+  // 13 Nov 2026: an LP draft is private HARD work. It has one route, Claude's seat, and WAITS for it by
+  // name where she can see it; it is never failed, never moved to Codex or a cloud route.
+  it("NEGATIVE: the same refusal on an LP draft she asked for herself waits for Claude by name and tells her", async () => {
     await setLever("OPEN");
     await bothSeatsSpent();
     const taskId = await insertTask({
       status: "queued", title: "Her own private ask", intake_kind: "research", sensitivity: "private",
       input: JSON.stringify({ from: "owner@example.test", mail_id: "iml_test_hers", backend_ladder: ["bk_claude_code", "bk_codex"], draft_kind: "lp_reply", lp_committed: true, prompt: "Draft the reply." }),
     });
-    restore = stubFetch(() => completionResponse("no"));
+    const hosts: string[] = [];
+    restore = stubFetch((req) => { hosts.push(new URL(req.url).hostname); return completionResponse("no"); });
     await handleTask(withKey() as any, { taskId, lane: "ops" });
-    expect((await row<any>(`SELECT status FROM tasks WHERE id = ?`, taskId)).status).toBe("failed");
-    expect(await all<any>(`SELECT kind, needs_her FROM boss_task_notices WHERE task_id = ?`, taskId)).toEqual([{ kind: "stopped", needs_her: 1 }]);
+    expect(hosts).toEqual([]);
+    expect(await all<any>(`SELECT 1 FROM backend_runs WHERE task_id = ? AND backend_id = 'bk_codex'`, taskId)).toHaveLength(0);
+    expect(await all<any>(`SELECT 1 FROM routing_decisions WHERE task_id = ?`, taskId)).toHaveLength(0);
+    expect((await row<any>(`SELECT status FROM tasks WHERE id = ?`, taskId)).status).toBe("queued");
+    const stop = JSON.parse((await row<any>(`SELECT detail FROM task_events WHERE task_id = ? AND event = 'named_stop' ORDER BY ts DESC LIMIT 1`, taskId)).detail);
+    expect(stop.code).toBe("WAITING_FOR_CLAUDE");
+    expect(stop.resume_at).toBe(NOW + 3 * 3600_000);
+    expect((await all<any>(`SELECT kind FROM boss_task_notices WHERE task_id = ?`, taskId)).map((n) => n.kind)).toEqual(["stop:WAITING_FOR_CLAUDE"]);
   });
 
   it("a duty whose prompt names an LP commitment is brain work too: Claude only, fails closed by name", async () => {
@@ -160,7 +169,7 @@ describe("both seats out of usage: the work waits on Codex's seat (owner, 3 Nov 
     expect(chosen.in_micros_1k + chosen.out_micros_1k).toBe(0);
   });
 
-  it("NEGATIVE: an LP draft (Claude seat only) is never parked on Codex; with Claude spent it stops by name", async () => {
+  it("NEGATIVE: an LP draft (Claude seat only) is never parked on Codex; with Claude spent it waits for Claude by name", async () => {
     await setLever("FREE_ONLY");
     await bothSeatsSpent();
     const taskId = await insertTask({
@@ -172,8 +181,12 @@ describe("both seats out of usage: the work waits on Codex's seat (owner, 3 Nov 
     await handleTask(withKey() as any, { taskId, lane: "ops" });
     expect(hosts).toEqual([]);
     expect(await all<any>(`SELECT 1 FROM backend_runs WHERE task_id = ? AND backend_id = 'bk_codex'`, taskId)).toHaveLength(0);
-    const t = await row<any>(`SELECT status, error FROM tasks WHERE id = ?`, taskId);
-    expect(t.status).toBe("failed");
-    expect(t.error).toMatch(/bk_claude_code: .*out of usage/);
+    expect(await all<any>(`SELECT 1 FROM backend_runs WHERE task_id = ? AND status = 'running'`, taskId), "a run was parked on a spent seat").toHaveLength(0);
+    expect(await all<any>(`SELECT 1 FROM routing_decisions WHERE task_id = ?`, taskId)).toHaveLength(0);
+    expect((await row<any>(`SELECT status FROM tasks WHERE id = ?`, taskId)).status).toBe("queued");
+    const stop = JSON.parse((await row<any>(`SELECT detail FROM task_events WHERE task_id = ? AND event = 'named_stop' ORDER BY ts DESC LIMIT 1`, taskId)).detail);
+    expect(stop.code).toBe("WAITING_FOR_CLAUDE");
+    expect(stop.why).toMatch(/bk_claude_code: .*out of usage/);
+    expect(stop.why).toMatch(/Never Codex, never a free or cloud route/);
   });
 });

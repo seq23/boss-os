@@ -330,7 +330,7 @@ describe("the briefing's own spec is not deal material; nothing else is exempt (
     expect(repoAuthoredBriefingText({ ...stamped, prompt: spec }, NOW - 5 * 86_400_000), "a stale day label was accepted").toEqual([]);
   });
 
-  it("her own edited briefing prompt carrying deal terms is still brain work on the shipped consumer: Claude's seat only, never Codex", async () => {
+  it("her own edited briefing prompt carrying deal terms is still private work on the shipped consumer: Claude's seat first, never a free or cloud route", async () => {
     await seatsReset();
     const edited = "Summarise the capital commitment, the allocation and the Fund II subscription at a $40M valuation, 2% fee.";
     await env.DB.prepare(`UPDATE standing_duties SET owner_prompt = ? WHERE id = 'duty_exec_intel'`).bind(edited).run();
@@ -342,7 +342,8 @@ describe("the briefing's own spec is not deal material; nothing else is exempt (
       expect(runs.map((r) => r.backend_id), "her edited deal wording reached Codex").not.toContain("bk_codex");
       expect(runs.map((r) => r.backend_id)).toEqual(["bk_claude_code"]);
       const step = await row<any>(`SELECT detail FROM task_events WHERE task_id = ? AND event = 'ladder_step'`, taskId);
-      expect(JSON.parse(step.detail).refused).toMatch(/privacy screen kept this prompt off Codex/);
+      expect(JSON.parse(step.detail).refused).toMatch(/privacy screen keeps this prompt off every free and cloud route/);
+      expect(await all<any>(`SELECT 1 FROM routing_decisions WHERE task_id = ?`, taskId), "a cloud route was asked").toHaveLength(0);
     } finally {
       await env.DB.prepare(`UPDATE standing_duties SET owner_prompt = NULL WHERE id = 'duty_exec_intel'`).run();
     }

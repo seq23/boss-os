@@ -1,6 +1,6 @@
 import { needsHer, startedBySystem } from "../../../shared/boss/mail/noticeGate.mjs";
-import { orderSeats, isOn, OPENAI_FIRST_KEY, OPENAI_SEAT, CLAUDE_SEAT, isConfidentialDraft, confidentialLadder } from "../duties/seatOrder";
-import { roleFor, CODEX_LIMIT_WAITS, afterCodexLimit } from "../../../shared/boss/aiRoles.mjs";
+import { OPENAI_SEAT, CLAUDE_SEAT, isConfidentialDraft, confidentialLadder, orderSeatsByRoutes, seatsForRoutes, seatFailedTwice } from "../duties/seatOrder";
+import { roleFor, CODEX_LIMIT_WAITS, afterCodexLimit, jobClassOf, routeOrder, HARD, CODEX, WAIT_FOR_CLAUDE } from "../../../shared/boss/aiRoles.mjs";
 import { isPlanSpent } from "../backends/spent";
 import { getBackend } from "../backends/registry";
 import { brainBlockFor } from "../brains/store";
@@ -13,6 +13,7 @@ import { getSetting } from "../lib/settings";
 import { loadEnvelope } from "../intake/envelope";
 import { routeCompletion, BudgetExceeded, RoutingBlocked, ProviderFailure, type RouteRequest } from "../router";
 import { scanForModelAccess, privateLexicon } from "../router/modelAccess";
+import { freeMemory, emptyAnswer } from "../router/experience";
 import { dispatchRunForTask } from "../backends/dispatch";
 import { deliverExecutiveReport } from "../duties/deliverReport";
 import { repoAuthoredBriefingText } from "../duties/briefingSpec";
@@ -208,9 +209,18 @@ export async function handleTask(env: Env, msg: TaskMessage): Promise<void> {
    * ChatGPT plan is a setting, not a no-training contract, so Codex is held to the same screen as the
    * free cloud rungs (the router's `scanForModelAccess`; west-peek-os #326 does the same). A seat
    * prompt it flags — an LP, investor or deal term, a private name, children's data, or a lexicon it
-   * cannot read — is BRAIN work (aiRoles.mjs "agent_queue.private_prompt"): Claude's seat only, never
-   * Codex, never a cloud rung, fail closed.
+   * cannot read — is PRIVATE work and never reaches a free or cloud route, fail closed.
+   *
+   * OWNER, 13 Nov 2026 ("all private stuff can go through codex i need a backup to claude"): private
+   * work walks its row of aiRoles.mjs ROUTE_TABLE. HARD private work has Claude's seat only and waits
+   * for it by name; CLEAR_BRIEF and SHORT private work goes to Claude's seat, then Codex's (her
+   * ChatGPT plan; the Mac's seat refuses any other sign-in, scripts/lib/codex-seat.mjs), then stops
+   * by name. The free tier is on no private row.
    */
+  const jobClass = jobClassOf({
+    intakeKind: task.intake_kind ?? null, repair: input.origin === "repair", repoChange: Boolean(input.repo_change),
+    confidentialDraft: confidential, chromeJob: input.chrome_job === true, brainEdit: input.brain_edit ?? null,
+  });
   let privatePrompt = false;
   if (baseLadder.length > 0 && !confidential) {
     const parts = await buildPromptParts(env, task, input, { backendId: OPENAI_SEAT });
@@ -225,18 +235,36 @@ export async function handleTask(env: Env, msg: TaskMessage): Promise<void> {
     if (privatePrompt) {
       await env.DB
         .prepare(`INSERT INTO task_events (id, task_id, ts, event, detail) VALUES (?,?,?,'ladder_step',?)`)
-        .bind(newId("tev"), task.id, Date.now(), JSON.stringify({ backend_id: OPENAI_SEAT, refused: `the privacy screen kept this prompt off Codex: ${verdict.reason ?? "private"}; it runs on the Claude seat only`, next: CLAUDE_SEAT }))
+        .bind(newId("tev"), task.id, Date.now(), JSON.stringify({ backend_id: "free routes", refused: `the privacy screen keeps this prompt off every free and cloud route: ${verdict.reason ?? "private"}; ${jobClass} private work runs on ${routeOrder({ jobClass, privateWork: true }).routes.join(", then ")}`, next: CLAUDE_SEAT }))
         .run();
     }
   }
-  const claudeOnly = confidential || privatePrompt || input.chrome_job === true;
+  const privateWork = confidential || privatePrompt;
+  // No free tier and none of the public flows below: private work, or a Chrome job (Claude's seat only).
+  const claudeOnly = privateWork || input.chrome_job === true;
+  // THE ORDER OF THE SEATS IS THE JOB CLASS'S ROW OF aiRoles.mjs ROUTE_TABLE (owner, 13 Nov 2026), below.
   // Owner, 3 Nov 2026 ("default OpenAI and Claude just be the brains"): Codex is the worker for every
   // employee duty (aiRoles.mjs "agent_queue.default"), so Codex's seat goes first on every ladder that
   // has it. This supersedes the 24 Oct "OpenAI first" switch, which now only matters if that row ever
   // makes agent work a brain job again. A Codex limit WAITS on Codex's seat (`codex_limit_waits`,
   // honoured at dispatch and at /claim), never Claude, never a cloud rung.
   const codexWorks = roleFor("agent_queue.default") === "worker";
-  let ladder = privatePrompt ? [CLAUDE_SEAT] : claudeOnly ? confidentialLadder(baseLadder) : orderSeats(baseLadder, codexWorks || isOn(await getSetting(env.DB, OPENAI_FIRST_KEY)));
+  /*
+   * A ROUTE THAT FAILED THIS CLASS TWICE IN A ROW STOPS GETTING IT (owner, 13 Nov 2026): the job moves
+   * up a rung by itself. Read from the run log (seatOrder.ts `seatFailedTwice`); Codex's seat is the
+   * one a seat ladder can move up from. The free tier does the same per model (router/experience.ts).
+   */
+  const codexDemoted = baseLadder.length > 0 && await seatFailedTwice(env.DB, OPENAI_SEAT, jobClass).catch(() => false);
+  const order = routeOrder({ jobClass, privateWork, demoted: codexDemoted ? [CODEX] : [] });
+  let ladder = confidential || input.chrome_job === true ? confidentialLadder(baseLadder)
+    : privatePrompt ? seatsForRoutes(order.routes)
+    : orderSeatsByRoutes(baseLadder, order.routes);
+  if (codexDemoted && !ladder.includes(OPENAI_SEAT) && ladder.length > 0 && input.chrome_job !== true && !confidential) {
+    await env.DB
+      .prepare(`INSERT INTO task_events (id, task_id, ts, event, detail) VALUES (?,?,?,'ladder_step',?)`)
+      .bind(newId("tev"), task.id, Date.now(), JSON.stringify({ backend_id: OPENAI_SEAT, refused: `NAMED STOP [ROUTE_DEMOTED] ${OPENAI_SEAT} failed its last two ${jobClass} jobs, so this kind moves up a rung; it is tried again after a week or one good run`, next: ladder[0] }))
+      .run();
+  }
   // After a Codex limit (aiRoles.mjs afterCodexLimit): public work → the free tiers, then the Claude
   // seat; everything else → the Claude seat. It waits for the reset only when no later rung can run.
   /*
@@ -248,7 +276,7 @@ export async function handleTask(env: Env, msg: TaskMessage): Promise<void> {
    */
   const seatsOnly = input.cloud_fallback === false;
   const publicFreeRung = !seatsOnly &&
-    afterCodexLimit({ sensitivity: task.sensitivity, modelAccess: researchWork ? task.model_access ?? null : null, confidential: confidential || privatePrompt, chromeJob: input.chrome_job === true }) === "free_rung";
+    afterCodexLimit({ sensitivity: task.sensitivity, modelAccess: researchWork || input.delivers === undefined ? task.model_access ?? null : null, confidential: privateWork, chromeJob: input.chrome_job === true, jobClass }) === "free_rung";
   // Owner, 6 Nov 2026: "A Codex usage limit hands the work to Claude … it never waits for the reset."
   // The Claude seat takes it when her Mac is there to claim it; otherwise it waits on Codex's seat.
   const claudeReady = !claudeOnly && ladder.includes(CLAUDE_SEAT) && await seatReady(env, CLAUDE_SEAT);
@@ -273,7 +301,7 @@ export async function handleTask(env: Env, msg: TaskMessage): Promise<void> {
     const hour = Date.now() + 3600_000;
     researchResume = free.capped?.resumeAt ? Math.min(free.capped.resumeAt, hour) : hour;
     researchCapWhy = free.capped?.why ?? null;
-    const seats = await researchSeats(env, { claudeOnly: free.privateAsk === true });
+    const seats = await researchSeats(env, { privateAsk: free.privateAsk === true });
     await env.DB
       .prepare(`INSERT INTO task_events (id, task_id, ts, event, detail) VALUES (?,?,?,'ladder_step',?)`)
       .bind(newId("tev"), task.id, Date.now(), JSON.stringify({ backend_id: "free rungs", refused: free.why.slice(0, 400), next: seats[0] ?? (free.capped || free.privateAsk ? "named stop" : "the router's free routes") }))
@@ -314,6 +342,8 @@ export async function handleTask(env: Env, msg: TaskMessage): Promise<void> {
       delete requested.model;
     }
     requested.backend_ladder = ladder;
+    // The class rides on the run, so the run log can say which route fails which kind of job.
+    requested.job_class = jobClass;
     requested.model_by_backend = modelBySeat ?? undefined;
     if (codexLimitWaits) requested.codex_limit_waits = true;
     if (publicFreeRung && codexWorks && !claudeOnly) requested.codex_limit_free_rung = true;
@@ -385,14 +415,29 @@ export async function handleTask(env: Env, msg: TaskMessage): Promise<void> {
    * goes back in the queue for the reset, on the same ladder — a Claude-only task stays Claude-only and
    * is never moved to another seat or a cloud model. Work she asked for keeps the failure below.
    */
-  const wouldFail = confidential || privatePrompt || (ladder.length > 0 && !input.cloud_fallback && !codexToFreeRung && !fellToFree);
+  const wouldFail = privateWork || (ladder.length > 0 && !input.cloud_fallback && !codexToFreeRung && !fellToFree);
   if (wouldFail && await waitForUsage(env, task, input, refusals)) return;
 
-  if (confidential || privatePrompt) {
-    // FAIL CLOSED: an LP / deal-terms draft that Claude's seat did not take is never sent anywhere else.
+  if (privateWork) {
+    /*
+     * PRIVATE HARD WORK WAITS FOR CLAUDE, BY NAME, WHERE SHE CAN SEE IT (owner, 13 Nov 2026). It has one
+     * route. When that seat did not take it the task goes back in the queue for the seat's reset (an
+     * hour when it gave none) under NAMED STOP [WAITING_FOR_CLAUDE], with one plain notice. It is never
+     * moved to Codex, a free route or a cloud model.
+     */
+    if (order.end === WAIT_FOR_CLAUDE && ladder.includes(CLAUDE_SEAT)) {
+      const seat = await getBackend(env.DB, CLAUDE_SEAT).catch(() => null) as { exhausted_until?: number | null } | null;
+      const resumeAt = isPlanSpent(seat, Date.now()) ? Number(seat!.exhausted_until) : Date.now() + 3600_000;
+      await namedStop(env, { id: task.id, lane: task.lane, title: String(task.title ?? task.id) }, {
+        code: "WAITING_FOR_CLAUDE", tell: true, resumeAt,
+        why: `NAMED STOP [WAITING_FOR_CLAUDE] private ${HARD} work runs on the Claude seat only and that seat did not take it (${refusals.map((r) => `${r.backend_id}: ${r.refused.slice(0, 160)}`).join(" | ") || "no seat answered"}); it waits and tries again at ${new Date(resumeAt).toISOString()}. Never Codex, never a free or cloud route.`,
+      });
+      return;
+    }
+    // FAIL CLOSED: private work no allowed seat took is never sent anywhere else.
     await failTask(env, task, employee, envelope, costMode,
-      [refusals.map((r) => `${r.backend_id}: ${r.refused}`).join(" | "), "an LP or deal-terms draft runs on the Claude seat only"].filter(Boolean).join(" | "),
-      "Run it when the Claude seat on her Mac is free. It is never moved to another seat or a cloud model.");
+      [refusals.map((r) => `${r.backend_id}: ${r.refused}`).join(" | "), `private ${jobClass} work runs on ${order.routes.join(", then ")} only, never a free or cloud route`].filter(Boolean).join(" | "),
+      "Run it when one of those seats on her Mac is free. It is never moved to a free route or a cloud model.");
     return;
   }
   if (ladder.length > 0 && !input.cloud_fallback && !codexToFreeRung && !fellToFree) {
@@ -462,6 +507,9 @@ export async function handleTask(env: Env, msg: TaskMessage): Promise<void> {
       confidentialDraft: confidential,
       // The job's own model list (model_job_policies): the task names it, or its draft kind does.
       jobKey: typeof (input as any)?.job_key === "string" ? (input as any).job_key : typeof (input as any)?.draft_kind === "string" ? (input as any).draft_kind : null,
+      // The job's own check on a free answer: an empty one, or a delivery that is not the object it
+      // was asked for, fails that model for this kind of job and the walk moves to the next candidate.
+      accept: (text: string) => emptyAnswer(text) ?? (cloudDelivers && !parseDeliversFromText(text) ? `it is not the ${cloudDelivers} object the job delivers` : null),
       costMode,
       budgetMicros: envelope?.budget_micros ?? 0,
       cloudForRestrictedAllowed: Boolean(envelope?.cloud_for_restricted_allowed),
@@ -499,7 +547,11 @@ export async function handleTask(env: Env, msg: TaskMessage): Promise<void> {
          * ladder_step and the walk moves on. Only a free-only run walks this way.
          */
         if (codexToFreeRung || fellToFree || groundedFell) {
-          for (const providerId of FREE_PROVIDER_ORDER) {
+          // Her order, with the provider whose model last completed this kind of job tried first.
+          const winner = (await freeMemory(env.DB, task.intake_kind ?? null)).lastWinner;
+          const winnerProvider = winner ? (await env.DB.prepare(`SELECT provider_id FROM models WHERE id = ?`).bind(winner).first<{ provider_id: string }>().catch(() => null))?.provider_id : null;
+          const providers = [...FREE_PROVIDER_ORDER].sort((a, b) => Number(b === winnerProvider) - Number(a === winnerProvider));
+          for (const providerId of providers) {
             try { result = await routeCompletion(env, { ...routeRequest(prompt), onlyProviderId: providerId }); break; } catch (pe) {
               await env.DB
                 .prepare(`INSERT INTO task_events (id, task_id, ts, event, detail) VALUES (?,?,?,'ladder_step',?)`)

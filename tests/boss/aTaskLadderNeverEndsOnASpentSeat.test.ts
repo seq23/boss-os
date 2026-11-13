@@ -290,7 +290,7 @@ describe("the chain after a Codex limit: free tiers first, then her seats, then 
     expect((await all<any>(`SELECT backend_id FROM backend_runs WHERE task_id = ?`, taskId)).map((r) => r.backend_id)).toEqual(["bk_codex"]);
   });
 
-  it("NEGATIVE: private research goes to the Claude seat only, never a free tier, never Codex", async () => {
+  it("NEGATIVE: private research goes to Claude's seat first, never a free tier; Codex is only its backup (13 Nov 2026)", async () => {
     await spendCodex(); await macSeenNow();
     const hits = stubFree();
     const taskId = await researchTask({ model_access: "private_model_only", input: JSON.stringify({ instruction: BRIEF, research_page: { page_id: "rpg_test_private", question: "q" }, delivers: "research_page", backend_id: "bk_claude_code", prompt: BRIEF }) });

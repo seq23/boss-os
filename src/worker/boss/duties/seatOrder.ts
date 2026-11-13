@@ -41,3 +41,59 @@ export function isConfidentialDraft(input: { confidential_draft?: unknown; draft
 export function confidentialLadder(ladder: string[]): string[] {
   return ladder.filter((x) => x === CLAUDE_SEAT);
 }
+
+/*
+ * ─── THE SEATS OF A LADDER, IN THE JOB CLASS'S ORDER (owner, 13 Nov 2026) ───────────────────────
+ *
+ * `routes` is the job's row of aiRoles.mjs ROUTE_TABLE (tiers, never a model). The two seat tiers
+ * take the place Claude's seat holds on the duty's own ladder, in the table's order; a tier the table
+ * leaves out is left out. A ladder without Claude's seat is left as it is, as `orderSeats` always did:
+ * a duty that names one seat for what that seat can do is not widened here.
+ */
+export const SEAT_OF_TIER: Readonly<Record<string, string>> = { claude: CLAUDE_SEAT, codex: OPENAI_SEAT };
+
+export function seatsForRoutes(routes: readonly string[]): string[] {
+  return routes.map((r) => SEAT_OF_TIER[r]).filter((x): x is string => typeof x === "string");
+}
+
+export function orderSeatsByRoutes(ladder: string[], routes: readonly string[]): string[] {
+  if (!ladder.includes(CLAUDE_SEAT)) return ladder;
+  const rest = ladder.filter((x) => x !== OPENAI_SEAT);
+  const at = rest.indexOf(CLAUDE_SEAT);
+  return [...rest.slice(0, at), ...seatsForRoutes(routes), ...rest.slice(at + 1)];
+}
+
+/** How long two failures in a row keep a seat off a job class before it is tried again. */
+export const DEMOTION_MS = 7 * 24 * 3600_000;
+
+/**
+ * DID THIS SEAT FAIL ITS LAST TWO JOBS OF THIS CLASS? Read from the run log the router already keeps,
+ * nothing new stored: `backend_runs` (a run the seat finished: succeeded or failed) and the
+ * `ladder_release` events (a run the seat gave an unusable answer on, handed to the next seat).
+ * Each run carries the class the queue stamped on it (`requested.job_class`).
+ *
+ * OUT OF USAGE IS NOT A FAILURE: a spent-plan release carries `exhausted_until` and is not counted,
+ * and a refused or cancelled run never ran. Only the newest two count, and only inside DEMOTION_MS,
+ * so one good run, or a week, puts the seat back.
+ */
+export async function seatFailedTwice(db: D1Database, seat: string, jobClass: string, now = Date.now()): Promise<boolean> {
+  const rows = await db
+    .prepare(
+      `SELECT ok FROM (
+         SELECT COALESCE(finished_at, started_at) AS ts, CASE status WHEN 'succeeded' THEN 1 ELSE 0 END AS ok
+           FROM backend_runs
+          WHERE backend_id = ?1 AND status IN ('succeeded','failed')
+            AND json_extract(requested, '$.job_class') = ?2 AND COALESCE(finished_at, started_at) > ?3
+         UNION ALL
+         SELECT e.ts AS ts, 0 AS ok
+           FROM task_events e JOIN backend_runs r ON r.id = json_extract(e.detail, '$.run_id')
+          WHERE e.event = 'ladder_release' AND e.ts > ?3
+            AND json_extract(e.detail, '$.from') = ?1 AND json_extract(e.detail, '$.exhausted_until') IS NULL
+            AND json_extract(r.requested, '$.job_class') = ?2
+       ) ORDER BY ts DESC LIMIT 2`,
+    )
+    .bind(seat, jobClass, now - DEMOTION_MS)
+    .all<{ ok: number }>();
+  const last = rows.results ?? [];
+  return last.length === 2 && last.every((r) => Number(r.ok) === 0);
+}

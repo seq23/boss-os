@@ -96,7 +96,7 @@ export async function check({ spec, fixture, prompt, files, deliveredAt, ladder 
   else {
     // Owner, 24 Oct 2026: OpenAI first, Claude as backup.
     if (!(rungs[0]?.backend_id === "bk_codex" && rungs[0]?.kind === "seat" && rungs[0]?.model === null)) problems.push(`Rung 1 is ${rungs[0]?.backend_id}/${rungs[0]?.model}, not bk_codex on its own default.`);
-    if (!(rungs[1]?.backend_id === "bk_claude_code" && rungs[1]?.kind === "seat" && rungs[1]?.model === "claude-sonnet-4-5-20250929")) problems.push(`Rung 2 is ${rungs[1]?.backend_id}/${rungs[1]?.model}, not bk_claude_code on Sonnet 4.5.`);
+    if (!(rungs[1]?.backend_id === "bk_claude_code" && rungs[1]?.kind === "seat")) problems.push(`Rung 2 is ${rungs[1]?.backend_id}, not the Claude seat. (Which model that seat runs is its own invocation config, never a rule: owner, 13 Nov 2026.)`);
     if (!rungs.slice(0, 2).every((r) => r.cost === "$0 (subscription)")) problems.push("A seat is not priced as a subscription seat.");
     const below = rungs.slice(2);
     if (!below.some((r) => r.kind === "free_rung")) problems.push("No free rung below the seats.");
