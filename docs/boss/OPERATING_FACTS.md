@@ -197,3 +197,19 @@ have had". A review found that nothing checked the finished work (a half-depth b
 - **The standards are on file**: `tests/fixtures/briefing/standard-2026-10-22` (must pass) and
   `below-2026-10-27` (must fail), graded by `npm run validate:briefing-on-par`; other deliverables in
   `tests/fixtures/floors/` (private ones masked to their shape), proven in `tests/boss/floors.test.ts`.
+
+### Four repairs behind the floors (13 Nov 2026)
+- **Backlink prospecting had no site list.** Its prompt named `PROPERTIES.json`; nothing wrote it, so
+  every run was blocked and delivered zero rows. `scripts/ops/properties-snapshot.mjs` writes it
+  before the Mac claims work (`scripts/ops/agent-claim.sh`): her own sites from
+  `searchReadiness/sites.json` (a friend's or client's site is left out), most Search Console clicks
+  first, `not read: <reason>` when clicks cannot be read.
+- **A delivers.json that does not parse** gets one syntax-only repair pass on the same seat
+  (`scripts/sync-agent/runner.mjs`); still unreadable is `NAMED STOP [DELIVERS_INVALID]` and a failed
+  run, never "succeeded".
+- **Row-delivering runs are told how they are checked** (`deliveryRules`, `duties/floors.ts`, appended
+  when the task is made). Sourcing may file an honest "nothing new" only with its searches and the
+  firms it turned down on record.
+- **Free Google-grounded search walks every free model** (`router/experience.ts`): a 404 "no longer
+  available" disables the model for good, a 429 on grounding passes it over until the daily reset;
+  then Brave with a free writer, then a seat. Never a paid route.

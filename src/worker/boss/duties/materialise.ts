@@ -6,6 +6,7 @@ import { admitTask } from "../tasks/admit";
 import { BRIEFING_PROMPT_VERSION, composeBriefingPrompt, ctDayLabel } from "./briefingSpec";
 import { BRIEFING_CLASSIFICATION, BRIEFING_LADDER_IDS, BRIEFING_CLOUD_FALLBACK, modelBySeat } from "./briefingLadder";
 import { runWorkerReader } from "../health/readers";
+import { deliveryRules } from "./floors";
 
 /**
  * Turning due duties into queued work.
@@ -274,6 +275,9 @@ export async function materialiseDueDuties(
       if (typeof duty.owner_prompt === "string" && duty.owner_prompt.trim()) {
         input = { ...input, prompt: duty.owner_prompt, prompt_source: "owner_edit" };
       }
+      // The run is told how its delivery is checked (floors.ts), whichever prompt it carries.
+      const rules = deliveryRules(input.delivers);
+      if (rules && typeof input.prompt === "string" && input.prompt.trim()) input = { ...input, prompt: `${input.prompt}\n\n${rules}` };
       const briefing = input.spec_module === "executive_briefing";
       // WHO STARTED IT rides on the task (noticeGate.mjs startedBySystem): a duty's own run is never
       // work she asked for, so its waits and stops are the team's, not her email (13 Nov 2026).

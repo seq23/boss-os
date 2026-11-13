@@ -85,11 +85,11 @@ describe("4a · Gemini direct, free tier", () => {
     for (const c of gem) expect(c).toMatchObject({ stage: "privacy", verdict: "rejected" });
   });
 
-  it("a grounded call on a model where search is not free is refused before it is made", async () => {
-    const g = stubGemini(() => geminiAnswer("x"));
+  it("a grounded call is only ever made on a free-tier model id, never a billed one", async () => {
+    const g = stubGemini(() => new Response("quota", { status: 429 }));
     const err = await routeCompletion(withKey(), route("Search for rooftop gardens.", { onlyProviderId: "prv_gemini", webSearch: true, jobKey: "summarise", taskId: "tsk_gem_search_paid" })).catch((e) => e);
     expect(err).toBeTruthy();
-    expect(g.calls.filter((c) => c.grounded && c.model !== "gemini-2.5-flash")).toEqual([]);
+    expect(g.calls.filter((c) => c.grounded && !(GEMINI_FREE_MODELS as readonly string[]).includes(c.model))).toEqual([]);
   });
 });
 
@@ -139,7 +139,7 @@ describe("meeting-prep research: Google-grounded, then their pages, then a named
   it("search unavailable: their pages are fetched and a free Gemini 3 Flash writes only from them", async () => {
     const PAGE = "Example Family Office invests in late-stage software. Pat Example, Managing Director, leads secondaries. ".repeat(4);
     const written = '```json\n{"found":true,"title":{"text":"Managing Director","url":"https://familyoffice.example/team"},"firm":{"text":"Example Family Office","url":"https://familyoffice.example/"},"background":{"text":"Invented history","url":"https://elsewhere.example/"},"focus":null,"upcoming":[]}\n```';
-    const g = stubGemini((model) => (model === "gemini-2.5-flash" ? new Response("quota", { status: 429 }) : geminiAnswer(written)));
+    const g = stubGemini((_model, body) => (body.tools?.some((t: any) => t.google_search) ? new Response("quota", { status: 429 }) : geminiAnswer(written)));
     const fetched: string[] = [];
     const r = await researchPerson(withKey(), who, async (_e, url) => { fetched.push(url); return { ok: url.endsWith("/team") || url.endsWith(".example/"), text: PAGE, finalUrl: url }; });
     expect(r.ok).toBe(true);
@@ -164,15 +164,16 @@ describe("meeting-prep research: Google-grounded, then their pages, then a named
   const readsPages = async (_e: unknown, url: string) => ({ ok: url.endsWith("/team"), text: PAGE2, finalUrl: url });
 
   it("2.5-flash retired (404): the next free Gemini writes the prep from their pages", async () => {
-    const g = stubGemini((model) => (model === "gemini-2.5-flash" ? new Response("models/gemini-2.5-flash is not found", { status: 404 }) : geminiAnswer(WRITTEN)));
+    const g = stubGemini((model, body) => (model === "gemini-2.5-flash" ? new Response("models/gemini-2.5-flash is not found for API version v1beta", { status: 404 })
+      : body.tools?.some((t: any) => t.google_search) ? new Response("quota", { status: 429 }) : geminiAnswer(WRITTEN)));
     const r = await researchPerson(withKey(), who, readsPages);
     expect(r).toMatchObject({ ok: true, via: "their_pages" });
     expect(r.json.title.url).toBe("https://familyoffice.example/team");
-    const writers = g.calls.filter((c) => c.model !== "gemini-2.5-flash");
+    const writers = g.calls.filter((c) => c.model !== "gemini-2.5-flash" && !c.grounded);
     expect(writers.length).toBeGreaterThan(0);
     expect(["gemini-3.8-flash", "gemini-3.6-flash", "gemini-3-flash-preview"]).toContain(writers[0]!.model);
     expect(writers[0]!.grounded).toBe(false);
-    expect(g.calls.filter((c) => c.grounded).map((c) => c.model)).toEqual(["gemini-2.5-flash"]); // never a billed grounded search
+    for (const c of g.calls.filter((x) => x.grounded)) expect(GEMINI_FREE_MODELS as readonly string[]).toContain(c.model); // never a billed grounded search
   });
 
   it("every free Gemini failing: an OpenRouter free model writes it, never a paid one", async () => {
@@ -199,5 +200,55 @@ describe("meeting-prep research: Google-grounded, then their pages, then a named
     const r = await researchPerson(withKey(), who, async () => ({ ok: false, text: null, finalUrl: null }));
     expect(r).toMatchObject({ ok: false, private: true });
     expect(g.calls).toEqual([]);
+  });
+});
+
+
+/**
+ * FREE GROUNDED SEARCH WALKS THE FREE MODELS AND LEARNS (repair, 13 Nov 2026). It asked one model,
+ * the one that retires 1 Dec 2026; with that model gone, free research had none. Before the fix the
+ * first test below ended in an error after one call.
+ */
+describe("free Google-grounded search: the key's answers decide which model is asked", () => {
+  const grounded = (taskId: string) => route("What changed in rooftop garden rules this year?", { onlyProviderId: "prv_gemini", webSearch: true, freeOnly: true, jobKey: "research_grounded_search", taskId });
+  const enabled = async (id: string) => (await row<{ enabled: number }>(`SELECT enabled FROM models WHERE id = ?`, id))?.enabled;
+  const SRC = [{ uri: "https://news.example/gardens", title: "News" }];
+
+  beforeEach(async () => {
+    await env.DB.exec("UPDATE models SET enabled = 1 WHERE provider_id = 'prv_gemini'; DELETE FROM model_job_outcome WHERE task_kind = 'grounded_search';");
+  });
+
+  it("the first model is retired (404): it is dropped for good and the next free model answers with sources", async () => {
+    const g = stubGemini((model) => (model === "gemini-2.5-flash" ? new Response("models/gemini-2.5-flash is no longer available to new users", { status: 404 }) : geminiAnswer("Rules changed in March.", SRC)));
+    const r = await routeCompletion(withKey(), grounded("tsk_ground_retired"));
+    expect(r.text).toBe("Rules changed in March.");
+    expect(r.sources?.map((x) => x.url)).toEqual(["https://news.example/gardens"]);
+    expect(await enabled("mdl_gemini_25_flash_free")).toBe(0);
+
+    g.calls.length = 0;
+    await routeCompletion(withKey(), grounded("tsk_ground_retired_2"));
+    expect(g.calls.map((c) => c.model)).not.toContain("gemini-2.5-flash"); // never asked again
+  });
+
+  it("a model whose grounding is out for today (429) is passed over until the reset, and stays enabled", async () => {
+    const capped = "gemini-2.5-flash";
+    const g = stubGemini((model) => (model === capped ? new Response("RESOURCE_EXHAUSTED", { status: 429 }) : geminiAnswer("Rules changed in March.", SRC)));
+    await routeCompletion(withKey(), grounded("tsk_ground_capped"));
+    expect(g.calls[0]).toEqual({ model: capped, grounded: true });
+    expect(await enabled("mdl_gemini_25_flash_free")).toBe(1);
+
+    g.calls.length = 0;
+    const r = await routeCompletion(withKey(), grounded("tsk_ground_capped_2"));
+    expect(r.text).toBe("Rules changed in March.");
+    expect(g.calls.map((c) => c.model)).not.toContain(capped);
+  });
+
+  it("every free model refusing: the call fails (the caller walks on), and nothing is ever asked of a paid model", async () => {
+    const g = stubGemini(() => new Response("RESOURCE_EXHAUSTED", { status: 429 }));
+    const err = await routeCompletion(withKey(), grounded("tsk_ground_all_out")).catch((e) => e);
+    expect(err).toBeInstanceOf(Error);
+    expect(g.calls.length).toBeGreaterThan(1);
+    for (const c of g.calls) expect(GEMINI_FREE_MODELS as readonly string[]).toContain(c.model);
+    expect(g.other).toEqual([]);
   });
 });

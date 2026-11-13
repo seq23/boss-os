@@ -1,7 +1,7 @@
 import { ProviderCallError, statusIsRetryable, type ProviderAdapter } from "./types";
 
 /** Mirrors GEMINI_FREE_SEARCH_MODELS (backends.ts), kept here so the adapter imports no wiring. */
-const FREE_SEARCH = new Set(["gemini-2.5-flash"]);
+const FREE_SEARCH = new Set(["gemini-2.5-flash", "gemini-3.8-flash", "gemini-3.6-flash", "gemini-3.5-flash-lite", "gemini-3.1-flash-lite", "gemini-3-flash-preview"]);
 
 /**
  * THINKING HAS ITS OWN ALLOWANCE, ON TOP OF THE ANSWER'S (6 Nov 2026).
@@ -43,7 +43,8 @@ export const gemini: ProviderAdapter = {
     if (req.requireNoTraining) {
       throw new ProviderCallError("The Gemini free tier may keep what it is sent, so it cannot take work that must not be trained on", null, false);
     }
-    // Search grounding is free only on the 2.5 models; anywhere else it would be billed, so refuse.
+    // Grounding is asked only of the free-tier models (a free key answers 429, never a bill, where a
+    // model has no free grounding; the router then passes that model over for the day). Any other id is refused.
     if (req.webSearch && !FREE_SEARCH.has(req.modelSlug)) {
       throw new ProviderCallError(`Google Search grounding is not free on ${req.modelSlug}, so this search was not made`, null, false);
     }

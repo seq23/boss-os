@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   REQUIRED_FORBIDDEN, REFUSAL, fenceUntrusted, buildPrompt, scanCommand,
-  validateEnvelope, executeRun, workOnce, childEnv, defaultRunCommand, matchesGlob, ALLOWED_WEB_TOOLS,
+  validateEnvelope, executeRun, workOnce, childEnv, defaultRunCommand, matchesGlob, ALLOWED_WEB_TOOLS, invalidDelivers, DELIVERS_REPAIR_SECONDS,
 } from "../../scripts/sync-agent/runner.mjs";
 import {
   DENIED_TOOLS, buildArgs, parseCliJson, claudeCodeExecutor, describeAuth,
@@ -918,5 +918,66 @@ describe("a stale delivers.json cannot be refiled as this run's", () => {
       gitProbe: gitStub(CLEAN),
     });
     expect(out.market_data).toBeNull();
+  });
+});
+
+
+/**
+ * A delivers.json THAT DOES NOT PARSE (12 Nov 2026, "Tools worth knowing"): 23 tools written, one
+ * stray "]", the run graded succeeded and nothing landed. One repair pass on the same seat, then a
+ * named failure. Before the fix `executeRun` returned status "succeeded" with delivers null.
+ */
+describe("a delivers.json that cannot be read", () => {
+  const UNREAD = "delivers.json could not be read: Expected ',' or '}' after property value in JSON at position 30863";
+  const research = () => envelope({ kind: "research", verification: [], web_tools: ["WebSearch"] } as Partial<Envelope>);
+
+  it("is repaired once by the same seat, and the repaired file is what is delivered", async () => {
+    const calls: Array<{ prompt: string; envelope: Envelope }> = [];
+    const execute = async (input: { prompt: string; envelope: Envelope }): Promise<ExecutorResult> => {
+      calls.push(input);
+      return calls.length === 1
+        ? { summary: "Wrote 23 tools.", exit_code: 0, delivers: null, remaining_risks: [UNREAD], error: null }
+        : { summary: "Removed a stray bracket.", exit_code: 0, delivers: { tools: [{ name: "Example Tool" }] }, delivery: { present: true, status: "complete" }, remaining_risks: [], error: null };
+    };
+    const out = await executeRun(research(), { execute: execute as never, gitProbe: gitStub(CLEAN) });
+    expect(calls).toHaveLength(2);
+    expect(calls[1]!.prompt).toMatch(/not valid JSON/);
+    expect(calls[1]!.prompt).toContain("position 30863");
+    expect((calls[1]!.envelope as { web_tools?: string[] }).web_tools).toEqual([]); // the repair researches nothing
+    expect(calls[1]!.envelope.max_seconds).toBe(DELIVERS_REPAIR_SECONDS);
+    expect(out.status).toBe("succeeded");
+    expect(out.delivers).toEqual({ tools: [{ name: "Example Tool" }] });
+    expect(out.remaining_risks.join(" ")).toMatch(/one repair pass fixed its syntax/);
+  });
+
+  it("still unreadable after the one pass: the run FAILS by name and delivers nothing (never a second pass)", async () => {
+    let n = 0;
+    const execute = async (): Promise<ExecutorResult> => { n++; return { summary: "Wrote 23 tools.", exit_code: 0, delivers: null, remaining_risks: [UNREAD], error: null }; };
+    const out = await executeRun(research(), { execute, gitProbe: gitStub(CLEAN) });
+    expect(n).toBe(2);
+    expect(out.status).toBe("failed");
+    expect(out.error).toMatch(/^NAMED STOP \[DELIVERS_INVALID\]/);
+    expect(out.delivers ?? null).toBeNull();
+  });
+
+  it("a file that is not a JSON object is treated the same way", async () => {
+    let n = 0;
+    const execute = async (): Promise<ExecutorResult> => { n++; return { summary: "Done.", exit_code: 0, delivers: null, remaining_risks: ["delivers.json did not contain a JSON object; nothing was delivered from it."], error: null }; };
+    const out = await executeRun(research(), { execute, gitProbe: gitStub(CLEAN) });
+    expect(n).toBe(2);
+    expect(out.status).toBe("failed");
+  });
+
+  it("no file at all, a readable file, a spent plan: no repair pass is run", async () => {
+    for (const first of [
+      { summary: "Done.", exit_code: 0, delivers: null, remaining_risks: [], error: null },
+      { summary: "Done.", exit_code: 0, delivers: { tools: [] }, remaining_risks: [], error: null },
+      { summary: "usage limit reached", exit_code: 0, delivers: null, remaining_risks: [UNREAD], seat_exhausted: { notice: "limit" }, error: "spent" },
+    ] as ExecutorResult[]) {
+      let n = 0;
+      await executeRun(research(), { execute: async () => { n++; return first; }, gitProbe: gitStub(CLEAN) });
+      expect(n).toBe(1);
+    }
+    expect(invalidDelivers({ delivers: null, remaining_risks: ["delivers.json could not be read: ENOENT"] })).toBeNull();
   });
 });
