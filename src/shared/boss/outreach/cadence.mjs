@@ -33,7 +33,19 @@ export function nextTouchDueAt({ touches, firstSentAt, lastTouchAt }) {
   if (!(n >= 1) || n >= MAX_EMAILS_PER_PERSON || !(Number(firstSentAt) > 0)) return null;
   const byFirst = Number(firstSentAt) + TOUCH_DAYS[n] * DAY_MS;
   const byLast = Number(lastTouchAt ?? firstSentAt) + MIN_TOUCH_GAP_DAYS * DAY_MS;
-  return Math.max(byFirst, byLast);
+  // Due from the START of that Central day, not to the millisecond. The senders run once a day at a
+  // fixed time and take a few seconds longer some days: counted to the millisecond, an email sent at
+  // 09:31:10 on Tuesday was "not due" to Friday's run reading its plan at 09:31:05, and the touch
+  // slipped to Monday behind a run that said "0 sent" (13 Nov 2026).
+  return startOfCentralDay(Math.max(byFirst, byLast));
+}
+
+const CENTRAL = new Intl.DateTimeFormat("en-CA", { timeZone: "America/Chicago", year: "numeric", month: "2-digit", day: "2-digit", hour: "2-digit", minute: "2-digit", second: "2-digit", hourCycle: "h23" });
+/** The first millisecond of the America/Chicago calendar day that `ms` falls in. Pure. */
+export function startOfCentralDay(ms) {
+  const part = Object.fromEntries(CENTRAL.formatToParts(new Date(ms)).map((x) => [x.type, Number(x.value)]));
+  const intoDay = (part.hour * 3600 + part.minute * 60 + part.second) * 1000 + (ms % 1000);
+  return ms - intoDay;
 }
 
 /** The touch number due now (2, 3 or 4), or null. Never a fifth email, whatever the input. */
