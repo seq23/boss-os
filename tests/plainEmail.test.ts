@@ -629,4 +629,18 @@ describe("a reassurance in one section never holds the whole morning email (repa
     const s = simplifyForOwner({ subject: "Ok", text: "Done.\n\nStatus: done, nothing needed from you." });
     expect(s.text).toContain("nothing needed from you");
   });
+  it("a NEGATED \"needs a look\" needs nothing: a calm week passes and keeps its reassurance; a real one still holds", () => {
+    // The Scorecard's clear week: "Nothing needs a look this week" beside a genuine reassurance.
+    const calm = { ...morning, text: "Two decisions are yours today.\n\nDecide (2)\n1. Answer Ana about the order.\n2. Approve the card.\n\n📊 Scorecard: Nothing needs a look this week.\n\nDone for you\n- What happened: 1 new comment. Status: done, nothing needed from you.\n\n— Simone", html: "<p>Decide (2)</p><p>Nothing needs a look this week.</p><p>Status: done, nothing needed from you.</p>" };
+    expect(mailGate(calm)).not.toContain('"needs a look" beside "nothing needed"');
+    const ready = plainOrSimplified(calm);
+    expect(ready.held).toBeNull();
+    expect(ready.payload.text).toContain("Status: done, nothing needed from you.");
+    // A non-layout sender: the structural line beside the same clear-week line is no contradiction.
+    const plainCalm = { subject: "Ok", text: "x\n\nNothing to decide — this is just so you know.\nNothing needs a look this week.\n\n— Simone" };
+    expect(plainProblems(plainCalm)).toEqual([]);
+    // A negation in an earlier clause never swallows a real "needs you" after it.
+    const real = { subject: "Ok", text: "x\n\nNothing to decide — this is just so you know.\nNothing has changed, but the risk report needs you.\n\n— Simone" };
+    expect(plainProblems(real)).toContain('"needs a look" beside "nothing needed"');
+  });
 });
