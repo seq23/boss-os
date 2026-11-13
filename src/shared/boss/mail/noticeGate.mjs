@@ -15,7 +15,7 @@
  */
 
 /** Kinds that always need her: a decision, a reply, a key or a folder only she can give. */
-export const EMAIL_KINDS = Object.freeze(["stopped", "could_not_do", "missing_secret", "drive_empty"]);
+export const EMAIL_KINDS = Object.freeze(["stopped", "could_not_do", "missing_secret", "drive_empty", "duty_not_running", "morning_missing"]);
 /** Kinds that never need her: told on the Updates page and counted in the morning email. */
 export const PAGE_KINDS = Object.freeze(["open_loop_reminder", "update"]);
 
@@ -43,8 +43,33 @@ export function needsHer({ kind, systemStarted = false, repair = false } = {}) {
   return true;
 }
 
-/** The drain's reading of a row: only an explicit 0 / false keeps it off email. Pure. */
+/**
+ * WHO STARTED IT (owner, 13 Nov 2026: "a job Boss OS started itself never asks her to restart it").
+ * `input` is the task's input (object or JSON text). Work she asked for, however she asked (an email
+ * to an employee, the employee page, a dated waiting-on check-in), is hers. A repair Boss OS opened
+ * itself and a standing duty's own run (`duty_id`, stamped by duties/materialise.ts; `dutyRun` for a
+ * task from before the stamp) are the system's. Anything else is hers: unknown fails toward telling
+ * her. One definition for the Worker (queue/consumer.ts, duties/deliverReport.ts) and the morning
+ * email (scripts/ops/your-day.mjs). Pure.
+ */
+export function startedBySystem(input, { dutyRun = false } = {}) {
+  let i = input ?? {};
+  if (typeof i === "string") { try { i = JSON.parse(i) ?? {}; } catch { i = {}; } }
+  if (typeof i !== "object") return false;
+  const repair = i.origin === "repair" && i.repair_kind !== "waiting_on";
+  if (repair) return true;
+  const sheAsked = typeof i.mail_id === "string" || (typeof i.from === "string" && i.from.includes("@")) || i.source === "employee_page" || i.repair_kind === "waiting_on" || i.origin === "waiting_on";
+  if (sheAsked) return false;
+  return i.duty_id != null || dutyRun === true;
+}
+
+/**
+ * The drain's reading of a row. A page kind (a reminder, an update) never emails, whatever the row's
+ * `needs_her` says: rows written before 7 Nov 2026 carry the column's default of 1 (migration 0353)
+ * and were still emailed. Otherwise only an explicit 0 / false keeps it off email. Pure.
+ */
 export function emailsHer(notice) {
+  if (PAGE_KINDS.includes(String(notice?.kind ?? ""))) return false;
   const v = notice?.needs_her;
   return !(v === 0 || v === false || v === "0");
 }

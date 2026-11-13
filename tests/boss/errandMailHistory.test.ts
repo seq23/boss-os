@@ -255,3 +255,19 @@ it("a shared fallback sender is still filtered under the employee whose Reply-To
   expect(history.sent).toHaveLength(1);
   expect(history.sent[0]!.from_addr).toBe("relay@example.test");
 });
+
+it("a test's mail never enters the live sent log: reserved test domains are answered, not recorded (13 Nov 2026)", async () => {
+  const mail = (to: string, id: string) => apiJson("/api/mail/sent", { method: "POST", body: { message_id: id, from: "Simone <simone@sequoiataylor.com>", to, subject: "Could not do: a synthetic job", text: "Synthetic." } });
+  const count = async () => (await env.DB.prepare(`SELECT COUNT(*) n FROM boss_sent_mail WHERE subject = 'Could not do: a synthetic job'`).first<any>())!.n;
+  const before = await count();
+  for (const to of ["o@example.com", "o@example.org, p@example.net", "o@anything.test", "o@anything.invalid"]) {
+    const r = await mail(to, `<reserved-${to.length}@mail>`);
+    expect(r.status, to).toBe(200);
+    expect(r.body.data.recorded, to).toBe(false);
+  }
+  expect(await count()).toBe(before);
+  // Negative proof: a real address is recorded.
+  const real = await mail("someone@gmail.com", "<real-recipient@mail>");
+  expect(real.body.data.recorded).toBe(true);
+  expect(await count()).toBe(before + 1);
+});

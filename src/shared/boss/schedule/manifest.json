@@ -5392,7 +5392,7 @@
     {
       "id": "your-day",
       "name": "Your morning email",
-      "what": "Simone's one morning email (07:50 is a safety tick; it sends nothing once the day's email went).",
+      "what": "Simone's one morning email. The later ticks send it only if it has not gone yet: while the briefing is still being written, or after a failed send.",
       "business": "personal",
       "brand": "Boss OS",
       "system": "github",
@@ -5407,12 +5407,20 @@
         "file": ".github/workflows/job-your-day.yml",
         "crons": [
           "CRON_TZ=America/Chicago 40 6 * * *",
-          "CRON_TZ=America/Chicago 50 7 * * *"
+          "CRON_TZ=America/Chicago 10 7 * * *",
+          "CRON_TZ=America/Chicago 30 7 * * *",
+          "CRON_TZ=America/Chicago 50 7 * * *",
+          "CRON_TZ=America/Chicago 30 9 * * *",
+          "CRON_TZ=America/Chicago 30 12 * * *"
         ],
         "ticks": {
           ".github/workflows/job-your-day.yml": [
             "daily 06:40",
-            "daily 07:50"
+            "daily 07:10",
+            "daily 07:30",
+            "daily 07:50",
+            "daily 09:30",
+            "daily 12:30"
           ]
         }
       },

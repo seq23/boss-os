@@ -111,6 +111,39 @@ export function stoppedEmail(notice, task = null) {
   });
 }
 
+/**
+ * KENDRA'S TWO ALARMS THAT REACH HER (owner, 13 Nov 2026): a duty that has not run 2 days running
+ * (`duty_not_running`, written by queue/consumer.ts `dutyNotRunning`) and a morning email that did not
+ * go (`morning_missing`, alarms/kendra.ts `morningEmailCheck`). The Worker writes the three parts as
+ * labelled lines; this lays them out as an alarm with nothing for her to do. Null for any other notice
+ * or one without its parts (it then goes as the plain note it always did). Pure; tested.
+ */
+export const ALARM_KINDS = Object.freeze(["duty_not_running", "morning_missing"]);
+export function alarmNoticeEmail(notice) {
+  if (!ALARM_KINDS.includes(String(notice?.kind ?? ""))) return null;
+  const part = (label) => new RegExp(`^${label}:[ \\t]*(.+)$`, "m").exec(String(notice.body ?? ""))?.[1]?.trim() ?? null;
+  const broke = part("What broke");
+  const doing = part("What is being done");
+  if (!broke || !doing) return null;
+  return ownerEmail({
+    who: notice.from_name,
+    layout: "alarm",
+    why: broke.split(/(?<=[.!?])\s+/)[0],
+    act: "Nothing to do",
+    subject: String(notice.subject ?? "").replace(/\s*\[?tsk_[a-z0-9]+\]?\s*$/i, ""),
+    broke,
+    lost: part("What was lost") ?? "Nothing.",
+    doing,
+    status: notice.kind === "morning_missing" ? "Being fixed. You will get the morning email itself as soon as it works." : "Waiting to run again. You will not hear about this again unless it changes.",
+    decide: [],
+  });
+}
+
+/** The Central day a morning_missing notice is about, from its key ("morning-2026-11-13"); null otherwise. Pure. */
+export function morningDayOf(notice) {
+  return notice?.kind === "morning_missing" ? (/^morning-(\d{4}-\d{2}-\d{2})$/.exec(String(notice.task_id ?? ""))?.[1] ?? null) : null;
+}
+
 const ORIGIN = process.env.BOSS_OS_ORIGIN ?? "https://boss.sequoiataylor.com";
 const TO = process.env.BOSS_NOTIFY_TO ?? "seq.taylor@gmail.com";
 const DRY = process.argv.includes("--dry-run");
@@ -243,7 +276,7 @@ export async function sendNotice(notice, { fetchImpl = fetch, to = TO, task = nu
   if (notice.kind === "stopped" && neverStarted(task)) return ON_PAGE;
   const senders = sendersFor(notice.from_name);
   if (senders.length === 0) return "no Resend key in the environment (BOSS_OS_MAIL_KEY / BOSS_OS_FALLBACK_MAIL_KEY)";
-  const prelaid = notice.kind === "stopped" ? stoppedEmail(notice, task) : researchDoneEmail(notice, page, senders[0]?.name);
+  const prelaid = notice.kind === "stopped" ? stoppedEmail(notice, task) : (alarmNoticeEmail(notice) ?? researchDoneEmail(notice, page, senders[0]?.name));
   let last = "";
   for (const sender of senders) {
     const res = await postEmployeeMail(sender, employeeMail(sender, { to, subject: notice.subject, text: notice.body, prelaid, owner: prelaid ? null : noticeOwner(notice) }), fetchImpl);
@@ -316,6 +349,16 @@ async function main() {
       if (notice.kind === "stopped" && t.read && !stillStopped(task)) {
         for (const n of [notice, ...also]) await api(`/${n.id}/sent`, { from: `not sent: the task is ${task?.status ?? "gone"} again` });
         say(`not sent "${notice.subject}": the task is ${task?.status ?? "gone"} now — a false alarm`);
+        continue;
+      }
+    }
+    // The morning email went after all (a later tick sent it before this drain ran): no alarm about it.
+    const morningDay = morningDayOf(notice);
+    if (morningDay) {
+      const m = await fetch(`${ORIGIN}/api/boss/morning/${morningDay}`, { headers: { cookie } }).then((r) => (r.ok ? r.json() : null)).catch(() => null);
+      if (m?.data?.sent_at) {
+        for (const n of [notice, ...also]) await api(`/${n.id}/sent`, { from: "not sent: the morning email went" });
+        say(`not sent "${notice.subject}": the morning email for ${morningDay} has gone — a false alarm`);
         continue;
       }
     }

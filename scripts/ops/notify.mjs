@@ -34,7 +34,7 @@
 
 import { existsSync, mkdirSync, readFileSync, readdirSync, unlinkSync, statSync, writeFileSync } from "node:fs";
 import { createHash } from "node:crypto";
-import { homedir } from "node:os";
+import { homedir, tmpdir } from "node:os";
 import { basename, join } from "node:path";
 import { outboundFilesPlan } from "../../src/shared/boss/service/files.mjs";
 import { layoutEmail, fromLegacy, plainProblems, simplifyForOwner } from "../../src/shared/boss/mail/plain.mjs";
@@ -258,10 +258,23 @@ const BOSS_ORIGIN = process.env.BOSS_OS_ORIGIN ?? "https://boss.sequoiataylor.co
  * job without any code in the subject. A refs record that fails is said on stderr by name; the
  * email itself has gone and is not retried.
  */
+/**
+ * WHERE THE MAC KEEPS A MAIL FOLDER (`sent-mail-pending`, `held-mail`). A TEST CAN NEVER WRITE INTO HER
+ * REAL ONE (13 Nov 2026: a test's "Could not do: a synthetic job" was archived into the real
+ * ~/.boss-os/sent-mail-pending and the next real send uploaded it to the live sent log). Under the
+ * test runner, a folder no test named is a throwaway one in the temp directory, never ~/.boss-os.
+ */
+export function mailStateDir(envName, leaf, env = process.env) {
+  if (env[envName]) return env[envName];
+  if (env.VITEST || env.NODE_ENV === "test") return join(tmpdir(), `boss-os-test-${process.pid}`, leaf);
+  return join(homedir(), ".boss-os", leaf);
+}
+const sentMailDir = () => mailStateDir("BOSS_OS_SENT_MAIL_DIR", "sent-mail-pending");
+
 /** Durable private retry copies: an archive outage must never cause the email to be sent twice. */
 export async function archiveSentMail(payload, id, fetchImpl = fetch, { commandId = null, key = null } = {}) {
   if (!id) throw new Error("The accepted email has no identifier.");
-  const directory = process.env.BOSS_OS_SENT_MAIL_DIR ?? join(homedir(), ".boss-os", "sent-mail-pending");
+  const directory = sentMailDir();
   mkdirSync(directory, { recursive: true, mode: 0o700 });
   const file = join(directory, `${createHash("sha256").update(id).digest("hex")}.json`);
   const refs = String(payload.headers?.["X-Boss-Ref"] ?? "").split(/\s+/);
@@ -279,7 +292,7 @@ export async function archiveSentMail(payload, id, fetchImpl = fetch, { commandI
   }
   return flushSentMail(fetchImpl, directory);
 }
-export async function flushSentMail(fetchImpl = fetch, directory = process.env.BOSS_OS_SENT_MAIL_DIR ?? join(homedir(), ".boss-os", "sent-mail-pending")) {
+export async function flushSentMail(fetchImpl = fetch, directory = sentMailDir()) {
   if (!process.env.BOSS_PASSCODE || !existsSync(directory)) return false;
   try {
     const cookie = await bossCookieFor(fetchImpl);
@@ -360,7 +373,7 @@ export function mailGate(payload) {
   return plainProblems({ subject: payload?.subject, text: payload?.text, html: payload?.html, kind, layout });
 }
 
-export const heldDir = () => process.env.BOSS_OS_HELD_MAIL_DIR ?? join(homedir(), ".boss-os", "held-mail");
+export const heldDir = () => mailStateDir("BOSS_OS_HELD_MAIL_DIR", "held-mail");
 
 /**
  * A FAILING EMAIL IS HELD, NEVER SENT: written to ~/.boss-os/held-mail (what it said and why it was

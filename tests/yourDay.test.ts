@@ -7,7 +7,7 @@ import { mkdtempSync, readdirSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
-import { buildDay, replyContext, briefingDecision, briefingLines, bounceLine, BRIEFING_CAP } from "../scripts/ops/your-day.mjs";
+import { buildDay, replyContext, briefingDecision, briefingLines, bounceLine, BRIEFING_CAP, briefingInProgress, bossDecisions, selfStartedWaiting, selfWaitingRepairs } from "../scripts/ops/your-day.mjs";
 import { plainProblems } from "../src/shared/boss/mail/plain.mjs";
 import { sendersFor, employeeMail } from "../scripts/ops/notify.mjs";
 import { writeMorningSection, addMorningLines, readMorningSections, clearToldSections, morningSectionProblems, MORNING_SECTIONS } from "../src/shared/boss/mail/morning.mjs";
@@ -280,5 +280,60 @@ describe("the morning shows at most five open loops, then See all (7 Nov 2026 li
     // Negative proof: five or six rows are shown as they are.
     const six = buildDay({ diary: [], tasks: [], approvals: [], repoChanges: [], briefing: null, feed: { items: [] }, morning: { open_loops: { section: "open_loops", at: new Date(NOW).toISOString(), title: "Your open loops: 6, 6 overdue", lines: lines.slice(0, 6) } } } as any, NOW);
     expect(six.text).toContain("Loop 6 (due");
+  });
+});
+
+describe("the email never waits for a briefing nobody is writing (13 Nov 2026)", () => {
+  // 06:44 Central, Friday 13 Nov: the report's job had stopped at 06:10, out of usage; the email sat an hour.
+  const at0644 = Date.parse("2026-11-13T12:44:00Z");
+  const job = (status: string, created = at0644 - 34 * 60_000) => ({ id: "tsk_synbrief01", status, created_at: created, input: JSON.stringify({ spec_module: "executive_briefing", delivers: "executive_reports" }) });
+  it("it waits only while today's briefing job is running", () => {
+    expect(briefingInProgress([job("running")], at0644)).toBe(true);
+    for (const status of ["queued", "failed", "cancelled", "done"]) expect(briefingInProgress([job(status)], at0644), status).toBe(false);
+    expect(briefingInProgress([], at0644), "no briefing job today").toBe(false);
+    expect(briefingInProgress([job("running", at0644 - 26 * 3_600_000)], at0644), "yesterday's job").toBe(false);
+    expect(briefingInProgress([{ id: "tsk_synother01", status: "running", created_at: at0644, input: "{}" }], at0644), "another job").toBe(false);
+  });
+  it("not in progress → send now without it; in progress → wait until the cap, as before", () => {
+    expect(briefingDecision(null, at0644, { inProgress: false })).toBe("send_late");
+    expect(briefingDecision(null, at0644, { inProgress: true })).toBe("wait");
+    expect(briefingDecision({ ...DATA.briefing, for_day: "2026-11-13" }, at0644, { inProgress: false })).toBe("send");
+  });
+});
+
+describe("work Boss OS started itself is never a Decide card (owner, 2 Nov and 13 Nov 2026)", () => {
+  const duty = { id: "tsk_synduty001", title: "A synthetic sweep", status: "awaiting_approval", employee_id: "emp_relationship", employee_name: "Monique", approval_id: null, input: JSON.stringify({ duty_id: "duty_synthetic" }) };
+  const hers = { ...duty, id: "tsk_synhers001", title: "Draft a synthetic note", input: JSON.stringify({ from: "o@example.com", mail_id: "iml_syn" }) };
+  it("a duty's run held with no approval of hers is no card, one Done line and one repair; her own ask is still a card", () => {
+    const data = { ...DATA, tasks: [duty, hers], approvals: [], repoChanges: [], morning: {} };
+    const cards = bossDecisions(data);
+    expect(cards.map((c) => c.key)).toEqual(["task:tsk_synhers001"]);
+    expect(selfStartedWaiting(data).map((t) => t.id)).toEqual(["tsk_synduty001"]);
+    const e = buildDay(data, NOW);
+    expect(e.problems).toEqual([]);
+    expect(e.text).not.toContain("waiting for your word: A synthetic sweep");
+    expect(e.text).toMatch(/Done for you[\s\S]*A synthetic sweep[\s\S]*Danielle/);
+    const repairs = selfWaitingRepairs(selfStartedWaiting(data), data.tasks);
+    expect(repairs).toHaveLength(1);
+    // None while a repair for it is still open.
+    expect(selfWaitingRepairs(selfStartedWaiting(data), [...data.tasks, { title: repairs[0]!.title, status: "queued" }])).toEqual([]);
+  });
+  it("a real approval on a duty's run (money, a send in her name) still reaches Decide", () => {
+    const data = { ...DATA, tasks: [{ ...duty, approval_id: "apr_synpay" }], approvals: [{ id: "apr_synpay", title: "Pay the synthetic invoice", origin_type: "tasks", origin_id: duty.id }], repoChanges: [], morning: {} };
+    expect(bossDecisions(data).map((c) => c.key)).toEqual(["approval:apr_synpay"]);
+    expect(selfStartedWaiting(data)).toEqual([]);
+  });
+});
+
+describe("a repair's approval is never a card, however old its task (13 Nov 2026)", () => {
+  // The task list is the newest 100 only; the nested card printed because the repair had left it.
+  const approval = { id: "apr_synrepair", title: "Kendra's alarm: \"Kendra's alarm: a synthetic alarm\"", origin_type: "tasks", origin_id: "tsk_synoldfix1" };
+  const repair = { id: "tsk_synoldfix1", title: "Fix Kendra's alarm: a synthetic alarm", status: "awaiting_approval", employee_id: "emp_repo", input: JSON.stringify({ origin: "repair", repair_kind: "kendra_alarm" }) };
+  it("its task read by id (approvalTasks) keeps it out of Decide; without that read it would print", () => {
+    const base = { ...DATA, tasks: [], approvals: [approval], repoChanges: [], morning: {} };
+    expect(bossDecisions({ ...base, approvalTasks: [repair] })).toEqual([]);
+    expect(bossDecisions(base).map((c) => c.key), "negative proof: the task unknown").toEqual(["approval:apr_synrepair"]);
+    // An approval on her own old task is still hers.
+    expect(bossDecisions({ ...base, approvalTasks: [{ ...repair, input: "{}" }] })).toHaveLength(1);
   });
 });

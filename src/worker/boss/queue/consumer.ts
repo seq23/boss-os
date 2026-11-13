@@ -1,4 +1,4 @@
-import { needsHer } from "../../../shared/boss/mail/noticeGate.mjs";
+import { needsHer, startedBySystem } from "../../../shared/boss/mail/noticeGate.mjs";
 import { orderSeats, isOn, OPENAI_FIRST_KEY, OPENAI_SEAT, CLAUDE_SEAT, isConfidentialDraft, confidentialLadder } from "../duties/seatOrder";
 import { roleFor, CODEX_LIMIT_WAITS, afterCodexLimit } from "../../../shared/boss/aiRoles.mjs";
 import { isPlanSpent } from "../backends/spent";
@@ -18,10 +18,10 @@ import { deliverExecutiveReport } from "../duties/deliverReport";
 import { firmNoticeBlock } from "../prompt/notices";
 import { practicesBlock } from "../service/constraints";
 import { afterResult } from "../service/afterResult";
-import { noticeOnce } from "../service/notices";
+import { noticeOnce, dutyNotRunning } from "../service/notices";
 import { taskToken, threeParts, bossWait } from "../../../shared/boss/service/waits.mjs";
 import { dueLine } from "../../../shared/boss/service/dueTime.mjs";
-import { isResearchWork, runFreeResearch, namedStop, codexResetAt, researchSeats, seatReady, asResearchPage } from "./freeRung";
+import { isResearchWork, runFreeResearch, namedStop, codexResetAt, researchSeats, seatReady, asResearchPage, centralTime } from "./freeRung";
 /*
  * The rule that recognises a completion which is transparently a non-answer. Deterministic, and it
  * reads the model's own reply rather than guessing from her request — see the module for why.
@@ -365,6 +365,16 @@ export async function handleTask(env: Env, msg: TaskMessage): Promise<void> {
   }
   // Every seat declined other public work: the $0 cloud rungs, never a failure, never paid.
   const fellToFree = ladder.length > 0 && !input.cloud_fallback && !codexToFreeRung && freeOk && refusals.length > 0;
+
+  /*
+   * A JOB BOSS OS STARTED ITSELF NEVER ASKS HER TO RESTART IT (owner, 13 Nov 2026: "Brokerage Sourcing
+   * Sweep" and the briefing were failed for good while every seat was out of usage, and each emailed
+   * her "only you can say whether it runs again"). Out of usage is a wait, not a failure: the same task
+   * goes back in the queue for the reset, on the same ladder — a Claude-only task stays Claude-only and
+   * is never moved to another seat or a cloud model. Work she asked for keeps the failure below.
+   */
+  const wouldFail = confidential || privatePrompt || (ladder.length > 0 && !input.cloud_fallback && !codexToFreeRung && !fellToFree);
+  if (wouldFail && await waitForUsage(env, task, input, refusals)) return;
 
   if (confidential || privatePrompt) {
     // FAIL CLOSED: an LP / deal-terms draft that Claude's seat did not take is never sent anywhere else.
@@ -1219,9 +1229,59 @@ async function failTask(
   if (final) await tellHerItStopped(env, task, employee, message, "once");
 }
 
+/** The duty a task is a run of: stamped on its input (materialise.ts), or, before the stamp, the duty's newest task. */
+async function dutyOf(env: Env, task: any, input: Record<string, any>): Promise<{ id: string; name: string; task_title: string } | null> {
+  const stamped = typeof input.duty_id === "string" ? input.duty_id : null;
+  return env.DB.prepare(`SELECT id, name, task_title FROM standing_duties WHERE ${stamped ? "id" : "last_task_id"} = ? LIMIT 1`)
+    .bind(stamped ?? task.id).first<{ id: string; name: string; task_title: string }>().catch(() => null);
+}
+
+/** Did Boss OS start this itself (a repair, a duty's own run)? The one rule is `startedBySystem`. */
+async function selfStarted(env: Env, task: any, input: Record<string, any>): Promise<{ self: boolean; duty: { id: string; name: string; task_title: string } | null }> {
+  const duty = await dutyOf(env, task, input);
+  const self = startedBySystem(input, { dutyRun: duty != null });
+  return { self, duty: self ? duty : null };
+}
+
+/**
+ * OUT OF USAGE ON WORK BOSS OS STARTED ITSELF: WAIT FOR THE RESET, SAY NOTHING BY EMAIL. `true` when
+ * the task was put back in the queue for the earliest reset among the seats that refused it; `false`
+ * when this is her own ask, or no refusing seat is out of usage (the caller then fails it as before).
+ * One row on the Updates page per task; the 2-day alarm is `dutyNotRunning`.
+ */
+async function waitForUsage(env: Env, task: any, input: Record<string, any>, refusals: { backend_id: string; refused: string }[]): Promise<boolean> {
+  if (refusals.length === 0) return false;
+  const { self, duty } = await selfStarted(env, task, input);
+  if (!self) return false;
+  const now = Date.now();
+  let resumeAt: number | null = null;
+  for (const r of refusals) {
+    const seat = await getBackend(env.DB, r.backend_id).catch(() => null) as { exhausted_until?: number | null } | null;
+    if (isPlanSpent(seat, now)) resumeAt = Math.min(resumeAt ?? Infinity, seat!.exhausted_until as number);
+  }
+  if (resumeAt == null) return false;
+  const title = String(task.title ?? task.id);
+  await namedStop(env, { id: task.id, lane: task.lane, title }, {
+    code: "USAGE_LIMIT", tell: false, resumeAt,
+    why: `NAMED STOP [USAGE_LIMIT] ${refusals.map((r) => `${r.backend_id}: ${r.refused.slice(0, 160)}`).join(" | ")}; Boss OS started this itself, so it waits on the same seats and tries again at ${new Date(resumeAt).toISOString()}`,
+  });
+  await noticeOnce(env, {
+    task: { id: task.id, lane: task.lane, title }, fromName: "Kendra", kind: "stop:USAGE_LIMIT", needsHer: false,
+    subject: `Waiting for AI usage: ${title.slice(0, 120)}`,
+    lines: [`"${title}" is waiting, not lost. The AI it may use is out of usage until ${centralTime(resumeAt)} Central, and it starts again by itself then.`],
+  }).catch(() => null);
+  if (duty) await dutyNotRunning(env, duty, { now, backAt: `${centralTime(resumeAt)} Central` }).catch(() => null);
+  return true;
+}
+
 /** The one stopped-notice, for a final failure or a dead letter. */
 async function tellHerItStopped(env: Env, task: any, employee: any, why: string, tried: string): Promise<void> {
+  // Work Boss OS started itself never asks her to restart it: its stop is a row on the Updates page,
+  // the morning email's fix job repairs it, and only 2 days without a run reaches her (dutyNotRunning).
+  const { self, duty } = await selfStarted(env, task, task.input ? safeJson(String(task.input)) : {}).catch(() => ({ self: false, duty: null }));
+  if (duty) await dutyNotRunning(env, duty).catch(() => null);
   await noticeOnce(env, {
+    ...(self ? { needsHer: false } : {}),
     task: { id: task.id, lane: task.lane, title: String(task.title ?? task.id) },
     fromName: employee?.name ?? "Boss OS",
     kind: "stopped",

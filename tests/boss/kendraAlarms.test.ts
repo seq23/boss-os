@@ -3,7 +3,7 @@ import { describe, expect, it, vi } from "vitest";
 
 // Each pass reads every live duty (42) and may admit a repair: give the end-to-end runs room.
 vi.setConfig({ testTimeout: 60_000 });
-import { runKendraChecks, raiseAlarm, herAlarms, runsFor } from "../../src/worker/boss/alarms/kendra";
+import { runKendraChecks, raiseAlarm, herAlarms, runsFor, morningEmailCheck, MORNING_ALARM_KEY } from "../../src/worker/boss/alarms/kendra";
 import { isResearchWork } from "../../src/worker/boss/queue/freeRung";
 import { noticeOnce } from "../../src/worker/boss/service/notices";
 import { repairOriginOf, planWaitsForOwner } from "../../src/shared/boss/repoChange/lane.mjs";
@@ -259,5 +259,45 @@ describe("an agent duty is judged by what it delivered, not by tasks.output (8 N
     }
     // Run b found nothing: it is a real 0, newest first.
     expect((await runsFor(E, d)).map((r) => r.output_count)).toEqual([0, 2]);
+  });
+});
+
+describe("C: the morning email can never go missing silently (13 Nov 2026; both ticks refused on 10 Nov and nothing told her)", () => {
+  // Tuesday 10 Nov 2026, Central (UTC-6).
+  const at = (hhmm: string) => Date.parse(`2026-11-10T${hhmm}:00-06:00`);
+  const notices = () => E.DB.prepare(`SELECT task_id, from_name, needs_her, subject, body FROM boss_task_notices WHERE kind = 'morning_missing'`).all().then((r: any) => r.results as any[]);
+  it("not sent by 09:00 Central: Kendra's alarm opens with one repair, ONE notice a day is written for her; once it goes the alarm closes", async () => {
+    await E.DB.prepare(`DELETE FROM morning_digests WHERE day = '2026-11-10'`).run();
+    await E.DB.prepare(`DELETE FROM boss_sent_mail WHERE layout = 'digest'`).run();
+    // Before the safety tick has had its turn, nothing is said.
+    expect(await morningEmailCheck(E, at("08:00"))).toBe("early");
+    expect(await alarm(MORNING_ALARM_KEY)).toBeNull();
+    expect(await notices()).toEqual([]);
+    // 09:00: said once.
+    expect(await morningEmailCheck(E, at("09:00"))).toBe("told");
+    const a = await alarm(MORNING_ALARM_KEY);
+    expect(a.status).toBe("open");
+    expect(a.hers).toBe(0);
+    expect(a.task_id, "no repair was opened for it").toBeTruthy();
+    expect(await morningEmailCheck(E, at("10:00"))).toBe("already told");
+    const rows = await notices();
+    expect(rows).toHaveLength(1);
+    expect(rows[0]).toMatchObject({ task_id: "morning-2026-11-10", from_name: "Kendra", needs_her: 1 });
+    expect(rows[0].body).toMatch(/^What broke: Your morning email has not gone out today\./);
+    // The email goes on a later tick: the alarm closes and nothing more is written.
+    await E.DB.prepare(`INSERT INTO morning_digests (day, payload, sent_at, created_at, updated_at) VALUES ('2026-11-10','{}',?,?,?)`).bind(at("09:31"), at("09:31"), at("09:31")).run();
+    expect(await morningEmailCheck(E, at("10:00"))).toBe("sent");
+    expect((await alarm(MORNING_ALARM_KEY)).status).toBe("closed");
+    expect(await notices()).toHaveLength(1);
+  });
+  it("a morning that was sent, by its own mark or by a digest in the sent log, raises nothing (negative proof)", async () => {
+    await E.DB.prepare(`DELETE FROM boss_task_notices WHERE kind = 'morning_missing'`).run();
+    await E.DB.prepare(`DELETE FROM morning_digests WHERE day = '2026-11-11'`).run();
+    const day = (hhmm: string) => Date.parse(`2026-11-11T${hhmm}:00-06:00`);
+    // Sent, but its mark was not written (the keep-in-Boss-OS post failed): the sent log still says it went.
+    await E.DB.prepare(`INSERT INTO boss_sent_mail (id, message_id, sent_at, delivery_state, from_addr, to_addr, subject, object_key, thread_id, layout) VALUES ('sm_test_digest','<digest-test@mail>',?, 'sent','simone@sequoiataylor.com','owner@example.test','Wednesday: 1 decision','boss-sent-mail/test.json','sm_test_digest','digest')`).bind(day("06:44")).run();
+    expect(await morningEmailCheck(E, day("09:00"))).toBe("sent");
+    expect(await notices()).toEqual([]);
+    await E.DB.prepare(`DELETE FROM boss_sent_mail WHERE id = 'sm_test_digest'`).run();
   });
 });

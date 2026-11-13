@@ -7,8 +7,8 @@
  * reaches the mail sender; a notice that needs her still does. Synthetic data.
  */
 import { describe, expect, it } from "vitest";
-import { sendNotice, ON_PAGE } from "../scripts/ops/task-notices.mjs";
-import { needsHer } from "../src/shared/boss/mail/noticeGate.mjs";
+import { sendNotice, ON_PAGE, alarmNoticeEmail } from "../scripts/ops/task-notices.mjs";
+import { needsHer, startedBySystem } from "../src/shared/boss/mail/noticeGate.mjs";
 import { reminderEmail } from "../src/shared/boss/openLoops/openLoops.mjs";
 
 process.env.BOSS_OS_MAIL_KEY = process.env.BOSS_OS_MAIL_KEY ?? "test-key-not-real";
@@ -101,5 +101,57 @@ describe("a job of hers that never started is the team's, not her email (7 Nov 2
     expect(neverStarted(ran)).toBe(false);
     expect(await sendNotice(notice, { fetchImpl, to: "o@example.com", task: ran })).toBeNull();
     expect(posts.some((u) => u.includes("resend"))).toBe(true);
+  });
+});
+
+describe("a row's kind decides at read time, not a stale needs_her (13 Nov 2026)", () => {
+  // Rows written before 7 Nov carry the column's default of 1 (migration 0353) and were still emailed.
+  it("an old reminder or update row marked needs_her = 1 never reaches the mail sender; a real ask with the same mark does", async () => {
+    for (const kind of ["open_loop_reminder", "update"]) {
+      const { calls, fetchImpl } = counting();
+      expect(await sendNotice({ kind, needs_her: 1, from_name: "Simone", task_id: loop.id, subject: mail.subject, body: mail.body }, { fetchImpl, to: "o@example.com" }), kind).toBe(ON_PAGE);
+      expect(calls, kind).toEqual([]);
+    }
+    // Negative proof: the same mark on a kind that asks her still emails.
+    const { calls, fetchImpl } = counting();
+    expect(await sendNotice({ kind: "could_not_do", needs_her: 1, from_name: "Simone", task_id: "tsk_synthetic06", subject: "Could not do: a synthetic job", body: "Synthetic. Reply to this email." }, { fetchImpl, to: "o@example.com" })).toBeNull();
+    expect(calls.some((u) => u.includes("resend"))).toBe(true);
+  });
+});
+
+describe("who started it: one rule for the Worker and the morning email (13 Nov 2026)", () => {
+  it("a repair and a duty's own run are the system's; anything she asked for, however she asked, is hers", () => {
+    expect(startedBySystem({ origin: "repair", repair_kind: "held_mail" })).toBe(true);
+    expect(startedBySystem(JSON.stringify({ duty_id: "duty_synthetic", delivers: "sourcing_candidates" }))).toBe(true);
+    expect(startedBySystem({}, { dutyRun: true }), "a duty run from before the stamp").toBe(true);
+    // Hers: an email to an employee, the employee page, a dated waiting-on check-in, and anything unknown.
+    expect(startedBySystem({ from: "o@example.com", duty_id: "duty_synthetic" })).toBe(false);
+    expect(startedBySystem({ mail_id: "iml_synthetic" }, { dutyRun: true })).toBe(false);
+    expect(startedBySystem({ source: "employee_page", build_ask: true, duty_id: "duty_synthetic" })).toBe(false);
+    expect(startedBySystem({ origin: "repair", repair_kind: "waiting_on" })).toBe(false);
+    expect(startedBySystem({})).toBe(false);
+    expect(startedBySystem("not json")).toBe(false);
+  });
+});
+
+describe("Kendra's two alarms go as an alarm with nothing for her to do (13 Nov 2026)", () => {
+  const duty = { kind: "duty_not_running", needs_her: 1, from_name: "Kendra", task_id: "duty_synthetic", subject: "Not running for 2 days: A synthetic sweep",
+    body: 'What broke: "A synthetic sweep" has not run for 2 days. The AI it may use is out of usage.\nWhat was lost: Nothing. The job is kept, and nothing was sent to anyone.\nWhat is being done: It is set to start again by itself when the usage is back, Sat, Nov 14, 3:00 PM Central.' };
+  it("the three parts the Worker wrote are the email's parts, line 1 says nothing to do, and no Decide list asks her anything", () => {
+    const e = alarmNoticeEmail(duty)!;
+    expect(e.layout).toBe("alarm");
+    expect(e.text.split("\n")[0]).toBe('"A synthetic sweep" has not run for 2 days. Nothing to do.');
+    expect(e.text).toContain("What was lost: Nothing. The job is kept");
+    expect(e.text).toContain("Sat, Nov 14, 3:00 PM Central");
+    expect(e.text).not.toMatch(/^Decide \(/m);
+    expect(e.text).not.toMatch(/only you|try again|drop it/i);
+    // Any other notice, or one missing its parts, is not laid out here.
+    expect(alarmNoticeEmail({ ...duty, kind: "could_not_do" })).toBeNull();
+    expect(alarmNoticeEmail({ ...duty, body: "Synthetic." })).toBeNull();
+  });
+  it("it is sent (the drain emails it), once through the mail sender", async () => {
+    const { calls, fetchImpl } = counting();
+    expect(await sendNotice(duty, { fetchImpl, to: "o@example.com" })).toBeNull();
+    expect(calls.filter((u) => u === "https://api.resend.com/emails")).toHaveLength(1);
   });
 });

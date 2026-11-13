@@ -29,7 +29,6 @@ const migrationSql = readdirSync(join(ROOT, "migrations")).filter((f) => f.endsW
  * Until it prints one, Kendra's check counts its runs as unknown (below the floor) and says so.
  */
 export const PENDING = {
-  "your-day.mjs": "owned by the open time-zone change (#291) on 6 Nov 2026; one line, outputLine(sent ? 1 : 0, \"emails sent\")",
   "pnp-listings.sh": "lives in ~/bin, not this repo; one line, echo \"OUTPUT <n> listings checked\"",
 };
 
@@ -105,7 +104,8 @@ function selfTest() {
     ["schedule and duty floors disagree", () => check(at("duty_pnp_corporate_outreach", (r) => { r.output.floor = 5; }))],
     ["the migration's floor is gone", () => check(manifest, migrationSql.replace(/WHERE id = 'duty_pnp_corporate_outreach';/, "WHERE id = 'duty_gone';"))],
     ["a producing script stopped printing", () => check(manifest, migrationSql, (s) => (s === "pnp-corporate-outreach.mjs" ? readScript(s).replace(/outputLine\(/g, "line(") : readScript(s)))],
-    ["a pending script that prints now", () => check(manifest, migrationSql, (s) => (s === "your-day.mjs" ? "console.log(outputLine(1, 'emails sent'))" : readScript(s)))],
+    // your-day.mjs prints its line (13 Nov 2026): listed as pending again, it must be caught.
+    ["a pending script that prints now", () => scriptProblems(manifest, migrationFloors(migrationSql), readScript, { ...PENDING, "your-day.mjs": "listed, but it prints" })],
     ["no rows at all", () => check({ rows: [] })],
   ];
   const missed = BROKEN.filter(([, f]) => f().length === 0).map(([n]) => n);

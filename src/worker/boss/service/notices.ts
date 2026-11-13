@@ -69,3 +69,40 @@ export async function noticeOnce(env: Env, n: NoticeInput): Promise<string | nul
     .run();
   return id;
 }
+
+/** How long a duty may go without a finished run before she is told, once (owner, 13 Nov 2026: 2 days running). */
+export const DUTY_NOT_RUNNING_MS = 24 * 3600_000;
+
+/**
+ * THE ONE ALARM FOR A DUTY THAT HAS NOT RUN 2 DAYS RUNNING. Called by queue/consumer.ts each time a duty's own
+ * run waits or stops. It reads the duty's runs by their title (every run a duty makes carries its `task_title`): the
+ * oldest run since the last finished one. Once that is a day old the duty has missed two days running,
+ * and ONE notice is written for it (kind `duty_not_running`, keyed on the duty, not the attempt); none
+ * again until a run finishes. Her Mac's drain lays it out as an alarm (task-notices.mjs
+ * `dutyAlarmEmail`). Returns the notice id, or null when it is not time or she was already told.
+ */
+export async function dutyNotRunning(
+  env: Env, duty: { id: string; name: string; task_title: string }, o: { now?: number; backAt?: string | null } = {},
+): Promise<string | null> {
+  const now = o.now ?? Date.now();
+  const good = await env.DB.prepare(`SELECT MAX(COALESCE(finished_at, created_at)) AS at FROM tasks WHERE title = ? AND status IN ('done','awaiting_approval')`).bind(duty.task_title).first<{ at: number | null }>();
+  const since = Number(good?.at ?? 0);
+  const first = await env.DB.prepare(`SELECT MIN(created_at) AS at FROM tasks WHERE title = ? AND status NOT IN ('done','awaiting_approval','cancelled') AND created_at > ?`)
+    .bind(duty.task_title, since).first<{ at: number | null }>();
+  if (!first?.at || now - Number(first.at) < DUTY_NOT_RUNNING_MS) return null;
+  const told = await env.DB.prepare(`SELECT id FROM boss_task_notices WHERE task_id = ? AND kind = 'duty_not_running' AND created_at > ? LIMIT 1`).bind(duty.id, since).first<{ id: string }>();
+  if (told) return null;
+  const name = String(duty.name || duty.task_title);
+  const id = newId("tnt");
+  const body = [
+    `What broke: "${name}" has not run for 2 days. ${o.backAt ? "The AI it may use is out of usage." : "It stopped each time it was tried."}`,
+    "What was lost: Nothing. The job is kept, and nothing was sent to anyone.",
+    o.backAt
+      ? `What is being done: It is set to start again by itself when the usage is back, ${o.backAt}.`
+      : "What is being done: Danielle is finding out why and fixing it. It runs again when that is done.",
+  ].join("\n");
+  await env.DB.prepare(
+    `INSERT INTO boss_task_notices (id, task_id, lane, from_name, kind, subject, body, created_at, needs_her) VALUES (?,?,'ops','Kendra','duty_not_running',?,?,?,1)`,
+  ).bind(id, duty.id, `Not running for 2 days: ${name.slice(0, 120)}`, body, now).run();
+  return id;
+}

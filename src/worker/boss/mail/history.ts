@@ -1,3 +1,4 @@
+import { onlyTestAddresses } from "../../../shared/boss/mail/testAddress.mjs";
 import { Hono } from "hono";
 import type { Env, Vars } from "../env";
 import { ok, badRequest, notFound } from "../lib/http";
@@ -95,6 +96,9 @@ mail.get("/:id", async (c) => {
 mail.post("/sent", async (c) => {
   const b = await c.req.json<SentMail>();
   if (!b.message_id || !b.from || !b.to || !b.subject || !(typeof b.text === "string")) throw badRequest("The sent email needs its address, subject, words and message identifier.");
+  // A test's mail never enters the live sent log (13 Nov 2026). Answered 200, not an error, so the
+  // Mac's retry folder drops its copy instead of offering it again on every send.
+  if (onlyTestAddresses(b.to)) return ok(c, { recorded: false, refused: "every recipient is on a reserved test domain" });
   await recordSentMail(c.env, b);
   return ok(c, { recorded: true });
 });

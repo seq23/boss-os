@@ -39,7 +39,8 @@
  *   npm run your-day -- --dry-run    # print what would be sent, send nothing
  *   npm run your-day -- --preview <dir>   # write the HTML and text to <dir>, send nothing
  */
-import { UPDATES_PATH } from "../../src/shared/boss/mail/noticeGate.mjs";
+import { UPDATES_PATH, startedBySystem } from "../../src/shared/boss/mail/noticeGate.mjs";
+import { outputLine } from "../../src/shared/boss/alarms/rules.mjs";
 import { doneForYou, failedDoneLine, jobFamily, jobName, splitRepeats, fixJobsToOpen } from "../../src/shared/boss/mail/morningMemory.mjs";
 import { MAX_TOUCHES } from "../../src/shared/boss/lp/plan.mjs";
 import fs from "node:fs";
@@ -199,7 +200,10 @@ export function bossDecisions(data) {
   const approvalIds = new Set((data.approvals ?? []).map((a) => a.id));
   const covered = new Set((data.approvals ?? []).map(approvalTaskId).filter(Boolean));
   for (const a of data.approvals ?? []) {
-    const task = tasks.find((t) => t.id === approvalTaskId(a)) ?? null;
+    // The approval's own task, wherever it sits: the task list is the newest 100 only, so `read`
+    // fetches any older one by id (`approvalTasks`). An old repair's approval printed as a card
+    // ('Kendra's alarm: "Kendra's alarm: …"', 13 Nov 2026) because its task had left that window.
+    const task = [...tasks, ...(data.approvalTasks ?? [])].find((t) => t.id === approvalTaskId(a)) ?? null;
     if (task && isRepairTask(task)) continue; // a repair is the team's, never her decision (7 Nov 2026)
     const worker = a.employee_name ?? task?.employee_name ?? null;
     const duty = dutyChangeCard(a.title, task, worker);
@@ -222,6 +226,10 @@ export function bossDecisions(data) {
   // approval"). A task Boss OS opened to fix itself that stops on approval is the team's to unblock.
   for (const t of tasks.filter((x) => x.status === "awaiting_approval" && !covered.has(x.id) && !approvalIds.has(x.approval_id) && !isRepairTask(x))) {
     const dg = digestOf(data, t);
+    // WORK BOSS OS STARTED ITSELF NEVER WAITS FOR HER WORD (owner, 2 Nov and 13 Nov 2026): with no
+    // approval of hers behind it there is nothing for her to decide. It is one Done line and a repair
+    // (`selfStartedWaiting`). A real decision (money, a send in her name) is an approval, shown above.
+    if (!dg && startedBySystem(t.input)) continue;
     if (dg) {
       const items = dg.items ?? [];
       const open = items.filter((i) => !i.instructed_at);
@@ -246,6 +254,17 @@ export function bossDecisions(data) {
     });
   }
   return out;
+}
+
+/**
+ * A job Boss OS started itself that sits "awaiting approval" with no approval of hers behind it and no
+ * comments to answer: never a Decide card. `read`-shaped data in, the tasks out. Pure.
+ */
+export function selfStartedWaiting(data) {
+  const approvalIds = new Set((data.approvals ?? []).map((a) => a.id));
+  const covered = new Set((data.approvals ?? []).map(approvalTaskId).filter(Boolean));
+  return (data.tasks ?? []).filter((t) => t.status === "awaiting_approval" && !covered.has(t.id) && !approvalIds.has(t.approval_id)
+    && !isRepairTask(t) && !digestOf(data, t) && startedBySystem(t.input));
 }
 
 /** What Monique did with the comments that did not need her (owner, 24 Oct 2026: fix it, then tell me). */
@@ -402,7 +421,6 @@ export function briefingReady(briefing, today) {
 
 /** The latest the morning email waits for Camille's briefing: 07:45 Central. */
 export const BRIEFING_CAP = Object.freeze({ hour: 7, minute: 45 });
-export const BRIEFING_POLL_MS = 3 * 60_000;
 
 /**
  * THE TIMING RULE (coordinator finding, 23 Oct 2026: the report lands about 07:10, the email went at
@@ -410,12 +428,30 @@ export const BRIEFING_POLL_MS = 3 * 60_000;
  * it lands; at 07:45 Central it sends without it, says "Briefing late" in one line, and opens a fix
  * job. `"send" | "wait" | "send_late"`. Pure.
  */
-export function briefingDecision(briefing, now) {
+export function briefingDecision(briefing, now, { inProgress = true } = {}) {
   const today = dayOf(now);
   if (briefingReady(briefing, today)) return "send";
+  // Nobody is writing it (13 Nov 2026: the report's job had stopped at 06:10, out of usage, and the
+  // email waited an hour for a briefing that could not land): send now, as at the cap.
+  if (!inProgress) return "send_late";
   const p = parts(now);
   return p.hour * 60 + p.minute >= BRIEFING_CAP.hour * 60 + BRIEFING_CAP.minute ? "send_late" : "wait";
 }
+
+/**
+ * IS TODAY'S BRIEFING STILL BEING WRITTEN? Read from the task list: the newest briefing job made today
+ * (Central) and whether it is running. None today, or one that failed, was cancelled or went back to
+ * the queue to wait for usage, means there is nothing to wait for. Pure.
+ */
+export function briefingInProgress(tasks, now) {
+  const today = dayOf(now);
+  const mine = (tasks ?? []).filter((t) => { const i = inputOf(t); return (i?.spec_module === "executive_briefing" || i?.delivers === "executive_reports") && dayOf(Number(t.created_at)) === today; })
+    .sort((a, b) => Number(b.created_at) - Number(a.created_at))[0];
+  return Boolean(mine) && mine.status === "running";
+}
+
+/** The exit code that tells duty-run.sh "not yet, ask me again on the next tick": named, never recorded as a run. */
+export const NOT_YET = 75;
 
 /** The one "done" line for the bounce agent (rule 4), from GET /outreach/bounce-fixes. */
 export function bounceLine(b) {
@@ -813,6 +849,8 @@ export function buildDay(data, now = Date.now()) {
     if (isTeamJob(t)) { teamStops++; continue; }
     doneRaw.push({ key: `failed:${jobFamily(t.title).toLowerCase()}`, text: failedDoneLine(t), full: f.text, links: [] });
   }
+  const selfWaiting = selfStartedWaiting(data);
+  if (selfWaiting.length) doneRaw.push({ key: `self-waiting:${today}`, text: `${selfWaiting.length === 1 ? `${selfWaiting[0].employee_name ?? "The team"}'s ${((j) => (j.quoted ? `"${j.name.slice(0, 80)}"` : j.name))(jobName(selfWaiting[0]))} was held up` : `${selfWaiting.length} of the team's own jobs were held up`} and Danielle is getting ${selfWaiting.length === 1 ? "it" : "them"} moving again.`, links: [{ label: "Open ›", url: `${ORIGIN}/?tab=systems` }] });
   if (teamStops) doneRaw.push({ key: `team-stops:${today}`, text: `${teamStops} team job${teamStops === 1 ? "" : "s"} stopped and ${teamStops === 1 ? "is" : "are"} being fixed by Danielle.`, links: [{ label: "Open ›", url: `${ORIGIN}/?tab=systems` }] });
   const prospects = prospectSection(data.prospects ?? null, now);
   const spirit = spiritSection(data.spirit ?? null, data.practiceWeek ?? null, now);
@@ -1073,7 +1111,11 @@ export async function read(api, now) {
   // Her zone for the times shown (Central when unread: never a guess).
   const updates = await api.get("/task-notices/updates?summary=1").catch((e) => { console.error(`your-day: the Updates count not read (${e.message})`); return null; });
   const ownerTz = await api.get("/system/owner-timezone").then((d) => d?.tz ?? null).catch((e) => { console.error(`your-day: her time zone not read (${e.message}); times in Central`); return null; });
-  return { updates, ownerTz, quietPeople, brainsCheck, t2rGroups, scoreboard, diary: diary?.rows ?? null, tasks: withDue, approvals, repoChanges: rc?.items ?? [], briefing: briefingOf(today), law: lawOf(today), bounceFixes, commentWatch, prospects, spirit, practiceWeek, settings, waiting, carried, morning: reported.sections, notReported: reported.missing };
+  // Job 6: an approval whose task is older than the newest 100 is read by id, so a repair's approval is known as one.
+  const known = new Set(tasks.map((t) => t.id));
+  const approvalTasks = (await Promise.all([...new Set((approvals ?? []).map(approvalTaskId).filter((id) => id && !known.has(id)))].slice(0, 100)
+    .map((id) => api.get(`/tasks/${encodeURIComponent(id)}`).then((d) => d?.task ?? null).catch((e) => { console.error(`your-day: the task behind an approval was not read (${e.message})`); return null; })))).filter(Boolean);
+  return { approvalTasks, updates, ownerTz, quietPeople, brainsCheck, t2rGroups, scoreboard, diary: diary?.rows ?? null, tasks: withDue, approvals, repoChanges: rc?.items ?? [], briefing: briefingOf(today), law: lawOf(today), bounceFixes, commentWatch, prospects, spirit, practiceWeek, settings, waiting, carried, morning: reported.sections, notReported: reported.missing };
 }
 
 export async function feedOf(range) {
@@ -1101,6 +1143,15 @@ export function notReportedRepairs(missing, tasks = []) {
   })).filter((r) => !open.has(r.title));
 }
 
+/** ONE repair per self-started job held for a word nobody asked her for, none while one for it is open. Pure. */
+export function selfWaitingRepairs(waiting, tasks = []) {
+  const open = new Set((tasks ?? []).filter((t) => OPEN.has(t.status)).map((t) => t.title));
+  return (waiting ?? []).map((t) => ({
+    title: `Unblock "${String(t.title).slice(0, 80)}": it waits for an approval nobody was asked for`,
+    prompt: `the task ${t.id} ("${t.title}") is one Boss OS started itself (a duty's run) and sits in awaiting_approval with no pending approval row, so nothing can release it and the owner is not asked (her ruling, 2 Nov and 13 Nov 2026: the employee takes her own default). Read its task_events to see what parked it, take the default (accept the result, or run it again), and fix at source whatever parks self-started work without a real owner decision (money, a send in her name, legal and invitations stay approvals).`,
+  })).filter((r) => !open.has(r.title));
+}
+
 /** Keep the morning in Boss OS (one retry). `true` when it is there. */
 async function postDigest(api, digest) {
   for (let attempt = 1; attempt <= 2; attempt++) {
@@ -1121,19 +1172,24 @@ async function main() {
   const NOW_WAIT = process.argv.includes("--no-wait");
   const day = dayOf(Date.now());
   const marker = path.join(SENT_DIR, `sent-${day}`);
-  if (!DRY && !PREVIEW && !FORCE && fs.existsSync(marker)) { console.log(`your-day: already sent for ${day}`); return; }
+  // The count is the day's morning email: a later tick that finds it sent says 1, the floor's "it went".
+  if (!DRY && !PREVIEW && !FORCE && fs.existsSync(marker)) { console.log(`your-day: already sent for ${day}`); console.log(outputLine(1, "emails sent")); return; }
 
   const api = await session();
   // Wait for Camille's briefing (lands about 07:10), sending the moment it does; 07:45 at the latest.
   const toldFile = path.join(SENT_DIR, "told.json");
   let told = { decide: {}, done: [] }; try { told = { ...told, ...JSON.parse(fs.readFileSync(toldFile, "utf8")) }; } catch { /* first run */ }
-  let data = { ...(await read(api, Date.now())), told };
-  let decision = briefingDecision(data.briefing, Date.now());
-  while (decision === "wait" && !DRY && !PREVIEW && !NOW_WAIT) {
-    console.log("your-day: waiting for today's briefing");
-    await new Promise((r) => setTimeout(r, BRIEFING_POLL_MS));
-    data = { ...(await read(api, Date.now())), told };
-    decision = briefingDecision(data.briefing, Date.now());
+  const data = { ...(await read(api, Date.now())), told };
+  const decision = briefingDecision(data.briefing, Date.now(), { inProgress: briefingInProgress(data.tasks, Date.now()) });
+  /*
+   * THE WAIT IS THE NEXT TICK, NEVER A SLEEP (13 Nov 2026: the 06:40 run slept an hour inside the
+   * runner, holding the 07:50 safety tick behind it). While the briefing is still being written this
+   * run ends by name and the next tick (job-your-day.yml: 07:10, 07:30, then 07:50, past the cap)
+   * asks again; duty-run.sh reads NOT_YET as "not a run", so nothing is recorded as sent or failed.
+   */
+  if (decision === "wait" && !DRY && !PREVIEW && !NOW_WAIT) {
+    console.log(`NAMED WAIT [BRIEFING_NOT_IN] today's briefing is still being written; the next tick sends the morning email (07:45 Central at the latest).`);
+    process.exit(NOT_YET);
   }
   const now = Date.now();
   const d = await feedOf("day");
@@ -1167,6 +1223,7 @@ async function main() {
   try { fs.mkdirSync(SENT_DIR, { recursive: true }); fs.writeFileSync(failMarks, JSON.stringify(failTold.slice(-500))); } catch { /* best effort */ }
 
   for (const r of notReportedRepairs(data.notReported, data.tasks)) await fixJob(api, r.title, r.prompt);
+  for (const r of selfWaitingRepairs(selfStartedWaiting(data), data.tasks)) await fixJob(api, r.title, r.prompt);
   // The team's own note (a section that did not report in) is a row on ☰ More → Updates, once a day.
   for (const line of email.teamNotes ?? []) {
     await api.post("/task-notices/update", { key: `morning-not-reported-${day}`, from_name: "Simone", subject: "Not in this morning's email", body: line })
@@ -1181,6 +1238,7 @@ async function main() {
   const r = await sendAsEmployee("Simone", { to: process.env.BOSS_NOTIFY_TO ?? "seq.taylor@gmail.com", subject: email.subject, text: email.text, prelaid: email, context: replyContext(email.text) });
   if (!r.ok) { console.error(`NAMED STOP [SEND_REFUSED] "${email.subject}" was not sent: ${r.error}`); process.exit(9); }
   console.log(`your-day: sent "${email.subject}" from ${r.from}`);
+  console.log(outputLine(1, "emails sent"));
   if (kept) await api.post(`/morning/${email.digest.day}/sent`, {}).catch((e) => console.error(`your-day: the morning was not marked sent (${e.message})`));
   clearToldSections(TOLD_ONCE);
   await api.post("/morning/sections/told", { sections: TOLD_ONCE }).catch((e) => console.error(`your-day: the told sections not marked in Boss OS (${e.message})`));
