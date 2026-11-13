@@ -196,3 +196,83 @@ describe("the next firing with Codex known to be out", () => {
     expect(JSON.parse(parked.requested).model, "the duty's Claude model reached Codex").toBeUndefined();
   });
 });
+
+// ═════════════════════════════════════════════════════════════════════════════════════════════
+describe("the LAST seat runs out mid-run on a duty: it waits for the reset, never fails (owner, 13 Nov 2026)", () => {
+  /*
+   * tsk_m780ys1fnrjmkvq4, "Backlink prospecting", 13 Nov 2026: Codex gave an unusable answer, the run
+   * stepped down to Claude's seat (the last on the ladder), and Claude's packet said its weekly plan
+   * was spent. The Worker answered `released: false, next_seat: null` and failed the duty for good.
+   * The packet below is that run's own words.
+   */
+  const unusable = (runId: string, taskId: string) => ({
+    device_id: "dev_test",
+    evidence: {
+      run_id: runId, task_id: taskId, backend_id: "bk_codex", status: "failed", summary: "Changed nothing.",
+      files_touched: [], commands: [], checks_run: { run: 0, passed: 0, failed: 0, detail: [] }, remaining_risks: [], violations: [],
+      rollback_ref: null, refusal_reason: null, error: "Codex answered without running a single web search, so what it wrote was not used.", cost_micros: 0,
+      started_at: NOW, finished_at: NOW + 1000, seat_exhausted: null,
+    },
+  });
+  const weeklyLimit = (runId: string, taskId: string) => ({
+    device_id: "dev_test",
+    evidence: {
+      run_id: runId, task_id: taskId, backend_id: "bk_claude_code", status: "failed",
+      summary: "You've hit your weekly limit · resets 7am (America/Chicago)",
+      files_touched: [], commands: [], checks_run: { run: 0, passed: 0, failed: 0, detail: [] }, remaining_risks: [], violations: [],
+      rollback_ref: null, refusal_reason: null,
+      error: "Claude Code has run out of usage and said: You've hit your weekly limit · resets 7am (America/Chicago)", cost_micros: 0,
+      started_at: NOW, finished_at: NOW + 1000,
+      seat_exhausted: { notice: "You've hit your weekly limit · resets 7am (America/Chicago)", retry_after_seconds: 82620 },
+    },
+  });
+
+  it("Backlink prospecting: Codex unusable → Claude's weekly limit → the task is queued for the reset, one Updates row, no email; at the reset it runs again", async () => {
+    const { taskId } = await fire("duty_link_prospects");
+    const runId = (await claim("bk_codex")).data.run.run_id as string;
+    const down = await api("/api/backends/report", { method: "POST", body: unusable(runId, taskId) });
+    expect((await down.json() as any).data.next_seat).toBe("bk_claude_code");
+    expect((await claim("bk_claude_code")).data.run?.run_id).toBe(runId);
+
+    const before = Date.now();
+    const rep = await api("/api/backends/report", { method: "POST", body: weeklyLimit(runId, taskId) });
+    expect(rep.status, await rep.clone().text()).toBe(200);
+    const answer = (await rep.json() as any).data;
+    expect(answer.released, "the Mac was told the run failed for good").toBe(true);
+    expect(answer.outcome_class).toBe("waiting_for_reset");
+
+    // Not failed: back in the queue under a named stop, resuming at the seat's own reset.
+    const t = await row<any>(`SELECT status FROM tasks WHERE id = ?`, taskId);
+    expect(t.status, "a duty out of usage was failed for good").toBe("queued");
+    const stop = JSON.parse((await row<any>(`SELECT detail FROM task_events WHERE task_id = ? AND event = 'named_stop' ORDER BY ts DESC LIMIT 1`, taskId)).detail);
+    expect(stop.code).toBe("USAGE_LIMIT");
+    expect(stop.resume_at).toBeGreaterThanOrEqual(before + 82620_000);
+    expect(stop.resume_at).toBeLessThanOrEqual(Date.now() + 82620_000);
+    expect(stop.why).toMatch(/bk_claude_code ran out of usage mid-run: You've hit your weekly limit/);
+
+    // She is not emailed and not asked to restart it: one Updates row, nothing that needs her.
+    expect(await all<any>(`SELECT kind, needs_her FROM boss_task_notices WHERE task_id = ?`, taskId)).toEqual([{ kind: "stop:USAGE_LIMIT", needs_her: 0 }]);
+
+    // The seat is stamped spent; the run that produced nothing is closed, not left running.
+    expect((await row<any>(`SELECT exhausted_until FROM execution_backends WHERE id = 'bk_claude_code'`)).exhausted_until).toBe(stop.resume_at);
+    const run = await row<any>(`SELECT status, finished_at, error FROM backend_runs WHERE id = ?`, runId);
+    expect(run.status).toBe("cancelled");
+    expect(run.finished_at).not.toBeNull();
+    expect(run.error).toMatch(/^NAMED STOP \[USAGE_LIMIT\]/);
+    expect(await all<any>(`SELECT 1 FROM backend_runs WHERE task_id = ? AND status = 'running'`, taskId)).toHaveLength(0);
+
+    // The reset: the same task is dispatched afresh and its new run finishes.
+    await seatsReset();
+    await handleTask(env as any, { taskId, lane: "ops" });
+    const again = await claim("bk_codex");
+    const newRun = again.data.run?.run_id as string;
+    expect(newRun, "the waiting task was not dispatched again at the reset").toBeTypeOf("string");
+    expect(newRun).not.toBe(runId);
+    const done = await api("/api/backends/report", {
+      method: "POST",
+      body: { device_id: "dev_test", evidence: { ...unusable(newRun, taskId).evidence, status: "succeeded", summary: "Found prospects.", error: null } },
+    });
+    expect(done.status, await done.clone().text()).toBe(200);
+    expect((await row<any>(`SELECT status FROM backend_runs WHERE id = ?`, newRun)).status).toBe("succeeded");
+  });
+});
