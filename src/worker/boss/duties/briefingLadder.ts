@@ -43,16 +43,18 @@ export interface BriefingSeat {
 }
 
 /**
- * The two $0 seats, in the order she named them: OpenAI, then Claude (24 Oct 2026; was Claude first).
+ * The two $0 seats, in her order: Claude first, Codex as the backup (owner, 13 Nov 2026; it was
+ * OpenAI first from 24 Oct, and the briefs Codex wrote from 25 Oct to 1 Nov ran at half depth). The
+ * briefing is HARD work (aiRoles.mjs HARD_DELIVERS), and this list is that row of ROUTE_TABLE with
+ * each seat's model beside it; the queue consumer orders the walk from the same row.
  *
  * `bk_codex` carries no model: Codex CLI runs whatever her ChatGPT Plus seat's default is, and
  * passing a Claude model id to it — which is what a single `requested.model` did — is a run that
  * cannot start.
  */
 export const BRIEFING_SEATS: BriefingSeat[] = [
-  // Owner, 24 Oct 2026: OpenAI first, Claude as backup (she is tight on Claude usage).
-  { backend_id: "bk_codex", model: null, label: "Codex CLI on her ChatGPT Plus seat", cost: "plan_equivalent" },
   { backend_id: "bk_claude_code", model: "claude-sonnet-4-5-20250929", label: "Claude Code on her Max seat", cost: "plan_equivalent" },
+  { backend_id: "bk_codex", model: null, label: "Codex CLI on her ChatGPT Plus seat", cost: "plan_equivalent" },
 ];
 /**
  * NO PAID RUNG, EVER, FOR THE BRIEFING (her "nothing paid" posture). When both seats refuse, the

@@ -126,17 +126,28 @@ export function routeOrder({ jobClass, privateWork = false, demoted = [] } = {})
 const SHORT_KINDS = new Set(["research", "drafting", "scheduled_check", "memory_promotion", "model_benchmark", "search_queries", "extract_from_fetched_text"]);
 /** Intake kinds that arrive with a clear brief (a duty row, a workflow's own step). */
 const CLEAR_BRIEF_KINDS = new Set(["recurring_duty", "triggered_workflow", "coaching", "relationship", "west_peek_bridge"]);
+/**
+ * DELIVERABLES THAT ARE HARD WHATEVER KIND THEY WERE FILED UNDER (owner, 13 Nov 2026: "figure out how
+ * ot make sure my briefs get wrriten to the impeccable standard we have had"). Her daily briefing
+ * (`delivers: "executive_reports"`) reaches her unchecked every morning, which is the definition of
+ * HARD above; filed as a routine duty it walked the Codex-first row, and the briefs Codex wrote
+ * (25 Oct to 1 Nov 2026) ran at half the depth of the standard. So it starts on Claude's seat, with
+ * Codex's as the backup.
+ */
+export const HARD_DELIVERS = Object.freeze(["executive_reports"]);
 
 /**
  * A job's class, from what the queue already knows about it. NOT A CLASSIFIER: no text is read. A
  * flag that marks hard work wins; then the intake kind; anything else (a one-off ask, a decision, a
  * repository change, trading, an unknown or missing kind) is HARD.
  *
+ * `delivers`: what the task hands back; a deliverable on HARD_DELIVERS is hard whatever its kind.
  * `brainEdit`: "record" (her exact words or a measured number, read back after the save) is SHORT;
  * any other brain edit is interpreting, and HARD.
  */
-export function jobClassOf({ intakeKind = null, repair = false, repoChange = false, confidentialDraft = false, chromeJob = false, brainEdit = null } = {}) {
+export function jobClassOf({ intakeKind = null, repair = false, repoChange = false, confidentialDraft = false, chromeJob = false, brainEdit = null, delivers = null } = {}) {
   if (repair || repoChange || confidentialDraft || chromeJob) return HARD;
+  if (typeof delivers === "string" && HARD_DELIVERS.includes(delivers)) return HARD;
   if (brainEdit != null && brainEdit !== false) return brainEdit === "record" ? SHORT : HARD;
   if (SHORT_KINDS.has(intakeKind)) return SHORT;
   if (CLEAR_BRIEF_KINDS.has(intakeKind)) return CLEAR_BRIEF;

@@ -220,6 +220,7 @@ export async function handleTask(env: Env, msg: TaskMessage): Promise<void> {
   const jobClass = jobClassOf({
     intakeKind: task.intake_kind ?? null, repair: input.origin === "repair", repoChange: Boolean(input.repo_change),
     confidentialDraft: confidential, chromeJob: input.chrome_job === true, brainEdit: input.brain_edit ?? null,
+    delivers: typeof input.delivers === "string" ? input.delivers : null,
   });
   let privatePrompt = false;
   if (baseLadder.length > 0 && !confidential) {

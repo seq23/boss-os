@@ -41,6 +41,10 @@ describe("the table: class × tier, and nothing names a model", () => {
     expect(routeOrder({ jobClass: null }).routes).toEqual(["claude", "codex"]);
     expect(jobClassOf({ intakeKind: "research" })).toBe("short");
     expect(jobClassOf({ intakeKind: "recurring_duty" })).toBe("clear_brief");
+    // Her daily briefing reaches her unchecked: hard whatever kind its duty was filed under (13 Nov 2026).
+    expect(jobClassOf({ intakeKind: "recurring_duty", delivers: "executive_reports" })).toBe("hard");
+    expect(jobClassOf({ intakeKind: "research", delivers: "executive_reports" })).toBe("hard");
+    expect(jobClassOf({ intakeKind: "research", delivers: "tool_suggestions" })).toBe("short");
     for (const flag of ["repair", "repoChange", "confidentialDraft", "chromeJob"]) expect(jobClassOf({ intakeKind: "research", [flag]: true })).toBe("hard");
     // The free tier is for short work only: a public job with no class never falls to it.
     expect(afterCodexLimit({ sensitivity: "public" })).toBe("claude_seat");

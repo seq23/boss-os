@@ -19,15 +19,16 @@ describe("the privacy screen runs before a worker is chosen", () => {
   // 13 Nov 2026: the briefing's own spec text is the repository's, not deal material, so it is not
   // brain work (it failed that morning while Claude's seat was out). Her edited prompt is still
   // scanned in full: tests/boss/theBriefingWalksTheLadder.test.ts.
-  it("Camille's briefing, whose spec text only LOOKS like deal material, goes to Codex first with no privacy refusal", async () => {
+  it("Camille's briefing, whose spec text only LOOKS like deal material, is not private work: it keeps Codex as its backup, with no privacy refusal", async () => {
     await env.DB.prepare(`DELETE FROM tasks WHERE input LIKE '%executive_reports%'`).run();
     const out = await materialiseDueDuties(env as any, Date.now(), "duty_exec_intel");
     expect(out.fired, JSON.stringify(out.skipped)).toHaveLength(1);
     const taskId = out.fired[0]!.task_id!;
     await handleTask(env as any, { taskId, lane: "ops" });
     const runs = await all<any>(`SELECT backend_id, requested FROM backend_runs WHERE task_id = ?`, taskId);
-    expect(runs.map((r) => r.backend_id)).toEqual(["bk_codex"]);
-    expect(JSON.parse(runs[0].requested).backend_ladder).toEqual(["bk_codex", "bk_claude_code"]);
+    // Hard work (13 Nov 2026): Claude's seat first. Were it read as PRIVATE hard work, Codex would be off the ladder.
+    expect(runs.map((r) => r.backend_id)).toEqual(["bk_claude_code"]);
+    expect(JSON.parse(runs[0].requested).backend_ladder).toEqual(["bk_claude_code", "bk_codex"]);
     expect(await all<any>(`SELECT 1 FROM task_events WHERE task_id = ? AND event = 'ladder_step'`, taskId)).toHaveLength(0);
   });
 

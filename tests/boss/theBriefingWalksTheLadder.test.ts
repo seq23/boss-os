@@ -56,13 +56,13 @@ async function briefingTask(): Promise<{ taskId: string; input: Record<string, a
 }
 
 describe("the ordered candidate list, from the rows as migrated", () => {
-  it("reads bk_codex → bk_claude_code (Sonnet 4.5), and NOTHING below the seats is reachable (owner, 24 Oct 2026)", async () => {
+  it("reads bk_claude_code (Sonnet 4.5) → bk_codex, and NOTHING below the seats is reachable (owner, 13 Nov 2026: the briefing is hard work)", async () => {
     await seatsReset();
     const c = await resolveBriefingCandidates(env.DB, NOW);
     expect(c.length, "Rule 0: an empty ladder is a failure").toBeGreaterThan(4);
 
-    expect(c[0]).toMatchObject({ position: 1, kind: "seat", backend_id: "bk_codex", model: null, eligible: true });
-    expect(c[1]).toMatchObject({ position: 2, kind: "seat", backend_id: "bk_claude_code", model: "claude-sonnet-4-5-20250929", eligible: true });
+    expect(c[0]).toMatchObject({ position: 1, kind: "seat", backend_id: "bk_claude_code", model: "claude-sonnet-4-5-20250929", eligible: true });
+    expect(c[1]).toMatchObject({ position: 2, kind: "seat", backend_id: "bk_codex", model: null, eligible: true });
     expect(c[0]!.cost).toBe("$0 (subscription)");
     expect(c[1]!.cost).toBe("$0 (subscription)");
 
@@ -75,11 +75,11 @@ describe("the ordered candidate list, from the rows as migrated", () => {
 
   it("marks a capped seat ineligible and keeps it on the list, so the printed ladder shows where the walk starts today", async () => {
     await seatsReset();
-    await seatCapped("bk_codex");
+    await seatCapped("bk_claude_code");
     const c = await resolveBriefingCandidates(env.DB, NOW);
-    expect(c[0]).toMatchObject({ backend_id: "bk_codex", eligible: false });
+    expect(c[0]).toMatchObject({ backend_id: "bk_claude_code", eligible: false });
     expect(c[0]!.why).toMatch(/ceiling spent/);
-    expect(c[1]).toMatchObject({ backend_id: "bk_claude_code", eligible: true });
+    expect(c[1]).toMatchObject({ backend_id: "bk_codex", eligible: true });
     await seatsReset();
   });
 
@@ -96,10 +96,10 @@ describe("the ordered candidate list, from the rows as migrated", () => {
       ],
     }, NOW);
     expect(c.map((x) => x.backend_id + ":" + (x.model ?? "default"))).toEqual([
-      "bk_codex:default", "bk_claude_code:claude-sonnet-4-5-20250929", "bk_openrouter:nvidia/nemotron-3-ultra-550b-a55b:free", "bk_openrouter:openai/gpt-5-mini",
+      "bk_claude_code:claude-sonnet-4-5-20250929", "bk_codex:default", "bk_openrouter:nvidia/nemotron-3-ultra-550b-a55b:free", "bk_openrouter:openai/gpt-5-mini",
     ]);
     expect(c.filter((x) => x.kind !== "seat").every((x) => !x.eligible)).toBe(true);
-    expect(BRIEFING_SEATS.map((s) => s.backend_id)).toEqual(["bk_codex", "bk_claude_code"]);
+    expect(BRIEFING_SEATS.map((s) => s.backend_id)).toEqual(["bk_claude_code", "bk_codex"]);
   });
 });
 
@@ -108,22 +108,22 @@ describe("the duty row carries the ladder, stamped by the materialiser from the 
 
   it("fires with backend_ladder, cloud_fallback and a model per seat", async () => {
     const { input } = await briefingTask();
-    expect(input.backend_ladder).toEqual(["bk_codex", "bk_claude_code"]);
+    expect(input.backend_ladder).toEqual(["bk_claude_code", "bk_codex"]);
     expect(input.cloud_fallback).toBe(false);
     expect(input.requested.model_by_backend).toEqual({ bk_codex: null, bk_claude_code: "claude-sonnet-4-5-20250929" });
     expect(input.delivers).toBe("executive_reports");
   });
 });
 
-describe("scenario (a): Codex capped or unavailable → Claude Code serves the same spec at $0", () => {
+describe("scenario (a): the briefing starts on Claude's seat; Claude capped or unavailable → Codex serves the same spec at $0", () => {
   beforeEach(seatsReset);
   afterEach(seatsReset);
 
-  // 13 Nov 2026: the briefing's spec is this repository's own text, so the privacy screen no longer
-  // reads its wording as deal material (before, it kept the briefing off Codex every morning and, with
-  // the Claude seat out of usage, it never ran). It walks her two seats in order, Codex first.
-  it("Codex capped: the briefing walks to Claude's seat with Claude's model and the same spec; Codex's step is its ceiling, never the privacy screen", async () => {
-    await seatCapped("bk_codex");
+  // 13 Nov 2026: the briefing is HARD work (aiRoles.mjs HARD_DELIVERS): it reaches her unchecked, and
+  // the briefs Codex wrote from 25 Oct to 1 Nov ran at half depth. Claude's seat first, Codex's as the
+  // backup. Its spec is this repository's own text, so the privacy screen does not read it as deal material.
+  it("Claude capped: the briefing walks to Codex's seat on Codex's own default with the same spec; Claude's step is its ceiling, never the privacy screen", async () => {
+    await seatCapped("bk_claude_code");
     const { taskId } = await briefingTask();
     let calls = 0;
     restore = stubFetch(() => { calls++; return completionResponse("should not be called"); });
@@ -131,29 +131,40 @@ describe("scenario (a): Codex capped or unavailable → Claude Code serves the s
     await handleTask(env as any, { taskId, lane: "ops" });
 
     const runs = await all<any>(`SELECT id, backend_id, status, requested FROM backend_runs WHERE task_id = ? ORDER BY started_at`, taskId);
-    expect(runs.map((r) => r.backend_id), "a capped Codex seat was handed the briefing").not.toContain("bk_codex");
+    expect(runs.map((r) => r.backend_id), "a capped Claude seat was handed the briefing").not.toContain("bk_claude_code");
     const parked = runs.filter((r) => r.status === "running");
     expect(parked, "no run was parked for a seat").toHaveLength(1);
-    expect(parked[0]!.backend_id).toBe("bk_claude_code");
+    expect(parked[0]!.backend_id).toBe("bk_codex");
     const requested = JSON.parse(parked[0]!.requested);
-    expect(requested.model, "Claude's seat lost its model").toBe("claude-sonnet-4-5-20250929");
-    expect(requested.backend_ladder).toEqual(["bk_codex", "bk_claude_code"]);
+    expect(requested.model, "a Claude model id reached the Codex seat").toBeUndefined();
+    expect(requested.backend_ladder).toEqual(["bk_claude_code", "bk_codex"]);
+    expect(requested.job_class).toBe("hard");
     expect(requested.instruction).toMatch(/EXECUTIVE INTELLIGENCE ENGINE/);
     expect(requested.instruction).toMatch(/Never invent/);
 
     const steps = await all<any>(`SELECT event, detail FROM task_events WHERE task_id = ? AND event IN ('ladder_step','dispatched') ORDER BY ts`, taskId);
     expect(steps.map((s) => s.event)).toEqual(["ladder_step", "dispatched"]);
-    expect(JSON.parse(steps[0]!.detail)).toMatchObject({ backend_id: "bk_codex", next: "bk_claude_code" });
+    expect(JSON.parse(steps[0]!.detail)).toMatchObject({ backend_id: "bk_claude_code", next: "bk_codex" });
     expect(JSON.parse(steps[0]!.detail).refused).not.toMatch(/privacy screen/);
-    expect(calls, "the walk went to the cloud while Claude's seat was available").toBe(0);
+    expect(calls, "the walk went to the cloud while Codex's seat was available").toBe(0);
   });
 
-  it("both seats free: the briefing is parked on Codex first (her order, 24 Oct 2026) with no privacy refusal, Codex claims it and its report lands under the grader", async () => {
+  it("both seats free: the briefing's FIRST route is Claude's seat, on Claude's model, with no privacy refusal (owner, 13 Nov 2026)", async () => {
+    const { taskId } = await briefingTask();
+    await handleTask(env as any, { taskId, lane: "ops" });
+    const first = await row<any>(`SELECT backend_id, requested FROM backend_runs WHERE task_id = ? AND status = 'running'`, taskId);
+    expect(first.backend_id, "the briefing started on Codex's seat").toBe("bk_claude_code");
+    expect(JSON.parse(first.requested).model).toBe("claude-sonnet-4-5-20250929");
+    expect(JSON.parse(first.requested).backend_ladder, "Codex is no longer the backup").toEqual(["bk_claude_code", "bk_codex"]);
+    expect(await all<any>(`SELECT 1 FROM task_events WHERE task_id = ? AND event = 'ladder_step'`, taskId)).toHaveLength(0);
+  });
+
+  it("Claude capped, Codex free: Codex claims the briefing and its report lands under the grader, signed by Codex", async () => {
+    await seatCapped("bk_claude_code");
     const { taskId } = await briefingTask();
     await handleTask(env as any, { taskId, lane: "ops" });
     const parked = await row<any>(`SELECT id, backend_id FROM backend_runs WHERE task_id = ? AND status = 'running'`, taskId);
-    expect(parked.backend_id, "the briefing's own wording kept it off Codex again").toBe("bk_codex");
-    expect(await all<any>(`SELECT 1 FROM task_events WHERE task_id = ? AND event = 'ladder_step'`, taskId)).toHaveLength(0);
+    expect(parked.backend_id).toBe("bk_codex");
 
     const res = await api("/api/backends/claim", { method: "POST", body: { device_id: "dev_test", backend_id: "bk_codex" } });
     const envelope = (await res.json() as any).data.run;
@@ -217,8 +228,8 @@ describe("scenario (b): both seats unavailable → the briefing stops by name; i
   afterEach(seatsReset);
 
   it("makes no network call, writes no report, and fails with every seat's refusal on it", async () => {
-    await seatCapped("bk_codex");
-    await seatDisabled("bk_claude_code");
+    await seatCapped("bk_claude_code");
+    await seatDisabled("bk_codex");
     const { taskId } = await briefingTask();
     const seen: string[] = [];
     restore = stubFetch((req) => { seen.push(new URL(req.url).hostname); return completionResponse("must not be reached"); });
@@ -230,13 +241,13 @@ describe("scenario (b): both seats unavailable → the briefing stops by name; i
 
     expect(seen, "a request left the Worker for a cloud rung").toEqual([]);
     const steps = await all<any>(`SELECT event, detail FROM task_events WHERE task_id = ? AND event = 'ladder_step' ORDER BY ts`, taskId);
-    expect(steps.map((s) => JSON.parse(s.detail).backend_id)).toEqual(["bk_codex", "bk_claude_code"]);
+    expect(steps.map((s) => JSON.parse(s.detail).backend_id)).toEqual(["bk_claude_code", "bk_codex"]);
     expect(JSON.parse(steps[0]!.detail).refused, "the briefing's own wording was read as deal material").not.toMatch(/privacy screen/);
     expect(JSON.parse(steps[1]!.detail).next).toBeNull();
     const t = await row<any>(`SELECT status, error FROM tasks WHERE id = ?`, taskId);
     expect(t.status).toBe("failed");
-    expect(t.error).toMatch(/bk_claude_code: /);
-    expect(await all<any>(`SELECT 1 FROM backend_runs WHERE task_id = ? AND backend_id = 'bk_codex'`, taskId)).toHaveLength(0);
+    expect(t.error).toMatch(/bk_codex: /);
+    expect(await all<any>(`SELECT 1 FROM backend_runs WHERE task_id = ?`, taskId)).toHaveLength(0);
     expect(await row(`SELECT 1 FROM executive_reports WHERE task_id = ?`, taskId)).toBeNull();
     expect(await all<any>(`SELECT 1 FROM routing_decisions WHERE task_id = ?`, taskId)).toHaveLength(0);
   });
