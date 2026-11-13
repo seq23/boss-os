@@ -72,14 +72,18 @@ describe("Boss OS employees: Codex works, Claude is the brain", () => {
     expect(existsSync(outFile)).toBe(false);
   });
 
-  it("after a Codex limit, public work goes to the $0 free rung; confidential, LP/deal, Chrome and non-public work go to the Claude seat", () => {
-    expect(afterCodexLimit({ sensitivity: "public" })).toBe("free_rung");
-    expect(afterCodexLimit({ sensitivity: "public", confidential: true })).toBe("claude_seat");
-    expect(afterCodexLimit({ sensitivity: "public", chromeJob: true })).toBe("claude_seat");
-    for (const sensitivity of ["private", "restricted", "confidential", null, undefined]) expect(afterCodexLimit({ sensitivity })).toBe("claude_seat");
+  // 13 Nov 2026: the free tier is for SHORT work only (aiRoles.mjs ROUTE_TABLE); a job with no class is hard.
+  it("after a Codex limit, public SHORT work goes to the $0 free rung; hard or clear-brief, confidential, LP/deal, Chrome and non-public work go to the Claude seat", () => {
+    const jobClass = "short";
+    expect(afterCodexLimit({ sensitivity: "public", jobClass })).toBe("free_rung");
+    expect(afterCodexLimit({ sensitivity: "public" })).toBe("claude_seat");
+    for (const cls of ["hard", "clear_brief", null, "a class nobody decided"]) expect(afterCodexLimit({ sensitivity: "public", jobClass: cls as any })).toBe("claude_seat");
+    expect(afterCodexLimit({ sensitivity: "public", confidential: true, jobClass })).toBe("claude_seat");
+    expect(afterCodexLimit({ sensitivity: "public", chromeJob: true, jobClass })).toBe("claude_seat");
+    for (const sensitivity of ["private", "restricted", "confidential", null, undefined]) expect(afterCodexLimit({ sensitivity, jobClass })).toBe("claude_seat");
     // Cleared for public models on its card (6 Nov 2026) counts as public; LP/deal and Chrome still wait.
-    expect(afterCodexLimit({ sensitivity: "internal", modelAccess: "public_model_approved" })).toBe("free_rung");
-    expect(afterCodexLimit({ sensitivity: "internal", modelAccess: "public_model_approved", confidential: true })).toBe("claude_seat");
-    expect(afterCodexLimit({ sensitivity: "internal", modelAccess: "private_model_only" })).toBe("claude_seat");
+    expect(afterCodexLimit({ sensitivity: "internal", modelAccess: "public_model_approved", jobClass })).toBe("free_rung");
+    expect(afterCodexLimit({ sensitivity: "internal", modelAccess: "public_model_approved", confidential: true, jobClass })).toBe("claude_seat");
+    expect(afterCodexLimit({ sensitivity: "internal", modelAccess: "private_model_only", jobClass })).toBe("claude_seat");
   });
 });

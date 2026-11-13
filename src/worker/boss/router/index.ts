@@ -21,7 +21,7 @@ import { bypassFor, predictSpend, type BypassRow } from "./bypass";
 import {
   GRADIENT_HARD_STOP_MICROS, gradientEffect, gradientState, isProtectedWork,
 } from "./gradient";
-import { experienceFor, mayBePreferredForProtectedWork, rank as experienceRank, recordOutcome } from "./experience";
+import { experienceFor, mayBePreferredForProtectedWork, rank as experienceRank, recordOutcome, freeMemory } from "./experience";
 import { getNumber } from "../lib/settings";
 import { hasConfidential, stripConfidential } from "../../../shared/boss/brains/brain.mjs";
 import { readJobPolicy, type JobPolicy } from "../../../shared/boss/router/jobPolicy.mjs";
@@ -220,6 +220,13 @@ export interface RouteRequest {
    * "lp_reply", "summarise"… A run without one, or whose job has no row, routes exactly as before.
    */
   jobKey?: string | null;
+  /**
+   * THE JOB'S OWN CHECK ON AN ANSWER (13 Nov 2026): a sentence saying why it cannot stand (malformed,
+   * no sources where sources are required), or null. A FREE answer that fails it counts
+   * as that model failing this kind of job: it is recorded, and the walk moves to the next candidate
+   * instead of landing a bad answer. A paid answer is never discarded here; its caller checks it.
+   */
+  accept?: (text: string) => string | null;
 }
 
 /**
@@ -738,6 +745,13 @@ export async function routeCompletion(env: Env, rawOpts: RouteRequest): Promise<
    * absence.
    */
   const confinedTo = opts.onlyProviderId ?? (opts.webSearch ? "prv_openai" : null);
+  // What the free tier remembers about this kind of job (experience.ts `freeMemory`): the candidate
+  // that last completed it goes first among the free continuity candidates.
+  const memory = await freeMemory(db, opts.intakeKind ?? null);
+  const isFreeRow = (m: ModelRow) => { const b = WIRING_BY_PROVIDER.get(m.provider_id)?.backendId; return Boolean(b) && !routeIsBilled(b!, m.slug); };
+  const winnerAt = memory.lastWinner ? assembled.findIndex((c) => c.tier === "continuity" && c.model.id === memory.lastWinner && isFreeRow(c.model)) : -1;
+  const firstFreeAt = assembled.findIndex((c) => c.tier === "continuity" && isFreeRow(c.model));
+  if (winnerAt > firstFreeAt && firstFreeAt >= 0) assembled.splice(firstFreeAt, 0, ...assembled.splice(winnerAt, 1));
   const ordered = assembled.filter(({ model, tier }) => {
     if (!confinedTo || model.provider_id === confinedTo) return true;
     considered.push({
@@ -852,6 +866,10 @@ export async function routeCompletion(env: Env, rawOpts: RouteRequest): Promise<
     const backendName = def.providerName;
     if (opts.freeOnly && !free) {
       note("budget", "rejected", `${model.display_name} costs money and this run is $0 only.`, { estimate_micros: estimate, free });
+      continue;
+    }
+    if (free && memory.failedTwice.has(model.id)) {
+      note("availability", "skipped", `this free candidate failed its last two ${opts.intakeKind} jobs, so this kind of job moves to the next candidate; it is tried again after a week or one good run`);
       continue;
     }
 
@@ -1116,9 +1134,23 @@ export async function routeCompletion(env: Env, rawOpts: RouteRequest): Promise<
       }
     }
 
+    // A FREE ANSWER THAT FAILS THE JOB'S OWN CHECK IS A FAILED CALL, so the walk moves on.
+    const unusable = called && !attemptError && free ? (opts.accept?.(called.text) ?? null) : null;
+    if (unusable) attemptError = new Error(`the answer failed this job's check: ${unusable}`);
+    // The free tier's memory: this candidate failed this kind of job. Out of allowance (429) is a
+    // note and a move to the next candidate, never a failure.
+    if (free && attemptError && !(attemptError instanceof ProviderCallError && attemptError.status === 429)) {
+      await recordOutcome(db, {
+        taskKind: opts.intakeKind ?? null, modelId: model.id, outcome: "rejected", source: "router",
+        lane: opts.lane, taskId: opts.taskId ?? null, note: attemptError.message.slice(0, 300),
+      });
+    }
+
     if (!called || attemptError) {
       lastError = attemptError ?? new Error("provider returned nothing");
-      const state = await recordFailure(db, def.backendId, lastError.message);
+      // An answer that failed the job's check says nothing about the provider being down: the
+      // breaker, which closes a whole provider, counts real call failures only.
+      const state = unusable ? { open: false } : await recordFailure(db, def.backendId, lastError.message);
       note(
         "call", "failed",
         `${lastError.message.slice(0, 240)}${state.open ? " — circuit breaker opened" : ""}`,

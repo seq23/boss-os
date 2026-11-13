@@ -19,6 +19,7 @@ import type { Env, Vars } from "../env";
 import { newId } from "../lib/id";
 import { audit } from "../lib/audit";
 import { logEvent } from "../lib/log";
+import { routeCounts, routeCountsLine } from "../router/routeCounts";
 import { ok, badRequest, notFound, conflict } from "../lib/http";
 import { INTAKE_KINDS } from "../../../shared/boss/governance";
 
@@ -782,8 +783,17 @@ export async function runCapabilityCadence(env: Env, now = Date.now()): Promise<
     }
   }
 
+  // The monthly measured line (owner, 13 Nov 2026): last month, per route, from the run logs. It goes
+  // on the Systems list; a line that could not be written is said there too, never skipped.
+  const monthStart = Date.UTC(date.getUTCFullYear(), date.getUTCMonth(), 1);
+  const routeLine = await routeCounts(env.DB, Date.UTC(date.getUTCFullYear(), date.getUTCMonth() - 1, 1), monthStart)
+    .then(routeCountsLine)
+    .catch((e) => `NAMED STOP [ROUTE_COUNTS_NOT_READ] the monthly route line could not be written: ${e instanceof Error ? e.message : String(e)}`);
+  await logEvent(env.DB, { level: routeLine.includes("NAMED STOP") || routeLine.includes("not read") ? "warn" : "info", scope: "systems", event: "route_month", detail: { line: routeLine } });
+
   return {
     ran: true,
+    route_month: routeLine,
     monthly_scan: { scanned: scanned.length, discoveries_raised: raised },
     quarterly_review: isQuarterStart ? { reviews: reviews.length } : null,
   };
