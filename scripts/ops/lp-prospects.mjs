@@ -560,8 +560,8 @@ async function main() {
         }
         if (events.length) await api.post("/lp/prospects/events", { events });
       }
-    } else if (plan.stops?.length) {
-      console.log(`plan: nothing sent — ${plan.stops.join(" ")}`);
+    } else if (plan.stops?.length || plan.opens) {
+      console.log(`plan: nothing sent — ${[...(plan.stops ?? []), plan.opens].filter(Boolean).join(" ")}`);
     }
 
     const rows = (await api.get("/lp/prospects?tokens=1")).rows ?? [];

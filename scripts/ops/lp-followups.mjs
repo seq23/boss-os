@@ -123,10 +123,13 @@ export const hashOf = (s) => crypto.createHash("sha256").update(String(s)).diges
  * note on, loops someone in, says they are reviewing or will get back, says thanks, is an auto-reply or
  * is only for information gets NO draft: the row is "waiting" (the thread waits on them) and any
  * unedited draft this file held for it is taken back out of her Drafts. Pure.
- * A row with no words to read (an entry older than the stored words) keeps its draft.
+ * NO WORDS READ, NO NEW DRAFT (owner, 13 Nov 2026: a templated reply was still being made for a
+ * message nobody had read, so a pass-along got "happy to find a time"). The caller reads their words
+ * from the thread when the list kept none; when even that fails, a draft already held stays as it is
+ * and none is made: the row shows as not answered, never as answered with words that may not fit.
  */
 export function lpReplyDecision(words) {
-  if (!String(words ?? "").trim()) return { draft: true, kind: "unread", why: "their words were not kept, so the reply is held as before" };
+  if (!String(words ?? "").trim()) return { draft: false, kind: "unread", why: "their words could not be read, so no reply is written for them" };
   const need = replyNeed(words);
   return { draft: need.needed, kind: need.kind, why: need.why };
 }
@@ -347,6 +350,11 @@ export async function followUps(people, { now = Date.now(), skipped = new Set(),
       // redrafted when they write again. A fixed template; nothing is sent here.
       // Does their new message need a reply at all? A hand-off, "we'll review", a thank-you: no draft.
       const need = status === "replied_again" ? lpReplyDecision(lastReplyText) : null;
+      if (need && need.kind === "unread") {
+        // Their new message could not be read: no reply is written for it; any reply already held stays.
+        rows.push({ ...base, status, sent_at: sentAt, last_reply_text: null });
+        continue;
+      }
       if (need && !need.draft) {
         status = "waiting";
         counts.waiting = (counts.waiting ?? 0) + 1;
@@ -375,8 +383,9 @@ export async function followUps(people, { now = Date.now(), skipped = new Set(),
       continue;
     }
     // Does their reply need one from her at all? A hand-off, "we'll review", a thank-you: no draft.
-    const need = lpReplyDecision(p.said);
-    if (!need.draft) {
+    // Their words as the list kept them, else read from their thread now.
+    const need = lpReplyDecision(p.said || (th?.id ? await latestWords(th.id) : null));
+    if (!need.draft && need.kind !== "unread") {
       counts.waiting = (counts.waiting ?? 0) + 1;
       if (draftTok) await dropOwnDraft(draftTok, state.drafts[p.address]);
       delete state.drafts[p.address];
@@ -391,8 +400,8 @@ export async function followUps(people, { now = Date.now(), skipped = new Set(),
       const unedited = existing && existing.message?.id === had?.message_id;
       // A kept draft is shown as it stands in Gmail NOW, word for word, pinned to its message id: the
       // tap sends it only if that id has not changed since the email showed it (owner, 24 Oct 2026).
-      if (existing && !(stale && unedited)) { counts.kept += 1; held = { id: had.id, message_id: existing.message?.id ?? had.message_id, hash: had.hash, body: await draftWords(existing.message?.id ?? had.message_id) }; }
-      else {
+      if (existing && (!need.draft || !(stale && unedited))) { counts.kept += 1; held = { id: had.id, message_id: existing.message?.id ?? had.message_id, hash: had.hash, body: await draftWords(existing.message?.id ?? had.message_id) }; }
+      else if (need.draft) {
         const body = draftBody({ name: p.name, bucket: p.bucket, slots });
         const message = { raw: rawDraft({ ...draftRecipients(p.address, th), subject: th?.subject ?? "", inReplyTo: th?.messageId, body }), ...(th?.threadId ? { threadId: th.threadId } : {}) };
         const res = existing

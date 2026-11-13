@@ -359,7 +359,6 @@ export const publicRow = (g) => {
 
 // ─── What Monique found ──────────────────────────────────────────────────────
 
-const sideWord = (g) => (g.direction === "buy" ? "buyer" : "seller");
 const mailto = (to, subject, body) =>
   `mailto:${encodeURIComponent(to)}?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(body)}`;
 
@@ -392,7 +391,6 @@ export function otherSides(grid, lists, { cap = 3, tolerance = DEFAULT_TOLERANCE
   return found;
 }
 
-const dealPhrase = (g) => `${g.side === "yours" ? "your " : "the "}${g.size_text !== "—" ? `${g.size_text} ` : ""}${g.company} ${sideWord(g)}`;
 
 /** "Person, Firm" for a row; "you (your own deal)" for hers. */
 const whoOf = (g) => (g.side === "yours" ? "you (your own deal)" : g.from_text);
@@ -611,8 +609,7 @@ export function gridRowOf(m) {
 
 /**
  * monique_found.json — owner, 25 Oct 2026 (mock-up v2): ONE grid of the best live matches (`grid`),
- * then "Still looking" as one line (new orders nobody in her email can fill yet), then the filings
- * and press as one link, then the count line to the Matches screen. `decide` is always empty: no
+ * then the filings and press as one link, and the way to the Matches screen. `decide` is always empty: no
  * match goes to Decide. `dismissed` (pair#sig) is what she dismissed; it never comes back until a
  * new order. Every current match is on the Matches screen (`matches`).
  */
@@ -622,34 +619,25 @@ export function moniqueFound({ newRows, grid, lists, found = {}, now = Date.now(
   const within = all.filter((m) => !m.old && (m.gap === null || m.gap <= DEFAULT_TOLERANCE));
   const counts = matchCounts(all);
   const picks = gridMatches(within, { dismissed });
+  // The matches and nothing else (owner, 13 Nov 2026): no "Still looking" line and no totals line.
+  // The counts ride on the section for the Matches screen; the email never prints them.
   const lines = [];
-  const looking = [];
   const outward = [];
   const rows = [];
   for (const g of newRows) {
-    const mine = within.filter((m) => m.key.split("|").includes(g.id));
-    if (!mine.length) looking.push(dealPhrase(g).replace(/^the /, ""));
     const holders = (found[g.company.toLowerCase()]?.holders ?? []).filter((h) => !isDoNotSuggest({ principal: h.fund, from_text: h.manager }, lists));
     const press = (found[g.company.toLowerCase()]?.press ?? []).filter((l) => !isDoNotSuggest({ principal: l.name, from_text: l.org }, lists));
     if (holdersLine(g, holders) || press.length) outward.push(g.company);
     for (const h of holders.slice(0, 5)) rows.push({ company: g.company, fund: h.fund, manager: h.manager ?? "—", value: moneyWords(h.value_usd), as_of: h.as_of ?? "—", url: h.filing_url });
   }
-  if (looking.length) lines.push({ text: `Still looking: no one in your email yet for ${looking.slice(0, 4).join("; ")}${looking.length > 4 ? `; and ${looking.length - 4} more` : ""}.` });
   const out = [...new Set(outward)];
   if (out.length) lines.push({ text: `Outside your email: public filings and press, not confirmed, on ${out.slice(0, 4).join(", ")}${out.length > 4 ? ` and ${out.length - 4} more` : ""}.`, links: [{ label: "See the filings and press", url: out.length === 1 ? `${HOLDERS_PAGE}&company=${encodeURIComponent(out[0])}` : HOLDERS_PAGE }] });
-  if (counts.within > picks.length) {
-    lines.push({
-      text: `${counts.within} possible ${counts.within === 1 ? "trade" : "trades"} in all, on ${counts.companies} ${counts.companies === 1 ? "company" : "companies"}, each buyer and seller counted once${counts.stale ? `; ${counts.stale} ${counts.stale === 1 ? "has" : "have"} an order over ${STALE_DAYS} days old (may be stale — check it's still live)` : ""}.`,
-      links: [{ label: counts.within === 1 ? "See the match →" : `See all ${counts.within} matches →`, url: MATCHES_PAGE }],
-      counts,
-    });
-  }
   return {
     decide: [], rows, lines, counts,
     grid: picks.map(gridRowOf),
     // Every current match goes to the Matches screen (capital_matches), not into this file.
     matches: all.slice(0, 2000),
-    link: lines.some((l) => l.counts) ? null : { label: "See every match", url: MATCHES_PAGE },
+    link: { label: "See every match", url: MATCHES_PAGE },
   };
 }
 

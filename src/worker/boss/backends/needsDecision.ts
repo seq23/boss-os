@@ -1,4 +1,5 @@
 import { actionNotTaken } from "../../../shared/boss/research/page.mjs";
+import { startedBySystem } from "../../../shared/boss/mail/noticeGate.mjs";
 /**
  * WHAT THE INBOX IS FOR, AND WHY THE EXECUTIVE REPORT WAS NEVER IT.
  *
@@ -57,6 +58,8 @@ export interface DecisionVerdict {
   reason: string;
   /** The delivery contract this task carried, if any. Null for ad-hoc dispatched work. */
   delivers: string | null;
+  /** Set when work Boss OS started itself cannot be accepted: the task ends failed under this name, never parked. */
+  stop?: string;
 }
 
 /** Delivery keys `routes/backends.ts` has a handler for. A key with no handler is not a delivery. */
@@ -77,6 +80,7 @@ export function runNeedsHerDecision(
   taskInput: string | null,
   evidence: Record<string, unknown> | null | undefined,
   violations: unknown[],
+  opts: { dutyRun?: boolean } = {},
 ): DecisionVerdict {
   let input: Record<string, unknown> = {};
   try { input = taskInput ? (JSON.parse(taskInput) as Record<string, unknown>) : {}; } catch { input = {}; }
@@ -88,8 +92,27 @@ export function runNeedsHerDecision(
     return { needed: true, reason: "A forbidden action was detected in this run", delivers };
   }
 
-  if (evidence?.approval_needed === true) {
+  /*
+   * WORK BOSS OS STARTED ITSELF NEVER PARKS WAITING ON HER (owner, 2 Nov and 13 Nov 2026; Wave 1 only
+   * hid these from her email). A duty's own run and a repair have no question of hers in them, and
+   * approving applies nothing, so the result is accepted where it lands, or the task ends under a
+   * named stop the team repairs. Two things still reach her: a guard that fired (above), and a duty's
+   * run that itself says a decision is hers (`approval_needed`: money, her account, legal, a send that
+   * cannot be undone). A repair never asks (noticeGate.mjs `needsHer`): its finding goes to the team.
+   */
+  const self = startedBySystem(input, { dutyRun: opts.dutyRun === true });
+  const repair = input.origin === "repair" && input.repair_kind !== "waiting_on";
+
+  if (evidence?.approval_needed === true && !repair) {
     return { needed: true, reason: "The run asked for your decision before this is used", delivers };
+  }
+
+  if (self) {
+    if (declared !== null && delivers === null) {
+      const reason = `This run was contracted to deliver "${declared}", and nothing in Boss OS handles that — so its output landed nowhere`;
+      return { needed: false, reason, delivers: null, stop: `NAMED STOP [DELIVERY_UNHANDLED] ${reason}` };
+    }
+    return { needed: false, reason: "Boss OS started this itself, so its result is accepted where it landed and nothing waits on you", delivers };
   }
 
   /*

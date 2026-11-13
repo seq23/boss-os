@@ -33,6 +33,14 @@ describe("does it need a reply", () => {
     }
   });
 
+  it("words nobody could read get no new draft (13 Nov 2026: a templated reply was made anyway)", () => {
+    for (const words of ["", "   ", null, undefined]) {
+      const d = lpReplyDecision(words);
+      expect(d.draft, String(words)).toBe(false);
+      expect(d.kind).toBe("unread");
+    }
+  });
+
   it("a question, a request, a time or a yes gets a draft, read from their own words only", () => {
     for (const words of ["Are you in NYC? The only day available is Wednesday.", "Please send the deck.", "Nov 5 at 11am can work.", "Happy to chat next week."]) {
       expect(lpReplyDecision(words).draft, words).toBe(true);

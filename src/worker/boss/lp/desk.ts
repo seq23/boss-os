@@ -307,6 +307,9 @@ async function prospectHealth(db: D1Database, now: number) {
   return { sent: Number(sent?.n ?? 0), bounced: Number(bounced?.n ?? 0), complaints: Number(complaints?.n ?? 0) };
 }
 
+/** When prospect emails go, said once, for a plan made outside those hours. Never one of `stops`. */
+export const SEND_WINDOW_WORDS = "Prospect emails go out on weekdays, 9 to 5 Central.";
+
 const chicagoDay = (ms: number) => new Intl.DateTimeFormat("en-CA", { timeZone: "America/Chicago" }).format(new Date(ms));
 
 /**
@@ -333,7 +336,10 @@ export async function prospectPlan(db: D1Database, now = Date.now()) {
   const complaint = health.complaints > 0 ? complaintStop("the brokerage prospect sequence", health.complaints) : null;
   if (complaint) { stops.push(complaint); blocked.push(complaint); }
   const paused = complaint ? null : pauseReason(health);
-  if (!inSendWindow(now)) stops.push("Outside the sending window (weekdays 9 to 5 Central).");
+  // THE CLOCK IS NOT A STOP (owner, 13 Nov 2026: every 6:45 am email said "not going out. Why: outside
+  // the sending window"). Before 9, after 5 and at weekends nothing is wrong: the emails go at the next
+  // window. Nothing sends (`sends` is empty), and `opens` says when, apart from the real stops.
+  const outside = !inSendWindow(now);
   const lists = await readExclusions(db);
   if (!lists.established) blocked.push(`her lists could not be read (${lists.note}).`);
   if (settings.killSwitch) stops.push("The global outreach kill switch is on.");
@@ -390,7 +396,7 @@ export async function prospectPlan(db: D1Database, now = Date.now()) {
   };
   // The brake on and nothing confirmed valid: nothing goes, and it says why.
   if (paused && !go.length) stops.push(paused);
-  if (stops.length) return { sends: [], stops, dryRun, template: tpl ?? null, forecast, held: count };
+  if (stops.length || outside) return { sends: [], stops, dryRun, template: tpl ?? null, forecast, held: count, opens: outside ? SEND_WINDOW_WORDS : null, note: undefined as string | undefined };
 
   const names = JSON.parse(tpl!.names_json ?? "[]");
   const approved: Template = storedTemplate(tpl);
@@ -415,7 +421,7 @@ export async function prospectPlan(db: D1Database, now = Date.now()) {
       from: touch === 1 ? null : (p.first_from ?? null),
     };
   });
-  return { sends, stops, dryRun, template: tpl, forecast, held: count, ...(paused ? { note: `${paused} Only addresses NeverBounce confirmed valid go until it recovers.` } : {}) };
+  return { sends, stops, dryRun, template: tpl, forecast, held: count, opens: null as string | null, ...(paused ? { note: `${paused} Only addresses NeverBounce confirmed valid go until it recovers.` } : {}) };
 }
 
 /**

@@ -899,9 +899,19 @@ backends.post("/report", async (c) => {
       // EVERY RUN ENDS AS A PROPOSAL — but only a run that produced something to propose. A failure
       // and a refusal close the task with their reason instead of asking her to approve nothing.
       if (status === "succeeded") {
-        const decision = runNeedsHerDecision(task.input, ev, violations);
+        // A duty's run from before the `duty_id` stamp is known by the duty that points at it.
+        const dutyRun = Boolean(await c.env.DB.prepare(`SELECT 1 FROM standing_duties WHERE last_task_id = ? LIMIT 1`).bind(task.id).first().catch(() => null));
+        const decision = runNeedsHerDecision(task.input, ev, violations, { dutyRun });
 
-        if (!decision.needed) {
+        if (decision.stop) {
+          // Boss OS's own work that cannot be accepted ends by name: a failed task the team repairs, never a card.
+          await c.env.DB.batch([
+            c.env.DB.prepare(`UPDATE tasks SET status = 'failed', finished_at = COALESCE(finished_at, ?), error = ?, cost_micros = cost_micros + ? WHERE id = ?`)
+              .bind(now, decision.stop, costMicros, task.id),
+            c.env.DB.prepare(`INSERT INTO task_events (id, task_id, ts, event, detail) VALUES (?,?,?,'failed',?)`)
+              .bind(newId("tev"), task.id, now, JSON.stringify({ backend_run_id: runId, backend_id: run.backend_id, reason: decision.stop })),
+          ]);
+        } else if (!decision.needed) {
           /*
            * DELIVERED WORK IS ACCEPTED WHERE IT LANDS. See `runNeedsHerDecision` for the rule and
            * the reason. The task closes as `done` with the acceptance recorded, and the reader's
@@ -933,8 +943,9 @@ backends.post("/report", async (c) => {
             ).bind(
               approvalId, task.lane, task.title,
               // The reason it is HERE leads, because an inbox card that does not say why it needs
-              // her is a card she learns to clear without reading.
-              `${decision.reason} — ${optionalText(ev.summary) ?? "A backend finished this run and proposes the result."}`,
+              // her is a card she learns to clear without reading. The reason alone: the run's own words
+              // stay on the card's screen with its evidence, never in the summary her email prints.
+              `${decision.reason}.`,
               runId, JSON.stringify({ run_id: runId, backend_id: run.backend_id, task_id: task.id, why: decision.reason }),
               now, now + 7 * 24 * 60 * 60 * 1000,
             ),

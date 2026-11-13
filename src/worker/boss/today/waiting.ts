@@ -1,5 +1,6 @@
 import type { Env } from "../env";
 import { daysBetween } from "../practice/lapse";
+import { answeredUnderneath } from "../../../shared/boss/mail/morningMemory.mjs";
 
 /**
  * STILL WAITING ON YOU — EVERY UNANSWERED DECIDE ITEM, ACROSS MORNINGS (owner, Today v4, 31 Oct 2026).
@@ -125,7 +126,7 @@ export function foldMornings(mornings: { day: string; decide: any[]; still: any[
 export async function waitingOnYou(env: Env, today: string, opts: { includeSnoozed?: boolean } = {}): Promise<{ items: WaitingItem[]; latest: string | null }> {
   const db = env.DB;
   const since = new Date(Date.parse(`${today}T12:00:00Z`) - CARRY_DAYS * 86_400_000).toISOString().slice(0, 10);
-  const [mornR, disR, snzR, lpR, errR, tplR, quietR] = await db.batch([
+  const [mornR, disR, snzR, lpR, errR, tplR, quietR, aprR, tskR] = await db.batch([
     db.prepare(`SELECT day, json_extract(payload, '$.decide') AS decide, json_extract(payload, '$.still_yours') AS still FROM morning_digests WHERE day >= ? ORDER BY day ASC`).bind(since),
     db.prepare(`SELECT item_id FROM decide_dismissed`),
     db.prepare(`SELECT item_key FROM today_ticks WHERE day_id = ? AND item_key LIKE 'notnow:%'`).bind(today),
@@ -133,7 +134,15 @@ export async function waitingOnYou(env: Env, today: string, opts: { includeSnooz
     db.prepare(`SELECT id, state, lower(json_extract(spec, '$.to')) AS addr FROM boss_commands WHERE kind = 'errand'`),
     db.prepare(`SELECT COUNT(*) AS n FROM prospect_templates WHERE status = 'pending'`),
     db.prepare(`SELECT address FROM quiet_people`),
+    db.prepare(`SELECT id FROM approvals WHERE status IN ('pending','deferred')`),
+    db.prepare(`SELECT id FROM tasks WHERE status = 'awaiting_approval'`),
   ]);
+  // An approval she already answered (or that expired), or a task no longer held, is not waiting on
+  // her (13 Nov 2026: a card approved on 7 Nov still read "waiting 4 days").
+  const underneath = {
+    pending: new Set(((aprR?.results ?? []) as { id: string }[]).map((r) => r.id)),
+    waiting: new Set(((tskR?.results ?? []) as { id: string }[]).map((r) => r.id)),
+  };
   const mornings = ((mornR?.results ?? []) as { day: string; decide: string | null; still: string | null }[])
     .map((r) => ({ day: r.day, decide: json<any[]>(r.decide, []), still: json<any[]>(r.still, []) }));
   const latest = mornings.length ? mornings[mornings.length - 1]!.day : null;
@@ -154,7 +163,7 @@ export async function waitingOnYou(env: Env, today: string, opts: { includeSnooz
   const items: WaitingItem[] = [];
   const perLp = new Map<string, WaitingItem>();
   for (const r of foldMornings(mornings).values()) {
-    if (r.answered || dismissed.has(r.id)) continue;
+    if (r.answered || dismissed.has(r.id) || answeredUnderneath(r.key, underneath)) continue;
     if (quietAddresses.some((a) => `${r.title} ${r.body} ${r.key ?? ""}`.toLowerCase().includes(a)) || lpOf(r)?.quiet) continue;
     if (!opts.includeSnoozed && snoozed.has(r.id)) continue;
     if (isMatchCard(r)) continue;

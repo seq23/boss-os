@@ -99,9 +99,10 @@ describe("the one morning email", () => {
     expect(e.text).toContain(`See the full grid: ${BOSS}`);
     expect(e.html).toMatch(/<table role="presentation"/);
   });
-  it("Camille's briefing: the one-minute summary in five lines, then one link to the whole briefing on its screen", () => {
+  it("Camille's briefing: three one-line headlines, then one link to the whole briefing on its screen", () => {
     const brief = e.text.slice(e.text.indexOf("This morning's briefing"), e.text.indexOf("Read the full briefing")).split("\n").filter((l) => l.startsWith("- "));
-    expect(brief.map((l) => l.replace(/\u2063/g, ""))).toEqual(["- Rates held.", "- A large AI secondary priced up.", "- Two IPO filings.", "- A launch slipped.", "- One ruling on fund disclosure."]);
+    expect(brief.map((l) => l.replace(/\u2063/g, ""))).toEqual(["- Rates held.", "- A large AI secondary priced up.", "- Two IPO filings."]);
+    expect(e.text.replace(/\u2063/g, "")).not.toContain("A launch slipped.");
     expect(e.text).toContain("Read the full briefing →: https://boss.sequoiataylor.com/?view=briefing");
     // The rest of the report is on its screen, never in the email (owner, 24 Oct 2026: "never risk the size limit").
     expect(e.text.replace(/\u2063/g, "")).not.toContain("Not this one.");
@@ -109,12 +110,14 @@ describe("the one morning email", () => {
     expect(e.html).not.toMatch(/<details|Show the full briefing/);
     expect(e.html).toMatch(/<a href="https:\/\/boss\.sequoiataylor\.com\/\?view=briefing"[^>]*>Read the full briefing →<\/a>/);
   });
-  it("Done for you: the bounce agent's one line first, three lines at most, each opening its screen, the rest on Today", () => {
+  it("Done for you: the bounce agent's one line first, three lines and nothing after them, each opening its screen", () => {
     const done = e.text.slice(e.text.indexOf("Done for you"), e.text.indexOf("Catch up with")).split("\n").filter((l) => l.startsWith("- "));
     expect(done[0]).toMatch(/^- Replaced 4 outreach addresses that bounced with working ones from each company's own site; outreach restarted \(The Industry Guides\)\. — See it: https:\/\/boss\.sequoiataylor\.com\/\?morning=2026-10-23&item=done-[0-9a-f]{10}$/);
-    expect(done.length).toBe(4);
-    // Owner, 26 Oct 2026: compact — at most three short lines, then "+N more on Today ›".
-    expect(done[3]).toBe("- +2 more on Today — Open ›: https://boss.sequoiataylor.com/?view=morning");
+    // Owner, 13 Nov 2026: three lines; no "+N more" and no count of the Updates page. The rest is on Today.
+    expect(done.length).toBe(3);
+    expect(e.text).not.toMatch(/\+\d+ more on Today/);
+    const counted = buildDay({ ...DATA, updates: { line: "7 updates, 13 reminders on your Updates page, all just so you know." } } as any, NOW);
+    expect(counted.text).not.toContain("Updates page");
     expect(e.digest.done).toHaveLength(5);
   });
   it("Valerie's box: one calm line per customer from the site's own list, boxed (25 Oct 2026)", () => {
@@ -135,7 +138,7 @@ describe("the one morning email", () => {
 });
 
 describe("an empty or broken morning still reads plainly", () => {
-  it("nothing to decide, no sections invented, a feed that did not load is one plain line (never 'I could not read')", () => {
+  it("nothing to decide and no empty blocks: a section with nothing in it is left out, a feed that did not load included", () => {
     const empty = buildDay({ diary: [], tasks: [], approvals: [], repoChanges: [], briefing: null, feed: null, feedError: "the site answered 401", morning: {} }, NOW);
     expect(empty.problems).toEqual([]);
     expect(empty.subject).toBe("Friday: nothing to decide");
@@ -143,7 +146,13 @@ describe("an empty or broken morning still reads plainly", () => {
     expect(empty.text).not.toMatch(/^Decide \(\d+\)$/m);
     expect(empty.text).not.toMatch(/New deals|Monique found|Done for you|Catch up with|8Raise/);
     expect(empty.text).toContain("Briefing late — it will be on your Today page.");
-    expect(empty.text).toContain("Valerie's list did not load this morning; the team is fixing it");
+    // Owner, 13 Nov 2026: no "nothing here" lines. Valerie's block shows only when her list holds something.
+    expect(empty.text).not.toMatch(/Valerie|No new deals|All clear|did not load|No deadlines/);
+    const quiet = buildDay({ diary: [], tasks: [], approvals: [], repoChanges: [], briefing: null, feed: { items: [] }, morning: { deals: { section: "deals", at: stamp, rows: [] }, monique_found: { section: "monique_found", at: stamp, lines: [], grid: [] }, open_loops: { section: "open_loops", at: stamp, title: "Your open loops: 3, none overdue", lines: [] } }, prospects: { replies: [], sent: [], next: [], totals: {}, stops: [] } } as any, Date.parse("2026-10-26T12:00:00Z"));
+    expect(quiet.text).not.toMatch(/Valerie|New deals|Monique found|Prospect emails|Done for you|open loops|This week|Codex/i);
+    // The seat-order footer is gone, whatever the setting says.
+    const seat = buildDay({ ...DATA, settings: [{ key: "seat_order_openai_first", value: "on", updated_at: NOW }] } as any, NOW);
+    expect(seat.text).not.toMatch(/Codex|ChatGPT/);
   });
   it("a producer's line that is not plain is dropped and named, never holds the whole email", () => {
     const bad = buildDay({ ...DATA, morning: { ...DATA.morning, monique_found: { section: "monique_found", at: stamp, lines: ["I could not read the filings today.", "Kept line."] } } }, NOW);
@@ -173,8 +182,17 @@ describe("Camille's briefing and the send time (coordinator finding, 23 Oct 2026
     expect(briefingDecision(null, Date.parse("2026-11-02T13:44:00Z"))).toBe("wait");
     expect(briefingDecision(null, Date.parse("2026-11-02T13:45:00Z"))).toBe("send_late");
   });
-  it("the five lines come from the one-minute summary, else the report's summary sentences", () => {
-    expect(briefingLines(DATA.briefing, "2026-10-23")?.length).toBe(5);
+  it("the three headlines come from the one-minute summary, else the report's summary sentences; each is one line", async () => {
+    const { headline, HEADLINE_CHARS } = await import("../scripts/ops/your-day.mjs");
+    expect(briefingLines(DATA.briefing, "2026-10-23")?.length).toBe(3);
+    // A long line stops at its last whole sentence that fits, citation kept; a short one is untouched.
+    const long = "Rates were held again by a committee that split seven to five on the vote [1]. Markets now expect the first cut in March, and the two-year yield fell eleven basis points on the day, its largest move since the summer.";
+    expect(headline(long)).toBe("Rates were held again by a committee that split seven to five on the vote [1].");
+    expect(headline("Two filings.")).toBe("Two filings.");
+    const noStop = headline("a".repeat(30) + " " + "word ".repeat(60));
+    expect(noStop.length).toBeLessThanOrEqual(HEADLINE_CHARS + 1);
+    expect(noStop).toMatch(/word…$/);
+    expect(briefingLines({ for_day: "2026-10-23", sections: [{ key: "one_minute_summary", bullets: [long, "Two filings."] }] }, "2026-10-23")).toEqual([headline(long), "Two filings."]);
     expect(briefingLines({ for_day: "2026-10-23", summary: "One. Two." }, "2026-10-23")).toEqual(["One.", "Two."]);
     expect(briefingLines({ ...DATA.briefing, for_day: "2026-10-22" }, "2026-10-23")).toBeNull();
   });
@@ -268,18 +286,104 @@ describe("a duty-change card names the change, not its label (7 Nov 2026 live re
   });
 });
 
-describe("the morning shows at most five open loops, then See all (7 Nov 2026 live read: 17 rows)", () => {
-  it("an older writer's long list is cut to five and one line to the page", () => {
-    const lines = Array.from({ length: 17 }, (_, i) => ({ text: `Loop ${i + 1} (due Mon 2 Nov). Did this happen?`, links: [] }));
-    const e = buildDay({ diary: [], tasks: [], approvals: [], repoChanges: [], briefing: null, feed: { items: [] }, morning: { open_loops: { section: "open_loops", at: new Date(NOW).toISOString(), title: "Open loops: 47, 31 overdue", lines, link: { label: "See every open loop →", url: "https://boss.sequoiataylor.com/?tab=loops" } } } } as any, NOW);
+describe("your open loops: hers only, the same row once, five at most, three mornings each (owner, 13 Nov 2026)", () => {
+  const PAGE = "https://boss.sequoiataylor.com/?tab=loops";
+  const row = (n: number, id = `olp_syn${n}`) => ({ text: `Loop ${n} (due Mon 2 Nov). Did this happen?`, links: [{ label: "Open ›", url: `${PAGE}&loop=${id}` }] });
+  const day = (lines: any[], told: any = {}) => buildDay({ diary: [], tasks: [], approvals: [], repoChanges: [], briefing: null, feed: { items: [] }, told, morning: { open_loops: { section: "open_loops", at: new Date(NOW).toISOString(), title: "Your open loops: 47, 31 overdue", lines, link: { label: "See every open loop →", url: PAGE } } } } as any, NOW);
+  it("a long list is five rows, with no count, no '+N more' and no team line", () => {
+    const e = day([...Array.from({ length: 17 }, (_, i) => row(i + 1)), { text: "+12 more of yours on Open Loops.", links: [{ label: "Open ›", url: PAGE }] }, { text: "The team has 9 more, 2 past their date, and is working on them.", links: [{ label: "Open ›", url: PAGE }] }]);
+    expect(e.problems).toEqual([]);
     expect(e.text).toContain("Loop 5 (due");
     expect(e.text).not.toContain("Loop 6 (due");
-    expect(e.text).toContain("+12 more overdue on Open Loops.");
-    // One way to the page, not two (7 Nov 2026 live read: "See all ›" then "See every open loop →").
-    expect(e.text.split("https://boss.sequoiataylor.com/?tab=loops").length - 1).toBe(1);
-    // Negative proof: five or six rows are shown as they are.
-    const six = buildDay({ diary: [], tasks: [], approvals: [], repoChanges: [], briefing: null, feed: { items: [] }, morning: { open_loops: { section: "open_loops", at: new Date(NOW).toISOString(), title: "Your open loops: 6, 6 overdue", lines: lines.slice(0, 6) } } } as any, NOW);
-    expect(six.text).toContain("Loop 6 (due");
+    expect(e.text).not.toMatch(/more of yours|more overdue|The team has|47|31 overdue/);
+  });
+  it("the same row posted five times is one line", () => {
+    const e = day([1, 2, 3, 4, 5].map((n) => ({ ...row(1, `olp_syndup${n}`) })).concat([row(2)]));
+    expect(e.text.split("Loop 1 (due").length - 1).toBe(1);
+    expect(e.text).toContain("Loop 2 (due");
+  });
+  it("a row shows on three mornings, then leaves the email; with none left the block is gone", () => {
+    let told: any = {};
+    for (let morning = 1; morning <= 3; morning++) {
+      const e = day([row(1)], told);
+      expect(e.text, `morning ${morning}`).toContain("Loop 1 (due");
+      told = e.memory;
+    }
+    const fourth = day([row(1), row(2)], told);
+    expect(fourth.text).not.toContain("Loop 1 (due");
+    expect(fourth.text).toContain("Loop 2 (due");
+    expect(day([row(1)], told).text).not.toMatch(/open loops/i);
+  });
+});
+
+describe("still yours to answer: three showings, and never an answered approval (owner, 13 Nov 2026)", () => {
+  const card = { key: "lp:syn1", title: "Reply to An LP at Example Fund", body: "They wrote back.", buttons: [{ label: "Open", url: "https://boss.sequoiataylor.com/?tab=capital" }] };
+  const base = { diary: [], tasks: [], approvals: [], repoChanges: [], briefing: null, feed: { items: [] } };
+  it("a card she has seen is a thin line on three later mornings, then leaves the email", () => {
+    const first = buildDay({ ...base, morning: { lp: { section: "lp", at: new Date(NOW).toISOString(), decide: [card] } } } as any, NOW);
+    expect(first.text).toMatch(/^Decide \(1\)$/m);
+    let told: any = first.memory;
+    for (let d = 1; d <= 4; d++) {
+      const at = NOW + d * 86_400_000;
+      const e = buildDay({ ...base, told, morning: { lp: { section: "lp", at: new Date(at).toISOString(), decide: [card] } } } as any, at);
+      expect(e.text).not.toMatch(/^Decide \(\d+\)$/m);
+      if (d <= 3) expect(e.text, `day ${d}`).toMatch(/Still yours to answer\n- An LP at Example Fund \(LP\)/);
+      else expect(e.text, "the fourth later morning").not.toContain("Still yours to answer");
+      told = e.memory;
+    }
+  });
+  it("a carried card whose approval she already answered, or whose job no longer waits, is not carried", () => {
+    const carried = [
+      { id: "decide-synanswered", key: "approval:apr_synanswered", title: "A synthetic library check", days: 4 },
+      { id: "decide-synopen", key: "approval:apr_synopen", title: "A synthetic renewal", days: 1 },
+      { id: "decide-syntask", key: "task:tsk_syngone", title: "A synthetic held job", days: 2 },
+      { id: "decide-synother", key: null, title: "Go to the synthetic dinner?", days: 3 },
+    ];
+    const e = buildDay({ ...base, carried, approvals: [{ id: "apr_synopen", title: "A synthetic renewal" }], morning: {} } as any, NOW);
+    const still = e.text.slice(e.text.indexOf("Still yours to answer"));
+    expect(still).toContain("Go to the synthetic dinner?");
+    expect(still).not.toContain("A synthetic library check");
+    expect(still).not.toContain("A synthetic held job");
+  });
+});
+
+describe("no card prints a model's own words (owner, 13 Nov 2026)", () => {
+  const RAW = "Based on the provided information, I will outline the tasks and responsibilities for each business.\n\n**Businesses:**\n\n1. **A synthetic brokerage**";
+  it("a finished result's summary is never printed; a run's keeps only the reason; a plain one-line reason stays", async () => {
+    const { plainSummary } = await import("../scripts/ops/your-day.mjs");
+    expect(plainSummary({ kind: "task_output", summary: RAW })).toBeNull();
+    expect(plainSummary({ kind: "task_output", summary: "A short line that an old writer took from a model." })).toBeNull();
+    expect(plainSummary({ kind: "backend_run", summary: `The run asked for your decision before this is used — ${RAW}` })).toBe("The run asked for your decision before this is used.");
+    expect(plainSummary({ kind: "manual", summary: RAW })).toBeNull();
+    expect(plainSummary({ kind: "judgement_call", summary: "A synthetic guide is drafted and ready to publish" })).toBe("A synthetic guide is drafted and ready to publish.");
+    const e = buildDay({ ...DATA, tasks: [], approvals: [{ id: "apr_synraw", kind: "task_output", title: "A synthetic library: pages indexed", summary: RAW, origin_type: "tasks", origin_id: "tsk_synraw" }], repoChanges: [], morning: {} } as any, NOW);
+    expect(e.problems).toEqual([]);
+    expect(e.text).toContain("A synthetic library: pages indexed");
+    expect(e.text).not.toMatch(/Based on the provided|I will outline|\*\*/);
+  });
+});
+
+describe("new deals: one row per company and side (owner, 13 Nov 2026)", () => {
+  it("'Fireworks' and 'Fireworks AI' are one row; the other side and other companies stay their own", async () => {
+    const { mergeDealRows, companyKey } = await import("../scripts/ops/your-day.mjs");
+    expect(companyKey("Fireworks AI, Inc.")).toBe(companyKey("fireworks"));
+    expect(companyKey("Fireworks")).not.toBe(companyKey("Fireside"));
+    const rows = [
+      { company: "Fireworks", side: "Sell", size: "—", price: "—", from: "Broker One (Firm X)" },
+      { company: "Fireworks AI", side: "Sell", size: "$5M", price: "$40", from: "Broker Two (Firm Y)" },
+      { company: "Fireworks AI", side: "Buy", size: "$2M", price: "—", from: "Broker One (Firm X)" },
+      { company: "Company B", side: "Sell", size: "$1M", price: "—", from: "Broker One (Firm X)" },
+    ];
+    const merged = mergeDealRows(rows);
+    expect(merged.map((r: any) => [r.company, r.side, r.size, r.price, r.from])).toEqual([
+      ["Fireworks AI", "Sell", "$5M", "$40", "Broker One (Firm X) (+1 more)"],
+      ["Fireworks AI", "Buy", "$2M", "—", "Broker One (Firm X)"],
+      ["Company B", "Sell", "$1M", "—", "Broker One (Firm X)"],
+    ]);
+    const e = buildDay({ diary: [], tasks: [], approvals: [], repoChanges: [], briefing: null, feed: { items: [] }, morning: { deals: { section: "deals", at: new Date(NOW).toISOString(), rows } } } as any, NOW);
+    expect(e.subject).toBe("Friday: 3 new deals");
+    expect(e.text).toContain("New deals since yesterday (3)");
+    expect(e.digest.deals).toHaveLength(3);
   });
 });
 
@@ -301,6 +405,26 @@ describe("the email never waits for a briefing nobody is writing (13 Nov 2026)",
   });
 });
 
+describe("the held jobs are read whole, never only the newest 100 (13 Nov 2026)", () => {
+  it("a held job older than the newest 100 is still read, once", async () => {
+    const { read } = await import("../scripts/ops/your-day.mjs");
+    const newest = Array.from({ length: 100 }, (_, i) => ({ id: `tsk_synnew${i}`, title: `Synthetic job ${i}`, status: i === 0 ? "awaiting_approval" : "done", input: "{}" }));
+    const old = { id: "tsk_synold001", title: "An old held synthetic job", status: "awaiting_approval", approval_id: null, input: JSON.stringify({ from: "o@example.com", mail_id: "iml_syn" }) };
+    const api = { get: async (p: string) => {
+      if (p === "/tasks") return newest.map((t) => ({ ...t }));
+      if (p === "/tasks?status=awaiting_approval") return [{ ...newest[0] }, old];
+      if (p === "/today") return { blocks: [] };
+      if (p === "/approvals") return [];
+      if (p === "/lp/replies") return { rows: [] };
+      return {};
+    } };
+    const data = await read(api, NOW);
+    expect(data.tasks.filter((t: any) => t.id === "tsk_synold001")).toHaveLength(1);
+    expect(data.tasks.filter((t: any) => t.id === "tsk_synnew0")).toHaveLength(1);
+    expect(bossDecisions(data).map((c) => c.key)).toContain("task:tsk_synold001");
+  });
+});
+
 describe("work Boss OS started itself is never a Decide card (owner, 2 Nov and 13 Nov 2026)", () => {
   const duty = { id: "tsk_synduty001", title: "A synthetic sweep", status: "awaiting_approval", employee_id: "emp_relationship", employee_name: "Monique", approval_id: null, input: JSON.stringify({ duty_id: "duty_synthetic" }) };
   const hers = { ...duty, id: "tsk_synhers001", title: "Draft a synthetic note", input: JSON.stringify({ from: "o@example.com", mail_id: "iml_syn" }) };
@@ -317,6 +441,16 @@ describe("work Boss OS started itself is never a Decide card (owner, 2 Nov and 1
     expect(repairs).toHaveLength(1);
     // None while a repair for it is still open.
     expect(selfWaitingRepairs(selfStartedWaiting(data), [...data.tasks, { title: repairs[0]!.title, status: "queued" }])).toEqual([]);
+  });
+  it("a job whose approval she already answered is no card again: it is held up, one Done line and one repair", () => {
+    const answered = { ...hers, id: "tsk_synansw01", title: "Change a synthetic duty", approval_id: "apr_synanswered" };
+    const data = { ...DATA, tasks: [answered], approvals: [], repoChanges: [], morning: {} };
+    expect(bossDecisions(data)).toEqual([]);
+    expect(selfStartedWaiting(data).map((t) => t.id)).toEqual(["tsk_synansw01"]);
+    const text = buildDay(data, NOW).text;
+    expect(text).not.toContain("waiting for your word");
+    expect(text).toContain("A job you already answered was held up, and Danielle is getting it moving again.");
+    expect(selfWaitingRepairs(selfStartedWaiting(data), data.tasks)).toHaveLength(1);
   });
   it("a real approval on a duty's run (money, a send in her name) still reaches Decide", () => {
     const data = { ...DATA, tasks: [{ ...duty, approval_id: "apr_synpay" }], approvals: [{ id: "apr_synpay", title: "Pay the synthetic invoice", origin_type: "tasks", origin_id: duty.id }], repoChanges: [], morning: {} };

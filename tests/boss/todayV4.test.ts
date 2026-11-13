@@ -57,6 +57,23 @@ async function clean() {
 describe("Still waiting on you: carried across mornings", () => {
   beforeEach(clean);
 
+  it("a card whose approval she already answered, or whose job no longer waits, is not carried (13 Nov 2026)", async () => {
+    await env.DB.prepare(`DELETE FROM approvals WHERE id LIKE 'apr_syncarry%'`).run();
+    await env.DB.prepare(`DELETE FROM tasks WHERE id LIKE 'tsk_syncarry%'`).run();
+    const apr = (id: string, status: string) => env.DB.prepare(`INSERT INTO approvals (id, lane, title, summary, kind, risk, status, requested_at) VALUES (?, 'ops', 'A synthetic card', 'A line.', 'task_output', 'low', ?, 1)`).bind(id, status).run();
+    await apr("apr_syncarryopen", "pending");
+    await apr("apr_syncarrydone", "approved");
+    await env.DB.prepare(`INSERT INTO tasks (id, lane, title, status, created_at) VALUES ('tsk_syncarryheld', 'ops', 'Held', 'awaiting_approval', 1), ('tsk_syncarrygone', 'ops', 'Gone', 'done', 1)`).run();
+    await morning(back(4), [
+      { id: "decide-aprdone", key: "approval:apr_syncarrydone", title: "A synthetic library check", body: "", from: "boss" },
+      { id: "decide-apropen", key: "approval:apr_syncarryopen", title: "A synthetic renewal", body: "", from: "boss" },
+      { id: "decide-taskgone", key: "task:tsk_syncarrygone", title: "A synthetic finished job", body: "", from: "boss" },
+      { id: "decide-taskheld", key: "task:tsk_syncarryheld", title: "A synthetic held job", body: "", from: "boss" },
+    ]);
+    const ids = (await waitingOnYou(env as any, TODAY)).items.map((i) => i.id).sort();
+    expect(ids).toEqual(["decide-apropen", "decide-taskheld"]);
+  });
+
   it("an old unanswered item survives a newer morning; an answered one does not", async () => {
     await morning(back(7), [
       { id: "decide-oldunanswered", title: "Approve the example contract", body: "It waits on you.", from: "boss" },

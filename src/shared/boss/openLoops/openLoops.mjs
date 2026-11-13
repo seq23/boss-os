@@ -98,21 +98,29 @@ export function dayWords(d) {
  * Nov 6). Did this happen?").
  */
 export const MAX_HER_LINES = 5;
-export function morningSection(loops, today, { origin, names = {} } = {}) {
+
+/** The words two rows share when they are the same loop: the title, case and spacing aside. Pure. */
+export const loopKey = (title) => String(title ?? "").replace(/\s+/g, " ").trim().toLowerCase();
+
+/**
+ * ONE ROW PER LOOP, HERS ONLY, FIVE AT MOST (owner, 13 Nov 2026: one stopped job, posted every few
+ * hours, filled the whole list with the same line). Rows with the same title are one line (the
+ * oldest date). No "+N more" and no team count: the page has the rest. Each line carries `key`, so
+ * the email can stop repeating it (morningMemory.mjs `withinShowings`).
+ */
+export function morningSection(loops, today, { origin, names: _names = {} } = {}) {
   const { shown } = visibleLoops(loops);
-  const titled = shown.filter((l) => String(l.title ?? "").trim());
-  const mine = titled.filter((l) => l.owner === HER);
-  const overdue = sortLoops(mine.filter((l) => isOverdue(l, today)), today);
-  const team = titled.filter((l) => l.owner !== HER);
-  const teamLate = team.filter((l) => isOverdue(l, today)).length;
+  const seen = new Set();
+  const mine = sortLoops(shown.filter((l) => String(l.title ?? "").trim() && l.owner === HER), today)
+    .filter((l) => { const k = loopKey(l.title); if (seen.has(k)) return false; seen.add(k); return true; });
+  const overdue = mine.filter((l) => isOverdue(l, today));
   const url = `${origin ?? ""}${PAGE_PATH}`;
   const title = `Your open loops: ${mine.length}${overdue.length ? `, ${overdue.length} overdue` : ", none overdue"}`;
   const lines = overdue.slice(0, MAX_HER_LINES).map((l) => ({
+    key: loopKey(l.title),
     text: `${String(l.title).trim()} (due ${dayWords(l.next_date)}). Did this happen?`,
     links: [{ label: "Open ›", url: `${url}&loop=${encodeURIComponent(l.id)}` }],
   }));
-  if (overdue.length > MAX_HER_LINES) lines.push({ text: `+${overdue.length - MAX_HER_LINES} more of yours on Open Loops.`, links: [{ label: "Open ›", url }] });
-  if (team.length) lines.push({ text: `The team has ${team.length} more${teamLate ? `, ${teamLate} past their date` : ""}, and is working on them.`, links: [{ label: "Open ›", url }] });
   return { title, lines, link: { label: "See every open loop →", url } };
 }
 

@@ -80,9 +80,11 @@ describe("matches: size, price and age (owner, 24 Oct 2026)", () => {
     const r = rankMatches(b, [old, stale, fresh], { now: NOW }).matches;
     expect(r.map((m: any) => [m.other.id, m.stale, m.old])).toEqual([["f", false, false], ["s", true, false]]);
     const out = moniqueFound({ newRows: [], grid: [b, stale, old], lists: NO_LISTS, now: NOW });
-    // A stale match never takes an email slot; it is counted, once, in the line to the Matches screen.
-    expect(out.lines.map((l: any) => l.text)).toEqual(["1 possible trade in all, on 1 company, each buyer and seller counted once; 1 has an order over 30 days old (may be stale — check it's still live)."]);
-    expect(out.lines[0].links).toEqual([{ label: "See the match →", url: "https://boss.sequoiataylor.com/?tab=capital&view=matches" }]);
+    // A stale match never takes an email slot. It is counted once, for the Matches screen; the email
+    // prints no totals line (owner, 13 Nov 2026), only the way to that screen.
+    expect(out.grid).toEqual([]);
+    expect(out.lines).toEqual([]);
+    expect(out.link).toEqual({ label: "See every match", url: "https://boss.sequoiataylor.com/?tab=capital&view=matches" });
     expect(out.counts).toEqual({ within: 1, companies: 1, stale: 1, live: 0 });
     expect(out.matches.some((m: any) => m.key === "b|o")).toBe(false);
   });
@@ -229,7 +231,7 @@ describe("Camille's briefing, whole and readable", () => {
   });
 });
 
-describe("prospect emails: only what is new, and stuck follow-ups are a decision", () => {
+describe("prospect emails: replies only, and stuck follow-ups are a decision (owner, 13 Nov 2026)", () => {
   const a = {
     totals: { active: 35, bounced: 1, emails_sent: 36 }, stops: ["No prospect email is approved yet."], approved: null, pending: null, replies: [],
     sent: [
@@ -238,23 +240,31 @@ describe("prospect emails: only what is new, and stuck follow-ups are a decision
     ],
     next: [{ name: "Due Today", email: "d@x.example", next_touch: 2, next_at: NOW - 86_400_000 }, { name: "Later", email: "l@x.example", next_touch: 2, next_at: NOW + 9 * 86_400_000 }],
   };
-  it("lists sends since yesterday, never the old ones; says why due follow-ups are not going", () => {
-    const sec = prospectSection(a, NOW)!;
-    const items = sec.items.map((i: any) => (typeof i === "string" ? i : i.text));
-    expect(items.join(" ")).not.toContain("Old Send");
-    expect(items[0]).toBe("Sent: email 2 of 4 to New Send (Firm N, n@x.example), a buyer, October 24.");
-    expect(items).toContain("1 follow-up is due and not going out; why, and what unblocks them, is in Decide above.");
-    expect(items.join(" ")).not.toContain("Later");
-    expect(items[items.length - 1]).toBe("So far: 36 emails sent; 35 in the sequence, 0 interested, 0 replied, 0 opted out, 1 bounced.");
+  it("no reply, no section: sends, what is due and the totals are never listed; a reply is one line", () => {
+    expect(prospectSection(a, NOW)).toBeNull();
+    const replied = { ...a, replies: [
+      { name: "Pat Reply", firm: "Firm R", email: "p@x.example", status: "replied", reply_note: "Send me the list", has_draft: 1 },
+      { name: "Olive Out", firm: "Firm Q", email: "q@x.example", status: "opted_out" },
+      { name: "Bo Bounce", firm: "Firm B", email: "b@x.example", status: "bounced" },
+    ] };
+    const items = prospectSection(replied, NOW)!.items.map((i: any) => (typeof i === "string" ? i : i.text));
+    expect(items).toHaveLength(2);
+    expect(items[0]).toMatch(/^Pat Reply \(Firm R, p@x\.example\) answered: .*Send me the list.* Your reply is ready in Decide above\.$/);
+    expect(items[1]).toBe("Olive Out (Firm Q, q@x.example) asked not to be written to again (done: they are off every list).");
+    expect(items.join(" ")).not.toMatch(/Sent: email|New Send|Old Send|Due Today|Later|So far:|Bo Bounce|not going out/);
+    expect(prospectSection(replied, NOW)!.full).toBeUndefined();
     const d = prospectDecisions(a, new Set(), NOW);
     expect(d.map((x: any) => x.title)).toEqual(["1 prospect follow-up is due and cannot go out"]);
     expect(d[0].details[0]).toBe("Waiting: Due Today (d@x.example).");
     expect(d[0].body).toBe("No prospect email is approved, and Monique has fewer than three fresh names on your list to write one, so nothing goes.");
   });
-  it("follow-ups overdue for days say since when, so a stuck send never reads like a same-morning hiccup (6 Nov 2026 live read)", () => {
-    const stale = { ...a, approved: { id: "t" }, stops: ["Outside the sending window (weekdays 9 to 5 Central)."], next: [{ name: "Old Due", email: "o@x.example", next_touch: 2, next_at: NOW - 23 * 86_400_000 }] };
-    const items = prospectSection(stale, NOW)!.items.map((i: any) => (typeof i === "string" ? i : i.text));
-    expect(items.find((t: string) => /follow-up is due/.test(t))).toMatch(/^1 follow-up is due since [A-Z][a-z]+ \d+ \(23 days\) and not going out\. Why: Outside the sending window/);
+  it("the clock is never a stop: before 9 am nothing is said; a real stop says since when (6 Nov 2026 live read)", () => {
+    const due = { ...a, approved: { id: "t" }, next: [{ name: "Old Due", email: "o@x.example", next_touch: 2, next_at: NOW - 23 * 86_400_000 }] };
+    expect(prospectSection({ ...due, stops: ["Outside the sending window (weekdays 9 to 5 Central)."] }, NOW)).toBeNull();
+    expect(prospectSection({ ...due, stops: [] }, NOW)).toBeNull();
+    const held = prospectSection({ ...due, stops: ["Outside the sending window (weekdays 9 to 5 Central).", "The global outreach kill switch is on."] }, NOW)!.items;
+    expect(held).toHaveLength(1);
+    expect(held[0]).toMatch(/^1 follow-up is due since [A-Z][a-z]+ \d+ \(23 days\) and not going out\. Why: The global outreach kill switch is on\.$/);
   });
   it("a template waiting for her OK is a decision with its full text and Approve / Change / Try again", () => {
     const pending = { id: "pt1", tap_token: "p".repeat(24), subject: "Up to $1B secondary inquiry: {subject_names}", body: "Hi {first},\n\n{names_line}\n\nSequoia Taylor", follow_up: "Hi {first}, again.", names_json: JSON.stringify([{ name: "Co A" }, { name: "Co B" }, { name: "Co C" }]) };

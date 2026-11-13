@@ -740,6 +740,28 @@ describe("Phase 2 — queue execution and evidence", () => {
     expect(JSON.parse(evidence!.checks_run)).toContain("budget");
   });
 
+  it("work Boss OS started itself never parks for her word; her own ask does, with one plain line and none of the model's words", async () => {
+    await commissionFireworks("MODERATE");
+    restore = stubFetch(() => completionResponse("Based on the provided information, I will outline **everything**.", 200, 100));
+    const hers = await insertTask({ status: "queued", employee_id: "emp_chief", input: JSON.stringify({ from: "o@example.com", mail_id: "iml_syn" }) });
+    const duty = await insertTask({ status: "queued", employee_id: "emp_chief", input: JSON.stringify({ duty_id: "duty_synthetic" }) });
+    const repair = await insertTask({ status: "queued", employee_id: "emp_chief", input: JSON.stringify({ origin: "repair", repair_kind: "self_repair" }) });
+    for (const id of [hers, duty, repair]) await handleTask(env, { taskId: id, lane: "ops" });
+
+    const mine = await row(`SELECT status, approval_id FROM tasks WHERE id = ?`, hers);
+    expect(mine!.status).toBe("awaiting_approval");
+    const card = await row(`SELECT summary FROM approvals WHERE id = ?`, mine!.approval_id);
+    expect(card!.summary).not.toMatch(/Based on the provided|I will outline|\*\*/);
+    expect(String(card!.summary).split("\n")).toHaveLength(1);
+
+    for (const id of [duty, repair]) {
+      const t = await row(`SELECT status, approval_id, output FROM tasks WHERE id = ?`, id);
+      expect(t!.status).toBe("done");
+      expect(t!.approval_id).toBeNull();
+      expect(String(t!.output)).toContain("I will outline"); // the result is kept on the task
+    }
+  });
+
   it("holds the task for a spend approval instead of failing when the budget is gone", async () => {
     await commissionFireworks("MODERATE");
     restore = stubFetch(() => completionResponse("should not run"));
