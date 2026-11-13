@@ -15,6 +15,7 @@ import { routeCompletion, BudgetExceeded, RoutingBlocked, ProviderFailure, type 
 import { scanForModelAccess, privateLexicon } from "../router/modelAccess";
 import { dispatchRunForTask } from "../backends/dispatch";
 import { deliverExecutiveReport } from "../duties/deliverReport";
+import { repoAuthoredBriefingText } from "../duties/briefingSpec";
 import { firmNoticeBlock } from "../prompt/notices";
 import { practicesBlock } from "../service/constraints";
 import { afterResult } from "../service/afterResult";
@@ -216,7 +217,9 @@ export async function handleTask(env: Env, msg: TaskMessage): Promise<void> {
     const verdict = scanForModelAccess(
       [{ role: "user", content: `${parts.firmContext ?? ""}\n${parts.instruction ?? ""}` }],
       await privateLexicon(env.DB),
-      { modelAccess: task.model_access ?? null, sensitivity: task.sensitivity ?? null },
+      // The briefing's own spec text is this repository's, so its wording is not a deal term
+      // (13 Nov 2026); her edited prompt, and everything else in the prompt, is scanned in full.
+      { modelAccess: task.model_access ?? null, sensitivity: task.sensitivity ?? null, repoAuthoredText: repoAuthoredBriefingText(input, Number(task.created_at)) },
     );
     privatePrompt = verdict.privateOnly;
     if (privatePrompt) {
@@ -236,11 +239,20 @@ export async function handleTask(env: Env, msg: TaskMessage): Promise<void> {
   let ladder = privatePrompt ? [CLAUDE_SEAT] : claudeOnly ? confidentialLadder(baseLadder) : orderSeats(baseLadder, codexWorks || isOn(await getSetting(env.DB, OPENAI_FIRST_KEY)));
   // After a Codex limit (aiRoles.mjs afterCodexLimit): public work → the free tiers, then the Claude
   // seat; everything else → the Claude seat. It waits for the reset only when no later rung can run.
-  const publicFreeRung = afterCodexLimit({ sensitivity: task.sensitivity, modelAccess: researchWork ? task.model_access ?? null : null, confidential: confidential || privatePrompt, chromeJob: input.chrome_job === true }) === "free_rung";
+  /*
+   * A TASK THAT DECLARES `cloud_fallback: false` (the briefing, BRIEFING_CLOUD_FALLBACK) WALKS ITS
+   * SEATS ONLY: no cloud rung, free or paid, and no parking on Codex's seat alone. When every seat
+   * refuses it waits for the EARLIEST reset among them (`waitForUsage`) — on 13 Nov Claude's seat was
+   * back at 07:00 while Codex's was days away. Until 13 Nov the privacy screen hid this, because the
+   * briefing's own wording made it Claude-only.
+   */
+  const seatsOnly = input.cloud_fallback === false;
+  const publicFreeRung = !seatsOnly &&
+    afterCodexLimit({ sensitivity: task.sensitivity, modelAccess: researchWork ? task.model_access ?? null : null, confidential: confidential || privatePrompt, chromeJob: input.chrome_job === true }) === "free_rung";
   // Owner, 6 Nov 2026: "A Codex usage limit hands the work to Claude … it never waits for the reset."
   // The Claude seat takes it when her Mac is there to claim it; otherwise it waits on Codex's seat.
   const claudeReady = !claudeOnly && ladder.includes(CLAUDE_SEAT) && await seatReady(env, CLAUDE_SEAT);
-  const codexLimitWaits = !claudeOnly && codexWorks && CODEX_LIMIT_WAITS && ladder.includes(OPENAI_SEAT) && !publicFreeRung && !claudeReady;
+  const codexLimitWaits = !claudeOnly && !seatsOnly && codexWorks && CODEX_LIMIT_WAITS && ladder.includes(OPENAI_SEAT) && !publicFreeRung && !claudeReady;
   const publicResearch = researchWork && !claudeOnly && publicFreeRung;
   let codexToFreeRung = !publicResearch && !claudeOnly && codexWorks && publicFreeRung && ladder.includes(OPENAI_SEAT) &&
     isPlanSpent(await getBackend(env.DB, OPENAI_SEAT), Date.now());

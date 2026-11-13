@@ -53,7 +53,7 @@ afterEach(async () => { await seatsReset(); });
 
 
 describe("both seats out of usage: the work waits on Codex's seat (owner, 3 Nov 2026)", () => {
-  it("the executive briefing reads as deal material, so it is brain work: with Claude out it WAITS for the reset on the Claude seat — never Codex, never a cloud rung, no network call, no email to her (13 Nov 2026)", async () => {
+  it("the executive briefing walks her two seats only: with both out of usage it WAITS for the earliest reset — no run parked on a spent seat, never a cloud rung, no network call, no email to her (13 Nov 2026)", async () => {
     await setLever("OPEN");
     await bothSeatsSpent();
     await env.DB.prepare(`DELETE FROM tasks WHERE input LIKE '%executive_reports%'`).run();

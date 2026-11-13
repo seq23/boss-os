@@ -994,3 +994,25 @@ function MARKET_SPCX_INDEX(market: MarketData): number {
   }
   return -1;
 }
+
+/**
+ * THE BRIEFING'S PROMPT, WHEN IT IS PROVABLY THIS REPOSITORY'S OWN TEXT (13 Nov 2026).
+ *
+ * The privacy screen read the spec's own words ("commitments", "valuation", "allocation", "%") as
+ * deal material and kept the briefing off Codex every morning since 3 Nov; on 13 Nov the Claude seat
+ * was out of usage and the briefing failed at 06:03. The spec is a fixed template, so the screen's
+ * pattern tiers may skip it (`DeclaredAccess.repoAuthoredText`). Returned ONLY when the task's prompt
+ * is, character for character, what `composeBriefingPrompt` makes for its day: a prompt she edited
+ * (`prompt_source: "owner_edit"`), an older version, or anything else carrying `spec_module` is
+ * scanned in full. A day either side of `createdAt` is accepted, for a firing that straddles midnight.
+ */
+export function repoAuthoredBriefingText(input: Record<string, unknown>, createdAt: number): string[] {
+  if (input.spec_module !== "executive_briefing" || input.prompt_source === "owner_edit") return [];
+  if (input.prompt_version !== BRIEFING_PROMPT_VERSION || typeof input.prompt !== "string") return [];
+  const at = Number.isFinite(createdAt) ? createdAt : Date.now();
+  for (const t of [at, at - 86_400_000, at + 86_400_000]) {
+    const composed = composeBriefingPrompt({ dayLabel: ctDayLabel(t), hasMarketData: true });
+    if (composed === input.prompt) return [composed];
+  }
+  return [];
+}

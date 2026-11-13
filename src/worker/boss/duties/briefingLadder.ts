@@ -1,6 +1,7 @@
 import { orderCandidates, vendorFamily } from "@shared/boss/router/candidateOrder.mjs";
 import { isPlanSpent, untilWords } from "../backends/spent";
 import { isPrivateModelRoute, privateLexicon, scanForModelAccess, type PrivateLexicon } from "../router/modelAccess";
+import { BRIEFING_PROMPT_VERSION, repoAuthoredBriefingText } from "./briefingSpec";
 
 /**
  * THE LADDER THE EXECUTIVE BRIEFING WALKS: HER TWO $0 SEATS, THEN THE FREE RUNGS, THEN PAID.
@@ -193,7 +194,9 @@ export function orderBriefingCandidates(
 /** The router's verdict on a prompt, for the ladder printout. */
 export async function briefingPrivacyVerdict(db: D1Database, prompt: string, lexicon?: PrivateLexicon): Promise<{ private_model_only: boolean; why: string }> {
   const lex = lexicon ?? (await privateLexicon(db));
-  const v = scanForModelAccess([{ role: "user", content: prompt }], lex, { modelAccess: "public_model_approved" });
+  // The same exemption the consumer applies: the composed spec is this repository's own text.
+  const own = repoAuthoredBriefingText({ spec_module: "executive_briefing", prompt_version: BRIEFING_PROMPT_VERSION, prompt }, Date.now());
+  const v = scanForModelAccess([{ role: "user", content: prompt }], lex, { modelAccess: "public_model_approved", repoAuthoredText: own });
   return { private_model_only: v.access === "private_model_only", why: v.reason };
 }
 

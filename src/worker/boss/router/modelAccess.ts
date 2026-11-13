@@ -353,6 +353,19 @@ export interface DeclaredAccess {
    * declared label, an unestablished lexicon, or a name hit.
    */
   publicWebText?: readonly string[] | null;
+  /**
+   * TEXT THIS REPOSITORY AUTHORED (13 Nov 2026), each an exact substring of a message: a fixed
+   * template holding no runtime data, such as the briefing's spec (`composeBriefingPrompt`).
+   *
+   * That spec tells a run how to write a PUBLIC markets briefing, so it says "commitments",
+   * "subscription", "valuation", "allocation" and "%". Four patterns plus a rate read as deal
+   * material, and every morning since 3 Nov the briefing was kept off Codex by its own instructions;
+   * on 13 Nov the Claude seat was out of usage too and the briefing never ran. The same rules as
+   * `publicWebText`: only the PATTERN tiers skip these spans; the lexicon and the private-brain marks
+   * still read everything, and a span not found verbatim exempts nothing. A caller passes a span
+   * only when it can prove the text is the repository's own (consumer.ts, `repoAuthoredBriefingText`).
+   */
+  repoAuthoredText?: readonly string[] | null;
 }
 
 /**
@@ -410,9 +423,10 @@ export function scanForModelAccess(
     }
   }
 
-  // Patterns read only what Boss OS itself wrote: public web text this run fetched is removed first.
+  // Patterns read only what Boss OS wrote at run time: public web text this run fetched, and fixed
+  // templates this repository authored, are removed first.
   let ours = haystack;
-  for (const span of declared.publicWebText ?? []) {
+  for (const span of [...(declared.publicWebText ?? []), ...(declared.repoAuthoredText ?? [])]) {
     const t = typeof span === "string" ? span.toLowerCase() : "";
     if (t.trim().length >= 40) ours = ours.split(t).join("\n");
   }

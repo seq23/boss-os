@@ -15,18 +15,19 @@ beforeEach(reset);
 afterEach(reset);
 
 describe("the privacy screen runs before a worker is chosen", () => {
-  it("Camille's briefing, whose prompt reads as deal material, goes to the brain (Claude's seat) and never to Codex", async () => {
+  // 13 Nov 2026: the briefing's own spec text is the repository's, not deal material, so it is not
+  // brain work (it failed that morning while Claude's seat was out). Her edited prompt is still
+  // scanned in full: tests/boss/theBriefingWalksTheLadder.test.ts.
+  it("Camille's briefing, whose spec text only LOOKS like deal material, goes to Codex first with no privacy refusal", async () => {
     await env.DB.prepare(`DELETE FROM tasks WHERE input LIKE '%executive_reports%'`).run();
     const out = await materialiseDueDuties(env as any, Date.now(), "duty_exec_intel");
     expect(out.fired, JSON.stringify(out.skipped)).toHaveLength(1);
     const taskId = out.fired[0]!.task_id!;
     await handleTask(env as any, { taskId, lane: "ops" });
     const runs = await all<any>(`SELECT backend_id, requested FROM backend_runs WHERE task_id = ?`, taskId);
-    expect(runs.map((r) => r.backend_id), "the briefing reached Codex").not.toContain("bk_codex");
-    expect(runs.filter((r) => r.backend_id === "bk_claude_code")).toHaveLength(1);
-    expect(JSON.parse(runs[0].requested).backend_ladder).toEqual(["bk_claude_code"]);
-    const step = await row<any>(`SELECT detail FROM task_events WHERE task_id = ? AND event = 'ladder_step'`, taskId);
-    expect(JSON.parse(step.detail).refused).toMatch(/privacy screen kept this prompt off Codex/);
+    expect(runs.map((r) => r.backend_id)).toEqual(["bk_codex"]);
+    expect(JSON.parse(runs[0].requested).backend_ladder).toEqual(["bk_codex", "bk_claude_code"]);
+    expect(await all<any>(`SELECT 1 FROM task_events WHERE task_id = ? AND event = 'ladder_step'`, taskId)).toHaveLength(0);
   });
 
   it("with Claude's seat out, flagged work fails closed by name: never Codex, never a cloud rung", async () => {
