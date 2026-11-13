@@ -918,7 +918,7 @@ export function headsUpMail({ titles, startAt, zone }) {
     layout: { happened: `At ${when} a Chrome window for Amazon KDP opens on your Mac and I ${what}. You approved ${titles.length === 1 ? "it" : "them"}.`, details: [
       "Please keep the Mac awake and on until it is done (about 20 minutes).",
       "If Amazon asks for a sign-in, I sign in for you; I only need you if Amazon shows a picture check, and then I email you at once.",
-      "When it is up I email you the Amazon link.",
+      "When the run is done I send one email with the Amazon links.",
     ] },
     owner: { layout: "note", why: `In ${Math.round(HEADS_UP_LEAD_MS / 60_000)} minutes I put your approved Kindle book${titles.length === 1 ? "" : "s"} up on Amazon.`, act: "Nothing to do now; keep the Mac awake" },
   };
@@ -933,7 +933,7 @@ export function stopMail({ title, code, said, waitMs = HANDOFF_MS, id = null }) 
     : `I stopped part way through putting "${title}" up: ${plainStop(code, said)} Nothing is published yet. The Chrome window is open on your Mac on that step.`;
   return {
     subject: signin ? `Kindle: Amazon wants you to sign in to publish ${title}` : `Kindle: ${title} stopped part way, one thing to finish`,
-    layout: { happened, details: [`The one thing to do: ${oneThing(code)}`, `I keep the window open and keep watching for ${hours}. If it is not done by then, I close it and try again tomorrow morning, with a heads-up first.`] },
+    layout: { happened, details: [`The one thing to do: ${oneThing(code)}`, `I keep the window open and keep watching for ${hours}. If it is not done by then, I close it and try again tomorrow morning.`] },
     owner: { layout: "note", ref: id, why: signin ? `Your Kindle book "${title}" needs you to sign in to Amazon.` : `Your Kindle book "${title}" needs one step finished by hand.`, act: signin ? "Sign in to Amazon in the Chrome window that is open on your Mac" : "Finish the step in the Chrome window that is open on your Mac" },
   };
 }
@@ -965,11 +965,46 @@ export function stillWaitingMail({ title, code, id = null }) {
   return {
     subject: `Kindle: ${title} is still waiting; I try again tomorrow`,
     layout: { happened: `"${title}" is not published yet. ${code === "SIGNIN" ? "Amazon's sign-in was not done" : "The step that stopped was not finished"}, so I closed the Chrome window.`, details: [
-      "Tomorrow morning I try again by myself, with a heads-up 30 minutes before.",
+      "Tomorrow morning I try again by myself.",
       `If you would rather not wait, say "publish the Kindle book now" to Claude on your Mac and it opens the same window with you.`,
     ] },
     owner: { layout: "note", ref: id, why: `"${title}" is still waiting to go up on Kindle.`, act: "Nothing to do now; I try again tomorrow morning" },
   };
+}
+
+/**
+ * ONE EMAIL PER RUN (owner, 13 Nov 2026: "one event, one email"). A run used to send a heads-up, a
+ * stop, a "still waiting" and one "is live" per title. Now `routeMessage` lets exactly one email
+ * out: the stop when she must act at the window, else the titles that went live, in one email
+ * (`liveMail`). Everything else in the run is a line on her Updates page (`asUpdate`). Pure.
+ */
+export function routeMessage(state, kind) {
+  if (kind === "headsup") return "update";      // nothing for her to do: never an email
+  if (state.emailed) return "update";           // the run's one email has gone
+  return "email";
+}
+
+/** Any of the run's messages as one line for her Updates page. Pure. */
+export const asUpdate = (key, msg) => ({ key: `kdp:${key}`, from_name: "Simone", subject: msg.subject, body: [msg.layout.happened, ...(msg.layout.details ?? [])].join(" ") });
+
+/** Every title that went live in this run, in ONE email. Pure. */
+export function liveMail(books) {
+  if (books.length === 1) return doneMail(books[0]);
+  const drafts = books.reduce((n, b) => n + (b.extraDrafts ?? 0), 0);
+  return {
+    subject: `Kindle: ${books.length} books are live on Amazon`,
+    layout: { happened: `${books.length} of your approved Kindle books are live on Amazon: ${quoted(books.map((b) => b.title))}.`, details: [
+      ...books.map((b) => `${b.title}${b.price_usd ? `, $${Number(b.price_usd).toFixed(2)}` : ""}${b.asin ? `: https://www.amazon.com/dp/${b.asin}` : ""}`),
+      ...(drafts ? [`Your bookshelf also has ${drafts} unfinished draft${drafts === 1 ? "" : "s"} with the same titles from earlier runs. You can delete ${drafts === 1 ? "it" : "them"} there (the ⋯ menu, Delete draft); I never make another.`] : []),
+    ] },
+    owner: { layout: "delivered", why: `${books.length} of your approved Kindle books are live.`, act: "Nothing to do" },
+  };
+}
+
+/** A stop email also carries what went live earlier in the same run, so that news is not a second email. Pure. */
+export function withLive(msg, books) {
+  if (!books.length) return msg;
+  return { ...msg, layout: { ...msg.layout, details: [...(msg.layout.details ?? []), ...books.map((b) => `Also live on Amazon now: ${b.title}${b.asin ? `, https://www.amazon.com/dp/${b.asin}` : ""}`)] } };
 }
 
 /** Live: the Amazon link, price and ASIN. Pure. */
@@ -1005,18 +1040,43 @@ export function waitingLoop({ title, folder, cleared = false, day }) {
 const TOLD = join(DRAFTS, "told.json");
 /** Pure: has this key been told? `told` is { key: iso }. */
 export const toldBefore = (told, key) => Boolean(told?.[key]);
-async function tell(key, msg, { dry = DRY } = {}) {
+/** This run's messages: `emailed` once the one email has gone, `live` the titles not yet told, `api` for Updates rows. */
+const OUT = { emailed: false, live: [], api: null };
+async function tell(key, msg, { dry = DRY, kind = "note" } = {}) {
+  const keys = [key].flat();
   let told = {};
   try { told = JSON.parse(await readFile(TOLD, "utf8")); } catch {}
-  if (toldBefore(told, key)) { console.log(`(already told: ${key})`); return true; }
-  if (dry) { console.log(`DRY: would email "${msg.subject}"`); return true; }
+  if (keys.every((k) => toldBefore(told, k))) { console.log(`(already told: ${keys.join(", ")})`); return true; }
+  if (dry) { console.log(`DRY: would ${routeMessage(OUT, kind) === "email" ? "email" : "note on Updates"} "${msg.subject}"`); if (routeMessage(OUT, kind) === "email") OUT.emailed = true; return true; }
+  const mark = async () => { for (const k of keys) told[k] = new Date().toISOString(); await writeFile(TOLD, JSON.stringify(told, null, 2)).catch(() => {}); };
+  if (routeMessage(OUT, kind) === "update") {
+    try { await OUT.api.post("/task-notices/update", asUpdate(keys[0], msg)); }
+    catch (e) { console.error(`NAMED STOP [UPDATE_NOT_WRITTEN] "${msg.subject}" did not reach her Updates page: ${String(e?.message ?? e).slice(0, 160)}`); return false; }
+    await mark();
+    console.log(`on her Updates page: ${msg.subject}`);
+    return true;
+  }
   const { sendAsEmployee } = await import("./notify.mjs");
   const r = await sendAsEmployee("Simone", { to: TO, subject: msg.subject, layout: msg.layout, owner: msg.owner });
   if (!r.ok) { console.error(`NAMED STOP [SEND_REFUSED] "${msg.subject}" was not sent: ${r.error}`); return false; }
-  told[key] = new Date().toISOString();
-  await writeFile(TOLD, JSON.stringify(told, null, 2)).catch(() => {});
+  OUT.emailed = true;
+  await mark();
   console.log(`emailed her: ${msg.subject}`);
   return true;
+}
+
+/** A stop needs her at the window now: it is the run's one email, and carries anything that went live before it. */
+async function tellStop(key, msg) {
+  const live = OUT.emailed ? [] : OUT.live.splice(0);
+  return tell([key, ...live.map((b) => `live:${b.id}`)], withLive(msg, live), { kind: "stop" });
+}
+
+/** End of the run: the titles that went live, as ONE email (or Updates rows when the run's email has gone). */
+async function tellLive() {
+  const live = OUT.live.splice(0);
+  if (!live.length) return;
+  if (!OUT.emailed) { await tell(live.map((b) => `live:${b.id}`), liveMail(live), { kind: "live" }); return; }
+  for (const b of live) await tell(`live:${b.id}`, doneMail(b), { kind: "live" });
 }
 
 /** Is the KDP Chrome profile already open (Chrome's SingletonLock names a live process)? */
@@ -1038,7 +1098,12 @@ export async function autoSignin(page, target) {
 }
 
 async function main() {
+  try { return await run(); } finally { await tellLive().catch((e) => console.error(`NAMED STOP [LIVE_NOT_TOLD] the live titles were not reported: ${String(e?.message ?? e).slice(0, 160)}`)); }
+}
+
+async function run() {
   const api = await boss();
+  OUT.api = api;
   const spec = JSON.parse(await readFile(join(HERE, "kdp-books/keepmyproof.json"), "utf8"));
   const only = flag("title");
   const register = JSON.parse(await readFile(join(HERE, "kdp-register.json"), "utf8"));
@@ -1082,7 +1147,7 @@ async function main() {
       await api.attempt(a.id, { resulting_state: "LIVE", run_outcome: "attempted", title_ref: plan.row.id, publish_attempted: false, cover_uploaded: false });
       await writeFile(join(b.dir, "publish.json"), JSON.stringify({ at: new Date().toISOString(), judgement_id: a.id, resulting_state: "LIVE", title_ref: plan.row.id, asin: plan.row.asin, price_usd: plan.row.price_usd }, null, 2));
       if (plan.row.price_usd != null && Math.abs(plan.row.price_usd - book.price_usd) > 0.001) console.error(`NAMED STOP [PRICE_DIFFERS] "${book.title}" is Live at $${plan.row.price_usd}; the approved price is $${book.price_usd.toFixed(2)}.`);
-      await tell(`live:${a.id}`, doneMail({ title: book.title, asin: plan.row.asin, price_usd: plan.row.price_usd ?? book.price_usd, extraDrafts: plan.extra.length }));
+      OUT.live.push({ id: a.id, title: book.title, asin: plan.row.asin, price_usd: plan.row.price_usd ?? book.price_usd, extraDrafts: plan.extra.length });
       await api.post("/open-loops/intake", waitingLoop({ title: book.title, folder: b.folder, cleared: true, day: dayCT() }));
       say("LIVE", `${book.title}: Live on the bookshelf${plan.row.asin ? ` (ASIN ${plan.row.asin})` : ""}; approval marked done.`);
       submitted += 1; return true;
@@ -1133,8 +1198,8 @@ async function main() {
   // 2. HEADS-UP, then the window (unattended); attended runs start now.
   if (UNATTENDED) {
     const startAt = Date.now() + HEADS_UP_LEAD_MS;
-    await tell(`headsup:${dayCT()}:${todo.map((b) => b.a.id).join(",")}`, headsUpMail({ titles: todo.map((b) => b.book.title), startAt }));
-    console.log(`heads-up sent; Chrome opens at ${herTime(startAt)}.`);
+    await tell(`headsup:${dayCT()}:${todo.map((b) => b.a.id).join(",")}`, headsUpMail({ titles: todo.map((b) => b.book.title), startAt }), { kind: "headsup" });
+    console.log(`heads-up on her Updates page; Chrome opens at ${herTime(startAt)}.`);
     await sleep(HEADS_UP_LEAD_MS);
     if (profileBusy(profile)) { console.error("NAMED STOP [PROFILE_IN_USE] the KDP Chrome window was opened by someone during the heads-up; nothing typed. The next run tries again."); console.log(`OUTPUT ${submitted} kindle-titles-submitted`); return 5; }
   }
@@ -1149,7 +1214,7 @@ async function main() {
       const { a, book, dir, ans } = b;
       Object.assign(RUN, {
         unattended: UNATTENDED, title: book.title,
-        tellSignin: () => tell(`stop:${a.id}:SIGNIN:${dayCT()}`, stopMail({ title: book.title, code: "SIGNIN", id: a.id })),
+        tellSignin: () => tellStop(`stop:${a.id}:SIGNIN:${dayCT()}`, stopMail({ title: book.title, code: "SIGNIN", id: a.id })),
         autoSignin: autoSignin,
       });
       const report = { title_ref: null, cover_uploaded: false, publish_attempted: false, resulting_state: null, run_outcome: "attempted", stop_code: null, amazon_message: null };
@@ -1213,7 +1278,7 @@ async function handBack(b, e, { api, context, page, isClosed, settle }) {
   const { a, book, folder } = b;
   const code = e.stop === "SIGNIN_NOT_DONE" ? "SIGNIN" : e.stop ?? "FAILED";
   if (!UNATTENDED && !process.stdin.isTTY) return false;
-  if (UNATTENDED && code !== "SIGNIN") await tell(`stop:${a.id}:${code}:${dayCT()}`, stopMail({ title: book.title, code, said: e.message, id: a.id }));
+  if (UNATTENDED && code !== "SIGNIN") await tellStop(`stop:${a.id}:${code}:${dayCT()}`, stopMail({ title: book.title, code, said: e.message, id: a.id }));
   if (!UNATTENDED) await handOff(context, page, b.dir, b.ans);
   else if (code !== "SIGNIN") {
     // Watch, bounded. Her window is never navigated: only the page she is on is read.
@@ -1236,7 +1301,7 @@ async function handBack(b, e, { api, context, page, isClosed, settle }) {
     if (await settle(b, plan(book.title, rows))) return true;
   } catch {}
   if (UNATTENDED) {
-    await tell(`waiting:${a.id}:${dayCT()}`, stillWaitingMail({ title: book.title, code, id: a.id }));
+    await tell(`waiting:${a.id}:${dayCT()}`, stillWaitingMail({ title: book.title, code, id: a.id }), { kind: "waiting" });
     await api.post("/open-loops/intake", waitingLoop({ title: book.title, folder, day: dayCT(Date.now() + 86_400_000) }));
   }
   console.error(`NAMED STOP [WAITING_FOR_HER_AT_THE_MAC] "${book.title}" is approved and not published: ${code}. She was told; the next daily run tries again. To do it now: ${runCommand(book.title)}`);

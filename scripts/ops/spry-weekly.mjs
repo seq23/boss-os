@@ -99,7 +99,18 @@ async function main() {
   const refresh = fetchRefreshLedgers();
   const mail = composeSpryWeekly(got, { loop, refresh });
   const laid = spryLaid(mail);
-  if (dry) { console.log(laid.subject); console.log(laid.text); return; }
+  if (dry) { console.log(laid.subject); console.log(laid.text); if (emptyEdition(got)) console.log("NOTE [EMPTY_EDITION] no report arrived: a real run would send nothing."); return; }
+  // NO EMPTY EDITION (owner, 13 Nov 2026): when not one business's report arrived there is nothing to
+  // read, so nothing is sent. The team gets the fix job; the week is not marked sent, so the next run tries again.
+  if (emptyEdition(got)) {
+    const why = await fixJob(await bossApi().catch(() => null), {
+      title: "Spry Labs weekly: no report arrived, so no email was sent",
+      prompt: SPRY_WEEKLY.sources.map((s) => `${s.label} (seq23/${s.repo}, ${s.workflow}): ${got[s.key].problem}. Find why the Wednesday run did not upload the ${SPRY_WEEKLY.artifact} artifact, fix it at source, and dispatch the workflow.`).join("\n") + "\nThen run npm run spry:weekly so this week's email goes.",
+    }).catch((e) => e?.message ?? String(e));
+    if (why) console.error(`NOTE [FIX_JOB_NOT_OPENED] ${why}`);
+    console.error("NAMED STOP [EMPTY_EDITION] not one Spry Labs report arrived, so the weekly was not sent; the team has the repair and the next run tries again.");
+    process.exit(7);
+  }
   if (!(await sendAs("Camille", { subject: laid.subject, text: laid.text, html: laid.html, prelaid: laid }))) {
     console.error("NAMED STOP [NO_MAIL_SENT] the Spry Labs weekly could not be sent; not recorded, so the next run tries again.");
     process.exit(8);
@@ -121,6 +132,11 @@ async function main() {
   mkdirSync(STATE_DIR, { recursive: true });
   writeFileSync(sentFile, JSON.stringify({ ...sent, [key]: new Date().toISOString() }, null, 2));
   console.log(`sent: ${SPRY_WEEKLY.sources.length} sections, ${mail.looks} to look at, ${mail.missing} missing.`);
+}
+
+/** An edition with not one report in it: every source failed to arrive. Pure. */
+export function emptyEdition(got) {
+  return SPRY_WEEKLY.sources.every((s) => !got?.[s.key]?.summary || Boolean(got[s.key].problem));
 }
 
 /** The weekly report nobody asked for this time is a Note (owner layout, 7 Nov 2026). Pure. */

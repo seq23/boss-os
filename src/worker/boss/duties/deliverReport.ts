@@ -827,9 +827,10 @@ export async function fileResearchPage(
  * seat's follow-through (`service/afterResult.ts`) writes one only for a task she sent by email. The
  * notice is written HERE, where every rung and seat files its page, so no path can skip it.
  *
- * ONE notice per delivery: the kind is `done#<attempt>`, the same key afterResult uses. When a mailed
- * task's generic Done notice is already waiting, it becomes this one (research words, page link);
- * one already sent is left alone, never a second email.
+ * ONE notice per report, however many attempts it took (13 Nov 2026): the kind is `done#<attempt>`,
+ * the key afterResult uses, but ANY attempt's Done notice counts. One still waiting becomes this
+ * one (research words, page link); once one has been sent, a retried report never emails again.
+ * A report with no source or no findings is filed and listed on Updates, never emailed.
  */
 async function noticeResearchDone(
   env: Env,
@@ -844,15 +845,19 @@ async function noticeResearchDone(
    * System Alarm", five in twelve hours) is a row on the Updates page. A field, never the words.
    */
   const { needsHer, startedBySystem } = await import("../../../shared/boss/mail/noticeGate.mjs");
-  const her = needsHer({ kind: "done", systemStarted: startedBySystem(task.input) });
+  const { researchNotEmailable } = await import("../../../shared/boss/research/doneEmail.mjs");
+  const empty = researchNotEmailable(a.page);
+  if (empty) await logEvent(env.DB, { level: "warn", scope: "duties", event: "research_page_not_emailed", entityId: a.pageId, detail: { task_id: a.taskId, why: empty } }).catch(() => {});
+  const her = !empty && needsHer({ kind: "done", systemStarted: startedBySystem(task.input) });
   const { researchPageUrl } = await import("../../../shared/boss/research/page.mjs");
   const { researchDoneLines, researchDoneSubject } = await import("../../../shared/boss/research/doneEmail.mjs");
   const kind = `done#${Number(task.attempts ?? 0)}`;
   const url = researchPageUrl(a.pageId);
   const subject = researchDoneSubject(a.page);
   const lines = researchDoneLines(a.page, url);
-  const waiting = await env.DB.prepare(`SELECT id, sent_at FROM boss_task_notices WHERE task_id = ? AND kind = ? LIMIT 1`)
-    .bind(task.id, kind).first<{ id: string; sent_at: number | null }>();
+  const earlier = (await env.DB.prepare(`SELECT id, sent_at FROM boss_task_notices WHERE task_id = ? AND kind LIKE 'done#%' ORDER BY created_at`)
+    .bind(task.id).all<{ id: string; sent_at: number | null }>()).results ?? [];
+  const waiting = earlier.find((n) => n.sent_at != null) ?? earlier[0];
   if (waiting) {
     if (waiting.sent_at == null) {
       await env.DB.prepare(`UPDATE boss_task_notices SET subject = ?, body = ?, needs_her = ? WHERE id = ?`)

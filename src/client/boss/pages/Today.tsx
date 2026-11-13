@@ -271,7 +271,7 @@ export function Today({ onOpenOperations: _ops, onOpenRecentWork: _recent, focus
           <span className="row-main"><span className="row-title">Open loops · everything approved but not finished</span></span>
           <span className="row-val">Open ›</span>
         </button>
-        <details data-testid="coming-up">
+        <details data-testid="coming-up" open={new URLSearchParams(window.location.search).has("up") || undefined}>
           <summary>
             Coming up · {meetings?.diary_summary?.startsWith("Nothing today") || !next ? "nothing today" : ""}
             {next ? ` next ${new Date(next.scheduled_at).toLocaleString(undefined, { weekday: "short", day: "numeric", month: "short", hour: "numeric", minute: "2-digit" })}, ${next.title}` : ""} · Show ▾
@@ -1741,6 +1741,20 @@ function Diary({ content, onChanged, onError }: {
   const [when, setWhen] = useState("");
   const [busy, setBusy] = useState(false);
   const rows: any[] = content.diary ?? [];
+  // Back from a prep page lands on the meeting it was opened from (`?up=<row>`).
+  const backTo = new URLSearchParams(window.location.search).get("up");
+  const hasBackRow = Boolean(backTo) && rows.some((r) => r.id === backTo);
+  useEffect(() => {
+    if (!hasBackRow) return;
+    // The rest of Today loads after this list and moves it, so the row is brought back into view a
+    // few times while the page settles, and never once she has touched the screen.
+    let touched = false;
+    const stop = () => { touched = true; };
+    window.addEventListener("touchstart", stop, { passive: true }); window.addEventListener("wheel", stop, { passive: true });
+    const show = () => { if (!touched) document.querySelector(`[data-up="${CSS.escape(backTo!)}"]`)?.scrollIntoView({ block: "center" }); };
+    const timers = [0, 300, 900, 1800].map((ms) => window.setTimeout(show, ms));
+    return () => { timers.forEach((t) => window.clearTimeout(t)); window.removeEventListener("touchstart", stop); window.removeEventListener("wheel", stop); };
+  }, [hasBackRow, backTo]);
 
   async function add() {
     const at = Date.parse(when);
@@ -1763,7 +1777,7 @@ function Diary({ content, onChanged, onError }: {
         <div className="row-sub">Nothing in the next three weeks. Add one below.</div>
       ) : (
         rows.map((r) => (
-          <div className="row" key={r.id}>
+          <div className="row" key={r.id} data-up={r.id}>
             <div className="row-main">
               <div className="row-title">{r.title}</div>
               <div className="row-sub">
@@ -1772,6 +1786,12 @@ function Diary({ content, onChanged, onError }: {
                 })}
                 {r.with ? ` · with ${r.with}` : ""}
                 {r.location ? ` · ${r.location}` : ""}
+                {r.prep_id ? <> · <a href={`/?command=${encodeURIComponent(r.prep_id)}`} data-testid="your-prep" onClick={(e) => {
+                  // In the app, and Back returns to this row: the address remembers which meeting was open.
+                  e.preventDefault();
+                  window.history.replaceState({}, "", `/?up=${encodeURIComponent(r.id)}`);
+                  go(`/?command=${encodeURIComponent(r.prep_id)}`);
+                }}>Your prep ›</a></> : null}
               </div>
               <div className="row-sub">
                 {r.source === "recurring" ? "standing" : r.source === "calendar" ? "from your calendar" : r.source === "crm" ? "from your people" : "you added this"}

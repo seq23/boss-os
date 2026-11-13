@@ -611,9 +611,11 @@ export function ancestralLine(day) {
  * sentence, this month's Ancestors hour and Contribution, and the week's practice in one line — then
  * one link to the Spirit tab for the rest (owner, 25 Oct 2026: trimmed). Pure.
  */
-export function spiritSection(day, week, now = Date.now()) {
+export function spiritSection(day, week, now = Date.now(), lapseLine = null) {
   if (!day) return null;
   const items = [];
+  // A rung day of the practice ladder is ONE line here, never an email of its own (owner, 13 Nov 2026).
+  if (lapseLine) items.push(String(lapseLine));
   const cur = day.map?.current;
   if (cur) items.push(`${cur.signal ?? ""} ${BAND_WORDS[cur.band] ?? cur.meaning ?? "This week"} (${cur.label}). ${cap(String(cur.note ?? "").replace(/^Peak money week\s*[—-]\s*/i, ""))}${/[.!?]$/.test(cur.note ?? "") ? "" : "."}`.trim());
   const ev = day.major_event;
@@ -935,13 +937,14 @@ export function buildDay(data, now = Date.now()) {
   }
   if (teamStops) doneRaw.push({ key: `team-stops:${today}`, text: `${teamStops} team job${teamStops === 1 ? "" : "s"} stopped and ${teamStops === 1 ? "is" : "are"} being fixed by Danielle.`, links: [{ label: "Open ›", url: `${ORIGIN}/?tab=systems` }] });
   const prospects = prospectSection(data.prospects ?? null, now);
-  const spirit = spiritSection(data.spirit ?? null, data.practiceWeek ?? null, now);
+  const spirit = spiritSection(data.spirit ?? null, data.practiceWeek ?? null, now, data.lapseLine ?? null);
   const ancestral = ancestralLine(data.spirit ?? null);
   // The prospects producer's count line is in "Prospect emails" when that loaded; not said twice.
   for (const name of DONE_SOURCES.filter((n) => !(data.prospects && n === "prospects"))) for (const l of m[name]?.lines ?? []) doneRaw.push(typeof l === "string" ? { text: l, links: [] } : { links: [], ...l });
   const doneOnce = doneForYou(doneRaw, { told: new Set(data.told?.done ?? []), max: MAX_DONE });
   const done = doneOnce.all.map((l) => { const id = idFor("done", l.text); return { ...l, id, screen: itemUrl(today, id) }; });
-  const doneShown = done.slice(0, MAX_DONE).map((l) => ({ text: l.text, links: [{ label: "See it", url: l.screen }] }));
+  // A line that carries its own links inline (`runs`: the filed meeting preps, each with its "Open ›") keeps them.
+  const doneShown = done.slice(0, MAX_DONE).map((l) => (Array.isArray(l.runs) && l.runs.some((r) => r.url) ? { runs: l.runs, links: [] } : { text: l.text, links: [{ label: "See it", url: l.screen }] }));
   // Three lines and nothing after them (owner, 13 Nov 2026): no "+N more" and no count of the Updates
   // page. Everything done is on Today, and the updates are on their page.
 
@@ -1175,6 +1178,7 @@ export async function read(api, now) {
   const prospects = await api.get(`/lp/prospects/activity?since=${now - 30 * 3_600_000}`).catch((e) => { console.error(`your-day: prospect activity not read (${e.message})`); return null; });
   const spirit = await api.get("/spirit/day").catch((e) => { console.error(`your-day: spirit day not read (${e.message})`); return null; });
   const practiceWeek = await api.get("/spirit/practice-week").catch(() => null);
+  const lapseLine = await api.get("/practice/lapse-line").then((d) => d?.line ?? null).catch((e) => { console.error(`your-day: the practice streak not read (${e.message})`); return null; });
   const waiting = await api.get("/waiting-on").then((d) => d?.items ?? []).catch((e) => { console.error(`your-day: the waiting-on register not read (${e.message})`); return []; });
   // Every unanswered Decide item from earlier mornings (Today v4: they never drop off), with one-tap send.
   const quietPeople = await api.get("/lp/replies").then((d) => (d.rows ?? []).filter((r) => r.quiet));
@@ -1199,7 +1203,7 @@ export async function read(api, now) {
   const known = new Set(tasks.map((t) => t.id));
   const approvalTasks = (await Promise.all([...new Set((approvals ?? []).map(approvalTaskId).filter((id) => id && !known.has(id)))].slice(0, 100)
     .map((id) => api.get(`/tasks/${encodeURIComponent(id)}`).then((d) => d?.task ?? null).catch((e) => { console.error(`your-day: the task behind an approval was not read (${e.message})`); return null; })))).filter(Boolean);
-  return { approvalTasks, ownerTz, quietPeople, brainsCheck, t2rGroups, scoreboard, diary: diary?.rows ?? null, tasks: withDue, approvals, repoChanges: rc?.items ?? [], briefing: briefingOf(today), law: lawOf(today), bounceFixes, commentWatch, prospects, spirit, practiceWeek, waiting, carried, morning: reported.sections, notReported: reported.missing };
+  return { approvalTasks, ownerTz, quietPeople, brainsCheck, t2rGroups, scoreboard, diary: diary?.rows ?? null, tasks: withDue, approvals, repoChanges: rc?.items ?? [], briefing: briefingOf(today), law: lawOf(today), bounceFixes, commentWatch, prospects, spirit, practiceWeek, lapseLine, waiting, carried, morning: reported.sections, notReported: reported.missing };
 }
 
 export async function feedOf(range) {

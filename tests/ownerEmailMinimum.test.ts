@@ -31,19 +31,19 @@ import { urgentEmail } from "../scripts/ops/risk-watch.mjs";
 // @ts-expect-error — plain ESM with no declaration file
 import { spryLaid } from "../scripts/ops/spry-weekly.mjs";
 // @ts-expect-error — plain ESM with no declaration file
-import { outcomesOwner } from "../scripts/ops/lp-outcomes.mjs";
+import { outcomesMail } from "../scripts/ops/lp-outcomes.mjs";
 // @ts-expect-error — plain ESM with no declaration file
 import { peopleOwner } from "../scripts/ops/people-worth-a-call.mjs";
 // @ts-expect-error — plain ESM with no declaration file
 import { askEmail, chaseEmail } from "../scripts/ops/kdp-surface-report.mjs";
 // @ts-expect-error — plain ESM with no declaration file
-import { headsUpMail, stopMail, stillWaitingMail, doneMail } from "../scripts/ops/kdp-new-title.mjs";
+import { headsUpMail, stopMail, stillWaitingMail, doneMail, liveMail } from "../scripts/ops/kdp-new-title.mjs";
 import { digestEmail, confirmationEmail } from "../src/shared/boss/commentWatch/lane.mjs";
 import { approvalNotice, composeDraft } from "../src/shared/boss/clients/hicksUpdate.mjs";
 import { composeSpryWeekly } from "../src/shared/boss/spryWeekly/compose.mjs";
 import { minimumProblems, ownerEmail } from "../src/shared/boss/mail/ownerLayout.mjs";
 import { reminderNotice as ancestralNotice, ancestralHourState } from "../src/worker/boss/spirit/ancestralHour";
-import { lapseNotice } from "../src/worker/boss/practice/lapse";
+import { middayNotice } from "../src/worker/boss/practice/lapse";
 import { reminderNotice as errandNotice } from "../src/worker/boss/commands/run";
 import { plainReply } from "../src/worker/boss/intake/mailRefs";
 
@@ -97,7 +97,7 @@ function cases(): Case[] {
 
   // Imani: the ancestral hour and the practice nudges.
   add("scripts/ops/errand-reminders.mjs", "Imani", "ancestral hour (Note)", mail("Imani", ancestralMail(ancestralNotice(ancestralHourState("2026-10-29", 0), `${ORIGIN}/tap/tokCCCCCCCCCCCCCCCCCCCCCCCCCCCCCC?do=done`))));
-  add("scripts/ops/practice-nudges.mjs", "Imani", "practice lapse (Note)", employeeMail(as("Imani"), practiceLayout(lapseNotice("firm" as any, 2, "2026-11-07", ORIGIN))));
+  add("scripts/ops/practice-nudges.mjs", "Imani", "midday push (Note)", employeeMail(as("Imani"), practiceLayout(middayNotice({ n: 4, title: "No Mid-Day Renegotiation", text: "The day is an execution environment." }, ORIGIN))));
 
   // Camille: the Hicks update for approval, the Spry Labs weekly.
   const clicks = { ok: true as const, now: 40, prev: 30, lastSent: 34, lastSentAt: NOW };
@@ -115,7 +115,7 @@ function cases(): Case[] {
   add("scripts/ops/youtube-comment-watch.mjs", "Monique", "comments to approve (A)", mail("Monique", { subject: dig.subject, text: dig.text, owner: dig.owner }));
   const conf = confirmationEmail([{ n: 1, result: "replied", author: "A viewer" }], "cw_m5guard0008");
   add("scripts/ops/youtube-comment-watch.mjs", "Monique", "comment actions done (D)", mail("Monique", { subject: conf.subject, text: conf.text, owner: conf.owner }));
-  add("scripts/ops/lp-outcomes.mjs", "Monique", "LP outcomes (Note)", mail("Monique", { subject: "LP outcomes: 1 to suppress, 2 replied, 0 bounced", text: "Two people replied and one asked to be removed.\n\nASKED TO BE REMOVED (1)\n- a.person@example.com", owner: outcomesOwner(1, 2, 0) }));
+  add("scripts/ops/lp-outcomes.mjs", "Monique", "LP outcomes (Note)", mail("Monique", outcomesMail({ optedOut: 1, replied: 2, bounced: 0 })));
   add("scripts/ops/people-worth-a-call.mjs", "Monique", "people worth a conversation (D)", mail("Monique", { subject: "2 people worth a conversation this week", text: "Two people worth a note this week.\n\n1. A Person <a.person@example.com>\n   Why now: they replied last month.", owner: peopleOwner(2) }));
 
   // Simone's Kindle report: a decision, a stop only she can clear, a chase.
@@ -133,6 +133,7 @@ function cases(): Case[] {
   add("scripts/ops/kdp-new-title.mjs", "Simone", "Kindle step stopped (Note)", kmail(stopMail({ title: "A Synthetic Book", code: "CATEGORIES_NOT_SET", id: "jc_m5guard0014" })));
   add("scripts/ops/kdp-new-title.mjs", "Simone", "Kindle still waiting (Note)", kmail(stillWaitingMail({ title: "A Synthetic Book", code: "SIGNIN", id: "jc_m5guard0015" })));
   add("scripts/ops/kdp-new-title.mjs", "Simone", "Kindle live (D)", kmail(doneMail({ title: "A Synthetic Book", asin: "B0SYNTH0001", price_usd: 4.99 })));
+  add("scripts/ops/kdp-new-title.mjs", "Simone", "Kindle several live (D)", kmail(liveMail([{ title: "A Synthetic Book", asin: "B0SYNTH0001", price_usd: 4.99 }, { title: "Another Synthetic Book", asin: "B0SYNTH0002", price_usd: 4.99 }])));
 
   // Toni: money at risk.
   add("scripts/ops/risk-watch.mjs", "Toni", "money at risk (C)", mail("Toni", { subject: "", prelaid: urgentEmail({ subject: "Paid AI calls are being charged — the team is on it", happened: "New paid AI spend of one cent since the last check.", did: "Opened a job for the team to switch the job back to a free model.", status: "Being fixed now." }) }));

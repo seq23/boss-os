@@ -49,3 +49,15 @@ describe("the Spry Labs weekly never asks her, and never sends her to GitHub (7 
     expect(JSON.stringify(quiet.sections)).not.toMatch(/The team has/);
   });
 });
+
+describe("the Spry Labs weekly sends no empty edition (13 Nov 2026)", async () => {
+  // @ts-expect-error — plain ESM with no declaration file
+  const { emptyEdition } = await import("../scripts/ops/spry-weekly.mjs");
+  const summary = { schema: SPRY_WEEKLY.schema, generated_at: "2026-11-04T13:20:00Z", sites: [], notes: [] };
+  it("no report from any business is empty; one report is an edition", () => {
+    expect(SPRY_WEEKLY.sources.length).toBeGreaterThan(0);
+    expect(emptyEdition({})).toBe(true);
+    expect(emptyEdition(Object.fromEntries(SPRY_WEEKLY.sources.map((s: any) => [s.key, { problem: "its report could not be read" }])))).toBe(true);
+    expect(emptyEdition({ [SPRY_WEEKLY.sources[0]!.key]: { summary } })).toBe(false);
+  });
+});

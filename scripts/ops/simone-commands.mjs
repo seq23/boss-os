@@ -144,7 +144,8 @@ export function noticeArgs(id, notice, to = OWNER_TO, { layout = null } = {}) {
   // you asked for" (D), or "approve this" (A) when it waits on her word; a reminder is a Note.
   return {
     to, subject: notice.subject, layout: { happened: notice.happened, details: notice.details ?? [], decide }, refs: [id],
-    owner: { layout: layout ?? (decide.length ? "approve" : "delivered"), why: notice.happened },
+    // A notice that says what it wants of her (`why`, `act`: partner campaigns) opens with exactly that.
+    owner: { layout: layout ?? (decide.length ? "approve" : "delivered"), why: notice.why ?? notice.happened, ...(notice.act ? { act: notice.act } : {}) },
     // A partner campaign's notice answers her own email, in her thread (outreach/campaign.ts).
     ...(Array.isArray(notice.thread) && notice.thread.length ? { thread: notice.thread } : {}),
   };

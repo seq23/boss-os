@@ -24,3 +24,15 @@ describe("the diary keeps two meetings two, and one meeting on two calendars one
     expect(out[0]!.source).toBe("manual");
   });
 });
+
+describe("a filed prep opens from its meeting on Today (13 Nov 2026)", () => {
+  it("the meeting's row carries its prep the moment the prep exists; other meetings carry none", async () => {
+    const { attachPreps } = await import("../src/worker/boss/today/diary");
+    const at = Date.parse("2026-11-16T16:00:00Z");
+    const rows = attachPreps(
+      [{ title: "Call with Pat Example", scheduled_at: at }, { title: "Team sync", scheduled_at: at + 3_600_000 }] as any[],
+      [{ id: "cmd_filed1", title: "Call with Pat Example", scheduled_at: at }],
+    );
+    expect(rows.map((r: any) => r.prep_id ?? null)).toEqual(["cmd_filed1", null]);
+  });
+});

@@ -4,7 +4,7 @@ import SENDER from "../../scripts/ops/practice-nudges.mjs?raw";
 import { beforeEach, describe, expect, it } from "vitest";
 import { apiJson, all, insertApproval } from "./helpers";
 import {
-  lapseTier, lapseVerdict, lapseNotice, middayNotice, dueNudges, markNudgeSent, recordEngagement, daysBetween,
+  lapseTier, lapseVerdict, lapseNotice, lapseMorningLine, lastEngagedDay, middayNotice, dueNudges, markNudgeSent, recordEngagement, daysBetween,
 } from "../../src/worker/boss/practice/lapse";
 import { LINES, BANNED_WORDS } from "../../src/worker/boss/practice/lines";
 import { LAWS, COMMITMENTS } from "../../src/worker/boss/today/faculty";
@@ -63,34 +63,41 @@ describe("the lapse ladder", () => {
     expect(lapseVerdict(AT_1030, { day: minus(9), tracking: false }).due).toBe(false);
   });
 
-  it("sends at most one a day: a claimed day is offered until it is sent, then never again", async () => {
+  it("is never an email of its own: a rung day is one line in the morning email", async () => {
     await engagedOn(minus(4));
-    const first = await dueNudges(env as any, ORIGIN, AT_1030);
-    expect(first.due.map((d) => [d.kind, d.tier, d.streak_days])).toEqual([["lapse", "tough", 4]]);
-    // The send failed (no mark): the same day is offered again, once.
-    expect((await dueNudges(env as any, ORIGIN, AT_1030 + 600_000)).due).toHaveLength(1);
-    expect(await markNudgeSent(env as any, TODAY, "lapse")).toBe(true);
-    const again = await dueNudges(env as any, ORIGIN, AT_1030 + 1_200_000);
-    expect(again.due).toEqual([]);
-    expect(again.lines.join(" ")).toMatch(/already sent today/);
-    expect((await all(`SELECT * FROM practice_nudges`)).length).toBe(1);
+    // No hour of a rung day offers a lapse email, and nothing is claimed for one.
+    for (const at of [AT_0830, AT_1030, AT_1030 + 6 * 3_600_000]) {
+      expect((await dueNudges(env as any, ORIGIN, at)).due.filter((d) => d.kind === "lapse")).toEqual([]);
+    }
+    expect(await all(`SELECT * FROM practice_nudges WHERE kind = 'lapse'`)).toEqual([]);
+    // The morning email gets exactly one line: the streak, and her own words.
+    const line = lapseMorningLine(AT_0830, await lastEngagedDay(env as any));
+    expect(line).toMatch(/^4 days\b/);
+    expect(line!.split("\n")).toHaveLength(1);
+    const quoted = [...LAWS.map((l) => l.text), ...COMMITMENTS.map((c) => c.text.slice(1))];
+    expect(quoted.some((q) => line!.includes(q))).toBe(true);
+    // The route the morning email reads says the same.
+    const r = await apiJson("/api/practice/lapse-line");
+    expect(r.status).toBe(200);
+    expect(JSON.stringify(r.body)).toContain('"line"');
+    // A day that is not a rung says nothing.
+    expect(lapseMorningLine(AT_0830, { day: minus(3), tracking: true })).toBeNull();
+    expect(lapseMorningLine(AT_0830, { day: minus(9), tracking: false })).toBeNull();
   });
 
   it("resets the moment she engages: an app open, a coach talk or a closed gate", async () => {
     await engagedOn(minus(7));
-    expect((await dueNudges(env as any, ORIGIN, AT_1030)).due[0]?.tier).toBe("hard");
-    await env.DB.prepare(`DELETE FROM practice_nudges`).run();
+    expect(lapseMorningLine(AT_1030, await lastEngagedDay(env as any))).toMatch(/^7 days\b/);
     await recordEngagement(env as any, "coach_morning", AT_1030 - 3_600_000);
-    const after = await dueNudges(env as any, ORIGIN, AT_1030);
-    expect(after.due.filter((d) => d.kind === "lapse")).toEqual([]);
-    expect(after.lines.join(" ")).toMatch(/engaged today/);
+    expect(lapseMorningLine(AT_1030, await lastEngagedDay(env as any))).toBeNull();
+    expect((await dueNudges(env as any, ORIGIN, AT_1030)).lines.join(" ")).toMatch(/engaged today/);
 
     // A gate closed yesterday is engagement too: the streak is 1, which is not a rung.
     await clean();
     await engagedOn(minus(9));
     await env.DB.prepare(`INSERT INTO days (id, date_ts, created_at, night_completed_at) VALUES (?,?,?,?) ON CONFLICT(id) DO UPDATE SET night_completed_at = excluded.night_completed_at`)
       .bind(minus(1), AT_1030 - 86_400_000, 1, AT_1030 - 80_000_000).run();
-    expect((await dueNudges(env as any, ORIGIN, AT_1030)).due.filter((d) => d.kind === "lapse")).toEqual([]);
+    expect(lapseMorningLine(AT_1030, await lastEngagedDay(env as any))).toBeNull();
   });
 
   it("stores THAT she talked to the coach, never what she said", async () => {

@@ -204,6 +204,16 @@ describe("blocks 08 and 09 — the faculty that was never actually missing", () 
     expect(focus.law.n).toBe(2);
   });
 
+  it("an ordinary day takes the next law in order, so all ten come round", async () => {
+    const days = Array.from({ length: 10 }, (_, i) => `2030-02-${String(i + 1).padStart(2, "0")}`);
+    const laws = [];
+    for (const d of days) laws.push((await coachingFocus(env as any, d, null)).law.n);
+    expect([...laws].sort((a, b) => a - b)).toEqual([1, 2, 3, 4, 5, 6, 7, 8, 9, 10]);
+    for (let i = 1; i < laws.length; i++) expect(laws[i]).toBe((laws[i - 1]! % 10) + 1);
+    // A day with a real reason keeps its law, whatever the date's turn is.
+    for (const d of days) expect((await coachingFocus(env as any, d, "mvd")).law.n).toBe(6);
+  });
+
   it("after a Miss, Law 1 is the one under pressure", async () => {
     await env.DB.prepare(`INSERT OR REPLACE INTO days (id, date_ts, created_at, verdict) VALUES (?,?,?,'miss')`)
       .bind("2031-06-01", Date.parse("2031-06-01T00:00:00Z"), Date.now())

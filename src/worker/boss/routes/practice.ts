@@ -4,7 +4,7 @@ import { audit } from "../lib/audit";
 import { ok, badRequest } from "../lib/http";
 import { dayIdInZone } from "../../../shared/boss/timezone";
 import { buildTodayList, cleanGateItems, GATE_NAMES, MAX_CUSTOM_CHECKS, type GateName } from "../today/list";
-import { dueNudges, markNudgeSent, recordEngagement, type DueNudge } from "../practice/lapse";
+import { dueNudges, lapseMorningLine, lastEngagedDay, markNudgeSent, recordEngagement, type DueNudge } from "../practice/lapse";
 import { ancestralUrgent } from "../practice/ancestralUrgent";
 import { waitingOnYou } from "../today/waiting";
 import { foodToday, cityNeedsPlaces, generateLocalPlaces, HOME_CITY_KEY, AWAY_CITY_KEY, AWAY_UNTIL_KEY } from "../today/food";
@@ -181,6 +181,9 @@ practice.post("/custom-gates", async (c) => {
 
 /** Due checks beyond the ladder and the midday push: the ancestral hour's last-day 6pm warning. */
 const EXTRA_NUDGES: ((env: Env, now: number, origin: string) => Promise<DueNudge[]>)[] = [ancestralUrgent];
+
+/** The morning email's one line on a rung day of the lapse ladder (never its own email). */
+practice.get("/lapse-line", async (c) => ok(c, { line: lapseMorningLine(Date.now(), await lastEngagedDay(c.env)) }));
 
 practice.post("/nudges/due", async (c) => {
   const now = Date.now();

@@ -4,8 +4,9 @@
 import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
 import { counterpartFromTitle, buildPrep, dedupeEvents, dueMeetings, extractWarmReferences, lengthLabel, nameFromTitle, prepKey, deadLinks, PREP_PREFIX } from "../src/shared/boss/meetingPrep/prep.mjs";
-import { prepEmail, dealRowsOf } from "../scripts/ops/meeting-prep.mjs";
+import { prepEmail, dealRowsOf, capPreps, overCapLine, hasOutsideGuest, filePrep, prepUrl, MAX_PREP_EMAILS_PER_DAY } from "../scripts/ops/meeting-prep.mjs";
 import { plainProblems } from "../src/shared/boss/mail/plain.mjs";
+import { buildDay } from "../scripts/ops/your-day.mjs";
 import { parseIcs } from "../scripts/ops/ics.mjs";
 import { mergeDiaryRows } from "../src/worker/boss/today/diary";
 
@@ -204,5 +205,55 @@ describe("a weekly invite keeps its hour across the clock change", () => {
     const ics = ["BEGIN:VCALENDAR", "BEGIN:VEVENT", "UID:sync1", "SUMMARY:Sequoia // Scooter Sync", "DTSTART;TZID=America/Chicago:20261028T080000", "DTEND;TZID=America/Chicago:20261028T084500", "RRULE:FREQ=WEEKLY", "END:VEVENT", "END:VCALENDAR"].join("\r\n");
     const evs = parseIcs(ics, Date.parse("2026-10-27T12:00:00Z"), 28).events;
     expect(evs.map((e) => new Date(e.scheduled_at).toISOString())).toEqual(["2026-10-28T13:00:00.000Z", "2026-11-04T14:00:00.000Z", "2026-11-11T14:00:00.000Z", "2026-11-18T14:00:00.000Z"]);
+  });
+});
+
+describe("prep EMAILS are capped a day; every prep is still made and filed (13 Nov 2026)", () => {
+  const HER = ["owner@herfund.example"];
+  const at = (h: number) => Date.UTC(2026, 10, 16, 15 + h, 0);
+  const inside = (n: number) => ({ e: { title: `Team sync ${n}`, scheduled_at: at(n), ical_uid: `in${n}`, attendees: [{ email: "owner@herfund.example" }, { email: "teammate@herfund.example", name: "A Teammate" }] } });
+  const outside = (n: number) => ({ e: { title: `Call ${n}`, scheduled_at: at(n), ical_uid: `out${n}`, attendees: [{ email: "owner@herfund.example" }, { email: `guest${n}@otherfirm.example`, name: "Pat Example" }] } });
+
+  it("outside people come before her own team, then the earliest; what already went today counts", () => {
+    expect(hasOutsideGuest(outside(1).e, HER)).toBe(true);
+    expect(hasOutsideGuest(inside(1).e, HER)).toBe(false);
+    const day = [inside(1), inside(2), outside(3), inside(4), outside(5), outside(6)];
+    const first = capPreps(day, 0, MAX_PREP_EMAILS_PER_DAY, HER);
+    expect(first.send.map((i) => i.e.title)).toEqual(["Call 3", "Call 5", "Call 6"]);
+    expect(first.rest.map((i) => i.e.title)).toEqual(["Team sync 1", "Team sync 2", "Team sync 4"]);
+    // With room left after the outside ones, the earliest internal meeting takes it.
+    expect(capPreps([inside(1), inside(2), outside(3)], 1, MAX_PREP_EMAILS_PER_DAY, HER).send.map((i) => i.e.title)).toEqual(["Team sync 1", "Call 3"]);
+    expect(capPreps(day, MAX_PREP_EMAILS_PER_DAY + 2, MAX_PREP_EMAILS_PER_DAY, HER).send).toEqual([]);
+    // Nothing is dropped: every meeting is in exactly one list.
+    expect(first.send.length + first.rest.length).toBe(day.length);
+  });
+
+  it("a prep past the cap is still made and filed whole, and no email is sent for it", async () => {
+    const event = { ...outside(9).e, duration_min: 30 };
+    const posts: any[] = [];
+    const api = { post: async (path: string, body: any) => { posts.push({ path, body }); return { id: "cmd_test_filed" }; } };
+    const r = await filePrep(api, event, { people: [], references: [], deals: [], summaries: {}, news: {} }, { context: {}, tz: "America/Chicago" });
+    expect(r.ok).toBe(true);
+    expect(r.url).toBe(prepUrl("cmd_test_filed"));
+    // Only the filing route is called: nothing here can send.
+    expect(posts.map((p) => p.path)).toEqual(["/commands/meeting-prep", "/commands/meeting-prep"]);
+    const kept = posts[1].body.spec.prep;
+    expect(kept.emailed).toBe(false);
+    // The filed words ARE the prep an email would have carried, not a stub.
+    const emailed = prepEmail(event, { people: [], references: [], deals: [], summaries: {}, news: {} }, { context: {}, tz: "America/Chicago", refs: ["cmd_test_filed"] });
+    expect(kept.text).toBe(emailed.laid.text);
+    expect(kept.text.length).toBeGreaterThan(80);
+    expect(posts[1].body.spec.event.scheduled_at).toBe(event.scheduled_at);
+  });
+
+  it("the morning line names each meeting with a link straight to its prep, and gives no excuse", () => {
+    const line = overCapLine([{ title: "Example call A", scheduled_at: at(1), url: prepUrl("cmd_a") }, { title: "Example call B", scheduled_at: at(3), url: prepUrl("cmd_b") }], "America/Chicago");
+    expect(line.text).toBe("2 more preps are ready: Example call A (10:00 am) Open ›; Example call B (12:00 pm) Open ›");
+    expect(line.runs.filter((x) => x.url).map((x) => x.url)).toEqual([prepUrl("cmd_a"), prepUrl("cmd_b")]);
+    expect(line.text).not.toMatch(/limit|because/i);
+    // In the morning email itself each meeting keeps its own link (the real builder, not a copy of it).
+    const day = buildDay({ diary: [], tasks: [], approvals: [], repoChanges: [], briefing: null, feed: { items: [] }, morning: { notices: { section: "notices", at: new Date(at(0)).toISOString(), lines: [line], decide: [], rows: [] } } }, at(0));
+    for (const id of ["cmd_a", "cmd_b"]) { expect(day.html).toContain(`href="${prepUrl(id)}"`); expect(day.text).toContain(prepUrl(id)); }
+    expect(plainProblems({ subject: "Your day", text: `Your day.\n\nNothing to decide — this is just so you know.\n- ${line.text}` })).toEqual([]);
   });
 });

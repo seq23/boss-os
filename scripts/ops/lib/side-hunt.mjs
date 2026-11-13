@@ -184,7 +184,8 @@ export function buildHuntEmail({ side, hunts, now = Date.now(), maxPeopleLines =
     { title: "Funds that hold it", note: "From public SEC fund filings. Free to read; a filing shows the fund holds it, not that it will trade.", items: fundItems, empty: null },
   ] : [];
   // The owner layout (7 Nov 2026): the weekly hunt is new leads for her (D); nobody was contacted.
-  return { subject: title, layout: { happened, decide: [], sections }, owner: { layout: "delivered", why: happened }, failed };
+  // `found` is what the week turned up. Zero is an empty edition, and the sender does not send it (13 Nov 2026).
+  return { subject: title, layout: { happened, decide: [], sections }, owner: { layout: "delivered", why: happened }, failed, found: nPeople + nFunds };
 }
 
 export { assetKey };
