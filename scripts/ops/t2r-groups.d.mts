@@ -7,8 +7,10 @@ export function runGroups(opts: {
   discover?: (plan: any) => Promise<any[]>; published?: (row: any) => Promise<boolean>;
   verify?: (emails: string[], opts?: any) => Promise<{ verdicts: Array<{ email: string; result: string }> }>;
   codeTable?: (spec: any) => Promise<any>; log?: (m: string) => void;
-}): Promise<{ researched: number; imported: number; verdicts: number; codes: number; usage: number; queued: number; stops: string[] }>;
+}): Promise<{ ready: number | null; researched: number; imported: number; verdicts: number; codes: number; usage: number; queued: number; stops: string[] }>;
 export function partnerResearchPrompt(x: { org: string; brand: string }): string;
 export function personResearchPrompt(x: { org: string; domain?: string | null; brand: string; people: Array<{ name: string; title?: string }> }): string;
 export function shownOnPages(out: any, onPage?: (row: any) => Promise<boolean>): Promise<{ people: Array<{ name: string; title: string; email?: string; source_url?: string }>; seen: Array<{ name: string; email: string }> }>;
 export function personResearch(work: { id: string; org: string; domain?: string | null; brand: string; people: Array<{ name: string; title?: string }> }, opts?: { discover?: (...a: any[]) => Promise<any>; onPage?: (row: any) => Promise<boolean> }): Promise<{ people: Array<{ name: string; title: string; email?: string; source_url?: string }>; seen: Array<{ name: string; email: string }>; domain: string | null }>;
+
+export function groupsOutputLine(out: { ready: number | null }): string | null;

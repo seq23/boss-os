@@ -195,7 +195,7 @@ const weekday = (now) => {
  */
 export async function runGroups({ live = false, now = Date.now(), api, discover = research, published = publishedOnPage,
   verify = neverBounceCheck, codeTable = runCode, log = () => {} }) {
-  const out = { researched: 0, imported: 0, verdicts: 0, codes: 0, usage: 0, queued: 0, stops: [] };
+  const out = { ready: null, researched: 0, imported: 0, verdicts: 0, codes: 0, usage: 0, queued: 0, stops: [] };
   if (live && !weekday(now)) { log("Outside the weekday schedule."); return out; }
   const partners = await partnerResearch({ api, live, log }).catch((e) => ({ orgs: 0, started: 0, stops: [`NAMED STOP [PARTNER_RESEARCH_FAILED] ${e?.message ?? e}`] }));
   out.partnersStarted = partners.started;
@@ -219,7 +219,10 @@ export async function runGroups({ live = false, now = Date.now(), api, discover 
     out.researched = fresh.length;
     if (!live) { log(`DRY RUN: ${fresh.length} group(s) found with the address on their page; nothing written.`); return out; }
     if (fresh.length) out.imported = (await api.post("/t2r-groups", { op: "import", rows: fresh })).recorded ?? 0;
-  } else if (!live) { log(`DRY RUN: ${plan.waiting} waiting and ${plan.queued} queued; no research needed.`); return out; }
+  } else {
+    log(`${live ? "LIVE" : "DRY RUN"}: research skipped because ${plan.waiting} waiting and ${plan.queued} queued groups already wait.`);
+    if (!live) return out;
+  }
 
   // 2. NeverBounce, before any first email.
   const { emails = [] } = await api.get("/t2r-groups/to-verify?cap=25");
@@ -249,7 +252,18 @@ export async function runGroups({ live = false, now = Date.now(), api, discover 
 
   // 5. Ready groups into the hourly outreach tick.
   out.queued = (await api.post("/t2r-groups", { op: "queue" })).queued ?? 0;
+  // Read after queueing: work done this run may have changed the pipeline.
+  try {
+    const depth = await api.get("/t2r-groups/plan");
+    if ([depth.waiting, depth.queued].every((n) => Number.isSafeInteger(n) && n >= 0)) {
+      out.ready = depth.waiting + depth.queued;
+    } else log("not read: pipeline depth response has no valid waiting and queued counts.");
+  } catch (e) { log(`not read: pipeline depth (${e?.message ?? e}).`); }
   return out;
+}
+
+export function groupsOutputLine(out) {
+  return out.ready === null ? null : outputLine(out.ready, "groups ready to write to");
 }
 
 async function main() {
@@ -258,7 +272,8 @@ async function main() {
   const r = await runGroups({ live, api, log: (m) => console.log(m) });
   for (const s of r.stops) console.error(s);
   console.log(`t2r-groups ${live ? "LIVE" : "DRY RUN"}: ${r.researched} researched, ${r.imported} new, ${r.verdicts} checked, ${r.codes} codes made, ${r.usage} codes read, ${r.queued} queued for the outreach tick.`);
-  console.log(outputLine(r.researched, "groups researched"));
+  const census = groupsOutputLine(r);
+  if (census !== null) console.log(census);
   if (r.stops.length) process.exitCode = 1;
 }
 if (import.meta.url === `file://${process.argv[1]}`) {

@@ -5782,3 +5782,12 @@ and repeat safety. Full validation outcome is recorded in this change's build.js
 UNPROVEN live: migration application, the next job's census, and automatic alarm closure. No
 production read or write was performed in BUILD; the approved plan records the earlier live read.
 After landing, the runner must use alarm:watch for output:duty_prospects against the merge SHA.
+
+## 13 Nov 2026 — Time-2-Read groups output floor (re-applied from #383)
+
+Research correctly skips when 20+ groups already wait, so the per-run "groups researched" floor
+alarmed on healthy runs (9-11 Nov: 0 waiting + 29 queued, OUTPUT 0). The Mac job now reads
+waiting + queued after queueing and emits `OUTPUT <n> groups ready to write to`; an unread or
+invalid count emits no census (stays unknown, so the floor still alarms). Migration 0362 and the
+Schedule row keep floor 1 over 3 runs with a fresh observation window. Bounce brake and research
+threshold unchanged. #383 was conflicting with main (its 0361 was taken); re-applied by hand.

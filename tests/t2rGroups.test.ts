@@ -8,7 +8,7 @@ import { describe, expect, it } from "vitest";
 import * as R from "../src/shared/boss/t2rGroups/rules.mjs";
 import { ACCESS_CODE_SHAPE, normaliseCode } from "../src/shared/boss/commands/parse.mjs";
 import { INSTALLED_LOCAL_JOBS } from "../src/shared/boss/duties/lane.mjs";
-import { personResearch, researchPrompt, runGroups, RESEARCH_BELOW } from "../scripts/ops/t2r-groups.mjs";
+import { personResearch, researchPrompt, runGroups, groupsOutputLine, RESEARCH_BELOW } from "../scripts/ops/t2r-groups.mjs";
 import { t2rGroupsSectionFor } from "../scripts/ops/your-day.mjs";
 import { BUSINESSES, businessByKey } from "../src/worker/boss/outreach/catalog";
 
@@ -160,6 +160,37 @@ describe("the Mac job", () => {
       verify: async () => ({ verdicts: [] }), codeTable: async () => ({ ok: false, why: "the key is not in the vault" }) });
     expect(r.stops).toContain("NAMED STOP [GROUP_CODE_NOT_MADE] the key is not in the vault; no group is written to without its own working code.");
     expect(api.posts.find((p) => p.op === "code")).toEqual({ op: "code", id: "g1", ok: false, detail: "the key is not in the vault" });
+  });
+
+  it("a full pipeline skips research and reports the fresh depth, never the research count", async () => {
+    const api = fakeApi(plan({ queued: 29 }), { toVerify: [], codesDue: [] });
+    let reads = 0;
+    const get = api.get;
+    api.get = async (path: string) => path === "/t2r-groups/plan"
+      ? plan({ queued: ++reads === 1 ? 29 : 30 }) : get(path);
+    const logs: string[] = [];
+    const r = await runGroups({ live: true, now: TUESDAY, api,
+      discover: async () => { throw new Error("must skip research"); },
+      codeTable: async () => ({ ok: true, codes: [] }), log: (s: string) => logs.push(s) });
+    expect(r).toMatchObject({ researched: 0, ready: 30 });
+    expect(reads).toBe(2);
+    expect(groupsOutputLine(r)).toBe("OUTPUT 30 groups ready to write to");
+    expect(logs.some((s) => s.includes("research skipped"))).toBe(true);
+  });
+
+  it.each(["failed", "missing", "negative"])("an unreadable depth (%s) prints no census", async (mode) => {
+    const api = fakeApi(plan({ queued: 29 }), { toVerify: [], codesDue: [] });
+    let reads = 0;
+    const get = api.get;
+    api.get = async (path: string) => {
+      if (path !== "/t2r-groups/plan") return get(path);
+      if (++reads === 1) return plan({ queued: 29 });
+      if (mode === "failed") throw new Error("offline");
+      return mode === "missing" ? {} : plan({ queued: -1 });
+    };
+    const r = await runGroups({ live: true, now: TUESDAY, api, codeTable: async () => ({ ok: true, codes: [] }) });
+    expect(r.ready).toBeNull();
+    expect(groupsOutputLine(r)).toBeNull();
   });
 
   it("weekdays only, and is an installed local job", async () => {
