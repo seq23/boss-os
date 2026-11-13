@@ -487,6 +487,45 @@ export async function executeRun(envelope, deps = {}) {
     });
   }
 
+  /*
+   * ── A delivers.json THAT DOES NOT PARSE GETS ONE REPAIR PASS, THEN FAILS BY NAME (13 Nov 2026) ──
+   *
+   * 12 Nov 2026, "Tools worth knowing": the run worked for hours, wrote 23 tools, and its
+   * delivers.json had one stray "]" on line 302. The adapter recorded "could not be read" as a risk,
+   * the run was graded SUCCEEDED, nothing landed and the task was auto-accepted. The file is written
+   * by hand by a model, many times over; one bad character must not cost the whole run, and must
+   * never pass for a delivery.
+   *
+   * So: the same seat is asked ONCE, on a short leash, to fix the syntax only. If the file then
+   * parses, its content is the delivery and the repair is on the record. If not, the run FAILS under
+   * a named stop (the cloud half hands it to a stronger seat or fails the task: duties/floors.ts).
+   * Never for a spent plan or a run that never searched: those are not syntax.
+   */
+  const unread = invalidDelivers(result);
+  if (unread && !result.seat_exhausted && result.search_refused !== true) {
+    let fixed = null;
+    try {
+      fixed = await runner({
+        envelope: { ...envelope, web_tools: [], max_seconds: DELIVERS_REPAIR_SECONDS },
+        prompt: deliversRepairPrompt(unread), sentinel, forbidden, cwd: envelope.repo_path,
+      });
+    } catch { fixed = null; }
+    const others = (result.remaining_risks ?? []).filter((r) => !DELIVERS_UNREAD.test(String(r)));
+    if (fixed?.delivers && typeof fixed.delivers === "object") {
+      result = {
+        ...result, delivers: fixed.delivers, delivery: fixed.delivery ?? { present: true, status: "partial" }, error: null,
+        commands: [...(result.commands ?? []), ...(fixed.commands ?? [])],
+        remaining_risks: [...others, `delivers.json did not parse (${unread}); one repair pass fixed its syntax and it was delivered.`],
+      };
+    } else {
+      result = {
+        ...result, delivers: null, delivery: { present: false, status: null }, delivers_invalid: true,
+        error: `NAMED STOP [DELIVERS_INVALID] delivers.json is not valid JSON (${unread}) and one repair pass did not fix it, so nothing was delivered. The next run writes it again.`,
+        remaining_risks: [...others, `delivers.json could not be read: ${unread}; one repair pass did not fix it.`],
+      };
+    }
+  }
+
   const commands = (result.commands ?? []).map((c) => ({
     cmd: String(c.cmd ?? c),
     exit_code: typeof c.exit_code === "number" ? c.exit_code : null,
@@ -601,7 +640,8 @@ export async function executeRun(envelope, deps = {}) {
   const delivered = result.delivery?.present === true;
   // A spent plan fails the run whatever the exit code said: the CLI can print its limit notice and exit 0.
   // A run sent to read the web that the CLI's own record shows never searched is a failure whatever its exit code said.
-  const failed = checks.failed > 0 || (result.exit_code !== 0 && !delivered) || Boolean(result.seat_exhausted) || result.search_refused === true;
+  // A deliverable that is on disk and cannot be read is a failure too (see the repair pass above).
+  const failed = checks.failed > 0 || (result.exit_code !== 0 && !delivered) || Boolean(result.seat_exhausted) || result.search_refused === true || result.delivers_invalid === true;
   return {
     ...base,
     status: failed ? "failed" : "succeeded",
@@ -881,6 +921,30 @@ export async function defaultPlaceMaterials(cwd, materials) {
     placed.push(name);
   }
   return placed;
+}
+
+/** The adapters' own words for a delivers.json that is on disk and cannot be used (claudeCode.mjs, codex.mjs). */
+const DELIVERS_UNREAD = /^delivers\.json (?:could not be read: |did not contain a JSON object)/;
+/** How long the one repair pass may take. */
+export const DELIVERS_REPAIR_SECONDS = 300;
+
+/** Why the run's delivers.json could not be used, or null when it was read (or was never written). */
+export function invalidDelivers(result) {
+  if (result?.delivers) return null;
+  const hit = (result?.remaining_risks ?? []).map(String).find((r) => DELIVERS_UNREAD.test(r));
+  if (!hit || /could not be read: ENOENT/.test(hit)) return null;
+  return hit.replace(/^delivers\.json (?:could not be read: )?/, "").replace(/; nothing was delivered from it\.$/, "").slice(0, 300);
+}
+
+/** The whole instruction for the repair pass: syntax only, nothing researched, nothing rewritten. */
+export function deliversRepairPrompt(why) {
+  return [
+    "The file delivers.json in your working directory is the finished result of a long piece of work, and it is not valid JSON, so none of it can be used.",
+    `The parser said: ${why}`,
+    "Fix the SYNTAX only: a missing or extra comma, bracket, brace or quote, or an unescaped character inside a string. It must be one JSON object.",
+    "Do not research anything, do not add, remove, reorder or reword any entry, and do not touch any other file.",
+    "Save it, then read it back and confirm it parses as JSON before you finish. Reply with one line saying what you fixed.",
+  ].join("\n");
 }
 
 /**

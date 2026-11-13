@@ -329,3 +329,35 @@ describe("when a late briefing is expected (for the morning email's \"arriving b
     expect(briefingArrivingBy(null, at)).toBeNull();
   });
 });
+
+
+/** The run is told how it is checked (13 Nov 2026): the floor is only fair if the run knows it. */
+describe("a row-delivering duty's task carries the delivery rules", () => {
+  it("sourcing is told how to file an honest nothing-new, and that record then passes the floor", async () => {
+    const { deliveryRules, honestNothingNew, NOTHING_NEW_FLOOR } = await import("../../src/worker/boss/duties/floors");
+    const rules = deliveryRules("sourcing_candidates")!;
+    expect(rules).toContain('"nothing_new"');
+    const record = { nothing_new: { searches: Array.from({ length: NOTHING_NEW_FLOOR.searches }, (_, i) => `query ${i}`), considered: Array.from({ length: NOTHING_NEW_FLOOR.considered }, (_, i) => ({ name: `Firm ${i}`, why_not: "already on the list" })) } };
+    expect(honestNothingNew("sourcing_candidates", record).ok).toBe(true);
+    expect(honestNothingNew("sourcing_candidates", { gaps: [{ wanted: "nothing new today", why: "" }] }).ok).toBe(false);
+    expect(deliveryRules("executive_reports")).toBeNull();
+    expect(deliveryRules("tool_suggestions")).not.toContain("nothing_new");
+  });
+
+  it("the materialised task's prompt ends with them, for the repo's prompt and for her own edit", async () => {
+    const { materialiseDueDuties } = await import("../../src/worker/boss/duties/materialise");
+    const { env } = await import("cloudflare:test");
+    await env.DB.prepare(`UPDATE standing_duties SET suspended = 1`).run();
+    for (const edit of [null, "Find tools for the brokerage only."]) {
+      await env.DB.prepare(`DELETE FROM tasks WHERE id IN (SELECT last_task_id FROM standing_duties WHERE id = 'duty_tool_scout')`).run();
+      await env.DB.prepare(`UPDATE standing_duties SET next_due_at = 0, suspended = 0, last_run_at = NULL, owner_prompt = ? WHERE id = 'duty_tool_scout'`).bind(edit).run();
+      const out = await materialiseDueDuties(env as any, Date.parse("2026-11-16T15:00:00Z"));
+      expect(out.fired.map((f: { duty: string }) => f.duty)).toContain("duty_tool_scout");
+      const t = await env.DB.prepare(`SELECT input AS input_json FROM tasks WHERE id = (SELECT last_task_id FROM standing_duties WHERE id = 'duty_tool_scout')`).first<{ input_json: string }>();
+      const prompt = String(JSON.parse(t!.input_json).prompt);
+      expect(prompt).toMatch(/read the file back and parse it/);
+      expect(prompt).toMatch(/at least 3 new/);
+      if (edit) expect(prompt.startsWith(edit)).toBe(true);
+    }
+  });
+});

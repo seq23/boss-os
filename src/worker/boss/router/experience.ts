@@ -456,6 +456,54 @@ export async function freeMemory(db: D1Database, taskKind: string | null | undef
   return out;
 }
 
+/*
+ * ─── FREE GOOGLE-GROUNDED SEARCH: WHICH MODELS THE KEY CAN STILL USE (repair, 13 Nov 2026) ──────
+ *
+ * Free research asked for exactly one model with `google_search`, the one that retires 1 Dec 2026
+ * and was already dead on a sister key. So a grounded search now walks every free model on the
+ * provider and learns from what the key answers, with nothing new stored:
+ *
+ *   · 404 "no longer available": the model is retired. Its `models` row is disabled, for good
+ *     (`retireModel`), so no job asks it again. A person can re-enable the row.
+ *   · 429 on a grounded call: grounding is out on that model until Google's daily reset. One
+ *     `rejected` row under the kind GROUNDING_KIND, and the model is passed over for grounded
+ *     searches until then (`groundingOutToday`). It stays available for plain writing.
+ *
+ * When every model is out, the caller walks on (Brave with a free writer, then a seat); never a
+ * paid route.
+ */
+export const GROUNDING_KIND = "grounded_search";
+
+/** Google's free tier resets at midnight Pacific: when the current day's allowance began. */
+export function freeDayStartedAt(now: number): number {
+  const parts = Object.fromEntries(new Intl.DateTimeFormat("en-US", { timeZone: "America/Los_Angeles", hourCycle: "h23", hour: "numeric", minute: "numeric", second: "numeric" })
+    .formatToParts(new Date(now)).map((p) => [p.type, p.value]));
+  return now - ((Number(parts.hour) % 24) * 3600 + Number(parts.minute) * 60 + Number(parts.second)) * 1000;
+}
+
+/** Does this failure say the model itself is gone (not the key, not the request)? */
+export function modelIsRetired(status: number | null | undefined, message: string): boolean {
+  return status === 404 && /no longer available|is not found for API version|was not found|has been (?:deprecated|retired|shut ?down)/i.test(message);
+}
+
+export async function retireModel(db: D1Database, modelId: string, why: string): Promise<void> {
+  await db.prepare(`UPDATE models SET enabled = 0 WHERE id = ? AND enabled = 1`).bind(modelId).run();
+  await logEvent(db, { level: "warn", scope: "router", event: "model_retired", entityId: modelId, detail: { why: why.slice(0, 300) } }).catch(() => {});
+}
+
+export async function groundingRefused(db: D1Database, modelId: string, lane: string, taskId: string | null, why: string): Promise<void> {
+  await recordOutcome(db, { taskKind: GROUNDING_KIND, modelId, outcome: "rejected", source: "router", lane, taskId, note: why.slice(0, 300) });
+}
+
+/** Models whose grounded search was refused since today's reset. Unreadable log: none, every model is asked. */
+export async function groundingOutToday(db: D1Database, now = Date.now()): Promise<Set<string>> {
+  try {
+    const rows = await db.prepare(`SELECT DISTINCT model_id FROM model_job_outcome WHERE task_kind = ? AND source = 'router' AND outcome = 'rejected' AND ts > ?`)
+      .bind(GROUNDING_KIND, freeDayStartedAt(now)).all<{ model_id: string }>();
+    return new Set((rows.results ?? []).map((r) => r.model_id));
+  } catch { return new Set(); }
+}
+
 /** Why an answer cannot stand whatever the job: it is empty. Null when it may go on to the job's own check. */
 export function emptyAnswer(text: string | null | undefined): string | null {
   return String(text ?? "").trim() ? null : "the answer was empty";

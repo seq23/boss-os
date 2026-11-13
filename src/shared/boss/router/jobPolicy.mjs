@@ -13,6 +13,12 @@ export const MEETING_PREP_WRITERS = [
   "mdl_or_nemotron_ultra_free", "mdl_or_deepseek_v4_free", "mdl_or_nemotron_super_free", "mdl_or_llama33_free",
 ];
 
+/** Google-grounded search may ask every free Gemini model; the key's answers decide which still work (0364). */
+export const GROUNDED_SEARCH_MODELS = [
+  "mdl_gemini_25_flash_free", "mdl_gemini_38_flash_free", "mdl_gemini_36_flash_free",
+  "mdl_gemini_3_flash_preview_free", "mdl_gemini_35_flash_lite_free", "mdl_gemini_31_flash_lite_free",
+];
+
 /** The seeded defaults: what "Default" means on the Settings screen. */
 export const JOB_POLICY_DEFAULTS = {
   meeting_prep: { label: "Meeting prep", allowed_model_ids: [], paid_allowed: 1, min_capability_tier: "general", on_no_model: "stop" },
@@ -24,7 +30,7 @@ export const JOB_POLICY_DEFAULTS = {
   // Meeting-prep research (migration 0338): Google-grounded on the free gemini-2.5-flash; else the
   // guest's fetched pages, written by a free Gemini 3 Flash. A named stop when neither can run.
   // 0354: 2.5-flash retires 1 Dec 2026, so the writer walks the next free Gemini, then OpenRouter free.
-  meeting_prep_search: { label: "Meeting prep: Google search", allowed_model_ids: ["mdl_gemini_25_flash_free"], paid_allowed: 0, min_capability_tier: "fast", on_no_model: "stop" },
+  meeting_prep_search: { label: "Meeting prep: Google search", allowed_model_ids: GROUNDED_SEARCH_MODELS, paid_allowed: 0, min_capability_tier: "fast", on_no_model: "stop" },
   meeting_prep_write: { label: "Meeting prep: writing from their pages", allowed_model_ids: MEETING_PREP_WRITERS, paid_allowed: 0, min_capability_tier: "general", on_no_model: "stop" },
 };
 

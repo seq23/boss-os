@@ -94,7 +94,9 @@ export interface ExecutorResult {
   refused?: boolean;
   refusal_reason?: string;
   /** Structured output the run wrote to `delivers.json`, read from its workspace by the adapter. */
-  delivers?: Record<string, unknown> | null;
+  delivers?: Record<string, unknown> | null;  delivery?: { present: boolean; status: string | null };
+  seat_exhausted?: unknown;
+  search_refused?: boolean;
 }
 
 export interface RunDeps {
@@ -134,6 +136,9 @@ export function validateEnvelope(
   envelope: Envelope | null | undefined,
   backend?: RunDeps["backend"],
 ): { ok: true; forbidden: string[] } | { ok: false; reason: string; detail: string };
+export const DELIVERS_REPAIR_SECONDS: number;
+export function invalidDelivers(result: ExecutorResult): string | null;
+export function deliversRepairPrompt(why: string): string;
 export function executeRun(envelope: Envelope, deps?: RunDeps): Promise<EvidencePacket>;
 export function claimRun(opts: { origin: string; deviceId: string; backendId?: string; fetchImpl?: typeof fetch; cookie?: string }): Promise<Envelope | null>;
 export function reportRun(evidence: EvidencePacket, opts: { origin: string; deviceId: string; fetchImpl?: typeof fetch; cookie?: string }): Promise<Record<string, unknown>>;

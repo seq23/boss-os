@@ -69,12 +69,16 @@ export const GEMINI_FREE_MODELS = [
   "gemini-2.5-flash", "gemini-3.8-flash", "gemini-3.6-flash", "gemini-3.5-flash-lite", "gemini-3.1-flash-lite", "gemini-3-flash-preview",
 ] as const;
 /**
- * GOOGLE SEARCH GROUNDING IS FREE ONLY ON gemini-2.5-flash (verified 4 Nov 2026: 2.5 Flash Lite is
- * closed to new users; grounding on 3.x answers 429 on the free tier). It retires 1 Dec 2026; after
- * that a grounded call is refused (gemini.ts) and meeting prep falls back to fetched pages, then to a
- * named stop. A search is never quietly billed, and research is never written from memory.
+ * WHICH FREE MODELS A GROUNDED GOOGLE SEARCH MAY ASK: ALL OF THEM, AND THE KEY'S ANSWERS DECIDE
+ * (repair, 13 Nov 2026). It was gemini-2.5-flash alone (verified free 4 Nov 2026), which retires
+ * 1 Dec 2026 and was already dead on a sister key, so free research had one model and then none.
+ * The router now walks the free models and learns (experience.ts): a 404 "no longer available"
+ * disables the model for good, a 429 on grounding passes it over until the daily reset. A free key
+ * answers 429, never a bill; a model outside this list is refused before any request (gemini.ts).
+ * When all are out the caller goes to Brave with a free writer, then a seat: never a paid route,
+ * and research is never written from memory.
  */
-export const GEMINI_FREE_SEARCH_MODELS = ["gemini-2.5-flash"] as const;
+export const GEMINI_FREE_SEARCH_MODELS = GEMINI_FREE_MODELS;
 
 export const CLOUD_BACKENDS: CloudBackendWiring[] = [
   {

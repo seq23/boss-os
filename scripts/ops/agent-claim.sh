@@ -156,4 +156,11 @@ if [ "$mode" = "poll" ]; then
   fi
 fi
 
+# PROPERTIES.json for the backlink prospecting run (13 Nov 2026: nothing ever wrote it, so every run
+# was "blocked: missing PROPERTIES.json" and delivered zero rows). Rewritten when it is over a day old;
+# `;` so a failed snapshot never stops the claim (the run then says what it is missing, and its floor fails it).
+if [ -z "$(find "${BOSS_OS_LINKS_WORKSPACE:-$HOME/.boss-os/links}/PROPERTIES.json" -mmin -1440 2>/dev/null)" ]; then
+  npm run --silent vault:run -- node scripts/ops/properties-snapshot.mjs >>"${BOSS_OS_HOME:-$HOME/.boss-os}/properties-snapshot.log" 2>&1 || true
+fi
+
 npm run --silent vault:run -- node scripts/sync-agent/agent.mjs work-once

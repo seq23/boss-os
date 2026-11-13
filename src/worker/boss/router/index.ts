@@ -21,7 +21,7 @@ import { bypassFor, predictSpend, type BypassRow } from "./bypass";
 import {
   GRADIENT_HARD_STOP_MICROS, gradientEffect, gradientState, isProtectedWork,
 } from "./gradient";
-import { experienceFor, mayBePreferredForProtectedWork, rank as experienceRank, recordOutcome, freeMemory } from "./experience";
+import { experienceFor, mayBePreferredForProtectedWork, rank as experienceRank, recordOutcome, freeMemory, groundingOutToday, groundingRefused, modelIsRetired, retireModel } from "./experience";
 import { getNumber } from "../lib/settings";
 import { hasConfidential, stripConfidential } from "../../../shared/boss/brains/brain.mjs";
 import { readJobPolicy, type JobPolicy } from "../../../shared/boss/router/jobPolicy.mjs";
@@ -752,7 +752,17 @@ export async function routeCompletion(env: Env, rawOpts: RouteRequest): Promise<
   const winnerAt = memory.lastWinner ? assembled.findIndex((c) => c.tier === "continuity" && c.model.id === memory.lastWinner && isFreeRow(c.model)) : -1;
   const firstFreeAt = assembled.findIndex((c) => c.tier === "continuity" && isFreeRow(c.model));
   if (winnerAt > firstFreeAt && firstFreeAt >= 0) assembled.splice(firstFreeAt, 0, ...assembled.splice(winnerAt, 1));
+  // A grounded search passes over the models that refused grounding since today's reset (experience.ts).
+  const groundingOut = opts.webSearch ? await groundingOutToday(db) : new Set<string>();
   const ordered = assembled.filter(({ model, tier }) => {
+    if (groundingOut.has(model.id)) {
+      considered.push({
+        model_id: model.id, backend_id: WIRING_BY_PROVIDER.get(model.provider_id)?.backendId ?? null,
+        tier, stage: "availability", verdict: "skipped",
+        reason: "this model refused a grounded search earlier today (out of allowance); it is asked again after the daily reset",
+      });
+      return false;
+    }
     if (!confinedTo || model.provider_id === confinedTo) return true;
     considered.push({
       model_id: model.id,
@@ -1139,7 +1149,13 @@ export async function routeCompletion(env: Env, rawOpts: RouteRequest): Promise<
     if (unusable) attemptError = new Error(`the answer failed this job's check: ${unusable}`);
     // The free tier's memory: this candidate failed this kind of job. Out of allowance (429) is a
     // note and a move to the next candidate, never a failure.
-    if (free && attemptError && !(attemptError instanceof ProviderCallError && attemptError.status === 429)) {
+    const failedStatus = attemptError instanceof ProviderCallError ? attemptError.status : null;
+    // The model itself is gone: dropped for good. Grounding refused for today: passed over until the reset.
+    const retired = Boolean(attemptError) && modelIsRetired(failedStatus, attemptError!.message);
+    const groundingCapped = Boolean(attemptError) && free && opts.webSearch === true && failedStatus === 429;
+    if (retired) await retireModel(db, model.id, attemptError!.message);
+    if (groundingCapped) await groundingRefused(db, model.id, opts.lane, opts.taskId ?? null, attemptError!.message);
+    if (free && attemptError && !retired && !(attemptError instanceof ProviderCallError && attemptError.status === 429)) {
       await recordOutcome(db, {
         taskKind: opts.intakeKind ?? null, modelId: model.id, outcome: "rejected", source: "router",
         lane: opts.lane, taskId: opts.taskId ?? null, note: attemptError.message.slice(0, 300),
@@ -1150,7 +1166,8 @@ export async function routeCompletion(env: Env, rawOpts: RouteRequest): Promise<
       lastError = attemptError ?? new Error("provider returned nothing");
       // An answer that failed the job's check says nothing about the provider being down: the
       // breaker, which closes a whole provider, counts real call failures only.
-      const state = unusable ? { open: false } : await recordFailure(db, def.backendId, lastError.message);
+      // Nor does a retired model or one model's grounding allowance: the provider is up, the next model is asked.
+      const state = unusable || retired || groundingCapped ? { open: false } : await recordFailure(db, def.backendId, lastError.message);
       note(
         "call", "failed",
         `${lastError.message.slice(0, 240)}${state.open ? " — circuit breaker opened" : ""}`,

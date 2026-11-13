@@ -162,6 +162,27 @@ export function honestNothingNew(kind: string, payload: Record<string, unknown> 
   return { ok, why: `${searches} searches run, ${considered} firms considered and turned down${ok ? "" : ` (an honest "nothing new" needs ${NOTHING_NEW_FLOOR.searches} and ${NOTHING_NEW_FLOOR.considered})`}` };
 }
 
+/**
+ * WHAT EVERY ROW-DELIVERING RUN IS TOLD, IN CODE (13 Nov 2026). The floor above is only fair if the
+ * run knows it. Appended to the duty's prompt when the task is made (materialise.ts), so it holds
+ * for the repository's prompt and for one she edited alike. Null for a kind with no row floor.
+ */
+export function deliveryRules(kind: unknown): string | null {
+  const spec = typeof kind === "string" ? ROWS[kind] : undefined;
+  if (!spec) return null;
+  const lines = [
+    "HOW THIS RUN IS CHECKED WHEN IT LANDS:",
+    `- It counts as delivered only when delivers.json holds at least ${spec.min} new ${spec.noun}${spec.min === 1 ? "" : "s"}, each with a link that opens. One already on the list is not new.`,
+    "- delivers.json must be valid JSON. After EVERY write, read the file back and parse it; fix it before you go on. A file that does not parse delivers nothing.",
+  ];
+  if (kind === "sourcing_candidates") {
+    lines.push(
+      `- If the search honestly turns up nothing new, say so with the record: add "nothing_new": { "searches": [the exact queries you ran, at least ${NOTHING_NEW_FLOOR.searches}], "considered": [{ "name", "why_not" }, at least ${NOTHING_NEW_FLOOR.considered} firms you looked at and turned down] }. "Nothing new" without that record is treated as a run that did not search.`,
+    );
+  }
+  return lines.join("\n");
+}
+
 /** A research page's floor: a page with no source a person can open is not delivered. */
 export async function researchPageFloor(
   page: { sources: { url: string }[] } | null,
