@@ -68,6 +68,18 @@ describe("the matrix flags both directions and shows duplicates", () => {
     expect(m.not_imported).toEqual(["gamma"]);
     expect(matrixFlagWords(m)).toBe("1 validator in the matrix is not in its repo's list (alpha); 1 validator is not in the matrix (alpha)");
   });
+  it("a deleted check is flagged even when an ordinary file shares its name (west-peek-os validate:home, 13 Nov 2026)", () => {
+    const scripts = { "validate:home": "node scripts/validate/home-answers-with-one-count.mjs", "validate:sql": "node scripts/validate/sql-against-schema.mjs" };
+    const files = ["scripts/validate/home-answers-with-one-count.mjs", "scripts/validate/sql-against-schema.mjs", "src/shared/help/pageGuide/home.ts", "src/gate.mjs"];
+    const rows = [row("validate:home"), row("validate:sql"), row("src/gate.mjs")];
+    const before = buildMatrix({ reviews: [review("wp", rows)], registries: { wp: registryFrom({ scripts, files }) } });
+    expect(before.unlisted).toEqual([]);
+    // The script and its file go; the page guide `home.ts` stays. The row must not hide behind it.
+    const after = buildMatrix({ reviews: [review("wp", rows)], registries: { wp: registryFrom({ scripts: { "validate:sql": scripts["validate:sql"] }, files: files.slice(1) }) } });
+    expect(after.unlisted).toEqual([{ repo: "wp", name: "validate:home" }]);
+    // A row named by its path is still found as a file; a path that is gone is flagged.
+    expect(buildMatrix({ reviews: [review("wp", [row("src/gate.mjs")])], registries: { wp: registryFrom({ scripts, files: files.slice(0, 3) }) } }).unlisted).toEqual([{ repo: "wp", name: "src/gate.mjs" }]);
+  });
   it("Rule 0: no review files, or a registry that yields nothing, is never all clear", () => {
     expect(buildMatrix({}).problems).toEqual(["no validators-<repo>.json file was found, so nothing was checked"]);
     expect(matrixFlagWords(buildMatrix({}))).toMatch(/could not read everything/);
