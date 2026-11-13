@@ -47,7 +47,10 @@ import {
 } from "../backends/guard";
 import { eligibleFor } from "../backends/registry";
 import { deepStrip } from "../backends/dispatch";
-import { CLAUDE_SEAT, OPENAI_SEAT } from "../duties/seatOrder";
+import { CLAUDE_SEAT, OPENAI_SEAT, SEAT_OF_TIER } from "../duties/seatOrder";
+import { ROUTE_TIERS } from "../../../shared/boss/aiRoles.mjs";
+import { ROW_FLOOR_KINDS, floorStop, researchPageFloor, rowsFloor } from "../duties/floors";
+import type { FloorVerdict } from "../duties/briefingSpec";
 import { afterResult } from "../service/afterResult";
 import type { AiProcessing } from "../policy/airlock";
 import type { Sensitivity } from "../../../shared/boss/governance";
@@ -710,7 +713,73 @@ backends.post("/report", async (c) => {
    * Pinned by tests/boss/anUnusableAnswerStepsDownToTheNextSeat.test.ts.
    */
   const spentEvidence = ev.seat_exhausted && typeof ev.seat_exhausted === "object" ? (ev.seat_exhausted as Record<string, unknown>) : null;
-  if (reported === "failed" && violations.length === 0) {
+
+  /*
+   * ── THE FLOOR: THE FINISHED WORK IS CHECKED HERE, ON THE REAL OUTPUT (owner, 13 Nov 2026) ─────
+   *
+   * A run that says "succeeded" has only said its process ended well. Backlink prospecting said so
+   * every week and delivered zero rows ever ("missing PROPERTIES.json"); a tools run lost 23 tools to
+   * an invalid delivers.json and was auto-accepted. So before anything is accepted, the deliverable
+   * the task was contracted for is graded (duties/floors.ts; the briefing by briefingSpec.ts
+   * `briefingFloor`). A MISS IS A FAILED RUN OF THIS ROUTE: it takes the same road an unusable answer
+   * takes just below (a `ladder_release` to a STRONGER seat when the ladder has one, which the
+   * two-failures rule counts), and with no stronger seat it ends failed under a named stop.
+   *
+   * WHAT WAS REAL IS STILL KEPT. The rows that are valid are written, and the briefing is filed as
+   * the day's best attempt (deliverReport.ts keeps the better of two), so a miss never erases work.
+   */
+  const delivered = (ev.delivers && typeof ev.delivers === "object" ? ev.delivers : null) as Record<string, unknown> | null;
+  let floorMiss: { stop: string; verdict: FloorVerdict; bestAttemptFiled: boolean } | null = null;
+  let reportFiled = false;
+  if (reported === "succeeded" && violations.length === 0 && run.task_id) {
+    const t = await c.env.DB.prepare(`SELECT input FROM tasks WHERE id = ?`).bind(run.task_id).first<{ input: string | null }>();
+    let tin: Record<string, unknown> = {};
+    try { tin = t?.input ? (JSON.parse(t.input) as Record<string, unknown>) : {}; } catch { tin = {}; }
+    const kind = typeof tin.delivers === "string" ? tin.delivers : null;
+    const unread = (Array.isArray(ev.remaining_risks) ? ev.remaining_risks : []).map(String).find((r: string) => /delivers\.json/.test(r)) ?? null;
+    const args = { taskId: run.task_id, runId, payload: delivered as any, runStatus: "succeeded", now: Date.now() };
+    try {
+      if (kind === "executive_reports") {
+        if (!delivered) {
+          floorMiss = { stop: `NAMED STOP [FLOOR_MISSED] the briefing delivered nothing: no readable delivers.json reached Boss OS${unread ? ` (${unread})` : ""}`, verdict: { pass: false, misses: ["nothing was delivered"], measured: {} }, bestAttemptFiled: false };
+        } else {
+          const out: { floor?: FloorVerdict; status?: "complete" | "partial" | "failed" } = {};
+          await deliverExecutiveReport(c.env, {
+            taskId: run.task_id, runId, report: delivered as any,
+            marketData: (ev.market_data && typeof ev.market_data === "object" ? ev.market_data : null) as any,
+            runStatus: "succeeded", now: Date.now(), out,
+          });
+          reportFiled = true;
+          if (out.floor && out.status !== "complete") floorMiss = { stop: floorStop("the briefing", out.floor), verdict: out.floor, bestAttemptFiled: out.status === "partial" };
+        }
+      } else if (kind && ROW_FLOOR_KINDS.includes(kind)) {
+        const verdict = await rowsFloor(c.env, kind, delivered, { why: unread });
+        if (verdict && !verdict.pass) {
+          floorMiss = { stop: floorStop(kind, verdict), verdict, bestAttemptFiled: false };
+          // The rows that ARE real are kept: the handlers below see a failed run and write nothing.
+          if (kind === "sourcing_candidates") await deliverSourcingCandidates(c.env, args);
+          else if (kind === "link_prospects") await deliverLinkProspects(c.env, args);
+          else await deliverToolSuggestions(c.env, args);
+        }
+      } else if (kind === "research_page") {
+        const { readResearchDelivery } = await import("../../../shared/boss/research/page.mjs");
+        const read = readResearchDelivery(delivered);
+        const verdict = await researchPageFloor(read.ok ? read.page : null, read.ok ? null : read.why);
+        if (!verdict.pass) floorMiss = { stop: floorStop("the research page", verdict), verdict, bestAttemptFiled: false };
+      }
+    } catch (err) {
+      // The check itself broke: said, never read as a pass or as a miss.
+      await logEvent(c.env.DB, { level: "error", scope: "backends", event: "floor_check_failed", entityId: run.task_id, detail: { run_id: run.id, delivers: kind, error: err instanceof Error ? err.message : String(err) } }).catch(() => {});
+    }
+    if (floorMiss) {
+      await logEvent(c.env.DB, { level: "warn", scope: "backends", event: "floor_missed", entityId: run.task_id, detail: { run_id: run.id, backend_id: run.backend_id, delivers: kind, misses: floorMiss.verdict.misses, measured: floorMiss.verdict.measured } }).catch(() => {});
+    }
+  }
+  /** Is `b` a stronger route than `a`? A floor miss only ever moves a job UP (aiRoles.mjs ROUTE_TIERS). */
+  const tierOf = (seat: string) => (ROUTE_TIERS as readonly string[]).indexOf(Object.keys(SEAT_OF_TIER).find((tier) => SEAT_OF_TIER[tier] === seat) ?? "");
+  const stronger = (a: string, b: string) => tierOf(b) > tierOf(a);
+
+  if ((reported === "failed" || floorMiss) && violations.length === 0) {
     let req: Record<string, unknown> = {};
     try { req = run.requested ? (JSON.parse(run.requested) as Record<string, unknown>) : {}; } catch { req = {}; }
     const ladder: string[] = Array.isArray(req.backend_ladder) ? (req.backend_ladder as unknown[]).filter((x): x is string => typeof x === "string") : [];
@@ -764,12 +833,12 @@ backends.post("/report", async (c) => {
         return ok(c, { released: true, run_id: run.id, next_seat: OPENAI_SEAT, outcome_class: "waiting_for_reset", approval_id: null, exhausted_until: until });
       }
     }
-    const next = at === -1 ? undefined : ladder.slice(at + 1).find((id) => !tried.includes(id) && id !== run.backend_id);
+    const next = at === -1 ? undefined : ladder.slice(at + 1).find((id) => !tried.includes(id) && id !== run.backend_id && (!floorMiss || stronger(run.backend_id, id)));
     if (next) {
       const releasedAt = Date.now();
       const until = spentEvidence ? releasedAt + spentCooldownSeconds(spentEvidence.retry_after_seconds) * 1000 : null;
       const notice = spentEvidence ? (optionalText(spentEvidence.notice) ?? "").slice(0, 300) || null : null;
-      const failedWith = (optionalText(ev.error) ?? "it reported a failure and named no error").slice(0, 300);
+      const failedWith = (floorMiss?.stop ?? optionalText(ev.error) ?? "it reported a failure and named no error").slice(0, 300);
       const why = spentEvidence
         ? `${run.backend_id} reported its plan is out of usage${notice ? `: ${notice}` : ""}`
         : `${run.backend_id} gave an unusable answer: ${failedWith}`;
@@ -838,7 +907,7 @@ backends.post("/report", async (c) => {
     }
   }
 
-  const status = violations.length > 0 ? "failed" : reported;
+  const status = violations.length > 0 || floorMiss ? "failed" : reported;
   const refusalReason =
     status === "refused"
       ? JSON.stringify({ code: optionalText(ev.refusal_reason) ?? "unstated", sentence: optionalText(ev.refusal_reason) ?? "The runner declined without naming a reason." })
@@ -847,7 +916,7 @@ backends.post("/report", async (c) => {
     status === "failed"
       ? violations.length > 0
         ? `FORBIDDEN_ACTION_DETECTED: ${violations.map((v: any) => String(v?.action ?? "unknown")).join(", ")}`
-        : (optionalText(ev.error) ?? "The runner reported a failure and named no error.")
+        : (floorMiss?.stop ?? optionalText(ev.error) ?? "The runner reported a failure and named no error.")
       : null;
 
   const costMicros = Number.isFinite(Number(ev.cost_micros)) ? Math.max(0, Math.floor(Number(ev.cost_micros))) : 0;
@@ -992,6 +1061,18 @@ backends.post("/report", async (c) => {
           ]);
           await afterResultOf(c.env, task, optionalText(ev.summary) ?? "", false);
         }
+      } else if (floorMiss?.bestAttemptFiled) {
+        /*
+         * NO ROUTE REACHED THE STANDARD, AND THE BEST ATTEMPT IS WHAT SHE READS. The run is failed
+         * (it counts against this route for this kind); the task is done, because the day's
+         * briefing was delivered, under the named stop its row carries to Today and the morning
+         * email ("Below the standard today: ..."). Never auto-accepted as a clean success.
+         */
+        await c.env.DB.batch([
+          c.env.DB.prepare(`UPDATE tasks SET status = 'done', finished_at = COALESCE(finished_at, ?), cost_micros = cost_micros + ? WHERE id = ?`).bind(now, costMicros, task.id),
+          c.env.DB.prepare(`INSERT INTO task_events (id, task_id, ts, event, detail) VALUES (?,?,?,'delivered_below_floor',?)`)
+            .bind(newId("tev"), task.id, now, JSON.stringify({ backend_run_id: runId, backend_id: run.backend_id, stop: floorMiss.stop, misses: floorMiss.verdict.misses })),
+        ]);
       } else {
         await c.env.DB
           .prepare(`UPDATE tasks SET status = ?, finished_at = ?, error = ?, cost_micros = cost_micros + ? WHERE id = ?`)
@@ -1058,7 +1139,7 @@ backends.post("/report", async (c) => {
         return null;
       });
 
-      await deliverExecutiveReport(c.env, {
+      if (!reportFiled) await deliverExecutiveReport(c.env, {
         taskId: task.id,
         runId,
         report: (ev.delivers && typeof ev.delivers === "object" ? ev.delivers : null) as any,

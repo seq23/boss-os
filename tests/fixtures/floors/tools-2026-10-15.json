@@ -1,0 +1,161 @@
+{
+ "_about": "THE STANDARD for \"tools worth knowing\": the real run of 15 Oct 2026, 13 tools, as stored. Public products and public review pages only.",
+ "tools": [
+  {
+   "name": "Carrd",
+   "url": "https://carrd.co",
+   "serves": "digital_products",
+   "what_it_does": "Single-page site builder for landing pages, portfolios, and product hubs. Mobile-first, minimal design.",
+   "price_note": "Free tier very limited; Pro tier extremely cheap",
+   "free_tier": false,
+   "instead_of": "Wix, Webflow, WordPress for simple landing pages",
+   "verdict": "Default MVP landing page for indie creators. Fast setup (minutes), mobile-friendly out of box. Limitation: one page only, no email automation built-in.",
+   "evidence": "2.5M sites built (Carrd AMA on Indie Hackers 2024), mentioned across Substack creator workflows and Twitter indie community, 13.6M monthly visits (Feb 2026)",
+   "evidence_url": "https://www.indiehackers.com/post/hi-im-aj-maker-of-carrd-and-after-2-5m-sites-1m-arr-and-a-funding-round-probably-time-for-an-ama-1b7fcf52fe"
+  },
+  {
+   "name": "Gumroad",
+   "url": "https://gumroad.com",
+   "serves": "digital_products",
+   "what_it_does": "Host and sell digital products (ebooks, courses, software). Unlimited email list. Free customer updates.",
+   "price_note": "5% + $0.25 per transaction (historically low)",
+   "free_tier": false,
+   "instead_of": "Building custom payment processing and fulfillment infrastructure; Stripe + custom code",
+   "verdict": "Founder interviews show the real workflow: tease on social → email list → launch to email list → gather feedback. Low friction for creators without engineering resources.",
+   "evidence": "Founder case studies from course creator guides; Gumroad founder Sahil Lavingia interviews about growth from one-on-one creator outreach",
+   "evidence_url": "https://filiato.com/media/2026/01/The-Gumroad-Creators-Playbook-A-Complete-Guide-to-Selling-Digital-Products.pdf"
+  },
+  {
+   "name": "Lemon Squeezy",
+   "url": "https://www.lemonsqueezy.com",
+   "serves": "digital_products",
+   "what_it_does": "Digital product sales with merchant-of-record (handles tax/VAT). Abandoned cart emails for subscriptions.",
+   "price_note": "5% + $0.50 per transaction",
+   "free_tier": false,
+   "instead_of": "Gumroad (if tax/VAT compliance needed), SendOwl",
+   "verdict": "Solves tax/VAT headache that Gumroad doesn't. Approval process documented as frustration point (slows launches). Fee structure (5% + $0.50) is higher on low-priced items than Gumroad. Email features more limited.",
+   "evidence": "Multiple 2024-2026 comparisons from indie creators (ByBurk, Velox Themes, WeCareFounders); approval delays mentioned across indie forums",
+   "evidence_url": "https://www.byburk.net/gumroad-vs-lemon-squeezy-which-is-the-better-platform-for-selling-digital-products-2024/"
+  },
+  {
+   "name": "ConvertKit (Kit)",
+   "url": "https://convertkit.com",
+   "serves": "digital_products",
+   "what_it_does": "Email marketing and automation for creators. Product launch sequences, welcome funnels, subscriber segmentation.",
+   "price_note": "Starts $39/month for 1,000 subscribers (sources vary)",
+   "free_tier": false,
+   "instead_of": "Mailchimp, Brevo, Substack (for advanced automation)",
+   "verdict": "Designed for creator economics (product launches, segmentation). Creators pair with Substack for automation depth. Real gotcha: higher pricing than alternatives; requires custom integrations for digital product workflows.",
+   "evidence": "Multiple practitioner blogs and comparison articles from SequenzY and Mailtoolfinder; creator launch workflows documented",
+   "evidence_url": "https://www.sequenzy.com/versus/substack-vs-convertkit"
+  },
+  {
+   "name": "Typeform",
+   "url": "https://www.typeform.com",
+   "serves": "digital_products",
+   "what_it_does": "Customer discovery via surveys and forms. Validate ideas, collect feedback before building.",
+   "price_note": "Free tier capped at 10 responses/month; paid starts $25-29/month",
+   "free_tier": false,
+   "instead_of": "Google Forms (for branding), SurveyMonkey, Qualtrics",
+   "verdict": "Recommended in 3-5 question format for customer validation. Real gotcha: free tier is punishing (10 responses only); branching logic restricted to paid. Practitioners recommend 5-question screener format.",
+   "evidence": "Multiple indie-focused guides (Ideaplan, Koji, EarlyCustomers, IndieTools); recommended in practitioner customer-discovery playbooks",
+   "evidence_url": "https://earlycustomers.com/blog/best-tools-finding-early-customers-indie-founder/"
+  },
+  {
+   "name": "Zapier",
+   "url": "https://zapier.com",
+   "serves": "digital_products",
+   "what_it_does": "No-code automation. Connect form submissions → email lists → CRM → follow-up sequences without code.",
+   "price_note": "Free tier ~100 tasks/month; paid $10-20+/month depending on complexity",
+   "free_tier": false,
+   "instead_of": "Make (similar), custom code, n8n (for self-hosted)",
+   "verdict": "Standard for indie automation stacks (forms → Airtable → Gmail). Real gotcha: free tier exhausts fast with multi-step automations; GDPR/consent handling not covered in free tier docs.",
+   "evidence": "Airtable's own support docs, indie automation guides (Calmops), Switch Labs tutorials, documented in Substack/Airtable workflows",
+   "evidence_url": "https://www.switchlabs.dev/resources/automating-email-workflows-with-airtable-and-zapier-integration"
+  },
+  {
+   "name": "Make (formerly Integromat)",
+   "url": "https://www.make.com",
+   "serves": "digital_products",
+   "what_it_does": "No-code automation platform. Similar to Zapier but with more flexible workflow logic.",
+   "price_note": "Free tier ~100 operations/month; paid $9-99+/month",
+   "free_tier": false,
+   "instead_of": "Zapier (for complex workflows), custom code",
+   "verdict": "More flexible workflow logic than Zapier for complex automations. Real gotcha: free tier exhausts quickly; pricing per operation can surprise.",
+   "evidence": "Mentioned in Switch Labs tutorials and Calmops indie automation guides as Zapier alternative",
+   "evidence_url": "https://calmops.com/indie-hackers/automating-indie-business-zapier-make/"
+  },
+  {
+   "name": "Brevo (formerly Sendinblue)",
+   "url": "https://www.brevo.com",
+   "serves": "digital_products",
+   "what_it_does": "Email and SMS marketing with automation. Billed by emails sent, not contacts stored.",
+   "price_note": "Free tier 300 emails/day; paid from $9/month",
+   "free_tier": false,
+   "instead_of": "Mailchimp (cheaper tier), ConvertKit (for cost-conscious indie)",
+   "verdict": "Indie hackers appreciate free tier (300/day, SMS included). Real gotcha: automation setup takes 2-3 hours; interface feels dated vs Mailchimp/ConvertKit. Steep jump from free to Professional plan pricing.",
+   "evidence": "IndieRadar review (indie-focused), HackAcceleration review, multiple 2026 reviews from practitioner sites",
+   "evidence_url": "https://indieradar.app/tools/email-marketing/brevo"
+  },
+  {
+   "name": "Airtable",
+   "url": "https://airtable.com",
+   "serves": "digital_products",
+   "what_it_does": "Customer database and light CRM. Organize customer data, manage relationships, track orders. Integrates with Zapier for automation.",
+   "price_note": "Free for individuals/small teams; paid from ~$12/month",
+   "free_tier": false,
+   "instead_of": "Notion (heavier), HubSpot (lighter alternative), spreadsheets",
+   "verdict": "Standard database for indie stacks (paired with Zapier for email automation). Lacks built-in email automation. Scales but breakdowns noted above ~100 customers without optimization.",
+   "evidence": "Airtable case study (Halo Cars), community forum discussions, multiple indie guides; standard in documented Zapier workflows",
+   "evidence_url": "https://builtbyme.io/blog/hubspot-alternatives-indie-crm-first-customers"
+  },
+  {
+   "name": "BuzzStream",
+   "url": "https://www.buzzstream.com",
+   "serves": "practice",
+   "what_it_does": "Relationship management and outreach tracking. Organize prospects by campaign/sector/client. Tracks contact history, follow-ups, link status.",
+   "price_note": "Pricing not disclosed; contact for quote (typical for larger agencies)",
+   "free_tier": false,
+   "instead_of": "Pitchbox (relationship-focused), HubSpot (light CRM)",
+   "verdict": "UNPROVEN — Built for relationship tracking at scale (30+ simultaneous campaigns). Real usage: Content Customs manages tens of thousands of contacts. Real limitation: case studies lack independent verification; UI complex for new users..",
+   "evidence": "The only source found was the vendor's own site.",
+   "evidence_url": null
+  },
+  {
+   "name": "Postaga",
+   "url": "https://postaga.com",
+   "serves": "practice",
+   "what_it_does": "AI-assisted link building. Analyzes site, suggests campaigns (skyscraper, guest post, resource page), finds prospects, builds personalized outreach sequences.",
+   "price_note": "Conflicting reports: sources cite $29+/month or free tier available—verify current",
+   "free_tier": false,
+   "instead_of": "Ahrefs + Pitchbox (all-in-one alternative), Respona (AI-heavy competitors)",
+   "verdict": "AI campaign suggestions and preset templates. Designed for solopreneurs/small teams (raised $180K from TinySeed accelerator per Indie Hackers). Real limitation: indie-hacker positioning suggests smaller target audience; limited independent reviews. Pricing unclear.",
+   "evidence": "Indie Hackers coverage by founders (Andy Cabasso, Sam Brodie); positioned as fast setup for independent operators",
+   "evidence_url": "https://www.indiehackers.com/post/ai-tool-for-pr-outreach-postaga-wants-to-boost-your-win-rate-bb801b7568"
+  },
+  {
+   "name": "Respona",
+   "url": "https://respona.com",
+   "serves": "practice",
+   "what_it_does": "Automated prospecting and outreach with AI personalization. Finds link prospects, generates icebreakers, manages campaigns via credits.",
+   "price_note": "Starts $198/month; 14-day free trial",
+   "free_tier": false,
+   "instead_of": "Pitchbox (for AI personalization), Postaga (AI alternative)",
+   "verdict": "UNPROVEN — AI personalization praised for sounding human. Automation runs at scale. Case study: 1,000 guest post pitches → 20.5% response rate → 55 placements. Real gotcha: credits system 'burns through budget fast' per reviewers; occasional bugs with domain authority filtering; email verification issues on niche domains..",
+   "evidence": "The only source found was the vendor's own site.",
+   "evidence_url": null
+  },
+  {
+   "name": "Majestic",
+   "url": "https://majestic.com",
+   "serves": "practice",
+   "what_it_does": "Specialist backlink analysis. Trust Flow and Citation Flow metrics assess link quality. Link Context shows where links appear on page.",
+   "price_note": "Sources cite $41.67-$49.99/month; verify current",
+   "free_tier": false,
+   "instead_of": "Ahrefs (for quality assessment specialists), Semrush (quality metrics focus)",
+   "verdict": "Specialist tool for backlink quality assessment. Trust/Citation Flow ratio (0.5–1.5 healthy) used by professionals. Real limitation: does not do keyword research or general SEO; smaller index than Ahrefs; requires pairing with other tools.",
+   "evidence": "PageOnepower guide recommends workflow (TF/CF ratio → Topical Trust Flow → Link Context); paired with Ahrefs by teams doing deep analysis",
+   "evidence_url": "https://www.pageonepower.com/linkarati/review-backlink-analysis-majestic"
+  }
+ ]
+}

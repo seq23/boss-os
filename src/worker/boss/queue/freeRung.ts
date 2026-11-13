@@ -296,6 +296,12 @@ export async function runFreeResearch(
       if (!capped || (out.resumeAt !== null && (capped.resumeAt === null || out.resumeAt < capped.resumeAt))) capped = { code: out.code, why: out.why, resumeAt: out.resumeAt };
       continue;
     }
+    // A page with no source is not a delivery (deliverReport.ts fileResearchPage refuses it): the walk goes on.
+    if (out.page.sources.length === 0) {
+      await step({ backend_id: rung.backend, refused: "the page it wrote cites no source a person can open", next: rung.engine === "google" ? "OpenRouter free models with Brave Search" : "the seats" });
+      reasons.push(`${rung.label}: wrote a page with no source`);
+      continue;
+    }
     await fileFreePage(env, task, input, t, out, o.employeeName ?? null, rung.label);
     return { handled: true };
   }

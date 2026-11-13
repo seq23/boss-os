@@ -465,6 +465,27 @@ export function briefingReady(briefing, today) {
   return Boolean(briefing && briefing.for_day === today && (briefing.headline || briefing.summary || (briefing.sections ?? []).length));
 }
 
+/**
+ * THE BRIEFING IS LATE: ONE LINE THAT SAYS WHEN (owner, 13 Nov 2026). The email went without its
+ * briefing section on 3, 9 and 13 Nov. Today's block carries `arriving_by` when a run is on its way
+ * (routes/today.ts `briefingArrivingBy`); with none on its way the line says so, never a made-up time.
+ */
+export function briefingLateLine(briefing, now, tz = null) {
+  const by = Number(briefing?.arriving_by);
+  if (Number.isFinite(by) && by > now) return `Briefing late, arriving by ${timeOf(by, tz)}. It will be on your Today page.`;
+  return "Briefing late: no run is on its way right now, so it may not arrive today. The team is fixing it.";
+}
+
+/**
+ * A BRIEFING BELOW THE STANDARD SAYS SO (owner, 13 Nov 2026): when no route reached the floor, the
+ * best attempt is delivered and this line leads it, in the report's own words (deliverReport.ts).
+ */
+export function briefingBelowLine(briefing) {
+  const first = String((briefing?.shortfalls ?? [])[0] ?? "");
+  if (briefing?.status !== "partial" || !first.startsWith("Below the standard today")) return null;
+  return `Best attempt today, below the usual standard: ${first.replace(/^Below the standard today:\s*/, "").replace(/\.$/, "")}.`;
+}
+
 /** The latest the morning email waits for Camille's briefing: 07:45 Central. */
 export const BRIEFING_CAP = Object.freeze({ hour: 7, minute: 45 });
 
@@ -902,7 +923,8 @@ export function buildDay(data, now = Date.now()) {
   // in the email (owner, 24 Oct 2026: "never risk the size limit"); `briefingFull` is its screen's shape.
   const raw = briefingRaw(data.briefing, today);
   const src = briefingSourceUrl(data.briefing);
-  const briefTop = raw ? raw.map((l) => ({ runs: proseRuns(headline(l), src) })) : null;
+  const below = raw ? briefingBelowLine(data.briefing) : null;
+  const briefTop = raw ? [...(below ? [below] : []), ...raw.map((l) => ({ runs: proseRuns(headline(l), src) }))] : null;
 
   /*
    * 4. Done for you (owner, 26 Oct 2026: "no need to repeat ever and do not use a lot of space"): each
@@ -1040,7 +1062,7 @@ export function buildDay(data, now = Date.now()) {
       ...(prospects ? [prospects] : []),
       ...(spirit ? [spirit] : []),
       // A briefing that is not in is said in one line (rule 0: a failed source says so), with its link.
-      { title: "This morning's briefing (Camille)", items: briefTop ?? ["Briefing late — it will be on your Today page."], link: { label: "Read the full briefing →", url: BRIEFING_URL } },
+      { title: "This morning's briefing (Camille)", items: briefTop ?? [briefingLateLine(data.briefing, now, data.ownerTz)], link: { label: "Read the full briefing →", url: BRIEFING_URL } },
       ...(doneShown.length ? [{ title: "Done for you", tone: "done", items: doneShown, empty: null }] : []),
       ...(gridRepos ? [gridRepos] : []),
       ...(openLoopsSection ? [openLoopsSection] : []),

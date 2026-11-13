@@ -8,9 +8,10 @@ import { taskToken } from "../../../shared/boss/service/waits.mjs";
 import { logEvent } from "../lib/log";
 import { dayIdInZone, wallClock, weekIdInZone, OWNER_TIMEZONE } from "@shared/boss/timezone";
 import { materialiseDueDuties } from "./materialise";
+import { sourcesReachable, type Reach } from "./floors";
 import {
-  applyMarketData, assessBriefing, checkedThrough, stripExcludedSections,
-  type MarketData,
+  applyMarketData, assessBriefing, checkedThrough, stripExcludedSections, briefingFloor, BRIEFING_FLOOR,
+  type FloorVerdict, type MarketData,
 } from "./briefingSpec";
 
 /**
@@ -478,6 +479,10 @@ export async function deliverExecutiveReport(
      * (backend and requested model); a cloud rung has no run row and names itself here.
      */
     writtenBy?: WrittenBy | null;
+    /** How many cited sources answered a plain GET; measured here when absent (tests hand it in). */
+    reach?: Reach | null;
+    /** Filled with what the floor found, for the caller that decides what the run's route is told. */
+    out?: { floor?: FloorVerdict; status?: "complete" | "partial" | "failed"; kept_earlier?: boolean };
   },
 ): Promise<string | null> {
   const now = args.now ?? Date.now();
@@ -569,9 +574,29 @@ export async function deliverExecutiveReport(
     .prepare(`SELECT started_at, finished_at FROM backend_runs WHERE id = ?`).bind(args.runId)
     .first<{ started_at: number | null; finished_at: number | null }>()
     .catch(() => null);
+  /*
+   * ── THE FLOOR IS MEASURED ON WHAT WAS DELIVERED (owner, 13 Nov 2026) ──────
+   * The last report's headlines (one carried over word for word is caught) and whether the cited
+   * sources answer a plain GET. The fetches run only for a report that already carries enough
+   * sources to pass: a thin one has missed on the count and nothing is gained by asking.
+   */
+  const earlier = await env.DB
+    .prepare(`SELECT sections FROM executive_reports WHERE day_id < ? AND status != 'failed' ORDER BY day_id DESC LIMIT 1`).bind(forDay)
+    .first<{ sections: string | null }>().catch(() => null);
+  let previousHeadlines: unknown[] = [];
+  try {
+    const top = (JSON.parse(earlier?.sections ?? "[]") as Record<string, unknown>[]).find((x) => sectionKeyOf(x) === "top_5_headlines");
+    previousHeadlines = asArray(top?.items).map((h) => (h && typeof h === "object" ? (h as Record<string, unknown>).headline : null));
+  } catch { previousHeadlines = []; }
+  const citedUrls = reportSources
+    .filter((x): x is Record<string, unknown> => Boolean(x) && typeof x === "object").map((x) => x.url);
+  const reach = args.reach !== undefined ? args.reach
+    : status !== "failed" && citedUrls.length >= BRIEFING_FLOOR.sources
+      ? await sourcesReachable(citedUrls, { need: BRIEFING_FLOOR.reachable }).catch(() => null)
+      : null;
   const assessment = assessBriefing(
-    { sections, sources: reportSources },
-    { dayId: forDay, finishedAt: run?.finished_at ?? now },
+    { sections, sources: reportSources, gaps },
+    { dayId: forDay, finishedAt: run?.finished_at ?? now, reach, previousHeadlines },
   );
 
   /*
@@ -618,9 +643,46 @@ export async function deliverExecutiveReport(
     ...(!applied.dashboard_built && status !== "failed" ? ["No live market snapshot reached this run; the dashboard is the run's own, cited figures."] : []),
     ...assessment.problems.filter((p) => !/is not in the report\.$/.test(p)),
   ];
-  const shortfalls = [...standing.shortfalls, ...extraShortfalls];
+  /*
+   * ── "partial" MEANS BELOW THE STANDARD, AND NOTHING ELSE (owner, 13 Nov 2026) ──
+   * Every report since 19 Sep read "partial": a read time typed a minute late, one homepage in
+   * thirty sources. A label every good day gets carries no signal, and a half-depth briefing wore
+   * the same one. The status is now the FLOOR's verdict (briefingSpec.ts `briefingFloor`): complete
+   * when the report is at the standard, partial when it is below it, with what fell short said
+   * first. The smaller notes stay on the row and never move the status.
+   */
+  // On the sections she is SHOWN: one withheld for printing a figure with no source is not there.
+  const floor = briefingFloor({ sections: sourcing.kept, sources: reportSources, gaps }, { reach, previousHeadlines });
   const honest: "complete" | "partial" | "failed" =
-    standing.status === "failed" ? "failed" : shortfalls.length === 0 ? "complete" : "partial";
+    standing.status === "failed" ? "failed" : floor.pass ? "complete" : "partial";
+  const shortfalls = [
+    ...(honest === "partial" ? [`Below the standard today: ${floor.misses.join("; ")}.`] : []),
+    ...standing.shortfalls, ...extraShortfalls,
+  ];
+  if (args.out) { args.out.floor = floor; args.out.status = honest; }
+
+  /*
+   * ── THE BEST ATTEMPT OF THE DAY STANDS ───────────────────────────────────
+   * A second attempt (the next seat after a floor miss, a retry) replaces the day's row only when it
+   * is at least as good: a report at the standard is never overwritten by one below it, a delivered
+   * report never by a failed run, and of two below the standard the one with fewer misses is kept.
+   */
+  const standingRow = await env.DB
+    .prepare(`SELECT id, status, floor FROM executive_reports WHERE day_id = ?`).bind(forDay)
+    .first<{ id: string; status: string; floor: string | null }>().catch(() => null);
+  if (standingRow && standingRow.status !== "failed" && honest !== "complete") {
+    let had: number | null = null;
+    try { const f = JSON.parse(standingRow.floor ?? "null"); had = Array.isArray(f?.misses) ? f.misses.length : null; } catch { had = null; }
+    const keep = honest === "failed" || standingRow.status === "complete" || (had !== null && had < floor.misses.length);
+    if (keep) {
+      if (args.out) args.out.kept_earlier = true;
+      await logEvent(env.DB, {
+        level: "warn", scope: "duties", event: "executive_report_kept_better", entityId: args.taskId,
+        detail: { day_id: forDay, kept: standingRow.id, kept_status: standingRow.status, this_status: honest, this_misses: floor.misses, run_id: args.runId },
+      }).catch(() => {});
+      return standingRow.id;
+    }
+  }
 
   const stamp = checkedThrough({ sources: reportSources, market, finishedAt: now });
   const writtenBy = args.writtenBy ?? (await writtenByFromRun(env, args.runId));
@@ -681,8 +743,8 @@ export async function deliverExecutiveReport(
     .prepare(
       `INSERT INTO executive_reports
          (id, day_id, generated_at, task_id, backend_run_id, status, headline, summary, sections, gaps, sources, corrections, watching, shortfalls,
-          checked_through, prompt_version, market_data, consulted, written_by)
-       VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+          checked_through, prompt_version, market_data, consulted, written_by, floor)
+       VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
        ON CONFLICT(day_id) DO UPDATE SET
          generated_at = excluded.generated_at,
          task_id = excluded.task_id,
@@ -700,7 +762,8 @@ export async function deliverExecutiveReport(
          prompt_version = excluded.prompt_version,
          market_data = excluded.market_data,
          consulted = excluded.consulted,
-         written_by = excluded.written_by`,
+         written_by = excluded.written_by,
+         floor = excluded.floor`,
     )
     .bind(
       id, forDay, now, args.taskId, args.runId, honest, headline, summary,
@@ -715,6 +778,7 @@ export async function deliverExecutiveReport(
       market ? JSON.stringify(market) : null,
       JSON.stringify(consulted),
       writtenBy ? JSON.stringify(writtenBy) : null,
+      honest === "failed" ? null : JSON.stringify(floor),
     )
     .run();
 
@@ -751,6 +815,7 @@ export async function deliverExecutiveReport(
       dashboard_built: applied.dashboard_built, excluded_removed: excluded.removed.length,
       checked_through: stamp.label, prompt_version: promptVersion,
       written_by: writtenBy?.label ?? null,
+      floor_pass: floor.pass, floor_misses: floor.misses, floor_measured: floor.measured,
     },
   });
 
@@ -766,6 +831,9 @@ export async function deliverExecutiveReport(
  * page is also filed in `delivered_work`, the one list of everything the team has delivered, which
  * Zora's Friday duty keeps whole.
  */
+/** Why a page with no source is not filed as delivered. */
+export const NO_SOURCE = "the page cites no source a person can open, so it was not filed as delivered";
+
 export async function deliverResearchPage(
   env: Env,
   args: { taskId: string; runId: string; payload: Record<string, unknown> | null; runStatus: string; now?: number },
@@ -792,7 +860,9 @@ export async function deliverResearchPage(
     await logEvent(env.DB, { level: "error", scope: "duties", event: "research_page_failed", entityId: pageId, detail: { task_id: args.taskId, run_id: args.runId, why: read.why } });
     return { state: "failed", page_id: pageId, why: read.why };
   }
-  await fileResearchPage(env, { pageId, taskId: args.taskId, runId: args.runId, page: read.page, now });
+  // A PAGE WITH NO SOURCE IS NEVER STORED "delivered" (owner, 13 Nov 2026: three of six free pages were).
+  const filed = await fileResearchPage(env, { pageId, taskId: args.taskId, runId: args.runId, page: read.page, now });
+  if (!filed) return { state: "failed", page_id: pageId, why: NO_SOURCE };
   return { state: "delivered", page_id: pageId };
 }
 
@@ -803,9 +873,17 @@ export async function deliverResearchPage(
 export async function fileResearchPage(
   env: Env,
   a: { pageId: string; taskId: string; runId: string; now: number; page: { title: string; summary: string; markdown: string; sources: unknown[]; gaps: unknown[]; status: string } },
-): Promise<void> {
+): Promise<boolean> {
   const { researchPageUrl } = await import("../../../shared/boss/research/page.mjs");
   const p = a.page;
+  // THE ONE PLACE EVERY RUNG AND SEAT FILES A PAGE, SO THE RULE LIVES HERE: no source, not delivered.
+  if (!Array.isArray(p.sources) || p.sources.length === 0) {
+    await env.DB
+      .prepare(`UPDATE research_pages SET state = 'failed', failure_reason = ?, run_id = ?, updated_at = ? WHERE id = ?`)
+      .bind(NO_SOURCE, a.runId, a.now, a.pageId).run();
+    await logEvent(env.DB, { level: "error", scope: "duties", event: "research_page_failed", entityId: a.pageId, detail: { task_id: a.taskId, run_id: a.runId, why: NO_SOURCE } });
+    return false;
+  }
   await env.DB.batch([
     env.DB.prepare(
       `UPDATE research_pages SET state = 'delivered', title = ?, summary = ?, markdown = ?, sources = ?, gaps = ?, status = ?,
@@ -819,6 +897,7 @@ export async function fileResearchPage(
   ]);
   await logEvent(env.DB, { level: "info", scope: "duties", event: "research_page_delivered", entityId: a.pageId, detail: { task_id: a.taskId, run_id: a.runId, sources: p.sources.length, status: p.status } });
   await noticeResearchDone(env, a);
+  return true;
 }
 
 /**

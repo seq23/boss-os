@@ -80,8 +80,31 @@ export function newestFixture(dir) {
  * Everything checkable, over a report + snapshot + prompt + sources.
  * Returns the list of problems; empty means on par.
  */
-export async function check({ spec, fixture, prompt, files, deliveredAt, ladder }) {
+export async function check({ spec, fixture, prompt, files, deliveredAt, ladder, standards }) {
   const problems = [];
+
+  /*
+   * ─── THE STANDARD, GRADED BY THE FLOOR THE DELIVERY RUNS (owner, 13 Nov 2026) ───────────────────
+   *
+   * "figure out how ot make sure my briefs get wrriten to the impeccable standard we have had". Two
+   * REAL briefings sit beside the 19 Sep fixture: the standard (22 Oct 2026) and one from the
+   * half-depth week (27 Oct 2026). The same `briefingFloor` the Worker runs on every delivery must
+   * pass the first and fail the second; a floor that passes both guards nothing, and one that fails
+   * both calls every good day "partial" again.
+   */
+  const standard = standards?.standard ?? null;
+  const below = standards?.below ?? null;
+  if (!standard) problems.push(`No standard briefing in ${FIXTURES}/ (standard-YYYY-MM-DD.delivers.json).`);
+  else {
+    const v = spec.briefingFloor(standard);
+    if (!v.pass) problems.push(`The standard briefing (${standard.day_id}) fails the floor: ${v.misses.join("; ")}.`);
+  }
+  if (!below) problems.push(`No below-standard briefing in ${FIXTURES}/ (below-YYYY-MM-DD.delivers.json): the floor is not proven against a day it must catch.`);
+  else {
+    const v = spec.briefingFloor(below);
+    if (v.pass) problems.push(`The half-depth briefing (${below.day_id}) PASSES the floor: it would have been delivered as the standard.`);
+  }
+  if (!/briefingFloor\(/.test(files.deliver) || !/floorMiss/.test(files.route)) problems.push("The delivery does not grade the briefing against the floor (deliverReport.ts briefingFloor, routes/backends.ts floorMiss).");
 
   /*
    * ─── THE LADDER: HER TWO $0 SEATS FIRST, IN HER ORDER, AND EVERY LINK THAT MAKES IT WALKABLE ──
@@ -280,7 +303,12 @@ async function load() {
   const files = Object.fromEntries(Object.entries(FILES).map(([k, p]) => [k, existsSync(join(ROOT, p)) ? readFileSync(join(ROOT, p), "utf8") : ""]));
   const fixture = newestFixture(join(ROOT, FIXTURES));
   const deliveredAt = fixture?.delivers?.delivered_at ? Date.parse(fixture.delivers.delivered_at) : Date.parse(`${fixture?.day ?? "2026-09-19"}T12:00:00Z`);
-  return { spec, files, fixture, prompt: await currentBriefingPrompt(), deliveredAt, ladder: await briefingLadder() };
+  const named = (prefix) => {
+    const dir = join(ROOT, FIXTURES);
+    const f = existsSync(dir) ? readdirSync(dir).filter((n) => new RegExp(`^${prefix}-\\d{4}-\\d{2}-\\d{2}\\.delivers\\.json$`).test(n)).sort().pop() : null;
+    return f ? JSON.parse(readFileSync(join(dir, f), "utf8")) : null;
+  };
+  return { spec, files, fixture, prompt: await currentBriefingPrompt(), deliveredAt, ladder: await briefingLadder(), standards: { standard: named("standard"), below: named("below") } };
 }
 
 async function selfTest() {
@@ -310,6 +338,15 @@ async function selfTest() {
     { name: "a materialiser that stopped composing from the module is caught", input: { ...good, files: { ...good.files, materialise: good.files.materialise.replace("prompt: composeBriefingPrompt(", "prompt: oldPrompt(") } }, expect: 1 },
     { name: "a retry slot on the screen that the Mac does not have is caught", input: { ...good, files: { ...good.files, today: good.files.today.replace("{ h: 6, m: 5 }", "{ h: 6, m: 15 }") } }, expect: 1 },
     { name: "a delivery that stopped re-queuing a failed morning is caught", input: { ...good, files: { ...good.files, deliver: good.files.deliver.replace(/retryFailedBriefing\(/g, "noRetry(") } }, expect: 1 },
+    { name: "the standard cut to three headlines fails the floor", input: { ...good, standards: { ...good.standards, standard: (() => { const f = clone(good.standards.standard); const t = f.sections.find((x) => x.key === "top_5_headlines"); t.items = t.items.slice(0, 3); return f; })() } }, expect: 1 },
+    { name: "the standard cut to fifteen sources fails the floor", input: { ...good, standards: { ...good.standards, standard: { ...good.standards.standard, sources: good.standards.standard.sources.slice(0, 15) } } }, expect: 1 },
+    { name: "the standard with its reasoning cut to a sentence fails the floor", input: { ...good, standards: { ...good.standards, standard: (() => { const f = clone(good.standards.standard); for (const h of f.sections.find((x) => x.key === "top_5_headlines").items) h.why_it_matters = String(h.why_it_matters).slice(0, 400); return f; })() } }, expect: 1 },
+    { name: "the standard with five unverified gaps fails the floor", input: { ...good, standards: { ...good.standards, standard: { ...good.standards.standard, gaps: [1, 2, 3, 4, 5].map((i) => ({ wanted: `thing ${i}`, why: "not found" })) } } }, expect: 1 },
+    { name: "the standard missing a section fails the floor", input: { ...good, standards: { ...good.standards, standard: { ...good.standards.standard, sections: good.standards.standard.sections.filter((x) => x.key !== "private_markets") } } }, expect: 1 },
+    { name: "a half-depth briefing passed off as the standard is caught", input: { ...good, standards: { ...good.standards, standard: good.standards.below } }, expect: 1 },
+    { name: "a floor with nothing it must fail is caught", input: { ...good, standards: { ...good.standards, below: good.standards.standard } }, expect: 1 },
+    { name: "no standard on file is a failure, not a pass", input: { ...good, standards: { standard: null, below: good.standards.below } }, expect: 1 },
+    { name: "a report route that stopped grading the delivery is caught", input: { ...good, files: { ...good.files, route: good.files.route.replace(/floorMiss/g, "nothing") } }, expect: 1 },
     { name: "a ladder whose first rung is Codex, not Claude's seat, is caught", input: { ...good, ladder: { ...good.ladder, candidates: [good.ladder.candidates[1], good.ladder.candidates[0], ...good.ladder.candidates.slice(2)] } }, expect: 1 },
     { name: "a duty row that lost a seat is caught", input: { ...good, ladder: { ...good.ladder, duty: { ...good.ladder.duty, backend_ladder: ["bk_codex"] } } }, expect: 1 },
     { name: "a reachable paid rung under the seats is caught", input: { ...good, ladder: { ...good.ladder, candidates: [...good.ladder.candidates.slice(0, 2), ...good.ladder.candidates.slice(2).map((r, i) => (i === 0 ? { ...r, eligible: true } : r))] } }, expect: 1 },
@@ -349,6 +386,7 @@ if (process.argv.includes("--self-test")) {
   console.log(
     `the-briefing-is-on-par: the live fixture (${input.fixture.day}) carries ${n} sections and ${src} article-level sources; ` +
     `every summary figure and headline number is cited inline, every [n] resolves, the dashboard is built from ` +
-    `${input.fixture.markets.quotes.length} feed quotes, nothing astrological, and the prompt, runner, launchd, migration and screen are wired; the ladder reads bk_claude_code → bk_codex, and no cloud rung is reachable. OK.`,
+    `${input.fixture.markets.quotes.length} feed quotes, nothing astrological, and the prompt, runner, launchd, migration and screen are wired; the ladder reads bk_claude_code → bk_codex, and no cloud rung is reachable. ` +
+    `The floor passes the standard (${input.standards.standard.day_id}) and fails the half-depth day (${input.standards.below.day_id}). OK.`,
   );
 }

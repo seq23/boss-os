@@ -3,7 +3,7 @@ import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { handleTask } from "../../src/worker/boss/queue/consumer";
 import { materialiseDueDuties } from "../../src/worker/boss/duties/materialise";
 import { REQUIRED_FORBIDDEN, workOnce } from "../../scripts/sync-agent/runner.mjs";
-import { api, row } from "./helpers";
+import { all, api, row } from "./helpers";
 import agentSrc from "../../scripts/sync-agent/agent.mjs?raw";
 
 /**
@@ -74,9 +74,10 @@ describe("a seat that gives an unusable answer hands the run to the next seat at
     const second = await claim("bk_claude_code");
     expect(second.run?.run_id, "Claude was not handed the run").toBe(parked.id);
     expect(second.run.backend_id).toBe("bk_claude_code");
-    const done = await report(packet(parked.id, taskId, "bk_claude_code", "succeeded"));
+    const done = await report(packet(parked.id, taskId, "bk_claude_code", "succeeded", { delivers: { tools: [1, 2, 3].map((i) => ({ name: `Tool ${i}`, url: `https://tool-${i}.example.com/`, what_it_does: "Does one thing well.", evidence: "An independent review.", evidence_url: `https://reviews.example.org/tool-${i}` })) } }));
     expect(done.status).toBe(200);
     expect((await row<any>(`SELECT status, backend_id FROM backend_runs WHERE id = ?`, parked.id))).toMatchObject({ status: "succeeded", backend_id: "bk_claude_code" });
+    expect(await all<any>(`SELECT 1 FROM tool_suggestions WHERE run_id = ?`, parked.id), "what Claude delivered did not land").toHaveLength(3);
   });
 
   it("is BOUNDED: Claude failing too fails the run — it never goes back up to Codex", async () => {

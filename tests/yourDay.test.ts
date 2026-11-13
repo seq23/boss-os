@@ -7,7 +7,7 @@ import { mkdtempSync, readdirSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
-import { buildDay, replyContext, briefingDecision, briefingLines, bounceLine, BRIEFING_CAP, briefingInProgress, bossDecisions, selfStartedWaiting, selfWaitingRepairs } from "../scripts/ops/your-day.mjs";
+import { buildDay, replyContext, briefingLateLine, briefingBelowLine, briefingDecision, briefingLines, bounceLine, BRIEFING_CAP, briefingInProgress, bossDecisions, selfStartedWaiting, selfWaitingRepairs } from "../scripts/ops/your-day.mjs";
 import { plainProblems } from "../src/shared/boss/mail/plain.mjs";
 import { sendersFor, employeeMail } from "../scripts/ops/notify.mjs";
 import { writeMorningSection, addMorningLines, readMorningSections, clearToldSections, morningSectionProblems, MORNING_SECTIONS } from "../src/shared/boss/mail/morning.mjs";
@@ -137,6 +137,35 @@ describe("the one morning email", () => {
   });
 });
 
+describe("a late or below-standard briefing is said in the email, never left out (owner, 13 Nov 2026)", () => {
+  const base = { diary: [], tasks: [], approvals: [], repoChanges: [], feed: null, feedError: null, morning: {} };
+  it("yesterday's report is showing and today's run is on its way: the section says when it arrives", () => {
+    // 23 Oct 2026, 07:45 Central; today's run lands by 08:15.
+    const by = Date.parse("2026-10-23T13:15:00Z");
+    const late = buildDay({ ...base, briefing: { ...DATA.briefing, for_day: "2026-10-22", arriving_by: by } }, NOW);
+    expect(late.problems).toEqual([]);
+    expect(late.text).toContain("This morning's briefing (Camille)");
+    expect(late.text).toMatch(/Briefing late, arriving by 8:15 am\b.*It will be on your Today page\./);
+    expect(late.text).toContain("Read the full briefing");
+    expect(briefingLateLine({ arriving_by: by }, NOW)).toMatch(/arriving by 8:15 am/);
+    // A time already past is not promised again.
+    expect(briefingLateLine({ arriving_by: NOW - 60_000 }, NOW)).toMatch(/no run is on its way/);
+    expect(briefingLateLine(null, NOW)).toMatch(/no run is on its way/);
+  });
+
+  it("a best attempt below the standard leads the section with what fell short, in plain words", () => {
+    const partial = { ...DATA.briefing, status: "partial", shortfalls: ["Below the standard today: 3 of 5 headlines; 14 sources (the standard is 20).", "1 source is a bare homepage."] };
+    expect(briefingBelowLine(partial)).toBe("Best attempt today, below the usual standard: 3 of 5 headlines; 14 sources (the standard is 20).");
+    const mail = buildDay({ ...base, briefing: partial }, NOW);
+    expect(mail.problems).toEqual([]);
+    expect(mail.text).toContain("Best attempt today, below the usual standard: 3 of 5 headlines; 14 sources (the standard is 20).");
+    // At the standard, or partial for an older reason, nothing is added.
+    expect(briefingBelowLine({ ...DATA.briefing, status: "complete", shortfalls: ["1 source is a bare homepage."] })).toBeNull();
+    expect(briefingBelowLine({ ...DATA.briefing, status: "partial", shortfalls: ["5 things could not be verified."] })).toBeNull();
+    expect(buildDay({ ...base, briefing: { ...DATA.briefing, status: "complete", shortfalls: [] } }, NOW).text).not.toMatch(/Best attempt/);
+  });
+});
+
 describe("an empty or broken morning still reads plainly", () => {
   it("nothing to decide and no empty blocks: a section with nothing in it is left out, a feed that did not load included", () => {
     const empty = buildDay({ diary: [], tasks: [], approvals: [], repoChanges: [], briefing: null, feed: null, feedError: "the site answered 401", morning: {} }, NOW);
@@ -145,7 +174,8 @@ describe("an empty or broken morning still reads plainly", () => {
     expect(empty.text.split("\n")[0]).toBe("Good morning. Here is your Friday, October 23. Nothing to do.");
     expect(empty.text).not.toMatch(/^Decide \(\d+\)$/m);
     expect(empty.text).not.toMatch(/New deals|Monique found|Done for you|Catch up with|8Raise/);
-    expect(empty.text).toContain("Briefing late — it will be on your Today page.");
+    // No run is on its way: the line says so and never invents a time (13 Nov 2026).
+    expect(empty.text).toContain("Briefing late: no run is on its way right now, so it may not arrive today. The team is fixing it.");
     // Owner, 13 Nov 2026: no "nothing here" lines. Valerie's block shows only when her list holds something.
     expect(empty.text).not.toMatch(/Valerie|No new deals|All clear|did not load|No deadlines/);
     const quiet = buildDay({ diary: [], tasks: [], approvals: [], repoChanges: [], briefing: null, feed: { items: [] }, morning: { deals: { section: "deals", at: stamp, rows: [] }, monique_found: { section: "monique_found", at: stamp, lines: [], grid: [] }, open_loops: { section: "open_loops", at: stamp, title: "Your open loops: 3, none overdue", lines: [] } }, prospects: { replies: [], sent: [], next: [], totals: {}, stops: [] } } as any, Date.parse("2026-10-26T12:00:00Z"));
