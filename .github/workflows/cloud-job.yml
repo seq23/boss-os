@@ -52,6 +52,8 @@ jobs:
           BOSS_PASSCODE: ${{ secrets.BOSS_PASSCODE }}
           BOSS_OS_MAIL_KEY: ${{ secrets.BOSS_OS_MAIL_KEY }}
           BOSS_OS_FALLBACK_MAIL_KEY: ${{ secrets.BOSS_OS_FALLBACK_MAIL_KEY }}
+          # Where her mail goes (scripts/ops/notify.mjs ownerTo): never written in this public repo.
+          BOSS_NOTIFY_TO: ${{ secrets.BOSS_NOTIFY_TO }}
           GSC_SERVICE_ACCOUNT_JSON: ${{ secrets.GSC_SERVICE_ACCOUNT_JSON }}
           DAILYSTORY_SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.DAILYSTORY_SUPABASE_SERVICE_ROLE_KEY }}
           # Valerie's list in the morning email (your-day): the P&P owner feed's read key.

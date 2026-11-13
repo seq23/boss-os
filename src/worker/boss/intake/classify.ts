@@ -59,6 +59,15 @@ interface Rule {
 // Ordered most-specific first. High-consequence categories are matched before
 // the general drafting/research buckets so a "wire the money" request can never
 // fall through to AI_DRAFT.
+export const TRADING_TERMS = new RegExp([
+  String.raw`\b(trading|ticker|portfolio|broker|brokerage|securities|equities|stock market)\b`,
+  String.raw`\b(limit|market|stop|buy|sell|open) orders?\b`,
+  String.raw`\b(stop[- ]loss|short[- ]sell(ing)?|go(ing)? (long|short))\b`,
+  String.raw`\b(long|short|open|trading) positions?\b`,
+  String.raw`\b(buy|sell|exit|close|trim|trade|short|long)\b[^.\n]{0,24}\b(positions?|shares|stocks?|calls|puts|options|contracts|futures)\b`,
+  String.raw`\b(place|execute|enter|exit) (a |an |the |this |that )?(trade|order|position)\b`,
+].join("|"), "i");
+
 const RULES: Rule[] = [
   {
     kind: "trading",
@@ -82,7 +91,16 @@ const RULES: Rule[] = [
      * acting on it (`router/modelAccess.ts`). A seating plan has no second signal; a real
      * allocation next to a figure does.
      */
-    terms: /\b(trade|trading|order|position|portfolio|exchange|broker|ticker|long|short|buy|sell)\b/i,
+    /*
+     * ONE ORDINARY WORD IS NOT TRADING (13 Nov 2026). Her instruction to change a Porch & Party
+     * duty ("Marketplace listings: renew, post for the season … bring steady leads") was classified
+     * trading / restricted / USER_ONLY on everyday words (`buy`, `sell`, `order`, `long`, `short`,
+     * `position`, `exchange`, `trade` are in every business's vocabulary), then refused a route
+     * and raised a second approval. The rule now needs words that are about a market: the trading
+     * nouns alone, or an everyday verb beside what is traded ("sell the shares", "a buy order").
+     * The trading LANE still forces this classification whatever the wording.
+     */
+    terms: TRADING_TERMS,
     reason: "Trading lane work. No model receives execution authority here.",
   },
   {

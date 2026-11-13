@@ -21,7 +21,7 @@
  * ─── It reads the RIGHT mailbox, which the previous attempt did not ─────────
  *
  * `lp-replies.sh` routes through the claude.ai Gmail connector, and that connector is bound to her
- * PERSONAL account. It searched seq.taylor@gmail.com and reported the result as West Peek: three
+ * PERSONAL account. It searched her personal inbox and reported the result as West Peek: three
  * inbound where there were 123, twelve bounces where there were 72. It did not error. It filed a
  * confident, wrong, quiet answer — the worst failure shape there is, because a crash is visible.
  *
@@ -52,7 +52,7 @@ import crypto from "node:crypto";
 import fs from "node:fs";
 import path from "node:path";
 import os from "node:os";
-import { sendersFor, employeeMail, postEmployeeMail } from "./notify.mjs";
+import { sendersFor, employeeMail, postEmployeeMail, ownerTo } from "./notify.mjs";
 
 const SOURCE_ID = process.env.LP_SOURCE_SHEET ?? "1Riww0SiaLb_vxHjUpruSdkNemBEndcQrDQgu7Ly9rRA";
 const SENT_TAB = process.env.LP_SOURCE_TAB ?? "Sent Log";
@@ -235,7 +235,7 @@ async function emailHer({ optedOut, replied, bounced }) {
    * address — and an email in the second-choice inbox beats a 403 in a log file.
    */
   const RECIPIENTS = [
-    process.env.BOSS_NOTIFY_TO ?? "seq.taylor@gmail.com",
+    ownerTo(),
     "sequoia@westpeek.ventures",
   ];
   /*
@@ -565,7 +565,7 @@ async function main() {
     console.log(`  would append ${blockAppend.length} row(s) to "${BLOCKED_TAB}"`);
     console.log(`  would append ${replyAppend.length} row(s) to "${REPLY_TAB}"`);
     console.log(`  would add ${toAdd.length} address(es) to ${suppressPath}`);
-    console.log(`  would email ${process.env.BOSS_NOTIFY_TO ?? "seq.taylor@gmail.com"} with `
+    console.log(`  would email ${ownerTo()} with `
       + `${optedOut.length} to suppress, ${replied.length} replied, ${bouncedOnly.length} bounced`);
     console.log("");
     console.log("Re-run with --commit to write.");

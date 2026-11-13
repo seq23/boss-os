@@ -29,7 +29,7 @@ function transport({ refuseArchive = false, refuseSend = false } = {}) {
 describe("every accepted Mac email reaches history", () => {
   it("archives a notice with no job references, preserving the actual laid-out words", async () => {
     const { sent, fetcher } = transport();
-    const payload = employeeMail(sender, { to: "owner@example.test", subject: "An update", text: "Your table needs a card." });
+    const payload = employeeMail(sender, { to: "owner@example.test", subject: "An update for you", text: "Your table needs a card.", owner: { layout: "note", why: "An update on your table" } });
     const res = await postEmployeeMail(sender, payload, fetcher);
     expect(res.ok).toBe(true);
     const archive = sent.find((r) => r.url.endsWith("/mail/sent"));
@@ -45,7 +45,7 @@ describe("every accepted Mac email reaches history", () => {
   });
   it("keeps a durable private copy through an archive outage; retry saves it without resending", async () => {
     const broken = transport({ refuseArchive: true });
-    const payload = employeeMail(sender, { to: "owner@example.test", subject: "Your update", text: "Here is the whole update." });
+    const payload = employeeMail(sender, { to: "owner@example.test", subject: "Your update", text: "Here is the whole update.", owner: { layout: "note", why: "Your weekly update" } });
     expect((await postEmployeeMail(sender, payload, broken.fetcher)).ok).toBe(true);
     const files = readdirSync(dir); expect(files).toHaveLength(1);
     expect(JSON.parse(readFileSync(join(dir, files[0]!), "utf8")).text).toBe(payload.text);

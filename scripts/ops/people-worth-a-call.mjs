@@ -45,7 +45,7 @@
 import fs from "node:fs";
 import path from "node:path";
 import os from "node:os";
-import { sendersFor, employeeMail, postEmployeeMail } from "./notify.mjs";
+import { sendersFor, employeeMail, postEmployeeMail, ownerTo } from "./notify.mjs";
 import { observedCadence } from "./lib/cadence.mjs";
 import { outputLine } from "../../src/shared/boss/alarms/rules.mjs";
 
@@ -257,7 +257,7 @@ async function emailHer(picks, examined, considered) {
     console.error("  Run this through the vault: npm run people:recommend -- --send");
     return false;
   }
-  const RECIPIENTS = [process.env.BOSS_NOTIFY_TO ?? "seq.taylor@gmail.com", "sequoia@westpeek.ventures"];
+  const RECIPIENTS = [ownerTo(), "sequoia@westpeek.ventures"];
 
   const body = weeklyNote(picks, examined, considered);
 

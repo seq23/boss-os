@@ -44,7 +44,7 @@ import {
   REGISTERED_REPOS, isRepair, planWaitsForOwner, namesPostLandStep, redChecksAction, reworkKind,
 } from "../../src/shared/boss/repoChange/lane.mjs";
 import { GRID_OWNER } from "../../src/shared/boss/grid.mjs";
-import { sendersFor, employeeMail, postEmployeeMail, filesAt, FALLBACK_STOP } from "./notify.mjs";
+import { sendersFor, employeeMail, postEmployeeMail, filesAt, FALLBACK_STOP, ownerTo } from "./notify.mjs";
 import { generateRunbook, readWranglerToml, readWranglerJson, mayRunFromRunbook, runbookSecretNames, secretNamesInSource, vendorPageFor } from "./lib/runbook.mjs";
 import { vaultLookup, envForRepoRun } from "../lib/vault-env.mjs";
 import { servicePracticesBlock } from "../../src/shared/boss/service/practices.mjs";
@@ -67,7 +67,7 @@ const PROMPT_FILE = process.env.REPO_CHANGE_PROMPT ?? join(HERE, "repo-change-pr
 const WORK_ROOT = process.env.REPO_CHANGE_WORK_DIR ?? join(homedir(), ".boss-os", "repo-change");
 const GITHUB_DIR = process.env.REPO_CHANGE_GITHUB_DIR ?? join(homedir(), "GitHub");
 const LAND = process.env.REPO_CHANGE_LAND ?? join(homedir(), "bin", "land");
-const TO = process.env.BOSS_NOTIFY_TO ?? "seq.taylor@gmail.com";
+const TO = ownerTo();
 const CLAUDE = process.env.REPO_CHANGE_CLAUDE ?? "claude";
 const DRY = process.argv.includes("--dry-run");
 /** The lane's own name, cross-checked by `validate:duty-delivery` against the script and the kind. */
@@ -216,7 +216,7 @@ async function email(subject, text, files = [], prelaid = null, owner = null) {
   if (senders.length === 0) return null;
   for (const sender of senders) {
     const { from, key } = sender;
-    const res = await postEmployeeMail(sender, employeeMail(sender, { to: TO, subject, text, files, prelaid, owner }));
+    const res = await postEmployeeMail(sender, employeeMail(sender, { to: TO, subject, text, files, prelaid, owner: owner ?? (prelaid ? null : { layout: "note", why: subject }) }));
     if (res.ok) {
       const id = (await res.json().catch(() => ({})))?.id ?? "sent";
       say(`emailed ${TO} from ${from}: ${subject}`);

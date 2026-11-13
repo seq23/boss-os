@@ -39,6 +39,8 @@ import { basename, join } from "node:path";
 import { outboundFilesPlan } from "../../src/shared/boss/service/files.mjs";
 import { layoutEmail, fromLegacy, plainProblems, simplifyForOwner } from "../../src/shared/boss/mail/plain.mjs";
 import { ownerEmail, layoutOf } from "../../src/shared/boss/mail/ownerLayout.mjs";
+import { ownerDoor, eventKey } from "../../src/shared/boss/mail/ownerDoor.mjs";
+import { isOwner } from "../../src/shared/boss/intake/mail.mjs";
 
 const ARGS = process.argv.slice(2);
 /** Every value of a repeatable flag (`--file a.csv --file b.png`). */
@@ -48,7 +50,19 @@ const arg = (name) => {
   return i === -1 ? null : (ARGS[i + 1] ?? null);
 };
 
-const TO = process.env.BOSS_NOTIFY_TO ?? "seq.taylor@gmail.com";
+/**
+ * WHERE HER MAIL GOES IS NEVER WRITTEN IN THIS REPO (13 Nov 2026: the repo is public, and her own
+ * address sat here as the default recipient of fifteen senders). It is `BOSS_NOTIFY_TO`, from the vault
+ * on her Mac and from the repo's secrets on a cloud run. Missing, the send door stops by name
+ * (`postEmployeeMail`, NO_OWNER_ADDRESS: nothing is sent and the caller's refused path runs); under the
+ * test runner it is a made-up address, so no test can reach her.
+ */
+export const NO_OWNER_ADDRESS = "NAMED STOP [NO_OWNER_ADDRESS] BOSS_NOTIFY_TO is not set, so there is nowhere to send her mail. Run through the vault (npm run vault:run -- …); on a cloud run it is the repo secret BOSS_NOTIFY_TO.";
+export function ownerTo(env = process.env) {
+  const to = String(env.BOSS_NOTIFY_TO ?? "").trim();
+  if (to) return to;
+  return env.VITEST || env.NODE_ENV === "test" ? "owner@example.com" : "";
+}
 
 /*
  * THE SENDER MUST BE A DOMAIN VERIFIED IN RESEND, AND THE KEY MUST MATCH THE ACCOUNT THAT OWNS IT.
@@ -310,18 +324,61 @@ export async function flushSentMail(fetchImpl = fetch, directory = sentMailDir()
   }
 }
 
-export async function postEmployeeMail(sender, payload, fetchImpl = fetch, { context = null } = {}) {
-  const ready = plainOrSimplified(payload);
-  if (ready.held) return holdMail(sender, payload, ready.held, fetchImpl);
-  if (ready.simplified) console.error(`SIMPLIFIED "${payload?.subject}" before sending: ${ready.simplified.join("; ")} — the technical lines ride as an attached file.`);
+/**
+ * What went to her in this run, by event (`eventKey`): the same event is one email, not two. A run is
+ * one process (a launchd tick, a cloud job). Under the test runner a file's cases share one process and
+ * are not one run, so a case that names no `seen` starts with an empty one.
+ */
+const sentThisRun = new Set();
+const runSeen = (env = process.env) => (env.VITEST || env.NODE_ENV === "test" ? new Set() : sentThisRun);
+
+/**
+ * THE DOOR, ON WHAT WOULD BE SENT (Wave 4, 13 Nov 2026; rules in src/shared/boss/mail/ownerDoor.mjs).
+ * The required minimum and the plain gate, both REPAIR FIRST: `ownerDoor` writes a missing line 1,
+ * plain-text part, REF, Reply-To and files an email with no stated layout as a Note; `simplifyForOwner`
+ * moves ids, paths and UTC stamps into an attached file. `{ payload, repaired, problems, mustGo }`:
+ * `problems` is what is still wrong after every repair, `mustGo` that it truly needs her today. Pure.
+ */
+export function throughTheDoor(sender, payload) {
+  const first = ownerDoor(payload, { replyTo: sender?.reply_to ?? null });
+  const plain = plainOrSimplified(first.payload);
+  // The simplifier may rewrite the opening line; the minimum is read again on what it left.
+  const last = plain.simplified || plain.held ? ownerDoor(plain.held ? plain.best : plain.payload, { minimum: first.minimum, replyTo: sender?.reply_to ?? null }) : first;
+  // The plain gate has the last word, on exactly what would leave: a repair may never put a code back.
+  const still = plain.held || last !== first ? mailGate(last.payload) : [];
+  return {
+    payload: last.payload,
+    repaired: [...first.repaired, ...(plain.simplified ?? []).map((p) => `not plain (${p}): the technical lines moved to an attached file`), ...(last === first ? [] : last.repaired)],
+    problems: [...still, ...last.problems], mustGo: last.mustGo,
+  };
+}
+
+export async function postEmployeeMail(sender, payload, fetchImpl = fetch, { context = null, seen = runSeen() } = {}) {
+  if (!(Array.isArray(payload?.to) ? payload.to : [payload?.to]).some((a) => String(a ?? "").trim())) {
+    console.error(NO_OWNER_ADDRESS);
+    return new Response(JSON.stringify({ message: NO_OWNER_ADDRESS }), { status: 422, headers: { "content-type": "application/json" } });
+  }
+  const door = throughTheDoor(sender, payload);
+  // What cannot be repaired is held for the team. One that truly needs her today is never held:
+  // it goes with the best repair, and the team gets the problem as a fix job.
+  if (door.problems.length && !door.mustGo) return holdMail(sender, payload, door.problems, fetchImpl);
+  if (door.problems.length) await holdMail(sender, door.payload, door.problems, fetchImpl, { sentAnyway: true });
+  if (door.repaired.length) console.error(`REPAIRED "${payload?.subject}" before sending: ${door.repaired.join("; ")}`);
+  // ONE EMAIL PER EVENT IN A RUN: a second email about the same event is not sent, and says so.
+  const event = eventKey(door.payload);
+  if (seen.has(event)) {
+    console.error(`NOT SENT TWICE "${door.payload.subject}": this run already emailed her about it.`);
+    return new Response(JSON.stringify({ id: null, duplicate: true }), { status: 200, headers: { "content-type": "application/json" } });
+  }
   // The gate's invisible prose marks (U+2063) have done their job: never in what she receives (7 Nov 2026).
-  payload = { ...ready.payload, text: String(ready.payload.text ?? "").replace(/\u2063/g, "") };
+  payload = { ...door.payload, text: String(door.payload.text ?? "").replace(/\u2063/g, "") };
   const res = await fetchImpl(RESEND, {
     method: "POST",
     headers: { "content-type": "application/json", authorization: `Bearer ${sender.key}` },
     body: JSON.stringify(payload),
   });
   if (res.ok) {
+    seen.add(event);
     const id = typeof res.clone === "function" ? (await res.clone().json().catch(() => ({})))?.id : null;
     if (id) await archiveSentMail(payload, id, fetchImpl, { key: sender.key });
   }
@@ -363,7 +420,8 @@ export function plainOrSimplified(payload) {
     ...(s.details.length ? { attachments: [...(payload.attachments ?? []), { filename: "details.txt", content: Buffer.from(s.details.join("\n")).toString("base64") }] } : {}),
   };
   const still = mailGate(next);
-  return still.length ? { payload, simplified: null, held: still } : { payload: next, simplified: problems, held: null };
+  // `best`: the plainest copy there is, for an email that must go anyway (one that truly needs her today).
+  return still.length ? { payload, simplified: null, held: still, best: next } : { payload: next, simplified: problems, held: null };
 }
 
 export function mailGate(payload) {
@@ -381,16 +439,17 @@ export const heldDir = () => mailStateDir("BOSS_OS_HELD_MAIL_DIR", "held-mail");
  * retry does not open a second job. Returns a refused Response (422) so every caller's existing
  * "refused" path runs: nothing is reported as sent.
  */
-export async function holdMail(sender, payload, problems, fetchImpl = fetch) {
+export async function holdMail(sender, payload, problems, fetchImpl = fetch, { sentAnyway = false } = {}) {
   const key = createHash("sha256").update(`${payload?.subject}\n${payload?.text}`).digest("hex").slice(0, 16);
   const HELD_DIR = heldDir();
   const file = join(HELD_DIR, `${key}.json`);
   const first = !existsSync(file);
   try {
     mkdirSync(HELD_DIR, { recursive: true });
-    if (first) writeFileSync(file, JSON.stringify({ at: new Date().toISOString(), from: sender?.from ?? null, subject: payload?.subject, problems, text: payload?.text }, null, 2));
+    if (first) writeFileSync(file, JSON.stringify({ at: new Date().toISOString(), from: sender?.from ?? null, subject: payload?.subject, problems, text: payload?.text, ...(sentAnyway ? { sent_anyway: true } : {}) }, null, 2));
   } catch (e) { console.error(`  could not write the held email to ${HELD_DIR}: ${e?.message ?? e}`); }
-  console.error(`HELD "${payload?.subject}" — not sent; it failed the plain-email check: ${problems.join("; ")}`);
+  if (sentAnyway) console.error(`NAMED STOP [SENT_BELOW_MINIMUM] "${payload?.subject}" needs her today, so it went with the best repair; still wrong, for the team: ${problems.join("; ")}`);
+  else console.error(`NAMED STOP [OWNER_MAIL_HELD] "${payload?.subject}" — not sent; it could not be repaired: ${problems.join("; ")}`);
   if (first) {
     let why = null;
     try {
@@ -400,10 +459,10 @@ export async function holdMail(sender, payload, problems, fetchImpl = fetch) {
         const r = await fetchImpl(`${BOSS_ORIGIN}/api/boss/tasks`, {
           method: "POST", headers: { cookie, "content-type": "application/json" },
           body: JSON.stringify({
-            title: `Fix a held email: ${String(payload?.subject ?? "").slice(0, 120)}`,
+            title: `${sentAnyway ? "Fix an email that went below the minimum" : "Fix a held email"}: ${String(payload?.subject ?? "").slice(0, 120)}`,
             lane: "ops", employee_id: "emp_repo",
             // A repair Boss OS opened itself: built and landed without asking her (25 Oct 2026).
-            input: { origin: "repair", repair_kind: "held_mail", prompt: `seq23/boss-os — an email to the owner was held by the plain-email gate (scripts/ops/notify.mjs mailGate) and not sent. Problems: ${problems.join("; ")}. The held copy is ${file} on her Mac. Fix the sender at source so it writes plainly (src/shared/boss/mail/plain.mjs layoutEmail / layoutProblem), keep tests/plainEmail.test.ts green, and let the next run send it.` },
+            input: { origin: "repair", repair_kind: "held_mail", prompt: `seq23/boss-os — an email to the owner ${sentAnyway ? "needed her today, so the send door (scripts/ops/notify.mjs postEmployeeMail) sent it with the best repair it could make, still below the required minimum" : "was held by the send door (scripts/ops/notify.mjs postEmployeeMail: the plain gate and the required minimum, src/shared/boss/mail/ownerDoor.mjs) and not sent, because it could not be repaired"}. Problems: ${problems.join("; ")}. The copy is ${file} on her Mac. Fix the sender at source so it states its layout and writes plainly (src/shared/boss/mail/ownerLayout.mjs ownerEmail), keep tests/plainEmail.test.ts and tests/ownerDoor.test.ts green${sentAnyway ? "" : ", and let the next run send it"}.` },
           }),
         });
         if (!r.ok) why = `Boss OS refused the fix job (${r.status})`;
@@ -411,6 +470,7 @@ export async function holdMail(sender, payload, problems, fetchImpl = fetch) {
     } catch (e) { why = String(e?.message ?? e); }
     if (why) console.error(`  the fix job for the held email was not opened: ${why}`);
   }
+  if (sentAnyway) return null;
   return new Response(JSON.stringify({ held: true, problems }), { status: 422, headers: { "content-type": "application/json" } });
 }
 
@@ -480,8 +540,10 @@ export function errandMail({ to, subject, text, cc = [], inReplyTo = null }) {
   return { from: ERRAND_FROM, to: [to], reply_to: ERRAND_REPLY_TO, subject: String(subject).slice(0, 200), text, ...(cc.length ? { cc } : {}), ...thread };
 }
 /** What is wrong with an errand payload, by name. `[]` means it may go. Pure. */
-export function errandPayloadProblems(p, { owner = process.env.BOSS_NOTIFY_TO ?? "seq.taylor@gmail.com" } = {}) {
+export function errandPayloadProblems(p, { owner = ownerTo() } = {}) {
   const out = [];
+  // An errand is a letter to a business. Mail to HER has one door, postEmployeeMail, and its minimum.
+  if ((p?.to ?? []).some((a) => String(a).toLowerCase() === String(owner).toLowerCase() || isOwner(a))) out.push("addressed to the owner (her mail goes through postEmployeeMail, never as an errand)");
   if (p?.from !== ERRAND_FROM) out.push("not from Simone's own address");
   if (p?.reply_to !== ERRAND_REPLY_TO) out.push("Reply-To is not Simone's address, so the answer would not be watched");
   if (!Array.isArray(p?.to) || p.to.length !== 1) out.push("not exactly one business");
@@ -540,7 +602,8 @@ async function main() {
   let lastErr = "";
   for (const sender of SENDERS) {
     const { from, key } = sender;
-    const res = await postEmployeeMail(sender, employeeMail(sender, { to: TO, subject, text: body.slice(0, 4000), files: filesAt(args("file")) }));
+    // A hand-run note states its layout like every sender: a Note, and the subject is why she is getting it.
+    const res = await postEmployeeMail(sender, employeeMail(sender, { to: ownerTo(), subject, text: body.slice(0, 4000), files: filesAt(args("file")), owner: { layout: "note", why: subject } }));
     if (res.ok) {
       const id = (await res.json().catch(() => ({})))?.id ?? "";
       console.log(`Notified from ${from}: ${subject}${id ? ` (${id})` : ""}`);

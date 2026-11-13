@@ -22,11 +22,11 @@ import { spawnSync } from "node:child_process";
 import { createSign } from "node:crypto";
 import { seatEnv } from "./seat-env.mjs";
 import { repairMojibake } from "../../../src/shared/boss/mail/subject.mjs";
-import { sendersFor, employeeMail, postEmployeeMail } from "../notify.mjs";
+import { sendersFor, employeeMail, postEmployeeMail, ownerTo } from "../notify.mjs";
 import { addMorningLines } from "../../../src/shared/boss/mail/morning.mjs";
 
 export const ORIGIN = process.env.BOSS_OS_ORIGIN ?? "https://boss.sequoiataylor.com";
-export const OWNER_TO = process.env.BOSS_NOTIFY_TO ?? "seq.taylor@gmail.com";
+export const OWNER_TO = ownerTo();
 
 // ─── State: what the last run saw ──────────────────────────────────────────────
 
@@ -101,7 +101,7 @@ export async function bossApi(fetchImpl = fetch) {
 export async function sendAs(who, { subject, text, html, prelaid = null, to = OWNER_TO }, fetchImpl = fetch) {
   const senders = sendersFor(who);
   for (const sender of senders) {
-    const res = await postEmployeeMail(sender, employeeMail(sender, { to, subject, text, html, prelaid }), fetchImpl);
+    const res = await postEmployeeMail(sender, employeeMail(sender, { to, subject, text, html, prelaid, owner: prelaid ? null : { layout: "note", why: subject } }), fetchImpl);
     if (res.ok) { console.log(`emailed ${to} as ${sender.from}`); return true; }
     console.error(`  ${sender.from} refused: ${res.status}`);
   }

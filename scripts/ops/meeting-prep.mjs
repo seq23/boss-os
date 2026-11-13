@@ -23,7 +23,7 @@ import os from "node:os";
 import path from "node:path";
 import { execFileSync } from "node:child_process";
 import { readAllCalendars } from "./calendar-sync.mjs";
-import { sendAsEmployee } from "./notify.mjs";
+import { sendAsEmployee, ownerTo } from "./notify.mjs";
 import { plainProblems, NOTHING_TO_DECIDE } from "../../src/shared/boss/mail/plain.mjs";
 import { ownerEmail } from "../../src/shared/boss/mail/ownerLayout.mjs";
 import { buildPrep, buildCatchUp, isScooterCatchUp, roundupFrom, CATCHUP_DEFAULT_DAYS, dueMeetings, linkResolves, lengthLabel, others, recordsFor, nameFromTitle, companyDomain, shortDate, clock, guestFirm, zonedTime, DISPLAY_TZ, validZone, researchPrompt, readResearch, invitePerson } from "../../src/shared/boss/meetingPrep/prep.mjs";
@@ -34,7 +34,7 @@ const ORIGIN = process.env.BOSS_OS_ORIGIN ?? "https://boss.sequoiataylor.com";
 const DIR = path.join(os.homedir(), ".boss-os", "meeting-prep");
 const SENT = path.join(DIR, "sent.json");
 const CACHE = path.join(DIR, "summaries.json");
-export const HER_ADDRESSES = (process.env.BOSS_HER_ADDRESSES ?? "seq.taylor@gmail.com,sequoia@westpeek.ventures,staylor@spry.vc,st@time-2-read.com").split(",").map((s) => s.trim().toLowerCase()).filter(Boolean);
+export const HER_ADDRESSES = (process.env.BOSS_HER_ADDRESSES ?? `${ownerTo()},sequoia@westpeek.ventures,staylor@spry.vc,st@time-2-read.com`).split(",").map((s) => s.trim().toLowerCase()).filter(Boolean);
 const WHISPER = "/opt/homebrew/bin/whisper-cli";
 const WHISPER_MODEL = path.join(os.homedir(), "Library", "Caches", "how-we-know", "ggml-small.en.bin");
 const SINCE_SEP = Date.parse("2026-09-01T00:00:00Z");
@@ -333,7 +333,7 @@ export function prepEmail(event, data, opts = {}) {
 export const eventSnapshot = (e) => ({ title: e.title, scheduled_at: e.scheduled_at, duration_min: e.duration_min ?? null, location: e.location ?? null, join_url: e.join_url ?? null, description: e.description ?? null, attendees: e.attendees ?? [], ical_uid: e.ical_uid ?? null, calendar_uid: e.calendar_uid ?? null });
 
 /** Send one prep with its row's code, so her reply in the thread finds it. `{ ok, id, error }`. */
-export async function sendPrep(api, event, data, { context, purpose = null, plan = null, subject = null, thread = [], tz = DISPLAY_TZ, send = (who, msg) => sendAsEmployee(who, msg), to = process.env.BOSS_NOTIFY_TO ?? "seq.taylor@gmail.com" } = {}) {
+export async function sendPrep(api, event, data, { context, purpose = null, plan = null, subject = null, thread = [], tz = DISPLAY_TZ, send = (who, msg) => sendAsEmployee(who, msg), to = ownerTo() } = {}) {
   const draft = buildPrep(event, data, { herAddresses: HER_ADDRESSES, context, purpose, plan, tz });
   const id = (await api.post("/commands/meeting-prep", { key: draft.key, asked: draft.needsPurpose, spec: { who: draft.who, subject: subject ?? draft.subject, event: eventSnapshot(event), context } }))?.id;
   const m = prepEmail(event, data, { context, purpose, plan, tz, refs: id ? [id] : [], subject: subject ?? draft.subject });
@@ -355,7 +355,7 @@ export async function finishPrep(api, p, { ask = askClaudeJson, send = (who, msg
   const plan = planFor(event, first, context, { ask, log, tz });
   const subject = `Re: ${repairMojibake(String(p.spec.subject ?? first.subject)).replace(/^re:\s*/i, "")}`;
   const m = prepEmail(event, data, { context, purpose: p.purpose, plan, tz, refs: [p.id], subject });
-  const r = await send("Simone", { to: process.env.BOSS_NOTIFY_TO ?? "seq.taylor@gmail.com", subject: m.laid.subject, prelaid: m.laid, thread: p.thread ?? [] });
+  const r = await send("Simone", { to: ownerTo(), subject: m.laid.subject, prelaid: m.laid, thread: p.thread ?? [] });
   if (r.ok) await api.post(`/commands/${p.id}/prep-done`, { message_id: r.id ?? null });
   return { ...r, prep: m };
 }
@@ -428,7 +428,7 @@ export function overCapLine(preps, tz = "America/Chicago") {
 }
 
 /** Read Open Loops and the brains, build each catch-up, and send it (or write it to the preview). */
-export async function sendCatchUps(api, events, { now = Date.now(), dry = false, preview = null, force = false, sentState = { keys: [] }, send = (who, msg) => sendAsEmployee(who, msg), to = process.env.BOSS_NOTIFY_TO ?? "seq.taylor@gmail.com" } = {}) {
+export async function sendCatchUps(api, events, { now = Date.now(), dry = false, preview = null, force = false, sentState = { keys: [] }, send = (who, msg) => sendAsEmployee(who, msg), to = ownerTo() } = {}) {
   const loops = (await api.get("/open-loops"))?.loops ?? [];
   const brains = [];
   for (const slug of CATCHUP_BRAINS) {

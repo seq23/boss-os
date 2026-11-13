@@ -5,7 +5,8 @@ import { ok, badRequest, notFound } from "../lib/http";
 import { audit } from "../lib/audit";
 import { extractAddress } from "../../../shared/boss/intake/mail.mjs";
 import { readableText } from "../../../shared/boss/intake/messageBody.mjs";
-import { layoutOf } from "../../../shared/boss/mail/ownerLayout.mjs";
+import { layoutOf, type OwnerMinimum } from "../../../shared/boss/mail/ownerLayout.mjs";
+import { throughOwnerDoor } from "./ownerDoor";
 
 export interface SentMail {
   message_id: string; employee_address?: string; from: string; to: string; subject: string; text: string;
@@ -13,6 +14,8 @@ export interface SentMail {
   in_reply_to?: string | null; thread_id?: string | null; sent_at?: number;
   /** The owner layout it went out in (approve, delivered, digest, alarm, note); the Updates page counts the Notes. */
   layout?: string | null;
+  /** The laid email's own minimum (ownerLayout.mjs), read by the send door; never stored. */
+  minimum?: OwnerMinimum | null;
 }
 
 /** Persist the exact accepted payload. A replay records the same send once. */
@@ -45,6 +48,8 @@ export async function stageSentMail(env: Env, mail: Omit<SentMail, "message_id">
 }
 
 export async function replyWithHistory(message: { reply: (mail: { from: string; subject: string; text: string; html?: string }) => Promise<unknown> }, env: Env, mail: SentMail) {
+  // The one door (mail/ownerDoor.ts): a reply to HER meets the required minimum, repaired here if it does not.
+  mail = await throughOwnerDoor(env, mail, { where: "the Worker's reply to her email", replyTo: mail.from, minimum: mail.minimum ?? null });
   const receipt = await stageSentMail(env, mail);
   try { await message.reply({ from: mail.from, subject: mail.subject, text: mail.text, html: mail.html }); }
   catch (e) { await receipt.failed(); throw e; }

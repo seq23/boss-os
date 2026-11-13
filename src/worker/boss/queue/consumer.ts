@@ -712,6 +712,18 @@ export async function handleTask(env: Env, msg: TaskMessage): Promise<void> {
       });
       return;
     }
+    /*
+     * A TASK SHE ALREADY SAID YES TO NEVER COMES BACK AS A SECOND CARD (13 Nov 2026: her yes of 4 Nov
+     * on a Porch & Party duty change was carried out, the run was refused a route one second later, and
+     * a new "Routing card" was raised for the next morning's Decide). A route refused on released work
+     * is the team's problem: the task ends by name and ONE fix job is opened; nothing is emailed to her.
+     */
+    if (err instanceof RoutingBlocked && err.approvable && (await herYesStands(env.DB, task.id).catch(() => false))) {
+      const stop = `NAMED STOP [ROUTE_BLOCKED_AFTER_HER_YES] ${err.message}. She already approved this task, so it is not asked again; the team has a fix job.`;
+      await failTask(env, task, employee, envelope, costMode, stop, "The team's fix job re-classifies or re-routes it. Nothing for her.", false);
+      await openRouteFixJob(env, task, err.message).catch((e) => console.error("consumer: the route fix job was not admitted", e));
+      return;
+    }
     // Boss OS's own work never asks her for a route: it ends by name, and the morning's repair picks it up.
     if (err instanceof RoutingBlocked && err.approvable && !(await selfStarted(env, task, input).catch(() => ({ self: false }))).self) {
       await holdForApproval(env, task, employee, envelope, costMode, {
@@ -1250,6 +1262,24 @@ async function failTask(
    * that clears it, and `service/blockReply.ts` makes that reply work.
    */
   if (final) await tellHerItStopped(env, task, employee, message, "once");
+}
+
+/** Has she already answered yes on a card for this task? (Any approved approval that names it.) */
+export async function herYesStands(db: D1Database, taskId: string): Promise<boolean> {
+  const r = await db.prepare(`SELECT 1 AS x FROM approvals WHERE origin_type = 'tasks' AND origin_id = ? AND status = 'approved' LIMIT 1`).bind(taskId).first<{ x: number }>();
+  return Boolean(r);
+}
+
+/** ONE fix job for a released task the router refused; none while one for it is still open. */
+async function openRouteFixJob(env: Env, task: any, why: string): Promise<void> {
+  const title = `Route a task she already approved: ${String(task.title ?? "").slice(0, 90)}`;
+  const open = await env.DB.prepare(`SELECT 1 AS x FROM tasks WHERE title = ? AND status NOT IN ('done','failed','cancelled') LIMIT 1`).bind(title).first<{ x: number }>();
+  if (open) return;
+  const { admitTask } = await import("../tasks/admit");
+  await admitTask(env, {
+    title, lane: "ops", employee_id: "emp_repo",
+    input: { origin: "repair", repair_kind: "route_blocked_after_her_yes", prompt: `seq23/boss-os — the task ${task.id} ("${task.title}") was approved by the owner, released, and then refused by the model router: ${why} (intake_kind ${task.intake_kind}, sensitivity ${task.sensitivity}, model_access ${task.model_access}). It was failed under NAMED STOP [ROUTE_BLOCKED_AFTER_HER_YES] and she was not asked again (src/worker/boss/queue/consumer.ts). Find why intake classified it that way (src/worker/boss/intake/classify.ts): if the classification is wrong, fix the classifier at source with a test on this prompt's shape and requeue the task; if the work is truly private, run it on her Claude seat. Never raise a second approval for it.` },
+  } as any);
 }
 
 /** The duty a task is a run of: stamped on its input (materialise.ts), or, before the stamp, the duty's newest task. */

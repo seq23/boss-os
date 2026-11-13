@@ -14,6 +14,7 @@
  * Every failure is returned as a sentence, never thrown with a token or key inside it.
  */
 import { stageSentMail } from "../mail/history";
+import { throughOwnerDoor } from "../mail/ownerDoor";
 import type { Env } from "../env";
 import { serviceAccountFrom, mintComposeToken, type ServiceAccount } from "../wealth/gmailDraft";
 import { WORKSPACE_MAILBOXES } from "../../../shared/boss/commands/parse.mjs";
@@ -158,6 +159,8 @@ export async function sendOne(env: Env, input: { from: string; to: string; subje
   if (!creds) return { ok: false, why: "the Google key is not on the Worker" };
   const tok = await mintComposeToken(creds, input.from, fetchImpl);
   if (!tok.ok) return { ok: false, why: `Google refused the sign-in (${tok.status})` };
+  // The one door (mail/ownerDoor.ts): an email she asked Simone to send to HERSELF meets the required minimum.
+  input = await throughOwnerDoor(env, input, { where: "an email Simone sends on her word", replyTo: input.from });
   const { inReplyTo, threadId, ...mail } = input;
   const receipt = await stageSentMail(env, { ...mail, in_reply_to: inReplyTo ?? null, employee_id: "emp_chief" });
   const res = await fetchImpl(GMAIL_SEND, {
