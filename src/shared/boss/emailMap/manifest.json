@@ -340,16 +340,6 @@
       "code": [{ "repo": "p-n-p", "paths": ["functions/_lib/reminders.mjs", "functions/_lib/customer-messages.mjs"] }]
     },
     {
-      "id": "pnp-marketplace-renew", "business": "porch-and-party",
-      "what": "Facebook Marketplace \"Renew listing\" reminder",
-      "sender": "Porch & Party (its own system)", "owner": "Danielle",
-      "from": "Porch & Party <hello@porchandparty901.com>", "to": "You",
-      "when": "Every 7th day, 9:00 AM",
-      "runs": "cloud-cron", "trigger": "pnp-mailer Worker",
-      "pause": "Clear the renew start date in /admin Settings",
-      "code": [{ "repo": "p-n-p", "paths": ["functions/_lib/marketplace-renew.mjs"] }]
-    },
-    {
       "id": "pnp-studio-mail", "business": "porch-and-party",
       "what": "P&P Studio: sign-in codes only (the brief, clips-ready, recap and posting-problem emails to you are cancelled, 1 Nov 2026)",
       "sender": "P&P Studio (its own system)", "owner": "Danielle",
