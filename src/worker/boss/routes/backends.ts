@@ -12,6 +12,7 @@
  */
 
 import { spentCooldownSeconds, isPlanSpent } from "../backends/spent";
+import { selfStarted, usageWait } from "../queue/freeRung";
 import { Hono } from "hono";
 import type { Env, Vars } from "../env";
 import { ok, badRequest, notFound, conflict, AppError } from "../lib/http";
@@ -796,6 +797,43 @@ backends.post("/report", async (c) => {
           detail: { run_id: run.id, from: run.backend_id, next, exhausted_until: until },
         });
         return ok(c, { released: true, run_id: run.id, next_seat: next, outcome_class: "released", approval_id: null, exhausted_until: until });
+      }
+    }
+    /*
+     * THE LAST SEAT ON THE LADDER RAN OUT MID-RUN: SELF-STARTED WORK WAITS FOR THE RESET (owner, 13 Nov
+     * 2026). `tsk_m780ys1fnrjmkvq4` ("Backlink prospecting"): Codex gave an unusable answer and the run
+     * stepped down to Claude's seat, the last one; Claude said "You've hit your weekly limit · resets
+     * 7am" and, with no later seat, the run fell through to the failure below and the duty was failed
+     * for good. The same rule as at dispatch (consumer.ts `waitForUsage`), written by the same
+     * `usageWait`: the seat is stamped spent first (so the guard walks past it), the run is closed
+     * cancelled (it produced nothing; the task gets a fresh run at the reset, so one claim, not two),
+     * and the TASK goes back in the queue for the reset. Work she asked for falls through and fails out
+     * loud, as before. Pinned by tests/boss/aSpentPlanHandsTheRunToTheNextSeat.test.ts.
+     */
+    if (spentEvidence && run.task_id) {
+      const task = await c.env.DB.prepare(`SELECT id, lane, title, input FROM tasks WHERE id = ?`).bind(run.task_id)
+        .first<{ id: string; lane: string; title: string | null; input: string | null }>();
+      let input: Record<string, any> = {};
+      try { input = task?.input ? (JSON.parse(task.input) as Record<string, any>) : {}; } catch { input = {}; }
+      const self = task ? (await selfStarted(c.env, task, input).catch(() => ({ self: false }))).self : false;
+      if (task && self) {
+        const at0 = Date.now();
+        const until = at0 + spentCooldownSeconds(spentEvidence.retry_after_seconds) * 1000;
+        const notice = (optionalText(spentEvidence.notice) ?? "").slice(0, 300) || null;
+        const closed = await c.env.DB
+          .prepare(`UPDATE backend_runs SET status = 'cancelled', finished_at = ?, error = ? WHERE id = ? AND finished_at IS NULL AND status = 'running'`)
+          .bind(at0, `NAMED STOP [USAGE_LIMIT] ${run.backend_id} is out of usage; the task waits for the reset${notice ? `: ${notice}` : ""}`, run.id)
+          .run();
+        if ((closed.meta.changes ?? 0) > 0) {
+          await c.env.DB.prepare(`UPDATE execution_backends SET exhausted_until = ?, exhausted_reason = ? WHERE id = ?`).bind(until, notice, run.backend_id).run();
+          await c.env.DB
+            .prepare(`INSERT INTO task_events (id, task_id, ts, event, detail) VALUES (?,?,?,'usage_limit_wait',?)`)
+            .bind(newId("tev"), run.task_id, at0, JSON.stringify({ run_id: run.id, backend_id: run.backend_id, exhausted_until: until, notice }))
+            .run();
+          await usageWait(c.env, task, input, { resumeAt: until, why: `${run.backend_id} ran out of usage mid-run${notice ? `: ${notice}` : ""}` });
+          await logEvent(c.env.DB, { level: "info", scope: "backends", event: "usage_limit_wait", entityId: run.task_id, detail: { run_id: run.id, backend_id: run.backend_id, exhausted_until: until } });
+          return ok(c, { released: true, run_id: run.id, next_seat: run.backend_id, outcome_class: "waiting_for_reset", approval_id: null, exhausted_until: until });
+        }
       }
     }
   }

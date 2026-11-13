@@ -18,7 +18,8 @@
 import type { Env } from "../env";
 import { newId } from "../lib/id";
 import { logEvent } from "../lib/log";
-import { noticeOnce } from "../service/notices";
+import { noticeOnce, dutyNotRunning } from "../service/notices";
+import { startedBySystem } from "../../../shared/boss/mail/noticeGate.mjs";
 import { runGroundedResearch, type FreeSearchEngine, type GroundedOutcome } from "../research/grounded";
 import { getBackend } from "../backends/registry";
 import { isPlanSpent } from "../backends/spent";
@@ -96,6 +97,54 @@ export async function namedStop(
       ],
     }).catch(() => null);
   }
+}
+
+type DutyRef = { id: string; name: string; task_title: string };
+
+/** The duty a task is a run of: stamped on its input (materialise.ts), or, before the stamp, the duty's newest task. */
+export async function dutyOf(env: Env, task: any, input: Record<string, any>): Promise<DutyRef | null> {
+  const stamped = typeof input.duty_id === "string" ? input.duty_id : null;
+  return env.DB.prepare(`SELECT id, name, task_title FROM standing_duties WHERE ${stamped ? "id" : "last_task_id"} = ? LIMIT 1`)
+    .bind(stamped ?? task.id).first<DutyRef>().catch(() => null);
+}
+
+/** Did Boss OS start this itself (a repair, a duty's own run)? The one rule is `startedBySystem`. */
+export async function selfStarted(env: Env, task: any, input: Record<string, any>): Promise<{ self: boolean; duty: DutyRef | null }> {
+  const duty = await dutyOf(env, task, input);
+  const self = startedBySystem(input, { dutyRun: duty != null });
+  return { self, duty: self ? duty : null };
+}
+
+/**
+ * OUT OF USAGE ON WORK BOSS OS STARTED ITSELF IS A WAIT FOR THE RESET, NEVER A FAILURE (owner, 13 Nov
+ * 2026). The ONE place that writes the wait, for both places a usage limit arrives: at dispatch (a seat
+ * refuses before a run exists, consumer.ts `waitForUsage`) and mid-run (a seat ran and then said its
+ * plan is spent, routes/backends.ts POST /report). 13 Nov 2026: "Backlink prospecting" had Codex's
+ * unusable answer handed to Claude's seat, the LAST seat on its ladder; Claude said "You've hit your
+ * weekly limit" and the report route failed the duty for good, because only dispatch knew the rule.
+ *
+ * `true`: the task is back in the queue for `resumeAt` under NAMED STOP [USAGE_LIMIT], with ONE row on
+ * the Updates page (needs_her = 0, never an email) and the duty's 2-day alarm (`dutyNotRunning`).
+ * `false`: work SHE asked for — the caller fails it out loud, as before. Nothing moves to another seat
+ * or a cloud model: the re-queued task walks its own ladder again.
+ */
+export async function usageWait(
+  env: Env, task: any, input: Record<string, any>, o: { resumeAt: number; why: string },
+): Promise<boolean> {
+  const { self, duty } = await selfStarted(env, task, input);
+  if (!self) return false;
+  const title = String(task.title ?? task.id);
+  await namedStop(env, { id: String(task.id), lane: String(task.lane), title }, {
+    code: "USAGE_LIMIT", tell: false, resumeAt: o.resumeAt,
+    why: `NAMED STOP [USAGE_LIMIT] ${o.why}; Boss OS started this itself, so it waits on the same seats and tries again at ${new Date(o.resumeAt).toISOString()}`,
+  });
+  await noticeOnce(env, {
+    task: { id: String(task.id), lane: String(task.lane), title }, fromName: "Kendra", kind: "stop:USAGE_LIMIT", needsHer: false,
+    subject: `Waiting for AI usage: ${title.slice(0, 120)}`,
+    lines: [`"${title}" is waiting, not lost. The AI it may use is out of usage until ${centralTime(o.resumeAt)} Central, and it starts again by itself then.`],
+  }).catch(() => null);
+  if (duty) await dutyNotRunning(env, duty, { now: Date.now(), backAt: `${centralTime(o.resumeAt)} Central` }).catch(() => null);
+  return true;
 }
 
 /** When Codex's seat is back, or null when it is not out. */

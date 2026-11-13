@@ -22,7 +22,7 @@ import { afterResult } from "../service/afterResult";
 import { noticeOnce, dutyNotRunning } from "../service/notices";
 import { taskToken, threeParts, bossWait } from "../../../shared/boss/service/waits.mjs";
 import { dueLine } from "../../../shared/boss/service/dueTime.mjs";
-import { isResearchWork, runFreeResearch, namedStop, codexResetAt, researchSeats, seatReady, asResearchPage, centralTime } from "./freeRung";
+import { isResearchWork, runFreeResearch, namedStop, codexResetAt, researchSeats, seatReady, asResearchPage, centralTime, selfStarted, usageWait } from "./freeRung";
 /*
  * The rule that recognises a completion which is transparently a non-answer. Deterministic, and it
  * reads the model's own reply rather than guessing from her request — see the module for why.
@@ -1282,23 +1282,9 @@ async function openRouteFixJob(env: Env, task: any, why: string): Promise<void> 
   } as any);
 }
 
-/** The duty a task is a run of: stamped on its input (materialise.ts), or, before the stamp, the duty's newest task. */
-async function dutyOf(env: Env, task: any, input: Record<string, any>): Promise<{ id: string; name: string; task_title: string } | null> {
-  const stamped = typeof input.duty_id === "string" ? input.duty_id : null;
-  return env.DB.prepare(`SELECT id, name, task_title FROM standing_duties WHERE ${stamped ? "id" : "last_task_id"} = ? LIMIT 1`)
-    .bind(stamped ?? task.id).first<{ id: string; name: string; task_title: string }>().catch(() => null);
-}
-
 /** The approval card's one line for a finished result that is hers to release. Plain words only. */
 export function approvalSummary(employeeName?: string | null): string {
   return `${employeeName ? String(employeeName).split(" ")[0] : "Your team"} finished this and holds the result until you say yes.`;
-}
-
-/** Did Boss OS start this itself (a repair, a duty's own run)? The one rule is `startedBySystem`. */
-async function selfStarted(env: Env, task: any, input: Record<string, any>): Promise<{ self: boolean; duty: { id: string; name: string; task_title: string } | null }> {
-  const duty = await dutyOf(env, task, input);
-  const self = startedBySystem(input, { dutyRun: duty != null });
-  return { self, duty: self ? duty : null };
 }
 
 /**
@@ -1309,8 +1295,6 @@ async function selfStarted(env: Env, task: any, input: Record<string, any>): Pro
  */
 async function waitForUsage(env: Env, task: any, input: Record<string, any>, refusals: { backend_id: string; refused: string }[]): Promise<boolean> {
   if (refusals.length === 0) return false;
-  const { self, duty } = await selfStarted(env, task, input);
-  if (!self) return false;
   const now = Date.now();
   let resumeAt: number | null = null;
   for (const r of refusals) {
@@ -1318,18 +1302,7 @@ async function waitForUsage(env: Env, task: any, input: Record<string, any>, ref
     if (isPlanSpent(seat, now)) resumeAt = Math.min(resumeAt ?? Infinity, seat!.exhausted_until as number);
   }
   if (resumeAt == null) return false;
-  const title = String(task.title ?? task.id);
-  await namedStop(env, { id: task.id, lane: task.lane, title }, {
-    code: "USAGE_LIMIT", tell: false, resumeAt,
-    why: `NAMED STOP [USAGE_LIMIT] ${refusals.map((r) => `${r.backend_id}: ${r.refused.slice(0, 160)}`).join(" | ")}; Boss OS started this itself, so it waits on the same seats and tries again at ${new Date(resumeAt).toISOString()}`,
-  });
-  await noticeOnce(env, {
-    task: { id: task.id, lane: task.lane, title }, fromName: "Kendra", kind: "stop:USAGE_LIMIT", needsHer: false,
-    subject: `Waiting for AI usage: ${title.slice(0, 120)}`,
-    lines: [`"${title}" is waiting, not lost. The AI it may use is out of usage until ${centralTime(resumeAt)} Central, and it starts again by itself then.`],
-  }).catch(() => null);
-  if (duty) await dutyNotRunning(env, duty, { now, backAt: `${centralTime(resumeAt)} Central` }).catch(() => null);
-  return true;
+  return usageWait(env, task, input, { resumeAt, why: refusals.map((r) => `${r.backend_id}: ${r.refused.slice(0, 160)}`).join(" | ") });
 }
 
 /** The one stopped-notice, for a final failure or a dead letter. */
