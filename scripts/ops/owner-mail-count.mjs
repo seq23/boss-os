@@ -3,7 +3,7 @@
  * (the measurement promised with the email overhaul, Wave 4, 13 Nov 2026; baseline 55 emails in the
  * 7 days to 13 Nov). Read-only: one SELECT on the live sent log (`boss_sent_mail`); it writes nothing.
  *
- *   node scripts/vault/vault.mjs run -- node scripts/ops/owner-mail-count.mjs [--days 7]
+ *   npm run vault:run -- npm run -s owner-mail:count [-- --days 7]
  *
  * HOW IT COUNTS, EXACTLY (the sent log holds the subject and the layout, not the body):
  *   · an email TO HER  = a row with delivery_state 'sent' whose recipient is her address
