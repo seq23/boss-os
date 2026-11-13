@@ -131,7 +131,12 @@ export function firstSendWhen(now: number): string {
  * A NOTE MONIQUE OWES HER. One waits at a time: if an earlier one has not gone yet (the Mac is off,
  * a send failed), the new one queues behind it in `spec.pending_notices` and goes after it
  * (`campaignNoticed`). Nothing is overwritten and nothing is lost.
+ *
+ * EVERY NOTE OPENS WITH WHAT IT WANTS OF HER (owner, 13 Nov 2026): `why` is one short sentence and
+ * `act` says what she must do, or that there is nothing to do; together they are line 1 of the email
+ * (`noticeArgs`, simone-commands.mjs). The long account stays below, in `happened` and `details`.
  */
+export const CAMPAIGN_NO_ASK = "Nothing to do."; // the owner layout's own words, so no reply code is shown
 async function owe(env: Env, id: string, notice: Record<string, unknown>, now: number) {
   const body = JSON.stringify({ from: "Monique", ...notice });
   const cur = await env.DB.prepare(`SELECT notice_state, spec FROM outreach_campaigns WHERE id = ?`).bind(id).first<{ notice_state: string; spec: string }>();
@@ -245,7 +250,7 @@ export async function campaignFromMail(env: Env, input: { text: string; subject:
   const receipt = receiptFor(b, plan.org, plan.contacts, plan.skipped, row, input.now);
   // Typed in from her own session (the console door), there is no email of hers to answer: the same
   // receipt goes to her as Monique's own email, the first of the thread the done reply joins.
-  if (input.viaConsole) await owe(env, row.id, { subject: (j(row.spec) as CampaignSpec).thread_subject, happened: receipt.happened, details: receipt.details, thread: (j(row.spec) as CampaignSpec).thread }, input.now);
+  if (input.viaConsole) await owe(env, row.id, { subject: (j(row.spec) as CampaignSpec).thread_subject, why: receipt.happened, act: CAMPAIGN_NO_ASK, happened: receipt.happened, details: receipt.details, thread: (j(row.spec) as CampaignSpec).thread }, input.now);
   return { reply: [`Monique here. ${receipt.happened}`, ...receipt.details.map((d) => `- ${d}`)].join("\n"), outcome: "CAMPAIGN", campaignId: row.id };
 }
 
@@ -504,6 +509,7 @@ export async function campaignVerified(env: Env, id: string, verdicts: Array<{ e
       await env.DB.prepare(`UPDATE outreach_campaigns SET state = 'ended', ended_reason = 'no working address found for anyone there', ended_at = ?, updated_at = ? WHERE id = ?`).bind(now, now, id).run();
       await owe(env, id, {
         subject: `Re: ${spec.thread_subject ?? `${row.org_name} partnership campaign`}`,
+        why: `Your ${b.brand} campaign for ${row.org_name} has stopped: nobody there has a working address`, act: CAMPAIGN_NO_ASK,
         happened: `The ${b.brand} campaign for ${row.org_name} has stopped: no working address was found for anyone there, after up to ${MAX_ADDRESSES_PER_PERSON} tries each.`,
         details: send.map((c) => `${c.name}: tried ${(c.tried ?? []).map((t) => `${t.email} (${t.outcome})`).join(", ") || "no address"}.`),
         thread: spec.thread,
@@ -533,6 +539,8 @@ export async function campaignVerified(env: Env, id: string, verdicts: Array<{ e
   await owe(env, id, {
     // A campaign from research is a NEW organisation starting: her subject says so.
     subject: row.source === "research" ? `Next ${b.brand} partner: ${row.org_name} ${first ? "has started" : "could not start"}` : `Re: ${spec.thread_subject ?? `${row.org_name} partnership campaign`}`,
+    why: first ? `Your ${b.brand} campaign for ${row.org_name} has started` : `Your ${b.brand} campaign for ${row.org_name} could not start: nobody there has a working address`,
+    act: CAMPAIGN_NO_ASK,
     happened,
     details: [...ordered.map(personLine), ...spec.skipped.map((s) => `${s.email}: skipped, ${s.why}.`), `The one-pager: ${pageUrl(row.page_token)}`,
       ...passedOver.map((s) => `${s.org_name} was passed over: ${s.note}.`),

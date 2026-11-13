@@ -128,6 +128,18 @@ export function gapsLineOf(gaps, max = MAX_GAPS_NAMED) {
   return `${shown.join("; ")}${rest > 0 ? `; and ${rest} more in the report` : ""}.`;
 }
 
+/**
+ * IS THIS REPORT WORTH AN EMAIL? (owner, 13 Nov 2026: "empty research is never emailed"). A report
+ * with no source behind it, or with no answer in it, is filed on its page and listed on Updates; it
+ * is not sent to her. Read from the page's fields, never its wording. Returns the reason, or null.
+ */
+export function researchNotEmailable(page) {
+  const sources = (Array.isArray(page?.sources) ? page.sources : []).filter((x) => /^https:\/\/\S+$/.test(String(x?.url ?? "")));
+  if (!sources.length) return "the report cites no source";
+  if (!answerBlockOf(page)) return "the report holds no findings";
+  return null;
+}
+
 /** Everything the email says, from the filed page. */
 export function researchDoneParts(page) {
   const gaps = Array.isArray(page?.gaps) ? page.gaps : [];

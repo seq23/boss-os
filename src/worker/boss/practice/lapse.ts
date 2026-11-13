@@ -15,9 +15,12 @@ import { LINES, type LapseTier } from "./lines";
  *   day 2       firm nudge
  *   day 4       tough love
  *   day 7+      a hard truth, and again every 3 days (7, 10, 13 …)
- * Any other day sends nothing. At most one lapse email a day (`practice_nudges`, PRIMARY KEY (day,
- * kind)), from 10:00 Central, to her only. The ladder resets the moment she engages: the streak is
- * computed from the newest engagement every time, so one app open puts it back to zero.
+ * Any other day says nothing. The ladder resets the moment she engages: the streak is computed from
+ * the newest engagement every time, so one app open puts it back to zero.
+ *
+ * NO EMAIL OF ITS OWN (owner, 13 Nov 2026: "no separate nag email; if it matters it is one line in
+ * the morning email"). A rung day is ONE line in Simone's morning email (`lapseMorningLine`, read by
+ * scripts/ops/your-day.mjs through GET /practice/lapse-line); `dueNudges` never offers a lapse email.
  *
  * NOTHING SAID IS STORED. `practice_engagement` holds a day, a kind and two times. Coaching is
  * LOCAL_ONLY (migration 0177); this file reads only that a talk happened. Pinned by
@@ -173,6 +176,17 @@ export function lapseVerdict(now: number, last: { day: string | null; tracking: 
   return { due: true, reason: `day ${streak}: ${tier}`, tier, streak_days: streak };
 }
 
+/** The ONE line a rung day adds to the morning email: the streak and her own words. Null on any other day. Pure. */
+export function lapseMorningLine(now: number, last: { day: string | null; tracking: boolean }): string | null {
+  if (!last.tracking || !last.day) return null;
+  const today = dayIdInZone(now);
+  const streak = daysBetween(last.day, today);
+  const tier = streak > 0 ? lapseTier(streak) : null;
+  if (!tier) return null;
+  const n = lapseNotice(tier, streak, today, "");
+  return `${n.happened} ${n.details[0]}`;
+}
+
 export async function dueNudges(env: Env, origin: string, now = Date.now(), extra: (env: Env, now: number) => Promise<DueNudge[]> = async () => []): Promise<{ due: DueNudge[]; lines: string[] }> {
   const today = dayIdInZone(now);
   const due: DueNudge[] = [];
@@ -183,9 +197,7 @@ export async function dueNudges(env: Env, origin: string, now = Date.now(), extr
   let lapsing = false;
   if (v.due && v.tier && v.streak_days) {
     lapsing = true;
-    if (await claim(env, today, "lapse", v.tier, v.streak_days, now)) {
-      due.push({ day: today, kind: "lapse", tier: v.tier, streak_days: v.streak_days, notice: lapseNotice(v.tier, v.streak_days, today, origin) });
-    } else lines.push("lapse: already sent today");
+    lines.push(`lapse: day ${v.streak_days} (${v.tier}) is one line in the morning email, never an email of its own`);
   } else lines.push(`lapse: ${v.reason}`);
 
   // THE MIDDAY PUSH: only on a day she is in the system (a lapse email already speaks for the day),

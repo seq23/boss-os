@@ -369,6 +369,23 @@ export function catchUpSince(event, last) {
   return last && last < event.scheduled_at - 86_400_000 ? last : week;
 }
 
+/** The most prep emails she gets in one Central day; the rest are one line in the morning email. */
+export const MAX_PREP_EMAILS_PER_DAY = 3;
+const dayKeyCt = (ms) => new Intl.DateTimeFormat("en-CA", { timeZone: "America/Chicago" }).format(new Date(ms));
+
+/** Which preps are emailed and which wait for the morning line, given how many went today. Soonest first. Pure. */
+export function capPreps(items, sentToday = 0, max = MAX_PREP_EMAILS_PER_DAY) {
+  const room = Math.max(0, max - sentToday);
+  return { send: items.slice(0, room), rest: items.slice(room) };
+}
+
+/** The one morning-email line for the meetings past the cap. Pure. */
+export function overCapLine(events, tz = "America/Chicago") {
+  const at = (ms) => new Intl.DateTimeFormat("en-US", { timeZone: tz, hour: "numeric", minute: "2-digit", hour12: true }).format(new Date(ms)).replace(" AM", " am").replace(" PM", " pm");
+  const n = events.length;
+  return `${n} more meeting${n === 1 ? "" : "s"} had no prep email, because three a day is the limit: ${events.map((e) => `${String(e.title ?? "a meeting").slice(0, 80)} (${at(e.scheduled_at)})`).join("; ")}.`;
+}
+
 /** Read Open Loops and the brains, build each catch-up, and send it (or write it to the preview). */
 export async function sendCatchUps(api, events, { now = Date.now(), dry = false, preview = null, force = false, sentState = { keys: [] }, send = (who, msg) => sendAsEmployee(who, msg), to = process.env.BOSS_NOTIFY_TO ?? "seq.taylor@gmail.com" } = {}) {
   const loops = (await api.get("/open-loops"))?.loops ?? [];
@@ -493,11 +510,23 @@ async function main() {
     return;
   }
 
+  // AT MOST THREE PREP EMAILS A DAY (owner, 13 Nov 2026); the rest are ONE line in the morning email.
+  const prepDay = dayKeyCt(now);
+  // A prep she asked for by name, day or force is hers and is never held back by the cap.
+  const { send: toSend, rest: overCap } = ONLY || DAY || FORCE ? { send: built, rest: [] } : capPreps(built, sentState.days?.[prepDay] ?? 0);
+  if (overCap.length) {
+    const { addMorningLines } = await import("../../src/shared/boss/mail/morning.mjs");
+    addMorningLines("notices", { lines: [overCapLine(overCap.map(({ e }) => e), tz)] });
+    sentState.keys = [...new Set([...sentState.keys, ...overCap.map(({ m }) => m.key)])].slice(-2000);
+    writeJson(SENT, sentState);
+    console.log(`meeting-prep: ${overCap.length} prep(s) over the daily limit of ${MAX_PREP_EMAILS_PER_DAY}: one line in the morning email, no email.`);
+  }
   let failed = 0;
-  for (const { e, context, plan, m } of built) {
+  for (const { e, context, plan, m } of toSend) {
     const r = await sendPrep(api, e, data, { context, purpose: PURPOSE, plan, subject: SUBJECT, thread: THREAD, tz });
     if (!r.ok) { failed += 1; console.error(`NAMED STOP [SEND_REFUSED] "${m.subject}" was not sent: ${r.error}`); continue; }
     sentState.keys = [...new Set([...sentState.keys, m.key])].slice(-2000);
+    sentState.days = { [prepDay]: (sentState.days?.[prepDay] ?? 0) + 1 }; // today's count only; older days are dropped
     writeJson(SENT, sentState); // after each send, so a failure later never re-sends this one
     console.log(`meeting-prep: sent "${m.laid.subject}" from ${r.from}${m.needsPurpose ? " (asks what it is for)" : ""}`);
   }

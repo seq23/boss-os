@@ -1,7 +1,7 @@
 import { describe, expect, it, vi } from "vitest";
 import { Window } from "happy-dom";
 // @ts-expect-error — plain .mjs ops script, no types
-import { planTitle, titleMatches, shelfRowsIn, parseShelfRow, waitForHer, aiAnswers, toolNames, profileBusy, toldBefore, stopMail, headsUpMail, doneMail, stillWaitingMail, reviewUpdate, waitingLoop } from "../scripts/ops/kdp-new-title.mjs";
+import { planTitle, titleMatches, shelfRowsIn, parseShelfRow, waitForHer, aiAnswers, toolNames, profileBusy, toldBefore, stopMail, headsUpMail, doneMail, stillWaitingMail, reviewUpdate, waitingLoop, routeMessage, liveMail, withLive, asUpdate } from "../scripts/ops/kdp-new-title.mjs";
 // @ts-expect-error — plain .mjs ops script, no types
 import { withPublished, lineCounts } from "../scripts/ops/kdp-line-counts.mjs";
 
@@ -124,6 +124,30 @@ describe("the AI answers say what the draft record says", () => {
 });
 
 describe("messages to her: told once, plain, the one thing to do", () => {
+  it("a whole run sends ONE email, whatever happens in it", () => {
+    // A run's messages in the order it raises them, for the three shapes a run can take.
+    const runs = [
+      ["headsup", "live"],                              // every title went live
+      ["headsup", "stop", "waiting", "live", "live"],   // a stop she must act on, then the rest
+      ["headsup", "waiting"],                           // nothing finished
+    ];
+    for (const kinds of runs) {
+      const state = { emailed: false };
+      let emails = 0;
+      for (const k of kinds) if (routeMessage(state, k) === "email") { emails += 1; state.emailed = true; }
+      expect(emails).toBe(1);
+    }
+    // The heads-up is never the email: there is nothing for her to do in it.
+    expect(routeMessage({ emailed: false }, "headsup")).toBe("update");
+    // Three titles live in one run are one message that links all three.
+    const three = [1, 2, 3].map((n) => ({ title: `Book ${n}`, asin: `B0SYNTH000${n}`, price_usd: 4.99 }));
+    const one = liveMail(three);
+    for (const b of three) expect(one.layout.details.join("\n")).toContain(`https://www.amazon.com/dp/${b.asin}`);
+    // A stop carries what went live before it, so that news is not a second email.
+    expect(withLive(stopMail({ title: T, code: "SIGNIN" }), three.slice(0, 1)).layout.details.join("\n")).toContain("https://www.amazon.com/dp/B0SYNTH0001");
+    // What is not emailed still reaches her Updates page with its words.
+    expect(asUpdate("waiting:x", stillWaitingMail({ title: T, code: "SIGNIN" })).body).toContain(T);
+  });
   it("a key already told is not told again", () => {
     expect(toldBefore({ "live:jc1": "2026-11-08T15:00:00Z" }, "live:jc1")).toBe(true);
     expect(toldBefore({}, "live:jc1")).toBe(false);

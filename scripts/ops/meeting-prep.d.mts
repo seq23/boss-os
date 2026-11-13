@@ -20,3 +20,6 @@ export declare function ownerZone(api: any, log?: (s: string) => void): Promise<
 export declare const CATCHUP_BRAINS: string[];
 export declare function catchUpSince(event: any, last: number | null): number;
 export declare function sendCatchUps(api: any, events: any[], opts?: any): Promise<{ failed: number; built: { subject: string; text: string }[] }>;
+export declare const MAX_PREP_EMAILS_PER_DAY: number;
+export declare function capPreps<T>(items: T[], sentToday?: number, max?: number): { send: T[]; rest: T[] };
+export declare function overCapLine(events: Array<{ title?: string | null; scheduled_at: number }>, tz?: string): string;

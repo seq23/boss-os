@@ -182,10 +182,10 @@ async function noteInInbox({ recipientLabel, optedOut, replied, bounced, senderN
       `${bounced} bounced, ${replied} replied, ${optedOut} asked to be removed.`,
       "",
       "Both spreadsheets already carry these outcomes in their Status column, so nothing here needs a",
-      "decision. The email repeats the lists so they can be pasted straight into Twin.",
+      "decision.",
       optedOut === 0
         ? "Nobody has asked to be removed, so there is nothing to suppress this time."
-        : "The addresses to suppress are in the email and in the suppression file Twin reads.",
+        : "The addresses to suppress are in the suppression file Twin reads; nothing to copy.",
       ...(senderNote ? ["", senderNote] : []),
     ].join("\n");
 
@@ -226,7 +226,7 @@ async function noteInInbox({ recipientLabel, optedOut, replied, bounced, senderN
  * Formatted to be pasted, not read: each section is bare addresses, one per line, with nothing
  * between them a paste would carry across. The prose sits above each block, never inside it.
  */
-async function emailHer({ optedOut, replied, bounced, tally, scanned, sentRows }) {
+async function emailHer({ optedOut, replied, bounced }) {
   /*
    * TWO RECIPIENTS, TRIED IN ORDER.
    *
@@ -274,69 +274,25 @@ async function emailHer({ optedOut, replied, bounced, tally, scanned, sentRows }
     return false;
   }
 
-  const block = (list) => (list.length ? list.join("\n") : "(none)");
-  /*
-   * THE NOTE AT THE TOP SAYS WHO SENT IT AND WHAT IT COMPLETES.
-   *
-   * An email that opens with a table of addresses makes her reconstruct what it is, why it arrived,
-   * and whether anything is expected of her. Three sentences at the top remove all three questions,
-   * and naming the duty means a future one is recognisable as the same recurring thing rather than
-   * a surprise.
-   */
-  const body = [
-    "Sequoia,",
-    "",
-    "This is Monique. I own the West Peek LP mailbox and this is the daily outcome read for the",
-    "AI outreach — duty `duty_lp_replies`, the deliverable being: every reply read and categorised",
-    "within a day, and anyone who asked to be removed handed to Twin as something Twin can act on",
-    "rather than a line you have to relay.",
-    "",
-    "It is done. Both spreadsheets already carry these outcomes in their Status column — Twin's",
-    "Sent Log and the AI Outreach tab on the Fund I Tracker. Nothing here needs a decision from you.",
-    "The lists are repeated below only so you can paste them straight into Twin.",
-    "",
-    "I have also left a note in your Boss OS inbox saying I sent this.",
-
-    "",
-    "— Monique, Director of Relationships",
-    "",
-    "---",
-    "",
-    `LP outreach outcomes — ${new Date().toISOString().slice(0, 10)}`,
-    "",
-    `${sentRows} emails sent. ${scanned} inbound messages read from ${MAILBOX}.`,
-    `${tally["opted-out"]} opted out, ${tally.replied} replied, ${tally.bounced} bounced.`,
-    "",
-    "",
-    `ASKED TO BE REMOVED (${optedOut.length}) - suppress these first`,
-    "",
-    block(optedOut),
-    "",
-    "",
-    `REPLIED (${replied.length}) - a human or an autoresponder answered`,
-    "",
-    block(replied),
-    "",
-    "",
-    `BOUNCED (${bounced.length}) - the address did not accept mail`,
-    "",
-    block(bounced),
-    "",
-  ].join("\n");
+  // ONE SOURCE FOR EVERY NUMBER (13 Nov 2026): the subject, the three lines, line 1 and the inbox
+  // note all read `counts`. The subject used to count the lists while the body counted the cells
+  // changed in this run, so one email said two different things.
+  const counts = outcomeCounts({ optedOut, replied, bounced });
+  const mail = outcomesMail(counts);
 
   let lastErr = "";
   const attempts = [];
   for (const sx of SENDERS) for (const to of RECIPIENTS) attempts.push([sx, to]);
   for (const [sender, TO] of attempts) {
     const { from, key } = sender;
-    const res = await postEmployeeMail(sender, employeeMail(sender, { to: TO, subject: `LP outcomes: ${optedOut.length} to suppress, ${replied.length} replied, ${bounced.length} bounced`, text: body,
-      owner: outcomesOwner(optedOut.length, replied.length, bounced.length) }));
+    const res = await postEmployeeMail(sender, employeeMail(sender, { to: TO, subject: mail.subject, layout: mail.layout, owner: mail.owner }));
     if (res.ok) {
-      console.log(`Emailed ${TO} from ${from}: ${optedOut.length} to suppress, ${replied.length} replied, ${bounced.length} bounced.`);
+      console.log(`Emailed ${TO} from ${from}: ${mail.subject}`);
       await noteInInbox({
         recipientLabel: TO.endsWith("westpeek.ventures") ? "your West Peek inbox" : "your personal inbox",
-        optedOut: optedOut.length, replied: replied.length, bounced: bounced.length,
+        optedOut: counts.optedOut, replied: counts.replied, bounced: counts.bounced,
       });
+      fs.writeFileSync(path.join(OUT_DIR, "emailed.json"), JSON.stringify({ at: new Date().toISOString(), ...counts }), "utf8");
       if (from.includes("westpeek.ventures")) {
         console.log("  NAMED STOP [WRONG_SENDING_IDENTITY] Monique is a Boss OS employee and just");
         console.log("  emailed from a West Peek domain. The Boss OS sender was unavailable — check");
@@ -369,9 +325,6 @@ async function main() {
       optedOut: prior.opted_out ?? [],
       replied: prior.replied ?? [],
       bounced: prior.bounced ?? [],
-      tally: prior.tally ?? { "opted-out": 0, replied: 0, bounced: 0 },
-      scanned: prior.scanned ?? 0,
-      sentRows: prior.sent_rows ?? 0,
     });
     if (!sent) process.exit(8);
     console.log("LP-OUTCOMES-COMPLETE: emailed");
@@ -689,21 +642,53 @@ async function main() {
 
   // The email goes LAST, after the spreadsheet is already correct. If the send fails she has lost a
   // push, not a record — and the failure is named rather than swallowed.
-  const sent = await emailHer({
-    optedOut,
-    replied: replied.map(([a]) => a),
-    bounced: bouncedOnly,
-    tally,
-    scanned,
-    sentRows: data.length,
-  });
+  //
+  // ONE EVENT, ONE EMAIL (13 Nov 2026). The lists are everyone to date, so a day with no new reply,
+  // bounce or removal has the same three numbers as the last email: it is not sent again.
+  const counts = outcomeCounts({ optedOut, replied: replied.map(([a]) => a), bounced: bouncedOnly });
+  let last = null;
+  try { last = JSON.parse(fs.readFileSync(path.join(OUT_DIR, "emailed.json"), "utf8")); } catch { last = null; }
+  if (!worthEmailing(counts, last)) {
+    console.log(`NOTE [NOTHING_NEW] ${counts.optedOut} asked to be removed, ${counts.replied} replied, ${counts.bounced} bounced: the same as the last email, so none was sent.`);
+    console.log("LP-OUTCOMES-COMPLETE: written (nothing new, no email)");
+    return;
+  }
+  const sent = await emailHer({ optedOut, replied: replied.map(([a]) => a), bounced: bouncedOnly });
 
   console.log(`LP-OUTCOMES-COMPLETE: written${sent ? " and emailed" : " (email not sent — see above)"}`);
 }
 
+/** The three numbers, counted ONCE from the three lists (people, each in one list only). Pure. */
+export function outcomeCounts({ optedOut = [], replied = [], bounced = [] }) {
+  return { optedOut: optedOut.length, replied: replied.length, bounced: bounced.length };
+}
+
+/** Send only when a number moved since the last email, and never an all-zero one. Pure. */
+export function worthEmailing(counts, last) {
+  if (counts.optedOut + counts.replied + counts.bounced === 0) return false;
+  return !last || last.optedOut !== counts.optedOut || last.replied !== counts.replied || last.bounced !== counts.bounced;
+}
+
+/**
+ * THE EMAIL: THREE LINES (owner, 13 Nov 2026). What came back, where it already is, and that there
+ * is nothing to do. No address lists: the suppression file is what Twin reads, so nothing is copied
+ * from this email into another tool, and no address leaves her Mac. Pure.
+ */
+export function outcomesMail(counts) {
+  const said = `${counts.optedOut} asked to be removed, ${counts.replied} replied, ${counts.bounced} bounced`;
+  return {
+    subject: `LP outcomes: ${said}`,
+    // Line 1 is the owner line below (the numbers, and "Nothing to do"); these are lines 2 and 3.
+    layout: { happened: "Both spreadsheets already show each one in their Status column.", details: [
+      counts.optedOut ? "Everyone who asked to be removed is on the list Twin reads, so they are not written to again." : "Nobody has asked to be removed.",
+    ] },
+    owner: outcomesOwner(counts.optedOut, counts.replied, counts.bounced),
+  };
+}
+
 /** The owner layout (7 Nov 2026): a duty's report she did not ask for this time is a Note. Pure. */
 export function outcomesOwner(optedOut, replied, bounced) {
-  return { layout: "note", why: `Monique read the replies to your LP outreach: ${optedOut} asked to be removed, ${replied} replied, ${bounced} bounced`, act: "Nothing to do. Both spreadsheets already carry these outcomes" };
+  return { layout: "note", why: `Your LP outreach so far: ${optedOut} asked to be removed, ${replied} replied, ${bounced} bounced`, act: "Nothing to do" };
 }
 
 if (import.meta.url === `file://${process.argv[1]}`) {

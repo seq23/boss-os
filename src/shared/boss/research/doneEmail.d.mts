@@ -17,3 +17,4 @@ export function researchPageIdIn(text: string | null | undefined): string | null
 export const FULL_EMAIL_MAX_HTML: number;
 export function researchPlainText(md: string): string;
 export function researchFullEmail(args: { who: string; subject: string; page: DonePage; url: string; refs?: string[]; markdownToHtml: (md: string) => string }): { subject: string; text: string; html: string; refs: string[]; kind: string };
+export function researchNotEmailable(page: { sources?: unknown[]; summary?: string; markdown?: string } | null | undefined): string | null;

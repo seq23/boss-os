@@ -248,10 +248,20 @@ export async function coachingFocus(env: Env, dayId: string, dayMode: string | n
     };
   }
 
+  // AN ORDINARY DAY TAKES THE NEXT LAW IN ORDER (owner, 13 Nov 2026). It used to fall back to Law 4
+  // every time, so laws 3, 5, 8, 9 and 10 were never the law of the day. A day with a real reason
+  // (the branches above) keeps that law.
+  const turn = law(lawForDay(dayId));
   return {
     mode: MODES.find((m) => m.key === "high_pressure")!,
     because: "A normal day. Default coaching is direct and unsentimental.",
-    law: law(4),
-    law_because: "The plan was made this morning by the version of you with the most capacity. Today's job is to execute it.",
+    law: turn,
+    law_because: `An ordinary day, so the laws take turns in order. Today is Law ${turn.n}'s day.`,
   };
+}
+
+/** The ordinary day's law number, 1 to 10 in order by date, so every law comes round. Pure. */
+export function lawForDay(dayId: string): number {
+  const days = Math.round(Date.UTC(+dayId.slice(0, 4), +dayId.slice(5, 7) - 1, +dayId.slice(8, 10)) / 86_400_000);
+  return (((days % LAWS.length) + LAWS.length) % LAWS.length) + 1;
 }

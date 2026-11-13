@@ -4,7 +4,7 @@
 import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
 import { counterpartFromTitle, buildPrep, dedupeEvents, dueMeetings, extractWarmReferences, lengthLabel, nameFromTitle, prepKey, deadLinks, PREP_PREFIX } from "../src/shared/boss/meetingPrep/prep.mjs";
-import { prepEmail, dealRowsOf } from "../scripts/ops/meeting-prep.mjs";
+import { prepEmail, dealRowsOf, capPreps, overCapLine, MAX_PREP_EMAILS_PER_DAY } from "../scripts/ops/meeting-prep.mjs";
 import { plainProblems } from "../src/shared/boss/mail/plain.mjs";
 import { parseIcs } from "../scripts/ops/ics.mjs";
 import { mergeDiaryRows } from "../src/worker/boss/today/diary";
@@ -204,5 +204,23 @@ describe("a weekly invite keeps its hour across the clock change", () => {
     const ics = ["BEGIN:VCALENDAR", "BEGIN:VEVENT", "UID:sync1", "SUMMARY:Sequoia // Scooter Sync", "DTSTART;TZID=America/Chicago:20261028T080000", "DTEND;TZID=America/Chicago:20261028T084500", "RRULE:FREQ=WEEKLY", "END:VEVENT", "END:VCALENDAR"].join("\r\n");
     const evs = parseIcs(ics, Date.parse("2026-10-27T12:00:00Z"), 28).events;
     expect(evs.map((e) => new Date(e.scheduled_at).toISOString())).toEqual(["2026-10-28T13:00:00.000Z", "2026-11-04T14:00:00.000Z", "2026-11-11T14:00:00.000Z", "2026-11-18T14:00:00.000Z"]);
+  });
+});
+
+describe("prep emails are capped a day; the rest are one morning line (13 Nov 2026)", () => {
+  const five = [1, 2, 3, 4, 5].map((n) => ({ title: `Meeting ${n}`, scheduled_at: Date.UTC(2026, 10, 16, 15 + n, 0) }));
+  it("sends the soonest up to the cap, counting what already went today", () => {
+    const first = capPreps(five, 0);
+    expect(first.send).toEqual(five.slice(0, MAX_PREP_EMAILS_PER_DAY));
+    expect(first.rest).toEqual(five.slice(MAX_PREP_EMAILS_PER_DAY));
+    expect(capPreps(five, MAX_PREP_EMAILS_PER_DAY - 1).send).toEqual([five[0]]);
+    expect(capPreps(five, MAX_PREP_EMAILS_PER_DAY + 4).send).toEqual([]);
+  });
+  it("everything past the cap is ONE line that names each meeting and passes the plain gate", () => {
+    const line = overCapLine(five.slice(3), "America/Chicago");
+    expect(line.split("\n")).toHaveLength(1);
+    expect(line).toContain("Meeting 4");
+    expect(line).toContain("Meeting 5");
+    expect(plainProblems({ subject: "Your day", text: `Your day.\n\nNothing to decide — this is just so you know.\n- ${line}` })).toEqual([]);
   });
 });

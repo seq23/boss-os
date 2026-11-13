@@ -160,7 +160,9 @@ pinned by `tests/plainEmail.test.ts` ("the rules in CLAUDE.md"), which reads thi
    and not doing coaching and not hitting my gates u should email me … I need tough love sometimes").
    From Imani, Director of Practice, to her only, through `scripts/ops/practice-nudges.mjs` on the
    errand-reminders tick; Boss OS decides and claims each one (`src/worker/boss/practice/lapse.ts`,
-   `practice_nudges`, one per kind per day). The lapse ladder: day 2 firm, day 4 tough love, day 7 and
+   `practice_nudges`, one per kind per day). **The lapse ladder is no longer an email of its own**
+   (owner, 13 Nov 2026): a rung day is ONE line in Simone's morning email (`lapseMorningLine`, read
+   through GET /practice/lapse-line). The lapse ladder: day 2 firm, day 4 tough love, day 7 and
    every 3 days after a hard truth, from 10:00 Central, reset the moment she opens the app, talks to the
    coach or closes a gate. Each states the streak, quotes one of HER laws or contract commitments
    (`LAWS`, `COMMITMENTS` in `today/faculty.ts`), gives one A-player line from `practice/lines.ts`

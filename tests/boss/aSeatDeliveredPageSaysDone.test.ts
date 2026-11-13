@@ -46,4 +46,39 @@ describe("a seat-delivered research page", () => {
     expect(gapLines[0]).toMatch(/partial/i);
     expect(gapLines[0]).toMatch(/insurance price/i);
   });
+
+  const file = async (payload: Record<string, unknown>) => {
+    const pageId = uid("rpg");
+    const taskId = await insertTask({
+      title: "Deep research: another synthetic question", status: "running", intake_kind: "research",
+      input: JSON.stringify({ delivers: "research_page", research_page: { page_id: pageId }, from: "owner@example.com" }),
+    });
+    const now = Date.now();
+    await env.DB.prepare(`INSERT INTO research_pages (id, task_id, question, state, requested_at, updated_at) VALUES (?,?,?,'queued',?,?)`)
+      .bind(pageId, taskId, "Another synthetic question", now, now).run();
+    const run = (runId: string) => deliverResearchPage(env as any, { taskId, runId, payload, runStatus: "succeeded", now });
+    const notices = async () => (await env.DB.prepare(`SELECT kind, needs_her, sent_at FROM boss_task_notices WHERE task_id = ?`).bind(taskId).all<any>()).results ?? [];
+    return { taskId, run, notices };
+  };
+  const BODY = "## The answer\n\n**Yes, as a small test.** Start-up is cheap and the first month tells you most of what you need.\n";
+
+  it("is emailed once, however many attempts the report took", async () => {
+    const { taskId, run, notices } = await file({ research_page: { title: "A synthetic report", summary: "Worth a small test.", markdown: BODY, sources: [{ title: "Example", url: "https://example.com/a" }] }, gaps: [], status: "complete" });
+    await run("brn_try_one");
+    expect(await notices()).toMatchObject([{ needs_her: 1 }]);
+    // The first email goes; then the task is retried and files the report again on a later attempt.
+    await env.DB.prepare(`UPDATE boss_task_notices SET sent_at = ? WHERE task_id = ?`).bind(Date.now(), taskId).run();
+    await env.DB.prepare(`UPDATE tasks SET attempts = COALESCE(attempts, 0) + 2 WHERE id = ?`).bind(taskId).run();
+    await run("brn_try_three");
+    expect(await notices()).toHaveLength(1);
+  });
+
+  it("a report with no source, or with no findings, is filed and not emailed", async () => {
+    const bare = await file({ research_page: { title: "A synthetic report", summary: "Worth a small test.", markdown: BODY, sources: [] }, gaps: [], status: "complete" });
+    expect((await bare.run("brn_no_sources"))?.state).toBe("delivered");
+    expect(await bare.notices()).toMatchObject([{ needs_her: 0 }]);
+    const hollow = await file({ research_page: { title: "A synthetic report", summary: "", markdown: `## Notes\n\n${"- \n".repeat(60)}`, sources: [{ title: "Example", url: "https://example.com/a" }] }, gaps: [], status: "complete" });
+    await hollow.run("brn_no_findings");
+    expect(await hollow.notices()).toMatchObject([{ needs_her: 0 }]);
+  });
 });

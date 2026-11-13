@@ -244,8 +244,8 @@ async function main(SIDE = "buy") {
    */
   const book = ONE_ASSET ? loadBook() : herLots(HER_SIDE, { book: loadBook() });
   /*
-   * THE WEEKLY EMAIL GOES EVEN ON AN EMPTY WEEK (Rule 0): "you have no sell orders from the last six
-   * months" is an answer she can read; a job that exits quietly is not.
+   * AN EMPTY WEEK IS NOT EMAILED (owner, 13 Nov 2026: "no empty edition"). `weeklyEmail` says so by
+   * name in the run log and counts 0 emails; it never exits quietly (Rule 0).
    */
   if (EMAIL && !ONE_ASSET && (!book || !book.positions.some((p) => p.side === HER_SIDE))) {
     return weeklyEmail(SIDE, []);
@@ -440,6 +440,14 @@ export function huntsFor(side, sections, inbox = usableInbox()) {
 async function weeklyEmail(side, sections) {
   const mail = buildHuntEmail({ side, hunts: huntsFor(side, sections) });
   const to = process.env.BOSS_NOTIFY_TO ?? "seq.taylor@gmail.com";
+  if (!mail.found) {
+    // Nothing found this week (or she has nothing on this side): no email. A source that failed is
+    // the team's repair (exit 3 below), never an email to her.
+    console.log(`\nNOTE [EMPTY_EDITION] "${huntTitle(side)}" found nobody and no fund this week, so no email was sent.`);
+    console.log(outputLine(0, "emails sent"));
+    if (mail.failed.length) { console.error(`NAMED STOP [SOURCE_FAILED] part of "${huntTitle(side)}" did not run: ${mail.failed.join("; ")}`); process.exitCode = 3; }
+    return;
+  }
   if (!SEND) {
     console.log(`\nDRY RUN: "${huntTitle(side)}" was not sent. Re-run with --send --email to send it.`);
   } else {

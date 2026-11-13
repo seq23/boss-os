@@ -144,3 +144,13 @@ it("keeps the card link, expiry and guarantee below a venue signature, but exclu
   const notice = errandReplyNotice({ to: VENUE, asked: "A table", read, kind: read.kind, confirmed: false, decideOpen: false });
   expect(notice.decide[0]!.buttons).toEqual([{ label: "Open their card link", url: "https://secure.sevenrooms.com/card/fake" }]);
 });
+
+it("a partner campaign's note opens with what it wants of her, before the long account", () => {
+  const laid = laidFor({ from: "Monique", subject: "Re: Example Org partnership campaign", why: "Your Example campaign for Example Org has started", act: "Nothing to do.",
+    happened: "The Example campaign for Example Org is queued: email 1 to Pat Example goes on the next weekday, from 9 a.m. Central.", details: ["Pat Example: the address you gave, checked."] });
+  const first = laid.text.split("\n").find((l: string) => l.trim())!;
+  expect(first).toBe("Your Example campaign for Example Org has started. Nothing to do.");
+  // Nothing is asked, so no reply code is put in the subject.
+  expect(laid.subject).not.toMatch(/REF/);
+  expect(mailGate(laid)).toEqual([]);
+});

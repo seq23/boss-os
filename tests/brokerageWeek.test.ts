@@ -117,6 +117,14 @@ describe("one email per side, two calm sections", () => {
     expect(mail.failed).toEqual([]);
   });
 
+  it("an edition that found nobody and no fund counts zero, so the sender does not send it", () => {
+    const lot = { asset: "Example Co", side: "sell", size_usd: 1_000_000, price: null };
+    expect(buildHuntEmail({ side: "sell", now: NOW, hunts: [] }).found).toBe(0);
+    expect(buildHuntEmail({ side: "sell", now: NOW, hunts: [{ lot, people: { hits: [] }, funds: { holders: [], total: 0, scanned: 0 } }] }).found).toBe(0);
+    const withFund = buildHuntEmail({ side: "sell", now: NOW, hunts: [{ lot, people: { hits: [] }, funds: { holders: [{ fund: "An Example Fund", valUSD: 5_000_000 }], total: 1, scanned: 1 } }] });
+    expect(withFund.found).toBe(1);
+  });
+
   /*
    * THE NEGATIVE PROOF: a hunt whose sources both failed is NOT allowed to read like a quiet week.
    * The email built from failed sources differs from the one built from empty sources, and only the

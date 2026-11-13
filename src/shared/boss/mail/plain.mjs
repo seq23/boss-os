@@ -749,7 +749,14 @@ function finish(laid) {
   return { ...laid, problems: plainProblems(laid) };
 }
 
-const NEED_LINE = /^(reply|answer|approve|say|tap|open|send|tell me|choose|pick)\b|\breply (with|")|\bneeds you\b|\bwhat i need\b|\bonly you can do\b/i;
+const ASK_LINE = /^(reply|answer|approve|say|tap|open|send|tell me|choose|pick)\b|\breply (with|")|\bneeds you\b|\bwhat i need\b|\bonly you can do\b/i;
+/*
+ * A LINE THAT SAYS NOTHING IS NEEDED IS NOT AN ASK (13 Nov 2026). "Nothing needs you today" and
+ * "Open loops: 3" matched the ask words and became Decide items on emails that asked for nothing. A
+ * line that denies the need, or that starts with a label ("Open loops:", "Answer:"), is a detail.
+ */
+const NO_ASK = /\b(nothing|no one|nobody|none|never|not|no need|don['’]t|doesn['’]t|without)\b[^.!?]{0,60}\b(needs? you|needed|what i need|only you can do|reply|to do|to decide)\b|^(reply|answer|open|send|say|tap|pick|approve|choose)(\s+[a-z]+){0,2}\s*:/i;
+const NEED_LINE = { test: (line) => ASK_LINE.test(line) && !NO_ASK.test(line) };
 const DROP_LINE = [
   /^(hi |hello |dear )?sequoia,?$/i,
   /^[—–-]{1,2}\s*[A-Z][a-z]+(\s*[,·].*)?$/,          // "— Danielle, Technical Program Manager"

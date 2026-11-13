@@ -5,9 +5,7 @@
  *
  * Boss OS decides what is due and claims it, so nothing goes twice (`POST /practice/nudges/due`,
  * src/worker/boss/practice/lapse.ts):
- *   - the lapse ladder: day 2 a firm nudge, day 4 tough love, day 7 and every 3 days after a hard
- *     truth, from 10:00 Central, at most one a day, reset the moment she opens the app, talks to the
- *     coach or closes a gate;
+ *   - (the lapse ladder is no longer an email: a rung day is one line in the morning email, 13 Nov 2026);
  *   - the midday push: today's law and the Midday gate, once, while the gate is open;
  *   - the ancestral hour's last-day warning, at 6pm Central, when the month's hour is not done.
  * This sends each from Imani, Director of Practice, to the owner ONLY (`OWNER_TO`), then says it went.

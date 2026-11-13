@@ -134,6 +134,14 @@ describe("the guard sees the problem", () => {
     expect(cleanText("Run npm run capital:match -- --not 3 to hide it.")).not.toMatch(/npm|--/);
     expect(cleanText("Done at 14:05 UTC.")).toMatch(/^Done at \d{1,2}:05 am\.$/);
   });
+  it("a line that says nothing is needed never becomes a Decide item", () => {
+    const quiet = fromLegacy({ who: "Simone", subject: "The weekly check ran", text: "The weekly check ran and everything passed.\nNothing needs you today.\nOpen loops: 3, none overdue.\nNo need to reply to this one." });
+    expect(quiet.text).toContain(NOTHING_TO_DECIDE);
+    expect(quiet.text).not.toMatch(/^Decide \(/m);
+    const asks = fromLegacy({ who: "Simone", subject: "One answer from you", text: "The draft is ready and waiting.\nReply with yes to send it." });
+    expect(asks.text).toMatch(/^Decide \(1\)/m);
+  });
+
   it("a lost byte is never a black diamond in her mail (26 Oct 2026 held mail: windows-1252 bytes decoded as UTF-8)", () => {
     expect(cleanText("check spam/junk folders � our automated emails are often rerouted")).toBe("check spam/junk folders our automated emails are often rerouted");
     expect(cleanText("less than 24 hours� notice")).toBe("less than 24 hours notice");
