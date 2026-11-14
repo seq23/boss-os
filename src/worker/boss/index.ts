@@ -70,6 +70,7 @@ import { hicksUpdateRoutes, runHicksUpdate } from "./clients/hicksUpdate";
 import { morning } from "./routes/morning";
 import { pnpOutreach } from "./routes/pnpOutreach";
 import { t2rGroups } from "./routes/t2rGroups";
+import { quality } from "./routes/quality";
 import { brains } from "./routes/brains";
 import { validators } from "./routes/validators";
 import { scorecardRoutes } from "./routes/scorecard";
@@ -170,6 +171,7 @@ app.route("/api/lp", lp);
 app.route("/api/pnp-outreach", pnpOutreach);
 // Monique's Time-2-Read groups & institutions: the Mac job's desk (owner, 31 Oct 2026).
 app.route("/api/t2r-groups", t2rGroups);
+app.route("/api/quality", quality);
 // The diary: what she has coming up, what she typed, and a link where a packet exists.
 app.route("/api/diary", diaryRoutes);
 app.route("/api/waiting-on", waitingOn);

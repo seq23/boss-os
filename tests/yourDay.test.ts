@@ -7,7 +7,7 @@ import { mkdtempSync, readdirSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
-import { buildDay, replyContext, briefingLateLine, briefingBelowLine, briefingDecision, briefingLines, bounceLine, BRIEFING_CAP, briefingInProgress, bossDecisions, selfStartedWaiting, selfWaitingRepairs } from "../scripts/ops/your-day.mjs";
+import { qualitySectionFor, buildDay, replyContext, briefingLateLine, briefingBelowLine, briefingDecision, briefingLines, bounceLine, BRIEFING_CAP, briefingInProgress, bossDecisions, selfStartedWaiting, selfWaitingRepairs } from "../scripts/ops/your-day.mjs";
 import { plainProblems } from "../src/shared/boss/mail/plain.mjs";
 import { sendersFor, employeeMail } from "../scripts/ops/notify.mjs";
 import { writeMorningSection, addMorningLines, readMorningSections, clearToldSections, morningSectionProblems, MORNING_SECTIONS } from "../src/shared/boss/mail/morning.mjs";
@@ -504,5 +504,38 @@ describe("a repair's approval is never a card, however old its task (13 Nov 2026
     expect(bossDecisions(base).map((c) => c.key), "negative proof: the task unknown").toEqual(["approval:apr_synrepair"]);
     // An approval on her own old task is still hers.
     expect(bossDecisions({ ...base, approvalTasks: [{ ...repair, input: "{}" }] })).toHaveLength(1);
+  });
+});
+
+
+/** Mondays: the quality check (owner, 13 Nov 2026, drift prevention). */
+describe("the weekly quality check in the morning email", () => {
+  const MONDAY = Date.parse("2026-11-16T13:45:00Z");
+  const lines = [
+    { text: "Daily briefing: 24 sources this week, best run 30, last four weeks 28, 26, 25, 24. Holding.", flagged: false },
+    { text: "Tools worth knowing: 2 new tools this week, best run 13, last four weeks 9, 4, 2, 2. Slipping: new tools 2 against a best of 13, two weeks running.", flagged: true },
+  ];
+
+  it("Mondays only; the lines that slipped come first and the title counts them", () => {
+    expect(qualitySectionFor({ quality: { lines } }, MONDAY + 24 * 3600_000)).toBeNull();
+    const s = qualitySectionFor({ quality: { lines, reads: [{ label: "Daily briefing", verdict: "holds", why: "The reasoning is as specific as the best example." }] } }, MONDAY);
+    expect(s.title).toBe("Quality check: 1 to look at");
+    expect(s.items.map((i: { text: string }) => i.text.split(":")[0])).toEqual(["Tools worth knowing", "Daily briefing", "Monthly read, Daily briefing"]);
+  });
+
+  it("deliverables with nothing checked this week are each named on one 'not measured' line", () => {
+    const blank = (label: string) => ({ label, text: `${label}: not measured this week (no run was checked).`, flagged: false, runs_this_week: 0 });
+    const s = qualitySectionFor({ quality: { lines: [lines[0], blank("Brokerage sourcing"), blank("Research pages")] } }, MONDAY);
+    expect(s.items.map((i: { text: string }) => i.text)).toEqual([lines[0]!.text, "Not measured this week (no run was checked): Brokerage sourcing, Research pages."]);
+    const one = qualitySectionFor({ quality: { lines: [lines[0], blank("Research pages")] } }, MONDAY);
+    expect(one.items[1].text).toBe("Research pages: not measured this week (no run was checked).");
+  });
+
+  it("a check that did not load says so; it is never left out or read as fine", () => {
+    for (const quality of [null, { lines: [] }]) {
+      const s = qualitySectionFor({ quality }, MONDAY);
+      expect(s.items[0].text).toBe("The weekly quality check did not load this morning; the team is looking.");
+    }
+    expect(qualitySectionFor({ quality: { lines: [lines[0]] } }, MONDAY).title).toBe("Quality check: holding");
   });
 });

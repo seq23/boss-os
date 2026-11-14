@@ -134,7 +134,9 @@ const CLEAR_BRIEF_KINDS = new Set(["recurring_duty", "triggered_workflow", "coac
  * (25 Oct to 1 Nov 2026) ran at half the depth of the standard. So it starts on Claude's seat, with
  * Codex's as the backup.
  */
-export const HARD_DELIVERS = Object.freeze(["executive_reports"]);
+// "quality_reads": the monthly read of her deliverables against their best examples (duties/drift.ts)
+// is judgement on her private records: Claude's seat, Codex's as the backup, never a free route.
+export const HARD_DELIVERS = Object.freeze(["executive_reports", "quality_reads"]);
 
 /**
  * A job's class, from what the queue already knows about it. NOT A CLASSIFIER: no text is read. A

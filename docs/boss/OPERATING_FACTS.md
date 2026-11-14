@@ -213,3 +213,19 @@ have had". A review found that nothing checked the finished work (a half-depth b
 - **Free Google-grounded search walks every free model** (`router/experience.ts`): a 404 "no longer
   available" disables the model for good, a 429 on grounding passes it over until the daily reset;
   then Brave with a free writer, then a seat. Never a paid route.
+
+### Drift prevention: a slow slide shows before a floor is missed (13 Nov 2026)
+- **Every floor check keeps what it measured** (`delivery_measures`, migration 0365): the counts, pass
+  or miss, and the route that ran it. Written by the report route and the free research rung
+  (`duties/drift.ts` `recordMeasures`).
+- **Mondays, the morning email carries "Quality check"**: one line per deliverable, this week beside
+  its best earlier week and the last four weeks (`driftReport`, `GET /api/quality/drift`,
+  `your-day.mjs qualitySectionFor`). A line is flagged only when a measure sits more than 25% under
+  its best week two weeks running, or a floor was missed. Nothing checked reads "not measured".
+- **Golden replay**: each deliverable's best example goes through the real report route in CI
+  (`tests/boss/floors.test.ts`), so a change that would turn the best work away fails before it is
+  live. CI replays the best output; it cannot run a model.
+- **The monthly read** (`duty_quality_read`, the 1st, 9:00 am Central): her Claude seat, Codex's as
+  the backup, never a free route (`HARD_DELIVERS`). It reads the newest real output of each
+  deliverable beside the best on record and files `holds` or `slipped` with a reason
+  (`quality_reads`); the email shows it for the week after it lands.

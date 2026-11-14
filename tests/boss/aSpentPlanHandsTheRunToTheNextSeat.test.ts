@@ -72,7 +72,12 @@ describe("0275 — the four other seat duties walk Claude Code, then Codex", () 
     const briefing = JSON.parse((await row<any>(`SELECT task_input FROM standing_duties WHERE id = 'duty_exec_intel'`)).task_input);
     expect(briefing.backend_ladder).toEqual(["bk_codex", "bk_claude_code"]);
     expect(briefing.cloud_fallback).toBe(false);
-    const others = await all<any>(`SELECT id, task_input FROM standing_duties WHERE id NOT IN (${["duty_exec_intel", ...FOUR].map(() => "?").join(",")})`, "duty_exec_intel", ...FOUR);
+    // The monthly quality read (0365) is a seat duty born with its ladder: Claude's seat, then Codex's, never the cloud.
+    const read = JSON.parse((await row<any>(`SELECT task_input FROM standing_duties WHERE id = 'duty_quality_read'`)).task_input);
+    expect(read.backend_ladder).toEqual(["bk_claude_code", "bk_codex"]);
+    expect(read.cloud_fallback).toBeUndefined();
+    const SEATED = ["duty_exec_intel", "duty_quality_read", ...FOUR];
+    const others = await all<any>(`SELECT id, task_input FROM standing_duties WHERE id NOT IN (${SEATED.map(() => "?").join(",")})`, ...SEATED);
     expect(others.length).toBeGreaterThan(10);
     for (const d of others) expect(JSON.parse(d.task_input ?? "{}").backend_ladder, d.id).toBeUndefined();
   });

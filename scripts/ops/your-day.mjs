@@ -739,6 +739,31 @@ export function t2rGroupsSectionFor(data, now = Date.now()) {
 }
 
 /**
+ * MONDAYS: THE QUALITY CHECK (owner, 13 Nov 2026, drift prevention). One line per deliverable: what
+ * it measured this week beside its best run and the last four weeks; the lines that slipped or missed
+ * their standard come first. The monthly read (her Claude seat, on substance) follows for the week
+ * after it lands. Built by the Worker (duties/drift.ts); a check that did not load says so (Rule 0),
+ * and a week with nothing measured reads "not measured", never as fine.
+ */
+export const QUALITY_URL = "https://boss.sequoiataylor.com/?tab=today";
+export function qualitySectionFor(data, now = Date.now()) {
+  if (parts(now).weekday !== "Monday") return null;
+  const q = data.quality;
+  if (!q || !Array.isArray(q.lines) || q.lines.length === 0) {
+    return { title: "Quality check", tone: "done", items: [{ text: "The weekly quality check did not load this morning; the team is looking.", links: [] }], empty: null };
+  }
+  // Deliverables with no checked run this week share one line, each still named: never left out, never "fine".
+  const measured = q.lines.filter((l) => l.runs_this_week !== 0);
+  const blank = q.lines.filter((l) => l.runs_this_week === 0);
+  const lines = [...measured.filter((l) => l.flagged), ...measured.filter((l) => !l.flagged)].map((l) => ({ text: String(l.text), links: [] }));
+  if (blank.length === 1) lines.push({ text: String(blank[0].text), links: [] });
+  if (blank.length > 1) lines.push({ text: `Not measured this week (no run was checked): ${blank.map((l) => l.label).join(", ")}.`, links: [] });
+  const reads = (Array.isArray(q.reads) ? q.reads : []).map((r) => ({ text: `Monthly read, ${r.label}: ${r.verdict === "slipped" ? "slipped" : "holds"}. ${String(r.why)}`, links: [] }));
+  const flagged = q.lines.filter((l) => l.flagged).length;
+  return { title: flagged ? `Quality check: ${flagged} to look at` : "Quality check: holding", tone: "done", items: [...lines, ...reads], empty: null };
+}
+
+/**
  * THE 1ST OF THE MONTH: ONE CALM GRID, business × key numbers, from each brain's Numbers table.
  * "not tracked yet" where a value is missing; never an invented number.
  */
@@ -995,6 +1020,7 @@ export function buildDay(data, now = Date.now()) {
   // 4c. Brains (31 Oct 2026): Mondays one plain line, never red; the 1st of the month the scoreboard.
   const brainsSection = brainsSectionFor(data, now);
   const t2rGroupsSection = t2rGroupsSectionFor(data, now);
+  const qualitySection = qualitySectionFor(data, now);
   const scoreSection = scoreboardSectionFor(data, now);
 
   // 5. Catch up with.
@@ -1070,6 +1096,7 @@ export function buildDay(data, now = Date.now()) {
       ...(scoreSection ? [scoreSection] : []),
       ...(brainsSection ? [brainsSection] : []),
       ...(t2rGroupsSection ? [t2rGroupsSection] : []),
+      ...(qualitySection ? [qualitySection] : []),
       { title: "Catch up with", cards: catchCards, items: catchLines, empty: null },
       // Her own to-dos (owner, 26 Oct 2026): told once, then Mondays or two days before a date. Reply
       // "add to my list: …" or "done: …" to change it.
@@ -1210,6 +1237,7 @@ export async function read(api, now) {
   const brainsCheck = await api.get("/brains/cohesion").catch((e) => { console.error(`your-day: brains check not read (${e.message})`); return null; });
   // Monique's Time-2-Read groups (31 Oct 2026): Monday's one line.
   const t2rGroups = await api.get("/t2r-groups/summary").catch((e) => { console.error(`your-day: t2r groups not read (${e.message})`); return null; });
+  const quality = await api.get("/quality/drift").catch((e) => { console.error(`your-day: the quality check not read (${e.message})`); return null; });
   const scoreboard = await api.get("/brains/scoreboard").then((d) => d?.rows ?? null).catch((e) => { console.error(`your-day: scoreboard not read (${e.message})`); return null; });
   // The sections live in Boss OS (1 Nov 2026, so cloud producers reach the email); the Mac files are
   // the cutover fallback, newer copy wins per section. A store that cannot be read leaves the files.
@@ -1225,7 +1253,7 @@ export async function read(api, now) {
   const known = new Set(tasks.map((t) => t.id));
   const approvalTasks = (await Promise.all([...new Set((approvals ?? []).map(approvalTaskId).filter((id) => id && !known.has(id)))].slice(0, 100)
     .map((id) => api.get(`/tasks/${encodeURIComponent(id)}`).then((d) => d?.task ?? null).catch((e) => { console.error(`your-day: the task behind an approval was not read (${e.message})`); return null; })))).filter(Boolean);
-  return { approvalTasks, ownerTz, quietPeople, brainsCheck, t2rGroups, scoreboard, diary: diary?.rows ?? null, tasks: withDue, approvals, repoChanges: rc?.items ?? [], briefing: briefingOf(today), law: lawOf(today), bounceFixes, commentWatch, prospects, spirit, practiceWeek, lapseLine, waiting, carried, morning: reported.sections, notReported: reported.missing };
+  return { approvalTasks, ownerTz, quietPeople, brainsCheck, t2rGroups, quality, scoreboard, diary: diary?.rows ?? null, tasks: withDue, approvals, repoChanges: rc?.items ?? [], briefing: briefingOf(today), law: lawOf(today), bounceFixes, commentWatch, prospects, spirit, practiceWeek, lapseLine, waiting, carried, morning: reported.sections, notReported: reported.missing };
 }
 
 export async function feedOf(range) {

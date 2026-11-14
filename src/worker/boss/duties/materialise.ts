@@ -7,6 +7,7 @@ import { BRIEFING_PROMPT_VERSION, composeBriefingPrompt, ctDayLabel } from "./br
 import { BRIEFING_CLASSIFICATION, BRIEFING_LADDER_IDS, BRIEFING_CLOUD_FALLBACK, modelBySeat } from "./briefingLadder";
 import { runWorkerReader } from "../health/readers";
 import { deliveryRules } from "./floors";
+import { composeQualityRead } from "./drift";
 
 /**
  * Turning due duties into queued work.
@@ -274,6 +275,17 @@ export async function materialiseDueDuties(
        */
       if (typeof duty.owner_prompt === "string" && duty.owner_prompt.trim()) {
         input = { ...input, prompt: duty.owner_prompt, prompt_source: "owner_edit" };
+      }
+      /*
+       * THE MONTHLY QUALITY READ IS COMPOSED FROM HER RECORDS (drift.ts): the newest real output of
+       * each deliverable beside its best one. Nothing on record to read is a named stop, never a task
+       * that asks a seat to judge nothing (Rule 0). Her own edit of the prompt does not apply: the
+       * outputs are the instruction.
+       */
+      if (input.spec_module === "quality_read") {
+        const ask = await composeQualityRead(env);
+        if (!ask) throw new Error("NAMED STOP [NOTHING_TO_READ] no deliverable has an output on record, so there is nothing for the monthly read to judge; it runs again next month");
+        input = { ...input, prompt: ask.prompt, expect: ask.expect };
       }
       // The run is told how its delivery is checked (floors.ts), whichever prompt it carries.
       const rules = deliveryRules(input.delivers);
