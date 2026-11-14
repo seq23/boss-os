@@ -99,12 +99,21 @@ function openQuote(t) {
   return straight % 2 === 1 || (t.match(/“/g) ?? []).length > (t.match(/”/g) ?? []).length;
 }
 
+/** A title head that says how long or what state, never what: "", "No answer in 9 days", "Waiting 3 days". */
+const STATUS_ONLY = /^(?:|(?:no answer|no reply|waiting|quiet|silent)(?: (?:in|for))? \d+ (?:days?|weeks?)|overdue|reminder|follow[- ]up|still waiting)$/i;
+
 /** The short label for a Decide item: "Waiting 12 days: Answer Kenneth Goodwin: they wrote…" → "Kenneth Goodwin (LP)". */
 export function decideLabel(d) {
   let t = String(d?.title ?? "").replace(/^Waiting \d+ days?:\s*/i, "");
   const answer = /^(?:Answer|Reply to)\s+([^:—]+?)(?:\s*[:—]|$)/i.exec(t);
   if (answer) t = answer[1];
-  else t = headOutsideQuotes(t);
+  else {
+    // A head that is only a status ("No answer in 9 days: nudge Jo at Acme?") names nothing: the
+    // thing waiting is after the colon (14 Nov 2026 live read: "No answer in 9 days · 2 days").
+    const head = headOutsideQuotes(t).trim();
+    const rest = t.slice(head.length).replace(/^\s*[:—]\s*/, "").trim();
+    t = rest && STATUS_ONLY.test(head) ? rest.replace(/^./, (c) => c.toUpperCase()) : head;
+  }
   t = t.trim();
   if (t.length > 48) t = t.slice(0, 48).replace(/\s+\S*$/, "");
   // 6 Nov 2026 live read: 'Change how Camille handles "Porch & Party' — a cut inside a quotation
@@ -123,7 +132,10 @@ export function daysWaiting(d, firstShown, now) {
 /** "Still yours to answer: Kenneth Goodwin (LP) · 13 days · Open ›" — always under ~120 characters. */
 export function thinDecideLine(d, firstShown, now) {
   const n = daysWaiting(d, firstShown, now);
-  return `Still yours to answer: ${decideLabel(d)} · ${n} day${n === 1 ? "" : "s"}`;
+  // Never a row that names nothing: the label, else the item's own name, else no line (null).
+  const label = decideLabel(d) || String(d?.name ?? "").trim();
+  if (!label) return null;
+  return `Still yours to answer: ${label} · ${n} day${n === 1 ? "" : "s"}`;
 }
 
 /**
@@ -131,14 +143,17 @@ export function thinDecideLine(d, firstShown, now) {
  * `told` maps key → the day it was first shown. Returns the new memory too.
  */
 export function splitRepeats(decide, { told = {}, today, now }) {
-  const full = [], thin = [], memory = { ...told };
+  const full = [], thin = [], nameless = [], memory = { ...told };
   for (const d of decide ?? []) {
     const key = String(d.key ?? d.title);
     const first = told[key];
-    if (first && first < today) thin.push({ ...d, thin: thinDecideLine(d, first, now) });
+    if (first && first < today) {
+      const line = thinDecideLine(d, first, now);
+      if (line) thin.push({ ...d, thin: line }); else nameless.push(key);
+    }
     else { full.push(d); memory[key] = first ?? today; }
   }
-  return { full, thin, memory };
+  return { full, thin, nameless, memory };
 }
 
 /**
