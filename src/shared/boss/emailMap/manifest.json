@@ -644,6 +644,16 @@
       "code": [{ "repo": "aplayer-mode", "paths": ["services/api/src/actionEngine.ts"] }]
     },
     {
+      "id": "aplayer-mode-renewal-reminder", "business": "industry-guides",
+      "what": "A Player Mode: one plain-text reminder before each yearly renewal (price, date, how to cancel, a link), for yearly plans bought by card or in the App Store; the law asks for it 15 to 45 days ahead",
+      "sender": "The app (no employee)", "owner": "Danielle",
+      "from": "billing@mail.aplayermode.com (replies go to support@aplayermode.com)", "to": "The subscriber",
+      "when": "Daily at 9 or 10 AM Central, once per renewal",
+      "runs": "cloud-cron", "trigger": "API Worker every 15 minutes; the reminder runs on the 15:00 UTC tick",
+      "pause": "Remove the RESEND_API_KEY secret from the aplayer-mode-api Worker",
+      "code": [{ "repo": "aplayer-mode", "paths": ["services/api/src/renewalReminders.ts", "services/api/migrations/0098_billing_renewal_reminders.sql"] }]
+    },
+    {
       "id": "youtube-comment-watch", "business": "industry-guides",
       "what": "How We Know: new YouTube comments worth a reply",
       "sender": "Monique", "owner": "Monique",
