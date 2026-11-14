@@ -8,6 +8,7 @@ import { beforeEach, describe, expect, it } from "vitest";
 import { DELIVERABLES, composeQualityRead, driftLine, driftReport, qualityReadsFloor, recordMeasures } from "../../src/worker/boss/duties/drift";
 import { deliverQualityReads } from "../../src/worker/boss/duties/deliverReport";
 import { jobClassOf, routeOrder } from "../../src/shared/boss/aiRoles.mjs";
+import { materialiseDueDuties } from "../../src/worker/boss/duties/materialise";
 
 const NOW = Date.parse("2026-11-16T14:00:00Z");
 const WEEK = 7 * 24 * 3600_000;
@@ -76,6 +77,23 @@ describe("the monthly read", () => {
       expect(routes[0]).toBe("claude");
       expect(routes.filter((r: string) => r !== "claude" && r !== "codex")).toEqual([]);
     }
+  });
+
+  it("runs for Kendra and never waits on the owner, whatever words the outputs it quotes carry (14 Nov 2026)", async () => {
+    // Live: the read quoted her briefing ("buy the shares", "common stock"); the duty's kind "review"
+    // is not an intake kind, so intake word-matched trading work, USER_ONLY, and asked her.
+    const item = { key: "top_5_headlines", items: [{ headline: "An example fund agreed to buy the shares of an example company", why_it_matters: "Its common stock and open positions moved." }] };
+    await env.DB.prepare(`INSERT INTO executive_reports (id, day_id, generated_at, status, sections, sources) VALUES ('rep_trade', '2026-11-13', ?, 'complete', ?, '[]')`).bind(NOW, JSON.stringify([item])).run();
+    await env.DB.prepare(`UPDATE standing_duties SET next_due_at = 0, suspended = 0 WHERE id = 'duty_quality_read'`).run();
+    const r = await materialiseDueDuties(env as any, NOW, "duty_quality_read");
+    const taskId = r.fired.find((f) => f.duty === "duty_quality_read")?.task_id;
+    expect(taskId).toBeTruthy();
+    const t = await env.DB.prepare(`SELECT status, approval_id, execution_assignment FROM tasks WHERE id = ?`).bind(taskId).first<any>();
+    expect(t.status).toBe("queued");
+    expect(t.approval_id).toBeNull();
+    expect(t.execution_assignment).not.toBe("USER_ONLY");
+    const asks = await env.DB.prepare(`SELECT COUNT(*) AS n FROM approvals WHERE origin_id = ?`).bind(taskId).first<{ n: number }>();
+    expect(asks!.n).toBe(0);
   });
 
   it("nothing on record: there is no read to ask for", async () => {

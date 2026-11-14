@@ -166,6 +166,31 @@ function approvalTaskId(a) {
 }
 
 /**
+ * AN APPROVAL INTAKE RAISED ON A DUTY'S OWN RUN IS THE TEAM'S, NOT HERS (14 Nov 2026 live read:
+ * Kendra's monthly quality read quoted her briefing, intake matched "shares" and "stock" as trading
+ * work, assigned USER_ONLY, and the morning asked her "Kendra waits for your word" with nothing to
+ * decide). Intake's guess is marked by `assignment` in the payload; a real decision on a duty's run
+ * (money, a send in her name) is an approval of its own and still reaches Decide. Pure.
+ */
+export function intakeHeldDutyRun(a, task) {
+  if (!task || !startedBySystem(task.input) || a?.lane === "trading" || task.lane === "trading") return false;
+  try { return Boolean((typeof a?.payload === "string" ? JSON.parse(a.payload) : a?.payload)?.assignment); } catch { return false; }
+}
+
+/**
+ * WHAT YES DOES, IN ONE PLAIN LINE (14 Nov 2026: "Kendra waits for your word. Yes lets it go ahead"
+ * did not say what she was approving). The approval's own plain line when it has one; otherwise who
+ * goes ahead with what, named. Pure.
+ */
+export function yesLine(a, task, worker) {
+  const own = plainSummary(a);
+  const what = String(a?.title ?? task?.title ?? "").replace(/\s+/g, " ").trim().replace(/[.?!]+$/, "");
+  const who = worker ?? "Your team";
+  const yes = what ? `Yes: ${who} goes ahead with “${what}”. No: nothing happens.` : `Yes: ${who} goes ahead. No: nothing happens.`;
+  return own ? `${own} ${yes}` : yes;
+}
+
+/**
  * A change to a teammate's standing duty, in plain words: who wants what, and what yes and no do
  * (2 Nov 2026). Null when the item is not a duty change. Pure.
  */
@@ -226,12 +251,12 @@ export function bossDecisions(data) {
     // ('Kendra's alarm: "Kendra's alarm: …"', 13 Nov 2026) because its task had left that window.
     const task = [...tasks, ...(data.approvalTasks ?? [])].find((t) => t.id === approvalTaskId(a)) ?? null;
     if (task && isRepairTask(task)) continue; // a repair is the team's, never her decision (7 Nov 2026)
+    if (intakeHeldDutyRun(a, task)) continue; // intake's guess on a duty's run: the team's (selfStartedWaiting)
     const worker = a.employee_name ?? task?.employee_name ?? null;
     const duty = dutyChangeCard(a.title, task, worker);
-    const own = plainSummary(a);
     out.push({
       key: `approval:${a.id}`, title: duty?.title ?? a.title,
-      body: duty?.body ?? `${own ? `${own} ` : ""}${worker ?? "Your team"} waits for your word. Yes lets it go ahead; no keeps things as they are.`,
+      body: duty?.body ?? yesLine(a, task, worker),
       details: [],
       buttons: [{ label: "Open it to approve or decline", url: `${ORIGIN}/?tab=inbox&approval=${encodeURIComponent(a.id)}` }], priority: 2,
     });
@@ -289,8 +314,10 @@ export function bossDecisions(data) {
 export function selfStartedWaiting(data) {
   const approvalIds = new Set((data.approvals ?? []).map((a) => a.id));
   const covered = new Set((data.approvals ?? []).map(approvalTaskId).filter(Boolean));
-  return (data.tasks ?? []).filter((t) => t.status === "awaiting_approval" && !covered.has(t.id) && !approvalIds.has(t.approval_id)
-    && !isRepairTask(t) && !digestOf(data, t) && (Boolean(t.approval_id) || startedBySystem(t.input)));
+  const guessed = new Set((data.approvals ?? []).filter((a) => intakeHeldDutyRun(a, (data.tasks ?? []).find((t) => t.id === approvalTaskId(a)))).map(approvalTaskId));
+  return (data.tasks ?? []).filter((t) => t.status === "awaiting_approval" && !isRepairTask(t) && !digestOf(data, t)
+    && (guessed.has(t.id) || (!covered.has(t.id) && !approvalIds.has(t.approval_id) && (Boolean(t.approval_id) || startedBySystem(t.input)))))
+    .map((t) => (guessed.has(t.id) ? { ...t, intake_held: true } : t));
 }
 
 /** What Monique did with the comments that did not need her (owner, 24 Oct 2026: fix it, then tell me). */
@@ -869,7 +896,9 @@ export function buildDay(data, now = Date.now()) {
   for (let i = decideRaw.length - 1; i >= 0; i--) if (isQuiet(decideRaw[i])) decideRaw.splice(i, 1);
   // A carried card whose approval she already answered, or whose job no longer waits, is not hers
   // any more (morningMemory.mjs `answeredUnderneath`; Today applies the same rule).
-  const underneath = { pending: new Set((data.approvals ?? []).map((a) => a.id)), waiting: new Set((data.tasks ?? []).filter((t) => t.status === "awaiting_approval").map((t) => t.id)) };
+  // An approval intake raised on a duty's run is the team's (`intakeHeldDutyRun`): not pending on her.
+  const taskOf = (a) => [...(data.tasks ?? []), ...(data.approvalTasks ?? [])].find((t) => t.id === approvalTaskId(a)) ?? null;
+  const underneath = { pending: new Set((data.approvals ?? []).filter((a) => !intakeHeldDutyRun(a, taskOf(a))).map((a) => a.id)), waiting: new Set((data.tasks ?? []).filter((t) => t.status === "awaiting_approval").map((t) => t.id)) };
   data = { ...data, carried: (data.carried ?? []).filter((d) => !isQuiet(d) && !answeredUnderneath(d.key, underneath)) };
   decideRaw.sort((a, b) => (b.priority ?? 0) - (a.priority ?? 0));
   // One card per key: the same decision from two producers is one decision.
@@ -893,6 +922,8 @@ export function buildDay(data, now = Date.now()) {
    * days "Still yours to answer: name · N days · Open ›", kept in the list, not counted as fresh.
    */
   const repeats = splitRepeats(decideRaw, { told: data.told?.decide ?? {}, today, now });
+  // A row that names nothing is left out by name, never sent as "· 2 days" (14 Nov 2026).
+  for (const key of repeats.nameless ?? []) console.error(`your-day: NAMED SKIP [STILL_YOURS_NO_TITLE] the "Still yours to answer" row for ${key} has no title or name, so it was left out of the email; it stays on Today`);
   const decide = repeats.full.map((d, i) => {
     const id = idFor("decide", d.key ?? d.title);
     const screen = itemUrl(today, id);
@@ -978,7 +1009,7 @@ export function buildDay(data, now = Date.now()) {
     // title, cut, read as a typo on 13 Nov 2026); several are one count.
     const one = selfWaiting.length === 1 ? selfWaiting[0] : null;
     const what = !one ? `${selfWaiting.length} of the team's jobs were held up`
-      : one.approval_id ? "A job you already answered was held up"
+      : one.approval_id && !one.intake_held ? "A job you already answered was held up"
       : `${one.employee_name ?? "The team"}'s ${((j) => (j.quoted ? `"${j.name.slice(0, 80)}"` : j.name))(jobName(one))} was held up`;
     doneRaw.push({ key: `self-waiting:${today}`, text: `${what}, and Danielle is getting ${one ? "it" : "them"} moving again.`, links: [] });
   }
@@ -1156,6 +1187,8 @@ export const oneLine = (t) => String(t ?? "").split(/\n+/).map((l) => l.trim()).
 export function carriedLines(carried, { shown = new Set(), keys = new Set(), today }) {
   return (carried ?? [])
     .filter((c) => c?.id && !shown.has(c.id) && !(c.key && keys.has(c.key)))
+    // A carried row with no title is left out by name, never sent as ": · waiting N days" (14 Nov 2026).
+    .filter((c) => { const ok = Boolean(String(c.title ?? "").trim()); if (!ok) console.error(`your-day: NAMED SKIP [STILL_YOURS_NO_TITLE] the carried row ${c.id} has no title, so it was left out of the email; it stays on Today`); return ok; })
     .map((c) => ({
       id: c.id, key: c.key ?? null, title: c.title, screen: `${ORIGIN}/?waiting=${encodeURIComponent(c.id)}`,
       thin: `Still yours to answer: ${c.title} · waiting ${c.days} day${c.days === 1 ? "" : "s"}`,
@@ -1286,7 +1319,7 @@ export function selfWaitingRepairs(waiting, tasks = []) {
   const open = new Set((tasks ?? []).filter((t) => OPEN.has(t.status)).map((t) => t.title));
   return (waiting ?? []).map((t) => ({
     title: `Unblock "${String(t.title).slice(0, 80)}": it waits for an approval nobody was asked for`,
-    prompt: `the task ${t.id} ("${t.title}") sits in awaiting_approval with no pending approval row, so nothing can release it and the owner is not asked. Either Boss OS started it itself (a duty's run; her ruling, 2 Nov and 13 Nov 2026: the employee takes her own default) or she already answered its approval and the task never moved. Read its task_events and its approval to see what parked it; if she approved it, do what she approved; otherwise take the default (accept the result, or run it again). Fix at source whatever left it parked (money, a send in her name, legal and invitations stay approvals).`,
+    prompt: `the task ${t.id} ("${t.title}") sits in awaiting_approval with no approval of hers to answer (none pending, or only intake's own word-match on a duty's run), so nothing releases it and the owner is not asked. Either Boss OS started it itself (a duty's run; her ruling, 2 Nov and 13 Nov 2026: the employee takes her own default) or she already answered its approval and the task never moved. Read its task_events and its approval to see what parked it; if she approved it, do what she approved; otherwise take the default (accept the result, or run it again). Fix at source whatever left it parked (money, a send in her name, legal and invitations stay approvals).`,
   })).filter((r) => !open.has(r.title));
 }
 

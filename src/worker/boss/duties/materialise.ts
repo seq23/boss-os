@@ -8,6 +8,7 @@ import { BRIEFING_CLASSIFICATION, BRIEFING_LADDER_IDS, BRIEFING_CLOUD_FALLBACK, 
 import { runWorkerReader } from "../health/readers";
 import { deliveryRules } from "./floors";
 import { composeQualityRead } from "./drift";
+import { isIntakeKind } from "../../../shared/boss/governance";
 
 /**
  * Turning due duties into queued work.
@@ -299,7 +300,10 @@ export async function materialiseDueDuties(
         lane: duty.lane,
         employee_id: duty.employee_id,
         // The kind the duty was defined with, rather than one inferred from its title every morning.
-        intake_kind: duty.task_kind,
+        // A kind intake does not know ("review", the monthly quality read) is still a standing duty:
+        // left undeclared, intake word-matched the outputs the read quotes ("shares", "stock") as
+        // trading work, USER_ONLY, and asked the owner (14 Nov 2026). Lane, money and sends still apply.
+        intake_kind: isIntakeKind(duty.task_kind) ? duty.task_kind : "recurring_duty",
         input,
         // The briefing declares its axes; a word-match on its own prompt made the cloud rungs
         // unreachable. See BRIEFING_CLASSIFICATION.

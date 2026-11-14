@@ -38,12 +38,32 @@ describe("a Decide item she has already seen is one thin line", () => {
     expect(day2.text).not.toContain("They asked for a call next week.");
     const line = day2.text.split("\n").find((l) => l.startsWith("- Ken Example (LP)"))!;
     expect(line).toMatch(/^- Ken Example \(LP\) · 12 days — Open ›: https:\/\//);
-    expect(thinDecideLine(lpDecide, "2026-10-26", TUE).length).toBeLessThan(120);
+    expect(thinDecideLine(lpDecide, "2026-10-26", TUE)!.length).toBeLessThan(120);
     expect(day2.html).toContain("Still yours to answer");
     expect(day2.digest.still_yours).toHaveLength(1);
     // The thin line keeps the person's key, so the third-reminder rule can count it (6 Nov 2026).
     expect(day2.digest.still_yours[0].key).toBe(day1.digest.decide[0].key);
     expect(day2.digest.still_yours[0].key).toBeTruthy();
+  });
+});
+
+describe("every 'Still yours to answer' row names the thing waiting (14 Nov 2026)", () => {
+  // The live row read "No answer in 9 days · 2 days": the label kept the status before the colon and
+  // dropped the person after it. A row with no name at all is left out, never sent empty.
+  const nudge = { key: "lpnudge:lpr_test2", title: "No answer in 9 days: nudge Jo Example at Example Capital?", body: "One gentle nudge, only if you say yes.", priority: 4, buttons: [] };
+  const nameless = { key: "lp:lpr_test3", title: "", body: "Something.", priority: 4, buttons: [] };
+  const with2 = (now: number, told?: any) => ({ ...base(now, told), morning: { lp: { section: "lp", at: new Date(now).toISOString(), decide: [nudge, nameless] } } });
+  const day1 = buildDay(with2(MON), MON);
+  const day2 = buildDay(with2(TUE, day1.memory), TUE);
+  const still = day2.digest.still_yours as Array<{ line: string }>;
+  it("the nudge row says who, not only how long", () => {
+    const row = still.find((s) => /Jo Example/.test(s.line));
+    expect(row?.line).toBe("Still yours to answer: Nudge Jo Example at Example Capital? · 1 day");
+  });
+  it("no row is only a status or a count", () => {
+    expect(still.length).toBeGreaterThan(0);
+    for (const s of still) expect(s.line).not.toMatch(/^Still yours to answer:\s*(?:·|No answer in \d+ days? ·)/);
+    expect(day2.text).not.toMatch(/^- (?:·|No answer in \d+ days? ·)/m);
   });
 });
 

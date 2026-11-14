@@ -487,6 +487,31 @@ describe("work Boss OS started itself is never a Decide card (owner, 2 Nov and 1
     expect(text).toContain("A job you already answered was held up, and Danielle is getting it moving again.");
     expect(selfWaitingRepairs(selfStartedWaiting(data), data.tasks)).toHaveLength(1);
   });
+  it("an approval intake raised on a duty's own run from a word in its prompt is the team's, not hers (14 Nov 2026)", () => {
+    // Live: Kendra's "Monthly quality read" quoted her briefing ("shares", "stock"); intake read it as
+    // trading work, USER_ONLY, and it came to her as "Kendra waits for your word" with nothing to decide.
+    const read = { ...duty, id: "tsk_synread01", title: "Monthly quality read", employee_name: "Kendra", approval_id: "apr_synread" };
+    const apr = { id: "apr_synread", lane: "ops", title: "Monthly quality read", kind: "manual", summary: "Intake assigned this USER_ONLY. Trading lane work. No model receives execution authority here.", origin_type: "tasks", origin_id: read.id, payload: JSON.stringify({ task_id: read.id, assignment: "USER_ONLY" }) };
+    // Yesterday's kept card for it is carried over too, and must not come back as "Still yours".
+    const carried = [{ id: "decide-synread", key: "approval:apr_synread", title: "Monthly quality read", days: 1 }];
+    const data = { ...DATA, tasks: [read], approvals: [apr], repoChanges: [], morning: {}, carried };
+    expect(buildDay(data, NOW).text).not.toContain("Monthly quality read · waiting");
+    expect(bossDecisions(data)).toEqual([]);
+    expect(selfStartedWaiting(data).map((t) => t.id)).toEqual(["tsk_synread01"]);
+    const text = buildDay(data, NOW).text;
+    expect(text).not.toMatch(/Monthly quality read\n/);
+    expect(text).toContain(`Kendra's "Monthly quality read" was held up, and Danielle is getting it moving again.`);
+    expect(selfWaitingRepairs(selfStartedWaiting(data), data.tasks)).toHaveLength(1);
+    // Negative proof: the same approval on work she asked for is still hers.
+    const mine = { ...read, input: JSON.stringify({ from: "o@example.com", mail_id: "iml_syn" }) };
+    expect(bossDecisions({ ...data, tasks: [mine] }).map((c) => c.key)).toEqual(["approval:apr_synread"]);
+  });
+  it("a decision card says in one plain line what yes does, never only 'waits for your word'", () => {
+    const mine = { id: "tsk_synmine01", title: "Book the synthetic venue for Friday", status: "awaiting_approval", employee_name: "Simone", approval_id: "apr_synmine", input: JSON.stringify({ from: "o@example.com", mail_id: "iml_syn" }) };
+    const apr = { id: "apr_synmine", title: "Book the synthetic venue for Friday", kind: "manual", summary: "Intake assigned this USER_ONLY. Money is involved, so it cannot execute unapproved.", origin_type: "tasks", origin_id: mine.id, payload: JSON.stringify({ task_id: mine.id, assignment: "USER_ONLY" }) };
+    const [card] = bossDecisions({ ...DATA, tasks: [mine], approvals: [apr], repoChanges: [], morning: {} });
+    expect(card!.body).toBe("Yes: Simone goes ahead with “Book the synthetic venue for Friday”. No: nothing happens.");
+  });
   it("a real approval on a duty's run (money, a send in her name) still reaches Decide", () => {
     const data = { ...DATA, tasks: [{ ...duty, approval_id: "apr_synpay" }], approvals: [{ id: "apr_synpay", title: "Pay the synthetic invoice", origin_type: "tasks", origin_id: duty.id }], repoChanges: [], morning: {} };
     expect(bossDecisions(data).map((c) => c.key)).toEqual(["approval:apr_synpay"]);
