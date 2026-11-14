@@ -68,12 +68,30 @@ async function due(only) {
   return out;
 }
 
+const FREE_ISBN = [(p) => p.getByLabel(/Get a free KDP ISBN/i), (p) => p.getByText(/Get a free KDP ISBN/i)];
+
+/**
+ * Waits for the content step's ISBN section to draw. Amazon moves the URL to /content before the form
+ * renders (parallel-parenting, 9 Nov 2026: CONTROL_NOT_FOUND on a page showing only KDP's spinner),
+ * so reading it at once found no ISBN control. Returns "assigned" (a resumed draft already has one),
+ * "free" (the free KDP ISBN choice is shown), or null when neither appears within `timeout`.
+ */
+export async function isbnSection(page, { timeout = STEP_MS, every = 1000 } = {}) {
+  const deadline = Date.now() + timeout;
+  for (;;) {
+    if (await page.getByText(/ISBN\s*:?\s*97[89]/).count().catch(() => 0)) return "assigned";
+    if (await first(page, FREE_ISBN)) return "free";
+    if (Date.now() >= deadline) return null;
+    await page.waitForTimeout(every);
+  }
+}
+
 /** Content step: ISBN, print options, the two files, the AI answers, the previewer. */
 async function content(page, b) {
   const { dir, listing } = b;
   // A free KDP ISBN (never a paid one). Already assigned on a resumed draft → nothing to do.
-  if (!(await page.getByText(/ISBN\s*:?\s*97[89]/).count().catch(() => 0))) {
-    await clickOne(page, "free KDP ISBN", [(p) => p.getByLabel(/Get a free KDP ISBN/i), (p) => p.getByText(/Get a free KDP ISBN/i)]);
+  if ((await isbnSection(page)) !== "assigned") {
+    await clickOne(page, "free KDP ISBN", FREE_ISBN);
     await clickOne(page, "Assign ISBN", [(p) => p.getByRole("button", { name: /^\s*Assign ISBN\s*$/i })]);
     await page.waitForTimeout(2500);
     const confirm = page.locator('.a-popover[aria-hidden="false"]').last().getByRole("button", { name: /Assign ISBN/i });

@@ -13,9 +13,10 @@
 # This one runs Playwright directly against Simone's own persistent Chrome profile. Different
 # executable, different requirements, so it is its own duty rather than a flag on an existing one.
 #
-# 09:45 Central DAILY since 8 Nov 2026 (migration 0357; it was the 1st of the month, which left an
-# approved book waiting up to a month). On the 1st it still runs after the triage (09:30). With
-# nothing approved it opens no window and sends nothing.
+# 09:45 Central on MONDAYS since 8 Nov 2026 (migration 0358, owner: "simone kdp needs to be weekly or
+# less"; it was daily for a day under 0357, and the 1st of the month before that). Amazon's weekly
+# limit on new Kindle titles resets Sunday 00:00 UTC, so Monday is the first run of each Amazon week.
+# With nothing approved it opens no window and sends nothing.
 #
 # ─── IT DOES NOT ASK HER FOR ANYTHING ───────────────────────────────────────
 #
@@ -73,7 +74,7 @@ ln -sf "$RUN_LOG" "$LOG_DIR/latest.log"
 grep -o 'KDP-PUBLISH:.*' "$RUN_LOG" | tail -5 | tee -a /dev/stderr
 
 # ─── NEW TITLES SHE APPROVED (kdp_new_title; the KeepMyProof books, owner 7 Nov 2026) ──────────
-# Simone publishes them on her own, every day while the saved Amazon sign-in lasts (owner, 8 Nov 2026:
+# Simone publishes them on her own, every Monday run while the saved Amazon sign-in lasts (owner, 8 Nov 2026:
 # "Yes, publish on her own"). kdp-new-title.mjs --unattended reads the bookshelf first, emails her a
 # heads-up 30 minutes before it opens Chrome, signs in to Amazon for her (her ruling 8 Nov 2026; the
 # existing kdp-signin.mjs steps, never a picture check), keeps the window open for her
