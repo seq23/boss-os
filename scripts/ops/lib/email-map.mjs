@@ -58,7 +58,7 @@ export function uncovered(files, manifest, repo) {
  */
 export const BUSINESS_DOMAINS = [
   "sequoiataylor.com", "joinwestpeek.com", "westpeek.ventures", "events.westpeek.live", "porchandparty901.com",
-  "mail.approvalprep.com", "time-2-read.com", "time2read.com", "time2read.app", "theindustryguides.com", "aplayermode.com", "approvalprep.com",
+  "mail.approvalprep.com", "mail.aplayermode.com", "time-2-read.com", "time2read.com", "time2read.app", "theindustryguides.com", "aplayermode.com", "approvalprep.com",
   "weddingchecklistpdf.com", "mail.weddingchecklistpdf.com", "github.com",
 ];
 export function addressProblems(manifest) {
