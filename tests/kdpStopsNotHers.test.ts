@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+// @ts-expect-error — plain .mjs ops script, no types
 import { stopNeedsHer, plainStop } from "../scripts/ops/kdp-new-title.mjs";
 
 // Owner, 14 Nov 2026: a Kindle run stopped on a leftover Amazon pop-up and emailed her to pick
