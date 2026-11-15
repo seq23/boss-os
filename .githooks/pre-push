@@ -1,0 +1,7 @@
+#!/bin/sh
+# Installed for every clone and worktree by `npm install` (package.json "prepare" sets core.hooksPath).
+# Runs the check scoped to what this branch changed (scripts/ops/check-changed.mjs), never the full suite.
+# A checkout whose code predates the check (no scripts/ops/check-changed.mjs) pushes unchecked, as before.
+[ -f scripts/ops/check-changed.mjs ] || exit 0
+out="$(npm run -s check:changed 2>&1)" || { printf '%s\n' "$out" | tail -60; echo "pre-push: npm run check:changed failed (above) — fix it and push again"; exit 1; }
+printf '%s\n' "$out" | tail -1
