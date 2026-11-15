@@ -127,7 +127,7 @@ async function main() {
   let calls = new Map();
   const stops = [];
   try {
-    const { herEvents } = await import("./lp-calendar.mjs");
+    const { herEvents } = await import("./lp-booked-calls.mjs");
     calls = bookedCalls(people, await herEvents(JSON.parse(process.env.GSC_SERVICE_ACCOUNT_JSON ?? "null"), { now }), now);
   } catch (e) {
     stops.push(CALENDAR_UNREAD_STOP(e?.message ?? e));
