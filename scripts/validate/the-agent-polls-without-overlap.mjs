@@ -78,7 +78,14 @@ case "$*" in
   *"agent.mjs work-once"*)
     if [ -n "\${STUB_REWRITE_HOLDER:-}" ]; then echo "2147483646|never" > "\${BOSS_OS_HOME}/agent-claim.lock/holder"; fi
     mkdir "\${BOSS_OS_HOME}/stub-running" 2>/dev/null || echo "OVERLAP" >> "${log}"
-    sleep "\${STUB_HOLD:-0}"
+    # A hold the TEST ends (STUB_RELEASE: a file it creates once the contenders are done), never a fixed number of
+    # seconds a loaded runner can outlast (15 Nov 2026, main run 43693209796: "the real wrapper behaves" red, then
+    # green on a rerun with nothing changed). Bounded at 60 s so a broken lock still ends and is reported.
+    if [ -n "\${STUB_RELEASE:-}" ]; then
+      i=0; while [ ! -e "\${STUB_RELEASE}" ] && [ "$i" -lt 1200 ]; do sleep 0.05; i=$((i+1)); done
+    else
+      sleep "\${STUB_HOLD:-0}"
+    fi
     rmdir "\${BOSS_OS_HOME}/stub-running" 2>/dev/null ;;
 esac
 exit 0
@@ -197,7 +204,8 @@ export async function wrapperProblems(wrapperPath) {
   // 6. A live holder makes the next tick exit WITHOUT claiming: two agents never run at once.
   {
     const root = fresh();
-    const first = spawn("bash", [wrapperPath], { env: envFor(root, { STUB_HOLD: "3" }), stdio: "ignore" });
+    const release = join(root, "release");
+    const first = spawn("bash", [wrapperPath], { env: envFor(root, { STUB_RELEASE: release }), stdio: "ignore" });
     // The close listener is attached HERE, in the same tick as the spawn. 2 Oct 2026, CI run
     // 37017877746: it was attached after the holder wait below, and a mutant that never writes
     // `holder` (the "nolock" self-test) ran its 3 s hold and closed while that wait was still
@@ -212,6 +220,7 @@ export async function wrapperProblems(wrapperPath) {
     const second = runWrapper(wrapperPath, root, ["--poll"], { BOSS_OS_CLAIM_HOUR: "14" });
     if (claimsIn(logOf(root)) !== 1) out.push(`While one claim was running, a second tick started another: ${claimsIn(logOf(root))} claims recorded (expected 1).`);
     if (second.status !== 0) out.push(`A tick that finds a live holder should exit 0 silently, exited ${second.status}.`);
+    writeFileSync(release, "");
     await firstClosed;
     if (existsSync(lockOf(root))) out.push("The lock was not released when the holder finished.");
     rmSync(root, { recursive: true, force: true });
@@ -239,8 +248,14 @@ export async function wrapperProblems(wrapperPath) {
   ]) {
     const root = fresh();
     prepare(root);
-    const procs = Array.from({ length: 8 }, () => spawn("bash", [wrapperPath, "--poll"], { env: envFor(root, { BOSS_OS_CLAIM_HOUR: "14", STUB_HOLD: "4" }), stdio: "ignore" }));
-    await Promise.all(procs.map((p) => new Promise((r) => p.on("close", r))));
+    // The holder holds until the other seven have exited (or 15 s), so no contender, however late a loaded runner
+    // starts it, can find the claim already finished: a second claim then means the lock failed.
+    const release = join(root, "release");
+    const procs = Array.from({ length: 8 }, () => spawn("bash", [wrapperPath, "--poll"], { env: envFor(root, { BOSS_OS_CLAIM_HOUR: "14", STUB_RELEASE: release }), stdio: "ignore" }));
+    let closed = 0;
+    const cap = setTimeout(() => writeFileSync(release, ""), 15_000);
+    await Promise.all(procs.map((p) => new Promise((r) => p.on("close", () => { if (++closed === 7) writeFileSync(release, ""); r(); }))));
+    clearTimeout(cap);
     // The hold outlasts the 3 s gate wait, so a contender a slow runner starts late still finds a LIVE holder: a second
     // claim then means the lock failed, not that the first run had already finished (the CI flake of 6 Nov 2026, #307).
     if (calls(logOf(root)).includes("OVERLAP")) out.push(`Eight simultaneous ticks on ${label}: two claims ran at the same moment.`);
@@ -270,10 +285,12 @@ esac
 `);
     chmodSync(join(shift, "ps"), 0o755);
     const PATH = `${shift}:${stubEnv(root).bin}:${process.env.PATH}`;
-    const first = spawn("bash", [wrapperPath], { env: envFor(root, { PATH, STUB_HOLD: "3" }), stdio: "ignore" });
+    const release = join(root, "release");
+    const first = spawn("bash", [wrapperPath], { env: envFor(root, { PATH, STUB_RELEASE: release }), stdio: "ignore" });
     const firstClosed = new Promise((r) => first.on("close", r));
     for (let i = 0; i < 100 && claimsIn(logOf(root)) < 1; i++) await new Promise((r) => setTimeout(r, 50));
     runWrapper(wrapperPath, root, ["--poll"], { PATH, BOSS_OS_CLAIM_HOUR: "14" });
+    writeFileSync(release, "");
     await firstClosed;
     if (calls(logOf(root)).includes("OVERLAP") || claimsIn(logOf(root)) !== 1) out.push(`On ${process.platform}, a live holder was taken over when the wall clock stepped (its ps start time moved): ${claimsIn(logOf(root))} claims (expected 1).`);
     rmSync(root, { recursive: true, force: true });
@@ -326,7 +343,9 @@ if (selfTest) {
     chmodSync(target, 0o755);
     return wrapperProblems(target);
   };
-  check("the real wrapper behaves", (await wrapperProblems(join(ROOT, WRAPPER))).length === 0);
+  const realProblems = await wrapperProblems(join(ROOT, WRAPPER));
+  for (const p of realProblems) console.error(`  real wrapper: ${p}`);
+  check("the real wrapper behaves", realProblems.length === 0);
   check("a wrapper with no hour guard is caught", (await plant("noguard", (t) => t.replace('if [ "$hour" -lt 6 ] || [ "$hour" -ge 22 ]; then', "if false; then"))).length > 0);
   check("a wrapper with no lock is caught", (await plant("nolock", (t) => t.replace('if mkdir "$LOCK_DIR" 2>/dev/null; then\n  have_lock=1', 'if true; then\n  have_lock=1'))).length > 0);
   check("a wrapper that never takes over a dead holder's lock is caught", (await plant("nosteal", (t) => t.replace('rm -rf "$LOCK_DIR"             # the holder is gone (or never wrote itself down): a crash left the lock behind\n  mkdir "$LOCK_DIR" 2>/dev/null && have_lock=1', ":"))).length > 0);
