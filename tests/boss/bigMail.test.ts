@@ -4,7 +4,7 @@ import { handleBossInboundMail, INLINE_READ_ATTEMPTS, STALE_ARRIVAL_MS, MAX_BODY
 import { readEverything, driveIdsIn } from "../../src/worker/boss/intake/readFiles";
 import { asksIn, gotItLines, fileLabel } from "../../src/worker/boss/intake/gotIt";
 import { runMailAlarm } from "../../src/worker/boss/intake/mailAlarm";
-import { mimeSplitCount } from "../../src/worker/effects/mimeAttachments";
+import { mimeSplitCount, fileAttachments, bytesOfBase64 } from "../../src/worker/effects/mimeAttachments";
 import { apiJson, row, all } from "./helpers";
 
 /**
@@ -257,5 +257,25 @@ describe("the Got it's words", () => {
     expect(fileLabel("notes.md")).toBe("notes (md file)");
     const lines = gotItLines({ asks: [], files: { heard: [], read: [], zips: [], unopened: [{ filename: "a.mov", reason: "a video" }] } });
     expect(lines).toEqual(["", "What I could not open (1):", "  a.mov: a video."]);
+  });
+});
+
+describe("a file sent quoted-printable or plain is still opened", () => {
+  it("a quoted-printable HTML attachment and a 7bit text file both come through, decoded", () => {
+    const B = "b-qp";
+    const raw = [
+      "From: a@example.com", "Subject: qp", `Content-Type: multipart/mixed; boundary="${B}"`, "",
+      `--${B}`, "Content-Type: text/plain", "", "See attached.", "",
+      `--${B}`, 'Content-Type: text/html; name="Attachment.html"', 'Content-Disposition: attachment; filename="Attachment.html"', "Content-Transfer-Encoding: quoted-printable", "",
+      "<p>Caf=C3=A9 list for the wee=", "k</p>", "",
+      `--${B}`, 'Content-Type: text/plain; name="notes.txt"', 'Content-Disposition: attachment; filename="notes.txt"', "Content-Transfer-Encoding: 7bit", "",
+      "three venues", "",
+      `--${B}--`, "",
+    ].join("\r\n");
+    const { attachments, unread } = fileAttachments(raw);
+    expect(unread).toEqual([]);
+    const text = (n: string) => new TextDecoder().decode(bytesOfBase64(attachments.find((a) => a.filename === n)!.dataBase64));
+    expect(text("Attachment.html")).toBe("<p>Café list for the week</p>");
+    expect(text("notes.txt")).toBe("three venues");
   });
 });

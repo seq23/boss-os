@@ -89,7 +89,23 @@ mailRefs.post("/", async (c) => {
 export function layReply(input: { text: string; subject: string; signer?: string | null }): LaidOutEmail {
   const who = input.signer ?? "Simone";
   const answer = legacyParts({ who, subject: input.subject, text: input.text }).happened;
-  return ownerEmail({ who, subject: input.subject, layout: "delivered", why: answer, text: input.text });
+  /*
+   * HER NUMBERED QUESTIONS ARE ON LINE 1 (15 Nov 2026 production dry run: "Simone has it. Nothing to
+   * do." above "One thing I need from you"). The count is read from the block `unclearLines` writes.
+   */
+  const asked = questionsAskedIn(input.text);
+  const act = asked ? (asked === 1 ? "One thing for you to answer below (reply by number)." : `${asked} things for you to answer below (reply by number).`) : undefined;
+  return ownerEmail({ who, subject: input.subject, layout: "delivered", why: answer, act, text: input.text });
+}
+
+/** How many numbered questions the Got it asks her (the `unclearLines` block), 0 if none. Pure. */
+export function questionsAskedIn(text: string): number {
+  const lines = text.split("\n");
+  const at = lines.findIndex((l) => /^(?:One thing|\d+ things) I need from you \(reply by number|^Your email reads several ways in \d+ places/.test(l));
+  if (at < 0) return 0;
+  let n = 0;
+  for (const l of lines.slice(at + 1)) { if (/^\s+\d+\.\s/.test(l)) n += 1; else break; }
+  return n;
 }
 
 /**
