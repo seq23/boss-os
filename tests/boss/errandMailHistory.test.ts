@@ -15,9 +15,11 @@ async function seed(id = "cmd_mail1", over: Record<string, unknown> = {}) {
   await env.DB.prepare(`INSERT INTO boss_commands (id, kind, state, spec, result, created_at, updated_at) VALUES (?,'errand',?,?,?,?,?)`).bind(id, over.state ?? "sent", JSON.stringify({ to: VENUE, ask: "Book a table at The Lantern Room on Thursday, October 29", owner_name: "Alex Example", ...over.spec as object }), JSON.stringify({ request: "a table for two at The Lantern Room on Thursday, October 29", booking: { time: "9:00 pm", at: Date.parse("2026-10-30T01:00:00Z"), confirmed: false }, ...over.result as object }), NOW, Date.now()).run();
   return (await getCommand(env as never, id))!;
 }
+// Each email has its own Message-ID, as real mail does: one repeated id is a re-delivery (worked once).
+let incomingCount = 0;
 function incoming(from: string, text: string, subject = "The Lantern Room", html = false) {
   const raw = `From: ${from}\r\nSubject: ${subject}\r\nContent-Type: text/${html ? "html" : "plain"}; charset=utf-8\r\n\r\n${text}`;
-  const headers = new Headers({ from, subject, "message-id": "<card1@platform.example.test>", "authentication-results": "mx.example.test; dmarc=pass" });
+  const headers = new Headers({ from, subject, "message-id": `<card${++incomingCount}@platform.example.test>`, "authentication-results": "mx.example.test; dmarc=pass" });
   return { raw, message: { from, to: BOSS_INTAKE_MAILBOX, headers, raw: new Response(raw).body!, rawSize: new TextEncoder().encode(raw).length } };
 }
 beforeEach(async () => {

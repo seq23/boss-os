@@ -783,6 +783,12 @@ describe("Phase 2 — queue execution and evidence", () => {
     restore = stubFetch(() => new Response("down", { status: 503 }));
     const taskId = await insertTask({ status: "queued", employee_id: "emp_chief" });
 
+    // An outage first waits by name and spends no attempt (MODELS_DOWN, queue/consumer.ts outageWait)…
+    await handleTask(env, { taskId, lane: "ops" });
+    expect((await row(`SELECT status FROM tasks WHERE id = ?`, taskId))!.status).toBe("queued");
+    expect(await row(`SELECT id FROM task_events WHERE task_id = ? AND event = 'named_stop' AND json_extract(detail, '$.code') = 'MODELS_DOWN'`, taskId)).toBeTruthy();
+    // …and after a day of waiting it fails, with its evidence, so the drain can retry and tell her.
+    await env.DB.prepare(`UPDATE task_events SET ts = ts - 25 * 3600000 WHERE task_id = ? AND event = 'named_stop'`).bind(taskId).run();
     await expect(handleTask(env, { taskId, lane: "ops" })).rejects.toBeTruthy();
 
     const task = await row(`SELECT status FROM tasks WHERE id = ?`, taskId);

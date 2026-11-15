@@ -19,6 +19,7 @@ import { deliverExecutiveReport } from "../duties/deliverReport";
 import { repoAuthoredBriefingText } from "../duties/briefingSpec";
 import { firmNoticeBlock } from "../prompt/notices";
 import { practicesBlock } from "../service/constraints";
+import { flushRound, roundOf } from "../service/round";
 import { afterResult } from "../service/afterResult";
 import { noticeOnce, dutyNotRunning } from "../service/notices";
 import { taskToken, threeParts, bossWait } from "../../../shared/boss/service/waits.mjs";
@@ -38,6 +39,20 @@ import { cannotDoIn, cannotDoSummary, cannotDoHint } from "../../../shared/boss/
  * indistinguishable from a run that never happened.
  */
 /** The free tiers, in her order (owner, 6 Nov 2026): Gemini free first, OpenRouter `:free` second. */
+/** A route whose every model failed waits this long between tries, for at most OUTAGE_WAIT_MS. */
+export const OUTAGE_RETRY_MS = 30 * 60_000;
+export const OUTAGE_WAIT_MS = 24 * 3600_000;
+/** Every model on the route failed: wait by name, spending no attempt, for up to a day. True when it waited. */
+export async function outageWait(env: Env, task: { id: string; lane: string; title: string }, err: Error, now = Date.now()): Promise<boolean> {
+  const first = await env.DB.prepare(`SELECT MIN(ts) AS ts FROM task_events WHERE task_id = ? AND event = 'named_stop' AND json_extract(detail, '$.code') = 'MODELS_DOWN'`).bind(task.id).first<{ ts: number | null }>().catch(() => null);
+  if (first?.ts && now - first.ts >= OUTAGE_WAIT_MS) return false;
+  const resumeAt = now + OUTAGE_RETRY_MS;
+  await namedStop(env, { id: task.id, lane: task.lane, title: String(task.title) }, {
+    code: "MODELS_DOWN", resumeAt,
+    why: `NAMED STOP [MODELS_DOWN] ${err.message.slice(0, 300)}; no attempt was spent and it tries again at ${new Date(resumeAt).toISOString()}`,
+  });
+  return true;
+}
 export const FREE_PROVIDER_ORDER = ["prv_gemini", "prv_openrouter"] as const;
 
 export async function handleTask(env: Env, msg: TaskMessage): Promise<void> {
@@ -50,6 +65,11 @@ export async function handleTask(env: Env, msg: TaskMessage): Promise<void> {
     return;
   }
   if (task.status === "cancelled" || task.status === "done") return;
+  // She said "stop" / "hold" / "wait" on the thread (service/round.ts): nothing runs until she says go.
+  if (safeJson(task.input ?? "").held_by_her) {
+    await env.DB.prepare(`INSERT INTO task_events (id, task_id, ts, event, detail) VALUES (?,?,?,'skipped_held_by_her',NULL)`).bind(newId("tev"), task.id, Date.now()).run();
+    return;
+  }
 
   /*
    * ─── A REPO CHANGE IS PARKED FOR HER MAC, NEVER SENT TO A CLOUD RUNG ────────
@@ -794,6 +814,14 @@ export async function handleTask(env: Env, msg: TaskMessage): Promise<void> {
       return;
     }
 
+    /*
+     * AN OUTAGE IS TRY-LATER, NEVER AN ATTEMPT (15 Nov 2026, the West Peek OS #443 rule). Every model
+     * on the route failing is the providers being down, not the work being wrong: it used to spend the
+     * drain's three attempts in minutes and end as "Stopped" in her inbox. It now waits by name and
+     * tries again in half an hour, spending nothing, for up to a day from the first wait; only after
+     * that does it take the old path (attempts, then one stopped email).
+     */
+    if (err instanceof ProviderFailure && (await outageWait(env, task, err))) return;
     const hint = err instanceof ProviderFailure
       ? err.hint
       : "Check Diagnostics for the failure, then requeue the task.";
@@ -1372,6 +1400,10 @@ async function tellHerItStopped(env: Env, task: any, employee: any, why: string,
     subject: `Stopped: ${String(task.title ?? task.id).slice(0, 140)}`,
     lines: [`"${task.title ?? task.id}" stopped and did not finish.`],
     wait: { kind: "TRIED_AND_STOPPED", fill: { what: tried, why } },
+  }).then(async () => {
+    // A job of a round that stopped: the round's ONE answer goes once the rest has finished.
+    const round = roundOf(task.input ? safeJson(String(task.input)) : {});
+    if (round) await flushRound(env, round);
   }).catch(async (e) => {
     await logEvent(env.DB, { level: "error", scope: "queue", event: "stopped_notice_failed", lane: task.lane, entityId: task.id, detail: { message: e instanceof Error ? e.message : String(e) } }).catch(() => {});
   });

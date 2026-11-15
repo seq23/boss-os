@@ -919,8 +919,21 @@ describe("Simone triages untagged mail (owner, 22 Oct 2026: \"i should not have 
   it("a reply on the thread goes back to the job it answers, not to a new pile", async () => {
     const first = await handleBossInboundMail(mail({ subject: "hosting question", body: "What are the cheapest ways to host a static site?", messageId: "<q1@mail.gmail.com>" }), env as never);
     expect(first.employeeId).toBe("emp_research");
-    const reply = await handleBossInboundMail(mail({
+    // While the job is still queued, her reply joins it (one round, one reply: service/round.ts).
+    const joined = await handleBossInboundMail(mail({
       subject: "Re: hosting question", body: "also include what each costs per month",
+      inReplyTo: "<reply-q1@boss>", references: "<q1@mail.gmail.com> <reply-q1@boss>",
+    }), env as never);
+    expect(joined.outcome).toBe("STEERED");
+    expect(joined.taskId).toBe(first.taskId);
+    expect(joined.reply).not.toContain(first.taskId!);
+    const body = await one<any>(`SELECT json_extract(input, '$.body') AS b FROM tasks WHERE id = ?`, first.taskId);
+    expect(body.b).toContain("also include what each costs per month");
+
+    // Once the job has finished and answered, a reply goes back to that job's desk as a follow-up.
+    await env.DB.prepare(`UPDATE tasks SET status = 'done' WHERE id = ?`).bind(first.taskId).run();
+    const reply = await handleBossInboundMail(mail({
+      subject: "Re: hosting question", body: "now compare the two cheapest",
       inReplyTo: "<reply-q1@boss>", references: "<q1@mail.gmail.com> <reply-q1@boss>",
     }), env as never);
     expect(reply.outcome).toBe("FOLLOWED_UP");
