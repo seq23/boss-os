@@ -59,7 +59,7 @@ export function fileLabel(name: string): string {
  * asks); `files` is what readFiles.ts returned. Recordings that could not be heard are left out of
  * "could not open" because their own stop line already names them (voiceNotes.ts unheardLines).
  */
-export function gotItLines(input: { asks: readonly string[]; files: FilesRead; holds?: readonly string[] }): string[] {
+export function gotItLines(input: { asks: readonly string[]; files: FilesRead; holds?: readonly string[]; questions?: readonly string[]; unclear?: readonly string[] }): string[] {
   const lines: string[] = [];
   if (input.asks.length) {
     lines.push(`What you asked, in your words (${input.asks.length === 1 ? "one thing" : `${input.asks.length} things`}):`);
@@ -69,6 +69,11 @@ export function gotItLines(input: { asks: readonly string[]; files: FilesRead; h
     lines.push("", "What you said must wait:");
     for (const h of input.holds) lines.push(`  "${h}"`);
   }
+  if (input.questions?.length) {
+    lines.push("", "Your questions (each one is answered in the result):");
+    input.questions.forEach((q, i) => lines.push(`  ${i + 1}. "${q}"`));
+  }
+  if (input.unclear?.length) lines.push("", ...input.unclear);
   const inZip = (n: string) => / \(in [^)]+\)$/.test(n);
   const read = [
     ...input.files.heard.filter((h) => !inZip(h.filename)).map((h) => `${fileLabel(h.filename)} (your voice note)`),

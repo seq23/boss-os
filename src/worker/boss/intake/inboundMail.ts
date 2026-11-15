@@ -20,6 +20,8 @@ import { steerRound } from "../service/round";
 import { unheardLines, withVoiceNotes } from "./voiceNotes";
 import { readEverything, EMPTY_FILES, type FilesRead } from "./readFiles";
 import { asksIn, gotItLines, filesForTask } from "./gotIt";
+import { firstRead, briefForTask, unclearLines, type FirstRead } from "./firstRead";
+import { takenOverJob, addToTakenOver, takenOverReply } from "../service/takeover";
 import { taskBodyFrom, ownWords, readableText } from "../../../shared/boss/intake/messageBody.mjs";
 import { triage, triageLines, shortTitle, type TriageJob } from "../../../shared/boss/intake/triage.mjs";
 import { parseResearchPage } from "../../../shared/boss/research/page.mjs";
@@ -1032,6 +1034,18 @@ export async function handleBossInboundMail(message: BossMailMessage, env: Env):
    * queued or running joins it: "stop" / "hold" / "wait" holds it, "go" releases it, and anything else
    * is added to the job in progress, so ONE answer covers both emails. It used to open a new job.
    */
+  /*
+   * A REPLY ON A JOB SHE TOOK OVER IN A SESSION (15 Nov 2026, service/takeover.ts): her words go onto
+   * that job word for word and the Got it says it is being handled in a session. Nothing is lost and
+   * nothing starts here.
+   */
+  const takenOver = isReply && own && !filedByVerb && !bookFailure && !closeQuestion ? await takenOverJob(env, replyChain) : null;
+  if (takenOver) {
+    await addToTakenOver(env, takenOver, { own, mailId, now });
+    const tReply = [takenOverReply(takenOver), ...(filesNote.length ? ["", ...filesNote] : []), ...(secrets?.line ? ["", secrets.line] : [])].join("\n");
+    await finish({ outcome: "TAKEN_OVER_NOTED", why: `A reply on ${takenOver.id}, which she took over in a session; her words were added to it and nothing was run.`, taskId: takenOver.id, employeeId: route.seat.id, objectKey, reply: tReply });
+    return { mailId, outcome: "TAKEN_OVER_NOTED", employeeId: route.seat.id, taskId: takenOver.id, reply: tReply, messageId, signer: "Simone" };
+  }
   const steer = isReply && own && !filedByVerb && !bookFailure && !closeQuestion
     ? await steerRound(env, { chain: replyChain, own, mailId, now })
     : null;
@@ -1075,7 +1089,7 @@ export async function handleBossInboundMail(message: BossMailMessage, env: Env):
       const title = strippedSubject(trueSubject)
         ? strippedSubject(trueSubject) + (triaged.length > 1 ? ` (${i + 1} of ${triaged.length})` : "")
         : shortTitle(job.ask, 80) || `Mail from ${sender}`;
-      let body = job.text + (filesBlock ? `\n\n${filesBlock}` : "") + replyingTo;
+      let body = job.text + (filesBlock ? `\n\n${filesBlock}` : "") + (briefBlock ? `\n\n${briefBlock}` : "") + replyingTo;
       // "your call" anywhere in her email pre-approves every job in it.
       if (preApproved && !preApprovalIn(body)) body = `${body}\n\n(Her email said "${preApproved}": pre-approved.)`;
       // Camille's executor is the research page; a question she was handed IS one.
@@ -1090,6 +1104,7 @@ export async function handleBossInboundMail(message: BossMailMessage, env: Env):
             ...(origin?.from ? { forwarded_from: origin.from } : {}),
             subject: trueSubject, tag: null,
             routing: `Simone triaged it: ${job.why}`,
+            ...(first ? { first_read: { ...(first.brief ?? {}), reader: first.reader, stop: first.stop, tried: first.tried } } : {}),
             triage: { part: i + 1, of: triaged.length, closest: job.closest },
             ...(job.seat.id === "emp_repo" ? { build_ask: true } : {}),
             ...(due ? { due } : {}),
@@ -1114,8 +1129,21 @@ export async function handleBossInboundMail(message: BossMailMessage, env: Env):
     });
   };
   if (followed) route.seat = followed.seat;
+  let first: FirstRead | null = null;
+  let briefBlock: string | null = null;
 
+  /*
+   * THE FIRST READ (15 Nov 2026, firstRead.ts): a free model's brief of her asks, holds, questions,
+   * unclear items and files, written onto the jobs the RULES already chose. Free rungs only; at the
+   * free cap, or with nothing answering, the rules read her email exactly as before.
+   */
   if (route.outcome !== "AMBIGUOUS" && !bookFailure && !question && !filedByVerb) {
+    // Inside the guard: nothing unclear, unread or already done ever reaches the free reader either.
+    const fileNames = [...files.heard.map((h) => h.filename), ...files.read.map((r) => r.filename), ...files.unopened.map((u) => u.filename)];
+    first = !oversize && (own || readable).trim()
+      ? await firstRead(env, { subject: trueSubject, words: own || readable, files: fileNames, now, mailId })
+      : null;
+    briefBlock = first?.brief ? briefForTask(first.brief, first.reader) : first?.stop ?? null;
     if (triaged.length) await admitTriaged();
     else try {
       const admitted = await admitTask(env, {
@@ -1146,7 +1174,8 @@ export async function handleBossInboundMail(message: BossMailMessage, env: Env):
           body: oversize
             ? `The message is ${(message.rawSize / 1024 / 1024).toFixed(1)}MB and was not read here.${objectKey ? ` The whole of it is kept at ${objectKey}.` : " It could not be stored either — nothing but this card survives it."}`
             : (taskBody || `The message carried no readable text — ${read?.parts ?? 0} MIME part(s) and nothing in any of them.${objectKey ? ` It is kept exactly as it arrived at ${objectKey}.` : ""}`)
-              + replyingTo,
+              + (briefBlock ? `\n\n${briefBlock}` : "") + replyingTo,
+          ...(first ? { first_read: { ...(first.brief ?? {}), reader: first.reader, stop: first.stop, tried: first.tried } } : {}),
           // The original, byte for byte. Re-extractable, and the reason a parser bug is repairable.
           ...(objectKey ? { raw_message: objectKey } : {}),
           ...(read ? { body_format: read.format, mime_parts: read.parts } : {}),
@@ -1217,6 +1246,7 @@ function headline(text: string): string {
     ...(closedNote ? [closedNote] : []),
     ...(closeQuestion ? [closeQuestion] : []),
     ...(viaConsole ? ["Typed into Boss OS from her own authenticated session, not received over SMTP."] : []),
+    ...(first ? [first.brief ? `First read by ${first.reader}: ${first.brief.asks.length} ask(s), ${first.brief.holds.length} hold(s), ${first.brief.questions.length} question(s), ${first.brief.unclear.length} unclear.` : first.stop ?? `No free model gave a first read (${first.tried.join("; ").slice(0, 200) || "none answered"}); the rules read it.`] : []),
     ...(bookNote ? [bookNote] : []),
     ...(question ? [`${route.seat.name} asked you a question instead of starting work. ${question.why}`] : []),
     ...(bookFailure ? [`No work was opened: the book instruction could not be read. ${headline(bookFailure)}`] : []),
@@ -1259,7 +1289,10 @@ function headline(text: string): string {
    * read, and every file that could not be opened. Work was not opened (a question back, an answer
    * filed on a card): only the files that could not be opened, so a missing file is never silent.
    */
-  const gotIt = taskId || triageTasks.length ? gotItLines({ asks: asksIn(own), files }) : [];
+  const brief = first?.brief ?? null;
+  const gotIt = taskId || triageTasks.length
+    ? gotItLines({ asks: brief?.asks.length ? brief.asks : asksIn(own), files, holds: brief?.holds, questions: brief?.questions, unclear: unclearLines(brief?.unclear ?? []) })
+    : [];
   const reply = stopped ? [
     stopped,
     ...(serviceLines.length ? ["", ...serviceLines] : []),
