@@ -17,6 +17,12 @@ import { newId } from "../lib/id";
 import { logEvent } from "../lib/log";
 
 export const UNACKNOWLEDGED_MS = 5 * 60_000;
+/**
+ * The five-minute cron in wrangler.toml; `scheduled` runs only this alarm on it. It lives HERE, not in
+ * src/worker/index.ts: every named export of a Worker's entry module is read as an entrypoint, and a
+ * string there stops the runtime from starting (15 Nov 2026, e2e on #420).
+ */
+export const MAIL_ALARM_CRON = "*/5 * * * *";
 const LOOKBACK_MS = 24 * 3600_000;
 
 export async function runMailAlarm(env: Env, now = Date.now()): Promise<{ checked: number; raised: number; output: string }> {
