@@ -433,10 +433,35 @@ export async function fillField(page, name, sels, value) {
   const back = await el.inputValue();
   if (back !== String(value)) throw stop("FIELD_DID_NOT_TAKE", `the ${name} box reads "${back}" after filling "${value}".`);
 }
+/**
+ * A leftover KDP pop-up (the series step's "submitted" box, 14 Nov 2026) can stay over the page and
+ * swallow every click: "a-modal-scroller … intercepts pointer events". Close it before clicking: its
+ * Done/Close/✕ button, then Escape, and wait until no modal scroller is visible. Never a question to her.
+ */
+export async function clearOverlays(page) {
+  for (let i = 0; i < 3; i++) {
+    const open = await page.locator(".a-modal-scroller:visible").count().catch(() => 0);
+    if (!open) return;
+    const close = page.locator('.a-popover:visible [data-action="a-popover-close"], .a-popover:visible button[aria-label="Close"], .a-popover:visible .a-button-close').first();
+    const done = page.getByRole("button", { name: /^\s*(Done|Close|OK)\s*$/i }).last();
+    if (await done.isVisible().catch(() => false)) await done.click({ timeout: 5_000 }).catch(() => {});
+    else if (await close.isVisible().catch(() => false)) await close.click({ timeout: 5_000 }).catch(() => {});
+    else await page.keyboard.press("Escape").catch(() => {});
+    await page.locator(".a-modal-scroller:visible").first().waitFor({ state: "hidden", timeout: 5_000 }).catch(() => {});
+  }
+}
+
 export async function clickOne(page, name, sels) {
+  await clearOverlays(page);
   const el = await first(page, sels);
   if (!el) throw stop("CONTROL_NOT_FOUND", `the ${name} control is not on the page.`);
-  await el.click();
+  try { await el.click({ timeout: 15_000 }); }
+  catch {
+    // One more try after clearing whatever covered it; then a named stop that says which control.
+    await clearOverlays(page);
+    try { await el.click({ timeout: 15_000 }); }
+    catch (e2) { throw stop("CONTROL_STUCK", `the ${name} control could not be pressed: ${String(e2.message).split("\n")[0]}`); }
+  }
   await waitForHer(page);
 }
 
@@ -937,6 +962,16 @@ export function stopMail({ title, code, said, waitMs = HANDOFF_MS, id = null }) 
   };
 }
 
+/**
+ * Stops only she can clear (owner, 14 Nov 2026: "i should not have gotten a blocked email about
+ * fuckint categories and ticking a box for adult content"). Everything else is the page's mechanics
+ * (a box, a button, categories, the AI question, a save): never an email to her; the run exits
+ * non-zero so the duty's failure opens one repair for the team, and the title stays approved for the
+ * next run. Pure.
+ */
+export const HER_STOPS = new Set(["SIGNIN", "SIGNIN_NOT_DONE", "BLOCKED", "PUBLISH_REFUSED", "UPLOAD_REFUSED"]);
+export const stopNeedsHer = (code) => HER_STOPS.has(code);
+
 /** Plain words for a stop the code named. Pure. */
 export function plainStop(code, said = "") {
   const m = {
@@ -955,6 +990,8 @@ export function plainStop(code, said = "") {
     CONTENT_NOT_SAVED: "Amazon did not save the book file and cover page.",
     BLOCKED: "Amazon shows the book as Blocked.",
     SHELF_UNREADABLE: "I could not tell from your bookshelf whether the book is already there.",
+    CONTROL_NOT_FOUND: "a button I press was not on the page.",
+    CONTROL_STUCK: "a button I press stayed covered by one of Amazon's pop-ups.",
   };
   return m[code] ?? `something on the page was not as expected.`;
 }
@@ -1277,6 +1314,12 @@ async function handBack(b, e, { api, context, page, isClosed, settle }) {
   const { a, book, folder } = b;
   const code = e.stop === "SIGNIN_NOT_DONE" ? "SIGNIN" : e.stop ?? "FAILED";
   if (!UNATTENDED && !process.stdin.isTTY) return false;
+  if (UNATTENDED && !stopNeedsHer(code)) {
+    // The page's mechanics, not hers: no email, no open window waiting on her (see HER_STOPS).
+    console.log(`NAMED STOP [KDP_PAGE_${code}] ${plainStop(code)} ${String(e.message).split("\n")[0]} — no email to her; the team's repair job takes it and the next run tries the title again.`);
+    await context.close().catch(() => {});
+    return false;
+  }
   if (UNATTENDED && code !== "SIGNIN") await tellStop(`stop:${a.id}:${code}:${dayCT()}`, stopMail({ title: book.title, code, said: e.message, id: a.id }));
   if (!UNATTENDED) await handOff(context, page, b.dir, b.ans);
   else if (code !== "SIGNIN") {
