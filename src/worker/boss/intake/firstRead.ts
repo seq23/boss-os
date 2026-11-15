@@ -89,6 +89,22 @@ export function briefPrompt(input: { subject: string; words: string; files: read
   ].join("\n");
 }
 
+/**
+ * WHAT SHE PASTED IS NOT WHAT SHE ASKED (15 Nov 2026 production dry run, the 12 Sep iPhone email: two
+ * sentences of hers above a pasted report, and the Workers AI rung listed 12 "asks", ten of them report
+ * lines such as "The Middle East energy shock worsened again overnight."; the prompt alone did not stop
+ * it). Every line passes the quote check, because the report IS in her email. So when a read lists more
+ * than OVER_LISTED asks, only lines that ask for something stay: a request phrase anywhere, or a line
+ * that opens on a doing word. A normal email's short list is never touched. Pure.
+ */
+export const OVER_LISTED = 6;
+const REQUEST = /\b(?:please|make sure|can you|could you|would you|will you|i need|i want|i'd like|i would like|let'?s|we need|you need|need you|have to|has to)\b/i;
+const DOING = /^(?:pull|mimic|send|find|draft|write|book|schedule|call|email|text|set|add|remove|fix|check|plan|get|make|create|update|review|list|prepare|research|organi[sz]e|order|buy|cancel|move|keep|use|put|show|tell|ask|look|read|summari[sz]e|compare|pick|choose|start|stop|follow|reply|forward|share|invite|confirm|track|build|design|change|delete|round ?up|gather|collect|pay|file|sign|print|ship|post|publish|turn|bring|give|help|do|don'?t|never|always)\b/i;
+export function withoutPasted(asks: string[]): string[] {
+  if (asks.length <= OVER_LISTED) return asks;
+  return asks.filter((a) => REQUEST.test(a) || DOING.test(a.replace(/^[^A-Za-z]+/, "")) || /\bbut\s+(?:pull|send|find|make|use|keep|mimic)\b/i.test(a));
+}
+
 /** The brief, keeping only lines that quote her (and files that are really attached). Pure. */
 export function parseBrief(text: string, words: string, files: readonly string[] = []): Brief | null {
   const body = norm(words);
@@ -218,6 +234,8 @@ export async function firstRead(
       const text = await withDeadline(Math.min(FIRST_READ_ATTEMPT_MS, usable), (signal) => rung.call(prompt, signal));
       const brief = parseBrief(text, input.words, files);
       if (!brief) { out.tried.push(`${rung.id}: no line quoted her`); continue; }
+      brief.asks = withoutPasted(brief.asks);
+      if (!brief.asks.length && !brief.questions.length && !brief.unclear.length && !brief.holds.length) { out.tried.push(`${rung.id}: listed only what she pasted`); continue; }
       out.brief = brief;
       out.reader = rung.id;
       out.tried.push(`${rung.id}: read`);

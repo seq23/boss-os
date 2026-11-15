@@ -2,6 +2,7 @@ import { env } from "cloudflare:test";
 import { describe, expect, it, beforeEach, afterEach } from "vitest";
 import { handleBossInboundMail } from "../../src/worker/boss/intake/inboundMail";
 import { layReply, questionsAskedIn } from "../../src/worker/boss/intake/mailRefs";
+import { withoutPasted, OVER_LISTED } from "../../src/worker/boss/intake/firstRead";
 import { firstRead, freeRungs, parseBrief, setFirstReadRungs, unclearLines, FIRST_READ_DAILY_CAP, FIRST_READ_SERVICE, type Rung } from "../../src/worker/boss/intake/firstRead";
 import { freeDailyCap } from "../../src/worker/boss/backends/guard";
 import { centralDay } from "../../src/worker/boss/research/searchQuota";
@@ -81,6 +82,17 @@ describe("the ladder is free, and only free", () => {
     expect(r.tried.at(-1)).toBe("workers-ai: read");
     expect(Date.now() - t0).toBeLessThan(31_000);
   }, 40_000);
+
+  it("a read that lists her pasted report as asks keeps only what she asked; a short list is untouched", async () => {
+    const hers = ["Please make sure the briefing page matches the report below.", "They are not to be mixed but pull out the calendar part for the other page."];
+    const pasted = ["Weekly Market Report", "Saturday, 12 September", "One-Minute Summary", "Oil rose again overnight.", "The pipeline moves five million barrels a day.", "Diesel is above six dollars.", "Inflation risk is now about supply."];
+    const words = [...hers, "", ...pasted].join("\n");
+    const r = await firstRead(env as never, { subject: "s", words, dry: true }, [rung("free-a", [...hers, ...pasted].map((l) => `ASK: ${l}`).join("\n"))]);
+    expect(r.brief!.asks).toEqual(hers);
+    expect(pasted.length + hers.length).toBeGreaterThan(OVER_LISTED);
+    // The guard is only for an over-listed read: a short list of plain statements stays as she wrote it.
+    expect(withoutPasted(["The venue is booked.", "Dinner is at eight."])).toEqual(["The venue is booked.", "Dinner is at eight."]);
+  });
 
   it("a dry run can prove one rung alone; a live read ignores the choice", async () => {
     const ladder = [rung("free-a", "ASK: Find three venues in Memphis for forty people."), rung("free-b", "ASK: Find three venues in Memphis for forty people.")];
