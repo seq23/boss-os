@@ -718,12 +718,31 @@ export async function aiDisclosure(page, ans, { write }) {
       if (!(await inp.count()) || (await inp.inputValue().catch(() => ""))) continue;
       // 8 Nov 2026: the tool box can sit outside the visible fold of the accordion; type when it is
       // visible, else set it the way the page's own input handler reads it. Never wait 30 s on it.
-      if (await inp.isVisible().catch(() => false)) await inp.fill(ans.tools, { timeout: 5000 }).catch(() => {});
-      if (!(await inp.inputValue().catch(() => ""))) await inp.evaluate((el, v) => { el.value = v; el.dispatchEvent(new Event("input", { bubbles: true })); el.dispatchEvent(new Event("change", { bubbles: true })); }, ans.tools).catch(() => {});
+      // 14 Nov 2026 (live probe): a value set by fill() or by script shows in the box but never reaches
+      // the page's state; Amazon then refuses Save with "Specify the AI tool you used for creating text."
+      // Real keystrokes are what it reads: scroll it in, click it, type, Tab out.
+      await inp.scrollIntoViewIfNeeded().catch(() => {});
+      await inp.click({ timeout: 5000 }).catch(() => {});
+      await inp.pressSequentially(ans.tools, { delay: 30 }).catch(() => {});
+      await inp.press("Tab").catch(() => {});
+      if (!(await inp.inputValue().catch(() => ""))) throw stop("AI_DISCLOSURE_NOT_SET", `the AI tool box would not take "${ans.tools}"; nothing was published.`);
+    }
+    // 14 Nov 2026 stop page: the selects took their answers inside the collapsed Yes panel while the
+    // No row stayed chosen, and Amazon refused the step ("Specify if you used AI tools"). The Yes
+    // row's own radio must read checked; press it until it does (three tries, never a loop).
+    if (ans.used) {
+      const yesRadio = root.locator('[data-a-accordion-row-name="yes"] [role="radio"]').first();
+      for (let i = 0; i < 3; i += 1) {
+        if ((await yesRadio.getAttribute("aria-checked").catch(() => null)) === "true") break;
+        await root.locator('[data-a-accordion-row-name="yes"] a.a-accordion-row').first().click({ force: true, timeout: 5000 }).catch(() => {});
+        await page.waitForTimeout(1200);
+      }
     }
     await page.waitForTimeout(800);
     st = await read();
   }
+  const yesChecked = (await root.locator('[data-a-accordion-row-name="yes"] [role="radio"]').first().getAttribute("aria-checked").catch(() => null)) === "true";
+  if (ans.used && write && !yesChecked) throw stop("AI_DISCLOSURE_NOT_SET", "the AI question's Yes would not stay chosen; nothing was published.");
   const result = { yes: st.yes, selects: st.selects, tools: st.tools };
   const eq = (a, b) => String(a ?? "").toLowerCase() === String(b ?? "").toLowerCase();
   // KDP's new affirmation UI (8 Nov 2026) has no separate Yes row once answers are chosen: an answer
