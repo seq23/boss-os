@@ -82,6 +82,13 @@ describe("the ladder is free, and only free", () => {
     expect(Date.now() - t0).toBeLessThan(31_000);
   }, 40_000);
 
+  it("a dry run can prove one rung alone; a live read ignores the choice", async () => {
+    const ladder = [rung("free-a", "ASK: Find three venues in Memphis for forty people."), rung("free-b", "ASK: Find three venues in Memphis for forty people.")];
+    const words = "Find three venues in Memphis for forty people.";
+    expect((await firstRead(env as never, { subject: "v", words, dry: true, onlyRung: "free-b" }, ladder)).reader).toBe("free-b");
+    expect((await firstRead(env as never, { subject: "v", words, onlyRung: "free-b" }, ladder)).reader).toBe("free-a");
+  });
+
   it("Workers AI is claimed before the call and stops at its free cap: a named stop, the rules read it", async () => {
     expect(freeDailyCap(FIRST_READ_SERVICE)).toBe(FIRST_READ_DAILY_CAP);
     await env.DB.prepare(`INSERT INTO free_search_quota_days (service, day, used, updated_at) VALUES (?, ?, ?, ?)`).bind(FIRST_READ_SERVICE, centralDay(Date.now()), FIRST_READ_DAILY_CAP, Date.now()).run();

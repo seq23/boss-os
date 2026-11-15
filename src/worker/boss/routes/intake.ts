@@ -323,12 +323,12 @@ intake.post("/mail", async (c) => {
  * `POST /api/intake/mail/dry-run` — READ A KEPT EMAIL, WRITE NOTHING (15 Nov 2026).
  *
  * `{ mail_id }` reads the email kept for that arrival row from R2; `{ raw }` reads a message posted
- * whole. Returns what the mailbox would read (her words, every file, voice note and Drive link), who
+ * whole; `rung` (optional) walks only the free rung whose id contains it. Returns what the mailbox would read (her words, every file, voice note and Drive link), who
  * would get the work, and the Got it as it would be sent. Writes nothing and sends nothing
  * (intake/dryRun.ts). Same authorisation as `/mail`: the session gate in front of `/api/*`.
  */
 intake.post("/mail/dry-run", async (c) => {
-  const b = await c.req.json<{ mail_id?: string; raw?: string }>().catch(() => null);
+  const b = await c.req.json<{ mail_id?: string; raw?: string; rung?: string }>().catch(() => null);
   let raw = typeof b?.raw === "string" ? b.raw : "";
   let key: string | null = null;
   if (!raw) {
@@ -343,7 +343,7 @@ intake.post("/mail/dry-run", async (c) => {
     raw = await obj.text();
   }
   const { dryReadMessage } = await import("../intake/dryRun");
-  return ok(c, { object_key: key, ...(await dryReadMessage(c.env, raw)) });
+  return ok(c, { object_key: key, ...(await dryReadMessage(c.env, raw, { rung: typeof b?.rung === "string" ? b.rung : null })) });
 });
 
 /**

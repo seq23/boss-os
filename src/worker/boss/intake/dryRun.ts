@@ -48,7 +48,7 @@ export interface DryRead {
   got_it: { subject: string; text: string };
 }
 
-export async function dryReadMessage(env: Env, raw: string): Promise<DryRead> {
+export async function dryReadMessage(env: Env, raw: string, opts: { rung?: string | null } = {}): Promise<DryRead> {
   const headers = headersOfRaw(raw);
   const subject = decodeMimeHeader(headers.get("subject") ?? "");
   const to = (headers.get("to") ?? "").toLowerCase();
@@ -59,7 +59,7 @@ export async function dryReadMessage(env: Env, raw: string): Promise<DryRead> {
   const route = routeToSeat(`${subject}\n${own}`, roster, to);
   // The first read, dry: the free ladder is walked, but no Workers AI slot is claimed and nothing is logged.
   const fileNames = [...files.heard.map((h) => h.filename), ...files.read.map((r) => r.filename), ...files.unopened.map((u) => u.filename)];
-  const first = own.trim() ? await firstRead(env, { subject, words: own, files: fileNames, dry: true }) : null;
+  const first = own.trim() ? await firstRead(env, { subject, words: own, files: fileNames, dry: true, onlyRung: opts.rung ?? null }) : null;
   const brief = first?.brief ?? null;
   const asks = brief?.asks.length ? brief.asks : asksIn(own);
   let head: string;
