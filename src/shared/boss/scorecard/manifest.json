@@ -148,7 +148,8 @@
       "owner": "Monique · your morning email",
       "result": "Replies, then calls booked",
       "jobs": [
-        "lp-daily"
+        "lp-daily",
+        "lp8-drip"
       ],
       "start": "2026-11-01",
       "first": {

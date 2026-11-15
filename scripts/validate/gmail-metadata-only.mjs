@@ -476,6 +476,17 @@ const PROSPECT_SENDERS = new Map([
       [(src) => !/api\.anthropic\.com|api\.openai\.com|generativelanguage\.googleapis\.com|openrouter\.ai/i.test(src) && !/spawn(Sync)?\(/.test(src), "no model sees a name"],
     ],
   }],
+  // THE ONE-LIST LP EMAILS (owner, 15 Nov 2026): the four emails she approved, to her private list.
+  ["lp8-drip.mjs", {
+    why: "Sends the four LP emails she approved to her one private list, only while the list's approved flag is true.",
+    invariants: [
+      [(src) => /const MAILBOX = "[^"]+@westpeek\.ventures"/.test(src) && /from: MAILBOX/.test(src) && /await import\("\.\/lp-prospects\.mjs"\)/.test(src) && !/\bsub:/.test(src), "it sends only as the pinned westpeek.ventures mailbox, through lp-prospects.mjs's token (no JWT of its own)"],
+      [(src) => !/gmail\.send|gmail\.modify|mail\.google\.com/.test(src), "compose and nothing wider"],
+      [(src) => !/format=full|"format", "full"|format=raw|"format", "raw"|\.snippet/.test(src), "it reads headers and message ids only"],
+      [(src) => /plan\.approved !== true/.test(src) && /if \(dry\) \{[\s\S]*?return 0;[\s\S]*messages\/send/.test(src), "nothing is sent unless the plan is approved, and a dry run returns before any send"],
+      [(src) => !/api\.anthropic\.com|api\.openai\.com|generativelanguage\.googleapis\.com|openrouter\.ai/i.test(src) && !/spawn(Sync)?\(/.test(src), "no model sees a name"],
+    ],
+  }],
 ]);
 
 for (const f of callers) {

@@ -283,6 +283,7 @@ export const INSTALLED_LOCAL_JOBS = [
   "lp-eightraise.mjs", // boss fix L
   "lp-prospect-discovery.mjs", // boss fix L
   "lp-prospects.mjs", // boss fix L
+  "lp8-drip.mjs", // the one-list LP emails (owner, 15 Nov 2026)
   "pnp-corporate-outreach.mjs",
   "t2r-groups.mjs", // Monique: Time-2-Read groups & institutions (owner, 31 Oct 2026)
   "lp-tracker-sync.mjs",

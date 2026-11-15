@@ -19,6 +19,8 @@
  *      (desk.ts, a named stop); emails 3 and 4 never go in words she did not approve (the prospect
  *      card's follow_up_2 / follow_up_3, and the guides' Decide card in engine.ts).
  *   7. No address outside our own domains or example.com in any file this fix owns (public repo).
+ *   8. THE ONE-LIST LP EMAILS (scripts/ops/lp8-drip.mjs, 15 Nov 2026): all four render with no
+ *      placeholder left, and none names a fund size, "Fund I", a vintage or terms (fees, carry).
  *
  * RULE 0: every check examines something; an empty scan fails. `--self-test` breaks each rule and
  * watches it go red.
@@ -28,6 +30,7 @@ import { join, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
 import * as plan from "../../src/shared/boss/lp/plan.mjs";
 import { startOfCentralDay } from "../../src/shared/boss/outreach/cadence.mjs";
+import * as lp8drip from "../ops/lp8-drip.mjs";
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), "..", "..");
 const read = (f) => readFileSync(join(ROOT, f), "utf8");
@@ -36,9 +39,10 @@ const OWNED = [
   "scripts/ops/lp-daily.mjs", "scripts/ops/lp-prospects.mjs", "scripts/ops/lp-prospect-discovery.mjs", "scripts/ops/lp-catchups.mjs",
   "scripts/ops/lp-eightraise.mjs", "scripts/ops/lp-followups.mjs", "migrations/0294_boss_lps_and_prospects.sql",
   "src/client/boss/pages/deals/LpTab.tsx", "src/client/boss/pages/deals/ProspectsTab.tsx", "tests/boss/lpProspects.test.ts",
+  "scripts/ops/lp8-drip.mjs",
 ];
 
-export function check({ template, lpBody, installer, tapSrc, eightSrc, files, deskSrc = "", engineSrc = "", P = plan }) {
+export function check({ template, lpBody, installer, tapSrc, eightSrc, files, deskSrc = "", engineSrc = "", P = plan, L8 = lp8drip }) {
   const bad = [];
   let examined = 0;
   const names = [{ name: "Alpha" }, { name: "Beta" }, { name: "Gamma" }];
@@ -102,6 +106,19 @@ export function check({ template, lpBody, installer, tapSrc, eightSrc, files, de
   if (!/laterWordsApproved\(env, b, step, pitch, now\)/.test(engineSrc)) bad.push("engine.ts: the guides' emails 3 and 4 are not held for her approved words");
 
   examined++;
+  if ((L8.TEMPLATES ?? []).length !== 4) bad.push(`one-list LP drip: ${(L8.TEMPLATES ?? []).length} emails; her copy is four`);
+  for (const touch of [1, 2, 3, 4]) {
+    let r;
+    try { r = L8.render(touch, { first: "Alex", hook: "you backed an emerging manager last year" }, L8.TEMPLATES); } catch (e) { bad.push(`one-list LP email ${touch}: ${e.message}`); continue; }
+    const text = `${r.subject}\n${r.body}`;
+    if (/\{[a-z_]+\}/i.test(text)) bad.push(`one-list LP email ${touch}: an unfilled placeholder`);
+    if (/\bfund (size|of \$)|\$\d[\d,.]*\s?(k|m|mm|b|bn|million|billion)\b/i.test(text)) bad.push(`one-list LP email ${touch}: names a fund size or an amount`);
+    if (/\bFund (I|II|III|1|2)\b/.test(text)) bad.push(`one-list LP email ${touch}: names "Fund I"`);
+    if (/\bvintage\b|\b20\d\d fund\b/i.test(text)) bad.push(`one-list LP email ${touch}: names a vintage`);
+    if (/\b(management fee|carry|carried interest|hurdle|2 and 20|2\/20|minimum (check|commitment)|terms)\b/i.test(text)) bad.push(`one-list LP email ${touch}: names terms`);
+  }
+
+  examined++;
   for (const [f, src] of Object.entries(files)) {
     for (const a of src.match(/[\w.+'-]+@[\w-]+(?:\.[\w-]+)+/g) ?? []) {
       if (/@(?:[\w-]+\.)?(westpeek\.ventures|sequoiataylor\.com|joinwestpeek\.com|example\.com|example\.org|theindustryguides\.com|time-2-read\.com)$/i.test(a)) continue;
@@ -151,6 +168,10 @@ if (process.argv.includes("--self-test")) {
     ["a reply that does not stop it", { P: { ...plan, dueTouch: (p, now) => plan.dueTouch({ ...p, status: "active" }, now) } }, /still due/],
     ["email 3 in unapproved words", { P: { ...plan, renderProspect: (t, a) => plan.renderProspect({ ...t, follow_up_2: t.follow_up_2 ?? t.follow_up, follow_up_3: t.follow_up_3 ?? t.follow_up }, a) } }, /without words she approved/],
     ["email 3 asks for a call", { template: { ...T, follow_up_2: T.follow_up_2.replace("One more thought", "Could we find 15 minutes for a quick call? One more thought") } }, /touch 3: suggests a call/],
+    ["the one-list drip names Fund I", { L8: { ...lp8drip, TEMPLATES: lp8drip.TEMPLATES.map((t, i) => (i === 2 ? t.replace("No ask in this one.", "No ask in this one about Fund I.") : t)) } }, /names "Fund I"/],
+    ["the one-list drip names a size", { L8: { ...lp8drip, TEMPLATES: lp8drip.TEMPLATES.map((t, i) => (i === 0 ? t.replace("venture fund", "$25M venture fund") : t)) } }, /fund size or an amount/],
+    ["the one-list drip names terms", { L8: { ...lp8drip, TEMPLATES: lp8drip.TEMPLATES.map((t, i) => (i === 1 ? t.replace("Bringing", "With a 2% management fee, bringing") : t)) } }, /names terms/],
+    ["the one-list drip leaves a placeholder", { L8: { ...lp8drip, render: (n, a) => ({ ...lp8drip.render(n, a), body: "Hi {first}" }) } }, /unfilled placeholder/],
     ["a complaint read as a polite no", { P: { ...plan, PROSPECT_COMPLAINT: /$^/ } }, /spam complaint in a reply/],
     ["the complaint pause removed", { deskSrc: read("src/worker/boss/lp/desk.ts").replaceAll("complaintStop(", "String(") }, /does not pause the whole/],
     ["emails 3 and 4 not held", { deskSrc: read("src/worker/boss/lp/desk.ts").replace("hasTouchWords(words, touch)", "true") }, /not held for words she approved/],

@@ -192,6 +192,17 @@
       "code": [{ "repo": "boss-os", "paths": ["scripts/ops/lp-prospects.mjs", "src/shared/boss/lp/plan.mjs"] }]
     },
     {
+      "id": "lp8-drip", "business": "west-peek-ventures",
+      "what": "The one-list LP emails: a first email and three follow-ups in the same thread (day 3, 7 and 14), in the words you approved, then never again; a reply, bounce or block anywhere at their firm stops everyone there",
+      "sender": "Monique", "owner": "Monique",
+      "from": "sequoia@westpeek.ventures (through the delegation you OK'd)", "to": "The people on your private LP list, at most 6 new a weekday",
+      "when": "Weekdays 9:30 AM (never Saturday or Sunday), once the list is approved",
+      "runs": "mac", "trigger": "Mac job com.seq.boss-lp8-drip (lp8:drip)",
+      "pause": "Set approved to false in the private plan, or launchctl bootout gui/501/com.seq.boss-lp8-drip",
+      "launchd": ["com.seq.boss-lp8-drip"],
+      "code": [{ "repo": "boss-os", "paths": ["scripts/ops/lp8-drip.mjs"] }]
+    },
+    {
       "id": "her-tap-send", "business": "west-peek-ventures",
       "what": "A held LP reply, sent the moment you tap \"Send as is\" in the morning email; a picked time adds the calendar invite",
       "sender": "Monique", "owner": "Monique",

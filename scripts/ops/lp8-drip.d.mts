@@ -1,0 +1,18 @@
+/** Loose types so tests can import this node script; the script itself is the authority. */
+export const SUBJECT: string;
+export const TEMPLATES: string[];
+export const FREEMAIL: Set<string>;
+export function render(touch: number, vars: { first?: string; hook?: string }, templates?: string[]): { subject: string; body: string };
+export function centralDay(ms?: number): string;
+export function daysBetween(a: string, b: string): number;
+export function isWeekday(day: string): boolean;
+export function sendable(row: any): boolean;
+export function key(email: string): string;
+export function dueToday(rows: any[], state: any, today: string): { firsts: { row: any; touch: number }[]; followups: { row: any; touch: number }[] };
+export function domainOf(email: string): string;
+export function stopKey(email: string): string;
+export function marksIn(cells: unknown[]): Set<string>;
+export const ADDRESS_ONLY_BLOCKED: RegExp;
+export function stopsFor(rows: any[], hits: { mark: string; reason: string; only?: boolean }[]): Map<string, string>;
+export function verdict(v: { due: number; firstsSent: number; followupsSent: number; stopped: number; reasons?: string[]; held?: string[] }): { sent: number; line: string; stop: string | null };
+export function sentLogRow(v: { day: string; row: any; touch: number; subject: string }): unknown[];
