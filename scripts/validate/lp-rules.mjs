@@ -109,7 +109,7 @@ export function check({ template, lpBody, installer, tapSrc, eightSrc, files, de
   if ((L8.TEMPLATES ?? []).length !== 4) bad.push(`one-list LP drip: ${(L8.TEMPLATES ?? []).length} emails; her copy is four`);
   for (const touch of [1, 2, 3, 4]) {
     let r;
-    try { r = L8.render(touch, { first: "Alex", hook: "you backed an emerging manager last year" }, L8.TEMPLATES); } catch (e) { bad.push(`one-list LP email ${touch}: ${e.message}`); continue; }
+    try { r = L8.render(touch, { first: "Alex", hook: "you backed an emerging manager last year", address: "1 Example Street, Example City" }, L8.TEMPLATES); } catch (e) { bad.push(`one-list LP email ${touch}: ${e.message}`); continue; }
     const text = `${r.subject}\n${r.body}`;
     if (/\{[a-z_]+\}/i.test(text)) bad.push(`one-list LP email ${touch}: an unfilled placeholder`);
     if (/\bfund (size|of \$)|\$\d[\d,.]*\s?(k|m|mm|b|bn|million|billion)\b/i.test(text)) bad.push(`one-list LP email ${touch}: names a fund size or an amount`);
