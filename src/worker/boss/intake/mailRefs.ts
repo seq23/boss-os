@@ -85,6 +85,13 @@ mailRefs.post("/", async (c) => {
   return ok(c, { recorded: true });
 });
 
+/** The reply in the owner layout, exactly as `plainReply` lays it out before its gate. Pure (the dry run reads it). */
+export function layReply(input: { text: string; subject: string; signer?: string | null }): LaidOutEmail {
+  const who = input.signer ?? "Simone";
+  const answer = legacyParts({ who, subject: input.subject, text: input.text }).happened;
+  return ownerEmail({ who, subject: input.subject, layout: "delivered", why: answer, text: input.text });
+}
+
 /**
  * THE WORKER'S REPLY TO HER, IN THE ONE LAYOUT, WITH ITS CODES MOVED TO THE THREAD.
  *
@@ -98,8 +105,7 @@ export async function plainReply(
 ): Promise<LaidOutEmail> {
   // The owner layout (7 Nov 2026): her answer is line 1, then whether she must do anything.
   const who = input.signer ?? "Simone";
-  const answer = legacyParts({ who, subject: input.subject, text: input.text }).happened;
-  let laid: LaidOutEmail = ownerEmail({ who, subject: input.subject, layout: "delivered", why: answer, text: input.text });
+  let laid: LaidOutEmail = layReply(input);
   /*
    * THE GATE, ON THE WORKER'S SIDE TOO (rule 13, 23 Oct 2026). A reply that fails the plain-email
    * check is held: what it would have said is logged as an error (it surfaces on Today for the team to

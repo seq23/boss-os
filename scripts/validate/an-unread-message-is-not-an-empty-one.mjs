@@ -84,7 +84,18 @@ export function envelopeCapIn(source) {
  * Both halves, because raising one number is only correct if the other one is still doing the job it
  * was raised in favour of. A cap raised on its own is a CPU budget removed.
  */
-export function theCapIsMeasuredOnTheReadableText(cap, her) {
+/** Email Routing's delivery ceiling: a larger message never arrives, so every smaller one must be read. */
+export const EMAIL_DELIVERY_CEILING = 25 * 1024 * 1024;
+
+/** `[env.production.limits] cpu_ms` from wrangler.toml, or null. */
+export function cpuLimitIn(toml) {
+  if (toml === null) return null;
+  const block = /\[env\.production\.limits\]([\s\S]*?)(?:\n\[|$)/.exec(toml);
+  const m = block ? /^\s*cpu_ms\s*=\s*(\d+)/m.exec(block[1]) : null;
+  return m ? Number(m[1]) : null;
+}
+
+export function theCapIsMeasuredOnTheReadableText(cap, her, cpuMs = 30000) {
   const bad = [];
   if (her === null) return ["her 12 September message is not committed, so the cap is unmeasured."];
   if (cap === null) return [`MAX_BODY_BYTES could not be read out of ${HANDLER}, so nothing about the cap is verified.`];
@@ -119,10 +130,23 @@ export function theCapIsMeasuredOnTheReadableText(cap, her) {
       + "envelope cap is the binding one again and the same class of bug is back.",
     );
   }
-  if (cap > 8 * 1024 * 1024) {
+  /*
+   * REWRITTEN 15 Nov 2026 (was: "a cap above 8 MB decodes the 7 MB deck and exhausts the invocation").
+   * The truth now is the opposite and at least as strict: every message Email Routing CAN deliver is
+   * read whole (readFiles.ts), so the cap must sit at or above the 25 MB delivery ceiling, AND the
+   * production CPU limit that makes that read affordable must be declared. A 6 MB email with a deck
+   * and a voice note left "too large to read here" is the failure this now catches.
+   */
+  if (cap < EMAIL_DELIVERY_CEILING) {
     bad.push(
-      `the envelope cap is ${cap} bytes. The oversize path exists because a 7 MB deck must stream to `
-      + "R2 without ever being decoded; a cap above that decodes it and exhausts the invocation.",
+      `the envelope cap is ${cap} bytes, under Email Routing's ${EMAIL_DELIVERY_CEILING}-byte ceiling, so an `
+      + "email that can arrive (a deck, a voice note) is stored unread and she is told it was too large.",
+    );
+  }
+  if (cap > 8 * 1024 * 1024 && !(cpuMs >= 30000)) {
+    bad.push(
+      `the envelope cap is ${cap} bytes but wrangler.toml declares no [env.production.limits] cpu_ms of at `
+      + "least 30000, so a big read runs under the default limit and can be killed mid-read.",
     );
   }
 
@@ -230,6 +254,8 @@ export function theHandlerPassesItOn(source) {
 
 const handlerPath = join(ROOT, HANDLER);
 const handlerSource = existsSync(handlerPath) ? readFileSync(handlerPath, "utf8") : null;
+const tomlPath = join(ROOT, "wrangler.toml");
+const cpuMs = cpuLimitIn(existsSync(tomlPath) ? readFileSync(tomlPath, "utf8") : null);
 
 if (process.argv.includes("--self-test")) {
   let failed = 0;
@@ -243,7 +269,7 @@ if (process.argv.includes("--self-test")) {
   const her = herMessage();
   const cap = envelopeCapIn(handlerSource);
 
-  expect("the shipped cap admits her real message and keeps the decode cap", theCapIsMeasuredOnTheReadableText(cap, her), false);
+  expect("the shipped cap admits her real message and keeps the decode cap", theCapIsMeasuredOnTheReadableText(cap, her, cpuMs), false);
   expect("an unread message is never nothing to act on", unreadIsNeverNothingToActOn(), false);
   expect("the real handler passes the flag on", theHandlerPassesItOn(handlerSource), false);
 
@@ -253,7 +279,8 @@ if (process.argv.includes("--self-test")) {
    * with an exit code.
    */
   expect("the 512 KB cap that skipped her message", theCapIsMeasuredOnTheReadableText(512 * 1024, her), true);
-  expect("a cap raised so far the 7 MB deck would be decoded", theCapIsMeasuredOnTheReadableText(64 * 1024 * 1024, her), true);
+  expect("the 4 MB cap that left a 6 MB email with a deck unread", theCapIsMeasuredOnTheReadableText(4 * 1024 * 1024, her, cpuMs), true);
+  expect("a big-mail cap with no production CPU limit declared", theCapIsMeasuredOnTheReadableText(30 * 1024 * 1024, her, null), true);
   expect("no fixture at all", theCapIsMeasuredOnTheReadableText(cap, null), true);
   expect("a cap that cannot be read out of the handler", theCapIsMeasuredOnTheReadableText(null, her), true);
   expect("a handler that stops telling the rules the text was unread", theHandlerPassesItOn(
@@ -289,7 +316,7 @@ if (UNREAD_CASES.length === 0) {
 }
 
 const problems = [
-  ...theCapIsMeasuredOnTheReadableText(envelopeCapIn(handlerSource), her),
+  ...theCapIsMeasuredOnTheReadableText(envelopeCapIn(handlerSource), her, cpuMs),
   ...unreadIsNeverNothingToActOn(),
   ...theHandlerPassesItOn(handlerSource),
 ];

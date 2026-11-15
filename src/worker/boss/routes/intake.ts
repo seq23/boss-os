@@ -320,6 +320,33 @@ intake.post("/mail", async (c) => {
 });
 
 /**
+ * `POST /api/intake/mail/dry-run` — READ A KEPT EMAIL, WRITE NOTHING (15 Nov 2026).
+ *
+ * `{ mail_id }` reads the email kept for that arrival row from R2; `{ raw }` reads a message posted
+ * whole. Returns what the mailbox would read (her words, every file, voice note and Drive link), who
+ * would get the work, and the Got it as it would be sent. Writes nothing and sends nothing
+ * (intake/dryRun.ts). Same authorisation as `/mail`: the session gate in front of `/api/*`.
+ */
+intake.post("/mail/dry-run", async (c) => {
+  const b = await c.req.json<{ mail_id?: string; raw?: string }>().catch(() => null);
+  let raw = typeof b?.raw === "string" ? b.raw : "";
+  let key: string | null = null;
+  if (!raw) {
+    const id = String(b?.mail_id ?? "").trim();
+    if (!id) throw badRequest("Name the email to read", "Send { mail_id } (an arrival row's id) or { raw } (a whole message).");
+    const row = await c.env.DB.prepare(`SELECT object_key FROM boss_inbound_mail WHERE id = ?`).bind(id).first<{ object_key: string | null }>();
+    if (!row) throw notFound("No arrival row has that id");
+    if (!row.object_key) throw notFound("That email was not kept, so it cannot be read again");
+    key = row.object_key;
+    const obj = await c.env.VAULT.get(key);
+    if (!obj) throw notFound("The kept email is not in storage any more");
+    raw = await obj.text();
+  }
+  const { dryReadMessage } = await import("../intake/dryRun");
+  return ok(c, { object_key: key, ...(await dryReadMessage(c.env, raw)) });
+});
+
+/**
  * `POST /api/intake/simone` — THE "TELL SIMONE" BOX ON TODAY (owner, 26 Oct 2026).
  *
  * "Same as emailing simone@sequoiataylor.com", and it is: the text becomes a message to simone@
