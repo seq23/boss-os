@@ -2,9 +2,9 @@
 /**
  * MONIQUE'S 8RAISE CREDITS — read, budgeted, logged (owner, 23 Oct 2026, ruling 12; Boss fix L).
  * duty_eightraise_budget, 06:25: reads the balance (free) and writes the morning footer line
- * "8Raise: Monique used N of her 75 credits this month (30 always kept for you)".
+ * "8Raise: Monique used N of her 135 credits this month (30 always kept for you)".
  *
- * The month (calendar, Central) on the 165-credit plan: prospecting ≤60, buyers for her supply ≤15;
+ * The month (calendar, Central) on the 165-credit plan: prospecting ≤120 (her call 15 Nov 2026: use the paid credits for prospects), buyers for her supply ≤15;
  * a hard stop when the balance would fall below 30; ≤5 contacts per search; one search per company
  * per month. NEVER buys credits, never upgrades: the only tools this file may call are on READ_TOOLS
  * and SPEND_TOOLS below, and none of them is billing (tests/boss/lpProspects.test.ts pins that).

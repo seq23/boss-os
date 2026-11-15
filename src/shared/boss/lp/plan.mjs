@@ -756,7 +756,7 @@ export function blur(name, email) {
 
 export const EIGHTRAISE_BUDGET = Object.freeze({
   plan: 165,
-  prospecting: 60,
+  prospecting: 120,
   buyers_for_supply: 15,
   floor: 30,
   per_search_contacts: 5,

@@ -17,7 +17,7 @@ it("writes ledger totals from 05:00 Central once daily, including empty days, pr
   const row = await env.DB.prepare("SELECT body FROM morning_sections WHERE section = 'eightraise'").first<{ body: string }>();
   const obj = JSON.parse(row!.body);
   expect(morningSectionProblems(obj)).toEqual([]);
-  expect(obj.credits).toEqual({ used: 7, budget: 75, kept: 30 });
+  expect(obj.credits).toEqual({ used: 7, budget: 135, kept: 30 });
   expect((await runEightraiseDaily(env, now + 3600000)).ran).toBe(false);
   await env.DB.prepare("UPDATE morning_sections SET job = 'lp-eightraise', body = 'mac copy'").run();
   expect((await runEightraiseDaily(env, now + 7200000)).ran).toBe(false);

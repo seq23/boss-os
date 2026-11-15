@@ -14,7 +14,7 @@
  *                   list. A vehicle has no email, so it is a LEAD (firm + filing link), kept on her Mac.
  *   3. sec_13f      SEC EDGAR 13F-HR filers whose names say family office / endowment / foundation /
  *                   pension / sovereign: institutions that hold public positions. Also leads.
- *   4. 8raise       only within the month's prospecting budget (≤60 credits, ≤5 contacts per search,
+ *   4. 8raise       only within the month's prospecting budget (≤120 credits, up to 25 firms a week, ≤5 contacts per search,
  *                   one search per firm per month, never below 30): the leads above, enriched to a
  *                   published contact, then LP-mode searches for family offices, sovereign wealth
  *                   funds and funds of funds. Without `--live` no credit is spent.
@@ -158,7 +158,7 @@ async function main() {
     console.log("DRY RUN: no 8Raise credit spent.");
   } else {
     const { spend8r, call8r } = await import("./lp-eightraise.mjs");
-    const fresh = merged.filter((l) => !l.enriched_month).slice(0, 5);
+    const fresh = merged.filter((l) => !l.enriched_month).slice(0, 25);
     const found = [];
     for (const l of fresh) {
       const r = await spend8r(api, { purpose: "prospecting", tool: "enrich_companies", args: { companies: [l.firm], max_per_firm: 1, tier: 1 }, credits: 1, company: l.firm, contacts: 1 })

@@ -57,7 +57,7 @@ export function check({ template, lpBody, installer, tapSrc, eightSrc, files, de
   if (/\bfund (size|of \$)|\$\d[\d,.]*\s?(m|mm|b|bn|million|billion)\s+fund\b/i.test(lpBody)) bad.push("LP reply: names a fund size");
 
   examined++;
-  const ledger = [{ month: "2026-10", purpose: "prospecting", credits: 58, company: "Acme" }];
+  const ledger = [{ month: "2026-10", purpose: "prospecting", credits: 118, company: "Acme" }];
   const tries = [
     [{ purpose: "prospecting", credits: 5, ledger, balance: 100, month: "2026-10" }, "over the month's prospecting budget"],
     [{ purpose: "buyers_for_supply", credits: 5, ledger: [], balance: 33, month: "2026-10" }, "below the floor of 30"],

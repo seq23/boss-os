@@ -179,15 +179,15 @@ describe("LP replies: her voice and the Decide item", () => {
 describe("8Raise budget (ruling 12)", () => {
   const L = [{ month: "2026-10", purpose: "prospecting", credits: 55, company: "Acme" }, { month: "2026-10", purpose: "buyers_for_supply", credits: 14 }];
   it("holds every limit and names why", () => {
-    expect(canSpend({ purpose: "prospecting", credits: 5, ledger: L, balance: 100, month: "2026-10" }).ok).toBe(true);
-    expect(canSpend({ purpose: "prospecting", credits: 6, ledger: L, balance: 100, month: "2026-10" }).why).toMatch(/5 of 60 left/);
+    expect(canSpend({ purpose: "prospecting", credits: 65, ledger: L, balance: 100, month: "2026-10" }).ok).toBe(true);
+    expect(canSpend({ purpose: "prospecting", credits: 66, ledger: L, balance: 100, month: "2026-10" }).why).toMatch(/65 of 120 left/);
     expect(canSpend({ purpose: "buyers_for_supply", credits: 2, ledger: L, balance: 100, month: "2026-10" }).ok).toBe(false);
     expect(canSpend({ purpose: "prospecting", credits: 1, ledger: L, balance: 30.5, month: "2026-10" }).why).toMatch(/below 30/);
     expect(canSpend({ purpose: "prospecting", credits: 1, contacts: 6, ledger: [], balance: 100, month: "2026-10" }).why).toMatch(/cap is 5/);
     expect(canSpend({ purpose: "prospecting", credits: 1, company: "ACME", ledger: L, balance: 100, month: "2026-10" }).why).toMatch(/already searched/);
     expect(canSpend({ purpose: "prospecting", credits: 1, ledger: [], balance: null, month: "2026-10" }).ok).toBe(false);
     expect(canSpend({ purpose: "purchase", credits: 1, ledger: [], balance: 100 }).ok).toBe(false);
-    expect(eightRaiseFooter(12)).toBe("8Raise: Monique used 12 of her 75 credits this month (30 always kept for you)");
+    expect(eightRaiseFooter(12)).toBe("8Raise: Monique used 12 of her 135 credits this month (30 always kept for you)");
   });
 });
 
