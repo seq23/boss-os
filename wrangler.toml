@@ -175,8 +175,12 @@ BOSS_SESSION_SECRET = "local-dev-session-secret-not-a-real-credential"
 # tick. Submitting a task now ALSO drains it immediately (see bossMount.ts), so the tick is a
 # safety net for work that was enqueued by something other than a request - a retry with a delay,
 # a task queued while the Worker was mid-deploy - rather than the only thing that moves the queue.
+#
+# THE FIVE-MINUTE TICK (15 Nov 2026) runs ONE thing: the "no Got it after five minutes" alarm
+# (src/worker/boss/intake/mailAlarm.ts). `scheduled` reads `event.cron` and returns after it, so the
+# hourly work above still runs once an hour and never twelve times.
 [triggers]
-crons = ["0 * * * *"]
+crons = ["0 * * * *", "*/5 * * * *"]
 
 # ---------------------------------------------------------------------------
 # production — the deployed profile (`wrangler deploy --env production`).
@@ -195,6 +199,12 @@ crons = ["0 * * * *"]
 [env.production]
 name = "boss-os"
 preview_urls = false
+
+# A BIG EMAIL IS READ WHOLE (15 Nov 2026, the West Peek OS #452 limit): her text, every file, every
+# voice note and every Drive link in the one run that answers her. 30 s of CPU is the ceiling for
+# that run, not its cost: the read is built to stay well under it (intake/readFiles.ts).
+[env.production.limits]
+cpu_ms = 30000
 
 [env.production.assets]
 directory = "./dist/client"

@@ -78,12 +78,29 @@ function nestedBoundaryOf(part: string): string | null {
  */
 const MAX_MIME_DEPTH = 6;
 
+/**
+ * SPLIT ONCE PER MESSAGE (15 Nov 2026, the West Peek OS #452 rule). One message is read by several
+ * readers in a row (voice notes, every other file); each used to split the whole multi-megabyte
+ * message again. The last split is kept and handed back for the same string.
+ */
+let lastSplit: { raw: string; boundary: string; parts: string[] } | null = null;
+/** How many times a message was actually split. Exposed for the test that pins one split per message. */
+export const mimeSplitCount = { n: 0 };
+
 /** Every leaf part of a message, flattened — descending into nested multiparts. */
-function leafParts(raw: string, boundary: string, depth = 0): string[] {
+function leafParts(raw: string, boundary: string): string[] {
+  if (lastSplit && lastSplit.raw === raw && lastSplit.boundary === boundary) return lastSplit.parts;
+  mimeSplitCount.n += 1;
+  const parts = splitLeafParts(raw, boundary);
+  lastSplit = { raw, boundary, parts };
+  return parts;
+}
+
+function splitLeafParts(raw: string, boundary: string, depth = 0): string[] {
   const out: string[] = [];
   for (const part of raw.split(`--${boundary}`)) {
     const inner = depth < MAX_MIME_DEPTH ? nestedBoundaryOf(part) : null;
-    if (inner) out.push(...leafParts(part, inner, depth + 1));
+    if (inner) out.push(...splitLeafParts(part, inner, depth + 1));
     else out.push(part);
   }
   return out;
@@ -110,7 +127,12 @@ function unfoldHeaders(raw: string): string {
 function headerIn(part: string, name: string): string | null {
   // Unfolds continuation lines first: a long filename is legally split across lines, and reading
   // only the first would truncate the name to something that looks deliberate.
-  const unfolded = part.replace(/\r?\n[ \t]+/g, " ");
+  // ONLY THE PART'S OWN HEADER BLOCK (15 Nov 2026): unfolding the whole part walked every megabyte of
+  // a base64 attachment, several times per part, per reader — that is where a big email's CPU went.
+  const crlf = part.indexOf("\r\n\r\n");
+  const lf = part.indexOf("\n\n");
+  const end = crlf === -1 ? lf : lf === -1 ? crlf : Math.min(crlf, lf);
+  const unfolded = (end === -1 ? part : part.slice(0, end)).replace(/\r?\n[ \t]+/g, " ");
   const m = new RegExp(`^${name}\\s*:\\s*(.+)$`, "im").exec(unfolded);
   return m ? m[1]!.trim() : null;
 }
@@ -119,7 +141,10 @@ function filenameIn(part: string): string {
   const disposition = headerIn(part, "content-disposition") ?? "";
   const type = headerIn(part, "content-type") ?? "";
   const m = /filename\*?=\s*"?([^";\r\n]+)"?/i.exec(disposition) ?? /name\s*=\s*"?([^";\r\n]+)"?/i.exec(type);
-  return (m ? m[1]!.trim() : "attachment.pdf").slice(0, 200);
+  if (m) return m[1]!.trim().slice(0, 200);
+  // No name: called by what it is, so a picture is never announced as "attachment.pdf".
+  const sub = /^[a-z]+\/([a-z0-9.+-]+)/i.exec(type)?.[1]?.toLowerCase();
+  return !type || sub === "pdf" ? "attachment.pdf" : `attachment.${(sub ?? "bin").replace(/^x-|\+.*$/g, "").slice(0, 8)}`;
 }
 
 /**
@@ -132,14 +157,50 @@ export function pdfAttachments(raw: string): { attachments: Attachment[]; unread
   return attachmentsOf(raw, (type) => type.includes("application/pdf"), () => "application/pdf", MAX_ATTACHMENTS);
 }
 
-/** A voice note is no bigger than this to be heard inside one invocation (Workers AI takes it whole). */
-export const MAX_VOICE_NOTE_BYTES = 3 * 1024 * 1024;
+/**
+ * A voice note up to this size is heard (15 Nov 2026: was 3 MB). Whisper takes it as the base64 TEXT
+ * the email already carries, so nothing is decoded or re-encoded here; the CPU is a copy, and the
+ * production Worker's CPU limit is 30 s (`[env.production.limits]`). A phone's few minutes of m4a is
+ * 1 to 20 MB; Email Routing refuses anything over 25 MB before it arrives.
+ */
+export const MAX_VOICE_NOTE_BYTES = 25 * 1024 * 1024;
 
 /** The audio files a person attached (a phone's "New Recording 4.m4a"), by type or by a sound file's name. */
 export function audioAttachments(raw: string): { attachments: Attachment[]; unread: string[] } {
   const isAudio = (type: string, part: string) => type.startsWith("audio/")
     || /name\*?=["']?[^"';\r\n]+\.(?:m4a|mp3|wav|aac|ogg|oga|opus|caf|amr|webm)\b/i.test(part.slice(0, 2000));
   return attachmentsOf(raw, isAudio, (type) => (type.split(";")[0] || "audio/mp4").trim(), 5, MAX_VOICE_NOTE_BYTES);
+}
+
+/**
+ * EVERY FILE IN THE MESSAGE (15 Nov 2026): every leaf that is not the message's own text — a PDF, a
+ * ZIP, a picture, a spreadsheet, a recording — with its base64 left as it is. A part with a filename,
+ * or any part whose type is not text/*, counts; the text/plain and text/html bodies do not.
+ */
+export function fileAttachments(raw: string, max = 40): { attachments: Attachment[]; unread: string[] } {
+  const isFile = (type: string, part: string) => {
+    if (type.startsWith("multipart/")) return false;
+    const head = part.slice(0, 2000);
+    const named = /(?:file)?name\*?=/i.test(head);
+    if (!type) return named;
+    return named || !type.startsWith("text/");
+  };
+  return attachmentsOf(raw, isFile, (type) => (type.split(";")[0] || "application/octet-stream").trim(), max, 30 * 1024 * 1024);
+}
+
+/** Base64 to bytes in one pass, without a per-byte callback. Throws on bad base64. */
+export function bytesOfBase64(b64: string): Uint8Array {
+  const bin = atob(b64.replace(/[\r\n\s]/g, ""));
+  const out = new Uint8Array(bin.length);
+  for (let i = 0; i < bin.length; i += 1) out[i] = bin.charCodeAt(i);
+  return out;
+}
+
+/** Bytes to base64 in 32 KB slices (a single String.fromCharCode over megabytes overflows the stack). */
+export function base64OfBytes(bytes: Uint8Array): string {
+  let s = "";
+  for (let i = 0; i < bytes.length; i += 0x8000) s += String.fromCharCode(...bytes.subarray(i, i + 0x8000));
+  return btoa(s);
 }
 
 function attachmentsOf(

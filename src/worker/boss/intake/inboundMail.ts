@@ -17,7 +17,9 @@ import { clarificationFor, isReplyMessage } from "../../../shared/boss/intake/cl
 import { handoffFor, seatInDepartment, huntRequestIn } from "../../../shared/boss/intake/handoff.mjs";
 import { campaignFromMail } from "../outreach/campaign";
 import { steerRound } from "../service/round";
-import { hearVoiceNotes, unheardLines, withVoiceNotes } from "./voiceNotes";
+import { unheardLines, withVoiceNotes } from "./voiceNotes";
+import { readEverything, EMPTY_FILES, type FilesRead } from "./readFiles";
+import { asksIn, gotItLines, filesForTask } from "./gotIt";
 import { taskBodyFrom, ownWords, readableText } from "../../../shared/boss/intake/messageBody.mjs";
 import { triage, triageLines, shortTitle, type TriageJob } from "../../../shared/boss/intake/triage.mjs";
 import { parseResearchPage } from "../../../shared/boss/research/page.mjs";
@@ -82,10 +84,23 @@ import { nudgeFromWords } from "../lp/nudge";
  * This one only has to be big enough that a normal mail client's envelope overhead cannot push a
  * small instruction over it, and small enough that a 7 MB deck still streams to R2 unparsed.
  *
- * 4 MB: eight times her real message, and still refuses the 7 MB deck that taught the oversize path
- * to exist. Guarded by `validate:unread-not-empty`, which measures her actual message.
+ * 30 MB (15 Nov 2026, was 4 MB): ABOVE Email Routing's own 25 MB ceiling, so every message that can
+ * arrive is read whole — text, every file, every voice note, every Drive link (readFiles.ts). The 4 MB
+ * cap left a 6 MB email with a deck and a voice note "too large to read here": stored, never read, and
+ * the reply said so. What made the big read affordable is the same as West Peek OS's #452: each part's
+ * headers are read from its own header block (not by walking megabytes of base64), the MIME tree is
+ * split once, a recording goes to Whisper as the base64 text it arrived as, and production's CPU limit
+ * is 30 s (`[env.production.limits] cpu_ms`). The oversize branch stays for anything bigger, which
+ * Email Routing does not deliver. Guarded by `validate:unread-not-empty`.
  */
-export const MAX_BODY_BYTES = 4 * 1024 * 1024;
+export const MAX_BODY_BYTES = 30 * 1024 * 1024;
+
+/** An arrival still RECEIVED after this long belongs to a run that was stopped (killed) before it finished. */
+export const STALE_ARRIVAL_MS = 4 * 60_000;
+/** Inline reads one message gets (the first delivery and one redelivery) before it is not tried again. */
+export const INLINE_READ_ATTEMPTS = 2;
+/** The named stop when two reads of one message were both stopped before they finished. */
+export const MAIL_READ_KILLED = "MAIL_READ_KILLED";
 
 /** Every active seat, which is the whole tag table. There is no second list. */
 export async function activeRoster(env: Env): Promise<BossSeat[]> {
@@ -322,15 +337,41 @@ export async function handleBossInboundMail(message: BossMailMessage, env: Env):
    * time: a second task, a second reply. A message already finished here is recorded as a duplicate
    * and nothing else happens. One left at RECEIVED never finished, so a second delivery may finish it.
    */
+  /*
+   * A RUN THAT WAS STOPPED BEFORE IT FINISHED (15 Nov 2026, checked against West Peek OS #452). A Worker
+   * killed mid-read (its CPU limit) runs no catch, and Email Routing delivers the message again a few
+   * minutes later. Here the arrival row of a killed run stays RECEIVED, which the rule above never treats
+   * as worked, so the redelivery IS read. Two gaps were left, and both are closed here:
+   *   · a run killed AFTER the work was filed but before her reply went left a finished row whose reply
+   *     was still `due`: the redelivery was then a DUPLICATE and she never heard. The reply is kept on
+   *     the row (`reply_text`), and the redelivery sends it.
+   *   · a message whose every read is killed was read again on every redelivery, for ever, and nobody
+   *     was told. After INLINE_READ_ATTEMPTS stopped reads it is not read a third time: it is kept, she
+   *     is answered, and a NAMED STOP goes in her notices.
+   */
+  let attempt = 1;
   if (messageId && !viaConsole) {
-    const seen = await env.DB.prepare(`SELECT id FROM boss_inbound_mail WHERE message_id = ? AND outcome NOT IN ('RECEIVED', 'DUPLICATE') LIMIT 1`).bind(messageId).first<{ id: string }>();
+    const earlier = (await env.DB.prepare(`SELECT id, outcome, reply_state, reply_text, received_at, employee_id FROM boss_inbound_mail WHERE message_id = ? ORDER BY received_at`)
+      .bind(messageId).all<{ id: string; outcome: string; reply_state: string | null; reply_text: string | null; received_at: number; employee_id: string | null }>()).results ?? [];
+    const seen = earlier.find((r) => r.outcome !== "RECEIVED" && r.outcome !== "DUPLICATE");
     if (seen) {
+      const unsent = seen.reply_state === "due" && Boolean(seen.reply_text) && now - seen.received_at > STALE_ARRIVAL_MS;
       await env.DB.prepare(
-        `INSERT INTO boss_inbound_mail (id, received_at, to_addr, from_addr, dmarc_pass, authorised, subject, outcome, why, bytes, message_id, reply_state)
-         VALUES (?,?,?,?,?,?,?,'DUPLICATE',?,?,?,'none_due')`,
-      ).bind(mailId, now, to, sender, dmarc ? 1 : 0, authorised ? 1 : 0, subject.slice(0, 400), `The same email (Message-ID) was already worked as ${seen.id}; nothing was done twice.`, message.rawSize, messageId).run();
-      return { mailId, outcome: "DUPLICATE", employeeId: null, taskId: null, reply: null, messageId };
+        `INSERT INTO boss_inbound_mail (id, received_at, to_addr, from_addr, dmarc_pass, authorised, subject, outcome, why, bytes, message_id, reply_state, reply_text)
+         VALUES (?,?,?,?,?,?,?,'DUPLICATE',?,?,?,?,?)`,
+      ).bind(mailId, now, to, sender, dmarc ? 1 : 0, authorised ? 1 : 0, subject.slice(0, 400),
+        unsent
+          ? `The same email (Message-ID) was already worked as ${seen.id}, but its reply never went (the run was stopped first), so this delivery sends that reply. Nothing was done twice.`
+          : `The same email (Message-ID) was already worked as ${seen.id}; nothing was done twice.`,
+        message.rawSize, messageId, unsent ? "due" : "none_due", unsent ? seen.reply_text : null).run();
+      if (!unsent) return { mailId, outcome: "DUPLICATE", employeeId: null, taskId: null, reply: null, messageId };
+      await env.DB.prepare(`UPDATE boss_inbound_mail SET reply_state = 'sent_on_redelivery' WHERE id = ?`).bind(seen.id).run();
+      const signer = seen.employee_id ? (await env.DB.prepare(`SELECT name FROM employees WHERE id = ?`).bind(seen.employee_id).first<{ name: string }>())?.name ?? "Simone" : "Simone";
+      return { mailId, outcome: "DUPLICATE", employeeId: seen.employee_id, taskId: null, reply: seen.reply_text, messageId, signer };
     }
+    const stopped = earlier.filter((r) => r.outcome === "RECEIVED").length;
+    attempt = stopped + 1;
+    if (authorised && stopped >= INLINE_READ_ATTEMPTS) return notReadTwice(env, message, { mailId, now, to, sender, dmarc, subject, messageId, attempt });
   }
   const chain = chainIds(message.headers.get("references"), message.headers.get("in-reply-to"));
   const parent = chain.length ? await env.DB.prepare(`SELECT thread_id FROM boss_inbound_mail WHERE message_id = ? UNION ALL SELECT thread_id FROM boss_sent_mail WHERE message_id = ? LIMIT 1`).bind(chain[chain.length - 1], chain[chain.length - 1]).first<{ thread_id: string }>() : null;
@@ -338,14 +379,14 @@ export async function handleBossInboundMail(message: BossMailMessage, env: Env):
   const recordArrival = async (outcome: string, why: string) => {
     await env.DB.prepare(
       `INSERT INTO boss_inbound_mail
-         (id, received_at, to_addr, from_addr, dmarc_pass, authorised, subject, outcome, why, bytes, message_id, reply_state, thread_id, in_reply_to)
-       VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
+         (id, received_at, to_addr, from_addr, dmarc_pass, authorised, subject, outcome, why, bytes, message_id, reply_state, thread_id, in_reply_to, attempt)
+       VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
     ).bind(
       mailId, now, to, sender, dmarc ? 1 : 0, authorised ? 1 : 0, subject.slice(0, 400),
       outcome, why.slice(0, 1000), message.rawSize, messageId,
       // An unauthorised sender is answered with silence on purpose; that is not a reply that failed.
       authorised ? "due" : "none_due",
-      threadId, message.headers.get("in-reply-to"),
+      threadId, message.headers.get("in-reply-to"), attempt,
     ).run();
   };
 
@@ -356,11 +397,11 @@ export async function handleBossInboundMail(message: BossMailMessage, env: Env):
     const replyState = !row.reply ? "none_due" : viaConsole ? "shown_on_screen" : "due";
     await env.DB.prepare(
       `UPDATE boss_inbound_mail
-          SET outcome = ?, why = ?, tag = ?, employee_id = ?, task_id = ?, object_key = ?, reply_state = ?
+          SET outcome = ?, why = ?, tag = ?, employee_id = ?, task_id = ?, object_key = ?, reply_state = ?, reply_text = ?
         WHERE id = ?`,
     ).bind(
       row.outcome, row.why.slice(0, 1000), row.tag ?? null, row.employeeId ?? null,
-      row.taskId ?? null, row.objectKey ?? null, replyState, mailId,
+      row.taskId ?? null, row.objectKey ?? null, replyState, replyState === "due" ? (row.reply ?? "").slice(0, 20_000) : null, mailId,
     ).run();
   };
 
@@ -531,12 +572,18 @@ export async function handleBossInboundMail(message: BossMailMessage, env: Env):
    * HER VOICE NOTES ARE HER WORDS (intake/voiceNotes.ts). A recording is transcribed and joins what she
    * typed, everywhere below; one that cannot be heard is a named stop in the reply and on the job.
    */
-  const voice = rawMessage && /^content-type:\s*audio\/|\.(?:m4a|mp3|wav|aac|ogg|oga|opus|caf|amr|webm)\b/im.test(rawMessage)
-    ? await hearVoiceNotes(env, rawMessage)
-    : { heard: [], failed: [] };
+  /*
+   * AND EVERY FILE AND DRIVE LINK SHE SENT (15 Nov 2026, readFiles.ts): read before anything is decided
+   * or answered, so the Got it can say what was read and name what could not be opened.
+   */
+  const files: FilesRead = rawMessage ? await readEverything(env, rawMessage, read?.readable ?? "") : EMPTY_FILES;
+  const voice = { heard: files.heard, failed: files.unopened.filter((u) => u.audio) };
   const unheard = unheardLines(voice.failed);
   const readable = withVoiceNotes(read?.readable ?? "", voice.heard);
-  const taskBody = [withVoiceNotes(read?.body ?? "", voice.heard), ...unheard].filter(Boolean).join("\n\n");
+  const filesBlock = filesForTask(files);
+  // The files that could not be opened, said on EVERY reply, including a lane's own answer.
+  const filesNote = gotItLines({ asks: [], files: { ...files, heard: [], read: [], zips: [] } });
+  const taskBody = [withVoiceNotes(read?.body ?? "", voice.heard), filesBlock, ...unheard].filter(Boolean).join("\n\n");
   /*
    * HER WORDS, NOT THE EMAIL SHE IS ANSWERING (27 Oct 2026). Every keyword reader below (routing,
    * handoff, the hunt, triage, list edits, a close, a book guess, a deadline, "your call") reads
@@ -641,7 +688,7 @@ export async function handleBossInboundMail(message: BossMailMessage, env: Env):
    */
   const campaign = own ? await campaignFromMail(env, { text: own, subject: trueSubjectOf(readable, subject), mailId, messageId: messageId || null, now, viaConsole }) : null;
   if (campaign) {
-    const campaignReply = [campaign.reply, ...(secrets?.line ? ["", secrets.line] : [])].join("\n");
+    const campaignReply = [campaign.reply, ...(filesNote.length ? ["", ...filesNote] : []), ...(secrets?.line ? ["", secrets.line] : [])].join("\n");
     await finish({ outcome: campaign.outcome, why: `Monique took it by rule: ${campaign.outcome.toLowerCase().replace(/_/g, " ")}${campaign.campaignId ? ` ${campaign.campaignId}` : ""}.`, employeeId: "emp_relationship", objectKey, reply: campaignReply });
     await audit(env.DB, { actor: "boss", lane: "ops", entityType: "inbound_mail", entityId: mailId, action: "campaign", detail: { outcome: campaign.outcome, campaign_id: campaign.campaignId } });
     return { mailId, outcome: campaign.outcome, employeeId: "emp_relationship", taskId: null, reply: campaignReply, messageId, signer: "Monique" };
@@ -659,7 +706,7 @@ export async function handleBossInboundMail(message: BossMailMessage, env: Env):
     : null;
   if (command) {
     if (command.commandIds.length === 1) await env.DB.prepare(`UPDATE boss_inbound_mail SET command_id = ?, thread_id = ? WHERE id = ?`).bind(command.commandIds[0], command.commandIds[0], mailId).run();
-    const commandReply = [command.reply, ...(secrets?.line ? ["", secrets.line] : [])].join("\n");
+    const commandReply = [command.reply, ...(filesNote.length ? ["", ...filesNote] : []), ...(secrets?.line ? ["", secrets.line] : [])].join("\n");
     await finish({ outcome: command.outcome, why: command.why ?? `Simone did it: ${command.commandIds.join(", ")}`, taskId: command.taskId, employeeId: "emp_chief", objectKey, reply: commandReply });
     return { mailId, outcome: command.outcome, employeeId: "emp_chief", taskId: command.taskId, reply: commandReply, messageId, signer: "Simone", jobs: command.jobs ?? [] };
   }
@@ -1028,7 +1075,7 @@ export async function handleBossInboundMail(message: BossMailMessage, env: Env):
       const title = strippedSubject(trueSubject)
         ? strippedSubject(trueSubject) + (triaged.length > 1 ? ` (${i + 1} of ${triaged.length})` : "")
         : shortTitle(job.ask, 80) || `Mail from ${sender}`;
-      let body = job.text + replyingTo;
+      let body = job.text + (filesBlock ? `\n\n${filesBlock}` : "") + replyingTo;
       // "your call" anywhere in her email pre-approves every job in it.
       if (preApproved && !preApprovalIn(body)) body = `${body}\n\n(Her email said "${preApproved}": pre-approved.)`;
       // Camille's executor is the research page; a question she was handed IS one.
@@ -1207,6 +1254,12 @@ function headline(text: string): string {
     ...(notBefore && taskId ? [`Held until ${dueLine({ due_at: notBefore.at, due_words: notBefore.words })!.replace(/^due /, "")}; nothing starts before then.`] : []),
     ...(due && taskId ? [`Deadline read from your words: ${dueLine(due)}.`] : []),
   ];
+  /*
+   * THE GOT IT, AFTER A REAL READ (15 Nov 2026). Work was opened: her asks back in her words, what was
+   * read, and every file that could not be opened. Work was not opened (a question back, an answer
+   * filed on a card): only the files that could not be opened, so a missing file is never silent.
+   */
+  const gotIt = taskId || triageTasks.length ? gotItLines({ asks: asksIn(own), files }) : [];
   const reply = stopped ? [
     stopped,
     ...(serviceLines.length ? ["", ...serviceLines] : []),
@@ -1217,7 +1270,9 @@ function headline(text: string): string {
      */
     // An answer to a card in her email (a dismissal, the prospect email) already says what it did.
     ...(route.outcome !== "ROUTED" && !dutyNote && !dismissAnswer ? ["", "—", "", replyBody(route, roster, trueSubject)] : []),
+    ...(filesNote.length ? ["", ...filesNote] : []),
   ].join("\n") : [triaged.length ? triageReply(triageTasks, { tags: route.unknownTags, roster }) : followed ? followReply(followed) : replyBody(route, roster, trueSubject),
+    ...(gotIt.length ? ["", ...gotIt] : []),
     ...(bookNote ? ["", bookNote] : []),
     ...(bookFailure ? ["", bookFailure] : []),
     ...(admitFailure ? ["", `I did NOT open work for this: ${admitFailure}.`] : []),
@@ -1262,6 +1317,49 @@ function headline(text: string): string {
    */
   const signer = triaged.length && !dutyNote ? "Simone" : nameOf(signerId);
   return { mailId, outcome, employeeId: signerId, taskId, reply, messageId, signer, jobs };
+}
+
+/**
+ * NAMED STOP [MAIL_READ_KILLED]: two reads of this message were stopped before they finished, so it is
+ * not read a third time (the same work would hit the same wall). It is kept whole in R2, she is
+ * answered on this delivery, and ONE notice goes in her notices (an email from her Mac's drain) so the
+ * team reads it by hand. Nothing is started from it.
+ */
+async function notReadTwice(
+  env: Env, message: BossMailMessage,
+  m: { mailId: string; now: number; to: string; sender: string; dmarc: boolean; subject: string; messageId: string; attempt: number },
+): Promise<BossMailResult> {
+  const key = `boss-inbound-mail/${new Date(m.now).toISOString().slice(0, 10)}/${m.mailId}.eml`;
+  let kept: string | null = key;
+  try {
+    const sized = new FixedLengthStream(message.rawSize);
+    const pumped = message.raw.pipeTo(sized.writable);
+    await env.VAULT.put(key, sized.readable, { httpMetadata: { contentType: "message/rfc822" }, customMetadata: { from: m.sender.slice(0, 200), subject: m.subject.slice(0, 200) } });
+    await pumped;
+  } catch {
+    kept = null;
+  }
+  const why = `NAMED STOP [${MAIL_READ_KILLED}] Two reads of this email were stopped before they finished, so it was not read a third time. ${kept ? `It is kept whole at ${kept}.` : "Storing it failed too; it is still in the sender's mailbox."}`;
+  const reply = [
+    `Your email "${m.subject.slice(0, 120) || "with no subject"}" reached me, but reading it was stopped twice before it finished, so I did not try a third time. Nothing in it has started yet.`,
+    "",
+    kept ? "It is kept whole, and the team is reading it by hand now." : "The team has been told and is looking at it now.",
+    "If it is urgent, reply with the key part typed out, or send the files in a separate email, and it goes straight to work.",
+  ].join("\n");
+  await env.DB.prepare(
+    `INSERT INTO boss_inbound_mail (id, received_at, to_addr, from_addr, dmarc_pass, authorised, subject, outcome, why, bytes, message_id, reply_state, reply_text, object_key, attempt, employee_id)
+     VALUES (?,?,?,?,?,1,?,'NOT_READ_TWICE',?,?,?,'due',?,?,?,'emp_chief')`,
+  ).bind(m.mailId, m.now, m.to, m.sender, m.dmarc ? 1 : 0, m.subject.slice(0, 400), why.slice(0, 1000), message.rawSize, m.messageId, reply, kept, m.attempt).run();
+  await env.DB.prepare(
+    `INSERT INTO boss_task_notices (id, task_id, lane, from_name, kind, subject, body, created_at, needs_her) VALUES (?,?,'ops','Kendra','mail_not_read',?,?,?,1)`,
+  ).bind(newId("tnt"), m.mailId, `Your email could not be read: ${m.subject.slice(0, 120) || "no subject"}`, [
+    `What broke: your email "${m.subject.slice(0, 160)}" was being read twice and both reads were stopped before they finished.`,
+    `What was lost: Nothing. ${kept ? "It is kept whole." : "It is still in your sent mail."} Nothing in it was started.`,
+    "What is being done: it is not read automatically a third time; the team reads it by hand.",
+    "The one thing to do: if it is urgent, reply to it with the key part typed out.",
+  ].join("\n"), m.now).run();
+  await logEvent(env.DB, { level: "error", scope: "intake", event: "boss_mail_read_killed", lane: "ops", entityId: m.mailId, detail: { attempts: m.attempt - 1, bytes: message.rawSize, kept } });
+  return { mailId: m.mailId, outcome: "NOT_READ_TWICE", employeeId: "emp_chief", taskId: null, reply, messageId: m.messageId, signer: "Simone" };
 }
 
 /**

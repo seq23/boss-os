@@ -118,7 +118,9 @@ export function stoppedEmail(notice, task = null) {
  * labelled lines; this lays them out as an alarm with nothing for her to do. Null for any other notice
  * or one without its parts (it then goes as the plain note it always did). Pure; tested.
  */
-export const ALARM_KINDS = Object.freeze(["duty_not_running", "morning_missing"]);
+// …and an email of hers with no Got it after five minutes, or one two reads could not finish (15 Nov 2026,
+// src/worker/boss/intake/mailAlarm.ts and inboundMail.ts notReadTwice).
+export const ALARM_KINDS = Object.freeze(["duty_not_running", "morning_missing", "mail_no_got_it", "mail_not_read"]);
 export function alarmNoticeEmail(notice) {
   if (!ALARM_KINDS.includes(String(notice?.kind ?? ""))) return null;
   const part = (label) => new RegExp(`^${label}:[ \\t]*(.+)$`, "m").exec(String(notice.body ?? ""))?.[1]?.trim() ?? null;
@@ -134,7 +136,9 @@ export function alarmNoticeEmail(notice) {
     broke,
     lost: part("What was lost") ?? "Nothing.",
     doing,
-    status: notice.kind === "morning_missing" ? "Being fixed. You will get the morning email itself as soon as it works." : "Waiting to run again. You will not hear about this again unless it changes.",
+    status: notice.kind === "morning_missing" ? "Being fixed. You will get the morning email itself as soon as it works."
+      : /^mail_/.test(String(notice.kind)) ? "Your email is kept. You will hear back on its own thread."
+      : "Waiting to run again. You will not hear about this again unless it changes.",
     decide: [],
   });
 }

@@ -1269,6 +1269,30 @@
       }
     },
     {
+      "id": "boss-os-mail-alarm",
+      "name": "Boss OS no-Got-it alarm",
+      "what": "Every 5 minutes: an email of hers with no Got it after five minutes becomes one alarm notice (src/worker/boss/intake/mailAlarm.ts)",
+      "business": "personal",
+      "brand": "Boss OS",
+      "system": "cloudflare",
+      "slots": [
+        "every 5m"
+      ],
+      "emails": false,
+      "heavy": false,
+      "trigger": {
+        "repo": "boss-os",
+        "file": "wrangler.toml",
+        "crons": [
+          "*/5 * * * *"
+        ]
+      },
+      "output": {
+        "floor": 0,
+        "reason": "An alarm: a quiet five minutes raises nothing, and the run logs OUTPUT <n> mail_no_got_it_alarms with the count it checked."
+      }
+    },
+    {
       "id": "brains-pull",
       "name": "Brains copy",
       "what": "Copies the company brains to the Mac every hour.",

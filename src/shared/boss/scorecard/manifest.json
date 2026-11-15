@@ -2605,6 +2605,10 @@
     "join-west-peek-main-forms-mailer": {
       "kind": "system",
       "why": "Keeps the system running or checks it; it has no customer result of its own."
+    },
+    "boss-os-mail-alarm": {
+      "kind": "system",
+      "why": "Keeps the system running or checks it; it has no customer result of its own."
     }
   }
 }
