@@ -580,16 +580,31 @@ export async function recordProspectEvents(db: D1Database, events: ProspectEvent
  * bounced or blocked"). `prospectPlan` checks that list before EVERY touch, so no later email goes.
  * A prospect Boss OS already wrote to is marked bounced; one it never wrote to is only suppressed, so
  * another system's bounce does not trip this sequence's bounce brake.
+ *
+ * NEVER AGAIN, WHATEVER THE SENDER (owner, 15 Nov 2026: "make sure he never gets another outreach
+ * email ever"). Three more reasons, written by Monique's morning LP read and by hand:
+ *   replied       an LP who wrote back to the outreach at all (anything but an autoresponder)
+ *   call_booked   an LP with a call on her calendar, booked or held
+ *   owner_block   blocked by her
+ * None of them is a bounce: a prospect row is closed ("replied" if it was written to, else "done"),
+ * never marked bounced, so the bounce brake is not tripped.
  */
-export async function suppressAddresses(db: D1Database, emails: string[], reason: "bounced" | "invalid", now = Date.now()) {
+export const SUPPRESS_REASONS = ["bounced", "invalid", "replied", "call_booked", "owner_block"] as const;
+export type SuppressReason = typeof SUPPRESS_REASONS[number];
+const SUPPRESS_SOURCE: Record<SuppressReason, string> = {
+  bounced: "wp_mailbox_bounce", invalid: "neverbounce", replied: "lp_replied", call_booked: "lp_call_booked", owner_block: "owner_block",
+};
+
+export async function suppressAddresses(db: D1Database, emails: string[], reason: SuppressReason, now = Date.now()) {
   let n = 0;
   for (const raw of emails ?? []) {
     const email = String(raw ?? "").trim().toLowerCase();
     if (!/^[^@\s]+@[^@\s]+\.[a-z]{2,}$/i.test(email)) continue;
     const before = await isSuppressed(db, email);
-    await suppress(db, email, reason, reason === "invalid" ? "neverbounce" : "wp_mailbox_bounce", now);
+    await suppress(db, email, reason, SUPPRESS_SOURCE[reason], now);
     // A NeverBounce "invalid" is a check, not a bounce: it stops the prospect without holding the brake on.
-    await db.prepare(`UPDATE prospects SET status = ?, updated_at = ? WHERE email = ? AND status IN ('new','active') AND touches > 0`).bind(reason === "invalid" ? "done" : "bounced", now, email).run();
+    const touched = reason === "bounced" ? "bounced" : reason === "replied" || reason === "call_booked" ? "replied" : "done";
+    await db.prepare(`UPDATE prospects SET status = ?, updated_at = ? WHERE email = ? AND status IN ('new','active') AND touches > 0`).bind(touched, now, email).run();
     await db.prepare(`UPDATE prospects SET status = 'done', updated_at = ? WHERE email = ? AND status = 'new' AND touches = 0`).bind(now, email).run();
     if (!before) n++;
   }

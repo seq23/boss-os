@@ -35,10 +35,10 @@ import { nextDueAt } from "../duties/cadence";
 import { whereSheIs } from "../lp/schedule";
 // boss fix L
 import {
-  upsertLpRows, listLpRows, importProspects, prospectPlan, prospectsToVerify, recordVerdicts, recordProspectEvents, suppressAddresses, proposeTemplate,
+  upsertLpRows, listLpRows, importProspects, prospectPlan, prospectsToVerify, recordVerdicts, recordProspectEvents, suppressAddresses, SUPPRESS_REASONS, proposeTemplate,
   approvedTemplate, pendingTemplate, ledgerRows, readExclusions, prospectActivity, backfillTouches,
 } from "../lp/desk";
-import { LP_STATUS_LABEL, LP_WAITING_LABEL, canSpend, monthOf, monthSpent, nameRulesIn, MONIQUE_MONTHLY } from "../../../shared/boss/lp/plan.mjs";
+import { lpStatusLabel, canSpend, monthOf, monthSpent, nameRulesIn, MONIQUE_MONTHLY } from "../../../shared/boss/lp/plan.mjs";
 
 export const lp = new Hono<{ Bindings: Env; Variables: Vars }>();
 
@@ -169,7 +169,7 @@ lp.get("/replies", async (c) => {
   return ok(c, {
     rows: rows.map((r) => ({
       id: r.id, name: r.name, firm: r.firm, address: r.address, bucket: r.bucket, quote: r.quote, quiet: Boolean(r.quiet),
-      status: r.status, status_label: r.waiting_why ? LP_WAITING_LABEL : (LP_STATUS_LABEL as Record<string, string>)[r.status] ?? r.status, waiting_why: r.waiting_why ?? null,
+      status: r.status, status_label: lpStatusLabel(r), waiting_why: r.waiting_why ?? null,
       first_seen: r.first_seen, drafted_at: r.drafted_at, sent_at: r.sent_at, thread_id: r.thread_id,
       draft_message_id: r.draft_message_id, send_error: r.send_error,
       said: r.said, draft_body: r.draft_body, last_reply_text: r.last_reply_text, last_reply_at: r.last_reply_at,
@@ -252,7 +252,7 @@ lp.post("/prospects/verdicts", async (c) => {
 lp.post("/prospects/suppress", async (c) => {
   const b = await c.req.json<any>().catch(() => null);
   if (!Array.isArray(b?.emails)) throw badRequest("emails[] is required");
-  if (!["bounced", "invalid"].includes(b?.reason)) throw badRequest("reason must be bounced or invalid");
+  if (!(SUPPRESS_REASONS as readonly string[]).includes(b?.reason)) throw badRequest(`reason must be one of ${SUPPRESS_REASONS.join(", ")}`);
   const added = await suppressAddresses(c.env.DB, b.emails.slice(0, 2000), b.reason);
   return ok(c, { added, received: b.emails.length });
 });

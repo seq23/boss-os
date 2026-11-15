@@ -370,6 +370,10 @@ describe("routes and the one-tap links", () => {
     // One Boss OS never wrote to is only stopped, so another system's bounce does not trip this brake.
     expect((await env.DB.prepare(`SELECT status FROM prospects WHERE email = 'never.written@example.com'`).first<any>()).status).toBe("done");
     expect(await suppressAddresses(env.DB, ["bounced.lp@example.com"], "bounced", WED_10AM)).toBe(0); // idempotent
+    // A reply, a booked call or her own block stops the next touch too, and is never counted as a bounce (15 Nov 2026).
+    expect(await suppressAddresses(env.DB, ["fine.lp@example.com"], "call_booked", WED_10AM)).toBe(1);
+    expect((await prospectPlan(env.DB, WED_10AM)).sends).toEqual([]);
+    expect((await env.DB.prepare(`SELECT status FROM prospects WHERE email = 'fine.lp@example.com'`).first<any>()).status).toBe("replied");
     // Days later: still nothing.
     expect((await prospectPlan(env.DB, WED_10AM + 7 * DAY)).sends.map((s: any) => s.email)).not.toContain("bounced.lp@example.com");
   });

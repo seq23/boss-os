@@ -4,6 +4,7 @@ export const INBOX_LOOKBACK_DAYS: number;
 export const ORIGIN: string;
 export const LP_STATUS_LABEL: Readonly<Record<string, string>>;
 export const LP_WAITING_LABEL: string;
+export function lpStatusLabel(r: any, now?: number): string;
 export function lpRecipientLines(r: any): string[];
 export function lpReplyRecipients(r: { address: string; reply_to?: string | null; reply_cc?: string | null }): { to: string[]; cc: string[] };
 export const LP_UNSENT_URGENT_DAYS: number;
