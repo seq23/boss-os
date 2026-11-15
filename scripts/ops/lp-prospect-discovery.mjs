@@ -76,6 +76,11 @@ export function leadKind(name) {
  * (11 Oct 2026 lesson: on obscure firms the match is often a person at ANOTHER company — never
  * emailed). Pure.
  */
+/** True when 8Raise answered with an error instead of a result (nothing was spent). */
+export function isMcpError(text) {
+  return /^\s*MCP error\b/.test(String(text ?? "")) || /"isError"\s*:\s*true/.test(String(text ?? ""));
+}
+
 export function contactsIn(text, firm) {
   const words = String(firm).toLowerCase().replace(/[^a-z0-9 ]/g, " ").split(/\s+/).filter((w) => w.length >= 4 && !/^(capital|partners|group|holdings|management|investments?|family|office|fund|llc|the)$/.test(w));
   const out = [];
@@ -160,32 +165,52 @@ async function main() {
     const { spend8r, call8r } = await import("./lp-eightraise.mjs");
     const fresh = merged.filter((l) => !l.enriched_month).slice(0, 25);
     const found = [];
+    const jobs = [];
+    // 8Raise's enrich_companies takes `firms` and a `delivery_tier` (1 = contact details only, 1 credit a contact).
+    // A reply that is an MCP error spent nothing: it is a named stop, nothing is marked searched (15 Nov 2026: a
+    // renamed field turned 25 searches into 25 silent errors).
     for (const l of fresh) {
-      const r = await spend8r(api, { purpose: "prospecting", tool: "enrich_companies", args: { companies: [l.firm], max_per_firm: 1, tier: 1 }, credits: 1, company: l.firm, contacts: 1 })
+      const r = await spend8r(api, { purpose: "prospecting", tool: "enrich_companies", args: { firms: [l.firm], max_per_firm: 1, delivery_tier: 1, firm_geography: "United States", channels: { email: true, linkedin: true, phone: false } }, credits: 1, company: l.firm, contacts: 1 })
         .catch((e) => ({ ok: false, why: e.message }));
       if (!r.ok) { console.log(`8Raise: stopped — ${r.why}`); break; }
+      const text = String(r.out ?? "");
+      if (isMcpError(text)) { console.log(`NAMED STOP [8RAISE_CALL_REJECTED] enrich_companies: ${text.slice(0, 160)}`); break; }
       l.enriched_month = new Date(now).toISOString().slice(0, 7);
-      // Enrichment can be a job: poll its status (free) a few times for the delivered contact.
-      let text = String(r.out ?? "");
-      const job = /"?(?:job_id|enrichment_id|id)"?\s*[:=]\s*"?([0-9a-f-]{8,})/i.exec(text)?.[1];
-      for (let i = 0; job && i < 8 && !contactsIn(text, l.firm).length; i++) {
-        await sleep(15_000);
-        text = call8r("check_enrichment_status", { job_id: job });
-      }
-      for (const c of contactsIn(text, l.firm)) found.push({ ...c, firm: l.firm, kind: l.kind, source: `8raise_via_${l.source}`, source_ref: l.source_ref });
+      const job = /"job_id"\s*:\s*"([0-9a-f-]{8,})"/i.exec(text)?.[1];
+      if (job) jobs.push({ job, lead: l });
+      else for (const c of contactsIn(text, l.firm)) found.push({ ...c, firm: l.firm, kind: l.kind, source: `8raise_via_${l.source}`, source_ref: l.source_ref });
     }
+    // Enrichment runs on 8Raise's side (about a minute a firm, in parallel): poll every job (free) for up to 15 minutes.
+    const deadline = Date.now() + 15 * 60_000;
+    let open = [...jobs];
+    while (open.length && Date.now() < deadline) {
+      await sleep(30_000);
+      const still = [];
+      for (const j of open) {
+        const text = String(call8r("check_enrichment_status", { job_id: j.job }) ?? "");
+        if (!/"status"\s*:\s*"done"/.test(text)) { if (!/"status"\s*:\s*"cancelled"/.test(text)) still.push(j); continue; }
+        for (const c of contactsIn(text, j.lead.firm)) found.push({ ...c, firm: j.lead.firm, kind: j.lead.kind, source: `8raise_via_${j.lead.source}`, source_ref: j.lead.source_ref });
+      }
+      open = still;
+    }
+    console.log(`8Raise: ${jobs.length} firm(s) searched, ${jobs.length - open.length} finished${open.length ? `, ${open.length} still running on 8Raise (their contacts land in the 8Raise dashboard)` : ""}.`);
     // One LP-mode search a week for the types she named, 5 contacts, inside the same budget.
-    const brief = "Family offices, sovereign wealth funds and funds of funds that invest directly in late-stage private technology companies, including secondaries. 5 contacts.";
+    const brief = "Family offices and sovereign wealth funds that invest in late-stage technology companies, including secondaries. 5 contacts.";
     try {
-      const refined = JSON.parse(call8r("refine_query", { query: brief }) || "{}");
+      let refined = JSON.parse(call8r("refine_query", { user_message: brief }) || "{}");
+      // A term 8Raise has no sector for: use it as a free-text keyword, as 8Raise's own answer says to.
+      if (refined.status === "needs_sector_pick" && refined.current_partial) {
+        refined = JSON.parse(call8r("refine_query", { user_message: "use it as free text", partial_query: refined.current_partial }) || "{}");
+      }
       const query = refined.structured_query ?? refined.query ?? null;
       if (query) {
-        const r = await spend8r(api, { purpose: "prospecting", tool: "search_investors", args: { query, lead_count: 5, user_confirmed: true }, credits: 5, company: `lp-mode ${new Date(now).toISOString().slice(0, 10)}`, contacts: 5 });
-        if (r.ok) for (const m of String(r.out).matchAll(/([A-Z][a-z'’-]+(?: [A-Z][a-z'’-]+){0,2})?[^@\n]{0,80}?\b([\w.+-]+@[\w-]+\.[\w.-]+)/g)) {
+        const r = await spend8r(api, { purpose: "prospecting", tool: "search_investors", args: { query: typeof query === "string" ? query : JSON.stringify(query) }, credits: 5, company: `lp-mode ${new Date(now).toISOString().slice(0, 10)}`, contacts: 5 });
+        if (r.ok && isMcpError(String(r.out))) console.log(`NAMED STOP [8RAISE_CALL_REJECTED] search_investors: ${String(r.out).slice(0, 160)}`);
+        else if (r.ok) for (const m of String(r.out).matchAll(/([A-Z][a-z'’-]+(?: [A-Z][a-z'’-]+){0,2})?[^@\n]{0,80}?\b([\w.+-]+@[\w-]+\.[\w.-]+)/g)) {
           if (!/@(gmail|yahoo|outlook|hotmail|icloud|aol)\./i.test(m[2])) found.push({ email: m[2].toLowerCase(), name: m[1] ?? null, kind: "family_office", source: "8raise_lp_mode", source_ref: brief.slice(0, 80) });
         }
         else console.log(`8Raise LP mode: not run — ${r.why}`);
-      } else console.log("8Raise LP mode: the brief needs a choice 8Raise asked about; not run.");
+      } else console.log(`8Raise LP mode: 8Raise asked a question (${refined.status ?? "no status"}); not run.`);
     } catch (e) { console.log(`8Raise LP mode: ${e.message}`); }
     if (found.length) {
       const r = await api.post("/lp/prospects/import", { rows: found });
