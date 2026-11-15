@@ -216,6 +216,35 @@ tasks.post("/:id/hunt-result", async (c) => {
  * longer wanted (its cause fixed at source, superseded, done another way). The reason is optional for
  * her button and stored on the row, the task event and the audit log alike.
  */
+/**
+ * `POST /api/tasks/:id/take-over` — SHE (OR A SESSION OF HERS) IS DOING THIS BY HAND (15 Nov 2026).
+ * The queue skips it, and a reply on its thread is added to it and answered "being handled in a
+ * session" (service/takeover.ts). `POST /:id/hand-back` returns it to the queue.
+ */
+tasks.post("/:id/take-over", async (c) => {
+  const id = c.req.param("id");
+  const b = await c.req.json<{ note?: string }>().catch(() => null);
+  const row = await c.env.DB.prepare(`SELECT input, status FROM tasks WHERE id = ?`).bind(id).first<{ input: string | null; status: string }>();
+  if (!row) throw notFound("No task has that id");
+  let input: Record<string, unknown> = {};
+  try { input = JSON.parse(row.input ?? "{}") ?? {}; } catch { input = {}; }
+  input.taken_over = { at: Date.now(), by: "session", note: String(b?.note ?? "").slice(0, 300) || null };
+  await c.env.DB.prepare(`UPDATE tasks SET input = ? WHERE id = ?`).bind(JSON.stringify(input), id).run();
+  return ok(c, { id, taken_over: true });
+});
+
+tasks.post("/:id/hand-back", async (c) => {
+  const id = c.req.param("id");
+  const row = await c.env.DB.prepare(`SELECT input, lane, status FROM tasks WHERE id = ?`).bind(id).first<{ input: string | null; lane: string; status: string }>();
+  if (!row) throw notFound("No task has that id");
+  let input: Record<string, unknown> = {};
+  try { input = JSON.parse(row.input ?? "{}") ?? {}; } catch { input = {}; }
+  delete input.taken_over;
+  await c.env.DB.prepare(`UPDATE tasks SET input = ? WHERE id = ?`).bind(JSON.stringify(input), id).run();
+  if (row.status !== "done" && row.status !== "cancelled") await c.env.TASKS.send({ taskId: id, lane: row.lane });
+  return ok(c, { id, taken_over: false });
+});
+
 tasks.post("/:id/cancel", async (c) => {
   const id = c.req.param("id");
   const b = await c.req.json<any>().catch(() => null);

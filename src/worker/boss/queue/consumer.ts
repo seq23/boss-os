@@ -66,6 +66,11 @@ export async function handleTask(env: Env, msg: TaskMessage): Promise<void> {
   }
   if (task.status === "cancelled" || task.status === "done") return;
   // She said "stop" / "hold" / "wait" on the thread (service/round.ts): nothing runs until she says go.
+  // …and a job she took over in a session (service/takeover.ts) is hers until she hands it back.
+  if (safeJson(task.input ?? "").taken_over) {
+    await env.DB.prepare(`INSERT INTO task_events (id, task_id, ts, event, detail) VALUES (?,?,?,'skipped_taken_over',NULL)`).bind(newId("tev"), task.id, Date.now()).run();
+    return;
+  }
   if (safeJson(task.input ?? "").held_by_her) {
     await env.DB.prepare(`INSERT INTO task_events (id, task_id, ts, event, detail) VALUES (?,?,?,'skipped_held_by_her',NULL)`).bind(newId("tev"), task.id, Date.now()).run();
     return;

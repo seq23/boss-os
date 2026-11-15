@@ -12,6 +12,7 @@ import type { Env } from "../env";
 import { activeRoster } from "./inboundMail";
 import { readEverything } from "./readFiles";
 import { asksIn, gotItLines } from "./gotIt";
+import { firstRead, unclearLines } from "./firstRead";
 import { layReply } from "./mailRefs";
 import { triageReply } from "./inboundMail";
 import { unheardLines, withVoiceNotes } from "./voiceNotes";
@@ -41,6 +42,7 @@ export interface DryRead {
   would_route_to: string[];
   typed_chars: number;
   asks: string[];
+  first_read: { reader: string | null; stop: string | null; tried: string[]; holds: number; questions: number; unclear: number; unclear_items: Array<{ words: string; missing: string }> } | null;
   files: { heard: string[]; read: string[]; zips: Array<{ filename: string; files: number }>; unopened: Array<{ filename: string; reason: string }> };
   reply_text: string;
   got_it: { subject: string; text: string };
@@ -55,7 +57,11 @@ export async function dryReadMessage(env: Env, raw: string): Promise<DryRead> {
   const own = withVoiceNotes(ownWords(read.readable ?? ""), files.heard);
   const roster = await activeRoster(env);
   const route = routeToSeat(`${subject}\n${own}`, roster, to);
-  const asks = asksIn(own);
+  // The first read, dry: the free ladder is walked, but no Workers AI slot is claimed and nothing is logged.
+  const fileNames = [...files.heard.map((h) => h.filename), ...files.read.map((r) => r.filename), ...files.unopened.map((u) => u.filename)];
+  const first = own.trim() ? await firstRead(env, { subject, words: own, files: fileNames, dry: true }) : null;
+  const brief = first?.brief ?? null;
+  const asks = brief?.asks.length ? brief.asks : asksIn(own);
   let head: string;
   let seats: string[];
   if (route && route.outcome === "DEFAULTED") {
@@ -69,7 +75,7 @@ export async function dryReadMessage(env: Env, raw: string): Promise<DryRead> {
     head = route ? replyBody(route, roster, subject) : "No seat could be read.";
   }
   const unheard = unheardLines(files.unopened.filter((u) => u.audio).map((u) => ({ filename: u.filename, reason: u.reason })));
-  const lines = gotItLines({ asks, files });
+  const lines = gotItLines({ asks, files, holds: brief?.holds, questions: brief?.questions, unclear: unclearLines(brief?.unclear ?? []) });
   const replyText = [head, ...(lines.length ? ["", ...lines] : []), ...(unheard.length ? ["", ...unheard] : [])].join("\n");
   const replySubject = `Re: ${subject || "your message"}`.replace(/\s+/g, " ").trim().slice(0, 200);
   const laid = layReply({ text: replyText, subject: replySubject, signer: "Simone" });
@@ -81,6 +87,7 @@ export async function dryReadMessage(env: Env, raw: string): Promise<DryRead> {
     would_route_to: seats,
     typed_chars: own.length,
     asks,
+    first_read: first ? { reader: first.reader, stop: first.stop, tried: first.tried, holds: brief?.holds.length ?? 0, questions: brief?.questions.length ?? 0, unclear: brief?.unclear.length ?? 0, unclear_items: (brief?.unclear ?? []).map((u) => ({ words: u.words, missing: u.missing })) } : null,
     files: {
       heard: files.heard.map((h) => h.filename),
       read: files.read.map((r) => r.filename),

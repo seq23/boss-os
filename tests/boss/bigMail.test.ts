@@ -113,8 +113,9 @@ describe("a big email is read whole, then answered", () => {
     const splits = mimeSplitCount.n;
     const res = await handleBossInboundMail(mail(raw, "<big-12@mail.gmail.com>"), hearingEnv(seen) as never);
     expect(mimeSplitCount.n - splits, "the files are read from ONE split of the message").toBe(1);
-    expect(seen.length).toBe(1);
-    expect(seen[0]!.audioType, "Whisper is handed the base64 text, never a byte array the binding would JSON-serialise").toBe("string");
+    const heard = seen.filter((x) => /whisper/.test(x.model));
+    expect(heard.length).toBe(1);
+    expect(heard[0]!.audioType, "Whisper is handed the base64 text, never a byte array the binding would JSON-serialise").toBe("string");
     expect(res.taskId).toBeTruthy();
 
     const body = JSON.parse((await row<any>(`SELECT input FROM tasks WHERE id = ?`, res.taskId))!.input).body as string;

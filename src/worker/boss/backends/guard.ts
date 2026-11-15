@@ -230,6 +230,15 @@ const FREE_ROUTES: Record<string, { kind: "included_allowance" | "free_model_slu
     slugs: ["gemini-2.5-flash", "gemini-3.8-flash", "gemini-3.6-flash", "gemini-3.5-flash-lite", "gemini-3.1-flash-lite", "gemini-3-flash-preview"],
     basis: "Google's free tier bills nothing for these Gemini models (it may train on what it is sent). Any other model, gemini-4-argon and the 3.1 Pro previews included, is metered.",
   },
+  // Her email's first read on Workers AI (15 Nov 2026, intake/firstRead.ts): the last free rung, after
+  // the free OpenRouter and Gemini rows. 40 reads a day (Central), each about 6k tokens in and 1k out on
+  // Llama 3.3 70B, is well under a quarter of the account's 10,000 free neurons a day; the 41st read is
+  // skipped, NAMED STOP [FIRST_READ_FREE_CAP], never paid. FIRST_READ_DAILY_CAP is pinned to this.
+  svc_workers_ai_first_read: {
+    kind: "free_daily_quota",
+    dailyCap: 40,
+    basis: "Workers AI's included daily allowance, held to 40 first reads a day so the email reads can never spend past it.",
+  },
   bk_workers_ai: {
     kind: "included_allowance",
     basis: "Workers AI's included daily allowance on an account already paid for. No key, no egress, no per-call charge.",
