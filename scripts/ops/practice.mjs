@@ -59,7 +59,7 @@ export function printable(id, d) {
     `to ${d.to ?? "?"} · ${d.bytes} bytes · ${d.typed_chars} typed characters · would go to: ${d.would_route_to.join(", ") || "nobody"}`,
     "",
     "THE BRIEF",
-    fr ? `  first read by ${fr.reader ?? "no rung"}${fr.stop ? ` — stopped: ${fr.stop}` : ""} (tried: ${fr.tried.join(", ") || "none"})` : "  no first read (no words of hers)",
+    ...(fr ? [`  first read by ${fr.reader ?? "no rung"}${fr.stop ? ` — stopped: ${fr.stop}` : ""} `, ...(fr.tried.length ? fr.tried.map((t) => `    tried ${String(t).replace(/\s+/g, " ").slice(0, 110)}`) : ["    tried none"])] : ["  no first read (no words of hers)"]),
     ...d.asks.map((a) => `  ask: ${a}`),
     ...(fr ? [`  holds ${fr.holds} · questions ${fr.questions} · unclear ${fr.unclear}`, ...fr.unclear_items.map((u) => `  unclear: "${u.words}" — ${u.missing}`)] : []),
     `  files: heard ${d.files.heard.length} · read ${d.files.read.length} · zips ${d.files.zips.length} · unopened ${d.files.unopened.length}`,

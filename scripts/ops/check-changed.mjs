@@ -13,8 +13,9 @@
  *
  * What runs, in one go:
  *   1. typecheck (tsc --noEmit, the whole project: it is incremental-cheap and a type break travels).
- *   2. `vitest related --run <changed>` under BOTH configs (vitest.config.ts and vitest.boss.config.ts),
- *      so a change to a module runs every suite that imports it, directly or not, in either pool.
+ *   2. the suites that import a changed file (`relatedTests`), each under its own config: tests/boss/**
+ *      under vitest.boss.config.ts, the rest under vitest.config.ts. So a change to src/worker/index.ts
+ *      runs every suite that loads it. A change to a vitest config or a test stub runs that whole pool.
  *   3. the registered scans (`validate:scans`) that the change can affect. Every scan under ~5 s runs
  *      always (they are ~45 s in all, run 6 at a time); the scans in SLOW below run only when a changed
  *      path is one the scan's own scripts name (a path literal or a relative import in them) or the
@@ -24,7 +25,7 @@
  * Exit: 0 green · 1 a check failed (named) · 2 NAMED STOP [CHECK_CHANGED_NO_BASE] origin/main unreadable.
  */
 import { execFileSync, spawn } from "node:child_process";
-import { existsSync, readFileSync } from "node:fs";
+import { existsSync, readFileSync, readdirSync, statSync } from "node:fs";
 import { dirname, join, normalize, relative } from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -51,6 +52,59 @@ export function changedFiles(against = "origin/main") {
   ].filter(Boolean));
   return [...set].filter((f) => existsSync(join(ROOT, f))).sort();
 }
+
+const ALIASES = { "@shared/": "src/shared/", "@worker/": "src/worker/" };
+const RESOLVE_EXT = ["", ".ts", ".tsx", ".mts", ".mjs", ".js", "/index.ts", "/index.tsx", "/index.mjs", "/index.js"];
+
+/** Every file under a directory, repo-relative. */
+function walk(rel, out = []) {
+  let names = [];
+  try { names = readdirSync(join(ROOT, rel)); } catch { return out; }
+  for (const n of names) {
+    const r = `${rel}/${n}`;
+    if (n === "node_modules" || n.startsWith(".")) continue;
+    if (statSync(join(ROOT, r)).isDirectory()) walk(r, out); else out.push(r);
+  }
+  return out;
+}
+
+/** Repo-relative imports of one file (relative and @shared/@worker specifiers; `?raw` etc. stripped). Pure over text. */
+export function importsOf(text, file) {
+  const out = [];
+  for (const m of text.matchAll(/(?:\bfrom\s*|\bimport\s*\(?\s*|\brequire\(\s*)["']([^"']+)["']/g)) {
+    let spec = m[1].split("?")[0];
+    const alias = Object.keys(ALIASES).find((a) => spec.startsWith(a));
+    if (alias) spec = ALIASES[alias] + spec.slice(alias.length);
+    else if (spec.startsWith(".")) spec = normalize(join(dirname(file), spec));
+    else continue;
+    const hit = RESOLVE_EXT.map((e) => spec + e).find((c) => existsSync(join(ROOT, c)) && statSync(join(ROOT, c)).isFile())
+      ?? (spec.endsWith(".js") ? [spec.replace(/\.js$/, ".ts"), spec.replace(/\.js$/, ".tsx")].find((c) => existsSync(join(ROOT, c))) : undefined);
+    if (hit) out.push(hit);
+  }
+  return out;
+}
+
+/**
+ * The test files that import a changed file themselves (and a changed test file is its own answer):
+ * "the tests for the files it changed". Direct importers only, on purpose: measured 15 Nov 2026 on
+ * #422's diff, the transitive closure of a hub module (queue/consumer.ts, intake/inboundMail.ts) is
+ * 188 of 418 suites at three hops, which is the full suite by another name (572 s); CI runs that. One hop
+ * still catches #423's break, since every suite that loads src/worker/index.ts imports it directly.
+ * Computed from the import text: vitest's own `related` walk parses `?raw` markdown as code and dies
+ * under the Boss config. Returns repo-relative test paths.
+ */
+export function relatedTests(changed) {
+  const want = new Set(changed);
+  return walk("tests").filter((f) => /\.test\.tsx?$/.test(f)).filter((t) => {
+    if (want.has(t)) return true;
+    let text = "";
+    try { text = readFileSync(join(ROOT, t), "utf8"); } catch { return false; }
+    return importsOf(text, t).some((f) => want.has(f));
+  });
+}
+
+/** Split a file list into n near-equal slices (round robin), dropping empty ones. Pure. */
+export const slices = (files, n) => Array.from({ length: n }, (_, i) => files.filter((_, j) => j % n === i)).filter((s) => s.length);
 
 /** The scans in `validate:scans`, by npm script name, in order. */
 export function registeredScans(scripts) {
@@ -112,18 +166,25 @@ async function main() {
   const scripts = JSON.parse(readFileSync(join(ROOT, "package.json"), "utf8")).scripts;
   const code = changed.filter((f) => TEST_EXT.test(f));
   const { run, skipped } = scansFor(changed, scripts);
-  console.log(`check:changed — ${changed.length} file(s) changed vs ${bi > 0 ? process.argv[bi + 1] : "origin/main"}; ${code.length} code file(s) for vitest related; ${run.length} scan(s)${skipped.length ? `, skipped (paths untouched): ${skipped.join(", ")}` : ""}`);
+  console.log(`check:changed — ${changed.length} file(s) changed vs ${bi > 0 ? process.argv[bi + 1] : "origin/main"}; ${code.length} code file(s); ${run.length} scan(s)${skipped.length ? `, skipped (paths untouched): ${skipped.join(", ")}` : ""}`);
   if (listOnly) { for (const f of changed) console.log(`  ${f}`); process.exit(0); }
   if (!changed.length) { console.log("check:changed — nothing changed vs origin/main, nothing to check."); process.exit(0); }
 
   const t0 = Date.now();
   const npx = (args) => ["npx", ["--no-install", ...args]];
+  const related = code.length ? relatedTests(code) : [];
+  // A change to a config or a test stub reaches every suite of that pool without an import line.
+  const bossAll = changed.some((f) => /^(vitest\.boss\.config\.ts|tests\/boss\/setup\.ts)$/.test(f));
+  const nodeAll = changed.some((f) => /^(vitest\.config\.ts|tests\/stubs\/)/.test(f));
+  const bossTests = bossAll ? ["tests/boss"] : related.filter((f) => f.startsWith("tests/boss/"));
+  const nodeTests = nodeAll ? ["tests"] : related.filter((f) => !f.startsWith("tests/boss/"));
+  console.log(`  related suites: ${nodeAll ? "all (node config changed)" : nodeTests.length} node, ${bossAll ? "all (boss config changed)" : bossTests.length} boss`);
+  // The node pool runs four files at a time per process, so two processes stay under the port ceiling.
+  // The Boss pool stays ONE process: four side by side raced each other's workerd storage (15 Nov 2026).
   const heavy = [
-    () => sh("typecheck", ...npx(["tsc", "--noEmit"])),
-    ...(code.length ? [
-      () => sh("vitest related (node)", ...npx(["vitest", "related", "--run", "--passWithNoTests", "--no-file-parallelism", ...code])),
-      () => sh("vitest related (boss)", ...npx(["vitest", "related", "--run", "--passWithNoTests", "--config", "vitest.boss.config.ts", ...code])),
-    ] : []),
+    () => sh("typecheck", ...npx(["tsc", "--noEmit", "--incremental", "--tsBuildInfoFile", "node_modules/.cache/check-changed.tsbuildinfo"])),
+    ...slices(nodeTests, nodeAll ? 1 : 2).map((part, i, all) => () => sh(`tests (node ${i + 1}/${all.length}, ${part.length})`, ...npx(["vitest", "run", ...part]))),
+    ...slices(bossTests, 1).map((part, i, all) => () => sh(`tests (boss ${i + 1}/${all.length}, ${part.length})`, ...npx(["vitest", "run", "--config", "vitest.boss.config.ts", ...part]))),
   ];
   const scanJobs = run.map((name) => () => sh(name, "npm", ["run", "-s", name]));
   const [heavyResults, scanResults] = await Promise.all([pool(heavy, heavy.length), pool(scanJobs, 6)]);
