@@ -90,7 +90,8 @@ describe("meeting prep: the email", () => {
   it("carries every section with something real, in order, and passes the plain-email gate", () => {
     const p = prepEmail(kate, data);
     // No "What's relevant now": she is a fund LP prospect, and grid deals are for brokerage contacts only.
-    expect(p.sections.map((s: any) => s.title)).toEqual(["What it's probably about (a guess, from your records)", "Who they are", "Your history", "What you referenced", "Goals and questions", "Have ready", "Open between you", "Logistics"]);
+    // A family office: "Where the money comes from" follows Who they are (owner, 15 Nov 2026), never left out.
+    expect(p.sections.map((s: any) => s.title)).toEqual(["What it's probably about (a guess, from your records)", "Who they are", "Where the money comes from", "Your history", "What you referenced", "Goals and questions", "Have ready", "Open between you", "Logistics"]);
     expect(p.needsPurpose).toBe(false);
     expect(p.laid.text).toContain("The fund: they are an LP prospect and said they are interested.");
     expect(p.laid.text).toContain("Fri 30 Oct, 12:00pm to 12:30pm CT.");
