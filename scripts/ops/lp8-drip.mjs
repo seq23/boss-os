@@ -328,7 +328,7 @@ async function main() {
     try {
       res = await gmail(sendTok, `${GMAIL}/messages/send`, { method: "POST", body: JSON.stringify({ raw: Buffer.from(msg).toString("base64url"), ...(x.touch > 1 ? { threadId: p.threadId } : {}) }) });
     } catch (err) {
-      if (err.status === 401 || err.status === 403) { save(); throw named(`NAMED STOP [SEND_REFUSED] Gmail refused the send (${err.message}); the West Peek delegation's gmail.compose grant needs checking. Sent so far: ${firstsSent + followupsSent}.`, 3); }
+      if (err.status === 401 || err.status === 403) { save(); throw named(`NAMED STOP [SEND_REFUSED] Gmail refused the send (${err.message}); the West Peek delegation's compose grant needs checking. Sent so far: ${firstsSent + followupsSent}.`, 3); }
       held.push(`Gmail ${err.message}`);
       continue;
     }
