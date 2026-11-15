@@ -4206,6 +4206,29 @@
       }
     },
     {
+      "id": "lp8-drip",
+      "name": "One-list LP emails",
+      "what": "Four emails to each person on your one private LP list (day 0, 3, 7 and 14, one thread), at most 6 new a weekday, only once you approved the words; a reply, bounce or block anywhere at their firm stops everyone there.",
+      "business": "west-peek-ventures",
+      "brand": "West Peek Ventures · fund",
+      "system": "mac",
+      "slots": [
+        "mon,tue,wed,thu,fri 09:30"
+      ],
+      "emails": false,
+      "heavy": false,
+      "trigger": {
+        "duty": "duty_lp8_drip",
+        "launchd": [
+          "com.seq.boss-lp8-drip"
+        ]
+      },
+      "output": {
+        "floor": 0,
+        "reason": "Sends only the emails the cadence makes due; a day with nobody due sends none, and a due-but-unsent day is its own named stop."
+      }
+    },
+    {
       "id": "repo-change",
       "name": "Repo changes",
       "what": "Danielle lands the code changes you asked for.",

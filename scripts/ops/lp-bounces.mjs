@@ -33,7 +33,7 @@ const COMMIT = process.argv.includes("--commit");
 const OUT_DIR = process.env.BOSS_OS_LP_DIR ?? path.join(os.homedir(), ".boss-os", "lp");
 
 const b64url = (b) => Buffer.from(b).toString("base64").replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
-async function accessToken(creds, scope, sub) {
+export async function accessToken(creds, scope, sub) {
   const now = Math.floor(Date.now() / 1000);
   const header = b64url(JSON.stringify({ alg: "RS256", typ: "JWT" }));
   // Sheets are shared with the service account itself (no `sub`); the mailbox is impersonated.

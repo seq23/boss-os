@@ -198,6 +198,7 @@ const DOOR = /\bthroughTheDoor\(|\bthroughOwnerDoor\(/;
 /** Transports that cannot address her, each with why. A stale entry (gone, or no longer a transport) fails. */
 const OUTSIDERS_ONLY: Record<string, string> = {
   "scripts/ops/lp-prospects.mjs": "LP prospect letters from her Workspace mailbox, to the prospect; her own copy is the morning email",
+  "scripts/ops/lp8-drip.mjs": "The one-list LP emails from her Workspace mailbox, to the people on her private list; never to her",
   "src/worker/boss/routes/lpTap.ts": "sends a held LP reply draft on her tap, to the LP it answers",
   "src/mail-fanout/index.ts": "forwards an outsider's own email unchanged; composes nothing",
   "src/worker/effects/resendClient.ts": "the inherited West Peek chassis client, switched off (WP_OS_EMAIL_SEND) and behind a human-approved receipt; an approved letter to an outsider",
