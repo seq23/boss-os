@@ -306,7 +306,7 @@ async function againDraft(draftTok, state, p, th, now, plan) {
  * `where` is Boss OS's "where I am until" (`away_city`, `away_until`); `offered` maps an address to
  * the times her last reply offered (D1's `offered_slots`), for a Mac whose state file is fresh.
  */
-export async function followUps(people, { now = Date.now(), skipped = new Set(), where = null, offered = {} } = {}) {
+export async function followUps(people, { now = Date.now(), skipped = new Set(), where = null, offered = {}, calls = new Map() } = {}) {
   const creds = JSON.parse(process.env.GSC_SERVICE_ACCOUNT_JSON ?? "null");
   if (!creds) throw new Error("NAMED STOP [NO_SERVICE_ACCOUNT] GSC_SERVICE_ACCOUNT_JSON is not in the vault run");
   const read = await token(creds, READ_SCOPE);
@@ -333,6 +333,20 @@ export async function followUps(people, { now = Date.now(), skipped = new Set(),
       last_reply_at: th?.at ?? null,
       reply_to: JSON.stringify(draftRecipients(p.address, th).to), reply_cc: JSON.stringify(draftRecipients(p.address, th).cc),
     };
+    /*
+     * A CALL ON HER CALENDAR IS THE ANSWER (owner, 15 Nov 2026). Booked or held, nothing is drafted and
+     * nothing is asked of her: the row is "scheduled" with the call's start (picked_start), and any
+     * draft this file held for them leaves her Drafts. lp-daily.mjs reads the calls (callBooked.mjs).
+     */
+    const call = calls.get(p.address);
+    if (call) {
+      counts.scheduled += 1;
+      if (draftTok) { await dropOwnDraft(draftTok, state.drafts[p.address]); await dropOwnDraft(draftTok, state.again?.[p.address]); }
+      delete state.drafts[p.address];
+      delete state.again?.[p.address];
+      rows.push({ ...base, status: "scheduled", picked_start: call.start, picked_zone: "America/Chicago" });
+      continue;
+    }
     const [mine] = await search(read, `in:sent from:${MAILBOX} to:${p.address} after:${after}`);
     if (mine) {
       const meta = await call(read, `${GMAIL}/messages/${mine.id}?format=metadata&metadataHeaders=Date`);

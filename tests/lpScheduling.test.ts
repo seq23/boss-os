@@ -191,6 +191,9 @@ describe("hard rules: nothing sends from the run, no model sees a name", () => {
     const cal = src("scripts", "ops", "lp-calendar.mjs");
     expect(cal).toContain("/freeBusy");
     expect(cal).not.toMatch(/\/events|summary|attendees/);
+    // The booked-call reader sees guests, so it never reaches a model or a send path.
+    const booked = src("scripts", "ops", "lp-booked-calls.mjs");
+    expect(booked).not.toMatch(/askClaude|spawn(Sync)?\(|child_process|codex|fetch\([^)]*(anthropic|openai|generativelanguage)|messages\/send/i);
   });
   it("the invite is made only on her tap: the two send paths, after the gate, and nowhere else", () => {
     const callers = ["src/worker/boss/routes/lpTap.ts", "src/worker/boss/lp/heldReply.ts"];
