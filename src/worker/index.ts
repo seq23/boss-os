@@ -7,9 +7,7 @@ import { INTAKE_MAILBOX } from "../shared/intake/emailTriggers";
  * from them and `validate:boss-intake-is-boss-only` fails the build if that ever changes.
  */
 import { handleBossInboundMail, isBossMailbox } from "./boss/intake/inboundMail";
-import { runMailAlarm } from "./boss/intake/mailAlarm";
-/** The five-minute cron in wrangler.toml; it runs the mail alarm only. */
-export const MAIL_ALARM_CRON = "*/5 * * * *";
+import { runMailAlarm, MAIL_ALARM_CRON } from "./boss/intake/mailAlarm";
 import { BOSS_INTAKE_MAILBOX, decodeMimeHeader } from "../shared/boss/intake/mail.mjs";
 import { replyWithHistory } from "./boss/mail/history";
 import { plainReply } from "./boss/intake/mailRefs";
