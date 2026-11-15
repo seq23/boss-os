@@ -1137,13 +1137,13 @@ export async function handleBossInboundMail(message: BossMailMessage, env: Env):
    * unclear items and files, written onto the jobs the RULES already chose. Free rungs only; at the
    * free cap, or with nothing answering, the rules read her email exactly as before.
    */
-  const admitting = route.outcome !== "AMBIGUOUS" && !bookFailure && !question && !filedByVerb;
-  const fileNames = [...files.heard.map((h) => h.filename), ...files.read.map((r) => r.filename), ...files.unopened.map((u) => u.filename)];
-  first = admitting && !oversize && (own || readable).trim()
-    ? await firstRead(env, { subject: trueSubject, words: own || readable, files: fileNames, now, mailId })
-    : null;
-  briefBlock = first?.brief ? briefForTask(first.brief, first.reader) : first?.stop ?? null;
-  if (admitting) {
+  if (route.outcome !== "AMBIGUOUS" && !bookFailure && !question && !filedByVerb) {
+    // Inside the guard: nothing unclear, unread or already done ever reaches the free reader either.
+    const fileNames = [...files.heard.map((h) => h.filename), ...files.read.map((r) => r.filename), ...files.unopened.map((u) => u.filename)];
+    first = !oversize && (own || readable).trim()
+      ? await firstRead(env, { subject: trueSubject, words: own || readable, files: fileNames, now, mailId })
+      : null;
+    briefBlock = first?.brief ? briefForTask(first.brief, first.reader) : first?.stop ?? null;
     if (triaged.length) await admitTriaged();
     else try {
       const admitted = await admitTask(env, {
