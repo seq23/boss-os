@@ -1386,6 +1386,8 @@ export async function handleRequest(
   return matched.route.handler({ request, env, identity, params: matched.params });
 }
 
+export { BrainReader } from "./boss/brains/brainReader";
+
 export default {
   async fetch(request: Request, env: Env, ctx: ExecutionContext): Promise<Response> {
     try {
