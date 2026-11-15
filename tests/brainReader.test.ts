@@ -1,6 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
 
-vi.mock("cloudflare:workers", () => ({ WorkerEntrypoint: class { env: unknown; constructor(_c: unknown, env: unknown) { this.env = env; } } }));
 const rows: Record<string, { slug: string; title: string; body_md: string; updated_at: string; updated_by: string }> = {
   "west-peek": { slug: "west-peek", title: "", body_md: "## Partners\nfacts <!-- confidential -->secret total<!-- /confidential --> end", updated_at: "2026-11-15", updated_by: "x" },
   "west-peek-ventures": { slug: "west-peek-ventures", title: "", body_md: "fund", updated_at: "2026-11-15", updated_by: "x" },
