@@ -37,6 +37,8 @@ export const FIRST_READ_STOP = "FIRST_READ_FREE_CAP";
 export const FIRST_READ_BUDGET_MS = 30_000;
 /** One rung at most. */
 export const FIRST_READ_ATTEMPT_MS = 12_000;
+/** What the free rungs before Workers AI must leave it. */
+export const WORKERS_AI_RESERVE_MS = 10_000;
 /** The Workers AI rung's model: the general one already provisioned for this account. */
 export const WORKERS_AI_FIRST_READ_MODEL = "@cf/meta/llama-3.3-70b-instruct-fp8-fast";
 /** More unclear items than this and she is given the best reading of each to correct, not a quiz. */
@@ -76,7 +78,7 @@ export function briefPrompt(input: { subject: string; words: string; files: read
     "ASK: <her EXACT words> — one line per separate thing she asks for, copied unchanged (a phrase or sentence of hers, no rewording).",
     "HOLD: <her EXACT words> — one line per real constraint: something that must NOT happen yet or must wait for her (only if she says so).",
     "QUESTION: <her EXACT words> — one line per question she asks that the result must answer.",
-    "UNCLEAR: <her EXACT words> :: <what is missing to do it> :: <your best reading of what she means> — only when the work cannot be done right without asking her.",
+    "UNCLEAR: <her EXACT words> :: <the one question to ask her, written TO her as \"you\" (never \"she\"), ending in ?> :: <your best reading of what she means> — only when the work cannot be done right without asking her.",
     ...(input.files.length ? ["FILE: <file name> :: <what it is for, from her email, under 15 words>", `Files: ${input.files.join(", ")}`] : []),
     "A greeting, thanks or remark is not an ask. Never invent, merge or summarise. If she asks for nothing, answer exactly: NONE",
     "",
@@ -187,9 +189,20 @@ export async function firstRead(
   const started = Date.now();
   let ladder: Rung[];
   try { ladder = rungs ?? rungsOverride ?? await freeRungs(env); } catch { ladder = []; }
-  for (const rung of ladder) {
+  /*
+   * TIME IS KEPT FOR WORKERS AI (15 Nov 2026 production dry run: four free rungs each ran to their
+   * deadline and the Workers AI rung, the one that answers reliably, was "out of time"). A free rung
+   * before it may only spend what leaves WORKERS_AI_RESERVE_MS for it.
+   */
+  const waAt = ladder.findIndex((r) => r.workersAi);
+  for (const [at, rung] of ladder.entries()) {
     const left = FIRST_READ_BUDGET_MS - (Date.now() - started);
-    if (left < 1500) { out.tried.push(`${rung.id}: out of time`); break; }
+    const usable = waAt > at ? left - WORKERS_AI_RESERVE_MS : left;
+    if (usable < 1500) {
+      out.tried.push(`${rung.id}: out of time${waAt > at ? " (kept for Workers AI)" : ""}`);
+      if (waAt > at) continue;
+      break;
+    }
     if (rung.workersAi) {
       const cap = input.dry ? await peekCap(env, now) : await claimFreeSearch(env.DB, FIRST_READ_SERVICE, now).catch(() => ({ ok: false, used: 0, cap: 0 }));
       if (!cap.ok) {
@@ -199,7 +212,7 @@ export async function firstRead(
       }
     }
     try {
-      const text = await withDeadline(Math.min(FIRST_READ_ATTEMPT_MS, left), (signal) => rung.call(prompt, signal));
+      const text = await withDeadline(Math.min(FIRST_READ_ATTEMPT_MS, usable), (signal) => rung.call(prompt, signal));
       const brief = parseBrief(text, input.words, files);
       if (!brief) { out.tried.push(`${rung.id}: no line quoted her`); continue; }
       out.brief = brief;

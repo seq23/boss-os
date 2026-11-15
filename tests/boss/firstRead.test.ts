@@ -1,6 +1,7 @@
 import { env } from "cloudflare:test";
 import { describe, expect, it, beforeEach, afterEach } from "vitest";
 import { handleBossInboundMail } from "../../src/worker/boss/intake/inboundMail";
+import { layReply, questionsAskedIn } from "../../src/worker/boss/intake/mailRefs";
 import { firstRead, freeRungs, parseBrief, setFirstReadRungs, unclearLines, FIRST_READ_DAILY_CAP, FIRST_READ_SERVICE, type Rung } from "../../src/worker/boss/intake/firstRead";
 import { freeDailyCap } from "../../src/worker/boss/backends/guard";
 import { centralDay } from "../../src/worker/boss/research/searchQuota";
@@ -69,6 +70,18 @@ describe("the ladder is free, and only free", () => {
     expect(r.tried).toEqual(["free-a: 429 from the free lane", "free-b: no line quoted her", "free-c: read"]);
   });
 
+  it("free rungs that hang leave Workers AI its time: it is still asked, and answers", async () => {
+    const hang: Rung = { id: "free-slow", call: (_p, signal) => new Promise((_, rej) => signal.addEventListener("abort", () => rej(new Error("aborted")))) };
+    const t0 = Date.now();
+    const r = await firstRead(env as never, { subject: "venues", words: "Find three venues in Memphis for forty people.", dry: true }, [
+      hang, { ...hang, id: "free-slow-2" }, { ...hang, id: "free-slow-3" },
+      { ...rung("workers-ai", "ASK: Find three venues in Memphis for forty people."), workersAi: true },
+    ]);
+    expect(r.reader, r.tried.join(" | ")).toBe("workers-ai");
+    expect(r.tried.at(-1)).toBe("workers-ai: read");
+    expect(Date.now() - t0).toBeLessThan(31_000);
+  }, 40_000);
+
   it("Workers AI is claimed before the call and stops at its free cap: a named stop, the rules read it", async () => {
     expect(freeDailyCap(FIRST_READ_SERVICE)).toBe(FIRST_READ_DAILY_CAP);
     await env.DB.prepare(`INSERT INTO free_search_quota_days (service, day, used, updated_at) VALUES (?, ?, ?, ?)`).bind(FIRST_READ_SERVICE, centralDay(Date.now()), FIRST_READ_DAILY_CAP, Date.now()).run();
@@ -101,7 +114,7 @@ describe("the ladder is free, and only free", () => {
 });
 
 describe("every unclear item is asked, numbered, in the Got it of the email that raised it", () => {
-  const unclearAnswer = (items: string[]) => () => ["ASK: Plan the dinner.", ...items.map((w) => `UNCLEAR: ${w} :: what exactly she means :: the obvious one`)].join("\n");
+  const unclearAnswer = (items: string[]) => () => ["ASK: Plan the dinner.", ...items.map((w) => `UNCLEAR: ${w} :: what exactly do you mean :: the obvious one`)].join("\n");
 
   it("3 items: one reply, 3 numbered questions quoting her; the brief is on the job; build goes on", async () => {
     const items = ["Use the usual place.", "Invite the regulars.", "Keep it to the normal budget."];
@@ -110,11 +123,17 @@ describe("every unclear item is asked, numbered, in the Got it of the email that
     expect(res.taskId, "the work is filed meanwhile, not held for the answers").toBeTruthy();
     const reply = res.reply!;
     expect(reply).toContain("3 things I need from you (reply by number");
-    items.forEach((w, i) => expect(reply).toContain(`  ${i + 1}. You wrote "${w}": what exactly she means?`));
+    items.forEach((w, i) => expect(reply).toContain(`  ${i + 1}. You wrote "${w}": what exactly do you mean?`));
     const input = JSON.parse((await row<any>(`SELECT input FROM tasks WHERE id = ?`, res.taskId))!.input);
     expect(input.first_read.unclear.map((u: any) => u.words)).toEqual(items);
     expect(input.first_read.reader).toBe("free-a");
     expect(input.body).toContain("ask every unclear item, numbered, in one email; never merge, drop or guess");
+
+    // Line 1 says she has something to answer, never "Nothing to do" above her questions.
+    expect(questionsAskedIn(reply)).toBe(3);
+    const first = layReply({ text: reply, subject: "Re: dinner", signer: "Simone" }).text.split("\n").find((l) => l.trim())!;
+    expect(first).toContain("3 things for you to answer below");
+    expect(first).not.toContain("Nothing to do");
 
     // The same email delivered again: no second email.
     const again = await handleBossInboundMail(mail({ subject: "#simone dinner", body: `Plan the dinner. ${items.join(" ")}`, messageId: "<fr-3@mail.gmail.com>" }), env as never);

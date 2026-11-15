@@ -196,6 +196,20 @@ export function bytesOfBase64(b64: string): Uint8Array {
   return out;
 }
 
+/** Quoted-printable to bytes: soft breaks joined, `=XX` undone, everything else kept as UTF-8. Pure. */
+export function quotedPrintableBytes(text: string): Uint8Array {
+  const joined = text.replace(/=\r?\n/g, "");
+  const out: number[] = [];
+  const enc = new TextEncoder();
+  for (let i = 0; i < joined.length; i += 1) {
+    const c = joined[i];
+    if (c === "=" && /^[0-9a-fA-F]{2}$/.test(joined.slice(i + 1, i + 3))) { out.push(parseInt(joined.slice(i + 1, i + 3), 16)); i += 2; continue; }
+    const code = joined.charCodeAt(i);
+    if (code < 128) out.push(code); else for (const b of enc.encode(c)) out.push(b);
+  }
+  return Uint8Array.from(out);
+}
+
 /** Bytes to base64 in 32 KB slices (a single String.fromCharCode over megabytes overflows the stack). */
 export function base64OfBytes(bytes: Uint8Array): string {
   let s = "";
@@ -243,7 +257,8 @@ function attachmentsOf(
     }
 
     const encoding = (headerIn(part, "content-transfer-encoding") ?? "").toLowerCase();
-    if (!encoding.includes("base64")) {
+    const plainSent = !encoding || /^(7bit|8bit|binary)$/.test(encoding.trim());
+    if (!encoding.includes("base64") && !encoding.includes("quoted-printable") && !plainSent) {
       // Anything else would need decoding this file does not do. Said, not guessed at.
       unread.push(`${filename} (sent as ${encoding || "an encoding this cannot read"})`);
       continue;
@@ -256,7 +271,15 @@ function attachmentsOf(
       continue;
     }
 
-    const dataBase64 = part.slice(split).replace(/[\r\n]/g, "").trim();
+    /*
+     * A QUOTED-PRINTABLE OR PLAIN FILE IS STILL HER FILE (15 Nov 2026 production dry run: a forwarded
+     * "Attachment.html" came back "could not open: sent as quoted-printable"). Its bytes are undone here
+     * and carried as base64 like every other file, so the readers downstream see one shape.
+     */
+    const body = part.slice(split);
+    const dataBase64 = encoding.includes("base64")
+      ? body.replace(/[\r\n]/g, "").trim()
+      : base64OfBytes(encoding.includes("quoted-printable") ? quotedPrintableBytes(body.replace(/\s+$/, "")) : new TextEncoder().encode(body.replace(/\s+$/, "")));
     if (!dataBase64) {
       unread.push(`${filename} (it was empty)`);
       continue;
