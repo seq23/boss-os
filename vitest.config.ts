@@ -6,6 +6,8 @@ export default defineConfig({
     alias: {
       "@shared": fileURLToPath(new URL("./src/shared", import.meta.url)),
       "@worker": fileURLToPath(new URL("./src/worker", import.meta.url)),
+      // workerd's built-in module, for suites that import the Worker entry module under Node.
+      "cloudflare:workers": fileURLToPath(new URL("./tests/stubs/cloudflare-workers.ts", import.meta.url)),
     },
   },
   test: {
