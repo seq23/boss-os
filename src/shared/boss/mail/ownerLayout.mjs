@@ -32,7 +32,7 @@ export const layoutOf = (name) => (KNOWN.has(String(name ?? "")) ? String(name) 
 
 const sentence = (s) => { const t = String(s ?? "").trim(); return !t ? "" : /[.!?…:]$/.test(t) ? t : `${t}.`; };
 /** True when the act part of line 1 says she has nothing to do. */
-export const saysNothingToDo = (act) => String(act ?? "").trim().startsWith(NOTHING_TO_DO);
+export const saysNothingToDo = (act) => { const t = String(act ?? "").trim(); return t.startsWith(NOTHING_TO_DO) || /^Nothing for you to do\b/.test(t); };
 
 /** What line 1 says she must do, when the sender did not say: read from the Decide count. */
 export function defaultAct(decideCount, layout) {

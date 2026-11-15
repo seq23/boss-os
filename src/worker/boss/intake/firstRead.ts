@@ -28,6 +28,7 @@ import { logEvent } from "../lib/log";
 import { WIRING_BY_PROVIDER, adapterCredential } from "../router/backends";
 import { routeIsBilled } from "../backends/guard";
 import { claimFreeSearch, centralDay } from "../research/searchQuota";
+import { freeDayStartedAt, recordOutcome } from "../router/experience";
 
 export const FIRST_READ_SERVICE = "svc_workers_ai_first_read";
 /** Workers AI first reads a day (Central). Also in FREE_ROUTES; the two are pinned together by test. */
@@ -39,6 +40,12 @@ export const FIRST_READ_BUDGET_MS = 30_000;
 export const FIRST_READ_ATTEMPT_MS = 12_000;
 /** What the free rungs before Workers AI must leave it. */
 export const WORKERS_AI_RESERVE_MS = 10_000;
+/** Free rungs asked at once: a hanging rung no longer holds the ones behind it. */
+export const FREE_AT_ONCE = 3;
+/** The least time a free rung is given (a good free read took 3 s in the 15 Nov dry run). */
+export const MIN_RUNG_MS = 4_000;
+/** The outcome kind that remembers a free rung's spent quota (model_job_outcome, nothing new stored). */
+export const QUOTA_KIND = "first_read_quota";
 /** The Workers AI rung's model: the general one already provisioned for this account. */
 export const WORKERS_AI_FIRST_READ_MODEL = "@cf/meta/llama-3.3-70b-instruct-fp8-fast";
 /** More unclear items than this and she is given the best reading of each to correct, not a quiz. */
@@ -66,7 +73,7 @@ export interface FirstRead {
 }
 
 /** What a model is: one call, the text back. Tests pass their own. */
-export type Rung = { id: string; call: (prompt: string, signal: AbortSignal) => Promise<string>; workersAi?: boolean };
+export type Rung = { id: string; call: (prompt: string, signal: AbortSignal) => Promise<string>; workersAi?: boolean; /** The `models` row, so a spent quota is remembered. */ modelId?: string };
 
 const norm = (s: string): string => s.toLowerCase().replace(/[“”"'‘’`]/g, "").replace(/\s+/g, " ").trim().replace(/^[\s\-–—•*:.,;!?]+|[\s\-–—•*:.,;!?]+$/g, "");
 const unquote = (s: string) => s.trim().replace(/^["“]|["”]$/g, "").trim();
@@ -151,6 +158,7 @@ export async function freeRungs(env: Env): Promise<Rung[]> {
     if (!cred.available) continue;
     rungs.push({
       id: r.slug,
+      modelId: r.id,
       call: async (prompt, signal) => (await wiring.adapter.complete(
         { modelSlug: r.slug, messages: [{ role: "user", content: prompt }], maxOutputTokens: 1200, temperature: 0, signal } as never,
         { baseUrl: wiring.baseUrl, apiKey: cred.apiKey, ai: cred.ai },
@@ -172,18 +180,54 @@ export async function freeRungs(env: Env): Promise<Rung[]> {
   return rungs;
 }
 
-const withDeadline = async <T>(ms: number, run: (signal: AbortSignal) => Promise<T>): Promise<T> => {
+const withDeadline = async <T>(ms: number, run: (signal: AbortSignal) => Promise<T>, stop?: AbortSignal): Promise<T> => {
   const ctl = new AbortController();
   let timer: ReturnType<typeof setTimeout> | undefined;
+  const onStop = () => ctl.abort();
+  stop?.addEventListener("abort", onStop);
   try {
     return await Promise.race([
       run(ctl.signal),
-      new Promise<T>((_, reject) => { timer = setTimeout(() => { ctl.abort(); reject(new Error(`no answer in ${Math.round(ms / 1000)} s`)); }, ms); }),
+      new Promise<T>((_, reject) => {
+        timer = setTimeout(() => { ctl.abort(); reject(new Error(`no answer in ${Math.round(ms / 1000)} s`)); }, ms);
+        stop?.addEventListener("abort", () => reject(new Error("stopped: another rung read it first")));
+      }),
     ]);
   } finally {
     if (timer) clearTimeout(timer);
+    stop?.removeEventListener("abort", onStop);
   }
 };
+
+/**
+ * A SPENT FREE QUOTA COSTS NO TIME (15 Nov 2026 production dry run: gemini-2.5-flash answered 429 on
+ * two emails in a row and was asked again each time). A 429 is remembered on the model's row until the
+ * window the provider named ("retry in 33s"), or, when it names none, until the free day resets; the
+ * rung is skipped before any call until then. Pure: when the rung may be asked again.
+ */
+export function quotaUntil(message: string, now: number): number | null {
+  // A free slug OpenRouter no longer serves free ("unavailable for free", 15 Nov 2026) is out for the day too.
+  if (/\b404\b/.test(message) && /unavailable for free/i.test(message)) return freeDayStartedAt(now) + 24 * 3600_000;
+  if (!/\b429\b|quota|rate.?limit/i.test(message)) return null;
+  const retry = /\[quota: retry in (\d+)s\]/.exec(message);
+  if (retry && !/\[quota: daily\]/.test(message)) return now + Number(retry[1]) * 1000;
+  return freeDayStartedAt(now) + 24 * 3600_000;
+}
+
+/** The free rungs whose quota is spent right now, with when each comes back. Unreadable: none. */
+export async function spentRungs(env: Env, now: number): Promise<Map<string, number>> {
+  const out = new Map<string, number>();
+  try {
+    const rows = await env.DB.prepare(`SELECT model_id, note FROM model_job_outcome WHERE task_kind = ? AND ts > ?`).bind(QUOTA_KIND, now - 24 * 3600_000).all<{ model_id: string; note: string | null }>();
+    for (const r of rows.results ?? []) {
+      const until = Number(/^until=(\d+)/.exec(String(r.note ?? ""))?.[1] ?? 0);
+      if (until > now && until > (out.get(r.model_id) ?? 0)) out.set(r.model_id, until);
+    }
+  } catch { /* an unreadable log skips nothing: every rung is asked */ }
+  return out;
+}
+
+const clock = (ms: number) => new Intl.DateTimeFormat("en-US", { timeZone: "America/Chicago", hour: "numeric", minute: "2-digit" }).format(new Date(ms));
 
 let rungsOverride: Rung[] | null = null;
 /** Tests swap in their own rungs (the invitations seam's shape); null restores the real ladder. */
@@ -209,29 +253,68 @@ export async function firstRead(
   // A dry run may name one rung to prove it alone (the replay endpoint's `rung`); a live read never does.
   if (input.dry && input.onlyRung) ladder = ladder.filter((r) => r.id.includes(input.onlyRung!));
   /*
-   * TIME IS KEPT FOR WORKERS AI (15 Nov 2026 production dry run: four free rungs each ran to their
-   * deadline and the Workers AI rung, the one that answers reliably, was "out of time"). A free rung
-   * before it may only spend what leaves WORKERS_AI_RESERVE_MS for it.
+   * EVERY FREE RUNG GETS A TURN, AND WORKERS AI KEEPS ITS TIME (15 Nov 2026 production dry runs: two
+   * Gemini rungs ran to their 8 to 12 s deadlines one after the other and the nine free rungs behind
+   * them were "out of time (kept for Workers AI)"). Now: a rung whose quota is spent is skipped at no
+   * cost; the rest are asked FREE_AT_ONCE at a time, each with a fair share of the free budget (the
+   * whole budget less WORKERS_AI_RESERVE_MS), and the first that quotes her wins and stops the others.
+   * Workers AI is the backstop, after them, with what is left.
    */
-  const waAt = ladder.findIndex((r) => r.workersAi);
-  for (const [at, rung] of ladder.entries()) {
-    const left = FIRST_READ_BUDGET_MS - (Date.now() - started);
-    const usable = waAt > at ? left - WORKERS_AI_RESERVE_MS : left;
-    if (usable < 1500) {
-      out.tried.push(`${rung.id}: out of time${waAt > at ? " (kept for Workers AI)" : ""}`);
-      if (waAt > at) continue;
-      break;
-    }
-    if (rung.workersAi) {
-      const cap = input.dry ? await peekCap(env, now) : await claimFreeSearch(env.DB, FIRST_READ_SERVICE, now).catch(() => ({ ok: false, used: 0, cap: 0 }));
-      if (!cap.ok) {
-        out.stop = `NAMED STOP [${FIRST_READ_STOP}] Workers AI's free first reads for today are used (${cap.used} of ${cap.cap}); nothing is paid past them, so the rules read this email.`;
-        out.tried.push(`${rung.id}: at the free cap`);
-        continue;
+  const spent = await spentRungs(env, now);
+  const free: Rung[] = [];
+  for (const r of ladder.filter((x) => !x.workersAi)) {
+    const until = r.modelId ? spent.get(r.modelId) : undefined;
+    if (until) out.tried.push(`${r.id}: skipped, its free quota is out until ${clock(until)} CT`);
+    else free.push(r);
+  }
+  const backstop = ladder.filter((x) => x.workersAi);
+  const freeEnd = started + FIRST_READ_BUDGET_MS - (backstop.length ? WORKERS_AI_RESERVE_MS : 0);
+  const share = free.length
+    ? Math.min(FIRST_READ_ATTEMPT_MS, Math.max(MIN_RUNG_MS, Math.floor(((freeEnd - Date.now()) * Math.min(FREE_AT_ONCE, free.length)) / free.length)))
+    : 0;
+  const results: Array<string | null> = free.map(() => null);
+  const stop = new AbortController();
+  let next = 0;
+  const ask = async (): Promise<void> => {
+    while (!out.brief && next < free.length) {
+      const i = next++;
+      const rung = free[i]!;
+      const left = freeEnd - Date.now();
+      if (left < 1500) { results[i] = `${rung.id}: out of time${backstop.length ? " (kept for Workers AI)" : ""}`; continue; }
+      try {
+        const text = await withDeadline(Math.min(share, left), (signal) => rung.call(prompt, signal), stop.signal);
+        if (out.brief) { results[i] = `${rung.id}: answered after another read`; continue; }
+        const brief = parseBrief(text, input.words, files);
+        if (!brief) { results[i] = `${rung.id}: no line quoted her`; continue; }
+        brief.asks = withoutPasted(brief.asks);
+        if (!brief.asks.length && !brief.questions.length && !brief.unclear.length && !brief.holds.length) { results[i] = `${rung.id}: listed only what she pasted`; continue; }
+        out.brief = brief;
+        out.reader = rung.id;
+        results[i] = `${rung.id}: read`;
+        stop.abort();
+      } catch (err) {
+        const msg = (err instanceof Error ? err.message : String(err));
+        results[i] = `${rung.id}: ${msg.slice(0, 120)}`;
+        const until = out.brief ? null : quotaUntil(msg, Date.now());
+        if (until && rung.modelId && !input.dry) {
+          await recordOutcome(env.DB, { taskKind: QUOTA_KIND, modelId: rung.modelId, outcome: "rejected", source: "router", lane: "ops", note: `until=${until} ${msg.slice(0, 200)}` }).catch(() => false);
+        }
       }
     }
+  };
+  await Promise.all(Array.from({ length: Math.min(FREE_AT_ONCE, free.length) }, ask));
+  out.tried.push(...results.filter((r): r is string => r !== null));
+  for (const rung of out.brief ? [] : backstop) {
+    const left = started + FIRST_READ_BUDGET_MS - Date.now();
+    if (left < 1500) { out.tried.push(`${rung.id}: out of time`); break; }
+    const cap = input.dry ? await peekCap(env, now) : await claimFreeSearch(env.DB, FIRST_READ_SERVICE, now).catch(() => ({ ok: false, used: 0, cap: 0 }));
+    if (!cap.ok) {
+      out.stop = `NAMED STOP [${FIRST_READ_STOP}] Workers AI's free first reads for today are used (${cap.used} of ${cap.cap}); nothing is paid past them, so the rules read this email.`;
+      out.tried.push(`${rung.id}: at the free cap`);
+      continue;
+    }
     try {
-      const text = await withDeadline(Math.min(FIRST_READ_ATTEMPT_MS, usable), (signal) => rung.call(prompt, signal));
+      const text = await withDeadline(Math.min(FIRST_READ_ATTEMPT_MS, left), (signal) => rung.call(prompt, signal));
       const brief = parseBrief(text, input.words, files);
       if (!brief) { out.tried.push(`${rung.id}: no line quoted her`); continue; }
       brief.asks = withoutPasted(brief.asks);

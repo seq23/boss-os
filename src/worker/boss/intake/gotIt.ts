@@ -30,8 +30,9 @@ function unwrapped(words: string): string {
 const REMARK = /^(?:hi|hey|hello|thanks|thank you|cheers|best|regards|xo)\b[^a-z]*\w*[,!.:]?$|\b(?:looks? (?:good|great)|love (?:it|this|the)|nice work|great work|well done|thank you|thanks)\b/i;
 /** Too short to stand as an ask: a fragment of a sentence. */
 const isFragment = (s: string): boolean => s.split(/\s+/).filter((w) => /[a-z]/i.test(w)).length < 3 || /[:,;–—-]$/.test(s.trim());
-/** Her tags and a voice-note label are not asks. */
-const NOT_AN_ASK = /^(?:#[\w-]+\s*)+$|^Voice note \(/i;
+/** Her tags and a voice-note label are not asks… */
+/** …nor is her phone's signature (15 Nov 2026 dry run: "Sent from my iPhone" listed as an ask). */
+const NOT_AN_ASK = /^(?:#[\w-]+\s*)+$|^Voice note \(|^Sent from my [\w ]{2,30}$|^Get Outlook for \w+$/i;
 
 /** Her sentences, as written: the asks when no model has read the email. Whole sentences, never fragments. Pure. */
 export function asksIn(words: string): string[] {

@@ -1,4 +1,4 @@
-import { ProviderCallError, statusIsRetryable, type ProviderAdapter } from "./types";
+import { ProviderCallError, quotaHint, statusIsRetryable, type ProviderAdapter } from "./types";
 
 /** Mirrors GEMINI_FREE_SEARCH_MODELS (backends.ts), kept here so the adapter imports no wiring. */
 const FREE_SEARCH = new Set(["gemini-2.5-flash", "gemini-3.8-flash", "gemini-3.6-flash", "gemini-3.5-flash-lite", "gemini-3.1-flash-lite", "gemini-3-flash-preview"]);
@@ -65,7 +65,7 @@ export const gemini: ProviderAdapter = {
     });
     if (!res.ok) {
       const detail = await res.text();
-      throw new ProviderCallError(`Gemini returned ${res.status}: ${detail.slice(0, 300)}`, res.status, statusIsRetryable(res.status));
+      throw new ProviderCallError(`Gemini returned ${res.status}${quotaHint(res.status, detail)}: ${detail.slice(0, 300)}`, res.status, statusIsRetryable(res.status));
     }
     const json = (await res.json()) as any;
     const cand = json?.candidates?.[0];

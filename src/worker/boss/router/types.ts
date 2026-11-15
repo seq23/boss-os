@@ -122,3 +122,18 @@ export interface ProviderAdapter {
  * not in the adapter, so the router can allow for it without importing a provider.
  */
 export const WEB_SEARCH_CALL_MICROS = 10_000;
+
+/**
+ * What a 429 body says about WHEN to ask again, kept short so it survives the 300-character cut of the
+ * body in the error (15 Nov 2026: Gemini's "Please retry in 33.4s" sits past the cut, and the first read
+ * could not tell a per-minute limit from a spent day). "" when the body says neither. Pure.
+ */
+export function quotaHint(status: number, body: string): string {
+  if (status !== 429) return "";
+  const s = String(body ?? "");
+  if (/PerDay|per[- ]day|free-models-per-day|daily/i.test(s)) return " [quota: daily]";
+  const m = /retry in ([\d.]+)\s*s|"retryDelay"\s*:\s*"(\d+(?:\.\d+)?)s"/i.exec(s);
+  if (m) return ` [quota: retry in ${Math.ceil(Number(m[1] ?? m[2]))}s]`;
+  if (/PerMinute|per[- ]min/i.test(s)) return " [quota: retry in 60s]";
+  return "";
+}

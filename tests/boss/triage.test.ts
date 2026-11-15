@@ -106,3 +106,30 @@ describe("the acknowledgement quotes her request whole (22 Oct 2026 live defect)
     expect(oneLine("x".repeat(400))).toHaveLength(400);
   });
 });
+
+describe("jobs open from her asks, never from what she pasted (15 Nov 2026 production dry run)", () => {
+  const pasted = [
+    "Ava Example (VP, Growth): ava@example.com Best use: Digital sponsorships, audience integration, performance marketing.",
+    "",
+    "Ben Sample (President): ben@example.com Best use: B2B curriculum integration, platform tools, settings sync.",
+  ].join("\n");
+  const ask = "I want one of my agents to create a drip campaign to sell a partnership to these people, with emails and maybe a one pager (they can use docs in repo)";
+
+  it("one ask above a pasted contact list is ONE job, on the outreach seat, carrying the list as material", () => {
+    const jobs = triage({ subject: "Example partnership campaign", text: `${ask}\n\n${pasted}`, roster: ROSTER, asks: [ask] });
+    expect(jobs.map((j) => j.seat.name)).toEqual(["Monique"]);
+    expect(jobs[0]!.ask).toBe(ask);
+    expect(jobs[0]!.text).toContain(`Her ask: ${ask}`);
+    expect(jobs[0]!.text).toContain("Ben Sample (President)");
+    // Without her asks the same email still splits on the pasted paragraphs: the asks are what fixes it.
+    expect(triage({ subject: "Example partnership campaign", text: `${ask}\n\n${pasted}`, roster: ROSTER }).length).toBeGreaterThan(0);
+  });
+
+  it("a follow-on ask no seat scores rides with the job before it; a different seat's ask is its own job", () => {
+    const jobs = triage({ subject: "s", text: "x", roster: ROSTER, asks: ["Find the buyers in my inbox for the sample company", "Give me their emails", "Schedule a call with the designer next Tuesday"] });
+    expect(jobs.map((j) => [j.seat.name, j.ask])).toEqual([
+      ["Monique", "Find the buyers in my inbox for the sample company\nGive me their emails"],
+      ["Simone", "Schedule a call with the designer next Tuesday"],
+    ]);
+  });
+});

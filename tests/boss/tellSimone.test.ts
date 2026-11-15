@@ -54,7 +54,7 @@ describe("simone@ is boss@", () => {
     expect(new Set(shape(viaBoss.jobs).map((j) => j.employeeId)).size).toBeGreaterThanOrEqual(2);
     expect(shape(viaSimone.jobs)).toEqual(shape(viaBoss.jobs));
     expect(await ownersOf(viaSimone.mailId)).toEqual(await ownersOf(viaBoss.mailId));
-    expect(viaSimone.reply).toMatch(/^Simone here\. Got it/);
+    expect(viaSimone.reply).toMatch(/^Got it\. .+ have started\./);
   });
 
   it("a one-ask email to simone@ goes to the seat that can do it, not Simone's desk by address", async () => {

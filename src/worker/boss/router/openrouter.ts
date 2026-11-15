@@ -1,4 +1,4 @@
-import { ProviderCallError, statusIsRetryable, type ProviderAdapter } from "./types";
+import { ProviderCallError, quotaHint, statusIsRetryable, type ProviderAdapter } from "./types";
 
 /**
  * OpenRouter — the availability half of Stage 4.
@@ -85,7 +85,7 @@ export const openrouter: ProviderAdapter = {
     if (!res.ok) {
       const detail = await res.text();
       throw new ProviderCallError(
-        `OpenRouter returned ${res.status}: ${detail.slice(0, 300)}`,
+        `OpenRouter returned ${res.status}${quotaHint(res.status, detail)}: ${detail.slice(0, 300)}`,
         res.status,
         statusIsRetryable(res.status),
       );
