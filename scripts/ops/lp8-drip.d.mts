@@ -2,7 +2,12 @@
 export const SUBJECT: string;
 export const TEMPLATES: string[];
 export const FREEMAIL: Set<string>;
-export function render(touch: number, vars: { first?: string; hook?: string }, templates?: string[]): { subject: string; body: string };
+export const OPT_OUT_LINE: string;
+export const LIST_UNSUBSCRIBE: string;
+export function usableAddress(a: unknown): string | null;
+export function withListUnsubscribe(raw: string): string;
+export function blockedRow(v: { row: any; day: string }): unknown[];
+export function render(touch: number, vars: { first?: string; hook?: string; address?: string | null }, templates?: string[]): { subject: string; body: string };
 export function centralDay(ms?: number): string;
 export function daysBetween(a: string, b: string): number;
 export function isWeekday(day: string): boolean;
@@ -16,3 +21,4 @@ export const ADDRESS_ONLY_BLOCKED: RegExp;
 export function stopsFor(rows: any[], hits: { mark: string; reason: string; only?: boolean }[]): Map<string, string>;
 export function verdict(v: { due: number; firstsSent: number; followupsSent: number; stopped: number; reasons?: string[]; held?: string[] }): { sent: number; line: string; stop: string | null };
 export function sentLogRow(v: { day: string; row: any; touch: number; subject: string }): unknown[];
+export function footerAddressOrStop(value: unknown): string;

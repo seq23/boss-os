@@ -24,7 +24,7 @@ import { ok, badRequest, notFound } from "../lib/http";
 import { audit } from "../lib/audit";
 import { BUSINESSES, TEST_RECIPIENTS, businessByKey } from "../outreach/catalog";
 import { BOUNCE_WINDOW_MS, chicagoParts, dailyCap } from "../outreach/brakes";
-import { domainState, outreachStopText, readSettings, routeReadyFor, runOutreachTick, sendTest } from "../outreach/engine";
+import { domainState, effectivePostalAddress, outreachStopText, readSettings, routeReadyFor, runOutreachTick, sendTest } from "../outreach/engine";
 import { GmailSession } from "../outreach/gmail";
 import { suppress } from "../outreach/suppression";
 import { normaliseHolderDomain } from "../outreach/seat";
@@ -93,6 +93,13 @@ outreach.get("/", async (c) => {
 function safeJson(s: string | null) {
   try { return s ? JSON.parse(s) : null; } catch { return s; }
 }
+
+/**
+ * THE FOOTER ADDRESS FOR THE MAC'S ONE-LIST LP EMAILS (scripts/ops/lp8-drip.mjs, 15 Nov 2026): the one
+ * mailing address every outreach business shares (effectivePostalAddress), behind the passcode like
+ * everything here. Private runtime data: returned, never logged. null when there is none or two.
+ */
+outreach.get("/postal-address", async (c) => ok(c, { address: (await effectivePostalAddress(c.env.DB, "lp8_drip", null)).address }));
 
 outreach.post("/settings", async (c) => {
   const body = await c.req.json<{ kill_switch?: string; sending?: string }>().catch(() => ({} as any));

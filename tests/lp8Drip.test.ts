@@ -4,27 +4,56 @@
  * addresses only: the repository is public.
  */
 import { describe, expect, it } from "vitest";
-import { ADDRESS_ONLY_BLOCKED, TEMPLATES, render, dueToday, stopsFor, marksIn, stopKey, verdict, sentLogRow, isWeekday, daysBetween } from "../scripts/ops/lp8-drip.mjs";
+import { ADDRESS_ONLY_BLOCKED, OPT_OUT_LINE, footerAddressOrStop, withListUnsubscribe, blockedRow, TEMPLATES, render, dueToday, stopsFor, marksIn, stopKey, verdict, sentLogRow, isWeekday, daysBetween } from "../scripts/ops/lp8-drip.mjs";
 
 const row = (n: string, domain = `firm${n}.example.com`, status = "send: new firm") => ({ lp: `Firm ${n}`, type: "Family office", status, first: `Alex${n}`, name: `Alex${n} Doe`, email: `alex${n}@${domain}`, hook: "you backed a first-time manager in 2025" });
+const ADDR = "1 Example Street, Example City, EX 00000";
 const sent = (...days: string[]) => ({ sent: days.map((day, i) => ({ touch: i + 1, day })), threadId: "t" });
 
 describe("the four approved emails", () => {
   it("render with no placeholder left, the same subject threaded as Re:", () => {
     for (const touch of [1, 2, 3, 4]) {
-      const r = render(touch, { first: "Alex", hook: "you backed a first-time manager." });
+      const r = render(touch, { first: "Alex", hook: "you backed a first-time manager.", address: ADDR });
       expect(`${r.subject}\n${r.body}`).not.toMatch(/\{[a-z_]+\}/i);
       expect(r.body.startsWith("Hi Alex,")).toBe(true);
       expect(r.subject).toBe(touch === 1 ? "Alex, a new manager question" : "Re: Alex, a new manager question");
     }
-    expect(render(1, { first: "Alex", hook: "you backed a first-time manager." }).body).toContain("I saw that you backed a first-time manager, which is why");
+    expect(render(1, { first: "Alex", hook: "you backed a first-time manager.", address: ADDR }).body).toContain("I saw that you backed a first-time manager, which is why");
     expect(TEMPLATES).toHaveLength(4);
   });
   it("refuses a fifth email, a missing first name and an email 1 with no hook", () => {
-    expect(() => render(5, { first: "Alex", hook: "x" })).toThrow();
-    expect(() => render(2, { first: " ", hook: "x" })).toThrow(/first name/);
-    expect(() => render(1, { first: "Alex", hook: "" })).toThrow(/hook/);
-    expect(() => render(1, { first: "Alex", hook: "x" }, ["Hi {first}, {unknown}"])).toThrow(/unfilled/);
+    expect(() => render(5, { first: "Alex", hook: "x", address: ADDR })).toThrow();
+    expect(() => render(2, { first: " ", hook: "x", address: ADDR })).toThrow(/first name/);
+    expect(() => render(1, { first: "Alex", hook: "", address: ADDR })).toThrow(/hook/);
+    expect(() => render(1, { first: "Alex", hook: "x", address: ADDR }, ["Hi {first}, {unknown}"])).toThrow(/unfilled/);
+  });
+});
+
+describe("the footer (R-EML-01 / R-EML-02)", () => {
+  it("every one of the four emails ends with the opt-out line and the mailing address on its own line, after the signature", () => {
+    for (const touch of [1, 2, 3, 4]) {
+      const { body } = render(touch, { first: "Alex", hook: "you backed a first-time manager", address: ADDR });
+      expect(body.endsWith(`\n\n${OPT_OUT_LINE}\n${ADDR}`)).toBe(true);
+      const sig = touch === 1 ? "Full disclosures: https://ventures.joinwestpeek.com/disclosures/" : "Best,\nSequoia";
+      expect(body.indexOf(sig)).toBeLessThan(body.indexOf(OPT_OUT_LINE));
+    }
+    expect(OPT_OUT_LINE).toBe("If you'd rather not hear from me, reply 'no thanks' and I won't write again.");
+  });
+  it("no mailing address is a NAMED STOP and no email renders without one", () => {
+    for (const bad of [null, undefined, "", "   ", "short", "{address}"]) {
+      expect(() => footerAddressOrStop(bad)).toThrow(/^NAMED STOP \[NO_POSTAL_ADDRESS\]/);
+      expect(() => render(2, { first: "Alex", address: bad as any })).toThrow(/mailing address/);
+    }
+    try { footerAddressOrStop(null); } catch (e: any) { expect(e.code).toBe(9); }
+    expect(footerAddressOrStop(` ${ADDR} `)).toBe(ADDR);
+  });
+  it("every message carries List-Unsubscribe by mailto with subject unsubscribe", () => {
+    const raw = withListUnsubscribe("From: a\r\nTo: b\r\nSubject: s\r\nMIME-Version: 1.0\r\n\r\nbody");
+    expect(raw).toContain("\r\nList-Unsubscribe: <mailto:sequoia@westpeek.ventures?subject=unsubscribe>\r\nMIME-Version: 1.0");
+    expect(() => withListUnsubscribe("no headers")).toThrow();
+  });
+  it("an opt-out goes on Blocked in that tab's column order", () => {
+    expect(blockedRow({ row: row("1"), day: "2026-11-16" })).toEqual(["alex1@firm1.example.com", "Alex1 Doe", "Firm 1", "Opted out (replied no thanks / unsubscribe)", "2026-11-16"]);
   });
 });
 

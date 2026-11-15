@@ -26,6 +26,14 @@
  * Before email 1 the address is checked with her NeverBounce: valid / catchall / unknown send;
  * invalid / disposable stop the person; no verdict (key missing, NeverBounce down) waits a day.
  *
+ * THE FOOTER (risk brain R-EML-01 / R-EML-02, coordinator's decision 15 Nov 2026): every email ends,
+ * after the signature, with the opt-out line and the shared mailing address on its own line. The
+ * address is private runtime data, read at run time from Boss OS (GET /outreach/postal-address, the
+ * address effectivePostalAddress gives every outreach business; set on Team → Outreach) and never
+ * written to the repo, a log or state. Unreadable → NAMED STOP [NO_POSTAL_ADDRESS], nothing sent.
+ * Every message carries List-Unsubscribe (mailto, subject "unsubscribe"). A reply saying "no thanks"
+ * or "unsubscribe" also goes on the LP Outreach Log's Blocked tab, so Twin honours it too.
+ *
  * AFTER EACH SEND a row goes on the sheet's "Sent Log" tab (signal tier "8fundraising", status
  * "sent") so Monique's 06:15 read and Twin see it, and state.json is written at once.
  *
@@ -62,19 +70,48 @@ export const TEMPLATES = [
   "Hi {first},\n\nI'll leave it here so I'm not crowding your inbox. If emerging managers come up on your side later, I'd love to stay on your radar.\n\nBest,\nSequoia",
 ];
 
-/** Email `touch` (1–4) for one person. Throws on an unknown touch or any placeholder left unfilled. Pure. */
-export function render(touch, { first, hook }, templates = TEMPLATES) {
+export const OPT_OUT_LINE = "If you'd rather not hear from me, reply 'no thanks' and I won't write again.";
+export const LIST_UNSUBSCRIBE = `<mailto:${"sequoia@westpeek.ventures"}?subject=unsubscribe>`;
+/** A mailing address worth printing: a street line, never blank or a placeholder. Pure. */
+export const usableAddress = (a) => (typeof a === "string" && a.trim().length >= 10 && !/[{}]/.test(a) ? a.trim() : null);
+
+/**
+ * Email `touch` (1–4) for one person, footer included. Throws on an unknown touch, any placeholder
+ * left unfilled, or no usable mailing address (the footer is never left off). Pure.
+ */
+export function render(touch, { first, hook, address }, templates = TEMPLATES) {
   const body0 = templates[touch - 1];
   if (!body0) throw new Error(`no email ${touch}: four at most`);
   const fill = (s) => s.replaceAll("{first}", String(first ?? "").trim()).replaceAll("{hook}", String(hook ?? "").trim().replace(/[.\s]+$/, ""));
   const first1 = fill(SUBJECT);
   const subject = touch === 1 ? first1 : `Re: ${first1}`;
-  const body = fill(body0);
+  const postal = usableAddress(address);
+  if (!postal) throw new Error(`email ${touch} has no mailing address for its footer`);
+  const body = `${fill(body0)}\n\n${OPT_OUT_LINE}\n${postal}`;
   const left = `${subject}\n${body}`.match(/\{[a-z_]+\}/gi);
   if (left) throw new Error(`email ${touch} has an unfilled placeholder: ${left.join(", ")}`);
   if (!String(first ?? "").trim()) throw new Error(`email ${touch} has no first name`);
   if (touch === 1 && !String(hook ?? "").trim()) throw new Error("email 1 has no hook");
   return { subject, body };
+}
+
+/** The footer's address, or NAMED STOP [NO_POSTAL_ADDRESS] (exit 9): no email goes without it. Pure. */
+export function footerAddressOrStop(value) {
+  const a = usableAddress(value);
+  if (!a) throw Object.assign(new Error("NAMED STOP [NO_POSTAL_ADDRESS] Boss OS has no single shared mailing address (Team → Outreach), so the footer cannot be written; nothing sent. Set it there and the next weekday run sends."), { code: 9 });
+  return a;
+}
+
+/** The raw message with List-Unsubscribe added to its headers. Pure. */
+export function withListUnsubscribe(raw) {
+  const at = raw.indexOf("\r\nMIME-Version:");
+  if (at === -1) throw new Error("no header block to add List-Unsubscribe to");
+  return `${raw.slice(0, at)}\r\nList-Unsubscribe: ${LIST_UNSUBSCRIBE}${raw.slice(at)}`;
+}
+
+/** A Blocked-tab row for a person who opted out, in the tab's column order. Pure. */
+export function blockedRow({ row, day }) {
+  return [key(row.email), String(row.name ?? "").trim(), row.lp ?? "", "Opted out (replied no thanks / unsubscribe)", day];
 }
 
 /* ─── Days, Central ──────────────────────────────────────────────────────── */
@@ -209,6 +246,15 @@ async function main() {
     console.log("OUTPUT 0 emails sent");
     return 0;
   }
+  // The footer's mailing address, read before anything else can send (never printed).
+  let address = null;
+  try {
+    const { bossApi } = await import("./lib/duty-kit.mjs");
+    address = usableAddress((await (await bossApi()).get("/outreach/postal-address"))?.address);
+  } catch (e) {
+    throw named(`NAMED STOP [NO_POSTAL_ADDRESS] the mailing address for the footer could not be read from Boss OS (${String(e.message).slice(0, 120)}); nothing sent. The next weekday run retries.`, 9);
+  }
+  address = footerAddressOrStop(address);
   const perDay = Math.max(0, Number(plan.perDay ?? 6));
   const state = readJson(STATE) ?? { people: {} };
   state.people ??= {};
@@ -231,13 +277,36 @@ async function main() {
   const hits = [];
   for (const tab of STOP_TABS) {
     const r = await fetch(`https://sheets.googleapis.com/v4/spreadsheets/${SHEET}/values/${encodeURIComponent(`'${tab}'!A1:Z5000`)}`, { headers: { authorization: `Bearer ${sheetTok}` } });
-    if (!r.ok) throw named(`NAMED STOP [STOP_LIST_UNREAD] the "${tab}" tab could not be read (${r.status}); nothing sent, because a person who replied or asked to be left alone could be emailed. The next weekday run retries.`, 75);
+    if (!r.ok) throw named(`NAMED STOP [STOP_LIST_UNREAD] the "${tab}" tab could not be read (${r.status}); nothing sent, because a person who replied or asked to be left alone could be emailed. The next weekday run retries.`, 9);
     for (const cells of (await r.json()).values ?? []) {
       const only = tab.startsWith("Blocked") && ADDRESS_ONLY_BLOCKED.test(String(cells[3] ?? "").trim());
       for (const m of marksIn(cells)) if (!only || m.includes("@")) hits.push({ mark: m, reason: `on "${tab}"`, only });
     }
   }
   if (fs.existsSync(SUPPRESS)) for (const a of fs.readFileSync(SUPPRESS, "utf8").split("\n").map((l) => l.trim()).filter(Boolean)) hits.push({ mark: a, reason: "on the suppression list" });
+
+  // Opt-outs: a reply saying "no thanks" or "unsubscribe" stops that person and goes on Blocked for Twin.
+  const blockedNow = new Set(hits.filter((h) => h.reason.includes("Blocked")).map((h) => key(h.mark)));
+  const optOuts = [];
+  for (const [e, p] of Object.entries(state.people)) {
+    if (!p.sent?.length || p.optOutLogged) continue;
+    const q = `in:anywhere from:${e} after:${p.sent[0].day.replaceAll("-", "/")} ("no thanks" OR unsubscribe)`;
+    const j = await gmail(readTok, `${GMAIL}/messages?maxResults=1&q=${encodeURIComponent(q)}`).catch((err) => { throw named(`NAMED STOP [MAILBOX_UNREAD] the opt-out search failed (${err.message}); nothing sent. The next weekday run retries.`, 9); });
+    if (!j.messages?.length) continue;
+    hits.push({ mark: e, reason: "opted out", only: true });
+    const row = rows.find((r) => key(r.email) === e);
+    optOuts.push({ e, needsRow: !blockedNow.has(e) && row, row });
+  }
+  if (optOuts.length && !dry) {
+    const values = optOuts.filter((o) => o.needsRow).map((o) => blockedRow({ row: o.row, day: today }));
+    if (values.length) {
+      const r = await fetch(`https://sheets.googleapis.com/v4/spreadsheets/${SHEET}/values/${encodeURIComponent("'Blocked – Do Not Contact'!A1")}:append?valueInputOption=RAW&insertDataOption=INSERT_ROWS`, {
+        method: "POST", headers: { authorization: `Bearer ${sheetTok}`, "content-type": "application/json" }, body: JSON.stringify({ values }),
+      });
+      if (!r.ok) throw named(`NAMED STOP [BLOCKED_WRITE] ${values.length} opt-out(s) could not go on the Blocked tab (${r.status}); nothing sent, so Twin cannot email them first. The next weekday run retries.`, 9);
+    }
+    for (const o of optOuts) state.people[o.e] = { ...state.people[o.e], optOutLogged: true, stopped: { reason: "opted out", day: today } };
+  }
 
   const anySent = Object.values(state.people).filter((p) => p.sent?.length);
   if (anySent.length) {
@@ -255,7 +324,7 @@ async function main() {
   for (const [k, since] of domains) {
     // Since the first send there; before any send, the last 180 days (a firm already writing to her is Monique's).
     const q = `in:anywhere from:${k.includes("@") ? k : `@${k}`} ${since ? `after:${since.replaceAll("-", "/")}` : "newer_than:180d"}`;
-    const j = await gmail(readTok, `${GMAIL}/messages?maxResults=1&q=${encodeURIComponent(q)}`).catch((e) => { throw named(`NAMED STOP [MAILBOX_UNREAD] the mailbox search failed (${e.message}); nothing sent, because a reply could be missed. The next weekday run retries.`, 75); });
+    const j = await gmail(readTok, `${GMAIL}/messages?maxResults=1&q=${encodeURIComponent(q)}`).catch((e) => { throw named(`NAMED STOP [MAILBOX_UNREAD] the mailbox search failed (${e.message}); nothing sent, because a reply could be missed. The next weekday run retries.`, 9); });
     if (j.messages?.length) hits.push({ mark: k, reason: "a message from them is in the mailbox" });
   }
   const stops = stopsFor(rows, hits);
@@ -295,10 +364,10 @@ async function main() {
   const due = goFirsts.length + dueFollow.length + held.length;
 
   if (dry) {
-    console.log(`DRY RUN ${today}: would send ${goFirsts.length} first email(s) (cap ${perDay}; ${candidates.length - goFirsts.length} more waiting) and ${dueFollow.length} follow-up(s); stopped ${stoppedN}${reasons.length ? ` (${reasons.join("; ")})` : ""}. NeverBounce not called in a dry run.`);
+    console.log(`DRY RUN ${today}: would send ${goFirsts.length} first email(s) (cap ${perDay}; ${candidates.length - goFirsts.length} more waiting) and ${dueFollow.length} follow-up(s); stopped ${stoppedN}${reasons.length ? ` (${reasons.join("; ")})` : ""}; ${optOuts.length} opt-out(s) would go on Blocked. Footer address read: yes. NeverBounce not called in a dry run.`);
     const one = goFirsts[0] ?? dueFollow[0];
     if (one) {
-      const r = render(one.touch, { first: "[name]", hook: `[hook, ${String(one.row.hook ?? "").length} chars]` });
+      const r = render(one.touch, { first: "[name]", hook: `[hook, ${String(one.row.hook ?? "").length} chars]`, address: "[mailing address, read from Boss OS]" });
       console.log(`--- email ${one.touch} as it would go (name and hook redacted) ---\nSubject: ${r.subject}\n\n${r.body}\n---`);
     }
     console.log("OUTPUT 0 emails sent");
@@ -314,7 +383,7 @@ async function main() {
   for (const x of [...dueFollow, ...goFirsts]) {
     const e = key(x.row.email);
     const p = state.people[e] ?? { sent: [] };
-    const { subject, body } = render(x.touch, { first: x.row.first, hook: x.row.hook });
+    const { subject, body } = render(x.touch, { first: x.row.first, hook: x.row.hook, address });
     let inReplyTo = null;
     if (x.touch > 1) {
       if (!p.threadId) { held.push("a follow-up with no thread on record"); continue; }
@@ -323,7 +392,7 @@ async function main() {
       if (th.held) { held.push(th.held); continue; }
       inReplyTo = th.messageId;
     }
-    const msg = mime({ to: e, subject, body, inReplyTo, from: MAILBOX });
+    const msg = withListUnsubscribe(mime({ to: e, subject, body, inReplyTo, from: MAILBOX }));
     let res;
     try {
       res = await gmail(sendTok, `${GMAIL}/messages/send`, { method: "POST", body: JSON.stringify({ raw: Buffer.from(msg).toString("base64url"), ...(x.touch > 1 ? { threadId: p.threadId } : {}) }) });
