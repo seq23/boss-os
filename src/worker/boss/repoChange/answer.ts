@@ -90,7 +90,7 @@ export async function answerFromMail(
       await taskEvent(env, row.task_id, "repo_change_note", { repo_change_id: row.id, mail_id: input.mailId, phase: "failed", text: reply.text.slice(0, 2000) });
       return { changeId, resumed: false, note: `Noted on ${row.id}: "${reply.text.slice(0, 300)}". It stays stopped; reply "try again" when you want it retried.` };
     }
-    const { phase: resumedAt } = await retryRow(env, row, { now: input.now, reason: `her reply on the thread: "${input.text.trim().slice(0, 200)}"`, mailId: input.mailId, followUp: ["approved", "preview", "forced"].includes(reply.mode) ? null : input.text, by: input.sender });
+    const { phase: resumedAt } = await retryRow(env, row, { now: input.now, reason: `her reply on the thread: "${reply.text.trim().slice(0, 200)}"`, mailId: input.mailId, followUp: ["approved", "preview", "forced"].includes(reply.mode) ? null : reply.text, by: input.sender });
     return {
       changeId, resumed: true,
       note: `Retrying ${row.id} (${row.repo ?? "the package"}) from ${resumedAt} with your original instruction${row.pre_approved_phrase ? ` and your pre-approval ("${row.pre_approved_phrase}")` : ""}${row.force_phrase ? ` and your "${row.force_phrase}"` : ""} — it was stopped with: ${(row.failure ?? "").slice(0, 200)}. ` +

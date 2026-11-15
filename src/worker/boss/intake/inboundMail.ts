@@ -16,6 +16,8 @@ import type { BookDirective } from "../../../shared/boss/intake/liveBook.mjs";
 import { clarificationFor, isReplyMessage } from "../../../shared/boss/intake/clarify.mjs";
 import { handoffFor, seatInDepartment, huntRequestIn } from "../../../shared/boss/intake/handoff.mjs";
 import { campaignFromMail } from "../outreach/campaign";
+import { steerRound } from "../service/round";
+import { hearVoiceNotes, unheardLines, withVoiceNotes } from "./voiceNotes";
 import { taskBodyFrom, ownWords, readableText } from "../../../shared/boss/intake/messageBody.mjs";
 import { triage, triageLines, shortTitle, type TriageJob } from "../../../shared/boss/intake/triage.mjs";
 import { parseResearchPage } from "../../../shared/boss/research/page.mjs";
@@ -314,6 +316,22 @@ export async function handleBossInboundMail(message: BossMailMessage, env: Env):
    * A row left saying `due` is therefore a handler that returned and a send that never resolved —
    * a visible loose end, in the shape this file already uses for an outcome stuck at RECEIVED.
    */
+  /*
+   * ONE EMAIL IS WORKED ONCE (15 Nov 2026, the West Peek OS #442 rule). A message delivered again
+   * (a retry by the sending server, a re-forward) carries the same Message-ID, and was worked a second
+   * time: a second task, a second reply. A message already finished here is recorded as a duplicate
+   * and nothing else happens. One left at RECEIVED never finished, so a second delivery may finish it.
+   */
+  if (messageId && !viaConsole) {
+    const seen = await env.DB.prepare(`SELECT id FROM boss_inbound_mail WHERE message_id = ? AND outcome NOT IN ('RECEIVED', 'DUPLICATE') LIMIT 1`).bind(messageId).first<{ id: string }>();
+    if (seen) {
+      await env.DB.prepare(
+        `INSERT INTO boss_inbound_mail (id, received_at, to_addr, from_addr, dmarc_pass, authorised, subject, outcome, why, bytes, message_id, reply_state)
+         VALUES (?,?,?,?,?,?,?,'DUPLICATE',?,?,?,'none_due')`,
+      ).bind(mailId, now, to, sender, dmarc ? 1 : 0, authorised ? 1 : 0, subject.slice(0, 400), `The same email (Message-ID) was already worked as ${seen.id}; nothing was done twice.`, message.rawSize, messageId).run();
+      return { mailId, outcome: "DUPLICATE", employeeId: null, taskId: null, reply: null, messageId };
+    }
+  }
   const chain = chainIds(message.headers.get("references"), message.headers.get("in-reply-to"));
   const parent = chain.length ? await env.DB.prepare(`SELECT thread_id FROM boss_inbound_mail WHERE message_id = ? UNION ALL SELECT thread_id FROM boss_sent_mail WHERE message_id = ? LIMIT 1`).bind(chain[chain.length - 1], chain[chain.length - 1]).first<{ thread_id: string }>() : null;
   const threadId = parent?.thread_id ?? chain[0] ?? messageId ?? mailId;
@@ -509,8 +527,16 @@ export async function handleBossInboundMail(message: BossMailMessage, env: Env):
    * missed. The subject is still in the haystack, because that is where she usually puts it.
    */
   const read = rawMessage ? taskBodyFrom(rawMessage) : null;
-  const readable = read?.readable ?? "";
-  const taskBody = read?.body ?? "";
+  /*
+   * HER VOICE NOTES ARE HER WORDS (intake/voiceNotes.ts). A recording is transcribed and joins what she
+   * typed, everywhere below; one that cannot be heard is a named stop in the reply and on the job.
+   */
+  const voice = rawMessage && /^content-type:\s*audio\/|\.(?:m4a|mp3|wav|aac|ogg|oga|opus|caf|amr|webm)\b/im.test(rawMessage)
+    ? await hearVoiceNotes(env, rawMessage)
+    : { heard: [], failed: [] };
+  const unheard = unheardLines(voice.failed);
+  const readable = withVoiceNotes(read?.readable ?? "", voice.heard);
+  const taskBody = [withVoiceNotes(read?.body ?? "", voice.heard), ...unheard].filter(Boolean).join("\n\n");
   /*
    * HER WORDS, NOT THE EMAIL SHE IS ANSWERING (27 Oct 2026). Every keyword reader below (routing,
    * handoff, the hunt, triage, list edits, a close, a book guess, a deadline, "your call") reads
@@ -518,7 +544,7 @@ export async function handleBossInboundMail(message: BossMailMessage, env: Env):
    * queued a $200M seller hunt from the QUOTED deals grid. `readable` still feeds the lanes that
    * read a whole thread on purpose and the card's stored text.
    */
-  const own = ownWords(readable);
+  const own = withVoiceNotes(ownWords(read?.readable ?? ""), voice.heard);
 
   if (secrets?.line && secrets.onlySecrets) {
     await finish({ outcome: "SECRET_STORED", why: secrets.line, objectKey, reply: secrets.line });
@@ -629,7 +655,7 @@ export async function handleBossInboundMail(message: BossMailMessage, env: Env):
    * the email goes on exactly as before. src/worker/boss/commands/run.ts.
    */
   const command = readable || subject
-    ? await commandFromMail(env, { subject: trueSubjectOf(readable, subject), text: readable, mailId, sender, refs: threadRefs.refs, now, to, ownerName: (message.headers.get("from") ?? "").replace(/<[^>]*>/g, "").replace(/^"|"$/g, "").trim() })
+    ? await commandFromMail(env, { subject: trueSubjectOf(readable, subject), text: own || readable, mailId, sender, refs: threadRefs.refs, now, to, ownerName: (message.headers.get("from") ?? "").replace(/<[^>]*>/g, "").replace(/^"|"$/g, "").trim() })
     : null;
   if (command) {
     if (command.commandIds.length === 1) await env.DB.prepare(`UPDATE boss_inbound_mail SET command_id = ?, thread_id = ? WHERE id = ?`).bind(command.commandIds[0], command.commandIds[0], mailId).run();
@@ -954,6 +980,23 @@ export async function handleBossInboundMail(message: BossMailMessage, env: Env):
    * of the email that opened the job), then the subject without its Re: — and the reply goes to the
    * seat that holds that job, linked to it.
    */
+  /*
+   * ONE ROUND, ONE REPLY (15 Nov 2026, service/round.ts). Her reply on the thread of work that is still
+   * queued or running joins it: "stop" / "hold" / "wait" holds it, "go" releases it, and anything else
+   * is added to the job in progress, so ONE answer covers both emails. It used to open a new job.
+   */
+  const steer = isReply && own && !filedByVerb && !bookFailure && !closeQuestion
+    ? await steerRound(env, { chain: replyChain, own, mailId, now })
+    : null;
+  if (steer && steer.outcome !== "JOIN") {
+    const steerReply = [steer.note, ...(secrets?.line ? ["", secrets.line] : [])].join("\n");
+    await finish({ outcome: steer.outcome, why: steer.note, taskId: steer.taskId, employeeId: route.seat.id, objectKey, reply: steerReply });
+    await audit(env.DB, { actor: "boss", lane: "ops", entityType: "inbound_mail", entityId: mailId, action: "round_steered", detail: { outcome: steer.outcome, task_id: steer.taskId } });
+    return { mailId, outcome: steer.outcome, employeeId: route.seat.id, taskId: steer.taskId, reply: steerReply, messageId, signer: route.seat.name };
+  }
+  // Several jobs of the round are still open: her new ask is its own job, answered in the round's ONE reply.
+  const joinRound = steer?.outcome === "JOIN" ? steer.round : null;
+
   let followed: { taskId: string; seat: BossSeat } | null = null;
   if (isReply && route.outcome === "DEFAULTED" && !handoffNote && !filedByVerb && !bookFailure) {
     followed = await jobThisAnswers(env, { replyChain, subject: trueSubject, roster, now });
@@ -996,6 +1039,7 @@ export async function handleBossInboundMail(message: BossMailMessage, env: Env):
           title, lane: job.seat.lane, employee_id: job.seat.id, not_before: notBeforeMs,
           input: {
             source: "boss_inbound_mail", mail_id: mailId, from: sender,
+            ...(joinRound ? { round: joinRound } : {}),
             ...(origin?.from ? { forwarded_from: origin.from } : {}),
             subject: trueSubject, tag: null,
             routing: `Simone triaged it: ${job.why}`,
@@ -1036,6 +1080,7 @@ export async function handleBossInboundMail(message: BossMailMessage, env: Env):
           source: "boss_inbound_mail",
           mail_id: mailId,
           from: sender,
+          ...(joinRound ? { round: joinRound } : {}),
           ...(origin?.from ? { forwarded_from: origin.from } : {}),
           subject: trueSubject,
           tag: route.tag,
@@ -1156,6 +1201,7 @@ function headline(text: string): string {
    */
   const stopped = question ? question.ask : planAnswer?.note ?? commentAnswer?.note ?? kdpAnswer?.note ?? dismissAnswer?.note ?? dutyNote?.note ?? closeQuestion ?? closedNote ?? bookFailure;
   const serviceLines = [
+    ...unheard,
     ...(secrets?.line ? [secrets.line] : []),
     ...(constraintNote ? [constraintNote] : []),
     ...(notBefore && taskId ? [`Held until ${dueLine({ due_at: notBefore.at, due_words: notBefore.words })!.replace(/^due /, "")}; nothing starts before then.`] : []),

@@ -21,6 +21,10 @@ import { deferFromResult } from "./deferred";
 import { recordSecretWait } from "./secretHandoff";
 import { noticeOnce } from "./notices";
 import { doneSubject } from "../../../shared/boss/service/doneSubject.mjs";
+import { roundWaits } from "./round";
+
+/** The most of an answer one done email carries (Gmail clips past ~102KB). */
+export const DONE_TEXT_MAX = 20_000;
 
 export interface ResultTask {
   id: string;
@@ -46,13 +50,17 @@ export async function afterResult(env: Env, task: ResultTask, text: string, o: {
       if (id) out.missing.push(name);
     }
     const mailed = typeof task.input.from === "string" && task.input.from.includes("@");
+    // One round, one reply (service/round.ts): held, taking her newer words, or part of a round still running.
+    if (o.done && mailed && text.trim() && (await roundWaits(env, task.id, text))) return out;
     if (o.done && mailed && text.trim()) {
       const id = await noticeOnce(env, {
         // She asked for it by email, so the answer is her reply (noticeGate.mjs needsHer).
         task, fromName: o.fromName, kind: `done#${Number(task.attempts ?? 0)}`, needsHer: true,
         subject: doneSubject(task.title, text),
         lines: [
-          text.trim().slice(0, 20_000),
+          text.trim().slice(0, DONE_TEXT_MAX),
+          // Never cut without saying so: a cut answer reads as an answer that skipped her asks.
+          ...(text.trim().length > DONE_TEXT_MAX ? ["", "This answer is longer than one email holds, so it stops here. The whole of it is kept on this job in Boss OS."] : []),
           ...(out.deferred.length ? ["", `Deferred, each as its own task on its date: ${out.deferred.join(", ")}.`] : []),
         ],
       });

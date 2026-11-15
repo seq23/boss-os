@@ -18,6 +18,7 @@ import type { Env } from "../env";
 import { newId } from "../lib/id";
 import { audit } from "../lib/audit";
 import { blockReplyDoor, taskTokenIn, waitDetail } from "../../../shared/boss/service/waits.mjs";
+import { ownWords } from "../../../shared/boss/intake/messageBody.mjs";
 
 export interface BlockReplyOutcome { note: string; taskId: string; door: "RETRY" | "DROP" | "ANSWER" | "HELD" }
 
@@ -56,7 +57,9 @@ export async function answerBlockFromMail(
   }
   let input: Record<string, unknown> = {};
   try { input = task.input ? JSON.parse(task.input) : {}; } catch { input = {}; }
-  const answer = door === "ANSWER" ? m.text.trim().slice(0, 8000) : "";
+  // Her own words only: the notice she is answering is quoted under them, and its old lines are not
+  // a new instruction for the rerun (15 Nov 2026, the West Peek OS partnersOwnWords rule).
+  const answer = door === "ANSWER" ? (ownWords(m.text) || m.text.trim()).slice(0, 8000) : "";
   if (answer) {
     const before = typeof input.body === "string" ? input.body : "";
     input = { ...input, body: `${before}${before ? "\n\n" : ""}Her reply after the stop: ${answer}` };

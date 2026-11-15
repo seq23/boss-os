@@ -129,6 +129,23 @@ function filenameIn(part: string): string {
  * SAY so on the work card. Silence about a dropped attachment is how the Sensori deck went missing.
  */
 export function pdfAttachments(raw: string): { attachments: Attachment[]; unread: string[] } {
+  return attachmentsOf(raw, (type) => type.includes("application/pdf"), () => "application/pdf", MAX_ATTACHMENTS);
+}
+
+/** A voice note is no bigger than this to be heard inside one invocation (Workers AI takes it whole). */
+export const MAX_VOICE_NOTE_BYTES = 3 * 1024 * 1024;
+
+/** The audio files a person attached (a phone's "New Recording 4.m4a"), by type or by a sound file's name. */
+export function audioAttachments(raw: string): { attachments: Attachment[]; unread: string[] } {
+  const isAudio = (type: string, part: string) => type.startsWith("audio/")
+    || /name\*?=["']?[^"';\r\n]+\.(?:m4a|mp3|wav|aac|ogg|oga|opus|caf|amr|webm)\b/i.test(part.slice(0, 2000));
+  return attachmentsOf(raw, isAudio, (type) => (type.split(";")[0] || "audio/mp4").trim(), 5, MAX_VOICE_NOTE_BYTES);
+}
+
+function attachmentsOf(
+  raw: string, accept: (type: string, part: string) => boolean, mediaTypeOf: (type: string) => string,
+  max: number, maxBytes = MAX_ATTACHMENT_BYTES,
+): { attachments: Attachment[]; unread: string[] } {
   const attachments: Attachment[] = [];
   const unread: string[] = [];
 
@@ -156,11 +173,11 @@ export function pdfAttachments(raw: string): { attachments: Attachment[]; unread
 
   for (const part of parts) {
     const type = (headerIn(part, "content-type") ?? "").toLowerCase();
-    if (!type.includes("application/pdf")) continue;
+    if (!accept(type, part)) continue;
 
     const filename = filenameIn(part);
-    if (attachments.length >= MAX_ATTACHMENTS) {
-      unread.push(`${filename} (only the first ${MAX_ATTACHMENTS} were taken)`);
+    if (attachments.length >= max) {
+      unread.push(`${filename} (only the first ${max} were taken)`);
       continue;
     }
 
@@ -187,12 +204,12 @@ export function pdfAttachments(raw: string): { attachments: Attachment[]; unread
     // Base64 is 4 characters per 3 bytes; close enough to refuse an oversized file without decoding
     // it, which is the whole point — measuring by decoding would cost what reading costs.
     const bytes = Math.floor((dataBase64.length * 3) / 4);
-    if (bytes > MAX_ATTACHMENT_BYTES) {
+    if (bytes > maxBytes) {
       unread.push(`${filename} (${(bytes / 1024 / 1024).toFixed(1)}MB — too large to read here)`);
       continue;
     }
 
-    attachments.push({ filename, mediaType: "application/pdf", dataBase64, bytes });
+    attachments.push({ filename, mediaType: mediaTypeOf(type), dataBase64, bytes });
   }
 
   return { attachments, unread };
