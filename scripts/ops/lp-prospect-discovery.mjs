@@ -163,16 +163,21 @@ async function main() {
     console.log("DRY RUN: no 8Raise credit spent.");
   } else {
     const { spend8r, call8r } = await import("./lp-eightraise.mjs");
-    const fresh = merged.filter((l) => !l.enriched_month).slice(0, 25);
+    const fresh = merged.filter((l) => !l.enriched_month);
+    let tried = 0;
     const found = [];
     const jobs = [];
     // 8Raise's enrich_companies takes `firms` and a `delivery_tier` (1 = contact details only, 1 credit a contact).
     // A reply that is an MCP error spent nothing: it is a named stop, nothing is marked searched (15 Nov 2026: a
     // renamed field turned 25 searches into 25 silent errors).
     for (const l of fresh) {
+      if (tried >= 25) break;
       const r = await spend8r(api, { purpose: "prospecting", tool: "enrich_companies", args: { firms: [l.firm], max_per_firm: 1, delivery_tier: 1, firm_geography: "United States", channels: { email: true, linkedin: true, phone: false } }, credits: 1, company: l.firm, contacts: 1 })
         .catch((e) => ({ ok: false, why: e.message }));
+      // A firm already on this month's ledger is skipped, not a reason to stop the week's searches.
+      if (!r.ok && /already searched/.test(String(r.why))) continue;
       if (!r.ok) { console.log(`8Raise: stopped — ${r.why}`); break; }
+      tried++;
       const text = String(r.out ?? "");
       if (isMcpError(text)) { console.log(`NAMED STOP [8RAISE_CALL_REJECTED] enrich_companies: ${text.slice(0, 160)}`); break; }
       l.enriched_month = new Date(now).toISOString().slice(0, 7);
