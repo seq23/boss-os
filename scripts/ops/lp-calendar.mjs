@@ -58,3 +58,4 @@ export async function herBusyAndZone(creds, { now = Date.now(), days = 21, subje
   if (!lists.length) return { busy: null, homeZone, read: 0, why: "no calendar is configured" };
   return { busy: mergeBusy(lists), homeZone, read: lists.length, why: null };
 }
+

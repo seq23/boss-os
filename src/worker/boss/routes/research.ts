@@ -175,6 +175,7 @@ export async function realLinks(json: any, sources: { title: string; url: string
   const fix = (f: any) => (f && typeof f.url === "string" && to.has(f.url) ? { ...f, url: to.get(f.url) } : f);
   const out = { ...json };
   for (const k of ["title", "firm", "background", "focus"]) out[k] = fix(json[k]);
+  if (json.money && typeof json.money === "object") out.money = Object.fromEntries(Object.entries(json.money).map(([k, v]) => [k, fix(v)]));
   out.upcoming = Array.isArray(json.upcoming) ? json.upcoming.map(fix) : json.upcoming;
   return { json: out, sources: sources.map((s) => (to.has(s.url) ? { ...s, url: to.get(s.url)! } : s)) };
 }
@@ -183,7 +184,7 @@ export async function realLinks(json: any, sources: { title: string; url: string
 export function publicSpans(prompt: string, pages: { text: string }[]): string[] {
   return pages.map((p) => String(p.text ?? "").slice(0, 6000)).filter((t) => t.length && prompt.includes(t));
 }
-const sourcedCount = (j: any) => (j && j.found !== false ? ["title", "firm", "background", "focus"].filter((k) => j[k]).length + (j.upcoming?.length ?? 0) : 0);
+const sourcedCount = (j: any) => (j && j.found !== false ? ["title", "firm", "background", "focus"].filter((k) => j[k]).length + (j.upcoming?.length ?? 0) + Object.values(j.money ?? {}).filter(Boolean).length : 0);
 
 /**
  * WHO A MEETING GUEST IS, RESEARCHED BEFORE THE PREP GOES (owner, 4 Nov 2026). Called by Simone's
@@ -206,12 +207,12 @@ const sourcedCount = (j: any) => (j && j.found !== false ? ["title", "firm", "ba
  */
 export async function researchPerson(
   env: Env,
-  b: { name?: string | null; email?: string | null; firm?: string | null; domain?: string | null; today?: string | null },
+  b: { name?: string | null; email?: string | null; firm?: string | null; domain?: string | null; today?: string | null; institution?: boolean },
   browse: (env: Env, url: string) => Promise<{ ok: boolean; text: string | null; finalUrl: string | null }> = (e, u) => browsePage(e as any, u),
   search: (env: Env, query: string) => Promise<{ ok: true; results: BraveResult[] } | { ok: false; detail: string }> = (e, q) => braveSearch(e.BRAVE_SEARCH_API_KEY, q),
   follow: (url: string) => Promise<string | null> = followGroundingLink,
 ): Promise<any> {
-  const name = b.name ?? null, email = b.email ?? null, firm = b.firm ?? null, domain = b.domain ?? null;
+  const name = b.name ?? null, email = b.email ?? null, firm = b.firm ?? null, domain = b.domain ?? null, institution = b.institution === true;
   const today = b.today ?? new Date().toISOString().slice(0, 10);
   const access = scanForModelAccess([{ role: "user", content: [name, email, firm].filter(Boolean).join(" ") }], await privateLexicon(env.DB));
   if (access.access === "private_model_only") {
@@ -224,7 +225,7 @@ export async function researchPerson(
   try {
     const r = await routeCompletion(env, {
       ...base, onlyProviderId: "prv_gemini", jobKey: "meeting_prep_search", webSearch: true, maxOutputTokens: 1500,
-      messages: [{ role: "user", content: groundedSearchPrompt({ name, email, firm, domain, today }) }],
+      messages: [{ role: "user", content: groundedSearchPrompt({ name, email, firm, domain, today, institution }) }],
     });
     const sources = (r.sources ?? []).filter((s) => /^https:\/\//.test(s.url)).slice(0, 20);
     const grounded = sources.length ? keepGroundedFacts(jsonIn(r.text), sources) : null;
@@ -238,7 +239,7 @@ export async function researchPerson(
 
   // Pages → a free model writes from that text only; a fact is kept only when it cites one of them.
   const writeFrom = async (pages: { url: string; text: string }[]) => {
-    const content = writeFromPagesPrompt({ name, pages });
+    const content = writeFromPagesPrompt({ name, pages, institution });
     const w = await routeCompletion(env, {
       ...base, jobKey: "meeting_prep_write", maxOutputTokens: 1200,
       messages: [{ role: "user", content }],
@@ -301,7 +302,7 @@ export async function researchPerson(
 research.post("/person", async (c) => {
   const b = await c.req.json<any>().catch(() => null);
   const str = (v: unknown, n: number) => (typeof v === "string" && v.trim() ? v.trim().slice(0, n) : null);
-  const body = { name: str(b?.name, 120), email: str(b?.email, 200), firm: str(b?.firm, 160), domain: str(b?.domain, 160), today: str(b?.today, 10) };
+  const body = { name: str(b?.name, 120), email: str(b?.email, 200), firm: str(b?.firm, 160), domain: str(b?.domain, 160), today: str(b?.today, 10), institution: b?.institution === true };
   if (!body.name && !body.email) throw badRequest("Send the person's name or email");
   return ok(c, await researchPerson(c.env, body));
 });

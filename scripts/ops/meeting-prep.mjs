@@ -26,7 +26,7 @@ import { readAllCalendars } from "./calendar-sync.mjs";
 import { sendAsEmployee, ownerTo } from "./notify.mjs";
 import { plainProblems, NOTHING_TO_DECIDE } from "../../src/shared/boss/mail/plain.mjs";
 import { ownerEmail } from "../../src/shared/boss/mail/ownerLayout.mjs";
-import { buildPrep, buildCatchUp, isScooterCatchUp, roundupFrom, CATCHUP_DEFAULT_DAYS, dueMeetings, linkResolves, lengthLabel, others, recordsFor, nameFromTitle, companyDomain, shortDate, clock, guestFirm, zonedTime, DISPLAY_TZ, validZone, researchPrompt, readResearch, invitePerson } from "../../src/shared/boss/meetingPrep/prep.mjs";
+import { isInstitution, buildPrep, buildCatchUp, isScooterCatchUp, roundupFrom, CATCHUP_DEFAULT_DAYS, dueMeetings, linkResolves, lengthLabel, others, recordsFor, nameFromTitle, companyDomain, shortDate, clock, guestFirm, zonedTime, DISPLAY_TZ, validZone, researchPrompt, readResearch, invitePerson } from "../../src/shared/boss/meetingPrep/prep.mjs";
 import { askClaudeJson, googleToken, gmailHeaders } from "./lib/duty-kit.mjs";
 import { repairMojibake } from "../../src/shared/boss/mail/subject.mjs";
 
@@ -272,7 +272,9 @@ export async function researchGuest(event, data, { api, ask = askClaudeJson, now
   const today = new Date(now).toISOString().slice(0, 10);
   // The person the invite names, not the assistant it went to (6 Nov 2026: Sam's prep researched Alex).
   const named = invitePerson(event.title, name, firm);
-  const who = named ? { name: named, email: null, firm, domain: companyDomain(lead?.email), today } : { name, email: lead?.email ?? null, firm, domain: companyDomain(lead?.email), today };
+  // An institution's research also asks where its money comes from (owner, 15 Nov 2026).
+  const institution = isInstitution({ rec, firm, email: lead?.email ?? null, title: event.title });
+  const who = named ? { name: named, email: null, firm, domain: companyDomain(lead?.email), today, institution } : { name, email: lead?.email ?? null, firm, domain: companyDomain(lead?.email), today, institution };
   let r = await api.post("/research/person", who).catch((e) => ({ ok: false, stop: "RESEARCH_UNREACHABLE", why: `Boss OS could not be asked (${String(e.message).slice(0, 80)})` }));
   if (r?.private) {
     r = ask(researchPrompt(who), { model: "sonnet", maxTurns: 20, timeoutMs: 600_000, requireTool: /WebSearch|WebFetch/i, toolSearch: "select:WebSearch,WebFetch" });

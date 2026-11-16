@@ -33,7 +33,8 @@ import { OUR_DOMAINS } from "./mail-bulk.mjs";
 import { INBOX_LOOKBACK_DAYS, excluded } from "../../src/shared/boss/lp/plan.mjs";
 import { outputLine } from "../../src/shared/boss/alarms/rules.mjs";
 
-const LIVE = process.argv.includes("--live");
+const COLLECT = process.argv.includes("--collect"); // only poll unfinished lookups: spends nothing
+const LIVE = process.argv.includes("--live") || COLLECT;
 const MORNING_DIR = process.env.BOSS_OS_MORNING_DIR ?? path.join(os.homedir(), ".boss-os", "morning");
 const LEADS = path.join(os.homedir(), ".boss-os", "lp", "prospect-leads.json");
 const UA = process.env.SEC_USER_AGENT ?? "Boss OS prospect research (westpeek.ventures)";
@@ -76,6 +77,11 @@ export function leadKind(name) {
  * (11 Oct 2026 lesson: on obscure firms the match is often a person at ANOTHER company — never
  * emailed). Pure.
  */
+/** The leads file with the lookups still running on 8Raise (kept so their contacts are never lost). */
+export function withPending(file, pending) {
+  return { ...file, pending_jobs: (pending ?? []).filter((p) => p && p.job && p.firm) };
+}
+
 /** True when 8Raise answered with an error instead of a result (nothing was spent). */
 export function isMcpError(text) {
   return /^\s*MCP error\b/.test(String(text ?? "")) || /"isError"\s*:\s*true/.test(String(text ?? ""));
@@ -132,6 +138,8 @@ async function secLeads(companies, now) {
 }
 
 async function main() {
+  // Read before anything rewrites the leads file: the lookups an earlier run left running on 8Raise.
+  const carried = (() => { try { return JSON.parse(fs.readFileSync(LEADS, "utf8")).pending_jobs ?? []; } catch { return []; } })();
   const api = await bossApi();
   const now = Date.now();
   const lists = await api.get("/lp/exclusions");
@@ -155,7 +163,7 @@ async function main() {
   fs.mkdirSync(path.dirname(LEADS), { recursive: true });
   const prev = (() => { try { return JSON.parse(fs.readFileSync(LEADS, "utf8")).leads ?? []; } catch { return []; } })();
   const merged = [...prev, ...leads.filter((l) => !prev.some((p) => p.firm.toLowerCase() === l.firm.toLowerCase()))];
-  fs.writeFileSync(LEADS, JSON.stringify({ updated_at: new Date(now).toISOString(), leads: merged }, null, 2), { mode: 0o600 });
+  fs.writeFileSync(LEADS, JSON.stringify(withPending({ updated_at: new Date(now).toISOString(), leads: merged }, carried), null, 2), { mode: 0o600 });
   console.log(`SEC: ${leads.length} firm leads this week (${merged.length} on file). A lead becomes a prospect only with a published address.`);
   console.log(outputLine(leads.length, "firm leads found"));
 
@@ -163,10 +171,13 @@ async function main() {
     console.log("DRY RUN: no 8Raise credit spent.");
   } else {
     const { spend8r, call8r } = await import("./lp-eightraise.mjs");
-    const fresh = merged.filter((l) => !l.enriched_month);
+    const fresh = COLLECT ? [] : merged.filter((l) => !l.enriched_month);
     let tried = 0;
     const found = [];
     const jobs = [];
+    // Unfinished enrichment jobs from earlier runs come first: polling is free and their contacts are already paid for.
+    for (const p of carried) { const lead = merged.find((l) => l.firm === p.firm) ?? { firm: p.firm, kind: p.kind, source: p.source, source_ref: p.source_ref }; jobs.push({ job: p.job, lead }); }
+    if (carried.length) console.log(`8Raise: ${carried.length} unfinished lookup(s) from an earlier run polled again.`);
     // 8Raise's enrich_companies takes `firms` and a `delivery_tier` (1 = contact details only, 1 credit a contact).
     // A reply that is an MCP error spent nothing: it is a named stop, nothing is marked searched (15 Nov 2026: a
     // renamed field turned 25 searches into 25 silent errors).
@@ -200,8 +211,8 @@ async function main() {
     }
     console.log(`8Raise: ${jobs.length} firm(s) searched, ${jobs.length - open.length} finished${open.length ? `, ${open.length} still running on 8Raise (their contacts land in the 8Raise dashboard)` : ""}.`);
     // One LP-mode search a week for the types she named, 5 contacts, inside the same budget.
-    const brief = "Family offices and sovereign wealth funds that invest in late-stage technology companies, including secondaries. 5 contacts.";
-    try {
+    const brief = "Family offices and sovereign wealth funds that invest directly in late-stage technology startups, United States. 5 contacts."; // "secondaries" made 8Raise read it as LPs for a fund (15 Nov 2026)
+    if (!COLLECT) try {
       let refined = JSON.parse(call8r("refine_query", { user_message: brief }) || "{}");
       // A term 8Raise has no sector for: use it as a free-text keyword, as 8Raise's own answer says to.
       if (refined.status === "needs_sector_pick" && refined.current_partial) {
@@ -221,7 +232,9 @@ async function main() {
       const r = await api.post("/lp/prospects/import", { rows: found });
       console.log(`8Raise: ${r.added} published contacts added.`);
     }
-    fs.writeFileSync(LEADS, JSON.stringify({ updated_at: new Date(now).toISOString(), leads: merged }, null, 2), { mode: 0o600 });
+    const pending_jobs = open.map((j) => ({ job: j.job, firm: j.lead.firm, kind: j.lead.kind ?? null, source: j.lead.source ?? null, source_ref: j.lead.source_ref ?? null }));
+    fs.writeFileSync(LEADS, JSON.stringify(withPending({ updated_at: new Date(now).toISOString(), leads: merged }, pending_jobs), null, 2), { mode: 0o600 });
+    if (pending_jobs.length) console.log(`8Raise: ${pending_jobs.length} lookup(s) kept for the next run (npm run lp:discover -- --collect).`);
   }
   console.log("LP-DISCOVERY-COMPLETE: filed");
 }

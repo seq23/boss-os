@@ -13,6 +13,7 @@ import { isRoleMailbox } from "../people/role.mjs";
 // Function-level use only (schedule.mjs reads firstName from here): the cycle is safe in ESM.
 import { slotText, slotsFrom } from "./schedule.mjs";
 import { recipientLines } from "../mail/replyNeed.mjs";
+import { callLine } from "./callBooked.mjs";
 
 export const LP_MAILBOX = "sequoia@westpeek.ventures";
 /**
@@ -34,6 +35,17 @@ export const LP_STATUS_LABEL = Object.freeze({
   not_answered: "Not answered yet",
   replied_again: "They replied again",
 });
+
+/**
+ * The tracker words for one row. A row with a call on her calendar (status "scheduled" with the
+ * call's start in picked_start, lp-followups.mjs) reads "Call booked: Mon 16 Nov, 12:00 PM CT", or
+ * "Call held: …" once it is past (owner, 15 Nov 2026).
+ */
+export function lpStatusLabel(r, now = Date.now()) {
+  if (r?.status === "scheduled" && Number(r.picked_start) > 0) return callLine(Number(r.picked_start), now);
+  if (r?.waiting_why) return LP_WAITING_LABEL;
+  return LP_STATUS_LABEL[r?.status] ?? r?.status ?? "";
+}
 
 /** The tracker word for a row whose last message needs no reply (`waiting_why`): the thread waits on them. */
 export const LP_WAITING_LABEL = "Waiting on them";
