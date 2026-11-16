@@ -908,10 +908,16 @@ export function childEnv(source = {}) {
  * rather than silently letting the second overwrite the first.
  */
 export async function defaultPlaceMaterials(cwd, materials) {
-  if (!Array.isArray(materials) || materials.length === 0) return [];
   const { copyFile, mkdir } = await import("node:fs/promises");
   const { join, basename } = await import("node:path");
+  /*
+   * THE RUN'S WORKSPACE ALWAYS EXISTS, MATERIALS OR NOT (16 Nov 2026: the Monthly quality read's
+   * first real run on Claude's seat failed in 18 ms, "spawn claude ENOENT" reported as "stdout was
+   * not JSON": its workspace ~/.boss-os/quality had never been made, because only a run WITH
+   * materials created its directory, and a spawn into a missing cwd says ENOENT).
+   */
   await mkdir(cwd, { recursive: true });
+  if (!Array.isArray(materials) || materials.length === 0) return [];
 
   const placed = [];
   for (const source of materials) {
