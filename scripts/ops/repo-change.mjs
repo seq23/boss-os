@@ -34,7 +34,7 @@
  */
 
 import { spawn, spawnSync } from "node:child_process";
-import { existsSync, mkdirSync, readFileSync, writeFileSync, appendFileSync, symlinkSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync, readdirSync, writeFileSync, appendFileSync, symlinkSync } from "node:fs";
 import { homedir } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -524,6 +524,75 @@ function checksFor(repo, prNumber) {
   return { state: "pending", detail };
 }
 
+/*
+ * "NO CHECKS REPORTED" IS A WAIT, NEVER AN ANSWER (16 Nov 2026, rc_m7fktx5ggr9vtcq5 / PR #417).
+ * GitHub registers a PR's check runs a few seconds after the PR exists (#417: opened 13:34:58Z,
+ * checks started 13:35:03Z). The lane read the checks inside that window, got "no checks reported"
+ * and failed a repair whose eight checks then all passed. Inside NO_CHECKS_GRACE_MS of the PR, "none"
+ * is pending; past it, "none" is green only where no workflow runs on a pull request at all and the
+ * repo's own validators passed — a repo with a PR gate that queued nothing is a named stop.
+ */
+export const NO_CHECKS_GRACE_MS = 10 * 60_000;
+
+/** The `on:` block of a workflow file (top-level key to the next top-level key), or "" when none. */
+function onBlock(text) {
+  const lines = String(text ?? "").split(/\r?\n/);
+  const start = lines.findIndex((l) => /^["']?on["']?\s*:/.test(l));
+  if (start < 0) return "";
+  const out = [lines[start].replace(/^["']?on["']?\s*:/, "")];
+  for (const l of lines.slice(start + 1)) {
+    if (/^\S/.test(l) && !/^#/.test(l)) break;
+    out.push(l);
+  }
+  return out.map((l) => l.replace(/#.*$/, "")).join("\n");
+}
+
+/** True when any workflow's `on:` names pull_request(_target); false when none do; null with nothing to read. */
+export function prTriggeredWorkflows(files) {
+  const list = (files ?? []).filter((f) => f && typeof f.text === "string");
+  if (list.length === 0) return null;
+  return list.some((f) => /(^|[\s\[,{-])pull_request(_target)?\b/.test(onBlock(f.text)));
+}
+
+/** Read the change's own worktree first (a PR that adds the first workflow counts), then the repo's checkout. */
+function prChecksExpected(row) {
+  for (const dir of [join(WORK_ROOT, `wt-${row.id}`), repoPathFor(row.repo)]) {
+    if (!dir) continue;
+    const wf = join(dir, ".github", "workflows");
+    if (!existsSync(wf)) { if (existsSync(join(dir, ".git"))) return false; continue; }
+    try {
+      const files = readdirSync(wf).filter((f) => /\.ya?ml$/i.test(f)).map((f) => ({ name: f, text: readFileSync(join(wf, f), "utf8") }));
+      return prTriggeredWorkflows(files) ?? false;
+    } catch { continue; }
+  }
+  return null;
+}
+
+/** When the PR was opened, from GitHub; null when gh cannot say. */
+function prCreatedAt(repo, prNumber) {
+  const run = spawnSync("gh", ["pr", "view", String(prNumber), "--repo", `seq23/${repo}`, "--json", "createdAt", "--jq", ".createdAt"], { encoding: "utf8" });
+  const t = run.status === 0 ? Date.parse((run.stdout ?? "").trim()) : NaN;
+  return Number.isFinite(t) ? t : null;
+}
+
+/** The whole rule for a "none" verdict: pending inside the grace, green only with no PR gate, else none. */
+export function noChecksVerdict({ prWorkflows, since, now = Date.now(), graceMs = NO_CHECKS_GRACE_MS, proof = null }) {
+  const age = Math.max(0, now - (Number.isFinite(since) ? since : now));
+  const mins = Math.round(age / 60_000);
+  if (age < graceMs) {
+    return { state: "pending", detail: `no checks registered yet ${Math.round(age / 1000)}s after the pull request opened; GitHub takes a moment to queue them, so this is a wait (grace ${Math.round(graceMs / 60_000)} min)` };
+  }
+  if (prWorkflows === false && proof?.validators_passed === true) {
+    return { state: "green", detail: `no workflow in this repo runs on a pull request; the repo's own validators passed on the Mac before the PR (recorded in the proof): ${(proof.validators ?? []).join(", ")}` };
+  }
+  const why = prWorkflows === true
+    ? "this repo has a workflow that runs on pull requests, yet GitHub queued nothing — most likely a workflow file GitHub cannot parse (zero jobs) or a paths filter that skipped it"
+    : prWorkflows === false
+      ? "this repo has no workflow that runs on pull requests, and no passing local validators were recorded"
+      : "this repo's workflows could not be read";
+  return { state: "none", detail: `gh: no checks reported ${mins} min after the pull request opened; ${why}` };
+}
+
 /** The failing checks' own output (the tail of `gh run view --log-failed`), as the rework's brief. Best effort. */
 function failedCheckOutput(repo, prNumber) {
   const run = spawnSync("gh", ["pr", "checks", String(prNumber), "--repo", `seq23/${repo}`, "--json", "name,bucket,link"], { encoding: "utf8" });
@@ -979,7 +1048,7 @@ async function runPhase(claim) {
     }
     say(`built: ${out.pr_url}; now watching its checks.`);
     // Watch the checks in this same run for a while, so a quick CI lands in the same tick.
-    await watchChecks({ ...row, repo, pr_url: out.pr_url, pr_number: Number(out.pr_number), proof: out.proof ?? null }, log, 15);
+    await watchChecks({ ...row, repo, pr_url: out.pr_url, pr_number: Number(out.pr_number), proof: out.proof ?? null, built_at: Date.now() }, log, 15);
     return;
   }
 
@@ -1139,10 +1208,14 @@ async function sendPreview(row, log) {
 /** Ask gh about a PR's checks, record the answer, and — on green — claim and run LAND now. */
 async function watchChecks(row, log, waitMinutes) {
   const deadline = Date.now() + waitMinutes * 60_000;
+  let since = Number.isFinite(Number(row.built_at)) && Number(row.built_at) > 0 ? Number(row.built_at) : null;
+  let prWorkflows;
   for (;;) {
     let verdict = checksFor(row.repo, row.pr_number);
-    if (verdict.state === "none" && row.proof?.validators_passed === true) {
-      verdict = { state: "green", detail: `no CI checks on ${row.repo}; the repo's own validators passed on the Mac before the PR (recorded in the proof): ${(row.proof.validators ?? []).join(", ")}` };
+    if (verdict.state === "none") {
+      since ??= prCreatedAt(row.repo, row.pr_number) ?? Date.now();
+      if (prWorkflows === undefined) prWorkflows = prChecksExpected(row);
+      verdict = noChecksVerdict({ prWorkflows, since, proof: row.proof });
     }
     say(`checks on ${row.pr_url}: ${verdict.state} — ${verdict.detail}`);
     if (verdict.state === "green") {
