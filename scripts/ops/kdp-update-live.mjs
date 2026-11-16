@@ -29,7 +29,7 @@ import { fileURLToPath, pathToFileURL } from "node:url";
 import { openProfile } from "./browser.mjs";
 import { companionLink } from "./kdp-books/series.mjs";
 import { jpegHeight } from "./kdp-build.mjs";
-import { snapshot, go, first, fillField, clickOne, categories, upload, autoSignin, RUN, normTitle, shelfRowsIn, parseShelfRow, tickAui, confirmAiAnswers } from "./kdp-new-title.mjs";
+import { snapshot, go, first, fillField, clickOne, categories, upload, autoSignin, RUN, normTitle, shelfRowsIn, parseShelfRow, tickAui, confirmAiAnswers, refusalOnPage } from "./kdp-new-title.mjs";
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const ROOT = join(HERE, "../..");
@@ -159,9 +159,15 @@ async function update(page, spec, row, todo, dir) {
   // A new file asks to re-affirm the AI answers (they are unchanged); a forced tick does not reach the page.
   if (todo.includes("manuscript") || todo.includes("cover")) await confirmAiAnswers(page);
   await saveAndGo(page, /\/pricing/);
-  if (!/\/pricing/.test(page.url())) throw stop("CONTENT_NOT_SAVED", "Amazon did not move on from the content step.", 9);
+  if (!/\/pricing/.test(page.url())) {
+    const r = await refusalOnPage(page);
+    throw stop("CONTENT_NOT_SAVED", `Amazon did not move on from the content step: ${r?.said ?? ((await page.locator(".a-alert-error:visible .a-alert-content, .a-alert-inline-error:visible").allInnerTexts().catch(() => [])).join(" ").slice(0, 300) || "no message shown")}.`, 9);
+  }
   await tickAui(page, 'input[name="data[is_select]-check"]');
-  if (todo.includes("price")) {
+  // The approved price is typed and the box left on EVERY update, not only when it differs: KDP fills the
+  // other marketplaces from it on blur, and without that Publish is refused "Set a list price for
+  // Amazon.co.uk …" (9 Nov 2026: letter-of-explanation, employment-verification-letter).
+  if (spec.price_usd) {
     await tickAui(page, `input[name="data[digital][royalty_rate]-radio"][value="${spec.price_usd >= 2.99 ? 70 : 35}_PERCENT"]`);
     await fillField(page, "Amazon.com price", ['input[name="data[digital_list_price][USD]"]', 'input[id*="price"][id*="US"]', (p) => p.locator("tr, .a-row").filter({ hasText: "Amazon.com" }).locator('input[type="text"]')], spec.price_usd.toFixed(2));
     await page.keyboard.press("Tab").catch(() => {});
@@ -170,8 +176,8 @@ async function update(page, spec, row, todo, dir) {
   if (DRY) return "DRY_RUN";
   await clickOne(page, "Publish Your Kindle eBook", [(p) => p.getByRole("button", { name: /Publish Your Kindle eBook/i }), "#save-and-publish-announce"]);
   await page.waitForTimeout(8000);
-  const err = (await page.locator(".a-alert-error:visible .a-alert-content").allInnerTexts().catch(() => [])).join(" ").trim();
-  if (err && /fix the highlighted|set a list price|refused|cannot be published/i.test(err)) throw stop("PUBLISH_REFUSED", `Amazon refused the update: ${err.slice(0, 300)}`, 9);
+  const refused = await refusalOnPage(page);
+  if (refused) throw stop(refused.code, `Amazon refused the update: ${refused.said}`, 9);
   return "submitted";
 }
 

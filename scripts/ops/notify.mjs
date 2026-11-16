@@ -37,7 +37,7 @@ import { createHash } from "node:crypto";
 import { homedir, tmpdir } from "node:os";
 import { basename, join } from "node:path";
 import { outboundFilesPlan } from "../../src/shared/boss/service/files.mjs";
-import { layoutEmail, fromLegacy, plainProblems, simplifyForOwner } from "../../src/shared/boss/mail/plain.mjs";
+import { layoutEmail, fromLegacy, plainProblems, simplifyForOwner, refsIn } from "../../src/shared/boss/mail/plain.mjs";
 import { ownerEmail, layoutOf } from "../../src/shared/boss/mail/ownerLayout.mjs";
 import { ownerDoor, eventKey } from "../../src/shared/boss/mail/ownerDoor.mjs";
 import { isOwner } from "../../src/shared/boss/intake/mail.mjs";
@@ -382,7 +382,10 @@ export async function postEmployeeMail(sender, payload, fetchImpl = fetch, { con
     const id = typeof res.clone === "function" ? (await res.clone().json().catch(() => ({})))?.id : null;
     if (id) await archiveSentMail(payload, id, fetchImpl, { key: sender.key });
   }
-  const refs = String(payload?.headers?.["X-Boss-Ref"] ?? "").split(/\s+/).filter(Boolean);
+  // Only job codes are recorded (the route keeps only those: `refsIn`, mailRefs.ts). A Kindle stop's ref
+  // is its approval id (apr_…), which the route refused with a 400 and a REFS_NOT_RECORDED stop on
+  // every such mail (14 Nov 2026); a mail with no job code has nothing for a reply to find.
+  const refs = refsIn(String(payload?.headers?.["X-Boss-Ref"] ?? ""));
   if (res.ok && refs.length) {
     let why;
     try {

@@ -53,3 +53,21 @@ describe("what reaches Resend carries no invisible prose marks (7 Nov 2026 live 
     expect(JSON.parse(bodies[0]!).text).toContain("A quiet line of prose.");
   });
 });
+
+describe("a mail whose only ref is not a job code never asks Boss OS to record it (14 Nov 2026 REFS_NOT_RECORDED 400)", () => {
+  it("an approval id (apr_…) is not posted to /mail-refs; a job code still is", async () => {
+    const { postEmployeeMail, sendersFor: sf } = await import("../scripts/ops/notify.mjs");
+    const { mkdtempSync } = await import("node:fs"); const { tmpdir } = await import("node:os"); const { join } = await import("node:path");
+    process.env.BOSS_OS_SENT_MAIL_DIR = mkdtempSync(join(tmpdir(), "employee-mail-refs-"));
+    process.env.BOSS_OS_MAIL_KEY = "k"; process.env.BOSS_PASSCODE = "p";
+    const sender = sf("Simone")[0]!;
+    const send = async (ref: string) => {
+      const urls: string[] = [];
+      const f = (async (u: string) => { urls.push(String(u)); return new Response(JSON.stringify({ id: "x", message_id: "<m@x>", ok: true }), { status: 200, headers: { "set-cookie": "boss=1" } }); }) as any;
+      await postEmployeeMail(sender, { from: "a@b", to: ["o@example.com"], reply_to: "a@b", subject: "Kindle stop", text: "t", html: "<p>t</p>", headers: { "X-Boss-Ref": ref } }, f, { seen: new Set() });
+      return urls.filter((u) => u.includes("/mail-refs"));
+    };
+    expect(await send("apr_m7abc123")).toEqual([]);
+    expect((await send("tsk_m7abc123")).length).toBe(1);
+  });
+});

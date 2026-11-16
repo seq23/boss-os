@@ -869,8 +869,8 @@ async function pricingAndPublish(page, book, ans) {
   await page.waitForTimeout(8000);
   // Only an error box that is SHOWN counts (8 Nov 2026: a hidden ".a-color-error" reading "Deleting"
   // stopped a book that Amazon had in fact accepted; the bookshelf read after this is the truth).
-  const err = (await page.locator(".a-alert-error:visible .a-alert-content").allInnerTexts().catch(() => [])).join(" ").trim();
-  if (err && /fix the highlighted|set a list price|refused|cannot be published/i.test(err)) throw stop("PUBLISH_REFUSED", `Amazon refused Publish: ${err.slice(0, 400)}`, 9);
+  const refused = await refusalOnPage(page);
+  if (refused) throw stop(refused.code, `Amazon refused Publish: ${refused.said}`, 9);
   return { published: true };
 }
 
@@ -988,6 +988,33 @@ export function stopMail({ title, code, said, waitMs = HANDOFF_MS, id = null }) 
  * non-zero so the duty's failure opens one repair for the team, and the title stays approved for the
  * next run. Pure.
  */
+/**
+ * WHICH FIELD AMAZON HIGHLIGHTED, AND WHOSE IT IS (16 Nov 2026). "Please fix the highlighted
+ * error(s)" said nothing on its own; the 9 Nov run's highlighted fields were "Set a list price for
+ * Amazon.co.uk …", boxes this run fills. A highlighted box is the run's repair (FIELDS_HIGHLIGHTED,
+ * not hers); only a refusal with no highlighted box we fill stays PUBLISH_REFUSED. `alert` is the
+ * page's error banner, `fields` each highlighted box's own message. Pure; null when nothing refused.
+ */
+export function readRefusal(alert, fields = []) {
+  const a = String(alert ?? "").trim();
+  const f = [...new Set((fields ?? []).map((x) => String(x).replace(/\s+/g, " ").trim()).filter(Boolean))];
+  const all = [a, ...f].join(" ");
+  if (!/fix the highlighted|set a list price|refused|cannot be published/i.test(all)) return null;
+  const named = f.length ? f : a.split(/\n+/).slice(1).map((x) => x.trim()).filter(Boolean);
+  const highlighted = /fix the highlighted|set a list price/i.test(all);
+  const said = `${a.split(/\n/)[0].slice(0, 200)}${named.length ? ` Highlighted: ${named.join("; ").slice(0, 600)}.` : ""}`;
+  return { code: highlighted ? "FIELDS_HIGHLIGHTED" : "PUBLISH_REFUSED", fields: named, said };
+}
+
+/** The refusal on the page as it is: the banner and every highlighted field's message, logged by name. */
+export async function refusalOnPage(page) {
+  const alert = (await page.locator(".a-alert-error:visible .a-alert-content").allInnerTexts().catch(() => [])).join("\n").trim();
+  const fields = await page.locator(".a-alert-inline-error:visible .a-alert-content, .a-form-error:visible, [aria-invalid=\"true\"]:visible").allInnerTexts().catch(() => []);
+  const r = readRefusal(alert, fields);
+  if (r?.fields.length) console.log(`Amazon highlighted: ${r.fields.join(" | ")}`);
+  return r;
+}
+
 export const HER_STOPS = new Set(["SIGNIN", "SIGNIN_NOT_DONE", "BLOCKED", "PUBLISH_REFUSED", "UPLOAD_REFUSED"]);
 export const stopNeedsHer = (code) => HER_STOPS.has(code);
 
@@ -1004,6 +1031,7 @@ export function plainStop(code, said = "") {
     FIELD_DID_NOT_TAKE: "a box did not keep what I typed.",
     PRICE_NOT_SET: "the price did not read back as the price you approved.",
     PUBLISH_REFUSED: "Amazon refused the Publish button.",
+    FIELDS_HIGHLIGHTED: "Amazon highlighted a box I fill in (named in the log) and would not publish until it is fixed.",
     PUBLISH_NOT_CONFIRMED: "after Publish, the bookshelf did not show the book as In review.",
     DETAILS_NOT_SAVED: "Amazon did not save the first page.",
     CONTENT_NOT_SAVED: "Amazon did not save the book file and cover page.",
