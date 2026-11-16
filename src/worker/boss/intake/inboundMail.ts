@@ -1071,27 +1071,10 @@ export async function handleBossInboundMail(message: BossMailMessage, env: Env):
    * the seat that can execute it (`shared/boss/intake/triage.mjs`). A tag she typed, the name@
    * address she wrote to, and a rule handoff all stay her decision and are never re-triaged.
    */
-  /*
-   * THE FIRST READ (15 Nov 2026, firstRead.ts): a free model's brief of her asks, holds, questions,
-   * unclear items and files. It runs BEFORE the split (15 Nov 2026 production dry run: a pasted
-   * contact list became two jobs): her asks open the jobs and everything else rides along as their
-   * material. The seat is still the rules' choice. Free rungs only; at the free cap, or with nothing
-   * answering, the rules read her email exactly as before.
-   */
   let first: FirstRead | null = null;
   let briefBlock: string | null = null;
-  if (route.outcome !== "AMBIGUOUS" && !bookFailure && !question && !filedByVerb) {
-    // Inside the guard: nothing unclear, unread or already done ever reaches the free reader either.
-    const fileNames = [...files.heard.map((h) => h.filename), ...files.read.map((r) => r.filename), ...files.unopened.map((u) => u.filename)];
-    first = !oversize && (own || readable).trim()
-      ? await firstRead(env, { subject: trueSubject, words: own || readable, files: fileNames, now, mailId })
-      : null;
-    briefBlock = first?.brief ? briefForTask(first.brief, first.reader) : first?.stop ?? null;
-  }
-  const triaged: Array<TriageJob<BossSeat>> =
-    route.outcome === "DEFAULTED" && !handoffNote && !followed && !filedByVerb && !bookFailure && !question && Boolean(readable || subject)
-      ? triage({ subject: trueSubject, text: own || trueSubject, roster, asks: first?.brief?.asks ?? null })
-      : [];
+  // Filled inside the one guarded admission branch below, after the first read (her asks open the jobs).
+  let triaged: Array<TriageJob<BossSeat>> = [];
   // A reply to Simone's daily or weekly email ("move the KDP item to Monday") carries the email
   // it answers. Only that email: it is built from Boss OS rows with nothing from the fund, so it
   // is safe as model input; other emails' text stays in boss_mail_refs (LOCAL_ONLY for AI).
@@ -1146,7 +1129,24 @@ export async function handleBossInboundMail(message: BossMailMessage, env: Env):
     });
   };
   if (followed) route.seat = followed.seat;
+
+  /*
+   * THE FIRST READ (15 Nov 2026, firstRead.ts): a free model's brief of her asks, holds, questions,
+   * unclear items and files. It runs BEFORE the split (15 Nov 2026 production dry run: a pasted
+   * contact list became two jobs): her asks open the jobs and everything else rides along as their
+   * material. The seat is still the rules' choice. Free rungs only; at the free cap, or with nothing
+   * answering, the rules read her email exactly as before.
+   */
   if (route.outcome !== "AMBIGUOUS" && !bookFailure && !question && !filedByVerb) {
+    // Inside the guard: nothing unclear, unread or already done ever reaches the free reader either.
+    const fileNames = [...files.heard.map((h) => h.filename), ...files.read.map((r) => r.filename), ...files.unopened.map((u) => u.filename)];
+    first = !oversize && (own || readable).trim()
+      ? await firstRead(env, { subject: trueSubject, words: own || readable, files: fileNames, now, mailId })
+      : null;
+    briefBlock = first?.brief ? briefForTask(first.brief, first.reader) : first?.stop ?? null;
+    triaged = route.outcome === "DEFAULTED" && !handoffNote && !followed && Boolean(readable || subject)
+      ? triage({ subject: trueSubject, text: own || trueSubject, roster, asks: first?.brief?.asks ?? null })
+      : [];
     if (triaged.length) await admitTriaged();
     else try {
       const admitted = await admitTask(env, {
