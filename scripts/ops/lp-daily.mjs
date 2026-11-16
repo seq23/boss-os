@@ -172,6 +172,8 @@ async function main() {
   const file = writeMorning("lp", lpMorning(after.rows ?? [], Date.now(), { stops }));
   for (const s of fu.stops) console.log(`note: ${s}`);
   console.log(`LP-DAILY-COMPLETE: ${rows.length} on the tracker; morning section at ${file}`);
+  // The census duty-run.sh records as what this run produced (`OUTPUT <n> <metric>`).
+  console.log(`OUTPUT ${rows.length} LP replies on the tracker`);
 }
 
 if (import.meta.url === `file://${process.argv[1]}`) {
