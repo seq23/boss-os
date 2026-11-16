@@ -458,6 +458,10 @@ export async function handleTask(env: Env, msg: TaskMessage): Promise<void> {
         code: "WAITING_FOR_CLAUDE", tell: true, resumeAt,
         why: `NAMED STOP [WAITING_FOR_CLAUDE] private ${HARD} work runs on the Claude seat only and that seat did not take it (${refusals.map((r) => `${r.backend_id}: ${r.refused.slice(0, 160)}`).join(" | ") || "no seat answered"}); it waits and tries again at ${new Date(resumeAt).toISOString()}. Never Codex, never a free or cloud route.`,
       });
+      // A wait that never clears (16 Nov 2026: a policy refusal read as a busy seat, hourly, told
+      // once) reaches her through the duty's own 2-day alarm, as `usageWait` does.
+      const { duty } = await selfStarted(env, task, input).catch(() => ({ duty: null }));
+      if (duty) await dutyNotRunning(env, duty).catch(() => null);
       return;
     }
     // FAIL CLOSED: private work no allowed seat took is never sent anywhere else.

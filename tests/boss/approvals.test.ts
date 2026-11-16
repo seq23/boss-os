@@ -252,7 +252,8 @@ describe("Phase 1 — expiry sweep", () => {
       const taskId = await insertTask({ status: "awaiting_approval", intake_kind: "trading", execution_assignment: "USER_ONLY", risk: "high", sensitivity: "restricted", ...over });
       const aprId = await insertApproval({ kind: "manual", origin_type: "tasks", origin_id: taskId, payload: { task_id: taskId, assignment: "USER_ONLY" }, expires_at: Date.now() + 86_400_000 });
       await env.DB.batch([
-        env.DB.prepare(`UPDATE tasks SET approval_id = ? WHERE id = ?`).bind(aprId, taskId),
+        // As production held it: the trading guess set private_model_only alongside restricted.
+        env.DB.prepare(`UPDATE tasks SET approval_id = ?, model_access = 'private_model_only' WHERE id = ?`).bind(aprId, taskId),
         env.DB.prepare(`INSERT INTO task_events (id, task_id, ts, event, detail) VALUES (?,?,?,'intake',?)`).bind(`tev_${taskId}`, taskId, Date.now(), JSON.stringify(intake)),
       ]);
       return { taskId, aprId };
@@ -266,21 +267,52 @@ describe("Phase 1 — expiry sweep", () => {
 
     await runExpirySweep(env);
 
-    const task = (id: string) => row(`SELECT status, approval_id, intake_kind, execution_assignment, risk, sensitivity FROM tasks WHERE id = ?`, id);
+    const task = (id: string) => row(`SELECT status, approval_id, intake_kind, execution_assignment, risk, sensitivity, model_access FROM tasks WHERE id = ?`, id);
     const apr = (id: string) => row(`SELECT status, decided_by, execution_status FROM approvals WHERE id = ?`, id);
-    expect(await task(duty.taskId)).toMatchObject({ status: "queued", approval_id: null, intake_kind: "recurring_duty", sensitivity: "restricted" });
+    // 16 Nov 2026: the guess's `restricted` is re-read; model access stays private (tighten-only).
+    expect(await task(duty.taskId)).toMatchObject({ status: "queued", approval_id: null, intake_kind: "recurring_duty", sensitivity: "internal", model_access: "private_model_only" });
     expect((await task(duty.taskId))!.execution_assignment).not.toBe("USER_ONLY");
     expect(await apr(duty.aprId)).toMatchObject({ status: "approved", decided_by: "system", execution_status: "executed" });
     expect((await all(`SELECT event FROM task_events WHERE task_id = ?`, duty.taskId)).map((e) => e.event)).toEqual(expect.arrayContaining(["intake_overruled", "requeued"]));
     expect((await task(repair.taskId))!.status).toBe("queued");
     for (const still of [hers, lane, declared]) {
-      expect((await task(still.taskId))!.status).toBe("awaiting_approval");
+      expect((await task(still.taskId))!).toMatchObject({ status: "awaiting_approval", sensitivity: "restricted" });
       expect((await apr(still.aprId))!.status).toBe("pending");
     }
     // Once: the next sweep finds nothing more to release.
     const again = await runExpirySweep(env);
     expect((await task(duty.taskId))!.status).toBe("queued");
     expect(again.failed).toBe(0);
+  });
+
+  it("a duty's run released before the sweep wrote sensitivity, still carrying the guess's `restricted`, is re-read once; a declared one and her own stay (16 Nov 2026)", async () => {
+    const quoted = "Monthly quality read: Brokerage sourcing, sell 2,000 shares";
+    const released = async (input: Record<string, unknown>, intake: Record<string, unknown> = { intakeKind: "trading", matched: ["trading"] }, over: Record<string, unknown> = {}) => {
+      const taskId = await insertTask({ status: "queued", title: "Monthly quality read", intake_kind: "recurring_duty", execution_assignment: "AI_EXECUTE_WITH_APPROVAL", risk: "high", sensitivity: "restricted", input: JSON.stringify(input), ...over });
+      await env.DB.batch([
+        env.DB.prepare(`UPDATE tasks SET model_access = 'private_model_only' WHERE id = ?`).bind(taskId),
+        env.DB.prepare(`INSERT INTO task_events (id, task_id, ts, event, detail) VALUES (?,?,?,'intake',?)`).bind(`tev_i_${taskId}`, taskId, 1, JSON.stringify(intake)),
+        env.DB.prepare(`INSERT INTO task_events (id, task_id, ts, event, detail) VALUES (?,?,?,'intake_overruled',?)`).bind(`tev_o_${taskId}`, taskId, 2, "{}"),
+      ]);
+      return taskId;
+    };
+    const stuck = await released({ prompt: quoted, duty_id: "duty_quality_read" });
+    const declared = await released({ prompt: quoted, duty_id: "duty_q2" }, { intakeKind: "trading", matched: ["trading", "explicit_sensitivity"] });
+    const hers = await released({ prompt: quoted, mail_id: "m1" });
+    const trading = await released({ prompt: quoted, duty_id: "duty_q3" }, undefined, { lane: "trading" });
+    const neverOverruled = await insertTask({ status: "queued", sensitivity: "restricted", input: JSON.stringify({ prompt: quoted, duty_id: "duty_q4" }) });
+
+    await runExpirySweep(env);
+
+    const t = (id: string) => row(`SELECT status, sensitivity, model_access, risk FROM tasks WHERE id = ?`, id);
+    expect(await t(stuck)).toMatchObject({ status: "queued", sensitivity: "internal", model_access: "private_model_only" });
+    for (const kept of [declared, hers, trading, neverOverruled]) expect((await t(kept))!.sensitivity).toBe("restricted");
+    const overruledEvents = async () => (await all(`SELECT 1 FROM task_events WHERE task_id = ? AND event = 'intake_overruled'`, stuck)).length;
+    expect(await overruledEvents()).toBe(2);
+    // Once: a second sweep changes nothing.
+    await runExpirySweep(env);
+    expect(await overruledEvents()).toBe(2);
+    expect((await t(stuck))!.sensitivity).toBe("internal");
   });
 
   it("a finished result of a dated check-in, a repair or a duty's run is accepted by the sweep; her own ask keeps its card (16 Nov 2026)", async () => {

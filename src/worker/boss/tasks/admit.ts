@@ -5,7 +5,7 @@ import { logEvent } from "../lib/log";
 import { badRequest, conflict } from "../lib/http";
 import { getSetting } from "../lib/settings";
 import { isLane } from "../../../shared/boss/lanes";
-import { classify, KIND_TO_DEPARTMENT } from "../intake/classify";
+import { classify, KIND_TO_DEPARTMENT, type Classification } from "../intake/classify";
 import { buildEnvelope } from "../intake/envelope";
 import { startedBySystem } from "../../../shared/boss/mail/noticeGate.mjs";
 
@@ -87,6 +87,31 @@ export function overruledGuess(a: {
   if (a.assignment !== "USER_ONLY") return false;
   if (a.declaredKind === "trading") return false;
   return startedBySystem(a.input);
+}
+
+/**
+ * THE PRIVACY AXES OF AN OVERRULED GUESS. Pure; the one reading admit and the hourly sweep
+ * (routes/approvals.ts) share.
+ *
+ * 16 Nov 2026: the monthly quality read was released from intake's USER_ONLY guess (15 Nov) and then
+ * refused by every seat for an hour at a time: the row still carried the guess's `restricted`
+ * sensitivity, and `restricted` asks for a sensitive-routing card (backends/guard.ts
+ * `restricted_needs_routing_card`) that nothing raises for work Boss OS started itself. The two axes
+ * are treated differently on purpose:
+ * - `sensitivity` is RE-DERIVED from the real text (a declared sensitivity still wins, through
+ *   classify). The trading word rule's `restricted` was part of the guess being overruled.
+ * - `modelAccess` stays TIGHTEN-ONLY: `private_model_only` if either reading says so. It is the
+ *   non-liftable guard (router/policy.ts) that keeps private text off every free and training route,
+ *   and the real prompt earns it on its own account (fund terms), so nothing private is loosened.
+ */
+export function overruledAxes(
+  was: { modelAccess: string | null | undefined },
+  redone: { sensitivity: Classification["sensitivity"]; modelAccess: Classification["modelAccess"] },
+): { sensitivity: Classification["sensitivity"]; modelAccess: Classification["modelAccess"] } {
+  return {
+    sensitivity: redone.sensitivity,
+    modelAccess: was.modelAccess === "private_model_only" ? "private_model_only" : redone.modelAccess,
+  };
 }
 
 /** The first active employee that fits the kind, then the lane, then nobody. */
@@ -291,11 +316,10 @@ export async function admitTask(env: Env, b: AdmitInput): Promise<AdmitResult> {
       risk: b.risk ?? undefined, sensitivity: b.sensitivity ?? undefined,
       model_access: b.model_access ?? undefined, audience: b.audience ?? undefined,
     });
-    // Tighten-only: the privacy axes stay as intake first set them; only the verdict changes.
+    // Sensitivity re-derived, model access tighten-only: see `overruledAxes`.
     classification = {
       ...redone,
-      sensitivity: overruled.sensitivity,
-      modelAccess: overruled.modelAccess,
+      ...overruledAxes(overruled, redone),
       reason: `${redone.reason} Boss OS started this itself, so a word in its own text does not park it (intake first read it as ${overruled.intakeKind}, ${overruled.executionAssignment}).`,
     };
   }
