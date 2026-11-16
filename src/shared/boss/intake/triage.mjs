@@ -39,8 +39,8 @@ export const TRIAGE_SEATS = Object.freeze([
   }),
   Object.freeze({
     id: "emp_relationship", does: "capital and LPs, institutional sales, outreach and relationships",
-    strong: /\b(outreach|reach out|pitch|introduce|introduction|intro to|follow up with|cold email|email (?:them|these|those|the list|people|prospects)|lps?|institutional sales|homeschool|co-?ops?|microschools?|time-?2-?read groups?)\b/gi,
-    signals: /\b(prospects?|buyers?|sellers?|sponsors?|partners?|contacts?|leads?|networking|relationship|capital|investors?|institutions?|libraries|tutoring)\b/gi,
+    strong: /\b(outreach|reach out|pitch|introduce|introduction|intro to|follow up with|cold email|email (?:them|these|those|the list|people|prospects)|lps?|institutional sales|homeschool|co-?ops?|microschools?|time-?2-?read groups?|drips?|campaigns?)\b/gi,
+    signals: /\b(prospects?|buyers?|sellers?|sponsors?|partners?|partnerships?|contacts?|leads?|networking|relationship|capital|investors?|institutions?|libraries|tutoring)\b/gi,
   }),
   Object.freeze({
     id: "emp_chief", does: "scheduling and running the day",
@@ -166,7 +166,8 @@ export function splitAsks(text) {
  * `{ seat, text, why, closest }`, where `text` carries the shared context so the seat reads the ask
  * the way she wrote it. At least one job whenever the roster has anybody.
  */
-export function triage({ subject = "", text = "", roster = [] } = {}) {
+export function triage({ subject = "", text = "", roster = [], asks: herAsks = null } = {}) {
+  if (Array.isArray(herAsks) && herAsks.some((a) => String(a ?? "").trim())) return triageHerAsks({ subject, text, roster, asks: herAsks });
   const { context, parts } = splitAsks(text);
   const asks = parts.length ? parts : [String(subject ?? "").trim()].filter(Boolean);
   if (asks.length === 0) asks.push(String(subject ?? "") || "(no text)");
@@ -186,6 +187,36 @@ export function triage({ subject = "", text = "", roster = [] } = {}) {
     seat: j.seat, why: j.why, closest: j.closest, ...(j.chrome ? { chrome: true } : {}),
     ask: jobs.length === 1 ? whole : j.asks.join("\n"),
     text: [context, ...j.asks].filter(Boolean).join("\n\n"),
+  }));
+}
+
+/**
+ * JOBS ARE OPENED FROM HER ASKS, NEVER FROM WHAT SHE PASTED (15 Nov 2026 production dry run: one ask,
+ * "create a drip campaign … for these people", above a pasted contact list became two jobs, one per
+ * pasted paragraph, on two seats the contact notes happened to score). When the first read listed her
+ * asks (her own words, checked against her text), each ask is judged on its own words (one ask: with
+ * the subject) and opens a job; neighbours on the same seat stay one job, and an ask no seat scores
+ * (a follow-on such as "give me their emails") rides with the job before it. Everything else she sent,
+ * pasted and forwarded material included, rides along on EVERY job as its material. Pure.
+ */
+function triageHerAsks({ subject, text, roster, asks }) {
+  const list = asks.map((a) => String(a ?? "").trim()).filter(Boolean).slice(0, 8);
+  const jobs = [];
+  for (const ask of list) {
+    const pick = seatForAsk(list.length === 1 ? `${subject}\n${ask}` : ask, roster);
+    if (!pick) return [];
+    const last = jobs[jobs.length - 1];
+    if (last && (pick.score === 0 || (last.seat.id === pick.seat.id && Boolean(last.chrome) === Boolean(pick.chrome)))) { last.asks.push(ask); continue; }
+    jobs.push({ seat: pick.seat, asks: [ask], why: pick.why, closest: pick.closest, ...(pick.chrome ? { chrome: true } : {}) });
+  }
+  const material = String(text ?? "").trim();
+  return jobs.map((j) => ({
+    seat: j.seat, why: j.why, closest: j.closest, ...(j.chrome ? { chrome: true } : {}),
+    ask: j.asks.join("\n"),
+    text: [
+      j.asks.length === 1 ? `Her ask: ${j.asks[0]}` : ["Her asks:", ...j.asks.map((a, i) => `  ${i + 1}. ${a}`)].join("\n"),
+      ...(material ? ["Her whole email (anything she pasted or forwarded is material for this job, never a job of its own):", material] : []),
+    ].join("\n\n"),
   }));
 }
 

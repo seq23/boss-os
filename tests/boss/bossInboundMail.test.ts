@@ -148,7 +148,7 @@ describe("an unknown tag is never guessed and never dropped", () => {
       mail({ subject: "a thought", body: "have a look at the Q3 numbers" }), env as never);
     expect(res.outcome).toBe("TRIAGED");
     expect(res.taskId).toBeTruthy();
-    expect(res.reply).toMatch(/^Simone here\. Got it/);
+    expect(res.reply).toMatch(/^Got it\. \w+ has started\./);
     expect(res.reply).not.toContain("Nobody here answers to");
     // 6 Nov 2026 live read: "Simone here" arrived signed by the seat that got the job, with a #tag
     // hint and a stray "Boss OS" line. The acknowledgement is Simone's, and says neither.
@@ -874,7 +874,7 @@ describe("Simone triages untagged mail (owner, 22 Oct 2026: \"i should not have 
       messageId: "<three@mail.gmail.com>",
     }), env as never);
     expect(res.outcome).toBe("TRIAGED");
-    expect(res.reply).toMatch(/^Simone here\. Got it — 3 jobs, all started:/);
+    expect(res.reply).toMatch(/^Got it\. Danielle, Camille and Simone have started\./);
     expect(res.reply).toContain("Danielle has: Build a one-page landing for a sample studio in seq23/creator-studios");
     expect(res.reply).toContain("Camille has: What are the three cheapest ways to host a static site?");
     expect(res.reply).toContain("Simone has: Schedule a call with the designer next Tuesday");

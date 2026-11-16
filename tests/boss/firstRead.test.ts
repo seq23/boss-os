@@ -2,7 +2,8 @@ import { env } from "cloudflare:test";
 import { describe, expect, it, beforeEach, afterEach } from "vitest";
 import { handleBossInboundMail } from "../../src/worker/boss/intake/inboundMail";
 import { layReply, questionsAskedIn } from "../../src/worker/boss/intake/mailRefs";
-import { withoutPasted, OVER_LISTED } from "../../src/worker/boss/intake/firstRead";
+import { withoutPasted, OVER_LISTED, quotaUntil, QUOTA_KIND } from "../../src/worker/boss/intake/firstRead";
+import { freeDayStartedAt } from "../../src/worker/boss/router/experience";
 import { firstRead, freeRungs, parseBrief, setFirstReadRungs, unclearLines, FIRST_READ_DAILY_CAP, FIRST_READ_SERVICE, type Rung } from "../../src/worker/boss/intake/firstRead";
 import { freeDailyCap } from "../../src/worker/boss/backends/guard";
 import { centralDay } from "../../src/worker/boss/research/searchQuota";
@@ -153,6 +154,7 @@ describe("every unclear item is asked, numbered, in the Got it of the email that
     const first = layReply({ text: reply, subject: "Re: dinner", signer: "Simone" }).text.split("\n").find((l) => l.trim())!;
     expect(first).toContain("3 things for you to answer below");
     expect(first).not.toContain("Nothing to do");
+    expect(first).not.toContain("Nothing for you to do");
 
     // The same email delivered again: no second email.
     const again = await handleBossInboundMail(mail({ subject: "#simone dinner", body: `Plan the dinner. ${items.join(" ")}`, messageId: "<fr-3@mail.gmail.com>" }), env as never);
@@ -199,5 +201,59 @@ describe("a reply on a job she took over in a session", () => {
     // And the queue leaves it alone.
     await handleTask(env as never, { taskId: opened.taskId!, lane: "ops" } as never);
     expect((await all<any>(`SELECT event FROM task_events WHERE task_id = ? AND event = 'skipped_taken_over'`, opened.taskId)).length).toBe(1);
+  });
+});
+
+describe("every free rung gets a turn (15 Nov 2026 production dry run: Workers AI read every email)", () => {
+  const words = "Find three venues in Memphis for forty people.";
+  const hang = (id: string, onCall?: () => void): Rung => ({ id, call: (_p, signal) => { onCall?.(); return new Promise((_, rej) => signal.addEventListener("abort", () => rej(new Error("aborted")))); } });
+
+  it("rungs that hang do not starve the free rungs behind them: a later free rung reads it, not Workers AI", async () => {
+    let waCalled = 0;
+    const r = await firstRead(env as never, { subject: "venues", words, dry: true }, [
+      hang("free-1"), hang("free-2"), hang("free-3"), hang("free-4"), hang("free-5"),
+      rung("free-6", `ASK: ${words}`),
+      { id: "workers-ai", workersAi: true, call: async () => { waCalled += 1; return `ASK: ${words}`; } },
+    ]);
+    expect(r.reader, r.tried.join(" | ")).toBe("free-6");
+    expect(waCalled, "Workers AI is the backstop, not the reader").toBe(0);
+    expect(r.tried.filter((t) => /out of time/.test(t))).toEqual([]);
+  }, 40_000);
+
+  it("a 429 is remembered: the next email skips that rung at no cost until its window ends", async () => {
+    const model = await row<{ id: string }>(`SELECT id FROM models LIMIT 1`);
+    await env.DB.prepare(`DELETE FROM model_job_outcome WHERE task_kind = ?`).bind(QUOTA_KIND).run();
+    let calls = 0;
+    const spentRung: Rung = { id: "free-spent", modelId: model!.id, call: async () => { calls += 1; throw new Error("Gemini returned 429 [quota: daily]: You exceeded your current quota"); } };
+    const ladder = [spentRung, rung("free-ok", `ASK: ${words}`)];
+    const one = await firstRead(env as never, { subject: "v", words }, ladder);
+    expect(one.reader).toBe("free-ok");
+    const two = await firstRead(env as never, { subject: "v", words }, ladder);
+    expect(calls, "the spent rung is not asked again").toBe(1);
+    expect(two.tried[0]).toMatch(/^free-spent: skipped, its free quota is out until /);
+    expect(two.reader).toBe("free-ok");
+  });
+
+  it("the window is the provider's when it names one, else the free day's reset; a non-quota error is not remembered", () => {
+    const now = Date.UTC(2026, 10, 15, 18, 0, 0);
+    expect(quotaUntil("Gemini returned 429 [quota: retry in 34s]: …", now)).toBe(now + 34_000);
+    expect(quotaUntil("Gemini returned 429: You exceeded your current quota", now)).toBe(freeDayStartedAt(now) + 24 * 3600_000);
+    expect(quotaUntil("Gemini returned 429 [quota: daily] [quota: retry in 34s]", now)).toBe(freeDayStartedAt(now) + 24 * 3600_000);
+    expect(quotaUntil("no answer in 12 s", now)).toBeNull();
+    expect(quotaUntil('OpenRouter returned 404: {"error":{"message":"This model is unavailable for free.', now)).toBe(freeDayStartedAt(now) + 24 * 3600_000);
+    expect(quotaUntil("OpenRouter returned 404: no such model", now)).toBeNull();
+  });
+});
+
+describe("the Got it's line 1 says plainly whether she must do anything", () => {
+  it("a triaged email with nothing unclear: \"Got it. Nothing for you to do: <seat> has started.\"", async () => {
+    const ask = "Schedule a call with the designer next Tuesday";
+    setFirstReadRungs([rung("free-a", `ASK: ${ask}`)]);
+    const res = await handleBossInboundMail(mail({ subject: "designer", body: `${ask}\n\nAva Example (VP, Growth): Best use: research, website build, outreach.`, messageId: "<l1-a@mail.gmail.com>" }), env as never);
+    expect(res.outcome).toBe("TRIAGED");
+    const first = layReply({ text: res.reply!, subject: "Re: designer", signer: "Simone" }).text.split("\n")[0];
+    expect(first).toBe("Got it. Nothing for you to do: Simone has started.");
+    const tasks = await all<any>(`SELECT employee_id FROM tasks WHERE json_extract(input, '$.mail_id') = ?`, res.mailId);
+    expect(tasks.map((t: any) => t.employee_id), "the pasted line opened no job of its own").toEqual(["emp_chief"]);
   });
 });

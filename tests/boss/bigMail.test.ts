@@ -253,6 +253,7 @@ describe("the dry run reads everything and writes nothing", () => {
 describe("the Got it's words", () => {
   it("her sentences, not greetings or fragments; file names survive the owner layout", () => {
     expect(asksIn("Hi Simone,\n\nPlease find a venue for forty people.\nThanks!\n#camille")).toEqual(["Please find a venue for forty people."]);
+    expect(asksIn("Find the buyers in my inbox for the sample company\n\nGive me their emails\n\nSent from my iPhone"), "her phone signature is not an ask").toEqual(["Find the buyers in my inbox for the sample company", "Give me their emails"]);
     expect(fileLabel("IMG_0001.jpg")).toBe("IMG 0001.jpg");
     expect(fileLabel("notes.md")).toBe("notes (md file)");
     const lines = gotItLines({ asks: [], files: { heard: [], read: [], zips: [], unopened: [{ filename: "a.mov", reason: "a video" }] } });

@@ -86,6 +86,9 @@ mailRefs.post("/", async (c) => {
 });
 
 /** The reply in the owner layout, exactly as `plainReply` lays it out before its gate. Pure (the dry run reads it). */
+/** Line 1 of a Got it when nothing is hers (saysNothingToDo reads it as "Nothing to do"). */
+export const NOTHING_FOR_YOU = "Nothing for you to do";
+
 export function layReply(input: { text: string; subject: string; signer?: string | null }): LaidOutEmail {
   const who = input.signer ?? "Simone";
   const answer = legacyParts({ who, subject: input.subject, text: input.text }).happened;
@@ -94,7 +97,22 @@ export function layReply(input: { text: string; subject: string; signer?: string
    * do." above "One thing I need from you"). The count is read from the block `unclearLines` writes.
    */
   const asked = questionsAskedIn(input.text);
-  const act = asked ? (asked === 1 ? "One thing for you to answer below (reply by number)." : `${asked} things for you to answer below (reply by number).`) : undefined;
+  const toAnswer = asked ? (asked === 1 ? "One thing for you to answer below (reply by number)" : `${asked} things for you to answer below (reply by number)`) : null;
+  /*
+   * THE GOT IT'S LINE 1 SAYS PLAINLY WHETHER SHE MUST DO ANYTHING (15 Nov 2026 production dry run:
+   * "Simone here. Got it — it has started: Nothing to do." read as if "Nothing to do" was what had
+   * started). Its own sentence, before who has it: "Got it. Nothing for you to do: Monique has
+   * started." With questions for her, that is what it says instead.
+   */
+  const lines = input.text.split("\n");
+  const head = /^Got it\. (.+ (?:has|have) started)\.$/.exec(lines[0]?.trim() ?? "") ?? /^((?:[A-Z][a-z]+) has it)\.$/.exec(lines[0]?.trim() ?? "");
+  // Work that did not open is never "nothing for you to do": that reply keeps its own words.
+  if (head && !/I did NOT open work|NOT STARTED/.test(input.text)) {
+    const rest = head[1]!.endsWith(" has it") ? `${head[1]!.replace(/ has it$/, "")} has the rest` : `${head[1]} on everything else`;
+    const act = toAnswer ? `${toAnswer}; ${rest}.` : `${NOTHING_FOR_YOU}: ${head[1]}.`;
+    return ownerEmail({ who, subject: input.subject, layout: "delivered", why: "Got it.", act, text: ["Got it.", ...lines.slice(1)].join("\n") });
+  }
+  const act = toAnswer ? `${toAnswer}.` : undefined;
   return ownerEmail({ who, subject: input.subject, layout: "delivered", why: answer, act, text: input.text });
 }
 

@@ -65,7 +65,7 @@ export async function dryReadMessage(env: Env, raw: string, opts: { rung?: strin
   let head: string;
   let seats: string[];
   if (route && route.outcome === "DEFAULTED") {
-    const jobs = triage({ subject, text: own || subject, roster });
+    const jobs = triage({ subject, text: own || subject, roster, asks: brief?.asks ?? null });
     seats = jobs.map((j: { seat: { name: string } }) => j.seat.name);
     head = jobs.length
       ? triageReply(jobs.map((job: any) => ({ job, taskId: "would_start", failure: null })), { tags: route.unknownTags, roster })

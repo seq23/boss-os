@@ -1071,10 +1071,10 @@ export async function handleBossInboundMail(message: BossMailMessage, env: Env):
    * the seat that can execute it (`shared/boss/intake/triage.mjs`). A tag she typed, the name@
    * address she wrote to, and a rule handoff all stay her decision and are never re-triaged.
    */
-  const triaged: Array<TriageJob<BossSeat>> =
-    route.outcome === "DEFAULTED" && !handoffNote && !followed && !filedByVerb && !bookFailure && !question && Boolean(readable || subject)
-      ? triage({ subject: trueSubject, text: own || trueSubject, roster })
-      : [];
+  let first: FirstRead | null = null;
+  let briefBlock: string | null = null;
+  // Filled inside the one guarded admission branch below, after the first read (her asks open the jobs).
+  let triaged: Array<TriageJob<BossSeat>> = [];
   // A reply to Simone's daily or weekly email ("move the KDP item to Monday") carries the email
   // it answers. Only that email: it is built from Boss OS rows with nothing from the fund, so it
   // is safe as model input; other emails' text stays in boss_mail_refs (LOCAL_ONLY for AI).
@@ -1129,13 +1129,13 @@ export async function handleBossInboundMail(message: BossMailMessage, env: Env):
     });
   };
   if (followed) route.seat = followed.seat;
-  let first: FirstRead | null = null;
-  let briefBlock: string | null = null;
 
   /*
    * THE FIRST READ (15 Nov 2026, firstRead.ts): a free model's brief of her asks, holds, questions,
-   * unclear items and files, written onto the jobs the RULES already chose. Free rungs only; at the
-   * free cap, or with nothing answering, the rules read her email exactly as before.
+   * unclear items and files. It runs BEFORE the split (15 Nov 2026 production dry run: a pasted
+   * contact list became two jobs): her asks open the jobs and everything else rides along as their
+   * material. The seat is still the rules' choice. Free rungs only; at the free cap, or with nothing
+   * answering, the rules read her email exactly as before.
    */
   if (route.outcome !== "AMBIGUOUS" && !bookFailure && !question && !filedByVerb) {
     // Inside the guard: nothing unclear, unread or already done ever reaches the free reader either.
@@ -1144,6 +1144,9 @@ export async function handleBossInboundMail(message: BossMailMessage, env: Env):
       ? await firstRead(env, { subject: trueSubject, words: own || readable, files: fileNames, now, mailId })
       : null;
     briefBlock = first?.brief ? briefForTask(first.brief, first.reader) : first?.stop ?? null;
+    triaged = route.outcome === "DEFAULTED" && !handoffNote && !followed && Boolean(readable || subject)
+      ? triage({ subject: trueSubject, text: own || trueSubject, roster, asks: first?.brief?.asks ?? null })
+      : [];
     if (triaged.length) await admitTriaged();
     else try {
       const admitted = await admitTask(env, {
@@ -1410,9 +1413,10 @@ export function triageReply(
     : [];
   const lines = triageLines(tasks.map((t) => t.job));
   return [
+    // Line 1 is laid out by layReply (mailRefs.ts): "Got it. Nothing for you to do: Monique has started."
     started.length === tasks.length
-      ? `Simone here. Got it — ${tasks.length === 1 ? "it has started" : `${tasks.length} jobs, all started`}:`
-      : `Simone here. ${started.length} of ${tasks.length} started:`,
+      ? `Got it. ${startedPhrase(tasks.map((t) => t.job.seat.name))}.`
+      : `Got it, but only ${started.length} of ${tasks.length} jobs started; what stopped the rest is below.`,
     "",
     ...tasks.map((t, i) => `  ${lines[i]}${t.failure ? ` — NOT STARTED: ${t.failure}` : ""}`),
     "",
@@ -1420,6 +1424,14 @@ export function triageReply(
     "To steer: reply on this thread — \"changes: …\" to change it, \"stop\" to stop it.",
     ...typo,
   ].join("\n");
+}
+
+/** "Monique has started" / "Danielle and Monique have started" (each seat once, in order). Pure. */
+export function startedPhrase(names: readonly string[]): string {
+  const seats = [...new Set(names.filter(Boolean))];
+  if (!seats.length) return "it has started";
+  const list = seats.length === 1 ? seats[0]! : `${seats.slice(0, -1).join(", ")} and ${seats.at(-1)}`;
+  return `${list} ${seats.length === 1 ? "has" : "have"} started`;
 }
 
 /** The reply to a reply that went back to its job. */
