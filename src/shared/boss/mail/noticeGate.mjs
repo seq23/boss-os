@@ -64,6 +64,24 @@ export function startedBySystem(input, { dutyRun = false } = {}) {
 }
 
 /**
+ * MAY THIS WORK ASK FOR HER YES? (owner, 16 Nov 2026: "Monday: 4 decisions" were Danielle's dated
+ * Search Console check-ins, each card "No: nothing happens".) A dated waiting-on check-in is opened by
+ * Zora's register, not by her (scripts/ops/waiting-on.mjs `actionTask`, owner 2 Nov 2026: "I'd rather
+ * Danielle have not asked me anything"), so its finished result is accepted where it lands, like a
+ * repair or a duty's run. `startedBySystem` still counts it as hers for one thing only: a STOP that
+ * needs her own account is emailed (notices). A real decision (money, a send in her name, legal, her
+ * sign-in) is raised by the work itself, never by the finished-result card. Pure.
+ */
+export function openedBySystem(input, opts = {}) {
+  let i = input ?? {};
+  if (typeof i === "string") { try { i = JSON.parse(i) ?? {}; } catch { i = {}; } }
+  if (typeof i !== "object") return false;
+  if (typeof i.mail_id === "string" || (typeof i.from === "string" && i.from.includes("@")) || i.source === "employee_page") return false;
+  if (i.origin === "waiting_on" || (i.origin === "repair" && i.repair_kind === "waiting_on")) return true;
+  return startedBySystem(i, opts);
+}
+
+/**
  * The drain's reading of a row. A page kind (a reminder, an update) never emails, whatever the row's
  * `needs_her` says: rows written before 7 Nov 2026 carry the column's default of 1 (migration 0353)
  * and were still emailed. Otherwise only an explicit 0 / false keeps it off email. Pure.

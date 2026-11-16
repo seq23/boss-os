@@ -19,7 +19,7 @@ import type { Env } from "../env";
 import { newId } from "../lib/id";
 import { logEvent } from "../lib/log";
 import { noticeOnce, dutyNotRunning } from "../service/notices";
-import { startedBySystem } from "../../../shared/boss/mail/noticeGate.mjs";
+import { startedBySystem, openedBySystem } from "../../../shared/boss/mail/noticeGate.mjs";
 import { runGroundedResearch, type FreeSearchEngine, type GroundedOutcome } from "../research/grounded";
 import { getBackend } from "../backends/registry";
 import { isPlanSpent } from "../backends/spent";
@@ -107,6 +107,12 @@ export async function dutyOf(env: Env, task: any, input: Record<string, any>): P
   const stamped = typeof input.duty_id === "string" ? input.duty_id : null;
   return env.DB.prepare(`SELECT id, name, task_title FROM standing_duties WHERE ${stamped ? "id" : "last_task_id"} = ? LIMIT 1`)
     .bind(stamped ?? task.id).first<DutyRef>().catch(() => null);
+}
+
+/** May its finished result skip her yes? A repair, a duty's run or a dated waiting-on check-in (`openedBySystem`). */
+export async function mayNotAskHer(env: Env, task: any, input: Record<string, any>): Promise<boolean> {
+  const duty = await dutyOf(env, task, input);
+  return openedBySystem(input, { dutyRun: duty != null });
 }
 
 /** Did Boss OS start this itself (a repair, a duty's own run)? The one rule is `startedBySystem`. */
