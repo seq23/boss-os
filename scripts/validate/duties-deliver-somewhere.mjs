@@ -72,6 +72,12 @@
  *      back to `tasks.output`, which the seat path never writes — every delivered report scored 0
  *      and the morning briefing raised a false alarm two days running.
  *
+ * And for the acceptance that closes the run (15 Nov 2026, the monthly quality read):
+ *
+ *  12. An AGENT duty's `delivers` key is in `DELIVERY_KINDS` (`src/worker/boss/backends/needsDecision.ts`).
+ *      A key missing there is filed by its handler and then FAILED as "landed nowhere" under
+ *      NAMED STOP [DELIVERY_UNHANDLED]: `quality_reads` had a handler and a table and was not listed.
+ *
  * RULE 0: examining zero duties is a failure, not a pass. A loop over an empty set is how a
  * validator ends up green for ever while the thing it guards rots.
  *
@@ -545,7 +551,44 @@ function scan() {
     problems.push(...censusProblems(duties.map((d) => ({ ...d, floor: effectiveFloor(d.id, ALL_MIGRATION_STATEMENTS) })), censusKeys));
   }
 
+  // ── 12. Every agent duty's delivery is one the run's acceptance knows ─────────────────────
+  const kinds = deliveryKindsIn(read(NEEDS_DECISION));
+  if (!kinds || kinds.size === 0) {
+    problems.push(`${NEEDS_DECISION}: DELIVERY_KINDS was not found or holds no key, so no agent duty's delivery can be accepted.`);
+  } else {
+    problems.push(...deliveryKindProblems(duties, kinds));
+  }
+
   return { duties, problems };
+}
+
+// ─── The run's acceptance (check 12) ─────────────────────────────────────────
+
+const NEEDS_DECISION = "src/worker/boss/backends/needsDecision.ts";
+
+/** The keys DELIVERY_KINDS holds, read from needsDecision.ts's source (comments skipped). */
+export function deliveryKindsIn(source) {
+  const m = /export const DELIVERY_KINDS\s*=\s*\[([\s\S]*?)\]\s*as const/.exec(source);
+  if (!m) return null;
+  const body = m[1].split("\n").map((l) => l.replace(/\/\/.*$/, "")).join("\n");
+  return new Set([...body.matchAll(/"([a-z_][a-z0-9_]*)"/g)].map((x) => x[1]));
+}
+
+/** Check 12. `duties` carry { id, file, text }. Pure. */
+export function deliveryKindProblems(duties, kinds) {
+  const problems = [];
+  for (const d of duties) {
+    // A local job, a Worker reader and a Worker job deliver without a seat's run: no acceptance reads them.
+    if (localJobScript(d.text) || workerReader(d.text) || workerJob(d.text)) continue;
+    const key = deliversKey(d.text);
+    if (key && !kinds.has(key)) {
+      problems.push(
+        `${d.id} (${d.file}): an agent duty delivers '${key}', which DELIVERY_KINDS in ${NEEDS_DECISION} does not hold.\n` +
+        `      The run is filed and then failed as "landed nowhere" (NAMED STOP [DELIVERY_UNHANDLED]). Add the key.`,
+      );
+    }
+  }
+  return problems;
 }
 
 // ─── Kendra's census (check 11) ──────────────────────────────────────────────
@@ -764,11 +807,18 @@ function selfTest() {
   if (!keys || keys.size !== 2 || !keys.has("a_b") || !keys.has("c")) { console.error("  ✗ check 11: census keys not read"); failed += 1; }
   if (effectiveFloor("duty_q", ["UPDATE s SET output_floor = 0 WHERE id = 'duty_q'", "UPDATE s SET output_floor = 1 WHERE id = 'duty_qq'", "UPDATE s SET output_floor = 2 WHERE id = 'duty_q'"]) !== 2) { console.error("  ✗ check 11: the last floor is not the one read"); failed += 1; }
 
+  // Check 12: an agent duty whose key DELIVERY_KINDS lacks fails (the quality read, 15 Nov 2026);
+  // a listed key, a local job and a commented-out key are read as written.
+  const kindsRead = deliveryKindsIn(`export const DELIVERY_KINDS = [\n  "executive_reports",\n  // "quality_reads" was here\n  "research_page",\n] as const;`);
+  if (!kindsRead || kindsRead.size !== 2 || kindsRead.has("quality_reads")) { console.error("  ✗ check 12: DELIVERY_KINDS not read as written"); failed += 1; }
+  if (deliveryKindProblems([agent("quality_reads", 1)], kindsRead ?? new Set()).length !== 1) { console.error("  ✗ check 12: an agent duty whose delivery the acceptance lacks passes"); failed += 1; }
+  if (deliveryKindProblems([agent("executive_reports", 1), { ...agent("quality_reads", 1), text: `json_object('local_job', 'a.mjs', 'delivers', 'quality_reads')` }, { ...agent("morning_sections", 0), text: `json_object('worker_job', 'invitations', 'delivers', 'morning_sections')` }], kindsRead ?? new Set()).length !== 0) { console.error("  ✗ check 12: a listed key, a local job or a Worker job fails"); failed += 1; }
+
   if (failed) {
     console.error(`\nSELF-TEST FAILED: ${failed} case(s)`);
     process.exit(1);
   }
-  console.log(`SELF-TEST PASSED: ${FIXTURES.length + 14}/${FIXTURES.length + 14} cases.`);
+  console.log(`SELF-TEST PASSED: ${FIXTURES.length + 17}/${FIXTURES.length + 17} cases.`);
 }
 
 // ─── Run ──────────────────────────────────────────────────────────────────────

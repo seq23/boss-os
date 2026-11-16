@@ -7,6 +7,7 @@ import { getSetting } from "../lib/settings";
 import { isLane } from "../../../shared/boss/lanes";
 import { classify, KIND_TO_DEPARTMENT } from "../intake/classify";
 import { buildEnvelope } from "../intake/envelope";
+import { startedBySystem } from "../../../shared/boss/mail/noticeGate.mjs";
 
 /**
  * TASK INTAKE, IN ONE PLACE, BECAUSE THERE WERE TWO AND ONLY ONE OF THEM WORKED.
@@ -63,6 +64,29 @@ export interface AdmitResult {
   queued: boolean;
   cost_mode: string;
   reason?: string;
+}
+
+/**
+ * IS THIS HOLD INTAKE'S OWN GUESS ON WORK BOSS OS STARTED ITSELF? Pure; the one reading admit and
+ * the hourly sweep (routes/approvals.ts) share.
+ *
+ * True only when all four hold: the work was started by Boss OS (a duty's run or a repair:
+ * `startedBySystem`), the lane is not trading, nobody declared the kind `trading`, and the
+ * assignment is USER_ONLY. Outside the trading lane only the trading WORD rule produces USER_ONLY
+ * (classify.ts RULES): money and an outward send end at AI_EXECUTE_WITH_APPROVAL, which queues and
+ * keeps its approval at delivery. So money, a send in her name, legal and invitations keep their
+ * approvals by construction, with no second list to keep in step.
+ */
+export function overruledGuess(a: {
+  lane: string | null | undefined;
+  assignment: string | null | undefined;
+  input: unknown;
+  declaredKind?: string | null;
+}): boolean {
+  if (a.lane === "trading") return false;
+  if (a.assignment !== "USER_ONLY") return false;
+  if (a.declaredKind === "trading") return false;
+  return startedBySystem(a.input);
 }
 
 /** The first active employee that fits the kind, then the lane, then nobody. */
@@ -249,6 +273,33 @@ export async function admitTask(env: Env, b: AdmitInput): Promise<AdmitResult> {
     }
   }
 
+  /*
+   * ─── WORK BOSS OS STARTED ITSELF IS NEVER PARKED ON INTAKE'S OWN GUESS (15 Nov 2026) ─────
+   *
+   * The monthly quality read (a duty's run) quotes her briefing, and the trading WORD rule read
+   * "Brokerage", "shares" and "stock" in those quotes as trading work: USER_ONLY, awaiting an
+   * approval that is never shown to her (your-day.mjs `intakeHeldDutyRun`), so nothing released it.
+   * `overruledGuess` is the one reading: see its comment for why money, sends and the trading lane
+   * keep their approvals. The overruled classification is kept on the record.
+   */
+  let overruled: ReturnType<typeof classify> | null = null;
+  if (overruledGuess({ lane, assignment: classification.executionAssignment, input, declaredKind: intakeKind })) {
+    overruled = classification;
+    const redone = classify({
+      title: b.title, prompt: (input.prompt as string | undefined) ?? null, lane,
+      intakeKind: input.duty_id != null ? "recurring_duty" : "one_off",
+      risk: b.risk ?? undefined, sensitivity: b.sensitivity ?? undefined,
+      model_access: b.model_access ?? undefined, audience: b.audience ?? undefined,
+    });
+    // Tighten-only: the privacy axes stay as intake first set them; only the verdict changes.
+    classification = {
+      ...redone,
+      sensitivity: overruled.sensitivity,
+      modelAccess: overruled.modelAccess,
+      reason: `${redone.reason} Boss OS started this itself, so a word in its own text does not park it (intake first read it as ${overruled.intakeKind}, ${overruled.executionAssignment}).`,
+    };
+  }
+
   const employeeId: string | null =
     employeeHint ?? (await suggestOwner(env, classification.intakeKind, lane))?.id ?? null;
 
@@ -303,6 +354,10 @@ export async function admitTask(env: Env, b: AdmitInput): Promise<AdmitResult> {
     ),
     env.DB.prepare(`INSERT INTO task_events (id, task_id, ts, event, detail) VALUES (?,?,?,'intake',?)`)
       .bind(newId("tev"), id, now, JSON.stringify(classification)),
+    ...(overruled
+      ? [env.DB.prepare(`INSERT INTO task_events (id, task_id, ts, event, detail) VALUES (?,?,?,'intake_overruled',?)`)
+          .bind(newId("tev"), id, now, JSON.stringify({ reason: "Started by Boss OS: a word in its own text does not park it", was: overruled }))]
+      : []),
   ]);
 
   if (firmScan && scanId) {

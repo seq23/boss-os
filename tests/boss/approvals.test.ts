@@ -247,6 +247,42 @@ describe("Phase 1 — expiry sweep", () => {
     expect((await statusOf(untouched.taskId)).status).toBe("awaiting_approval");
   });
 
+  it("a duty's run held on intake's own guess is released by the sweep and runs; her own, the trading lane and a declared trading kind stay held (15 Nov 2026)", async () => {
+    const held = async (over: Record<string, unknown> = {}, intake: Record<string, unknown> = { intakeKind: "trading", matched: ["trading"] }) => {
+      const taskId = await insertTask({ status: "awaiting_approval", intake_kind: "trading", execution_assignment: "USER_ONLY", risk: "high", sensitivity: "restricted", ...over });
+      const aprId = await insertApproval({ kind: "manual", origin_type: "tasks", origin_id: taskId, payload: { task_id: taskId, assignment: "USER_ONLY" }, expires_at: Date.now() + 86_400_000 });
+      await env.DB.batch([
+        env.DB.prepare(`UPDATE tasks SET approval_id = ? WHERE id = ?`).bind(aprId, taskId),
+        env.DB.prepare(`INSERT INTO task_events (id, task_id, ts, event, detail) VALUES (?,?,?,'intake',?)`).bind(`tev_${taskId}`, taskId, Date.now(), JSON.stringify(intake)),
+      ]);
+      return { taskId, aprId };
+    };
+    const quoted = "Monthly quality read: Brokerage sourcing, sell 2,000 shares";
+    const duty = await held({ title: "Monthly quality read", input: JSON.stringify({ prompt: quoted, duty_id: "duty_quality_read", delivers: "quality_reads" }) });
+    const repair = await held({ input: JSON.stringify({ prompt: quoted, origin: "repair", repair_kind: "fix" }) });
+    const hers = await held({ input: JSON.stringify({ prompt: quoted, mail_id: "m1" }) });
+    const lane = await held({ lane: "trading", input: JSON.stringify({ prompt: quoted, duty_id: "duty_x" }) });
+    const declared = await held({ input: JSON.stringify({ prompt: quoted, duty_id: "duty_y" }) }, { intakeKind: "trading", matched: ["explicit_kind"] });
+
+    await runExpirySweep(env);
+
+    const task = (id: string) => row(`SELECT status, approval_id, intake_kind, execution_assignment, risk, sensitivity FROM tasks WHERE id = ?`, id);
+    const apr = (id: string) => row(`SELECT status, decided_by, execution_status FROM approvals WHERE id = ?`, id);
+    expect(await task(duty.taskId)).toMatchObject({ status: "queued", approval_id: null, intake_kind: "recurring_duty", sensitivity: "restricted" });
+    expect((await task(duty.taskId))!.execution_assignment).not.toBe("USER_ONLY");
+    expect(await apr(duty.aprId)).toMatchObject({ status: "approved", decided_by: "system", execution_status: "executed" });
+    expect((await all(`SELECT event FROM task_events WHERE task_id = ?`, duty.taskId)).map((e) => e.event)).toEqual(expect.arrayContaining(["intake_overruled", "requeued"]));
+    expect((await task(repair.taskId))!.status).toBe("queued");
+    for (const still of [hers, lane, declared]) {
+      expect((await task(still.taskId))!.status).toBe("awaiting_approval");
+      expect((await apr(still.aprId))!.status).toBe("pending");
+    }
+    // Once: the next sweep finds nothing more to release.
+    const again = await runExpirySweep(env);
+    expect((await task(duty.taskId))!.status).toBe("queued");
+    expect(again.failed).toBe(0);
+  });
+
   it("writes an expired event and leaves nothing pending behind", async () => {
     const aprId = await insertApproval({ expires_at: Date.now() - 1000 });
     await runExpirySweep(env);
