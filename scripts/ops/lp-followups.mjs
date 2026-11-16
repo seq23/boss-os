@@ -338,13 +338,13 @@ export async function followUps(people, { now = Date.now(), skipped = new Set(),
      * nothing is asked of her: the row is "scheduled" with the call's start (picked_start), and any
      * draft this file held for them leaves her Drafts. lp-daily.mjs reads the calls (callBooked.mjs).
      */
-    const call = calls.get(p.address);
-    if (call) {
+    const booked = calls.get(p.address);
+    if (booked) {
       counts.scheduled += 1;
       if (draftTok) { await dropOwnDraft(draftTok, state.drafts[p.address]); await dropOwnDraft(draftTok, state.again?.[p.address]); }
       delete state.drafts[p.address];
       delete state.again?.[p.address];
-      rows.push({ ...base, status: "scheduled", picked_start: call.start, picked_zone: "America/Chicago" });
+      rows.push({ ...base, status: "scheduled", picked_start: booked.start, picked_zone: "America/Chicago" });
       continue;
     }
     const [mine] = await search(read, `in:sent from:${MAILBOX} to:${p.address} after:${after}`);
