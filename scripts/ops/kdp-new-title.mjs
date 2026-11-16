@@ -51,6 +51,7 @@ import { join, dirname } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { openProfile, profilePath } from "./browser.mjs";
 import { findSeriesBook, BOOKS_DIR } from "./kdp-build.mjs";
+import { gateFolder } from "./kdp-books/quality-gate.mjs";
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const ORIGIN = process.env.BOSS_OS_ORIGIN ?? "https://boss.sequoiataylor.com";
@@ -982,6 +983,46 @@ export function stopMail({ title, code, said, waitMs = HANDOFF_MS, id = null }) 
 }
 
 /**
+ * AMAZON REJECTED THE CONTENT (16 Nov 2026). A title Blocked on the bookshelf is Kindle Content Review's
+ * rejection, never a step at the Mac: "How to Break Into Investment Banking" was told to "finish the step
+ * in the Chrome window" and retried, and resubmitting rejected content can put the whole account at risk.
+ * The run reads Amazon's own reason from the Content Review email, records the title BLOCKED (Boss OS
+ * then stops listing it: routes/kdp.ts), never retries it, and tells her once. Replying or appealing is
+ * hers alone (her ruling 16 Nov 2026: no appeal).
+ */
+export function reasonIn(text) {
+  const m = /KDP-REASON:\s*(.+)/.exec(String(text ?? ""));
+  const r = m ? m[1].trim().replace(/^["“'”]+|["”'“]+$/g, "").trim() : "";
+  return r && !/^none$/i.test(r) ? r.slice(0, 600) : null;
+}
+
+/** The one email when Amazon rejected a title. Pure. */
+export function rejectedMail({ title, reason, id = null }) {
+  const said = reason ? `Amazon's reason: "${reason}"` : `Amazon's Content Review email for it was not found, so its reason is not quoted here; the bookshelf shows it Blocked.`;
+  return {
+    subject: `Kindle: Amazon rejected ${title}`,
+    layout: { happened: `Amazon's Kindle Content Review rejected "${title}". ${said}`, details: [
+      "I stopped: it is not tried again, because sending rejected content back can put the whole KDP account at risk.",
+      "The other approved titles wait until each passes a quality check against Amazon's reasons; the team fixes what fails.",
+      "Nothing to do at the Mac. I have not replied to Amazon or appealed (your call, 16 Nov: no appeal).",
+    ] },
+    owner: { layout: "note", ref: id, why: `Amazon rejected your Kindle book "${title}".`, act: "Nothing to do now" },
+  };
+}
+
+async function readRejection(title, titleId) {
+  try {
+    const { askGmail } = await import("./kdp-signin.mjs");
+    return reasonIn(await askGmail([
+      "Load the Gmail tools with ToolSearch (search_threads, get_thread).",
+      `Search: newer_than:30d from:amazon.com ("Kindle Content Review" OR "Alert from Amazon" OR "KDP") ("${title.replace(/"/g, "")}"${titleId ? ` OR "${titleId}"` : ""})`,
+      `Read the newest message about the Kindle book "${title}"${titleId ? ` (title ID ${titleId})` : ""} that says Amazon will not accept or has blocked it.`,
+      "Print exactly one line: KDP-REASON: <Amazon's own reason, quoted from the email, one or two sentences>. If there is no such email, print exactly: KDP-REASON: none. Print nothing else.",
+    ].join("\n")));
+  } catch { return null; }
+}
+
+/**
  * Stops only she can clear (owner, 14 Nov 2026: "i should not have gotten a blocked email about
  * fuckint categories and ticking a box for adult content"). Everything else is the page's mechanics
  * (a box, a button, categories, the AI question, a save): never an email to her; the run exits
@@ -1015,7 +1056,7 @@ export async function refusalOnPage(page) {
   return r;
 }
 
-export const HER_STOPS = new Set(["SIGNIN", "SIGNIN_NOT_DONE", "BLOCKED", "PUBLISH_REFUSED", "UPLOAD_REFUSED"]);
+export const HER_STOPS = new Set(["SIGNIN", "SIGNIN_NOT_DONE", "PUBLISH_REFUSED", "UPLOAD_REFUSED"]);
 export const stopNeedsHer = (code) => HER_STOPS.has(code);
 
 /** Plain words for a stop the code named. Pure. */
@@ -1212,6 +1253,18 @@ async function run() {
     books.push({ a, folder, dir, book: { ...listing }, ans: aiAnswers(series ? {} : spec, listing) });
   }
 
+  // THE QUALITY GATE (16 Nov 2026, after Amazon's Content Review rejected a title): a title that fails is
+  // held approved and goes to the team's repair, never to her and never to Amazon (kdp-books/quality-gate.mjs).
+  for (const b of [...books]) {
+    let g;
+    try { g = gateFolder(b.dir); } catch (e) { g = { pass: false, findings: [{ code: "GATE_UNREAD", why: String(e?.message ?? e).slice(0, 160) }] }; }
+    if (g.pass) continue;
+    books.splice(books.indexOf(b), 1);
+    const why = g.findings.map((f) => `${f.code}: ${f.why}`).join("; ");
+    console.error(`NAMED STOP [QUALITY_GATE] "${b.book.title}" is held, not put up: ${why}. The team fixes it; nothing for her.`);
+    await api.attempt(b.a.id, { run_outcome: "could-not-run", stop_code: "QUALITY_GATE", amazon_message: why.slice(0, 800) });
+    code = code || 3;
+  }
   if (!books.length) { console.log("OUTPUT 0 kindle-titles-submitted"); return code; }
   const profile = profilePath("kdp");
   if (profileBusy(profile)) {
@@ -1234,6 +1287,13 @@ async function run() {
       await api.post("/open-loops/intake", waitingLoop({ title: book.title, folder: b.folder, cleared: true, day: dayCT() }));
       say("LIVE", `${book.title}: Live on the bookshelf${plan.row.asin ? ` (ASIN ${plan.row.asin})` : ""}; approval marked done.`);
       submitted += 1; return true;
+    }
+    if (plan.action === "blocked") {
+      const reason = await readRejection(book.title, plan.row?.id ?? null);
+      await api.attempt(a.id, { resulting_state: "BLOCKED", run_outcome: "attempted", title_ref: plan.row?.id ?? null, stop_code: "CONTENT_REJECTED", amazon_message: reason });
+      await tellStop(`rejected:${a.id}`, rejectedMail({ title: book.title, reason, id: a.id }));
+      console.error(`NAMED STOP [CONTENT_REJECTED] "${book.title}" is Blocked by Amazon's Content Review${reason ? `: ${reason}` : ""}. Never retried; replying to Amazon is hers.`);
+      return true;
     }
     if (plan.action === "watch") {
       await api.attempt(a.id, { resulting_state: st, run_outcome: "attempted", title_ref: plan.row.id });
@@ -1305,7 +1365,6 @@ async function run() {
         // Read again right before acting: she may have finished it by hand during the heads-up.
         const p0 = plan(book.title, await bookshelf(page, book.title));
         if (await settle(b, p0)) continue;
-        if (p0.action === "blocked") throw stop("BLOCKED", `"${book.title}" shows Blocked on the bookshelf; only she can read Amazon's reason there.`);
         if (p0.action === "unknown") throw stop("SHELF_UNREADABLE", `"${book.title}" is on the bookshelf but its state could not be read; nothing was created.`);
         if (p0.action === "resume") console.log(`resuming the existing draft ${p0.row.id} (Continue setup), never a second one${p0.extra.length ? `; ${p0.extra.length} older duplicate draft(s) left for her to delete` : ""}.`);
         report.title_ref = p0.row?.id ?? null;

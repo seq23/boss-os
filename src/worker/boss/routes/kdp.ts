@@ -1260,7 +1260,8 @@ kdp.get("/publish", async (c) => {
 /**
  * NEW KINDLE TITLES SHE HAS APPROVED (`kdp_new_title`, owner 7 Nov 2026: the KeepMyProof books).
  * `kdp-new-title.mjs` (run by kdp-publish.sh) reads this list; a title is on it from her yes until
- * an attempt records the bookshelf reading Live. The title is matched to its local draft by the
+ * an attempt records the bookshelf reading Live, or Blocked (16 Nov 2026: a title Amazon's Content Review
+ * rejected is never retried; resubmitting rejected content risks the account). The title is matched to its local draft by the
  * judgement's title, which is the book's title.
  */
 kdp.get("/new-titles", async (c) => {
@@ -1270,7 +1271,7 @@ kdp.get("/new-titles", async (c) => {
          FROM judgement_calls j JOIN approvals a ON a.id = j.approval_id
         WHERE j.resume_kind = 'kdp_new_title' AND j.state = 'approved'
           AND NOT EXISTS (SELECT 1 FROM kdp_publish_attempts p
-                           WHERE p.judgement_id = j.id AND p.resulting_state = 'LIVE')
+                           WHERE p.judgement_id = j.id AND p.resulting_state IN ('LIVE', 'BLOCKED'))
         ORDER BY j.decided_at`,
     )
     .all<any>();
