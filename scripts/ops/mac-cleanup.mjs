@@ -218,8 +218,8 @@ function sh(cmd, args) {
   return r.status === 0 ? "ok" : `failed (${String(r.stderr || r.error?.message || r.status).trim().slice(0, 120)})`;
 }
 
-async function main() {
-  const DRY = process.argv.includes("--dry-run");
+export async function main(argv = process.argv) {
+  const DRY = argv.includes("--dry-run");
   const now = Date.now();
   const before = freeGb();
   const log = [];
@@ -288,7 +288,9 @@ async function main() {
   fs.writeFileSync(path.join(logDir, `${new Date(now).toISOString().slice(0, 10)}.log`), `${log.join("\n")}\n`);
   for (const l of log) console.log(l);
 
-  const big = ["Library/Caches", "GitHub", "Library/Developer", "Downloads"].map((d) => ({ d, b: sizeOf(path.join(HOME, d)) })).sort((a, b) => b.b - a.b).slice(0, 3).map((x) => `${x.d.split("/").pop()} ${Math.round(x.b / 1e9)} GB`);
+  const removed = log.filter((l) => /^(removed|would remove) /.test(l)).length;
+  // Sized only when the disk is low: the line below is null otherwise, and du over ~/GitHub is slow.
+  const big = after >= LOW_GB ? [] : ["Library/Caches", "GitHub", "Library/Developer", "Downloads"].map((d) => ({ d, b: sizeOf(path.join(HOME, d)) })).sort((a, b) => b.b - a.b).slice(0, 3).map((x) => `${x.d.split("/").pop()} ${Math.round(x.b / 1e9)} GB`);
   const line = lowDiskLine(after, cleaned, big, trashGb);
   /*
    * ON THE UPDATES PAGE, NEVER AN EMAIL (owner, 7 Nov 2026: "Mac disk: N GB free" every day said
@@ -298,8 +300,19 @@ async function main() {
   if (line && !DRY) {
     const r = await postUpdate({ key: `mac-disk:${today}`, from_name: "Simone", subject: `Mac disk: ${Math.round(after)} GB free`, body: line });
     if (!r.ok) { console.error(`NAMED STOP [UPDATE_REFUSED] the low-disk line did not reach the Updates page: ${r.error}`); process.exit(9); }
-    console.log(`OUTPUT updates=1 (${r.already ? "already on the Updates page today" : "on the Updates page"})`);
+    console.log(`UPDATES: 1 (${r.already ? "already on the Updates page today" : "on the Updates page"})`);
   }
+  console.log(censusOutput({ removed, cleanedGb: cleaned, freeGb: after }));
+}
+
+/**
+ * The run's census as duty-run.sh reads it (`OUTPUT <n> <metric>`, the last one printed). Every run
+ * prints it: a healthy day with nothing removed is still a census taken, never a stop (16 Nov 2026: eight
+ * days logged NO_OUTPUT_LINE because only the low-disk Updates row printed one). Pure.
+ */
+export function censusOutput({ removed, cleanedGb, freeGb }) {
+  const gb = (n) => (Number.isFinite(n) ? `${n.toFixed(1)} GB` : "not read");
+  return `OUTPUT ${Math.max(0, Math.trunc(removed) || 0)} items removed (cleaned ${gb(cleanedGb)}, ${gb(freeGb)} free)`;
 }
 
 /** Post one Updates-page row to Boss OS (passcode from the vault). `{ ok, already?, error? }`. */
