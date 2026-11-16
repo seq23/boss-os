@@ -10,9 +10,9 @@ import { isLane } from "../../../shared/boss/lanes";
 import { executeDecision, type ApprovalRow } from "../approvals/execute";
 import { decideApproval, type Decision } from "../approvals/decide";
 import { pendingApprovals } from "../approvals/pending";
-import { overruledGuess } from "../tasks/admit";
+import { overruledGuess, overruledAxes } from "../tasks/admit";
 import { classify } from "../intake/classify";
-import { openedBySystem } from "../../../shared/boss/mail/noticeGate.mjs";
+import { openedBySystem, startedBySystem } from "../../../shared/boss/mail/noticeGate.mjs";
 
 export const approvals = new Hono<{ Bindings: Env; Variables: Vars }>();
 
@@ -372,20 +372,21 @@ export async function runExpirySweep(env: Env): Promise<{ expired: number; execu
    * (owner, 2 and 13 Nov 2026), and a run that never ran has nothing to accept, so the default is to
    * run it: the system decides the docket and the approved path requeues it (`handleHeldTask`).
    * `overruledGuess` (tasks/admit.ts) is the same reading admit uses, so money, sends in her name,
-   * legal, invitations and the trading lane keep their approvals. The row's kind, assignment and
-   * risk become what admit writes now; its privacy axes stay as they are (tighten-only).
+   * legal, invitations and the trading lane keep their approvals. The row's kind, assignment, risk
+   * and sensitivity become what admit writes now; model access is tighten-only (`overruledAxes`).
    */
   // Read from the held TASKS (not a count of what waits on her: that is approvals/pending.ts).
   const guessed = await env.DB
     .prepare(
       `SELECT a.*, t.title AS task_title, t.input AS task_input, t.lane AS task_lane,
+              t.sensitivity AS task_sensitivity, t.model_access AS task_model_access,
               (SELECT detail FROM task_events e WHERE e.task_id = t.id AND e.event = 'intake' ORDER BY e.ts DESC LIMIT 1) AS intake_detail
          FROM tasks t JOIN approvals a ON a.id = t.approval_id
         WHERE t.status = 'awaiting_approval' AND t.lane != 'trading' AND a.kind = 'manual'
           AND a.status = 'pending' AND json_extract(a.payload, '$.assignment') = 'USER_ONLY'
         ORDER BY a.requested_at LIMIT 50`,
     )
-    .all<ApprovalRow & { task_title: string; task_input: string | null; task_lane: string; intake_detail: string | null }>();
+    .all<ApprovalRow & { task_title: string; task_input: string | null; task_lane: string; task_sensitivity: string | null; task_model_access: string | null; intake_detail: string | null }>();
   for (const row of guessed.results ?? []) {
     let input: Record<string, unknown> = {};
     try { input = row.task_input ? (JSON.parse(row.task_input) as Record<string, unknown>) : {}; } catch { input = {}; }
@@ -398,7 +399,10 @@ export async function runExpirySweep(env: Env): Promise<{ expired: number; execu
     const redone = classify({
       title: row.task_title, prompt: typeof input.prompt === "string" ? input.prompt : null, lane: row.task_lane,
       intakeKind: input.duty_id != null ? "recurring_duty" : "one_off",
+      // A sensitivity someone DECLARED is a fact, kept through classify; the guessed one is re-read.
+      sensitivity: (first.matched ?? []).includes("explicit_sensitivity") ? row.task_sensitivity : undefined,
     });
+    const axes = overruledAxes({ modelAccess: row.task_model_access }, redone);
     const note = `Boss OS started this itself and intake held it on a word in its own text (${first.intakeKind ?? "unknown"}, USER_ONLY). Her standing default for such work is to run it.`;
     const decidedAt = Date.now();
     const claimed = await env.DB
@@ -410,10 +414,10 @@ export async function runExpirySweep(env: Env): Promise<{ expired: number; execu
     await env.DB.batch([
       env.DB.prepare(`INSERT INTO approval_events (id, approval_id, ts, event, detail) VALUES (?,?,?,'approved',?)`)
         .bind(newId("ape"), row.id, decidedAt, JSON.stringify({ by: "system", reason: note })),
-      env.DB.prepare(`UPDATE tasks SET intake_kind = ?, execution_assignment = ?, risk = ? WHERE id = ? AND status = 'awaiting_approval'`)
-        .bind(redone.intakeKind, redone.executionAssignment, redone.risk, taskId),
+      env.DB.prepare(`UPDATE tasks SET intake_kind = ?, execution_assignment = ?, risk = ?, sensitivity = ?, model_access = ? WHERE id = ? AND status = 'awaiting_approval'`)
+        .bind(redone.intakeKind, redone.executionAssignment, redone.risk, axes.sensitivity, axes.modelAccess, taskId),
       env.DB.prepare(`INSERT INTO task_events (id, task_id, ts, event, detail) VALUES (?,?,?,'intake_overruled',?)`)
-        .bind(newId("tev"), taskId, decidedAt, JSON.stringify({ reason: note, was: { intakeKind: first.intakeKind ?? null, assignment: "USER_ONLY" }, now: { intakeKind: redone.intakeKind, assignment: redone.executionAssignment, risk: redone.risk } })),
+        .bind(newId("tev"), taskId, decidedAt, JSON.stringify({ reason: note, was: { intakeKind: first.intakeKind ?? null, assignment: "USER_ONLY", sensitivity: row.task_sensitivity }, now: { intakeKind: redone.intakeKind, assignment: redone.executionAssignment, risk: redone.risk, ...axes } })),
     ]);
     await audit(env.DB, {
       actor: "system", lane: row.lane, entityType: "approval", entityId: row.id,
@@ -422,6 +426,44 @@ export async function runExpirySweep(env: Env): Promise<{ expired: number; execu
     const result = await executeDecision(env, { ...row, status: "approved" } as ApprovalRow, "approved", note);
     if (result.status === "executed") executed++;
     else if (result.status === "failed") failed++;
+  }
+  /*
+   * AN OVERRULED GUESS STILL CARRYING ITS `restricted` IS RE-READ (16 Nov 2026). Before the block above
+   * wrote sensitivity, a released duty's run kept the trading guess's `restricted`, and every seat
+   * refused it for a sensitive-routing card nothing raises (NAMED STOP [WAITING_FOR_CLAUDE] hourly,
+   * the monthly quality read). Only rows that already carry an `intake_overruled` event, outside the
+   * trading lane, with no sensitivity declared at intake; model access stays tighten-only.
+   */
+  const stillGuessed = await env.DB
+    .prepare(
+      `SELECT t.id, t.title, t.input, t.lane, t.model_access,
+              (SELECT detail FROM task_events e WHERE e.task_id = t.id AND e.event = 'intake' ORDER BY e.ts DESC LIMIT 1) AS intake_detail
+         FROM tasks t
+        WHERE t.status IN ('queued','running') AND t.lane != 'trading' AND t.sensitivity = 'restricted'
+          AND EXISTS (SELECT 1 FROM task_events e WHERE e.task_id = t.id AND e.event = 'intake_overruled')
+        ORDER BY t.created_at LIMIT 50`,
+    )
+    .all<{ id: string; title: string; input: string | null; lane: string; model_access: string | null; intake_detail: string | null }>();
+  for (const t of stillGuessed.results ?? []) {
+    let input: Record<string, unknown> = {};
+    try { input = t.input ? (JSON.parse(t.input) as Record<string, unknown>) : {}; } catch { input = {}; }
+    let first: { matched?: string[] } = {};
+    try { first = t.intake_detail ? JSON.parse(t.intake_detail) : {}; } catch { first = {}; }
+    if ((first.matched ?? []).includes("explicit_sensitivity")) continue;
+    if (!startedBySystem(input)) continue;
+    const redone = classify({
+      title: t.title, prompt: typeof input.prompt === "string" ? input.prompt : null, lane: t.lane,
+      intakeKind: input.duty_id != null ? "recurring_duty" : "one_off",
+    });
+    const axes = overruledAxes({ modelAccess: t.model_access }, redone);
+    if (axes.sensitivity === "restricted") continue;
+    const at = Date.now();
+    await env.DB.batch([
+      env.DB.prepare(`UPDATE tasks SET sensitivity = ?, model_access = ? WHERE id = ? AND sensitivity = 'restricted'`)
+        .bind(axes.sensitivity, axes.modelAccess, t.id),
+      env.DB.prepare(`INSERT INTO task_events (id, task_id, ts, event, detail) VALUES (?,?,?,'intake_overruled',?)`)
+        .bind(newId("tev"), t.id, at, JSON.stringify({ reason: "The overruled guess's restricted label is re-read from the text; model access is kept.", was: { sensitivity: "restricted", modelAccess: t.model_access }, now: axes })),
+    ]);
   }
   /*
    * A FINISHED RESULT HELD FOR A YES THAT WAS NEVER HERS IS ACCEPTED (16 Nov 2026). Danielle's dated

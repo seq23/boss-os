@@ -2,7 +2,7 @@ import { env } from "cloudflare:test";
 import { describe, expect, it } from "vitest";
 import { classify } from "../../src/worker/boss/intake/classify";
 import { buildEnvelope } from "../../src/worker/boss/intake/envelope";
-import { admitTask, overruledGuess } from "../../src/worker/boss/tasks/admit";
+import { admitTask, overruledAxes, overruledGuess } from "../../src/worker/boss/tasks/admit";
 import { apiJson, insertTask, row, all } from "./helpers";
 
 const post = (path: string, body: unknown) => apiJson(path, { method: "POST", body });
@@ -108,11 +108,17 @@ describe("Phase 2 — intake admits work through the right door", () => {
     const quoted = "Monthly quality read. Newest briefing: Brokerage sourcing — a seller wants to sell 2,000 shares.";
     const duty = await admitTask(env, { title: "Monthly quality read", input: { prompt: quoted, duty_id: "duty_quality_read" } });
     expect(duty.queued).toBe(true);
-    const t = await row(`SELECT status, intake_kind, execution_assignment, approval_id, sensitivity FROM tasks WHERE id = ?`, duty.task_id);
+    const t = await row(`SELECT status, intake_kind, execution_assignment, approval_id, sensitivity, model_access, risk FROM tasks WHERE id = ?`, duty.task_id);
     expect(t).toMatchObject({ status: "queued", intake_kind: "recurring_duty", approval_id: null });
     expect(t!.execution_assignment).not.toBe("USER_ONLY");
-    // Tighten-only: the privacy axis intake first read stays.
-    expect(t!.sensitivity).toBe("restricted");
+    // 16 Nov 2026: the guess's `restricted` is re-read from the text (it asked for a routing card nothing
+    // raises), while model access stays tighten-only.
+    expect(t).toMatchObject({ sensitivity: "internal", model_access: "private_model_only" });
+    // A sensitivity someone declared is a fact and stays.
+    const declaredRestricted = await admitTask(env, { title: "Monthly quality read", sensitivity: "restricted", input: { prompt: quoted, duty_id: "duty_quality_read" } });
+    expect((await row(`SELECT sensitivity FROM tasks WHERE id = ?`, declaredRestricted.task_id))!.sensitivity).toBe("restricted");
+    expect(overruledAxes({ modelAccess: "private_model_only" }, { sensitivity: "internal", modelAccess: "public_model_approved" }))
+      .toEqual({ sensitivity: "internal", modelAccess: "private_model_only" });
     const events = (await all(`SELECT event FROM task_events WHERE task_id = ?`, duty.task_id)).map((e) => e.event);
     expect(events).toContain("intake_overruled");
 

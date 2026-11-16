@@ -109,6 +109,46 @@ describe("the privacy screen runs before a worker is chosen", () => {
     expect(stop.why).toMatch(/bk_claude_code: .*out of usage/);
   });
 
+  /*
+   * THE SHAPE THAT PARKED "Monthly quality read" (tsk_m7bs3zagfkrkr2k0, 16 Nov 2026): a duty's private
+   * hard run whose row kept an overruled guess's `restricted`. Claude's seat refuses it for a
+   * sensitive-routing card nothing raises, and the task waited hourly, told once. The wait now reaches
+   * the duty's 2-day alarm; with the label re-read (`internal`, what the sweep writes) Claude's seat
+   * takes it, and still nothing goes to Codex, a free route or a cloud route.
+   */
+  it("a duty's private hard run refused for a routing card raises the duty's 2-day alarm; re-read as internal, Claude's seat takes it", async () => {
+    const duty = await row<any>(`SELECT id, task_title FROM standing_duties WHERE id = 'duty_exec_intel'`);
+    await env.DB.prepare(`DELETE FROM tasks WHERE title = ?`).bind(duty.task_title).run();
+    await env.DB.prepare(`DELETE FROM boss_task_notices WHERE task_id = ?`).bind(duty.id).run();
+    const run = async (sensitivity: string) => {
+      const taskId = await insertTask({
+        status: "queued", title: duty.task_title, intake_kind: "decision_support", sensitivity, risk: "high",
+        input: JSON.stringify({ duty_id: duty.id, backend_ladder: ["bk_claude_code"], cloud_fallback: false, prompt: DEAL }),
+      });
+      await env.DB.prepare(`UPDATE tasks SET model_access = 'private_model_only', created_at = ? WHERE id = ?`).bind(Date.now() - 49 * 3600_000, taskId).run();
+      await handleTask(env as any, { taskId, lane: "ops" });
+      return taskId;
+    };
+
+    const stuck = await run("restricted");
+    expect((await row<any>(`SELECT status FROM tasks WHERE id = ?`, stuck)).status).toBe("queued");
+    const stop = JSON.parse((await row<any>(`SELECT detail FROM task_events WHERE task_id = ? AND event = 'named_stop' ORDER BY ts DESC LIMIT 1`, stuck)).detail);
+    expect(stop.code).toBe("WAITING_FOR_CLAUDE");
+    expect(stop.why).toMatch(/sensitive-routing card/);
+    const alarms = await all<any>(`SELECT needs_her FROM boss_task_notices WHERE kind = 'duty_not_running' AND task_id = ?`, duty.id);
+    expect(alarms, "the wait never reached the duty's alarm").toEqual([{ needs_her: 1 }]);
+    // A second hourly attempt raises no second alarm.
+    await handleTask(env as any, { taskId: stuck, lane: "ops" });
+    expect(await all<any>(`SELECT 1 FROM boss_task_notices WHERE kind = 'duty_not_running' AND task_id = ?`, duty.id)).toHaveLength(1);
+
+    await env.DB.prepare(`UPDATE tasks SET status = 'cancelled' WHERE id = ?`).bind(stuck).run();
+    const released = await run("internal");
+    const runs = await all<any>(`SELECT backend_id FROM backend_runs WHERE task_id = ? AND status = 'running'`, released);
+    expect(runs.map((r) => r.backend_id)).toEqual(["bk_claude_code"]);
+    expect(await all<any>(`SELECT 1 FROM backend_runs WHERE task_id = ? AND backend_id = 'bk_codex'`, released)).toHaveLength(0);
+    expect(await all<any>(`SELECT 1 FROM routing_decisions WHERE task_id = ?`, released), "a cloud rung was asked").toHaveLength(0);
+  });
+
   it("NEGATIVE: a plain public prompt still goes to Codex first", async () => {
     const taskId = await insertTask({
       status: "queued", title: "Lighthouses", intake_kind: "research", sensitivity: "public",
