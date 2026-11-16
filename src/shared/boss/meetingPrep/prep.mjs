@@ -384,14 +384,43 @@ export function offersFrom({ context = {}, firm = null, lead = null, researched 
  */
 export const RESEARCH_FIELDS = [["title", "Title"], ["firm", "Firm"], ["background", "Background"], ["focus", "Current focus"]];
 
+/**
+ * WHERE THE MONEY COMES FROM (owner, 15 Nov 2026: a prep for an LP call "shouldn't have left out"
+ * where the institution's money comes from). For an LP or allocator meeting with a foundation,
+ * endowment, family office, pension or sovereign fund, the research asks for these too, each with its
+ * source link, and the prep ALWAYS carries a "Where the money comes from" section: the facts, or a
+ * line saying research found none. Never silently left out.
+ */
+export const MONEY_FIELDS = [
+  ["founder", "Founder or family"], ["wealth", "Source of the wealth"], ["founded", "Founded"],
+  ["mandate", "Mandate"], ["name_trap", "Name trap"],
+];
+export const MONEY_TITLE = "Where the money comes from";
+const INSTITUTION_KINDS = new Set(["family_office", "sovereign_wealth", "pension_endowment_foundation"]);
+const INSTITUTION_WORDS = /\b(foundation|endowment|family office|family offices|pension|retirement system|sovereign|charitable trust|philanthrop\w*)\b/i;
+const INSTITUTION_DOMAIN = /(foundation|found\.|fdn|endow|pension|familyoffice|philanthrop)/i;
+
+/** Is this guest's organisation one whose money has a source worth knowing? Pure. */
+export function isInstitution({ rec = null, firm = null, email = null, title = null } = {}) {
+  if (INSTITUTION_KINDS.has(rec?.prospect?.kind)) return true;
+  if ([firm, rec?.lp?.firm, rec?.prospect?.firm, title].some((t) => t && INSTITUTION_WORDS.test(String(t)))) return true;
+  const domain = String(email ?? "").split("@")[1] ?? "";
+  return Boolean(domain && INSTITUTION_DOMAIN.test(domain));
+}
+
+const MONEY_ASK = "Because they are an institution, also find where its money comes from: the founder or family behind it; the source of the wealth (the company or industry it came from); the year it was founded; anything that defines its mandate (a regional charter, a cause, a required focus); and any name-collision trap (another foundation, family or person with the same or a famous name that it must not be confused with).";
+const MONEY_JSON = ',"money":{"founder":{"text":"...","url":"https://..."} or null,"wealth":{...} or null,"founded":{...} or null,"mandate":{...} or null,"name_trap":{...} or null}';
+const withMoney = (json, institution) => (institution ? json.replace(/\]\}\. If/, `]${MONEY_JSON}}. If`) : json);
+
 /** The research prompt. Pure, so the test reads exactly what the seat is told. */
-export function researchPrompt({ name, email = null, firm = null, domain = null, today }) {
+export function researchPrompt({ name, email = null, firm = null, domain = null, today, institution = false }) {
   const who = [name ? `"${name}"` : null, email ? `<${email}>` : null, firm ? `of ${firm}` : null, domain ? `(company website ${domain})` : null].filter(Boolean).join(" ");
   return [
     `Research ${who} before a meeting with Sequoia Taylor. Today is ${today}. Use web search and read the pages you cite. Public sources only (their company site, news, conference pages, podcasts, filings, public profiles).`,
     "Find: their current title; their firm; their background in one sentence; what they are focused on now; anything public they are doing soon (talks, panels, launches, fund closes) with its date.",
+    ...(institution ? [MONEY_ASK] : []),
     "Every fact needs the https link of the page that says it. A fact you cannot source is left out (null). Never guess; never fill a gap; a person with the same name at another firm is not them.",
-    'Answer with JSON only, in a ```json block: {"found":true,"title":{"text":"...","url":"https://..."} or null,"firm":{...} or null,"background":{...} or null,"focus":{...} or null,"upcoming":[{"text":"what, and when","url":"https://..."}]}. If you cannot tell who they are: {"found":false,"why":"one short reason"}.',
+    withMoney('Answer with JSON only, in a ```json block: {"found":true,"title":{"text":"...","url":"https://..."} or null,"firm":{...} or null,"background":{...} or null,"focus":{...} or null,"upcoming":[{"text":"what, and when","url":"https://..."}]}. If you cannot tell who they are: {"found":false,"why":"one short reason"}.', institution),
   ].join("\n");
 }
 
@@ -426,7 +455,9 @@ export function readResearch(r, { now = Date.now() } = {}) {
   const facts = [];
   for (const [k, label] of RESEARCH_FIELDS) { const f = fact(j[k]); if (f) facts.push({ label, ...f }); }
   for (const u of (Array.isArray(j.upcoming) ? j.upcoming : []).filter((u) => !isPast(u?.text, now)).slice(0, 3)) { const f = fact(u, 180); if (f) facts.push({ label: "Coming up", ...f }); }
-  return facts.length ? { ok: true, facts } : { ok: false, why: "no fact came back with a source" };
+  const money = [];
+  for (const [k, label] of MONEY_FIELDS) { const f = fact(j.money?.[k], 260); if (f) money.push({ label, ...f }); }
+  return facts.length || money.length ? { ok: true, facts, money } : { ok: false, why: "no fact came back with a source" };
 }
 
 /**
@@ -441,24 +472,26 @@ export function readResearch(r, { now = Date.now() } = {}) {
  */
 const RESEARCH_JSON = 'Answer with JSON only, in a ```json block: {"found":true,"title":{"text":"...","url":"<page link>"} or null,"firm":{...} or null,"background":{...} or null,"focus":{...} or null,"upcoming":[{"text":"what, and when","url":"<page link>"}]}. If the pages do not say who they are: {"found":false,"why":"one short reason"}.';
 
-export function groundedSearchPrompt({ name, email = null, firm = null, domain = null, today }) {
+export function groundedSearchPrompt({ name, email = null, firm = null, domain = null, today, institution = false }) {
   const who = [name ? `"${name}"` : null, firm ? `of ${firm}` : null, domain ? `(company website ${domain})` : null, email ? `email domain ${String(email).split("@")[1] ?? ""}` : null].filter(Boolean).join(" ");
   return [
     `Search Google for ${who}. Today is ${today}.`,
     "From the pages you find, state: their current title; their firm; their background in one sentence; what they are focused on now; anything public they are doing soon (talks, panels, launches, fund closes) with its date.",
+    ...(institution ? [MONEY_ASK] : []),
     "Every fact cites the link of the page that says it. A fact no page says is left out (null). A person with the same name at another firm is not them. Never add from memory.",
-    RESEARCH_JSON,
+    withMoney(RESEARCH_JSON, institution),
   ].join("\n");
 }
 
 /** The fallback's prompt: write from the fetched pages only, citing each fact by its page's link. */
-export function writeFromPagesPrompt({ name, pages }) {
+export function writeFromPagesPrompt({ name, pages, institution = false }) {
   const list = pages.map((p, i) => `[${i + 1}] ${p.url}\n"""${String(p.text ?? "").slice(0, 6000)}"""`).join("\n\n");
   return [
     `Write what these pages say about ${name ?? "this person"} and their firm. Use ONLY the page text below; never add from memory. If a page does not name them, say nothing about them from it.`,
     `Pages:\n${list}`,
+    ...(institution ? [MONEY_ASK] : []),
     "Every fact cites ONE of those page links, copied exactly. A fact no page supports is left out (null).",
-    RESEARCH_JSON,
+    withMoney(RESEARCH_JSON, institution),
   ].join("\n\n");
 }
 
@@ -471,7 +504,21 @@ export function keepGroundedFacts(json, sources) {
     ...json,
     ...Object.fromEntries(RESEARCH_FIELDS.map(([k]) => [k, keep(json[k])])),
     upcoming: (Array.isArray(json.upcoming) ? json.upcoming : []).map(keep).filter(Boolean),
+    ...(json.money && typeof json.money === "object" ? { money: Object.fromEntries(MONEY_FIELDS.map(([k]) => [k, keep(json.money[k])])) } : {}),
   };
+}
+
+/**
+ * The "Where the money comes from" lines: one per sourced fact, or the one line saying research found
+ * none (or did not run), so the section is never silently missing.
+ */
+export function moneyItems(research, org) {
+  const money = research?.ok ? research.money ?? [] : [];
+  if (money.length) return money.map((f) => ({ text: `${f.label}: ${f.text}`, links: [{ label: "Source", url: f.url }] }));
+  const what = "the founder or family, the source of the wealth, the founding year and the mandate";
+  if (!research) return [`Not researched yet: nothing says where ${org ?? "their"}'s money comes from (${what}). Ask early in the call.`];
+  if (!research.ok) return [`Couldn't research where ${org ?? "their"}'s money comes from (${what}). Ask early in the call.`];
+  return [`Research found nothing public on where ${org ?? "their"}'s money comes from (${what}). Ask early in the call.`];
 }
 
 /** The guest's public pages to fetch when search is not available: their site, its about and team pages. */
@@ -544,6 +591,7 @@ export function buildPrep(event, data = {}, { herAddresses = [], context = {}, p
     whoItems.push({ text: `Their website, ${ctx.site.domain}: ${clip([ctx.site.title, ctx.site.about].filter(Boolean).join(". "), 220)}`, links: [{ label: "Open their website", url: `https://${ctx.site.domain}` }] });
   }
   if (whoItems.length) sections.push({ title: "Who they are", items: whoItems });
+  if (isInstitution({ rec, firm, email: lead?.email ?? null, title: event.title })) sections.push({ title: MONEY_TITLE, items: moneyItems(research, firm) });
 
   // How you know them: her mailboxes, her calendars, Boss OS cards. Only what was found.
   const knowItems = [];

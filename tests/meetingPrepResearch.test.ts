@@ -52,7 +52,7 @@ describe("b) the guest is researched before the prep is sent", () => {
     const { api, posts } = fakeApi(RESEARCH_OK);
     const asked: any[] = [];
     const research = await researchGuest(pat, lpReplyData, { api, ask: (...a: any[]) => { asked.push(a); return null; }, now: Date.parse("2026-10-29T23:00:00Z"), log: () => {} });
-    expect(posts).toEqual([{ p: "/research/person", body: { name: "Pat Example", email: "pat@familyoffice.example", firm: "familyoffice.example", domain: "familyoffice.example", today: "2026-10-29" } }]);
+    expect(posts).toEqual([{ p: "/research/person", body: { name: "Pat Example", email: "pat@familyoffice.example", firm: "familyoffice.example", domain: "familyoffice.example", today: "2026-10-29", institution: true } }]);
     expect(asked).toEqual([]); // a prospect never goes to her seat: Boss OS's free route did it
     expect(research.ok).toBe(true);
     const m = prepEmail(pat, lpReplyData, { context: { research } });
