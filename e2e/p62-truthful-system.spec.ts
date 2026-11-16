@@ -1,6 +1,14 @@
 import { expect, test } from "@playwright/test";
 import { gotoSurface } from "./support/nav";
-import { queryLocalD1 } from "./support/provision";
+import { provisionLocalD1, queryLocalD1 } from "./support/provision";
+
+// The non-partner identity the ceiling test posts as, seeded HERE: with six shards (#433) the specs
+// that also seed it (p3, p65) may run in another shard, and the post came back 401, not 403 (16 Nov 2026).
+test.beforeAll(() => {
+  provisionLocalD1(
+    `INSERT OR IGNORE INTO firm_user (id, email, full_name, status) VALUES ('fu_e2e_member', 'e2e-member@westpeek.ventures', 'E2E Member', 'ACTIVE'); INSERT OR IGNORE INTO firm_user_role (firm_user_id, role_id) VALUES ('fu_e2e_member', 'role_investment_team');`,
+  );
+});
 
 /**
  * THE SYSTEM TELLING THE TRUTH ABOUT ITSELF.
