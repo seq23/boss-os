@@ -106,6 +106,19 @@ export function otpIn(text) {
   return m ? m[1] : null;
 }
 
+/** One question to her mailbox through the Gmail connector (`claude -p` on her seat); its printed answer, or "". */
+export function askGmail(prompt, { model = OTP_MODEL, timeoutMs = 120_000 } = {}) {
+  return new Promise((resolve) => {
+    const child = spawn("claude", ["-p", prompt, "--model", model, "--dangerously-skip-permissions"], { env: seatEnv(process.env), stdio: ["ignore", "pipe", "pipe"] });
+    let text = "";
+    child.stdout.on("data", (d) => { text += d.toString(); });
+    child.stderr.on("data", () => {});
+    const t = setTimeout(() => child.kill("SIGTERM"), timeoutMs);
+    child.on("close", () => { clearTimeout(t); resolve(text); });
+    child.on("error", () => { clearTimeout(t); resolve(""); });
+  });
+}
+
 /** Ask her mailbox, through the connector, for a fresh Amazon code. Polls inside the window. */
 async function readOtpFromGmail(sinceIso) {
   const prompt = [
@@ -118,15 +131,7 @@ async function readOtpFromGmail(sinceIso) {
   let attempt = 0;
   while (Date.now() < deadline) {
     attempt += 1;
-    const answer = await new Promise((resolve) => {
-      const child = spawn("claude", ["-p", prompt, "--model", OTP_MODEL, "--dangerously-skip-permissions"], { env: seatEnv(process.env), stdio: ["ignore", "pipe", "pipe"] });
-      let text = "";
-      child.stdout.on("data", (d) => { text += d.toString(); });
-      child.stderr.on("data", () => {});
-      const t = setTimeout(() => child.kill("SIGTERM"), 120_000);
-      child.on("close", () => { clearTimeout(t); resolve(text); });
-      child.on("error", () => { clearTimeout(t); resolve(""); });
-    });
+    const answer = await askGmail(prompt);
     const code = otpIn(answer);
     if (code) return { code, attempt };
     if (Date.now() + 25_000 >= deadline) break;
