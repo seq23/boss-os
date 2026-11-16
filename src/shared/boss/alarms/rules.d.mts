@@ -4,7 +4,7 @@ export declare const DEFAULT_OUTPUT_RUNS: number;
 export declare function parseOutputLine(text: unknown): { count: number; metric: string } | null;
 export declare function outputLine(count: number, metric: string): string;
 
-export interface FloorRun { outcome?: string; output_count?: number | null; finished_at?: number }
+export interface FloorRun { outcome?: string; output_count?: number | null; finished_at?: number; honest_zero?: boolean }
 export interface FloorDuty { name?: string; output_metric?: string | null; output_floor?: number | null; output_runs?: number | null }
 export interface FloorVerdict { alarm: boolean; low: number; needed: number; newest: FloorRun | null }
 export declare function runIsLow(run: FloorRun, floor: number | null | undefined): boolean;

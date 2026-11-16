@@ -260,6 +260,37 @@ describe("an agent duty is judged by what it delivered, not by tasks.output (8 N
     // Run b found nothing: it is a real 0, newest first.
     expect((await runsFor(E, d)).map((r) => r.output_count)).toEqual([0, 2]);
   });
+
+  it("an honest nothing-new sourcing run is not low; a zero with no such record still is (16 Nov 2026, alarm output:duty_brokerage_sourcing)", async () => {
+    const d = await duty("duty_brokerage_sourcing");
+    expect(d).toMatchObject({ executor: "agent", output_floor: 1, output_runs: 2 });
+    const t0 = Number(d.output_since) + 1000;
+    const measure = (taskId: string, at: number, pass: number, measured: Record<string, unknown>) =>
+      E.DB.prepare(`INSERT INTO delivery_measures (id, at, deliverable, task_id, run_id, route, pass, misses, measured) VALUES (?,?, 'sourcing_candidates', ?, NULL, 'bk_claude_code', ?, '[]', ?)`)
+        .bind(`dms_${taskId}_${at}`, at, taskId, pass, JSON.stringify(measured)).run();
+    // Two runs that delivered no row but passed their floor on the "nothing new" record.
+    await materialised("duty_brokerage_sourcing", "tsk_bs_13nov", "sourcing_candidates", t0);
+    await measure("tsk_bs_13nov", t0 + 60_000, 1, { new_rows: 0, nothing_new: "20 searches, 3 firms turned down" });
+    await materialised("duty_brokerage_sourcing", "tsk_bs_16nov", "sourcing_candidates", t0 + 72 * H);
+    await measure("tsk_bs_16nov", t0 + 72 * H + 60_000, 1, { new_rows: 0, nothing_new: "21 searches, 3 firms turned down" });
+    // The alarm already open from before the fix closes on the next tick, with no new run needed.
+    await raiseAlarm(E, { key: "output:duty_brokerage_sourcing", kind: "output_floor", subject_id: "duty_brokerage_sourcing", text: "Brokerage Sourcing Sweep ran but produced 0 reports delivered (needs 1), 2 runs in a row." }, t0 + 73 * H);
+    expect((await runsFor(E, d)).map((r) => r.honest_zero === true)).toEqual([true, true]);
+    let r = await runKendraChecks(E, t0 + 74 * H);
+    expect(r.floors.opened).not.toContain("duty_brokerage_sourcing");
+    expect(r.floors.cleared).toContain("duty_brokerage_sourcing");
+    expect((await alarm("output:duty_brokerage_sourcing")).status).toBe("closed");
+
+    // Negative proof: two zeros with no honest record (a failed check, and a pass without nothing_new) still alarm.
+    await materialised("duty_brokerage_sourcing", "tsk_bs_18nov", "sourcing_candidates", t0 + 120 * H);
+    await measure("tsk_bs_18nov", t0 + 120 * H + 60_000, 0, { new_rows: 0, nothing_new: "2 searches" });
+    await materialised("duty_brokerage_sourcing", "tsk_bs_20nov", "sourcing_candidates", t0 + 168 * H);
+    await measure("tsk_bs_20nov", t0 + 168 * H + 60_000, 1, { new_rows: 0 });
+    expect((await runsFor(E, d)).map((x) => x.honest_zero === true)).toEqual([false, false, true, true]);
+    r = await runKendraChecks(E, t0 + 169 * H);
+    expect(r.floors.opened).toContain("duty_brokerage_sourcing");
+    expect((await alarm("output:duty_brokerage_sourcing")).text).toMatch(/produced 0 reports delivered \(needs 1\), 2 runs in a row/);
+  });
 });
 
 describe("C: the morning email can never go missing silently (13 Nov 2026; both ticks refused on 10 Nov and nothing told her)", () => {
