@@ -5,7 +5,7 @@
  */
 import { env } from "cloudflare:test";
 import { beforeEach, describe, expect, it } from "vitest";
-import { DELIVERABLES, composeQualityRead, driftLine, driftReport, qualityReadsFloor, recordMeasures } from "../../src/worker/boss/duties/drift";
+import { DELIVERABLES, validReads, composeQualityRead, driftLine, driftReport, qualityReadsFloor, recordMeasures } from "../../src/worker/boss/duties/drift";
 import { deliverQualityReads } from "../../src/worker/boss/duties/deliverReport";
 import { jobClassOf, routeOrder } from "../../src/shared/boss/aiRoles.mjs";
 import { materialiseDueDuties } from "../../src/worker/boss/duties/materialise";
@@ -110,6 +110,11 @@ describe("the monthly read", () => {
     expect(ask.expect).toEqual(["executive_reports"]);
     expect(ask.prompt.indexOf("The newest example headline")).toBeLessThan(ask.prompt.indexOf("The sharp example headline"));
     expect(ask.prompt).toMatch(/Day 2026-11-13: 1 sections, 12 sources/);
+    // The shape it hands the seat is one JSON object that files as a read (16 Nov 2026: a bare array
+    // was refused by the runner, and a finished read delivered nothing).
+    const shape = JSON.parse(ask.prompt.split("\n").find((l) => l.trim().startsWith("{ \"reads\""))!.trim());
+    expect(Array.isArray(shape)).toBe(false);
+    expect(validReads(shape)).toHaveLength(1);
   });
 
   it("a read counts only with a verdict and a checkable reason for every deliverable handed over", async () => {

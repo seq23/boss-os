@@ -197,12 +197,18 @@ export async function composeQualityRead(env: DB): Promise<QualityReadAsk | null
     "",
     parts.join("\n\n"),
     "",
-    "Write delivers.json in your working directory, then read it back and confirm it parses:",
-    '  reads [{ "deliverable": one of the deliverable keys above, "verdict": "holds" or "slipped", "why": one or two plain sentences a person can check against the output, naming what is as good as the best example or what is worse }]',
+    // 16 Nov 2026: "reads [{ … }]" was read as a bare array, which the runner refuses (delivers.json
+    // must be one JSON object), so a finished read delivered nothing. The shape is now the literal file.
+    "Write delivers.json in your working directory as ONE JSON object (never a bare array), then read it back and confirm it parses. Exactly this shape:",
+    `  ${READS_SHAPE}`,
+    'Each "deliverable" is one of the deliverable keys above; "verdict" is "holds" or "slipped"; "why" is one or two plain sentences a person can check against the output, naming what is as good as the best example or what is worse.',
     `One read for each of: ${expect.join(", ")}. "holds" means it is as good as the best example in substance; "slipped" means it is not, and "why" says where.`,
   ].join("\n");
   return { prompt, expect };
 }
+
+/** The delivers.json shape the prompt hands the seat, word for word; a valid payload by `validReads`. */
+export const READS_SHAPE = '{ "reads": [ { "deliverable": "executive_reports", "verdict": "slipped", "why": "Five of its eleven sections show a title with nothing under it, where the best example filled every one." } ] }';
 
 const VERDICTS = ["holds", "slipped"];
 /** The reads worth keeping: a known deliverable, a verdict, and a reason long enough to check. One per deliverable. */
