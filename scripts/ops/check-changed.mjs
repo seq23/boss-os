@@ -18,9 +18,9 @@
  *      vitest.boss.config.ts, the rest under vitest.config.ts. So a change to src/worker/index.ts runs
  *      suites that load it under Node, which is what broke #423.
  *   3. the registered scans (`validate:scans`) that the change can affect. Every scan under ~5 s runs
- *      always (they are ~45 s in all, run 6 at a time); the scans in SLOW below run only when a changed
- *      path is one the scan's own scripts name (a path literal or a relative import in them) or the
- *      scan's script itself changed.
+ *      only when a changed path is one the scan's own scripts name (a path literal, a directory, or a
+ *      relative import in them) or the scan's script itself changed; the rest are CI's.
+ *   4. the whole push waits at most BUDGET_S (90 s); a check still running then is named and left to CI.
  *
  * It is NOT the full suite (CI runs that on the PR), and it does not run e2e.
  * Exit: 0 green · 1 a check failed (named) · 2 NAMED STOP [CHECK_CHANGED_NO_BASE] origin/main unreadable.
@@ -36,7 +36,8 @@ const ROOT = (() => { try { return execFileSync("git", ["rev-parse", "--show-top
 /**
  * Scans too slow to run on every push, measured 15 Nov 2026 on a Mac (`validate:scans` one by one):
  * agent-poll 159 s (it drives the real launchd wrapper under bash with timed holds), service-rules 15 s.
- * Every other scan measured under 4 s. A scan added here is scoped by the paths its scripts name.
+ * Every other scan measured under 4 s. A scan listed here never runs on a push (it cannot finish inside the
+ * budget); CI runs it on every PR.
  */
 export const SLOW = ["validate:agent-poll", "validate:service-rules"];
 
@@ -151,11 +152,13 @@ export const touches = (changed, named) => changed.some((c) => named.some((n) =>
 export function scansFor(changed, scripts, read = (f) => readFileSync(join(ROOT, f), "utf8")) {
   const run = [];
   const skipped = [];
+  // EVERY scan is scoped by the paths its own scripts name (her call 15 Nov 2026: "these checks need to be scoped
+  // to the work we are doing"; #434's push ran all 105 and took 5 minutes). A scan that names a directory ("src")
+  // runs for anything under it; one that names nothing it reads is left to CI, which runs every scan on the PR.
   for (const name of registeredScans(scripts)) {
-    if (!SLOW.includes(name)) { run.push(name); continue; }
     const files = scriptFiles(scripts[name] ?? "");
     const named = files.flatMap((f) => { try { return pathsNamedIn(read(f), f); } catch { return [f]; } });
-    (files.length === 0 || touches(changed, [...named, "package.json"]) ? run : skipped).push(name);
+    (!SLOW.includes(name) && files.length > 0 && touches(changed, [...named, "package.json"]) ? run : skipped).push(name);
   }
   return { run, skipped };
 }
@@ -169,14 +172,25 @@ export function scansFor(changed, scripts, read = (f) => readFileSync(join(ROOT,
  */
 export const cleanEnv = (env = process.env) => Object.fromEntries(Object.entries(env).filter(([k]) => !/^GIT_/.test(k)));
 
+/**
+ * THE PUSH WAITS AT MOST BUDGET_S (15 Nov 2026). A check still running then is stopped and named as left to CI,
+ * which runs everything on the PR anyway; only a check that FINISHED red blocks the push. Override with
+ * CHECK_CHANGED_BUDGET_S (0 = no limit).
+ */
+export const BUDGET_S = Number(process.env.CHECK_CHANGED_BUDGET_S ?? 90);
+const deadline = BUDGET_S > 0 ? Date.now() + BUDGET_S * 1000 : Infinity;
+
 function sh(label, cmd, args) {
   return new Promise((res) => {
     const t0 = Date.now();
-    const p = spawn(cmd, args, { cwd: ROOT, stdio: ["ignore", "pipe", "pipe"], env: cleanEnv() });
+    if (Date.now() >= deadline) return res({ label, ok: true, late: true, secs: 0, out: "" });
+    const p = spawn(cmd, args, { cwd: ROOT, stdio: ["ignore", "pipe", "pipe"], env: cleanEnv(), detached: true });
     let out = "";
+    let late = false;
+    const timer = Number.isFinite(deadline) ? setTimeout(() => { late = true; try { process.kill(-p.pid, "SIGKILL"); } catch {} }, Math.max(0, deadline - Date.now())) : null;
     p.stdout.on("data", (d) => { out += d; });
     p.stderr.on("data", (d) => { out += d; });
-    p.on("close", (code) => res({ label, ok: code === 0, secs: (Date.now() - t0) / 1000, out }));
+    p.on("close", (code) => { if (timer) clearTimeout(timer); res({ label, ok: late || code === 0, late, secs: (Date.now() - t0) / 1000, out }); });
   });
 }
 
@@ -221,8 +235,10 @@ async function main() {
   const [heavyResults, scanResults] = await Promise.all([pool(heavy, heavy.length), pool(scanJobs, 6)]);
   const all = [...heavyResults, ...scanResults];
   const failed = all.filter((r) => !r.ok);
-  for (const r of heavyResults) console.log(`  ${r.ok ? "ok  " : "FAIL"} ${r.label} (${r.secs.toFixed(1)} s)`);
-  console.log(`  ${scanResults.filter((r) => r.ok).length}/${scanResults.length} scans ok (longest ${Math.max(0, ...scanResults.map((r) => r.secs)).toFixed(1)} s)`);
+  for (const r of heavyResults) console.log(`  ${r.late ? "CI  " : r.ok ? "ok  " : "FAIL"} ${r.label} (${r.late ? `past the ${BUDGET_S} s budget, left to CI` : `${r.secs.toFixed(1)} s`})`);
+  const lateScans = scanResults.filter((r) => r.late).map((r) => r.label);
+  if (lateScans.length) console.log(`  left to CI (past the ${BUDGET_S} s budget): ${lateScans.join(", ")}`);
+  console.log(`  ${scanResults.filter((r) => r.ok && !r.late).length}/${scanResults.length} scans ok (longest ${Math.max(0, ...scanResults.map((r) => r.secs)).toFixed(1)} s)`);
   for (const r of failed) console.log(`\n── ${r.label} ──\n${r.out.trim().split("\n").slice(-40).join("\n")}`);
   const secs = ((Date.now() - t0) / 1000).toFixed(1);
   if (failed.length) { console.log(`\ncheck:changed FAILED in ${secs} s: ${failed.map((r) => r.label).join(", ")}`); process.exit(1); }
