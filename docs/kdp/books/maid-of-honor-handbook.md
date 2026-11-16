@@ -278,6 +278,17 @@ Listen without fixing. Take one task off their plate. Remind them to eat, sleep 
 
 A late vendor, a torn hem, rain. Solve what you can quietly, tell the couple only what they need to know, and keep smiling. Very few guests notice what goes wrong; they notice how people react.
 
+Some of the usual problems, and a first move for each:
+
+- **A vendor is late.** Call them yourself so the couple does not have to; the vendor's number should be on your day-of sheet. Ask for an arrival time, tell the coordinator or venue lead, and only then tell the couple, with the new time and what changes.
+- **A dress or suit tears.** Safety pins and a small sewing kit fix most hems and straps for a few hours. Fabric tape holds a hem; a pin on the inside holds a strap. Keep both in the emergency kit.
+- **It rains on an outdoor plan.** Ask the venue early in the week what the wet-weather plan is, so on the day you only have to say "we are using the indoor room". Have umbrellas for the couple's photos.
+- **Someone is upset or has had too much to drink.** Walk them somewhere quiet, get them water and food, and ask a calm friend of theirs to sit with them. Do not argue with them in front of guests.
+- **The rings or the license go missing.** Know who holds each one before the ceremony starts, and check with that person an hour before. Most "lost" rings are in a jacket pocket.
+- **The schedule runs late.** Tell the photographer and the venue lead, and ask which part can be shortened. Usually it is the gap before dinner, not the ceremony.
+
+Afterwards, let the couple enjoy the day without a report. If something went wrong that they need to know about, such as a vendor who did not deliver what was paid for, tell them after the wedding, in a calm message with the facts and the vendor's contact details.
+
 ## When you have reached your limit
 
 You are allowed to have a life outside the wedding. If the role is taking more time, money or energy than you can give, say so honestly and kindly. Offer what you can do instead.
