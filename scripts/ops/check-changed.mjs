@@ -160,10 +160,19 @@ export function scansFor(changed, scripts, read = (f) => readFileSync(join(ROOT,
   return { run, skipped };
 }
 
+/**
+ * The environment for every check, WITHOUT git's own variables. Git runs a pre-push hook with GIT_DIR
+ * (and friends) pointing at the real repository, and every scratch repo a test or scan builds inherits
+ * them: 15 Nov 2026, the first hooked push ran validate:codex-lane's `git init --bare` + `git push origin
+ * HEAD:main` against boss-os itself (core.bare flipped, a scratch commit on the branch, a push to main that
+ * only the branch ruleset refused). Pure.
+ */
+export const cleanEnv = (env = process.env) => Object.fromEntries(Object.entries(env).filter(([k]) => !/^GIT_/.test(k)));
+
 function sh(label, cmd, args) {
   return new Promise((res) => {
     const t0 = Date.now();
-    const p = spawn(cmd, args, { cwd: ROOT, stdio: ["ignore", "pipe", "pipe"], env: process.env });
+    const p = spawn(cmd, args, { cwd: ROOT, stdio: ["ignore", "pipe", "pipe"], env: cleanEnv() });
     let out = "";
     p.stdout.on("data", (d) => { out += d; });
     p.stderr.on("data", (d) => { out += d; });

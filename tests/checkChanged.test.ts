@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 // @ts-expect-error — a plain .mjs script with no types
-import { scansFor, importsOf, relatedTests, SLOW } from "../scripts/ops/check-changed.mjs";
+import { scansFor, importsOf, relatedTests, SLOW, cleanEnv } from "../scripts/ops/check-changed.mjs";
 
 describe("check:changed runs what the change can break (15 Nov 2026)", () => {
   const scripts = {
@@ -28,5 +28,9 @@ describe("check:changed runs what the change can break (15 Nov 2026)", () => {
     expect(related.length).toBeGreaterThan(0);
     expect(related.every((f) => /^tests\/.+\.test\.tsx?$/.test(f))).toBe(true);
     expect(relatedTests(["tests/checkChanged.test.ts"])).toEqual(["tests/checkChanged.test.ts"]);
+  });
+
+  it("no check inherits git's hook variables, so a scratch repo can never act on this one", () => {
+    expect(cleanEnv({ GIT_DIR: "/repo/.git", GIT_INDEX_FILE: "x", PATH: "/bin", GITHUB_TOKEN: "t" })).toEqual({ PATH: "/bin", GITHUB_TOKEN: "t" });
   });
 });
