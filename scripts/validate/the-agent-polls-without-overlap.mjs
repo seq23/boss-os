@@ -78,6 +78,7 @@ case "$*" in
   *"agent.mjs work-once"*)
     if [ -n "\${STUB_REWRITE_HOLDER:-}" ]; then echo "2147483646|never" > "\${BOSS_OS_HOME}/agent-claim.lock/holder"; fi
     mkdir "\${BOSS_OS_HOME}/stub-running" 2>/dev/null || echo "OVERLAP" >> "${log}"
+    [ -n "\${STUB_RELEASE:-}" ] && [ -e "\${STUB_RELEASE}" ] && echo "AFTER_RELEASE" >> "${log}"
     # A hold the TEST ends (STUB_RELEASE: a file it creates once the contenders are done), never a fixed number of
     # seconds a loaded runner can outlast (15 Nov 2026, main run 43693209796: "the real wrapper behaves" red, then
     # green on a rerun with nothing changed). Bounded at 60 s so a broken lock still ends and is reported.
@@ -253,14 +254,19 @@ export async function wrapperProblems(wrapperPath) {
     const release = join(root, "release");
     const procs = Array.from({ length: 8 }, () => spawn("bash", [wrapperPath, "--poll"], { env: envFor(root, { BOSS_OS_CLAIM_HOUR: "14", STUB_RELEASE: release }), stdio: "ignore" }));
     let closed = 0;
-    const cap = setTimeout(() => writeFileSync(release, ""), 15_000);
+    // The cap only ends a broken run; it is not the normal release. If it fires (a runner so loaded that a contender had
+    // not even started in 45 s), a tick that starts AFTER the first claim finished may claim once more: that is the lock
+    // working, not two agents at once (main runs 43693209796 and 43780957679, 15 Nov 2026). Such claims are marked
+    // AFTER_RELEASE by the stub and do not count; any claim that starts while the first is held still fails.
+    const cap = setTimeout(() => writeFileSync(release, ""), 45_000);
     await Promise.all(procs.map((p) => new Promise((r) => p.on("close", () => { if (++closed === 7) writeFileSync(release, ""); r(); }))));
     clearTimeout(cap);
     // The hold outlasts the 3 s gate wait, so a contender a slow runner starts late still finds a LIVE holder: a second
     // claim then means the lock failed, not that the first run had already finished (the CI flake of 6 Nov 2026, #307).
     if (calls(logOf(root)).includes("OVERLAP")) out.push(`Eight simultaneous ticks on ${label}: two claims ran at the same moment.`);
-    const n = claimsIn(logOf(root));
-    if (n !== 1) out.push(`Eight simultaneous ticks on ${label} produced ${n} claims (expected exactly 1): two agents ran at once.`);
+    const late = calls(logOf(root)).filter((l) => l === "AFTER_RELEASE").length;
+    const n = claimsIn(logOf(root)) - late;
+    if (n !== 1) out.push(`Eight simultaneous ticks on ${label} produced ${n} claims while the first was held (expected exactly 1): two agents ran at once.`);
     if (existsSync(lockOf(root)) || existsSync(`${lockOf(root)}.gate`)) out.push(`Eight simultaneous ticks on ${label} left a lock or gate behind.`);
     rmSync(root, { recursive: true, force: true });
   }

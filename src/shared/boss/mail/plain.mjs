@@ -626,7 +626,7 @@ export function layoutEmail({ who, subject, happened, decide = [], needs = [], d
     ? [`${DECIDE_HEADING} (${allDecide.length})`, ...shown.flatMap((c, i) => [...cardText(c, i + 1), ""]), ...(moreLine ? [moreLine] : [])]
     : leadLine ? [] : [NOTHING_TO_DECIDE];
   let sectionLines = sectionList.flatMap(sectionText);
-  const detailLines = (list, cutNote) => (list.length || cutNote ? ["", "Details:", ...list.map((d) => (typeof d === "string" ? `- ${d}` : `${d.heading}`)), ...(cutNote ? [`- ${cutNote}`] : [])] : []);
+  const detailLines = (list, cutNote) => (list.length || cutNote ? ["", "Details:", ...list.map((d) => (typeof d === "string" ? (/^\d+\. /.test(d) ? `  ${d}` : `- ${d}`) : `${d.heading}`)), ...(cutNote ? [`- ${cutNote}`] : [])] : []);
   const buildText = (list, cutNote) => [first, ...notes, "", ...decideLines, ...(after && after !== first ? ["", after] : []), ...sectionLines, ...detailLines(list, cutNote), "", ...(foot ? [foot, ""] : []), `— ${name}`, ...(ps ? ["", ps] : [])]
     .join("\n").replace(/\n{3,}/g, "\n\n");
 
@@ -814,6 +814,8 @@ export function legacyParts({ who, subject, text, refs = [] }) {
     const kept = dropCommandSentences(trimmed);
     if (!kept) continue;
     const wasHeading = /[A-Z]{3}/.test(kept) && !/[a-z]/.test(kept.replace(/\bhttps?:\S+/g, "")) && kept.length < 90;
+    // A NUMBERED line keeps its number (15 Nov 2026: a Got it said "reply by number" over bullets with no numbers).
+    const num = kept.match(/^(\d+)[.)]\s+/)?.[1] ?? null;
     let line = kept.replace(/^(?:[-*•·]|\d+[.)])\s+/, "").replace(new RegExp(`^This is ${name || "[A-Z][a-z]+"}\\.\\s*`), "");
     line = cleanText(line);
     if (!line) continue;
@@ -829,7 +831,7 @@ export function legacyParts({ who, subject, text, refs = [] }) {
       needs.push(ask.charAt(0).toUpperCase() + ask.slice(1));
       continue;
     }
-    details.push(line);
+    details.push(num ? `${num}. ${line}` : line);
   }
   // A trailing heading with nothing under it says nothing.
   while (details.length && typeof details[details.length - 1] === "object") details.pop();
