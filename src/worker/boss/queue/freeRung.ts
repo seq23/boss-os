@@ -85,7 +85,8 @@ export async function namedStop(
     const delay = Math.max(60, Math.min(MAX_SLEEP_S, Math.round((stop.resumeAt - now) / 1000)));
     await env.TASKS.send({ taskId: task.id, lane: task.lane }, { delaySeconds: delay });
   }
-  if (stop.tell) {
+  // A resume time already past is a retry now, never a pause to announce (16 Nov 2026).
+  if (stop.tell && (stop.resumeAt === null || stop.resumeAt > now)) {
     await noticeOnce(env, {
       task, fromName: "Kendra", kind: `stop:${stop.code}`,
       subject: `Paused until ${stop.resumeAt ? centralTime(stop.resumeAt) : "a seat is free"}: ${task.title.slice(0, 100)}`,

@@ -16,7 +16,7 @@
 import type { Env } from "../env";
 import { newId } from "../lib/id";
 import { taskToken, waitDetail, type BossWaitKind, type BossWaitFill } from "../../../shared/boss/service/waits.mjs";
-import { needsHer } from "../../../shared/boss/mail/noticeGate.mjs";
+import { needsHer, startedBySystem } from "../../../shared/boss/mail/noticeGate.mjs";
 
 export interface NoticeInput {
   task: { id: string; lane: string; title: string };
@@ -34,12 +34,24 @@ export interface NoticeInput {
   needsHer?: boolean;
 }
 
-/** The notice body: what happened, then the three parts. Exported so the tests read the same text. */
-export function noticeBody(lines: readonly string[], wait: { kind: BossWaitKind; fill?: BossWaitFill } | null | undefined, taskId: string): string {
+/**
+ * The notice body: what happened, then the three parts. Exported so the tests read the same text.
+ *
+ * A NOTICE WITH NO QUESTION NEVER ASKS FOR A REPLY (owner's inbox, 16 Nov 2026: "Paused until …:
+ * Monthly quality read" showed "Decide (1) 1. Reply to this email…" with nothing to decide; the
+ * renderer reads a reply line as an ask). The reply line goes only where a reply does something: a
+ * wait she can clear (`wait`), or a Done for work she asked for (`replyable`), where her reply is the
+ * follow-up. A pause, an update or any other told-only notice carries the facts and nothing else.
+ */
+export function noticeBody(
+  lines: readonly string[], wait: { kind: BossWaitKind; fill?: BossWaitFill } | null | undefined, taskId: string,
+  o: { replyable?: boolean } = { replyable: true },
+): string {
+  const asks = Boolean(wait) || o.replyable === true;
   return [
     ...lines,
     ...(wait ? ["", waitDetail(wait.kind, wait.fill ?? {})] : []),
-    "", `Reply to this email and your answer goes straight back to this job. ${taskId}`,
+    ...(asks ? ["", `Reply to this email and your answer goes straight back to this job. ${taskId}`] : []),
   ].join("\n");
 }
 
@@ -55,16 +67,30 @@ export async function noticeOnce(env: Env, n: NoticeInput): Promise<string | nul
   // A repair Boss OS opened itself never waits on her (noticeGate.mjs needsHer `repair`).
   const row = await env.DB.prepare(`SELECT input FROM tasks WHERE id = ?`).bind(n.task.id).first<{ input: string | null }>().catch(() => null);
   let repair = false;
+  let input: Record<string, unknown> = {};
   // A dated waiting-on check-in can need her own account (the Friday unsubscribe taps): not a repair here.
-  try { const i = JSON.parse(row?.input ?? "{}") as { origin?: unknown; repair_kind?: unknown }; repair = i?.origin === "repair" && i?.repair_kind !== "waiting_on"; } catch { repair = false; }
-  const her = repair ? needsHer({ kind: n.kind, repair }) : (n.needsHer ?? needsHer({ kind: n.kind }));
+  try { input = (JSON.parse(row?.input ?? "{}") ?? {}) as Record<string, unknown>; repair = input?.origin === "repair" && input?.repair_kind !== "waiting_on"; } catch { repair = false; }
+  /*
+   * WHO STARTED IT DECIDES A PAUSE (owner's inbox, 16 Nov 2026: "Paused until …: Monthly quality read"
+   * emailed her from Kendra; the duty's run waits for a seat and retries by itself). `needsHer` emails a
+   * `stop:` only for work she asked for, but this call never told it who started the task, so every
+   * pause read as hers. The task's own input (and, before the duty stamp, the duty's last run) says.
+   */
+  let systemStarted = false;
+  if (n.needsHer === undefined && !repair) {
+    const dutyRun = input.duty_id == null
+      ? Boolean(await env.DB.prepare(`SELECT 1 AS one FROM standing_duties WHERE last_task_id = ? LIMIT 1`).bind(n.task.id).first().catch(() => null))
+      : false;
+    systemStarted = startedBySystem(input, { dutyRun });
+  }
+  const her = repair ? needsHer({ kind: n.kind, repair }) : (n.needsHer ?? needsHer({ kind: n.kind, systemStarted }));
   const subject = n.subject.includes(token) ? n.subject : `${n.subject.slice(0, 160)} ${token}`;
   await env.DB
     .prepare(
       `INSERT INTO boss_task_notices (id, task_id, lane, from_name, kind, subject, body, created_at, secret_name, needs_her)
        VALUES (?,?,?,?,?,?,?,?,?,?)`,
     )
-    .bind(id, n.task.id, n.task.lane, n.fromName, n.kind, subject, noticeBody(n.lines, n.wait, n.task.id), Date.now(), n.secretName ?? null,
+    .bind(id, n.task.id, n.task.lane, n.fromName, n.kind, subject, noticeBody(n.lines, n.wait, n.task.id, { replyable: /^done(#|$)/.test(n.kind) }), Date.now(), n.secretName ?? null,
       her ? 1 : 0)
     .run();
   return id;
