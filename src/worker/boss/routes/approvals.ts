@@ -10,6 +10,8 @@ import { isLane } from "../../../shared/boss/lanes";
 import { executeDecision, type ApprovalRow } from "../approvals/execute";
 import { decideApproval, type Decision } from "../approvals/decide";
 import { pendingApprovals } from "../approvals/pending";
+import { overruledGuess } from "../tasks/admit";
+import { classify } from "../intake/classify";
 
 export const approvals = new Hono<{ Bindings: Env; Variables: Vars }>();
 
@@ -358,6 +360,65 @@ export async function runExpirySweep(env: Env): Promise<{ expired: number; execu
     .all<ApprovalRow>();
   for (const approval of stuck.results ?? []) {
     const result = await executeDecision(env, approval, approval.status as "approved" | "rejected" | "expired", null);
+    if (result.status === "executed") executed++;
+    else if (result.status === "failed") failed++;
+  }
+  /*
+   * A HOLD ON INTAKE'S OWN GUESS, RAISED BEFORE ADMIT STOPPED RAISING IT, IS RELEASED (15 Nov 2026).
+   * The monthly quality read sat `awaiting_approval` on intake's "Intake assigned this USER_ONLY"
+   * docket, which is never shown to her (your-day.mjs `intakeHeldDutyRun`): nothing released it, and
+   * at expiry it would have been cancelled. Work Boss OS started takes the employee's own default
+   * (owner, 2 and 13 Nov 2026), and a run that never ran has nothing to accept, so the default is to
+   * run it: the system decides the docket and the approved path requeues it (`handleHeldTask`).
+   * `overruledGuess` (tasks/admit.ts) is the same reading admit uses, so money, sends in her name,
+   * legal, invitations and the trading lane keep their approvals. The row's kind, assignment and
+   * risk become what admit writes now; its privacy axes stay as they are (tighten-only).
+   */
+  // Read from the held TASKS (not a count of what waits on her: that is approvals/pending.ts).
+  const guessed = await env.DB
+    .prepare(
+      `SELECT a.*, t.title AS task_title, t.input AS task_input, t.lane AS task_lane,
+              (SELECT detail FROM task_events e WHERE e.task_id = t.id AND e.event = 'intake' ORDER BY e.ts DESC LIMIT 1) AS intake_detail
+         FROM tasks t JOIN approvals a ON a.id = t.approval_id
+        WHERE t.status = 'awaiting_approval' AND t.lane != 'trading' AND a.kind = 'manual'
+          AND a.status = 'pending' AND json_extract(a.payload, '$.assignment') = 'USER_ONLY'
+        ORDER BY a.requested_at LIMIT 50`,
+    )
+    .all<ApprovalRow & { task_title: string; task_input: string | null; task_lane: string; intake_detail: string | null }>();
+  for (const row of guessed.results ?? []) {
+    let input: Record<string, unknown> = {};
+    try { input = row.task_input ? (JSON.parse(row.task_input) as Record<string, unknown>) : {}; } catch { input = {}; }
+    let first: { intakeKind?: string; matched?: string[] } = {};
+    try { first = row.intake_detail ? JSON.parse(row.intake_detail) : {}; } catch { first = {}; }
+    // A kind someone DECLARED as trading is a fact about the work, never a guess to overrule.
+    const declaredKind = first.intakeKind === "trading" && (first.matched ?? []).includes("explicit_kind") ? "trading" : null;
+    if (!overruledGuess({ lane: row.task_lane, assignment: "USER_ONLY", input, declaredKind })) continue;
+
+    const redone = classify({
+      title: row.task_title, prompt: typeof input.prompt === "string" ? input.prompt : null, lane: row.task_lane,
+      intakeKind: input.duty_id != null ? "recurring_duty" : "one_off",
+    });
+    const note = `Boss OS started this itself and intake held it on a word in its own text (${first.intakeKind ?? "unknown"}, USER_ONLY). Her standing default for such work is to run it.`;
+    const decidedAt = Date.now();
+    const claimed = await env.DB
+      .prepare(`UPDATE approvals SET status = 'approved', decided_at = ?, decided_by = 'system', decision_note = ? WHERE id = ? AND status = 'pending'`)
+      .bind(decidedAt, note, row.id)
+      .run();
+    if (!claimed.meta.changes) continue;
+    const taskId = (() => { try { return (JSON.parse(row.payload ?? "{}") as { task_id?: string }).task_id ?? row.origin_id; } catch { return row.origin_id; } })();
+    await env.DB.batch([
+      env.DB.prepare(`INSERT INTO approval_events (id, approval_id, ts, event, detail) VALUES (?,?,?,'approved',?)`)
+        .bind(newId("ape"), row.id, decidedAt, JSON.stringify({ by: "system", reason: note })),
+      env.DB.prepare(`UPDATE tasks SET intake_kind = ?, execution_assignment = ?, risk = ? WHERE id = ? AND status = 'awaiting_approval'`)
+        .bind(redone.intakeKind, redone.executionAssignment, redone.risk, taskId),
+      env.DB.prepare(`INSERT INTO task_events (id, task_id, ts, event, detail) VALUES (?,?,?,'intake_overruled',?)`)
+        .bind(newId("tev"), taskId, decidedAt, JSON.stringify({ reason: note, was: { intakeKind: first.intakeKind ?? null, assignment: "USER_ONLY" }, now: { intakeKind: redone.intakeKind, assignment: redone.executionAssignment, risk: redone.risk } })),
+    ]);
+    await audit(env.DB, {
+      actor: "system", lane: row.lane, entityType: "approval", entityId: row.id,
+      action: "decided", detail: { decision: "approved", reason: note },
+    });
+    const result = await executeDecision(env, { ...row, status: "approved" } as ApprovalRow, "approved", note);
     if (result.status === "executed") executed++;
     else if (result.status === "failed") failed++;
   }

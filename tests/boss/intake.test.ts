@@ -2,7 +2,8 @@ import { env } from "cloudflare:test";
 import { describe, expect, it } from "vitest";
 import { classify } from "../../src/worker/boss/intake/classify";
 import { buildEnvelope } from "../../src/worker/boss/intake/envelope";
-import { apiJson, insertTask, row } from "./helpers";
+import { admitTask, overruledGuess } from "../../src/worker/boss/tasks/admit";
+import { apiJson, insertTask, row, all } from "./helpers";
 
 const post = (path: string, body: unknown) => apiJson(path, { method: "POST", body });
 
@@ -100,6 +101,32 @@ describe("Phase 2 — intake admits work through the right door", () => {
     expect(body.data.task.status).toBe("awaiting_approval");
     expect(body.data.classification.executionAssignment).toBe("USER_ONLY");
     expect(body.data.task.approval_id).toBeTruthy();
+  });
+
+  it("work Boss OS started itself is never parked on a word in its own text; her own work and the trading lane still are (15 Nov 2026)", async () => {
+    // The monthly quality read quotes her briefing: "Brokerage sourcing", "sell 2,000 shares".
+    const quoted = "Monthly quality read. Newest briefing: Brokerage sourcing — a seller wants to sell 2,000 shares.";
+    const duty = await admitTask(env, { title: "Monthly quality read", input: { prompt: quoted, duty_id: "duty_quality_read" } });
+    expect(duty.queued).toBe(true);
+    const t = await row(`SELECT status, intake_kind, execution_assignment, approval_id, sensitivity FROM tasks WHERE id = ?`, duty.task_id);
+    expect(t).toMatchObject({ status: "queued", intake_kind: "recurring_duty", approval_id: null });
+    expect(t!.execution_assignment).not.toBe("USER_ONLY");
+    // Tighten-only: the privacy axis intake first read stays.
+    expect(t!.sensitivity).toBe("restricted");
+    const events = (await all(`SELECT event FROM task_events WHERE task_id = ?`, duty.task_id)).map((e) => e.event);
+    expect(events).toContain("intake_overruled");
+
+    // The same words from her own mail still wait for her.
+    const hers = await admitTask(env, { title: "Monthly quality read", input: { prompt: quoted, mail_id: "m1", duty_id: "duty_quality_read" } });
+    expect(hers.queued).toBe(false);
+    // The trading lane is a fact, never a guess.
+    const lane = await admitTask(env, { title: "Monthly quality read", lane: "trading", input: { prompt: quoted, duty_id: "duty_x" } });
+    expect(lane.queued).toBe(false);
+    // A declared trading kind is a fact too.
+    expect(overruledGuess({ lane: "ops", assignment: "USER_ONLY", input: { duty_id: "d" }, declaredKind: "trading" })).toBe(false);
+    // Money keeps its approval at delivery: it is never USER_ONLY here, so nothing to overrule.
+    expect(overruledGuess({ lane: "ops", assignment: "AI_EXECUTE_WITH_APPROVAL", input: { duty_id: "d" } })).toBe(false);
+    expect(overruledGuess({ lane: "ops", assignment: "USER_ONLY", input: { origin: "repair", repair_kind: "fix" } })).toBe(true);
   });
 
   it("refuses to cross lanes when assigning an employee", async () => {

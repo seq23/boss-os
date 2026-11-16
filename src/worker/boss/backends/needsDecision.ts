@@ -74,6 +74,9 @@ export const DELIVERY_KINDS = [
   // delivery. Missing from this list, the first emailed research page (22 Oct 2026) was DELIVERED
   // and then sent to her Inbox as "its output landed nowhere".
   "research_page",
+  // The monthly quality read (duties/drift.ts), filed by routes/backends.ts `deliverQualityReads`.
+  // Missing from this list, a delivered read was failed as "landed nowhere" (15 Nov 2026).
+  "quality_reads",
 ] as const;
 
 export function runNeedsHerDecision(
