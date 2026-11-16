@@ -24,8 +24,11 @@ export function missedToday(jobs, now = Date.now()) {
   const out = [];
   for (const j of jobs ?? []) {
     // A morning-section producer (`--morning`) is the section catch-up's (morningSections.mjs), never run twice.
-    if (/oneshot/.test(j.label) || /--morning\b/.test(j.program ?? "") || !Array.isArray(j.slots) || j.slots.length !== 1) continue;
-    const s = j.slots[0];
+    // Once a week = every slot on ONE weekday (prospect discovery: 07:00 search, 09:15 collect); the
+    // first slot of the day is the one a late boot misses.
+    if (/oneshot/.test(j.label) || /--morning\b/.test(j.program ?? "") || !Array.isArray(j.slots) || !j.slots.length) continue;
+    if (new Set(j.slots.map((x) => Number(x?.Weekday) % 7)).size !== 1) continue;
+    const s = [...j.slots].sort((x, y) => (x.Hour * 60 + (x.Minute ?? 0)) - (y.Hour * 60 + (y.Minute ?? 0)))[0];
     if (s?.Weekday == null || s.Hour == null) continue;
     if (Number(s.Weekday) % 7 !== d.getDay()) continue;
     const slot = new Date(now); slot.setHours(Number(s.Hour), Number(s.Minute ?? 0), 0, 0);

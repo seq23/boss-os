@@ -9,7 +9,7 @@ describe("a weekly slot missed while the Mac was off runs once later that day", 
   const job = (label: string, slots: unknown[], lastRunMs: number) => ({ label, slots, lastRunMs });
   it("the 07:00 Monday job with no log since 07:00 is started; the 09:45 one is not yet due", () => {
     const jobs = [
-      job("com.seq.boss-prospect-discovery", [{ Weekday: 1, Hour: 7, Minute: 0 }], slotAt - 7 * 86_400_000),
+      job("com.seq.boss-prospect-discovery", [{ Weekday: 1, Hour: 9, Minute: 15 }, { Weekday: 1, Hour: 7, Minute: 0 }], slotAt - 7 * 86_400_000),
       job("com.seq.kdp-publish", [{ Weekday: 1, Hour: 9, Minute: 45 }], 0),
     ];
     expect(missedToday(jobs, monday)).toEqual(["com.seq.boss-prospect-discovery"]);
