@@ -14,7 +14,8 @@ import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
 import { MORNING_SECTION_SPECS, catchUpPlan } from "../src/shared/boss/mail/morningSections.mjs";
 import { sends } from "../scripts/ops/lib/email-map.mjs";
-import { attemptedNames, catchUpBudget, catchUpOutcome, catchUpWindow, weekdayIn, expectedSections, windowWords } from "../scripts/ops/morning-catchup.mjs";
+import { attemptedNames, catchUpBudget, catchUpOutcome, catchUpWindow, weekdayIn, expectedSections, windowWords, EMAIL_MINUTE_CENTRAL } from "../scripts/ops/morning-catchup.mjs";
+import { installerJobs } from "../scripts/ops/lib/schedule.mjs";
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const PKG = JSON.parse(readFileSync(path.join(ROOT, "package.json"), "utf8"));
@@ -217,5 +218,43 @@ describe("a long producer is caught up after the email, never before it", () => 
   it("a long run still names its stop when the section did not come back", () => {
     const plan = catchUpPlan(GRID, { long: true });
     expect(catchUpOutcome({ missingBefore: GRID, missingAfter: GRID, plan })).toMatchObject({ stop: "MORNING_CATCHUP_STILL_MISSING", names: ["grid_repos"] });
+  });
+});
+
+/**
+ * 16 Nov 2026 (repair rc_m7j94r6q6f5dx58g): the Mac booted at 06:39 Central, so the only catch-up run that
+ * day (RunAtLoad) fell before the email and refused the long "grid_repos" producer; the 06:32 slot alone
+ * never reaches the after-email window, so grid_repos had no path at all. The installer must write a slot
+ * before the email AND one after it.
+ */
+describe("the catch-up has a slot on each side of the email", () => {
+  const LABEL = "com.seq.boss-morning-catchup";
+  const text = readFileSync(path.join(ROOT, "scripts/ops/install-morning-catchup.sh"), "utf8");
+  const minutes = (sh: string) => (installerJobs(sh)[LABEL] ?? []).map((slot: string) => {
+    const m = /^daily (\d\d):(\d\d)$/.exec(slot);
+    return m ? Number(m[1]) * 60 + Number(m[2]) : NaN;
+  }).filter((n: number) => !Number.isNaN(n));
+  const bothSides = (sh: string) => {
+    const t = minutes(sh);
+    return t.some((m) => m < EMAIL_MINUTE_CENTRAL) && t.some((m) => m >= EMAIL_MINUTE_CENTRAL);
+  };
+
+  it("writes a daily slot before 06:40 Central and one after it", () => {
+    expect(minutes(text).length).toBeGreaterThan(0); // Rule 0: no slots read proves nothing
+    expect(bothSides(text)).toBe(true);
+  });
+
+  it("every catchUpLongWhy section therefore has an after-email run", () => {
+    const long = MORNING_SECTION_SPECS.filter((s) => s.catchUpLongWhy);
+    expect(long.length).toBeGreaterThan(0);
+    expect(catchUpBudget(catchUpWindow(Date.parse("2026-11-16T12:45:00Z"), "America/Chicago")).long).toBe(true); // 06:45 CT
+  });
+
+  it("NEGATIVE: the 06:32-only installer of 16 Nov fails", () => {
+    const old = text.replace(/<key>StartCalendarInterval<\/key>\s*<array>[\s\S]*?<\/array>/,
+      "<key>StartCalendarInterval</key>\n  <dict><key>Hour</key><integer>6</integer><key>Minute</key><integer>32</integer></dict>");
+    expect(old).not.toEqual(text);
+    expect(minutes(old)).toEqual([6 * 60 + 32]);
+    expect(bothSides(old)).toBe(false);
   });
 });

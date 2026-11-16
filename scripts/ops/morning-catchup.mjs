@@ -20,6 +20,11 @@
  * email (it is already sent): it writes Today and tomorrow's email, and its completion line says so
  * (`catchUpWindow`), so a boot-time run never claims to have saved the email.
  *
+ * 16 Nov 2026 (repair rc_m7j94r6q6f5dx58g): the Mac booted at 06:39 Central, so the boot run fell BEFORE
+ * the email and refused the long "grid_repos" producer (sites:audit), and nothing ran after the email:
+ * the after-email window was reachable only by a late boot. The plist now has two slots, 06:32 (before
+ * the email) and 06:45 (after it), held by tests/morningCatchup.test.ts.
+ *
  *   npm run morning:catchup
  */
 import { execFileSync } from "node:child_process";
