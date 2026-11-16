@@ -45,6 +45,9 @@ export const outputLine = (count, metric) => `OUTPUT ${Math.max(0, Math.trunc(Nu
 export function runIsLow(run, floor) {
   if (!(Number(floor) > 0)) return false;
   if (run?.outcome === "failed") return true;
+  // An honest zero (16 Nov 2026, alarm output:duty_brokerage_sourcing): the run passed its own
+  // delivery floor by filing "nothing new" with its searches and the names it turned down on record.
+  if (run?.honest_zero === true) return false;
   if (run?.output_count === null || run?.output_count === undefined) return true;
   return Number(run.output_count) < Number(floor);
 }
@@ -73,6 +76,7 @@ export function producedWords(run, metric) {
   if (!run) return `nothing (no run recorded)`;
   if (run.outcome === "failed") return `0 ${metric} (the run failed)`;
   if (run.output_count === null || run.output_count === undefined) return `an unknown number of ${metric} (it printed no OUTPUT line)`;
+  if (run.honest_zero === true) return `nothing new, with the searches it ran on record`;
   return `${run.output_count} ${metric}`;
 }
 
@@ -111,6 +115,7 @@ export function firstRunLoop(job) {
 export function firstRunMet(run, floor) {
   if (!run || run.outcome === "failed") return false;
   if (!(Number(floor) > 0)) return true;
+  if (run.honest_zero === true) return true;
   return run.output_count !== null && run.output_count !== undefined && Number(run.output_count) >= Number(floor);
 }
 

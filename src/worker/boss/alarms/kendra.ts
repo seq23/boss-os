@@ -40,6 +40,8 @@ export interface Run {
   outcome: "ok" | "failed";
   output_count: number | null;
   finished_at: number;
+  /** Passed its own delivery floor by filing "nothing new" with its searches on record (duties/floors.ts). */
+  honest_zero?: boolean;
 }
 
 const KEY_RE = /^(output|task|mail):[A-Za-z0-9_.#:@ -]{1,200}$/;
@@ -172,6 +174,29 @@ async function deliveredByTask(env: Env, key: DeliveryKey, since: number): Promi
 }
 
 /**
+ * HONEST ZEROS (16 Nov 2026, alarm output:duty_brokerage_sourcing). A sourcing run may deliver no
+ * row and still pass its floor check (`honestNothingNew`, duties/floors.ts) when it files its
+ * searches and the firms it turned down; that check is kept in `delivery_measures` with
+ * `measured.nothing_new`. Without this read Kendra scored two such runs 0 and raised a false alarm.
+ * Static, bound by deliverable and `output_since`, newest first: a task's FIRST row is its newest check.
+ */
+const HONEST_ZEROS = `SELECT task_id, pass, measured FROM delivery_measures WHERE deliverable = ? AND at >= ? AND task_id IS NOT NULL ORDER BY at DESC LIMIT 200`;
+
+async function honestZeroTasks(env: Env, key: string, since: number): Promise<Set<string>> {
+  const { results } = await env.DB.prepare(HONEST_ZEROS).bind(key, since).all<{ task_id: string; pass: number; measured: string | null }>();
+  const seen = new Set<string>();
+  const honest = new Set<string>();
+  for (const r of results ?? []) {
+    if (seen.has(r.task_id)) continue;
+    seen.add(r.task_id);
+    let nothingNew = false;
+    try { nothingNew = Boolean(JSON.parse(r.measured ?? "{}")?.nothing_new); } catch { nothingNew = false; }
+    if (Number(r.pass) === 1 && nothingNew) honest.add(r.task_id);
+  }
+  return honest;
+}
+
+/**
  * The duty's runs since its floor was set, newest first. A Mac or cloud job reports through
  * /duties/ran (duty_runs.output_count, from its OUTPUT line). A Worker reader's run is its
  * `ran_in_worker` audit row (the rows it wrote). An agent duty's run is the task it materialised:
@@ -199,9 +224,11 @@ export async function runsFor(env: Env, d: DutyFloorRow): Promise<Run[]> {
     ).bind(d.id, since, MAX_RUNS).all<{ ts: number; task_id: string; status: string; output: string | null; delivers: string | null }>();
     // ONE grouped read per delivery table this duty's runs declare, not one per run.
     const delivered = new Map<string, Map<string, number>>();
+    const honest = new Map<string, Set<string>>();
     for (const r of results ?? []) {
       if (r.status !== "done" || !r.delivers || !(r.delivers in DELIVERY_CENSUS) || delivered.has(r.delivers)) continue;
       delivered.set(r.delivers, await deliveredByTask(env, r.delivers as DeliveryKey, since));
+      honest.set(r.delivers, await honestZeroTasks(env, r.delivers, since));
     }
     const out: Run[] = [];
     for (const r of results ?? []) {
@@ -211,7 +238,9 @@ export async function runsFor(env: Env, d: DutyFloorRow): Promise<Run[]> {
         // A declared delivery table is the truth: a done task with no row delivered nothing and still scores 0.
         // Only a task that declares no table the census holds falls back to the cloud path's `tasks.output`.
         const n = census ? (census.get(r.task_id) ?? 0) : (r.output && r.output.trim() ? 1 : 0);
-        out.push({ outcome: "ok", output_count: n, finished_at: r.ts });
+        // A zero whose own floor check passed on an honest "nothing new" record is not low.
+        const honestZero = n === 0 && !!r.delivers && !!honest.get(r.delivers)?.has(r.task_id);
+        out.push(honestZero ? { outcome: "ok", output_count: 0, finished_at: r.ts, honest_zero: true } : { outcome: "ok", output_count: n, finished_at: r.ts });
       }
       // queued / running / awaiting approval: not finished, so not judged — and not a reason to stop counting.
     }
@@ -320,7 +349,7 @@ export async function runKendraChecks(env: Env, now = Date.now()): Promise<Kendr
     if (v.alarm) {
       const r = await raiseAlarm(env, { key, kind: "output_floor", subject_id: d.id, text: floorAlarmText(d, v) }, now);
       (r.action === "kept" ? out.floors.kept : out.floors.opened).push(d.id);
-    } else if (runs.length && v.low === 0 && (await clearAlarm(env, key, "the newest run met its floor", now))) {
+    } else if (runs.length && v.low === 0 && (await clearAlarm(env, key, runs[0]?.honest_zero ? "the newest run found nothing new and filed its searches" : "the newest run met its floor", now))) {
       out.floors.cleared.push(d.id);
     }
 
@@ -338,7 +367,7 @@ export async function runKendraChecks(env: Env, now = Date.now()): Promise<Kendr
       out.first_run.opened.push(d.id);
     } else if (existing?.status === "open" && met) {
       await env.DB.prepare(`UPDATE owner_open_loops SET status = 'closed', closed_reason = ?, closed_at = ?, updated_at = ? WHERE id = ?`)
-        .bind(Number(d.output_floor) > 0 ? `first run produced ${met.output_count} ${d.output_metric}` : "first run finished cleanly", now, now, existing.id).run();
+        .bind(Number(d.output_floor) > 0 ? (met.honest_zero ? "first run found nothing new and filed its searches" : `first run produced ${met.output_count} ${d.output_metric}`) : "first run finished cleanly", now, now, existing.id).run();
       out.first_run.closed.push(d.id);
     }
   }
