@@ -4198,7 +4198,13 @@
         "duty": "duty_prospect_discovery",
         "launchd": [
           "com.seq.boss-prospect-discovery"
-        ]
+        ],
+        "ticks": {
+          "com.seq.boss-prospect-discovery": [
+            "mon 07:00",
+            "mon 09:15"
+          ]
+        }
       },
       "output": {
         "metric": "firm leads found",

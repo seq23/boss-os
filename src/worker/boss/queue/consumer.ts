@@ -24,7 +24,7 @@ import { afterResult } from "../service/afterResult";
 import { noticeOnce, dutyNotRunning } from "../service/notices";
 import { taskToken, threeParts, bossWait } from "../../../shared/boss/service/waits.mjs";
 import { dueLine } from "../../../shared/boss/service/dueTime.mjs";
-import { isResearchWork, runFreeResearch, namedStop, codexResetAt, researchSeats, seatReady, asResearchPage, centralTime, selfStarted, usageWait } from "./freeRung";
+import { isResearchWork, runFreeResearch, namedStop, codexResetAt, researchSeats, seatReady, asResearchPage, centralTime, selfStarted, mayNotAskHer, usageWait } from "./freeRung";
 /*
  * The rule that recognises a completion which is transparently a non-answer. Deterministic, and it
  * reads the model's own reply rather than guessing from her request — see the module for why.
@@ -677,7 +677,8 @@ export async function handleTask(env: Env, msg: TaskMessage): Promise<void> {
      * lands. Her own asks still come to her. A real decision (money, a send in her name) is raised as
      * its own approval by the work itself, never by this branch.
      */
-    const needsApproval = asksApproval && !(await selfStarted(env, task, input)).self;
+    // A dated waiting-on check-in counts too (16 Nov 2026: four Search Console reads reached her as decisions).
+    const needsApproval = asksApproval && !(await mayNotAskHer(env, task, input));
 
     const afterOf = (done: boolean) => afterResult(env, {
       id: task.id, lane: task.lane, title: String(task.title), employee_id: task.employee_id ?? null, input, attempts: task.attempts ?? 0,
@@ -803,7 +804,7 @@ export async function handleTask(env: Env, msg: TaskMessage): Promise<void> {
       return;
     }
     // Boss OS's own work never asks her for a route: it ends by name, and the morning's repair picks it up.
-    if (err instanceof RoutingBlocked && err.approvable && !(await selfStarted(env, task, input).catch(() => ({ self: false }))).self) {
+    if (err instanceof RoutingBlocked && err.approvable && !(await mayNotAskHer(env, task, input).catch(() => false))) {
       await holdForApproval(env, task, employee, envelope, costMode, {
         kind: "model_route",
         title: `Routing card: ${task.title}`,

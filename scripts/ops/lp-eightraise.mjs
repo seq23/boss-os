@@ -29,18 +29,49 @@ export const SPEND_TOOLS = Object.freeze(["enrich_companies", "search_investors"
 const NEVER = /billing|subscription|upgrade|purchase|buy|checkout|top.?up/i;
 
 export const KEY_NAMES = Object.freeze(["EIGHTRAISE_API_KEY", "EIGHTRAISE_SEQ_TAYLOR_API_KEY"]);
-export const NEVER_KEYS = Object.freeze(["EIGHTRAISE_WESTPEEK_API_KEY", "EIGHTRAISE_TIME_2_READ_API_KEY", "EIGHTRAISE_CRYPTOCLEARR_API_KEY"]);
+/**
+ * THE TWO FREE BROKERAGE ACCOUNTS ARE SPENT FIRST, FOR PROSPECTING ONLY (her ruling 16 Nov 2026: "use
+ * the 2 brokerage ones"). 10 free credits a month each; each one's own get_usage says what is left, and
+ * at 0 the next is used, then her paid account. A free spend is logged as `free_prospecting`, so the
+ * paid budget and the floor count only paid credits. The West Peek account stays out (the fund only).
+ */
+export const FREE_KEY_NAMES = Object.freeze(["EIGHTRAISE_CRYPTOCLEARR_API_KEY", "EIGHTRAISE_TIME_2_READ_API_KEY"]);
+export const NEVER_KEYS = Object.freeze(["EIGHTRAISE_WESTPEEK_API_KEY"]);
+
+/**
+ * Which account a spend uses: the first free account (prospecting only) whose remaining covers it,
+ * else the paid one (null). `remaining(name)` reads that account's balance; null = unreadable = skipped. Pure.
+ */
+export function pickAccount({ purpose, credits, names = FREE_KEY_NAMES, env = process.env, remaining }) {
+  if (purpose !== "prospecting") return null;
+  for (const name of names) {
+    if (NEVER_KEYS.includes(name) || !FREE_KEY_NAMES.includes(name)) continue;
+    if (!(typeof env[name] === "string" && env[name].trim())) continue;
+    const left = remaining(name);
+    if (left !== null && left !== undefined && left >= credits) return { name, left };
+  }
+  return null;
+}
 
 export function resolveKey(env = process.env, names = KEY_NAMES) {
   if (names.some((name) => NEVER_KEYS.includes(name) || !KEY_NAMES.includes(name))) throw new Error("NAMED STOP [8RAISE_ACCOUNT_REFUSED] only her own account is allowed");
   return names.map((name) => env[name]).find((key) => typeof key === "string" && key.trim()) ?? null;
 }
 
-function withHeader(fn) {
+function withHeader(fn, keyName = null) {
+  if (keyName) {
+    if (!FREE_KEY_NAMES.includes(keyName)) throw new Error("NAMED STOP [8RAISE_ACCOUNT_REFUSED] only her own and the two brokerage accounts are allowed");
+    return withKeyFile(process.env[keyName], fn);
+  }
   const given = process.env.EIGHTRAISE_HDR ?? path.join(os.homedir(), "Work", "8raise-tools", ".hdr-seq-taylor");
   if (fs.existsSync(given)) return fn(given);
   const key = resolveKey();
   if (!key) throw new Error("NAMED STOP [NO_8RAISE_KEY] no header file and no injected key; 8Raise is not called today.");
+  return withKeyFile(key, fn);
+}
+
+function withKeyFile(key, fn) {
+  if (!key) throw new Error("NAMED STOP [NO_8RAISE_KEY] that account's key is not in the vault.");
   const tmp = fs.mkdtempSync(path.join(os.tmpdir(), "e8r-"));
   const file = path.join(tmp, "h");
   try {
@@ -52,13 +83,13 @@ function withHeader(fn) {
 }
 
 /** One MCP tool call through 8r.sh. Refuses anything that is not a known read or spend tool. */
-export function call8r(tool, args = {}) {
+export function call8r(tool, args = {}, keyName = null) {
   if (NEVER.test(tool) || ![...READ_TOOLS, ...SPEND_TOOLS].includes(tool)) throw new Error(`refused: ${tool} is not a tool Monique may call`);
   return withHeader((hdr) => {
     const r = spawnSync("zsh", [HELPER, hdr, tool, JSON.stringify(args)], { encoding: "utf8", timeout: 120_000 });
     if (r.status !== 0) throw new Error(`8Raise ${tool} failed (${r.status})`);
     return r.stdout;
-  });
+  }, keyName);
 }
 
 /** The balance from get_usage's text, whichever field name it uses. Null when unreadable. */
@@ -76,14 +107,24 @@ export function balanceIn(text) {
  * Spend credits under the budget: check first (server side, against the ledger), call, then log.
  * Every refusal names its reason; nothing is called on a refusal.
  */
-export async function spend8r(api, { purpose, tool, args, credits, company = null, contacts = 0 }) {
+export async function spend8r(api, { purpose, tool, args, credits, company = null, contacts = 0 }, { call = call8r, env = process.env } = {}) {
   if (!SPEND_TOOLS.includes(tool)) throw new Error(`refused: ${tool} is not a spend tool`);
   if (contacts > EIGHTRAISE_BUDGET.per_search_contacts) return { ok: false, why: `cap is ${EIGHTRAISE_BUDGET.per_search_contacts} contacts per search` };
-  const balance = balanceIn(call8r("get_usage"));
+  const readLeft = (name) => { try { return balanceIn(call("get_usage", {}, name)); } catch { return null; } };
+  const free = pickAccount({ purpose, credits, env, remaining: readLeft });
+  if (free) {
+    const check = await api.post("/lp/eightraise", { purpose: "free_prospecting", credits, contacts, company, balance: free.left, dry: true });
+    if (!check.allowed) return { ok: false, why: check.why };
+    const out = call(tool, args, free.name);
+    const after = readLeft(free.name);
+    await api.post("/lp/eightraise", { purpose: "free_prospecting", tool, credits: after !== null ? Math.max(credits, free.left - after) : credits, contacts, company, balance: free.left, balance_after: after, note: free.name });
+    return { ok: true, out, account: free.name };
+  }
+  const balance = balanceIn(call("get_usage"));
   const check = await api.post("/lp/eightraise", { purpose, credits, contacts, company, balance, dry: true });
   if (!check.allowed) return { ok: false, why: check.why };
-  const out = call8r(tool, args);
-  const after = balanceIn(call8r("get_usage"));
+  const out = call(tool, args);
+  const after = balanceIn(call("get_usage"));
   await api.post("/lp/eightraise", { purpose, tool, credits: after !== null && balance !== null ? Math.max(credits, balance - after) : credits, contacts, company, balance, balance_after: after });
   return { ok: true, out };
 }

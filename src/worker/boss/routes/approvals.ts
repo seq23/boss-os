@@ -12,6 +12,7 @@ import { decideApproval, type Decision } from "../approvals/decide";
 import { pendingApprovals } from "../approvals/pending";
 import { overruledGuess } from "../tasks/admit";
 import { classify } from "../intake/classify";
+import { openedBySystem } from "../../../shared/boss/mail/noticeGate.mjs";
 
 export const approvals = new Hono<{ Bindings: Env; Variables: Vars }>();
 
@@ -418,6 +419,38 @@ export async function runExpirySweep(env: Env): Promise<{ expired: number; execu
       actor: "system", lane: row.lane, entityType: "approval", entityId: row.id,
       action: "decided", detail: { decision: "approved", reason: note },
     });
+    const result = await executeDecision(env, { ...row, status: "approved" } as ApprovalRow, "approved", note);
+    if (result.status === "executed") executed++;
+    else if (result.status === "failed") failed++;
+  }
+  /*
+   * A FINISHED RESULT HELD FOR A YES THAT WAS NEVER HERS IS ACCEPTED (16 Nov 2026). Danielle's dated
+   * Search Console check-ins (waiting-on) reached her as "Monday: 4 decisions", each card "No: nothing
+   * happens". Approving a task_output applies nothing but "done" (approvals/execute.ts), so the system
+   * decides it; the consumer no longer raises these (`mayNotAskHer`). Her own asks keep theirs.
+   */
+  // Read from the held TASKS (not a count of what waits on her: that is approvals/pending.ts).
+  const held = await env.DB
+    .prepare(
+      `SELECT a.*, t.input AS task_input
+         FROM tasks t JOIN approvals a ON a.id = t.approval_id
+        WHERE t.status = 'awaiting_approval' AND t.lane != 'trading' AND a.kind = 'task_output'
+          AND a.status = 'pending'
+        ORDER BY a.requested_at LIMIT 50`,
+    )
+    .all<ApprovalRow & { task_input: string | null }>();
+  for (const row of held.results ?? []) {
+    if (!openedBySystem(row.task_input ?? "{}")) continue;
+    const note = "Boss OS opened this itself (a dated check-in, a repair or a duty's run): its result is accepted where it lands, never a decision for her.";
+    const decidedAt = Date.now();
+    const claimed = await env.DB
+      .prepare(`UPDATE approvals SET status = 'approved', decided_at = ?, decided_by = 'system', decision_note = ? WHERE id = ? AND status = 'pending'`)
+      .bind(decidedAt, note, row.id)
+      .run();
+    if (!claimed.meta.changes) continue;
+    await env.DB.prepare(`INSERT INTO approval_events (id, approval_id, ts, event, detail) VALUES (?,?,?,'approved',?)`)
+      .bind(newId("ape"), row.id, decidedAt, JSON.stringify({ by: "system", reason: note })).run();
+    await audit(env.DB, { actor: "system", lane: row.lane, entityType: "approval", entityId: row.id, action: "decided", detail: { decision: "approved", reason: note } });
     const result = await executeDecision(env, { ...row, status: "approved" } as ApprovalRow, "approved", note);
     if (result.status === "executed") executed++;
     else if (result.status === "failed") failed++;

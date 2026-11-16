@@ -283,6 +283,30 @@ describe("Phase 1 — expiry sweep", () => {
     expect(again.failed).toBe(0);
   });
 
+  it("a finished result of a dated check-in, a repair or a duty's run is accepted by the sweep; her own ask keeps its card (16 Nov 2026)", async () => {
+    const held = async (input: Record<string, unknown>, over: Record<string, unknown> = {}) => {
+      const taskId = await insertTask({ status: "awaiting_approval", input: JSON.stringify(input), ...over });
+      const aprId = await insertApproval({ kind: "task_output", origin_type: "tasks", origin_id: taskId, payload: { task_id: taskId }, expires_at: Date.now() + 86_400_000 });
+      await env.DB.prepare(`UPDATE tasks SET approval_id = ? WHERE id = ?`).bind(aprId, taskId).run();
+      return { taskId, aprId };
+    };
+    const checkIn = await held({ origin: "repair", repair_kind: "waiting_on", waiting_on: "wo_local_guides", prompt: "Read Search Console per host." });
+    const duty = await held({ duty_id: "duty_x", prompt: "weekly read" });
+    const hers = await held({ mail_id: "m1", prompt: "draft the LP note" });
+    const herCheckIn = await held({ origin: "repair", repair_kind: "waiting_on", from: "her@example.com" });
+    const trading = await held({ duty_id: "duty_t" }, { lane: "trading" });
+
+    await runExpirySweep(env);
+
+    const apr = (id: string) => row(`SELECT status, decided_by FROM approvals WHERE id = ?`, id);
+    const task = (id: string) => row(`SELECT status FROM tasks WHERE id = ?`, id);
+    for (const gone of [checkIn, duty]) {
+      expect(await apr(gone.aprId)).toMatchObject({ status: "approved", decided_by: "system" });
+      expect((await task(gone.taskId))!.status).toBe("done");
+    }
+    for (const still of [hers, herCheckIn, trading]) expect((await apr(still.aprId))!.status).toBe("pending");
+  });
+
   it("writes an expired event and leaves nothing pending behind", async () => {
     const aprId = await insertApproval({ expires_at: Date.now() - 1000 });
     await runExpirySweep(env);

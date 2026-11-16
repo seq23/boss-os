@@ -786,10 +786,17 @@ export function monthOf(ms = Date.now()) {
  * is no purpose that could.
  */
 export function canSpend({ purpose, credits, contacts = 0, company = null, ledger = [], balance = null, month = monthOf() }) {
-  if (!["prospecting", "buyers_for_supply"].includes(purpose)) return { ok: false, why: `unknown purpose ${purpose}` };
+  if (!["prospecting", "buyers_for_supply", "free_prospecting"].includes(purpose)) return { ok: false, why: `unknown purpose ${purpose}` };
   if (!(credits > 0)) return { ok: false, why: "a spend must state its credits up front" };
   if (contacts > EIGHTRAISE_BUDGET.per_search_contacts) return { ok: false, why: `asks for ${contacts} contacts; the cap is ${EIGHTRAISE_BUDGET.per_search_contacts} per search` };
   const thisMonth = ledger.filter((l) => l.month === month && l.purpose !== "balance_read");
+  // A free brokerage account (her ruling 16 Nov 2026): its own remaining is the only budget; the paid
+  // month and the floor are not touched. One search per company still holds across every account.
+  if (purpose === "free_prospecting") {
+    if (company && thisMonth.some((l) => l.company && l.company.toLowerCase() === String(company).toLowerCase())) return { ok: false, why: `${company} was already searched this month` };
+    if (!(Number(balance) >= credits)) return { ok: false, why: "the free account has too few credits left" };
+    return { ok: true, why: null };
+  }
   const spent = thisMonth.filter((l) => l.purpose === purpose).reduce((a, l) => a + Number(l.credits), 0);
   if (spent + credits > EIGHTRAISE_BUDGET[purpose]) return { ok: false, why: `${purpose} has ${EIGHTRAISE_BUDGET[purpose] - spent} of ${EIGHTRAISE_BUDGET[purpose]} left this month` };
   if (company && thisMonth.some((l) => l.company && l.company.toLowerCase() === String(company).toLowerCase())) {
@@ -801,7 +808,7 @@ export function canSpend({ purpose, credits, contacts = 0, company = null, ledge
 }
 
 export function monthSpent(ledger, month = monthOf()) {
-  return ledger.filter((l) => l.month === month && l.purpose !== "balance_read").reduce((a, l) => a + Number(l.credits), 0);
+  return ledger.filter((l) => l.month === month && l.purpose !== "balance_read" && l.purpose !== "free_prospecting").reduce((a, l) => a + Number(l.credits), 0);
 }
 
 /** The morning email footer line (rule 1). */

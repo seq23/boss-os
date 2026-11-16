@@ -50,6 +50,20 @@ async function out(result, code = 0) {
   process.exitCode = code;
 }
 
+/**
+ * page.goto, once more after a pause when it times out (16 Nov 2026: the morning catch-up ran this a
+ * minute after the Mac booted, both reports timed out at 60 s, and 8 Scorecard rows read "No number";
+ * the same read an hour later took seconds). Any other error, or a second timeout, is thrown.
+ */
+export async function gotoTwice(page, url, opts, { waitMs = 30_000, sleep = (ms) => new Promise((r) => setTimeout(r, ms)) } = {}) {
+  try { return await page.goto(url, opts); }
+  catch (err) {
+    if (!/Timeout/i.test(String(err?.message ?? err))) throw err;
+    await sleep(waitMs);
+    return page.goto(url, opts);
+  }
+}
+
 /** A URL with its query stripped, for anything printed. */
 const safeUrl = (u) => String(u ?? "").split("?")[0].slice(0, 120);
 
@@ -83,7 +97,7 @@ async function main() {
   });
   try {
     for (const url of REPORTS) {
-      await page.goto(url, { waitUntil: "domcontentloaded", timeout: TIMEOUT_MS });
+      await gotoTwice(page, url, { waitUntil: "domcontentloaded", timeout: TIMEOUT_MS });
       if (/\/ap\/(signin|mfa|cvf)/.test(page.url())) {
         return out({ at, unread: `the session is signed out at ${safeUrl(page.url())}; kdp-signin.mjs runs before this and should have fixed it` }, 6);
       }
