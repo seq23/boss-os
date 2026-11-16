@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 // @ts-expect-error — a plain .mjs script with no types
-import { scansFor, importsOf, relatedTests, SLOW, cleanEnv } from "../scripts/ops/check-changed.mjs";
+import { scansFor, importsOf, relatedTests, cleanEnv, SLOW } from "../scripts/ops/check-changed.mjs";
 
 describe("check:changed runs what the change can break (15 Nov 2026)", () => {
   const scripts = {
@@ -10,12 +10,13 @@ describe("check:changed runs what the change can break (15 Nov 2026)", () => {
   };
   const read = () => `const INSTALLER = "scripts/ops/install-agent-launchd.sh"; import x from "../lib/helper.mjs";`;
 
-  it("a slow scan runs only when a path its script names changed; every fast scan always runs", () => {
+  it("every scan runs only when a path its own script names changed; a scan naming nothing, or a SLOW one, is left to CI", () => {
+    const named = (f: string) => (f.includes("fast") ? `const ROOTS = ["src/client"];` : read());
     expect(SLOW).toContain("validate:agent-poll");
-    expect(scansFor(["src/client/App.tsx"], scripts, read)).toEqual({ run: ["validate:fast"], skipped: ["validate:agent-poll"] });
-    expect(scansFor(["scripts/ops/install-agent-launchd.sh"], scripts, read).run).toContain("validate:agent-poll");
-    expect(scansFor(["scripts/lib/helper.mjs"], scripts, read).run).toContain("validate:agent-poll");
-    expect(scansFor(["scripts/validate/the-agent-polls-without-overlap.mjs"], scripts, read).run).toContain("validate:agent-poll");
+    expect(scansFor(["src/client/App.tsx"], scripts, named)).toEqual({ run: ["validate:fast"], skipped: ["validate:agent-poll"] });
+    expect(scansFor(["src/worker/index.ts"], scripts, named)).toEqual({ run: [], skipped: ["validate:fast", "validate:agent-poll"] });
+    expect(scansFor(["scripts/validate/the-agent-polls-without-overlap.mjs"], scripts, named).run).toEqual([]);
+    expect(scansFor(["package.json"], scripts, named).run).toEqual(["validate:fast"]);
   });
 
   it("reads relative and aliased imports, and strips ?raw", () => {
