@@ -33,8 +33,8 @@ import { OUR_DOMAINS } from "./mail-bulk.mjs";
 import { INBOX_LOOKBACK_DAYS, excluded } from "../../src/shared/boss/lp/plan.mjs";
 import { outputLine } from "../../src/shared/boss/alarms/rules.mjs";
 
-const COLLECT = process.argv.includes("--collect"); // only poll unfinished lookups: spends nothing
-const LIVE = process.argv.includes("--live") || COLLECT;
+const COLLECT_FLAG = process.argv.includes("--collect"); // only poll unfinished lookups: spends nothing
+const LIVE = process.argv.includes("--live") || COLLECT_FLAG;
 const MORNING_DIR = process.env.BOSS_OS_MORNING_DIR ?? path.join(os.homedir(), ".boss-os", "morning");
 const LEADS = path.join(os.homedir(), ".boss-os", "lp", "prospect-leads.json");
 const UA = process.env.SEC_USER_AGENT ?? "Boss OS prospect research (westpeek.ventures)";
@@ -80,6 +80,18 @@ export function leadKind(name) {
 /** The leads file with the lookups still running on 8Raise (kept so their contacts are never lost). */
 export function withPending(file, pending) {
   return { ...file, pending_jobs: (pending ?? []).filter((p) => p && p.job && p.firm) };
+}
+
+/**
+ * Only collect (poll kept lookups, spend nothing)? When asked to, or when today's full run is already on
+ * file: the job's second Monday slot (09:15) then collects what the 07:00 run left running. Pure; Central days.
+ */
+export function collectOnly({ collectFlag = false, fullRunAt = null, now = Date.now() } = {}) {
+  if (collectFlag) return true;
+  if (!fullRunAt) return false;
+  const day = (ms) => new Intl.DateTimeFormat("en-CA", { timeZone: "America/Chicago" }).format(new Date(ms));
+  const t = Date.parse(fullRunAt);
+  return Number.isFinite(t) && day(t) === day(now);
 }
 
 /** True when 8Raise answered with an error instead of a result (nothing was spent). */
@@ -139,9 +151,13 @@ async function secLeads(companies, now) {
 
 async function main() {
   // Read before anything rewrites the leads file: the lookups an earlier run left running on 8Raise.
-  const carried = (() => { try { return JSON.parse(fs.readFileSync(LEADS, "utf8")).pending_jobs ?? []; } catch { return []; } })();
+  const prevFile = (() => { try { return JSON.parse(fs.readFileSync(LEADS, "utf8")) ?? {}; } catch { return {}; } })();
+  const carried = prevFile.pending_jobs ?? [];
   const api = await bossApi();
   const now = Date.now();
+  const COLLECT = collectOnly({ collectFlag: COLLECT_FLAG, fullRunAt: prevFile.full_run_at ?? null, now });
+  if (COLLECT && !COLLECT_FLAG) console.log("Today's full run is on file: this run only collects the lookups it kept (no credit spent).");
+  const full_run_at = COLLECT ? prevFile.full_run_at ?? null : new Date(now).toISOString();
   const lists = await api.get("/lp/exclusions");
   if (!lists.established) {
     console.log(`NAMED STOP [LISTS_UNREADABLE] ${lists.note}; no prospect added this week rather than risk someone she ruled out.`);
@@ -163,7 +179,7 @@ async function main() {
   fs.mkdirSync(path.dirname(LEADS), { recursive: true });
   const prev = (() => { try { return JSON.parse(fs.readFileSync(LEADS, "utf8")).leads ?? []; } catch { return []; } })();
   const merged = [...prev, ...leads.filter((l) => !prev.some((p) => p.firm.toLowerCase() === l.firm.toLowerCase()))];
-  fs.writeFileSync(LEADS, JSON.stringify(withPending({ updated_at: new Date(now).toISOString(), leads: merged }, carried), null, 2), { mode: 0o600 });
+  fs.writeFileSync(LEADS, JSON.stringify(withPending({ updated_at: new Date(now).toISOString(), full_run_at, leads: merged }, carried), null, 2), { mode: 0o600 });
   console.log(`SEC: ${leads.length} firm leads this week (${merged.length} on file). A lead becomes a prospect only with a published address.`);
   console.log(outputLine(leads.length, "firm leads found"));
 
@@ -176,7 +192,7 @@ async function main() {
     const found = [];
     const jobs = [];
     // Unfinished enrichment jobs from earlier runs come first: polling is free and their contacts are already paid for.
-    for (const p of carried) { const lead = merged.find((l) => l.firm === p.firm) ?? { firm: p.firm, kind: p.kind, source: p.source, source_ref: p.source_ref }; jobs.push({ job: p.job, lead }); }
+    for (const p of carried) { const lead = merged.find((l) => l.firm === p.firm) ?? { firm: p.firm, kind: p.kind, source: p.source, source_ref: p.source_ref }; jobs.push({ job: p.job, lead, account: p.account ?? null }); }
     if (carried.length) console.log(`8Raise: ${carried.length} unfinished lookup(s) from an earlier run polled again.`);
     // 8Raise's enrich_companies takes `firms` and a `delivery_tier` (1 = contact details only, 1 credit a contact).
     // A reply that is an MCP error spent nothing: it is a named stop, nothing is marked searched (15 Nov 2026: a
@@ -193,7 +209,8 @@ async function main() {
       if (isMcpError(text)) { console.log(`NAMED STOP [8RAISE_CALL_REJECTED] enrich_companies: ${text.slice(0, 160)}`); break; }
       l.enriched_month = new Date(now).toISOString().slice(0, 7);
       const job = /"job_id"\s*:\s*"([0-9a-f-]{8,})"/i.exec(text)?.[1];
-      if (job) jobs.push({ job, lead: l });
+      // A lookup is polled with the account that started it (a free brokerage account or the paid one).
+      if (job) jobs.push({ job, lead: l, account: r.account ?? null });
       else for (const c of contactsIn(text, l.firm)) found.push({ ...c, firm: l.firm, kind: l.kind, source: `8raise_via_${l.source}`, source_ref: l.source_ref });
     }
     // Enrichment runs on 8Raise's side (about a minute a firm, in parallel): poll every job (free) for up to 15 minutes.
@@ -203,7 +220,7 @@ async function main() {
       await sleep(30_000);
       const still = [];
       for (const j of open) {
-        const text = String(call8r("check_enrichment_status", { job_id: j.job }) ?? "");
+        const text = String(call8r("check_enrichment_status", { job_id: j.job }, j.account ?? null) ?? "");
         if (!/"status"\s*:\s*"done"/.test(text)) { if (!/"status"\s*:\s*"cancelled"/.test(text)) still.push(j); continue; }
         for (const c of contactsIn(text, j.lead.firm)) found.push({ ...c, firm: j.lead.firm, kind: j.lead.kind, source: `8raise_via_${j.lead.source}`, source_ref: j.lead.source_ref });
       }
@@ -222,8 +239,15 @@ async function main() {
       if (query) {
         const r = await spend8r(api, { purpose: "prospecting", tool: "search_investors", args: { query: typeof query === "string" ? query : JSON.stringify(query) }, credits: 5, company: `lp-mode ${new Date(now).toISOString().slice(0, 10)}`, contacts: 5 });
         if (r.ok && isMcpError(String(r.out))) console.log(`NAMED STOP [8RAISE_CALL_REJECTED] search_investors: ${String(r.out).slice(0, 160)}`);
-        else if (r.ok) for (const m of String(r.out).matchAll(/([A-Z][a-z'’-]+(?: [A-Z][a-z'’-]+){0,2})?[^@\n]{0,80}?\b([\w.+-]+@[\w-]+\.[\w.-]+)/g)) {
-          if (!/@(gmail|yahoo|outlook|hotmail|icloud|aol)\./i.test(m[2])) found.push({ email: m[2].toLowerCase(), name: m[1] ?? null, kind: "family_office", source: "8raise_lp_mode", source_ref: brief.slice(0, 80) });
+        else if (r.ok) {
+          let lpFound = 0;
+          for (const m of String(r.out).matchAll(/([A-Z][a-z'’-]+(?: [A-Z][a-z'’-]+){0,2})?[^@\n]{0,80}?\b([\w.+-]+@[\w-]+\.[\w.-]+)/g)) {
+            if (!/@(gmail|yahoo|outlook|hotmail|icloud|aol)\./i.test(m[2])) { found.push({ email: m[2].toLowerCase(), name: m[1] ?? null, kind: "family_office", source: "8raise_lp_mode", source_ref: brief.slice(0, 80) }); lpFound++; }
+          }
+          // Rule 0 (16 Nov 2026: a successful search printed nothing): the count, and a named stop at zero.
+          // Not a bare OUTPUT line: duty-run.sh reads the LAST one as the week's census (firm leads).
+          console.log(`LP-MODE: ${outputLine(lpFound, "LP-mode contacts found")}`);
+          if (!lpFound) console.log("NAMED STOP [LP_MODE_NO_CONTACTS] search_investors answered with no published address; the credits are on the ledger.");
         }
         else console.log(`8Raise LP mode: not run — ${r.why}`);
       } else console.log(`8Raise LP mode: 8Raise asked a question (${refined.status ?? "no status"}); not run.`);
@@ -232,9 +256,9 @@ async function main() {
       const r = await api.post("/lp/prospects/import", { rows: found });
       console.log(`8Raise: ${r.added} published contacts added.`);
     }
-    const pending_jobs = open.map((j) => ({ job: j.job, firm: j.lead.firm, kind: j.lead.kind ?? null, source: j.lead.source ?? null, source_ref: j.lead.source_ref ?? null }));
-    fs.writeFileSync(LEADS, JSON.stringify(withPending({ updated_at: new Date(now).toISOString(), leads: merged }, pending_jobs), null, 2), { mode: 0o600 });
-    if (pending_jobs.length) console.log(`8Raise: ${pending_jobs.length} lookup(s) kept for the next run (npm run lp:discover -- --collect).`);
+    const pending_jobs = open.map((j) => ({ job: j.job, firm: j.lead.firm, kind: j.lead.kind ?? null, source: j.lead.source ?? null, source_ref: j.lead.source_ref ?? null, account: j.account ?? null }));
+    fs.writeFileSync(LEADS, JSON.stringify(withPending({ updated_at: new Date(now).toISOString(), full_run_at, leads: merged }, pending_jobs), null, 2), { mode: 0o600 });
+    if (pending_jobs.length) console.log(`8Raise: ${pending_jobs.length} lookup(s) kept for the next run (the 09:15 Monday slot collects them; by hand: npm run lp:discover -- --live --collect).`);
   }
   console.log("LP-DISCOVERY-COMPLETE: filed");
 }
