@@ -96,6 +96,7 @@ async function main() {
   const state = join(tmp, "state");
   let dev = null;
   let failed = 0;
+  let madeDist = false;
   try {
     const raws = new Map();
     for (const id of ids) {
@@ -117,7 +118,9 @@ async function main() {
       writeFileSync(sqlFile, `PRAGMA defer_foreign_keys = true;\n${mirrorSql(table, rows, cols)}\n`);
       if (rows.length) wrangler(["d1", "execute", LOCAL_DB, ...local, "--file", sqlFile]);
     }
-    if (!existsSync(join(ROOT, "dist", "client"))) mkdirSync(join(ROOT, "dist", "client"), { recursive: true });
+    // wrangler needs the assets folder to exist; an empty one made here is removed again (an empty
+    // dist/client reads as a broken build to validate:identity).
+    if (!existsSync(join(ROOT, "dist", "client"))) { mkdirSync(join(ROOT, "dist", "client"), { recursive: true }); madeDist = true; }
 
     // Only the keys the read needs, never the vault's whole environment.
     const port = 8790 + Math.floor(Math.random() * 100);
@@ -144,6 +147,7 @@ async function main() {
   } finally {
     if (dev?.pid) { try { process.kill(-dev.pid, "SIGTERM"); } catch { /* already gone */ } }
     rmSync(tmp, { recursive: true, force: true });
+    if (madeDist) rmSync(join(ROOT, "dist", "client"), { recursive: true, force: true });
   }
   console.log(`OUTPUT ${ids.length - failed} of ${ids.length} email(s) read; nothing written to production, nothing sent`);
   process.exit(failed ? 1 : 0);

@@ -14,7 +14,7 @@ describe("check:changed runs what the change can break (15 Nov 2026)", () => {
     expect(SLOW).toContain("validate:agent-poll");
     expect(scansFor(["src/client/App.tsx"], scripts, read)).toEqual({ run: ["validate:fast"], skipped: ["validate:agent-poll"] });
     expect(scansFor(["scripts/ops/install-agent-launchd.sh"], scripts, read).run).toContain("validate:agent-poll");
-    expect(scansFor(["scripts/validate/lib/helper.mjs"], scripts, read).run).toContain("validate:agent-poll");
+    expect(scansFor(["scripts/lib/helper.mjs"], scripts, read).run).toContain("validate:agent-poll");
     expect(scansFor(["scripts/validate/the-agent-polls-without-overlap.mjs"], scripts, read).run).toContain("validate:agent-poll");
   });
 
