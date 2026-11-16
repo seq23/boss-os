@@ -34,6 +34,23 @@ Each story opens with two short lists:
 
 Each story ends with two questions for you to ask. Talking about the story builds understanding as well as reading.
 
+## New sentences and sound chains
+
+After each story come two short extras. **Read it again: new sentences** uses only the sounds and tricky words your child has met so far, in new lines, so they read words rather than remember the story. Read one line at a time; cover the rest with a card if a full page feels like a lot.
+
+**Change one sound** is a chain of words, each one sound away from the last. Say the first word, then change one sound to make the next, and ask your child which sound changed and where it was: the start, the middle or the end.
+
+## When to move to the next story
+
+Move on when your child can read the story with few stops, even if it is still slow. Speed comes later, from rereading. Some signs they are ready:
+
+- They can say every sound in the "Sounds in this story" list without help.
+- They read the tricky words by sight, without sounding them out.
+- They read the new sentences after the story, which they have not seen before, with only one or two stops.
+- They can answer the "Talk about it" questions, which shows they followed what happened.
+
+If a story still feels hard after three or four reads, that is information, not failure. Go back one story for a few days, play one of the sound games at the back of the book, and try again. Children often stall on the step where two letters make one sound (sh, ck, ch, th); a few extra days there is common and normal.
+
 ## Reading it again
 
 Rereading is not cheating. The second and third read are where reading becomes smooth. Many children love reading a story they have mastered to someone new: a grandparent, a pet, a favorite toy.
@@ -100,6 +117,24 @@ A cat nap.
 
 - What did Pam do with the pan?
 - Do you think the cat liked to nap? Why?
+
+## Read it again: new sentences
+
+Pam can nap.
+
+Sam can tap.
+
+A cat can pat a mat.
+
+Sam sat. Pam sat. A cat sat.
+
+A man can tap a can.
+
+Tap, tap. Nap, nap.
+
+## Change one sound
+
+cat → mat → map → nap → tap → tan → pan → man
 
 # Story 2: Pip Can Dig
 
@@ -168,6 +203,24 @@ Pip naps.
 
 - What did Pip find in the pit?
 - What would you like to find if you dug a big pit?
+
+## Read it again: new sentences
+
+Pip had a big bag.
+
+Dad can dig a pit.
+
+His cat hid in the bin.
+
+A big pig sits.
+
+Pip hid his hat in the bag.
+
+Pip and Dad dig and dig.
+
+## Change one sound
+
+dig → big → bag → bat → hat → hit → bit → bin → pin
 
 # Story 3: The Hot Pot
 
@@ -242,6 +295,24 @@ The dog naps on the mat.
 
 - Why could Mom not lift the pot alone?
 - What do you think was in the hot pot?
+
+## Read it again: new sentences
+
+Rob got a big pot.
+
+The pot got hot.
+
+Fran can hop on a log.
+
+Lin got a frog. It hops in a pot.
+
+Mom can mop a spot.
+
+Rob and Fran sat on a log.
+
+## Change one sound
+
+hot → pot → pop → top → mop → rod → rob → lob → log → fog
 
 # Story 4: Get Set, Ted
 
@@ -319,6 +390,24 @@ Ted is set.
 - Why could Jem not go on the jet?
 - If you went on a jet, what would you pack?
 
+## Read it again: new sentences
+
+Ted can get a red pen.
+
+Jen fed ten hens.
+
+Ken met Jen at the den.
+
+A wet hen sat in a nest.
+
+Jen let Ted pet the hen.
+
+Get set! Ted and Ken jog and jog.
+
+## Change one sound
+
+net → pet → pen → ten → hen → wet → web → jet → get → let
+
 # Story 5: Bud and the Bus
 
 ## Sounds in this story
@@ -395,6 +484,24 @@ Bud gets a pat and a bun.
 - How did Bud help Gus?
 - Have you ever left something behind? What happened?
 
+## Read it again: new sentences
+
+Gus had a red cup.
+
+Yum! Gus had a hot bun.
+
+A big bug sat in the sun.
+
+Bud can zip up the van.
+
+Gus hugs Bud on the rug.
+
+Run, Bud, run! Bud has fun in the sun.
+
+## Change one sound
+
+bus → bud → bug → hug → mug → rug → run → sun → fun → gum
+
 # Story 6: The Fish Shop
 
 ## Sounds in this story
@@ -469,6 +576,24 @@ Bess is glad.
 - What color was the fish?
 - If you had a fish, what would you call it?
 
+## Read it again: new sentences
+
+Bess will pack a bag.
+
+Jack has a red sock.
+
+Russ fell in the mud.
+
+The duck is wet and glad.
+
+Bess will lock the shop.
+
+Jack kicks a rock up the hill.
+
+## Change one sound
+
+back → pack → pick → kick → sick → sock → rock → lock → luck → duck
+
 # Story 7: Chip and the Chick
 
 ## Sounds in this story
@@ -542,6 +667,24 @@ That was a lot of fun.
 - How did Chip know where the chick lived?
 - How do you think the chick felt at the end?
 
+## Read it again: new sentences
+
+Chip and Beth chat.
+
+The chick is in a thick nest.
+
+Seth has a chess set.
+
+Rich will fetch the chips.
+
+Beth checks the chick. It is a fat chick.
+
+Then Chip and Beth munch lunch.
+
+## Change one sound
+
+chip → chop → shop → ship → shin → thin → thick → chick → check → chess
+
 # All the sounds in this book
 
 Read down the list together. Can your child say every sound?
@@ -575,6 +718,34 @@ Read down the list together. Can your child say every sound?
 - was
 - you
 - of
+
+# Five sound games for the car or the kitchen
+
+These take a minute or two and need no book. They practise the same skill the stories do: hearing the separate sounds in a word and putting them back together.
+
+## 1. Robot talk
+
+Say a word in robot voice, one sound at a time: "c... a... t". Your child says the whole word: "cat". Then swap: they speak robot and you guess. Start with three-sound words from the stories they have read.
+
+## 2. What's the first sound?
+
+Name something you can both see, such as a mug, a bus or a fish. Ask for its first sound, not its letter name: "mmm" for mug. When that is easy, ask for the last sound, then the middle one.
+
+## 3. Change one sound
+
+Say "cat". Ask: "Change the c to m. What word is it now?" (mat). Keep going and make a chain. Silly words are fine; the point is hearing the swap.
+
+## 4. Sound hunt
+
+Pick one sound from the story you are reading, such as sh. Take turns spotting things that have it: shoe, fish, shelf, dish. Your child gets a point for each one; you get a point only if they cannot find a new one.
+
+## 5. Tap and count
+
+Say a word and tap the table once for each sound. "Ship" has three taps: sh, i, p. Two letters can make one sound, which is why sh and ch get one tap each. Ask your child to tap the next word.
+
+## When to stop
+
+Stop while it is still fun. Two minutes a day, most days, does more than one long session at the weekend. If a game feels hard, go back to an easier one, or to a story your child already reads well.
 
 # What comes next
 

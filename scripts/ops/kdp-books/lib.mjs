@@ -171,7 +171,7 @@ export function sections(book, { chapters, checklist, states, checkedOn }) {
     const entry = log.fields.map((f) => `<p class="field"><span class="label">${esc(f)}:</span> <span class="line">&#160;</span></p>`).join("");
     out.push({ id: `log-${slug(log.name)}`, title: `Log: ${log.name}`, html: `<h2>Log: ${esc(log.name)}</h2><p class="hint">One entry per event, written the same day. Copy this page into a notebook, or print it free at ${esc(book.printable_url.replace(/^https:\/\//, ""))}.</p>${Array.from({ length: log.rows }, (_, i) => `<div class="entry"><p class="entry-n">Entry ${i + 1}</p>${entry}</div>`).join("")}` });
   }
-  const stateHtml = states.map((s) => `<h3 id="st-${s.code}">${esc(s.name)}</h3>${s.groups.map((g) => `<p class="group">${esc(g.label)}</p><ul class="facts">${g.facts.map((f) => `<li>${esc(f.claim)} <span class="src">Source: <a href="${esc(f.source_url)}">${esc(f.source_name)}</a>, checked ${esc(fmtDate(f.checked))}.</span></li>`).join("")}</ul>`).join("")}`).join("");
+  const stateHtml = states.map((s) => `<h3 id="st-${s.code}">${esc(s.name)}</h3>${s.groups.map((g) => `<p class="group">${esc(g.label)}</p><ul class="facts">${g.facts.map((f) => `<li>${esc(restateCdc(f.claim))} <span class="src">Source: <a href="${esc(f.source_url)}">${esc(f.source_name)}</a>, checked ${esc(fmtDate(f.checked))}.</span></li>`).join("")}</ul>`).join("")}`).join("");
   out.push({ id: "states", title: "Official sources by state", html: `<h2>Official sources by state</h2><p>Each line below is quoted or closely restated from the official page linked after it, and shows the date it was checked. Pages move and rules change: open the link before you rely on a line, and ask the court's self-help center if anything is unclear. A state appears only when at least one of its facts passed that check.</p>${missingStates(states).length ? `<p class="missing">Not covered: ${missingStates(states).map(esc).join(", ")}. None of ${missingStates(states).length === 1 ? "its" : "their"} official facts on these topics passed our quote check by ${esc(fmtDate(checkedOn))}. Use the state court's own website, or ask its self-help center.</p>` : ""}<p class="statelist">${states.map((s) => `<a href="#st-${s.code}">${esc(s.name)}</a>`).join(" · ")}</p>${stateHtml}` });
   out.push({ id: "keepmyproof", title: "Keep it on your phone", html: `<h2>Keep it on your phone</h2><p>This book was made by the people behind KeepMyProof, a free private phone app for the papers, photos and notes you already have. It sorts them into folders with suggested checklists, puts dates on every item, and turns a folder into one PDF you can hand to a lawyer or mediator. No account, no ads, and nothing leaves your phone unless you send it. Free for your first 25 items.</p><p>See whether it is available on your phone yet, and use the free printable logs and checklists, at <a href="${esc(book.folder_url)}">${esc(book.folder_url.replace(/^https:\/\//, "").replace(/\/$/, ""))}</a>.</p>` });
   out.push({ id: "author", title: "About the author", html: `<h2>About the author</h2><p>${esc(book.author)} writes plain, practical workbooks for people gathering papers under pressure, published by Spry Labs. ${esc(book.author)} is not a lawyer, and this book is not legal advice.</p><p>If this book helped, a short review on Amazon helps another parent find it.</p>` });
@@ -186,6 +186,22 @@ export const BOOK_CSS = `body{font-family:serif;line-height:1.5;margin:0 4%}h1,h
 .check{list-style:none;padding-left:0}.check li{margin:.5em 0}.box{font-size:1.2em}
 .entry{border-top:1px solid #999;margin-top:1em;padding-top:.3em}.entry-n{font-weight:bold;font-size:.9em}.field{margin:.6em 0}.label{font-weight:bold}.line{display:inline-block;border-bottom:1px solid #999;width:60%}
 .group{font-weight:bold;margin-bottom:.2em}.facts{margin-top:.2em}.facts li{margin:.35em 0}.src{font-size:.85em}.hint{font-style:italic}.statelist{font-size:.9em}`;
+
+/**
+ * ONE OPENING PER LINE, NOT "THE CDC LISTS" TWENTY-FOUR TIMES (her call 16 Nov 2026, after the quality
+ * gate read the Co-Parenting Log). A CDC fee line leads with the office or the state it is about; the
+ * figure, the office and the CDC as its source are kept word for word. Any other line is unchanged. Pure.
+ */
+export function restateCdc(claim) {
+  const c = String(claim ?? "").trim();
+  let m = /^The CDC lists (\$[\d.,]+) as the cost of a divorce record copy from (.+?)\.$/.exec(c);
+  if (m) return `${m[2][0].toUpperCase()}${m[2].slice(1)} charges ${m[1]} for a copy of a divorce record, according to the CDC.`;
+  m = /^The CDC lists (\$[\d.,]+) as the cost of a divorce record copy in (.+?)\.$/.exec(c);
+  if (m) return `In ${m[2]}, a copy of a divorce record costs ${m[1]}, according to the CDC.`;
+  m = /^The CDC lists (\$[\d.,]+) for (.+?)(, .+)?\.$/.exec(c);
+  if (m) return `For ${m[2]}, the CDC lists ${m[1]}${m[3] ?? ""}.`;
+  return c;
+}
 
 export const xhtml = (title, body) => `<?xml version="1.0" encoding="utf-8"?>\n<!DOCTYPE html>\n<html xmlns="http://www.w3.org/1999/xhtml" xmlns:epub="http://www.idpf.org/2007/ops" xml:lang="en" lang="en"><head><meta charset="utf-8"/><title>${esc(title)}</title><link rel="stylesheet" type="text/css" href="book.css"/></head><body>${body}</body></html>`;
 
