@@ -14,6 +14,8 @@ export const ON_PAGE: string;
 export const ALARM_KINDS: readonly string[];
 export function alarmNoticeEmail(notice: { kind?: string; from_name?: string; subject?: string; body?: string; task_id?: string }): (LaidOutEmail & { layout?: string }) | null;
 export function morningDayOf(notice: { kind?: string; task_id?: string }): string | null;
+/** A pause notice whose announced resume time has passed, or whose task runs or is done: the reason it is not sent, else null. */
+export function pauseOver(notice: Record<string, any>, detail: { task: Record<string, any> | null; events?: Array<Record<string, any>> } | null, now?: number): string | null;
 export function noticeOwner(notice: Record<string, any>): { layout: string; why: string; ref: string | null; act?: string };
 export function repairTask(task: { input?: unknown } | null | undefined): boolean;
 export function plainStopWhy(why: unknown): string | null;

@@ -203,11 +203,12 @@ async function researchPageOf(notice) {
 
 /** The task behind a notice, read fresh: `{ read, task }`. A failed read sends the notice as before. */
 async function taskOf(id) {
-  if (!id) return { read: false, task: null };
+  if (!id) return { read: false, task: null, detail: null };
   const res = await fetch(`${ORIGIN}/api/boss/tasks/${encodeURIComponent(id)}`, { headers: { cookie } }).catch(() => null);
-  if (res?.status === 404) return { read: true, task: null };
-  if (!res?.ok) return { read: false, task: null };
-  return { read: true, task: (await res.json().catch(() => ({})))?.data?.task ?? null };
+  if (res?.status === 404) return { read: true, task: null, detail: { task: null, events: [] } };
+  if (!res?.ok) return { read: false, task: null, detail: null };
+  const data = (await res.json().catch(() => ({})))?.data ?? {};
+  return { read: true, task: data.task ?? null, detail: { task: data.task ?? null, events: data.events ?? [] } };
 }
 
 /**
@@ -242,10 +243,34 @@ export function noticeOwner(notice) {
   const kind = String(notice?.kind ?? "");
   // A could-not-do or a missing key arrives as one block of words, not the alarm's parts: a Note, counted.
   const layout = /^done(#|$)/.test(kind) ? "delivered" : "note";
-  const hers = ["could_not_do", "missing_secret", "drive_empty"].includes(kind) || kind.startsWith("stop:");
+  // A pause (`stop:<CODE>`) asks nothing: it starts again by itself (16 Nov 2026, "Paused until …" with
+  // a Decide block and "Reply with what it needs" over nothing to decide). It is told, never asked.
+  const hers = ["could_not_do", "missing_secret", "drive_empty"].includes(kind);
   const why = legacyParts({ who: notice?.from_name ?? "Simone", subject: notice?.subject ?? "", text: String(notice?.body ?? "") }).happened;
   const ref = /^tsk_[a-z0-9]+$/i.test(String(notice?.task_id ?? "")) ? String(notice.task_id).toLowerCase() : null;
   return hers ? { layout, why, ref, act: "Reply to this email with what it needs; your reply goes straight back to the job" } : { layout, why, ref };
+}
+
+/**
+ * A PAUSE THAT IS ALREADY OVER IS NEVER SENT (owner's inbox, 16 Nov 2026: "Paused until Mon, Nov 16,
+ * 8:40 AM" arrived at 12:43 PM; the Worker wrote it at 7:40 AM and this drain only ran hours later).
+ * A `stop:<CODE>` notice announces the resume time of the named stop written with it. By the time the
+ * drain runs, that time may have passed (the task already retried) or the task may be running or
+ * done: either way the words are false, so it is closed without an email. Pure: `detail` is the
+ * task route's answer ({ task, events }); a notice it cannot judge (no detail read) is left to send.
+ */
+export function pauseOver(notice, detail, now = Date.now()) {
+  if (!String(notice?.kind ?? "").startsWith("stop:") || !detail) return null;
+  const status = String(detail.task?.status ?? "");
+  if (!detail.task) return "the task is gone";
+  if (["running", "done", "cancelled", "awaiting_approval"].includes(status)) return `the task is ${status} now`;
+  const at = Number(notice.created_at ?? now);
+  const stops = (detail.events ?? []).filter((e) => e?.event === "named_stop" && Number(e.ts) <= at + 60_000);
+  const announced = stops.length ? stops[stops.length - 1] : null;
+  let resumeAt = null;
+  try { resumeAt = JSON.parse(String(announced?.detail ?? "{}"))?.resume_at ?? null; } catch { resumeAt = null; }
+  if (typeof resumeAt === "number" && resumeAt <= now) return "the pause it announced is over; the task retries by itself";
+  return null;
 }
 
 /** A task Boss OS opened itself to repair something (its input says origin "repair"; a waiting-on check-in is hers). Pure. */
@@ -353,6 +378,12 @@ async function main() {
       if (notice.kind === "stopped" && t.read && !stillStopped(task)) {
         for (const n of [notice, ...also]) await api(`/${n.id}/sent`, { from: `not sent: the task is ${task?.status ?? "gone"} again` });
         say(`not sent "${notice.subject}": the task is ${task?.status ?? "gone"} now — a false alarm`);
+        continue;
+      }
+      const over = pauseOver(notice, t.detail);
+      if (over) {
+        for (const n of [notice, ...also]) await api(`/${n.id}/sent`, { from: `not sent: ${over}` });
+        say(`not sent "${notice.subject}": ${over}`);
         continue;
       }
     }
