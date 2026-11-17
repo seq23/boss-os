@@ -127,6 +127,23 @@ describe("the monthly read", () => {
     const payload = { reads: [{ deliverable: "executive_reports", verdict: "holds", why }, { deliverable: "tool_suggestions", verdict: "slipped", why: "Three of the five tools repeat last month's list and carry no independent evidence." }] };
     expect(qualityReadsFloor(payload, ["executive_reports", "tool_suggestions"])).toMatchObject({ pass: true, measured: { reads: 2, slipped: 1 } });
 
+    // 16 Nov 2026 (tsk_m7bs3zagfkrkr2k0): the seat wrote the reads as a bare array and the repair pass
+    // (or the adapter) wrapped it under a key of its own. The wrapper's name never costs the read; each
+    // entry is still held to every check, and two array keys are ambiguous, read as none.
+    const wrapped = { delivers: [
+      { deliverable: "executive_reports", verdict: "slipped", why: "Five of its eleven sections are empty titles; the filled ones drop the best example's structure." },
+      { deliverable: "sourcing_candidates", verdict: "holds", why: "Each candidate names a thesis and a source as specific as the best example on record." },
+      { deliverable: "tool_suggestions", verdict: "slipped", why: "Three entries repeat the same hedge word for word where the best example gave evidence." },
+      { deliverable: "tool_suggestions", verdict: "holds", why: "A duplicate read for the same deliverable is counted once and never twice." },
+      { deliverable: "not_a_deliverable", verdict: "holds", why: "An unknown deliverable is never filed, whatever its reason says here." },
+    ] };
+    expect(qualityReadsFloor(wrapped, ["executive_reports", "sourcing_candidates", "tool_suggestions"])).toMatchObject({ pass: true, measured: { reads: 3, expected: 3, slipped: 2 } });
+    expect(validReads({ a: wrapped.delivers, b: wrapped.delivers })).toEqual([]);
+    expect(qualityReadsFloor({ delivers: [{ deliverable: "executive_reports", verdict: "fine", why }] }, ["executive_reports"]).pass).toBe(false);
+    await env.DB.prepare(`INSERT INTO tasks (id, lane, title, input, status, created_at) VALUES ('tsk_wrapped', 'ops', 'Monthly quality read', ?, 'running', ?)`).bind(JSON.stringify({ delivers: "quality_reads" }), NOW).run();
+    expect(await deliverQualityReads(env as any, { taskId: "tsk_wrapped", runId: "run_wrapped", payload: wrapped, route: "bk_claude_code", now: NOW - 3600_000 })).toEqual({ inserted: 3 });
+    await env.DB.prepare(`DELETE FROM quality_reads WHERE task_id = 'tsk_wrapped'`).run();
+
     await env.DB.prepare(`INSERT INTO tasks (id, lane, title, input, status, created_at) VALUES ('tsk_read', 'ops', 'Monthly quality read', ?, 'running', ?)`).bind(JSON.stringify({ delivers: "quality_reads" }), NOW).run();
     expect(await deliverQualityReads(env as any, { taskId: "tsk_read", runId: "run_read", payload, route: "bk_claude_code", now: NOW - 3600_000 })).toEqual({ inserted: 2 });
     const r = await driftReport(env, NOW);

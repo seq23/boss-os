@@ -626,10 +626,22 @@ describe("Stage 2 — the Claude Code adapter", () => {
       expect(out.summary).toBe("done");
     });
 
-    it("refuses a JSON array, because a report is an object with named fields", async () => {
-      const out = await runWith(async () => JSON.stringify([1, 2, 3]));
-      expect(out.delivers).toBeNull();
-      expect(out.remaining_risks.join(" ")).toContain("JSON object");
+    it("keeps a bare JSON array under \"delivers\", with a risk line, so the run's work is never thrown away (16 Nov 2026)", async () => {
+      // tsk_m7bs3zagfkrkr2k0: three finished quality reads written as a bare array were discarded here.
+      const reads = [{ deliverable: "executive_reports", verdict: "slipped", why: "Five of eleven sections are empty titles." }];
+      const out = await runWith(async () => JSON.stringify(reads));
+      expect(out.delivers).toEqual({ delivers: reads });
+      expect(out.remaining_risks.join(" ")).toMatch(/bare JSON array/);
+      // Not a lost run: the runner's repair pass is not triggered by it.
+      expect(invalidDelivers(out)).toBeNull();
+    });
+
+    it("still refuses a JSON value that is neither object nor array", async () => {
+      for (const raw of ["42", '"text"', "null"]) {
+        const out = await runWith(async () => raw);
+        expect(out.delivers, raw).toBeNull();
+        expect(out.remaining_risks.join(" "), raw).toContain("JSON object");
+      }
     });
 
     it("refuses a payload past the size cap", async () => {

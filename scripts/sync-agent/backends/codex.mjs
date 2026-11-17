@@ -237,7 +237,13 @@ export async function codexExecutor(
       risks.push(`delivers.json is ${raw.length} bytes, past the 1MB cap; nothing was delivered from it.`);
     } else {
       const obj = JSON.parse(raw);
-      if (typeof obj !== "object" || obj === null || Array.isArray(obj)) {
+      if (Array.isArray(obj)) {
+        // 16 Nov 2026: a monthly quality read wrote its three reads as a bare array and lost all of
+        // them here. A run's finished work is never thrown away over a wrapper: it is kept under
+        // `delivers`, and the kind's own reader still decides whether it counts.
+        delivers = { delivers: obj };
+        risks.push("delivers.json was a bare JSON array, not an object; it was kept under \"delivers\" for the kind's reader to judge.");
+      } else if (typeof obj !== "object" || obj === null) {
         risks.push("delivers.json did not contain a JSON object; nothing was delivered from it.");
       } else {
         delivers = obj;
