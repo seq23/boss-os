@@ -384,7 +384,11 @@ export const CHECKS = {
       if (checked.has(urlKey(served))) continue;
       checked.add(urlKey(served));
       const t = titleOf(p.html);
-      if (t.length < 30 || t.length > 65) bad.push(`${served} title is ${t.length} chars`);
+      // An OWNER-RULED TITLE is one page's title she set word for word (sites.json `owner_titles`;
+      // 13 Nov 2026, approvalprep.com/ at 72 characters). Only that exact text on that path leaves
+      // the length band; it still counts for uniqueness, and any other wording is measured again.
+      const ruled = (ctx.site?.owner_titles ?? []).some((o) => o.path === new URL(served).pathname && o.title === t);
+      if (!ruled && (t.length < 30 || t.length > 65)) bad.push(`${served} title is ${t.length} chars`);
       (seen[t] ??= []).push(served);
     }
     for (const [t, us] of Object.entries(seen)) if (us.length > 1) bad.push(`"${t.slice(0, 50)}" on ${us.length} pages (${us.slice(0, 3).join(", ")})`);
