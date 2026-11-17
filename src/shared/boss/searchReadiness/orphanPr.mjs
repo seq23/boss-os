@@ -107,11 +107,13 @@ const DONE_LANDS = ['already_merged', 'landed'];
  *  - every row in flight and at least one still blocked by an open PR -> SR_BLOCKED_BY_OPEN_PRS;
  *  - every row in flight and every PR merged or landed -> SR_AWAITING_HOST_PUBLISH (the fix is on
  *    main; the live host has not rebuilt);
+ *  - a fixed PR that a named land gate refused (17 Nov 2026, see landGateCause) -> SR_LAND_GATE_UNMET;
  *  - anything else -> { code: '', sentence: '' }, so a genuine stall stays SR_QUEUE_STALLED.
  */
 export function fixedNothingCause(rows) {
   rows = rows.filter(r => r.disposition !== 'none');
   const none = { code: '', sentence: '' };
+  if (rows.some(r => r.disposition === 'fixed_pr')) return landGateCause(rows);
   if (!rows.length || rows.some(r => r.disposition !== 'in_flight' || !PR_URL.test(r.pr_url ?? ''))) return none;
   if (rows.some(r => r.land === 'blocked')) {
     const blockers = blockerLines(rows).join('; ');
@@ -126,4 +128,32 @@ export function fixedNothingCause(rows) {
     };
   }
   return none;
+}
+
+/** The land outcomes that are a named gate refusing a finished fix, never a stall. */
+export const GATE_LANDS = Object.freeze(['land_refused', 'clickthrough_failed', 'held_owner_approval', 'held_client_approval']);
+// eslint-disable-next-line no-control-regex
+const ANSI = /\u001b\[[0-9;]*m/g;
+const gateOf = (r) => {
+  const detail = String(r.land_detail ?? '').replace(ANSI, '');
+  if (r.land === 'land_refused') return /NAMED STOP \[([A-Z0-9_]+)\]/.exec(detail)?.[1] ?? '';
+  return GATE_LANDS.includes(r.land) ? (/NAMED STOP \[([A-Z0-9_]+)\]/.exec(detail)?.[1] ?? r.land) : '';
+};
+
+/**
+ * A ROUND THAT FIXED NOTHING BECAUSE A LAND GATE REFUSED (17 Nov 2026). detoxdenver.org's PR #18 was
+ * fixed, green and refused by ~/bin/land with NAMED STOP [NOT_CLICKED_THROUGH] in all three rounds; the
+ * rows were `fixed_pr` + `land_refused`, which the in_flight-only reading above never classified, so
+ * the run printed "round 3 fixed nothing" / SR_QUEUE_STALLED. Every row a PR (fixed or in flight), at
+ * least one fixed PR refused by a NAMED gate, and every other fixed PR landed or gated -> the gate and
+ * the PR are named. A land_refused with no named stop (a red check, a network blip) is not a gate.
+ */
+function landGateCause(rows) {
+  const none = { code: '', sentence: '' };
+  if (rows.some(r => !['fixed_pr', 'in_flight'].includes(r.disposition) || !PR_URL.test(r.pr_url ?? ''))) return none;
+  const fixed = rows.filter(r => r.disposition === 'fixed_pr');
+  const gated = fixed.filter(r => gateOf(r));
+  if (!gated.length || fixed.some(r => !gateOf(r) && !DONE_LANDS.includes(r.land))) return none;
+  const lines = [...new Set(gated.map(r => `${r.pr_url} refused by ${gateOf(r)}`))];
+  return { code: 'SR_LAND_GATE_UNMET', sentence: lines.join('; ') };
 }

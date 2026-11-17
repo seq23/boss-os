@@ -81,6 +81,7 @@
     "browser:where": "node scripts/ops/browser.mjs where",
     "browser:signin": "node scripts/ops/browser.mjs signin",
     "browser:read": "node scripts/ops/browser.mjs read",
+    "clickthrough": "node scripts/ops/clickthrough.mjs",
     "kdp:browser": "node scripts/ops/kdp-browser.mjs",
     "kdp:signin": "node scripts/ops/kdp-browser.mjs signin",
     "kdp:surface": "bash scripts/ops/kdp-surface.sh",

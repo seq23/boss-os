@@ -274,7 +274,8 @@ main() {
       STALLED=1
       # WHY IT FIXED NOTHING, NAMED (7 Nov 2026): "CODE<TAB>SENTENCE" from fixedNothingCause, empty
       # for a genuine stall. Open PRs still blocking -> SR_BLOCKED_BY_OPEN_PRS; every fix merged but the
-      # live host not yet republished -> SR_AWAITING_HOST_PUBLISH (her Open Loops note, never a repair).
+      # live host not yet republished -> SR_AWAITING_HOST_PUBLISH (her Open Loops note, never a repair);
+      # a fixed PR a named land gate refused -> SR_LAND_GATE_UNMET (17 Nov 2026, NOT_CLICKED_THROUGH).
       CAUSE="$(node --input-type=module -e '
         import {readdirSync,readFileSync} from "node:fs";
         import {fixedNothingCause} from "./src/shared/boss/searchReadiness/orphanPr.mjs";
@@ -285,6 +286,7 @@ main() {
       CAUSE_CODE="$(printf '%s' "$CAUSE" | cut -f1)"; BLOCKERS="$(printf '%s' "$CAUSE" | cut -f2-)"
       if [ "$CAUSE_CODE" = SR_BLOCKED_BY_OPEN_PRS ]; then say "round $ROUND blocked by open PRs: $BLOCKERS";
       elif [ "$CAUSE_CODE" = SR_AWAITING_HOST_PUBLISH ]; then say "round $ROUND: $BLOCKERS";
+      elif [ "$CAUSE_CODE" = SR_LAND_GATE_UNMET ]; then say "round $ROUND: the fixes are made but a land gate refused them: $BLOCKERS";
       else say "round $ROUND fixed nothing; stopping until tomorrow rather than spinning"; fi
       break
     fi

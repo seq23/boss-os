@@ -179,3 +179,65 @@ it('cause 5: a stale grid PR of our lane open >24h is acted on; fresh, foreign a
   expect(none.rearm).toBe(false);
   expect(none.lines).toEqual([expect.stringMatching(/^HANDOFF none:/)]);
 });
+
+/*
+ * 17 NOV 2026: ~/bin/land refused detoxdenver.org's PR #18 (components/ClarityLoader.tsx) with NAMED
+ * STOP [NOT_CLICKED_THROUGH] in all three rounds, and nothing in this lane ever wrote the line. The
+ * real landAll now clicks the PR's preview through (clickthrough.mjs) and lands again; a dirty or
+ * unreadable click-through is clickthrough_failed with why, and is never landed.
+ */
+import { fixedNothingCause as cause } from '../src/shared/boss/searchReadiness/orphanPr.mjs';
+it('a NOT_CLICKED_THROUGH refusal is clicked through and landed; a dirty or unread click-through never lands', () => {
+  const dpr = 'https://github.com/seq23/dianne-place-recovery-services/pull/18';
+  const dsites = [{ repo: 'dianne-place-recovery-services', domain: 'detoxdenver.org' }];
+  const rowsOf = () => [
+    { repo: 'dianne-place-recovery-services', disposition: 'fixed_pr', pr_url: dpr, headline: 'e6: Clarity', because: 'renders the loader into the /contact/ HTML (never on /admin/)' },
+    { repo: 'dianne-place-recovery-services', disposition: 'fixed_pr', pr_url: dpr, headline: 'i8: Clarity', because: '/about/ gets a question H2' },
+  ];
+  const go = (ct: { status: number; out: string } | null) => {
+    let commented = false;
+    const calls: string[] = [];
+    const payload: any = { findings: rowsOf() };
+    landAll(payload, { sites: dsites, parked: () => false, landBin: '/test/land', run: (cmd: string, args: string[]) => {
+      calls.push([cmd, ...args].join(' '));
+      if (args.includes('/test/land')) return commented ? { status: 0, out: 'landed' } : { status: 1, out: '\u001b[31mSTOPPED: NAMED STOP [NOT_CLICKED_THROUGH] PR #18 changes screens people operate (components/ClarityLoader.tsx ) and carries no "Clicked through:" line.\u001b[0m' };
+      if (args.some(a => a.endsWith('clickthrough.mjs'))) { if (ct?.status === 0) commented = true; return ct ?? { status: 0, out: '' }; }
+      if (cmd === 'gh' && args.includes('state')) return { status: 0, out: 'OPEN' };
+      if (cmd === 'gh' && args[0] === 'api') return { status: 0, out: '[]' };
+      return { status: 0, out: '' };
+    } });
+    const ctCalls = calls.filter(c => c.includes('clickthrough.mjs'));
+    return { rows: payload.findings, lands: calls.filter(c => c.includes('/test/land')).length, ctCalls };
+  };
+  const clean = go({ status: 0, out: 'CLICKED_THROUGH ok' });
+  expect(clean.rows.map((r: any) => r.land)).toEqual(['landed', 'landed']);
+  expect(clean.lands).toBe(2);
+  expect(clean.ctCalls).toHaveLength(1);
+  // The paths come from both briefs of the PR; /admin is never opened.
+  expect(clean.ctCalls[0]).toContain(`${dpr} --paths /,/contact/,/about/`);
+  expect(clean.ctCalls[0]).not.toContain('/admin');
+  // NEGATIVE: a dirty console holds the PR with the error on the row; one land, never a second.
+  const dirty = go({ status: 3, out: 'NAMED STOP [CLICKTHROUGH_DIRTY] /contact/: console: clarity is not defined' });
+  expect(dirty.lands).toBe(1);
+  expect(dirty.rows[0]).toMatchObject({ land: 'clickthrough_failed', land_detail: expect.stringContaining('console: clarity is not defined') });
+  // NEGATIVE: no readable preview fails closed, never lands.
+  const unread = go({ status: 2, out: 'NAMED STOP [PREVIEW_URL_UNREAD] no preview of the head' });
+  expect(unread.lands).toBe(1);
+  expect(unread.rows[1]).toMatchObject({ land: 'clickthrough_failed', land_detail: expect.stringContaining('PREVIEW_URL_UNREAD') });
+  // The round that holds it names the gate, never "fixed nothing".
+  expect(cause(unread.rows)).toMatchObject({ code: 'SR_LAND_GATE_UNMET', sentence: `${dpr} refused by PREVIEW_URL_UNREAD` });
+});
+
+it('fixedNothingCause: a named land gate on a fixed PR is SR_LAND_GATE_UNMET; no named gate is still a stall', () => {
+  const pr = 'https://github.com/seq23/approvalprep/pull/9';
+  const f = { repo: 'approvalprep', disposition: 'fixed_pr', pr_url: pr };
+  expect(cause([{ ...f, land: 'land_refused', land_detail: 'STOPPED: NAMED STOP [NOT_CLICKED_THROUGH] PR #9' }])).toEqual({ code: 'SR_LAND_GATE_UNMET', sentence: `${pr} refused by NOT_CLICKED_THROUGH` });
+  expect(cause([{ ...f, land: 'held_owner_approval', land_detail: 'hicks: waits' }]).code).toBe('SR_LAND_GATE_UNMET');
+  expect(cause([{ ...f, land: 'held_owner_approval' }, { ...f, land: 'landed' }]).code).toBe('SR_LAND_GATE_UNMET');
+  // NEGATIVE: no named stop, a red check, a fixed row with no PR, or a mixed surfaced row is a genuine stall.
+  expect(cause([{ ...f, land: 'land_refused', land_detail: 'network error' }]).code).toBe('');
+  expect(cause([{ ...f, land: 'checks_red', land_detail: 'NAMED STOP [X]' }]).code).toBe('');
+  expect(cause([{ ...f, land: 'held_owner_approval' }, { ...f, land: 'checks_red' }]).code).toBe('');
+  expect(cause([{ ...f, pr_url: undefined, land: 'held_owner_approval' }]).code).toBe('');
+  expect(cause([{ ...f, land: 'held_owner_approval' }, { disposition: 'surfaced' }]).code).toBe('');
+});
