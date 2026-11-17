@@ -420,6 +420,22 @@ describe("checks catch what they guard", () => {
     expect(all.sort()).toEqual(["billionairehighperformancecoach.com/download"]);
   });
 
+  it("b1: an owner-ruled title passes the length band only on its path and only word for word (13 Nov 2026)", () => {
+    const s = sites.grid_repos.find((x: any) => x.domain === "approvalprep.com");
+    const ruled = s.owner_titles[0].title;
+    expect(ruled.length).toBeGreaterThan(65);
+    const status = (pages: any[]) => runChecks(checklist, baseCtx({ site: s, host: "approvalprep.com", pages })).find((r: any) => r.id === "b1")?.status;
+    expect(status([page("https://approvalprep.com/", `<title>${ruled}</title><h1>x</h1>`)])).toBe("pass");
+    // Any other wording on the homepage is measured again.
+    expect(status([page("https://approvalprep.com/", `<title>${ruled} Today</title><h1>x</h1>`)])).toBe("fail");
+    // The same title on another path is not ruled, and it is also a duplicate.
+    expect(status([page("https://approvalprep.com/", `<title>${ruled}</title><h1>x</h1>`), page("https://approvalprep.com/about", `<title>${ruled}</title><h1>x</h1>`)])).toBe("fail");
+    // A site without the ruling still fails the same 72-character title.
+    expect(runChecks(checklist, baseCtx({ pages: [page("https://memphisseniorcarehomes.com/", `<title>${ruled}</title><h1>x</h1>`)] })).find((r: any) => r.id === "b1")?.status).toBe("fail");
+    // No other site carries an owner-ruled title.
+    expect(sites.grid_repos.filter((x: any) => x.owner_titles?.length).map((x: any) => x.domain)).toEqual(["approvalprep.com"]);
+  });
+
   it("every applicable automatic item gets a verdict line (nothing silently skipped)", () => {
     const results = runChecks(checklist, baseCtx());
     const want = checklist.items.filter((i: any) => applies(i, site)).map((i: any) => i.id);

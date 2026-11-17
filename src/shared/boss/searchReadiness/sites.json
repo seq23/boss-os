@@ -863,6 +863,14 @@
   {
    "domain": "approvalprep.com",
    "repo": "approvalprep",
+   "owner_titles": [
+    {
+     "path": "/",
+     "title": "Credit Dispute Letters: the DIY Credit Repair Alternative | ApprovalPrep",
+     "decided": "2026-11-13",
+     "why": "Her credit repair wording ruling (spry brain, 13 Nov 2026) sets this homepage title word for word; the repo ships it unfitted (exactTitle in src/pages/index.astro)."
+    }
+   ],
    "category": "side_business",
    "group": "divine_9",
    "business": "ApprovalPrep",
