@@ -198,7 +198,7 @@ function centralHour(now: number): number {
  * and one reminder email per slot for a row that needs her (`overdueRoute`),
  * through the same admission every repair uses. Returns what it did, never silence.
  */
-export async function runOpenLoopsDaily(env: Env, now = Date.now()): Promise<{ ran: boolean; reason?: string; shown?: number; overdue?: number; repairs?: string[]; reminders?: string[] }> {
+export async function runOpenLoopsDaily(env: Env, now = Date.now()): Promise<{ ran: boolean; reason?: string; shown?: number; overdue?: number; repairs?: string[]; not_admitted?: string[]; reminders?: string[] }> {
   if (!MORNING_SECTIONS.includes(SECTION)) return { ran: false, reason: "NAMED STOP [OPEN_LOOPS_SECTION_UNREGISTERED]" };
   const today = dayIdInZone(now);
   if (centralHour(now) < WRITE_FROM_HOUR) return { ran: false, reason: "before 05:00 Central" };
@@ -217,17 +217,32 @@ export async function runOpenLoopsDaily(env: Env, now = Date.now()): Promise<{ r
   ).bind(SECTION, JOB, today, JSON.stringify(obj), now, now).run();
 
   const opened: string[] = [];
+  const skipped: string[] = [];
   for (const l of repairsDue(loops, today)) {
     const who = l.owner === "claude" || l.owner === "codex" ? l.owner : names[l.owner] ?? l.owner;
-    const r = await admitTask(env, {
-      title: `Open loop overdue: ${l.title} [${l.id}]`,
-      lane: "ops",
-      employee_id: "emp_repo",
-      input: {
-        origin: "repair", repair_kind: "open_loop_overdue", loop_id: l.id,
-        prompt: `Open Loops (☰ More → Open Loops in Boss OS): the row "${l.title}" (${l.id}), owned by ${who}, was due ${l.next_date} and is more than three days late. Finish line: ${l.finish_line}. Next step: ${l.next_step ?? "not written"}. Do the next step, or find what stops it and fix that at source. Then update the row through PUT /api/boss/open-loops/${l.id} with a new next step and date, or close it with the real outcome (POST /api/boss/open-loops/${l.id}/close). Never close it on "PR merged".`,
-      },
-    } as any);
+    /*
+     * ONE ROW THAT CANNOT BE ADMITTED NEVER LOSES THE REST OF THE PASS (17 Nov 2026). A row naming a
+     * repository the grid excludes ("Unsaved edits in ~/GitHub/founder-dilution-dashboard") makes
+     * admission refuse with the grid's reason; before, that throw escaped this loop and every
+     * remaining repair and every reminder of the run was lost. The reason is recorded and the pass
+     * carries on; `repair_for` is not set, so the row stays visible in the morning section.
+     */
+    let r: Awaited<ReturnType<typeof admitTask>>;
+    try {
+      r = await admitTask(env, {
+        title: `Open loop overdue: ${l.title} [${l.id}]`,
+        lane: "ops",
+        employee_id: "emp_repo",
+        input: {
+          origin: "repair", repair_kind: "open_loop_overdue", loop_id: l.id,
+          prompt: `Open Loops (☰ More → Open Loops in Boss OS): the row "${l.title}" (${l.id}), owned by ${who}, was due ${l.next_date} and is more than three days late. Finish line: ${l.finish_line}. Next step: ${l.next_step ?? "not written"}. Do the next step, or find what stops it and fix that at source. Then update the row through PUT /api/boss/open-loops/${l.id} with a new next step and date, or close it with the real outcome (POST /api/boss/open-loops/${l.id}/close). Never close it on "PR merged".`,
+        },
+      } as any);
+    } catch (e) {
+      console.error(`open loops: the repair for ${l.id} was not admitted (${e instanceof Error ? e.message : String(e)})`);
+      skipped.push(l.id);
+      continue;
+    }
     if (!r.created) { console.error(`open loops: the repair for ${l.id} was not admitted (${r.reason ?? "no reason"})`); continue; }
     await env.DB.prepare(`UPDATE owner_open_loops SET repair_for = ? WHERE id = ?`).bind(l.next_date, l.id).run();
     opened.push(l.id);
@@ -252,5 +267,5 @@ export async function runOpenLoopsDaily(env: Env, now = Date.now()): Promise<{ r
     ).bind(newId("tnt"), l.id, "ops", "Simone", "open_loop_reminder", mail.subject, mail.body, now, slot, needsHer({ kind: "open_loop_reminder" }) ? 1 : 0).run();
     reminded.push(l.id);
   }
-  return { ran: true, shown: visibleLoops(loops).shown.length, overdue: sec.lines.length, repairs: opened, reminders: reminded };
+  return { ran: true, shown: visibleLoops(loops).shown.length, overdue: sec.lines.length, repairs: opened, ...(skipped.length ? { not_admitted: skipped } : {}), reminders: reminded };
 }

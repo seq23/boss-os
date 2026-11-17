@@ -156,4 +156,21 @@ describe("Open Loops", () => {
     expect((await runOpenLoopsDaily(env as any, NOW + 3 * 86_400_000)).reminders).toHaveLength(3);
     expect((await env.DB.prepare(`SELECT COUNT(*) AS n FROM tasks WHERE title LIKE 'Open loop overdue:%'`).first<{ n: number }>())!.n).toBe(1);
   });
+  /*
+   * 17 Nov 2026: the real row ("Unsaved edits in ~/GitHub/boss-os") failed at the cloud router on every
+   * model; and a row naming an excluded repo threw out of the pass, losing every later repair and reminder.
+   */
+  it("the unsaved-edits repair is parked for her Mac as a boss-os repo change; an excluded repo never loses the rest of the pass (17 Nov 2026)", async () => {
+    const step = (dir: string) => `1 changed file in ${dir}, the oldest from 2026-11-01. Look at them, then save them to GitHub in a pull request or discard them on purpose. The nightly check never touches them itself.`;
+    const excluded = await create({ title: "Unsaved edits in ~/GitHub/founder-dilution-dashboard (1 file, oldest 2026-11-01)", next_step: step("~/GitHub/founder-dilution-dashboard"), finish_line: "saved to GitHub or discarded on purpose", owner: "claude", next_date: "2026-11-05" });
+    const boss = await create({ title: "Unsaved edits in ~/GitHub/boss-os (1 file, oldest 2026-11-01)", next_step: step("~/GitHub/boss-os"), finish_line: "saved to GitHub or discarded on purpose", owner: "claude", next_date: "2026-11-06" });
+    const mine = await create({ title: "Pay for the accounts", owner: "sequoia", next_date: "2026-11-09" });
+    await env.DB.prepare(`DELETE FROM boss_task_notices WHERE kind = 'open_loop_reminder'`).run();
+
+    const res = await runOpenLoopsDaily(env as any, NOW);
+    expect(res).toMatchObject({ ran: true, repairs: [boss.id], not_admitted: [excluded.id], reminders: [mine.id] });
+    const t = await env.DB.prepare(`SELECT id FROM tasks WHERE title = ?`).bind(`Open loop overdue: ${boss.title} [${boss.id}]`).first<{ id: string }>();
+    const rc = await env.DB.prepare(`SELECT repo, github_repo, origin, repair_kind FROM repo_changes WHERE task_id = ?`).bind(t!.id).first<any>();
+    expect(rc).toMatchObject({ repo: "boss-os", github_repo: "seq23/boss-os", origin: "repair", repair_kind: "open_loop_overdue" });
+  });
 });

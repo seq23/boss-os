@@ -13,7 +13,8 @@ import { beforeEach, describe, expect, it } from "vitest";
 import { apiJson, row } from "./helpers";
 import { handleBossInboundMail } from "../../src/worker/boss/intake/inboundMail";
 import { handleTask } from "../../src/worker/boss/queue/consumer";
-import { repoNamedIn, canEnterBuild, canLand, claimablePhase, parseRepoChange, tokenIn, changeToken, readReply, needsPreview, isForced, APPROVED_DEFAULTS_TEXT } from "../../src/shared/boss/repoChange/lane.mjs";
+import { admitTask } from "../../src/worker/boss/tasks/admit";
+import { repoNamedIn, canEnterBuild, canLand, claimablePhase, parseRepoChange, tokenIn, changeToken, readReply, needsPreview, isForced, APPROVED_DEFAULTS_TEXT, systemRepoChange } from "../../src/shared/boss/repoChange/lane.mjs";
 
 const FOLDER = "https://drive.google.com/drive/folders/1AbCdEfGhIjKlMnOpQrStUv";
 
@@ -880,5 +881,48 @@ describe("a repo she names in words registers as a step of the job (22 Oct 2026)
     expect(r).toMatchObject({ repo: "studio-site", github_repo: "seq23/studio-site", registered: true });
     expect(parseRepoChange("build a landing page")).toBeNull();
     expect(parseRepoChange("build a landing page", { buildAsk: true })).toMatchObject({ repo: null, drive_folder: null });
+  });
+});
+
+/*
+ * 17 Nov 2026, tsk_m7mjnn5amvqt1bzj: an overdue open loop's repair on Danielle's seat was classified
+ * repository/high but named no repository, so it fell to the cloud router, where every model is
+ * cleared to low risk ("8 of 21 refused at capability"). A high-risk repair Boss OS opened itself on
+ * this seat is a change to a repository; her own words and low-risk repairs keep their old path.
+ */
+describe("a high-risk system repair that names no repository is Boss OS's own repo change", () => {
+  const STEP = "1 changed file in ~/GitHub/boss-os, the oldest from 2026-11-14. Look at them, then save them to GitHub in a pull request or discard them on purpose. The nightly check never touches them itself.";
+  const admit = (prompt: string, input: Record<string, unknown> = {}) => admitTask(env as any, {
+    title: "Open loop overdue: Unsaved edits in ~/GitHub/boss-os (1 file, oldest 2026-11-14) [olp_test]",
+    lane: "ops", employee_id: "emp_repo",
+    input: { origin: "repair", repair_kind: "open_loop_overdue", loop_id: "olp_test", prompt, ...input },
+  });
+
+  it("systemRepoChange: a checkout path names its repo, an excluded one is refused, nothing named is boss-os", () => {
+    expect(systemRepoChange(STEP)).toMatchObject({ repo: "boss-os", github_repo: "seq23/boss-os", registered: false });
+    expect(systemRepoChange("Unsaved edits in ~/GitHub/founder-dilution-dashboard (1 file)")).toHaveProperty("excluded");
+    expect(systemRepoChange("Unsaved edits in ~/GitHub/p-n-p (2 files)")).toMatchObject({ repo: "p-n-p" });
+    expect(systemRepoChange("Fix the failing duty and open a pull request")).toMatchObject({ repo: "boss-os" });
+  });
+
+  it("the real failing repair becomes a repo change, parked for her Mac, never sent to the cloud router", async () => {
+    const r = await admit(`Next step: ${STEP}`);
+    expect(r.classification.risk).toBe("high");
+    const rc = await row<any>(`SELECT repo, github_repo, origin, repair_kind FROM repo_changes WHERE task_id = ?`, r.task_id);
+    expect(rc).toMatchObject({ repo: "boss-os", github_repo: "seq23/boss-os", origin: "repair", repair_kind: "open_loop_overdue" });
+    await handleTask(env as never, { taskId: r.task_id!, lane: "ops" } as never);
+    expect((await row<any>(`SELECT status FROM tasks WHERE id = ?`, r.task_id)).status).toBe("queued");
+    expect(await row<any>(`SELECT id FROM task_events WHERE task_id = ? AND event = 'parked_for_mac'`, r.task_id)).toBeTruthy();
+  });
+
+  it("not her request, and not a low-risk repair: those keep today's path", async () => {
+    const hers = await admit(`Next step: ${STEP}`, { origin: undefined, repair_kind: undefined });
+    expect(await row<any>(`SELECT id FROM repo_changes WHERE task_id = ?`, hers.task_id)).toBeFalsy();
+    const low = await admitTask(env as any, {
+      title: "Open loop overdue: Refresh the reading list [olp_low]", lane: "ops", employee_id: "emp_repo", risk: "low",
+      input: { origin: "repair", repair_kind: "open_loop_overdue", prompt: "Refresh the reading list and update the row." },
+    });
+    expect(low.classification.risk).toBe("low");
+    expect(await row<any>(`SELECT id FROM repo_changes WHERE task_id = ?`, low.task_id)).toBeFalsy();
   });
 });

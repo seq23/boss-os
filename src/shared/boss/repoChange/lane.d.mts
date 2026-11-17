@@ -67,6 +67,9 @@ export const REGISTERED_REPOS: readonly { readonly name: string; readonly github
 export function registeredByNameIn(text: string | null | undefined): { repo: string; github_repo: string } | null;
 export function repoNamedIn(text: string | null | undefined): { repo: string; github_repo: string } | null;
 export function parseRepoChange(text: string | null | undefined, opts?: { buildAsk?: boolean }): RepoChangeParse | RepoChangeExcluded | null;
+export const SYSTEM_REPO: Readonly<{ name: string; github_repo: string }>;
+/** A high-risk system repair read as a repo change: a `~/GitHub/<name>` checkout, else Boss OS's own. */
+export function systemRepoChange(text: string | null | undefined): RepoChangeParse | RepoChangeExcluded | null;
 export const APPROVAL_WORDS: readonly string[];
 export const HOLD_PREFIXES: readonly string[];
 export const APPROVED_DEFAULTS_TEXT: string;

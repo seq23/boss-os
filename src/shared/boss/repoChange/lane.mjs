@@ -343,6 +343,38 @@ export function parseRepoChange(text, opts = {}) {
 }
 
 /**
+ * ─── A HIGH-RISK REPAIR THAT NAMES NO REPOSITORY IS BOSS OS'S OWN (17 Nov 2026) ─────────────
+ *
+ * tsk_m7mjnn5amvqt1bzj, "Open loop overdue: Unsaved edits in ~/GitHub/boss-os (1 file)": the repair
+ * was opened on Danielle's seat, its words ("save them to GitHub in a pull request") classified as
+ * repository work, risk high, but `parseRepoChange` found no repository (boss-os is not a grid site
+ * and the prompt said `~/GitHub/boss-os`, never `seq23/boss-os`). No repo change, so it fell to the
+ * cloud router, where every model is cleared to low risk: "8 of 21 refused at capability". It could
+ * never have run. The one desk that does high-risk repository work is this lane.
+ *
+ * Read as a change: a checkout path `~/GitHub/<name>` names that repository (the named exclusions
+ * still win, as `{ excluded }`); anything else is Boss OS's own repository. Pure. The caller
+ * (tasks/admit.ts) decides WHEN — a repair Boss OS opened itself, on this seat, classified high.
+ */
+export const SYSTEM_REPO = Object.freeze({ name: "boss-os", github_repo: `${GRID_OWNER}/boss-os` });
+export function systemRepoChange(text) {
+  const t = String(text ?? "").trim();
+  if (!t) return null;
+  const parsed = parseRepoChange(t);
+  if (parsed) return parsed;
+  const path = /(?:~|\/Users\/[^/\s]+)\/GitHub\/([A-Za-z0-9][A-Za-z0-9._-]{1,99})/.exec(t);
+  const named = path ? path[1].replace(/[.]+$/, "") : null;
+  if (named && !named.startsWith(".wt-") && isExcluded(named)) return { excluded: { repo: named, why: whyExcluded(named) ?? "out of scope by the grid" } };
+  const repo = named && !named.startsWith(".wt-") ? named : SYSTEM_REPO.name;
+  const github_repo = repo === SYSTEM_REPO.name ? SYSTEM_REPO.github_repo : `${GRID_OWNER}/${repo}`;
+  return {
+    // A checkout named by path that is not Boss OS is registered beside the grid, like any repo named in words (R24).
+    repo, github_repo, registered: repo !== SYSTEM_REPO.name, property: null, drive_folder: null, drive_url: null,
+    instruction: `${github_repo} — ${t}`.slice(0, 20_000), pre_approved_phrase: null, force_phrase: null,
+  };
+}
+
+/**
  * ─── REPAIRS NEVER WAIT ON THE OWNER (owner, 25 Oct 2026) ──────────────────
  *
  * When Boss OS itself opens a repo change to repair something broken — an email the plain check
