@@ -285,6 +285,34 @@ describe("search-readiness-fix.sh waits out the network and resumes by itself", 
     expect(r.out).toContain("pull/15: another_lane");
   }, 60000);
 
+  /*
+   * 17 NOV 2026: detoxdenver.org's PR #18 was fixed and green, and ~/bin/land refused it in every round
+   * (NAMED STOP [NOT_CLICKED_THROUGH]). The rows were fixed_pr + land_refused, and the run said
+   * "round 3 fixed nothing" / SR_QUEUE_STALLED. The real runner now names the gate and the PR.
+   */
+  const DETOX = "QUEUE total=2 workable=2 protected=0 no_repo=0\nCHUNK dianne-place-recovery-services 2 sr-detoxdenver.org-e6,sr-detoxdenver.org-i8";
+  const refused = (h: string) => ({ repo: "dianne-place-recovery-services", disposition: "fixed_pr", headline: h, pr_url: "https://github.com/seq23/dianne-place-recovery-services/pull/18", land: "land_refused", land_detail: "\u001b[31mSTOPPED: NAMED STOP [NOT_CLICKED_THROUGH] PR #18 changes screens people operate (components/ClarityLoader.tsx ) and carries no \"Clicked through:\" line." });
+
+  it("17 Nov run reproduced (a fixed PR refused by land's click-through gate): SR_LAND_GATE_UNMET names the gate and the PR, never \"fixed nothing\"", () => {
+    const t = runnerTree({ plans: [DETOX], findings: [refused("e6: Clarity"), refused("i8: Clarity")] });
+    const r = t.run();
+    expect(r.rc, r.out).toBe(0);
+    expect(r.out).toContain("NAMED STOP [SR_LAND_GATE_UNMET] 2 workable briefs left (https://github.com/seq23/dianne-place-recovery-services/pull/18 refused by NOT_CLICKED_THROUGH;");
+    expect(r.out).not.toContain("fixed nothing");
+    expect(r.out).not.toContain("SR_QUEUE_STALLED");
+    expect(r.out).not.toContain("\u001b[");
+    expect(t.read("reported").trim()).toBe("SR_LAND_GATE_UNMET");
+    expect(existsSync(t.mark)).toBe(false);
+  }, 60000);
+
+  it("NEGATIVE: a fixed PR refused with no named gate (a red check) is still a genuine stall, SR_QUEUE_STALLED", () => {
+    const t = runnerTree({ plans: [DETOX], findings: [{ ...refused("e6"), land: "checks_red", land_detail: "validate failed" }] });
+    const r = t.run();
+    expect(r.rc, r.out).toBe(0);
+    expect(r.out).toContain("NAMED STOP [SR_QUEUE_STALLED]");
+    expect(r.out).not.toContain("SR_LAND_GATE_UNMET");
+  }, 60000);
+
   it("every fix merged but the host not republished: SR_AWAITING_HOST_PUBLISH, PRs named, exit 0, mark cleared, reported as that code", () => {
     const t = runnerTree({ plans: [HGOML], findings: [merged(15), merged(17)] });
     const r = t.run();

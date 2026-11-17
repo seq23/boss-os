@@ -31,13 +31,15 @@
 import { readFileSync, writeFileSync, existsSync, readdirSync } from "node:fs";
 import { execFileSync, spawnSync } from "node:child_process";
 import { homedir } from "node:os";
-import { join } from "node:path";
+import { dirname, join } from "node:path";
+import { fileURLToPath } from "node:url";
 import { mayAutoFix } from "../../src/shared/boss/siteAudit/repoPolicy.mjs";
 import { scopeSnapshot } from "../../src/shared/boss/siteAudit/evidence.mjs";
 import { repoForDomain } from "../../src/shared/boss/siteAudit/domainRepos.mjs";
 import { heldForOwner } from "../../src/shared/boss/searchReadiness/ownerApproval.mjs";
 
 import { orphanVerdict, mergedOnMain, NEEDS_WORKER, clientApprovalHold } from "../../src/shared/boss/searchReadiness/orphanPr.mjs";
+import { pathsFrom } from "./clickthrough.mjs";
 import { envForRepoRun } from "../lib/vault-env.mjs";
 import { isParked } from "./lib/repo-categories.mjs";
 
@@ -203,7 +205,8 @@ export const prRepoOf = (url) => /github\.com\/[^/]+\/([^/]+)\/pull\/\d+/.exec(S
  */
 const REASON_LINE = /✘ \[ERROR\]|NAMED STOP|STOPPED|refus|not green|failed|error/i;
 export function landReason(out) {
-  const lines = String(out ?? "").split("\n").map((l) => l.trim()).filter(Boolean);
+  // eslint-disable-next-line no-control-regex
+  const lines = String(out ?? "").replace(/\u001b\[[0-9;]*m/g, "").split("\n").map((l) => l.trim()).filter(Boolean);
   const hit = [...lines].reverse().find((l) => REASON_LINE.test(l) && !/^🪵|Logs were written/.test(l));
   return (hit ?? lines.pop() ?? "").replace(/^✘ \[ERROR\]\s*/, "").slice(0, 300);
 }
@@ -214,6 +217,7 @@ export function landReason(out) {
  * launchd has no login and refused ("In a non-interactive environment, it's necessary to set a
  * CLOUDFLARE_API_TOKEN"). `envForRepoRun` strips every other vault name.
  */
+const CLICKTHROUGH = join(dirname(fileURLToPath(import.meta.url)), "clickthrough.mjs");
 export const LAND_VAULT_NAMES = Object.freeze(["CLOUDFLARE_API_TOKEN", "CLOUDFLARE_ACCOUNT_ID"]);
 
 export function landAll(payload, { run = defaultRun, landBin = process.env.AUDIT_LAND_BIN ?? join(homedir(), "bin/land"), sites = SITES, approvedSites = approvedSitesFromQueue(), parked = isParked, env = envForRepoRun(process.env, LAND_VAULT_NAMES) } = {}) {
@@ -293,8 +297,22 @@ export function landAll(payload, { run = defaultRun, landBin = process.env.AUDIT
       f.land = "checks_red";
       f.land_detail = lastLine(checks.out);
     } else {
-      const landed = run("timeout", ["3600", landBin, num], cwd, env);
-      f.land = landed.status === 0 ? "landed" : "land_refused";
+      let landed = run("timeout", ["3600", landBin, num], cwd, env);
+      /*
+       * LAND'S CLICK-THROUGH GATE IS MET BY THIS LANE, NOT LEFT UNREACHABLE (17 Nov 2026). ~/bin/land
+       * refuses a PR that changes an operated screen (detoxdenver.org #18, components/ClarityLoader.tsx)
+       * without a "Clicked through:" line, and nothing here ever wrote one: three rounds redid the same
+       * fix and the run stopped SR_QUEUE_STALLED. The refusal is land's own file test, so this reads it
+       * rather than copying it: the PR's preview is clicked at 390 px (clickthrough.mjs), a clean run
+       * posts the line and lands again; a dirty or unreadable one is `clickthrough_failed` with why.
+       */
+      if (landed.status !== 0 && /NOT_CLICKED_THROUGH/.test(String(landed.out))) {
+        const paths = pathsFrom(payload.findings.filter((x) => x.pr_url === f.pr_url));
+        const ct = run("timeout", ["900", process.execPath, CLICKTHROUGH, f.pr_url, "--paths", paths.join(",")], cwd, env);
+        if (ct.status === 0) landed = run("timeout", ["3600", landBin, num], cwd, env);
+        else landed = { status: ct.status || 1, out: ct.out, clickthrough: true };
+      }
+      f.land = landed.status === 0 ? "landed" : landed.clickthrough ? "clickthrough_failed" : "land_refused";
       f.land_detail = landReason(landed.out);
       /*
        * A MERGED PR IS NEVER "NOT LANDED" (7 Nov 2026: p-n-p #201/#202 and boss-os #318 were merged,
