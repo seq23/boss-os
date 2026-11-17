@@ -211,10 +211,23 @@ export async function composeQualityRead(env: DB): Promise<QualityReadAsk | null
 export const READS_SHAPE = '{ "reads": [ { "deliverable": "executive_reports", "verdict": "slipped", "why": "Five of its eleven sections show a title with nothing under it, where the best example filled every one." } ] }';
 
 const VERDICTS = ["holds", "slipped"];
+/**
+ * Where the reads sit in the payload: under `reads`, or, when that is absent, under the payload's ONE
+ * array-valued key. 16 Nov 2026 (tsk_m7bs3zagfkrkr2k0): the seat wrote three full reads as a bare
+ * array, the repair pass wrapped it as `{ "delivers": [ … ] }`, this reader looked only at `reads`,
+ * and the month's read was lost as FLOOR_MISSED. The wrapper's name never decides; each entry still
+ * has to pass every check below. Two or more array keys are ambiguous and read as none.
+ */
+function readsList(payload: Record<string, unknown> | null): unknown[] {
+  if (!payload) return [];
+  if (Array.isArray(payload.reads)) return payload.reads as unknown[];
+  const arrays = Object.values(payload).filter(Array.isArray) as unknown[][];
+  return arrays.length === 1 ? arrays[0]! : [];
+}
 /** The reads worth keeping: a known deliverable, a verdict, and a reason long enough to check. One per deliverable. */
 export function validReads(payload: Record<string, unknown> | null): { deliverable: string; verdict: string; why: string }[] {
   const out: { deliverable: string; verdict: string; why: string }[] = [];
-  for (const r of Array.isArray(payload?.reads) ? (payload!.reads as unknown[]) : []) {
+  for (const r of readsList(payload)) {
     const x = r && typeof r === "object" ? (r as Record<string, unknown>) : {};
     const deliverable = cut(x.deliverable, 60), verdict = cut(x.verdict, 20).toLowerCase(), why = cut(x.why, 600);
     if (DELIVERABLES.some((d) => d.key === deliverable) && VERDICTS.includes(verdict) && why.length >= 40 && !out.some((o) => o.deliverable === deliverable)) out.push({ deliverable, verdict, why });

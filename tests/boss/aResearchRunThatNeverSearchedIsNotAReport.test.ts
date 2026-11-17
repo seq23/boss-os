@@ -112,6 +112,16 @@ describe("the Codex adapter on a research run", () => {
     expect(out.error).toBeNull();
   });
 
+  it("a bare JSON array is kept under \"delivers\" with a risk line, never thrown away (16 Nov 2026)", async () => {
+    const list = [{ name: "Example Tool" }];
+    const out = await run(FIXTURE, { delivers: list });
+    expect(out.delivers).toEqual({ delivers: list });
+    expect(out.remaining_risks.join(" ")).toMatch(/bare JSON array/);
+    const scalar = await run(FIXTURE, { delivers: 42 });
+    expect(scalar.delivers).toBeNull();
+    expect(scalar.remaining_risks.join(" ")).toContain("did not contain a JSON object");
+  });
+
   it("a run that wrote a report WITHOUT searching has the report set aside and fails with a sentence", async () => {
     const out = await run(withoutSearches);
     expect(out.search_refused).toBe(true);
