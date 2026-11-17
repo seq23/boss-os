@@ -179,7 +179,7 @@ export async function admitTask(env: Env, b: AdmitInput): Promise<AdmitResult> {
    *
    * Every door passes through here — mail, Team → New task, the API — so the shape is one shape.
    */
-  const { parseRepoChange, REPO_CHANGE_SEAT } = await import("../../../shared/boss/repoChange/lane.mjs");
+  const { parseRepoChange, systemRepoChange, repairOriginOf, REPO_CHANGE_SEAT } = await import("../../../shared/boss/repoChange/lane.mjs");
   const repoChange = employeeHint === REPO_CHANGE_SEAT && !(input.repo_change && typeof input.repo_change === "object")
     ? parseRepoChange([b.title, input.body as string | undefined, input.prompt as string | undefined].filter(Boolean).join("\n"), { buildAsk: input.build_ask === true })
     : null;
@@ -189,15 +189,20 @@ export async function admitTask(env: Env, b: AdmitInput): Promise<AdmitResult> {
       "Name a repository from the grid, any other repository by its GitHub address (github.com/owner/name), or a Drive folder for one of them.",
     );
   }
-  const change = repoChange && !("excluded" in repoChange) ? repoChange : null;
-  const changeId = change ? newId("rc") : null;
-  if (change && changeId) {
+  let change = repoChange && !("excluded" in repoChange) ? repoChange : null;
+  let changeId: string | null = null;
+  const attachChange = (c: NonNullable<typeof change>): string => {
+    const cid = newId("rc");
     (input as Record<string, unknown>).repo_change = {
-      change_id: changeId, repo: change.repo, property: change.property, github_repo: change.github_repo,
-      drive_folder: change.drive_folder, drive_url: change.drive_url,
-      ...(change.pre_approved_phrase ? { pre_approved_phrase: change.pre_approved_phrase } : {}),
-      ...(change.force_phrase ? { force_phrase: change.force_phrase } : {}),
+      change_id: cid, repo: c.repo, property: c.property, github_repo: c.github_repo,
+      drive_folder: c.drive_folder, drive_url: c.drive_url,
+      ...(c.pre_approved_phrase ? { pre_approved_phrase: c.pre_approved_phrase } : {}),
+      ...(c.force_phrase ? { force_phrase: c.force_phrase } : {}),
     };
+    return cid;
+  };
+  if (change) {
+    changeId = attachChange(change);
     if (!intakeKind) intakeKind = "repository";
   }
 
@@ -208,6 +213,33 @@ export async function admitTask(env: Env, b: AdmitInput): Promise<AdmitResult> {
     // Mail-born work carries who wrote it, so her own errand (classify's one outbound carve-out) is known.
     sender: input.source === "boss_inbound_mail" ? String(input.from ?? "") : null,
   });
+
+  /*
+   * ─── A HIGH-RISK REPAIR ON DANIELLE'S SEAT THAT NAMES NO REPOSITORY IS A REPO CHANGE (17 Nov 2026) ─
+   *
+   * tsk_m7mjnn5amvqt1bzj: an overdue open loop ("Unsaved edits in ~/GitHub/boss-os") opened on this
+   * seat, classified repository/high, named no repository the parse reads, so it became an ordinary
+   * queued task and the cloud router refused it on every model (all are cleared to low risk). Only
+   * this lane does high-risk repository work. Narrow on purpose: a repair Boss OS opened itself
+   * (`repairOriginOf`), never her mail, and only at risk high — low and medium repairs keep the path
+   * that already runs them. `systemRepoChange` reads a `~/GitHub/<name>` checkout as that repo and
+   * anything else as Boss OS's own; a named exclusion is refused with the grid's reason, as above.
+   */
+  if (!change && repoChange === null && employeeHint === REPO_CHANGE_SEAT && classification.risk === "high" &&
+      typeof input.mail_id !== "string" && !(input.repo_change && typeof input.repo_change === "object") &&
+      repairOriginOf(input).origin === "repair") {
+    const sys = systemRepoChange([b.title, input.body as string | undefined, input.prompt as string | undefined].filter(Boolean).join("\n"));
+    if (sys && "excluded" in sys) {
+      throw badRequest(
+        `${sys.excluded.repo} is out of scope for Danielle: ${sys.excluded.why}`,
+        "A repair names a repository from the grid, or Boss OS's own.",
+      );
+    }
+    if (sys) {
+      change = sys;
+      changeId = attachChange(sys);
+    }
+  }
 
   /*
    * ─── "FIND FIRMS THAT DID X AND DRAFT THE ASK" IS ONE SHAPE OF WORK, ON EVERY DOOR ─────────
@@ -408,7 +440,6 @@ export async function admitTask(env: Env, b: AdmitInput): Promise<AdmitResult> {
      * so `pre_approved_by` is the verified sender and never a later correspondent. The finding
      * names the phrase, so "why did this build without asking me" has a one-line answer.
      */
-    const { repairOriginOf } = await import("../../../shared/boss/repoChange/lane.mjs");
     const repair = typeof input.mail_id === "string" ? { origin: "owner", repair_kind: null } : repairOriginOf(input);
     const preBy = change.pre_approved_phrase ? (typeof input.from === "string" ? input.from : "console") : null;
     await env.DB
