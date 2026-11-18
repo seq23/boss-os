@@ -178,7 +178,7 @@ describe("return-on-effort ledger", () => {
       // property can never appear in — or vanish from — her returns ledger without someone saying so.
       "citation_velocity", "guides_generator", "porch_party", "approvalprep", "wedding", "hpc",
       "saas_apps", "youtube", "authority_network", "horse_legal", "hicks_consulting", "detox_denver",
-      "cynthia_brown_dds", "virtual_agency", "keepmyproof", "whisper_almanac",
+      "cynthia_brown_dds", "virtual_agency", "keepmyproof", "peace_be_still", "whisper_almanac",
     ]);
     expect(body.data.ordering_note).toContain("Nothing here ranks them");
   });

@@ -690,6 +690,22 @@
       "expires": "2027-12-05"
     },
     {
+      "domain": "peacebestillapp.com",
+      "business": "spry",
+      "repo": "peace-be-still",
+      "registrar": "Cloudflare",
+      "dns": "main",
+      "mail": "none",
+      "mail_words": "No mail.",
+      "site": "peacebestillapp",
+      "tier": "keep",
+      "tier_why": "Serves Peace Be Still, the Spry Labs faith + mindset app.",
+      "note": "Bought 18 Nov 2026 by her for the Peace Be Still app; a coming-soon page with a waitlist until the app launches.",
+      "expires": "2027-11-18",
+      "auto_renew": true,
+      "renew_read": "18 Nov 2026, whois"
+    },
+    {
       "domain": "phoenixaccidentguid.com",
       "business": "spry",
       "repo": "outside",

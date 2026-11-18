@@ -1,7 +1,7 @@
 {
  "_why": "THE GRID REPOS: every site the Search Readiness checklist is enforced on, with its category, kind and coverage. Owner, 25 Oct 2026: the side businesses on her Side Business Review page, plus Porch & Party, Virtual Agency OS, the Spry HPC sites and the two client sites (horselegalguide.com, hicksconsulting.org), all on the full auto-fix lane. Never anything West Peek, never Shirley Brown's senior housing work. tests/searchReadiness.test.ts fails if a site has no coverage entry. entity_parent (31 Oct 2026, authority audit): spry-labs = a side business whose entity points parentOrganization at Spry Labs (https://billionairehighperformancecoach.com/spry-labs#organization), directly or through a grid parent such as The Industry Guides; client = a friend's business, never the Spry Labs parent; own = her own business outside Spry Labs (Porch & Party, Virtual Agency OS) or a side business whose parent claim the owner has withdrawn (the three authority-network publications, 11 Oct 2026; entity_parent_why says so on the row), never the Spry Labs parent. ymyl: true marks a medical, legal or financial site whose pages need a named reviewer (k5). entity_file names the entity file when it is not called entity.json. search_loop (1 Nov 2026, owner: the search growth loop on every selling site): the site runs the shared seq23/search-loop engine and every growth-loop item (f2, f7-f12, applies_to flag:search_loop) is enforced on it; wave is the rollout order she approved (1 Industry Guides, ApprovalPrep, Dream Wedding, the Spry HPC sites; 2 Time-2-Read and heygetonmylevel; 3 Porch & Party and the client sites). Where a site shows is decided by its repo's category in the personal brain's \"Repo categories\" (1 Nov 2026): her own sites in the standings and her email; Friends & clients in a separate \"Friends' sites\" section, in her email only when one needs her (siteSection).",
  "_groups": {
-  "_why": "WHAT SEARCH READINESS COVERS (owner, 7 Nov 2026, personal brain Settled decisions 'Names and groups'): friends' sites + all of the Divine 9 + the support systems (owner, 10 Nov 2026: Porch & Party is a friends & clients site and there is no selling group). Every grid row names its `group` and its `business`; reports name the business first, so an Industry Guides vertical (dentistryguides.com) is never shown as a business of its own. Support systems (the authority backlink network) serve her businesses and stay audited; they are not Spry Labs businesses (owner, 10 Nov 2026), so the libraries are own_business. Time-2-Read is one ed-tech business with two apps, time-2-read.com and heygetonmylevel.com (owner, 10 Nov 2026). `sunsetting` on a row: audited and reported, its briefs never worked. Pinned by tests/searchReadinessGroups.test.ts. THE GRID (owner, 10 Nov 2026) is every grid_repos row plus every gap that names a `repo` and a `handle` (a channel with no website); src/shared/boss/grid.mjs derives from this file and scripts/validate/the-grid-is-one-list.mjs holds it.",
+  "_why": "WHAT SEARCH READINESS COVERS (owner, 7 Nov 2026, personal brain Settled decisions 'Names and groups'): friends' sites + all of the Divine 10 (the Divine 9 plus Peace Be Still, owner 18 Nov 2026; the group key stays divine_9) + the support systems (owner, 10 Nov 2026: Porch & Party is a friends & clients site and there is no selling group). Every grid row names its `group` and its `business`; reports name the business first, so an Industry Guides vertical (dentistryguides.com) is never shown as a business of its own. Support systems (the authority backlink network) serve her businesses and stay audited; they are not Spry Labs businesses (owner, 10 Nov 2026), so the libraries are own_business. Time-2-Read is one ed-tech business with two apps, time-2-read.com and heygetonmylevel.com (owner, 10 Nov 2026). `sunsetting` on a row: audited and reported, its briefs never worked. Pinned by tests/searchReadinessGroups.test.ts. THE GRID (owner, 10 Nov 2026) is every grid_repos row plus every gap that names a `repo` and a `handle` (a channel with no website); src/shared/boss/grid.mjs derives from this file and scripts/validate/the-grid-is-one-list.mjs holds it.",
   "divine_9": [
    "Time-2-Read",
    "Industry Guides",
@@ -10,7 +10,8 @@
    "Dream Wedding",
    "A Player Mode",
    "How We Know",
-   "Whisper Almanac"
+   "Whisper Almanac",
+   "Peace Be Still"
   ],
   "friends": [
    "Horse",
@@ -1132,7 +1133,10 @@
    "domain": "professionalresourcelibrary.com",
    "repo": "authority-backlink-network",
    "repo_private_why": "authority-backlink-network is the one private repo, an exception to every repo being public: its name and target list tied the publications to her money sites; its Actions use (~466 min/month) sits under the free 2,000 (owner, 8 Nov 2026, personal brain).",
-   "deploy_direct_upload": { "workflow": "deploy-publications.yml", "why": "The publications moved to their own Cloudflare account in Nov 2026 with no GitHub connection on purpose, so a direct upload from this workflow is the only path a change takes to the live site (Pages direct upload is free)." },
+   "deploy_direct_upload": {
+    "workflow": "deploy-publications.yml",
+    "why": "The publications moved to their own Cloudflare account in Nov 2026 with no GitHub connection on purpose, so a direct upload from this workflow is the only path a change takes to the live site (Pages direct upload is free)."
+   },
    "category": "own_business",
    "group": "support",
    "business": "Authority backlink network",
@@ -1158,7 +1162,10 @@
    "domain": "founderoperatorlibrary.com",
    "repo": "authority-backlink-network",
    "repo_private_why": "authority-backlink-network is the one private repo, an exception to every repo being public: its name and target list tied the publications to her money sites; its Actions use (~466 min/month) sits under the free 2,000 (owner, 8 Nov 2026, personal brain).",
-   "deploy_direct_upload": { "workflow": "deploy-publications.yml", "why": "The publications moved to their own Cloudflare account in Nov 2026 with no GitHub connection on purpose, so a direct upload from this workflow is the only path a change takes to the live site (Pages direct upload is free)." },
+   "deploy_direct_upload": {
+    "workflow": "deploy-publications.yml",
+    "why": "The publications moved to their own Cloudflare account in Nov 2026 with no GitHub connection on purpose, so a direct upload from this workflow is the only path a change takes to the live site (Pages direct upload is free)."
+   },
    "category": "own_business",
    "group": "support",
    "business": "Authority backlink network",
@@ -1184,7 +1191,10 @@
    "domain": "memphisvendorlibrary.com",
    "repo": "authority-backlink-network",
    "repo_private_why": "authority-backlink-network is the one private repo, an exception to every repo being public: its name and target list tied the publications to her money sites; its Actions use (~466 min/month) sits under the free 2,000 (owner, 8 Nov 2026, personal brain).",
-   "deploy_direct_upload": { "workflow": "deploy-publications.yml", "why": "The publications moved to their own Cloudflare account in Nov 2026 with no GitHub connection on purpose, so a direct upload from this workflow is the only path a change takes to the live site (Pages direct upload is free)." },
+   "deploy_direct_upload": {
+    "workflow": "deploy-publications.yml",
+    "why": "The publications moved to their own Cloudflare account in Nov 2026 with no GitHub connection on purpose, so a direct upload from this workflow is the only path a change takes to the live site (Pages direct upload is free)."
+   },
    "category": "own_business",
    "group": "support",
    "business": "Authority backlink network",
@@ -1209,10 +1219,22 @@
   {
    "domain": "horselegalguide.com",
    "client_approval": "owner, 9 Nov 2026: \"the only thing that waits for the horse owner's approval is new posts - any fixes I make get pushed without that\". Fixes to the live site (pages, templates, metadata, at-source repairs) land like any other site's; only a NEW post or page waits for the Horse owners' approval in their /admin/ queue. Replaces the 3 Nov reading (every change to a live page waited). Read by clientApprovalHold (orphanPr.mjs).",
-   "client_approval_queue_files": ["data/site_changes/queue.json"],
-   "client_approval_new_post_paths": ["content/", "questions/", "dist/"],
-   "client_approval_draft_paths": ["content/drafts/"],
-   "client_approval_record_files": ["data/system/editorial_backlog.json", "data/system/content_calendar.json", "data/search-loop/approvals.json"],
+   "client_approval_queue_files": [
+    "data/site_changes/queue.json"
+   ],
+   "client_approval_new_post_paths": [
+    "content/",
+    "questions/",
+    "dist/"
+   ],
+   "client_approval_draft_paths": [
+    "content/drafts/"
+   ],
+   "client_approval_record_files": [
+    "data/system/editorial_backlog.json",
+    "data/system/content_calendar.json",
+    "data/search-loop/approvals.json"
+   ],
    "repo": "horse-legal-guide-velocity",
    "category": "client",
    "group": "friends",
@@ -1394,6 +1416,33 @@
      "paths": [
       "/checklists"
      ]
+    }
+   }
+  },
+  {
+   "domain": "peacebestillapp.com",
+   "repo": "peace-be-still",
+   "category": "side_business",
+   "group": "divine_9",
+   "business": "Peace Be Still",
+   "entity_parent": "spry-labs",
+   "kind": "brand",
+   "roles": [],
+   "label": "Peace Be Still",
+   "coverage": {
+    "model": "not_local",
+    "why": "A national faith + mindset phone app; its coming-soon page (in /site of the repo) collects a waitlist, with no place-based pages."
+   },
+   "search_loop": {
+    "wave": 1
+   },
+   "lead_source": {
+    "kind": "d1",
+    "action": "waitlist sign-ups before launch, the coming-soon page's one action",
+    "code": "peace-be-still waitlist (D1 peace-be-still, table waitlist); until that database exists the reader says D1_NOT_FOUND, never 0",
+    "params": {
+     "db": "peace-be-still",
+     "sql": "SELECT COUNT(*) AS n FROM waitlist WHERE datetime(created_at) >= datetime(:since_iso)"
     }
    }
   }

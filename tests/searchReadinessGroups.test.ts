@@ -1,6 +1,6 @@
 /*
  * WHAT SEARCH READINESS COVERS (owner, 7 Nov 2026, personal brain "Names and groups"): friends' sites
- * + all of the Divine 9 + support (no selling group since 10 Nov 2026: Porch & Party is friends & clients), each grid row naming its group and business; an Industry
+ * + all of the Divine 10 (group key divine_9; Peace Be Still joined 18 Nov 2026) + support (no selling group since 10 Nov 2026: Porch & Party is friends & clients), each grid row naming its group and business; an Industry
  * Guides vertical is never a business of its own; a sunsetting site is audited, never worked.
  */
 import { describe, it, expect } from "vitest";
@@ -16,7 +16,9 @@ describe("Search Readiness groups (7 Nov 2026)", () => {
   it("every grid row names a group and a business that group lists; every named business has a site or a named gap", () => {
     expect(rows.length).toBeGreaterThan(0);
     // Owner, 10 Nov 2026: Time-2-Read is one business with two apps; heygetonmylevel is not a business of its own.
-    expect(groups.divine_9).toHaveLength(8);
+    // Owner, 18 Nov 2026: the Divine 9 became the Divine 10 with Peace Be Still (the key stays divine_9).
+    expect(groups.divine_9).toHaveLength(9);
+    expect(rows.find((r) => r.domain === "peacebestillapp.com")).toMatchObject({ group: "divine_9", business: "Peace Be Still", entity_parent: "spry-labs" });
     expect(groups.divine_9).not.toContain("heygetonmylevel");
     expect(rows.filter((r) => r.business === "Time-2-Read").map((r) => r.domain).sort()).toEqual(["heygetonmylevel.com", "time-2-read.com"]);
     // Owner, 10 Nov 2026: the groups are exactly these three; there is no "selling" group, and

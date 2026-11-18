@@ -331,6 +331,18 @@
       "status": "live"
     },
     {
+      "id": "peacebestillapp",
+      "name": "Peace Be Still",
+      "url": "https://peacebestillapp.com",
+      "domain": "peacebestillapp.com",
+      "business": "spry",
+      "repo": "peace-be-still",
+      "host": "cloudflare-pages",
+      "project": "peace-be-still",
+      "deploy": "Its site workflow ships /site from main (coming-soon page, 18 Nov 2026)",
+      "status": "live"
+    },
+    {
       "id": "keepmyproof",
       "name": "KeepMyProof",
       "url": "https://keepmyproof.com",
