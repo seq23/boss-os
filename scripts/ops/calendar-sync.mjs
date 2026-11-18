@@ -115,7 +115,11 @@ export async function readCalendar(creds, subject, horizonDays) {
         ical_uid: e.iCalUID ?? null,
         all_day: !e.start.dateTime,
         time_zone: e.start.timeZone ?? null,
-        attendees: (e.attendees ?? []).map((a) => ({ email: a.email ?? null, name: a.displayName ?? null, self: Boolean(a.self), organizer: Boolean(a.organizer) })),
+        attendees: (e.attendees ?? []).map((a) => ({ email: a.email ?? null, name: a.displayName ?? null, self: Boolean(a.self), organizer: Boolean(a.organizer), response: a.responseStatus ?? null })),
+        // Her own answer to the invite (accepted · tentative · declined · needsAction); null when she
+        // is the only one on it or it is her own event. Read by the morning's calendar line and the
+        // prep: a maybe or a no is not a meeting she is going to (owner, 18 Nov 2026).
+        response: (e.attendees ?? []).find((a) => a.self)?.responseStatus ?? null,
         join_url: e.hangoutLink ?? (e.conferenceData?.entryPoints ?? []).find((p) => p.entryPointType === "video")?.uri ?? null,
         description: e.description ? String(e.description).slice(0, 4000) : null,
         calendar: subject,

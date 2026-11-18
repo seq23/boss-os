@@ -281,6 +281,19 @@ export function mergeDiaryRows(rows: DiaryRow[]): DiaryRow[] {
         return sameCalendarEvent(m, r);
       }
       if (ta && tb && (ta === tb || ta.includes(tb) || tb.includes(ta))) return true;
+      /*
+       * A ROW SHE TYPED AND A CALENDAR EVENT ARE ONE MEETING ONLY WHEN THE EVENT NAMES IT (18 Nov
+       * 2026: the City of Memphis "38126 Project Discussion" at 10 and an LP call at 8 were folded
+       * into the standing "West Peek partner meeting" with Scooter, so the morning email said "West
+       * Peek partner meeting with Scooter" for a meeting he was not in). The same title, or the event
+       * names the typed row's person; never "within two hours" alone.
+       */
+      if (m.source === "calendar" || r.source === "calendar") {
+        const typed = m.source === "calendar" ? r : m;
+        const cal = m.source === "calendar" ? m : r;
+        const who = (typed.with ?? "").toLowerCase().trim();
+        return who !== "" && `${cal.title} ${cal.with ?? ""}`.toLowerCase().includes(who);
+      }
       const compatible = a === b || a === "" || b === "";
       return compatible && Math.abs(m.scheduled_at - r.scheduled_at) <= 2 * 3_600_000;
     });

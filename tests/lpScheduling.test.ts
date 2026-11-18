@@ -14,7 +14,32 @@ import {
   WORK_DAY, MIN_SLOTS, MAX_SLOTS, instantIn, proposedTimes, proposedFit,
 } from "../src/shared/boss/lp/schedule.mjs";
 import { againReply, keepHeldDraft } from "../scripts/ops/lp-followups.mjs";
-import { lpDecideItems } from "../src/shared/boss/lp/plan.mjs";
+import { lpDecideItems, theirWords } from "../src/shared/boss/lp/plan.mjs";
+import { callFor } from "../src/shared/boss/lp/callBooked.mjs";
+
+// Owner, 18 Nov 2026: "Q1" got 20/23/24 November; "Wonderful" answered an apology; the quote and signature showed.
+describe("a reply honours the window they asked for, and shows their words only", () => {
+  const now = Date.parse("2026-11-18T12:00:00Z");
+  const said = "I'm so sorry to be slow. Would it work if we find some time to connect in Q1? Pat 248-555-0100 pat@example.com www.example.com On Tue, Oct 6, 2026 at 12:45 AM Her <her@example.com> wrote:\n> old";
+  const slots = [{ start: now + 2 * 86_400_000, zone: "America/Chicago" }, { start: now + 5 * 86_400_000, zone: "America/Chicago" }];
+  it("offers no November times for Q1, opens with no problem, and keeps only their message", () => {
+    const r = againReply({ name: "Pat Example", said, slots, busy: [], now, zoneOn: () => "America/Chicago" });
+    expect(r.kind).toBe("later");
+    expect(r.offered).toEqual([]);
+    expect(r.body).toMatch(/No problem at all, Q1 works well\. I'll send you a few times in early January\./);
+    expect(r.body).not.toMatch(/November/);
+    expect(theirWords(said)).toBe("I'm so sorry to be slow. Would it work if we find some time to connect in Q1?");
+    const near = againReply({ name: "Pat Example", said: "Sorry for the delay, happy to chat, when works?", slots, busy: [], now, zoneOn: () => "America/Chicago" });
+    expect(near.kind).toBe("times");
+    expect(near.body).toMatch(/^Hi Pat,\n\nNo problem at all/);
+  });
+  it("closes an assistant's thread once a call with their principal is on her calendar", () => {
+    const ev = [{ scheduled_at: now - 86_400_000, attendees: [{ email: "boss@firm.example" }] }];
+    expect(callFor("helper@firm.example", ev, now)).toBeNull();
+    expect(callFor("helper@firm.example", ev, now, { assistant: true })).toEqual({ start: now - 86_400_000, held: true });
+    expect(callFor("helper@gmail.com", [{ scheduled_at: now, attendees: [{ email: "x@gmail.com" }] }], now, { assistant: true })).toBeNull();
+  });
+});
 
 const NOW = Date.parse("2026-10-31T11:15:00Z"); // Saturday morning
 const WHERE = { awayCity: "New York, NY", awayUntil: "2026-11-04", homeZone: "America/Chicago" };
@@ -171,7 +196,7 @@ describe("the reply held for someone who wrote back: a fixed template, never a m
     const [confirm] = lpDecideItems([{ ...base, draft_body: lpConfirmBody({ name: "Avery", slot: pick }), picked_start: pick.start, picked_zone: pick.zone, last_reply_text: "Tuesday works" }], NOW);
     expect(confirm!.title).toContain(`picked ${slotText(pick)}`);
     expect(confirm!.details.join("\n")).toMatch(/Send as is also sends the calendar invite/);
-    expect(confirm!.buttons.map((b) => b.label)).toEqual(["Send as is", "Change it", "Open their email"]);
+    expect(confirm!.buttons.map((b) => b.label)).toEqual(["Send as is", "Change it"]);
     const [times] = lpDecideItems([{ ...base, draft_body: lpTimesBody({ name: "Avery", slots }), offered_slots: JSON.stringify(slots), last_reply_text: "When works?" }], NOW);
     expect(times!.title).toContain(`your reply offers ${slots.length} times`);
     expect(times!.draft?.text).toContain(slotText(slots[0]!));

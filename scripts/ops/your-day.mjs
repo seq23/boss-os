@@ -49,7 +49,8 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { sendAsEmployee, ownerTo } from "./notify.mjs";
-import { createHash } from "node:crypto";
+import { createHash, randomBytes } from "node:crypto";
+import { isClientOutreach, theirWords } from "../../src/shared/boss/lp/plan.mjs";
 import { ownerTime } from "../../src/shared/boss/ownerTime.mjs";
 import { clockWords, lineProblems, proseRuns, proseText, cleanText, quotedSentence, NOTHING_TO_DO, toYou } from "../../src/shared/boss/mail/plain.mjs";
 import { ownerEmail } from "../../src/shared/boss/mail/ownerLayout.mjs";
@@ -58,6 +59,7 @@ import { sectionsNotReported, notReportedLine } from "../../src/shared/boss/mail
 import { templateDecide } from "./lp-prospects.mjs";
 import { systemRow } from "../../src/shared/boss/openLoops/openLoops.mjs";
 import { yoursThisWeek } from "../../src/shared/boss/waiting/register.mjs";
+import { dedupeEvents, isAttending, others } from "../../src/shared/boss/meetingPrep/prep.mjs";
 
 const ORIGIN = process.env.BOSS_OS_ORIGIN ?? "https://boss.sequoiataylor.com";
 const FEED = process.env.PNP_OWNER_FEED_URL ?? "https://porchandparty901.com/api/owner-feed";
@@ -91,6 +93,43 @@ const OPEN = new Set(["queued", "running", "awaiting_approval", "classified", "a
 
 function callsOn(diary, iso) {
   return (diary ?? []).filter((r) => r.scheduled_at && dayOf(r.scheduled_at) === iso).sort((a, b) => a.scheduled_at - b.scheduled_at);
+}
+
+/** "Harris, Felicia" → "Felicia Harris"; a guest with no name is their address. */
+const guestName = (a) => {
+  const n = String(a.name ?? "").trim();
+  if (!n) return a.email ?? null;
+  const m = /^([^,]+),\s*([^,]+)$/.exec(n);
+  return m ? `${m[2]} ${m[1]}` : n;
+};
+
+/**
+ * HER CALENDAR LINE: EVERY MEETING SHE IS GOING TO, FROM BOTH CALENDARS, REAL TITLE, REAL PEOPLE
+ * (owner, 18 Nov 2026: the line listed one meeting, called the City of Memphis "38126 Project
+ * Discussion" a "West Peek partner meeting with Scooter", and listed a meeting she had answered maybe
+ * to). Built from the calendars themselves (`events`, every copy merged by `dedupeEvents`), never
+ * from the diary's merged row: a meeting she answered maybe or no is left out (`isAttending`). A row
+ * she typed (or the standing Wednesday) is added only when no calendar event that day names it, so a
+ * declined standing meeting is gone and an un-calendared one still shows. With no calendar read,
+ * the diary as before. Pure. Returns [{ at, text }] in time order.
+ */
+export function calendarItems({ events = null, diary = [], today, her = [], tz = null }) {
+  const typed = callsOn((diary ?? []).filter((r) => r.source !== "calendar"), today);
+  if (!Array.isArray(events)) return callsOn(diary, today).map((c) => ({ at: c.scheduled_at, text: `${timeOf(c.scheduled_at, tz)} ${c.title}${c.with ? ` with ${c.with}` : ""}${/^https:\/\/\S+$/.test(String(c.location ?? "")) ? ` (join: ${c.location})` : ""}` }));
+  const day = dedupeEvents(events.filter((e) => !e.all_day && dayOf(e.scheduled_at) === today));
+  const names = (e) => `${e.title} ${(e.attendees ?? []).map((a) => `${a.name ?? ""} ${a.email ?? ""}`).join(" ")}`.toLowerCase();
+  const out = day.filter((e) => isAttending(e, her)).map((e) => {
+    const people = others(e, her).map(guestName).filter(Boolean);
+    const shown = people.slice(0, 4).join(", ") + (people.length > 4 ? ` and ${people.length - 4} more` : "");
+    return { at: e.scheduled_at, text: `${timeOf(e.scheduled_at, tz)} ${e.title.trim()}${shown ? ` with ${shown}` : ""}${e.join_url ? ` (join: ${e.join_url})` : ""}` };
+  });
+  for (const r of typed) {
+    const who = String(r.with ?? "").toLowerCase().trim();
+    const t = String(r.title ?? "").toLowerCase().replace(/[^a-z0-9]+/g, "");
+    const named = day.some((e) => (who && names(e).includes(who)) || (t && e.title.toLowerCase().replace(/[^a-z0-9]+/g, "") === t));
+    if (!named) out.push({ at: r.scheduled_at, text: `${timeOf(r.scheduled_at, tz)} ${r.title}${r.with ? ` with ${r.with}` : ""}` });
+  }
+  return out.sort((a, b) => a.at - b.at);
 }
 
 /** Every item in the email opens its own screen (owner, 24 Oct 2026): the morning, kept in Boss OS. */
@@ -862,11 +901,28 @@ export function buildDay(data, now = Date.now()) {
     if (problems.length) dropped.push(`${where}: ${problems.join("; ")}`);
     return problems.length === 0;
   };
-  const quiet = data.quietPeople ?? [];
+  /*
+   * CLIENT OUTREACH IS NEVER HER ANSWER LIST (owner, 18 Nov 2026: "Ron Brooks" was a reply to the
+   * WHA senior-housing outreach sent from her West Peek mailbox, listed as an LP to nudge). The
+   * client's own sequence runs its follow-ups; a row whose thread is client work is treated as quiet.
+   */
+  const quiet = [...(data.quietPeople ?? []), ...(data.lpRows ?? []).filter(isClientOutreach)];
   const isQuiet = (d) => quiet.some((r) =>
     [`lp:${r.id}`, `lp-again:${r.id}`, `lpnudge:${r.id}`, `lp:${r.address}`, `lp-again:${r.address}`, `lpnudge:${r.address}`].includes(d.key) ||
     (r.name && String(d.title ?? "").toLowerCase().includes(r.name.toLowerCase())) ||
     (r.address && JSON.stringify(d).toLowerCase().includes(r.address.toLowerCase())));
+  /*
+   * DROP FOR GOOD (owner, 18 Nov 2026): every item in every block carries one tap that dismisses it
+   * permanently (`decide_dismissed`, the one store Today already reads), and her reply "drop 2" or
+   * "drop Ron Brooks" does the same. A dropped item never comes back unless that person sends a
+   * genuinely new message (`fresh_at` later than the drop). Each link is a random token posted with
+   * the kept morning (`drops`); the tap page acts on POST only (routes/lpTap.ts).
+   */
+  const gone = new Map((data.dropped ?? []).map((r) => [r.item_id, Number(r.dropped_at) || 0]));
+  const isGone = (id, freshAt = null) => gone.has(id) && !(Number(freshAt) > gone.get(id));
+  const drops = [];
+  const mint = data.mintToken ?? (() => `drop_${randomBytes(18).toString("base64url")}`);
+  const dropLink = (id, label) => { const token = mint(); drops.push({ token, item_id: id, label: String(label ?? "").slice(0, 160) }); return { label: "Drop for good", url: `${ORIGIN}/tap/${token}` }; };
   const m = {};
   for (const [name, sec] of Object.entries(data.morning ?? {})) {
     m[name] = {
@@ -1073,7 +1129,7 @@ export function buildDay(data, now = Date.now()) {
   const notReported = notReportedLine(data.notReported);
   // Every call and meeting of the day, once (the diary merges a copy on a second calendar), with who
   // and the join link when there is one (owner, 26 Oct 2026: "tell me when i have calls").
-  const calls = callsOn(data.diary, today).map((c) => `${timeOf(c.scheduled_at, data.ownerTz)} ${c.title}${c.with ? ` with ${c.with}` : ""}${/^https:\/\/\S+$/.test(String(c.location ?? "")) ? ` (join: ${c.location})` : ""}`);
+  const calls = calendarItems({ events: data.calendar ?? null, diary: data.diary, today, her: data.herAddresses ?? [], tz: data.ownerTz }).map((c) => c.text);
   // The postscript is the 8Raise line, only when something is wrong (the seat-order line left 13 Nov 2026).
   const ps = eightRaiseLine(m.eightraise?.credits ?? null);
 
@@ -1243,7 +1299,8 @@ export const MAX_OPEN_LOOP_LINES = 5;
 
 export function lawLine(law) {
   if (!law?.n || !law?.title || !law?.text) return null;
-  return `Today's law, Law ${law.n}, ${law.title}: "${law.text}" Read it aloud.`;
+  // One line, the same shape every day: the law's name and its words (owner, 18 Nov 2026).
+  return `Law ${law.n}, ${law.title}: "${law.text}"`;
 }
 
 export async function read(api, now) {
@@ -1286,7 +1343,13 @@ export async function read(api, now) {
   const known = new Set(tasks.map((t) => t.id));
   const approvalTasks = (await Promise.all([...new Set((approvals ?? []).map(approvalTaskId).filter((id) => id && !known.has(id)))].slice(0, 100)
     .map((id) => api.get(`/tasks/${encodeURIComponent(id)}`).then((d) => d?.task ?? null).catch((e) => { console.error(`your-day: the task behind an approval was not read (${e.message})`); return null; })))).filter(Boolean);
-  return { approvalTasks, ownerTz, quietPeople, brainsCheck, t2rGroups, quality, scoreboard, diary: diary?.rows ?? null, tasks: withDue, approvals, repoChanges: rc?.items ?? [], briefing: briefingOf(today), law: lawOf(today), bounceFixes, commentWatch, prospects, spirit, practiceWeek, lapseLine, waiting, carried, morning: reported.sections, notReported: reported.missing };
+  // Her calendars themselves (both Workspace calendars and the feeds), for the calendar line: the real
+  // title, the real guests and her own answer (18 Nov 2026). Not read = the diary, as before.
+  const { readAllCalendars } = await import("./calendar-sync.mjs");
+  const cal = await readAllCalendars({ horizonDays: 2, now }).catch((e) => { console.error(`your-day: her calendars not read (${e.message}); the diary only`); return null; });
+  const calendar = cal && cal.read > 0 ? cal.events : null;
+  const herAddresses = [ownerTo(), ...String(process.env.BOSS_HER_ADDRESSES ?? "sequoia@westpeek.ventures,staylor@spry.vc,st@time-2-read.com").split(",")].map((s) => String(s ?? "").trim().toLowerCase()).filter(Boolean);
+  return { calendar, herAddresses, approvalTasks, ownerTz, quietPeople, brainsCheck, t2rGroups, quality, scoreboard, diary: diary?.rows ?? null, tasks: withDue, approvals, repoChanges: rc?.items ?? [], briefing: briefingOf(today), law: lawOf(today), bounceFixes, commentWatch, prospects, spirit, practiceWeek, lapseLine, waiting, carried, morning: reported.sections, notReported: reported.missing };
 }
 
 export async function feedOf(range) {

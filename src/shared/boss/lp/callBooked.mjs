@@ -42,10 +42,24 @@ function eventAddresses(e) {
  * `attendees` and optional `description`, `status`. The next upcoming call wins; with none ahead,
  * the most recent one held. Cancelled events never count.
  */
-export function callFor(address, events, now = Date.now()) {
+/*
+ * THE ASSISTANT AND THE PRINCIPAL ARE ONE THREAD (owner, 18 Nov 2026: an executive assistant arranged
+ * a call with her principal; the call was held on 17 Nov and the morning still listed the assistant as
+ * "still yours to answer"). For someone who signs as an assistant, a call with anyone at the same
+ * organisation — the same own domain, never a webmail one — is the call they arranged. For anyone
+ * else a colleague alone never counts (15 Nov 2026).
+ */
+export const isAssistant = (text) => /\b(?:executive|personal|administrative|office)\s+assistant\b|\bassistant to\b|\bchief of staff\b|\bon behalf of\b/i.test(String(text ?? ""));
+const WEBMAIL = /^(?:gmail|googlemail|yahoo|outlook|hotmail|live|icloud|me|aol|proton|protonmail|msn|comcast)\./i;
+export function sameOrg(a, b) {
+  const [da, db] = [lc(a).split("@")[1] ?? "", lc(b).split("@")[1] ?? ""];
+  return Boolean(da) && da === db && !WEBMAIL.test(da);
+}
+
+export function callFor(address, events, now = Date.now(), { assistant = false } = {}) {
   const hits = (events ?? [])
     .filter((e) => e && e.status !== "cancelled" && Number.isFinite(Number(e.scheduled_at)))
-    .filter((e) => eventAddresses(e).some((x) => sameContact(x, address)))
+    .filter((e) => eventAddresses(e).some((x) => sameContact(x, address) || (assistant && sameOrg(x, address))))
     .map((e) => Number(e.scheduled_at));
   if (!hits.length) return null;
   const ahead = hits.filter((t) => t >= now).sort((x, y) => x - y);

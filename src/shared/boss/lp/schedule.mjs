@@ -344,12 +344,77 @@ export function proposedFit(text, { busy, zoneOn, now = Date.now(), leadMs = 3 *
 
 /* ─── The words, fixed templates ────────────────────────────────────────── */
 
-/** The reply offering times. Her voice: short, warm, "we", the times in her own zone. */
-export function lpTimesBody({ name, slots }) {
+/*
+ * THE OPENING FITS THEIR MESSAGE (owner, 18 Nov 2026: "Wonderful, thank you" answered "I'm so sorry
+ * to be slow … would Q1 work?"). An apology or a delay gets "No problem at all"; anything else the
+ * warm thanks.
+ */
+const APOLOGY = /\b(?:sorry|apolog\w*|slow to (?:reply|respond|get back)|delay(?:ed)?|busy|busiest|hectic|swamped|late (?:reply|response)|catching up)\b/i;
+export function openingFor(said) {
+  return APOLOGY.test(String(said ?? "")) ? "No problem at all, thank you for coming back to me." : "Wonderful, thank you.";
+}
+
+/*
+ * THE TIME THEY ASKED FOR (owner, 18 Nov 2026: Alex asked for "Q1"; the reply offered 20, 23 and 24
+ * November). A message that names a later window — a quarter, a month, "next year", "after the
+ * holidays", "in the new year" — that starts more than two weeks out gets no near-term times: the
+ * reply agrees to the window and says she will send times at its start. Null when no later window is
+ * named (or the window has already begun). Pure.
+ */
+const MONTH_RE = /\b(?:in|from|after|early|mid|late|around|during)\s+(?:early\s+|mid[- ]\s*|late\s+)?(january|february|march|april|may|june|july|august|september|october|november|december)\b/i;
+export function laterWindow(text, now = Date.now()) {
+  const t = String(text ?? "");
+  const d = new Date(now);
+  const y = d.getUTCFullYear();
+  const at = (year, month) => Date.UTC(year, month, 1);
+  let start = null;
+  let label = null;
+  const q = /\b(?:in\s+|by\s+|early\s+|during\s+)?Q([1-4])\b/i.exec(t);
+  if (q) {
+    const qi = Number(q[1]) - 1;
+    start = at(y, qi * 3);
+    if (start + 90 * DAY <= now) start = at(y + 1, qi * 3);
+    label = `Q${q[1]}`;
+  } else if (/\b(?:next year|the new year|new year|after the (?:holidays|new year)|early next year|in 20\d\d)\b/i.test(t)) {
+    start = at(y + 1, 0);
+    label = /holidays/i.test(t) ? "after the holidays" : "the new year";
+  } else {
+    const mo = MONTH_RE.exec(t);
+    if (mo) {
+      const mi = MONTHS.indexOf(mo[1].toLowerCase());
+      start = at(y, mi);
+      if (start + 28 * DAY <= now) start = at(y + 1, mi);
+      label = mo[1][0].toUpperCase() + mo[1].slice(1).toLowerCase();
+    } else if (/\bnext month\b/i.test(t)) {
+      start = at(d.getUTCMonth() === 11 ? y + 1 : y, (d.getUTCMonth() + 1) % 12);
+      label = "next month";
+    }
+  }
+  if (start == null || start - now < 14 * DAY) return null;
+  const month = new Date(start).toLocaleDateString("en-US", { month: "long", timeZone: "UTC" });
+  return { label, start, sendBy: `early ${month}` };
+}
+
+/** The reply to "can we find time in Q1?": yes to their window, times at its start. One concrete promise. */
+export function lpLaterBody({ name, window, said = null }) {
+  const opening = APOLOGY.test(String(said ?? "")) ? "No problem at all" : "Of course";
+  const works = /^Q\d$/.test(window.label) ? `${window.label} works well` : `${window.label} works well for me`;
   return [
     `Hi ${firstName(name)},`,
     "",
-    "Wonderful, thank you. Any of these would work on my side for a short call:",
+    `${opening}, ${works}. I'll send you a few times in ${window.sendBy}.`,
+    "",
+    "Best,",
+    "Sequoia",
+  ].join("\n");
+}
+
+/** The reply offering times. Her voice: short, warm, "we", the times in her own zone. */
+export function lpTimesBody({ name, slots, said = null }) {
+  return [
+    `Hi ${firstName(name)},`,
+    "",
+    `${openingFor(said)} Any of these would work on my side for a short call:`,
     ...slots.map((s) => `- ${slotText(s)}`),
     "",
     "If none of those suits, send me a couple of times that do and we'll make it work.",

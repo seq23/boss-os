@@ -36,3 +36,14 @@ describe("a filed prep opens from its meeting on Today (13 Nov 2026)", () => {
     expect(rows.map((r: any) => r.prep_id ?? null)).toEqual(["cmd_filed1", null]);
   });
 });
+
+// Owner, 18 Nov 2026: a city meeting at 10 was shown as the standing "partner meeting with Scooter".
+describe("a typed row absorbs only the calendar event that names it", () => {
+  it("keeps a different meeting near the standing row its own title; folds the one naming its person", () => {
+    const standing = { ...row("Partner meeting", "2026-11-18T16:00:00Z", "recurring", "Pat"), standing: true };
+    const city = row("Zip Code Project Discussion", "2026-11-18T16:00:00Z");
+    const sync = row("Sequoia // Pat Sync", "2026-11-18T14:00:00Z");
+    const out = mergeDiaryRows([standing, city, sync]);
+    expect(out.map((r: any) => r.title).sort()).toEqual(["Partner meeting", "Zip Code Project Discussion"]);
+  });
+});

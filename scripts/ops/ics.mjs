@@ -93,18 +93,36 @@ function icsTime(value, params) {
  * does not understand appears once rather than disappearing.
  */
 /** An ICS TEXT value unescaped: \\n → newline, \\, \\; \\\\ → the character. */
+/** An attendee's answer in a feed (PARTSTAT), in the Calendar API's words, so both readers agree. */
+const PARTSTAT = { ACCEPTED: "accepted", TENTATIVE: "tentative", DECLINED: "declined", "NEEDS-ACTION": "needsAction" };
+
 export function icsText(v) {
   return v == null ? v : String(v).replace(/\\([nN,;\\])/g, (_, c) => (c === "n" || c === "N" ? "\n" : c));
 }
 
-export function parseIcs(text, now = Date.now(), horizonDays = 28) {
+export function parseIcs(text, now = Date.now(), horizonDays = 28, backDays = 1) {
   const until = now + horizonDays * 86_400_000;
-  const from = now - 86_400_000;
+  const from = now - backDays * 86_400_000;
   const out = [];
   let unexpanded = 0;
 
-  for (const block of unfold(text).split("BEGIN:VEVENT").slice(1)) {
-    const body = block.split("END:VEVENT")[0] ?? "";
+  const blocks = unfold(text).split("BEGIN:VEVENT").slice(1).map((b) => b.split("END:VEVENT")[0] ?? "");
+  /*
+   * ONE DAY OF A SERIES CHANGED ON ITS OWN WINS OVER THE SERIES (18 Nov 2026: she declined one
+   * Wednesday of "Sequoia // Scooter Sync"; the feed carried that day's copy (RECURRENCE-ID) AND the
+   * series' rule, so the day came out twice, once "accepted"). The series skips every start that has
+   * its own copy, and every EXDATE (a day deleted from it).
+   */
+  const own = new Set();
+  for (const b of blocks) {
+    const uid = /^UID(?:;[^:\n]*)?:(.*)$/m.exec(b)?.[1]?.trim();
+    const rid = /^RECURRENCE-ID(;[^:\n]*)?:(.*)$/m.exec(b);
+    if (uid && rid) { const t = icsTime(rid[2].trim(), rid[1] ?? ""); if (t !== null) own.add(`${uid}|${t}`); }
+    for (const ex of b.matchAll(/^EXDATE(;[^:\n]*)?:(.*)$/gm)) for (const v of ex[2].split(",")) { const t = icsTime(v.trim(), ex[1] ?? ""); if (uid && t !== null) own.add(`${uid}|${t}`); }
+  }
+
+  for (const body of blocks) {
+    const isOverride = /^RECURRENCE-ID[;:]/m.test(body);
     const field = (name) => {
       const m = new RegExp(`^${name}(;[^:\\n]*)?:(.*)$`, "m").exec(body);
       return m ? { params: m[1] ?? "", value: m[2] ?? "" } : null;
@@ -127,6 +145,7 @@ export function parseIcs(text, now = Date.now(), horizonDays = 28) {
     // For Simone's meeting prep: who is invited, the notes, a join link (never posted to the diary).
     const attendees = [...body.matchAll(/^ATTENDEE([^:\n]*):(?:mailto:)?([^\s]+)$/gim)].map((m) => ({
       email: m[2].toLowerCase(), name: (/CN="?([^;":]+)"?/.exec(m[1])?.[1] ?? null), self: false, organizer: false,
+      response: PARTSTAT[(/PARTSTAT=([A-Z-]+)/i.exec(m[1])?.[1] ?? "").toUpperCase()] ?? null,
     }));
     const description = (field("DESCRIPTION")?.value ?? "").replace(/\\n/g, "\n").replace(/\\([,;])/g, "$1").slice(0, 4000) || null;
     const joinUrl = /https:\/\/(?:meet\.google\.com|[\w.-]*zoom\.us|teams\.microsoft\.com)\/[^\s"<>\\]+/.exec(`${location ?? ""} ${description ?? ""}`)?.[0] ?? null;
@@ -135,6 +154,7 @@ export function parseIcs(text, now = Date.now(), horizonDays = 28) {
     const rrule = field("RRULE")?.value ?? "";
     const push = (at, suffix = "") => {
       if (at < from || at > until) return;
+      if (rrule && !isOverride && own.has(`${uid}|${at}`)) return;
       out.push({
         calendar_uid: `${uid}${suffix}`,
         title: summary.slice(0, 200),

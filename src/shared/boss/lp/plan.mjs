@@ -11,7 +11,7 @@ import * as CADENCE from "../outreach/cadence.mjs";
 import { quotedSentence } from "../mail/plain.mjs";
 import { isRoleMailbox } from "../people/role.mjs";
 // Function-level use only (schedule.mjs reads firstName from here): the cycle is safe in ESM.
-import { slotText, slotsFrom } from "./schedule.mjs";
+import { slotText, slotsFrom, laterWindow } from "./schedule.mjs";
 import { recipientLines } from "../mail/replyNeed.mjs";
 import { callLine } from "./callBooked.mjs";
 
@@ -87,12 +87,13 @@ export function lpReplyBody({ name, bucket }) {
  * template — no model, no name to a model — that she sends as is or changes in her own words.
  */
 export function lpAgainBody({ name, wantsCall = false }) {
+  // Never "thank you for your patience" (owner, 18 Nov 2026): it apologises for a wait nobody named.
   return [
     `Hi ${firstName(name)},`,
     "",
     wantsCall
-      ? "Thank you for your patience, and for your note. I wanted to come back to you properly: would you have 20 minutes in the next week or so? Send me a couple of times that suit and we'll make it work."
-      : "Thank you for your patience, and for your note. I wanted to come back to you properly: tell me what would be most useful and I'll send it over here.",
+      ? "Thank you for your note. Would you have 20 minutes in the next week or so? Send me a couple of times that suit and we'll make it work."
+      : "Thank you for your note. Tell me what would be most useful and I'll send it over here.",
     "",
     "Best,",
     "Sequoia",
@@ -104,14 +105,51 @@ export const LP_UNSENT_URGENT_DAYS = 2;
 /** Days after her reply with no answer before ONE gentle nudge is drafted for her yes (26 Oct 2026). */
 export const LP_NUDGE_DAYS = 7;
 
-/** The nudge, a fixed template (no model, no names to a model). */
-export function lpNudgeBody({ name, bucket }) {
+/**
+ * THEIR MESSAGE, AND NOTHING THEY QUOTED OR SIGNED (owner, 18 Nov 2026: "What they wrote" carried
+ * "Alex 248-… alex@… www.… On Tue, Oct 6, 2026 at 12:45 AM … wrote."). Cut at the quoted reply ("On …
+ * wrote", "-----Original Message", a ">" line, "From: … Sent:"), then at the signature (a phone
+ * number, an email address or a web address with only a short tail after it, or a sign-off word),
+ * then a bare name left after their last sentence. Pure; their whole text when nothing is left.
+ */
+export function theirWords(text) {
+  const raw = String(text ?? "").trim();
+  let s = raw.split(/\s*(?:On\s[^\n]{4,200}?wrote:?|-{2,}\s*Original Message|\n\s*>|\bFrom:\s[^\n]{0,200}\s(?:Sent|Date):|Sent from my\s)/i)[0];
+  const sig = /(?:\+?\d[\d\s().-]{8,}\d|[\w.+-]+@[\w-]+(?:\.[\w-]+)+|\bwww\.\S+|https?:\/\/\S+)/.exec(s);
+  if (sig && s.length - sig.index < 260) s = s.slice(0, sig.index);
+  s = s.replace(/\s*(?:best|thanks|thank you|regards|kind regards|best regards|cheers|sincerely|warmly|warm regards|all the best)[,!.]?\s*[A-Z][\w.'’ -]{0,40}$/i, "").trim();
+  const end = Math.max(s.lastIndexOf("."), s.lastIndexOf("?"), s.lastIndexOf("!"));
+  if (end > 0) { const tail = s.slice(end + 1).trim(); if (tail && tail.split(/\s+/).length <= 4 && !/[.?!]/.test(tail)) s = s.slice(0, end + 1); }
+  return s.trim() || raw;
+}
+
+/*
+ * CLIENT OUTREACH IS NOT AN LP (owner, 18 Nov 2026: a reply to the senior-housing outreach she runs
+ * for a friend's nonprofit, sent from her West Peek mailbox, was listed as an LP to nudge). A thread
+ * about that work is run by the client's own sequence: never a Decide card, never a nudge, never a
+ * "Still yours to answer" line. Topic words only (the client's name is confidential).
+ */
+const laterWindowOf = (said, now) => laterWindow(theirWords(said), now);
+
+export const CLIENT_OUTREACH_RE = /\b(?:senior housing|affordable housing|memphis housing|housing (?:fund|lender|trust fund|project)|feasibility brief|community development corporation|thda)\b/i;
+export function isClientOutreach(row) {
+  return CLIENT_OUTREACH_RE.test(`${row?.subject ?? ""} ${row?.quote ?? ""}`);
+}
+
+/**
+ * The nudge, a fixed template (no model, no names to a model). It names the last exchange — what
+ * they last said, in a few of their own words — and asks one concrete thing (owner, 18 Nov 2026).
+ */
+export function lpNudgeBody({ name, bucket, said = null, subject = null }) {
+  const theirs = theirWords(said).replace(/\s+/g, " ").trim();
+  const about = String(subject ?? "").replace(/^\s*(?:re|fwd?)\s*:\s*/gi, "").replace(/\s+/g, " ").trim();
+  const last = theirs ? `Picking up from your note ("${theirs.length > 90 ? `${theirs.slice(0, 87).replace(/\s+\S*$/, "")}…` : theirs}")` : about ? `Picking up our thread on ${about}` : "Picking up our last exchange";
   return [
     `Hi ${firstName(name)},`,
     "",
     bucket === "call"
-      ? "Just floating this back up in case it got buried. Happy to find 20 minutes whenever suits you."
-      : "Just floating this back up in case it got buried. Happy to pick it up here whenever suits you.",
+      ? `${last}: would 20 minutes next week work? If so, send me two times that suit and I'll lock one in.`
+      : `${last}: is there one thing I can send you that would be useful right now?`,
     "",
     "Best,",
     "Sequoia",
@@ -126,7 +164,7 @@ export function lpNudgeBody({ name, bucket }) {
 export function lpNudgeItems(rows, now = Date.now()) {
   return (rows ?? [])
     // Shown for one week from day 7, then dropped: one nudge offered once, never a nag.
-    .filter((r) => { const d = daysSince(r.sent_at, now) ?? 0; return !r.quiet && r.status === "sent" && !r.nudged_at && d >= LP_NUDGE_DAYS && d < 2 * LP_NUDGE_DAYS; })
+    .filter((r) => { const d = daysSince(r.sent_at, now) ?? 0; return !r.quiet && !isClientOutreach(r) && r.status === "sent" && !r.nudged_at && d >= LP_NUDGE_DAYS && d < 2 * LP_NUDGE_DAYS; })
     .map((r) => ({
       key: `lpnudge:${r.id ?? r.address}`,
       title: `No answer in ${daysSince(r.sent_at, now)} days: nudge ${r.name || "an LP"}${r.firm ? ` at ${r.firm}` : ""}?`,
@@ -191,7 +229,7 @@ export function lpWho(r) {
  * sends nothing the email did not show.
  */
 export function lpDecideItems(rows, now = Date.now(), origin = ORIGIN) {
-  const held = (rows ?? []).filter((r) => !r.quiet && r.status === "drafted" && r.tap_token);
+  const held = (rows ?? []).filter((r) => !r.quiet && !isClientOutreach(r) && r.status === "drafted" && r.tap_token);
   const aged = held.map((r) => ({ r, days: daysSince(r.drafted_at, now) ?? 0 }))
     .sort((a, b) => b.days - a.days);
   const items = aged.map(({ r, days }) => {
@@ -204,7 +242,7 @@ export function lpDecideItems(rows, now = Date.now(), origin = ORIGIN) {
       body: `${r.bucket === "call" ? "They want a call" : "They want to stay in touch"}. Who: ${lpWho(r)}.`,
       details: [
         `Their email: ${r.address}`,
-        ...(said ? [`What they wrote: ${quotedSentence(said0)}`] : []),
+        ...(said ? [`What they wrote: ${quotedSentence(theirWords(said0))}`] : []),
         `History: they answered your outreach on ${r.first_seen}${r.subject ? ` ("${trimEnd(r.subject)}")` : ""}; you have not replied yet.`,
         `Your reply goes from ${r.reply_from ?? LP_MAILBOX}, in their thread.`,
         ...lpRecipientLines(r),
@@ -223,7 +261,7 @@ export function lpDecideItems(rows, now = Date.now(), origin = ORIGIN) {
   });
   // Someone who wrote back after her reply: answering is hers (it goes in her name), so it is a
   // decision with their words and the thread, never a "done" line.
-  for (const r of (rows ?? []).filter((x) => !x.quiet && x.status === "replied_again")) {
+  for (const r of (rows ?? []).filter((x) => !x.quiet && !isClientOutreach(x) && x.status === "replied_again")) {
     const said0 = r.last_reply_text || r.said || r.quote;
     const said = trimEnd(said0);
     // A reply to their new message held in the thread (Today v4): shown word for word, one tap sends it.
@@ -246,12 +284,13 @@ export function lpDecideItems(rows, now = Date.now(), origin = ORIGIN) {
       title: `${waited >= 1 ? `Waiting ${waited} day${waited === 1 ? "" : "s"}: ` : ""}${picked
         ? `${r.name || "An LP"}${r.firm ? ` at ${r.firm}` : ""} picked ${slotText(picked)}: confirm and send the invite`
         : offered.length ? `${r.name || "An LP"}${r.firm ? ` at ${r.firm}` : ""} wants to find a time: your reply offers ${offered.length} times`
+        : ready && laterWindowOf(said0, now) ? `${r.name || "An LP"}${r.firm ? ` at ${r.firm}` : ""} asked to meet in ${laterWindowOf(said0, now).label}: your reply says you'll send times in ${laterWindowOf(said0, now).sendBy}`
         : `Answer ${r.name || "an LP"}${r.firm ? ` at ${r.firm}` : ""}: they wrote back after your reply`}`,
       noDismiss: true,
       body: `Who: ${lpWho(r)}.`,
       details: [
         `Their email: ${r.address}`,
-        ...(said ? [`What they wrote: ${quotedSentence(said0)}`] : []),
+        ...(said ? [`What they wrote: ${quotedSentence(theirWords(said0))}`] : []),
         `History: they answered your outreach on ${r.first_seen}; you replied${r.sent_at ? ` on ${new Date(Number(r.sent_at)).toISOString().slice(0, 10)}` : ""}; they wrote again${r.last_reply_at ? ` on ${new Date(Number(r.last_reply_at)).toISOString().slice(0, 10)}` : ""}.`,
         ready ? `Your reply goes from ${r.reply_from ?? LP_MAILBOX}, in their thread.` : "No reply is drafted for this one yet: it needs your own words.",
         ...(ready ? lpRecipientLines(r) : []),
@@ -261,9 +300,12 @@ export function lpDecideItems(rows, now = Date.now(), origin = ORIGIN) {
       draft: ready ? { heading: "Your reply, word for word (Send as is sends exactly this)", text: r.draft_body } : null,
       priority: 4 + Math.min(waited, 60),
       buttons: [
-        ...(ready ? [{ label: "Send as is", url: tapUrl(r.tap_token, "send", origin) }, { label: "Change it", url: `${origin}/?tab=today` }] : []),
-        { label: ready ? "Open their email" : "Open the thread and reply", url: gmailThreadUrl(r.thread_id, r.reply_from ?? LP_MAILBOX) },
+        // Two links when a reply is ready: Send as is, Change it (owner, 18 Nov 2026: "not five"). The
+        // morning points Change it at the card's own screen, which holds their email and the edit.
+        ...(ready ? [{ label: "Send as is", url: tapUrl(r.tap_token, "send", origin) }, { label: "Change it", url: `${origin}/?tab=today` }]
+          : [{ label: "Open the thread and reply", url: gmailThreadUrl(r.thread_id, r.reply_from ?? LP_MAILBOX) }]),
       ],
+      fresh_at: Number(r.last_reply_at) || null,
     });
   }
   return items;

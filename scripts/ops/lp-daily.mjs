@@ -24,7 +24,7 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { bossApi } from "./lib/duty-kit.mjs";
-import { callFor, callLine, CALENDAR_UNREAD_STOP } from "../../src/shared/boss/lp/callBooked.mjs";
+import { callFor, callLine, CALENDAR_UNREAD_STOP, isAssistant } from "../../src/shared/boss/lp/callBooked.mjs";
 import { ORIGIN, lpDecideItems, lpNudgeItems } from "../../src/shared/boss/lp/plan.mjs";
 import { morningDir, writeMorningSection } from "../../src/shared/boss/mail/morning.mjs";
 
@@ -37,7 +37,7 @@ const LP_DIR = process.env.BOSS_OS_LP_DIR ?? path.join(os.homedir(), ".boss-os",
 export function bookedCalls(people, events, now = Date.now()) {
   const out = new Map();
   for (const p of people ?? []) {
-    const c = callFor(p.address, events, now);
+    const c = callFor(p.address, events, now, { assistant: isAssistant(`${p.said ?? ""} ${p.quote ?? ""}`) });
     if (c) out.set(p.address, c);
   }
   return out;
