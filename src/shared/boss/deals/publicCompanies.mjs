@@ -60,7 +60,8 @@ const PUBLIC_RES = [
 ];
 const NOT_YET = /\b(?:plans?|planning|files?|filed|filing|considers?|considering|weighs?|weighing|eyes|eyeing|prepares?|preparing|could|may|might|rumou?red|confidential(?:ly)?|delays?|postpones?)\b/i;
 export function publicFromHeadline(text) {
-  const t = String(text ?? "").replace(/[*_`]/g, "").replace(/^\W+/, "").trim();
+  // A briefing line often starts with its section label ("Morning: Anthropic prices…"): the label is not the company.
+  const t = String(text ?? "").replace(/[*_`]/g, "").replace(/^\W+/, "").replace(/^[A-Z][\w &/-]{1,24}:\s+/, "").trim();
   if (!t || NOT_YET.test(t.split(/[:—-]/)[0] ?? t)) return null;
   for (const re of PUBLIC_RES) {
     const m = re.exec(t);

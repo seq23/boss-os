@@ -687,9 +687,9 @@ export function prospectSection(a, now = Date.now(), people = []) {
     const peopleRuns = (there.length ? there : [{ name: r.name, firm: r.firm }]).flatMap((p, i) => [{ text: `${i ? ", " : ""}${p.name}` }, { text: " (LinkedIn search)", url: linkedInSearch(p.name, r.firm) }]);
     const kind = KIND_WORDS[rec.kind] ?? "investor";
     const aum = rec.aum ?? rec.aum_usd ?? null;
-    const said = r.reply_note ? quotedSentence(theirWords(r.reply_note)) : "no words kept";
+    const said = r.reply_note ? quotedSentence(theirWords(r.reply_note)) : null;
     const next = NO_THANKS.test(String(r.reply_note ?? "")) ? "Next: closed, nothing more goes to them." : r.has_draft ? "Next: your reply is ready in Decide above." : "Next: Monique is drafting your reply; it will be in Decide.";
-    items.push({ runs: [{ text: `${r.name || r.email} at ${r.firm || domain} (${kind}${aum ? `, AUM ${typeof aum === "number" ? `$${Math.round(aum / 1e6)}M` : aum}` : ", AUM not on record"}). They said: ${said} ${next} People there: ` }, ...peopleRuns, { text: "." }], key: `prospect:${r.email}`, text: `${r.name || r.email} at ${r.firm || domain}` });
+    items.push({ runs: [{ text: `${r.name || r.email} at ${r.firm || domain} (${kind}${aum ? `, AUM ${typeof aum === "number" ? `$${Math.round(aum / 1e6)}M` : aum}` : ", AUM not on record"}). ${said ? `They said: ${said}` : "They wrote back; their words are in the thread."} ${next} People there: ` }, ...peopleRuns, { text: "." }], key: `prospect:${r.email}`, text: `${r.name || r.email} at ${r.firm || domain}` });
   }
   const stops = (a.stops ?? []).filter((x) => !/sending window/i.test(String(x)));
   const due = (a.next ?? []).filter((r) => r.next_at && r.next_at <= now);
