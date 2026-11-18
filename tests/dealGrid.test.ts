@@ -178,7 +178,8 @@ describe("Rainmaker x Rainmaker is never suggested; do-not-suggest never appears
 
 describe("morning sections (interface for Builder E)", () => {
   it("deals.json carries new rows and a link to the full grid; monique_found has no 'Nobody' lines", () => {
-    const a = row({ source_message: "a1" });
+    // Both sides priced alike: only a real match reaches the email (18 Nov 2026).
+    const a = row({ source_message: "a1", price_text: "$ 590,000 M" });
     const b = row({ source_message: "b1", side: "sell", principal: "Seller Co", principal_email: "s@sellerco.com", from: "s@sellerco.com", from_name: "Sam Seller", price_text: "$ 590,000 M" });
     const grid = buildGrid([a, b], { identity: ID, lists: NO_LISTS, now: NOW });
     const deals = morningDeals(grid, grid.length, NOW);
@@ -238,11 +239,11 @@ describe("N-PORT: every holder named, partial fills summed (rule 7)", () => {
     const c = recordFound("Acme Robotics", { holders: [{ fund: "Fund A", valUSD: 120e6, url: "https://www.sec.gov/a" }, { fund: "Fund B", valUSD: 64e6, url: "https://www.sec.gov/b" }] }, file);
     const grid = buildGrid([row({})], { identity: ID, lists: NO_LISTS, now: NOW });
     const out = moniqueFound({ newRows: grid, grid, lists: NO_LISTS, found: { "acme robotics": c }, now: NOW });
-    // 13 Nov 2026: no "Still looking" line; the filings and press are one link.
-    expect(out.lines.map((l: any) => l.text)).toEqual([
-      "Outside your email: public filings and press, not confirmed, on Acme Robotics.",
-    ]);
-    expect(out.lines[0].links).toEqual([{ label: "See the filings and press", url: expect.stringMatching(/view=holders&company=Acme%20Robotics$/) }]);
+    // 18 Nov 2026: "Outside your email" is firms with one contact each, or nothing. No contact known: no line.
+    expect(out.lines).toEqual([]);
+    const withPerson = moniqueFound({ newRows: grid, grid, lists: NO_LISTS, found: { "acme robotics": c }, now: NOW, contacts: [],
+      reach: ({ filer }: any) => ({ lines: filer === "Fund A" ? [{ kind: "email", confidence: "known", text: "ana@funda.example", source: "your own email" }] : [] }) } as any);
+    expect(withPerson.lines.map((l: any) => l.text)).toEqual(["Acme Robotics: buyers, no seller yet. Firms whose filings show a position: Fund A, write to ana@funda.example (an address from your own email)."]);
     // The funds themselves are kept for the item screen, summed as before.
     expect(out.rows.map((r: any) => [r.fund, r.value])).toEqual([["Fund A", "$120M"], ["Fund B", "$64M"]]);
     expect(JSON.stringify(out.lines)).not.toMatch(/\bvs\b/);
@@ -271,14 +272,21 @@ describe("combined merge: Monique found reads as one intro per pair, in plain gr
   it("a buyer and a seller who are both new make ONE grid row, never a Decide item (25 Oct 2026)", () => {
     const out = moniqueFound({ newRows: g, grid: g, lists: { same_firm: [], do_not_suggest: [] }, now: NOW });
     expect(out.decide).toEqual([]);
-    expect(out.grid).toHaveLength(1);
-    expect(out.grid[0]).toMatchObject({ company: "Company Z", trade: "Broker Two $300M, no price given → Broker One $1B, no price given", fit: "fills part, price unknown or far, fresh", url_label: "Open ›" });
-    expect(out.lines.filter((l: any) => /Company Z/.test(l.text) && /^Match/.test(l.text))).toHaveLength(0);
+    // 18 Nov 2026: with no prices it is a match on the Matches screen only, never the email's grid.
+    expect(out.matches).toHaveLength(1);
+    expect(out.grid).toHaveLength(0);
+    const priced = [{ ...g[0], price_text: "$100/share" }, { ...g[1], price_text: "$101/share" }];
+    const p = moniqueFound({ newRows: priced, grid: priced, lists: { same_firm: [], do_not_suggest: [] }, now: NOW });
+    expect(p.decide).toEqual([]);
+    expect(p.grid).toHaveLength(1);
+    expect(p.grid[0]).toMatchObject({ company: "⭐ Company Z", fit: "fills part, prices close, fresh", url_label: "Open ›" });
+    expect(p.lines.filter((l: any) => /Company Z/.test(l.text) && /^Match/.test(l.text))).toHaveLength(0);
   });
   it("one holder is named in the singular", () => {
     const out = moniqueFound({ newRows: [g[0]], grid: [g[0]], lists: { same_firm: [], do_not_suggest: [] },
       found: { "company z": { holders: [{ fund: "Fund A", value_usd: 1.2e8, filing_url: "https://www.sec.gov/x" }] } } });
-    expect(out.lines.map((l: any) => l.text)).toEqual(["Outside your email: public filings and press, not confirmed, on Company Z."]);
+    // 18 Nov 2026: a holder firm with no known person is no line at all.
+    expect(out.lines).toEqual([]);
     expect(out.rows).toEqual([expect.objectContaining({ company: "Company Z", fund: "Fund A", value: "$120M" })]);
     expect(out.link).toEqual({ label: "See every match", url: expect.stringMatching(/view=matches$/) });
   });

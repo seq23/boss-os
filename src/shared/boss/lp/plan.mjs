@@ -13,6 +13,7 @@ import { isRoleMailbox } from "../people/role.mjs";
 // Function-level use only (schedule.mjs reads firstName from here): the cycle is safe in ESM.
 import { slotText, slotsFrom, laterWindow } from "./schedule.mjs";
 import { recipientLines } from "../mail/replyNeed.mjs";
+import { PUBLIC_SEED, isPublicCompany } from "../deals/publicCompanies.mjs";
 import { callLine } from "./callBooked.mjs";
 
 export const LP_MAILBOX = "sequoia@westpeek.ventures";
@@ -134,6 +135,20 @@ const laterWindowOf = (said, now) => laterWindow(theirWords(said), now);
 export const CLIENT_OUTREACH_RE = /\b(?:senior housing|affordable housing|memphis housing|housing (?:fund|lender|trust fund|project)|feasibility brief|community development corporation|thda)\b/i;
 export function isClientOutreach(row) {
   return CLIENT_OUTREACH_RE.test(`${row?.subject ?? ""} ${row?.quote ?? ""}`);
+}
+
+/*
+ * A THANKS OR AN APPROVAL CLOSES THE THREAD (owner, 18 Nov 2026, item 14: "Yesssssssss much
+ * better!!!" left a thread on her list). Their words only (theirWords), short, and nothing asked: a
+ * question mark, a date or a request keeps it open. An auto-reply is never a new message at all. Pure.
+ */
+export const AUTO_REPLY = /\b(?:out of (?:the )?office|automatic reply|auto-?reply|thank you for contacting|thanks for contacting|on (?:annual )?leave|away from (?:my|the) (?:desk|office)|limited access to email|will respond (?:as soon as|when))\b/i;
+const THANKS = /^(?:y+e+s+|yes+|yay+|great|perfect|awesome|amazing|wonderful|love(?:d)? it|looks? (?:great|good)|much better|thanks?|thank you|thx|ty|got it|sounds good|all good|approved|works for me|this is great|beautiful)\b/i;
+export function closesThread(text) {
+  const t = theirWords(text).replace(/\s+/g, " ").trim();
+  if (!t || AUTO_REPLY.test(t)) return false;
+  if (t.length > 120 || /\?|\b(?:can|could|would|will) you\b|\bplease\b|\b(?:mon|tues|wednes|thurs|fri)day\b|\bnext week\b|\bcall\b|\bmeet|\blet'?s\b|\btalk|\bsend\b|\bshare\b/i.test(t)) return false;
+  return THANKS.test(t.replace(/^(?:hi|hey|hello)\b[^,!.]*[,!.]?\s*/i, ""));
 }
 
 /**
@@ -261,7 +276,7 @@ export function lpDecideItems(rows, now = Date.now(), origin = ORIGIN) {
   });
   // Someone who wrote back after her reply: answering is hers (it goes in her name), so it is a
   // decision with their words and the thread, never a "done" line.
-  for (const r of (rows ?? []).filter((x) => !x.quiet && !isClientOutreach(x) && x.status === "replied_again")) {
+  for (const r of (rows ?? []).filter((x) => !x.quiet && !isClientOutreach(x) && x.status === "replied_again" && !closesThread(x.last_reply_text || x.said || x.quote) && !AUTO_REPLY.test(String(x.last_reply_text || x.said || "")))) {
     const said0 = r.last_reply_text || r.said || r.quote;
     const said = trimEnd(said0);
     // A reply to their new message held in the thread (Today v4): shown word for word, one tap sends it.
@@ -715,12 +730,14 @@ export function dueTouch(p, now = Date.now()) {
  * The featured names Monique proposes: her supply ("Yours" rows) ranked by buyer demand seen in her
  * inbox, then freshness (≤30 days), then size, then how well known. Never-feature names are out.
  */
-export function proposeFeatured(supply, { never = [], add = [], drop = [] } = {}, now = Date.now()) {
+export function proposeFeatured(supply, { never = [], add = [], drop = [], publicNames = PUBLIC_SEED } = {}, now = Date.now()) {
+  // A public company is never featured or asked about (owner, 18 Nov 2026).
+  const isPub = (n) => isPublicCompany(n, publicNames);
   const banned = new Set([...never, ...drop].map((n) => String(n).toLowerCase()));
   const byName = new Map();
   for (const r of supply ?? []) {
     const name = String(r.company ?? r.name ?? "").trim();
-    if (!name || banned.has(name.toLowerCase())) continue;
+    if (!name || banned.has(name.toLowerCase()) || isPub(name)) continue;
     const age = r.seen_at ? (now - Number(r.seen_at)) / DAY : 999;
     const prev = byName.get(name.toLowerCase());
     const row = {
@@ -732,7 +749,7 @@ export function proposeFeatured(supply, { never = [], add = [], drop = [] } = {}
     };
     byName.set(name.toLowerCase(), row);
   }
-  for (const a of add) if (!banned.has(String(a).toLowerCase()) && !byName.has(String(a).toLowerCase())) byName.set(String(a).toLowerCase(), { name: String(a), demand: 0, fresh: 0, size: 0, known: 1, asked: true });
+  for (const a of add) if (!banned.has(String(a).toLowerCase()) && !isPub(a) && !byName.has(String(a).toLowerCase())) byName.set(String(a).toLowerCase(), { name: String(a), demand: 0, fresh: 0, size: 0, known: 1, asked: true });
   const rows = [...byName.values()].filter((r) => r.asked || r.fresh <= FEATURE_FRESH_DAYS);
   rows.sort((a, b) => Number(!!b.asked) - Number(!!a.asked) || b.demand - a.demand || a.fresh - b.fresh || b.size - a.size || b.known - a.known);
   return rows.slice(0, FEATURED_MAX).map((r) => ({

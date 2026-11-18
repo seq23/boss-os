@@ -30,6 +30,7 @@ import { isScorecardToken, scorecardTapGet, scorecardTapPost } from "./scorecard
 import { isHicksToken, hicksTapGet, hicksTapPost } from "../clients/hicksUpdate";
 import { sendLpNudge, skipLpNudge } from "../lp/nudge";
 import { isInviteToken, inviteTapGet, inviteTapPost } from "../invitations/tap";
+import { DROP_TOKEN_RE, dropByToken, dropTapLabel } from "./morning";
 
 export const lpTap = new Hono<{ Bindings: Env; Variables: Vars }>();
 
@@ -73,6 +74,11 @@ async function find(db: D1Database, token: string): Promise<Found | null> {
 const VERBS: Record<string, string> = { send: "Sending your reply…", skip: "Skipping…", approve: "Approving…", dismiss: "Dismissing…", retry: "Writing a different draft…", nudge: "Sending the nudge…", nonudge: "No nudge…" };
 
 lpTap.get("/:token", async (c) => {
+  // DROP FOR GOOD (18 Nov 2026): the page says what it drops and posts itself; a scanner changes nothing.
+  if (DROP_TOKEN_RE.test(c.req.param("token"))) {
+    const label = await dropTapLabel(c.env, c.req.param("token"));
+    return c.html(label ? page("Drop for good?", `${label}: it leaves your morning email and Today for good, unless they write to you again.`, { action: "?do=drop", label: "Drop for good" }) : page("That link has expired", "Nothing was changed."));
+  }
   // Simone's Go? card on an invitation: Yes, go · No · Not sure (invitations/tap.ts). A GET never acts.
   if (isInviteToken(c.req.param("token"))) return inviteTapGet(c, c.req.param("token"));
   // The Hicks quarterly update: Approve · Change the words · Skip (clients/hicksUpdate.ts).
@@ -133,6 +139,10 @@ export function lpReplyClosed(row: { status: string; draft_body?: string | null 
 }
 
 lpTap.post("/:token", async (c) => {
+  if (DROP_TOKEN_RE.test(c.req.param("token"))) {
+    const done = await dropByToken(c.env, c.req.param("token"));
+    return c.html(done ? page("Dropped for good", `${done.label}: gone from your morning email and Today. It comes back only if they write to you again.`) : page("That link has expired", "Nothing was changed."));
+  }
   if (isInviteToken(c.req.param("token"))) return inviteTapPost(c, c.req.param("token"));
   if (isHicksToken(c.req.param("token"))) return hicksTapPost(c, c.req.param("token"));
   if (isScorecardToken(c.req.param("token"))) return scorecardTapPost(c, c.req.param("token"));

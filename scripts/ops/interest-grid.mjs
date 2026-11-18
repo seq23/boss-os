@@ -35,6 +35,8 @@ import { createHash } from "node:crypto";
 import { writeMorningSection } from "../../src/shared/boss/mail/morning.mjs";
 import { rankMatches, ageWords, moneyShort, parsePrice, DEFAULT_TOLERANCE, STALE_DAYS } from "../../src/shared/boss/deals/match.mjs";
 import { outputLine } from "../../src/shared/boss/alarms/rules.mjs";
+import { PUBLIC_SEED, publicList, isPublicCompany } from "../../src/shared/boss/deals/publicCompanies.mjs";
+import { loadContacts, reachFor } from "./lib/reach.mjs";
 import {
   FIRM_DOMAIN, LOOKBACK_DAYS, withinLookback, withinArchive, isSameFirm, isDoNotSuggest, pairAllowed,
 } from "../../src/shared/boss/capital/partyLists.mjs";
@@ -207,7 +209,21 @@ const unnamed = (p) => !p || /\b(unnamed|undisclosed|anonymous|a client|client o
 export function fromWords(row, hers) {
   if (hers) return "You";
   // A note she passed on comes from the party it names, not from her (25 Oct 2026).
-  if (row.relayed) return `${String(row.principal ?? "").trim() || "—"}${row.intermediated_by ? `, via ${row.intermediated_by}` : ""} (a note you passed on)`;
+  /*
+   * PLAIN NAMES (owner, 18 Nov 2026: "unnamed seller of Prab Rattan, via prab@… (a note you passed
+   * on)"). The person and their firm, never an address: "Prab Rattan (Clarity), for a client" when
+   * the principal is unnamed, "Pat Example, through Prab Rattan (Clarity)" when named.
+   */
+  if (row.relayed) {
+    const principal = String(row.principal ?? "").trim();
+    const via = String(row.intermediated_by ?? "").trim();
+    const viaEmail = /@/.test(via) ? via : "";
+    const viaName = (viaEmail ? nameFromAddress(viaEmail) : via) || "";
+    const viaFirm = viaEmail ? firmOf(viaEmail) : "";
+    const viaWords = [viaName, viaFirm && viaFirm.toLowerCase() !== viaName.toLowerCase() ? `(${viaFirm})` : ""].filter(Boolean).join(" ");
+    if (principal && !unnamed(principal)) return viaWords ? `${principal}, through ${viaWords}` : principal;
+    return viaWords ? `${viaWords}, for a client` : "—";
+  }
   const addr = row.from && !row.outbound ? row.from : (row.intermediated_by || row.principal_email || "");
   const firm = firmOf(addr || row.principal_email);
   // A role mailbox is a team, never a person (26 Oct 2026: "Operations, Rainmaker").
@@ -596,10 +612,50 @@ export function gridMatches(within, { dismissed = new Set(), max = MAX_EMAIL_MAT
   return out;
 }
 
-/** One grid row: company (+N more) | seller → buyer | fit dots | Open ›. */
+/*
+ * WHO LIKELY HOLDS IT, AND ONE PERSON TO WRITE TO (owner, 18 Nov 2026: "Outside your email: public
+ * filings and press, not confirmed, on Etched" plus two links was useless). For a company with buyer
+ * demand and no seller on her grid: up to three firms whose filings show a position, each with ONE
+ * contact from `reachFor` (lib/reach.mjs: a known address from her own mail, or a pattern resting on
+ * known addresses at that domain — never a guess), said as verified or not. A firm with no person is
+ * left out; no firm, no line. Pure.
+ */
+export const MAX_HOLDER_FIRMS = 3;
+export function likelyHolderLines({ newRows = [], grid = [], found = {}, lists = {}, contacts = null, reach = reachFor }) {
+  const out = [];
+  const sells = new Set((grid ?? []).filter((g) => g.side === "sell" || (g.side === "yours" && /sell/i.test(String(g.direction ?? "")))).map((g) => String(g.company).toLowerCase()));
+  const wanted = [...new Set((newRows ?? []).filter((g) => g.side === "buy").map((g) => g.company))].filter((c) => !sells.has(String(c).toLowerCase()));
+  for (const company of wanted) {
+    const holders = (found[String(company).toLowerCase()]?.holders ?? []).filter((h) => !isDoNotSuggest({ principal: h.fund, from_text: h.manager }, lists));
+    const firms = [];
+    for (const h of holders) {
+      const firm = String(h.manager || h.fund || "").trim();
+      if (!firm || firms.some((f) => f.firm === firm)) continue;
+      const line = (reach({ filer: firm, contacts }).lines ?? []).find((l) => (l.confidence === "known" || l.confidence === "pattern") && l.source && /@/.test(l.text));
+      if (!line) continue;
+      const person = line.text.replace(/\s+—.*$/, "").trim();
+      firms.push({ firm, contact: `${person} (${line.confidence === "known" ? "an address from your own email" : "address not verified"})` });
+      if (firms.length >= MAX_HOLDER_FIRMS) break;
+    }
+    if (firms.length) out.push({ text: `${company}: buyers, no seller yet. Firms whose filings show a position: ${firms.map((f) => `${f.firm}, write to ${f.contact}`).join("; ")}.`, links: [], deal: company });
+  }
+  return out;
+}
+
+/*
+ * ONLY A REAL MATCH REACHES HER EMAIL (owner, 18 Nov 2026: "Stripe was the only real one"). A named
+ * person on each side, sizes that fit (whole or a real part), and both prices known and close. Every
+ * other match stays on the Matches screen. Pure.
+ */
+const namedSide = (who) => { const w = String(who ?? "").trim(); return Boolean(w) && w !== "—" && !/^(?:unnamed|undisclosed|anonymous|a client|someone)\b/i.test(w); };
+export function realMatch(m) {
+  return namedSide(m?.seller?.who) && namedSide(m?.buyer?.who) && ["good", "part"].includes(m?.fit?.size) && ["good", "part"].includes(m?.fit?.price);
+}
+
+/** One grid row: company | seller → buyer | fit | Open ›; other matches on the company said in words. */
 export function gridRowOf(m) {
   return {
-    company: `${m.star ? "⭐ " : ""}${m.company}${m.more_on_company > 0 ? ` (+${m.more_on_company} more)` : ""}`,
+    company: `${m.star ? "⭐ " : ""}${m.company}${m.more_on_company > 0 ? ` (and ${m.more_on_company} other ${m.more_on_company === 1 ? "match" : "matches"} on it in Boss OS)` : ""}`,
     trade: `${m.seller.who} ${terms(m.seller)} → ${m.buyer.who} ${terms(m.buyer)}`,
     fit: fitWords(m.fit),
     url: cardUrl(m), url_label: "Open ›",
@@ -613,12 +669,15 @@ export function gridRowOf(m) {
  * match goes to Decide. `dismissed` (pair#sig) is what she dismissed; it never comes back until a
  * new order. Every current match is on the Matches screen (`matches`).
  */
-export function moniqueFound({ newRows, grid, lists, found = {}, now = Date.now(), firstSeen: _firstSeen = null, dismissed = new Set() }) {
+export function moniqueFound({ newRows, grid, lists, found = {}, now = Date.now(), firstSeen: _firstSeen = null, dismissed = new Set(), publicNames = PUBLIC_SEED, contacts = null, reach = reachFor }) {
+  // A public company is not a live deal (owner, 18 Nov 2026): no match on it anywhere, closed "now public".
+  newRows = newRows.filter((g) => !isPublicCompany(g.company, publicNames));
+  grid = (grid ?? []).filter((g) => !isPublicCompany(g.company, publicNames));
   const newIds = new Set(newRows.map((g) => g.id));
   const all = allMatches(grid, lists, { newIds, now }).filter((m) => !dismissed.has(`${m.pair}#${m.sig}`));
   const within = all.filter((m) => !m.old && (m.gap === null || m.gap <= DEFAULT_TOLERANCE));
   const counts = matchCounts(all);
-  const picks = gridMatches(within, { dismissed });
+  const picks = gridMatches(within.filter(realMatch), { dismissed });
   // The matches and nothing else (owner, 13 Nov 2026): no "Still looking" line and no totals line.
   // The counts ride on the section for the Matches screen; the email never prints them.
   const lines = [];
@@ -630,8 +689,8 @@ export function moniqueFound({ newRows, grid, lists, found = {}, now = Date.now(
     if (holdersLine(g, holders) || press.length) outward.push(g.company);
     for (const h of holders.slice(0, 5)) rows.push({ company: g.company, fund: h.fund, manager: h.manager ?? "—", value: moneyWords(h.value_usd), as_of: h.as_of ?? "—", url: h.filing_url });
   }
-  const out = [...new Set(outward)];
-  if (out.length) lines.push({ text: `Outside your email: public filings and press, not confirmed, on ${out.slice(0, 4).join(", ")}${out.length > 4 ? ` and ${out.length - 4} more` : ""}.`, links: [{ label: "See the filings and press", url: out.length === 1 ? `${HOLDERS_PAGE}&company=${encodeURIComponent(out[0])}` : HOLDERS_PAGE }] });
+  void outward;
+  lines.push(...likelyHolderLines({ newRows, grid, found, lists, contacts, reach }));
   return {
     decide: [], rows, lines, counts,
     grid: picks.map(gridRowOf),
@@ -744,7 +803,10 @@ async function main() {
   const newRows = seenState ? grid.filter((g) => !seen.has(g.id)) : grid.filter((g) => g.received_on >= yesterday);
   const found = readJson(path.join(DIR, "found.json"), { companies: {} }).companies ?? {};
 
-  const deals = morningDeals(newRows, grid.length);
+  // The one list of companies now public (Boss OS setting + the seed); unread → the seed alone.
+  const pub = session ? await session.get("/capital/public").catch(() => null) : null;
+  const publicNames = publicList(pub?.data?.companies ?? null);
+  const deals = morningDeals(newRows.filter((g) => !isPublicCompany(g.company, publicNames)), grid.length);
   // Monique's memory of when each buyer/seller pair was first seen, so "new matches" means new.
   const firstSeenFile = path.join(DIR, "matches-first-seen.json");
   const firstSeen = readJson(firstSeenFile, null)?.pairs ?? null;
@@ -754,7 +816,7 @@ async function main() {
   const dismissedRows = live?.data?.dismissed ?? readJson(dismissedCache, { dismissed: [] }).dismissed ?? [];
   if (live?.data?.dismissed) fs.writeFileSync(dismissedCache, JSON.stringify({ fetched_at: new Date().toISOString(), dismissed: dismissedRows }));
   const dismissed = new Set(dismissedRows.map((d) => `${d.pair}#${d.sig}`));
-  const monique = moniqueFound({ newRows, grid, lists, found, firstSeen, dismissed });
+  const monique = moniqueFound({ newRows, grid, lists, found, firstSeen, dismissed, publicNames, contacts: loadContacts() });
   const nowMs = Date.now();
   const nextSeen = {};
   for (const m of monique.matches) nextSeen[m.pair] = firstSeen?.[m.pair] ?? nowMs;

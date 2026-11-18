@@ -32,6 +32,47 @@ import { MORNING_SECTIONS, morningSectionProblems, appendToSection } from "../..
 export const morning = new Hono<{ Bindings: Env; Variables: Vars }>();
 
 const DAY_RE = /^\d{4}-\d{2}-\d{2}$/;
+export const DROP_TOKEN_RE = /^drop_[A-Za-z0-9_-]{20,40}$/;
+const ITEM_RE = /^[a-z]+-[a-z0-9]{6,32}$/;
+
+/**
+ * DROP FOR GOOD (owner, 18 Nov 2026). One store: `decide_dismissed`, which Today's waiting list
+ * already honours. A tap, a reply ("drop 2", "drop Ron Brooks") and Today's dismiss all write it.
+ */
+export async function dropItems(env: Env, items: { id: string; label?: string | null }[], via: "tap" | "reply" | "today", now = Date.now()): Promise<number> {
+  const ok = items.filter((i) => ITEM_RE.test(i.id));
+  if (!ok.length) return 0;
+  const r = await env.DB.batch(ok.map((i) => env.DB.prepare(`INSERT INTO decide_dismissed (item_id, dismissed_at, label, via) VALUES (?,?,?,?) ON CONFLICT(item_id) DO UPDATE SET dismissed_at = excluded.dismissed_at, label = excluded.label, via = excluded.via`).bind(i.id, now, String(i.label ?? "").slice(0, 160), via)));
+  return r.length;
+}
+
+/** Drop the item its token names (the tap page's POST). Null for an unknown token. */
+export async function dropByToken(env: Env, token: string, now = Date.now()): Promise<{ label: string } | null> {
+  if (!DROP_TOKEN_RE.test(token)) return null;
+  const t = await env.DB.prepare(`SELECT item_id, label FROM morning_drop_taps WHERE token = ?`).bind(token).first<{ item_id: string; label: string | null }>();
+  if (!t) return null;
+  await dropItems(env, [{ id: t.item_id, label: t.label }], "tap", now);
+  return { label: t.label ?? "That item" };
+}
+export async function dropTapLabel(env: Env, token: string): Promise<string | null> {
+  if (!DROP_TOKEN_RE.test(token)) return null;
+  const t = await env.DB.prepare(`SELECT label FROM morning_drop_taps WHERE token = ?`).bind(token).first<{ label: string | null }>();
+  return t ? (t.label || "That item") : null;
+}
+
+/** Any object in a kept morning whose `id` she dropped leaves the list it sits in (Today agrees with the email). */
+export function pruneDropped<T>(value: T, dropped: Set<string>): T {
+  const walk = (v: any): any => {
+    if (Array.isArray(v)) return v.filter((x) => !(x && typeof x === "object" && typeof x.id === "string" && dropped.has(x.id))).map(walk);
+    if (v && typeof v === "object") return Object.fromEntries(Object.entries(v).map(([k, x]) => [k, walk(x)]));
+    return v;
+  };
+  return dropped.size ? walk(value) : value;
+}
+async function droppedSet(env: Env): Promise<Set<string>> {
+  const r = await env.DB.prepare(`SELECT item_id FROM decide_dismissed`).all<{ item_id: string }>().catch(() => ({ results: [] as { item_id: string }[] }));
+  return new Set((r.results ?? []).map((x) => x.item_id));
+}
 const MAX_PAYLOAD = 900_000;
 
 interface Row { day: string; payload: string; sent_at: number | null; created_at: number; updated_at: number }
@@ -118,7 +159,17 @@ morning.post("/", async (c) => {
               ON CONFLICT(day) DO UPDATE SET payload = excluded.payload, updated_at = excluded.updated_at`)
     .bind(b.day, json, now, now)
     .run();
-  return ok(c, { day: b.day, decide: (p.decide as unknown[]).length }, 201);
+  // Every "Drop for good" link in this morning's email (18 Nov 2026): one token per item, kept so the tap works.
+  const drops = (Array.isArray((p as any).drops) ? (p as any).drops : []).filter((d: any) => DROP_TOKEN_RE.test(String(d?.token ?? "")) && ITEM_RE.test(String(d?.item_id ?? "")));
+  const stmts = drops.map((d: any) => c.env.DB.prepare(`INSERT OR IGNORE INTO morning_drop_taps (token, day, item_id, label, created_at) VALUES (?,?,?,?,?)`).bind(d.token, b.day, d.item_id, String(d.label ?? "").slice(0, 160), now));
+  for (let i = 0; i < stmts.length; i += 100) await c.env.DB.batch(stmts.slice(i, i + 100));
+  return ok(c, { day: b.day, decide: (p.decide as unknown[]).length, drops: drops.length }, 201);
+});
+
+/** Everything she dropped for good, for the morning run (every item id and when). */
+morning.get("/dropped", async (c) => {
+  const r = await c.env.DB.prepare(`SELECT item_id, dismissed_at AS dropped_at, label, via FROM decide_dismissed ORDER BY dismissed_at DESC LIMIT 5000`).all();
+  return ok(c, { rows: r.results ?? [] });
 });
 
 morning.post("/:day/sent", async (c) => {
@@ -134,7 +185,7 @@ morning.post("/:day/sent", async (c) => {
 morning.get("/latest", async (c) => {
   const r = await c.env.DB.prepare(`SELECT * FROM morning_digests ORDER BY day DESC LIMIT 1`).first<Row>();
   // What she has dismissed since leaves Today and the item screens at once (25 Oct 2026).
-  return ok(c, r ? await pruneQuietPeople(c.env, pruneDismissed(view(r), await dismissedSet(c.env))) : null);
+  return ok(c, r ? pruneDropped(await pruneQuietPeople(c.env, pruneDismissed(view(r), await dismissedSet(c.env))), await droppedSet(c.env)) : null);
 });
 
 morning.get("/:day", async (c) => {
@@ -142,5 +193,5 @@ morning.get("/:day", async (c) => {
   if (!DAY_RE.test(day)) throw badRequest("The day is YYYY-MM-DD");
   const r = await c.env.DB.prepare(`SELECT * FROM morning_digests WHERE day = ?`).bind(day).first<Row>();
   if (!r) throw notFound(`No morning kept for ${day}`);
-  return ok(c, await pruneQuietPeople(c.env, pruneDismissed(view(r), await dismissedSet(c.env))));
+  return ok(c, pruneDropped(await pruneQuietPeople(c.env, pruneDismissed(view(r), await dismissedSet(c.env))), await droppedSet(c.env)));
 });

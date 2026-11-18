@@ -209,9 +209,15 @@ describe("morning and schedule", () => {
     const dir = fs.mkdtempSync(path.join(os.tmpdir(), "pnp-morning-"));
     const options = { dir, stateFile: path.join(dir, ".progress.json"), now: NOW };
     try {
-      writeProgress({ status: status({ sent_today: 3, followups_today: 1, taken_over: [prospect().contact_email], corporate_booked: 2 }), stopped: null }, options);
+      // A system notice in the same inbox is never "an office wrote back" (18 Nov 2026: 4 of 7 were TikTok's own mail).
+      writeProgress({ status: status({ sent_today: 3, followups_today: 1, taken_over: [prospect().contact_email, "noreply@account.example-social.com", "bounces+123@em1.account.tiktok.com"], corporate_booked: 2 }), stopped: null }, options);
       const morning = readMorningSections({ dir, now: NOW }).sections;
-      expect(morning.pnp_outreach.lines).toEqual(["Camille, office Christmas outreach: 4 sent · 1 forwarded to you · 2 booked of 4"]);
+      const line = morning.pnp_outreach.lines[0];
+      expect(morning.pnp_outreach.lines).toHaveLength(1);
+      expect(line).toMatch(/\b4 sent today\b/);
+      expect(line).toMatch(/\b1 office wrote back\b/);
+      expect(line).toContain("Office1");
+      expect(line).toMatch(/\b2 of the 4 office bookings\b/);
       const mail = buildDay({ diary: [], tasks: [], approvals: [], repoChanges: [], feed: { items: [] }, morning }, NOW);
       expect(mail.text).toContain(morning.pnp_outreach.lines[0]);
       writeProgress({ status: status({ corporate_booked: 4 }), stopped: "Full" }, options);

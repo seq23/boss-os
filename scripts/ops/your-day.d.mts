@@ -2,7 +2,7 @@ import type { LaidOutEmail } from "../../src/shared/boss/mail/plain.mjs";
 export function dayOf(at: number): string;
 export function timeOf(at: number, tz?: string | null): string;
 export function dayWords(iso: string, opts?: { weekday?: boolean }): string;
-export function bounceLine(b: { replaced?: number; dropped?: number; restarted?: string[] } | null): string | null;
+export function bounceLine(b: { replaced?: number; dropped?: number; restarted?: string[]; restarts?: { business: string; why: string; sent_since: number }[] } | null): string | null;
 export function briefingLines(briefing: unknown, today: string): string[] | null;
 export function briefingLateLine(briefing: unknown, now: number, tz?: string | null): string;
 export function briefingBelowLine(briefing: unknown): string | null;
@@ -18,7 +18,7 @@ export function buildDay(data: Record<string, unknown>, now?: number): LaidOutEm
 export function briefingFull(briefing: unknown): Array<{ heading: string; lines: unknown[] }>;
 export function briefingSourceUrl(briefing: unknown): (n: number) => string;
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
-export function prospectSection(a: any, now?: number): any;
+export function prospectSection(a: any, now?: number, people?: any[]): any;
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 export function prospectDecisions(a: any, existingKeys?: Set<string>, now?: number): any[];
 export function eightRaiseLine(credits: { used?: number; budget?: number; kept?: number; error?: string } | null): string | null;
@@ -30,7 +30,7 @@ export const PROSPECTS_URL: string;
 export const CHANNEL: string;
 export function replyContext(text: string): string;
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
-export function spiritSection(day: any, week: any, now?: number): any;
+export function spiritSection(day: any, week: any, now?: number, lapseLine?: string | null, o?: { coach?: string | null; action?: string | null }): any;
 export function ancestralLine(day: any): string | null;
 export function valerieItems(feed: { items?: any[] } | null | undefined, now?: number): string[] | null;
 export const SPIRIT_LINK_LABEL: string;
@@ -65,3 +65,16 @@ export function mergeDealRows<T extends Record<string, any>>(rows: T[]): T[];
 export function read(api: { get: (p: string) => Promise<any> }, now: number): Promise<any>;
 export const HEADLINE_CHARS: number;
 export function headline(line: unknown): string;
+// 18 Nov 2026 review (see your-day.mjs).
+export function calendarItems(a: { events?: any[] | null; diary?: any[]; today: string; her?: string[]; tz?: string | null }): { at: number; text: string }[];
+export function cardButtons(buttons: any[] | null | undefined, screen: string): { label: string; url: string }[];
+export function onePerPerson<T>(rows: T[]): T[];
+export function stillPreview(d: any): string;
+export function publicFromBriefing(briefing: any, list?: any[]): { company: string; evidence: string }[];
+export function neverMissTwice(missed: unknown, o?: { waiting?: number; oldestWait?: number; action?: string | null; deadline?: string; pressure?: string }): { line: string | null; banner: { tone: string; title: string; lines: string[] } | null };
+export function gateLine(o: { gratitude?: string | null; action?: string | null; done?: boolean }): string | null;
+export function gratitudeLine(o: { wins?: { sentence: string; theme: string }[]; herList?: string[]; fallback?: string | null; history?: any[]; today: string }): { sentence: string; theme: string } | null;
+export function winsFrom(o: { lpRows?: any[]; prospects?: any; deals?: number; now?: number }): { sentence: string; theme: string }[];
+export const INVENTED_DETAIL: RegExp;
+export const MONEY_OR_OUTREACH: RegExp;
+export function teamStopsLine(tasks: any[]): string | null;

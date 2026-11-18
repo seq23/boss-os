@@ -273,6 +273,6 @@ describe("a meeting she answered maybe or no is not hers to prep", () => {
       "BEGIN:VEVENT", "UID:s1", "RECURRENCE-ID:20261118T140000Z", "DTSTART:20261118T140000Z", "DTEND:20261118T150000Z", "SUMMARY:Weekly sync", "ATTENDEE;PARTSTAT=DECLINED:mailto:me@example.com", "END:VEVENT", "END:VCALENDAR"].join("\r\n");
     const day = parseIcs(ics, Date.parse("2026-11-17T12:00:00Z"), 3).events.filter((e: any) => e.scheduled_at === Date.parse("2026-11-18T14:00:00Z"));
     expect(day).toHaveLength(1);
-    expect(day[0].attendees[0].response).toBe("declined");
+    expect(day[0]?.attendees?.[0]?.response).toBe("declined");
   });
 });

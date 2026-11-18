@@ -87,10 +87,19 @@ Owner, 24 Oct 2026. In code in `src/shared/boss/deals/match.mjs` (size, price, a
    earns the star only when both prices are known and within 10%, the seller fills at least 25% of the
    buyer or $10M, and both orders are under 14 days (`STAR`, `matchFit`). A row stays until she
    dismisses it or one side goes stale. **No match goes to Decide**: Decide is her own moves (LP
-   replies, approvals). Then the filings and press as one link and one way to the Matches screen; no
-   "Still looking" line and no totals line (13 Nov 2026). "New deals since yesterday" is a grid too: company | side |
-   size @ price | from | Open ›, one row per company and side (`mergeDealRows`). Pinned by `tests/matchGridAndStar.test.ts` and
-   `tests/morningSizeAndMatches.test.ts`.
+   replies, approvals). Then one way to the Matches screen; no "Still looking" line and no totals line
+   (13 Nov 2026). **Only a real match reaches the email** (owner, 18 Nov 2026, `realMatch`): a named buyer
+   and seller, sizes that fit, both prices known and close; the rest stay on the Matches screen. Other
+   matches on a company are said in words, never "(+N more)". "Outside your email" is up to three firms
+   whose filings show a position, each with one known contact, or nothing (`likelyHolderLines`).
+   "New deals since yesterday" is a grid too: company | side | size @ price | from | Open ›, one row
+   per company and side (`mergeDealRows`). Pinned by `tests/matchGridAndStar.test.ts`,
+   `tests/morningSizeAndMatches.test.ts` and `tests/simoneReview18Nov.test.ts`.
+6b. **A public company is not a live deal** (owner, 18 Nov 2026): one list (`src/shared/boss/deals/
+   publicCompanies.mjs`, seeded Anthropic and SpaceX; setting `public_companies`; GET/POST
+   `/api/capital/public`). It grows from her reply "X is public" and from Camille's briefing (IPO
+   priced, first trade, direct listing). No new deal, match, "outside your email" line or LP/prospect
+   question names it; existing rows close as "now public", never deleted.
 6a. **Dismiss is one table** (`capital_dismissed`, `src/worker/boss/capital/dismiss.ts`): the card's
    button, the one-tap link and her reply "dismiss <code>" all write it; the Matches screen, Today
    (the kept morning) and her Mac's morning run all read it. A dismissed pair comes back only on a new
@@ -106,9 +115,12 @@ Owner, 23 Oct 2026 (inbox review: nine Boss OS emails in two days, none useful).
 pinned by `tests/plainEmail.test.ts` ("the rules in CLAUDE.md"), which reads this section, and by
 `npm run validate:email-plain`:
 1. **One morning email.** Simone's (`scripts/ops/your-day.mjs`): Decide → New deals since yesterday (one
-   row per company and side) + Monique found (the matches only) (+ Prospect emails, replies only) → ✨ Spirit (week, moon, sky, the morning sequence, a new non-body
-   gratitude sentence every day, the month, the week's practice in one line; then one link, "See the
-   full sky, body and practice in Boss OS →" — trimmed 25 Oct 2026) → Camille's briefing (three one-line headlines and "Read the full briefing →" to its screen — the whole briefing is never
+   row per company and side) + Monique found (the matches only) (+ Prospect emails, replies only, opened by a totals line) → ✨ Spirit (at most five lines, coaching first:
+   the never-miss-twice line, a sky line only when it points at a decision, today's if-then filled in,
+   giving as a count, the Ancestors hour only in the month's last two weeks; then one link, "See the
+   full sky, body and practice in Boss OS →" — rebuilt 18 Nov 2026). Above Decide: the morning gate
+   (1–3 things in bed, then reply "gate done") with a real gratitude line, and on a second missed gate
+   day the never-miss-twice call-out (`neverMissTwice`) → Camille's briefing (three one-line headlines and "Read the full briefing →" to its screen — the whole briefing is never
    in the email; it waits for the report, 07:45 Central at the latest) → Done for you (≤3, nothing after them)
    → Your open loops (her own overdue rows, five at most) → Catch up with → Porch & Party: To do for
    Valerie (only when her list holds something) → sign-off → the 8Raise line only when something

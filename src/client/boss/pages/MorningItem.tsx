@@ -48,7 +48,8 @@ function Draft({ draft }: { draft: { heading?: string; text: string } | null }) 
 }
 
 function find(payload: any, id: string): { kind: string; item: any } | null {
-  for (const kind of ["decide", "answered", "deals", "found", "done", "catchups"]) {
+  // "still_yours" (18 Nov 2026): its "Open ›" opened "not in that morning" because it was never searched.
+  for (const kind of ["decide", "answered", "still_yours", "deals", "found", "done", "catchups"]) {
     const it = (payload?.[kind] ?? []).find((x: any) => x.id === id);
     if (it) return { kind, item: it };
   }
@@ -57,7 +58,7 @@ function find(payload: any, id: string): { kind: string; item: any } | null {
 
 const KIND_LABEL: Record<string, string> = {
   decide: "A decision for you", answered: "A decision you answered", deals: "A new deal", found: "Something Monique found",
-  done: "Done for you", catchups: "Someone to catch up with",
+  done: "Done for you", catchups: "Someone to catch up with", still_yours: "Still yours to answer",
 };
 
 export function MorningItem({ day, id }: { day: string; id: string }) {
@@ -80,7 +81,7 @@ export function MorningItem({ day, id }: { day: string; id: string }) {
       ) : (
         <>
           <h2 className="mi-title">{item.title}</h2>
-          {item.body ? <p className="mi-lede">{item.body}</p> : null}
+          {item.body ?? item.line ? <p className="mi-lede" style={{ whiteSpace: "pre-line" }}>{item.body ?? item.line}</p> : null}
           {(item.details ?? []).length ? <ul className="brief-list mi-list">{item.details.map((d: string, i: number) => <li key={i}>{d}</li>)}</ul> : null}
           <Draft draft={item.draft} />
           <Buttons list={item.buttons ?? []} />

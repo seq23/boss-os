@@ -58,3 +58,6 @@ export const NEW_MATCH_MS: number;
 export const MAX_EMAIL_MATCHES: number;
 export const NEW_MATCH_MS: number;
 export function sharePriceWords(text: unknown): string;
+export function realMatch(m: any): boolean;
+export function likelyHolderLines(a: any): { text: string; links: any[]; deal: string }[];
+export const MAX_HOLDER_FIRMS: number;
