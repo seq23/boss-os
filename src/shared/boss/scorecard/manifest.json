@@ -1231,6 +1231,54 @@
       ]
     },
     {
+      "id": "peace-be-still-app",
+      "initiative": "Peace Be Still app (peacebestillapp.com)",
+      "business": "spry",
+      "owner": "Spry Labs · Wednesday Spry Labs email",
+      "result": "Waitlist sign-ups before launch, then installs and paid members after launch",
+      "jobs": [],
+      "start": null,
+      "startWhen": {
+        "label": "the first waitlist sign-up on peacebestillapp.com",
+        "reader": "d1",
+        "params": {
+          "db": "peace-be-still",
+          "sql": "SELECT date(MIN(created_at)) AS n FROM waitlist"
+        }
+      },
+      "first": {
+        "label": "waitlist sign-ups in the last 30 days",
+        "by": 30,
+        "floor": {
+          "op": ">=",
+          "value": 25
+        },
+        "reader": "d1",
+        "params": {
+          "db": "peace-be-still",
+          "days": 30,
+          "sql": "SELECT COUNT(*) AS n FROM waitlist WHERE datetime(created_at) >= datetime(:since_iso)"
+        }
+      },
+      "real": {
+        "label": "waitlist sign-ups in total (the launch list)",
+        "by": 60,
+        "floor": {
+          "op": ">=",
+          "value": 100
+        },
+        "reader": "d1",
+        "params": {
+          "db": "peace-be-still",
+          "sql": "SELECT COUNT(*) AS n FROM waitlist"
+        }
+      },
+      "versionB": {
+        "text": "Day 30 miss: the coming-soon page leads with the free Psalm Nights sleep session (a sample to play now) instead of the app pitch, and every Whisper Almanac Psalm Nights description links the waitlist. Day 60 miss: launch to the store with whoever is on the list rather than wait. After launch this row's floors move to installs and paid members (free to paid, like KeepMyProof)."
+      },
+      "pause": []
+    },
+    {
       "id": "t2r-institutional",
       "initiative": "Time-2-Read institutional sales (Monique)",
       "business": "time-2-read",

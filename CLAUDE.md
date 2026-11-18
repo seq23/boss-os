@@ -275,7 +275,7 @@ site. Pinned by `tests/searchReadiness.test.ts`, which reads this section:
    nothing blocks a reviewer-less page or a frequent date refresh. Pinned by `tests/searchReadiness.test.ts`.
 7. **The search growth loop on every selling site (owner, 1 Nov 2026; spec in the spry brain's
    Settled decisions).** A site with a `search_loop` entry in sites.json (its wave: 1 Industry Guides,
-   ApprovalPrep, Dream Wedding, the Spry HPC sites, KeepMyProof (6 Nov 2026); 2 Time-2-Read, heygetonmylevel; 3 Porch & Party and
+   ApprovalPrep, Dream Wedding, the Spry HPC sites, KeepMyProof (6 Nov 2026), Peace Be Still (18 Nov 2026); 2 Time-2-Read, heygetonmylevel; 3 Porch & Party and
    the client sites) is held to the loop's stages, each automatic and reaching only those sites
    (`flag:search_loop`): f2 new pages publish straight away under a quality gate (rewritten from
    "frozen until the query has a number"), f7 low-competition searches found weekly at $0, f8 new pages
@@ -342,7 +342,7 @@ site. Pinned by `tests/searchReadiness.test.ts`, which reads this section:
    own host (`auditHost`), and its social card (b6) is read from a page of that host, never the
    other site's home page (`socialCardPage`, 7 Nov 2026).
 11. **What it covers (owner, 7 Nov 2026, personal brain "Names and groups"; 10 Nov 2026).** Friends'
-   sites + all of the Divine 9 + the support systems; there is no selling group (Porch & Party is a
+   sites + all of the Divine 10 (Peace Be Still joined 18 Nov 2026; the key stays `divine_9`) + the support systems; there is no selling group (Porch & Party is a
    friends & clients site, 10 Nov 2026). This set IS "the grid": `src/shared/boss/grid.mjs` derives
    from sites.json (plus Whisper Almanac's channel in `_groups.gaps`), held by
    `validate:grid-is-one-list`. Every sites.json row names its `group` (divine_9, friends,
