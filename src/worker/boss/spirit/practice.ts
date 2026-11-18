@@ -237,6 +237,9 @@ const FORMS: Record<string, Form[]> = {
   "home": [
     () => "Grateful for a home that is quiet when I need it to be.",
     () => "Grateful there is a place that is mine to come back to tonight.",
+    // 18 Nov 2026: lines that named a coffee, a kitchen, a laugh, a song or a stranger she never had are gone;
+    // their places hold lines that invent nothing, so the 30-day no-repeat rotation keeps its length.
+    () => "Grateful my home is mine to keep in order, one room at a time.",
   ],
   "spiritual protection and alignment": [
     (f) => f.holding ? `Grateful I am still holding ${lower(f.holding)} without gripping it.` : "Grateful I can want something big without gripping it.",
@@ -251,6 +254,9 @@ const FORMS: Record<string, Form[]> = {
   ],
   "small moments": [
     () => "Grateful for an unhurried minute before the phone wakes up.",
+    () => "Grateful I noticed something that went right yesterday, however small.",
+    () => "Grateful a plain, ordinary day still counts as a good one.",
+    () => "Grateful I can still be surprised by how a day turns out.",
   ],
   "resilience and survival": [
     (f) => f.lastVerdict === "miss" ? "Grateful yesterday is closed and today is the one that decides what it was." : "Grateful a hard day has never had the last word.",

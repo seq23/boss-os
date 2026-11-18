@@ -20,4 +20,7 @@ CREATE TABLE IF NOT EXISTS morning_drop_taps (
 );
 CREATE INDEX IF NOT EXISTS idx_morning_drop_taps_day ON morning_drop_taps(day);
 
+INSERT OR IGNORE INTO data_policy (entity, subsystem, residency, ai_processing, reason) VALUES
+  ('morning_drop_taps', 'today', 'LOCAL_ONLY', 'LOCAL_ONLY', 'One-tap "Drop for good" tokens from the morning email: a token, the item id and its short label.');
+
 INSERT OR IGNORE INTO schema_version (migration) VALUES ('0368_boss_drop_for_good');
