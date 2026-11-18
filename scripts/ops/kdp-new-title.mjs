@@ -1059,6 +1059,16 @@ export async function refusalOnPage(page) {
 export const HER_STOPS = new Set(["SIGNIN", "SIGNIN_NOT_DONE", "PUBLISH_REFUSED", "UPLOAD_REFUSED"]);
 export const stopNeedsHer = (code) => HER_STOPS.has(code);
 
+/**
+ * ONE STUCK TITLE NEVER HALTS THE QUEUE (18 Nov 2026: the Investment Banking title, Blocked by Amazon,
+ * held ten approved books for a week). Only a stop about the WINDOW or the ACCOUNT ends the run: no
+ * sign-in, no passcode, a refused unlock, the profile in use, Amazon's weekly title limit. Every other
+ * stop is about one title: it is recorded and told as before, and the run goes on to the next approved
+ * title, inside the same caps (PUBLISH_PER_RUN, the 10-draft cap, the weekly limit). Pure.
+ */
+export const RUN_STOPS = new Set(["SIGNIN", "SIGNIN_NOT_DONE", "NO_PASSCODE", "UNLOCK_REFUSED", "PROFILE_IN_USE", "WEEKLY_TITLE_LIMIT", "APPROVALS_UNREAD"]);
+export const stopEndsRun = (code) => RUN_STOPS.has(String(code ?? ""));
+
 /** Plain words for a stop the code named. Pure. */
 export function plainStop(code, said = "") {
   const m = {
@@ -1348,10 +1358,14 @@ async function run() {
   }
 
   // KDP_HEADLESS=1: nothing opens on her screen (her coordinator, 8 Nov 2026, while she works in Chrome).
-  const { context } = await openProfile("kdp", { headed: process.env.KDP_HEADLESS !== "1" });
-  let closed = false;
-  context.once("close", () => { closed = true; });
-  const page = context.pages()[0] ?? (await context.newPage());
+  let context, page, closed = false;
+  const open = async () => {
+    ({ context } = await openProfile("kdp", { headed: process.env.KDP_HEADLESS !== "1" }));
+    closed = false;
+    context.once("close", () => { closed = true; });
+    page = context.pages()[0] ?? (await context.newPage());
+  };
+  await open();
   try {
     for (const b of todo) {
       const { a, book, dir, ans } = b;
@@ -1397,7 +1411,12 @@ async function run() {
         await api.attempt(a.id, report);
         const ok = await handBack(b, e, { api, context, page, isClosed: () => closed, settle });
         if (!ok) code = e.code ?? 1;
-        break; // the window is closed now; any other approved title goes in the next run
+        // A stop about the window or the account ends the run; a stop about this one title does not.
+        if (stopEndsRun(e.stop)) break;
+        const next = todo.slice(todo.indexOf(b) + 1);
+        if (!next.length) break;
+        console.log(`"${book.title}" is set aside (${report.stop_code}); the run goes on to ${next.length} more approved title(s).`);
+        if (closed || page.isClosed?.()) await open();
 
       }
     }

@@ -88,12 +88,18 @@ describe("the publish queue", () => {
     expect(queueOrder(approved, { titles: [] }).map((a: { id: string }) => a.id)).toEqual(["1", "2", "3", "4"]);
   });
 
-  it("the real register puts both Ambitious Grads books at the front", () => {
+  // 18 Nov 2026: the Investment Banking book is Blocked by Amazon (never retried), so it leaves the
+  // queue; every Ambitious Grads book still queued is at the front, and a Blocked one is never queued.
+  it("the real register puts the queued Ambitious Grads books at the front, and never a Blocked one", () => {
     const real = JSON.parse(readFileSync("scripts/ops/kdp-register.json", "utf8"));
     const spec = JSON.parse(readFileSync("scripts/ops/kdp-books/ambitiousgrads.json", "utf8"));
     const queued = real.titles.filter((t: { status: string }) => t.status === "APPROVED_QUEUED").map((t: { title: string }) => ({ title: t.title }));
     const order = queueOrder(queued, real).map((a: { title: string }) => a.title);
-    expect(order.slice(0, 2)).toEqual(spec.series_books.map((b: { title: string }) => b.title));
+    const blocked = new Set(real.titles.filter((t: { status: string }) => t.status === "BLOCKED").map((t: { title: string }) => t.title));
+    const grads = spec.series_books.map((b: { title: string }) => b.title).filter((t: string) => !blocked.has(t));
+    expect(grads.length).toBeGreaterThan(0);
+    expect(order.slice(0, grads.length)).toEqual(grads);
+    for (const t of blocked) expect(order).not.toContain(t);
     for (const b of spec.series_books) expect(b.manuscript.startsWith("~/")).toBe(true);
   });
 });

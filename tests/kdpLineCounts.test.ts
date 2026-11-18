@@ -17,14 +17,16 @@ describe("kdp-line-counts", () => {
     expect(Object.keys(v)).toEqual(["Kindle books: ApprovalPrep", "Kindle books: Dream Wedding", "Kindle books: A Player Mode", "Kindle books: KeepMyProof", "Kindle books: Time-2-Read", "Kindle books: Industry Guides (uscisexam)", "Kindle books: Ambitious Grads"]);
     // Ambitious Grads (owner, 9 Nov 2026): her two own career guides, approved and queued, none live yet.
     expect(v["Kindle books: Ambitious Grads"]).toBe("2 (0 live)");
-    expect(v["Kindle books: ApprovalPrep"]).toMatch(/^6 \(\d live\)$/);
+    // 18 Nov 2026: The Employment Verification Letter (Live since before the register knew it) is on it.
+    expect(v["Kindle books: ApprovalPrep"]).toMatch(/^7 \(\d live\)$/);
     expect(v["Kindle books: Dream Wedding"]).toMatch(/^6 \(\d live\)$/);
     expect(v["Kindle books: A Player Mode"]).toMatch(/^1 \(\d live\)$/);
     expect(v["Kindle books: Time-2-Read"]).toMatch(/^1 \(\d live\)$/);
     expect(v["Kindle books: Industry Guides (uscisexam)"]).toMatch(/^1 \(\d live\)$/);
     // The divorce book (The Co-Parenting Log) is Live since 7 Nov 2026, confirmed on the bookshelf 8 Nov;
     // five KeepMyProof series books joined it on 8 Nov (one In review, four queued).
-    expect(v["Kindle books: KeepMyProof"]).toBe("6 (1 live)");
+    // 18 Nov 2026: Parallel Parenting is Live (B0HQYCKPZK).
+    expect(v["Kindle books: KeepMyProof"]).toBe("6 (2 live)");
     expect(register.lines.keepmyproof.plan).toMatch(/divorce first/);
   });
 
@@ -49,7 +51,7 @@ describe("kdp-line-counts", () => {
     const put = JSON.parse(calls.at(-1).init.body);
     expect(put.section).toBe("Numbers");
     expect(put.text).toMatch(/\| Sales \|/);
-    expect(put.text).toMatch(/\| Kindle books: KeepMyProof \|.*\| 6 \(1 live\) \| 2026-12-01 \|/);
+    expect(put.text).toMatch(/\| Kindle books: KeepMyProof \|.*\| 6 \(2 live\) \| 2026-12-01 \|/);
     await expect(run({ env: {}, fetchImpl })).rejects.toThrow(/NO_PASSCODE/);
   });
 });
