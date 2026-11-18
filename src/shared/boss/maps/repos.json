@@ -157,7 +157,10 @@
       "label": "Peace Be Still",
       "category": "mine",
       "business": "spry",
-      "what": "peacebestillapp.com (coming soon, waitlist) and the Peace Be Still app (from 20 Nov 2026)."
+      "what": "peacebestillapp.com (coming soon, waitlist) and the Peace Be Still app (from 20 Nov 2026).",
+      "launchd": [
+        "com.seq.pbs-library-fill"
+      ]
     },
     {
       "repo": "authority-backlink-network",

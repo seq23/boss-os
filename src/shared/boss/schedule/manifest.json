@@ -2980,6 +2980,29 @@
       }
     },
     {
+      "id": "pbs-library-fill",
+      "name": "Peace Be Still library fill",
+      "what": "Voices the KJV and RV1909 read aloud (Psalms first), checks each file, shelves it on Drive; How We Know pauses while it runs.",
+      "business": "spry",
+      "brand": "Peace Be Still",
+      "system": "mac",
+      "slots": [
+        "every 900s"
+      ],
+      "emails": false,
+      "heavy": true,
+      "trigger": {
+        "launchd": [
+          "com.seq.pbs-library-fill"
+        ]
+      },
+      "output": {
+        "metric": "files shelved",
+        "floor": 1,
+        "runs": 2
+      }
+    },
+    {
       "id": "hunt-ondemand",
       "name": "Buyer hunt on request",
       "what": "Runs a buyer hunt when you ask for one.",
