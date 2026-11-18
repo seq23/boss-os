@@ -555,10 +555,13 @@
       "owner": "google-second",
       "business": "spry",
       "repos": [
-        "outside"
+        "dream-wedding-builder",
+        "approvalprep"
       ],
-      "vault_keys": [],
-      "used_by": "Dream Wedding TikTok and Instagram, ApprovalPrep Instagram (free plan, 3 of 3).",
+      "vault_keys": [
+        "BUFFER_BRANDS_ACCESS_TOKEN"
+      ],
+      "used_by": "Dream Wedding TikTok and Instagram, ApprovalPrep Instagram (free plan, 3 of 3); the weekly brand social jobs queue here.",
       "security": "not known yet",
       "move_to_brand": "Better on a brand address: every social and blog account sits under its own site's or brand's address (your ruling, 8 Nov 2026).",
       "login": "se**@gmail.com"

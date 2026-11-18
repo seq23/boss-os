@@ -389,10 +389,25 @@
       "account_email": "unknown",
       "status": "planned",
       "posts": {
-        "by": "none",
-        "what": "Connected to the second Buffer; nothing queued."
+        "by": "job",
+        "what": "Mondays: 2 carousels from the pin copy + 1 screen-recorded planner video, queued in the brands Buffer (switched off until turned on).",
+        "code": [
+          {
+            "repo": "dream-wedding-builder",
+            "paths": [
+              ".github/workflows/brand-social-posts.yml",
+              "scripts/brand_social/queue_posts.mjs",
+              "scripts/brand_social/buffer_queue.mjs",
+              "scripts/brand_social/posts.mjs",
+              "data/brand-social/plan.json"
+            ]
+          }
+        ],
+        "jobs": [
+          "dream-wedding-builder-brand-social-posts"
+        ]
       },
-      "decision": "Starts posting only against its scorecard row dw-brand-social (7 Nov 2026)."
+      "decision": "Starts posting only against its scorecard row dw-brand-social (7 Nov 2026). Samples approved 18 Nov 2026; the job is built and switched off until turned on."
     },
     {
       "id": "dw-tiktok",
@@ -404,10 +419,25 @@
       "account_email": "unknown",
       "status": "planned",
       "posts": {
-        "by": "none",
-        "what": "Connected to the second Buffer; nothing queued."
+        "by": "job",
+        "what": "Mondays: 2 carousels from the pin copy + 1 screen-recorded planner video, queued in the brands Buffer (switched off until turned on).",
+        "code": [
+          {
+            "repo": "dream-wedding-builder",
+            "paths": [
+              ".github/workflows/brand-social-posts.yml",
+              "scripts/brand_social/queue_posts.mjs",
+              "scripts/brand_social/buffer_queue.mjs",
+              "scripts/brand_social/posts.mjs",
+              "data/brand-social/plan.json"
+            ]
+          }
+        ],
+        "jobs": [
+          "dream-wedding-builder-brand-social-posts"
+        ]
       },
-      "decision": "The old persona account repurposed, followers kept (her call, 7 Nov 2026); starts against dw-brand-social."
+      "decision": "The old persona account repurposed, followers kept (her call, 7 Nov 2026); starts against dw-brand-social. Samples approved 18 Nov 2026; the job is built and switched off until turned on."
     },
     {
       "id": "ap-pinterest",
@@ -466,10 +496,25 @@
       "account_email": "unknown",
       "status": "planned",
       "posts": {
-        "by": "none",
-        "what": "Connected to the second Buffer; nothing queued."
+        "by": "job",
+        "what": "Mondays: 2 carousels from the pin copy + 1 screen-recorded Letter Studio video, queued in the brands Buffer (switched off until turned on).",
+        "code": [
+          {
+            "repo": "approvalprep",
+            "paths": [
+              ".github/workflows/brand-social-posts.yml",
+              "scripts/brand_social/queue_posts.mjs",
+              "scripts/brand_social/buffer_queue.mjs",
+              "scripts/brand_social/posts.mjs",
+              "data/brand-social/plan.json"
+            ]
+          }
+        ],
+        "jobs": [
+          "approvalprep-brand-social-posts"
+        ]
       },
-      "decision": "Starts posting only against its scorecard row ap-brand-social (7 Nov 2026)."
+      "decision": "Starts posting only against its scorecard row ap-brand-social (7 Nov 2026). Samples approved 18 Nov 2026; the job is built and switched off until turned on."
     },
     {
       "id": "ap-linkedin",
@@ -1468,12 +1513,30 @@
       "repo": "creator-studios",
       "path": "worker/jobs/ytupload.ts",
       "why": "A studio owner's own YouTube channel, not one of her accounts."
+    },
+    {
+      "repo": "dream-wedding-builder",
+      "path": "scripts/brand_social/collect_metrics.mjs",
+      "why": "Reads Buffer's sent posts for the scorecard (read-only); posts nothing."
+    },
+    {
+      "repo": "approvalprep",
+      "path": "scripts/brand_social/collect_metrics.mjs",
+      "why": "Reads Buffer's sent posts for the scorecard (read-only); posts nothing."
     }
   ],
   "schedule_exempt": [
     {
       "id": "spry-weekly",
       "why": "Reads each business's week (its Pinterest numbers included) for one email; posts nothing."
+    },
+    {
+      "id": "dream-wedding-builder-brand-social-metrics",
+      "why": "Reads Buffer's sent posts and the site's Instagram/TikTok visits for the scorecard; posts nothing."
+    },
+    {
+      "id": "approvalprep-brand-social-metrics",
+      "why": "Reads Buffer's sent posts and the site's Instagram/TikTok visits for the scorecard; posts nothing."
     }
   ]
 }

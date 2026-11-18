@@ -6267,6 +6267,102 @@
         "floor": 0,
         "reason": "A morning with no new invitation is normal; an unread inbox is a named stop, never a zero."
       }
+    },
+    {
+      "id": "dream-wedding-builder-brand-social-posts",
+      "name": "Brand social posts",
+      "what": "Mondays: draws the week's Instagram and TikTok posts (2 carousels + 1 planner video) and queues them in the brands Buffer. Switched off until turned on in data/brand-social/plan.json.",
+      "business": "spry",
+      "brand": "Dream Wedding",
+      "system": "github",
+      "slots": [
+        "mon 07:30"
+      ],
+      "emails": false,
+      "heavy": false,
+      "trigger": {
+        "repo": "dream-wedding-builder",
+        "file": ".github/workflows/brand-social-posts.yml",
+        "crons": [
+          "CRON_TZ=America/Chicago 30 7 * * 1"
+        ]
+      },
+      "output": {
+        "floor": 0,
+        "reason": "Switched off prints OUTPUT ... OFF; on, it queues up to 3 posts per channel or makes a named stop."
+      }
+    },
+    {
+      "id": "dream-wedding-builder-brand-social-metrics",
+      "name": "Brand social metrics",
+      "what": "Daily: posts the brands Buffer sent and visits from Instagram and TikTok, for the scorecard.",
+      "business": "spry",
+      "brand": "Dream Wedding",
+      "system": "github",
+      "slots": [
+        "daily 05:55"
+      ],
+      "emails": false,
+      "heavy": false,
+      "trigger": {
+        "repo": "dream-wedding-builder",
+        "file": ".github/workflows/brand-social-metrics.yml",
+        "crons": [
+          "CRON_TZ=America/Chicago 55 5 * * *"
+        ]
+      },
+      "output": {
+        "floor": 0,
+        "reason": "Writes the metrics file every day; a number it cannot read is named, never 0."
+      }
+    },
+    {
+      "id": "approvalprep-brand-social-posts",
+      "name": "Brand social posts",
+      "what": "Mondays: draws the week's Instagram posts (2 carousels + 1 Letter Studio video) and queues them in the brands Buffer. Switched off until turned on in data/brand-social/plan.json.",
+      "business": "spry",
+      "brand": "ApprovalPrep",
+      "system": "github",
+      "slots": [
+        "mon 07:45"
+      ],
+      "emails": false,
+      "heavy": false,
+      "trigger": {
+        "repo": "approvalprep",
+        "file": ".github/workflows/brand-social-posts.yml",
+        "crons": [
+          "CRON_TZ=America/Chicago 45 7 * * 1"
+        ]
+      },
+      "output": {
+        "floor": 0,
+        "reason": "Switched off prints OUTPUT ... OFF; on, it queues up to 3 posts or makes a named stop."
+      }
+    },
+    {
+      "id": "approvalprep-brand-social-metrics",
+      "name": "Brand social metrics",
+      "what": "Daily: posts the brands Buffer sent and visits from Instagram and TikTok, for the scorecard.",
+      "business": "spry",
+      "brand": "ApprovalPrep",
+      "system": "github",
+      "slots": [
+        "daily 06:10"
+      ],
+      "emails": false,
+      "heavy": false,
+      "trigger": {
+        "repo": "approvalprep",
+        "file": ".github/workflows/brand-social-metrics.yml",
+        "crons": [
+          "CRON_TZ=America/Chicago 10 6 * * *"
+        ]
+      },
+      "output": {
+        "floor": 0,
+        "reason": "Writes the metrics file every day; a number it cannot read is named, never 0."
+      }
     }
   ]
 }
