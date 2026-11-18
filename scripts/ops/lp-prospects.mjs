@@ -37,6 +37,7 @@
  * is checked (≤ NEVERBOUNCE_MAX_PER_RUN credits a run, 90-day cache) and the verdict is kept in D1.
  * The plan sends only addresses with a verdict; while the bounce brake is on, only "valid" ones.
  */
+import { publicList, isPublicCompany } from "../../src/shared/boss/deals/publicCompanies.mjs";
 import crypto from "node:crypto";
 import fs from "node:fs";
 import os from "node:os";
@@ -469,12 +470,15 @@ async function main() {
     const deals = readJson(path.join(MORNING_DIR, "deals.json"));
     const supply = supplyFrom(deals);
     const rules = (await api.get("/lp/prospects/names")).rules ?? [];
+    const publicNames = publicList((await api.get("/capital/public").catch(() => null))?.companies ?? null);
     const byRule = (k) => rules.filter((r) => r.rule === k).map((r) => r.name);
     const state = await api.get("/lp/prospects");
     let pending = state.pending;
     let stale = [];
     const approvedNames = state.approved ? JSON.parse(state.approved.names_json ?? "[]") : [];
     if (state.approved && deals) stale = staleFeatured(approvedNames, supply).filter((n) => !byRule("add").map((x) => String(x).toLowerCase()).includes(n.toLowerCase()));
+    // A featured name now public is swapped out at once, whatever she added (owner, 18 Nov 2026).
+    if (state.approved) for (const n of approvedNames.map((x) => x.name)) if (isPublicCompany(n, publicNames) && !stale.includes(n)) stale.push(n);
     /*
      * EMAILS 3 AND 4 GO TO HER FIRST (owner, 6 Nov 2026: "never invent-and-send"). An approved template
      * from before today has no words for them: the same email, the same names and the same follow-up,
@@ -496,7 +500,7 @@ async function main() {
     }
     if (!state.approved || stale.length) {
       const keep = approvedNames.filter((n) => !stale.includes(n.name));
-      const proposed = [...keep, ...proposeFeatured(supply, { never: byRule("never"), add: byRule("add"), drop: byRule("drop") }).filter((p) => !keep.some((k) => k.name.toLowerCase() === p.name.toLowerCase()))].slice(0, 5);
+      const proposed = [...keep, ...proposeFeatured(supply, { never: byRule("never"), add: byRule("add"), drop: byRule("drop"), publicNames }).filter((p) => !keep.some((k) => k.name.toLowerCase() === p.name.toLowerCase()))].slice(0, 5);
       // A waiting draft whose names no longer match her list (a name she added since, or written in the
       // wrong case) is replaced; proposeTemplate retires the old one. The same names leave it alone.
       const waitingNames = pending ? JSON.parse(pending.names_json ?? "[]").map((n) => n.name).join("|") : null;

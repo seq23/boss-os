@@ -46,7 +46,8 @@ beforeAll(async () => {
 
   // ── D: two new rows (a buyer and a seller of the same company), so an intro and the grid both show.
   const g = [
-    row({ id: "g1", company: "Company A", side: "buy", direction: "buy", size_usd: 1e9, size_text: "$1B", from_text: "Broker One (Firm X)",
+    // Both priced and close: only a real match reaches her email (18 Nov 2026).
+    row({ id: "g1", company: "Company A", side: "buy", direction: "buy", size_usd: 1e9, size_text: "$1B", price_text: "$140/share", from_text: "Broker One (Firm X)",
       email_url: `${G}a1`, _row: { from: "one@firm-x.example", from_name: "Broker One" } }),
     row({ id: "g2", company: "Company A", side: "sell", direction: "sell", size_usd: 3e8, size_text: "$300M", price_text: "$138/share", from_text: "Broker Two (Firm Y)",
       email_url: `${G}b2`, _row: { from: "two@firm-y.example", from_name: "Broker Two" } }),
@@ -114,7 +115,8 @@ describe("D and L sections reach Simone's morning email through E's writer", () 
   it("renders every section's content in her order", () => {
     const t: string = email.text;
     for (const s of ["New deals since yesterday (2)", "Company A", "Broker Two (Firm Y)", "See the full grid (2 open deals)",
-      "Monique found", "See the filings and press", "See every match",
+      // 18 Nov 2026: no "filings and press" link; a holder firm shows only with a known person to write to.
+      "Monique found", "See every match",
       "Reply to An Allocator at Example Endowment", "A Buyer at Example Capital wants to talk",
       "Catch up with", "A Past Partner"]) {
       expect(t, s).toContain(s);
@@ -128,7 +130,7 @@ describe("D and L sections reach Simone's morning email through E's writer", () 
     // One match for the one buyer-seller pair (D), as ONE grid row and never in Decide (25 Oct 2026).
     expect(t).not.toContain("a buyer and a seller who could trade");
     expect(t.match(/^- Company A · .* → .* · (size fits|fills part|size small), [^—]+ — Open ›: https:\/\/boss\.sequoiataylor\.com\/\?tab=capital&view=matches&match=/gm)).toHaveLength(1);
-    expect(t).toContain("Company A · Buy · $1B · Broker One (Firm X)");
+    expect(t).toMatch(/Company A · Buy · \$1B @ \$140[^·]* · Broker One \(Firm X\)/);
     expect(t).not.toMatch(/@\s*(?:·|—|$)/m);
     // An LP draft whose words are not on the row has no "Send as is": nothing goes that was not shown.
     expect(t).not.toContain("Send as is: https://boss.sequoiataylor.com/tap/tok_lp_1?do=send");

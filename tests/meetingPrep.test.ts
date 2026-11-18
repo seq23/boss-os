@@ -258,3 +258,21 @@ describe("prep EMAILS are capped a day; every prep is still made and filed (13 N
     expect(plainProblems({ subject: "Your day", text: `Your day.\n\nNothing to decide — this is just so you know.\n- ${line.text}` })).toEqual([]);
   });
 });
+
+// Owner, 18 Nov 2026: she answered "maybe" to a 10 am meeting and still got a prep.
+describe("a meeting she answered maybe or no is not hers to prep", () => {
+  const at = Date.parse("2026-11-18T16:00:00Z");
+  const now = Date.parse("2026-11-18T03:00:00Z");
+  const ev = (who: string, response: string | null, extra = {}) => ({ calendar_uid: `u-${who}`, ical_uid: `u-${who}`, title: `${who} Example <> Sequoia`, scheduled_at: at, attendees: [{ email: "me@example.com", response }, { email: `${who.toLowerCase()}@firm.example`, name: `${who} Example` }], ...extra });
+  it("drops tentative and declined, keeps accepted and unanswered, from either reader", () => {
+    const due = dueMeetings([ev("Ann", "tentative"), ev("Bo", "declined"), ev("Cy", "accepted"), ev("Di", null), ev("Ed", null, { response: "declined" })], { now, herAddresses: ["me@example.com"] });
+    expect(due.map((e: any) => e.title)).toEqual(["Cy Example <> Sequoia", "Di Example <> Sequoia"]);
+  });
+  it("one day of a series answered on its own wins over the series in a feed", () => {
+    const ics = ["BEGIN:VCALENDAR", "BEGIN:VEVENT", "UID:s1", "DTSTART:20261111T140000Z", "DTEND:20261111T150000Z", "RRULE:FREQ=WEEKLY", "SUMMARY:Weekly sync", "ATTENDEE;PARTSTAT=ACCEPTED:mailto:me@example.com", "END:VEVENT",
+      "BEGIN:VEVENT", "UID:s1", "RECURRENCE-ID:20261118T140000Z", "DTSTART:20261118T140000Z", "DTEND:20261118T150000Z", "SUMMARY:Weekly sync", "ATTENDEE;PARTSTAT=DECLINED:mailto:me@example.com", "END:VEVENT", "END:VCALENDAR"].join("\r\n");
+    const day = parseIcs(ics, Date.parse("2026-11-17T12:00:00Z"), 3).events.filter((e: any) => e.scheduled_at === Date.parse("2026-11-18T14:00:00Z"));
+    expect(day).toHaveLength(1);
+    expect(day[0]?.attendees?.[0]?.response).toBe("declined");
+  });
+});

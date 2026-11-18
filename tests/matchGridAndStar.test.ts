@@ -49,8 +49,9 @@ describe("the star: all three, at their boundaries", () => {
   it("a starred match sorts to the top of the grid, ahead of a fresher ordinary one", () => {
     const starred = [grow({ id: "b1", company: "Alpha", size_usd: 20e6, price_text: "$100/share", received_on: day(5), from_text: "B1", _row: { from: "b1@x.example" } }),
       grow({ id: "s1", company: "Alpha", side: "sell", direction: "sell", size_usd: 20e6, price_text: "$102/share", received_on: day(5), from_text: "S1", _row: { from: "s1@x.example" } })];
-    const plain = [grow({ id: "b2", company: "Beta", size_usd: 20e6, received_on: day(0), from_text: "B2", _row: { from: "b2@x.example" } }),
-      grow({ id: "s2", company: "Beta", side: "sell", direction: "sell", size_usd: 20e6, received_on: day(0), from_text: "S2", _row: { from: "s2@x.example" } })];
+    // Beta is priced within the limit but not within 10%: a real match for the email, without the star (18 Nov 2026).
+    const plain = [grow({ id: "b2", company: "Beta", size_usd: 20e6, price_text: "$100/share", received_on: day(0), from_text: "B2", _row: { from: "b2@x.example" } }),
+      grow({ id: "s2", company: "Beta", side: "sell", direction: "sell", size_usd: 20e6, price_text: "$112/share", received_on: day(0), from_text: "S2", _row: { from: "s2@x.example" } })];
     const out = moniqueFound({ newRows: [], grid: [...plain, ...starred], lists: NO_LISTS, now: NOW });
     expect(out.grid.map((r: any) => r.company)).toEqual(["⭐ Alpha", "Beta"]);
   });

@@ -124,7 +124,8 @@ describe("matches are counted once and the email carries the best few", () => {
     const out = moniqueFound({ newRows: [], grid, lists: NO_LISTS, now: NOW });
     expect(out.grid).toHaveLength(MAX_EMAIL_MATCHES);
     // Fresh, 1% apart and filled: every one of these earns the star, so the order is freshest first.
-    expect(out.grid.map((r: any) => r.company)).toEqual(["⭐ Co 0 (+1 more)", "⭐ Co 1 (+1 more)", "⭐ Co 2 (+1 more)", "⭐ Co 3 (+1 more)", "⭐ Co 4 (+1 more)"]);
+    // 18 Nov 2026: the other match on a company is said in words, never "(+1 more)".
+    expect(out.grid.map((r: any) => r.company)).toEqual([0, 1, 2, 3, 4].map((c) => `⭐ Co ${c} (and 1 other match on it in Boss OS)`));
     expect(out.grid[0].trade).toMatch(/^Seller 0near .* at \$101 a share → Buyer 0 .* at \$100 a share$/);
     expect(out.lines.filter((l: any) => /^Match, /.test(l.text))).toEqual([]);
     // The totals are counted once for the Matches screen and never printed (owner, 13 Nov 2026).
@@ -133,8 +134,9 @@ describe("matches are counted once and the email carries the best few", () => {
     expect(out.link).toEqual({ label: "See every match", url: "https://boss.sequoiataylor.com/?tab=capital&view=matches" }); // one button to the Matches screen
   });
   it("a row stays until she dismisses it or one side goes stale; a new order brings a dismissed pair back", () => {
-    const sell = row({ id: "s", company: "Company Q", side: "sell", direction: "sell", size_usd: 25e6, size_text: "$25M", from_text: "Pat", received_on: day(11), _row: { from: "pat@q.example" } });
-    const buy = row({ id: "b", company: "Company Q", from_text: "Bo", received_on: day(11), _row: { from: "bo@q.example" } });
+    // Priced and close: only a real match reaches the email (18 Nov 2026).
+    const sell = row({ id: "s", company: "Company Q", side: "sell", direction: "sell", size_usd: 25e6, size_text: "$25M", from_text: "Pat", received_on: day(11), price_text: "$100/share", _row: { from: "pat@q.example" } });
+    const buy = row({ id: "b", company: "Company Q", from_text: "Bo", received_on: day(11), price_text: "$100/share", _row: { from: "bo@q.example" } });
     const all = allMatches([sell, buy], NO_LISTS, { now: NOW });
     const within = all;
     // Told yesterday or today, it stays (25 Oct 2026: "a row stays until she dismisses it").
@@ -144,14 +146,14 @@ describe("matches are counted once and the email carries the best few", () => {
     expect(gridMatches(within, { dismissed })).toHaveLength(0);
     expect(moniqueFound({ newRows: [], grid: [sell, buy], lists: NO_LISTS, now: NOW, dismissed }).matches).toHaveLength(0);
     // A new price from the seller is a new order: the pair is back.
-    const repriced = { ...sell, price_text: "$120/share" };
+    const repriced = { ...sell, price_text: "$102/share" };
     expect(moniqueFound({ newRows: [], grid: [repriced, buy], lists: NO_LISTS, now: NOW, dismissed }).grid).toHaveLength(1);
   });
   it("the email never lists hundreds: a grid of 300 pairs still shows five rows and no totals line", () => {
     const grid: any[] = [];
     for (let i = 0; i < 300; i++) {
-      grid.push(row({ id: `b${i}`, company: `Co ${i % 40}`, from_text: `B${i}`, _row: { from: `b${i}@x.example` } }));
-      grid.push(row({ id: `s${i}`, company: `Co ${i % 40}`, side: "sell", direction: "sell", from_text: `S${i}`, _row: { from: `s${i}@x.example` } }));
+      grid.push(row({ id: `b${i}`, company: `Co ${i % 40}`, from_text: `B${i}`, price_text: "$100/share", _row: { from: `b${i}@x.example` } }));
+      grid.push(row({ id: `s${i}`, company: `Co ${i % 40}`, side: "sell", direction: "sell", from_text: `S${i}`, price_text: "$100/share", _row: { from: `s${i}@x.example` } }));
     }
     const out = moniqueFound({ newRows: [], grid, lists: NO_LISTS, now: NOW });
     expect(out.grid.length).toBe(MAX_EMAIL_MATCHES);
@@ -181,7 +183,8 @@ describe("their words, quoted, end as they ended", () => {
   it("the prospect section's reply line ends with their question mark", () => {
     const e = buildDay({ diary: [], tasks: [], approvals: [], repoChanges: [], briefing: null, feed: { items: [] }, morning: {},
       prospects: { sent: [], replies: [{ name: "Alex Example", firm: "Fund", email: "alex@fund.example", status: "replied", reply_note: "Can we talk Tuesday?" }], next: [], totals: {}, approved: true } }, NOW);
-    expect(e.text).toContain('Alex Example (Fund, alex@fund.example) answered: "Can we talk Tuesday?"');
+    // 18 Nov 2026: each replier is "Name at Firm (kind, AUM)", then what they said, quoted as they ended it.
+    expect(e.text).toMatch(/Alex Example at Fund \(.*\)\. They said: "Can we talk Tuesday\?"/);
     expect(e.text).not.toContain('Tuesday."');
   });
 });

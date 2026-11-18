@@ -4,7 +4,26 @@
  * Kept apart from lp-calendar.mjs, which reads free/busy only and feeds the reply drafter.
  * What this reads is matched by code (src/shared/boss/lp/callBooked.mjs) and never sent to a model.
  */
-import { CAL_SUBJECTS, calendarToken } from "./calendar-sync.mjs";
+import { CAL_SUBJECTS, calendarToken, FEEDS } from "./calendar-sync.mjs";
+import { parseIcs } from "./ics.mjs";
+
+/*
+ * AND EVERY CALENDAR FEED SHE HAS (18 Nov 2026: the call with an LP's principal sat on her personal
+ * calendar only, so the West Peek read missed it and the morning kept asking her to answer the
+ * assistant who had arranged it, a day after the call was held). Feeds that cannot be read are
+ * skipped; the West Peek read still decides whether the whole read failed.
+ */
+export async function feedEvents({ now = Date.now(), backDays = 45, aheadDays = 180 } = {}) {
+  const out = [];
+  for (const f of FEEDS.filter((x) => process.env[x.env])) {
+    try {
+      const r = await fetch(process.env[f.env], { headers: { accept: "text/calendar" } });
+      if (!r.ok) continue;
+      for (const e of parseIcs(await r.text(), now, aheadDays, backDays).events) out.push({ scheduled_at: e.scheduled_at, status: null, description: e.description, attendees: (e.attendees ?? []).map((a) => ({ email: a.email, self: false, responseStatus: a.response ?? null })) });
+    } catch { /* one feed unread is not the whole read */ }
+  }
+  return out;
+}
 
 const CAL = "https://www.googleapis.com/calendar/v3";
 const DAY = 86_400_000;
@@ -41,5 +60,5 @@ export async function herEvents(creds, { now = Date.now(), since = Date.parse("2
     }
     page = j.nextPageToken ?? null;
   } while (page && out.length < 20_000);
-  return out;
+  return [...out, ...(await feedEvents({ now }))];
 }

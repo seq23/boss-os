@@ -229,15 +229,17 @@ const FORMS: Record<string, Form[]> = {
     () => "Grateful the team runs while I sleep and tells me plainly what it did.",
   ],
   "relationships and support": [
-    (f) => f.westPeekDay ? "Grateful I get to build something with Scooter that outlasts both of us." : "Grateful for a partner who picks up when I call.",
+    (f) => f.westPeekDay ? "Grateful I get to build something with Scooter that outlasts both of us." : "Grateful I get to build West Peek with my brother.",
     () => "Grateful for the people who knew me before any of this worked.",
     () => "Grateful I am not doing this alone, even on the days it feels like it.",
     () => "Grateful for the friends who tell me the truth, kindly.",
   ],
   "home": [
     () => "Grateful for a home that is quiet when I need it to be.",
-    () => "Grateful for the first coffee and the first light in my kitchen.",
     () => "Grateful there is a place that is mine to come back to tonight.",
+    // 18 Nov 2026: lines that named a coffee, a kitchen, a laugh, a song or a stranger she never had are gone;
+    // their places hold lines that invent nothing, so the 30-day no-repeat rotation keeps its length.
+    () => "Grateful my home is mine to keep in order, one room at a time.",
   ],
   "spiritual protection and alignment": [
     (f) => f.holding ? `Grateful I am still holding ${lower(f.holding)} without gripping it.` : "Grateful I can want something big without gripping it.",
@@ -251,10 +253,10 @@ const FORMS: Record<string, Form[]> = {
     () => "Grateful to carry a name that the people before me kept clean.",
   ],
   "small moments": [
-    () => "Grateful for one good laugh yesterday that I did not plan.",
-    () => "Grateful for a song that can change the whole room.",
-    () => "Grateful for the small kindness of a stranger I will never see again.",
     () => "Grateful for an unhurried minute before the phone wakes up.",
+    () => "Grateful I noticed something that went right yesterday, however small.",
+    () => "Grateful a plain, ordinary day still counts as a good one.",
+    () => "Grateful I can still be surprised by how a day turns out.",
   ],
   "resilience and survival": [
     (f) => f.lastVerdict === "miss" ? "Grateful yesterday is closed and today is the one that decides what it was." : "Grateful a hard day has never had the last word.",

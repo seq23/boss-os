@@ -264,13 +264,32 @@ export async function runOutreach({ live = false, now = Date.now(), sender, desk
   return { sent, planned: plan.length };
 }
 
+/*
+ * WHO REALLY WROTE BACK (owner, 18 Nov 2026: "explain '7 forwarded to you' … and '0 booked of 4'").
+ * Of the 7 "forwarded", 4 were TikTok's own system mail landing in the same inbox. A reply counts only
+ * from a person: never a no-reply, bounce, register or notification address. Pure.
+ */
+export const SYSTEM_SENDER = /^(?:no-?reply|do-?not-?reply|register|notifications?|mailer-daemon|postmaster|bounces?\b|bounces\+)|@(?:[a-z0-9-]+\.)*(?:tiktok|facebookmail|google|linkedin|instagram)\.com$/i;
+const orgOf = (email) => {
+  const d = String(email).split("@")[1] ?? "";
+  const base = d.replace(/^(?:mail|www)\./, "").split(".").slice(0, -1).join(" ");
+  return base.replace(/(foundation|security|group|law|company|church|school)$/i, " $1").replace(/\bthe(?=[a-z])/i, "the ").replace(/\b\w/g, (c) => c.toUpperCase()).trim() || d;
+};
+export function progressLine(status, { stopped = null } = {}) {
+  const people = [...new Set((status.taken_over ?? []).map((s) => String(s).toLowerCase()))].filter((e) => !SYSTEM_SENDER.test(e));
+  const ooo = new Set((status.replies ?? []).filter((r) => /^(?:ooo|out_of_office|auto_reply|auto-reply)$/i.test(r.kind)).map((r) => String(r.email).toLowerCase())).size;
+  const booked = `${status.corporate_booked} of the 4 office bookings Camille is aiming for by 5 Dec (a booking is a paid deposit on a business or lobby request)`;
+  const wrote = people.length
+    ? `${people.length} ${people.length === 1 ? "office wrote" : "offices wrote"} back and ${people.length === 1 ? "is" : "are"} yours to answer in your Porch & Party inbox (${people.map(orgOf).join(", ")}); Camille stopped writing to ${people.length === 1 ? "it" : "them"}`
+    : "no office has written back yet";
+  if (stopped) return `Camille, office Christmas outreach: finished. ${wrote}${ooo ? `; ${ooo} out-of-office` : ""}. ${booked[0].toUpperCase()}${booked.slice(1)}.`;
+  return `Camille, office Christmas outreach: ${status.sent_today + status.followups_today} sent today · ${wrote}${ooo ? ` · ${ooo} out-of-office` : ""} · ${booked}.`;
+}
+
 export function writeProgress({ status, stopped }, { dir = process.env.BOSS_OS_MORNING_DIR ?? morningDir(), stateFile = path.join(privateDir, "progress.json"), now = Date.now() } = {}) {
   const prev = readJson(stateFile);
   if (stopped && prev.finished) return;
-  const forwarded = new Set((status.taken_over ?? []).map((s) => s.toLowerCase())).size;
-  const line = stopped ? `Camille, office Christmas outreach: finished · ${status.corporate_booked} booked of 4`
-    : `Camille, office Christmas outreach: ${status.sent_today + status.followups_today} sent · ${forwarded} forwarded to you · ${status.corporate_booked} booked of 4`;
-  writeMorningSection("pnp_outreach", { lines: [line] }, { dir, now });
+  writeMorningSection("pnp_outreach", { lines: [progressLine(status, { stopped })] }, { dir, now });
   keep(stateFile, { finished: !!stopped });
 }
 

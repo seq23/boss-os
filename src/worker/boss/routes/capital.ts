@@ -30,6 +30,7 @@ import type { Env, Vars } from "../env";
 import { ok, badRequest } from "../lib/http";
 import { currentBook, currentBookLines } from "../capital/book";
 import { dismissedSet, tapsFor, tapByCode, dismissMatch, refKey, currentMatch } from "../capital/dismiss";
+import { publicCompanies, markPublic } from "../capital/publicCompanies";
 import {
   activeLists, applyListEdit, cleanDealRow, cleanHolder, dealGrid, holdersList, storeDeals, storeHolders,
   type DealRow, type HolderRow,
@@ -210,6 +211,16 @@ capital.post("/matches", async (c) => {
   });
   for (let i = 0; i < stmts.length; i += 100) await c.env.DB.batch(stmts.slice(i, i + 100));
   return ok(c, { stored: stmts.length - (body.replace ? 1 : 0), codes });
+});
+
+/** The companies now public (seed + stored): no match, no deal, no prospect question on them. */
+capital.get("/public", async (c) => ok(c, { companies: await publicCompanies(c.env) }));
+/** Add one: the morning run's briefing read (`via: "briefing"`, the headline as evidence) or by hand. */
+capital.post("/public", async (c) => {
+  const b = (await c.req.json<any>().catch(() => null)) ?? {};
+  if (!String(b.company ?? "").trim()) throw badRequest("Name the company.");
+  const via = ["briefing", "reply", "hand"].includes(String(b.via)) ? String(b.via) : "hand";
+  return ok(c, { added: await markPublic(c.env, { company: String(b.company), evidence: b.evidence ?? null, via, since: b.since ?? null }), companies: await publicCompanies(c.env) });
 });
 
 /** What she has dismissed, for her Mac's morning run: every (pair, sig). */

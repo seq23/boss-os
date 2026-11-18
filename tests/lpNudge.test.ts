@@ -12,7 +12,10 @@ describe("the LP nudge", () => {
     expect(LP_NUDGE_DAYS).toBe(7);
     const [n] = lpNudgeItems([row({})], NOW);
     expect(n.title).toMatch(/^No answer in 8 days: nudge Pat Example\?/);
-    expect(n.draft.text).toMatch(/^Hi Pat,\n\nJust floating this back up/);
+    // It names the last exchange and asks one concrete thing; never "patience" in a chase (18 Nov 2026).
+    expect(lpNudgeItems([row({ said: "We are reviewing managers this month. Pat, Example LP, 555-555-0100" })], NOW)[0].draft.text).toMatch(/^Hi Pat,\n\nPicking up from your note \("We are reviewing managers this month\."\)/);
+    expect(n.draft.text).not.toMatch(/patience/i);
+    expect(lpNudgeItems([row({ subject: "Re: Memphis senior housing fit?" })], NOW)).toEqual([]);
     expect(n.buttons.map((b: any) => b.label)).toEqual(["Open their thread"]);
     expect(lpNudgeItems([row({ tap_token: "tok_abcdefghijklmnopqrstu" })], NOW)[0].buttons.map((b: any) => b.label)).toEqual(["Send the nudge", "No nudge", "Open their thread"]);
     expect(lpNudgeItems([row({ nudged_at: NOW - DAY })], NOW)).toEqual([]);

@@ -12,12 +12,14 @@ export interface IcsEvent {
   scheduled_at: number;
   duration_min: number | null;
   location: string | null;
+  attendees?: Array<{ email: string; response?: string | null }>;
 }
 
 export function parseIcs(
   text: string,
   now?: number,
   horizonDays?: number,
+  backDays?: number,
 ): { events: IcsEvent[]; unexpanded: number };
 
 export function icsText(v: string | null | undefined): string | null | undefined;

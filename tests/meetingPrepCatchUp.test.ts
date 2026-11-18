@@ -25,6 +25,13 @@ describe("a meeting with Scooter is a catch-up", () => {
     expect(isScooterCatchUp(other, ME)).toBe(false);
   });
 
+  // Owner, 18 Nov 2026: an LP call with Scooter on it was prepped as "Catch-up with Scooter".
+  it("is never a catch-up when anyone but her and Scooter is on it", () => {
+    const withLp = { ...other, title: "Pat (Example Partners) <> Sequoia", attendees: [{ email: "me@example.com" }, { email: "assistant@partners.example", name: "Lee Assistant" }, { email: "scooter@fund.example", name: "Scooter Example" }] };
+    expect(isScooterCatchUp(withLp, ME)).toBe(false);
+    expect(isScooterCatchUp({ ...sync, attendees: [...sync.attendees, { email: "lp@lp.example", name: "Some Lp" }] }, ME)).toBe(false);
+  });
+
   it("never asks what it is for, on any weekday, and leads with her roundup", () => {
     const r = roundupFrom({ loops, brains: [{ slug: "spry", body_md: brain }], since, now: THU_3PM - 3_600_000 });
     const p = buildCatchUp(sync, r, { herAddresses: ME, since });

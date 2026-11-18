@@ -2207,8 +2207,16 @@ today.post("/gates/morning", async (c) => {
    * day is. Everything in the body is an override of something it would otherwise decide.
    */
   const b = (await c.req.json<any>().catch(() => null)) ?? {};
+  return ok(c, await closeMorningGate(c.env, b), 201);
+});
 
-  const day = await ensureDay(c.env.DB, b.day_id ? String(b.day_id) : dayId(Date.now()));
+/**
+ * THE MORNING GATE, CLOSED (the screen's POST and her reply "gate done", 18 Nov 2026: one path, so a
+ * gate ticked by email is the same record as one ticked on Today).
+ */
+export async function closeMorningGate(env: Env, b: any = {}) {
+
+  const day = await ensureDay(env.DB, b.day_id ? String(b.day_id) : dayId(Date.now()));
   const weekday = new Date(`${day.id}T12:00:00Z`).getUTCDay();
 
   /*
@@ -2223,7 +2231,7 @@ today.post("/gates/morning", async (c) => {
    * day is the default and hers is an OVERRIDE — a normal event with a name, not an exception. What
    * she sends wins; what she omits is filled in from her projects, her arcs and her real record.
    */
-  const pillars = await buildPillars(c.env, day.id, day.day_mode, weekday);
+  const pillars = await buildPillars(env, day.id, day.day_mode, weekday);
 
   /*
    * `optionalTextList`, NOT `textList`. The strict one throws "the gate needs at least one
@@ -2246,7 +2254,7 @@ today.post("/gates/morning", async (c) => {
 
   // Step 6 of canon §17 is the approval inbox scan, so the contract records what
   // was actually waiting when the day was agreed to.
-  const pending = await c.env.DB
+  const pending = await env.DB
     .prepare(`SELECT COUNT(*) AS n FROM approvals WHERE status = 'pending'`)
     .first<{ n: number }>();
 
@@ -2275,8 +2283,8 @@ today.post("/gates/morning", async (c) => {
    * WORK. Spirit was the starkest — `spirit/practice.ts` had been composing the sentence and
    * holding the sequence the whole time, and nothing ever called it.
    */
-  const { body: bodyContract, somatic_logged } = await buildBodyContractWithState(c.env, day.id, day.day_mode);
-  if (!somatic_logged) await logSomatic(c.env, day.id, bodyContract.somatic);
+  const { body: bodyContract, somatic_logged } = await buildBodyContractWithState(env, day.id, day.day_mode);
+  if (!somatic_logged) await logSomatic(env, day.id, bodyContract.somatic);
 
   const agenda = {
     anchor: contract.commitment,
@@ -2294,7 +2302,7 @@ today.post("/gates/morning", async (c) => {
   };
 
   const payload = { priorities, state, contract, agenda, inbox_scan: { pending: pending?.n ?? 0 } };
-  const entry = await recordGate(c.env, day, "morning", payload, {
+  const entry = await recordGate(env, day, "morning", payload, {
     morning_completed_at: Date.now(),
     morning_priorities: JSON.stringify(priorities),
     morning_state: JSON.stringify(state),
@@ -2303,13 +2311,13 @@ today.post("/gates/morning", async (c) => {
   });
 
   // Morning Launch is Body + Spirit + first setup, which is exactly what this gate captured.
-  await ensureRunOfShow(c.env, day.id);
-  await closeBlocksForGate(c.env, day.id, "morning");
+  await ensureRunOfShow(env, day.id);
+  await closeBlocksForGate(env, day.id, "morning");
 
-  const refreshed = await ensureDay(c.env.DB, day.id);
-  const blocks = await assembleDayFlow(c.env, refreshed);
-  return ok(c, { gate: entry, day: refreshed, blocks }, 201);
-});
+  const refreshed = await ensureDay(env.DB, day.id);
+  const blocks = await assembleDayFlow(env, refreshed);
+  return { gate: entry, day: refreshed, blocks };
+}
 
 /**
  * The standing agenda for a recurring counterpart.

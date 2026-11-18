@@ -516,7 +516,7 @@ function cleanSection(sec) {
   } : null;
   const rows = sec.rows && Array.isArray(sec.rows.data) && sec.rows.data.length ? {
     columns: (sec.rows.columns ?? []).map((c) => ({ key: c.key, label: cleanText(c.label) })),
-    data: sec.rows.data.map((r) => ({ ...r, url: okUrl(r.url) ? r.url : null, url_label: cleanText(r.url_label ?? "") || null })),
+    data: sec.rows.data.map((r) => ({ ...r, url: okUrl(r.url) ? r.url : null, url_label: cleanText(r.url_label ?? "") || null, url2: okUrl(r.url2) ? r.url2 : null, url2_label: cleanText(r.url2_label ?? "") || null })),
   } : null;
   return {
     title: cleanText(sec.title), note: sec.note ? cleanText(sec.note) : null, boxed: Boolean(sec.boxed), tone: sec.tone ?? null,
@@ -531,7 +531,7 @@ const cell = (r, key) => cleanText(r[key] ?? "") || "—";
 function sectionText(sec) {
   const out = ["", sec.title, ...(sec.note ? [sec.note] : [])];
   const body = [];
-  if (sec.rows) for (const r of sec.rows.data) body.push(`- ${sec.rows.columns.map((c) => cell(r, c.key)).join(" · ")}${r.url ? ` — ${r.url_label ?? linkLabel(r.url)}: ${r.url}` : ""}`);
+  if (sec.rows) for (const r of sec.rows.data) body.push(`- ${sec.rows.columns.map((c) => cell(r, c.key)).join(" · ")}${r.url ? ` — ${r.url_label ?? linkLabel(r.url)}: ${r.url}` : ""}${r.url2 ? ` — ${r.url2_label ?? linkLabel(r.url2)}: ${r.url2}` : ""}`);
   sec.cards.forEach((c, i) => body.push(...cardText(c, i + 1)));
   for (const i of sec.items) body.push(`- ${i.text}${i.links.map((l) => ` — ${l.label}: ${l.url}`).join("")}`);
   if (!body.length && sec.empty) body.push(sec.empty);
@@ -552,7 +552,7 @@ function sectionHtml(sec) {
     inner += `<table role="presentation" style="border-collapse:collapse;width:100%;margin:0 0 8px;font-size:13px">`
       + `<tr>${sec.rows.columns.map((c) => `<th ${th}>${esc(c.label)}</th>`).join("")}<th ${th}></th></tr>`
       + sec.rows.data.map((r) => `<tr>${sec.rows.columns.map((c, i) => `<td ${td}>${i === 0 ? `<b>${esc(cell(r, c.key))}</b>` : esc(cell(r, c.key))}</td>`).join("")}`
-        + `<td ${td}>${r.url ? `<a href="${esc(r.url)}">${esc(r.url_label ?? linkLabel(r.url))}</a>` : ""}</td></tr>`).join("")
+        + `<td ${td}>${r.url ? `<a href="${esc(r.url)}">${esc(r.url_label ?? linkLabel(r.url))}</a>` : ""}${r.url2 ? `<br><a href="${esc(r.url2)}">${esc(r.url2_label ?? linkLabel(r.url2))}</a>` : ""}</td></tr>`).join("")
       + `</table>`;
   }
   if (sec.cards.length) { any = true; inner += sec.cards.map((c, i) => cardHtml(c, i + 1, "plain")).join(""); }
@@ -595,7 +595,15 @@ function page(inner) {
  *   details   strings (bullets) or `{ heading }`, under "Details" (what `fromLegacy` writes).
  *   footer    a small line above the name; `postscript` a small line below it (the 8Raise line).
  */
-export function layoutEmail({ who, subject, happened, decide = [], needs = [], details = [], sections = [], refs = [], footer = null, postscript = null, moreDecide = null, maxDecide = MAX_DECIDE, kind = "plain", lead = null, leadNotes = [] }) {
+export function layoutEmail({ who, subject, happened, decide = [], needs = [], details = [], sections = [], refs = [], footer = null, postscript = null, moreDecide = null, maxDecide = MAX_DECIDE, kind = "plain", lead = null, leadNotes = [], banners = [] }) {
+  /*
+   * BANNERS (18 Nov 2026): what must be seen before anything else — the "never miss twice" call-out
+   * and a job that has STOPPED. In HTML a coloured block at the very top (inline styles, so Gmail
+   * renders it); in text, right under line 1, each line in capitals for its title.
+   */
+  const bannerList = (banners ?? []).map((b) => ({ tone: b?.tone === "coach" ? "coach" : "red", title: cleanText(b?.title ?? ""), lines: (b?.lines ?? []).map((l) => cleanText(l)).filter(Boolean) })).filter((b) => b.title);
+  const bannerText = bannerList.flatMap((b) => ["", `${b.tone === "red" ? "🔴 " : ""}${b.title.toUpperCase()}`, ...b.lines]);
+  const bannerHtml = bannerList.map((b) => `<div style="margin:0 0 12px;padding:14px 16px;border-radius:10px;background:${b.tone === "red" ? "#b3261e" : "#1d1d1f"};color:#ffffff;border-left:8px solid ${b.tone === "red" ? "#7a0f0a" : "#d93025"}"><p style="margin:0 0 6px;font-size:17px;line-height:1.35;font-weight:700;color:#ffffff">${b.tone === "red" ? "&#128308; " : ""}${esc(b.title)}</p>${b.lines.map((l) => `<p style="margin:4px 0 0;font-size:15px;line-height:1.45;color:#ffffff">${esc(l)}</p>`).join("")}</div>`).join("");
   const name = String(who ?? "").trim() || "Simone";
   const subj = cleanSubject(subject);
   /*
@@ -627,7 +635,7 @@ export function layoutEmail({ who, subject, happened, decide = [], needs = [], d
     : leadLine ? [] : [NOTHING_TO_DECIDE];
   let sectionLines = sectionList.flatMap(sectionText);
   const detailLines = (list, cutNote) => (list.length || cutNote ? ["", "Details:", ...list.map((d) => (typeof d === "string" ? (/^\d+\. /.test(d) ? `  ${d}` : `- ${d}`) : `${d.heading}`)), ...(cutNote ? [`- ${cutNote}`] : [])] : []);
-  const buildText = (list, cutNote) => [first, ...notes, "", ...decideLines, ...(after && after !== first ? ["", after] : []), ...sectionLines, ...detailLines(list, cutNote), "", ...(foot ? [foot, ""] : []), `— ${name}`, ...(ps ? ["", ps] : [])]
+  const buildText = (list, cutNote) => [first, ...notes, ...bannerText, "", ...decideLines, ...(after && after !== first ? ["", after] : []), ...sectionLines, ...detailLines(list, cutNote), "", ...(foot ? [foot, ""] : []), `— ${name}`, ...(ps ? ["", ps] : [])]
     .join("\n").replace(/\n{3,}/g, "\n\n");
 
   /*
@@ -687,7 +695,7 @@ export function layoutEmail({ who, subject, happened, decide = [], needs = [], d
     detailHtml += "</div>";
   }
   const html = page(
-    `<div style="background:#ffffff;border-radius:10px;padding:12px 14px;border:1px solid ${C.line}"><p style="margin:0;font-size:16px;line-height:1.45;font-weight:600">${linkify(first)}</p>${notes.map((x) => `<p style="margin:8px 0 0">${linkify(x)}</p>`).join("")}</div>`
+    bannerHtml + `<div style="background:#ffffff;border-radius:10px;padding:12px 14px;border:1px solid ${C.line}"><p style="margin:0;font-size:16px;line-height:1.45;font-weight:600">${linkify(first)}</p>${notes.map((x) => `<p style="margin:8px 0 0">${linkify(x)}</p>`).join("")}</div>`
     + (shown.length
       ? `<p ${SEC(C.decideInk)}>${DECIDE_HEADING} (${allDecide.length})</p>${shown.map((c, i) => cardHtml(c, i + 1)).join("")}${moreLine ? `<p style="margin:0 0 8px;font-size:13px;color:${C.muted}">${esc(moreLine)}</p>` : ""}`
       : leadLine ? "" : `<p style="margin:14px 2px;font-size:14px;color:${C.muted}">${NOTHING_TO_DECIDE}</p>`)

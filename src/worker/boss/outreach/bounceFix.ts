@@ -173,7 +173,7 @@ export async function fixBounces(db: D1Database, fetchImpl: typeof fetch, now: n
 }
 
 /** The last day of the agent's work, for her one line: `{ replaced, dropped, restarted: [brand] }`. */
-export async function bounceSummary(db: D1Database, now: number, windowMs = DAY_MS): Promise<{ replaced: number; dropped: number; restarted: string[]; pending: number }> {
+export async function bounceSummary(db: D1Database, now: number, windowMs = DAY_MS): Promise<{ replaced: number; dropped: number; restarted: string[]; pending: number; restarts: { business: string; why: string; sent_since: number; bounced_14d: number }[] }> {
   const since = now - windowMs;
   const counts = await db.prepare(
     `SELECT SUM(CASE WHEN state = 'replaced' AND done_at >= ? THEN 1 ELSE 0 END) AS replaced,
@@ -181,12 +181,27 @@ export async function bounceSummary(db: D1Database, now: number, windowMs = DAY_
             SUM(CASE WHEN state = 'pending' THEN 1 ELSE 0 END) AS pending
        FROM outreach_bounce_fixes WHERE kind = 'replace'`,
   ).bind(since, since).first<{ replaced: number | null; dropped: number | null; pending: number | null }>();
-  const restarts = await db.prepare(`SELECT DISTINCT business_key FROM outreach_bounce_fixes WHERE kind = 'restart' AND created_at >= ?`).bind(since).all<{ business_key: string }>();
+  const restarts = await db.prepare(`SELECT business_key, MIN(created_at) AS at FROM outreach_bounce_fixes WHERE kind = 'restart' AND created_at >= ? GROUP BY business_key`).bind(since).all<{ business_key: string; at: number }>();
+  /*
+   * WHY IT STOPPED AND HOW MANY WENT OUT (owner, 18 Nov 2026: "Outreach restarted (Time2Read)" said
+   * neither). The pause is the bounce guard: over 3% of the last 14 days' emails bounced. Counted from
+   * the real sends, never tests.
+   */
+  const restartDetail: { business: string; why: string; sent_since: number; bounced_14d: number }[] = [];
+  for (const r of restarts.results ?? []) {
+    const n = await db.prepare(
+      `SELECT SUM(CASE WHEN status = 'sent' AND sent_at >= ? THEN 1 ELSE 0 END) AS sent_since,
+              SUM(CASE WHEN status = 'bounced' AND sent_at >= ? THEN 1 ELSE 0 END) AS bounced
+         FROM outreach_sends WHERE business_key = ? AND is_test = 0`,
+    ).bind(r.at, now - 14 * 86_400_000, r.business_key).first<{ sent_since: number | null; bounced: number | null }>();
+    restartDetail.push({ business: BUSINESSES.find((b) => b.key === r.business_key)?.brand ?? r.business_key, why: "more than 3% of its emails in the last 14 days had bounced", sent_since: n?.sent_since ?? 0, bounced_14d: n?.bounced ?? 0 });
+  }
   const brand = (k: string) => BUSINESSES.find((b) => b.key === k)?.brand ?? k;
   return {
     replaced: counts?.replaced ?? 0,
     dropped: counts?.dropped ?? 0,
     pending: counts?.pending ?? 0,
     restarted: [...new Set((restarts.results ?? []).map((r) => brand(r.business_key)))],
+    restarts: restartDetail,
   };
 }

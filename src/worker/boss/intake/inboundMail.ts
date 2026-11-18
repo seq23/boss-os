@@ -40,6 +40,7 @@ import { answerKdpFromMail } from "../kdp/answer";
 import { dismissFromMail } from "../capital/dismiss";
 import { prospectTemplateFromMail } from "../lp/templateReply";
 import { decideAnswerFromMail, morningDayOf } from "../lp/decideReply";
+import { morningReplyFromMail } from "./morningReply";
 import { secretDoor } from "../service/secretHandoff";
 import { answerBlockFromMail } from "../service/blockReply";
 import { recordConstraints } from "../service/constraints";
@@ -659,11 +660,21 @@ export async function handleBossInboundMail(message: BossMailMessage, env: Env):
    * or desk sees it: an LP card holds her words as the reply in their thread for her one tap; a
    * task card goes to that task's door; any other card keeps her words. Never a hunt or a new job.
    */
+  /*
+   * HER PLAIN-WORD COMMANDS TO SIMONE (18 Nov 2026): "drop 2", "drop Ron Brooks", "gate done",
+   * "grateful for …", "X is public", a standing rule. Exact whole lines only; never sends or approves
+   * (intake/morningReply.ts). Only commands → done here; mixed → acted on, and the rest goes on.
+   */
+  const morningReply = own ? await morningReplyFromMail(env, { text: own, refs: threadRefs.refs, mailId, now }) : null;
+  if (morningReply?.onlyCommands) {
+    await finish({ outcome: "MORNING_REPLY", why: morningReply.note, employeeId: "emp_chief", objectKey, reply: morningReply.note });
+    return { mailId, outcome: "MORNING_REPLY", employeeId: "emp_chief", taskId: null, reply: morningReply.note, messageId, signer: "Simone" };
+  }
   const decideAnswer = own
     ? await decideAnswerFromMail(env, { text: own, refs: threadRefs.refs, subject, mailId, now })
     : null;
   if (decideAnswer) {
-    const decideReply = [decideAnswer.note, ...(secrets?.line ? ["", secrets.line] : [])].join("\n");
+    const decideReply = [decideAnswer.note, ...(morningReply?.note ? [morningReply.note] : []), ...(secrets?.line ? ["", secrets.line] : [])].join("\n");
     await finish({ outcome: decideAnswer.outcome, why: decideAnswer.note, taskId: decideAnswer.taskId, employeeId: "emp_chief", objectKey, reply: decideReply });
     return { mailId, outcome: decideAnswer.outcome, employeeId: "emp_chief", taskId: decideAnswer.taskId, reply: decideReply, messageId, signer: "Simone" };
   }

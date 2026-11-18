@@ -49,7 +49,9 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { sendAsEmployee, ownerTo } from "./notify.mjs";
-import { createHash } from "node:crypto";
+import { createHash, randomBytes } from "node:crypto";
+import { isClientOutreach, theirWords } from "../../src/shared/boss/lp/plan.mjs";
+import { publicList, isPublicCompany, publicFromHeadline } from "../../src/shared/boss/deals/publicCompanies.mjs";
 import { ownerTime } from "../../src/shared/boss/ownerTime.mjs";
 import { clockWords, lineProblems, proseRuns, proseText, cleanText, quotedSentence, NOTHING_TO_DO, toYou } from "../../src/shared/boss/mail/plain.mjs";
 import { ownerEmail } from "../../src/shared/boss/mail/ownerLayout.mjs";
@@ -58,6 +60,8 @@ import { sectionsNotReported, notReportedLine } from "../../src/shared/boss/mail
 import { templateDecide } from "./lp-prospects.mjs";
 import { systemRow } from "../../src/shared/boss/openLoops/openLoops.mjs";
 import { yoursThisWeek } from "../../src/shared/boss/waiting/register.mjs";
+import { dedupeEvents, isAttending, others } from "../../src/shared/boss/meetingPrep/prep.mjs";
+import { gratitudeFromBrain, coachPressure } from "../../src/shared/boss/mail/morningReply.mjs";
 
 const ORIGIN = process.env.BOSS_OS_ORIGIN ?? "https://boss.sequoiataylor.com";
 const FEED = process.env.PNP_OWNER_FEED_URL ?? "https://porchandparty901.com/api/owner-feed";
@@ -91,6 +95,43 @@ const OPEN = new Set(["queued", "running", "awaiting_approval", "classified", "a
 
 function callsOn(diary, iso) {
   return (diary ?? []).filter((r) => r.scheduled_at && dayOf(r.scheduled_at) === iso).sort((a, b) => a.scheduled_at - b.scheduled_at);
+}
+
+/** "Harris, Felicia" → "Felicia Harris"; a guest with no name is their address. */
+const guestName = (a) => {
+  const n = String(a.name ?? "").trim();
+  if (!n) return a.email ?? null;
+  const m = /^([^,]+),\s*([^,]+)$/.exec(n);
+  return m ? `${m[2]} ${m[1]}` : n;
+};
+
+/**
+ * HER CALENDAR LINE: EVERY MEETING SHE IS GOING TO, FROM BOTH CALENDARS, REAL TITLE, REAL PEOPLE
+ * (owner, 18 Nov 2026: the line listed one meeting, called the City of Memphis "38126 Project
+ * Discussion" a "West Peek partner meeting with Scooter", and listed a meeting she had answered maybe
+ * to). Built from the calendars themselves (`events`, every copy merged by `dedupeEvents`), never
+ * from the diary's merged row: a meeting she answered maybe or no is left out (`isAttending`). A row
+ * she typed (or the standing Wednesday) is added only when no calendar event that day names it, so a
+ * declined standing meeting is gone and an un-calendared one still shows. With no calendar read,
+ * the diary as before. Pure. Returns [{ at, text }] in time order.
+ */
+export function calendarItems({ events = null, diary = [], today, her = [], tz = null }) {
+  const typed = callsOn((diary ?? []).filter((r) => r.source !== "calendar"), today);
+  if (!Array.isArray(events)) return callsOn(diary, today).map((c) => ({ at: c.scheduled_at, text: `${timeOf(c.scheduled_at, tz)} ${c.title}${c.with ? ` with ${c.with}` : ""}${/^https:\/\/\S+$/.test(String(c.location ?? "")) ? ` (join: ${c.location})` : ""}` }));
+  const day = dedupeEvents(events.filter((e) => !e.all_day && dayOf(e.scheduled_at) === today));
+  const names = (e) => `${e.title} ${(e.attendees ?? []).map((a) => `${a.name ?? ""} ${a.email ?? ""}`).join(" ")}`.toLowerCase();
+  const out = day.filter((e) => isAttending(e, her)).map((e) => {
+    const people = others(e, her).map(guestName).filter(Boolean);
+    const shown = people.slice(0, 4).join(", ") + (people.length > 4 ? ` and ${people.length - 4} more` : "");
+    return { at: e.scheduled_at, text: `${timeOf(e.scheduled_at, tz)} ${e.title.trim()}${shown ? ` with ${shown}` : ""}${e.join_url ? ` (join: ${e.join_url})` : ""}` };
+  });
+  for (const r of typed) {
+    const who = String(r.with ?? "").toLowerCase().trim();
+    const t = String(r.title ?? "").toLowerCase().replace(/[^a-z0-9]+/g, "");
+    const named = day.some((e) => (who && names(e).includes(who)) || (t && e.title.toLowerCase().replace(/[^a-z0-9]+/g, "") === t));
+    if (!named) out.push({ at: r.scheduled_at, text: `${timeOf(r.scheduled_at, tz)} ${r.title}${r.with ? ` with ${r.with}` : ""}` });
+  }
+  return out.sort((a, b) => a.at - b.at);
 }
 
 /** Every item in the email opens its own screen (owner, 24 Oct 2026): the morning, kept in Boss OS. */
@@ -397,6 +438,25 @@ export function valerieItems(feed, now = Date.now()) {
 export const MAX_BRIEFING_LINES = 3;
 
 /** The one-minute summary's first lines, as Camille wrote them. `null` when today's report is not in. */
+/**
+ * THE BRIEFING TELLS BOSS OS WHEN A COMPANY GOES PUBLIC (owner, 18 Nov 2026). Every sentence of
+ * Camille's briefing is read for an IPO priced, a first trade or a direct listing
+ * (`publicFromHeadline`); each company found and not yet on the list is returned with the sentence as
+ * its evidence. The run adds them (POST /capital/public) before it builds the email, so the same
+ * morning carries no match or deal on them. Pure.
+ */
+export function publicFromBriefing(briefing, list = []) {
+  const texts = [];
+  const walk = (v) => { if (typeof v === "string") texts.push(v); else if (Array.isArray(v)) v.forEach(walk); else if (v && typeof v === "object") Object.values(v).forEach(walk); };
+  walk(briefing?.sections ?? briefing ?? []);
+  const out = [];
+  for (const s of texts.flatMap((t) => t.split(/\n+|(?<=[.!?])\s+/)).map((x) => x.replace(/^[-*•\d.)\s]+/, "").trim()).filter((x) => x.length >= 12)) {
+    const company = publicFromHeadline(s);
+    if (company && !isPublicCompany(company, [...list, ...out]) && !out.some((o) => o.company === company)) out.push({ company, evidence: s.slice(0, 220) });
+  }
+  return out;
+}
+
 function briefingRaw(briefing, today) {
   if (!briefingReady(briefing, today)) return null;
   const sec = (briefing.sections ?? []).find((s) => s?.key === "one_minute_summary" || /one[- ]minute/i.test(String(s?.heading ?? s?.title ?? "")));
@@ -544,6 +604,23 @@ export function briefingInProgress(tasks, now) {
   return Boolean(mine) && mine.status === "running";
 }
 
+/**
+ * STOPPED TEAM JOBS, NAMED (owner, 18 Nov 2026: "'5 team jobs stopped' is not done-for-you: name the
+ * jobs + whether money/outreach is affected"). Each by its plain name; whether any touches money or
+ * outreach is said either way. Null when none stopped. Pure.
+ */
+export const MONEY_OR_OUTREACH = /\b(?:outreach|send|sends|sender|follow-?ups?|invoice|payment|stripe|gumroad|kdp|publish|price|checkout|nudge|campaign|drip)\b/i;
+export function teamStopsLine(tasks) {
+  const list = (tasks ?? []).filter(Boolean);
+  if (!list.length) return null;
+  const names = [...new Set(list.map((t) => jobName(t).name))];
+  const shown = names.slice(0, 4).join("; ");
+  const touch = list.filter((t) => MONEY_OR_OUTREACH.test(`${t.title ?? ""} ${jobName(t).name}`)).map((t) => jobName(t).name);
+  const effect = touch.length ? `${[...new Set(touch)].slice(0, 2).join(" and ").replace(/[.:]/g, ",")} ${touch.length === 1 ? "touches" : "touch"} outreach or money, so nothing goes out from ${touch.length === 1 ? "it" : "them"} until it is fixed` : "none of them touches money or outreach";
+  // One sentence: Done for you keeps the first sentence of a line.
+  return `Stopped, and Danielle is fixing ${names.length === 1 ? "it" : "them"}: ${shown.replace(/[.:]/g, ",")}${names.length > 4 ? ` and ${names.length - 4} more` : ""} (${effect}).`;
+}
+
 /** The exit code that tells duty-run.sh "not yet, ask me again on the next tick": named, never recorded as a run. */
 export const NOT_YET = 75;
 
@@ -553,7 +630,10 @@ export function bounceLine(b) {
   const bits = [];
   if (b.replaced) bits.push(`Replaced ${plural(b.replaced, "outreach address", "outreach addresses")} that bounced with working ones from each company's own site`);
   if (b.dropped) bits.push(`${b.replaced ? "removed" : "Removed"} ${plural(b.dropped, "bounced address", "bounced addresses")} for good (no working address was published)`);
-  if (b.restarted?.length) bits.push(`${bits.length ? "outreach restarted" : "Outreach restarted"} (${b.restarted.join(", ")})`);
+  // Why it stopped and how many went out since (owner, 18 Nov 2026: "say why it stopped and how many went out").
+  const restarts = Array.isArray(b.restarts) && b.restarts.length ? b.restarts : null;
+  if (restarts) for (const r of restarts) bits.push(`${bits.length ? "" : ""}${r.business} outreach restarted: it was paused because ${r.why}; that is back under 3%, and ${plural(Number(r.sent_since) || 0, "email")} went out since`);
+  else if (b.restarted?.length) bits.push(`${bits.length ? "outreach restarted" : "Outreach restarted"} (${b.restarted.join(", ")})`);
   return `${bits.join("; ")}.`;
 }
 
@@ -575,13 +655,41 @@ export const PROSPECTS_URL = `${ORIGIN}/?tab=capital&view=prospects`;
  * From GET /lp/prospects/activity. Pure. `null` when there is nothing to say or it did not load.
  */
 const shortDate = (ms) => new Date(Number(ms)).toLocaleDateString("en-US", { month: "long", day: "numeric", timeZone: TZ });
-export function prospectSection(a, now = Date.now()) {
+const KIND_WORDS = {
+  family_office: "family office", sovereign_wealth: "sovereign wealth fund", fund_of_funds: "fund of funds",
+  pension_endowment_foundation: "pension, endowment or foundation", secondary_fund: "secondaries fund",
+  crossover_growth: "crossover or growth fund", spv_manager: "SPV manager", inbox_buyer: "buyer from your inbox", other: "investor",
+};
+const OOO = /\b(?:out of (?:the )?office|automatic reply|auto-?reply|on (?:annual )?leave|away from (?:my|the) (?:desk|office)|limited access to email|thank you for contacting)\b/i;
+const NO_THANKS = /\b(?:not interested|no thanks|no thank you|not a fit|pass\b|please remove|unsubscribe|not at this time|not right now)\b/i;
+const linkedInSearch = (name, firm) => `https://www.linkedin.com/search/results/people/?keywords=${encodeURIComponent([name, firm].filter(Boolean).join(" "))}`;
+
+/**
+ * PROSPECT EMAILS: YESTERDAY IN ONE LINE, THEN EACH REAL REPLY (owner, 18 Nov 2026; every prospect is
+ * a brokerage prospect). "Yesterday: 18 sent · 1 reply · 2 bounces · 0 opt-outs", then per reply:
+ * the firm and its type (and AUM when recorded), two or three people there from her own list with a
+ * LinkedIn search for each, what they said in one line, and what happens next (the ready reply in
+ * Decide; "closed" for a no). An out-of-office is never a reply. `people` are the prospect rows. Pure.
+ */
+export function prospectSection(a, now = Date.now(), people = []) {
   if (!a) return null;
   const items = [];
-  for (const r of a.replies ?? []) {
+  const replies = (a.replies ?? []).filter((r) => !(r.status === "replied" && OOO.test(String(r.reply_note ?? ""))));
+  const n = (s) => replies.filter((r) => r.status === s).length;
+  const answered = replies.filter((r) => !["bounced", "opted_out"].includes(r.status));
+  items.push(`Yesterday: ${(a.sent ?? []).filter((r) => !Number(r.sent_at) || Number(r.sent_at) >= now - 36 * 3_600_000).length} sent · ${plural(answered.length, "reply", "replies")} · ${plural(n("bounced"), "bounce")} · ${plural(n("opted_out"), "opt-out")}.`);
+  for (const r of replies) {
     if (r.status === "bounced") continue;
-    const what = r.status === "opted_out" ? "asked not to be written to again (done: they are off every list)." : `answered${r.reply_note ? `: ${quotedSentence(r.reply_note)}` : "."}${r.has_draft ? " Your reply is ready in Decide above." : ""}`;
-    items.push(`${whoLine(r)} ${what}`);
+    if (r.status === "opted_out") { items.push(`${whoLine(r)} asked not to be written to again (done: they are off every list).`); continue; }
+    const rec = (people ?? []).find((p) => String(p.email ?? "").toLowerCase() === String(r.email ?? "").toLowerCase()) ?? r;
+    const domain = String(r.email ?? "").split("@")[1] ?? "";
+    const there = (people ?? []).filter((p) => domain && String(p.email ?? "").toLowerCase().endsWith(`@${domain.toLowerCase()}`) && p.name).slice(0, 3);
+    const peopleRuns = (there.length ? there : [{ name: r.name, firm: r.firm }]).flatMap((p, i) => [{ text: `${i ? ", " : ""}${p.name}` }, { text: " (LinkedIn search)", url: linkedInSearch(p.name, r.firm) }]);
+    const kind = KIND_WORDS[rec.kind] ?? "investor";
+    const aum = rec.aum ?? rec.aum_usd ?? null;
+    const said = r.reply_note ? quotedSentence(theirWords(r.reply_note)) : null;
+    const next = NO_THANKS.test(String(r.reply_note ?? "")) ? "Next: closed, nothing more goes to them." : r.has_draft ? "Next: your reply is ready in Decide above." : "Next: Monique is drafting your reply; it will be in Decide.";
+    items.push({ runs: [{ text: `${r.name || r.email} at ${r.firm || domain} (${kind}${aum ? `, AUM ${typeof aum === "number" ? `$${Math.round(aum / 1e6)}M` : aum}` : ", AUM not on record"}). ${said ? `They said: ${said}` : "They wrote back; their words are in the thread."} ${next} People there: ` }, ...peopleRuns, { text: "." }], key: `prospect:${r.email}`, text: `${r.name || r.email} at ${r.firm || domain}` });
   }
   const stops = (a.stops ?? []).filter((x) => !/sending window/i.test(String(x)));
   const due = (a.next ?? []).filter((r) => r.next_at && r.next_at <= now);
@@ -590,7 +698,9 @@ export function prospectSection(a, now = Date.now()) {
     const late = now - oldest > 36 * 3_600_000 ? ` since ${shortDate(oldest)} (${Math.floor((now - oldest) / DAY_MS)} days)` : "";
     items.push(`${plural(due.length, "follow-up is", "follow-ups are")} due${late} and not going out. Why: ${stops.join(" ")}`);
   }
-  if (!items.length) return null;
+  // Only when anything went or came back (a quiet day leaves the block out, 13 Nov 2026).
+  // No reply, no section (13 Nov 2026): the totals line opens a section that has replies or a stop to tell.
+  if (!(a.replies ?? []).length && items.length === 1) return null;
   return { title: "Prospect emails", items, link: { label: "See every prospect", url: PROSPECTS_URL }, empty: null };
 }
 
@@ -654,56 +764,116 @@ export function ancestralLine(day) {
 }
 
 /**
- * THE SPIRIT SECTION, built exactly like the sample she approved: the money-map week, the next
- * major lunar event, today's sky in one plain line, the morning practice in one line, the gratitude
- * sentence, this month's Ancestors hour and Contribution, and the week's practice in one line — then
- * one link to the Spirit tab for the rest (owner, 25 Oct 2026: trimmed). Pure.
+ * NEVER MISS TWICE (owner, 18 Nov 2026; personal brain, Settled decisions: "harder - i want to be a
+ * successful billionaire i need discipline and i cant miss twice … i need high pressure coaching").
+ * `missed` is whole days with no gate and no coach talk before today. One missed day: a firm line,
+ * first in Spirit. Two or more: a call-out at the TOP of the email, above Decide — the streak said
+ * plainly, her goal named, what it is costing in this morning's real numbers, and ONE non-negotiable
+ * action with a deadline; firmer from four days. Null on a day she is on track. Pure.
  */
-export function spiritSection(day, week, now = Date.now(), lapseLine = null) {
+export function neverMissTwice(missed, { waiting = 0, oldestWait = 0, action = null, deadline = "9 am", pressure = "softer" } = {}) {
+  const m = Number(missed);
+  if (!Number.isInteger(m) || m < 1) return { line: null, banner: null };
+  const todo = action ? `${action}` : "close today's morning gate";
+  // Her reply "be harder on me" (kept in the personal brain) makes the first missed day the call-out.
+  if (m === 1 && pressure !== "harder") return { line: `You missed yesterday's gate. Never miss twice: do the gate below before your feet touch the floor, then ${todo.charAt(0).toLowerCase()}${todo.slice(1)} by ${deadline}.`, banner: null };
+  const cost = waiting
+    ? `${waiting} ${waiting === 1 ? "decision is" : "decisions are"} waiting on you this morning${oldestWait > 0 ? `, and someone has waited ${oldestWait} day${oldestWait === 1 ? "" : "s"} for your answer` : ""}.`
+    : "Every day without a gate is a day the habit you said you are done with gets stronger.";
+  const title = m === 1 ? "You missed yesterday's gate. Never miss twice starts this morning." : m >= 4 ? `${m} days without a gate. This is how people stay where they are.` : `${m} days without a gate. You said you never miss twice. You just did.`;
+  return {
+    line: null,
+    banner: {
+      tone: "coach",
+      title,
+      lines: [
+        `You told me you are building a billionaire's life. Billionaires are built on the days nobody sees, and you have skipped ${m === 1 ? "one" : `${m} of them in a row`}.`,
+        `What it is costing: ${cost}`,
+        `Non-negotiable, by ${deadline}: do the three things below in bed, reply "gate done", then ${todo.charAt(0).toLowerCase()}${todo.slice(1)}. No negotiating with yourself.`,
+      ],
+    },
+  };
+}
+
+/*
+ * THE GRATITUDE LINE (owner, 18 Nov 2026, hostile review accepted). Most days a REAL win from the last
+ * 48 hours (from the record, never invented); otherwise a line from HER list (she adds by replying
+ * "grateful for …", kept in the personal brain); otherwise the Spirit tab's sentence, unless it
+ * invents a detail. No theme twice in 7 days, no sentence twice in 60. `history` is
+ * [{ day, sentence, theme }]. Returns { sentence, theme } or null. Pure.
+ */
+export const INVENTED_DETAIL = /\b(?:coffee|kitchen|laugh|song|stranger|picks up when I call)\b/i;
+export function gratitudeLine({ wins = [], herList = [], fallback = null, history = [], today }) {
+  const back = (n) => addDays(today, -n);
+  const usedSentence = new Set(history.filter((h) => h.day >= back(60)).map((h) => String(h.sentence).toLowerCase()));
+  const usedTheme = new Set(history.filter((h) => h.day >= back(6)).map((h) => h.theme));
+  const ok = (c) => c?.sentence && !usedSentence.has(c.sentence.toLowerCase()) && !usedTheme.has(c.theme) && !INVENTED_DETAIL.test(c.sentence);
+  const mine = (herList ?? []).map((t) => String(t).trim().replace(/[.!]+$/, "")).filter(Boolean)
+    .map((t) => ({ sentence: `Grateful for ${t.replace(/^(?:grateful for\s+)/i, "")}.`, theme: `mine:${t.toLowerCase().slice(0, 40)}` }));
+  // A real win most days; her own list on the day after a win, so the line is not always business.
+  const lastWasWin = history.some((h) => h.day === back(1) && String(h.theme).startsWith("win:"));
+  const order = lastWasWin && mine.length ? [...mine, ...wins] : [...wins, ...mine];
+  return order.find(ok) ?? (fallback && ok({ sentence: fallback, theme: "spirit" }) ? { sentence: fallback, theme: "spirit" } : null);
+}
+
+/** Real wins in the last 48 hours, from the record: a call held or booked, a real reply, new deals. Pure. */
+export function winsFrom({ lpRows = [], prospects = null, deals = 0, now = Date.now() }) {
+  const out = [];
+  const since = now - 48 * 3_600_000;
+  for (const r of lpRows ?? []) {
+    const at = Number(r.picked_start ?? 0) || Number(r.invite_sent_at ?? 0);
+    if (r.status === "scheduled" && at >= since && at <= now + 14 * DAY_MS && r.name) out.push({ sentence: `Grateful ${r.name}${r.firm ? ` at ${r.firm}` : ""} made time to talk with me.`, theme: "win:call" });
+  }
+  for (const r of prospects?.replies ?? []) {
+    if (r.status === "replied" && r.name && !/\b(?:out of (?:the )?office|automatic reply|not interested|no thanks)\b/i.test(String(r.reply_note ?? ""))) out.push({ sentence: `Grateful ${r.name}${r.firm ? ` at ${r.firm}` : ""} wrote back to me.`, theme: "win:reply" });
+  }
+  if (deals > 0) out.push({ sentence: `Grateful ${deals === 1 ? "a new deal" : `${deals} new deals`} reached my desk since yesterday.`, theme: "win:deals" });
+  return out;
+}
+
+/**
+ * THE MORNING GATE, IN BED (owner, 18 Nov 2026): one to three things to do right now, before getting
+ * up, no questions asked, then reply "gate done" and Boss OS ticks the gate. Her gate order (personal
+ * brain): gratitude aloud, then breath; today's one action named last. Null once the gate is done. Pure.
+ */
+export function gateLine({ gratitude = null, action = null, done = false }) {
+  if (done) return null;
+  const steps = [gratitude ? `say aloud: “${gratitude.replace(/^“|”$/g, "")}”` : "say one thing you are grateful for, aloud", "three slow breaths", `name today's one action: ${action ?? "the first decision below"}`];
+  return `Before you get up: ${steps.map((s, i) => `${i + 1}. ${s}`).join(" ")}. Then reply "gate done" and your morning gate is ticked.`;
+}
+
+/**
+ * THE SPIRIT SECTION, AT MOST FIVE LINES, COACHING FIRST (owner, 18 Nov 2026, hostile review
+ * accepted): the coaching line on a missed day; the sky only when it points at a real decision; the
+ * if-then plan filled in with today's one action, never a template; giving as a plain count; the
+ * Ancestors hour only in the month's last two weeks, with no target fraction. The money-map week and
+ * the moon are on the Spirit tab, one link away. The gratitude line is in the gate, above. Pure.
+ */
+export function spiritSection(day, week, now = Date.now(), lapseLine = null, { coach = null, action = null } = {}) {
   if (!day) return null;
   const items = [];
-  // A rung day of the practice ladder is ONE line here, never an email of its own (owner, 13 Nov 2026).
-  if (lapseLine) items.push(String(lapseLine));
-  const cur = day.map?.current;
-  if (cur) items.push(`${cur.signal ?? ""} ${BAND_WORDS[cur.band] ?? cur.meaning ?? "This week"} (${cur.label}). ${cap(String(cur.note ?? "").replace(/^Peak money week\s*[—-]\s*/i, ""))}${/[.!?]$/.test(cur.note ?? "") ? "" : "."}`.trim());
-  const ev = day.major_event;
-  if (ev?.label && ev.at) items.push(`${MOON_ICON[ev.kind] ?? "🌙"} ${ev.label} ${whenWords(ev.at, now)}${ev.hours_away ? `, about ${ev.hours_away} hours away` : ""}.`);
+  if (coach) items.push(String(coach));
+  else if (lapseLine) items.push(String(lapseLine));
   const active = day.sky?.active ?? [];
-  if (active.length) {
+  if (active.length && action) {
     const hard = active.filter((a) => HARD.has(a.aspect)).length;
     const easy = active.filter((a) => EASY.has(a.aspect)).length;
-    const lead = hard >= easy ? "the sky says make the decision rather than wait" : "the sky is easy today, so reach for what you want";
-    items.push(`⚡ Today: ${lead}.${hard >= easy && easy ? " There's also an easy opening for growth, so use it." : ""}`);
-  } else if (day.sky?.available) items.push("⚡ Today: a quiet sky.");
-  const steps = day.practice?.manifestation?.steps ?? [];
-  if (steps.length) {
-    const total = steps.reduce((n, x) => n + (Number(x.minutes) || 0), 0);
-    const words = steps.map((x) => `${(STEP_WORDS.find(([re]) => re.test(x.what)) ?? [null, String(x.what).split(/\s+/).slice(0, 2).join(" ").toLowerCase()])[1]} ${x.minutes}`);
-    items.push(`This morning · ${total} min: ${cap(words.join(" → "))}.`);
+    items.push(hard >= easy ? `⚡ The sky favours deciding over waiting today: start with ${action}.` : `⚡ An easy sky today: reach for ${action} first.`);
   }
-  const g = day.practice?.gratitude?.sentence;
-  if (g) items.push({ runs: [{ text: `“${g}”` }] });
+  const how = String(week?.practice?.how_to_try_it ?? week?.practice?.claim ?? "").replace(/\s+/g, " ").trim();
+  const plan = /['"‘“](If [^'"’”]{8,160}?)['"’”]/i.exec(how)?.[1]?.trim();
+  const cue = plan && !/\[[^\]]+\]/.test(plan) ? /^If ([^,]+?),?\s+then\b/i.exec(plan)?.[1] : null;
+  if (action) items.push(`Your if-then for today: if ${cue ? cue.replace(/^I\s/, "I ") : "it is 9 am"}, then I ${action.charAt(0).toLowerCase()}${action.slice(1)}.`);
   const anc = day.ancestors;
   const con = day.contribution;
-  if (anc || con) {
-    // The Worker's one rule (spirit/ancestralHour.ts) when it sent it; the same count otherwise.
-    const [y, mo] = dayOf(now).split("-").map(Number);
-    const left = Number.isInteger(day.ancestral_hour?.days_left) ? day.ancestral_hour.days_left : new Date(Date.UTC(y, mo, 0)).getUTCDate() - Number(dayOf(now).slice(8, 10));
-    items.push(`This month · ${plural(left, "day")} left: 🕯 Ancestors hour: ${anc?.minutes ?? 0} of ${anc?.target_minutes ?? 60} min · 🤝 Contribution: ${con?.count ?? 0} of ${con?.minimum ?? 1}.`);
-  }
-  /*
-   * THE WEEK'S PRACTICE, ONE SHORT LINE (owner, 25 Oct 2026): its own first sentence, no source.
-   * Everything else — the sky in full, Body, Manifestations, the advisory note — is on the Spirit tab,
-   * one link away. The email carries only what she reads in the morning.
-   */
-  const how = String(week?.practice?.how_to_try_it ?? week?.practice?.claim ?? "").replace(/\s+/g, " ").trim();
-  const tech = String(week?.practice?.technique ?? "").replace(/\s*\([^)]*\)\s*/g, " ").trim();
-  // An if-then plan reads as the plan itself: "If I finish my morning coffee, then I do 5 minutes of breathwork."
-  const plan = /['"‘“](If [^'"’”]{8,160}?)['"’”]/i.exec(how)?.[1]?.trim();
-  const first = (how.match(/^.*?[.!?](?=\s|$)/)?.[0] ?? how).trim();
-  const line = plan ? `${tech ? `${tech}: ` : ""}${plan}${/[.!?]$/.test(plan) ? "" : "."}` : first || tech;
-  if (line) items.push(`This week's practice: ${line}${/[.!?]$/.test(line) ? "" : "."}`);
-  return { title: "✨ Spirit", items: items.map((i) => (typeof i === "string" ? { runs: [{ text: i }] } : i)), link: { label: SPIRIT_LINK_LABEL, url: SPIRIT_URL }, empty: null };
+  const [y, mo] = dayOf(now).split("-").map(Number);
+  const left = Number.isInteger(day.ancestral_hour?.days_left) ? day.ancestral_hour.days_left : new Date(Date.UTC(y, mo, 0)).getUTCDate() - Number(dayOf(now).slice(8, 10));
+  const month = [];
+  if (con) month.push(Number(con.count) > 0 ? `🤝 Giving: ${con.count} this month ✓` : "🤝 Giving: none yet this month");
+  if (anc && left <= 14) month.push(`🕯 Ancestors hour: ${Number(anc.minutes ?? 0) > 0 ? `${anc.minutes} min so far` : "not yet"}, ${plural(left, "day")} left this month`);
+  if (month.length) items.push(`${month.join(" · ")}.`);
+  if (!items.length) return null;
+  return { title: "✨ Spirit", items: items.slice(0, 5).map((i) => ({ runs: [{ text: i }], key: `spirit:${i.slice(0, 12)}` })), link: { label: SPIRIT_LINK_LABEL, url: SPIRIT_URL }, empty: null };
 }
 
 /**
@@ -862,11 +1032,28 @@ export function buildDay(data, now = Date.now()) {
     if (problems.length) dropped.push(`${where}: ${problems.join("; ")}`);
     return problems.length === 0;
   };
-  const quiet = data.quietPeople ?? [];
+  /*
+   * CLIENT OUTREACH IS NEVER HER ANSWER LIST (owner, 18 Nov 2026: "Ron Brooks" was a reply to the
+   * WHA senior-housing outreach sent from her West Peek mailbox, listed as an LP to nudge). The
+   * client's own sequence runs its follow-ups; a row whose thread is client work is treated as quiet.
+   */
+  const quiet = [...(data.quietPeople ?? []), ...(data.lpRows ?? []).filter(isClientOutreach)];
   const isQuiet = (d) => quiet.some((r) =>
     [`lp:${r.id}`, `lp-again:${r.id}`, `lpnudge:${r.id}`, `lp:${r.address}`, `lp-again:${r.address}`, `lpnudge:${r.address}`].includes(d.key) ||
     (r.name && String(d.title ?? "").toLowerCase().includes(r.name.toLowerCase())) ||
     (r.address && JSON.stringify(d).toLowerCase().includes(r.address.toLowerCase())));
+  /*
+   * DROP FOR GOOD (owner, 18 Nov 2026): every item in every block carries one tap that dismisses it
+   * permanently (`decide_dismissed`, the one store Today already reads), and her reply "drop 2" or
+   * "drop Ron Brooks" does the same. A dropped item never comes back unless that person sends a
+   * genuinely new message (`fresh_at` later than the drop). Each link is a random token posted with
+   * the kept morning (`drops`); the tap page acts on POST only (routes/lpTap.ts).
+   */
+  const gone = new Map((data.dropped ?? []).map((r) => [r.item_id, Number(r.dropped_at) || 0]));
+  const isGone = (id, freshAt = null) => gone.has(id) && !(Number(freshAt) > gone.get(id));
+  const drops = [];
+  const mint = data.mintToken ?? (() => `drop_${randomBytes(18).toString("base64url")}`);
+  const dropLink = (id, label) => { const token = mint(); drops.push({ token, item_id: id, label: String(label ?? "").slice(0, 160) }); return { label: "Drop for good", url: `${ORIGIN}/tap/${token}` }; };
   const m = {};
   for (const [name, sec] of Object.entries(data.morning ?? {})) {
     m[name] = {
@@ -924,12 +1111,13 @@ export function buildDay(data, now = Date.now()) {
   const repeats = splitRepeats(decideRaw, { told: data.told?.decide ?? {}, today, now });
   // A row that names nothing is left out by name, never sent as "· 2 days" (14 Nov 2026).
   for (const key of repeats.nameless ?? []) console.error(`your-day: NAMED SKIP [STILL_YOURS_NO_TITLE] the "Still yours to answer" row for ${key} has no title or name, so it was left out of the email; it stays on Today`);
-  const decide = repeats.full.map((d, i) => {
+  const notGone = (d) => !isGone(itemId("decide", d.key ?? d.title), d.fresh_at);
+  const decide = repeats.full.filter(notGone).map((d, i) => {
     const id = idFor("decide", d.key ?? d.title);
     const screen = itemUrl(today, id);
-    return { ...d, id, screen, details: [...(d.details ?? []), replyHint(d, i + 1)], buttons: [...(d.buttons ?? []), more(screen)] };
+    return { ...d, id, screen, details: [...(d.details ?? []), replyHint(d, i + 1)], buttons: [...cardButtons(d.buttons, screen), dropLink(id, d.title)] };
   });
-  const stillYours = repeats.thin.map((d) => {
+  const stillYours = repeats.thin.filter(notGone).map((d) => {
     const id = idFor("decide", d.key ?? d.title);
     const screen = itemUrl(today, id);
     return { ...d, id, screen, buttons: [more(screen)] };
@@ -945,34 +1133,57 @@ export function buildDay(data, now = Date.now()) {
     const c = (data.carried ?? []).find((x) => x.id === d.id);
     if (c?.send_url && c.reply?.text) { d.reply_text = c.reply.text; d.send_url = c.send_url; d.change_url = c.change_url; }
   }
+  // One person, one line, the true turn (owner, 18 Nov 2026: Cecelia was "yours to answer" and
+  // "nudge?" in one email); a dropped one stays dropped unless they wrote since.
+  const stillOne = onePerPerson(stillYours.filter((d) => !isGone(d.id, d.fresh_at) && !isQuiet(d)));
+  stillYours.length = 0;
+  stillYours.push(...stillOne);
+  for (const d of stillYours) d.drop = dropLink(d.id, d.title);
 
   // 2. Deals: each opens its own screen there; the source email is one more tap from it.
-  const deals = mergeDealRows(m.deals?.rows ?? []).map((r) => {
-    const id = idFor("deal", `${r.company}|${r.side}|${r.size}|${r.from}|${r.received_on ?? r.when}`);
+  // A public company is not a live deal (owner, 18 Nov 2026): never in new deals or matches.
+  const pubs = data.publicNames ?? publicList(null);
+  const dealKey = (r) => `${r.company}|${r.side}|${r.size}|${r.from}|${r.received_on ?? r.when}`;
+  const deals = mergeDealRows(m.deals?.rows ?? []).filter((r) => !isPublicCompany(r.company, pubs) && !isGone(itemId("deal", dealKey(r)))).map((r) => {
+    const id = idFor("deal", dealKey(r));
     return { ...r, id, screen: itemUrl(today, id) };
   });
-  const dealRowsAll = deals.map((r) => ({
-    company: r.company, side: r.side ?? "—", size: [r.size, r.price && r.price !== "—" ? `@ ${r.price}` : ""].filter(Boolean).join(" ") || "—",
-    from: r.from ?? "—", url: r.screen, url_label: "Open ›",
-  }));
+  const dealRowsAll = deals.map((r) => {
+    const drop = dropLink(r.id, `${r.company} (${r.side ?? "deal"})`);
+    return {
+      company: r.company, side: r.side ?? "—", size: [r.size, r.price && r.price !== "—" ? `@ ${r.price}` : ""].filter(Boolean).join(" ") || "—",
+      from: r.from ?? "—", url: r.screen, url_label: "Open ›", url2: drop.url, url2_label: drop.label,
+    };
+  });
   /*
    * MONIQUE FOUND IS ONE GRID (owner, 25 Oct 2026, mock-up v2): company (+N more) | seller → buyer |
    * fit dots | "Open ›" to the trade's card in Boss OS, which holds the seller's ready email and
    * Dismiss. ⭐ first. No match is ever in Decide. Each row carries its pair and orders, so a match
    * she dismisses leaves Today at once (routes/morning.ts prunes them).
    */
-  const foundGrid = (m.monique_found?.grid ?? []).filter((r, i) => passes(`monique_found grid ${i + 1}`, r.company, r.trade, r.fit)).map((r) => ({
-    company: r.company, trade: r.trade, fit: r.fit, url: r.url, url_label: "Open ›", match_pair: r.match_pair, match_sig: r.match_sig,
-  }));
-  const found = (m.monique_found?.lines ?? []).map((l) => {
-    const line = typeof l === "string" ? { text: l, links: [] } : l;
-    const id = idFor("found", line.text);
-    return { ...line, id, screen: itemUrl(today, id), holders: (m.monique_found?.rows ?? []).filter((h) => line.deal && h.company === line.deal) };
-  });
+  /*
+   * ONLY A REAL MATCH, ON A PRIVATE COMPANY (owner, 18 Nov 2026): a named person each side, sizes
+   * that fit, prices known and close (interest-grid.mjs `realMatch`); a copy written before the
+   * producer learned that is read the same way here, by its own words.
+   */
+  const realRow = (r) => !/price unknown or far|size small/i.test(String(r.fit ?? "")) && !/\b(?:unnamed|undisclosed)\b|^—/i.test(String(r.trade ?? "")) && !isPublicCompany(r.company, pubs);
+  const foundGrid = (m.monique_found?.grid ?? []).filter((r, i) => realRow(r) && passes(`monique_found grid ${i + 1}`, r.company, r.trade, r.fit)).map((r) => {
+    const id = itemId("match", r.key ?? r.match_pair ?? r.company);
+    if (isGone(id)) return null;
+    const drop = dropLink(id, `${String(r.company).replace(/^⭐\s*/, "")} match`);
+    return { id, company: String(r.company).replace(/\s*\(\+(\d+) more\)$/, (_, n) => ` (and ${n} other matches on it in Boss OS)`), trade: r.trade, fit: r.fit, url: r.url, url_label: "Open ›", url2: drop.url, url2_label: drop.label, match_pair: r.match_pair, match_sig: r.match_sig };
+  }).filter(Boolean);
+  // The old "Outside your email: public filings and press…" line is never shown (owner, 18 Nov 2026);
+  // the producer now writes firms with one contact each, or nothing.
+  const found = (m.monique_found?.lines ?? []).map((l) => (typeof l === "string" ? { text: l, links: [] } : l))
+    .filter((line) => !/^Outside your email:/i.test(line.text) && !(line.deal && isPublicCompany(line.deal, pubs))).map((line) => {
+      const id = idFor("found", line.text);
+      return { ...line, id, screen: itemUrl(today, id), holders: (m.monique_found?.rows ?? []).filter((h) => line.deal && h.company === line.deal) };
+    }).filter((f) => !isGone(f.id));
 
   // The matches stay; the totals line and "Still looking" are gone (owner, 13 Nov 2026). A copy
   // written before the producer stopped sending them is read the same way.
-  const foundItems = found.filter((f) => !f.counts && !/^Still looking:/.test(f.text)).map((f) => ({ text: f.text, links: f.links?.length ? f.links.slice(0, 1).concat([{ label: "See it", url: f.screen }]) : [{ label: "See it", url: f.screen }] }));
+  const foundItems = found.filter((f) => !f.counts && !/^Still looking:/.test(f.text)).map((f) => ({ text: f.text, links: [{ label: "See it", url: f.screen }, dropLink(f.id, f.text.slice(0, 80))] }));
   const foundShown = (max) => foundItems.slice(0, max);
 
   // 3. Briefing: three one-line headlines, and "Read the full briefing →" to its screen. The whole briefing is never
@@ -997,10 +1208,10 @@ export function buildDay(data, now = Date.now()) {
    * email…", "Zora's archive audit", "Tools worth knowing about" in her Done for you). Danielle's
    * repairs and the duties' own runs live on Systems; only a job she asked for gets its own line.
    */
-  let teamStops = 0;
+  const teamStopped = [];
   for (const f of failedTaskLines(data.tasks, now)) {
     const t = (data.tasks ?? []).find((x) => x.id === f.id) ?? {};
-    if (isTeamJob(t)) { teamStops++; continue; }
+    if (isTeamJob(t)) { teamStopped.push(t); continue; }
     doneRaw.push({ key: `failed:${jobFamily(t.title).toLowerCase()}`, text: failedDoneLine(t), full: f.text, links: [] });
   }
   const selfWaiting = selfStartedWaiting(data);
@@ -1013,16 +1224,24 @@ export function buildDay(data, now = Date.now()) {
       : `${one.employee_name ?? "The team"}'s ${((j) => (j.quoted ? `"${j.name.slice(0, 80)}"` : j.name))(jobName(one))} was held up`;
     doneRaw.push({ key: `self-waiting:${today}`, text: `${what}, and Danielle is getting ${one ? "it" : "them"} moving again.`, links: [] });
   }
-  if (teamStops) doneRaw.push({ key: `team-stops:${today}`, text: `${teamStops} team job${teamStops === 1 ? "" : "s"} stopped and ${teamStops === 1 ? "is" : "are"} being fixed by Danielle.`, links: [{ label: "Open ›", url: `${ORIGIN}/?tab=systems` }] });
-  const prospects = prospectSection(data.prospects ?? null, now);
-  const spirit = spiritSection(data.spirit ?? null, data.practiceWeek ?? null, now, data.lapseLine ?? null);
+  const stopsLine = teamStopsLine(teamStopped);
+  if (stopsLine) doneRaw.push({ key: `team-stops:${today}`, text: stopsLine, links: [{ label: "Open ›", url: `${ORIGIN}/?tab=systems` }] });
+  const prospects = prospectSection(data.prospects ?? null, now, data.prospectRows ?? []);
+  // Today's one action: the first decision, else the oldest "still yours" (18 Nov 2026: the if-then is filled in).
+  const firstTitle = (d) => String(d?.title ?? "").replace(/^Waiting \d+ days?:\s*/i, "").split(":")[0].trim();
+  const action = decide.length ? `answer decision 1 (${firstTitle(decide[0])})` : stillYours.length ? `answer ${firstTitle(stillYours[0])}` : null;
+  const oldestWait = Math.max(0, ...stillYours.map((d) => Number(/(\d+) days?/.exec(String(d.thin ?? ""))?.[1] ?? d.days ?? 0)));
+  const coach = neverMissTwice(data.missedDays, { waiting: decide.length + stillYours.length, oldestWait, action, pressure: data.pressure });
+  const grat = gratitudeLine({ wins: winsFrom({ lpRows: data.lpRows ?? [], prospects: data.prospects ?? null, deals: deals.length, now }), herList: data.gratitudeList ?? [], fallback: data.spirit?.practice?.gratitude?.sentence ?? null, history: data.told?.gratitude ?? [], today });
+  const gate = gateLine({ gratitude: grat?.sentence ?? null, action, done: Boolean(data.gateDone) });
+  const spirit = spiritSection(data.spirit ?? null, data.practiceWeek ?? null, now, data.lapseLine ?? null, { coach: coach.line, action });
   const ancestral = ancestralLine(data.spirit ?? null);
   // The prospects producer's count line is in "Prospect emails" when that loaded; not said twice.
   for (const name of DONE_SOURCES.filter((n) => !(data.prospects && n === "prospects"))) for (const l of m[name]?.lines ?? []) doneRaw.push(typeof l === "string" ? { text: l, links: [] } : { links: [], ...l });
   const doneOnce = doneForYou(doneRaw, { told: new Set(data.told?.done ?? []), max: MAX_DONE });
-  const done = doneOnce.all.map((l) => { const id = idFor("done", l.text); return { ...l, id, screen: itemUrl(today, id) }; });
+  const done = doneOnce.all.map((l) => { const id = idFor("done", l.text); return { ...l, id, screen: itemUrl(today, id) }; }).filter((l) => !isGone(l.id));
   // A line that carries its own links inline (`runs`: the filed meeting preps, each with its "Open ›") keeps them.
-  const doneShown = done.slice(0, MAX_DONE).map((l) => (Array.isArray(l.runs) && l.runs.some((r) => r.url) ? { runs: l.runs, links: [] } : { text: l.text, links: [{ label: "See it", url: l.screen }] }));
+  const doneShown = done.slice(0, MAX_DONE).map((l) => (Array.isArray(l.runs) && l.runs.some((r) => r.url) ? { runs: l.runs, links: [dropLink(l.id, l.text)] } : { text: l.text, links: [{ label: "See it", url: l.screen }, dropLink(l.id, l.text)] }));
   // Three lines and nothing after them (owner, 13 Nov 2026): no "+N more" and no count of the Updates
   // page. Everything done is on Today, and the updates are on their page.
 
@@ -1045,7 +1264,7 @@ export function buildDay(data, now = Date.now()) {
   const olSeen = withinShowings((m.open_loops?.lines ?? []).map((l) => (typeof l === "string" ? { text: l, links: [] } : { links: [], ...l }))
     .filter((l) => (l.links ?? []).some((k) => /[?&]loop=/.test(String(k.url ?? ""))) && !systemRow({ title: l.text }))
     .map((l) => ({ ...l, seenKey: String(l.key ?? l.text).toLowerCase() })), data.told?.loops ?? {});
-  const olLines = olSeen.shown.slice(0, MAX_OPEN_LOOP_LINES).map(({ text, links }) => ({ text, links }));
+  const olLines = olSeen.shown.map((l) => ({ ...l, id: idFor("loop", l.seenKey) })).filter((l) => !isGone(l.id)).slice(0, MAX_OPEN_LOOP_LINES).map(({ id, text, links }) => ({ text, links: [...(links ?? []), dropLink(id, text)] }));
   const openLoopsSection = olLines.length ? { title: "Your open loops", items: olLines, link: null, empty: null } : null;
 
   // 4c. Brains (31 Oct 2026): Mondays one plain line, never red; the 1st of the month the scoreboard.
@@ -1055,7 +1274,7 @@ export function buildDay(data, now = Date.now()) {
   const scoreSection = scoreboardSectionFor(data, now);
 
   // 5. Catch up with.
-  const catchCards = (m.catchups?.decide ?? []).map((d) => { const id = idFor("catchup", d.key ?? d.title); const screen = itemUrl(today, id); return { ...d, id, screen, buttons: [...(d.buttons ?? []), more(screen)] }; });
+  const catchCards = (m.catchups?.decide ?? []).map((d) => { const id = idFor("catchup", d.key ?? d.title); const screen = itemUrl(today, id); return { ...d, id, screen, buttons: [...(d.buttons ?? []), more(screen), dropLink(id, d.title)] }; }).filter((d) => !isGone(d.id));
   const catchLines = (m.catchups?.lines ?? []).map((l) => (typeof l === "string" ? l : l));
 
   // Mondays: this week's deadlines, in the same email.
@@ -1073,7 +1292,7 @@ export function buildDay(data, now = Date.now()) {
   const notReported = notReportedLine(data.notReported);
   // Every call and meeting of the day, once (the diary merges a copy on a second calendar), with who
   // and the join link when there is one (owner, 26 Oct 2026: "tell me when i have calls").
-  const calls = callsOn(data.diary, today).map((c) => `${timeOf(c.scheduled_at, data.ownerTz)} ${c.title}${c.with ? ` with ${c.with}` : ""}${/^https:\/\/\S+$/.test(String(c.location ?? "")) ? ` (join: ${c.location})` : ""}`);
+  const calls = calendarItems({ events: data.calendar ?? null, diary: data.diary, today, her: data.herAddresses ?? [], tz: data.ownerTz }).map((c) => c.text);
   // The postscript is the 8Raise line, only when something is wrong (the seat-order line left 13 Nov 2026).
   const ps = eightRaiseLine(m.eightraise?.credits ?? null);
 
@@ -1097,7 +1316,8 @@ export function buildDay(data, now = Date.now()) {
    */
   // Each its own line under line 1. A section that did not report in is the team's: it goes to the
   // Updates page (`teamNotes`, posted by the run), never her email (7 Nov 2026).
-  const morningRest = [lawLine(data.law), ancestral, calls.length ? `On your calendar: ${calls.join("; ")}.` : null].filter(Boolean);
+  // Her calendar stays right under line 1 (7 Nov 2026); the in-bed gate follows it (18 Nov 2026).
+  const morningRest = [lawLine(data.law), ancestral, calls.length ? `On your calendar: ${calls.join("; ")}.` : null, gate].filter(Boolean);
   const lay = ({ foundMax = MAX_FOUND_LINES, dealMax = MAX_DEAL_ROWS } = {}) => ownerEmail({
     who: "Simone",
     layout: "digest",
@@ -1107,11 +1327,13 @@ export function buildDay(data, now = Date.now()) {
     maxDecide: Infinity,
     subject,
     lineTail: morningRest,
+    // Never miss twice (above Decide), then any job that has STOPPED (red), 18 Nov 2026.
+    banners: [...(data.stallBanners ?? []), ...(coach.banner ? [coach.banner] : [])],
     decide,
     sections: [
       ...(stillYours.length ? [{ title: "Still yours to answer", items: stillYours.map((d) => ({
-        text: `${d.thin.replace(/^Still yours to answer: /, "")}${d.reply_text ? `. Your reply, word for word: “${oneLine(d.reply_text)}”` : ""}`,
-        links: [...(d.send_url ? [{ label: "✓ Send as is", url: d.send_url }, { label: "✎ Change it", url: d.change_url }] : []), { label: "Open ›", url: d.screen }],
+        text: `${stillPreview(d)}${d.reply_text ? ` Your reply, word for word: “${oneLine(d.reply_text)}”` : ""}`,
+        links: [...(d.send_url ? [{ label: "✓ Send as is", url: d.send_url }, { label: "✎ Change it", url: d.change_url }] : [{ label: "Open ›", url: d.screen }]), d.drop],
       })), empty: null }] : []),
       // A block with nothing in it is left out, never "nothing here" (owner, 13 Nov 2026).
       ...(deals.length ? [{ title: `New deals since yesterday (${deals.length})`, note: deals.length > dealMax ? `The ${dealMax} newest are here; all ${deals.length} are on the Deals screen.` : null, rows: { columns: [{ key: "company", label: "Company" }, { key: "side", label: "Side" }, { key: "size", label: "Size @ price" }, { key: "from", label: "From" }], data: dealRowsAll.slice(0, dealMax) }, link: m.deals?.link ?? null, empty: null }] : []),
@@ -1159,14 +1381,16 @@ export function buildDay(data, now = Date.now()) {
     found_grid: foundGrid,
     done: done.map(({ id, text, full, links, screen }) => ({ id, text: full ?? text, links: links ?? [], screen })),
     // `key` rides here too: a thin line is still a reminder about that person (lp/reminders.ts counts it).
-    still_yours: stillYours.map(({ id, key, title, thin, screen }) => ({ id, key: key ?? null, title, line: thin, screen })),
+    // The whole preview rides along, so its screen shows what the email said (18 Nov 2026: "Open ›" opened nothing).
+    still_yours: stillYours.map((d) => ({ id: d.id, key: d.key ?? null, title: d.title, line: d.thin, body: stillPreview(d), screen: d.screen })),
+    drops,
     catchups: catchCards.map(({ id, title, body, details, draft, buttons, screen }) => ({ id, title, body: body ?? "", details: details ?? [], draft: draft ?? null, buttons, screen })),
     briefing: raw ? { for_day: data.briefing.for_day, top: raw.map((l) => proseText(proseRuns(l)).replace(/⁣/g, "")) } : null,
     prospects: data.prospects ? { items: (prospects?.items ?? []).map((i) => (typeof i === "string" ? i : i.text)), sent: (data.prospects?.sent ?? []).map((r) => ({ name: r.name, firm: r.firm, email: r.email, touch: r.touch_no, sent_at: r.sent_at, subject: r.sent_subject ?? r.subject, body: r.body ?? null })) } : null,
     eightraise: ps,
   };
   // What this email told her, so tomorrow's says it once more at most as a thin line (morningMemory.mjs).
-  const memory = { decide: repeats.memory, done: [...new Set([...(data.told?.done ?? []), ...doneOnce.keys])].slice(-500), still: stillSeen.memory, loops: olSeen.memory };
+  const memory = { gratitude: [...(data.told?.gratitude ?? []).filter((h) => h.day >= addDays(today, -60) && h.day !== today), ...(grat ? [{ day: today, sentence: grat.sentence, theme: grat.theme }] : [])], decide: repeats.memory, done: [...new Set([...(data.told?.done ?? []), ...doneOnce.keys])].slice(-500), still: stillSeen.memory, loops: olSeen.memory };
   return { ...laid, dropped, digest, cuts, bytes: bytes(laid), memory, yoursTold: yours.map((i) => i.id), teamNotes: notReported ? [notReported] : [] };
 }
 
@@ -1184,13 +1408,67 @@ export const oneLine = (t) => String(t ?? "").split(/\n+/).map((l) => l.trim()).
  * producers did not send again is one thin "Still yours to answer" line, "waiting N days" from the
  * morning it first appeared. Pure, so it is pinned (tests/boss/todayV4.test.ts).
  */
+/**
+ * A DECISION'S LINKS (owner, 18 Nov 2026: "Two links per decision (Send as is, Change it), not
+ * five"). A card with a held reply: Send as is, and Change it on the card's own screen (which holds
+ * their email and the edit). Any other card: its own two answers at most, and Open › to its screen.
+ * "Drop for good" is added by the caller. Pure.
+ */
+export function cardButtons(buttons, screen) {
+  const list = buttons ?? [];
+  const send = list.find((b) => /^send as is$/i.test(String(b.label ?? "")));
+  if (send) return [send, { label: "Change it", url: screen }];
+  const own = list.filter((b) => !/^(?:see everything|open their email|open their thread|open the thread|open ›|change it|edit in gmail)/i.test(String(b.label ?? ""))).slice(0, 2);
+  return [...own, { label: "Open ›", url: screen }];
+}
+
+/** Who a card is about: its LP row id from the key, else the person's name from the title. */
+const personOf = (d) => /^(?:lp|lp-again|lpnudge):(.+)$/.exec(String(d.key ?? ""))?.[1]
+  ?? (/^(?:Still yours to answer:\s*)?(?:Waiting \d+ days?:\s*)?(?:No answer in \d+ days: nudge |Answer |Reply to |Nudge )?([A-Z][\w'’-]+ [A-Z][\w'’-]+)/.exec(String(d.title ?? ""))?.[1]?.toLowerCase() ?? null);
+/** Yours to answer beats a nudge: they wrote last, so the turn is hers (18 Nov 2026). */
+const TURN_RANK = (d) => (/^lpnudge:/.test(String(d.key ?? "")) || /\bnudge\b/i.test(String(d.title ?? "")) ? 0 : 1);
+/**
+ * ONE PERSON, ONE LINE, THE TRUE TURN (owner, 18 Nov 2026: the same person was "Still yours to answer"
+ * and "No answer in 7 days: nudge?" in one email). Rows about the same person collapse to the one
+ * whose turn is true: their newer message makes it hers. Pure.
+ */
+export function onePerPerson(rows) {
+  const out = [];
+  const by = new Map();
+  for (const d of rows ?? []) {
+    const p = personOf(d);
+    if (!p) { out.push(d); continue; }
+    const had = by.get(p);
+    if (!had) { by.set(p, d); out.push(d); continue; }
+    if (TURN_RANK(d) > TURN_RANK(had)) { out[out.indexOf(had)] = d; by.set(p, d); }
+  }
+  return out;
+}
+
+/**
+ * A STILL-YOURS LINE IS A PREVIEW (owner, 18 Nov 2026): who they are, what they last said in one
+ * line, whose turn it is, and how long — the day count saying which way ("they've waited 3 days",
+ * "you've waited 3 days"). Pure.
+ */
+export function stillPreview(d) {
+  const title = String(d.title ?? d.thin ?? "").replace(/^Still yours to answer:\s*/, "").replace(/^Waiting \d+ days?:\s*/i, "").replace(/\s*·.*$/, "").trim();
+  const days = Number(/(\d+) days?/.exec(String(d.thin ?? ""))?.[1] ?? d.days ?? 0);
+  const who = /^Who:\s*([^.]+)/.exec(String(d.body ?? ""))?.[1]?.trim() ?? null;
+  const said = (d.details ?? []).map((x) => /^What they wrote:\s*(.+)$/.exec(String(x))?.[1]).find(Boolean) ?? null;
+  const theirs = TURN_RANK(d) === 0;
+  const n = `${days} day${days === 1 ? "" : "s"}`;
+  const turn = theirs ? `Waiting on them: you've waited ${n}` : `Yours to answer: they've waited ${n}`;
+  const saidLine = said ? ` Last said: ${said.length > 140 ? `${said.slice(0, 137).replace(/\s+\S*$/, "")}…”` : said}` : "";
+  return `${title}${who ? ` (${who})` : ""}.${saidLine} ${turn}.`.replace(/\.\./g, ".");
+}
+
 export function carriedLines(carried, { shown = new Set(), keys = new Set(), today }) {
   return (carried ?? [])
     .filter((c) => c?.id && !shown.has(c.id) && !(c.key && keys.has(c.key)))
     // A carried row with no title is left out by name, never sent as ": · waiting N days" (14 Nov 2026).
     .filter((c) => { const ok = Boolean(String(c.title ?? "").trim()); if (!ok) console.error(`your-day: NAMED SKIP [STILL_YOURS_NO_TITLE] the carried row ${c.id} has no title, so it was left out of the email; it stays on Today`); return ok; })
     .map((c) => ({
-      id: c.id, key: c.key ?? null, title: c.title, screen: `${ORIGIN}/?waiting=${encodeURIComponent(c.id)}`,
+      id: c.id, key: c.key ?? null, title: c.title, body: c.body ?? "", days: c.days ?? 0, screen: `${ORIGIN}/?waiting=${encodeURIComponent(c.id)}`,
       thin: `Still yours to answer: ${c.title} · waiting ${c.days} day${c.days === 1 ? "" : "s"}`,
       buttons: [], first_day: c.first_day ?? today,
     }));
@@ -1243,7 +1521,8 @@ export const MAX_OPEN_LOOP_LINES = 5;
 
 export function lawLine(law) {
   if (!law?.n || !law?.title || !law?.text) return null;
-  return `Today's law, Law ${law.n}, ${law.title}: "${law.text}" Read it aloud.`;
+  // One line, the same shape every day: the law's name and its words (owner, 18 Nov 2026).
+  return `Law ${law.n}, ${law.title}: "${law.text}"`;
 }
 
 export async function read(api, now) {
@@ -1260,7 +1539,9 @@ export async function read(api, now) {
   const prospects = await api.get(`/lp/prospects/activity?since=${now - 30 * 3_600_000}`).catch((e) => { console.error(`your-day: prospect activity not read (${e.message})`); return null; });
   const spirit = await api.get("/spirit/day").catch((e) => { console.error(`your-day: spirit day not read (${e.message})`); return null; });
   const practiceWeek = await api.get("/spirit/practice-week").catch(() => null);
-  const lapseLine = await api.get("/practice/lapse-line").then((d) => d?.line ?? null).catch((e) => { console.error(`your-day: the practice streak not read (${e.message})`); return null; });
+  const lapse = await api.get("/practice/lapse-line").catch((e) => { console.error(`your-day: the practice streak not read (${e.message})`); return null; });
+  const lapseLine = lapse?.line ?? null;
+  const missedDays = Number.isInteger(lapse?.missed) ? lapse.missed : null;
   const waiting = await api.get("/waiting-on").then((d) => d?.items ?? []).catch((e) => { console.error(`your-day: the waiting-on register not read (${e.message})`); return []; });
   // Every unanswered Decide item from earlier mornings (Today v4: they never drop off), with one-tap send.
   const quietPeople = await api.get("/lp/replies").then((d) => (d.rows ?? []).filter((r) => r.quiet));
@@ -1286,7 +1567,30 @@ export async function read(api, now) {
   const known = new Set(tasks.map((t) => t.id));
   const approvalTasks = (await Promise.all([...new Set((approvals ?? []).map(approvalTaskId).filter((id) => id && !known.has(id)))].slice(0, 100)
     .map((id) => api.get(`/tasks/${encodeURIComponent(id)}`).then((d) => d?.task ?? null).catch((e) => { console.error(`your-day: the task behind an approval was not read (${e.message})`); return null; })))).filter(Boolean);
-  return { approvalTasks, ownerTz, quietPeople, brainsCheck, t2rGroups, quality, scoreboard, diary: diary?.rows ?? null, tasks: withDue, approvals, repoChanges: rc?.items ?? [], briefing: briefingOf(today), law: lawOf(today), bounceFixes, commentWatch, prospects, spirit, practiceWeek, lapseLine, waiting, carried, morning: reported.sections, notReported: reported.missing };
+  // Her calendars themselves (both Workspace calendars and the feeds), for the calendar line: the real
+  // title, the real guests and her own answer (18 Nov 2026). Not read = the diary, as before.
+  const { readAllCalendars } = await import("./calendar-sync.mjs");
+  const cal = await readAllCalendars({ horizonDays: 2, now }).catch((e) => { console.error(`your-day: her calendars not read (${e.message}); the diary only`); return null; });
+  const calendar = cal && cal.read > 0 ? cal.events : null;
+  const herAddresses = [ownerTo(), ...String(process.env.BOSS_HER_ADDRESSES ?? "sequoia@westpeek.ventures,staylor@spry.vc,st@time-2-read.com").split(",")].map((s) => String(s ?? "").trim().toLowerCase()).filter(Boolean);
+  // The companies now public, learning from today's briefing first (18 Nov 2026).
+  let publicNames = publicList(await api.get("/capital/public").then((d) => d?.companies ?? null).catch((e) => { console.error(`your-day: the public-company list not read (${e.message}); the seed only`); return null; }));
+  for (const p of publicFromBriefing(briefingOf(today), publicNames)) {
+    const r = await api.post("/capital/public", { company: p.company, via: "briefing", evidence: `${dayOf(now)}: ${p.evidence}`, since: dayOf(now) }).catch((e) => { console.error(`your-day: ${p.company} is public per the briefing but was not recorded (${e.message})`); return null; });
+    publicNames = r?.companies ? publicList(r.companies) : [...publicNames, { company: p.company }];
+    console.log(`your-day: marked public from the briefing: ${p.company}`);
+  }
+  // The LP rows (every one), so a client's outreach thread is never on her answer list.
+  const lpRows = await api.get("/lp/replies").then((d) => d?.rows ?? []).catch(() => []);
+  const prospectRows = await api.get("/lp/prospects").then((d) => d?.rows ?? []).catch(() => []);
+  // What she dropped for good (decide_dismissed), so nothing dropped comes back.
+  const dropped = await api.get("/morning/dropped").then((d) => d?.rows ?? []).catch((e) => { console.error(`your-day: the dropped items not read (${e.message})`); return []; });
+  // Her own gratitude list (her replies "grateful for …", kept in the personal brain) and today's gate.
+  const personal = await api.get("/brains/personal").catch((e) => { console.error(`your-day: the personal brain not read (${e.message})`); return null; });
+  const gratitudeList = gratitudeFromBrain(personal?.body_md ?? "");
+  const pressure = coachPressure(personal?.body_md ?? "");
+  const gateDone = Boolean(today?.day?.morning_completed_at);
+  return { pressure, gratitudeList, gateDone, missedDays, publicNames, lpRows, prospectRows, dropped, calendar, herAddresses, approvalTasks, ownerTz, quietPeople, brainsCheck, t2rGroups, quality, scoreboard, diary: diary?.rows ?? null, tasks: withDue, approvals, repoChanges: rc?.items ?? [], briefing: briefingOf(today), law: lawOf(today), bounceFixes, commentWatch, prospects, spirit, practiceWeek, lapseLine, waiting, carried, morning: reported.sections, notReported: reported.missing };
 }
 
 export async function feedOf(range) {

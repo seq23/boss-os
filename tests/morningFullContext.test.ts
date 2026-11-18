@@ -32,11 +32,14 @@ describe("matches: size, price and age (owner, 24 Oct 2026)", () => {
   const sell = grow({ id: "s25", company: "Company Q", side: "sell", direction: "sell", size_usd: 25e6, size_text: "$25M", from_text: "Pat Seller, Seller Co", received_on: day(11), email_url: "https://mail.google.com/mail/u/0/#all/s25", _row: { from: "pat@sellerco.example", from_name: "Pat Seller" } });
   const buy = grow({ id: "b5", company: "Company Q", size_usd: 5e6, size_text: "$5M", from_text: "Bo Buyer, Buyer Co", received_on: day(11), email_url: "https://mail.google.com/mail/u/0/#all/b5", _row: { from: "bo@buyerco.example", from_name: "Bo Buyer" } });
 
-  it("an unpriced $25M seller and $5M buyer are a grid row in the email; its card holds both contacts and a note to each", () => {
+  // 18 Nov 2026: an unpriced pair is a match on the Matches screen, never a row in her email; priced and close, it is.
+  it("an unpriced $25M seller and $5M buyer stay on the Matches screen with both contacts and a note to each; priced, they are a grid row", () => {
     const out = moniqueFound({ newRows: [], grid: [sell, buy], lists: NO_LISTS, now: NOW });
-    expect(out.grid).toEqual([expect.objectContaining({
-      company: "Company Q", trade: "Pat Seller, Seller Co $25M, no price given → Bo Buyer, Buyer Co $5M, no price given", fit: "size fits, price unknown or far, fresh",
-      url: "https://boss.sequoiataylor.com/?tab=capital&view=matches&match=b5%7Cs25", url_label: "Open ›", star: false,
+    expect(out.grid).toEqual([]);
+    const priced = moniqueFound({ newRows: [], grid: [{ ...sell, price_text: "$100/share" }, { ...buy, price_text: "$100/share" }], lists: NO_LISTS, now: NOW });
+    expect(priced.grid).toEqual([expect.objectContaining({
+      company: "⭐ Company Q", trade: "Pat Seller, Seller Co $25M at $100 a share → Bo Buyer, Buyer Co $5M at $100 a share", fit: "size fits, prices close, fresh",
+      url: "https://boss.sequoiataylor.com/?tab=capital&view=matches&match=b5%7Cs25", url_label: "Open ›",
     })]);
     const m = out.matches[0];
     expect(m.drafts.map((d: any) => d.to)).toEqual(["pat@sellerco.example", "bo@buyerco.example"]);
@@ -247,10 +250,12 @@ describe("prospect emails: replies only, and stuck follow-ups are a decision (ow
       { name: "Olive Out", firm: "Firm Q", email: "q@x.example", status: "opted_out" },
       { name: "Bo Bounce", firm: "Firm B", email: "b@x.example", status: "bounced" },
     ] };
-    const items = prospectSection(replied, NOW)!.items.map((i: any) => (typeof i === "string" ? i : i.text));
-    expect(items).toHaveLength(2);
-    expect(items[0]).toMatch(/^Pat Reply \(Firm R, p@x\.example\) answered: .*Send me the list.* Your reply is ready in Decide above\.$/);
-    expect(items[1]).toBe("Olive Out (Firm Q, q@x.example) asked not to be written to again (done: they are off every list).");
+    const items = prospectSection(replied, NOW)!.items.map((i: any) => (typeof i === "string" ? i : i.runs.map((r: any) => r.text).join("")));
+    // 18 Nov 2026: a totals line first (yesterday's sends only), then one line per replier: firm, what they said, next step.
+    expect(items).toHaveLength(3);
+    expect(items[0]).toBe("Yesterday: 1 sent · 1 reply · 1 bounce · 1 opt-out.");
+    expect(items[1]).toMatch(/^Pat Reply at Firm R \(.*\)\. They said: .*Send me the list.* Next: your reply is ready in Decide above\./);
+    expect(items[2]).toBe("Olive Out (Firm Q, q@x.example) asked not to be written to again (done: they are off every list).");
     expect(items.join(" ")).not.toMatch(/Sent: email|New Send|Old Send|Due Today|Later|So far:|Bo Bounce|not going out/);
     expect(prospectSection(replied, NOW)!.full).toBeUndefined();
     const d = prospectDecisions(a, new Set(), NOW);
@@ -263,8 +268,9 @@ describe("prospect emails: replies only, and stuck follow-ups are a decision (ow
     expect(prospectSection({ ...due, stops: ["Outside the sending window (weekdays 9 to 5 Central)."] }, NOW)).toBeNull();
     expect(prospectSection({ ...due, stops: [] }, NOW)).toBeNull();
     const held = prospectSection({ ...due, stops: ["Outside the sending window (weekdays 9 to 5 Central).", "The global outreach kill switch is on."] }, NOW)!.items;
-    expect(held).toHaveLength(1);
-    expect(held[0]).toMatch(/^1 follow-up is due since [A-Z][a-z]+ \d+ \(23 days\) and not going out\. Why: The global outreach kill switch is on\.$/);
+    expect(held).toHaveLength(2);
+    expect(held[0]).toMatch(/^Yesterday: /);
+    expect(held[1]).toMatch(/^1 follow-up is due since [A-Z][a-z]+ \d+ \(23 days\) and not going out\. Why: The global outreach kill switch is on\.$/);
   });
   it("a template waiting for her OK is a decision with its full text and Approve / Change / Try again", () => {
     const pending = { id: "pt1", tap_token: "p".repeat(24), subject: "Up to $1B secondary inquiry: {subject_names}", body: "Hi {first},\n\n{names_line}\n\nSequoia Taylor", follow_up: "Hi {first}, again.", names_json: JSON.stringify([{ name: "Co A" }, { name: "Co B" }, { name: "Co C" }]) };

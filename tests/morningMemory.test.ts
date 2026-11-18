@@ -36,8 +36,9 @@ describe("a Decide item she has already seen is one thin line", () => {
   it("day 2+: one line under 120 characters, kept, not a fresh decision", () => {
     expect(day2.subject).not.toMatch(/decision/);
     expect(day2.text).not.toContain("They asked for a call next week.");
-    const line = day2.text.split("\n").find((l) => l.startsWith("- Ken Example (LP)"))!;
-    expect(line).toMatch(/^- Ken Example \(LP\) · 12 days — Open ›: https:\/\//);
+    // 18 Nov 2026: the carried line is a preview: whose turn, which way the days run, and its links.
+    const line = day2.text.split("\n").find((l) => l.startsWith("- Answer Ken Example"))!;
+    expect(line).toMatch(/Yours to answer: they've waited 12 days\..*Open ›: https:\/\//);
     expect(thinDecideLine(lpDecide, "2026-10-26", TUE)!.length).toBeLessThan(120);
     expect(day2.html).toContain("Still yours to answer");
     expect(day2.digest.still_yours).toHaveLength(1);
@@ -119,13 +120,18 @@ describe("a job with an empty title is named, never empty quotes (2 Nov 2026)", 
     expect(e2.text).not.toContain('""');
   });
 
-  it("a team repair that stopped is one count line, never its own line (7 Nov 2026)", () => {
+  // 7 Nov 2026: one line for all of them; 18 Nov 2026: that line names each job and says whether money or outreach is touched.
+  it("stopped team jobs are ONE line naming each job and whether money or outreach is touched", () => {
     const rep = { id: "t7", title: "Fix a held email: a synthetic one", status: "failed", employee_name: "Danielle", employee_id: "emp_repo", finished_at: MON - 1_000, input: JSON.stringify({ origin: "repair", repair_kind: "held_mail" }) };
     const duty = { id: "t6", title: "Tools worth knowing about", status: "failed", employee_name: "Kendra", finished_at: MON - 2_000, input: JSON.stringify({ delivers: "tool_suggestions" }) };
     const e = buildDay({ ...base(MON), tasks: [rep, duty], morning: {} }, MON);
-    expect(e.text).toContain("2 team jobs stopped and are being fixed by Danielle.");
-    expect(e.text).not.toContain("Fix a held email");
-    expect(e.text).not.toContain("Tools worth knowing about");
+    const lines = e.text.split("\n").filter((l) => /Danielle is fixing/.test(l));
+    expect(lines).toHaveLength(1);
+    expect(lines[0]).toContain("Tools worth knowing about");
+    expect(lines[0]).toContain("Fix a held email");
+    expect(lines[0]).toMatch(/touch(?:es)? outreach or money|touches money or outreach/);
+    const send = { ...duty, id: "t5", title: "Time2Read outreach sends" };
+    expect(buildDay({ ...base(MON), tasks: [send], morning: {} }, MON).text).toMatch(/Time2Read outreach sends touches outreach or money, so nothing goes out/i);
   });
 });
 

@@ -19,7 +19,10 @@ export function openSlots(busy: Array<[number, number]>, o?: { now?: number; zon
 export function slotText(slot: Slot): string;
 export function wantsToMeet(text: unknown): boolean;
 export function pickedSlot(text: unknown, offered: Slot[] | null | undefined): Slot | null;
-export function lpTimesBody(a: { name?: string | null; slots: Slot[] }): string;
+export function lpTimesBody(a: { name?: string | null; slots: Slot[]; said?: string | null }): string;
+export function openingFor(said: unknown): string;
+export function laterWindow(text: unknown, now?: number): { label: string; start: number; sendBy: string } | null;
+export function lpLaterBody(a: { name?: string | null; window: { label: string; start: number; sendBy: string }; said?: string | null }): string;
 export function lpConfirmBody(a: { name?: string | null; slot: Slot & { theirs?: string } }): string;
 export function proposedTimes(text: unknown, now?: number, o?: { zone?: string | null }): Slot[];
 export function offeredIn(text: unknown, now?: number): Slot[];

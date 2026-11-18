@@ -92,15 +92,38 @@ export function sameCalendarEvent(a, b) {
   return ca !== "" && ca === cb;
 }
 
+/*
+ * HER OWN ANSWER TO THE INVITE (owner, 18 Nov 2026: she answered "maybe" to the City of Memphis
+ * "38126 Project Discussion", was not going, and still got a prep and a calendar line). A maybe or a
+ * no is not a meeting she is going to: no line under "On your calendar", no prep. Her answer is the
+ * event's own (`response`, the Calendar API's self attendee) or her address's row among the guests
+ * (an ICS feed's PARTSTAT). When copies disagree the stronger "not going" wins: declined, then
+ * tentative, then anything else.
+ */
+const ANSWER_RANK = { declined: 3, tentative: 2, accepted: 1, needsAction: 0 };
+export function herAnswer(event, herAddresses = []) {
+  const mine = new Set(herAddresses.map((a) => String(a).toLowerCase()));
+  const answers = [event?.response, ...(event?.attendees ?? []).filter((a) => a.self || (a.email && mine.has(String(a.email).toLowerCase()))).map((a) => a.response)].filter(Boolean);
+  return answers.sort((a, b) => (ANSWER_RANK[b] ?? 0) - (ANSWER_RANK[a] ?? 0))[0] ?? null;
+}
+/** True unless she answered maybe or no. An event with no answer (her own, or one she typed) counts. */
+export function isAttending(event, herAddresses = []) {
+  const a = herAnswer(event, herAddresses);
+  return a !== "declined" && a !== "tentative";
+}
+
 /** Every event once: copies merged, attendees unioned, a join link kept from whichever copy had it. */
 export function dedupeEvents(events) {
   const out = [];
   for (const e of [...(events ?? [])].sort((a, b) => a.scheduled_at - b.scheduled_at)) {
     const hit = out.find((m) => sameCalendarEvent(m, e));
-    if (!hit) { out.push({ ...e, attendees: [...(e.attendees ?? [])] }); continue; }
+    if (!hit) { out.push({ ...e, attendees: (e.attendees ?? []).map((a) => ({ ...a })) }); continue; }
     for (const a of e.attendees ?? []) {
-      if (!hit.attendees.some((x) => x.email && a.email && x.email.toLowerCase() === a.email.toLowerCase())) hit.attendees.push(a);
+      const same = hit.attendees.find((x) => x.email && a.email && x.email.toLowerCase() === a.email.toLowerCase());
+      if (!same) hit.attendees.push({ ...a });
+      else if ((ANSWER_RANK[a.response] ?? -1) > (ANSWER_RANK[same.response] ?? -1)) same.response = a.response;
     }
+    if ((ANSWER_RANK[e.response] ?? -1) > (ANSWER_RANK[hit.response] ?? -1)) hit.response = e.response;
     hit.join_url = hit.join_url ?? e.join_url ?? null;
     hit.location = hit.location ?? e.location ?? null;
     hit.description = hit.description || e.description || null;
@@ -177,6 +200,7 @@ export function dueMeetings(events, { now = Date.now(), sent = new Set(), day = 
   const evening = hourOfCt(now) >= EVENING_HOUR;
   return dedupeEvents(events).filter((e) => {
     if (meetingKind(e, { herAddresses, personal }) === "personal") return false;
+    if (!isAttending(e, herAddresses)) return false;
     const d = dayOfCt(e.scheduled_at);
     if (day) { if (d !== day) return false; }
     else if (!((d === tomorrow && evening) || (d === today && e.scheduled_at > now))) return false;
@@ -762,10 +786,18 @@ export async function deadLinks(body, fetchImpl = fetch) {
 export const CATCHUP_DEFAULT_DAYS = 7;
 const SCOOTER_RE = /\bscooter\b/i;
 
-/** True when the title names Scooter, or a guest is Scooter (by name or the address's own name). */
+/*
+ * ONLY HER AND SCOOTER (owner, 18 Nov 2026: the 17 Nov call with Ned and his assistant had Scooter on
+ * it and was prepped as "Catch-up with Scooter"; "her + Scooter + anyone else (e.g. an LP) is not a
+ * Scooter catch-up"). A catch-up is a meeting whose guests other than her are Scooter alone: every
+ * guest is Scooter, or the title names him and there is at most one guest (him, under any address).
+ * Any third person = a normal prep.
+ */
+const isScooter = (a) => SCOOTER_RE.test(String(a.name ?? "")) || SCOOTER_RE.test(String(a.email ?? "").split("@")[0]);
 export function isScooterCatchUp(event, herAddresses = []) {
-  if (SCOOTER_RE.test(String(event?.title ?? ""))) return true;
-  return others(event, herAddresses).some((a) => SCOOTER_RE.test(String(a.name ?? "")) || SCOOTER_RE.test(String(a.email ?? "").split("@")[0]));
+  const guests = others(event, herAddresses);
+  if (guests.length && guests.every(isScooter)) return true;
+  return guests.length <= 1 && SCOOTER_RE.test(String(event?.title ?? ""));
 }
 
 const CONFIDENTIAL_RE = /<!--\s*confidential\s*-->[\s\S]*?<!--\s*\/confidential\s*-->/gi;

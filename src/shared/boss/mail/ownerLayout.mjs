@@ -97,7 +97,7 @@ export function ownerEmail(spec) {
       if (spec.thing?.text) extra.push({ title: spec.thing.title ?? "The draft", cards: [{ title: spec.thing.heading ?? "Word for word", draft: { heading: "The words that go out", text: spec.thing.text } }], empty: null });
     }
     laid = layoutEmail({
-      who: spec.who, subject, lead, leadNotes, happened: why && parts.happened && cleanText(parts.happened) !== why ? parts.happened : "", decide: parts.decide ?? [], needs: parts.needs ?? [],
+      who: spec.who, subject, lead, leadNotes, banners: spec.banners ?? [], happened: why && parts.happened && cleanText(parts.happened) !== why ? parts.happened : "", decide: parts.decide ?? [], needs: parts.needs ?? [],
       sections: [...extra, ...(parts.sections ?? [])], details: parts.details ?? [], refs: jobRefs, footer, postscript: parts.postscript ?? null,
       ...(parts.maxDecide !== undefined ? { maxDecide: parts.maxDecide } : {}), ...(parts.moreDecide ? { moreDecide: parts.moreDecide } : {}), kind: parts.kind === "morning" ? "morning" : "plain",
     });

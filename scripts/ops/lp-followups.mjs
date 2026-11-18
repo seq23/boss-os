@@ -48,7 +48,7 @@ import path from "node:path";
 import os from "node:os";
 import { lpReplyBody, lpAgainBody } from "../../src/shared/boss/lp/plan.mjs";
 import {
-  instantIn, openSlots, slotText, slotsFrom, zoneResolver, wantsToMeet, pickedSlot, proposedFit, lpTimesBody, lpConfirmBody,
+  instantIn, openSlots, slotText, slotsFrom, zoneResolver, wantsToMeet, pickedSlot, proposedFit, lpTimesBody, lpConfirmBody, laterWindow, lpLaterBody,
   offeredIn, zonelessTime, lpAskZoneBody, SLOT_MINUTES,
 } from "../../src/shared/boss/lp/schedule.mjs";
 import { herBusyAndZone } from "./lp-calendar.mjs";
@@ -255,7 +255,10 @@ export function againReply({ name, said, offered = [], slots = [], busy = null, 
   // A day and a time with no zone anywhere: yes to it, and ask which zone (no invite until she knows).
   const when = zonelessTime(ownSaid, now);
   if (when) return { kind: "ask_zone", body: lpAskZoneBody({ name, when }), picked: null, offered: herOffer };
-  if (wantsToMeet(said) && slots.length) return { kind: "times", body: lpTimesBody({ name, slots }), picked: null, offered: slots };
+  // A later window they named ("Q1", "in January"): yes to it, times at its start; never this month's slots (18 Nov 2026).
+  const later = laterWindow(ownSaid, now);
+  if (later) return { kind: "later", body: lpLaterBody({ name, window: later, said: ownSaid }), picked: null, offered: [] };
+  if (wantsToMeet(said) && slots.length) return { kind: "times", body: lpTimesBody({ name, slots, said: ownSaid }), picked: null, offered: slots };
   // Warm about meeting but no open times readable: still a yes, asking for theirs (never a call they did not ask for).
   return { kind: "plain", body: lpAgainBody({ name, wantsCall: wantsToMeet(said) }), picked: null, offered };
 }
