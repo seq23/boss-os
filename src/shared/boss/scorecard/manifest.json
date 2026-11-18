@@ -1236,7 +1236,9 @@
       "business": "spry",
       "owner": "Spry Labs · Wednesday Spry Labs email",
       "result": "Waitlist sign-ups before launch, then installs and paid members after launch",
-      "jobs": [],
+      "jobs": [
+        "pbs-library-fill"
+      ],
       "start": null,
       "startWhen": {
         "label": "the first waitlist sign-up on peacebestillapp.com",

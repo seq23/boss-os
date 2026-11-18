@@ -104,9 +104,17 @@ describe("the chain guard catches a broken key", () => {
     expect(scheduleRepos({ trigger: { wpos: "x" } }, repos)).toEqual(["west-peek-os"]);
     expect(scheduleRepos({ trigger: { launchd: ["com.seq.drive-backup"] } }, repos)).toEqual(["seq-bin"]);
     expect(scheduleRepos({ trigger: { duty: "duty_x" } }, repos)).toEqual(["boss-os"]);
+    expect(scheduleRepos({ trigger: { launchd: ["com.seq.pbs-library-fill"] } }, repos)).toEqual(["peace-be-still"]);
   });
   it("a seq-bin label the Schedule does not cite, and a Mac label nobody defines", () => {
     const ctx = real(); ctx.repos.rows.find((r: any) => r.repo === "seq-bin").launchd.push("com.seq.ghost");
     expect(launchdProblems(ctx, new Set()).join("\n")).toContain("com.seq.ghost");
+  });
+  it("a Mac label its own repo row lists is placed; taken off that list, it is not", () => {
+    const ctx = real();
+    const own = ctx.repos.rows.find((r: any) => r.repo === "peace-be-still");
+    expect(launchdProblems(ctx, new Set()).join("\n")).not.toContain("com.seq.pbs-library-fill");
+    own.launchd = [];
+    expect(launchdProblems(ctx, new Set()).join("\n")).toContain("com.seq.pbs-library-fill");
   });
 });

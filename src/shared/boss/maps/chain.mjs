@@ -58,12 +58,12 @@ export function scheduleRepos(row, repos) {
   const t = row?.trigger ?? {};
   if (t.repo) return [t.repo];
   if (t.wpos) return ["west-peek-os"];
-  const binLabels = new Set((repos?.rows ?? []).find((r) => r.repo === "seq-bin")?.launchd ?? []);
+  const owner = new Map((repos?.rows ?? []).flatMap((r) => (r.launchd ?? []).map((l) => [l, r.repo])));
   const out = new Set();
   for (const l of t.launchd ?? []) {
     if (/^com\.howweknow\./.test(l)) out.add("how-we-know");
     else if (/^ventures\.westpeek\.os\./.test(l)) out.add("west-peek-os");
-    else if (binLabels.has(l)) out.add("seq-bin");
+    else if (owner.has(l)) out.add(owner.get(l));
     else if (/^com\.seq\./.test(l)) out.add("boss-os");
   }
   if (!out.size && t.duty) out.add("boss-os");
@@ -218,14 +218,23 @@ export function chainProblems(ctx) {
   return p;
 }
 
-/** Seq-bin's launchd list holds only labels the Schedule cites, and every Mac label boss-os does not define is placed. */
+/**
+ * A repo row's launchd list (seq-bin's, or another repo that installs its own Mac job, e.g.
+ * peace-be-still's library fill) holds only labels the Schedule cites, and every Mac label boss-os
+ * does not define is placed on one of those lists.
+ */
 export function launchdProblems(ctx, bossLabels) {
   const p = [];
-  const bin = (ctx.repos?.rows ?? []).find((r) => r.repo === "seq-bin")?.launchd ?? [];
+  const rows = ctx.repos?.rows ?? [];
+  const bin = rows.find((r) => r.repo === "seq-bin")?.launchd ?? [];
   if (!bin.length) p.push("the seq-bin row lists no launchd labels (the guard cannot see anything)");
   const cited = new Set((ctx.schedule?.rows ?? []).flatMap((j) => j.trigger?.launchd ?? []));
-  for (const l of bin) if (!cited.has(l)) p.push(`seq-bin lists ${l}, which the Schedule does not cite`);
-  for (const l of cited) if (/^com\.seq\./.test(l) && !bossLabels.has(l) && !bin.includes(l)) p.push(`Schedule label ${l} is not defined in boss-os and is not on seq-bin's list`);
+  const placed = new Set();
+  for (const r of rows) for (const l of r.launchd ?? []) {
+    placed.add(l);
+    if (!cited.has(l)) p.push(`${r.repo} lists ${l}, which the Schedule does not cite`);
+  }
+  for (const l of cited) if (/^com\.seq\./.test(l) && !bossLabels.has(l) && !placed.has(l)) p.push(`Schedule label ${l} is not defined in boss-os and is not on seq-bin's list (or its own repo's)`);
   return p;
 }
 
