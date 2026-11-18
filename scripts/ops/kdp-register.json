@@ -59,8 +59,8 @@
       "author": "S. L. Taylor",
       "publisher": "Spry Labs",
       "target": "LIVE",
-      "status": "APPROVED_QUEUED",
-      "status_as_of": "2026-11-09",
+      "status": "BLOCKED",
+      "status_as_of": "2026-11-18",
       "line": "ambitious-grads",
       "series": "Ambitious Grads",
       "slug": "ambitious-grads-wall-street",
@@ -74,7 +74,14 @@
         "on": "2026-11-09",
         "her_words": "lets take the open loop for nov 14 about my new kdp books ... called Ambitious grads ... i feel like we should just opportunistically post them to amazon publishing no extra landing pages etc."
       },
-      "queued_why": "Amazon's weekly limit on new Kindle titles (reached 8 Nov 2026; resets Sunday 00:00 UTC). queue_priority puts these two ahead of every other approved title (owner, 9 Nov 2026)."
+      "queued_why": "Amazon's weekly limit on new Kindle titles (reached 8 Nov 2026; resets Sunday 00:00 UTC). queue_priority puts these two ahead of every other approved title (owner, 9 Nov 2026).",
+      "blocked": {
+        "on": "2026-11-16",
+        "by": "Amazon Content Review",
+        "case": "52966733",
+        "never_retried": true,
+        "why": "A title Amazon's Content Review blocked is never resubmitted (16 Nov 2026); the queue skips it and publishes the next approved title."
+      }
     },
     {
       "title_ref": "draft:ambitious-grads-silicon-valley",
@@ -343,14 +350,26 @@
       "cover_source": "existing-books.json"
     },
     {
+      "title_ref": null,
+      "title": "The Employment Verification Letter",
+      "author": "S. Taylor",
+      "target": "LIVE",
+      "status": "LIVE",
+      "status_as_of": "2026-11-18",
+      "asin": "B0HHHR33NQ",
+      "line": "approvalprep",
+      "slug": "employment-verification-letter",
+      "cover_source": "existing-books.json"
+    },
+    {
       "title_ref": "A3963CGLMXDJPS",
       "title": "Executive Dysfunction",
       "subtitle": "A Five-Role System for Adults Carrying Too Much: Start the Task, Remember the Plan and Finish the Day",
       "author": "Tomas Wexley",
       "publisher": "Spry Labs",
       "target": "LIVE",
-      "status": "IN_REVIEW",
-      "status_as_of": "2026-11-08",
+      "status": "LIVE",
+      "status_as_of": "2026-11-18",
       "line": "a-player-mode",
       "series": "A Player Mode Field Guides",
       "slug": "executive-dysfunction",
@@ -358,7 +377,8 @@
       "kdp_select": true,
       "price_usd": 2.99,
       "draft_dir": "~/.boss-os/kdp/books/executive-dysfunction",
-      "cover_source": "kdp-build"
+      "cover_source": "kdp-build",
+      "asin": "B0HQYBCG78"
     },
     {
       "title_ref": "A1X13YAW52ZSZ",
@@ -367,8 +387,8 @@
       "author": "Reid Calloway",
       "publisher": "Spry Labs",
       "target": "LIVE",
-      "status": "IN_REVIEW",
-      "status_as_of": "2026-11-08",
+      "status": "LIVE",
+      "status_as_of": "2026-11-18",
       "line": "keepmyproof",
       "series": "KeepMyProof Record Books",
       "slug": "parallel-parenting",
@@ -380,7 +400,8 @@
         "status": "NOT_STARTED"
       },
       "draft_dir": "~/.boss-os/kdp/books/parallel-parenting",
-      "cover_source": "kdp-build"
+      "cover_source": "kdp-build",
+      "asin": "B0HQYCKPZK"
     },
     {
       "title_ref": "draft:hostile-work-environment",
