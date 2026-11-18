@@ -319,7 +319,8 @@ export function cleanText(input, { prose = false } = {}) {
   s = s.replace(/^\s*#{1,6}\s+/gm, "").replace(/\*\*/g, "");
   // snake_case and UPPER_SNAKE become words.
   s = s.replace(/\b[A-Za-z][A-Za-z0-9]*(?:_[A-Za-z0-9]+)+\b/g, (m) => m.replace(/_/g, " ").toLowerCase());
-  s = s.replace(/[A-Za-z0-9][A-Za-z0-9'’-]*/g, capsWord);
+  // "🔴 STOPPED:" is the stall alert's own marker (18 Nov 2026), kept loud; any other STOPPED is calmed.
+  s = s.replace(/[A-Za-z0-9][A-Za-z0-9'’-]*/g, (w, at, all) => (w === "STOPPED" && /🔴\s*$/u.test(all.slice(Math.max(0, at - 4), at)) ? w : capsWord(w)));
   s = s.replace(/\(\s*\)/g, "").replace(/\[\s*\]/g, "").replace(/\s+([,.;:!?])/g, "$1").replace(/[ \t]{2,}/g, " ").trim();
   s = s.replace(/^[—–-]\s+/, "").replace(/\s+[—–-]$/, "");
   if (wasAllCaps && s) s = s.charAt(0).toUpperCase() + s.slice(1);
@@ -601,7 +602,7 @@ export function layoutEmail({ who, subject, happened, decide = [], needs = [], d
    * and a job that has STOPPED. In HTML a coloured block at the very top (inline styles, so Gmail
    * renders it); in text, right under line 1, each line in capitals for its title.
    */
-  const bannerList = (banners ?? []).map((b) => ({ tone: b?.tone === "coach" ? "coach" : "red", title: cleanText(b?.title ?? ""), lines: (b?.lines ?? []).map((l) => cleanText(l)).filter(Boolean) })).filter((b) => b.title);
+  const bannerList = (banners ?? []).map((b) => ({ tone: b?.tone === "coach" ? "coach" : "red", title: b?.tone === "coach" ? cleanText(b?.title ?? "") : cleanText(`🔴 ${b?.title ?? ""}`).replace(/^🔴\s*/u, ""), lines: (b?.lines ?? []).map((l) => cleanText(l)).filter(Boolean) })).filter((b) => b.title);
   const bannerText = bannerList.flatMap((b) => ["", `${b.tone === "red" ? "🔴 " : ""}${b.title.toUpperCase()}`, ...b.lines]);
   const bannerHtml = bannerList.map((b) => `<div style="margin:0 0 12px;padding:14px 16px;border-radius:10px;background:${b.tone === "red" ? "#b3261e" : "#1d1d1f"};color:#ffffff;border-left:8px solid ${b.tone === "red" ? "#7a0f0a" : "#d93025"}"><p style="margin:0 0 6px;font-size:17px;line-height:1.35;font-weight:700;color:#ffffff">${b.tone === "red" ? "&#128308; " : ""}${esc(b.title)}</p>${b.lines.map((l) => `<p style="margin:4px 0 0;font-size:15px;line-height:1.45;color:#ffffff">${esc(l)}</p>`).join("")}</div>`).join("");
   const name = String(who ?? "").trim() || "Simone";
@@ -933,7 +934,7 @@ export function plainProblems({ subject, text, html, kind = null, layout = null 
   const problems = [...contentProblems(seen), ...proseProblems(visibleText({ text, html }, { prose: "only" }))];
   const hit = (name, re, where = seen) => { const m = re.exec(where); if (m) problems.push(`${name}: "${m[0].trim()}"`); };
   hit("brackets in the subject", /[[\]]/, subj);
-  const shout = subj.replace(new RegExp(REF_CODE_RE.source, "g"), "").split(/\s+/).map((w) => w.replace(/[^A-Za-z0-9]/g, "")).find(isShouting);
+  const shout = subj.replace(new RegExp(REF_CODE_RE.source, "g"), "").replace(/^🔴\s*STOPPED:/u, "🔴 Stopped:").split(/\s+/).map((w) => w.replace(/[^A-Za-z0-9]/g, "")).find(isShouting);
   if (shout) problems.push(`capitals in the subject: "${shout}"`);
   for (const seg of subj.split(/\s+[—–]\s+/)) {
     const items = seg.split(/,|\band\b/).map((x) => x.trim().toLowerCase()).filter(Boolean);

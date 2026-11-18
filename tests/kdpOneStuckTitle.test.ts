@@ -5,7 +5,6 @@
  * account ends a run now; a stop about one title sets that title aside and the run goes on.
  * Synthetic data only.
  */
-import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
 // @ts-expect-error — plain .mjs ops libs, no types
 import { stopEndsRun, RUN_STOPS, planTitle, queueOrder, underCaps } from "../scripts/ops/kdp-new-title.mjs";
@@ -18,15 +17,8 @@ describe("one stuck Kindle title never halts the queue", () => {
     expect(RUN_STOPS.size).toBeGreaterThan(0);
   });
 
-  it("every stop code the publisher can raise is judged, and the loop asks before it ends a run", () => {
-    const src = readFileSync("scripts/ops/kdp-new-title.mjs", "utf8");
-    const raised = new Set([...src.matchAll(/stop\("([A-Z_]+)"/g)].map((m) => m[1]));
-    expect(raised.size).toBeGreaterThan(10);
-    // A per-title catch that ends the run without asking stopEndsRun is the 16 Nov bug.
-    const loop = src.slice(src.indexOf("} catch (e0) {"), src.indexOf("async function handBack"));
-    expect(loop).toMatch(/if \(stopEndsRun\(e\.stop\)\) break;/);
-    expect(loop).not.toMatch(/break; \/\/ the window is closed now/);
-  });
+  // The loop itself (no per-title catch may end the run with a bare break) is held by the one shared
+  // sweep over every Mac job, tests/oneStuckItem.test.ts.
 
   it("a Blocked title is set aside on the bookshelf read; the next approved titles still go, inside the caps", () => {
     const rows = [{ id: "A1", title: "Synthetic Blocked Book", lines: ["Synthetic Blocked Book", "Kindle eBook", "Blocked"] }];

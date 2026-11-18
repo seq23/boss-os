@@ -49,6 +49,8 @@ import { readFile, writeFile } from "node:fs/promises";
 import { existsSync, lstatSync, readlinkSync } from "node:fs";
 import { join, dirname } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
+import { stallFrom } from "../../src/shared/boss/duties/stall.mjs";
+import { reportStall } from "./lib/stall-report.mjs";
 import { openProfile, profilePath } from "./browser.mjs";
 import { findSeriesBook, BOOKS_DIR } from "./kdp-build.mjs";
 import { gateFolder } from "./kdp-books/quality-gate.mjs";
@@ -911,6 +913,7 @@ async function boss() {
     approved: async () => { const r = await fetch(`${ORIGIN}/api/boss/kdp/new-titles`, { headers: { cookie } }); if (!r.ok) throw stop("APPROVALS_UNREAD", `could not read approved titles (${r.status}).`, 2); return (await r.json()).data.approved; },
     attempt: (id, body) => fetch(`${ORIGIN}/api/boss/kdp/new-titles/${id}/attempt`, { method: "POST", headers: { cookie, "content-type": "application/json" }, body: JSON.stringify(body) }).then((r) => r.ok).catch(() => false),
     post: (path, body) => fetch(`${ORIGIN}/api/boss${path}`, { method: "POST", headers: { cookie, "content-type": "application/json" }, body: JSON.stringify(body) }).then((r) => r.ok).catch(() => false),
+    call: (path, body) => fetch(`${ORIGIN}/api/boss${path}`, { method: "POST", headers: { cookie, "content-type": "application/json" }, body: JSON.stringify(body) }).then((r) => (r.ok ? r.json().then((j) => j.data) : null)).catch(() => null),
   };
 }
 
@@ -1068,6 +1071,33 @@ export const stopNeedsHer = (code) => HER_STOPS.has(code);
  */
 export const RUN_STOPS = new Set(["SIGNIN", "SIGNIN_NOT_DONE", "NO_PASSCODE", "UNLOCK_REFUSED", "PROFILE_IN_USE", "WEEKLY_TITLE_LIMIT", "APPROVALS_UNREAD"]);
 export const stopEndsRun = (code) => RUN_STOPS.has(String(code ?? ""));
+
+/**
+ * THE STALL ALERT (18 Nov 2026; src/shared/boss/duties/stall.mjs): what this run moved, set aside or was
+ * stopped by, filled in as it goes and judged once at the end by `kdpStallOf`.
+ */
+export const RUN_STALL = { approved: 0, moved: 0, setAside: [], held: [], runStop: null, weekly: false, draftCap: false };
+const RUN_STOP_WORDS = { SIGNIN: "the KDP sign-in", SIGNIN_NOT_DONE: "the KDP sign-in", NO_PASSCODE: "the KDP sign-in", UNLOCK_REFUSED: "the KDP sign-in", PROFILE_IN_USE: "the KDP Chrome window being open elsewhere" };
+
+/**
+ * Pure. { stall } when approved books wait and this run moved none of them for a reason that will not
+ * clear by itself; { clear: true } when it moved one or nothing waits; {} (leave the row) when only
+ * Amazon's weekly limit held them, which is the normal queue.
+ */
+export function kdpStallOf(r = RUN_STALL) {
+  if (!(r.approved > 0) || r.moved > 0) return { clear: true };
+  if (r.weekly) return {};
+  const what = "Kindle publishing", noun = ["book", "books"];
+  const first = (xs) => xs[0] ?? {};
+  let waiting = r.approved, blocker = null;
+  if (r.runStop) blocker = { noun: [RUN_STOP_WORDS[r.runStop] ?? `a stop (${plainStop(r.runStop)})`] };
+  else if (r.setAside.length) blocker = { noun: [r.setAside.length === 1 ? "1 stuck book" : "a stop on every book"], name: first(r.setAside).title, why: plainStop(first(r.setAside).code) };
+  else if (r.held.length && r.held.length >= r.approved) blocker = { noun: [first(r.held).code === "NO_DRAFT" ? "missing drafts on the Mac" : "the quality check"], name: first(r.held).title, why: plainStop(first(r.held).code) };
+  else if (r.draftCap) blocker = { noun: [`KDP's ${KDP_DRAFT_CAP}-draft limit`], why: "unfinished drafts fill every slot" };
+  if (!blocker) return {};
+  if (r.setAside.length === 1 && !r.runStop) waiting = Math.max(1, r.approved - 1);
+  return { stall: stallFrom({ job: "kdp-new-title", what, noun, waiting, moved: r.moved, blocker }) };
+}
 
 /** Plain words for a stop the code named. Pure. */
 export function plainStop(code, said = "") {
@@ -1242,6 +1272,7 @@ async function run() {
   const only = flag("title");
   const register = JSON.parse(await readFile(join(HERE, "kdp-register.json"), "utf8"));
   const approved = queueOrder((await api.approved()).filter((a) => !only || a.title === only), register);
+  RUN_STALL.approved = approved.length;
   if (!approved.length) { say("NOTHING_APPROVED", "no approved new Kindle title is waiting; nothing to do."); console.log("OUTPUT 0 kindle-titles-submitted"); return 0; }
 
   // Each approved title, with its local draft.
@@ -1257,6 +1288,7 @@ async function run() {
       say("NO_DRAFT", `"${a.title}" has no draft on this Mac (${dir ?? "no folder"}); run ${series ? "kdp-build.mjs" : "kdp-kmp-draft.mjs"} first.`);
       console.error(`NAMED STOP [NO_DRAFT] "${a.title}" is approved and its draft is not on this Mac.`);
       await api.attempt(a.id, { run_outcome: "could-not-run", stop_code: "NO_DRAFT", amazon_message: null });
+      RUN_STALL.held.push({ title: a.title, code: "NO_DRAFT" });
       code = 4; continue;
     }
     const listing = JSON.parse(await readFile(join(dir, "listing.json"), "utf8"));
@@ -1273,11 +1305,13 @@ async function run() {
     const why = g.findings.map((f) => `${f.code}: ${f.why}`).join("; ");
     console.error(`NAMED STOP [QUALITY_GATE] "${b.book.title}" is held, not put up: ${why}. The team fixes it; nothing for her.`);
     await api.attempt(b.a.id, { run_outcome: "could-not-run", stop_code: "QUALITY_GATE", amazon_message: why.slice(0, 800) });
+    RUN_STALL.held.push({ title: b.book.title, code: "QUALITY_GATE" });
     code = code || 3;
   }
   if (!books.length) { console.log("OUTPUT 0 kindle-titles-submitted"); return code; }
   const profile = profilePath("kdp");
   if (profileBusy(profile)) {
+    RUN_STALL.runStop = "PROFILE_IN_USE";
     console.error("NAMED STOP [PROFILE_IN_USE] the KDP Chrome window is already open on this Mac (someone is using it); nothing was opened or typed. The next run tries again.");
     say("PROFILE_IN_USE", "the KDP Chrome profile is open already; nothing done.");
     console.log("OUTPUT 0 kindle-titles-submitted");
@@ -1296,7 +1330,7 @@ async function run() {
       OUT.live.push({ id: a.id, title: book.title, asin: plan.row.asin, price_usd: plan.row.price_usd ?? book.price_usd, extraDrafts: plan.extra.length });
       await api.post("/open-loops/intake", waitingLoop({ title: book.title, folder: b.folder, cleared: true, day: dayCT() }));
       say("LIVE", `${book.title}: Live on the bookshelf${plan.row.asin ? ` (ASIN ${plan.row.asin})` : ""}; approval marked done.`);
-      submitted += 1; return true;
+      submitted += 1; RUN_STALL.moved += 1; return true;
     }
     if (plan.action === "blocked") {
       const reason = await readRejection(book.title, plan.row?.id ?? null);
@@ -1310,7 +1344,7 @@ async function run() {
       await api.post("/task-notices/update", reviewUpdate({ id: a.id, title: book.title }));
       await api.post("/open-loops/intake", waitingLoop({ title: book.title, folder: b.folder, cleared: true, day: dayCT() }));
       say(st, `${book.title}: ${st === "IN_REVIEW" ? "In review" : "Publishing"} on the bookshelf; the next daily run follows it to Live.`);
-      submitted += 1; return true;
+      submitted += 1; RUN_STALL.moved += 1; return true;
     }
     return false;
   };
@@ -1342,6 +1376,7 @@ async function run() {
       if (st !== 200) { todo.splice(todo.indexOf(b), 1); say("QUEUED", `${b.book.title}: held — its companion page ${b.book.companion_url} answers ${st}; it goes when the page is live.`); }
     }
     const { go, queued } = underCaps(todo, { drafts });
+    if (!go.length && queued.some((q) => /draft cap/.test(q.why))) RUN_STALL.draftCap = true;
     for (const q of queued) say("QUEUED", `${q.book.title}: approved and waiting for the next run (${q.why}).`);
     todo.splice(0, todo.length, ...go);
     console.log(`queue: ${queued.length} approved title(s) wait for the next run; ${drafts} unpublished draft(s) on the bookshelf.`);
@@ -1354,7 +1389,7 @@ async function run() {
     await tell(`headsup:${dayCT()}:${todo.map((b) => b.a.id).join(",")}`, headsUpMail({ titles: todo.map((b) => b.book.title), startAt }), { kind: "headsup" });
     console.log(`heads-up on her Updates page; Chrome opens at ${herTime(startAt)}.`);
     await sleep(HEADS_UP_LEAD_MS);
-    if (profileBusy(profile)) { console.error("NAMED STOP [PROFILE_IN_USE] the KDP Chrome window was opened by someone during the heads-up; nothing typed. The next run tries again."); console.log(`OUTPUT ${submitted} kindle-titles-submitted`); return 5; }
+    if (profileBusy(profile)) { RUN_STALL.runStop = "PROFILE_IN_USE"; console.error("NAMED STOP [PROFILE_IN_USE] the KDP Chrome window was opened by someone during the heads-up; nothing typed. The next run tries again."); console.log(`OUTPUT ${submitted} kindle-titles-submitted`); return 5; }
   }
 
   // KDP_HEADLESS=1: nothing opens on her screen (her coordinator, 8 Nov 2026, while she works in Chrome).
@@ -1399,6 +1434,7 @@ async function run() {
         // this title and every one after it stay approved and QUEUED, and the next Monday run goes on.
         const e = (await titleLimitReached(page)) ? stop("WEEKLY_TITLE_LIMIT", "Amazon's weekly limit on new Kindle titles is reached; it resets Sunday 00:00 UTC.", 0) : e0;
         if (e.stop === "WEEKLY_TITLE_LIMIT") {
+          RUN_STALL.weekly = true;
           const left = todo.slice(todo.indexOf(b));
           for (const q of left) say("QUEUED", `${q.book.title}: approved and waiting for the next run (Amazon's weekly limit on new Kindle titles).`);
           console.log(`queue: ${left.length} approved title(s) wait for the next run (weekly title limit).`);
@@ -1412,7 +1448,8 @@ async function run() {
         const ok = await handBack(b, e, { api, context, page, isClosed: () => closed, settle });
         if (!ok) code = e.code ?? 1;
         // A stop about the window or the account ends the run; a stop about this one title does not.
-        if (stopEndsRun(e.stop)) break;
+        if (stopEndsRun(e.stop)) { RUN_STALL.runStop = e.stop; break; }
+        RUN_STALL.setAside.push({ title: book.title, code: report.stop_code });
         const next = todo.slice(todo.indexOf(b) + 1);
         if (!next.length) break;
         console.log(`"${book.title}" is set aside (${report.stop_code}); the run goes on to ${next.length} more approved title(s).`);
@@ -1475,6 +1512,19 @@ async function handBack(b, e, { api, context, page, isClosed, settle }) {
   return false;
 }
 
+/** The scheduled run's stall, on the named-stop path: once by email (unless this run already emailed her), a red line in the morning email until it moves. */
+async function tellStall() {
+  if (!UNATTENDED || DRY || !OUT.api?.call) return;
+  const { stall, clear } = kdpStallOf(RUN_STALL);
+  if (!stall && !clear) return;
+  try {
+    await reportStall({
+      post: OUT.api.call, job: "kdp-new-title", stall: stall ?? null,
+      send: async (mail) => (OUT.emailed ? true : tell(`stall:${stall.stop}:${dayCT()}`, mail, { kind: "stop" })),
+    });
+  } catch (e) { console.error(`NAMED STOP [STALL_NOT_REPORTED] ${String(e?.message ?? e).slice(0, 160)}`); }
+}
+
 if (import.meta.url === pathToFileURL(process.argv[1] ?? "").href) {
-  main().then((c) => process.exit(c)).catch((e) => { say("STOPPED", e.message); console.log("OUTPUT 0 kindle-titles-submitted"); process.exit(e.code ?? 1); });
+  main().then(async (c) => { await tellStall(); process.exit(c); }).catch((e) => { say("STOPPED", e.message); console.log("OUTPUT 0 kindle-titles-submitted"); process.exit(e.code ?? 1); });
 }

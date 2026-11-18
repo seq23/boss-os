@@ -29,6 +29,7 @@ import { ownerEmail } from "../../src/shared/boss/mail/ownerLayout.mjs";
 import { isInstitution, buildPrep, buildCatchUp, isScooterCatchUp, roundupFrom, CATCHUP_DEFAULT_DAYS, dueMeetings, linkResolves, lengthLabel, others, recordsFor, nameFromTitle, companyDomain, shortDate, clock, guestFirm, zonedTime, DISPLAY_TZ, validZone, researchPrompt, readResearch, invitePerson } from "../../src/shared/boss/meetingPrep/prep.mjs";
 import { askClaudeJson, googleToken, gmailHeaders } from "./lib/duty-kit.mjs";
 import { repairMojibake } from "../../src/shared/boss/mail/subject.mjs";
+import { eachItem } from "../../src/shared/boss/duties/stall.mjs";
 
 const ORIGIN = process.env.BOSS_OS_ORIGIN ?? "https://boss.sequoiataylor.com";
 const DIR = path.join(os.homedir(), ".boss-os", "meeting-prep");
@@ -518,7 +519,8 @@ async function main() {
   data.summaries = {};
   data.news = {};
   const checks = [];
-  for (const e of due) {
+  // One stuck item never halts the list (18 Nov 2026, src/shared/boss/duties/stall.mjs).
+  await eachItem(due, async (e) => {
     const lead = others(e, HER_ADDRESSES)[0] ?? null;
     const rec = recordsFor({ email: lead?.email ?? null, name: lead?.name ?? nameFromTitle(e.title) }, data);
     for (const r of rec.references) {
@@ -530,7 +532,7 @@ async function main() {
     }
     const firm = guestFirm(rec, e, lead?.email ?? null);
     if (firm && !data.news[firm]) data.news[firm] = await newsFor(firm, now);
-  }
+  }, { label: (e) => `the links for "${e.title}"` });
   data.references = data.references.filter((r) => r.verified !== 0 && r.verified !== false);
   writeJson(CACHE, cache);
   if (checks.length) await api.post("/lp/references/checks", { checks }).catch((e) => console.error(`meeting-prep: link checks not saved (${e.message})`));
@@ -538,14 +540,14 @@ async function main() {
   // What was found for each meeting, then the plan for a meeting whose purpose is known.
   const built = [];
   const tz = await ownerZone(api);
-  for (const e of due) {
+  const builds = await eachItem(due, async (e) => {
     const context = await gatherContext(e, data, { api, now, tz });
     // Every work meeting with an outside guest is researched before anything is sent (4 Nov 2026).
     context.research = await researchGuest(e, data, { api, now });
     const first = buildPrep(e, data, { herAddresses: HER_ADDRESSES, context, purpose: PURPOSE, tz });
     const plan = planFor(e, first, context, { tz });
     built.push({ e, context, plan, m: prepEmail(e, data, { context, purpose: PURPOSE, plan, tz, subject: SUBJECT }) });
-  }
+  }, { label: (e) => `the prep for "${e.title}"` });
   if (PREVIEW || DRY) {
     const text = built.map(({ m }) => `${m.laid.subject}\n\n${m.laid.text}`).join("\n\n════════════════\n\n");
     if (PREVIEW) { writeJson(`${PREVIEW}.json`, built.map(({ m }) => ({ key: m.key, subject: m.subject, needs_purpose: m.needsPurpose }))); fs.writeFileSync(PREVIEW, text, { mode: 0o600 }); console.log(`meeting-prep: ${built.length} prep(s) written to ${PREVIEW}; nothing sent.`); }
@@ -559,7 +561,8 @@ async function main() {
   const prepDay = dayKeyCt(now);
   // A prep she asked for by name, day or force is hers and is never held back by the cap.
   const { send: toSend, rest: overCap } = ONLY || DAY || FORCE ? { send: built, rest: [] } : capPreps(built, sentState.days?.[prepDay] ?? 0);
-  let failed = 0;
+  // A meeting whose prep could not be built still fails the run at the end, after every other prep went.
+  let failed = builds.setAside.length;
   const filed = [];
   for (const { e, context, plan, m } of overCap) {
     const r = await filePrep(api, e, data, { context, purpose: PURPOSE, plan, tz }).catch((err) => ({ ok: false, error: String(err?.message ?? err) }));

@@ -34,6 +34,7 @@ import { sendersFor, employeeMail, postEmployeeMail, flushSentMail, errandMail, 
 import { addMorningLines } from "../../src/shared/boss/mail/morning.mjs";
 import { finishPrep } from "./meeting-prep.mjs";
 import { neverBounceCheck } from "./lp-prospects.mjs";
+import { eachItem } from "../../src/shared/boss/duties/stall.mjs";
 import { PRODUCT_REPOS, ACCESS_CODE_SHAPE, errandText, errandProblems, followUpProblems, OWNER_TZ } from "../../src/shared/boss/commands/parse.mjs";
 
 /*
@@ -227,11 +228,11 @@ async function main() {
   // waiting from the last tick goes BEFORE this tick's checks, so the done reply never replaces it.
   const [monique] = sendersFor("Monique");
   const sendCampaignNotices = async (list) => {
-    for (const n of list ?? []) {
+    await eachItem(list ?? [], async (n) => {
       const res = await postEmployeeMail(monique, employeeMail(monique, noticeArgs(n.id, n.notice)));
       if (res.ok) { await api.post(`/outreach/campaigns/${n.id}/noticed`); did++; }
       else console.error(`NAMED STOP [NOTICE_NOT_SENT] ${n.id}: ${res.status}`);
-    }
+    }, { label: (n) => `the campaign notice ${n.id}` });
   };
   await sendCampaignNotices(work.campaign_notices);
 
