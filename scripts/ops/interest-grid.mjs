@@ -222,7 +222,7 @@ export function fromWords(row, hers) {
     const viaFirm = viaEmail ? firmOf(viaEmail) : "";
     const viaWords = [viaName, viaFirm && viaFirm.toLowerCase() !== viaName.toLowerCase() ? `(${viaFirm})` : ""].filter(Boolean).join(" ");
     if (principal && !unnamed(principal)) return viaWords ? `${principal}, through ${viaWords}` : principal;
-    return viaWords ? `${viaWords}, for a client` : "—";
+    return viaWords ? `${viaWords}, for a client` : "From a note you passed on";
   }
   const addr = row.from && !row.outbound ? row.from : (row.intermediated_by || row.principal_email || "");
   const firm = firmOf(addr || row.principal_email);

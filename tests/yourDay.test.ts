@@ -66,7 +66,8 @@ describe("the one morning email", () => {
   });
   it("Decide: EVERY decision is shown, the count is the number shown, nothing points at Today, each opens its own screen", () => {
     const decide = e.text.slice(e.text.indexOf("Decide (4)"), e.text.indexOf("New deals"));
-    expect(decide).toMatch(/^Decide \(4\)\n1\. Reply to an LP who wants a call\nReplied Tuesday; not sent yet\.\n- Reply "1: …" to this email to answer this one\.\n- Send as is: https:\/\/mail\.google\.com\/mail\/u\/0\/#all\/d1\n- Edit, then send: .*\n- Skip: /);
+    // 18 Nov 2026: two links per decision (Send as is, Change it on its own screen), then Drop for good.
+    expect(decide).toMatch(/^Decide \(4\)\n1\. Reply to an LP who wants a call\nReplied Tuesday; not sent yet\.\n- Reply "1: …" to this email to answer this one\.\n- Send as is: https:\/\/mail\.google\.com\/mail\/u\/0\/#all\/d1\n- Change it: https:\/\/boss\.sequoiataylor\.com\/\?morning=2026-10-23&item=decide-[0-9a-f]{10}\n- Drop for good: https:\/\/boss\.sequoiataylor\.com\/tap\/drop_[A-Za-z0-9_-]+\n/);
     expect(decide).toContain("2. Renew the example.com domain");
     // Every card says how to answer it by reply, by its own number (25 Oct 2026).
     for (const n of [1, 2, 3, 4]) expect(decide).toContain(`Reply "${n}: …" to this email to answer this one.`);
@@ -77,7 +78,7 @@ describe("the one morning email", () => {
     const numbered = decide.split("\n").filter((l) => /^\d+\. /.test(l));
     expect(numbered).toHaveLength(4);
     // Every decision carries a link to its own screen, and the digest Boss OS keeps holds the same four.
-    const screens = [...decide.matchAll(/See everything ›: (\S+)/g)].map((m) => m[1]);
+    const screens = [...decide.matchAll(/(?:Change it|Open ›): (https:\/\/boss\.sequoiataylor\.com\/\?morning\S+)/g)].map((m) => m[1]);
     expect(screens).toHaveLength(4);
     expect(screens.every((u) => /^https:\/\/boss\.sequoiataylor\.com\/\?morning=2026-10-23&item=decide-[0-9a-f]{10}$/.test(u!))).toBe(true);
     expect(e.digest.decide.map((d: any) => d.screen)).toEqual(screens);
@@ -92,7 +93,7 @@ describe("the one morning email", () => {
     expect(e.html).toMatch(/<a href="https:\/\/mail\.google\.com\/mail\/u\/0\/#all\/d1" style="display:inline-block[^"]*">Send as is<\/a>/);
   });
   it("deals are grid rows, each opening its own deal screen; the person and firm say who it came from", () => {
-    expect(e.text).toMatch(/- Company A · Buy · \$1B · Broker One — Open ›: https:\/\/boss\.sequoiataylor\.com\/\?morning=2026-10-23&item=deal-[0-9a-f]{10}\n/);
+    expect(e.text).toMatch(/- Company A · Buy · \$1B · Broker One — Open ›: https:\/\/boss\.sequoiataylor\.com\/\?morning=2026-10-23&item=deal-[0-9a-f]{10} — Drop for good: https:\/\/boss\.sequoiataylor\.com\/tap\/drop_[A-Za-z0-9_-]+\n/);
     expect(e.text).toMatch(/- Company B · Sell · \$300M @ \$138 · Broker Two \(Firm X\) — Open ›: /);
     expect(e.text).not.toMatch(/· Rainmaker — /);
     expect(e.digest.deals.map((d: any) => [d.company, d.email_url])).toEqual([["Company A", `${G}a1`], ["Company B", `${G}b2`]]);
@@ -112,7 +113,7 @@ describe("the one morning email", () => {
   });
   it("Done for you: the bounce agent's one line first, three lines and nothing after them, each opening its screen", () => {
     const done = e.text.slice(e.text.indexOf("Done for you"), e.text.indexOf("Catch up with")).split("\n").filter((l) => l.startsWith("- "));
-    expect(done[0]).toMatch(/^- Replaced 4 outreach addresses that bounced with working ones from each company's own site; outreach restarted \(The Industry Guides\)\. — See it: https:\/\/boss\.sequoiataylor\.com\/\?morning=2026-10-23&item=done-[0-9a-f]{10}$/);
+    expect(done[0]).toMatch(/^- Replaced 4 outreach addresses that bounced with working ones from each company's own site; outreach restarted \(The Industry Guides\)\. — See it: https:\/\/boss\.sequoiataylor\.com\/\?morning=2026-10-23&item=done-[0-9a-f]{10} — Drop for good: https:\/\/boss\.sequoiataylor\.com\/tap\/drop_[A-Za-z0-9_-]+$/);
     // Owner, 13 Nov 2026: three lines; no "+N more" and no count of the Updates page. The rest is on Today.
     expect(done.length).toBe(3);
     expect(e.text).not.toMatch(/\+\d+ more on Today/);
@@ -362,7 +363,8 @@ describe("still yours to answer: three showings, and never an answered approval 
       const at = NOW + d * 86_400_000;
       const e = buildDay({ ...base, told, morning: { lp: { section: "lp", at: new Date(at).toISOString(), decide: [card] } } } as any, at);
       expect(e.text).not.toMatch(/^Decide \(\d+\)$/m);
-      if (d <= 3) expect(e.text, `day ${d}`).toMatch(/Still yours to answer\n- An LP at Example Fund \(LP\)/);
+      // 18 Nov 2026: the carried line is a preview of the card (its title, whose turn, how long).
+      if (d <= 3) expect(e.text, `day ${d}`).toMatch(/Still yours to answer\n- Reply to An LP at Example Fund\. Yours to answer: they've waited \d+ days?\./);
       else expect(e.text, "the fourth later morning").not.toContain("Still yours to answer");
       told = e.memory;
     }

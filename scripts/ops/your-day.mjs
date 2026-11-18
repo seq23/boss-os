@@ -1316,7 +1316,8 @@ export function buildDay(data, now = Date.now()) {
    */
   // Each its own line under line 1. A section that did not report in is the team's: it goes to the
   // Updates page (`teamNotes`, posted by the run), never her email (7 Nov 2026).
-  const morningRest = [gate, lawLine(data.law), ancestral, calls.length ? `On your calendar: ${calls.join("; ")}.` : null].filter(Boolean);
+  // Her calendar stays right under line 1 (7 Nov 2026); the in-bed gate follows it (18 Nov 2026).
+  const morningRest = [lawLine(data.law), ancestral, calls.length ? `On your calendar: ${calls.join("; ")}.` : null, gate].filter(Boolean);
   const lay = ({ foundMax = MAX_FOUND_LINES, dealMax = MAX_DEAL_ROWS } = {}) => ownerEmail({
     who: "Simone",
     layout: "digest",

@@ -23,25 +23,27 @@ const DAY = {
 const WEEK = { practice: { technique: "If-then plans", how_to_try_it: "Pick one friction point and write the rule.", source_name: "A study (2006)", source_url: "https://doi.example/x" }, body: { suggestion: "Drink water first.", why: "It helps." } };
 
 describe("the Spirit section, as she approved it", () => {
-  it("above the fold: the week, the moon, the sky in one line, the practice in one line, gratitude, the month", () => {
-    const s = spiritSection(DAY, WEEK, NOW)!;
+  // 18 Nov 2026 (her review, hostile review accepted; supersedes the 24 Oct sample): at most five lines,
+  // coaching first; the sky only when it points at today's decision; the if-then filled in, never a
+  // template; giving as a count; the Ancestors hour only in the month's last two weeks, no fraction.
+  // The money-map week, the moon and the gratitude sentence are on the Spirit tab (gratitude is in the gate).
+  it("at most five lines: the sky tied to today's action, the if-then filled in, giving as a count", () => {
+    const s = spiritSection(DAY, WEEK, NOW, null, { action: "answer decision 1 (Reply to Dana)" })!;
     const top = s.items.map((i: any) => i.runs.map((r: any) => r.text).join(""));
-    expect(top).toEqual([
-      "🟢🟢 Peak money week (Oct 19–25). Finalize major opportunities.",
-      "🌕 Full Moon in Taurus Sunday night, about 37 hours away.",
-      "⚡ Today: the sky says make the decision rather than wait. There's also an easy opening for growth, so use it.",
-      "This morning · 9 min: Breathe 2 → visualize 5 → name today's one action 2.",
-      "“Grateful for the people behind me who never needed to be asked.”",
-      "This month · 7 days left: 🕯 Ancestors hour: 0 of 60 min · 🤝 Contribution: 0 of 1.",
-      // Trimmed (owner, 25 Oct 2026): the week's practice as ONE short line, no source.
-      "This week's practice: Pick one friction point and write the rule.",
-    ]);
+    expect(top.length).toBeLessThanOrEqual(5);
+    expect(top[0]).toBe("⚡ The sky favours deciding over waiting today: start with answer decision 1 (Reply to Dana).");
+    expect(top).toContain("Your if-then for today: if it is 9 am, then I answer decision 1 (Reply to Dana).");
+    expect(top.at(-1)).toBe("🤝 Giving: none yet this month · 🕯 Ancestors hour: not yet, 7 days left this month.");
+    expect(top.join(" ")).not.toMatch(/Peak money week|Full Moon|of 60|of 1\b|\[cue\]|\[behavior\]/);
     expect(s.link).toEqual({ label: "See the full sky, body and practice in Boss OS →", url: "https://boss.sequoiataylor.com/?tab=spirit" });
     expect(s.full).toBeUndefined();
+    // No action today: no sky line and no empty if-then.
+    const quiet = spiritSection(DAY, WEEK, NOW)!.items.map((i: any) => i.runs[0].text);
+    expect(quiet).toEqual(["🤝 Giving: none yet this month · 🕯 Ancestors hour: not yet, 7 days left this month."]);
   });
-  it("an if-then practice reads as the plan itself, in one sentence", () => {
-    const s = spiritSection(DAY, { practice: { technique: "Implementation Intentions (if-then planning)", how_to_try_it: "Pick one existing habit loop. Write it as a concrete if-then: 'If I finish my morning coffee, then I do 5 minutes of breathwork.' The specificity matters.", source_name: "A study" } }, NOW)!;
-    expect(s.items.at(-1).runs[0].text).toBe("This week's practice: Implementation Intentions: If I finish my morning coffee, then I do 5 minutes of breathwork.");
+  it("an if-then practice is filled in with today's one action, on her own cue", () => {
+    const s = spiritSection(DAY, { practice: { technique: "Implementation Intentions (if-then planning)", how_to_try_it: "Pick one existing habit loop. Write it as a concrete if-then: 'If I finish my morning coffee, then I do 5 minutes of breathwork.'" } }, NOW, null, { action: "answer decision 1" })!;
+    expect(s.items.map((i: any) => i.runs[0].text)).toContain("Your if-then for today: if I finish my morning coffee, then I answer decision 1.");
   });
   it("sits after Monique found and before the briefing; the sky in full, Body, Manifestations and the advisory are one link away", () => {
     const e = buildDay({ diary: [], tasks: [], approvals: [], repoChanges: [], briefing: null, feed: { items: [] }, morning: {}, spirit: DAY, practiceWeek: WEEK }, NOW);
@@ -71,7 +73,7 @@ describe("the ancestral hour above the fold (owner, 31 Oct 2026)", () => {
     expect(e.html).toContain("Ancestral hour: 3 days left this month");
     expect(e.problems).toEqual([]);
     // The month line counts with the same rule.
-    expect(t).toContain("This month · 3 days left: 🕯 Ancestors hour: 0 of 60 min");
+    expect(t).toContain("🕯 Ancestors hour: not yet, 3 days left this month");
   });
   it("done, or outside the window: no line", () => {
     expect(ancestralLine({ ancestral_hour: ancestralHourState("2026-10-31", 60) })).toBeNull();
