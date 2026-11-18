@@ -62,6 +62,7 @@ import { systemRow } from "../../src/shared/boss/openLoops/openLoops.mjs";
 import { yoursThisWeek } from "../../src/shared/boss/waiting/register.mjs";
 import { dedupeEvents, isAttending, others } from "../../src/shared/boss/meetingPrep/prep.mjs";
 import { gratitudeFromBrain, coachPressure } from "../../src/shared/boss/mail/morningReply.mjs";
+import { stallBanners } from "../../src/shared/boss/duties/stall.mjs";
 
 const ORIGIN = process.env.BOSS_OS_ORIGIN ?? "https://boss.sequoiataylor.com";
 const FEED = process.env.PNP_OWNER_FEED_URL ?? "https://porchandparty901.com/api/owner-feed";
@@ -1541,6 +1542,8 @@ export async function read(api, now) {
   const practiceWeek = await api.get("/spirit/practice-week").catch(() => null);
   const lapse = await api.get("/practice/lapse-line").catch((e) => { console.error(`your-day: the practice streak not read (${e.message})`); return null; });
   const lapseLine = lapse?.line ?? null;
+  // A stalled job (src/shared/boss/duties/stall.mjs): a red line at the very top until its Open Loops row clears.
+  const stalls = await api.get("/open-loops").then((d) => stallBanners(d?.loops)).catch((e) => { console.error(`your-day: stalled jobs not read (${e.message})`); return []; });
   const missedDays = Number.isInteger(lapse?.missed) ? lapse.missed : null;
   const waiting = await api.get("/waiting-on").then((d) => d?.items ?? []).catch((e) => { console.error(`your-day: the waiting-on register not read (${e.message})`); return []; });
   // Every unanswered Decide item from earlier mornings (Today v4: they never drop off), with one-tap send.
@@ -1590,7 +1593,7 @@ export async function read(api, now) {
   const gratitudeList = gratitudeFromBrain(personal?.body_md ?? "");
   const pressure = coachPressure(personal?.body_md ?? "");
   const gateDone = Boolean(today?.day?.morning_completed_at);
-  return { pressure, gratitudeList, gateDone, missedDays, publicNames, lpRows, prospectRows, dropped, calendar, herAddresses, approvalTasks, ownerTz, quietPeople, brainsCheck, t2rGroups, quality, scoreboard, diary: diary?.rows ?? null, tasks: withDue, approvals, repoChanges: rc?.items ?? [], briefing: briefingOf(today), law: lawOf(today), bounceFixes, commentWatch, prospects, spirit, practiceWeek, lapseLine, waiting, carried, morning: reported.sections, notReported: reported.missing };
+  return { stallBanners: stalls, pressure, gratitudeList, gateDone, missedDays, publicNames, lpRows, prospectRows, dropped, calendar, herAddresses, approvalTasks, ownerTz, quietPeople, brainsCheck, t2rGroups, quality, scoreboard, diary: diary?.rows ?? null, tasks: withDue, approvals, repoChanges: rc?.items ?? [], briefing: briefingOf(today), law: lawOf(today), bounceFixes, commentWatch, prospects, spirit, practiceWeek, lapseLine, waiting, carried, morning: reported.sections, notReported: reported.missing };
 }
 
 export async function feedOf(range) {
