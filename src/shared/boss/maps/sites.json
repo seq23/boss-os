@@ -337,9 +337,9 @@
       "domain": "peacebestillapp.com",
       "business": "spry",
       "repo": "peace-be-still",
-      "host": "cloudflare-pages",
-      "project": "peace-be-still",
-      "deploy": "Its site workflow ships /site from main (coming-soon page, 18 Nov 2026)",
+      "host": "cloudflare-worker",
+      "project": "peace-be-still-site",
+      "deploy": "Worker peace-be-still-site (static assets + waitlist D1 peace-be-still), shipped from /site by the repo deploy workflow on push to main; live since 18 Nov 2026",
       "status": "live"
     },
     {
