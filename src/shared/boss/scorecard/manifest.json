@@ -1546,10 +1546,13 @@
       "business": "spry",
       "owner": "Danielle · your morning email",
       "result": "Posts published, then visits from instagram and tiktok to weddingchecklistpdf.com",
-      "jobs": [],
+      "jobs": [
+        "dream-wedding-builder-brand-social-posts",
+        "dream-wedding-builder-brand-social-metrics"
+      ],
       "start": "2026-11-07",
       "first": {
-        "label": "posts published through Buffer (28 days); not wired until dream-wedding-builder writes data/brand-social/metrics.json",
+        "label": "posts published through Buffer on Instagram and TikTok (28 days)",
         "by": 30,
         "floor": {
           "op": ">=",
@@ -1666,10 +1669,13 @@
       "business": "spry",
       "owner": "Danielle · your morning email",
       "result": "Posts published, then visits from tiktok to approvalprep.com",
-      "jobs": [],
+      "jobs": [
+        "approvalprep-brand-social-posts",
+        "approvalprep-brand-social-metrics"
+      ],
       "start": "2026-11-07",
       "first": {
-        "label": "posts published through Buffer (28 days); not wired until approvalprep writes data/brand-social/metrics.json",
+        "label": "posts published through Buffer on Instagram (28 days)",
         "by": 30,
         "floor": {
           "op": ">=",
@@ -1689,7 +1695,7 @@
         }
       },
       "real": {
-        "label": "site visits from tiktok to approvalprep.com (28 days)",
+        "label": "site visits from Instagram or TikTok to approvalprep.com (28 days)",
         "by": 60,
         "floor": {
           "op": ">=",
