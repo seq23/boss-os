@@ -567,6 +567,21 @@
       "login": "se**@gmail.com"
     },
     {
+      "id": "buffer-approvalprep",
+      "service": "Buffer (ApprovalPrep)",
+      "owner": "google-guides",
+      "business": "spry",
+      "repos": [
+        "approvalprep"
+      ],
+      "vault_keys": [
+        "BUFFER_APPROVALPREP_ACCESS_TOKEN"
+      ],
+      "used_by": "ApprovalPrep Threads (live, 7:30 PM CT daily), Peace Be Still Instagram (connected 18 Nov 2026, not posting yet) and Peace Be Still Threads once Meta's security review clears (free plan, 3 of 3).",
+      "security": "not known yet",
+      "login": "cr**@gmail.com"
+    },
+    {
       "id": "buffer-creators",
       "service": "Buffer (the four creators)",
       "owner": "unknown",
