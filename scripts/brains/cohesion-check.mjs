@@ -254,7 +254,7 @@ export function runMapChecks({ root = fileURLToPath(new URL("../..", import.meta
     const r = spawnSync(process.execPath, [join(root, "scripts", "ops", script)], { cwd: root, encoding: "utf8", timeout: 15 * 60_000, maxBuffer: 16 << 20 });
     return { what, status: r.status, stdout: `${r.stdout ?? ""}\n${r.stderr ?? ""}` };
   };
-  return mapCheckWords([run("the Email Map", "email-map-check.mjs"), run("the Schedule", "schedule-check.mjs")]);
+  return mapCheckWords([run("the Email Map", "email-map-check.mjs"), run("the Schedule", "schedule-check.mjs"), run("the Accounts map's Buffers", "buffer-check.mjs")]);
 }
 
 /** Every check, merged into the record the Worker keeps. */
@@ -275,7 +275,7 @@ export async function runChecks({ home = homedir(), now = Date.now(), dryRun = f
   let social_map_flag = null;
   try { social_map_flag = await social(); } catch (e) { social_map_flag = `the Social Map check stopped (${String(e?.message ?? e).slice(0, 120)})`; }
   let mp;
-  try { mp = maps(); } catch { mp = { maps_flag: null, unchecked: ["the Email Map", "the Schedule"] }; }
+  try { mp = maps(); } catch { mp = { maps_flag: null, unchecked: ["the Email Map", "the Schedule", "the Accounts map's Buffers"] }; }
   return { ...m, ...r, ...s, ...rs, ...c, ...v, social_map_flag, maps_flag: mp.maps_flag ?? null, matrix, unchecked: [...m.unchecked, ...r.unchecked, ...s.unchecked, ...rs.unchecked, ...(mp.unchecked ?? [])] };
 }
 
@@ -307,7 +307,7 @@ if (import.meta.url === pathToFileURL(process.argv[1] ?? "").href) {
       if (rec.unchecked.length) console.log(`unchecked: ${rec.unchecked.join(", ")}`);
       console.log(`validators: ${rec.validators_checked} in the matrix; ${rec.validators_flag ?? "nothing flagged"}`);
       console.log(`social map: ${rec.social_map_flag ?? "every account, sameAs and posting job is on the map"}`);
-      console.log(`maps: ${rec.maps_flag ?? "the Email Map and the Schedule match what runs"}`);
+      console.log(`maps: ${rec.maps_flag ?? "the Email Map, the Schedule and the Buffers match what runs"}`);
       if (dryRun) return;
       const { matrix, ...record } = rec;
       const out = await post(record, { matrix });

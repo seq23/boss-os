@@ -24,3 +24,6 @@ export const MASKED_LOCAL: RegExp;
 export function unmaskedAddresses(map: unknown): string[];
 export function privacyProblems(name: string, map: unknown): string[];
 export function countWords(n: number, one: string, many: string): string;
+export function isBufferRow(a: any): boolean;
+export interface BufferTableRow { buffer: string; service: string; owner: string; login?: string; keys: string[]; used: number; slots: number; platform: string | null; handle: string | null; social: string | null; status: string | null; posting: string; jobs?: string[] }
+export function bufferTable(accounts: Map_, social?: Map_): BufferTableRow[];

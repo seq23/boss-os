@@ -118,3 +118,67 @@ describe("the chain guard catches a broken key", () => {
     expect(launchdProblems(ctx, new Set()).join("\n")).toContain("com.seq.pbs-library-fill");
   });
 });
+
+/**
+ * THE BUFFER TABLE (owner, 18 Nov 2026: "we need to make sure we have a table of all accounts and which
+ * buffers they are in"). The page shows one row per channel; the Sunday check compares each Buffer's live
+ * channels with the map (scripts/ops/lib/buffer-channels.mjs) and cannot pass while seeing nothing.
+ */
+import { bufferTable } from "../src/shared/boss/maps/chain.mjs";
+import { driftProblems, expectedByKey, runBufferCheck } from "../scripts/ops/lib/buffer-channels.mjs";
+
+const liveFromMap = (accounts: any) => new Map([...expectedByKey(accounts)].map(([k, v]) => [k, { channels: v.channels.map((c: any) => ({ platform: c.platform, handle: c.handle })) }]));
+
+describe("the Buffer table", () => {
+  it("lists every Buffer channel with its Buffer, vault key and posting words, from the real maps", () => {
+    const ctx = real();
+    const rows = bufferTable(ctx.accounts, ctx.social);
+    const pbs = rows.filter((r) => r.buffer === "buffer-peacebestill");
+    expect(pbs.map((r) => r.platform).sort()).toEqual(["facebook", "instagram", "threads"]);
+    expect(pbs.every((r) => r.keys.includes("BUFFER_PEACEBESTILL_ACCESS_TOKEN") && r.posting !== "not on the Social Map")).toBe(true);
+    expect(rows.filter((r) => r.platform).length).toBeGreaterThanOrEqual(10);
+    expect(rows.find((r) => r.buffer === "buffer-creators")?.posting).toBe("No channels connected");
+  });
+  it("renders on the Accounts page", async () => {
+    const { renderToStaticMarkup } = await import("react-dom/server");
+    const { BufferTable } = await import("../src/client/boss/pages/Maps");
+    const html = renderToStaticMarkup(BufferTable());
+    expect(html).toContain("BUFFER_PEACEBESTILL_ACCESS_TOKEN");
+    expect((html.match(/data-testid="buffer-row-/g) ?? []).length).toBe(bufferTable(real().accounts, real().social).length);
+  });
+  it("catches a Buffer row with no channel list, and a channel naming no Social Map row", () => {
+    const a = real(); delete a.accounts.rows.find((r: any) => r.id === "buffer-pnp").channels;
+    expect(shapeProblems(a).join("\n")).toContain("buffer-pnp: a Buffer row lists its channels");
+    const b = real(); b.accounts.rows.find((r: any) => r.id === "buffer-pnp").channels[0].social = "gone-row";
+    expect(chainProblems(b).join("\n")).toContain("gone-row, which does not exist");
+    const c = real(); c.accounts.rows = c.accounts.rows.filter((r: any) => !/^buffer-/.test(r.id));
+    expect(shapeProblems(c).join("\n")).toContain("no Buffer rows");
+  });
+});
+
+describe("the Buffer drift guard", () => {
+  it("is clean when every Buffer holds what the map lists", () => {
+    const { accounts } = real();
+    const r = driftProblems(accounts, liveFromMap(accounts));
+    expect(r.problems).toEqual([]);
+    expect(r.stop).toBeNull();
+  });
+  it("names a channel moved between Buffers (both ends)", () => {
+    const { accounts } = real();
+    const live = liveFromMap(accounts);
+    live.get("BUFFER_APPROVALPREP_ACCESS_TOKEN")!.channels = live.get("BUFFER_APPROVALPREP_ACCESS_TOKEN")!.channels.filter((c: any) => c.platform !== "instagram");
+    live.get("BUFFER_BRANDS_ACCESS_TOKEN")!.channels.push({ platform: "instagram", handle: "approvalprep" });
+    const p = driftProblems(accounts, live).problems.join("\n");
+    expect(p).toContain("buffer-approvalprep: the map lists instagram approvalprep, but that Buffer does not hold it");
+    expect(p).toContain("buffer-brands: that Buffer holds instagram approvalprep, which the map does not list");
+  });
+  it("names a key it could not read, and stops by name when zero channels were read", async () => {
+    const { accounts } = real();
+    const none = await runBufferCheck({ accounts, env: {}, fetchImpl: (() => { throw new Error("no call expected"); }) as any });
+    expect(none.problems.some((p) => p.includes("BUFFER_PEACEBESTILL_ACCESS_TOKEN could not be read"))).toBe(true);
+    expect(none.stop).toContain("NAMED STOP [BUFFER_NOTHING_READ]");
+    const empty = new Map([...expectedByKey(accounts).keys()].map((k) => [k, { channels: [] }]));
+    expect(driftProblems(accounts, empty).stop).toContain("BUFFER_NOTHING_READ");
+    expect(driftProblems({ rows: [] }, new Map()).stop).toContain("BUFFER_NOTHING_CHECKED");
+  });
+});
