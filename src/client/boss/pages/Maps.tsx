@@ -307,16 +307,16 @@ export function BufferTable() {
     <section className="brain-expander" data-testid="buffer-table">
       <h3 className="email-map-business-name">Which Buffer each account is in</h3>
       <p className="brain-hint">{buffers.map((b: Row) => `${b.service.replace(/^Buffer \((.*)\)$/, "$1")}: ${(b.channels ?? []).length} of ${b.plan_slots}${(b.vault_keys ?? []).length > 1 ? ` (${b.vault_keys.length} Buffers)` : ""}`).join(" · ")}. Checked against Buffer itself every Sunday.</p>
-      <div style={{ overflowX: "auto" }}>
-        <table className="brain-table">
+      <div>
+        <table className="brain-table phone-cards">
           <thead><tr><th>Account</th><th>Buffer</th><th>Vault key</th><th>Posting</th></tr></thead>
           <tbody>
             {rows.map((r, i) => (
               <tr key={`${r.buffer}-${i}`} data-testid={`buffer-row-${r.buffer}`}>
                 <td>{r.platform ? <><a href="/?tab=social">{PLATFORM[r.platform] ?? r.platform} {r.handle}</a></> : "None yet"}</td>
-                <td><a href={href("accounts", "account", r.buffer)}>{r.service}</a>{r.login && r.login !== "not known yet" ? <span className="maps-from"> {r.login}</span> : null}</td>
-                <td className="email-map-code">{r.keys.join(", ")}</td>
-                <td>{r.status ? <strong>{STATUS_WORDS[r.status] ?? r.status}. </strong> : null}{r.posting}</td>
+                <td data-label="Buffer"><a href={href("accounts", "account", r.buffer)}>{r.service}</a>{r.login && r.login !== "not known yet" ? <>{" · "}<span className="maps-from">{r.login}</span></> : null}</td>
+                <td data-label="Vault key" className="email-map-code">{r.keys.join(", ")}</td>
+                <td data-label="Posting">{r.status ? <strong>{STATUS_WORDS[r.status] ?? r.status}. </strong> : null}{r.posting}</td>
               </tr>
             ))}
           </tbody>
