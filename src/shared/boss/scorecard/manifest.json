@@ -1282,11 +1282,14 @@
     },
     {
       "id": "pbs-social",
-      "initiative": "Peace Be Still on Threads and Instagram (@peacebestillapp, via the ApprovalPrep Buffer)",
+      "initiative": "Peace Be Still on Threads, Instagram and Facebook (@peacebestillapp, via its own Buffer)",
       "business": "spry",
       "owner": "Spry Labs · Wednesday Spry Labs email",
       "result": "Visits to peacebestillapp.com tagged utm_source=threads or utm_source=instagram, then store-page visits from them",
-      "jobs": [],
+      "jobs": [
+        "peace-be-still-threads-posts",
+        "peace-be-still-instagram-posts"
+      ],
       "start": null,
       "startWhen": {
         "label": "the first Peace Be Still post goes out (the nightly 9:30 PM CT loop, after her yes on the samples)",

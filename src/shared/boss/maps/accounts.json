@@ -1,5 +1,5 @@
 {
-  "_note": "THE ACCOUNTS MAP (owner, 8 Nov 2026). Every outside service login: which login owns it (a label, and the address masked the owner's way, 8 Nov 2026: the first two letters, ** and the full domain, e.g. st**@time-2-read.com; a full address is never written, and tests/infraMaps.test.ts fails on one), the business, what uses it (repos and vault key NAMES, never values) and its 2-step / recovery state if known. Never guess an owner: an unknown one is `unknown` (\"not known yet\"). `internal_keys` are the apps' own secrets, not outside logins. A new login or vault key goes here in the same PR.",
+  "_note": "THE ACCOUNTS MAP (owner, 8 Nov 2026). Every outside service login: which login owns it (a label, and the address masked the owner's way, 8 Nov 2026: the first two letters, ** and the full domain, e.g. st**@time-2-read.com; a full address is never written, and tests/infraMaps.test.ts fails on one), the business, what uses it (repos and vault key NAMES, never values) and its 2-step / recovery state if known. Never guess an owner: an unknown one is `unknown` (\"not known yet\"). `internal_keys` are the apps' own secrets, not outside logins. A new login or vault key goes here in the same PR. Every Buffer row (id buffer-*) lists its connected channels as `channels: [{platform, handle, social}]` (platform and handle exactly as Buffer names them; social = the Social Map row) and its `plan_slots` (the free plan's 3 per Buffer); the Accounts page shows them as ONE table (account, which Buffer, vault key, posting job), and the weekly cohesion check (scripts/ops/buffer-check.mjs) reads every Buffer's live channels and names any difference.",
   "owners": {
     "google-personal": "Your personal Google account",
     "google-second": "Your second personal Google account",
@@ -16,7 +16,8 @@
     "no-person": "No person: a Google service account",
     "sequoia": "You, in your own name: only your sign-in can act (which address is not recorded yet)",
     "unknown": "not known yet",
-    "kmp-inbox": "KeepMyProof's own address"
+    "kmp-inbox": "KeepMyProof's own address",
+    "pbs-inbox": "Peace Be Still's own address"
   },
   "rows": [
     {
@@ -544,10 +545,28 @@
       "vault_keys": [
         "BUFFER_ACCESS_TOKEN"
       ],
-      "used_by": "P&P Studio posts to TikTok, Instagram and the Facebook page (free plan, 3 of 3).",
+      "used_by": "P&P Studio posts to Instagram, TikTok and the Facebook Page (free plan, 3 of 3, none free).",
       "security": "not known yet",
       "move_to_brand": "Better on a brand address: every social and blog account sits under its own site's or brand's address (your ruling, 8 Nov 2026).",
-      "login": "se**@gmail.com"
+      "login": "se**@gmail.com",
+      "plan_slots": 3,
+      "channels": [
+        {
+          "platform": "instagram",
+          "handle": "porchandparty901",
+          "social": "pnp-instagram"
+        },
+        {
+          "platform": "tiktok",
+          "handle": "porch.party.901",
+          "social": "pnp-tiktok"
+        },
+        {
+          "platform": "facebook",
+          "handle": "Porch & Party",
+          "social": "pnp-facebook"
+        }
+      ]
     },
     {
       "id": "buffer-brands",
@@ -561,10 +580,23 @@
       "vault_keys": [
         "BUFFER_BRANDS_ACCESS_TOKEN"
       ],
-      "used_by": "Dream Wedding TikTok and Instagram, ApprovalPrep Instagram (free plan, 3 of 3); the weekly brand social jobs queue here.",
+      "used_by": "Dream Wedding TikTok and Instagram (free plan, 2 of 3, 1 free); Dream Wedding's weekly brand social job queues here. ApprovalPrep Instagram moved out to the ApprovalPrep Buffer (18 Nov 2026). ApprovalPrep's scorecard metrics and weekly job still read this key until its switch lands in approvalprep.",
       "security": "not known yet",
       "move_to_brand": "Better on a brand address: every social and blog account sits under its own site's or brand's address (your ruling, 8 Nov 2026).",
-      "login": "se**@gmail.com"
+      "login": "se**@gmail.com",
+      "plan_slots": 3,
+      "channels": [
+        {
+          "platform": "tiktok",
+          "handle": "dreamweddingbuilder",
+          "social": "dw-tiktok"
+        },
+        {
+          "platform": "instagram",
+          "handle": "dreamweddingbuilder",
+          "social": "dw-instagram"
+        }
+      ]
     },
     {
       "id": "buffer-approvalprep",
@@ -577,9 +609,55 @@
       "vault_keys": [
         "BUFFER_APPROVALPREP_ACCESS_TOKEN"
       ],
-      "used_by": "ApprovalPrep Threads (live, 7:30 PM CT daily), Peace Be Still Instagram (connected 18 Nov 2026, not posting yet) and Peace Be Still Threads once Meta's security review clears (free plan, 3 of 3).",
+      "used_by": "ApprovalPrep Instagram (moved in from the brands Buffer 18 Nov 2026) and ApprovalPrep Threads (live, 7:30 PM CT daily) (free plan, 2 of 3, 1 free). Peace Be Still moved to its own Buffer (18 Nov 2026).",
       "security": "not known yet",
-      "login": "cr**@gmail.com"
+      "login": "cr**@gmail.com",
+      "plan_slots": 3,
+      "channels": [
+        {
+          "platform": "instagram",
+          "handle": "approvalprep",
+          "social": "ap-instagram"
+        },
+        {
+          "platform": "threads",
+          "handle": "approvalprep",
+          "social": "ap-threads"
+        }
+      ]
+    },
+    {
+      "id": "buffer-peacebestill",
+      "service": "Buffer (Peace Be Still)",
+      "owner": "pbs-inbox",
+      "business": "spry",
+      "repos": [
+        "peace-be-still"
+      ],
+      "vault_keys": [
+        "BUFFER_PEACEBESTILL_ACCESS_TOKEN"
+      ],
+      "used_by": "Peace Be Still Threads (nightly 9:30 PM CT), the Facebook Page and Instagram (pictures Sun, Tue, Thu 8 PM CT) (free plan, 3 of 3, none free); made 18 Nov 2026 on the brand's own address, so faith posts never share a Buffer with another brand.",
+      "security": "not known yet",
+      "login": "in**@peacebestillapp.com",
+      "plan_slots": 3,
+      "channels": [
+        {
+          "platform": "threads",
+          "handle": "peacebestillapp",
+          "social": "pbs-threads"
+        },
+        {
+          "platform": "facebook",
+          "handle": "Peace Be Still",
+          "social": "pbs-facebook"
+        },
+        {
+          "platform": "instagram",
+          "handle": "peacebestillapp",
+          "social": "pbs-instagram"
+        }
+      ]
     },
     {
       "id": "buffer-creators",
@@ -595,9 +673,11 @@
         "BUFFER_API_KEY_MAYA_REYES",
         "BUFFER_API_KEY_NIA_BROOKS"
       ],
-      "used_by": "One Buffer per creator persona, never merged; waits on their social accounts.",
+      "used_by": "One Buffer per creator persona (4 Buffers), never merged; no channels connected (no persona account exists).",
       "security": "not known yet",
-      "login": "not known yet"
+      "login": "not known yet",
+      "plan_slots": 3,
+      "channels": []
     },
     {
       "id": "pinterest",

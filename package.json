@@ -95,6 +95,7 @@
     "archive:audit": "node scripts/vault/vault.mjs run -- node scripts/ops/archive-audit.mjs",
     "email-map:check": "node scripts/ops/email-map-check.mjs",
     "social-map:check": "node scripts/ops/social-map-check.mjs",
+    "buffer:check": "node scripts/ops/buffer-check.mjs",
     "mac:cleanup": "node scripts/vault/vault.mjs run -- node scripts/ops/mac-cleanup.mjs",
     "preseed:watch": "node scripts/vault/vault.mjs run -- node scripts/ops/preseed-watch.mjs",
     "waiting-on": "node scripts/vault/vault.mjs run -- node scripts/ops/waiting-on.mjs",

@@ -9,7 +9,7 @@ import scorecard from "@shared/boss/scorecard/manifest.json";
 import readiness from "@shared/boss/searchReadiness/sites.json";
 import checklist from "@shared/boss/searchReadiness/checklist.json";
 import social from "@shared/boss/socialMap/manifest.json";
-import { MAP_ORDER, OUTSIDE, linksByRepo, notLinked, scorecardSites, registrable } from "@shared/boss/maps/chain.mjs";
+import { MAP_ORDER, OUTSIDE, linksByRepo, notLinked, scorecardSites, registrable, bufferTable } from "@shared/boss/maps/chain.mjs";
 
 /**
  * THE MAPS (owner, 8 Nov 2026: "do all the maps we maybe missing"; "looking at the first one should be
@@ -282,6 +282,7 @@ export function AccountsMap() {
       <p className="brain-summary">{accountsSummary()}</p>
       <p className="brain-hint">Addresses show their first two letters and the domain only. Keys are listed by name, never their values.</p>
       <Filtered tab="accounts" words={filtered ?? null} />
+      {only || repo ? null : <BufferTable />}
       {Object.entries(R.businesses).map(([b, label]) => {
         const shown = rows.filter((a: Row) => a.business === b);
         if (!shown.length) return null;
@@ -295,6 +296,36 @@ export function AccountsMap() {
   );
 }
 
+const PLATFORM: Record<string, string> = { instagram: "Instagram", tiktok: "TikTok", threads: "Threads", facebook: "Facebook Page" };
+const STATUS_WORDS = (social as any).statuses as Record<string, string>;
+
+/** Every social account and which Buffer it is in (owner, 18 Nov 2026), from the buffer-* rows. */
+export function BufferTable() {
+  const rows = bufferTable(A, social as any);
+  const buffers = A.rows.filter((a: Row) => /^buffer-/.test(a.id));
+  return (
+    <section className="brain-expander" data-testid="buffer-table">
+      <h3 className="email-map-business-name">Which Buffer each account is in</h3>
+      <p className="brain-hint">{buffers.map((b: Row) => `${b.service.replace(/^Buffer \((.*)\)$/, "$1")}: ${(b.channels ?? []).length} of ${b.plan_slots}${(b.vault_keys ?? []).length > 1 ? ` (${b.vault_keys.length} Buffers)` : ""}`).join(" · ")}. Checked against Buffer itself every Sunday.</p>
+      <div>
+        <table className="brain-table phone-cards">
+          <thead><tr><th>Account</th><th>Buffer</th><th>Vault key</th><th>Posting</th></tr></thead>
+          <tbody>
+            {rows.map((r, i) => (
+              <tr key={`${r.buffer}-${i}`} data-testid={`buffer-row-${r.buffer}`}>
+                <td>{r.platform ? <><a href="/?tab=social">{PLATFORM[r.platform] ?? r.platform} {r.handle}</a></> : "None yet"}</td>
+                <td data-label="Buffer"><a href={href("accounts", "account", r.buffer)}>{r.service}</a>{r.login && r.login !== "not known yet" ? <>{" · "}<span className="maps-from">{r.login}</span></> : null}</td>
+                <td data-label="Vault key" className="email-map-code">{r.keys.join(", ")}</td>
+                <td data-label="Posting">{r.status ? <strong>{STATUS_WORDS[r.status] ?? r.status}. </strong> : null}{r.posting}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+    </section>
+  );
+}
+
 function AccountCard({ a }: { a: Row }) {
   const owner = A.owners[a.owner] ?? a.owner;
   return (
@@ -303,6 +334,7 @@ function AccountCard({ a }: { a: Row }) {
       links={<>{(a.repos ?? []).map((r: string) => <From key={r} repo={r} />)}</>}>
       <dt>What uses it</dt><dd>{a.used_by}</dd>
       <dt>2-step and recovery</dt><dd>{a.security}</dd>
+      {Array.isArray(a.channels) ? <><dt>Channels in this Buffer</dt><dd>{a.channels.length ? a.channels.map((c: Row) => `${PLATFORM[c.platform] ?? c.platform} ${c.handle}`).join(", ") : "none"} ({a.channels.length} of {a.plan_slots}{(a.vault_keys ?? []).length === 1 ? `, ${a.plan_slots - a.channels.length} free` : " each"})</dd></> : null}
       {a.vault_keys?.length ? <><dt>Vault keys (names only)</dt><dd className="email-map-code">{a.vault_keys.join(", ")}</dd></> : null}
       {a.note ? <><dt>Note</dt><dd>{a.note}</dd></> : null}
       <dt>Business</dt><dd>{bizLabel(a.business)}</dd>

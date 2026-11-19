@@ -138,6 +138,26 @@ const req = (row, fields, where) => fields.filter((f) => row?.[f] === undefined 
 const dupes = (ids, where) => ids.filter((x, i) => ids.indexOf(x) !== i).map((x) => `${where}: ${x} is listed twice`);
 
 /** Shape: required fields, unique keys, known enums. Rule 0: an empty map is a problem. */
+/** A Buffer login on the Accounts map (rows buffer-*): its channels are a table on the page and checked live. */
+export const isBufferRow = (a) => /^buffer-/.test(String(a?.id ?? ""));
+
+/**
+ * THE BUFFER TABLE (owner, 18 Nov 2026: "we need to make sure we have a table of all accounts and which
+ * buffers they are in"): one row per connected channel: the account, which Buffer, its vault key and
+ * the posting job (from the Social Map row it names). A Buffer with no channel is one row saying so.
+ */
+export function bufferTable(accounts, social) {
+  const byId = new Map((social?.rows ?? []).map((s) => [s.id, s]));
+  return (accounts?.rows ?? []).filter(isBufferRow).flatMap((a) => {
+    const base = { buffer: a.id, service: a.service, owner: a.owner, login: a.login, keys: a.vault_keys ?? [], used: (a.channels ?? []).length, slots: a.plan_slots };
+    if (!(a.channels ?? []).length) return [{ ...base, platform: null, handle: null, social: null, status: null, posting: "No channels connected" }];
+    return a.channels.map((c) => {
+      const s = byId.get(c.social);
+      return { ...base, platform: c.platform, handle: c.handle, social: c.social, status: s?.status ?? null, posting: s?.posts?.what ?? "not on the Social Map", jobs: s?.posts?.jobs ?? [] };
+    });
+  });
+}
+
 export function shapeProblems(ctx) {
   const p = [];
   const { repos, domains, sites, accounts } = ctx;
@@ -173,7 +193,15 @@ export function shapeProblems(ctx) {
     if (!owners.includes(a.owner)) p.push(`account ${a.id}: unknown owner key ${a.owner}`);
     if (!Array.isArray(a.repos) || !a.repos.length) p.push(`account ${a.id}: no repo (say "outside" when no repo uses it)`);
     if (!Array.isArray(a.vault_keys)) p.push(`account ${a.id}: vault_keys is not a list`);
+    if (isBufferRow(a)) {
+      if (!Array.isArray(a.channels)) p.push(`account ${a.id}: a Buffer row lists its channels (channels: [{platform, handle, social}])`);
+      if (!Number.isInteger(a.plan_slots) || a.plan_slots < 1) p.push(`account ${a.id}: a Buffer row says its plan_slots`);
+      if (!(a.vault_keys ?? []).length) p.push(`account ${a.id}: a Buffer row names its vault key`);
+      for (const c of a.channels ?? []) p.push(...req(c, ["platform", "handle", "social"], `account ${a.id} channel ${c.handle ?? "?"}`));
+      if ((a.vault_keys ?? []).length === 1 && (a.channels ?? []).length > a.plan_slots) p.push(`account ${a.id}: ${a.channels.length} channels on a ${a.plan_slots}-channel plan`);
+    }
   }
+  if (!(accounts?.rows ?? []).some(isBufferRow)) p.push("the Accounts map has no Buffer rows (the Buffer table cannot see anything)");
   p.push(...dupes((accounts?.rows ?? []).map((a) => a.id), "Accounts"));
   p.push(...dupes((accounts?.rows ?? []).flatMap((a) => a.vault_keys ?? []), "Accounts vault keys"));
   return p;
@@ -205,6 +233,7 @@ export function chainProblems(ctx) {
   for (const a of ctx.accounts?.rows ?? []) {
     for (const r of a.repos ?? []) if (!okRepo(r)) p.push(`account ${a.id}: repo ${r} is not on the Repos map`);
     if (!okBiz(a.business)) p.push(`account ${a.id}: business ${a.business} is not a brain`);
+    if (ctx.social) for (const c of a.channels ?? []) if (!(ctx.social.rows ?? []).some((s) => s.id === c.social)) p.push(`account ${a.id}: channel ${c.platform} ${c.handle} names Social Map row ${c.social}, which does not exist`);
   }
   for (const e of ctx.emails?.rows ?? []) for (const r of emailRepos(e)) if (!okRepo(r)) p.push(`Email Map ${e.id}: repo ${r} is not on the Repos map`);
   for (const j of ctx.schedule?.rows ?? []) for (const r of scheduleRepos(j, ctx.repos)) if (!okRepo(r)) p.push(`Schedule ${j.id}: repo ${r} is not on the Repos map`);

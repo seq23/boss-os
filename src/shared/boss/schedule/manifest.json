@@ -6387,6 +6387,54 @@
         "floor": 0,
         "reason": "Queues 0 when the next 7 evenings are already filled; it prints OUTPUT: queued N, scheduled ahead M, and 0 queued with fewer than 7 ahead and no named note is the named stop THREADS_NOTHING_QUEUED."
       }
+    },
+    {
+      "id": "peace-be-still-threads-posts",
+      "name": "Threads posts",
+      "what": "Daily: keeps the next 4 evenings filled on Threads @peacebestillapp, one post at 21:30 CT through Peace Be Still's own Buffer, from data/threads/posts.json; recycles evergreen posts once the bank is spent, so it never stops.",
+      "business": "spry",
+      "brand": "Peace Be Still",
+      "system": "github",
+      "slots": [
+        "daily 08:35"
+      ],
+      "emails": false,
+      "heavy": false,
+      "trigger": {
+        "repo": "peace-be-still",
+        "file": ".github/workflows/threads-posts.yml",
+        "crons": [
+          "CRON_TZ=America/Chicago 35 8 * * *"
+        ]
+      },
+      "output": {
+        "floor": 0,
+        "reason": "Queues 0 when the next 4 evenings are already filled; it prints OUTPUT: queued N, scheduled ahead M, and 0 queued with fewer than 4 ahead and no named note is the named stop THREADS_NOTHING_QUEUED."
+      }
+    },
+    {
+      "id": "peace-be-still-instagram-posts",
+      "name": "Instagram + Facebook posts",
+      "what": "Daily: keeps the next 3 picture posts (Sun, Tue and Thu at 20:00 CT) queued on Instagram @peacebestillapp and the Facebook Page, the same pictures and caption, through Peace Be Still's own Buffer, from data/instagram/posts.json; writes data/social/metrics.json for the scorecard row pbs-social.",
+      "business": "spry",
+      "brand": "Peace Be Still",
+      "system": "github",
+      "slots": [
+        "daily 08:45"
+      ],
+      "emails": false,
+      "heavy": false,
+      "trigger": {
+        "repo": "peace-be-still",
+        "file": ".github/workflows/instagram-posts.yml",
+        "crons": [
+          "CRON_TZ=America/Chicago 45 8 * * *"
+        ]
+      },
+      "output": {
+        "floor": 0,
+        "reason": "Queues 0 when the next 3 slots are already queued on each channel; it prints OUTPUT: queued N (instagram I, facebook F), scheduled ahead M, and 0 queued with too few ahead and no named note is the named stop IG_NOTHING_QUEUED."
+      }
     }
   ]
 }
