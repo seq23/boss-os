@@ -86,6 +86,13 @@
       "grid_business": "Time-2-Read"
     },
     {
+      "key": "peace-be-still",
+      "label": "Peace Be Still",
+      "group": "divine_9",
+      "blurb": "peacebestillapp.com, the faith + mindset app (new in the Divine 10, 18 Nov 2026). No social accounts yet.",
+      "grid_business": "Peace Be Still"
+    },
+    {
       "key": "spry-labs",
       "label": "Spry Labs",
       "group": "other",
@@ -387,10 +394,10 @@
       "handle": "@dreamweddingbuilder",
       "url": "https://www.instagram.com/dreamweddingbuilder/",
       "account_email": "unknown",
-      "status": "planned",
+      "status": "live_auto",
       "posts": {
         "by": "job",
-        "what": "Mondays: 2 carousels from the pin copy + 1 screen-recorded planner video, queued in the brands Buffer (switched off until turned on).",
+        "what": "Mondays: 2 carousels from the pin copy + 1 screen-recorded planner video, queued in the brands Buffer.",
         "code": [
           {
             "repo": "dream-wedding-builder",
@@ -405,9 +412,17 @@
         ],
         "jobs": [
           "dream-wedding-builder-brand-social-posts"
-        ]
+        ],
+        "check": {
+          "kind": "workflow",
+          "workflow": {
+            "repo": "dream-wedding-builder",
+            "file": "brand-social-posts.yml"
+          },
+          "max_age_days": 8
+        }
       },
-      "decision": "Starts posting only against its scorecard row dw-brand-social (7 Nov 2026). Samples approved 18 Nov 2026; the job is built and switched off until turned on."
+      "decision": "Starts posting against its scorecard row dw-brand-social (7 Nov 2026). Samples approved 18 Nov 2026; connected to Buffer and the job switched on 18 Nov (dream-wedding-builder #243, #244). No Threads for Dream Wedding (18 Nov 2026, firm): couples plan on Pinterest and TikTok."
     },
     {
       "id": "dw-tiktok",
@@ -417,10 +432,10 @@
       "handle": "@dreamweddingbuilder",
       "url": "https://www.tiktok.com/@dreamweddingbuilder",
       "account_email": "unknown",
-      "status": "planned",
+      "status": "live_auto",
       "posts": {
         "by": "job",
-        "what": "Mondays: 2 carousels from the pin copy + 1 screen-recorded planner video, queued in the brands Buffer (switched off until turned on).",
+        "what": "Mondays: 2 carousels from the pin copy + 1 screen-recorded planner video, queued in the brands Buffer.",
         "code": [
           {
             "repo": "dream-wedding-builder",
@@ -435,9 +450,17 @@
         ],
         "jobs": [
           "dream-wedding-builder-brand-social-posts"
-        ]
+        ],
+        "check": {
+          "kind": "workflow",
+          "workflow": {
+            "repo": "dream-wedding-builder",
+            "file": "brand-social-posts.yml"
+          },
+          "max_age_days": 8
+        }
       },
-      "decision": "The old persona account repurposed, followers kept (her call, 7 Nov 2026); starts against dw-brand-social. Samples approved 18 Nov 2026; the job is built and switched off until turned on."
+      "decision": "The old persona account repurposed, followers kept (her call, 7 Nov 2026); starts against dw-brand-social. Samples approved 18 Nov 2026; connected to Buffer and the job switched on 18 Nov (dream-wedding-builder #243, #244)."
     },
     {
       "id": "ap-pinterest",
@@ -494,10 +517,10 @@
       "handle": "@approvalprep",
       "url": "https://www.instagram.com/approvalprep/",
       "account_email": "unknown",
-      "status": "planned",
+      "status": "live_auto",
       "posts": {
         "by": "job",
-        "what": "Mondays: 2 carousels from the pin copy + 1 screen-recorded Letter Studio video, queued in the brands Buffer (switched off until turned on).",
+        "what": "Mondays: 2 carousels from the pin copy + 1 screen-recorded Letter Studio video, queued in Buffer (moving from the brands Buffer into the ApprovalPrep Buffer).",
         "code": [
           {
             "repo": "approvalprep",
@@ -512,9 +535,32 @@
         ],
         "jobs": [
           "approvalprep-brand-social-posts"
-        ]
+        ],
+        "check": {
+          "kind": "workflow",
+          "workflow": {
+            "repo": "approvalprep",
+            "file": "brand-social-posts.yml"
+          },
+          "max_age_days": 8
+        }
       },
-      "decision": "Starts posting only against its scorecard row ap-brand-social (7 Nov 2026). Samples approved 18 Nov 2026; the job is built and switched off until turned on."
+      "decision": "Starts posting against its scorecard row ap-brand-social (7 Nov 2026). Samples approved 18 Nov 2026; connected to Buffer and the job switched on 18 Nov (approvalprep #176, #177)."
+    },
+    {
+      "id": "ap-threads",
+      "business": "approvalprep",
+      "site": "approvalprep.com",
+      "platform": "Threads",
+      "handle": "@approvalprep",
+      "url": "https://www.threads.com/@approvalprep",
+      "account_email": "unknown",
+      "status": "live_manual",
+      "posts": {
+        "by": "none",
+        "what": "Profile and 11 follows done; 14 posts drafted, waiting on her yes, then queued through the ApprovalPrep Buffer."
+      },
+      "decision": "Added 18 Nov 2026 (Divine 10 channels, firm): people paying for credit repair talk about it there, the account came free from the Instagram, and Threads shows posts to non-followers. Its own free Buffer. X later, not now."
     },
     {
       "id": "ap-linkedin",
@@ -937,6 +983,36 @@
       "platform": "GitHub (code repo)",
       "handle": "seq23/heygetonmylevel",
       "url": "https://github.com/seq23/heygetonmylevel",
+      "account_email": "personal — move",
+      "status": "live_manual",
+      "posts": {
+        "by": "none",
+        "what": "A public code repo in sameAs; nothing posts."
+      },
+      "decision": "In entity.json sameAs."
+    },
+    {
+      "id": "pbs-threads-instagram",
+      "business": "peace-be-still",
+      "site": "peacebestillapp.com",
+      "platform": "Threads + Instagram",
+      "handle": null,
+      "url": null,
+      "account_email": "no account",
+      "status": "planned",
+      "posts": {
+        "by": "none",
+        "what": "Nothing yet; until launch it grows through its search pages, store pages and (after launch) a YouTube nights lane."
+      },
+      "decision": "Recommended at app launch (18 Nov 2026), waiting on her yes and on her creating the Instagram (Threads needs one; agents never create accounts): Black church women and Christian Threads are very active."
+    },
+    {
+      "id": "pbs-github",
+      "business": "peace-be-still",
+      "site": "peacebestillapp.com",
+      "platform": "GitHub (code repo)",
+      "handle": "seq23/peace-be-still",
+      "url": "https://github.com/seq23/peace-be-still",
       "account_email": "personal — move",
       "status": "live_manual",
       "posts": {
