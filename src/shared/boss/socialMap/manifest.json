@@ -555,12 +555,34 @@
       "handle": "@approvalprep",
       "url": "https://www.threads.com/@approvalprep",
       "account_email": "unknown",
-      "status": "live_manual",
+      "status": "live_auto",
       "posts": {
-        "by": "none",
-        "what": "Profile and 11 follows done; 14 posts drafted, waiting on her yes, then queued through the ApprovalPrep Buffer."
+        "by": "job",
+        "what": "Daily: one post at 7:30 PM CT, the next 7 evenings always queued in the ApprovalPrep Buffer, from a 60-post bank; recycles evergreen posts once the bank is spent, so it never stops.",
+        "code": [
+          {
+            "repo": "approvalprep",
+            "paths": [
+              ".github/workflows/threads-posts.yml",
+              "scripts/threads/threads_loop.mjs",
+              "scripts/brand_social/buffer_queue.mjs",
+              "data/threads/posts.json"
+            ]
+          }
+        ],
+        "jobs": [
+          "approvalprep-threads-posts"
+        ],
+        "check": {
+          "kind": "workflow",
+          "workflow": {
+            "repo": "approvalprep",
+            "file": "threads-posts.yml"
+          },
+          "max_age_days": 2
+        }
       },
-      "decision": "Added 18 Nov 2026 (Divine 10 channels, firm): people paying for credit repair talk about it there, the account came free from the Instagram, and Threads shows posts to non-followers. Its own free Buffer. X later, not now."
+      "decision": "Added 18 Nov 2026 (Divine 10 channels, firm): people paying for credit repair talk about it there, the account came free from the Instagram, and Threads shows posts to non-followers. Its own free Buffer. X later, not now. Posting job live 18 Nov 2026 (approvalprep #183), scorecard row ap-threads."
     },
     {
       "id": "ap-linkedin",
