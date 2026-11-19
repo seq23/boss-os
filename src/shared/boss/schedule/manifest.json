@@ -6363,6 +6363,30 @@
         "floor": 0,
         "reason": "Writes the metrics file every day; a number it cannot read is named, never 0."
       }
+    },
+    {
+      "id": "approvalprep-threads-posts",
+      "name": "Threads posts",
+      "what": "Daily: keeps the next 7 evenings filled on Threads @approvalprep, one post at 19:30 CT through ApprovalPrep's own Buffer, from data/threads/posts.json; recycles evergreen posts once the bank is spent, so it never stops.",
+      "business": "spry",
+      "brand": "ApprovalPrep",
+      "system": "github",
+      "slots": [
+        "daily 08:25"
+      ],
+      "emails": false,
+      "heavy": false,
+      "trigger": {
+        "repo": "approvalprep",
+        "file": ".github/workflows/threads-posts.yml",
+        "crons": [
+          "CRON_TZ=America/Chicago 25 8 * * *"
+        ]
+      },
+      "output": {
+        "floor": 0,
+        "reason": "Queues 0 when the next 7 evenings are already filled; it prints OUTPUT: queued N, scheduled ahead M, and 0 queued with fewer than 7 ahead and no named note is the named stop THREADS_NOTHING_QUEUED."
+      }
     }
   ]
 }

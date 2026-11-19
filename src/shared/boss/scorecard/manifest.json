@@ -1720,6 +1720,61 @@
       "pause": []
     },
     {
+      "id": "ap-threads",
+      "initiative": "ApprovalPrep on Threads (@approvalprep, one post a day via Buffer)",
+      "business": "spry",
+      "owner": "Spry Labs · Wednesday Spry Labs email",
+      "result": "Visits on the Threads link (utm_source=threads), then kit sales from them",
+      "jobs": [
+        "approvalprep-threads-posts"
+      ],
+      "start": "2026-11-19",
+      "first": {
+        "label": "visits tagged utm_source=threads (28 days); also aim for 100 followers, read by hand in Threads",
+        "by": 30,
+        "floor": {
+          "op": ">=",
+          "value": 25
+        },
+        "reader": "repo-json",
+        "params": {
+          "maxAgeDays": 9,
+          "files": [
+            {
+              "repo": "approvalprep",
+              "path": "data/brand-social/metrics.json",
+              "field": "threads_visits_28d",
+              "at": "updatedAt"
+            }
+          ]
+        }
+      },
+      "real": {
+        "label": "kit sales from Threads visitors (28 days); also aim for 300 followers, read by hand in Threads",
+        "by": 60,
+        "floor": {
+          "op": ">=",
+          "value": 1
+        },
+        "reader": "repo-json",
+        "params": {
+          "maxAgeDays": 9,
+          "files": [
+            {
+              "repo": "approvalprep",
+              "path": "data/brand-social/metrics.json",
+              "field": "threads_sales_28d",
+              "at": "updatedAt"
+            }
+          ]
+        }
+      },
+      "versionB": {
+        "text": "Save this posts as image carousels instead of text."
+      },
+      "pause": []
+    },
+    {
       "id": "bhpc-search-blitz",
       "initiative": "BHPC search blitz + redesign (billionairehighperformancecoach.com)",
       "business": "spry",
