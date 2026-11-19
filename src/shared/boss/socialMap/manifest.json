@@ -89,7 +89,7 @@
       "key": "peace-be-still",
       "label": "Peace Be Still",
       "group": "divine_9",
-      "blurb": "peacebestillapp.com, the faith + mindset app (new in the Divine 10, 18 Nov 2026). Instagram, Threads and a new Facebook Page (18 Nov 2026), all in Peace Be Still's own Buffer.",
+      "blurb": "peacebestillapp.com, the faith + mindset app (new in the Divine 10, 18 Nov 2026). Instagram, Threads and a new Facebook Page (18 Nov 2026), all in Peace Be Still's own Buffer and posting (Threads nightly, pictures Sun/Tue/Thu).",
       "grid_business": "Peace Be Still"
     },
     {
@@ -1022,12 +1022,34 @@
       "handle": "@peacebestillapp",
       "url": "https://www.instagram.com/peacebestillapp/",
       "account_email": "in**@peacebestillapp.com",
-      "status": "planned",
+      "status": "live_auto",
       "posts": {
-        "by": "none",
-        "what": "Connected to Peace Be Still's own Buffer (18 Nov 2026); nothing posts yet. Plan: picture posts (verse cards) Sun, Tue and Thu at 8 PM CT, the same pictures as the Facebook Page; the job is being built in peace-be-still. No Imagination Nights or Mindset posts (her yes, 18 Nov 2026)."
+        "by": "job",
+        "what": "Picture posts (verse cards) Sun, Tue and Thu at 8 PM CT, the same pictures and caption as the Facebook Page, through Peace Be Still's own Buffer; first post Thu 19 Nov 2026. No Imagination Nights or Mindset posts (her yes, 18 Nov 2026).",
+        "code": [
+          {
+            "repo": "peace-be-still",
+            "paths": [
+              ".github/workflows/instagram-posts.yml",
+              "scripts/instagram/ig_loop.mjs",
+              "scripts/threads/buffer.mjs",
+              "data/instagram/posts.json"
+            ]
+          }
+        ],
+        "jobs": [
+          "peace-be-still-instagram-posts"
+        ],
+        "check": {
+          "kind": "workflow",
+          "workflow": {
+            "repo": "peace-be-still",
+            "file": "instagram-posts.yml"
+          },
+          "max_age_days": 2
+        }
       },
-      "decision": "Made by her 18 Nov 2026 (Professional/Creator account). On Peace Be Still's own Buffer (its own address; 3 free channels: Threads, the Facebook Page, this; full). Scorecard row pbs-social."
+      "decision": "Made by her 18 Nov 2026 (Professional/Creator account). On Peace Be Still's own Buffer (its own address; 3 free channels: Threads, the Facebook Page, this; full). Live 18 Nov 2026 (peace-be-still #45, #46). Scorecard row pbs-social."
     },
     {
       "id": "pbs-threads",
@@ -1037,12 +1059,34 @@
       "handle": "@peacebestillapp",
       "url": "https://www.threads.com/@peacebestillapp",
       "account_email": "in**@peacebestillapp.com",
-      "status": "planned",
+      "status": "live_auto",
       "posts": {
-        "by": "none",
-        "what": "Nothing yet. Connected to Peace Be Still's own Buffer 18 Nov 2026, after Meta's security review cleared. Plan: one post nightly at 9:30 PM CT, led by Hush Harbor · Black Bible Chat & Stories and the other faith features (samples version 5), on the same never-stops loop as ApprovalPrep Threads, once she says yes. Imagination Nights and Mindset never post here (her yes, 18 Nov 2026: Mindset only through search pages and the Imagination Nights custom product page)."
+        "by": "job",
+        "what": "Nightly at 9:30 PM CT through Peace Be Still's own Buffer, the next 4 evenings always queued, led by Hush Harbor · Black Bible Chat & Stories and the other faith features (samples version 5); recycles evergreen posts once the bank is spent. First post 18 Nov 2026. Imagination Nights and Mindset never post here (her yes, 18 Nov 2026: Mindset only through search pages and the Imagination Nights custom product page).",
+        "code": [
+          {
+            "repo": "peace-be-still",
+            "paths": [
+              ".github/workflows/threads-posts.yml",
+              "scripts/threads/threads_loop.mjs",
+              "scripts/threads/buffer.mjs",
+              "data/threads/posts.json"
+            ]
+          }
+        ],
+        "jobs": [
+          "peace-be-still-threads-posts"
+        ],
+        "check": {
+          "kind": "workflow",
+          "workflow": {
+            "repo": "peace-be-still",
+            "file": "threads-posts.yml"
+          },
+          "max_age_days": 2
+        }
       },
-      "decision": "Approved for app launch (her yes, 18 Nov 2026). Meta's security review cleared and it is in Peace Be Still's own Buffer (18 Nov 2026). One Threads per brand, never a shared one (mixed topics confuse Threads and followers; credit-repair claims never sit next to faith content). Scorecard row pbs-social."
+      "decision": "Approved for app launch (her yes, 18 Nov 2026). Meta's security review cleared and it is in Peace Be Still's own Buffer (18 Nov 2026). One Threads per brand, never a shared one (mixed topics confuse Threads and followers; credit-repair claims never sit next to faith content). Live 18 Nov 2026 (peace-be-still #45, #46). Scorecard row pbs-social."
     },
     {
       "id": "pbs-facebook",
@@ -1052,12 +1096,34 @@
       "handle": "Peace Be Still (no username yet)",
       "url": "https://www.facebook.com/profile.php?id=61596617014759",
       "account_email": "in**@peacebestillapp.com",
-      "status": "planned",
+      "status": "live_auto",
       "posts": {
-        "by": "none",
-        "what": "Connected to Peace Be Still's own Buffer 18 Nov 2026; nothing posts yet. Plan: picture posts (verse cards) Sun, Tue and Thu at 8 PM CT with Instagram; the job is being built in peace-be-still."
+        "by": "job",
+        "what": "Picture posts Sun, Tue and Thu at 8 PM CT with Instagram (same job), through Peace Be Still's own Buffer; first post Thu 19 Nov 2026.",
+        "code": [
+          {
+            "repo": "peace-be-still",
+            "paths": [
+              ".github/workflows/instagram-posts.yml",
+              "scripts/instagram/ig_loop.mjs",
+              "scripts/threads/buffer.mjs",
+              "data/instagram/posts.json"
+            ]
+          }
+        ],
+        "jobs": [
+          "peace-be-still-instagram-posts"
+        ],
+        "check": {
+          "kind": "workflow",
+          "workflow": {
+            "repo": "peace-be-still",
+            "file": "instagram-posts.yml"
+          },
+          "max_age_days": 2
+        }
       },
-      "decision": "Made 18 Nov 2026 (her yes: \"ok im in facebook u need to help me create the page and do not connect it in any way to my page\"): no invites, no profile notifications, nothing linking it to her own page. Scorecard row pbs-social."
+      "decision": "Made 18 Nov 2026 (her yes: \"ok im in facebook u need to help me create the page and do not connect it in any way to my page\"): no invites, no profile notifications, nothing linking it to her own page. Live 18 Nov 2026 (peace-be-still #45, #46). Scorecard row pbs-social."
     },
     {
       "id": "pbs-github",
