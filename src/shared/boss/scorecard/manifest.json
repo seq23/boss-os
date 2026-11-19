@@ -1281,6 +1281,73 @@
       "pause": []
     },
     {
+      "id": "pbs-social",
+      "initiative": "Peace Be Still on Threads and Instagram (@peacebestillapp, via the ApprovalPrep Buffer)",
+      "business": "spry",
+      "owner": "Spry Labs · Wednesday Spry Labs email",
+      "result": "Visits to peacebestillapp.com tagged utm_source=threads or utm_source=instagram, then store-page visits from them",
+      "jobs": [],
+      "start": null,
+      "startWhen": {
+        "label": "the first Peace Be Still post goes out (the nightly 9:30 PM CT loop, after her yes on the samples)",
+        "reader": "repo-json",
+        "params": {
+          "files": [
+            {
+              "repo": "peace-be-still",
+              "path": "data/social/metrics.json",
+              "field": "first_post_at",
+              "date": true
+            }
+          ]
+        }
+      },
+      "first": {
+        "label": "visits tagged utm_source=threads or instagram (28 days); also aim for 100 followers, read by hand in Threads and Instagram",
+        "by": 30,
+        "floor": {
+          "op": ">=",
+          "value": 25
+        },
+        "reader": "repo-json",
+        "params": {
+          "maxAgeDays": 9,
+          "files": [
+            {
+              "repo": "peace-be-still",
+              "path": "data/social/metrics.json",
+              "field": "social_visits_28d",
+              "at": "updatedAt"
+            }
+          ]
+        }
+      },
+      "real": {
+        "label": "store-page visits from Threads and Instagram visitors (28 days); also aim for 300 followers, read by hand",
+        "by": 60,
+        "floor": {
+          "op": ">=",
+          "value": 50
+        },
+        "reader": "repo-json",
+        "params": {
+          "maxAgeDays": 9,
+          "files": [
+            {
+              "repo": "peace-be-still",
+              "path": "data/social/metrics.json",
+              "field": "social_store_visits_28d",
+              "at": "updatedAt"
+            }
+          ]
+        }
+      },
+      "versionB": {
+        "text": "Post verse-card carousels (picture posts on Instagram, image carousels on Threads) instead of text posts."
+      },
+      "pause": []
+    },
+    {
       "id": "t2r-institutional",
       "initiative": "Time-2-Read institutional sales (Monique)",
       "business": "time-2-read",

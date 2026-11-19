@@ -89,7 +89,7 @@
       "key": "peace-be-still",
       "label": "Peace Be Still",
       "group": "divine_9",
-      "blurb": "peacebestillapp.com, the faith + mindset app (new in the Divine 10, 18 Nov 2026). No social accounts yet.",
+      "blurb": "peacebestillapp.com, the faith + mindset app (new in the Divine 10, 18 Nov 2026). Instagram made 18 Nov 2026 and connected to the ApprovalPrep Buffer; Threads waits on a Meta security review.",
       "grid_business": "Peace Be Still"
     },
     {
@@ -900,7 +900,8 @@
             "repo": "how-we-know",
             "paths": [
               "loop/whisper_upload.py",
-              "loop/whisper_lane.py"
+              "loop/whisper_lane.py",
+              "loop/whisper_shorts.py"
             ]
           }
         ]
@@ -1014,19 +1015,34 @@
       "decision": "In entity.json sameAs."
     },
     {
-      "id": "pbs-threads-instagram",
+      "id": "pbs-instagram",
       "business": "peace-be-still",
       "site": "peacebestillapp.com",
-      "platform": "Threads + Instagram",
-      "handle": null,
-      "url": null,
-      "account_email": "no account",
+      "platform": "Instagram",
+      "handle": "@peacebestillapp",
+      "url": "https://www.instagram.com/peacebestillapp/",
+      "account_email": "in**@peacebestillapp.com",
       "status": "planned",
       "posts": {
         "by": "none",
-        "what": "Nothing yet; until launch it grows through its search pages, store pages and (after launch) a YouTube nights lane."
+        "what": "Connected to the ApprovalPrep Buffer 18 Nov 2026; nothing posts yet. Picture versions (verse cards) of the Threads posts come after her yes on the Threads samples."
       },
-      "decision": "Approved for app launch (her yes, 18 Nov 2026); waits on her creating the Instagram (Threads needs one; agents never create accounts): Black church women and Christian Threads are very active. One Threads per brand, never a shared one (mixed topics confuse Threads and followers; credit-repair claims never sit next to faith content)."
+      "decision": "Made by her 18 Nov 2026 (Professional/Creator account). Shares the ApprovalPrep Buffer (3 free channels: ApprovalPrep Threads, this, Peace Be Still Threads). Scorecard row pbs-social."
+    },
+    {
+      "id": "pbs-threads",
+      "business": "peace-be-still",
+      "site": "peacebestillapp.com",
+      "platform": "Threads",
+      "handle": "@peacebestillapp",
+      "url": null,
+      "account_email": "in**@peacebestillapp.com",
+      "status": "planned",
+      "posts": {
+        "by": "none",
+        "what": "Nothing yet. Plan: one post nightly at 9:30 PM CT, led by Black Bible Chat and the other features, through the ApprovalPrep Buffer, on the same never-stops loop as ApprovalPrep Threads, once she says yes to the samples (version 3)."
+      },
+      "decision": "Approved for app launch (her yes, 18 Nov 2026). Waits on Meta's selfie security review; she connects it to the ApprovalPrep Buffer once it clears. One Threads per brand, never a shared one (mixed topics confuse Threads and followers; credit-repair claims never sit next to faith content). Scorecard row pbs-social."
     },
     {
       "id": "pbs-github",
