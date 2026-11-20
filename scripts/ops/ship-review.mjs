@@ -57,7 +57,7 @@ export function parseArgs(argv) {
   for (let i = 0; i < argv.length; i++) {
     const k = argv[i];
     if (!k.startsWith("--")) continue;
-    if (["--launch", "--private", "--public", "--no-store"].includes(k)) { a.flags.add(k.slice(2)); continue; }
+    if (["--launch", "--private", "--public", "--no-store", "--capture-only", "--on-github"].includes(k)) { a.flags.add(k.slice(2)); continue; }
     if (k === "--planned") { (a.planned ??= []).push(argv[++i]); continue; }
     if (k === "--focus") { (a.focus ??= []).push(argv[++i]); continue; }
     a[k.slice(2)] = argv[++i];
@@ -333,6 +333,43 @@ export async function capture(a, out, deps = {}) {
   return capturePage(a, out);
 }
 
+/**
+ * THE CAPTURE ON GITHUB (coordinator, 20 Nov 2026: 8 GB Mac, 22 GB into swap from headless Chromes).
+ * `--capture-only` (what the workflow runs) writes the shots and facts with `capture.json`; `--on-github`
+ * dispatches .github/workflows/ship-review-capture.yml, waits for it in one bounded call, downloads the
+ * artifact and judges from it on the Mac. Public pages only: this repo and its artifacts are public.
+ */
+const CAPTURE_REPO = "seq23/boss-os";
+export function writeCaptureFile(out, { shots, facts }) {
+  writeFileSync(join(out, "capture.json"), JSON.stringify({ shots: shots.map((s) => ({ label: s.label, file: basename(s.path) })), facts }, null, 2));
+}
+export function readCaptureFile(dir) {
+  const f = join(dir, "capture.json");
+  if (!existsSync(f)) throw stop(9, "GITHUB_CAPTURE", `${f} is missing: the GitHub capture left no capture.json`);
+  const j = JSON.parse(readFileSync(f, "utf8"));
+  const shots = (j.shots ?? []).map((s) => ({ label: s.label, path: join(dir, s.file) })).filter((s) => existsSync(s.path));
+  return { shots, facts: Array.isArray(j.facts) ? j.facts : [] };
+}
+async function captureOnGithub(a, id, out, { run = spawnSync, wait = (ms) => new Promise((r) => setTimeout(r, ms)) } = {}) {
+  if (isPrivate(a) || a.kind !== "page" || YOUTUBE_CHANNEL.test(String(a.target))) throw stop(64, "BAD_ARGS", "--on-github is for public web pages only (its artifacts are public); capture private work and YouTube on the Mac");
+  const gh = (args, o = {}) => run("gh", args, { encoding: "utf8", maxBuffer: 64 << 20, ...o });
+  const d = gh(["workflow", "run", "ship-review-capture.yml", "-R", CAPTURE_REPO, "-f", `target=${a.target}`, "-f", `label=${id}`, "-f", `focus=${JSON.stringify(a.focus ?? [])}`]);
+  if (d.status !== 0) throw stop(9, "GITHUB_CAPTURE", `could not start the capture workflow: ${String(d.stderr).trim().slice(0, 200)}`);
+  let runId = null;
+  for (let i = 0; i < 24 && !runId; i++) {
+    await wait(5_000);
+    const l = gh(["run", "list", "-R", CAPTURE_REPO, "-w", "ship-review-capture.yml", "-L", "20", "--json", "databaseId,displayTitle"]);
+    runId = (JSON.parse(l.stdout || "[]").find((r) => r.displayTitle === `ship-review capture ${id}`) ?? {}).databaseId ?? null;
+  }
+  if (!runId) throw stop(9, "GITHUB_CAPTURE", `the capture run for ${id} never appeared in two minutes`);
+  const w = gh(["run", "watch", String(runId), "-R", CAPTURE_REPO, "--exit-status", "-i", "15"], { timeout: 25 * 60_000 });
+  if (w.status !== 0) throw stop(9, "GITHUB_CAPTURE", `the capture run ${runId} failed or timed out (gh run view ${runId} -R ${CAPTURE_REPO} --log-failed)`);
+  const dl = gh(["run", "download", String(runId), "-R", CAPTURE_REPO, "-n", `ship-capture-${id}`, "-D", out]);
+  if (dl.status !== 0) throw stop(9, "GITHUB_CAPTURE", `could not download the capture of run ${runId}: ${String(dl.stderr).trim().slice(0, 200)}`);
+  const c = readCaptureFile(out);
+  return { ...c, facts: [...c.facts, `captured on GitHub Actions (run ${runId}), the same capture code as on the Mac`] };
+}
+
 // ─── Judge: down the route walk until one route returns a review it can trust ─────────────────────
 
 async function geminiModels(fetchImpl) {
@@ -459,6 +496,13 @@ export async function main(argv = process.argv.slice(2), { env = process.env, fe
   const id = reviewId();
   const out = resolve(a.out ?? join(env.HOME || homedir(), ".boss-os", "ship-reviews", id));
   mkdirSync(out, { recursive: true });
+  if (a.flags.has("capture-only")) {
+    const c = await capture(a, out, { env, fetchImpl });
+    writeCaptureFile(out, c);
+    print(`CAPTURED ${c.shots.length} shots, ${c.facts.length} facts`);
+    if (!c.shots.length) throw stop(9, "NOTHING_CAPTURED", `no capture of ${a.target} could be made`);
+    return 0;
+  }
   const subject = a.subject ?? `${a.kind}:${a.target}`;
   const skill = env.SHIP_READY_SKILL ?? join(env.HOME || homedir(), ".claude", "skills", "ship-ready", "SKILL.md");
   if (!existsSync(skill)) throw stop(2, "NO_CHECKLIST", `${skill} is missing: the reviewer judges against the ship-ready skill and will not judge without it`);
@@ -472,7 +516,7 @@ export async function main(argv = process.argv.slice(2), { env = process.env, fe
   const privateWork = isPrivate(a);
   const { routes } = reviewRoutes({ firstOfKind, privateWork });
 
-  const { shots, facts } = await capture(a, out, { env, fetchImpl });
+  const { shots, facts } = a.flags.has("on-github") ? await captureOnGithub(a, id, out) : await capture(a, out, { env, fetchImpl });
   if (!shots.length) { print("OUTPUT 0 reviews"); throw stop(9, "NOTHING_CAPTURED", `no capture of ${a.target} could be made, so nothing was judged`); }
   const lookedAt = `${lookedAtText({ kind: a.kind, target: a.target, shots })}, judged as ${a.surface ?? DEFAULT_SURFACE[a.kind]}${a.planned.length ? ` with ${a.planned.length} planned placeholder(s) excluded` : ""}`;
   log(`ship-review ${id}: ${lookedAt}; ${firstOfKind ? "first review" : "re-review"}${privateWork ? ", private" : ""}; routes ${routes.join(" → ")}`);
