@@ -1,196 +1,231 @@
-Source: https://claude.ai/artifact/2XkmYNmppidkqr4SU8xwiv
+Source: https://claude.ai/artifact/3ohvZx7uCRdWqaHXSJm9Ab
 
 Repo copy; the page is the living version; refreshed when it changes.
 
-Copied 16 Oct 2026 (evening) from the version updated with the 16 Oct afternoon changes: neuro evaluation + therapy, hormone affiliates, dead-link fix, free AI route repair.
+Re-verified in the repo on Friday 20 November 2026 against the sources named below (Zora's Friday archive audit found the 16 October copy stale). The claude.ai page is behind this copy until a session that can write it carries this over.
 
 # Side Business Review
 
-*Spry Labs and Industry Guides side businesses · as of Friday 16 October 2026*
+*Spry Labs side businesses, the Divine 10 · as of Friday 20 November 2026*
+
+## What this copy was verified against
+
+- **Search and leads:** the Monday search audit run on 17 Nov 2026 (its results file in `~/.boss-os/search-readiness/`), Search Console windows 18 Oct–14 Nov against 20 Sep–17 Oct.
+- **Business facts and rulings:** the business brains as pulled at 09:23 CT on 20 Nov 2026 (`spry`, `time-2-read`), Numbers and Settled decisions.
+- **Which businesses count:** the Divine 10 list in `src/shared/boss/searchReadiness/sites.json` (`_groups.divine_9`, the key kept from before Peace Be Still joined).
+- **Floors and day-30 / day-60 reads:** the Scorecard (`src/shared/boss/scorecard/manifest.json`, ☰ More → Scorecard).
+
+A line this copy could not re-read is written "not read" with the reason, never carried forward from October.
 
 ## Side businesses: what is live, what to watch
 
-Every business now has **a price, a working checkout and a way to reach buyers**, and outreach and Pinterest run by themselves. Search is the bottleneck: about 1,600 impressions and 4 clicks a month across the portfolio, and Google is declining most guide pages. No revenue to show yet; the first real read is the **25 October numbers check**.
+Nine businesses on the Divine 10 list in `sites.json`, all under Spry Labs; the three library sites are a support system, not a business. **Money: still none to speak of.** Time-2-Read has 0 paying subscribers; A Player Mode's Founding 100 has 0 sold; no app is in a store yet (four wait on Apple, Google Play waits on the company D-U-N-S number). **Search grew:** the Divine 10 sites Google showed 15,780 times and sent 52 clicks in the four weeks to 14 Nov (KeepMyProof's 6,617 and 17 clicks are its first 14 days), against about 1,600 impressions and 4 clicks a month in September. **Nobody acts yet:** three leads counted across every tracked site (one each on dentistry, neuro and Time-2-Read).
 
-- **7** businesses with a price and a checkout
-- **6** Industry Guides, one sender (hello@theindustryguides.com)
-- **35 · 0** outreach emails sent on the old copy · human replies; new copy since 16 Oct
-- **3** Pinterest accounts, 1 new pin a day each
-- **4** affiliate programs live (Amazon, Bookshop, Ulta Lab Tests, PrescribedRX)
+- **9** businesses (Time-2-Read, Industry Guides, KeepMyProof, ApprovalPrep, Dream Wedding, A Player Mode, How We Know, Whisper Almanac, Peace Be Still)
+- **5** phone apps in App Store Connect (Peace Be Still, A Player Mode, ApprovalPrep, Dream Wedding, KeepMyProof); 0 live
+- **3** Pinterest accounts, **3 pins a day each** since 1 Nov, every board fed by its own feed
+- **2** YouTube channels (How We Know, Whisper Almanac); new voicing paused since 18 Nov while Peace Be Still's library fills
+- **7** Kindle books in two lines, 6 live (ApprovalPrep 5 with 4 live, Dream Wedding 2 live; Monday KDP count of 7 Nov)
+- **$0** paid advertising, by her ruling (8 Nov and 18 Nov)
 
 ## Business by business
 
-### time-2-read
+### Time-2-Read
 
-*dailystory · time-2-read.com · subscription*
-
-#### Live now
-
-- Checkout repaired; deploys fail loudly on a dead key.
-- Paywall: 3 free stories, 7-day trial, $9.99/month or $79/year. **Actually published 16 Oct:** it had been merged but never published, because the site only goes live when someone clicks Publish in Lovable.
-- **16 Oct:** in Google Search Console (you are a verified owner), sitemap submitted, IndexNow live, homepage structured data added (dailystory \#69).
-- Outreach from its own mailbox, st@time-2-read.com (SPF, DKIM, DMARC set).
-- Supabase AI data sharing switched off.
-
-#### Next
-
-- Trial starts, read at the 25 Oct check.
-
-### heygetonmylevel
-
-*heygetonmylevel.com · a Spry Labs company, an app like Time2Read (and a bonus for Time2Read Premium) · **parked, no active work** (owner, 1 Nov 2026: "we aren't doing anything w it right now"). Not an Industry Guides business, not a Monique outreach target, no brain of its own (it is listed in the `spry` brain); excluded from SEO/AEO/GEO work.*
+*dailystory + heygetonmylevel · time-2-read.com, heygetonmylevel.com · subscription · one ed-tech business with two apps (her ruling, 10 Nov)*
 
 #### Live now
 
-- Readable by search engines (homepage 8 → 265 words), 10-page sitemap, analytics.
-- Positioned as "included free with Time2Read Premium".
-- **16 Oct:** in Google Search Console, sitemap submitted, IndexNow live (heygetonmylevel \#2).
-- **16 Oct, security fixed:** the reading database was open to anyone with the site’s public key (254 sessions, passages, questions, answers, stats). Locked down (SQL in Lovable + \#3, published); checked from outside, nothing is readable and reading still works. Lovable’s critical warning is gone. The passage cache readers are shown is now written only by the server (\#4, published, SQL run 16 Oct): an outside write attempt is refused, new passages still cache. Leaked-password check switched on. The only finding left is informational and intended: the shared reading passages are public to read.
+- **List price $12.99 a month or $99 a year** (`dailystory/docs/PRICING.md`, in the brain since 25 Oct), 7-day trial.
+- **Paying subscribers 0, MRR $0.00, free signups 0 in November and 1 in October** (brain Numbers, 18 Nov).
+- **Trial starts and trial → paid: not read** — needs a live Time-2-Read Stripe restricted key (`T2R_STRIPE_LIVE_RESTRICTED_KEY`); the vault's key is test mode.
+- **Groups and institutions (Monique's duty):** 45 groups emailed, 0 in talks, 0 codes in use, 0 human replies (brain, 20 Nov). Time4Learning is the first homeschool partner target (drip since 8 Nov). Schools and districts stay off until Phase 8.
+- **Search (17 Nov audit):** time-2-read.com shown 514 times, 6 clicks, 1 signup counted. Two checks still open: a1 (one canonical host, others 301) and a9 (HTTPS, a real 404, icons, manifest), on both sites.
+- **heygetonmylevel.com:** parked, no active work (her ruling, 1 Nov); a free bonus for Time-2-Read subscribers, never an outreach target. 24 impressions; its leads are not tracked yet (its links to time-2-read.com carry no ref tag).
 
 #### Next
 
-- Nothing. Excluded from outreach by your rule; a test enforces it.
+- The institutions positioning study, then the languages phase (brain Priorities).
+- Trial numbers the day a live Stripe key is in the vault.
 
-### The Industry Guides
+### Industry Guides
 
-*local-guides-generator + citation-velocity · theindustryguides.com, 5 canonicals, memphisseniorcarehomes.com · listings and leads*
+*local-guides-generator + local-guides-citation-velocity · theindustryguides.com, uscisexam.com, dentistryguides.com, theaccidentguides.com, neuroevalguides.com, hormonesivhair.com, memphisseniorcarehomes.com · listings and leads*
 
 #### Live now
 
-- Six guides under one company: the same footer and contact (hello@theindustryguides.com) on every page; Spry Labs removed, a build check keeps it out.
-- $249/month listing with 2 months free; $499/month per injury firm on theaccidentguides.com (statewide listing, not exclusive; other firms may list too).
-- **Memphis Senior Care Homes** (13 Oct): 37 licensed facilities, nine-screen intake, teaser leads at **$800 flat or one month’s rent** on move-in, a $249/month exclusive seat, 30/60/90-day family follow-ups, Stripe account "The Industry Guides".
-- Dentistry: sourced safety-net clinic sections in 6 metros.
-- **Neuro Evaluation Guides now serves evaluation AND therapy** (16 Oct, local-guides-generator \#74): headline “ADHD and autism: getting evaluated, and finding therapy — with or without a diagnosis”, two equal buttons, providers tagged Evaluation / Therapy / both, callback asks which. 83 verified therapy-only practices now listed on 50 of 56 city pages (#75; autism/ABA so far, ADHD therapists being added).
-- **Hormone Optimization Guides: two affiliate programs live 16 Oct** (local-guides-generator \#76). “Check your levels first” sends readers to Ulta Lab Tests at-home tests (testosterone, men’s panel, menopause; up to 20%) from the homepage, 9 guides and every city page. “Prefer to start online?” sends them to PrescribedRX online TRT ($100 per order) from the homepage and 8 guides, beside “find a local clinic”. Every block is labelled as an affiliate ad with the FTC disclosure, and clicks are counted per program. The headline now names TRT and menopause/perimenopause HRT, and the callback offers “Menopause / women’s HRT clinic”.
-- **Dead links fixed 16 Oct:** about 3,600 links from theindustryguides.com into the guide sites hit pages that were never built; they now go to the matching real guides (LGCV \#202–#205; 12 of 12 rechecked live). Across the other sites: 14 dead outside links, broken email links, orphan next-steps pages, uscisexam duplicate pages and tracking codes on internal links all fixed (local-guides-generator \#77–#80), each with a check that blocks it returning.
-- **Neuro: 34 ADHD therapy practices added in 27 cities** (#79), alongside the 83 autism/ABA practices.
-- **Outreach copy rewritten 16 Oct** in your voice: a conversation and a quick call, says it is a digital guide built to come up when people ask ChatGPT, Google and other AI assistants, with the link; every follow-up re-explains; signed S.L. Taylor (boss-os \#88).
-- Memphis outreach had sent nothing because its mailing address was missing; set 16 Oct, and a new guide now inherits the shared address, with a named stop if a ready guide stays silent (boss-os \#90).
+- **Search (17 Nov audit, four weeks to 14 Nov against the four before):**
+
+| Site | Impressions | Clicks | Leads (request form or intake) |
+|---|---|---|---|
+| theaccidentguides.com | 3,115 (was 1,320) | 1 | 0 |
+| memphisseniorcarehomes.com | 2,219 (was 171 over 6 days) | 6 | 0 intakes finished |
+| dentistryguides.com | 848 (was 530) | 1 | 1 |
+| neuroevalguides.com | 172 (was 39) | 3 | 1 |
+| hormonesivhair.com | 134 (was 40) | 0 | 0 |
+| uscisexam.com | 43 (was 14) | 0 | 0 |
+| theindustryguides.com | 12 (was 15) | 0 | not tracked yet (no counted link from the hub to the guides' forms) |
+
+- Every guide site passes every automatic check on the 17 Nov audit.
+- **Injury firms:** no outreach to personal-injury firms in CA, CO, KY, MI, RI or TX; Florida held (research 1 Nov, `~/.boss-os/risk/pi-states-2026-11-01.md`).
+- **Freshness:** guides get the automatic refresh lane (every page revisited about every 30–90 days, ruled 10 Nov); theindustryguides.com's hand-written pages do not.
+- **Paid listings, seats and senior leads sold: not tracked yet** (the brain's Numbers are `[MISSING]`).
 
 #### Next
 
-- Replies to the new copy (Monique’s card).
-- Intake starts, teaser accepts and lead-form submissions (Monday search email carries the funnel line).
-- Bing re-check for memphisseniorcarehomes.com, about 28 Oct.
-- 25 Oct: consolidation where the data says so (69 candidates).
+- The Dream Wedding refresh results, then the refresh rollout here, dentistry and accident guides first, on her "go" (brain Priority 1).
+- A counted link from the hub to the guide forms, so theindustryguides.com's one action is measured.
+
+### KeepMyProof
+
+*keepmyproof · keepmyproof.com (EN, ES, ZH, KO) · app: free to 25 items, Plus $19.99 a year or $39.99 lifetime*
+
+#### Live now
+
+- **Site live since 1 Nov** on Cloudflare Pages; the app's App Store record waits for review (1.0, 20 Nov). Google Play waits on the company account (her ruling, 19 Nov). RevenueCat products set up 2 Nov.
+- **The App Store lead is the private photo vault** (15 Nov); divorce and custody is the second product page.
+- **Search:** 6,617 impressions and 17 clicks in its first 14 days on Google. **Red on 17 Nov: "people come, nobody acts"** — 0 visits counted to the free printable checklists. The count is thin by design: the site stays "no analytics" (her ruling, 6 Nov), so only sampled page views exist.
+- Kindle line: 0 books.
+
+#### Next
+
+- App Store approval; Monique adds KeepMyProof outreach once the app is public (7 Nov).
 
 ### ApprovalPrep
 
-*approvalprep.com · one-off kits*
+*approvalprep · approvalprep.com · eight kits once, $15–$49; app mirrors the same eight*
 
 #### Live now
 
-- Kits at $15, $19, $29, $39 and $49 everywhere, with a validator on the prices; About page and byline.
-- **16 Oct:** product details Google had rejected on 4 kit pages fixed (image, brand, real price), with a check (#53).
-- Checkout verified 16 Oct; the Life Admin Letter Kit button had been selling the $15 kit, fixed (#50).
-- **Pinterest:** 11 launch pins, then 1 a day queued through 21 Dec; visits from each pin counted.
-- Self and Kikoff affiliate slots built and hidden (programs closed 16 Oct).
+- **Repositioned 3 Nov** as the self-service alternative to a monthly credit repair company; "credit repair" appears only as the thing it replaces (13 Nov wording, with the disclaimer beside it).
+- **Free:** the Letter Studio and a 2-page credit dispute letter. **Kits v2** replaced v1 for all eight on 10 Nov; paid kit files are out of the public repo.
+- **App:** built with every purchase switched off; App Store 1.0 waits for review. Credit Letter Kit $19.99, Explanation Kit $14.99, bundle $49.99 ($29.99 upgrade).
+- **Search (17 Nov):** 43 impressions, 0 clicks, 0 kits sold. Search-loop topics now write credit-repair buyer questions first (13 Nov).
+- **Social:** Threads @approvalprep live since 18 Nov, one post a day; Pinterest 5 boards.
+- Kindle: 5 books, 4 live.
 
 #### Next
 
-- 25 Oct: Pinterest visits; consolidation (27 pages → 15 hubs) if the data says so.
-- Seven more guides join the pin queue around 4 Dec.
+- App Store approval, then purchases on.
 
-### Wedding checklist
+### Dream Wedding
 
-*dream-wedding-builder · weddingchecklistpdf.com · one-off PDF and bundle*
+*dream-wedding-builder · weddingchecklistpdf.com + 3 tool sites · $9–$39 once on the site; app $14.99 per event ($9.99 for the first 30 days)*
 
 #### Live now
 
-- $9 PDF on the homepage, email-gated builder, $39 bundle.
-- Delivery failures retried hourly and, since 16 Oct, emailed to info@weddingchecklistpdf.com (#33).
-- Amazon registry tag live; Zola shown as a plain link (its program closed 16 Oct).
-- **Pinterest:** 6 launch pins, then 1 a day queued through 27 Nov, refilled every Monday; visits from each pin counted (#36).
+- **Redesign live 6 Nov.** Free planner: plan first, email second, one welcome email only to people who ticked the box (10 Nov).
+- **The $9 checklist file was found blank on 10 Nov** and fixed the same day; every paid product was removed from the public repo (13 Nov) and is served from private storage.
+- **App:** built, purchases off, App Store 1.0 waits for review.
+- **Search (17 Nov):** weddingchecklistpdf.com 107 impressions, the three tool sites 56 together; 0 clicks, 0 orders.
+- Pinterest 4 boards; Kindle 2 books, both live.
 
 #### Next
 
-- 25 Oct: Pinterest visits and search numbers; consolidation (21 candidates).
+- The refresh results (brain Priority 1); the blend journey (13 Nov plan).
 
 ### A Player Mode
 
-*aplayer-mode · aplayermode.com · subscription*
+*sprylabs-hpc-site + aplayer-mode · aplayermode.com, billionairehighperformancecoach.com · app subscription; BHPC OS $49 once on Gumroad*
 
 #### Live now
 
-- Founding 100 at $9.99/month with a live "N of 100 left" counter; checkout opens (no sale yet to prove payment end to end).
-- Pinterest visits per pin now counted (sprylabs-hpc-site \#139): 0 so far, as expected before the first pins post.
-- 18+ gate and health consent; purchase flows tested live by you.
-- Indexable since 10 Oct, Lighthouse SEO 100, Clarity, Search Console. **16 Oct:** IndexNow live; product details now show the real $49 Gumroad price (two places had a made-up $29); old index.html links redirect in one hop (sprylabs-hpc-site \#143, \#144).
-- **Pinterest:** 5 launch pins, 35 queued one a day through 20 Nov, weekly refill (sprylabs-hpc-site \#138).
+- **Founding 100 open at $9.99 a month, 0 sold** (6 Nov). Plans shown to buyers: Executive Roundtable $24.99, Executive Suite $39.99, Autopilot $79.99 (6 Nov). She kept subscriptions on 19 Nov.
+- **App Store:** 1.0.1 rejected, unresolved issues (20 Nov).
+- **Search (17 Nov):** aplayermode.com 208 impressions (was 31), 7 clicks; billionairehighperformancecoach.com 1,585 impressions, 10 clicks. **BHPC is red: "people come, nobody acts"** — 0 paid Spry Executive OS sales in four weeks. The download page is protected: fixed only when really broken.
+- Pinterest fully hands-off, 4 boards (13 Nov).
 
 #### Next
 
-- App Store and Google Play accounts (parked by you; Open Loops).
-- First Search Console read around 7 Nov.
+- The BHPC core (goal → plan engine, daily loop) before billing; stop and discuss before billing (brain Priority 7).
 
 ### How We Know
 
-*how-we-know · youtube.com/@howweknowdeep · affiliate links*
+*how-we-know · youtube.com/@howweknowdeep, howweknowdeep.com · ads once monetised, Amazon and Bookshop links*
 
 #### Live now
 
-- Deep-sea Shorts 3:1, all three cuts of each episode published.
-- Amazon tag and Bookshop \#129693 in every description ($0.00 payable so far).
-- **Food, niche \#3:** first video goes public **Sat 17 Oct 10:00 CT**; after that the nightly batch makes food episodes for the Wed/Sat slots.
-- New titles: 13 of 43 live; the rest apply Sat 17 Oct (YouTube’s daily quota).
+- **Plan of 9 Nov:** both long-form nights go to the **Money** lane (stories proven by the public record, never financial advice); deep sea and materials as Shorts; food long-form paused. Starting point: 113 videos, 31 subscribers.
+- Seven videos a week minimum per channel (18 Nov); made at most 7 days ahead (17 Nov).
+- **Paused for new voicing since 18 Nov** while Peace Be Still's library fills; finished videos keep uploading.
+- **Search, red on 17 Nov:** howweknowdeep.com 83 impressions, down 69% from 270; confirmed cause: a top losing page now redirects (for example /creatures/dumbo-octopus/).
 
 #### Next
 
-- Title and thumbnail A/B tests on 17 videos once Saturday’s titles land.
-- Connect Stripe on Bookshop once money is payable.
+- The 30-day read per lane (watch hours, subscribers); then apply to the YouTube Partner Program once eligible (hers).
+
+### Whisper Almanac
+
+*how-we-know · youtube.com/@whisperalmanac · ads once monetised · no website yet (whisperalmanac.com owned, no site)*
+
+#### Live now
+
+- Long whispered sleep videos in her cloned voice, made by the Mac at $0; tagline "Whisper yourself to sleep: manifest, learn, or just let go." (16 Nov). Lanes: Neville Goddard, food history, money, ocean documentary; Psalm Nights took the Friday slot (18 Nov).
+- Shorts daily, three from each long video (16 Nov); its own YouTube quota (16 Nov).
+- Measured weekly (11 Nov). **Deadline:** in the Partner Program before 1 Feb 2027, when the bar for new channels rises.
+- Paused for new voicing since 18 Nov with How We Know.
+- On the grid as a named gap until its site exists.
+
+### Peace Be Still
+
+*peace-be-still · peacebestillapp.com · faith + mindset app, $7.99 a month or $39.99 a year, a free lane*
+
+#### Live now
+
+- **Joined the Divine 10 on 18 Nov**; brand approved the same day (the working name Every Tongue is retired).
+- App Store record created 20 Nov; **her yes to submit (20 Nov)** once the build passes review. Launches with a partial library (19 Nov) and a Spanish journey.
+- Site buttons read "Coming soon to the App Store", no waitlist (18 Nov). Its own Buffer with Instagram and Threads (18 Nov).
+- Not yet in a Monday search audit (it joined the day after the 17 Nov run).
+
+### The support systems
+
+*authority-backlink-network · professionalresourcelibrary.com, founderoperatorlibrary.com, memphisvendorlibrary.com · not a business; it serves the others (her ruling, 10 Nov)*
+
+- **Two red on 17 Nov:** professionalresourcelibrary.com 222 impressions, down 63% (confirmed: one page, /consumer-reporting-companies-directory, carries 67% of the drop); memphisvendorlibrary.com 15, down 91% (confirmed: its top losing pages are crawled and not indexed). founderoperatorlibrary.com rose to 280.
+- Backlinks delivered per business is brain Priority 4; LinkedIn posts link to the library pages (16 Nov).
 
 ### Outreach
 
-*boss-os · Monique’s lane · serves all of the above*
+*boss-os · Monique's lane · automatic for the side businesses*
 
-#### Live now
-
-- Fully automatic, no human review; the six guides send as hello@theindustryguides.com, the other businesses from their own aliases.
-- 10 a day per site; auto-pause on bounces over 3% or any complaint; suppression list, unsubscribe link, San Francisco mailbox in the footer.
-- 35 real emails went out on the old copy (dentistry 19, hormones 11, USCIS 5; 3 bounced; 0 human replies). Those prospects get the new standalone follow-ups; no restart.
-- **Neuro outreach targets therapy practices first** (boss-os \#93): ADHD/autism therapy, ABA and both-service practices now qualify; the pitch names evaluation and ongoing therapy. Deploy follows today’s browser-test run.
-- **Site health, 16 Oct:** Search Console shows nothing blocks Google or AI crawlers on any site; the gap is how few pages Google indexes (10 sites), which is the 25 Oct consolidation decision. Ahrefs crawls had failed only because the free plan ran out of credits: all 24 projects are now capped and spread out after the 22 Oct reset. virtualagency-os: broken email link and 46 duplicate-page redirects fixed, sitemap dates now honest (#44, \#45). **Danielle’s Ahrefs job rebuilt** (boss-os \#96, \#98, \#99): she now crawls flagged sites herself, fixes at source, and lands the fix; her first real run fixed and landed 2 issues. Porch & Party’s 5–6 MB images are now ~385 KB and www redirects to the main address (p-n-p \#46, \#47).
-- **Free AI route repaired 16 Oct:** a router bug made one model’s refusal look like a dead key, and slow answers looked empty. Fixed in four repos; free models answer again at $0.
-
-#### Next
-
-- Reply rate on the new copy, per site.
-- Record `?ref=` on checkouts for affiliate credit.
+- The rules in code: heygetonmylevel is never a target; nothing sends through or needs West Peek's Workspace; every live send checks SPF, DKIM and DMARC first; the footer carries a San Francisco mailing address (never written in this repo).
+- Time-2-Read groups: numbers above. **Industry Guides replies since the 16 Oct copy: not read** (the brain's figure is still the 16 Oct "0 of 35").
 
 ### Pinterest
 
-*pinterest.com/weddingchecklistpdf · /approvalprep · /aplayermode · serves three businesses*
+*pinterest.com/weddingchecklistpdf · /approvalprep · /aplayermode*
 
-#### Live now
-
-- Three brand accounts under one login; each site claimed, one public board fed by a free feed on the site.
-- 1 new pin a day per account, from queues refilled automatically; pins link to product pages (never checkout) with UTM tags. $0.
-
-#### Next
-
-- 25 Oct: go to 3 pins a day on any account whose impressions grew two weeks running.
+- **3 pins a day per account since 1 Nov**, across topic boards (Wedding Checklist PDF 4, ApprovalPrep 5, A Player Mode 4), one feed per board; every search-loop question page on weddingchecklistpdf.com and approvalprep.com also becomes a pin. $0, nobody posts by hand.
+- **Visits from pins: not read since 16 Oct** (the brain's figure is "0, before first pins").
 
 ## Affiliate programs
 
-- Amazon Associates: live · seq23-20
-- Bookshop.org: live · 129693 · How We Know
-- Ulta Lab Tests: live 16 Oct · hormones · up to 20%
-- PrescribedRX: live 16 Oct · hormones · $100/order
-- Zola, Self, Kikoff (Impact): closed 16 Oct · slots hidden
-- MaxBounty (Winona): dropped 16 Oct
-- FlexOffers: declined · closed
+- Amazon Associates (seq23-20) and Bookshop.org (129693, How We Know only): live. **Payable: not read since 16 Oct** ($0.00 then).
+- Ulta Lab Tests and PrescribedRX: live on hormonesivhair.com since 16 Oct; earnings not read.
+- Closed or dropped: Zola, Self, Kikoff, MaxBounty, FlexOffers (all by 16 Oct).
 
-## What to watch, 25 October numbers check
+## What to watch
 
-- **Search, per site:** 28-day impressions and clicks against the 11 Sep–8 Oct baseline (in the build log below), and the indexed share from each repo’s daily coverage file.
-- **Consolidation PRs where the data says merge:** Porch & Party 12 hubs, local guides 69, ApprovalPrep 15, wedding 21, WPP-llm 191, memphis library 11, horse legal 20; which host owns ai-executive-coach.
-- **Pinterest:** impressions and outbound clicks per account, visits per pin; the 1 → 3 pins decision.
-- **Money signals:** outreach replies (neuro therapy practices now included), Founding 100 counter, time-2-read trial starts, guide intake starts and teaser accepts, neuro callbacks by evaluation/therapy/both, and Ulta/PrescribedRX clicks and earnings.
-- **Recoveries in flight:** virtualagency-os.com (149 redirected URLs), detoxdenver.org, the Hicks resources pages.
-- Any Monday-email RED issue open two weeks running is a defect, not volatility.
+- **Every Monday, the search audit** (Simone's morning email, "The grid repos"): reds and golds per site, each with a confirmed or suspected cause. Open on 17 Nov: howweknowdeep.com, professionalresourcelibrary.com, memphisvendorlibrary.com (drops); keepmyproof.com, billionairehighperformancecoach.com ("people come, nobody acts").
+- **Leads, not visits:** a site with 10+ Google clicks and 0 counted actions is red. Still not tracked: theindustryguides.com (a counted link to the guide forms), heygetonmylevel.com (a ref tag on its Time-2-Read links), howweknowdeep.com (a counted link to the channel), the three libraries (a counted /go/ hop).
+- **The Scorecard's day-30 and day-60 floors** for every initiative (☰ More → Scorecard).
+- **Store approvals:** four apps waiting on Apple, A Player Mode's rejection, Peace Be Still's submission; Google Play after the D-U-N-S number.
+- **Money numbers still unread:** Time-2-Read trials (needs the live Stripe key), Industry Guides listings and senior leads, A Player Mode MRR.
 
-## Build log, 10–16 October
+## Since 16 October
+
+- **25 Oct** — this review's artifact named the definition of "side businesses" (spry brain).
+- **1 Nov** — Spry Labs becomes the umbrella brain; KeepMyProof's site goes live; Pinterest to 3 pins a day; personal-injury outreach state limits; heygetonmylevel parked.
+- **3 Nov** — ApprovalPrep repositions against credit repair companies.
+- **6 Nov** — Dream Wedding, ApprovalPrep and KeepMyProof redesigns live; Whisper Almanac named and its domain bought; A Player Mode's buyer-facing plan names.
+- **9 Nov** — How We Know's Money lane and Whisper Almanac's weekly mix approved.
+- **10 Nov** — the app model for Dream Wedding and ApprovalPrep (free tool, paid once); kits v2; the blank $9 checklist found and fixed; the grid's groups set.
+- **13–14 Nov** — Dream Wedding and ApprovalPrep apps built with purchases off; App Store Connect records created.
+- **17 Nov** — the Monday audit: five red, one gold (Hicks, a friend's site).
+- **18 Nov** — Peace Be Still joins (the Divine 10); ApprovalPrep on Threads; YouTube voicing paused for the app library.
+- **20 Nov** — Peace Be Still cleared to submit to Apple.
+
+## History: build log, 10–16 October (kept as written then)
 
 ### Search update (10–11 October 2026)
 
