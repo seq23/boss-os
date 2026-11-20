@@ -110,7 +110,7 @@ export async function driftReport(env: DB, now = Date.now()): Promise<DriftRepor
     list.push({ at: r.at, pass: r.pass === 1, route: r.route, measured });
     by.set(r.deliverable, list);
   }
-  const reads = await env.DB.prepare(`SELECT deliverable, verdict, why, at FROM quality_reads WHERE at > ? ORDER BY at DESC`).bind(now - DRIFT.week_ms)
+  const reads = await env.DB.prepare(`SELECT deliverable, verdict, why, at FROM quality_reads WHERE kind = 'monthly' AND at > ? ORDER BY at DESC`).bind(now - DRIFT.week_ms)
     .all<{ deliverable: string; verdict: string; why: string; at: number }>();
   const label = (k: string) => DELIVERABLES.find((d) => d.key === k)?.label ?? k;
   const seen = new Set<string>();

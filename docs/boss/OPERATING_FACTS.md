@@ -229,3 +229,34 @@ have had". A review found that nothing checked the finished work (a half-depth b
   the backup, never a free route (`HARD_DELIVERS`). It reads the newest real output of each
   deliverable beside the best on record and files `holds` or `slipped` with a reason
   (`quality_reads`); the email shows it for the week after it lands.
+
+### The shared ship-ready reviewer (20 Nov 2026, grid row 6f)
+Owner, 19 Nov 2026 (personal brain, "VETERAN QUALITY BAR, HANDS-OFF"): the builder never grades its own
+work; a fresh reviewer judges the REAL output against `~/.claude/skills/ship-ready/SKILL.md`.
+- **One runner**: `npm run vault:run -- node scripts/ops/ship-review.mjs --kind page|email|video|profile|images
+  --target <url|file|folder> --builder "<who>" [--subject <key>] [--brand <slug>] [--launch] [--pr owner/repo#N]`.
+  It captures what a person meets (Playwright: 390 px light and dark + 1280 px, with HTTP status,
+  sideways scroll, broken images, title and console errors measured; ffmpeg: first frame + a 12-frame
+  contact sheet; or the finished images), judges, prints `Ship-ready: PASS — boss-os ship-review sr_… (<route>)
+  looked at <what>` or `…: FAIL …` with numbered findings, and with `--pr` appends the PASS line to the
+  PR body, where `~/bin/land` reads it. Rules (pure) in `src/shared/boss/shipReview/review.mjs`.
+- **Routes** (`aiRoles.routeOrder`): a subject never passed before is HARD (Claude seat, then Codex);
+  a re-review is SHORT (free Gemini vision models from the search-loop roster, then Codex, then Claude);
+  emails and Boss OS screens are private (never a free route). **A free route may FAIL a piece but
+  never PASS it** (measured 20 Nov 2026: free Gemini passed a P&P reel the Claude seat failed on 7
+  findings); its PASS goes on to a seat. Never a paid API.
+- **Kept** in `quality_reads` (kind `ship`, migration 0369; the monthly read is kind `monthly`), API
+  `POST/GET /api/boss/quality/reviews[?subject=]`; `latestShipReview` in `routes/quality.ts` for Worker code.
+- **Rule 0**: `OUTPUT 1 reviews` only when a verdict was stored; exit 0 PASS, 1 FAIL, 2 NOT_RECORDED,
+  3 passcode, 9 NOTHING_CAPTURED / NO_REVIEWER (nothing passes by default).
+- **Danielle's repo lane** (`repo-change.mjs` `shipReviewFor`): when a change's checks go green and it
+  shows a person something (a preview deployment, else her build's screenshots), the reviewer runs once
+  per PR head. PASS → the line goes in the PR body; FAIL → a red check: the findings are the rework
+  brief (`MAX_REWORKS`); a reviewer that could not run leaves it pending for the next tick.
+- **Phase 3, nothing new goes public without a PASS**: a new Email Map sender or live Social Map row
+  carries `ship_ready: { pass: "<the PASS line>", review: "sr_…" }` (Launch-ready for a new channel), or
+  `tests/shipReview.test.ts` fails the build. The senders and channels already live on 20 Nov are in
+  `src/shared/boss/shipReview/live-before-gate.json` until phase 4 (Sat 21 Nov) scores them; the list
+  only shrinks. Boss OS itself posts to no social platform (checked 20 Nov: no posting endpoint in this
+  repo, no Social Map row citing boss-os code); its posters live in other repos and pass through `land`.
+- Not a scheduled job: it runs inside `repo-change` (already on the Schedule and Scorecard) and on demand.

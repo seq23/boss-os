@@ -1205,6 +1205,41 @@ async function sendPreview(row, log) {
   else say(`previewed: ${found?.url ?? "(no deployment; PR + screenshots)"}; waiting on her second word.`);
 }
 
+/**
+ * ─── THE SHARED REVIEWER BEFORE ANYTHING LANDS (grid row 6f, owner 19 Nov 2026: "the veteran of 20
+ * years where nothing looks and feels and sounds like AI created it") ───────────────────────────────
+ *
+ * Danielle never grades her own build. When the checks go green on a change that shows a person
+ * something (a preview deployment, or the screenshots her build took at 390 px and desktop), the one
+ * shared reviewer (ship-review.mjs) judges that real output, once per PR head. PASS puts the
+ * `Ship-ready: PASS — …` line in the PR body, where ~/bin/land reads it; FAIL is a red check: the
+ * findings go back to BUILD as the rework brief, like any failing check. A reviewer that could not run
+ * leaves the change waiting for the next tick, never landed unreviewed.
+ * Returns { state: "pass" | "fail" | "none" | "unavailable", lines, why }.
+ */
+export function shipReviewArgs(row, { previewUrl = null, shots = [], out }) {
+  const target = previewUrl ?? shots.join(",");
+  return [join(HERE, "ship-review.mjs"), "--kind", previewUrl ? "page" : "images", "--target", target,
+    "--builder", `Danielle's repo lane, change ${row.id}`, "--subject", `repo-change:${row.repo}#${row.pr_number}`,
+    "--pr", `seq23/${row.repo}#${row.pr_number}`, "--out", out];
+}
+
+function shipReviewFor(row, run = spawnSync) {
+  const shots = screenshotPaths(row.proof ?? {}, row).filter((p) => /\.(png|jpe?g|webp)$/i.test(p) && existsSync(p));
+  const preview = previewUrlFor(row.repo, row.branch ?? `refs/pull/${row.pr_number}/head`, row.pr_number, 0);
+  if (!preview && !shots.length) return { state: "none", lines: [], why: "nothing a person sees: no preview deployment and no screenshots in the build's proof" };
+  const head = run("gh", ["pr", "view", String(row.pr_number), "--repo", `seq23/${row.repo}`, "--json", "headRefOid", "-q", ".headRefOid"], { encoding: "utf8" });
+  const sha = String(head.stdout ?? "").trim().slice(0, 12) || "unknown";
+  const out = join(WORK_ROOT, row.id, `ship-review-${sha}`);
+  const done = readJson(join(out, "verdict.json"));
+  if (done?.verdict) return { state: done.verdict === "PASS" ? "pass" : "fail", lines: [done.line, ...(done.findings ?? []).map((f, i) => `${i + 1}. ${f.where ? `[${f.where}] ` : ""}${f.what}`)], why: "reviewed this head already" };
+  const r = run(process.execPath, shipReviewArgs(row, { previewUrl: preview?.url ?? null, shots, out }), { encoding: "utf8", env: process.env, timeout: 30 * 60_000, maxBuffer: 16 << 20 });
+  const lines = String(r.stdout ?? "").split("\n").filter((l) => /^(Ship|Launch)-ready:|^\d+\. /.test(l));
+  if (r.status === 0) return { state: "pass", lines, why: "" };
+  if (r.status === 1) return { state: "fail", lines, why: "" };
+  return { state: "unavailable", lines, why: (String(r.stderr ?? "").match(/NAMED STOP \[[A-Z_]+\][^\n]*/) ?? [`ship-review exited ${r.status}`])[0] };
+}
+
 /** Ask gh about a PR's checks, record the answer, and — on green — claim and run LAND now. */
 async function watchChecks(row, log, waitMinutes) {
   const deadline = Date.now() + waitMinutes * 60_000;
@@ -1218,6 +1253,15 @@ async function watchChecks(row, log, waitMinutes) {
       verdict = noChecksVerdict({ prWorkflows, since, proof: row.proof });
     }
     say(`checks on ${row.pr_url}: ${verdict.state} — ${verdict.detail}`);
+    if (verdict.state === "green") {
+      const review = shipReviewFor(row);
+      say(`ship-ready review: ${review.state}${review.why ? ` (${review.why})` : ""}`);
+      if (review.state === "unavailable") {
+        await api(`/${row.id}/checks`, { state: "pending", detail: `checks green; the ship-ready review could not run yet: ${review.why}` });
+        return;
+      }
+      if (review.state === "fail") verdict = { state: "red", detail: `The checks are green, but the ship-ready review FAILED: a fresh reviewer looked at the real output and would not ship it. Fix every finding at source:\n${review.lines.join("\n")}` };
+    }
     if (verdict.state === "green") {
       const r = await api(`/${row.id}/checks`, { state: "green", detail: verdict.detail });
       if (!r.ok) { say(`NAMED STOP [GREEN_NOT_RECORDED] ${r.status} ${r.error ?? ""}`); return; }
