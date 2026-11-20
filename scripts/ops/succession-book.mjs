@@ -71,6 +71,34 @@ function herPlain(t) {
 }
 export const herWords = (t) => String(t ?? "").split(/("[^"]*"|“[^”]*”)/).map((part, i) => (i % 2 ? part : herPlain(part))).join("");
 
+const MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+/** "2026-12-11" → "11 Dec 2026", the way the rest of the book writes dates. */
+export const humanDate = (iso) => {
+  const m = /^(\d{4})-(\d{2})-(\d{2})/.exec(String(iso ?? ""));
+  return m ? `${Number(m[3])} ${MONTHS[Number(m[2]) - 1]} ${m[1]}` : String(iso ?? "");
+};
+
+/**
+ * Her staff and her own shorthand, said once in plain words wherever an automatic email or post names
+ * them (shared review, 20 Nov 2026: "the matches Monique found", "the hunts", "her live book").
+ */
+const GLOSSARY = [
+  [/\bMonique\b/, "Monique (her AI researcher for deals and outreach)"],
+  [/\bSimone\b/, "Simone (her AI chief of staff)"],
+  [/\bCamille\b/, "Camille (her AI research director)"],
+  [/\bImani\b/, "Imani (her AI coach)"],
+  [/\bKendra\b/, "Kendra (her AI systems manager)"],
+  [/\bToni\b/, "Toni (her AI risk watcher)"],
+  [/\bZora\b/, "Zora (her AI archivist)"],
+  [/\bDanielle\b/, "Danielle (her AI developer)"],
+  [/\bWynn\b/, "Wynn (the West Peek OS AI that sells TLC sponsorships)"],
+  [/\bParker\b/, "Parker (the West Peek OS AI that plans Rooms and TLC)"],
+  [/\bPorter\b/, "Porter (the West Peek OS AI front desk)"],
+  [/\bthe hunts\b/, "the hunts (her automatic searches for buyers and sellers)"],
+  [/\bher live book\b/, "her live book (her list of open buy and sell orders)"],
+];
+export const plainWhat = (t) => GLOSSARY.reduce((out, [re, words]) => out.replace(re, words), herWords(t));
+
 export function table(head, rows) {
   if (!rows.length) return "_(none)_";
   return [`| ${head.join(" | ")} |`, `|${head.map(() => "---").join("|")}|`, ...rows.map((r) => `| ${r.map(cell).join(" | ")} |`)].join("\n");
@@ -140,7 +168,7 @@ export function domainsBlock(domains, now = new Date()) {
   const soon = new Date(now.getTime() + 60 * 86_400_000).toISOString().slice(0, 10);
   const rows = (domains.rows ?? []).filter((r) => r.tier === "keep" || r.tier === "sunset")
     .sort((a, b) => String(a.expires ?? "9999").localeCompare(String(b.expires ?? "9999")) || a.domain.localeCompare(b.domain))
-    .map((r) => [r.domain, r.expires && r.expires <= soon ? `RENEW NOW, before ${r.expires}` : r.tier === "keep" ? "Keep: renew" : "Keep for now: renew unless Claude confirms nothing uses it", r.registrar, r.expires ?? "not known yet", herWords(r.mail_words ?? "")]);
+    .map((r) => [r.domain, r.expires && r.expires <= soon ? `RENEW NOW, before ${humanDate(r.expires)}` : r.tier === "keep" ? "Keep: renew" : "Keep for now: renew unless Claude confirms nothing uses it", r.registrar, r.expires ? humanDate(r.expires) : "not known yet", herWords(r.mail_words ?? "")]);
   if (!rows.length) throw new Stop("NO_DOMAINS", "The Domains map has no domain marked keep.");
   return table(["Domain", "Keep or let go", "Registrar (where to renew)", "Paid until", "Email on it"], rows);
 }
@@ -168,7 +196,7 @@ export function socialBlock(social) {
  * Claude to stop the sender. So no group is "stop by not tapping".
  */
 export const EMAIL_KINDS = [
-  ["brokerage", "Brokerage: stop on Day 1; do not read"],
+  ["brokerage", "Brokerage reports to Sequoia: stop on Day 1 unopened (they hold client data)"],
   ["as-her", "Sends as Sequoia: stop on Day 1; tap nothing in these emails"],
   ["outreach", "Writes to people for her businesses: stop on Day 1"],
   ["customers", "Customers (receipts, sign-ins, replies): leave on"],
@@ -226,16 +254,18 @@ export function emailsBlock(emailMap) {
   const leftOn = rows.filter((x) => !STOP_KINDS.has(x.kind));
   const keepFor = (x) => (STOP_KINDS.has(x.kind) ? leftOn.filter((y) => y.r.pause === x.r.pause && y.kind !== "to-her").map((y) => y.r.id) : []);
   const skipped = all.length - rows.length;
-  return `${rows.length} automatic emails, from Boss OS › Email Map${skipped ? ` (${skipped} more there write to no one, so they are not listed)` : ""}.\n\n${table(["Who it writes to", "Business", "What it is", "Sent to", "How to stop it"], rows.map((x) => [
-    words[x.kind], label[x.r.business] ?? x.r.business, herWords(x.r.what), herWords(x.r.to), stopWords(x.r, keepFor(x)),
-  ]))}`;
+  const groups = EMAIL_KINDS.map(([k, words]) => [words, rows.filter((x) => x.kind === k)]).filter(([, xs]) => xs.length);
+  return `${rows.length} automatic emails, from Boss OS › Email Map${skipped ? ` (${skipped} more there write to no one, so they are not listed)` : ""}.\n\n${groups.map(([words, xs]) =>
+    `#### ${words}\n\n${table(["What it is", "Business", "Sent to", "How to stop it"], xs.map((x) => [
+      plainWhat(x.r.what), label[x.r.business] ?? x.r.business, herWords(x.r.to), stopWords(x.r, keepFor(x)),
+    ]))}`).join("\n\n")}`;
 }
 
 /** Every account a job posts to by itself, from the Social Map. Posts speak for the brand, not for her. */
 export function postingBlock(social) {
   const label = Object.fromEntries((social.businesses ?? []).map((b) => [b.key, b.label]));
   const rows = (social.rows ?? []).filter(postsByJob)
-    .map((r) => [label[r.business] ?? r.business, r.platform, herWords(r.posts.what), `Ask Claude: "Pause the job that posts to ${r.platform} for ${label[r.business] ?? r.business}."`]);
+    .map((r) => [label[r.business] ?? r.business, r.platform, plainWhat(r.posts.what), `Ask Claude: "Pause the job that posts to ${r.platform} for ${label[r.business] ?? r.business}."`]);
   return `${rows.length} accounts post automatically (brand posts, never personal messages).\n\n${table(["Business", "Platform", "What posts", "How to stop it"], rows)}`;
 }
 
@@ -310,7 +340,12 @@ function sectionText(md, heading) {
   return next < 0 ? rest : rest.slice(0, next);
 }
 const genBody = (md, name) => (new RegExp(`<!-- GEN:${name} -->([\\s\\S]*?)<!-- /GEN:${name} -->`).exec(md) ?? [])[1] ?? "";
-const tableRows = (text) => text.split("\n").filter((l) => l.trim().startsWith("|")).slice(2);
+/** Body rows of every table in a text: no header (the line above a separator), no separator. */
+const SEPARATOR = /^\|[\s|:-]+\|$/;
+const tableRows = (text) => {
+  const lines = text.split("\n").map((l) => l.trim());
+  return lines.filter((l, n) => l.startsWith("|") && !SEPARATOR.test(l) && !SEPARATOR.test(lines[n + 1] ?? ""));
+};
 const cellsOf = (line) => line.trim().replace(/^\||\|$/g, "").split("|").map((c) => c.trim());
 
 /**
@@ -334,7 +369,9 @@ export function bookProblems(md, { emailMap, social }) {
   for (const line of [...tableRows(emails), ...tableRows(genBody(md, "posting"))]) {
     const stop = cellsOf(line).at(-1);
     const own = stop.replace(/Email Map sender [\w-]+/g, ""); // a sender's id (her-tap-send) is a name, not a step
-    if (/\btap\b/i.test(own) || /wrangler|deploy|launchctl|\.toml|RESEND_API_KEY|\bsecret\b/i.test(own)) p.push(`a stop step Scooter cannot follow: "${stop}"`);
+    // A tap is allowed only on a named website (a pause button there), never in an email to her.
+    const tapInEmail = /\btap\b/i.test(own) && !/\b[\w-]+\.(com|so|ventures|ai|dev)\b/i.test(own);
+    if (tapInEmail || /wrangler|deploy|launchctl|\.toml|RESEND_API_KEY|\bsecret\b/i.test(own)) p.push(`a stop step Scooter cannot follow: "${stop}"`);
   }
   // Every sender Day 1 stops is in the Day 1 message, and nothing else is.
   const dayOne = genBody(md, "day1-stop").split(/,\s*/).map((t) => t.trim()).filter(Boolean).sort().join(",");
@@ -370,7 +407,7 @@ export function buildBook({ template, live, mapRows, cats, domains, social, emai
     social: socialBlock(social),
     emails: emailsBlock(emailMap),
     posting: postingBlock(social),
-    built: now.toISOString().slice(0, 10),
+    built: humanDate(now.toISOString()),
     envelope: envelopeBlock(),
     "day1-stop": dayOneIds(emailMap).join(", "),
     gaps: "",
@@ -401,6 +438,14 @@ export function mdToHtml(md, title) {
   while (i < lines.length) {
     const line = lines[i].trim();
     if (!line) { i++; continue; }
+    if (line.startsWith("```")) {
+      const code = [];
+      i++;
+      while (i < lines.length && !lines[i].trim().startsWith("```")) code.push(lines[i++].trim());
+      i++;
+      out.push(`<pre>${esc(code.join("\n"))}</pre>`);
+      continue;
+    }
     const h = /^(#{1,4})\s+(.*)$/.exec(line);
     if (h) { out.push(`<h${h[1].length}>${inlineHtml(h[2])}</h${h[1].length}>`); i++; continue; }
     if (line.startsWith("|")) {

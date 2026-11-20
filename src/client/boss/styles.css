@@ -32,6 +32,7 @@
   /* Ink — a warm plum-brown. Pure black on cream reads as a printing error. */
   --ink: #3d2f33;
   --muted: #907e84;
+  --label: #6f5f65; /* small labels on cream: 5.8:1, where --muted is 3.7:1 */
 
   /* Blush and gold. */
   --blush: #f4dade;
@@ -162,7 +163,9 @@ button { font: inherit; color: inherit; cursor: pointer; }
   justify-content: space-between;
   gap: 12px;
   padding: calc(14px + env(safe-area-inset-top)) 18px 12px;
-  background: linear-gradient(var(--ground) 70%, transparent);
+  /* Solid: a fade let page text show through the title on scroll (shared review, 20 Nov 2026). */
+  background: var(--ground);
+  border-bottom: 1px solid var(--line);
 }
 
 .topbar h1 {
@@ -1739,10 +1742,10 @@ a.btn { text-decoration: none; text-align: center; display: inline-block; }
     content: attr(data-label);
     display: block;
     font-family: var(--mono);
-    font-size: 11px;
-    letter-spacing: 0.08em;
+    font-size: 12px;
+    letter-spacing: 0.06em;
     text-transform: uppercase;
-    color: var(--muted);
+    color: var(--label);
   }
   .phone-cards td:first-child::before { display: none; }
   .phone-cards td:first-child { font-size: 16px; }
@@ -1967,10 +1970,16 @@ a.btn { text-decoration: none; text-align: center; display: inline-block; }
 .succession .succession-h2 { margin-top: 28px; }
 .succession .succession-h3 { font-size: 16px; margin: 18px 0 6px; }
 .succession-toc { background: var(--card); border: 1px solid var(--line); border-radius: 3px; padding: 10px 14px; margin: 0 0 16px; }
-.succession-toc-h { font-family: var(--mono); font-size: 11px; letter-spacing: 0.08em; text-transform: uppercase; color: var(--muted); margin: 0 0 6px; }
+.succession-toc-h { font-family: var(--mono); font-size: 12px; letter-spacing: 0.06em; text-transform: uppercase; color: var(--label); margin: 0 0 6px; }
 .succession-toc ul { margin: 0; padding-left: 0; list-style: none; line-height: 1.4; }
-.succession-toc li a { display: inline-block; padding: 6px 0; }
-.succession-toc .succession-toc-sub { list-style: none; margin-left: 12px; }
+.succession-toc li { padding: 3px 0; }
+.succession-toc li > a { display: inline-block; padding: 4px 0; font-weight: 600; }
+.succession-toc-subs { display: flex; flex-wrap: wrap; gap: 0 14px; margin-left: 12px; font-size: 14px; }
+.succession-toc-subs a { display: inline-block; padding: 4px 0; }
+.succession-code { position: relative; margin: 8px 0 10px; }
+.succession-code pre { margin: 0; padding: 10px 72px 10px 12px; background: var(--card-2); border: 1px solid var(--line); border-radius: 3px; font-family: var(--mono); font-size: 15px; line-height: 1.6; white-space: pre-wrap; }
+.succession-code pre code { background: none; padding: 0; font-size: inherit; }
+.succession-copy { position: absolute; top: 6px; right: 6px; min-height: 36px; padding: 0 12px; font: 600 13px var(--body); color: var(--ink); background: var(--card); border: 1px solid var(--line); border-radius: 3px; }
 .succession [id^="s-"] { scroll-margin-top: 80px; }
 .succession a { color: var(--rose); text-decoration-color: var(--blush-deep); text-underline-offset: 2px; }
 .succession code { font-family: var(--mono); font-size: 13px; background: var(--card-2); padding: 1px 4px; border-radius: 2px; }

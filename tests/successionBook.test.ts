@@ -3,7 +3,7 @@
  * public, so no real brain, handoff or book text is ever here.
  */
 import { describe, expect, it } from "vitest";
-import { ENVELOPE, bookProblems, buildBook, fillBlocks, herWords, mdToHtml, repoCategory, safetyProblems } from "../scripts/ops/succession-book.mjs";
+import { ENVELOPE, bookProblems, plainWhat, buildBook, fillBlocks, herWords, mdToHtml, repoCategory, safetyProblems } from "../scripts/ops/succession-book.mjs";
 
 const TEMPLATE = [
   "# Book", "", "Hand-written words stay.", "",
@@ -68,7 +68,7 @@ describe("the Succession Book generator", () => {
     expect(md).toContain("Her alpha site.");
     expect(md).toContain("No description yet");
     expect(md).not.toContain("@gone");
-    expect(md).toContain("<!-- GEN:built -->2026-12-01<!-- /GEN:built -->");
+    expect(md).toContain("<!-- GEN:built -->1 Dec 2026<!-- /GEN:built -->");
     expect(md).toContain("| Example App | com.example.app | https://appstoreconnect.apple.com/apps/1234567890 | live |");
     expect(md).not.toContain("After the table.");
     expect(md).toContain("| Example Co | Instagram | @ex | Live, posts automatically |");
@@ -77,7 +77,10 @@ describe("the Succession Book generator", () => {
     expect(md).toContain("10 automatic emails, from Boss OS › Email Map (1 more there write to no one, so they are not listed).");
     // Round 11: one rule for buttons (tap nothing), senders as her stop on Day 1, a shared switch keeps the receipts.
     expect(md).not.toMatch(/\| Tap |Do not tap/);
-    expect(md).toContain('| Sends as Sequoia: stop on Day 1; tap nothing in these emails | personal | Emails a session sends for Sequoia | Whoever | Ask Claude: "Stop the Email Map sender her-gmail." |');
+    expect(md).toContain('#### Sends as Sequoia: stop on Day 1; tap nothing in these emails\n\n| What it is | Business | Sent to | How to stop it |');
+    expect(md).toContain('| Emails a session sends for Sequoia | personal | Whoever | Ask Claude: "Stop the Email Map sender her-gmail." |');
+    // Her staff and shorthand are explained where an email names them (shared review, 20 Nov 2026).
+    expect(plainWhat("The matches Monique found, what the hunts found")).toBe("The matches Monique (her AI researcher for deals and outreach) found, what the hunts (her automatic searches for buyers and sellers) found");
     expect(md).toContain('Ask Claude: "Stop the Email Map sender hicks."');
     expect(md).toContain("| Sign in at twin.so and pause the LP campaign. |");
     expect(md).toContain('Ask Claude: "Stop the Email Map sender spry-cold only, and keep spry-receipt running."');
@@ -87,7 +90,7 @@ describe("the Succession Book generator", () => {
     expect(md).toContain("Stop these Email Map senders: <!-- GEN:day1-stop -->spry-cold, her-gmail, hicks, deals<!-- /GEN:day1-stop -->.");
     expect(md).toContain("2 blanks.");
     expect(md).toContain("| Fill in | Pending: …: the attorney's name |");
-    const order = ["Brokerage: stop on Day 1", "Sends as Sequoia: stop on Day 1", "Writes to people for her businesses: stop on Day 1", "Customers (receipts", "To Sequoia only"].map((w) => md.indexOf(w));
+    const order = ["Brokerage reports to Sequoia: stop on Day 1", "Sends as Sequoia: stop on Day 1", "Writes to people for her businesses: stop on Day 1", "Customers (receipts", "To Sequoia only"].map((w) => md.indexOf(w));
     expect(order.every((n, i) => n > 0 && (i === 0 || n > order[i - 1]!))).toBe(true);
     expect(md).toContain(ENVELOPE.map((t, i) => `${i + 1}. ${t}`).join("\n"));
     expect(md).toContain("Her morning email");
@@ -109,7 +112,7 @@ describe("the Succession Book generator", () => {
   it("lists the kept domains soonest-expiring first, never a retired one", () => {
     const md = buildBook(input());
     expect(md.indexOf("soon.example")).toBeLessThan(md.indexOf("late.example"));
-    expect(md).toContain("| soon.example | RENEW NOW, before 2026-12-11 |");
+    expect(md).toContain("| soon.example | RENEW NOW, before 11 Dec 2026 |");
     expect(md).toContain("| late.example | Keep: renew |");
     expect(md).not.toContain("gone.example");
   });

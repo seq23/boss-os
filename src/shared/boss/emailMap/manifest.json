@@ -98,7 +98,7 @@
       "runs": "cloud-cron", "trigger": "An approved email.send on its card; the west-peek-os Worker sends it on its drip pass",
       "pause": "Do not approve; or in west-peek-os wrangler.toml set WP_OS_EMAIL_SEND off and deploy",
       "as_her": true,
-      "plain_stop": "Pause tlc_drip, tlc_daily and tlc_brand_batch at os.joinwestpeek.com › Work › machinery, signed in as yourself (scooter@westpeek.ventures).",
+      "plain_stop": "On your phone, go to os.joinwestpeek.com and sign in as yourself (scooter@westpeek.ventures). Tap Work, then the jobs list (\"machinery\"), and tap Pause on every job whose name starts with \"tlc_\".",
       "code": [{ "repo": "west-peek-os", "paths": ["src/worker/effects/executor.ts", "src/worker/services/googleConnect.ts", "src/worker/effects/googleClient.ts"] }]
     },
     {

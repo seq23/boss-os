@@ -16,7 +16,7 @@ export function Succession() {
   if (!book) return <Loading />;
   return (
     <article className="succession">
-      <p className="brain-saved">Rebuilt {new Date(book.built_at).toLocaleDateString(undefined, { day: "numeric", month: "long", year: "numeric" })}. Private: never share this page or paste it anywhere but Claude on Sequoia's Mac.</p>
+      <p className="brain-saved">Rebuilt {new Date(book.built_at).toLocaleDateString("en-GB", { day: "numeric", month: "short", year: "numeric" })}. Private: never share this page or paste it anywhere but Claude on Sequoia's Mac.</p>
       <Contents markdown={book.markdown} />
       {mdBlocks(book.markdown.replace(/<!--[\s\S]*?-->/g, ""))}
     </article>
@@ -29,23 +29,47 @@ export const headingId = (text: string) => `s-${text.toLowerCase().replace(/\*\*
 /** The sub-sections he needs fastest, linked under their section in the contents. */
 const KEY_SUBSECTIONS = /^(How to get into each account|Social accounts matrix|App Store apps|First day|First week|First month|Every automatic email|If the Mac dies|Domains to keep|Bills that must stay paid|Scheduled jobs and how to pause them)/;
 
-/** The book is long on a phone: its sections, and the key sub-sections, one tap away. */
+/**
+ * The book is long on a phone: its sections, one tap away, with the key sub-sections on one short line
+ * under their section, so every section fits above the tab bar (shared review, 20 Nov 2026).
+ */
 function Contents({ markdown }: { markdown: string }) {
-  const items: { text: string; sub: boolean }[] = [];
+  const sections: { text: string; subs: string[] }[] = [];
   for (const m of markdown.matchAll(/^(##|###)\s+(.+)$/gm)) {
     const text = m[2]!.trim();
-    if (m[1] === "##") items.push({ text, sub: false });
-    else if (KEY_SUBSECTIONS.test(text)) items.push({ text, sub: true });
+    if (m[1] === "##") sections.push({ text, subs: [] });
+    else if (KEY_SUBSECTIONS.test(text) && sections.length) sections[sections.length - 1]!.subs.push(text);
   }
+  const short = (t: string) => t.replace(/\s*\(.*\)$/, "");
   return (
     <nav className="succession-toc" aria-label="Contents">
       <p className="succession-toc-h">Contents</p>
       <ul>
-        {items.map((it) => (
-          <li key={it.text} className={it.sub ? "succession-toc-sub" : undefined}><a href={`#${headingId(it.text)}`}>{it.text.replace(/\s*\(.*\)$/, "")}</a></li>
+        {sections.map((it) => (
+          <li key={it.text}>
+            <a href={`#${headingId(it.text)}`}>{short(it.text)}</a>
+            {it.subs.length > 0 && (
+              <span className="succession-toc-subs">
+                {it.subs.map((sub) => <a key={sub} href={`#${headingId(sub)}`}>{short(sub)}</a>)}
+              </span>
+            )}
+          </li>
         ))}
       </ul>
     </nav>
+  );
+}
+
+/** A command he types: shown as code, with a Copy button (the Terminal lines in section 0). */
+function CodeBlock({ code }: { code: string }) {
+  const [copied, setCopied] = useState(false);
+  return (
+    <div className="succession-code">
+      <pre><code>{code}</code></pre>
+      <button type="button" className="succession-copy" onClick={() => { void navigator.clipboard?.writeText(code).then(() => setCopied(true)); }}>
+        {copied ? "Copied" : "Copy"}
+      </button>
+    </div>
   );
 }
 
@@ -78,6 +102,14 @@ export function mdBlocks(md: string): ReactNode[] {
     const raw = lines[i]!;
     const line = raw.trim();
     if (!line) { i++; continue; }
+    if (line.startsWith("```")) {
+      const code: string[] = [];
+      i++;
+      while (i < lines.length && !lines[i]!.trim().startsWith("```")) code.push(lines[i++]!.trim());
+      i++;
+      out.push(<CodeBlock key={`c${i}`} code={code.join("\n")} />);
+      continue;
+    }
     const h = /^(#{1,4})\s+(.*)$/.exec(line);
     if (h) {
       const level = h[1]!.length;
@@ -107,10 +139,10 @@ export function mdBlocks(md: string): ReactNode[] {
       continue;
     }
     if (LIST.test(raw)) {
-      const items: { depth: number; numbered: boolean; text: string }[] = [];
+      const items: ListItem[] = [];
       while (i < lines.length && LIST.test(lines[i]!)) {
         const m = LIST.exec(lines[i]!)!;
-        items.push({ depth: Math.floor(m[1]!.length / 2), numbered: /\d/.test(m[2]!), text: lines[i]!.slice(m[0].length) });
+        items.push({ depth: Math.floor(m[1]!.length / 2), numbered: /\d/.test(m[2]!), start: parseInt(m[2]!, 10) || 1, text: lines[i]!.slice(m[0].length) });
         i++;
       }
       out.push(<Fragment key={`l${i}`}>{listTree(items, 0)}</Fragment>);
@@ -122,7 +154,10 @@ export function mdBlocks(md: string): ReactNode[] {
   return out;
 }
 
-function listTree(items: { depth: number; numbered: boolean; text: string }[], depth: number): ReactNode {
+type ListItem = { depth: number; numbered: boolean; start: number; text: string };
+
+/** A numbered list keeps its own numbers when a code block splits it (section 0: steps 5, then 6). */
+function listTree(items: ListItem[], depth: number): ReactNode {
   const lis: ReactNode[] = [];
   let n = 0;
   while (n < items.length) {
@@ -133,5 +168,5 @@ function listTree(items: { depth: number; numbered: boolean; text: string }[], d
     lis.push(<li key={n}>{mdInline(it.text)}{kids.length ? listTree(kids, depth + 1) : null}</li>);
     n = j;
   }
-  return items[0]?.numbered ? <ol className="brain-ol">{lis}</ol> : <ul className="brain-ul">{lis}</ul>;
+  return items[0]?.numbered ? <ol className="brain-ol" start={items[0].start}>{lis}</ol> : <ul className="brain-ul">{lis}</ul>;
 }

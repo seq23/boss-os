@@ -4,6 +4,8 @@ export const DRIVE_DOC_NAME: string;
 export const MAX_BYTES: number;
 export class Stop extends Error { code: string; exit: number; constructor(code: string, sentence: string, exit?: number); }
 export function herWords(text: unknown): string;
+export function humanDate(iso: unknown): string;
+export function plainWhat(text: unknown): string;
 export function table(head: string[], rows: unknown[][]): string;
 export function fillBlocks(template: string, blocks: Record<string, string>): string;
 export function repoCategory(name: string, cats: any, mapRow?: any): string;
