@@ -242,7 +242,10 @@ work; a fresh reviewer judges the REAL output against `~/.claude/skills/ship-rea
   contact sheet; or the finished images; a YouTube channel through the official Data API with her key
   `HOWWEKNOW_YOUTUBE_API_KEY`: real avatar, banner, title, description and newest thumbnails drawn at 390 px
   and 1280 px, never a disguised browser visit), judges (what no capture showed goes in the reviewer's
-  `unseen`, never a finding: with nothing real found it is NAMED STOP [CAPTURE_INCOMPLETE], exit 9), prints `Ship-ready: PASS — boss-os ship-review sr_… (<route>)
+  `unseen`, never a finding: with nothing real found it is NAMED STOP [CAPTURE_INCOMPLETE], exit 9; with
+  `--pr` a page review also gets the PR's changed lines; `--on-github` takes a public page's capture on
+  GitHub Actions, `.github/workflows/ship-review-capture.yml`, and judges it on the Mac: no Chrome on the
+  8 GB Mac, never for private work, since the artifacts are public), prints `Ship-ready: PASS — boss-os ship-review sr_… (<route>)
   looked at <what>` or `…: FAIL …` with numbered findings, and with `--pr` appends the PASS line to the
   PR body, where `~/bin/land` reads it. Rules (pure) in `src/shared/boss/shipReview/review.mjs`.
 - **Routes** (`aiRoles.routeOrder`): a subject never passed before is HARD (Claude seat, then Codex);

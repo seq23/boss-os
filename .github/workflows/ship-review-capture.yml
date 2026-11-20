@@ -1,0 +1,59 @@
+# THE SHIP-READY REVIEWER'S CAPTURE, ON GITHUB (coordinator, 20 Nov 2026: the Mac has 8 GB and a
+# queue of headless Chromes put it 22 GB into swap). The same capture code as on the Mac
+# (`scripts/ops/ship-review.mjs --capture-only`): whole page in real-size parts at 390 px and 1280 px,
+# dark only when the site has one, the measured facts. The Mac's `ship-review --on-github` dispatches
+# this, downloads the artifact and judges from it; nothing is judged here.
+#
+# PUBLIC PAGES ONLY: this repo is public, so its artifacts are too. `--on-github` refuses private work
+# (Boss OS screens, emails), and so does this job (the same isPrivate rule in the script).
+name: ship-review-capture
+run-name: ship-review capture ${{ inputs.label }}
+
+on:
+  workflow_dispatch:
+    inputs:
+      target:
+        description: Public page URL, or a comma list of up to 4
+        required: true
+        type: string
+      label:
+        description: The review id (names the run and the artifact ship-capture-<label>)
+        required: true
+        type: string
+      focus:
+        description: JSON array of changed texts to shoot around (optional)
+        required: false
+        default: '[]'
+        type: string
+
+permissions:
+  contents: read
+
+jobs:
+  capture:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+      - name: Install Playwright only (the capture needs nothing else)
+        run: |
+          npm i --no-save --no-audit --no-fund --prefix "$RUNNER_TEMP/pw" @playwright/test@1.62.1
+          ln -s "$RUNNER_TEMP/pw/node_modules" node_modules
+          npx playwright install chromium
+      - name: Capture
+        env:
+          TARGET: ${{ inputs.target }}
+          FOCUS: ${{ inputs.focus }}
+        run: |
+          args=()
+          while IFS= read -r f; do [ -n "$f" ] && args+=(--focus "$f"); done < <(node -e 'for (const f of JSON.parse(process.env.FOCUS || "[]")) console.log(String(f).replace(/\n/g, " "))')
+          node scripts/ops/ship-review.mjs --capture-only --kind page --public --target "$TARGET" --builder "github capture" --out "$RUNNER_TEMP/cap" "${args[@]}"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ship-capture-${{ inputs.label }}
+          path: ${{ runner.temp }}/cap
+          retention-days: 3
+          if-no-files-found: error

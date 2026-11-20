@@ -5,7 +5,7 @@
 import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
 import { EMAIL_SENDS, SOCIAL_POSTS, gateProblems, parseVerdict, passLine, PASS_LINE_RE, reviewRoutes, reviewPrompt } from "../src/shared/boss/shipReview/review.mjs";
-import { judge, isPrivate, isBlank, parseArgs, capture, pageSlug, tilesFor, MAX_TILES, changedLines, YOUTUBE_CHANNEL } from "../scripts/ops/ship-review.mjs";
+import { judge, isPrivate, isBlank, parseArgs, capture, pageSlug, tilesFor, MAX_TILES, changedLines, writeCaptureFile, readCaptureFile, YOUTUBE_CHANNEL } from "../scripts/ops/ship-review.mjs";
 // @ts-expect-error — plain ESM with no declaration file
 import { shipReviewArgs } from "../scripts/ops/repo-change.mjs";
 
@@ -75,6 +75,17 @@ describe("a verdict is trusted only when it is a real review", () => {
     expect(c).toBe("site/insights.html:\n- Support is tailored to you.\n+ Support is shaped to respect you.");
     expect(changedLines(diff, 60)).toMatch(/1 more changed line not shown/);
     expect(reviewPrompt({ kind: "page", target: "t", builder: "b", checklist: "c", shots, change: c })).toMatch(/THE CHANGE ITSELF[\s\S]*tailored to you/);
+  });
+  it("a capture taken on GitHub comes back as the same shots and facts; private work never goes there", async () => {
+    const { mkdtempSync, writeFileSync: w } = await import("node:fs");
+    const { tmpdir } = await import("node:os");
+    const dir = mkdtempSync(`${tmpdir()}/cap-`);
+    w(`${dir}/phone-390-light-1of2.png`, "x"); w(`${dir}/laptop-1280-light.png`, "x");
+    writeCaptureFile(dir, { shots: [{ label: "phone-390-light-1of2.png", path: `/runner/cap/phone-390-light-1of2.png` }, { label: "laptop-1280-light.png", path: `/runner/cap/laptop-1280-light.png` }], facts: ["no horizontal scroll at 390 px"] });
+    expect(readCaptureFile(dir)).toEqual({ shots: [{ label: "phone-390-light-1of2.png", path: `${dir}/phone-390-light-1of2.png` }, { label: "laptop-1280-light.png", path: `${dir}/laptop-1280-light.png` }], facts: ["no horizontal scroll at 390 px"] });
+    expect(() => readCaptureFile(`${dir}/nothing`)).toThrow(/GITHUB_CAPTURE/);
+    const { main } = await import("../scripts/ops/ship-review.mjs");
+    await expect(main(["--kind", "email", "--target", "x.html", "--builder", "b", "--on-github", "--no-store"], { env: { ...process.env, SHIP_READY_SKILL: "package.json" }, log: () => {}, print: () => {} })).rejects.toThrow(/public web pages only/);
   });
   it("the whole page is captured, in at most MAX_TILES parts with no gap and no cut", () => {
     for (const [h, w] of [[844, 390], [3201, 390], [6500, 390], [41_000, 390], [2401, 1280]] as const) {
