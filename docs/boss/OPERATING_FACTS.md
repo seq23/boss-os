@@ -235,11 +235,14 @@ Owner, 19 Nov 2026 (personal brain, "VETERAN QUALITY BAR, HANDS-OFF"): the build
 work; a fresh reviewer judges the REAL output against `~/.claude/skills/ship-ready/SKILL.md`.
 - **One runner**: `npm run vault:run -- node scripts/ops/ship-review.mjs --kind page|email|video|profile|images
   --target <url|file|folder> --builder "<who>" [--subject <key>] [--brand <slug>] [--launch] [--pr owner/repo#N]`.
-  It captures what a person meets (Playwright: 390 px light and dark + 1280 px, with HTTP status,
+  It captures what a person meets (Playwright: 390 px + 1280 px, the WHOLE page in at most 8 real-size parts,
+  never cut at a height; dark only when the site has a dark scheme or a theme toggle, else the fact says
+  "no dark scheme" or "dark: not read", never a finding; with HTTP status,
   sideways scroll, broken images, title and console errors measured; ffmpeg: first frame + a 12-frame
   contact sheet; or the finished images; a YouTube channel through the official Data API with her key
   `HOWWEKNOW_YOUTUBE_API_KEY`: real avatar, banner, title, description and newest thumbnails drawn at 390 px
-  and 1280 px, never a disguised browser visit), judges, prints `Ship-ready: PASS — boss-os ship-review sr_… (<route>)
+  and 1280 px, never a disguised browser visit), judges (what no capture showed goes in the reviewer's
+  `unseen`, never a finding: with nothing real found it is NAMED STOP [CAPTURE_INCOMPLETE], exit 9), prints `Ship-ready: PASS — boss-os ship-review sr_… (<route>)
   looked at <what>` or `…: FAIL …` with numbered findings, and with `--pr` appends the PASS line to the
   PR body, where `~/bin/land` reads it. Rules (pure) in `src/shared/boss/shipReview/review.mjs`.
 - **Routes** (`aiRoles.routeOrder`): a subject never passed before is HARD (Claude seat, then Codex);

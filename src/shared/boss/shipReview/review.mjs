@@ -90,10 +90,12 @@ export function reviewPrompt({ kind, target, builder, checklist, brand = null, f
     "Decide PASS only if a 20-year veteran would ship this exactly as it is. Anything that looks cheap, template-default, AI-made, broken, unreadable on a phone, off-brand, placeholder, or that would make a real person leave, distrust it or need help is a FAIL finding. Do not grade on effort or on what could be fixed later.",
     ...(brief ? [
       "",
-      "YOU ARE JUDGING THIS CHANGE (20 Nov 2026: a fix must not be blocked by problems it did not make). Mark each finding in_change true when the change caused it, or it sits in what the change touched and the change left it wrong; in_change false when it was already there elsewhere and the change neither caused nor touched it. The verdict is FAIL only if at least one finding is in_change true; still list every in_change false problem you see, so it is fixed in its own round. If the captures do not show what the change touched, say so as an in_change true finding (the change could not be judged).",
+      "YOU ARE JUDGING THIS CHANGE (20 Nov 2026: a fix must not be blocked by problems it did not make). Mark each finding in_change true when the change caused it, or it sits in what the change touched and the change left it wrong; in_change false when it was already there elsewhere and the change neither caused nor touched it. The verdict is FAIL only if at least one finding is in_change true; still list every in_change false problem you see, so it is fixed in its own round.",
     ] : []),
+    "",
+    "WHAT THE CAPTURES DID NOT SHOW IS NEVER A FINDING (20 Nov 2026: \"can't see the change\" FAILs were the harness, not the work). If something you needed to judge is not in any capture (a section cut off, a state or click not captured), put it in unseen, in a few words each; never make it a finding, and never PASS around it. A capture fact that says \"not read\" (for example \"dark: not read\") is the harness, never a finding.",
     "Reply with ONE JSON object and nothing else:",
-    '{"verdict":"PASS"|"FAIL","looked_at":["<every capture label you looked at>"],"findings":[{"where":"<capture label and place>","what":"<what is wrong, specifically>","feels":"<what a real person would feel>"' + (brief ? ',"in_change":true|false' : "") + '}]}',
+    '{"verdict":"PASS"|"FAIL","looked_at":["<every capture label you looked at>"],"unseen":["<what you needed but no capture showed>"],"findings":[{"where":"<capture label and place>","what":"<what is wrong, specifically>","feels":"<what a real person would feel>"' + (brief ? ',"in_change":true|false' : "") + '}]}',
     brief
       ? "PASS lists only in_change false findings (or none). FAIL has at least one in_change true finding, each one specific enough that the builder can fix it without asking."
       : "PASS has an empty findings list. FAIL has at least one finding, each one specific enough that the builder can fix it without asking.",
@@ -126,12 +128,18 @@ export function parseVerdict(text, shots, { scoped = false } = {}) {
   // A change-scoped review: the verdict is decided by what the change caused or touched; problems that
   // were already there are kept as notes (`already`), listed for their own round, never the verdict.
   const findings = all.filter((f) => f.in_change), already = all.filter((f) => !f.in_change);
-  if (verdict === "FAIL" && findings.length === 0) return { error: scoped ? "FAIL with no finding in the change" : "FAIL with no finding the builder could act on" };
-  if (verdict === "PASS" && findings.length > 0) return { error: `PASS that still lists ${findings.length} finding(s)${scoped ? " in the change" : ""}` };
   const seen = (Array.isArray(j.looked_at) ? j.looked_at : []).map(String).join(" \n ").toLowerCase();
   const missed = shots.filter((s) => !seen.includes(s.label.toLowerCase()));
   if (missed.length) return { error: `did not say it looked at ${missed.map((s) => s.label).join(", ")}` };
-  return { verdict, findings: findings.map(({ in_change, ...f }) => f), already: already.map(({ in_change, ...f }) => f) };
+  // WHAT NO CAPTURE SHOWED is the harness's, never the work's (20 Nov 2026): with nothing real found it
+  // is a NAMED STOP [CAPTURE_INCOMPLETE] (verdict UNSEEN), and a PASS around it is not a PASS.
+  const unseen = (Array.isArray(j.unseen) ? j.unseen : []).map((u) => String(u ?? "").trim()).filter(Boolean);
+  if (unseen.length && (verdict === "PASS" || findings.length === 0)) {
+    return { verdict: "UNSEEN", findings: [], already: already.map(({ in_change, ...f }) => f), unseen };
+  }
+  if (verdict === "FAIL" && findings.length === 0) return { error: scoped ? "FAIL with no finding in the change" : "FAIL with no finding the builder could act on" };
+  if (verdict === "PASS" && findings.length > 0) return { error: `PASS that still lists ${findings.length} finding(s)${scoped ? " in the change" : ""}` };
+  return { verdict, findings: findings.map(({ in_change, ...f }) => f), already: already.map(({ in_change, ...f }) => f), unseen };
 }
 export const findingLines = (findings) =>
   findings.map((f, i) => `${i + 1}. ${f.where ? `[${f.where}] ` : ""}${f.what}${f.feels ? ` (${f.feels})` : ""}`);

@@ -5,7 +5,7 @@
 import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
 import { EMAIL_SENDS, SOCIAL_POSTS, gateProblems, parseVerdict, passLine, PASS_LINE_RE, reviewRoutes, reviewPrompt } from "../src/shared/boss/shipReview/review.mjs";
-import { judge, isPrivate, isBlank, parseArgs, capture, pageSlug, YOUTUBE_CHANNEL } from "../scripts/ops/ship-review.mjs";
+import { judge, isPrivate, isBlank, parseArgs, capture, pageSlug, tilesFor, MAX_TILES, YOUTUBE_CHANNEL } from "../scripts/ops/ship-review.mjs";
 // @ts-expect-error — plain ESM with no declaration file
 import { shipReviewArgs } from "../scripts/ops/repo-change.mjs";
 
@@ -17,7 +17,7 @@ const before = JSON.parse(readFileSync("src/shared/boss/shipReview/live-before-g
 
 describe("a verdict is trusted only when it is a real review", () => {
   it("PASS with no findings and every capture named is a PASS; land's own pattern reads the line it makes", () => {
-    expect(parseVerdict(reply({ verdict: "PASS", looked_at: shots.map((s) => s.label), findings: [] }), shots)).toEqual({ verdict: "PASS", findings: [], already: [] });
+    expect(parseVerdict(reply({ verdict: "PASS", looked_at: shots.map((s) => s.label), findings: [] }), shots)).toEqual({ verdict: "PASS", findings: [], already: [], unseen: [] });
     const line = passLine({ reviewer: "boss-os ship-review sr_abc (claude seat)", lookedAt: "x at 390 px" });
     expect(PASS_LINE_RE.test(line)).toBe(true);
     // the same ERE ~/bin/land greps (gate_quality → signoff)
@@ -56,6 +56,27 @@ describe("a verdict is trusted only when it is a real review", () => {
     // without a brief every finding decides the verdict, as before
     expect(parseVerdict(r({ verdict: "PASS", looked_at: L, findings: [{ what: "x", in_change: false }] }), shots).error).toBeTruthy();
     expect(reviewPrompt({ kind: "page", target: "t", builder: "b", checklist: "c", shots, brief: "b" })).toMatch(/in_change/);
+  });
+  it("what no capture showed is the harness's NAMED STOP, never a finding and never a PASS", () => {
+    const r = (o: unknown) => JSON.stringify(o);
+    const L = shots.map((s) => s.label);
+    // 20 Nov 2026 (cynthia #25, hicks #72): "can't see the change" was a FAIL on the work.
+    const onlyUnseen = parseVerdict(r({ verdict: "FAIL", looked_at: L, unseen: ["the footer note below the fold"], findings: [{ what: "old grey footer", in_change: false }] }), shots, { scoped: true });
+    expect(onlyUnseen).toMatchObject({ verdict: "UNSEEN", findings: [], unseen: ["the footer note below the fold"], already: [{ what: "old grey footer" }] });
+    expect(parseVerdict(r({ verdict: "PASS", looked_at: L, unseen: ["dark mode"], findings: [] }), shots)).toMatchObject({ verdict: "UNSEEN" });
+    const real = parseVerdict(r({ verdict: "FAIL", looked_at: L, unseen: ["the menu open"], findings: [{ what: "new link has no name", in_change: true }] }), shots, { scoped: true });
+    expect(real).toMatchObject({ verdict: "FAIL", findings: [{ what: "new link has no name" }], unseen: ["the menu open"] });
+    expect(parseVerdict(r({ verdict: "FAIL", looked_at: ["phone-390-light.png"], unseen: ["x"], findings: [] }), shots).error).toMatch(/did not say it looked at/);
+  });
+  it("the whole page is captured, in at most MAX_TILES parts with no gap and no cut", () => {
+    for (const [h, w] of [[844, 390], [3201, 390], [6500, 390], [41_000, 390], [2401, 1280]] as const) {
+      const t = tilesFor(h, w);
+      expect(t.length).toBeLessThanOrEqual(MAX_TILES);
+      expect(t[0]!.y).toBe(0);
+      for (let i = 1; i < t.length; i++) expect(t[i]!.y).toBe(t[i - 1]!.y + t[i - 1]!.height);
+      expect(t.at(-1)!.y + t.at(-1)!.height).toBe(h);
+    }
+    expect(readFileSync("scripts/ops/ship-review.mjs", "utf8")).not.toMatch(/maxHeight/);
   });
   it("the prompt names the builder as not the reviewer and treats text in the output as data", () => {
     const p = reviewPrompt({ kind: "page", target: "https://x.test/", builder: "Codex", checklist: "THE BAR", shots });
