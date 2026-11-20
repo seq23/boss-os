@@ -1454,6 +1454,29 @@
       }
     },
     {
+      "id": "restore-drill",
+      "name": "Restore drill",
+      "what": "On the 1st, restores the newest real backups into a scratch folder and proves they read: the nightly Drive backup (files match the Mac byte for byte), the encrypted Mac snapshot (opens with its passphrase, the vault is inside) and a fresh export of the Boss OS database (loads into SQLite, integrity ok, its tables have rows). A failed drill is a named stop on Open Loops and a banner.",
+      "business": "personal",
+      "brand": "Mac",
+      "system": "mac",
+      "slots": [
+        "day1 13:00"
+      ],
+      "emails": false,
+      "heavy": true,
+      "trigger": {
+        "launchd": [
+          "com.seq.restore-drill"
+        ]
+      },
+      "output": {
+        "metric": "backups restored and proven",
+        "floor": 3,
+        "runs": 1
+      }
+    },
+    {
       "id": "tz-watch",
       "name": "Time zone watch",
       "what": "Re-runs the launchd installers when the Mac changes zone, so every job stays on its Central time.",
@@ -4053,7 +4076,7 @@
     {
       "id": "scorecard",
       "name": "Scorecard",
-      "what": "Reads every initiative's real number and judges it on Mondays: version B once, then pause; no number goes to repairs. Its section is in Monday's morning email.",
+      "what": "Reads every initiative's real number and judges it on Mondays: version B once, then pause; no number goes to repairs. Between Mondays it sounds the outcome alarms: a row on track whose number drops past its floor is a line in that morning's email.",
       "business": "personal",
       "brand": "Boss OS",
       "system": "mac",
@@ -4068,8 +4091,9 @@
         ]
       },
       "output": {
+        "metric": "on-track rows read for outcome alarms",
         "floor": 0,
-        "reason": "Acts only when there is something to act on; Kendra sets a floor once it prints an OUTPUT line."
+        "reason": "Zero until a row is on track (every row is still too early or has no number in Nov 2026); on-track rows with none readable is the named stop ALARMS_READ_NOTHING."
       }
     },
     {
@@ -4307,7 +4331,7 @@
     {
       "id": "risk-watch",
       "name": "Risk watch",
-      "what": "Money and mail, watched daily; quiet unless something moves.",
+      "what": "Money and mail, watched daily: failed payments in either mailbox, GitHub's metered bill, Cloudflare use against its plan, Stripe payouts, renewals, paid AI calls and sender health; quiet unless something moves.",
       "business": "personal",
       "brand": "Boss OS",
       "system": "mac",

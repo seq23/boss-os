@@ -14,11 +14,14 @@
  *
  * Runs on her Mac, daily 06:10 Central (launchd com.seq.boss-scorecard, through the vault, because
  * every key lives there). Mondays it judges (or the first later day when that Monday was missed:
- * judgeReason); other days it only switches back on the workflows of a
- * row she restarted with the one-tap link.
+ * judgeReason); other days it switches back on the workflows of a row she restarted with the one-tap
+ * link, and sounds the OUTCOME ALARMS (owner, 19 Nov 2026): every row last judged "On track" is read
+ * again, and one now past its floor is a line in that morning's email (said once per drop; state in
+ * ~/.boss-os/duties/scorecard-alarms.json).
  *
  *   npm run scorecard:monday                 the real run (Mondays judge; other days restarts only)
  *   npm run scorecard:monday -- --dry        read and judge now, print the states; no email, no switch, no record
+ *   npm run scorecard:monday -- --alarms --dry   run the between-Mondays alarm check now; print, write nothing
  *
  * RULE 0: zero rows, or every row unreadable, is a NAMED STOP (exit 2) — never a quiet green.
  */
@@ -26,9 +29,9 @@ import { execFileSync } from "node:child_process";
 import { readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
-import { addDays, centralDay, emailSection, judge, judgeReason, mondayOnOrBefore, pauseTargets, shapeProblems } from "../../src/shared/boss/scorecard/scorecard.mjs";
+import { addDays, alarmReading, alarmTargets, centralDay, emailSection, judge, judgeReason, mondayOnOrBefore, pauseTargets, shapeProblems } from "../../src/shared/boss/scorecard/scorecard.mjs";
 import { macContext, readMetric } from "./lib/scorecard-readers.mjs";
-import { ORIGIN, bossApi, fixJob } from "./lib/duty-kit.mjs";
+import { ORIGIN, bossApi, fixJob, loadState, movedReadings, saveState, stateMap } from "./lib/duty-kit.mjs";
 import { writeMorningSection } from "../../src/shared/boss/mail/morning.mjs";
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), "..", "..");
@@ -72,6 +75,35 @@ async function applyRestarts(api, state, dry) {
   return out;
 }
 
+/**
+ * The between-Mondays outcome alarms. Reads each "On track" row's judged floor, says a new drop (and a
+ * recovery) once, in that morning's email. Returns the exit code. Rule 0: rows to check but none read is
+ * a named stop; nothing on track is a plain zero, said in the OUTPUT line.
+ */
+export async function outcomeAlarms({ sc, state, ctx, today, dry, read = readMetric, write = writeMorningSection }) {
+  const targets = alarmTargets(sc.rows, state, today);
+  const label = (key) => sc.businesses.find((b) => b.key === key)?.label ?? key;
+  const readings = [];
+  for (const t of targets) readings.push(alarmReading(t, await read(t.row[t.key], ctx), today, label(t.row.business)));
+  console.log(`OUTPUT ${readings.filter((r) => r.state !== "stop").length} on-track rows read for outcome alarms (${targets.length} on track)`);
+  for (const r of readings) console.log(`  [${r.state}] ${r.line}`);
+  if (targets.length && readings.every((r) => r.state === "stop")) {
+    console.error(`NAMED STOP [ALARMS_READ_NOTHING] none of the ${targets.length} on-track rows could be read; the keys or the network are down on this Mac. Monday's run opens the repair.`);
+    return 2;
+  }
+  const prev = loadState("scorecard-alarms");
+  const moved = movedReadings(readings, prev.states ?? {});
+  const lines = moved.filter((r) => r.state === "alert" || (r.state === "ok" && r.was === "alert")).map((r) => r.line);
+  console.log(`outcome alarms ${today}: ${readings.filter((r) => r.state === "alert").length} below floor, ${lines.length} new to say.`);
+  if (dry) return 0;
+  if (lines.length) {
+    try { write("scorecard", { title: `🚨 Scorecard alarm: ${lines.length} result${lines.length === 1 ? "" : "s"} moved past a floor`, lines }); }
+    catch (e) { console.error(`NAMED STOP [MORNING_SECTION_REFUSED] ${e?.message ?? e}; state not saved so the next run says it again.`); return 9; }
+  }
+  saveState("scorecard-alarms", { at: new Date().toISOString(), states: stateMap(readings) });
+  return 0;
+}
+
 export async function main(argv = process.argv.slice(2)) {
   const dry = argv.includes("--dry");
   const now = Date.now();
@@ -92,9 +124,9 @@ export async function main(argv = process.argv.slice(2)) {
   }
   const restarts = await applyRestarts(api, state, dry);
   const reason = judgeReason(today, state?.week);
-  if (!dry && !reason) {
+  if ((!dry && !reason) || argv.includes("--alarms")) {
     console.log(`scorecard: not Monday, nothing judged; ${restarts.length ? restarts.join("; ") : "no restarts waiting"}.`);
-    return 0;
+    return outcomeAlarms({ sc, state, ctx: macContext({ now, sites }), today, dry });
   }
   if (!dry && reason === "missed") console.log(`scorecard: Monday ${mondayOnOrBefore(today)} was missed (the Mac was off); judged now.`);
 

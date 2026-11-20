@@ -232,6 +232,49 @@ export function valueWords(metric, v) {
  * Returns { state, note, next, actions[], record } — `record` is what Boss OS keeps for next week
  * (history gains this week's line). Pure.
  */
+/** Which floor is judged today ("first", "real" or null before the first check), and by when. Pure. */
+export function floorDue(row, rec, today, bDays = 30) {
+  if (rec?.bOn) return { key: rec.missed ?? "first", due: addDays(rec.bOn, bDays) };
+  const firstBy = floorDate(row.first.by, rec?.start), realBy = floorDate(row.real.by, rec?.start);
+  if (realBy && today >= realBy) return { key: "real", due: realBy };
+  if (firstBy && today >= firstBy) return { key: "first", due: firstBy };
+  return { key: null, due: null };
+}
+
+/**
+ * OUTCOME ALARMS (owner, 19 Nov 2026, phase 1 of the veteran quality bar: an alarm when a live
+ * result drops past its floor, not just a red CI). Monday judges every row; between Mondays a row last
+ * judged "On track" is read again each morning on the floor it is judged on, and a number now past its
+ * floor is an alarm the same day. Rows in any other state are already in hand (version B, paused, no
+ * number), so they are left to Monday. Returns the rows to read with the floor key for each. Pure.
+ */
+export function alarmTargets(rows, state, today) {
+  const out = [];
+  for (const row of rows) {
+    const entry = state?.rows?.[row.id];
+    if (entry?.state !== "On track" || !entry.record) continue;
+    const { key } = floorDue(row, entry.record, today);
+    if (key) out.push({ row, key, record: entry.record });
+  }
+  return out;
+}
+
+/**
+ * One alarm reading (`{ key, state, line }`, the duty-kit reading shape) for a target and what its
+ * reader returned now: "alert" past the floor, "ok" at or above it, "stop" when it cannot be told. Pure.
+ */
+export function alarmReading({ row, key, record }, read, today, businessLabel = row.business) {
+  const k = `floor:${row.id}`;
+  const m = row[key];
+  if (read?.error) return { key: k, state: "stop", line: `${row.initiative}: ${plainStop(read.error)}` };
+  const mv = metricValue(m, key, read?.raw ?? null, record.history, today);
+  const ok = meets(m, key, mv.value, record.history, today);
+  if (ok === null) return { key: k, state: "stop", line: `${row.initiative}: ${mv.note ?? "nothing to measure yet"}` };
+  return ok
+    ? { key: k, state: "ok", line: `${row.initiative} (${businessLabel}) is back at its floor: ${valueWords(m, mv.value)} ${m.label} (floor ${floorWords(m)}).` }
+    : { key: k, state: "alert", line: `${row.initiative} (${businessLabel}) dropped below its floor: ${valueWords(m, mv.value)} ${m.label} (floor ${floorWords(m)}). It was on track at the last Monday check; if it is still down next Monday, version B starts.` };
+}
+
 export function judge({ row, record, reading, today, defaults = {} }) {
   const bDays = defaults.versionBDays ?? 30;
   const stuckWeeks = defaults.stuckWeeks ?? 3;
@@ -252,7 +295,6 @@ export function judge({ row, record, reading, today, defaults = {} }) {
   }
   let state; let note = ""; let next = null;
   const firstBy = floorDate(row.first.by, rec.start);
-  const realBy = floorDate(row.real.by, rec.start);
 
   if (!rec.start) {
     if (reading.started?.error) { state = "No number"; note = `Could not tell whether it has started: ${plainStop(reading.started.error)}`; }
@@ -265,11 +307,7 @@ export function judge({ row, record, reading, today, defaults = {} }) {
       state = "No number";
       note = broken.map((k) => (vals[k].error ? `${row[k].label}: ${plainStop(vals[k].error)}` : `${row[k].label} has not changed in ${stuckWeeks} weeks`)).join("; ");
     } else {
-      // Which floor is being judged today, and by when.
-      let key = null; let due = null;
-      if (rec.bOn) { key = rec.missed ?? "first"; due = addDays(rec.bOn, bDays); }
-      else if (today >= realBy) { key = "real"; due = realBy; }
-      else if (today >= firstBy) { key = "first"; due = firstBy; }
+      const { key, due } = floorDue(row, rec, today, bDays);
       if (!key) { state = "Too early"; next = firstBy; note = `First judged ${shortDate(firstBy)}.`; }
       else if (rec.bOn && today < due) { state = "Trying version B"; next = due; note = `Version B since ${shortDate(rec.bOn)}; judged again ${shortDate(due)}.`; }
       else {
