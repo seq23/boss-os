@@ -1962,3 +1962,8 @@ a.btn { text-decoration: none; text-align: center; display: inline-block; }
 .loops-closed { margin-top: 18px; }
 .loops-focus { border-color: var(--gold); }
 .loops-confirm input { overflow-wrap: anywhere; }
+/* ☰ More → Succession Book */
+.succession { max-width: 760px; overflow-wrap: anywhere; }
+.succession .succession-h2 { margin-top: 28px; }
+.succession .succession-h3 { font-size: 16px; margin: 18px 0 6px; }
+.succession code { font-family: var(--mono); font-size: 13px; background: var(--card-2); padding: 1px 4px; border-radius: 2px; }

@@ -32,6 +32,7 @@ import { judgement } from "./routes/judgement";
 import { lp } from "./routes/lp";
 import { diaryRoutes } from "./routes/diary";
 import { deliverables } from "./routes/deliverables";
+import { succession } from "./routes/succession";
 import { siteAudit } from "./routes/siteAudit";
 import { capital } from "./routes/capital";
 import { grid } from "./routes/grid";
@@ -177,6 +178,7 @@ app.route("/api/diary", diaryRoutes);
 app.route("/api/waiting-on", waitingOn);
 // The register of owned work. The escalating half of it lands on Today; this is the list itself.
 app.route("/api/deliverables", deliverables);
+app.route("/api/succession", succession);
 // Danielle's weekly Ahrefs run reports back here. A local job, because reading her mailbox and
 // opening a PR in a working copy are both things a Worker cannot do.
 app.route("/api/engineering", siteAudit);

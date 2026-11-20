@@ -690,6 +690,37 @@ lint_plist "$BRAINS_PULL_PLIST"
 launchctl load "$BRAINS_PULL_PLIST"
 echo "Installed $BRAINS_PULL_LABEL — hourly at :23."
 
+# THE SUCCESSION BOOK (owner ruling 19 Nov 2026): Scooter's emergency book, rebuilt the 1st of
+# every month at 06:20 Central from the brains, HANDOFF and GitHub; stored behind the Boss OS
+# passcode and copied to her Drive (scripts/ops/succession-book.mjs). No model reads it.
+SUCCESSION_LOGS="$HOME/Library/Logs/boss-succession"
+mkdir -p "$SUCCESSION_LOGS"
+SUCCESSION_LABEL="com.seq.boss-succession-book"
+SUCCESSION_PLIST="$HOME/Library/LaunchAgents/$SUCCESSION_LABEL.plist"
+cat > "$SUCCESSION_PLIST" <<SUCCEOF
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN"
+  "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0"><dict>
+  <key>Label</key><string>$SUCCESSION_LABEL</string>
+  <key>ProgramArguments</key>
+  <array>
+    <string>/bin/bash</string>
+    <string>-lc</string>
+    <string>cd $REPO &amp;&amp; npm run --silent vault:run -- npm run --silent succession:build</string>
+  </array>
+  <key>StartCalendarInterval</key>
+  <dict><key>Day</key><integer>1</integer><key>Hour</key><integer>6</integer><key>Minute</key><integer>20</integer></dict>
+  <key>RunAtLoad</key><false/>
+  <key>StandardOutPath</key><string>$SUCCESSION_LOGS/build.log</string>
+  <key>StandardErrorPath</key><string>$SUCCESSION_LOGS/build.err</string>
+</dict></plist>
+SUCCEOF
+launchctl unload "$SUCCESSION_PLIST" 2>/dev/null || true
+lint_plist "$SUCCESSION_PLIST"
+launchctl load "$SUCCESSION_PLIST"
+echo "Installed $SUCCESSION_LABEL — the 1st at 06:20 Central."
+
 COHESION_LABEL="com.seq.boss-cohesion"
 COHESION_PLIST="$HOME/Library/LaunchAgents/$COHESION_LABEL.plist"
 cat > "$COHESION_PLIST" <<COHEOF
@@ -1816,6 +1847,7 @@ require_loaded "$SIMONE_CMD_LABEL"
 # WITH THE JOBS, 31 October: the brains copy and the Monday cohesion check.
 require_loaded "$BRAINS_PULL_LABEL"
 require_loaded "$COHESION_LABEL"
+require_loaded "$SUCCESSION_LABEL"
 # WITH THE JOB, 1 November: real job photos first, before the Marketplace listings run.
 require_loaded "$PNP_PHOTOS_LABEL"
 require_loaded "$SCORECARD_LABEL"

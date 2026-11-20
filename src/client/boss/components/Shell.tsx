@@ -101,7 +101,7 @@ function useReadingPosition() {
   return { progress, scrollable, atEnd };
 }
 
-export type TabId = "today" | "inbox" | "capital" | "spirit" | "team" | "brains" | "repos" | "domains" | "sites" | "accounts" | "emails" | "social" | "schedule" | "scorecard" | "loops" | "updates" | "validators" | "memory" | "trading" | "vault" | "systems";
+export type TabId = "today" | "inbox" | "capital" | "spirit" | "team" | "brains" | "repos" | "domains" | "sites" | "accounts" | "emails" | "social" | "schedule" | "scorecard" | "loops" | "updates" | "validators" | "memory" | "trading" | "vault" | "systems" | "succession";
 
 const ICONS: Record<TabId, ReactNode> = {
   today: <path d="M12 3a9 9 0 100 18 9 9 0 000-18zM12 7v5l3.5 2" />,
@@ -124,6 +124,7 @@ const ICONS: Record<TabId, ReactNode> = {
   memory: <path d="M12 4v16M12 7a3 3 0 013-3h4v13h-4a3 3 0 00-3 3M12 7a3 3 0 00-3-3H5v13h4a3 3 0 013 3" />,
   trading: <path d="M3 17l5-6 4 3 5-8M21 6h-4M21 6v4" />,
   vault: <path d="M4 4h16v16H4zM12 9a3 3 0 100 6 3 3 0 000-6zM12 15v3" />,
+  succession: <path d="M6 3h11a2 2 0 012 2v16H8a2 2 0 01-2-2zM6 19a2 2 0 012-2h11M10 8h6M10 12h4" />,
   systems: <path d="M12 15a3 3 0 100-6 3 3 0 000 6zM12 2v3M12 19v3M2 12h3M19 12h3M4.9 4.9l2.1 2.1M17 17l2.1 2.1M19.1 4.9L17 7M7 17l-2.1 2.1" />,
 };
 
@@ -131,7 +132,7 @@ const ICONS: Record<TabId, ReactNode> = {
 const LABELS: Record<TabId, string> = {
   today: "Today", inbox: "Inbox", capital: "Capital",
   spirit: "Spirit", team: "Team", brains: "Brains", repos: "Repos", domains: "Domains", sites: "Sites", accounts: "Accounts", emails: "Email Map", social: "Social Map", schedule: "Schedule", scorecard: "Scorecard", loops: "Open Loops", updates: "Updates", validators: "Validators", memory: "Memory", trading: "Trading", vault: "Vault",
-  systems: "Systems",
+  systems: "Systems", succession: "Succession Book",
 };
 
 /*
@@ -140,7 +141,7 @@ const LABELS: Record<TabId, string> = {
  * Trading, Vault, Systems and Operations (the settings) are in "☰ More", two taps away.
  */
 export const PRIMARY_TABS: readonly TabId[] = ["today", "inbox", "capital", "spirit"];
-export const MORE_TABS: readonly TabId[] = ["team", "brains", "repos", "domains", "sites", "accounts", "emails", "social", "schedule", "scorecard", "loops", "updates", "validators", "memory", "trading", "vault", "systems"];
+export const MORE_TABS: readonly TabId[] = ["team", "brains", "repos", "domains", "sites", "accounts", "emails", "social", "schedule", "scorecard", "loops", "updates", "validators", "memory", "trading", "vault", "systems", "succession"];
 
 export function Shell({
   tab, onTab, title, lane, pending, onSettings, settingsOpen, offline, waiting, onBack, children,

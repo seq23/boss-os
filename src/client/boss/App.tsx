@@ -24,6 +24,7 @@ import { OpenLoops } from "./pages/OpenLoops";
 import { Updates } from "./pages/Updates";
 import { Validators } from "./pages/Validators";
 import { Trading } from "./pages/Trading";
+import { Succession } from "./pages/Succession";
 import { Vault } from "./pages/Vault";
 import { Settings } from "./pages/Settings";
 import { Systems } from "./pages/Systems";
@@ -51,7 +52,7 @@ import { readRoute, readFocus, readGateFocus, type Route } from "./nav";
 const TITLES: Record<TabId, string> = {
   today: "Today", inbox: "Inbox", capital: "Capital",
   spirit: "Spirit", team: "Team", brains: "Brains", repos: "Repos", domains: "Domains", sites: "Sites", accounts: "Accounts", emails: "Email Map", social: "Social Map", schedule: "Schedule", scorecard: "Scorecard", loops: "Open Loops", updates: "Updates", validators: "Validators", memory: "Memory", trading: "Trading", vault: "Vault",
-  systems: "Systems",
+  systems: "Systems", succession: "Succession Book",
 };
 
 export default function App() {
@@ -327,6 +328,8 @@ export default function App() {
         <Trading />
       ) : tab === "vault" ? (
         <Vault />
+      ) : tab === "succession" ? (
+        <Succession />
       ) : (
         <Systems />
       )}

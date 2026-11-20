@@ -2794,6 +2794,10 @@
     "boss-os-mail-alarm": {
       "kind": "system",
       "why": "Keeps the system running or checks it; it has no customer result of its own."
+    },
+    "succession-book": {
+      "kind": "system",
+      "why": "Keeps the emergency book current for Scooter; it has no customer result of its own."
     }
   }
 }

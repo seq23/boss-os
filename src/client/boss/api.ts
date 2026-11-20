@@ -134,6 +134,7 @@ export const api = {
   // Brains (31 Oct 2026): one document per business, read first by every employee.
   brains: () => call<{ brains: BrainSummary[] }>("/brains"),
   brain: (slug: string) => call<BrainFull>(`/brains/${encodeURIComponent(slug)}`),
+  succession: () => call<{ markdown: string; built_at: string; bytes: number }>("/succession"),
   saveBrainSection: (slug: string, section: string, text: string) =>
     call<BrainFull>(`/brains/${encodeURIComponent(slug)}`, { method: "PUT", headers: { "content-type": "application/json" }, body: JSON.stringify({ section, text }) }),
   saveBrainBody: (slug: string, body_md: string) =>
