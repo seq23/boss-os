@@ -29,6 +29,7 @@
     "practice": "node scripts/vault/vault.mjs run -- node scripts/ops/practice.mjs",
     "hicks:dry-run": "node scripts/ops/hicks-update-dry-run.mjs",
     "brains:pull": "node scripts/brains/pull.mjs",
+    "succession:build": "node scripts/ops/succession-book.mjs",
     "validators:matrix": "node scripts/ops/validator-matrix.mjs",
     "brains:cohesion": "bash scripts/ops/self-update-checkout.sh && node scripts/brains/cohesion-check.mjs",
     "brains:t2r-numbers": "bash scripts/ops/self-update-checkout.sh && node scripts/brains/t2r-numbers.mjs",

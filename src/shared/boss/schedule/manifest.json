@@ -1316,6 +1316,29 @@
       }
     },
     {
+      "id": "succession-book",
+      "name": "Succession Book rebuild",
+      "what": "Rebuilds Scooter's emergency book from the brains, the handoff notes and GitHub; keeps it behind the Boss OS passcode and in her Drive.",
+      "business": "personal",
+      "brand": "Boss OS",
+      "system": "mac",
+      "slots": [
+        "day1 06:20"
+      ],
+      "emails": false,
+      "heavy": false,
+      "trigger": {
+        "launchd": [
+          "com.seq.boss-succession-book"
+        ]
+      },
+      "output": {
+        "metric": "books built",
+        "floor": 1,
+        "runs": 1
+      }
+    },
+    {
       "id": "brokerage-sourcing",
       "name": "Brokerage sourcing sweep",
       "what": "Finds new institutional buyers for late-stage tech secondaries.",
