@@ -24,21 +24,25 @@ export function Succession() {
 }
 
 /** An anchor id for a heading: "5. First day, …" → "s-5-first-day". */
-export const headingId = (text: string) => `s-${text.toLowerCase().replace(/\*\*/g, "").replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "").slice(0, 40)}`;
+export const headingId = (text: string) => `s-${text.toLowerCase().replace(/\*\*/g, "").replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "").slice(0, 60)}`;
 
-/** The book is long on a phone: its sections, and Day 1, one tap away. */
+/** The sub-sections he needs fastest, linked under their section in the contents. */
+const KEY_SUBSECTIONS = /^(How to get into each account|Social accounts matrix|App Store apps|First day|First week|First month|Every automatic email|If the Mac dies|Domains to keep|Bills that must stay paid|Scheduled jobs and how to pause them)/;
+
+/** The book is long on a phone: its sections, and the key sub-sections, one tap away. */
 function Contents({ markdown }: { markdown: string }) {
-  const h2 = [...markdown.matchAll(/^##\s+(.+)$/gm)].map((m) => m[1]!.trim());
-  const day1 = /^###\s+(First day.*)$/m.exec(markdown)?.[1]?.trim();
+  const items: { text: string; sub: boolean }[] = [];
+  for (const m of markdown.matchAll(/^(##|###)\s+(.+)$/gm)) {
+    const text = m[2]!.trim();
+    if (m[1] === "##") items.push({ text, sub: false });
+    else if (KEY_SUBSECTIONS.test(text)) items.push({ text, sub: true });
+  }
   return (
     <nav className="succession-toc" aria-label="Contents">
       <p className="succession-toc-h">Contents</p>
       <ul>
-        {h2.map((t) => (
-          <Fragment key={t}>
-            <li><a href={`#${headingId(t)}`}>{t}</a></li>
-            {day1 && /^5\./.test(t) && <li className="succession-toc-sub"><a href={`#${headingId(day1)}`}>{day1}</a></li>}
-          </Fragment>
+        {items.map((it) => (
+          <li key={it.text} className={it.sub ? "succession-toc-sub" : undefined}><a href={`#${headingId(it.text)}`}>{it.text.replace(/\s*\(.*\)$/, "")}</a></li>
         ))}
       </ul>
     </nav>

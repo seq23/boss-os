@@ -8,7 +8,7 @@
  *     never in this public repo;
  *   - her repo categories (the personal brain) and the App Store apps table (the spry brain), both
  *     through the Boss OS brain API; the live `gh repo list seq23`;
- *     and this repo's Repos, Domains and Social maps.
+ *     and this repo's Repos, Domains, Social and Email maps.
  *   The other brains and ~/HANDOFF.md PINNED are read by hand into the template's own words when it
  *   is revised: pasted raw they carried developer notes, stale dates and brokerage detail a fresh
  *   review failed (20 Nov 2026).
@@ -53,8 +53,21 @@ export class Stop extends Error {
 /** A table cell: one line, no pipe. */
 const cell = (v) => String(v ?? "").replace(/\s+/g, " ").replace(/\|/g, "/").trim() || "–";
 
-/** The maps speak to her ("your account"); the book speaks to Scooter about her. */
-export const herWords = (t) => String(t ?? "").replace(/\bYour\b/g, "Sequoia's").replace(/\byour\b/g, "her").replace(/\bYou\b/g, "Sequoia").replace(/\byou\b/g, "Sequoia");
+/** The maps speak to her ("your account"); the book speaks to Scooter about her. Quoted text is kept word for word. */
+const NOT_VERBS = new Set(["for", "to", "in", "on", "at", "with", "about", "from", "a", "an", "the", "and", "or", "by", "as", "if", "when", "that", "this", "today", "only", "directly", "all", "first", "know", "can", "will", "may", "might", "must", "should", "could", "would", "did", "had"]);
+const third = (v) => ({ are: "is", have: "has", were: "was", do: "does", go: "goes" })[v]
+  ?? (/(s|sh|ch|x|z)$/.test(v) ? `${v}es` : /[^aeiou]y$/.test(v) ? `${v.slice(0, -1)}ies` : `${v}s`);
+function herPlain(t) {
+  return t
+    .replace(/\b[Yy]ou're\b/g, "Sequoia is").replace(/\b[Yy]ou've\b/g, "Sequoia has").replace(/\b[Yy]ou'll\b/g, "Sequoia will").replace(/\b[Yy]ou'd\b/g, "Sequoia would")
+    .replace(/\b(Do|Did|Does|Will|Can|Are|Have) you\b/g, (_m, aux) => `${({ Do: "Does", Are: "Is", Have: "Has" })[aux] ?? aux} Sequoia`)
+    .replace(/\b[Yy]ou((?: still| also| already| now| once| first| then)?) ([a-z]+)\b/g, (m, adv, w, off, str) => {
+      if (/(Does|Did|Will|Can|Is|Has) Sequoia$/.test(str.slice(0, off).trimEnd())) return m;
+      return NOT_VERBS.has(w) || /(ed|s)$/.test(w) ? `Sequoia${adv} ${w}` : `Sequoia${adv} ${third(w)}`;
+    })
+    .replace(/\bYour\b/g, "Her").replace(/\byour\b/g, "her").replace(/\byours\b/g, "hers").replace(/\bYou\b/g, "Sequoia").replace(/\byou\b/g, "Sequoia");
+}
+export const herWords = (t) => String(t ?? "").split(/("[^"]*"|“[^”]*”)/).map((part, i) => (i % 2 ? part : herPlain(part))).join("");
 
 export function table(head, rows) {
   if (!rows.length) return "_(none)_";
@@ -95,7 +108,8 @@ export function reposBlock(live, mapRows, cats) {
     .map((r) => {
       const m = byName.get(r.name);
       const what = herWords(m?.what ?? r.description ?? "") || "No description yet; ask Claude to read the repo.";
-      return [`github.com/seq23/${r.name}`, repoCategory(r.name, cats, m), what, r.visibility === "PRIVATE" ? "private" : "public"];
+      const whose = m?.business === "brokerage" ? "Brokerage: do not touch" : /\bScooter's\b/.test(m?.what ?? "") ? "yours (Scooter's)" : repoCategory(r.name, cats, m);
+      return [`github.com/seq23/${r.name}`, whose, what, r.visibility === "PRIVATE" ? "private" : "public"];
     });
   return `${rows.length} repos, live from GitHub.\n\n${table(["Repo", "Whose", "What it is", "Visibility"], rows)}`;
 }
@@ -120,20 +134,116 @@ export function appsBlock(spryBody) {
 }
 
 /** Every domain she keeps, its registrar and expiry: renew these, never let one lapse. */
-export function domainsBlock(domains) {
-  const rows = (domains.rows ?? []).filter((r) => r.tier === "keep")
+export function domainsBlock(domains, now = new Date()) {
+  const soon = new Date(now.getTime() + 60 * 86_400_000).toISOString().slice(0, 10);
+  const rows = (domains.rows ?? []).filter((r) => r.tier === "keep" || r.tier === "sunset")
     .sort((a, b) => String(a.expires ?? "9999").localeCompare(String(b.expires ?? "9999")) || a.domain.localeCompare(b.domain))
-    .map((r) => [r.domain, r.registrar, r.expires ?? "not known yet", herWords(r.mail_words ?? "")]);
+    .map((r) => [r.domain, r.expires && r.expires <= soon ? `RENEW NOW, before ${r.expires}` : r.tier === "keep" ? "Keep: renew" : "Keep for now: renew unless Claude confirms nothing uses it", r.registrar, r.expires ?? "not known yet", herWords(r.mail_words ?? "")]);
   if (!rows.length) throw new Stop("NO_DOMAINS", "The Domains map has no domain marked keep.");
-  return table(["Domain", "Registrar (where to renew)", "Paid until", "Email on it"], rows);
+  return table(["Domain", "Keep or let go", "Registrar (where to renew)", "Paid until", "Email on it"], rows);
 }
 
-/** The Social Map's live accounts: status only; the logins are in the matrix above. */
+/** The Social Map's live profiles: status only (the logins are in the hand-written matrix). */
+export const SOCIAL_WORDS = { live_auto: "Live, posts automatically", live_manual: "Live, posted by hand", paused: "Off: ask Claude whether on purpose or broken" };
 export function socialBlock(social) {
-  const statuses = social.statuses ?? {};
-  const rows = (social.rows ?? []).filter((r) => r.status === "live_auto" || r.status === "live_manual" || r.status === "paused")
-    .map((r) => [r.business, r.platform, r.handle || r.url || "", statuses[r.status] ?? r.status]);
+  const label = Object.fromEntries((social.businesses ?? []).map((b) => [b.key, b.label]));
+  const rows = (social.rows ?? []).filter((r) => r.status in SOCIAL_WORDS && !/^GitHub/i.test(r.platform ?? ""))
+    .map((r) => [label[r.business] ?? r.business, r.platform, r.handle || r.url || "", SOCIAL_WORDS[r.status]]);
   return table(["Business", "Platform", "Handle", "Status"], rows);
+}
+
+/** Who an Email Map sender writes to, in the words Day 1 acts on. Order is the table's order. */
+export const EMAIL_KINDS = [
+  ["brokerage", "Brokerage: stop on Day 1; do not read"],
+  ["tap", "Sends as Sequoia when a button is tapped: stop on Day 1; never tap"],
+  ["outreach", "Outreach in her name: stop on Day 1"],
+  ["customers", "Customers (receipts, sign-ins, replies): leave on"],
+  ["friends", "A friend's or client's business: theirs, leave on"],
+  ["her", "Sequoia only: harmless, leave on or pause"],
+];
+const OUTREACH = /\b(prospects?|LPs?|LP list|offices|institutions|communities|brands|introduced|business address|businesses \()\b/i;
+export function emailKind(row) {
+  const to = String(row.to ?? "");
+  if (row.business === "brokerage") return "brokerage";
+  if (/send as is|\bgo\?|yes, go|approve and|approved card|her own words sent as/i.test(`${row.what} ${row.pause} ${row.trigger ?? ""}`)) return "tap";
+  if (/^(none|no one)/i.test(to)) return null;
+  if (/^you\b/i.test(to)) return "her";
+  if (row.business === "friends" || /\bValerie\b|studio's owner/.test(to)) return "friends";
+  if (OUTREACH.test(to)) return "outreach";
+  return "customers";
+}
+
+/**
+ * How to stop an email, as a sentence Scooter can follow: never the raw command (Claude finds it in
+ * the Email Map by its id). A switch that is not an action ("already off", "do not tap Send") is said as is.
+ */
+export function stopWords(row) {
+  const p = String(row.pause ?? "").trim();
+  if (!p || /^(–|-|none)$/i.test(p)) return "Nothing to do.";
+  if (/^(tap|do not|don't|already|nothing|leave|it stops|stops|pausing|it is|retired)/i.test(p)) return herWords(p);
+  const receipts = /RESEND_API_KEY|resend/i.test(p) ? " (this also stops customers' receipts)" : "";
+  return `Ask Claude: "Stop the Email Map sender ${row.id}."${receipts}`;
+}
+
+/** Every automatic email, from the Email Map, grouped by who it writes to, with how to stop it. */
+export function emailsBlock(emailMap) {
+  const label = Object.fromEntries((emailMap.businesses ?? []).map((b) => [b.key, b.label]));
+  const rows = (emailMap.rows ?? []).map((r) => ({ r, kind: emailKind(r) })).filter((x) => x.kind);
+  if (!rows.length) throw new Stop("NO_EMAIL_MAP", "The Email Map has no senders, so the emails could not be listed.");
+  const order = Object.fromEntries(EMAIL_KINDS.map(([k], i) => [k, i]));
+  const words = Object.fromEntries(EMAIL_KINDS);
+  rows.sort((a, b) => order[a.kind] - order[b.kind] || String(a.r.business).localeCompare(String(b.r.business)));
+  return `${rows.length} automatic emails, from Boss OS › Email Map.\n\n${table(["Who it writes to", "Business", "What it is", "Sent to", "How to stop it"], rows.map(({ r, kind }) => [
+    words[kind], label[r.business] ?? r.business, herWords(r.what), herWords(r.to), stopWords(r),
+  ]))}`;
+}
+
+/** Every account a job posts to by itself, from the Social Map. Posts speak for the brand, not for her. */
+export function postingBlock(social) {
+  const label = Object.fromEntries((social.businesses ?? []).map((b) => [b.key, b.label]));
+  const rows = (social.rows ?? []).filter((r) => r.status === "live_auto" && r.posts?.by === "job" && !/^GitHub/i.test(r.platform ?? ""))
+    .map((r) => [label[r.business] ?? r.business, r.platform, herWords(r.posts.what), `Ask Claude: "Pause the job that posts to ${r.platform} for ${label[r.business] ?? r.business}."`]);
+  return `${rows.length} accounts post automatically (brand posts, never personal messages).\n\n${table(["Business", "Platform", "What posts", "How to stop it"], rows)}`;
+}
+
+/** Every "[Sequoia fills …]" and "[Sequoia confirms …]" in the built book, with its section, so none is missed. */
+export function gapsBlock(md) {
+  const rows = [];
+  let sectionName = "Top of the book";
+  let sub = "";
+  let header = null;
+  for (const line of String(md).split("\n")) {
+    if (!line.trim().startsWith("|")) header = null;
+    const h2 = /^##\s+(.+)$/.exec(line);
+    if (h2) { sectionName = h2[1].trim(); sub = ""; continue; }
+    const h3 = /^###\s+(.+)$/.exec(line);
+    if (h3) { sub = h3[1].trim(); continue; }
+    const isRow = line.trim().startsWith("|");
+    if (isRow && /^\|[\s|:-]+\|$/.test(line.trim())) continue;
+    const cells = isRow ? line.trim().replace(/^\||\|$/g, "").split("|").map((c) => c.trim().replace(/\*\*/g, "")) : null;
+    if (isRow && !header) { header = cells; continue; }
+    for (const m of line.matchAll(/\[Sequoia (fills|confirms)([^\]]*)\]/g)) {
+      if (line[(m.index ?? 0) - 1] === '"') continue; // the marker named in a sentence, not a blank
+      const inside = m[2].replace(/^[:,\s]+/, "").trim();
+      let where;
+      if (cells) {
+        const col = cells.findIndex((c) => c.includes(m[0].replace(/\*\*/g, "")));
+        const name = cells[0].replace(m[0], "").trim() || "row";
+        const platform = /platform/i.test(header?.[1] ?? "") ? ` ${cells[1]}` : "";
+        where = `${name}${platform} › ${header?.[col] ?? "a cell"}`;
+      } else {
+        const at = m.index ?? 0;
+        const prev = line.lastIndexOf(". ", at);
+        const start = prev < 0 ? 0 : prev + 2;
+        const end = line.indexOf(". ", at);
+        where = line.slice(start, end < 0 ? undefined : end + 1).replace(m[0], "…").replace(/\*\*/g, "").replace(/^[\s\-\d.]+/, "").trim();
+        if (where.length > 160) where = `${where.slice(0, 160).replace(/\s+\S*$/, "")} …`;
+        where = where.replace(/\.$/, "");
+      }
+      rows.push([sub ? `${sectionName} › ${sub}` : sectionName, m[1] === "fills" ? "Fill in" : "Confirm", inside ? `${where}: ${inside}` : where]);
+    }
+  }
+  return rows.length ? `${rows.length} blanks.\n\n${table(["Where", "Do", "What"], rows)}` : "None: every blank is filled.";
 }
 
 /** Things that must never be in the book. Returns problems (empty = safe). */
@@ -148,16 +258,20 @@ export function safetyProblems(md) {
   return p;
 }
 
-export function buildBook({ template, live, mapRows, cats, domains, social, spryBody, now = new Date() }) {
+export function buildBook({ template, live, mapRows, cats, domains, social, emailMap, spryBody, now = new Date() }) {
   if (!String(template ?? "").trim()) throw new Stop("NO_TEMPLATE", "The template is empty.");
   if (!live.length) throw new Stop("NO_REPOS", "`gh repo list seq23` returned no repos.");
-  const md = fillBlocks(template, {
+  const firstPass = fillBlocks(template, {
     apps: appsBlock(spryBody),
     repos: reposBlock(live, mapRows, cats),
-    domains: domainsBlock(domains),
+    domains: domainsBlock(domains, now),
     social: socialBlock(social),
+    emails: emailsBlock(emailMap),
+    posting: postingBlock(social),
     built: now.toISOString().slice(0, 10),
+    gaps: "",
   });
+  const md = firstPass.replace(/(<!-- GEN:gaps -->)[\s\S]*?(<!-- \/GEN:gaps -->)/, (_m, a, b) => `${a}\n${gapsBlock(firstPass)}\n${b}`);
   const problems = safetyProblems(md);
   if (problems.length) throw new Stop("UNSAFE_CONTENT", `The built book holds ${problems.join(", ")}; nothing was stored.`);
   return md;
@@ -247,6 +361,7 @@ export async function run({ argv = process.argv.slice(2), env = process.env, fet
     cats,
     domains: readJson("src/shared/boss/maps/domains.json"),
     social: readJson("src/shared/boss/socialMap/manifest.json"),
+    emailMap: readJson("src/shared/boss/emailMap/manifest.json"),
     spryBody: spry?.body_md,
   });
   const local = join(dirname(templatePath), "book.md");

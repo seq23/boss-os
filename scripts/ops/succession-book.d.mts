@@ -9,9 +9,16 @@ export function fillBlocks(template: string, blocks: Record<string, string>): st
 export function repoCategory(name: string, cats: any, mapRow?: any): string;
 export function reposBlock(live: any[], mapRows: any[], cats: any): string;
 export function appsBlock(spryBody: unknown): string;
-export function domainsBlock(domains: any): string;
+export function domainsBlock(domains: any, now?: Date): string;
+export const SOCIAL_WORDS: Record<string, string>;
 export function socialBlock(social: any): string;
+export const EMAIL_KINDS: [string, string][];
+export function emailKind(row: any): string | null;
+export function stopWords(row: any): string;
+export function gapsBlock(md: string): string;
+export function emailsBlock(emailMap: any): string;
+export function postingBlock(social: any): string;
 export function safetyProblems(md: string): string[];
 export function mdToHtml(md: string, title: string): string;
-export function buildBook(input: { template: string; live: any[]; mapRows: any[]; cats: any; domains: any; social: any; spryBody?: string; now?: Date }): string;
+export function buildBook(input: { template: string; live: any[]; mapRows: any[]; cats: any; domains: any; social: any; emailMap: any; spryBody?: string; now?: Date }): string;
 export function run(opts?: Record<string, unknown>): Promise<{ md: string; stored: boolean }>;
