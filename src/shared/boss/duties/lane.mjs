@@ -142,13 +142,15 @@ export function dutyRequestIn(subject, body, roster) {
  *   other    — anything else: a note on the draft, nothing created
  *   empty    — no readable text
  *
- * `readReply` is the repo lane's reader, reused rather than copied; this only splits its `held`
- * into the two things she can mean by it.
+ * `readReply` is the repo lane's reader, reused rather than copied (with the first read's reading when there is one);
+ * this only splits its `held` into the two things she can mean by it.
  */
-export function readDutyReply(text) {
+export function readDutyReply(text, read = null) {
   // The token she kept or typed is an address, not part of her answer: "approved [dd_x]" is "approved".
   text = String(text ?? "").replace(/\s*\[dd_[a-z0-9]+\]\s*/gi, " ").trim();
-  const r = readReply(text);
+  // The first read decides (19 Nov 2026) when it read approved or held; a draft has no preview, so any other reading
+  // leaves her words to the judged keywords.
+  const r = readReply(text, read === "approved" || read === "held" ? read : null);
   if (r.mode === "approved") return { mode: "approved", text: r.text };
   if (r.mode === "empty") return { mode: "empty", text: "" };
   const first = String(text ?? "").trim().split(/\r?\n/).map((l) => l.trim()).find((l) => l) ?? "";

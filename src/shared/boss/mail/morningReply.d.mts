@@ -7,6 +7,7 @@ export type MorningCommand =
   | { kind: "rule"; words: string };
 export function morningCommands(text: unknown): { commands: MorningCommand[]; rest: string };
 export function commandOf(line: unknown): MorningCommand | null;
+export function commandsFromRead(readCommands: ReadonlyArray<{ kind: string; n: number | null; text: string }> | null | undefined): MorningCommand[];
 export const KNOWN_RULES: ReadonlyArray<{ re: RegExp; said: string; coach?: "harder" | "softer" }>;
 export function knownRule(words: unknown): { re: RegExp; said: string; coach?: "harder" | "softer" } | null;
 export function coachPressure(brainMd: unknown): "harder" | "softer";

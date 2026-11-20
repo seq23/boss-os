@@ -26,7 +26,7 @@ export function preApprovalIn(text: string): string | null;
 export function draftToken(id: string): string;
 export function draftTokenIn(text: string | null | undefined): string | null;
 export function dutyRequestIn(subject: string, body: string, roster: LaneSeat[]): DutyRequest | DutyRequestError | null;
-export function readDutyReply(text: string): { mode: "approved" | "changes" | "held" | "other" | "empty"; text: string };
+export function readDutyReply(text: string, read?: string | null): { mode: "approved" | "changes" | "held" | "other" | "empty"; text: string };
 export function weekdayIn(text: string): number | null;
 export function hourIn(text: string): { hour: number; minute: number } | null;
 export function pickSlot(

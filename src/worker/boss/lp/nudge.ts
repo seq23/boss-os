@@ -1,4 +1,6 @@
 import type { Env } from "../env";
+import { sentencesOf, standingIn } from "../../../shared/boss/text/wholeSentence.mjs";
+import { logReplyDecision, type ReplyDecision } from "../intake/firstRead";
 import { audit } from "../lib/audit";
 import { holdThreadReply } from "../wealth/gmailDraft";
 import { sendDraft } from "../routes/lpTap";
@@ -81,11 +83,34 @@ export function nudgeAddressesIn(text: string): string[] {
 }
 
 /**
+ * The keyword last resort, judged (19 Nov 2026): only the addresses in a sentence whose "nudge" stands. "Don't nudge
+ * ann@…", "nudge ann@… if she hasn't replied by Friday", "Ann said to nudge bob@…" and "should I nudge ann@…?" send
+ * nothing. Pure.
+ */
+export function judgedNudgeAddressesIn(text: string): string[] {
+  const out = new Set<string>();
+  for (const s of sentencesOf(text)) {
+    if (!standingIn(s.text, /\bnudge\b/i)) continue;
+    for (const a of nudgeAddressesIn(s.text)) out.add(a);
+  }
+  return [...out];
+}
+
+/**
  * The email door: an email of hers that asks for the nudge to an LP on the tracker is the whole job.
  * Null when it names no tracker row (the email goes on exactly as before).
  */
-export async function nudgeFromWords(env: Env, text: string, now = Date.now(), fetchImpl: typeof fetch = fetch): Promise<{ note: string; sent: number } | null> {
-  const addresses = nudgeAddressesIn(text);
+export async function nudgeFromWords(
+  env: Env, text: string, now = Date.now(), fetchImpl: typeof fetch = fetch,
+  by: { read?: ReplyDecision | null; mailId?: string } = {},
+): Promise<{ note: string; sent: number } | null> {
+  // The first read decides (19 Nov 2026): its nudge commands name the addresses; the judged keywords only without one.
+  const fromRead = by.read ? [...new Set(by.read.commands.filter((c) => c.kind === "nudge").flatMap((c) => nudgeAddressesIn(`nudge ${c.text}`)))] : null;
+  const keyword = judgedNudgeAddressesIn(text);
+  const addresses = fromRead ?? keyword;
+  if (by.mailId && (fromRead?.length || keyword.length)) {
+    await logReplyDecision(env, { mailId: by.mailId, what: "the LP nudge", firstRead: fromRead ? fromRead.join(", ") || "none" : null, keyword: keyword.join(", ") || "none" });
+  }
   if (!addresses.length) return null;
   const lines: string[] = [];
   let sent = 0;

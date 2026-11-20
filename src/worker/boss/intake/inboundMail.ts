@@ -41,6 +41,7 @@ import { dismissFromMail } from "../capital/dismiss";
 import { prospectTemplateFromMail } from "../lp/templateReply";
 import { decideAnswerFromMail, morningDayOf } from "../lp/decideReply";
 import { morningReplyFromMail } from "./morningReply";
+import { morningCommands } from "../../../shared/boss/mail/morningReply.mjs";
 import { secretDoor } from "../service/secretHandoff";
 import { answerBlockFromMail } from "../service/blockReply";
 import { recordConstraints } from "../service/constraints";
@@ -48,7 +49,7 @@ import { recordDriveWatches } from "../service/macWaits";
 import { standingConstraintsIn } from "../../../shared/boss/service/practices.mjs";
 import { dueTimeIn, dueLine, notBeforeIn, heldDue } from "../../../shared/boss/service/dueTime.mjs";
 import { commandFromMail, openErrandFor, errandReplied } from "../commands/run";
-import { nudgeFromWords } from "../lp/nudge";
+import { nudgeFromWords, nudgeAddressesIn } from "../lp/nudge";
 
 /**
  * MAIL TO `boss@sequoiataylor.com`.
@@ -665,23 +666,27 @@ export async function handleBossInboundMail(message: BossMailMessage, env: Env):
    * "grateful for …", "X is public", a standing rule. Exact whole lines only; never sends or approves
    * (intake/morningReply.ts). Only commands → done here; mixed → acted on, and the rest goes on.
    */
-  const morningReply = own ? await morningReplyFromMail(env, { text: own, refs: threadRefs.refs, mailId, now }) : null;
-  if (morningReply?.onlyCommands) {
-    await finish({ outcome: "MORNING_REPLY", why: morningReply.note, employeeId: "emp_chief", objectKey, reply: morningReply.note });
-    return { mailId, outcome: "MORNING_REPLY", employeeId: "emp_chief", taskId: null, reply: morningReply.note, messageId, signer: "Simone" };
-  }
   /*
    * THE FIRST READ DECIDES HER REPLY (owner ruling, 19 Nov 2026). A reply (it names a thread we sent) is read once, here,
    * before any reply door: its DECISION says what her reply means for the plan, preview, Kindle ask or morning card it
-   * answers, and the doors below act on it (`readReply(text, read)`, `decideAnswerFromMail`). Their keywords act only
+   * answers, and the doors below act on it (`readReply(text, read)`, `decideAnswerFromMail`, the morning commands, the LP
+   * nudge, the comment digest and the duty draft). A fresh email is read here too when its words carry a command. Their
+   * keywords act only
    * when no first read answered, logged "first read absent: keyword fallback". The same read is the work's brief below
    * (one read per email). Gemini free, then Workers AI; never Claude or Codex, never masked (firstRead.ts).
    */
   const fileNames = [...files.heard.map((h) => h.filename), ...files.read.map((r) => r.filename), ...files.unopened.map((u) => u.filename)];
-  const replyRead: FirstRead | null = (threadRefs.refs.length || message.headers.get("in-reply-to")) && !oversize && (own || readable).trim()
+  const mayCommand = Boolean(own) && (morningCommands(own).commands.length > 0 || nudgeAddressesIn(own).length > 0);
+  const replyRead: FirstRead | null = (threadRefs.refs.length || message.headers.get("in-reply-to") || mayCommand) && !oversize && (own || readable).trim()
     ? await firstRead(env, { subject, words: own || readable, files: fileNames, now, mailId })
     : null;
   const replyDecision = replyRead?.brief?.decision ?? null;
+  const replyHasWork = Boolean(replyRead?.brief && (replyRead.brief.asks.length || replyRead.brief.questions.length || replyRead.brief.unclear.length));
+  const morningReply = own ? await morningReplyFromMail(env, { text: own, refs: threadRefs.refs, mailId, now, read: replyDecision, readHasWork: replyHasWork }) : null;
+  if (morningReply?.onlyCommands) {
+    await finish({ outcome: "MORNING_REPLY", why: morningReply.note, employeeId: "emp_chief", objectKey, reply: morningReply.note });
+    return { mailId, outcome: "MORNING_REPLY", employeeId: "emp_chief", taskId: null, reply: morningReply.note, messageId, signer: "Simone" };
+  }
   const decideAnswer = own
     ? await decideAnswerFromMail(env, { text: own, refs: threadRefs.refs, subject, mailId, now, read: replyDecision })
     : null;
@@ -697,7 +702,7 @@ export async function handleBossInboundMail(message: BossMailMessage, env: Env):
    * page. An email of hers with the word "nudge" and the address of someone on the LP tracker is the
    * whole job: the fixed nudge goes in their thread and they are marked nudged (lp/nudge.ts).
    */
-  const nudge = own ? await nudgeFromWords(env, own, now) : null;
+  const nudge = own ? await nudgeFromWords(env, own, now, fetch, { read: replyDecision, mailId }) : null;
   if (nudge) {
     const nudgeReply = [nudge.note, ...(secrets?.line ? ["", secrets.line] : [])].join("\n");
     await finish({ outcome: "LP_NUDGE", why: nudge.note, employeeId: "emp_relationship", objectKey, reply: nudgeReply });
@@ -944,7 +949,7 @@ export async function handleBossInboundMail(message: BossMailMessage, env: Env):
    * `validate:comment-act-instructed` pins that this call sits after the `!authorised` return.
    */
   const commentAnswer = !planAnswer
-    ? await answerCommentWatchFromMail(env, { sender, subject: trueSubject + laneTail, text: readable, mailId, now })
+    ? await answerCommentWatchFromMail(env, { sender, subject: trueSubject + laneTail, text: readable, mailId, now, read: replyDecision })
     : null;
   /*
    * HER WORD ON A KINDLE PROBLEM, the same way: `[kml_…]` names the item Simone asked about
@@ -980,7 +985,7 @@ export async function handleBossInboundMail(message: BossMailMessage, env: Env):
    * `validate:duty-birth` pins that both calls sit after the `!authorised` return.
    */
   const dutyAnswer = planAnswer || commentAnswer || kdpAnswer || dismissAnswer ? null : await answerDutyFromMail(env, {
-    roster, subject: trueSubject + laneTail, text: readable, mailId, now, sender,
+    roster, subject: trueSubject + laneTail, text: readable, mailId, now, sender, read: replyDecision?.reply ?? null,
     inReplyTo: message.headers.get("in-reply-to"), references: message.headers.get("references"),
   });
   const dutyRequest = planAnswer || commentAnswer || kdpAnswer || dismissAnswer || dutyAnswer ? null : await newDutyFromMail(env, {

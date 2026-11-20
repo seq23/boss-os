@@ -129,10 +129,24 @@ describe("the ladder is free, and only free", () => {
   it("her reply's DECISION is read strictly: a reading of five, answers that quote her; a decision-only reply is a read", async () => {
     const words = "2: send it Monday\napproved";
     const brief = parseBrief('NONE\nDECISION: {"reply":"approved","answers":[{"n":2,"text":"send it Monday"},{"n":3,"text":"invented words"}]}', words)!;
-    expect(brief.decision).toEqual({ reply: "approved", answers: [{ n: 2, text: "send it Monday" }] });
-    expect(parseBrief('NONE\nDECISION: {"reply":"ship it","answers":[]}', "ship it")?.decision ?? null).toBeNull();
+    expect(brief.decision).toEqual({ reply: "approved", answers: [{ n: 2, text: "send it Monday" }], commands: [] });
+    expect(parseBrief('NONE\nDECISION: {"reply":"ship it","answers":[]}', "ship it")?.decision?.reply ?? null, "ship it is not one of five").toBeNull();
+    expect(parseBrief("NONE", "ship it")?.decision ?? null, "no DECISION line is no reading").toBeNull();
     const read = await firstRead(env, { subject: "Re: plan", words: "approved", now: Date.now(), mailId: "m_dec" }, [{ id: "gemini-test", call: async () => 'NONE\nDECISION: {"reply":"approved","answers":[]}' }]);
     expect(read.brief?.decision?.reply, "a one-word reply is still read").toBe("approved");
+  });
+
+  it("her plain-word commands are read only when they quote her; a comment needs its number", () => {
+    const words = "drop 2\nGate done.\nI was going to say nudge ann@lp.example but not yet\n3 delete";
+    const d = parseBrief(
+      'NONE\nDECISION: {"reply":null,"answers":[],"commands":[{"kind":"drop","n":2,"text":"drop 2"},{"kind":"gate","n":null,"text":""},{"kind":"nudge","n":null,"text":"bob@lp.example"},{"kind":"comment","n":null,"text":"delete"},{"kind":"comment","n":3,"text":"delete"},{"kind":"launch","n":null,"text":"drop 2"}]}',
+      words,
+    )!.decision!;
+    expect(d.commands).toEqual([
+      { kind: "drop", n: 2, text: "drop 2" },
+      { kind: "gate", n: null, text: "" },
+      { kind: "comment", n: 3, text: "delete" },
+    ]);
   });
 
   it("a prospect's name in her email reaches the free reader unchanged (no private-term block)", async () => {

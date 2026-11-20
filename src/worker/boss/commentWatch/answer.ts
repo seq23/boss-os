@@ -3,6 +3,7 @@ import { newId } from "../lib/id";
 import { audit } from "../lib/audit";
 import { taskEvent } from "../repoChange/answer";
 import { tokenIn, parseReply } from "../../../shared/boss/commentWatch/lane.mjs";
+import { logReplyDecision, type ReplyDecision } from "../intake/firstRead";
 
 /**
  * THE COMMENT-WATCH LANE'S WORKER HALF — her reply becomes instruction rows.
@@ -43,7 +44,7 @@ export async function itemsOf(env: Env, digestId: string): Promise<CommentWatchI
 }
 
 export async function answerCommentWatchFromMail(
-  env: Env, input: { sender: string; subject: string; text: string; mailId: string; now: number },
+  env: Env, input: { sender: string; subject: string; text: string; mailId: string; now: number; read?: ReplyDecision | null },
 ): Promise<{ digestId: string; instructed: number; note: string } | null> {
   const digestId = tokenIn(`${input.subject}\n${input.text}`);
   if (!digestId) return null;
@@ -57,7 +58,21 @@ export async function answerCommentWatchFromMail(
     return { digestId, instructed: 0, note: `Noted on ${digestId}: every comment in that digest already has your instruction. A second reply changes nothing; if you want something different, tell me by number in a new #monique message.` };
   }
 
-  const parsed = parseReply(input.text, open);
+  /*
+   * THE FIRST READ DECIDES (owner ruling, 19 Nov 2026): its `comment` commands (n + her words for that comment) and
+   * `your_call` are her instructions, read by the same exact forms; the keyword lines act only without a first read,
+   * logged "first read absent: keyword fallback". The keyword forms are exact whole lines ("3 delete", "your call"), so
+   * a doubt, condition or question never matches them.
+   */
+  const keyword = parseReply(input.text, open);
+  const readLines = input.read
+    ? input.read.commands.some((c) => c.kind === "your_call")
+      ? "your call"
+      : input.read.commands.filter((c) => c.kind === "comment" && c.n).map((c) => `${c.n} ${c.text.replace(/^#?\s*\d{1,3}\s*[.):\-–—]?\s*/, "")}`).join("\n")
+    : null;
+  const parsed = readLines === null ? keyword : parseReply(readLines, open);
+  const said = (p: typeof keyword) => p.mode === "none" ? "none" : p.mode === "your_call" ? "your call" : p.instructions.map((i) => `${i.n} ${i.action}`).join(", ");
+  await logReplyDecision(env, { mailId: input.mailId, what: `the comment digest ${digestId}`, firstRead: readLines === null ? null : said(parsed), keyword: said(keyword) });
   if (parsed.mode === "none") {
     if (digest.task_id) await taskEvent(env, digest.task_id, "comment_watch_unread", { digest_id: digestId, mail_id: input.mailId, unread: parsed.unread, text: input.text.slice(0, 4000) });
     return {
