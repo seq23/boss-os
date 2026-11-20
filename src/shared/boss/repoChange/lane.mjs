@@ -485,10 +485,14 @@ export function herWords(text) {
  * Pure.
  */
 const PARTIAL = /\b\d{1,3}\b|\b(?:but|except|not|unless|only|skip|without)\b|n['’]t\b/i;
+const HOLDS_BACK = /n['’]t\b|\b(?:not|no|hold|wait)\b|\?/i;
 export function anchoredReading(read, words) {
   const w = String(words ?? "");
   if (read === "forced") return forcePhraseIn(w) ? "forced" : "preview";
   if (read === "approved" && PARTIAL.test(w.replace(/\[[a-z]{2,4}_[a-z0-9]+\]/gi, " "))) return "answers";
+  // A preview starts work on her plan, so it needs her go: words that hold it back ("I don't approve this yet")
+  // or only ask ("can you show me the phone version first?") are a hold, never a preview (post-land replay, 20 Nov).
+  if (read === "preview" && HOLDS_BACK.test(w)) return "held";
   return read;
 }
 

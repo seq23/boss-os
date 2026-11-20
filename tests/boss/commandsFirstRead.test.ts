@@ -107,6 +107,11 @@ describe("a reading is anchored to her words", () => {
   it("production without a preview needs her force words", () => {
     expect(anchoredReading("forced", "approved, push it straight to prod, skip the preview")).toBe("preview");
     expect(anchoredReading("forced", "approved to production")).toBe("forced");
+    // Post-land replay, 20 Nov: a model read these as "preview", which starts work on a plan she held back.
+    expect(anchoredReading("preview", "I don't approve this yet, I want to see the copy first.")).toBe("held");
+    expect(anchoredReading("preview", "Can you show me the phone version first?")).toBe("held");
+    expect(anchoredReading("preview", "preview first")).toBe("preview");
+    expect(anchoredReading("preview", "Looks good, send me a preview")).toBe("preview");
     expect(readReply("approved, push it straight to prod", "forced").mode).toBe("preview");
   });
   it("a partial approval is never a full one (Kindle, duty, plan doors)", () => {
