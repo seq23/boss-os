@@ -32,16 +32,19 @@ describe("the Marketplace photo ask", () => {
  * A PHOTO SET IS REAL WORK (13 Nov 2026). P&P Studio's photo sets (`pack_photos`) were not counted, so
  * the newest real work read 24 Oct when photos had come in on 12 Nov, and she was about to be asked
  * again. The job's own SQL is run here against P&P Studio's table shapes (creator-studios migrations
- * 0001 and 0020), then judged by the job's own rule.
+ * 0001, 0020 and 0043), then judged by the job's own rule.
  */
 describe("P&P Studio photo sets count as new real work", () => {
-  const studio = (rows: { assets?: string[]; clips?: string[]; sets?: [string, string][] }) => {
+  const studio = (rows: { assets?: string[]; clips?: string[]; sets?: [string, string, string?][] }) => {
     const { DatabaseSync } = process.getBuiltinModule("node:sqlite") as typeof import("node:sqlite");
     const db = new DatabaseSync(":memory:");
-    db.exec("CREATE TABLE assets (id INTEGER PRIMARY KEY, mime_type TEXT, upload_status TEXT, created_at TEXT); CREATE TABLE clips (id INTEGER PRIMARY KEY, status TEXT, created_at TEXT); CREATE TABLE pack_photos (id INTEGER PRIMARY KEY, upload_status TEXT, created_at TEXT);");
+    db.exec("CREATE TABLE assets (id INTEGER PRIMARY KEY, mime_type TEXT, upload_status TEXT, created_at TEXT); CREATE TABLE clips (id INTEGER PRIMARY KEY, status TEXT, created_at TEXT); CREATE TABLE photo_packs (id TEXT PRIMARY KEY, made_by TEXT NOT NULL DEFAULT 'studio'); CREATE TABLE pack_photos (id INTEGER PRIMARY KEY, pack_id TEXT, upload_status TEXT, created_at TEXT);");
     for (const at of rows.assets ?? []) db.prepare("INSERT INTO assets (mime_type, upload_status, created_at) VALUES ('image/jpeg', 'uploaded', ?)").run(at);
     for (const at of rows.clips ?? []) db.prepare("INSERT INTO clips (status, created_at) VALUES ('approved', ?)").run(at);
-    for (const [status, at] of rows.sets ?? []) db.prepare("INSERT INTO pack_photos (upload_status, created_at) VALUES (?, ?)").run(status, at);
+    (rows.sets ?? []).forEach(([status, at, madeBy = "studio"], i) => {
+      db.prepare("INSERT INTO photo_packs (id, made_by) VALUES (?, ?)").run(`pck_${i}`, madeBy);
+      db.prepare("INSERT INTO pack_photos (pack_id, upload_status, created_at) VALUES (?, ?, ?)").run(`pck_${i}`, status, at);
+    });
     const r = db.prepare(STUDIO_PHOTOS_SQL).get() as { n: number; newest: string | null };
     return { n: Number(r.n), newest: d1Time(r.newest) };
   };
@@ -57,5 +60,10 @@ describe("P&P Studio photo sets count as new real work", () => {
     const half = studio({ assets: [old], sets: [["uploading", "2026-11-12T18:30:00.000Z"], ["failed", "2026-11-13T09:00:00.000Z"]] });
     expect(half.n).toBe(1);
     expect(photoAskDue({ newest: half.newest, lastAsked: null, now }).ask).toBe(true);
+  });
+  it("a content-engine carousel (made_by engine, 20 Nov 2026) is not real work: she is still asked", () => {
+    const got = studio({ assets: [old], sets: [["uploaded", "2026-11-12T18:30:00.000Z", "engine"]] });
+    expect(got.n).toBe(1);
+    expect(photoAskDue({ newest: got.newest, lastAsked: null, now }).ask).toBe(true);
   });
 });

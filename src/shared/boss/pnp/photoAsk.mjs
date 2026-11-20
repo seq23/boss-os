@@ -16,12 +16,15 @@ const DAY = 86_400_000;
  * WHAT COUNTS AS NEW REAL WORK IN P&P STUDIO: an uploaded photo or video, a clip, AND A PHOTO SET
  * (13 Nov 2026: photo sets, `pack_photos`, were not counted, so the newest real work read 24 Oct when
  * photos had come in on 12 Nov, and she was about to be asked again for photos she had just added).
+ * Only sets the owner uploaded count (`photo_packs.made_by = 'studio'`): the content engine (20 Nov 2026)
+ * writes its own designed carousels as photo sets (`made_by = 'engine'`) every day, and counting them
+ * would mean she is never asked for real job photos again.
  * One row: `n` on file, `newest` the latest created_at.
  */
 export const STUDIO_PHOTOS_SQL = "SELECT COUNT(*) AS n, MAX(created_at) AS newest FROM ("
   + "SELECT created_at FROM assets WHERE upload_status = 'uploaded' AND (mime_type LIKE 'image/%' OR mime_type LIKE 'video/%')"
   + " UNION ALL SELECT created_at FROM clips WHERE status IN ('draft','approved')"
-  + " UNION ALL SELECT created_at FROM pack_photos WHERE upload_status = 'uploaded')";
+  + " UNION ALL SELECT pp.created_at FROM pack_photos pp JOIN photo_packs p ON p.id = pp.pack_id WHERE pp.upload_status = 'uploaded' AND p.made_by = 'studio')";
 
 /** A D1 time as ms. `datetime('now')` has no zone: it is UTC. null when there is none. Pure. */
 export function d1Time(value) {
