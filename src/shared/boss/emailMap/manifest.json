@@ -97,6 +97,8 @@
       "when": "Approved emails go every half hour",
       "runs": "cloud-cron", "trigger": "An approved email.send on its card; the west-peek-os Worker sends it on its drip pass",
       "pause": "Do not approve; or in west-peek-os wrangler.toml set WP_OS_EMAIL_SEND off and deploy",
+      "as_her": true,
+      "plain_stop": "Pause tlc_drip, tlc_daily and tlc_brand_batch at os.joinwestpeek.com › Work › machinery, signed in as yourself (scooter@westpeek.ventures).",
       "code": [{ "repo": "west-peek-os", "paths": ["src/worker/effects/executor.ts", "src/worker/services/googleConnect.ts", "src/worker/effects/googleClient.ts"] }]
     },
     {
@@ -167,6 +169,7 @@
       "when": "When you approve it",
       "runs": "cloud-event", "trigger": "An approved email.send effect; nothing goes without its approval",
       "pause": "Set WP_OS_OUTSIDE_EMAIL_BREAK_GLASS = \"off-hard\" in west-peek-os wrangler.toml and deploy; or revoke Gmail send in Settings",
+      "as_her": true,
       "code": [{ "repo": "west-peek-os", "paths": ["src/worker/effects/executor.ts", "src/shared/policy/outsideEmail.ts"] }]
     },
     {
@@ -188,6 +191,7 @@
       "when": "Weekdays 9:30 AM (never Saturday or Sunday), once you approved the template",
       "runs": "mac", "trigger": "Mac job com.seq.boss-prospects (lp:prospects --live)",
       "pause": "Outreach kill switch on Team → Outreach, or launchctl bootout gui/501/com.seq.boss-prospects",
+      "as_her": true,
       "launchd": ["com.seq.boss-prospects"],
       "code": [{ "repo": "boss-os", "paths": ["scripts/ops/lp-prospects.mjs", "src/shared/boss/lp/plan.mjs"] }]
     },
@@ -199,6 +203,7 @@
       "when": "Weekdays 9:30 AM (never Saturday or Sunday), once the list is approved",
       "runs": "mac", "trigger": "Mac job com.seq.boss-lp8-drip (lp8:drip)",
       "pause": "Set approved to false in the private plan, or launchctl bootout gui/501/com.seq.boss-lp8-drip",
+      "as_her": true,
       "launchd": ["com.seq.boss-lp8-drip"],
       "code": [{ "repo": "boss-os", "paths": ["scripts/ops/lp8-drip.mjs"] }]
     },
@@ -210,6 +215,7 @@
       "when": "Only when you tap",
       "runs": "cloud-event", "trigger": "Your one-tap page (/tap/…) in Boss OS",
       "pause": "Skip it in the email; nothing sends without your tap",
+      "as_her": true,
       "code": [{ "repo": "boss-os", "paths": ["src/worker/boss/routes/lpTap.ts", "src/worker/boss/lp/schedule.ts", "src/worker/boss/commands/google.ts"] }]
     },
     {
@@ -272,6 +278,7 @@
       "when": "Never: nothing calls it",
       "runs": "inert", "trigger": "POST /api/introductions/send, called by no schedule",
       "pause": "Already off: the delegation excludes Gmail send",
+      "as_her": true,
       "code": [{ "repo": "west-peek-network-os", "paths": ["functions/api/introductions/send.ts"] }]
     },
 
@@ -283,6 +290,7 @@
       "when": "Weekdays 10:20 AM",
       "runs": "mac", "trigger": "Mac job com.seq.boss-pnp-outreach (pnp:outreach --live) asks the Porch & Party site to send",
       "pause": "launchctl bootout gui/501/com.seq.boss-pnp-outreach",
+      "as_her": true,
       "launchd": ["com.seq.boss-pnp-outreach"],
       "code": [
         { "repo": "boss-os", "paths": ["scripts/ops/pnp-corporate-outreach.mjs", "src/shared/boss/pnp/outreach.mjs"] },
@@ -369,6 +377,7 @@
       "when": "Up to 10 new groups a weekday; the Mac imports weekdays 8:15 AM, the cloud sends hourly",
       "runs": "cloud-cron", "trigger": "boss-os Worker hourly outreach tick (business time2read_groups); Mac job com.seq.boss-t2r-groups",
       "pause": "Outreach kill switch on Team → Outreach, or pause the time2read_groups business there",
+      "as_her": true,
       "launchd": ["com.seq.boss-t2r-groups"],
       "code": [{ "repo": "boss-os", "paths": ["src/worker/boss/outreach/groups.ts", "src/worker/boss/outreach/engine.ts", "scripts/ops/t2r-groups.mjs"] }]
     },
@@ -819,6 +828,7 @@
       "when": "Only when you tap Send or reply \"send\"",
       "runs": "cloud-event", "trigger": "Your Send tap in Boss OS",
       "pause": "Do not tap Send; reply \"cancel\" on the thread",
+      "as_her": true,
       "code": [{ "repo": "boss-os", "paths": ["src/worker/boss/commands/google.ts", "src/worker/boss/commands/run.ts"] }]
     },
     {
@@ -958,6 +968,7 @@
       "when": "Only while a session is open",
       "runs": "session", "trigger": "The claude.ai Gmail connector",
       "pause": "Disconnect the connector in claude.ai",
+      "as_her": true,
       "code": [{ "repo": "external", "paths": [] }]
     },
     {
@@ -992,6 +1003,8 @@
       "when": "On Twin's own drip schedule",
       "runs": "external-tool", "trigger": "Twin's campaign. Boss OS only reads the replies (Monique, every morning)",
       "pause": "In Twin: pause the campaign",
+      "as_her": true,
+      "plain_stop": "Sign in at twin.so (For Scooter entry \"Twin\") and pause the LP campaign. If Twin will not open, follow Day 1 Step 2.",
       "external_why": "Twin is an outside tool, not code in any repo of hers, so there is no path to cite and the code scan expects none. Monique's daily read of the replies is com.seq.boss-lp (lp-daily.mjs).",
       "code": [{"repo": "external", "paths": []}]
     },
@@ -1007,6 +1020,7 @@
       "runs": "github",
       "trigger": "Drafted by the Boss OS hourly tick; sent by GitHub Actions job-errand-reminders.yml (every 10 minutes)",
       "pause": "Tap Skip this quarter",
+      "as_her": true,
       "code": [{"repo": "boss-os", "paths": ["scripts/ops/errand-reminders.mjs", "src/worker/boss/clients/hicksUpdate.ts", "src/shared/boss/clients/hicksUpdate.mjs"]}]
     },
     {
@@ -1077,6 +1091,7 @@
       "when": "Only when you tap Yes, go or No",
       "runs": "cloud-event", "trigger": "Your one-tap page (/tap/…) from the Go? card in the morning email or Today",
       "pause": "Do not tap; Not sure holds it",
+      "as_her": true,
       "code": [{ "repo": "boss-os", "paths": ["src/worker/boss/invitations/tap.ts", "src/worker/boss/commands/google.ts"] }]
     }
   ]

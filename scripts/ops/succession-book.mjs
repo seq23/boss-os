@@ -80,10 +80,10 @@ export function fillBlocks(template, blocks) {
   for (const [name, body] of Object.entries(blocks)) {
     const re = new RegExp(`(<!-- GEN:${name} -->)[\\s\\S]*?(<!-- /GEN:${name} -->)`);
     if (!re.test(out)) throw new Stop("TEMPLATE_BLOCK_MISSING", `The template has no GEN:${name} block, so that part of the book would be stale.`);
-    const inline = name === "built";
-    out = out.replace(re, (_m, a, b) => (inline ? `${a}${body}${b}` : `${a}\n${body}\n${b}`));
+    // A block whose two markers sit on one line is filled inline (a date, a list inside a sentence).
+    out = out.replace(re, (m, a, b) => (m.includes("\n") ? `${a}\n${body}\n${b}` : `${a}${body}${b}`));
   }
-  const left = [...out.matchAll(/<!-- GEN:([a-z-]+) -->/g)].map((m) => m[1]).filter((n) => !(n in blocks));
+  const left = [...out.matchAll(/<!-- GEN:([a-z0-9-]+) -->/g)].map((m) => m[1]).filter((n) => !(n in blocks));
   if (left.length) throw new Stop("BLOCK_NOT_BUILT", `The template asks for ${left.join(", ")}, which this generator does not build.`);
   return out;
 }
@@ -152,49 +152,72 @@ export function socialBlock(social) {
   return table(["Business", "Platform", "Handle", "Status"], rows);
 }
 
-/** Who an Email Map sender writes to, in the words Day 1 acts on. Order is the table's order. */
+/**
+ * Who an Email Map sender writes to, in the words Day 1 acts on. Order is the table's order.
+ * One rule for every button (round-11 review): Scooter taps nothing in any email to Sequoia; he asks
+ * Claude to stop the sender. So no group is "stop by not tapping".
+ */
 export const EMAIL_KINDS = [
   ["brokerage", "Brokerage: stop on Day 1; do not read"],
-  ["tap", "Sends as Sequoia when a button is tapped: stop on Day 1; never tap"],
-  ["outreach", "Outreach in her name: stop on Day 1"],
+  ["as-her", "Sends as Sequoia: stop on Day 1; tap nothing in these emails"],
+  ["outreach", "Writes to people for her businesses: stop on Day 1"],
   ["customers", "Customers (receipts, sign-ins, replies): leave on"],
   ["friends", "A friend's or client's business: theirs, leave on"],
-  ["her", "Sequoia only: harmless, leave on or pause"],
+  ["to-her", "To Sequoia only: leave on; tap nothing in them"],
 ];
+/** The groups Day 1 stops; the rest stay on. */
+export const STOP_KINDS = new Set(["brokerage", "as-her", "outreach"]);
 const OUTREACH = /\b(prospects?|LPs?|LP list|offices|institutions|communities|brands|introduced|business address|businesses \()\b/i;
+/** Writes to no one (a page, a section of another email): not listed. */
+const toNoOne = (row) => /^(none|no one)/i.test(String(row.to ?? "")) || /^no email/i.test(String(row.from ?? ""));
 export function emailKind(row) {
-  const to = String(row.to ?? "");
   if (row.business === "brokerage") return "brokerage";
-  if (/send as is|\bgo\?|yes, go|approve and|approved card|her own words sent as/i.test(`${row.what} ${row.pause} ${row.trigger ?? ""}`)) return "tap";
-  if (/^(none|no one)/i.test(to)) return null;
-  if (/^you\b/i.test(to)) return "her";
+  // Data, not words: the Email Map marks every sender that writes from her own mailbox (its shape check
+  // refuses one that sends from her mailbox without the mark).
+  if (row.as_her === true) return "as-her";
+  if (toNoOne(row)) return null;
+  const to = String(row.to ?? "");
+  if (/^you\b/i.test(to)) return "to-her";
   if (row.business === "friends" || /\bValerie\b|studio's owner/.test(to)) return "friends";
   if (OUTREACH.test(to)) return "outreach";
   return "customers";
 }
 
+const alreadyOff = (row) => /^(already|nothing runs)/i.test(String(row.pause ?? "").trim()) || /^none$/i.test(String(row.from ?? "").trim());
+
 /**
- * How to stop an email, as a sentence Scooter can follow: never the raw command (Claude finds it in
- * the Email Map by its id). A switch that is not an action ("already off", "do not tap Send") is said as is.
+ * How Scooter stops an email. He never edits code or taps a button: the row's own plain_stop (a switch he
+ * works himself, such as Twin's pause), else one sentence to Claude, who finds the switch in the Email Map
+ * by its id. A stop that shares its switch with an email that stays on names those, so Claude keeps them
+ * running (round-11 review: "this also stops customers' receipts" left him a choice and no answer).
  */
-export function stopWords(row) {
-  const p = String(row.pause ?? "").trim();
-  if (!p || /^(–|-|none)$/i.test(p)) return "Nothing to do.";
-  if (/^(tap|do not|don't|already|nothing|leave|it stops|stops|pausing|it is|retired)/i.test(p)) return herWords(p);
-  const receipts = /RESEND_API_KEY|resend/i.test(p) ? " (this also stops customers' receipts)" : "";
-  return `Ask Claude: "Stop the Email Map sender ${row.id}."${receipts}`;
+export function stopWords(row, keepRunning = []) {
+  if (alreadyOff(row)) return "Nothing to do: it is already off.";
+  if (row.plain_stop) return String(row.plain_stop);
+  const keep = keepRunning.length ? ` only, and keep ${keepRunning.join(" and ")} running` : "";
+  return `Ask Claude: "Stop the Email Map sender ${row.id}${keep}."`;
+}
+
+/** The emails Day 1 asks Claude to stop: every stop-group sender Claude can stop (not one already off or stopped by hand). */
+export function dayOneIds(emailMap) {
+  return (emailMap.rows ?? []).filter((r) => STOP_KINDS.has(emailKind(r)) && !alreadyOff(r) && !r.plain_stop).map((r) => r.id);
 }
 
 /** Every automatic email, from the Email Map, grouped by who it writes to, with how to stop it. */
 export function emailsBlock(emailMap) {
   const label = Object.fromEntries((emailMap.businesses ?? []).map((b) => [b.key, b.label]));
-  const rows = (emailMap.rows ?? []).map((r) => ({ r, kind: emailKind(r) })).filter((x) => x.kind);
+  const all = (emailMap.rows ?? []).map((r) => ({ r, kind: emailKind(r) }));
+  const rows = all.filter((x) => x.kind);
   if (!rows.length) throw new Stop("NO_EMAIL_MAP", "The Email Map has no senders, so the emails could not be listed.");
   const order = Object.fromEntries(EMAIL_KINDS.map(([k], i) => [k, i]));
   const words = Object.fromEntries(EMAIL_KINDS);
   rows.sort((a, b) => order[a.kind] - order[b.kind] || String(a.r.business).localeCompare(String(b.r.business)));
-  return `${rows.length} automatic emails, from Boss OS › Email Map.\n\n${table(["Who it writes to", "Business", "What it is", "Sent to", "How to stop it"], rows.map(({ r, kind }) => [
-    words[kind], label[r.business] ?? r.business, herWords(r.what), herWords(r.to), stopWords(r),
+  // A stop-group sender whose switch also turns off an email that stays on.
+  const leftOn = rows.filter((x) => !STOP_KINDS.has(x.kind));
+  const keepFor = (x) => (STOP_KINDS.has(x.kind) ? leftOn.filter((y) => y.r.pause === x.r.pause && y.kind !== "to-her").map((y) => y.r.id) : []);
+  const skipped = all.length - rows.length;
+  return `${rows.length} automatic emails, from Boss OS › Email Map${skipped ? ` (${skipped} more there write to no one, so they are not listed)` : ""}.\n\n${table(["Who it writes to", "Business", "What it is", "Sent to", "How to stop it"], rows.map((x) => [
+    words[x.kind], label[x.r.business] ?? x.r.business, herWords(x.r.what), herWords(x.r.to), stopWords(x.r, keepFor(x)),
   ]))}`;
 }
 
@@ -258,6 +281,75 @@ export function safetyProblems(md) {
   return p;
 }
 
+/**
+ * THE SEALED ENVELOPE (owner ruling 20 Nov 2026, personal brain): the paper holds exactly these three,
+ * and nothing else is put in the envelope. Recovery codes, the iPhone passcode and the FileVault key live
+ * only in KeePassXC, named by entry: one stolen envelope must not open everything.
+ */
+export const ENVELOPE = ["Her Mac login", "The lock on her Passwords app", "The KeePassXC master password"];
+export const envelopeBlock = () => ENVELOPE.map((t, i) => `${i + 1}. ${t}`).join("\n");
+const NOT_IN_ENVELOPE = /backup codes?|recovery codes?|recovery key|FileVault|iPhone passcode|her passcode|USB|printed|Used codes|letter|LLC papers|copy of this book|snapshot passphrase|vault (master )?key/i;
+
+/** Text of one "## n." section (or "### name" subsection) of the book, up to the next heading of its level. */
+function sectionText(md, heading) {
+  const level = /^#+/.exec(heading)[0].length;
+  const at = md.indexOf(`\n${heading}`);
+  if (at < 0) return "";
+  const rest = md.slice(at + heading.length + 1);
+  const next = rest.search(new RegExp(`\\n#{1,${level}} `));
+  return next < 0 ? rest : rest.slice(0, next);
+}
+const genBody = (md, name) => (new RegExp(`<!-- GEN:${name} -->([\\s\\S]*?)<!-- /GEN:${name} -->`).exec(md) ?? [])[1] ?? "";
+const tableRows = (text) => text.split("\n").filter((l) => l.trim().startsWith("|")).slice(2);
+const cellsOf = (line) => line.trim().replace(/^\||\|$/g, "").split("|").map((c) => c.trim());
+
+/**
+ * Facts in the book that must agree with each other (round-11 review, 20 Nov 2026: the previous builder
+ * fixed each of these by hand, eleven rounds running). Returns problems (empty = consistent).
+ */
+export function bookProblems(md, { emailMap, social }) {
+  const p = [];
+  // The envelope: no sentence or table cell puts anything but the three ruled items in it.
+  for (const line of md.split("\n")) {
+    const parts = line.trim().startsWith("|") ? cellsOf(line) : line.split(/(?<=[.;:!?])\s+/);
+    for (const part of parts) if (/envelope/i.test(part) && NOT_IN_ENVELOPE.test(part)) p.push(`the envelope holds more than the three ruled items: "${part.slice(0, 120)}"`);
+  }
+  // The emails: the count said is the rows shown, and every sender is either shown or writes to no one.
+  const emails = genBody(md, "emails");
+  const said = Number((/^\s*(\d+) automatic emails/.exec(emails) ?? [])[1]);
+  const shown = tableRows(emails).length;
+  const expected = (emailMap.rows ?? []).filter((r) => emailKind(r)).length;
+  if (said !== shown || shown !== expected) p.push(`the email list says ${said}, shows ${shown}, and the Email Map has ${expected} senders that write to someone`);
+  // Every stop is something Scooter can do: never a tap, never code.
+  for (const line of [...tableRows(emails), ...tableRows(genBody(md, "posting"))]) {
+    const stop = cellsOf(line).at(-1);
+    const own = stop.replace(/Email Map sender [\w-]+/g, ""); // a sender's id (her-tap-send) is a name, not a step
+    if (/\btap\b/i.test(own) || /wrangler|deploy|launchctl|\.toml|RESEND_API_KEY|\bsecret\b/i.test(own)) p.push(`a stop step Scooter cannot follow: "${stop}"`);
+  }
+  // Every sender Day 1 stops is in the Day 1 message, and nothing else is.
+  const dayOne = genBody(md, "day1-stop").split(/,\s*/).map((t) => t.trim()).filter(Boolean).sort().join(",");
+  if (dayOne !== dayOneIds(emailMap).sort().join(",")) p.push("the Day 1 message to Claude does not name exactly the senders the list says to stop on Day 1");
+  // Every automatic post has a stop row; every business section 1 calls "made automatically" posts through one.
+  const postingRows = tableRows(genBody(md, "posting"));
+  const autoRows = (social.rows ?? []).filter((r) => r.status === "live_auto" && r.posts?.by === "job" && !/^GitHub/i.test(r.platform ?? ""));
+  if (postingRows.length !== autoRows.length) p.push(`the posting list shows ${postingRows.length} rows for ${autoRows.length} automatic accounts`);
+  const postingBusinesses = new Set(postingRows.map((l) => cellsOf(l)[0]));
+  for (const line of tableRows(sectionText(md, "## 1. Every business at a glance"))) {
+    const name = (/^\*\*([^*]+)\*\*/.exec(cellsOf(line)[0]) ?? [])[1];
+    if (name && /made automatically/i.test(line) && !postingBusinesses.has(name)) p.push(`${name} is made automatically but has no row in the automatic posts list, so nothing tells Scooter how to pause it`);
+  }
+  // An app's Apple status lives only in the App Store apps table (the brain's); section 1 points to it.
+  const one = sectionText(md, "## 1. Every business at a glance").replace(/<!-- GEN:apps -->[\s\S]*?<!-- \/GEN:apps -->/, "");
+  const appWords = /Apple review|App Store process|waiting for review|rejected|submitted to Apple/i.exec(one);
+  if (appWords) p.push(`section 1 states an app's Apple status ("${appWords[0]}") outside the App Store apps table`);
+  // Day 1: Gmail is open before Claude is started (Claude may send its sign-in code there).
+  const day1 = sectionText(md, "### First day");
+  const claudeAt = day1.search(/run Claude|claude --permission-mode/i);
+  const gmailAt = day1.search(/sign in to seq\.taylor@gmail\.com|seq\.taylor@gmail\.com/i);
+  if (claudeAt >= 0 && (gmailAt < 0 || gmailAt > claudeAt)) p.push("First day starts Claude before it has him sign in to seq.taylor@gmail.com");
+  return p;
+}
+
 export function buildBook({ template, live, mapRows, cats, domains, social, emailMap, spryBody, now = new Date() }) {
   if (!String(template ?? "").trim()) throw new Stop("NO_TEMPLATE", "The template is empty.");
   if (!live.length) throw new Stop("NO_REPOS", "`gh repo list seq23` returned no repos.");
@@ -269,11 +361,15 @@ export function buildBook({ template, live, mapRows, cats, domains, social, emai
     emails: emailsBlock(emailMap),
     posting: postingBlock(social),
     built: now.toISOString().slice(0, 10),
+    envelope: envelopeBlock(),
+    "day1-stop": dayOneIds(emailMap).join(", "),
     gaps: "",
   });
   const md = firstPass.replace(/(<!-- GEN:gaps -->)[\s\S]*?(<!-- \/GEN:gaps -->)/, (_m, a, b) => `${a}\n${gapsBlock(firstPass)}\n${b}`);
   const problems = safetyProblems(md);
   if (problems.length) throw new Stop("UNSAFE_CONTENT", `The built book holds ${problems.join(", ")}; nothing was stored.`);
+  const clash = bookProblems(md, { emailMap, social });
+  if (clash.length) throw new Stop("BOOK_CONTRADICTS_ITSELF", `${clash.join("; ")}. Nothing was stored.`);
   return md;
 }
 

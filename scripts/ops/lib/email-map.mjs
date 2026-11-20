@@ -96,6 +96,15 @@ export function categoryProblems(manifest, _scannedRepos = [], cats = readRepoCa
 }
 
 /** The shape every row must have; a row the page cannot show fully is a problem by name. */
+/**
+ * A sender that writes FROM her own mailbox speaks as her: "as_her": true on its row, so the Succession
+ * Book files it under "Sends as Sequoia: stop on Day 1" (round-11 review, 20 Nov 2026: two such senders
+ * sat under "leave on"). A row whose words cannot show it (a tap that sends from her Gmail, a mailbox set
+ * inside another service) sets the flag by hand.
+ * "plain_stop", when present, is how a non-developer stops it himself, when that is not "ask Claude".
+ */
+export const HER_OWN_MAILBOX = /^(Your|You)\b|\bsequoia@|^st@time-2-read\.com|^The address the person wrote to|^The inbox the invitation came to|^The Gmail account behind/i;
+export const CODE_WORDS = /wrangler|\bdeploy|launchctl|\.toml\b|RESEND_API_KEY|\bsecret\b|\bgh workflow|\bnpm\b/i;
 export function shapeProblems(manifest) {
   const keys = new Set(manifest.businesses.map((b) => b.key));
   const runs = new Set(Object.keys(manifest.runs));
@@ -110,6 +119,9 @@ export function shapeProblems(manifest) {
     if (!keys.has(r.business)) out.push(`${r.id}: business ${r.business} is not one of the map's businesses`);
     if (!runs.has(r.runs)) out.push(`${r.id}: runs ${r.runs} is not a known place`);
     if (!Array.isArray(r.code) || r.code.length === 0) out.push(`${r.id}: no code entry`);
+    if (HER_OWN_MAILBOX.test(r.from ?? "") && r.as_her !== true) out.push(`${r.id}: sends from her own mailbox, so it must say "as_her": true (the Succession Book stops it on Day 1)`);
+    if (r.as_her != null && typeof r.as_her !== "boolean") out.push(`${r.id}: as_her must be true or absent`);
+    if (r.plain_stop != null && (!String(r.plain_stop).trim() || CODE_WORDS.test(r.plain_stop))) out.push(`${r.id}: plain_stop must be words a non-developer can follow (no code, keys or deploys)`);
     for (const c of r.code ?? []) if (c.repo !== "external" && (!c.paths || c.paths.length === 0)) out.push(`${r.id}: ${c.repo} cites no path`);
   }
   for (const b of keys) if (!manifest.rows.some((r) => r.business === b)) out.push(`business ${b} has no rows`);

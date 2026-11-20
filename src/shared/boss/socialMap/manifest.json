@@ -891,10 +891,19 @@
       "handle": "@whisperalmanac",
       "url": "https://www.youtube.com/@whisperalmanac",
       "account_email": "personal — move",
-      "status": "planned",
+      "status": "live_auto",
       "posts": {
         "by": "job",
-        "what": "The whisper lane uploads from the Mac once the first episode is ready (0 uploads).",
+        "what": "The Mac's night batch renders the whispered episodes in her cloned voice, uploads them and schedules Shorts cut from each.",
+        "check": {
+          "kind": "launchd",
+          "label": "com.howweknow.batch",
+          "log_dir": "Library/Logs/how-we-know",
+          "max_age_days": 2
+        },
+        "jobs": [
+          "howweknow-batch"
+        ],
         "code": [
           {
             "repo": "how-we-know",
