@@ -8,7 +8,23 @@ export function senderPauseReason(b: unknown): string | null;
 export function hasDkim(txts: string[]): boolean;
 export function rdapUrl(domain: string): string;
 import type { DecideItem, Button } from "../../src/shared/boss/mail/plain.mjs";
-export function planRisk(moved: Array<{ key: string; state: string; line: string; was?: string | null }>): {
+export type Notice = { id: string; from_domain?: string; subject?: string; date?: string; kind?: string; vendor?: string; detail?: string | null };
+export type BillingReading = Reading & { domain?: string; vendor?: string; subject?: string; needsHer?: boolean; gross?: number; net?: number };
+export const CHARGE_QUERY: string;
+export const GITHUB_SCOPE_COMMAND: string;
+export const CLOUDFLARE_INCLUDED: Readonly<Record<string, { label: string; included: number }>>;
+export const NEAR_CAP: number;
+export function githubUsageReading(summary: unknown): BillingReading;
+export function cloudflareUsageReading(mtd: Record<string, number>, p: { daysDone: number; daysInMonth: number }): Reading;
+export function stripeReading(label: string, x: { payouts: Array<{ status?: string; amount?: number; failure_message?: string }> | null; account: { payouts_enabled?: boolean; requirements?: { disabled_reason?: string } } | null }): Reading;
+export function billingProblemReadings(notices: Notice[]): BillingReading[];
+export function noticeReadings(notices: Notice[], where: string, sourceKey: string, now?: number): BillingReading[];
+export function chargeReading(m: Notice, where: string): Reading;
+export function dayWords(day: string | undefined): string;
+export function vendorName(domain: string): string;
+export function billingPage(domain: string): string | null;
+export function monthProgress(now: number): { first: string; yesterday: string; daysDone: number; daysInMonth: number };
+export function planRisk(moved: Array<{ key: string; state: string; line: string; was?: string | null; needsHer?: boolean; domain?: string; vendor?: string; subject?: string }>, ctx?: { github?: Reading | null }): {
   urgent: { subject: string; happened: string; did: string; status: string } | null;
   decide: Array<DecideItem & { body: string; buttons: Button[]; priority?: number }>;
   lines: Array<string | { text: string; links: Button[] }>;

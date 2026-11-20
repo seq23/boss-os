@@ -10,6 +10,14 @@
  *   openrouter     balance never below $0, and any new spend since the last run (every model call is
  *                  meant to be $0 — AI cost posture, 11 Oct 2026)
  *   cloudflare     Workers / account subscriptions and their price (needs Billing Read on the token)
+ *   cloudflare-usage  this month's Workers requests, D1 rows read/written and D1 storage, projected to
+ *                  the month's end, against what the Workers Paid plan includes (GraphQL analytics)
+ *   github         this month's metered use, what included discounts cover, and what is due (the Mac's
+ *                  `gh` sign-in; the billing API needs its `user` scope, which only she can grant)
+ *   stripe         every live Stripe key in the vault: a failed payout in 30 days, or payouts switched off
+ *   billing        a vendor's "we could not charge your card" mail in either mailbox (14 days back), read
+ *                  by the model, never by subject keywords (owner, 19 Nov 2026, phase 1 billing watch:
+ *                  GitHub's "payment failed, attempt 3 of 3" sat unseen while its metered use was covered)
  *   supabase       organisation plans (needs SUPABASE_ACCESS_TOKEN)
  *   renewals       every grid and sender domain's expiry over public RDAP; inside 30 days is named
  *   charges        receipt / invoice notices in the spry.vc mailbox (service account, metadata only)
@@ -29,6 +37,7 @@
  *   npm run risk:watch              # read, pause what must pause, email what moved
  *   npm run risk:watch -- --dry     # read and print; no pause, no email, state not saved
  */
+import { execFileSync } from "node:child_process";
 import { GRID } from "../../src/shared/boss/grid.mjs";
 import {
   PERSONAL_GMAIL, askClaudeJson, bossApi, fromDomain, gmailHeaders, googleToken, loadState, movedReadings,
@@ -114,6 +123,128 @@ export function hasDkim(txts) {
   return (txts ?? []).some((t) => /v=DKIM1/i.test(t) && /\bp=[A-Za-z0-9+/]{20,}/.test(t.replace(/["\s]/g, "")));
 }
 
+/** "$1,234.50". Pure. */
+const usd = (n) => `$${Number(n).toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+
+/**
+ * GitHub's billing usage summary (GET /users/<login>/settings/billing/usage/summary) → one reading. The
+ * metered total, what included discounts cover, and what is due; anything due is an alert. Pure.
+ */
+export function githubUsageReading(summary) {
+  const items = Array.isArray(summary?.usageItems) ? summary.usageItems : null;
+  if (!items) return { key: "github", state: "stop", line: "GitHub answered the billing read without usage items." };
+  const sum = (f) => Math.round(items.reduce((a, i) => a + Number(i?.[f] ?? 0), 0) * 100) / 100;
+  const gross = sum("grossAmount"), discount = sum("discountAmount"), net = sum("netAmount");
+  const covered = net <= 0.005;
+  const line = covered
+    ? `GitHub this month: ${usd(gross)} of metered use, all covered by included discounts, so ${usd(0)} is due from it.`
+    : `GitHub this month: ${usd(gross)} of metered use, ${usd(discount)} covered by included discounts, ${usd(net)} due.`;
+  return { key: "github", state: covered ? "ok" : "alert", line, gross, net };
+}
+
+/**
+ * What the Workers Paid plan includes each month (Cloudflare pricing, read 20 Nov 2026). The account is
+ * on it: 25 D1 databases is past the free plan's 10, and 61 million rows read in one day is past free's 5
+ * million (both CONFIRMED 20 Nov 2026).
+ */
+export const CLOUDFLARE_INCLUDED = Object.freeze({
+  requests: { label: "Workers requests", included: 10_000_000 },
+  rowsRead: { label: "D1 rows read", included: 25_000_000_000 },
+  rowsWritten: { label: "D1 rows written", included: 50_000_000 },
+  storageBytes: { label: "D1 storage", included: 5_000_000_000 },
+});
+/** A share of the included amount, projected to the month's end, that counts as "near its cap". */
+export const NEAR_CAP = 0.8;
+
+const big = (n) => (n >= 1e9 ? `${(n / 1e9).toFixed(1)} billion` : n >= 1e6 ? `${(n / 1e6).toFixed(1)} million` : Math.round(n).toLocaleString("en-US"));
+
+/**
+ * Month-to-date Cloudflare use → one reading. Counters are projected to the month's end from the days
+ * already complete; storage is read as it stands. Any projection at NEAR_CAP of what the plan includes is
+ * an alert naming it. Pure.
+ */
+export function cloudflareUsageReading(mtd, { daysDone, daysInMonth }) {
+  const near = [];
+  const parts = [];
+  for (const [k, { label, included }] of Object.entries(CLOUDFLARE_INCLUDED)) {
+    const v = Number(mtd?.[k]);
+    if (!Number.isFinite(v)) return { key: "cloudflare-usage", state: "stop", line: `Cloudflare use: ${label} was not in the analytics answer.` };
+    const projected = k === "storageBytes" ? v : (v / Math.max(1, daysDone)) * daysInMonth;
+    const share = projected / included;
+    const words = k === "storageBytes" ? `${(v / 1e9).toFixed(2)} GB of ${included / 1e9} GB` : `${big(projected)} of ${big(included)} expected this month`;
+    parts.push(`${label} ${words}`);
+    if (share >= NEAR_CAP) near.push(`${label} at ${Math.round(share * 100)}% of what the plan includes`);
+  }
+  return near.length
+    ? { key: "cloudflare-usage", state: "alert", line: `Cloudflare is heading past what its plan includes: ${near.join("; ")} (${parts.join(", ")}). Past it, Cloudflare charges per use.` }
+    : { key: "cloudflare-usage", state: "ok", line: `Cloudflare use is inside its plan: ${parts.join(", ")}.` };
+}
+
+/** One Stripe account's payouts (last 30 days) and account record → one reading. Pure. */
+export function stripeReading(label, { payouts, account }) {
+  const key = `stripe:${label}`;
+  if (!Array.isArray(payouts)) return { key, state: "stop", line: `Stripe (${label}): payouts could not be read.` };
+  const failed = payouts.filter((p) => p?.status === "failed");
+  if (failed.length) {
+    const f = failed[0];
+    return { key, state: "alert", line: `Stripe (${label}) could not pay out ${usd(Number(f.amount ?? 0) / 100)} to the bank${f.failure_message ? `: ${String(f.failure_message).replace(/\.\s*$/, "").slice(0, 140)}` : ""}${failed.length > 1 ? ` (${failed.length} failed payouts in 30 days)` : ""}.` };
+  }
+  if (account && account.payouts_enabled === false) {
+    return { key, state: "alert", line: `Stripe (${label}) has payouts switched off${account.requirements?.disabled_reason ? ` (${account.requirements.disabled_reason})` : ""}; money stays in Stripe until it is fixed.` };
+  }
+  return { key, state: "ok", line: `Stripe (${label}): ${payouts.length} payout(s) in 30 days, none failed.` };
+}
+
+/**
+ * Billing-problem notices (a model already read each one as `payment_failed`) → one alert per vendor,
+ * keyed by its newest message, so a later failed attempt is news again and the same one is said once.
+ * Pure.
+ */
+export function billingProblemReadings(notices) {
+  const byVendor = new Map();
+  for (const n of notices ?? []) {
+    if (n?.kind !== "payment_failed") continue;
+    // A vendor billing through Stripe mails from stripe.com: the vendor the model names is the one owed.
+    const d = String(n.from_domain ?? "unknown").toLowerCase();
+    const who = String(n.vendor ?? "").trim();
+    const id = who ? `${d}/${who.toLowerCase()}` : d;
+    const prev = byVendor.get(id);
+    if (!prev) byVendor.set(id, { domain: d, who, newest: n, count: 1 });
+    else { prev.count += 1; if (String(n.date ?? "") >= String(prev.newest.date ?? "")) prev.newest = n; }
+  }
+  return [...byVendor.values()].map(({ domain, who, newest, count }) => ({
+    key: `billing-problem:${domain}:${String(newest.id).slice(0, 40)}`,
+    state: "alert",
+    domain,
+    vendor: who || vendorName(domain),
+    subject: String(newest.subject ?? "").slice(0, 120),
+    line: `Your payment to ${who || vendorName(domain)} did not go through${dayWords(newest.date)}${count > 1 ? ` (${count} notices)` : ""}${newest.detail ? `: ${String(newest.detail).replace(/\.\s*$/, "").slice(0, 160)}` : ""}.`,
+  }));
+}
+
+/** " on 17 Nov" from "2026-11-17"; "" when there is no date. Pure. */
+export function dayWords(day) {
+  const t = Date.parse(`${String(day ?? "").slice(0, 10)}T12:00:00Z`);
+  return Number.isFinite(t) ? ` on ${new Date(t).toLocaleDateString("en-GB", { day: "numeric", month: "short", timeZone: "UTC" })}` : "";
+}
+
+/** "github.com" → "GitHub"; others by their domain's first label. Pure. */
+export function vendorName(domain) {
+  const known = { "github.com": "GitHub", "cloudflare.com": "Cloudflare", "stripe.com": "Stripe", "google.com": "Google", "apple.com": "Apple", "anthropic.com": "Anthropic", "openai.com": "OpenAI" };
+  const d = String(domain ?? "").toLowerCase().replace(/^(?:[a-z0-9-]+\.)*?([a-z0-9-]+\.[a-z]{2,})$/, "$1");
+  if (known[d]) return known[d];
+  const first = d.split(".")[0] ?? "A vendor";
+  return first.charAt(0).toUpperCase() + first.slice(1);
+}
+
+/** Where to fix a vendor's payment. Pure. */
+export function billingPage(domain) {
+  const d = String(domain ?? "").toLowerCase();
+  if (d.endsWith("github.com")) return "https://github.com/settings/billing";
+  if (d.endsWith("cloudflare.com")) return "https://dash.cloudflare.com/?to=/:account/billing";
+  return null;
+}
+
 // ─── Readers ────────────────────────────────────────────────────────────────
 
 async function readOpenRouter(prev) {
@@ -141,6 +272,75 @@ async function readCloudflare() {
   return { key: "cloudflare", state: paid.length ? "alert" : "ok", line: paid.length ? `Cloudflare: ${paid.length} paid subscription(s), $${total.toFixed(2)} per period (${paid.map((s) => s?.rate_plan?.public_name ?? s?.product?.name ?? "plan").join(", ")}).` : "Cloudflare: no paid subscriptions.", fingerprint: total.toFixed(2) };
 }
 
+/** The scope line she runs once so Toni can read GitHub's bill (interactive sign-in: only she can). */
+export const GITHUB_SCOPE_COMMAND = "gh auth refresh -h github.com -s user";
+
+function readGithub(run = execFileSync) {
+  const gh = (args) => run("gh", args, { encoding: "utf8", stdio: ["ignore", "pipe", "pipe"], timeout: 60_000 });
+  try {
+    const login = gh(["api", "/user", "-q", ".login"]).trim();
+    return githubUsageReading(JSON.parse(gh(["api", `/users/${login}/settings/billing/usage/summary`])));
+  } catch (e) {
+    const why = String(e?.stderr ?? e?.message ?? e);
+    if (/needs the "user" scope|Resource not accessible|404/i.test(why)) {
+      return { key: "github", state: "stop", needsHer: true, line: `GitHub's bill cannot be read yet: the Mac's GitHub sign-in lacks the billing permission. One line in Terminal adds it (a sign-in, so only you can): ${GITHUB_SCOPE_COMMAND}` };
+    }
+    return { key: "github", state: "stop", line: `GitHub's bill could not be read (${why.trim().split("\n").pop().slice(0, 120)}).` };
+  }
+}
+
+/** Days of the month already complete in Central, and the month's length. Pure. */
+export function monthProgress(now) {
+  const day = new Intl.DateTimeFormat("en-CA", { timeZone: "America/Chicago" }).format(new Date(now));
+  const [y, m, d] = day.split("-").map(Number);
+  return { first: `${y}-${String(m).padStart(2, "0")}-01`, yesterday: new Date(Date.UTC(y, m - 1, d - 1)).toISOString().slice(0, 10), daysDone: Math.max(1, d - 1), daysInMonth: new Date(Date.UTC(y, m, 0)).getUTCDate() };
+}
+
+async function readCloudflareUsage(now) {
+  const token = process.env.CLOUDFLARE_API_TOKEN, acct = process.env.CLOUDFLARE_ACCOUNT_ID;
+  if (!token || !acct) return { key: "cloudflare-usage", state: "stop", line: "Cloudflare use: no token or account id in the vault run. Missing key: CLOUDFLARE_API_TOKEN / CLOUDFLARE_ACCOUNT_ID" };
+  const h = { authorization: `Bearer ${token}` };
+  const p = monthProgress(now);
+  // On the 1st nothing is complete yet: last month's last day stands in, so the read is never empty.
+  const since = p.yesterday < p.first ? p.yesterday : p.first;
+  const q = `{viewer{accounts(filter:{accountTag:"${acct}"}){w:workersInvocationsAdaptive(limit:10000,filter:{date_geq:"${since}",date_leq:"${p.yesterday}"}){sum{requests}} d:d1AnalyticsAdaptiveGroups(limit:10000,filter:{date_geq:"${since}",date_leq:"${p.yesterday}"}){sum{rowsRead rowsWritten}}}}}`;
+  try {
+    const g = await fetch("https://api.cloudflare.com/client/v4/graphql", { method: "POST", headers: { ...h, "content-type": "application/json" }, body: JSON.stringify({ query: q }) });
+    const gj = await g.json();
+    const a = gj?.data?.viewer?.accounts?.[0];
+    if (!g.ok || !a) return { key: "cloudflare-usage", state: "stop", line: `Cloudflare use: analytics refused (${g.status} ${String(gj?.errors?.[0]?.message ?? "").slice(0, 100)}).` };
+    const total = (rows, f) => (rows ?? []).reduce((n, r) => n + Number(r?.sum?.[f] ?? 0), 0);
+    const dbs = await fetch(`https://api.cloudflare.com/client/v4/accounts/${acct}/d1/database?per_page=1000`, { headers: h }).then((r) => r.json());
+    if (!Array.isArray(dbs?.result)) return { key: "cloudflare-usage", state: "stop", line: "Cloudflare use: the D1 database list could not be read." };
+    const mtd = { requests: total(a.w, "requests"), rowsRead: total(a.d, "rowsRead"), rowsWritten: total(a.d, "rowsWritten"), storageBytes: dbs.result.reduce((n, d) => n + Number(d?.file_size ?? 0), 0) };
+    return cloudflareUsageReading(mtd, { daysDone: since === p.first ? p.daysDone : 1, daysInMonth: p.daysInMonth });
+  } catch (e) {
+    return { key: "cloudflare-usage", state: "stop", line: `Cloudflare use: unreachable (${String(e?.message ?? e).slice(0, 100)}).` };
+  }
+}
+
+/** Every live Stripe key in the vault, one reading per account (two keys on one account read once). */
+async function readStripe(now) {
+  const keys = Object.keys(process.env).filter((k) => /^STRIPE_[A-Z0-9_]+_LIVE_(SECRET|RESTRICTED)$/.test(k)).sort();
+  if (!keys.length) return [{ key: "stripe", state: "stop", line: "Stripe: no live key in the vault run." }];
+  const out = [], seen = new Set();
+  for (const k of keys) {
+    const label = k.replace(/^STRIPE_/, "").replace(/_LIVE_(SECRET|RESTRICTED)$/, "").toLowerCase().replace(/_/g, "-");
+    const h = { authorization: `Bearer ${process.env[k]}` };
+    try {
+      const acc = await fetch("https://api.stripe.com/v1/account", { headers: h });
+      const account = acc.ok ? await acc.json() : null; // a restricted key may not read the account (403): payouts still tell
+      if (account?.id) { if (seen.has(account.id)) continue; seen.add(account.id); }
+      const since = Math.floor((now - 30 * DAY) / 1000);
+      const r = await fetch(`https://api.stripe.com/v1/payouts?limit=100&created[gte]=${since}`, { headers: h });
+      out.push(stripeReading(label, { payouts: r.ok ? (await r.json())?.data : null, account }));
+    } catch (e) {
+      out.push({ key: `stripe:${label}`, state: "stop", line: `Stripe (${label}): unreachable (${String(e?.message ?? e).slice(0, 100)}).` });
+    }
+  }
+  return out;
+}
+
 async function readSupabase() {
   const token = process.env.SUPABASE_ACCESS_TOKEN;
   if (!token) return { key: "supabase", state: "stop", line: "Supabase bills cannot be read: no management token in the vault. Missing key: SUPABASE_ACCESS_TOKEN" };
@@ -166,12 +366,48 @@ async function readRenewals(domains, now) {
   return out;
 }
 
+/**
+ * The mail search behind both charge readers: receipts from the last 2 days, and anything that may be a
+ * billing problem from the last 14 (a failed card keeps being retried for days). The search only gathers
+ * candidates; what each message IS (receipt, failed payment, renewal, other) is read by the model.
+ */
+// GitHub's CI mail ("Run failed", 200 a fortnight) buried GitHub's own billing mail (CONFIRMED 20 Nov 2026),
+// so notifications@github.com is left out of the 14-day search; billing mail comes from noreply@github.com.
+export const CHARGE_QUERY = '(newer_than:2d subject:(receipt OR invoice OR "payment received" OR "your order" OR "you were charged" OR "payment confirmation" OR renewal)) OR (newer_than:14d -from:notifications@github.com subject:(payment OR billing OR declined OR "past due" OR overdue OR "payment failed" OR "unable to charge" OR suspended))';
+
+// Her household bills are never reported (her ruling: no personal bills in reports), so the model files
+// them as "personal" and nothing reads that kind.
+const KIND_RULE = 'kind is one of "receipt" (a business service took money or issued an invoice), "payment_failed" (a business service could not charge a card or payment, or an account is past due or suspended for non-payment), "renewal" (a business service will charge soon), "personal" (a household or personal bill or card: phone or internet carrier, utilities, personal credit cards, bank, rent, insurance, personal shopping), "other" (none of these, e.g. a job listing). Business services are the software, hosting, domains, AI, payment and marketing tools her companies use';
+
+/** A charge notice's reading: failed payments are gathered by vendor later; the rest are notices. Pure. */
+export function chargeReading(m, where) {
+  return { key: `charge:${String(m.id).slice(0, 40)}`, state: "notice", line: `Charge notice ${m.date ?? ""}: ${m.from_domain ?? "unknown"} — "${String(m.subject ?? "").slice(0, 120)}" (${where}).` };
+}
+
+/** Readings from model-read notices of one mailbox. Pure. */
+export function noticeReadings(notices, where, sourceKey, now = Date.now()) {
+  const list = (notices ?? []).slice(0, 25);
+  // Receipts and renewals are news for 2 days; only a billing problem is looked for 14 days back.
+  const recent = (m) => !Number.isFinite(Date.parse(m?.date)) || now - Date.parse(m.date) <= 2 * DAY + DAY / 2;
+  return list.filter((m) => (m?.kind === "receipt" || m?.kind === "renewal") && recent(m)).map((m) => chargeReading(m, where))
+    .concat(billingProblemReadings(list))
+    .concat([{ key: sourceKey, state: "ok", line: `${where.charAt(0).toUpperCase()}${where.slice(1)} read: ${list.filter((m) => ["receipt", "payment_failed", "renewal"].includes(m?.kind)).length} business charge or billing notice(s).` }]);
+}
+
 async function readChargesSpry() {
   try {
     const token = await googleToken("https://www.googleapis.com/auth/gmail.readonly", "staylor@spry.vc");
-    const hits = await gmailHeaders(token, 'newer_than:2d (subject:(receipt OR invoice OR "payment received" OR "your order" OR "you were charged" OR "payment confirmation"))', 20);
-    return hits.map((m) => ({ key: `charge:${m.id}`, state: "notice", line: `Charge notice ${m.date}: ${fromDomain(m.from)} — "${m.subject}" (spry.vc mailbox).` }))
-      .concat([{ key: "charges:spry", state: "ok", line: `spry.vc mailbox read: ${hits.length} charge notice(s) in 2 days.` }]);
+    const hits = await gmailHeaders(token, CHARGE_QUERY, 25);
+    if (!hits.length) return noticeReadings([], "spry.vc mailbox", "charges:spry");
+    // Metadata only (sender domain, subject, date): the model reads what each one is.
+    const a = askClaudeJson(
+      `Each line is one email's sender domain, date and subject. ${KIND_RULE}. Reply with ONLY a JSON array, one object per line, in order: {"id":"<id>","kind":"<kind>"}.\n` +
+      hits.map((m) => `${m.id}\t${fromDomain(m.from)}\t${m.date}\t${m.subject}`).join("\n"),
+      { model: MODEL, maxTurns: 1 },
+    );
+    if (!a.ok || !Array.isArray(a.json)) return [{ key: "charges:spry", state: "stop", line: `The spry.vc charge notices could not be read: ${a.ok ? "the answer was not a list" : a.why}.` }];
+    const kinds = new Map(a.json.map((x) => [String(x?.id), x?.kind]));
+    return noticeReadings(hits.map((m) => ({ id: m.id, from_domain: fromDomain(m.from), subject: m.subject, date: m.date, kind: kinds.get(m.id) ?? "other" })), "spry.vc mailbox", "charges:spry");
   } catch (e) {
     return [{ key: "charges:spry", state: "stop", line: `The spry.vc mailbox could not be read for charge notices (${String(e?.message ?? e).slice(0, 120)}).` }];
   }
@@ -180,13 +416,14 @@ async function readChargesSpry() {
 function readChargesPersonal() {
   if (process.env.RISK_WATCH_CONNECTOR === "0") return [{ key: "charges:personal", state: "stop", line: "Personal Gmail charge check switched off (RISK_WATCH_CONNECTOR=0)." }];
   const a = askClaudeJson(
-    "Use the Gmail tool on my mailbox. Search: newer_than:2d (subject:(receipt OR invoice OR \"payment received\" OR \"your order\" OR \"you were charged\" OR \"renewal\")). " +
-    "Do not open bodies. Reply with ONLY a JSON array, one object per message: {\"id\":\"<message id>\",\"from_domain\":\"<sender domain>\",\"subject\":\"<subject, max 120 chars>\",\"date\":\"YYYY-MM-DD\"}. An empty mailbox result is [].",
+    `Use the Gmail tool on my mailbox. Search: ${CHARGE_QUERY}. ` +
+    `For each message decide its kind from the sender, subject and snippet: ${KIND_RULE}. ` +
+    "Open a message's body only when its kind is payment_failed, to read what was not paid. " +
+    "Reply with ONLY a JSON array, one object per message: {\"id\":\"<message id>\",\"from_domain\":\"<sender domain>\",\"subject\":\"<subject, max 120 chars>\",\"date\":\"YYYY-MM-DD\",\"kind\":\"<kind>\",\"vendor\":\"<the company asking to be paid, e.g. from the sender name; for a payment page like Stripe, the business behind it>\",\"detail\":\"<payment_failed only: one plain sentence from the email: what was not paid, the amount if stated, and the attempt (e.g. attempt 3 of 3) if stated; else empty>\"}. An empty mailbox result is [].",
     { model: MODEL, ...PERSONAL_GMAIL, evidence: "risk-watch-charges-personal" },
   );
   if (!a.ok || !Array.isArray(a.json)) return [{ key: "charges:personal", state: "stop", line: `Her personal Gmail could not be read for charge notices: ${a.ok ? "the answer was not a list" : a.why}.` }];
-  return a.json.slice(0, 20).map((m) => ({ key: `charge:${String(m.id).slice(0, 40)}`, state: "notice", line: `Charge notice ${m.date ?? ""}: ${m.from_domain ?? "unknown"} — "${String(m.subject ?? "").slice(0, 120)}" (personal Gmail).` }))
-    .concat([{ key: "charges:personal", state: "ok", line: `Personal Gmail read: ${a.json.length} charge notice(s) in 2 days.` }]);
+  return noticeReadings(a.json, "personal Gmail", "charges:personal");
 }
 
 async function readSenders(api) {
@@ -230,6 +467,8 @@ async function readDkim(domain) {
 
 const RISK_LABELS = [
   [/^openrouter$/, () => "OpenRouter spend"], [/^cloudflare$/, () => "Cloudflare bills"], [/^supabase$/, () => "Supabase bills"],
+  [/^github$/, () => "GitHub's bill"], [/^cloudflare-usage$/, () => "Cloudflare use"], [/^stripe:(.+)$/, (m) => `Stripe payouts (${m[1]})`],
+  [/^billing-problem:([^:]+):/, (m) => `${vendorName(m[1])}'s payment`],
   [/^renewal:(.+)$/, (m) => `The ${m[1]} renewal`], [/^sender:(.+)$/, (m) => `Outreach from ${m[1]}`], [/^dkim:(.+)$/, (m) => `The ${m[1]} sending setup`],
 ];
 const labelOf = (key) => { for (const [re, f] of RISK_LABELS) { const m = re.exec(key); if (m) return f(m); } return key.split(":")[0]; };
@@ -244,16 +483,47 @@ export function urgentEmail(urgent) {
  * `{ urgent, decide, lines, fixes }` for the readings that moved. `urgent` is the one problem email
  * (money at risk now); everything else goes into the morning email or to the team.
  */
-export function planRisk(moved) {
+export function planRisk(moved, { github = null } = {}) {
   const out = { urgent: null, decide: [], lines: [], fixes: [] };
   for (const r of moved) {
     const key = r.key;
+    if (r.state === "stop" && r.needsHer) {
+      // A sign-in only she can give (interactive): said once, as a Decide item, never a team chore.
+      out.decide.push({ title: `Let Toni read ${labelOf(key)}?`, body: r.line, buttons: [{ label: "What the line does", url: "https://cli.github.com/manual/gh_auth_refresh" }], priority: 0 });
+      continue;
+    }
     if (r.state === "stop") {
       out.fixes.push({ title: `Toni cannot check ${labelOf(key)}`, prompt: `Toni's daily risk watch (scripts/ops/risk-watch.mjs) could not read ${key}: ${r.line} Fix the read (a token, a permission, a key in the vault) so the check runs again. This is a team chore, never her email.` });
       continue;
     }
     if (r.state === "ok" || r.state === "cleared") {
+      // A billing-problem mail ageing out of the 14-day search is not proof it was paid: say nothing.
+      if (key.startsWith("billing-problem:")) continue;
       if (r.was === "alert" || r.was === "paused") out.lines.push(`${labelOf(key)} is back to normal.`);
+      continue;
+    }
+    if (key.startsWith("billing-problem:")) {
+      const domain = r.domain ?? key.split(":")[1];
+      const extra = domain === "github.com" && github && github.state !== "stop" ? ` ${github.line}` : "";
+      const page = billingPage(domain);
+      out.decide.push({
+        title: `${r.vendor ?? vendorName(domain)} could not take a payment`,
+        body: `${r.line}${extra} Only you can update the card or pay it.`,
+        buttons: [...(page ? [{ label: "Open the billing page", url: page }] : []), { label: "Open the email", url: r.subject ? gmailSearchLink(r.subject) : `https://mail.google.com/mail/u/0/#search/${encodeURIComponent(`from:${domain}`)}` }],
+        priority: 3,
+      });
+      continue;
+    }
+    if (key === "github") {
+      out.decide.push({ title: "GitHub will charge for this month's use", body: `${r.line} Included discounts no longer cover it.`, buttons: [{ label: "Open the billing page", url: "https://github.com/settings/billing" }], priority: 2 });
+      continue;
+    }
+    if (key === "cloudflare-usage") {
+      out.decide.push({ title: "Cloudflare use is near what the plan includes", body: r.line, buttons: [{ label: "Open Cloudflare billing", url: "https://dash.cloudflare.com/?to=/:account/billing" }], priority: 1 });
+      continue;
+    }
+    if (key.startsWith("stripe:")) {
+      out.decide.push({ title: `Stripe payouts need you (${key.slice(7)})`, body: r.line, buttons: [{ label: "Open Stripe payouts", url: "https://dashboard.stripe.com/payouts" }], priority: 3 });
       continue;
     }
     if (key === "openrouter") {
@@ -308,6 +578,10 @@ async function main() {
   readings.push(or);
   readings.push(await readCloudflare());
   readings.push(await readSupabase());
+  const github = readGithub();
+  readings.push(github);
+  readings.push(await readCloudflareUsage(now));
+  readings.push(...(await readStripe(now)));
 
   let api = null;
   try { api = await bossApi(); } catch (e) { readings.push({ key: "senders", state: "stop", line: String(e?.message ?? e) }); }
@@ -326,12 +600,13 @@ async function main() {
   if (stop) { console.error(stop); process.exit(3); }
 
   const moved = movedReadings(readings, prev.states ?? {});
+  console.log(`OUTPUT ${readings.filter((r) => r.state !== "stop").length} readings`);
   console.log(`risk watch: ${readings.length} readings, ${readings.filter((r) => r.state === "alert").length} alerting, ${readings.filter((r) => r.state === "stop").length} unreadable, ${moved.length} moved since the last run.`);
   if (DRY) { console.log("RISK-WATCH-COMPLETE: dry"); return; }
 
   let reported = false;
   if (moved.length) {
-    const plan = planRisk(moved);
+    const plan = planRisk(moved, { github });
     for (const f of plan.fixes) { const why = api ? await fixJob(api, f) : "Boss OS was not reachable"; console.log(`  fix job: ${f.title}${why ? ` — NOT opened (${why})` : ""}`); }
     if (plan.lines.length || plan.decide.length) {
       if (!toMorning("risk", { lines: plan.lines, decide: plan.decide })) { console.error("state not saved so the next run says it again."); process.exit(8); }

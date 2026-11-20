@@ -26,6 +26,9 @@ export function isStuck(metric: any, key: string, raw: unknown, history: any[], 
 export function floorWords(metric: any): string;
 export function valueWords(metric: any, v: number | null): string;
 export interface Judged { id: string; state: string; note: string; next: string | null; actions: Array<{ kind: string; [k: string]: any }>; values: Record<string, any>; record: Record<string, any> }
+export function floorDue(row: any, rec: any, today: string, bDays?: number): { key: "first" | "real" | null; due: string | null };
+export function alarmTargets(rows: any[], state: any, today: string): { row: any; key: "first" | "real"; record: any }[];
+export function alarmReading(target: { row: any; key: "first" | "real"; record: any }, read: { raw?: number | null; error?: string | null } | null | undefined, today: string, businessLabel?: string): { key: string; state: "ok" | "alert" | "stop"; line: string };
 export function judge(a: { row: any; record?: any; reading: any; today: string; defaults?: any }): Judged;
 export function needsLook(results: any[], today: string): any[];
 export function emailSection(results: any[], rows: any[], o: { today: string; links: (row: any) => { open: string; restart?: string | null } }): { title: string; lines: Array<string | { text: string; links: Array<{ label: string; url: string }> }> };
