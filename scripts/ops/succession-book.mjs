@@ -55,15 +55,17 @@ const cell = (v) => String(v ?? "").replace(/\s+/g, " ").replace(/\|/g, "/").tri
 
 /** The maps speak to her ("your account"); the book speaks to Scooter about her. Quoted text is kept word for word. */
 const NOT_VERBS = new Set(["for", "to", "in", "on", "at", "with", "about", "from", "a", "an", "the", "and", "or", "by", "as", "if", "when", "that", "this", "today", "only", "directly", "all", "first", "know", "can", "will", "may", "might", "must", "should", "could", "would", "did", "had"]);
+const PAST = new Set(["wrote", "sent", "made", "took", "gave", "said", "told", "chose", "set", "put", "got", "kept", "left", "met", "paid", "read", "ran", "saw", "sold", "bought", "brought", "thought", "found", "held", "knew", "led", "lost", "meant", "built", "began", "came", "did", "drew", "forgot", "heard", "let", "picked", "spent", "won", "wore"]);
 const third = (v) => ({ are: "is", have: "has", were: "was", do: "does", go: "goes" })[v]
   ?? (/(s|sh|ch|x|z)$/.test(v) ? `${v}es` : /[^aeiou]y$/.test(v) ? `${v.slice(0, -1)}ies` : `${v}s`);
 function herPlain(t) {
   return t
     .replace(/\b[Yy]ou're\b/g, "Sequoia is").replace(/\b[Yy]ou've\b/g, "Sequoia has").replace(/\b[Yy]ou'll\b/g, "Sequoia will").replace(/\b[Yy]ou'd\b/g, "Sequoia would")
     .replace(/\b(Do|Did|Does|Will|Can|Are|Have) you\b/g, (_m, aux) => `${({ Do: "Does", Are: "Is", Have: "Has" })[aux] ?? aux} Sequoia`)
-    .replace(/\b[Yy]ou((?: still| also| already| now| once| first| then)?) ([a-z]+)\b/g, (m, adv, w, off, str) => {
+    .replace(/\b[Yy]ou((?: still| also| already| now| once| first| then)?) ([a-z]+(?:-[a-z]+)*)\b/g, (m, adv, w, off, str) => {
       if (/(Does|Did|Will|Can|Is|Has) Sequoia$/.test(str.slice(0, off).trimEnd())) return m;
-      return NOT_VERBS.has(w) || /(ed|s)$/.test(w) ? `Sequoia${adv} ${w}` : `Sequoia${adv} ${third(w)}`;
+      // A whole hyphenated verb ("un-park") takes the s; a past tense ("wrote") takes none.
+      return NOT_VERBS.has(w) || PAST.has(w) || /(ed|s)$/.test(w) ? `Sequoia${adv} ${w}` : `Sequoia${adv} ${third(w)}`;
     })
     .replace(/\bYour\b/g, "Her").replace(/\byour\b/g, "her").replace(/\byours\b/g, "hers").replace(/\bYou\b/g, "Sequoia").replace(/\byou\b/g, "Sequoia");
 }
@@ -296,7 +298,7 @@ export function safetyProblems(md) {
  */
 export const ENVELOPE = ["Her Mac login", "The lock on her Passwords app", "The KeePassXC master password"];
 export const envelopeBlock = () => ENVELOPE.map((t, i) => `${i + 1}. ${t}`).join("\n");
-const NOT_IN_ENVELOPE = /backup codes?|recovery codes?|recovery key|FileVault|iPhone passcode|her passcode|USB|printed|Used codes|letter|LLC papers|copy of this book|snapshot passphrase|vault (master )?key/i;
+const NOT_IN_ENVELOPE = /\bcop(y|ies)\b|backup codes?|recovery codes?|recovery key|FileVault|iPhone passcode|her passcode|USB|printed|Used codes|letter|LLC papers|copy of this book|snapshot passphrase|vault (master )?key/i;
 
 /** Text of one "## n." section (or "### name" subsection) of the book, up to the next heading of its level. */
 function sectionText(md, heading) {

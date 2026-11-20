@@ -143,6 +143,8 @@ describe("the Succession Book generator", () => {
     expect(bad("Videos made automatically", "In Apple review; videos made automatically")).toMatch(/Apple status/);
     expect(bad("3. Sign in to seq.taylor@gmail.com, then run Claude.", "3. Run Claude, then sign in to seq.taylor@gmail.com.")).toMatch(/starts Claude before/);
     expect(() => buildBook(input({ template: `${TEMPLATE}\nThe envelope holds a USB stick.\n` }))).toThrow(/NAMED STOP \[BOOK_CONTRADICTS_ITSELF\]/);
+    // Final review, 20 Nov 2026: a closing line placed a copy of the book in the envelope.
+    expect(bad("1. Her Mac login", "1. Her Mac login\n\nThe Boss OS copy and the envelope copy are then the versions to follow.")).toMatch(/envelope holds more/);
   });
 
   it("the Drive Doc carries real tables, nested lists and escaped text", () => {
@@ -157,5 +159,6 @@ describe("the Succession Book generator", () => {
     expect(herWords("Do you still want to go? Buyers for what you're selling")).toBe("Does Sequoia still want to go? Buyers for what Sequoia is selling");
     expect(herWords('Subject "Before you pay" stays')).toBe('Subject "Before you pay" stays');
     expect(herWords("the business you named; what you approved")).toBe("the business Sequoia named; what Sequoia approved");
+    expect(herWords("the address you wrote; until you un-park it")).toBe("the address Sequoia wrote; until Sequoia un-parks it");
   });
 });
