@@ -85,9 +85,14 @@ async function shoot(b, url, { width, height, scheme, file, maxHeight }) {
     broken: [...document.images].filter((i) => i.complete && i.naturalWidth === 0).map((i) => i.currentSrc || i.src).slice(0, 5),
     title: document.title,
   })).catch(() => ({ scrollW: width, fullH: height, broken: [], title: "" }));
-  await page.screenshot({ path: file, clip: { x: 0, y: 0, width, height: Math.min(m.fullH || height, maxHeight) } }).catch(async () => page.screenshot({ path: file }));
+  // A busy Mac can hold a screenshot on web fonts past Playwright's 30 s default: allow 90 s, then
+  // one plain viewport shot; a size that still cannot be captured is left out and named, never faked.
+  let shot = true;
+  await page.screenshot({ path: file, timeout: 90_000, clip: { x: 0, y: 0, width, height: Math.min(m.fullH || height, maxHeight) } })
+    .catch(() => page.screenshot({ path: file, timeout: 60_000 }))
+    .catch(() => { shot = false; });
   await ctx.close();
-  return { status: res?.status?.() ?? "unknown", errors, ...m };
+  return { status: res?.status?.() ?? "unknown", errors, shot, ...m };
 }
 
 async function capturePage(a, out) {
@@ -104,7 +109,8 @@ async function capturePage(a, out) {
     for (const s of sizes) {
       const file = join(out, s.label);
       const m = await shoot(b, url, { ...s, file });
-      shots.push({ path: file, label: s.label });
+      if (m.shot) shots.push({ path: file, label: s.label });
+      else facts.push(`the ${s.label.replace(/\.png$/, "")} capture could not be taken`);
       if (s.label === sizes[0].label) {
         if (a.kind !== "email") facts.push(`HTTP status of the page: ${m.status}`);
         facts.push(m.scrollW > 390 ? `horizontal scroll at 390 px: the page is ${m.scrollW} px wide` : "no horizontal scroll at 390 px");
