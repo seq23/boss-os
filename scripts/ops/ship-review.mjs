@@ -83,8 +83,32 @@ async function browser() {
   return chromium.launch();
 }
 
-/** One page at one size: a screenshot (capped in height) and what the browser measured. */
-async function shoot(b, url, { width, height, scheme, file, maxHeight, focus = [], focusFile = null }) {
+/** Tile height so a tall page is read at real size, in at most MAX_TILES parts that together cover it all. */
+export const MAX_TILES = 8;
+export function tilesFor(fullH, width) {
+  const h = Math.max(1, Math.round(fullH || 1));
+  let tile = width < 600 ? 2400 : 1800;
+  if (Math.ceil(h / tile) > MAX_TILES) tile = Math.ceil(h / MAX_TILES);
+  const out = [];
+  for (let y = 0; y < h; y += tile) out.push({ y, height: Math.min(tile, h - y) });
+  return out;
+}
+
+/** What a page's colours are: dark mode is read only when it really changes them. */
+const COLORS = () => {
+  const bg = (el) => { for (let e = el; e; e = e.parentElement) { const c = getComputedStyle(e).backgroundColor; if (c && c !== "rgba(0, 0, 0, 0)" && c !== "transparent") return c; } return "rgb(255, 255, 255)"; };
+  const main = document.querySelector("main, article, h1, p") ?? document.body;
+  return `${bg(document.body)} / ${bg(main)} / ${getComputedStyle(main).color}`;
+};
+const THEME_TOGGLE = /dark|theme|night|light mode|colou?r mode/i;
+
+/**
+ * One page at one size: the WHOLE page in tiles (no height cut: 20 Nov 2026, a change below a 3,200 px
+ * cut could not be judged) and what the browser measured. For the dark pass, `lightColors` is the light
+ * pass's colours: a site with no dark scheme is not captured twice; one with a theme toggle has it
+ * pressed; a dark that cannot be reached is "dark: not read", never a finding.
+ */
+async function shoot(b, url, { width, height, scheme, file, focus = [], focusFile = null, lightColors = null }) {
   // The browser says what it is (owner's coordinator, 20 Nov 2026: the reviewer is never disguised to
   // get past a site's bot handling). YouTube is read through its Data API instead (captureYouTube).
   const ctx = await b.newContext({ viewport: { width, height }, colorScheme: scheme, locale: "en-US", isMobile: width < 600, hasTouch: width < 600 });
@@ -116,14 +140,30 @@ async function shoot(b, url, { width, height, scheme, file, maxHeight, focus = [
     words: (document.body?.innerText ?? "").trim().length,
     media: [...document.querySelectorAll("img,video,canvas,svg")].filter((e) => { const r = e.getBoundingClientRect(); return r.width > 60 && r.height > 30; }).length,
   })).catch(() => ({ scrollW: width, fullH: height, broken: [], title: "", words: 0, media: 0 }));
-  // A busy Mac can hold a screenshot on web fonts past Playwright's 30 s default: allow 180 s, then
-  // one plain viewport shot; a size that still cannot be captured is left out and named, never faked.
-  let shot = true;
-  // fullPage is what lets a clip reach below the first screen (without it the capture stops at the
-  // viewport: 20 Nov 2026, the reviewer itself caught 390x844 shots labelled "first 3200 px").
-  await page.screenshot({ path: file, timeout: 180_000, fullPage: true, animations: "disabled", clip: { x: 0, y: 0, width, height: Math.min(m.fullH || height, maxHeight) } })
-    .catch(() => page.screenshot({ path: file, timeout: 60_000, animations: "disabled" }))
-    .catch(() => { shot = false; });
+  let colors = await page.evaluate(COLORS).catch(() => null);
+  let dark = null;
+  if (scheme === "dark" && lightColors && colors === lightColors) {
+    const toggle = page.getByRole("button", { name: THEME_TOGGLE }).or(page.locator("[aria-label*=theme i], [aria-label*=dark i], [data-theme-toggle]")).first();
+    if (await toggle.isVisible({ timeout: 1_000 }).catch(() => false)) {
+      await toggle.click().catch(() => {});
+      await page.waitForTimeout(1_000);
+      colors = await page.evaluate(COLORS).catch(() => null);
+      dark = colors && colors !== lightColors ? "toggle" : "not read";
+    } else dark = "none";
+    if (dark !== "toggle") { await ctx.close(); return { dark, tiles: [], shot: false, blank: false, focused: [], errors, status: res?.status?.() ?? "unknown", ...m }; }
+  }
+  // Every part of the page, at real size. A busy Mac can hold a screenshot on web fonts past
+  // Playwright's 30 s default: allow 180 s; a part that still cannot be captured is named, never faked.
+  // fullPage is what lets a clip reach below the first screen.
+  const parts = tilesFor(m.fullH || height, width);
+  const tiles = [], missing = [];
+  for (const [i, t] of parts.entries()) {
+    const f = parts.length === 1 ? file : file.replace(/\.png$/, `-${i + 1}of${parts.length}.png`);
+    const ok = await page.screenshot({ path: f, timeout: 180_000, fullPage: true, animations: "disabled", clip: { x: 0, y: t.y, width, height: t.height } }).then(() => true, () => false);
+    if (ok) tiles.push(f); else missing.push(`part ${i + 1} of ${parts.length} (${t.y}-${t.y + t.height} px)`);
+  }
+  if (!tiles.length) await page.screenshot({ path: file, timeout: 60_000, animations: "disabled" }).then(() => { tiles.push(file); missing.push("the whole page (only the first screen was taken)"); }, () => {});
+  const shot = tiles.length > 0;
   // THE CHANGED TEXT, WHEREVER IT SITS (20 Nov 2026: a footer note 6,500 px down was never in the
   // capture, so the change could not be judged). Each --focus text found on the page gets its own shot
   // of the screen around it.
@@ -136,7 +176,7 @@ async function shoot(b, url, { width, height, scheme, file, maxHeight, focus = [
     focused.push({ text, file: ok ? f : null });
   }
   await ctx.close();
-  return { status: res?.status?.() ?? "unknown", errors, shot, blank: isBlank(m), focused, ...m };
+  return { status: res?.status?.() ?? "unknown", errors, shot, tiles, missing, colors, dark, blank: isBlank(m), focused, ...m };
 }
 
 /** A capture with almost no words and no pictures is the browser failing, not the work: never judged. */
@@ -160,21 +200,30 @@ async function capturePage(a, out) {
     for (const target of targets) {
       const url = a.kind === "email" ? pathToFileURL(resolve(target)).href : target;
       const pre = many ? `${pageSlug(target)}-` : "";
+      // Dark is read on the first page of a review (one page's dark tells whether the site has one).
       const sizes = [
-        { label: `${pre}phone-390-light.png`, width: 390, height: 844, scheme: "light", maxHeight: 3200 },
-        ...(many ? [] : [{ label: "phone-390-dark.png", width: 390, height: 844, scheme: "dark", maxHeight: 3200 }]),
-        { label: `${pre}laptop-1280-light.png`, width: 1280, height: 800, scheme: "light", maxHeight: 2400 },
+        { label: `${pre}phone-390-light.png`, width: 390, height: 844, scheme: "light" },
+        ...(target === targets[0] ? [{ label: `${pre}phone-390-dark.png`, width: 390, height: 844, scheme: "dark" }] : []),
+        { label: `${pre}laptop-1280-light.png`, width: 1280, height: 800, scheme: "light" },
       ];
+      let lightColors = null;
       const say = (f) => facts.push(many ? `${pageSlug(target)}: ${f}` : f);
       for (const s of sizes) {
         const file = join(out, s.label);
         const fbase = s.label.replace(/\.png$/, "");
-        const m = await shoot(b, url, { ...s, file, focus: s.scheme === "light" ? (a.focus ?? []) : [], focusFile: (i) => join(out, `${fbase}-focus-${i + 1}.png`) });
+        const m = await shoot(b, url, { ...s, file, lightColors: s.scheme === "dark" ? lightColors : null, focus: s.scheme === "light" ? (a.focus ?? []) : [], focusFile: (i) => join(out, `${fbase}-focus-${i + 1}.png`) });
+        if (s === sizes[0]) lightColors = m.colors;
+        if (s.scheme === "dark" && (m.dark === "none" || m.dark === "not read")) {
+          say(m.dark === "none" ? "dark: the site has no dark scheme (the page looks the same with the phone in dark mode); nothing to judge" : "dark: not read (a theme toggle was there but the harness could not reach a dark page)");
+          continue;
+        }
+        if (s.scheme === "dark") say(m.dark === "toggle" ? "dark: read through the site's own theme toggle" : "dark: the site has its own dark scheme; captured");
         for (const [i, f] of (m.focused ?? []).entries()) {
           if (f.file) shots.push({ path: f.file, label: `${fbase}-focus-${i + 1}.png` });
           else say(`the changed text "${f.text.slice(0, 80)}" was not found on this page at ${s.width} px`);
         }
-        if (m.shot && !m.blank) shots.push({ path: file, label: s.label });
+        if (m.shot && !m.blank) for (const t of m.tiles) shots.push({ path: t, label: basename(t) });
+        if (m.shot && !m.blank) say(`the ${fbase} capture is the whole page (${m.fullH} px) in ${m.tiles.length} part${m.tiles.length === 1 ? "" : "s"}${m.missing.length ? `; NOT captured: ${m.missing.join(", ")}` : ""}`);
         else say(`the ${s.label.replace(/\.png$/, "")} capture could not be taken${m.blank ? " (the browser got a blank page)" : ""}`);
         if (m.blank) blanks.push(s.label);
         if (s === sizes[0]) {
@@ -183,7 +232,6 @@ async function capturePage(a, out) {
           say(m.broken.length ? `broken images: ${m.broken.join(", ")}` : "no broken images");
           if (a.kind !== "email") say(m.title ? `page title: "${m.title}"` : "the page has NO <title>");
           say(m.errors.length ? `console errors on load: ${m.errors.slice(0, 3).join(" | ")}` : "no console errors on load");
-          if (m.fullH > s.maxHeight) say(`the phone capture shows the first ${s.maxHeight} px of ${m.fullH}`);
         }
       }
     }
@@ -338,6 +386,7 @@ export async function judge({ routes, base, shots, out, env = process.env, fetch
     // repeated frames and warped balloon lettering that it failed as stills). A free route may FAIL a
     // piece, since its findings are specific and checkable; only a seat may PASS it.
     if (v.verdict === "PASS" && tier === "free") { log(`free: ${v.model} passed it; a free PASS is confirmed by a seat before it counts`); continue; }
+    if (v.verdict === "UNSEEN" && tier === "free") { log(`free: ${v.model} could not see ${v.unseen.join("; ")}; a seat looks before the capture is called incomplete`); continue; }
     return { ...v, tier };
   }
   return null;
@@ -411,6 +460,12 @@ export async function main(argv = process.argv.slice(2), { env = process.env, fe
   const v = await judge({ routes, base, shots, out, env, fetchImpl, log });
   if (!v) { print("OUTPUT 0 reviews"); throw stop(9, "NO_REVIEWER", `every route (${routes.join(", ")}) was out or gave no review it could trust; the next run tries again. Captures kept in ${out}`); }
 
+  // RULE 0: what no capture showed stops the harness, never the work (coordinator, 20 Nov 2026).
+  if (v.verdict === "UNSEEN") {
+    writeFileSync(join(out, "verdict.json"), JSON.stringify({ id, subject, verdict: "UNSEEN", unseen: v.unseen, already: v.already, route: v.model, facts, at: new Date().toISOString() }, null, 2));
+    print("OUTPUT 0 reviews");
+    throw stop(9, "CAPTURE_INCOMPLETE", `${v.model} could not see: ${v.unseen.join("; ")}. Nothing was judged; capture it (--focus "<changed text>", or the page that holds it) and rerun. Captures kept in ${out}`);
+  }
   const reviewer = `boss-os ship-review ${id} (${v.model})`;
   const line = v.verdict === "PASS" ? passLine({ reviewer, lookedAt, launch: base.launch }) : `${base.launch ? "Launch" : "Ship"}-ready: FAIL — ${reviewer} looked at ${lookedAt}`;
   const already = v.already ?? [];
@@ -418,6 +473,7 @@ export async function main(argv = process.argv.slice(2), { env = process.env, fe
   writeFileSync(join(out, "verdict.json"), JSON.stringify(record, null, 2));
   print(line);
   for (const l of findingLines(v.findings)) print(l);
+  if (v.unseen?.length) print(`Not seen in any capture (the harness's, not a finding): ${v.unseen.join("; ")}`);
   if (already.length) { print("Already there before this change (not this change's verdict; fix in its own round):"); for (const l of findingLines(already)) print(`  ${l}`); }
   print(`Captures and verdict: ${out}`);
 
@@ -429,6 +485,7 @@ export async function main(argv = process.argv.slice(2), { env = process.env, fe
   if (a.pr && (v.verdict === "FAIL" || already.length)) {
     const body = [line, "", ...(v.findings.length ? ["Findings (this change):", ...findingLines(v.findings), ""] : []),
       ...(already.length ? ["Already there before this change (not this verdict; fix in its own round):", ...findingLines(already), ""] : []),
+      ...(v.unseen?.length ? [`Not seen in any capture (the harness's, not a finding): ${v.unseen.join("; ")}`, ""] : []),
       `Looked at: ${lookedAt}`].join("\n");
     const err = commentOnPr(a.pr, body);
     if (err) log(`NAMED STOP [PR_NOT_UPDATED] ${err}; the findings are in ${join(out, "verdict.json")}`);

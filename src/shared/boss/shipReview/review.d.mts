@@ -14,7 +14,7 @@ export declare const SURFACES: Readonly<Record<Surface, string>>;
 export declare const DEFAULT_SURFACE: Readonly<Record<ShipKind, Surface>>;
 export declare function reviewPrompt(a: { kind: ShipKind; target: string; builder: string; checklist: string; brand?: string | null; facts?: string[]; shots: Shot[]; launch?: boolean; imageHow?: string; surface?: string | null; planned?: string[]; brief?: string | null }): string;
 export declare function lastJson(text: string): Record<string, unknown> | null;
-export declare function parseVerdict(text: string, shots: Shot[], o?: { scoped?: boolean }): { verdict: "PASS" | "FAIL"; findings: Finding[]; already: Finding[]; error?: undefined } | { error: string; verdict?: undefined; findings?: undefined; already?: undefined };
+export declare function parseVerdict(text: string, shots: Shot[], o?: { scoped?: boolean }): { verdict: "PASS" | "FAIL" | "UNSEEN"; findings: Finding[]; already: Finding[]; unseen: string[]; error?: undefined } | { error: string; verdict?: undefined; findings?: undefined; already?: undefined; unseen?: undefined };
 export declare function findingLines(findings: Finding[]): string[];
 export declare const EMAIL_SENDS: (row: { runs?: string }) => boolean;
 export declare const SOCIAL_POSTS: (row: { status?: string }) => boolean;
