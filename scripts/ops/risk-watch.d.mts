@@ -16,6 +16,10 @@ export const CLOUDFLARE_INCLUDED: Readonly<Record<string, { label: string; inclu
 export const NEAR_CAP: number;
 export function githubUsageReading(summary: unknown): BillingReading;
 export function cloudflareUsageReading(mtd: Record<string, number>, p: { daysDone: number; daysInMonth: number }): Reading;
+export const WORKERS_AI_FREE_NEURONS: number;
+export const WORKERS_AI_DAY_CEILING: number;
+export const WORKERS_AI_MONTH_LIMIT_USD: number;
+export function workersAiReading(byDay: Record<string, number> | null): Reading;
 export function stripeReading(label: string, x: { payouts: Array<{ status?: string; amount?: number; failure_message?: string }> | null; account: { payouts_enabled?: boolean; requirements?: { disabled_reason?: string } } | null }): Reading;
 export function billingProblemReadings(notices: Notice[]): BillingReading[];
 export function noticeReadings(notices: Notice[], where: string, sourceKey: string, now?: number): BillingReading[];
