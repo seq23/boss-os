@@ -56,3 +56,34 @@ launchctl unload "$MORNCATCHUP_PLIST" 2>/dev/null || true
 launchctl load "$MORNCATCHUP_PLIST"
 launchctl list | grep -q "$MORNCATCHUP_LABEL" || { echo "NOT INSTALLED: $MORNCATCHUP_LABEL"; exit 1; }
 echo "Installed $MORNCATCHUP_LABEL — daily 06:32 and 06:45 Central, and whenever the Mac comes up."
+
+# THE SLOT CATCH-UP (scripts/ops/missed-slots.mjs), every 30 minutes and at load (20 Nov 2026). The
+# 01:40 backup missed 16 and 20 Nov: the lid was closed, so the Mac slept through the slot, woke only
+# briefly, and was then restarted; the morning catch-up above runs at 06:32/06:45/boot only, never on a
+# wake from sleep. Every 30 minutes, any com.seq.* job whose daily (or weekly) slot today is past with
+# no log since is started once; a daily job silent for 36 hours is named in the morning email.
+SLOTS_LABEL="com.seq.boss-slot-catchup"
+SLOTS_PLIST="$HOME/Library/LaunchAgents/$SLOTS_LABEL.plist"
+cat > "$SLOTS_PLIST" <<SLOTSEOF
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN"
+  "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0"><dict>
+  <key>Label</key><string>$SLOTS_LABEL</string>
+  <key>ProgramArguments</key>
+  <array>
+    <string>/bin/bash</string>
+    <string>-lc</string>
+    <string>cd $REPO &amp;&amp; node scripts/ops/missed-slots.mjs</string>
+  </array>
+  <key>StartInterval</key><integer>1800</integer>
+  <key>StandardOutPath</key><string>$LOGS/slot-catchup.log</string>
+  <key>StandardErrorPath</key><string>$LOGS/slot-catchup.err</string>
+  <key>RunAtLoad</key><true/>
+</dict></plist>
+SLOTSEOF
+plutil -lint "$SLOTS_PLIST" >/dev/null || { echo "NAMED STOP [PLIST_MALFORMED] $SLOTS_PLIST is not a valid property list; not loaded." >&2; exit 1; }
+launchctl unload "$SLOTS_PLIST" 2>/dev/null || true
+launchctl load "$SLOTS_PLIST"
+launchctl list | grep -q "$SLOTS_LABEL" || { echo "NOT INSTALLED: $SLOTS_LABEL"; exit 1; }
+echo "Installed $SLOTS_LABEL — every 30 minutes and whenever the Mac comes up."
