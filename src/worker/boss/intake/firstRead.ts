@@ -160,6 +160,39 @@ export function parseBrief(text: string, words: string, files: readonly string[]
   return brief;
 }
 
+/** Her DECISION line, read strictly: an answer that does not quote her, or a reading that is not one of five, is dropped. Pure. */
+export function decisionOf(lines: readonly string[], words: string): ReplyDecision | null {
+  const line = lines.find((l) => /^DECISION\s*:/i.test(l));
+  if (!line) return null;
+  let v: unknown;
+  try { v = JSON.parse(line.replace(/^DECISION\s*:\s*/i, "")); } catch { return null; }
+  if (!v || typeof v !== "object" || Array.isArray(v)) return null;
+  const d = v as { reply?: unknown; answers?: unknown };
+  const reply = typeof d.reply === "string" && (READ_MODES as readonly string[]).includes(d.reply) ? (d.reply as ReplyMode) : null;
+  const body = norm(words);
+  const answers = (Array.isArray(d.answers) ? d.answers : [])
+    .map((a) => ({ n: Number((a as { n?: unknown })?.n), text: String((a as { text?: unknown })?.text ?? "").trim() }))
+    .filter((a) => Number.isInteger(a.n) && a.n > 0 && a.n < 100 && a.text.length > 0 && body.includes(norm(a.text)))
+    .slice(0, MAX_ITEMS);
+  return reply || answers.length ? { reply, answers } : null;
+}
+
+/**
+ * BOTH READINGS ON THE RECORD, every time a reply door decides (owner ruling, 19 Nov 2026; the West Peek OS shape):
+ * what the first read said, what the keywords said, and which one acted. "first read absent: keyword fallback" when no
+ * first read gave this part. Never throws.
+ */
+export async function logReplyDecision(env: Env, input: { mailId: string; what: string; firstRead: string | null; keyword: string }): Promise<string> {
+  const used = input.firstRead === null ? "KEYWORD" : "FIRST_READ";
+  const line = input.firstRead === null
+    ? `first read absent: keyword fallback (${input.what}: ${input.keyword}).`
+    : input.firstRead === input.keyword
+      ? `First read decides ${input.what}: ${input.firstRead} (the keywords agree).`
+      : `First read decides ${input.what}: ${input.firstRead}; the keywords read ${input.keyword} and were overruled.`;
+  await logEvent(env.DB, { level: "info", scope: "intake", event: "first_read_decides", lane: "ops", entityId: input.mailId, detail: { what: input.what, used, first_read: input.firstRead, keyword: input.keyword, line } }).catch(() => undefined);
+  return line;
+}
+
 /**
  * The free rungs, in HER order (owner ruling, 19 Nov 2026): Google's free Gemini rows, then Workers AI. Never Claude or
  * Codex, never a paid API, never masked in Boss OS.
