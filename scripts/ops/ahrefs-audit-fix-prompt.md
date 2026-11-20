@@ -234,6 +234,14 @@ source page. Shapes seen before: a relative `src="assets/…"` on pages served u
 was missing from an assembler's deny-list; Cloudflare email-obfuscation links that 404 for crawlers
 (use a plain `mailto:` or the site's form).
 
+**Hold every fix to the engineering bar.** Before you change a repository, read
+`~/.claude/skills/ship-ready/engineering.md` and answer its one question for the fix: "if we built
+this from scratch today with the tools we have, would it look like this?" Record it on the finding as
+`built_today: { "answer": "yes" | "no", "different": "…" }` (why yes, or what is different and
+whether this PR does the rebuild or a dated Open Loops row names it), and put the same line in the PR
+body. A fix that patches logic fixed in the last 30 days is a rebuild, not another patch. The report
+refuses a `fixed_pr` without it (`FIX_WITHOUT_BUILT_TODAY`).
+
 **Follow each repository's own conventions.** Read its `CLAUDE.md` and `scripts/validate/`. Run that
 repository's own validators (its fast check: typecheck, unit, validators — not a full e2e suite unless
 you changed what it covers) in ONE batched call before you push, and say in the PR body which ran and
@@ -300,6 +308,7 @@ Write `~/.boss-os/site-audit/findings.json` and nothing else. Shape:
       "because": "Thirteen answer pages used a relative src=\"assets/…\" which resolves to /answers/assets/… and 404s.",
       "suggested_action": "PR #23 is green; the runner lands it.",
       "pr_url": "https://github.com/seq23/WPP-llm/pull/23",
+      "built_today": { "answer": "yes", "different": "nothing: the fix is in the answer-page template, at source, the way it would be built today" },
       "worktree": "/Users/…/GitHub/.wt-danielle-WPP-llm-20261016-153800",
       "crawl": { "pages_crawled": 117, "sitemap_total": 117, "counts": { "broken_internal_image": 13 } },
       "health_score": 22,

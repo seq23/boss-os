@@ -238,6 +238,15 @@ describe("the phases, and the two facts every landing rests on", () => {
     for (const w of ["approved", "Approved.", "approve", "yes", "go", "Land it!", "ok"]) expect(readReply(w).mode, w).toBe("approved");
     for (const w of ["no", "No thanks", "not approved", "stop", "changes: use B", "hold"]) expect(readReply(w).mode, w).toBe("held");
     for (const w of ["Use B. Go.", "note: use B", "now use B, approved", "approved\nbut use B", "approved to prod"]) expect(readReply(w).mode, w).toBe("answers");
+  });
+
+  it("readReply: the first read decides; the hold keywords judge the whole sentence (owner ruling, 19 Nov 2026)", () => {
+    // The first read's reading wins over the words.
+    expect(readReply("approved", "held")).toMatchObject({ mode: "held", by: "FIRST_READ" });
+    expect(readReply("no notes, ship it", "approved")).toMatchObject({ mode: "approved", text: APPROVED_DEFAULTS_TEXT, by: "FIRST_READ" });
+    // With no first read, a hold that is asked, conditional or reported is her answer, never a hold.
+    for (const w of ["Stop the build?", "hold it if the numbers are off", "no, last time I said use A"]) expect(readReply(w).mode, w).toBe("answers");
+    for (const w of ["no, not yet", "stop.", "hold off until Monday"]) expect(readReply(w)).toMatchObject({ mode: "held", by: "KEYWORD" });
     for (const w of ["preview", "Preview only", "preview first"]) expect(readReply(w).mode, w).toBe("preview");
     for (const w of ["approved to production", "Approved to production.", "force production", "ship it anyway", "land anyway"]) expect(readReply(w).mode, w).toBe("forced");
     expect(readReply("").mode).toBe("empty");

@@ -122,6 +122,17 @@ describe("the ladder is free, and only free", () => {
     expect(ids.filter((id) => /anthropic|claude|openai\/|gpt/i.test(id))).toEqual([]);
     expect(ids.filter((id) => !/:free$|^gemini-|^@cf\//.test(id)), "every rung is a free slug or Workers AI").toEqual([]);
     expect(ids[ids.length - 1]).toMatch(/^@cf\//);
+    // Her order (19 Nov 2026): Gemini free, then Workers AI. No OpenRouter rung even with its key present.
+    expect(ids.filter((id) => !/^gemini-|^@cf\//.test(id)), "Gemini free, then Workers AI, nothing else").toEqual([]);
+  });
+
+  it("her reply's DECISION is read strictly: a reading of five, answers that quote her; a decision-only reply is a read", async () => {
+    const words = "2: send it Monday\napproved";
+    const brief = parseBrief('NONE\nDECISION: {"reply":"approved","answers":[{"n":2,"text":"send it Monday"},{"n":3,"text":"invented words"}]}', words)!;
+    expect(brief.decision).toEqual({ reply: "approved", answers: [{ n: 2, text: "send it Monday" }] });
+    expect(parseBrief('NONE\nDECISION: {"reply":"ship it","answers":[]}', "ship it")?.decision ?? null).toBeNull();
+    const read = await firstRead(env, { subject: "Re: plan", words: "approved", now: Date.now(), mailId: "m_dec" }, [{ id: "gemini-test", call: async () => 'NONE\nDECISION: {"reply":"approved","answers":[]}' }]);
+    expect(read.brief?.decision?.reply, "a one-word reply is still read").toBe("approved");
   });
 
   it("a prospect's name in her email reaches the free reader unchanged (no private-term block)", async () => {

@@ -32,6 +32,7 @@
  * (`searchEvidenceGap`, src/shared/boss/siteAudit/evidence.mjs).
  */
 
+import { builtTodayProblem } from "../../src/shared/boss/engineering/builtToday.mjs";
 import { readFile, stat } from "node:fs/promises";
 import { join } from "node:path";
 import { mayAutoFix, whyNoAutoFix, DISPOSITIONS } from "../../src/shared/boss/siteAudit/repoPolicy.mjs";
@@ -185,6 +186,14 @@ async function main() {
         stop(16, "FIX_WITH_NO_PR",
           `Finding ${i + 1} claims a fix in ${f?.repo} and names no pull request.`,
           "An unverifiable fix is not recorded.");
+      }
+      // The engineering bar (owner ruling, 19 Nov 2026): every fix answers "built from scratch today, would it look like this?"
+      const builtProblem = builtTodayProblem(f?.built_today);
+      if (builtProblem) {
+        stop(20, "FIX_WITHOUT_BUILT_TODAY",
+          `Finding ${i + 1} claims a fix in ${f?.repo} and ${builtProblem}.`,
+          "Read ~/.claude/skills/ship-ready/engineering.md and answer it per fix: built_today: { answer: \"yes\" | \"no\", different }.",
+          "THE WHOLE BATCH was refused.");
       }
       if (f?.mapped_by !== "repo_identity" && f?.mapped_by !== "grid_manifest") {
         stop(17, "REPO_MATCHED_BY_RESEMBLANCE",
