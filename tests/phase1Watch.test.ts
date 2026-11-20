@@ -10,7 +10,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import {
-  billingProblemReadings, cloudflareUsageReading, githubUsageReading, monthProgress, noticeReadings, planRisk, stripeReading,
+  billingProblemReadings, cloudflareUsageReading, workersAiReading, githubUsageReading, monthProgress, noticeReadings, planRisk, stripeReading,
 } from "../scripts/ops/risk-watch.mjs";
 import { lineProblems } from "../src/shared/boss/mail/plain.mjs";
 import { morningSectionProblems } from "../src/shared/boss/mail/morning.mjs";
@@ -72,6 +72,17 @@ describe("billing watch: a failed payment surfaces as one plain Decide item", ()
     expect(plan.fixes).toEqual([]);
     expect(plan.decide[0]!.body).toContain("gh auth refresh -h github.com -s user");
     expect(planRisk([{ key: "github", state: "stop", was: null, line: "GitHub's bill could not be read (500)." }]).fixes).toHaveLength(1);
+  });
+
+  it("Workers AI: a day past 9,000 neurons is named, $0.99 of overage in a month is her limit", () => {
+    expect(workersAiReading({ "2026-11-18": 1027, "2026-11-19": 34 }).state).toBe("ok");
+    const hot = workersAiReading({ "2026-11-19": 34, "2026-11-20": 29_072 });
+    expect(hot.state).toBe("alert");
+    expect(hot.line).toContain("2026-11-20");
+    expect(hot.line).toContain("$0.21");
+    const limit = workersAiReading({ "2026-11-15": 112_937, "2026-11-20": 9_500 });
+    expect(limit.line).toContain("$0.99 limit");
+    expect(workersAiReading(null).state).toBe("stop");
   });
 
   it("Cloudflare use is projected to the month's end and named when near what the plan includes", () => {

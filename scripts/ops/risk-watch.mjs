@@ -180,6 +180,30 @@ export function cloudflareUsageReading(mtd, { daysDone, daysInMonth }) {
     : { key: "cloudflare-usage", state: "ok", line: `Cloudflare use is inside its plan: ${parts.join(", ")}.` };
 }
 
+/**
+ * Workers AI is billed per UTC day: 10,000 neurons free, then $0.011 per 1,000 (Cloudflare pricing,
+ * read 17 Sep 2026). The owner's bar (20 Nov 2026): "we should strive for $0", and an overage under
+ * $1 a month is the most she accepts. Red-team runs took the account to 29,072 neurons on 20 Nov and
+ * the plan reading above never saw it, because it counts requests and D1 only.
+ */
+export const WORKERS_AI_FREE_NEURONS = 10_000;
+export const WORKERS_AI_DAY_CEILING = 9_000;
+export const WORKERS_AI_MONTH_LIMIT_USD = 0.99;
+const NEURON_USD = 0.011 / 1000;
+
+/** Neurons per UTC day this month (complete days) → one reading. Pure. */
+export function workersAiReading(byDay) {
+  const key = "workers-ai";
+  if (!byDay || typeof byDay !== "object") return { key, state: "stop", line: "Workers AI use: the analytics answer had no neuron counts." };
+  const days = Object.entries(byDay).filter(([, n]) => Number.isFinite(Number(n))).sort(([a], [b]) => a.localeCompare(b));
+  const overUsd = days.reduce((s, [, n]) => s + Math.max(0, Number(n) - WORKERS_AI_FREE_NEURONS) * NEURON_USD, 0);
+  const hot = days.filter(([, n]) => Number(n) > WORKERS_AI_DAY_CEILING).map(([d, n]) => `${d} ${big(Number(n))}`);
+  const money = `$${overUsd.toFixed(2)} past the free neurons this month`;
+  if (overUsd >= WORKERS_AI_MONTH_LIMIT_USD) return { key, state: "alert", line: `Workers AI is at ${money}, at or past her $0.99 limit (days over ${big(WORKERS_AI_DAY_CEILING)}: ${hot.join(", ")}). Find the caller by model in Cloudflare's AI analytics and stop it at source.` };
+  if (hot.length) return { key, state: "alert", line: `Workers AI went past ${big(WORKERS_AI_DAY_CEILING)} neurons on ${hot.join(", ")} (${money}; the aim is $0). Find the caller by model and cap it.` };
+  return { key, state: "ok", line: `Workers AI stayed under ${big(WORKERS_AI_DAY_CEILING)} neurons every day this month (${money}).` };
+}
+
 /** One Stripe account's payouts (last 30 days) and account record → one reading. Pure. */
 export function stripeReading(label, { payouts, account }) {
   const key = `stripe:${label}`;
@@ -303,7 +327,7 @@ async function readCloudflareUsage(now) {
   const p = monthProgress(now);
   // On the 1st nothing is complete yet: last month's last day stands in, so the read is never empty.
   const since = p.yesterday < p.first ? p.yesterday : p.first;
-  const q = `{viewer{accounts(filter:{accountTag:"${acct}"}){w:workersInvocationsAdaptive(limit:10000,filter:{date_geq:"${since}",date_leq:"${p.yesterday}"}){sum{requests}} d:d1AnalyticsAdaptiveGroups(limit:10000,filter:{date_geq:"${since}",date_leq:"${p.yesterday}"}){sum{rowsRead rowsWritten}}}}}`;
+  const q = `{viewer{accounts(filter:{accountTag:"${acct}"}){w:workersInvocationsAdaptive(limit:10000,filter:{date_geq:"${since}",date_leq:"${p.yesterday}"}){sum{requests}} d:d1AnalyticsAdaptiveGroups(limit:10000,filter:{date_geq:"${since}",date_leq:"${p.yesterday}"}){sum{rowsRead rowsWritten}} ai:aiInferenceAdaptiveGroups(limit:10000,filter:{date_geq:"${since}",date_leq:"${p.yesterday}"}){sum{totalNeurons} dimensions{date}}}}}`;
   try {
     const g = await fetch("https://api.cloudflare.com/client/v4/graphql", { method: "POST", headers: { ...h, "content-type": "application/json" }, body: JSON.stringify({ query: q }) });
     const gj = await g.json();
@@ -313,7 +337,8 @@ async function readCloudflareUsage(now) {
     const dbs = await fetch(`https://api.cloudflare.com/client/v4/accounts/${acct}/d1/database?per_page=1000`, { headers: h }).then((r) => r.json());
     if (!Array.isArray(dbs?.result)) return { key: "cloudflare-usage", state: "stop", line: "Cloudflare use: the D1 database list could not be read." };
     const mtd = { requests: total(a.w, "requests"), rowsRead: total(a.d, "rowsRead"), rowsWritten: total(a.d, "rowsWritten"), storageBytes: dbs.result.reduce((n, d) => n + Number(d?.file_size ?? 0), 0) };
-    return cloudflareUsageReading(mtd, { daysDone: since === p.first ? p.daysDone : 1, daysInMonth: p.daysInMonth });
+    const neurons = Array.isArray(a.ai) ? a.ai.reduce((m, r) => ({ ...m, [r.dimensions.date]: (m[r.dimensions.date] ?? 0) + Number(r?.sum?.totalNeurons ?? 0) }), {}) : null;
+    return [cloudflareUsageReading(mtd, { daysDone: since === p.first ? p.daysDone : 1, daysInMonth: p.daysInMonth }), workersAiReading(neurons)];
   } catch (e) {
     return { key: "cloudflare-usage", state: "stop", line: `Cloudflare use: unreachable (${String(e?.message ?? e).slice(0, 100)}).` };
   }
@@ -580,7 +605,7 @@ async function main() {
   readings.push(await readSupabase());
   const github = readGithub();
   readings.push(github);
-  readings.push(await readCloudflareUsage(now));
+  readings.push(...[await readCloudflareUsage(now)].flat());
   readings.push(...(await readStripe(now)));
 
   let api = null;
