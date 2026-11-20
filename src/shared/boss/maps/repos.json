@@ -324,6 +324,27 @@
       "what": "The shared search engine every selling site runs."
     },
     {
+      "repo": "redwoodreserveholdings-site",
+      "label": "Redwood Reserve Holdings site",
+      "category": "mine",
+      "business": "personal",
+      "what": "The company page of her LLC, Redwood Reserve Holdings (redwoodreserveholdings.com)."
+    },
+    {
+      "repo": "whisperalmanac-site",
+      "label": "Whisper Almanac site",
+      "category": "mine",
+      "business": "spry",
+      "what": "The website of Whisper Almanac, the sleep and ASMR YouTube channel (whisperalmanac.com)."
+    },
+    {
+      "repo": "Deep-seek-infra-vault",
+      "label": "DeepSeek infra copy",
+      "category": "mine",
+      "business": "personal",
+      "what": "A copy of an open-source DeepSeek AI infrastructure project (its own GitHub Pages site); not part of any business."
+    },
+    {
       "repo": "seq-bin",
       "label": "Mac scripts",
       "category": "system",

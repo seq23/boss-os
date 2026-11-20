@@ -894,7 +894,16 @@
       "status": "planned",
       "posts": {
         "by": "job",
-        "what": "The whisper lane uploads from the Mac once the first episode is ready (0 uploads).",
+        "what": "The Mac's night batch renders the whispered episodes in her cloned voice, uploads them and schedules Shorts cut from each.",
+        "check": {
+          "kind": "launchd",
+          "label": "com.howweknow.batch",
+          "log_dir": "Library/Logs/how-we-know",
+          "max_age_days": 2
+        },
+        "jobs": [
+          "howweknow-batch"
+        ],
         "code": [
           {
             "repo": "how-we-know",
@@ -906,7 +915,7 @@
           }
         ]
       },
-      "decision": "The ASMR channel is Whisper Almanac (8 Nov 2026, supersedes Safe Now Whispers).",
+      "decision": "The ASMR channel is Whisper Almanac (8 Nov 2026, supersedes Safe Now Whispers). It has uploaded since Nov 2026 but was mapped planned, so it is not on the ship-ready gate's grandfather list; it stays planned until its Launch-ready PASS (first review sr_mwp7ggjbgup9, 20 Nov 2026, could not load the channel logged out).",
       "account_email_note": "On the guides' Google account (cryptoclearr), where the channel was created 6 Nov 2026 (Spry brain)."
     },
     {

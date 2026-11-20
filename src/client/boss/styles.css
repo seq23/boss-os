@@ -1966,4 +1966,11 @@ a.btn { text-decoration: none; text-align: center; display: inline-block; }
 .succession { max-width: 760px; overflow-wrap: anywhere; }
 .succession .succession-h2 { margin-top: 28px; }
 .succession .succession-h3 { font-size: 16px; margin: 18px 0 6px; }
+.succession-toc { background: var(--card); border: 1px solid var(--line); border-radius: 3px; padding: 10px 14px; margin: 0 0 16px; }
+.succession-toc-h { font-family: var(--mono); font-size: 11px; letter-spacing: 0.08em; text-transform: uppercase; color: var(--muted); margin: 0 0 6px; }
+.succession-toc ul { margin: 0; padding-left: 0; list-style: none; line-height: 1.4; }
+.succession-toc li a { display: inline-block; padding: 6px 0; }
+.succession-toc .succession-toc-sub { list-style: none; margin-left: 12px; }
+.succession [id^="s-"] { scroll-margin-top: 80px; }
+.succession a { color: var(--rose); text-decoration-color: var(--blush-deep); text-underline-offset: 2px; }
 .succession code { font-family: var(--mono); font-size: 13px; background: var(--card-2); padding: 1px 4px; border-radius: 2px; }
