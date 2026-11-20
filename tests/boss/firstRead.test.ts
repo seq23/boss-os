@@ -136,16 +136,16 @@ describe("the ladder is free, and only free", () => {
     expect(read.brief?.decision?.reply, "a one-word reply is still read").toBe("approved");
   });
 
-  it("her plain-word commands are read only when they quote her; a comment needs its number", () => {
+  it("her plain-word commands are read only when they quote her; a comment needs its number and an action from the list", () => {
     const words = "drop 2\nGate done.\nI was going to say nudge ann@lp.example but not yet\n3 delete";
     const d = parseBrief(
-      'NONE\nDECISION: {"reply":null,"answers":[],"commands":[{"kind":"drop","n":2,"text":"drop 2"},{"kind":"gate","n":null,"text":""},{"kind":"nudge","n":null,"text":"bob@lp.example"},{"kind":"comment","n":null,"text":"delete"},{"kind":"comment","n":3,"text":"delete"},{"kind":"launch","n":null,"text":"drop 2"}]}',
+      'NONE\nDECISION: {"reply":null,"answers":[],"commands":[{"kind":"drop","n":2,"text":"drop 2"},{"kind":"gate","n":null,"text":""},{"kind":"nudge","n":null,"text":"bob@lp.example"},{"kind":"comment","n":null,"text":"delete"},{"kind":"comment","n":3,"action":"hide","text":"delete"},{"kind":"comment","n":3,"action":"burn","text":"delete"},{"kind":"launch","n":null,"text":"drop 2"}]}',
       words,
     )!.decision!;
     expect(d.commands).toEqual([
       { kind: "drop", n: 2, text: "drop 2" },
       { kind: "gate", n: null, text: "" },
-      { kind: "comment", n: 3, text: "delete" },
+      { kind: "comment", n: 3, text: "delete", action: "hide" },
     ]);
   });
 

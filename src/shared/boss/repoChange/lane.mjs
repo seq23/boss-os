@@ -475,6 +475,23 @@ export function herWords(text) {
   return out.join("\n").trim();
 }
 
+/*
+ * THE READING IS ANCHORED TO HER WORDS (fresh review of #473, 20 Nov 2026). The model decides, inside two hard stops
+ * that code holds:
+ *   · production without a preview is "forced" only when HER words carry a force phrase (FORCE_WORDS); a model's
+ *     "forced" without them is a preview, the safe floor;
+ *   · a full approval is "approved" only when her words carry no item numbers and no "but / not / except / unless /
+ *     only": "approve 1 and 3, skip 2" read as approved becomes her answers, so a partial approval is never a full one.
+ * Pure.
+ */
+const PARTIAL = /\b\d{1,3}\b|\b(?:but|except|not|unless|only|skip|without)\b|n['’]t\b/i;
+export function anchoredReading(read, words) {
+  const w = String(words ?? "");
+  if (read === "forced") return forcePhraseIn(w) ? "forced" : "preview";
+  if (read === "approved" && PARTIAL.test(w.replace(/\[[a-z]{2,4}_[a-z0-9]+\]/gi, " "))) return "answers";
+  return read;
+}
+
 export function readReply(text, read = null) {
   const raw = herWords(text);
   if (!raw) return { mode: "empty", text: raw, by: "KEYWORD" };
@@ -483,8 +500,9 @@ export function readReply(text, read = null) {
    * (intake/firstRead.ts, its DECISION's `reply`), that is the reading; the words below are the logged last resort.
    */
   if (read && READ_MODES.includes(read)) {
-    const text = read === "approved" ? APPROVED_DEFAULTS_TEXT : read === "preview" ? PREVIEW_DEFAULTS_TEXT : read === "forced" ? FORCED_TEXT : raw;
-    return { mode: read, text, by: "FIRST_READ" };
+    const mode = anchoredReading(read, raw);
+    const text = mode === "approved" ? APPROVED_DEFAULTS_TEXT : mode === "preview" ? PREVIEW_DEFAULTS_TEXT : mode === "forced" ? FORCED_TEXT : raw;
+    return { mode, text, by: "FIRST_READ" };
   }
   const first = raw.split(/\r?\n/).map((l) => l.trim()).find((l) => l.length > 0) ?? "";
   const norm = first.toLowerCase().replace(/[\s.!,;:'"“”‘’-]+$/g, "").replace(/^[\s"“'‘-]+/g, "").trim();

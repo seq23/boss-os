@@ -1,5 +1,5 @@
 import type { Env } from "../env";
-import { sentencesOf, standingIn } from "../../../shared/boss/text/wholeSentence.mjs";
+import { quoteStands, sentencesOf, standingIn } from "../../../shared/boss/text/wholeSentence.mjs";
 import { logReplyDecision, type ReplyDecision } from "../intake/firstRead";
 import { audit } from "../lib/audit";
 import { holdThreadReply } from "../wealth/gmailDraft";
@@ -105,7 +105,7 @@ export async function nudgeFromWords(
   by: { read?: ReplyDecision | null; mailId?: string } = {},
 ): Promise<{ note: string; sent: number } | null> {
   // The first read decides (19 Nov 2026): its nudge commands name the addresses; the judged keywords only without one.
-  const fromRead = by.read ? [...new Set(by.read.commands.filter((c) => c.kind === "nudge").flatMap((c) => nudgeAddressesIn(`nudge ${c.text}`)))] : null;
+  const fromRead = by.read ? [...new Set(by.read.commands.filter((c) => c.kind === "nudge" && quoteStands(text, c.text)).flatMap((c) => nudgeAddressesIn(`nudge ${c.text}`)))] : null;
   const keyword = judgedNudgeAddressesIn(text);
   const addresses = fromRead ?? keyword;
   if (by.mailId && (fromRead?.length || keyword.length)) {

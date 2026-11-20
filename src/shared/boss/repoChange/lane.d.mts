@@ -99,3 +99,5 @@ export function redChecksAction(row: { rework_count?: number | null; origin?: st
 export function isRepair(row: { origin?: string | null } | null | undefined): boolean;
 export function planWaitsForOwner(row: { origin?: string | null; pre_approved_phrase?: string | null; pre_approved_by?: string | null } | null | undefined): boolean;
 export function namesPostLandStep(text: string | null | undefined): boolean;
+
+export function anchoredReading(read: ReplyMode, words: string): ReplyMode;

@@ -73,3 +73,18 @@ export function standingIn(sentence, re, shapes = ALL_SHAPES) {
 export function stands(text, re, shapes = ALL_SHAPES) {
   return sentencesOf(text).some((x) => standingIn(x.text, re, shapes) !== null);
 }
+
+/*
+ * A QUOTE FROM A MODEL'S READING, JUDGED IN HER SENTENCE (fresh review of #473, 20 Nov 2026). A reading quotes her
+ * ("drop 3"), but the condition may sit in the rest of the sentence ("drop 3 if Ron hasn't answered by Friday"). So the
+ * quote is judged in every sentence of hers that holds it (or that it holds), and alone only when none does. True when
+ * it stands.
+ */
+const flat = (t) => String(t ?? "").toLowerCase().replace(/[“”]/g, '"').replace(/[‘’]/g, "'").replace(/\s+/g, " ").trim();
+export function quoteStands(words, quote, shapes = ALL_SHAPES) {
+  const q = flat(quote);
+  if (!q) return true;
+  const holding = sentencesOf(words).filter((x) => { const f = flat(x.text); return f.includes(q) || q.includes(f); });
+  if (!holding.length) return !vetoOf(quote, null, shapes);
+  return holding.every((x) => !vetoOf(x.text, null, shapes));
+}
