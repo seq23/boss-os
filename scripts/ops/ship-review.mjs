@@ -40,6 +40,8 @@ import {
 const ROSTER = "https://raw.githubusercontent.com/seq23/search-loop/main/config/free-models.json";
 const GEMINI = "https://generativelanguage.googleapis.com/v1beta/openai/chat/completions";
 const IMAGE_EXT = /\.(png|jpe?g|webp)$/i;
+const YT_API = "https://www.googleapis.com/youtube/v3";
+export const YOUTUBE_CHANNEL = /youtube\.com\/(?:(@[\w.-]+)|channel\/(UC[\w-]+))/i;
 
 const stop = (code, tag, why) => Object.assign(new Error(`NAMED STOP [${tag}] ${why}`), { code });
 
@@ -72,28 +74,51 @@ async function browser() {
 
 /** One page at one size: a screenshot (capped in height) and what the browser measured. */
 async function shoot(b, url, { width, height, scheme, file, maxHeight }) {
-  const ctx = await b.newContext({ viewport: { width, height }, colorScheme: scheme });
+  // The browser says what it is (owner's coordinator, 20 Nov 2026: the reviewer is never disguised to
+  // get past a site's bot handling). YouTube is read through its Data API instead (captureYouTube).
+  const ctx = await b.newContext({ viewport: { width, height }, colorScheme: scheme, locale: "en-US", isMobile: width < 600, hasTouch: width < 600 });
   const page = await ctx.newPage();
   const errors = [];
   page.on("console", (m) => { if (m.type() === "error") errors.push(m.text().slice(0, 160)); });
   page.on("pageerror", (e) => errors.push(String(e.message).slice(0, 160)));
-  const res = await page.goto(url, { waitUntil: "networkidle", timeout: 45_000 }).catch((e) => ({ status: () => `not loaded (${e.message.split("\n")[0]})` }));
-  await page.waitForTimeout(800);
+  const res = await page.goto(url, { waitUntil: "domcontentloaded", timeout: 60_000 }).catch((e) => ({ status: () => `not loaded (${e.message.split("\n")[0]})` }));
+  await page.waitForLoadState("networkidle", { timeout: 20_000 }).catch(() => {});
+  // A consent wall is answered the privacy-first way (reject), as a stranger who declines would.
+  for (const name of [/^reject all$/i, /^reject$/i, /^decline( all)?$/i, /^only (allow )?(necessary|essential)/i]) {
+    const btn = page.getByRole("button", { name }).first();
+    if (await btn.isVisible({ timeout: 500 }).catch(() => false)) { await btn.click().catch(() => {}); await page.waitForLoadState("networkidle", { timeout: 20_000 }).catch(() => {}); break; }
+  }
+  // Wait for real content (words or pictures on the first screen), up to 25 s.
+  await page.waitForFunction(() => (document.body?.innerText ?? "").trim().length > 80 || [...document.querySelectorAll("img,video,canvas,svg")].filter((e) => e.getBoundingClientRect().width > 60).length > 2, null, { timeout: 25_000 }).catch(() => {});
+  // Scroll the whole page once so scroll-triggered reveals and lazy images load, then settle at the
+  // top: a capture taken mid-animation shows an empty or blurred hero (20 Nov 2026, linear.app).
+  await page.evaluate(async () => {
+    for (let y = 0; y < document.documentElement.scrollHeight; y += window.innerHeight) { window.scrollTo(0, y); await new Promise((r) => setTimeout(r, 150)); }
+    window.scrollTo(0, 0);
+  }).catch(() => {});
+  await page.waitForTimeout(2000);
   const m = await page.evaluate(() => ({
     scrollW: document.documentElement.scrollWidth,
     fullH: document.documentElement.scrollHeight,
     broken: [...document.images].filter((i) => i.complete && i.naturalWidth === 0).map((i) => i.currentSrc || i.src).slice(0, 5),
     title: document.title,
-  })).catch(() => ({ scrollW: width, fullH: height, broken: [], title: "" }));
-  // A busy Mac can hold a screenshot on web fonts past Playwright's 30 s default: allow 90 s, then
+    words: (document.body?.innerText ?? "").trim().length,
+    media: [...document.querySelectorAll("img,video,canvas,svg")].filter((e) => { const r = e.getBoundingClientRect(); return r.width > 60 && r.height > 30; }).length,
+  })).catch(() => ({ scrollW: width, fullH: height, broken: [], title: "", words: 0, media: 0 }));
+  // A busy Mac can hold a screenshot on web fonts past Playwright's 30 s default: allow 180 s, then
   // one plain viewport shot; a size that still cannot be captured is left out and named, never faked.
   let shot = true;
-  await page.screenshot({ path: file, timeout: 90_000, clip: { x: 0, y: 0, width, height: Math.min(m.fullH || height, maxHeight) } })
-    .catch(() => page.screenshot({ path: file, timeout: 60_000 }))
+  // fullPage is what lets a clip reach below the first screen (without it the capture stops at the
+  // viewport: 20 Nov 2026, the reviewer itself caught 390x844 shots labelled "first 3200 px").
+  await page.screenshot({ path: file, timeout: 180_000, fullPage: true, animations: "disabled", clip: { x: 0, y: 0, width, height: Math.min(m.fullH || height, maxHeight) } })
+    .catch(() => page.screenshot({ path: file, timeout: 60_000, animations: "disabled" }))
     .catch(() => { shot = false; });
   await ctx.close();
-  return { status: res?.status?.() ?? "unknown", errors, shot, ...m };
+  return { status: res?.status?.() ?? "unknown", errors, shot, blank: isBlank(m), ...m };
 }
+
+/** A capture with almost no words and no pictures is the browser failing, not the work: never judged. */
+export const isBlank = (m) => (m?.words ?? 0) < 40 && (m?.media ?? 0) === 0;
 
 async function capturePage(a, out) {
   const url = a.kind === "email" ? pathToFileURL(resolve(a.target)).href : a.target;
@@ -104,13 +129,14 @@ async function capturePage(a, out) {
     { label: "laptop-1280-light.png", width: 1280, height: 800, scheme: "light", maxHeight: 2400 },
   ];
   const b = await browser();
-  const shots = [], facts = [];
+  const shots = [], facts = [], blanks = [];
   try {
     for (const s of sizes) {
       const file = join(out, s.label);
       const m = await shoot(b, url, { ...s, file });
-      if (m.shot) shots.push({ path: file, label: s.label });
-      else facts.push(`the ${s.label.replace(/\.png$/, "")} capture could not be taken`);
+      if (m.shot && !m.blank) shots.push({ path: file, label: s.label });
+      else facts.push(`the ${s.label.replace(/\.png$/, "")} capture could not be taken${m.blank ? " (the browser got a blank page)" : ""}`);
+      if (m.blank) blanks.push(s.label);
       if (s.label === sizes[0].label) {
         if (a.kind !== "email") facts.push(`HTTP status of the page: ${m.status}`);
         facts.push(m.scrollW > 390 ? `horizontal scroll at 390 px: the page is ${m.scrollW} px wide` : "no horizontal scroll at 390 px");
@@ -121,6 +147,8 @@ async function capturePage(a, out) {
       }
     }
   } finally { await b.close(); }
+  // RULE 0: a blank capture is the capture failing, a NAMED STOP, never a FAIL on the builder's work.
+  if (!shots.length && blanks.length) throw stop(9, "CAPTURE_BLANK", `the browser got a blank page for ${a.target} at ${blanks.join(", ")}; nothing was judged. Retry, or capture it another way (--kind images with real screenshots)`);
   return { shots, facts };
 }
 
@@ -145,7 +173,72 @@ function captureImages(a) {
   return { shots, facts: files.length > 8 ? [`${files.length} images given; the first 8 are judged`] : [] };
 }
 
-export async function capture(a, out) {
+
+/**
+ * A YOUTUBE CHANNEL IS READ THROUGH THE OFFICIAL DATA API (20 Nov 2026: a headless browser gets a blank
+ * shell from YouTube, and the reviewer is never disguised to get past that). Her own key
+ * (HOWWEKNOW_YOUTUBE_API_KEY, read-only public data): channels.list for the avatar, banner, title,
+ * handle, description and counts, the uploads playlist for the newest video thumbnails. They are drawn
+ * at the sizes YouTube shows them (phone 390 px, laptop 1280 px) and the raw avatar and banner are
+ * judged at full size too.
+ */
+async function captureYouTube(a, out, { env = process.env, fetchImpl = fetch } = {}) {
+  const key = env.HOWWEKNOW_YOUTUBE_API_KEY;
+  if (!key) throw stop(3, "NO_YOUTUBE_KEY", "HOWWEKNOW_YOUTUBE_API_KEY is not in the environment: run through the vault (npm run vault:run -- …)");
+  const [, handle, id] = YOUTUBE_CHANNEL.exec(a.target);
+  const get = async (path) => { const r = await fetchImpl(`${YT_API}/${path}&key=${encodeURIComponent(key)}`); const j = await r.json().catch(() => ({})); if (!r.ok) throw stop(75, "YOUTUBE_API", `${path.split("?")[0]} answered ${r.status} ${j?.error?.message ?? ""}`); return j; };
+  const ch = (await get(`channels?part=snippet,brandingSettings,statistics,contentDetails&${handle ? `forHandle=${encodeURIComponent(handle)}` : `id=${id}`}`)).items?.[0];
+  if (!ch) throw stop(9, "NOTHING_CAPTURED", `YouTube has no channel at ${a.target}`);
+  const sn = ch.snippet ?? {}, st = ch.statistics ?? {};
+  const avatar = sn.thumbnails?.high?.url ?? sn.thumbnails?.medium?.url ?? sn.thumbnails?.default?.url ?? null;
+  const banner = ch.brandingSettings?.image?.bannerExternalUrl ?? null;
+  const uploads = ch.contentDetails?.relatedPlaylists?.uploads;
+  const vids = uploads ? ((await get(`playlistItems?part=snippet&maxResults=8&playlistId=${uploads}`).catch(() => ({ items: [] }))).items ?? []) : [];
+  const thumbs = vids.map((v) => ({ title: v.snippet?.title ?? "", url: v.snippet?.thumbnails?.high?.url ?? v.snippet?.thumbnails?.medium?.url })).filter((v) => v.url);
+  const facts = [
+    "read through the YouTube Data API (the channel's real avatar, banner, title, description and newest uploads), drawn at YouTube's display sizes; not a browser visit",
+    `channel title "${sn.title ?? ""}", handle ${sn.customUrl ?? handle ?? id}`,
+    `${st.hiddenSubscriberCount ? "subscriber count hidden" : `${st.subscriberCount ?? "?"} subscribers`}, ${st.videoCount ?? 0} public videos`,
+    sn.description ? `description (${sn.description.length} characters): "${sn.description.replace(/\s+/g, " ").slice(0, 400)}"` : "the channel has NO description",
+    avatar ? "avatar set" : "NO avatar (YouTube's default letter)",
+    banner ? "banner set" : "NO banner",
+    thumbs.length ? `${thumbs.length} newest upload thumbnail(s) shown` : "NO uploads: a first visitor sees an empty channel",
+  ];
+  const esc = (t) => String(t).replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
+  const pageFor = (w) => {
+    const phone = w < 600, av = phone ? 72 : 160, bh = Math.round(w / (phone ? 3.65 : 6.2));
+    return `<!doctype html><meta charset="utf-8"><body style="margin:0;background:#fff;font:14px Roboto,Arial,sans-serif;color:#0f0f0f;width:${w}px">
+${banner ? `<div style="height:${bh}px;background:url('${banner}=w2560') center/cover"></div>` : ""}
+<div style="display:flex;gap:${phone ? 12 : 24}px;align-items:center;padding:${phone ? 12 : 24}px">
+${avatar ? `<img src="${avatar}" style="width:${av}px;height:${av}px;border-radius:50%">` : `<div style="width:${av}px;height:${av}px;border-radius:50%;background:#888"></div>`}
+<div><div style="font-size:${phone ? 22 : 36}px;font-weight:700">${esc(sn.title ?? "")}</div>
+<div style="color:#606060">${esc(sn.customUrl ?? "")} · ${st.hiddenSubscriberCount ? "" : `${esc(st.subscriberCount ?? 0)} subscribers · `}${esc(st.videoCount ?? 0)} videos</div>
+<div style="color:#606060;max-width:${phone ? 260 : 700}px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${esc((sn.description ?? "").split("\n")[0])}</div></div></div>
+<div style="display:grid;grid-template-columns:repeat(${phone ? 1 : 4},1fr);gap:16px;padding:${phone ? 12 : 24}px">
+${thumbs.map((t) => `<div><img src="${t.url}" style="width:100%;aspect-ratio:16/9;object-fit:cover;border-radius:12px"><div style="font-weight:600;margin-top:6px">${esc(t.title)}</div></div>`).join("")}
+${thumbs.length ? "" : `<div style="color:#606060;padding:32px 0">This channel doesn't have any content</div>`}</div></body>`;
+  };
+  const b = await browser();
+  const shots = [];
+  try {
+    for (const [label, w, h] of [["youtube-phone-390.png", 390, 844], ["youtube-laptop-1280.png", 1280, 800]]) {
+      const ctx = await b.newContext({ viewport: { width: w, height: h } });
+      const page = await ctx.newPage();
+      await page.setContent(pageFor(w), { waitUntil: "networkidle", timeout: 60_000 }).catch(() => {});
+      await page.screenshot({ path: join(out, label), fullPage: true, timeout: 120_000 }).then(() => shots.push({ path: join(out, label), label })).catch(() => facts.push(`the ${label} drawing could not be taken`));
+      await ctx.close();
+    }
+  } finally { await b.close(); }
+  for (const [label, url] of [["avatar-full.jpg", avatar ? avatar.replace(/=s\d+[^/]*$/, "=s800") : null], ["banner-full.jpg", banner ? `${banner}=w2560` : null]]) {
+    if (!url) continue;
+    const r = await fetchImpl(url).catch(() => null);
+    if (r?.ok) { writeFileSync(join(out, label), Buffer.from(await r.arrayBuffer())); shots.push({ path: join(out, label), label }); }
+  }
+  return { shots, facts };
+}
+
+export async function capture(a, out, deps = {}) {
+  if (YOUTUBE_CHANNEL.test(String(a.target)) && (a.kind === "profile" || a.kind === "page")) return captureYouTube(a, out, deps);
   if (a.kind === "video") return captureVideo(a, out);
   if (a.kind === "images") return captureImages(a);
   return capturePage(a, out);
@@ -252,7 +345,7 @@ export async function main(argv = process.argv.slice(2), { env = process.env, fe
   const privateWork = isPrivate(a);
   const { routes } = reviewRoutes({ firstOfKind, privateWork });
 
-  const { shots, facts } = await capture(a, out);
+  const { shots, facts } = await capture(a, out, { env, fetchImpl });
   if (!shots.length) { print("OUTPUT 0 reviews"); throw stop(9, "NOTHING_CAPTURED", `no capture of ${a.target} could be made, so nothing was judged`); }
   const lookedAt = lookedAtText({ kind: a.kind, target: a.target, shots });
   log(`ship-review ${id}: ${lookedAt}; ${firstOfKind ? "first review" : "re-review"}${privateWork ? ", private" : ""}; routes ${routes.join(" → ")}`);
