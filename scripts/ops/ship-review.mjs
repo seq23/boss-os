@@ -18,6 +18,8 @@
  *     --planned  "<text>" (repeatable): a deliberate placeholder waiting on a known step; not a finding
  *     --brief    a file saying what changed and what to judge (the change's review brief)
  *     page/profile --target may be a comma list of up to 4 pages (the pages the change touched)
+ *     --focus    "<text>" (repeatable): text the change touched; each page also gets a shot around it
+ *                (with --brief the verdict is the CHANGE's; problems already there are listed apart)
  *     --launch   new and going public: judged against ship-ready section 3 too; prints Launch-ready
  *     --private  never a free route (default for emails and Boss OS's own screens); --public overrides
  *     --pr       owner/repo#N: on PASS the line is appended to that PR's body, where `land` reads it
@@ -57,6 +59,7 @@ export function parseArgs(argv) {
     if (!k.startsWith("--")) continue;
     if (["--launch", "--private", "--public", "--no-store"].includes(k)) { a.flags.add(k.slice(2)); continue; }
     if (k === "--planned") { (a.planned ??= []).push(argv[++i]); continue; }
+    if (k === "--focus") { (a.focus ??= []).push(argv[++i]); continue; }
     a[k.slice(2)] = argv[++i];
   }
   a.planned ??= [];
@@ -81,7 +84,7 @@ async function browser() {
 }
 
 /** One page at one size: a screenshot (capped in height) and what the browser measured. */
-async function shoot(b, url, { width, height, scheme, file, maxHeight }) {
+async function shoot(b, url, { width, height, scheme, file, maxHeight, focus = [], focusFile = null }) {
   // The browser says what it is (owner's coordinator, 20 Nov 2026: the reviewer is never disguised to
   // get past a site's bot handling). YouTube is read through its Data API instead (captureYouTube).
   const ctx = await b.newContext({ viewport: { width, height }, colorScheme: scheme, locale: "en-US", isMobile: width < 600, hasTouch: width < 600 });
@@ -121,8 +124,19 @@ async function shoot(b, url, { width, height, scheme, file, maxHeight }) {
   await page.screenshot({ path: file, timeout: 180_000, fullPage: true, animations: "disabled", clip: { x: 0, y: 0, width, height: Math.min(m.fullH || height, maxHeight) } })
     .catch(() => page.screenshot({ path: file, timeout: 60_000, animations: "disabled" }))
     .catch(() => { shot = false; });
+  // THE CHANGED TEXT, WHEREVER IT SITS (20 Nov 2026: a footer note 6,500 px down was never in the
+  // capture, so the change could not be judged). Each --focus text found on the page gets its own shot
+  // of the screen around it.
+  const focused = [];
+  for (const [i, text] of focus.entries()) {
+    const box = await page.getByText(text, { exact: false }).first().boundingBox({ timeout: 5_000 }).catch(() => null);
+    if (!box) { focused.push({ text, file: null }); continue; }
+    const top = Math.max(0, box.y - height / 2), f = focusFile(i);
+    const ok = await page.screenshot({ path: f, fullPage: true, timeout: 120_000, animations: "disabled", clip: { x: 0, y: top, width, height: Math.min(height, Math.max(1, (m.fullH || height) - top)) } }).then(() => true, () => false);
+    focused.push({ text, file: ok ? f : null });
+  }
   await ctx.close();
-  return { status: res?.status?.() ?? "unknown", errors, shot, blank: isBlank(m), ...m };
+  return { status: res?.status?.() ?? "unknown", errors, shot, blank: isBlank(m), focused, ...m };
 }
 
 /** A capture with almost no words and no pictures is the browser failing, not the work: never judged. */
@@ -154,7 +168,12 @@ async function capturePage(a, out) {
       const say = (f) => facts.push(many ? `${pageSlug(target)}: ${f}` : f);
       for (const s of sizes) {
         const file = join(out, s.label);
-        const m = await shoot(b, url, { ...s, file });
+        const fbase = s.label.replace(/\.png$/, "");
+        const m = await shoot(b, url, { ...s, file, focus: s.scheme === "light" ? (a.focus ?? []) : [], focusFile: (i) => join(out, `${fbase}-focus-${i + 1}.png`) });
+        for (const [i, f] of (m.focused ?? []).entries()) {
+          if (f.file) shots.push({ path: f.file, label: `${fbase}-focus-${i + 1}.png` });
+          else say(`the changed text "${f.text.slice(0, 80)}" was not found on this page at ${s.width} px`);
+        }
         if (m.shot && !m.blank) shots.push({ path: file, label: s.label });
         else say(`the ${s.label.replace(/\.png$/, "")} capture could not be taken${m.blank ? " (the browser got a blank page)" : ""}`);
         if (m.blank) blanks.push(s.label);
@@ -278,7 +297,7 @@ async function geminiModels(fetchImpl) {
 
 const mediaType = (p) => ({ ".jpg": "image/jpeg", ".jpeg": "image/jpeg", ".webp": "image/webp" }[extname(p).toLowerCase()] ?? "image/png");
 
-async function freeTier({ prompt, shots, env, fetchImpl, log }) {
+async function freeTier({ prompt, shots, env, fetchImpl, log, scoped = false }) {
   if (!env.GEMINI_API_KEY) { log("free: no GEMINI_API_KEY in the environment (run through vault:run); passed over"); return null; }
   for (const m of await geminiModels(fetchImpl)) {
     const content = [{ type: "text", text: prompt }, ...shots.map((s) => ({ type: "image_url", image_url: { url: `data:${mediaType(s.path)};base64,${readFileSync(s.path).toString("base64")}` } }))];
@@ -286,7 +305,7 @@ async function freeTier({ prompt, shots, env, fetchImpl, log }) {
       const r = await fetchImpl(GEMINI, { method: "POST", headers: { "content-type": "application/json", authorization: `Bearer ${env.GEMINI_API_KEY}` }, body: JSON.stringify({ model: m.id, messages: [{ role: "user", content }], max_tokens: 4000, temperature: 0.1, reasoning_effort: m.reasoning_effort ?? "none" }), signal: AbortSignal.timeout(180_000) });
       const j = await r.json().catch(() => ({}));
       if (!r.ok) { log(`free: ${m.id} answered ${r.status}`); continue; }
-      const v = parseVerdict(j?.choices?.[0]?.message?.content ?? "", shots);
+      const v = parseVerdict(j?.choices?.[0]?.message?.content ?? "", shots, { scoped });
       if (v.error) { log(`free: ${m.id} — ${v.error}`); continue; }
       return { ...v, model: `gemini ${m.id}` };
     } catch (e) { log(`free: ${m.id} — ${e.message}`); }
@@ -294,7 +313,7 @@ async function freeTier({ prompt, shots, env, fetchImpl, log }) {
   return null;
 }
 
-function seatTier(tier, { prompt, shots, out, env, log, run = spawnSync }) {
+function seatTier(tier, { prompt, shots, out, env, log, run = spawnSync, scoped = false }) {
   const bin = env.AI_RUN_BIN || join(env.HOME || homedir(), "bin", "ai-run");
   if (!existsSync(bin)) { log(`${tier}: ${bin} is not installed`); return null; }
   const role = tier === "codex" ? "worker" : "brain";
@@ -302,7 +321,7 @@ function seatTier(tier, { prompt, shots, out, env, log, run = spawnSync }) {
     encoding: "utf8", timeout: 20 * 60_000, maxBuffer: 32 << 20,
     env: { ...env, AI_RUN_CALLER: "ship-review", ...(tier === "codex" ? { AI_RUN_NO_CLAUDE_FALLBACK: "1" } : {}) },
   });
-  const v = parseVerdict(`${r.stdout ?? ""}`, shots);
+  const v = parseVerdict(`${r.stdout ?? ""}`, shots, { scoped });
   if (v.error) { log(`${tier}: exit ${r.status} — ${v.error}`); return null; }
   return { ...v, model: tier === "codex" ? "codex seat" : "claude seat" };
 }
@@ -312,7 +331,8 @@ export async function judge({ routes, base, shots, out, env = process.env, fetch
   for (const tier of routes) {
     const onDisk = `on disk: ${shots.map((s) => `${s.label} = ${s.path}`).join("; ")}. Open every one (Claude: the Read tool; Codex: view_image). Do not create or edit any file`;
     const prompt = reviewPrompt({ ...base, shots, imageHow: tier === "free" ? "attached in that order" : onDisk });
-    const v = tier === "free" ? await freeTier({ prompt, shots, env, fetchImpl, log }) : seatTier(tier, { prompt, shots, out, env, log, run });
+    const scoped = Boolean(base.brief);
+    const v = tier === "free" ? await freeTier({ prompt, shots, env, fetchImpl, log, scoped }) : seatTier(tier, { prompt, shots, out, env, log, run, scoped });
     if (!v) continue;
     // A FREE PASS IS NOT FINAL (measured 20 Nov 2026: a free Gemini model passed a P&P reel with frozen
     // repeated frames and warped balloon lettering that it failed as stills). A free route may FAIL a
@@ -338,6 +358,14 @@ async function bossApi(env, fetchImpl) {
     return j?.data ?? j;
   };
   return { get: (p) => call("GET", p), post: (p, b) => call("POST", p, b) };
+}
+
+/** Findings as one PR comment, so the builder reads them where it works. */
+function commentOnPr(pr, body, run = spawnSync) {
+  const m = /^([\w.-]+\/[\w.-]+)#(\d+)$/.exec(String(pr));
+  if (!m) return `--pr must look like owner/repo#123 (got ${pr})`;
+  const r = run("gh", ["pr", "comment", m[2], "-R", m[1], "--body-file", "-"], { input: body, encoding: "utf8" });
+  return r.status === 0 ? null : `gh pr comment failed: ${String(r.stderr).trim().slice(0, 200)}`;
 }
 
 /** Append the PASS line to a PR body (land reads the last one). */
@@ -385,10 +413,12 @@ export async function main(argv = process.argv.slice(2), { env = process.env, fe
 
   const reviewer = `boss-os ship-review ${id} (${v.model})`;
   const line = v.verdict === "PASS" ? passLine({ reviewer, lookedAt, launch: base.launch }) : `${base.launch ? "Launch" : "Ship"}-ready: FAIL — ${reviewer} looked at ${lookedAt}`;
-  const record = { id, subject, kind: a.kind, verdict: v.verdict, findings: v.findings, looked_at: lookedAt, builder: a.builder, route: v.model, line, facts, surface: a.surface ?? DEFAULT_SURFACE[a.kind], planned: a.planned, at: new Date().toISOString() };
+  const already = v.already ?? [];
+  const record = { id, subject, kind: a.kind, verdict: v.verdict, findings: v.findings, already, looked_at: lookedAt, builder: a.builder, route: v.model, line, facts, surface: a.surface ?? DEFAULT_SURFACE[a.kind], planned: a.planned, at: new Date().toISOString() };
   writeFileSync(join(out, "verdict.json"), JSON.stringify(record, null, 2));
   print(line);
   for (const l of findingLines(v.findings)) print(l);
+  if (already.length) { print("Already there before this change (not this change's verdict; fix in its own round):"); for (const l of findingLines(already)) print(`  ${l}`); }
   print(`Captures and verdict: ${out}`);
 
   if (api) {
@@ -396,6 +426,13 @@ export async function main(argv = process.argv.slice(2), { env = process.env, fe
     catch (e) { print("OUTPUT 0 reviews"); throw stop(2, "NOT_RECORDED", `the verdict was not stored in Boss OS (${e.message}); it is in ${join(out, "verdict.json")}. Rerun once Boss OS answers`); }
   }
   if (a.pr && v.verdict === "PASS") { const err = addToPr(a.pr, line); if (err) log(`NAMED STOP [PR_NOT_UPDATED] ${err}; add the line above to the PR body by hand`); }
+  if (a.pr && (v.verdict === "FAIL" || already.length)) {
+    const body = [line, "", ...(v.findings.length ? ["Findings (this change):", ...findingLines(v.findings), ""] : []),
+      ...(already.length ? ["Already there before this change (not this verdict; fix in its own round):", ...findingLines(already), ""] : []),
+      `Looked at: ${lookedAt}`].join("\n");
+    const err = commentOnPr(a.pr, body);
+    if (err) log(`NAMED STOP [PR_NOT_UPDATED] ${err}; the findings are in ${join(out, "verdict.json")}`);
+  }
   print(api ? "OUTPUT 1 reviews" : "OUTPUT 0 reviews (--no-store: judged, not recorded)");
   return v.verdict === "PASS" ? 0 : 1;
 }
