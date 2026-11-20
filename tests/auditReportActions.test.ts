@@ -29,7 +29,7 @@ afterAll(async () => {
   if (server.listening) await new Promise<void>((resolve) => server.close(() => resolve()));
   for (const dir of dirs) rmSync(dir, { recursive: true, force: true });
 });
-const finding = {
+const finding = { built_today: { answer: "yes", different: "nothing; the fix uses the checker as it stands" },
   project: "checklist:audit-fixture.example", domain: "audit-fixture.example", repo: "fixture-site",
   mapped_by: "repo_identity", disposition: "in_flight", headline: "a6: sitemap date",
   because: "An existing fix covers this finding.", suggested_action: "Confirm the existing fix next week.",
@@ -76,6 +76,15 @@ const defaults: Record<string, string> = {
   ahrefs_credits: "Ahrefs ran out of crawl credits; we'll check the next audit without buying more credits.",
 };
 describe("audit actions match the disposition", () => {
+  it("a fix that does not answer the engineering bar is refused, not recorded", async () => {
+    reply = { written: 1, refused: [] };
+    const before = posts.length;
+    const { built_today: _, ...bare } = finding;
+    const result = await report([{ ...bare, disposition: "fixed_pr" }]);
+    expect(result.code, result.out).toBe(20);
+    expect(result.out).toContain("FIX_WITHOUT_BUILT_TODAY");
+    expect(posts).toHaveLength(before);
+  });
   for (const disposition of DISPOSITIONS) {
     it(`${disposition}: keeps the supplied next action`, async () => {
       reply = { written: 1, refused: [] };
