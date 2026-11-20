@@ -1847,6 +1847,7 @@ require_loaded "$SIMONE_CMD_LABEL"
 # WITH THE JOBS, 31 October: the brains copy and the Monday cohesion check.
 require_loaded "$BRAINS_PULL_LABEL"
 require_loaded "$COHESION_LABEL"
+require_loaded "$SUCCESSION_LABEL"
 # WITH THE JOB, 1 November: real job photos first, before the Marketplace listings run.
 require_loaded "$PNP_PHOTOS_LABEL"
 require_loaded "$SCORECARD_LABEL"
