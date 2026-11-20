@@ -13,7 +13,7 @@ import { askClaudeJson, movedReadings, PERSONAL_GMAIL, readClaudeStream, readNot
 import { existsSync, readFileSync as readAbs } from "node:fs";
 import { hasDkim, openrouterReading, rdapExpiry, rdapUrl, renewalReading, senderPauseReason } from "../scripts/ops/risk-watch.mjs";
 import { lockReading } from "../scripts/ops/outside-locks.mjs";
-import { citedBossFiles, dateIn, handoffTodayDate, kindOf, NOT_OURS_RE, readGalleryExport } from "../scripts/ops/archive-audit.mjs";
+import { citedBossFiles, dateIn, handoffTodayDate, kindOf, NOT_OURS_RE, readGalleryExport, sideBusinessReading } from "../scripts/ops/archive-audit.mjs";
 import { mkdtempSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 
@@ -104,6 +104,18 @@ describe("Zora's judgements", () => {
     expect(dateIn("October 3, 2026")).toBe(Date.UTC(2026, 9, 3));
     expect(dateIn("no date")).toBeNull();
     expect(handoffTodayDate("# PINNED\n...\n## Today — 21 Oct 2026\n- x")).toBe(Date.UTC(2026, 9, 21));
+  });
+  it("ages the Side Business Review by its date line, never by a commit that left the date alone (20 Nov 2026)", () => {
+    const now = Date.UTC(2026, 10, 20, 12);
+    const doc = (d: string) => `Source: x\n\n# Side Business Review\n\n*as of ${d}*\n`;
+    expect(sideBusinessReading(doc("Friday 20 November 2026"), null, now)).toMatchObject({ state: "ok", line: "Side Business Review refreshed 0 days ago." });
+    const stale = sideBusinessReading(doc("Friday 16 October 2026"), now - 3_600_000, now);
+    expect(stale).toMatchObject({ state: "alert", owner: "Danielle", fix: "boss-os docs/SIDE_BUSINESS_REVIEW.md" });
+    expect(stale.line).toBe("Side Business Review last refreshed 35 days ago.");
+    const undated = sideBusinessReading("Source: x\n# Side Business Review\n", now - 2 * 86_400_000, now);
+    expect(undated).toMatchObject({ state: "ok" });
+    expect(undated.line).toMatch(/no date line; read from its last commit/);
+    expect(sideBusinessReading("no date", null, now)).toMatchObject({ state: "alert", owner: "Zora" });
   });
   it("finds the boss-os files the email map cites (hard fail on zero)", () => {
     const files = citedBossFiles(read("docs/OUTBOUND_EMAIL_MAP.md"));

@@ -198,7 +198,7 @@ describe("the map and the side-business review are linked where people look", ()
   });
   it("the side-business review starts with its source page and the repo-copy line", () => {
     for (const [file, url] of <Array<[string, string]>>[
-      ["docs/SIDE_BUSINESS_REVIEW.md", "https://claude.ai/artifact/2XkmYNmppidkqr4SU8xwiv"],
+      ["docs/SIDE_BUSINESS_REVIEW.md", "https://claude.ai/artifact/3ohvZx7uCRdWqaHXSJm9Ab"],
     ]) {
       const text = readFileSync(path.join(ROOT, file), "utf8");
       expect(text.split("\n")[0]).toBe(`Source: ${url}`);

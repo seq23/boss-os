@@ -136,18 +136,29 @@ function auditEmailMap(now) {
   return { key, state: "ok", line: `Outbound Email Map verified ${age} days ago; no cited sending code changed since.` };
 }
 
-function auditSideBusiness(now) {
+/**
+ * The Side Business Review's reading. Pure; tested. Its age is its own DATE LINE (the first date in
+ * the first 15 lines), as the header contract says. A commit that does not move the date is not a
+ * refresh (20 Nov 2026: two one-line fixes on 1 Nov bought 14 days of silence while the content sat
+ * at 16 Oct, so the alarm came 35 days late). The last commit counts only when the copy has no date,
+ * and the line says so.
+ */
+export function sideBusinessReading(md, committed, now) {
   const key = "doc:SIDE_BUSINESS_REVIEW";
-  const md = readDoc("docs/SIDE_BUSINESS_REVIEW.md");
-  if (!md) return { key, state: "stop", line: `The Side Business Review copy is not in ${REPO}.` };
-  const dated = dateIn(md.split("\n").slice(0, 15).join("\n"));
-  const committed = lastCommit(["docs/SIDE_BUSINESS_REVIEW.md"]);
-  const t = Math.max(dated ?? 0, committed ?? 0);
+  const dated = dateIn(String(md ?? "").split("\n").slice(0, 15).join("\n"));
+  const t = dated ?? committed ?? null;
   if (!t) return { key, state: "alert", owner: "Zora", line: "Side Business Review: no date and no commit — cannot say how current it is." };
   const age = daysSince(t, now);
+  const how = dated === null ? " (no date line; read from its last commit)" : "";
   return age >= STALE_DAYS
-    ? { key, state: "alert", owner: "Danielle", fix: "boss-os docs/SIDE_BUSINESS_REVIEW.md", line: `Side Business Review last refreshed ${age} days ago.` }
-    : { key, state: "ok", line: `Side Business Review refreshed ${age} days ago.` };
+    ? { key, state: "alert", owner: "Danielle", fix: "boss-os docs/SIDE_BUSINESS_REVIEW.md", line: `Side Business Review last refreshed ${age} days ago${how}.` }
+    : { key, state: "ok", line: `Side Business Review refreshed ${age} days ago${how}.` };
+}
+
+function auditSideBusiness(now) {
+  const md = readDoc("docs/SIDE_BUSINESS_REVIEW.md");
+  if (!md) return { key: "doc:SIDE_BUSINESS_REVIEW", state: "stop", line: `The Side Business Review copy is not in ${REPO}.` };
+  return sideBusinessReading(md, lastCommit(["docs/SIDE_BUSINESS_REVIEW.md"]), now);
 }
 
 function auditHandoff(now) {
