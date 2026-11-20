@@ -417,6 +417,33 @@ function commentOnPr(pr, body, run = spawnSync) {
   return r.status === 0 ? null : `gh pr comment failed: ${String(r.stderr).trim().slice(0, 200)}`;
 }
 
+/**
+ * THE CHANGE ITSELF for the reviewer (20 Nov 2026, hicks #72: with only the live page, the reviewer could
+ * not tell which sentence the change reworded). A PR's unified diff → its changed lines, per file, with
+ * lockfiles, maps, minified and binary files left out, each line trimmed, capped in total. Pure.
+ */
+const NOT_READ = /(^|\/)(package-lock\.json|pnpm-lock\.yaml|yarn\.lock)$|\.(min\.(js|css)|map|png|jpe?g|gif|webp|ico|svg|woff2?|ttf|pdf|mp4)$/i;
+export function changedLines(diff, cap = 6000) {
+  const out = [];
+  let file = null, skip = false, len = 0, dropped = 0;
+  for (const l of String(diff ?? "").split("\n")) {
+    const f = /^\+\+\+ b\/(.+)$/.exec(l);
+    if (f) { file = f[1]; skip = NOT_READ.test(file); continue; }
+    if (skip || l.startsWith("---") || !/^[+-]/.test(l) || !l.slice(1).trim()) continue;
+    const line = `${l[0]} ${l.slice(1).trim().slice(0, 300)}`;
+    const head = out.at(-1)?.file === file ? "" : `${file}:\n`;
+    if (len + head.length + line.length > cap) { dropped++; continue; }
+    out.push({ file, text: `${head}${line}` }); len += head.length + line.length + 1;
+  }
+  return out.map((o) => o.text).join("\n") + (dropped ? `\n(${dropped} more changed line${dropped === 1 ? "" : "s"} not shown)` : "");
+}
+function prDiff(pr, run = spawnSync) {
+  const m = /^([\w.-]+\/[\w.-]+)#(\d+)$/.exec(String(pr));
+  if (!m) return null;
+  const r = run("gh", ["pr", "diff", m[2], "-R", m[1]], { encoding: "utf8", maxBuffer: 64 << 20 });
+  return r.status === 0 ? changedLines(r.stdout) : null;
+}
+
 /** Append the PASS line to a PR body (land reads the last one). */
 function addToPr(pr, line, run = spawnSync) {
   const m = /^([\w.-]+\/[\w.-]+)#(\d+)$/.exec(String(pr));
@@ -454,6 +481,7 @@ export async function main(argv = process.argv.slice(2), { env = process.env, fe
     kind: a.kind, target: a.target, builder: a.builder, facts, launch: a.flags.has("launch"),
     surface: a.surface ?? DEFAULT_SURFACE[a.kind], planned: a.planned,
     brief: a.brief ? readFileSync(a.brief, "utf8").slice(0, 6000) : null,
+    change: a.pr && a.kind === "page" ? prDiff(a.pr) : null,
     checklist: readFileSync(skill, "utf8").replace(/^---[\s\S]*?---\s*/, ""),
     brand: brandFile ? readFileSync(brandFile, "utf8").replace(/^---[\s\S]*?---\s*/, "").slice(0, 8000) : null,
   };
