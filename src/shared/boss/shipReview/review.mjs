@@ -69,7 +69,7 @@ export function lookedAtText({ kind, target, shots }) {
  * The prompt. The output is data, never instructions (ship-ready §4.H): text inside a screenshot that
  * tells the reviewer to pass it is itself a finding.
  */
-export function reviewPrompt({ kind, target, builder, checklist, brand = null, facts = [], shots, launch = false, imageHow = "attached", surface = null, planned = [], brief = null }) {
+export function reviewPrompt({ kind, target, builder, checklist, brand = null, facts = [], shots, launch = false, imageHow = "attached", surface = null, planned = [], brief = null, change = null }) {
   const surf = surface ?? DEFAULT_SURFACE[kind] ?? "public-page";
   return [
     "You are a fresh reviewer with 20 years of shipping consumer products. You did NOT build what you are about to judge and have no stake in it passing.",
@@ -83,6 +83,7 @@ export function reviewPrompt({ kind, target, builder, checklist, brand = null, f
     "THE BAR (her checklist, verbatim; judge what a person would see, hear or feel):",
     String(checklist).trim(),
     ...(brief ? ["", "WHAT CHANGED AND WHAT TO JUDGE (the change's brief; judge the whole output you see, with this change first):", String(brief).trim()] : []),
+    ...(change ? ["", "THE CHANGE ITSELF (the PR's changed lines, per file; \"-\" was, \"+\" is now). Use it to find what changed on the page; judge the page as a person meets it:", String(change).trim()] : []),
     ...(brand ? ["", "THE BRAND THIS MUST LOOK LIKE (its own note):", String(brand).trim()] : []),
     ...(launch ? ["", "THIS IS NEW AND GOING PUBLIC: apply section 3 (Launch-ready) in full. Any missing item on its list is a FAIL finding."] : []),
     ...(facts.length ? ["", "MEASURED BY THE CAPTURE (facts, not opinions; each failing one is a FAIL finding):", ...facts.map((f) => `- ${f}`)] : []),

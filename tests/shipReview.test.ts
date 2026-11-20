@@ -5,7 +5,7 @@
 import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
 import { EMAIL_SENDS, SOCIAL_POSTS, gateProblems, parseVerdict, passLine, PASS_LINE_RE, reviewRoutes, reviewPrompt } from "../src/shared/boss/shipReview/review.mjs";
-import { judge, isPrivate, isBlank, parseArgs, capture, pageSlug, tilesFor, MAX_TILES, YOUTUBE_CHANNEL } from "../scripts/ops/ship-review.mjs";
+import { judge, isPrivate, isBlank, parseArgs, capture, pageSlug, tilesFor, MAX_TILES, changedLines, YOUTUBE_CHANNEL } from "../scripts/ops/ship-review.mjs";
 // @ts-expect-error — plain ESM with no declaration file
 import { shipReviewArgs } from "../scripts/ops/repo-change.mjs";
 
@@ -67,6 +67,14 @@ describe("a verdict is trusted only when it is a real review", () => {
     const real = parseVerdict(r({ verdict: "FAIL", looked_at: L, unseen: ["the menu open"], findings: [{ what: "new link has no name", in_change: true }] }), shots, { scoped: true });
     expect(real).toMatchObject({ verdict: "FAIL", findings: [{ what: "new link has no name" }], unseen: ["the menu open"] });
     expect(parseVerdict(r({ verdict: "FAIL", looked_at: ["phone-390-light.png"], unseen: ["x"], findings: [] }), shots).error).toMatch(/did not say it looked at/);
+  });
+  it("a PR review is given the change itself: changed lines per file, never lockfiles or images", () => {
+    const diff = ["diff --git a/site/insights.html b/site/insights.html", "--- a/site/insights.html", "+++ b/site/insights.html", "@@ -1,3 +1,3 @@", " same", "-Support is tailored to you.", "+Support is shaped to respect you.",
+      "diff --git a/package-lock.json b/package-lock.json", "--- a/package-lock.json", "+++ b/package-lock.json", "+\"x\": 1", "+++ b/logo.png", "+binary"].join("\n");
+    const c = changedLines(diff);
+    expect(c).toBe("site/insights.html:\n- Support is tailored to you.\n+ Support is shaped to respect you.");
+    expect(changedLines(diff, 60)).toMatch(/1 more changed line not shown/);
+    expect(reviewPrompt({ kind: "page", target: "t", builder: "b", checklist: "c", shots, change: c })).toMatch(/THE CHANGE ITSELF[\s\S]*tailored to you/);
   });
   it("the whole page is captured, in at most MAX_TILES parts with no gap and no cut", () => {
     for (const [h, w] of [[844, 390], [3201, 390], [6500, 390], [41_000, 390], [2401, 1280]] as const) {

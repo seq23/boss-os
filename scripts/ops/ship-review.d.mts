@@ -6,6 +6,7 @@ export declare function isBlank(m: { words?: number; media?: number } | null | u
 export declare const YOUTUBE_CHANNEL: RegExp;
 export declare const MAX_TILES: number;
 export declare function tilesFor(fullH: number, width: number): Array<{ y: number; height: number }>;
+export declare function changedLines(diff: string, cap?: number): string;
 export declare function pageSlug(u: string): string;
 export declare function capture(a: ShipArgs, out: string, deps?: { env?: Record<string, string | undefined>; fetchImpl?: typeof fetch }): Promise<{ shots: Shot[]; facts: string[] }>;
 export declare function judge(o: { routes: string[]; base: Record<string, unknown>; shots: Shot[]; out: string; env?: Record<string, string | undefined>; fetchImpl?: typeof fetch; log?: (s: string) => void; run?: (...a: any[]) => any }): Promise<{ verdict: "PASS" | "FAIL" | "UNSEEN"; findings: Finding[]; unseen: string[]; model: string; tier: string } | null>;
