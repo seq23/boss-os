@@ -17,7 +17,7 @@ const before = JSON.parse(readFileSync("src/shared/boss/shipReview/live-before-g
 
 describe("a verdict is trusted only when it is a real review", () => {
   it("PASS with no findings and every capture named is a PASS; land's own pattern reads the line it makes", () => {
-    expect(parseVerdict(reply({ verdict: "PASS", looked_at: shots.map((s) => s.label), findings: [] }), shots)).toEqual({ verdict: "PASS", findings: [] });
+    expect(parseVerdict(reply({ verdict: "PASS", looked_at: shots.map((s) => s.label), findings: [] }), shots)).toEqual({ verdict: "PASS", findings: [], already: [] });
     const line = passLine({ reviewer: "boss-os ship-review sr_abc (claude seat)", lookedAt: "x at 390 px" });
     expect(PASS_LINE_RE.test(line)).toBe(true);
     // the same ERE ~/bin/land greps (gate_quality → signoff)
@@ -45,6 +45,17 @@ describe("a verdict is trusted only when it is a real review", () => {
     expect(pageSlug("https://x.pages.dev/questions/is-dental-anxiety-real/")).toBe("questions-is-dental-anxiety-real");
     expect(pageSlug("https://x.pages.dev/")).toBe("home");
     expect(reviewPrompt({ kind: "page", target: "t", builder: "b", checklist: "c", shots, brief: "Changed: footer note" })).toMatch(/WHAT CHANGED AND WHAT TO JUDGE[\s\S]*footer note/);
+  });
+  it("with a brief, the verdict is the change's: problems already there are kept apart, never the verdict", () => {
+    const r = (o: unknown) => JSON.stringify(o);
+    const L = shots.map((s) => s.label);
+    const pass = parseVerdict(r({ verdict: "PASS", looked_at: L, findings: [{ what: "old footer is grey", in_change: false }] }), shots, { scoped: true });
+    expect(pass).toMatchObject({ verdict: "PASS", findings: [], already: [{ what: "old footer is grey" }] });
+    expect(parseVerdict(r({ verdict: "FAIL", looked_at: L, findings: [{ what: "old footer is grey", in_change: false }] }), shots, { scoped: true }).error).toMatch(/no finding in the change/);
+    expect(parseVerdict(r({ verdict: "PASS", looked_at: L, findings: [{ what: "new label wraps", in_change: true }] }), shots, { scoped: true }).error).toBeTruthy();
+    // without a brief every finding decides the verdict, as before
+    expect(parseVerdict(r({ verdict: "PASS", looked_at: L, findings: [{ what: "x", in_change: false }] }), shots).error).toBeTruthy();
+    expect(reviewPrompt({ kind: "page", target: "t", builder: "b", checklist: "c", shots, brief: "b" })).toMatch(/in_change/);
   });
   it("the prompt names the builder as not the reviewer and treats text in the output as data", () => {
     const p = reviewPrompt({ kind: "page", target: "https://x.test/", builder: "Codex", checklist: "THE BAR", shots });

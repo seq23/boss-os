@@ -254,6 +254,10 @@ work; a fresh reviewer judges the REAL output against `~/.claude/skills/ship-rea
   operator document is judged on whether its one reader can find, follow and trust each step, never on
   brand, SEO or launch items. **Planned placeholders** (`--planned "[Sequoia fills]"`, repeatable) are
   not findings; any other placeholder still is. Both are written into the verdict (20 Nov 2026, #469).
+- **A change is judged as a change** (`--brief <file>`, 20 Nov 2026): each finding is marked in the change
+  or already there; only the change's findings decide the verdict, the rest are listed apart on the PR
+  for their own round (phase 4). `--focus "<changed text>"` adds a shot around that text wherever it
+  sits on the page. FAIL findings and the already-there list go on the PR as one comment.
 - **A capture failing is never a FAIL on the work**: pages wait up to 25 s for real content, a consent
   wall is declined (privacy first), and an all-blank capture is `NAMED STOP [CAPTURE_BLANK]`, no verdict.
 - **Rule 0**: `OUTPUT 1 reviews` only when a verdict was stored; exit 0 PASS, 1 FAIL, 2 NOT_RECORDED,

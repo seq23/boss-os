@@ -88,9 +88,15 @@ export function reviewPrompt({ kind, target, builder, checklist, brand = null, f
     ...(facts.length ? ["", "MEASURED BY THE CAPTURE (facts, not opinions; each failing one is a FAIL finding):", ...facts.map((f) => `- ${f}`)] : []),
     "",
     "Decide PASS only if a 20-year veteran would ship this exactly as it is. Anything that looks cheap, template-default, AI-made, broken, unreadable on a phone, off-brand, placeholder, or that would make a real person leave, distrust it or need help is a FAIL finding. Do not grade on effort or on what could be fixed later.",
+    ...(brief ? [
+      "",
+      "YOU ARE JUDGING THIS CHANGE (20 Nov 2026: a fix must not be blocked by problems it did not make). Mark each finding in_change true when the change caused it, or it sits in what the change touched and the change left it wrong; in_change false when it was already there elsewhere and the change neither caused nor touched it. The verdict is FAIL only if at least one finding is in_change true; still list every in_change false problem you see, so it is fixed in its own round. If the captures do not show what the change touched, say so as an in_change true finding (the change could not be judged).",
+    ] : []),
     "Reply with ONE JSON object and nothing else:",
-    '{"verdict":"PASS"|"FAIL","looked_at":["<every capture label you looked at>"],"findings":[{"where":"<capture label and place>","what":"<what is wrong, specifically>","feels":"<what a real person would feel>"}]}',
-    "PASS has an empty findings list. FAIL has at least one finding, each one specific enough that the builder can fix it without asking.",
+    '{"verdict":"PASS"|"FAIL","looked_at":["<every capture label you looked at>"],"findings":[{"where":"<capture label and place>","what":"<what is wrong, specifically>","feels":"<what a real person would feel>"' + (brief ? ',"in_change":true|false' : "") + '}]}',
+    brief
+      ? "PASS lists only in_change false findings (or none). FAIL has at least one in_change true finding, each one specific enough that the builder can fix it without asking."
+      : "PASS has an empty findings list. FAIL has at least one finding, each one specific enough that the builder can fix it without asking.",
   ].join("\n");
 }
 
@@ -109,23 +115,24 @@ export function lastJson(text) {
  * A model reply → `{ verdict, findings }`, or `{ error }` when the reply cannot be trusted as a
  * review. A reply that does not name every capture did not look at every capture, and is no review.
  */
-export function parseVerdict(text, shots) {
+export function parseVerdict(text, shots, { scoped = false } = {}) {
   const j = lastJson(text);
   if (!j) return { error: "no JSON verdict in the reply" };
   const verdict = String(j.verdict ?? "").trim().toUpperCase();
   if (verdict !== "PASS" && verdict !== "FAIL") return { error: `verdict "${j.verdict}" is neither PASS nor FAIL` };
-  const findings = (Array.isArray(j.findings) ? j.findings : [])
-    .map((f) => (typeof f === "string" ? { where: "", what: f, feels: "" } : { where: String(f?.where ?? ""), what: String(f?.what ?? ""), feels: String(f?.feels ?? "") }))
+  const all = (Array.isArray(j.findings) ? j.findings : [])
+    .map((f) => (typeof f === "string" ? { where: "", what: f, feels: "", in_change: true } : { where: String(f?.where ?? ""), what: String(f?.what ?? ""), feels: String(f?.feels ?? ""), in_change: scoped ? f?.in_change !== false : true }))
     .filter((f) => f.what.trim());
-  if (verdict === "FAIL" && findings.length === 0) return { error: "FAIL with no finding the builder could act on" };
-  if (verdict === "PASS" && findings.length > 0) return { error: `PASS that still lists ${findings.length} finding(s)` };
+  // A change-scoped review: the verdict is decided by what the change caused or touched; problems that
+  // were already there are kept as notes (`already`), listed for their own round, never the verdict.
+  const findings = all.filter((f) => f.in_change), already = all.filter((f) => !f.in_change);
+  if (verdict === "FAIL" && findings.length === 0) return { error: scoped ? "FAIL with no finding in the change" : "FAIL with no finding the builder could act on" };
+  if (verdict === "PASS" && findings.length > 0) return { error: `PASS that still lists ${findings.length} finding(s)${scoped ? " in the change" : ""}` };
   const seen = (Array.isArray(j.looked_at) ? j.looked_at : []).map(String).join(" \n ").toLowerCase();
   const missed = shots.filter((s) => !seen.includes(s.label.toLowerCase()));
   if (missed.length) return { error: `did not say it looked at ${missed.map((s) => s.label).join(", ")}` };
-  return { verdict, findings };
+  return { verdict, findings: findings.map(({ in_change, ...f }) => f), already: already.map(({ in_change, ...f }) => f) };
 }
-
-/** Numbered findings, one per line, for the terminal, the PR and the rework brief. */
 export const findingLines = (findings) =>
   findings.map((f, i) => `${i + 1}. ${f.where ? `[${f.where}] ` : ""}${f.what}${f.feels ? ` (${f.feels})` : ""}`);
 
