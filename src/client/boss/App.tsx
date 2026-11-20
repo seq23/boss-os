@@ -245,7 +245,8 @@ export default function App() {
       onSettings={() => { setSettingsOpen((v) => !v); setOpenApproval(null); }}
       settingsOpen={settingsOpen}
       needsYou={needsYou}
-      onTellSimone={() => setTellOpen(true)}
+      // Not on the Succession Book: Scooter reads it, and Simone would act in Sequoia's name.
+      onTellSimone={tab === "succession" ? undefined : () => setTellOpen(true)}
       sheet={tellOpen ? (
         <Sheet title="Tell Simone" onClose={() => setTellOpen(false)} testId="tell-sheet">
           <TellSimone focus onOpenRecentWork={() => { setTellOpen(false); setTeamStart("team"); setTab("team"); setRecentFocus((n) => n + 1); }} />

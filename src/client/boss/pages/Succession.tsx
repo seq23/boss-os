@@ -17,8 +17,31 @@ export function Succession() {
   return (
     <article className="succession">
       <p className="brain-saved">Rebuilt {new Date(book.built_at).toLocaleDateString(undefined, { day: "numeric", month: "long", year: "numeric" })}. Private: never share this page or paste it anywhere but Claude on Sequoia's Mac.</p>
+      <Contents markdown={book.markdown} />
       {mdBlocks(book.markdown.replace(/<!--[\s\S]*?-->/g, ""))}
     </article>
+  );
+}
+
+/** An anchor id for a heading: "5. First day, …" → "s-5-first-day". */
+export const headingId = (text: string) => `s-${text.toLowerCase().replace(/\*\*/g, "").replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "").slice(0, 40)}`;
+
+/** The book is long on a phone: its sections, and Day 1, one tap away. */
+function Contents({ markdown }: { markdown: string }) {
+  const h2 = [...markdown.matchAll(/^##\s+(.+)$/gm)].map((m) => m[1]!.trim());
+  const day1 = /^###\s+(First day.*)$/m.exec(markdown)?.[1]?.trim();
+  return (
+    <nav className="succession-toc" aria-label="Contents">
+      <p className="succession-toc-h">Contents</p>
+      <ul>
+        {h2.map((t) => (
+          <Fragment key={t}>
+            <li><a href={`#${headingId(t)}`}>{t}</a></li>
+            {day1 && /^5\./.test(t) && <li className="succession-toc-sub"><a href={`#${headingId(day1)}`}>{day1}</a></li>}
+          </Fragment>
+        ))}
+      </ul>
+    </nav>
   );
 }
 
@@ -56,8 +79,8 @@ export function mdBlocks(md: string): ReactNode[] {
       const level = h[1]!.length;
       const body = mdInline(h[2]!);
       out.push(level === 1 ? <h2 key={i} className="brain-title">{body}</h2>
-        : level === 2 ? <h3 key={i} className="brain-section-h succession-h2">{body}</h3>
-        : <h4 key={i} className="succession-h3">{body}</h4>);
+        : level === 2 ? <h3 key={i} id={headingId(h[2]!)} className="brain-section-h succession-h2">{body}</h3>
+        : <h4 key={i} id={headingId(h[2]!)} className="succession-h3">{body}</h4>);
       i++;
       continue;
     }
@@ -71,9 +94,9 @@ export function mdBlocks(md: string): ReactNode[] {
       const [head, ...body] = rows;
       out.push(
         <div className="brain-tablewrap" key={`t${i}`}>
-          <table className="brain-table">
+          <table className={`brain-table${(head?.length ?? 0) > 2 ? " phone-cards" : ""}`}>
             {head && <thead><tr>{head.map((c, j) => <th key={j}>{mdInline(c)}</th>)}</tr></thead>}
-            <tbody>{body.map((r, n) => <tr key={n}>{r.map((c, j) => <td key={j}>{mdInline(c)}</td>)}</tr>)}</tbody>
+            <tbody>{body.map((r, n) => <tr key={n}>{r.map((c, j) => <td key={j} data-label={head?.[j]?.replace(/\*\*/g, "")}>{mdInline(c)}</td>)}</tr>)}</tbody>
           </table>
         </div>,
       );
