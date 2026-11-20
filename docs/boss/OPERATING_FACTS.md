@@ -263,4 +263,9 @@ work; a fresh reviewer judges the REAL output against `~/.claude/skills/ship-rea
   `src/shared/boss/shipReview/live-before-gate.json` until phase 4 (Sat 21 Nov) scores them; the list
   only shrinks. Boss OS itself posts to no social platform (checked 20 Nov: no posting endpoint in this
   repo, no Social Map row citing boss-os code); its posters live in other repos and pass through `land`.
+- **Agent reviews in a shared session go through this job** (20 Nov 2026, PR #469): every agent a
+  session spawns carries that session's id, which `land` reads as the builder, so a spawned agent's
+  "PASS" is refused. The runner signs as `boss-os ship-review sr_… (<route>)`, its own recorded review
+  id, which `land`'s builder check (`builders`/`is_builder`) accepts; checked on #469's real commits.
+  Run it with `--pr owner/repo#N` and the line lands in the PR body.
 - Not a scheduled job: it runs inside `repo-change` (already on the Schedule and Scorecard) and on demand.
