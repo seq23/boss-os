@@ -38,7 +38,7 @@ const input = (over: Record<string, unknown> = {}) => ({
     { domain: "gone.example", registrar: "Cloudflare", tier: "retire", expires: "2027-01-01" },
   ] },
   social: { businesses: [{ key: "example", label: "Example Co" }], rows: [
-    { business: "example", platform: "Pinterest", handle: "ex", status: "live_auto", posts: { by: "job", what: "The Mac posts your pins." } },{ business: "example", platform: "Instagram", handle: "@ex", status: "live_auto" }, { business: "example", platform: "X", handle: "@gone", status: "dead" }, { business: "example", platform: "GitHub (code repo)", handle: "seq23/x", status: "live_auto" }] },
+    { business: "example", platform: "Pinterest", handle: "ex", status: "live_auto", posts: { by: "job", what: "The Mac posts your pins." } },{ business: "example", platform: "YouTube", handle: "@exvideo", status: "planned", posts: { by: "job", what: "The Mac uploads.", jobs: ["night-batch"] } },{ business: "example", platform: "LinkedIn", handle: "@later", status: "planned", posts: { by: "job", what: "Someday." } },{ business: "example", platform: "Instagram", handle: "@ex", status: "live_auto" }, { business: "example", platform: "X", handle: "@gone", status: "dead" }, { business: "example", platform: "GitHub (code repo)", handle: "seq23/x", status: "live_auto" }] },
   emailMap: { businesses: [{ key: "spry", label: "Spry Labs" }], rows: [
     { id: "morning", business: "spry", what: "Your morning email", to: "You", pause: "Turn off com.seq.example-morning" },
     { id: "ancestral", business: "personal", what: "Your hour, with Done", to: "You", pause: "Tap Done ✓" },
@@ -92,7 +92,11 @@ describe("the Succession Book generator", () => {
     expect(md).toContain(ENVELOPE.map((t, i) => `${i + 1}. ${t}`).join("\n"));
     expect(md).toContain("Her morning email");
     expect(md).not.toContain("Weekly report");
-    expect(md).toContain("1 accounts post automatically");
+    // A job already posting to a not-yet-launched account still gets its pause row (Whisper Almanac, round 11).
+    expect(md).toContain("2 accounts post automatically");
+    expect(md).toContain('| Example Co | YouTube | The Mac uploads. | Ask Claude: "Pause the job that posts to YouTube for Example Co." |');
+    expect(md).toContain("| Example Co | YouTube | @exvideo | Posts automatically; its launch review has not passed yet |");
+    expect(md).not.toContain("@later");
     expect(md).toContain("The Mac posts her pins.");
   });
 

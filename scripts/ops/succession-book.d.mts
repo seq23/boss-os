@@ -11,6 +11,7 @@ export function reposBlock(live: any[], mapRows: any[], cats: any): string;
 export function appsBlock(spryBody: unknown): string;
 export function domainsBlock(domains: any, now?: Date): string;
 export const SOCIAL_WORDS: Record<string, string>;
+export const postsByJob: (row: any) => boolean;
 export function socialBlock(social: any): string;
 export const EMAIL_KINDS: [string, string][];
 export function emailKind(row: any): string | null;

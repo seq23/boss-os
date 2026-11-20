@@ -145,10 +145,18 @@ export function domainsBlock(domains, now = new Date()) {
 
 /** The Social Map's live profiles: status only (the logins are in the hand-written matrix). */
 export const SOCIAL_WORDS = { live_auto: "Live, posts automatically", live_manual: "Live, posted by hand", paused: "Off: ask Claude whether on purpose or broken" };
+/**
+ * An account a scheduled job posts to: live, or still "planned" on the map while a Schedule job already
+ * posts there (Whisper Almanac, 20 Nov 2026: uploading, not yet through its launch review). Day 1 needs a
+ * pause row for every one of them, whatever its launch state.
+ */
+export const postsByJob = (r) => r.posts?.by === "job" && !/^GitHub/i.test(r.platform ?? "")
+  && (r.status === "live_auto" || (r.status === "planned" && (r.posts.jobs ?? []).length > 0));
+const socialStatus = (r) => SOCIAL_WORDS[r.status] ?? (postsByJob(r) ? "Posts automatically; its launch review has not passed yet" : null);
 export function socialBlock(social) {
   const label = Object.fromEntries((social.businesses ?? []).map((b) => [b.key, b.label]));
-  const rows = (social.rows ?? []).filter((r) => r.status in SOCIAL_WORDS && !/^GitHub/i.test(r.platform ?? ""))
-    .map((r) => [label[r.business] ?? r.business, r.platform, r.handle || r.url || "", SOCIAL_WORDS[r.status]]);
+  const rows = (social.rows ?? []).filter((r) => socialStatus(r) && !/^GitHub/i.test(r.platform ?? ""))
+    .map((r) => [label[r.business] ?? r.business, r.platform, r.handle || r.url || "", socialStatus(r)]);
   return table(["Business", "Platform", "Handle", "Status"], rows);
 }
 
@@ -224,7 +232,7 @@ export function emailsBlock(emailMap) {
 /** Every account a job posts to by itself, from the Social Map. Posts speak for the brand, not for her. */
 export function postingBlock(social) {
   const label = Object.fromEntries((social.businesses ?? []).map((b) => [b.key, b.label]));
-  const rows = (social.rows ?? []).filter((r) => r.status === "live_auto" && r.posts?.by === "job" && !/^GitHub/i.test(r.platform ?? ""))
+  const rows = (social.rows ?? []).filter(postsByJob)
     .map((r) => [label[r.business] ?? r.business, r.platform, herWords(r.posts.what), `Ask Claude: "Pause the job that posts to ${r.platform} for ${label[r.business] ?? r.business}."`]);
   return `${rows.length} accounts post automatically (brand posts, never personal messages).\n\n${table(["Business", "Platform", "What posts", "How to stop it"], rows)}`;
 }
@@ -331,7 +339,7 @@ export function bookProblems(md, { emailMap, social }) {
   if (dayOne !== dayOneIds(emailMap).sort().join(",")) p.push("the Day 1 message to Claude does not name exactly the senders the list says to stop on Day 1");
   // Every automatic post has a stop row; every business section 1 calls "made automatically" posts through one.
   const postingRows = tableRows(genBody(md, "posting"));
-  const autoRows = (social.rows ?? []).filter((r) => r.status === "live_auto" && r.posts?.by === "job" && !/^GitHub/i.test(r.platform ?? ""));
+  const autoRows = (social.rows ?? []).filter(postsByJob);
   if (postingRows.length !== autoRows.length) p.push(`the posting list shows ${postingRows.length} rows for ${autoRows.length} automatic accounts`);
   const postingBusinesses = new Set(postingRows.map((l) => cellsOf(l)[0]));
   for (const line of tableRows(sectionText(md, "## 1. Every business at a glance"))) {
