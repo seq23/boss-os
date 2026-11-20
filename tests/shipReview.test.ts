@@ -6,6 +6,7 @@ import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
 import { EMAIL_SENDS, SOCIAL_POSTS, gateProblems, parseVerdict, passLine, PASS_LINE_RE, reviewRoutes, reviewPrompt } from "../src/shared/boss/shipReview/review.mjs";
 import { judge, isPrivate, parseArgs } from "../scripts/ops/ship-review.mjs";
+// @ts-expect-error — plain ESM with no declaration file
 import { shipReviewArgs } from "../scripts/ops/repo-change.mjs";
 
 const shots = [{ label: "phone-390-light.png", path: "/x/phone-390-light.png" }, { label: "laptop-1280-light.png", path: "/x/laptop-1280-light.png" }];
