@@ -41,6 +41,7 @@ import { dismissFromMail } from "../capital/dismiss";
 import { prospectTemplateFromMail } from "../lp/templateReply";
 import { decideAnswerFromMail, morningDayOf } from "../lp/decideReply";
 import { morningReplyFromMail } from "./morningReply";
+import { morningCommands } from "../../../shared/boss/mail/morningReply.mjs";
 import { secretDoor } from "../service/secretHandoff";
 import { answerBlockFromMail } from "../service/blockReply";
 import { recordConstraints } from "../service/constraints";
@@ -48,7 +49,7 @@ import { recordDriveWatches } from "../service/macWaits";
 import { standingConstraintsIn } from "../../../shared/boss/service/practices.mjs";
 import { dueTimeIn, dueLine, notBeforeIn, heldDue } from "../../../shared/boss/service/dueTime.mjs";
 import { commandFromMail, openErrandFor, errandReplied } from "../commands/run";
-import { nudgeFromWords } from "../lp/nudge";
+import { nudgeFromWords, nudgeAddressesIn } from "../lp/nudge";
 
 /**
  * MAIL TO `boss@sequoiataylor.com`.
@@ -665,13 +666,29 @@ export async function handleBossInboundMail(message: BossMailMessage, env: Env):
    * "grateful for …", "X is public", a standing rule. Exact whole lines only; never sends or approves
    * (intake/morningReply.ts). Only commands → done here; mixed → acted on, and the rest goes on.
    */
-  const morningReply = own ? await morningReplyFromMail(env, { text: own, refs: threadRefs.refs, mailId, now }) : null;
+  /*
+   * THE FIRST READ DECIDES HER REPLY (owner ruling, 19 Nov 2026). A reply (it names a thread we sent) is read once, here,
+   * before any reply door: its DECISION says what her reply means for the plan, preview, Kindle ask or morning card it
+   * answers, and the doors below act on it (`readReply(text, read)`, `decideAnswerFromMail`, the morning commands, the LP
+   * nudge, the comment digest and the duty draft). A fresh email is read here too when its words carry a command. Their
+   * keywords act only
+   * when no first read answered, logged "first read absent: keyword fallback". The same read is the work's brief below
+   * (one read per email). Gemini free, then Workers AI; never Claude or Codex, never masked (firstRead.ts).
+   */
+  const fileNames = [...files.heard.map((h) => h.filename), ...files.read.map((r) => r.filename), ...files.unopened.map((u) => u.filename)];
+  const mayCommand = Boolean(own) && (morningCommands(own).commands.length > 0 || nudgeAddressesIn(own).length > 0);
+  const replyRead: FirstRead | null = (threadRefs.refs.length || message.headers.get("in-reply-to") || mayCommand) && !oversize && (own || readable).trim()
+    ? await firstRead(env, { subject, words: own || readable, files: fileNames, now, mailId })
+    : null;
+  const replyDecision = replyRead?.brief?.decision ?? null;
+  const replyHasWork = Boolean(replyRead?.brief && (replyRead.brief.asks.length || replyRead.brief.questions.length || replyRead.brief.unclear.length));
+  const morningReply = own ? await morningReplyFromMail(env, { text: own, refs: threadRefs.refs, mailId, now, read: replyDecision, readHasWork: replyHasWork }) : null;
   if (morningReply?.onlyCommands) {
     await finish({ outcome: "MORNING_REPLY", why: morningReply.note, employeeId: "emp_chief", objectKey, reply: morningReply.note });
     return { mailId, outcome: "MORNING_REPLY", employeeId: "emp_chief", taskId: null, reply: morningReply.note, messageId, signer: "Simone" };
   }
   const decideAnswer = own
-    ? await decideAnswerFromMail(env, { text: own, refs: threadRefs.refs, subject, mailId, now })
+    ? await decideAnswerFromMail(env, { text: own, refs: threadRefs.refs, subject, mailId, now, read: replyDecision })
     : null;
   if (decideAnswer) {
     const decideReply = [decideAnswer.note, ...(morningReply?.note ? [morningReply.note] : []), ...(secrets?.line ? ["", secrets.line] : [])].join("\n");
@@ -685,7 +702,7 @@ export async function handleBossInboundMail(message: BossMailMessage, env: Env):
    * page. An email of hers with the word "nudge" and the address of someone on the LP tracker is the
    * whole job: the fixed nudge goes in their thread and they are marked nudged (lp/nudge.ts).
    */
-  const nudge = own ? await nudgeFromWords(env, own, now) : null;
+  const nudge = own ? await nudgeFromWords(env, own, now, fetch, { read: replyDecision, mailId }) : null;
   if (nudge) {
     const nudgeReply = [nudge.note, ...(secrets?.line ? ["", secrets.line] : [])].join("\n");
     await finish({ outcome: "LP_NUDGE", why: nudge.note, employeeId: "emp_relationship", objectKey, reply: nudgeReply });
@@ -922,7 +939,7 @@ export async function handleBossInboundMail(message: BossMailMessage, env: Env):
     ? ((`${message.headers.get("references") ?? ""} ${message.headers.get("in-reply-to") ?? ""}`).match(/<[^>]+>/g) ?? []).slice(0, 20)
     : [];
   const planAnswer = route.outcome !== "AMBIGUOUS"
-    ? await answerFromMail(env, { seatId: route.seat.id, subject: trueSubject + laneTail, text: readable, mailId, now, sender, replyChain })
+    ? await answerFromMail(env, { seatId: route.seat.id, subject: trueSubject + laneTail, text: readable, mailId, now, sender, replyChain, read: replyDecision?.reply ?? null })
     : null;
   /*
    * HER WORD ON A COMMENT DIGEST, the same way: `[cw_…]` in the subject names the digest Monique
@@ -932,14 +949,14 @@ export async function handleBossInboundMail(message: BossMailMessage, env: Env):
    * `validate:comment-act-instructed` pins that this call sits after the `!authorised` return.
    */
   const commentAnswer = !planAnswer
-    ? await answerCommentWatchFromMail(env, { sender, subject: trueSubject + laneTail, text: readable, mailId, now })
+    ? await answerCommentWatchFromMail(env, { sender, subject: trueSubject + laneTail, text: readable, mailId, now, read: replyDecision })
     : null;
   /*
    * HER WORD ON A KINDLE PROBLEM, the same way: `[kml_…]` names the item Simone asked about
    * (`owner_ask`); "approved" — or her own wording — goes on the row and her next run executes it.
    */
   const kdpAnswer = !planAnswer && !commentAnswer
-    ? await answerKdpFromMail(env, { sender, subject: trueSubject + laneTail, text: readable, mailId, now })
+    ? await answerKdpFromMail(env, { sender, subject: trueSubject + laneTail, text: readable, mailId, now, read: replyDecision?.reply ?? null })
     : null;
   /*
    * HER "dismiss <code>" ON A MATCH (owner, 25 Oct 2026): the five letters on the trade's card. The
@@ -968,7 +985,7 @@ export async function handleBossInboundMail(message: BossMailMessage, env: Env):
    * `validate:duty-birth` pins that both calls sit after the `!authorised` return.
    */
   const dutyAnswer = planAnswer || commentAnswer || kdpAnswer || dismissAnswer ? null : await answerDutyFromMail(env, {
-    roster, subject: trueSubject + laneTail, text: readable, mailId, now, sender,
+    roster, subject: trueSubject + laneTail, text: readable, mailId, now, sender, read: replyDecision?.reply ?? null,
     inReplyTo: message.headers.get("in-reply-to"), references: message.headers.get("references"),
   });
   const dutyRequest = planAnswer || commentAnswer || kdpAnswer || dismissAnswer || dutyAnswer ? null : await newDutyFromMail(env, {
@@ -1150,10 +1167,10 @@ export async function handleBossInboundMail(message: BossMailMessage, env: Env):
    */
   if (route.outcome !== "AMBIGUOUS" && !bookFailure && !question && !filedByVerb) {
     // Inside the guard: nothing unclear, unread or already done ever reaches the free reader either.
-    const fileNames = [...files.heard.map((h) => h.filename), ...files.read.map((r) => r.filename), ...files.unopened.map((u) => u.filename)];
-    first = !oversize && (own || readable).trim()
+    // One read per email: a reply was read above, before the reply doors.
+    first = replyRead ?? (!oversize && (own || readable).trim()
       ? await firstRead(env, { subject: trueSubject, words: own || readable, files: fileNames, now, mailId })
-      : null;
+      : null);
     briefBlock = first?.brief ? briefForTask(first.brief, first.reader) : first?.stop ?? null;
     triaged = route.outcome === "DEFAULTED" && !handoffNote && !followed && Boolean(readable || subject)
       ? triage({ subject: trueSubject, text: own || trueSubject, roster, asks: first?.brief?.asks ?? null })

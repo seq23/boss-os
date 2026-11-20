@@ -7,13 +7,18 @@
  *
  * Only on a reply to the morning email (its `yd_` ref), except "gate done" and "X is public", which
  * are unambiguous wherever she writes them to Simone.
+ *
+ * THE FIRST READ DECIDES (owner ruling, 19 Nov 2026): when the email's first read gave a DECISION, its commands are the
+ * commands, and the keywords only sit beside it in the log. Without one, the exact whole-line keywords act, judged by
+ * the shared whole-sentence judge, logged "first read absent: keyword fallback".
  */
 import type { Env } from "../env";
 import { audit } from "../lib/audit";
 import { admitTask } from "../tasks/admit";
 import { dayIdInZone } from "../../../shared/boss/timezone";
 import { appendToSection } from "../../../shared/boss/brains/brain.mjs";
-import { morningCommands, dropTargets, knownRule, brainLine } from "../../../shared/boss/mail/morningReply.mjs";
+import { morningCommands, commandsFromRead, withKeywordsTheReadMissed, dropTargets, knownRule, brainLine } from "../../../shared/boss/mail/morningReply.mjs";
+import { logReplyDecision, type ReplyDecision } from "./firstRead";
 import { oneBrain, saveBrain } from "../brains/store";
 import { markPublic } from "../capital/publicCompanies";
 import { dropItems } from "../routes/morning";
@@ -29,12 +34,22 @@ async function keepInPersonal(env: Env, lines: string[], now: number) {
   await saveBrain(env, "personal", md, "Sequoia", "by email (her reply to Simone)", now);
 }
 
-export async function morningReplyFromMail(env: Env, a: { text: string; refs: string[]; mailId: string; now?: number }): Promise<MorningReplyResult | null> {
+const MORNING_KINDS = new Set(["drop", "gate", "grateful", "public", "rule"]);
+
+export async function morningReplyFromMail(env: Env, a: { text: string; refs: string[]; mailId: string; now?: number; read?: ReplyDecision | null; readHasWork?: boolean }): Promise<MorningReplyResult | null> {
   const now = a.now ?? Date.now();
-  const { commands, rest } = morningCommands(a.text);
+  const keyword = morningCommands(a.text);
+  const fromRead = a.read ? commandsFromRead(a.read.commands.filter((c) => MORNING_KINDS.has(c.kind)), a.text) : null;
+  const commands = fromRead ? withKeywordsTheReadMissed(fromRead, keyword.commands) : keyword.commands;
   const morningDay = morningDayOf(a.refs);
   const usable = commands.filter((c: any) => morningDay || c.kind === "gate" || c.kind === "public");
+  const kinds = (cs: any[]) => cs.map((c) => c.kind).join(", ") || "none";
+  if (fromRead || usable.length) {
+    await logReplyDecision(env, { mailId: a.mailId, what: "her morning commands", firstRead: fromRead ? kinds(fromRead) : null, keyword: kinds(keyword.commands) });
+  }
   if (!usable.length) return null;
+  // Only commands → done here. With the first read: the keywords found nothing else in it, or the read found no work.
+  const rest = fromRead && a.readHasWork === false ? "" : keyword.rest;
   const today = dayIdInZone(now);
   const said: string[] = [];
   const brainLines: string[] = [];

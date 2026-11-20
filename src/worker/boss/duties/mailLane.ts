@@ -1,4 +1,6 @@
 import type { Env } from "../env";
+import { logReplyDecision } from "../intake/firstRead";
+import type { ReplyMode } from "../../../shared/boss/repoChange/lane.mjs";
 import { newId } from "../lib/id";
 import { audit } from "../lib/audit";
 import { logEvent } from "../lib/log";
@@ -318,7 +320,7 @@ async function draftForReply(env: Env, input: { subject: string; text: string; c
  */
 export async function answerDutyFromMail(env: Env, input: {
   roster: LaneSeat[]; subject: string; text: string; inReplyTo: string | null; references: string | null;
-  mailId: string; now: number; sender: string;
+  mailId: string; now: number; sender: string; read?: ReplyMode | null;
 }): Promise<MailLaneResult | null> {
   const chain = `${input.references ?? ""} ${input.inReplyTo ?? ""}`;
   const isReply = /^\s*re\s*:/i.test(input.subject) || chain.trim().length > 0 || Boolean(draftTokenIn(`${input.subject}\n${input.text}`));
@@ -328,7 +330,8 @@ export async function answerDutyFromMail(env: Env, input: {
 
   const seat = input.roster.find((s) => s.id === row.employee_id) ?? { id: row.employee_id, name: row.employee_id };
   const signer = input.roster.find((s) => s.id === row.routed_by) ?? seat;
-  const reply = readDutyReply(input.text);
+  const reply = readDutyReply(input.text, input.read ?? null);
+  await logReplyDecision(env, { mailId: input.mailId, what: `the duty draft ${draftToken(row.id)}`, firstRead: input.read === "approved" || input.read === "held" ? reply.mode : null, keyword: readDutyReply(input.text).mode });
   const token = draftToken(row.id);
 
   if (row.state !== "drafted") {

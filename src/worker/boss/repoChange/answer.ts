@@ -2,7 +2,8 @@ import type { Env } from "../env";
 import { newId } from "../lib/id";
 import { audit } from "../lib/audit";
 import { logEvent } from "../lib/log";
-import { tokenIn, readReply, needsPreview, isForced, REPO_CHANGE_SEAT } from "../../../shared/boss/repoChange/lane.mjs";
+import { tokenIn, readReply, needsPreview, isForced, REPO_CHANGE_SEAT, type ReplyMode } from "../../../shared/boss/repoChange/lane.mjs";
+import { logReplyDecision } from "../intake/firstRead";
 import { blockReplyDoor } from "../../../shared/boss/service/waits.mjs";
 
 /**
@@ -61,7 +62,7 @@ export async function taskEvent(env: Env, taskId: string, event: string, detail:
  * make land-on-green a door anyone who knew the token could open.
  */
 export async function answerFromMail(
-  env: Env, input: { seatId: string; subject: string; text: string; mailId: string; now: number; sender: string; replyChain?: string[] },
+  env: Env, input: { seatId: string; subject: string; text: string; mailId: string; now: number; sender: string; replyChain?: string[]; read?: ReplyMode | null },
 ): Promise<{ changeId: string; resumed: boolean; note: string } | null> {
   /*
    * THE TOKEN ROUTES, WHATEVER DESK THE TAG LANDED ON. `[rc_…]` names a change only Danielle's lane
@@ -74,6 +75,8 @@ export async function answerFromMail(
   if (!token && !row) return null;
   const changeId = token ?? row!.id;
   if (!row) return { changeId, resumed: false, note: `Your message names ${changeId}, and no repo change has that id. Nothing was changed.` };
+  // Both readings on the record: the first read's (it decides), the keywords' (the last resort). intake/firstRead.ts.
+  await logReplyDecision(env, { mailId: input.mailId, what: `the reply to ${changeId}`, firstRead: input.read ?? null, keyword: readReply(input.text).mode });
 
   /*
    * A REPLY ON A FAILED CHANGE IS A RETRY OF THAT CHANGE. "try again" — or anything that is not a
@@ -82,7 +85,7 @@ export async function answerFromMail(
    * the reply's words is exactly the defect this closes.
    */
   if (row.phase === "failed") {
-    const reply = readReply(input.text);
+    const reply = readReply(input.text, input.read);
     if (reply.mode === "empty") return { changeId, resumed: false, note: `Your reply to ${row.id} carried no readable text; it stays stopped.` };
     const dropped = await dropIfAsked(env, row, input, changeId);
     if (dropped) return dropped;
@@ -108,7 +111,7 @@ export async function answerFromMail(
    * word that approves it. "no" / "changes:" holds, as at the plan.
    */
   if (row.phase === "previewing") {
-    const reply = readReply(input.text);
+    const reply = readReply(input.text, input.read);
     if (reply.mode === "empty") return { changeId, resumed: false, note: `Your reply to ${row.id} carried no readable text; the preview is still waiting on you.` };
     if (reply.mode === "approved") {
       const next = row.checks_green_at ? "land" : "landing";
@@ -157,8 +160,8 @@ export async function answerFromMail(
    * PR as a preview she has not approved (`previewing`, with the hold as the preview moment), so
    * `canLand` refuses until she writes "approved". Nothing lands on a hold.
    */
-  if ((row.phase === "build" || row.phase === "landing") && readReply(input.text).mode === "held") {
-    const reply = readReply(input.text);
+  if ((row.phase === "build" || row.phase === "landing") && readReply(input.text, input.read).mode === "held") {
+    const reply = readReply(input.text, input.read);
     if (row.phase === "build") {
       await env.DB
         .prepare(`UPDATE repo_changes SET phase = 'asking', answered_at = NULL, answers_text = NULL, answers_mode = NULL, plan_approved_by = NULL, held_at = ?, held_text = ?, updated_at = ? WHERE id = ? AND phase = 'build'`)
@@ -193,7 +196,7 @@ export async function answerFromMail(
    * approved" / "stop" / "changes:" HOLDS the task exactly where it is; anything else is her
    * answers. `readReply` is the one reader, and the validator runs it over fixtures.
    */
-  const reply = readReply(input.text);
+  const reply = readReply(input.text, input.read);
   if (reply.mode === "empty") {
     return { changeId, resumed: false, note: `Your reply to ${row.id} carried no readable text, so nothing was recorded and the change is still waiting on you.` };
   }

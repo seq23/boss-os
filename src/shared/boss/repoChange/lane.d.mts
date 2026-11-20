@@ -76,7 +76,9 @@ export const APPROVED_DEFAULTS_TEXT: string;
 export const PREVIEW_WORDS: readonly string[];
 export const PREVIEW_DEFAULTS_TEXT: string;
 export function herWords(text: string | null | undefined): string;
-export function readReply(text: string | null | undefined): { mode: "approved" | "preview" | "forced" | "held" | "answers" | "empty"; text: string };
+export type ReplyMode = "approved" | "preview" | "forced" | "held" | "answers";
+export const READ_MODES: readonly ReplyMode[];
+export function readReply(text: string | null | undefined, read?: ReplyMode | null): { mode: ReplyMode | "empty"; text: string; by: "FIRST_READ" | "KEYWORD" };
 export const FORCE_WORDS: readonly string[];
 export const FORCED_TEXT: string;
 export function isForced(row: RepoChangeRowLike | null | undefined): boolean;
@@ -97,3 +99,5 @@ export function redChecksAction(row: { rework_count?: number | null; origin?: st
 export function isRepair(row: { origin?: string | null } | null | undefined): boolean;
 export function planWaitsForOwner(row: { origin?: string | null; pre_approved_phrase?: string | null; pre_approved_by?: string | null } | null | undefined): boolean;
 export function namesPostLandStep(text: string | null | undefined): boolean;
+
+export function anchoredReading(read: ReplyMode, words: string): ReplyMode;

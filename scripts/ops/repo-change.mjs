@@ -33,6 +33,7 @@
  * validator `the-repo-lane-lands-only-on-green.mjs` fails the build if it starts to.
  */
 
+import { builtTodayLine, builtTodayProblem } from "../../src/shared/boss/engineering/builtToday.mjs";
 import { spawn, spawnSync } from "node:child_process";
 import { existsSync, mkdirSync, readFileSync, readdirSync, writeFileSync, appendFileSync, symlinkSync } from "node:fs";
 import { homedir } from "node:os";
@@ -1007,6 +1008,17 @@ async function runPhase(claim) {
       return;
     }
     if (step && !namesStep && !isRepair(row)) { await failOut("POST_LAND_STEP_UNNAMED", `plan.json carries a post_land_step (\`${String(step.command).slice(0, 120)}\`) that neither her instruction nor the plan text names. Only a step she or the plan named runs after land.`, log); return; }
+    /*
+     * THE ENGINEERING BAR, ANSWERED IN THE PLAN (owner ruling, 19 Nov 2026; ~/.claude/skills/ship-ready/engineering.md):
+     * "built from scratch today, would it look like this?" A plan without the answer is refused before anything is built,
+     * repairs included; the answer opens the plan she reads and the one on the record.
+     */
+    const builtProblem = builtTodayProblem(out.built_today);
+    if (builtProblem) {
+      await failOut("BUILT_TODAY_UNANSWERED", `the plan does not answer "built from scratch today, would it look like this?" (${builtProblem}). Read ~/.claude/skills/ship-ready/engineering.md and write plan.json's built_today: { answer: "yes" | "no", different }. Nothing was built.`, log);
+      return;
+    }
+    out.plan_text = `${builtTodayLine(out.built_today)}\n\n${String(out.plan_text ?? "").trim()}`;
     const ready = out.publish_ready === true;
     const placeholders = Array.isArray(out.placeholders) ? out.placeholders.map(String) : [];
     if (!ready && placeholders.length === 0) placeholders.push("(the plan marked itself not publish-ready without naming what would ship as a placeholder)");

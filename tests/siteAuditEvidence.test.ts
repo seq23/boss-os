@@ -191,7 +191,7 @@ describe("ahrefs-audit-report.mjs delivers a queue pass and refuses a thin mailb
   });
 
   it("a fix made in the checker stays the site's row (7 Nov 2026: boss-os #318 refused as unmapped)", async () => {
-    const fix = { project: "checklist:dentistryguides.com", domain: "dentistryguides.com", disposition: "fixed_pr", headline: "j3: guides under target", because: "The checker failed guides the 75% ruling passes.", suggested_action: "Landed; nothing to do.", crawl: { pages_crawled: 25 }, repo: "boss-os" };
+    const fix = { project: "checklist:dentistryguides.com", domain: "dentistryguides.com", disposition: "fixed_pr", headline: "j3: guides under target", because: "The checker failed guides the 75% ruling passes.", suggested_action: "Landed; nothing to do.", crawl: { pages_crawled: 25 }, repo: "boss-os", built_today: { answer: "yes", different: "nothing; the 75% ruling is read where it lives" } };
     const write = (rows: object[]) => {
       const dir = mkdtempSync(join(tmpdir(), "sr-"));
       writeFileSync(join(dir, "findings.json"), JSON.stringify({ run_id: "t", searched: { mailbox: null, queries: [] }, findings: rows }));

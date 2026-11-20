@@ -2,7 +2,8 @@ import type { Env } from "../env";
 import { newId } from "../lib/id";
 import { audit } from "../lib/audit";
 import { taskEvent } from "../repoChange/answer";
-import { tokenIn, parseReply } from "../../../shared/boss/commentWatch/lane.mjs";
+import { tokenIn, parseReply, readCommentReply } from "../../../shared/boss/commentWatch/lane.mjs";
+import { logReplyDecision, type ReplyDecision } from "../intake/firstRead";
 
 /**
  * THE COMMENT-WATCH LANE'S WORKER HALF — her reply becomes instruction rows.
@@ -43,7 +44,7 @@ export async function itemsOf(env: Env, digestId: string): Promise<CommentWatchI
 }
 
 export async function answerCommentWatchFromMail(
-  env: Env, input: { sender: string; subject: string; text: string; mailId: string; now: number },
+  env: Env, input: { sender: string; subject: string; text: string; mailId: string; now: number; read?: ReplyDecision | null },
 ): Promise<{ digestId: string; instructed: number; note: string } | null> {
   const digestId = tokenIn(`${input.subject}\n${input.text}`);
   if (!digestId) return null;
@@ -57,12 +58,21 @@ export async function answerCommentWatchFromMail(
     return { digestId, instructed: 0, note: `Noted on ${digestId}: every comment in that digest already has your instruction. A second reply changes nothing; if you want something different, tell me by number in a new #monique message.` };
   }
 
-  const parsed = parseReply(input.text, open);
+  /*
+   * THE FIRST READ DECIDES, PER ITEM (owner ruling, 19 Nov 2026; lane.mjs `readCommentReply`): its `comment` commands
+   * (number, an action from a closed list, her words) and `your_call` instruct, each judged in her sentence; an item it
+   * missed keeps what her exact words say; anything she named that neither instructs is said back as unread. Without a
+   * first read the keyword forms act alone, logged "first read absent: keyword fallback".
+   */
+  const keyword = parseReply(input.text, open);
+  const parsed = readCommentReply(input.text, open, input.read ? input.read.commands : null);
+  const said = (p: typeof keyword) => p.mode === "none" ? "none" : p.mode === "your_call" ? "your call" : p.instructions.map((i) => `${i.n} ${i.action}`).join(", ");
+  await logReplyDecision(env, { mailId: input.mailId, what: `the comment digest ${digestId}`, firstRead: input.read ? said(parsed) : null, keyword: said(keyword) });
   if (parsed.mode === "none") {
     if (digest.task_id) await taskEvent(env, digest.task_id, "comment_watch_unread", { digest_id: digestId, mail_id: input.mailId, unread: parsed.unread, text: input.text.slice(0, 4000) });
     return {
       digestId, instructed: 0,
-      note: `I could not read an instruction in your reply to ${digestId}. One line per number — \`1 delete\`, \`2 reply as drafted\`, \`3 reply: <your words>\`, \`4 ignore\` — or \`your call\` on its own line. Nothing was changed.`,
+      note: `I could not read an instruction in your reply to ${digestId}. One line per number — \`1 delete\`, \`2 reply as drafted\`, \`3 reply: <your words>\`, \`4 ignore\` — or \`your call\` on its own line. Nothing was changed.${parsed.unread.length ? ` Could not read: ${parsed.unread.map((u) => `"${u}"`).join(", ")}.` : ""}`,
     };
   }
 

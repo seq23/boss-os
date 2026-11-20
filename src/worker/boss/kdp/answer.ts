@@ -10,7 +10,8 @@
  */
 import type { Env } from "../env";
 import { audit } from "../lib/audit";
-import { readReply } from "../../../shared/boss/repoChange/lane.mjs";
+import { readReply, type ReplyMode } from "../../../shared/boss/repoChange/lane.mjs";
+import { logReplyDecision } from "../intake/firstRead";
 
 export function kdpTokenIn(text: string | null | undefined): string | null {
   const m = /\[(kml_[a-z0-9]+)\]/i.exec(String(text ?? ""));
@@ -18,7 +19,7 @@ export function kdpTokenIn(text: string | null | undefined): string | null {
 }
 
 export async function answerKdpFromMail(
-  env: Env, input: { sender: string; subject: string; text: string; mailId: string; now: number },
+  env: Env, input: { sender: string; subject: string; text: string; mailId: string; now: number; read?: ReplyMode | null },
 ): Promise<{ id: string; answered: boolean; note: string } | null> {
   const id = kdpTokenIn(`${input.subject}\n${input.text}`);
   if (!id) return null;
@@ -29,7 +30,8 @@ export async function answerKdpFromMail(
   if (!row) return { id, answered: false, note: `Your message names ${id}, and no Kindle item has that id. Nothing was changed.` };
   if (row.resolved_at) return { id, answered: false, note: `${id} was already resolved; your reply is on the record and changes nothing. If something is wrong again, Simone's next run will see Amazon's mail.` };
 
-  const reply = readReply(input.text);
+  const reply = readReply(input.text, input.read);
+  await logReplyDecision(env, { mailId: input.mailId, what: `the reply to ${id}`, firstRead: input.read ?? null, keyword: readReply(input.text).mode });
   if (reply.mode === "empty") return { id, answered: false, note: `Your reply to ${id} carried no readable text; nothing was recorded.` };
   const answer = reply.mode === "approved" ? "approved" : reply.mode === "held" ? `held: ${reply.text.slice(0, 1500)}` : reply.text.slice(0, 1500);
   await env.DB

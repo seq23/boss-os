@@ -31,6 +31,8 @@
  * it at 14:05. The act half runs on its own daily slots so her reply never waits a week.
  */
 
+import { quoteStands } from "../text/wholeSentence.mjs";
+
 export const TASK_KIND = "youtube_comment_watch";
 export const DUTY_ID = "duty_youtube_comment_watch";
 export const LOCAL_JOB = "youtube-comment-watch.sh";
@@ -107,6 +109,7 @@ export function parseReply(text, items) {
   const instructions = [];
   const unread = [];
   const seen = new Set();
+  const flagged = new Set(); // numbers whose own line is already said back, read or not
   for (const raw of own) {
     const line = raw.trim();
     if (!line) continue;
@@ -115,6 +118,7 @@ export function parseReply(text, items) {
     const n = Number(m[1]);
     const rest = m[2].trim();
     const it = byN.get(n);
+    flagged.add(n);
     if (!it) { unread.push(line); continue; }
     if (seen.has(n)) { unread.push(line); continue; }
     const read = readInstruction(rest, it);
@@ -122,7 +126,95 @@ export function parseReply(text, items) {
     seen.add(n);
     instructions.push({ n, comment_id: it.comment_id, ...read });
   }
-  return { mode: instructions.length ? "per_number" : "none", phrase: null, instructions, unread };
+  // Her prose, clause by clause (fresh review of #473): "approve 1 and 3, skip 2", "reply to 1 as drafted, delete 2, leave 3".
+  for (const raw of own) {
+    const line = raw.trim();
+    if (!line || /^#?\s*\d{1,3}\b/.test(line)) continue;
+    for (const m of line.matchAll(CLAUSE)) {
+      if (!quoteStands(line, m[0], CLAUSE_SHAPES)) { unread.push(m[0].trim()); continue; }
+      for (const n of numbersIn(m[2])) {
+        const it = byN.get(n);
+        if (!it || seen.has(n)) continue;
+        const read = clauseInstruction(m[1], Boolean(m[3]), it);
+        if (!read) continue;
+        seen.add(n);
+        instructions.push({ n, comment_id: it.comment_id, ...read });
+      }
+    }
+  }
+  return { mode: instructions.length ? "per_number" : "none", phrase: null, instructions, unread: [...unread, ...namedButUnread(own, byN, new Set([...seen, ...flagged]))] };
+}
+
+const CLAUSE = /\b(approved?|ok(?:ay)?|accept|go with|delete|hide|remove|skip|ignore|leave|reply to|reply)\s+((?:#?\d{1,3}(?:\s*(?:,|and|&|\+)\s*(?=#?\d))?)+)(\s+as\s+(?:drafted|proposed))?/gi;
+/** A clause that is conditioned, reported or asked never instructs; "don't reply to 2" may well be her "leave it". */
+const CLAUSE_SHAPES = ["CONDITIONS", "REPORTS", "ASKS"];
+const numbersIn = (t) => [...String(t ?? "").matchAll(/\d{1,3}/g)].map((x) => Number(x[0]));
+function proposedOf(it) {
+  const action = ACTIONS.includes(it.proposed_action) ? it.proposed_action : "ignore";
+  if (action !== "reply") return { action, reply_text: null };
+  const draft = (it.proposed_reply ?? "").trim();
+  return draft ? { action: "reply", reply_text: draft } : { action: "ignore", reply_text: null };
+}
+function clauseInstruction(verb, asDrafted, it) {
+  const v = verb.toLowerCase();
+  if (/^(approved?|ok(ay)?|accept|go with)$/.test(v)) return proposedOf(it);
+  if (/^(delete|hide|remove)$/.test(v)) return { action: "hide", reply_text: null };
+  if (/^(skip|ignore|leave)$/.test(v)) return { action: "ignore", reply_text: null };
+  if (asDrafted) { const draft = (it.proposed_reply ?? "").trim(); return draft ? { action: "reply", reply_text: draft } : null; }
+  return null;
+}
+/** Every comment she named by number that got no instruction is said back to her as unread, never dropped in silence. */
+function namedButUnread(own, byN, seen) {
+  const named = new Set();
+  for (const l of own) for (const n of numbersIn(l)) if (byN.has(n) && !seen.has(n)) named.add(n);
+  return [...named].map((n) => `${n}: no instruction read for it`);
+}
+
+/*
+ * THE FIRST READ DECIDES, PER ITEM (owner ruling 19 Nov 2026; fresh review of #473). Each `comment` command carries the
+ * number, an action from a closed list and her words for it; the words must stand in her sentence (the same judge).
+ * Where her exact forms read an item plainly, they win over a read that disagrees; an item the read did not instruct
+ * keeps what her exact words say; anything she named that neither reading instructed is listed back as unread. Pure.
+ */
+export const READ_ACTIONS = ["approve", "hide", "ignore", "reply_as_drafted", "reply"];
+export function readCommentReply(text, items, readCommands = null) {
+  const keyword = parseReply(text, items);
+  if (!readCommands) return { ...keyword, instructions: [...keyword.instructions].sort((a, b) => a.n - b.n), by: "KEYWORD" };
+  const ownText = ownLines(text ?? "").join("\n");
+  const byN = new Map((items ?? []).map((it, i) => [Number(it.n ?? i + 1), it]));
+  if (readCommands.some((c) => c.kind === "your_call" && quoteStands(ownText, c.text, CLAUSE_SHAPES))) {
+    const all = parseReply("your call", items);
+    return { ...all, phrase: readCommands.find((c) => c.kind === "your_call")?.text ?? "your call", by: "FIRST_READ" };
+  }
+  const instructions = [];
+  const unread = [];
+  const seen = new Set();
+  for (const c of readCommands) {
+    if (c.kind !== "comment") continue;
+    const it = byN.get(Number(c.n));
+    if (!it || seen.has(it.n ?? c.n)) continue;
+    if (!READ_ACTIONS.includes(c.action) || !quoteStands(ownText, c.text, CLAUSE_SHAPES)) { unread.push(c.text); continue; }
+    let read = null;
+    if (c.action === "approve") read = proposedOf(it);
+    else if (c.action === "hide" || c.action === "ignore") read = { action: c.action, reply_text: null };
+    else if (c.action === "reply_as_drafted") { const d = (it.proposed_reply ?? "").trim(); read = d ? { action: "reply", reply_text: d } : null; }
+    else { const w = /reply\s*(?:to\s*#?\d{1,3}\s*)?[:\-–—]\s*(.+)$/is.exec(c.text); read = w && w[1].trim() ? { action: "reply", reply_text: w[1].trim().slice(0, 2000) } : null; }
+    if (!read) { unread.push(c.text); continue; }
+    seen.add(Number(c.n));
+    instructions.push({ n: Number(c.n), comment_id: it.comment_id, ...read });
+  }
+  // Her exact words win where they read an item plainly and the read says otherwise (live, 20 Nov 2026: Workers AI read
+  // "skip 2" as hide); the read fills only what her exact forms cannot read.
+  for (const k of keyword.instructions) {
+    const at = instructions.findIndex((i) => i.n === k.n);
+    if (at >= 0) instructions[at] = k;
+    else if (!seen.has(k.n)) { seen.add(k.n); instructions.push(k); }
+  }
+  const own = ownLines(text ?? "");
+  const kept = keyword.unread.filter((u) => !/^\d{1,3}: no instruction read/.test(u));
+  const saidBack = new Set(kept.map((u) => Number(/^#?\s*(\d{1,3})/.exec(u)?.[1])).filter((n) => n > 0));
+  const left = [...unread, ...kept.filter((u) => !seen.has(Number(/^#?\s*(\d{1,3})/.exec(u)?.[1]))), ...namedButUnread(own, byN, new Set([...seen, ...saidBack]))];
+  return { mode: instructions.length ? "per_number" : "none", phrase: null, instructions: instructions.sort((a, b) => a.n - b.n), unread: [...new Set(left)], by: "FIRST_READ" };
 }
 
 function readInstruction(rest, item) {

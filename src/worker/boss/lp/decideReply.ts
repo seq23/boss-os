@@ -16,6 +16,7 @@
  * The prospect-email card stays templateReply.ts's. Never a hunt, never a new job, never a send.
  * Her words only: the quoted morning under them is never read (`ownWords`).
  */
+import { logReplyDecision, type ReplyDecision } from "../intake/firstRead";
 import type { Env } from "../env";
 import { audit } from "../lib/audit";
 import { ownWords } from "../../../shared/boss/intake/messageBody.mjs";
@@ -123,12 +124,19 @@ async function answerLp(env: Env, card: DecideCard, n: number, row: any, words: 
  */
 export async function decideAnswerFromMail(
   env: Env,
-  input: { text: string; refs: string[]; subject: string; mailId: string; now: number },
+  input: { text: string; refs: string[]; subject: string; mailId: string; now: number; read?: ReplyDecision | null },
   fetchImpl: typeof fetch = fetch,
 ): Promise<{ note: string; outcome: "DECIDE_ANSWERED"; taskId: string | null } | null> {
   const her = ownWords(input.text);
-  const m = DECIDE_ANSWER_RE.exec(her);
+  /*
+   * WHICH CARD AND WHAT SHE SAID ARE THE FIRST READ'S (owner ruling, 19 Nov 2026): its `answers` name the card and
+   * carry her words. The "N: …" shape is the logged last resort when the first read gave no answer.
+   */
+  const kw = DECIDE_ANSWER_RE.exec(her);
+  const said = input.read?.answers?.[0] ?? null;
+  const m: [string, string, string] | null = said ? [her, String(said.n), said.text] : kw ? [kw[0], kw[1]!, kw[2]!] : null;
   if (!m) return null;
+  await logReplyDecision(env, { mailId: input.mailId, what: "the morning card she answered", firstRead: said ? `${said.n}: ${said.text.slice(0, 80)}` : null, keyword: kw ? `${kw[1]}: ${kw[2]!.trim().slice(0, 80)}` : "no numbered answer" });
   const otherThread = input.refs.some((r) => !r.startsWith("yd_"));
   const day = morningDayOf(input.refs);
   const fromMorning = Boolean(day) || (!otherThread && /^\s*(?:re|fwd?):\s*(?:mon|tues|wednes|thurs|fri|satur|sun)day\b/i.test(input.subject));

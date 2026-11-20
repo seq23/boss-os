@@ -86,6 +86,13 @@ Read the package, the runbook, and the repository. Then write the plan.
    change touches.
 3. Write the plan: what changes, file by file; what the runbook requires (validators, build,
    lastmod, screenshots, redirects); how it will be proven; what the live proof will be.
+   **Then hold it to the engineering bar.** Read `~/.claude/skills/ship-ready/engineering.md` and
+   answer its one question in `built_today`: "if we built this from scratch today with the tools we
+   have (models, platform features, libraries), would it look like this?" `answer` is `yes` or `no`;
+   `different` says why yes, or what is different and whether this change does the rebuild (then the
+   plan IS the rebuild) or names it as a dated Open Loops row. Meaning read by keywords, a hand-built
+   version of what a platform does, a new store or job where one exists, or an old path kept beside
+   its replacement is a `no`. The runner refuses a plan without it (`BUILT_TODAY_UNANSWERED`).
 Pre-approved in the request: {{PRE_APPROVED}}
 A repair Boss OS opened itself: {{REPAIR}}
 
@@ -128,6 +135,7 @@ Result file shape:
 {
   "repo": "WPP-llm",
   "publish_ready": false,
+  "built_today": { "answer": "yes", "different": "nothing: the page is static copy in the site's own templates, the way it would be built today" },
   "post_land_step": { "command": ".venv/bin/python loop/channel_about.py", "proof": "channels.list shows the new About text; a public fetch of the channel page contains the new paragraph" },
   "placeholders": ["Team section: bios for two of the four people are not in the package"],
   "plan_text": "markdown — the plan in full, sent as an attachment and kept on the record",

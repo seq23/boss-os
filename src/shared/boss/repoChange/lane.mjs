@@ -30,6 +30,8 @@
 import { propertyForRepo, isExcluded, whyExcluded, GRID, GRID_OWNER } from "../grid.mjs";
 
 /** The task-kind token. The Mac lane and `validate:duty-delivery` cross-check it against the script. */
+import { sentencesOf, vetoOf } from "../text/wholeSentence.mjs";
+
 export const TASK_KIND = "repo_change";
 /** The executor on her Mac, named once. `install-agent-launchd.sh` must name it too. */
 export const EXECUTOR_SCRIPT = "repo-change.sh";
@@ -473,24 +475,57 @@ export function herWords(text) {
   return out.join("\n").trim();
 }
 
-export function readReply(text) {
+/*
+ * THE READING IS ANCHORED TO HER WORDS (fresh review of #473, 20 Nov 2026). The model decides, inside two hard stops
+ * that code holds:
+ *   · production without a preview is "forced" only when HER words carry a force phrase (FORCE_WORDS); a model's
+ *     "forced" without them is a preview, the safe floor;
+ *   · a full approval is "approved" only when her words carry no item numbers and no "but / not / except / unless /
+ *     only": "approve 1 and 3, skip 2" read as approved becomes her answers, so a partial approval is never a full one.
+ * Pure.
+ */
+const PARTIAL = /\b\d{1,3}\b|\b(?:but|except|not|unless|only|skip|without)\b|n['’]t\b/i;
+export function anchoredReading(read, words) {
+  const w = String(words ?? "");
+  if (read === "forced") return forcePhraseIn(w) ? "forced" : "preview";
+  if (read === "approved" && PARTIAL.test(w.replace(/\[[a-z]{2,4}_[a-z0-9]+\]/gi, " "))) return "answers";
+  return read;
+}
+
+export function readReply(text, read = null) {
   const raw = herWords(text);
+  if (!raw) return { mode: "empty", text: raw, by: "KEYWORD" };
+  /*
+   * THE FIRST READ DECIDES (owner ruling, 19 Nov 2026). When the first read of her reply said what it means
+   * (intake/firstRead.ts, its DECISION's `reply`), that is the reading; the words below are the logged last resort.
+   */
+  if (read && READ_MODES.includes(read)) {
+    const mode = anchoredReading(read, raw);
+    const text = mode === "approved" ? APPROVED_DEFAULTS_TEXT : mode === "preview" ? PREVIEW_DEFAULTS_TEXT : mode === "forced" ? FORCED_TEXT : raw;
+    return { mode, text, by: "FIRST_READ" };
+  }
   const first = raw.split(/\r?\n/).map((l) => l.trim()).find((l) => l.length > 0) ?? "";
   const norm = first.toLowerCase().replace(/[\s.!,;:'"“”‘’-]+$/g, "").replace(/^[\s"“'‘-]+/g, "").trim();
-  if (!raw) return { mode: "empty", text: raw };
   const oneLine = raw.split(/\r?\n/).filter((l) => l.trim()).length === 1;
-  if (APPROVAL_WORDS.includes(norm) && oneLine) return { mode: "approved", text: APPROVED_DEFAULTS_TEXT };
-  if (PREVIEW_WORDS.includes(norm) && oneLine) return { mode: "preview", text: PREVIEW_DEFAULTS_TEXT };
-  if (FORCE_WORDS.includes(norm) && oneLine) return { mode: "forced", text: FORCED_TEXT };
+  if (APPROVAL_WORDS.includes(norm) && oneLine) return { mode: "approved", text: APPROVED_DEFAULTS_TEXT, by: "KEYWORD" };
+  if (PREVIEW_WORDS.includes(norm) && oneLine) return { mode: "preview", text: PREVIEW_DEFAULTS_TEXT, by: "KEYWORD" };
+  if (FORCE_WORDS.includes(norm) && oneLine) return { mode: "forced", text: FORCED_TEXT, by: "KEYWORD" };
   const lower = first.toLowerCase();
+  // A hold that starts her reply stands only if its whole sentence does (wholeSentence.mjs): "hold it if the numbers
+  // are off", "stop the build?" and "last time I said no" are her answers, read as such; "no, not yet" and "stop." hold.
+  // A negation is not judged here: a hold is one ("no, not yet" is the plainest hold there is).
+  const sentence = (sentencesOf(first)[0]?.text ?? "").toLowerCase();
   for (const p of HOLD_PREFIXES) {
     if (lower === p || lower.startsWith(p + " ") || lower.startsWith(p + ",") || lower.startsWith(p + ".") || lower.startsWith(p + "!") || (p.endsWith(":") && lower.startsWith(p))) {
       // "no" as a prefix must not swallow "note:" / "now use B"; the separators above make sure of it.
-      return { mode: "held", text: raw };
+      if (p.endsWith(":") || !vetoOf(sentence, { from: 0, to: p.length }, ["CONDITIONS", "REPORTS", "ASKS"])) return { mode: "held", text: raw, by: "KEYWORD" };
     }
   }
-  return { mode: "answers", text: raw };
+  return { mode: "answers", text: raw, by: "KEYWORD" };
 }
+
+/** The readings the first read may give her reply (its DECISION's `reply`). */
+export const READ_MODES = ["approved", "preview", "forced", "held", "answers"];
 
 /**
  * ─── THE GUARDS ─────────────────────────────────────────────────────────────

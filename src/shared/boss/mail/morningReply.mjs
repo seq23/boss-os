@@ -18,6 +18,7 @@
  *                                     becomes a repair job (who and when said in the reply)
  */
 import { publicFromReply } from "../deals/publicCompanies.mjs";
+import { vetoOf, quoteStands } from "../text/wholeSentence.mjs";
 
 const PRONOUN = /^(?:it|that|this|them|those|these|the item|everything|all)$/i;
 
@@ -34,7 +35,52 @@ export function morningCommands(text) {
   return { commands, rest: rest.join("\n").trim() };
 }
 
+/*
+ * THE SHARED JUDGE (19 Nov 2026). These keywords are the last resort, after the first read; even then a line that is
+ * conditioned ("drop 2 if he hasn't answered"), reported ("Ann said drop it") or asked ("drop Ron Brooks?") is not a
+ * command. A rule is negative by nature ("don't …", "never …") and may carry its own "when", so it is judged only for
+ * reporting and asking. Pure.
+ */
+const JUDGED = Object.freeze({ rule: ["REPORTS", "ASKS"], gate: ["NEGATES", "CONDITIONS", "REPORTS", "ASKS"], drop: ["NEGATES", "CONDITIONS", "REPORTS", "ASKS"] });
 export function commandOf(line) {
+  const c = keywordCommandOf(line);
+  return c && !vetoOf(String(line ?? "").trim(), null, JUDGED[c.kind] ?? ["CONDITIONS", "REPORTS", "ASKS"]) ? c : null;
+}
+
+/*
+ * FROM THE FIRST READ (19 Nov 2026): her commands as the first read gave them, each quoting her. The quoted words are
+ * read by the same exact parser when they carry the shape ("drop Ron Brooks"); a drop the read numbered, a gate, a
+ * gratitude or a company the read named is taken as the read said. Pure.
+ */
+export function commandsFromRead(readCommands, words) {
+  const out = [];
+  for (const c of readCommands ?? []) {
+    // The same judge as the keywords, on her whole sentence: a conditioned, reported or asked command never acts.
+    const shapes = JUDGED[c.kind] ?? ["NEGATES", "CONDITIONS", "REPORTS", "ASKS"];
+    const stands = c.text ? quoteStands(words, c.text, shapes) : c.kind === "gate" && morningCommands(words).commands.some((k) => k.kind === "gate");
+    if (!stands) continue;
+    const parsed = keywordCommandOf(c.text);
+    // A drop must be her drop: a number the read gave from words that say drop, or words the drop parser reads.
+    if (c.kind === "drop") { if (parsed?.kind === "drop") out.push(c.n && !parsed.number ? { kind: "drop", number: c.n } : parsed); else if (c.n && /\b(?:drop|remove|dismiss|lose|get rid of|take off)\b/i.test(c.text)) out.push({ kind: "drop", number: c.n }); }
+    else if (c.kind === "gate") out.push({ kind: "gate" });
+    else if (c.kind === "grateful") out.push(parsed?.kind === "grateful" ? parsed : { kind: "grateful", what: String(c.text).trim() });
+    else if (c.kind === "public") out.push(parsed?.kind === "public" ? parsed : { kind: "public", company: String(c.text).replace(/\s+is\s+(?:now\s+)?public\b.*$/i, "").trim() });
+    else if (c.kind === "rule") out.push({ kind: "rule", words: String(c.text).trim() });
+  }
+  return out.filter((c) => c.kind !== "drop" || c.number || (c.name && c.name.length >= 2 && !PRONOUN.test(c.name)));
+}
+
+/*
+ * A whole-line command in her exact words that the read missed still acts (live, 20 Nov 2026: Workers AI dropped the
+ * "drop 2" beside "gate done"). Both are judged already; one command is never done twice. Pure.
+ */
+export function withKeywordsTheReadMissed(fromRead, keyword) {
+  const key = (c) => c.kind === "gate" ? "gate" : `${c.kind}:${c.number ?? ""}:${String(c.name ?? c.what ?? c.company ?? c.words ?? "").toLowerCase()}`;
+  const have = new Set(fromRead.map(key));
+  return [...fromRead, ...keyword.filter((k) => !have.has(key(k)))];
+}
+
+function keywordCommandOf(line) {
   const l = String(line ?? "").trim().replace(/\s+/g, " ");
   let m;
   if ((m = /^drop\s+#?(\d{1,2})\s*[.!]?$/i.exec(l))) return { kind: "drop", number: Number(m[1]) };
