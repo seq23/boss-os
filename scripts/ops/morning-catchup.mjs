@@ -28,7 +28,7 @@
  *   npm run morning:catchup
  */
 import { execFileSync } from "node:child_process";
-import { catchUpWeeklySlots } from "./missed-weekly-slots.mjs";
+import { catchUpWeeklySlots } from "./missed-slots.mjs";
 import { bossApi } from "./lib/duty-kit.mjs";
 import { outputLine } from "../../src/shared/boss/alarms/rules.mjs";
 import { readMorningSections, freshSections } from "../../src/shared/boss/mail/morning.mjs";
@@ -123,7 +123,7 @@ async function main() {
   const when = windowWords(window);
   const { long, budgetMs } = catchUpBudget(window);
 
-  // A weekly Mac job whose slot fell while the Mac was off runs once now (missed-weekly-slots.mjs).
+  // A weekly Mac job whose slot fell while the Mac was off runs once now (missed-slots.mjs).
   try { console.log(outputLine(catchUpWeeklySlots(now).length, "missed weekly slots started")); }
   catch (e) { console.error(`NAMED STOP [MISSED_SLOTS_UNREAD] ${e.message}`); }
 

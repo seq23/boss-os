@@ -4051,6 +4051,28 @@
       }
     },
     {
+      "id": "slot-catchup",
+      "name": "Missed-slot catch-up",
+      "what": "Every 30 minutes and whenever the Mac comes up: a daily or weekly Mac job whose time passed while the Mac slept or was off gets one run; a daily job with no run in 36 hours is a named note in the morning email.",
+      "business": "personal",
+      "brand": "Boss OS",
+      "system": "mac",
+      "slots": [
+        "every 1800s"
+      ],
+      "emails": false,
+      "heavy": false,
+      "trigger": {
+        "launchd": [
+          "com.seq.boss-slot-catchup"
+        ]
+      },
+      "output": {
+        "floor": 0,
+        "reason": "A catch-up: most runs start nothing because nothing was missed."
+      }
+    },
+    {
       "id": "scorecard",
       "name": "Scorecard",
       "what": "Reads every initiative's real number and judges it on Mondays: version B once, then pause; no number goes to repairs. Its section is in Monday's morning email.",
