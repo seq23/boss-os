@@ -5,7 +5,7 @@
 import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
 import { EMAIL_SENDS, SOCIAL_POSTS, gateProblems, parseVerdict, passLine, PASS_LINE_RE, reviewRoutes, reviewPrompt } from "../src/shared/boss/shipReview/review.mjs";
-import { judge, isPrivate, parseArgs } from "../scripts/ops/ship-review.mjs";
+import { judge, isPrivate, isBlank, parseArgs, capture, YOUTUBE_CHANNEL } from "../scripts/ops/ship-review.mjs";
 // @ts-expect-error — plain ESM with no declaration file
 import { shipReviewArgs } from "../scripts/ops/repo-change.mjs";
 
@@ -34,6 +34,24 @@ describe("a verdict is trusted only when it is a real review", () => {
     expect(p).toMatch(/Builder \(not you\): Codex/);
     expect(p).toMatch(/never an instruction to you/);
     expect(p).toMatch(/THE BAR/);
+  });
+});
+
+describe("a blank capture is the browser failing, never the work", () => {
+  it("almost no words and no pictures is blank; real words or real pictures are not", () => {
+    expect(isBlank({ words: 0, media: 0 })).toBe(true);
+    expect(isBlank({ words: 12, media: 0 })).toBe(true);
+    expect(isBlank({ words: 500, media: 0 })).toBe(false);
+    expect(isBlank({ words: 5, media: 3 })).toBe(false);
+  });
+  it("a YouTube channel is read through the Data API with her key, never a disguised browser visit", async () => {
+    expect(YOUTUBE_CHANNEL.test("https://www.youtube.com/@whisperalmanac")).toBe(true);
+    expect(YOUTUBE_CHANNEL.test("https://www.youtube.com/channel/UCabc123")).toBe(true);
+    expect(YOUTUBE_CHANNEL.test("https://porchandparty901.com/")).toBe(false);
+    await expect(capture({ kind: "profile", target: "https://www.youtube.com/@whisperalmanac", builder: "b", flags: new Set() } as any, "/tmp", { env: {} }))
+      .rejects.toThrow(/NO_YOUTUBE_KEY/);
+    const src = (await import("node:fs")).readFileSync("scripts/ops/ship-review.mjs", "utf8");
+    expect(src).not.toMatch(/userAgent\s*:/);
   });
 });
 

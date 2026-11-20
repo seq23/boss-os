@@ -237,7 +237,9 @@ work; a fresh reviewer judges the REAL output against `~/.claude/skills/ship-rea
   --target <url|file|folder> --builder "<who>" [--subject <key>] [--brand <slug>] [--launch] [--pr owner/repo#N]`.
   It captures what a person meets (Playwright: 390 px light and dark + 1280 px, with HTTP status,
   sideways scroll, broken images, title and console errors measured; ffmpeg: first frame + a 12-frame
-  contact sheet; or the finished images), judges, prints `Ship-ready: PASS — boss-os ship-review sr_… (<route>)
+  contact sheet; or the finished images; a YouTube channel through the official Data API with her key
+  `HOWWEKNOW_YOUTUBE_API_KEY`: real avatar, banner, title, description and newest thumbnails drawn at 390 px
+  and 1280 px, never a disguised browser visit), judges, prints `Ship-ready: PASS — boss-os ship-review sr_… (<route>)
   looked at <what>` or `…: FAIL …` with numbered findings, and with `--pr` appends the PASS line to the
   PR body, where `~/bin/land` reads it. Rules (pure) in `src/shared/boss/shipReview/review.mjs`.
 - **Routes** (`aiRoles.routeOrder`): a subject never passed before is HARD (Claude seat, then Codex);
@@ -247,6 +249,8 @@ work; a fresh reviewer judges the REAL output against `~/.claude/skills/ship-rea
   findings); its PASS goes on to a seat. Never a paid API.
 - **Kept** in `quality_reads` (kind `ship`, migration 0369; the monthly read is kind `monthly`), API
   `POST/GET /api/boss/quality/reviews[?subject=]`; `latestShipReview` in `routes/quality.ts` for Worker code.
+- **A capture failing is never a FAIL on the work**: pages wait up to 25 s for real content, a consent
+  wall is declined (privacy first), and an all-blank capture is `NAMED STOP [CAPTURE_BLANK]`, no verdict.
 - **Rule 0**: `OUTPUT 1 reviews` only when a verdict was stored; exit 0 PASS, 1 FAIL, 2 NOT_RECORDED,
   3 passcode, 9 NOTHING_CAPTURED / NO_REVIEWER (nothing passes by default).
 - **Danielle's repo lane** (`repo-change.mjs` `shipReviewFor`): when a change's checks go green and it
