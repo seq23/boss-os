@@ -218,8 +218,14 @@ export function billingProblemReadings(notices) {
     domain,
     vendor: who || vendorName(domain),
     subject: String(newest.subject ?? "").slice(0, 120),
-    line: `${who || vendorName(domain)} could not take a payment (${newest.date ?? "recently"}${count > 1 ? `, ${count} notices` : ""})${newest.detail ? `: ${String(newest.detail).replace(/\.\s*$/, "").slice(0, 160)}` : ""}.`,
+    line: `Your payment to ${who || vendorName(domain)} did not go through${dayWords(newest.date)}${count > 1 ? ` (${count} notices)` : ""}${newest.detail ? `: ${String(newest.detail).replace(/\.\s*$/, "").slice(0, 160)}` : ""}.`,
   }));
+}
+
+/** " on 17 Nov" from "2026-11-17"; "" when there is no date. Pure. */
+export function dayWords(day) {
+  const t = Date.parse(`${String(day ?? "").slice(0, 10)}T12:00:00Z`);
+  return Number.isFinite(t) ? ` on ${new Date(t).toLocaleDateString("en-GB", { day: "numeric", month: "short", timeZone: "UTC" })}` : "";
 }
 
 /** "github.com" → "GitHub"; others by their domain's first label. Pure. */
@@ -501,8 +507,8 @@ export function planRisk(moved, { github = null } = {}) {
       const extra = domain === "github.com" && github && github.state !== "stop" ? ` ${github.line}` : "";
       const page = billingPage(domain);
       out.decide.push({
-        title: `${r.vendor ?? vendorName(domain)} could not charge your card`,
-        body: `${r.line}${extra} Nobody on the team pays or changes a card (R32); updating it is yours.`,
+        title: `${r.vendor ?? vendorName(domain)} could not take a payment`,
+        body: `${r.line}${extra} Only you can update the card or pay it.`,
         buttons: [...(page ? [{ label: "Open the billing page", url: page }] : []), { label: "Open the email", url: r.subject ? gmailSearchLink(r.subject) : `https://mail.google.com/mail/u/0/#search/${encodeURIComponent(`from:${domain}`)}` }],
         priority: 3,
       });

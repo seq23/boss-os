@@ -42,7 +42,7 @@ describe("billing watch: a failed payment surfaces as one plain Decide item", ()
     ], "personal Gmail", "charges:personal", NOW);
     const alerts = r.filter((x) => x.state === "alert");
     expect(alerts).toHaveLength(1);
-    expect(alerts[0]!.line).toBe("GitHub could not take a payment (2026-11-17, 2 notices): The card was declined for the seq23 account, attempt 3 of 3.");
+    expect(alerts[0]!.line).toBe("Your payment to GitHub did not go through on 17 Nov (2 notices): The card was declined for the seq23 account, attempt 3 of 3.");
     expect(r.filter((x) => x.state === "notice").map((x) => x.key)).toEqual(["charge:r2"]);
     expect(r.some((x) => /carrier-example/.test(x.line))).toBe(false);
   });
@@ -53,7 +53,7 @@ describe("billing watch: a failed payment surfaces as one plain Decide item", ()
     expect(plan.fixes).toEqual([]);
     expect(plan.decide).toHaveLength(1);
     const d = plan.decide[0]!;
-    expect(d.title).toBe("GitHub could not charge your card");
+    expect(d.title).toBe("GitHub could not take a payment");
     expect(d.body).toContain("$641.75 of metered use, all covered by included discounts");
     expect(d.buttons.map((b) => b.url)).toEqual(["https://github.com/settings/billing", expect.stringMatching(/^https:\/\/mail\.google\.com\//)]);
     expect(lineProblems(`${d.title} ${d.body}`)).toEqual([]);

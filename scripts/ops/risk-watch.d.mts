@@ -20,6 +20,7 @@ export function stripeReading(label: string, x: { payouts: Array<{ status?: stri
 export function billingProblemReadings(notices: Notice[]): BillingReading[];
 export function noticeReadings(notices: Notice[], where: string, sourceKey: string, now?: number): BillingReading[];
 export function chargeReading(m: Notice, where: string): Reading;
+export function dayWords(day: string | undefined): string;
 export function vendorName(domain: string): string;
 export function billingPage(domain: string): string | null;
 export function monthProgress(now: number): { first: string; yesterday: string; daysDone: number; daysInMonth: number };
