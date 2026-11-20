@@ -1,5 +1,5 @@
 import type { Shot, Finding, ShipKind } from "../../src/shared/boss/shipReview/review.mjs";
-export interface ShipArgs { kind: ShipKind; target: string; builder: string; flags: Set<string>; [k: string]: unknown }
+export interface ShipArgs { kind: ShipKind; target: string; builder: string; flags: Set<string>; planned: string[]; surface?: string; [k: string]: unknown }
 export declare function parseArgs(argv: string[]): ShipArgs;
 export declare function isPrivate(a: ShipArgs): boolean;
 export declare function isBlank(m: { words?: number; media?: number } | null | undefined): boolean;

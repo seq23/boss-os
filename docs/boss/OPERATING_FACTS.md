@@ -249,6 +249,11 @@ work; a fresh reviewer judges the REAL output against `~/.claude/skills/ship-rea
   findings); its PASS goes on to a seat. Never a paid API.
 - **Kept** in `quality_reads` (kind `ship`, migration 0369; the monthly read is kind `monthly`), API
   `POST/GET /api/boss/quality/reviews[?subject=]`; `latestShipReview` in `routes/quality.ts` for Worker code.
+- **The request names its surface** (`--surface public-page|operator-doc|email|app-screen|video|social-profile`,
+  default from `--kind`) and the job judges by that surface's rules (`SURFACES` in review.mjs): a private
+  operator document is judged on whether its one reader can find, follow and trust each step, never on
+  brand, SEO or launch items. **Planned placeholders** (`--planned "[Sequoia fills]"`, repeatable) are
+  not findings; any other placeholder still is. Both are written into the verdict (20 Nov 2026, #469).
 - **A capture failing is never a FAIL on the work**: pages wait up to 25 s for real content, a consent
   wall is declined (privacy first), and an all-blank capture is `NAMED STOP [CAPTURE_BLANK]`, no verdict.
 - **Rule 0**: `OUTPUT 1 reviews` only when a verdict was stored; exit 0 PASS, 1 FAIL, 2 NOT_RECORDED,

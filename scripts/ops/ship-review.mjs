@@ -13,6 +13,9 @@
  *     --subject  the key the verdict is kept under (default "<kind>:<target>"); senders and posters
  *                use their Email Map / Social Map row id ("email:<id>", "social:<id>")
  *     --brand    a brand slug: its ~/.claude/skills/design-<slug>/SKILL.md is the brand note
+ *     --surface  public-page | operator-doc | email | app-screen | video | social-profile: which
+ *                rules judge it (default from --kind; a private runbook or book is operator-doc)
+ *     --planned  "<text>" (repeatable): a deliberate placeholder waiting on a known step; not a finding
  *     --launch   new and going public: judged against ship-ready section 3 too; prints Launch-ready
  *     --private  never a free route (default for emails and Boss OS's own screens); --public overrides
  *     --pr       owner/repo#N: on PASS the line is appended to that PR's body, where `land` reads it
@@ -34,7 +37,7 @@ import { homedir } from "node:os";
 import { basename, extname, join, resolve } from "node:path";
 import { pathToFileURL } from "node:url";
 import {
-  KINDS, findingLines, lookedAtText, parseVerdict, passLine, reviewId, reviewPrompt, reviewRoutes,
+  KINDS, SURFACES, DEFAULT_SURFACE, findingLines, lookedAtText, parseVerdict, passLine, reviewId, reviewPrompt, reviewRoutes,
 } from "../../src/shared/boss/shipReview/review.mjs";
 
 const ROSTER = "https://raw.githubusercontent.com/seq23/search-loop/main/config/free-models.json";
@@ -51,8 +54,11 @@ export function parseArgs(argv) {
     const k = argv[i];
     if (!k.startsWith("--")) continue;
     if (["--launch", "--private", "--public", "--no-store"].includes(k)) { a.flags.add(k.slice(2)); continue; }
+    if (k === "--planned") { (a.planned ??= []).push(argv[++i]); continue; }
     a[k.slice(2)] = argv[++i];
   }
+  a.planned ??= [];
+  if (a.surface && !(a.surface in SURFACES)) throw stop(64, "BAD_ARGS", `--surface must be one of ${Object.keys(SURFACES).join(", ")}`);
   if (!KINDS.includes(a.kind)) throw stop(64, "BAD_ARGS", `--kind must be one of ${KINDS.join(", ")}`);
   if (!a.target) throw stop(64, "BAD_ARGS", "--target is required: what real output to look at");
   if (!a.builder) throw stop(64, "BAD_ARGS", "--builder is required: the reviewer must know who it is not");
@@ -347,11 +353,12 @@ export async function main(argv = process.argv.slice(2), { env = process.env, fe
 
   const { shots, facts } = await capture(a, out, { env, fetchImpl });
   if (!shots.length) { print("OUTPUT 0 reviews"); throw stop(9, "NOTHING_CAPTURED", `no capture of ${a.target} could be made, so nothing was judged`); }
-  const lookedAt = lookedAtText({ kind: a.kind, target: a.target, shots });
+  const lookedAt = `${lookedAtText({ kind: a.kind, target: a.target, shots })}, judged as ${a.surface ?? DEFAULT_SURFACE[a.kind]}${a.planned.length ? ` with ${a.planned.length} planned placeholder(s) excluded` : ""}`;
   log(`ship-review ${id}: ${lookedAt}; ${firstOfKind ? "first review" : "re-review"}${privateWork ? ", private" : ""}; routes ${routes.join(" → ")}`);
 
   const base = {
     kind: a.kind, target: a.target, builder: a.builder, facts, launch: a.flags.has("launch"),
+    surface: a.surface ?? DEFAULT_SURFACE[a.kind], planned: a.planned,
     checklist: readFileSync(skill, "utf8").replace(/^---[\s\S]*?---\s*/, ""),
     brand: brandFile ? readFileSync(brandFile, "utf8").replace(/^---[\s\S]*?---\s*/, "").slice(0, 8000) : null,
   };
@@ -360,7 +367,7 @@ export async function main(argv = process.argv.slice(2), { env = process.env, fe
 
   const reviewer = `boss-os ship-review ${id} (${v.model})`;
   const line = v.verdict === "PASS" ? passLine({ reviewer, lookedAt, launch: base.launch }) : `${base.launch ? "Launch" : "Ship"}-ready: FAIL — ${reviewer} looked at ${lookedAt}`;
-  const record = { id, subject, kind: a.kind, verdict: v.verdict, findings: v.findings, looked_at: lookedAt, builder: a.builder, route: v.model, line, facts, at: new Date().toISOString() };
+  const record = { id, subject, kind: a.kind, verdict: v.verdict, findings: v.findings, looked_at: lookedAt, builder: a.builder, route: v.model, line, facts, surface: a.surface ?? DEFAULT_SURFACE[a.kind], planned: a.planned, at: new Date().toISOString() };
   writeFileSync(join(out, "verdict.json"), JSON.stringify(record, null, 2));
   print(line);
   for (const l of findingLines(v.findings)) print(l);

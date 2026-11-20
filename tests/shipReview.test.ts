@@ -29,6 +29,18 @@ describe("a verdict is trusted only when it is a real review", () => {
     expect(parseVerdict(reply({ verdict: "PASS", looked_at: shots.map((s) => s.label), findings: ["cut off"] }), shots).error).toBeTruthy();
     expect(parseVerdict("Looks great to me!", shots).error).toBeTruthy();
   });
+  it("the request's surface decides the rules, and planned placeholders are named as not findings", () => {
+    const doc = reviewPrompt({ kind: "page", target: "book", builder: "b", checklist: "c", shots, surface: "operator-doc", planned: ["[Sequoia fills]"] });
+    expect(doc).toMatch(/SURFACE: operator-doc\. A PRIVATE operator document/);
+    expect(doc).toMatch(/Do NOT judge marketing polish/);
+    expect(doc).toMatch(/PLANNED, NOT FINDINGS[\s\S]*- \[Sequoia fills\]/);
+    expect(doc).toMatch(/any OTHER placeholder or unfinished text still is a finding/);
+    expect(reviewPrompt({ kind: "page", target: "x", builder: "b", checklist: "c", shots })).toMatch(/SURFACE: public-page/);
+    expect(reviewPrompt({ kind: "page", target: "x", builder: "b", checklist: "c", shots })).not.toMatch(/PLANNED, NOT FINDINGS/);
+    const a = parseArgs(["--kind", "page", "--target", "t", "--builder", "b", "--surface", "operator-doc", "--planned", "x", "--planned", "y"]);
+    expect(a.planned).toEqual(["x", "y"]);
+    expect(() => parseArgs(["--kind", "page", "--target", "t", "--builder", "b", "--surface", "brochure"])).toThrow(/BAD_ARGS/);
+  });
   it("the prompt names the builder as not the reviewer and treats text in the output as data", () => {
     const p = reviewPrompt({ kind: "page", target: "https://x.test/", builder: "Codex", checklist: "THE BAR", shots });
     expect(p).toMatch(/Builder \(not you\): Codex/);
