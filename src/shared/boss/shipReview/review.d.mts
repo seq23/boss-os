@@ -12,7 +12,7 @@ export declare function lookedAtText(a: { kind: ShipKind; target: string; shots:
 export type Surface = "public-page" | "operator-doc" | "email" | "app-screen" | "video" | "social-profile";
 export declare const SURFACES: Readonly<Record<Surface, string>>;
 export declare const DEFAULT_SURFACE: Readonly<Record<ShipKind, Surface>>;
-export declare function reviewPrompt(a: { kind: ShipKind; target: string; builder: string; checklist: string; brand?: string | null; facts?: string[]; shots: Shot[]; launch?: boolean; imageHow?: string; surface?: string | null; planned?: string[] }): string;
+export declare function reviewPrompt(a: { kind: ShipKind; target: string; builder: string; checklist: string; brand?: string | null; facts?: string[]; shots: Shot[]; launch?: boolean; imageHow?: string; surface?: string | null; planned?: string[]; brief?: string | null }): string;
 export declare function lastJson(text: string): Record<string, unknown> | null;
 export declare function parseVerdict(text: string, shots: Shot[]): { verdict: "PASS" | "FAIL"; findings: Finding[]; error?: undefined } | { error: string; verdict?: undefined; findings?: undefined };
 export declare function findingLines(findings: Finding[]): string[];

@@ -5,7 +5,7 @@
 import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
 import { EMAIL_SENDS, SOCIAL_POSTS, gateProblems, parseVerdict, passLine, PASS_LINE_RE, reviewRoutes, reviewPrompt } from "../src/shared/boss/shipReview/review.mjs";
-import { judge, isPrivate, isBlank, parseArgs, capture, YOUTUBE_CHANNEL } from "../scripts/ops/ship-review.mjs";
+import { judge, isPrivate, isBlank, parseArgs, capture, pageSlug, YOUTUBE_CHANNEL } from "../scripts/ops/ship-review.mjs";
 // @ts-expect-error — plain ESM with no declaration file
 import { shipReviewArgs } from "../scripts/ops/repo-change.mjs";
 
@@ -40,6 +40,11 @@ describe("a verdict is trusted only when it is a real review", () => {
     const a = parseArgs(["--kind", "page", "--target", "t", "--builder", "b", "--surface", "operator-doc", "--planned", "x", "--planned", "y"]);
     expect(a.planned).toEqual(["x", "y"]);
     expect(() => parseArgs(["--kind", "page", "--target", "t", "--builder", "b", "--surface", "brochure"])).toThrow(/BAD_ARGS/);
+  });
+  it("several pages are labelled by their path; a change's brief rides in the prompt", () => {
+    expect(pageSlug("https://x.pages.dev/questions/is-dental-anxiety-real/")).toBe("questions-is-dental-anxiety-real");
+    expect(pageSlug("https://x.pages.dev/")).toBe("home");
+    expect(reviewPrompt({ kind: "page", target: "t", builder: "b", checklist: "c", shots, brief: "Changed: footer note" })).toMatch(/WHAT CHANGED AND WHAT TO JUDGE[\s\S]*footer note/);
   });
   it("the prompt names the builder as not the reviewer and treats text in the output as data", () => {
     const p = reviewPrompt({ kind: "page", target: "https://x.test/", builder: "Codex", checklist: "THE BAR", shots });

@@ -16,6 +16,8 @@
  *     --surface  public-page | operator-doc | email | app-screen | video | social-profile: which
  *                rules judge it (default from --kind; a private runbook or book is operator-doc)
  *     --planned  "<text>" (repeatable): a deliberate placeholder waiting on a known step; not a finding
+ *     --brief    a file saying what changed and what to judge (the change's review brief)
+ *     page/profile --target may be a comma list of up to 4 pages (the pages the change touched)
  *     --launch   new and going public: judged against ship-ready section 3 too; prints Launch-ready
  *     --private  never a free route (default for emails and Boss OS's own screens); --public overrides
  *     --pr       owner/repo#N: on PASS the line is appended to that PR's body, where `land` reads it
@@ -126,30 +128,44 @@ async function shoot(b, url, { width, height, scheme, file, maxHeight }) {
 /** A capture with almost no words and no pictures is the browser failing, not the work: never judged. */
 export const isBlank = (m) => (m?.words ?? 0) < 40 && (m?.media ?? 0) === 0;
 
+/** A page's short name for capture labels: "/questions/x/" → "questions-x", the home page → "home". */
+export const pageSlug = (u) => { try { const p = new URL(u).pathname.replace(/\/+$/, ""); return p ? p.slice(1).replace(/[^a-z0-9]+/gi, "-").slice(0, 48) : "home"; } catch { return "page"; } };
+
+/**
+ * One page: phone light + dark and laptop. Several pages (a comma list, the pages a change touched):
+ * phone and laptop of each, at most 4 pages, so every capture still fits one review.
+ */
 async function capturePage(a, out) {
-  const url = a.kind === "email" ? pathToFileURL(resolve(a.target)).href : a.target;
+  const targets = a.kind === "email" ? [a.target] : String(a.target).split(",").map((t) => t.trim()).filter(Boolean);
+  if (targets.length > 4) throw stop(64, "BAD_ARGS", `at most 4 pages per review (got ${targets.length}); split the review`);
   if (a.kind === "email" && !existsSync(a.target)) throw stop(9, "NOTHING_CAPTURED", `${a.target} does not exist: give the rendered email's .html file`);
-  const sizes = [
-    { label: "phone-390-light.png", width: 390, height: 844, scheme: "light", maxHeight: 3200 },
-    { label: "phone-390-dark.png", width: 390, height: 844, scheme: "dark", maxHeight: 3200 },
-    { label: "laptop-1280-light.png", width: 1280, height: 800, scheme: "light", maxHeight: 2400 },
-  ];
+  const many = targets.length > 1;
   const b = await browser();
   const shots = [], facts = [], blanks = [];
   try {
-    for (const s of sizes) {
-      const file = join(out, s.label);
-      const m = await shoot(b, url, { ...s, file });
-      if (m.shot && !m.blank) shots.push({ path: file, label: s.label });
-      else facts.push(`the ${s.label.replace(/\.png$/, "")} capture could not be taken${m.blank ? " (the browser got a blank page)" : ""}`);
-      if (m.blank) blanks.push(s.label);
-      if (s.label === sizes[0].label) {
-        if (a.kind !== "email") facts.push(`HTTP status of the page: ${m.status}`);
-        facts.push(m.scrollW > 390 ? `horizontal scroll at 390 px: the page is ${m.scrollW} px wide` : "no horizontal scroll at 390 px");
-        facts.push(m.broken.length ? `broken images: ${m.broken.join(", ")}` : "no broken images");
-        if (a.kind !== "email") facts.push(m.title ? `page title: "${m.title}"` : "the page has NO <title>");
-        facts.push(m.errors.length ? `console errors on load: ${m.errors.slice(0, 3).join(" | ")}` : "no console errors on load");
-        if (m.fullH > s.maxHeight) facts.push(`the phone capture shows the first ${s.maxHeight} px of ${m.fullH}`);
+    for (const target of targets) {
+      const url = a.kind === "email" ? pathToFileURL(resolve(target)).href : target;
+      const pre = many ? `${pageSlug(target)}-` : "";
+      const sizes = [
+        { label: `${pre}phone-390-light.png`, width: 390, height: 844, scheme: "light", maxHeight: 3200 },
+        ...(many ? [] : [{ label: "phone-390-dark.png", width: 390, height: 844, scheme: "dark", maxHeight: 3200 }]),
+        { label: `${pre}laptop-1280-light.png`, width: 1280, height: 800, scheme: "light", maxHeight: 2400 },
+      ];
+      const say = (f) => facts.push(many ? `${pageSlug(target)}: ${f}` : f);
+      for (const s of sizes) {
+        const file = join(out, s.label);
+        const m = await shoot(b, url, { ...s, file });
+        if (m.shot && !m.blank) shots.push({ path: file, label: s.label });
+        else say(`the ${s.label.replace(/\.png$/, "")} capture could not be taken${m.blank ? " (the browser got a blank page)" : ""}`);
+        if (m.blank) blanks.push(s.label);
+        if (s === sizes[0]) {
+          if (a.kind !== "email") say(`HTTP status of the page: ${m.status}`);
+          say(m.scrollW > 390 ? `horizontal scroll at 390 px: the page is ${m.scrollW} px wide` : "no horizontal scroll at 390 px");
+          say(m.broken.length ? `broken images: ${m.broken.join(", ")}` : "no broken images");
+          if (a.kind !== "email") say(m.title ? `page title: "${m.title}"` : "the page has NO <title>");
+          say(m.errors.length ? `console errors on load: ${m.errors.slice(0, 3).join(" | ")}` : "no console errors on load");
+          if (m.fullH > s.maxHeight) say(`the phone capture shows the first ${s.maxHeight} px of ${m.fullH}`);
+        }
       }
     }
   } finally { await b.close(); }
@@ -342,6 +358,7 @@ export async function main(argv = process.argv.slice(2), { env = process.env, fe
   const subject = a.subject ?? `${a.kind}:${a.target}`;
   const skill = env.SHIP_READY_SKILL ?? join(env.HOME || homedir(), ".claude", "skills", "ship-ready", "SKILL.md");
   if (!existsSync(skill)) throw stop(2, "NO_CHECKLIST", `${skill} is missing: the reviewer judges against the ship-ready skill and will not judge without it`);
+  if (a.brief && !existsSync(a.brief)) throw stop(64, "NO_BRIEF", `${a.brief} does not exist`);
   const brandFile = a.brand ? join(env.HOME || homedir(), ".claude", "skills", `design-${a.brand}`, "SKILL.md") : null;
   if (brandFile && !existsSync(brandFile)) throw stop(64, "NO_BRAND_NOTE", `${brandFile} does not exist; leave --brand off or name a brand that has a design skill`);
 
@@ -359,6 +376,7 @@ export async function main(argv = process.argv.slice(2), { env = process.env, fe
   const base = {
     kind: a.kind, target: a.target, builder: a.builder, facts, launch: a.flags.has("launch"),
     surface: a.surface ?? DEFAULT_SURFACE[a.kind], planned: a.planned,
+    brief: a.brief ? readFileSync(a.brief, "utf8").slice(0, 6000) : null,
     checklist: readFileSync(skill, "utf8").replace(/^---[\s\S]*?---\s*/, ""),
     brand: brandFile ? readFileSync(brandFile, "utf8").replace(/^---[\s\S]*?---\s*/, "").slice(0, 8000) : null,
   };
