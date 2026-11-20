@@ -328,10 +328,11 @@
       "label": "Mac scripts",
       "category": "system",
       "business": "personal",
-      "what": "land, the CI sweep, backups and housekeeping on your Mac.",
+      "what": "land, the CI sweep, backups, the monthly restore drill, the dangerous-command guard and housekeeping on your Mac.",
       "launchd": [
         "com.seq.drive-backup",
         "com.seq.mac-snapshot",
+        "com.seq.restore-drill",
         "com.seq.housekeeping",
         "com.seq.disk-sweep",
         "com.seq.ci-sweep-resume",
