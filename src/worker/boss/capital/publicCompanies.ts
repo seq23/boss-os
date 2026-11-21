@@ -8,7 +8,7 @@
 import type { Env } from "../env";
 import { getSetting, setSetting } from "../lib/settings";
 import { audit } from "../lib/audit";
-import { publicList, companyNorm } from "../../../shared/boss/deals/publicCompanies.mjs";
+import { publicList, companyNorm, isCompanyName } from "../../../shared/boss/deals/publicCompanies.mjs";
 
 export const PUBLIC_KEY = "public_companies";
 
@@ -20,6 +20,7 @@ export async function publicCompanies(env: Env) {
 export async function markPublic(env: Env, row: { company: string; evidence?: string | null; via: string; since?: string | null }, now = Date.now()): Promise<boolean> {
   const company = String(row.company ?? "").trim().slice(0, 80);
   if (!companyNorm(company)) return false;
+  if (row.via !== "owner" && row.via !== "reply" && !isCompanyName(company)) return false;
   const raw = await getSetting(env.DB, PUBLIC_KEY);
   if (publicList(raw).some((r) => companyNorm(r.company) === companyNorm(company))) return false;
   let stored: any[] = [];

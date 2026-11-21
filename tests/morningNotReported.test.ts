@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { buildDay, notReportedRepairs } from "../scripts/ops/your-day.mjs";
-import { sectionsNotReported, MORNING_SECTION_SPECS } from "../src/shared/boss/mail/morningSections.mjs";
+import { sectionsNotReported, morningEmailSlot, MORNING_SECTION_SPECS } from "../src/shared/boss/mail/morningSections.mjs";
 
 /**
  * A SECTION THAT DID NOT REPORT IN IS SAID AND REPAIRED (rule 0, 1 Nov 2026). A Mac job whose post
@@ -54,6 +54,31 @@ describe("morning sections that did not report in", () => {
     expect(repair!.prompt).toContain("~/Library/Logs/boss-duty/");
     expect(repair!.prompt).toContain("~/Library/Logs/boss-agent/");
     expect(repair!.prompt).not.toContain("~/.boss-os/logs");
+  });
+
+  it("a Saturday safety tick gives the same prospect result as the scheduled email", () => {
+    const slot = Date.parse("2026-11-21T12:40:00Z");
+    const late = Date.parse("2026-11-21T19:47:08Z");
+    for (const now of [slot, late]) {
+      const prospects = { ...fresh("prospects"), at: "2026-11-20T15:31:12.590Z" };
+      const result = sectionsNotReported({ prospects }, { weekday: "Saturday", now });
+      expect(result.sections.prospects).toEqual(prospects);
+      expect(notReportedRepairs(result.missing, []).map((repair) => repair.title))
+        .not.toContain('The morning section "prospects" did not report in');
+
+      const old = { ...prospects, at: "2026-11-19T15:31:12.590Z" };
+      const missing = sectionsNotReported({ prospects: old }, { weekday: "Saturday", now });
+      expect(missing.sections.prospects).toBeUndefined();
+      expect(missing.missing.map((section) => section.name)).toContain("prospects");
+    }
+  });
+
+  it.each([
+    ["2026-07-18T02:00:00Z", "2026-07-17T11:40:00Z"],
+    ["2026-11-01T06:00:00Z", "2026-11-01T12:40:00Z"],
+    ["2026-12-18T02:00:00Z", "2026-12-17T12:40:00Z"],
+  ])("finds the Central email slot for %s", (now, expected) => {
+    expect(morningEmailSlot(Date.parse(now))).toBe(Date.parse(expected));
   });
 
   it("a weekly section is expected only on its day", () => {

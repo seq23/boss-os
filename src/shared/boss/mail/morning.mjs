@@ -37,7 +37,7 @@ import { execFileSync } from "node:child_process";
 import { fileURLToPath } from "node:url";
 
 export { MORNING_SECTIONS, STALE_MS, morningSectionProblems, appendToSection, newerSections } from "./morningSections.mjs";
-import { STALE_MS, morningSectionProblems, appendToSection, newerSections } from "./morningSections.mjs";
+import { morningEmailSlot, STALE_MS, morningSectionProblems, appendToSection, newerSections } from "./morningSections.mjs";
 
 export function morningDir() {
   return join(homedir(), ".boss-os", "morning");
@@ -104,7 +104,7 @@ export function addMorningLines(section, { lines = [], decide = [] } = {}, { dir
 }
 
 /** Fresh, valid sections out of a list of objects: `{ sections, skipped }`. Pure. */
-export function freshSections(objs, now = Date.now(), from = "file") {
+export function freshSections(objs, now = Date.now(), from = "file", judgeAt = morningEmailSlot(now)) {
   const sections = {};
   const skipped = [];
   for (const { name: n, obj, error } of objs) {
@@ -112,7 +112,7 @@ export function freshSections(objs, now = Date.now(), from = "file") {
     if (error) { skipped.push(`${name}: ${error}`); continue; }
     const problems = morningSectionProblems(obj);
     if (problems.length) { skipped.push(`${name}: ${problems.join("; ")}`); continue; }
-    if (now - Date.parse(obj.at) > STALE_MS) { skipped.push(`${name}: stale (written ${obj.at})`); continue; }
+    if (judgeAt - Date.parse(obj.at) > STALE_MS) { skipped.push(`${name}: stale (written ${obj.at})`); continue; }
     sections[obj.section] = obj;
   }
   return { sections, skipped };
@@ -123,7 +123,7 @@ export function freshSections(objs, now = Date.now(), from = "file") {
  * `store` is the Boss OS copy (`GET /morning/sections` rows, read by the caller); per section the
  * newer of store and Mac file wins whole (`newerSections`). No store given = the Mac files alone.
  */
-export function readMorningSections({ dir = morningDir(), now = Date.now(), store = null } = {}) {
+export function readMorningSections({ dir = morningDir(), now = Date.now(), store = null, judgeAt = morningEmailSlot(now) } = {}) {
   const objs = [];
   if (existsSync(dir)) {
     for (const f of readdirSync(dir).filter((x) => /^[a-z_]+\.json$/.test(x))) {
@@ -131,9 +131,9 @@ export function readMorningSections({ dir = morningDir(), now = Date.now(), stor
       try { objs.push({ name, obj: JSON.parse(readFileSync(join(dir, f), "utf8")) }); } catch { objs.push({ name, error: "does not parse" }); }
     }
   }
-  const files = freshSections(objs, now, "file");
+  const files = freshSections(objs, now, "file", judgeAt);
   if (!store) return files;
-  const kept = freshSections((store ?? []).map((r) => ({ name: r.section, obj: r.body })), now, "store");
+  const kept = freshSections((store ?? []).map((r) => ({ name: r.section, obj: r.body })), now, "store", judgeAt);
   return { sections: newerSections(files.sections, kept.sections), skipped: [...files.skipped, ...kept.skipped] };
 }
 
