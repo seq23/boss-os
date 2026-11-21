@@ -12,20 +12,15 @@ name: job · Simone's morning email · daily 06:40 CT
 # in case GitHub drops an earlier one. 09:30 and 12:30 send the email again if it still has not gone
 # (a held or refused send, 10 Nov 2026). The day's sent marker (state your-day) makes every tick after
 # the send exit "already sent".
+#
+# FIRED BY BOSS OS'S OWN CLOCK, NOT GITHUB'S (21 Nov 2026). GitHub's `schedule` event is best effort
+# and from about 17 Nov fired this account's workflows once every 6-9 hours, so the 21 Nov morning
+# email was never built. The Worker's five-minute cron reads this job's times from its Schedule row
+# (src/shared/boss/schedule/manifest.json, trigger.clock "worker") and sends the repository_dispatch
+# below (src/worker/boss/cron/dispatch.ts). No `schedule:` here: one clock, never two.
 on:
-  schedule:
-    - cron: '40 6 * * *'  # America/Chicago, all year
-      timezone: America/Chicago
-    - cron: '10 7 * * *'  # America/Chicago, all year — the briefing was still being written at 06:40
-      timezone: America/Chicago
-    - cron: '30 7 * * *'  # America/Chicago, all year — the same
-      timezone: America/Chicago
-    - cron: '50 7 * * *'  # America/Chicago, all year — safety tick, past the briefing cap
-      timezone: America/Chicago
-    - cron: '30 9 * * *'  # America/Chicago, all year — sends it if it still has not gone
-      timezone: America/Chicago
-    - cron: '30 12 * * *'  # America/Chicago, all year — the same
-      timezone: America/Chicago
+  repository_dispatch:
+    types: [job-your-day]
   workflow_dispatch:
 
 permissions:

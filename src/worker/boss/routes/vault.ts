@@ -279,6 +279,9 @@ const SNAPSHOT_TABLES = [
   // with the best earlier week: a restore that lost the history would call a slide "no earlier week".
   "delivery_measures",
   "quality_reads",
+  // 0370 — Boss OS's own clock: which slot of which GitHub job was started. A restore that lost it
+  // would start every job of the last half hour a second time.
+  "cloud_job_dispatches",
   // 0202 — the register of owned work. THE MOST IMPORTANT ADDITION TO THIS LIST IN A WHILE: these
   // rows are the commitments she has personally handed people, and a restore that lost them would
   // silently drop every one of them — which is the precise thing the mechanism exists to make

@@ -113,6 +113,8 @@ export function toBossEnv(env: Env): BossEnv {
     OPENROUTER_API_KEY: env.OPENROUTER_API_KEY,
     GEMINI_API_KEY: env.GEMINI_API_KEY,
     BRAVE_SEARCH_API_KEY: env.BRAVE_SEARCH_API_KEY,
+    // Boss OS's own clock (21 Nov 2026): GitHub's schedule event stopped being a clock.
+    GITHUB_SEQ23_PAT: env.GITHUB_SEQ23_PAT,
   };
 }
 

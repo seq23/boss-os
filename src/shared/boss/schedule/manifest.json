@@ -1246,8 +1246,8 @@
     },
     {
       "id": "boss-os-wrangler-toml",
-      "name": "Boss OS hourly tick",
-      "what": "Boss OS hourly tick; Open Loops and 8Raise ledger morning sections daily from 05:00 Central",
+      "name": "Hourly checks",
+      "what": "Checks for work that needs attention. Starting at 5:00 am, it also prepares the Open Loops and 8Raise ledger sections for your morning email.",
       "business": "personal",
       "brand": "Boss OS",
       "system": "cloudflare",
@@ -1270,8 +1270,8 @@
     },
     {
       "id": "boss-os-mail-alarm",
-      "name": "Boss OS no-Got-it alarm",
-      "what": "Every 5 minutes: an email of hers with no Got it after five minutes becomes one alarm notice (src/worker/boss/intake/mailAlarm.ts)",
+      "name": "Email acknowledgment check",
+      "what": "Raises an alert if your email goes five minutes without a “Got it” reply. It also starts scheduled jobs when they’re due.",
       "business": "personal",
       "brand": "Boss OS",
       "system": "cloudflare",
@@ -1399,6 +1399,8 @@
         "duty": "duty_catchups",
         "repo": "boss-os",
         "file": ".github/workflows/job-catchups.yml",
+        "clock": "worker",
+        "event": "job-catchups",
         "crons": [
           "CRON_TZ=America/Chicago 20 6 * * *"
         ]
@@ -2348,6 +2350,8 @@
         "duty": "duty_errand_reminders",
         "repo": "boss-os",
         "file": ".github/workflows/job-errand-reminders.yml",
+        "clock": "worker",
+        "event": "job-errand-reminders",
         "crons": [
           "*/10 * * * *"
         ],
@@ -4200,6 +4204,8 @@
         "duty": "duty_preseed_watch",
         "repo": "boss-os",
         "file": ".github/workflows/job-preseed-watch.yml",
+        "clock": "worker",
+        "event": "job-preseed-watch",
         "crons": [
           "CRON_TZ=America/Chicago 30 7 * * 2"
         ]
@@ -4224,6 +4230,8 @@
       "trigger": {
         "repo": "boss-os",
         "file": ".github/workflows/job-properties.yml",
+        "clock": "worker",
+        "event": "job-properties",
         "crons": [
           "CRON_TZ=America/Chicago 45 6 * * 3"
         ]
@@ -4819,6 +4827,8 @@
       "trigger": {
         "repo": "boss-os",
         "file": ".github/workflows/job-t2r-numbers.yml",
+        "clock": "worker",
+        "event": "job-t2r-numbers",
         "crons": [
           "CRON_TZ=America/Chicago 30 7 * * 3"
         ]
@@ -4887,6 +4897,8 @@
         "duty": "duty_waiting_on",
         "repo": "boss-os",
         "file": ".github/workflows/job-waiting-on.yml",
+        "clock": "worker",
+        "event": "job-waiting-on",
         "crons": [
           "CRON_TZ=America/Chicago 0 7 * * *"
         ]
@@ -5559,7 +5571,7 @@
     {
       "id": "your-day",
       "name": "Your morning email",
-      "what": "Simone's one morning email. The later ticks send it only if it has not gone yet: while the briefing is still being written, or after a failed send.",
+      "what": "Simone sends this once a day, when your briefing is ready. If the briefing is still being prepared or the send fails, a later run tries again.",
       "business": "personal",
       "brand": "Boss OS",
       "system": "github",
@@ -5572,6 +5584,8 @@
         "duty": "duty_your_day",
         "repo": "boss-os",
         "file": ".github/workflows/job-your-day.yml",
+        "clock": "worker",
+        "event": "job-your-day",
         "crons": [
           "CRON_TZ=America/Chicago 40 6 * * *",
           "CRON_TZ=America/Chicago 10 7 * * *",
