@@ -11,8 +11,8 @@ export interface MorningSection {
 }
 export { MORNING_SECTIONS, STALE_MS, morningSectionProblems, appendToSection, newerSections } from "./morningSections.mjs";
 export function morningDir(): string;
-export function freshSections(objs: Array<{ name: string; obj?: unknown; error?: string }>, now?: number, from?: string): { sections: Record<string, MorningSection>; skipped: string[] };
+export function freshSections(objs: Array<{ name: string; obj?: unknown; error?: string }>, now?: number, from?: string, judgeAt?: number): { sections: Record<string, MorningSection>; skipped: string[] };
 export function writeMorningSection(section: string, data: Partial<MorningSection>, opts?: { dir?: string; now?: number }): MorningSection;
 export function addMorningLines(section: string, add: { lines?: MorningSection["lines"]; decide?: MorningDecide[] }, opts?: { dir?: string; now?: number }): MorningSection;
-export function readMorningSections(opts?: { dir?: string; now?: number; store?: Array<{ section: string; body: unknown }> | null }): { sections: Record<string, MorningSection>; skipped: string[] };
+export function readMorningSections(opts?: { dir?: string; now?: number; judgeAt?: number; store?: Array<{ section: string; body: unknown }> | null }): { sections: Record<string, MorningSection>; skipped: string[] };
 export function clearToldSections(names: string[], opts?: { dir?: string }): void;

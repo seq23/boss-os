@@ -25,12 +25,21 @@ export function companyNorm(name) {
     .replace(/[^a-z0-9]+/g, "");
 }
 
+const GENERIC_NAME_WORDS = new Set("the a an its it their this that stock stocks share shares company companies startup startups firm firms lab labs offering ipo listing ai initial public artificial intelligence".split(" "));
+
+/** A noun phrase made entirely of generic market words does not identify a company. */
+export function isCompanyName(name) {
+  return (String(name ?? "").toLowerCase().match(/[\p{L}\p{N}]+/gu) ?? [])
+    .some((word) => !GENERIC_NAME_WORDS.has(word));
+}
+
 /** The seed and the stored rows, once each by name. `stored` is the setting's JSON (array) or null. */
 export function publicList(stored = null) {
   let rows = [];
   try { rows = Array.isArray(stored) ? stored : JSON.parse(stored ?? "[]"); } catch { rows = []; }
   const out = new Map();
   for (const r of [...PUBLIC_SEED, ...(Array.isArray(rows) ? rows : [])]) {
+    if (r?.via !== "owner" && r?.via !== "reply" && !isCompanyName(r?.company)) continue;
     const k = companyNorm(r?.company);
     if (k && !out.has(k)) out.set(k, { company: String(r.company).trim(), since: r.since ?? null, evidence: r.evidence ?? null, via: r.via ?? null });
   }
@@ -67,7 +76,7 @@ export function publicFromHeadline(text) {
     const m = re.exec(t);
     if (m) {
       const company = m[1].replace(/^(?:the\s+)?(?:ai\s+)?(?:startup|company|firm|lab)\s+/i, "").replace(/[,.;:]+$/, "").trim();
-      if (company && company.split(/\s+/).length <= 5) return company;
+      if (isCompanyName(company) && company.split(/\s+/).length <= 5) return company;
     }
   }
   return null;

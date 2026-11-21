@@ -5,6 +5,18 @@
  * Worker bundles this file.
  */
 
+import { wallIn, zonedUtc } from "../commands/parse.mjs";
+import { HOME_TZ } from "../ownerTime.mjs";
+
+export const MORNING_EMAIL_HOUR = 6;
+export const MORNING_EMAIL_MINUTE = 40;
+
+/** The scheduled email instant on the Central calendar day containing now. */
+export function morningEmailSlot(now = Date.now()) {
+  const { y, m, d } = wallIn(now, HOME_TZ);
+  return zonedUtc(y, m, d, MORNING_EMAIL_HOUR, MORNING_EMAIL_MINUTE, HOME_TZ);
+}
+
 /**
  * THE ONE SECTION REGISTRY. Producers: D writes deals + monique_found; L writes lp, prospects,
  * catchups; the Worker writes eightraise (L adds the live balance); E the rest. `expect` is the weekdays (Central) whose morning email must carry
@@ -76,14 +88,16 @@ export const REPORT_IN_MS = 24 * 3_600_000;
  * its section silently out of the email. Every section expected on `weekday` with no copy written
  * within REPORT_IN_MS is returned `{ name, label }`, and `sections` comes back without those old
  * copies, so the email never shows yesterday's section as today's. Pure.
+ * On 21 Nov 2026 the late safety tick flagged Friday’s prospects copy even though it was ready
+ * for the scheduled email. Judge against 06:40 Central so a delayed tick gives the same answer.
  */
-export function sectionsNotReported(sections, { weekday, now = Date.now() }) {
+export function sectionsNotReported(sections, { weekday, now = Date.now(), judgeAt = morningEmailSlot(now) }) {
   const kept = { ...(sections ?? {}) };
   const missing = [];
   for (const s of MORNING_SECTION_SPECS) {
     if (!s.expect?.includes(weekday)) continue;
     const at = Date.parse(kept[s.name]?.at ?? "");
-    if (Number.isFinite(at) && now - at <= REPORT_IN_MS) continue;
+    if (Number.isFinite(at) && judgeAt - at <= REPORT_IN_MS) continue;
     delete kept[s.name];
     missing.push({ name: s.name, label: s.label });
   }

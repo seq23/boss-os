@@ -39,6 +39,15 @@ describe("newerSections: the cutover rule", () => {
 });
 
 describe("readMorningSections with the store", () => {
+  it("keeps a section written 29 hours before the scheduled email at a late tick", () => {
+    const dir = mkdtempSync(join(tmpdir(), "morning-"));
+    const now = Date.parse("2026-11-21T19:47:08Z");
+    const body = { section: "notices", at: "2026-11-20T07:40:00Z", lines: ["notice"] };
+    const { sections, skipped } = readMorningSections({ dir, now, store: [{ section: body.section, body }] });
+    expect(sections.notices).toEqual(body);
+    expect(skipped).toEqual([]);
+  });
+
   it("reads store rows and Mac files together; a stale or invalid store row is skipped by name", () => {
     const dir = mkdtempSync(join(tmpdir(), "morning-"));
     writeFileSync(join(dir, "risk.json"), JSON.stringify({ section: "risk", at: at(3), lines: ["mac risk"] }));

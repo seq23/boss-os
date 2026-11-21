@@ -83,6 +83,20 @@ describe("a public company is not a live deal (item 22)", () => {
     expect(publicFromHeadline("Example Robotics files for IPO")).toBeNull();
     expect(publicFromBriefing({ sections: [{ items: ["Example Robotics began trading on the NYSE today."] }]}).map((r: any) => r.company)).toEqual(["Example Robotics"]);
   });
+  it("rejects generic briefing subjects and preserves names the owner entered", () => {
+    expect(publicFromHeadline("The stock began trading November 19 on Nasdaq.")).toBeNull();
+    expect(publicFromHeadline("The AI company began trading on Nasdaq.")).toBeNull();
+    expect(publicFromHeadline("Example Robotics began trading on the NYSE today.")).toBe("Example Robotics");
+    const rows = [
+      { company: "The stock", via: "briefing" },
+      { company: "The AI company", via: "briefing" },
+      { company: "Example Robotics", via: "briefing" },
+      { company: "The stock", via: "owner" },
+      { company: "The firm", via: "reply" },
+    ];
+    expect(publicList(rows).filter((row) => rows.some(({ company }) => row.company === company))
+      .map(({ company, via }) => ({ company, via }))).toEqual(rows.slice(2));
+  });
   it("only a named buyer and seller with fitting size and close price is a match for her email", () => {
     const m = { seller: { who: "Alder Partners" }, buyer: { who: "Birch Capital" }, fit: { size: "good", price: "good" } };
     expect(realMatch(m)).toBe(true);
