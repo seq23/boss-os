@@ -1271,7 +1271,7 @@
     {
       "id": "boss-os-mail-alarm",
       "name": "Boss OS no-Got-it alarm",
-      "what": "Every 5 minutes: an email of hers with no Got it after five minutes becomes one alarm notice (src/worker/boss/intake/mailAlarm.ts)",
+      "what": "Every 5 minutes: an email of hers with no Got it after five minutes becomes one alarm notice (src/worker/boss/intake/mailAlarm.ts), and Boss OS's own clock starts each GitHub job marked clock worker at its time (src/worker/boss/cron/dispatch.ts; GitHub's schedule stopped being a clock, 21 Nov 2026)",
       "business": "personal",
       "brand": "Boss OS",
       "system": "cloudflare",
@@ -1399,6 +1399,8 @@
         "duty": "duty_catchups",
         "repo": "boss-os",
         "file": ".github/workflows/job-catchups.yml",
+        "clock": "worker",
+        "event": "job-catchups",
         "crons": [
           "CRON_TZ=America/Chicago 20 6 * * *"
         ]
@@ -2348,6 +2350,8 @@
         "duty": "duty_errand_reminders",
         "repo": "boss-os",
         "file": ".github/workflows/job-errand-reminders.yml",
+        "clock": "worker",
+        "event": "job-errand-reminders",
         "crons": [
           "*/10 * * * *"
         ],
@@ -4200,6 +4204,8 @@
         "duty": "duty_preseed_watch",
         "repo": "boss-os",
         "file": ".github/workflows/job-preseed-watch.yml",
+        "clock": "worker",
+        "event": "job-preseed-watch",
         "crons": [
           "CRON_TZ=America/Chicago 30 7 * * 2"
         ]
@@ -4224,6 +4230,8 @@
       "trigger": {
         "repo": "boss-os",
         "file": ".github/workflows/job-properties.yml",
+        "clock": "worker",
+        "event": "job-properties",
         "crons": [
           "CRON_TZ=America/Chicago 45 6 * * 3"
         ]
@@ -4819,6 +4827,8 @@
       "trigger": {
         "repo": "boss-os",
         "file": ".github/workflows/job-t2r-numbers.yml",
+        "clock": "worker",
+        "event": "job-t2r-numbers",
         "crons": [
           "CRON_TZ=America/Chicago 30 7 * * 3"
         ]
@@ -4887,6 +4897,8 @@
         "duty": "duty_waiting_on",
         "repo": "boss-os",
         "file": ".github/workflows/job-waiting-on.yml",
+        "clock": "worker",
+        "event": "job-waiting-on",
         "crons": [
           "CRON_TZ=America/Chicago 0 7 * * *"
         ]
@@ -5572,6 +5584,8 @@
         "duty": "duty_your_day",
         "repo": "boss-os",
         "file": ".github/workflows/job-your-day.yml",
+        "clock": "worker",
+        "event": "job-your-day",
         "crons": [
           "CRON_TZ=America/Chicago 40 6 * * *",
           "CRON_TZ=America/Chicago 10 7 * * *",

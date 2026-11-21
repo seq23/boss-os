@@ -323,20 +323,31 @@ export function launchdProblems(m, jobs) {
 export const missingLabels = (m, jobs) => [...rowsByLabel(m).keys()].filter((l) => !(l in jobs));
 
 /**
- * Crons of one repo (`[{ file, crons }]`) against the manifest: every scheduled file has a row whose
- * crons are exactly the file's, and every row's slots are among what those crons really fire now.
+ * Crons of one repo (`[{ file, crons, dispatch? }]`) against the manifest: every scheduled file has a
+ * row whose crons are exactly the file's, and every row's slots are among what those crons really fire now.
+ *
+ * BOSS OS'S OWN CLOCK (21 Nov 2026). A row with `trigger.clock: "worker"` is fired by the Worker's
+ * five-minute cron (src/shared/boss/schedule/clock.mjs), not by GitHub's best-effort schedule. Its
+ * crons are the manifest's own, held to its slots the same way; its workflow must listen for the
+ * repository_dispatch `trigger.event` (`dispatch`) and carry NO `schedule:` of its own — two clocks
+ * would run the job twice, and a workflow that does not listen would never run at all.
  */
 export function cronProblems(m, repo, files, utcOffset = chicagoOffset()) {
   const rows = m.rows.filter((r) => r.trigger?.repo === repo);
+  const clocked = rows.filter((r) => r.trigger.clock === "worker");
   const out = [];
+  for (const r of rows) if (r.trigger.clock != null && r.trigger.clock !== "worker") out.push(`${r.id}: trigger.clock "${r.trigger.clock}" is not a clock (only "worker")`);
   for (const { file, crons } of files) {
     if (!crons.length) continue;
     const mine = rows.filter((r) => r.trigger.file === file);
     if (!mine.length) { out.push(`${repo}: ${file} runs on ${crons.join(" | ")} and no Schedule row names it`); continue; }
-    const named = new Set(mine.flatMap((r) => r.trigger.crons));
+    for (const r of mine.filter((x) => x.trigger.clock === "worker")) out.push(`${r.id}: ${repo}/${file} still has a schedule: of its own, but Boss OS's clock fires it (two clocks)`);
+    const ghRows = mine.filter((x) => x.trigger.clock !== "worker");
+    if (!ghRows.length) continue;
+    const named = new Set(ghRows.flatMap((r) => r.trigger.crons));
     for (const c of crons) if (!named.has(c)) out.push(`${repo}: ${file} cron "${c}" is on no Schedule row`);
     const f = files.find((x) => x.file === file);
-    for (const r of mine) {
+    for (const r of ghRows) {
       for (const c of r.trigger.crons) if (!crons.includes(c)) out.push(`${r.id}: cron "${c}" is no longer in ${repo}/${file}`);
       const live = activeCrons({ crons: r.trigger.crons, gated: f.gated }, utcOffset);
       const real = canonical(live.flatMap((c) => cronEvents(c, utcOffset)));
@@ -344,9 +355,33 @@ export function cronProblems(m, repo, files, utcOffset = chicagoOffset()) {
       if (!sameSlots(real, want)) out.push(`${r.id}: says ${want.join(" + ")}, but its crons fire ${real.join(" + ")} Central now`);
     }
   }
+  for (const r of clocked) {
+    const f = files.find((x) => x.file === r.trigger.file);
+    if (!f || !(f.dispatch ?? []).includes(r.trigger.event)) out.push(`${r.id}: Boss OS's clock fires "${r.trigger.event}", and ${repo}/${r.trigger.file} does not listen for it (repository_dispatch types)`);
+    const real = canonical(r.trigger.crons.flatMap((c) => cronEvents(c, utcOffset)));
+    const want = labelSlots(r, r.trigger.file);
+    if (!sameSlots(real, want)) out.push(`${r.id}: says ${want.join(" + ")}, but its crons fire ${real.join(" + ")} Central now`);
+  }
   const scheduled = new Set(files.filter((f) => f.crons.length).map((f) => f.file));
-  for (const r of rows) if (!scheduled.has(r.trigger.file)) out.push(`${r.id}: ${repo}/${r.trigger.file} has no schedule any more (or is gone/disabled)`);
+  for (const r of rows) if (r.trigger.clock !== "worker" && !scheduled.has(r.trigger.file)) out.push(`${r.id}: ${repo}/${r.trigger.file} has no schedule any more (or is gone/disabled)`);
   return out;
+}
+
+/** The repository_dispatch types a workflow listens for (`types: [a, b]` or a `- a` list). Pure. */
+export function workflowDispatchTypes(yaml) {
+  const m = /^([ \t]*)repository_dispatch:[ \t]*\r?\n((?:\1[ \t]+.*(?:\r?\n|$))*)/m.exec(String(yaml ?? ""));
+  if (!m) return [];
+  const block = m[2];
+  const inline = /types:\s*\[([^\]]*)\]/.exec(block);
+  if (inline) return inline[1].split(",").map((x) => x.trim().replace(/^["']|["']$/g, "")).filter(Boolean);
+  return [...block.matchAll(/^\s*-\s*["']?([A-Za-z0-9_.-]+)["']?\s*$/gm)].map((x) => x[1]);
+}
+
+/** One workflow's entry for cronProblems, or null when it has neither a schedule nor a dispatch type. Pure. */
+export function workflowEntry(file, text) {
+  const crons = /^\s*schedule:/m.test(text) ? [...new Set(workflowCrons(text))] : [];
+  const dispatch = workflowDispatchTypes(text);
+  return crons.length || dispatch.length ? { file, crons, gated: gatedCrons(text), dispatch } : null;
 }
 
 /** One repo's scheduled files on its default branch (workflows that are not disabled, wrangler configs). */
@@ -365,8 +400,9 @@ export function repoCronFiles(repo, root, { fetch = true, disabled = new Set() }
     if (!wf && !wr) continue;
     if (wf && disabled.has(f)) continue;
     const text = git("show", `${ref}:${f}`);
-    const crons = wf ? (/^\s*schedule:/m.test(text) ? workflowCrons(text) : []) : wranglerCrons(text);
-    if (crons.length) out.push({ file: f, crons: [...new Set(crons)], gated: wf ? gatedCrons(text) : { "-5": [], "-6": [] } });
+    if (wf) { const e = workflowEntry(f, text); if (e) out.push(e); continue; }
+    const crons = wranglerCrons(text);
+    if (crons.length) out.push({ file: f, crons: [...new Set(crons)], gated: { "-5": [], "-6": [] } });
   }
   return out;
 }
@@ -417,8 +453,8 @@ export function repoCronFilesApi(owner, repo) {
     if (w.state !== "active" || !/^\.github\/workflows\//.test(w.path)) continue;
     let text = "";
     try { text = Buffer.from(api(`repos/${owner}/${repo}/contents/${w.path}`).content ?? "", "base64").toString("utf8"); } catch { continue; }
-    const crons = /^\s*schedule:/m.test(text) ? workflowCrons(text) : [];
-    if (crons.length) out.push({ file: w.path, crons: [...new Set(crons)], gated: gatedCrons(text) });
+    const e = workflowEntry(w.path, text);
+    if (e) out.push(e);
   }
   return out;
 }

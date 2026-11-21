@@ -28,6 +28,8 @@ export interface Env {
   GEMINI_API_KEY?: string;
   /** Brave Search, the second meeting-research route (5 Nov 2026). A Worker secret from the vault; 20 searches a day. */
   BRAVE_SEARCH_API_KEY?: string;
+  /** Boss OS's own clock (cron/dispatch.ts): fires the boss-os GitHub jobs by repository_dispatch. Absent → NAMED STOP [CLOUD_CLOCK_NO_TOKEN]. */
+  GITHUB_SEQ23_PAT?: string;
   /**
    * The gsc-bot service account, as the vault holds it, so the Worker can create a Gmail DRAFT in
    * her own mailbox on the green button (`wealth/gmailDraft.ts`). One scope, `gmail.compose`, and
