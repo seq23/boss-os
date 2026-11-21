@@ -10,6 +10,8 @@ import {
   mrr, numbersSection, parseExcludeList, parseListPrice, payingWords, previousMonthKey, rateWords, stripeTrials, trialRate,
 } from "../scripts/brains/t2r-numbers.mjs";
 import { numbersRows, seedFor } from "../src/shared/boss/brains/brain.mjs";
+import { readSchedule, workflowEntry } from "../scripts/ops/lib/schedule.mjs";
+import { dueJobs } from "../src/shared/boss/schedule/clock.mjs";
 
 const NOW = Date.parse("2026-11-04T13:30:00Z"); // a Wednesday, 07:30 Central
 const DAY = 86_400_000;
@@ -175,10 +177,18 @@ describe("Rule 0: the brain cells", () => {
 });
 
 describe("the job runs in the cloud, Wednesday 07:30 Central (moved off the Mac 1 Nov 2026)", () => {
-  it("is scheduled by its workflow with its private exclusion list as state, and not on the Mac", () => {
-    const wf = readFileSync(".github/workflows/job-t2r-numbers.yml", "utf8");
+  it("dispatches from the Worker clock with its private exclusion list as state and no GitHub or Mac schedule", () => {
+    const file = ".github/workflows/job-t2r-numbers.yml";
+    const wf = readFileSync(file, "utf8");
+    const manifest = readSchedule(process.cwd());
+    const job = dueJobs(manifest, NOW).find(({ id }) => id === "t2r-numbers");
+    expect(job).toMatchObject({
+      event: "job-t2r-numbers",
+      key: "t2r-numbers:2026-11-04:07:30",
+    });
+    expect(dueJobs(manifest, NOW - 60_000).some(({ id }) => id === "t2r-numbers")).toBe(false);
+    expect(workflowEntry(file, wf)).toMatchObject({ crons: [], dispatch: [job?.event] });
     expect(wf).toMatch(/brains:t2r-numbers/);
-    expect(wf).toMatch(/cron: '30 7 \* \* 3'\s+# America\/Chicago[^\n]*\n\s+timezone: America\/Chicago/);
     expect(wf).toMatch(/state: t2r-test-accounts\.txt/);
     const installer = readFileSync("scripts/ops/install-agent-launchd.sh", "utf8");
     expect(installer).toMatch(/cloud_moved "\$T2R_NUMBERS_LABEL"/);

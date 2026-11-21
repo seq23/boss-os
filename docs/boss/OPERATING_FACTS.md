@@ -103,6 +103,15 @@ they live in the repo, not only in someone's memory. Non-confidential. `STATUS.m
 - Every duty names its model and cap; the budget stops scheduled duties only, never dispatched ones.
 - The Mac runs on Eastern time; launchd schedules are written in the Mac's clock, so a 07:40 plist is
   06:40 Central. Jobs that care about the hour decide it in Central themselves.
+- **GitHub's `schedule` event is not a clock for this account** (21 Nov 2026). It is best effort, and
+  from about 2026-11-17 20:40Z it fired every scheduled workflow of the account once every 6-9 hours
+  (a ten-minute job ran 11 times in four days); the 21 Nov morning email was never built. Boss OS keeps
+  its own clock: the Worker's `*/5` cron (`src/worker/boss/cron/dispatch.ts`) reads every Schedule row
+  with `trigger.clock: "worker"` (`src/shared/boss/schedule/clock.mjs`) and starts the job by
+  repository_dispatch `trigger.event` on seq23/boss-os, once per slot (`cloud_job_dispatches`, latest
+  slot in the last 30 minutes, so an outage costs one catch-up). Those workflows carry no `schedule:`
+  (`cronProblems` fails two clocks, or a workflow that does not listen). Needs `GITHUB_SEQ23_PAT` on the
+  Worker; without it, NAMED STOP [CLOUD_CLOCK_NO_TOKEN] and the Kendra alarm `mail:cloud-clock`.
 
 ## Mac-side runs
 - **Every launchd job runs from `~/.boss-os/runtime`, never from `~/GitHub/boss-os`** (1 Nov 2026).

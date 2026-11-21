@@ -1,6 +1,6 @@
 // Types for scripts/ops/lib/schedule.mjs (the Schedule's guard). The manifest is loosely typed here on purpose: the guard checks its shape.
 export type Slots = string[];
-export interface CronFile { file: string; crons: string[]; gated?: Record<string, string[]> }
+export interface CronFile { file: string; crons: string[]; gated?: Record<string, string[]>; dispatch?: string[] }
 export const DAY_NAMES: string[];
 export const LAUNCHD_FAMILIES: RegExp;
 export function canonical(events: unknown[]): string[];
@@ -22,6 +22,8 @@ export function dutyProblems(m: any, duties: any[]): string[];
 export function launchdProblems(m: any, jobs: Record<string, string[]>): string[];
 export function missingLabels(m: any, jobs: Record<string, string[]>): string[];
 export function cronProblems(m: any, repo: string, files: CronFile[], utcOffset?: number): string[];
+export function workflowDispatchTypes(yaml: string): string[];
+export function workflowEntry(file: string, text: string): CronFile | null;
 export function repoCronFiles(repo: string, root: string, opts?: { fetch?: boolean; disabled?: Set<string> }): CronFile[] | null;
 export function repoCronFilesApi(owner: string, repo: string): CronFile[];
 export function scheduleRepoDir(repo: string, root: string): string | null;

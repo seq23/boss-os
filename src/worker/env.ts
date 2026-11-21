@@ -18,6 +18,8 @@ export interface Env {
   OPENROUTER_API_KEY?: string;
   GEMINI_API_KEY?: string;
   BRAVE_SEARCH_API_KEY?: string;
+  /** Boss OS's own clock (boss/cron/dispatch.ts): repository_dispatch on seq23/boss-os. Optional: absent is a named stop, never a Worker that will not start. */
+  GITHUB_SEQ23_PAT?: string;
   /** Boss OS's frontier coaching backends (passed through by bossMount.toBossEnv). */
   ANTHROPIC_API_KEY?: string;
   OPENAI_API_KEY?: string;

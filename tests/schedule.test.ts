@@ -14,7 +14,7 @@ import { fileURLToPath } from "node:url";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import {
   canonical, chicagoOffset, cronEvents, cronProblems, displayWindow, dutyProblems, dutySlots, gatedCrons, activeCrons,
-  installerJobs, launchdProblems, plistEvents, readSchedule, scheduleCategoryProblems, shapeProblems, weekProblems, wranglerCrons, workflowCrons,
+  installerJobs, launchdProblems, plistEvents, readSchedule, scheduleCategoryProblems, shapeProblems, weekProblems, wranglerCrons, workflowCrons, workflowEntry, workflowDispatchTypes,
 } from "../scripts/ops/lib/schedule.mjs";
 import { composeSpryWeekly, hostAllowed, loopSection, SPRY_WEEKLY } from "../src/shared/boss/spryWeekly/compose.mjs";
 import { createTestDb, disposeTestDb, type TestDb } from "./helpers/db";
@@ -112,11 +112,11 @@ describe("the Schedule manifest", () => {
   });
 
   it("this repo's own crons have rows at the times they fire", () => {
-    const files: Array<{ file: string; crons: string[]; gated: any }> = [];
+    const files: Array<{ file: string; crons: string[]; gated: any; dispatch?: string[] }> = [];
     const wfDir = path.join(ROOT, ".github/workflows");
     for (const f of existsSync(wfDir) ? readdirSync(wfDir) : []) {
-      const text = readFileSync(path.join(wfDir, f), "utf8");
-      if (/^\s*schedule:/m.test(text)) files.push({ file: `.github/workflows/${f}`, crons: workflowCrons(text), gated: gatedCrons(text) });
+      const e = workflowEntry(`.github/workflows/${f}`, readFileSync(path.join(wfDir, f), "utf8"));
+      if (e) files.push(e as any);
     }
     const wr = wranglerCrons(readFileSync(path.join(ROOT, "wrangler.toml"), "utf8"));
     if (wr.length) files.push({ file: "wrangler.toml", crons: [...new Set<string>(wr)], gated: { "-5": [], "-6": [] } });
@@ -128,6 +128,37 @@ describe("the Schedule manifest", () => {
     const moved = { ...m, rows: m.rows.map((r: any) => (r.trigger?.ticks?.[".github/workflows/job-errand-reminders.yml"]
       ? { ...r, trigger: { ...r.trigger, ticks: { ".github/workflows/job-errand-reminders.yml": ["hourly :00"] } } } : r)) };
     expect(cronProblems(moved, "boss-os", files, chicagoOffset()).join()).toMatch(/errand-reminders: says hourly :00, but its crons fire every 10m/);
+  });
+
+  it("Boss OS's clock (21 Nov 2026): a worker-clocked job has one clock, and its workflow listens", () => {
+    const files: Array<{ file: string; crons: string[]; gated: any; dispatch?: string[] }> = [];
+    const wfDir = path.join(ROOT, ".github/workflows");
+    for (const f of readdirSync(wfDir)) {
+      const e = workflowEntry(`.github/workflows/${f}`, readFileSync(path.join(wfDir, f), "utf8"));
+      if (e) files.push(e as any);
+    }
+    files.push({ file: "wrangler.toml", crons: [...new Set<string>(wranglerCrons(readFileSync(path.join(ROOT, "wrangler.toml"), "utf8")))], gated: { "-5": [], "-6": [] } });
+    const clocked = m.rows.filter((r: any) => r.trigger?.clock === "worker");
+    expect(clocked.length).toBe(7);
+    for (const r of clocked) {
+      const f = files.find((x) => x.file === r.trigger.file);
+      expect(f?.crons, `${r.trigger.file} keeps no schedule of its own`).toEqual([]);
+      expect(f?.dispatch, `${r.trigger.file} listens for ${r.trigger.event}`).toContain(r.trigger.event);
+    }
+    expect(cronProblems(m, "boss-os", files, chicagoOffset())).toEqual([]);
+    // NEGATIVE: two clocks — the workflow kept its schedule after its row moved to the Worker.
+    const twice = files.map((f) => (f.file === ".github/workflows/job-your-day.yml" ? { ...f, crons: ["CRON_TZ=America/Chicago 40 6 * * *"] } : f));
+    expect(cronProblems(m, "boss-os", twice, chicagoOffset()).join()).toMatch(/your-day: .*job-your-day.yml still has a schedule: of its own.*two clocks/);
+    // NEGATIVE: the workflow does not listen for the event the clock sends.
+    const deaf = files.map((f) => (f.file === ".github/workflows/job-your-day.yml" ? { ...f, dispatch: [] } : f));
+    expect(cronProblems(m, "boss-os", deaf, chicagoOffset()).join()).toMatch(/your-day: Boss OS's clock fires "job-your-day", and .* does not listen for it/);
+    // NEGATIVE: a clocked row's own crons are still held to its slots.
+    const drift = { ...m, rows: m.rows.map((r: any) => (r.id === "catchups" ? { ...r, trigger: { ...r.trigger, crons: ["CRON_TZ=America/Chicago 25 6 * * *"] } } : r)) };
+    expect(cronProblems(drift, "boss-os", files, chicagoOffset()).join()).toMatch(/catchups: says daily 06:20, but its crons fire daily 06:25/);
+    // The reader: both YAML shapes of repository_dispatch types.
+    expect(workflowDispatchTypes("on:\n  repository_dispatch:\n    types: [job-a, 'job-b']\n  workflow_dispatch:\n")).toEqual(["job-a", "job-b"]);
+    expect(workflowDispatchTypes("on:\n  repository_dispatch:\n    types:\n      - job-c\n  push:\n")).toEqual(["job-c"]);
+    expect(workflowDispatchTypes("on:\n  workflow_dispatch:\n")).toEqual([]);
   });
 
   it("every line of the approved week names jobs that really run that day, at that time", () => {

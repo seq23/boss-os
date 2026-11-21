@@ -3,9 +3,15 @@ name: job · errand reminders · every 10 min
 # Simone's "do you still want to go?" email 28 hours before a booking, and Imani's practice nudges
 # (owner, 26 Oct 2026 and 31 Oct 2026). Moved off her Mac 1 Nov 2026 (was launchd
 # com.seq.boss-errand-reminders, same ten-minute tick). Reports to duty_errand_reminders.
+#
+# FIRED BY BOSS OS'S OWN CLOCK, NOT GITHUB'S (21 Nov 2026). GitHub's `schedule` event is best effort
+# and from about 17 Nov fired this account's workflows once every 6-9 hours, so the 21 Nov morning
+# email was never built. The Worker's five-minute cron reads this job's times from its Schedule row
+# (src/shared/boss/schedule/manifest.json, trigger.clock "worker") and sends the repository_dispatch
+# below (src/worker/boss/cron/dispatch.ts). No `schedule:` here: one clock, never two.
 on:
-  schedule:
-    - cron: '*/10 * * * *'
+  repository_dispatch:
+    types: [job-errand-reminders]
   workflow_dispatch:
 
 permissions:

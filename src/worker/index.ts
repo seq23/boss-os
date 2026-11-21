@@ -8,6 +8,7 @@ import { INTAKE_MAILBOX } from "../shared/intake/emailTriggers";
  */
 import { handleBossInboundMail, isBossMailbox } from "./boss/intake/inboundMail";
 import { runMailAlarm, MAIL_ALARM_CRON } from "./boss/intake/mailAlarm";
+import { runCloudClock as runBossCloudClock } from "./boss/cron/dispatch";
 import { BOSS_INTAKE_MAILBOX, decodeMimeHeader } from "../shared/boss/intake/mail.mjs";
 import { replyWithHistory } from "./boss/mail/history";
 import { plainReply } from "./boss/intake/mailRefs";
@@ -1596,9 +1597,12 @@ export default {
 
   async scheduled(event: ScheduledController, env: Env, ctx: ExecutionContext): Promise<void> {
     const now = new Date();
-    // THE FIVE-MINUTE TICK runs the "no Got it yet" alarm and nothing else (wrangler.toml [triggers]).
+    // THE FIVE-MINUTE TICK runs the "no Got it yet" alarm and Boss OS's own clock for its GitHub jobs
+    // (21 Nov 2026: GitHub's schedule event stopped being a clock), each in its own waitUntil so one
+    // cannot swallow the other (wrangler.toml [triggers]).
     if (event?.cron === MAIL_ALARM_CRON) {
       ctx.waitUntil(runMailAlarm(toBossEnvForCron(env), now.getTime()).then(() => undefined).catch((err) => console.error("boss mail alarm failed", err)));
+      ctx.waitUntil(runBossCloudClock(toBossEnvForCron(env), now.getTime()).then(() => undefined).catch((err) => console.error("boss cloud clock failed", err)));
       return;
     }
     ctx.waitUntil(

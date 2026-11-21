@@ -3,10 +3,15 @@ name: job · Pre-seed watch · tue 07:30 CT
 # Monique's pre-seed watch: the two mailboxes (service-account delegation) against the market's funded
 # rounds; one line into the morning email. Moved off her Mac 1 Nov 2026 (was launchd
 # com.seq.boss-preseed-watch, same Tuesday 07:30 Central). Its week marker rides in R2 as cloud state.
+#
+# FIRED BY BOSS OS'S OWN CLOCK, NOT GITHUB'S (21 Nov 2026). GitHub's `schedule` event is best effort
+# and from about 17 Nov fired this account's workflows once every 6-9 hours, so the 21 Nov morning
+# email was never built. The Worker's five-minute cron reads this job's times from its Schedule row
+# (src/shared/boss/schedule/manifest.json, trigger.clock "worker") and sends the repository_dispatch
+# below (src/worker/boss/cron/dispatch.ts). No `schedule:` here: one clock, never two.
 on:
-  schedule:
-    - cron: '30 7 * * 2'  # America/Chicago, all year
-      timezone: America/Chicago
+  repository_dispatch:
+    types: [job-preseed-watch]
   workflow_dispatch:
     inputs:
       dry:
