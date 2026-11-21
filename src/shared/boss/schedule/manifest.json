@@ -1246,8 +1246,8 @@
     },
     {
       "id": "boss-os-wrangler-toml",
-      "name": "Boss OS hourly tick",
-      "what": "Boss OS hourly tick; Open Loops and 8Raise ledger morning sections daily from 05:00 Central",
+      "name": "Hourly checks",
+      "what": "Checks for work that needs attention. Starting at 5:00 am, it also prepares the Open Loops and 8Raise ledger sections for your morning email.",
       "business": "personal",
       "brand": "Boss OS",
       "system": "cloudflare",
@@ -1270,8 +1270,8 @@
     },
     {
       "id": "boss-os-mail-alarm",
-      "name": "Boss OS no-Got-it alarm",
-      "what": "Every 5 minutes: an email of hers with no Got it after five minutes becomes one alarm notice (src/worker/boss/intake/mailAlarm.ts), and Boss OS's own clock starts each GitHub job marked clock worker at its time (src/worker/boss/cron/dispatch.ts; GitHub's schedule stopped being a clock, 21 Nov 2026)",
+      "name": "Email acknowledgment check",
+      "what": "Raises an alert if your email goes five minutes without a “Got it” reply. It also starts scheduled jobs when they’re due.",
       "business": "personal",
       "brand": "Boss OS",
       "system": "cloudflare",
@@ -5571,7 +5571,7 @@
     {
       "id": "your-day",
       "name": "Your morning email",
-      "what": "Simone's one morning email. The later ticks send it only if it has not gone yet: while the briefing is still being written, or after a failed send.",
+      "what": "Simone sends this once a day, when your briefing is ready. If the briefing is still being prepared or the send fails, a later run tries again.",
       "business": "personal",
       "brand": "Boss OS",
       "system": "github",

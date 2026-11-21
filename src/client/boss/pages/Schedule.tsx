@@ -76,6 +76,11 @@ export function firedBy(r: { system: string; trigger: { clock?: string } }): str
   return r.system === "github" ? " · started by GitHub" : "";
 }
 
+export function jobTitle({ brand, name }: Pick<ScheduleRow, "brand" | "name">): string {
+  if (!brand || name === brand || name.startsWith(`${brand} `) || name.startsWith(`${brand}:`)) return name;
+  return `${brand}: ${name}`;
+}
+
 export function Schedule() {
   const only = repoOnly();
   const today = new Date().toLocaleDateString("en-US", { timeZone: "America/Chicago", weekday: "short" }).toLowerCase().slice(0, 3);
@@ -128,7 +133,7 @@ export function Schedule() {
               <div className="brain-cards">
                 {rows.map((r) => (
                   <div key={r.id} className="brain-card email-map-card" data-testid={`schedule-job-${r.id}`}>
-                    <span className="email-map-what">{r.brand ? `${r.brand}: ` : ""}{r.name}</span>
+                    <span className="email-map-what">{jobTitle(r)}</span>
                     <span className="brain-card-line">{r.what}</span>
                     <span className="brain-card-line">{r.slots.map(slotWords).join(" · ")}</span>
                     <span className="email-map-runs">{SCHEDULE.businesses.find((b) => b.key === r.business)?.label ?? r.business}{r.emails ? " · emails you" : ""}{r.heavy ? " · heavy" : ""}{firedBy(r)}</span>
