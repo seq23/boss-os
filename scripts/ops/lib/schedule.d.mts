@@ -7,6 +7,7 @@ export function canonical(events: unknown[]): string[];
 export function sameSlots(a: string[], b: string[]): boolean;
 export function plistEvents(text: string, shift?: number): unknown[];
 export function installerJobs(sh: string): Record<string, string[]>;
+export function installedPlists(dir?: string, families?: RegExp): Record<string, string>;
 export function installedJobs(dir?: string, shift?: number): Record<string, string[]>;
 export function dutySlots(d: Record<string, unknown>): string[];
 export function cronEvents(cron: string, utcOffsetHours?: number): unknown[];
