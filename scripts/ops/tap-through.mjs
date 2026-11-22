@@ -128,17 +128,19 @@ const FINGERPRINT = () => {
 /** The controls a person can tap on this screen, in reading order; tappables with no role are named apart. */
 const CONTROLS = (roles) => {
   const vis = (e) => { const r = e.getBoundingClientRect(); const s = getComputedStyle(e); return r.width > 4 && r.height > 4 && s.visibility !== "hidden" && s.display !== "none" && !e.closest("[aria-hidden=true]"); };
-  const name = (e) => (e.getAttribute("aria-label") || e.innerText || e.getAttribute("title") || e.value || "").replace(/\s+/g, " ").trim().slice(0, 120);
+  // The FULL name finds the control again (exact match); `name` is cut to 120 for the report only. Cutting
+  // the locator's name made every long-labelled control "cannot be tapped" (22 Nov 2026, AP and PBS).
+  const fullName = (e) => (e.getAttribute("aria-label") || e.innerText || e.getAttribute("title") || e.value || "").replace(/\s+/g, " ").trim();
   const roleOf = (e) => e.getAttribute("role") || (e.tagName === "A" && e.hasAttribute("href") ? "link" : e.tagName === "BUTTON" ? "button" : e.type === "checkbox" ? "checkbox" : null);
   const seen = new Map(), out = [], noRole = [];
   for (const e of document.querySelectorAll("[role],a[href],button,input[type=checkbox]")) {
     const role = roleOf(e);
     if (!roles.includes(role) || !vis(e)) continue;
-    const n = name(e), key = `${role}|${n}`;
+    const full = fullName(e), n = full.slice(0, 120), key = `${role}|${full}`;
     const nth = seen.get(key) ?? 0; seen.set(key, nth + 1);
-    out.push({ role, name: n, nth, disabled: e.getAttribute("aria-disabled") === "true" || e.disabled === true, current: role === "tab" && (e.getAttribute("aria-selected") === "true" || (e.getAttribute("aria-current") ?? "false") !== "false"), href: e.tagName === "A" ? e.href : null });
+    out.push({ role, name: n, nth, disabled: e.getAttribute("aria-disabled") === "true" || e.disabled === true, full, current: (role === "tab" && (e.getAttribute("aria-selected") === "true" || (e.getAttribute("aria-current") ?? "false") !== "false")) || (role === "radio" && e.getAttribute("aria-checked") === "true"), href: e.tagName === "A" ? e.href : null });
   }
-  for (const e of document.querySelectorAll("[tabindex='0']:not([role]):not(a):not(button):not(input)")) if (vis(e) && name(e) && e.querySelector("[role]") === null && getComputedStyle(e).cursor === "pointer") noRole.push(name(e));
+  for (const e of document.querySelectorAll("[tabindex='0']:not([role]):not(a):not(button):not(input)")) if (vis(e) && fullName(e) && e.querySelector("[role]") === null && getComputedStyle(e).cursor === "pointer") noRole.push(fullName(e).slice(0, 120));
   return { controls: out, noRole: [...new Set(noRole)].slice(0, 10) };
 };
 
@@ -173,6 +175,18 @@ async function errorScreen(page, flow, settled = false) {
 function whyNot(e) {
   const lines = String(e.message).split("\n");
   return (lines.find((l) => /intercepts pointer events|not stable|outside of the viewport|not visible|not enabled/.test(l)) ?? lines[0]).trim();
+}
+
+/**
+ * Tap like a person: Playwright scrolls a control just into view, which can leave it under a fixed tab
+ * bar ("intercepts pointer events"); a person scrolls it to the middle and taps. Only then a failure.
+ */
+async function tap(loc, timeout) {
+  const first = await loc.click({ timeout }).then(() => true, (e) => e);
+  if (first === true) return true;
+  if (!/intercepts pointer events/.test(String(first.message))) return whyNot(first);
+  await loc.evaluate((e) => e.scrollIntoView({ block: "center" })).catch(() => {});
+  return loc.click({ timeout: 3_000 }).then(() => true, whyNot);
 }
 
 /** Wait until the screen differs from `before` (up to ms), or a link, dialog or download said it worked. */
@@ -266,7 +280,7 @@ async function doStep(c, s, flow, target) {
   }
   const before = await page.evaluate(FINGERPRINT).catch(() => "");
   await showTap(page, loc);
-  const clicked = await loc.click({ timeout: 10_000 }).then(() => true, whyNot);
+  const clicked = await tap(loc, 10_000);
   if (clicked !== true) return { ok: false, code: "STEP_UNREACHABLE", what: `"${s.tap}" could not be tapped (${clicked})`, tapped: false };
   const ch = await changed(page, before, signal);
   if (!ch) return { ok: false, code: "DEAD_BUTTON", what: `tapping "${s.tap}" changed nothing`, tapped: true };
@@ -299,17 +313,20 @@ async function sweep(browser, flow, target, origin, j, at, c, ctx) {
   const skip = (flow.sweep_skip ?? []).map((s) => matcher(s.name));
   const path = await c.page.evaluate(() => location.pathname + location.search).catch(() => "");
   const results = [], left = [];
-  let cur = c, fresh = true, here = 0;
+  // Every tap starts from a replayed copy of this screen, never the journey's own page: the steps after a
+  // sweep must find the screen the sweep saw (PBS first-open, 22 Nov 2026: the door was gone).
+  let cur = c, fresh = false, here = 0;
   if (noRole.length) notes.noRole.push(...noRole.map((n) => `${j.name} step ${at + 1}: "${n}"`));
   for (const k of controls) {
+    const { full, ...shown } = k; // the report keeps the cut name
     const key = `${path}|${k.role}|${k.name}|${k.nth}`;
     if (swept.has(key)) continue;
-    if (!k.name) { results.push({ ...k, result: "no accessible name (a screen reader says nothing)" }); notes.unnamed.push(`${j.name} step ${at + 1}: a ${k.role} with no name`); swept.add(key); continue; }
-    if (k.disabled) { results.push({ ...k, result: "disabled here" }); swept.add(key); continue; }
-    if (k.current) { results.push({ ...k, result: "the current tab (tapping it stays here)" }); swept.add(key); continue; }
-    if (skip.some((m) => (typeof m === "string" ? m === k.name : m.test(k.name)))) { results.push({ ...k, result: "skipped (sweep_skip)" }); swept.add(key); continue; }
-    if (k.href && /^(mailto|tel|sms):/i.test(k.href)) { results.push({ ...k, result: `opens ${k.href.split(":")[0]} (not followed)` }); swept.add(key); continue; }
-    if (k.href && !k.href.startsWith(origin)) { results.push({ ...k, result: `links to ${k.href.split("?")[0]} (not followed)` }); notes.external.add(k.href.split("?")[0]); swept.add(key); continue; }
+    if (!k.name) { results.push({ ...shown, result: "no accessible name (a screen reader says nothing)" }); notes.unnamed.push(`${j.name} step ${at + 1}: a ${k.role} with no name`); swept.add(key); continue; }
+    if (k.disabled) { results.push({ ...shown, result: "disabled here" }); swept.add(key); continue; }
+    if (k.current) { results.push({ ...shown, result: k.role === "radio" ? "the chosen option (tapping it keeps it)" : "the current tab (tapping it stays here)" }); swept.add(key); continue; }
+    if (skip.some((m) => (typeof m === "string" ? m === k.name : m.test(k.name)))) { results.push({ ...shown, result: "skipped (sweep_skip)" }); swept.add(key); continue; }
+    if (k.href && /^(mailto|tel|sms):/i.test(k.href)) { results.push({ ...shown, result: `opens ${k.href.split(":")[0]} (not followed)` }); swept.add(key); continue; }
+    if (k.href && !k.href.startsWith(origin)) { results.push({ ...shown, result: `links to ${k.href.split("?")[0]} (not followed)` }); notes.external.add(k.href.split("?")[0]); swept.add(key); continue; }
     if (budget.left <= 0 || here >= SWEEP_PER_SCREEN) { left.push(k.name); continue; }
     if (!fresh) {
       if (cur !== c) await cur.ctx.close().catch(() => {});
@@ -317,17 +334,17 @@ async function sweep(browser, flow, target, origin, j, at, c, ctx) {
       if (!cur) { left.push(k.name, "(could not return to this screen)"); cur = c; break; }
     }
     budget.left--; here++; swept.add(key);
-    const loc = cur.page.getByRole(k.role, { name: k.name, exact: true }).nth(k.nth);
+    const loc = cur.page.getByRole(k.role, { name: full ?? k.name, exact: true }).nth(k.nth);
     const before = await cur.page.evaluate(FINGERPRINT).catch(() => "");
     cur.signal.hit = null; cur.signal.accept = false;
-    const clicked = await loc.click({ timeout: 5_000 }).then(() => true, whyNot);
-    if (clicked !== true) { results.push({ ...k, result: `could not be tapped (${clicked})` }); ctx.failures.push({ code: "STEP_UNREACHABLE", where: `${j.name} step ${at + 1} sweep`, what: `the ${k.role} "${k.name}" is shown but cannot be tapped (${clicked.slice(0, 120)})` }); continue; }
+    const clicked = await tap(loc, 5_000);
+    if (clicked !== true) { results.push({ ...shown, result: `could not be tapped (${clicked})` }); ctx.failures.push({ code: "STEP_UNREACHABLE", where: `${j.name} step ${at + 1} sweep`, what: `the ${k.role} "${k.name}" is shown but cannot be tapped (${clicked.slice(0, 120)})` }); continue; }
     ctx.taps.n++;
     const ch = await changed(cur.page, before, cur.signal, 2500);
     const err = await errorScreen(cur.page, flow);
-    if (!ch) { results.push({ ...k, result: "DEAD" }); ctx.failures.push({ code: "DEAD_BUTTON", where: `${j.name} step ${at + 1} sweep`, what: `tapping the ${k.role} "${k.name}" changed nothing` }); fresh = true; continue; }
+    if (!ch) { results.push({ ...shown, result: "DEAD" }); ctx.failures.push({ code: "DEAD_BUTTON", where: `${j.name} step ${at + 1} sweep`, what: `tapping the ${k.role} "${k.name}" changed nothing` }); fresh = true; continue; }
     if (err) ctx.failures.push({ code: "ERROR_SCREEN", where: `${j.name} step ${at + 1} sweep`, what: `tapping "${k.name}" shows ${err}` });
-    results.push({ ...k, result: ch });
+    results.push({ ...shown, result: ch });
     fresh = false;
   }
   if (cur !== c) await cur.ctx.close().catch(() => {});
