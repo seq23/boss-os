@@ -58,7 +58,7 @@ lint_plist() {
 }
 lint_plist "$MORNCATCHUP_PLIST"
 "${LAUNCHD_RELOAD:-$HOME/bin/launchd-reload}" "$MORNCATCHUP_PLIST" || exit 1   # the one reload (seq-bin): pauses kept, old schedule on failure
-launchctl list | grep -q "$MORNCATCHUP_LABEL" || { echo "NOT INSTALLED: $MORNCATCHUP_LABEL"; exit 1; }
+launchctl print "gui/$(id -u)/$MORNCATCHUP_LABEL" >/dev/null 2>&1 || { echo "NOT INSTALLED: $MORNCATCHUP_LABEL"; exit 1; }
 echo "Installed $MORNCATCHUP_LABEL — daily 06:05, 06:14 and 10:10 Central, and whenever the Mac comes up."
 
 # THE SLOT CATCH-UP (scripts/ops/missed-slots.mjs), every 30 minutes and at load (20 Nov 2026). The
@@ -88,5 +88,5 @@ cat > "$SLOTS_PLIST" <<SLOTSEOF
 SLOTSEOF
 lint_plist "$SLOTS_PLIST"   # the same mover: Central, and behind mac-window like every job
 "${LAUNCHD_RELOAD:-$HOME/bin/launchd-reload}" "$SLOTS_PLIST" || exit 1   # the one reload (seq-bin): pauses kept, old schedule on failure
-launchctl list | grep -q "$SLOTS_LABEL" || { echo "NOT INSTALLED: $SLOTS_LABEL"; exit 1; }
+launchctl print "gui/$(id -u)/$SLOTS_LABEL" >/dev/null 2>&1 || { echo "NOT INSTALLED: $SLOTS_LABEL"; exit 1; }
 echo "Installed $SLOTS_LABEL — every 30 minutes and whenever the Mac comes up."
