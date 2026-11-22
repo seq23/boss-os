@@ -23,3 +23,7 @@ export function cycleEnd(results: { key: string; state: string }[]): { ok: boole
 export const NAMING_RULE: string;
 export function namingProblems(draft: string): string[];
 export function pipelineKey(business: string, channel: string, format: string): string;
+export const REPORT_EVERY_DAYS: number;
+export function reportDue(lastDay: string | null, today: string): boolean;
+export function numbersLine(summary: any): string | null;
+export function reportSection(rows: { label: string; state: string; decision: string; business?: string; actions?: any[]; evidence?: string[] }[], o: { cards: number; origin: string; at: number; summaries?: any[]; scorecard?: any; floorValues?: { first?: number | null; real?: number | null } }): { section: string; at: string; title: string; decide: never[]; rows: never[]; lines: string[]; link: { label: string; url: string } };

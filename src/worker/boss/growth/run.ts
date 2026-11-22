@@ -34,16 +34,20 @@ import { GROWTH_BRAINS, growthSection, parseRoster, rosterProblems, type RosterE
 import { playbookBody } from "../../../shared/boss/growth/playbook.mjs";
 import {
   MAX_CARDS, MAX_OPEN_PER_BUSINESS, ASKED_DAYS, decisionPrompt, parseDecision, enforceHolds, claimsPrompt, parseClaims, claimRules,
-  routeItem, routeProposal, spendPrompt, parseSpend, cycleEnd, namingProblems, pipelineKey,
+  routeItem, routeProposal, spendPrompt, parseSpend, cycleEnd, namingProblems, pipelineKey, reportDue, reportSection,
 } from "../../../shared/boss/growth/director.mjs";
 import { raiseJudgementCall } from "../approvals/raise";
 import { latestReadings } from "../routes/growth";
+import { getSetting, setSetting } from "../lib/settings";
+import { putMorningSection } from "../mail/morningSection";
+import { BOSS_ORIGIN } from "../../../shared/boss/research/page.mjs";
 
 export const DIRECTOR = "emp_growth";
 /** A row's own next step, without the Director's one line on top (written as "Growth Director, …\n"). */
 export function withoutDirectorLine(step: string | null | undefined): string {
   return String(step ?? "").replace(/^Growth Director, [^\n]*\n/, "");
 }
+const REPORT_KEY = "growth_report_last_day";
 const TREND_FEED = "https://trends.google.com/trending/rss?geo=US";
 
 type Msg = { role: string; content: string };
@@ -245,6 +249,19 @@ export async function runGrowthDirector(env: Env, now = Date.now(), deps: { mode
 
   const end = cycleEnd(results);
   await audit(db, { actor: "system", lane: "ops", entityType: "growth_cycle", entityId: cycle, action: end.ok ? "decided" : "held", detail: { line: end.line, problems, trends: trends.length } });
+  // Her report, every two weeks, as a section of Simone's morning email (written even on a held
+  // cycle: "held, not guessed" is news too). The last day is kept so a missed Monday catches up.
+  if (rows.length && reportDue(await getSetting(db, REPORT_KEY), today)) {
+    const row = (manifest as any).rows.find((r: any) => r.id === "growth-director") ?? null;
+    const floorValues = {
+      first: summaries.find((x: any) => x.key === "porch-and-party")?.totals?.requests ?? null,
+      real: summaries.some((x: any) => x.totals?.money != null) ? summaries.reduce((a: number, x: any) => a + (x.totals?.money ?? 0), 0) : null,
+    };
+    const obj = reportSection(rows, { cards, origin: BOSS_ORIGIN, at: now, summaries, scorecard: row, floorValues });
+    const bad = await putMorningSection(db, { section: "growth", job: "duty_growth_director", day: today, obj, now });
+    if (bad.length) throw new Error(`NAMED STOP [GROWTH_REPORT_REFUSED] ${bad.join("; ")}`);
+    await setSetting(db, REPORT_KEY, today);
+  }
   if (!end.ok) throw new Error(`${end.line}${problems.length ? `; roster: ${problems.slice(0, 3).join("; ")}` : ""}`);
   return { written: results.filter((r) => r.state === "decided").length, line: end.line, problems, cards };
 }

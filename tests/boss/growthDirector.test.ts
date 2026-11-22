@@ -429,3 +429,52 @@ describe("the Director owns the older work on its roster (22 Nov 2026)", () => {
     await env.DB.exec("DELETE FROM owner_open_loops WHERE id = 'olp_q1'");
   }, 60_000);
 });
+
+describe("her report every two weeks (a section of Simone's morning email)", () => {
+  it("written on the first cycle, not again within the fortnight, plain words with the Growth page link", async () => {
+    await env.DB.exec("DELETE FROM morning_sections WHERE section = 'growth'; DELETE FROM settings WHERE key = 'growth_report_last_day';");
+    await reading("pnp-requests", "porch-and-party", "requests", "all", 2);
+    await reading("ap-sales", "approvalprep", "sales", "site", 1);
+    const { model } = fake(DECISION, (draft) => /★/.test(draft) ? { pass: false, broken: ["R-PRF-01"], why: "x" } : { pass: true, broken: [], why: "" });
+    const out = await runGrowthDirector(env as any, NOW, { model, fetchImpl: noTrends });
+    const row = await env.DB.prepare(`SELECT body, day FROM morning_sections WHERE section = 'growth'`).first<any>();
+    const body = JSON.parse(row.body);
+    expect(body.title).toMatch(/Growth/);
+    expect(out.cards).toBeGreaterThan(0);
+    expect(body.lines[0]).toBe(`${out.cards === 1 ? "One growth idea waits" : `${out.cards} growth ideas wait`} for your yes in Decide. Nothing else to do.`);
+    expect(body.lines.some((l: string) => /^Porch & Party: 2 requests in 28 days; 1 queued, \d asked in Decide\. More Instagram reels/.test(l))).toBe(true);
+    expect(body.lines.some((l: string) => /^Against the floors: Porch & Party requests in the last 28 days: 2 of 4 by/.test(l))).toBe(true);
+    expect(body.link.url).toMatch(/\?tab=growth$/);
+    expect(JSON.stringify(body)).not.toMatch(/NAMED STOP|olp_|apr_|gdc_|R-PRF/);
+    // A week later: no new report.
+    await env.DB.exec("UPDATE morning_sections SET body = '{}' WHERE section = 'growth'");
+    const later = async (days: number) => {
+      const t = NOW + days * 86_400_000;
+      await reading("pnp-requests", "porch-and-party", "requests", "all", 3, dayIdInZone(t));
+      await runGrowthDirector(env as any, t, { model, fetchImpl: noTrends });
+    };
+    await later(7);
+    expect((await env.DB.prepare(`SELECT body FROM morning_sections WHERE section = 'growth'`).first<any>()).body).toBe("{}");
+    // Two weeks later: a new one.
+    await later(14);
+    expect(JSON.parse((await env.DB.prepare(`SELECT body FROM morning_sections WHERE section = 'growth'`).first<any>()).body).title).toMatch(/Growth/);
+  }, 30_000);
+
+  it("a held cycle still reports; a refused write leaves the day unset so next Monday retries", async () => {
+    await env.DB.exec("DELETE FROM morning_sections WHERE section = 'growth'; DELETE FROM settings WHERE key = 'growth_report_last_day';");
+    await reading("pnp-requests", "porch-and-party", "requests", "all", 2);
+    const silent = async () => null;
+    await expect(runGrowthDirector(env as any, NOW, { model: silent as any, fetchImpl: noTrends })).rejects.toThrow();
+    const body = JSON.parse((await env.DB.prepare(`SELECT body FROM morning_sections WHERE section = 'growth'`).first<any>()).body);
+    expect(body.lines[0]).toBe("Nothing to do: nothing new was queued this fortnight. Why, below.");
+    expect(body.lines.join(" ")).toMatch(/Held, not guessed: .*no free writer answered/);
+    // A failed write (the table gone for a moment): the day is not set, so the next run writes it.
+    await env.DB.exec("DELETE FROM morning_sections WHERE section = 'growth'; DELETE FROM settings WHERE key = 'growth_report_last_day'; ALTER TABLE morning_sections RENAME TO morning_sections_away;");
+    try {
+      await expect(runGrowthDirector(env as any, NOW, { model: silent as any, fetchImpl: noTrends })).rejects.toThrow();
+    } finally { await env.DB.exec("ALTER TABLE morning_sections_away RENAME TO morning_sections;"); }
+    expect(await env.DB.prepare(`SELECT 1 FROM settings WHERE key = 'growth_report_last_day'`).first()).toBeNull();
+    await expect(runGrowthDirector(env as any, NOW + 3_600_000, { model: silent as any, fetchImpl: noTrends })).rejects.toThrow();
+    expect(await env.DB.prepare(`SELECT 1 FROM morning_sections WHERE section = 'growth'`).first()).not.toBeNull();
+  }, 30_000);
+});

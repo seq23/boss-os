@@ -5124,7 +5124,7 @@
     {
       "id": "growth-director",
       "name": "Growth Director: decide the week",
-      "what": "Noelle reads the growth scoreboard and each business's Growth roster, writes one decision per business with its evidence, queues approved work as to-dos and puts anything new in Decide (three cards at most). Sends and posts nothing.",
+      "what": "Noelle reads the growth scoreboard and each business's Growth roster, writes one decision per business with its evidence, queues approved work as to-dos and puts anything new in Decide (three cards at most). Every other Monday it writes a Growth section in Simone's morning email. Sends and posts nothing else.",
       "business": "spry",
       "brand": "Spry Labs",
       "system": "boss-os",
