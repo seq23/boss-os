@@ -224,7 +224,7 @@ async function changed(page, before, signal, ms = 3000) {
   await page.mouse.move(1, 1).catch(() => {});
   await page.waitForTimeout(200);
   const look = await page.evaluate(LOOK).catch(() => null);
-  return look !== null && look !== before.look ? LOOK_ONLY : null;
+  return look !== null && look !== before.look ? null : null;
 }
 
 /** Shows where the robot tapped, so the video reads like a person using the app. */
