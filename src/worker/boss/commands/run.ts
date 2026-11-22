@@ -733,7 +733,7 @@ export async function readErrandMeaning(env: Env, text: string, to: string | und
       asks: "they ask a question, need something (a name, a phone number, a card, a deposit) or set a condition",
       other: "an automatic or holding reply, with nothing yet to act on",
     },
-    text: theirs, keyword: errandKeywordMeaning(keyword), mailId,
+    text: theirs, keyword: errandKeywordMeaning(keyword), mailId, acts: ["confirmed"],
   });
   return m.by === "model" ? readErrandReply(text, to, subject, m.value) : keyword;
 }

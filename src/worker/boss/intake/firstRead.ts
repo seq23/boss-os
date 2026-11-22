@@ -31,6 +31,7 @@ import { claimFreeSearch, centralDay } from "../research/searchQuota";
 import { freeDayStartedAt, recordOutcome } from "../router/experience";
 import { READ_MODES, type ReplyMode } from "../../../shared/boss/repoChange/lane.mjs";
 import { readJsonObject, type JsonOutput } from "../router/types";
+import { privateLexicon, scanForModelAccess } from "../router/modelAccess";
 
 export const FIRST_READ_SERVICE = "svc_workers_ai_first_read";
 /** Workers AI first reads a day (Central). Also in FREE_ROUTES; the two are pinned together by test. */
@@ -365,16 +366,28 @@ export interface Ladder<T> { value: T | null; reader: string | null; tried: stri
  * to her (the first read, and each door's meaning: `meaning.ts`) walks this ladder with its own schema
  * and its own check. `read` turns an answer into a value, or says why it was passed over. `dry` reads
  * without claiming a Workers AI slot. Never throws.
+ *
+ * PRIVATE TEXT NEVER REACHES A FREE RUNG, BY DEFAULT (private-data-routing; fresh review of #510, F3). Every
+ * rung may train on what it reads, so a prompt the router's own content scan would hold to a private
+ * model is not sent at all: the ladder answers nothing and its stop says why, and the caller's keywords
+ * read it. A lexicon that cannot be built counts as a hit (fail closed). A caller turns the scan off only
+ * by naming the ruling that lets it (`privateScanOff`); the first read is the one that does.
  */
 export async function freeLadder<T>(
   env: Env,
-  input: { prompt: string; json: JsonOutput; read: (text: string) => T | string; budgetMs?: number; now?: number; dry?: boolean; onlyRung?: string | null },
+  input: { prompt: string; json: JsonOutput; read: (text: string) => T | string; budgetMs?: number; now?: number; dry?: boolean; onlyRung?: string | null; privateScanOff?: string },
   rungs?: Rung[],
 ): Promise<Ladder<T>> {
   const now = input.now ?? Date.now();
   const budget = input.budgetMs ?? FIRST_READ_BUDGET_MS;
   const out: Ladder<T> = { value: null, reader: null, tried: [], stop: null };
   const { prompt, json } = input;
+  if (!input.privateScanOff?.trim()) {
+    const scan = await privateLexicon(env.DB)
+      .then((lex) => scanForModelAccess([{ role: "user", content: prompt }], lex))
+      .catch(() => ({ privateOnly: true, kinds: ["the private scan could not run"] }));
+    if (scan.privateOnly) { out.stop = `kept off the free models: ${scan.kinds.join(", ")}`; return out; }
+  }
   const started = Date.now();
   let ladder: Rung[];
   try { ladder = rungs ?? rungsOverride ?? await freeRungs(env); } catch { ladder = []; }
@@ -454,6 +467,9 @@ export async function freeLadder<T>(
   return out;
 }
 
+/** Why the first read alone skips the private scan: her ruling, quoted in this file's header ("IT IS NOT BLOCKED BY THE PRIVATE-TERM CHECK"). */
+export const FIRST_READ_SCAN_OFF = "owner ruling 15 Nov 2026: Boss OS ignores the private-email rules for its own first read (LP names here are prospects); see firstRead.ts header";
+
 /** Walk the free ladder once for the brief. `dry` reads without claiming a Workers AI slot. Never throws. */
 export async function firstRead(
   env: Env,
@@ -464,6 +480,7 @@ export async function firstRead(
   const files = input.files ?? [];
   const walk = await freeLadder(env, {
     prompt: briefPrompt({ subject: input.subject, words: input.words, files }), json: BRIEF_JSON, now: input.now, dry: input.dry, onlyRung: input.onlyRung,
+    privateScanOff: FIRST_READ_SCAN_OFF,
     read: (text) => {
       const brief = readBrief(text, input.words, files);
       if (typeof brief === "string") return brief;

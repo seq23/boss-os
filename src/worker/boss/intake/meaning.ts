@@ -16,8 +16,8 @@
 import type { Env } from "../env";
 import { logEvent } from "../lib/log";
 import { readJsonObject } from "../router/types";
-import { privateLexicon, scanForModelAccess } from "../router/modelAccess";
 import { freeLadder, logReplyDecision, type Rung } from "./firstRead";
+import { quoteStands } from "../../../shared/boss/text/wholeSentence.mjs";
 
 export const UNSURE = "unsure" as const;
 /** Short doors get a short ladder: the reply waits on it. */
@@ -31,6 +31,11 @@ export interface MeaningAsk<T extends string> {
   /** Each meaning the door can act on, and what it means. */
   options: Readonly<Record<T, string>>;
   text: string;
+  /**
+   * The meanings that ACT (send, approve, book). Their quote must stand in her sentence (`quoteStands`, the
+   * shared whole-sentence judge): a quote she negated, conditioned, reported or asked is read as unsure.
+   */
+  acts?: readonly T[];
   /** What the door's keywords read, used and logged when no model answers. */
   keyword: T | typeof UNSURE;
   mailId?: string | null;
@@ -73,14 +78,19 @@ export function meaningPrompt<T extends string>(ask: Pick<MeaningAsk<T>, "about"
   ].join("\n");
 }
 
-/** A model's answer, checked. Pure: the value, or why it is passed over. */
-export function checkMeaning<T extends string>(raw: unknown, options: readonly T[], text: string): { value: T | typeof UNSURE; quote: string | null } | string {
+/**
+ * A model's answer, checked. Pure: the value, or why it is passed over. The quote must be in the text (a model
+ * cannot invent words), and for a meaning that acts it must also stand in her sentence; one that does not is
+ * unsure, so the door asks.
+ */
+export function checkMeaning<T extends string>(raw: unknown, options: readonly T[], text: string, acts: readonly T[] = []): { value: T | typeof UNSURE; quote: string | null } | string {
   if (!raw || typeof raw !== "object" || Array.isArray(raw)) return "not one JSON answer";
   const m = (raw as Record<string, unknown>).meaning;
   const quote = typeof (raw as Record<string, unknown>).quote === "string" ? ((raw as Record<string, unknown>).quote as string).trim() : "";
   if (m === UNSURE) return { value: UNSURE, quote: null };
   if (typeof m !== "string" || !(options as readonly string[]).includes(m)) return "a meaning it was not offered";
   if (quote.length < 2 || !norm(text).includes(norm(quote))) return "its quote is not in the text";
+  if ((acts as readonly string[]).includes(m) && !quoteStands(text, quote)) return { value: UNSURE, quote };
   return { value: m as T, quote };
 }
 
@@ -88,17 +98,11 @@ export function checkMeaning<T extends string>(raw: unknown, options: readonly T
 export async function readMeaning<T extends string>(env: Env, ask: MeaningAsk<T>, rungs?: Rung[]): Promise<Meaning<T>> {
   const options = Object.keys(ask.options) as T[];
   let walk: Awaited<ReturnType<typeof freeLadder<{ value: T | typeof UNSURE; quote: string | null }>>> | null = null;
-  /*
-   * PRIVATE TEXT NEVER REACHES A FREE ROUTE (private-data-routing). Every rung of this ladder may train
-   * on what it reads, so text the router's own scan would hold to a private model is not sent at all:
-   * the keywords read it, and the record says why. A lexicon that cannot be built counts as a hit.
-   */
-  const scan = await privateLexicon(env.DB).then((lex) => scanForModelAccess([{ role: "user", content: ask.text }], lex)).catch(() => ({ privateOnly: true, kinds: ["the private scan could not run"] }));
-  if (scan.privateOnly) walk = { value: null, reader: null, tried: [], stop: `kept off the free models: ${scan.kinds.join(", ")}` };
-  else if (ask.text.trim()) {
+  // Private text is held off every free rung inside `freeLadder` itself (its default scan); its stop is logged below.
+  if (ask.text.trim()) {
     walk = await freeLadder(env, {
       prompt: meaningPrompt(ask), json: meaningJson(options), budgetMs: MEANING_BUDGET_MS, now: ask.now,
-      read: (t) => checkMeaning(readJsonObject(t), options, ask.text),
+      read: (t) => checkMeaning(readJsonObject(t), options, ask.text, ask.acts ?? []),
     }, rungs).catch(() => null);
   }
   const got = walk?.value ?? null;

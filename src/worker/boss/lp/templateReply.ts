@@ -22,6 +22,8 @@ import { renderProspect, tapUrl, hasTouchWords } from "../../../shared/boss/lp/p
 import { ownWords } from "../../../shared/boss/intake/messageBody.mjs";
 import { decideCardOf } from "./decideReply";
 import { readMeaning } from "../intake/meaning";
+import { logReplyDecision, type ReplyDecision } from "../intake/firstRead";
+import { stands } from "../../../shared/boss/text/wholeSentence.mjs";
 
 /** "5: …", "#5 …", "5. …", "5) …" at the start of her reply. */
 export const NUMBERED_REPLY_RE = /^\s*#?(\d{1,2})\s*(?::|\.|\)|-|—|\s)\s*([\s\S]*)$/;
@@ -61,18 +63,29 @@ export function redraftReply(tpl: any, opts: { applied?: string[]; kept?: string
 /** Plainly "yes" and nothing else: what the keywords call an approval. */
 const APPROVE_RE = /^(?:approved?|yes|go|ok(?:ay)?)[.!]?$/i;
 const TRY_AGAIN_RE = /\btry again\b|\bstart over\b|\bdifferent (?:one|draft|version)\b|\banother (?:go|draft|version)\b/i;
-/** A no, a wait or a condition anywhere in her words: an approval from the model is then asked about, never acted on. */
-const HOLD_RE = /\b(?:not|no|don'?t|do not|never|isn'?t|wait|hold|stop|unless|but|if)\b|\?/i;
+/** An approval word anywhere: never acted on unless it is the whole answer, but it means "ask", never "redraft". */
+const APPROVE_WORD_RE = /\bapprov(?:e|ed|es|ing)\b/i;
 
 export type TemplateMeaning = "approve" | "try_again" | "change" | "unsure";
 
 /**
- * What her words to the card MEAN, read by the model (meaning.ts) with the keywords as the logged fallback.
- * Approving sends email to prospects, so it is the one meaning held twice: the model must say it AND
- * her words must hold no no, wait or condition; otherwise it is "unsure" and she is asked.
+ * Her words, by the keywords alone (the logged last resort and the reading of one numbered answer). Every phrase is
+ * judged in its whole sentence (`stands`, the shared judge): "don't try again, just shorten it" is a change. Pure.
+ */
+export function templateKeywordMeaning(words: string): TemplateMeaning {
+  if (APPROVE_RE.test(words.trim())) return "approve";
+  if (stands(words, TRY_AGAIN_RE)) return "try_again";
+  if (stands(words, APPROVE_WORD_RE)) return "unsure";
+  return words.trim() ? "change" : "unsure";
+}
+
+/**
+ * What her words to the card MEAN when the email had NO first read: the model (meaning.ts) with the keywords as the
+ * logged fallback. Approving sends email to prospects, so a model's approve must quote words that stand in her
+ * sentence (`acts`, checked by `quoteStands` in `checkMeaning`); otherwise it is unsure and she is asked.
  */
 export async function templateMeaningOf(env: Env, words: string, mailId: string | null = null): Promise<TemplateMeaning> {
-  const keyword: TemplateMeaning = APPROVE_RE.test(words) ? "approve" : TRY_AGAIN_RE.test(words) ? "try_again" : words.trim() ? "change" : "unsure";
+  const keyword = templateKeywordMeaning(words);
   const read = await readMeaning<Exclude<TemplateMeaning, "unsure">>(env, {
     what: "her reply to the prospect email",
     about: "This is the owner's reply to a draft prospect email waiting for her approval.",
@@ -81,21 +94,37 @@ export async function templateMeaningOf(env: Env, words: string, mailId: string 
       try_again: "she wants a different draft altogether",
       change: "she asks for changes to the draft (her words say what to change)",
     },
+    acts: ["approve", "try_again"],
     text: words, keyword, mailId,
   });
-  if (read.value === "approve" && (read.by === "keywords" ? !APPROVE_RE.test(words) : HOLD_RE.test(words))) return "unsure";
   return read.value;
 }
 
-export async function prospectTemplateFromMail(env: Env, text: string, now = Date.now(), day: string | null = null, mailId: string | null = null): Promise<{ note: string; outcome: string } | null> {
+/**
+ * WHAT HER REPLY DECIDES, FROM THE EMAIL'S FIRST READ (fresh review of #510, F1). The email was already read once;
+ * the card never reads it a second time. It approves only when the first read says the reply is `approved`, or
+ * when this card's own numbered answer is a plain approval. Try again or change is told from that answer's
+ * words. Anything else that names an approval is asked, never redrafted. Pure.
+ */
+export function templateMeaningFromRead(read: ReplyDecision, card: number | null, words: string): TemplateMeaning {
+  const answer = card === null ? null : read.answers.find((a) => a.n === card)?.text?.trim() || null;
+  if (answer) return templateKeywordMeaning(answer);
+  if (read.reply === "approved") return "approve";
+  if (read.reply === "held") return "unsure";
+  const kw = templateKeywordMeaning(words);
+  return kw === "approve" ? "unsure" : kw;
+}
+
+export async function prospectTemplateFromMail(env: Env, text: string, now = Date.now(), day: string | null = null, mailId: string | null = null, read: ReplyDecision | null = null): Promise<{ note: string; outcome: string } | null> {
   // Her words only: never the quoted morning email under them.
   const her = ownWords(text);
   let templateId: string | null = null;
   let words = her;
+  let cardN: number | null = null;
   const numbered = NUMBERED_REPLY_RE.exec(her);
   if (numbered) {
     const card = await decideCardOf(env, Number(numbered[1]), day);
-    if (card?.key?.startsWith("prospect-template:")) { templateId = card.key.slice("prospect-template:".length); words = numbered[2]!.trim(); }
+    if (card?.key?.startsWith("prospect-template:")) { templateId = card.key.slice("prospect-template:".length); words = numbered[2]!.trim(); cardN = Number(numbered[1]); }
   }
   if (!templateId) {
     const id = TEMPLATE_ID_RE.exec(her)?.[1];
@@ -109,7 +138,11 @@ export async function prospectTemplateFromMail(env: Env, text: string, now = Dat
   const live = row.status === "pending" ? row : await env.DB.prepare(`SELECT * FROM prospect_templates WHERE status = 'pending' ORDER BY created_at DESC LIMIT 1`).first<any>() ?? row;
   const released = await followUpsReleased(env.DB);
 
-  const meaning = await templateMeaningOf(env, words, mailId);
+  let meaning: TemplateMeaning;
+  if (read) {
+    meaning = templateMeaningFromRead(read, cardN, words);
+    await logReplyDecision(env, { mailId: mailId ?? "", what: "her reply to the prospect email", firstRead: meaning, keyword: templateKeywordMeaning(words) }).catch(() => undefined);
+  } else meaning = await templateMeaningOf(env, words, mailId);
   if (meaning === "unsure") {
     await audit(env.DB, { actor: "owner", lane: "ops", entityType: "prospect_template", entityId: live.id, action: "asked", detail: { via: "reply", why: "her reply did not plainly approve or change it" } });
     return { outcome: "TEMPLATE_ANSWERED", note: `I could not tell whether that approves the prospect email, so nothing changed and nothing goes out. Reply "approved" to send it as it is, "try again" for a different draft, or tell me what to change.\n\nTap to approve: ${tapUrl(live.tap_token, "approve")}` };

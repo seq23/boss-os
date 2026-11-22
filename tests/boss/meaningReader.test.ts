@@ -8,8 +8,8 @@
 import { env } from "cloudflare:test";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { checkMeaning, readMeaning } from "../../src/worker/boss/intake/meaning";
-import { setFirstReadRungs, type Rung } from "../../src/worker/boss/intake/firstRead";
-import { prospectTemplateFromMail, templateMeaningOf } from "../../src/worker/boss/lp/templateReply";
+import { freeLadder, setFirstReadRungs, type Rung } from "../../src/worker/boss/intake/firstRead";
+import { prospectTemplateFromMail, templateMeaningFromRead, templateMeaningOf } from "../../src/worker/boss/lp/templateReply";
 import { proposeTemplate } from "../../src/worker/boss/lp/desk";
 import { readErrandMeaning } from "../../src/worker/boss/commands/run";
 
@@ -33,6 +33,16 @@ describe("checkMeaning", () => {
     expect(checkMeaning({ meaning: "delete", quote: "send" }, opts, "send")).toBe("a meaning it was not offered");
     expect(checkMeaning({ meaning: "unsure", quote: "" }, opts, "hmm")).toEqual({ value: "unsure", quote: null });
     expect(checkMeaning(null, opts, "x")).toBe("not one JSON answer");
+  });
+
+  it("a meaning that acts must stand in her sentence: negated, conditioned or asked is unsure (#510 F2)", () => {
+    const opts = ["approve", "change"] as const;
+    const acts = ["approve"] as const;
+    expect(checkMeaning({ meaning: "approve", quote: "approved" }, opts, "Not approved yet.", acts)).toEqual({ value: "unsure", quote: "approved" });
+    expect(checkMeaning({ meaning: "approve", quote: "approve it" }, opts, "Approve it if Ron agrees.", acts)).toEqual({ value: "unsure", quote: "approve it" });
+    expect(checkMeaning({ meaning: "approve", quote: "Approved!" }, opts, "Approved! Let me know if anything bounces.", acts)).toEqual({ value: "approve", quote: "Approved!" });
+    // A meaning that does not act keeps its quote whatever the sentence says.
+    expect(checkMeaning({ meaning: "change", quote: "not that opening" }, opts, "Not that opening.", acts)).toEqual({ value: "change", quote: "not that opening" });
   });
 });
 
@@ -82,6 +92,56 @@ describe("her reply to the prospect email", () => {
     expect(called).toBe(0);
     expect(m.by).toBe("keywords");
     expect(JSON.parse((await events("meaning_keyword_fallback"))[0].detail).stop).toMatch(/kept off the free models/);
+  });
+});
+
+describe("the template door after a first read (#510 F1, F2)", () => {
+  const firstRead = (reply: any, answers: Array<{ n: number; text: string }> = []) => ({ reply, answers, commands: [] });
+
+  it("the first read says change and the meaning rung says approve: no send, and the rung is never asked", async () => {
+    const t = (await proposeTemplate(env.DB, null, NAMES)) as any;
+    let asked = 0;
+    setFirstReadRungs([{ id: "free-test", call: async () => { asked += 1; return JSON.stringify({ meaning: "approve", quote: "shorten the opening" }); } }]);
+    await prospectTemplateFromMail(env, `${t.template.id}: shorten the opening`, Date.now(), null, null, firstRead("answers") as any);
+    expect(asked).toBe(0);
+    expect((await env.DB.prepare(`SELECT COUNT(*) AS n FROM prospect_templates WHERE status = 'approved'`).first<any>()).n).toBe(0);
+  });
+
+  it("only the first read's approved, or this card's plain answer, approves; try again is told from the answer's words", () => {
+    expect(templateMeaningFromRead(firstRead("approved") as any, null, "approved")).toBe("approve");
+    expect(templateMeaningFromRead(firstRead("answers") as any, null, "approved")).toBe("unsure");
+    expect(templateMeaningFromRead(firstRead("held") as any, null, "wait on this")).toBe("unsure");
+    expect(templateMeaningFromRead(firstRead("answers", [{ n: 5, text: "approved" }]) as any, 5, "approved")).toBe("approve");
+    expect(templateMeaningFromRead(firstRead("answers", [{ n: 5, text: "try again" }]) as any, 5, "try again")).toBe("try_again");
+    expect(templateMeaningFromRead(firstRead("answers", [{ n: 5, text: "don't try again, shorten it" }]) as any, 5, "x")).toBe("change");
+    // Another card's answer never decides this one.
+    expect(templateMeaningFromRead(firstRead("answers", [{ n: 2, text: "approved" }]) as any, 5, "shorter please")).toBe("change");
+  });
+
+  it("\"Approved! Let me know if anything bounces.\" approves; a condition in another sentence does not hold it", async () => {
+    setFirstReadRungs(says("approve", "Approved!"));
+    expect(await templateMeaningOf(env, "Approved! Let me know if anything bounces.")).toBe("approve");
+  });
+
+  it("model down: \"Don't try again, just shorten the opening.\" is never try again", async () => {
+    setFirstReadRungs(down);
+    expect(await templateMeaningOf(env, "Don't try again, just shorten the opening.")).not.toBe("try_again");
+  });
+});
+
+describe("the free ladder itself (#510 F3)", () => {
+  it("private text through a direct freeLadder call never reaches a rung; a named opt-out is the only way past", async () => {
+    let called = 0;
+    const rung: Rung[] = [{ id: "free-test", call: async () => { called += 1; return "{}"; } }];
+    const ask = { prompt: "approved, and the term sheet says pre-money is fine", json: { name: "x", schema: { type: "object" } }, read: () => ({ ok: true }) };
+    const walk = await freeLadder(env, ask, rung);
+    expect(called).toBe(0);
+    expect(walk.value).toBeNull();
+    expect(walk.stop).toMatch(/kept off the free models/);
+    await freeLadder(env, { ...ask, privateScanOff: "  " }, rung);
+    expect(called, "a blank opt-out is no opt-out").toBe(0);
+    await freeLadder(env, { ...ask, privateScanOff: "test: a named ruling" }, rung);
+    expect(called).toBe(1);
   });
 });
 
