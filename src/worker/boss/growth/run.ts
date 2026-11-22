@@ -24,6 +24,7 @@
  *
  * It never posts, sends, spends, creates or deletes anything. Pinned by tests/boss/growthDirector.test.ts.
  */
+import { stripConfidential } from "../../../shared/boss/brains/brain.mjs";
 import type { Env } from "../env";
 import { newId } from "../lib/id";
 import { audit } from "../lib/audit";
@@ -40,6 +41,10 @@ import { raiseJudgementCall } from "../approvals/raise";
 import { latestReadings } from "../routes/growth";
 
 export const DIRECTOR = "emp_growth";
+/** A row's own next step, without the Director's one line on top (written as "Growth Director, …\n"). */
+export function withoutDirectorLine(step: string | null | undefined): string {
+  return String(step ?? "").replace(/^Growth Director, [^\n]*\n/, "");
+}
 const TREND_FEED = "https://trends.google.com/trending/rss?geo=US";
 
 type Msg = { role: string; content: string };
@@ -167,9 +172,12 @@ export async function runGrowthDirector(env: Env, now = Date.now(), deps: { mode
       if (!s || s.state !== "read") { await record({ ...base, state: "held: no data", decision: "Held: nothing on the scoreboard was read for this business, so nothing is decided on zeros.", evidence: (s?.channels ?? []).map((c: any) => `${c.label}: ${c.unread}`), actions: [] }); continue; }
       const first = !(await db.prepare(`SELECT 1 FROM growth_decisions WHERE business = ? AND state = 'decided' LIMIT 1`).bind(entry.key).first());
       const todos = await inMotion(db, entry.key!);
-      // The older work on this business's roster (open rows only): the Director decides each one. Only the
-      // rows the roster names are read, and they are growth work (no customer rows), so a free model may see them.
-      const linked = entry.linked.length ? ((await db.prepare(`SELECT id, title, next_step, finish_line FROM owner_open_loops WHERE status = 'open' AND id IN (SELECT value FROM json_each(?))`).bind(JSON.stringify(entry.linked)).all<any>()).results ?? []) : [];
+      // The older work on this business's roster: the Director decides each row. Read only when the row is
+      // open, this business's, and an agent's work item (never her own rows, which can hold people and
+      // money); its text is cut of any confidential span before a free model sees it.
+      const linked = entry.linked.length ? ((await db.prepare(
+        `SELECT id, title, next_step, finish_line FROM owner_open_loops WHERE status = 'open' AND business = ? AND owner <> 'sequoia' AND id IN (SELECT value FROM json_each(?))`,
+      ).bind(entry.key, JSON.stringify(entry.linked)).all<any>()).results ?? []).map((l: any) => ({ ...l, title: stripConfidential(l.title), next_step: stripConfidential(withoutDirectorLine(l.next_step)), finish_line: stripConfidential(l.finish_line) })) : [];
       const answer = parseDecision(await model(env, decisionPrompt({ playbook, entry, summary: s, trends, today, todos, first, linked }) as Msg[], "growth-decide"));
       if (!answer) { await record({ ...base, state: "held: no model", decision: "Held: no free model answered (every free route was busy or spent); the next cycle tries again.", evidence: [], actions: [] }); continue; }
       const { decision, dropped } = enforceHolds(answer, s);
@@ -212,15 +220,18 @@ export async function runGrowthDirector(env: Env, now = Date.now(), deps: { mode
         actions.push({ kind: "proposal", proposal: p, card: c.card, ...(c.why ? { why: c.why } : {}) });
       }
       // Her older rows get the Director's verdict, written where she and the working session read them.
+      const judged = new Set<string>();
       for (const v of decision.linked ?? []) {
-        if (!linked.some((l: any) => l.id === v.id)) continue; // only rows it was shown
-        const say = `Growth Director, ${today}: ${v.verdict}. ${v.why}`;
+        if (judged.has(v.id) || !linked.some((l: any) => l.id === v.id)) continue; // once each, only rows it was shown
+        judged.add(v.id);
+        // The Director's line is ONE line on top; the step under it is the row's own (or the changed one).
+        const say = `Growth Director, ${today}: ${v.verdict}. ${v.why.replace(/\s+/g, " ").trim()}`;
         if (v.verdict === "drop") {
-          await db.prepare(`UPDATE owner_open_loops SET status = 'closed', closed_reason = ?, closed_at = ?, updated_at = ? WHERE id = ? AND status = 'open'`).bind(say.slice(0, 400), now, now, v.id).run();
+          await db.prepare(`UPDATE owner_open_loops SET status = 'closed', closed_reason = ?, closed_at = ?, updated_at = ? WHERE id = ? AND business = ? AND status = 'open'`).bind(say.slice(0, 400), now, now, v.id, entry.key).run();
         } else {
-          const old = linked.find((l: any) => l.id === v.id)!;
-          const next = v.verdict === "change" ? `${say} Next: ${v.next_step}` : `${say} ${String(old.next_step ?? "").replace(/^Growth Director, \d{4}-\d\d-\d\d: [^.]*\.[^.]*\.\s*/, "")}`;
-          await db.prepare(`UPDATE owner_open_loops SET next_step = ?, updated_at = ? WHERE id = ? AND status = 'open'`).bind(next.slice(0, 1000), now, v.id).run();
+          const cur = await db.prepare(`SELECT next_step FROM owner_open_loops WHERE id = ?`).bind(v.id).first<{ next_step: string | null }>();
+          const step = v.verdict === "change" ? v.next_step : withoutDirectorLine(cur?.next_step);
+          await db.prepare(`UPDATE owner_open_loops SET next_step = ?, updated_at = ? WHERE id = ? AND business = ? AND status = 'open'`).bind(`${say}\n${step}`, now, v.id, entry.key).run();
         }
         actions.push({ kind: "linked", id: v.id, verdict: v.verdict, why: v.why });
       }

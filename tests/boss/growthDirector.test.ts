@@ -364,17 +364,60 @@ describe("the Director owns the older work on its roster (22 Nov 2026)", () => {
     await runGrowthDirector(env as any, NOW, { model, fetchImpl: noTrends });
     const get = (id: string) => env.DB.prepare(`SELECT status, next_step, closed_reason FROM owner_open_loops WHERE id = ?`).bind(id).first<any>();
     expect(seen.find((t) => /OLDER WORK/.test(t))).toMatch(/olp_keep1: Engine pieces waiting for pictures/);
-    expect((await get("olp_keep1")).next_step).toMatch(/^Growth Director, \d{4}-\d\d-\d\d: keep\. Christmas porch pieces .* Render the pictures after 6 PM\.$/);
-    expect((await get("olp_change1")).next_step).toMatch(/: change\. Only porch weeks sell before 15 Dec\. Next: Fill the December weeks with porch pieces only\.$/);
+    expect((await get("olp_keep1")).next_step).toMatch(/^Growth Director, \d{4}-\d\d-\d\d: keep\. Christmas porch pieces [^\n]*\nRender the pictures after 6 PM\.$/);
+    expect((await get("olp_change1")).next_step).toMatch(/: change\. Only porch weeks sell before 15 Dec\.\nFill the December weeks with porch pieces only\.$/);
     expect(await get("olp_drop1")).toMatchObject({ status: "closed" });
     expect((await get("olp_drop1")).closed_reason).toMatch(/drop\. No office requests/);
     expect(await get("olp_other1")).toMatchObject({ status: "open", next_step: "Render the pictures after 6 PM." });
     const acts = JSON.parse((await decisions()).find((d) => d.business === "porch-and-party").actions);
     expect(acts.filter((a: any) => a.kind === "linked").map((a: any) => a.verdict)).toEqual(["keep", "change", "drop"]);
-    // A second week's keep replaces the Director's own line, never stacks it.
-    await reading("pnp-requests", "porch-and-party", "requests", "all", 2, dayIdInZone(NOW + 7 * 86_400_000));
-    await runGrowthDirector(env as any, NOW + 7 * 86_400_000, { model, fetchImpl: noTrends });
-    expect(((await get("olp_keep1")).next_step.match(/Growth Director/g) ?? []).length).toBe(1);
     await env.DB.exec("DELETE FROM owner_open_loops WHERE id IN ('olp_keep1','olp_change1','olp_drop1','olp_other1')");
+  }, 60_000);
+
+  const seedRow = (id: string, business = "porch-and-party", owner = "claude", title = "Engine pieces") => env.DB.prepare(`INSERT INTO owner_open_loops (id, title, finish_line, next_step, owner, next_date, business, section, status, source, created_at, updated_at)
+    VALUES (?, ?, 'x', 'Render the pictures after 6 PM.', ?, '2026-11-22', ?, 'not_finished', 'open', 'agent_report', 1, 1)`).bind(id, title, owner, business).run();
+  const getRow = (id: string) => env.DB.prepare(`SELECT status, next_step FROM owner_open_loops WHERE id = ?`).bind(id).first<any>();
+  const week = async (answer: any, t: number) => {
+    await reading("pnp-requests", "porch-and-party", "requests", "all", 2, dayIdInZone(t));
+    const f = fake(answer, () => ({ pass: true, broken: [], why: "" }));
+    await runGrowthDirector(env as any, t, { model: f.model, fetchImpl: noTrends }).catch(() => null);
+    return f.seen;
+  };
+
+  it("a keep with no full stop, or with two sentences, keeps her step intact week after week; a repeated id acts once", async () => {
+    await seedRow("olp_k1"); await seedRow("olp_k2");
+    await brain("porch-and-party", PNP + "- linked to-dos: olp_k1, olp_k2\n");
+    const ans = { ...DECISION, queue: [], proposals: [], linked: [
+      { id: "olp_k1", verdict: "keep", why: "No office requests in 28 days" },
+      { id: "olp_k2", verdict: "keep", why: "Porches sell. Instagram brings the requests." },
+      { id: "olp_k2", verdict: "drop", why: "a second verdict for the same row" },
+    ] };
+    await week(ans, NOW);
+    const w1 = [(await getRow("olp_k1")).next_step, (await getRow("olp_k2")).next_step];
+    await week(ans, NOW + 7 * 86_400_000);
+    const w2 = [(await getRow("olp_k1")).next_step, (await getRow("olp_k2")).next_step];
+    for (const s2 of w2) expect(s2).toMatch(/\nRender the pictures after 6 PM\.$/);
+    expect(w2.map((x) => x.replace(/^Growth Director, [^:]*/, ""))).toEqual(w1.map((x) => x.replace(/^Growth Director, [^:]*/, "")));
+    expect((await getRow("olp_k2")).status).toBe("open");
+    await env.DB.exec("DELETE FROM owner_open_loops WHERE id IN ('olp_k1','olp_k2')");
+  }, 60_000);
+
+  it("another business's row, or her own row, is never shown to the model or changed, even when listed", async () => {
+    await seedRow("olp_lp1", "west-peek-ventures", "claude", "An LP named in a to-do"); await seedRow("olp_hers1", "porch-and-party", "sequoia", "Invoice a customer");
+    await brain("porch-and-party", PNP + "- linked to-dos: olp_lp1, olp_hers1\n");
+    const seen = await week({ ...DECISION, queue: [], proposals: [], linked: [{ id: "olp_lp1", verdict: "drop", why: "x" }, { id: "olp_hers1", verdict: "drop", why: "x" }] }, NOW);
+    expect(seen.join("\n")).not.toMatch(/An LP named|Invoice a customer/);
+    expect(await getRow("olp_lp1")).toEqual({ status: "open", next_step: "Render the pictures after 6 PM." });
+    expect(await getRow("olp_hers1")).toEqual({ status: "open", next_step: "Render the pictures after 6 PM." });
+    await env.DB.exec("DELETE FROM owner_open_loops WHERE id IN ('olp_lp1','olp_hers1')");
+  }, 60_000);
+
+  it("no answer, or an answer with no verdicts, leaves the rows untouched", async () => {
+    await seedRow("olp_q1");
+    await brain("porch-and-party", PNP + "- linked to-dos: olp_q1\n");
+    await week(null, NOW);
+    await week({ ...DECISION, queue: [], proposals: [] }, NOW + 7 * 86_400_000);
+    expect(await getRow("olp_q1")).toEqual({ status: "open", next_step: "Render the pictures after 6 PM." });
+    await env.DB.exec("DELETE FROM owner_open_loops WHERE id = 'olp_q1'");
   }, 60_000);
 });
