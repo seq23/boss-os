@@ -128,6 +128,12 @@ describe("the template door after a first read (#510 F1, F2)", () => {
     expect(await templateMeaningOf(env, "I don't like this, try again")).toBe("try_again");
     expect(await templateMeaningOf(env, "Don't try again, just shorten the opening.")).toBe("change");
     expect(await templateMeaningOf(env, "If the opening is still off, try again?")).toBe("change");
+    // F5: the model quotes her whole sentence; the negation sits in the other clause, so it is still a fresh draft.
+    setFirstReadRungs(says("try_again", "I don't like this, try again"));
+    expect(await templateMeaningOf(env, "I don't like this, try again")).toBe("try_again");
+    // F5: a quote that holds no ask for a new draft is no try again.
+    setFirstReadRungs(says("try_again", "just shorten the opening"));
+    expect(await templateMeaningOf(env, "Don't try again, just shorten the opening.")).toBe("change");
     setFirstReadRungs(down);
     expect(await templateMeaningOf(env, "I don't like this, try again")).toBe("try_again");
     // The first read's answer for the card goes through the same keywords.
@@ -144,6 +150,13 @@ describe("the template door after a first read (#510 F1, F2)", () => {
     await env.DB.prepare(`INSERT INTO morning_digests (day, payload, sent_at, created_at, updated_at) VALUES (?,?,?,?,?)`).bind("2026-10-25", JSON.stringify(payload), Date.now(), Date.now(), Date.now()).run();
     await prospectTemplateFromMail(env, "5: shorten the opening", Date.now(), null, null, firstRead("approved") as any);
     expect((await env.DB.prepare(`SELECT COUNT(*) AS n FROM prospect_templates WHERE status = 'approved'`).first<any>()).n).toBe(0);
+  });
+
+  it("the first read's \"approved\" with no card number approves only on her own standing approval; else she is asked", () => {
+    expect(templateMeaningFromRead(firstRead("approved") as any, null, "approved")).toBe("approve");
+    expect(templateMeaningFromRead(firstRead("approved") as any, null, "Approved, thanks!")).toBe("approve");
+    expect(templateMeaningFromRead(firstRead("approved") as any, null, "don't approve 2, try again on 1")).toBe("unsure");
+    expect(templateMeaningFromRead(firstRead("approved") as any, null, "shorten the opening")).toBe("unsure");
   });
 
   it("model down: \"Don't try again, just shorten the opening.\" is never try again", async () => {

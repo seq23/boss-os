@@ -86,7 +86,14 @@ export function tryAgainStands(words: string): boolean {
     && clausesOf(x.text).some((c) => standingIn(c, TRY_AGAIN_RE, ["NEGATES"]) !== null));
 }
 
-/** A model's try-again quote, judged the same way: in the clause that holds it, and its whole sentence. */
+/**
+ * A model's try-again quote, judged the same way (#510 re-check, F5): its sentence is not held back, and it is judged
+ * by the clause that holds the ask. When her sentence names a fresh draft ("try again", "start over"), the quote must
+ * cover a clause where that phrase stands: a whole-sentence quote of "I don't like this, try again" passes (the
+ * negation sits in another clause), and "just shorten the opening" quoted from "Don't try again, just shorten the
+ * opening." does not (it holds no ask). Only when her sentence names no such phrase (the model read a paraphrase)
+ * must every clause the quote covers be un-negated.
+ */
 export function tryAgainQuoteStands(words: string, quote: string): boolean {
   const q = flat(quote);
   if (!q) return false;
@@ -94,6 +101,7 @@ export function tryAgainQuoteStands(words: string, quote: string): boolean {
     if (!flat(x.text).includes(q) && !q.includes(flat(x.text))) continue;
     if (vetoOf(x.text, null, SENTENCE_SHAPES)) return false;
     const holding = clausesOf(x.text).filter((c) => flat(c).includes(q) || q.includes(flat(c)));
+    if (TRY_AGAIN_RE.test(x.text)) return holding.some((c) => standingIn(c, TRY_AGAIN_RE, ["NEGATES"]) !== null);
     return holding.length === 0 ? !vetoOf(quote, null, ["NEGATES"]) : holding.every((c) => !vetoOf(c, null, ["NEGATES"]));
   }
   return !vetoOf(quote);
@@ -149,7 +157,9 @@ export function templateMeaningFromRead(read: ReplyDecision, card: number | null
   // "approved" may belong to another card or the batch, and never approves this one (F4b). Only a bare
   // "approved" in her own card words does.
   if (card !== null) return templateKeywordMeaning(words);
-  if (read.reply === "approved") return "approve";
+  // Approving sends to prospects: the first read's "approved" approves only when her own words hold an approval that
+  // stands ("approved", "yes", or an approve word no negation, question or condition holds back); else she is asked.
+  if (read.reply === "approved") return APPROVE_RE.test(words.trim()) || stands(words, APPROVE_WORD_RE) ? "approve" : "unsure";
   if (read.reply === "held") return "unsure";
   const kw = templateKeywordMeaning(words);
   return kw === "approve" ? "unsure" : kw;
