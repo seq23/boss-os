@@ -197,16 +197,10 @@ function whyNot(e) {
   return (lines.find((l) => /intercepts pointer events|not stable|outside of the viewport|not visible|not enabled/.test(l)) ?? lines[0]).trim();
 }
 
-/**
- * Tap like a person: Playwright scrolls a control just into view, which can leave it under a fixed tab
- * bar ("intercepts pointer events"); a person scrolls it to the middle and taps. Only then a failure.
- */
+/** Tap like a person. Playwright already re-scrolls a covered control (it tries other alignments), so a
+ * second scroll here added nothing: AP ran without it with no covered control (run 45052767700). */
 async function tap(loc, timeout) {
-  const first = await loc.click({ timeout }).then(() => true, (e) => e);
-  if (first === true) return true;
-  if (!/intercepts pointer events/.test(String(first.message))) return whyNot(first);
-  await loc.evaluate((e) => e.scrollIntoView({ block: "center" })).catch(() => {});
-  return loc.click({ timeout: 3_000 }).then(() => true, whyNot);
+  return loc.click({ timeout }).then(() => true, whyNot);
 }
 
 /** Wait until the screen differs from `before` (up to ms), or a link, dialog or download said it worked. */
