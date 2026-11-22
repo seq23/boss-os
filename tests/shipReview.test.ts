@@ -235,7 +235,7 @@ describe("a message that only shows after a tap is captured, never left unseen",
         <a href="elsewhere.html">Go elsewhere</a>
         <button onclick="document.getElementById('m').hidden=false">Get this kit, $19 once</button>
         <p id="m" hidden style="background:#f00;height:120px;margin:0">Preview: this kit is open for this visit.</p>
-        <button onclick="document.getElementById('all').hidden=false">Get every kit</button>
+        <button onclick="document.getElementById('all').hidden=false;this.textContent='Get every kit (added)';document.body.classList.add('locked')">Get every kit</button>
         <div style="height:1400px">Your files</div>
         <p id="all" hidden style="background:#00f;height:120px;margin:0">Preview: every kit is open for this visit.</p></div>
       ${"<p>filler words for the blank check</p>".repeat(20)}</body></html>`);
