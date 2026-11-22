@@ -204,16 +204,26 @@ describe("the Schedule page", () => {
     expect(jobTitle({ brand: "Example", name: "Example report" })).toBe("Example report");
     expect(jobTitle({ brand: "Example", name: "Example: Report" })).toBe("Example: Report");
     expect(jobTitle({ brand: "Example", name: "Report" })).toBe("Example: Report");
+    expect(jobTitle({ brand: "Authority network", name: "Authority Network Autopilot" })).toBe("Authority Network Autopilot");
+    expect(jobTitle({ brand: "Creator Network", name: "Daily Creator Network" })).toBe("Daily Creator Network");
     expect(jobTitle({ name: "Report" })).toBe("Report");
+    const rows = (JSON.parse(readFileSync(path.join(ROOT, "src/shared/boss/schedule/manifest.json"), "utf8")) as { rows: Array<{ brand?: string; name: string }> }).rows;
+    const branded = rows.filter((r) => r.brand);
+    expect(branded.length).toBeGreaterThan(0);
+    for (const r of branded) {
+      const t = jobTitle(r).toLowerCase(), b = r.brand!.toLowerCase();
+      expect(t.split(b).length - 1, `${r.brand} / ${r.name}`).toBe(1);
+    }
   });
 
   it("says which clock starts each GitHub job: Boss OS's own clock for the Worker-fired rows", () => {
     const rows = (JSON.parse(readFileSync(path.join(ROOT, "src/shared/boss/schedule/manifest.json"), "utf8")) as { rows: Array<{ system: string; trigger: { clock?: string } }> }).rows;
     const worker = rows.filter((r) => r.trigger.clock === "worker");
     expect(worker.length).toBeGreaterThan(0);
-    for (const r of worker) expect(firedBy(r)).toBe(" · started by Boss OS's own clock");
-    expect(firedBy({ system: "github", trigger: {} })).toBe(" · started by GitHub");
-    expect(firedBy({ system: "mac", trigger: {} })).toBe("");
+    const ownClock = firedBy({ system: "github", trigger: { clock: "worker" } });
+    const github = firedBy({ system: "github", trigger: {} });
+    expect(new Set([ownClock, github, ""]).size).toBe(3);
+    for (const r of rows) expect(firedBy(r)).toBe(r.trigger.clock === "worker" ? ownClock : r.system === "github" ? github : "");
   });
 
   it("renders the manifest itself and sits in ☰ More next to the Email Map", () => {

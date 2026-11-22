@@ -76,8 +76,9 @@ export function firedBy(r: { system: string; trigger: { clock?: string } }): str
   return r.system === "github" ? " · started by GitHub" : "";
 }
 
+/** The card title names the brand once: a name that already says it, in any case, stands alone. */
 export function jobTitle({ brand, name }: Pick<ScheduleRow, "brand" | "name">): string {
-  if (!brand || name === brand || name.startsWith(`${brand} `) || name.startsWith(`${brand}:`)) return name;
+  if (!brand || name.toLowerCase().includes(brand.toLowerCase())) return name;
   return `${brand}: ${name}`;
 }
 

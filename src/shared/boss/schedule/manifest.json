@@ -1385,7 +1385,7 @@
     },
     {
       "id": "catchups",
-      "name": "Catch up with",
+      "name": "Who to catch up with",
       "what": "Who is worth a catch-up, only when there is a live reason.",
       "business": "west-peek-ventures",
       "brand": "West Peek Ventures",
