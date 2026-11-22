@@ -12,8 +12,9 @@
  *   - a measure that could not be read is stored with value NULL and `unread: "not read: <reason>"`,
  *     never 0, never last week's number;
  *   - a business whose every measure is unread is `state: "no data"`, and the Director holds it;
- *   - a business with too few visits to judge a format is `state: "too little data"` (under
- *     MIN_VISITS_FOR_TESTS a month), a separate hold.
+ *   - a channel with too few visits to judge a format is held "too little data" (under
+ *     MIN_VISITS_FOR_TESTS a month), a separate hold from "no data"; holds are per channel;
+ *   - a reading older than STALE_DAYS is "not read: stale since <day>".
  *
  * PRIVACY PROMISES BEAT THE COUNT. KeepMyProof promises no analytics (spry brain, 6 Nov 2026): it is
  * counted only from store numbers (RevenueCat), Google's own search report and the in-app "How did you
@@ -96,13 +97,21 @@ export function readingProblems(body, manifest) {
   return out;
 }
 
+/** A reading older than this many days is stale: shown as "not read", never as this week's number. */
+export const STALE_DAYS = 2;
+const dayGap = (a, b) => Math.round((Date.parse(`${b}T12:00:00Z`) - Date.parse(`${a}T12:00:00Z`)) / 86_400_000);
+
 /**
  * The one summary per business, from the newest reading of each measure (and, when given, the
  * readings from about 28 days before). Every reader — Director, page, email — uses this.
- *   { key, label, paused, state: "read" | "no data" | "too little data" | "paused", totals: {kind: n|null},
- *     channels: [{ channel, language, kind, value, before, unread }], unread: [measure ids] }
+ *   { key, label, paused, state: "read" | "no data" | "paused", totals: {kind: n|null},
+ *     channels: [{ measure, channel, language, kind, value, before, unread, hold }], unread: [measure ids] }
+ * A channel's `hold` is the rule for format tests there: "no data" when it was not read,
+ * "too little data" when a visits channel has under MIN_VISITS_FOR_TESTS, else null. A hold is per
+ * channel: a thin Google channel never holds Porch & Party's requests or money.
+ * `today` (YYYY-MM-DD) makes a reading older than STALE_DAYS "not read: stale since <day>".
  */
-export function summarize(manifest, latest, before = []) {
+export function summarize(manifest, latest, before = [], today = null) {
   const prev = new Map(before.map((r) => [r.measure, r]));
   const now = new Map(latest.map((r) => [r.measure, r]));
   return (manifest?.scoreboard?.businesses ?? []).map((b) => {
@@ -110,19 +119,20 @@ export function summarize(manifest, latest, before = []) {
     const ms = (manifest.scoreboard.measures ?? []).filter((m) => m.business === b.key);
     const channels = ms.map((m) => {
       const r = now.get(m.id);
-      return { measure: m.id, label: m.label, channel: m.channel, language: m.language, kind: m.kind, value: r ? r.value : null,
-        before: prev.get(m.id)?.value ?? null, unread: r ? r.unread && r.value === null ? r.unread : null : `${UNREAD_PREFIX}no reading yet` };
+      const stale = r && today && dayGap(r.day, today) > STALE_DAYS;
+      const value = r && !stale ? r.value : null;
+      const unread = !r ? `${UNREAD_PREFIX}no reading yet` : stale ? `${UNREAD_PREFIX}stale since ${r.day}` : r.value === null ? r.unread : null;
+      const hold = value === null ? "no data" : m.kind === "visits" && value < MIN_VISITS_FOR_TESTS ? "too little data" : null;
+      return { measure: m.id, label: m.label, channel: m.channel, language: m.language, kind: m.kind, value, before: prev.get(m.id)?.value ?? null, unread, hold };
     });
     const totals = {};
     for (const k of KINDS) {
       const read = channels.filter((c) => c.kind === k && c.value !== null && c.channel !== "untagged");
-      // An "all" channel is the total; otherwise the channels add up.
+      // An "all" channel is the total; otherwise the channels add up. Nothing read is null, never 0.
       const all = read.find((c) => c.channel === "all");
       totals[k] = all ? all.value : read.length ? read.reduce((a, c) => a + c.value, 0) : null;
     }
-    const readAny = channels.some((c) => c.value !== null);
-    const visits = totals.visits ?? 0;
-    const state = !readAny ? "no data" : visits < MIN_VISITS_FOR_TESTS ? "too little data" : "read";
+    const state = channels.some((c) => c.value !== null) ? "read" : "no data";
     return { key: b.key, label: b.label, paused: null, state, totals, channels, unread: channels.filter((c) => c.value === null).map((c) => c.measure) };
   });
 }

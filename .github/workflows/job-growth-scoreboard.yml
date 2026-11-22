@@ -26,4 +26,4 @@ jobs:
     with:
       job: growth-scoreboard
       timeout: 15
-      command: npm run --silent vault:run -- npm run --silent growth:scoreboard
+      command: bash scripts/ops/duty-run.sh growth-scoreboard.mjs -- npm run --silent vault:run -- npm run --silent growth:scoreboard

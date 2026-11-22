@@ -1,6 +1,7 @@
 import { Hono } from "hono";
 import type { Env, Vars } from "../env";
 import { ok, badRequest } from "../lib/http";
+import { dayIdInZone } from "../../../shared/boss/timezone";
 import manifest from "../../../shared/boss/scorecard/manifest.json";
 import { readingProblems, summarize } from "../../../shared/boss/growth/scoreboard.mjs";
 
@@ -24,7 +25,10 @@ growthRoutes.post("/readings", async (c) => {
   if (body.readings.length > MAX_READINGS) throw badRequest("Too many readings", `At most ${MAX_READINGS}.`);
   const at = Date.now();
   await c.env.DB.batch(body.readings.map((r: any) => c.env.DB.prepare(
-    `INSERT OR REPLACE INTO growth_readings (day, measure, business, kind, channel, language, value, unread, at) VALUES (?,?,?,?,?,?,?,?,?)`,
+    // A same-day re-run replaces the row, except that a failed read never overwrites a good number.
+    `INSERT INTO growth_readings (day, measure, business, kind, channel, language, value, unread, at) VALUES (?,?,?,?,?,?,?,?,?)
+       ON CONFLICT(day, measure) DO UPDATE SET value = excluded.value, unread = excluded.unread, at = excluded.at
+       WHERE excluded.value IS NOT NULL OR growth_readings.value IS NULL`,
   ).bind(body.day, r.measure, r.business, r.kind, r.channel, r.language, r.value, r.unread ?? null, at)));
   return ok(c, { kept: body.readings.length, day: body.day }, 201);
 });
@@ -45,5 +49,5 @@ export async function latestReadings(db: D1Database) {
 
 growthRoutes.get("/", async (c) => {
   const { latest, before, day } = await latestReadings(c.env.DB);
-  return ok(c, { day, businesses: summarize(manifest, latest, before) });
+  return ok(c, { day, businesses: summarize(manifest, latest, before, dayIdInZone(Date.now())) });
 });

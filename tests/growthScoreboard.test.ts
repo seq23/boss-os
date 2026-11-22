@@ -75,17 +75,32 @@ describe("outage: a failed source is 'not read', never 0", () => {
     expect(readingProblems({ day: "2026-11-21", readings: [] }, manifest).join(" ")).toMatch(/no readings/);
     expect(readingProblems({ day: "2026-11-21", readings: [{ measure: m.id, business: m.business, value: 1, unread: "a@b.co" }] }, manifest).join(" ")).toMatch(/address/);
   });
-  it("a business with nothing read is 'no data'; a thin one is 'too little data'", () => {
+  it("a business with nothing read is 'no data'; holds are per channel; unread visits are never 'too little'", () => {
     const pnp = manifest.scoreboard.measures.filter((x: any) => x.business === "porch-and-party");
     const unread = pnp.map((x: any) => toReading(x, { raw: null, error: "NAMED STOP [KEY_MISSING] gone" }, "2026-11-21"));
     expect(summarize(manifest, unread).find((b: any) => b.key === "porch-and-party").state).toBe("no data");
     const thin = pnp.map((x: any) => toReading(x, { raw: x.kind === "visits" ? MIN_VISITS_FOR_TESTS - 1 : 2 }, "2026-11-21"));
     const s = summarize(manifest, thin).find((b: any) => b.key === "porch-and-party");
-    expect(s.state).toBe("too little data");
+    expect(s.state).toBe("read");
     expect(s.totals.requests).toBe(2); // the "all" channel is the total, not the sum of channels
+    expect(s.channels.find((c: any) => c.kind === "visits").hold).toBe("too little data");
+    expect(s.channels.find((c: any) => c.measure === "pnp-requests").hold).toBeNull();
+    // NEGATIVE: visits unread, money read → the visits channel is "no data", never "too little data", and its total is null, never 0.
+    const half = pnp.map((x: any) => toReading(x, x.kind === "visits" ? { raw: null, error: "NAMED STOP [GSC_UNREADABLE] no" } : { raw: 3 }, "2026-11-21"));
+    const h = summarize(manifest, half).find((b: any) => b.key === "porch-and-party");
+    expect(h.channels.find((c: any) => c.kind === "visits").hold).toBe("no data");
+    expect(h.totals.visits).toBeNull();
     const busy = pnp.map((x: any) => toReading(x, { raw: x.kind === "visits" ? MIN_VISITS_FOR_TESTS : 2 }, "2026-11-21"));
-    expect(summarize(manifest, busy).find((b: any) => b.key === "porch-and-party").state).toBe("read");
+    expect(summarize(manifest, busy).find((b: any) => b.key === "porch-and-party").channels.find((c: any) => c.kind === "visits").hold).toBeNull();
     expect(summarize(manifest, []).find((b: any) => b.key === "how-we-know").state).toBe("paused");
+  });
+  it("a stopped job's old reading is 'not read: stale', never this week's number", () => {
+    const m = manifest.scoreboard.measures[0];
+    const old = [toReading(m, { raw: 5 }, "2026-11-14")];
+    const row = summarize(manifest, old, [], "2026-11-21").find((b: any) => b.key === "porch-and-party").channels[0];
+    expect(row.value).toBeNull();
+    expect(row.unread).toBe("not read: stale since 2026-11-14");
+    expect(summarize(manifest, old, [], "2026-11-15").find((b: any) => b.key === "porch-and-party").channels[0].value).toBe(5);
   });
 });
 

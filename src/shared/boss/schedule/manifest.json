@@ -4852,6 +4852,7 @@
       "emails": false,
       "heavy": false,
       "trigger": {
+        "duty": "duty_growth_scoreboard",
         "repo": "boss-os",
         "file": ".github/workflows/job-growth-scoreboard.yml",
         "clock": "worker",

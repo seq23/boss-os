@@ -6,4 +6,5 @@ export function scoreboardProblems(manifest: any): string[];
 export function activeMeasures(manifest: any): any[];
 export function toReading(m: any, result: any, day: string): any;
 export function readingProblems(body: any, manifest: any): string[];
-export function summarize(manifest: any, latest: any[], before?: any[]): any[];
+export const STALE_DAYS: number;
+export function summarize(manifest: any, latest: any[], before?: any[], today?: string | null): any[];

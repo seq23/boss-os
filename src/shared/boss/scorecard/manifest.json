@@ -2866,7 +2866,7 @@
         "reader": "d1",
         "params": {
           "db": "pnp-admin",
-          "sql": "SELECT COUNT(*) AS n FROM requests WHERE is_test = 0 AND 1 = 1 AND datetime(submitted_at) >= datetime(:since_iso)",
+          "sql": "SELECT COUNT(*) AS n FROM requests WHERE is_test = 0 AND datetime(submitted_at) >= datetime(:since_iso)",
           "days": 28
         }
       },
