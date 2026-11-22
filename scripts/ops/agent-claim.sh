@@ -26,22 +26,28 @@
 # peeks, and if something is waiting refreshes both before claiming. A file written in the last ten minutes is not
 # refetched, which bounds feed traffic if an unclaimable run is ever stuck waiting.
 #
-# ─── Never two at once, and the lock is ownership-safe (review of #61) ──────
+# ─── Never two at once: a lock the KERNEL holds (22 Nov 2026) ─────────────────
 #
 # A briefing can run for fifteen minutes; a second Claude Code or Codex session on the same Mac while the first works is
-# the failure. The lock is a directory holding "<pid>|<stamp>" (see started_of: the stamp guards against a reused PID).
-# EVERY change to the lock happens inside a short-lived GATE directory, so two contenders cannot interleave a check with a
-# removal: a contender that finds a dead or empty lock takes it over INSIDE the gate, where nobody else is looking, and
-# the release removes the lock only if it is still its own. A gate left by a process that died inside it expires after a
-# minute. (Residual: two contenders that both arrive more than a minute after a crash mid-gate could each clear the stale
-# gate; that needs a crash inside a few-millisecond window and a simultaneous pair. The cost would be one overlap, not a loss.)
+# the failure. The lock is flock(2) on one file, taken non-blocking on fd 9, which this shell keeps open until it exits:
+# a tick that finds it held exits silently, and the kernel drops it the moment the holder ends, however it ends (normal
+# exit, crash, kill -9). Nothing is left behind to judge stale, so there is no holder record, no PID, no start stamp
+# and no takeover. The children never inherit fd 9 (`9>&-` on each), so a process a run leaves behind cannot hold
+# every later tick out.
+#
+# Why not `mkdir` any more: the lock was a directory made with the `mkdir` BINARY, which is only a mutex if that binary
+# is one atomic mkdir(2). The ubuntu-26.04 runners ship uutils coreutils (`mkdir (uutils coreutils) 0.10.0`), which
+# checks for the path and then creates it, so several racers all "win": 8 bare `mkdir` racers on one path had 2-6
+# winners in 14 of 800 runs there, and this lock let two claims run at once (main CI 21 Nov 2026, run 44989669473,
+# "two claims ran at the same moment", green on a rerun). Every earlier patch here (the gate, the holder stamp, the
+# reused-PID guard) sat on that one assumption. `perl` takes the lock because macOS ships no `flock` binary and both her
+# Mac and Linux ship perl; perl's flock is flock(2) on both, and the lock lives on the open file, so it stays held
+# after perl exits for as long as this shell holds fd 9.
 #
 # BOSS_OS_CLAIM_HOUR overrides the clock for the hour guard, so the guard is testable on any machine at any time.
 set -u
 
 REPO="$(cd "$(dirname "$0")/../.." && pwd)"
-LOCK_DIR="${BOSS_OS_HOME:-$HOME/.boss-os}/agent-claim.lock"
-GATE_DIR="$LOCK_DIR.gate"
 WORKSPACE="${BOSS_OS_REPORT_WORKSPACE:-$HOME/.boss-os/reports}"
 FRESH_MINUTES=10
 
@@ -56,84 +62,19 @@ if [ "$mode" = "poll" ]; then
   fi
 fi
 
-# Who a PID is, as a stamp the WALL CLOCK CANNOT MOVE (7 Nov 2026, CI run 42417606391 on #327, and #328: two claims at
-# once). The stamp used to be `ps -o lstart`. On Linux that is DERIVED as btime + ticks, and btime moves whenever the clock
-# is stepped (NTP, VM time sync; reproduced by stepping the clock 0.3 s), so a live holder's stamp changed between the write
-# and a contender's check, the holder looked dead, and its running claim was taken over. No stamp here reads the clock:
-#   Linux: field 22 of /proc/<pid>/stat, clock ticks since boot, fixed for the life of the process (and a reused PID gets a
-#          new one). The comm field can hold spaces and parens, so fields are counted after the LAST ")".
-#   macOS (her Mac, launchd; no /proc): whether the PID is running this wrapper. A dead holder's PID reused by any other
-#          program is not "claim-wrapper", so the lock is taken over; reused by another copy of this wrapper (a contender
-#          for the same few milliseconds) it reads as alive, which skips one tick and never overlaps.
-started_of() {
-  local stat cmd
-  if stat="$(cat "/proc/$1/stat" 2>/dev/null)" && [ -n "$stat" ]; then
-    stat="${stat##*) }"
-    set -- $stat
-    echo "ticks:${20:-}"
-    return
-  fi
-  cmd="$(ps -o command= -p "$1" 2>/dev/null)"
-  case "$cmd" in
-    *agent-claim.sh*) echo "claim-wrapper" ;;
-    *) echo "other:${cmd:-gone}" ;;
-  esac
-}
-
-# Is the holder recorded in the lock still the process that wrote it? An empty or unreadable record is NOT alive.
-holder_alive() {
-  local rec pid started
-  rec="$(cat "$LOCK_DIR/holder" 2>/dev/null || true)"
-  pid="${rec%%|*}"
-  started="${rec#*|}"
-  [ -n "$pid" ] || return 1
-  kill -0 "$pid" 2>/dev/null || return 1
-  [ -z "$started" ] && return 0
-  [ "$(started_of "$pid")" = "$started" ]
-}
-
-have_gate=0
-have_lock=0
-release() {
-  [ "$have_gate" = 1 ] && rmdir "$GATE_DIR" 2>/dev/null
-  if [ "$have_lock" = 1 ]; then
-    # Remove the lock only if it is still ours.
-    rec="$(cat "$LOCK_DIR/holder" 2>/dev/null || true)"
-    [ "${rec%%|*}" = "$$" ] && rm -rf "$LOCK_DIR"
-  fi
-}
-trap release EXIT
-
-mkdir -p "$(dirname "$LOCK_DIR")"
-
-# Take the gate: wait briefly for another contender's few-millisecond critical section.
-for _ in $(seq 1 30); do
-  if mkdir "$GATE_DIR" 2>/dev/null; then have_gate=1; break; fi
-  sleep 0.1
-done
-if [ "$have_gate" != 1 ]; then
-  # A gate older than a minute belongs to a process that died inside it.
-  if [ -n "$(find "$GATE_DIR" -maxdepth 0 -mmin +1 2>/dev/null)" ]; then
-    rm -rf "$GATE_DIR"
-    mkdir "$GATE_DIR" 2>/dev/null && have_gate=1
-  fi
+LOCK_FILE="${BOSS_OS_HOME:-$HOME/.boss-os}/agent-claim.flock"
+mkdir -p "$(dirname "$LOCK_FILE")"
+if ! exec 9>>"$LOCK_FILE"; then
+  echo "agent-claim: NAMED STOP [CLAIM_LOCK_UNAVAILABLE] cannot open $LOCK_FILE; no claim this tick." >&2
+  exit 3
 fi
-[ "$have_gate" = 1 ] || exit 0
-
-# INSIDE THE GATE: acquire, taking over a dead or empty lock. No one else can look at or change the lock until the gate is released.
-if mkdir "$LOCK_DIR" 2>/dev/null; then
-  have_lock=1
-elif holder_alive; then
-  :                              # a claim is already running; this tick has nothing to add
-else
-  rm -rf "$LOCK_DIR"             # the holder is gone (or never wrote itself down): a crash left the lock behind
-  mkdir "$LOCK_DIR" 2>/dev/null && have_lock=1
-fi
-if [ "$have_lock" = 1 ]; then
-  echo "$$|$(started_of $$)" > "$LOCK_DIR/holder"
-fi
-rmdir "$GATE_DIR" 2>/dev/null && have_gate=0
-[ "$have_lock" = 1 ] || exit 0
+perl -MFcntl=:flock -e 'open(my $fh, ">&=", 9) or exit 2; flock($fh, LOCK_EX | LOCK_NB) or exit 1; exit 0'
+case $? in
+  0) ;;                          # ours until this shell exits
+  1) exit 0 ;;                   # a claim is already running; this tick has nothing to add
+  *) echo "agent-claim: NAMED STOP [CLAIM_LOCK_UNAVAILABLE] perl could not take the lock on $LOCK_FILE; no claim this tick." >&2
+     exit 3 ;;
+esac
 
 cd "$REPO" || exit 0
 
@@ -142,17 +83,17 @@ if [ "$mode" = "poll" ]; then
   # THE SERVICE PASS (docs/SERVICE_RULES.md, 6 Oct 2026): keys she emailed into the vault, DNS records
   # re-checked, Drive folders loaded. Cheap (a few HTTP calls), so it runs on every poll tick BEFORE the
   # peek, whether or not a run is waiting, and its outcome never stops the claim. Logged, never silent.
-  npm run --silent vault:run -- node scripts/ops/service-tick.mjs >>"${BOSS_OS_HOME:-$HOME/.boss-os}/service-tick.log" 2>&1 || true
+  npm run --silent vault:run -- node scripts/ops/service-tick.mjs 9>&- >>"${BOSS_OS_HOME:-$HOME/.boss-os}/service-tick.log" 2>&1 || true
 
-  npm run --silent vault:run -- node scripts/sync-agent/agent.mjs peek >/dev/null 2>&1 || exit 0
+  npm run --silent vault:run -- node scripts/sync-agent/agent.mjs peek 9>&- >/dev/null 2>&1 || exit 0
 
   # Something is waiting: refresh the briefing's data before the claim, as the fixed-time chain does. A file written in the last
   # FRESH_MINUTES is not refetched. `;` between the steps: a failing snapshot must not stop the claim.
   if [ -z "$(find "$WORKSPACE/SKY.json" -mmin -"$FRESH_MINUTES" 2>/dev/null)" ]; then
-    npm run --silent vault:run -- node scripts/ops/sky-snapshot.mjs
+    npm run --silent vault:run -- node scripts/ops/sky-snapshot.mjs 9>&-
   fi
   if [ -z "$(find "$WORKSPACE/MARKETS.json" -mmin -"$FRESH_MINUTES" 2>/dev/null)" ]; then
-    node scripts/ops/market-snapshot.mjs
+    node scripts/ops/market-snapshot.mjs 9>&-
   fi
 fi
 
@@ -160,7 +101,7 @@ fi
 # was "blocked: missing PROPERTIES.json" and delivered zero rows). Rewritten when it is over a day old;
 # `;` so a failed snapshot never stops the claim (the run then says what it is missing, and its floor fails it).
 if [ -z "$(find "${BOSS_OS_LINKS_WORKSPACE:-$HOME/.boss-os/links}/PROPERTIES.json" -mmin -1440 2>/dev/null)" ]; then
-  npm run --silent vault:run -- node scripts/ops/properties-snapshot.mjs >>"${BOSS_OS_HOME:-$HOME/.boss-os}/properties-snapshot.log" 2>&1 || true
+  npm run --silent vault:run -- node scripts/ops/properties-snapshot.mjs 9>&- >>"${BOSS_OS_HOME:-$HOME/.boss-os}/properties-snapshot.log" 2>&1 || true
 fi
 
-npm run --silent vault:run -- node scripts/sync-agent/agent.mjs work-once
+npm run --silent vault:run -- node scripts/sync-agent/agent.mjs work-once 9>&-

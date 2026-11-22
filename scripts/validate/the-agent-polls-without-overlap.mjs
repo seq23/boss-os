@@ -7,9 +7,11 @@
  * `scripts/ops/agent-claim.sh --poll` every 300 seconds. Two things must stay true or the cure is worse than the
  * wait, and this proves both over the REAL wrapper under real bash with a stub `npm` (no CLI starts, nothing is claimed):
  *
- *   1. IT NEVER OVERLAPS. The fixed-time job and the poll both go through the wrapper, which takes a lock holding its PID. A
- *      live holder makes the next tick exit silently (a briefing runs up to fifteen minutes; a second Claude Code or Codex
- *      session on the same Mac while the first works is the failure); a dead holder is a crash and is taken over.
+ *   1. IT NEVER OVERLAPS. The fixed-time job and the poll both go through the wrapper, which takes a kernel lock (flock on
+ *      fd 9). A live holder makes the next tick exit silently (a briefing runs up to fifteen minutes; a second Claude Code
+ *      or Codex session on the same Mac while the first works is the failure); a holder that dies, even by kill -9, frees
+ *      it at once; a child the run leaves behind never holds it; and the lock never trusts the `mkdir` binary, which is
+ *      not atomic on the ubuntu-26.04 runners (uutils; main red 21 Nov 2026, run 44989669473).
  *   2. IT STAYS IN THE WAKING DAY. Outside 06:00-22:00 the poll does nothing; the fixed job is not restricted.
  *   3. IT PEEKS BEFORE IT DOES ANYTHING COSTLY, AND THE BRIEFING'S DATA IS FRESH BEFORE THE CLAIM (review of #61). An idle poll is one
  *      read and fetches nothing from any feed; when a run is waiting it refreshes SKY.json and MARKETS.json (unless written in the
@@ -67,8 +69,11 @@ function stubEnv(root) {
   // root, so the first write is the only one needed.
   if (existsSync(join(bin, "npm")) && existsSync(join(bin, "node"))) return out;
   // `npm` stands in for `npm run --silent vault:run -- node scripts/...` (peek, work-once, sky-snapshot), `node` for the market snapshot.
-  // Every call is logged in order. `peek` answers STUB_PEEK_RC (0 = something is waiting); `work-once` can hold for STUB_HOLD seconds,
-  // standing in for a run in progress, and can overwrite the lock's record (STUB_REWRITE_HOLDER) to prove the release is ownership-safe.
+  // Every call is logged in order. `peek` answers STUB_PEEK_RC (0 = something is waiting); `work-once` holds until the TEST
+  // releases it (STUB_RELEASE) or for STUB_HOLD seconds, and with STUB_LINGER leaves a background child behind.
+  //
+  // Overlap is detected with bash's own noclobber (O_CREAT|O_EXCL in the shell), never the `mkdir` binary: on the
+  // ubuntu-26.04 runners `mkdir` is uutils, which is not atomic (22 Nov 2026), so a mkdir marker could miss a real overlap.
   writeFileSync(
     join(bin, "npm"),
     `#!/bin/bash
@@ -76,9 +81,11 @@ echo "npm $*" >> "${log}"
 case "$*" in
   *"agent.mjs peek"*) exit "\${STUB_PEEK_RC:-0}" ;;
   *"agent.mjs work-once"*)
-    if [ -n "\${STUB_REWRITE_HOLDER:-}" ]; then echo "2147483646|never" > "\${BOSS_OS_HOME}/agent-claim.lock/holder"; fi
-    mkdir "\${BOSS_OS_HOME}/stub-running" 2>/dev/null || echo "OVERLAP" >> "${log}"
+    ( set -C; : > "\${BOSS_OS_HOME}/stub-running" ) 2>/dev/null || echo "OVERLAP" >> "${log}"
     [ -n "\${STUB_RELEASE:-}" ] && [ -e "\${STUB_RELEASE}" ] && echo "AFTER_RELEASE" >> "${log}"
+    echo "HOLDING" >> "${log}"
+    # A child the run leaves behind, holding every fd the run had (as a detached helper would).
+    if [ -n "\${STUB_LINGER:-}" ]; then sleep 30 </dev/null >/dev/null 2>&1 & echo "$!" > "\${STUB_LINGER}"; fi
     # A hold the TEST ends (STUB_RELEASE: a file it creates once the contenders are done), never a fixed number of
     # seconds a loaded runner can outlast (15 Nov 2026, main run 43693209796: "the real wrapper behaves" red, then
     # green on a rerun with nothing changed). Bounded at 60 s so a broken lock still ends and is reported.
@@ -87,7 +94,7 @@ case "$*" in
     else
       sleep "\${STUB_HOLD:-0}"
     fi
-    rmdir "\${BOSS_OS_HOME}/stub-running" 2>/dev/null ;;
+    rm -f "\${BOSS_OS_HOME}/stub-running" ;;
 esac
 exit 0
 `,
@@ -112,6 +119,26 @@ function runWrapper(wrapperPath, root, args, extraEnv = {}) {
   return spawnSync("bash", [wrapperPath, ...args], { env: envFor(root, extraEnv), encoding: "utf8" });
 }
 
+/**
+ * A `mkdir` with the race the ubuntu-26.04 runners' uutils mkdir has (22 Nov 2026, run 44989669473): it looks for the
+ * path, and only then creates it, so racers that look in the same window all succeed. Put first on PATH, it makes that
+ * race certain on any machine (her Mac's BSD mkdir included), so a lock that trusts the `mkdir` binary fails every time.
+ */
+function racyMkdirBin(root) {
+  const dir = join(root, "racybin");
+  mkdirSync(dir, { recursive: true });
+  const real = spawnSync("sh", ["-c", "command -v mkdir"], { encoding: "utf8" }).stdout.trim() || "/bin/mkdir";
+  writeFileSync(join(dir, "mkdir"), `#!/bin/bash
+for a in "$@"; do [ "$a" = "-p" ] && exec "${real}" "$@"; done
+for a in "$@"; do case "$a" in -*) ;; *) d="$a" ;; esac; done
+if [ -e "$d" ]; then echo "mkdir: $d: File exists" >&2; exit 1; fi
+sleep 0.3
+exec "${real}" -p "$d"
+`);
+  chmodSync(join(dir, "mkdir"), 0o755);
+  return dir;
+}
+
 /** Problems in the wrapper's behaviour, over the file at `wrapperPath`. */
 export async function wrapperProblems(wrapperPath) {
   const out = [];
@@ -129,13 +156,16 @@ export async function wrapperProblems(wrapperPath) {
     }
   }
   const fresh = () => mkdtempSync(join(tmpdir(), "boss-claim-"));
-  const lockOf = (root) => join(root, "home", "agent-claim.lock");
+  const homeOf = (root) => join(root, "home");
   const logOf = (root) => join(root, "calls.log");
   const touchAgo = (path, minutesAgo) => {
     mkdirSync(dirname(path), { recursive: true });
     writeFileSync(path, "{}");
     const t = new Date(Date.now() - minutesAgo * 60_000);
     utimesSync(path, t, t);
+  };
+  const waitForClaims = async (root, n) => {
+    for (let i = 0; i < 200 && claimsIn(logOf(root)) < n; i++) await new Promise((r) => setTimeout(r, 50));
   };
 
   // 1. The poll only runs in the waking day: 06:00 in, 22:00 out; "08" is not read as octal. Peek answers "waiting" here.
@@ -144,18 +174,20 @@ export async function wrapperProblems(wrapperPath) {
     runWrapper(wrapperPath, root, ["--poll"], { BOSS_OS_CLAIM_HOUR: hour });
     const n = claimsIn(logOf(root));
     if (n !== expected) out.push(`--poll at hour ${hour}: expected ${expected} claim(s), saw ${n}.`);
-    if (existsSync(lockOf(root)) || existsSync(`${lockOf(root)}.gate`)) out.push(`--poll at hour ${hour}: a lock or gate was left behind.`);
     rmSync(root, { recursive: true, force: true });
   }
 
-  // 2. The fixed-time call claims at ANY hour, and does NOT peek or refresh (its own chain already did).
+  // 2. The fixed-time call claims at ANY hour, and does NOT peek or refresh (its own chain already did). A finished run
+  // releases the lock: the next call claims too.
   {
     const root = fresh();
-    runWrapper(wrapperPath, root, [], { BOSS_OS_CLAIM_HOUR: "03" });
+    const first = runWrapper(wrapperPath, root, [], { BOSS_OS_CLAIM_HOUR: "03" });
     const c = calls(logOf(root));
     if (claimsIn(logOf(root)) !== 1) out.push(`The fixed-time call at 03:00 should claim once, saw ${claimsIn(logOf(root))}.`);
+    if (first.status !== 0) out.push(`A normal fixed-time claim exited ${first.status}: ${first.stderr.trim()}`);
     if (c.some((l) => /peek|sky-snapshot|market-snapshot/.test(l))) out.push("The fixed-time call peeked or refreshed the data; its own chain does that.");
-    if (existsSync(lockOf(root))) out.push("The lock was not released after a normal run.");
+    runWrapper(wrapperPath, root, [], { BOSS_OS_CLAIM_HOUR: "03" });
+    if (claimsIn(logOf(root)) !== 2) out.push("The lock was not released after a normal run: the next call could not claim.");
     rmSync(root, { recursive: true, force: true });
   }
 
@@ -202,80 +234,103 @@ export async function wrapperProblems(wrapperPath) {
     rmSync(root2, { recursive: true, force: true });
   }
 
-  // 6. A live holder makes the next tick exit WITHOUT claiming: two agents never run at once.
+  // 6. A live holder makes the next tick exit WITHOUT claiming: two agents never run at once. When it finishes, the next tick claims.
   {
     const root = fresh();
     const release = join(root, "release");
     const first = spawn("bash", [wrapperPath], { env: envFor(root, { STUB_RELEASE: release }), stdio: "ignore" });
-    // The close listener is attached HERE, in the same tick as the spawn. 2 Oct 2026, CI run
-    // 37017877746: it was attached after the holder wait below, and a mutant that never writes
-    // `holder` (the "nolock" self-test) ran its 3 s hold and closed while that wait was still
-    // polling; the close event fired with nobody listening, the later await never settled, and
-    // Node exited 13 ("unsettled top-level await") — main red on a workflow-only merge.
+    // The close listener is attached HERE, in the same tick as the spawn (2 Oct 2026, CI run 37017877746: attached later,
+    // a fast mutant closed with nobody listening and Node exited 13, "unsettled top-level await").
     const firstClosed = new Promise((r) => first.on("close", r));
-    // Wait until `first` has RECORDED its claim (the stub logs `work-once`, then holds STUB_HOLD seconds), so the
-    // second tick below provably runs inside the hold. Waiting for `holder` alone (as before 2 Oct 2026) left a
-    // window — holder written, the two snapshot stubs still starting, claim not yet logged — in which a loaded
-    // machine read "0 claims recorded (expected 1)" against the real, correct wrapper.
-    for (let i = 0; i < 100 && claimsIn(logOf(root)) < 1; i++) await new Promise((r) => setTimeout(r, 50));
+    // Wait until `first` has RECORDED its claim, so the second tick below provably runs inside the hold.
+    await waitForClaims(root, 1);
     const second = runWrapper(wrapperPath, root, ["--poll"], { BOSS_OS_CLAIM_HOUR: "14" });
     if (claimsIn(logOf(root)) !== 1) out.push(`While one claim was running, a second tick started another: ${claimsIn(logOf(root))} claims recorded (expected 1).`);
     if (second.status !== 0) out.push(`A tick that finds a live holder should exit 0 silently, exited ${second.status}.`);
     writeFileSync(release, "");
     await firstClosed;
-    if (existsSync(lockOf(root))) out.push("The lock was not released when the holder finished.");
-    rmSync(root, { recursive: true, force: true });
-  }
-
-  // 7. A lock whose holder is dead, or EMPTY (a crash between mkdir and writing itself down), is taken over; the lock is cleaned up.
-  for (const [label, setup] of [
-    ["a dead holder", (dir) => writeFileSync(join(dir, "holder"), "2147483646|Thu Jan  1 00:00:00 1970\n")],
-    ["a holder record that is empty", (dir) => writeFileSync(join(dir, "holder"), "")],
-    ["a lock with no record at all", () => {}],
-  ]) {
-    const root = fresh();
-    mkdirSync(lockOf(root), { recursive: true });
-    setup(lockOf(root));
     runWrapper(wrapperPath, root, ["--poll"], { BOSS_OS_CLAIM_HOUR: "14" });
-    if (claimsIn(logOf(root)) !== 1) out.push(`A lock left by ${label} blocked the claim instead of being taken over.`);
-    if (existsSync(lockOf(root))) out.push(`The lock taken over from ${label} was not released.`);
+    if (claimsIn(logOf(root)) !== 2) out.push("The lock was not released when the holder finished: the next tick could not claim.");
     rmSync(root, { recursive: true, force: true });
   }
 
-  // 8. SIMULTANEOUS CONTENDERS (review of #61): eight ticks at the same instant, on a free lock and on a dead one, claim exactly ONCE.
-  for (const [label, prepare] of [
-    ["a free lock", () => {}],
-    ["a lock left by a dead process", (root) => { mkdirSync(lockOf(root), { recursive: true }); writeFileSync(join(lockOf(root), "holder"), "2147483646|Thu Jan  1 00:00:00 1970\n"); }],
+  // 7. A HOLDER THAT DIES (kill -9 mid-claim: no exit trap, no clean-up) does not hold the next tick out, and nothing an
+  // older wrapper or a crash left on disk blocks a claim: an old lock directory whose record names a LIVE process (this
+  // validator), one with an empty record, and a lock file with nobody holding it.
+  {
+    const root = fresh();
+    const release = join(root, "release");
+    const first = spawn("bash", [wrapperPath], { env: envFor(root, { STUB_RELEASE: release }), stdio: "ignore", detached: true });
+    const firstClosed = new Promise((r) => first.on("close", r));
+    await waitForClaims(root, 1);
+    try { process.kill(-first.pid, "SIGKILL"); } catch { /* already gone */ }
+    await firstClosed;
+    rmSync(join(homeOf(root), "stub-running"), { force: true }); // the killed stub's own marker, not the wrapper's
+    runWrapper(wrapperPath, root, ["--poll"], { BOSS_OS_CLAIM_HOUR: "14" });
+    if (claimsIn(logOf(root)) !== 2) out.push(`A holder killed mid-claim (kill -9) still held the next tick out: ${claimsIn(logOf(root))} claims (expected 2).`);
+    rmSync(root, { recursive: true, force: true });
+  }
+  for (const [label, setup] of [
+    ["an old lock directory naming a live process", (home) => { mkdirSync(join(home, "agent-claim.lock"), { recursive: true }); writeFileSync(join(home, "agent-claim.lock", "holder"), `${process.pid}|Thu Jan  1 00:00:00 1970\n`); }],
+    ["an old lock directory with an empty record", (home) => { mkdirSync(join(home, "agent-claim.lock"), { recursive: true }); writeFileSync(join(home, "agent-claim.lock", "holder"), ""); }],
+    ["a lock file nobody holds", (home) => { mkdirSync(home, { recursive: true }); writeFileSync(join(home, "agent-claim.flock"), "left by a crash\n"); }],
   ]) {
     const root = fresh();
-    prepare(root);
-    // The holder holds until the other seven have exited (or 15 s), so no contender, however late a loaded runner
+    setup(homeOf(root));
+    runWrapper(wrapperPath, root, ["--poll"], { BOSS_OS_CLAIM_HOUR: "14" });
+    if (claimsIn(logOf(root)) !== 1) out.push(`${label[0].toUpperCase()}${label.slice(1)} blocked the claim.`);
+    rmSync(root, { recursive: true, force: true });
+  }
+
+  // 8. SIMULTANEOUS CONTENDERS (review of #61): eight ticks at the same instant claim exactly ONCE: on a free lock, on a lock
+  // file a crash left, and with a `mkdir` that is not atomic first on PATH (the 21 Nov 2026 main red, run 44989669473: the
+  // runners' uutils mkdir let two of eight contenders "create" the same lock directory, so two claims ran at once).
+  for (const [label, prepare] of [
+    ["a free lock", () => ({})],
+    ["a lock file a crash left", (root) => { mkdirSync(homeOf(root), { recursive: true }); writeFileSync(join(homeOf(root), "agent-claim.flock"), ""); return {}; }],
+    ["a free lock with a non-atomic mkdir (the runners' uutils race)", (root) => ({ PATH: `${racyMkdirBin(root)}:${stubEnv(root).bin}:${process.env.PATH}` })],
+  ]) {
+    const root = fresh();
+    const extra = prepare(root);
+    // The holder holds until the other seven have exited (or 45 s), so no contender, however late a loaded runner
     // starts it, can find the claim already finished: a second claim then means the lock failed.
     const release = join(root, "release");
-    const procs = Array.from({ length: 8 }, () => spawn("bash", [wrapperPath, "--poll"], { env: envFor(root, { BOSS_OS_CLAIM_HOUR: "14", STUB_RELEASE: release }), stdio: "ignore" }));
+    const procs = Array.from({ length: 8 }, () => spawn("bash", [wrapperPath, "--poll"], { env: envFor(root, { BOSS_OS_CLAIM_HOUR: "14", STUB_RELEASE: release, ...extra }), stdio: "ignore" }));
     let closed = 0;
-    // The cap only ends a broken run; it is not the normal release. If it fires (a runner so loaded that a contender had
-    // not even started in 45 s), a tick that starts AFTER the first claim finished may claim once more: that is the lock
-    // working, not two agents at once (main runs 43693209796 and 43780957679, 15 Nov 2026). Such claims are marked
-    // AFTER_RELEASE by the stub and do not count; any claim that starts while the first is held still fails.
+    // The cap only ends a broken run. If it fires, a tick that starts AFTER the first claim finished may claim once more:
+    // that is the lock working (main runs 43693209796 and 43780957679, 15 Nov 2026). Such claims are marked AFTER_RELEASE
+    // by the stub and do not count; any claim that starts while the first is held still fails.
     const cap = setTimeout(() => writeFileSync(release, ""), 45_000);
-    await Promise.all(procs.map((p) => new Promise((r) => p.on("close", () => { if (++closed === 7) writeFileSync(release, ""); r(); }))));
+    // Seven exits release the holder only once it is HOLDING (past its AFTER_RELEASE look): a busy tick exits at once, so the seven can all be
+    // gone before the winner has even reached its claim, and a release written then would mark the one real claim late.
+    // A second claim HOLDING already decides the case (the lock failed), so it releases at once instead of waiting out the cap.
+    const poll = setInterval(() => {
+      if ((closed >= 7 && calls(logOf(root)).includes("HOLDING")) || calls(logOf(root)).filter((l) => l === "HOLDING").length >= 2) { clearInterval(poll); writeFileSync(release, ""); }
+    }, 20);
+    await Promise.all(procs.map((p) => new Promise((r) => p.on("close", () => { closed++; r(); }))));
+    clearInterval(poll);
     clearTimeout(cap);
-    // The hold outlasts the 3 s gate wait, so a contender a slow runner starts late still finds a LIVE holder: a second
-    // claim then means the lock failed, not that the first run had already finished (the CI flake of 6 Nov 2026, #307).
     if (calls(logOf(root)).includes("OVERLAP")) out.push(`Eight simultaneous ticks on ${label}: two claims ran at the same moment.`);
     const late = calls(logOf(root)).filter((l) => l === "AFTER_RELEASE").length;
     const n = claimsIn(logOf(root)) - late;
     if (n !== 1) out.push(`Eight simultaneous ticks on ${label} produced ${n} claims while the first was held (expected exactly 1): two agents ran at once.`);
-    if (existsSync(lockOf(root)) || existsSync(`${lockOf(root)}.gate`)) out.push(`Eight simultaneous ticks on ${label} left a lock or gate behind.`);
     rmSync(root, { recursive: true, force: true });
   }
 
-  // 10. A LIVE HOLDER STAYS LIVE WHEN THE WALL CLOCK STEPS (7 Nov 2026, CI run 42417606391 on #327, and #328: "two claims
-  // ran at the same moment"). On Linux `ps -o lstart` is btime + ticks, and btime moves when NTP or VM time sync steps the
-  // clock, so the holder's recorded start stopped matching and a contender took over a running claim. A `ps` whose lstart
-  // answer moves on every call (everything else goes to the real ps) stands in for the step, on Linux AND on her Mac:
-  // the holder's identity must come from something the clock cannot move.
+  // 9. A CHILD THE RUN LEAVES BEHIND does not hold every later tick out: the lock is the wrapper's alone, never inherited.
+  {
+    const root = fresh();
+    const linger = join(root, "linger.pid");
+    runWrapper(wrapperPath, root, [], { STUB_LINGER: linger });
+    runWrapper(wrapperPath, root, ["--poll"], { BOSS_OS_CLAIM_HOUR: "14" });
+    if (claimsIn(logOf(root)) !== 2) out.push("A background child the run left behind held the lock: the next tick could not claim (the lock must not be inherited).");
+    try { process.kill(Number(readFileSync(linger, "utf8").trim()), "SIGKILL"); } catch { /* already gone */ }
+    rmSync(root, { recursive: true, force: true });
+  }
+
+  // 10. A LIVE HOLDER STAYS LIVE WHEN THE WALL CLOCK STEPS (7 Nov 2026, CI run 42417606391 on #327, and #328). A `ps` whose
+  // lstart answer moves on every call (everything else goes to the real ps) stands in for an NTP step: nothing about who
+  // holds the lock may come from the clock.
   {
     const root = fresh();
     const shift = join(root, "shiftbin");
@@ -294,31 +349,25 @@ esac
     const release = join(root, "release");
     const first = spawn("bash", [wrapperPath], { env: envFor(root, { PATH, STUB_RELEASE: release }), stdio: "ignore" });
     const firstClosed = new Promise((r) => first.on("close", r));
-    for (let i = 0; i < 100 && claimsIn(logOf(root)) < 1; i++) await new Promise((r) => setTimeout(r, 50));
+    await waitForClaims(root, 1);
     runWrapper(wrapperPath, root, ["--poll"], { PATH, BOSS_OS_CLAIM_HOUR: "14" });
     writeFileSync(release, "");
     await firstClosed;
-    if (calls(logOf(root)).includes("OVERLAP") || claimsIn(logOf(root)) !== 1) out.push(`On ${process.platform}, a live holder was taken over when the wall clock stepped (its ps start time moved): ${claimsIn(logOf(root))} claims (expected 1).`);
+    if (calls(logOf(root)).includes("OVERLAP") || claimsIn(logOf(root)) !== 1) out.push(`On ${process.platform}, a live holder was taken over when the wall clock stepped: ${claimsIn(logOf(root))} claims (expected 1).`);
     rmSync(root, { recursive: true, force: true });
   }
 
-  // 11. A DEAD HOLDER WHOSE PID WAS REUSED is still taken over: the PID is alive (this validator's own process), but it is
-  // not the wrapper that wrote the record, on Linux (other start ticks) and on macOS (not running agent-claim.sh).
+  // 11. A LOCK THAT CANNOT BE TAKEN IS A NAMED STOP, never a silent tick: with no working perl the wrapper claims nothing,
+  // exits 3 and says CLAIM_LOCK_UNAVAILABLE (a quiet exit 0 here would mean the Mac never claims again and nobody hears).
   {
     const root = fresh();
-    mkdirSync(lockOf(root), { recursive: true });
-    writeFileSync(join(lockOf(root), "holder"), `${process.pid}|Thu Jan  1 00:00:00 1970\n`);
-    runWrapper(wrapperPath, root, ["--poll"], { BOSS_OS_CLAIM_HOUR: "14" });
-    if (claimsIn(logOf(root)) !== 1) out.push(`On ${process.platform}, a lock whose holder PID now belongs to another program blocked the claim instead of being taken over.`);
-    if (existsSync(lockOf(root))) out.push("The lock taken over from a reused PID was not released.");
-    rmSync(root, { recursive: true, force: true });
-  }
-
-  // 9. The release is OWNERSHIP-SAFE: if the lock's record no longer names this process, it is not removed.
-  {
-    const root = fresh();
-    runWrapper(wrapperPath, root, [], { STUB_REWRITE_HOLDER: "1" });
-    if (!existsSync(lockOf(root))) out.push("The release removed a lock that no longer belonged to this process.");
+    const broken = join(root, "brokenbin");
+    mkdirSync(broken, { recursive: true });
+    writeFileSync(join(broken, "perl"), "#!/bin/bash\necho 'perl: not installed' >&2\nexit 127\n");
+    chmodSync(join(broken, "perl"), 0o755);
+    const r = runWrapper(wrapperPath, root, [], { PATH: `${broken}:${stubEnv(root).bin}:${process.env.PATH}` });
+    if (claimsIn(logOf(root)) !== 0) out.push("With no working lock (perl failing) the wrapper claimed anyway.");
+    if (r.status !== 3 || !/CLAIM_LOCK_UNAVAILABLE/.test(r.stderr)) out.push(`With no working lock the wrapper must stop by name (exit 3, CLAIM_LOCK_UNAVAILABLE); it exited ${r.status}: ${r.stderr.trim() || "(silent)"}`);
     rmSync(root, { recursive: true, force: true });
   }
   return out;
@@ -339,13 +388,15 @@ if (selfTest) {
   check("a poll with no device id is caught", installerProblems(real.replace(/(<key>Label<\/key><string>\$POLL_LABEL<\/string>[\s\S]*?)<key>BOSS_OS_DEVICE_ID<\/key>/, "$1<key>OTHER</key>")).length > 0);
 
   const wrapperText = readFileSync(join(ROOT, WRAPPER), "utf8");
+  const PERL_LOCK = `perl -MFcntl=:flock -e 'open(my $fh, ">&=", 9) or exit 2; flock($fh, LOCK_EX | LOCK_NB) or exit 1; exit 0'`;
   const dir = mkdtempSync(join(tmpdir(), "boss-claim-self-"));
   const plant = async (name, mutate) => {
-    const p = join(dir, `${name}.sh`);
     // The wrapper finds its repo from its own path, so a planted copy lives under scripts/ops of a scratch tree.
     mkdirSync(join(dir, name, "scripts", "ops"), { recursive: true });
     const target = join(dir, name, "scripts", "ops", "agent-claim.sh");
-    writeFileSync(target, mutate(wrapperText));
+    const text = mutate(wrapperText);
+    if (text === wrapperText) throw new Error(`self-test mutant "${name}" did not apply: the wrapper text it targets has changed`);
+    writeFileSync(target, text);
     chmodSync(target, 0o755);
     return wrapperProblems(target);
   };
@@ -353,16 +404,15 @@ if (selfTest) {
   for (const p of realProblems) console.error(`  real wrapper: ${p}`);
   check("the real wrapper behaves", realProblems.length === 0);
   check("a wrapper with no hour guard is caught", (await plant("noguard", (t) => t.replace('if [ "$hour" -lt 6 ] || [ "$hour" -ge 22 ]; then', "if false; then"))).length > 0);
-  check("a wrapper with no lock is caught", (await plant("nolock", (t) => t.replace('if mkdir "$LOCK_DIR" 2>/dev/null; then\n  have_lock=1', 'if true; then\n  have_lock=1'))).length > 0);
-  check("a wrapper that never takes over a dead holder's lock is caught", (await plant("nosteal", (t) => t.replace('rm -rf "$LOCK_DIR"             # the holder is gone (or never wrote itself down): a crash left the lock behind\n  mkdir "$LOCK_DIR" 2>/dev/null && have_lock=1', ":"))).length > 0);
-  check("a wrapper that leaves its lock behind is caught", (await plant("noclean", (t) => t.replace('[ "${rec%%|*}" = "$$" ] && rm -rf "$LOCK_DIR"', ":"))).length > 0);
-  check("a release that removes a lock that is not its own is caught", (await plant("steals", (t) => t.replace('[ "${rec%%|*}" = "$$" ] && rm -rf "$LOCK_DIR"', 'rm -rf "$LOCK_DIR"'))).length > 0);
-  check("a poll that claims without peeking is caught", (await plant("nopeek", (t) => t.replace("agent.mjs peek >/dev/null 2>&1 || exit 0", "agent.mjs peek >/dev/null 2>&1 || true"))).length > 0);
+  check("a wrapper with no lock is caught", (await plant("nolock", (t) => t.replace(PERL_LOCK, "true"))).length > 0);
+  // THE 21 NOV 2026 LOCK: a directory made with the `mkdir` binary, released by a trap. Correct only where that binary is
+  // atomic, so it must fail here on every machine, her Mac included (the non-atomic mkdir case), and on a kill -9.
+  check("a lock that trusts the mkdir binary (the 21 Nov race) is caught", (await plant("mkdirlock", (t) => t.replace(PERL_LOCK, `mkdir "$LOCK_FILE.d" 2>/dev/null && trap 'rmdir "$LOCK_FILE.d"' EXIT`))).length > 0);
+  check("a lock the run's children inherit is caught", (await plant("inherited", (t) => t.replace("agent.mjs work-once 9>&-", "agent.mjs work-once"))).length > 0);
+  check("a lock failure that exits quietly is caught", (await plant("quietfail", (t) => t.replace(/no claim this tick\." >&2\n     exit 3 ;;/, 'no claim this tick." >&2\n     exit 0 ;;'))).length > 0);
+  check("a poll that claims without peeking is caught", (await plant("nopeek", (t) => t.replace("agent.mjs peek 9>&- >/dev/null 2>&1 || exit 0", "agent.mjs peek 9>&- >/dev/null 2>&1 || true"))).length > 0);
   check("a poll that claims without refreshing the briefing's data is caught", (await plant("norefresh", (t) => t.replace(/  if \[ -z "\$\(find "\$WORKSPACE\/SKY\.json"[\s\S]*?\n  fi\n  if \[ -z "\$\(find "\$WORKSPACE\/MARKETS\.json"[\s\S]*?\n  fi\n/, ""))).length > 0);
   check("a poll that refetches fresh data every tick is caught", (await plant("alwaysfetch", (t) => t.replaceAll('-mmin -"$FRESH_MINUTES"', "-mmin -0"))).length > 0);
-  check("a takeover with no gate (the race review of #61 found) is caught", (await plant("nogate", (t) => t.replace('if mkdir "$GATE_DIR" 2>/dev/null; then have_gate=1; break; fi', "have_gate=1; break").replace('rm -rf "$LOCK_DIR"             # the holder is gone', 'sleep 0.3; rm -rf "$LOCK_DIR"             # the holder is gone'))).length > 0);
-  check("a holder identity read from the stepping wall clock (ps lstart) is caught", (await plant("lstart", (t) => t.replace(/started_of\(\) \{[\s\S]*?\n\}\n/, "started_of() { ps -o lstart= -p \"$1\" 2>/dev/null | sed 's/^ *//;s/ *$//'; }\n"))).length > 0);
-  check("a liveness check with no reused-PID guard (kill -0 alone) is caught", (await plant("noreuse", (t) => t.replace('[ "$(started_of "$pid")" = "$started" ]', "true"))).length > 0);
   rmSync(dir, { recursive: true, force: true });
 
   const failed = results.filter(([, ok]) => !ok);
@@ -379,5 +429,5 @@ if (selfTest) {
     for (const p of problems) console.error(`  - ${p}`);
     process.exit(1);
   }
-  console.log("the-agent-polls-without-overlap: the poll is five minutes, waking day only, through one lock-taking wrapper the fixed-time job shares; a live holder blocks, a dead one is taken over, the lock is released. OK.");
+  console.log("the-agent-polls-without-overlap: the poll is five minutes, waking day only, through one lock-taking wrapper the fixed-time job shares; a live holder blocks, a dead one (even kill -9) frees it, no child inherits it, and eight racers claim once even with a non-atomic mkdir. OK.");
 }
