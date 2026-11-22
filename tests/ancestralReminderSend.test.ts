@@ -17,7 +17,9 @@ describe("the ancestral-hour reminder send", () => {
   it("due: one email to the owner only, from Imani, then reported sent", async () => {
     const api = fakeApi({ due: true, day: "2026-10-31", kind: "last", notice });
     const sent: any[] = [];
-    const r = await ancestralReminder(api, (async (_u: string, init: any) => { sent.push(JSON.parse(init.body)); return new Response("{}", { status: 200 }); }) as any, senders);
+    // Only the email itself counts: with BOSS_PASSCODE in the shell (her Mac) the door's Boss OS
+    // bookkeeping posts go through this same fetch, and they are not emails.
+    const r = await ancestralReminder(api, (async (u: string, init: any) => { if (u === "https://api.resend.com/emails") sent.push(JSON.parse(init.body)); return new Response("{}", { status: 200 }); }) as any, senders);
     expect(r.sent).toBe(true);
     // Through postEmployeeMail, so the plain-email gate passed it: one email, to the owner only, from Imani.
     expect(sent).toHaveLength(1);
