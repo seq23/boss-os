@@ -40,8 +40,9 @@ describe("check:changed runs what the change can break (15 Nov 2026)", () => {
     const gone: string[] = relatedTests([], 2, ["src/worker/effects/mimeAttachments.ts"]);
     expect(gone).toContain("tests/mimeMemory.test.ts");
     expect(gone.length).toBeGreaterThan(1);
-    // An extensionless import ("../src/worker/ai/runAi") names no full path, so only the import read finds it.
-    expect(relatedTests([], 2, ["src/worker/ai/runAi.ts"])).toContain("tests/allocation.test.ts");
+    // An extensionless import ("../src/worker/effects/browserClient") names no full path, so only the import read finds it.
+    // (allocation.test.ts no longer imports runAi since #537, which turned this red on main.)
+    expect(relatedTests([], 2, ["src/worker/effects/browserClient.ts"])).toContain("tests/browserClient.test.ts");
     // Negative: nothing changed, nothing deleted → nothing picked by these rules.
     expect(relatedTests([], 2, [])).toEqual([]);
   });
