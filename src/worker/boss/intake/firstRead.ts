@@ -178,8 +178,14 @@ const str = (v: unknown): string => (typeof v === "string" ? v.trim() : "");
  * model marked as pasted is dropped: what she pasted is material, never an ask. Pure.
  */
 export function parseBrief(text: string, words: string, files: readonly string[] = []): Brief | null {
+  const r = readBrief(text, words, files);
+  return typeof r === "string" ? null : r;
+}
+
+/** As `parseBrief`, but says why there is no brief: the ladder logs the reason. Pure. */
+export function readBrief(text: string, words: string, files: readonly string[] = []): Brief | string {
   const v = readJsonObject(text);
-  if (!v) return null;
+  if (!v) return "not one JSON answer";
   const body = norm(words);
   const hers = (s: string) => s.length >= 3 && body.includes(norm(s));
   const quoted = (xs: unknown[]): string[] => {
@@ -190,8 +196,9 @@ export function parseBrief(text: string, words: string, files: readonly string[]
     }
     return out.slice(0, MAX_ITEMS);
   };
-  const askItems = list(v.asks).map((a) => (typeof a === "string" ? { words: a, from: "her" } : (a ?? {}) as { words?: unknown; from?: unknown }));
-  const asks = quoted(askItems.filter((a) => a.from !== "pasted").map((a) => a.words));
+  // Hers only when the model marks it hers: a missing, unknown or bare-string mark is not her ask (fail closed).
+  const askItems = list(v.asks).map((a) => (a && typeof a === "object" && !Array.isArray(a) ? a : {}) as { words?: unknown; from?: unknown });
+  const asks = quoted(askItems.filter((a) => a.from === "her").map((a) => a.words));
   const pastedOnly = askItems.length > 0 && askItems.every((a) => a.from === "pasted");
   const unclear: Brief["unclear"] = [];
   for (const u of list(v.unclear)) {
@@ -209,8 +216,10 @@ export function parseBrief(text: string, words: string, files: readonly string[]
   const brief: Brief = { asks, holds: quoted(list(v.holds)), questions: quoted(list(v.questions)), unclear: unclear.slice(0, MAX_ITEMS), files: filesOut, decision: decisionOf(v.decision, words) };
   const listed = askItems.length + list(v.holds).length + list(v.questions).length + list(v.unclear).length;
   const kept = brief.asks.length + brief.holds.length + brief.questions.length + brief.unclear.length;
-  // Something listed and nothing of it quotes her: no brief. Only pasted lines listed: the empty brief, said so by the ladder.
-  if (listed > 0 && kept === 0 && !pastedOnly && !decides(brief.decision)) return null;
+  // Only pasted lines listed and nothing decided: passed over, so the next rung reads it. Something listed
+  // and nothing of it quotes her: no brief. An empty answer with a decision object is a reading ("nothing decided").
+  if (pastedOnly && kept === 0 && !decides(brief.decision)) return "listed only what she pasted";
+  if (listed > 0 && kept === 0 && !decides(brief.decision)) return "no line quoted her";
   return brief;
 }
 
@@ -399,9 +408,9 @@ export async function firstRead(
       try {
         const text = await withDeadline(Math.min(share, left), (signal) => rung.call(prompt, signal), stop.signal);
         if (out.brief) { results[i] = `${rung.id}: answered after another read`; continue; }
-        const brief = parseBrief(text, input.words, files);
-        if (!brief) { results[i] = `${rung.id}: ${readJsonObject(text) ? "no line quoted her" : "not one JSON answer"}`; continue; }
-        if (!brief.asks.length && !brief.questions.length && !brief.unclear.length && !brief.holds.length && !decides(brief.decision)) { results[i] = `${rung.id}: listed only what she pasted`; continue; }
+        const brief = readBrief(text, input.words, files);
+        if (typeof brief === "string") { results[i] = `${rung.id}: ${brief}`; continue; }
+        if (!brief.asks.length && !brief.questions.length && !brief.unclear.length && !brief.holds.length && !brief.decision) { results[i] = `${rung.id}: listed nothing`; continue; }
         out.brief = brief;
         out.reader = rung.id;
         results[i] = `${rung.id}: read`;
@@ -429,9 +438,9 @@ export async function firstRead(
     }
     try {
       const text = await withDeadline(Math.min(FIRST_READ_ATTEMPT_MS, left), (signal) => rung.call(prompt, signal));
-      const brief = parseBrief(text, input.words, files);
-      if (!brief) { out.tried.push(`${rung.id}: ${readJsonObject(text) ? "no line quoted her" : "not one JSON answer"}`); continue; }
-      if (!brief.asks.length && !brief.questions.length && !brief.unclear.length && !brief.holds.length && !decides(brief.decision)) { out.tried.push(`${rung.id}: listed only what she pasted`); continue; }
+      const brief = readBrief(text, input.words, files);
+      if (typeof brief === "string") { out.tried.push(`${rung.id}: ${brief}`); continue; }
+      if (!brief.asks.length && !brief.questions.length && !brief.unclear.length && !brief.holds.length && !brief.decision) { out.tried.push(`${rung.id}: listed nothing`); continue; }
       out.brief = brief;
       out.reader = rung.id;
       out.tried.push(`${rung.id}: read`);

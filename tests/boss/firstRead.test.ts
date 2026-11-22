@@ -90,6 +90,15 @@ describe("the brief only quotes her", () => {
     const b = parseBrief(answer({ asks: ["Please match the briefing page to the report below.", { words: "Oil rose again overnight.", from: "pasted" }] }), words)!;
     expect(b.asks).toEqual(["Please match the briefing page to the report below."]);
   });
+
+  it("an ask is hers only when marked \"her\": forwarded, unmarked and a bare string are never her ask", () => {
+    const mine = "Please match the briefing page to the report below.";
+    const words = `${mine}\n\nOil rose again overnight.`;
+    for (const other of [{ words: "Oil rose again overnight.", from: "forwarded" }, { words: "Oil rose again overnight." }, "Oil rose again overnight."]) {
+      const raw = JSON.stringify({ asks: [{ words: mine, from: "her" }, other], holds: [], questions: [], unclear: [], decision: { reply: "none", answers: [], commands: [] } });
+      expect(parseBrief(raw, words)!.asks, JSON.stringify(other)).toEqual([mine]);
+    }
+  });
 });
 
 describe("the ladder is free, and only free", () => {
@@ -126,6 +135,19 @@ describe("the ladder is free, and only free", () => {
     const mine = ["The venue is booked.", "Dinner is at eight.", "Bring the cake.", "Seat Pat first.", "Use the blue cloths.", "Call the band.", "Order ice.", "Print the menus."];
     const b = parseBrief(ask(...mine), mine.join("\n"))!;
     expect(b.asks).toEqual(mine);
+  });
+
+  it("a read that lists nothing and decides nothing is a reading: the ladder stops there, no keyword acts", async () => {
+    const r = await firstRead(env as never, { subject: "Re: your morning", words: "Thanks!", dry: true }, [rung("free-a", answer())]);
+    expect(r.reader).toBe("free-a");
+    expect(r.brief!.decision).toEqual({ reply: null, answers: [], commands: [] });
+    expect(r.tried).toEqual(["free-a: read"]);
+    const wa = await firstRead(env as never, { subject: "Re: your morning", words: "Thanks!", dry: true }, [
+      { id: "free-x", call: async () => { throw new Error("429 from the free lane"); } },
+      { ...rung("workers-ai", answer()), workersAi: true },
+    ]);
+    expect(wa.reader, "the Workers AI backstop's empty reading is a reading too").toBe("workers-ai");
+    expect(wa.tried.at(-1)).toBe("workers-ai: read");
   });
 
   it("a read that marks everything as pasted is passed over, and the next rung reads it", async () => {
