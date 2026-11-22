@@ -108,148 +108,19 @@ test("the morning brief either arrives or states, in the schedule's own words, w
   await expect(page.getByTestId("home-brief-delivery")).toBeVisible();
 });
 
-test("diagnostics catches something down, escalates once to BOTH partners, and announces the recovery", async ({
-  page,
-  request,
-}) => {
-  const marker = `E2E-P62-${Date.now()}`;
-
+test("the copied diagnostics sweep is switched off here: a run is refused and tells no one anything", async ({ request }) => {
   /*
-   * A REAL FAULT, MADE REAL. `approval_load` reports DOWN past 25 cards waiting, because "a long
-   * approval queue is a bug report, not a to-do list" — past about ten a queue gets skimmed rather
-   * than read. So the queue is genuinely overloaded here and genuinely cleared afterwards; nothing
-   * is stubbed, and the check is asked what it thinks at each step rather than assumed.
+   * West Peek OS runs its own diagnostics_sweep, so 0375 switched the copy here off (22 Nov 2026):
+   * every run here reported the same one fault to fund partners in a table no Boss OS screen reads.
+   * A run is REFUSED with that reason, and no health notice is written by it.
    */
-  expect(
-    await checkState(request, "approval_load"),
-    "this journey needs the queue to start healthy; if it is already DOWN, something before this spec left it that way",
-  ).not.toBe("DOWN");
-
-  /*
-   * SETTLE ANYTHING STILL OPEN FIRST, USING THE PRODUCT RATHER THAN SQL.
-   *
-   * A `health_fault` row stays open until a sweep sees the check healthy again, and an already
-   * escalated fault is deliberately never escalated twice — so an earlier attempt that ended between
-   * "escalate" and "recover" would make this journey read as "nothing new" for a fault that is
-   * genuinely down. One sweep against a healthy queue closes the episode, which is exactly the
-   * recovery behaviour asserted at the foot of this test.
-   */
-  await sweep(request);
-
-  /*
-   * COUNTED AS A DELTA, NOT AS A TOTAL. Every spec drives the same database and this one may have
-   * run before against it, so "how many notifications mention approval_load" is a number that grows
-   * across episodes. What this journey is about is ONE fault episode: how many people it told, and
-   * how many times. So the ledger is photographed first and only the new rows are counted.
-   */
-  const alreadySeen = new Set(notificationsAbout("approval_load").map((n) => n.id));
-  const newlyRaised = (): NotificationRow[] =>
-    notificationsAbout("approval_load").filter((n) => !alreadySeen.has(n.id));
-
-  const cards: string[] = [];
-  try {
-    for (let i = 0; i < 30; i += 1) {
-      const res = await request.post("/api/approvals", {
-        headers: MP,
-        data: {
-          action_key: "investment.approve",
-          object_type: "canonical_company",
-          object_id: `cc_${marker}_${i}`,
-          title: `${marker} queue depth ${i}`,
-          submit: true,
-        },
-      });
-      expect(res.status(), await res.text()).toBe(201);
-      cards.push(((await res.json()) as { id: string }).id);
-    }
-    expect(await checkState(request, "approval_load"), "thirty cards waiting must read as DOWN").toBe("DOWN");
-
-    /*
-     * ── ONE SIGHTING IS NOT A FAULT ───────────────────────────────────────────────────────────────
-     *
-     * The first sweep records it and says nothing. Two consecutive readings are required before
-     * anybody is told, which is what keeps a momentary blip from waking both partners — and it is
-     * asserted here rather than assumed, because a check that escalated on first sight would still
-     * pass every "does it escalate" test ever written.
-     */
-    const first = await sweep(request);
-    expect(first, "a first sighting must not escalate").not.toContain("escalated approval_load");
-
-    /*
-     * Matched as two substrings rather than one phrase: the sweep escalates everything it finds in
-     * the same sentence, so `escalated a, b, approval_load` is the ordinary shape and pinning
-     * "escalated approval_load" would pass only when this fault happened to be listed first.
-     */
-    const second = await sweep(request);
-    expect(second, "a fault seen twice running must be escalated").toContain("escalated");
-    expect(second, "and this fault must be one of the ones it names").toContain("approval_load");
-
-    /*
-     * BOTH PARTNERS, ONE EACH. A firm with two Managing Partners where only one is told has a
-     * partner walking around believing the system is fine.
-     */
-    const warnings = newlyRaised().filter((n) => n.severity === "WARNING");
-    expect(warnings.length, "each Managing Partner is told, once").toBe(2);
-    expect(new Set(warnings.map((n) => n.dedupe_key)).size, "the two are distinct rows, not one counted twice").toBe(2);
-    for (const n of warnings) {
-      // The reading, and what to do about it — an alert that names neither is a noise generator.
-      expect(n.title).toContain("down");
-      expect(n.body, "an escalation carries what was read").toContain("waiting");
-    }
-
-    /*
-     * AND ONCE. A fault that keeps being reported while nobody has fixed it is how an alert becomes
-     * wallpaper — the third sweep sees exactly the same fault and says nothing new.
-     */
-    const third = await sweep(request);
-    expect(third, "an open fault must not be re-escalated on every tick").toContain("nothing new");
-    expect(newlyRaised().filter((n) => n.severity === "WARNING")).toHaveLength(2);
-
-    // A partner can see the fault on the board it belongs to, in the state it is in.
-    await signIn(page);
-    await gotoSurface(page, "Diagnostics");
-    await expect(page.getByTestId("health-approval_load")).toHaveAttribute("data-state", "DOWN");
-  } finally {
-    // Clear the queue again, whatever happened above — a spec that leaves thirty cards waiting has
-    // broken the next one's starting state as surely as if it had failed.
-    for (const id of cards) {
-      await request.post(`/api/approvals/${id}/decide`, {
-        headers: MP,
-        data: { decision: "rejected", note: `${marker}: queue-depth fixture, cleared` },
-      });
-    }
-  }
-
-  expect(await checkState(request, "approval_load"), "the fixture must have cleared").not.toBe("DOWN");
-
-  /*
-   * ── AND THE RECOVERY IS ANNOUNCED ─────────────────────────────────────────────────────────────
-   *
-   * A warning left standing over something that fixed itself is worse than no warning: it teaches
-   * the reader that red does not mean anything. The sweep that sees the fault gone says so, and the
-   * partners get told in the same place they were told it was broken.
-   */
-  const recovered = await sweep(request);
-  expect(recovered, "the sweep that finds it fixed must say so").toContain("recovered approval_load");
-
-  /*
-   * Counted as a TOTAL here rather than as a delta, and deliberately. The recovery notification is
-   * deduped into an hour bucket (`health_recovered:<key>:<hour>`), so a second recovery inside the
-   * same hour writes nothing — which is correct, and is the opposite of the escalation case where
-   * "one each, once" is the property. What has to hold is that the recovery WAS announced, and the
-   * sweep's own summary above is what pins it to this episode.
-   */
-  const good = notificationsAbout("approval_load").filter((n) => n.severity === "INFO");
-  expect(good.length, "recovery is announced").toBeGreaterThan(0);
-  expect(good[0]!.title).toContain("working again");
-  // And nothing else was changed by the check — diagnostics observes, it does not repair.
-  expect(good[0]!.body).toContain("Nothing else was changed");
-
-  // Read fresh: the board was already open on this page from the DOWN half above, and navigating to
-  // the page you are already on does not re-ask the server.
-  await page.reload();
-  await gotoSurface(page, "Diagnostics");
-  await expect(page.getByTestId("health-approval_load")).not.toHaveAttribute("data-state", "DOWN");
+  const before = notificationsAbout("approval_load").length;
+  const res = await request.post("/api/jobs/diagnostics_sweep/run", { headers: MP });
+  expect([200, 201], await res.text()).toContain(res.status());
+  const body = (await res.json()) as { run: { status: string; outcome_summary: string } };
+  expect(body.run.status).toBe("REFUSED");
+  expect(body.run.outcome_summary).toContain("West Peek OS runs this job itself");
+  expect(notificationsAbout("approval_load").length).toBe(before);
 });
 
 test("a spending ceiling is a partner's decision, it persists, and a cost mode actually stops a run", async ({
@@ -389,24 +260,6 @@ test("a spending ceiling is a partner's decision, it persists, and a cost mode a
 // ── helpers ────────────────────────────────────────────────────────────────────────────────────
 
 type Ctx = import("@playwright/test").APIRequestContext;
-
-async function checkState(request: Ctx, key: string): Promise<string> {
-  const body = (await (await request.get("/api/diagnostics/health", { headers: MP })).json()) as {
-    checks: Array<{ key: string; state: string }>;
-  };
-  const check = body.checks.find((c) => c.key === key);
-  expect(check, `the ${key} check must exist`).toBeTruthy();
-  return check!.state;
-}
-
-/** Run the diagnostics sweep the way the cron would, and hand back what it said it did. */
-async function sweep(request: Ctx): Promise<string> {
-  const res = await request.post("/api/jobs/diagnostics_sweep/run", { headers: MP });
-  expect([200, 201], await res.text()).toContain(res.status());
-  const body = (await res.json()) as { run: { status: string; outcome_summary: string } };
-  expect(body.run.status, "the sweep itself must not be what fails").toBe("SUCCEEDED");
-  return body.run.outcome_summary;
-}
 
 interface NotificationRow {
   id: string;

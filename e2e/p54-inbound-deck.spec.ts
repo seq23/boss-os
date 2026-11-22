@@ -50,16 +50,20 @@ async function signIn(page: import("@playwright/test").Page): Promise<void> {
   await expect(page.getByTestId("identity-status")).toContainText("Scooter Taylor");
 }
 
-/** Run the deck queue the way the cron would, and hand back what it said it did. */
-async function runDeckReading(request: import("@playwright/test").APIRequestContext): Promise<string> {
+/*
+ * Boss OS no longer reads decks: West Peek OS runs its own deck_reading, so 0375 switched the copy
+ * here off (22 Nov 2026). Running it is REFUSED with that reason and does nothing, so a deck that
+ * arrives stays stored and queued: never lost, never marked unreadable.
+ */
+async function deckReadingIsOff(request: import("@playwright/test").APIRequestContext): Promise<void> {
   const res = await request.post("/api/jobs/deck_reading/run", { headers: MP });
   expect(res.status(), await res.text()).toBe(201);
   const body = (await res.json()) as { run: { status: string; outcome_summary: string } };
-  expect(body.run.status).toBe("SUCCEEDED");
-  return body.run.outcome_summary;
+  expect(body.run.status).toBe("REFUSED");
+  expect(body.run.outcome_summary).toContain("West Peek OS runs this job itself");
 }
 
-test("a deck emailed about a company we already have is stored, queued, and read by the analyst", async ({ page, request }) => {
+test("a deck emailed about a company we already have is stored and queued, and the switched-off reader leaves it queued", async ({ page, request }) => {
   const company = `Northwind Robotics ${Date.now()}`;
 
   // The company is already on the register, with a one-liner a PERSON typed. That field is the one
@@ -78,9 +82,7 @@ test("a deck emailed about a company we already have is stored, queued, and read
   expect(created.status(), await created.text()).toBe(201);
   const companyId = ((await created.json()) as { id: string }).id;
 
-  // Nothing is waiting before the mail arrives — so "1 could not be read" below cannot be somebody
-  // else's deck.
-  expect(await runDeckReading(request)).toBe("no decks waiting");
+  await deckReadingIsOff(request);
 
   await deliverMail(request, {
     from: FOUNDER,
@@ -117,32 +119,14 @@ test("a deck emailed about a company we already have is stored, queued, and read
   // The ORIGINAL sender is the source, not the mailbox and not a relay.
   expect(card!.description).toContain(addressOf(FOUNDER));
 
-  /*
-   * THE QUEUE PICKS IT UP AND GOES THROUGH THE GOVERNED AI BOUNDARY.
-   *
-   * "1 could not be read" is the honest local outcome and is asserted as such: the deck WAS taken
-   * off the queue and attempted, and the local mock model's answer was not a deck summary. The
-   * distinction this suite must not blur is between that and "nothing was waiting" — those are the
-   * two outcomes that look identical on a company card unless the reason is written down.
-   */
-  const summary = await runDeckReading(request);
-  expect(summary).toContain("could not be read");
-
+  // The switched-off reader is refused and touches nothing: the deck is still queued, whole.
+  await deckReadingIsOff(request);
   const afterwards = queryLocalD1<PendingDeck>(
     `SELECT id, state, detail, filename, object_key, bytes, company_id FROM pending_deck WHERE company_id = '${companyId}'`,
   );
-  expect(afterwards[0]!.state).toBe("FAILED");
-  expect(afterwards[0]!.detail, "a deck that could not be read must say why").toBeTruthy();
-  expect(afterwards[0]!.detail!.trim().length).toBeGreaterThan(0);
-
-  // It was WYATT who read it, through `run_ai`, with the deck as a document — not a direct
-  // provider call and not an unattributed run.
-  const runs = (await (await request.get("/api/ai/runs?limit=20", { headers: MP })).json()) as {
-    runs: Array<{ purpose: string; actor_type: string; actor_id: string }>;
-  };
-  const deckRun = runs.runs.find((r) => r.purpose.includes("northwind-seed.pdf"));
-  expect(deckRun, "reading a deck must go through the governed AI boundary").toBeTruthy();
-  expect(deckRun!.actor_type).toBe("AI");
+  expect(afterwards).toHaveLength(1);
+  expect(afterwards[0]!.state).toBe("PENDING");
+  expect(afterwards[0]!.bytes).toBe(queued[0]!.bytes);
 
   /*
    * WHOSE FACT IS IT. Operator's ruling, 22 Aug 2026, overturning an earlier blanks-only rule:
