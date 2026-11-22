@@ -2,6 +2,7 @@ import type { Env } from "../env";
 import { audit } from "../lib/audit";
 import { logEvent } from "../lib/log";
 import { isDue, nextDueAt, type DutySchedule } from "./cadence";
+import { effectiveNextDue } from "./clock";
 import { admitTask } from "../tasks/admit";
 import { BRIEFING_PROMPT_VERSION, composeBriefingPrompt, ctDayLabel } from "./briefingSpec";
 import { BRIEFING_CLASSIFICATION, BRIEFING_LADDER_IDS, BRIEFING_CLOUD_FALLBACK, modelBySeat } from "./briefingLadder";
@@ -115,6 +116,8 @@ export async function materialiseDueDuties(
       skipped.push({ duty: duty.id, reason: "suspended" });
       continue;
     }
+    // Read through the one clock door (clock.ts): a clock left ahead of the owed slot is moved back first.
+    if (!only) duty.next_due_at = (await effectiveNextDue(env, duty, now)) ?? duty.next_due_at;
     if (!only && !isDue(duty.next_due_at, duty.suspended === 1, now)) {
       skipped.push({ duty: duty.id, reason: duty.suspended === 1 ? "suspended" : "not_due" });
       continue;

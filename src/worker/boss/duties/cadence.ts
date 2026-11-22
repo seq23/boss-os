@@ -146,3 +146,75 @@ export function isDue(nextDueAtMs: number, suspended: boolean, now: number): boo
  * at most eight. Read by the run recorder (routes/duties.ts `creditFrom`) and by staleness.
  */
 export const EARLY_RUN_GRACE_MS = 8 * 3_600_000;
+
+/*
+ * ─── THE CLOCK BELONGS TO CODE (22 Nov 2026) ────────────────────────────────
+ *
+ * THE DEFECT. Migration 0373 moved every Mac duty into her Mac's day and wrote each clock by hand in
+ * SQLite date arithmetic: `date('now', '+1 day')` plus a fixed number of hours. Two errors in one
+ * line: `date('now')` is a UTC date standing in for a Central day, and `'+1 day'` skips the coming
+ * occurrence unconditionally. Applied when the UTC date already read 22 Nov, it set duty_lp_daily to
+ * 23 Nov 05:45 while the duty had last run on 21 Nov, so the 22 Nov slot never existed, the Mac's
+ * `--only-if-due` wrapper skipped the LP producer twice, and the morning email said "LP updates: its
+ * job did not report in". The line was copied from 0327: the second break of one kind, so the clock
+ * left SQL instead of being patched a third time.
+ *
+ * THE RULE. A stored clock that is AHEAD of the slot the duty owes is moved back to that slot. Never
+ * forward: a genuinely missed run stays in the past, so Today still says so out loud.
+ */
+
+/** How far back one missed slot can be owed: one period of the duty's cadence. */
+export function periodMs(schedule: Pick<DutySchedule, "cadence">): number {
+  if (schedule.cadence === "weekly") return 7 * DAY_MS;
+  if (schedule.cadence === "monthly") return 31 * DAY_MS;
+  return DAY_MS;
+}
+
+/**
+ * The slot this duty owes: the first occurrence strictly after the later of (a) the slot its last
+ * successful run answered for, (b) the moment the duty was created, and (c) one period ago.
+ *
+ * (a) mirrors the run recorder (`creditFrom`, routes/duties.ts): a run up to EARLY_RUN_GRACE_MS
+ * before a slot answers for that slot (a Mac on Eastern fires an hour early), so that slot is not
+ * owed again. (c) bounds the debt to one period: a deploy never starts a backlog of week-old work.
+ */
+export function pendingSlot(
+  schedule: DutySchedule,
+  lastRunAt: number | null | undefined,
+  now: number,
+  createdAt?: number | null,
+): number {
+  let anchor = 0;
+  if (typeof lastRunAt === "number" && Number.isFinite(lastRunAt)) {
+    const following = nextDueAt(schedule, lastRunAt);
+    anchor = following - lastRunAt <= EARLY_RUN_GRACE_MS ? following : lastRunAt;
+  }
+  const floor = Math.max(anchor, typeof createdAt === "number" && Number.isFinite(createdAt) ? createdAt : 0, now - periodMs(schedule));
+  return nextDueAt(schedule, floor);
+}
+
+export interface ClockRow extends DutySchedule {
+  next_due_at: number | null;
+  last_run_at?: number | null;
+  created_at?: number | null;
+  suspended?: number | boolean | null;
+  removed_at?: number | null;
+}
+
+export type ClockRepair = { next_due_at: number; why: "not_a_slot" | "slot_skipped" };
+
+/**
+ * `null` when the clock is healthy, else where it belongs and why. It fires only when the stored
+ * instant is LATER than the slot the duty owes — because it is not an occurrence of the duty's own
+ * schedule (a schedule moved and the clock did not), or because a period was skipped. Suspended,
+ * removed and clockless rows are never touched. An unschedulable duty (`nextDueAt` throws) is
+ * rethrown to the caller, which keeps its clock and says so by name.
+ */
+export function clockRepair(duty: ClockRow, now: number): ClockRepair | null {
+  if (duty.suspended || duty.removed_at) return null;
+  if (typeof duty.next_due_at !== "number" || !Number.isFinite(duty.next_due_at)) return null;
+  const owed = pendingSlot(duty, duty.last_run_at ?? null, now, duty.created_at ?? null);
+  if (duty.next_due_at <= owed) return null;
+  const isSlot = nextDueAt(duty, duty.next_due_at - 1) === duty.next_due_at;
+  return { next_due_at: owed, why: isSlot ? "slot_skipped" : "not_a_slot" };
+}
