@@ -2,11 +2,12 @@
 <html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
 <title>Fixture app</title>
 <style>body{font:16px system-ui;margin:0;padding:24px}button{display:block;margin:12px 0;padding:12px 16px;font:inherit}
-@media (prefers-color-scheme:dark){body{background:#111;color:#eee}}</style></head>
+@media (prefers-color-scheme:dark){body{background:#111;color:#eee}}
+#buy:focus{background:rgb(255,200,0)}</style></head>
 <body><main id="app"></main>
 <script>
 // A tiny app the tap-through self-test drives. ?broken=1 turns on the planted defects.
-const broken = new URLSearchParams(location.search).has("broken");
+const broken = new URLSearchParams(location.search).has("broken"), empty = new URLSearchParams(location.search).has("empty");
 if (broken) console.error("planted: the broken fixture logs an error on load");
 const screens = {
   "": () => `<h1>Fixture app</h1><p>Keep your proof in one place.</p>
@@ -14,6 +15,11 @@ const screens = {
     <button data-go="settings">Settings</button>${broken ? '<button id="help">Help</button>' : '<button data-go="help">Help</button>'}
     <div role="radiogroup" aria-label="Look"><button role="radio" aria-checked="true">Light look, chosen</button></div><button aria-selected="true">✓ English</button><!-- chosen by its look alone (as RN-web draws accessibilityState): a person sees it change, so it is never DEAD --><button data-look>Large text</button>
     <button data-go="saved">Open the proof you saved last, with its photos, its receipt, its notes and the date it was taken, so you can show it to anyone who asks</button>
+    ${broken ? `<!-- planted sweep defects: a dead button whose only change is its :focus colour; a tap that draws, then throws;
+    a chosen radio that tells the web build nothing (no aria-checked), whose tap rightly changes nothing -->
+    <button id="buy">Buy now</button><button id="tip">Show tip</button>
+    <div role="radiogroup" aria-label="Billing"><button role="radio" style="border:3px solid rgb(0, 90, 200)">Monthly, chosen</button></div>` : ""}
+    ${empty ? '<a href="#/blank">Open the empty screen</a>' : ""}
     <nav role="tablist"><button role="tab" aria-selected="true">Home, current tab</button><button role="tab" aria-selected="false" data-go="plans">Plans tab</button></nav>`,
   task: () => `<h1>New proof</h1><label>Title <input aria-label="Title"></label><button data-go="saved">Save</button><button data-go="">Back home</button>`,
   saved: () => `<h1>Saved</h1><p>Your proof is kept.</p><button data-go="">Done</button>`,
@@ -23,6 +29,7 @@ const screens = {
   restore: () => `<h1>Restore</h1><p>Nothing to restore (preview).</p><button data-go="">Done</button>`,
   settings: () => `<h1>Settings</h1><button role="switch" aria-checked="false" id="dm">Reminders</button><button data-go="delete">Delete my data</button><button data-go="">Back home</button>`,
   delete: () => `<h1>Delete my data</h1><p>This removes everything.</p><button id="del">Delete everything</button><button data-go="settings">Cancel</button>`,
+  blank: () => `<h1>Nothing here</h1><p>This screen drew no controls.</p>`,
   help: () => `<h1>Help</h1><p>Ask us anything.</p><a href="mailto:help@example.com">Email us</a><button data-go="">Back home</button>`,
 };
 function draw() { const k = location.hash.replace(/^#\/?/, ""); document.getElementById("app").innerHTML = (screens[k] ?? screens[""])(); }
@@ -34,6 +41,7 @@ document.addEventListener("click", (e) => {
   if (b.dataset.go != null) location.hash = "/" + b.dataset.go;
   if (b.hasAttribute("data-look")) b.style.borderColor = b.style.borderColor ? "" : "rgb(0, 90, 200)";
   if (b.id === "dm") b.setAttribute("aria-checked", b.getAttribute("aria-checked") === "true" ? "false" : "true");
+  if (b.id === "tip") { b.insertAdjacentHTML("afterend", "<p>Tip: keep the receipt.</p>"); throw new Error("planted crash after tap"); }
   if (b.id === "del") fetch("/api/delete", { method: "POST" }).then(() => { document.getElementById("app").innerHTML = "<h1>Deleted</h1><p>All gone.</p>"; }, () => { document.getElementById("app").innerHTML = "<h1>Deleted</h1><p>All gone (test value).</p>"; });
 });
 draw();

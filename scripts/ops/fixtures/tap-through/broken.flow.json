@@ -9,6 +9,9 @@
           "see": "Fixture app"
         },
         {
+          "sweep": true
+        },
+        {
           "tap": "Help",
           "then": "Ask us anything."
         }

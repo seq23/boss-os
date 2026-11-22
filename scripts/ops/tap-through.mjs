@@ -11,16 +11,28 @@
  *   ERROR_SCREEN       the framework's error or not-found screen, the app's own (flow `error_text`), or a blank screen
  *   STEP_UNREACHABLE   a control or screen the flow says is there and is not
  *   PROMISE_UNBUILT    a promise on a price screen with no reached screen behind it (app-review check 13)
- * and stops BY NAME, never a pass (rule-zero-shapes), on PREVIEW_DOWN, FLOW_INVALID and FLOW_TAPS_NOTHING.
+ *   STATE_HIDDEN       a radio, tab or switch whose tap changed nothing and that tells the web build nothing
+ *                      (no aria-checked / aria-selected): the chosen option or a dead one, a screen reader
+ *                      cannot tell which (react-native-web 0.21 drops accessibilityState)
+ *   UNMAPPED_SCREEN    a screen this change touched that the run could not open (a route with a value in
+ *                      its path, never reached by a journey)
+ * and stops BY NAME, never a pass (rule-zero-shapes), on PREVIEW_DOWN, FLOW_INVALID, FLOW_TAPS_NOTHING and
+ * CHANGED_SCREENS_UNMAPPED (screen files changed and no expo-router route maps them).
+ *
+ * THE CHANGE DECIDES WHAT IS OPENED, not only the hand-kept journeys: with --changed (the PR's
+ * `git diff --name-only base...head`) and --files (`git ls-files`), each changed expo-router route file
+ * is a URL (the path is the route: structure, not a guess). A changed screen no journey reached is
+ * opened and swept; a changed shared file (a component, a layout) opens and sweeps every route.
  *
  * SAFE BY CONSTRUCTION: every request that is not a read (anything but GET/HEAD/OPTIONS) is blocked
  * unless the flow mocks it with test values, and the main page never leaves the preview's origin, so
  * no real purchase, sign-in, email or delete can happen; the flow only uses preview flags and test values.
  *
  *   node scripts/ops/tap-through.mjs --flow <tap-through.json> --target <preview URL> --out <dir> [--schemes light,dark]
+ *                                     [--changed <changed.txt> --files <files.txt>]
  *   node scripts/ops/tap-through.mjs --self-test     (the broken-fixture proof; CI runs it)
  *
- * Runs on GitHub only (.github/workflows/ship-review-capture.yml, kind tap-through; the Mac never runs
+ * Runs on GitHub only (.github/workflows/tap-through.yml; the Mac never runs
  * Playwright). `ship-review --kind tap-through --on-github` dispatches it and judges what it recorded.
  * Exit 0 every step passed · 1 named failures (all in tap-report.json) · 9 a named stop (nothing judged).
  */
@@ -30,12 +42,16 @@ import { tmpdir } from "node:os";
 import { dirname, extname, join, resolve } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 
-export const FAILS = Object.freeze(["DEAD_BUTTON", "CONSOLE_ERROR", "ERROR_SCREEN", "STEP_UNREACHABLE", "PROMISE_UNBUILT"]);
-export const STOPS = Object.freeze(["PREVIEW_DOWN", "FLOW_INVALID", "FLOW_TAPS_NOTHING"]);
+export const FAILS = Object.freeze(["DEAD_BUTTON", "CONSOLE_ERROR", "ERROR_SCREEN", "STEP_UNREACHABLE", "PROMISE_UNBUILT", "STATE_HIDDEN", "UNMAPPED_SCREEN"]);
+export const STOPS = Object.freeze(["PREVIEW_DOWN", "FLOW_INVALID", "FLOW_TAPS_NOTHING", "CHANGED_SCREENS_UNMAPPED"]);
 /** A flow longer than this cannot be judged in one review: split it (the judge must open every shot). */
 export const MAX_STEPS = 40;
 /** Sweep budget: taps per swept screen and per run. What the budget leaves is named, never dropped. */
 export const SWEEP_PER_SCREEN = 40, SWEEP_PER_RUN = 240;
+/** A shared file changed, so every route is opened: each one gets this many taps, from its own budget. */
+export const SWEEP_PER_ROUTE = 8, ROUTE_SWEEP_PER_RUN = 160;
+/** Roles whose chosen state the web build must say out loud (aria-checked / aria-selected). */
+const STATEFUL_ROLES = ["radio", "tab", "switch"];
 /**
  * The framework's own error and not-found screens (expo-router build/views: Unmatched.js, ErrorBoundary.js).
  * Exact strings the framework renders, all of a set present: structure, not a guess at meaning.
@@ -55,11 +71,14 @@ export function matcher(s) {
   return m ? new RegExp(m[1], m[2]) : String(s);
 }
 const actionOf = (step) => ACTIONS.find((k) => k in step);
+/** A step's target as a person reads it: an object spec ({ role, name }) as JSON, never "[object Object]". */
+export const said = (v) => (v && typeof v === "object" ? JSON.stringify(v) : String(v));
 
 /** Every problem with a flow, one plain line each; [] when it can run. Pure. */
 export function flowProblems(flow) {
   const out = [];
   if (!flow || typeof flow !== "object") return ["the flow is not a JSON object"];
+  if (flow.error) return [`the flow file could not be read: ${flow.error}`];
   if (!flow.app) out.push("`app` is missing (the app's name)");
   const journeys = Array.isArray(flow.journeys) ? flow.journeys : [];
   if (!journeys.length) out.push("`journeys` is empty: a flow that taps nothing is no tap-through");
@@ -106,6 +125,50 @@ export function promiseFailures(flow, reached) {
   return out;
 }
 
+// ─── The change: which screens it touched ────────────────────────────────────────────────────────
+
+const CODE = /\.(tsx|ts|jsx|js)$/;
+const NOT_APP = /(^|\/)(__tests__|tests?|e2e|scripts|\.github|node_modules)\/|\.(test|spec|d)\.[jt]sx?$|(^|\/)[^/]*\.config\.[cm]?[jt]s$/;
+const escapeRe = (s) => s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+
+/** An expo-router route file (relative to its app folder) as a route: its URL pattern, and a URL when it has no value in it. */
+export function routeOf(rel) {
+  const segs = rel.replace(CODE, "").split("/").filter((s) => !/^\(.*\)$/.test(s));
+  if (segs.at(-1) === "index") segs.pop();
+  const dynamic = segs.some((s) => /^\[.+\]$/.test(s));
+  const re = segs.map((s) => (/^\[\.\.\..+\]$/.test(s) ? ".+" : /^\[.+\]$/.test(s) ? "[^/]+" : escapeRe(s))).join("/");
+  return { route: `/${segs.join("/")}`, re: new RegExp(`^/${re}/?$`), url: dynamic ? null : `/${segs.join("/")}` };
+}
+
+/**
+ * What a change touched, from its changed files and the repo's file list. Pure. `changed` null = no diff
+ * given (not a pull request): the journeys alone run, and the report says so. A route file is its route;
+ * any other app file (a component, a layout, a hook) is shared, so every route is opened; tests, scripts,
+ * configs and files outside the app's package are not screens.
+ */
+export function changedScreens({ changed = null, files = [], appDir = null }) {
+  if (!changed) return { given: false };
+  const roots = appDir ? [appDir.replace(/\/$/, "")] : [...new Set(files.map((f) => /^(?:(.+)\/)?app\/(?:_layout|index)\.(?:tsx|ts|jsx|js)$/.exec(f)).filter(Boolean).map((m) => (m[1] ? `${m[1]}/app` : "app")))];
+  const pkgOf = (root) => root.replace(/(^|\/)app$/, "");
+  const inPkg = (f) => roots.some((r) => { const p = pkgOf(r); return !p || f.startsWith(`${p}/`); });
+  const rootOf = (f) => roots.find((r) => f.startsWith(`${r}/`));
+  const isRoute = (f) => { const r = rootOf(f); return r && CODE.test(f) && !NOT_APP.test(f) && !/^[_+]/.test(f.split("/").pop()); };
+  const all = [];
+  for (const f of files) if (isRoute(f)) { const r = routeOf(f.slice(rootOf(f).length + 1)); if (!all.some((x) => x.route === r.route)) all.push({ ...r, file: f }); }
+  const changedRoutes = [], shared = [], present = new Set(files);
+  for (const f of changed) {
+    if (!CODE.test(f) || NOT_APP.test(f) || (files.length && !present.has(f))) continue; // a deleted file is no screen to open
+    if (isRoute(f)) { const r = all.find((x) => x.file === f) ?? { ...routeOf(f.slice(rootOf(f).length + 1)), file: f }; if (!changedRoutes.some((x) => x.route === r.route)) changedRoutes.push(r); }
+    else if (roots.length && inPkg(f)) shared.push(f);
+    else if (!roots.length && /\.(tsx|jsx)$/.test(f)) shared.push(f);
+  }
+  const screenFiles = changedRoutes.length + shared.length;
+  const stop = screenFiles && !all.length
+    ? `${screenFiles} screen file(s) changed (${[...changedRoutes.map((r) => r.file), ...shared].slice(0, 4).join(", ")}) and no expo-router route maps them (no app/_layout or app/index in the repo); set "app_dir" in the flow`
+    : null;
+  return { given: true, changedRoutes, shared, everyRoute: shared.length > 0, allRoutes: all, stop, ignored: changed.length - screenFiles };
+}
+
 /** The run's outcome from what happened. Rule 0: zero taps is a stop, never a pass. Pure. */
 export function outcome({ taps, failures, stopped = null }) {
   if (stopped) return { exit: 9, line: `NAMED STOP [${stopped.code}] ${stopped.why}` };
@@ -140,7 +203,7 @@ async function snap(page) {
 // With `mark`, the same scan tags that one control (data-tap-through-target) so the tap hits exactly the control
 // the sweep counted. A role+name locator counts controls this scan leaves out (screens kept mounted under the
 // one on show), so its nth hit the wrong copy: AP "Back" DEAD and "Next question" untappable, 22 Nov 2026.
-const CONTROLS = ({ roles, mark }) => {
+const CONTROLS = ({ roles, mark, stateful }) => {
   const vis = (e) => { const r = e.getBoundingClientRect(); const s = getComputedStyle(e); return r.width > 4 && r.height > 4 && s.visibility !== "hidden" && s.display !== "none" && !e.closest("[aria-hidden=true]"); };
   const fullName = (e) => (e.getAttribute("aria-label") || e.innerText || e.getAttribute("title") || e.value || "").replace(/\s+/g, " ").trim();
   const roleOf = (e) => e.getAttribute("role") || (e.tagName === "A" && e.hasAttribute("href") ? "link" : e.tagName === "BUTTON" ? "button" : e.type === "checkbox" ? "checkbox" : null);
@@ -154,7 +217,7 @@ const CONTROLS = ({ roles, mark }) => {
       if (role === mark.role && n === mark.name && nth === mark.nth) { e.setAttribute("data-tap-through-target", ""); return { marked: true }; }
       continue;
     }
-    out.push({ role, name: n, nth, disabled: e.getAttribute("aria-disabled") === "true" || e.disabled === true, current: (role === "tab" && (e.getAttribute("aria-selected") === "true" || (e.getAttribute("aria-current") ?? "false") !== "false")) || (role === "radio" && e.getAttribute("aria-checked") === "true") || (role === "button" && e.getAttribute("aria-selected") === "true"), href: e.tagName === "A" ? e.href : null });
+    out.push({ role, name: n, nth, hidesState: stateful.includes(role) && !e.hasAttribute("aria-checked") && !e.hasAttribute("aria-selected"), disabled: e.getAttribute("aria-disabled") === "true" || e.disabled === true, current: (role === "tab" && (e.getAttribute("aria-selected") === "true" || (e.getAttribute("aria-current") ?? "false") !== "false")) || (role === "radio" && e.getAttribute("aria-checked") === "true") || (role === "button" && e.getAttribute("aria-selected") === "true"), href: e.tagName === "A" ? e.href : null });
   }
   for (const e of document.querySelectorAll("[tabindex='0']:not([role]):not(a):not(button):not(input)")) if (vis(e) && fullName(e) && e.querySelector("[role]") === null && getComputedStyle(e).cursor === "pointer") noRole.push(fullName(e).slice(0, 120));
   if (mark) return { marked: false };
@@ -212,8 +275,10 @@ async function changed(page, before, signal, ms = 3000) {
     await page.waitForTimeout(150);
   }
   if (signal.hit) return signal.hit;
-  // The pointer moves off first: a hover colour is not a change the tap made.
+  // The pointer moves off and the focus leaves first: a hover or focus style is not a change the tap made
+  // (a dead "Buy now" with a :focus border passed as live, review of #509, 22 Nov 2026).
   await page.mouse.move(1, 1).catch(() => {});
+  await page.evaluate(() => document.activeElement?.blur?.()).catch(() => {});
   await page.waitForTimeout(200);
   const look = await page.evaluate(LOOK).catch(() => null);
   return look !== null && look !== before.look ? LOOK_ONLY : null;
@@ -254,6 +319,8 @@ async function openContext(browser, { flow, origin, scheme, video, notes }) {
   });
   ctx.on("page", async (p) => { if (p !== ctx.pages()[0]) { signal.hit ??= `it opens a new window (${p.url() || "about:blank"})`; notes.external.add(p.url() || "a new window"); await p.close().catch(() => {}); } });
   const page = await ctx.newPage();
+  // Every screen the run reaches, replays and sweeps included: a changed screen reached here was opened.
+  page.on("framenavigated", (f) => { if (f === page.mainFrame()) notes.paths?.add(pathOf(f.url())); });
   page.on("dialog", async (d) => { signal.hit ??= `it asks "${d.message().slice(0, 80)}"`; await (signal.accept ? d.accept() : d.dismiss()).catch(() => {}); });
   page.on("download", async (d) => { signal.hit ??= `it downloads ${d.suggestedFilename()}`; await d.cancel().catch(() => {}); });
   const errors = [];
@@ -269,6 +336,11 @@ async function load(page, url, flow, storage) {
   const res = await page.goto(url, { waitUntil: "domcontentloaded", timeout: 45_000 }).catch((e) => ({ status: () => 0, err: e.message.split("\n")[0] }));
   await page.waitForLoadState("networkidle", { timeout: 15_000 }).catch(() => {});
   return res;
+}
+
+/** A URL's screen path, the way a route matches it ("/plans", never "/plans/" or "/plans.html"). */
+export function pathOf(url) {
+  try { const p = new URL(url).pathname.replace(/\.html$/, "").replace(/\/index$/, "").replace(/\/+$/, ""); return p || "/"; } catch { return ""; }
 }
 
 const joinUrl = (target, start = "/") => /^https?:/.test(start) ? start : new URL(start, target.endsWith("/") ? target : `${target}/`).href;
@@ -291,24 +363,26 @@ async function doStep(c, s, flow, target) {
   const field = (n) => page.getByLabel(n).or(page.getByPlaceholder(n)).or(page.getByRole("textbox", { name: n })).first();
   const loc = act === "fill" ? field(matcher(s.fill)) : locate(page, s.tap);
   const there = await loc.waitFor({ state: "visible", timeout: s.timeout ?? 15_000 }).then(() => true, () => false);
-  if (!there) return { ok: false, code: "STEP_UNREACHABLE", what: `"${typeof s[act] === "object" ? JSON.stringify(s[act]) : s[act]}" is not on the screen` };
+  if (!there) return { ok: false, code: "STEP_UNREACHABLE", what: `"${said(s[act])}" is not on the screen` };
   if (act === "fill") {
     const ok = await loc.fill(s.value, { timeout: 10_000 }).then(() => true, () => false);
     return ok ? { ok, what: `types into ${s.fill}` } : { ok, code: "STEP_UNREACHABLE", what: `"${s.fill}" cannot be typed into` };
   }
   const before = await snap(page);
+  const hides = await loc.evaluate((e, roles) => roles.includes(e.getAttribute("role")) && !e.hasAttribute("aria-checked") && !e.hasAttribute("aria-selected"), STATEFUL_ROLES).catch(() => false);
   await showTap(page, loc);
   const clicked = await tap(loc, 10_000);
-  if (clicked !== true) return { ok: false, code: "STEP_UNREACHABLE", what: `"${s.tap}" could not be tapped (${clicked})`, tapped: false };
+  if (clicked !== true) return { ok: false, code: "STEP_UNREACHABLE", what: `"${said(s.tap)}" could not be tapped (${clicked})`, tapped: false };
   const ch = await changed(page, before, signal);
-  if (!ch) return { ok: false, code: "DEAD_BUTTON", what: `tapping "${s.tap}" changed nothing`, tapped: true };
+  if (!ch) return hides ? { ok: false, code: "STATE_HIDDEN", what: stateHidden("control", said(s.tap)), tapped: true } : { ok: false, code: "DEAD_BUTTON", what: `tapping "${said(s.tap)}" changed nothing`, tapped: true };
   if (s.then != null) {
     const ok = await locate(page, s.then).waitFor({ state: "visible", timeout: s.timeout ?? 15_000 }).then(() => true, () => false);
-    if (!ok) return { ok: false, code: "STEP_UNREACHABLE", what: `after "${s.tap}", "${s.then}" never appeared`, tapped: true };
+    if (!ok) return { ok: false, code: "STEP_UNREACHABLE", what: `after "${said(s.tap)}", "${said(s.then)}" never appeared`, tapped: true };
   }
-  return { ok: true, what: `taps ${s.tap}: ${ch}`, tapped: true };
+  return { ok: true, what: `taps ${said(s.tap)}: ${ch}`, tapped: true };
 }
 
+const stateHidden = (role, name) => `tapping the ${role} "${name}" changed nothing, and it tells the web build nothing (no aria-checked / aria-selected): it is the chosen option or a dead one, and a screen reader cannot tell which; set aria-checked or aria-selected (react-native-web drops accessibilityState)`;
 const consoleOk = (flow, text) => (flow.console_ok ?? []).some((c) => text.includes(c.text));
 const slug = (s) => String(s).toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "").slice(0, 40) || "step";
 
@@ -325,12 +399,13 @@ async function replay(browser, flow, target, origin, j, upto, notes) {
 }
 
 /** Taps every control on the screen a journey reached, each from that screen; a dead one fails by name. */
-async function sweep(browser, flow, target, origin, j, at, c, ctx) {
-  const { notes, swept, budget } = ctx;
-  const { controls, noRole } = await c.page.evaluate(CONTROLS, { roles: CONTROL_ROLES }).catch(() => ({ controls: [], noRole: [] }));
+async function sweep(browser, flow, target, origin, j, at, c, ctx, cap = SWEEP_PER_SCREEN, budget = ctx.budget) {
+  const { notes, swept } = ctx;
+  const shots = []; // a shot after every sweep tap: the reviewer sees each one (review of #509: sweeps left no capture)
+  const { controls, noRole } = await c.page.evaluate(CONTROLS, { roles: CONTROL_ROLES, stateful: STATEFUL_ROLES }).catch(() => ({ controls: [], noRole: [] }));
   const skip = (flow.sweep_skip ?? []).map((s) => matcher(s.name));
   const path = await c.page.evaluate(() => location.pathname + location.search).catch(() => "");
-  const results = [], left = [];
+  const results = [], left = [], where = `${j.name}${at ? ` step ${at + 1}` : ""} sweep`;
   // Every tap starts from a replayed copy of this screen, never the journey's own page: the steps after a
   // sweep must find the screen the sweep saw (PBS first-open, 22 Nov 2026: the door was gone).
   let cur = c, fresh = false, here = 0;
@@ -345,7 +420,7 @@ async function sweep(browser, flow, target, origin, j, at, c, ctx) {
     if (skip.some((m) => (typeof m === "string" ? m === k.name : m.test(k.name)))) { results.push({ ...shown, result: "skipped (sweep_skip)" }); swept.add(key); continue; }
     if (k.href && /^(mailto|tel|sms):/i.test(k.href)) { results.push({ ...shown, result: `opens ${k.href.split(":")[0]} (not followed)` }); swept.add(key); continue; }
     if (k.href && !k.href.startsWith(origin)) { results.push({ ...shown, result: `links to ${k.href.split("?")[0]} (not followed)` }); notes.external.add(k.href.split("?")[0]); swept.add(key); continue; }
-    if (budget.left <= 0 || here >= SWEEP_PER_SCREEN) { left.push(k.name); continue; }
+    if (budget.left <= 0 || here >= cap) { left.push(k.name); continue; }
     if (!fresh) {
       if (cur !== c) await cur.ctx.close().catch(() => {});
       cur = await replay(browser, flow, target, origin, j, at, notes);
@@ -357,31 +432,47 @@ async function sweep(browser, flow, target, origin, j, at, c, ctx) {
     // locator click would, up to 5 s. An instant look made AP, APM and PBS controls "gone" (22 Nov 2026).
     let marked = false;
     for (const t0 = Date.now(); !marked && Date.now() - t0 < 5_000; ) {
-      ({ marked } = await cur.page.evaluate(CONTROLS, { roles: CONTROL_ROLES, mark: { role: k.role, name: k.name, nth: k.nth } }).catch(() => ({ marked: false })));
+      ({ marked } = await cur.page.evaluate(CONTROLS, { roles: CONTROL_ROLES, stateful: STATEFUL_ROLES, mark: { role: k.role, name: k.name, nth: k.nth } }).catch(() => ({ marked: false })));
       if (!marked) await cur.page.waitForTimeout(250);
     }
-    if (!marked) { results.push({ ...shown, result: "gone when this screen was opened again" }); ctx.failures.push({ code: "STEP_UNREACHABLE", where: `${j.name} step ${at + 1} sweep`, what: `the ${k.role} "${k.name}" was not there when the screen was opened again (the screen differs each time)` }); fresh = false; continue; }
+    if (!marked) { results.push({ ...shown, result: "gone when this screen was opened again" }); ctx.failures.push({ code: "STEP_UNREACHABLE", where, what: `the ${k.role} "${k.name}" was not there when the screen was opened again (the screen differs each time)` }); fresh = false; continue; }
     const loc = cur.page.locator("[data-tap-through-target]");
     const before = await snap(cur.page);
     cur.signal.hit = null; cur.signal.accept = false;
+    cur.errors.length = 0; // only what this tap logs: the replay's own load is the journey's to judge
+    await showTap(cur.page, loc);
     const clicked = await tap(loc, 5_000);
-    if (clicked !== true) { results.push({ ...shown, result: `could not be tapped (${clicked})` }); ctx.failures.push({ code: "STEP_UNREACHABLE", where: `${j.name} step ${at + 1} sweep`, what: `the ${k.role} "${k.name}" is shown but cannot be tapped (${clicked.slice(0, 120)})` }); continue; }
+    if (clicked !== true) { results.push({ ...shown, result: `could not be tapped (${clicked})` }); ctx.failures.push({ code: "STEP_UNREACHABLE", where, what: `the ${k.role} "${k.name}" is shown but cannot be tapped (${clicked.slice(0, 120)})` }); continue; }
     ctx.taps.n++;
     const ch = await changed(cur.page, before, cur.signal, 2500);
     const err = await errorScreen(cur.page, flow);
-    if (!ch) { results.push({ ...shown, result: "DEAD" }); ctx.failures.push({ code: "DEAD_BUTTON", where: `${j.name} step ${at + 1} sweep`, what: `tapping the ${k.role} "${k.name}" changed nothing` }); fresh = true; continue; }
-    if (err) ctx.failures.push({ code: "ERROR_SCREEN", where: `${j.name} step ${at + 1} sweep`, what: `tapping "${k.name}" shows ${err}` });
+    // A tap that draws and then throws is a crash a person hits: read this context's errors, as a step's are.
+    const cons = cur.errors.splice(0).filter((e) => !consoleOk(flow, e));
+    for (const e of cons) ctx.failures.push({ code: "CONSOLE_ERROR", where, what: `tapping "${k.name}": ${e}` });
+    const result = !ch ? (k.hidesState ? "STATE_HIDDEN" : "DEAD") : ch;
+    if (ctx.out) {
+      const file = join(ctx.out, `${String(shots.length + 1).padStart(2, "0")}-${slug(k.name)}.jpg`);
+      await cur.page.screenshot({ path: file, type: "jpeg", quality: 60, animations: "disabled", timeout: 30_000 }).catch(() => {});
+      if (existsSync(file)) shots.push({ file, caption: `${slug(j.name)} · tap "${k.name.slice(0, 40)}" → ${result === ch ? "live" : result}${cons.length ? " · CONSOLE_ERROR" : ""}` });
+    }
+    if (!ch) {
+      results.push({ ...shown, result });
+      ctx.failures.push(k.hidesState ? { code: "STATE_HIDDEN", where, what: stateHidden(k.role, k.name) } : { code: "DEAD_BUTTON", where, what: `tapping the ${k.role} "${k.name}" changed nothing` });
+      fresh = true; continue;
+    }
+    if (err) ctx.failures.push({ code: "ERROR_SCREEN", where, what: `tapping "${k.name}" shows ${err}` });
     results.push({ ...shown, result: ch });
     fresh = false;
   }
   if (cur !== c) await cur.ctx.close().catch(() => {});
-  return { results, left };
+  return { results, left, found: controls.length, shots };
 }
 
-/** Dark shots of one journey on one sheet, so the judge sees every dark screen without 40 more images. */
+/** Shots on one sheet (one journey's dark screens, or one screen's sweep taps), so the judge opens one image, not 40. */
 async function sheet(browser, files, out) {
   if (!files.length) return null;
-  const imgs = files.map((f) => `<figure><img src="data:image/png;base64,${readFileSync(f).toString("base64")}"><figcaption>${f.split("/").pop()}</figcaption></figure>`).join("");
+  const esc = (s) => String(s).replace(/[&<>"]/g, (ch) => `&#${ch.charCodeAt(0)};`);
+  const imgs = files.map((x) => { const f = x.file ?? x; return `<figure><img src="data:image/${extname(f) === ".jpg" ? "jpeg" : "png"};base64,${readFileSync(f).toString("base64")}"><figcaption>${esc(x.caption ?? f.split("/").pop())}</figcaption></figure>`; }).join("");
   const ctx = await browser.newContext({ viewport: { width: 1280, height: 900 } });
   const p = await ctx.newPage();
   await p.setContent(`<style>body{margin:0;background:#888;display:grid;grid-template-columns:repeat(4,1fr);gap:12px;padding:12px;font:13px sans-serif}img{width:100%;display:block}figure{margin:0}figcaption{color:#fff;padding:4px 0}</style>${imgs}`);
@@ -394,9 +485,9 @@ async function sheet(browser, files, out) {
  * The whole run. Returns the report (also written to out/tap-report.json) with every step, every
  * sweep result, every failure by name, the facts and the capture list ship-review judges.
  */
-export async function run({ flow, target, out, schemes = ["light", "dark"], chromium = null }) {
+export async function run({ flow, target, out, schemes = ["light", "dark"], chromium = null, changed = null, files = [] }) {
   mkdirSync(out, { recursive: true });
-  const report = { app: flow?.app, target, schemes, journeys: [], sweeps: [], failures: [], facts: [], shots: [], videos: [], taps: 0, stopped: null };
+  const report = { app: flow?.app, target, schemes, journeys: [], sweeps: [], routes: [], failures: [], facts: [], shots: [], videos: [], taps: 0, stopped: null };
   const finish = () => {
     const o = outcome({ taps: report.taps, failures: report.failures, stopped: report.stopped });
     report.result = o.line;
@@ -406,10 +497,17 @@ export async function run({ flow, target, out, schemes = ["light", "dark"], chro
   };
   const problems = flowProblems(flow);
   if (problems.length) { report.stopped = { code: "FLOW_INVALID", why: problems.join("; ") }; return finish(); }
+  const change = changedScreens({ changed, files, appDir: flow.app_dir ?? null });
+  if (change.stop) { report.stopped = { code: "CHANGED_SCREENS_UNMAPPED", why: change.stop }; return finish(); }
   const origin = new URL(target).origin;
   const browser = await (chromium ?? (await import("@playwright/test")).chromium).launch();
-  const notes = { blocked: new Set(), external: new Set(), noRole: [], unnamed: [] };
-  const ctx = { notes, swept: new Set(), budget: { left: SWEEP_PER_RUN }, failures: report.failures, taps: { n: 0 } };
+  const notes = { blocked: new Set(), external: new Set(), noRole: [], unnamed: [], paths: new Set() };
+  const ctx = { notes, swept: new Set(), budget: { left: SWEEP_PER_RUN }, failures: report.failures, taps: { n: 0 }, out: null };
+  const sweepSheet = async (name, shots) => {
+    const f = await sheet(browser, shots, join(out, `sweep-sheet-${slug(name)}.png`)).catch(() => null);
+    if (f) report.shots.push({ label: f.split("/").pop(), file: f.split("/").pop() });
+    return f;
+  };
   const reached = new Map(); // "<journey>:<id>" → { ok, text }
   const leftOver = [];
   try {
@@ -438,11 +536,15 @@ export async function run({ flow, target, out, schemes = ["light", "dark"], chro
           let r;
           if ("sweep" in s) {
             if (dark) { n--; continue; }
+            ctx.out = join(out, "sweep-tmp", `${slug(j.name)}-${i + 1}`); mkdirSync(ctx.out, { recursive: true });
             const sw = await sweep(browser, flow, target, origin, j, i, c, ctx);
-            report.sweeps.push({ journey: j.name, step: i + 1, ...sw });
+            const sh = await sweepSheet(`${j.name}-step-${i + 1}`, sw.shots);
+            report.sweeps.push({ journey: j.name, step: i + 1, results: sw.results, left: sw.left, sheet: sh?.split("/").pop() ?? null });
             if (sw.left.length) leftOver.push(`${j.name} step ${i + 1}: ${sw.left.join(", ")}`);
-            r = { ok: true, what: `sweeps ${sw.results.length} controls` };
+            // A swept screen with nothing a person can tap is a broken or wrong screen, never "0 controls, ok".
+            r = sw.found ? { ok: true, what: `sweeps ${sw.results.length} controls` } : { ok: false, code: "STEP_UNREACHABLE", what: "the sweep found no control a person can tap on this screen (a broken or wrong screen)" };
           } else r = await doStep(c, s, flow, target);
+          notes.paths.add(pathOf(c.page.url()));
           if (r.tapped) ctx.taps.n++;
           await c.page.waitForTimeout(350);
           const where = `${j.name} step ${i + 1}${dark ? " (dark)" : ""}`;
@@ -474,7 +576,8 @@ export async function run({ flow, target, out, schemes = ["light", "dark"], chro
         report.journeys.push(jr);
       }
     }
-  } finally { await browser.close(); rmSync(join(out, "video-tmp"), { recursive: true, force: true }); }
+    if (change.given) await changedPass({ browser, flow, target, origin, change, ctx, report, sweepSheet, out });
+  } finally { await browser.close(); for (const d of ["video-tmp", "sweep-tmp"]) rmSync(join(out, d), { recursive: true, force: true }); }
   report.taps = ctx.taps.n;
   report.failures.push(...promiseFailures(flow, reached));
   const f = report.facts;
@@ -482,7 +585,10 @@ export async function run({ flow, target, out, schemes = ["light", "dark"], chro
   for (const j of report.journeys.filter((x) => x.scheme === schemes[0])) f.push(`journey ${j.name}: ${j.steps.map((s) => `${s.n} ${s.status === "ok" ? "ok" : s.status}`).join(", ")}`);
   for (const s of report.sweeps) f.push(`sweep at ${s.journey} step ${s.step}: ${s.results.map((r) => `"${r.name}" ${r.result === "DEAD" ? "DEAD" : "live"}`).join(", ") || "no controls"}`);
   if (leftOver.length) f.push(`NOT swept (budget ${SWEEP_PER_RUN} taps): ${leftOver.join("; ")}`);
-  f.push(report.failures.length ? `${report.failures.length} named failures: ${report.failures.map((x) => `${x.code} at ${x.where}: ${x.what}`).join(" | ")}` : "no named failures: no dead button, console error, error screen, unreachable step or unbuilt promise");
+  if (!change.given) f.push("no diff given (not a pull request or push): the journeys alone ran; no changed screen was looked for");
+  else f.push(`the change: ${change.changedRoutes.length} screen route(s) changed (${change.changedRoutes.map((r) => r.route).join(", ") || "none"}), ${change.shared.length} shared app file(s)${change.everyRoute ? ` (so all ${change.allRoutes.length} routes were opened)` : ""}, ${change.ignored} file(s) not screens`);
+  for (const r of report.routes) f.push(`route ${r.route}${r.changed ? " (changed)" : ""}: ${r.result}`);
+  f.push(report.failures.length ? `${report.failures.length} named failures: ${report.failures.map((x) => `${x.code} at ${x.where}: ${x.what}`).join(" | ")}` : "no named failures: no dead button, console error, error screen, unreachable step, unbuilt promise, hidden state or unopened changed screen");
   if (notes.blocked.size) f.push(`writes blocked (the tap-through never writes): ${[...notes.blocked].slice(0, 8).join(", ")}`);
   if (notes.external.size) f.push(`opens outside the app (not followed): ${[...notes.external].slice(0, 10).join(", ")}`);
   const lookOnly = report.sweeps.flatMap((s) => s.results.filter((r) => r.result === LOOK_ONLY).map((r) => `${s.journey}: "${r.name}"`));
@@ -498,30 +604,106 @@ export async function run({ flow, target, out, schemes = ["light", "dark"], chro
   return finish();
 }
 
+/**
+ * The screens this change touched that the journeys did not sweep: each is opened by its URL and every
+ * control on it tapped (a changed route gets the full per-screen budget; with a shared file changed,
+ * every other route gets SWEEP_PER_ROUTE). A changed screen the run cannot open fails UNMAPPED_SCREEN.
+ */
+async function changedPass({ browser, flow, target, origin, change, ctx, report, sweepSheet, out }) {
+  const base = pathOf(target) === "/" ? "" : pathOf(target);
+  const local = (p) => (base && p.startsWith(base) ? p.slice(base.length) || "/" : p);
+  const reached = () => [...ctx.notes.paths].map(local);
+  const isChanged = (r) => change.changedRoutes.some((x) => x.route === r.route);
+  const list = change.everyRoute ? [...change.changedRoutes, ...change.allRoutes.filter((r) => !isChanged(r))] : change.changedRoutes;
+  const budget = { left: ROUTE_SWEEP_PER_RUN };
+  for (const r of list) {
+    const ch = isChanged(r), url = r.url ?? flow.routes?.[r.route] ?? null;
+    const row = { route: r.route, file: r.file, changed: ch, result: "" };
+    report.routes.push(row);
+    if (!url) {
+      const hit = reached().find((p) => r.re.test(p));
+      if (hit) { row.result = `reached by the journeys at ${hit}`; continue; }
+      row.result = "NOT opened: its path takes a value and no journey reached it";
+      if (ch) ctx.failures.push({ code: "UNMAPPED_SCREEN", where: `changed screen ${r.route}`, what: `${r.file} changed, no journey reached it and its path takes a value: add a journey that reaches it, or "routes": { "${r.route}": "<a test URL>" } to the flow` });
+      continue;
+    }
+    if (budget.left <= 0) { row.result = `NOT opened (budget ${ROUTE_SWEEP_PER_RUN} taps)`; if (ch) ctx.failures.push({ code: "UNMAPPED_SCREEN", where: `changed screen ${r.route}`, what: `${r.file} changed and the run's tap budget ran out before it was opened; split the change` }); continue; }
+    const j = { name: `route ${r.route}`, start: url.replace(/^\//, ""), steps: [], storage: flow.route_storage ?? flow.journeys[0]?.storage };
+    const c = await openContext(browser, { flow, origin, scheme: "light", video: null, notes: ctx.notes });
+    try {
+      await load(c.page, joinUrl(target, j.start), flow, j.storage);
+      await c.page.waitForTimeout(500);
+      const landed = local(pathOf(c.page.url()));
+      const where = `changed screen ${r.route}`;
+      if (!r.re.test(landed) && !(flow.routes?.[r.route] && landed === local(pathOf(joinUrl(target, j.start))))) {
+        row.result = `opening it went to ${landed} (it needs sign-in or data first)`;
+        if (ch) ctx.failures.push({ code: "UNMAPPED_SCREEN", where, what: `${r.file} changed and opening ${url} went to ${landed}: add a journey that reaches it (with test values), or route_storage to the flow` });
+        continue;
+      }
+      const err = await errorScreen(c.page, flow);
+      const cons = c.errors.splice(0).filter((e) => !consoleOk(flow, e));
+      const file = join(out, `route-${slug(r.route) || "home"}.png`);
+      await c.page.screenshot({ path: file, fullPage: true, animations: "disabled", timeout: 60_000 }).catch(() => {});
+      if (existsSync(file)) report.shots.push({ label: file.split("/").pop(), file: file.split("/").pop() });
+      if (err) ctx.failures.push({ code: "ERROR_SCREEN", where: `route ${r.route}`, what: `opening it shows ${err}` });
+      for (const e of cons) ctx.failures.push({ code: "CONSOLE_ERROR", where: `route ${r.route}`, what: e });
+      if (err) { row.result = `ERROR_SCREEN: ${err}`; continue; }
+      ctx.out = join(out, "sweep-tmp", slug(j.name)); mkdirSync(ctx.out, { recursive: true });
+      const sw = await sweep(browser, flow, target, origin, j, 0, c, ctx, ch ? SWEEP_PER_SCREEN : SWEEP_PER_ROUTE, budget);
+      const sh = await sweepSheet(j.name, sw.shots);
+      report.sweeps.push({ journey: j.name, step: 0, results: sw.results, left: sw.left, sheet: sh?.split("/").pop() ?? null });
+      const dead = sw.results.filter((x) => x.result === "DEAD" || x.result === "STATE_HIDDEN").length;
+      row.result = `opened; ${sw.results.length} controls tapped here${dead ? ` (${dead} failed)` : ""}, ${sw.found - sw.results.length - sw.left.length} already swept by the journeys${sw.left.length ? `, ${sw.left.length} over the budget` : ""}`;
+      if (!sw.found && ch) ctx.failures.push({ code: "STEP_UNREACHABLE", where, what: "the changed screen opened with no control a person can tap (a broken or wrong screen)" });
+    } finally { await c.ctx.close().catch(() => {}); }
+  }
+}
+
 // ─── Self-test: the broken-fixture proof ─────────────────────────────────────────────────────────
 
 const FIXTURES = join(dirname(fileURLToPath(import.meta.url)), "fixtures", "tap-through");
-function serve(dir) {
+/** A flow file as the run reads it: a file that is not JSON comes back carrying why, so FLOW_INVALID says so. */
+export function readFlow(path) {
+  try { return JSON.parse(readFileSync(path, "utf8")); } catch (e) { return { journeys: [], error: e.message.split("\n")[0] }; }
+}
+const readList = (path) => (path ? readFileSync(path, "utf8").split("\n").map((s) => s.trim()).filter(Boolean) : null);
+
+function serve(dir, { spa = false } = {}) {
   const types = { ".html": "text/html", ".js": "text/javascript", ".json": "application/json" };
   const writes = [];
   const srv = createServer((req, res) => {
     if (!["GET", "HEAD"].includes(req.method)) writes.push(`${req.method} ${req.url}`);
     const p = join(dir, decodeURIComponent(new URL(req.url, "http://x").pathname).replace(/\/$/, "/index.html"));
-    if (!p.startsWith(dir) || !existsSync(p)) { res.writeHead(404); return res.end("not found"); }
-    res.writeHead(200, { "content-type": types[extname(p)] ?? "application/octet-stream" }); res.end(readFileSync(p));
+    // spa: every path is the app (as an expo-router web build serves it); else a missing file is a 404.
+    const f = p.startsWith(dir) && existsSync(p) && !p.endsWith("/") ? p : spa ? join(dir, "index.html") : null;
+    if (!f) { res.writeHead(404); return res.end("not found"); }
+    res.writeHead(200, { "content-type": types[extname(f)] ?? "application/octet-stream" }); res.end(readFileSync(f));
   });
   return new Promise((r) => srv.listen(0, "127.0.0.1", () => r({ url: `http://127.0.0.1:${srv.address().port}/`, writes, close: () => srv.close() })));
 }
 
 /** Each fixture must end exactly as expected, or the self-test fails (and with it the PR). */
 export async function selfTest({ chromium = null, log = console.log, keep = null } = {}) {
-  const srv = await serve(FIXTURES);
+  const srv = await serve(FIXTURES), app = await serve(join(FIXTURES, "routes"), { spa: true });
   const tmp = keep ? resolve(keep) : join(tmpdir(), `tap-self-${Date.now()}`);
-  const flowOf = (n) => JSON.parse(readFileSync(join(FIXTURES, n), "utf8"));
+  const flowOf = (n) => readFlow(join(FIXTURES, n));
+  // The path-routed fixture app's repo (expo-router layout); each change case names the files it changed.
+  const files = readList(join(FIXTURES, "routes", "files.txt"));
+  const routes = { flow: "routes/routes.flow.json", target: app.url, files };
   const cases = [
     { name: "a working app passes", flow: "good.flow.json", target: srv.url, exit: 0 },
     { name: "a write the flow did not mock is blocked, never sent", flow: "good.flow.json", target: srv.url, exit: 0, blocked: "POST" },
-    { name: "a dead button and an unbuilt paywall promise fail by name", flow: "broken.flow.json", target: srv.url, exit: 1, codes: ["DEAD_BUTTON", "PROMISE_UNBUILT", "CONSOLE_ERROR", "STEP_UNREACHABLE"] },
+    { name: "a dead button and an unbuilt paywall promise fail by name", flow: "broken.flow.json", target: srv.url, exit: 1, codes: ["DEAD_BUTTON", "PROMISE_UNBUILT", "CONSOLE_ERROR", "STEP_UNREACHABLE"],
+      // each planted sweep defect by its own control: a dead "Buy now" with a :focus style is DEAD (not "its look
+      // changed"), a tap that draws and then throws is a CONSOLE_ERROR, a hidden-state radio is STATE_HIDDEN not DEAD
+      has: [["DEAD_BUTTON", "Buy now"], ["CONSOLE_ERROR", "planted crash after tap"], ["STATE_HIDDEN", "Monthly, chosen"]], lacks: [["DEAD_BUTTON", "Monthly, chosen"]], sheets: 1 },
+    { name: "a swept screen with nothing to tap is unreachable, never ok", flow: "no-controls.flow.json", target: srv.url, exit: 1, has: [["STEP_UNREACHABLE", "no control"]] },
+    { name: "a flow file that is not JSON is a named stop that says why", flow: "invalid.flow.json", target: srv.url, exit: 9, stop: "FLOW_INVALID", says: "could not be read" },
+    { name: "a changed screen the journeys reach and sweep passes", ...routes, changed: ["app/plans.tsx", "tests/plans.test.ts"], exit: 0, routes: ["/plans"] },
+    { name: "a changed screen no journey reached is opened and swept", ...routes, changed: ["app/settings/index.tsx"], exit: 1, has: [["DEAD_BUTTON", "Reset"]], lacks: [["DEAD_BUTTON", "Contact"]], routes: ["/settings"] },
+    { name: "a changed shared component opens and sweeps every route", ...routes, changed: ["components/Card.tsx"], exit: 1, has: [["DEAD_BUTTON", "Reset"], ["DEAD_BUTTON", "Contact"]] },
+    { name: "a changed screen whose path takes a value, never reached, fails by name", ...routes, changed: ["app/item/[id].tsx"], exit: 1, has: [["UNMAPPED_SCREEN", "item/[id]"]] },
+    { name: "screen files changed with no route that maps them is a named stop", ...routes, files: ["src/Screen.tsx", "package.json"], changed: ["src/Screen.tsx"], exit: 9, stop: "CHANGED_SCREENS_UNMAPPED" },
     { name: "a flow that taps nothing is a named stop", flow: "taps-nothing.flow.json", target: srv.url, exit: 9, stop: "FLOW_TAPS_NOTHING" },
     { name: "a preview that is down is a named stop", flow: "good.flow.json", target: "http://127.0.0.1:9/", exit: 9, stop: "PREVIEW_DOWN" },
     { name: "a flow file with no journeys is a named stop", flow: "empty.flow.json", target: srv.url, exit: 9, stop: "FLOW_INVALID" },
@@ -529,9 +711,18 @@ export async function selfTest({ chromium = null, log = console.log, keep = null
   const bad = [];
   try {
     for (const [i, c] of cases.entries()) {
-      const r = await run({ flow: flowOf(c.flow), target: c.target, out: join(tmp, String(i)), schemes: ["light"], chromium });
+      const r = await run({ flow: flowOf(c.flow), target: c.target, out: join(tmp, String(i)), schemes: ["light"], chromium, changed: c.changed ?? null, files: c.files ?? [] });
       const codes = new Set(r.report.failures.map((f) => f.code));
+      const named = (code, text) => r.report.failures.some((f) => f.code === code && `${f.where} ${f.what}`.includes(text));
       const ok = r.exit === c.exit && (c.codes ?? []).every((k) => codes.has(k)) && (!c.stop || r.line.includes(`[${c.stop}]`));
+      for (const [code, text] of c.has ?? []) if (!named(code, text)) bad.push(`${c.name}: no ${code} for "${text}" (${r.report.failures.map((f) => `${f.code} ${f.what}`).join(" | ").slice(0, 400)})`);
+      for (const [code, text] of c.lacks ?? []) if (named(code, text)) bad.push(`${c.name}: "${text}" was named ${code}, wrongly`);
+      if (c.says && !r.line.includes(c.says)) bad.push(`${c.name}: the stop does not say "${c.says}" (${r.line})`);
+      for (const rt of c.routes ?? []) if (!r.report.routes.some((x) => x.route === rt && x.result.startsWith("opened"))) bad.push(`${c.name}: the changed screen ${rt} was not opened and swept`);
+      // every sweep tap is on a sheet the reviewer opens (review of #509: sweeps left no capture)
+      const sheets = r.report.shots.filter((s) => s.file.startsWith("sweep-sheet-") && existsSync(join(tmp, String(i), s.file)));
+      if (c.sheets && sheets.length < c.sheets) bad.push(`${c.name}: ${sheets.length} sweep sheets, expected ${c.sheets}`);
+      if (JSON.stringify(r.report).includes("[object Object]")) bad.push(`${c.name}: the report says "[object Object]"`);
       if (c.exit === 0 && !r.report.taps) bad.push(`${c.name}: passed having tapped nothing`);
       if (c.blocked && !r.report.facts.some((f) => f.startsWith("writes blocked") && f.includes(c.blocked))) bad.push(`${c.name}: the delete's POST was not recorded as blocked`);
       if (c.blocked && srv.writes.length) bad.push(`${c.name}: the fixture server received ${srv.writes.join(", ")}`);
@@ -539,7 +730,7 @@ export async function selfTest({ chromium = null, log = console.log, keep = null
       if (!ok) bad.push(`${c.name}: expected exit ${c.exit}${c.codes ? ` with ${c.codes.join(", ")}` : ""}${c.stop ? ` [${c.stop}]` : ""}; got exit ${r.exit} (${r.line})`);
       if (c.flow === "broken.flow.json" && !r.report.videos.length) bad.push("the broken run recorded no video");
     }
-  } finally { srv.close(); if (!keep) rmSync(tmp, { recursive: true, force: true }); }
+  } finally { srv.close(); app.close(); if (!keep) rmSync(tmp, { recursive: true, force: true }); }
   if (bad.length) { for (const b of bad) log(`SELF-TEST FAIL ${b}`); return 1; }
   log(`SELF-TEST PASS ${cases.length} fixtures ended as expected`);
   return 0;
@@ -551,11 +742,11 @@ export async function main(argv = process.argv.slice(2), { print = console.log }
   if (argv.includes("--self-test")) { const o = argv.indexOf("--out"); return selfTest({ log: print, keep: o >= 0 ? argv[o + 1] : null }); }
   const a = {};
   for (let i = 0; i < argv.length; i++) if (argv[i].startsWith("--")) a[argv[i].slice(2)] = argv[++i];
-  if (!a.flow || !a.target || !a.out) { print("usage: tap-through.mjs --flow <tap-through.json> --target <preview URL> --out <dir> [--schemes light,dark]"); return 64; }
+  if (!a.flow || !a.target || !a.out) { print("usage: tap-through.mjs --flow <tap-through.json> --target <preview URL> --out <dir> [--schemes light,dark] [--changed <changed.txt> --files <files.txt>]"); return 64; }
+  if (a.changed && !a.files) { print("NAMED STOP [FLOW_INVALID] --changed needs --files (the repo's file list) to map screens"); return 9; }
   const out = resolve(a.out);
-  let flow = null;
-  try { flow = JSON.parse(readFileSync(a.flow, "utf8")); } catch (e) { flow = { journeys: [], error: e.message }; }
-  const r = await run({ flow, target: a.target, out, schemes: (a.schemes ?? "light,dark").split(",").filter(Boolean) });
+  const flow = readFlow(a.flow);
+  const r = await run({ flow, target: a.target, out, schemes: (a.schemes ?? "light,dark").split(",").filter(Boolean), changed: readList(a.changed), files: readList(a.files) ?? [] });
   for (const f of r.report.failures) print(`${f.code} ${f.where}: ${f.what}`);
   print(r.line);
   print(`OUTPUT ${r.report.taps} taps, ${r.report.shots.length} captures, ${r.report.videos.length} videos in ${out}`);

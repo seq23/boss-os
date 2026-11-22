@@ -8,7 +8,7 @@ import { mkdtempSync, readFileSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
-import { flowProblems, outcome, promiseFailures, MAX_STEPS } from "../scripts/ops/tap-through.mjs";
+import { changedScreens, flowProblems, outcome, pathOf, promiseFailures, readFlow, routeOf, said, MAX_STEPS } from "../scripts/ops/tap-through.mjs";
 import { parseArgs, readTapThrough } from "../scripts/ops/ship-review.mjs";
 import { DEFAULT_SURFACE, KINDS, reviewPrompt, withTapFailures } from "../src/shared/boss/shipReview/review.mjs";
 
@@ -30,6 +30,48 @@ describe("a flow file that cannot prove anything never runs", () => {
     expect(flowProblems({ app: "X", journeys: [{ name: "a", steps: [{ fill: "Email" }] }] }).join(" ")).toMatch(/test "value"/);
     const long = { app: "X", journeys: [{ name: "a", steps: Array.from({ length: MAX_STEPS + 1 }, () => ({ tap: "Next" })) }] };
     expect(flowProblems(long).join(" ")).toMatch(/split the flow/);
+  });
+});
+
+describe("the change decides which screens are opened (review of #509, F1)", () => {
+  const files = readFileSync("scripts/ops/fixtures/tap-through/routes/files.txt", "utf8").split("\n").filter(Boolean);
+  it("an expo-router file is its route: groups and index drop out, a value in the path has no URL", () => {
+    expect(routeOf("(tabs)/more/full-plan.tsx")).toMatchObject({ route: "/more/full-plan", url: "/more/full-plan" });
+    expect(routeOf("settings/index.tsx")).toMatchObject({ route: "/settings", url: "/settings" });
+    expect(routeOf("index.tsx")).toMatchObject({ route: "/", url: "/" });
+    const item = routeOf("item/[id].tsx");
+    expect(item.url).toBeNull();
+    expect(item.re.test("/item/42")).toBe(true);
+    expect(item.re.test("/item")).toBe(false);
+    expect(pathOf("https://x.pages.dev/plans/")).toBe("/plans");
+    expect(pathOf("https://x.pages.dev/")).toBe("/");
+  });
+  it("a changed route is its screen, a shared app file opens every route, tests and deleted files are not screens", () => {
+    expect(changedScreens({ changed: null, files })).toEqual({ given: false });
+    const one = changedScreens({ changed: ["app/settings/index.tsx", "tests/plans.test.ts", "app/gone.tsx"], files });
+    expect(one.changedRoutes.map((r: { route: string }) => r.route)).toEqual(["/settings"]);
+    expect(one.everyRoute).toBe(false);
+    const shared = changedScreens({ changed: ["components/Card.tsx"], files });
+    expect(shared.everyRoute).toBe(true);
+    expect(shared.allRoutes.map((r: { route: string }) => r.route).sort()).toEqual(["/", "/help", "/item/[id]", "/plans", "/settings"]);
+    const mono = changedScreens({ changed: ["apps/mobile/app/(tabs)/more/full-plan.tsx", "apps/web/src/page.tsx"], files: ["apps/mobile/app/_layout.tsx", "apps/mobile/app/(tabs)/more/full-plan.tsx", "apps/web/src/page.tsx"] });
+    expect(mono.changedRoutes.map((r: { route: string }) => r.route)).toEqual(["/more/full-plan"]);
+    expect(mono.shared).toEqual([]);
+  });
+  it("screen files changed and no route maps them is a named stop, never a pass", () => {
+    expect(changedScreens({ changed: ["src/Screen.tsx"], files: ["src/Screen.tsx"] }).stop).toMatch(/no expo-router route maps them/);
+    expect(changedScreens({ changed: ["README.md"], files: ["README.md"] }).stop).toBeNull();
+  });
+});
+
+describe("what the report says is what a person reads", () => {
+  it("an object tap spec reads as JSON, never [object Object]", () => {
+    expect(said({ role: "link", name: "Home" })).toBe('{"role":"link","name":"Home"}');
+    expect(said("Save")).toBe("Save");
+  });
+  it("a flow file that is not JSON carries its parse error into FLOW_INVALID", () => {
+    const f = readFlow("scripts/ops/fixtures/tap-through/invalid.flow.json");
+    expect(flowProblems(f).join(" ")).toMatch(/could not be read: .*JSON/);
   });
 });
 

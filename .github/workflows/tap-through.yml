@@ -1,8 +1,10 @@
 # THE APP TAP-THROUGH, ON GITHUB (owner, 22 Nov 2026: "a factory standard that we live by"; "yes to
 # all"). A robot taps through an app's web preview like a person, at 390 px in light and dark, driven
 # by the app repo's tap-through.json (scripts/ops/tap-through.mjs): a video per journey, a screenshot
-# per step, and a red run on a dead button, a console error, an error screen, an unreachable step or a
-# price-screen promise with no screen behind it. Never on the Mac (8 GB; the owner's ruling).
+# per step, a sheet per swept screen, and a red run on a dead button, a console error, an error screen, an
+# unreachable step, a price-screen promise with no screen behind it, a hidden-state control or a changed
+# screen it could not open. The change decides what is opened: every screen the PR's diff touched is
+# opened and every control on it tapped. Never on the Mac (8 GB; the owner's ruling).
 #
 #   workflow_call      each app's preview workflow calls this after its preview is up (a red check
 #                      blocks `land`): uses: seq23/boss-os/.github/workflows/tap-through.yml@main
@@ -81,15 +83,31 @@ jobs:
       # Self-test or a real app? Only by the target: a caller and a dispatch always pass one; the
       # pull_request self-test has none. Never by event_name: a calling app's PR run is also
       # 'pull_request', and on 22 Nov 2026 every app "passed" by running the fixture instead of itself.
-      - name: The app's flow file
+      # The whole app repo with its history: the flow file, and the change (which screens it touched).
+      - name: The app (flow file and change)
         if: inputs.target != ''
         uses: actions/checkout@v4
         with:
           repository: ${{ inputs.flow_repo || github.repository }}
           ref: ${{ inputs.flow_ref || github.sha }}
           path: flow
-          sparse-checkout: ${{ inputs.flow_file || 'tap-through.json' }}
-          sparse-checkout-cone-mode: false
+          fetch-depth: 0
+      # The change decides what is opened: a pull request's `base...head`, a push's `before...after`. A
+      # dispatch (no PR) or a first push has no diff; the runner then says so and plays the journeys alone.
+      - name: The change
+        if: inputs.target != ''
+        working-directory: flow
+        env:
+          BASE: ${{ github.event.pull_request.base.sha || github.event.before || '' }}
+        run: |
+          git ls-files > "$RUNNER_TEMP/files.txt"
+          if [ -n "$BASE" ] && [ "$BASE" != "0000000000000000000000000000000000000000" ] && git cat-file -e "$BASE^{commit}" 2>/dev/null; then
+            git diff --name-only "$BASE...HEAD" > "$RUNNER_TEMP/changed.txt"
+            echo "CHANGED=--changed $RUNNER_TEMP/changed.txt --files $RUNNER_TEMP/files.txt" >> "$GITHUB_ENV"
+            echo "the change: $(wc -l < "$RUNNER_TEMP/changed.txt") files since $BASE"
+          else
+            echo "no diff: ${BASE:-no base} (a dispatch or a first push); the journeys alone run"
+          fi
       - uses: actions/setup-node@v4
         with:
           node-version: 24
@@ -108,7 +126,8 @@ jobs:
         env:
           TARGET: ${{ inputs.target }}
           FLOW: flow/${{ inputs.flow_file || 'tap-through.json' }}
-        run: node boss/scripts/ops/tap-through.mjs --flow "$FLOW" --target "$TARGET" --out "$RUNNER_TEMP/tap"
+        # $CHANGED is unquoted on purpose: it is empty, or two flags with runner-made paths (no user text).
+        run: node boss/scripts/ops/tap-through.mjs --flow "$FLOW" --target "$TARGET" --out "$RUNNER_TEMP/tap" $CHANGED
       - uses: actions/upload-artifact@v4
         if: always()
         with:
