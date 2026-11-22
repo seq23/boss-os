@@ -213,6 +213,16 @@ describe("one read per email (#514 review)", () => {
     expect(await dueOf(result.taskId), "\"Have it done by Friday\" was the forwarded sender's").toBeNull();
   });
 
+  it("through the inbound door: a forwarded \"call me after 3pm\" never holds her task (model down; inboundMail :78)", async () => {
+    const body = FORWARD.replace("Have it done by Friday.", "Call me after 3pm.");
+    const result = await door(body, "Fwd: frames", "fwd-514-hold");
+    expect(result.taskId, "the forward is ordinary work").toBeTruthy();
+    // The hold rides on the admitted task's input (and the queue delay admitTask takes from it).
+    const input = JSON.parse((await row<{ input: string }>(`SELECT input FROM tasks WHERE id = '${result.taskId}'`))!.input);
+    expect(input.body, "the forward's words are still the work").toContain("after 3pm");
+    expect(input.not_before ?? null, "\"after 3pm\" was the forwarded sender's").toBeNull();
+  });
+
   it("the list door cuts at a forward itself: handed her whole email (inboundMail :701 passing `own`), only her line acts", async () => {
     await applyListEdit(env, { list: "same_firm", action: "add", kind: "name", value: OTHER.toLowerCase(), label: OTHER } as any, "seed");
     setFirstReadRungs(down);
