@@ -18,3 +18,6 @@ export declare function secretDoorLine(
   stored: ReadonlyArray<{ name: string; repo: string | null }>,
   refused: ReadonlyArray<{ name: string; why: string }>,
 ): string;
+
+export declare function decodeQuotedPrintable(text: string, charset?: string | null): string;
+export declare function decodeBase64Text(text: string, charset?: string | null): string;

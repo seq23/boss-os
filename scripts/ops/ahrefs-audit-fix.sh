@@ -251,7 +251,18 @@ place of the mail, find the exact URLs on each live site, and fix at source as s
   say "mail pass from digest: $AHREFS_DIGEST"
 fi
 [[ "$MAX_TURNS" =~ ^[1-9][0-9]*$ ]] || { say "NAMED STOP [BAD_MAX_TURNS] AHREFS_AUDIT_MAX_TURNS='$MAX_TURNS' is not a positive whole number."; exit 5; }
-AI_RUN_CLAUDE_ARGS="--max-turns $MAX_TURNS --dangerously-skip-permissions" \
+# ONLY THE COMMANDS A PASS USES (22 Nov 2026). The Claude worker ran with every permission skipped;
+# it now runs in dontAsk mode with the allow and deny lists in sr-fix-permissions.json, built from
+# what the 17-21 Nov passes ran. A settings FILE, not --allowedTools: ai-run splits AI_RUN_CLAUDE_ARGS
+# on spaces, and "Bash(git status:*)" has one. Codex keeps its own sandbox.
+# THE FILE IS THE WHOLE LIST: `--setting-sources=` loads none of her own settings (with --cwd $HOME her
+# user, project and local files would all add their allow rules: her signed-in Chrome, `wrangler r2 *`,
+# any `git push`). Probed 22 Nov 2026: `wrangler r2 bucket list --help` ran without it, was refused with it.
+# Her command guard rides in the file itself, as the backstop for `node` and `python3`, which are code.
+SR_FIX_SETTINGS="$REPO/scripts/ops/sr-fix-permissions.json"
+[ -s "$SR_FIX_SETTINGS" ] || { say "NAMED STOP [NO_PERMISSIONS_FILE] $SR_FIX_SETTINGS is missing; the worker never runs without its allow list."; exit 6; }
+case "$SR_FIX_SETTINGS" in *[[:space:]]*) say "NAMED STOP [PERMISSIONS_PATH_SPACE] '$SR_FIX_SETTINGS' has a space, which ai-run would split."; exit 6;; esac
+AI_RUN_CLAUDE_ARGS="--max-turns $MAX_TURNS --permission-mode dontAsk --setting-sources= --settings $SR_FIX_SETTINGS" \
 "$AI_RUN" --role "$REPAIR_ROLE" --network --cwd "$HOME" --out "$RUN_LOG" -- "$PROMPT_TEXT" >> "$RUN_LOG" 2>&1
 RC=$?
 say "=== ai-run --role $REPAIR_ROLE exited rc=$RC ==="

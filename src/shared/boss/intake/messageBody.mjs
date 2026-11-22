@@ -20,167 +20,20 @@
  * This is the repo's most-named defect in a new costume: the piece that reads the mail and the piece
  * that does the work each held their own idea of what "the body" is, with no link between them.
  *
- * ─── BOSS OS'S OWN, COPIED AND NOT IMPORTED ────────────────────────────────
+ * ─── READ BY postal-mime (22 Nov 2026) ─────────────────────────────────────
  *
- * `src/worker/effects/mimeAttachments.ts` already solves most of this for West Peek's mailbox, and
- * its scars are worth having: unfold the headers before you look for a boundary, descend into nested
- * multiparts because a forward always has one, split on a plain string because a boundary may legally
- * contain regex metacharacters, and cap the depth because a message can declare a boundary containing
- * itself. All of that is copied. NONE of it is imported — `validate:boss-intake` fails the build the
- * moment Boss OS's intake reaches into West Peek's, and that guard is right: these are two companies.
- *
- * What is NOT copied is that file's two deliberate refusals, because they are wrong here. It skips
- * base64 parts and never decodes quoted-printable, which is fine when you are scanning for a hashtag
- * and fatal when the decoded text IS the deliverable. Her own message's HTML alternative is
- * quoted-printable; a Mail.app message is routinely base64.
- *
- * ─── AND IT RUNS INSIDE A WORKER ───────────────────────────────────────────
- *
- * ~10ms of CPU. Every loop here is bounded, the output is capped, and the oversize path never calls
- * this at all — that message goes to R2 and is read by something with a real CPU budget.
+ * This file used to walk the MIME tree itself: unfold, find the boundary, descend, decode base64 and
+ * quoted-printable, a copy of West Peek's walker with its scars. Both walkers are gone; the message is
+ * parsed once by `shared/mail/parseMail.mjs` (postal-mime, bounded) and this file keeps what is Boss
+ * OS's own: plain text over HTML across the whole message, HTML reduced to words, the signature and
+ * the quoted reply taken off, and a client that lied about UTF-8 still read as the windows-1252 it is.
+ * A door that also reads the files hands its one parse here (`taskBodyFrom(parsed)`).
  */
+
+import { parseMail } from "../../mail/parseMail.mjs";
 
 /** Enough for any instruction plus a forwarded chain. Beyond this nobody is reading it anyway. */
 export const MAX_READABLE_BYTES = 60_000;
-
-/** A message can declare a boundary that contains itself. Descent stops. */
-const MAX_MIME_DEPTH = 6;
-
-/** More parts than any real message has; a defence against a boundary that splits into thousands. */
-const MAX_PARTS = 200;
-
-/** Join RFC 5322 continuation lines back onto their header. Bounded to the header block. */
-function unfoldHeaders(raw) {
-  const end = raw.search(/\r?\n\r?\n/);
-  return (end === -1 ? raw : raw.slice(0, end)).replace(/\r?\n[ \t]+/g, " ");
-}
-
-/** One header out of a part's own header block, unfolded first. */
-function headerIn(part, name) {
-  const headerEnd = part.search(/\r?\n\r?\n/);
-  const block = (headerEnd === -1 ? part : part.slice(0, headerEnd)).replace(/\r?\n[ \t]+/g, " ");
-  const m = new RegExp(`^${name}\\s*:\\s*(.*)$`, "im").exec(block);
-  return m ? m[1].trim() : null;
-}
-
-/** The multipart boundary a header block declares, or null when the message is not multipart. */
-function boundaryIn(headerBlock) {
-  const m = /content-type:\s*multipart\/[^\n]*?boundary\s*=\s*"?([^";\r\n]+)"?/i.exec(headerBlock);
-  return m ? m[1] : null;
-}
-
-/** Everything after the blank line that ends a part's headers. */
-function bodyOf(part) {
-  const at = part.search(/\r?\n\r?\n/);
-  if (at === -1) return "";
-  return part.slice(at + (part.slice(at, at + 2) === "\r\n" ? 4 : 2));
-}
-
-/**
- * Every leaf part, flattened.
- *
- * DESCENDS, because a forward is `multipart/mixed` inside `multipart/alternative` and a one-level
- * split hands back the wrapper — a block whose own Content-Type says `multipart/…`, matching no text
- * rule, so the words come back empty while they were in the bytes the whole time.
- */
-function leafParts(section, boundary, depth = 0, out = []) {
-  for (const part of section.split(`--${boundary}`)) {
-    if (out.length >= MAX_PARTS) return out;
-    /*
-     * `boundaryIn` wants a HEADER LINE, not a header VALUE, and passing it the bare value made this
-     * whole function a no-op for every nested message. Caught by the Apple Mail forward fixture:
-     * `multipart/mixed; boundary="Apple-Mail=_1122…"` never matched `content-type:\s*multipart/`,
-     * so the nested block came back as one opaque leaf, the leaf's own type read `multipart/mixed`,
-     * no text rule matched it, and a forward with her instruction at the top produced an EMPTY body.
-     * Which is the same silent loss as the raw-MIME bug wearing the opposite face.
-     */
-    const inner = depth < MAX_MIME_DEPTH ? boundaryIn(`content-type: ${headerIn(part, "content-type") ?? ""}`) : null;
-    if (inner) leafParts(part, inner, depth + 1, out);
-    else out.push(part);
-  }
-  return out;
-}
-
-/**
- * `=C2=A0` and a soft line break, undone.
- *
- * THE SOFT BREAK IS THE HALF EVERY NAIVE VERSION FORGETS. A quoted-printable line is at most 76
- * characters and a trailing `=` means "this line did not really end" — so `buyers=C2=A0of Da\ntabricks`
- * is one word split across a line, and leaving the break in produces text that reads as a typo in
- * her instruction rather than as a decoding failure.
- */
-export function decodeQuotedPrintable(text, charset) {
-  const joined = String(text ?? "").replace(/=\r?\n/g, "");
-  const bytes = [];
-  for (let i = 0; i < joined.length; i += 1) {
-    const c = joined[i];
-    if (c === "=" && /^[0-9a-fA-F]{2}$/.test(joined.slice(i + 1, i + 3))) {
-      bytes.push(parseInt(joined.slice(i + 1, i + 3), 16));
-      i += 2;
-      continue;
-    }
-    const code = joined.charCodeAt(i);
-    if (code < 128) { bytes.push(code); continue; }
-    // Already a decoded character (a client that lied about its encoding); keep it as UTF-8 bytes.
-    for (const b of new TextEncoder().encode(c)) bytes.push(b);
-  }
-  return utf8(Uint8Array.from(bytes), charset);
-}
-
-/** Base64 to text. Whitespace is stripped first — a MIME body is wrapped at 76 columns. */
-export function decodeBase64Text(text, charset) {
-  const clean = String(text ?? "").replace(/[^A-Za-z0-9+/=]/g, "");
-  if (!clean) return "";
-  try {
-    const bin = atob(clean);
-    return utf8(Uint8Array.from(bin, (c) => c.charCodeAt(0)), charset);
-  } catch {
-    /*
-     * A TRUNCATED BASE64 PART IS NOT A REASON TO LOSE THE MESSAGE. Returning "" here would be a
-     * silent drop; the caller falls through to the next part, and if every part fails the whole
-     * message is reported as unreadable rather than as empty.
-     */
-    return "";
-  }
-}
-
-/** One `TextDecoder` per label: cheap to reuse, and a bad label only ever fails once. */
-const DECODERS = new Map();
-function decoderFor(label) {
-  let d = DECODERS.get(label);
-  if (d === undefined) {
-    try { d = new TextDecoder(label, { fatal: true }); } catch { d = null; }
-    DECODERS.set(label, d);
-  }
-  return d;
-}
-
-/**
- * THE PART'S OWN CHARSET WINS (26 Oct 2026 held mail: a windows-1252 em dash and curly apostrophe,
- * declared or not, came out as U+FFFD because this always decoded as UTF-8). A declared non-UTF-8
- * charset decodes as itself; an undeclared or UTF-8-declared part that is not actually valid UTF-8
- * (a client that lied) falls back to windows-1252, the one real mail clients actually emit — never
- * a guess beyond that, and never a change to the bytes themselves.
- */
-function utf8(bytes, charset) {
-  const label = String(charset ?? "").trim().toLowerCase();
-  if (label && !["utf-8", "utf8", "us-ascii", "ascii"].includes(label)) {
-    const d = decoderFor(label);
-    if (d) { try { return d.decode(bytes); } catch { /* fall through to UTF-8 / windows-1252 */ } }
-  }
-  try { return new TextDecoder("utf-8", { fatal: true }).decode(bytes); }
-  catch {
-    const fallback = decoderFor("windows-1252");
-    if (fallback) { try { return fallback.decode(bytes); } catch { /* fall through */ } }
-    return String.fromCharCode(...bytes);
-  }
-}
-
-/** The charset a `Content-Type` header declares, lower-cased. Null when it names none. */
-function charsetIn(contentType) {
-  const m = /charset\s*=\s*"?([^";\s]+)"?/i.exec(String(contentType ?? ""));
-  return m ? m[1].toLowerCase() : null;
-}
 
 /** The named entities a mail client actually emits, plus every numeric one. */
 const ENTITIES = {
@@ -224,75 +77,61 @@ export function htmlToText(html) {
     .trim();
 }
 
-/** One part, decoded according to what its own headers say it is. */
-function textOfPart(part) {
-  const type = (headerIn(part, "content-type") ?? "").toLowerCase();
-  if (!type.startsWith("text/")) return null;
-  const disposition = (headerIn(part, "content-disposition") ?? "").toLowerCase();
-  // A .txt or .csv sent as an attachment is a file, not the message.
-  if (disposition.startsWith("attachment")) return null;
+/**
+ * A client that LIED ABOUT UTF-8 (26 Oct 2026 held mail: `charset=utf-8` on windows-1252 bytes, so an
+ * em dash and a curly apostrophe came out as U+FFFD). postal-mime honours the label, so when the text
+ * it gives back carries a replacement character the message is read once more with every utf-8 label
+ * dropped, and each part is then read as UTF-8 when it is valid and windows-1252 when it is not.
+ */
+const UTF8_LABEL = /(charset\s*=\s*)("?)utf-?8\2/gi;
 
-  const charset = charsetIn(headerIn(part, "content-type"));
-  const encoding = (headerIn(part, "content-transfer-encoding") ?? "").toLowerCase();
-  const raw = bodyOf(part);
-  const decoded = encoding.includes("base64")
-    ? decodeBase64Text(raw, charset)
-    : encoding.includes("quoted-printable")
-      ? decodeQuotedPrintable(raw, charset)
-      : raw;
-  return { html: type.startsWith("text/html"), text: decoded };
+async function textOf(source) {
+  const parsed = source && typeof source === "object" && "mail" in source ? source : await parseMail(String(source ?? ""));
+  const { mail } = parsed;
+  if (!mail) return { parsed, plain: "", html: "" };
+  let plain = mail.text ?? "";
+  let html = mail.html ?? "";
+  if (parsed.raw && (plain.includes("\uFFFD") || html.includes("\uFFFD")) && UTF8_LABEL.test(parsed.raw)) {
+    UTF8_LABEL.lastIndex = 0;
+    const again = await parseMail(parsed.raw.replace(UTF8_LABEL, "$1$2x-unlabelled$2"));
+    if (again.mail) { plain = again.mail.text ?? ""; html = again.mail.html ?? ""; }
+  }
+  UTF8_LABEL.lastIndex = 0;
+  return { parsed, plain, html, parts: (mail.attachments?.length ?? 0) + (mail.text ? 1 : 0) + (mail.html ? 1 : 0) };
 }
 
 /**
- * The readable text of a whole RFC 822 message.
+ * The readable text of a whole RFC 822 message: the raw text, or a door's one parse (`ParsedMail`).
  *
  * PREFERS `text/plain` OVER `text/html` ACROSS THE WHOLE TREE, not part by part. A `multipart/
  * alternative` carries the same words twice and taking both would hand an employee her instruction
- * followed by a second, uglier copy of her instruction. The plain part wins outright when there is
- * one anywhere in the message.
+ * followed by a second, uglier copy of her instruction. The plain text wins outright when there is
+ * any (postal-mime gives `text` only when a plain part exists).
+ *
+ * A MESSAGE THAT CANNOT BE TAKEN APART (a forged one, refused by the parse's limits) is never read as
+ * empty: its text after the headers is the body, capped, and `format` says "unparsed".
  */
-export function readableText(raw, { full = false } = {}) {
+export async function readableText(source, { full = false } = {}) {
   const keep = full ? (text) => text : cap;
-  const source = String(raw ?? "");
-  const headerBlock = unfoldHeaders(source);
-  const boundary = boundaryIn(headerBlock);
-
-  if (!boundary) {
-    const encoding = (headerIn(source, "content-transfer-encoding") ?? "").toLowerCase();
-    const type = (headerIn(source, "content-type") ?? "").toLowerCase();
-    const charset = charsetIn(headerIn(source, "content-type"));
-    const body = bodyOf(source);
-    const decoded = encoding.includes("base64")
-      ? decodeBase64Text(body, charset)
-      : encoding.includes("quoted-printable")
-        ? decodeQuotedPrintable(body, charset)
-        : body;
-    const text = type.startsWith("text/html") ? htmlToText(decoded) : decoded;
-    return { text: keep(text.trim()), format: type.startsWith("text/html") ? "html" : "plain", parts: 1 };
+  const { parsed, plain, html, parts } = await textOf(source);
+  if (!parsed.mail) {
+    const raw = parsed.raw;
+    const end = raw.search(/\r?\n\r?\n/);
+    return { text: keep(end === -1 ? "" : raw.slice(end).trim()), format: "unparsed", parts: 0 };
   }
-
-  const plain = [];
-  const html = [];
-  const leaves = leafParts(source, boundary);
-  for (const part of leaves) {
-    const got = textOfPart(part);
-    if (!got || !got.text.trim()) continue;
-    (got.html ? html : plain).push(got.text);
-  }
-
-  if (plain.length) {
-    const text = plain.join("\n\n").trim();
+  const text = plain.trim();
+  if (text) {
     // Some booking platforms put the secure link only in their HTML alternative. In a mail
     // viewer, prefer that complete alternative over a plain part that loses the action.
-    if (full && html.length) {
-      const alternative = htmlToText(html.join("\n")).trim();
+    if (full && html) {
+      const alternative = htmlToText(html).trim();
       const links = alternative.match(/https?:\/\/[^\s<>"']+/g) ?? [];
-      if (links.some((link) => !text.includes(link))) return { text: alternative, format: "html", parts: leaves.length };
+      if (links.some((link) => !text.includes(link))) return { text: alternative, format: "html", parts };
     }
-    return { text: keep(text), format: "plain", parts: leaves.length };
+    return { text: keep(text), format: "plain", parts };
   }
-  if (html.length) return { text: keep(htmlToText(html.join("\n")).trim()), format: "html", parts: leaves.length };
-  return { text: "", format: "none", parts: leaves.length };
+  if (html.trim()) return { text: keep(htmlToText(html).trim()), format: "html", parts };
+  return { text: "", format: "none", parts };
 }
 
 function cap(text) {
@@ -408,8 +247,8 @@ export function herWords(text) {
  * ONE FUNCTION, so the intake and the guard that checks the intake can never mean two different
  * things by "the body". `scripts/validate/a-task-body-is-not-a-mime-message.mjs` calls exactly this.
  */
-export function taskBodyFrom(raw) {
-  const read = readableText(raw);
+export async function taskBodyFrom(source) {
+  const read = await readableText(source);
   const body = stripSignature(read.text);
   return { body, format: read.format, parts: read.parts, readable: read.text };
 }

@@ -23,6 +23,7 @@ import { asksIn, gotItLines, filesForTask } from "./gotIt";
 import { firstRead, briefForTask, unclearLines, type FirstRead } from "./firstRead";
 import { takenOverJob, addToTakenOver, takenOverReply } from "../service/takeover";
 import { taskBodyFrom, ownWords, herWords, readableText } from "../../../shared/boss/intake/messageBody.mjs";
+import { parseMail, type ParsedMail } from "../../../shared/mail/parseMail.mjs";
 import { triage, triageLines, shortTitle, type TriageJob } from "../../../shared/boss/intake/triage.mjs";
 import { parseResearchPage } from "../../../shared/boss/research/page.mjs";
 import { preApprovalIn } from "../../../shared/boss/repoChange/lane.mjs";
@@ -490,7 +491,7 @@ export async function handleBossInboundMail(message: BossMailMessage, env: Env):
    */
   const externalBytes = !isOwner(sender, env.BOSS_EXTRA_OWNER_SENDERS ?? "") && message.rawSize <= MAX_BODY_BYTES ? await new Response(message.raw).arrayBuffer() : null;
   const externalRaw = externalBytes === null ? null : new TextDecoder().decode(externalBytes);
-  const externalText = externalRaw === null ? "" : readableText(externalRaw, { full: true }).text;
+  const externalText = externalRaw === null ? "" : (await readableText(externalRaw, { full: true })).text;
   const errand = !isOwner(sender, env.BOSS_EXTRA_OWNER_SENDERS ?? "") ? await openErrandFor(env, sender, now, { subject, text: externalText }) : null;
   const externalKey = `boss-inbound-mail/${new Date(now).toISOString().slice(0, 10)}/${mailId}.eml`;
   const keepExternal = async () => {
@@ -571,6 +572,8 @@ export async function handleBossInboundMail(message: BossMailMessage, env: Env):
 
   let objectKey: string | null = null;
   let rawMessage = "";
+  /** The one parse of this message, shared by its text and its files, then let go. */
+  let parsed: ParsedMail | null = null;
   let secrets: Awaited<ReturnType<typeof secretDoor>> | null = null;
   if (oversize) {
     objectKey = objectKeyFor();
@@ -588,6 +591,7 @@ export async function handleBossInboundMail(message: BossMailMessage, env: Env):
     }
   } else {
     rawMessage = await new Response(message.raw).text();
+    parsed = await parseMail(rawMessage);
     /*
      * R3 — THE SECRET DOOR RUNS BEFORE THE MESSAGE IS KEPT ANYWHERE. A `SECRET NAME=value` line is
      * encrypted into `boss_secret_handoff` and the value is scrubbed out of the raw MIME here, so the
@@ -596,8 +600,10 @@ export async function handleBossInboundMail(message: BossMailMessage, env: Env):
      * key is stored from it.)
      */
     secrets = await secretDoor(env, {
-      raw: rawMessage, readable: taskBodyFrom(rawMessage)?.readable ?? "", subject, sender, mailId,
+      raw: rawMessage, readable: (await taskBodyFrom(parsed)).readable, subject, sender, mailId,
     });
+    // A scrubbed message is read again, so no value survives in the text or the files read from it.
+    if (secrets.raw !== rawMessage) parsed = await parseMail(secrets.raw);
     rawMessage = secrets.raw;
     /*
      * ─── THE RAW MESSAGE IS KEPT, AND THE CARD GETS THE WORDS ────────────────
@@ -635,7 +641,7 @@ export async function handleBossInboundMail(message: BossMailMessage, env: Env):
    * in an HTML-only message was previously matched against `=23monique`-shaped bytes and would have
    * missed. The subject is still in the haystack, because that is where she usually puts it.
    */
-  const read = rawMessage ? taskBodyFrom(rawMessage) : null;
+  const read = parsed ? await taskBodyFrom(parsed) : null;
   /*
    * HER VOICE NOTES ARE HER WORDS (intake/voiceNotes.ts). A recording is transcribed and joins what she
    * typed, everywhere below; one that cannot be heard is a named stop in the reply and on the job.
@@ -644,7 +650,9 @@ export async function handleBossInboundMail(message: BossMailMessage, env: Env):
    * AND EVERY FILE AND DRIVE LINK SHE SENT (15 Nov 2026, readFiles.ts): read before anything is decided
    * or answered, so the Got it can say what was read and name what could not be opened.
    */
-  const files: FilesRead = rawMessage ? await readEverything(env, rawMessage, read?.readable ?? "") : EMPTY_FILES;
+  const files: FilesRead = parsed ? await readEverything(env, parsed, read?.readable ?? "") : EMPTY_FILES;
+  // The parse (every file, as bytes) is let go here: what is needed below has been read out of it.
+  parsed = null;
   const voice = { heard: files.heard, failed: files.unopened.filter((u) => u.audio) };
   const unheard = unheardLines(voice.failed);
   const readable = withVoiceNotes(read?.readable ?? "", voice.heard);

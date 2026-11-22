@@ -7,13 +7,16 @@
  * extraction rule would prove only that its copy works.
  */
 
-export type BodyFormat = "plain" | "html" | "none";
+import type { ParsedMail } from "../../mail/parseMail.mjs";
+
+/** "unparsed": the message could not be taken apart, and its raw text after the headers is the body. */
+export type BodyFormat = "plain" | "html" | "none" | "unparsed";
 
 export interface ReadableText {
   /** The decoded, human-readable text of the message. Empty when no text part could be read. */
   text: string;
   format: BodyFormat;
-  /** How many MIME leaves were walked. 1 for a message that is not multipart. */
+  /** How many parts the message had (its text bodies and its files). 0 when it could not be parsed. */
   parts: number;
 }
 
@@ -29,14 +32,12 @@ export interface TaskBody {
 export declare const MAX_READABLE_BYTES: number;
 export declare const MIME_TELLS: ReadonlyArray<{ name: string; test: RegExp }>;
 
-export declare function decodeQuotedPrintable(text: string, charset?: string | null): string;
-export declare function decodeBase64Text(text: string, charset?: string | null): string;
 export declare function htmlToText(html: string): string;
-export declare function readableText(raw: string, options?: { full?: boolean }): ReadableText;
+export declare function readableText(source: string | ParsedMail, options?: { full?: boolean }): Promise<ReadableText>;
 export declare function stripSignature(text: string): string;
 export declare const QUOTE_START: RegExp;
 export declare const FORWARD_START: RegExp;
 export declare function herWords(text: string | null | undefined): string;
 export declare function ownWords(text: string | null | undefined): string;
-export declare function taskBodyFrom(raw: string): TaskBody;
+export declare function taskBodyFrom(source: string | ParsedMail): Promise<TaskBody>;
 export declare function mimeTellsIn(body: string | null | undefined): string[];

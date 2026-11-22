@@ -2,7 +2,7 @@ import type { Env } from "../env";
 import { appendEvent } from "../events";
 import { proposePerson } from "./networkOsClient";
 import { dealFromMessage, intakeDealFromEmail, matchFunnelCompany, openRoutingCard } from "../services/dealIntake";
-import { pdfAttachments } from "./mimeAttachments";
+import { parseMail, pdfAttachments } from "./mimeAttachments";
 import { openPortfolioUpdateCard } from "../services/portfolioReporting";
 import { EMAIL_TRIGGERS, INTAKE_MAILBOX, NO_TRIGGER_ROUTE, ROUTING_EMPLOYEE, strippedSubject, triggersIn, type EmailTrigger } from "../../shared/intake/emailTriggers";
 
@@ -416,10 +416,11 @@ export async function handleInboundEmail(
        * two were simply never connected.
        *
        * Stored on the card as base64 rather than read here, because reading is a model call and
-       * this handler has 10ms of CPU. The employee reads it on their own step, with their own
+       * this handler only takes the message apart (about 70 ms of CPU for a 2 MB deck, measured
+       * 22 Nov 2026, against the 30 s ceiling). The employee reads it on their own step, with their own
        * budget — the same store-now-read-later shape the oversize path uses.
        */
-      const { attachments, unread } = pdfAttachments(raw);
+      const { attachments, unread } = pdfAttachments(await parseMail(raw));
 
       /*
        * `#wpdeck` AND `#wpdealflow` DO THE SAME THING, and the difference is now decided by looking.
