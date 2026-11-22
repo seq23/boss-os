@@ -23,7 +23,7 @@ Verified 12 Oct 2026 by a read-only domains probe.
 
 | Team | Env name (here) | Where the key lives | Domains | Used for |
 |---|---|---|---|---|
-| Boss OS | BOSS_OS_MAIL_KEY | Worker secret + boss-os vault (Mac lanes via npm run vault:run) | sequoiataylor.com, mail.spryexecutiveos.com, mail.aplayermode.com | Every Boss OS employee email: employees send as <name>@sequoiataylor.com. Cloudflare Email Routing on sequoiataylor.com routes boss@, monique@, camille@, danielle@, imani@, kendra@, simone@, toni@ and zora@ into the boss-os Worker. |
+| Boss OS | BOSS_OS_MAIL_KEY | Worker secret + boss-os vault (Mac lanes via npm run vault:run) | sequoiataylor.com, mail.spryexecutiveos.com, mail.aplayermode.com | Every Boss OS employee email: employees send as <name>@sequoiataylor.com. Cloudflare Email Routing on sequoiataylor.com routes boss@, monique@, camille@, danielle@, imani@, kendra@, simone@, toni@, zora@ and noelle@ into the boss-os Worker. |
 | The Industry Guides | BOSS_OS_FALLBACK_MAIL_KEY | boss-os vault (Mac lanes only; no Worker path uses it) | theindustryguides.com, mail.weddingchecklistpdf.com | The Boss OS fallback sender (Boss OS <hello@theindustryguides.com>, reply-to the employee), and the Industry Guides lead and report paths below. |
 | The other business's team | (not held for Boss OS mail) | n/a | not listed here | Belongs to the other business and is never used by Boss OS mail. tests/bossMailFallback.test.ts fails if Boss OS code names its domains as a From. |
 

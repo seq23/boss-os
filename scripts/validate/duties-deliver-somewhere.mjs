@@ -617,7 +617,9 @@ export function effectiveFloor(dutyId, statements) {
 export function censusProblems(duties, censusKeys) {
   const problems = [];
   for (const d of duties) {
-    if (localJobScript(d.text) || workerReader(d.text)) continue;
+    // A Worker job is scored like a Worker reader: Kendra reads its `ran_in_worker` audit row's
+    // `written` (alarms/kendra.ts), never tasks.output, so the census is not its business.
+    if (localJobScript(d.text) || workerReader(d.text) || workerJob(d.text)) continue;
     if (!(Number(d.floor) > 0)) continue;
     const key = deliversKey(d.text);
     if (!key || !censusKeys.has(key)) {
@@ -803,6 +805,7 @@ function selfTest() {
   if (censusProblems([agent("widgets", 1)], census).length !== 1) { console.error("  ✗ check 11: an agent duty the census cannot count passes"); failed += 1; }
   if (censusProblems([agent("widgets", 0)], census).length !== 0) { console.error("  ✗ check 11: a floor of 0 is judged"); failed += 1; }
   if (censusProblems([{ ...agent("widgets", 1), text: `json_object('local_job', 'a.mjs', 'delivers', 'widgets')` }], census).length !== 0) { console.error("  ✗ check 11: a local job is judged as an agent duty"); failed += 1; }
+  if (censusProblems([{ ...agent("widgets", 1), text: `json_object('worker_job', 'growth', 'delivers', 'widgets')` }], census).length !== 0) { console.error("  ✗ check 11: a Worker job (scored by its audit row) is judged as an agent duty"); failed += 1; }
   const keys = censusKeysIn("export const DELIVERY_CENSUS = {\n  a_b:\n    `SELECT 1`,\n  c: `x`,\n} as const;");
   if (!keys || keys.size !== 2 || !keys.has("a_b") || !keys.has("c")) { console.error("  ✗ check 11: census keys not read"); failed += 1; }
   if (effectiveFloor("duty_q", ["UPDATE s SET output_floor = 0 WHERE id = 'duty_q'", "UPDATE s SET output_floor = 1 WHERE id = 'duty_qq'", "UPDATE s SET output_floor = 2 WHERE id = 'duty_q'"]) !== 2) { console.error("  ✗ check 11: the last floor is not the one read"); failed += 1; }

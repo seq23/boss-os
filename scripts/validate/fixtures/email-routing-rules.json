@@ -1,7 +1,26 @@
 {
-  "recorded_at": "2026-09-21T20:02:14.121Z",
+  "recorded_at": "2026-11-22T04:32:29.148Z",
   "domain": "sequoiataylor.com",
   "rules": [
+    {
+      "id": "311e1b1661a64f4a9bfe6d4141405e07",
+      "enabled": true,
+      "matchers": [
+        {
+          "type": "literal",
+          "field": "to",
+          "value": "noelle@sequoiataylor.com"
+        }
+      ],
+      "actions": [
+        {
+          "type": "worker",
+          "value": [
+            "boss-os"
+          ]
+        }
+      ]
+    },
     {
       "id": "5b74c877b2ac494a8b7f58439edb03dd",
       "enabled": true,

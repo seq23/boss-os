@@ -300,7 +300,7 @@ function AddDuty({ employee, onDone, onError }: { employee: any; onDone: () => v
  * ZORA'S REGISTER (owner-approved 26 Oct 2026): everything Boss OS is waiting on, who owns it, the
  * date, and what happens on that date. Read only; Zora's daily run acts on it.
  */
-const OWNER_NAME: Record<string, string> = { emp_chief: "Simone", emp_relationship: "Monique", emp_knowledge: "Zora", emp_repo: "Danielle", emp_continuity: "Kendra", emp_risk: "Toni", emp_research: "Camille", emp_practice: "Imani", sequoia: "You" };
+const OWNER_NAME: Record<string, string> = { emp_chief: "Simone", emp_relationship: "Monique", emp_knowledge: "Zora", emp_repo: "Danielle", emp_continuity: "Kendra", emp_growth: "Noelle", emp_risk: "Toni", emp_research: "Camille", emp_practice: "Imani", sequoia: "You" };
 const STATE_WORDS: Record<string, string> = { open: "Waiting", actioned: "Started", done: "Done", repair: "Being fixed" };
 export function WaitingOnRegister() {
   const [items, setItems] = useState<any[] | null>(null);

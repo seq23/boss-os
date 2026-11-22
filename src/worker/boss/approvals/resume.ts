@@ -1,3 +1,5 @@
+import { newId } from "../lib/id";
+import { pipelineKey } from "../../../shared/boss/growth/director.mjs";
 import type { Env } from "../env";
 import { recordDeliverableActivity } from "../today/deliverables";
 import { createDutyFromDraft, DutyCannotRun } from "../duties/create";
@@ -447,6 +449,33 @@ export const RESUME_HANDLERS: Record<string, ResumeHandler> = {
     }
     const r = await editDuty(env, detail.duty_id, { instructions: detail.instructions }, now);
     return { detail: r.changed.length ? "Applied now. The duty carries your change; Undo on the employee page puts it back." : "The duty already says this; nothing needed changing.", duty_id: detail.duty_id };
+  },
+  /**
+   * THE GROWTH DIRECTOR'S CARD (21 Nov 2026, src/worker/boss/growth/run.ts). Something new she was
+   * asked about: a channel or format not on the roster, a product, a price, a list. Her YES opens the
+   * follow-on to-do for the agent sessions (owner "claude", one row per card), carrying exactly what
+   * she approved; anything that needs a new account or money is never a card (refused before it is
+   * raised). Her NO is remembered: the Director does not ask about the same thing for 28 days
+   * (`askedRecently` reads this judgement's row). Nothing is posted, sent or bought here.
+   */
+  growth_proposal: async (env, j, verdict, note, now) => {
+    if (verdict === "try_again") {
+      return { detail: note ? "Noted: not now. Noelle won't raise it again for four weeks, and your note is on the record." : "Noted: not now. Noelle won't raise it again for four weeks." };
+    }
+    const row = await env.DB.prepare(`SELECT resume_detail FROM judgement_calls WHERE id = ?`).bind(j.id).first<{ resume_detail: string | null }>();
+    let d: any = null;
+    try { d = row?.resume_detail ? JSON.parse(row.resume_detail) : null; } catch { d = null; }
+    if (!d?.business || !(d.item || d.proposal)) throw new Error("The idea this approval was for is missing, so nothing was started. It stays on your screen.");
+    const what = d.item && d.first ? `post this first ${d.item.format} through ${d.label}'s approved ${d.item.channel} pipeline, as written: ${d.item.draft}` : d.item ? `add ${d.item.format} on ${d.item.channel} to ${d.label}'s Growth roster entry, then post this draft through that pipeline: ${d.item.draft}` : `${d.proposal.what}`;
+    // Any item card (a first post, or a new format) opens that format's pipeline row: once the format is
+    // on the roster, later weeks queue on it without asking her twice. queueRow still needs the roster.
+    const key = d.item ? pipelineKey(d.business, d.item.channel, d.item.format) : `growth-yes#${j.id}`;
+    const id = newId("olp");
+    await env.DB.prepare(
+      `INSERT INTO owner_open_loops (id, title, finish_line, next_step, owner, next_date, business, section, status, source, source_key, created_at, updated_at)
+       VALUES (?,?,?,?,'claude',?,?,'not_finished','open','agent_report',?,?,?) ON CONFLICT(source_key) WHERE source_key IS NOT NULL DO NOTHING`,
+    ).bind(id, `Growth Director: ${j.title} (she said yes)`.slice(0, 200), `Done as she approved it`, `She approved: ${what}${note ? ` Her note: ${note}` : ""}`.slice(0, 400), new Date(now).toISOString().slice(0, 10), d.brain ?? "spry", key, now, now).run();
+    return { detail: "Approved. It is on the Growth to-do list now; nothing is posted or bought without the approved pipeline." };
   },
   duty_created: async (env, j, verdict, note, now) => {
     if (verdict === "try_again") {

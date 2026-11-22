@@ -142,7 +142,7 @@ const ROSTER = {
   // Explicit only, for system mail no employee owns. Never a default.
   "boss os": "boss",
   imani: "imani", danielle: "danielle", simone: "simone", zora: "zora",
-  monique: "monique", camille: "camille", toni: "toni", kendra: "kendra",
+  monique: "monique", camille: "camille", toni: "toni", kendra: "kendra", noelle: "noelle",
 };
 
 export function sendersFor(who, { fallback = industryGuidesFallback } = {}) {

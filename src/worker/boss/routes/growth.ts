@@ -51,3 +51,11 @@ growthRoutes.get("/", async (c) => {
   const { latest, before, day } = await latestReadings(c.env.DB);
   return ok(c, { day, businesses: summarize(manifest, latest, before, dayIdInZone(Date.now())) });
 });
+
+/** The Director's newest decisions (the weekly cycle's record, duty_growth_director), newest cycle first. */
+growthRoutes.get("/decisions", async (c) => {
+  const rows = (await c.env.DB.prepare(
+    `SELECT cycle, business, label, state, decision, evidence, test, actions, next_check FROM growth_decisions ORDER BY created_at DESC LIMIT 60`,
+  ).all<any>()).results ?? [];
+  return ok(c, { decisions: rows });
+});
