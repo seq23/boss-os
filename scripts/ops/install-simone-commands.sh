@@ -43,5 +43,5 @@ EOF
 node "$REPO/scripts/ops/plist-central.mjs" "$PLIST" || { echo "NAMED STOP [PLIST_TZ] could not move $PLIST to this Mac's zone; not loaded." >&2; exit 1; }
 plutil -lint "$PLIST" >/dev/null
 "${LAUNCHD_RELOAD:-$HOME/bin/launchd-reload}" "$PLIST" || exit 1   # the one reload (seq-bin): pauses kept, old schedule on failure
-launchctl list | grep -q "$LABEL" || { echo "NOT INSTALLED: $LABEL"; exit 1; }
+launchctl print "gui/$(id -u)/$LABEL" >/dev/null 2>&1 || { echo "NOT INSTALLED: $LABEL"; exit 1; }
 echo "Installed $LABEL — every 10 minutes 06:00–23:00 Central (simone-commands.mjs)."
