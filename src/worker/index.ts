@@ -532,7 +532,6 @@ import {
   handlePauseJob,
   handleRunDueJobs,
   handleRunJob,
-  runDueJobs,
 } from "./services/jobs";
 import {
   handleCreatePacket as handleCreateWorkPacket,
@@ -1605,18 +1604,10 @@ export default {
       ctx.waitUntil(runBossCloudClock(toBossEnvForCron(env), now.getTime()).then(() => undefined).catch((err) => console.error("boss cloud clock failed", err)));
       return;
     }
-    ctx.waitUntil(
-      runDueJobs(env, now)
-        .then((results) => {
-          if (results.length > 0) console.log("scheduled tick", JSON.stringify(results));
-        })
-        .catch((err) => {
-          console.error("scheduled tick failed", err);
-        }),
-    );
+    // The copied West Peek fund jobs (runDueJobs) no longer run here: West Peek OS runs them itself
+    // and migration 0375 paused the rows (chassis retirement, her yes 22 Nov 2026).
     // Boss OS's employee work used Cloudflare Queues; here it waits in D1 and drains on this same
-    // tick. Kept as its own waitUntil so a failure in one lane cannot swallow the other - the
-    // chassis jobs and the Boss tasks fail, and are logged, independently.
+    // tick. Each lane below is its own waitUntil so a failure in one cannot swallow another.
     ctx.waitUntil(
       drainBossTasks(env, now)
         .then((r) => {

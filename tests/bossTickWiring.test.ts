@@ -13,11 +13,18 @@ describe("the Worker's scheduled() handler", () => {
   const src = readFileSync("src/worker/index.ts", "utf8");
   const handler = src.slice(src.indexOf("async scheduled("), src.indexOf("} satisfies ExportedHandler"));
 
-  it("runs the chassis jobs, the Boss drain, the duties, the reaper and the nightly, each in its own waitUntil", () => {
-    for (const call of ["runDueJobs(", "drainBossTasks(", "runBossDuties(", "runBossReaper(", "runBossNightly(", "runBossOpenLoops("]) {
+  it("runs the Boss drain, the duties, the reaper and the nightly, each in its own waitUntil", () => {
+    for (const call of ["drainBossTasks(", "runBossDuties(", "runBossReaper(", "runBossNightly(", "runBossOpenLoops("]) {
       expect(handler, `scheduled() no longer calls ${call}`).toContain(call);
     }
     expect((handler.match(/ctx\.waitUntil\(/g) ?? []).length).toBeGreaterThanOrEqual(5);
+  });
+
+  it("no longer runs the copied West Peek fund jobs (chassis retirement, 22 Nov 2026)", () => {
+    // West Peek OS runs diagnostics_sweep, deck_reading and network_sync itself; 0375 paused the
+    // rows here. The hourly tick must not reach back into the chassis scheduler.
+    expect(handler).not.toMatch(/runDueJobs\s*\(/);
+    expect(handler).not.toMatch(/services\/jobs/);
   });
 
   it("the reaper is the Boss module's, re-exported through the mount like the duties are", () => {
