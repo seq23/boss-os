@@ -357,18 +357,26 @@ esac
     rmSync(root, { recursive: true, force: true });
   }
 
-  // 11. A LOCK THAT CANNOT BE TAKEN IS A NAMED STOP, never a silent tick: with no working perl the wrapper claims nothing,
-  // exits 3 and says CLAIM_LOCK_UNAVAILABLE (a quiet exit 0 here would mean the Mac never claims again and nobody hears).
+  // 11. A LOCK THAT CANNOT BE TAKEN IS A NAMED STOP, never a silent tick (a quiet exit 0 here would mean the Mac never
+  // claims again and nobody hears): with no working perl, and with a flock the filesystem refuses (the real one-liner, its
+  // flock answering EOPNOTSUPP), the wrapper claims nothing, exits 3 and says CLAIM_LOCK_UNAVAILABLE. Only "held by
+  // another process" (EWOULDBLOCK) is the silent busy tick.
   {
-    const root = fresh();
-    const broken = join(root, "brokenbin");
-    mkdirSync(broken, { recursive: true });
-    writeFileSync(join(broken, "perl"), "#!/bin/bash\necho 'perl: not installed' >&2\nexit 127\n");
-    chmodSync(join(broken, "perl"), 0o755);
-    const r = runWrapper(wrapperPath, root, [], { PATH: `${broken}:${stubEnv(root).bin}:${process.env.PATH}` });
-    if (claimsIn(logOf(root)) !== 0) out.push("With no working lock (perl failing) the wrapper claimed anyway.");
-    if (r.status !== 3 || !/CLAIM_LOCK_UNAVAILABLE/.test(r.stderr)) out.push(`With no working lock the wrapper must stop by name (exit 3, CLAIM_LOCK_UNAVAILABLE); it exited ${r.status}: ${r.stderr.trim() || "(silent)"}`);
-    rmSync(root, { recursive: true, force: true });
+    const realPerl = spawnSync("sh", ["-c", "command -v perl"], { encoding: "utf8" }).stdout.trim() || "/usr/bin/perl";
+    for (const [label, perl] of [
+      ["no working perl", "#!/bin/bash\necho 'perl: not installed' >&2\nexit 127\n"],
+      ["a flock the filesystem refuses", `#!/bin/bash\nexec "${realPerl}" -e 'BEGIN { require Errno; *CORE::GLOBAL::flock = sub { $! = Errno::EOPNOTSUPP(); 0 } }' "$@"\n`],
+    ]) {
+      const root = fresh();
+      const broken = join(root, "brokenbin");
+      mkdirSync(broken, { recursive: true });
+      writeFileSync(join(broken, "perl"), perl);
+      chmodSync(join(broken, "perl"), 0o755);
+      const r = runWrapper(wrapperPath, root, [], { PATH: `${broken}:${stubEnv(root).bin}:${process.env.PATH}` });
+      if (claimsIn(logOf(root)) !== 0) out.push(`With ${label} the wrapper claimed anyway.`);
+      if (r.status !== 3 || !/CLAIM_LOCK_UNAVAILABLE/.test(r.stderr)) out.push(`With ${label} the wrapper must stop by name (exit 3, CLAIM_LOCK_UNAVAILABLE); it exited ${r.status}: ${r.stderr.trim() || "(silent)"}`);
+      rmSync(root, { recursive: true, force: true });
+    }
   }
   return out;
 }
@@ -388,7 +396,7 @@ if (selfTest) {
   check("a poll with no device id is caught", installerProblems(real.replace(/(<key>Label<\/key><string>\$POLL_LABEL<\/string>[\s\S]*?)<key>BOSS_OS_DEVICE_ID<\/key>/, "$1<key>OTHER</key>")).length > 0);
 
   const wrapperText = readFileSync(join(ROOT, WRAPPER), "utf8");
-  const PERL_LOCK = `perl -MFcntl=:flock -e 'open(my $fh, ">&=", 9) or exit 2; flock($fh, LOCK_EX | LOCK_NB) or exit 1; exit 0'`;
+  const PERL_LOCK = `perl -MFcntl=:flock -MErrno -e 'open(my $fh, ">&=", 9) or exit 2; flock($fh, LOCK_EX | LOCK_NB) or exit($!{EWOULDBLOCK} ? 1 : 2); exit 0'`;
   const dir = mkdtempSync(join(tmpdir(), "boss-claim-self-"));
   const plant = async (name, mutate) => {
     // The wrapper finds its repo from its own path, so a planted copy lives under scripts/ops of a scratch tree.
@@ -409,6 +417,7 @@ if (selfTest) {
   // atomic, so it must fail here on every machine, her Mac included (the non-atomic mkdir case), and on a kill -9.
   check("a lock that trusts the mkdir binary (the 21 Nov race) is caught", (await plant("mkdirlock", (t) => t.replace(PERL_LOCK, `mkdir "$LOCK_FILE.d" 2>/dev/null && trap 'rmdir "$LOCK_FILE.d"' EXIT`))).length > 0);
   check("a lock the run's children inherit is caught", (await plant("inherited", (t) => t.replace("agent.mjs work-once 9>&-", "agent.mjs work-once"))).length > 0);
+  check("a flock error read as \"busy\" (a silent tick forever) is caught", (await plant("errorisbusy", (t) => t.replace("or exit($!{EWOULDBLOCK} ? 1 : 2)", "or exit 1"))).length > 0);
   check("a lock failure that exits quietly is caught", (await plant("quietfail", (t) => t.replace(/no claim this tick\." >&2\n     exit 3 ;;/, 'no claim this tick." >&2\n     exit 0 ;;'))).length > 0);
   check("a poll that claims without peeking is caught", (await plant("nopeek", (t) => t.replace("agent.mjs peek 9>&- >/dev/null 2>&1 || exit 0", "agent.mjs peek 9>&- >/dev/null 2>&1 || true"))).length > 0);
   check("a poll that claims without refreshing the briefing's data is caught", (await plant("norefresh", (t) => t.replace(/  if \[ -z "\$\(find "\$WORKSPACE\/SKY\.json"[\s\S]*?\n  fi\n  if \[ -z "\$\(find "\$WORKSPACE\/MARKETS\.json"[\s\S]*?\n  fi\n/, ""))).length > 0);

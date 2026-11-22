@@ -68,7 +68,8 @@ if ! exec 9>>"$LOCK_FILE"; then
   echo "agent-claim: NAMED STOP [CLAIM_LOCK_UNAVAILABLE] cannot open $LOCK_FILE; no claim this tick." >&2
   exit 3
 fi
-perl -MFcntl=:flock -e 'open(my $fh, ">&=", 9) or exit 2; flock($fh, LOCK_EX | LOCK_NB) or exit 1; exit 0'
+# 1 only when another process holds it (EWOULDBLOCK); any other failure (no flock on this filesystem, a bad fd) is 2.
+perl -MFcntl=:flock -MErrno -e 'open(my $fh, ">&=", 9) or exit 2; flock($fh, LOCK_EX | LOCK_NB) or exit($!{EWOULDBLOCK} ? 1 : 2); exit 0'
 case $? in
   0) ;;                          # ours until this shell exits
   1) exit 0 ;;                   # a claim is already running; this tick has nothing to add
