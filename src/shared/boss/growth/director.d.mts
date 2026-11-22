@@ -22,3 +22,4 @@ export function routeProposal(roster: RosterEntry[], business: string, p: { what
 export function cycleEnd(results: { key: string; state: string }[]): { ok: boolean; stop?: string; line: string };
 export const NAMING_RULE: string;
 export function namingProblems(draft: string): string[];
+export function pipelineKey(business: string, channel: string, format: string): string;

@@ -34,7 +34,7 @@ import { GROWTH_BRAINS, growthSection, parseRoster, rosterProblems, type RosterE
 import { playbookBody } from "../../../shared/boss/growth/playbook.mjs";
 import {
   MAX_CARDS, MAX_OPEN_PER_BUSINESS, ASKED_DAYS, decisionPrompt, parseDecision, enforceHolds, claimsPrompt, parseClaims, claimRules,
-  routeItem, routeProposal, spendPrompt, parseSpend, cycleEnd, namingProblems,
+  routeItem, routeProposal, spendPrompt, parseSpend, cycleEnd, namingProblems, pipelineKey,
 } from "../../../shared/boss/growth/director.mjs";
 import { raiseJudgementCall } from "../approvals/raise";
 import { latestReadings } from "../routes/growth";
@@ -85,7 +85,7 @@ export async function loadRoster(db: D1Database): Promise<{ roster: RosterEntry[
 /** The pipeline to-do for one business × channel × format: one row, its draft refreshed each week. */
 export const PIPELINE_OWNER = "claude";
 async function queueRow(db: D1Database, entry: RosterEntry, item: { channel: string; format: string; draft: string }, nextDate: string): Promise<{ id: string | null; why?: string }> {
-  const key = `growth#${entry.key}#${item.channel}-${item.format}`.toLowerCase().replace(/[^a-z0-9#-]+/g, "-");
+  const key = pipelineKey(entry.key!, item.channel, item.format);
   const open = await db.prepare(`SELECT COUNT(*) AS n FROM owner_open_loops WHERE status = 'open' AND source_key LIKE ? AND source_key <> ?`).bind(`growth#${entry.key}#%`, key).first<{ n: number }>();
   const mine = await db.prepare(`SELECT id, status FROM owner_open_loops WHERE source_key = ?`).bind(key).first<{ id: string; status: string }>();
   if (!(mine?.status === "open") && (open?.n ?? 0) >= MAX_OPEN_PER_BUSINESS) return { id: null, why: `${entry.label} already has ${MAX_OPEN_PER_BUSINESS} growth to-dos open; this waits for one to finish` };
@@ -191,6 +191,13 @@ export async function runGrowthDirector(env: Env, now = Date.now(), deps: { mode
         const verdict = parseClaims(await model(env, claimsPrompt({ entry, rules, draft: item.draft }) as Msg[], "growth-claims"));
         if (!verdict) { actions.push({ kind: "held", why: "the claims check got no model answer, so it is held, never passed", item }); continue; }
         if (!verdict.pass) { actions.push({ kind: "blocked", why: `breaks ${verdict.broken.join(", ") || "a rule"}: ${verdict.why}`, item }); continue; }
+        // The first post of a format on a channel waits for her yes (a card); after it, it queues.
+        const started = await db.prepare(`SELECT 1 FROM owner_open_loops WHERE source_key = ?`).bind(pipelineKey(entry.key!, item.channel, item.format)).first();
+        if (!started) {
+          const c = await raise(`${entry.label}: start posting ${item.format} on ${item.channel}? (first one below)`, `${item.why}\n\nThe first one, which passed the claims check: ${item.draft}`, { item, first: true });
+          actions.push({ kind: "proposal", why: c.why ?? "the first post of this format waits for her yes", item, card: c.card });
+          continue;
+        }
         const q = await queueRow(db, entry, item, decision.next_check ?? today);
         actions.push(q.id ? { kind: "queued", loop: q.id, item } : { kind: "held", why: q.why, item });
       }

@@ -1,4 +1,5 @@
 import { newId } from "../lib/id";
+import { pipelineKey } from "../../../shared/boss/growth/director.mjs";
 import type { Env } from "../env";
 import { recordDeliverableActivity } from "../today/deliverables";
 import { createDutyFromDraft, DutyCannotRun } from "../duties/create";
@@ -465,8 +466,10 @@ export const RESUME_HANDLERS: Record<string, ResumeHandler> = {
     let d: any = null;
     try { d = row?.resume_detail ? JSON.parse(row.resume_detail) : null; } catch { d = null; }
     if (!d?.business || !(d.item || d.proposal)) throw new Error("The idea this approval was for is missing, so nothing was started. It stays on your screen.");
-    const what = d.item ? `add ${d.item.format} on ${d.item.channel} to ${d.label}'s Growth roster entry, then post this draft through that pipeline: ${d.item.draft}` : `${d.proposal.what}`;
-    const key = `growth-yes#${j.id}`;
+    const what = d.item && d.first ? `post this first ${d.item.format} through ${d.label}'s approved ${d.item.channel} pipeline, as written: ${d.item.draft}` : d.item ? `add ${d.item.format} on ${d.item.channel} to ${d.label}'s Growth roster entry, then post this draft through that pipeline: ${d.item.draft}` : `${d.proposal.what}`;
+    // Her yes to the FIRST post of an approved format opens that format's pipeline row itself (the
+    // same key the cycle queues on), so later weeks queue without asking again.
+    const key = d.item && d.first ? pipelineKey(d.business, d.item.channel, d.item.format) : `growth-yes#${j.id}`;
     const id = newId("olp");
     await env.DB.prepare(
       `INSERT INTO owner_open_loops (id, title, finish_line, next_step, owner, next_date, business, section, status, source, source_key, created_at, updated_at)

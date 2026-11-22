@@ -219,3 +219,13 @@ export function cycleEnd(results) {
   if (!decided) return { ok: false, stop: "HELD_ALL", line: `NAMED STOP [HELD_ALL] every business was held this cycle (${counts})` };
   return { ok: true, line: `OUTPUT ${decided} decisions (${counts})` };
 }
+
+/**
+ * One pipeline to-do per business × channel × format. The same key marks that her yes was given for
+ * that format: the FIRST post of an approved format on a channel goes to her as a Decide card (her
+ * ruling, 21 Nov 2026: nothing posts until she says yes to posting); her yes opens this row, and from
+ * then on the format queues like any approved one.
+ */
+export function pipelineKey(business, channel, format) {
+  return `growth#${business}#${channel}-${format}`.toLowerCase().replace(/[^a-z0-9#-]+/g, "-");
+}
