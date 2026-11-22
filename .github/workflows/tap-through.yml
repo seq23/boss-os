@@ -1,0 +1,105 @@
+# THE APP TAP-THROUGH, ON GITHUB (owner, 22 Nov 2026: "a factory standard that we live by"; "yes to
+# all"). A robot taps through an app's web preview like a person, at 390 px in light and dark, driven
+# by the app repo's tap-through.json (scripts/ops/tap-through.mjs): a video per journey, a screenshot
+# per step, and a red run on a dead button, a console error, an error screen, an unreachable step or a
+# price-screen promise with no screen behind it. Never on the Mac (8 GB; the owner's ruling).
+#
+#   workflow_call      each app's preview workflow calls this after its preview is up (a red check
+#                      blocks `land`): uses: seq23/boss-os/.github/workflows/tap-through.yml@main
+#   workflow_dispatch  `ship-review --kind tap-through --on-github` starts it, downloads the artifact
+#                      and judges the recording on the Mac
+#   pull_request       the runner's own proof: --self-test drives a good fixture app and a broken one
+#                      (a dead button, a price-screen promise with no screen) and fails unless each ends
+#                      exactly as it must, the named stops included
+#
+# SAFE: the runner blocks every request that is not a read unless the flow mocks it with test values,
+# and never leaves the preview's origin, so no purchase, sign-in, email or delete can happen. All the
+# app repos and this one are public, so these runners cost nothing; the artifacts are public too, so
+# a flow only ever uses preview flags and test values.
+name: tap-through
+run-name: tap-through ${{ inputs.label || github.event.pull_request.title || github.run_id }}
+
+on:
+  workflow_call:
+    inputs:
+      target:
+        description: The app's web preview URL
+        required: true
+        type: string
+      flow_file:
+        description: The flow file in the calling repo
+        required: false
+        default: tap-through.json
+        type: string
+  workflow_dispatch:
+    inputs:
+      target:
+        description: The app's web preview URL
+        required: true
+        type: string
+      label:
+        description: The review id (names the run and the artifact tap-through-<label>)
+        required: true
+        type: string
+      flow_repo:
+        description: owner/repo holding tap-through.json
+        required: true
+        type: string
+      flow_ref:
+        description: Branch, tag or sha of that repo
+        required: false
+        default: main
+        type: string
+  pull_request:
+    paths:
+      - scripts/ops/tap-through.mjs
+      - scripts/ops/fixtures/tap-through/**
+      - .github/workflows/tap-through.yml
+
+permissions:
+  contents: read
+
+jobs:
+  tap-through:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - name: The runner (boss-os; main when another repo calls it)
+        uses: actions/checkout@v4
+        with:
+          repository: seq23/boss-os
+          ref: ${{ github.repository == 'seq23/boss-os' && github.sha || 'main' }}
+          path: boss
+      - name: The app's flow file
+        if: github.event_name != 'pull_request'
+        uses: actions/checkout@v4
+        with:
+          repository: ${{ inputs.flow_repo || github.repository }}
+          ref: ${{ inputs.flow_ref || github.sha }}
+          path: flow
+          sparse-checkout: ${{ inputs.flow_file || 'tap-through.json' }}
+          sparse-checkout-cone-mode: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+      - name: Install Playwright only
+        run: |
+          npm i --no-save --no-audit --no-fund --prefix "$RUNNER_TEMP/pw" @playwright/test@1.62.1
+          ln -s "$RUNNER_TEMP/pw/node_modules" boss/node_modules
+          cd boss && npx playwright install --with-deps chromium
+      - name: Self-test (the broken-fixture proof)
+        if: github.event_name == 'pull_request'
+        run: node boss/scripts/ops/tap-through.mjs --self-test --out "$RUNNER_TEMP/tap"
+      - name: Tap through
+        if: github.event_name != 'pull_request'
+        env:
+          TARGET: ${{ inputs.target }}
+          FLOW: flow/${{ inputs.flow_file || 'tap-through.json' }}
+        run: node boss/scripts/ops/tap-through.mjs --flow "$FLOW" --target "$TARGET" --out "$RUNNER_TEMP/tap"
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: tap-through-${{ inputs.label || github.run_id }}
+          path: ${{ runner.temp }}/tap
+          retention-days: 14
+          if-no-files-found: error

@@ -1,0 +1,99 @@
+{
+  "app": "Fixture app (broken)",
+  "journeys": [
+    {
+      "name": "first-open",
+      "start": "/?broken=1",
+      "steps": [
+        {
+          "see": "Fixture app"
+        },
+        {
+          "tap": "Help",
+          "then": "Ask us anything."
+        }
+      ]
+    },
+    {
+      "name": "main-task",
+      "start": "/?broken=1",
+      "steps": [
+        {
+          "tap": "Start",
+          "then": "New proof"
+        },
+        {
+          "fill": "Title",
+          "value": "Test receipt"
+        },
+        {
+          "tap": "Save",
+          "then": "Saved",
+          "id": "saved"
+        }
+      ]
+    },
+    {
+      "name": "paywall",
+      "start": "/?broken=1",
+      "steps": [
+        {
+          "tap": "See plans",
+          "then": "Plans",
+          "id": "plans"
+        },
+        {
+          "tap": "Try export",
+          "then": "Preview of your export.",
+          "id": "export"
+        },
+        {
+          "tap": "Back to plans",
+          "then": "Plans"
+        },
+        {
+          "tap": "Restore purchase",
+          "then": "Nothing to restore (preview)."
+        }
+      ]
+    },
+    {
+      "name": "delete-my-data",
+      "start": "/?broken=1",
+      "steps": [
+        {
+          "tap": "Settings",
+          "then": "Delete my data"
+        },
+        {
+          "tap": "Reminders"
+        },
+        {
+          "tap": "Delete my data",
+          "then": "This removes everything."
+        },
+        {
+          "tap": "Delete everything",
+          "then": "Deleted"
+        }
+      ]
+    }
+  ],
+  "promises": [
+    {
+      "text": "Unlimited proofs",
+      "on": "paywall:plans",
+      "built": "main-task:saved"
+    },
+    {
+      "text": "Export to PDF",
+      "on": "paywall:plans",
+      "built": "paywall:export"
+    },
+    {
+      "text": "Voice notes",
+      "on": "paywall:plans"
+    }
+  ],
+  "mocks": []
+}

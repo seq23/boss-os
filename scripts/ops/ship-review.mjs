@@ -6,7 +6,7 @@
  * records PASS or FAIL with numbered findings and exactly what was looked at.
  *
  *   npm run vault:run -- node scripts/ops/ship-review.mjs --kind page --target https://example.com/ --builder "<who built it>"
- *     --kind     page | email | video | profile | images
+ *     --kind     page | email | video | profile | images | tap-through
  *     --target   page/profile: a URL · email: a rendered .html file · video: a video file ·
  *                images: a folder of images or a comma list of image files
  *     --builder  who built it (named in the record; the reviewer is never it)
@@ -25,6 +25,10 @@
  *     --pr       owner/repo#N: on PASS the line is appended to that PR's body, where `land` reads it
  *     --out      where captures and verdict.json go (default ~/.boss-os/ship-reviews/<id>)
  *     --no-store judge and print only (a dry run; nothing is recorded, so `land` gets no line)
+ *   tap-through (an app, 22 Nov 2026): --target is the app's web preview URL, --flow owner/repo[@ref]
+ *     the repo whose tap-through.json drives it; always --on-github (the Mac never runs Playwright):
+ *     the robot's run on GitHub (.github/workflows/tap-through.yml) is judged with app-review.md, and
+ *     every failure the run measured is a FAIL finding whatever the reviewer saw. --brand is required.
  *
  * The route walk is aiRoles.routeOrder: a subject never passed before is HARD (Claude, then Codex);
  * a re-review is SHORT (free Gemini vision models first, then Codex, then Claude); private output
@@ -41,7 +45,7 @@ import { homedir } from "node:os";
 import { basename, extname, join, resolve } from "node:path";
 import { pathToFileURL } from "node:url";
 import {
-  KINDS, SURFACES, DEFAULT_SURFACE, findingLines, lookedAtText, parseVerdict, passLine, reviewId, reviewPrompt, reviewRoutes,
+  KINDS, SURFACES, DEFAULT_SURFACE, findingLines, lookedAtText, parseVerdict, passLine, reviewId, reviewPrompt, reviewRoutes, withTapFailures,
 } from "../../src/shared/boss/shipReview/review.mjs";
 
 const ROSTER = "https://raw.githubusercontent.com/seq23/search-loop/main/config/free-models.json";
@@ -67,6 +71,11 @@ export function parseArgs(argv) {
   if (!KINDS.includes(a.kind)) throw stop(64, "BAD_ARGS", `--kind must be one of ${KINDS.join(", ")}`);
   if (!a.target) throw stop(64, "BAD_ARGS", "--target is required: what real output to look at");
   if (!a.builder) throw stop(64, "BAD_ARGS", "--builder is required: the reviewer must know who it is not");
+  if (a.kind === "tap-through") {
+    if (!a.flags.has("on-github")) throw stop(64, "BAD_ARGS", "--kind tap-through runs on GitHub only (the Mac never runs Playwright): add --on-github");
+    if (!/^[\w.-]+\/[\w.-]+(@[\w./-]+)?$/.test(String(a.flow ?? ""))) throw stop(64, "BAD_ARGS", "--kind tap-through needs --flow owner/repo[@ref]: the repo whose tap-through.json drives the robot");
+    if (!a.brand) throw stop(64, "BAD_ARGS", "--kind tap-through needs --brand <slug>: an app is judged against its own design skill");
+  }
   return a;
 }
 
@@ -241,13 +250,27 @@ async function capturePage(a, out) {
   return { shots, facts };
 }
 
+/** 12 frames sampled across a video's whole length on one sheet; returns its length in seconds, or 0. */
+export function videoSheet(file, sheet, width = 360) {
+  const probe = spawnSync("ffprobe", ["-v", "error", "-show_entries", "format=duration", "-of", "csv=p=0", file], { encoding: "utf8" });
+  let dur = Number(String(probe.stdout ?? "").trim());
+  // A browser's .webm often carries no duration in its header: count it by decoding instead.
+  if (!(dur > 0)) {
+    const c = spawnSync("ffprobe", ["-v", "error", "-count_packets", "-select_streams", "v:0", "-show_entries", "stream=nb_read_packets,r_frame_rate", "-of", "csv=p=0", file], { encoding: "utf8" });
+    const [rate, n] = String(c.stdout ?? "").trim().split(",");
+    const [num, den] = String(rate ?? "").split("/").map(Number);
+    dur = num > 0 && Number(n) > 0 ? Number(n) / (num / (den || 1)) : 0;
+  }
+  if (!(dur > 0)) return 0;
+  spawnSync("ffmpeg", ["-y", "-v", "error", "-i", file, "-vf", `fps=12/${dur},scale=${width}:-2,tile=4x3`, "-frames:v", "1", sheet]);
+  return existsSync(sheet) ? dur : 0;
+}
+
 function captureVideo(a, out) {
   if (!existsSync(a.target)) throw stop(9, "NOTHING_CAPTURED", `${a.target} does not exist`);
-  const probe = spawnSync("ffprobe", ["-v", "error", "-show_entries", "format=duration", "-of", "csv=p=0", a.target], { encoding: "utf8" });
-  const dur = Number(probe.stdout.trim());
-  if (!(dur > 0)) throw stop(9, "NOTHING_CAPTURED", `ffprobe could not read a duration from ${a.target}`);
   const sheet = join(out, "contact-sheet-12-frames.png"), first = join(out, "first-frame.png");
-  spawnSync("ffmpeg", ["-y", "-v", "error", "-i", a.target, "-vf", `fps=12/${dur},scale=360:-2,tile=4x3`, "-frames:v", "1", sheet]);
+  const dur = videoSheet(a.target, sheet);
+  if (!(dur > 0)) throw stop(9, "NOTHING_CAPTURED", `ffprobe could not read a duration from ${a.target}`);
   spawnSync("ffmpeg", ["-y", "-v", "error", "-ss", "0.3", "-i", a.target, "-frames:v", "1", "-vf", "scale=720:-2", first]);
   const shots = [{ path: first, label: "first-frame.png" }, { path: sheet, label: "contact-sheet-12-frames.png" }].filter((s) => existsSync(s.path));
   return { shots, facts: [`video length ${dur.toFixed(1)} s; the contact sheet holds 12 frames, one every ${(dur / 12).toFixed(1)} s, left to right, top to bottom`] };
@@ -327,6 +350,7 @@ ${thumbs.length ? "" : `<div style="color:#606060;padding:32px 0">This channel d
 }
 
 export async function capture(a, out, deps = {}) {
+  if (a.kind === "tap-through") throw stop(64, "BAD_ARGS", "a tap-through is captured on GitHub only (.github/workflows/tap-through.yml); use --on-github");
   if (YOUTUBE_CHANNEL.test(String(a.target)) && (a.kind === "profile" || a.kind === "page")) return captureYouTube(a, out, deps);
   if (a.kind === "video") return captureVideo(a, out);
   if (a.kind === "images") return captureImages(a);
@@ -350,27 +374,61 @@ export function readCaptureFile(dir) {
   const shots = (j.shots ?? []).map((s) => ({ label: s.label, path: join(dir, s.file) })).filter((s) => existsSync(s.path));
   return { shots, facts: Array.isArray(j.facts) ? j.facts : [] };
 }
-async function captureOnGithub(a, id, out, { run = spawnSync, wait = (ms) => new Promise((r) => setTimeout(r, ms)) } = {}) {
-  if (isPrivate(a) || a.kind !== "page" || YOUTUBE_CHANNEL.test(String(a.target))) throw stop(64, "BAD_ARGS", "--on-github is for public web pages only (its artifacts are public); capture private work and YouTube on the Mac");
-  const gh = (args, o = {}) => run("gh", args, { encoding: "utf8", maxBuffer: 64 << 20, ...o });
-  const d = gh(["workflow", "run", "ship-review-capture.yml", "-R", CAPTURE_REPO, "-f", `target=${a.target}`, "-f", `label=${id}`, "-f", `focus=${JSON.stringify(a.focus ?? [])}`]);
-  if (d.status !== 0) throw stop(9, "GITHUB_CAPTURE", `could not start the capture workflow: ${String(d.stderr).trim().slice(0, 200)}`);
+/** Finds a dispatched run by its title in one bounded look (two minutes), then waits on it in one call. */
+async function dispatchAndWait({ gh, workflow, inputs, title, wait }) {
+  const d = gh(["workflow", "run", workflow, "-R", CAPTURE_REPO, ...Object.entries(inputs).flatMap(([k, v]) => ["-f", `${k}=${v}`])]);
+  if (d.status !== 0) throw stop(9, "GITHUB_CAPTURE", `could not start ${workflow}: ${String(d.stderr).trim().slice(0, 200)}`);
   let runId = null;
   for (let i = 0; i < 24 && !runId; i++) {
     await wait(5_000);
-    const l = gh(["run", "list", "-R", CAPTURE_REPO, "-w", "ship-review-capture.yml", "-L", "20", "--json", "databaseId,displayTitle"]);
-    runId = (JSON.parse(l.stdout || "[]").find((r) => r.displayTitle === `ship-review capture ${id}`) ?? {}).databaseId ?? null;
+    const l = gh(["run", "list", "-R", CAPTURE_REPO, "-w", workflow, "-L", "20", "--json", "databaseId,displayTitle"]);
+    runId = (JSON.parse(l.stdout || "[]").find((r) => r.displayTitle === title) ?? {}).databaseId ?? null;
   }
-  if (!runId) throw stop(9, "GITHUB_CAPTURE", `the capture run for ${id} never appeared in two minutes`);
-  const w = gh(["run", "watch", String(runId), "-R", CAPTURE_REPO, "--exit-status", "-i", "15"], { timeout: 25 * 60_000 });
-  if (w.status !== 0) throw stop(9, "GITHUB_CAPTURE", `the capture run ${runId} failed or timed out (gh run view ${runId} -R ${CAPTURE_REPO} --log-failed)`);
+  if (!runId) throw stop(9, "GITHUB_CAPTURE", `the run "${title}" never appeared in two minutes`);
+  const w = gh(["run", "watch", String(runId), "-R", CAPTURE_REPO, "--exit-status", "-i", "30"], { timeout: 30 * 60_000 });
+  return { runId, ok: w.status === 0 };
+}
+
+/**
+ * A tap-through run's artifact → what the reviewer judges. The run's own named stop (preview down, a
+ * flow that taps nothing, an invalid flow) or a missing report is CAPTURE_INCOMPLETE: nothing is judged,
+ * never a pass. Each journey's video becomes a 12-frame sheet here (ffmpeg on the Mac, no browser).
+ */
+export function readTapThrough(dir, { runId = null, sheet = videoSheet } = {}) {
+  const f = join(dir, "tap-report.json");
+  if (!existsSync(f)) throw stop(9, "CAPTURE_INCOMPLETE", `the tap-through run${runId ? ` ${runId}` : ""} left no tap-report.json, so nothing was tapped or judged`);
+  const report = JSON.parse(readFileSync(f, "utf8"));
+  if (report.stopped) throw stop(9, "CAPTURE_INCOMPLETE", `the tap-through stopped: [${report.stopped.code}] ${report.stopped.why}`);
+  if (!report.taps) throw stop(9, "CAPTURE_INCOMPLETE", "the tap-through tapped nothing ([FLOW_TAPS_NOTHING]); nothing was judged");
+  const c = readCaptureFile(dir);
+  const sheets = [];
+  for (const v of report.videos ?? []) {
+    const label = `video-sheet-${v.scheme}-${v.journey}.png`, path = join(dir, label);
+    if (existsSync(join(dir, v.file)) && sheet(join(dir, v.file), path, 240) > 0) sheets.push({ label, path });
+  }
+  if ((report.videos ?? []).length && !sheets.length) throw stop(9, "CAPTURE_INCOMPLETE", "the run recorded videos but none could be read into a sheet (ffmpeg missing?); nothing was judged");
+  const facts = [...c.facts, `recorded on GitHub Actions${runId ? ` (run ${runId}, https://github.com/${CAPTURE_REPO}/actions/runs/${runId})` : ""}; the videos are in that run's artifact`];
+  return { shots: [...c.shots, ...sheets], facts, report };
+}
+
+async function captureOnGithub(a, id, out, { run = spawnSync, wait = (ms) => new Promise((r) => setTimeout(r, ms)) } = {}) {
+  const gh = (args, o = {}) => run("gh", args, { encoding: "utf8", maxBuffer: 64 << 20, ...o });
+  if (a.kind === "tap-through") {
+    const [flowRepo, flowRef = "main"] = String(a.flow).split("@");
+    const { runId, ok } = await dispatchAndWait({ gh, workflow: "tap-through.yml", title: `tap-through ${id}`, wait, inputs: { target: a.target, label: id, flow_repo: flowRepo, flow_ref: flowRef } });
+    // A red run is still judged: the robot's named failures are in its report, and they are findings.
+    const dl = gh(["run", "download", String(runId), "-R", CAPTURE_REPO, "-n", `tap-through-${id}`, "-D", out]);
+    if (dl.status !== 0) throw stop(9, "CAPTURE_INCOMPLETE", `the tap-through run ${runId} ${ok ? "passed" : "failed"} and left no artifact to judge (gh run view ${runId} -R ${CAPTURE_REPO} --log-failed)`);
+    return readTapThrough(out, { runId });
+  }
+  if (isPrivate(a) || a.kind !== "page" || YOUTUBE_CHANNEL.test(String(a.target))) throw stop(64, "BAD_ARGS", "--on-github is for public web pages only, and app tap-throughs (its artifacts are public); capture private work and YouTube on the Mac");
+  const { runId, ok } = await dispatchAndWait({ gh, workflow: "ship-review-capture.yml", title: `ship-review capture ${id}`, wait, inputs: { target: a.target, label: id, focus: JSON.stringify(a.focus ?? []) } });
+  if (!ok) throw stop(9, "GITHUB_CAPTURE", `the capture run ${runId} failed or timed out (gh run view ${runId} -R ${CAPTURE_REPO} --log-failed)`);
   const dl = gh(["run", "download", String(runId), "-R", CAPTURE_REPO, "-n", `ship-capture-${id}`, "-D", out]);
   if (dl.status !== 0) throw stop(9, "GITHUB_CAPTURE", `could not download the capture of run ${runId}: ${String(dl.stderr).trim().slice(0, 200)}`);
   const c = readCaptureFile(out);
   return { ...c, facts: [...c.facts, `captured on GitHub Actions (run ${runId}), the same capture code as on the Mac`] };
 }
-
-// ─── Judge: down the route walk until one route returns a review it can trust ─────────────────────
 
 async function geminiModels(fetchImpl) {
   try {
@@ -491,6 +549,13 @@ function addToPr(pr, line, run = spawnSync) {
   return edit.status === 0 ? null : `gh pr edit failed: ${String(edit.stderr).trim().slice(0, 200)}`;
 }
 
+/** ship-ready's app-review.md beside SKILL.md: an app is judged by it, and will not be judged without it. */
+function appReview(skill) {
+  const f = join(resolve(skill, ".."), "app-review.md");
+  if (!existsSync(f)) throw stop(2, "NO_CHECKLIST", `${f} is missing: an app tap-through is judged against app-review.md`);
+  return `APP REVIEW (app-review.md, verbatim):\n${readFileSync(f, "utf8").replace(/^---[\s\S]*?---\s*/, "")}`;
+}
+
 export async function main(argv = process.argv.slice(2), { env = process.env, fetchImpl = fetch, log = (s) => console.error(s), print = (s) => console.log(s) } = {}) {
   const a = parseArgs(argv);
   const id = reviewId();
@@ -516,7 +581,7 @@ export async function main(argv = process.argv.slice(2), { env = process.env, fe
   const privateWork = isPrivate(a);
   const { routes } = reviewRoutes({ firstOfKind, privateWork });
 
-  const { shots, facts } = a.flags.has("on-github") ? await captureOnGithub(a, id, out) : await capture(a, out, { env, fetchImpl });
+  const { shots, facts, report = null } = a.flags.has("on-github") ? await captureOnGithub(a, id, out) : await capture(a, out, { env, fetchImpl });
   if (!shots.length) { print("OUTPUT 0 reviews"); throw stop(9, "NOTHING_CAPTURED", `no capture of ${a.target} could be made, so nothing was judged`); }
   const lookedAt = `${lookedAtText({ kind: a.kind, target: a.target, shots })}, judged as ${a.surface ?? DEFAULT_SURFACE[a.kind]}${a.planned.length ? ` with ${a.planned.length} planned placeholder(s) excluded` : ""}`;
   log(`ship-review ${id}: ${lookedAt}; ${firstOfKind ? "first review" : "re-review"}${privateWork ? ", private" : ""}; routes ${routes.join(" → ")}`);
@@ -526,10 +591,10 @@ export async function main(argv = process.argv.slice(2), { env = process.env, fe
     surface: a.surface ?? DEFAULT_SURFACE[a.kind], planned: a.planned,
     brief: a.brief ? readFileSync(a.brief, "utf8").slice(0, 6000) : null,
     change: a.pr && a.kind === "page" ? prDiff(a.pr) : null,
-    checklist: readFileSync(skill, "utf8").replace(/^---[\s\S]*?---\s*/, ""),
+    checklist: [readFileSync(skill, "utf8").replace(/^---[\s\S]*?---\s*/, ""), ...(a.kind === "tap-through" ? [appReview(skill)] : [])].join("\n\n"),
     brand: brandFile ? readFileSync(brandFile, "utf8").replace(/^---[\s\S]*?---\s*/, "").slice(0, 8000) : null,
   };
-  const v = await judge({ routes, base, shots, out, env, fetchImpl, log });
+  const v = withTapFailures(await judge({ routes, base, shots, out, env, fetchImpl, log }), report?.failures ?? []);
   if (!v) { print("OUTPUT 0 reviews"); throw stop(9, "NO_REVIEWER", `every route (${routes.join(", ")}) was out or gave no review it could trust; the next run tries again. Captures kept in ${out}`); }
 
   // RULE 0: what no capture showed stops the harness, never the work (coordinator, 20 Nov 2026).
