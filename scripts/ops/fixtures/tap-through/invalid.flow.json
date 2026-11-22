@@ -1,0 +1,4 @@
+{
+  "app": "Fixture app",
+  "journeys": [
+    { "name": "first-open", "start": "/",

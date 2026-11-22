@@ -1,0 +1,25 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Routes fixture</title>
+<style>body{font:16px system-ui;margin:0;padding:24px}button{display:block;margin:12px 0;padding:12px 16px;font:inherit}
+@media (prefers-color-scheme:dark){body{background:#111;color:#eee}}</style></head>
+<body><main id="app"></main>
+<script>
+// A path-routed app (as an expo-router web build is) for the tap-through's changed-screen cases. The
+// journeys reach "/" and "/plans" only; "/settings" (a dead "Reset") and "/help" (a dead "Contact") are
+// reached only when the change opens them, so a planted defect there proves the screen was swept.
+const screens = {
+  "/": () => `<h1>Routes fixture</h1><button data-go="/plans">Open plans</button>`,
+  "/plans": () => `<h1>Plans</h1><button data-toggle>Pick yearly</button><button data-go="/">Back home</button>`,
+  "/settings": () => `<h1>Settings</h1><button>Reset</button><button data-go="/">Back home</button>`,
+  "/help": () => `<h1>Help</h1><button>Contact</button><button data-go="/">Back home</button>`,
+};
+function draw() { const p = location.pathname.replace(/\/+$/, "") || "/"; document.getElementById("app").innerHTML = (screens[p] ?? (() => "<h1>Unmatched Route</h1><p>Page could not be found.</p>"))(); }
+addEventListener("popstate", draw);
+document.addEventListener("click", (e) => {
+  const b = e.target.closest("button"); if (!b) return;
+  if (b.dataset.go) { history.pushState(null, "", b.dataset.go); draw(); }
+  if (b.hasAttribute("data-toggle")) b.textContent = b.textContent === "Pick yearly" ? "Yearly picked" : "Pick yearly";
+});
+draw();
+</script></body></html>

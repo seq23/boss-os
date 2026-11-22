@@ -263,6 +263,24 @@ work; a fresh reviewer judges the REAL output against `~/.claude/skills/ship-rea
   8 GB Mac, never for private work, since the artifacts are public), prints `Ship-ready: PASS — boss-os ship-review sr_… (<route>)
   looked at <what>` or `…: FAIL …` with numbered findings, and with `--pr` appends the PASS line to the
   PR body, where `~/bin/land` reads it. Rules (pure) in `src/shared/boss/shipReview/review.mjs`.
+- **Apps: the tap-through** (owner, 22 Nov 2026, "a factory standard that we live by"). Each app repo
+  keeps a `tap-through.json` (journeys: first open, the main task, every price screen, restore, settings,
+  delete my data, every preview flag for paid and hidden states; the price screen's promises mapped to the
+  screen behind each; native-only features named with why). `scripts/ops/tap-through.mjs` drives the web
+  preview at 390 px, light and dark, on GitHub only (`.github/workflows/tap-through.yml`: each app's
+  preview workflow calls it, so a red run blocks `land`), records a video per journey, a shot per step and
+  a sheet per swept screen (a shot after every sweep tap), blocks every write the flow did not mock, and
+  fails by name on DEAD_BUTTON, CONSOLE_ERROR, ERROR_SCREEN, STEP_UNREACHABLE, PROMISE_UNBUILT,
+  STATE_HIDDEN (a radio/tab/switch with no aria-checked/aria-selected whose tap changed nothing) and
+  UNMAPPED_SCREEN; PREVIEW_DOWN, FLOW_INVALID, FLOW_TAPS_NOTHING and CHANGED_SCREENS_UNMAPPED are named
+  stops. The change decides what is opened: the workflow passes the PR's `git diff --name-only
+  base...head`; each changed expo-router route file is its URL, opened and swept if no journey swept it
+  (a route with a value in its path needs a journey or `"routes"` in the flow, else UNMAPPED_SCREEN); a
+  changed shared app file opens and sweeps every route.
+  `ship-review --kind tap-through --on-github --flow seq23/<repo>[@ref] --brand <slug> --target <preview>`
+  dispatches it and judges the shots, dark sheets and video sheets with `app-review.md`; any measured
+  failure is a FAIL finding, a stopped run is CAPTURE_INCOMPLETE. Its proof is `--self-test` (good and
+  broken fixture apps in `scripts/ops/fixtures/tap-through/`), run on every PR that touches it.
 - **Routes** (`aiRoles.routeOrder`): a subject never passed before is HARD (Claude seat, then Codex);
   a re-review is SHORT (free Gemini vision models from the search-loop roster, then Codex, then Claude);
   emails and Boss OS screens are private (never a free route). **A free route may FAIL a piece but
