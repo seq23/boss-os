@@ -37,5 +37,17 @@ describe("the growth playbook", () => {
     const real = await runChecks({ home, dryRun: false, ...stub } as any);
     expect(real.playbook).toBe("differs, regenerated");
     expect(readFileSync(f, "utf8")).toBe(PLAYBOOK);
+    expect(real.unchecked).not.toContain("the growth playbook skill");
+  });
+  it("a copy it cannot write is named in unchecked, never counted as clean (rule 0)", async () => {
+    const { runChecks } = await import("../scripts/brains/cohesion-check.mjs");
+    const home = mkdtempSync(join(tmpdir(), "home-"));
+    // A FILE where the skills directory should be: the check cannot read or write the copy.
+    mkdirSync(join(home, ".claude"), { recursive: true });
+    writeFileSync(join(home, ".claude", "skills"), "not a directory");
+    const stub = { validators: () => null, social: async () => null, maps: () => ({ maps_flag: null, unchecked: [] }), restart: () => {}, wait: async () => {} };
+    const r = await runChecks({ home, dryRun: false, ...stub } as any);
+    expect(r.playbook).toMatch(/^not checked/);
+    expect(r.unchecked).toContain("the growth playbook skill");
   });
 });

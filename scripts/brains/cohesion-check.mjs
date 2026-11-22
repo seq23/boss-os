@@ -279,13 +279,13 @@ export async function runChecks({ home = homedir(), now = Date.now(), dryRun = f
   try { mp = maps(); } catch { mp = { maps_flag: null, unchecked: ["the Email Map", "the Schedule", "the Accounts map's Buffers"] }; }
   // 6. The growth playbook's one copy (~/.claude/skills/growth-director/SKILL.md) is regenerated from
   // its source when it differs: one source, never two drifting playbooks (Growth Director, 21 Nov 2026).
-  let playbook = "not checked";
+  let playbook = "not checked"; let playbookUnchecked = [];
   try {
     const skillFile = join(home, ".claude", "skills", "growth-director", "SKILL.md");
     playbook = comparePlaybook(skillFile);
     if (playbook !== "same" && !dryRun) { writePlaybook(skillFile); playbook = `${playbook}, regenerated`; }
-  } catch (e) { playbook = `not checked (${String(e?.message ?? e).slice(0, 80)})`; }
-  return { ...m, ...r, ...s, ...rs, ...c, ...v, playbook, social_map_flag, maps_flag: mp.maps_flag ?? null, matrix, unchecked: [...m.unchecked, ...r.unchecked, ...s.unchecked, ...rs.unchecked, ...(mp.unchecked ?? [])] };
+  } catch (e) { playbook = `not checked (${String(e?.message ?? e).slice(0, 80)})`; playbookUnchecked = ["the growth playbook skill"]; }
+  return { ...m, ...r, ...s, ...rs, ...c, ...v, playbook, social_map_flag, maps_flag: mp.maps_flag ?? null, matrix, unchecked: [...m.unchecked, ...r.unchecked, ...s.unchecked, ...rs.unchecked, ...(mp.unchecked ?? []), ...playbookUnchecked] };
 }
 
 export async function post(record, { passcode = process.env.BOSS_PASSCODE, fetchImpl = fetch, origin = ORIGIN, matrix = null } = {}) {
