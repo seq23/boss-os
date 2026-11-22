@@ -172,3 +172,17 @@ describe("the naming guard (her ruling, 21 Nov 2026; USPTO sn 98839129)", () => 
     expect(namingProblems("Some things you can't tell anyone.")).toEqual([]);
   });
 });
+
+describe("older work: the Director's verdicts are shaped, never guessed", () => {
+  it("keeps only known verdicts with a reason; a change needs its next step", () => {
+    const d = parseDecision(JSON.stringify({ decision: "x", linked: [
+      { id: "olp_a1", verdict: "keep", why: "season" }, { id: "olp_b2", verdict: "change", why: "y" },
+      { id: "olp_c3", verdict: "maybe", why: "z" }, { id: "olp_d4", verdict: "drop", why: "" }, { id: "not an id", verdict: "drop", why: "w" },
+      { id: "olp_e5", verdict: "change", why: "v", next_step: "Do the porch weeks" },
+    ] }))!;
+    expect(d.linked).toEqual([
+      { id: "olp_a1", verdict: "keep", why: "season", next_step: null },
+      { id: "olp_e5", verdict: "change", why: "v", next_step: "Do the porch weeks" },
+    ]);
+  });
+});

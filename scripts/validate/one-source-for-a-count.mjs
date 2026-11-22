@@ -54,6 +54,15 @@ const SOURCE = "src/worker/boss/approvals/pending.ts";
  */
 const NOT_THE_BADGE = new Map([
   [
+    "src/worker/boss/routes/growth.ts",
+    {
+      why:
+        "The Growth page lists the Director's OWN cards (judgement calls of resume kind growth_proposal), " +
+        "waiting and answered in the last eight weeks, under their business. It is not a count of what " +
+        "waits on her: the badge and Decide keep that answer.",
+    },
+  ],
+  [
     "src/worker/boss/routes/today.ts",
     {
       why:
