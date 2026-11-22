@@ -62,12 +62,6 @@ async function reading(measure: string, business: string, kind: string, channel:
   await env.DB.prepare(`INSERT OR REPLACE INTO growth_readings (day, measure, business, kind, channel, language, value, unread, at) VALUES (?,?,?,?,?,?,?,?,?)`)
     .bind(day, measure, business, kind, channel, "en", value, value === null ? "not read: test" : null, NOW).run();
 }
-/** Her yes already given for a format: its pipeline row exists (finished), so drafts queue. */
-async function started(business: string, channel: string, format: string) {
-  await env.DB.prepare(`INSERT INTO owner_open_loops (id, title, finish_line, next_step, owner, next_date, business, section, status, source, source_key, created_at, updated_at)
-    VALUES (?, ?, 'x', 'x', 'claude', '2026-11-20', 'porch-and-party', 'not_finished', 'done', 'agent_report', ?, 1, 1)`)
-    .bind(`olp_${business}_${channel}_${format}`.replace(/[^a-z0-9_]/g, ""), `started ${channel} ${format}`, `growth#${business}#${channel}-${format}`).run();
-}
 const decisions = async () => ((await env.DB.prepare(`SELECT * FROM growth_decisions ORDER BY business`).all<any>()).results ?? []);
 const loops = async () => ((await env.DB.prepare(`SELECT * FROM owner_open_loops WHERE source_key LIKE 'growth#%'`).all<any>()).results ?? []);
 const cards = async () => ((await env.DB.prepare(`SELECT a.* FROM approvals a JOIN judgement_calls j ON j.approval_id = a.id WHERE j.resume_kind = 'growth_proposal' AND a.status = 'pending'`).all<any>()).results ?? []);
@@ -113,7 +107,6 @@ describe("one real cycle", () => {
   it("queues only approved, clean drafts; blocks a claims break; cards the new; refuses spend and accounts; pauses the paused", async () => {
     await reading("pnp-requests", "porch-and-party", "requests", "all", 2);
     await reading("pnp-requests-instagram", "porch-and-party", "requests", "instagram", 2);
-    await started("porch-and-party", "instagram", "reel");
     await reading("ap-sales", "approvalprep", "sales", "site", 1);
     const { model, seen } = fake(DECISION, (draft) => /★|happy customer/.test(draft) ? { pass: false, broken: ["R-PRF-01"], why: "an invented testimonial" } : { pass: true, broken: [], why: "" });
     const r = await runGrowthDirector(env as any, NOW, { model, fetchImpl: noTrends });
@@ -228,7 +221,6 @@ describe("review round (21 Nov): her answer, no piling up, a lost record, a brok
   it("two cycles: one pipeline row per business × channel × format, a cap on open rows, last week's waiting cards replaced", async () => {
     await seed();
     const many = { ...DECISION, queue: [{ channel: "instagram", format: "reel", draft: "Porch reel", why: "x" }, { channel: "instagram", format: "carousel", draft: "Porch carousel", why: "x" }, { channel: "facebook", format: "post", draft: "Porch post", why: "x" }], proposals: [] };
-    for (const [c, f] of [["instagram", "reel"], ["instagram", "carousel"], ["facebook", "post"], ["instagram", "story"]]) await started("porch-and-party", c!, f!);
     const { model } = fake(many, OK);
     await runGrowthDirector(env as any, NOW, { model, fetchImpl: noTrends });
     const first = (await loops()).filter((l) => l.status === "open" && /porch-and-party/.test(l.source_key));
@@ -247,24 +239,14 @@ describe("review round (21 Nov): her answer, no piling up, a lost record, a brok
     expect(acts.find((a: any) => a.kind === "held").why).toMatch(/already has 3 growth to-dos open/);
   }, 60_000);
 
-  it("the first post of an approved format is her card; her yes opens its pipeline; the next week it queues", async () => {
-    const { apiJson } = await import("./helpers");
+  it("an approved format queues from its first post: no card (her ruling, 22 Nov 2026)", async () => {
     await seed();
     const one = { ...DECISION, queue: [DECISION.queue[0]], proposals: [] };
     const { model } = fake(one, OK);
     await runGrowthDirector(env as any, NOW, { model, fetchImpl: noTrends });
-    expect((await loops()).filter((l) => l.status === "open")).toHaveLength(0);
-    const first = (await cards()).find((c) => /Porch & Party: start posting reel on instagram/.test(c.title))!;
-    expect(first).toBeTruthy();
-    await apiJson<any>(`/api/approvals/${first.id}/decide`, { method: "POST", body: { decision: "approved" } });
-    const row = await env.DB.prepare(`SELECT * FROM owner_open_loops WHERE source_key = 'growth#porch-and-party#instagram-reel'`).first<any>();
-    expect(row).toMatchObject({ status: "open", owner: "claude" });
-    expect(row.next_step).toMatch(/first reel/);
-    await env.DB.prepare(`UPDATE owner_open_loops SET status = 'done' WHERE id = ?`).bind(row.id).run();
-    await seed(NOW + 7 * 86_400_000);
-    await runGrowthDirector(env as any, NOW + 7 * 86_400_000, { model, fetchImpl: noTrends });
     expect((await loops()).filter((l) => l.status === "open" && l.source_key === "growth#porch-and-party#instagram-reel")).toHaveLength(1);
-    expect((await cards()).some((c) => /start posting reel on instagram/.test(c.title))).toBe(false);
+    // Only a format NOT on a roster still asks (ApprovalPrep has no Instagram reels): a new channel or format.
+    expect((await cards()).map((c) => c.title)).toEqual(["ApprovalPrep: try reel on instagram?"]);
   }, 60_000);
 
   it("her yes to a new format: once it is on the roster, the next week queues without asking again", async () => {
@@ -309,7 +291,6 @@ describe("review round (21 Nov): her answer, no piling up, a lost record, a brok
   it("no Open Loops title ever reaches a model; each business sees only its own earlier work", async () => {
     await env.DB.prepare(`INSERT INTO owner_open_loops (id, title, finish_line, next_step, owner, next_date, business, section, status, source, created_at, updated_at)
       VALUES ('olp_secretish', 'Call Valerie about the Hendersons', 'x', 'x', 'emp_growth', '2026-11-30', 'porch-and-party', 'not_finished', 'open', 'agent_report', 1, 1)`).run();
-    await started("porch-and-party", "instagram", "reel");
     await seed();
     const { model, seen } = fake(DECISION, OK);
     await runGrowthDirector(env as any, NOW, { model, fetchImpl: noTrends });
@@ -321,4 +302,47 @@ describe("review round (21 Nov): her answer, no piling up, a lost record, a brok
     expect(ap).not.toMatch(/instagram reel \(queued\)/); // P&P's queued reel is not ApprovalPrep's
     expect(s2.find((t) => /Business: Porch & Party/.test(t))).toMatch(/instagram reel \(queued\)/);
   }, 60_000);
+});
+
+describe("the Growth page", () => {
+  it("per business: upcoming to-dos and cards, this week's decision, linked rows marked elsewhere; paused said; nothing read is not zero", async () => {
+    const { apiJson } = await import("./helpers");
+    await reading("pnp-requests", "porch-and-party", "requests", "all", 2);
+    await reading("ap-sales", "approvalprep", "sales", "site", 1);
+    await env.DB.prepare(`INSERT INTO owner_open_loops (id, title, finish_line, next_step, owner, next_date, business, section, status, source, created_at, updated_at)
+      VALUES ('olp_elsewhere1', 'Search-loop pages for P&P', 'Live', 'In flight', 'claude', '2026-11-30', 'porch-and-party', 'not_finished', 'open', 'agent_report', 1, 1),
+             ('olp_general01', 'Growth Director: service mix', 'Decided', 'Read the bookings', 'emp_growth', '2026-11-30', 'spry', 'not_finished', 'open', 'agent_report', 1, 1)`).run();
+    await brain("porch-and-party", PNP + "- linked to-dos: olp_elsewhere1\n");
+    const { model } = fake(DECISION, (draft) => /★/.test(draft) ? { pass: false, broken: ["R-PRF-01"], why: "x" } : { pass: true, broken: [], why: "" });
+    await runGrowthDirector(env as any, NOW, { model, fetchImpl: noTrends });
+    const page = (await apiJson("/api/growth/page")).body.data;
+    const pnp = page.businesses.find((b: any) => b.key === "porch-and-party");
+    expect(pnp.happening.decision.decision).toMatch(/Christmas porches/);
+    expect(pnp.upcoming.todos.find((t: any) => t.id === "olp_elsewhere1")).toMatchObject({ elsewhere: true });
+    expect(pnp.upcoming.todos.some((t: any) => /done by 1 December/.test(t.next) && !t.elsewhere)).toBe(true);
+    expect(pnp.upcoming.cards.some((c: any) => /tiktok/i.test(c.title))).toBe(true);
+    expect(page.general.map((t: any) => t.id)).toContain("olp_general01");
+    expect(page.week).toEqual({ decided: 2, held: 0 });
+    expect(page.problems.join(" ")).not.toMatch(/porch-and-party|spry brain/);
+    // Her yes on a proposal lands under its business, not "across the businesses".
+    const card = (await cards()).find((c: any) => /refresh add-on/.test(c.title));
+    await apiJson(`/api/approvals/${card.id}/decide`, { method: "POST", body: { decision: "approved" } });
+    const again = (await apiJson("/api/growth/page")).body.data;
+    expect(again.businesses.find((b: any) => b.key === "porch-and-party").upcoming.todos.some((t: any) => /she said yes/.test(t.title))).toBe(true);
+    expect(again.general.some((t: any) => /she said yes/.test(t.title))).toBe(false);
+    // An old decision is history, never "this week"; a to-do closed 60 days ago is gone from the page.
+    await env.DB.prepare(`UPDATE growth_decisions SET cycle = '2026-11-02' WHERE business = 'approvalprep'`).run();
+    await env.DB.prepare(`INSERT INTO owner_open_loops (id, title, finish_line, next_step, owner, next_date, business, section, status, source, source_key, created_at, updated_at)
+      VALUES ('olp_old_done', 'Growth Director: Porch & Party — instagram story', 'x', 'x', 'claude', '2026-09-01', 'porch-and-party', 'not_finished', 'done', 'agent_report', 'growth#porch-and-party#instagram-story', ?, ?)`).bind(Date.now() - 60 * 86_400_000, Date.now() - 60 * 86_400_000).run();
+    const later = (await apiJson("/api/growth/page")).body.data;
+    const ap = later.businesses.find((b: any) => b.key === "approvalprep");
+    expect(ap.happening.decision).toBeNull();
+    expect(ap.happening.last).toBe("2026-11-02");
+    expect(ap.happened.decisions.map((d: any) => d.cycle)).toContain("2026-11-02");
+    const pnp2 = later.businesses.find((b: any) => b.key === "porch-and-party");
+    expect(pnp2.happened.done.some((t: any) => t.id === "olp_old_done")).toBe(false);
+    expect(page.businesses.find((b: any) => b.key === "how-we-know").paused).toBeTruthy();
+    const dw = page.businesses.find((b: any) => b.key === "dream-wedding");
+    expect(dw.happening.board.channels.every((c: any) => c.value === null && /^not read/.test(c.unread))).toBe(true);
+  }, 30_000);
 });

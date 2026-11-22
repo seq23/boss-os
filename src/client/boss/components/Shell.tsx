@@ -101,7 +101,7 @@ function useReadingPosition() {
   return { progress, scrollable, atEnd };
 }
 
-export type TabId = "today" | "inbox" | "capital" | "spirit" | "team" | "brains" | "repos" | "domains" | "sites" | "accounts" | "emails" | "social" | "schedule" | "scorecard" | "loops" | "updates" | "validators" | "memory" | "trading" | "vault" | "systems" | "succession";
+export type TabId = "today" | "inbox" | "capital" | "spirit" | "team" | "brains" | "repos" | "domains" | "sites" | "accounts" | "emails" | "social" | "schedule" | "scorecard" | "growth" | "loops" | "updates" | "validators" | "memory" | "trading" | "vault" | "systems" | "succession";
 
 const ICONS: Record<TabId, ReactNode> = {
   today: <path d="M12 3a9 9 0 100 18 9 9 0 000-18zM12 7v5l3.5 2" />,
@@ -118,6 +118,7 @@ const ICONS: Record<TabId, ReactNode> = {
   social: <path d="M6 9a3 3 0 100-6 3 3 0 000 6zM18 21a3 3 0 100-6 3 3 0 000 6zM18 9a3 3 0 100-6 3 3 0 000 6zM8.6 7.5l6.8 3.5M8.6 4.5l6.8-1M15.5 16.5L8.6 9" />,
   schedule: <path d="M4 5h16v15H4zM4 10h16M9 3v4M15 3v4" />,
   scorecard: <path d="M4 20V10M10 20V4M16 20v-7M22 20H2" />,
+  growth: <path d="M3 17l6-6 4 4 8-8M15 7h6v6" />,
   loops: <path d="M4 6h11M4 12h11M4 18h7M18 5l2 2 3-3" />,
   updates: <path d="M6 9a6 6 0 0112 0c0 6 2 7 2 7H4s2-1 2-7zM10 20a2 2 0 004 0" />,
   validators: <path d="M12 3l8 3v6c0 5-3.5 8-8 9-4.5-1-8-4-8-9V6zM8.5 12l2.5 2.5 4.5-5" />,
@@ -131,7 +132,7 @@ const ICONS: Record<TabId, ReactNode> = {
 /** Canon §15: Today is the default operating screen, and so the first tab. */
 const LABELS: Record<TabId, string> = {
   today: "Today", inbox: "Inbox", capital: "Capital",
-  spirit: "Spirit", team: "Team", brains: "Brains", repos: "Repos", domains: "Domains", sites: "Sites", accounts: "Accounts", emails: "Email Map", social: "Social Map", schedule: "Schedule", scorecard: "Scorecard", loops: "Open Loops", updates: "Updates", validators: "Validators", memory: "Memory", trading: "Trading", vault: "Vault",
+  spirit: "Spirit", team: "Team", brains: "Brains", repos: "Repos", domains: "Domains", sites: "Sites", accounts: "Accounts", emails: "Email Map", social: "Social Map", schedule: "Schedule", scorecard: "Scorecard", growth: "Growth", loops: "Open Loops", updates: "Updates", validators: "Validators", memory: "Memory", trading: "Trading", vault: "Vault",
   systems: "Systems", succession: "Succession Book",
 };
 
@@ -141,7 +142,7 @@ const LABELS: Record<TabId, string> = {
  * Trading, Vault, Systems and Operations (the settings) are in "☰ More", two taps away.
  */
 export const PRIMARY_TABS: readonly TabId[] = ["today", "inbox", "capital", "spirit"];
-export const MORE_TABS: readonly TabId[] = ["team", "brains", "repos", "domains", "sites", "accounts", "emails", "social", "schedule", "scorecard", "loops", "updates", "validators", "memory", "trading", "vault", "systems", "succession"];
+export const MORE_TABS: readonly TabId[] = ["team", "brains", "repos", "domains", "sites", "accounts", "emails", "social", "schedule", "scorecard", "growth", "loops", "updates", "validators", "memory", "trading", "vault", "systems", "succession"];
 
 export function Shell({
   tab, onTab, title, lane, pending, onSettings, settingsOpen, offline, waiting, onBack, children,

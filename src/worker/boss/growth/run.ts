@@ -71,12 +71,15 @@ async function brainMd(db: D1Database, slug: string): Promise<string | null> {
 }
 
 /** The roster from the growth brains only; a broken section is a named problem, never a quiet skip. */
+/** Her words for the two growth brains, so a problem reads as a business, never a slug. */
+const BRAIN_NAMES: Record<string, string> = { "porch-and-party": "Porch & Party", spry: "Spry Labs" };
 export async function loadRoster(db: D1Database): Promise<{ roster: RosterEntry[]; problems: string[] }> {
   const roster: RosterEntry[] = []; const problems: string[] = [];
   for (const slug of GROWTH_BRAINS) {
     const md = await brainMd(db, slug);
-    if (!md) { problems.push(`the ${slug} brain is missing`); continue; }
-    try { const body = growthSection(slug, md); if (body) roster.push(...parseRoster(body, slug)); else problems.push(`the ${slug} brain has no Growth section`); }
+    const name = BRAIN_NAMES[slug] ?? slug;
+    if (!md) { problems.push(`${name}'s brain is missing`); continue; }
+    try { const body = growthSection(slug, md); if (body) roster.push(...parseRoster(body, slug)); else problems.push(`${name}'s brain has no Growth section yet`); }
     catch (e) { problems.push(String((e as Error).message)); }
   }
   return { roster, problems: [...problems, ...rosterProblems(roster)] };
@@ -191,13 +194,8 @@ export async function runGrowthDirector(env: Env, now = Date.now(), deps: { mode
         const verdict = parseClaims(await model(env, claimsPrompt({ entry, rules, draft: item.draft }) as Msg[], "growth-claims"));
         if (!verdict) { actions.push({ kind: "held", why: "the claims check got no model answer, so it is held, never passed", item }); continue; }
         if (!verdict.pass) { actions.push({ kind: "blocked", why: `breaks ${verdict.broken.join(", ") || "a rule"}: ${verdict.why}`, item }); continue; }
-        // The first post of a format on a channel waits for her yes (a card); after it, it queues.
-        const started = await db.prepare(`SELECT 1 FROM owner_open_loops WHERE source_key = ?`).bind(pipelineKey(entry.key!, item.channel, item.format)).first();
-        if (!started) {
-          const c = await raise(`${entry.label}: start posting ${item.format} on ${item.channel}? (first one below)`, `${item.why}\n\nThe first one, which passed the claims check: ${item.draft}`, { item, first: true });
-          actions.push({ kind: "proposal", why: c.why ?? "the first post of this format waits for her yes", item, card: c.card });
-          continue;
-        }
+        // A format on the roster is approved: it queues, first post included. Decide is only for a new
+        // account, channel, price or anything paid (her ruling, 22 Nov 2026: "why are they asking me anything?").
         const q = await queueRow(db, entry, item, decision.next_check ?? today);
         actions.push(q.id ? { kind: "queued", loop: q.id, item } : { kind: "held", why: q.why, item });
       }

@@ -221,10 +221,8 @@ export function cycleEnd(results) {
 }
 
 /**
- * One pipeline to-do per business × channel × format. The same key marks that her yes was given for
- * that format: the FIRST post of an approved format on a channel goes to her as a Decide card (her
- * ruling, 21 Nov 2026: nothing posts until she says yes to posting); her yes opens this row, and from
- * then on the format queues like any approved one.
+ * One pipeline to-do per business × channel × format. A format on the roster queues on it from its
+ * first post (her ruling, 22 Nov 2026); her yes to a NEW format's card opens the same row.
  */
 export function pipelineKey(business, channel, format) {
   return `growth#${business}#${channel}-${format}`.toLowerCase().replace(/[^a-z0-9#-]+/g, "-");

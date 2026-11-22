@@ -1944,6 +1944,7 @@ a.btn { text-decoration: none; text-align: center; display: inline-block; }
 
 /* The Scorecard (1 Nov 2026): one state word per card; colour means escalation only. */
 .scorecard-business { display: flex; flex-direction: column; gap: 8px; margin-top: 10px; }
+.growth-when { margin: 8px 0 0; font-size: 13px; font-weight: 600; letter-spacing: .04em; text-transform: uppercase; color: var(--muted); }
 .scorecard-state { align-self: flex-start; font-family: var(--mono); font-size: 12px; letter-spacing: .08em; text-transform: uppercase; padding: 1px 6px; border-radius: 3px; border: 1px solid var(--line); color: var(--muted); }
 .scorecard-ok { color: var(--ok); border-color: var(--ok); }
 .scorecard-gold { color: var(--gold-deep); border-color: var(--gold); }

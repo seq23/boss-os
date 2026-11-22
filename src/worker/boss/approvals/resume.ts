@@ -469,7 +469,7 @@ export const RESUME_HANDLERS: Record<string, ResumeHandler> = {
     const what = d.item && d.first ? `post this first ${d.item.format} through ${d.label}'s approved ${d.item.channel} pipeline, as written: ${d.item.draft}` : d.item ? `add ${d.item.format} on ${d.item.channel} to ${d.label}'s Growth roster entry, then post this draft through that pipeline: ${d.item.draft}` : `${d.proposal.what}`;
     // Any item card (a first post, or a new format) opens that format's pipeline row: once the format is
     // on the roster, later weeks queue on it without asking her twice. queueRow still needs the roster.
-    const key = d.item ? pipelineKey(d.business, d.item.channel, d.item.format) : `growth-yes#${j.id}`;
+    const key = d.item ? pipelineKey(d.business, d.item.channel, d.item.format) : `growth-yes#${d.business}#${j.id}`;
     const id = newId("olp");
     await env.DB.prepare(
       `INSERT INTO owner_open_loops (id, title, finish_line, next_step, owner, next_date, business, section, status, source, source_key, created_at, updated_at)
