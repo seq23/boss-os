@@ -172,7 +172,7 @@ function locate(page, spec) {
   // Only a copy on show counts: a copy kept mounted out of sight (stacked screens) is never tapped or "seen".
   const n = matcher(spec), exact = typeof n === "string";
   const byRole = CONTROL_ROLES.map((r) => page.getByRole(r, { name: n, exact })).reduce((a, b) => a.or(b));
-  return byRole.or(page.getByText(n, { exact })).filter({ visible: true }).first();
+  return byRole.or(page.getByText(n, { exact })).first();
 }
 
 async function screenText(page) { return page.evaluate(() => document.body?.innerText ?? "").catch(() => ""); }
