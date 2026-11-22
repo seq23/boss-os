@@ -46,18 +46,19 @@ write_status() {
 }
 # THE RUN RESUMES BY ITSELF (25 Oct 2026). A network outage stopped every pass at 18:20 that day, the
 # run ended "fixed=0 left=316" with exit 0, and nothing restarted it until a person did at 20:10.
-# MARK says "a run is unfinished" from the moment one starts until it reaches its end; RUN_LOCK holds
-# the pid of the live one. com.seq.boss-sr-resume (install-agent-launchd.sh) is a launchd KeepAlive on
+# MARK says "a run is unfinished" from the moment one starts until it reaches its end; RUN_LOCK is
+# held by the live one (lib/flock.sh: the kernel lets go when the run dies, so there is no stale lock). com.seq.boss-sr-resume (install-agent-launchd.sh) is a launchd KeepAlive on
 # MARK's path: while MARK exists launchd runs `--resume-if-unfinished` at most every 15 minutes, which
-# resumes a run whose pid is dead (clearing its stale lock) and never starts a second beside a live one.
+# resumes a run nobody holds and never starts a second beside a live one.
 MARK="$STATE_DIR/run-unfinished.json"
-RUN_LOCK="$STATE_DIR/run.lock"
+RUN_LOCK="$STATE_DIR/run.flock"
 mkdir -p "$LOG_DIR" "$STATE_DIR"
 LOG="$LOG_DIR/$(date +%Y-%m-%d-%H%M%S).log"
 say() { echo "[$(date +%H:%M:%S)] $*" | tee -a "$LOG"; }
 cd "$REPO" || { say "NAMED STOP [NO_REPO] $REPO"; exit 2; }
 # shellcheck source=lib/net-wait.sh
 source "$REPO/scripts/ops/lib/net-wait.sh"
+source "$(dirname "$(readlink -f "${BASH_SOURCE[0]}")")/lib/flock.sh"  # one run at a time, held by the kernel
 
 # One repo's chunks of this round, one pass after another (never two passes on one repo at once).
 # Each pass's exit code goes to $RCS, so a pass that lost the network (13) is told apart from one
@@ -86,9 +87,9 @@ repo_worker() {
 # A pass from before this runner (one global lock, $AUDIT_LOCK) may still be working some repo.
 # Its repo is not recorded, so wait for it rather than risk a second pass on the same repo.
 wait_for_unscoped_pass() {
-  local lock="$HOME/Library/Logs/ahrefs-audit-fix/.lock" waited=0
-  while [ -f "$lock/pid" ] && kill -0 "$(cat "$lock/pid" 2>/dev/null)" 2>/dev/null; do
-    [ "$waited" -eq 0 ] && say "waiting for the pass already running (pid $(cat "$lock/pid")) to finish before starting"
+  local lock="$HOME/Library/Logs/ahrefs-audit-fix/.lock.flock" waited=0
+  while lock_busy "$lock"; do
+    [ "$waited" -eq 0 ] && say "waiting for the pass already running to finish before starting"
     waited=1; sleep 30
   done
 }
@@ -99,15 +100,16 @@ mark() {
     "$$" "${RUN_STARTED:-$(date +%Y-%m-%dT%H:%M:%S)}" "$1" "${REPORTED:-}" "$LOG" > "$MARK.tmp" && mv "$MARK.tmp" "$MARK"
 }
 
-# The launchd KeepAlive entry point. Cheap and local: a file test and a kill -0, nothing on the network.
+# The launchd KeepAlive entry point. Cheap and local: a file test and a lock probe, nothing on the network.
 resume_if_unfinished() {
-  local pid old rc
+  local old rc busy=0
   [ -f "$MARK" ] || { say "resume check: no unfinished Search Readiness run"; return 0; }
-  pid="$(cat "$RUN_LOCK/pid" 2>/dev/null)"
-  if [ -n "$pid" ] && kill -0 "$pid" 2>/dev/null; then
-    say "resume check: the run is alive (pid $pid); not starting a second one"; return 0
-  fi
-  if [ -d "$RUN_LOCK" ]; then say "resume check: stale run lock (pid ${pid:-none} is dead); clearing it"; rm -rf "$RUN_LOCK"; fi
+  lock_busy "$RUN_LOCK" || busy=$?
+  case $busy in
+    0) say "resume check: the run is alive (it holds the run lock); not starting a second one"; return 0 ;;
+    1) ;;
+    *) say "NAMED STOP [NO_RUN_LOCK] cannot read $RUN_LOCK; not resuming blind (the next check retries)"; return 0 ;;
+  esac
   # THE AI ALLOWANCE RESETS AT A KNOWN TIME, NOT "NOW" (28 Oct 2026). A pass that hit its usage limit
   # wrote the reset time here; starting a run before then just hits the same limit in seconds.
   if [ -f "$STATE_DIR/retry-after" ]; then
@@ -147,15 +149,14 @@ resume_if_unfinished() {
 }
 
 take_run_lock() {
-  local pid
-  if ! mkdir "$RUN_LOCK" 2>/dev/null; then
-    pid="$(cat "$RUN_LOCK/pid" 2>/dev/null)"
-    if [ -n "$pid" ] && kill -0 "$pid" 2>/dev/null; then say "NAMED STOP [ALREADY_RUNNING] pid $pid"; exit 0; fi
-    say "stale run lock (pid ${pid:-none} is dead); reclaiming"; rm -rf "$RUN_LOCK"
-    mkdir "$RUN_LOCK" 2>/dev/null || { say "NAMED STOP [NO_RUN_LOCK] $RUN_LOCK"; exit 3; }
-  fi
-  echo $$ > "$RUN_LOCK/pid"
-  trap 'rm -rf "$RUN_LOCK" "${RCS:-}"' EXIT
+  local rc=0
+  hold_lock "$RUN_LOCK" || rc=$?
+  case $rc in
+    0) ;;
+    1) say "NAMED STOP [ALREADY_RUNNING] another run holds $RUN_LOCK"; exit 0 ;;
+    *) say "NAMED STOP [NO_RUN_LOCK] $RUN_LOCK"; exit 3 ;;
+  esac
+  trap '[ -n "${RCS:-}" ] && rm -f "$RCS"' EXIT
 }
 
 # Each stop is reported once across resumes. Notes use a distinct receipt so an old repair

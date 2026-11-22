@@ -51,6 +51,7 @@ function runFixer(down: string, loggedIn: boolean, extra: Record<string, string>
   mkdirSync(join(ops, "lib"), { recursive: true });
   copyFileSync("scripts/ops/ahrefs-audit-fix.sh", join(ops, "ahrefs-audit-fix.sh"));
   copyFileSync("scripts/ops/lib/net-wait.sh", join(ops, "lib/net-wait.sh"));
+  copyFileSync("scripts/ops/lib/flock.sh", join(ops, "lib/flock.sh"));
   copyFileSync("scripts/ops/lib/ai-run.mjs", join(ops, "lib/ai-run.mjs"));
   mkdirSync(join(home, "boss-os/src/shared/boss"), { recursive: true });
   copyFileSync("src/shared/boss/aiRoles.mjs", join(home, "boss-os/src/shared/boss/aiRoles.mjs"));
@@ -114,6 +115,21 @@ describe("ahrefs-audit-fix.sh tells the network apart from the gh login", () => 
   });
 });
 
+/** Is FILE flock-held by some process right now? (probe only; never keeps it) */
+function lockHeld(file: string): boolean {
+  if (!existsSync(file)) return false;
+  const r = spawnSync("perl", ["-MFcntl=:flock", "-e", 'open(my $f, "<", $ARGV[0]) or exit 2; exit(flock($f, LOCK_EX | LOCK_NB) ? 1 : 0)', file]);
+  return r.status === 0;
+}
+
+/** A live run elsewhere: a real hold_lock from lib/flock.sh, held until killed. */
+async function holdLockElsewhere(file: string) {
+  const p = spawn("/bin/bash", ["-c", `source scripts/ops/lib/flock.sh; hold_lock "$1" && exec sleep 60`, "x", file], { stdio: "ignore" });
+  for (let i = 0; i < 100 && !lockHeld(file); i++) await new Promise((r) => setTimeout(r, 100));
+  expect(lockHeld(file), "the stand-in run holds the lock").toBe(true);
+  return p;
+}
+
 type RunnerOpts = { plans: string[]; fixRcs?: number[]; fixSleep?: number; down?: string; findings?: any[] };
 
 /** A stub boss-os around the REAL runner and net-wait.sh. Plans are returned in turn, the last repeating. */
@@ -125,6 +141,7 @@ function runnerTree(o: RunnerOpts) {
   mkdirSync(join(repo, "src/shared/boss/searchReadiness"), { recursive: true });
   copyFileSync("scripts/ops/search-readiness-fix.sh", join(ops, "search-readiness-fix.sh"));
   copyFileSync("scripts/ops/lib/net-wait.sh", join(ops, "lib/net-wait.sh"));
+  copyFileSync("scripts/ops/lib/flock.sh", join(ops, "lib/flock.sh"));
   for (const f of ["orphanPr.mjs", "ownerApproval.mjs"]) copyFileSync(`src/shared/boss/searchReadiness/${f}`, join(repo, "src/shared/boss/searchReadiness", f));
   mkdirSync(join(repo, "src/shared/boss/siteAudit"), { recursive: true });
   copyFileSync("src/shared/boss/siteAudit/repoPolicy.mjs", join(repo, "src/shared/boss/siteAudit/repoPolicy.mjs"));
@@ -162,7 +179,7 @@ exit $rc
     const r = spawnSync("/bin/bash", [join(ops, "search-readiness-fix.sh"), ...args], { env, cwd: repo, encoding: "utf8", timeout: 60000 });
     return { rc: r.status, out: `${r.stdout}${r.stderr}` };
   };
-  return { home, repo, ops, env, net, state, mark: join(state, "run-unfinished.json"), lock: join(state, "run.lock"), read, run };
+  return { home, repo, ops, env, net, state, mark: join(state, "run-unfinished.json"), lock: join(state, "run.flock"), read, run };
 }
 
 const EMPTY = "QUEUE total=0 workable=0 protected=0 no_repo=0";
@@ -175,7 +192,7 @@ describe("search-readiness-fix.sh waits out the network and resumes by itself", 
     expect(out).toMatch(/waiting for the network/);
     expect(rc, out).toBe(0);
     expect(existsSync(t.mark)).toBe(false);
-    expect(existsSync(t.lock)).toBe(false);
+    expect(lockHeld(t.lock), "a finished run holds no lock").toBe(false);
   }, 60000);
 
   it("a pass that lost the network (13) is re-run, not counted as \"fixed nothing\"", () => {
@@ -211,28 +228,29 @@ describe("search-readiness-fix.sh waits out the network and resumes by itself", 
     expect(t.read("reported")).toContain("--cleared\n--cleared");
   }, 90000);
 
-  it("a runner killed mid-run is resumed by the tick, and its stale lock is cleared", async () => {
+  it("a runner killed mid-run is resumed by the tick: the kernel freed its lock, nothing to clear", async () => {
     const t = runnerTree({ plans: [FOUR, EMPTY], fixSleep: 30 });
     const child = spawn("/bin/bash", [join(t.ops, "search-readiness-fix.sh")], { env: t.env, cwd: t.repo, detached: true, stdio: "ignore" });
     for (let i = 0; i < 100 && !t.read("passes"); i++) await new Promise((r) => setTimeout(r, 100));
     expect(existsSync(t.mark)).toBe(true);
     process.kill(-child.pid!, "SIGKILL");
-    await new Promise((r) => setTimeout(r, 300));
-    expect(existsSync(join(t.lock, "pid")), "the lock of a killed run is stale").toBe(true);
+    await new Promise((r) => setTimeout(r, 1500));
+    expect(lockHeld(t.lock), "a killed run holds nothing").toBe(false);
     writeFileSync(join(t.home, "plans.json"), JSON.stringify([EMPTY]));
     const r = t.run("--resume-if-unfinished");
-    expect(r.out).toMatch(/stale run lock/);
     expect(r.out).toMatch(/resuming/);
+    expect(r.out).not.toMatch(/alive|NO_RUN_LOCK/);
     expect(r.rc, r.out).toBe(0);
     expect(existsSync(t.mark)).toBe(false);
   }, 90000);
 
-  it("NEGATIVE: beside a live run the tick starts nothing; with no unfinished run it starts nothing", () => {
+  it("NEGATIVE: beside a live run the tick starts nothing; with no unfinished run it starts nothing", async () => {
     const t = runnerTree({ plans: [EMPTY] });
-    mkdirSync(t.lock, { recursive: true });
-    writeFileSync(join(t.lock, "pid"), String(process.pid));
+    mkdirSync(t.state, { recursive: true });
+    const holder = await holdLockElsewhere(t.lock);
     writeFileSync(t.mark, JSON.stringify({ pid: process.pid, reason: "running", reported: "" }));
     const live = t.run("--resume-if-unfinished");
+    process.kill(holder.pid!, "SIGKILL");
     expect(live.out).toMatch(/alive.*not starting a second one/);
     expect(t.read("duty-runs")).toBe("");
     const u = runnerTree({ plans: [EMPTY] });

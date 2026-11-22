@@ -41,22 +41,21 @@ OUT_DIR="${BOSS_OS_MAILBOX_DIR:-$HOME/.boss-os/mailbox}"
 MODEL="${MAILBOX_SWEEP_MODEL:-claude-sonnet-4-5-20250929}"
 MAX_TURNS="${MAILBOX_SWEEP_MAX_TURNS:-80}"
 LOG_DIR="$HOME/Library/Logs/mailbox-sweep"
-LOCK="$LOG_DIR/.lock"
+LOCK="$LOG_DIR/.lock.flock"
 RUN_LOG="$LOG_DIR/$(date +%Y-%m-%d-%H%M%S)-$$.log"
 
 mkdir -p "$LOG_DIR" "$OUT_DIR"
 say() { echo "[$(date +%H:%M:%S)] $*" | tee -a "$RUN_LOG"; }
 
 # Two runs in the same minute shared a log file once and the second inherited the first's sentinel.
-# Seconds and pid in the name; a lock directory for the run itself.
-if ! mkdir "$LOCK" 2>/dev/null; then
-  if [ -f "$LOCK/pid" ] && kill -0 "$(cat "$LOCK/pid")" 2>/dev/null; then
-    say "NAMED STOP [ALREADY_RUNNING] pid $(cat "$LOCK/pid")"; exit 0
-  fi
-  say "stale lock; reclaiming"; rm -rf "$LOCK"; mkdir "$LOCK" 2>/dev/null || { say "FAILED to lock"; exit 3; }
-fi
-echo $$ > "$LOCK/pid"
-trap 'rm -rf "$LOCK"' EXIT
+# Seconds and pid in the name.
+source "$(dirname "$(readlink -f "${BASH_SOURCE[0]}")")/lib/flock.sh"  # one run at a time, held by the kernel (lib/flock.sh)
+LOCK_RC=0; hold_lock "$LOCK" || LOCK_RC=$?
+case $LOCK_RC in
+  0) ;;
+  1) say "NAMED STOP [ALREADY_RUNNING] another run holds $LOCK"; exit 0 ;;
+  *) say "NAMED STOP [LOCK_FAILED] cannot lock $LOCK"; exit 3 ;;
+esac
 
 # THE ENGINE IS ~/bin/ai-run IN THE ROLE src/shared/boss/aiRoles.mjs NAMES ("mailbox_sweep"; owner, 3 Nov 2026).
 AI_RUN="${AI_RUN_BIN:-$HOME/bin/ai-run}"

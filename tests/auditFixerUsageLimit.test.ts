@@ -189,6 +189,7 @@ function runnerTree(o: RunnerOpts) {
   const copy = (src: string, dst: string) => writeFileSync(dst, readFileSync(src, "utf8"));
   copy("scripts/ops/search-readiness-fix.sh", join(ops, "search-readiness-fix.sh"));
   copy("scripts/ops/lib/net-wait.sh", join(ops, "lib/net-wait.sh"));
+  copy("scripts/ops/lib/flock.sh", join(ops, "lib/flock.sh"));
   writeFileSync(join(repo, "package.json"), JSON.stringify({ name: "stub", scripts: { "sites:audit": "true", "vault:run": "env" } }));
   writeFileSync(join(home, "plans.json"), JSON.stringify(o.plans));
   writeFileSync(

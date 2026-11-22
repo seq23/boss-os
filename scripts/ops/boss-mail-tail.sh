@@ -31,14 +31,14 @@ exec > >(tee -a "$RUN_LOG") 2>&1
 # Keep two weeks of tick logs.
 find "$LOG_DIR" -maxdepth 1 -name '2*.log' -mtime +14 -delete 2>/dev/null || true
 
-LOCK="$LOG_DIR/.lock"
-if ! mkdir "$LOCK" 2>/dev/null; then
-  HOLDER="$(cat "$LOCK/pid" 2>/dev/null)"
-  if [ -n "$HOLDER" ] && kill -0 "$HOLDER" 2>/dev/null; then echo "[lock] a tick is running (pid $HOLDER)"; exit 0; fi
-  echo "[lock] stale lock (pid ${HOLDER:-none}) — broken"; rm -rf "$LOCK"; mkdir "$LOCK" || exit 1
-fi
-echo $$ > "$LOCK/pid"
-trap 'rm -rf "$LOCK" 2>/dev/null' EXIT
+LOCK="$LOG_DIR/.lock.flock"
+source "$(dirname "$(readlink -f "${BASH_SOURCE[0]}")")/lib/flock.sh"  # one run at a time, held by the kernel (lib/flock.sh)
+LOCK_RC=0; hold_lock "$LOCK" || LOCK_RC=$?
+case $LOCK_RC in
+  0) ;;
+  1) echo "[lock] a tick is running"; exit 0 ;;
+  *) echo "[lock] NAMED STOP [LOCK_FAILED] cannot lock $LOCK"; exit 1 ;;
+esac
 
 START_FILE="$STATE_DIR/started_at_ms"
 TAILED_FILE="$STATE_DIR/tailed-mail-ids.txt"
