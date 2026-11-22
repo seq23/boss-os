@@ -39,6 +39,7 @@ import { readRepoCategories } from "../ops/lib/repo-categories.mjs";
 import { readMatrix } from "../ops/validator-matrix.mjs";
 import { matrixFlagWords } from "../../src/shared/boss/validators/matrix.mjs";
 import { runSocialMapCheck, socialMapFlagWords } from "../ops/lib/social-map.mjs";
+import { compare as comparePlaybook, writeSkill as writePlaybook } from "../ops/growth-playbook.mjs";
 
 const BOSS_ROOT = join(fileURLToPath(new URL(".", import.meta.url)), "..", "..");
 
@@ -276,7 +277,15 @@ export async function runChecks({ home = homedir(), now = Date.now(), dryRun = f
   try { social_map_flag = await social(); } catch (e) { social_map_flag = `the Social Map check stopped (${String(e?.message ?? e).slice(0, 120)})`; }
   let mp;
   try { mp = maps(); } catch { mp = { maps_flag: null, unchecked: ["the Email Map", "the Schedule", "the Accounts map's Buffers"] }; }
-  return { ...m, ...r, ...s, ...rs, ...c, ...v, social_map_flag, maps_flag: mp.maps_flag ?? null, matrix, unchecked: [...m.unchecked, ...r.unchecked, ...s.unchecked, ...rs.unchecked, ...(mp.unchecked ?? [])] };
+  // 6. The growth playbook's one copy (~/.claude/skills/growth-director/SKILL.md) is regenerated from
+  // its source when it differs: one source, never two drifting playbooks (Growth Director, 21 Nov 2026).
+  let playbook = "not checked"; let playbookUnchecked = [];
+  try {
+    const skillFile = join(home, ".claude", "skills", "growth-director", "SKILL.md");
+    playbook = comparePlaybook(skillFile);
+    if (playbook !== "same" && !dryRun) { writePlaybook(skillFile); playbook = `${playbook}, regenerated`; }
+  } catch (e) { playbook = `not checked (${String(e?.message ?? e).slice(0, 80)})`; playbookUnchecked = ["the growth playbook skill"]; }
+  return { ...m, ...r, ...s, ...rs, ...c, ...v, playbook, social_map_flag, maps_flag: mp.maps_flag ?? null, matrix, unchecked: [...m.unchecked, ...r.unchecked, ...s.unchecked, ...rs.unchecked, ...(mp.unchecked ?? []), ...playbookUnchecked] };
 }
 
 export async function post(record, { passcode = process.env.BOSS_PASSCODE, fetchImpl = fetch, origin = ORIGIN, matrix = null } = {}) {
@@ -307,9 +316,10 @@ if (import.meta.url === pathToFileURL(process.argv[1] ?? "").href) {
       if (rec.unchecked.length) console.log(`unchecked: ${rec.unchecked.join(", ")}`);
       console.log(`validators: ${rec.validators_checked} in the matrix; ${rec.validators_flag ?? "nothing flagged"}`);
       console.log(`social map: ${rec.social_map_flag ?? "every account, sameAs and posting job is on the map"}`);
+      console.log(`growth playbook skill: ${rec.playbook}`);
       console.log(`maps: ${rec.maps_flag ?? "the Email Map, the Schedule and the Buffers match what runs"}`);
       if (dryRun) return;
-      const { matrix, ...record } = rec;
+      const { matrix, playbook, ...record } = rec;
       const out = await post(record, { matrix });
       console.log(`cohesion: ${out.line}`);
     })
