@@ -1,3 +1,8 @@
+> **Historical: retired 22 Nov 2026.** This describes the West Peek fund code copied into this repo,
+> which retired on 22 Nov 2026. West Peek OS (the `west-peek-os` repo) holds the live version. Files
+> it names may no longer exist here. Boss OS's own authority is [`docs/boss/`](docs/boss/) and
+> [`STATUS.md`](STATUS.md).
+
 # Architectural Decisions — West Peek OS Initial Implementation
 
 Canon v3.2.14 is frozen to errata during implementation (D11). Corrections are recorded here as ADRs;

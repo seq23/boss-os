@@ -124,7 +124,7 @@ async function main() {
 
     // Only the keys the read needs, never the vault's whole environment.
     const port = 8790 + Math.floor(Math.random() * 100);
-    const env = { PATH: process.env.PATH, HOME: process.env.HOME, CLOUDFLARE_INCLUDE_PROCESS_ENV: "true", WP_OS_EMAIL_SEND: "off" };
+    const env = { PATH: process.env.PATH, HOME: process.env.HOME, CLOUDFLARE_INCLUDE_PROCESS_ENV: "true" };
     for (const k of PASSED_KEYS) if (process.env[k]) env[k] = process.env[k];
     console.log(`practice — starting this branch's worker locally on port ${port}`);
     dev = spawn("npx", ["--no-install", "wrangler", "dev", ...local, "--port", String(port)], { cwd: ROOT, env, stdio: ["ignore", "pipe", "pipe"], detached: true });

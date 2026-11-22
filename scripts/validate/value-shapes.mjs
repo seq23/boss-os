@@ -25,7 +25,7 @@
  * of those. Every check below rests on something the schema or the data DECLARES, never on two
  * names looking alike.
  *
- * THE FOUR CHECKS:
+ * THE THREE CHECKS:
  *
  *   A · ORPHANED REFERENCES. Every REFERENCES clause the schema declares, checked against the rows.
  *       A value pointing at a row that is not there is a bug needing no judgement.
@@ -37,9 +37,9 @@
  *   C · SQL LITERALS AGAINST THE OWNING TABLE. `FROM investment_opportunity WHERE status = 'X'` is
  *       checked against THAT table's CHECK constraint. Table-aware, therefore exact.
  *
- *   D · TS CONSTANTS AGAINST THE SCHEMA. The exported value lists the code compares against must
- *       equal the database's CHECK constraint. This is the one that kills the family at its root:
- *       when the list and the column agree and the code uses the list, a typo stops compiling.
+ *
+ *   (A fourth, TS constants against the schema, pinned only chassis lists: work_card, scheduled_job and
+ *   deliverable. It retired with the chassis on 22 Nov 2026; the tables stay.)
  *
  * Usage:  node scripts/validate/value-shapes.mjs [--env production]
  */
@@ -298,59 +298,6 @@ function sqlLiteralAudit(tables, files, sources = {}) {
   return findings;
 }
 
-// ── D · the TS constants the code compares against, versus the schema ───────
-
-/**
- * The lists worth pinning, and the column each one is the vocabulary FOR.
- *
- * Explicit rather than discovered, deliberately. A list is worth checking only where somebody has
- * decided it is the same vocabulary as a column; inferring that from a name is what made check C's
- * first draft produce 226 false alarms. Add a row here whenever a new enum earns a constant.
- */
-const PINNED = [
-  { constant: "CARD_STATES", file: "src/shared/work/workCards.ts", table: "work_card", column: "state" },
-  { constant: "SCHEDULE_KINDS", file: "src/shared/setup/recommendedJobs.ts", table: "scheduled_job", column: "schedule_kind" },
-  { constant: "TARGET_KINDS", file: "src/shared/setup/recommendedJobs.ts", table: "scheduled_job", column: "target_kind" },
-  { constant: "DELIVERABLE_KINDS", file: "src/shared/deliverables/deliverable.ts", table: "deliverable", column: "kind" },
-];
-
-function constantValues(file, name, suppliedSource) {
-  const src = suppliedSource ?? readFileSync(path.resolve(file), "utf8");
-  const m = new RegExp(`export const ${name}[^=]*=\\s*\\[([\\s\\S]*?)\\]`).exec(src);
-  if (!m) return null;
-  return [...m[1].matchAll(/"([^"]+)"/g)].map((x) => x[1]);
-}
-
-function constantDriftAudit(tables, pins = PINNED, sources = {}) {
-  const findings = [];
-  for (const pin of pins) {
-    const declared = tables.get(pin.table)?.get(pin.column)?.values;
-    if (!declared) {
-      findings.push({ ...pin, problem: `no CHECK on ${pin.table}.${pin.column} — the pin is stale` });
-      continue;
-    }
-    const actual = constantValues(pin.file, pin.constant, sources[pin.file]);
-    if (!actual) {
-      findings.push({ ...pin, problem: `constant ${pin.constant} not found — renamed or moved?` });
-      continue;
-    }
-    const missing = declared.filter((v) => !actual.includes(v));
-    const extra = actual.filter((v) => !declared.includes(v));
-    if (missing.length || extra.length) {
-      findings.push({
-        ...pin,
-        problem: [
-          missing.length ? `the column permits ${missing.join(", ")}, which the constant omits` : "",
-          extra.length ? `the constant offers ${extra.join(", ")}, which the column rejects` : "",
-        ]
-          .filter(Boolean)
-          .join("; "),
-      });
-    }
-  }
-  return findings;
-}
-
 
 // ── Self-test ────────────────────────────────────────────────────────────────
 
@@ -384,28 +331,6 @@ function selfTest() {
       sqlLiteralAudit(fakeTables, ["f.ts"], {
         "f.ts": "`SELECT id FROM investment_opportunity WHERE status = 'INVESTED'`",
       }).length === 1,
-  });
-
-  // 2 · the DAILY/DAILY_AT bug, as constant drift.
-  cases.push({
-    name: "a TS constant out of step with its column",
-    caught:
-      constantDriftAudit(
-        fakeTables,
-        [{ constant: "CARD_STATES", file: "f.ts", table: "work_card", column: "state" }],
-        { "f.ts": 'export const CARD_STATES = ["OPEN", "DONE", "ABANDONED"] as const;' },
-      ).length === 1,
-  });
-
-  // 3 · a renamed constant, which is drift wearing a different hat.
-  cases.push({
-    name: "a pinned constant that no longer exists",
-    caught:
-      constantDriftAudit(
-        fakeTables,
-        [{ constant: "CARD_STATES", file: "f.ts", table: "work_card", column: "state" }],
-        { "f.ts": "export const SOMETHING_ELSE = [];" },
-      ).length === 1,
   });
 
   // And the two shapes that must NOT be reported, because reporting them is what made the first
@@ -467,21 +392,12 @@ async function main() {
     return;
   }
 
-  const drift = constantDriftAudit(tables);
   const literals = sqlLiteralAudit(tables, files);
   const orphans = await orphanAudit(tables);
   const pins = await polyPinAudit();
   const poly = await polymorphicReport(tables);
 
   let failed = false;
-
-  if (drift.length > 0) {
-    failed = true;
-    process.stdout.write(`\nA TS CONSTANT AND ITS COLUMN DISAGREE — ${drift.length}:\n`);
-    for (const d of drift) {
-      process.stdout.write(`  ✗ ${d.constant} (${d.file}) vs ${d.table}.${d.column}\n      ${d.problem}\n`);
-    }
-  }
 
   if (literals.length > 0) {
     failed = true;

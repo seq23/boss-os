@@ -614,39 +614,21 @@ the defect pattern this repository is written against.
 
 ---
 
-## The chassis underneath
+## The chassis underneath (retired 22 Nov 2026)
 
 Boss OS was built by **cloning West Peek OS and porting the Boss OS v20 artifact into it** — the
-owner's decision. That means this repo contains two applications:
+owner's decision. The copied fund application (its sign-in, `src/worker/services/`, the fund
+client, its jobs and its mail handler) was **retired on 22 Nov 2026** (her yes, personal brain). What
+is left of it:
 
-| | Boss OS | West Peek chassis |
-|---|---|---|
-| Server | `src/worker/boss/` | `src/worker/services/`, `src/worker/index.ts` |
-| Client | `src/client/boss/` | `src/client/pages/`, `src/client/App.tsx` |
-| Migrations | `0152` onward | `0001`–`0151` |
-| Tests | `tests/boss/` (workerd pool) | `tests/` (node pool) |
+- **Migrations `0001`–`0151`** and the tables they made stay, untouched. Nothing is dropped.
+- **Non-Boss hosts** get a "moved" page naming West Peek OS (`src/client/surface.ts` decides, from an
+  allowlist of hostnames, because "does this look like a Boss host" is a question with a wrong
+  answer). An old fund `/api` route answers `410 Gone` with `moved_to`; `/api/health` stays public.
+- **Documents** under `docs/` that describe the fund code carry a "historical" banner. They use
+  **P0–P25** numbering and talk about LPs, dealflow and Managing Partners; none of that is Boss OS.
 
-**Which app you see is decided by hostname**, in `src/client/main.tsx`:
-
-```
-const BOSS_HOSTS = new Set(["boss.sequoiataylor.com"]);
-```
-
-This exists because boss.sequoiataylor.com once served West Peek Ventures' entire fund interface —
-one business's UI on another's domain. It is an allowlist rather than a pattern, because "does this
-look like a Boss host" is a question with a wrong answer.
-
-**The chassis is being removed, not kept.** Its 129 E2E journeys are the regression suite for that
-removal and go when it does.
-
-### Documents at the repo root belong to the chassis, not to Boss OS
-
-`README.md`, `AGENTS.md`, `BACKLOG.md`, `REPO_VALIDATION_MATRIX.md`, `ARTIFACT_MANIFEST.md` and
-`IMPLEMENTATION_LEDGER.md` are West Peek's, inherited by the clone. They use **P0–P25** numbering and
-talk about LPs, dealflow and Managing Partners.
-
-**Boss OS's own authority is `docs/boss/`.** It uses **Phase 0–23** numbering. If a document
-mentions West Peek, it is not describing this product.
+**Boss OS's own authority is `docs/boss/`.** It uses **Phase 0–23** numbering.
 
 ---
 
@@ -655,7 +637,7 @@ mentions West Peek, it is not describing this product.
 ```bash
 npm install
 npm run migrate:local        # apply migrations to the local D1 store
-npm run dev                  # wrangler dev; open /boss
+npm run dev                  # wrangler dev
 npm run validate             # typecheck + BOTH test suites
 npm run e2e                  # Playwright, resets the local D1 first
 ```

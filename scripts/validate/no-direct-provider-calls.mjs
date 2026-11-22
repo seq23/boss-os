@@ -2,13 +2,18 @@
 /**
  * no-direct-provider-calls.mjs — static AI-boundary scan (P4, `npm run validate:ai-boundary`).
  *
- * Proves, by construction, that the governed boundary in src/worker/ai/runAi.ts is
- * the ONLY path to a model provider: outside src/worker/ai/providers/, no source
- * file under src/ may contain
+ * Proves, by construction, that Boss OS's model router (src/worker/boss/router/, the files named in
+ * BOSS_ROUTER) is the ONLY path to a model provider: no other source file under src/ may contain
  *   (a) provider SDK imports (openai, @anthropic-ai/sdk, @google/generative-ai, …),
  *   (b) model API hostnames (api.openai.com, api.anthropic.com,
  *       generativelanguage.googleapis.com, api.perplexity.ai, openrouter.ai), or
  *   (c) bearer-token model calls (fetch + Bearer authorization in the same file).
+ * And no entry in BOSS_ROUTER may name a file that is gone.
+ *
+ * Until 22 Nov 2026 the copied West Peek fund code had its own governor (src/worker/ai/runAi.ts and
+ * its providers/), and the Boss OS router was listed here as a debt to resolve "once the fund domain
+ * is gone". It went with the chassis, so the router is the one governor and the debt is paid. What
+ * is left in src/worker/ai/ is the Whisper adapter, which uses the env.AI binding and needs no entry.
  *
  * Scope note: the scan covers src/** (worker/client/shared — executable code).
  * migrations/ and scripts/seed/ legitimately carry provider hostnames as
@@ -25,16 +30,7 @@ import path from "node:path";
 
 const ROOT = fileURLToPath(new URL("../..", import.meta.url));
 const SRC_DIR = path.join(ROOT, "src");
-const PROVIDERS_PREFIX = "src/worker/ai/providers/";
 
-/**
- * Provider SDK import. A PACKAGE import whose specifier names a vendor is a breach; an import
- * of one of OUR OWN adapter modules under `ai/providers/` is the sanctioned pattern and is not
- * (P16: `ai/routing.ts` imports the OpenRouter and Fireworks adapter factories by design —
- * that is precisely how the boundary is supposed to be crossed). Relative specifiers pointing
- * into `providers/` are therefore excluded before the vendor-name test.
- */
-const OWN_ADAPTER_IMPORT = /(?:from|require\()\s*["']\.{1,2}\/(?:[^"']*\/)?providers\/[^"']*["']/;
 const SDK_IMPORT = /(?:from|require\()\s*["'][^"']*(openai|anthropic|generative-ai|perplexity|openrouter)[^"']*["']/i;
 const MODEL_HOSTNAMES = /(api\.openai\.com|api\.anthropic\.com|generativelanguage\.googleapis\.com|api\.perplexity\.ai|openrouter\.ai)/;
 const BEARER = /bearer/i;
@@ -57,51 +53,12 @@ function listSourceFiles() {
  * Pure — the same function scans the real tree and the self-test fixtures.
  */
 /**
- * Files permitted a direct vendor call because what they call is NOT a reasoning model.
- *
- * THE RULE THIS BENDS AND WHY IT STILL HOLDS. Everything that reasons goes through `runAi`, so that
- * every such call passes the privacy label, the credential scrubber, the egress decision and the
- * cost ledger. A completion call outside that pipeline is how firm data leaves without a decision
- * being made, which is what this scan exists to prevent.
- *
- * Runware turns a prompt into a picture. It receives only text the caller composed, returns image
- * bytes, and feeds nothing back into anything that reasons. Routing it through `runAi` would mean
- * modelling an image generator as a text completion — inventing token counts and an `output_text`
- * that do not exist — which would corrupt the one clean abstraction this codebase has in order to
- * satisfy a rule about a risk that is not present.
- *
- * THE COST OF THE EXEMPTION IS PAID, not waved through. Sitting outside `runAi` means sitting
- * outside the AI cost ledger, which would have made firm spend under-report by whatever pictures
- * cost — a total that is quietly incomplete being worse than one that is obviously missing, because
- * it gets believed. So `vendor_spend` (migration 0080) records every image against the vendor's own
- * reported price, and the cost centre adds it to the firm total while keeping the model ledger
- * clean. An unpriced call is counted as unpriced, never as zero.
- *
- * Adding an entry here is a deliberate act and needs the same kind of written reason.
+ * Boss OS's model router: the one governor for every model call (cost modes, per-lane and
+ * per-employee hard budget stops, privacy class, risk ceiling, bounded fallback, a decision log that
+ * records refusals, every call in `usage_ledger`). Named individually, not pattern-matched, so
+ * nothing drifts in behind them; a new vendor file is added here with its reason.
  */
-const NON_REASONING_VENDORS = new Set(["src/worker/effects/runwareClient.ts"]);
-
-/**
- * The ported Boss OS model router, which reasons and therefore does NOT qualify above.
- *
- * WHAT IS ACTUALLY TRUE HERE. Boss OS arrived with its own complete governance for model calls:
- * six cost modes, per-lane and per-employee budgets that are hard stops, a privacy class, a risk
- * ceiling, benchmark gating, bounded fallback, and a decision log that records refusals. It is not
- * an ungoverned call. It is a SECOND governor, and the duplication is the real problem rather than
- * the missing `runAi` wrapper - two cost ledgers over one account is how spend gets under-reported
- * by exactly the amount nobody is looking at.
- *
- * THE COST OF THE EXEMPTION IS PAID, not waved through. Every call down this path is recorded in
- * Boss OS's own `usage_ledger` and charged against its `budgets` rows, so the spend exists on the
- * record - it is simply on a different record. What is NOT yet true is that the two ledgers add
- * up anywhere, and no dashboard shows a combined total.
- *
- * THIS ENTRY IS A DEBT, NOT A DECISION. It is one file, named individually so nothing else can
- * drift in behind it, and it should disappear one of two ways: Boss OS's router becomes an adapter
- * under providers/ reached through runAi, or runAi is retired in favour of Boss OS's router once
- * the fund domain is gone. Adding anything else here needs the same kind of written reason.
- */
-const PORTED_BOSS_ROUTER = new Set([
+const BOSS_ROUTER = new Set([
   "src/worker/boss/router/fireworks.ts",
   // ── Stage 4 · continuity. Two more files, and the same written reason. ──
   //
@@ -146,29 +103,25 @@ const PORTED_BOSS_ROUTER = new Set([
   // bearer token and names no host. That absence is the argument for preferring it.
 ]);
 
-export function checkSources(files) {
+export function checkSources(files, checkStale = false) {
   const violations = [];
 
   for (const [rel, source] of Object.entries(files)) {
-    if (rel.startsWith(PROVIDERS_PREFIX)) continue; // adapters are the allowed exception
-    // The one file outside providers/ that legitimately holds a bearer-token call to a model
-    // vendor. Named individually, not pattern-matched, so nothing else can drift into the
-    // exemption. Its reason is written at NON_REASONING_VENDORS.
-    if (NON_REASONING_VENDORS.has(rel)) continue;
-    // The ported Boss OS router. Its reason is written at PORTED_BOSS_ROUTER.
-    if (PORTED_BOSS_ROUTER.has(rel)) continue;
-    // Strip imports of our own adapter modules before testing for vendor SDK imports, so
-    // `import { createOpenRouterAdapter } from "./providers/openRouter"` is not mistaken for
-    // `import OpenAI from "openai"`. Everything else in the file is still scanned.
-    const withoutOwnAdapters = source.replace(new RegExp(OWN_ADAPTER_IMPORT.source, "g"), "");
-    if (SDK_IMPORT.test(withoutOwnAdapters)) {
-      violations.push(`${rel}: provider SDK import outside src/worker/ai/providers/ (run_ai boundary breach)`);
+    if (BOSS_ROUTER.has(rel)) continue; // the router is the allowed path; its reason is written above
+    if (SDK_IMPORT.test(source)) {
+      violations.push(`${rel}: provider SDK import outside Boss OS's model router`);
     }
     if (MODEL_HOSTNAMES.test(source)) {
-      violations.push(`${rel}: model API hostname outside src/worker/ai/providers/ (run_ai boundary breach)`);
+      violations.push(`${rel}: model API hostname outside Boss OS's model router`);
     }
     if (/\bfetch\s*\(/.test(source) && BEARER.test(source)) {
-      violations.push(`${rel}: fetch + Bearer authorization outside src/worker/ai/providers/ (bearer-token model call)`);
+      violations.push(`${rel}: fetch + Bearer authorization outside Boss OS's model router (bearer-token model call)`);
+    }
+  }
+
+  if (checkStale) {
+    for (const rel of BOSS_ROUTER) {
+      if (!(rel in files)) violations.push(`${rel}: listed in BOSS_ROUTER but no longer exists — remove the entry`);
     }
   }
 
@@ -186,44 +139,25 @@ function scanRealTree() {
 
 function selfTest() {
   const clean = {
-    "src/worker/services/aiRuns.ts": 'import { runAi } from "../ai/runAi";\nawait runAi(env, input);',
-    "src/worker/ai/providers/httpExternal.ts":
-      'await fetch(`${baseUrl}/complete`, { headers: { authorization: `Bearer ${apiKey}` } });\n// api.openai.com is fine HERE',
-    // P16: importing our OWN adapter factory is the sanctioned way to reach a vendor.
-    "src/worker/ai/routing.ts": 'import { createOpenRouterAdapter } from "./providers/openRouter";\nconst a = createOpenRouterAdapter(opts);',
+    "src/worker/boss/router/openai.ts":
+      'await fetch("https://api.openai.com/v1/responses", { headers: { authorization: `Bearer ${key}` } });',
+    "src/worker/boss/lanes/writer.ts": 'import { route } from "../router/route";\nawait route(env, input);',
   };
   const failures = [];
-  if (checkSources(clean).length !== 0) failures.push("clean fixture was flagged (providers dir must be the allowed exception)");
+  if (checkSources(clean).length !== 0) failures.push("clean fixture was flagged (the router must be the allowed path)");
 
   const cases = {
-    "provider SDK import in a service": {
-      ...clean,
-      "src/worker/services/sneaky.ts": 'import OpenAI from "openai";\nconst c = new OpenAI();',
-    },
-    "scoped provider SDK import": {
-      ...clean,
-      "src/worker/services/sneaky.ts": 'import { Anthropic } from "@anthropic-ai/sdk";',
-    },
-    "model hostname literal": {
-      ...clean,
-      "src/worker/ai/sneaky.ts": 'const url = "https://api.openai.com/v1/chat/completions";',
-    },
-    "bearer-token model call": {
-      ...clean,
-      "src/client/sneaky.tsx": 'await fetch(url, { headers: { authorization: "Bearer " + key } });',
-    },
-    // The P16 exemption must not become a hiding place: a real vendor SDK import in the same
-    // file as a legitimate adapter import is still a breach.
-    "real SDK import alongside a legitimate adapter import": {
-      ...clean,
-      "src/worker/ai/routing.ts":
-        'import { createOpenRouterAdapter } from "./providers/openRouter";\nimport OpenAI from "openai";',
-    },
+    "provider SDK import in a Boss OS lane": { ...clean, "src/worker/boss/lanes/sneaky.ts": 'import OpenAI from "openai";\nconst c = new OpenAI();' },
+    "scoped provider SDK import": { ...clean, "src/worker/boss/sneaky.ts": 'import { Anthropic } from "@anthropic-ai/sdk";' },
+    "model hostname literal outside the router": { ...clean, "src/worker/ai/sneaky.ts": 'const url = "https://api.openai.com/v1/chat/completions";' },
+    "bearer-token model call in the client": { ...clean, "src/client/sneaky.tsx": 'await fetch(url, { headers: { authorization: "Bearer " + key } });' },
+    "a router file in a look-alike folder": { ...clean, "src/worker/boss/routerx/openai.ts": 'await fetch("https://api.openai.com/v1")' },
   };
   for (const [name, files] of Object.entries(cases)) {
     if (checkSources(files).length === 0) failures.push(`violating fixture NOT caught: ${name}`);
   }
-  return { failures, caseCount: Object.keys(cases).length };
+  if (!checkSources(clean, true).some((v) => v.includes("no longer exists"))) failures.push("violating fixture NOT caught: a stale BOSS_ROUTER entry");
+  return { failures, caseCount: Object.keys(cases).length + 1 };
 }
 
 if (process.argv.includes("--self-test")) {
@@ -234,7 +168,7 @@ if (process.argv.includes("--self-test")) {
     process.exit(1);
   }
   console.log(
-    `SELF-TEST PASSED: clean fixture passes (providers dir is the only exception); all ${caseCount} violating fixtures are caught.`,
+    `SELF-TEST PASSED: clean fixture passes (the router is the only path); all ${caseCount} violating fixtures are caught.`,
   );
   process.exit(0);
 }
@@ -251,16 +185,15 @@ if (scannedCount === 0) {
   console.error("source tree before trusting this result.");
   process.exit(1);
 }
-const violations = checkSources(realTree);
+const violations = checkSources(realTree, true);
 if (violations.length > 0) {
   console.error("AI BOUNDARY SCAN FAILED — direct-provider-call violations:");
   for (const v of violations) console.error(`  ✗ ${v}`);
   // What to do about it. A scan that names the breach and not the fix costs more than it saves:
   // the reader who trips this is usually the one who least knows where the boundary is.
-  console.error("\nEvery model call goes through run_ai(src/worker/ai/runAi.ts), which applies the");
-  console.error("privacy mode, the cost mode, the egress rules and the spend record. If the provider");
-  console.error("is genuinely new, add an adapter under src/worker/ai/providers/ and reach it from");
-  console.error("run_ai — never from a service. A call that skips run_ai skips all four of those.");
+  console.error("\nEvery model call goes through Boss OS's model router (src/worker/boss/router/), which");
+  console.error("applies the cost mode, the hard budget stops, the privacy class and the spend record.");
+  console.error("A genuinely new vendor gets a file there, named in BOSS_ROUTER with its reason.");
   process.exit(1);
 }
-console.log("AI BOUNDARY SCAN PASSED: no provider SDK imports, model API hostnames, or bearer-token model calls outside src/worker/ai/providers/.");
+console.log("AI BOUNDARY SCAN PASSED: no provider SDK imports, model API hostnames, or bearer-token model calls outside Boss OS's model router, and every router entry still exists.");

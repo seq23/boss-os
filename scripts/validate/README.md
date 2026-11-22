@@ -3,13 +3,11 @@
 Static validation scans, wired to npm scripts. Each must FAIL loudly (exit 1, named
 violations) on breach and proves its own detection with a self-test fixture run.
 
-- `no-unauthorized-effects.mjs` (P3, `npm run validate:authority`) — proves (a) only
-  `src/worker/effects/executor.ts` performs external-effect execution (no other worker
-  file marks `external_effect_request` EXECUTED; no outbound fetch to non-localhost
-  anywhere in worker code) and (b) merge/reverse + executor call sites route through
-  `authorize()` and consume receipts. `--self-test` feeds synthetic violating sources
-  through the same checks and asserts they are caught. The npm script also runs the
-  seed generator's `--check` (registry-seed freshness) — see `scripts/seed/`.
+- `no-unauthorized-effects.mjs` (`npm run validate:authority`) — no outbound fetch to a
+  non-localhost host from any worker file outside the egress allowlist, each entry with its
+  written reason, and no allowlist entry naming a file that is gone. `--self-test` feeds
+  synthetic violating sources through the same checks and asserts they are caught. (The
+  executor and receipt checks retired with the copied fund code on 22 Nov 2026.)
 
 - `an-alert-says-what-happened.mjs` (`npm run validate:alert-says-what`) — the one scan
   here that RUNS the shipped code rather than reading it. It feeds the production error

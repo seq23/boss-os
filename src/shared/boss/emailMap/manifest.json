@@ -971,16 +971,6 @@
       "as_her": true,
       "code": [{ "repo": "external", "paths": [] }]
     },
-    {
-      "id": "boss-worker-mail", "business": "personal",
-      "what": "The Boss OS Worker's own email effects (switched off)",
-      "sender": "Nobody", "owner": "Kendra",
-      "from": "None", "to": "None",
-      "when": "Never",
-      "runs": "inert", "trigger": "Would run on approved effects; WP_OS_EMAIL_SEND is off",
-      "pause": "Already off",
-      "code": [{ "repo": "boss-os", "paths": ["src/worker/effects/resendClient.ts", "src/worker/effects/cloudflareEmailClient.ts", "src/worker/effects/googleClient.ts", "src/worker/effects/executor.ts", "src/worker/services/deliverables.ts", "src/worker/services/googleConnect.ts"] }]
-    },
 
     {
       "id": "client-dashboards-mail", "business": "spry",

@@ -9,7 +9,7 @@
  * ArrayBuffers still held. Nothing of a finished request may stay in the isolate for the next one
  * (review of #517, F2: a module-level "last parse" cache held 61 MB; none holds ~9).
  */
-import { parseMail, pdfAttachments, fileAttachments, messageText, unreadableDeckAttachments, base64OfBytes } from "../../src/worker/effects/mimeAttachments.ts";
+import { parseMail, fileAttachments, base64OfBytes } from "../../src/worker/effects/mimeAttachments.ts";
 import { taskBodyFrom } from "../../src/shared/boss/intake/messageBody.mjs";
 
 const mb = Number(process.argv[2]);
@@ -29,13 +29,10 @@ const message = () => {
 async function oneRequest(raw) {
   const parsed = await parseMail(raw);
   if (!parsed.mail) throw new Error(`not parsed: ${parsed.failed}`);
-  const pdf = pdfAttachments(parsed);
-  const deck = unreadableDeckAttachments(parsed);
-  const text = messageText(parsed);
   const body = await taskBodyFrom(parsed);
   const files = fileAttachments(parsed);
   const heard = base64OfBytes(files.attachments[0].content); // what the transcriber is handed
-  if (files.attachments.length !== 1 || heard.length < mb * 1024 * 1024 || !text.body.includes("hear the note") || !body.body.includes("hear the note") || pdf.attachments.length || deck.length) {
+  if (files.attachments.length !== 1 || heard.length < mb * 1024 * 1024 || !body.body.includes("hear the note")) {
     throw new Error("the readers did not read the message");
   }
   return Math.round(process.memoryUsage().heapUsed / 1024 / 1024);

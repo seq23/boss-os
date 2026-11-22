@@ -1,22 +1,14 @@
 # src/worker
 
-Cloudflare Worker API (P1). Entry `index.ts`; all server behavior lives here.
+The Boss OS Worker. Entry `index.ts`.
 
-- `index.ts` — exported `fetch` handler + `handleRequest` (directly testable). `/api/*`
-  is routed here; everything else delegates to `env.ASSETS` (SPA).
-- `router.ts` — minimal hand-rolled router.
-- `auth.ts` — runtime identity (ADR-006): dev header `x-wpos-dev-user` when
-  `WP_OS_ENV=local`, else the claims of a verified Access assertion (`accessJwt.ts`); resolves `firm_user`
-  + roles + authority scopes; fail closed.
-- `env.ts` — `Env` bindings (`WP_OS_DB`, `WP_OS_DOCUMENTS`, `WP_OS_KV`, `ASSETS`,
-  `WP_OS_ENV`).
-- `events.ts` — `appendEvent` helper: the only write path to the append-only
-  `event_record` spine (D15).
-- `services/companies.ts` — P2 canonical identity (D3): company CRUD, aliases,
-  resolution, identity-resolution candidates, human-reserved merge + exact reversal.
-- `services/funds.ts` — P2 fund + policy substrate; policy versions are immutable
-  (trigger-level) and created as new version rows only.
-- `import/contracts.ts` — P2 typed import contracts (Network OS person reference,
-  VentureDeals opportunity) + dry-run endpoint; persists nothing (docs/IMPORT_CONTRACTS.md).
+- `index.ts`: the exported `fetch`, `scheduled` and `email` handlers, plus `handleRequest`
+  (directly testable). `/api/boss/*`, `/tap/*`, `/p/*` and `/research/*` go to Boss OS
+  (`bossMount.ts`, `boss/`), behind Boss OS's own passcode session. `/api/health` is the public
+  liveness check. Every other `/api/*` path answers 410 naming West Peek OS, where the retired
+  fund API now lives (chassis retirement, 22 Nov 2026). Non-API paths go to `env.ASSETS`.
+- `boss/`: Boss OS itself (routes, duties, intake, router, auth).
+- `effects/`: the few outside readers Boss OS still uses (browser, search, grounding links, mail parsing).
+- `env.ts`: `Env` bindings.
 
 Keep imports relative (wrangler does not resolve tsconfig paths).

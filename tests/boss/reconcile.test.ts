@@ -4,7 +4,7 @@ import { reconcileSpend, WORKERS_AI_ALLOWANCE_NOTE } from "../../src/worker/boss
 import { apiJson } from "./helpers";
 
 /**
- * THREE LEDGERS RECORD MONEY HERE AND NOTHING ADDED THEM UP.
+ * EVERY LEDGER THAT RECORDS MONEY REACHES THE TOTAL.
  *
  * The tests that matter are the ones proving a cost in ONE ledger reaches the total, because the
  * defect being fixed is not "the arithmetic is wrong" — it is "a whole ledger was invisible". A
@@ -25,7 +25,8 @@ describe("spend reconciliation", () => {
   it("names every ledger it read, so a wrong figure is traceable to its source", async () => {
     const r = await reconcileSpend(env as any, WINDOW_START);
     const sources = r.parts.map((p) => p.source);
-    expect(sources).toContain("usage_ledger");
+    // One ledger since the chassis retirement (22 Nov 2026): ai_run and vendor_spend had no row ever.
+    expect(sources).toEqual(["usage_ledger"]);
     // Each part carries its own basis and a sentence — a bare number with no provenance is the
     // thing this replaces.
     for (const p of r.parts) {

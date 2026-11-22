@@ -4,8 +4,8 @@
  * Owner, 10 September 2026: "why are u sharing anything with west peek's os? why? this is a separate
  * repo and domain." Then, on how to build it: "u can copy the code thats fine."
  *
- * So this file is a COPY of the ideas in `src/shared/intake/emailTriggers.ts` and never an import of
- * them. The MIME decoding, the forwarded-origin parsing and the sender-is-the-authorisation rule are
+ * So this file is a COPY of the ideas in West Peek's own trigger table (in west-peek-os; the copy
+ * that lived here retired with the fund code on 22 Nov 2026) and never an import of them. The MIME decoding, the forwarded-origin parsing and the sender-is-the-authorisation rule are
  * all worth keeping and are kept. The ROUTING TABLE is not shared, and that is the whole point: a
  * shared table is two businesses' mail deciding each other's fate, and a change to West Peek's tags
  * would silently move hers. Two copies that diverge is the correct outcome here — these are two

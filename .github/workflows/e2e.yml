@@ -35,18 +35,19 @@ concurrency:
 
 jobs:
   e2e:
-    name: Playwright journeys (shard ${{ matrix.shard }}/6)
+    name: Playwright journeys (shard ${{ matrix.shard }}/3)
     runs-on: ubuntu-latest
-    # SIX SHARDS (15 Nov 2026: three took 13-15 min, every production deploy after a large change waited
-    # on it). THREE SHARDS, EACH ITS OWN RUNNER, ITS OWN LOCAL D1 AND ITS OWN wrangler dev (26 Oct 2026: the
+    # THREE SHARDS AGAIN (22 Nov 2026: the copied fund code's journeys retired, 63 specs became 23, so six
+    # shards spent more time starting runners than running specs). SIX SHARDS (15 Nov 2026: three took
+    # 13-15 min with 63 specs, every production deploy after a large change waited on it). THREE SHARDS, EACH ITS OWN RUNNER, ITS OWN LOCAL D1 AND ITS OWN wrangler dev (26 Oct 2026: the
     # one job had grown to 32 min, so every production deploy waited ~44 min). Specs still run one at a
     # time inside a shard (workers: 1), so the single-database rule in playwright.config.ts holds. A
-    # shard is ~11 min; 45 is a fault detector at ~4x normal, never a budget; the retry is inside it.
+    # shard is ~8 min; 45 is a fault detector at ~4x normal, never a budget; the retry is inside it.
     timeout-minutes: 45
     strategy:
       fail-fast: false
       matrix:
-        shard: [1, 2, 3, 4, 5, 6]
+        shard: [1, 2, 3]
     permissions:
       contents: read
 
@@ -79,7 +80,7 @@ jobs:
       # (see playwright.config.ts). A journey that fails on its own merits fails the step: this
       # tolerates the tool crashing, never a wrong assertion.
       - name: Playwright journeys
-        run: npm run e2e -- --shard=${{ matrix.shard }}/6 || (echo "::warning::wrangler dev crashed or a journey failed — retrying this shard once" && npm run e2e -- --shard=${{ matrix.shard }}/6)
+        run: npm run e2e -- --shard=${{ matrix.shard }}/3 || (echo "::warning::wrangler dev crashed or a journey failed — retrying this shard once" && npm run e2e -- --shard=${{ matrix.shard }}/3)
 
       - uses: actions/upload-artifact@v4
         if: failure()

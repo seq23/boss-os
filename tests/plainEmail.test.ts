@@ -191,7 +191,7 @@ describe("no sender can skip the layout", () => {
     for (const f of Object.keys(SAMPLES)) if (f !== "scripts/ops/notify.mjs") expect(sendingFiles(), `${f} is listed but no longer sends`).toContain(f);
     for (const f of sendingFiles()) expect(Object.keys(SAMPLES), `${f} sends mail and has no sample in tests/plainEmail.test.ts`).toContain(f);
   });
-  it("only notify.mjs posts to Resend (the chassis client is switched off), and every Mac post goes through postEmployeeMail", () => {
+  it("only notify.mjs posts to Resend (the chassis client is gone), and every Mac post goes through postEmployeeMail", () => {
     const hits: string[] = [];
     const walk = (dir: string) => {
       for (const name of readdirSync(dir)) {
@@ -201,7 +201,7 @@ describe("no sender can skip the layout", () => {
       }
     };
     walk(join(ROOT, "scripts")); walk(join(ROOT, "src"));
-    expect(hits.sort()).toEqual(["scripts/ops/notify.mjs", "src/worker/effects/resendClient.ts"]);
+    expect(hits.sort()).toEqual(["scripts/ops/notify.mjs"]);
     for (const f of sendingFiles().filter((x) => x !== "scripts/ops/notify.mjs")) {
       const src = readFileSync(join(ROOT, f), "utf8");
       const raw = (src.match(/employeeMail\(/g) ?? []).length;

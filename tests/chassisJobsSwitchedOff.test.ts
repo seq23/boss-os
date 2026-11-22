@@ -2,13 +2,16 @@ import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { createTestDb, disposeTestDb, makeTestEnv, splitSqlStatements, type TestDb } from "./helpers/db";
-import { runDueJobs } from "../src/worker/services/jobs";
 
 /**
- * Migration 0375 switches off the three copied West Peek fund jobs that still ran every 15 minutes
- * here (her yes, 22 Nov 2026: "Yes, retire it"). West Peek OS runs all three itself, so nothing
- * stops. The promise is "paused, not removed": every row stays, and the one switch-back line in the
- * migration's own comment puts them back exactly as they were.
+ * Migration 0375 switches off the three copied West Peek fund jobs that still ran hourly here
+ * (her yes, 22 Nov 2026: "Yes, retire it"). West Peek OS runs all three itself, so nothing stops.
+ * The promise is "paused, not removed": every row stays, and the one switch-back line in the
+ * migration's own comment puts them back exactly as they were. 0376 adds the pause's record and
+ * closes the one fault the pause made permanent.
+ *
+ * The chassis dispatcher that ran these rows is gone (same retirement), so no tick can run them;
+ * what is left to prove here is the data.
  */
 
 const MIGRATION = readFileSync(
@@ -25,6 +28,9 @@ const SWITCH_BACK = (() => {
 })();
 /** The migration's own statements, comments stripped, minus the schema_version stamp. */
 const PAUSE_STATEMENTS = splitSqlStatements(MIGRATION).filter((s) => /UPDATE\s+scheduled_job/i.test(s));
+const RECORD = splitSqlStatements(
+  readFileSync(fileURLToPath(new URL("../migrations/0376_chassis_pause_recorded.sql", import.meta.url)), "utf8"),
+).filter((s) => !/schema_version/i.test(s));
 
 type Row = Record<string, unknown> & { job_key: string; status: string; pause_reason: string | null };
 
@@ -46,7 +52,7 @@ describe("0375: the copied fund jobs are paused, not removed", () => {
     expect(PAUSE_STATEMENTS).toHaveLength(1);
   });
 
-  it("pauses the three jobs that ran every 15 minutes, with the retirement marker", async () => {
+  it("pauses the three jobs that ran hourly, with the retirement marker", async () => {
     const all = await rows();
     for (const key of SWITCHED_OFF) {
       const row = all.find((r) => r.job_key === key);
@@ -65,19 +71,6 @@ describe("0375: the copied fund jobs are paused, not removed", () => {
       expect(row.status, key).toBe("PAUSED");
       expect(String(row.pause_reason ?? ""), key).not.toMatch(/chassis-retire/);
     }
-  });
-
-  it("the hourly tick runs none of them", async () => {
-    const env = makeTestEnv(t.db);
-    const before = await t.db.prepare(
-      `SELECT COUNT(*) AS n FROM job_run WHERE job_id IN (SELECT id FROM scheduled_job WHERE job_key IN ('deck_reading','diagnostics_sweep','network_sync'))`,
-    ).first<{ n: number }>();
-    const results = await runDueJobs(env, new Date("2030-01-01T12:00:00.000Z"));
-    expect(results.map((r) => r.job_key).filter((k) => SWITCHED_OFF.includes(k))).toEqual([]);
-    const after = await t.db.prepare(
-      `SELECT COUNT(*) AS n FROM job_run WHERE job_id IN (SELECT id FROM scheduled_job WHERE job_key IN ('deck_reading','diagnostics_sweep','network_sync'))`,
-    ).first<{ n: number }>();
-    expect(after!.n).toBe(before!.n);
   });
 
   it("the switch-back line restores the rows exactly, and only the rows 0375 closed", async () => {
@@ -104,5 +97,62 @@ describe("0375: the copied fund jobs are paused, not removed", () => {
     // And the round trip: pausing again gives back the very same rows.
     for (const stmt of PAUSE_STATEMENTS) await exec(stmt);
     expect(await rows()).toEqual(paused);
+  });
+});
+
+describe("0376: the pause is on record, and the fault it froze is closed", () => {
+  async function pausedEvents(): Promise<Array<{ object_id: string; actor_id: string; payload_json: string }>> {
+    const r = await t.db.prepare(
+      "SELECT object_id, actor_id, payload_json FROM event_record WHERE event_type = 'scheduled_job.paused' ORDER BY object_id",
+    ).all<{ object_id: string; actor_id: string; payload_json: string }>();
+    return r.results ?? [];
+  }
+  async function openFault(id: string): Promise<void> {
+    await exec(`DELETE FROM health_fault WHERE id = '${id}' OR (check_key = 'scheduled_work' AND resolved_at IS NULL)`);
+    await exec(`INSERT INTO health_fault (id, check_key, label, first_seen_at) VALUES ('${id}', 'scheduled_work', 'Scheduled work', '2026-10-13T16:00:38.838Z')`);
+  }
+  async function resolvedAt(id: string): Promise<string | null> {
+    return (await t.db.prepare("SELECT resolved_at FROM health_fault WHERE id = ?1").bind(id).first<{ resolved_at: string | null }>())!.resolved_at;
+  }
+  async function pauseAll(): Promise<void> { for (const stmt of PAUSE_STATEMENTS) await exec(stmt); }
+
+  /** The rows 0376's insert would write right now: its own SELECT, read off the migration. */
+  async function wouldRecord(): Promise<number> {
+    const select = RECORD[0]!.slice(RECORD[0]!.search(/\bSELECT\b/));
+    return (await t.db.prepare(`SELECT COUNT(*) AS n FROM (${select})`).first<{ n: number }>())!.n;
+  }
+
+  it("one scheduled_job.paused record per job 0375 paused, carrying its reason, the shape the pause button wrote", async () => {
+    // The test database ran every migration, 0376 included (event_record is append-only).
+    const events = await pausedEvents();
+    expect(events.map((e) => e.object_id)).toEqual(["sjob_deck_reading", "sjob_diagnostics_sweep", "sjob_network_sync"]);
+    for (const e of events) {
+      expect(e.actor_id).toBe("migration:0375_chassis_jobs_switched_off");
+      expect(JSON.parse(e.payload_json).reason).toMatch(/^chassis-retire 2026-11-22: /);
+    }
+    // A re-run adds nothing.
+    for (const stmt of RECORD) await exec(stmt);
+    expect(await pausedEvents()).toHaveLength(3);
+  });
+
+  it("a job switched back on before 0376 gets no false pause record, and its fault stays open", async () => {
+    await openFault("hf_test_running");
+    expect(await wouldRecord()).toBe(3);
+    await exec(SWITCH_BACK);
+    expect(await wouldRecord()).toBe(0);
+    for (const stmt of RECORD.slice(1)) await exec(stmt);
+    expect(await resolvedAt("hf_test_running")).toBeNull();
+    await pauseAll();
+  });
+
+  it("closes the open scheduled_work fault while network_sync is paused, and touches nothing else", async () => {
+    await openFault("hf_test_frozen");
+    await exec("DELETE FROM health_fault WHERE id = 'hf_test_other'");
+    await exec("INSERT INTO health_fault (id, check_key, label, first_seen_at) VALUES ('hf_test_other', 'brain_reader', 'Brains', '2026-11-01T00:00:00.000Z')");
+    const before = (await t.db.prepare("SELECT COUNT(*) AS n FROM health_fault").first<{ n: number }>())!.n;
+    for (const stmt of RECORD) await exec(stmt);
+    expect(await resolvedAt("hf_test_frozen")).toBe("2026-11-22T00:00:00.000Z");
+    expect(await resolvedAt("hf_test_other")).toBeNull();
+    expect((await t.db.prepare("SELECT COUNT(*) AS n FROM health_fault").first<{ n: number }>())!.n).toBe(before);
   });
 });

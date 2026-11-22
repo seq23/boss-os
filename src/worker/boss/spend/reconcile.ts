@@ -1,33 +1,17 @@
 import type { Env } from "../env";
-import type { Env as ChassisEnv } from "../../env";
-import { firmSpend } from "../../ai/spend";
 
 /**
  * WHAT THIS SYSTEM ACTUALLY SPENT, IN ONE NUMBER.
  *
- * THE DEFECT THIS CLOSES. Money is recorded in three places in this repository and nothing ever
- * added them together:
+ * Money is recorded by Boss OS's own router in `usage_ledger` (0152); this reads it and reports one
+ * figure with how it was obtained, plus what cannot be observed from here.
  *
- *   `usage_ledger`   — Boss OS's own, written by its router (0152).
- *   `ai_run`         — the West Peek chassis's, written by `runAi` (0004).
- *   `vendor_spend`   — charges outside any model boundary, e.g. generated images (0080), which are
- *                      outside `runAi` by design and invisible to both of the above.
- *
- * Two components each keeping their own list, with no link between them, is the defect pattern this
- * repository is written against — and here it has teeth, because "what did I spend" was answered by
- * whichever ledger the reader happened to open. A budget that hard-stops at $2 while a second
- * ledger accrues elsewhere is not a budget.
- *
- * IT CALLS THE CHASSIS'S OWN DEFINITION RATHER THAN RE-DERIVING ONE. `firmSpend` already sums
- * `ai_run` and `vendor_spend` together and is, in its own words, "the single source every screen
- * and every ceiling reads" — written that way after three separate derivations of the same word
- * were caught 28% apart. Re-implementing that SQL here to avoid one import would have been the
- * fourth derivation, and there is no reason to believe mine would agree with theirs.
- *
- * THE COUPLING IS DELIBERATE AND FAILS LOUDLY. Boss OS is otherwise self-contained and the chassis
- * is scheduled for removal, so this import is the one thread between them. When the chassis goes
- * this file stops compiling — which is the correct failure: a missing ledger should be a build
- * error someone fixes, never a total that silently shrinks.
+ * THE CHASSIS LEDGERS ARE GONE FROM THIS SUM (chassis retirement, 22 Nov 2026). `ai_run` and
+ * `vendor_spend` belonged to the copied West Peek fund code. Both were read live in production
+ * before removal: zero rows ever, in either. Their only writers were the retired fund API, so
+ * nothing can add a row to them now. The tables stay (nothing is dropped). If anything in Boss OS
+ * ever records spend outside the router again, it records it in `usage_ledger`, so one ledger
+ * stays the whole truth.
  *
  * THIS IS A READER, NOT A FOURTH LEDGER. It writes nothing. Adding a fourth store to fix three that
  * disagree is the same mistake with more steps. Each source keeps recording exactly as it does
@@ -86,20 +70,10 @@ export const WORKERS_AI_ALLOWANCE_NOTE =
   "Read the true account figure with `npm run ops:workers-ai-usage`, which runs where the " +
   "Cloudflare token already lives rather than putting an account-scoped token in this Worker.";
 
-/**
- * `firmSpend` reads only `env.WP_OS_DB`, and Boss OS's `DB` is that same database — one D1, one
- * Worker. The shim is narrow on purpose: widening it would invite the rest of the chassis env in
- * behind it.
- */
-function chassisView(db: D1Database): ChassisEnv {
-  return { WP_OS_DB: db } as unknown as ChassisEnv;
-}
-
 export async function reconcileSpend(
   env: Env,
   windowStartedAt: number,
   windowEndsAt = Date.now(),
-  firmScope = "west-peek",
 ): Promise<Reconciliation> {
   const parts: LedgerPart[] = [];
 
@@ -127,31 +101,6 @@ export async function reconcileSpend(
       "Boss OS's router ledger. Cost is computed from token counts and the stored per-token price, " +
       "so it is exactly as true as those prices — each row in `models` states its own provenance.",
   });
-
-  // ── The chassis's ledgers, through the chassis's own definition ────────────
-  // ALL_TIME then narrowed by the caller's window is not possible through firmSpend's fixed
-  // windows, so the whole-life figure is read and reported as such. Reporting a smaller number
-  // under a window it does not actually cover would be worse than reporting a wider true one.
-  const chassis = await firmSpend(chassisView(env.DB), firmScope, "ALL_TIME").catch(() => null);
-
-  if (chassis) {
-    parts.push({
-      source: "ai_run + vendor_spend",
-      cost_micros: Math.round(chassis.total_usd * 1_000_000),
-      // Mixed: model cost is estimated from prices, vendor cost is what the vendor reported. The
-      // weaker of the two governs the label, because a total is only as trustworthy as its
-      // shakiest part.
-      basis: "estimated",
-      rows: chassis.runs,
-      note:
-        `The West Peek chassis's ledgers, read through its own \`firmSpend\` — the single ` +
-        `definition every chassis screen and ceiling uses. Model $${chassis.model_usd.toFixed(6)} ` +
-        `and vendor $${chassis.vendor_usd.toFixed(6)}, all-time rather than windowed, because ` +
-        `firmSpend offers fixed windows and a narrower figure that did not cover the window would ` +
-        `mislead. ${chassis.unpriced_vendor_calls} vendor call(s) reported no cost and are excluded ` +
-        `rather than counted as zero.`,
-    });
-  }
 
   const unobservable: LedgerPart[] = [
     {

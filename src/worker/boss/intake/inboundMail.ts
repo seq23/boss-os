@@ -119,8 +119,8 @@ import { nudgeFromWords, nudgeAddressesIn } from "../lp/nudge";
 /**
  * MAIL TO `boss@sequoiataylor.com`.
  *
- * Boss OS's own inbox, written for Boss OS, importing nothing from `src/worker/effects/inboundEmail.ts`.
- * That file serves `os@joinwestpeek.com`, which is West Peek's mailbox on West Peek's domain,
+ * Boss OS's own inbox, written for Boss OS, importing nothing from West Peek's mail handler.
+ * That handler (retired from this repo 22 Nov 2026) serves `os@joinwestpeek.com`, which is West Peek's mailbox on West Peek's domain,
  * delivered to a Worker called `west-peek-os` and not to this one. Owner, 10 Sep 2026: "why are u
  * sharing anything with west peek's os? why? this is a separate repo and domain."
  *

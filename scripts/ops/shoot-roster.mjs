@@ -2,9 +2,8 @@
 /**
  * The roster's portraits, shot from the casting sheet.
  *
- * WHY A SCRIPT AND NOT A FEATURE. The Worker already has a governed image client
- * (`src/worker/effects/runwareClient.ts`) for an employee who needs a picture mid-task. This is a
- * different thing: a one-off shoot for seven seats, run by the owner, writing files into the
+ * WHY A SCRIPT AND NOT A FEATURE. This is a one-off shoot for seven seats, run by the owner,
+ * writing files into the
  * repository. That is an ops task, so it lives beside `workers-ai-usage.mjs` and runs where the
  * vault already is — the same reason no account-scoped token lives in the Worker.
  *
