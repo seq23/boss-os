@@ -182,6 +182,26 @@ export function dur(ms) {
 }
 
 /**
+ * The week's two scorecard numbers, kept on the morning section (scorecard row "landing-speed" reads them from
+ * D1): of the merged PRs with a deploy on record, the share live within an hour of merging, and the share live
+ * within a day of opening. No PR with a deploy is null (not read), never 0 or 100. Pure.
+ */
+export function weekMeasures(rows) {
+  const live = rows.filter((r) => ok(r.total_ms) && ok(r.to_live_ms));
+  const pct = (f) => (live.length ? Math.round((1000 * live.filter(f).length) / live.length) / 10 : null);
+  return {
+    prs: rows.length, live: live.length,
+    landed_in_hour_pct: pct((r) => r.to_live_ms <= 60 * MIN),
+    live_in_day_pct: pct((r) => r.total_ms <= 24 * 60 * MIN),
+  };
+}
+
+/** The morning section as written: the lines she reads, and the measures the scorecard reads. Pure. */
+export function sectionBody(rows, opts = {}) {
+  return { title: "Landing speed, PR to live", lines: weekLines(rows, opts), measures: weekMeasures(rows) };
+}
+
+/**
  * The week's line. Never "0 minutes" for nothing: no rows is a named stop before this is called, and a
  * step with no record says "not recorded". Pure.
  */
@@ -338,13 +358,14 @@ async function main() {
   const map = JSON.parse(readFileSync(new URL("../../src/shared/boss/maps/repos.json", import.meta.url), "utf8"));
   const { repos, rows, unreadable, privateRepos } = await readWeek({ days, expected: expectedRepos(map) });
   if (!repos) throw stop("NO_REPOS_READ", 2, `no repository of ${OWNER} was pushed in the last ${days} days, or the list did not load`);
-  const lines = weekLines(rows, { days, unreadable, privateRepos });
+  const body = sectionBody(rows, { days, unreadable, privateRepos });
+  const { lines } = body;
   if (args.includes("--json")) console.log(JSON.stringify(rows, null, 1));
   else if (dry) for (const r of rows) console.log([r.repo, `#${r.number}`, `review ${dur(r.review_ms)}`, `reviewed ${r.reviewed}`, `to merge ${dur(r.to_merge_ms)}`, `to live ${dur(r.to_live_ms)}`, `queued ${dur(r.ci_queued_ms + r.main_queued_ms)}`, `fails ${r.fail_rounds}`].join("  "));
   for (const l of lines) console.log(l);
   if (!dry) {
     const { writeMorningSection } = await import("../../src/shared/boss/mail/morning.mjs");
-    writeMorningSection("landing", { title: "Landing speed, PR to live", lines });
+    writeMorningSection("landing", body);
   }
   console.log(outputLine(rows.length, "PRs measured"));
   const note = endOfRun({ unreadable, privateRepos });

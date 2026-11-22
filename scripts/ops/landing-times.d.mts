@@ -18,6 +18,8 @@ export function liveAt(pr: Obj): number | null;
 export function prRow(pr: Obj): LandingRow;
 export function median(xs: Array<number | null>): number | null;
 export function dur(ms: number | null | undefined): string;
+export function weekMeasures(rows: LandingRow[]): { prs: number; live: number; landed_in_hour_pct: number | null; live_in_day_pct: number | null };
+export function sectionBody(rows: LandingRow[], opts?: { days?: number; unreadable?: string[]; privateRepos?: string[] }): { title: string; lines: string[]; measures: ReturnType<typeof weekMeasures> };
 export function weekLines(rows: LandingRow[], opts?: { days?: number; unreadable?: string[]; privateRepos?: string[] }): string[];
 export function expectedRepos(map: unknown): string[];
 export function graphql(query: string, variables?: Obj, opts?: { fetchImpl?: (url: string, init: Obj) => Promise<Response>; tok?: string; wait?: (ms: number) => Promise<unknown> }): Promise<any>;

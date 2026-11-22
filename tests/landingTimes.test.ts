@@ -1,5 +1,6 @@
+import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
-import { dur, endOfRun, expectedRepos, failRounds, isPublicRepo, graphql, liveAt, passAt, prRow, readWeek, weekLines } from "../scripts/ops/landing-times.mjs";
+import { dur, endOfRun, expectedRepos, failRounds, isPublicRepo, graphql, liveAt, passAt, prRow, readWeek, sectionBody, weekLines, weekMeasures } from "../scripts/ops/landing-times.mjs";
 
 /*
  * PR-to-live, measured (owner, 22 Nov 2026: "landing shit takes fucking forever"). The ways it breaks:
@@ -213,5 +214,32 @@ describe("landing-times: rule 0 and outages", () => {
     const { repos, rows } = await readWeek({ now, gql });
     expect(repos).toBe(1);
     expect(rows.map((r: { number: number }) => r.number)).toEqual([2]);
+  });
+});
+
+describe("landing-times: the scorecard's numbers", () => {
+  const row = (to_live_h: number | null, total_h: number | null) =>
+    ({ total_ms: total_h === null ? null : total_h * H, to_live_ms: to_live_h === null ? null : to_live_h * H });
+
+  it("shares are of PRs with a deploy on record; a PR with none is left out, never counted live or slow", () => {
+    const m = weekMeasures([row(0.5, 3), row(2, 30), row(1, 24), row(null, null)] as never);
+    expect(m).toEqual({ prs: 4, live: 3, landed_in_hour_pct: 66.7, live_in_day_pct: 66.7 });
+  });
+
+  it("no PR with a deploy is null (not read), never 0% or 100%", () => {
+    expect(weekMeasures([row(null, null)] as never)).toMatchObject({ landed_in_hour_pct: null, live_in_day_pct: null });
+  });
+
+  it("the section the job writes carries the measures, and the scorecard row reads keys that exist", () => {
+    const body = sectionBody([prRow(pr())]);
+    const sc = JSON.parse(readFileSync(new URL("../src/shared/boss/scorecard/manifest.json", import.meta.url), "utf8"));
+    const r = sc.rows.find((x: { jobs: string[] }) => x.jobs.includes("landing-times"));
+    expect(r, "landing-times has a scorecard row").toBeTruthy();
+    for (const m of [r.first, r.real]) {
+      const key = String(m.params.sql).match(/\$\.measures\.(\w+)/)?.[1];
+      expect(key, `${m.label} reads a measure`).toBeTruthy();
+      expect(Object.keys(body.measures)).toContain(key);
+      expect(m.params.sql).toMatch(/section = 'landing'/);
+    }
   });
 });
