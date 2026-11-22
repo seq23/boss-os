@@ -267,7 +267,7 @@ export async function readWeek({ days = 7, now = Date.now(), gql = graphql, owne
   do {
     let d;
     try {
-      d = await gql(`query($o: String!, $a: String) { user(login: $o) { repositories(first: 100, after: $a, isFork: false, ownerAffiliations: OWNER) {
+      d = await gql(`query($o: String!, $a: String) { user(login: $o) { repositories(first: 100, after: $a, ownerAffiliations: OWNER) {
         pageInfo { hasNextPage endCursor } nodes { name isArchived pushedAt } } } }`, { o: owner, a: after });
     } catch (e) {
       if (e?.notFound) throw stop("OWNER_NOT_FOUND", 3, `GitHub has no user "${owner}" (LANDING_OWNER); nothing was measured`);

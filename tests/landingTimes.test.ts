@@ -149,6 +149,15 @@ describe("landing-times: rule 0 and outages", () => {
     expect(unreadable).toEqual(["hidden"]);
     expect(weekLines([prRow(pr())], { unreadable }).at(-1)).toMatch(/^1 repo not readable with this token, so not measured: hidden\.$/);
   });
+  it("F6: a fork she owns (Deep-seek-infra-vault, 22 Nov) is read, not reported unreadable", async () => {
+    // GitHub semantics: isFork: false hides forks from the listing.
+    const gql = async (q: string) => q.includes("repositories(")
+      ? { user: { repositories: { pageInfo: { hasNextPage: false }, nodes: [{ name: "r", isArchived: false, pushedAt: at(0) }, { name: "fork", isFork: true, isArchived: false, pushedAt: at(0) }].filter((n) => !(n.isFork && /isFork:\s*false/.test(q))) } } }
+      : { repository: { pullRequests: { pageInfo: { hasNextPage: false }, nodes: [] } } };
+    const { unreadable, repos } = await readWeek({ now: Date.parse(at(1)), gql, expected: ["r", "fork"] });
+    expect(unreadable).toEqual([]);
+    expect(repos).toBe(2);
+  });
   it("slowest is the slowest LANDING (merge to live) among the window's PRs, in plain days", () => {
     const dep = (h: number) => [{ statuses: [{ state: "SUCCESS", createdAt: at(h) }] }];
     const oldOpen = prRow(pr({ number: 7, createdAt: at(-900), mergeDeploys: dep(3.2) }));
