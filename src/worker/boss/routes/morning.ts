@@ -21,6 +21,7 @@
  * Names stay in D1 (`morning_digests`, LOCAL_ONLY for models); nothing here reaches a model.
  */
 
+import { putMorningSection } from "../mail/morningSection";
 import { recordPersonReminders, pruneQuietPeople } from "../lp/reminders";
 import { Hono } from "hono";
 import type { Env, Vars } from "../env";
@@ -118,12 +119,7 @@ morning.post("/sections", async (c) => {
   if (problems.length) throw badRequest(`morning section "${section}" refused: ${problems.join("; ")}`);
   const json = JSON.stringify(obj);
   if (json.length > MAX_PAYLOAD) throw badRequest(`The section is ${json.length} characters; the most kept is ${MAX_PAYLOAD}`);
-  await c.env.DB
-    .prepare(`INSERT INTO morning_sections (section, job, day, body, status, told_at, created_at, updated_at) VALUES (?,?,?,?,'fresh',NULL,?,?)
-              ON CONFLICT(section) DO UPDATE SET job = excluded.job, day = excluded.day, body = excluded.body,
-                status = 'fresh', told_at = NULL, updated_at = excluded.updated_at`)
-    .bind(section, b.job, dayIdInZone(now), json, now, now)
-    .run();
+  await putMorningSection(c.env.DB, { section, job: b.job, day: dayIdInZone(now), obj, now });
   return ok(c, { section, lines: (obj.lines ?? []).length, decide: (obj.decide ?? []).length }, 201);
 });
 

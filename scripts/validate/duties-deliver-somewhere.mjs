@@ -202,6 +202,18 @@ function workerJobCode(job) {
   return files.map((f) => read(`src/worker/boss/${job}/${f}`)).join("\n").split("\n").filter((line) => !/^\s*(#|\/\/|\*|\/\*)/.test(line)).join("\n");
 }
 
+/*
+ * A table with ONE writer (22 Nov 2026): Simone's morning sections are written only by
+ * `putMorningSection` (src/worker/boss/mail/morningSection.ts), so a job that calls it writes that
+ * table. The writer's own file must still hold the INSERT, so a writer that stops writing is caught.
+ */
+const SHARED_WRITERS = [{ fn: "putMorningSection", file: "src/worker/boss/mail/morningSection.ts" }];
+export function writesInto(code, key, readFile = (f) => (existsSync(join(ROOT, f)) ? read(f) : "")) {
+  const into = new RegExp(`INTO\\s+${key}\\b`, "i");
+  if (into.test(code)) return true;
+  return SHARED_WRITERS.some((w) => new RegExp(`\\b${w.fn}\\(`).test(code) && into.test(readFile(w.file)));
+}
+
 export function workerReader(text) {
   const m = /'worker_reader'\s*,\s*'([a-z][a-z0-9_]*)'/.exec(text)
     ?? /"worker_reader"\s*:\s*"([a-z][a-z0-9_]*)"/.exec(text);
@@ -391,7 +403,7 @@ function scan() {
       if (!new RegExp(`job === "${jobName}"`).test(materialiseSrc)) problems.push(`${duty.id} (${duty.file}): names worker job '${jobName}' and ${MATERIALISE} never dispatches it.`);
       if (!code) { problems.push(`${duty.id} (${duty.file}): names worker job '${jobName}' and src/worker/boss/${jobName}/ holds no module.`); continue; }
       if (!key) { problems.push(`${duty.id} (${duty.file}): is a worker job and declares no \`delivers\` table.`); continue; }
-      if (!new RegExp(`INTO\\s+${key}\\b`, "i").test(code)) problems.push(`${duty.id} (${duty.file}): delivers '${key}' and src/worker/boss/${jobName}/ writes to no table of that name.`);
+      if (!writesInto(code, key)) problems.push(`${duty.id} (${duty.file}): delivers '${key}' and src/worker/boss/${jobName}/ writes to no table of that name.`);
       if (!tables.has(key)) problems.push(`${duty.id} (${duty.file}): delivers '${key}' and no migration creates a table called '${key}'.`);
       const routeFiles = readdirSync(join(ROOT, "src/worker/boss/routes")).filter((f) => f.endsWith(".ts"));
       const routeSrc = routeFiles.map((f) => read(`src/worker/boss/routes/${f}`)).join("\n");
@@ -712,6 +724,13 @@ const FIXTURES = [
 ];
 
 function selfTest() {
+  // A job that writes through the one morning-section writer delivers that table; a job that only
+  // mentions it, or a writer whose file lost its INSERT, does not.
+  const writerFile = () => "INSERT INTO morning_sections (section, day) VALUES (?, ?)";
+  if (!writesInto("await putMorningSection(db, { section: 'x' })", "morning_sections", writerFile)) { console.error("self-test: a call to the one writer was not counted"); process.exit(1); }
+  if (writesInto("// putMorningSection is elsewhere", "morning_sections", writerFile)) { console.error("self-test: a mention without a call was counted"); process.exit(1); }
+  if (writesInto("await putMorningSection(db, {})", "morning_sections", () => "SELECT 1")) { console.error("self-test: a writer with no INSERT vouched"); process.exit(1); }
+  if (writesInto("await putMorningSection(db, {})", "open_loops", writerFile)) { console.error("self-test: the writer vouched for a table it does not write"); process.exit(1); }
   let failed = 0;
   for (const f of FIXTURES) {
     const got = dutiesIn(f.sql);

@@ -26,6 +26,7 @@
  * every active business held → NAMED STOP [HELD_ALL] with the counts.
  */
 import { mayAct } from "./roster.mjs";
+import { lineProblems } from "../mail/plain.mjs";
 
 export const MAX_CARDS = 3;
 export const MAX_QUEUE_PER_BUSINESS = 3;
@@ -233,4 +234,95 @@ export function cycleEnd(results) {
  */
 export function pipelineKey(business, channel, format) {
   return `growth#${business}#${channel}-${format}`.toLowerCase().replace(/[^a-z0-9#-]+/g, "-");
+}
+
+/** Her report runs every two weeks: due when none was written, or the last one is 13+ days old. */
+export const REPORT_EVERY_DAYS = 14;
+export function reportDue(lastDay, today) {
+  if (!lastDay) return true;
+  return (Date.parse(`${today}T12:00:00Z`) - Date.parse(`${lastDay}T12:00:00Z`)) / 86_400_000 >= REPORT_EVERY_DAYS - 1;
+}
+
+/** Her words for a held or paused state: why, and who is on it. Never the state code. */
+const HELD_WHY = {
+  "held: no data": "nothing on its scoreboard could be read yet",
+  "held: no model": "no free writer answered; it tries again next Monday",
+  "held: roster": "its plan in the brain needs a fix; the team is on it",
+  "held: error": "the run failed for it; the team is fixing it",
+};
+const WORDS = { money: (n) => `$${Math.round(n).toLocaleString("en-US")} in`, sales: (n) => `${n} ${n === 1 ? "sale" : "sales"}`, installs: (n) => `${n} ${n === 1 ? "install" : "installs"}`, requests: (n) => `${n} ${n === 1 ? "request" : "requests"}`, visits: (n) => `${n} ${n === 1 ? "visit" : "visits"}` };
+/** "2 requests, $730 in" from a scoreboard summary's totals; null when nothing was read (never 0). */
+export function numbersLine(summary) {
+  const parts = Object.entries(summary?.totals ?? {}).filter(([, v]) => v !== null && v !== undefined).map(([k, v]) => WORDS[k]?.(v)).filter(Boolean);
+  return parts.length ? parts.join(", ") : null;
+}
+// A channel in her words: the brand's own spelling where it has one (WordPress, TikTok), else Title Case.
+const BRAND_SPELLING = { wordpress: "WordPress", tiktok: "TikTok", youtube: "YouTube", linkedin: "LinkedIn" };
+const titleCase = (w) => String(w ?? "").replace(/[-_]+/g, " ").replace(/\b\w/g, (c) => c.toUpperCase())
+  .replace(/\b(Wordpress|Tiktok|Youtube|Linkedin)\b/g, (m) => BRAND_SPELLING[m.toLowerCase()]);
+/** The one model sentence kept: its first sentence, only when it passes the plain-words check. */
+function modelSentence(text) {
+  const first = String(text ?? "").replace(/NAMED STOP \[[A-Z0-9_]+\]\s*/g, "").replace(/\s+/g, " ").trim().split(/(?<=[.!?])\s/)[0] ?? "";
+  if (!first || first.length > 160 || lineProblems(first).length || /[*_`#]|\b[a-z]+-[a-z]+\b|\b[a-z]{2,4}_[a-z0-9]+|R-[A-Z]+-\d/.test(first)) return null;
+  return /[.!?]$/.test(first) ? first : `${first}.`;
+}
+/** "Porch & Party requests: 2 of 4 by 23 Dec" — a floor from the Scorecard row, "not read" never 0. */
+function floorLine(f, start, value, missing = []) {
+  if (!f) return null;
+  const by = new Date(Date.parse(`${start}T12:00:00Z`) + f.by * 86_400_000).toLocaleDateString("en-US", { day: "numeric", month: "short", timeZone: "UTC" });
+  const money = (n) => `${f.unit === "$" ? "$" : ""}${Math.round(n).toLocaleString("en-US")}`;
+  if (value === null || value === undefined) return `${f.label}: not read yet (the floor is ${money(f.floor.value)} by ${by})`;
+  const gap = missing.length ? ` (${missing.join(" and ")} not read yet)` : "";
+  return `${f.label}: ${money(value)} of ${money(f.floor.value)} by ${by}${gap}`;
+}
+/**
+ * The two floor numbers, from the scoreboard totals: Porch & Party's requests, and the money in
+ * across every business that tracks money. A business whose money could not be read is NAMED, never
+ * summed as $0 (22 Nov 2026: "$730 of $1,000" hid that A Player Mode was unread); none read → null.
+ */
+export function floorValues(summaries, labelOf = (k) => k) {
+  const first = summaries.find((x) => x.key === "porch-and-party")?.totals?.requests ?? null;
+  const tracked = summaries.filter((x) => x.totals && "money" in x.totals);
+  const read = tracked.filter((x) => typeof x.totals.money === "number");
+  const missing = tracked.filter((x) => typeof x.totals.money !== "number").map((x) => labelOf(x.key));
+  return { first, real: read.length ? read.reduce((a, x) => a + x.totals.money, 0) : null, realMissing: read.length ? missing : [] };
+}
+
+/**
+ * The fortnightly Growth section of Simone's morning email (repo rule: one morning email; every
+ * producer writes a section). Built from the record, never from a model's paragraph: line 1 says
+ * whether she must do anything (true for the all-held fortnight too), then the floors, then one line
+ * per business (its numbers, what was queued or asked, at most one model sentence that passes the
+ * plain-words check), up to three queued examples, then held and paused businesses with the reason
+ * in her words. The cards are in Decide already, so they are counted, never repeated.
+ */
+export function reportSection(rows, { cards, origin, at, summaries = [], scorecard = null }) {
+  const sum = (k) => summaries.find((x) => x.key === k);
+  const fv = floorValues(summaries, (k) => sum(k)?.label ?? rows.find((r) => r.business === k)?.label ?? "one business");
+  const queued = rows.flatMap((r) => (r.actions ?? []).filter((a) => a.kind === "queued").map((a) => ({ label: r.label, item: a.item })));
+  const decided = rows.filter((r) => r.state === "decided");
+  const held = rows.filter((r) => String(r.state).startsWith("held"));
+  const paused = rows.filter((r) => r.state === "paused");
+  const one = (n, a, b) => (n === 1 ? a : b.replace("N", String(n)));
+  const lines = [
+    cards ? `${one(cards, "One growth idea waits", "N growth ideas wait")} for your yes in Decide. Nothing else to do.`
+      : queued.length ? `Nothing to do: ${one(queued.length, "one post was", "N posts were")} queued from formats you already approved.`
+      : "Nothing to do: nothing new was queued this fortnight. Why, below.",
+  ];
+  const floors = [floorLine(scorecard?.first, scorecard?.start, fv.first), floorLine(scorecard?.real, scorecard?.start, fv.real, fv.realMissing)].filter(Boolean);
+  if (floors.length) lines.push(`Against the floors: ${floors.join("; ")}.`);
+  for (const r of decided) {
+    const acts = r.actions ?? [];
+    const q = acts.filter((a) => a.kind === "queued").length;
+    const asked = acts.filter((a) => a.kind === "proposal").length;
+    const did = [q ? `${q} queued` : null, asked ? `${asked} asked in Decide` : null].filter(Boolean).join(", ") || "nothing new queued";
+    const said = modelSentence(r.decision);
+    lines.push(`${r.label}: ${numbersLine(sum(r.business)) ?? "numbers not read"} in 28 days; ${did}.${said ? ` ${said}` : ""}`);
+  }
+  if (queued.length) lines.push(`Queued, for example: ${queued.slice(0, 3).map((x) => `${x.label}, ${titleCase(x.item?.channel)} ${String(x.item?.format ?? "post").replace(/[-_]+/g, " ")}`).join("; ")}.`);
+  if (held.length) lines.push(`Held, not guessed: ${held.map((r) => `${r.label} (${HELD_WHY[r.state] ?? "held; the team is looking"})`).join("; ")}.`);
+  // A paused row's decision is "Paused: <her reason>. Nothing measured…" (run.ts); the reason is hers.
+  const pausedWhy = (r) => /^Paused: (.+?)\. Nothing measured/.exec(String(r.decision ?? ""))?.[1] ?? null;
+  if (paused.length) lines.push(`Paused: ${paused.map((r) => (pausedWhy(r) ? `${r.label} (${pausedWhy(r)})` : r.label)).join("; ")}.`);
+  return { section: "growth", at: new Date(at).toISOString(), title: "📈 Growth, from Noelle", decide: [], rows: [], lines, link: { label: "See every business on the Growth page", url: `${origin}/?tab=growth` } };
 }

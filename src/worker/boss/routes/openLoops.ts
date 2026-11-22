@@ -14,6 +14,7 @@
  * The intake is the one path outside the session gate (index.ts): a CI runner in another repo holds
  * only `BOSS_OPEN_LOOPS_TOKEN`, which can do nothing but post to /intake — never the passcode.
  */
+import { putMorningSection } from "../mail/morningSection";
 import { Hono } from "hono";
 import type { Context } from "hono";
 import { getCookie } from "hono/cookie";
@@ -24,7 +25,7 @@ import { getSetting, setSetting } from "../lib/settings";
 import { readSession } from "../auth";
 import { dayIdInZone } from "../../../shared/boss/timezone";
 import { BRAIN_SLUGS } from "../../../shared/boss/brains/brain.mjs";
-import { MORNING_SECTIONS, morningSectionProblems } from "../../../shared/boss/mail/morningSections.mjs";
+import { MORNING_SECTIONS } from "../../../shared/boss/mail/morningSections.mjs";
 import { HER, loopKey, loopProblems, morningSection, systemRow, repairsDue, remindersDue, reminderEmail, sourceKeyOf, visibleLoops, isOwner, isDay, type Loop } from "../../../shared/boss/openLoops/openLoops.mjs";
 import { admitTask } from "../tasks/admit";
 import { needsHer } from "../../../shared/boss/mail/noticeGate.mjs";
@@ -209,12 +210,8 @@ export async function runOpenLoopsDaily(env: Env, now = Date.now()): Promise<{ r
   const names = await employeeNames(env.DB);
   const sec = morningSection(loops, today, { origin: ORIGIN, names });
   const obj = { section: SECTION, at: new Date(now).toISOString(), decide: [], rows: [], title: sec.title, lines: sec.lines, link: sec.link };
-  const problems = morningSectionProblems(obj);
+  const problems = await putMorningSection(env.DB, { section: SECTION, job: JOB, day: today, obj, now });
   if (problems.length) return { ran: false, reason: `NAMED STOP [OPEN_LOOPS_SECTION_REFUSED] ${problems.join("; ")}` };
-  await env.DB.prepare(
-    `INSERT INTO morning_sections (section, job, day, body, status, told_at, created_at, updated_at) VALUES (?,?,?,?,'fresh',NULL,?,?)
-     ON CONFLICT(section) DO UPDATE SET job = excluded.job, day = excluded.day, body = excluded.body, status = 'fresh', told_at = NULL, updated_at = excluded.updated_at`,
-  ).bind(SECTION, JOB, today, JSON.stringify(obj), now, now).run();
 
   const opened: string[] = [];
   const skipped: string[] = [];
