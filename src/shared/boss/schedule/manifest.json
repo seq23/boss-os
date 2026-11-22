@@ -3637,11 +3637,12 @@
     {
       "id": "local-jobs",
       "name": "West Peek OS Mac jobs",
-      "what": "Runs West Peek OS's jobs that need the Mac.",
+      "what": "Runs West Peek OS's jobs that need the Mac (Porter's site builds, partner sessions), 10:00-21:59 only; a job queued at night waits for 10:00.",
       "business": "west-peek-ventures",
       "brand": "West Peek OS",
       "system": "mac",
       "slots": [
+        "daily 10:00",
         "always"
       ],
       "emails": false,
@@ -3654,7 +3655,8 @@
       "output": {
         "floor": 0,
         "reason": "Acts only when there is something to act on; Kendra sets a floor once it prints an OUTPUT line."
-      }
+      },
+      "macWindow": "LIGHT"
     },
     {
       "id": "lp-daily",

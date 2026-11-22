@@ -5,7 +5,7 @@
  * morning job done by 06:30 with twice its worst measured runtime to spare ("do not let my ... morning
  * email /briefs suffer").
  *
- * Reads every com.seq.* / com.howweknow.* plist in ~/Library/LaunchAgents (and the PBS fill held in
+ * Reads every com.seq.* / com.howweknow.* plist (and West Peek OS's local-jobs claimer) in ~/Library/LaunchAgents (and the PBS fill held in
  * ~/.peace-be-still/held), each Hour moved back from the Mac's zone to Central, and the Schedule manifest's
  * `macWindow` and `worstMin`. Fails, by name, when:
  *   - any calendar slot falls 07:00-09:59 (the Mac is off: it would simply never run);
@@ -32,7 +32,10 @@ import { centralToLocalOffset, macWindows, ONE_SHOT } from "./plist-central.mjs"
 import { installedPlists, plistEvents, slotTimes } from "./lib/schedule.mjs";
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..", "..");
-const FAMILIES = /^(com\.seq\.|com\.howweknow\.)/; // West Peek OS daemons are not hers to schedule here
+// Her jobs, plus West Peek OS's local-jobs claimer (it runs `claude -p` builds on this Mac, so it keeps her day:
+// LIGHT, behind mac-window, installed by west-peek-os `npm run launchd:install:local-jobs`, 22 Nov 2026). The seat
+// claimer and the Meet listener are West Peek OS daemons this check does not schedule.
+export const FAMILIES = /^(com\.seq\.|com\.howweknow\.|ventures\.westpeek\.os\.local-jobs$)/;
 // Jobs her rules leave exactly as they are (21 Nov 2026: "dont ... put the pause back"): the 00:05 tool that
 // ends her pauses is not rewritten, so it carries no guard and no row. Its slots are still checked.
 export const LEFT_AS_IS = new Set(["com.seq.resume-paused-jobs"]);
