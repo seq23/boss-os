@@ -81,10 +81,10 @@ function run(files) {
 }
 
 function selfTest() {
-  const log = "shard 4/4\tUNKNOWN STEP\t2026Z \x1b[31m\x1b[1m\x1b[7m FAIL \x1b[27m\x1b[22m\x1b[39m tests/workerEntryExports.test.ts\x1b[2m > \x1b[22mthe Worker entry\n"
+  const log = "shard 4/4\tUNKNOWN STEP\t2026Z \x1b[31m\x1b[1m\x1b[7m FAIL \x1b[27m\x1b[22m\x1b[39m tests/onlyColoured.test.ts\x1b[2m > \x1b[22mthe Worker entry\n"
     + "x FAIL  tests/boss/bigMail.test.ts > a\nx FAIL  tests/workerEntryExports.test.ts > b\n ✓ tests/ok.test.ts\n";
   const got = failedTestFiles(log);
-  const want = ["tests/boss/bigMail.test.ts", "tests/workerEntryExports.test.ts"];
+  const want = ["tests/boss/bigMail.test.ts", "tests/onlyColoured.test.ts", "tests/workerEntryExports.test.ts"];
   if (JSON.stringify(got) !== JSON.stringify(want)) throw new Error(`failedTestFiles: ${JSON.stringify(got)}`);
   if (failedTestFiles("all green\n ✓ tests/a.test.ts").length) throw new Error("failedTestFiles found a FAIL in a green log");
   const runs = [{ databaseId: 3, headSha: "new", status: "in_progress" }, { databaseId: 2, headSha: "old", status: "completed", conclusion: "failure" }, { databaseId: 1, headSha: "older", status: "completed", conclusion: "success" }];
