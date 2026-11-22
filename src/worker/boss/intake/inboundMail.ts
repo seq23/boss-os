@@ -965,7 +965,7 @@ export async function handleBossInboundMail(message: BossMailMessage, env: Env):
    */
   const dismissAnswer = !planAnswer && !commentAnswer && !kdpAnswer
     // …and her numbered answer to the prospect-email card ("5: try again"), the same way (25 Oct 2026).
-    ? (await dismissFromMail(env, own, now)) ?? (await prospectTemplateFromMail(env, own, now, morningDayOf(threadRefs.refs)))
+    ? (await dismissFromMail(env, own, now)) ?? (await prospectTemplateFromMail(env, own, now, morningDayOf(threadRefs.refs), mailId, replyDecision))
     : null;
 
   /*

@@ -1,0 +1,28 @@
+type Obj = Record<string, unknown>;
+export type LandingRow = {
+  repo: string; number: number; opened: string; pass: string | null; merged: string; live: string | null;
+  reviewed: "yes" | "no" | "before opening";
+  review_ms: number | null; to_merge_ms: number | null; to_live_ms: number | null; total_ms: number | null; open_to_merge_ms: number;
+  fail_rounds: number; ci_queued_ms: number; ci_running_ms: number; main_queued_ms: number; main_running_ms: number;
+};
+export const PASS_RE: RegExp;
+export const FAIL_RE: RegExp;
+export const VERDICT_RE: RegExp;
+export const BYPASS_RE: RegExp;
+export const DEPLOY_RE: RegExp;
+export function verdictOf(body?: string): "pass" | "fail" | null;
+export function passAt(pr: Obj): number | null;
+export function failRounds(pr: Obj): number;
+export function ciWaits(suites: Obj[] | undefined): { queued: number; running: number; jobs: number };
+export function liveAt(pr: Obj): number | null;
+export function prRow(pr: Obj): LandingRow;
+export function median(xs: Array<number | null>): number | null;
+export function dur(ms: number | null | undefined): string;
+export function weekMeasures(rows: LandingRow[]): { prs: number; live: number; landed_in_hour_pct: number | null; live_in_day_pct: number | null };
+export function sectionBody(rows: LandingRow[], opts?: { days?: number; unreadable?: string[]; privateRepos?: string[] }): { title: string; lines: string[]; measures: ReturnType<typeof weekMeasures> };
+export function weekLines(rows: LandingRow[], opts?: { days?: number; unreadable?: string[]; privateRepos?: string[] }): string[];
+export function expectedRepos(map: unknown): string[];
+export function graphql(query: string, variables?: Obj, opts?: { fetchImpl?: (url: string, init: Obj) => Promise<Response>; tok?: string; wait?: (ms: number) => Promise<unknown> }): Promise<any>;
+export function readWeek(opts?: { days?: number; now?: number; owner?: string; expected?: string[]; gql?: (q: string, v?: Obj) => Promise<any>; isPublic?: (owner: string, name: string) => Promise<boolean> }): Promise<{ repos: number; unreadable: string[]; privateRepos: string[]; rows: LandingRow[] }>;
+export function isPublicRepo(owner: string, name: string, fetchImpl?: (url: string, init: Obj) => Promise<{ status: number }>): Promise<boolean>;
+export function endOfRun(r: { unreadable?: string[]; privateRepos?: string[] }): string | null;

@@ -190,10 +190,34 @@ async function shoot(b, url, { width, height, scheme, file, focus = [], focusFil
     if (!(await centre())) { focused.push({ text, tap, file: null }); continue; }
     if (tap) {
       tapped = true;
+      // Watch what the tap changes, so the shot is centred on the message it shows, wherever that
+      // lands (22 Nov 2026: a preview message below a kit list fell under the shot's cut).
+      // Elements the tap adds or unhides rank above class/style churn (a ticking timer, a carousel);
+      // the tapped button itself (its "Adding…" label), what holds it, html and body never count.
+      await el.evaluate((btn) => {
+        const strong = [], weak = [];
+        const note = (n, list) => { const e = n.nodeType === 1 ? n : n.parentElement; if (e) list.push(e); };
+        const obs = new MutationObserver((ms) => ms.forEach((m) => {
+          if (m.type === "childList") m.addedNodes.forEach((n) => note(n, strong));
+          else if (m.type === "attributes" && (m.attributeName === "hidden" || m.attributeName === "open")) note(m.target, strong);
+          else note(m.target, m.type === "characterData" ? strong : weak);
+        }));
+        obs.observe(document.body, { subtree: true, childList: true, characterData: true, attributes: true, attributeFilter: ["hidden", "style", "class", "open"] });
+        window.__srTap = { btn, strong, weak, obs };
+      }).catch(() => {});
       if (!(await el.click({ timeout: 5_000 }).then(() => true, () => false))) { focused.push({ text, tap, file: null }); continue; }
       await page.waitForLoadState("networkidle", { timeout: 10_000 }).catch(() => {});
       await page.waitForTimeout(1_500);
-      await centre();
+      // The last such element that now shows text; the tapped button itself if none (a link tap that
+      // left the page, or a tap that changed nothing visible).
+      const shown = await page.evaluate(() => {
+        const t = window.__srTap; if (!t) return false;
+        t.obs.disconnect();
+        const ok = (e) => e.isConnected && e !== document.body && e !== document.documentElement && !(t.btn.isConnected && (e === t.btn || e.contains(t.btn) || t.btn.contains(e))) && e.innerText?.trim() && e.getClientRects().length;
+        const e = t.strong.filter(ok).at(-1) ?? t.weak.filter(ok).at(-1); if (!e) return false;
+        e.scrollIntoView({ block: "center" }); return true;
+      }).catch(() => false);
+      if (!shown) await centre();
     }
     focused.push({ text, tap, file: (await viewShot(f)) ? f : null });
   }

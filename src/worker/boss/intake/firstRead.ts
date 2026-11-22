@@ -30,7 +30,8 @@ import { routeIsBilled } from "../backends/guard";
 import { claimFreeSearch, centralDay } from "../research/searchQuota";
 import { freeDayStartedAt, recordOutcome } from "../router/experience";
 import { READ_MODES, type ReplyMode } from "../../../shared/boss/repoChange/lane.mjs";
-import { readJsonObject } from "../router/types";
+import { readJsonObject, type JsonOutput } from "../router/types";
+import { privateLexicon, scanForModelAccess } from "../router/modelAccess";
 
 export const FIRST_READ_SERVICE = "svc_workers_ai_first_read";
 /** Workers AI first reads a day (Central). Also in FREE_ROUTES; the two are pinned together by test. */
@@ -99,7 +100,7 @@ export interface FirstRead {
 }
 
 /** What a model is: one call, the text back. Tests pass their own. */
-export type Rung = { id: string; call: (prompt: string, signal: AbortSignal) => Promise<string>; workersAi?: boolean; /** The `models` row, so a spent quota is remembered. */ modelId?: string };
+export type Rung = { id: string; call: (prompt: string, signal: AbortSignal, json?: JsonOutput) => Promise<string>; workersAi?: boolean; /** The `models` row, so a spent quota is remembered. */ modelId?: string };
 
 const norm = (s: string): string => s.toLowerCase().replace(/[“”"'‘’`]/g, "").replace(/\s+/g, " ").trim().replace(/^[\s\-–—•*:.,;!?]+|[\s\-–—•*:.,;!?]+$/g, "");
 const unquote = (s: string) => s.trim().replace(/^["“]|["”]$/g, "").trim();
@@ -283,8 +284,8 @@ export async function freeRungs(env: Env): Promise<Rung[]> {
     rungs.push({
       id: r.slug,
       modelId: r.id,
-      call: async (prompt, signal) => (await wiring.adapter.complete(
-        { modelSlug: r.slug, messages: [{ role: "user", content: prompt }], maxOutputTokens: 1200, temperature: 0, json: BRIEF_JSON, signal } as never,
+      call: async (prompt, signal, json = BRIEF_JSON) => (await wiring.adapter.complete(
+        { modelSlug: r.slug, messages: [{ role: "user", content: prompt }], maxOutputTokens: 1200, temperature: 0, json, signal } as never,
         { baseUrl: wiring.baseUrl, apiKey: cred.apiKey, ai: cred.ai },
       )).text,
     });
@@ -295,8 +296,8 @@ export async function freeRungs(env: Env): Promise<Rung[]> {
     rungs.push({
       id: WORKERS_AI_FIRST_READ_MODEL,
       workersAi: true,
-      call: async (prompt, signal) => (await wa.adapter.complete(
-        { modelSlug: WORKERS_AI_FIRST_READ_MODEL, messages: [{ role: "user", content: prompt }], maxOutputTokens: 1200, temperature: 0, json: BRIEF_JSON, signal } as never,
+      call: async (prompt, signal, json = BRIEF_JSON) => (await wa.adapter.complete(
+        { modelSlug: WORKERS_AI_FIRST_READ_MODEL, messages: [{ role: "user", content: prompt }], maxOutputTokens: 1200, temperature: 0, json, signal } as never,
         { baseUrl: wa.baseUrl, ai: waCred.ai },
       )).text,
     });
@@ -357,20 +358,36 @@ let rungsOverride: Rung[] | null = null;
 /** Tests swap in their own rungs (the invitations seam's shape); null restores the real ladder. */
 export function setFirstReadRungs(r: Rung[] | null): void { rungsOverride = r; }
 
+/** One walk of the free ladder: the first rung whose answer `read` accepts wins. */
+export interface Ladder<T> { value: T | null; reader: string | null; tried: string[]; stop: string | null }
+
 /**
- * Walk the free ladder once. `dry` reads without claiming a Workers AI slot (it peeks at the count,
- * so the dry run writes nothing). Never throws.
+ * THE ONE FREE MODEL READER (eng sweep rows 7-8, 22 Nov 2026). Every reading of her words or of a reply
+ * to her (the first read, and each door's meaning: `meaning.ts`) walks this ladder with its own schema
+ * and its own check. `read` turns an answer into a value, or says why it was passed over. `dry` reads
+ * without claiming a Workers AI slot. Never throws.
+ *
+ * PRIVATE TEXT NEVER REACHES A FREE RUNG, BY DEFAULT (private-data-routing; fresh review of #510, F3). Every
+ * rung may train on what it reads, so a prompt the router's own content scan would hold to a private
+ * model is not sent at all: the ladder answers nothing and its stop says why, and the caller's keywords
+ * read it. A lexicon that cannot be built counts as a hit (fail closed). A caller turns the scan off only
+ * by naming the ruling that lets it (`privateScanOff`); the first read is the one that does.
  */
-export async function firstRead(
+export async function freeLadder<T>(
   env: Env,
-  input: { subject: string; words: string; files?: readonly string[]; now?: number; dry?: boolean; mailId?: string | null; onlyRung?: string | null },
+  input: { prompt: string; json: JsonOutput; read: (text: string) => T | string; budgetMs?: number; now?: number; dry?: boolean; onlyRung?: string | null; privateScanOff?: string },
   rungs?: Rung[],
-): Promise<FirstRead> {
+): Promise<Ladder<T>> {
   const now = input.now ?? Date.now();
-  const out: FirstRead = { brief: null, reader: null, tried: [], stop: null };
-  if (!input.words.trim()) return out;
-  const files = input.files ?? [];
-  const prompt = briefPrompt({ subject: input.subject, words: input.words, files });
+  const budget = input.budgetMs ?? FIRST_READ_BUDGET_MS;
+  const out: Ladder<T> = { value: null, reader: null, tried: [], stop: null };
+  const { prompt, json } = input;
+  if (!input.privateScanOff?.trim()) {
+    const scan = await privateLexicon(env.DB)
+      .then((lex) => scanForModelAccess([{ role: "user", content: prompt }], lex))
+      .catch(() => ({ privateOnly: true, kinds: ["the private scan could not run"] }));
+    if (scan.privateOnly) { out.stop = `kept off the free models: ${scan.kinds.join(", ")}`; return out; }
+  }
   const started = Date.now();
   let ladder: Rung[];
   try { ladder = rungs ?? rungsOverride ?? await freeRungs(env); } catch { ladder = []; }
@@ -381,7 +398,7 @@ export async function firstRead(
    * Gemini rungs ran to their 8 to 12 s deadlines one after the other and the nine free rungs behind
    * them were "out of time (kept for Workers AI)"). Now: a rung whose quota is spent is skipped at no
    * cost; the rest are asked FREE_AT_ONCE at a time, each with a fair share of the free budget (the
-   * whole budget less WORKERS_AI_RESERVE_MS), and the first that quotes her wins and stops the others.
+   * whole budget less WORKERS_AI_RESERVE_MS), and the first accepted answer wins and stops the others.
    * Workers AI is the backstop, after them, with what is left.
    */
   const spent = await spentRungs(env, now);
@@ -392,33 +409,36 @@ export async function firstRead(
     else free.push(r);
   }
   const backstop = ladder.filter((x) => x.workersAi);
-  const freeEnd = started + FIRST_READ_BUDGET_MS - (backstop.length ? WORKERS_AI_RESERVE_MS : 0);
+  const reserve = backstop.length ? Math.min(WORKERS_AI_RESERVE_MS, Math.floor(budget / 3)) : 0;
+  const freeEnd = started + budget - reserve;
   const share = free.length
     ? Math.min(FIRST_READ_ATTEMPT_MS, Math.max(MIN_RUNG_MS, Math.floor(((freeEnd - Date.now()) * Math.min(FREE_AT_ONCE, free.length)) / free.length)))
     : 0;
   const results: Array<string | null> = free.map(() => null);
   const stop = new AbortController();
+  let done = false;
   let next = 0;
+  const accept = (rung: Rung, text: string): string => {
+    const v = input.read(text);
+    if (typeof v === "string") return `${rung.id}: ${v}`;
+    out.value = v; out.reader = rung.id; done = true;
+    return `${rung.id}: read`;
+  };
   const ask = async (): Promise<void> => {
-    while (!out.brief && next < free.length) {
+    while (!done && next < free.length) {
       const i = next++;
       const rung = free[i]!;
       const left = freeEnd - Date.now();
       if (left < 1500) { results[i] = `${rung.id}: out of time${backstop.length ? " (kept for Workers AI)" : ""}`; continue; }
       try {
-        const text = await withDeadline(Math.min(share, left), (signal) => rung.call(prompt, signal), stop.signal);
-        if (out.brief) { results[i] = `${rung.id}: answered after another read`; continue; }
-        const brief = readBrief(text, input.words, files);
-        if (typeof brief === "string") { results[i] = `${rung.id}: ${brief}`; continue; }
-        if (!brief.asks.length && !brief.questions.length && !brief.unclear.length && !brief.holds.length && !brief.decision) { results[i] = `${rung.id}: listed nothing`; continue; }
-        out.brief = brief;
-        out.reader = rung.id;
-        results[i] = `${rung.id}: read`;
-        stop.abort();
+        const text = await withDeadline(Math.min(share, left), (signal) => rung.call(prompt, signal, json), stop.signal);
+        if (done) { results[i] = `${rung.id}: answered after another read`; continue; }
+        results[i] = accept(rung, text);
+        if (done) stop.abort();
       } catch (err) {
         const msg = (err instanceof Error ? err.message : String(err));
         results[i] = `${rung.id}: ${msg.slice(0, 120)}`;
-        const until = out.brief ? null : quotaUntil(msg, Date.now());
+        const until = done ? null : quotaUntil(msg, Date.now());
         if (until && rung.modelId && !input.dry) {
           await recordOutcome(env.DB, { taskKind: QUOTA_KIND, modelId: rung.modelId, outcome: "rejected", source: "router", lane: "ops", note: `until=${until} ${msg.slice(0, 200)}` }).catch(() => false);
         }
@@ -427,8 +447,8 @@ export async function firstRead(
   };
   await Promise.all(Array.from({ length: Math.min(FREE_AT_ONCE, free.length) }, ask));
   out.tried.push(...results.filter((r): r is string => r !== null));
-  for (const rung of out.brief ? [] : backstop) {
-    const left = started + FIRST_READ_BUDGET_MS - Date.now();
+  for (const rung of done ? [] : backstop) {
+    const left = started + budget - Date.now();
     if (left < 1500) { out.tried.push(`${rung.id}: out of time`); break; }
     const cap = input.dry ? await peekCap(env, now) : await claimFreeSearch(env.DB, FIRST_READ_SERVICE, now).catch(() => ({ ok: false, used: 0, cap: 0 }));
     if (!cap.ok) {
@@ -437,18 +457,38 @@ export async function firstRead(
       continue;
     }
     try {
-      const text = await withDeadline(Math.min(FIRST_READ_ATTEMPT_MS, left), (signal) => rung.call(prompt, signal));
-      const brief = readBrief(text, input.words, files);
-      if (typeof brief === "string") { out.tried.push(`${rung.id}: ${brief}`); continue; }
-      if (!brief.asks.length && !brief.questions.length && !brief.unclear.length && !brief.holds.length && !brief.decision) { out.tried.push(`${rung.id}: listed nothing`); continue; }
-      out.brief = brief;
-      out.reader = rung.id;
-      out.tried.push(`${rung.id}: read`);
-      break;
+      const text = await withDeadline(Math.min(FIRST_READ_ATTEMPT_MS, left), (signal) => rung.call(prompt, signal, json));
+      out.tried.push(accept(rung, text));
+      if (done) break;
     } catch (err) {
       out.tried.push(`${rung.id}: ${(err instanceof Error ? err.message : String(err)).slice(0, 120)}`);
     }
   }
+  return out;
+}
+
+/** Why the first read alone skips the private scan: her ruling, quoted in this file's header ("IT IS NOT BLOCKED BY THE PRIVATE-TERM CHECK"). */
+export const FIRST_READ_SCAN_OFF = "owner ruling 15 Nov 2026: Boss OS ignores the private-email rules for its own first read (LP names here are prospects); see firstRead.ts header";
+
+/** Walk the free ladder once for the brief. `dry` reads without claiming a Workers AI slot. Never throws. */
+export async function firstRead(
+  env: Env,
+  input: { subject: string; words: string; files?: readonly string[]; now?: number; dry?: boolean; mailId?: string | null; onlyRung?: string | null },
+  rungs?: Rung[],
+): Promise<FirstRead> {
+  if (!input.words.trim()) return { brief: null, reader: null, tried: [], stop: null };
+  const files = input.files ?? [];
+  const walk = await freeLadder(env, {
+    prompt: briefPrompt({ subject: input.subject, words: input.words, files }), json: BRIEF_JSON, now: input.now, dry: input.dry, onlyRung: input.onlyRung,
+    privateScanOff: FIRST_READ_SCAN_OFF,
+    read: (text) => {
+      const brief = readBrief(text, input.words, files);
+      if (typeof brief === "string") return brief;
+      if (!brief.asks.length && !brief.questions.length && !brief.unclear.length && !brief.holds.length && !brief.decision) return "listed nothing";
+      return brief;
+    },
+  }, rungs);
+  const out: FirstRead = { brief: walk.value, reader: walk.reader, tried: walk.tried, stop: walk.stop };
   if (!input.dry) {
     await logEvent(env.DB, {
       level: out.brief ? "info" : "warn", scope: "intake", event: "boss_mail_first_read", lane: "ops", entityId: input.mailId ?? undefined,

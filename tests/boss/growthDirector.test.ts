@@ -420,6 +420,19 @@ describe("the Director owns the older work on its roster (22 Nov 2026)", () => {
     await env.DB.exec("DELETE FROM owner_open_loops WHERE id IN ('olp_lp1','olp_hers1','olp_cust1')");
   }, 60_000);
 
+  it("a Spry Labs company judges its own rows, which are filed under the spry brain; another entry's list never reaches it", async () => {
+    await seedRow("olp_s1", "spry", "claude", "Carousels: start posting");
+    await reading("ap-sales", "approvalprep", "sales", "site", 1, dayIdInZone(NOW)); // read, so it reaches the model
+    await brain("spry", SPRY.replace("- limits: R-ADV-13\n", "- limits: R-ADV-13\n- linked to-dos: olp_s1 (screenshot carousels, start posting)\n"));
+    const seen = await week({ ...DECISION, queue: [], proposals: [], linked: [{ id: "olp_s1", verdict: "keep", why: "Carousels go out twice a week" }] }, NOW);
+    expect(seen.filter((t) => /olp_s1: screenshot carousels, start posting/.test(t))).toHaveLength(1); // ApprovalPrep's prompt only
+    expect(await getRow("olp_s1")).toEqual({ status: "open", next_step: `Growth Director, ${dayIdInZone(NOW)}: keep. Carousels go out twice a week\nRender the pictures after 6 PM.` });
+    const acts = (await decisions()).filter((d) => JSON.parse(d.actions).some((a: any) => a.kind === "linked" && a.id === "olp_s1")).map((d) => d.business);
+    expect(acts).toEqual(["approvalprep"]);
+    await env.DB.exec("DELETE FROM owner_open_loops WHERE id = 'olp_s1'");
+    await brain("spry", SPRY);
+  }, 60_000);
+
   it("no answer, or an answer with no verdicts, leaves the rows untouched", async () => {
     await seedRow("olp_q1");
     await brain("porch-and-party", PNP + "- linked to-dos: olp_q1\n");
