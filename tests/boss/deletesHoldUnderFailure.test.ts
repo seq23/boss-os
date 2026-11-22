@@ -11,15 +11,15 @@ import { env } from "cloudflare:test";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { takeSnapshot, pruneSnapshots } from "../../src/worker/boss/routes/vault";
 import { expireSecretHandoffs } from "../../src/worker/boss/service/secretHandoff";
-import { importAlmanac, MAX_IMPORT_EVENTS } from "../../src/worker/boss/spirit/almanac_import";
+import { importAlmanac, MAX_IMPORT_EVENTS, HORIZON_MONTHS } from "../../src/worker/boss/spirit/almanac_import";
 import { dayIdInZone } from "../../src/shared/boss/timezone";
 import { apiJson, insertMemory, row, all } from "./helpers";
 
 const triggers: string[] = [];
-async function failInsertsOn(table: string) {
+async function failInsertsOn(table: string, when = "", on = "INSERT") {
   const name = `fail_${table}_${triggers.length}`;
   await env.DB.prepare(
-    `CREATE TRIGGER ${name} BEFORE INSERT ON ${table} BEGIN SELECT RAISE(ABORT, 'simulated outage'); END`,
+    `CREATE TRIGGER ${name} BEFORE ${on} ON ${table} ${when ? `WHEN ${when} ` : ""}BEGIN SELECT RAISE(ABORT, 'simulated outage'); END`,
   ).run();
   triggers.push(name);
 }
@@ -97,8 +97,50 @@ describe("vault restore and prune (routes/vault.ts)", () => {
       mode: "replace",
       confirm: "REPLACE",
     });
-    expect(status).toBe(201);
+    expect(status).toBe(422); // it would write nothing, so it is refused
     expect(await row(`SELECT id FROM memory_items WHERE id = ?`, kept)).toBeTruthy();
+  });
+
+  it("a replace whose rows fit no column of the schema is refused and wipes nothing", async () => {
+    const kept = await insertMemory({ title: "Kept through rows that fit nothing" });
+    const { status, body } = await restore({
+      payload: JSON.stringify({ tables: { memory_items: [{ bogus: 1 }] } }),
+      mode: "replace",
+      confirm: "REPLACE",
+    });
+    expect(status).toBe(422);
+    expect(body.error).toMatch(/fits this schema|no row this schema can write/);
+    expect(await row(`SELECT id FROM memory_items WHERE id = ?`, kept)).toBeTruthy();
+  });
+
+  it("one table whose rows fit nothing is refused even beside a table that writes", async () => {
+    const kept = await insertMemory({ title: "Kept beside a writable table" });
+    const lanes = await all<Record<string, unknown>>(`SELECT * FROM lanes`);
+    const { status } = await restore({
+      payload: JSON.stringify({ tables: { lanes, memory_items: [{ bogus: 1 }] } }),
+      mode: "replace",
+      confirm: "REPLACE",
+    });
+    expect(status).toBe(422);
+    expect(await row(`SELECT id FROM memory_items WHERE id = ?`, kept)).toBeTruthy();
+  });
+
+  it("a replace whose record cannot be written leaves every table as it was (never replaced unrecorded)", async () => {
+    const snapshot = await takeSnapshot(env, "record-outage");
+    const added = await insertMemory({ title: "Added after the snapshot" });
+    await failInsertsOn("vault_restores", "NEW.status = 'applied'");
+    const { status } = await restore({ snapshot_id: snapshot.id, mode: "replace", confirm: "REPLACE" });
+    expect(status).not.toBe(201);
+    expect(await row(`SELECT id FROM memory_items WHERE id = ?`, added)).toBeTruthy();
+    expect(await all(`SELECT id FROM vault_restores WHERE status = 'applied'`)).toEqual([]);
+  });
+
+  it("an applied replace leaves its record and its audit row after the restore", async () => {
+    const snapshot = await takeSnapshot(env, "recorded");
+    const { status, body } = await restore({ snapshot_id: snapshot.id, mode: "replace", confirm: "REPLACE" });
+    expect(status).toBe(201);
+    expect(await row(`SELECT id FROM vault_restores WHERE id = ? AND status = 'applied'`, body.data.id)).toBeTruthy();
+    expect(await row(`SELECT id FROM audit_log WHERE entity_id = ? AND action = 'restore_replace'`, body.data.id)).toBeTruthy();
   });
 
   it("a replace whose write fails part-way leaves every table as it was", async () => {
@@ -122,6 +164,29 @@ describe("vault restore and prune (routes/vault.ts)", () => {
     expect(result.failures.length).toBe(2);
     expect((await all(`SELECT id FROM vault_snapshots WHERE status = 'complete'`)).length).toBe(3);
   });
+
+  it("a prune whose record cannot be updated never deletes the file a complete snapshot points at", async () => {
+    for (let i = 0; i < 3; i++) await takeSnapshot(env, `prune-record-${i}`);
+    await failInsertsOn("vault_snapshots", "", "UPDATE");
+    const result = await pruneSnapshots(env, 1);
+    expect(result.deleted).toBe(0);
+    const complete = await all<{ r2_key: string }>(`SELECT r2_key FROM vault_snapshots WHERE status = 'complete'`);
+    expect(complete.length).toBe(3);
+    for (const s of complete) expect(await env.VAULT.head(s.r2_key)).not.toBeNull();
+  });
+
+  it("a prune that stops after the file is gone leaves no complete row behind, and the next prune finishes it", async () => {
+    for (let i = 0; i < 3; i++) await takeSnapshot(env, `prune-half-${i}`);
+    await failInsertsOn("vault_snapshots", "NEW.status = 'pruned'", "UPDATE");
+    await pruneSnapshots(env, 1);
+    for (const s of await all<{ r2_key: string }>(`SELECT r2_key FROM vault_snapshots WHERE status = 'complete'`)) {
+      expect(await env.VAULT.head(s.r2_key)).not.toBeNull();
+    }
+    while (triggers.length) await env.DB.prepare(`DROP TRIGGER IF EXISTS ${triggers.pop()}`).run();
+    await pruneSnapshots(env, 1);
+    expect(await all(`SELECT id FROM vault_snapshots WHERE status = 'pruning'`)).toEqual([]);
+    expect((await all(`SELECT id FROM vault_snapshots WHERE status = 'pruned'`)).length).toBe(2);
+  });
 });
 
 describe("removing a contribution (routes/spirit.ts)", () => {
@@ -141,6 +206,13 @@ describe("removing a contribution (routes/spirit.ts)", () => {
     const { status } = await apiJson(`/api/spirit/contributions/${id}`, { method: "DELETE" });
     expect(status).toBeGreaterThanOrEqual(500);
     expect(await row(`SELECT id FROM contributions WHERE id = ?`, id)).toBeTruthy();
+  });
+
+  it("a double tap records one removal, not two", async () => {
+    const id = await add("Tapped twice");
+    const statuses = (await Promise.all([1, 2].map(() => apiJson(`/api/spirit/contributions/${id}`, { method: "DELETE" })))).map((r) => r.status).sort();
+    expect(statuses).toEqual([200, 404]);
+    expect(await all(`SELECT id FROM audit_log WHERE entity_type = 'contribution' AND entity_id = ? AND action = 'removed'`, id)).toHaveLength(1);
   });
 });
 
@@ -177,6 +249,35 @@ describe("refreshing the hand-entered almanac (spirit/almanac_import.ts)", () =>
     await failInsertsOn("astro_calendar"); // the upsert of an existing row is an insert first
 
     await expect(importAlmanac(env.DB, paste("Mercury retrograde (corrected)", true))).rejects.toThrow();
+    expect(await imported()).toEqual(before);
+  });
+
+  it("a refresh whose audit row cannot be written leaves the old copy whole", async () => {
+    await importAlmanac(env.DB, paste("Mercury retrograde (first copy)"));
+    const before = await imported();
+    await failInsertsOn("audit_log");
+    const { status } = await apiJson("/api/spirit/astro/almanac/import", { method: "POST", body: paste("Mercury retrograde (corrected)", true) });
+    expect(status).toBeGreaterThanOrEqual(500);
+    expect(await imported()).toEqual(before);
+  });
+
+  it("a refresh records what it replaced, counted by the delete itself", async () => {
+    await importAlmanac(env.DB, paste("Mercury retrograde (first copy)"));
+    const result = await importAlmanac(env.DB, paste("Mercury retrograde (corrected)", true));
+    expect(result.replaced).toBe(2);
+    const audits = await all<{ detail: string }>(`SELECT detail FROM audit_log WHERE entity_type = 'astro_calendar' AND action = 'imported' ORDER BY ts`);
+    expect(audits.map((a) => JSON.parse(a.detail).replaced)).toEqual([0, 2]);
+  });
+
+  it("a refresh spanning far beyond the horizon (a mistyped year) is refused before anything is deleted", async () => {
+    await importAlmanac(env.DB, paste("Mercury retrograde (first copy)"));
+    const before = await imported();
+    const far = START + (HORIZON_MONTHS + 24) * 31 * DAY;
+    const events = [
+      { kind: "retrograde", label: "Typed right", starts_at: START - 60 * DAY, ends_at: START - 40 * DAY },
+      { kind: "retrograde", label: "Mistyped year", starts_at: far, ends_at: far + 20 * DAY },
+    ];
+    await expect(importAlmanac(env.DB, { source_name: "Mistyped", replace: true, events })).rejects.toThrow(/spans at most/);
     expect(await imported()).toEqual(before);
   });
 

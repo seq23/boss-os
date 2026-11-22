@@ -167,7 +167,7 @@ export function check({ page, routes }) {
       `${ROUTES} has no DELETE /contributions/:id. The four accidental rows had to be removed from ` +
       `production with a terminal, because the page that wrote them could not unwrite them.`,
     );
-  } else if (!/\baudit(?:Statement)?\(/.test(del[0])) {
+  } else if (!/\baudit(?:Statement|OfPrevious)?\(/.test(del[0])) {
     problems.push(
       `${ROUTES}'s DELETE /contributions/:id writes no audit_log row. Removing a record of her own ` +
       `practice is hers to do and must leave a trace — that is what separates a correction from a ` +
