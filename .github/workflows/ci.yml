@@ -48,8 +48,47 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  # ─── WHAT FAILED LAST TIME RUNS FIRST (owner, 22 Nov 2026) ─────────────
+  # On a pull request whose previous run FAILED, the suites that failed there run first (about two
+  # minutes); red stops here, green lets the full gate below run unchanged. Anything else (no earlier
+  # run, it passed, a scan or build failed) skips straight on in seconds. scripts/ops/recheck-failed.mjs.
+  recheck:
+    name: What failed last time
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    permissions:
+      contents: read
+      actions: read
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Which suites failed on the previous commit
+        id: plan
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: node scripts/ops/recheck-failed.mjs --plan
+
+      - name: Set up Node
+        if: steps.plan.outputs.files != ''
+        uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+
+      - name: Install (reproducible, from package-lock)
+        if: steps.plan.outputs.files != ''
+        run: npm ci
+
+      - name: Run them first
+        if: steps.plan.outputs.files != ''
+        env:
+          RECHECK_FILES: ${{ steps.plan.outputs.files }}
+        run: node scripts/ops/recheck-failed.mjs --run
+
   validate:
     name: Typecheck, scans, and client build
+    needs: recheck
     runs-on: ubuntu-latest
     # Normal: ~5m50s on main by 8 Nov 2026 (it was ~2m30s; the scans grew). At 6 minutes it was cancelled
     # on a green run (PR #360, 6m03s), so the hang guard is the merge gate's ten-minute ceiling (the-merge-gate-is-fast.mjs).
@@ -179,6 +218,7 @@ jobs:
 
   unit:
     name: Unit and integration tests (shard ${{ matrix.shard }}/4)
+    needs: recheck
     runs-on: ubuntu-latest
     # Normal: ~2m30s a shard (7m55s serial on 21 Sep 2026, split four ways, plus install).
     timeout-minutes: 6
@@ -218,6 +258,7 @@ jobs:
 
   boss:
     name: Boss OS suites (shard ${{ matrix.shard }}/3)
+    needs: recheck
     runs-on: ubuntu-latest
     # Normal: ~3–4m a shard. Two shards split 81 files 41/40 but 811/696 tests: shard 2 took 7m37s
     # on run 35653650867 while shard 1 took 3m. Three shards keep the longest under the gate's target.
