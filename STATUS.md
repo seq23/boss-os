@@ -667,7 +667,7 @@ real one and cannot reach production.
 
 `npm run validate` plus ten static validators, all of which run in CI:
 
-`classification` · `lists-speak` · `css-classes` · `css-variables` · `brand` · `design-tokens` ·
+`classification` · `css-classes` · `css-variables` · `brand` · `design-tokens` ·
 `sql` · `authority` · `ai-boundary` · `network-boundary`
 
 Each has its own self-test. A validator that cannot demonstrate it still catches what it exists to

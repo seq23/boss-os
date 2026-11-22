@@ -2,7 +2,6 @@ import { describe, expect, it } from "vitest";
 import { SKILL_LIBRARY, guidanceBlock, skillsForMachines } from "@shared/skills/library";
 import { ACTIVE_MACHINES, MACHINE_REGISTRY, isRetiredMachine } from "@shared/registry/machines";
 import { AI_EMPLOYEE_ROSTER } from "@shared/registry/aiEmployees";
-import { DEPARTMENTS_COVER_ALL_DOMAINS, departmentDef } from "@shared/registry/departments";
 
 /**
  * The firm's methods, and the two ways a written-down method rots.
@@ -65,12 +64,6 @@ describe("the skill library is attached to a real firm", () => {
     // And every active machine has somebody accountable for it — the state item 17 finished in.
     const seated = new Set(AI_EMPLOYEE_ROSTER.flatMap((e) => e.primaryMachineKeys));
     expect(ACTIVE_MACHINES.filter((m) => !seated.has(m.key)).map((m) => m.key)).toEqual([]);
-  });
-
-  it("gives every domain the machine registry uses a human name", () => {
-    // Otherwise the page falls back to shouting an enum, which is what it used to do.
-    expect(DEPARTMENTS_COVER_ALL_DOMAINS).toBe(true);
-    expect(departmentDef("INVESTMENT_OS").name).toBe("Investing");
   });
 });
 

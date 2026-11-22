@@ -34,7 +34,6 @@ const ROOT = "src/client";
  */
 const STYLESHEETS = [
   { prefix: "src/client/boss/", css: "src/client/boss/styles.css" },
-  { prefix: "src/client/", css: "src/client/styles.css" },
 ];
 
 function stylesheetFor(file) {

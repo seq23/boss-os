@@ -34,10 +34,9 @@
  * So: **an address on that domain is fine. A HOST is not.** Anything shaped like a URL, an origin,
  * or a bare `boss.westpeek.ventures` is a bug.
  *
- * Likewise, the chassis is still in this tree and `src/client/App.tsx` is West Peek OS's own shell.
- * West Peek's mark belongs in West Peek's app. What may not happen is Boss OS's entry document, its
- * manifest, its service worker or its icons carrying it — those are shared by both apps and served
- * on her domain.
+ * West Peek's mark belongs in West Peek's app (the copied fund screens were retired from this tree on
+ * 22 Nov 2026). What may not happen is Boss OS's entry document, its manifest, its service worker or
+ * its icons carrying it — those are served on her domain.
  *
  * RULE 0: a scan that examined no files is a broken scan, not a clean repo.
  *

@@ -13,7 +13,7 @@ describe("check:changed runs what the change can break (15 Nov 2026)", () => {
   it("every scan runs only when a path its own script names changed; a scan naming nothing, or a SLOW one, is left to CI", () => {
     const named = (f: string) => (f.includes("fast") ? `const ROOTS = ["src/client"];` : read());
     expect(SLOW).toContain("validate:agent-poll");
-    expect(scansFor(["src/client/App.tsx"], scripts, named)).toEqual({ run: ["validate:fast"], skipped: ["validate:agent-poll"] });
+    expect(scansFor(["src/client/main.tsx"], scripts, named)).toEqual({ run: ["validate:fast"], skipped: ["validate:agent-poll"] });
     expect(scansFor(["src/worker/index.ts"], scripts, named)).toEqual({ run: [], skipped: ["validate:fast", "validate:agent-poll"] });
     expect(scansFor(["scripts/validate/the-agent-polls-without-overlap.mjs"], scripts, named).run).toEqual([]);
     expect(scansFor(["package.json"], scripts, named).run).toEqual(["validate:fast"]);

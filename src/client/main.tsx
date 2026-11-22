@@ -1,51 +1,19 @@
 import React from "react";
 import { createRoot } from "react-dom/client";
+import { Moved } from "./Moved";
+import { surfaceFor } from "./surface";
 
 const root = createRoot(document.getElementById("root")!);
 
-/**
- * One bundle, two surfaces, and only one of them mounts.
- *
- * Boss OS arrived as a complete SPA - its own Shell, its own lock screen, its own nine tabs - and
- * the chassis it was ported into is still the West Peek fund OS. They are not merged in the UI for
- * the same reason they are not merged on the server: both define global CSS and both own the whole
- * screen, so loading them together would leave whichever style sheet lost the race silently
- * restyling the other app.
- *
- * So the import is DYNAMIC and exclusive. `/boss` and anything under it mounts Boss OS and loads
- * only Boss OS's styles; every other path mounts the chassis and loads only the chassis's. The
- * Worker already serves index.html for any non-/api path, so both are reachable as normal URLs.
- *
- * This is the interim shape, not the destination. When the fund domain is stripped - the same
- * finish line tests/boss/chassisTables.ts ratchets towards - Boss OS becomes the root app and this
- * branch goes away with it.
- */
 /*
- * WHICH APP MOUNTS IS DECIDED BY THE HOST, NOT ONLY THE PATH.
+ * WHICH SURFACE MOUNTS IS DECIDED BY THE HOST, NOT ONLY THE PATH (surface.ts says why).
  *
- * boss.sequoiataylor.com served West Peek Ventures' entire fund interface - branded West Peek,
- * asking the owner to sign in as you@westpeek.ventures, with Thesis, Dealflow, Portfolio and Fund
- * strategy in the sidebar - because this line defaulted to the chassis and only /boss escaped it.
- * That is one business's interface on another's domain, which is the exact thing the owner's
- * separation rule exists to prevent.
- *
- * IT HAD TO BE FIXED HERE, NOT ON THE SERVER. The first fix was a redirect in the Worker, and it
- * could never have run: Cloudflare's assets binding answers "/" directly and the fetch handler is
- * never invoked for it. Verified against production - the redirect deployed and "/" still returned
- * 200. The client is the only place that sees every navigation.
- *
- * BOSS_HOSTS is an allowlist rather than a pattern, because "does this look like a Boss host" is a
- * question with a wrong answer. Anywhere else - localhost, previews - keeps the old behaviour, so
- * the chassis's 129 E2E journeys still drive it at "/". They are the regression suite for the
- * domain being removed, and they go when it does.
+ * It has to be decided here, not on the server: Cloudflare's assets binding answers "/" directly
+ * and the fetch handler is never invoked for it (verified against production), so the client is
+ * the only place that sees every navigation. Boss OS is imported dynamically so the moved page
+ * never downloads it.
  */
-const BOSS_HOSTS = new Set(["boss.sequoiataylor.com"]);
-const isBoss =
-  BOSS_HOSTS.has(location.hostname) ||
-  location.pathname === "/boss" ||
-  location.pathname.startsWith("/boss/");
-
-if (isBoss) {
+if (surfaceFor(location.hostname, location.pathname) === "boss") {
   void (async () => {
     // A stylesheet is not load-bearing. Awaiting it unguarded meant one uncached CSS file offline
     // rejected before the app was even imported, and the reader got a blank page instead of an
@@ -59,15 +27,13 @@ if (isBoss) {
     );
   })();
 } else {
-  void (async () => {
-    await import("./styles.css").catch(() => {});
-    const { App } = await import("./App");
-    root.render(
-      <React.StrictMode>
-        <App />
-      </React.StrictMode>,
-    );
-  })();
+  // The retired West Peek fund screens (22 Nov 2026): a plain page naming where they went.
+  document.title = "This page has moved";
+  root.render(
+    <React.StrictMode>
+      <Moved hash={location.hash} />
+    </React.StrictMode>,
+  );
 }
 
 /*
