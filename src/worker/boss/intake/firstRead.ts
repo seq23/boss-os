@@ -30,6 +30,7 @@ import { routeIsBilled } from "../backends/guard";
 import { claimFreeSearch, centralDay } from "../research/searchQuota";
 import { freeDayStartedAt, recordOutcome } from "../router/experience";
 import { READ_MODES, type ReplyMode } from "../../../shared/boss/repoChange/lane.mjs";
+import { readJsonObject } from "../router/types";
 
 export const FIRST_READ_SERVICE = "svc_workers_ai_first_read";
 /** Workers AI first reads a day (Central). Also in FREE_ROUTES; the two are pinned together by test. */
@@ -103,18 +104,64 @@ export type Rung = { id: string; call: (prompt: string, signal: AbortSignal) => 
 const norm = (s: string): string => s.toLowerCase().replace(/[“”"'‘’`]/g, "").replace(/\s+/g, " ").trim().replace(/^[\s\-–—•*:.,;!?]+|[\s\-–—•*:.,;!?]+$/g, "");
 const unquote = (s: string) => s.trim().replace(/^["“]|["”]$/g, "").trim();
 
+/**
+ * THE SHAPE OF A FIRST READ (eng sweep row 8, 22 Nov 2026). The model answers one JSON object held to
+ * this schema by its provider's structured output (router/types.ts `json`), so the brief is read from
+ * fields, never fished out of `ASK:` / `DECISION:` labels in prose. Each ask says whether she wrote it
+ * or pasted it: the model reads that, where a keyword list over its own read used to guess it.
+ */
+const STR = { type: "string" } as const;
+const strList = { type: "array", items: STR } as const;
+export const BRIEF_SCHEMA = {
+  type: "object",
+  properties: {
+    asks: {
+      type: "array",
+      items: { type: "object", properties: { words: STR, from: { type: "string", enum: ["her", "pasted"] } }, required: ["words", "from"] },
+    },
+    holds: strList,
+    questions: strList,
+    unclear: {
+      type: "array",
+      items: { type: "object", properties: { words: STR, question: STR, best: STR }, required: ["words", "question"] },
+    },
+    files: {
+      type: "array",
+      items: { type: "object", properties: { filename: STR, purpose: STR }, required: ["filename", "purpose"] },
+    },
+    decision: {
+      type: "object",
+      properties: {
+        reply: { type: "string", enum: [...READ_MODES, "none"] },
+        answers: { type: "array", items: { type: "object", properties: { n: { type: "integer" }, text: STR }, required: ["n", "text"] } },
+        commands: {
+          type: "array",
+          items: {
+            type: "object",
+            properties: { kind: { type: "string", enum: [...COMMAND_KINDS] }, n: { type: "integer" }, text: STR, action: { type: "string", enum: [...COMMENT_ACTIONS] } },
+            required: ["kind", "text"],
+          },
+        },
+      },
+      required: ["reply", "answers", "commands"],
+    },
+  },
+  required: ["asks", "holds", "questions", "unclear", "decision"],
+} as const;
+export const BRIEF_JSON = { name: "first_read", schema: BRIEF_SCHEMA as unknown as Record<string, unknown> };
+
 /** The prompt. Pure. */
 export function briefPrompt(input: { subject: string; words: string; files: readonly string[] }): string {
   return [
-    "Sequoia, the owner, just emailed the work below to her assistant. Read it and list, line by line:",
-    "ASK: <her EXACT words> — one line per separate thing she asks for, copied unchanged (a phrase or sentence of hers, no rewording).",
-    "HOLD: <her EXACT words> — one line per real constraint: something that must NOT happen yet or must wait for her (only if she says so).",
-    "QUESTION: <her EXACT words> — one line per question she asks that the result must answer.",
-    "UNCLEAR: <her EXACT words> :: <the one question to ask her, written TO her as \"you\" (never \"she\"), ending in ?> :: <your best reading of what she means> — only when the work cannot be done right without asking her.",
-    ...(input.files.length ? ["FILE: <file name> :: <what it is for, from her email, under 15 words>", `Files: ${input.files.join(", ")}`] : []),
-    "Only sentences she wrote herself to the assistant count. Anything she pasted, forwarded or quoted (a report, an article, an earlier email, a signature) is MATERIAL for the work: never an ASK, HOLD, QUESTION or UNCLEAR line, however it is worded.",
-    "A greeting, thanks or remark is not an ask. Never invent, merge or summarise. If she asks for nothing, answer exactly: NONE",
-    'Always end with one line DECISION: followed by a JSON object with exactly {"reply":"approved|preview|forced|held|answers"|null,"answers":[{"n":number,"text":string}],"commands":[{"kind":string,"n":number|null,"text":string,"action"?:string}]}. "reply" is what her email decides when it answers an approval or a question she was sent: approved (go ahead as proposed), preview (build it but show her before it goes live), forced (only her exact words "approved to production"), held (stop, wait, not yet), answers (her own words decide, e.g. approved with a change). A doubt, a condition, a quote of someone else or a question is never approved or held. null when her email answers nothing. "answers" lists her answers to numbered items ("2: send it Monday" is n 2), in her words; empty when none. "commands" lists each plain-word command she gives, each as {"kind","n","text"} with "text" her exact words: drop (an item leaves her morning email for good; n = its number, else null), gate (her morning gate is done), grateful (text = what she is grateful for), public (text = the company she says is public), rule (a standing rule for the emails of the assistant, e.g. "never prep maybes"), nudge (text = the one email address to nudge), comment (n = the numbered comment, "action" one of approve|hide|ignore|reply_as_drafted|reply, text = her exact words about it; "approve 1 and 3, skip 2" is three commands), your_call (text = her words handing every comment to the proposed action). A doubt, a condition, a question or the words of someone else is never a command; empty when none.',
+    "Sequoia, the owner, just emailed the work below to her assistant. Read it and answer with one JSON object:",
+    '"asks": each separate thing she asks for, as {"words": her EXACT words copied unchanged (a phrase or sentence of hers, no rewording), "from": "her"}. A line she pasted, forwarded or quoted (a report, an article, an earlier email, a signature) that looks like an ask is listed with "from": "pasted".',
+    '"holds": her EXACT words for each real constraint: something that must NOT happen yet or must wait for her (only if she says so).',
+    '"questions": her EXACT words for each question she asks that the result must answer.',
+    '"unclear": only when the work cannot be done right without asking her: {"words": her EXACT words, "question": the one question to ask her, written TO her as "you" (never "she"), ending in ?, "best": your best reading of what she means}.',
+    ...(input.files.length ? [`"files": for each file, {"filename": its name, "purpose": what it is for, from her email, under 15 words}. Files: ${input.files.join(", ")}`] : []),
+    "Only sentences she wrote herself to the assistant count. Anything she pasted, forwarded or quoted is MATERIAL for the work: never a hold, question or unclear item, however it is worded.",
+    "A greeting, thanks or remark is not an ask. Never invent, merge or summarise. Empty lists when she asks for nothing.",
+    '"decision": {"reply", "answers", "commands"}. "reply" is what her email decides when it answers an approval or a question she was sent: approved (go ahead as proposed), preview (build it but show her before it goes live), forced (only her exact words "approved to production"), held (stop, wait, not yet), answers (her own words decide, e.g. approved with a change), none when her email answers nothing. A doubt, a condition, a quote of someone else, a negation ("not approved") or a question is never approved or held. "answers" lists her answers to numbered items ("2: send it Monday" is n 2), in her words; empty when none. "commands" lists each plain-word command she gives, each as {"kind","n","text"} with "text" her exact words: drop (an item leaves her morning email for good; n = its number, else leave n out), gate (her morning gate is done), grateful (text = what she is grateful for), public (text = the company she says is public), rule (a standing rule for the emails of the assistant, e.g. "never prep maybes"), nudge (text = the one email address to nudge), comment (n = the numbered comment, "action" one of approve|hide|ignore|reply_as_drafted|reply, text = her exact words about it; "approve 1 and 3, skip 2" is three commands), your_call (text = her words handing every comment to the proposed action). A doubt, a condition, a question or the words of someone else is never a command; empty when none.',
     "",
     `Subject: ${input.subject}`,
     "Email:",
@@ -122,70 +169,65 @@ export function briefPrompt(input: { subject: string; words: string; files: read
   ].join("\n");
 }
 
-/**
- * WHAT SHE PASTED IS NOT WHAT SHE ASKED (15 Nov 2026 production dry run, the 12 Sep iPhone email: two
- * sentences of hers above a pasted report, and the Workers AI rung listed 12 "asks", ten of them report
- * lines such as "The Middle East energy shock worsened again overnight."; the prompt alone did not stop
- * it). Every line passes the quote check, because the report IS in her email. So when a read lists more
- * than OVER_LISTED asks, only lines that ask for something stay: a request phrase anywhere, or a line
- * that opens on a doing word. A normal email's short list is never touched. Pure.
- */
-export const OVER_LISTED = 6;
-const REQUEST = /\b(?:please|make sure|can you|could you|would you|will you|i need|i want|i'd like|i would like|let'?s|we need|you need|need you|have to|has to)\b/i;
-const DOING = /^(?:pull|mimic|send|find|draft|write|book|schedule|call|email|text|set|add|remove|fix|check|plan|get|make|create|update|review|list|prepare|research|organi[sz]e|order|buy|cancel|move|keep|use|put|show|tell|ask|look|read|summari[sz]e|compare|pick|choose|start|stop|follow|reply|forward|share|invite|confirm|track|build|design|change|delete|round ?up|gather|collect|pay|file|sign|print|ship|post|publish|turn|bring|give|help|do|don'?t|never|always)\b/i;
-export function withoutPasted(asks: string[]): string[] {
-  if (asks.length <= OVER_LISTED) return asks;
-  return asks.filter((a) => REQUEST.test(a) || DOING.test(a.replace(/^[^A-Za-z]+/, "")) || /\bbut\s+(?:pull|send|find|make|use|keep|mimic)\b/i.test(a));
-}
+const list = (v: unknown): unknown[] => (Array.isArray(v) ? v : []);
+const str = (v: unknown): string => (typeof v === "string" ? v.trim() : "");
 
-/** The brief, keeping only lines that quote her (and files that are really attached). Pure. */
+/**
+ * The brief out of the model's JSON, keeping only what quotes her (and files really attached). Null
+ * when the answer is not one JSON object, or every item it listed fails the quote check. An ask the
+ * model marked as pasted is dropped: what she pasted is material, never an ask. Pure.
+ */
 export function parseBrief(text: string, words: string, files: readonly string[] = []): Brief | null {
+  const v = readJsonObject(text);
+  if (!v) return null;
   const body = norm(words);
-  const lines = String(text ?? "").replace(/<think>[\s\S]*?<\/think>/gi, "").split(/\r?\n/).map((l) => l.trim().replace(/^[-*•\d.)\s]+(?=[A-Z]+\s*:)/, "")).filter(Boolean);
   const hers = (s: string) => s.length >= 3 && body.includes(norm(s));
-  const pick = (label: string) => {
+  const quoted = (xs: unknown[]): string[] => {
     const out: string[] = [];
-    for (const l of lines) {
-      const v = new RegExp(`^${label}\\s*:\\s*(.+)$`, "i").exec(l)?.[1];
-      const w = v ? unquote(v) : "";
+    for (const x of xs) {
+      const w = unquote(str(x));
       if (w && hers(w) && !out.some((o) => norm(o) === norm(w))) out.push(w);
     }
     return out.slice(0, MAX_ITEMS);
   };
+  const askItems = list(v.asks).map((a) => (typeof a === "string" ? { words: a, from: "her" } : (a ?? {}) as { words?: unknown; from?: unknown }));
+  const asks = quoted(askItems.filter((a) => a.from !== "pasted").map((a) => a.words));
+  const pastedOnly = askItems.length > 0 && askItems.every((a) => a.from === "pasted");
   const unclear: Brief["unclear"] = [];
-  for (const l of lines) {
-    const m = /^UNCLEAR\s*:\s*(.+?)\s*::\s*(.+?)(?:\s*::\s*(.+))?$/i.exec(l);
-    if (!m) continue;
-    const w = unquote(m[1]!);
-    if (hers(w) && !unclear.some((u) => norm(u.words) === norm(w))) unclear.push({ words: w, missing: m[2]!.trim().slice(0, 200), best: m[3]?.trim().slice(0, 200) || null });
+  for (const u of list(v.unclear)) {
+    const o = (u ?? {}) as { words?: unknown; question?: unknown; best?: unknown };
+    const w = unquote(str(o.words));
+    const q = str(o.question);
+    if (w && q && hers(w) && !unclear.some((x) => norm(x.words) === norm(w))) unclear.push({ words: w, missing: q.slice(0, 200), best: str(o.best).slice(0, 200) || null });
   }
   const filesOut: Brief["files"] = [];
-  for (const l of lines) {
-    const m = /^FILE\s*:\s*(.+?)\s*::\s*(.+)$/i.exec(l);
-    const name = m ? files.find((f) => f.toLowerCase() === unquote(m[1]!).toLowerCase()) : undefined;
-    if (m && name && !filesOut.some((f) => f.filename === name)) filesOut.push({ filename: name, purpose: m[2]!.trim().slice(0, 200) });
+  for (const f of list(v.files)) {
+    const o = (f ?? {}) as { filename?: unknown; purpose?: unknown };
+    const name = files.find((x) => x.toLowerCase() === unquote(str(o.filename)).toLowerCase());
+    if (name && str(o.purpose) && !filesOut.some((x) => x.filename === name)) filesOut.push({ filename: name, purpose: str(o.purpose).slice(0, 200) });
   }
-  const brief: Brief = { asks: pick("ASK"), holds: pick("HOLD"), questions: pick("QUESTION"), unclear: unclear.slice(0, MAX_ITEMS), files: filesOut, decision: decisionOf(lines, words) };
-  const none = lines.some((l) => /^NONE\b/i.test(l));
-  if (!brief.asks.length && !brief.holds.length && !brief.questions.length && !brief.unclear.length && !none && !brief.decision) return null;
+  const brief: Brief = { asks, holds: quoted(list(v.holds)), questions: quoted(list(v.questions)), unclear: unclear.slice(0, MAX_ITEMS), files: filesOut, decision: decisionOf(v.decision, words) };
+  const listed = askItems.length + list(v.holds).length + list(v.questions).length + list(v.unclear).length;
+  const kept = brief.asks.length + brief.holds.length + brief.questions.length + brief.unclear.length;
+  // Something listed and nothing of it quotes her: no brief. Only pasted lines listed: the empty brief, said so by the ladder.
+  if (listed > 0 && kept === 0 && !pastedOnly && !decides(brief.decision)) return null;
   return brief;
 }
 
-/** Her DECISION line, read strictly: an answer or command that does not quote her, or a reading that is not one of five, is dropped. Null only when no DECISION line parsed. Pure. */
-export function decisionOf(lines: readonly string[], words: string): ReplyDecision | null {
-  const line = lines.find((l) => /^DECISION\s*:/i.test(l));
-  if (!line) return null;
-  let v: unknown;
-  try { v = JSON.parse(line.replace(/^DECISION\s*:\s*/i, "")); } catch { return null; }
-  if (!v || typeof v !== "object" || Array.isArray(v)) return null;
-  const d = v as { reply?: unknown; answers?: unknown; commands?: unknown };
+/** True when a decision says something: a reading, an answer or a command. An empty one is the model saying "nothing decided". */
+export const decides = (d: ReplyDecision | null | undefined): boolean => !!d && (d.reply !== null || d.answers.length > 0 || d.commands.length > 0);
+
+/** Her decision, read strictly: an answer or command that does not quote her, or a reading that is not one of five, is dropped. Null only when the answer carried no decision object. Pure. */
+export function decisionOf(value: unknown, words: string): ReplyDecision | null {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return null;
+  const d = value as { reply?: unknown; answers?: unknown; commands?: unknown };
   const reply = typeof d.reply === "string" && (READ_MODES as readonly string[]).includes(d.reply) ? (d.reply as ReplyMode) : null;
   const body = norm(words);
-  const answers = (Array.isArray(d.answers) ? d.answers : [])
-    .map((a) => ({ n: Number((a as { n?: unknown })?.n), text: String((a as { text?: unknown })?.text ?? "").trim() }))
+  const answers = list(d.answers)
+    .map((a) => ({ n: Number((a as { n?: unknown })?.n), text: str((a as { text?: unknown })?.text) }))
     .filter((a) => Number.isInteger(a.n) && a.n > 0 && a.n < 100 && a.text.length > 0 && body.includes(norm(a.text)))
     .slice(0, MAX_ITEMS);
-  const commands = (Array.isArray(d.commands) ? d.commands : [])
+  const commands = list(d.commands)
     .map((c) => {
       const o = (c ?? {}) as { kind?: unknown; n?: unknown; text?: unknown; action?: unknown };
       const n = o.n === null || o.n === undefined || o.n === "" ? null : Number(o.n);
@@ -233,7 +275,7 @@ export async function freeRungs(env: Env): Promise<Rung[]> {
       id: r.slug,
       modelId: r.id,
       call: async (prompt, signal) => (await wiring.adapter.complete(
-        { modelSlug: r.slug, messages: [{ role: "user", content: prompt }], maxOutputTokens: 1200, temperature: 0, signal } as never,
+        { modelSlug: r.slug, messages: [{ role: "user", content: prompt }], maxOutputTokens: 1200, temperature: 0, json: BRIEF_JSON, signal } as never,
         { baseUrl: wiring.baseUrl, apiKey: cred.apiKey, ai: cred.ai },
       )).text,
     });
@@ -245,7 +287,7 @@ export async function freeRungs(env: Env): Promise<Rung[]> {
       id: WORKERS_AI_FIRST_READ_MODEL,
       workersAi: true,
       call: async (prompt, signal) => (await wa.adapter.complete(
-        { modelSlug: WORKERS_AI_FIRST_READ_MODEL, messages: [{ role: "user", content: prompt }], maxOutputTokens: 1200, temperature: 0, signal } as never,
+        { modelSlug: WORKERS_AI_FIRST_READ_MODEL, messages: [{ role: "user", content: prompt }], maxOutputTokens: 1200, temperature: 0, json: BRIEF_JSON, signal } as never,
         { baseUrl: wa.baseUrl, ai: waCred.ai },
       )).text,
     });
@@ -358,9 +400,8 @@ export async function firstRead(
         const text = await withDeadline(Math.min(share, left), (signal) => rung.call(prompt, signal), stop.signal);
         if (out.brief) { results[i] = `${rung.id}: answered after another read`; continue; }
         const brief = parseBrief(text, input.words, files);
-        if (!brief) { results[i] = `${rung.id}: no line quoted her`; continue; }
-        brief.asks = withoutPasted(brief.asks);
-        if (!brief.asks.length && !brief.questions.length && !brief.unclear.length && !brief.holds.length && !brief.decision) { results[i] = `${rung.id}: listed only what she pasted`; continue; }
+        if (!brief) { results[i] = `${rung.id}: ${readJsonObject(text) ? "no line quoted her" : "not one JSON answer"}`; continue; }
+        if (!brief.asks.length && !brief.questions.length && !brief.unclear.length && !brief.holds.length && !decides(brief.decision)) { results[i] = `${rung.id}: listed only what she pasted`; continue; }
         out.brief = brief;
         out.reader = rung.id;
         results[i] = `${rung.id}: read`;
@@ -389,9 +430,8 @@ export async function firstRead(
     try {
       const text = await withDeadline(Math.min(FIRST_READ_ATTEMPT_MS, left), (signal) => rung.call(prompt, signal));
       const brief = parseBrief(text, input.words, files);
-      if (!brief) { out.tried.push(`${rung.id}: no line quoted her`); continue; }
-      brief.asks = withoutPasted(brief.asks);
-      if (!brief.asks.length && !brief.questions.length && !brief.unclear.length && !brief.holds.length && !brief.decision) { out.tried.push(`${rung.id}: listed only what she pasted`); continue; }
+      if (!brief) { out.tried.push(`${rung.id}: ${readJsonObject(text) ? "no line quoted her" : "not one JSON answer"}`); continue; }
+      if (!brief.asks.length && !brief.questions.length && !brief.unclear.length && !brief.holds.length && !decides(brief.decision)) { out.tried.push(`${rung.id}: listed only what she pasted`); continue; }
       out.brief = brief;
       out.reader = rung.id;
       out.tried.push(`${rung.id}: read`);

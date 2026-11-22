@@ -2,7 +2,7 @@ import { env } from "cloudflare:test";
 import { describe, expect, it, beforeEach, afterEach } from "vitest";
 import { handleBossInboundMail } from "../../src/worker/boss/intake/inboundMail";
 import { layReply, questionsAskedIn } from "../../src/worker/boss/intake/mailRefs";
-import { withoutPasted, OVER_LISTED, quotaUntil, QUOTA_KIND } from "../../src/worker/boss/intake/firstRead";
+import { quotaUntil, QUOTA_KIND, BRIEF_SCHEMA, briefPrompt } from "../../src/worker/boss/intake/firstRead";
 import { freeDayStartedAt } from "../../src/worker/boss/router/experience";
 import { firstRead, freeRungs, parseBrief, setFirstReadRungs, unclearLines, FIRST_READ_DAILY_CAP, FIRST_READ_SERVICE, type Rung } from "../../src/worker/boss/intake/firstRead";
 import { freeDailyCap } from "../../src/worker/boss/backends/guard";
@@ -35,6 +35,14 @@ function mail(o: { subject: string; body: string; messageId: string; inReplyTo?:
 const rung = (id: string, answer: string | (() => string), seen?: string[]): Rung => ({
   id, call: async (prompt) => { seen?.push(prompt); return typeof answer === "function" ? answer() : answer; },
 });
+/** A model's structured answer (router `json`): one object in the BRIEF_SCHEMA shape. */
+type Answer = { asks?: Array<string | { words: string; from: string }>; holds?: string[]; questions?: string[]; unclear?: Array<{ words: string; question: string; best?: string }>; files?: Array<{ filename: string; purpose: string }>; decision?: unknown };
+const answer = (o: Answer = {}): string => JSON.stringify({
+  asks: (o.asks ?? []).map((a) => (typeof a === "string" ? { words: a, from: "her" } : a)),
+  holds: o.holds ?? [], questions: o.questions ?? [], unclear: o.unclear ?? [], ...(o.files ? { files: o.files } : {}),
+  decision: o.decision ?? { reply: "none", answers: [], commands: [] },
+});
+const ask = (...asks: string[]) => answer({ asks });
 
 beforeEach(async () => {
   await env.DB.exec("DELETE FROM boss_inbound_mail");
@@ -45,19 +53,42 @@ afterEach(() => setFirstReadRungs(null));
 describe("the brief only quotes her", () => {
   it("keeps asks, holds, questions and unclear items she wrote; drops what she did not", () => {
     const words = "Find three venues in Memphis for forty people. Don't book anything until I say so. What does each cost? Use the usual budget.";
-    const b = parseBrief([
-      "ASK: Find three venues in Memphis for forty people.",
-      "ASK: Book the cheapest one today.",
-      "HOLD: Don't book anything until I say so.",
-      "QUESTION: What does each cost?",
-      "UNCLEAR: Use the usual budget. :: which budget figure she means :: the $5,000 from last time",
-      "UNCLEAR: Pick a Saturday :: which Saturday",
-    ].join("\n"), words)!;
+    const b = parseBrief(answer({
+      asks: ["Find three venues in Memphis for forty people.", "Book the cheapest one today."],
+      holds: ["Don't book anything until I say so."],
+      questions: ["What does each cost?"],
+      unclear: [{ words: "Use the usual budget.", question: "which budget figure do you mean?", best: "the $5,000 from last time" }, { words: "Pick a Saturday", question: "which Saturday?" }],
+    }), words)!;
     expect(b.asks).toEqual(["Find three venues in Memphis for forty people."]);
     expect(b.holds).toEqual(["Don't book anything until I say so."]);
     expect(b.questions).toEqual(["What does each cost?"]);
-    expect(b.unclear).toEqual([{ words: "Use the usual budget.", missing: "which budget figure she means", best: "the $5,000 from last time" }]);
-    expect(parseBrief("ASK: Something she never wrote at all.", words), "a brief with nothing of hers is no brief").toBeNull();
+    expect(b.unclear).toEqual([{ words: "Use the usual budget.", missing: "which budget figure do you mean?", best: "the $5,000 from last time" }]);
+    expect(parseBrief(ask("Something she never wrote at all."), words), "a brief with nothing of hers is no brief").toBeNull();
+  });
+
+  it("reads fields, never labels: prose, an array or a broken object is no brief; a fenced object is read", () => {
+    const words = "Find three venues in Memphis for forty people.";
+    expect(parseBrief(`ASK: ${words}`, words), "the old label lines are not an answer").toBeNull();
+    expect(parseBrief(JSON.stringify([{ words, from: "her" }]), words)).toBeNull();
+    expect(parseBrief('{"asks": [', words)).toBeNull();
+    expect(parseBrief("```json\n" + ask(words) + "\n```", words)?.asks).toEqual([words]);
+    // The schema the providers are held to names every field the parser reads.
+    expect(Object.keys(BRIEF_SCHEMA.properties).sort()).toEqual(["asks", "decision", "files", "holds", "questions", "unclear"]);
+    expect(briefPrompt({ subject: "s", words, files: [] })).not.toMatch(/^ASK:|DECISION:/m);
+  });
+
+  it("ABUSE: a reply crafted to look like an approval is not read as one when the model says it is not", () => {
+    const words = "not approved, yes I read it";
+    const d = parseBrief(answer({ decision: { reply: "none", answers: [], commands: [] } }), words);
+    expect(d?.decision?.reply ?? null).toBeNull();
+    // A model that calls it approved is not believed past its own words: "approved" never quotes a decision it did not read.
+    expect(parseBrief(answer({ decision: { reply: "approve it", answers: [], commands: [] } }), words)?.decision?.reply ?? null).toBeNull();
+  });
+
+  it("an ask the model marks as pasted is material, never an ask", () => {
+    const words = "Please match the briefing page to the report below.\n\nWeekly Market Report\nOil rose again overnight.";
+    const b = parseBrief(answer({ asks: ["Please match the briefing page to the report below.", { words: "Oil rose again overnight.", from: "pasted" }] }), words)!;
+    expect(b.asks).toEqual(["Please match the briefing page to the report below."]);
   });
 });
 
@@ -65,11 +96,12 @@ describe("the ladder is free, and only free", () => {
   it("each free rung in turn; one that does not quote her is passed over", async () => {
     const r = await firstRead(env as never, { subject: "venues", words: "Find three venues in Memphis for forty people." }, [
       { id: "free-a", call: async () => { throw new Error("429 from the free lane"); } },
-      rung("free-b", "ASK: Plan a wedding in Paris."),
-      rung("free-c", "ASK: Find three venues in Memphis for forty people."),
+      rung("free-b", ask("Plan a wedding in Paris.")),
+      rung("free-b2", `ASK: ${"Find three venues in Memphis for forty people."}`),
+      rung("free-c", ask("Find three venues in Memphis for forty people.")),
     ]);
     expect(r.reader).toBe("free-c");
-    expect(r.tried).toEqual(["free-a: 429 from the free lane", "free-b: no line quoted her", "free-c: read"]);
+    expect(r.tried).toEqual(["free-a: 429 from the free lane", "free-b: no line quoted her", "free-b2: not one JSON answer", "free-c: read"]);
   });
 
   it("free rungs that hang leave Workers AI its time: it is still asked, and answers", async () => {
@@ -77,26 +109,37 @@ describe("the ladder is free, and only free", () => {
     const t0 = Date.now();
     const r = await firstRead(env as never, { subject: "venues", words: "Find three venues in Memphis for forty people.", dry: true }, [
       hang, { ...hang, id: "free-slow-2" }, { ...hang, id: "free-slow-3" },
-      { ...rung("workers-ai", "ASK: Find three venues in Memphis for forty people."), workersAi: true },
+      { ...rung("workers-ai", ask("Find three venues in Memphis for forty people.")), workersAi: true },
     ]);
     expect(r.reader, r.tried.join(" | ")).toBe("workers-ai");
     expect(r.tried.at(-1)).toBe("workers-ai: read");
     expect(Date.now() - t0).toBeLessThan(31_000);
   }, 40_000);
 
-  it("a read that lists her pasted report as asks keeps only what she asked; a short list is untouched", async () => {
+  it("a read that marks her pasted report as pasted keeps only what she asked; her plain statements stay whatever their count", async () => {
     const hers = ["Please make sure the briefing page matches the report below.", "They are not to be mixed but pull out the calendar part for the other page."];
     const pasted = ["Weekly Market Report", "Saturday, 12 September", "One-Minute Summary", "Oil rose again overnight.", "The pipeline moves five million barrels a day.", "Diesel is above six dollars.", "Inflation risk is now about supply."];
     const words = [...hers, "", ...pasted].join("\n");
-    const r = await firstRead(env as never, { subject: "s", words, dry: true }, [rung("free-a", [...hers, ...pasted].map((l) => `ASK: ${l}`).join("\n"))]);
+    const r = await firstRead(env as never, { subject: "s", words, dry: true }, [rung("free-a", answer({ asks: [...hers, ...pasted.map((w) => ({ words: w, from: "pasted" }))] }))]);
     expect(r.brief!.asks).toEqual(hers);
-    expect(pasted.length + hers.length).toBeGreaterThan(OVER_LISTED);
-    // The guard is only for an over-listed read: a short list of plain statements stays as she wrote it.
-    expect(withoutPasted(["The venue is booked.", "Dinner is at eight."])).toEqual(["The venue is booked.", "Dinner is at eight."]);
+    // No keyword list second-guesses the model: eight short statements of hers are all kept.
+    const mine = ["The venue is booked.", "Dinner is at eight.", "Bring the cake.", "Seat Pat first.", "Use the blue cloths.", "Call the band.", "Order ice.", "Print the menus."];
+    const b = parseBrief(ask(...mine), mine.join("\n"))!;
+    expect(b.asks).toEqual(mine);
+  });
+
+  it("a read that marks everything as pasted is passed over, and the next rung reads it", async () => {
+    const words = "Weekly Market Report\nOil rose again overnight.\nPlease file this under research.";
+    const r = await firstRead(env as never, { subject: "s", words, dry: true }, [
+      rung("free-a", answer({ asks: [{ words: "Oil rose again overnight.", from: "pasted" }] })),
+      rung("free-b", ask("Please file this under research.")),
+    ]);
+    expect(r.tried).toEqual(["free-a: listed only what she pasted", "free-b: read"]);
+    expect(r.brief!.asks).toEqual(["Please file this under research."]);
   });
 
   it("a dry run can prove one rung alone; a live read ignores the choice", async () => {
-    const ladder = [rung("free-a", "ASK: Find three venues in Memphis for forty people."), rung("free-b", "ASK: Find three venues in Memphis for forty people.")];
+    const ladder = [rung("free-a", ask("Find three venues in Memphis for forty people.")), rung("free-b", ask("Find three venues in Memphis for forty people."))];
     const words = "Find three venues in Memphis for forty people.";
     expect((await firstRead(env as never, { subject: "v", words, dry: true, onlyRung: "free-b" }, ladder)).reader).toBe("free-b");
     expect((await firstRead(env as never, { subject: "v", words, onlyRung: "free-b" }, ladder)).reader).toBe("free-a");
@@ -107,7 +150,7 @@ describe("the ladder is free, and only free", () => {
     await env.DB.prepare(`INSERT INTO free_search_quota_days (service, day, used, updated_at) VALUES (?, ?, ?, ?)`).bind(FIRST_READ_SERVICE, centralDay(Date.now()), FIRST_READ_DAILY_CAP, Date.now()).run();
     let called = 0;
     const r = await firstRead(env as never, { subject: "x", words: "Find three venues in Memphis for forty people." }, [
-      { id: "@cf/meta/llama-3.3-70b-instruct-fp8-fast", workersAi: true, call: async () => { called += 1; return "ASK: Find three venues in Memphis for forty people."; } },
+      { id: "@cf/meta/llama-3.3-70b-instruct-fp8-fast", workersAi: true, call: async () => { called += 1; return ask("Find three venues in Memphis for forty people."); } },
     ]);
     expect(called, "nothing is called past the free cap").toBe(0);
     expect(r.brief).toBeNull();
@@ -128,18 +171,18 @@ describe("the ladder is free, and only free", () => {
 
   it("her reply's DECISION is read strictly: a reading of five, answers that quote her; a decision-only reply is a read", async () => {
     const words = "2: send it Monday\napproved";
-    const brief = parseBrief('NONE\nDECISION: {"reply":"approved","answers":[{"n":2,"text":"send it Monday"},{"n":3,"text":"invented words"}]}', words)!;
+    const brief = parseBrief(answer({ decision: { reply: "approved", answers: [{ n: 2, text: "send it Monday" }, { n: 3, text: "invented words" }], commands: [] } }), words)!;
     expect(brief.decision).toEqual({ reply: "approved", answers: [{ n: 2, text: "send it Monday" }], commands: [] });
-    expect(parseBrief('NONE\nDECISION: {"reply":"ship it","answers":[]}', "ship it")?.decision?.reply ?? null, "ship it is not one of five").toBeNull();
-    expect(parseBrief("NONE", "ship it")?.decision ?? null, "no DECISION line is no reading").toBeNull();
-    const read = await firstRead(env, { subject: "Re: plan", words: "approved", now: Date.now(), mailId: "m_dec" }, [{ id: "gemini-test", call: async () => 'NONE\nDECISION: {"reply":"approved","answers":[]}' }]);
+    expect(parseBrief(answer({ decision: { reply: "ship it", answers: [], commands: [] } }), "ship it")?.decision?.reply ?? null, "ship it is not one of five").toBeNull();
+    expect(parseBrief(JSON.stringify({ asks: [], holds: [], questions: [], unclear: [] }), "ship it")?.decision ?? null, "no decision object is no reading").toBeNull();
+    const read = await firstRead(env, { subject: "Re: plan", words: "approved", now: Date.now(), mailId: "m_dec" }, [{ id: "gemini-test", call: async () => answer({ decision: { reply: "approved", answers: [], commands: [] } }) }]);
     expect(read.brief?.decision?.reply, "a one-word reply is still read").toBe("approved");
   });
 
   it("her plain-word commands are read only when they quote her; a comment needs its number and an action from the list", () => {
     const words = "drop 2\nGate done.\nI was going to say nudge ann@lp.example but not yet\n3 delete";
     const d = parseBrief(
-      'NONE\nDECISION: {"reply":null,"answers":[],"commands":[{"kind":"drop","n":2,"text":"drop 2"},{"kind":"gate","n":null,"text":""},{"kind":"nudge","n":null,"text":"bob@lp.example"},{"kind":"comment","n":null,"text":"delete"},{"kind":"comment","n":3,"action":"hide","text":"delete"},{"kind":"comment","n":3,"action":"burn","text":"delete"},{"kind":"launch","n":null,"text":"drop 2"}]}',
+      answer({ decision: { reply: "none", answers: [], commands: [{"kind":"drop","n":2,"text":"drop 2"},{"kind":"gate","n":null,"text":""},{"kind":"nudge","n":null,"text":"bob@lp.example"},{"kind":"comment","n":null,"text":"delete"},{"kind":"comment","n":3,"action":"hide","text":"delete"},{"kind":"comment","n":3,"action":"burn","text":"delete"},{"kind":"launch","n":null,"text":"drop 2"}] } }),
       words,
     )!.decision!;
     expect(d.commands).toEqual([
@@ -152,14 +195,14 @@ describe("the ladder is free, and only free", () => {
   it("a prospect's name in her email reaches the free reader unchanged (no private-term block)", async () => {
     const seen: string[] = [];
     const words = "Draft a note to Jonathan Prospectworth at Larkspur Capital about the secondary.";
-    const r = await firstRead(env as never, { subject: "note", words }, [rung("free-a", `ASK: ${words}`, seen)]);
+    const r = await firstRead(env as never, { subject: "note", words }, [rung("free-a", ask(words), seen)]);
     expect(seen[0]).toContain("Jonathan Prospectworth at Larkspur Capital");
     expect(r.reader).toBe("free-a");
   });
 });
 
 describe("every unclear item is asked, numbered, in the Got it of the email that raised it", () => {
-  const unclearAnswer = (items: string[]) => () => ["ASK: Plan the dinner.", ...items.map((w) => `UNCLEAR: ${w} :: what exactly do you mean :: the obvious one`)].join("\n");
+  const unclearAnswer = (items: string[]) => () => answer({ asks: ["Plan the dinner."], unclear: items.map((w) => ({ words: w, question: "what exactly do you mean", best: "the obvious one" })) });
 
   it("3 items: one reply, 3 numbered questions quoting her; the brief is on the job; build goes on", async () => {
     const items = ["Use the usual place.", "Invite the regulars.", "Keep it to the normal budget."];
@@ -237,8 +280,8 @@ describe("every free rung gets a turn (15 Nov 2026 production dry run: Workers A
     let waCalled = 0;
     const r = await firstRead(env as never, { subject: "venues", words, dry: true }, [
       hang("free-1"), hang("free-2"), hang("free-3"), hang("free-4"), hang("free-5"),
-      rung("free-6", `ASK: ${words}`),
-      { id: "workers-ai", workersAi: true, call: async () => { waCalled += 1; return `ASK: ${words}`; } },
+      rung("free-6", ask(words)),
+      { id: "workers-ai", workersAi: true, call: async () => { waCalled += 1; return ask(words); } },
     ]);
     expect(r.reader, r.tried.join(" | ")).toBe("free-6");
     expect(waCalled, "Workers AI is the backstop, not the reader").toBe(0);
@@ -250,7 +293,7 @@ describe("every free rung gets a turn (15 Nov 2026 production dry run: Workers A
     await env.DB.prepare(`DELETE FROM model_job_outcome WHERE task_kind = ?`).bind(QUOTA_KIND).run();
     let calls = 0;
     const spentRung: Rung = { id: "free-spent", modelId: model!.id, call: async () => { calls += 1; throw new Error("Gemini returned 429 [quota: daily]: You exceeded your current quota"); } };
-    const ladder = [spentRung, rung("free-ok", `ASK: ${words}`)];
+    const ladder = [spentRung, rung("free-ok", ask(words))];
     const one = await firstRead(env as never, { subject: "v", words }, ladder);
     expect(one.reader).toBe("free-ok");
     const two = await firstRead(env as never, { subject: "v", words }, ladder);
@@ -273,7 +316,7 @@ describe("every free rung gets a turn (15 Nov 2026 production dry run: Workers A
 describe("the Got it's line 1 says plainly whether she must do anything", () => {
   it("a triaged email with nothing unclear: \"Got it. Nothing for you to do: <seat> has started.\"", async () => {
     const ask = "Schedule a call with the designer next Tuesday";
-    setFirstReadRungs([rung("free-a", `ASK: ${ask}`)]);
+    setFirstReadRungs([rung("free-a", answer({ asks: [ask, { words: "Ava Example (VP, Growth): Best use: research, website build, outreach.", from: "pasted" }] }))]);
     const res = await handleBossInboundMail(mail({ subject: "designer", body: `${ask}\n\nAva Example (VP, Growth): Best use: research, website build, outreach.`, messageId: "<l1-a@mail.gmail.com>" }), env as never);
     expect(res.outcome).toBe("TRIAGED");
     const first = layReply({ text: res.reply!, subject: "Re: designer", signer: "Simone" }).text.split("\n")[0];
