@@ -230,6 +230,29 @@ export const isBlank = (m) => (m?.words ?? 0) < 40 && (m?.media ?? 0) === 0;
 
 /** A page's short name for capture labels: "/questions/x/" → "questions-x", the home page → "home". */
 export const pageSlug = (u) => { try { const p = new URL(u).pathname.replace(/\/+$/, ""); return p ? p.slice(1).replace(/[^a-z0-9]+/gi, "-").slice(0, 48) : "home"; } catch { return "page"; } };
+/** One label per page for a multi-page review: the path, and where pages share a path, the part of
+ *  the host the pages do not share ("0ee3.lgg-pi.pages.dev" → "0ee3-lgg-pi"; three sites' home pages
+ *  would otherwise overwrite each other's shots). "-2", "-3" only when a label is already taken. */
+export const pageSlugs = (targets) => {
+  const base = targets.map(pageSlug);
+  const hostOf = (u) => { try { return new URL(u).hostname.split("."); } catch { return ["page"]; } };
+  const given = new Set();
+  return targets.map((u, i) => {
+    const peers = targets.filter((_, j) => base[j] === base[i]);
+    let label = base[i];
+    if (peers.length > 1) {
+      const hosts = peers.map(hostOf);
+      let shared = 0;
+      while (hosts.every((h) => h.length > shared + 1 && h[h.length - 1 - shared] === hosts[0][hosts[0].length - 1 - shared])) shared++;
+      const own = hostOf(u);
+      label = `${own.slice(0, own.length - shared).join("-").replace(/[^a-z0-9]+/gi, "-").slice(0, 40)}-${base[i]}`;
+    }
+    let out = label, n = 2;
+    while (given.has(out)) out = `${label}-${n++}`;
+    given.add(out);
+    return out;
+  });
+};
 
 /**
  * Dark on every page of a review (22 Nov 2026: a CSS change across three libraries could not be judged
@@ -245,7 +268,7 @@ export const nextDarkState = (state, m) => (m.dark === "none" ? "none" : m.shot 
  * phone and laptop of each, at most 4 pages, so every capture still fits one review.
  */
 async function capturePage(a, out) {
-  const targets = a.kind === "email" ? [a.target] : String(a.target).split(",").map((t) => t.trim()).filter(Boolean);
+  const targets = a.kind === "email" ? [a.target] : [...new Set(String(a.target).split(",").map((t) => t.trim()).filter(Boolean))];
   if (targets.length > 4) throw stop(64, "BAD_ARGS", `at most 4 pages per review (got ${targets.length}); split the review`);
   if (a.kind === "email" && !existsSync(a.target)) throw stop(9, "NOTHING_CAPTURED", `${a.target} does not exist: give the rendered email's .html file`);
   const many = targets.length > 1;
@@ -253,16 +276,17 @@ async function capturePage(a, out) {
   const shots = [], facts = [], blanks = [];
   try {
     let darkState = "unknown";
-    for (const target of targets) {
+    const slugs = pageSlugs(targets);
+    for (const [ti, target] of targets.entries()) {
       const url = a.kind === "email" ? pathToFileURL(resolve(target)).href : target;
-      const pre = many ? `${pageSlug(target)}-` : "";
+      const pre = many ? `${slugs[ti]}-` : "";
       const sizes = [
         { label: `${pre}phone-390-light.png`, width: 390, height: 844, scheme: "light" },
         ...(readDark(darkState) ? [{ label: `${pre}phone-390-dark.png`, width: 390, height: 844, scheme: "dark" }] : []),
         { label: `${pre}laptop-1280-light.png`, width: 1280, height: 800, scheme: "light" },
       ];
       let lightColors = null;
-      const say = (f) => facts.push(many ? `${pageSlug(target)}: ${f}` : f);
+      const say = (f) => facts.push(many ? `${slugs[ti]}: ${f}` : f);
       for (const s of sizes) {
         const file = join(out, s.label);
         const fbase = s.label.replace(/\.png$/, "");
