@@ -84,7 +84,7 @@ growthRoutes.get("/page", async (c) => {
       WHERE j.resume_kind = 'growth_proposal' AND j.state <> 'superseded' AND (a.status = 'pending' OR a.requested_at >= ?) ORDER BY a.requested_at DESC LIMIT 30`,
   ).bind(Date.now() - HAPPENED_DAYS * 86_400_000).all<any>()).results ?? []);
   const decisions = ((await db.prepare(
-    `SELECT business, cycle, state, decision, evidence, test, actions, next_check FROM growth_decisions WHERE created_at >= ? ORDER BY cycle DESC`,
+    `SELECT business, cycle, state, decision, evidence, test, actions, next_check FROM growth_decisions WHERE created_at >= ? ORDER BY cycle DESC, created_at DESC`,
   ).bind(Date.now() - HAPPENED_DAYS * 86_400_000).all<any>()).results ?? []);
   const parse = (t: string | null, d: unknown) => { try { return t ? JSON.parse(t) : d; } catch { return d; } };
   const businesses = (manifest as any).scoreboard.businesses.map((b: any) => {
