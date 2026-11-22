@@ -167,7 +167,10 @@ export async function runGrowthDirector(env: Env, now = Date.now(), deps: { mode
       if (!s || s.state !== "read") { await record({ ...base, state: "held: no data", decision: "Held: nothing on the scoreboard was read for this business, so nothing is decided on zeros.", evidence: (s?.channels ?? []).map((c: any) => `${c.label}: ${c.unread}`), actions: [] }); continue; }
       const first = !(await db.prepare(`SELECT 1 FROM growth_decisions WHERE business = ? AND state = 'decided' LIMIT 1`).bind(entry.key).first());
       const todos = await inMotion(db, entry.key!);
-      const answer = parseDecision(await model(env, decisionPrompt({ playbook, entry, summary: s, trends, today, todos, first }) as Msg[], "growth-decide"));
+      // The older work on this business's roster (open rows only): the Director decides each one. Only the
+      // rows the roster names are read, and they are growth work (no customer rows), so a free model may see them.
+      const linked = entry.linked.length ? ((await db.prepare(`SELECT id, title, next_step, finish_line FROM owner_open_loops WHERE status = 'open' AND id IN (SELECT value FROM json_each(?))`).bind(JSON.stringify(entry.linked)).all<any>()).results ?? []) : [];
+      const answer = parseDecision(await model(env, decisionPrompt({ playbook, entry, summary: s, trends, today, todos, first, linked }) as Msg[], "growth-decide"));
       if (!answer) { await record({ ...base, state: "held: no model", decision: "Held: no free model answered (every free route was busy or spent); the next cycle tries again.", evidence: [], actions: [] }); continue; }
       const { decision, dropped } = enforceHolds(answer, s);
       const actions: any[] = [];
@@ -207,6 +210,19 @@ export async function runGrowthDirector(env: Env, now = Date.now(), deps: { mode
         if (r.to === "refused") { actions.push({ kind: "refused", stop: r.stop, why: r.why, proposal: p }); continue; }
         const c = await raise(`${entry.label}: ${p.what}`, `${p.why}\n\nEvidence: ${p.evidence}`, { proposal: p });
         actions.push({ kind: "proposal", proposal: p, card: c.card, ...(c.why ? { why: c.why } : {}) });
+      }
+      // Her older rows get the Director's verdict, written where she and the working session read them.
+      for (const v of decision.linked ?? []) {
+        if (!linked.some((l: any) => l.id === v.id)) continue; // only rows it was shown
+        const say = `Growth Director, ${today}: ${v.verdict}. ${v.why}`;
+        if (v.verdict === "drop") {
+          await db.prepare(`UPDATE owner_open_loops SET status = 'closed', closed_reason = ?, closed_at = ?, updated_at = ? WHERE id = ? AND status = 'open'`).bind(say.slice(0, 400), now, now, v.id).run();
+        } else {
+          const old = linked.find((l: any) => l.id === v.id)!;
+          const next = v.verdict === "change" ? `${say} Next: ${v.next_step}` : `${say} ${String(old.next_step ?? "").replace(/^Growth Director, \d{4}-\d\d-\d\d: [^.]*\.[^.]*\.\s*/, "")}`;
+          await db.prepare(`UPDATE owner_open_loops SET next_step = ?, updated_at = ? WHERE id = ? AND status = 'open'`).bind(next.slice(0, 1000), now, v.id).run();
+        }
+        actions.push({ kind: "linked", id: v.id, verdict: v.verdict, why: v.why });
       }
       await record({ ...base, state: "decided", decision: decision.decision, evidence: decision.evidence, test: decision.test, next_check: decision.next_check, actions });
     } catch (e) {

@@ -346,3 +346,35 @@ describe("the Growth page", () => {
     expect(dw.happening.board.channels.every((c: any) => c.value === null && /^not read/.test(c.unread))).toBe(true);
   }, 30_000);
 });
+
+describe("the Director owns the older work on its roster (22 Nov 2026)", () => {
+  it("keeps, changes or drops each linked row, on its evidence; a row it was not shown is untouched", async () => {
+    await reading("pnp-requests", "porch-and-party", "requests", "all", 2, dayIdInZone(NOW));
+    const row = (id: string, title: string) => env.DB.prepare(`INSERT INTO owner_open_loops (id, title, finish_line, next_step, owner, next_date, business, section, status, source, created_at, updated_at)
+      VALUES (?, ?, 'x', 'Render the pictures after 6 PM.', 'claude', '2026-11-22', 'porch-and-party', 'not_finished', 'open', 'agent_report', 1, 1)`).bind(id, title).run();
+    await row("olp_keep1", "Engine pieces waiting for pictures"); await row("olp_change1", "Three short December weeks"); await row("olp_drop1", "Office party posts"); await row("olp_other1", "Not on the roster");
+    await brain("porch-and-party", PNP + "- linked to-dos: olp_keep1, olp_change1, olp_drop1\n");
+    const answer = { ...DECISION, queue: [], proposals: [], linked: [
+      { id: "olp_keep1", verdict: "keep", why: "Christmas porch pieces match the season and Instagram brings the requests." },
+      { id: "olp_change1", verdict: "change", why: "Only porch weeks sell before 15 Dec.", next_step: "Fill the December weeks with porch pieces only." },
+      { id: "olp_drop1", verdict: "drop", why: "No office requests in 28 days." },
+      { id: "olp_other1", verdict: "drop", why: "not shown" },
+    ] };
+    const { model, seen } = fake(answer, () => ({ pass: true, broken: [], why: "" }));
+    await runGrowthDirector(env as any, NOW, { model, fetchImpl: noTrends });
+    const get = (id: string) => env.DB.prepare(`SELECT status, next_step, closed_reason FROM owner_open_loops WHERE id = ?`).bind(id).first<any>();
+    expect(seen.find((t) => /OLDER WORK/.test(t))).toMatch(/olp_keep1: Engine pieces waiting for pictures/);
+    expect((await get("olp_keep1")).next_step).toMatch(/^Growth Director, \d{4}-\d\d-\d\d: keep\. Christmas porch pieces .* Render the pictures after 6 PM\.$/);
+    expect((await get("olp_change1")).next_step).toMatch(/: change\. Only porch weeks sell before 15 Dec\. Next: Fill the December weeks with porch pieces only\.$/);
+    expect(await get("olp_drop1")).toMatchObject({ status: "closed" });
+    expect((await get("olp_drop1")).closed_reason).toMatch(/drop\. No office requests/);
+    expect(await get("olp_other1")).toMatchObject({ status: "open", next_step: "Render the pictures after 6 PM." });
+    const acts = JSON.parse((await decisions()).find((d) => d.business === "porch-and-party").actions);
+    expect(acts.filter((a: any) => a.kind === "linked").map((a: any) => a.verdict)).toEqual(["keep", "change", "drop"]);
+    // A second week's keep replaces the Director's own line, never stacks it.
+    await reading("pnp-requests", "porch-and-party", "requests", "all", 2, dayIdInZone(NOW + 7 * 86_400_000));
+    await runGrowthDirector(env as any, NOW + 7 * 86_400_000, { model, fetchImpl: noTrends });
+    expect(((await get("olp_keep1")).next_step.match(/Growth Director/g) ?? []).length).toBe(1);
+    await env.DB.exec("DELETE FROM owner_open_loops WHERE id IN ('olp_keep1','olp_change1','olp_drop1','olp_other1')");
+  }, 60_000);
+});
