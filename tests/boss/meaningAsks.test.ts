@@ -10,7 +10,9 @@ import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { all, apiJson, row } from "./helpers";
 import { setFirstReadRungs, type Rung } from "../../src/worker/boss/intake/firstRead";
 import { listEditsFromMail, applyListEdit } from "../../src/worker/boss/capital/grid";
-import { activeRoster, emailReading, herSubjectOf } from "../../src/worker/boss/intake/inboundMail";
+import { activeRoster, emailReading, handleBossInboundMail, herSubjectOf } from "../../src/worker/boss/intake/inboundMail";
+import { BOSS_INTAKE_MAILBOX } from "../../src/shared/boss/intake/mail.mjs";
+import type { Env } from "../../src/worker/boss/env";
 import { herWords, ownWords } from "../../src/shared/boss/intake/messageBody.mjs";
 import { checksOf } from "../../src/worker/boss/intake/firstRead";
 import { editDutyFromMail } from "../../src/worker/boss/duties/editByMail";
@@ -183,6 +185,19 @@ describe("one read per email (#514 review)", () => {
     const res = await editDutyFromMail(env, { roster: (await activeRoster(env)) as any, subject: "", text: herWords(FORWARD), mailId: "m5", now: NOW, sender: "owner" });
     expect(res?.outcome ?? null).not.toBe("DUTY_EDITED");
     expect(await rainmaker()).toEqual([PERSON.toLowerCase()]);
+    expect((await row<{ owner_prompt: string | null }>(`SELECT owner_prompt FROM standing_duties WHERE id = '${WRITTEN}'`))!.owner_prompt).toBeNull();
+  });
+
+  it("through the inbound door: her Gmail forward never takes a name off her list or edits a duty (model down)", async () => {
+    setFirstReadRungs(down);
+    const from = "owner-test@example.test";
+    const runtime = { ...env, BOSS_EXTRA_OWNER_SENDERS: from } as Env;
+    const raw = `From: ${from}\r\nSubject: Fwd: frames\r\nContent-Type: text/plain; charset=UTF-8\r\n\r\n${FORWARD.replace(/\n/g, "\r\n")}`;
+    const headers = new Headers({ from, subject: "Fwd: frames", "authentication-results": "mx.example.test; spf=pass; dkim=pass; dmarc=pass", "message-id": "<fwd-514@example.test>" });
+    const result = await handleBossInboundMail({ from, to: BOSS_INTAKE_MAILBOX, headers, raw: new Response(raw).body!, rawSize: new TextEncoder().encode(raw).length } as never, runtime);
+    expect(result.mailId).toBeTruthy();
+    expect(await rainmaker()).toEqual([PERSON.toLowerCase()]);
+    expect((await all<any>(`SELECT id FROM audit_log WHERE action = 'party_list_edited'`)).length).toBe(0);
     expect((await row<{ owner_prompt: string | null }>(`SELECT owner_prompt FROM standing_duties WHERE id = '${WRITTEN}'`))!.owner_prompt).toBeNull();
   });
 
