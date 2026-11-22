@@ -165,6 +165,7 @@ describe("the naming guard (her ruling, 21 Nov 2026; USPTO sn 98839129)", () => 
     expect(namingProblems("Try Black Bible Chat tonight")).toHaveLength(1);
     expect(namingProblems("Hush Harbor · Black Bible Chat tonight")).toHaveLength(1);
     expect(namingProblems("Black-Bible-Stories for kids")).toHaveLength(1);
+    expect(namingProblems("Black–Bible—Stories")).toHaveLength(1);
     expect(namingProblems("Hush Harbor · Black Bible Chat & Stories: a night story")).toEqual([]);
     expect(namingProblems("Bible Stories with Black Faces, every night #blackbiblechat")).toEqual([]);
     // Hashtags and music are judgement, never required: a post with neither is clean.
