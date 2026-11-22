@@ -1,0 +1,33 @@
+Return-Path: <owner@example.com>
+From: Owner Example <owner@example.com>
+To: boss@example.test
+Subject: Deck for the Thursday call
+Date: Sun, 22 Nov 2026 09:14:02 -0600
+Message-ID: <CAF1multipart@mail.example.com>
+MIME-Version: 1.0
+Content-Type: multipart/mixed; boundary="000000000000mixed"
+
+--000000000000mixed
+Content-Type: multipart/alternative; boundary="000000000000alt"
+
+--000000000000alt
+Content-Type: text/plain; charset="UTF-8"
+Content-Transfer-Encoding: quoted-printable
+
+#monique here is the deck =E2=80=94 can you pull the three numbers on page 2 b=
+efore Thursday?
+
+--000000000000alt
+Content-Type: text/html; charset="UTF-8"
+Content-Transfer-Encoding: quoted-printable
+
+<div dir=3D"ltr">#monique here is the deck =E2=80=94 can you pull the three numbers on page 2 before Thursday?</div>
+
+--000000000000alt--
+--000000000000mixed
+Content-Type: application/pdf; name="Q3 deck.pdf"
+Content-Disposition: attachment; filename="Q3 deck.pdf"
+Content-Transfer-Encoding: base64
+
+JVBERi0xLjQKMSAwIG9iajw8Pj5lbmRvYmoKdHJhaWxlcjw8Pj4KJSVFT0YK
+--000000000000mixed--

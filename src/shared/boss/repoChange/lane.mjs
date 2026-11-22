@@ -27,6 +27,7 @@
  * exists to catch.
  */
 
+import { READ_MODES } from "../intake/intents.mjs";
 import { propertyForRepo, isExcluded, whyExcluded, GRID, GRID_OWNER } from "../grid.mjs";
 
 /** The task-kind token. The Mac lane and `validate:duty-delivery` cross-check it against the script. */
@@ -528,8 +529,6 @@ export function readReply(text, read = null) {
   return { mode: "answers", text: raw, by: "KEYWORD" };
 }
 
-/** The readings the first read may give her reply (its DECISION's `reply`). */
-export const READ_MODES = ["approved", "preview", "forced", "held", "answers"];
 
 /**
  * ─── THE GUARDS ─────────────────────────────────────────────────────────────

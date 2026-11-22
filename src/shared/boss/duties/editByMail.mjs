@@ -41,7 +41,9 @@ function tokens(s) {
  */
 export function dutyEditRequestIn(subject, text, { roster = [], duties = [] } = {}) {
   const haystack = `${String(subject ?? "")}\n${String(text ?? "")}`;
-  if (!DUTY_WORD_RE.test(haystack) || !CHANGE_RE.test(haystack)) return null;
+  // The words find WHICH duty (structure); whether she asks to change it is the first read's check (meaning by the
+  // model, 22 Nov 2026). The change words gate nothing here: they are only the logged fallback (`dutyChangeStands`).
+  if (!DUTY_WORD_RE.test(haystack)) return null;
   // A new duty is the duty lane's other door, never an edit.
   if (NEW_DUTY_RE.test(haystack) || UNTAGGED_NEW_DUTY_RE.test(haystack)) return null;
   const live = (duties ?? []).filter((d) => d && d.id && d.name && !d.removed_at);
@@ -63,6 +65,8 @@ export function dutyEditRequestIn(subject, text, { roster = [], duties = [] } = 
   const [best, second] = scored;
   const theSeat = (roster ?? []).find((s) => s.id === best.duty.employee_id) ?? seat;
   if (second && second.score * 1.5 > best.score) {
+    // "Which one?" goes to her only when her words plainly ask for a change: a question she did not invite is noise.
+    if (!dutyChangeStands(subject, text)) return null;
     return { ambiguous: scored.filter((s) => s.score * 1.5 > best.score).slice(0, 4).map((s) => s.duty), seat: theSeat };
   }
   return {

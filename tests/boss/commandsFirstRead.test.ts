@@ -3,7 +3,7 @@
  * fires only on a sentence that stands (19 Nov 2026). Every phrasing below is one a keyword used to act on.
  */
 import { describe, expect, it } from "vitest";
-import { commandOf, commandsFromRead, morningCommands, withKeywordsTheReadMissed } from "../../src/shared/boss/mail/morningReply.mjs";
+import { commandOf, commandsFromRead, morningCommands, missedByRead } from "../../src/shared/boss/mail/morningReply.mjs";
 import { judgedNudgeAddressesIn } from "../../src/worker/boss/lp/nudge";
 import { readDutyReply } from "../../src/shared/boss/duties/lane.mjs";
 import { anchoredReading, readReply } from "../../src/shared/boss/repoChange/lane.mjs";
@@ -83,17 +83,19 @@ describe("the first read's commands pass the same sentence judge", () => {
 describe("the comment digest reads every item she names", () => {
   const items = [1, 2, 3].map((n) => ({ n, comment_id: `c${n}`, proposed_action: n === 2 ? "hide" : "reply", proposed_reply: `draft ${n}` }));
   const acts = (r: { instructions: Array<{ n: number; action: string; reply_text: string | null }> }) => r.instructions.map((i) => `${i.n} ${i.action}${i.reply_text ? `:${i.reply_text}` : ""}`);
-  it("\"approve 1 and 3, skip 2\" instructs all three, even when the read gave nothing", () => {
-    expect(acts(readCommentReply("approve 1 and 3, skip 2", items, []))).toEqual(["1 reply:draft 1", "2 ignore", "3 reply:draft 3"]);
-    expect(acts(readCommentReply("approve 1 and 3, skip 2", items, null)), "the keywords alone too").toEqual(["1 reply:draft 1", "2 ignore", "3 reply:draft 3"]);
+  it("\"approve 1 and 3, skip 2\": the judged keywords act only when no read answered; a read that gave nothing asks once", () => {
+    expect(acts(readCommentReply("approve 1 and 3, skip 2", items, null)), "no read: the logged keywords").toEqual(["1 reply:draft 1", "2 ignore", "3 reply:draft 3"]);
+    const r = readCommentReply("approve 1 and 3, skip 2", items, []);
+    expect(acts(r), "the read and her words disagree: nothing is done").toEqual([]);
+    expect(r.unread.filter((u) => /not sure what you meant/.test(u)).map((u) => u.slice(0, 2))).toEqual(["1:", "2:", "3:"]);
   });
-  it("\"reply to 1 as drafted, delete 2, leave 3\": the read's one item, and her words for the rest", () => {
+  it("\"reply to 1 as drafted, delete 2, leave 3\": the item both read alike acts, the rest are asked once", () => {
     const r = readCommentReply("reply to 1 as drafted, delete 2, leave 3", items, [{ kind: "comment", n: 2, action: "hide", text: "delete 2" }]);
-    expect(acts(r)).toEqual(["1 reply:draft 1", "2 hide", "3 ignore"]);
-    expect(r.unread).toEqual([]);
+    expect(acts(r), "only the item both read the same way acts").toEqual(["2 hide"]);
+    expect(r.unread.filter((u) => /not sure what you meant/.test(u)).map((u) => u.slice(0, 2))).toEqual(["1:", "3:"]);
   });
   it("an item she named that nothing instructs is said back as unread, never dropped", () => {
-    const r = readCommentReply("fix 1 somehow, delete 2", items, []);
+    const r = readCommentReply("fix 1 somehow, delete 2", items, [{ kind: "comment", n: 2, action: "hide", text: "delete 2" }]);
     expect(acts(r)).toEqual(["2 hide"]);
     expect(r.unread).toContain("1: no instruction read for it");
   });
@@ -124,16 +126,18 @@ describe("a reading is anchored to her words", () => {
 
 describe("live misses of the backstop rung (Workers AI, 20 Nov 2026)", () => {
   const items = [1, 2, 3].map((n) => ({ n, comment_id: `c${n}`, proposed_action: n === 2 ? "hide" : "reply", proposed_reply: `draft ${n}` }));
-  it("her plain \"skip 2\" wins over a read of hide", () => {
+  it("her plain \"skip 2\" against a read of hide: neither acts, she is asked once", () => {
     const r = readCommentReply("approve 1 and 3, skip 2", items, [{ kind: "comment", n: 2, action: "hide", text: "skip 2" }]);
-    expect(r.instructions.map((i) => `${i.n} ${i.action}`)).toEqual(["1 reply", "2 ignore", "3 reply"]);
+    expect(r.instructions).toEqual([]);
+    expect(r.unread.some((u) => u.startsWith("2: I was not sure"))).toBe(true);
   });
 });
 
 describe("a morning command the read missed", () => {
-  it("\"drop 2\" beside \"gate done\" still acts when the read gave only the gate; nothing twice", () => {
+  it("\"drop 2\" beside \"gate done\" when the read gave only the gate: the drop is unknown, never done", () => {
     const words = "drop 2\ngate done";
     const fromRead = commandsFromRead([{ kind: "gate", n: null, text: "gate done" }], words);
-    expect(withKeywordsTheReadMissed(fromRead, morningCommands(words).commands)).toEqual([{ kind: "gate" }, { kind: "drop", number: 2 }]);
+    expect(fromRead).toEqual([{ kind: "gate" }]);
+    expect(missedByRead(fromRead, morningCommands(words).commands)).toEqual([{ kind: "drop", number: 2 }]);
   });
 });

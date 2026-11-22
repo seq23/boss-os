@@ -235,8 +235,27 @@ export async function admitTask(env: Env, b: AdmitInput): Promise<AdmitResult> {
       sender: String(input.from ?? ""),
     }) };
   }
-  if (brief?.kind && !intakeKind && classification.intakeKind === "one_off" && brief.kind !== "one_off") {
-    classification = { ...classification, intakeKind: brief.kind };
+  /*
+   * THE READ'S KIND DECIDES (22 Nov 2026: meaning by the model, no keyword verdict in front of it). A declared kind
+   * (a tag, a repo change) still wins: that is structure. The read names the kind; what that kind would make stricter
+   * is taken (private access, higher risk, her own hands), and nothing it would loosen is: the keywords' access, risk,
+   * hands-off level, sensitivity and audience stand otherwise.
+   */
+  if (brief?.kind && !intakeKind && brief.kind !== classification.intakeKind) {
+    const byRead = classify({
+      title: b.title, prompt: (input.prompt as string | undefined) ?? null, lane,
+      intakeKind: brief.kind, risk: b.risk ?? undefined, sensitivity: b.sensitivity ?? undefined,
+      model_access: b.model_access ?? undefined, audience: classification.audience,
+      sender: String(input.from ?? ""),
+    });
+    classification = {
+      ...classification,
+      intakeKind: brief.kind,
+      modelAccess: byRead.modelAccess === "private_model_only" ? "private_model_only" : classification.modelAccess,
+      risk: riskAllows(classification.risk, byRead.risk) ? classification.risk : byRead.risk,
+      executionAssignment: byRead.executionAssignment === "USER_ONLY" ? "USER_ONLY" : classification.executionAssignment,
+      reason: `${classification.reason} Kind read from her words: ${brief.kind}.`,
+    };
   }
   if (brief?.risk && !b.risk && !riskAllows(classification.risk, brief.risk)) {
     classification = { ...classification, risk: brief.risk };

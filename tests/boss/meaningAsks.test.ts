@@ -100,6 +100,14 @@ describe("her duty edits", () => {
     expect(res?.note).toMatch(/could not tell whether you want the duty "Gallery Frames Recount" changed/);
   });
 
+  // No keyword fast path in front of the model (22 Nov 2026): a change in words the old change list never had is read.
+  it("words no keyword knew (\"make … also count the attic\"): the model reads asks and the duty is edited", async () => {
+    const PLAIN = "Make Camille's gallery frames recount duty count the attic too. Your call.";
+    setFirstReadRungs(says("asks", "count the attic too"));
+    expect((await edit(PLAIN))?.outcome).toBe("DUTY_EDITED");
+    expect(await prompt()).toContain("count the attic too");
+  });
+
   it("the model reads \"not\": no edit", async () => {
     setFirstReadRungs(says("not"));
     expect(await edit()).toBeNull();
@@ -112,6 +120,20 @@ describe("her duty edits", () => {
     expect(await prompt()).toContain("count the attic too");
     expect(await fellBack()).toBe(1);
   });
+
+  it("outage: a model that answers with bad JSON is no read: the judged keywords edit AND that is logged", async () => {
+    setFirstReadRungs([{ id: "free-test", call: async () => "Sure! Here is what she means: she wants a change." }]);
+    expect((await edit())?.outcome).toBe("DUTY_EDITED");
+    expect(await fellBack()).toBe(1);
+  });
+
+  it("outage: a model that never answers times out: the judged keywords decide AND that is logged", async () => {
+    setFirstReadRungs([{ id: "free-test", call: (_p, signal) => new Promise((_, rej) => signal.addEventListener("abort", () => rej(new Error("aborted")))) }]);
+    const res = await edit("Don't change Camille's gallery frames recount duty to count the attic too. Your call.");
+    expect(res?.outcome ?? null, "the judge still refuses a negated change").not.toBe("DUTY_EDITED");
+    expect(await prompt()).toBeNull();
+    expect(await fellBack()).toBe(1);
+  }, 45_000);
 
   // Sentences the duty words DO find (so the whole-sentence judge is what stops them), negated and asked.
   it("outage: \"Don't change …\" the duty words find is never an edit", async () => {
@@ -132,7 +154,7 @@ describe("her duty edits", () => {
 describe("one read per email (#514 review)", () => {
   const NOW = Date.parse("2026-11-23T15:00:00Z");
   const reading = async (readable: string, subject = "", own = ownWords(readable)) => emailReading(env, {
-    subject, her: herWords(readable), own, readable, files: [], roster: (await activeRoster(env)) as any, now: NOW, mailId: "m5", oversize: false,
+    subject, her: herWords(readable), own, readable, files: [], roster: (await activeRoster(env)) as any, now: NOW, mailId: "m5", oversize: false, isReply: false,
   });
 
   it("a list edit, a duty edit and a deadline are all answered by ONE model call, and only when a door asks", async () => {
@@ -254,18 +276,44 @@ describe("who reads the work she asks for: kind, risk and audience only tighten"
     const PLAIN = { title: "The studio frames", prompt: "Handle the frames for the studio." };
     expect((await admit(null, PLAIN)).classification.intakeKind).toBe("one_off");
     expect((await admit({ kind: "recurring_duty" }, PLAIN)).classification.intakeKind).toBe("recurring_duty");
-    // A kind the keywords named is never relabelled by the model.
-    expect((await admit({ kind: "recurring_duty" })).classification.intakeKind).toBe((await admit(null)).classification.intakeKind);
+    // The read's kind decides over a kind the keywords guessed, when it loosens nothing (22 Nov 2026).
+    const guessed = (await admit(null)).classification;
+    const byRead = (await admit({ kind: "drafting" })).classification;
+    expect(guessed.intakeKind).toBe("research");
+    expect(byRead.intakeKind).toBe("drafting");
+    // A kind that would run on its own where the keywords' only drafted keeps the draft: the label moves, the hands do not.
+    expect((await admit({ kind: "recurring_duty" })).classification).toMatchObject({ intakeKind: "recurring_duty", executionAssignment: "AI_DRAFT" });
+  });
+
+  it("the read's kind never loosens: private work stays private, a declared kind is never relabelled", async () => {
+    const KEPT = { title: "The studio portfolio", prompt: "Close the open positions in the studio portfolio." };
+    expect((await admit(null, KEPT)).classification, "the keywords read it as trading").toMatchObject({ intakeKind: "trading", modelAccess: "private_model_only", executionAssignment: "USER_ONLY" });
+    expect((await admit({ kind: "drafting" }, KEPT)).classification, "a looser kind from the read moves the label, never the hands or the models")
+      .toMatchObject({ intakeKind: "drafting", modelAccess: "private_model_only", executionAssignment: "USER_ONLY", risk: "high" });
+    const PRIVATE = { title: "The trading desk ask", prompt: "Look at the trading desk positions." };
+    const tightened = (await admit({ kind: "coaching" })).classification;
+    expect(tightened.modelAccess, "a private kind from the read makes it private").toBe("private_model_only");
+    const declared = await admitTask(env as never, { title: PRIVATE.title, intake_kind: "trading", brief: { asks: [], holds: [], questions: [], unclear: [], files: [], decision: null, kind: "drafting" }, input: { prompt: PRIVATE.prompt, source: "boss_inbound_mail", from: "owner@example.test", mail_id: "m7-declared" } } as any);
+    expect(declared.classification).toMatchObject({ intakeKind: "trading", modelAccess: "private_model_only" });
   });
 });
 
 describe("her morning reply", () => {
-  it("a whole-line command the first read missed still acts; logged as added, never as an outage", async () => {
+  it("a whole-line command the first read missed is unknown: nothing done, asked once, logged as a disagreement", async () => {
     const { morningReplyFromMail } = await import("../../src/worker/boss/intake/morningReply");
-    await morningReplyFromMail(env as never, { text: "Examplecorp is public", refs: [], mailId: "m9", read: { reply: null, answers: [], commands: [] } as any });
-    const added = await all<any>(`SELECT detail FROM system_events WHERE event = 'meaning_keyword_added'`);
-    expect(added).toHaveLength(1);
-    expect(JSON.parse(added[0].detail).keyword).toBe("public");
+    const r = await morningReplyFromMail(env as never, { text: "Examplecorp is public", refs: [], mailId: "m9", read: { reply: null, answers: [], commands: [] } as any, readHasWork: false });
+    expect(r?.acted).toBe(0);
+    expect(r?.note).toMatch(/not sure you meant "Examplecorp is public"/);
+    const said = await all<any>(`SELECT detail FROM system_events WHERE event = 'meaning_disagrees'`);
+    expect(said).toHaveLength(1);
+    expect(JSON.parse(said[0].detail).keyword).toBe("public");
     expect(await fellBack()).toBe(0);
+  });
+  it("with no read at all, the judged keyword acts and is logged as the fallback", async () => {
+    const { morningReplyFromMail } = await import("../../src/worker/boss/intake/morningReply");
+    const r = await morningReplyFromMail(env as never, { text: "Examplecorp is public", refs: [], mailId: "m10", read: null });
+    expect(r?.acted).toBe(1);
+    const logged = await all<any>(`SELECT detail FROM system_events WHERE event = 'first_read_decides' AND entity_id = 'm10'`);
+    expect(JSON.parse(logged[0].detail)).toMatchObject({ used: "KEYWORD", keyword: "public" });
   });
 });

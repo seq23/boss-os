@@ -12,7 +12,8 @@
  * Nothing is cached: the caller parses once and hands the result to each reader, and it is gone with
  * the request. Never throws: a refused or broken message is `failed`, with postal-mime's code.
  */
-import PostalMime from "postal-mime";
+import PostalMime, { decodeWords } from "postal-mime";
+import { repairMojibake } from "../boss/mail/subject.mjs";
 
 /** Tight for real mail: a forward of a forward is a handful of levels and a few dozen parts. Its defaults
  * (256 levels, 10,000 parts, 2 MiB of headers) are for a mail client, not a Worker. */
@@ -35,4 +36,17 @@ export async function parseMail(raw) {
   } catch (e) {
     return { raw: text, mail: null, failed: String(e?.code ?? e?.message ?? e).slice(0, 80) };
   }
+}
+
+/**
+ * A header's encoded words (RFC 2047: `=?UTF-8?Q?=23monique_=E2=80=94?=`), decoded by postal-mime in their own charset,
+ * then repaired where the sender's client had already garbled them (4 Nov 2026: "Ã¢Â€Â”" subjects). The one header
+ * decoder for both companies: a subject tag survives a dash or a curly quote. Never throws: a header it cannot read is
+ * returned as it came, because a subject we cannot decode is still a subject.
+ */
+export function decodeHeader(value) {
+  const text = String(value ?? "");
+  let decoded = text;
+  try { decoded = text.includes("=?") ? decodeWords(text) : text; } catch { decoded = text; }
+  return repairMojibake(decoded);
 }

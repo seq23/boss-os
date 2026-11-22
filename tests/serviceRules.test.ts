@@ -50,7 +50,7 @@ describe("the pure halves", () => {
     for (const k of BOSS_WAIT_KINDS) expect(waitDetail(k, { what: "X", why: "Y" })).toMatch(WAIT_SHAPE);
   });
 
-  it("a SECRET line is read, a reserved name refused, and the value scrubbed from quoted-printable and base64 parts", () => {
+  it("a SECRET line is read, a reserved name refused, and the value scrubbed from quoted-printable and base64 parts", async () => {
     const v = "abcd-1234-efgh-5678";
     const r = readSecretLines(`hi\nSECRET RESEND_API_KEY=${v}\nSECRET PATH=/evil`);
     expect(r.found).toEqual([{ name: "RESEND_API_KEY", value: v }]);
@@ -61,9 +61,9 @@ describe("the pure halves", () => {
       "Content-Type: text/plain; charset=utf-8", "Content-Transfer-Encoding: base64", "", btoa(`SECRET RESEND_API_KEY=${v}\n`),
       "--b1", "Content-Type: text/html; charset=utf-8", "Content-Transfer-Encoding: quoted-printable", "", `<p>SECRET RESEND_API_KEY=3D${v}</p>`, "--b1--", "",
     ].join("\r\n");
-    expect(carriesSecretValue(raw, [v])).toBe(true);
-    const clean = scrubSecretValues(raw, [v]);
-    expect(carriesSecretValue(clean, [v])).toBe(false);
+    expect(await carriesSecretValue(raw, [v])).toBe(true);
+    const clean = await scrubSecretValues(raw, [v]);
+    expect(await carriesSecretValue(clean, [v])).toBe(false);
   });
 
   it("deferred lines, missing keys and standing constraints are read exactly", () => {

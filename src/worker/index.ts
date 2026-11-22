@@ -2,7 +2,8 @@ import type { Env } from "./env";
 import { handleBossInboundMail, isBossMailbox } from "./boss/intake/inboundMail";
 import { runMailAlarm, MAIL_ALARM_CRON } from "./boss/intake/mailAlarm";
 import { runCloudClock as runBossCloudClock } from "./boss/cron/dispatch";
-import { BOSS_INTAKE_MAILBOX, decodeMimeHeader } from "../shared/boss/intake/mail.mjs";
+import { BOSS_INTAKE_MAILBOX } from "../shared/boss/intake/mail.mjs";
+import { decodeHeader } from "../shared/mail/parseMail.mjs";
 import { replyWithHistory } from "./boss/mail/history";
 import { plainReply } from "./boss/intake/mailRefs";
 // The structured event spine, for the one thing in this file that writes to it: a reply that did
@@ -258,7 +259,7 @@ export default {
          * "Fwd: Shorts lane #simone " — the one genuine failure in the table — is removed by the
          * same line, which is a plausible contributor and is NOT claimed as the cause.
          */
-        const subject = `Re: ${decodeMimeHeader(message.headers.get("subject") ?? "") || "your message"}`
+        const subject = `Re: ${decodeHeader(message.headers.get("subject") ?? "") || "your message"}`
           .replace(/[\r\n\t]+/g, " ").replace(/\s+/g, " ").trim().slice(0, 200);
         const recordReply = async (state: "sent" | "failed", error: string | null) => {
           await env.WP_OS_DB.prepare(
