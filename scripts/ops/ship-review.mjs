@@ -190,10 +190,25 @@ async function shoot(b, url, { width, height, scheme, file, focus = [], focusFil
     if (!(await centre())) { focused.push({ text, tap, file: null }); continue; }
     if (tap) {
       tapped = true;
+      // Watch what the tap changes, so the shot is centred on the message it shows, wherever that
+      // lands (22 Nov 2026: a preview message below a kit list fell under the shot's cut).
+      await page.evaluate(() => {
+        window.__srChanged = [];
+        const note = (n) => { const e = n.nodeType === 1 ? n : n.parentElement; if (e) window.__srChanged.push(e); };
+        new MutationObserver((ms) => ms.forEach((m) => { if (m.type === "childList") m.addedNodes.forEach(note); else note(m.target); }))
+          .observe(document.body, { subtree: true, childList: true, characterData: true, attributes: true, attributeFilter: ["hidden", "style", "class", "open"] });
+      }).catch(() => {});
       if (!(await el.click({ timeout: 5_000 }).then(() => true, () => false))) { focused.push({ text, tap, file: null }); continue; }
       await page.waitForLoadState("networkidle", { timeout: 10_000 }).catch(() => {});
       await page.waitForTimeout(1_500);
-      await centre();
+      // The last element the tap changed that now shows text; the tapped button itself if none (a link
+      // tap that left the page, or a tap that changed nothing visible).
+      const shown = await page.evaluate(() => {
+        const seen = (window.__srChanged ?? []).filter((e) => e.isConnected && e.innerText?.trim() && e.getClientRects().length);
+        const e = seen.at(-1); if (!e) return false;
+        e.scrollIntoView({ block: "center" }); return true;
+      }).catch(() => false);
+      if (!shown) await centre();
     }
     focused.push({ text, tap, file: (await viewShot(f)) ? f : null });
   }
