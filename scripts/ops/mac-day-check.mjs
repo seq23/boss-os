@@ -14,7 +14,7 @@
  *   - a MORNING job's slot before 07:00 plus twice its worst runtime ends after 06:30, or it has no
  *     measured worst runtime;
  *   - more than 3 jobs start in one 5-minute slot from 10:00 on, on any real date of the next 8 weeks;
- *   - a job (one-shots aside) does not run behind `mac-window run <its class> <label>`, or has no class
+ *   - a job (one-shots and LEFT_AS_IS aside) does not run behind `mac-window run <its class> <label>`, or has no class
  *     (a row's `macWindowIn` names the script that runs it behind mac-window itself: the PBS fill, whose
  *     plist is held and moved by its own one-shot, so it is never rewritten).
  * Exit 0 clean, 1 problems, 2 nothing read (Rule 0: zero plists or zero calendar slots is a lost directory, not a pass).
@@ -33,6 +33,9 @@ import { installedPlists, plistEvents, slotTimes } from "./lib/schedule.mjs";
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..", "..");
 const FAMILIES = /^(com\.seq\.|com\.howweknow\.)/; // West Peek OS daemons are not hers to schedule here
+// Jobs her rules leave exactly as they are (21 Nov 2026: "dont ... put the pause back"): the 00:05 tool that
+// ends her pauses is not rewritten, so it carries no guard and no row. Its slots are still checked.
+export const LEFT_AS_IS = new Set(["com.seq.resume-paused-jobs"]);
 const REST = [7 * 60, 10 * 60];
 const HEAVY_END = 6 * 60 + 55;
 const MORNING_DONE = 6 * 60 + 30;
@@ -78,7 +81,7 @@ export function macDayProblems(jobs, manifest, { shift = 0, from = new Date("202
     const slots = slotsOf(text, shift);
     const c = cls.get(label);
     const oneShot = ONE_SHOT.test(label);
-    if (!oneShot) {
+    if (!oneShot && !LEFT_AS_IS.has(label)) {
       if (!c) problems.push(`${label}: no macWindow on its Schedule row`);
       const g = guardOf(text);
       if (!g && !inScript.has(label)) problems.push(`${label}: does not run behind mac-window`);

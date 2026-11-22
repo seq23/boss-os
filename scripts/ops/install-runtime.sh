@@ -40,6 +40,8 @@ cat > "$PLIST" <<EOF
   <key>RunAtLoad</key><true/>
 </dict></plist>
 EOF
+# Behind mac-window ANY like every other job (its Schedule row says so); Hours to this Mac's zone.
+node "$RT/scripts/ops/plist-central.mjs" "$PLIST" || { echo "NAMED STOP [PLIST_TZ] could not guard $PLIST; nothing repointed." >&2; exit 4; }
 
 "${LAUNCHD_RELOAD:-$HOME/bin/launchd-reload}" --seed >/dev/null
 FAILED=0 MOVED=0 DEFERRED=0

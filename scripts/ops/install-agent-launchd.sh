@@ -475,6 +475,37 @@ lint_plist "$BUYERS_PLIST"
 reload_plist "$BUYERS_PLIST"
 echo "Installed $BUYERS_LABEL — Tuesdays 10:05 Central (buyer-hunt.mjs, duty_buyer_hunt)."
 
+# ─── The on-demand hunter: a hunt she asks for by email, within 5 minutes ────
+#
+# validate:a-hunt-reaches-the-hunter holds that this job exists and polls every 15 minutes or less. It
+# was installed by hand (12 Sep 2026) and no installer wrote it, so the Mac's day could not reach it:
+# it was the one LIGHT job left running outside mac-window (21 Nov 2026). Written here, it is guarded
+# like the rest; a pause on it (disabled) is kept, the new file waits in launchd-reload's pending list.
+HUNT_LABEL="com.seq.boss-hunt-ondemand"
+HUNT_PLIST="$HOME/Library/LaunchAgents/$HUNT_LABEL.plist"
+
+cat > "$HUNT_PLIST" <<HUNTEOF
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN"
+  "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0"><dict>
+  <key>Label</key><string>$HUNT_LABEL</string>
+  <key>ProgramArguments</key>
+  <array>
+    <string>/bin/bash</string>
+    <string>-lc</string>
+    <string>cd $REPO &amp;&amp; npm run --silent vault:run -- node scripts/ops/buyer-hunt.mjs --from-boss --send</string>
+  </array>
+  <key>StartInterval</key><integer>300</integer>
+  <key>StandardOutPath</key><string>$LOGS/hunt-ondemand.log</string>
+  <key>StandardErrorPath</key><string>$LOGS/hunt-ondemand.err</string>
+  <key>RunAtLoad</key><false/>
+</dict></plist>
+HUNTEOF
+lint_plist "$HUNT_PLIST"
+reload_plist "$HUNT_PLIST"
+echo "Installed $HUNT_LABEL — every 5 minutes, 10:00-21:59 Central (buyer-hunt.mjs --from-boss)."
+
 # ─── Thursday: sellers for what her LPs want to buy (owner, 1 Nov 2026) ──────
 #
 # The mirror of Tuesday for her BUY orders: people in her own mail who hold or can source the
@@ -1802,6 +1833,7 @@ require_loaded "$GRID_LABEL"
 # September and neither was ever on this list; the grid job was on the list and had never been
 # installed at all, because nobody ran the installer after writing it. Measured on 15 September.
 require_loaded "$BUYERS_LABEL"
+require_loaded "$HUNT_LABEL"
 require_loaded "$SELLERS_LABEL"
 require_loaded "$AHREFS_LABEL"
 # A FIFTH TIME, on 21 September: the repo-change lane was installed, loaded, and the "Verified" line
