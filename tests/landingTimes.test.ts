@@ -1,4 +1,6 @@
 import { readFileSync } from "node:fs";
+import { createRequire } from "node:module";
+import { d1Sql } from "../scripts/ops/lib/scorecard-readers.mjs";
 import { describe, expect, it } from "vitest";
 import { dur, endOfRun, expectedRepos, failRounds, isPublicRepo, graphql, liveAt, passAt, prRow, readWeek, sectionBody, weekLines, weekMeasures } from "../scripts/ops/landing-times.mjs";
 
@@ -242,4 +244,29 @@ describe("landing-times: the scorecard's numbers", () => {
       expect(m.params.sql).toMatch(/section = 'landing'/);
     }
   });
+});
+
+describe("landing-times: the scorecard reads only a fresh reading", () => {
+  const { DatabaseSync } = createRequire(import.meta.url)("node:sqlite") as typeof import("node:sqlite");
+  const sc = JSON.parse(readFileSync(new URL("../src/shared/boss/scorecard/manifest.json", import.meta.url), "utf8"));
+  const row = sc.rows.find((x: { id: string }) => x.id === "landing-speed");
+  const now = Date.parse("2026-12-20T12:00:00Z");
+  const read = (ageDays: number | null) => {
+    const db = new DatabaseSync(":memory:");
+    db.exec("CREATE TABLE morning_sections (section TEXT PRIMARY KEY, job TEXT, day TEXT, body TEXT, status TEXT, told_at INTEGER, created_at INTEGER, updated_at INTEGER)");
+    if (ageDays !== null) {
+      const at = now - ageDays * 86_400_000;
+      db.prepare("INSERT INTO morning_sections VALUES ('landing', 'landing-times', 'd', ?, 'told', NULL, ?, ?)")
+        .run(JSON.stringify({ measures: { landed_in_hour_pct: 91.5, live_in_day_pct: 88 } }), at, at);
+    }
+    return [row.first, row.real].map((m: { params: { db: string; sql: string; days: number } }) => {
+      const rows = db.prepare(d1Sql(m.params, now)).all() as Array<{ n: unknown }>;
+      expect(rows).toHaveLength(1);   // one row always: the reader's D1_SHAPE stop never fires on a missing section
+      return rows[0]?.n;
+    });
+  };
+
+  it("a reading from this week is read", () => expect(read(2)).toEqual([91.5, 88]));
+  it("a reading older than 9 days is not read (null), never last month's number", () => expect(read(10)).toEqual([null, null]));
+  it("no reading at all is not read (null)", () => expect(read(null)).toEqual([null, null]));
 });
