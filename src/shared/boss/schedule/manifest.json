@@ -4410,7 +4410,7 @@
         "metric": "PRs measured",
         "floor": 1,
         "runs": 1,
-        "reason": "Every week merges PRs; zero read is NAMED STOP [NO_PRS_READ], a red run."
+        "reason": "Every week merges PRs; zero read is NAMED STOP [NO_PRS_READ], a red run. Not wrapped in duty-run.sh, so no D1 floor check: a red or missing run leaves Sunday's Landing speed section named as missing in the morning email."
       }
     },
     {

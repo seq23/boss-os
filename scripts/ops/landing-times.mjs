@@ -6,17 +6,22 @@
  * For every PR merged in the last 7 days across her GitHub account, four moments, read from GitHub
  * itself (land keeps no timing log of its own; GitHub keeps all of it):
  *   opened   the PR's createdAt
- *   PASS     the first time a reviewer's `Ship-ready|Launch-ready|Engineering: PASS` line is on the PR
- *            (a comment, or the body: its edit history says when the line arrived); `Owner override`
- *            (her bypass) counts as the review; none = "not reviewed" for that PR, never 0 minutes
+ *   PASS     the first time a reviewer's `Ship-ready|Launch-ready: PASS` line is on the PR (a comment, or
+ *            the body: its edit history says when the line arrived); `Owner override` (her bypass) counts
+ *            as the review. A comment whose verdict is fail (first line `VERDICT: fail`, or a
+ *            `Ship-ready: FAIL` line) is never the PASS, even if it also says `Engineering: PASS`. None =
+ *            "no review" for that PR: no review time and no PASS-to-merge time, never measured from the
+ *            opening. A PASS already there when the PR opened = "reviewed before the PR opened", counted
+ *            apart and kept out of the review median (the time was spent, just not on the PR).
  *   merged   mergedAt
- *   live     the first production Deployment that went green after the merge (land records one per
+ *   live     the first production Deployment of THE MERGE COMMIT that went green (land records one per
  *            production deploy), else the merge commit's deploy run (a workflow or a Cloudflare build
  *            whose name says deploy, pages, publish, promote or release) finishing green; neither =
- *            "no deploy on record" for that PR (a script repo, docs), counted apart, never 0 minutes
+ *            "no deploy on record" for that PR (a script repo, docs), counted apart, never 0 minutes and
+ *            never another commit's deploy
  * and inside them, where the time went: each CI job's wait for a runner (queued: startedAt minus its
- * suite's createdAt) and its run (running), on the PR's last commit and on the merge commit, plus the
- * review rounds that ended in FAIL before the PASS.
+ * suite's createdAt) and its run (running), on the PR's last commit and on the merge commit (earlier
+ * pushes are not counted, and the line says "last commit"), plus the fail verdicts posted on it.
  *
  * Read-only by construction: the only request this makes is a GraphQL query; `graphql()` refuses any
  * text that is a mutation, so nothing in any repository's history can be changed by this job.
@@ -27,9 +32,14 @@
  *
  * The morning email shows the lines on Sundays (section "landing", MORNING_SECTION_SPECS), written by
  * job-landing-times.yml (cloud, Sundays 05:40 Central, fired by the Worker clock), with that run's own
- * token so it never spends the account's hourly allowance.
+ * token, so it never spends the account's hourly allowance. The Mac catch-up (`npm run landing:times`)
+ * uses her gh token instead: about 90 GraphQL points of her 5,000, a separate budget from the REST calls
+ * land waits on.
  * RULE 0: zero PRs read is NAMED STOP [NO_PRS_READ] (exit 2); GitHub not answering is
- * NAMED STOP [GITHUB_UNREACHABLE] (exit 75); neither ever prints "0 minutes".
+ * NAMED STOP [GITHUB_UNREACHABLE] (exit 75); a bad or under-scoped token is NAMED STOP
+ * [GITHUB_TOKEN_REFUSED] (exit 3); a wrong owner is NAMED STOP [OWNER_NOT_FOUND] (exit 3); a repo in the
+ * Repos map that this token cannot see is named in the line and is NAMED STOP [REPOS_NOT_READABLE]
+ * (exit 3) after the line is written. None ever prints "0 minutes".
  */
 import { execFileSync } from "node:child_process";
 import { outputLine } from "../../src/shared/boss/alarms/rules.mjs";
@@ -37,8 +47,9 @@ import { outputLine } from "../../src/shared/boss/alarms/rules.mjs";
 const OWNER = process.env.LANDING_OWNER ?? "seq23";
 const MIN = 60_000;
 
-export const PASS_RE = /\b(?:Ship-ready|Launch-ready|Engineering)\s*:\s*PASS\b/i;
+export const PASS_RE = /\b(?:Ship-ready|Launch-ready)\s*:\s*PASS\b/i;
 export const FAIL_RE = /\b(?:Ship-ready|Launch-ready|Engineering)\s*:\s*FAIL\b/i;
+export const VERDICT_RE = /^\s*VERDICT\s*:\s*(pass|fail)\b/i;
 export const BYPASS_RE = /^\s*Owner override\s*:/im;
 export const DEPLOY_RE = /deploy|pages|publish|promote|release|workers builds|cloudflare/i;
 
@@ -51,11 +62,25 @@ function stop(code, exit, words) {
 const t = (iso) => (iso ? Date.parse(iso) : NaN);
 const ok = (n) => Number.isFinite(n);
 
+/**
+ * A comment's verdict: its first line's `VERDICT: pass|fail` (the field every reviewer posts first), else
+ * fail when it carries a FAIL line, else pass when it carries a PASS line or her bypass, else null. A
+ * protocol field read as structure, never meaning. Pure.
+ */
+export function verdictOf(body = "") {
+  const first = body.split("\n").find((l) => l.trim()) ?? "";
+  const v = VERDICT_RE.exec(first);
+  if (v) return v[1].toLowerCase();
+  if (FAIL_RE.test(body)) return "fail";
+  if (PASS_RE.test(body) || BYPASS_RE.test(body)) return "pass";
+  return null;
+}
+
 /** When the PASS (or her bypass) first stood on the PR, as ms; null when it never did. Pure. */
 export function passAt(pr) {
   const created = t(pr.createdAt);
   const seen = [];
-  for (const c of pr.comments ?? []) if (PASS_RE.test(c.body ?? "") || BYPASS_RE.test(c.body ?? "")) seen.push(t(c.createdAt));
+  for (const c of pr.comments ?? []) if (verdictOf(c.body ?? "") === "pass") seen.push(t(c.createdAt));
   const edits = pr.edits ?? [];
   for (const e of edits) if (PASS_RE.test(e.diff ?? "") || BYPASS_RE.test(e.diff ?? "")) seen.push(t(e.editedAt));
   // A body that carries the line with no edit history had it from the start.
@@ -64,9 +89,9 @@ export function passAt(pr) {
   return ok(first) ? Math.max(first, created) : null;
 }
 
-/** Review rounds that ended in FAIL (comments, and body versions that carried a FAIL line). Pure. */
+/** Fail verdicts posted on the PR (each fail comment is one round, plus FAIL lines in the body's history). Pure. */
 export function failRounds(pr) {
-  let n = (pr.comments ?? []).filter((c) => FAIL_RE.test(c.body ?? "")).length;
+  let n = (pr.comments ?? []).filter((c) => verdictOf(c.body ?? "") === "fail").length;
   const bodies = (pr.edits ?? []).map((e) => e.diff ?? "");
   if (!bodies.length && FAIL_RE.test(pr.body ?? "")) n += 1;
   // Each distinct FAIL line that appeared in the body's history is one round.
@@ -93,10 +118,14 @@ export function ciWaits(suites) {
   return { queued: Math.max(0, queued), running, jobs };
 }
 
-/** When the merge went live, ms; null with no deploy on record. Pure. */
-export function liveAt(pr, deployments) {
+/**
+ * When the merge went live, ms; null with no deploy on record. Only the merge commit's own deployments
+ * count (pr.mergeDeploys): a repo's other deployments are never borrowed, so a merge older than what was
+ * read is "not recorded", never the oldest deploy seen (review F1, 22 Nov 2026). Pure.
+ */
+export function liveAt(pr) {
   const merged = t(pr.mergedAt);
-  const fromDeploy = (deployments ?? [])
+  const fromDeploy = (pr.mergeDeploys ?? [])
     .flatMap((d) => (d.statuses ?? []).filter((s) => s.state === "SUCCESS").map((s) => t(s.createdAt)))
     .filter((x) => ok(x) && x >= merged)
     .sort((a, b) => a - b)[0];
@@ -112,16 +141,19 @@ export function liveAt(pr, deployments) {
 }
 
 /** One PR's row: every moment and every wait, null where GitHub has no record. Pure. */
-export function prRow(pr, deployments) {
+export function prRow(pr) {
   const opened = t(pr.createdAt), merged = t(pr.mergedAt);
-  const pass = passAt(pr), live = liveAt(pr, deployments);
+  const pass = passAt(pr), live = liveAt(pr);
+  // A PASS already on the PR within a minute of it opening was written before it: not a 0-minute review.
+  const early = pass !== null && pass - opened < MIN;
   const ci = ciWaits(pr.headSuites), main = ciWaits(pr.mainSuites);
   return {
     repo: pr.repo, number: pr.number,
     opened: pr.createdAt, pass: pass === null ? null : new Date(pass).toISOString(), merged: pr.mergedAt,
     live: live === null ? null : new Date(live).toISOString(),
-    review_ms: pass === null ? null : pass - opened,
-    to_merge_ms: merged - (pass ?? opened),
+    reviewed: pass === null ? "no" : early ? "before opening" : "yes",
+    review_ms: pass === null || early ? null : pass - opened,
+    to_merge_ms: pass === null ? null : merged - pass,
     to_live_ms: live === null ? null : live - merged,
     total_ms: live === null ? null : live - opened,
     open_to_merge_ms: merged - opened,
@@ -143,6 +175,7 @@ export function dur(ms) {
   const m = Math.round(ms / MIN);
   if (m < 60) return `${m} min`;
   const h = Math.floor(m / 60), r = m % 60;
+  if (h >= 48) return `${Math.round(h / 24)} days`;
   return r ? `${h} h ${r} min` : `${h} h`;
 }
 
@@ -150,19 +183,23 @@ export function dur(ms) {
  * The week's line. Never "0 minutes" for nothing: no rows is a named stop before this is called, and a
  * step with no record says "not recorded". Pure.
  */
-export function weekLines(rows, { days = 7 } = {}) {
+export function weekLines(rows, { days = 7, unreadable = [] } = {}) {
   if (!rows.length) throw stop("NO_PRS_READ", 2, "no merged PR was read, so there is no landing time to report");
   const live = rows.filter((r) => r.total_ms !== null);
-  const slow = [...live].sort((a, b) => b.total_ms - a.total_ms)[0];
+  // Slowest LANDING (merge to live): opened-to-live is won by month-old PRs and says nothing about landing.
+  const slow = [...live].sort((a, b) => b.to_live_ms - a.to_live_ms)[0];
   const sum = (k) => rows.reduce((a, r) => a + (r[k] ?? 0), 0);
   const fails = sum("fail_rounds");
-  const reviewed = rows.filter((r) => r.review_ms !== null).length;
+  const n = (v) => rows.filter((r) => r.reviewed === v).length;
+  const unreviewed = rows.filter((r) => r.reviewed === "no");
   const head = live.length
-    ? `${rows.length} PRs merged in the last ${days} days; ${live.length} have a deploy on record. Opened to live: median ${dur(median(live.map((r) => r.total_ms)))}, slowest ${slow.repo} #${slow.number} at ${dur(slow.total_ms)}.`
+    ? `${rows.length} PRs merged in the last ${days} days; ${live.length} have a deploy on record. Opened to live: median ${dur(median(live.map((r) => r.total_ms)))}; slowest merge to live ${slow.repo} #${slow.number} at ${dur(slow.to_live_ms)}.`
     : `${rows.length} PRs merged in the last ${days} days; none has a deploy on record, so opened to merged: median ${dur(median(rows.map((r) => r.open_to_merge_ms)))}.`;
-  const where = `Where the time went (median per PR): review ${dur(median(rows.map((r) => r.review_ms)))} (${reviewed} of ${rows.length} reviewed, ${fails} FAIL round${fails === 1 ? "" : "s"}), PASS to merge ${dur(median(rows.map((r) => r.to_merge_ms)))}, merge to live ${dur(median(live.map((r) => r.to_live_ms)))}.`;
-  const runners = `Waiting for a GitHub runner, all PRs together: ${dur(sum("ci_queued_ms") + sum("main_queued_ms"))} (running: ${dur(sum("ci_running_ms") + sum("main_running_ms"))}).`;
-  return [head, where, runners];
+  const where = `Where the time went (median per PR): review ${dur(median(rows.map((r) => r.review_ms)))} (${n("yes")} reviewed on the PR, ${n("before opening")} before it opened, ${n("no")} with no review; ${fails} fail verdict${fails === 1 ? "" : "s"}), PASS to merge ${dur(median(rows.map((r) => r.to_merge_ms)))}, merge to live ${dur(median(live.map((r) => r.to_live_ms)))}${unreviewed.length ? `; no-review PRs opened to merged ${dur(median(unreviewed.map((r) => r.open_to_merge_ms)))}` : ""}.`;
+  const runners = `Waiting for a GitHub runner (each PR's last commit and its merge), all PRs together: ${dur(sum("ci_queued_ms") + sum("main_queued_ms"))} (running: ${dur(sum("ci_running_ms") + sum("main_running_ms"))}).`;
+  const lines = [head, where, runners];
+  if (unreadable.length) lines.push(`${unreadable.length} repo${unreadable.length === 1 ? "" : "s"} not readable with this token, so not measured: ${unreadable.join(", ")}.`);
+  return lines;
 }
 
 // ─── GitHub (read-only) ──────────────────────────────────────────────────────────────────────────
@@ -176,8 +213,9 @@ function token() {
 /** One GraphQL query. Refuses a mutation, so this job can only read. */
 export async function graphql(query, variables = {}, { fetchImpl = fetch, tok = token(), wait = (ms) => new Promise((r) => setTimeout(r, ms)) } = {}) {
   if (/^\s*mutation\b/i.test(query) || /\bmutation\s*[({]/i.test(query)) throw stop("READ_ONLY", 9, "landing-times sends queries only; a mutation was refused");
-  let last = "";
+  let last = "", pause = 0;
   for (let attempt = 1; attempt <= 3; attempt++) {
+    pause = 0;
     try {
       const res = await fetchImpl("https://api.github.com/graphql", {
         method: "POST",
@@ -186,12 +224,24 @@ export async function graphql(query, variables = {}, { fetchImpl = fetch, tok = 
       });
       const body = await res.json().catch(() => null);
       if (res.ok && body?.data && !body.errors?.length) return body.data;
-      // GitHub answered and refused the query itself (too big, bad field): asking again cannot help.
-      if (res.ok && body?.errors?.length) throw stop("GITHUB_QUERY_REFUSED", 75, `GitHub refused the query (${JSON.stringify(body.errors).slice(0, 200)}); nothing was measured`);
-      last = `HTTP ${res.status} ${JSON.stringify(body?.errors ?? body?.message ?? "").slice(0, 200)}`;
-      if (res.status < 500 && res.status !== 403 && res.status !== 429) break;
-    } catch (e) { if (e?.code === 75 || e?.code === 9) throw e; last = String(e?.message ?? e); }
-    await wait(2000 * attempt);
+      const said = JSON.stringify(body?.errors ?? body?.message ?? "").slice(0, 200);
+      const types = (body?.errors ?? []).map((e) => e?.type);
+      // GitHub answered and said no to this token: a retry cannot fix it, the token's permissions can.
+      // ...unless the "no" is a rate limit (primary or secondary): that one passes, so it is waited out.
+      const limited = res.status === 429 || res.headers?.get?.("x-ratelimit-remaining") === "0"
+        || res.headers?.get?.("retry-after") != null || /rate limit/i.test(said);
+      if (limited) pause = Math.min(Math.max(Number(res.headers?.get?.("retry-after")) || 0, 60) * 1000, 180_000);
+      if (res.status === 401 || (res.status === 403 && !limited) || types.includes("FORBIDDEN")) {
+        throw stop("GITHUB_TOKEN_REFUSED", 3, `GitHub refused this token (HTTP ${res.status} ${said}); give it read access to pull requests, checks, deployments and actions (workflow permissions, or the token's scopes); nothing was measured`);
+      }
+      if (types.includes("NOT_FOUND")) throw Object.assign(stop("GITHUB_NOT_FOUND", 3, `GitHub has no such owner or repository (${said}); nothing was measured`), { notFound: true });
+      // GitHub answered and refused the query itself (too big, bad field): asking again cannot help, and
+      // partial data with errors is never used.
+      if (res.ok && body?.errors?.length) throw stop("GITHUB_QUERY_REFUSED", 75, `GitHub refused the query (${said}); nothing was measured`);
+      last = `HTTP ${res.status} ${said}`;
+      if (res.status < 500 && !limited) break;
+    } catch (e) { if ([75, 9, 3].includes(e?.code) && /NAMED STOP/.test(e?.message ?? "")) throw e; last = String(e?.message ?? e); }
+    await wait(pause || 2000 * attempt);
   }
   throw stop("GITHUB_UNREACHABLE", 75, `GitHub did not answer (${last}); nothing was measured, the next run tries again`);
 }
@@ -203,40 +253,54 @@ const suitesOf = (c) => (c?.checkSuites?.nodes ?? []).map((s) => ({
   runs: (s.checkRuns?.nodes ?? []).map((r) => ({ name: r.name, startedAt: r.startedAt, completedAt: r.completedAt, conclusion: r.conclusion })),
 }));
 
-export async function readWeek({ days = 7, now = Date.now(), gql = graphql } = {}) {
+const DEPLOYS = `deployments(first: 5, environments: ["production"]) { nodes { createdAt statuses(first: 5) { nodes { state createdAt } } } }`;
+
+/** The Repos map's live repos (not retired): every one must be visible to the token, or the line says so. */
+export function expectedRepos(map) {
+  return (map?.rows ?? []).filter((r) => r.repo && r.category !== "retired").map((r) => r.repo);
+}
+
+export async function readWeek({ days = 7, now = Date.now(), gql = graphql, owner = OWNER, expected = [] } = {}) {
   const since = now - days * 86_400_000;
-  const repos = [];
+  const repos = [], seen = new Set();
   let after = null;
   do {
-    const d = await gql(`query($o: String!, $a: String) { user(login: $o) { repositories(first: 100, after: $a, isFork: false, ownerAffiliations: OWNER) {
-      pageInfo { hasNextPage endCursor } nodes { name isArchived pushedAt } } } }`, { o: OWNER, a: after });
+    let d;
+    try {
+      d = await gql(`query($o: String!, $a: String) { user(login: $o) { repositories(first: 100, after: $a, isFork: false, ownerAffiliations: OWNER) {
+        pageInfo { hasNextPage endCursor } nodes { name isArchived pushedAt } } } }`, { o: owner, a: after });
+    } catch (e) {
+      if (e?.notFound) throw stop("OWNER_NOT_FOUND", 3, `GitHub has no user "${owner}" (LANDING_OWNER); nothing was measured`);
+      throw e;
+    }
+    if (!d?.user) throw stop("OWNER_NOT_FOUND", 3, `GitHub has no user "${owner}" (LANDING_OWNER); nothing was measured`);
     const c = d.user.repositories;
+    for (const r of c.nodes) seen.add(r.name);
     repos.push(...c.nodes.filter((r) => !r.isArchived && t(r.pushedAt) >= since).map((r) => r.name));
     after = c.pageInfo.hasNextPage ? c.pageInfo.endCursor : null;
   } while (after);
+  const unreadable = expected.filter((r) => !seen.has(r));
 
-  const prs = [], deploys = {};
+  const prs = [];
   for (const name of repos) {
     let cur = null, more = true;
     while (more) {
       const d = await gql(`query($o: String!, $n: String!, $a: String) { repository(owner: $o, name: $n) {
-        deployments(last: 40, environments: ["production"]) { nodes { createdAt statuses(first: 5) { nodes { state createdAt } } } }
         pullRequests(states: MERGED, first: 8, after: $a, orderBy: { field: UPDATED_AT, direction: DESC }) {
           pageInfo { hasNextPage endCursor }
           nodes { number createdAt mergedAt updatedAt body
             comments(last: 25) { nodes { createdAt body } }
             userContentEdits(first: 10) { nodes { editedAt diff } }
             commits(last: 1) { nodes { commit { ${SUITES} } } }
-            mergeCommit { ${SUITES} } } } } }`, { o: OWNER, n: name, a: cur });
-      const repo = d.repository;
-      deploys[name] ??= (repo.deployments?.nodes ?? []).map((x) => ({ createdAt: x.createdAt, statuses: x.statuses?.nodes ?? [] }));
-      const page = repo.pullRequests;
+            mergeCommit { ${SUITES} ${DEPLOYS} } } } } }`, { o: owner, n: name, a: cur });
+      const page = d.repository.pullRequests;
       for (const p of page.nodes) {
         if (t(p.mergedAt) < since) continue;
         prs.push({
           repo: name, number: p.number, createdAt: p.createdAt, mergedAt: p.mergedAt, body: p.body,
           comments: p.comments.nodes, edits: p.userContentEdits.nodes,
           headSuites: suitesOf(p.commits.nodes[0]?.commit), mainSuites: suitesOf(p.mergeCommit),
+          mergeDeploys: (p.mergeCommit?.deployments?.nodes ?? []).map((x) => ({ createdAt: x.createdAt, statuses: x.statuses?.nodes ?? [] })),
         });
       }
       const oldest = page.nodes.at(-1);
@@ -244,7 +308,7 @@ export async function readWeek({ days = 7, now = Date.now(), gql = graphql } = {
       cur = page.pageInfo.endCursor;
     }
   }
-  return { repos: repos.length, rows: prs.map((p) => prRow(p, deploys[p.repo])) };
+  return { repos: repos.length, unreadable, rows: prs.map((p) => prRow(p)) };
 }
 
 // ─── Run ─────────────────────────────────────────────────────────────────────────────────────────
@@ -252,18 +316,23 @@ export async function readWeek({ days = 7, now = Date.now(), gql = graphql } = {
 async function main() {
   const args = process.argv.slice(2);
   const dry = args.includes("--dry-run");
-  const days = Number(args[args.indexOf("--days") + 1]) || 7;
-  const { repos, rows } = await readWeek({ days });
+  const i = args.indexOf("--days");
+  const days = i >= 0 ? Number(args[i + 1]) : 7;
+  if (!(days > 0)) throw stop("BAD_ARGS", 64, "--days needs a positive number of days");
+  const { readFileSync } = await import("node:fs");
+  const map = JSON.parse(readFileSync(new URL("../../src/shared/boss/maps/repos.json", import.meta.url), "utf8"));
+  const { repos, rows, unreadable } = await readWeek({ days, expected: expectedRepos(map) });
   if (!repos) throw stop("NO_REPOS_READ", 2, `no repository of ${OWNER} was pushed in the last ${days} days, or the list did not load`);
-  const lines = weekLines(rows, { days });
+  const lines = weekLines(rows, { days, unreadable });
   if (args.includes("--json")) console.log(JSON.stringify(rows, null, 1));
-  else if (dry) for (const r of rows) console.log([r.repo, `#${r.number}`, `review ${dur(r.review_ms)}`, `to merge ${dur(r.to_merge_ms)}`, `to live ${dur(r.to_live_ms)}`, `queued ${dur(r.ci_queued_ms + r.main_queued_ms)}`, `fails ${r.fail_rounds}`].join("  "));
+  else if (dry) for (const r of rows) console.log([r.repo, `#${r.number}`, `review ${dur(r.review_ms)}`, `reviewed ${r.reviewed}`, `to merge ${dur(r.to_merge_ms)}`, `to live ${dur(r.to_live_ms)}`, `queued ${dur(r.ci_queued_ms + r.main_queued_ms)}`, `fails ${r.fail_rounds}`].join("  "));
   for (const l of lines) console.log(l);
   if (!dry) {
     const { writeMorningSection } = await import("../../src/shared/boss/mail/morning.mjs");
     writeMorningSection("landing", { title: "Landing speed, PR to live", lines });
   }
   console.log(outputLine(rows.length, "PRs measured"));
+  if (unreadable.length) throw stop("REPOS_NOT_READABLE", 3, `${unreadable.length} repo(s) in the Repos map are not visible to this token (${unreadable.join(", ")}); the line says so, and this run is red until the token can read them`);
 }
 
 if (process.argv[1] && import.meta.url === new URL(`file://${process.argv[1]}`).href) {

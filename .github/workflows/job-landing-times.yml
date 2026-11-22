@@ -5,7 +5,8 @@ name: job · Landing speed, PR to live · sun 05:40 CT
 # (GraphQL queries; the script refuses a mutation) with this run's own token, so it never spends the
 # account's own hourly allowance that land and the agents wait on. Writes the morning section
 # "landing" (Sunday's email). Zero PRs read: NAMED STOP [NO_PRS_READ], a red run; GitHub not
-# answering: NAMED STOP [GITHUB_UNREACHABLE], a red run; neither is ever "0 minutes".
+# answering: NAMED STOP [GITHUB_UNREACHABLE], a red run; a token GitHub refuses: [GITHUB_TOKEN_REFUSED];
+# neither is ever "0 minutes".
 #
 # FIRED BY BOSS OS'S OWN CLOCK, NOT GITHUB'S (21 Nov 2026): the Worker's five-minute cron reads this
 # job's time from its Schedule row (src/shared/boss/schedule/manifest.json, trigger.clock "worker")
@@ -20,8 +21,14 @@ on:
         type: boolean
         default: false
 
+# Read-only scopes this job's own token needs to see every repo's PRs, checks, deployments and runs; a
+# repo it still cannot see (a private one) is named in the line and turns the run red (REPOS_NOT_READABLE).
 permissions:
   contents: read
+  pull-requests: read
+  checks: read
+  deployments: read
+  actions: read
 
 concurrency:
   group: job-landing-times

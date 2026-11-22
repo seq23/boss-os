@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { dur, graphql, liveAt, passAt, prRow, readWeek, weekLines } from "../scripts/ops/landing-times.mjs";
+import { dur, expectedRepos, failRounds, graphql, liveAt, passAt, prRow, readWeek, weekLines } from "../scripts/ops/landing-times.mjs";
 
 /*
  * PR-to-live, measured (owner, 22 Nov 2026: "landing shit takes fucking forever"). The ways it breaks:
@@ -16,19 +16,63 @@ const pr = (o: Record<string, unknown> = {}) => ({
 describe("landing-times: the moments of a PR", () => {
   it("PASS is the first reviewer line, from a comment or a body edit; none is null, never instant", () => {
     expect(passAt(pr({ comments: [{ createdAt: at(2), body: "Ship-ready: PASS — r looked; Engineering: PASS" }] }))).toBe(Date.parse(at(2)));
-    expect(passAt(pr({ edits: [{ editedAt: at(1), diff: "Engineering: PASS" }] }))).toBe(Date.parse(at(1)));
+    expect(passAt(pr({ edits: [{ editedAt: at(1), diff: "Ship-ready: PASS — r; Engineering: PASS" }] }))).toBe(Date.parse(at(1)));
     expect(passAt(pr({ body: 'Owner override: "ship it" (22 Nov)' }))).toBe(Date.parse(at(0)));
     expect(passAt(pr({ comments: [{ createdAt: at(1), body: "Ship-ready: FAIL" }] }))).toBeNull();
   });
-  it("live is the first green production deploy after the merge, else a green deploy run; none is null", () => {
+  it("live is the merge commit's first green production deploy, else a green deploy run; none is null", () => {
     const dep = [{ statuses: [{ state: "SUCCESS", createdAt: at(2) }, { state: "SUCCESS", createdAt: at(4) }] }];
-    expect(liveAt(pr(), dep)).toBe(Date.parse(at(4)));
+    expect(liveAt(pr({ mergeDeploys: dep }))).toBe(Date.parse(at(4)));
     const run = { app: "github-actions", workflow: "Deploy", runs: [{ name: "deploy", conclusion: "SUCCESS", completedAt: at(5) }] };
-    expect(liveAt(pr({ mainSuites: [run] }), [])).toBe(Date.parse(at(5)));
-    expect(liveAt(pr({ mainSuites: [{ ...run, workflow: "CI", runs: [{ ...run.runs[0], name: "test" }] }] }), [])).toBeNull();
+    expect(liveAt(pr({ mainSuites: [run] }))).toBe(Date.parse(at(5)));
+    expect(liveAt(pr({ mainSuites: [{ ...run, workflow: "CI", runs: [{ ...run.runs[0], name: "test" }] }] }))).toBeNull();
+  });
+  it("F1: a merge with no deploy of its own is 'not recorded', never another commit's (the repo's oldest) deploy", async () => {
+    // #418's shape: merged 3 days before the oldest deploy the repo list reaches; the repo-wide list must not be used.
+    const now = Date.parse(at(24 * 7));
+    const repoDeploys = { nodes: [{ createdAt: at(80), statuses: { nodes: [{ state: "SUCCESS", createdAt: at(80) }] } }] };
+    const node = { number: 418, createdAt: at(6), mergedAt: at(8), updatedAt: at(8), body: "", comments: { nodes: [] }, userContentEdits: { nodes: [] }, commits: { nodes: [] },
+      mergeCommit: { checkSuites: { nodes: [] }, deployments: { nodes: [] } } };
+    const gql = async (q: string) => q.includes("repositories(")
+      ? { user: { repositories: { pageInfo: { hasNextPage: false }, nodes: [{ name: "r", isArchived: false, pushedAt: at(160) }] } } }
+      : { repository: { deployments: repoDeploys, pullRequests: { pageInfo: { hasNextPage: false }, nodes: [node] } } };
+    const { rows } = await readWeek({ now, gql });
+    expect(rows[0]?.live).toBeNull();
+    expect(rows[0]?.to_live_ms).toBeNull();
+    // and its own deploy, when there is one, is the one used
+    node.mergeCommit.deployments.nodes = [{ createdAt: at(8.3), statuses: { nodes: [{ state: "SUCCESS", createdAt: at(8.35) }] } }] as never;
+    const again = await readWeek({ now, gql });
+    expect(again.rows[0]?.to_live_ms).toBe(0.35 * H);
+  });
+  it("F2: an unreviewed PR has no PASS-to-merge time; it is never measured from the opening", () => {
+    const row = prRow(pr());
+    expect(row.reviewed).toBe("no");
+    expect(row.to_merge_ms).toBeNull();
+    const lines = weekLines([row, prRow(pr({ number: 2, comments: [{ createdAt: at(1), body: "VERDICT: pass\nShip-ready: PASS — r" }] }))]).join(" ");
+    expect(lines).toMatch(/PASS to merge 2 h 0 min|PASS to merge 2 h,/);
+    expect(lines).toMatch(/no-review PRs opened to merged 3 h/);
+  });
+  it("F3: a `VERDICT: fail` comment is one fail round, and a fail verdict is never the PASS", () => {
+    const failed = pr({ comments: [
+      { createdAt: at(1), body: "VERDICT: fail\n\n## Fails\n- F1 the page is blank" },
+      { createdAt: at(1.5), body: "Ship-ready: FAIL — r; Engineering: PASS" },
+      { createdAt: at(2), body: "VERDICT: pass\nShip-ready: PASS — r; Engineering: PASS" },
+    ] });
+    expect(failRounds(failed)).toBe(2);
+    expect(passAt(failed)).toBe(Date.parse(at(2)));
+    expect(passAt(pr({ comments: [{ createdAt: at(1), body: "VERDICT: fail\nShip-ready: PASS on looks; Engineering: FAIL" }] }))).toBeNull();
+    expect(passAt(pr({ comments: [{ createdAt: at(1), body: "Ship-ready: FAIL; Engineering: PASS" }] }))).toBeNull();
+  });
+  it("F4: a PASS already there when the PR opened is 'reviewed before the PR opened', never a 0-minute review", () => {
+    const row = prRow(pr({ body: "Ship-ready: PASS — r looked; Engineering: PASS" }));
+    expect(row.reviewed).toBe("before opening");
+    expect(row.review_ms).toBeNull();
+    const onPr = prRow(pr({ number: 2, comments: [{ createdAt: at(1), body: "Ship-ready: PASS — r" }] }));
+    expect(weekLines([row, onPr]).join(" ")).toMatch(/review 1 h 0 min|review 1 h \(/);
+    expect(weekLines([row, onPr]).join(" ")).toMatch(/1 reviewed on the PR, 1 before it opened, 0 with no review/);
   });
   it("a row with no review and no deploy says so, and the line says 'not recorded'", () => {
-    const row = prRow(pr(), []);
+    const row = prRow(pr());
     expect(row.review_ms).toBeNull();
     expect(row.total_ms).toBeNull();
     expect(weekLines([row]).join(" ")).toMatch(/none has a deploy on record.*review not recorded/s);
@@ -36,7 +80,7 @@ describe("landing-times: the moments of a PR", () => {
   });
   it("runner waits come from each job's start minus its suite's creation", () => {
     const suite = { app: "github-actions", createdAt: at(0), runs: [{ startedAt: at(0.5), completedAt: at(1) }] };
-    const row = prRow(pr({ headSuites: [suite] }), []);
+    const row = prRow(pr({ headSuites: [suite] }));
     expect(row.ci_queued_ms).toBe(0.5 * H);
     expect(row.ci_running_ms).toBe(0.5 * H);
   });
@@ -59,6 +103,58 @@ describe("landing-times: rule 0 and outages", () => {
     const fetchImpl = async () => { calls++; return new Response(JSON.stringify({ data: null, errors: [{ type: "RESOURCE_LIMITS_EXCEEDED" }] }), { status: 200 }); };
     await expect(graphql("query { a }", {}, { fetchImpl, tok: "t", wait: async () => {} })).rejects.toThrow(/GITHUB_QUERY_REFUSED/);
     expect(calls).toBe(1);
+  });
+  it("F5: 401 and FORBIDDEN are NAMED STOP [GITHUB_TOKEN_REFUSED], exit 3, at once; never 'unreachable'", async () => {
+    for (const res of [
+      () => new Response(JSON.stringify({ message: "Bad credentials" }), { status: 401 }),
+      () => new Response(JSON.stringify({ message: "Resource not accessible by integration" }), { status: 403 }),
+      () => new Response(JSON.stringify({ data: { repository: null }, errors: [{ type: "FORBIDDEN", message: "Resource not accessible by integration" }] }), { status: 200 }),
+    ]) {
+      let calls = 0;
+      const fetchImpl = async () => { calls++; return res(); };
+      await expect(graphql("query { a }", {}, { fetchImpl, tok: "t", wait: async () => {} }))
+        .rejects.toMatchObject({ code: 3, message: expect.stringMatching(/NAMED STOP \[GITHUB_TOKEN_REFUSED\].*pull requests, checks, deployments/) });
+      expect(calls).toBe(1);
+    }
+  });
+  it("F5: a 403 that is the rate limit is still asked again (transient), not a token stop", async () => {
+    let calls = 0;
+    const fetchImpl = async () => { calls++; return new Response("{}", { status: 403, headers: { "x-ratelimit-remaining": "0" } }); };
+    await expect(graphql("query { a }", {}, { fetchImpl, tok: "t", wait: async () => {} })).rejects.toThrow(/GITHUB_UNREACHABLE/);
+    expect(calls).toBe(3);
+  });
+  it("F5: a secondary rate limit (403 'rate limit' text) is waited out, at least a minute, never a token stop", async () => {
+    let calls = 0; const waits: number[] = [];
+    const fetchImpl = async () => { calls++; return new Response(JSON.stringify({ message: "You have exceeded a secondary rate limit." }), { status: 403 }); };
+    await expect(graphql("query { a }", {}, { fetchImpl, tok: "t", wait: async (ms: number) => { waits.push(ms); } })).rejects.toThrow(/GITHUB_UNREACHABLE/);
+    expect(calls).toBe(3);
+    expect(Math.min(...waits)).toBeGreaterThanOrEqual(60_000);
+  });
+  it("F5: partial data with errors is refused, never used", async () => {
+    const fetchImpl = async () => new Response(JSON.stringify({ data: { user: { repositories: { nodes: [] } } }, errors: [{ type: "RESOURCE_LIMITS_EXCEEDED" }] }), { status: 200 });
+    await expect(graphql("query { a }", {}, { fetchImpl, tok: "t", wait: async () => {} })).rejects.toThrow(/GITHUB_QUERY_REFUSED/);
+  });
+  it("F5: a wrong owner is NAMED STOP [OWNER_NOT_FOUND], exit 3, never a TypeError", async () => {
+    await expect(readWeek({ owner: "nobody", gql: async () => ({ user: null }) })).rejects.toMatchObject({ code: 3, message: expect.stringMatching(/OWNER_NOT_FOUND.*nobody/) });
+    const fetchImpl = async () => new Response(JSON.stringify({ data: { user: null }, errors: [{ type: "NOT_FOUND", path: ["user"] }] }), { status: 200 });
+    const gql = (q: string, v?: Record<string, unknown>) => graphql(q, v, { fetchImpl, tok: "t", wait: async () => {} });
+    await expect(readWeek({ owner: "nobody", gql })).rejects.toThrow(/OWNER_NOT_FOUND/);
+  });
+  it("F6: a Repos-map repo the token cannot see is named in the line and returned as unreadable", async () => {
+    const gql = async (q: string) => q.includes("repositories(")
+      ? { user: { repositories: { pageInfo: { hasNextPage: false }, nodes: [{ name: "r", isArchived: false, pushedAt: at(0) }] } } }
+      : { repository: { pullRequests: { pageInfo: { hasNextPage: false }, nodes: [] } } };
+    const expected = expectedRepos({ rows: [{ repo: "r", category: "mine" }, { repo: "hidden", category: "mine" }, { repo: "old", category: "retired" }] });
+    const { unreadable } = await readWeek({ now: Date.parse(at(1)), gql, expected });
+    expect(unreadable).toEqual(["hidden"]);
+    expect(weekLines([prRow(pr())], { unreadable }).at(-1)).toMatch(/^1 repo not readable with this token, so not measured: hidden\.$/);
+  });
+  it("slowest is the slowest LANDING (merge to live) among the window's PRs, in plain days", () => {
+    const dep = (h: number) => [{ statuses: [{ state: "SUCCESS", createdAt: at(h) }] }];
+    const oldOpen = prRow(pr({ number: 7, createdAt: at(-900), mergeDeploys: dep(3.2) }));
+    const slowLand = prRow(pr({ number: 8, mergeDeploys: dep(60) }));
+    const head = weekLines([oldOpen, slowLand])[0];
+    expect(head).toMatch(/slowest merge to live r #8 at 2 days/);
   });
   it("it can only read: a mutation is refused before anything is sent", async () => {
     let calls = 0;
