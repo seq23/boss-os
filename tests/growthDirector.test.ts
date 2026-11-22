@@ -229,6 +229,13 @@ describe("her fortnightly report: built from the record, plain words, honest lin
     expect(all).toContain("money in across the growth businesses, last 28 days: not read yet (the floor is $1,000 by Jan 22)");
   });
 
+  it("one of a thing is said singular, and a brand keeps its own spelling", () => {
+    const r = reportSection([{ ...pnp, actions: [queued("wordpress", "guide-syndication"), queued("tiktok", "screen-video")] }], { ...O, cards: 0, summaries: [{ key: "porch-and-party", totals: { money: null, requests: 1, visits: 1 } }] });
+    const all = r.lines.join("\n");
+    expect(all).toContain("Porch & Party: 1 request, 1 visit in 28 days; 2 queued.");
+    expect(all).toContain("Queued, for example: Porch & Party, WordPress guide syndication; Porch & Party, TikTok screen video.");
+  });
+
   it("a plain model sentence is kept, only its first sentence", () => {
     const r = reportSection([{ ...pnp, decision: "Christmas porches lead, so reels show finished porches. More below." }], { ...O, cards: 0 });
     expect(r.lines[1]).toMatch(/2 queued\. Christmas porches lead, so reels show finished porches\.$/);

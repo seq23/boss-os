@@ -250,13 +250,16 @@ const HELD_WHY = {
   "held: roster": "its plan in the brain needs a fix; the team is on it",
   "held: error": "the run failed for it; the team is fixing it",
 };
-const WORDS = { money: (n) => `$${Math.round(n).toLocaleString("en-US")} in`, sales: (n) => `${n} ${n === 1 ? "sale" : "sales"}`, installs: (n) => `${n} ${n === 1 ? "install" : "installs"}`, requests: (n) => `${n} ${n === 1 ? "request" : "requests"}`, visits: (n) => `${n} visits` };
+const WORDS = { money: (n) => `$${Math.round(n).toLocaleString("en-US")} in`, sales: (n) => `${n} ${n === 1 ? "sale" : "sales"}`, installs: (n) => `${n} ${n === 1 ? "install" : "installs"}`, requests: (n) => `${n} ${n === 1 ? "request" : "requests"}`, visits: (n) => `${n} ${n === 1 ? "visit" : "visits"}` };
 /** "2 requests, $730 in" from a scoreboard summary's totals; null when nothing was read (never 0). */
 export function numbersLine(summary) {
   const parts = Object.entries(summary?.totals ?? {}).filter(([, v]) => v !== null && v !== undefined).map(([k, v]) => WORDS[k]?.(v)).filter(Boolean);
   return parts.length ? parts.join(", ") : null;
 }
-const titleCase = (w) => String(w ?? "").replace(/[-_]+/g, " ").replace(/\b\w/g, (c) => c.toUpperCase());
+// A channel in her words: the brand's own spelling where it has one (WordPress, TikTok), else Title Case.
+const BRAND_SPELLING = { wordpress: "WordPress", tiktok: "TikTok", youtube: "YouTube", linkedin: "LinkedIn" };
+const titleCase = (w) => String(w ?? "").replace(/[-_]+/g, " ").replace(/\b\w/g, (c) => c.toUpperCase())
+  .replace(/\b(Wordpress|Tiktok|Youtube|Linkedin)\b/g, (m) => BRAND_SPELLING[m.toLowerCase()]);
 /** The one model sentence kept: its first sentence, only when it passes the plain-words check. */
 function modelSentence(text) {
   const first = String(text ?? "").replace(/NAMED STOP \[[A-Z0-9_]+\]\s*/g, "").replace(/\s+/g, " ").trim().split(/(?<=[.!?])\s/)[0] ?? "";
