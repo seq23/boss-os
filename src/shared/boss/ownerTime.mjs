@@ -64,7 +64,11 @@ export function civilIn(ts, tz) {
  * hour wrong on every deadline that crossed a clock change). The epoch ms at which the clock in `tz`
  * reads y-m-d h:min. TWO PASSES: the offset depends on the instant being solved for, so the second
  * pass re-reads it at the first guess and settles the clock-change days. Days past the month's end
- * roll over (d = 32 is the next month's 1st). The Worker's cached twin is `zonedTime` in timezone.ts.
+ * roll over (d = 32 is the next month's 1st). A time in the hour the clocks go back over is the first
+ * of its two instants west of UTC (the Americas) and the second east of it, as every earlier copy did; a
+ * time in the skipped hour lands an hour off it (`instantIn`, lp/schedule.mjs, says null instead). The
+ * Worker's offset-cached twin is `zonedTime` in timezone.ts; scripts/lib/seat-usage-limit.mjs mirrors
+ * another repo on purpose (repositories never import each other).
  */
 export function instantAt(tz, y, m, d, h = 0, min = 0) {
   const wallMs = Date.UTC(y, m - 1, d, h, min);

@@ -33,3 +33,14 @@ describe("notBeforeIn and heldDue across a clock change", () => {
     expect(heldDue(null, start)?.due_at).toBe("2026-11-02T23:00:00.000Z");
   });
 });
+
+describe("notBeforeIn in the repeated hour", () => {
+  it("an email at the second 1:00 am that says 'after 1:30am' starts at the second 1:30 am, not one already past", () => {
+    const now = new Date("2026-11-01T07:00:45Z"); // 01:00 CST, the second time the clock reads 1:00
+    expect(notBeforeIn("Run this after 1:30am.", now)?.at).toBe("2026-11-01T07:30:00.000Z");
+  });
+  it("earlier that night (first 1:00 am, CDT) the first 1:30 am still counts", () => {
+    const now = new Date("2026-11-01T06:00:45Z"); // 01:00 CDT
+    expect(notBeforeIn("Run this after 1:30am.", now)?.at).toBe("2026-11-01T06:30:00.000Z");
+  });
+});

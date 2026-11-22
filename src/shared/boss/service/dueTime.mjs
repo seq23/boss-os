@@ -115,7 +115,11 @@ export function notBeforeIn(text, now = new Date()) {
     if (wd) { ymd = [y, m, d + ((DAYS.indexOf(wd[1].toLowerCase()) - dow + 7) % 7)]; day = wd[1]; }
     else ymd = [y, m, d + (hh * 60 + mm > nowH * 60 + nowMin ? 0 : 1)];
   }
-  const at = chicagoToIso(ymd[0], ymd[1], ymd[2], hh, mm);
+  let ms = instantAt(CHICAGO, ymd[0], ymd[1], ymd[2], hh, mm);
+  // The repeated hour when clocks go back: a start already past may be the second time that clock reads.
+  const later = civilIn(ms + 3_600_000, CHICAGO), w = civilIn(ms, CHICAGO);
+  if (ms <= now.getTime() && later.h === w.h && later.min === w.min && later.d === w.d) ms += 3_600_000;
+  const at = new Date(ms).toISOString();
   return { at, words: `${day ? `${day}, ` : ""}${start[0]}` };
 }
 
