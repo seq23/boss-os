@@ -4868,6 +4868,27 @@
       }
     },
     {
+      "id": "growth-director",
+      "name": "Growth Director: decide the week",
+      "what": "Noelle reads the growth scoreboard and each business's Growth roster, writes one decision per business with its evidence, queues approved work as to-dos and puts anything new in Decide (three cards at most). Sends and posts nothing.",
+      "business": "spry",
+      "brand": "Spry Labs",
+      "system": "boss-os",
+      "slots": [
+        "mon 06:00"
+      ],
+      "emails": false,
+      "heavy": false,
+      "trigger": {
+        "duty": "duty_growth_director"
+      },
+      "output": {
+        "metric": "growth decisions",
+        "floor": 1,
+        "runs": 1
+      }
+    },
+    {
       "id": "tool-scout",
       "name": "Tools worth knowing about",
       "what": "Kendra looks for tools worth your time.",

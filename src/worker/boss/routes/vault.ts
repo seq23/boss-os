@@ -284,6 +284,7 @@ const SNAPSHOT_TABLES = [
   "cloud_job_dispatches",
   // 0372 — the growth scoreboard's daily readings: the Director's evidence.
   "growth_readings",
+  "growth_decisions",
   // 0202 — the register of owned work. THE MOST IMPORTANT ADDITION TO THIS LIST IN A WHILE: these
   // rows are the commitments she has personally handed people, and a restore that lost them would
   // silently drop every one of them — which is the precise thing the mechanism exists to make

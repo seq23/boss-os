@@ -2248,6 +2248,48 @@
         "text": "Back to today's date-first order: the date field and dated plan first, with \"Design my day ›\" as a second door into steps 1 and 2. Same counts compared. Step-1 starts for the % read: SELECT COUNT(DISTINCT ip_hash || '|' || day) AS n FROM wedding_reads WHERE is_test = 0 AND created_at >= datetime(:since_iso)"
       },
       "pause": []
+    },
+    {
+      "id": "growth-director",
+      "initiative": "Growth Director",
+      "business": "spry",
+      "owner": "Noelle · the Growth page and her email every two weeks",
+      "result": "More paid work and sales for the growth businesses, Porch & Party's Christmas requests first",
+      "jobs": [
+        "growth-director",
+        "growth-scoreboard"
+      ],
+      "start": "2026-11-23",
+      "first": {
+        "label": "Porch & Party requests in the last 28 days",
+        "by": 30,
+        "floor": {
+          "op": ">=",
+          "value": 4
+        },
+        "reader": "d1",
+        "params": {
+          "db": "boss-os",
+          "sql": "SELECT value AS n FROM growth_readings WHERE measure = 'pnp-requests' AND value IS NOT NULL ORDER BY day DESC LIMIT 1"
+        }
+      },
+      "real": {
+        "label": "money in across the growth businesses, last 28 days",
+        "unit": "$",
+        "by": 60,
+        "floor": {
+          "op": ">=",
+          "value": 1000
+        },
+        "reader": "d1",
+        "params": {
+          "db": "boss-os",
+          "sql": "SELECT SUM(r.value) AS n FROM growth_readings r JOIN (SELECT measure, MAX(day) AS day FROM growth_readings WHERE kind = 'money' AND value IS NOT NULL GROUP BY measure) t ON t.measure = r.measure AND t.day = r.day"
+        }
+      },
+      "versionB": {
+        "text": "Propose only: the Director queues nothing herself, and each move goes to her as one Decide card with its evidence."
+      }
     }
   ],
   "exempt": {
@@ -2802,10 +2844,6 @@
     "succession-book": {
       "kind": "system",
       "why": "Keeps the emergency book current for Scooter; it has no customer result of its own."
-    },
-    "growth-scoreboard": {
-      "kind": "helper",
-      "why": "The Growth Director's daily count; it feeds the growth-director row's decisions and has no customer result of its own."
     }
   },
   "scoreboard": {

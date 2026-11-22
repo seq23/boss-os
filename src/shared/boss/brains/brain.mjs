@@ -350,6 +350,9 @@ export const EMPLOYEE_BRAINS = Object.freeze({
   emp_continuity: [],
   emp_risk: ["risk"],
   emp_practice: [],
+  // Noelle (Growth, 21 Nov 2026) reads ONLY the Growth sections of porch-and-party and spry, through
+  // roster.mjs growthSection, never a whole brain: P&P's request names and private spans stay out.
+  emp_growth: [],
 });
 
 export function brainsFor(employeeId) {

@@ -196,6 +196,8 @@ export async function materialiseDueDuties(
       try {
         const result = job === "invitations"
           ? await (await import("../invitations/run")).runInvitations(env, now)
+          : job === "growth_director"
+          ? await (await import("../growth/run")).runGrowthDirector(env, now)
           : job ? (() => { throw new Error(`No Worker job is called "${job}".`); })()
           : await runWorkerReader(env, readerName, now);
         await env.DB
