@@ -730,6 +730,7 @@ function selfTest() {
   if (!writesInto("await putMorningSection(db, { section: 'x' })", "morning_sections", writerFile)) { console.error("self-test: a call to the one writer was not counted"); process.exit(1); }
   if (writesInto("// putMorningSection is elsewhere", "morning_sections", writerFile)) { console.error("self-test: a mention without a call was counted"); process.exit(1); }
   if (writesInto("await putMorningSection(db, {})", "morning_sections", () => "SELECT 1")) { console.error("self-test: a writer with no INSERT vouched"); process.exit(1); }
+  if (writesInto("await putMorningSection(db, {})", "open_loops", writerFile)) { console.error("self-test: the writer vouched for a table it does not write"); process.exit(1); }
   let failed = 0;
   for (const f of FIXTURES) {
     const got = dutiesIn(f.sql);

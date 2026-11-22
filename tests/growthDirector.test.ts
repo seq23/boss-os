@@ -233,6 +233,8 @@ describe("her fortnightly report: built from the record, plain words, honest lin
     const r = reportSection([{ ...pnp, actions: [queued("wordpress", "guide-syndication"), queued("tiktok", "screen-video")] }], { ...O, cards: 0, summaries: [{ key: "porch-and-party", totals: { money: null, requests: 1, visits: 1 } }] });
     const all = r.lines.join("\n");
     expect(all).toContain("Porch & Party: 1 request, 1 visit in 28 days; 2 queued.");
+    const many = reportSection([pnp], { ...O, cards: 0, summaries: [{ key: "porch-and-party", totals: { money: null, requests: 0, visits: 0 } }] }).lines.join("\n");
+    expect(many).toContain("0 requests, 0 visits in 28 days");
     expect(all).toContain("Queued, for example: Porch & Party, WordPress guide syndication; Porch & Party, TikTok screen video.");
   });
 
