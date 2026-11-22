@@ -120,4 +120,12 @@ describe("her \"dismiss <code>\" is read by the model first", () => {
     expect(await dismissFromMail(env as never, `Don't dismiss ${code} yet.`, Date.now(), null, "m-d3")).toBeNull();
     expect(await listed()).toEqual(["b7|s7"]);
   });
+
+  it("model down: a dismissal she only asks about, or makes conditional, does not stand", async () => {
+    const { body } = await push([match(8)]);
+    const code = body.data.codes["b8|s8"];
+    expect(await dismissFromMail(env as never, `dismiss ${code}?`, Date.now(), null, "m-d4")).toBeNull();
+    expect(await dismissFromMail(env as never, `dismiss ${code} if the seller has gone quiet`, Date.now(), null, "m-d5")).toBeNull();
+    expect(await listed()).toEqual(["b8|s8"]);
+  });
 });

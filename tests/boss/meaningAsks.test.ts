@@ -286,6 +286,10 @@ describe("who reads the work she asks for: kind, risk and audience only tighten"
   });
 
   it("the read's kind never loosens: private work stays private, a declared kind is never relabelled", async () => {
+    const KEPT = { title: "The studio portfolio", prompt: "Close the open positions in the studio portfolio." };
+    expect((await admit(null, KEPT)).classification, "the keywords read it as trading").toMatchObject({ intakeKind: "trading", modelAccess: "private_model_only", executionAssignment: "USER_ONLY" });
+    expect((await admit({ kind: "drafting" }, KEPT)).classification, "a looser kind from the read moves the label, never the hands or the models")
+      .toMatchObject({ intakeKind: "drafting", modelAccess: "private_model_only", executionAssignment: "USER_ONLY", risk: "high" });
     const PRIVATE = { title: "The trading desk ask", prompt: "Look at the trading desk positions." };
     const tightened = (await admit({ kind: "coaching" })).classification;
     expect(tightened.modelAccess, "a private kind from the read makes it private").toBe("private_model_only");
