@@ -21,4 +21,4 @@ export const CHASSIS_FIRM_TABLES: readonly string[] = ["firm_skill", "firm_spend
  * generator, never a table, which left one slot for a new table to hide in). Tables are never dropped (her ruling,
  * 22 Nov 2026), so this changes only by her own decision to drop one, and then only downwards.
  */
-export const CHASSIS_TABLE_COUNT = 230;
+export const CHASSIS_TABLE_COUNT = 229;
