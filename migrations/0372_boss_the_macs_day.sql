@@ -58,7 +58,7 @@ UPDATE standing_duties SET weekday = 4, local_hour = 22, local_minute = 15, next
 UPDATE standing_duties SET local_hour = 4, local_minute = 0, next_due_at = (unixepoch(date('now', '+1 day')) + 10 * 3600 + 0 * 60) * 1000 WHERE id = 'duty_exec_intel';
 -- duty_credentials: daily 03:40 (before the first agent tick, as before (now 04:05))
 UPDATE standing_duties SET local_hour = 3, local_minute = 40, next_due_at = (unixepoch(date('now', '+1 day')) + 9 * 3600 + 40 * 60) * 1000 WHERE id = 'duty_credentials';
--- duty_lp_daily: daily 05:45 (Monique's held LP replies: 05:45, retry 06:15, both done long before the 06:40 email)
+-- duty_lp_daily: daily 05:45 (Monique's held LP replies: 05:45, retry 06:00, both done long before the 06:40 email)
 UPDATE standing_duties SET local_hour = 5, local_minute = 45, next_due_at = (unixepoch(date('now', '+1 day')) + 11 * 3600 + 45 * 60) * 1000 WHERE id = 'duty_lp_daily';
 
 -- duty_grid_watch: daily 05:55 (a morning producer: done by 06:30 with twice its worst runtime to spare, before the 06:05/06:14 catch-up)

@@ -8,7 +8,7 @@ import { tmpdir } from "node:os";
 import path from "node:path";
 import { describe, expect, it } from "vitest";
 import { guardPlist, macWindows } from "../scripts/ops/plist-central.mjs";
-import { macDayProblems, slotsOf } from "../scripts/ops/mac-day-check.mjs";
+import { macDayProblems, rowProblems, slotsOf } from "../scripts/ops/mac-day-check.mjs";
 import manifest from "../src/shared/boss/schedule/manifest.json";
 
 const plist = (label: string, slots: string, extra = "") =>
@@ -52,6 +52,27 @@ describe("mac-day:check", () => {
     expect(p.some((x: string) => / 10:20: 4 jobs start in one 5-minute slot/.test(x))).toBe(true);
     delete jobs["com.seq.p4"];
     expect(macDayProblems(jobs, M(ls.slice(0, 3).map((l) => [l, "LIGHT"])))).toEqual([]);
+  });
+  it("fails a job with no class on its row, and a guard whose class or label disagrees with the row", () => {
+    const m = M([["com.seq.k", "LIGHT"]]);
+    const p = macDayProblems({
+      "com.seq.nobody": g(plist("com.seq.nobody", at(11, 0)), "LIGHT"),
+      "com.seq.k": guardPlist(plist("com.seq.k", at(11, 0)), "HEAVY", "/u/bin/mac-window"),
+    }, m).join("\n");
+    expect(p).toContain("com.seq.nobody: no macWindow on its Schedule row");
+    expect(p).toContain("com.seq.k: runs behind mac-window HEAVY com.seq.k, its row says LIGHT");
+  });
+  it("the rows' own claims: a MORNING row's slot + 2x its stated worst must end by 06:30", () => {
+    expect(rowProblems(manifest)).toEqual([]);
+    const bad = { rows: [{ id: "x", system: "mac", macWindow: "MORNING", slots: ["daily 04:00"], worstMin: { minutes: 80 } }, { id: "y", system: "mac", macWindow: "MORNING", slots: ["daily 05:00"] }] };
+    expect(rowProblems(bad)).toEqual(["row x 04:00: starts + 2 x 80 min worst = 06:40, after 06:30", "row y: a MORNING row with no measured worst runtime (worstMin)"]);
+  });
+  it("Rule 0: no plists, or plists with no calendar slot, is exit 2, never a pass", () => {
+    const run = (dir: string) => { try { execFileSync("node", ["scripts/ops/mac-day-check.mjs", "--dir", dir, "--held", dir, "--shift", "0"], { encoding: "utf8" }); return 0; } catch (e: any) { return e.status; } };
+    const empty = mkdtempSync(path.join(tmpdir(), "macday-empty-"));
+    expect(run(empty)).toBe(2);
+    writeFileSync(path.join(empty, "com.seq.i.plist"), `<?xml version="1.0"?><plist version="1.0"><dict><key>Label</key><string>com.seq.i</string><key>StartInterval</key><integer>60</integer></dict></plist>`);
+    expect(run(empty)).toBe(2);
   });
   it("reads the Central hour back from an Eastern Mac's plist", () => {
     expect(slotsOf(plist("x", at(11, 0)), 1)[0]?.mins).toBe(10 * 60);
