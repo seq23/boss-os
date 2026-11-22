@@ -194,11 +194,12 @@ describe("a heavy week fits the cap and says what it left out", () => {
 
 describe("the week is wired", () => {
   const installer = readFileSync(join(ROOT, "scripts/ops/install-agent-launchd.sh"), "utf8");
-  it("Tuesday sends one email; Thursday runs seller-hunt.mjs at 07:00 on weekday 4", () => {
+  it("Tuesday sends one email; Thursday runs seller-hunt.mjs at 10:05 on weekday 4 (the Mac's day, 21 Nov 2026)", () => {
     expect(installer).toMatch(/duty-run\.sh buyer-hunt\.mjs -- npm run --silent capital:buyers -- --send --email/);
     const thu = /SELLERS_LABEL="com\.seq\.boss-capital-sellers"[\s\S]*?\nSELLERSEOF\n/.exec(installer)?.[0] ?? "";
     expect(thu).toMatch(/duty-run\.sh seller-hunt\.mjs -- npm run --silent capital:sellers -- --send --email/);
-    expect(thu).toMatch(/<key>Weekday<\/key><integer>4<\/integer><key>Hour<\/key><integer>7<\/integer><key>Minute<\/key><integer>0<\/integer>/);
+    expect(thu).toMatch(/<key>Weekday<\/key><integer>4<\/integer><key>Hour<\/key><integer>10<\/integer><key>Minute<\/key><integer>5<\/integer>/);
+    expect(readFileSync(join(ROOT, "migrations/0372_boss_the_macs_day.sql"), "utf8")).toMatch(/local_hour = 10, local_minute = 5,[^\n]*'weekday 4'[^\n]*WHERE id = 'duty_seller_hunt'/);
   });
   it("the Thursday duty is Monique's, weekly on Thursday at 07:00", () => {
     const sql = readFileSync(join(ROOT, "migrations/0328_boss_the_brokerage_week.sql"), "utf8");
@@ -207,7 +208,7 @@ describe("the week is wired", () => {
   });
   it("prospect emails: weekdays only on the Mac job, four emails at most (owner, 6 Nov 2026)", () => {
     const line = installer.split("\n").find((l) => l.startsWith("install_l_job com.seq.boss-prospects ")) ?? "";
-    for (const d of [1, 2, 3, 4, 5]) expect(line).toContain(`<dict><key>Weekday</key><integer>${d}</integer><key>Hour</key><integer>9</integer>`);
+    for (const d of [1, 2, 3, 4, 5]) expect(line).toContain(`<dict><key>Weekday</key><integer>${d}</integer><key>Hour</key><integer>10</integer>`);
     expect(line).not.toMatch(/<integer>[06]<\/integer><key>Hour/);
     expect(MAX_TOUCHES).toBe(4);
     expect(isSendDay(Date.parse("2026-11-07T15:30:00Z"))).toBe(false); // Saturday 09:30 Central

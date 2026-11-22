@@ -4,6 +4,7 @@
 # 15 minutes. Called by install-agent-launchd.sh, and runnable alone so installing it never reloads
 # (and so never kills) the Mac's other lanes mid-run.
 set -euo pipefail
+"${LAUNCHD_RELOAD:-$HOME/bin/launchd-reload}" --seed >/dev/null
 REPO="${BOSS_OS_REPO:-$(cd "$(dirname "$0")/../.." && pwd)}"
 MT_LABEL="com.seq.boss-mail-tail"
 MT_PLIST="$HOME/Library/LaunchAgents/$MT_LABEL.plist"
@@ -35,6 +36,5 @@ MTEOF
 # installer skipped it and Simone's commands ran 05:00-22:50 Central on an Eastern Mac).
 node "$REPO/scripts/ops/plist-central.mjs" "$MT_PLIST" || { echo "NAMED STOP [PLIST_TZ] could not move $MT_PLIST to this Mac's zone; not loaded." >&2; exit 1; }
 plutil -lint "$MT_PLIST" >/dev/null
-launchctl bootout "gui/$(id -u)/$MT_LABEL" 2>/dev/null || true
-launchctl bootstrap "gui/$(id -u)" "$MT_PLIST"
+"${LAUNCHD_RELOAD:-$HOME/bin/launchd-reload}" "$MT_PLIST" || exit 1   # the one reload (seq-bin): pauses kept, old schedule on failure
 echo "Installed $MT_LABEL — every 15 minutes (boss-mail-tail.sh; report from simone@sequoiataylor.com)."

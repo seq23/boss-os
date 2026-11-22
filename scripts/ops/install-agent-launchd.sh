@@ -65,6 +65,17 @@ mkdir -p "$LOGS"
 # refuses to load a file `plutil` cannot parse, so the class cannot come back through a stanza
 # somebody adds later. `scripts/validate/the-installer-writes-well-formed-plists.mjs` proves the
 # same thing offline, in CI, over this file's own text.
+# EVERY RELOAD IS launchd-reload's (seq-bin, 21 Nov 2026). The old unload+load dropped a PAUSED
+# (disabled) job: launchd refuses to load a disabled label, so after the unload it was simply gone and
+# the planned enable that ends the pause had nothing to enable. launchd-reload keeps a disabled, running
+# or YouTube-held job on its old schedule with its pause untouched and applies the new file later
+# (tz-watch, hourly: launchd-reload --pending); a reload that fails loads the last good file again.
+RELOAD="${LAUNCHD_RELOAD:-$HOME/bin/launchd-reload}"
+[ -x "$RELOAD" ] || { echo "NAMED STOP [NO_LAUNCHD_RELOAD] $RELOAD is missing (seq-bin); nothing installed." >&2; exit 1; }
+"$RELOAD" --seed >/dev/null
+RELOAD_FAILED=0
+reload_plist() { "$RELOAD" "$1" || RELOAD_FAILED=$((RELOAD_FAILED + 1)); }
+
 lint_plist() {
   # Every Hour in this file is Central; move it to the Mac's own zone before launchd reads it (26 Oct 2026).
   node "$REPO/scripts/ops/plist-central.mjs" "$1" || { echo "NAMED STOP [PLIST_TZ] could not move $1 to this Mac's zone; not loaded." >&2; exit 1; }
@@ -133,10 +144,10 @@ cat > "$PLIST" <<PLISTEOF
   </array>
   <key>StartCalendarInterval</key>
   <array>
-    <dict><key>Hour</key><integer>6</integer><key>Minute</key><integer>5</integer></dict>
-    <dict><key>Hour</key><integer>6</integer><key>Minute</key><integer>35</integer></dict>
-    <dict><key>Hour</key><integer>6</integer><key>Minute</key><integer>50</integer></dict>
-    <dict><key>Hour</key><integer>7</integer><key>Minute</key><integer>10</integer></dict>
+    <dict><key>Hour</key><integer>4</integer><key>Minute</key><integer>5</integer></dict>
+    <dict><key>Hour</key><integer>4</integer><key>Minute</key><integer>35</integer></dict>
+    <dict><key>Hour</key><integer>5</integer><key>Minute</key><integer>5</integer></dict>
+    <dict><key>Hour</key><integer>10</integer><key>Minute</key><integer>15</integer></dict>
     <dict><key>Hour</key><integer>12</integer><key>Minute</key><integer>35</integer></dict>
     <dict><key>Hour</key><integer>18</integer><key>Minute</key><integer>35</integer></dict>
   </array>
@@ -148,9 +159,8 @@ cat > "$PLIST" <<PLISTEOF
 </dict></plist>
 PLISTEOF
 
-launchctl unload "$PLIST" 2>/dev/null || true
 lint_plist "$PLIST"
-launchctl load "$PLIST"
+reload_plist "$PLIST"
 
 # ─── The five-minute poll — added 1 Oct 2026 ─────────────────────────────────
 #
@@ -188,10 +198,8 @@ cat > "$POLL_PLIST" <<POLLEOF
   <key>RunAtLoad</key><false/>
 </dict></plist>
 POLLEOF
-
-launchctl unload "$POLL_PLIST" 2>/dev/null || true
 lint_plist "$POLL_PLIST"
-launchctl load "$POLL_PLIST"
+reload_plist "$POLL_PLIST"
 
 # ─── The Wednesday packet reminder — REMOVED 30 Sep 2026 ────────────────────
 #
@@ -239,10 +247,8 @@ cat > "$NETWORK_PLIST" <<NETEOF
   <key>RunAtLoad</key><false/>
 </dict></plist>
 NETEOF
-
-launchctl unload "$NETWORK_PLIST" 2>/dev/null || true
 lint_plist "$NETWORK_PLIST"
-launchctl load "$NETWORK_PLIST"
+reload_plist "$NETWORK_PLIST"
 echo "Installed $NETWORK_LABEL — Sunday 18:00 Central."
 
 # ─── Monique's weekly people note ────────────────────────────────────────────
@@ -275,18 +281,16 @@ cat > "$PEOPLE_PLIST" <<PEOPLEEOF
   </array>
   <key>StartCalendarInterval</key>
   <array>
-    <dict><key>Weekday</key><integer>1</integer><key>Hour</key><integer>7</integer><key>Minute</key><integer>15</integer></dict>
+    <dict><key>Weekday</key><integer>1</integer><key>Hour</key><integer>10</integer><key>Minute</key><integer>55</integer></dict>
   </array>
   <key>StandardOutPath</key><string>$LOGS/people.log</string>
   <key>StandardErrorPath</key><string>$LOGS/people.err</string>
   <key>RunAtLoad</key><false/>
 </dict></plist>
 PEOPLEEOF
-
-launchctl unload "$PEOPLE_PLIST" 2>/dev/null || true
 lint_plist "$PEOPLE_PLIST"
-launchctl load "$PEOPLE_PLIST"
-echo "Installed $PEOPLE_LABEL — Monday 07:15 Central (people-worth-a-call.mjs)."
+reload_plist "$PEOPLE_PLIST"
+echo "Installed $PEOPLE_LABEL — Monday 10:55 Central (people-worth-a-call.mjs)."
 
 # ─── Monique's brokerage desk: the daily supply watch and the monthly note ───
 #
@@ -326,23 +330,21 @@ cat > "$CAPITAL_PLIST" <<CAPEOF
   </array>
   <key>StartCalendarInterval</key>
   <array>
-    <dict><key>Hour</key><integer>5</integer><key>Minute</key><integer>30</integer></dict>
+    <dict><key>Hour</key><integer>3</integer><key>Minute</key><integer>45</integer></dict>
   </array>
   <key>StandardOutPath</key><string>$LOGS/capital.log</string>
   <key>StandardErrorPath</key><string>$LOGS/capital.err</string>
   <key>RunAtLoad</key><false/>
 </dict></plist>
 CAPEOF
-
-launchctl unload "$CAPITAL_PLIST" 2>/dev/null || true
 lint_plist "$CAPITAL_PLIST"
-launchctl load "$CAPITAL_PLIST"
+reload_plist "$CAPITAL_PLIST"
 # boss fix D (23 Oct 2026): 05:30, so the deals sections are written before Simone's 06:40 email; the
 # hunt runs before the grid so what it finds is in the same morning; no step emails her any more.
 # 3 Nov 2026: a kernel panic mid-chain lost the whole day's monique_found section silently, so the
 # chain now marks itself unfinished from --start to --done (chainMark.mjs) and interest-grid.mjs runs
 # through duty-run.sh so it finally leaves a dated log and a recorded run — see com.seq.boss-capital-resume below.
-echo "Installed $CAPITAL_LABEL — daily 05:30 Central (interest-ledger.mjs, interest-extract.mjs, ledger-hunt.mjs, interest-grid.mjs, interest-match.mjs)."
+echo "Installed $CAPITAL_LABEL — daily 03:45 Central (interest-ledger.mjs, interest-extract.mjs, ledger-hunt.mjs, interest-grid.mjs, interest-match.mjs)."
 
 # ─── The capital chain resumes by itself (3 Nov 2026) ───────────────────────────────────────────
 #
@@ -374,10 +376,8 @@ cat > "$CAPR_PLIST" <<CAPREOF
   <key>StandardErrorPath</key><string>$LOGS/capital-resume.err</string>
 </dict></plist>
 CAPREOF
-
-launchctl unload "$CAPR_PLIST" 2>/dev/null || true
 lint_plist "$CAPR_PLIST"
-launchctl load "$CAPR_PLIST"
+reload_plist "$CAPR_PLIST"
 echo "Installed $CAPR_LABEL — resumes an unfinished capital chain within 15 minutes."
 
 # MORNING CATCH-UP (repair rc_m6gtk44dhfjq6rvj, 3 Nov 2026; RunAtLoad added by repair
@@ -406,18 +406,16 @@ cat > "$NUDGE_PLIST" <<NUDGEEOF
   </array>
   <key>StartCalendarInterval</key>
   <array>
-    <dict><key>Day</key><integer>1</integer><key>Hour</key><integer>7</integer><key>Minute</key><integer>30</integer></dict>
+    <dict><key>Day</key><integer>1</integer><key>Hour</key><integer>11</integer><key>Minute</key><integer>25</integer></dict>
   </array>
   <key>StandardOutPath</key><string>$LOGS/capital-nudge.log</string>
   <key>StandardErrorPath</key><string>$LOGS/capital-nudge.err</string>
   <key>RunAtLoad</key><false/>
 </dict></plist>
 NUDGEEOF
-
-launchctl unload "$NUDGE_PLIST" 2>/dev/null || true
 lint_plist "$NUDGE_PLIST"
-launchctl load "$NUDGE_PLIST"
-echo "Installed $NUDGE_LABEL — the 1st at 07:30 Central (interest-match.mjs --nudge)."
+reload_plist "$NUDGE_PLIST"
+echo "Installed $NUDGE_LABEL — the 1st at 11:25 Central (interest-match.mjs --nudge)."
 
 # ─── The weekly buyer hunt, against her live book ────────────────────────────
 #
@@ -466,18 +464,16 @@ cat > "$BUYERS_PLIST" <<BUYERSEOF
   </array>
   <key>StartCalendarInterval</key>
   <array>
-    <dict><key>Weekday</key><integer>2</integer><key>Hour</key><integer>7</integer><key>Minute</key><integer>0</integer></dict>
+    <dict><key>Weekday</key><integer>2</integer><key>Hour</key><integer>10</integer><key>Minute</key><integer>5</integer></dict>
   </array>
   <key>StandardOutPath</key><string>$LOGS/capital-buyers.log</string>
   <key>StandardErrorPath</key><string>$LOGS/capital-buyers.err</string>
   <key>RunAtLoad</key><false/>
 </dict></plist>
 BUYERSEOF
-
-launchctl unload "$BUYERS_PLIST" 2>/dev/null || true
 lint_plist "$BUYERS_PLIST"
-launchctl load "$BUYERS_PLIST"
-echo "Installed $BUYERS_LABEL — Tuesdays 07:00 Central (buyer-hunt.mjs, duty_buyer_hunt)."
+reload_plist "$BUYERS_PLIST"
+echo "Installed $BUYERS_LABEL — Tuesdays 10:05 Central (buyer-hunt.mjs, duty_buyer_hunt)."
 
 # ─── Thursday: sellers for what her LPs want to buy (owner, 1 Nov 2026) ──────
 #
@@ -504,18 +500,16 @@ cat > "$SELLERS_PLIST" <<SELLERSEOF
   </array>
   <key>StartCalendarInterval</key>
   <array>
-    <dict><key>Weekday</key><integer>4</integer><key>Hour</key><integer>7</integer><key>Minute</key><integer>0</integer></dict>
+    <dict><key>Weekday</key><integer>4</integer><key>Hour</key><integer>10</integer><key>Minute</key><integer>5</integer></dict>
   </array>
   <key>StandardOutPath</key><string>$LOGS/capital-sellers.log</string>
   <key>StandardErrorPath</key><string>$LOGS/capital-sellers.err</string>
   <key>RunAtLoad</key><false/>
 </dict></plist>
 SELLERSEOF
-
-launchctl unload "$SELLERS_PLIST" 2>/dev/null || true
 lint_plist "$SELLERS_PLIST"
-launchctl load "$SELLERS_PLIST"
-echo "Installed $SELLERS_LABEL — Thursdays 07:00 Central (seller-hunt.mjs, duty_seller_hunt)."
+reload_plist "$SELLERS_PLIST"
+echo "Installed $SELLERS_LABEL — Thursdays 10:05 Central (seller-hunt.mjs, duty_seller_hunt)."
 
 # ─── The weekly property read ────────────────────────────────────────────────
 #
@@ -555,17 +549,16 @@ cat > "$HOME/Library/LaunchAgents/$GRID_LABEL.plist" <<PLIST
       <string>cd $REPO &amp;&amp; bash $REPO/scripts/ops/duty-run.sh grid-watch.mjs -- npm run --silent grid:post</string>
     </array>
     <key>StartCalendarInterval</key>
-    <dict><key>Hour</key><integer>6</integer><key>Minute</key><integer>20</integer></dict>
+    <dict><key>Hour</key><integer>5</integer><key>Minute</key><integer>55</integer></dict>
     <key>StandardOutPath</key><string>$LOGS/grid.log</string>
     <key>StandardErrorPath</key><string>$LOGS/grid.log</string>
     <key>RunAtLoad</key><false/>
 </dict>
 </plist>
 PLIST
-launchctl unload "$HOME/Library/LaunchAgents/$GRID_LABEL.plist" 2>/dev/null || true
 lint_plist "$HOME/Library/LaunchAgents/$GRID_LABEL.plist"
 lint_plist "$HOME/Library/LaunchAgents/$GRID_LABEL.plist"
-launchctl load "$HOME/Library/LaunchAgents/$GRID_LABEL.plist"
+reload_plist "$HOME/Library/LaunchAgents/$GRID_LABEL.plist"
 
 # Archive a job that now runs on GitHub Actions (owner-approved 1 Nov 2026): unload it and move its plist
 # to ~/Archive/launchagents-retired-2026-11-01 (never deleted), so the Mac and the cloud are never both live.
@@ -605,18 +598,16 @@ cat > "$SPRYWK_PLIST" <<SPRYWKEOF
   </array>
   <key>StartCalendarInterval</key>
   <array>
-    <dict><key>Weekday</key><integer>3</integer><key>Hour</key><integer>8</integer><key>Minute</key><integer>15</integer></dict>
+    <dict><key>Weekday</key><integer>3</integer><key>Hour</key><integer>10</integer><key>Minute</key><integer>25</integer></dict>
   </array>
   <key>StandardOutPath</key><string>$LOGS/spry-weekly.log</string>
   <key>StandardErrorPath</key><string>$LOGS/spry-weekly.err</string>
   <key>RunAtLoad</key><false/>
 </dict></plist>
 SPRYWKEOF
-
-launchctl unload "$SPRYWK_PLIST" 2>/dev/null || true
 lint_plist "$SPRYWK_PLIST"
-launchctl load "$SPRYWK_PLIST"
-echo "Installed $SPRYWK_LABEL — Wednesday 08:15 Central (spry-weekly.mjs: the one Spry Labs weekly email)."
+reload_plist "$SPRYWK_PLIST"
+echo "Installed $SPRYWK_LABEL — Wednesday 10:25 Central (spry-weekly.mjs: the one Spry Labs weekly email)."
 
 # ─── The Search Readiness audit — every checklist item on every grid repo site, weekly ───────────
 #
@@ -640,18 +631,16 @@ cat > "$SR_PLIST" <<SREOF
   </array>
   <key>StartCalendarInterval</key>
   <array>
-    <dict><key>Weekday</key><integer>1</integer><key>Hour</key><integer>6</integer><key>Minute</key><integer>0</integer></dict>
+    <dict><key>Weekday</key><integer>1</integer><key>Hour</key><integer>5</integer><key>Minute</key><integer>40</integer></dict>
   </array>
   <key>StandardOutPath</key><string>$LOGS/sites-audit.log</string>
   <key>StandardErrorPath</key><string>$LOGS/sites-audit.err</string>
   <key>RunAtLoad</key><false/>
 </dict></plist>
 SREOF
-
-launchctl unload "$SR_PLIST" 2>/dev/null || true
 lint_plist "$SR_PLIST"
-launchctl load "$SR_PLIST"
-echo "Installed $SR_LABEL — Monday 06:00 Central."
+reload_plist "$SR_PLIST"
+echo "Installed $SR_LABEL — Monday 05:40 Central."
 
 # ─── The brains: the hourly local copy, and the Monday cohesion check ───────────────────────────
 #
@@ -679,16 +668,37 @@ cat > "$BRAINS_PULL_PLIST" <<BPEOF
     <string>-lc</string>
     <string>cd $REPO &amp;&amp; npm run --silent vault:run -- npm run --silent brains:pull</string>
   </array>
-  <key>StartCalendarInterval</key><dict><key>Minute</key><integer>23</integer></dict>
+  <key>StartCalendarInterval</key>
+  <array>
+    <dict><key>Hour</key><integer>0</integer><key>Minute</key><integer>23</integer></dict>
+    <dict><key>Hour</key><integer>1</integer><key>Minute</key><integer>23</integer></dict>
+    <dict><key>Hour</key><integer>2</integer><key>Minute</key><integer>23</integer></dict>
+    <dict><key>Hour</key><integer>3</integer><key>Minute</key><integer>23</integer></dict>
+    <dict><key>Hour</key><integer>4</integer><key>Minute</key><integer>23</integer></dict>
+    <dict><key>Hour</key><integer>5</integer><key>Minute</key><integer>23</integer></dict>
+    <dict><key>Hour</key><integer>6</integer><key>Minute</key><integer>23</integer></dict>
+    <dict><key>Hour</key><integer>11</integer><key>Minute</key><integer>23</integer></dict>
+    <dict><key>Hour</key><integer>12</integer><key>Minute</key><integer>23</integer></dict>
+    <dict><key>Hour</key><integer>13</integer><key>Minute</key><integer>23</integer></dict>
+    <dict><key>Hour</key><integer>14</integer><key>Minute</key><integer>23</integer></dict>
+    <dict><key>Hour</key><integer>15</integer><key>Minute</key><integer>23</integer></dict>
+    <dict><key>Hour</key><integer>16</integer><key>Minute</key><integer>23</integer></dict>
+    <dict><key>Hour</key><integer>17</integer><key>Minute</key><integer>23</integer></dict>
+    <dict><key>Hour</key><integer>18</integer><key>Minute</key><integer>23</integer></dict>
+    <dict><key>Hour</key><integer>19</integer><key>Minute</key><integer>23</integer></dict>
+    <dict><key>Hour</key><integer>20</integer><key>Minute</key><integer>23</integer></dict>
+    <dict><key>Hour</key><integer>21</integer><key>Minute</key><integer>23</integer></dict>
+    <dict><key>Hour</key><integer>22</integer><key>Minute</key><integer>23</integer></dict>
+    <dict><key>Hour</key><integer>23</integer><key>Minute</key><integer>23</integer></dict>
+  </array>
   <key>RunAtLoad</key><true/>
   <key>StandardOutPath</key><string>$BRAINS_LOGS/pull.log</string>
   <key>StandardErrorPath</key><string>$BRAINS_LOGS/pull.err</string>
 </dict></plist>
 BPEOF
-launchctl unload "$BRAINS_PULL_PLIST" 2>/dev/null || true
 lint_plist "$BRAINS_PULL_PLIST"
-launchctl load "$BRAINS_PULL_PLIST"
-echo "Installed $BRAINS_PULL_LABEL — hourly at :23."
+reload_plist "$BRAINS_PULL_PLIST"
+echo "Installed $BRAINS_PULL_LABEL — hourly at :23, except 07:00-10:59 (the Mac is off until 10:00; its RunAtLoad pulls at boot)."
 
 # THE SUCCESSION BOOK (owner ruling 19 Nov 2026): Scooter's emergency book, rebuilt the 1st of
 # every month at 06:20 Central from the brains, HANDOFF and GitHub; stored behind the Boss OS
@@ -710,16 +720,15 @@ cat > "$SUCCESSION_PLIST" <<SUCCEOF
     <string>cd $REPO &amp;&amp; npm run --silent vault:run -- npm run --silent succession:build</string>
   </array>
   <key>StartCalendarInterval</key>
-  <dict><key>Day</key><integer>1</integer><key>Hour</key><integer>6</integer><key>Minute</key><integer>20</integer></dict>
+  <dict><key>Day</key><integer>1</integer><key>Hour</key><integer>11</integer><key>Minute</key><integer>10</integer></dict>
   <key>RunAtLoad</key><false/>
   <key>StandardOutPath</key><string>$SUCCESSION_LOGS/build.log</string>
   <key>StandardErrorPath</key><string>$SUCCESSION_LOGS/build.err</string>
 </dict></plist>
 SUCCEOF
-launchctl unload "$SUCCESSION_PLIST" 2>/dev/null || true
 lint_plist "$SUCCESSION_PLIST"
-launchctl load "$SUCCESSION_PLIST"
-echo "Installed $SUCCESSION_LABEL — the 1st at 06:20 Central."
+reload_plist "$SUCCESSION_PLIST"
+echo "Installed $SUCCESSION_LABEL — the 1st at 11:10 Central."
 
 COHESION_LABEL="com.seq.boss-cohesion"
 COHESION_PLIST="$HOME/Library/LaunchAgents/$COHESION_LABEL.plist"
@@ -742,9 +751,8 @@ cat > "$COHESION_PLIST" <<COHEOF
   <key>StandardErrorPath</key><string>$BRAINS_LOGS/cohesion.err</string>
 </dict></plist>
 COHEOF
-launchctl unload "$COHESION_PLIST" 2>/dev/null || true
 lint_plist "$COHESION_PLIST"
-launchctl load "$COHESION_PLIST"
+reload_plist "$COHESION_PLIST"
 echo "Installed $COHESION_LABEL — Sunday 18:45 Central (counts for the week that starts Monday)."
 
 # Time-2-Read's money numbers (owner's approval, 1 Nov 2026): paying subscribers, MRR, trial starts,
@@ -782,16 +790,15 @@ cat > "$PNP_PHOTOS_PLIST" <<PNPPEOF
     <string>cd $REPO &amp;&amp; npm run --silent pnp:photo-ask</string>
   </array>
   <key>StartCalendarInterval</key>
-  <dict><key>Hour</key><integer>6</integer><key>Minute</key><integer>20</integer></dict>
+  <dict><key>Hour</key><integer>11</integer><key>Minute</key><integer>15</integer></dict>
   <key>RunAtLoad</key><false/>
   <key>StandardOutPath</key><string>$PNP_PHOTOS_LOGS/launchd.log</string>
   <key>StandardErrorPath</key><string>$PNP_PHOTOS_LOGS/launchd.err</string>
 </dict></plist>
 PNPPEOF
-launchctl unload "$PNP_PHOTOS_PLIST" 2>/dev/null || true
 lint_plist "$PNP_PHOTOS_PLIST"
-launchctl load "$PNP_PHOTOS_PLIST"
-echo "Installed $PNP_PHOTOS_LABEL — daily 06:20 Central."
+reload_plist "$PNP_PHOTOS_PLIST"
+echo "Installed $PNP_PHOTOS_LABEL — daily 11:15 Central."
 
 # ─── The Scorecard — daily 06:10 Central; Mondays it judges (owner ruling, 1 Nov 2026) ───────────────
 #
@@ -816,16 +823,15 @@ cat > "$SCORECARD_PLIST" <<SCOREEOF
     <string>cd $REPO &amp;&amp; npm run --silent scorecard:monday</string>
   </array>
   <key>StartCalendarInterval</key>
-  <dict><key>Hour</key><integer>6</integer><key>Minute</key><integer>10</integer></dict>
+  <dict><key>Hour</key><integer>5</integer><key>Minute</key><integer>50</integer></dict>
   <key>RunAtLoad</key><false/>
   <key>StandardOutPath</key><string>$SCORECARD_LOGS/launchd.log</string>
   <key>StandardErrorPath</key><string>$SCORECARD_LOGS/launchd.err</string>
 </dict></plist>
 SCOREEOF
-launchctl unload "$SCORECARD_PLIST" 2>/dev/null || true
 lint_plist "$SCORECARD_PLIST"
-launchctl load "$SCORECARD_PLIST"
-echo "Installed $SCORECARD_LABEL — daily 06:10 Central (judges on Mondays)."
+reload_plist "$SCORECARD_PLIST"
+echo "Installed $SCORECARD_LABEL — daily 05:50 Central (judges on Mondays)."
 
 # ─── Kendra's stray sweep — the 1st of each month, 09:45 Central (owner ruling, 1 Nov 2026) ─────────
 #
@@ -849,16 +855,15 @@ cat > "$SCSWEEP_PLIST" <<SCSWEOF
     <string>cd $REPO &amp;&amp; npm run --silent scorecard:sweep</string>
   </array>
   <key>StartCalendarInterval</key>
-  <dict><key>Day</key><integer>1</integer><key>Hour</key><integer>9</integer><key>Minute</key><integer>45</integer></dict>
+  <dict><key>Day</key><integer>1</integer><key>Hour</key><integer>10</integer><key>Minute</key><integer>50</integer></dict>
   <key>RunAtLoad</key><false/>
   <key>StandardOutPath</key><string>$SCSWEEP_LOGS/launchd.log</string>
   <key>StandardErrorPath</key><string>$SCSWEEP_LOGS/launchd.err</string>
 </dict></plist>
 SCSWEOF
-launchctl unload "$SCSWEEP_PLIST" 2>/dev/null || true
 lint_plist "$SCSWEEP_PLIST"
-launchctl load "$SCSWEEP_PLIST"
-echo "Installed $SCSWEEP_LABEL — the 1st of each month, 09:45 Central."
+reload_plist "$SCSWEEP_PLIST"
+echo "Installed $SCSWEEP_LABEL — the 1st of each month, 10:50 Central."
 
 # ─── The Search Readiness repair pass — weekly, Tuesday; the DUTY ROW is the clock ────────────────
 #
@@ -882,7 +887,7 @@ cat > "$SRF_PLIST" <<SRFEOF
   </array>
   <key>StartCalendarInterval</key>
   <array>
-    <dict><key>Hour</key><integer>6</integer><key>Minute</key><integer>30</integer></dict>
+    <dict><key>Hour</key><integer>22</integer><key>Minute</key><integer>15</integer></dict>
   </array>
   <key>EnvironmentVariables</key>
   <dict><key>BOSS_AI_RUNNER</key><string>auto</string></dict>
@@ -891,11 +896,9 @@ cat > "$SRF_PLIST" <<SRFEOF
   <key>RunAtLoad</key><false/>
 </dict></plist>
 SRFEOF
-
-launchctl unload "$SRF_PLIST" 2>/dev/null || true
 lint_plist "$SRF_PLIST"
-launchctl load "$SRF_PLIST"
-echo "Installed $SRF_LABEL — daily 06:30 Central tick (approved week, 1 Nov 2026), weekly Tuesday work (asks the duty row)."
+reload_plist "$SRF_PLIST"
+echo "Installed $SRF_LABEL — daily 22:15 Central tick (heavy: night only, 21 Nov 2026), weekly Tuesday-night work (asks the duty row)."
 
 # ─── The Search Readiness run resumes by itself (25 Oct 2026) ─────────────────────────────────────
 #
@@ -929,10 +932,8 @@ cat > "$SRR_PLIST" <<SRREOF
   <key>StandardErrorPath</key><string>$LOGS/sr-resume.err</string>
 </dict></plist>
 SRREOF
-
-launchctl unload "$SRR_PLIST" 2>/dev/null || true
 lint_plist "$SRR_PLIST"
-launchctl load "$SRR_PLIST"
+reload_plist "$SRR_PLIST"
 echo "Installed $SRR_LABEL — resumes an unfinished Search Readiness run within 15 minutes."
 
 # ─── Simone's publication chase — RETIRED 14 September 2026 ─────────────────
@@ -988,7 +989,7 @@ cat > "$SURFACE_PLIST" <<SURFEOF
   </array>
   <key>StartCalendarInterval</key>
   <array>
-    <dict><key>Day</key><integer>1</integer><key>Hour</key><integer>9</integer><key>Minute</key><integer>30</integer></dict>
+    <dict><key>Day</key><integer>1</integer><key>Hour</key><integer>10</integer><key>Minute</key><integer>30</integer></dict>
   </array>
   <key>EnvironmentVariables</key>
   <dict><key>BOSS_OS_REPO</key><string>$REPO</string></dict>
@@ -997,11 +998,9 @@ cat > "$SURFACE_PLIST" <<SURFEOF
   <key>RunAtLoad</key><false/>
 </dict></plist>
 SURFEOF
-
-launchctl unload "$SURFACE_PLIST" 2>/dev/null || true
 lint_plist "$SURFACE_PLIST"
-launchctl load "$SURFACE_PLIST"
-echo "Installed $SURFACE_LABEL — daily 09:30 Central."
+reload_plist "$SURFACE_PLIST"
+echo "Installed $SURFACE_LABEL — the 1st at 10:30 Central."
 
 # ─── Simone ACTING: the covers she approved, put up, and Publish pressed ─────
 #
@@ -1046,7 +1045,7 @@ cat > "$PUBLISH_PLIST" <<PUBEOF
   </array>
   <key>StartCalendarInterval</key>
   <array>
-    <dict><key>Weekday</key><integer>1</integer><key>Hour</key><integer>9</integer><key>Minute</key><integer>45</integer></dict>
+    <dict><key>Weekday</key><integer>0</integer><key>Hour</key><integer>22</integer><key>Minute</key><integer>15</integer></dict>
   </array>
   <key>EnvironmentVariables</key>
   <dict><key>BOSS_OS_REPO</key><string>$REPO</string></dict>
@@ -1055,11 +1054,9 @@ cat > "$PUBLISH_PLIST" <<PUBEOF
   <key>RunAtLoad</key><false/>
 </dict></plist>
 PUBEOF
-
-launchctl unload "$PUBLISH_PLIST" 2>/dev/null || true
 lint_plist "$PUBLISH_PLIST"
-launchctl load "$PUBLISH_PLIST"
-echo "Installed $PUBLISH_LABEL — Mondays 09:45 Central."
+reload_plist "$PUBLISH_PLIST"
+echo "Installed $PUBLISH_LABEL — Sundays 22:15 Central (heavy: a browser run, at night)."
 
 # ─── Monique's mailbox sweep ─────────────────────────────────────────────────
 #
@@ -1109,10 +1106,8 @@ cat > "$MAILBOX_PLIST" <<MBXEOF
   <key>RunAtLoad</key><false/>
 </dict></plist>
 MBXEOF
-
-launchctl unload "$MAILBOX_PLIST" 2>/dev/null || true
 lint_plist "$MAILBOX_PLIST"
-launchctl load "$MAILBOX_PLIST"
+reload_plist "$MAILBOX_PLIST"
 echo "Installed $MAILBOX_LABEL — Sunday 18:30 Central."
 
 # ─── Danielle's weekly Ahrefs audit pass ─────────────────────────────────────
@@ -1191,7 +1186,7 @@ cat > "$AHREFS_PLIST" <<AHREOF
   </array>
   <key>StartCalendarInterval</key>
   <array>
-    <dict><key>Hour</key><integer>5</integer><key>Minute</key><integer>0</integer></dict>
+    <dict><key>Hour</key><integer>22</integer><key>Minute</key><integer>15</integer></dict>
   </array>
   <key>EnvironmentVariables</key>
   <dict><key>BOSS_OS_REPO</key><string>$REPO</string></dict>
@@ -1200,11 +1195,9 @@ cat > "$AHREFS_PLIST" <<AHREOF
   <key>RunAtLoad</key><false/>
 </dict></plist>
 AHREOF
-
-launchctl unload "$AHREFS_PLIST" 2>/dev/null || true
 lint_plist "$AHREFS_PLIST"
-launchctl load "$AHREFS_PLIST"
-echo "Installed $AHREFS_LABEL — daily 05:00 Central tick (approved week, 1 Nov 2026), weekly Thursday work (asks the duty row)."
+reload_plist "$AHREFS_PLIST"
+echo "Installed $AHREFS_LABEL — daily 22:15 Central tick (heavy: night only, 21 Nov 2026), weekly Thursday-night work (asks the duty row)."
 
 # ─── Danielle's on-demand repo-change lane ───────────────────────────────────
 #
@@ -1239,7 +1232,7 @@ ln -sfn "$REPO/scripts/ops/repo-change.sh" "$HOME/bin/repo-change.sh"
 ln -sfn "$REPO/scripts/ops/repo-change-prompt.md" "$HOME/bin/repo-change-prompt.md"
 
 RC_INTERVALS=""
-for H in 6 7 8 9 10 11 12 13 14 15 16 17 18 19 20 21 22; do
+for H in 10 11 12 13 14 15 16 17 18 19 20 21; do
   for M in 0 20 40; do
     RC_INTERVALS="$RC_INTERVALS    <dict><key>Hour</key><integer>$H</integer><key>Minute</key><integer>$M</integer></dict>
 "
@@ -1268,11 +1261,9 @@ $RC_INTERVALS  </array>
   <key>RunAtLoad</key><false/>
 </dict></plist>
 RCEOF
-
-launchctl unload "$RC_PLIST" 2>/dev/null || true
 lint_plist "$RC_PLIST"
-launchctl load "$RC_PLIST"
-echo "Installed $RC_LABEL — every 20 minutes 06:00–22:00 Central (repo-change.sh, task kind repo_change)."
+reload_plist "$RC_PLIST"
+echo "Installed $RC_LABEL — every 20 minutes 10:00–21:40 Central (on-demand heavy work, never in the Mac's rest) (repo-change.sh, task kind repo_change)."
 
 # ─── Simone does it by email (25 Oct 2026): lookups, drafts, bounce checks, notices ──
 chmod +x "$REPO/scripts/ops/install-simone-commands.sh"
@@ -1342,10 +1333,8 @@ cat > "$CW_PLIST" <<CWEOF
   <key>RunAtLoad</key><false/>
 </dict></plist>
 CWEOF
-
-launchctl unload "$CW_PLIST" 2>/dev/null || true
 lint_plist "$CW_PLIST"
-launchctl load "$CW_PLIST"
+reload_plist "$CW_PLIST"
 echo "Installed $CW_LABEL — daily 14:05 and 19:05 Central slots; the sweep runs when the duty is due (Wednesday 14:00), the act half every slot."
 
 # ─── boss fix L: Monique's morning LP run (replaces the connector digest) ────────
@@ -1379,20 +1368,18 @@ cat > "$LP_PLIST" <<LPEOF
   </array>
   <key>StartCalendarInterval</key>
   <array>
-    <dict><key>Hour</key><integer>6</integer><key>Minute</key><integer>15</integer></dict>
-    <dict><key>Hour</key><integer>6</integer><key>Minute</key><integer>30</integer></dict>
-    <dict><key>Hour</key><integer>8</integer><key>Minute</key><integer>45</integer></dict>
+    <dict><key>Hour</key><integer>5</integer><key>Minute</key><integer>45</integer></dict>
+    <dict><key>Hour</key><integer>6</integer><key>Minute</key><integer>0</integer></dict>
+    <dict><key>Hour</key><integer>10</integer><key>Minute</key><integer>45</integer></dict>
   </array>
   <key>StandardOutPath</key><string>$LP_LOGS/launchd.log</string>
   <key>StandardErrorPath</key><string>$LP_LOGS/launchd.err</string>
   <key>RunAtLoad</key><false/>
 </dict></plist>
 LPEOF
-
-launchctl unload "$LP_PLIST" 2>/dev/null || true
 lint_plist "$LP_PLIST"
-launchctl load "$LP_PLIST"
-echo "Installed $LP_LABEL — daily 06:15, 06:30 and 08:45 Central (lp-daily.mjs: held LP replies for the morning email)."
+reload_plist "$LP_PLIST"
+echo "Installed $LP_LABEL — daily 05:45, 06:00 and 10:45 Central (lp-daily.mjs: held LP replies for the morning email)."
 
 # boss fix L: prospects (09:30 weekdays-in-window, the brakes decide), discovery (Monday 07:00),
 # catch-ups (06:20), 8Raise balance (06:25). One plist each, all through duty-run.sh.
@@ -1422,39 +1409,37 @@ install_l_job() {
   <key>RunAtLoad</key><false/>
 </dict></plist>
 LJEOF
-  launchctl unload "$plist" 2>/dev/null || true
   lint_plist "$plist"
-  launchctl load "$plist"
+  reload_plist "$plist"
   echo "Installed $label (${cmd%% --*})."
 }
 # WEEKDAYS ONLY (owner, 1 Nov 2026): no prospect email goes on a Saturday or Sunday, Central. A
 # follow-up due at the weekend is simply still due on Monday (dueTouch counts days since the first
 # email, so nothing is lost). lp-prospects.mjs refuses a weekend --live run as well.
-install_l_job com.seq.boss-prospects "duty-run.sh lp-prospects.mjs -- npm run --silent lp:prospects -- --live" '<dict><key>Weekday</key><integer>1</integer><key>Hour</key><integer>9</integer><key>Minute</key><integer>30</integer></dict><dict><key>Weekday</key><integer>2</integer><key>Hour</key><integer>9</integer><key>Minute</key><integer>30</integer></dict><dict><key>Weekday</key><integer>3</integer><key>Hour</key><integer>9</integer><key>Minute</key><integer>30</integer></dict><dict><key>Weekday</key><integer>4</integer><key>Hour</key><integer>9</integer><key>Minute</key><integer>30</integer></dict><dict><key>Weekday</key><integer>5</integer><key>Hour</key><integer>9</integer><key>Minute</key><integer>30</integer></dict>' lp-prospects
+install_l_job com.seq.boss-prospects "duty-run.sh lp-prospects.mjs -- npm run --silent lp:prospects -- --live" '<dict><key>Weekday</key><integer>1</integer><key>Hour</key><integer>10</integer><key>Minute</key><integer>40</integer></dict><dict><key>Weekday</key><integer>2</integer><key>Hour</key><integer>10</integer><key>Minute</key><integer>40</integer></dict><dict><key>Weekday</key><integer>3</integer><key>Hour</key><integer>10</integer><key>Minute</key><integer>40</integer></dict><dict><key>Weekday</key><integer>4</integer><key>Hour</key><integer>10</integer><key>Minute</key><integer>40</integer></dict><dict><key>Weekday</key><integer>5</integer><key>Hour</key><integer>10</integer><key>Minute</key><integer>40</integer></dict>' lp-prospects
 # THE ONE-LIST LP EMAILS (owner, 15 Nov 2026). Weekdays 09:30 Central: four emails per person on the
 # private list in ~/.boss-os/lp/8fund/plan.json, only while its approved flag is true. Reports to duty_lp8_drip.
-install_l_job com.seq.boss-lp8-drip "duty-run.sh lp8-drip.mjs -- npm run --silent vault:run -- npm run --silent lp8:drip" '<dict><key>Weekday</key><integer>1</integer><key>Hour</key><integer>9</integer><key>Minute</key><integer>30</integer></dict><dict><key>Weekday</key><integer>2</integer><key>Hour</key><integer>9</integer><key>Minute</key><integer>30</integer></dict><dict><key>Weekday</key><integer>3</integer><key>Hour</key><integer>9</integer><key>Minute</key><integer>30</integer></dict><dict><key>Weekday</key><integer>4</integer><key>Hour</key><integer>9</integer><key>Minute</key><integer>30</integer></dict><dict><key>Weekday</key><integer>5</integer><key>Hour</key><integer>9</integer><key>Minute</key><integer>30</integer></dict>' lp8-drip
+install_l_job com.seq.boss-lp8-drip "duty-run.sh lp8-drip.mjs -- npm run --silent vault:run -- npm run --silent lp8:drip" '<dict><key>Weekday</key><integer>1</integer><key>Hour</key><integer>10</integer><key>Minute</key><integer>45</integer></dict><dict><key>Weekday</key><integer>2</integer><key>Hour</key><integer>10</integer><key>Minute</key><integer>45</integer></dict><dict><key>Weekday</key><integer>3</integer><key>Hour</key><integer>10</integer><key>Minute</key><integer>45</integer></dict><dict><key>Weekday</key><integer>4</integer><key>Hour</key><integer>10</integer><key>Minute</key><integer>45</integer></dict><dict><key>Weekday</key><integer>5</integer><key>Hour</key><integer>10</integer><key>Minute</key><integer>45</integer></dict>' lp8-drip
 # Two Monday slots, one job (16 Nov 2026: 18 lookups were kept and nothing polled them for a week): the
 # 07:00 run searches; the 09:15 run sees today's full run on file and only collects (spends nothing).
-install_l_job com.seq.boss-prospect-discovery "duty-run.sh lp-prospect-discovery.mjs -- npm run --silent vault:run -- npm run --silent lp:discover -- --live" '<dict><key>Weekday</key><integer>1</integer><key>Hour</key><integer>7</integer><key>Minute</key><integer>0</integer></dict><dict><key>Weekday</key><integer>1</integer><key>Hour</key><integer>9</integer><key>Minute</key><integer>15</integer></dict>' lp-discovery
+install_l_job com.seq.boss-prospect-discovery "duty-run.sh lp-prospect-discovery.mjs -- npm run --silent vault:run -- npm run --silent lp:discover -- --live" '<dict><key>Weekday</key><integer>1</integer><key>Hour</key><integer>10</integer><key>Minute</key><integer>35</integer></dict><dict><key>Weekday</key><integer>1</integer><key>Hour</key><integer>11</integer><key>Minute</key><integer>35</integer></dict>' lp-discovery
 # MONIQUE: TIME-2-READ GROUPS & INSTITUTIONS (owner, 31 Oct 2026). Weekdays 08:15 Central, before the
 # 09:00 outreach window: research, NeverBounce, each group's own code, queue. Reports to duty_t2r_groups (0324).
-install_l_job com.seq.boss-t2r-groups "duty-run.sh t2r-groups.mjs -- npm run --silent t2r:groups -- --live" '<dict><key>Weekday</key><integer>1</integer><key>Hour</key><integer>8</integer><key>Minute</key><integer>15</integer></dict><dict><key>Weekday</key><integer>2</integer><key>Hour</key><integer>8</integer><key>Minute</key><integer>15</integer></dict><dict><key>Weekday</key><integer>3</integer><key>Hour</key><integer>8</integer><key>Minute</key><integer>15</integer></dict><dict><key>Weekday</key><integer>4</integer><key>Hour</key><integer>8</integer><key>Minute</key><integer>15</integer></dict><dict><key>Weekday</key><integer>5</integer><key>Hour</key><integer>8</integer><key>Minute</key><integer>15</integer></dict>' t2r-groups
+install_l_job com.seq.boss-t2r-groups "duty-run.sh t2r-groups.mjs -- npm run --silent t2r:groups -- --live" '<dict><key>Weekday</key><integer>1</integer><key>Hour</key><integer>10</integer><key>Minute</key><integer>55</integer></dict><dict><key>Weekday</key><integer>2</integer><key>Hour</key><integer>10</integer><key>Minute</key><integer>55</integer></dict><dict><key>Weekday</key><integer>3</integer><key>Hour</key><integer>10</integer><key>Minute</key><integer>55</integer></dict><dict><key>Weekday</key><integer>4</integer><key>Hour</key><integer>10</integer><key>Minute</key><integer>55</integer></dict><dict><key>Weekday</key><integer>5</integer><key>Hour</key><integer>10</integer><key>Minute</key><integer>55</integer></dict>' t2r-groups
 # KENDRA: EMAILS TO HER THAT FAIL, IN EVERY APP (owner, 6 Nov 2026). 07:50 and 15:50 Central, daily.
 # Reads West Peek OS and Boss OS failed owner-bound sends, raises a Kendra alarm on 2 in a row. Reports
 # to duty_owner_mail_watch (0350).
-install_l_job com.seq.boss-owner-mail-watch "duty-run.sh owner-mail-watch.mjs -- npm run --silent owner-mail:watch" '<dict><key>Hour</key><integer>7</integer><key>Minute</key><integer>50</integer></dict><dict><key>Hour</key><integer>15</integer><key>Minute</key><integer>50</integer></dict>' owner-mail-watch
+install_l_job com.seq.boss-owner-mail-watch "duty-run.sh owner-mail-watch.mjs -- npm run --silent owner-mail:watch" '<dict><key>Hour</key><integer>10</integer><key>Minute</key><integer>25</integer></dict><dict><key>Hour</key><integer>15</integer><key>Minute</key><integer>50</integer></dict>' owner-mail-watch
 # Seasonal corporate outreach. The renderer shares the checked-in plist template, and only writes.
 # The template runs duty-run.sh pnp-corporate-outreach.mjs -- npm run --silent pnp:outreach -- --live
 PNP_PLIST="$HOME/Library/LaunchAgents/com.seq.boss-pnp-outreach.plist"
 BOSS_OS_REPO="$REPO" node "$REPO/scripts/ops/render-pnp-outreach-plist.mjs" --out "$PNP_PLIST"
-launchctl unload "$PNP_PLIST" 2>/dev/null || true
 lint_plist "$PNP_PLIST"
-launchctl load "$PNP_PLIST"
+reload_plist "$PNP_PLIST"
 # SIMONE'S MEETING PREP (owner-approved 26 Oct 2026): every hour at :05. The script decides by
 # Central time (from 18:00 Central, tomorrow's meetings; any hour, a meeting added for later today),
 # so the Mac's own zone (Eastern) cannot move it. Reports to duty_meeting_prep (migration 0312).
-install_l_job com.seq.boss-meeting-prep "duty-run.sh meeting-prep.mjs -- npm run --silent meeting-prep" '<dict><key>Minute</key><integer>5</integer></dict>' meeting-prep
+install_l_job com.seq.boss-meeting-prep "duty-run.sh meeting-prep.mjs -- npm run --silent meeting-prep" '<dict><key>Hour</key><integer>0</integer><key>Minute</key><integer>5</integer></dict><dict><key>Hour</key><integer>1</integer><key>Minute</key><integer>5</integer></dict><dict><key>Hour</key><integer>2</integer><key>Minute</key><integer>5</integer></dict><dict><key>Hour</key><integer>3</integer><key>Minute</key><integer>5</integer></dict><dict><key>Hour</key><integer>4</integer><key>Minute</key><integer>5</integer></dict><dict><key>Hour</key><integer>5</integer><key>Minute</key><integer>5</integer></dict><dict><key>Hour</key><integer>6</integer><key>Minute</key><integer>5</integer></dict><dict><key>Hour</key><integer>10</integer><key>Minute</key><integer>5</integer></dict><dict><key>Hour</key><integer>11</integer><key>Minute</key><integer>5</integer></dict><dict><key>Hour</key><integer>12</integer><key>Minute</key><integer>5</integer></dict><dict><key>Hour</key><integer>13</integer><key>Minute</key><integer>5</integer></dict><dict><key>Hour</key><integer>14</integer><key>Minute</key><integer>5</integer></dict><dict><key>Hour</key><integer>15</integer><key>Minute</key><integer>5</integer></dict><dict><key>Hour</key><integer>16</integer><key>Minute</key><integer>5</integer></dict><dict><key>Hour</key><integer>17</integer><key>Minute</key><integer>5</integer></dict><dict><key>Hour</key><integer>18</integer><key>Minute</key><integer>5</integer></dict><dict><key>Hour</key><integer>19</integer><key>Minute</key><integer>5</integer></dict><dict><key>Hour</key><integer>20</integer><key>Minute</key><integer>5</integer></dict><dict><key>Hour</key><integer>21</integer><key>Minute</key><integer>5</integer></dict><dict><key>Hour</key><integer>22</integer><key>Minute</key><integer>5</integer></dict><dict><key>Hour</key><integer>23</integer><key>Minute</key><integer>5</integer></dict>' meeting-prep
 # 26 Oct 2026 (owner-approved, "build it all"): Zora's register daily 07:00, Kendra's Mac clean-up
 # Sundays 09:00, Monique's pre-seed watch Tuesdays 07:30 (all Central; lint_plist moves them to the Mac's zone).
 # MOVED TO THE CLOUD (1 Nov 2026): .github/workflows/job-waiting-on.yml, daily 07:00 Central, same duty.
@@ -1468,12 +1453,12 @@ cloud_moved com.seq.boss-waiting-on
 ERRAND_LABEL="com.seq.boss-errand-reminders"
 cloud_moved "$ERRAND_LABEL"
 # Daily since 3 Nov 2026 (was Sundays): a week of render working folders filled the disk and the Mac panicked on low swap.
-install_l_job com.seq.boss-mac-cleanup "duty-run.sh mac-cleanup.mjs -- npm run --silent mac:cleanup" '<dict><key>Hour</key><integer>9</integer><key>Minute</key><integer>0</integer></dict>' mac-cleanup
+install_l_job com.seq.boss-mac-cleanup "duty-run.sh mac-cleanup.mjs -- npm run --silent mac:cleanup" '<dict><key>Hour</key><integer>11</integer><key>Minute</key><integer>5</integer></dict>' mac-cleanup
 # MOVED TO THE CLOUD (1 Nov 2026): .github/workflows/job-preseed-watch.yml, Tuesday 07:30 Central, state preseed.
 cloud_moved com.seq.boss-preseed-watch
 # MOVED TO THE CLOUD (1 Nov 2026): .github/workflows/job-catchups.yml, daily 06:20 Central, same duty.
 cloud_moved com.seq.boss-catchups
-install_l_job com.seq.boss-eightraise "duty-run.sh lp-eightraise.mjs -- npm run --silent lp:eightraise" '<dict><key>Hour</key><integer>6</integer><key>Minute</key><integer>25</integer></dict>' lp-eightraise
+install_l_job com.seq.boss-eightraise "duty-run.sh lp-eightraise.mjs -- npm run --silent lp:eightraise" '<dict><key>Hour</key><integer>5</integer><key>Minute</key><integer>58</integer></dict>' lp-eightraise
 # end boss fix L
 
 # ─── The two things Scooter reads on a Wednesday ─────────────────────────────
@@ -1514,18 +1499,16 @@ cat > "$SHEET_PLIST" <<SHEETEOF
   </array>
   <key>StartCalendarInterval</key>
   <array>
-    <dict><key>Weekday</key><integer>2</integer><key>Hour</key><integer>7</integer><key>Minute</key><integer>15</integer></dict>
+    <dict><key>Weekday</key><integer>2</integer><key>Hour</key><integer>10</integer><key>Minute</key><integer>15</integer></dict>
   </array>
   <key>StandardOutPath</key><string>$LOGS/scooter-sheet.log</string>
   <key>StandardErrorPath</key><string>$LOGS/scooter-sheet.err</string>
   <key>RunAtLoad</key><false/>
 </dict></plist>
 SHEETEOF
-
-launchctl unload "$SHEET_PLIST" 2>/dev/null || true
 lint_plist "$SHEET_PLIST"
-launchctl load "$SHEET_PLIST"
-echo "Installed $SHEET_LABEL — Tuesday 07:15 Central (lp-tracker-sync.mjs then lp-outcomes.mjs)."
+reload_plist "$SHEET_PLIST"
+echo "Installed $SHEET_LABEL — Tuesday 10:15 Central (lp-tracker-sync.mjs then lp-outcomes.mjs)."
 
 # boss fix L: the Tuesday 08:15 reminder email (lp-positive.mjs --email --followups) is RETIRED —
 # owner, 23 Oct 2026: "the weekly Tuesday reminder email goes away". Held replies are in the morning
@@ -1559,17 +1542,16 @@ cat > "$XMATCH_PLIST" <<XMATCHEOF
   </array>
   <key>StartCalendarInterval</key>
   <array>
-    <dict><key>Weekday</key><integer>2</integer><key>Hour</key><integer>7</integer><key>Minute</key><integer>45</integer></dict>
+    <dict><key>Weekday</key><integer>2</integer><key>Hour</key><integer>11</integer><key>Minute</key><integer>35</integer></dict>
   </array>
   <key>StandardOutPath</key><string>$LOGS/crossmatch.log</string>
   <key>StandardErrorPath</key><string>$LOGS/crossmatch.err</string>
   <key>RunAtLoad</key><false/>
 </dict></plist>
 XMATCHEOF
-launchctl unload "$XMATCH_PLIST" 2>/dev/null || true
 lint_plist "$XMATCH_PLIST"
-launchctl load "$XMATCH_PLIST"
-echo "Installed $XMATCH_LABEL — Tuesday 07:45 Central (lp-buyer-crossmatch.mjs; firms only, no email)."
+reload_plist "$XMATCH_PLIST"
+echo "Installed $XMATCH_LABEL — Tuesday 11:35 Central (lp-buyer-crossmatch.mjs; firms only, no email)."
 
 # ─── Toni's credential prober ────────────────────────────────────────────────
 #
@@ -1614,7 +1596,7 @@ cat > "$CRED_PLIST" <<CREDEOF
   </array>
   <key>StartCalendarInterval</key>
   <array>
-    <dict><key>Hour</key><integer>6</integer><key>Minute</key><integer>15</integer></dict>
+    <dict><key>Hour</key><integer>3</integer><key>Minute</key><integer>40</integer></dict>
   </array>
   <key>EnvironmentVariables</key>
   <dict><key>BOSS_OS_REPO</key><string>$REPO</string></dict>
@@ -1623,11 +1605,9 @@ cat > "$CRED_PLIST" <<CREDEOF
   <key>RunAtLoad</key><false/>
 </dict></plist>
 CREDEOF
-
-launchctl unload "$CRED_PLIST" 2>/dev/null || true
 lint_plist "$CRED_PLIST"
-launchctl load "$CRED_PLIST"
-echo "Installed $CRED_LABEL — daily 06:15 Central, reporting to duty_credentials (Toni)."
+reload_plist "$CRED_PLIST"
+echo "Installed $CRED_LABEL — daily 03:40 Central, reporting to duty_credentials (Toni)."
 
 # ─── Zora's archive audit and Toni's two risk duties (22 Oct 2026) ─────────────
 #
@@ -1654,7 +1634,7 @@ cat > "$ARCHIVE_PLIST" <<ARCHIVEEOF
   </array>
   <key>StartCalendarInterval</key>
   <array>
-    <dict><key>Weekday</key><integer>5</integer><key>Hour</key><integer>8</integer><key>Minute</key><integer>40</integer></dict>
+    <dict><key>Weekday</key><integer>5</integer><key>Hour</key><integer>10</integer><key>Minute</key><integer>35</integer></dict>
   </array>
   <key>EnvironmentVariables</key>
   <dict><key>BOSS_OS_REPO</key><string>$REPO</string></dict>
@@ -1663,11 +1643,9 @@ cat > "$ARCHIVE_PLIST" <<ARCHIVEEOF
   <key>RunAtLoad</key><false/>
 </dict></plist>
 ARCHIVEEOF
-
-launchctl unload "$ARCHIVE_PLIST" 2>/dev/null || true
 lint_plist "$ARCHIVE_PLIST"
-launchctl load "$ARCHIVE_PLIST"
-echo "Installed $ARCHIVE_LABEL — Friday 08:40 Central, reporting to duty_archive_audit (Zora)."
+reload_plist "$ARCHIVE_PLIST"
+echo "Installed $ARCHIVE_LABEL — Friday 10:35 Central, reporting to duty_archive_audit (Zora)."
 
 RISK_LABEL="com.seq.boss-risk-watch"
 RISK_PLIST="$HOME/Library/LaunchAgents/$RISK_LABEL.plist"
@@ -1686,7 +1664,7 @@ cat > "$RISK_PLIST" <<RISKEOF
   </array>
   <key>StartCalendarInterval</key>
   <array>
-    <dict><key>Hour</key><integer>8</integer><key>Minute</key><integer>20</integer></dict>
+    <dict><key>Hour</key><integer>10</integer><key>Minute</key><integer>35</integer></dict>
   </array>
   <key>EnvironmentVariables</key>
   <dict><key>BOSS_OS_REPO</key><string>$REPO</string></dict>
@@ -1695,11 +1673,9 @@ cat > "$RISK_PLIST" <<RISKEOF
   <key>RunAtLoad</key><false/>
 </dict></plist>
 RISKEOF
-
-launchctl unload "$RISK_PLIST" 2>/dev/null || true
 lint_plist "$RISK_PLIST"
-launchctl load "$RISK_PLIST"
-echo "Installed $RISK_LABEL — daily 08:20 Central, reporting to duty_risk_watch (Toni)."
+reload_plist "$RISK_PLIST"
+echo "Installed $RISK_LABEL — daily 10:35 Central, reporting to duty_risk_watch (Toni)."
 
 # SIMONE'S "YOUR DAY", EVERY MORNING AT 06:40 (owner-approved 22 Oct 2026; Mondays add "Your week").
 # After the 06:05 briefing claim and before Valerie's 7 AM list, so the Porch & Party box matches what
@@ -1727,7 +1703,7 @@ cat > "$LOCKS_PLIST" <<LOCKSEOF
   </array>
   <key>StartCalendarInterval</key>
   <array>
-    <dict><key>Weekday</key><integer>5</integer><key>Hour</key><integer>8</integer><key>Minute</key><integer>40</integer></dict>
+    <dict><key>Weekday</key><integer>5</integer><key>Hour</key><integer>11</integer><key>Minute</key><integer>35</integer></dict>
   </array>
   <key>EnvironmentVariables</key>
   <dict><key>BOSS_OS_REPO</key><string>$REPO</string></dict>
@@ -1736,13 +1712,11 @@ cat > "$LOCKS_PLIST" <<LOCKSEOF
   <key>RunAtLoad</key><false/>
 </dict></plist>
 LOCKSEOF
-
-launchctl unload "$LOCKS_PLIST" 2>/dev/null || true
 lint_plist "$LOCKS_PLIST"
-launchctl load "$LOCKS_PLIST"
-echo "Installed $LOCKS_LABEL — Friday 08:40 Central (rebalanced week, 1 Nov 2026), reporting to duty_outside_locks (Toni)."
+reload_plist "$LOCKS_PLIST"
+echo "Installed $LOCKS_LABEL — Friday 11:35 Central (the Mac's day, 21 Nov 2026), reporting to duty_outside_locks (Toni)."
 
-echo "Installed $LABEL — fetches the sky and the market, then checks for queued work at 06:05, 06:35, 06:50, 07:10, 12:35 and 18:35 Central."
+echo "Installed $LABEL — fetches the sky and the market, then checks for queued work at 04:05, 04:35, 05:05, 10:15, 12:35 and 18:35 Central."
 echo "Device: $DEVICE_ID · logs: $LOGS/agent.log"
 echo
 # RULE 0: an installer that installed nothing must not exit 0 looking pleased. launchctl load is
@@ -1875,6 +1849,7 @@ require_loaded com.seq.boss-owner-mail-watch
 [ -L "$HOME/bin/kdp-surface-prompt.md" ] || missing="$missing ~/bin/kdp-surface-prompt.md(symlink)"
 [ -f "$REPO/scripts/ops/kdp-surface-prompt.md" ] || missing="$missing scripts/ops/kdp-surface-prompt.md"
 
+[ "$RELOAD_FAILED" = 0 ] || { echo "NAMED STOP [RELOAD_FAILED] $RELOAD_FAILED job(s) would not load their new file and kept the OLD schedule (RELOAD_FAILED lines above)."; exit 1; }
 if [ -z "$missing" ]; then
   echo "Verified: launchd lists$checked."
 else

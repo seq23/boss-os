@@ -75,6 +75,7 @@
     "spry:heartbeat": "node scripts/ops/spry-heartbeat.mjs",
     "spry:weekly": "node scripts/vault/vault.mjs run -- node scripts/ops/spry-weekly.mjs",
     "schedule:check": "node scripts/ops/schedule-check.mjs",
+    "mac-day:check": "node scripts/ops/mac-day-check.mjs",
     "owner-mail:watch": "node scripts/vault/vault.mjs run -- node scripts/ops/owner-mail-watch.mjs",
     "canon:sync": "node scripts/vault/vault.mjs run -- node scripts/ops/canon-sync.mjs",
     "kdp:check": "bash scripts/ops/kdp-watch.sh",

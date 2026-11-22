@@ -172,7 +172,7 @@ describe("the schedule and the rule are the code's", () => {
   const sh = readFileSync(join(__dirname, "..", "scripts", "ops", "install-agent-launchd.sh"), "utf8");
   const claude = readFileSync(join(__dirname, "..", "CLAUDE.md"), "utf8");
   it("the installer writes the Sunday 18:45 Central job (rebalanced week, 1 Nov 2026) and verifies it", () => {
-    const stanza = sh.slice(sh.indexOf('COHESION_LABEL="com.seq.boss-cohesion"'), sh.indexOf("COHEOF\nlaunchctl"));
+    const stanza = sh.slice(sh.indexOf('COHESION_LABEL="com.seq.boss-cohesion"'), sh.indexOf("\nCOHEOF\n", sh.indexOf('COHESION_LABEL="com.seq.boss-cohesion"')));
     expect(stanza).toContain("npm run --silent brains:cohesion");
     // Hours in the installer are CENTRAL (lint_plist moves them to the Mac's zone): Sunday 18:45.
     expect(stanza).toMatch(/<key>Weekday<\/key><integer>0<\/integer><key>Hour<\/key><integer>18<\/integer><key>Minute<\/key><integer>45<\/integer>/);

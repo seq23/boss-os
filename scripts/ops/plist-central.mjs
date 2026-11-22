@@ -11,6 +11,7 @@
  *   node scripts/ops/plist-central.mjs <file.plist>     # rewrite in place; prints the shift
  */
 import fs from "node:fs";
+import os from "node:os";
 import { pathToFileURL } from "node:url";
 
 /**
@@ -69,14 +70,56 @@ export function shiftPlist(text, offset) {
   return head + shifted + (end === -1 ? "" : rest.slice(end));
 }
 
+/**
+ * THE MAC'S DAY (her ruling 21 Nov 2026, Central, every day): every job's command runs behind seq-bin's
+ * `mac-window`, with the class its Schedule row names (`macWindow`: HEAVY 22:00-06:30 and stopped at
+ * 06:55, MORNING and ANY never 07:00-09:59, LIGHT 10:00-21:59). Written here because every installer
+ * (boss-os, seq-bin, how-we-know) already passes each plist through this file before launchd reads it,
+ * so a new job cannot be installed without its window. A job woken outside its window waits (one
+ * pending record, then mac-window catch-up starts it once). Interval and KeepAlive jobs get --no-wait.
+ */
+export const MAC_CLASSES = ["HEAVY", "MORNING", "LIGHT", "ANY"];
+export const ONE_SHOT = /-once$|\.oneshot\./;
+
+/** label -> class from the Schedule manifest's mac rows (`macWindow`, a class or { label: class }). Pure. */
+export function macWindows(manifest) {
+  const out = new Map();
+  for (const r of manifest?.rows ?? []) {
+    if (r.system !== "mac" || !r.macWindow) continue;
+    for (const l of [].concat(r.trigger?.launchd ?? [])) {
+      const c = typeof r.macWindow === "string" ? r.macWindow : r.macWindow[l];
+      if (c) out.set(l, c);
+    }
+  }
+  return out;
+}
+
+/** The plist text with its command behind `mac-window run <class> <label>`; idempotent. Pure. */
+export function guardPlist(text, cls, bin) {
+  const label = /<key>Label<\/key>\s*<string>([^<]+)<\/string>/.exec(text)?.[1];
+  if (!label || !MAC_CLASSES.includes(cls)) return text;
+  const unguarded = text.replace(/(<key>ProgramArguments<\/key>\s*<array>)\s*<string>[^<]*\/mac-window<\/string>[\s\S]*?<string>--<\/string>/, "$1");
+  const poll = /<key>(StartInterval|KeepAlive)<\/key>/.test(text) ? "<string>--no-wait</string>" : "";
+  const prefix = `\n    <string>${bin}</string><string>run</string><string>${cls}</string><string>${label}</string>${poll}<string>--</string>`;
+  return unguarded.replace(/(<key>ProgramArguments<\/key>\s*<array>)/, `$1${prefix}`);
+}
+
 // Run as a CLI by its REAL path: a caller reaching it through a symlink (/var -> /private/var, a linked
 // checkout) used to fail this test silently, so the plist was loaded unshifted and exit was 0.
 if (process.argv[1] && import.meta.url === pathToFileURL(fs.realpathSync(process.argv[1])).href) {
   const file = process.argv[2];
   const offset = centralToLocalOffset();
-  const before = fs.readFileSync(file, "utf8");
-  if (before.includes("<!-- central-shifted -->")) process.exit(0);
-  const after = shiftPlist(before, offset).replace("<plist version=\"1.0\">", "<!-- central-shifted -->\n<plist version=\"1.0\">");
-  fs.writeFileSync(file, after);
-  if (offset) console.log(`  (Central hours moved ${offset > 0 ? "+" : ""}${offset}h to this Mac's zone)`);
+  let text = fs.readFileSync(file, "utf8");
+  if (!text.includes("<!-- central-shifted -->")) {
+    text = shiftPlist(text, offset).replace("<plist version=\"1.0\">", "<!-- central-shifted -->\n<plist version=\"1.0\">");
+    if (offset) console.log(`  (Central hours moved ${offset > 0 ? "+" : ""}${offset}h to this Mac's zone)`);
+  }
+  const label = /<key>Label<\/key>\s*<string>([^<]+)<\/string>/.exec(text)?.[1] ?? "";
+  if (!ONE_SHOT.test(label)) {
+    const manifest = JSON.parse(fs.readFileSync(new URL("../../src/shared/boss/schedule/manifest.json", import.meta.url), "utf8"));
+    const cls = macWindows(manifest).get(label);
+    if (cls) text = guardPlist(text, cls, process.env.MAC_WINDOW_BIN || `${os.homedir()}/bin/mac-window`);
+    else console.log(`  NOTE [NO_MAC_WINDOW] ${label} has no macWindow on its Schedule row; it runs unguarded (npm run mac-day:check fails it)`);
+  }
+  fs.writeFileSync(file, text);
 }

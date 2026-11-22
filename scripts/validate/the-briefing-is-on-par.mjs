@@ -54,6 +54,7 @@ const FILES = {
   launchd: "scripts/ops/install-agent-launchd.sh",
   screen: "src/client/boss/pages/Today.tsx",
   migration: "migrations/0257_boss_the_briefing_on_par_with_the_one_she_pays_for.sql",
+  macDay: "migrations/0372_boss_the_macs_day.sql",
   ladderMigration: "migrations/0258_boss_the_briefing_walks_her_two_seats_then_the_rungs.sql",
   consumer: "src/worker/boss/queue/consumer.ts",
   agent: "scripts/sync-agent/agent.mjs",
@@ -273,19 +274,21 @@ export async function check({ spec, fixture, prompt, files, deliveredAt, ladder,
   // The claim step is the shared wrapper since 1 Oct 2026 (it takes the lock the five-minute poll also takes); it runs `agent.mjs work-once`.
   const chain = /market-snapshot\.mjs;[\s\S]*?scripts\/ops\/agent-claim\.sh/.test(F.launchd);
   if (!chain) problems.push("The launchd chain does not run the market snapshot before the claim.");
-  if (!/<key>Hour<\/key><integer>6<\/integer><key>Minute<\/key><integer>5<\/integer>/.test(F.launchd)) problems.push("The launchd job has no 06:05 slot to claim a 06:00 duty.");
+  if (!/<key>Hour<\/key><integer>4<\/integer><key>Minute<\/key><integer>5<\/integer>/.test(F.launchd)) problems.push("The launchd job has no 04:05 slot to claim the 04:00 duty (the Mac's day, 21 Nov 2026: done by 06:30 with room to spare).");
   /*
    * THE RETRY TIME THE SCREEN NAMES IS THE TIME THE MAC ACTUALLY LOOKS. `MAC_CLAIM_SLOTS_CT` in
    * routes/today.ts and the boss-agent plist's StartCalendarInterval are two lists; this is the link.
    */
   const slotsInCode = [...(F.today.match(/MAC_CLAIM_SLOTS_CT[^=]*=\s*\[([\s\S]*?)\];/)?.[1] ?? "").matchAll(/\{\s*h:\s*(\d+),\s*m:\s*(\d+)\s*\}/g)]
     .map((m) => `${m[1]}:${m[2]}`);
-  const agentBlock = F.launchd.slice(F.launchd.indexOf('LABEL="com.seq.boss-agent"'), F.launchd.indexOf("launchctl load \"$PLIST\""));
+  const agentBlock = F.launchd.slice(F.launchd.indexOf('LABEL="com.seq.boss-agent"'), F.launchd.indexOf("reload_plist \"$PLIST\""));
   const slotsInPlist = [...agentBlock.matchAll(/<key>Hour<\/key><integer>(\d+)<\/integer><key>Minute<\/key><integer>(\d+)<\/integer>/g)].map((m) => `${m[1]}:${m[2]}`);
   if (slotsInCode.length === 0) problems.push("routes/today.ts has no MAC_CLAIM_SLOTS_CT, so a failed run cannot name its retry time.");
   else if (slotsInCode.join(",") !== slotsInPlist.join(",")) problems.push(`The retry slots the screen names (${slotsInCode.join(", ")}) are not the boss-agent's launchd slots (${slotsInPlist.join(", ")}).`);
   if (!/retryFailedBriefing\(/.test(F.deliver) || !/materialiseDueDuties\(env, now, "duty_exec_intel"\)/.test(F.deliver)) problems.push("deliverReport.ts does not re-queue a failed morning.");
   if (!/local_hour = 6,\s*local_minute = 0/.test(F.migration)) problems.push("Migration 0257 does not move the duty to 06:00 Central.");
+  // 21 Nov 2026 (the Mac's day: morning work done by 06:30 with twice its worst runtime to spare): 04:00.
+  if (!/SET local_hour = 4, local_minute = 0, [^;]*WHERE id = 'duty_exec_intel'/.test(F.macDay)) problems.push("Migration 0372 does not move the briefing duty to 04:00 Central.");
   if (!/'\$\.prompt'\s*\)/.test(F.migration) || !/json_remove/.test(F.migration)) problems.push("Migration 0257 does not remove $.prompt from the duty row.");
   if (!/'\$\.spec_module', 'executive_briefing'/.test(F.migration)) problems.push("Migration 0257 does not point the duty at the module.");
   for (const [re, what] of [

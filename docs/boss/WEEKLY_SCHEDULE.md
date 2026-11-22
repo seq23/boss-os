@@ -8,6 +8,11 @@ when a time moves (the page is), with one exception: on 1 Nov 2026 the jobs the 
 set back to their intended Central times (the page had listed them an hour early, where they fired after
 the clock change), and How We Know's draft is shown at Monday 12am. All times are Central. Client sites are never listed here (her rule).
 
+**21 Nov 2026, the Mac's day (her ruling, every day):** heavy work 22:00-06:55, the Mac OFF 07:00-10:00, everything
+else from 10:00, morning jobs done by 06:30 with twice their worst runtime to spare. Most Mac times below moved
+(lines at 07:00-09:59 now run from 10:00 the same day; the sweeps and repairs run that night at 22:15). The Schedule
+page holds the new times; `npm run mac-day:check` proves them on the installed plists.
+
 ## Monday
 
 10 weekly jobs · 4 emails to you

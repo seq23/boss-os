@@ -362,7 +362,7 @@ describe("search-readiness-fix.sh waits out the network and resumes by itself", 
 
   it("the installer keeps a KeepAlive on the unfinished mark, throttled to 15 minutes, naming no duty", () => {
     const installer = readFileSync("scripts/ops/install-agent-launchd.sh", "utf8");
-    const block = installer.slice(installer.indexOf('SRR_LABEL="com.seq.boss-sr-resume"'), installer.indexOf("SRREOF\n\n"));
+    const block = installer.slice(installer.indexOf('SRR_LABEL="com.seq.boss-sr-resume"'), installer.indexOf("\nSRREOF\n", installer.indexOf('SRR_LABEL="com.seq.boss-sr-resume"')));
     expect(block).toContain("search-readiness-fix.sh --resume-if-unfinished");
     expect(block).toContain("<key>PathState</key><dict><key>$HOME/.boss-os/search-readiness/run-unfinished.json</key><true/>");
     expect(block).toMatch(/<key>ThrottleInterval<\/key><integer>900<\/integer>/);

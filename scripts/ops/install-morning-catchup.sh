@@ -1,6 +1,9 @@
 #!/bin/bash
-# THE MORNING CATCH-UP (scripts/ops/morning-catchup.mjs): 06:32 Central, eight minutes before Simone's
-# 06:40 morning email, 06:45 Central just after it (the long producers), AND whenever the Mac comes up (RunAtLoad).
+# THE MORNING CATCH-UP (scripts/ops/morning-catchup.mjs): 06:05 and 06:14 Central, before Simone's 06:40
+# morning email, AND whenever the Mac comes up (RunAtLoad). The Mac's day (her ruling 21 Nov 2026): every
+# morning job is done by 06:30 with twice its worst runtime to spare, and the Mac is off 07:00-10:00, so the
+# after-the-email run (the long producers, for Today and tomorrow's email) moved from 06:45 to 10:10, and
+# the 10:00 boot (RunAtLoad) usually gets there first.
 #
 # 3 Nov 2026 (repair rc_m6gtk44dhfjq6rvj): a reboot killed com.seq.boss-capital mid-chain, so
 # capital:grid never ran and "deals"/"monique_found" missed the email. The 06:32 slot was the fix.
@@ -17,6 +20,7 @@
 # Called by install-agent-launchd.sh; safe to run on its own, so this one job can be reinstalled
 # without unloading every other job (and killing a scheduled one mid-run).
 set -euo pipefail
+"${LAUNCHD_RELOAD:-$HOME/bin/launchd-reload}" --seed >/dev/null
 REPO="${BOSS_OS_REPO:-${BOSS_OS_RUNTIME:-$HOME/.boss-os/runtime}}"  # launchd runs the runtime checkout, never her working one
 LOGS="$HOME/Library/Logs/boss-agent"
 mkdir -p "$LOGS" "$HOME/Library/LaunchAgents"
@@ -37,8 +41,9 @@ cat > "$MORNCATCHUP_PLIST" <<MORNCATCHUPEOF
   </array>
   <key>StartCalendarInterval</key>
   <array>
-    <dict><key>Hour</key><integer>6</integer><key>Minute</key><integer>32</integer></dict>
-    <dict><key>Hour</key><integer>6</integer><key>Minute</key><integer>45</integer></dict>
+    <dict><key>Hour</key><integer>6</integer><key>Minute</key><integer>5</integer></dict>
+    <dict><key>Hour</key><integer>6</integer><key>Minute</key><integer>14</integer></dict>
+    <dict><key>Hour</key><integer>10</integer><key>Minute</key><integer>10</integer></dict>
   </array>
   <key>StandardOutPath</key><string>$LOGS/morning-catchup.log</string>
   <key>StandardErrorPath</key><string>$LOGS/morning-catchup.err</string>
@@ -52,14 +57,13 @@ lint_plist() {
   plutil -lint "$1" >/dev/null || { echo "NAMED STOP [PLIST_MALFORMED] $1 is not a valid property list; not loaded." >&2; exit 1; }
 }
 lint_plist "$MORNCATCHUP_PLIST"
-launchctl unload "$MORNCATCHUP_PLIST" 2>/dev/null || true
-launchctl load "$MORNCATCHUP_PLIST"
+"${LAUNCHD_RELOAD:-$HOME/bin/launchd-reload}" "$MORNCATCHUP_PLIST" || exit 1   # the one reload (seq-bin): pauses kept, old schedule on failure
 launchctl list | grep -q "$MORNCATCHUP_LABEL" || { echo "NOT INSTALLED: $MORNCATCHUP_LABEL"; exit 1; }
-echo "Installed $MORNCATCHUP_LABEL — daily 06:32 and 06:45 Central, and whenever the Mac comes up."
+echo "Installed $MORNCATCHUP_LABEL — daily 06:05, 06:14 and 10:10 Central, and whenever the Mac comes up."
 
 # THE SLOT CATCH-UP (scripts/ops/missed-slots.mjs), every 30 minutes and at load (20 Nov 2026). The
 # 01:40 backup missed 16 and 20 Nov: the lid was closed, so the Mac slept through the slot, woke only
-# briefly, and was then restarted; the morning catch-up above runs at 06:32/06:45/boot only, never on a
+# briefly, and was then restarted; the morning catch-up above runs at its slots and at boot only, never on a
 # wake from sleep. Every 30 minutes, any com.seq.* job whose daily (or weekly) slot today is past with
 # no log since is started once; a daily job silent for 36 hours is named in the morning email.
 SLOTS_LABEL="com.seq.boss-slot-catchup"
@@ -82,8 +86,7 @@ cat > "$SLOTS_PLIST" <<SLOTSEOF
   <key>RunAtLoad</key><true/>
 </dict></plist>
 SLOTSEOF
-plutil -lint "$SLOTS_PLIST" >/dev/null || { echo "NAMED STOP [PLIST_MALFORMED] $SLOTS_PLIST is not a valid property list; not loaded." >&2; exit 1; }
-launchctl unload "$SLOTS_PLIST" 2>/dev/null || true
-launchctl load "$SLOTS_PLIST"
+lint_plist "$SLOTS_PLIST"   # the same mover: Central, and behind mac-window like every job
+"${LAUNCHD_RELOAD:-$HOME/bin/launchd-reload}" "$SLOTS_PLIST" || exit 1   # the one reload (seq-bin): pauses kept, old schedule on failure
 launchctl list | grep -q "$SLOTS_LABEL" || { echo "NOT INSTALLED: $SLOTS_LABEL"; exit 1; }
 echo "Installed $SLOTS_LABEL — every 30 minutes and whenever the Mac comes up."

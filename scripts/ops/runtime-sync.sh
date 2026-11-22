@@ -100,8 +100,9 @@ main() {
       fi
       W="$WORKING" R="$RT" perl -pi -e 's#\Q$ENV{W}\E(?=[/<&" ]|$)#$ENV{R}#g' "$P"
       if [ -n "${BOSS_OS_RUNTIME_NO_LAUNCHCTL:-}" ]; then say "repointed $L to $RT (not reloaded: no launchctl)"; continue; fi
-      if plutil -lint "$P" >/dev/null 2>&1 && { launchctl bootout "gui/$(id -u)/$L" 2>/dev/null; launchctl bootstrap "gui/$(id -u)" "$P" 2>/dev/null; launchctl print "gui/$(id -u)/$L" >/dev/null 2>&1; }; then
-        say "repointed $L to $RT and reloaded it"
+      # The one reload (seq-bin launchd-reload, 21 Nov 2026): a paused (disabled) job is never dropped.
+      if rl="$("${LAUNCHD_RELOAD:-$HOME/bin/launchd-reload}" "$P" 2>&1)"; then
+        say "repointed $L to $RT: $rl"
       else
         note "NAMED STOP [PLIST_REPOINT_FAILED] $L was moved to $RT but did not load again; run scripts/ops/install-runtime.sh"
       fi

@@ -71,39 +71,12 @@
           ]
         },
         {
-          "time": "6:00",
+          "time": "5:40",
           "tag": "sl",
           "text": "Search checklist audit of every side-business site",
           "emails": true,
           "refs": [
             "sites-audit"
-          ]
-        },
-        {
-          "time": "7:00",
-          "tag": "sv",
-          "text": "Finds new prospect names from free sources",
-          "emails": false,
-          "refs": [
-            "prospect-discovery"
-          ]
-        },
-        {
-          "time": "7:00",
-          "tag": "wf",
-          "text": "Scooter watch digest: what Scooter-watch caught last week",
-          "emails": true,
-          "refs": [
-            "scooter-watch-digest"
-          ]
-        },
-        {
-          "time": "7:15",
-          "tag": "sv",
-          "text": "People worth a call this week, with the reason for each",
-          "emails": true,
-          "refs": [
-            "people-worth-a-call"
           ]
         },
         {
@@ -123,6 +96,42 @@
           "refs": [
             "wpos-tlc-roundup"
           ]
+        },
+        {
+          "time": "10:15",
+          "tag": "wf",
+          "text": "Scooter watch digest: what Scooter-watch caught last week",
+          "emails": true,
+          "refs": [
+            "scooter-watch-digest"
+          ]
+        },
+        {
+          "time": "10:35",
+          "tag": "sv",
+          "text": "Finds new prospect names from free sources",
+          "emails": false,
+          "refs": [
+            "prospect-discovery"
+          ]
+        },
+        {
+          "time": "10:55",
+          "tag": "sv",
+          "text": "People worth a call this week, with the reason for each",
+          "emails": true,
+          "refs": [
+            "people-worth-a-call"
+          ]
+        },
+        {
+          "time": "22:15",
+          "tag": "me",
+          "text": "CI sweep: finds any repo with failing tests and fixes it (also Saturday)",
+          "emails": false,
+          "refs": [
+            "ci-sweep"
+          ]
         }
       ]
     },
@@ -131,22 +140,12 @@
       "label": "Tuesday",
       "items": [
         {
-          "time": "6:30",
-          "tag": "sl",
-          "text": "Fixes the gaps Monday's search audit found, and puts the fixes live",
-          "emails": false,
-          "refs": [
-            "search-readiness-repair"
-          ]
-        },
-        {
-          "time": "7:00",
-          "tag": "sv",
-          "text": "Buyers for what you're selling: one email, people in your own mail who want it and funds that hold it (two emails merged into one)",
+          "time": "7:30",
+          "tag": "wf",
+          "text": "Pre-seed watch: new pre-seed companies worth knowing",
           "emails": true,
           "refs": [
-            "buyer-hunt",
-            "filing-research"
+            "preseed-watch"
           ]
         },
         {
@@ -159,7 +158,26 @@
           ]
         },
         {
-          "time": "7:15",
+          "time": "9:00",
+          "tag": "wc",
+          "text": "westpeek.live: weekly hire search for Scooter",
+          "emails": false,
+          "refs": [
+            "wpos-productions-hire-search"
+          ]
+        },
+        {
+          "time": "10:05",
+          "tag": "sv",
+          "text": "Buyers for what you're selling: one email, people in your own mail who want it and funds that hold it (two emails merged into one)",
+          "emails": true,
+          "refs": [
+            "buyer-hunt",
+            "filing-research"
+          ]
+        },
+        {
+          "time": "10:15",
           "tag": "wf",
           "text": "Brings Scooter's LP tracker up to date before Wednesday's sync",
           "emails": false,
@@ -168,21 +186,12 @@
           ]
         },
         {
-          "time": "7:30",
-          "tag": "wf",
-          "text": "Pre-seed watch: new pre-seed companies worth knowing",
-          "emails": true,
-          "refs": [
-            "preseed-watch"
-          ]
-        },
-        {
-          "time": "9:00",
-          "tag": "wc",
-          "text": "westpeek.live: weekly hire search for Scooter",
+          "time": "22:15",
+          "tag": "sl",
+          "text": "Fixes the gaps Monday's search audit found, and puts the fixes live",
           "emails": false,
           "refs": [
-            "wpos-productions-hire-search"
+            "search-readiness-repair"
           ]
         }
       ]
@@ -234,21 +243,15 @@
           ]
         },
         {
-          "time": "8:00",
-          "tag": "me",
-          "text": "CI sweep: finds any repo with failing tests and fixes it (also Saturday)",
+          "time": "10:00–10:30",
+          "tag": "sl",
+          "text": "Sites fix their own small problems (Dream Wedding, backlink network, P&P, westpeek)",
           "emails": false,
           "refs": [
-            "ci-sweep"
-          ]
-        },
-        {
-          "time": "8:15",
-          "tag": "sl",
-          "text": "ONE \"Spry Labs weekly\" email: results for every side business (A Player Mode, Creator Network, Citation Velocity, Spry Labs site, Local Guides, ApprovalPrep, Dream Wedding, How We Know). Replaces 7 separate emails.",
-          "emails": true,
-          "refs": [
-            "spry-weekly"
+            "dream-wedding-builder-self-heal",
+            "authority-backlink-network-self-heal",
+            "p-n-p-self-heal",
+            "wpp-llm-self-heal"
           ]
         },
         {
@@ -261,15 +264,12 @@
           ]
         },
         {
-          "time": "10:00–10:30",
+          "time": "10:25",
           "tag": "sl",
-          "text": "Sites fix their own small problems (Dream Wedding, backlink network, P&P, westpeek)",
-          "emails": false,
+          "text": "ONE \"Spry Labs weekly\" email: results for every side business (A Player Mode, Creator Network, Citation Velocity, Spry Labs site, Local Guides, ApprovalPrep, Dream Wedding, How We Know). Replaces 7 separate emails.",
+          "emails": true,
           "refs": [
-            "dream-wedding-builder-self-heal",
-            "authority-backlink-network-self-heal",
-            "p-n-p-self-heal",
-            "wpp-llm-self-heal"
+            "spry-weekly"
           ]
         },
         {
@@ -297,15 +297,6 @@
       "label": "Thursday",
       "items": [
         {
-          "time": "5:00",
-          "tag": "sl",
-          "text": "Ahrefs audit: crawls each site, fixes problems at the source",
-          "emails": true,
-          "refs": [
-            "site-audit-repair"
-          ]
-        },
-        {
           "time": "7:00–8:00",
           "tag": "sl",
           "text": "Checks which outside sites link to How We Know, Time-2-Read, Dream Wedding and westpeek, one every 20 min",
@@ -315,15 +306,6 @@
             "dailystory-entity-backlink-watch",
             "dream-wedding-builder-entity-backlink-watch",
             "wpp-llm-entity-backlink-watch"
-          ]
-        },
-        {
-          "time": "7:00",
-          "tag": "sv",
-          "text": "Sellers for what your LPs want to buy: one email, the mirror of Tuesday for your buy orders",
-          "emails": true,
-          "refs": [
-            "seller-hunt"
           ]
         },
         {
@@ -343,6 +325,24 @@
           "refs": [
             "tool-scout"
           ]
+        },
+        {
+          "time": "10:05",
+          "tag": "sv",
+          "text": "Sellers for what your LPs want to buy: one email, the mirror of Tuesday for your buy orders",
+          "emails": true,
+          "refs": [
+            "seller-hunt"
+          ]
+        },
+        {
+          "time": "22:15",
+          "tag": "sl",
+          "text": "Ahrefs audit: crawls each site, fixes problems at the source",
+          "emails": true,
+          "refs": [
+            "site-audit-repair"
+          ]
         }
       ]
     },
@@ -357,15 +357,6 @@
           "emails": false,
           "refs": [
             "brokerage-sourcing"
-          ]
-        },
-        {
-          "time": "8:00",
-          "tag": "sl",
-          "text": "How We Know: this week's videos go public",
-          "emails": false,
-          "refs": [
-            "how-we-know-loop-fri-publish"
           ]
         },
         {
@@ -387,21 +378,30 @@
           ]
         },
         {
-          "time": "8:40",
-          "tag": "me",
-          "text": "Outside locks: anyone put a lock on your accounts? Emails you only if yes",
-          "emails": true,
+          "time": "8:00",
+          "tag": "sl",
+          "text": "How We Know: this week's videos go public",
+          "emails": false,
           "refs": [
-            "outside-locks"
+            "how-we-know-loop-fri-publish"
           ]
         },
         {
-          "time": "8:40",
+          "time": "10:35",
           "tag": "me",
           "text": "Archive check: nothing went stale, everything delivered can be found",
           "emails": false,
           "refs": [
             "archive-audit"
+          ]
+        },
+        {
+          "time": "11:35",
+          "tag": "me",
+          "text": "Outside locks: anyone put a lock on your accounts? Emails you only if yes",
+          "emails": true,
+          "refs": [
+            "outside-locks"
           ]
         },
         {
@@ -411,6 +411,15 @@
           "emails": false,
           "refs": [
             "how-we-know-loop-fri-measure"
+          ]
+        },
+        {
+          "time": "22:15",
+          "tag": "me",
+          "text": "CI sweep: finds any repo with failing tests and fixes it (also Saturday)",
+          "emails": false,
+          "refs": [
+            "ci-sweep"
           ]
         }
       ]
@@ -441,15 +450,6 @@
           "refs": [
             "how-we-know-loop-sat-score"
           ]
-        },
-        {
-          "time": "8:00",
-          "tag": "me",
-          "text": "CI sweep: fixes any repo with failing tests",
-          "emails": false,
-          "refs": [
-            "ci-sweep"
-          ]
         }
       ]
     },
@@ -476,7 +476,7 @@
           ]
         },
         {
-          "time": "9:00",
+          "time": "11:05",
           "tag": "me",
           "text": "Mac cleanup: keeps the disk from filling up",
           "emails": false,
@@ -547,7 +547,7 @@
     "Creator studio emails to you are cancelled, including P&P Studio. Sign-in codes still come."
   ],
   "about": "Every scheduled job across her systems, in Central time: Boss OS duties, the Mac's launchd jobs, GitHub Actions and Cloudflare crons in her repos, and West Peek OS's jobs. Client repos are never listed (clientRepoProblems). The Schedule page renders this and nothing else; tests/schedule.test.ts and npm run schedule:check hold it to the real triggers.",
-  "updated": "2026-11-01",
+  "updated": "2026-11-21",
   "businesses": [
     {
       "key": "brokerage",
@@ -590,10 +590,10 @@
       "brand": "Boss OS",
       "system": "mac",
       "slots": [
-        "daily 06:05",
-        "daily 06:35",
-        "daily 06:50",
-        "daily 07:10",
+        "daily 04:05",
+        "daily 04:35",
+        "daily 05:05",
+        "daily 10:15",
         "daily 12:35",
         "daily 18:35"
       ],
@@ -607,6 +607,12 @@
       "output": {
         "floor": 0,
         "reason": "Acts only when there is something to act on; Kendra sets a floor once it prints an OUTPUT line."
+      },
+      "macWindow": "MORNING",
+      "worstMin": {
+        "minutes": 30,
+        "measured": "2026-11-21",
+        "from": "the briefing run: 13.6 min on 18 Nov (agent.log); 20-25 min over 14 days (migration 0257's count); 30 used"
       }
     },
     {
@@ -629,7 +635,8 @@
       "output": {
         "floor": 0,
         "reason": "A check: its result is pass or fail, and a fail is already its own red run."
-      }
+      },
+      "macWindow": "LIGHT"
     },
     {
       "id": "aplayer-mode-services-api-wrangler-jsonc",
@@ -1028,7 +1035,7 @@
       "brand": "Boss OS",
       "system": "mac",
       "slots": [
-        "fri 08:40"
+        "fri 10:35"
       ],
       "emails": true,
       "heavy": false,
@@ -1041,7 +1048,8 @@
       "output": {
         "floor": 0,
         "reason": "An audit: a week with nothing stale is the good outcome."
-      }
+      },
+      "macWindow": "LIGHT"
     },
     {
       "id": "authority-backlink-network-authority-post-publish-distributi",
@@ -1300,7 +1308,26 @@
       "brand": "Boss OS",
       "system": "mac",
       "slots": [
-        "hourly :23"
+        "daily 00:23",
+        "daily 01:23",
+        "daily 02:23",
+        "daily 03:23",
+        "daily 04:23",
+        "daily 05:23",
+        "daily 06:23",
+        "daily 11:23",
+        "daily 12:23",
+        "daily 13:23",
+        "daily 14:23",
+        "daily 15:23",
+        "daily 16:23",
+        "daily 17:23",
+        "daily 18:23",
+        "daily 19:23",
+        "daily 20:23",
+        "daily 21:23",
+        "daily 22:23",
+        "daily 23:23"
       ],
       "emails": false,
       "heavy": false,
@@ -1313,7 +1340,8 @@
         "metric": "brains copied",
         "floor": 1,
         "runs": 2
-      }
+      },
+      "macWindow": "ANY"
     },
     {
       "id": "succession-book",
@@ -1323,7 +1351,7 @@
       "brand": "Boss OS",
       "system": "mac",
       "slots": [
-        "day1 06:20"
+        "day1 11:10"
       ],
       "emails": false,
       "heavy": false,
@@ -1336,7 +1364,8 @@
         "metric": "books built",
         "floor": 1,
         "runs": 1
-      }
+      },
+      "macWindow": "LIGHT"
     },
     {
       "id": "brokerage-sourcing",
@@ -1367,7 +1396,7 @@
       "brand": "Brokerage",
       "system": "mac",
       "slots": [
-        "tue 07:00"
+        "tue 10:05"
       ],
       "emails": true,
       "heavy": false,
@@ -1381,7 +1410,8 @@
         "metric": "emails sent",
         "floor": 1,
         "runs": 2
-      }
+      },
+      "macWindow": "LIGHT"
     },
     {
       "id": "catchups",
@@ -1418,7 +1448,7 @@
       "brand": "Repos",
       "system": "mac",
       "slots": [
-        "wed,sat 08:00"
+        "mon,fri 22:15"
       ],
       "emails": true,
       "heavy": true,
@@ -1430,7 +1460,8 @@
       "output": {
         "floor": 0,
         "reason": "A repair: it acts only on what is broken; nothing broken is the goal."
-      }
+      },
+      "macWindow": "HEAVY"
     },
     {
       "id": "drive-backup",
@@ -1440,7 +1471,7 @@
       "brand": "Mac",
       "system": "mac",
       "slots": [
-        "daily 01:40"
+        "daily 22:00"
       ],
       "emails": false,
       "heavy": false,
@@ -1453,7 +1484,8 @@
         "metric": "files backed up",
         "floor": 1,
         "runs": 2
-      }
+      },
+      "macWindow": "HEAVY"
     },
     {
       "id": "mac-snapshot",
@@ -1463,7 +1495,7 @@
       "brand": "Mac",
       "system": "mac",
       "slots": [
-        "day1,day15 10:00"
+        "day1,day15 22:05"
       ],
       "emails": false,
       "heavy": true,
@@ -1476,7 +1508,8 @@
         "metric": "verified snapshots uploaded",
         "floor": 1,
         "runs": 1
-      }
+      },
+      "macWindow": "HEAVY"
     },
     {
       "id": "restore-drill",
@@ -1486,7 +1519,7 @@
       "brand": "Mac",
       "system": "mac",
       "slots": [
-        "day1 13:00"
+        "day2 22:05"
       ],
       "emails": false,
       "heavy": true,
@@ -1499,7 +1532,8 @@
         "metric": "backups restored and proven",
         "floor": 3,
         "runs": 1
-      }
+      },
+      "macWindow": "HEAVY"
     },
     {
       "id": "tz-watch",
@@ -1521,7 +1555,8 @@
       "output": {
         "floor": 0,
         "reason": "A catch-up: it acts only when an earlier run did not finish."
-      }
+      },
+      "macWindow": "ANY"
     },
     {
       "id": "housekeeping",
@@ -1543,7 +1578,8 @@
       "output": {
         "floor": 0,
         "reason": "Housekeeping: doing nothing on a clean machine is fine."
-      }
+      },
+      "macWindow": "ANY"
     },
     {
       "id": "disk-sweep",
@@ -1553,7 +1589,7 @@
       "brand": "Mac",
       "system": "mac",
       "slots": [
-        "daily 07:15"
+        "daily 11:25"
       ],
       "emails": true,
       "heavy": false,
@@ -1565,7 +1601,8 @@
       "output": {
         "floor": 0,
         "reason": "Housekeeping: a disk with nothing leaked needs nothing removed; the OUTPUT line still reports free space."
-      }
+      },
+      "macWindow": "LIGHT"
     },
     {
       "id": "ci-sweep-resume",
@@ -1587,7 +1624,8 @@
       "output": {
         "floor": 0,
         "reason": "A catch-up: it acts only when an earlier run did not finish."
-      }
+      },
+      "macWindow": "HEAVY"
     },
     {
       "id": "ci-sweep-retry",
@@ -1597,7 +1635,7 @@
       "brand": "Repos",
       "system": "mac",
       "slots": [
-        "wed,sat 09:00"
+        "mon,fri 22:20"
       ],
       "emails": true,
       "heavy": true,
@@ -1609,7 +1647,8 @@
       "output": {
         "floor": 0,
         "reason": "A catch-up: it acts only when an earlier run did not finish."
-      }
+      },
+      "macWindow": "HEAVY"
     },
     {
       "id": "cohesion",
@@ -1631,7 +1670,8 @@
       "output": {
         "floor": 0,
         "reason": "A check: its result is pass or fail, and a fail is already its own red run."
-      }
+      },
+      "macWindow": "LIGHT"
     },
     {
       "id": "creator-network-daily-creator-network",
@@ -1795,7 +1835,7 @@
       "brand": "Boss OS",
       "system": "mac",
       "slots": [
-        "daily 06:15"
+        "daily 03:40"
       ],
       "emails": true,
       "heavy": true,
@@ -1808,6 +1848,12 @@
       "output": {
         "floor": 0,
         "reason": "A check: a dead login is already named on Today with its steps."
+      },
+      "macWindow": "MORNING",
+      "worstMin": {
+        "minutes": 0.4,
+        "measured": "2026-11-21",
+        "from": "boss-duty logs, 8 Nov"
       }
     },
     {
@@ -1818,7 +1864,7 @@
       "brand": "West Peek Ventures · fund",
       "system": "mac",
       "slots": [
-        "tue 07:45"
+        "tue 11:35"
       ],
       "emails": false,
       "heavy": false,
@@ -1830,7 +1876,8 @@
       "output": {
         "floor": 0,
         "reason": "Acts only when there is something to act on; Kendra sets a floor once it prints an OUTPUT line."
-      }
+      },
+      "macWindow": "LIGHT"
     },
     {
       "id": "dailystory-entity-backlink-watch",
@@ -2068,7 +2115,8 @@
       "output": {
         "floor": 0,
         "reason": "Housekeeping: doing nothing on a clean machine is fine."
-      }
+      },
+      "macWindow": "LIGHT"
     },
     {
       "id": "dream-wedding-builder-authority-preflight-validation",
@@ -2319,7 +2367,7 @@
       "brand": "West Peek Ventures",
       "system": "mac",
       "slots": [
-        "daily 06:25"
+        "daily 05:58"
       ],
       "emails": false,
       "heavy": false,
@@ -2332,6 +2380,12 @@
       "output": {
         "floor": 0,
         "reason": "Reads the month's 8Raise credits; the reading is the whole job."
+      },
+      "macWindow": "MORNING",
+      "worstMin": {
+        "minutes": 0.2,
+        "measured": "2026-11-21",
+        "from": "boss-duty logs, 20 Nov"
       }
     },
     {
@@ -2374,7 +2428,7 @@
       "brand": "Boss OS",
       "system": "boss-os",
       "slots": [
-        "daily 06:00"
+        "daily 04:00"
       ],
       "emails": false,
       "heavy": true,
@@ -2395,7 +2449,7 @@
       "brand": "Brokerage",
       "system": "mac",
       "slots": [
-        "tue 07:00"
+        "tue 10:05"
       ],
       "emails": false,
       "heavy": false,
@@ -2408,7 +2462,8 @@
       "output": {
         "floor": 0,
         "reason": "No holder clearing the bar is a real answer the email already states."
-      }
+      },
+      "macWindow": "LIGHT"
     },
     {
       "id": "grid-watch",
@@ -2418,7 +2473,7 @@
       "brand": "Industry Guides",
       "system": "mac",
       "slots": [
-        "daily 06:20"
+        "daily 05:55"
       ],
       "emails": false,
       "heavy": false,
@@ -2432,6 +2487,12 @@
         "metric": "health readings filed",
         "floor": 1,
         "runs": 2
+      },
+      "macWindow": "MORNING",
+      "worstMin": {
+        "minutes": 1.5,
+        "measured": "2026-11-21",
+        "from": "boss-duty logs, 12 Nov"
       }
     },
     {
@@ -2903,7 +2964,7 @@
       "brand": "How We Know",
       "system": "mac",
       "slots": [
-        "daily 09:00"
+        "daily 10:05"
       ],
       "emails": false,
       "heavy": false,
@@ -2915,7 +2976,8 @@
       "output": {
         "floor": 0,
         "reason": "Acts only when there is something to act on; Kendra sets a floor once it prints an OUTPUT line."
-      }
+      },
+      "macWindow": "LIGHT"
     },
     {
       "id": "howweknow-batch",
@@ -2938,7 +3000,8 @@
         "metric": "episodes rendered",
         "floor": 1,
         "runs": 2
-      }
+      },
+      "macWindow": "HEAVY"
     },
     {
       "id": "howweknow-batch-resume",
@@ -2960,7 +3023,8 @@
       "output": {
         "floor": 0,
         "reason": "A catch-up: it acts only when an earlier run did not finish."
-      }
+      },
+      "macWindow": "HEAVY"
     },
     {
       "id": "howweknow-food",
@@ -2983,7 +3047,8 @@
         "metric": "episodes rendered",
         "floor": 1,
         "runs": 2
-      }
+      },
+      "macWindow": "HEAVY"
     },
     {
       "id": "howweknow-food-resume",
@@ -3005,7 +3070,8 @@
       "output": {
         "floor": 0,
         "reason": "A catch-up: it acts only when an earlier run did not finish."
-      }
+      },
+      "macWindow": "HEAVY"
     },
     {
       "id": "howweknow-nightquit",
@@ -3027,7 +3093,8 @@
       "output": {
         "floor": 0,
         "reason": "Housekeeping: doing nothing on a clean machine is fine."
-      }
+      },
+      "macWindow": "HEAVY"
     },
     {
       "id": "pbs-library-fill",
@@ -3050,7 +3117,8 @@
         "metric": "files shelved",
         "floor": 1,
         "runs": 2
-      }
+      },
+      "macWindow": "HEAVY"
     },
     {
       "id": "hunt-ondemand",
@@ -3072,7 +3140,8 @@
       "output": {
         "floor": 0,
         "reason": "Acts only when there is something to act on; Kendra sets a floor once it prints an OUTPUT line."
-      }
+      },
+      "macWindow": "LIGHT"
     },
     {
       "id": "inbound-supply",
@@ -3082,7 +3151,7 @@
       "brand": "Brokerage",
       "system": "mac",
       "slots": [
-        "daily 05:30"
+        "daily 03:45"
       ],
       "emails": false,
       "heavy": true,
@@ -3096,6 +3165,12 @@
         "metric": "interests read",
         "floor": 1,
         "runs": 2
+      },
+      "macWindow": "MORNING",
+      "worstMin": {
+        "minutes": 80,
+        "measured": "2026-11-21",
+        "from": "chain: ledger-hunt 71.0 (19 Nov) + extract 2.8 + grid 0.2 + match, boss-duty logs"
       }
     },
     {
@@ -3106,7 +3181,7 @@
       "brand": "Brokerage",
       "system": "mac",
       "slots": [
-        "day1 07:30"
+        "day1 11:25"
       ],
       "emails": false,
       "heavy": false,
@@ -3119,7 +3194,8 @@
       "output": {
         "floor": 0,
         "reason": "\"Nobody worth a note this month\" is a real answer the email states."
-      }
+      },
+      "macWindow": "LIGHT"
     },
     {
       "id": "kdp-publish",
@@ -3129,7 +3205,7 @@
       "brand": "KDP books",
       "system": "mac",
       "slots": [
-        "mon 09:45"
+        "sun 22:15"
       ],
       "emails": true,
       "heavy": true,
@@ -3142,7 +3218,8 @@
       "output": {
         "floor": 0,
         "reason": "Publishes only approved covers; stopped on her word since 14 Sep 2026."
-      }
+      },
+      "macWindow": "HEAVY"
     },
     {
       "id": "kdp-surface",
@@ -3152,7 +3229,7 @@
       "brand": "KDP books",
       "system": "mac",
       "slots": [
-        "day1 09:30"
+        "day1 10:30"
       ],
       "emails": true,
       "heavy": true,
@@ -3165,7 +3242,8 @@
       "output": {
         "floor": 0,
         "reason": "Reads Amazon's mail; a quiet month is normal."
-      }
+      },
+      "macWindow": "LIGHT"
     },
     {
       "id": "ledger-hunt",
@@ -3175,7 +3253,7 @@
       "brand": "Brokerage",
       "system": "mac",
       "slots": [
-        "daily 05:45"
+        "daily 04:00"
       ],
       "emails": false,
       "heavy": false,
@@ -3186,13 +3264,19 @@
         ],
         "ticks": {
           "com.seq.boss-capital": [
-            "daily 05:30"
+            "daily 03:45"
           ]
         }
       },
       "output": {
         "floor": 0,
         "reason": "Routes only on the days her mail names a side."
+      },
+      "macWindow": "MORNING",
+      "worstMin": {
+        "minutes": 80,
+        "measured": "2026-11-21",
+        "from": "chain: ledger-hunt 71.0 (19 Nov) + extract 2.8 + grid 0.2 + match, boss-duty logs"
       }
     },
     {
@@ -3203,7 +3287,7 @@
       "brand": "Brokerage",
       "system": "mac",
       "slots": [
-        "daily 05:30"
+        "daily 03:45"
       ],
       "emails": false,
       "heavy": false,
@@ -3217,6 +3301,12 @@
         "metric": "grid rows",
         "floor": 1,
         "runs": 2
+      },
+      "macWindow": "MORNING",
+      "worstMin": {
+        "minutes": 80,
+        "measured": "2026-11-21",
+        "from": "chain: ledger-hunt 71.0 (19 Nov) + extract 2.8 + grid 0.2 + match, boss-duty logs"
       }
     },
     {
@@ -3239,6 +3329,12 @@
       "output": {
         "floor": 0,
         "reason": "A catch-up: it acts only when an earlier run did not finish."
+      },
+      "macWindow": "MORNING",
+      "worstMin": {
+        "minutes": 80,
+        "measured": "2026-11-21",
+        "from": "resumes the same chain"
       }
     },
     {
@@ -3567,7 +3663,7 @@
       "brand": "West Peek Ventures · fund",
       "system": "mac",
       "slots": [
-        "daily 06:15"
+        "daily 05:45"
       ],
       "emails": false,
       "heavy": false,
@@ -3575,9 +3671,9 @@
         "duty": "duty_lp_daily",
         "ticks": {
           "com.seq.boss-lp": [
-            "daily 06:15",
-            "daily 06:30",
-            "daily 08:45"
+            "daily 05:45",
+            "daily 06:00",
+            "daily 10:45"
           ]
         },
         "launchd": [
@@ -3587,6 +3683,12 @@
       "output": {
         "floor": 0,
         "reason": "Holds a reply only when an LP writes."
+      },
+      "macWindow": "MORNING",
+      "worstMin": {
+        "minutes": 3.9,
+        "measured": "2026-11-21",
+        "from": "boss-duty logs, 21 Nov"
       }
     },
     {
@@ -3597,7 +3699,7 @@
       "brand": "Boss OS",
       "system": "mac",
       "slots": [
-        "daily 09:00"
+        "daily 11:05"
       ],
       "emails": true,
       "heavy": false,
@@ -3610,7 +3712,8 @@
       "output": {
         "floor": 0,
         "reason": "Housekeeping: freeing nothing on a clean disk is fine."
-      }
+      },
+      "macWindow": "LIGHT"
     },
     {
       "id": "mail-tail",
@@ -3632,7 +3735,8 @@
       "output": {
         "floor": 0,
         "reason": "Acts only when there is something to act on; Kendra sets a floor once it prints an OUTPUT line."
-      }
+      },
+      "macWindow": "LIGHT"
     },
     {
       "id": "runtime-sync",
@@ -3654,7 +3758,8 @@
       "output": {
         "floor": 0,
         "reason": "Acts only when there is something to act on; Kendra sets a floor once it prints an OUTPUT line."
-      }
+      },
+      "macWindow": "ANY"
     },
     {
       "id": "mailbox-sweep",
@@ -3678,7 +3783,8 @@
         "metric": "threads read",
         "floor": 1,
         "runs": 2
-      }
+      },
+      "macWindow": "LIGHT"
     },
     {
       "id": "meet-listener",
@@ -3721,14 +3827,35 @@
         ],
         "ticks": {
           "com.seq.boss-meeting-prep": [
-            "hourly :05"
+            "daily 00:05",
+            "daily 01:05",
+            "daily 02:05",
+            "daily 03:05",
+            "daily 04:05",
+            "daily 05:05",
+            "daily 06:05",
+            "daily 10:05",
+            "daily 11:05",
+            "daily 12:05",
+            "daily 13:05",
+            "daily 14:05",
+            "daily 15:05",
+            "daily 16:05",
+            "daily 17:05",
+            "daily 18:05",
+            "daily 19:05",
+            "daily 20:05",
+            "daily 21:05",
+            "daily 22:05",
+            "daily 23:05"
           ]
         }
       },
       "output": {
         "floor": 0,
         "reason": "Preps only when a call is due."
-      }
+      },
+      "macWindow": "ANY"
     },
     {
       "id": "mercedes-creator-dashboard-wrangler-jsonc",
@@ -3779,7 +3906,8 @@
         "metric": "contacts read",
         "floor": 1,
         "runs": 2
-      }
+      },
+      "macWindow": "LIGHT"
     },
     {
       "id": "outside-locks",
@@ -3789,7 +3917,7 @@
       "brand": "Boss OS",
       "system": "mac",
       "slots": [
-        "fri 08:40"
+        "fri 11:35"
       ],
       "emails": false,
       "heavy": false,
@@ -3802,7 +3930,8 @@
       "output": {
         "floor": 0,
         "reason": "A check: quiet unless someone else locked an account."
-      }
+      },
+      "macWindow": "LIGHT"
     },
     {
       "id": "p-n-p-authority-daily",
@@ -3980,7 +4109,7 @@
       "brand": "Brokerage",
       "system": "mac",
       "slots": [
-        "mon 07:15"
+        "mon 10:55"
       ],
       "emails": true,
       "heavy": false,
@@ -3994,7 +4123,8 @@
         "metric": "people recommended",
         "floor": 1,
         "runs": 2
-      }
+      },
+      "macWindow": "LIGHT"
     },
     {
       "id": "pnp-corporate-outreach",
@@ -4023,7 +4153,8 @@
         "metric": "emails sent",
         "floor": 1,
         "runs": 2
-      }
+      },
+      "macWindow": "LIGHT"
     },
     {
       "id": "pnp-marketplace",
@@ -4042,18 +4173,14 @@
         "duty_born_live": true,
         "launchd": [
           "com.seq.boss-fb-renew"
-        ],
-        "ticks": {
-          "com.seq.boss-fb-renew": [
-            "daily 13:40"
-          ]
-        }
+        ]
       },
       "output": {
         "metric": "listings checked",
         "floor": 1,
         "runs": 2
-      }
+      },
+      "macWindow": "LIGHT"
     },
     {
       "id": "pnp-photo-ask",
@@ -4063,7 +4190,7 @@
       "brand": "Porch & Party",
       "system": "mac",
       "slots": [
-        "daily 06:20"
+        "daily 11:15"
       ],
       "emails": true,
       "heavy": false,
@@ -4075,7 +4202,8 @@
       "output": {
         "floor": 0,
         "reason": "A check: its result is pass or fail, and a fail is already its own red run."
-      }
+      },
+      "macWindow": "LIGHT"
     },
     {
       "id": "morning-catchup",
@@ -4085,8 +4213,9 @@
       "brand": "Boss OS",
       "system": "mac",
       "slots": [
-        "daily 06:32",
-        "daily 06:45"
+        "daily 06:05",
+        "daily 06:14",
+        "daily 10:10"
       ],
       "emails": false,
       "heavy": false,
@@ -4098,6 +4227,12 @@
       "output": {
         "floor": 0,
         "reason": "A catch-up: it re-runs a producer only when an expected morning section is missing; most days it re-runs nothing."
+      },
+      "macWindow": "MORNING",
+      "worstMin": {
+        "minutes": 8,
+        "measured": "2026-11-21",
+        "from": "its own before-email budget (8 min, morning-catchup.mjs); log 9 s after start on 21 Nov"
       }
     },
     {
@@ -4120,7 +4255,8 @@
       "output": {
         "floor": 0,
         "reason": "A catch-up: most runs start nothing because nothing was missed."
-      }
+      },
+      "macWindow": "ANY"
     },
     {
       "id": "scorecard",
@@ -4130,7 +4266,7 @@
       "brand": "Boss OS",
       "system": "mac",
       "slots": [
-        "daily 06:10"
+        "daily 05:50"
       ],
       "emails": true,
       "heavy": false,
@@ -4143,6 +4279,12 @@
         "metric": "on-track rows read for outcome alarms",
         "floor": 0,
         "reason": "Zero until a row is on track (every row is still too early or has no number in Nov 2026); on-track rows with none readable is the named stop ALARMS_READ_NOTHING."
+      },
+      "macWindow": "MORNING",
+      "worstMin": {
+        "minutes": 5,
+        "measured": "2026-11-21",
+        "from": "log written 4 s after the 06:10 start (21 Nov); Monday judging allowed 5"
       }
     },
     {
@@ -4153,7 +4295,7 @@
       "brand": "Boss OS",
       "system": "mac",
       "slots": [
-        "day1 09:45"
+        "day1 10:50"
       ],
       "emails": false,
       "heavy": false,
@@ -4165,7 +4307,8 @@
       "output": {
         "floor": 0,
         "reason": "Acts only when there is something to act on; Kendra sets a floor once it prints an OUTPUT line."
-      }
+      },
+      "macWindow": "LIGHT"
     },
     {
       "id": "practice-week",
@@ -4291,7 +4434,7 @@
       "brand": "West Peek Ventures",
       "system": "mac",
       "slots": [
-        "mon 07:00"
+        "mon 10:35"
       ],
       "emails": false,
       "heavy": false,
@@ -4302,8 +4445,8 @@
         ],
         "ticks": {
           "com.seq.boss-prospect-discovery": [
-            "mon 07:00",
-            "mon 09:15"
+            "mon 10:35",
+            "mon 11:35"
           ]
         }
       },
@@ -4311,7 +4454,8 @@
         "metric": "firm leads found",
         "floor": 1,
         "runs": 2
-      }
+      },
+      "macWindow": "LIGHT"
     },
     {
       "id": "prospects",
@@ -4321,7 +4465,7 @@
       "brand": "West Peek Ventures",
       "system": "mac",
       "slots": [
-        "mon,tue,wed,thu,fri 09:30"
+        "mon,tue,wed,thu,fri 10:40"
       ],
       "emails": false,
       "heavy": false,
@@ -4334,7 +4478,8 @@
       "output": {
         "floor": 0,
         "reason": "Sends only the touches the cadence makes due; a day with nobody due sends none, and a due-but-held day is its own named stop."
-      }
+      },
+      "macWindow": "LIGHT"
     },
     {
       "id": "lp8-drip",
@@ -4344,7 +4489,7 @@
       "brand": "West Peek Ventures · fund",
       "system": "mac",
       "slots": [
-        "mon,tue,wed,thu,fri 09:30"
+        "mon,tue,wed,thu,fri 10:45"
       ],
       "emails": false,
       "heavy": false,
@@ -4357,7 +4502,8 @@
       "output": {
         "floor": 0,
         "reason": "Sends only the emails the cadence makes due; a day with nobody due sends none, and a due-but-unsent day is its own named stop."
-      }
+      },
+      "macWindow": "LIGHT"
     },
     {
       "id": "repo-change",
@@ -4367,7 +4513,7 @@
       "brand": "Boss OS",
       "system": "mac",
       "slots": [
-        "daily 06:00-22:40/20m"
+        "daily 10:00-21:40/20m"
       ],
       "emails": true,
       "heavy": true,
@@ -4379,7 +4525,8 @@
       "output": {
         "floor": 0,
         "reason": "Acts only when there is something to act on; Kendra sets a floor once it prints an OUTPUT line."
-      }
+      },
+      "macWindow": "LIGHT"
     },
     {
       "id": "risk-watch",
@@ -4389,7 +4536,7 @@
       "brand": "Boss OS",
       "system": "mac",
       "slots": [
-        "daily 08:20"
+        "daily 10:35"
       ],
       "emails": true,
       "heavy": false,
@@ -4402,7 +4549,8 @@
       "output": {
         "floor": 0,
         "reason": "A watch: quiet unless money or mail moves."
-      }
+      },
+      "macWindow": "LIGHT"
     },
     {
       "id": "scooter-sheet",
@@ -4412,7 +4560,7 @@
       "brand": "West Peek Ventures",
       "system": "mac",
       "slots": [
-        "tue 07:15"
+        "tue 10:15"
       ],
       "emails": true,
       "heavy": false,
@@ -4425,7 +4573,8 @@
       "output": {
         "floor": 0,
         "reason": "Appends only the tracker rows that are new; a quiet week appends none."
-      }
+      },
+      "macWindow": "LIGHT"
     },
     {
       "id": "scooter-watch",
@@ -4447,7 +4596,8 @@
       "output": {
         "floor": 0,
         "reason": "A check: its result is pass or fail, and a fail is already its own red run."
-      }
+      },
+      "macWindow": "LIGHT"
     },
     {
       "id": "scooter-watch-digest",
@@ -4457,8 +4607,8 @@
       "brand": "West Peek Ventures",
       "system": "mac",
       "slots": [
-        "mon 07:00",
-        "mon 08:00"
+        "mon 10:15",
+        "mon 11:15"
       ],
       "emails": true,
       "heavy": false,
@@ -4470,7 +4620,8 @@
       "output": {
         "floor": 0,
         "reason": "Acts only when there is something to act on; Kendra sets a floor once it prints an OUTPUT line."
-      }
+      },
+      "macWindow": "LIGHT"
     },
     {
       "id": "search-readiness-repair",
@@ -4480,7 +4631,7 @@
       "brand": "Industry Guides",
       "system": "mac",
       "slots": [
-        "tue 06:30"
+        "tue 22:15"
       ],
       "emails": false,
       "heavy": true,
@@ -4491,14 +4642,15 @@
         ],
         "ticks": {
           "com.seq.boss-sr-fix": [
-            "daily 06:30"
+            "daily 22:15"
           ]
         }
       },
       "output": {
         "floor": 0,
         "reason": "Fixes only the gaps Monday's audit found; none is the goal."
-      }
+      },
+      "macWindow": "HEAVY"
     },
     {
       "id": "seat-claimer",
@@ -4530,7 +4682,7 @@
       "brand": "Brokerage",
       "system": "mac",
       "slots": [
-        "thu 07:00"
+        "thu 10:05"
       ],
       "emails": true,
       "heavy": false,
@@ -4544,7 +4696,8 @@
         "metric": "emails sent",
         "floor": 1,
         "runs": 2
-      }
+      },
+      "macWindow": "LIGHT"
     },
     {
       "id": "sheila-creator-dashboard-wrangler-jsonc",
@@ -4594,7 +4747,8 @@
       "output": {
         "floor": 0,
         "reason": "Acts only when there is something to act on; Kendra sets a floor once it prints an OUTPUT line."
-      }
+      },
+      "macWindow": "LIGHT"
     },
     {
       "id": "simone-commands",
@@ -4604,7 +4758,93 @@
       "brand": "Boss OS",
       "system": "mac",
       "slots": [
-        "daily 06:00-23:50/10m"
+        "daily 06:00",
+        "daily 06:10",
+        "daily 06:20",
+        "daily 10:00",
+        "daily 10:10",
+        "daily 10:20",
+        "daily 10:30",
+        "daily 10:40",
+        "daily 10:50",
+        "daily 11:00",
+        "daily 11:10",
+        "daily 11:20",
+        "daily 11:30",
+        "daily 11:40",
+        "daily 11:50",
+        "daily 12:00",
+        "daily 12:10",
+        "daily 12:20",
+        "daily 12:30",
+        "daily 12:40",
+        "daily 12:50",
+        "daily 13:00",
+        "daily 13:10",
+        "daily 13:20",
+        "daily 13:30",
+        "daily 13:40",
+        "daily 13:50",
+        "daily 14:00",
+        "daily 14:10",
+        "daily 14:20",
+        "daily 14:30",
+        "daily 14:40",
+        "daily 14:50",
+        "daily 15:00",
+        "daily 15:10",
+        "daily 15:20",
+        "daily 15:30",
+        "daily 15:40",
+        "daily 15:50",
+        "daily 16:00",
+        "daily 16:10",
+        "daily 16:20",
+        "daily 16:30",
+        "daily 16:40",
+        "daily 16:50",
+        "daily 17:00",
+        "daily 17:10",
+        "daily 17:20",
+        "daily 17:30",
+        "daily 17:40",
+        "daily 17:50",
+        "daily 18:00",
+        "daily 18:10",
+        "daily 18:20",
+        "daily 18:30",
+        "daily 18:40",
+        "daily 18:50",
+        "daily 19:00",
+        "daily 19:10",
+        "daily 19:20",
+        "daily 19:30",
+        "daily 19:40",
+        "daily 19:50",
+        "daily 20:00",
+        "daily 20:10",
+        "daily 20:20",
+        "daily 20:30",
+        "daily 20:40",
+        "daily 20:50",
+        "daily 21:00",
+        "daily 21:10",
+        "daily 21:20",
+        "daily 21:30",
+        "daily 21:40",
+        "daily 21:50",
+        "daily 22:00",
+        "daily 22:10",
+        "daily 22:20",
+        "daily 22:30",
+        "daily 22:40",
+        "daily 22:50",
+        "daily 23:00",
+        "daily 23:10",
+        "daily 23:20",
+        "daily 23:30",
+        "daily 23:40",
+        "daily 23:50"
       ],
       "emails": true,
       "heavy": true,
@@ -4616,7 +4856,8 @@
       "output": {
         "floor": 0,
         "reason": "Acts only when there is something to act on; Kendra sets a floor once it prints an OUTPUT line."
-      }
+      },
+      "macWindow": "ANY"
     },
     {
       "id": "site-audit-repair",
@@ -4626,7 +4867,7 @@
       "brand": "Industry Guides",
       "system": "mac",
       "slots": [
-        "thu 05:00"
+        "thu 22:15"
       ],
       "emails": true,
       "heavy": true,
@@ -4637,14 +4878,15 @@
         ],
         "ticks": {
           "com.seq.boss-ahrefs-audit": [
-            "daily 05:00"
+            "daily 22:15"
           ]
         }
       },
       "output": {
         "floor": 0,
         "reason": "Fixes only what the audit flagged; none is the goal."
-      }
+      },
+      "macWindow": "HEAVY"
     },
     {
       "id": "sites-audit",
@@ -4654,7 +4896,7 @@
       "brand": "Industry Guides",
       "system": "mac",
       "slots": [
-        "mon 06:00"
+        "mon 05:40"
       ],
       "emails": true,
       "heavy": false,
@@ -4667,6 +4909,12 @@
         "metric": "sites audited",
         "floor": 1,
         "runs": 2
+      },
+      "macWindow": "MORNING",
+      "worstMin": {
+        "minutes": 7,
+        "measured": "2026-11-21",
+        "from": "last log 2 Nov, 7 min after the 06:00 start"
       }
     },
     {
@@ -4677,7 +4925,7 @@
       "brand": "Spry Labs",
       "system": "mac",
       "slots": [
-        "wed 08:15"
+        "wed 10:25"
       ],
       "emails": true,
       "heavy": false,
@@ -4690,7 +4938,8 @@
         "metric": "emails sent",
         "floor": 1,
         "runs": 2
-      }
+      },
+      "macWindow": "LIGHT"
     },
     {
       "id": "sprylabs-hpc-site-entity-backlink-watch",
@@ -4786,7 +5035,8 @@
       "output": {
         "floor": 0,
         "reason": "A catch-up: it acts only when an earlier run did not finish."
-      }
+      },
+      "macWindow": "HEAVY"
     },
     {
       "id": "t2r-groups",
@@ -4796,7 +5046,7 @@
       "brand": "Time-2-Read",
       "system": "mac",
       "slots": [
-        "mon,tue,wed,thu,fri 08:15"
+        "mon,tue,wed,thu,fri 10:55"
       ],
       "emails": false,
       "heavy": false,
@@ -4810,7 +5060,8 @@
         "metric": "groups ready to write to",
         "floor": 1,
         "runs": 3
-      }
+      },
+      "macWindow": "LIGHT"
     },
     {
       "id": "t2r-numbers",
@@ -5638,7 +5889,8 @@
       "output": {
         "floor": 0,
         "reason": "Reads comments; acts only on her word."
-      }
+      },
+      "macWindow": "LIGHT"
     },
     {
       "id": "search-loop-mode-sync",
@@ -5872,7 +6124,7 @@
       "brand": "Boss OS",
       "system": "mac",
       "slots": [
-        "daily 07:50"
+        "daily 10:25"
       ],
       "emails": false,
       "heavy": false,
@@ -5883,7 +6135,7 @@
         ],
         "ticks": {
           "com.seq.boss-owner-mail-watch": [
-            "daily 07:50",
+            "daily 10:25",
             "daily 15:50"
           ]
         }
@@ -5892,7 +6144,8 @@
         "metric": "apps read",
         "floor": 2,
         "runs": 2
-      }
+      },
+      "macWindow": "LIGHT"
     },
     {
       "id": "keepmyproof-entity-backlink-watch",
