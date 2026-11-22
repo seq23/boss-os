@@ -142,21 +142,19 @@ async function snap(page) {
 // one on show), so its nth hit the wrong copy: AP "Back" DEAD and "Next question" untappable, 22 Nov 2026.
 const CONTROLS = ({ roles, mark }) => {
   const vis = (e) => { const r = e.getBoundingClientRect(); const s = getComputedStyle(e); return r.width > 4 && r.height > 4 && s.visibility !== "hidden" && s.display !== "none" && !e.closest("[aria-hidden=true]"); };
-  // The FULL name finds the control again (exact match); `name` is cut to 120 for the report only. Cutting
-  // the locator's name made every long-labelled control "cannot be tapped" (22 Nov 2026, AP and PBS).
   const fullName = (e) => (e.getAttribute("aria-label") || e.innerText || e.getAttribute("title") || e.value || "").replace(/\s+/g, " ").trim();
   const roleOf = (e) => e.getAttribute("role") || (e.tagName === "A" && e.hasAttribute("href") ? "link" : e.tagName === "BUTTON" ? "button" : e.type === "checkbox" ? "checkbox" : null);
   const seen = new Map(), out = [], noRole = [];
   for (const e of document.querySelectorAll("[role],a[href],button,input[type=checkbox]")) {
     const role = roleOf(e);
     if (!roles.includes(role) || !vis(e)) continue;
-    const full = fullName(e), n = full.slice(0, 120), key = `${role}|${full}`;
+    const n = fullName(e).slice(0, 120), key = `${role}|${n}`; // the mark below finds it again: no locator matches this name
     const nth = seen.get(key) ?? 0; seen.set(key, nth + 1);
     if (mark) {
-      if (role === mark.role && full === mark.full && nth === mark.nth) { e.setAttribute("data-tap-through-target", ""); return { marked: true }; }
+      if (role === mark.role && n === mark.name && nth === mark.nth) { e.setAttribute("data-tap-through-target", ""); return { marked: true }; }
       continue;
     }
-    out.push({ role, name: n, nth, disabled: e.getAttribute("aria-disabled") === "true" || e.disabled === true, full, current: (role === "tab" && (e.getAttribute("aria-selected") === "true" || (e.getAttribute("aria-current") ?? "false") !== "false")) || (role === "radio" && e.getAttribute("aria-checked") === "true") || (role === "button" && e.getAttribute("aria-selected") === "true"), href: e.tagName === "A" ? e.href : null });
+    out.push({ role, name: n, nth, disabled: e.getAttribute("aria-disabled") === "true" || e.disabled === true, current: (role === "tab" && (e.getAttribute("aria-selected") === "true" || (e.getAttribute("aria-current") ?? "false") !== "false")) || (role === "radio" && e.getAttribute("aria-checked") === "true") || (role === "button" && e.getAttribute("aria-selected") === "true"), href: e.tagName === "A" ? e.href : null });
   }
   for (const e of document.querySelectorAll("[tabindex='0']:not([role]):not(a):not(button):not(input)")) if (vis(e) && fullName(e) && e.querySelector("[role]") === null && getComputedStyle(e).cursor === "pointer") noRole.push(fullName(e).slice(0, 120));
   if (mark) return { marked: false };
@@ -338,7 +336,7 @@ async function sweep(browser, flow, target, origin, j, at, c, ctx) {
   let cur = c, fresh = false, here = 0;
   if (noRole.length) notes.noRole.push(...noRole.map((n) => `${j.name} step ${at + 1}: "${n}"`));
   for (const k of controls) {
-    const { full, ...shown } = k; // the report keeps the cut name
+    const shown = k;
     const key = `${path}|${k.role}|${k.name}|${k.nth}`;
     if (swept.has(key)) continue;
     if (!k.name) { results.push({ ...shown, result: "no accessible name (a screen reader says nothing)" }); notes.unnamed.push(`${j.name} step ${at + 1}: a ${k.role} with no name`); swept.add(key); continue; }
@@ -359,7 +357,7 @@ async function sweep(browser, flow, target, origin, j, at, c, ctx) {
     // locator click would, up to 5 s. An instant look made AP, APM and PBS controls "gone" (22 Nov 2026).
     let marked = false;
     for (const t0 = Date.now(); !marked && Date.now() - t0 < 5_000; ) {
-      ({ marked } = await cur.page.evaluate(CONTROLS, { roles: CONTROL_ROLES, mark: { role: k.role, full, nth: k.nth } }).catch(() => ({ marked: false })));
+      ({ marked } = await cur.page.evaluate(CONTROLS, { roles: CONTROL_ROLES, mark: { role: k.role, name: k.name, nth: k.nth } }).catch(() => ({ marked: false })));
       if (!marked) await cur.page.waitForTimeout(250);
     }
     if (!marked) { results.push({ ...shown, result: "gone when this screen was opened again" }); ctx.failures.push({ code: "STEP_UNREACHABLE", where: `${j.name} step ${at + 1} sweep`, what: `the ${k.role} "${k.name}" was not there when the screen was opened again (the screen differs each time)` }); fresh = false; continue; }
