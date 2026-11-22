@@ -86,6 +86,30 @@ export function importsOf(text, file) {
   return out;
 }
 
+/** Files the change deletes or renames away (vs the merge base), repo-relative. They no longer exist, so nothing else lists them. */
+export function deletedFiles(against = "origin/main") {
+  let base;
+  try { base = git(["merge-base", against, "HEAD"]).trim(); } catch { return []; }
+  const committed = git(["diff", "--name-only", "--diff-filter=D", base]).split("\n");
+  const renamed = git(["diff", "--name-status", "--diff-filter=R", base]).split("\n").map((l) => l.split("\t")[1]);
+  return [...new Set([...committed, ...renamed].filter(Boolean))].filter((f) => !existsSync(join(ROOT, f))).sort();
+}
+
+/** Every relative or aliased import of a file as a repo path, WITHOUT checking it exists (so a deleted target still matches). Pure over text. */
+export function specsOf(text, file) {
+  const out = [];
+  for (const m of text.matchAll(/(?:\bfrom\s*|\bimport\s*\(?\s*|\brequire\(\s*)["']([^"']+)["']/g)) {
+    let spec = m[1].split("?")[0];
+    const alias = Object.keys(ALIASES).find((a) => spec.startsWith(a));
+    if (alias) spec = ALIASES[alias] + spec.slice(alias.length);
+    else if (spec.startsWith(".")) spec = normalize(join(dirname(file), spec));
+    else continue;
+    for (const e of ["", ".ts", ".tsx", ".mts", ".mjs", ".js", "/index.ts", "/index.mjs", "/index.js"]) out.push(spec + e);
+    if (spec.endsWith(".js")) out.push(spec.replace(/\.js$/, ".ts"), spec.replace(/\.js$/, ".tsx"));
+  }
+  return out;
+}
+
 /**
  * The suites to run for these changes, at most PER_FILE importers of each changed module per pool.
  *
@@ -100,7 +124,7 @@ export function importsOf(text, file) {
  * the Boss config). Returns repo-relative test paths.
  */
 export const PER_FILE = 2;
-export function relatedTests(changed, perFile = PER_FILE) {
+export function relatedTests(changed, perFile = PER_FILE, deleted = []) {
   const want = new Set(changed);
   const tests = walk("tests").filter((f) => /\.test\.tsx?$/.test(f));
   const pick = new Set(tests.filter((t) => want.has(t)));
@@ -111,6 +135,23 @@ export function relatedTests(changed, perFile = PER_FILE) {
     let text = "";
     try { text = readFileSync(join(ROOT, t), "utf8"); } catch { continue; }
     for (const f of importsOf(text, t)) if (importers.has(f)) importers.get(f).push(t);
+  }
+  // Suites that reach a changed file WITHOUT importing it (22 Nov 2026, #537 went red twice on these):
+  //   · a suite that names its path ("src/worker/index.ts" read with readFileSync: workerEntryExports);
+  //   · a suite that runs a helper or fixture under tests/ which imports it (mimeMemory spawns
+  //     fixtures/mimeMemoryChild.mjs, which imported readers the PR removed);
+  //   · a suite (or helper) that still imports a file the change DELETED.
+  // Each is the exact suite that would fail, so all of them run, with no per-file cap.
+  const gone = new Set(deleted);
+  const helpers = walk("tests").filter((f) => TEST_EXT.test(f) && !/\.test\.tsx?$/.test(f));
+  const reaches = (text, f) => importsOf(text, f).some((i) => importers.has(i)) || specsOf(text, f).some((s) => gone.has(s));
+  const touchedHelpers = helpers.filter((h) => { try { return reaches(readFileSync(join(ROOT, h), "utf8"), h); } catch { return false; } });
+  const names = [...changed, ...deleted, ...touchedHelpers];
+  for (const t of tests) {
+    let text = "";
+    try { text = readFileSync(join(ROOT, t), "utf8"); } catch { continue; }
+    const byName = names.some((n) => text.includes(n) || (touchedHelpers.includes(n) && text.includes(n.split("/").pop())));
+    if (byName || specsOf(text, t).some((s) => gone.has(s))) pick.add(t);
   }
   for (const [file, users] of importers) {
     if (!users.length) continue;
@@ -211,11 +252,12 @@ async function main() {
   const { run, skipped } = scansFor(changed, scripts);
   console.log(`check:changed — ${changed.length} file(s) changed vs ${bi > 0 ? process.argv[bi + 1] : "origin/main"}; ${code.length} code file(s); ${run.length} scan(s)${skipped.length ? `, skipped (paths untouched): ${skipped.join(", ")}` : ""}`);
   if (listOnly) { for (const f of changed) console.log(`  ${f}`); process.exit(0); }
-  if (!changed.length) { console.log("check:changed — nothing changed vs origin/main, nothing to check."); process.exit(0); }
+  if (!changed.length && !deletedFiles(bi > 0 ? process.argv[bi + 1] : "origin/main").length) { console.log("check:changed — nothing changed vs origin/main, nothing to check."); process.exit(0); }
 
   const t0 = Date.now();
   const npx = (args) => ["npx", ["--no-install", ...args]];
-  const related = code.length ? relatedTests(code) : [];
+  const deleted = deletedFiles(bi > 0 ? process.argv[bi + 1] : "origin/main").filter((f) => TEST_EXT.test(f));
+  const related = code.length || deleted.length ? relatedTests(code, PER_FILE, deleted) : [];
   // A change to a config or a test stub reaches every suite of that pool without an import line.
   const bossAll = changed.some((f) => /^(vitest\.boss\.config\.ts|tests\/boss\/setup\.ts)$/.test(f));
   const nodeAll = changed.some((f) => /^(vitest\.config\.ts|tests\/stubs\/)/.test(f));
@@ -223,7 +265,7 @@ async function main() {
   const sample = (nodeAll || bossAll) ? relatedTests(["src/worker/index.ts", "src/worker/boss/index.ts"], 3) : [];
   const bossTests = [...new Set([...related, ...(bossAll ? sample : [])])].filter((f) => f.startsWith("tests/boss/"));
   const nodeTests = [...new Set([...related, ...(nodeAll ? sample : [])])].filter((f) => !f.startsWith("tests/boss/"));
-  console.log(`  suites: ${nodeTests.length} node, ${bossTests.length} boss (changed tests, the suite named after each changed module, and up to ${PER_FILE} importers of each per pool; CI runs the rest)`);
+  console.log(`  suites: ${nodeTests.length} node, ${bossTests.length} boss (changed tests, the suite named after each changed module, every suite that names a changed or deleted file or runs a helper that imports one, and up to ${PER_FILE} importers of each per pool; CI runs the rest)`);
   // The node pool runs four files at a time per process, so two processes stay under the port ceiling.
   // The Boss pool stays ONE process: four side by side raced each other's workerd storage (15 Nov 2026).
   const heavy = [

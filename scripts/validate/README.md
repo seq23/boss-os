@@ -154,6 +154,7 @@ violations) on breach and proves its own detection with a self-test fixture run.
   16-fixture self-test.
 
 - `the-merge-gate-is-fast.mjs` (`npm run validate:merge-gate-fast`) — the shape of `ci.yml`
+- `../ops/recheck-failed.mjs --self-test` + `../ops/vitest-pool.mjs --self-test` (`npm run validate:recheck-failed`) — shard 1 of `unit` and of `boss` in `ci.yml` first re-runs the suites of its pool that failed on the PR's previous commit, with the gate's own setup and runner (22 Nov 2026); proves it reads vitest's FAIL lines, picks the right earlier run, splits the pools, lets no unsafe path through, and retries the Boss pool only on its storage race.
   after 21 Sep 2026 (PR #35 waited 50 minutes on a serial 15-minute job plus a Playwright retry
   that hit its cap): every job has `timeout-minutes`; the unit suite and the Boss suites are
   sharded, the `--shard=i/N` denominator equals the matrix length and each unit shard stays
