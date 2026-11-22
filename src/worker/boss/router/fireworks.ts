@@ -22,6 +22,7 @@ export const fireworks: ProviderAdapter = {
         messages: req.messages,
         max_tokens: req.maxOutputTokens,
         temperature: req.temperature,
+        ...(req.json ? { response_format: { type: "json_schema", json_schema: { name: req.json.name, schema: req.json.schema } } } : {}),
       }),
     });
 

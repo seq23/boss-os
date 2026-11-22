@@ -45,6 +45,8 @@ const SNAPSHOT_TABLES = [
   "capital_deal_rows", // fix D
   "capital_party_lists", // fix D
   "capital_holders", // fix D
+  // 0374: a grid push on its way in, swapped in whole by its last part (LOCAL_ONLY like the grid).
+  "capital_deal_rows_staging",
   /*
    * THE POINTERS TO WORK MONIQUE EMAILED HER FROM THE LEDGER. A count, a kind and a clock — the
    * whole table is incapable of holding anything else — and losing it to a rebuild would silently
@@ -178,6 +180,7 @@ const SNAPSHOT_TABLES = [
   "client_update_carryover",
   "client_update_subjects",
   "capital_matches",
+  "capital_matches_staging", // 0374: a matches push on its way in
   "capital_match_taps",
   "capital_dismissed",
   // Danielle's repo changes (0265): her instruction, the plan, her reply, the PR and the proof.

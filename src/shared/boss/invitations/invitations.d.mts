@@ -10,7 +10,6 @@ export const PLATFORMS: readonly { name: string; re: RegExp; link: RegExp }[];
 export function mailQuery(afterSec: number): string;
 export function centralDay(ms: number): string;
 export function addDays(day: string, n: number): string;
-export function wallToUtc(y: number, mo: number, d: number, h: number, mi: number, tz?: string): number;
 export function whenWords(start: number, end?: number | null, allDay?: boolean): string;
 export function dayWords(day: string): string;
 export interface Ics {

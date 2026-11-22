@@ -251,3 +251,11 @@ describe("a held reply answers their latest message (2 Nov 2026: a time they acc
     expect(r.body).not.toContain("what would be most useful");
   });
 });
+
+describe("instantIn: a clock time that never happens", () => {
+  it("the hour skipped when clocks go forward is null, the hours either side are real", () => {
+    expect(instantIn("America/Chicago", "2027-03-14", 2, 30)).toBeNull();
+    expect(new Date(instantIn("America/Chicago", "2027-03-14", 1, 30)!).toISOString()).toBe("2027-03-14T07:30:00.000Z");
+    expect(new Date(instantIn("America/Chicago", "2027-03-14", 3, 30)!).toISOString()).toBe("2027-03-14T08:30:00.000Z");
+  });
+});

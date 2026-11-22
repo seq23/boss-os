@@ -57,13 +57,13 @@ it("owner action resets the per-person streak instead of counting acted-on remin
 });
 it("bulk dismiss writes the shared table for old pairs and leaves fresh pairs and new orders", async () => {
   const match = (id: string, days: number, sig = id) => ({ key: id, pair: `pair-${id}`, sig, company: "Example Company", oldest_days: days });
-  await apiJson("/api/capital/matches", { method: "POST", body: { replace: true, matches: [match("old", 31), match("fresh", 30)] } });
+  await apiJson("/api/capital/matches", { method: "POST", body: { total: 2, matches: [match("old", 31), match("fresh", 30)] } });
   expect((await apiJson("/api/capital/dismiss-older", { method: "POST", body: {} })).status).toBe(400);
   const result = await apiJson<any>("/api/capital/dismiss-older", { method: "POST", body: { confirmed: true } });
   expect(result.body.data.dismissed).toBe(1);
   expect((await apiJson<any>("/api/capital/matches")).body.data.matches.map((m: any) => m.key)).toEqual(["fresh"]);
   expect(await env.DB.prepare("SELECT pair FROM capital_dismissed").first("pair")).toBe("pair-old");
-  await apiJson("/api/capital/matches", { method: "POST", body: { replace: true, matches: [match("old", 31, "new-order"), match("fresh", 30)] } });
+  await apiJson("/api/capital/matches", { method: "POST", body: { total: 2, matches: [match("old", 31, "new-order"), match("fresh", 30)] } });
   expect((await apiJson<any>("/api/capital/matches")).body.data.matches).toHaveLength(2);
 });
 it("RR-list repliers on outside domains refuse a Rainmaker pair and allow an outside pair", async () => {
@@ -74,7 +74,7 @@ it("RR-list repliers on outside domains refuse a Rainmaker pair and allow an out
   expect(pairAllowed({ from: "unlisted@example.com" }, { from: "broker@example.com" }, lists)).toBe(true);
 });
 it("Matches hides orders over 90 days without deleting the retained push", async () => {
-  await apiJson("/api/capital/matches", { method: "POST", body: { replace: true, matches: [
+  await apiJson("/api/capital/matches", { method: "POST", body: { total: 2, matches: [
     { key: "day90", pair: "pair90", sig: "order90", company: "Example Company", oldest_days: 90 },
     { key: "day91", pair: "pair91", sig: "order91", company: "Example Company", oldest_days: 91 },
   ] } });

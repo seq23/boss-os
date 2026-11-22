@@ -57,6 +57,8 @@ export const anthropic: ProviderAdapter = {
         temperature: req.temperature,
         ...(system ? { system } : {}),
         messages,
+        // Structured output: one forced tool whose input is the asked shape (types.ts `json`).
+        ...(req.json ? { tools: [{ name: req.json.name, description: "Give the answer in this shape.", input_schema: req.json.schema }], tool_choice: { type: "tool", name: req.json.name } } : {}),
       }),
     });
 
@@ -70,7 +72,8 @@ export const anthropic: ProviderAdapter = {
     }
 
     const json = (await res.json()) as any;
-    const text = (json?.content ?? [])
+    const tool = req.json ? (json?.content ?? []).find((b: any) => b?.type === "tool_use" && b?.input && typeof b.input === "object") : null;
+    const text = tool ? JSON.stringify(tool.input) : (json?.content ?? [])
       .filter((b: any) => b?.type === "text")
       .map((b: any) => b.text)
       .join("");

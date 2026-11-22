@@ -773,6 +773,44 @@ export function writeMorning(name, section) {
   return writeMorningSection(name, { ...section, decide: (section.decide ?? []).filter(realButtons) }, { dir: MORNING_DIR });
 }
 
+/**
+ * ONE WHOLE PUSH (eng sweep row 10, 22 Nov 2026): parts of 500 under one push id, the last part
+ * marked, so Boss OS swaps the set in whole or keeps the previous one. Zero rows is never pushed
+ * unless `allowEmpty` (the grid never passes it: an empty grid is a broken read, not "no deals").
+ */
+export async function pushWhole(session, route, key, items, { allowEmpty = false, size = 500 } = {}) {
+  if (items.length === 0 && !allowEmpty) return { ok: false, why: "0 rows: nothing pushed" };
+  const push = `mac-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 10)}`;
+  for (let i = 0; i < items.length || i === 0; i += size) {
+    const last = i + size >= items.length;
+    const res = await session.post(route, { [key]: items.slice(i, i + size), push, total: items.length, last, offset: i, ...(allowEmpty ? { allowEmpty: true } : {}) });
+    if (!res?.ok) return { ok: false, why: `part ${i / size + 1}: ${res?.status ?? "no response"}` };
+    const body = last ? await res.json().catch(() => null) : null;
+    if (last && body?.data?.committed !== true) return { ok: false, why: "last part not committed" };
+    if (last) return { ok: true, why: "", stored: Number(body?.data?.stored ?? 0) };
+  }
+  return { ok: true, why: "", stored: 0 };
+}
+
+/** Each id once, first wins: Boss OS refuses a push that repeats one (DUPLICATE_ID). Pure. */
+export function onceEach(items, keyOf) {
+  const seen = new Set();
+  return items.filter((x) => { const k = keyOf(x); if (seen.has(k)) return false; seen.add(k); return true; });
+}
+
+/**
+ * How the run ends, once the morning sections are written. A push that did not land is a NAMED STOP
+ * and a non-zero exit, so the duty records a failed run instead of a good one; OUTPUT counts only the
+ * rows Boss OS saved. Pure.
+ */
+export function gridRunEnd({ reached, grid, matches }) {
+  const stops = [];
+  if (!reached) stops.push("NAMED STOP [BOSS_UNREACHABLE] Boss OS could not be reached, so the Deals and Matches screens still show the last good push.");
+  else if (!grid?.ok) stops.push(`NAMED STOP [GRID_NOT_PUSHED] ${grid?.why || "no answer"}: the Deals page shows the last good push, whole.`);
+  else if (!matches?.ok) stops.push(`NAMED STOP [MATCHES_NOT_PUSHED] ${matches?.why || "no answer"}: the Matches screen shows the last good push, whole.`);
+  return { stops, exitCode: stops.length ? 4 : 0, output: outputLine(reached && grid?.ok ? grid.stored : 0, "grid rows") };
+}
+
 async function main() {
   const DRY = process.argv.includes("--dry-run");
   const KEEP_SEEN = process.argv.includes("--keep-seen");
@@ -831,25 +869,19 @@ async function main() {
   writeMorning("monique_found", moniqueSection);
   fs.writeFileSync(firstSeenFile, JSON.stringify({ updated_at: new Date(nowMs).toISOString(), pairs: nextSeen }));
 
-  let pushed = false;
+  let gridPush = null;
+  let matchesPush = null;
   if (session) {
     // The Archive rides along (owner, 24 Oct 2026): a view by date on the Deals page, never matched.
     const archived = buildGrid(ledger.interests, { identity, lists, senders, wrong, archive: true });
-    const rows = [...grid, ...archived.filter((a) => !grid.some((g) => g.id === a.id))].map(publicRow);
-    pushed = true;
-    for (let i = 0; i < rows.length || i === 0; i += 500) {
-      const res = await session.post("/capital/deals", { rows: rows.slice(i, i + 500), replace: i === 0, lookback_days: LOOKBACK_DAYS });
-      if (!res?.ok) { pushed = false; console.error(`  grid NOT pushed [${res?.status ?? "no response"}] — the Deals page shows the last good push.`); break; }
-      if (rows.length === 0) break;
-    }
+    const rows = onceEach([...grid, ...archived].map(publicRow), (r) => r.id);
+    gridPush = await pushWhole(session, "/capital/deals", "rows", rows);
   }
-  // THE MATCHES SCREEN: every current match, best first, replaced whole.
+  const pushed = !!gridPush?.ok;
+  // THE MATCHES SCREEN: every current match, best first, replaced whole. Zero matches beside a real
+  // grid that just landed is a true "none now", so only then may the screen be emptied.
   if (session && pushed) {
-    for (let i = 0; i < matches.length || i === 0; i += 500) {
-      const res = await session.post("/capital/matches", { matches: matches.slice(i, i + 500), replace: i === 0, offset: i });
-      if (!res?.ok) { console.error(`  matches NOT pushed [${res?.status ?? "no response"}]`); break; }
-      if (matches.length === 0) break;
-    }
+    matchesPush = await pushWhole(session, "/capital/matches", "matches", onceEach(matches, (m) => m.key), { allowEmpty: true });
   }
   /*
    * THE HOLDERS TAB: every named holder Danielle's filings read found, per company in the grid's
@@ -869,7 +901,10 @@ async function main() {
   }
   if (!KEEP_SEEN) fs.writeFileSync(seenFile, JSON.stringify({ updated_at: new Date().toISOString(), ids: grid.map((g) => g.id) }, null, 2));
   console.log(`CAPITAL-GRID-COMPLETE: ${grid.length} row(s), ${newRows.length} new, morning sections written${pushed ? ", Deals page updated" : ""}${KEEP_SEEN ? " (--keep-seen: grid-seen.json untouched)" : ""}.`);
-  console.log(outputLine(grid.length, "grid rows"));
+  const end = gridRunEnd({ reached: !!session, grid: gridPush, matches: matchesPush });
+  for (const stop of end.stops) console.error(stop);
+  console.log(end.output);
+  process.exitCode = end.exitCode;
 }
 
 if (import.meta.url === `file://${process.argv[1]}`) {

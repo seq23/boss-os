@@ -8,28 +8,15 @@
  * (`queue/consumer.ts#buildPrompt`) and back to her in the reply, and every wait that could eat it
  * says so. Pure. Times are read in America/Chicago and returned as ISO UTC.
  */
+import { HOME_TZ as CHICAGO, civilIn, instantAt } from "../ownerTime.mjs";
+
 const DAYS = ["sunday", "monday", "tuesday", "wednesday", "thursday", "friday", "saturday"];
-const CHICAGO = "America/Chicago";
 
-/** The Chicago wall-clock parts of an instant. */
-function chicagoParts(at) {
-  const fmt = new Intl.DateTimeFormat("en-US", { timeZone: CHICAGO, hourCycle: "h23", year: "numeric", month: "2-digit", day: "2-digit", hour: "2-digit", minute: "2-digit", weekday: "short" });
-  const p = Object.fromEntries(fmt.formatToParts(at).map((x) => [x.type, x.value]));
-  const y = Number(p.year), m = Number(p.month), d = Number(p.day), h = Number(p.hour) % 24, min = Number(p.minute);
-  const dow = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"].indexOf(String(p.weekday));
-  const asUtc = Date.UTC(y, m - 1, d, h, min);
-  // Against the instant floored to its minute: the wall clock above has no seconds, so an email that
-  // arrived at :45 seconds rounded the offset a minute off and every deadline read hh:01 (1 Nov 2026,
-  // "due 2026-11-01T23:01Z").
-  const offsetMin = Math.round((asUtc - Math.floor(at.getTime() / 60_000) * 60_000) / 60_000);
-  return { y, m, d, h, min, dow, offsetMin };
-}
+/** The Chicago wall-clock parts of an instant: { y, m, d, h, min, dow }. */
+const chicagoParts = (at) => civilIn(at.getTime(), CHICAGO);
 
-/** A Chicago wall-clock → ISO UTC, using the offset in force at the reference instant (DST edges are a few-hour error at worst, never a day). */
-function chicagoToIso(ref, y, m, d, h, min) {
-  const { offsetMin } = chicagoParts(ref);
-  return new Date(Date.UTC(y, m - 1, d, h, min) - offsetMin * 60_000).toISOString();
-}
+/** A Chicago wall-clock time as ISO UTC, with the offset in force on THAT day (instantAt), never the day the email arrived. */
+const chicagoToIso = (y, m, d, h, min) => new Date(instantAt(CHICAGO, y, m, d, h, min)).toISOString();
 
 const HOUR_WORDS = [
   [/\b(first thing|morning|am\b|breakfast)/i, 9],
@@ -58,7 +45,7 @@ function hourIn(words) {
 export function dueTimeIn(text, now = new Date()) {
   const t = String(text ?? "").replace(/\s+/g, " ");
   const { y, m, d, dow } = chicagoParts(now);
-  const at = (days, h, words, priority) => ({ due_at: chicagoToIso(now, y, m, d + days, h, 0), due_words: words.trim(), priority });
+  const at = (days, h, words, priority) => ({ due_at: chicagoToIso(y, m, d + days, h, 0), due_words: words.trim(), priority });
 
   const asap = /\b(as soon as (you|u) can|asap|right away|immediately|urgent(ly)?|today|this morning|this afternoon|tonight|by end of (the )?day|by eod|before doors|by (\d{1,2}(:\d{2})?\s*(am|pm)) today)\b/i.exec(t);
   if (asap) {
@@ -84,7 +71,7 @@ export function dueTimeIn(text, now = new Date()) {
     const day = Number(explicitDate[2]);
     let year = y;
     if (month < m || (month === m && day < d)) year += 1;
-    const due = chicagoToIso(now, year, month, day, 17, 0);
+    const due = chicagoToIso(year, month, day, 17, 0);
     const days = (Date.parse(due) - now.getTime()) / 86_400_000;
     return { due_at: due, due_words: explicitDate[0], priority: days <= 2 ? "URGENT" : "HIGH" };
   }
@@ -128,7 +115,11 @@ export function notBeforeIn(text, now = new Date()) {
     if (wd) { ymd = [y, m, d + ((DAYS.indexOf(wd[1].toLowerCase()) - dow + 7) % 7)]; day = wd[1]; }
     else ymd = [y, m, d + (hh * 60 + mm > nowH * 60 + nowMin ? 0 : 1)];
   }
-  const at = chicagoToIso(now, ymd[0], ymd[1], ymd[2], hh, mm);
+  let ms = instantAt(CHICAGO, ymd[0], ymd[1], ymd[2], hh, mm);
+  // The repeated hour when clocks go back: a start already past may be the second time that clock reads.
+  const later = civilIn(ms + 3_600_000, CHICAGO), w = civilIn(ms, CHICAGO);
+  if (ms <= now.getTime() && later.h === w.h && later.min === w.min && later.d === w.d) ms += 3_600_000;
+  const at = new Date(ms).toISOString();
   return { at, words: `${day ? `${day}, ` : ""}${start[0]}` };
 }
 
@@ -142,7 +133,7 @@ export function heldDue(due, notBefore) {
   const start = Date.parse(notBefore.at);
   if (due && Date.parse(due.due_at) > start) return due;
   const p = chicagoParts(new Date(start));
-  const fivePm = Date.parse(chicagoToIso(new Date(start), p.y, p.m, p.d, 17, 0));
+  const fivePm = Date.parse(chicagoToIso(p.y, p.m, p.d, 17, 0));
   const dueAt = Math.max(fivePm, start + 2 * 3_600_000);
   return { due_at: new Date(dueAt).toISOString(), due_words: notBefore.words, priority: "HIGH" };
 }

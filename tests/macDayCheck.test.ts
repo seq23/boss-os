@@ -8,7 +8,7 @@ import { tmpdir } from "node:os";
 import path from "node:path";
 import { describe, expect, it } from "vitest";
 import { guardPlist, macWindows } from "../scripts/ops/plist-central.mjs";
-import { macDayProblems, rowProblems, slotsOf } from "../scripts/ops/mac-day-check.mjs";
+import { FAMILIES, macDayProblems, rowProblems, slotsOf } from "../scripts/ops/mac-day-check.mjs";
 import manifest from "../src/shared/boss/schedule/manifest.json";
 
 const plist = (label: string, slots: string, extra = "") =>
@@ -80,11 +80,17 @@ describe("mac-day:check", () => {
   it("reads the Central hour back from an Eastern Mac's plist", () => {
     expect(slotsOf(plist("x", at(11, 0)), 1)[0]?.mins).toBe(10 * 60);
   });
+  it("covers West Peek OS's local-jobs claimer (it runs claude -p on this Mac), and only that West Peek OS daemon", () => {
+    expect(FAMILIES.test("ventures.westpeek.os.local-jobs")).toBe(true);
+    expect(FAMILIES.test("ventures.westpeek.os.seat-claimer")).toBe(false);
+    const unguarded = `<?xml version="1.0"?><plist version="1.0"><dict><key>Label</key><string>ventures.westpeek.os.local-jobs</string><key>ProgramArguments</key><array><string>/bin/sh</string></array><key>StartInterval</key><integer>900</integer></dict></plist>`;
+    expect(macDayProblems({ "ventures.westpeek.os.local-jobs": unguarded }, manifest as any)).toContain("ventures.westpeek.os.local-jobs: does not run behind mac-window");
+  });
   it("every mac row the installers write has a class, and every MORNING row a worst runtime", () => {
     const cls = macWindows(manifest);
     expect(cls.size).toBeGreaterThan(50);
     for (const r of (manifest as any).rows) {
-      if (r.system !== "mac" || /^ventures\./.test(r.trigger?.launchd?.[0] ?? "")) continue;
+      if (r.system !== "mac" || !FAMILIES.test(r.trigger?.launchd?.[0] ?? "")) continue;
       expect(r.macWindow, r.id).toBeTruthy();
       if (r.macWindow === "MORNING") expect(r.worstMin?.minutes, r.id).toBeGreaterThan(0);
     }

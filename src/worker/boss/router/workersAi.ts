@@ -65,6 +65,7 @@ export const workersAi: ProviderAdapter = {
           messages: req.messages,
           max_tokens: req.maxOutputTokens,
           temperature: req.temperature,
+          ...(req.json ? { response_format: { type: "json_schema", json_schema: req.json.schema } } : {}),
         }),
         req.signal,
       );
