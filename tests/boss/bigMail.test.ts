@@ -4,7 +4,8 @@ import { handleBossInboundMail, INLINE_READ_ATTEMPTS, STALE_ARRIVAL_MS, MAX_BODY
 import { readEverything, driveIdsIn } from "../../src/worker/boss/intake/readFiles";
 import { asksIn, gotItLines, fileLabel } from "../../src/worker/boss/intake/gotIt";
 import { runMailAlarm } from "../../src/worker/boss/intake/mailAlarm";
-import { mimeParseCount, fileAttachments, bytesOfBase64, pdfAttachments, audioAttachments, messageText, MIME_LIMITS } from "../../src/worker/effects/mimeAttachments";
+import { mimeParseCount, fileAttachments, parseMail, pdfAttachments, messageText, MIME_LIMITS } from "../../src/worker/effects/mimeAttachments";
+import { readableText } from "../../src/shared/boss/intake/messageBody.mjs";
 import { apiJson, row, all } from "./helpers";
 
 /**
@@ -164,7 +165,7 @@ describe("a Drive link is her material too", () => {
     }) as unknown as typeof fetch;
     const words = `See https://docs.google.com/document/d/${SHARED}/edit and https://drive.google.com/file/d/${PRIVATE}/view`;
     expect(driveIdsIn(words)).toEqual([SHARED, PRIVATE]);
-    const got = await readEverything(e as never, "Subject: x\r\n\r\nplain", words, { fetchImpl, ai: null });
+    const got = await readEverything(e as never, await parseMail("Subject: x\r\n\r\nplain"), words, { fetchImpl, ai: null });
     expect(got.read).toEqual([{ filename: "Launch plan", text: "Plan: open in March, hire two people." }]);
     expect(got.unopened[0]!.reason).toMatch(/not shared with Boss OS/);
   });
@@ -273,9 +274,9 @@ describe("a file sent quoted-printable or plain is still opened", () => {
       "three venues", "",
       `--${B}--`, "",
     ].join("\r\n");
-    const { attachments, unread } = await fileAttachments(raw);
+    const { attachments, unread } = fileAttachments(await parseMail(raw));
     expect(unread).toEqual([]);
-    const text = (n: string) => new TextDecoder().decode(bytesOfBase64(attachments.find((a) => a.filename === n)!.dataBase64));
+    const text = (n: string) => new TextDecoder().decode(attachments.find((a) => a.filename === n)!.content);
     // Byte for byte, RFC 2046: the blank line above each boundary is the file's own last line break (the CRLF
     // right before "--b-qp" belongs to the boundary). The old hand splitter trimmed it; postal-mime keeps the file whole.
     expect(text("Attachment.html")).toBe("<p>Café list for the week</p>\r\n");
@@ -296,14 +297,14 @@ describe("a forged or broken message (postal-mime, eng sweep row 9)", () => {
   }
 
   it("abuse: parts nested past the limit, or more parts than the limit, are refused by the limit and SAID, never thrown", async () => {
-    const deep = await fileAttachments(nested(MIME_LIMITS.maxNestingDepth + 40));
+    const deep = fileAttachments(await parseMail(nested(MIME_LIMITS.maxNestingDepth + 40)));
     expect(deep.attachments).toEqual([]);
     expect(deep.unread).toEqual([expect.stringMatching(/^the message \(it could not be taken apart, its parts are nested deeper than any real email; it is kept as it arrived\)$/)]);
     const many = ["From: a@example.com", "Subject: many", 'Content-Type: multipart/mixed; boundary="m"', "",
       ...Array.from({ length: MIME_LIMITS.maxPartCount + 50 }, (_, i) => [`--m`, "Content-Type: text/plain", "", `part ${i}`]).flat(), "--m--", ""].join("\r\n");
-    expect((await pdfAttachments(many)).unread).toEqual([expect.stringContaining("holds more parts than any real email")]);
+    expect((pdfAttachments(await parseMail(many))).unread).toEqual([expect.stringContaining("holds more parts than any real email")]);
     // A real forward of a forward is far inside the limit and still read.
-    expect((await pdfAttachments(nested(4))).attachments.map((a) => a.filename)).toEqual(["deep.pdf"]);
+    expect((pdfAttachments(await parseMail(nested(4)))).attachments.map((a) => a.filename)).toEqual(["deep.pdf"]);
   });
 
   it("outage: a message the parser refuses is kept, and her Got it names it in plain words", async () => {
@@ -315,15 +316,29 @@ describe("a forged or broken message (postal-mime, eng sweep row 9)", () => {
     expect(res.reply ?? "").toContain("could not be taken apart");
     expect(res.reply ?? "").not.toMatch(/EMAX|Error|undefined/);
     // The text still reaches the readers: a tag in a message that cannot be taken apart is found.
-    const text = await messageText(raw);
+    const text = messageText(await parseMail(raw));
     expect(text.subject).toBe("#camille the forged one");
     expect(text.unread).toContain("could not be taken apart");
   });
 
-  it("one parse per message: the deck, the voice notes, every file and the text read the same parse", async () => {
-    const raw = bigEmail(64 * 1024);
-    const before = mimeParseCount.n;
-    await pdfAttachments(raw); await audioAttachments(raw); await fileAttachments(raw); await messageText(raw);
-    expect(mimeParseCount.n - before).toBe(1);
+  it("a PDF typed application/octet-stream but named .pdf is read as the deck", async () => {
+    const raw = ["From: a@example.com", "Subject: deck", 'Content-Type: multipart/mixed; boundary="o"', "",
+      "--o", "Content-Type: text/plain", "", "Deck attached.", "",
+      "--o", 'Content-Type: application/octet-stream; name="Deck.pdf"', 'Content-Disposition: attachment; filename="Deck.pdf"', "Content-Transfer-Encoding: base64", "",
+      btoa("%PDF-1.4 octet deck"), "--o--", ""].join("\r\n");
+    const { attachments, unread } = pdfAttachments(await parseMail(raw));
+    expect(unread).toEqual([]);
+    expect(attachments.map((a) => [a.filename, atob(a.dataBase64)])).toEqual([["Deck.pdf", "%PDF-1.4 octet deck"]]);
+  });
+
+  it("a named text/plain part with no disposition is read as her words, not dropped as an unsaid file", async () => {
+    const raw = ["From: a@example.com", "Subject: notes", 'Content-Type: multipart/mixed; boundary="t"', "",
+      "--t", "Content-Type: text/plain", "", "See my notes.", "",
+      "--t", 'Content-Type: text/plain; name="notes.txt"', "", "three venues by Friday", "",
+      "--t--", ""].join("\r\n");
+    const parsed = await parseMail(raw);
+    expect((await readableText(parsed)).text).toContain("three venues by Friday");
+    // Not a file as well: the words are read once, in the body.
+    expect(fileAttachments(parsed).attachments.map((a) => a.filename)).toEqual([]);
   });
 });
