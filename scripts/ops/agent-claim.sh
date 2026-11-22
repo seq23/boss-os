@@ -29,20 +29,19 @@
 # ─── Never two at once: a lock the KERNEL holds (22 Nov 2026) ─────────────────
 #
 # A briefing can run for fifteen minutes; a second Claude Code or Codex session on the same Mac while the first works is
-# the failure. The lock is flock(2) on one file, taken non-blocking on fd 9, which this shell keeps open until it exits:
-# a tick that finds it held exits silently, and the kernel drops it the moment the holder ends, however it ends (normal
-# exit, crash, kill -9). Nothing is left behind to judge stale, so there is no holder record, no PID, no start stamp
-# and no takeover. The children never inherit fd 9 (`9>&-` on each), so a process a run leaves behind cannot hold
-# every later tick out.
+# the failure. The lock is flock(2) on one file, through scripts/ops/lib/flock.sh, the one lock every scripts/ops job
+# shares: a tick that finds it held exits silently; a small holder process owns the only open file and lets go the
+# moment this shell ends, however it ends (normal exit: at once, through `release_lock`; crash or kill -9: within a
+# second). Nothing is left behind to judge stale, so there is no holder record, no PID file, no start stamp and no
+# takeover. No child of the run ever has the file open, so a process a run leaves behind cannot hold every later tick out.
 #
 # Why not `mkdir` any more: the lock was a directory made with the `mkdir` BINARY, which is only a mutex if that binary
 # is one atomic mkdir(2). The ubuntu-26.04 runners ship uutils coreutils (`mkdir (uutils coreutils) 0.10.0`), which
 # checks for the path and then creates it, so several racers all "win": 8 bare `mkdir` racers on one path had 2-6
 # winners in 14 of 800 runs there, and this lock let two claims run at once (main CI 21 Nov 2026, run 44989669473,
 # "two claims ran at the same moment", green on a rerun). Every earlier patch here (the gate, the holder stamp, the
-# reused-PID guard) sat on that one assumption. `perl` takes the lock because macOS ships no `flock` binary and both her
-# Mac and Linux ship perl; perl's flock is flock(2) on both, and the lock lives on the open file, so it stays held
-# after perl exits for as long as this shell holds fd 9.
+# reused-PID guard) sat on that one assumption. #506 moved this file to flock(2) on its own fd 9; that lock now lives
+# in the shared library, so there is one lock and one set of tests for it (tests/opsFlock.test.ts).
 #
 # BOSS_OS_CLAIM_HOUR overrides the clock for the hour guard, so the guard is testable on any machine at any time.
 set -u
@@ -63,17 +62,13 @@ if [ "$mode" = "poll" ]; then
 fi
 
 LOCK_FILE="${BOSS_OS_HOME:-$HOME/.boss-os}/agent-claim.flock"
-mkdir -p "$(dirname "$LOCK_FILE")"
-if ! exec 9>>"$LOCK_FILE"; then
-  echo "agent-claim: NAMED STOP [CLAIM_LOCK_UNAVAILABLE] cannot open $LOCK_FILE; no claim this tick." >&2
-  exit 3
-fi
-# 1 only when another process holds it (EWOULDBLOCK); any other failure (no flock on this filesystem, a bad fd) is 2.
-perl -MFcntl=:flock -MErrno -e 'open(my $fh, ">&=", 9) or exit 2; flock($fh, LOCK_EX | LOCK_NB) or exit($!{EWOULDBLOCK} ? 1 : 2); exit 0'
-case $? in
-  0) ;;                          # ours until this shell exits
+# shellcheck source=lib/flock.sh
+. "$REPO/scripts/ops/lib/flock.sh"
+LOCK_RC=0; hold_lock "$LOCK_FILE" || LOCK_RC=$?
+case $LOCK_RC in
+  0) trap release_lock EXIT ;;   # ours until this shell exits
   1) exit 0 ;;                   # a claim is already running; this tick has nothing to add
-  *) echo "agent-claim: NAMED STOP [CLAIM_LOCK_UNAVAILABLE] perl could not take the lock on $LOCK_FILE; no claim this tick." >&2
+  *) echo "agent-claim: NAMED STOP [CLAIM_LOCK_UNAVAILABLE] could not take the lock on $LOCK_FILE; no claim this tick." >&2
      exit 3 ;;
 esac
 
@@ -84,17 +79,17 @@ if [ "$mode" = "poll" ]; then
   # THE SERVICE PASS (docs/SERVICE_RULES.md, 6 Oct 2026): keys she emailed into the vault, DNS records
   # re-checked, Drive folders loaded. Cheap (a few HTTP calls), so it runs on every poll tick BEFORE the
   # peek, whether or not a run is waiting, and its outcome never stops the claim. Logged, never silent.
-  npm run --silent vault:run -- node scripts/ops/service-tick.mjs 9>&- >>"${BOSS_OS_HOME:-$HOME/.boss-os}/service-tick.log" 2>&1 || true
+  npm run --silent vault:run -- node scripts/ops/service-tick.mjs >>"${BOSS_OS_HOME:-$HOME/.boss-os}/service-tick.log" 2>&1 || true
 
-  npm run --silent vault:run -- node scripts/sync-agent/agent.mjs peek 9>&- >/dev/null 2>&1 || exit 0
+  npm run --silent vault:run -- node scripts/sync-agent/agent.mjs peek >/dev/null 2>&1 || exit 0
 
   # Something is waiting: refresh the briefing's data before the claim, as the fixed-time chain does. A file written in the last
   # FRESH_MINUTES is not refetched. `;` between the steps: a failing snapshot must not stop the claim.
   if [ -z "$(find "$WORKSPACE/SKY.json" -mmin -"$FRESH_MINUTES" 2>/dev/null)" ]; then
-    npm run --silent vault:run -- node scripts/ops/sky-snapshot.mjs 9>&-
+    npm run --silent vault:run -- node scripts/ops/sky-snapshot.mjs
   fi
   if [ -z "$(find "$WORKSPACE/MARKETS.json" -mmin -"$FRESH_MINUTES" 2>/dev/null)" ]; then
-    node scripts/ops/market-snapshot.mjs 9>&-
+    node scripts/ops/market-snapshot.mjs
   fi
 fi
 
@@ -102,7 +97,7 @@ fi
 # was "blocked: missing PROPERTIES.json" and delivered zero rows). Rewritten when it is over a day old;
 # `;` so a failed snapshot never stops the claim (the run then says what it is missing, and its floor fails it).
 if [ -z "$(find "${BOSS_OS_LINKS_WORKSPACE:-$HOME/.boss-os/links}/PROPERTIES.json" -mmin -1440 2>/dev/null)" ]; then
-  npm run --silent vault:run -- node scripts/ops/properties-snapshot.mjs 9>&- >>"${BOSS_OS_HOME:-$HOME/.boss-os}/properties-snapshot.log" 2>&1 || true
+  npm run --silent vault:run -- node scripts/ops/properties-snapshot.mjs >>"${BOSS_OS_HOME:-$HOME/.boss-os}/properties-snapshot.log" 2>&1 || true
 fi
 
-npm run --silent vault:run -- node scripts/sync-agent/agent.mjs work-once 9>&-
+npm run --silent vault:run -- node scripts/sync-agent/agent.mjs work-once

@@ -66,6 +66,12 @@ describe("lib/flock.sh: one holder, freed however the holder ends", () => {
     }
   }, 30000);
 
+  it("release_lock lets go at once, while the shell lives on (agent-claim's next claim can start the moment one ends)", () => {
+    const lock = join(scratch(), ".lock.flock");
+    const r = sh('hold_lock "$1" || exit 9; lock_busy "$1"; echo "held=$?"; release_lock; lock_busy "$1"; echo "after=$?"', lock);
+    expect(r.stdout.trim().split("\n")).toEqual(["held=0", "after=1"]);
+  });
+
   it("an unlockable path is 2 (the caller's NAMED STOP), never 'busy' and never 'held'", () => {
     expect(sh('hold_lock /dev/null/nope/.lock.flock; echo "rc=$?"').stdout.trim()).toBe("rc=2");
     expect(busy(join(scratch(), "absent"))).toBe("rc=1");
@@ -77,7 +83,8 @@ describe("every scripts/ops job that must run once at a time takes the kernel lo
   const users = readdirSync(ops).filter((f) => f.endsWith(".sh") && readFileSync(join(ops, f), "utf8").includes("lib/flock.sh"));
 
   it("finds the jobs (never passes on zero) and none still takes a mkdir directory lock", () => {
-    expect(users.length).toBeGreaterThanOrEqual(9);
+    expect(users.length).toBeGreaterThanOrEqual(10);
+    expect(users, "agent-claim takes the shared lock").toContain("agent-claim.sh");
     for (const f of readdirSync(ops).filter((f) => f.endsWith(".sh"))) {
       const src = readFileSync(join(ops, f), "utf8");
       expect(src, f).not.toMatch(/mkdir\s+"\$(RUN_)?LOCK"\s+2>/);

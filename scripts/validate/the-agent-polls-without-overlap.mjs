@@ -7,10 +7,10 @@
  * `scripts/ops/agent-claim.sh --poll` every 300 seconds. Two things must stay true or the cure is worse than the
  * wait, and this proves both over the REAL wrapper under real bash with a stub `npm` (no CLI starts, nothing is claimed):
  *
- *   1. IT NEVER OVERLAPS. The fixed-time job and the poll both go through the wrapper, which takes a kernel lock (flock on
- *      fd 9). A live holder makes the next tick exit silently (a briefing runs up to fifteen minutes; a second Claude Code
+ *   1. IT NEVER OVERLAPS. The fixed-time job and the poll both go through the wrapper, which takes a kernel lock (flock, through
+ *      scripts/ops/lib/flock.sh). A live holder makes the next tick exit silently (a briefing runs up to fifteen minutes; a second Claude Code
  *      or Codex session on the same Mac while the first works is the failure); a holder that dies, even by kill -9, frees
- *      it at once; a child the run leaves behind never holds it; and the lock never trusts the `mkdir` binary, which is
+ *      it (at once when it ends normally, within a second when killed); a child the run leaves behind never holds it; and the lock never trusts the `mkdir` binary, which is
  *      not atomic on the ubuntu-26.04 runners (uutils; main red 21 Nov 2026, run 44989669473).
  *   2. IT STAYS IN THE WAKING DAY. Outside 06:00-22:00 the poll does nothing; the fixed job is not restricted.
  *   3. IT PEEKS BEFORE IT DOES ANYTHING COSTLY, AND THE BRIEFING'S DATA IS FRESH BEFORE THE CLAIM (review of #61). An idle poll is one
@@ -33,6 +33,7 @@ import { fileURLToPath } from "node:url";
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), "..", "..");
 const INSTALLER = "scripts/ops/install-agent-launchd.sh";
 const WRAPPER = "scripts/ops/agent-claim.sh";
+const LIB = "scripts/ops/lib/flock.sh";
 
 /** Problems in the installer's text. */
 export function installerProblems(text) {
@@ -396,30 +397,40 @@ if (selfTest) {
   check("a poll with no device id is caught", installerProblems(real.replace(/(<key>Label<\/key><string>\$POLL_LABEL<\/string>[\s\S]*?)<key>BOSS_OS_DEVICE_ID<\/key>/, "$1<key>OTHER</key>")).length > 0);
 
   const wrapperText = readFileSync(join(ROOT, WRAPPER), "utf8");
-  const PERL_LOCK = `perl -MFcntl=:flock -MErrno -e 'open(my $fh, ">&=", 9) or exit 2; flock($fh, LOCK_EX | LOCK_NB) or exit($!{EWOULDBLOCK} ? 1 : 2); exit 0'`;
+  const libText = readFileSync(join(ROOT, LIB), "utf8");
+  const TAKE = 'LOCK_RC=0; hold_lock "$LOCK_FILE" || LOCK_RC=$?';
   const dir = mkdtempSync(join(tmpdir(), "boss-claim-self-"));
-  const plant = async (name, mutate) => {
+  const plant = async (name, mutate, mutateLib = null) => {
     // The wrapper finds its repo from its own path, so a planted copy lives under scripts/ops of a scratch tree.
     mkdirSync(join(dir, name, "scripts", "ops"), { recursive: true });
     const target = join(dir, name, "scripts", "ops", "agent-claim.sh");
     const text = mutate(wrapperText);
-    if (text === wrapperText) throw new Error(`self-test mutant "${name}" did not apply: the wrapper text it targets has changed`);
+    if (!mutateLib && text === wrapperText) throw new Error(`self-test mutant "${name}" did not apply: the wrapper text it targets has changed`);
     writeFileSync(target, text);
     chmodSync(target, 0o755);
+    // The wrapper sources the shared lock from its own tree; a mutant of the LIBRARY is planted there.
+    const lib = mutateLib ? mutateLib(libText) : libText;
+    if (mutateLib && lib === libText) throw new Error(`self-test mutant "${name}" did not apply to ${LIB}: the text it targets has changed`);
+    mkdirSync(join(dir, name, "scripts", "ops", "lib"), { recursive: true });
+    writeFileSync(join(dir, name, "scripts", "ops", "lib", "flock.sh"), lib);
     return wrapperProblems(target);
   };
   const realProblems = await wrapperProblems(join(ROOT, WRAPPER));
   for (const p of realProblems) console.error(`  real wrapper: ${p}`);
   check("the real wrapper behaves", realProblems.length === 0);
   check("a wrapper with no hour guard is caught", (await plant("noguard", (t) => t.replace('if [ "$hour" -lt 6 ] || [ "$hour" -ge 22 ]; then', "if false; then"))).length > 0);
-  check("a wrapper with no lock is caught", (await plant("nolock", (t) => t.replace(PERL_LOCK, "true"))).length > 0);
+  check("a wrapper with no lock is caught", (await plant("nolock", (t) => t.replace(TAKE, "LOCK_RC=0"))).length > 0);
   // THE 21 NOV 2026 LOCK: a directory made with the `mkdir` binary, released by a trap. Correct only where that binary is
   // atomic, so it must fail here on every machine, her Mac included (the non-atomic mkdir case), and on a kill -9.
-  check("a lock that trusts the mkdir binary (the 21 Nov race) is caught", (await plant("mkdirlock", (t) => t.replace(PERL_LOCK, `mkdir "$LOCK_FILE.d" 2>/dev/null && trap 'rmdir "$LOCK_FILE.d"' EXIT`))).length > 0);
-  check("a lock the run's children inherit is caught", (await plant("inherited", (t) => t.replace("agent.mjs work-once 9>&-", "agent.mjs work-once"))).length > 0);
-  check("a flock error read as \"busy\" (a silent tick forever) is caught", (await plant("errorisbusy", (t) => t.replace("or exit($!{EWOULDBLOCK} ? 1 : 2)", "or exit 1"))).length > 0);
+  check("a lock that trusts the mkdir binary (the 21 Nov race) is caught", (await plant("mkdirlock", (t) => t.replace(TAKE, `LOCK_RC=0; mkdir "$LOCK_FILE.d" 2>/dev/null || LOCK_RC=1`).replace("0) trap release_lock EXIT ;;", `0) trap 'rmdir "$LOCK_FILE.d"' EXIT ;;`))).length > 0);
+  // The lock held on one of the wrapper's own fds (#506's shape) with no child closing it: the run's children inherit it.
+  check("a lock the run's children inherit is caught", (await plant("inherited", (t) => t.replace(TAKE, `LOCK_RC=0; exec 9>>"$LOCK_FILE"; perl -MFcntl=:flock -e 'open(my $fh, ">&=", 9) or exit 2; flock($fh, LOCK_EX | LOCK_NB) or exit 1; exit 0' || LOCK_RC=$?`).replace("0) trap release_lock EXIT ;;", "0) ;;"))).length > 0);
+  check("a flock error read as \"busy\" (a silent tick forever) is caught", (await plant("errorisbusy", (t) => t, (l) => l.replace('($!{EWOULDBLOCK} ? "busy" : "error")', '"busy"'))).length > 0);
+  // A lock that lets go only when the holder notices the shell is gone (up to a second): the next claim, started the
+  // moment this one ends, finds it still held and skips its work.
+  check("a lock not let go the moment the run ends is caught", (await plant("slowrelease", (t) => t.replace("0) trap release_lock EXIT ;;", "0) ;;"))).length > 0);
   check("a lock failure that exits quietly is caught", (await plant("quietfail", (t) => t.replace(/no claim this tick\." >&2\n     exit 3 ;;/, 'no claim this tick." >&2\n     exit 0 ;;'))).length > 0);
-  check("a poll that claims without peeking is caught", (await plant("nopeek", (t) => t.replace("agent.mjs peek 9>&- >/dev/null 2>&1 || exit 0", "agent.mjs peek 9>&- >/dev/null 2>&1 || true"))).length > 0);
+  check("a poll that claims without peeking is caught", (await plant("nopeek", (t) => t.replace("agent.mjs peek >/dev/null 2>&1 || exit 0", "agent.mjs peek >/dev/null 2>&1 || true"))).length > 0);
   check("a poll that claims without refreshing the briefing's data is caught", (await plant("norefresh", (t) => t.replace(/  if \[ -z "\$\(find "\$WORKSPACE\/SKY\.json"[\s\S]*?\n  fi\n  if \[ -z "\$\(find "\$WORKSPACE\/MARKETS\.json"[\s\S]*?\n  fi\n/, ""))).length > 0);
   check("a poll that refetches fresh data every tick is caught", (await plant("alwaysfetch", (t) => t.replaceAll('-mmin -"$FRESH_MINUTES"', "-mmin -0"))).length > 0);
   rmSync(dir, { recursive: true, force: true });
