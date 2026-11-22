@@ -186,6 +186,15 @@ export const isBlank = (m) => (m?.words ?? 0) < 40 && (m?.media ?? 0) === 0;
 export const pageSlug = (u) => { try { const p = new URL(u).pathname.replace(/\/+$/, ""); return p ? p.slice(1).replace(/[^a-z0-9]+/gi, "-").slice(0, 48) : "home"; } catch { return "page"; } };
 
 /**
+ * Dark on every page of a review (22 Nov 2026: a CSS change across three libraries could not be judged
+ * in dark on /about or a /daily/ page when only the first page was read dark). Each page is read dark
+ * until one shows the site has no dark scheme ("none"); a dark that could not be reached ("not read")
+ * keeps the next page trying, and each page that tried says so in its facts.
+ */
+export const readDark = (state) => state !== "none";
+export const nextDarkState = (state, m) => (m.dark === "none" ? "none" : m.shot ? "has" : state);
+
+/**
  * One page: phone light + dark and laptop. Several pages (a comma list, the pages a change touched):
  * phone and laptop of each, at most 4 pages, so every capture still fits one review.
  */
@@ -197,16 +206,13 @@ async function capturePage(a, out) {
   const b = await browser();
   const shots = [], facts = [], blanks = [];
   try {
-    let siteHasDark = false;
+    let darkState = "unknown";
     for (const target of targets) {
       const url = a.kind === "email" ? pathToFileURL(resolve(target)).href : target;
       const pre = many ? `${pageSlug(target)}-` : "";
-      // Dark is read on the first page; once that page shows the site has a dark scheme, every page is
-      // read dark too (22 Nov 2026: a CSS change across three libraries could not be judged in dark on
-      // /about or a /daily/ page). A site with none is read dark once, not once per page.
       const sizes = [
         { label: `${pre}phone-390-light.png`, width: 390, height: 844, scheme: "light" },
-        ...(target === targets[0] || siteHasDark ? [{ label: `${pre}phone-390-dark.png`, width: 390, height: 844, scheme: "dark" }] : []),
+        ...(readDark(darkState) ? [{ label: `${pre}phone-390-dark.png`, width: 390, height: 844, scheme: "dark" }] : []),
         { label: `${pre}laptop-1280-light.png`, width: 1280, height: 800, scheme: "light" },
       ];
       let lightColors = null;
@@ -216,11 +222,11 @@ async function capturePage(a, out) {
         const fbase = s.label.replace(/\.png$/, "");
         const m = await shoot(b, url, { ...s, file, lightColors: s.scheme === "dark" ? lightColors : null, focus: s.scheme === "light" ? (a.focus ?? []) : [], focusFile: (i) => join(out, `${fbase}-focus-${i + 1}.png`) });
         if (s === sizes[0]) lightColors = m.colors;
+        if (s.scheme === "dark") darkState = nextDarkState(darkState, m);
         if (s.scheme === "dark" && (m.dark === "none" || m.dark === "not read")) {
           say(m.dark === "none" ? "dark: the site has no dark scheme (the page looks the same with the phone in dark mode); nothing to judge" : "dark: not read (a theme toggle was there but the harness could not reach a dark page)");
           continue;
         }
-        if (s.scheme === "dark" && m.shot) siteHasDark = true;
         if (s.scheme === "dark") say(m.dark === "toggle" ? "dark: read through the site's own theme toggle" : "dark: the site has its own dark scheme; captured");
         for (const [i, f] of (m.focused ?? []).entries()) {
           if (f.file) shots.push({ path: f.file, label: `${fbase}-focus-${i + 1}.png` });

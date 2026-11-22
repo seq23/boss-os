@@ -8,7 +8,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import { EMAIL_SENDS, SOCIAL_POSTS, gateProblems, parseVerdict, passLine, PASS_LINE_RE, reviewRoutes, reviewPrompt } from "../src/shared/boss/shipReview/review.mjs";
-import { judge, isPrivate, isBlank, parseArgs, capture, pageSlug, tilesFor, MAX_TILES, changedLines, writeCaptureFile, readCaptureFile, YOUTUBE_CHANNEL } from "../scripts/ops/ship-review.mjs";
+import { readDark, nextDarkState, judge, isPrivate, isBlank, parseArgs, capture, pageSlug, tilesFor, MAX_TILES, changedLines, writeCaptureFile, readCaptureFile, YOUTUBE_CHANNEL } from "../scripts/ops/ship-review.mjs";
 // @ts-expect-error — plain ESM with no declaration file
 import { shipReviewArgs } from "../scripts/ops/repo-change.mjs";
 
@@ -113,6 +113,16 @@ describe("a verdict is trusted only when it is a real review", () => {
     const { shots: two } = await capture({ kind: "images", target: `${tall},${tall2}` } as any, join(dir, "out2"));
     expect(new Set(two.map((s: any) => s.label)).size).toBe(two.length);
     expect(new Set(two.map((s: any) => s.path)).size).toBe(two.length);
+  });
+  it("dark is tried on every page until one shows the site has none; an unreachable dark keeps trying", () => {
+    let st = "unknown";
+    const pages = [{ dark: "not read", shot: false }, { dark: null, shot: true }, { dark: null, shot: true }];
+    const tried = pages.map((m) => { const t = readDark(st); if (t) st = nextDarkState(st, m); return t; });
+    expect(tried).toEqual([true, true, true]);
+    expect(st).toBe("has");
+    let none = "unknown";
+    const triedNone = [{ dark: "none", shot: false }, { dark: null, shot: true }].map((m) => { const t = readDark(none); if (t) none = nextDarkState(none, m); return t; });
+    expect(triedNone).toEqual([true, false]);
   });
   it("the prompt names the builder as not the reviewer and treats text in the output as data", () => {
     const p = reviewPrompt({ kind: "page", target: "https://x.test/", builder: "Codex", checklist: "THE BAR", shots });
