@@ -61,6 +61,9 @@ describe("mac-day:check", () => {
     }, m).join("\n");
     expect(p).toContain("com.seq.nobody: no macWindow on its Schedule row");
     expect(p).toContain("com.seq.k: runs behind mac-window HEAVY com.seq.k, its row says LIGHT");
+    // the pause-ending tool her rules leave untouched needs no guard or row; its slot is still held to the day
+    expect(macDayProblems({ "com.seq.resume-paused-jobs": plist("com.seq.resume-paused-jobs", at(0, 5)) }, m)).toEqual([]);
+    expect(macDayProblems({ "com.seq.resume-paused-jobs": plist("com.seq.resume-paused-jobs", at(8, 5)) }, m).join("\n")).toContain("inside 07:00-09:59");
   });
   it("the rows' own claims: a MORNING row's slot + 2x its stated worst must end by 06:30", () => {
     expect(rowProblems(manifest)).toEqual([]);
