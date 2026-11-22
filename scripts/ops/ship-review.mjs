@@ -274,7 +274,8 @@ function captureImages(a, out) {
     const base = basename(f, extname(f)), n = (stems.get(base) ?? 0) + 1; stems.set(base, n);
     const stem = n > 1 ? `${base}-${n}` : base;
     const size = imageSize(f);
-    const parts = size ? tilesFor(size.height, size.width) : [{ y: 0 }];
+    if (!size) throw stop(9, "NOTHING_CAPTURED", `ffprobe could not read the size of ${f}, so a tall image would be judged shrunk; install ffmpeg or fix the file`);
+    const parts = tilesFor(size.height, size.width);
     if (shots.length + parts.length > MAX_IMAGE_SHOTS) { left.push(basename(f)); continue; }
     if (parts.length === 1) { shots.push({ path: resolve(f), label: n > 1 ? `${stem}${extname(f)}` : basename(f) }); continue; }
     mkdirSync(out, { recursive: true });

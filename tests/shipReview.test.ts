@@ -100,7 +100,8 @@ describe("a verdict is trusted only when it is a real review", () => {
     }
     expect(readFileSync("scripts/ops/ship-review.mjs", "utf8")).not.toMatch(/maxHeight/);
   });
-  it.skipIf(spawnSync("ffmpeg", ["-version"]).status !== 0)("a tall screenshot is judged in real-size tiles; a short one as it is", async () => {
+  // CI installs ffmpeg (ci.yml unit job), so there the test always runs; only a laptop without it skips.
+  it.skipIf(!process.env.CI && spawnSync("ffmpeg", ["-version"]).status !== 0)("a tall screenshot is judged in real-size tiles; a short one as it is", async () => {
     const dir = mkdtempSync(join(tmpdir(), "sr-img-"));
     const make = (name: string, w: number, h: number) => { spawnSync("ffmpeg", ["-y", "-v", "error", "-f", "lavfi", "-i", `color=c=white:s=${w}x${h}`, "-frames:v", "1", join(dir, name)]); return join(dir, name); };
     const tall = make("home-390.png", 390, 7254), short = make("about-1280.png", 1280, 900);
