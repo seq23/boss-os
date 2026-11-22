@@ -1,0 +1,29 @@
+name: job · Growth scoreboard · daily 05:20 CT
+
+# The Growth Director's daily count (21 Nov 2026): every measure in the Scorecard manifest's
+# `scoreboard` block, read with the Scorecard's own readers over 28 days, posted to Boss OS
+# (D1 growth_readings). Counts and sums only. A source that fails is stored as "not read: <reason>".
+#
+# FIRED BY BOSS OS'S OWN CLOCK, NOT GITHUB'S: the Worker's five-minute cron reads this job's time from
+# its Schedule row (src/shared/boss/schedule/manifest.json, trigger.clock "worker") and sends the
+# repository_dispatch below (src/worker/boss/cron/dispatch.ts). No `schedule:` here.
+on:
+  repository_dispatch:
+    types: [job-growth-scoreboard]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: job-growth-scoreboard
+  cancel-in-progress: false
+
+jobs:
+  run:
+    uses: ./.github/workflows/cloud-job.yml
+    secrets: inherit
+    with:
+      job: growth-scoreboard
+      timeout: 15
+      command: bash scripts/ops/duty-run.sh growth-scoreboard.mjs -- npm run --silent vault:run -- npm run --silent growth:scoreboard

@@ -75,6 +75,7 @@ import { quality } from "./routes/quality";
 import { brains } from "./routes/brains";
 import { validators } from "./routes/validators";
 import { scorecardRoutes } from "./routes/scorecard";
+import { growthRoutes } from "./routes/growth";
 import { openLoops, INTAKE_PATH as OPEN_LOOPS_INTAKE, runOpenLoopsDaily } from "./routes/openLoops";
 import { alarms } from "./routes/alarms";
 import { runBrainsCohesion } from "./brains/store";
@@ -269,6 +270,8 @@ app.route("/api/brains", brains);
 app.route("/api/validators", validators);
 // The Scorecard (1 Nov 2026): each initiative's state and history, posted by the Monday run (routes/scorecard.ts).
 app.route("/api/scorecard", scorecardRoutes);
+// The Growth Director (21 Nov 2026): the scoreboard readings, decisions and page data (routes/growth.ts).
+app.route("/api/growth", growthRoutes);
 // Open Loops (1 Nov 2026): everything approved but not finished, chased each morning (routes/openLoops.ts).
 app.route("/api/open-loops", openLoops);
 // Kendra's alarms (5 Nov 2026): output floors, stuck tasks, owner emails that fail (routes/alarms.ts).
