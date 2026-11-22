@@ -213,7 +213,7 @@ describe("review round (21 Nov): her answer, no piling up, a lost record, a brok
     const addOn = c.find((x) => /refresh add-on/.test(x.title))!;
     const yes = await apiJson<any>(`/api/approvals/${tiktok.id}/decide`, { method: "POST", body: { decision: "approved" } });
     expect(yes.status).toBeLessThan(300);
-    const follow = await env.DB.prepare(`SELECT * FROM owner_open_loops WHERE source_key LIKE 'growth-yes#%'`).first<any>();
+    const follow = await env.DB.prepare(`SELECT * FROM owner_open_loops WHERE source_key = 'growth#porch-and-party#tiktok-reel'`).first<any>();
     expect(follow.owner).toBe("claude");
     expect(follow.next_step).toMatch(/She approved: add reel on tiktok to Porch & Party's Growth roster entry/);
     await apiJson<any>(`/api/approvals/${addOn.id}/decide`, { method: "POST", body: { decision: "rejected", note: "not now" } });
@@ -265,6 +265,24 @@ describe("review round (21 Nov): her answer, no piling up, a lost record, a brok
     await runGrowthDirector(env as any, NOW + 7 * 86_400_000, { model, fetchImpl: noTrends });
     expect((await loops()).filter((l) => l.status === "open" && l.source_key === "growth#porch-and-party#instagram-reel")).toHaveLength(1);
     expect((await cards()).some((c) => /start posting reel on instagram/.test(c.title))).toBe(false);
+  }, 60_000);
+
+  it("her yes to a new format: once it is on the roster, the next week queues without asking again", async () => {
+    const { apiJson } = await import("./helpers");
+    await seed();
+    const tiktok = { ...DECISION, queue: [DECISION.queue[2]], proposals: [] };
+    const { model } = fake(tiktok, OK);
+    await runGrowthDirector(env as any, NOW, { model, fetchImpl: noTrends });
+    const c = (await cards()).find((x) => /Porch & Party: try reel on tiktok/.test(x.title))!;
+    await apiJson<any>(`/api/approvals/${c.id}/decide`, { method: "POST", body: { decision: "approved" } });
+    const row = await env.DB.prepare(`SELECT * FROM owner_open_loops WHERE source_key = 'growth#porch-and-party#tiktok-reel'`).first<any>();
+    expect(row.next_step).toMatch(/add reel on tiktok to Porch & Party's Growth roster entry/);
+    await env.DB.prepare(`UPDATE owner_open_loops SET status = 'done' WHERE id = ?`).bind(row.id).run();
+    await brain("porch-and-party", PNP.replace("facebook [post]", "facebook [post] · tiktok [reel]"));
+    await seed(NOW + 7 * 86_400_000);
+    await runGrowthDirector(env as any, NOW + 7 * 86_400_000, { model, fetchImpl: noTrends });
+    expect((await loops()).filter((l) => l.status === "open" && l.source_key === "growth#porch-and-party#tiktok-reel")).toHaveLength(1);
+    expect((await cards()).some((x) => /tiktok/.test(x.title) && /^Porch/.test(x.title))).toBe(false);
   }, 60_000);
 
   it("an error on one business keeps the others' record and writes its own as held: error", async () => {
