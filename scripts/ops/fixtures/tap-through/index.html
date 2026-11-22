@@ -11,7 +11,8 @@ if (broken) console.error("planted: the broken fixture logs an error on load");
 const screens = {
   "": () => `<h1>Fixture app</h1><p>Keep your proof in one place.</p>
     <button data-go="task">Start</button><button data-go="plans">See plans</button>
-    <button data-go="settings">Settings</button>${broken ? '<button id="help">Help</button>' : '<button data-go="help">Help</button>'}`,
+    <button data-go="settings">Settings</button>${broken ? '<button id="help">Help</button>' : '<button data-go="help">Help</button>'}
+    <nav role="tablist"><button role="tab" aria-selected="true">Home, current tab</button><button role="tab" aria-selected="false" data-go="plans">Plans tab</button></nav>`,
   task: () => `<h1>New proof</h1><label>Title <input aria-label="Title"></label><button data-go="saved">Save</button><button data-go="">Back home</button>`,
   saved: () => `<h1>Saved</h1><p>Your proof is kept.</p><button data-go="">Done</button>`,
   plans: () => `<h1>Plans</h1><ul><li>Unlimited proofs</li><li>Export to PDF</li>${broken ? "<li>Voice notes</li>" : ""}</ul>
@@ -26,6 +27,8 @@ function draw() { const k = location.hash.replace(/^#\/?/, ""); document.getElem
 addEventListener("hashchange", draw);
 document.addEventListener("click", (e) => {
   const b = e.target.closest("button"); if (!b) return;
+  // "Start" blanks the screen for a moment first, like a real app's transition: never a blank-screen failure.
+  if (b.dataset.go === "task") { document.getElementById("app").innerHTML = ""; setTimeout(() => { location.hash = "/task"; }, 600); return; }
   if (b.dataset.go != null) location.hash = "/" + b.dataset.go;
   if (b.id === "dm") b.setAttribute("aria-checked", b.getAttribute("aria-checked") === "true" ? "false" : "true");
   if (b.id === "del") fetch("/api/delete", { method: "POST" }).then(() => { document.getElementById("app").innerHTML = "<h1>Deleted</h1><p>All gone.</p>"; }, () => { document.getElementById("app").innerHTML = "<h1>Deleted</h1><p>All gone (test value).</p>"; });

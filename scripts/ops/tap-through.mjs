@@ -136,7 +136,7 @@ const CONTROLS = (roles) => {
     if (!roles.includes(role) || !vis(e)) continue;
     const n = name(e), key = `${role}|${n}`;
     const nth = seen.get(key) ?? 0; seen.set(key, nth + 1);
-    out.push({ role, name: n, nth, disabled: e.getAttribute("aria-disabled") === "true" || e.disabled === true, href: e.tagName === "A" ? e.href : null });
+    out.push({ role, name: n, nth, disabled: e.getAttribute("aria-disabled") === "true" || e.disabled === true, current: role === "tab" && (e.getAttribute("aria-selected") === "true" || (e.getAttribute("aria-current") ?? "false") !== "false"), href: e.tagName === "A" ? e.href : null });
   }
   for (const e of document.querySelectorAll("[tabindex='0']:not([role]):not(a):not(button):not(input)")) if (vis(e) && name(e) && e.querySelector("[role]") === null && getComputedStyle(e).cursor === "pointer") noRole.push(name(e));
   return { controls: out, noRole: [...new Set(noRole)].slice(0, 10) };
@@ -156,12 +156,23 @@ function locate(page, spec) {
 async function screenText(page) { return page.evaluate(() => document.body?.innerText ?? "").catch(() => ""); }
 
 /** The framework's error screens, the app's own (flow.error_text), or nothing on the screen at all. */
-async function errorScreen(page, flow) {
+async function errorScreen(page, flow, settled = false) {
   const s = await page.evaluate(() => ({ text: document.body?.innerText ?? "", media: [...document.querySelectorAll("img,svg,canvas,video")].filter((e) => e.getBoundingClientRect().width > 20).length })).catch(() => ({ text: "", media: 0 }));
   for (const set of FRAMEWORK_ERROR_SCREENS) if (set.every((t) => s.text.includes(t))) return `the framework's error screen ("${set[0]}")`;
   for (const t of flow.error_text ?? []) if (s.text.includes(t)) return `the app's own error screen ("${t}")`;
-  if (s.text.trim().length < 3 && s.media === 0) return "a blank screen";
+  if (s.text.trim().length < 3 && s.media === 0) {
+    // A screen mid-transition is blank for a moment: blank only counts if it is still blank 4 s later.
+    if (settled) return "a blank screen";
+    await page.waitForTimeout(4000);
+    return errorScreen(page, flow, true);
+  }
   return null;
+}
+
+/** Why a click failed, in the words that help: what covers the control, or that it never settles. */
+function whyNot(e) {
+  const lines = String(e.message).split("\n");
+  return (lines.find((l) => /intercepts pointer events|not stable|outside of the viewport|not visible|not enabled/.test(l)) ?? lines[0]).trim();
 }
 
 /** Wait until the screen differs from `before` (up to ms), or a link, dialog or download said it worked. */
@@ -194,14 +205,17 @@ async function showTap(page, loc) {
  * values, the main page never leaves the preview, popups and downloads are noted and closed.
  */
 async function openContext(browser, { flow, origin, scheme, video, notes }) {
-  const ctx = await browser.newContext({ viewport: { width: 390, height: 844 }, colorScheme: scheme, locale: flow.locale ?? "en-US", isMobile: true, hasTouch: true, deviceScaleFactor: 2, ...(video ? { recordVideo: { dir: video, size: { width: 390, height: 844 } } } : {}) });
+  const ctx = await browser.newContext({ viewport: { width: 390, height: 844 }, colorScheme: scheme, locale: flow.locale ?? "en-US", isMobile: true, hasTouch: true, deviceScaleFactor: 2, serviceWorkers: "block", ...(video ? { recordVideo: { dir: video, size: { width: 390, height: 844 } } } : {}) });
   const signal = { hit: null };
   await ctx.route("**/*", async (route) => {
     const req = route.request(), url = req.url(), method = req.method();
     const mock = (flow.mocks ?? []).find((m) => url.startsWith(m.url) && (m.method ?? "POST").toUpperCase() === method);
     if (mock) return route.fulfill({ status: mock.status ?? 200, contentType: "application/json", body: JSON.stringify(mock.json ?? {}) });
     if (!READS.has(method)) { notes.blocked.add(`${method} ${url.split("?")[0]}`); signal.hit ??= `it sent ${method} ${url.split("?")[0]} (blocked: the tap-through never writes)`; return route.abort("blockedbyclient"); }
-    if (req.isNavigationRequest() && req.frame() === req.frame().page()?.mainFrame() && !url.startsWith(origin)) {
+    // A service worker's request has no frame (frame() throws); service workers are blocked above, so
+    // every request the page makes passes through this guard.
+    let frame = null; try { frame = req.frame(); } catch { /* no frame */ }
+    if (req.isNavigationRequest() && frame && frame === frame.page()?.mainFrame() && !url.startsWith(origin)) {
       notes.external.add(url.split("?")[0]); signal.hit ??= `it opens ${url.split("?")[0]} (not followed: outside the preview)`; return route.abort("blockedbyclient");
     }
     return route.continue();
@@ -250,7 +264,7 @@ async function doStep(c, s, flow, target) {
   }
   const before = await page.evaluate(FINGERPRINT).catch(() => "");
   await showTap(page, loc);
-  const clicked = await loc.click({ timeout: 10_000 }).then(() => true, (e) => e.message.split("\n")[0]);
+  const clicked = await loc.click({ timeout: 10_000 }).then(() => true, whyNot);
   if (clicked !== true) return { ok: false, code: "STEP_UNREACHABLE", what: `"${s.tap}" could not be tapped (${clicked})`, tapped: false };
   const ch = await changed(page, before, signal);
   if (!ch) return { ok: false, code: "DEAD_BUTTON", what: `tapping "${s.tap}" changed nothing`, tapped: true };
@@ -290,6 +304,7 @@ async function sweep(browser, flow, target, origin, j, at, c, ctx) {
     if (swept.has(key)) continue;
     if (!k.name) { results.push({ ...k, result: "no accessible name (a screen reader says nothing)" }); notes.unnamed.push(`${j.name} step ${at + 1}: a ${k.role} with no name`); swept.add(key); continue; }
     if (k.disabled) { results.push({ ...k, result: "disabled here" }); swept.add(key); continue; }
+    if (k.current) { results.push({ ...k, result: "the current tab (tapping it stays here)" }); swept.add(key); continue; }
     if (skip.some((m) => (typeof m === "string" ? m === k.name : m.test(k.name)))) { results.push({ ...k, result: "skipped (sweep_skip)" }); swept.add(key); continue; }
     if (k.href && /^(mailto|tel|sms):/i.test(k.href)) { results.push({ ...k, result: `opens ${k.href.split(":")[0]} (not followed)` }); swept.add(key); continue; }
     if (k.href && !k.href.startsWith(origin)) { results.push({ ...k, result: `links to ${k.href.split("?")[0]} (not followed)` }); notes.external.add(k.href.split("?")[0]); swept.add(key); continue; }
@@ -303,7 +318,7 @@ async function sweep(browser, flow, target, origin, j, at, c, ctx) {
     const loc = cur.page.getByRole(k.role, { name: k.name, exact: true }).nth(k.nth);
     const before = await cur.page.evaluate(FINGERPRINT).catch(() => "");
     cur.signal.hit = null; cur.signal.accept = false;
-    const clicked = await loc.click({ timeout: 5_000 }).then(() => true, (e) => e.message.split("\n")[0]);
+    const clicked = await loc.click({ timeout: 5_000 }).then(() => true, whyNot);
     if (clicked !== true) { results.push({ ...k, result: `could not be tapped (${clicked})` }); ctx.failures.push({ code: "STEP_UNREACHABLE", where: `${j.name} step ${at + 1} sweep`, what: `the ${k.role} "${k.name}" is shown but cannot be tapped (${clicked.slice(0, 120)})` }); continue; }
     ctx.taps.n++;
     const ch = await changed(cur.page, before, cur.signal, 2500);
