@@ -16,7 +16,7 @@ function json(body: unknown, init: ResponseInit = {}): Response {
   return new Response(JSON.stringify(body), { ...init, headers });
 }
 
-export const WEST_PEEK_OS_ORIGIN = "https://os.joinwestpeek.com";
+const WEST_PEEK_OS_ORIGIN = "https://os.joinwestpeek.com";
 
 /*
  * THE COPIED FUND API IS RETIRED, AND SAYS SO.

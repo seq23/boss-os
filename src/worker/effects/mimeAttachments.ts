@@ -20,8 +20,8 @@
  *   · BOUNDED. A forged message (parts nested hundreds deep, thousands of parts, megabytes of headers)
  *     is refused by postal-mime's own limits, set tight below; the refusal is flagged, never thrown.
  *   · A PARSE THAT FAILS KEEPS THE MESSAGE. The caller has already stored it; every reader returns the
- *     failure as an `unread` line naming why, so the card says it, and `messageText` falls back to the
- *     raw text so a trigger tag is still found.
+ *     failure as an `unread` line naming why, so the card says it, and the task body
+ *     (`messageBody.mjs`) falls back to the raw text so a trigger tag is still found.
  */
 import type { Attachment as MimePart } from "postal-mime";
 import { parseMail, mimeParseCount, MIME_LIMITS, type ParsedMail } from "../../shared/mail/parseMail.mjs";
