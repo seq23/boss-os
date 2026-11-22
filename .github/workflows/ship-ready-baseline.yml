@@ -6,6 +6,11 @@ on:
   push:
     branches: [main]
   workflow_dispatch:
+# One baseline per ref: a newer push to the same branch or PR cancels the older run (22 Nov 2026: two
+# runs per push were queuing on the same sha).
+concurrency:
+  group: ship-ready-baseline-${{ github.ref }}
+  cancel-in-progress: true
 jobs:
   ship-ready-baseline:
     uses: seq23/seq-bin/.github/workflows/ship-ready-baseline.yml@v1
