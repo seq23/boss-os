@@ -1,3 +1,8 @@
+> **Historical: retired 22 Nov 2026.** This describes the West Peek fund code copied into this repo,
+> which retired on 22 Nov 2026. West Peek OS (the `west-peek-os` repo) holds the live version. Files
+> it names may no longer exist here. Boss OS's own authority is [`docs/boss/`](../docs/boss/) and
+> [`STATUS.md`](../STATUS.md).
+
 # Identity Model — CanonicalCompany-First (P2)
 
 Canon D3: the **CanonicalCompany** is the single company-shaped entity. No parallel

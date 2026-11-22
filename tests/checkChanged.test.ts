@@ -31,6 +31,21 @@ describe("check:changed runs what the change can break (15 Nov 2026)", () => {
     expect(relatedTests(["tests/checkChanged.test.ts"])).toEqual(["tests/checkChanged.test.ts"]);
   });
 
+  it("runs the suites that reach a changed file without importing it: by path, through a fixture, or importing a deleted file (what #537 pushed red twice)", () => {
+    // workerEntryExports reads src/worker/index.ts with readFileSync; mimeMemory spawns fixtures/mimeMemoryChild.mjs,
+    // which imports mimeAttachments.ts. Neither imports the changed module, and both went red on CI only.
+    expect(relatedTests(["src/worker/index.ts"])).toContain("tests/workerEntryExports.test.ts");
+    expect(relatedTests(["src/worker/effects/mimeAttachments.ts"])).toContain("tests/mimeMemory.test.ts");
+    // A deleted module: every suite (or fixture's suite) still importing it runs, though the file is gone.
+    const gone: string[] = relatedTests([], 2, ["src/worker/effects/mimeAttachments.ts"]);
+    expect(gone).toContain("tests/mimeMemory.test.ts");
+    expect(gone.length).toBeGreaterThan(1);
+    // An extensionless import ("../src/worker/ai/runAi") names no full path, so only the import read finds it.
+    expect(relatedTests([], 2, ["src/worker/ai/runAi.ts"])).toContain("tests/allocation.test.ts");
+    // Negative: nothing changed, nothing deleted → nothing picked by these rules.
+    expect(relatedTests([], 2, [])).toEqual([]);
+  });
+
   it("no check inherits git's hook variables, so a scratch repo can never act on this one", () => {
     expect(cleanEnv({ GIT_DIR: "/repo/.git", GIT_INDEX_FILE: "x", PATH: "/bin", GITHUB_TOKEN: "t" })).toEqual({ PATH: "/bin", GITHUB_TOKEN: "t" });
   });

@@ -7,15 +7,14 @@
 # refuses to run (scripts/deploy/production.mjs).
 #
 # Top level = the LOCAL development/validation profile. `wrangler dev`, `npm run e2e`, and
-# `npm run migrate:local` run fully offline against miniflare and keep WP_OS_ENV = "local",
-# which is what enables the `x-wpos-dev-user` dev identity header (src/worker/auth.ts).
+# `npm run migrate:local` run fully offline against miniflare and keep WP_OS_ENV = "local".
 # That profile must never be what gets deployed. Its remote identifiers stay ADR-007
 # placeholders on purpose — local dev and local validation never need them.
 #
 # Remote deployment targets the explicit `[env.production]` profile below
-# (`wrangler deploy --env production`), where WP_OS_ENV = "production" and identity is
-# the signed `email` / `common_name` claim of a verified `Cf-Access-Jwt-Assertion` only
-# (src/worker/accessJwt.ts; Boss OS accepts no Access application today). See docs/ENVIRONMENTS.md.
+# (`wrangler deploy --env production`), where WP_OS_ENV = "production". Boss OS signs in with its own
+# passcode session (src/worker/boss/auth.ts); the West Peek fund sign-in retired on 22 Nov 2026.
+# See docs/ENVIRONMENTS.md.
 #
 # Declaring that profile is NOT a deployment and NOT a proof of one: remote deployment,
 # Cloudflare Access configuration, and remote migration apply all remain human-gated and
@@ -24,7 +23,7 @@
 name = "boss-os"
 main = "src/worker/index.ts"
 # No version preview URLs (<version>-<name>.<sub>.workers.dev): a hostname outside any Access
-# application. Identity is verified either way (accessJwt.ts); this removes the surface too.
+# application; this removes the surface.
 preview_urls = false
 compatibility_date = "2025-10-01"
 # Required by @cloudflare/puppeteer, which pulls in node:buffer. Without it the Worker does not
@@ -86,26 +85,6 @@ id = "00000000000000000000000000000000"
 # so there is no second vendor, no second credential, and no x402 autonomous-payment surface.
 [browser]
 binding = "BROWSER"
-
-# Email Sending (P33) — DISABLED, and the reason is not technical.
-#
-# Cloudflare Email Sending requires the Workers Paid plan: "Email Sending is currently only
-# available with the Workers Paid plan." This firm is not on it and does not want to be, so the
-# binding cannot send and is commented out rather than left deployed.
-#
-# LEAVING IT DEPLOYED WOULD HAVE BEEN WORSE THAN USELESS. The executor prefers Cloudflare whenever
-# the binding is present, so a live binding against an un-onboarded domain would have captured
-# every send and failed it — while Resend sat configured and unused. An unusable transport that
-# outranks a working one is a trap, so it goes.
-#
-# Outbound mail goes through Resend instead (src/worker/effects/resendClient.ts): free to 3,000
-# messages a month and 100 a day, which is far beyond what this fund sends. To switch back, upgrade
-# the plan, run `wrangler email sending enable <boss-os-domain>`, and uncomment.
-# [[send_email]]
-# name = "EMAIL"
-# # The binding may only send AS this address, so a bug or a prompt injection cannot make the fund
-# # appear to email as anybody else on the domain.
-# allowed_sender_addresses = ["os@<boss-os-domain>"]
 
 [vars]
 # local | preview | production
@@ -238,68 +217,13 @@ id = "1d066abc950c4105973ed0e5a1f6f803"
 [env.production.browser]
 binding = "BROWSER"
 
-# Email Sending (P33) — DISABLED, and the reason is not technical.
-#
-# Cloudflare Email Sending requires the Workers Paid plan: "Email Sending is currently only
-# available with the Workers Paid plan." This firm is not on it and does not want to be, so the
-# binding cannot send and is commented out rather than left deployed.
-#
-# LEAVING IT DEPLOYED WOULD HAVE BEEN WORSE THAN USELESS. The executor prefers Cloudflare whenever
-# the binding is present, so a live binding against an un-onboarded domain would have captured
-# every send and failed it — while Resend sat configured and unused. An unusable transport that
-# outranks a working one is a trap, so it goes.
-#
-# Outbound mail goes through Resend instead (src/worker/effects/resendClient.ts): free to 3,000
-# messages a month and 100 a day, which is far beyond what this fund sends. To switch back, upgrade
-# the plan, run `wrangler email sending enable <boss-os-domain>`, and uncomment.
-# [[env.production.send_email]]
-# name = "EMAIL"
-# # The binding may only send AS this address, so a bug or a prompt injection cannot make the fund
-# # appear to email as anybody else on the domain.
-# allowed_sender_addresses = ["os@<boss-os-domain>"]
-
 [env.production.vars]
-# ── Whether an AI employee may email anybody (P33) ──
-#
-# BOTH OFF, and separate because they are different decisions. An employee emailing the partners is
-# an internal convenience — worst case a partner reads something wrong in their own inbox and says
-# so. An employee emailing the outside world is the firm speaking to a founder, an LP or a
-# co-investor, and there is no undo.
-#
-# Deployment settings rather than buttons on a page, on purpose: flipping one should leave a diff, a
-# review and a timestamp, not be a click any session with an MP cookie can make. Anything other than
-# exactly "enabled" is off, so a typo fails safe.
-WP_OS_AI_EMAIL_PARTNERS = "off"
-WP_OS_AI_EMAIL_EXTERNAL = "off"
-# Not "local": the dev identity header `x-wpos-dev-user` is refused outside local,
-# and identity comes from the signed `email` / `common_name` claim of a verified `Cf-Access-Jwt-Assertion` (src/worker/auth.ts).
+# Not "local". Boss OS signs in with its own passcode session; the fund sign-in that read this retired
+# on 22 Nov 2026.
 WP_OS_ENV = "production"
 
 # See the note on the local profile. Restated because wrangler does not inherit vars.
 BOSS_OS_VERSION = "21.0.0"
-
-# ── Outbound email (P33) ──
-# Configuration rather than secrets, so the switch is visible in the repo and in review instead of
-# hidden in a dashboard. The credential itself is a Worker secret (RESEND_API_KEY).
-#
-# WP_OS_EMAIL_SEND must be the literal "enabled". "true", "yes" and "1" all leave sending off, which
-# is deliberate: a transport being available has never been consent to start emailing people, and it
-# should be impossible to switch on by accident.
-#
-# os@<boss-os-domain> needs no mailbox behind it to send. Inbound mail for that domain goes to
-# Google Workspace and is untouched by any of this — Resend's records live on the `send` and
-# `resend._domainkey` subdomains precisely so the root MX is left alone.
-WP_OS_EMAIL_FROM = ""
-WP_OS_EMAIL_SEND = "off"
-
-# Network OS live pull (P35, canon §12A). Non-secret: an origin and an identity, both of which
-# are useless without WP_OS_NETWORK_OS_SESSION_SECRET, which is a Worker secret and never in this
-# file. The pull stays 503 until all three are present.
-# WP_OS_NETWORK_OS_BASE_URL — West Peek only. Boss OS has no network lane.
-# sequoia@, and this was tried as info@ for one deploy on 22 Aug 2026 and reverted. Network OS's
-# own `ADMIN_EMAIL_ALLOWLIST` holds sequoia@ and scooter@ and NOT info@, so the alternative could
-# never have authenticated — checked in that repo rather than guessed at from here.
-# WP_OS_NETWORK_OS_USER_EMAIL — West Peek only.
 
 # Custom domain. Boss OS answers on boss.sequoiataylor.com. `custom_domain = true`
 # makes Cloudflare provision the hostname and certificate for this Worker rather

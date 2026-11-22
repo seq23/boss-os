@@ -52,13 +52,10 @@
   resolves `env.WP_OS_ENV ("production")` and the real D1/KV/R2 ids.
 - `preview` has no profile of its own and has never been deployed, configured, or
   exercised at all.
-- Identity in these environments is Cloudflare Access (or equivalent private ingress):
-  the Access policy — MFA, device posture, allowed users — is CONFIGURATION owned by
-  the operator, not application code. The worker VERIFIES the `Cf-Access-Jwt-Assertion`
-  Access signs after authentication (RS256 against the team's certs, issuer, the app's
-  `aud`, expiry: `src/worker/accessJwt.ts`, 3 Nov 2026), takes identity only from its
-  signed claims, and enforces app-level `FirmUser`/`Role`/`AuthorityScope` records on
-  top. The dev header is ignored outside `WP_OS_ENV=local` (tested).
+- Identity: Boss OS signs in with its own passcode session (`src/worker/boss/auth.ts`,
+  the `boss_session` cookie). The copied fund sign-in (Cloudflare Access JWT, firm users,
+  the local dev header) retired on 22 Nov 2026: no Access header, cookie or dev header
+  opens anything here (tests/chassisRetired.test.ts).
 - Remote migration apply and remote backup are UNPROVEN until separately gated and
   actually exercised. Access's live behaviour on the production hostname is externally
   recorded (above), never proven by anything in this repo. Do not describe local green

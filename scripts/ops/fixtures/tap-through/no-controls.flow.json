@@ -1,0 +1,24 @@
+{
+  "app": "Fixture app",
+  "journeys": [
+    {
+      "name": "empty-screen",
+      "start": "/?empty=1",
+      "steps": [
+        {
+          "see": "Fixture app"
+        },
+        {
+          "tap": {
+            "role": "link",
+            "name": "Open the empty screen"
+          },
+          "then": "Nothing here"
+        },
+        {
+          "sweep": true
+        }
+      ]
+    }
+  ]
+}

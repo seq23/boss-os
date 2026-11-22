@@ -5,7 +5,7 @@ import { expect, type Page } from "@playwright/test";
  *
  * The passcode is the local fixture published in `wrangler.toml`; it cannot reach production.
  * Boss OS's nav is a bottom tab bar that is always on screen at every width, so a tab is reached by
- * its label directly — there is no sheet to open, unlike the chassis (`e2e/support/nav.ts`).
+ * its label directly — there is no sheet to open.
  */
 export const PASSCODE = "local-dev-passcode";
 

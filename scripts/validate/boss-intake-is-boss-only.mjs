@@ -23,16 +23,14 @@
  *
  * ─── WHAT IS ASSERTED ──────────────────────────────────────────────────────
  *
- *   1. No Boss OS intake file imports from a West Peek intake module. Structural, not textual: an
- *      `import` or a `require`, which is the thing that actually creates runtime coupling.
- *   2. No Boss OS intake file names a West Peek mailbox, domain or tag. A hardcoded
+ *   1. No Boss OS intake file names a West Peek mailbox, domain or tag. A hardcoded
  *      `os@joinwestpeek.com` needs no import to send her mail to the wrong business.
- *   3. Nothing outside Boss OS's own intake resolves an employee tag. `#firstname` is Boss OS's
- *      convention and a West Peek file matching on it would be routing her employees.
- *   4. The `email()` handler DISPATCHES ON THE RECIPIENT. This is the one that matters most in
- *      practice: the handler used to pass every message to West Peek's router unconditionally, so
- *      pointing boss@ at this Worker would have filed her mail into a fund's deal funnel. A guard
- *      that only checked imports would have called that file clean.
+ *   2. Nothing outside Boss OS resolves an employee tag. `#firstname` is Boss OS's convention.
+ *   3. The `email()` handler DISPATCHES ON THE RECIPIENT and hands mail to Boss OS's handler only.
+ *      It used to pass every message to West Peek's router unconditionally, so pointing boss@ at
+ *      this Worker would have filed her mail into a fund's deal funnel. West Peek's handler retired
+ *      with the copied fund code on 22 Nov 2026 (West Peek OS reads that mail), so it must not come
+ *      back here in any form.
  *
  * RULE 0: FINDING NOTHING TO EXAMINE IS A FAILURE. If the Boss intake files stop matching this
  * scan's idea of where they live, the guard is standing over an empty room while the real code is
@@ -42,7 +40,7 @@
  *   node scripts/validate/boss-intake-is-boss-only.mjs --self-test
  */
 
-import { readFileSync, existsSync } from "node:fs";
+import { readFileSync, existsSync, readdirSync } from "node:fs";
 import { join, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -54,15 +52,6 @@ const BOSS_INTAKE = [
   "src/shared/boss/intake/liveBook.mjs",
   "src/worker/boss/intake/inboundMail.ts",
   "src/worker/boss/capital/book.ts",
-];
-
-/** West Peek's intake. Foreign code in this repo; readable, copyable, never importable from Boss OS. */
-const WEST_PEEK_INTAKE = [
-  "shared/intake/emailTriggers",
-  "effects/inboundEmail",
-  "services/dealIntake",
-  "effects/networkOsClient",
-  "services/portfolioReporting",
 ];
 
 /** West Peek's addresses and its tag convention. */
@@ -80,28 +69,16 @@ const WEST_PEEK_IDENTITY = [
   /(?<![A-Za-z0-9_])INTAKE_MAILBOX\b/,
 ];
 
-const importedModules = (source) => [
-  ...source.matchAll(/(?:^|\n)\s*import\s[^;]*?from\s*["']([^"']+)["']/g),
-  ...source.matchAll(/(?:^|\n)\s*import\s*["']([^"']+)["']/g),
-  ...source.matchAll(/\brequire\s*\(\s*["']([^"']+)["']\s*\)/g),
-  ...source.matchAll(/\bimport\s*\(\s*["']([^"']+)["']\s*\)/g),
-].map((m) => m[1]);
-
 /** Comments describe the boundary constantly and must. Only real code may violate it. */
 export function stripComments(source) {
   return source.replace(/\/\*[\s\S]*?\*\//g, "").replace(/(^|[^:])\/\/[^\n]*/g, "$1");
 }
 
-/** Rules 1 and 2, over the Boss OS intake files. */
+/** Rule 1, over the Boss OS intake files. */
 export function intakeViolations(files) {
   const bad = [];
   for (const [name, raw] of Object.entries(files)) {
     const code = stripComments(raw);
-    for (const spec of importedModules(code)) {
-      if (WEST_PEEK_INTAKE.some((wp) => spec.includes(wp))) {
-        bad.push(`${name} imports "${spec}" — West Peek's intake. Copy what you need; never import it.`);
-      }
-    }
     for (const pattern of WEST_PEEK_IDENTITY) {
       const hit = pattern.exec(code);
       if (hit) bad.push(`${name} names West Peek in live code: "${hit[0]}". Boss OS mail is boss@sequoiataylor.com only.`);
@@ -110,7 +87,7 @@ export function intakeViolations(files) {
   return bad;
 }
 
-/** Rule 3: only Boss OS's own intake may resolve a `#firstname`. */
+/** Rule 2: only Boss OS may resolve a `#firstname`. */
 export function tagLeakViolations(files) {
   const bad = [];
   for (const [name, raw] of Object.entries(files)) {
@@ -124,12 +101,10 @@ export function tagLeakViolations(files) {
 }
 
 /**
- * Rule 4: the email handler dispatches on the recipient before either router sees the message.
+ * Rule 3: the email handler dispatches on the recipient and reaches Boss OS's handler only.
  *
- * THE ONE A TEXTUAL IMPORT SCAN WOULD HAVE MISSED. `src/worker/index.ts` legitimately imports both
- * handlers — it is the seam where the two meet — so it can never be judged by its imports. What has
- * to be true is that Boss OS's handler is chosen by the ADDRESS, and that West Peek's is gated
- * rather than being the unconditional default it used to be.
+ * THE ONE A TEXTUAL IMPORT SCAN WOULD HAVE MISSED: what has to be true is that Boss OS's handler is
+ * chosen by the ADDRESS, and that no second handler (West Peek's, retired) is reachable at all.
  */
 export function dispatchViolations(indexSource) {
   const bad = [];
@@ -144,16 +119,8 @@ export function dispatchViolations(indexSource) {
   if (!/handleBossInboundMail\s*\(/.test(handler)) {
     bad.push("email() never calls handleBossInboundMail() — Boss OS's own mailbox is unreachable");
   }
-  const wp = handler.indexOf("handleInboundEmail(");
-  if (wp !== -1) {
-    // West Peek's handler must sit behind an explicit recipient test, not be the fall-through.
-    const before = handler.slice(0, wp);
-    if (!/INTAKE_MAILBOX/.test(before)) {
-      bad.push("handleInboundEmail() is reachable without an explicit West Peek recipient test — her mail would be routed by West Peek's tag table");
-    }
-    if (before.indexOf("isBossMailbox") === -1) {
-      bad.push("West Peek's handler is reached before the Boss OS recipient test");
-    }
+  if (/handleInboundEmail\s*\(|INTAKE_MAILBOX/.test(handler.replace(/BOSS_INTAKE_MAILBOX/g, ""))) {
+    bad.push("email() reaches West Peek's retired mail handler — that mail belongs to West Peek OS, never this Worker");
   }
   return bad;
 }
@@ -162,20 +129,14 @@ export function dispatchViolations(indexSource) {
 
 if (process.argv.includes("--self-test")) {
   const cases = [
-    ["an import of West Peek's trigger table",
-     { "src/worker/boss/intake/inboundMail.ts": 'import { EMAIL_TRIGGERS } from "../../../shared/intake/emailTriggers";' }, true],
-    ["a require of West Peek's handler",
-     { "src/worker/boss/intake/inboundMail.ts": 'const h = require("../../effects/inboundEmail");' }, true],
-    ["a dynamic import of West Peek's deal intake",
-     { "src/worker/boss/intake/inboundMail.ts": 'const m = await import("../../services/dealIntake");' }, true],
     ["a hardcoded West Peek mailbox with no import at all",
      { "src/shared/boss/intake/mail.ts": 'export const FALLBACK = "os@joinwestpeek.com";' }, true],
     ["a West Peek tag in Boss OS's router",
      { "src/shared/boss/intake/mail.ts": 'if (text.includes("#wpdealflow")) return dealflow;' }, true],
     ["prose about the boundary, which is required and must stay legal",
      { "src/shared/boss/intake/mail.ts": '/* Not os@joinwestpeek.com — that is West Peek, and #wpdealflow is its tag. */\nexport const M = "boss@sequoiataylor.com";' }, false],
-    ["Boss OS importing its own modules",
-     { "src/worker/boss/intake/inboundMail.ts": 'import { routeToSeat } from "../../../shared/boss/intake/mail";' }, false],
+    ["Boss OS's own mailbox constant",
+     { "src/worker/boss/intake/inboundMail.ts": 'import { BOSS_INTAKE_MAILBOX } from "../../../shared/boss/intake/mail";\nif (to === BOSS_INTAKE_MAILBOX) route();' }, false],
   ];
   let failed = 0;
   for (const [name, files, shouldCatch] of cases) {
@@ -189,8 +150,10 @@ if (process.argv.includes("--self-test")) {
      "  async email(message, env, ctx) {\n    await handleInboundEmail(message, env);\n  },", true],
     ["Boss OS reached only after West Peek has already taken it",
      "  async email(message, env, ctx) {\n    await handleInboundEmail(message, env);\n    if (isBossMailbox(message.to)) await handleBossInboundMail(message, env);\n  },", true],
-    ["dispatch on the recipient, Boss OS first",
-     "  async email(message, env, ctx) {\n    if (isBossMailbox(message.to)) { await handleBossInboundMail(message, env); return; }\n    if (message.to === INTAKE_MAILBOX) { await handleInboundEmail(message, env); return; }\n  },", false],
+    ["West Peek's retired handler behind its own mailbox test",
+     "  async email(message, env, ctx) {\n    if (isBossMailbox(message.to)) { await handleBossInboundMail(message, env); return; }\n    if (message.to === INTAKE_MAILBOX) { await handleInboundEmail(message, env); return; }\n  },", true],
+    ["dispatch on the recipient, Boss OS only",
+     "  async email(message, env, ctx) {\n    if (isBossMailbox(message.to)) { await handleBossInboundMail(message, env); return; }\n    console.error(\"unknown mailbox\", message.to);\n  },", false],
   ];
   for (const [name, src, shouldCatch] of dispatchCases) {
     const caught = dispatchViolations(src).length > 0;
@@ -198,9 +161,9 @@ if (process.argv.includes("--self-test")) {
     else console.log(`  ✓ dispatch: ${name}`);
   }
 
-  const leak = tagLeakViolations({ "src/worker/effects/inboundEmail.ts": "const seat = routeToSeat(raw, roster);" });
-  if (leak.length === 0) { console.error("  ✗ a West Peek file resolving a Boss OS tag was not caught"); failed += 1; }
-  else console.log("  ✓ a West Peek file resolving a Boss OS tag");
+  const leak = tagLeakViolations({ "src/worker/services/mail.ts": "const seat = routeToSeat(raw, roster);" });
+  if (leak.length === 0) { console.error("  ✗ a file outside Boss OS resolving a Boss OS tag was not caught"); failed += 1; }
+  else console.log("  ✓ a file outside Boss OS resolving a Boss OS tag");
 
   if (failed) { console.error(`BOSS INTAKE SELF-TEST FAILED (${failed})`); process.exit(1); }
   console.log("BOSS INTAKE SELF-TEST PASSED");
@@ -234,22 +197,37 @@ if (Object.keys(files).length < BOSS_INTAKE.length) {
 const indexPath = join(ROOT, "src/worker/index.ts");
 const indexSource = existsSync(indexPath) ? readFileSync(indexPath, "utf8") : null;
 
+/** Every source file outside Boss OS (src/worker/boss/ and src/shared/boss/), for rule 2. */
+const outside = {};
+const walk = (dir) => {
+  for (const e of readdirSync(join(ROOT, dir), { withFileTypes: true })) {
+    const rel = `${dir}/${e.name}`;
+    if (e.isDirectory()) walk(rel);
+    else if (/\.(ts|tsx|mjs|js)$/.test(e.name) && !rel.startsWith("src/worker/boss/") && !rel.startsWith("src/shared/boss/")) outside[rel] = readFileSync(join(ROOT, rel), "utf8");
+  }
+};
+walk("src");
+if (Object.keys(outside).length === 0) {
+  console.error("BOSS INTAKE SCAN FAILED — found no source files outside Boss OS (src/worker/boss/, src/shared/boss/) for the tag check.");
+  process.exit(2);
+}
+
 const problems = [
   ...intakeViolations(files),
   ...dispatchViolations(indexSource),
-  ...tagLeakViolations({ "src/worker/effects/inboundEmail.ts": existsSync(join(ROOT, "src/worker/effects/inboundEmail.ts")) ? readFileSync(join(ROOT, "src/worker/effects/inboundEmail.ts"), "utf8") : "" }),
+  ...tagLeakViolations(outside),
 ];
 
 if (problems.length) {
   console.error(`BOSS INTAKE SCAN FAILED — ${problems.length} violation(s):`);
   for (const p of problems) console.error(`  ✗ ${p}`);
   console.error("\n  \"why are u sharing anything with west peek's os? why? this is a separate repo and domain.\"");
-  console.error("  Copy what you need from West Peek's intake. Never import it, and never let one");
+  console.error("  Boss OS reads boss@ mail only; West Peek's mail is West Peek OS's. Never let one");
   console.error("  routing table decide two businesses' mail.");
   process.exit(1);
 }
 
 console.log(
-  `BOSS INTAKE SCAN PASSED: ${Object.keys(files).length} Boss OS intake file(s) examined, none importing or `
-  + "naming West Peek; email() dispatches on the recipient and West Peek's handler is gated behind its own mailbox.",
+  `BOSS INTAKE SCAN PASSED: ${Object.keys(files).length} Boss OS intake file(s) examined, none naming West Peek; `
+  + `${Object.keys(outside).length} other files resolve no Boss OS tag; email() dispatches on the recipient to Boss OS only.`,
 );

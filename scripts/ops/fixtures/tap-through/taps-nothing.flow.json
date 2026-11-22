@@ -1,0 +1,17 @@
+{
+  "app": "Fixture app",
+  "journeys": [
+    {
+      "name": "looks-only",
+      "start": "/",
+      "steps": [
+        {
+          "see": "Fixture app"
+        },
+        {
+          "see": "See plans"
+        }
+      ]
+    }
+  ]
+}

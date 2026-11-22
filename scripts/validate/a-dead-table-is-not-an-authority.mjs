@@ -1,11 +1,11 @@
 #!/usr/bin/env node
 /**
- * BOSS OS DOES NOT READ THE CHASSIS'S SPEND TABLES, AND THE ONE IT DOES READ, IT KEEPS READING.
+ * BOSS OS DOES NOT READ THE CHASSIS'S SPEND TABLES.
  *
  * ─── The problem ────────────────────────────────────────────────────────────
  *
- * This repository contains two applications, because Boss OS was built by cloning West Peek OS.
- * That means it has TWO parallel sets of model-and-money tables and only one of them is live:
+ * Boss OS was built by cloning West Peek OS, and the clone's fund code (the chassis) retired on
+ * 22 Nov 2026. Its tables stay (migrations are additive only), so there are still TWO parallel sets of model-and-money tables and only one of them is live:
  *
  *   LIVE       `providers`, `models`, `budgets`, `usage_ledger`   — 0152, the Boss OS router's
  *   INHERITED  `provider_registry`, `provider_model`, `budget_policy`, `ai_run`  — 0004 and 0015
@@ -17,31 +17,16 @@
  *
  * ─── Why this is a scan and not a deletion ──────────────────────────────────
  *
- * Migration 0252 sets out the reasoning. In short: `ai_run` is DELIBERATELY read by Boss OS —
- * `spend/reconcile.ts` adds it to `usage_ledger` through the chassis's own `firmSpend`, because
- * "a budget that hard-stops at $2 while a second ledger accrues elsewhere is not a budget" — and
- * the chassis is scheduled for removal as a unit, with its 129 E2E journeys as the regression suite
- * for that removal. Pulling its tables out ahead of it is dismantling the scaffolding while
- * standing on it.
- *
- * So the tables stay, and this is the boundary. A comment saying "dead" stops a careful reader; a
- * scan in the gate stops the rest.
+ * Migrations are additive only: the tables stay, so this is the boundary. Until 22 Nov 2026
+ * `spend/reconcile.ts` deliberately read `ai_run` through the chassis's `firmSpend`; that ledger
+ * had zero rows in production ever, and it went with the chassis, so `ai_run` is dead too.
  *
  * ─── What is checked ────────────────────────────────────────────────────────
  *
  *   1. NO BOSS OS FILE READS A DEAD TABLE. Nothing under `src/worker/boss/` or `src/client/boss/`
- *      may mention `provider_registry`, `provider_model` or `budget_policy` in SQL.
- *   2. `ai_run` HAS EXACTLY ONE READER, AND IT IS STILL THERE. It is allowed in
- *      `src/worker/boss/spend/reconcile.ts` and nowhere else — and that file must still read it,
- *      because a reconciliation that quietly stopped counting one of its two ledgers would report a
- *      smaller number and look healthier. An allowlist that permits a thing is not the same as one
- *      that requires it, and this requires it.
- *   3. THE LABEL IS IN THE DATA. The latest `budget_policy` row says whose lane it governs, so
+ *      may mention `provider_registry`, `provider_model`, `budget_policy` or `ai_run` in SQL.
+ *   2. THE LABEL IS IN THE DATA. The latest `budget_policy` row says whose lane it governs, so
  *      somebody querying the table directly is told before they act on it.
- *   4. AND THE LABEL DOES NOT SWITCH THE LANE OFF. The chassis journeys still drive this lane, so a
- *      superseding row that zeroed its caps would break the suite that has to prove the chassis's
- *      removal was clean. That is not a hypothetical: the first draft of 0252 did exactly that and
- *      `p4-ai` and `p14-mp-home` went red.
  *
  * RULE 0: zero Boss OS files scanned is a HARD FAILURE. An empty file list would report a clean
  * boundary over a codebase nobody looked at.
@@ -57,17 +42,11 @@ import { DatabaseSync } from "node:sqlite";
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), "..", "..");
 
-/** Boss OS's own halves. The chassis is `src/worker/services/`, `src/client/pages/` and so on. */
+/** Boss OS's own halves. */
 const BOSS_DIRS = ["src/worker/boss", "src/client/boss"];
 
 /** The inherited tables nothing in Boss OS may touch. */
-const DEAD = ["provider_registry", "provider_model", "budget_policy"];
-
-/**
- * `ai_run` is not on that list because it has a legitimate reader. The allowlist is one file, and
- * the file is named rather than pattern-matched: a second reader is a decision with a diff.
- */
-const AI_RUN_READER = "src/worker/boss/spend/reconcile.ts";
+const DEAD = ["provider_registry", "provider_model", "budget_policy", "ai_run"];
 
 function walk(dir, out = []) {
   const abs = join(ROOT, dir);
@@ -99,8 +78,7 @@ export function check({ files, sources, latestPolicy }) {
     return ["no Boss OS files were scanned, so the boundary was checked over nothing"];
   }
 
-  // ── 1 & 2. The boundary ────────────────────────────────────────────────────
-  let aiRunReaderFound = false;
+  // ── 1. The boundary ────────────────────────────────────────────────────────
   for (const f of files) {
     const src = code(sources[f] ?? "");
     for (const table of DEAD) {
@@ -112,28 +90,9 @@ export function check({ files, sources, latestPolicy }) {
         );
       }
     }
-    if (/\bai_run\b/.test(src)) {
-      if (f === AI_RUN_READER) aiRunReaderFound = true;
-      else {
-        bad.push(
-          `${f} touches \`ai_run\`. It has exactly one legitimate reader in Boss OS — `
-          + `${AI_RUN_READER}, which adds the chassis's ledger to Boss OS's so the total is honest. `
-          + `A second reader is a second opinion about what was spent.`,
-        );
-      }
-    }
   }
 
-  if (!aiRunReaderFound) {
-    bad.push(
-      `${AI_RUN_READER} no longer reads \`ai_run\`. That is the ONLY place the two ledgers are added `
-      + `together, and a reconciliation that quietly stopped counting one of them would report a `
-      + `smaller number and look healthier. An allowlist that permits this read is not enough; it `
-      + `has to require it.`,
-    );
-  }
-
-  // ── 3. The label is in the data ────────────────────────────────────────────
+  // ── 2. The label is in the data ────────────────────────────────────────────
   if (!latestPolicy) {
     bad.push("there is no budget_policy row at all, so nothing tells a reader whose lane it governs");
   } else {
@@ -141,16 +100,6 @@ export function check({ files, sources, latestPolicy }) {
       bad.push(
         "the latest budget_policy row does not say whose lane it governs. It is the field a human "
         + "reads beside $25/day, and unlabelled it reads as this system's budget.",
-      );
-    }
-    // ── 4. And the label did not switch the lane off ─────────────────────────
-    if (Number(latestPolicy.daily_cap_usd) === 0 || latestPolicy.cost_mode === "CRITICAL_ONLY") {
-      bad.push(
-        "the latest budget_policy row retires the chassis lane rather than labelling it. Two of the "
-        + "chassis's 129 journeys drive this lane — p4-ai and p14-mp-home — and they are the "
-        + "regression suite for the chassis's REMOVAL. Switching the lane off ahead of that removal "
-        + "breaks the suite that has to prove the removal was clean. Retire it in the same commit "
-        + "that retires the journeys, not before.",
       );
     }
   }
@@ -201,19 +150,11 @@ function selfTest() {
       expect: 1,
     },
     {
-      name: "a second reader of ai_run",
+      name: "a Boss OS file reading the retired ai_run ledger",
       input: {
         ...good,
         files: [...good.files, "src/worker/boss/routes/fake2.ts"],
         sources: { ...good.sources, "src/worker/boss/routes/fake2.ts": "const q = `SELECT * FROM ai_run`;" },
-      },
-      expect: 1,
-    },
-    {
-      name: "THE RECONCILER QUIETLY STOPPING: the one required read removed",
-      input: {
-        ...good,
-        sources: { ...good.sources, [AI_RUN_READER]: "// nothing here reads it any more" },
       },
       expect: 1,
     },
@@ -232,14 +173,6 @@ function selfTest() {
     {
       name: "an unlabelled policy row",
       input: { ...good, latestPolicy: { cost_mode: "NORMAL", daily_cap_usd: 25, set_by: "system" } },
-      expect: 1,
-    },
-    {
-      name: "THE ACTUAL DEFECT: the lane retired instead of labelled",
-      input: {
-        ...good,
-        latestPolicy: { cost_mode: "CRITICAL_ONLY", daily_cap_usd: 0, set_by: "NOT BOSS OS GOVERNANCE — retired" },
-      },
       expect: 1,
     },
   ];
@@ -274,7 +207,6 @@ if (process.argv.includes("--self-test")) {
   }
   console.log(
     `A DEAD TABLE IS NOT AN AUTHORITY OK — ${world.files.length} Boss OS files scanned; none reads `
-    + `${DEAD.join(", ")}, \`ai_run\` is read by ${AI_RUN_READER} and by nothing else, and the latest `
-    + `budget_policy row labels the chassis lane without switching it off.`,
+    + `${DEAD.join(", ")}, and the latest budget_policy row labels the chassis lane.`,
   );
 }

@@ -5,7 +5,7 @@
  * ─── What this guards against ───────────────────────────────────────────────
  *
  * `internal_memo` has been in this database since 0014 with a create action type, two routes in
- * `src/worker/services/workforce.ts`, and an append-only trigger. It holds ZERO ROWS, and nothing
+ * the copied fund code's workforce service (retired 22 Nov 2026), and an append-only trigger. It held ZERO ROWS, and nothing
  * anywhere reads it into a prompt. A noticeboard in a room nobody walks through.
  *
  * That is this repository's most expensive defect class, and it has been written up here three

@@ -2,16 +2,15 @@
 /**
  * no-unauthorized-effects.mjs — static authority scan (P3, `npm run validate:authority`).
  *
- * Proves, by construction:
- * (a) ONLY src/worker/effects/executor.ts performs external-effect execution:
- *     - no other worker file writes state 'EXECUTED' on external_effect_request;
- *     - no worker file contains an outbound fetch() to a non-localhost URL
- *       (all effect adapters are local simulations).
- * (b) The reserved/executed call sites pass through authorize():
- *     - handleMergeCompanies and handleReverseMerge (services/companies.ts) each call
- *       authorize() with the reserved action identity_merge.execute;
- *     - executeExternalEffect (effects/executor.ts) calls authorize() and consumes
- *       the receipt via consumeApprovalCard().
+ * Proves, by construction, that worker code reaches the network only from the files named in
+ * EGRESS_ALLOWED, each with its reason:
+ *   - no worker file outside the list calls fetch() to a non-localhost URL;
+ *   - no worker file outside the list calls fetch() at all (an injected URL hides from the first);
+ *   - no entry on the list names a file that is gone (a stale allowance is an unread rule).
+ *
+ * Until 22 Nov 2026 it also pinned the West Peek fund's effect executor and company-merge choke
+ * points (effects/executor.ts, services/companies.ts). Both retired with the chassis; Boss OS has
+ * no external_effect_request path, so those checks would watch nothing.
  *
  * The scan FAILS LOUDLY (exit 1, named violations) on any breach. `--self-test`
  * feeds synthetic violating sources through the same check functions and asserts
@@ -24,7 +23,6 @@ import path from "node:path";
 
 const ROOT = fileURLToPath(new URL("../..", import.meta.url));
 const WORKER_DIR = path.join(ROOT, "src", "worker");
-const EXECUTOR = path.join("src", "worker", "effects", "executor.ts");
 
 const OUTBOUND_FETCH = /fetch\s*\(\s*["'`]https?:\/\/(?!localhost\b|127\.0\.0\.1\b)/;
 
@@ -40,13 +38,6 @@ const OUTBOUND_FETCH = /fetch\s*\(\s*["'`]https?:\/\/(?!localhost\b|127\.0\.0\.1
  */
 const EGRESS_ALLOWED = new Map([
   ["src/worker/boss/research/grounded.ts", "Reads where a Google grounding link lands (GET vertexaisearch.cloud.google.com/grounding-api-redirect/… with redirect: manual, the Location header only, 6 s cap); one fixed host, nothing sent but the GET, so a research page cites the real page (6 Nov 2026)"],
-  ["src/worker/accessJwt.ts", "Cloudflare Access public signing keys (GET https://seq-taylor.cloudflareaccess.com/cdn-cgi/access/certs); read-only, one fixed host, nothing leaves but the GET, held an hour in memory (security sweep, 3 Nov 2026)"],
-  ["src/worker/effects/feedClient.ts", "RSS/Atom acquisition; https-only, blocks loopback/RFC1918/metadata, size and time capped"],
-  ["src/worker/effects/resendClient.ts", "Resend email transport; reachable only after executeExternalEffect() has an approved receipt, and inert unless RESEND_API_KEY and WP_OS_EMAIL_SEND are both set"],
-  ["src/worker/effects/secEdgarClient.ts", "SEC EDGAR full-text search; public, read-only, https-only, one request per market map, sends the User-Agent the SEC's fair-access policy requires"],
-  ["src/worker/effects/networkOsClient.ts", "Network OS snapshot pull (§12A); READ-ONLY by construction — no POST in the file — and inert unless base URL, session secret and approved email are all set"],
-  ["src/worker/effects/runwareClient.ts", "Runware image generation; the PROMPT is the only thing that leaves — no firm records travel with it — https-only to one host, inert unless RUNWARE_API_KEY is set, one image per call, size and time capped"],
-  ["src/worker/effects/googleClient.ts", "Google OAuth + Calendar (P51); READ-ONLY scopes so nothing here can alter a calendar, inert unless GOOGLE_OAUTH_CLIENT_ID and GOOGLE_OAUTH_CLIENT_SECRET are both set, and reachable only for a partner who granted consent themselves"],
 
   // ── Inbox overhaul, 19 Sep 2026. ──
   // boss fix L (23 Oct 2026, ruling 10)
@@ -76,7 +67,6 @@ const EGRESS_ALLOWED = new Map([
   ["src/worker/boss/router/anthropic.ts", "Boss OS model router, third vendor; the exact sibling of fireworks.ts and openrouter.ts and reached the same way — solely through Boss's own router, which applies cost mode, per-lane and per-employee budgets, privacy class, risk ceiling and the decision log before the call. One host, https-only, base URL held as a constant in router/backends.ts and never read from a request body. Inert without ANTHROPIC_API_KEY, and its absence is a NAMED STOP rather than a silent fallback to another provider: she approved a specific backend, and answering from a different one would mean a party she never consented to read her words"],
   ["src/worker/boss/router/openai.ts", "Boss OS model router, fourth vendor; identical construction and identical gating to the entry above. The Sovereignty Addendum §1 forbids a critical capability depending permanently on one provider, which is why there is more than one of these at all. Inert without OPENAI_API_KEY"],
   ["src/worker/boss/routes/employees.ts", "NOT EGRESS. `fetch(new URL('/api/judgement', c.req.url))` is the Worker calling ITSELF at its own origin, so a duty draft is raised through the same authenticated judgement route a person would use rather than by writing the rows directly. Nothing leaves the isolate; the URL is built from the incoming request, so it cannot be pointed anywhere else"],
-  ["src/worker/boss/routes/packets.ts", "NOT EGRESS, AND NOT EVEN THIS PROCESS'S FETCH. The match is inside a STRING of browser JavaScript embedded in a generated HTML packet — `fetch('/api/boss/auth/unlock')`, run later by the reader's own browser against her own origin. Listed rather than excused by a cleverer regex: a scan that learns to ignore text inside strings is a scan that misses a real call assembled in one"],
   ["src/worker/boss/trading/quant.ts", "Boss OS kill-switch probe (ported); sends ONE command — kill_switch or ping — to an operator-registered engine control URL, with a hard AbortSignal timeout and no firm or personal record in the body. No engine is registered in this build, so control_url is null and the file returns not_configured without reaching the network: the quant validation status reports the kill switch as UNPROVEN rather than claiming it works"],
 ]);
 
@@ -102,14 +92,6 @@ function listWorkerFiles() {
   return out;
 }
 
-/** Extract the body of an exported async function from a source string. */
-function functionBody(source, name) {
-  const start = source.indexOf(`export async function ${name}`);
-  if (start === -1) return null;
-  const next = source.indexOf("\nexport ", start + 1);
-  return source.slice(start, next === -1 ? source.length : next);
-}
-
 /**
  * Run all checks over a map of { relativePath: source }. Returns violation strings.
  * Pure — the same function scans the real tree and the self-test fixtures.
@@ -131,7 +113,7 @@ function stripComments(source) {
     .replace(/(^|[^:])\/\/[^\n]*/g, "$1 "); // line comments, leaving http:// intact
 }
 
-export function checkSources(files) {
+export function checkSources(files, checkStale = false) {
   const violations = [];
 
   for (const [rel, raw] of Object.entries(files)) {
@@ -139,50 +121,20 @@ export function checkSources(files) {
     // (a2) No outbound network fetch anywhere in worker code, except the named egress clients.
     const egressAllowed = EGRESS_ALLOWED.has(rel);
     if (OUTBOUND_FETCH.test(source) && !egressAllowed) {
-      violations.push(`${rel}: outbound fetch() to a non-localhost URL (external effects must be local simulations in effects/executor.ts adapters)`);
+      violations.push(`${rel}: outbound fetch() to a non-localhost URL from a file not in EGRESS_ALLOWED`);
     }
     // (a2b) A file that calls fetch() at all — including through an injected fetchImpl with a
     // constant URL — must be on the allowlist. Without this, egress hides from (a2) simply by
     // storing the URL in a variable, which is exactly how both real clients slipped past it.
     if (!egressAllowed && ANY_FETCH.test(source) && !/\bfetchImpl\s*[,)=:]/.test(source)) {
-      violations.push(`${rel}: calls fetch() but is not in EGRESS_ALLOWED — add it there with a reason, or route the call through effects/`);
-    }
-    // (a1) Only the executor may mark external_effect_request EXECUTED.
-    if (rel !== EXECUTOR.split(path.sep).join("/") && source.includes("external_effect_request") && source.includes("EXECUTED")) {
-      violations.push(`${rel}: references external_effect_request and 'EXECUTED' — only effects/executor.ts may execute external effects`);
+      violations.push(`${rel}: calls fetch() but is not in EGRESS_ALLOWED — add it there with a reason`);
     }
   }
 
-  // (b) Choke-point routing at the reserved/executed call sites.
-  const companies = files["src/worker/services/companies.ts"];
-  if (!companies) {
-    violations.push("src/worker/services/companies.ts: file missing");
-  } else {
-    for (const fn of ["handleMergeCompanies", "handleReverseMerge"]) {
-      const body = functionBody(companies, fn);
-      if (!body) {
-        violations.push(`services/companies.ts: ${fn} not found`);
-        continue;
-      }
-      if (!body.includes("authorize(") || !body.includes('"identity_merge.execute"')) {
-        violations.push(`services/companies.ts: ${fn} does not route through authorize() with identity_merge.execute`);
-      }
-      if (!body.includes("consumeApprovalCard(")) {
-        violations.push(`services/companies.ts: ${fn} does not consume the authorization receipt (consumeApprovalCard)`);
-      }
-    }
-  }
-
-  const executor = files[EXECUTOR.split(path.sep).join("/")];
-  if (!executor) {
-    violations.push(`${EXECUTOR}: file missing`);
-  } else {
-    const body = functionBody(executor, "executeExternalEffect");
-    if (!body || !body.includes("authorize(")) {
-      violations.push("effects/executor.ts: executeExternalEffect does not verify through authorize()");
-    }
-    if (!body || !body.includes("consumeApprovalCard(")) {
-      violations.push("effects/executor.ts: executeExternalEffect does not consume the receipt (replay protection)");
+  // A stale allowance: an entry for a file that is gone. Ignored for fixtures that name no real file.
+  if (checkStale) {
+    for (const rel of EGRESS_ALLOWED.keys()) {
+      if (!(rel in files)) violations.push(`${rel}: listed in EGRESS_ALLOWED but no longer exists — remove the entry`);
     }
   }
 
@@ -200,37 +152,21 @@ function scanRealTree() {
 
 function selfTest() {
   const clean = {
-    "src/worker/services/companies.ts": [
-      "export async function handleMergeCompanies() { await authorize(env, actor, \"identity_merge.execute\", ref, { receiptId }); await consumeApprovalCard(env, card); }",
-      "export async function handleReverseMerge() { await authorize(env, actor, \"identity_merge.execute\", ref, { receiptId }); await consumeApprovalCard(env, card); }",
-    ].join("\n"),
-    "src/worker/effects/executor.ts":
-      "export async function executeExternalEffect() { await authorize(env, actor, key, ref, { receiptId }); await consumeApprovalCard(env, id); db('external_effect_request', 'EXECUTED'); }",
+    "src/worker/boss/ok.ts": "export const x = 1;",
+    "src/worker/boss/research/grounded.ts": 'await fetch("https://vertexaisearch.cloud.google.com/x", { redirect: "manual" });',
   };
   const failures = [];
   if (checkSources(clean).length !== 0) failures.push("clean fixture was flagged");
 
   const cases = {
-    "another module marks EXECUTED": {
-      ...clean,
-      "src/worker/services/sneaky.ts": 'await db.prepare("UPDATE external_effect_request SET state = \'EXECUTED\'")',
-    },
-    "outbound fetch outside localhost": {
-      ...clean,
-      "src/worker/services/sneaky.ts": 'await fetch("https://api.example.com/send")',
-    },
-    "merge without authorize()": {
-      ...clean,
-      "src/worker/services/companies.ts": clean["src/worker/services/companies.ts"].replaceAll("authorize(", "noop("),
-    },
-    "executor without receipt consumption": {
-      ...clean,
-      "src/worker/effects/executor.ts": clean["src/worker/effects/executor.ts"].replace("consumeApprovalCard(", "noop("),
-    },
+    "outbound fetch outside localhost": { ...clean, "src/worker/boss/sneaky.ts": 'await fetch("https://api.example.com/send")' },
+    "fetch through a variable URL": { ...clean, "src/worker/boss/sneaky.ts": "const u = target; await fetch(u);" },
   };
   for (const [name, files] of Object.entries(cases)) {
     if (checkSources(files).length === 0) failures.push(`violating fixture NOT caught: ${name}`);
   }
+  // A stale allowance is caught when the real-tree check runs.
+  if (!checkSources(clean, true).some((v) => v.includes("no longer exists"))) failures.push("violating fixture NOT caught: a stale EGRESS_ALLOWED entry");
   return failures;
 }
 
@@ -241,7 +177,7 @@ if (process.argv.includes("--self-test")) {
     for (const f of failures) console.error(`  - ${f}`);
     process.exit(1);
   }
-  console.log("SELF-TEST PASSED: clean fixture passes; all 4 violating fixtures are caught.");
+  console.log("SELF-TEST PASSED: clean fixture passes; all 3 violating fixtures are caught.");
   process.exit(0);
 }
 
@@ -256,16 +192,12 @@ if (scannedCount === 0) {
   console.error("worker tree before trusting this result.");
   process.exit(1);
 }
-const violations = checkSources(realTree);
+const violations = checkSources(realTree, true);
 if (violations.length > 0) {
   console.error("AUTHORITY SCAN FAILED — unauthorized-effect violations:");
   for (const v of violations) console.error(`  ✗ ${v}`);
-  // What to do about it. This is the scan most likely to be tripped by someone who thinks they are
-  // writing an ordinary service, so the epilogue names the one path rather than restating the rule.
-  console.error("\nAnything that leaves the system is an external effect: it is REQUESTED by a service,");
-  console.error("authorized through authorize(), and EXECUTED only by effects/executor.ts, which");
-  console.error("consumes the approval receipt so it cannot be replayed. Splitting those three steps");
-  console.error("across a service is how an effect happens with nobody having approved it.");
+  console.error("\nEvery file that reaches the network is named in EGRESS_ALLOWED with the reason it may.");
+  console.error("Add a new one there with its reason, or remove the entry for a file that is gone.");
   process.exit(1);
 }
-console.log("AUTHORITY SCAN PASSED: external-effect execution is confined to effects/executor.ts, no outbound fetch in worker code, merge/reverse/executor route through authorize().");
+console.log("AUTHORITY SCAN PASSED: every worker file that reaches the network is named in EGRESS_ALLOWED, and every entry there still exists.");

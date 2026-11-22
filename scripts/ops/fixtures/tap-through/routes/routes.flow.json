@@ -1,0 +1,14 @@
+{
+  "app": "Fixture routes app",
+  "journeys": [
+    {
+      "name": "home-to-plans",
+      "start": "/",
+      "steps": [
+        { "see": "Routes fixture" },
+        { "tap": "Open plans", "then": "Plans" },
+        { "sweep": true }
+      ]
+    }
+  ]
+}

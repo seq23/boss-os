@@ -1,0 +1,137 @@
+# THE APP TAP-THROUGH, ON GITHUB (owner, 22 Nov 2026: "a factory standard that we live by"; "yes to
+# all"). A robot taps through an app's web preview like a person, at 390 px in light and dark, driven
+# by the app repo's tap-through.json (scripts/ops/tap-through.mjs): a video per journey, a screenshot
+# per step, a sheet per swept screen, and a red run on a dead button, a console error, an error screen, an
+# unreachable step, a price-screen promise with no screen behind it, a hidden-state control or a changed
+# screen it could not open. The change decides what is opened: every screen the PR's diff touched is
+# opened and every control on it tapped. Never on the Mac (8 GB; the owner's ruling).
+#
+#   workflow_call      each app's preview workflow calls this after its preview is up (a red check
+#                      blocks `land`): uses: seq23/boss-os/.github/workflows/tap-through.yml@main
+#   workflow_dispatch  `ship-review --kind tap-through --on-github` starts it, downloads the artifact
+#                      and judges the recording on the Mac
+#   pull_request       the runner's own proof: --self-test drives a good fixture app and a broken one
+#                      (a dead button, a price-screen promise with no screen) and fails unless each ends
+#                      exactly as it must, the named stops included
+#
+# SAFE: the runner blocks every request that is not a read unless the flow mocks it with test values,
+# and never leaves the preview's origin, so no purchase, sign-in, email or delete can happen. All the
+# app repos and this one are public, so these runners cost nothing; the artifacts are public too, so
+# a flow only ever uses preview flags and test values.
+name: tap-through
+run-name: tap-through ${{ inputs.label || github.event.pull_request.title || github.run_id }}
+
+on:
+  workflow_call:
+    inputs:
+      target:
+        description: The app's web preview URL
+        required: true
+        type: string
+      flow_file:
+        description: The flow file in the calling repo
+        required: false
+        default: tap-through.json
+        type: string
+      runner_ref:
+        description: The boss-os ref the runner is checked out at (a caller pins a branch only while the runner change is unmerged)
+        required: false
+        default: main
+        type: string
+  workflow_dispatch:
+    inputs:
+      target:
+        description: The app's web preview URL
+        required: true
+        type: string
+      label:
+        description: The review id (names the run and the artifact tap-through-<label>)
+        required: true
+        type: string
+      flow_repo:
+        description: owner/repo holding tap-through.json
+        required: true
+        type: string
+      flow_ref:
+        description: Branch, tag or sha of that repo
+        required: false
+        default: main
+        type: string
+  pull_request:
+    paths:
+      - scripts/ops/tap-through.mjs
+      - scripts/ops/fixtures/tap-through/**
+      - .github/workflows/tap-through.yml
+
+permissions:
+  contents: read
+
+jobs:
+  tap-through:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      # The runner: this repo's own commit when boss-os runs it (self-test, dispatch), else the caller's
+      # runner_ref (main). A reusable workflow has no context naming its own commit (github.sha is the
+      # caller's; job_workflow_sha is only an OIDC claim: "not our ref" in every app run, 22 Nov 2026).
+      - name: The runner (boss-os)
+        uses: actions/checkout@v4
+        with:
+          repository: seq23/boss-os
+          ref: ${{ github.repository == 'seq23/boss-os' && github.sha || inputs.runner_ref || 'main' }}
+          path: boss
+      # Self-test or a real app? Only by the target: a caller and a dispatch always pass one; the
+      # pull_request self-test has none. Never by event_name: a calling app's PR run is also
+      # 'pull_request', and on 22 Nov 2026 every app "passed" by running the fixture instead of itself.
+      # The whole app repo with its history: the flow file, and the change (which screens it touched).
+      - name: The app (flow file and change)
+        if: inputs.target != ''
+        uses: actions/checkout@v4
+        with:
+          repository: ${{ inputs.flow_repo || github.repository }}
+          ref: ${{ inputs.flow_ref || github.sha }}
+          path: flow
+          fetch-depth: 0
+      # The change decides what is opened: a pull request's `base...head`, a push's `before...after`. A
+      # dispatch (no PR) or a first push has no diff; the runner then says so and plays the journeys alone.
+      - name: The change
+        if: inputs.target != ''
+        working-directory: flow
+        env:
+          BASE: ${{ github.event.pull_request.base.sha || github.event.before || '' }}
+        run: |
+          git ls-files > "$RUNNER_TEMP/files.txt"
+          if [ -n "$BASE" ] && [ "$BASE" != "0000000000000000000000000000000000000000" ] && git cat-file -e "$BASE^{commit}" 2>/dev/null; then
+            git diff --name-only "$BASE...HEAD" > "$RUNNER_TEMP/changed.txt"
+            echo "CHANGED=--changed $RUNNER_TEMP/changed.txt --files $RUNNER_TEMP/files.txt" >> "$GITHUB_ENV"
+            echo "the change: $(wc -l < "$RUNNER_TEMP/changed.txt") files since $BASE"
+          else
+            echo "no diff: ${BASE:-no base} (a dispatch or a first push); the journeys alone run"
+          fi
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+      - name: Install Playwright only
+        run: |
+          npm i --no-save --no-audit --no-fund --prefix "$RUNNER_TEMP/pw" @playwright/test@1.62.1
+          ln -s "$RUNNER_TEMP/pw/node_modules" boss/node_modules
+          cd boss && npx playwright install --with-deps chromium
+      - name: Self-test (the broken-fixture proof)
+        if: inputs.target == ''
+        run: |
+          if [ "$GITHUB_REPOSITORY" != "seq23/boss-os" ]; then echo "NAMED STOP [SELF_TEST_IN_CALLER] $GITHUB_REPOSITORY called the tap-through with no target: the fixture is no proof of an app"; exit 9; fi
+          node boss/scripts/ops/tap-through.mjs --self-test --out "$RUNNER_TEMP/tap"
+      - name: Tap through
+        if: inputs.target != ''
+        env:
+          TARGET: ${{ inputs.target }}
+          FLOW: flow/${{ inputs.flow_file || 'tap-through.json' }}
+        # $CHANGED is unquoted on purpose: it is empty, or two flags with runner-made paths (no user text).
+        run: node boss/scripts/ops/tap-through.mjs --flow "$FLOW" --target "$TARGET" --out "$RUNNER_TEMP/tap" $CHANGED
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: tap-through-${{ inputs.label || github.run_id }}
+          path: ${{ runner.temp }}/tap
+          retention-days: 14
+          if-no-files-found: error
