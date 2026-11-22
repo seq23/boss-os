@@ -198,7 +198,7 @@ describe("boss-mail-tail's fix agent holds the kernel lock for its whole life (i
     const first = spawn("/bin/bash", t.args, { env: t.env, stdio: "ignore" });
     const done = new Promise<number | null>((r) => first.on("exit", r));
     expect(await until(() => busy(t.lock) === "rc=0")).toBe(true);
-    const holders = spawnSync("/bin/bash", ["-c", 'for p in $(pgrep -f -- "-MFcntl=:flock"); do ps -o args= -p "$p" | grep -qF -- "$1" && echo "$p"; done', "x", t.lock], { encoding: "utf8" }).stdout.trim().split("\n").filter(Boolean);
+    const holders = spawnSync("/bin/bash", ["-c", 'for p in $(pgrep -f -- "-MFcntl=:flock"); do [ "$p" = "$$" ] && continue; a="$(ps -o args= -p "$p")"; case "$a" in "perl "*) printf %s "$a" | grep -qF -- "$1" && echo "$p" ;; esac; done', "x", t.lock], { encoding: "utf8" }).stdout.trim().split("\n").filter(Boolean);
     expect(holders.length, "the one holder of the agent lock").toBe(1);
     process.kill(Number(holders[0]), "SIGKILL");
     await done;
