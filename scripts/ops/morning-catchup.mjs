@@ -125,8 +125,8 @@ async function main() {
   const when = windowWords(window);
   const { long, budgetMs } = catchUpBudget(window);
 
-  // A weekly Mac job whose slot fell while the Mac was off runs once now (missed-slots.mjs).
-  try { console.log(outputLine(catchUpSlots(now).length, "missed weekly slots started")); }
+  // A Mac job (daily or once-a-week) whose slot fell while the Mac was off runs once now (missed-slots.mjs).
+  try { console.log(outputLine(catchUpSlots(now).length, "missed slots started")); }
   catch (e) { console.error(`NAMED STOP [MISSED_SLOTS_UNREAD] ${e.message}`); }
 
   const api = await bossApi();

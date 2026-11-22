@@ -96,7 +96,7 @@ export function catchUpSlots(now = Date.now()) {
   for (const label of missedToday(readJobs(), now)) {
     try {
       execFileSync("launchctl", ["kickstart", `gui/${process.getuid()}/${label}`], { stdio: "ignore" });
-      console.log(`missed-weekly-slot: ${label} missed today's slot while the Mac was off; started it now.`);
+      console.log(`missed-slot: ${label} missed today's slot while the Mac was off; started it now.`);
       started.push(label);
     } catch (e) {
       console.error(`NAMED STOP [MISSED_SLOT_NOT_STARTED] ${label}: ${e.message}`);
