@@ -14,7 +14,9 @@
  *   - a MORNING job's slot before 07:00 plus twice its worst runtime ends after 06:30, or it has no
  *     measured worst runtime;
  *   - more than 3 jobs start in one 5-minute slot from 10:00 on, on any real date of the next 8 weeks;
- *   - a job (one-shots aside) does not run behind `mac-window run <its class> <label>`, or has no class.
+ *   - a job (one-shots aside) does not run behind `mac-window run <its class> <label>`, or has no class
+ *     (a row's `macWindowIn` names the script that runs it behind mac-window itself: the PBS fill, whose
+ *     plist is held and moved by its own one-shot, so it is never rewritten).
  * Exit 0 clean, 1 problems, 2 nothing read (Rule 0: zero plists is a lost directory, not a pass).
  *
  *   npm run mac-day:check                  # this Mac
@@ -68,6 +70,8 @@ export function macDayProblems(jobs, manifest, { shift = 0, from = new Date("202
   const cls = macWindows(manifest);
   const worst = new Map();
   for (const r of manifest.rows ?? []) for (const l of [].concat(r.trigger?.launchd ?? [])) if (r.worstMin) worst.set(l, r.worstMin.minutes);
+  const inScript = new Set();
+  for (const r of manifest.rows ?? []) if (r.macWindowIn) for (const l of [].concat(r.trigger?.launchd ?? [])) inScript.add(l);
   const problems = [];
   const starts = []; // { label, slot }
   for (const [label, text] of Object.entries(jobs)) {
@@ -77,8 +81,8 @@ export function macDayProblems(jobs, manifest, { shift = 0, from = new Date("202
     if (!oneShot) {
       if (!c) problems.push(`${label}: no macWindow on its Schedule row`);
       const g = guardOf(text);
-      if (!g) problems.push(`${label}: does not run behind mac-window`);
-      else if (c && (g.cls !== c || g.label !== label)) problems.push(`${label}: runs behind mac-window ${g.cls} ${g.label}, its row says ${c}`);
+      if (!g && !inScript.has(label)) problems.push(`${label}: does not run behind mac-window`);
+      else if (g && c && (g.cls !== c || g.label !== label)) problems.push(`${label}: runs behind mac-window ${g.cls} ${g.label}, its row says ${c}`);
     }
     for (const s of slots) {
       const at = `${label} ${s.dow != null ? `wd${s.dow} ` : ""}${s.dom != null ? `day${s.dom} ` : ""}${hhmm(s.mins)}`;

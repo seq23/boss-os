@@ -40,6 +40,8 @@ describe("mac-day:check", () => {
     expect(p).toContain("com.seq.m 06:15: starts + 2 x 10 min worst = 06:35, after 06:30");
     expect(p).toContain("com.seq.n 05:00: a MORNING job with no measured worst runtime");
     expect(p).toContain("com.seq.u: does not run behind mac-window");
+    const inScript = { rows: [...m.rows, { system: "mac", macWindow: "HEAVY", macWindowIn: "run.sh", trigger: { launchd: ["com.seq.s"] } }] };
+    expect(macDayProblems({ "com.seq.s": plist("com.seq.s", at(23, 0)) }, inScript)).toEqual([]);
   });
   it("fails four starts in one 5-minute slot after 10:00 on a real date (a weekly and a daily together)", () => {
     const ls = ["com.seq.p1", "com.seq.p2", "com.seq.p3", "com.seq.p4"];

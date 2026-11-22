@@ -6,19 +6,19 @@
   },
   "tags": {
     "sv": {
-      "label": "Spry Ventures · brokerage",
+      "label": "Spry Ventures \u00b7 brokerage",
       "color": "#2d4f7c"
     },
     "wf": {
-      "label": "West Peek Ventures · fund",
+      "label": "West Peek Ventures \u00b7 fund",
       "color": "#6a3d8a"
     },
     "wc": {
-      "label": "West Peek · community",
+      "label": "West Peek \u00b7 community",
       "color": "#8a3d5c"
     },
     "sl": {
-      "label": "Spry Labs · side businesses",
+      "label": "Spry Labs \u00b7 side businesses",
       "color": "#2f5d50"
     },
     "t2r": {
@@ -34,7 +34,7 @@
       "color": "#3d6a8a"
     },
     "me": {
-      "label": "You · personal",
+      "label": "You \u00b7 personal",
       "color": "#555555"
     }
   },
@@ -228,7 +228,7 @@
           ]
         },
         {
-          "time": "7:00–8:00",
+          "time": "7:00\u20138:00",
           "tag": "sl",
           "text": "Seven side businesses each work out their weekly results: A Player Mode, Creator Network, Citation Velocity, the Spry Labs site, Local Guides, ApprovalPrep, Dream Wedding",
           "emails": false,
@@ -243,7 +243,7 @@
           ]
         },
         {
-          "time": "10:00–10:30",
+          "time": "10:00\u201310:30",
           "tag": "sl",
           "text": "Sites fix their own small problems (Dream Wedding, backlink network, P&P, westpeek)",
           "emails": false,
@@ -297,7 +297,7 @@
       "label": "Thursday",
       "items": [
         {
-          "time": "7:00–8:00",
+          "time": "7:00\u20138:00",
           "tag": "sl",
           "text": "Checks which outside sites link to How We Know, Time-2-Read, Dream Wedding and westpeek, one every 20 min",
           "emails": false,
@@ -429,7 +429,7 @@
       "label": "Saturday",
       "items": [
         {
-          "time": "4:00–8:00",
+          "time": "4:00\u20138:00",
           "tag": "sl",
           "text": "Weekly upkeep for the side businesses, 15 min apart: ApprovalPrep's own weekly checks (Search Console results, Pinterest visits, the page refresh queue) and Dream Wedding's Pinterest refill",
           "emails": false,
@@ -1279,7 +1279,7 @@
     {
       "id": "boss-os-mail-alarm",
       "name": "Email acknowledgment check",
-      "what": "Raises an alert if your email goes five minutes without a “Got it” reply. It also starts scheduled jobs when they’re due.",
+      "what": "Raises an alert if your email goes five minutes without a \u201cGot it\u201d reply. It also starts scheduled jobs when they\u2019re due.",
       "business": "personal",
       "brand": "Boss OS",
       "system": "cloudflare",
@@ -1861,7 +1861,7 @@
       "name": "LP and buyer crossmatch",
       "what": "Flags firms that are on both your Fund I LP list and your brokerage buyer list.",
       "business": "west-peek-ventures",
-      "brand": "West Peek Ventures · fund",
+      "brand": "West Peek Ventures \u00b7 fund",
       "system": "mac",
       "slots": [
         "tue 11:35"
@@ -2497,7 +2497,7 @@
     },
     {
       "id": "how-we-know-entity-backlink-watch",
-      "name": "site · entity backlink watch",
+      "name": "site \u00b7 entity backlink watch",
       "what": "Checks who links to the site and that it is named right.",
       "business": "spry",
       "brand": "How We Know",
@@ -2910,7 +2910,7 @@
     },
     {
       "id": "how-we-know-search-console-daily",
-      "name": "search console · daily truth, coverage and sitemap status",
+      "name": "search console \u00b7 daily truth, coverage and sitemap status",
       "what": "Reads Search Console and finds what to improve.",
       "business": "spry",
       "brand": "How We Know",
@@ -2934,7 +2934,7 @@
     },
     {
       "id": "how-we-know-site-post-deploy-check",
-      "name": "site · post-deploy live check",
+      "name": "site \u00b7 post-deploy live check",
       "what": "Checks the live site still works.",
       "business": "spry",
       "brand": "How We Know",
@@ -3118,7 +3118,8 @@
         "floor": 1,
         "runs": 2
       },
-      "macWindow": "HEAVY"
+      "macWindow": "HEAVY",
+      "macWindowIn": "peace-be-still audio/run.sh (execs mac-window run HEAVY com.seq.pbs-library-fill --no-wait, MAC_WINDOW_SLOTS=2)"
     },
     {
       "id": "hunt-ondemand",
@@ -3660,7 +3661,7 @@
       "name": "Monique reads every reply to your Fund I drip",
       "what": "Every morning she reads the replies to the Fund I drip (it runs in Twin), keeps the running list of positive replies on the Deals page, and holds a reply for each warm LP in your morning email.",
       "business": "west-peek-ventures",
-      "brand": "West Peek Ventures · fund",
+      "brand": "West Peek Ventures \u00b7 fund",
       "system": "mac",
       "slots": [
         "daily 05:45"
@@ -4486,7 +4487,7 @@
       "name": "One-list LP emails",
       "what": "Four emails to each person on your one private LP list (day 0, 3, 7 and 14, one thread), at most 6 new a weekday, only once you approved the words; a reply, bounce or block anywhere at their firm stops everyone there.",
       "business": "west-peek-ventures",
-      "brand": "West Peek Ventures · fund",
+      "brand": "West Peek Ventures \u00b7 fund",
       "system": "mac",
       "slots": [
         "mon,tue,wed,thu,fri 10:45"
