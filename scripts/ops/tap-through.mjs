@@ -225,7 +225,9 @@ async function openContext(browser, { flow, origin, scheme, video, notes }) {
   page.on("dialog", async (d) => { signal.hit ??= `it asks "${d.message().slice(0, 80)}"`; await (signal.accept ? d.accept() : d.dismiss()).catch(() => {}); });
   page.on("download", async (d) => { signal.hit ??= `it downloads ${d.suggestedFilename()}`; await d.cancel().catch(() => {}); });
   const errors = [];
-  page.on("console", (m) => { if (m.type() === "error") errors.push(m.text().slice(0, 200)); });
+  // The guard's own abort (a write or an outside page, recorded in notes) logs "net::ERR_BLOCKED_BY_CLIENT"
+  // in the console; a clean CI Chromium has no extension that could, so that line is ours, not the app's.
+  page.on("console", (m) => { if (m.type() === "error" && !/net::ERR_BLOCKED_BY_CLIENT/.test(m.text())) errors.push(m.text().slice(0, 200)); });
   page.on("pageerror", (e) => errors.push(`uncaught: ${String(e.message).slice(0, 200)}`));
   return { ctx, page, signal, errors };
 }
