@@ -42,6 +42,13 @@ export const SLOT_LATE_MS = 20 * MINUTE_MS;
 export const SLOT_NOTICE_KIND = "slot_missed";
 const SLOT_KEY_RE = /^[a-z0-9-]{1,60}:\d{4}-\d{2}-\d{2}:\d{2}:\d{2}$/;
 const SLOT_OUTCOMES = new Set(["ok", "failed", "cancelled"]);
+/**
+ * Runner reports exist from here (review S1, 22 Nov 2026): a slot dispatched before its job's runner
+ * could report has no start or end, which is not "never started". A job's own first report moves this
+ * earlier; with no report at all, slots from this moment on are judged, so a runner that never reports
+ * is still told.
+ */
+export const SLOT_REPORTS_FROM = Date.parse("2026-11-25T00:00:00-06:00");
 
 /** GitHub's primary or secondary rate limit: a wait, never a fault. Pure. */
 export function rateLimited(status: number, headers: Headers, body: string): boolean {
@@ -242,16 +249,20 @@ const hhmm = (ms: number): string =>
  *   · finished with an outcome other than ok → it ended badly.
  * A run whose start report did not reach Boss OS but whose end did is judged by its end alone.
  */
-export function slotVerdict(day: SlotRow[], now: number): string | null {
+export function slotVerdict(day: SlotRow[], now: number, name = day[0]?.job ?? "", reportsFrom = SLOT_REPORTS_FROM): string | null {
   const first = day[0];
   if (!first || first.status !== "accepted") return null;
   const late = first.due_at + SLOT_LATE_MS;
   let what: string | null = null;
   if (first.started_at == null && first.finished_at == null) {
     if (now < late) return null;
+    // Dispatched before this job's runner could report: no report is not a missed run.
+    if ((first.dispatched_at ?? first.due_at) < reportsFrom) return null;
     what = `was accepted by GitHub but had not started by ${hhmm(late)}`;
   } else if (first.started_at != null && first.started_at > late) {
-    what = `waited in GitHub's queue and started late, at ${hhmm(first.started_at)}`;
+    what = first.dispatched_at != null && first.dispatched_at > late
+      ? `was started late by Boss OS's clock, at ${hhmm(first.dispatched_at)}, and began at ${hhmm(first.started_at)}`
+      : `waited in GitHub's queue and started late, at ${hhmm(first.started_at)}`;
   }
   if (first.finished_at != null && first.outcome !== "ok") {
     what = `${what ? `${what}, and ` : ""}ended ${first.outcome ?? "without a result"} at ${hhmm(first.finished_at)}`;
@@ -265,7 +276,7 @@ export function slotVerdict(day: SlotRow[], now: number): string | null {
     return `${at} has not started (GitHub keeps one waiting run per job, so a newer start replaces a waiting one)`;
   });
   return [
-    `The ${hhmm(first.due_at)} Central run of ${first.job} ${what}.`,
+    `The ${hhmm(first.due_at)} Central run of ${name} ${what}.`,
     later.length ? `Later runs today: ${later.join("; ")}.` : "No later run of it was due yet.",
   ].join(" ");
 }
@@ -282,18 +293,30 @@ export function watchedJobs(manifest: unknown): string[] {
  * Each watched job's first slot today: ONE notice per job per day on the Updates page, its words kept
  * current as the later slots report. Returns the jobs told about.
  */
+/** What she calls a job: its Schedule name ("Your morning email"), never its id. Pure. */
+export function jobName(manifest: unknown, job: string): string {
+  const row = ((manifest as { rows?: Array<{ id: string; name?: string }> }).rows ?? []).find((r) => r.id === job);
+  return row?.name?.trim() || job;
+}
+
 export async function slotCheck(env: Env, now = Date.now(), jobs = watchedJobs(schedule)): Promise<string[]> {
   const day = centralDay(now);
   const told: string[] = [];
   for (const job of jobs) {
+    const firstReport = await env.DB.prepare(
+      `SELECT MIN(COALESCE(dispatched_at, due_at)) AS at FROM cloud_job_dispatches
+       WHERE job = ? AND (started_at IS NOT NULL OR finished_at IS NOT NULL)`,
+    ).bind(job).first<{ at: number | null }>();
+    const reportsFrom = Math.min(SLOT_REPORTS_FROM, firstReport?.at ?? Infinity);
+    const name = jobName(schedule, job);
     const { results } = await env.DB.prepare(
       `SELECT key, job, due_at, status, dispatched_at, started_at, finished_at, outcome FROM cloud_job_dispatches
        WHERE job = ? AND key LIKE ? ORDER BY due_at`,
     ).bind(job, `${job}:${day}:%`).all<SlotRow>();
-    const body = slotVerdict(results ?? [], now);
+    const body = slotVerdict(results ?? [], now, name, reportsFrom);
     if (!body) continue;
     const taskId = `slot-${job}-${day}`;
-    const subject = `${job}'s first run today did not go on time`;
+    const subject = `${name}: the first run today did not go on time`;
     const kept = await env.DB.prepare(
       `UPDATE boss_task_notices SET body = ? WHERE task_id = ? AND kind = ? AND body <> ?`,
     ).bind(body, taskId, SLOT_NOTICE_KIND, body).run();

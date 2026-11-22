@@ -22,7 +22,7 @@
       "Bash(pwd)",
       "Bash(echo:*)",
       "Bash(command -v:*)",
-      "Bash(timeout:*)",
+      "Bash(timeout 1800 gh pr checks:*)",
       "Bash(python3:*)",
       "Bash(node:*)",
       "Bash(curl -sS:*)",
@@ -37,10 +37,11 @@
       "Bash(git commit:*)",
       "Bash(git merge origin/main:*)",
       "Bash(git push origin HEAD:*)",
+      "Bash(git push -u origin HEAD)",
+      "Bash(git rm -r -q --cached --ignore-unmatch node_modules)",
       "Bash(git remote get-url:*)",
       "Bash(git ls-remote:*)",
       "Bash(git tag --points-at:*)",
-      "Bash(git -C:*)",
       "Bash(git reset --hard origin/main)",
       "Bash(gh pr list:*)",
       "Bash(gh pr view:*)",
@@ -50,7 +51,6 @@
       "Bash(gh pr comment:*)",
       "Bash(gh repo view:*)",
       "Bash(gh auth status)",
-      "Bash(gh api:*)",
       "Bash(npm run:*)",
       "Bash(npm ci)",
       "Bash(rm package-lock.json)",
@@ -75,8 +75,32 @@
       "Bash(gh secret:*)",
       "Bash(npm run vault:set:*)",
       "Bash(npm run -s vault:set:*)",
-      "Bash(gh api -X DELETE:*)",
-      "Bash(gh api --method DELETE:*)"
+      "Bash(gh api:*)",
+      "Bash(git push origin HEAD:refs/heads/main:*)",
+      "Bash(git push origin HEAD:refs/heads/master:*)",
+      "Bash(git push *:main)",
+      "Bash(git push *:main *)",
+      "Bash(git push *:master)",
+      "Bash(git push *:master *)",
+      "Bash(git push *:refs/heads/main*)",
+      "Bash(git push *:refs/heads/master*)",
+      "Bash(wrangler:*)",
+      "Bash(npx wrangler:*)",
+      "mcp__claude-in-chrome"
+    ]
+  },
+  "hooks": {
+    "PreToolUse": [
+      {
+        "matcher": "Bash",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node \"$HOME/bin/command-guard.mjs\"",
+            "timeout": 10
+          }
+        ]
+      }
     ]
   }
 }
