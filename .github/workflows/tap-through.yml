@@ -78,8 +78,11 @@ jobs:
           repository: seq23/boss-os
           ref: ${{ github.repository == 'seq23/boss-os' && github.sha || inputs.runner_ref || 'main' }}
           path: boss
+      # Self-test or a real app? Only by the target: a caller and a dispatch always pass one; the
+      # pull_request self-test has none. Never by event_name: a calling app's PR run is also
+      # 'pull_request', and on 22 Nov 2026 every app "passed" by running the fixture instead of itself.
       - name: The app's flow file
-        if: github.event_name != 'pull_request'
+        if: inputs.target != ''
         uses: actions/checkout@v4
         with:
           repository: ${{ inputs.flow_repo || github.repository }}
@@ -96,10 +99,12 @@ jobs:
           ln -s "$RUNNER_TEMP/pw/node_modules" boss/node_modules
           cd boss && npx playwright install --with-deps chromium
       - name: Self-test (the broken-fixture proof)
-        if: github.event_name == 'pull_request'
-        run: node boss/scripts/ops/tap-through.mjs --self-test --out "$RUNNER_TEMP/tap"
+        if: inputs.target == ''
+        run: |
+          if [ "$GITHUB_REPOSITORY" != "seq23/boss-os" ]; then echo "NAMED STOP [SELF_TEST_IN_CALLER] $GITHUB_REPOSITORY called the tap-through with no target: the fixture is no proof of an app"; exit 9; fi
+          node boss/scripts/ops/tap-through.mjs --self-test --out "$RUNNER_TEMP/tap"
       - name: Tap through
-        if: github.event_name != 'pull_request'
+        if: inputs.target != ''
         env:
           TARGET: ${{ inputs.target }}
           FLOW: flow/${{ inputs.flow_file || 'tap-through.json' }}
