@@ -49,9 +49,12 @@ describe("a verdict is trusted only when it is a real review", () => {
     expect(pageSlug("https://x.pages.dev/questions/is-dental-anxiety-real/")).toBe("questions-is-dental-anxiety-real");
     expect(pageSlug("https://x.pages.dev/")).toBe("home");
     // Three sites' home pages in one review each keep their own shots (22 Nov 2026: they overwrote each other).
-    const homes = ["https://0ee3.lgg-pi.pages.dev/", "https://d0cb.lgg-dentistry.pages.dev/", "https://dddee.lgg-neuro.pages.dev/"];
-    expect(new Set(pageSlugs(homes)).size).toBe(3);
+    expect(pageSlugs(["https://0ee3.lgg-pi.pages.dev/", "https://d0cb.lgg-dentistry.pages.dev/", "https://dddee.lgg-neuro.pages.dev/"]))
+      .toEqual(["0ee3-lgg-pi-home", "d0cb-lgg-dentistry-home", "dddee-lgg-neuro-home"]);
     expect(pageSlugs(["https://x.pages.dev/", "https://x.pages.dev/questions/a/"])).toEqual(["home", "questions-a"]);
+    expect(pageSlugs(["https://x.dev/a/", "https://x.dev/a/"])).toEqual(["x-a", "x-a-2"]);
+    expect(pageSlugs(["https://a.x.dev/", "https://a.y.dev/", "https://z.dev/a-x-home/"])).toEqual(["a-x-home", "a-y-home", "a-x-home-2"]);
+    expect(pageSlugs(["not a url", "also not"])).toEqual(["page-page", "page-page-2"]);
     expect(reviewPrompt({ kind: "page", target: "t", builder: "b", checklist: "c", shots, brief: "Changed: footer note" })).toMatch(/WHAT CHANGED AND WHAT TO JUDGE[\s\S]*footer note/);
   });
   it("with a brief, the verdict is the change's: problems already there are kept apart, never the verdict", () => {
