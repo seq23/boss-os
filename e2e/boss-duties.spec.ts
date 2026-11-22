@@ -57,7 +57,7 @@ test.describe("Team → Duties", () => {
     expect(await rows.count()).toBeGreaterThanOrEqual(5);
     // Camille's morning report: daily, an agent on Sonnet, next run stated.
     const camille = page.getByRole("region", { name: "Camille's duties" });
-    await expect(camille).toContainText(/daily at 06:00/);
+    await expect(camille).toContainText(/daily at 04:00/); // migration 0373, the Mac's day (06:00 before)
     await expect(camille).toContainText(/agent · Sonnet/);
     await expect(camille).toContainText(/next /);
     await expect(camille).toContainText(/last run/);
