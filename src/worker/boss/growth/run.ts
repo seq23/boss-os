@@ -255,11 +255,7 @@ export async function runGrowthDirector(env: Env, now = Date.now(), deps: { mode
   // cycle: "held, not guessed" is news too). The last day is kept so a missed Monday catches up.
   if (rows.length && reportDue(await getSetting(db, REPORT_KEY), today)) {
     const row = (manifest as any).rows.find((r: any) => r.id === "growth-director") ?? null;
-    const floorValues = {
-      first: summaries.find((x: any) => x.key === "porch-and-party")?.totals?.requests ?? null,
-      real: summaries.some((x: any) => x.totals?.money != null) ? summaries.reduce((a: number, x: any) => a + (x.totals?.money ?? 0), 0) : null,
-    };
-    const obj = reportSection(rows, { cards, origin: BOSS_ORIGIN, at: now, summaries, scorecard: row, floorValues });
+    const obj = reportSection(rows, { cards, origin: BOSS_ORIGIN, at: now, summaries, scorecard: row });
     const bad = await putMorningSection(db, { section: "growth", job: "duty_growth_director", day: today, obj, now });
     if (bad.length) throw new Error(`NAMED STOP [GROWTH_REPORT_REFUSED] ${bad.join("; ")}`);
     await setSetting(db, REPORT_KEY, today);

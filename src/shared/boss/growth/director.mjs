@@ -267,12 +267,25 @@ function modelSentence(text) {
   return /[.!?]$/.test(first) ? first : `${first}.`;
 }
 /** "Porch & Party requests: 2 of 4 by 23 Dec" — a floor from the Scorecard row, "not read" never 0. */
-function floorLine(f, start, value) {
+function floorLine(f, start, value, missing = []) {
   if (!f) return null;
   const by = new Date(Date.parse(`${start}T12:00:00Z`) + f.by * 86_400_000).toLocaleDateString("en-US", { day: "numeric", month: "short", timeZone: "UTC" });
   const money = (n) => `${f.unit === "$" ? "$" : ""}${Math.round(n).toLocaleString("en-US")}`;
   if (value === null || value === undefined) return `${f.label}: not read yet (the floor is ${money(f.floor.value)} by ${by})`;
-  return `${f.label}: ${money(value)} of ${money(f.floor.value)} by ${by}`;
+  const gap = missing.length ? ` (${missing.join(" and ")} not read yet)` : "";
+  return `${f.label}: ${money(value)} of ${money(f.floor.value)} by ${by}${gap}`;
+}
+/**
+ * The two floor numbers, from the scoreboard totals: Porch & Party's requests, and the money in
+ * across every business that tracks money. A business whose money could not be read is NAMED, never
+ * summed as $0 (22 Nov 2026: "$730 of $1,000" hid that A Player Mode was unread); none read → null.
+ */
+export function floorValues(summaries, labelOf = (k) => k) {
+  const first = summaries.find((x) => x.key === "porch-and-party")?.totals?.requests ?? null;
+  const tracked = summaries.filter((x) => x.totals && "money" in x.totals);
+  const read = tracked.filter((x) => typeof x.totals.money === "number");
+  const missing = tracked.filter((x) => typeof x.totals.money !== "number").map((x) => labelOf(x.key));
+  return { first, real: read.length ? read.reduce((a, x) => a + x.totals.money, 0) : null, realMissing: read.length ? missing : [] };
 }
 
 /**
@@ -283,8 +296,9 @@ function floorLine(f, start, value) {
  * plain-words check), up to three queued examples, then held and paused businesses with the reason
  * in her words. The cards are in Decide already, so they are counted, never repeated.
  */
-export function reportSection(rows, { cards, origin, at, summaries = [], scorecard = null, floorValues = {} }) {
+export function reportSection(rows, { cards, origin, at, summaries = [], scorecard = null }) {
   const sum = (k) => summaries.find((x) => x.key === k);
+  const fv = floorValues(summaries, (k) => sum(k)?.label ?? rows.find((r) => r.business === k)?.label ?? "one business");
   const queued = rows.flatMap((r) => (r.actions ?? []).filter((a) => a.kind === "queued").map((a) => ({ label: r.label, item: a.item })));
   const decided = rows.filter((r) => r.state === "decided");
   const held = rows.filter((r) => String(r.state).startsWith("held"));
@@ -295,7 +309,7 @@ export function reportSection(rows, { cards, origin, at, summaries = [], scoreca
       : queued.length ? `Nothing to do: ${one(queued.length, "one post was", "N posts were")} queued from formats you already approved.`
       : "Nothing to do: nothing new was queued this fortnight. Why, below.",
   ];
-  const floors = [floorLine(scorecard?.first, scorecard?.start, floorValues.first), floorLine(scorecard?.real, scorecard?.start, floorValues.real)].filter(Boolean);
+  const floors = [floorLine(scorecard?.first, scorecard?.start, fv.first), floorLine(scorecard?.real, scorecard?.start, fv.real, fv.realMissing)].filter(Boolean);
   if (floors.length) lines.push(`Against the floors: ${floors.join("; ")}.`);
   for (const r of decided) {
     const acts = r.actions ?? [];

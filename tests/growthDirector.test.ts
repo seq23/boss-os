@@ -218,7 +218,7 @@ describe("her fortnightly report: built from the record, plain words, honest lin
   });
 
   it("a model's code words never reach her: every line passes the plain-words check", () => {
-    const r = reportSection([pnp, { business: "approvalprep", label: "ApprovalPrep", state: "held: roster", decision: "NAMED STOP [X] roster", actions: [] }], { ...O, cards: 0, summaries: sums, scorecard: SC, floorValues: { first: 2, real: null } });
+    const r = reportSection([pnp, { business: "approvalprep", label: "ApprovalPrep", state: "held: roster", decision: "NAMED STOP [X] roster", actions: [] }], { ...O, cards: 0, summaries: sums, scorecard: SC });
     for (const l of r.lines) expect(lineProblems(l), l).toEqual([]);
     const all = r.lines.join("\n");
     expect(all).not.toMatch(/olp_|R-PRF|\*\*|instagram-reels|NAMED STOP|\(roster\)/);
@@ -226,7 +226,15 @@ describe("her fortnightly report: built from the record, plain words, honest lin
     expect(all).toContain("Queued, for example: Porch & Party, Instagram reel; Porch & Party, Facebook Page carousel.");
     // Floors from the Scorecard row; an unread value is "not read", never 0.
     expect(all).toContain("Porch & Party requests in the last 28 days: 2 of 4 by Dec 23");
-    expect(all).toContain("money in across the growth businesses, last 28 days: not read yet (the floor is $1,000 by Jan 22)");
+    // A business whose money was not read is named, never summed as $0.
+    expect(all).toContain("money in across the growth businesses, last 28 days: $730 of $1,000 by Jan 22 (ApprovalPrep not read yet)");
+  });
+
+  it("the money floor: none read is \"not read yet\", all read sums with no gap, a business with no money number is not counted", () => {
+    const line = (summaries: any[]) => reportSection([pnp], { ...O, cards: 0, summaries, scorecard: SC }).lines.find((l) => l.startsWith("Against the floors"))!;
+    expect(line([{ key: "porch-and-party", totals: { money: null } }, { key: "a-player-mode", totals: { money: null } }])).toContain("last 28 days: not read yet (the floor is $1,000 by Jan 22)");
+    expect(line([{ key: "porch-and-party", totals: { money: 700 } }, { key: "keepmyproof", totals: { money: 30 } }, { key: "how-we-know", totals: {} }])).toContain("last 28 days: $730 of $1,000 by Jan 22.");
+    expect(line([{ key: "porch-and-party", totals: { money: 700 } }, { key: "a-player-mode", label: "A Player Mode", totals: { money: null } }, { key: "approvalprep", label: "ApprovalPrep", totals: { money: undefined } }])).toContain("$700 of $1,000 by Jan 22 (A Player Mode and ApprovalPrep not read yet)");
   });
 
   it("one of a thing is said singular, and a brand keeps its own spelling", () => {
