@@ -396,16 +396,18 @@ async function main() {
           fail(`not_synced.${name} has no written reason. An exclusion with no reason is an oversight with a name.`);
         }
       }
-      for (const name of names) {
-        if (!(name in secrets)) fail(`mapped secret ${name} is not in the vault; refusing partial sync.`);
-      }
+      const { syncPlan } = await import("../lib/vault-env.mjs");
+      const plan = syncPlan(mapping, secrets);
+      if (plan.strayOptional.length) fail(`optional_secret_names lists ${plan.strayOptional.join(", ")}, which secret_names does not.`);
+      if (plan.missing.length) fail(`mapped secret(s) ${plan.missing.join(", ")} not in the vault; refusing partial sync.`);
       const { isWestPeekKey } = await import("../lib/vault-env.mjs");
       const fundKeys = names.filter((n) => isWestPeekKey(n));
       if (fundKeys.length) {
         fail(`secret_names lists West Peek key(s) ${fundKeys.join(", ")}. The fund's keys never go on the Boss OS Worker; move each to not_synced.`);
       }
 
-      for (const name of names) {
+      for (const name of plan.skipped) console.log(`Skipped ${name}: optional and not in the vault, so the Worker keeps its default.`);
+      for (const name of plan.upload) {
         const res = await fetch(
           `https://api.cloudflare.com/client/v4/accounts/${accountId}/workers/scripts/${workerName}/secrets`,
           {
@@ -421,7 +423,7 @@ async function main() {
         console.log(`Synced ${name} → Cloudflare worker ${workerName} (value never displayed).`);
       }
       console.log(
-        `Cloudflare secret sync complete: ${names.length} synced to ${workerName}, ` +
+        `Cloudflare secret sync complete: ${plan.upload.length} synced to ${workerName}, ${plan.skipped.length} optional skipped, ` +
         `${Object.keys(notSynced).length} held back with a written reason, 0 unclassified.`,
       );
       break;

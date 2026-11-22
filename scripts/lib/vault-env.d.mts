@@ -10,3 +10,8 @@ export const FUND_TEAM_KEYS: readonly string[];
 export function isWestPeekKey(name: string): boolean;
 export function bossOsProcessEnv<T extends Record<string, unknown>>(env: T): Partial<T>;
 export function isCloudRun(env?: Record<string, string | undefined>, plat?: string): boolean;
+/** What sync:cloudflare uploads, skips (optional and absent) or refuses on (mapped and absent). */
+export function syncPlan(
+  mapping: { secret_names?: string[]; optional_secret_names?: string[] },
+  held: Record<string, unknown>,
+): { upload: string[]; skipped: string[]; missing: string[]; strayOptional: string[] };

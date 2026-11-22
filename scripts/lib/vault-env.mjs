@@ -91,6 +91,24 @@ export function rememberHandedOff(names, path = HANDED_OFF_NAMES) {
   return all;
 }
 
+/**
+ * WHAT sync:cloudflare UPLOADS (21 Nov 2026). Every mapped name the vault holds is uploaded. A mapped
+ * name the vault lacks stops the sync (never a partial one), unless the mapping lists it in
+ * `optional_secret_names`: a setting the Worker reads as blank-means-default (BOSS_EXTRA_OWNER_SENDERS,
+ * #178), which the vault cannot hold empty. That one is skipped by name, and the Worker keeps its default.
+ */
+export function syncPlan(mapping, held) {
+  const names = mapping.secret_names ?? [];
+  const optional = new Set(mapping.optional_secret_names ?? []);
+  const has = (n) => Object.prototype.hasOwnProperty.call(held, n);
+  return {
+    upload: names.filter(has),
+    skipped: names.filter((n) => !has(n) && optional.has(n)),
+    missing: names.filter((n) => !has(n) && !optional.has(n)),
+    strayOptional: [...optional].filter((n) => !names.includes(n)),
+  };
+}
+
 /** The names she emailed, for `vault.mjs sync:cloudflare`'s classification. */
 export function handedOffNames(path = HANDED_OFF_NAMES) {
   try { return new Set(existsSync(path) ? JSON.parse(readFileSync(path, "utf8")).names ?? [] : []); } catch { return new Set(); }
