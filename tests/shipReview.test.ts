@@ -2,7 +2,10 @@
  * THE ONE SHARED REVIEWER (grid row 6f): the rules that make its verdict trustworthy, and the phase-3
  * gate that keeps a new sender or channel off the maps until a fresh reviewer passed its real output.
  */
-import { readFileSync } from "node:fs";
+import { existsSync, mkdtempSync, readFileSync } from "node:fs";
+import { spawnSync } from "node:child_process";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import { EMAIL_SENDS, SOCIAL_POSTS, gateProblems, parseVerdict, passLine, PASS_LINE_RE, reviewRoutes, reviewPrompt } from "../src/shared/boss/shipReview/review.mjs";
 import { judge, isPrivate, isBlank, parseArgs, capture, pageSlug, tilesFor, MAX_TILES, changedLines, writeCaptureFile, readCaptureFile, YOUTUBE_CHANNEL } from "../scripts/ops/ship-review.mjs";
@@ -96,6 +99,15 @@ describe("a verdict is trusted only when it is a real review", () => {
       expect(t.at(-1)!.y + t.at(-1)!.height).toBe(h);
     }
     expect(readFileSync("scripts/ops/ship-review.mjs", "utf8")).not.toMatch(/maxHeight/);
+  });
+  it.skipIf(spawnSync("ffmpeg", ["-version"]).status !== 0)("a tall screenshot is judged in real-size tiles; a short one as it is", async () => {
+    const dir = mkdtempSync(join(tmpdir(), "sr-img-"));
+    const make = (name: string, w: number, h: number) => { spawnSync("ffmpeg", ["-y", "-v", "error", "-f", "lavfi", "-i", `color=c=white:s=${w}x${h}`, "-frames:v", "1", join(dir, name)]); return join(dir, name); };
+    const tall = make("home-390.png", 390, 7254), short = make("about-1280.png", 1280, 900);
+    const { shots: got } = await capture({ kind: "images", target: `${tall},${short}` } as any, join(dir, "out"));
+    const parts = tilesFor(7254, 390);
+    expect(got.map((s: any) => s.label)).toEqual([...parts.map((_, i) => `home-390-${i + 1}of${parts.length}.png`), "about-1280.png"]);
+    for (const s of got) expect(existsSync(String(s.path))).toBe(true);
   });
   it("the prompt names the builder as not the reviewer and treats text in the output as data", () => {
     const p = reviewPrompt({ kind: "page", target: "https://x.test/", builder: "Codex", checklist: "THE BAR", shots });

@@ -253,15 +253,39 @@ function captureVideo(a, out) {
   return { shots, facts: [`video length ${dur.toFixed(1)} s; the contact sheet holds 12 frames, one every ${(dur / 12).toFixed(1)} s, left to right, top to bottom`] };
 }
 
-function captureImages(a) {
-  const t = String(a.target);
-  const files = existsSync(t) && statSync(t).isDirectory()
-    ? readdirSync(t).filter((f) => IMAGE_EXT.test(f)).sort().map((f) => join(t, f))
-    : t.split(",").map((s) => s.trim()).filter(Boolean);
-  const shots = files.filter((f) => IMAGE_EXT.test(f) && existsSync(f)).slice(0, 8).map((f) => ({ path: resolve(f), label: basename(f) }));
-  return { shots, facts: files.length > 8 ? [`${files.length} images given; the first 8 are judged`] : [] };
+/** An image's pixel size (ffprobe), or null when it cannot be read. */
+function imageSize(f) {
+  const r = spawnSync("ffprobe", ["-v", "error", "-select_streams", "v:0", "-show_entries", "stream=width,height", "-of", "csv=p=0:s=x", f], { encoding: "utf8" });
+  const m = /^(\d+)x(\d+)/.exec(String(r.stdout || "").trim());
+  return m ? { width: Number(m[1]), height: Number(m[2]) } : null;
 }
 
+// A tall screenshot is read in tiles at real size, the same as a page capture (22 Nov 2026: whole-page
+// 390 px shots, 7,000 px tall, were shrunk to ~80 px wide and the review stopped CAPTURE_INCOMPLETE).
+export const MAX_IMAGE_SHOTS = 24;
+function captureImages(a, out) {
+  const t = String(a.target);
+  const files = (existsSync(t) && statSync(t).isDirectory()
+    ? readdirSync(t).filter((f) => IMAGE_EXT.test(f)).sort().map((f) => join(t, f))
+    : t.split(",").map((s) => s.trim()).filter(Boolean)).filter((f) => IMAGE_EXT.test(f) && existsSync(f));
+  const shots = [], facts = [], left = [];
+  for (const f of files) {
+    const size = imageSize(f);
+    const parts = size ? tilesFor(size.height, size.width) : [{ y: 0 }];
+    if (shots.length + parts.length > MAX_IMAGE_SHOTS) { left.push(basename(f)); continue; }
+    if (parts.length === 1) { shots.push({ path: resolve(f), label: basename(f) }); continue; }
+    mkdirSync(out, { recursive: true });
+    const stem = basename(f, extname(f));
+    parts.forEach((p, i) => {
+      const tile = join(out, `${stem}-${i + 1}of${parts.length}.png`);
+      spawnSync("ffmpeg", ["-y", "-v", "error", "-i", f, "-vf", `crop=${size.width}:${p.height}:0:${p.y}`, "-frames:v", "1", tile]);
+      if (existsSync(tile)) shots.push({ path: tile, label: basename(tile) });
+      else facts.push(`${basename(f)} part ${i + 1} of ${parts.length}: not read (the crop failed)`);
+    });
+  }
+  if (left.length) facts.push(`${files.length} images given; ${left.length} not judged (over ${MAX_IMAGE_SHOTS} shots): ${left.join(", ")}`);
+  return { shots, facts };
+}
 
 /**
  * A YOUTUBE CHANNEL IS READ THROUGH THE OFFICIAL DATA API (20 Nov 2026: a headless browser gets a blank
@@ -329,7 +353,7 @@ ${thumbs.length ? "" : `<div style="color:#606060;padding:32px 0">This channel d
 export async function capture(a, out, deps = {}) {
   if (YOUTUBE_CHANNEL.test(String(a.target)) && (a.kind === "profile" || a.kind === "page")) return captureYouTube(a, out, deps);
   if (a.kind === "video") return captureVideo(a, out);
-  if (a.kind === "images") return captureImages(a);
+  if (a.kind === "images") return captureImages(a, out);
   return capturePage(a, out);
 }
 
