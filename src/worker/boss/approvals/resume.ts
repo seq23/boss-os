@@ -467,8 +467,6 @@ export const RESUME_HANDLERS: Record<string, ResumeHandler> = {
     try { d = row?.resume_detail ? JSON.parse(row.resume_detail) : null; } catch { d = null; }
     if (!d?.business || !(d.item || d.proposal)) throw new Error("The idea this approval was for is missing, so nothing was started. It stays on your screen.");
     const what = d.item && d.first ? `post this first ${d.item.format} through ${d.label}'s approved ${d.item.channel} pipeline, as written: ${d.item.draft}` : d.item ? `add ${d.item.format} on ${d.item.channel} to ${d.label}'s Growth roster entry, then post this draft through that pipeline: ${d.item.draft}` : `${d.proposal.what}`;
-    // Her yes to the FIRST post of an approved format opens that format's pipeline row itself (the
-    // same key the cycle queues on), so later weeks queue without asking again.
     // Any item card (a first post, or a new format) opens that format's pipeline row: once the format is
     // on the roster, later weeks queue on it without asking her twice. queueRow still needs the roster.
     const key = d.item ? pipelineKey(d.business, d.item.channel, d.item.format) : `growth-yes#${j.id}`;
