@@ -326,7 +326,8 @@ describe("your open loops: hers only, the same row once, five at most, three mor
     expect(e.problems).toEqual([]);
     expect(e.text).toContain("Loop 5 (due");
     expect(e.text).not.toContain("Loop 6 (due");
-    expect(e.text).not.toMatch(/more of yours|more overdue|The team has|47|31 overdue/);
+    // Her words only: the tap links carry tokens minted from the clock, which can hold "47" (shard 3/4 red, run 45040505906).
+    expect(e.text.replace(/https?:\/\/\S+/g, "")).not.toMatch(/more of yours|more overdue|The team has|\b47\b|31 overdue/);
   });
   it("a row about the system's own work is never hers, even in a copy that lists it", () => {
     const e = day([{ text: "Codex stopped (Stopped:) on a synthetic queue job: 06-example (due Wed Nov 11). Did this happen?", links: [{ label: "Open ›", url: `${PAGE}&loop=olp_synsys` }] }, row(2)]);
