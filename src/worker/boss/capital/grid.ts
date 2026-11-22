@@ -1,10 +1,11 @@
 import type { Env } from "../env";
 import { newId } from "../lib/id";
-import { confirmAsk } from "../intake/meaning";
+import { askedIn, type SharedRead } from "../intake/meaning";
+import { firstRead } from "../intake/firstRead";
 import { audit } from "../lib/audit";
 import { badRequest, conflict } from "../lib/http";
 import {
-  LOOKBACK_DAYS, ARCHIVE_DAYS, archiveRows, isDoNotSuggest, parseListEdits, confirmEdit,
+  LOOKBACK_DAYS, ARCHIVE_DAYS, archiveRows, isDoNotSuggest, parseListEdits, confirmEdit, aboveQuote,
 } from "../../../shared/boss/capital/partyLists.mjs";
 import { partiesReply, rowsForCompany } from "../../../shared/boss/capital/partiesAsk.mjs";
 import type { PartiesAsk } from "../../../shared/boss/capital/partiesAsk.mjs";
@@ -107,34 +108,34 @@ export async function applyListEdit(env: Env, e: ListEdit, source: "seed" | "rep
  * message when the edits were all it said.
  */
 export async function listEditsFromMail(
-  env: Env, body: string, mailId: string, now = Date.now(),
+  env: Env, body: string, mailId: string, now = Date.now(), shared?: SharedRead,
 ): Promise<{ note: string; edits: ListEdit[]; onlyEdits: boolean } | null> {
   const found = parseListEdits(body);
   if (found.length === 0) return null;
   /*
-   * MEANING BY THE MODEL (eng sweep row 7b): the words found the list and the name; the model reads whether she
-   * asks for it. Not asked: the line is ordinary mail. Unsure: nothing changes and she is asked. Model down: the
-   * words act, logged (`meaning_keyword_fallback`).
+   * MEANING BY THE MODEL (eng sweep row 7b): the words found the list and the name; the email's one first read says
+   * whether she asks for each (`shared`, or a read of its own when called alone). Not asked: the line is ordinary
+   * mail. Unsure: nothing changes and she is asked. No read at all: the words act, logged.
    */
-  const her = String(body).split(/\r?\n(?:>|On .+wrote:)/)[0] ?? "";
+  const her = aboveQuote(body);
+  const read = shared ?? { read: await firstRead(env, { subject: "", words: her, checks: found.map(listChangeWords), now, mailId }), base: 0 };
   const edits: ListEdit[] = [];
   const unsure: ListEdit[] = [];
   let skipped = 0;
-  for (const e of found) {
-    const said = await confirmAsk(env, {
-      what: "her list edit", about: "This is the owner's email to her deal team, which keeps a Rainmaker list and a do-not-suggest list.",
-      change: listChangeWords(e), text: her, mailId, now,
-    });
+  for (const [i, e] of found.entries()) {
+    const said = await askedIn(env, read, i + 1, { what: "her list edit", keyword: "asks", mailId });
     if (said === "act") edits.push(e); else if (said === "ask") unsure.push(e); else skipped += 1;
   }
   if (edits.length === 0 && unsure.length === 0) return null;
   for (const e of edits) await applyListEdit(env, e, "reply", now);
-  await audit(env.DB, {
-    actor: "owner", lane: "ops", entityType: "inbound_mail", entityId: mailId, action: "party_list_edited",
-    detail: { edits: edits.map((e) => ({ list: e.list, action: e.action, kind: e.kind })) },
-  });
-  const above = String(body).split(/\r?\n(?:>|On .+wrote:)/)[0] ?? "";
-  const other = above.split(/\r?\n/).map((l) => l.trim()).filter((l) => l
+  // An audit row records a change: none made, none written.
+  if (edits.length) {
+    await audit(env.DB, {
+      actor: "owner", lane: "ops", entityType: "inbound_mail", entityId: mailId, action: "party_list_edited",
+      detail: { edits: edits.map((e) => ({ list: e.list, action: e.action, kind: e.kind })) },
+    });
+  }
+  const other = her.split(/\r?\n/).map((l) => l.trim()).filter((l) => l
     && parseListEdits(l).length === 0
     && !/^(hi|hey|hello|thanks|thank you|thx|ty|best|sequoia|s|-+|—.*)[,.!]?$/i.test(l));
   const asks = unsure.map((e) => `I could not tell whether you want this, so nothing changed: ${listChangeWords(e)}. Reply with it on its own line if you do.`);

@@ -16,7 +16,7 @@
 import type { Env } from "../env";
 import { logEvent } from "../lib/log";
 import { readJsonObject } from "../router/types";
-import { freeLadder, logReplyDecision, type Rung } from "./firstRead";
+import { freeLadder, logReplyDecision, type FirstRead, type Rung } from "./firstRead";
 import { quoteStands } from "../../../shared/boss/text/wholeSentence.mjs";
 
 export const UNSURE = "unsure" as const;
@@ -118,20 +118,29 @@ export async function readMeaning<T extends string>(env: Env, ask: MeaningAsk<T>
 
 /*
  * DOES SHE ASK FOR THIS? (eng sweep row 7, part b: duty edits, list edits, deadline words). The code finds the
- * structure (which duty, which list and value, which hour); the model reads whether her words ASK for it. "Asks"
- * acts and must quote words that stand in her sentence; "not" (she mentions, reports, conditions or asks about it)
- * never acts; unsure never acts either, so the door asks her. Model down: the keywords' reading (`keyword`, default "asks": the
- * words found it) stands, logged.
+ * structure (which duty, which list and value, which hour) and hands it to the email's ONE first read as a numbered
+ * check (`BriefInput.checks`); the model says whether her words ASK for it. "asks" acts and its quote must stand in her
+ * sentence (`checksOf`); "not" never acts; unsure, or a check the read left out, never acts either: the door asks her.
+ * No brief at all (every free rung down, or the read stopped): the door's keyword reading stands, and that real
+ * outage is logged (`meaning_keyword_fallback`). An email with no words of hers is not an outage and logs nothing.
  */
 export type Asked = "act" | "skip" | "ask";
-export async function confirmAsk(env: Env, input: { what: string; about: string; change: string; text: string; mailId?: string | null; now?: number; keyword?: "asks" | "not" }, rungs?: Rung[]): Promise<Asked> {
-  const m = await readMeaning<"asks" | "not">(env, {
-    what: input.what, about: input.about,
-    options: {
-      asks: `her words ask for this, now: ${input.change}`,
-      not: "her words do not ask for it: they mention it, report it, ask about it, make it depend on something, or ask for something else",
-    },
-    acts: ["asks"], keyword: input.keyword ?? "asks", text: input.text, mailId: input.mailId, now: input.now,
-  }, rungs);
-  return m.value === "asks" ? "act" : m.value === "not" ? "skip" : "ask";
+/** A door's slice of the email's one read: the read, and where this door's checks start (1-based). */
+export interface SharedRead { read: FirstRead; base: number }
+
+export async function askedIn(
+  env: Env, shared: SharedRead, i: number, input: { what: string; keyword: "asks" | "not"; mailId?: string | null },
+): Promise<Asked> {
+  const { read, base } = shared;
+  if (read.brief) {
+    const c = read.brief.checks?.[base + i];
+    return c?.meaning === "asks" ? "act" : c?.meaning === "not" ? "skip" : "ask";
+  }
+  if (read.tried.length || read.stop) {
+    await logEvent(env.DB, {
+      level: "warn", scope: "intake", event: "meaning_keyword_fallback", lane: "ops", entityId: input.mailId ?? undefined,
+      detail: { what: input.what, keyword: input.keyword, tried: read.tried.slice(0, 10), stop: read.stop },
+    }).catch(() => undefined);
+  }
+  return input.keyword === "asks" ? "act" : "skip";
 }

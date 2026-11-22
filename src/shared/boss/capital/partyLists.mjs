@@ -127,12 +127,24 @@ const RULES = [
  * Her plain words, read as list edits. Line by line, above any quoted reply; a line that is not an
  * edit is left alone. Returns [{ list, action, kind, value, label }].
  */
-export function parseListEdits(text) {
+/**
+ * Her own words: the lines above quoted history or a forwarded message. The ONE place this boundary is drawn
+ * for the list door (#514 review), so the edits found and the words the model reads are the same words. Pure.
+ */
+export function aboveQuote(text) {
   const out = [];
   for (const raw of String(text ?? "").split(/\r?\n/)) {
     const line = raw.trim();
-    // Quoted history or a forwarded message starts here: only her own words above it are read.
     if (/^>/.test(line) || /^on .+wrote:$/i.test(line) || /^-{2,}\s*forwarded message/i.test(line) || /^begin forwarded message/i.test(line)) break;
+    out.push(raw);
+  }
+  return out.join("\n");
+}
+
+export function parseListEdits(text) {
+  const out = [];
+  for (const raw of aboveQuote(text).split(/\r?\n/)) {
+    const line = raw.trim();
     for (const part of line.split(/[.;!]\s+|[.;!]$/)) {
       const s = part.trim().replace(/[.!;]+$/, "");
       if (!s || s.length > 200) continue;

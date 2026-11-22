@@ -1,11 +1,12 @@
-import { confirmAsk } from "../intake/meaning";
+import { askedIn, type SharedRead } from "../intake/meaning";
+import { firstRead } from "../intake/firstRead";
 import type { Env } from "../env";
 import { audit } from "../lib/audit";
 import { raiseJudgementCall } from "../approvals/raise";
 import { admitTask } from "../tasks/admit";
 import { editDuty, repoInstructions, OWNER_TZ, type OwnedDuty } from "./ownerEdits";
 import { localDate } from "../../../shared/boss/duties/ownerEdits.mjs";
-import { dutyChangeBody, dutyCodeHome, dutyEditRequestIn, editedInstructions } from "../../../shared/boss/duties/editByMail.mjs";
+import { dutyChangeBody, dutyChangeStands, dutyCodeHome, dutyEditRequestIn, editedInstructions } from "../../../shared/boss/duties/editByMail.mjs";
 import type { LaneSeat } from "../../../shared/boss/duties/lane.mjs";
 
 /**
@@ -31,11 +32,23 @@ export interface DutyEditResult {
   taskId: string | null;
 }
 
+/** Which duty her words change, or null. Read once; the inbound door passes it on with the email's one read. */
+export async function findDutyEdit(env: Env, input: { roster: LaneSeat[]; subject: string; text: string }) {
+  if (!input.text.trim() && !input.subject.trim()) return null;
+  const duties = (await env.DB.prepare(`SELECT * FROM standing_duties WHERE removed_at IS NULL`).all<OwnedDuty>()).results ?? [];
+  return dutyEditRequestIn(input.subject, input.text, { roster: input.roster, duties });
+}
+export type DutyEditFound = NonNullable<Awaited<ReturnType<typeof findDutyEdit>>>;
+
+/** The check the first read answers for a duty edit. */
+export const dutyCheckWords = (name: string) => `change the standing duty "${name}"`;
+
 export async function editDutyFromMail(env: Env, input: {
   roster: LaneSeat[]; subject: string; text: string; mailId: string; now: number; sender: string;
+  /** The duty found and the email's one read (`base` + 1 is this check), from the inbound door. */
+  found?: DutyEditFound | null; shared?: SharedRead;
 }): Promise<DutyEditResult | null> {
-  const duties = (await env.DB.prepare(`SELECT * FROM standing_duties WHERE removed_at IS NULL`).all<OwnedDuty>()).results ?? [];
-  const req = dutyEditRequestIn(input.subject, input.text, { roster: input.roster, duties });
+  const req = input.found !== undefined ? input.found : await findDutyEdit(env, input);
   if (!req) return null;
   const signer = input.roster.find((s) => String(s.role ?? "").toLowerCase() === "chief of staff")?.name ?? "Simone";
 
@@ -58,10 +71,12 @@ export async function editDutyFromMail(env: Env, input: {
    * MEANING BY THE MODEL (eng sweep row 7b): the words found the duty; the model reads whether she asks to change
    * it. Not asked: no edit, the email goes on. Unsure: nothing changes and she is asked. Model down: logged keywords.
    */
-  const said = await confirmAsk(env, {
-    what: "her duty edit", about: "This is the owner's email to her team, who run standing duties for her.",
-    change: `change the standing duty "${d.name}"`, text: `${input.subject}\n${input.text}`, mailId: input.mailId, now: input.now,
-  });
+  const shared = input.shared ?? {
+    read: await firstRead(env, { subject: input.subject, words: `${input.subject}\n${input.text}`.trim(), checks: [dutyCheckWords(d.name)], now: input.now, mailId: input.mailId }),
+    base: 0,
+  };
+  // No read at all: her change words must stand in their sentence ("Don't change …", "Should I change …?" do not).
+  const said = await askedIn(env, shared, 1, { what: "her duty edit", keyword: dutyChangeStands(input.subject, input.text) ? "asks" : "not", mailId: input.mailId });
   if (said === "skip") return null;
   if (said === "ask") {
     return {

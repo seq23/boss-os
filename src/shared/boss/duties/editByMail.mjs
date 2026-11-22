@@ -10,6 +10,7 @@
  * the code. The Worker half is `src/worker/boss/duties/editByMail.ts`; the edit itself goes through
  * `ownerEdits.ts` (a `duty_versions` row, undoable), the same path the employee page uses.
  */
+import { stands } from "../text/wholeSentence.mjs";
 import { seatTag } from "../intake/mail.mjs";
 import { preApprovalIn } from "../repoChange/lane.mjs";
 import { NEW_DUTY_RE, UNTAGGED_NEW_DUTY_RE } from "./lane.mjs";
@@ -69,6 +70,15 @@ export function dutyEditRequestIn(subject, text, { roster = [], duties = [] } = 
     phrase: String(text ?? "").trim().slice(0, 8000) || String(subject ?? "").trim(),
     preApproved: preApprovalIn(haystack),
   };
+}
+
+/**
+ * The keyword reading of a duty edit, for when no first read answers (#514 review): her change words must STAND in
+ * their sentence (wholeSentence.mjs). "Don't change the … duty" negates and "Should I change …?" asks, so neither is
+ * an edit. Pure.
+ */
+export function dutyChangeStands(subject, text) {
+  return stands(`${String(subject ?? "")}\n${String(text ?? "")}`, CHANGE_RE);
 }
 
 /** The duty's instructions after her change: what it said, then her words, dated. Pure. */
