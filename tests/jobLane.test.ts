@@ -20,7 +20,7 @@ export function flowOf(file: string, text: string): Flow {
   const block = (key: string) => {
     const i = lines.findIndex((l) => new RegExp(`^${key}:`).test(l));
     if (i < 0) return [] as string[];
-    const out = [lines[i]];
+    const out: string[] = [lines[i] ?? ""];
     for (const l of lines.slice(i + 1)) { if (/^\S/.test(l)) break; out.push(l); }
     return out;
   };
