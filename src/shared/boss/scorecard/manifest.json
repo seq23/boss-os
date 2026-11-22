@@ -2844,6 +2844,10 @@
     "succession-book": {
       "kind": "system",
       "why": "Keeps the emergency book current for Scooter; it has no customer result of its own."
+    },
+    "growth-scoreboard": {
+      "kind": "helper",
+      "why": "The Growth Director's daily count; it feeds the growth-director row's decisions and has no customer result of its own."
     }
   },
   "scoreboard": {
