@@ -3,14 +3,16 @@
  * ONE first read per email answers a numbered check for each. How it breaks, each proven here: a model that says
  * "not" never removes a list row or edits a duty (data loss) and never lifts a not-before hold; unsure changes nothing
  * and asks her; model down runs the keywords AND logs it (outage), and the keywords never read "Don't change …" or
- * "Should I change …?" as a change; a pure forward never edits a duty. Synthetic names only: the repo is public.
+ * "Should I change …?" as a change; a forwarded sender's words (body or subject) never edit, list or set a deadline. Synthetic names only: the repo is public.
  */
 import { env } from "cloudflare:test";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { all, apiJson, row } from "./helpers";
 import { setFirstReadRungs, type Rung } from "../../src/worker/boss/intake/firstRead";
 import { listEditsFromMail, applyListEdit } from "../../src/worker/boss/capital/grid";
-import { activeRoster, emailReading } from "../../src/worker/boss/intake/inboundMail";
+import { activeRoster, emailReading, herSubjectOf } from "../../src/worker/boss/intake/inboundMail";
+import { herWords, ownWords } from "../../src/shared/boss/intake/messageBody.mjs";
+import { checksOf } from "../../src/worker/boss/intake/firstRead";
 import { editDutyFromMail } from "../../src/worker/boss/duties/editByMail";
 import { admitTask } from "../../src/worker/boss/tasks/admit";
 
@@ -74,6 +76,13 @@ describe("her list edits", () => {
     expect(await rainmaker()).toEqual([]);
     expect(await fellBack()).toBe(1);
   });
+
+  it("no read was made (nothing to read, or too big to read): the keywords act and NO outage is logged", async () => {
+    setFirstReadRungs(down);
+    await listEditsFromMail(env, TAKE_OFF, "m1", Date.now(), { read: { brief: null, reader: null, tried: [], stop: null } as any, base: 0 });
+    expect(await rainmaker()).toEqual([]);
+    expect(await fellBack()).toBe(0);
+  });
 });
 
 describe("her duty edits", () => {
@@ -102,57 +111,104 @@ describe("her duty edits", () => {
     expect(await fellBack()).toBe(1);
   });
 
-  it("outage: \"Don't change …\" is never an edit", async () => {
+  // Sentences the duty words DO find (so the whole-sentence judge is what stops them), negated and asked.
+  it("outage: \"Don't change …\" the duty words find is never an edit", async () => {
     setFirstReadRungs(down);
-    expect((await edit("Don't change Camille's gallery frames recount duty: it is fine as it is."))?.outcome).not.toBe("DUTY_EDITED");
+    const res = await edit("Don't change Camille's gallery frames recount duty to count the attic too. Your call.");
+    expect(res?.outcome ?? null).not.toBe("DUTY_EDITED");
     expect(await prompt()).toBeNull();
   });
 
-  it("outage: \"Should I change …?\" is never an edit", async () => {
+  it("outage: \"Should I change …?\" the duty words find is never an edit", async () => {
     setFirstReadRungs(down);
-    expect((await edit("Should I change Camille's gallery frames recount duty to count the attic too?"))?.outcome).not.toBe("DUTY_EDITED");
+    const res = await edit("Should I change Camille's gallery frames recount duty to count the attic too? Your call.");
+    expect(res?.outcome ?? null).not.toBe("DUTY_EDITED");
     expect(await prompt()).toBeNull();
   });
 });
 
 describe("one read per email (#514 review)", () => {
-  const reading = async (own: string, readable = own) => emailReading(env, {
-    subject: "", own, readable, files: [], roster: (await activeRoster(env)) as any, now: Date.parse("2026-11-23T15:00:00Z"), mailId: "m5", oversize: false,
+  const NOW = Date.parse("2026-11-23T15:00:00Z");
+  const reading = async (readable: string, subject = "", own = ownWords(readable)) => emailReading(env, {
+    subject, her: herWords(readable), own, readable, files: [], roster: (await activeRoster(env)) as any, now: NOW, mailId: "m5", oversize: false,
   });
 
-  it("a list edit, a duty edit and a deadline are all answered by ONE model call", async () => {
+  it("a list edit, a duty edit and a deadline are all answered by ONE model call, and only when a door asks", async () => {
     const calls = { n: 0 };
     setFirstReadRungs(reads([{ meaning: "unsure" }, { meaning: "unsure" }, { meaning: "unsure" }], {}, calls));
     const r = await reading(`Take ${PERSON} off the Rainmaker list.\nChange to Camille's gallery frames recount duty: count the attic too.\nHave it done by Friday.`);
     expect(r.listsAt).not.toBeNull();
     expect(r.dutyAt).not.toBeNull();
+    expect(r.dueFound).not.toBeNull();
+    // Building the reading, and a guard looking at what was read so far, never call the model.
+    expect(await r.readSoFar()).toBeNull();
+    expect(calls.n).toBe(0);
     await r.listsAt!();
     await r.dutyAt!();
+    await r.dueAt();
     await r.read();
     expect(calls.n).toBe(1);
   });
 
-  it("a not-before hold is never read away: the model's \"not\" leaves it standing", async () => {
-    setFirstReadRungs(says("not", "", 3));
-    const r = await reading("Do this Monday, not before 9am.");
+  it("a not-before hold is never read away: the model's \"not\" on the deadline leaves the hold standing", async () => {
+    setFirstReadRungs(says("not"));
+    const r = await reading("Have the frames counted by Friday 3pm. Start not before 9am Wednesday.");
+    expect(r.dueFound).not.toBeNull();
     expect(r.notBefore?.at).toBeTruthy();
-    // The deadline the model said she did not set may go; the hold it implies does not.
-    expect(r.due && Date.parse(r.due.due_at)).toBeGreaterThan(Date.parse(r.notBefore!.at));
+    const due = await r.dueAt();
+    // The deadline the model said she did not set is gone; the due the hold implies is set from the hold.
+    expect(due).not.toBeNull();
+    expect(due!.due_at).not.toBe(r.dueFound!.due_at);
+    expect(Date.parse(due!.due_at)).toBeGreaterThan(Date.parse(r.notBefore!.at));
   });
 
   it("a deadline the model says she did not set is dropped; unsure keeps it", async () => {
     setFirstReadRungs(says("not"));
-    expect((await reading("Send me last Friday's report.")).due).toBeNull();
+    expect(await (await reading("Send me the report by Friday.")).dueAt()).toBeNull();
     setFirstReadRungs(says("unsure"));
-    expect((await reading("Send me the report by Friday.")).due).not.toBeNull();
+    expect(await (await reading("Send me the report by Friday.")).dueAt()).not.toBeNull();
   });
 
-  it("a pure forward: the duty door never sees the forwarded sender's words", async () => {
+  // A real Gmail forward, through the same boundary the inbound door uses, with every model down.
+  const FORWARD = "FYI\n\n---------- Forwarded message ---------\nFrom: Someone <someone@example.test>\nDate: Sat, Nov 21, 2026 at 9:12 AM\nSubject: frames\nTo: <studio@example.test>\n\n" +
+    `Change to Camille's gallery frames recount duty: count the attic too. Your call.\nTake ${PERSON} off the Rainmaker list.\nHave it done by Friday.`;
+
+  it("a forward: the forwarded sender's words never edit a duty or a list, and set no deadline (model down)", async () => {
     setFirstReadRungs(down);
-    const forwarded = "---------- Forwarded message ---------\nFrom: someone@example.test\n\nChange to Camille's gallery frames recount duty: count the attic too. Your call.";
-    const r = await reading("", forwarded);
+    const r = await reading(FORWARD);
+    expect(herWords(FORWARD)).toBe("FYI");
     expect(r.duty).toBeNull();
-    expect(r.dutyAt).toBeNull();
+    expect(r.listsAt).toBeNull();
+    expect(r.dueFound).toBeNull();
+    const res = await editDutyFromMail(env, { roster: (await activeRoster(env)) as any, subject: "", text: herWords(FORWARD), mailId: "m5", now: NOW, sender: "owner" });
+    expect(res?.outcome ?? null).not.toBe("DUTY_EDITED");
+    expect(await rainmaker()).toEqual([PERSON.toLowerCase()]);
+    expect((await row<{ owner_prompt: string | null }>(`SELECT owner_prompt FROM standing_duties WHERE id = '${WRITTEN}'`))!.owner_prompt).toBeNull();
+  });
+
+  it("a forward keeps its body for the work (ownWords): only the doors that change her things cut at it", () => {
+    expect(ownWords(FORWARD)).toContain("count the attic too");
+  });
+
+  it("a forwarded subject is not hers: no deadline or duty is read from it", async () => {
+    setFirstReadRungs(down);
+    const subject = "Fwd: Change Camille's gallery frames recount duty, have it done by Friday";
+    const own = herSubjectOf(subject, "Change Camille's gallery frames recount duty, have it done by Friday");
+    expect(own).toBe("");
+    const r = await reading(FORWARD, own);
+    expect(r.dueFound).toBeNull();
+    expect(r.duty).toBeNull();
+    // Her own subject on a forward still counts.
+    expect(herSubjectOf("Have this done by Friday", "frames")).toBe("Have this done by Friday");
+  });
+});
+
+describe("the quote check: an \"asks\" must stand in her sentence", () => {
+  const LINE = `take ${PERSON} off the Rainmaker list`;
+  it("a questioned or negated sentence is unsure, never an ask; a plain one stands", () => {
+    expect(checksOf([{ n: 1, meaning: "asks", quote: LINE }], `Should I ${LINE}?`, 1)[1]!.meaning).toBe("unsure");
+    expect(checksOf([{ n: 1, meaning: "asks", quote: LINE }], `Don't ${LINE}.`, 1)[1]!.meaning).toBe("unsure");
+    expect(checksOf([{ n: 1, meaning: "asks", quote: LINE }], `Please ${LINE}.`, 1)[1]!.meaning).toBe("asks");
   });
 });
 
@@ -171,10 +227,12 @@ describe("who reads the work she asks for: kind, risk and audience only tighten"
     expect((await admit(null)).classification.audience).toBe("internal");
   });
 
-  it("risk only rises: the model's high raises a low read, its low never lowers", async () => {
-    const base = (await admit(null)).classification.risk;
+  it("risk only rises: the model's high raises a low read, its low never lowers a high one", async () => {
+    expect((await admit(null)).classification.risk).toBe("low");
     expect((await admit({ risk: "high" })).classification.risk).toBe("high");
-    expect((await admit({ risk: "low" })).classification.risk).toBe(base);
+    const WEIGH = { title: "The gallery's offer", prompt: "Weigh the gallery's offer for the spring catalogue and tell me what you think." };
+    expect((await admit(null, WEIGH)).classification.risk).toBe("high");
+    expect((await admit({ risk: "low" }, WEIGH)).classification.risk).toBe("high");
   });
 
   it("the model's kind fills a one-off the keywords could not name", async () => {

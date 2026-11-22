@@ -13,6 +13,7 @@
  * only value written here is her firm's own domain, which is already public. She edits both lists by
  * replying in plain words to any Monique email; `parseListEdits` reads those words.
  */
+import { herWords } from "../intake/messageBody.mjs";
 
 /** Her firm. Built in, because it is the one same-firm entry that can never be removed. */
 export const FIRM_DOMAIN = "rainmakersecurities.com";
@@ -128,17 +129,12 @@ const RULES = [
  * edit is left alone. Returns [{ list, action, kind, value, label }].
  */
 /**
- * Her own words: the lines above quoted history or a forwarded message. The ONE place this boundary is drawn
- * for the list door (#514 review), so the edits found and the words the model reads are the same words. Pure.
+ * Her own words: above quoted history AND a forwarded message. The list door's name for `herWords`, the ONE
+ * boundary every door that changes something of hers reads (#514 re-check), so the edits found and the words
+ * the model reads are the same words. Pure.
  */
 export function aboveQuote(text) {
-  const out = [];
-  for (const raw of String(text ?? "").split(/\r?\n/)) {
-    const line = raw.trim();
-    if (/^>/.test(line) || /^on .+wrote:$/i.test(line) || /^-{2,}\s*forwarded message/i.test(line) || /^begin forwarded message/i.test(line)) break;
-    out.push(raw);
-  }
-  return out.join("\n");
+  return herWords(text);
 }
 
 export function parseListEdits(text) {

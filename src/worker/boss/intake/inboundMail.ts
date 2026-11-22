@@ -22,7 +22,7 @@ import { readEverything, EMPTY_FILES, type FilesRead } from "./readFiles";
 import { asksIn, gotItLines, filesForTask } from "./gotIt";
 import { firstRead, briefForTask, unclearLines, type FirstRead } from "./firstRead";
 import { takenOverJob, addToTakenOver, takenOverReply } from "../service/takeover";
-import { taskBodyFrom, ownWords, readableText } from "../../../shared/boss/intake/messageBody.mjs";
+import { taskBodyFrom, ownWords, herWords, readableText } from "../../../shared/boss/intake/messageBody.mjs";
 import { triage, triageLines, shortTitle, type TriageJob } from "../../../shared/boss/intake/triage.mjs";
 import { parseResearchPage } from "../../../shared/boss/research/page.mjs";
 import { preApprovalIn } from "../../../shared/boss/repoChange/lane.mjs";
@@ -59,18 +59,22 @@ const NO_READ: FirstRead = { brief: null, reader: null, tried: [], stop: null };
  * ONE READ PER EMAIL (#514 review). Every door that acts on what her words found (a list edit, a duty edit, a
  * deadline) puts its question to the same first read as a numbered check, and that read is also the reply read
  * and the work's brief. The words find the candidates; the read says whether she asks for each.
+ *   · HER words only (#514 re-check): `her` is her text above any quote AND any forward (`herWords`), and
+ *     `subject` is her own subject, never a forwarded one (`herSubjectOf`). The lists, the duty, the deadline and
+ *     the hold are found there, and a check's quote must stand there: a forwarded sender's words change nothing.
  *   · A not-before hold is never read away: a model "not" could only loosen it, so the words' hold always stands.
  *   · A deadline the read says she did not set ("last Friday's report") is dropped; unsure or no read keeps it,
  *     because a deadline orders work and never deletes, sends or approves.
- *   · Only her own words above the quote are read for edits; a pure forward has none, so no door acts on it.
+ *   · NOTHING HERE CALLS THE MODEL. `read`, `dutyAt`, `listsAt` and `dueAt` read when a door asks, so the
+ *     guards (ambiguous, a book that failed, a question back to her) still stand in front of the reader.
  */
 export async function emailReading(env: Env, m: {
-  subject: string; own: string; readable: string; files: string[]; roster: LaneSeat[]; now: number; mailId: string; oversize: boolean;
+  subject: string; her: string; own: string; readable: string; files: string[]; roster: LaneSeat[]; now: number; mailId: string; oversize: boolean;
 }) {
-  const lists = m.own.trim() ? parseListEdits(m.own) : [];
-  const duty = m.own.trim() ? await findDutyEdit(env, { roster: m.roster, subject: m.subject, text: m.own }) : null;
+  const lists = m.her.trim() ? parseListEdits(m.her) : [];
+  const duty = m.her.trim() ? await findDutyEdit(env, { roster: m.roster, subject: m.subject, text: m.her }) : null;
   const dutyName = duty && !duty.ambiguous ? duty.duty.name : null;
-  const herWords = `${m.subject}\n${m.own}`;
+  const herWords = `${m.subject}\n${m.her}`;
   const notBefore = notBeforeIn(herWords, new Date(m.now));
   const dueFound = dueTimeIn(herWords, new Date(m.now));
   const when = dueFound ? new Date(Date.parse(dueFound.due_at)).toLocaleString("en-US", { timeZone: "America/Chicago", weekday: "long", month: "short", day: "numeric", hour: "numeric", minute: "2-digit" }) : "";
@@ -81,19 +85,32 @@ export async function emailReading(env: Env, m: {
   ];
   let once: Promise<FirstRead | null> | null = null;
   const read = () => (once ??= !m.oversize && (m.own || m.readable).trim()
-    ? firstRead(env, { subject: m.subject, words: m.own || m.readable, files: m.files, checks, now: m.now, mailId: m.mailId })
+    ? firstRead(env, { subject: m.subject, words: m.own || m.readable, checkWords: herWords, files: m.files, checks, now: m.now, mailId: m.mailId })
     : Promise.resolve(null));
   const at = async (base: number): Promise<SharedRead> => ({ read: (await read()) ?? NO_READ, base });
   const dueBase = lists.length + (dutyName ? 1 : 0);
-  const dueSaid = dueFound ? await askedIn(env, await at(dueBase), 1, { what: "a deadline in her email", keyword: "asks", mailId: m.mailId }) : null;
   return {
     read,
+    /** The read only if a door already asked for it: a guard may use it, never start it. */
+    readSoFar: () => (once ?? Promise.resolve(null)),
     listsAt: lists.length ? () => at(0) : null,
     duty,
     dutyAt: dutyName ? () => at(lists.length) : null,
     notBefore,
-    due: heldDue(dueSaid === "skip" ? null : dueFound, notBefore),
+    dueFound,
+    dueAt: async () => {
+      if (!dueFound) return heldDue(null, notBefore);
+      const said = await askedIn(env, await at(dueBase), 1, { what: "a deadline in her email", keyword: "asks", mailId: m.mailId });
+      return heldDue(said === "skip" ? null : dueFound, notBefore);
+    },
   };
+}
+
+/** Her own subject: on a forward, the subject is the forwarded email's unless she wrote her own. Pure. */
+export function herSubjectOf(subject: string, forwardedSubject: string | null): string {
+  const bare = (s: string) => s.replace(/^\s*((re|fwd?|fw)\s*:\s*)+/i, "").trim();
+  if (forwardedSubject == null) return subject;
+  return bare(subject).toLowerCase() === bare(forwardedSubject).toLowerCase() ? "" : bare(subject);
 }
 import { commandFromMail, openErrandFor, errandReplied } from "../commands/run";
 import { nudgeFromWords, nudgeAddressesIn } from "../lp/nudge";
@@ -643,6 +660,8 @@ export async function handleBossInboundMail(message: BossMailMessage, env: Env):
    * read a whole thread on purpose and the card's stored text.
    */
   const own = withVoiceNotes(ownWords(read?.readable ?? ""), voice.heard);
+  // What she herself wrote: above any quote and any forward. Every door that changes something of hers reads this.
+  const her = withVoiceNotes(herWords(read?.readable ?? ""), voice.heard);
 
   if (secrets?.line && secrets.onlySecrets) {
     await finish({ outcome: "SECRET_STORED", why: secrets.line, objectKey, reply: secrets.line });
@@ -677,8 +696,9 @@ export async function handleBossInboundMail(message: BossMailMessage, env: Env):
   const origin = readable ? forwardedOrigin(readable) : null;
   const trueSubject = origin?.subject ? decodeMimeHeader(origin.subject) : subject;
   const fileNames = [...files.heard.map((h) => h.filename), ...files.read.map((r) => r.filename), ...files.unopened.map((u) => u.filename)];
-  const reading = await emailReading(env, { subject: trueSubject, own, readable, files: fileNames, roster, now, mailId, oversize });
-  const listEdit = reading.listsAt ? await listEditsFromMail(env, own, mailId, now, await reading.listsAt()) : null;
+  const herSubject = herSubjectOf(subject, origin ? (origin.subject ? decodeMimeHeader(origin.subject) : "") : null);
+  const reading = await emailReading(env, { subject: herSubject, her, own, readable, files: fileNames, roster, now, mailId, oversize });
+  const listEdit = reading.listsAt ? await listEditsFromMail(env, her, mailId, now, await reading.listsAt()) : null;
   if (listEdit?.onlyEdits) {
     await finish({ outcome: "LIST_EDITED", why: listEdit.note, objectKey, reply: listEdit.note });
     return { mailId, outcome: "LIST_EDITED", employeeId: null, taskId: null, reply: listEdit.note, messageId, signer: "Monique" };
@@ -799,7 +819,9 @@ export async function handleBossInboundMail(message: BossMailMessage, env: Env):
   // R12 — a deadline in her words rides on the task and is stated to the employee.
   // A start she named ("tomorrow … after 9am") holds the work until then, and a deadline before that
   // start is not hers (1 Nov 2026: a past-tense "today" made a Monday job URGENT on Sunday).
-  const { notBefore, due } = reading;
+  const { notBefore } = reading;
+  // Read inside the guard below (the model is asked only there); the words' deadline until then.
+  let due = reading.dueFound ? heldDue(reading.dueFound, notBefore) : null;
   const notBeforeMs = notBefore ? Date.parse(notBefore.at) : null;
 
   const haystack = `${subject}\n${own}`;
@@ -1045,7 +1067,7 @@ export async function handleBossInboundMail(message: BossMailMessage, env: Env):
    */
   const dutyEdit = planAnswer || commentAnswer || kdpAnswer || dismissAnswer || dutyAnswer || dutyRequest ? null : reading.duty ? await editDutyFromMail(env, {
     // Her own words only: a pure forward's text is someone else's (#514 review).
-    roster, subject: trueSubject, text: own, mailId, now, sender, found: reading.duty, shared: reading.dutyAt ? await reading.dutyAt() : undefined,
+    roster, subject: herSubject, text: her, mailId, now, sender, found: reading.duty, shared: reading.dutyAt ? await reading.dutyAt() : undefined,
   }) : null;
   const dutyNote = dutyAnswer ?? dutyRequest ?? dutyEdit;
 
@@ -1055,7 +1077,8 @@ export async function handleBossInboundMail(message: BossMailMessage, env: Env):
     hasVerb: Boolean(directive), forwarded: Boolean(origin?.from), unread: oversize,
   });
   // A short email the read found an ask in ("call Ron") is not "nothing to act on": the read wins over the word count.
-  if (question?.reason === "nothing_to_act_on" && (await reading.read())?.brief?.asks.length) question = null;
+  // Only a read the email already had: the guard is never the thing that calls the model.
+  if (question?.reason === "nothing_to_act_on" && (await reading.readSoFar())?.brief?.asks.length) question = null;
 
   /*
    * HER ANSWER CLOSES THE QUESTION. Matched on the Message-ID her own client put in `References`,
@@ -1221,6 +1244,7 @@ export async function handleBossInboundMail(message: BossMailMessage, env: Env):
     // Inside the guard: nothing unclear, unread or already done ever reaches the free reader either.
     // One read per email: a reply was read above, before the reply doors.
     first = await reading.read();
+    due = await reading.dueAt();
     briefBlock = first?.brief ? briefForTask(first.brief, first.reader) : first?.stop ?? null;
     triaged = route.outcome === "DEFAULTED" && !handoffNote && !followed && Boolean(readable || subject)
       ? triage({ subject: trueSubject, text: own || trueSubject, roster, asks: first?.brief?.asks ?? null })

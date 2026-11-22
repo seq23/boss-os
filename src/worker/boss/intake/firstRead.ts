@@ -215,7 +215,8 @@ export function parseBrief(text: string, words: string, files: readonly string[]
 }
 
 /** As `parseBrief`, but says why there is no brief: the ladder logs the reason. Pure. */
-export function readBrief(text: string, words: string, files: readonly string[] = [], checkCount = 0): Brief | string {
+/** `checkWords`: the words a numbered check's quote must stand in (her own, above any forward); the read's words by default. */
+export function readBrief(text: string, words: string, files: readonly string[] = [], checkCount = 0, checkWords = words): Brief | string {
   const v = readJsonObject(text);
   if (!v) return "not one JSON answer";
   const body = norm(words);
@@ -247,7 +248,7 @@ export function readBrief(text: string, words: string, files: readonly string[] 
   }
   const brief: Brief = {
     asks, holds: quoted(list(v.holds)), questions: quoted(list(v.questions)), unclear: unclear.slice(0, MAX_ITEMS), files: filesOut, decision: decisionOf(v.decision, words),
-    checks: checksOf(v.checks, words, checkCount),
+    checks: checksOf(v.checks, checkWords, checkCount),
     outside: ((o) => (o && hers(o) && quoteStands(words, o) ? o : null))(unquote(str(v.outside))),
     kind: (INTAKE_KINDS as readonly string[]).includes(str(v.kind)) ? (str(v.kind) as IntakeKind) : null,
     risk: (RISKS as readonly string[]).includes(str(v.risk)) ? (str(v.risk) as RiskLevel) : null,
@@ -530,7 +531,7 @@ export const FIRST_READ_SCAN_OFF = "owner ruling 15 Nov 2026: Boss OS ignores th
 /** Walk the free ladder once for the brief. `dry` reads without claiming a Workers AI slot. Never throws. */
 export async function firstRead(
   env: Env,
-  input: { subject: string; words: string; files?: readonly string[]; checks?: readonly string[]; now?: number; dry?: boolean; mailId?: string | null; onlyRung?: string | null },
+  input: { subject: string; words: string; checkWords?: string; files?: readonly string[]; checks?: readonly string[]; now?: number; dry?: boolean; mailId?: string | null; onlyRung?: string | null },
   rungs?: Rung[],
 ): Promise<FirstRead> {
   if (!input.words.trim()) return { brief: null, reader: null, tried: [], stop: null };
@@ -539,7 +540,7 @@ export async function firstRead(
     prompt: briefPrompt({ subject: input.subject, words: input.words, files, checks: input.checks }), json: BRIEF_JSON, now: input.now, dry: input.dry, onlyRung: input.onlyRung,
     privateScanOff: FIRST_READ_SCAN_OFF,
     read: (text) => {
-      const brief = readBrief(text, input.words, files, input.checks?.length ?? 0);
+      const brief = readBrief(text, input.words, files, input.checks?.length ?? 0, input.checkWords ?? input.words);
       if (typeof brief === "string") return brief;
       if (!brief.asks.length && !brief.questions.length && !brief.unclear.length && !brief.holds.length && !brief.decision && !Object.keys(brief.checks ?? {}).length && !brief.outside) return "listed nothing";
       return brief;
