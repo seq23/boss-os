@@ -126,7 +126,10 @@ const FINGERPRINT = () => {
 };
 
 /** The controls a person can tap on this screen, in reading order; tappables with no role are named apart. */
-const CONTROLS = (roles) => {
+// With `mark`, the same scan tags that one control (data-tap-through-target) so the tap hits exactly the control
+// the sweep counted. A role+name locator counts controls this scan leaves out (screens kept mounted under the
+// one on show), so its nth hit the wrong copy: AP "Back" DEAD and "Next question" untappable, 22 Nov 2026.
+const CONTROLS = ({ roles, mark }) => {
   const vis = (e) => { const r = e.getBoundingClientRect(); const s = getComputedStyle(e); return r.width > 4 && r.height > 4 && s.visibility !== "hidden" && s.display !== "none" && !e.closest("[aria-hidden=true]"); };
   // The FULL name finds the control again (exact match); `name` is cut to 120 for the report only. Cutting
   // the locator's name made every long-labelled control "cannot be tapped" (22 Nov 2026, AP and PBS).
@@ -138,9 +141,14 @@ const CONTROLS = (roles) => {
     if (!roles.includes(role) || !vis(e)) continue;
     const full = fullName(e), n = full.slice(0, 120), key = `${role}|${full}`;
     const nth = seen.get(key) ?? 0; seen.set(key, nth + 1);
-    out.push({ role, name: n, nth, disabled: e.getAttribute("aria-disabled") === "true" || e.disabled === true, full, current: (role === "tab" && (e.getAttribute("aria-selected") === "true" || (e.getAttribute("aria-current") ?? "false") !== "false")) || (role === "radio" && e.getAttribute("aria-checked") === "true"), href: e.tagName === "A" ? e.href : null });
+    if (mark) {
+      if (role === mark.role && full === mark.full && nth === mark.nth) { e.setAttribute("data-tap-through-target", ""); return { marked: true }; }
+      continue;
+    }
+    out.push({ role, name: n, nth, disabled: e.getAttribute("aria-disabled") === "true" || e.disabled === true, full, current: (role === "tab" && (e.getAttribute("aria-selected") === "true" || (e.getAttribute("aria-current") ?? "false") !== "false")) || (role === "radio" && e.getAttribute("aria-checked") === "true") || (role === "button" && e.getAttribute("aria-selected") === "true"), href: e.tagName === "A" ? e.href : null });
   }
   for (const e of document.querySelectorAll("[tabindex='0']:not([role]):not(a):not(button):not(input)")) if (vis(e) && fullName(e) && e.querySelector("[role]") === null && getComputedStyle(e).cursor === "pointer") noRole.push(fullName(e).slice(0, 120));
+  if (mark) return { marked: false };
   return { controls: out, noRole: [...new Set(noRole)].slice(0, 10) };
 };
 
@@ -309,7 +317,7 @@ async function replay(browser, flow, target, origin, j, upto, notes) {
 /** Taps every control on the screen a journey reached, each from that screen; a dead one fails by name. */
 async function sweep(browser, flow, target, origin, j, at, c, ctx) {
   const { notes, swept, budget } = ctx;
-  const { controls, noRole } = await c.page.evaluate(CONTROLS, CONTROL_ROLES).catch(() => ({ controls: [], noRole: [] }));
+  const { controls, noRole } = await c.page.evaluate(CONTROLS, { roles: CONTROL_ROLES }).catch(() => ({ controls: [], noRole: [] }));
   const skip = (flow.sweep_skip ?? []).map((s) => matcher(s.name));
   const path = await c.page.evaluate(() => location.pathname + location.search).catch(() => "");
   const results = [], left = [];
@@ -323,7 +331,7 @@ async function sweep(browser, flow, target, origin, j, at, c, ctx) {
     if (swept.has(key)) continue;
     if (!k.name) { results.push({ ...shown, result: "no accessible name (a screen reader says nothing)" }); notes.unnamed.push(`${j.name} step ${at + 1}: a ${k.role} with no name`); swept.add(key); continue; }
     if (k.disabled) { results.push({ ...shown, result: "disabled here" }); swept.add(key); continue; }
-    if (k.current) { results.push({ ...shown, result: k.role === "radio" ? "the chosen option (tapping it keeps it)" : "the current tab (tapping it stays here)" }); swept.add(key); continue; }
+    if (k.current) { results.push({ ...shown, result: k.role !== "tab" ? "the chosen option (tapping it keeps it)" : "the current tab (tapping it stays here)" }); swept.add(key); continue; }
     if (skip.some((m) => (typeof m === "string" ? m === k.name : m.test(k.name)))) { results.push({ ...shown, result: "skipped (sweep_skip)" }); swept.add(key); continue; }
     if (k.href && /^(mailto|tel|sms):/i.test(k.href)) { results.push({ ...shown, result: `opens ${k.href.split(":")[0]} (not followed)` }); swept.add(key); continue; }
     if (k.href && !k.href.startsWith(origin)) { results.push({ ...shown, result: `links to ${k.href.split("?")[0]} (not followed)` }); notes.external.add(k.href.split("?")[0]); swept.add(key); continue; }
@@ -334,7 +342,10 @@ async function sweep(browser, flow, target, origin, j, at, c, ctx) {
       if (!cur) { left.push(k.name, "(could not return to this screen)"); cur = c; break; }
     }
     budget.left--; here++; swept.add(key);
-    const loc = cur.page.getByRole(k.role, { name: full ?? k.name, exact: true }).nth(k.nth);
+    await cur.page.evaluate(() => document.querySelectorAll("[data-tap-through-target]").forEach((e) => e.removeAttribute("data-tap-through-target"))).catch(() => {});
+    const { marked } = await cur.page.evaluate(CONTROLS, { roles: CONTROL_ROLES, mark: { role: k.role, full, nth: k.nth } }).catch(() => ({ marked: false }));
+    if (!marked) { results.push({ ...shown, result: "gone when this screen was opened again" }); ctx.failures.push({ code: "STEP_UNREACHABLE", where: `${j.name} step ${at + 1} sweep`, what: `the ${k.role} "${k.name}" was not there when the screen was opened again (the screen differs each time)` }); fresh = false; continue; }
+    const loc = cur.page.locator("[data-tap-through-target]");
     const before = await cur.page.evaluate(FINGERPRINT).catch(() => "");
     cur.signal.hit = null; cur.signal.accept = false;
     const clicked = await tap(loc, 5_000);
