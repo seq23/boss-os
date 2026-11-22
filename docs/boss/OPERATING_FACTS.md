@@ -111,7 +111,11 @@ they live in the repo, not only in someone's memory. Non-confidential. `STATUS.m
   repository_dispatch `trigger.event` on seq23/boss-os, once per slot (`cloud_job_dispatches`, latest
   slot in the last 30 minutes, so an outage costs one catch-up). Those workflows carry no `schedule:`
   (`cronProblems` fails two clocks, or a workflow that does not listen). Needs `GITHUB_SEQ23_PAT` on the
-  Worker; without it, NAMED STOP [CLOUD_CLOCK_NO_TOKEN] and the Kendra alarm `mail:cloud-clock`.
+  Worker. The PAT and other credentials acting as the same GitHub user share its primary REST API
+  quota. The clock uses GitHub's retry headers to wait for rate limits and retries server and network
+  failures. A recorded slot can survive the 30-minute catch-up window, with a 90-minute cap.
+  `mail:cloud-clock` opens when retries expire or a terminal refusal occurs, including a missing token,
+  and closes on the next accepted dispatch.
 
 ## Mac-side runs
 - **Every launchd job runs from `~/.boss-os/runtime`, never from `~/GitHub/boss-os`** (1 Nov 2026).
