@@ -1,9 +1,8 @@
 import type { Env } from "../env";
 import { appendEvent } from "../events";
 import { readDeck } from "./deckReader";
-import { deckLinks, messageText, pdfAttachments, unreadableDeckAttachments } from "../effects/mimeAttachments";
+import { deckLinks, messageText, parseMail, pdfAttachments, unreadableDeckAttachments, type ParsedMail } from "../effects/mimeAttachments";
 import { dealFromMessage, intakeDealFromEmail, matchFunnelCompany } from "./dealIntake";
-import { decodeMimeHeader } from "../effects/inboundEmail";
 import { createWorkCardInternal } from "./workCards";
 import { triggersIn } from "../../shared/intake/emailTriggers";
 import { DEAL_INTAKE_EMPLOYEE, seatId } from "../../shared/intake/emailTriggers";
@@ -242,10 +241,10 @@ export async function runDeckReading(env: Env): Promise<{ read: number; failed: 
      * 7MB deck could never have been read no matter what else worked.
      */
     // The whole message, kept before the next block replaces this variable with the attachment.
-    const rawEml = deck.object_key.endsWith(".eml") ? dataBase64 : "";
+    const eml: ParsedMail | null = deck.object_key.endsWith(".eml") ? await parseMail(dataBase64) : null;
 
-    if (deck.object_key.endsWith(".eml")) {
-      const { attachments, unread } = pdfAttachments(dataBase64);
+    if (eml) {
+      const { attachments, unread } = pdfAttachments(eml);
       if (attachments.length === 0) {
         /*
          * SAY WHAT ARRIVED, not what was absent.
@@ -261,8 +260,8 @@ export async function runDeckReading(env: Env): Promise<{ read: number; failed: 
          * the browser tool cannot do. Reporting them precisely is the honest half, and it is the
          * half that lets somebody act.
          */
-        const otherFiles = unreadableDeckAttachments(dataBase64);
-        const { subject: emlSubject, body: emlBody } = messageText(dataBase64);
+        const otherFiles = unreadableDeckAttachments(eml);
+        const { subject: emlSubject, body: emlBody } = messageText(eml);
         const links = deckLinks(`${emlSubject}\n${emlBody}`);
 
         const reasons: string[] = [];
@@ -310,14 +309,9 @@ export async function runDeckReading(env: Env): Promise<{ read: number; failed: 
 
     let companyId = deck.company_id;
     if (!companyId) {
-      /*
-       * DECODED, because the stored header is raw. Scooter's forward arrives as
-       * `=?utf-8?Q?Fwd:_Vynlo_=E2=80=94_pre-seed?=`, and any subject with an em dash or an accent
-       * arrives this way — which is most forwards from founders.
-       */
-      const raw = messageText(rawEml);
-      const emlSubject = decodeMimeHeader(raw.subject);
-      const emlBody = raw.body;
+      // The subject comes back decoded from the one parse (an encoded-word forward such as
+      // `=?utf-8?Q?Fwd:_Vynlo_=E2=80=94_pre-seed?=` reads as "Fwd: Vynlo — pre-seed"), so nothing decodes it twice.
+      const { subject: emlSubject, body: emlBody } = eml ? messageText(eml) : { subject: "", body: "" };
       const tags = triggersIn(`${emlSubject}\n${emlBody}`);
       const fromMessage = dealFromMessage(emlSubject, emlBody, "", tags.length > 0);
 

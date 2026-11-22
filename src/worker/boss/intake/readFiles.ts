@@ -25,7 +25,7 @@
  * exactly this reader. Never throws: a file that fails is in `unopened` with the reason.
  */
 import type { Env } from "../env";
-import { base64OfBytes, bytesOfBase64, fileAttachments, MAX_VOICE_NOTE_BYTES } from "../../effects/mimeAttachments";
+import { base64OfBytes, bytesOfBase64, fileAttachments, MAX_VOICE_NOTE_BYTES, type ParsedMail } from "../../effects/mimeAttachments";
 import { transcribeChunk } from "../../ai/providers/workersAiWhisper";
 import { unzipEntries, isZip, typeOfName } from "./zipEntries";
 import { htmlToText } from "../../../shared/boss/intake/messageBody.mjs";
@@ -88,15 +88,15 @@ function kindOf(f: { filename: string; mediaType: string }): "audio" | "zip" | "
 const mb = (n: number) => `${(n / 1024 / 1024).toFixed(1)} MB`;
 
 /** Read every file in a message, and every Drive link in her words. Never throws; writes nothing. */
-export async function readEverything(env: Env, raw: string, words: string, deps: ReadDeps = {}): Promise<FilesRead> {
+export async function readEverything(env: Env, parsed: ParsedMail, words: string, deps: ReadDeps = {}): Promise<FilesRead> {
   const out: FilesRead = { heard: [], read: [], unopened: [], zips: [] };
   const ai = (deps.ai === undefined ? (env.AI as Ai | undefined) : deps.ai) ?? null;
   const budget = { text: FILES_TEXT_MAX, recordings: MAX_RECORDINGS };
   try {
-    const { attachments, unread } = fileAttachments(raw);
+    const { attachments, unread } = fileAttachments(parsed);
     for (const u of unread) out.unopened.push({ filename: u.replace(/\s*\(.*$/, ""), reason: u.replace(/^[^(]*\(|\)$/g, "") });
     for (const a of attachments) {
-      await readOne(ai, { filename: a.filename, mediaType: a.mediaType, base64: a.dataBase64, size: a.bytes }, out, budget, 0);
+      await readOne(ai, { filename: a.filename, mediaType: a.mediaType, bytes: a.content, size: a.bytes }, out, budget, 0);
     }
   } catch (err) {
     out.unopened.push({ filename: "the attachments", reason: `they could not be read (${(err instanceof Error ? err.message : String(err)).slice(0, 160)})` });

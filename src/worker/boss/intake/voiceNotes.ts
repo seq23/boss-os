@@ -8,31 +8,12 @@
  * One that cannot be heard (no binding, the model refused, too big) is a NAMED STOP said in the reply
  * and on the job: never silence.
  */
-import type { Env } from "../env";
-import { audioAttachments } from "../../effects/mimeAttachments";
-import { transcribeChunk } from "../../ai/providers/workersAiWhisper";
 
 export const VOICE_NOTE_STOP = "VOICE_NOTE_NOT_TRANSCRIBED";
 
 export interface VoiceNotes {
   heard: Array<{ filename: string; text: string }>;
   failed: Array<{ filename: string; reason: string }>;
-}
-
-/** Every recording attached to the message. Never throws: a failure is in `failed`. */
-export async function hearVoiceNotes(env: Env, raw: string): Promise<VoiceNotes> {
-  const { attachments, unread } = audioAttachments(raw);
-  const out: VoiceNotes = { heard: [], failed: unread.map((u) => ({ filename: u.replace(/\s*\(.*$/, ""), reason: u.replace(/^[^(]*\(|\)$/g, "") })) };
-  for (const a of attachments) {
-    try {
-      const text = (await transcribeChunk(env.AI, a.dataBase64)).text.trim();
-      if (text) out.heard.push({ filename: a.filename, text });
-      else out.failed.push({ filename: a.filename, reason: "the transcriber heard no words in it" });
-    } catch (err) {
-      out.failed.push({ filename: a.filename, reason: (err instanceof Error ? err.message : String(err)).slice(0, 300) });
-    }
-  }
-  return out;
 }
 
 /** Her typed words, then each recording's words, labelled. Pure. */

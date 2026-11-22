@@ -8,7 +8,8 @@
  * is unchanged: only what these two decoders do with the bytes they are already given.
  */
 import { describe, expect, it } from "vitest";
-import { decodeQuotedPrintable, decodeBase64Text } from "../src/shared/boss/intake/messageBody.mjs";
+import { decodeQuotedPrintable, decodeBase64Text } from "../src/shared/boss/service/secretLines.mjs";
+import { readableText } from "../src/shared/boss/intake/messageBody.mjs";
 
 describe("quoted-printable honours its declared charset", () => {
   it("a declared charset overrides even bytes that would parse as valid UTF-8", () => {
@@ -42,5 +43,22 @@ describe("base64 honours its declared charset", () => {
   });
   it("undeclared falls back to windows-1252 when the bytes are not valid UTF-8", () => {
     expect(decodeBase64Text(bytes(0x78, 0x97, 0x79))).toBe("x—y");
+  });
+});
+
+describe("a whole message read by readableText (postal-mime underneath)", () => {
+  const msg = (contentType: string, encoding: string, body: string) => [
+    "From: Example Sender <sender@example.test>", "Subject: notice", "MIME-Version: 1.0",
+    `Content-Type: ${contentType}`, `Content-Transfer-Encoding: ${encoding}`, "", body, "",
+  ].join("\r\n");
+
+  it("a client that lied about UTF-8 still reads as the windows-1252 it is (the held mail)", async () => {
+    const { text } = await readableText(msg("text/plain; charset=utf-8", "quoted-printable", "24 hours=92 notice =96 please"));
+    expect(text).toBe("24 hours’ notice – please");
+  });
+
+  it("honest UTF-8 is left exactly as it was", async () => {
+    const { text } = await readableText(msg('text/plain; charset="utf-8"', "quoted-printable", "Caf=C3=A9 =E2=80=94 deck"));
+    expect(text).toBe("Café — deck");
   });
 });

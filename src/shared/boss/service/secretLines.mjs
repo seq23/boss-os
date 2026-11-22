@@ -10,7 +10,13 @@
  * the raw MIME (plain, quoted-printable and base64 text parts alike), so nothing downstream can copy
  * it anywhere. The Worker half (`src/worker/boss/service/secretHandoff.ts`) encrypts and stores.
  */
-import { decodeBase64Text, decodeQuotedPrintable } from "../intake/messageBody.mjs";
+/*
+ * THE SCRUB KEEPS ITS OWN SMALL MIME WALK, ON PURPOSE (22 Nov 2026, when the repo's two reading walkers
+ * moved onto postal-mime): it does not read the message, it REWRITES it, replacing an encoded part in
+ * the raw text with its scrubbed 8bit copy. A parser hands back decoded content, never where the part
+ * sits in the raw bytes, so this needs the raw parts and the two decoders below, which live here now
+ * because this is their only user.
+ */
 
 export const SECRET_REDACTED = "[secret redacted]";
 /** The Worker secret that encrypts a hand-off. Vendor-prefixed; never a reserved name. */
@@ -71,6 +77,82 @@ export function nothingButSecrets(scrubbedWritten) {
 }
 
 // ─── The MIME scrub ──────────────────────────────────────────────────────────
+
+/**
+ * `=C2=A0` and a soft line break, undone.
+ *
+ * THE SOFT BREAK IS THE HALF EVERY NAIVE VERSION FORGETS. A quoted-printable line is at most 76
+ * characters and a trailing `=` means "this line did not really end" — so `buyers=C2=A0of Da\ntabricks`
+ * is one word split across a line, and leaving the break in produces text that reads as a typo in
+ * her instruction rather than as a decoding failure.
+ */
+export function decodeQuotedPrintable(text, charset) {
+  const joined = String(text ?? "").replace(/=\r?\n/g, "");
+  const bytes = [];
+  for (let i = 0; i < joined.length; i += 1) {
+    const c = joined[i];
+    if (c === "=" && /^[0-9a-fA-F]{2}$/.test(joined.slice(i + 1, i + 3))) {
+      bytes.push(parseInt(joined.slice(i + 1, i + 3), 16));
+      i += 2;
+      continue;
+    }
+    const code = joined.charCodeAt(i);
+    if (code < 128) { bytes.push(code); continue; }
+    // Already a decoded character (a client that lied about its encoding); keep it as UTF-8 bytes.
+    for (const b of new TextEncoder().encode(c)) bytes.push(b);
+  }
+  return utf8(Uint8Array.from(bytes), charset);
+}
+
+/** Base64 to text. Whitespace is stripped first — a MIME body is wrapped at 76 columns. */
+export function decodeBase64Text(text, charset) {
+  const clean = String(text ?? "").replace(/[^A-Za-z0-9+/=]/g, "");
+  if (!clean) return "";
+  try {
+    const bin = atob(clean);
+    return utf8(Uint8Array.from(bin, (c) => c.charCodeAt(0)), charset);
+  } catch {
+    /*
+     * A TRUNCATED BASE64 PART IS NOT A REASON TO LOSE THE MESSAGE. Returning "" here would be a
+     * silent drop; the caller falls through to the next part, and if every part fails the whole
+     * message is reported as unreadable rather than as empty.
+     */
+    return "";
+  }
+}
+
+/** One `TextDecoder` per label: cheap to reuse, and a bad label only ever fails once. */
+const DECODERS = new Map();
+function decoderFor(label) {
+  let d = DECODERS.get(label);
+  if (d === undefined) {
+    try { d = new TextDecoder(label, { fatal: true }); } catch { d = null; }
+    DECODERS.set(label, d);
+  }
+  return d;
+}
+
+/**
+ * THE PART'S OWN CHARSET WINS (26 Oct 2026 held mail: a windows-1252 em dash and curly apostrophe,
+ * declared or not, came out as U+FFFD because this always decoded as UTF-8). A declared non-UTF-8
+ * charset decodes as itself; an undeclared or UTF-8-declared part that is not actually valid UTF-8
+ * (a client that lied) falls back to windows-1252, the one real mail clients actually emit — never
+ * a guess beyond that, and never a change to the bytes themselves.
+ */
+function utf8(bytes, charset) {
+  const label = String(charset ?? "").trim().toLowerCase();
+  if (label && !["utf-8", "utf8", "us-ascii", "ascii"].includes(label)) {
+    const d = decoderFor(label);
+    if (d) { try { return d.decode(bytes); } catch { /* fall through to UTF-8 / windows-1252 */ } }
+  }
+  try { return new TextDecoder("utf-8", { fatal: true }).decode(bytes); }
+  catch {
+    const fallback = decoderFor("windows-1252");
+    if (fallback) { try { return fallback.decode(bytes); } catch { /* fall through */ } }
+    return String.fromCharCode(...bytes);
+  }
+}
+
 
 function headerOf(part, name) {
   const end = part.search(/\r?\n\r?\n/);
