@@ -125,6 +125,17 @@ const FINGERPRINT = () => {
   return `${location.href}\n${dialogs}\n${states}\n${document.body?.innerText ?? ""}`;
 };
 
+// What a person sees of each control. RN-web 0.21 drops accessibilityState, so a chosen radio or tab often
+// changes only its look (DW plan radios, KMP language and tabs, 22 Nov 2026): a person sees that, so it is
+// never DEAD, but the report names it (a screen reader on the web build is told nothing).
+const LOOK = () => [...document.querySelectorAll("[role],a[href],button,input")]
+  .filter((e) => { const r = e.getBoundingClientRect(); return r.width > 4 && r.height > 4; })
+  .map((e) => { const s = getComputedStyle(e); return `${s.borderTopColor}${s.borderTopWidth}${s.backgroundColor}${s.color}`; }).join("|");
+async function snap(page) {
+  await page.mouse.move(1, 1).catch(() => {}); // the same pointer place as the look taken after the tap
+  return { fp: await page.evaluate(FINGERPRINT).catch(() => ""), look: await page.evaluate(LOOK).catch(() => "") };
+}
+
 /** The controls a person can tap on this screen, in reading order; tappables with no role are named apart. */
 // With `mark`, the same scan tags that one control (data-tap-through-target) so the tap hits exactly the control
 // the sweep counted. A role+name locator counts controls this scan leaves out (screens kept mounted under the
@@ -156,11 +167,12 @@ function locate(page, spec) {
   if (typeof spec === "object" && spec) {
     const n = spec.name != null ? matcher(spec.name) : undefined;
     const l = spec.role ? page.getByRole(spec.role, { name: n, exact: typeof n === "string" }) : page.getByText(n, { exact: typeof n === "string" });
-    return l.nth(spec.nth ?? 0);
+    return l.filter({ visible: true }).nth(spec.nth ?? 0);
   }
+  // Only a copy on show counts: a copy kept mounted out of sight (stacked screens) is never tapped or "seen".
   const n = matcher(spec), exact = typeof n === "string";
   const byRole = CONTROL_ROLES.map((r) => page.getByRole(r, { name: n, exact })).reduce((a, b) => a.or(b));
-  return byRole.or(page.getByText(n, { exact })).first();
+  return byRole.or(page.getByText(n, { exact })).filter({ visible: true }).first();
 }
 
 async function screenText(page) { return page.evaluate(() => document.body?.innerText ?? "").catch(() => ""); }
@@ -198,15 +210,21 @@ async function tap(loc, timeout) {
 }
 
 /** Wait until the screen differs from `before` (up to ms), or a link, dialog or download said it worked. */
+const LOOK_ONLY = "only its look changed (a screen reader on the web build is told nothing)";
 async function changed(page, before, signal, ms = 3000) {
   const t0 = Date.now();
   while (Date.now() - t0 < ms) {
     if (signal.hit) return signal.hit;
     const now = await page.evaluate(FINGERPRINT).catch(() => null);
-    if (now !== null && now !== before) return "the screen changed";
+    if (now !== null && now !== before.fp) return "the screen changed";
     await page.waitForTimeout(150);
   }
-  return signal.hit ?? null;
+  if (signal.hit) return signal.hit;
+  // The pointer moves off first: a hover colour is not a change the tap made.
+  await page.mouse.move(1, 1).catch(() => {});
+  await page.waitForTimeout(200);
+  const look = await page.evaluate(LOOK).catch(() => null);
+  return look !== null && look !== before.look ? LOOK_ONLY : null;
 }
 
 /** Shows where the robot tapped, so the video reads like a person using the app. */
@@ -277,7 +295,7 @@ async function doStep(c, s, flow, target) {
   }
   if (act === "wait") { await page.waitForTimeout(Math.min(Number(s.wait) || 500, 5000)); return { ok: true, what: `waits ${s.wait} ms` }; }
   if (act === "goto") { const r = await load(page, joinUrl(target, s.goto), flow, null); const st = r?.status?.() ?? 0; return st && st < 400 ? { ok: true, what: `opens ${s.goto}` } : { ok: false, code: "STEP_UNREACHABLE", what: `${s.goto} answered ${st || r?.err || "nothing"}` }; }
-  if (act === "back") { const before = await page.evaluate(FINGERPRINT).catch(() => ""); await page.goBack({ timeout: 10_000 }).catch(() => {}); const ch = await changed(page, before, signal); return ch ? { ok: true, what: "goes back" } : { ok: false, code: "DEAD_BUTTON", what: "back changed nothing" }; }
+  if (act === "back") { const before = await snap(page); await page.goBack({ timeout: 10_000 }).catch(() => {}); const ch = await changed(page, before, signal); return ch ? { ok: true, what: "goes back" } : { ok: false, code: "DEAD_BUTTON", what: "back changed nothing" }; }
   const field = (n) => page.getByLabel(n).or(page.getByPlaceholder(n)).or(page.getByRole("textbox", { name: n })).first();
   const loc = act === "fill" ? field(matcher(s.fill)) : locate(page, s.tap);
   const there = await loc.waitFor({ state: "visible", timeout: s.timeout ?? 15_000 }).then(() => true, () => false);
@@ -286,7 +304,7 @@ async function doStep(c, s, flow, target) {
     const ok = await loc.fill(s.value, { timeout: 10_000 }).then(() => true, () => false);
     return ok ? { ok, what: `types into ${s.fill}` } : { ok, code: "STEP_UNREACHABLE", what: `"${s.fill}" cannot be typed into` };
   }
-  const before = await page.evaluate(FINGERPRINT).catch(() => "");
+  const before = await snap(page);
   await showTap(page, loc);
   const clicked = await tap(loc, 10_000);
   if (clicked !== true) return { ok: false, code: "STEP_UNREACHABLE", what: `"${s.tap}" could not be tapped (${clicked})`, tapped: false };
@@ -343,10 +361,16 @@ async function sweep(browser, flow, target, origin, j, at, c, ctx) {
     }
     budget.left--; here++; swept.add(key);
     await cur.page.evaluate(() => document.querySelectorAll("[data-tap-through-target]").forEach((e) => e.removeAttribute("data-tap-through-target"))).catch(() => {});
-    const { marked } = await cur.page.evaluate(CONTROLS, { roles: CONTROL_ROLES, mark: { role: k.role, full, nth: k.nth } }).catch(() => ({ marked: false }));
+    // The replayed screen may still be drawing (lists load after the screen opens): wait for the control as a
+    // locator click would, up to 5 s. An instant look made AP, APM and PBS controls "gone" (22 Nov 2026).
+    let marked = false;
+    for (const t0 = Date.now(); !marked && Date.now() - t0 < 5_000; ) {
+      ({ marked } = await cur.page.evaluate(CONTROLS, { roles: CONTROL_ROLES, mark: { role: k.role, full, nth: k.nth } }).catch(() => ({ marked: false })));
+      if (!marked) await cur.page.waitForTimeout(250);
+    }
     if (!marked) { results.push({ ...shown, result: "gone when this screen was opened again" }); ctx.failures.push({ code: "STEP_UNREACHABLE", where: `${j.name} step ${at + 1} sweep`, what: `the ${k.role} "${k.name}" was not there when the screen was opened again (the screen differs each time)` }); fresh = false; continue; }
     const loc = cur.page.locator("[data-tap-through-target]");
-    const before = await cur.page.evaluate(FINGERPRINT).catch(() => "");
+    const before = await snap(cur.page);
     cur.signal.hit = null; cur.signal.accept = false;
     const clicked = await tap(loc, 5_000);
     if (clicked !== true) { results.push({ ...shown, result: `could not be tapped (${clicked})` }); ctx.failures.push({ code: "STEP_UNREACHABLE", where: `${j.name} step ${at + 1} sweep`, what: `the ${k.role} "${k.name}" is shown but cannot be tapped (${clicked.slice(0, 120)})` }); continue; }
@@ -469,6 +493,8 @@ export async function run({ flow, target, out, schemes = ["light", "dark"], chro
   f.push(report.failures.length ? `${report.failures.length} named failures: ${report.failures.map((x) => `${x.code} at ${x.where}: ${x.what}`).join(" | ")}` : "no named failures: no dead button, console error, error screen, unreachable step or unbuilt promise");
   if (notes.blocked.size) f.push(`writes blocked (the tap-through never writes): ${[...notes.blocked].slice(0, 8).join(", ")}`);
   if (notes.external.size) f.push(`opens outside the app (not followed): ${[...notes.external].slice(0, 10).join(", ")}`);
+  const lookOnly = report.sweeps.flatMap((s) => s.results.filter((r) => r.result === LOOK_ONLY).map((r) => `${s.journey}: "${r.name}"`));
+  if (lookOnly.length) f.push(`chosen by its look alone (the web build hides the state from a screen reader; the phone build reads accessibilityState): ${lookOnly.slice(0, 8).join("; ")}`);
   if (notes.noRole.length) f.push(`tappable with no role (a screen reader does not call it a button): ${notes.noRole.slice(0, 6).join("; ")}`);
   if (notes.unnamed.length) f.push(`controls with no name: ${notes.unnamed.slice(0, 6).join("; ")}`);
   for (const nf of flow.native_only ?? []) f.push(`NOT RUN ON THE WEB PREVIEW (native only): ${nf.feature}: ${nf.why}${nf.simulator ? `; the iOS-simulator capture is ${nf.simulator}` : "; no iOS-simulator capture exists yet"}`);

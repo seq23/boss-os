@@ -10,9 +10,9 @@ const broken = new URLSearchParams(location.search).has("broken");
 if (broken) console.error("planted: the broken fixture logs an error on load");
 const screens = {
   "": () => `<h1>Fixture app</h1><p>Keep your proof in one place.</p>
-    <button data-go="task">Start</button><!-- a copy kept mounted out of sight (as stacked screens are): the sweep must tap the one on show --><button style="position:absolute;width:2px;height:2px;overflow:hidden;opacity:0.01">See plans</button><button data-go="plans">See plans</button>
+    <button data-go="task">Start</button><!-- a copy kept mounted out of sight (as stacked screens are): every tap must hit the one on show --><button style="position:absolute;width:0;height:0;padding:0;border:0;overflow:hidden">See plans</button><button data-go="plans">See plans</button>
     <button data-go="settings">Settings</button>${broken ? '<button id="help">Help</button>' : '<button data-go="help">Help</button>'}
-    <div role="radiogroup" aria-label="Look"><button role="radio" aria-checked="true">Light look, chosen</button></div><button aria-selected="true">✓ English</button>
+    <div role="radiogroup" aria-label="Look"><button role="radio" aria-checked="true">Light look, chosen</button></div><button aria-selected="true">✓ English</button><!-- chosen by its look alone (as RN-web draws accessibilityState): a person sees it change, so it is never DEAD --><button data-look>Large text</button>
     <button data-go="saved">Open the proof you saved last, with its photos, its receipt, its notes and the date it was taken, so you can show it to anyone who asks</button>
     <nav role="tablist"><button role="tab" aria-selected="true">Home, current tab</button><button role="tab" aria-selected="false" data-go="plans">Plans tab</button></nav>`,
   task: () => `<h1>New proof</h1><label>Title <input aria-label="Title"></label><button data-go="saved">Save</button><button data-go="">Back home</button>`,
@@ -32,6 +32,7 @@ document.addEventListener("click", (e) => {
   // "Start" blanks the screen for a moment first, like a real app's transition: never a blank-screen failure.
   if (b.dataset.go === "task") { document.getElementById("app").innerHTML = ""; setTimeout(() => { location.hash = "/task"; }, 600); return; }
   if (b.dataset.go != null) location.hash = "/" + b.dataset.go;
+  if (b.hasAttribute("data-look")) b.style.borderColor = b.style.borderColor ? "" : "rgb(0, 90, 200)";
   if (b.id === "dm") b.setAttribute("aria-checked", b.getAttribute("aria-checked") === "true" ? "false" : "true");
   if (b.id === "del") fetch("/api/delete", { method: "POST" }).then(() => { document.getElementById("app").innerHTML = "<h1>Deleted</h1><p>All gone.</p>"; }, () => { document.getElementById("app").innerHTML = "<h1>Deleted</h1><p>All gone (test value).</p>"; });
 });
