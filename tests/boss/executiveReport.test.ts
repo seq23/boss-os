@@ -624,7 +624,7 @@ describe("the sourcing duty is scoped and honest about what it cannot do", () =>
 
   it("finishes before the report starts, so the two never contend for the single work slot", async () => {
     /*
-     * 21 Nov 2026 (the Mac's day, 0372): the report moved to 04:00 and sourcing to 10:30 Mon/Wed/Fri,
+     * 21 Nov 2026 (the Mac's day, 0373): the report moved to 04:00 and sourcing to 10:30 Mon/Wed/Fri,
      * AFTER it: the report's start plus twice its worst run (2 x 30 min) ends long before sourcing
      * starts, and sourcing starts once the Mac is back (10:00). The rule is the same: never both.
      * 1 Nov 2026 (owner's rebalanced week): sourcing moved from 06:45 to 05:30, BEFORE the 06:00

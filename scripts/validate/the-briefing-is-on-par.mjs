@@ -54,7 +54,7 @@ const FILES = {
   launchd: "scripts/ops/install-agent-launchd.sh",
   screen: "src/client/boss/pages/Today.tsx",
   migration: "migrations/0257_boss_the_briefing_on_par_with_the_one_she_pays_for.sql",
-  macDay: "migrations/0372_boss_the_macs_day.sql",
+  macDay: "migrations/0373_boss_the_macs_day.sql",
   ladderMigration: "migrations/0258_boss_the_briefing_walks_her_two_seats_then_the_rungs.sql",
   consumer: "src/worker/boss/queue/consumer.ts",
   agent: "scripts/sync-agent/agent.mjs",
@@ -288,7 +288,7 @@ export async function check({ spec, fixture, prompt, files, deliveredAt, ladder,
   if (!/retryFailedBriefing\(/.test(F.deliver) || !/materialiseDueDuties\(env, now, "duty_exec_intel"\)/.test(F.deliver)) problems.push("deliverReport.ts does not re-queue a failed morning.");
   if (!/local_hour = 6,\s*local_minute = 0/.test(F.migration)) problems.push("Migration 0257 does not move the duty to 06:00 Central.");
   // 21 Nov 2026 (the Mac's day: morning work done by 06:30 with twice its worst runtime to spare): 04:00.
-  if (!/SET local_hour = 4, local_minute = 0, [^;]*WHERE id = 'duty_exec_intel'/.test(F.macDay)) problems.push("Migration 0372 does not move the briefing duty to 04:00 Central.");
+  if (!/SET local_hour = 4, local_minute = 0, [^;]*WHERE id = 'duty_exec_intel'/.test(F.macDay)) problems.push("Migration 0373 does not move the briefing duty to 04:00 Central.");
   if (!/'\$\.prompt'\s*\)/.test(F.migration) || !/json_remove/.test(F.migration)) problems.push("Migration 0257 does not remove $.prompt from the duty row.");
   if (!/'\$\.spec_module', 'executive_briefing'/.test(F.migration)) problems.push("Migration 0257 does not point the duty at the module.");
   for (const [re, what] of [

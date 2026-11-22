@@ -69,4 +69,4 @@ UPDATE standing_duties SET local_hour = 5, local_minute = 58, next_due_at = (uni
 -- duty_brokerage_sourcing: mon,wed,fri 10:30 (after the 04:00 report, never beside it on the one seat; the Mac is back at 10:00)
 UPDATE standing_duties SET local_hour = 10, local_minute = 30, next_due_at = (unixepoch(date('now', '+1 day', 'weekday 1')) + 16 * 3600 + 30 * 60) * 1000 WHERE id = 'duty_brokerage_sourcing';
 
-INSERT OR IGNORE INTO schema_version (migration) VALUES ('0372_boss_the_macs_day');
+INSERT OR IGNORE INTO schema_version (migration) VALUES ('0373_boss_the_macs_day');

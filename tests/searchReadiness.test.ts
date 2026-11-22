@@ -608,7 +608,7 @@ describe("the fix queue is worked to empty, then weekly on Tuesday (owner, 25 Oc
     expect(readFileSync("migrations/0327_boss_the_rebalanced_week.sql", "utf8")).toMatch(/local_hour = 6, local_minute = 30, next_due_at = \(unixepoch\(date\('now', '\+1 day', 'weekday 2'\)\) \+ 12 \* 3600 \+ 30 \* 60\) \* 1000\n WHERE id = 'duty_search_readiness_repair'/);
     const audit = installer.slice(installer.indexOf('SR_LABEL="com.seq.boss-sites-audit"'), installer.indexOf("\nSREOF\n", installer.indexOf('SR_LABEL="com.seq.boss-sites-audit"')));
     expect(audit).toMatch(/<key>Weekday<\/key><integer>1<\/integer><key>Hour<\/key><integer>5<\/integer><key>Minute<\/key><integer>40<\/integer>/);
-    expect(readFileSync("migrations/0372_boss_the_macs_day.sql", "utf8")).toMatch(/local_hour = 22, local_minute = 15,[^\n]*WHERE id = 'duty_search_readiness_repair'/);
+    expect(readFileSync("migrations/0373_boss_the_macs_day.sql", "utf8")).toMatch(/local_hour = 22, local_minute = 15,[^\n]*WHERE id = 'duty_search_readiness_repair'/);
     expect(readFileSync("scripts/ops/ahrefs-audit-fix.sh", "utf8")).toMatch(/SR_SCOPE_REPO/);
     const driver = readFileSync("scripts/ops/search-readiness-fix.sh", "utf8");
     expect(driver).toMatch(/fixed nothing; stopping/);

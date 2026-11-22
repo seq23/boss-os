@@ -199,7 +199,7 @@ describe("the week is wired", () => {
     const thu = /SELLERS_LABEL="com\.seq\.boss-capital-sellers"[\s\S]*?\nSELLERSEOF\n/.exec(installer)?.[0] ?? "";
     expect(thu).toMatch(/duty-run\.sh seller-hunt\.mjs -- npm run --silent capital:sellers -- --send --email/);
     expect(thu).toMatch(/<key>Weekday<\/key><integer>4<\/integer><key>Hour<\/key><integer>10<\/integer><key>Minute<\/key><integer>5<\/integer>/);
-    expect(readFileSync(join(ROOT, "migrations/0372_boss_the_macs_day.sql"), "utf8")).toMatch(/local_hour = 10, local_minute = 5,[^\n]*'weekday 4'[^\n]*WHERE id = 'duty_seller_hunt'/);
+    expect(readFileSync(join(ROOT, "migrations/0373_boss_the_macs_day.sql"), "utf8")).toMatch(/local_hour = 10, local_minute = 5,[^\n]*'weekday 4'[^\n]*WHERE id = 'duty_seller_hunt'/);
   });
   it("the Thursday duty is Monique's, weekly on Thursday at 07:00", () => {
     const sql = readFileSync(join(ROOT, "migrations/0328_boss_the_brokerage_week.sql"), "utf8");

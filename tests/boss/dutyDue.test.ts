@@ -161,7 +161,7 @@ describe("duty_site_audit_repair after 0246", () => {
      * happens to choose. `validate:audit-fixer` holds the same line from outside the database.
      */
     expect(duty?.weekday).toBe(4);
-    // 22:15 Central Thursday night since the Mac's day (21 Nov 2026; 0372; 05:00 from 0327); its plist ticks then.
+    // 22:15 Central Thursday night since the Mac's day (21 Nov 2026; 0373; 05:00 from 0327); its plist ticks then.
     expect(duty?.local_hour).toBe(22);
     expect(duty?.local_job).toBe("ahrefs-audit-fix.sh");
 
@@ -170,7 +170,7 @@ describe("duty_site_audit_repair after 0246", () => {
     // A Thursday, because that is the day the cadence names. 4 = Thursday, 0 = Sunday.
     expect(new Date(duty.next_due_at).getUTCDay()).toBe(5); // 22:15 CST Thursday is 04:15 UTC Friday
     /*
-     * 04:15 UTC Friday is 22:15 America/Chicago Thursday in winter (0372, the Mac's day, moved the pass
+     * 04:15 UTC Friday is 22:15 America/Chicago Thursday in winter (0373, the Mac's day, moved the pass
      * from 05:00 to Thursday night) and one hour EARLY in summer — the safe direction, because the daily
      * tick asks "am I due?" at 22:15 local and must already find yes. Seeding late would settle the run permanently on Friday.
      */
