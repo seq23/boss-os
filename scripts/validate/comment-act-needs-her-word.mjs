@@ -41,6 +41,8 @@ const FILES = {
   routes: "src/worker/boss/routes/commentWatch.ts",
   mac: "scripts/ops/youtube-comment-watch.mjs",
   lane: "src/shared/boss/commentWatch/lane.mjs",
+  // The per-number forms live in the one list of meanings (22 Nov 2026); the lane prints them from there.
+  intents: "src/shared/boss/intake/intents.mjs",
 };
 const read = (rel) => readFileSync(join(ROOT, rel), "utf8");
 const strip = (src) => src.replace(/\/\*[\s\S]*?\*\//g, "").replace(/(^|[^:"'`])\/\/[^\n]*/g, "$1");
@@ -92,7 +94,9 @@ export function findings(src) {
   // The empty-digest rule and the reply forms.
   if (!/shouldEmail\(/.test(mac) || !/NOTHING_TO_REPORT/.test(mac)) problems.push("mac: the empty digest is not the no-email, NOTHING_TO_REPORT path");
   if (!/items\.length > 0/.test(lane)) problems.push("lane: shouldEmail does not gate on items");
-  const forms = lane.match(/REPLY_FORMS\s*=\s*\[[\s\S]*?\];/)?.[0] ?? "";
+  const laneForms = lane.match(/REPLY_FORMS\s*=\s*\[[\s\S]*?\];/)?.[0] ?? "";
+  const table = /COMMENT_ACTION_TABLE\.map\(/.test(laneForms) ? (src.intents ?? "").match(/COMMENT_ACTION_TABLE\s*=[\s\S]*?\]\);/)?.[0] ?? "" : "";
+  const forms = laneForms + table;
   for (const form of ["`1 delete`", "`2 reply as drafted`", "`3 reply: <your words>`", "`4 ignore`", "`your call`"]) {
     if (!forms.includes(form)) problems.push(`lane: the reply forms no longer print ${form}`);
   }
@@ -126,6 +130,7 @@ function selfTest() {
     ["a second writer of instructed_at in the routes", (s) => ({ ...s, routes: s.routes + "\nconst x = `UPDATE comment_watch_items SET instructed_at = 1 WHERE 1`;\n" }), /2 writer/],
     ["the write drops source", (s) => ({ ...s, answer: s.answer.replace("instructed_at = ?, source = ?", "instructed_at = ?") }), /instructed_by and source/],
     ["the write can overwrite", (s) => ({ ...s, answer: s.answer.replace("AND instructed_at IS NULL", "") }), /overwrite/],
+    ["the shared list stops printing a form", (s) => ({ ...s, intents: s.intents.replace("`1 delete`", "`1 remove`") }), /no longer print `1 delete`/],
     ["your call loses its phrase", (s) => ({ ...s, answer: s.answer.replace("pre-approved by her reply", "approved") }), /pre-approval/],
     ["the feed forgets instructed_at", (s) => ({ ...s, routes: s.routes.replace("i.instructed_at IS NOT NULL AND", "") }), /require instructed_at/],
     ["the feed hands out applied rows", (s) => ({ ...s, routes: s.routes.replace("AND i.applied_at IS NULL", "") }), /exclude applied/],
