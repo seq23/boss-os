@@ -5,19 +5,22 @@
  * #537 pushed a fix and waited the whole gate (~10 minutes) to learn whether the two suites that failed
  * were green now. This runs first on a pull request: it reads the PR's previous CI run on another commit,
  * and if that run FAILED it re-runs exactly the suites that failed there (vitest's "FAIL tests/…" lines),
- * each under its own config. Red here stops the gate in about two minutes; green lets the full gate run,
- * unchanged, so nothing the full gate checks is skipped.
+ * as the FIRST step of shard 1 of each pool (`unit`, `boss`), so it has the gate's own setup by
+ * construction and runs through the gate's own runner (vitest-pool.mjs). Red stops that shard in about
+ * two minutes, so the PR shows red early; green lets the shard run on. The other shards never wait, and
+ * nothing the full gate checks is skipped.
  *
  * Nothing to re-check (not a PR, no earlier run, the earlier run passed or was cancelled, or its failure
  * was not a test suite, e.g. a scan or the build) prints why and exits 0: the full gate decides.
  *
- *   node scripts/ops/recheck-failed.mjs --plan     # in CI: write files=<list> to GITHUB_OUTPUT (no install needed)
- *   RECHECK_FILES="<files…>" node scripts/ops/recheck-failed.mjs --run   # run those suites, each under its own config
+ *   node scripts/ops/recheck-failed.mjs --plan --pool node|boss    # in CI: files=<that pool's list> to GITHUB_OUTPUT
+ *   RECHECK_FILES="<files…>" node scripts/ops/recheck-failed.mjs --run --pool node|boss
  *   node scripts/ops/recheck-failed.mjs --self-test
  * Exit: 0 green or nothing to re-check · 1 a suite that failed last time still fails.
  */
-import { execFileSync, spawnSync } from "node:child_process";
+import { execFileSync } from "node:child_process";
 import { appendFileSync, existsSync, readFileSync } from "node:fs";
+import { runPool } from "./vitest-pool.mjs";
 import { fileURLToPath } from "node:url";
 
 /** Only plain repo test paths pass (the list came from a log). Pure. */
@@ -42,8 +45,11 @@ export function previousRun(runs, headSha) {
 
 const gh = (args) => execFileSync("gh", args, { encoding: "utf8", stdio: ["ignore", "pipe", "pipe"], maxBuffer: 256 * 1024 * 1024 });
 
-function plan() {
-  const files = pick();
+/** The suites of one pool: boss suites live under tests/boss/, every other suite is the node pool. Pure. */
+export const ofPool = (files, pool) => files.filter((f) => f.startsWith("tests/boss/") === (pool === "boss"));
+
+function plan(pool) {
+  const files = ofPool(pick(), pool);
   if (process.env.GITHUB_OUTPUT) appendFileSync(process.env.GITHUB_OUTPUT, `files=${files.join(" ")}\n`);
 }
 
@@ -70,14 +76,10 @@ function pick() {
   return files;
 }
 
-function run(files) {
-  const boss = files.filter((f) => f.startsWith("tests/boss/"));
-  const node = files.filter((f) => !f.startsWith("tests/boss/"));
-  let failed = false;
-  if (node.length) failed = spawnSync("npx", ["--no-install", "vitest", "run", "--no-file-parallelism", ...node], { stdio: "inherit" }).status !== 0 || failed;
-  if (boss.length) failed = spawnSync("npx", ["--no-install", "vitest", "run", "--config", "vitest.boss.config.ts", ...boss], { stdio: "inherit" }).status !== 0 || failed;
-  if (failed) { console.log("::error::a suite that failed last time still fails; the full gate is not run on this commit"); process.exit(1); }
-  console.log("recheck: every suite that failed last time passes now; the full gate runs");
+async function run(pool, files) {
+  if (!files.length) return console.log("recheck: nothing to re-check in this pool");
+  if ((await runPool(pool, files)) !== 0) { console.log("::error::a suite that failed last time still fails; this shard stops here"); process.exit(1); }
+  console.log("recheck: every suite that failed last time passes now; this shard runs on");
 }
 
 function selfTest() {
@@ -92,7 +94,14 @@ function selfTest() {
   if (previousRun([{ databaseId: 1, headSha: "new", status: "completed" }], "new") !== null) throw new Error("previousRun picked this commit's own run");
   if (safeFiles("tests/a.test.ts;rm tests/$(x).test.ts ../tests/b.test.ts").length) throw new Error("safeFiles let an unsafe path through");
   if (safeFiles("tests/checkChanged.test.ts").length !== 1) throw new Error("safeFiles refused a real suite");
+  if (JSON.stringify(ofPool(["tests/a.test.ts", "tests/boss/b.test.ts"], "boss")) !== '["tests/boss/b.test.ts"]' || ofPool(["tests/boss/b.test.ts"], "node").length) throw new Error("ofPool split the pools wrong");
   console.log("recheck-failed self-test: ok");
 }
 
-if (process.argv[1] && fileURLToPath(import.meta.url) === process.argv[1]) process.argv.includes("--self-test") ? selfTest() : process.argv.includes("--plan") ? plan() : run(safeFiles(process.env.RECHECK_FILES ?? ""));
+if (process.argv[1] && fileURLToPath(import.meta.url) === process.argv[1]) {
+  const pool = process.argv.includes("--pool") ? process.argv[process.argv.indexOf("--pool") + 1] : "";
+  if (process.argv.includes("--self-test")) selfTest();
+  else if (pool !== "node" && pool !== "boss") { console.error("recheck: --pool node|boss is required"); process.exit(2); }
+  else if (process.argv.includes("--plan")) plan(pool);
+  else run(pool, ofPool(safeFiles(process.env.RECHECK_FILES ?? ""), pool));
+}
