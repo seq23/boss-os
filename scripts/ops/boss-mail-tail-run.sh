@@ -2,7 +2,7 @@
 #
 # One tail agent for boss-mail-tail.sh: runs `claude -p --model opus` with a 2 h hard cap, then
 # folds the report (or, if the agent wrote none, an INCOMPLETE one naming its log) into Simone's
-# morning email through boss-mail-tail-report.mjs under the Boss OS vault runner. Always clears the agent lock.
+# morning email through boss-mail-tail-report.mjs under the Boss OS vault runner. Holds the agent lock for its whole life.
 #
 # THE HARNESS KILLS A BACKGROUND TASK 10 MINUTES AFTER THE AGENT'S LAST TURN (owner incident,
 # 1 Nov 2026): the 17:48Z run handed its fix to a background subagent and ended its own turn; the
@@ -13,7 +13,8 @@
 # bounded --resume asks that same session to write it; failing that, any uncommitted worktree the
 # agent cut (boss-mail-tail.sh now works in one, never in $REPO itself) is salvaged rather than
 # lost, and the branch it lands on is named in the INCOMPLETE report.
-#   boss-mail-tail-run.sh <prompt> <tail.jsonl> <lockdir> <claude> <report.txt> <subjects> <since>
+#   boss-mail-tail-run.sh <prompt> <tail.jsonl> <lockfile> <claude> <report.txt> <subjects> <since>
+# It holds <lockfile> (lib/flock.sh) for its whole life, so the tick sees it running however it ends.
 set -uo pipefail
 PROMPT_FILE="$1" TAIL_LOG="$2" FIXLOCK="$3" CLAUDE="$4" REPORT_FILE="$5" SUBJECT="${6:-your email}" SINCE="${7:-}"
 REPO="${BOSS_OS_REPO:-$(cd "$(dirname "$(readlink -f "${BASH_SOURCE[0]}")")/../.." && pwd)}"  # the checkout this script lives in, symlinks followed (launchd: the runtime)
@@ -21,7 +22,18 @@ LIB="$REPO/scripts/ops/lib/tail-report.mjs"
 STATE_DIR="$(dirname "$TAIL_LOG")"
 REPORT_LOG="$STATE_DIR/report.log"
 CAP_SECONDS="${BOSS_MAIL_TAIL_CAP_SECONDS:-7200}"
+# The tick starts this runner with its output thrown away, so every warning of its own (LOCK_LOST from release_lock at
+# exit included) goes to report.log beside the others. The agent, node and vault calls keep their own redirects.
+exec 2>>"$REPORT_LOG"
 export CLAUDE_CODE_PRINT_BG_WAIT_CEILING_MS=0
+# shellcheck source=lib/flock.sh
+. "$REPO/scripts/ops/lib/flock.sh"
+LOCK_RC=0; hold_lock "$FIXLOCK" || LOCK_RC=$?
+case $LOCK_RC in
+  0) ;;
+  1) echo "$(date -u +%Y-%m-%dT%H:%M:%SZ) another tail agent holds $FIXLOCK; this one steps aside" >> "$REPORT_LOG"; exit 0 ;;
+  *) echo "$(date -u +%Y-%m-%dT%H:%M:%SZ) NAMED STOP [LOCK_FAILED] cannot lock $FIXLOCK; no agent started" >> "$REPORT_LOG"; exit 3 ;;
+esac
 
 (cd "$REPO" && exec "$CLAUDE" -p "$(cat "$PROMPT_FILE")" --model opus --output-format stream-json --verbose --dangerously-skip-permissions) >> "$TAIL_LOG" 2>&1 &
 AGENT=$!
@@ -78,5 +90,4 @@ else
   echo "$(date -u +%Y-%m-%dT%H:%M:%SZ) FAILED to fold $REPORT_FILE into the morning email: $OUT" >> "$REPORT_LOG"
   /usr/bin/osascript -e "display notification \"Tail report not folded — see $REPORT_LOG\" with title \"Boss OS tail\" sound name \"Basso\"" >/dev/null 2>&1
 fi
-rm -rf "$FIXLOCK"
 rm -f "$PROMPT_FILE"

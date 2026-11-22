@@ -31,14 +31,14 @@ exec > >(tee -a "$RUN_LOG") 2>&1
 # Keep two weeks of tick logs.
 find "$LOG_DIR" -maxdepth 1 -name '2*.log' -mtime +14 -delete 2>/dev/null || true
 
-LOCK="$LOG_DIR/.lock"
-if ! mkdir "$LOCK" 2>/dev/null; then
-  HOLDER="$(cat "$LOCK/pid" 2>/dev/null)"
-  if [ -n "$HOLDER" ] && kill -0 "$HOLDER" 2>/dev/null; then echo "[lock] a tick is running (pid $HOLDER)"; exit 0; fi
-  echo "[lock] stale lock (pid ${HOLDER:-none}) — broken"; rm -rf "$LOCK"; mkdir "$LOCK" || exit 1
-fi
-echo $$ > "$LOCK/pid"
-trap 'rm -rf "$LOCK" 2>/dev/null' EXIT
+LOCK="$LOG_DIR/.lock.flock"
+source "$(dirname "$(readlink -f "${BASH_SOURCE[0]}")")/lib/flock.sh"  # one run at a time, held by the kernel (lib/flock.sh)
+LOCK_RC=0; hold_lock "$LOCK" || LOCK_RC=$?
+case $LOCK_RC in
+  0) ;;
+  1) echo "[lock] a tick is running"; exit 0 ;;
+  *) echo "[lock] NAMED STOP [LOCK_FAILED] cannot lock $LOCK"; exit 1 ;;
+esac
 
 START_FILE="$STATE_DIR/started_at_ms"
 TAILED_FILE="$STATE_DIR/tailed-mail-ids.txt"
@@ -68,12 +68,15 @@ echo "[tail] $(printf '%s' "$ROWS" | grep -c . || true) tailed-outcome row(s) si
 
 PENDING="$(printf '%s\n' "$ROWS" | awk -F'\t' -v tailed="$TAILED_FILE" 'BEGIN{while((getline l < tailed)>0) t[l]=1} $1!="" && !($1 in t)')"
 COUNT="$(printf '%s' "$PENDING" | grep -c . || true)"
-FIXLOCK="$STATE_DIR/.agent-lock"
+# The running tail agent holds this kernel lock (lib/flock.sh) for its whole life; the tick only asks.
+FIXLOCK="$STATE_DIR/.agent-lock.flock"
 if [ "$COUNT" -eq 0 ]; then echo "[tail] nothing new"; exit 0; fi
-if [ -d "$FIXLOCK" ] && kill -0 "$(cat "$FIXLOCK/pid" 2>/dev/null)" 2>/dev/null; then
-  echo "[tail] $COUNT email(s) queued behind the agent running since $(cat "$FIXLOCK/started_at" 2>/dev/null)"; exit 0
-fi
-rm -rf "$FIXLOCK"
+BUSY=0; lock_busy "$FIXLOCK" || BUSY=$?
+case $BUSY in
+  0) echo "[tail] $COUNT email(s) queued behind the agent already running"; exit 0 ;;
+  1) ;;
+  *) echo "[tail] NAMED STOP [LOCK_FAILED] cannot read $FIXLOCK; not dispatching blind (the next tick retries)"; exit 1 ;;
+esac
 
 STAMP="$(date -u +%Y%m%dT%H%M%SZ)"
 LOCAL_STAMP="$(date +%Y%m%d-%H%M%S)"
@@ -143,12 +146,13 @@ so in the report rather than omitting it):
      line "FRICTION_FIXED: <n>". No tables, no markdown.
 PROMPT
 
-mkdir -p "$FIXLOCK"
-date -u +%Y-%m-%dT%H:%M:%SZ > "$FIXLOCK/started_at"
 printf '%s\n' "$PENDING" | awk -F'\t' '{print $1}' >> "$TAILED_FILE"
 CLAUDE="${BOSS_MAIL_TAIL_CLAUDE_BIN:-$(command -v claude || echo /opt/homebrew/bin/claude)}"
 nohup bash "$REPO/scripts/ops/boss-mail-tail-run.sh" "$PROMPT_FILE" "$TAIL_LOG" "$FIXLOCK" "$CLAUDE" "$REPORT_FILE" "$SUBJECTS" "$LOCAL_STAMP" </dev/null >/dev/null 2>&1 &
-echo "$!" > "$FIXLOCK/pid"
-disown "$!" 2>/dev/null
-echo "[tail] agent dispatched (pid $(cat "$FIXLOCK/pid")) for $COUNT email(s): $SUBJECTS"
-exit 0
+AGENT_PID=$!
+disown "$AGENT_PID" 2>/dev/null
+# This tick still holds the tick lock, so no other tick can dispatch until the runner has taken the agent lock.
+i=0; while [ "$i" -lt 150 ] && ! lock_busy "$FIXLOCK" && kill -0 "$AGENT_PID" 2>/dev/null; do sleep 0.1; i=$((i + 1)); done
+if lock_busy "$FIXLOCK"; then echo "[tail] agent dispatched (pid $AGENT_PID) for $COUNT email(s): $SUBJECTS"; exit 0; fi
+echo "[tail] NAMED STOP [AGENT_NOT_STARTED] the tail agent (pid $AGENT_PID) never took $FIXLOCK; see $STATE_DIR/report.log"
+exit 1

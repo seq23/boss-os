@@ -622,8 +622,29 @@ export function paymentLinksIn(text) {
   return cardLinks.length ? cardLinks : links;
 }
 
-export function readErrandReply(text, address = "them", subject = "") {
-  const offer = errandOffer(`${subject}\n${text}`);
+/**
+ * WHAT THEIR ANSWER MEANS, READ BY A MODEL (eng sweep row 7, 22 Nov 2026), laid over the keywords'
+ * offer: the model's "confirmed" lets the booking stand only where the code's own checks also hold (one
+ * time, nothing asked, no fee, card or rule); "unavailable", "asks" and "unsure" can only make it hers
+ * to decide. A card, a fee or a need the code finds is never read away. No meaning: the keywords alone.
+ */
+export const ERRAND_MEANINGS = ["confirmed", "unavailable", "asks", "other"];
+export function withErrandMeaning(offer, meaning) {
+  if (!meaning) return offer;
+  if (meaning === "confirmed") return { ...offer, confirms: true };
+  if (meaning === "unavailable") return { ...offer, confirms: false, unavailable: true };
+  if (meaning === "other") return { ...offer, confirms: false };
+  return { ...offer, confirms: false, asks: true };
+}
+/** What the keywords alone read, in the model's words: the fallback the record names. */
+export function errandKeywordMeaning(read) {
+  if (read.kind === "confirmed") return "confirmed";
+  if (read.kind === "other") return "other";
+  return read.offer.unavailable ? "unavailable" : "asks";
+}
+
+export function readErrandReply(text, address = "them", subject = "", meaning = null) {
+  const offer = withErrandMeaning(errandOffer(`${subject}\n${text}`), meaning);
   const said = ownWords(text).trim();
   const t = said.replace(/\s+/g, " ").trim();
   const at = address && address !== "them" ? `them at ${address}` : "them";

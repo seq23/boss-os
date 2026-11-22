@@ -99,7 +99,7 @@ export async function secretDoor(
   if (!read.found.length && !read.refused.length) {
     return { raw: input.raw, stored: [], refused: [], onlySecrets: false, resumed: [], line: null };
   }
-  const raw = scrubSecretValues(input.raw, read.values);
+  const raw = await scrubSecretValues(input.raw, read.values);
   const repo = repoIn(`${input.subject}\n${read.scrubbed}`) ?? registeredRepoIn(`${input.subject}\n${read.scrubbed}`)?.repo ?? null;
   const configured = await secretDoorConfigured(env);
   const stored: SecretDoorOutcome["stored"] = [];

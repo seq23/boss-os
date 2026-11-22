@@ -23,6 +23,7 @@ function runDriver(parallel: string | null, chunks: string[]): Ev[] {
   copyFileSync("scripts/ops/search-readiness-fix.sh", join(repo, "scripts/ops/search-readiness-fix.sh"));
   mkdirSync(join(repo, "scripts/ops/lib"), { recursive: true });
   copyFileSync("scripts/ops/lib/net-wait.sh", join(repo, "scripts/ops/lib/net-wait.sh"));
+  copyFileSync("scripts/ops/lib/flock.sh", join(repo, "scripts/ops/lib/flock.sh"));
   // The network is faked UP (the runner probes it before every audit): no real request leaves the test.
   const bin = join(home, "bin");
   mkdirSync(bin);
@@ -89,7 +90,7 @@ describe("search-readiness-fix.sh runs repos in parallel, one pass per repo at a
     expect(driver).toMatch(/PARALLEL="\$\{SR_PARALLEL:-3\}"/);
     expect(driver).toMatch(/SR_SCOPE_REPO="\$rr" SR_SCOPE_BRIEFS="\$ids" bash scripts\/ops\/ahrefs-audit-fix\.sh/);
     const fixer = readFileSync("scripts/ops/ahrefs-audit-fix.sh", "utf8");
-    expect(fixer).toContain('LOCK="$LOG_DIR/.lock${SR_SCOPE_REPO:+-sr-$SR_SCOPE_REPO}"');
+    expect(fixer).toContain('LOCK="$LOG_DIR/.lock${SR_SCOPE_REPO:+-sr-$SR_SCOPE_REPO}.flock"');
     expect(fixer).toContain('OUT_DIR="$OUT_DIR/sr-$SR_SCOPE_REPO"');
     expect(fixer).toContain('export BOSS_OS_SITE_AUDIT_DIR="$OUT_DIR"');
     expect(fixer).toContain("s#~/.boss-os/site-audit/findings.json#$OUT_DIR/findings.json#g");

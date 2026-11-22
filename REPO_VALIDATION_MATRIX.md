@@ -1,15 +1,7 @@
-> ### ⚠️ This document describes the West Peek chassis, not Boss OS.
->
-> This repository is **Boss OS v21**, live at boss.sequoiataylor.com. It was built by cloning West
-> Peek OS and porting the Boss OS v20 artifact into it, so the documents at the repository root —
-> this one included — were inherited from the chassis and describe *it*. They use **P0–P25**
-> numbering and talk about LPs, dealflow and Managing Partners. None of that is Boss OS.
->
-> **Boss OS's own authority is [`docs/boss/`](docs/boss/), and [`STATUS.md`](STATUS.md) is the plain
-> account of what this repo is, what is built, and what is deliberately not.**
->
-> This document is kept rather than deleted because the chassis is still in the tree and still under
-> test, and its rules still govern the half of the code it describes. It goes when the chassis does.
+> **Historical: retired 22 Nov 2026.** This describes the West Peek fund code copied into this repo,
+> which retired on 22 Nov 2026. West Peek OS (the `west-peek-os` repo) holds the live version. Files
+> it names may no longer exist here. Boss OS's own authority is [`docs/boss/`](docs/boss/) and
+> [`STATUS.md`](STATUS.md).
 
 # Repo Validation Matrix — West Peek OS
 
@@ -56,6 +48,7 @@ credentials except `validate:value-shapes`, noted below.
 | 
 | `npm run validate:gate-parity` | `npm run validate` and `ci.yml` run the SAME set of scans — every CI step is in the chain, CI runs the `validate:scans` union, and `validate` stays scans + typecheck + tests. 7-fixture self-test. Rule 0: zero CI steps or zero registered scans hard-fails | that any individual scan is *correct*, only that the gate you can run is the gate that runs |
 | `npm run validate:migrations-keep-data` (1 Nov 2026) | no new or changed migration drops a table or column, deletes every row, truncates, or rebuilds a table without one of its columns — unless it carries `-- destructive-ok: <reason> (backed up: <where>)`; history grandfathered; 31-check self-test | that the backup named in the annotation exists or restores, or that an UPDATE without WHERE is safe |
+| `npm run validate:duty-clock` (22 Nov 2026) | the duty clock belongs to code: no new migration `UPDATE standing_duties … SET next_due_at` (the nine files that did before the rule are named with the day each landed), and every file in `src/worker` that answers "is it due" (`isDue(` / `macDueToday(`) reads the clock through `effectiveNextDue`, which moves a clock left ahead of the owed slot back to it. 11-fixture self-test. Rule 0: zero migrations or zero due-answer files hard-fails | that a due answer is *right*: that is pinned in `tests/boss/dutyClock.test.ts` against the real 22 Nov rows |
 
 | 
 | 

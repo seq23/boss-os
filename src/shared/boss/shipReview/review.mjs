@@ -14,7 +14,7 @@
  */
 import { routeOrder, HARD, SHORT } from "../aiRoles.mjs";
 
-export const KINDS = Object.freeze(["page", "email", "video", "profile", "images"]);
+export const KINDS = Object.freeze(["page", "email", "video", "profile", "images", "tap-through"]);
 
 /** How a person meets each kind of output; the reviewer is told this, and the runner captures it. */
 export const HOW_SEEN = Object.freeze({
@@ -23,6 +23,7 @@ export const HOW_SEEN = Object.freeze({
   video: "a video: a contact sheet of frames sampled across its whole length, plus its first frame at full size",
   profile: "a social profile as a stranger sees it, logged out, on a phone and on a laptop",
   images: "finished images (screens, frames, thumbnails or covers) exactly as they will be published",
+  "tap-through": "a phone app used by a robot the way a person would (390 px, light and dark, on its web preview): a screenshot after every step, a sheet of the dark screens per journey, a contact sheet of each journey's video (red rings mark each tap), and the run's own measurements of every tap",
 });
 
 /**
@@ -38,7 +39,7 @@ export const SURFACES = Object.freeze({
   "video": "A video or short. Judge the first frames, every sampled frame, imagery (AI tells, repeats, fit to the topic), text on screen, pacing and the ending.",
   "social-profile": "A social profile as a stranger meets it logged out. Judge the avatar, banner, name, bio, links, the posts or videos shown, and whether it looks like a real business worth following.",
 });
-export const DEFAULT_SURFACE = Object.freeze({ page: "public-page", email: "email", video: "video", profile: "social-profile", images: "public-page" });
+export const DEFAULT_SURFACE = Object.freeze({ page: "public-page", email: "email", video: "video", profile: "social-profile", images: "public-page", "tap-through": "app-screen" });
 
 /** The PASS line `land` reads (seq-bin ~/bin/land gate_quality): `<Kind>-ready: PASS — <reviewer> looked at <what>`. */
 export const passLine = ({ reviewer, lookedAt, launch = false }) =>
@@ -87,6 +88,7 @@ export function reviewPrompt({ kind, target, builder, checklist, brand = null, f
     ...(brand ? ["", "THE BRAND THIS MUST LOOK LIKE (its own note):", String(brand).trim()] : []),
     ...(launch ? ["", "THIS IS NEW AND GOING PUBLIC: apply section 3 (Launch-ready) in full. Any missing item on its list is a FAIL finding."] : []),
     ...(facts.length ? ["", "MEASURED BY THE CAPTURE (facts, not opinions; each failing one is a FAIL finding):", ...facts.map((f) => `- ${f}`)] : []),
+    ...(kind === "tap-through" ? ["", TAP_THROUGH_BRIEF] : []),
     "",
     "Decide PASS only if a 20-year veteran would ship this exactly as it is. Anything that looks cheap, template-default, AI-made, broken, unreadable on a phone, off-brand, placeholder, or that would make a real person leave, distrust it or need help is a FAIL finding. Do not grade on effort or on what could be fixed later.",
     ...(brief ? [
@@ -94,7 +96,7 @@ export function reviewPrompt({ kind, target, builder, checklist, brand = null, f
       "YOU ARE JUDGING THIS CHANGE (20 Nov 2026: a fix must not be blocked by problems it did not make). Mark each finding in_change true when the change caused it, or it sits in what the change touched and the change left it wrong; in_change false when it was already there elsewhere and the change neither caused nor touched it. The verdict is FAIL only if at least one finding is in_change true; still list every in_change false problem you see, so it is fixed in its own round.",
     ] : []),
     "",
-    "WHAT THE CAPTURES DID NOT SHOW IS NEVER A FINDING (20 Nov 2026: \"can't see the change\" FAILs were the harness, not the work). unseen is ONLY what THE CHANGE ITSELF alters on this surface that a capture could have shown and no capture shows (cut off, a state or tap not captured), in a few words each; never a finding, never PASS around it, and no brief can put it out of scope. Nothing else is ever unseen (20-22 Nov 2026: reviews stopped on link targets and on what their briefs said another review covered): where a link goes, a keyboard focus ring, an outside page, code, and what the brief says another review covers or is judged from the changed lines. Judge any of those the change touched from the change's lines, and if they do not settle it, say so as a finding; leave the rest alone. A capture fact that says \"not read\" (for example \"dark: not read\") is the harness, never a finding.",
+    "WHAT THE CAPTURES DID NOT SHOW IS NEVER A FINDING (20 Nov 2026: \"can't see the change\" FAILs were the harness, not the work). unseen is ONLY what THE CHANGE ITSELF alters on this surface that a capture could have shown and no capture shows (cut off, a state or tap not captured), in a few words each; never a finding, never PASS around it, and no brief can put it out of scope. Nothing else is ever unseen (20-22 Nov 2026: reviews stopped on link targets, hover looks, an AI-only label and on what their briefs said another review covered): where a link goes, a hover or keyboard-focus look, a screen only a live model call, a payment or a sign-in produces, an outside page, code, and what the brief says another review covers or is judged from the changed lines. Judge any of those the change touched from the change's lines, and if they do not settle it, say so as a finding; leave the rest alone. A capture fact that says \"not read\" (for example \"dark: not read\") is the harness, never a finding.",
     "Reply with ONE JSON object and nothing else:",
     '{"verdict":"PASS"|"FAIL","looked_at":["<every capture label you looked at>"],"unseen":["<what you needed but no capture showed>"],"findings":[{"where":"<capture label and place>","what":"<what is wrong, specifically>","feels":"<what a real person would feel>"' + (brief ? ',"in_change":true|false' : "") + '}]}',
     brief
@@ -102,6 +104,18 @@ export function reviewPrompt({ kind, target, builder, checklist, brand = null, f
       : "PASS has an empty findings list. FAIL has at least one finding, each one specific enough that the builder can fix it without asking.",
   ].join("\n");
 }
+
+/**
+ * What the reviewer of a tap-through is asked (22 Nov 2026). Native-only features cannot run on a web
+ * preview: they are out of this review (never a finding, never unseen); the iOS-simulator capture judges them.
+ */
+export const TAP_THROUGH_BRIEF = [
+  "THIS IS A TAP-THROUGH: judge it as a first-time user who just installed the app, step by step, against app-review.md (in the bar above) and the brand note.",
+  "- Each step's screenshot is the screen right after that step; the journey facts say which step did what. A video contact sheet shows the motion of a whole journey (red rings mark each tap).",
+  "- Every screen: is it plain what it is and what to tap? Loading, empty and error states, words, brand, thumb reach at 390 px, and dark mode (the dark sheets).",
+  "- The price screen: the facts quote everything it says and map each promise to the screen behind it. A promise, feature or benefit on it that the map does not list is a FAIL finding (check 13).",
+  "- Features the facts list as NOT RUN ON THE WEB PREVIEW (native only: camera, purchases, notifications) are out of this review: never a finding and never unseen; the iOS-simulator capture judges them.",
+].join("\n");
 
 /** The last {...} in a model's reply that parses, or null. */
 export function lastJson(text) {
@@ -142,6 +156,17 @@ export function parseVerdict(text, shots, { scoped = false } = {}) {
   if (verdict === "PASS" && findings.length > 0) return { error: `PASS that still lists ${findings.length} finding(s)${scoped ? " in the change" : ""}` };
   return { verdict, findings: findings.map(({ in_change, ...f }) => f), already: already.map(({ in_change, ...f }) => f), unseen };
 }
+/**
+ * THE TAP-THROUGH'S OWN FAILURES DECIDE TOO (22 Nov 2026). The runner measured a dead button, a console
+ * error, an error screen, an unreachable step or an unbuilt price-screen promise: each is a FAIL finding
+ * whatever the reviewer saw, so a reviewer that missed it cannot pass the app. UNSEEN and errors stand.
+ */
+export function withTapFailures(result, failures = []) {
+  if (!failures.length || result?.error || result?.verdict === "UNSEEN") return result;
+  const found = failures.map((f) => ({ where: `${f.shot ?? f.where}`, what: `${f.code}: ${f.where}: ${f.what}`, feels: "measured by the tap-through, not a judgement" }));
+  return { ...result, verdict: "FAIL", findings: [...found, ...(result.findings ?? [])] };
+}
+
 export const findingLines = (findings) =>
   findings.map((f, i) => `${i + 1}. ${f.where ? `[${f.where}] ` : ""}${f.what}${f.feels ? ` (${f.feels})` : ""}`);
 

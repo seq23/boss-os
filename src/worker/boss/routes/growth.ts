@@ -84,7 +84,7 @@ growthRoutes.get("/page", async (c) => {
       WHERE j.resume_kind = 'growth_proposal' AND j.state <> 'superseded' AND (a.status = 'pending' OR a.requested_at >= ?) ORDER BY a.requested_at DESC LIMIT 30`,
   ).bind(Date.now() - HAPPENED_DAYS * 86_400_000).all<any>()).results ?? []);
   const decisions = ((await db.prepare(
-    `SELECT business, cycle, state, decision, evidence, test, actions, next_check FROM growth_decisions WHERE created_at >= ? ORDER BY cycle DESC`,
+    `SELECT business, cycle, state, decision, evidence, test, actions, next_check FROM growth_decisions WHERE created_at >= ? ORDER BY cycle DESC, created_at DESC`,
   ).bind(Date.now() - HAPPENED_DAYS * 86_400_000).all<any>()).results ?? []);
   const parse = (t: string | null, d: unknown) => { try { return t ? JSON.parse(t) : d; } catch { return d; } };
   const businesses = (manifest as any).scoreboard.businesses.map((b: any) => {
@@ -114,7 +114,8 @@ growthRoutes.get("/page", async (c) => {
   const placed = new Set(businesses.flatMap((b: any) => [...b.upcoming.todos, ...b.happened.done].map((t: any) => t.id)));
   const general = loops.filter((l) => !placed.has(l.id) && l.status === "open").map((l) => ({ id: l.id, title: l.title, next: l.next_step, date: l.next_date, elsewhere: l.owner !== DIRECTOR && !String(l.source_key ?? "").startsWith("growth") }));
   // This week = this Monday's Central cycle (the duty runs Mondays); a held decision counts as written.
-  const thisWeek = decisions.filter((d) => d.cycle >= weekStart(today));
+  // One per business: the newest (rows arrive newest first), so a same-day re-run is not counted twice.
+  const thisWeek = decisions.filter((d, i) => d.cycle >= weekStart(today) && decisions.findIndex((x) => x.business === d.business) === i);
   const week = { decided: thisWeek.filter((d) => d.state === "decided").length, held: thisWeek.filter((d) => String(d.state).startsWith("held")).length };
   return ok(c, { day: today, problems, general, businesses, week });
 });

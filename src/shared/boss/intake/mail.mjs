@@ -4,8 +4,8 @@
  * Owner, 10 September 2026: "why are u sharing anything with west peek's os? why? this is a separate
  * repo and domain." Then, on how to build it: "u can copy the code thats fine."
  *
- * So this file is a COPY of the ideas in `src/shared/intake/emailTriggers.ts` and never an import of
- * them. The MIME decoding, the forwarded-origin parsing and the sender-is-the-authorisation rule are
+ * So this file is a COPY of the ideas in West Peek's own trigger table (in west-peek-os; the copy
+ * that lived here retired with the fund code on 22 Nov 2026) and never an import of them. The MIME decoding, the forwarded-origin parsing and the sender-is-the-authorisation rule are
  * all worth keeping and are kept. The ROUTING TABLE is not shared, and that is the whole point: a
  * shared table is two businesses' mail deciding each other's fate, and a change to West Peek's tags
  * would silently move hers. Two copies that diverge is the correct outcome here — these are two
@@ -44,7 +44,6 @@
  * name that Email Routing does not touch. Nothing is currently delivered to this domain, so nothing
  * can be lost.
  */
-import { repairMojibake } from "../mail/subject.mjs";
 export const BOSS_INTAKE_MAILBOX = "boss@sequoiataylor.com";
 /** Simone's own address. The same front door as boss@ (owner, 26 Oct 2026): see routeToSeat. */
 export const SIMONE_MAILBOX = "simone@sequoiataylor.com";
@@ -232,41 +231,6 @@ export function replyBody(route, roster, subject) {
     "",
     "— Boss OS",
   ].join("\n");
-}
-
-/**
- * An RFC 2047 encoded-word header, decoded. COPIED from West Peek's handler, which learned it the
- * expensive way: the first real message arrived with an em dash in the subject, the client encoded
- * the whole header, `#` became `=23`, and the tag survived only because the body repeated it.
- * Anybody putting `#monique` in the subject alone — the natural place — would be silently ignored
- * the moment their subject contained a dash, a curly quote or an accented name.
- */
-export function decodeMimeHeader(value) {
-  // Decoded ONCE, in the word's own charset, then repaired if the sender's client had already garbled
-  // it (4 Nov 2026: "Ã¢Â€Â”" subjects; shared/boss/mail/subject.mjs).
-  if (!value.includes("=?")) return repairMojibake(value);
-  const decoderFor = (charset) => { try { return new TextDecoder(String(charset).toLowerCase()); } catch { return new TextDecoder("utf-8"); } };
-  return repairMojibake(value
-    .replace(/\?=\s+=\?/g, "?==?")
-    .replace(/=\?([^?*]+)(?:\*[^?]*)?\?([QqBb])\?([^?]*)\?=/g, (whole, charset, enc, text) => {
-      try {
-        if (enc.toUpperCase() === "B") {
-          const bin = atob(text);
-          return decoderFor(charset).decode(Uint8Array.from(bin, (c) => c.charCodeAt(0)));
-        }
-        const withSpaces = text.replace(/_/g, " ");
-        const bytes = [];
-        for (let i = 0; i < withSpaces.length; i += 1) {
-          if (withSpaces[i] === "=" && i + 2 < withSpaces.length) {
-            const hex = withSpaces.slice(i + 1, i + 3);
-            if (/^[0-9a-fA-F]{2}$/.test(hex)) { bytes.push(parseInt(hex, 16)); i += 2; continue; }
-          }
-          // A raw character outside ASCII (it should not be there) keeps its UTF-8 bytes, never cut.
-          for (const b of new TextEncoder().encode(withSpaces[i])) bytes.push(b);
-        }
-        return decoderFor(charset).decode(Uint8Array.from(bytes));
-      } catch { return whole; }
-    }));
 }
 
 /** The bare address out of a `From:` header, which may be `Name <a@b.c>` or just `a@b.c`. */

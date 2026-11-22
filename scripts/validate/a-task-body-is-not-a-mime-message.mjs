@@ -66,7 +66,7 @@ export function corpus(dir = FIXTURES) {
  * Both directions, on every fixture. "No headers in the output" alone would pass on an empty string
  * — and an empty card is a message lost, which is the failure the mailbox exists to prevent.
  */
-export function bodiesAreReadable(messages) {
+export async function bodiesAreReadable(messages) {
   const bad = [];
   for (const m of messages) {
     const rawTells = mimeTellsIn(m.raw);
@@ -79,7 +79,7 @@ export function bodiesAreReadable(messages) {
     }
 
     let got;
-    try { got = taskBodyFrom(m.raw); }
+    try { got = await taskBodyFrom(m.raw); }
     catch (e) { bad.push(`${m.name}: taskBodyFrom threw — ${e.message.split("\n")[0]}. A throw here loses her mail.`); continue; }
 
     const tells = mimeTellsIn(got.body);
@@ -198,7 +198,7 @@ if (process.argv.includes("--self-test")) {
   };
 
   const real = corpus();
-  expect("the committed corpus extracts to readable text", bodiesAreReadable(real), false);
+  expect("the committed corpus extracts to readable text", await bodiesAreReadable(real), false);
   expect("the detector names what it finds", detectorWorks(), false);
 
   /*
@@ -222,11 +222,11 @@ if (process.argv.includes("--self-test")) {
     } else {
       console.log(`  ✓ the raw 8,378-byte message is caught, naming ${rawAsBody.length}: ${rawAsBody.slice(0, 4).join(", ")}…`);
     }
-    expect("her extracted message is clean", bodiesAreReadable(brokenExtractor), false);
+    expect("her extracted message is clean", await bodiesAreReadable(brokenExtractor), false);
   }
 
   // A fixture that is not a MIME message at all must be refused rather than silently passed.
-  expect("a corpus that proves nothing", bodiesAreReadable([
+  expect("a corpus that proves nothing", await bodiesAreReadable([
     { name: "not-really-mail.eml", raw: "just a sentence with no headers", expected: null },
   ]), true);
 
@@ -268,7 +268,7 @@ const handlerSource = existsSync(join(ROOT, HANDLER)) ? readFileSync(join(ROOT, 
 
 const problems = [
   ...detectorWorks(),
-  ...bodiesAreReadable(messages),
+  ...(await bodiesAreReadable(messages)),
   ...handlerUsesIt(handlerSource),
 ];
 
@@ -282,6 +282,6 @@ const bytes = messages.reduce((n, m) => n + m.raw.length, 0);
 console.log(
   `TASK BODY SCAN PASSED: ${messages.length} captured message(s), ${bytes.toLocaleString("en-US")} raw bytes, `
   + `every one of them tripping the MIME detector and every extracted body clean of it — `
-  + `${messages.map((m) => `${m.name.replace(/\.eml$/, "")} (${taskBodyFrom(m.raw).format})`).join(", ")}. `
+  + `${(await Promise.all(messages.map(async (m) => `${m.name.replace(/\.eml$/, "")} (${(await taskBodyFrom(m.raw)).format})`))).join(", ")}. `
   + "The handler extracts through the same function and keeps the original on both paths.",
 );

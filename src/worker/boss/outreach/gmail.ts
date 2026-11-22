@@ -16,7 +16,7 @@
 import { stageSentMail } from "../mail/history";
 import { throughOwnerDoor } from "../mail/ownerDoor";
 import { readableText } from "../../../shared/boss/intake/messageBody.mjs";
-import { decodeMimeHeader } from "../../../shared/boss/intake/mail.mjs";
+import { decodeHeader } from "../../../shared/mail/parseMail.mjs";
 import type { Env } from "../env";
 import { serviceAccountFrom, type ServiceAccount } from "../wealth/gmailDraft";
 import { OUTREACH_MAILBOX, assertOutreachMailboxAllowed, assertSenderAllowed, type Business } from "./catalog";
@@ -108,10 +108,11 @@ export class GmailSession {
     assertSenderAllowed(business);
     if (!raw.includes(`<${business.sender}>`)) throw new Error(`Refused: the message is not From ${business.sender}.`);
     const token = await this.token(SCOPE_COMPOSE);
+    const bodyText = (await readableText(raw, { full: true })).text;
     // The one door (mail/ownerDoor.ts). Outreach is for outsiders; a copy addressed to HER (a test send) is
     // read against the required minimum and logged, never rewritten: these bytes are already composed.
-    await throughOwnerDoor(this.env, { to: raw.match(/^To: (.+)/m)?.[1]?.trim() ?? "", subject: decodeMimeHeader(raw.match(/^Subject: (.+)/m)?.[1]?.trim() ?? ""), text: readableText(raw, { full: true }).text }, { where: `outreach as ${business.sender}`, replyTo: business.sender, repair: false });
-    const receipt = await stageSentMail(this.env, { from: business.sender, to: raw.match(/^To: (.+)/m)?.[1]?.trim() ?? "", subject: decodeMimeHeader(raw.match(/^Subject: (.+)/m)?.[1]?.trim() ?? ""), text: readableText(raw, { full: true }).text, raw, thread_id: threadId, employee_id: "emp_relationship" });
+    await throughOwnerDoor(this.env, { to: raw.match(/^To: (.+)/m)?.[1]?.trim() ?? "", subject: decodeHeader(raw.match(/^Subject: (.+)/m)?.[1]?.trim() ?? ""), text: bodyText }, { where: `outreach as ${business.sender}`, replyTo: business.sender, repair: false });
+    const receipt = await stageSentMail(this.env, { from: business.sender, to: raw.match(/^To: (.+)/m)?.[1]?.trim() ?? "", subject: decodeHeader(raw.match(/^Subject: (.+)/m)?.[1]?.trim() ?? ""), text: bodyText, raw, thread_id: threadId, employee_id: "emp_relationship" });
     const res = await timed(this.fetchImpl, `${GMAIL}/messages/send`, {
       method: "POST",
       headers: { authorization: `Bearer ${token}`, "content-type": "application/json" },

@@ -3,13 +3,11 @@
 Static validation scans, wired to npm scripts. Each must FAIL loudly (exit 1, named
 violations) on breach and proves its own detection with a self-test fixture run.
 
-- `no-unauthorized-effects.mjs` (P3, `npm run validate:authority`) — proves (a) only
-  `src/worker/effects/executor.ts` performs external-effect execution (no other worker
-  file marks `external_effect_request` EXECUTED; no outbound fetch to non-localhost
-  anywhere in worker code) and (b) merge/reverse + executor call sites route through
-  `authorize()` and consume receipts. `--self-test` feeds synthetic violating sources
-  through the same checks and asserts they are caught. The npm script also runs the
-  seed generator's `--check` (registry-seed freshness) — see `scripts/seed/`.
+- `no-unauthorized-effects.mjs` (`npm run validate:authority`) — no outbound fetch to a
+  non-localhost host from any worker file outside the egress allowlist, each entry with its
+  written reason, and no allowlist entry naming a file that is gone. `--self-test` feeds
+  synthetic violating sources through the same checks and asserts they are caught. (The
+  executor and receipt checks retired with the copied fund code on 22 Nov 2026.)
 
 - `an-alert-says-what-happened.mjs` (`npm run validate:alert-says-what`) — the one scan
   here that RUNS the shipped code rather than reading it. It feeds the production error
@@ -156,6 +154,7 @@ violations) on breach and proves its own detection with a self-test fixture run.
   16-fixture self-test.
 
 - `the-merge-gate-is-fast.mjs` (`npm run validate:merge-gate-fast`) — the shape of `ci.yml`
+- `../ops/recheck-failed.mjs --self-test` + `../ops/vitest-pool.mjs --self-test` (`npm run validate:recheck-failed`) — shard 1 of `unit` and of `boss` in `ci.yml` first re-runs the suites of its pool that failed on the PR's previous commit, with the gate's own setup and runner (22 Nov 2026); proves it reads vitest's FAIL lines, picks the right earlier run, splits the pools, lets no unsafe path through, and retries the Boss pool only on its storage race.
   after 21 Sep 2026 (PR #35 waited 50 minutes on a serial 15-minute job plus a Playwright retry
   that hit its cap): every job has `timeout-minutes`; the unit suite and the Boss suites are
   sharded, the `--shard=i/N` denominator equals the matrix length and each unit shard stays

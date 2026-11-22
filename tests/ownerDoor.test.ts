@@ -201,8 +201,6 @@ const OUTSIDERS_ONLY: Record<string, string> = {
   "scripts/ops/lp8-drip.mjs": "The one-list LP emails from her Workspace mailbox, to the people on her private list; never to her",
   "src/worker/boss/routes/lpTap.ts": "sends a held LP reply draft on her tap, to the LP it answers",
   "src/mail-fanout/index.ts": "forwards an outsider's own email unchanged; composes nothing",
-  "src/worker/effects/resendClient.ts": "the inherited West Peek chassis client, switched off (WP_OS_EMAIL_SEND) and behind a human-approved receipt; an approved letter to an outsider",
-  "src/worker/effects/googleClient.ts": "the inherited West Peek chassis client: an approved letter from her connected Gmail to an outsider, behind a human-approved receipt",
 };
 const code = (text: string) => text.replace(/\/\*[\s\S]*?\*\//g, "").replace(/^\s*(?:\/\/|\*).*$/gm, "");
 function walk(dir: string): string[] {

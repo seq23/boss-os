@@ -9,7 +9,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import { EMAIL_SENDS, SOCIAL_POSTS, gateProblems, parseVerdict, passLine, PASS_LINE_RE, reviewRoutes, reviewPrompt } from "../src/shared/boss/shipReview/review.mjs";
-import { readDark, nextDarkState, judge, isPrivate, isBlank, parseArgs, capture, pageSlug, tilesFor, MAX_TILES, changedLines, writeCaptureFile, readCaptureFile, YOUTUBE_CHANNEL } from "../scripts/ops/ship-review.mjs";
+import { readDark, nextDarkState, judge, isPrivate, isBlank, parseArgs, capture, pageSlug, pageSlugs, tilesFor, MAX_TILES, changedLines, writeCaptureFile, readCaptureFile, YOUTUBE_CHANNEL } from "../scripts/ops/ship-review.mjs";
 // @ts-expect-error — plain ESM with no declaration file
 import { shipReviewArgs } from "../scripts/ops/repo-change.mjs";
 
@@ -48,6 +48,13 @@ describe("a verdict is trusted only when it is a real review", () => {
   it("several pages are labelled by their path; a change's brief rides in the prompt", () => {
     expect(pageSlug("https://x.pages.dev/questions/is-dental-anxiety-real/")).toBe("questions-is-dental-anxiety-real");
     expect(pageSlug("https://x.pages.dev/")).toBe("home");
+    // Three sites' home pages in one review each keep their own shots (22 Nov 2026: they overwrote each other).
+    expect(pageSlugs(["https://0ee3.lgg-pi.pages.dev/", "https://d0cb.lgg-dentistry.pages.dev/", "https://dddee.lgg-neuro.pages.dev/"]))
+      .toEqual(["0ee3-lgg-pi-home", "d0cb-lgg-dentistry-home", "dddee-lgg-neuro-home"]);
+    expect(pageSlugs(["https://x.pages.dev/", "https://x.pages.dev/questions/a/"])).toEqual(["home", "questions-a"]);
+    expect(pageSlugs(["https://x.dev/a/", "https://x.dev/a/"])).toEqual(["x-a", "x-a-2"]);
+    expect(pageSlugs(["https://a.x.dev/", "https://a.y.dev/", "https://z.dev/a-x-home/"])).toEqual(["a-x-home", "a-y-home", "a-x-home-2"]);
+    expect(pageSlugs(["not a url", "also not"])).toEqual(["page-page", "page-page-2"]);
     expect(reviewPrompt({ kind: "page", target: "t", builder: "b", checklist: "c", shots, brief: "Changed: footer note" })).toMatch(/WHAT CHANGED AND WHAT TO JUDGE[\s\S]*footer note/);
   });
   it("with a brief, the verdict is the change's: problems already there are kept apart, never the verdict", () => {
@@ -234,10 +241,13 @@ describe("a message that only shows after a tap is captured, never left unseen",
         <p style="background:#0c0;height:120px;margin:0">Deep in the panel</p>
         <a href="elsewhere.html">Go elsewhere</a>
         <button onclick="document.getElementById('m').hidden=false">Get this kit, $19 once</button>
-        <p id="m" hidden style="background:#f00;height:120px;margin:0">Preview: this kit is open for this visit.</p></div>
+        <p id="m" hidden style="background:#f00;height:120px;margin:0">Preview: this kit is open for this visit.</p>
+        <button onclick="document.getElementById('all').hidden=false;this.textContent='Get every kit (added)';document.body.classList.add('locked')">Get every kit</button>
+        <div style="height:1400px">Your files</div>
+        <p id="all" hidden style="background:#00f;height:120px;margin:0">Preview: every kit is open for this visit.</p></div>
       ${"<p>filler words for the blank check</p>".repeat(20)}</body></html>`);
     expect(parseArgs(["--kind", "page", "--target", "https://x.test/", "--builder", "b", "--tap", "Get this kit"]).focus).toEqual(["tap:Get this kit"]);
-    const { shots, facts } = await capture({ kind: "email", target: page, focus: ["tap:Get this kit", "tap:Go elsewhere", "Deep in the panel", "tap:No such button"] } as any, join(dir, "out"));
+    const { shots, facts } = await capture({ kind: "email", target: page, focus: ["tap:Get this kit", "tap:Go elsewhere", "Deep in the panel", "tap:No such button", "tap:Get every kit"] } as any, join(dir, "out"));
     const labels = shots.map((s: any) => s.label);
     // Text after a link tap is looked for on the page itself again, inside its scrolling panel, and the
     // shot shows it (the green block beside it), not some other part of the page.
@@ -253,5 +263,9 @@ describe("a message that only shows after a tap is captured, never left unseen",
     // A tap that cannot happen is said, never a silent pass.
     expect(facts.some((f: string) => /could not tap "No such button"/.test(f))).toBe(true);
     expect(labels.some((l: string) => /-tap-4\.png$/.test(l))).toBe(false);
+    // A message that lands far below the button (a list in between) is still what the shot shows.
+    const farShot = shots.find((s: any) => /phone-390-light-tap-5\.png$/.test(s.label));
+    expect(farShot).toBeTruthy();
+    expect(await colourShare(String(farShot!.path), [0, 0, 255])).toBeGreaterThan(0.05);
   }, 120_000);
 });

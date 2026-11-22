@@ -34,16 +34,20 @@ import { GROWTH_BRAINS, growthSection, parseRoster, rosterProblems, type RosterE
 import { playbookBody } from "../../../shared/boss/growth/playbook.mjs";
 import {
   MAX_CARDS, MAX_OPEN_PER_BUSINESS, ASKED_DAYS, decisionPrompt, parseDecision, enforceHolds, claimsPrompt, parseClaims, claimRules,
-  routeItem, routeProposal, spendPrompt, parseSpend, cycleEnd, namingProblems, pipelineKey,
+  routeItem, routeProposal, spendPrompt, parseSpend, cycleEnd, namingProblems, pipelineKey, reportDue, reportSection,
 } from "../../../shared/boss/growth/director.mjs";
 import { raiseJudgementCall } from "../approvals/raise";
 import { latestReadings } from "../routes/growth";
+import { getSetting, setSetting } from "../lib/settings";
+import { putMorningSection } from "../mail/morningSection";
+import { BOSS_ORIGIN } from "../../../shared/boss/research/page.mjs";
 
 export const DIRECTOR = "emp_growth";
 /** A row's own next step, without the Director's one line on top (written as "Growth Director, …\n"). */
 export function withoutDirectorLine(step: string | null | undefined): string {
   return String(step ?? "").replace(/^Growth Director, [^\n]*\n/, "");
 }
+const REPORT_KEY = "growth_report_last_day";
 const TREND_FEED = "https://trends.google.com/trending/rss?geo=US";
 
 type Msg = { role: string; content: string };
@@ -173,10 +177,12 @@ export async function runGrowthDirector(env: Env, now = Date.now(), deps: { mode
       const todos = await inMotion(db, entry.key!);
       // The older work on this business's roster: the Director decides each row. Open Loops is LOCAL_ONLY
       // (migration 0331), so no row text goes to the model: it sees the id and the roster's own words for it
-      // ("olp_x (what it is)" in the brain), and only open rows of this business, not hers, are judged.
+      // ("olp_x (what it is)" in the brain), and only open rows filed under this entry's brain, not hers, are
+      // judged. A row's `business` is the BRAIN slug (the Director files its own rows that way, line above), so a
+      // Spry Labs company's rows are 'spry', never its roster key: keying on the key hid every PBS row (22 Nov).
       const linkedIds = entry.linked.length ? ((await db.prepare(
         `SELECT id FROM owner_open_loops WHERE status = 'open' AND business = ? AND owner <> 'sequoia' AND id IN (SELECT value FROM json_each(?))`,
-      ).bind(entry.key, JSON.stringify(entry.linked)).all<{ id: string }>()).results ?? []).map((r) => r.id) : [];
+      ).bind(entry.brain, JSON.stringify(entry.linked)).all<{ id: string }>()).results ?? []).map((r) => r.id) : [];
       const linked = linkedIds.map((id) => ({ id, what: entry.linkedNotes[id] ?? "no description on the roster" }));
       const answer = parseDecision(await model(env, decisionPrompt({ playbook, entry, summary: s, trends, today, todos, first, linked }) as Msg[], "growth-decide"));
       if (!answer) { await record({ ...base, state: "held: no model", decision: "Held: no free model answered (every free route was busy or spent); the next cycle tries again.", evidence: [], actions: [] }); continue; }
@@ -227,11 +233,11 @@ export async function runGrowthDirector(env: Env, now = Date.now(), deps: { mode
         // The Director's line is ONE line on top; the step under it is the row's own (or the changed one).
         const say = `Growth Director, ${today}: ${v.verdict}. ${v.why.replace(/\s+/g, " ").trim()}`;
         if (v.verdict === "drop") {
-          await db.prepare(`UPDATE owner_open_loops SET status = 'closed', closed_reason = ?, closed_at = ?, updated_at = ? WHERE id = ? AND business = ? AND status = 'open'`).bind(say.slice(0, 400), now, now, v.id, entry.key).run();
+          await db.prepare(`UPDATE owner_open_loops SET status = 'closed', closed_reason = ?, closed_at = ?, updated_at = ? WHERE id = ? AND business = ? AND status = 'open'`).bind(say.slice(0, 400), now, now, v.id, entry.brain).run();
         } else {
           const cur = await db.prepare(`SELECT next_step FROM owner_open_loops WHERE id = ?`).bind(v.id).first<{ next_step: string | null }>();
           const step = v.verdict === "change" ? v.next_step : withoutDirectorLine(cur?.next_step);
-          await db.prepare(`UPDATE owner_open_loops SET next_step = ?, updated_at = ? WHERE id = ? AND business = ? AND status = 'open'`).bind(`${say}\n${step}`, now, v.id, entry.key).run();
+          await db.prepare(`UPDATE owner_open_loops SET next_step = ?, updated_at = ? WHERE id = ? AND business = ? AND status = 'open'`).bind(`${say}\n${step}`, now, v.id, entry.brain).run();
         }
         actions.push({ kind: "linked", id: v.id, verdict: v.verdict, why: v.why });
       }
@@ -245,6 +251,15 @@ export async function runGrowthDirector(env: Env, now = Date.now(), deps: { mode
 
   const end = cycleEnd(results);
   await audit(db, { actor: "system", lane: "ops", entityType: "growth_cycle", entityId: cycle, action: end.ok ? "decided" : "held", detail: { line: end.line, problems, trends: trends.length } });
+  // Her report, every two weeks, as a section of Simone's morning email (written even on a held
+  // cycle: "held, not guessed" is news too). The last day is kept so a missed Monday catches up.
+  if (rows.length && reportDue(await getSetting(db, REPORT_KEY), today)) {
+    const row = (manifest as any).rows.find((r: any) => r.id === "growth-director") ?? null;
+    const obj = reportSection(rows, { cards, origin: BOSS_ORIGIN, at: now, summaries, scorecard: row });
+    const bad = await putMorningSection(db, { section: "growth", job: "duty_growth_director", day: today, obj, now });
+    if (bad.length) throw new Error(`NAMED STOP [GROWTH_REPORT_REFUSED] ${bad.join("; ")}`);
+    await setSetting(db, REPORT_KEY, today);
+  }
   if (!end.ok) throw new Error(`${end.line}${problems.length ? `; roster: ${problems.slice(0, 3).join("; ")}` : ""}`);
   return { written: results.filter((r) => r.state === "decided").length, line: end.line, problems, cards };
 }

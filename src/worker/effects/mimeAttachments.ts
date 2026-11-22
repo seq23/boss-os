@@ -1,191 +1,99 @@
 /**
- * Pulling the PDF out of an email.
+ * The files and text in an email, read by postal-mime (eng sweep row 9, 22 Nov 2026).
  *
- * WHY THIS DID NOT EXIST, AND WHY THAT MATTERED. `#wpdeck` shipped meaning "the information is in
- * the attachment", `deckReader.ts` shipped able to read a PDF, and nothing ever connected them:
- * `inboundEmail.ts` extracted no attachments at all. So the prompt handed to Wyatt said "the
- * substance is in the attachment, not the message body" while the attachment was never given to
- * him. The one path that worked was uploading a deck by hand.
+ * This file used to be a 402-line MIME parser of its own: boundary splitting, header unfolding, nested
+ * multiparts, quoted-printable, each fixed after a real deck went missing (Apple Mail's folded boundary,
+ * a `+` in a boundary, a forward's nested multipart). postal-mime does all of that, and more (RFC 2231
+ * filenames, encoded words, message/rfc822 forwards, every transfer encoding), in a parser built for
+ * Workers. What stays here is what is ours: which files each reader takes, the caps, and the rule this
+ * file has always kept: ANYTHING NOT TAKEN IS SAID (`unread`), never silence.
  *
- * DELIBERATELY SMALL AND DELIBERATELY NOT A MIME LIBRARY. A Worker has 10ms of CPU; a general
- * parser walking a multi-megabyte tree would not finish. This does one thing: find `application/pdf`
- * parts, decode their base64, and stop at the first few. Anything it cannot confidently read it
- * reports as unread rather than guessing — a deck half-decoded into a model is worse than no deck,
- * because the model will answer anyway.
+ *   · ONE PARSE PER MESSAGE, HELD BY THE CALLER. `parseMail` is called once at each door and the
+ *     `ParsedMail` is handed to every reader; nothing is cached here, so a message (and its files) is
+ *     gone from memory when the request that read it is (review of #517, F2: a module-level cache kept
+ *     the last message, up to 30 MB, in the isolate between requests).
+ *   · FILES AS BYTES. postal-mime hands each part over as an ArrayBuffer; base64 is made only for a
+ *     part a reader takes, in slices joined once (F1: postal-mime's own base64 mode built each file
+ *     as a string of joined pieces that V8 kept whole, 257 MB held for one 16 MB file, so a Worker's
+ *     128 MB ran out at a 12 MB voice note). `tests/mimeMemory.test.ts` runs the readers under a
+ *     128 MB heap.
+ *   · BOUNDED. A forged message (parts nested hundreds deep, thousands of parts, megabytes of headers)
+ *     is refused by postal-mime's own limits, set tight below; the refusal is flagged, never thrown.
+ *   · A PARSE THAT FAILS KEEPS THE MESSAGE. The caller has already stored it; every reader returns the
+ *     failure as an `unread` line naming why, so the card says it, and the task body
+ *     (`messageBody.mjs`) falls back to the raw text so a trigger tag is still found.
  */
+import type { Attachment as MimePart } from "postal-mime";
+import { parseMail, mimeParseCount, MIME_LIMITS, type ParsedMail } from "../../shared/mail/parseMail.mjs";
 
-export interface Attachment {
+export { parseMail, mimeParseCount, MIME_LIMITS, type ParsedMail };
+
+/** A file as bytes: what Boss intake reads (a recording is made base64 only when it is heard). */
+export interface FilePart {
   filename: string;
   mediaType: string;
-  /** Base64, exactly as `readDeck` wants it — never decoded here, which is the expensive part. */
-  dataBase64: string;
+  content: Uint8Array;
   bytes: number;
 }
 
-/** More than this and the firm is being sent a library, not a deck. */
-export const MAX_ATTACHMENTS = 3;
-
-/** A deck bigger than this is not going to be read inside one invocation. */
-export const MAX_ATTACHMENT_BYTES = 12 * 1024 * 1024;
-
 /**
- * The boundary token a multipart message declares in its own Content-Type.
- *
- * UNFOLDED FIRST, AND WITHOUT THAT THE WHOLE FILE WAS A NO-OP FOR APPLE MAIL AND OUTLOOK.
- *
- * RFC 5322 lets a header wrap onto a continuation line beginning with a space or a tab, and both
- * clients do it here as a matter of course:
- *
- *   Content-Type: multipart/mixed;
- *    boundary="Apple-Mail=_A1B2C3"
- *
- * The pattern's `[^\n]*` cannot cross that line break, so `boundaryOf` returned null, `pdfAttachments`
- * returned `{ attachments: [], unread: [] }`, and the caller then set `isDeck = false` and said
- * nothing — a deck dropped in silence, which is the one failure this file exists to prevent. Its own
- * docstring promises the opposite ("anything it cannot confidently read it reports as unread"), and
- * `headerIn` unfolds for exactly this reason; the function that runs FIRST and gates everything did
- * not. The operator's own note is that most of this mailbox is forwards from those two clients.
- */
-/** The boundary declared by a PART's own headers, used to descend into a nested multipart. */
-function nestedBoundaryOf(part: string): string | null {
-  const headerEnd = part.search(/\r?\n\r?\n/);
-  const headers = (headerEnd === -1 ? part : part.slice(0, headerEnd)).replace(/\r?\n[ \t]+/g, " ");
-  const m = /content-type:\s*multipart\/[^\n]*boundary\s*=\s*"?([^";\r\n]+)"?/i.exec(headers);
-  return m ? m[1]! : null;
-}
-
-/**
- * MIME nests, and this file used to pretend it did not.
- *
- * Scooter forwarded a deck from Apple Mail on 23 Aug 2026 and it arrived shaped like this:
- *
- *   multipart/alternative          <- the boundary the top-level header declares
- *   ├── text/plain
- *   └── multipart/mixed            <- and the deck is in HERE
- *       ├── text/html
- *       ├── application/pdf        <- Vynlo_PreSeed_Deck_Outreach_2026-08-22.pdf
- *       └── text/html
- *
- * Splitting on the top boundary yields the whole nested block as ONE opaque part whose own
- * Content-Type reads `multipart/mixed` — not `application/pdf` — so nothing matched and the message
- * was reported as carrying no readable PDF. The deck was in the bytes the entire time.
- *
- * This is not an edge case. It is what every mail client produces when you forward a message that
- * has an attachment, and the operator's own words are "most will be forwards from founders".
- *
- * Depth is capped because a malicious or broken message can declare a boundary that contains itself,
- * and this runs inside a Worker with 10ms of CPU.
- */
-const MAX_MIME_DEPTH = 6;
-
-/**
- * SPLIT ONCE PER MESSAGE (15 Nov 2026, the West Peek OS #452 rule). One message is read by several
- * readers in a row (voice notes, every other file); each used to split the whole multi-megabyte
- * message again. The last split is kept and handed back for the same string.
- */
-let lastSplit: { raw: string; boundary: string; parts: string[] } | null = null;
-/** How many times a message was actually split. Exposed for the test that pins one split per message. */
-export const mimeSplitCount = { n: 0 };
-
-/** Every leaf part of a message, flattened — descending into nested multiparts. */
-function leafParts(raw: string, boundary: string): string[] {
-  if (lastSplit && lastSplit.raw === raw && lastSplit.boundary === boundary) return lastSplit.parts;
-  mimeSplitCount.n += 1;
-  const parts = splitLeafParts(raw, boundary);
-  lastSplit = { raw, boundary, parts };
-  return parts;
-}
-
-function splitLeafParts(raw: string, boundary: string, depth = 0): string[] {
-  const out: string[] = [];
-  for (const part of raw.split(`--${boundary}`)) {
-    const inner = depth < MAX_MIME_DEPTH ? nestedBoundaryOf(part) : null;
-    if (inner) out.push(...splitLeafParts(part, inner, depth + 1));
-    else out.push(part);
-  }
-  return out;
-}
-
-function boundaryOf(raw: string): string | null {
-  const m = /content-type:\s*multipart\/[^\n]*boundary\s*=\s*"?([^";\r\n]+)"?/i.exec(unfoldHeaders(raw));
-  return m ? m[1]! : null;
-}
-
-/**
- * Join continuation lines back onto the header they belong to.
- *
- * Bounded to the message's own header block — everything before the first blank line — because that
- * is where the top-level Content-Type is, and because running it over a multi-megabyte body would
- * spend CPU this file has none of. A base64 body is never folded, so nothing downstream needs it.
- */
-function unfoldHeaders(raw: string): string {
-  const end = raw.search(/\r?\n\r?\n/);
-  return (end === -1 ? raw : raw.slice(0, end)).replace(/\r?\n[ \t]+/g, " ");
-}
-
-/** A header value from one MIME part's own header block. */
-function headerIn(part: string, name: string): string | null {
-  // Unfolds continuation lines first: a long filename is legally split across lines, and reading
-  // only the first would truncate the name to something that looks deliberate.
-  // ONLY THE PART'S OWN HEADER BLOCK (15 Nov 2026): unfolding the whole part walked every megabyte of
-  // a base64 attachment, several times per part, per reader — that is where a big email's CPU went.
-  const crlf = part.indexOf("\r\n\r\n");
-  const lf = part.indexOf("\n\n");
-  const end = crlf === -1 ? lf : lf === -1 ? crlf : Math.min(crlf, lf);
-  const unfolded = (end === -1 ? part : part.slice(0, end)).replace(/\r?\n[ \t]+/g, " ");
-  const m = new RegExp(`^${name}\\s*:\\s*(.+)$`, "im").exec(unfolded);
-  return m ? m[1]!.trim() : null;
-}
-
-function filenameIn(part: string): string {
-  const disposition = headerIn(part, "content-disposition") ?? "";
-  const type = headerIn(part, "content-type") ?? "";
-  const m = /filename\*?=\s*"?([^";\r\n]+)"?/i.exec(disposition) ?? /name\s*=\s*"?([^";\r\n]+)"?/i.exec(type);
-  if (m) return m[1]!.trim().slice(0, 200);
-  // No name: called by what it is, so a picture is never announced as "attachment.pdf".
-  const sub = /^[a-z]+\/([a-z0-9.+-]+)/i.exec(type)?.[1]?.toLowerCase();
-  return !type || sub === "pdf" ? "attachment.pdf" : `attachment.${(sub ?? "bin").replace(/^x-|\+.*$/g, "").slice(0, 8)}`;
-}
-
-/**
- * The PDFs in a raw MIME message.
- *
- * Returns `unread` for parts that look like attachments and could not be taken, so the caller can
- * SAY so on the work card. Silence about a dropped attachment is how the Sensori deck went missing.
- */
-export function pdfAttachments(raw: string): { attachments: Attachment[]; unread: string[] } {
-  return attachmentsOf(raw, (type) => type.includes("application/pdf"), () => "application/pdf", MAX_ATTACHMENTS);
-}
-
-/**
- * A voice note up to this size is heard (15 Nov 2026: was 3 MB). Whisper takes it as the base64 TEXT
- * the email already carries, so nothing is decoded or re-encoded here; the CPU is a copy, and the
- * production Worker's CPU limit is 30 s (`[env.production.limits]`). A phone's few minutes of m4a is
- * 1 to 20 MB; Email Routing refuses anything over 25 MB before it arrives.
+ * A voice note up to this size is heard (15 Nov 2026: was 3 MB). Whisper takes it as base64; a phone's
+ * few minutes of m4a is 1 to 20 MB; Email Routing refuses anything over 25 MB before it arrives.
  */
 export const MAX_VOICE_NOTE_BYTES = 25 * 1024 * 1024;
 
-/** The audio files a person attached (a phone's "New Recording 4.m4a"), by type or by a sound file's name. */
-export function audioAttachments(raw: string): { attachments: Attachment[]; unread: string[] } {
-  const isAudio = (type: string, part: string) => type.startsWith("audio/")
-    || /name\*?=["']?[^"';\r\n]+\.(?:m4a|mp3|wav|aac|ogg|oga|opus|caf|amr|webm)\b/i.test(part.slice(0, 2000));
-  return attachmentsOf(raw, isAudio, (type) => (type.split(";")[0] || "audio/mp4").trim(), 5, MAX_VOICE_NOTE_BYTES);
+/** What the card says when the message itself could not be taken apart. */
+const PARSE_FAILED_NAME = "the message";
+/** postal-mime's refusal in plain words: this line reaches her Got it, so no error code is ever in it. */
+const PLAIN_REFUSAL: Record<string, string> = {
+  EMAXNESTINGDEPTH: "its parts are nested deeper than any real email",
+  EMAXPARTCOUNT: "it holds more parts than any real email",
+  EMAXHEADERSIZE: "its headers are larger than any real email's",
+  EMAXFORWARDEDADDRESSES: "its forwards carry more addresses than any real email",
+};
+const failedLine = (why: string) => `${PARSE_FAILED_NAME} (it could not be taken apart, ${PLAIN_REFUSAL[why] ?? "it is not a well-formed email"}; it is kept as it arrived)`;
+
+function filenameOf(part: MimePart): string {
+  if (part.filename) return part.filename.trim().slice(0, 200);
+  // No name: called by what it is, so a picture is never announced as "attachment.pdf".
+  const sub = /^[a-z]+\/([a-z0-9.+-]+)/i.exec(part.mimeType)?.[1]?.toLowerCase();
+  return !part.mimeType || sub === "pdf" ? "attachment.pdf" : `attachment.${(sub ?? "bin").replace(/^x-|\+.*$/g, "").slice(0, 8)}`;
 }
 
-/**
- * EVERY FILE IN THE MESSAGE (15 Nov 2026): every leaf that is not the message's own text — a PDF, a
- * ZIP, a picture, a spreadsheet, a recording — with its base64 left as it is. A part with a filename,
- * or any part whose type is not text/*, counts; the text/plain and text/html bodies do not.
- */
-export function fileAttachments(raw: string, max = 40): { attachments: Attachment[]; unread: string[] } {
-  const isFile = (type: string, part: string) => {
-    if (type.startsWith("multipart/")) return false;
-    const head = part.slice(0, 2000);
-    const named = /(?:file)?name\*?=/i.test(head);
-    if (!type) return named;
-    return named || !type.startsWith("text/");
-  };
-  return attachmentsOf(raw, isFile, (type) => (type.split(";")[0] || "application/octet-stream").trim(), max, 30 * 1024 * 1024);
+function partsOf(
+  parsed: ParsedMail, accept: (part: MimePart, filename: string) => boolean, mediaTypeOf: (type: string) => string,
+  max: number, maxBytes: number,
+): { files: FilePart[]; unread: string[] } {
+  const files: FilePart[] = [];
+  const unread: string[] = [];
+  const { mail, failed } = parsed;
+  if (!mail) return { files, unread: failed ? [failedLine(failed)] : [] };
+
+  for (const part of mail.attachments) {
+    const filename = filenameOf(part);
+    if (!accept(part, filename)) continue;
+    if (files.length >= max) {
+      unread.push(`${filename} (only the first ${max} were taken)`);
+      continue;
+    }
+    const content = typeof part.content === "string" ? new TextEncoder().encode(part.content) : new Uint8Array(part.content);
+    if (!content.byteLength) {
+      unread.push(`${filename} (it was empty)`);
+      continue;
+    }
+    if (content.byteLength > maxBytes) {
+      unread.push(`${filename} (${(content.byteLength / 1024 / 1024).toFixed(1)}MB — too large to read here)`);
+      continue;
+    }
+    files.push({ filename, mediaType: mediaTypeOf(part.mimeType), content, bytes: content.byteLength });
+  }
+  return { files, unread };
+}
+
+/** EVERY FILE IN THE MESSAGE (15 Nov 2026): every part that is not the message's own text, as bytes. */
+export function fileAttachments(parsed: ParsedMail, max = 40): { attachments: FilePart[]; unread: string[] } {
+  const { files, unread } = partsOf(parsed, () => true, (type) => type || "application/octet-stream", max, 30 * 1024 * 1024);
+  return { attachments: files, unread };
 }
 
 /** Base64 to bytes in one pass, without a per-byte callback. Throws on bad base64. */
@@ -196,207 +104,19 @@ export function bytesOfBase64(b64: string): Uint8Array {
   return out;
 }
 
-/** Quoted-printable to bytes: soft breaks joined, `=XX` undone, everything else kept as UTF-8. Pure. */
-export function quotedPrintableBytes(text: string): Uint8Array {
-  const joined = text.replace(/=\r?\n/g, "");
-  const out: number[] = [];
-  const enc = new TextEncoder();
-  for (let i = 0; i < joined.length; i += 1) {
-    const c = joined[i];
-    if (c === "=" && /^[0-9a-fA-F]{2}$/.test(joined.slice(i + 1, i + 3))) { out.push(parseInt(joined.slice(i + 1, i + 3), 16)); i += 2; continue; }
-    const code = joined.charCodeAt(i);
-    if (code < 128) out.push(code); else for (const b of enc.encode(c)) out.push(b);
-  }
-  return Uint8Array.from(out);
-}
-
-/** Bytes to base64 in 32 KB slices (a single String.fromCharCode over megabytes overflows the stack). */
+/**
+ * Bytes to base64, one 96 KB slice at a time, joined once. A slice is a multiple of 3 bytes so only
+ * the last carries padding; the binary string of the whole file is never built, and `join` gives one
+ * flat string rather than a rope V8 keeps every piece of.
+ */
 export function base64OfBytes(bytes: Uint8Array): string {
-  let s = "";
-  for (let i = 0; i < bytes.length; i += 0x8000) s += String.fromCharCode(...bytes.subarray(i, i + 0x8000));
-  return btoa(s);
-}
-
-function attachmentsOf(
-  raw: string, accept: (type: string, part: string) => boolean, mediaTypeOf: (type: string) => string,
-  max: number, maxBytes = MAX_ATTACHMENT_BYTES,
-): { attachments: Attachment[]; unread: string[] } {
-  const attachments: Attachment[] = [];
-  const unread: string[] = [];
-
-  const boundary = boundaryOf(raw);
-  if (!boundary) return { attachments, unread };
-
-  /*
-   * Split on the declared boundary, WITHOUT a regular expression.
-   *
-   * It used to escape the boundary and build a RegExp, and the escape did not work. The character
-   * class read `/[.*+?^${}()|[\\]\\\\]/` — the `\\` closed the escape and the following `]` ended
-   * the class, so the pattern was "one metacharacter followed by a literal `\\]`", which matches
-   * nothing a boundary ever contains. Every boundary went into `new RegExp` UNESCAPED.
-   *
-   * RFC 2046 allows `(`, `)`, `+`, `?`, `.`, `/`, `:`, `=` and `'` in a boundary, and real clients
-   * use them. So a boundary with a `+` or a `?` in it mis-split the message and the deck was
-   * silently dropped, and an unbalanced `(` made `new RegExp` THROW — which, from inside the email
-   * handler, loses the entire message: no event, no card, no capture. Exactly the class of silent
-   * loss the rest of this file exists to prevent.
-   *
-   * `String.prototype.split` with a plain string needs no escaping at all, cannot throw on a legal
-   * boundary, and is what this always wanted. The regex was never buying anything.
-   */
-  const parts = leafParts(raw, boundary);
-
-  for (const part of parts) {
-    const type = (headerIn(part, "content-type") ?? "").toLowerCase();
-    if (!accept(type, part)) continue;
-
-    const filename = filenameIn(part);
-    if (attachments.length >= max) {
-      unread.push(`${filename} (only the first ${max} were taken)`);
-      continue;
-    }
-
-    const encoding = (headerIn(part, "content-transfer-encoding") ?? "").toLowerCase();
-    const plainSent = !encoding || /^(7bit|8bit|binary)$/.test(encoding.trim());
-    if (!encoding.includes("base64") && !encoding.includes("quoted-printable") && !plainSent) {
-      // Anything else would need decoding this file does not do. Said, not guessed at.
-      unread.push(`${filename} (sent as ${encoding || "an encoding this cannot read"})`);
-      continue;
-    }
-
-    // The body is everything after the blank line that ends the part's headers.
-    const split = part.indexOf("\r\n\r\n") >= 0 ? part.indexOf("\r\n\r\n") + 4 : part.indexOf("\n\n") + 2;
-    if (split <= 1) {
-      unread.push(`${filename} (its content could not be found)`);
-      continue;
-    }
-
-    /*
-     * A QUOTED-PRINTABLE OR PLAIN FILE IS STILL HER FILE (15 Nov 2026 production dry run: a forwarded
-     * "Attachment.html" came back "could not open: sent as quoted-printable"). Its bytes are undone here
-     * and carried as base64 like every other file, so the readers downstream see one shape.
-     */
-    const body = part.slice(split);
-    const dataBase64 = encoding.includes("base64")
-      ? body.replace(/[\r\n]/g, "").trim()
-      : base64OfBytes(encoding.includes("quoted-printable") ? quotedPrintableBytes(body.replace(/\s+$/, "")) : new TextEncoder().encode(body.replace(/\s+$/, "")));
-    if (!dataBase64) {
-      unread.push(`${filename} (it was empty)`);
-      continue;
-    }
-
-    // Base64 is 4 characters per 3 bytes; close enough to refuse an oversized file without decoding
-    // it, which is the whole point — measuring by decoding would cost what reading costs.
-    const bytes = Math.floor((dataBase64.length * 3) / 4);
-    if (bytes > maxBytes) {
-      unread.push(`${filename} (${(bytes / 1024 / 1024).toFixed(1)}MB — too large to read here)`);
-      continue;
-    }
-
-    attachments.push({ filename, mediaType: mediaTypeOf(type), dataBase64, bytes });
+  const SLICE = 0x8000 * 3;
+  const out: string[] = [];
+  for (let i = 0; i < bytes.length; i += SLICE) {
+    const slice = bytes.subarray(i, i + SLICE);
+    let bin = "";
+    for (let j = 0; j < slice.length; j += 0x8000) bin += String.fromCharCode(...slice.subarray(j, j + 0x8000));
+    out.push(btoa(bin));
   }
-
-  return { attachments, unread };
-}
-
-
-/**
- * The readable text of a message: its subject, and every text part of the body.
- *
- * WHY THE OVERSIZE PATH NEEDS THIS. Operator, 23 Aug 2026: *"the subjects will all be different its
- * the #hashtag trigger that matters"*, and *"the hashtag can be in the subject or the body"*. A
- * message over the size cap is routed from its HEADERS ALONE, because walking a seven-megabyte MIME
- * tree does not fit in a Worker's 10ms of CPU — so a `#wpdeck` written in the body is invisible at
- * arrival, and both of Scooter's decks opened cards reading "It carries no trigger tag."
- *
- * The whole message is already stored, and the scheduled reader has its own CPU budget. So the
- * trigger scan happens THERE, over this text, rather than being missed at the door.
- *
- * Attachments are skipped deliberately: a hashtag inside a PDF is not a routing instruction, and
- * decoding megabytes of base64 to look for one is the cost this split exists to avoid.
- */
-export function messageText(raw: string): { subject: string; body: string } {
-  const subject = headerIn(unfoldHeaders(raw.split(/\r?\n\r?\n/)[0] ?? ""), "subject") ?? "";
-
-  const boundary = boundaryOf(raw);
-  if (!boundary) {
-    // Not multipart: everything after the first blank line is the body.
-    const split = raw.indexOf("\r\n\r\n") >= 0 ? raw.indexOf("\r\n\r\n") + 4 : raw.indexOf("\n\n") + 2;
-    return { subject, body: split > 1 ? raw.slice(split, split + MAX_SCANNED_BODY) : "" };
-  }
-
-  const chunks: string[] = [];
-  // Flattened for the same reason as the attachments above: on a forward the readable body sits
-  // inside a nested multipart, and a one-level scan returns the wrapper instead of the words.
-  for (const part of leafParts(raw, boundary)) {
-    const type = (headerIn(part, "content-type") ?? "").toLowerCase();
-    // text/plain and text/html only. An empty content-type is the preamble, not a part.
-    if (!type.startsWith("text/")) continue;
-    const encoding = (headerIn(part, "content-transfer-encoding") ?? "").toLowerCase();
-    if (encoding.includes("base64")) continue; // Not decoded here; a trigger is rarely base64-only.
-    const blank = part.indexOf("\r\n\r\n") >= 0 ? part.indexOf("\r\n\r\n") + 4 : part.indexOf("\n\n") + 2;
-    if (blank > 1) chunks.push(part.slice(blank));
-    if (chunks.join("").length > MAX_SCANNED_BODY) break;
-  }
-  return { subject, body: chunks.join("\n").slice(0, MAX_SCANNED_BODY) };
-}
-
-/** Enough to carry a forwarded chain and its tags; not so much that scanning it costs real time. */
-const MAX_SCANNED_BODY = 256 * 1024;
-
-
-/**
- * A deck that arrived as something this cannot open — named precisely, never as silence.
- *
- * Operator, 24 Aug 2026, on the PDF-only limit: decks also arrive as `.pptx`, as Keynote, and as
- * Docsend or Google Slides LINKS. The reader refuses anything that is not `application/pdf`, which
- * is correct — handing a model a file it cannot open and believing the answer is worse than
- * refusing — but the refusal read "The message carried no PDF this can read", which is true of the
- * parser and useless to a partner. It does not say a 9MB Keynote was sitting right there.
- *
- * This does not convert anything and does not pretend to. It reports WHAT ARRIVED so the card can
- * say it, which is the difference between "we cannot read this" and "nothing was there".
- */
-const DECK_LIKE_TYPES: ReadonlyArray<{ match: RegExp; called: string }> = [
-  { match: /presentationml|\.pptx?$/i, called: "a PowerPoint file" },
-  { match: /keynote|\.key$/i, called: "a Keynote file" },
-  { match: /opendocument\.presentation|\.odp$/i, called: "an OpenDocument presentation" },
-  { match: /msword|wordprocessingml|\.docx?$/i, called: "a Word document" },
-];
-
-export function unreadableDeckAttachments(raw: string): string[] {
-  const boundary = boundaryOf(raw);
-  if (!boundary) return [];
-
-  const found: string[] = [];
-  for (const part of leafParts(raw, boundary)) {
-    const type = (headerIn(part, "content-type") ?? "").toLowerCase();
-    if (!type || type.includes("application/pdf") || type.startsWith("text/") || type.startsWith("multipart/")) continue;
-    const filename = filenameIn(part);
-    const known = DECK_LIKE_TYPES.find((k) => k.match.test(type) || k.match.test(filename));
-    if (known) found.push(`${filename} (${known.called})`);
-  }
-  return found.slice(0, MAX_ATTACHMENTS);
-}
-
-/**
- * Deck links in the body, which is how a lot of decks travel now.
- *
- * SURFACED, NOT FETCHED, and that boundary is deliberate. Docsend gates on an email address and
- * Google Slides needs paging through slides — the browser tool this system has reads one page of
- * text and shoots above the fold, which would capture a title slide and nothing else. Reporting the
- * link so a person can open it is honest; claiming to have read a deck from a screenshot of slide
- * one would be the same over-claim this whole review keeps removing.
- */
-const DECK_HOSTS = /https:\/\/(?:www\.)?(docsend\.com|drive\.google\.com|docs\.google\.com|dropbox\.com|notion\.so|figma\.com|canva\.com|pitch\.com)\/[^\s"'<>)\]]+/gi;
-
-export function deckLinks(text: string): string[] {
-  const seen = new Set<string>();
-  for (const m of text.matchAll(DECK_HOSTS)) {
-    // Trailing punctuation from prose, and the tracking noise a forward adds.
-    const url = m[0].replace(/[.,;:]+$/, "");
-    seen.add(url.slice(0, 300));
-    if (seen.size >= 5) break;
-  }
-  return [...seen];
+  return out.join("");
 }

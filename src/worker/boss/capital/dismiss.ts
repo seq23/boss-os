@@ -10,11 +10,15 @@
 import { ageDays, OLD_DAYS, STALE_DAYS } from "../../../shared/boss/deals/match.mjs";
 import type { Env } from "../env";
 import { audit } from "../lib/audit";
+import { logEvent } from "../lib/log";
+import { logReplyDecision, type ReplyDecision } from "../intake/firstRead";
+import { quoteStands, sentencesOf, standingIn } from "../../../shared/boss/text/wholeSentence.mjs";
 
 const CODE_ALPHABET = "abcdefghjkmnpqrstuvwxyz23456789";
 export const DISMISS_CODE_RE = /^[a-hj-km-np-z2-9]{5}$/;
 /** "dismiss k3m9q" anywhere at the start of a line of her reply. */
 export const DISMISS_REPLY_RE = /(?:^|\n)\s*dismiss\s+([a-hj-km-np-z2-9]{5})\b/i;
+const DISMISS_WORDS_RE = /\bdismiss\s+[a-hj-km-np-z2-9]{5}\b/i;
 
 function random(n: number, alphabet: string): string {
   const bytes = crypto.getRandomValues(new Uint8Array(n));
@@ -85,15 +89,33 @@ export function pruneDismissed<T>(value: T, dismissed: Set<string>): T {
   return dismissed.size ? walk(value) : value;
 }
 
-/** Her reply "dismiss <code>": the answer the mailbox records, or null when the reply is not one. */
-export async function dismissFromMail(env: Env, text: string, now = Date.now()): Promise<{ note: string } | null> {
-  const m = DISMISS_REPLY_RE.exec(String(text ?? ""));
-  if (!m) return null;
-  const code = m[1]!.toLowerCase();
-  const tap = await tapByCode(env, code);
-  if (!tap) return { note: `No match has the code ${code}, so nothing was dismissed. The five letters are on the trade's card in Boss OS.` };
-  const r = await dismissMatch(env, { pair: tap.pair, sig: tap.sig, company: tap.company, code }, "reply", now);
-  return { note: r.dismissed ? `Dismissed the ${tap.company} match (${code}). It will not come back unless one side sends a new order.` : `The ${tap.company} match (${code}) was already dismissed.` };
+/*
+ * HER REPLY "dismiss <code>" (25 Oct 2026; read by the model, 22 Nov 2026). The first read decides: each `dismiss`
+ * command it gives, quoting her words, dismisses the code in them. With no read, the code-shaped line is the logged
+ * last resort, judged by the shared sentence judge ("don't dismiss k3m9q", "dismiss k3m9q?" never act). Where the
+ * read and her exact line disagree, the code is unknown: nothing is dismissed and she is asked once.
+ */
+export async function dismissFromMail(env: Env, text: string, now = Date.now(), read: ReplyDecision | null = null, mailId = ""): Promise<{ note: string } | null> {
+  const words = String(text ?? "");
+  const codeOf = (s: string) => (DISMISS_REPLY_RE.exec(`\n${s}`)?.[1] ?? "").toLowerCase();
+  const keyword = [...new Set(sentencesOf(words).map((x) => standingIn(x.text, DISMISS_WORDS_RE) ? codeOf(x.text) : "").filter(Boolean))];
+  const fromRead = read ? [...new Set(read.commands.filter((c) => c.kind === "dismiss" && quoteStands(words, c.text)).map((c) => codeOf(c.text)).filter(Boolean))] : null;
+  const codes = fromRead ?? keyword;
+  const unsure = fromRead ? keyword.filter((k) => !fromRead.includes(k)) : [];
+  if (!codes.length && !unsure.length) return null;
+  await logReplyDecision(env, { mailId, what: "a match dismissal", firstRead: fromRead ? fromRead.join(", ") || "none" : null, keyword: keyword.join(", ") || "none" });
+  const said: string[] = [];
+  for (const code of codes) {
+    const tap = await tapByCode(env, code);
+    if (!tap) { said.push(`No match has the code ${code}, so nothing was dismissed. The five letters are on the trade's card in Boss OS.`); continue; }
+    const r = await dismissMatch(env, { pair: tap.pair, sig: tap.sig, company: tap.company, code }, "reply", now);
+    said.push(r.dismissed ? `Dismissed the ${tap.company} match (${code}). It will not come back unless one side sends a new order.` : `The ${tap.company} match (${code}) was already dismissed.`);
+  }
+  if (unsure.length) {
+    await logEvent(env.DB, { level: "warn", scope: "intake", event: "meaning_disagrees", lane: "ops", entityId: mailId || undefined, detail: { what: "a match dismissal", first_read: fromRead?.join(", ") || "none", keyword: unsure.join(", "), line: "the read and her exact words disagree: unknown, asked once, nothing done" } }).catch(() => undefined);
+    said.push(`I was not sure you meant to dismiss ${unsure.join(", ")}, so nothing was dismissed. Reply "dismiss ${unsure[0]}" on its own line if you did.`);
+  }
+  return { note: said.join("\n") };
 }
 
 /** Recompute age on read: a retained push ages without deleting its orders. */

@@ -21,6 +21,7 @@
  * RULE 0: `OUTPUT n invitations` every run; an inbox it cannot read is NAMED STOP
  * [INVITES_MAILBOX_UNREAD] — a plain line in her email, the duty marked failed, one fix job a day.
  */
+import { putMorningSection } from "../mail/morningSection";
 import type { Env } from "../env";
 import { newId } from "../lib/id";
 import { getSetting, setSetting } from "../lib/settings";
@@ -28,7 +29,7 @@ import { logEvent } from "../lib/log";
 import { admitTask } from "../tasks/admit";
 import { serviceAccountFrom, type ServiceAccount } from "../wealth/gmailDraft";
 import { awaitingReply, selfAnswer, mailboxAllowed } from "../commands/google";
-import { MORNING_SECTIONS, morningSectionProblems } from "../../../shared/boss/mail/morningSections.mjs";
+import { MORNING_SECTIONS } from "../../../shared/boss/mail/morningSections.mjs";
 import {
   INVITE_INBOXES, SECTION, FIRST_LOOKBACK_DAYS, EXCERPT_CHARS, MAX_PER_MAILBOX, mailQuery, parseIcs, readInvitation,
   dedupeKey, askPlan, cardFor, centralDay, outputLine, yesWords, noWords, platformOf, notInvitation,
@@ -300,12 +301,8 @@ export async function runInvitations(env: Env, now = Date.now(), fetchImpl: type
     ? [`⚠ Simone could not read ${unread.length === 1 ? "one place" : `${unread.length} places`} for invitations this morning (${unread.map((u) => u.replace(/\s*\(.*\)$/, "")).join(", ")}), so an invitation there may be missing. The team is fixing it.`]
     : [];
   const obj = { section: SECTION, at: new Date(now).toISOString(), title: "Invitations", decide, rows: [], lines };
-  const problems = morningSectionProblems(obj);
+  const problems = await putMorningSection(env.DB, { section: SECTION, job: "duty_invitations", day: today, obj, now });
   if (problems.length) throw new Error(`NAMED STOP [INVITES_SECTION_REFUSED] ${problems.join("; ")}`);
-  await env.DB.prepare(
-    `INSERT INTO morning_sections (section, job, day, body, status, told_at, created_at, updated_at) VALUES (?,?,?,?,'fresh',NULL,?,?)
-     ON CONFLICT(section) DO UPDATE SET job = excluded.job, day = excluded.day, body = excluded.body, status = 'fresh', told_at = NULL, updated_at = excluded.updated_at`,
-  ).bind(SECTION, "duty_invitations", today, JSON.stringify(obj), now, now).run();
 
   const output = outputLine(decide.length);
   console.log(`invitations: ${output} (new ${found}; read ${JSON.stringify(read)}; skipped ${JSON.stringify(skipped)})`);

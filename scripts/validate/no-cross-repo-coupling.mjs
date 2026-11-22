@@ -3,15 +3,16 @@
  * no-cross-repo-coupling.mjs — static Network OS boundary scan (P9,
  * `npm run validate:network-boundary`).
  *
- * Proves, by construction, that West Peek OS never couples to another system's
- * storage. Outside src/worker/services/networkAdapter.ts (the ONE declared
- * adapter), no source file under src/ may contain
+ * Proves, by construction, that this Worker never couples to another system's storage. No source
+ * file under src/ may contain
  *   (a) a filesystem/SQLite path into a sibling repo or DB file
  *       (network-os, agency-event-os, secondaries, *.sqlite/*.db),
- *   (b) a D1/KV/R2 binding name that is not a West Peek OS binding (WP_OS_*),
+ *   (b) a binding that is not this Worker's own (WP_OS_*, the Boss OS subtree's names, or one of
+ *       the declared non-storage settings below),
  *   (c) a Network OS hostname or API base.
- * And even INSIDE the adapter, direct storage access is forbidden: the adapter may
- * only call the injected NetworkOsClient.
+ * Until 22 Nov 2026 the copied West Peek fund code held one declared Network OS adapter
+ * (services/networkAdapter.ts). It went with the chassis; West Peek OS owns that crossing now, so
+ * no file here may name a Network OS host at all.
  *
  * The scan FAILS LOUDLY (exit 1, named violations). `--self-test` feeds synthetic
  * violating sources through the same check function and asserts they are caught.
@@ -23,7 +24,6 @@ import path from "node:path";
 
 const ROOT = fileURLToPath(new URL("../..", import.meta.url));
 const SRC_DIR = path.join(ROOT, "src");
-const ADAPTER = "src/worker/services/networkAdapter.ts";
 
 const SIBLING_REPO_PATH = /(west-peek-network-os|agency-event-os|seq23\/secondaries|\.\.\/\.\.\/\.\.\/[a-z-]*network)/i;
 
@@ -50,43 +50,17 @@ const PATH_INTO_A_REPO = /(\.\.\/\.\.\/\.\.\/|~\/GitHub\/|\/Users\/[a-z]+\/GitHu
 const FOREIGN_DB_FILE = /["'`][^"'`]*\.(sqlite3?|db)["'`]/i;
 const FOREIGN_BINDING = /env\.(?!WP_OS_)(?:[A-Z][A-Z0-9_]{2,})\b/;
 /**
- * Bindings that are NOT West Peek storage but are legitimately part of the declared
- * environment contract (src/worker/env.ts, docs/ENVIRONMENT_CONTRACT.md):
- * - ASSETS: the static SPA fetcher (P1).
- * - Provider API-key SECRETS (P16/P23, including the specialist lane): names only, values live in
- *   the encrypted vault. These are
- *   credentials for the governed AI boundary, not another system's storage, which is what this
- *   scan exists to prevent. Any binding outside this list is still a violation.
- * - RESEND_API_KEY (P33): the outbound email transport credential. Same category as the provider
- *   keys — a credential for an effect this system performs itself, NOT a handle on another
- *   repository's database. The two switches that gate its use (WP_OS_EMAIL_SEND, WP_OS_EMAIL_FROM)
- *   already carry the WP_OS_ prefix and need no exemption.
- * - CF_ACCESS_CLIENT_ID / CF_ACCESS_CLIENT_SECRET: this firm's OWN Cloudflare Access service
- *   token, used so the firm's browser can open the firm's own pages — every West Peek page sits
- *   behind Access, so a design reviewer that can critique any founder's homepage could not open
- *   ours. Platform-named, so neither can carry a WP_OS_ prefix. It is a credential for this
- *   system's own front door, not a handle on another repository's storage, which is the thing this
- *   scan exists to prevent. The secret is reachable only from effects/browserClient.ts and only for
- *   hosts isOwnHost() accepts.
- * - RUNWARE_API_KEY: the image-generation credential. Same category as the provider and transport
- *   keys — a credential for an effect this system performs itself, not a handle on another
- *   repository's storage, which is the thing this scan exists to prevent. Vendor-named, so it
- *   cannot carry a WP_OS_ prefix, and reachable only from effects/runwareClient.ts, which is on the
- *   egress allowlist with its own written reason.
- * - GOOGLE_OAUTH_CLIENT_ID / GOOGLE_OAUTH_CLIENT_SECRET (P51): the firm's own OAuth client, used
- *   so each partner can grant this system read access to their own calendar. Same category as the
- *   provider keys — a credential for something this system does itself, not a handle on another
- *   repository's storage. Platform-named, so neither can carry a WP_OS_ prefix, and both are
- *   reachable only from effects/googleClient.ts.
- * - EMAIL (P33): Cloudflare's Email Sending binding, the second transport for that same effect.
- *   Platform-named, so it cannot carry a WP_OS_ prefix. It is a capability this system was granted
- *   on its own account — not a handle on another repository's storage — which is the thing this
- *   scan exists to prevent. It is declared in src/worker/env.ts and reachable only from
- *   effects/cloudflareEmailClient.ts, and being a binding it adds no egress surface at all.
- * - BOSS_EXTRA_OWNER_SENDERS: this Worker's own private intake sender configuration, also read
- *   through process.env by Mac callers. It is a declared setting, not another system's storage.
+ * Bindings that are NOT storage but are part of the declared environment (src/worker/env.ts).
+ * Any binding outside this list, WP_OS_* and the Boss OS subtree is still a violation.
+ * - ASSETS: the static SPA fetcher.
+ * - CF_ACCESS_CLIENT_ID / CF_ACCESS_CLIENT_SECRET: this Worker's OWN Cloudflare Access service
+ *   token, so its browser client can open its own pages. Platform-named, so neither can carry a
+ *   WP_OS_ prefix; reachable only from effects/browserClient.ts and only for hosts isOwnHost()
+ *   accepts.
+ * - BOSS_EXTRA_OWNER_SENDERS: Boss intake's own private sender configuration, also read through
+ *   process.env by Mac callers. A declared setting, not another system's storage.
  */
-const DECLARED_NON_STORAGE_BINDINGS = /env\.(ASSETS|OPENROUTER_API_KEY|FIREWORKS_API_KEY|AI_PROVIDER_API_KEY|HARVEY_API_KEY|NORM_API_KEY|RESEND_API_KEY|RUNWARE_API_KEY|CF_ACCESS_CLIENT_ID|CF_ACCESS_CLIENT_SECRET|EMAIL|GOOGLE_OAUTH_CLIENT_ID|GOOGLE_OAUTH_CLIENT_SECRET|BOSS_EXTRA_OWNER_SENDERS)\b/;
+const DECLARED_NON_STORAGE_BINDINGS = /env\.(ASSETS|CF_ACCESS_CLIENT_ID|CF_ACCESS_CLIENT_SECRET|BOSS_EXTRA_OWNER_SENDERS)\b/;
 const NETWORK_OS_HOST = /(network-os[a-z0-9.-]*\.(?:com|dev|net|io|workers\.dev)|api\.westpeeknetwork)/i;
 
 function listSourceFiles() {
@@ -163,8 +137,8 @@ export function checkSources(files) {
     if (FOREIGN_DB_FILE.test(source)) {
       violations.push(`${rel}: literal database file path (no system may open another system's storage)`);
     }
-    if (NETWORK_OS_HOST.test(source) && rel !== ADAPTER) {
-      violations.push(`${rel}: Network OS hostname outside the declared adapter`);
+    if (NETWORK_OS_HOST.test(source)) {
+      violations.push(`${rel}: Network OS hostname (West Peek OS owns that crossing; nothing here may call it)`);
     }
     // Remove the declared non-storage bindings before looking for a foreign one, so a
     // legitimate credential reference cannot mask an illegitimate storage binding later in
@@ -174,10 +148,6 @@ export function checkSources(files) {
     const bossTranslates = rel.startsWith(BOSS_SUBTREE) || rel === BOSS_MOUNT;
     if (foreignBinding && !bossTranslates) {
       violations.push(`${rel}: non-West-Peek binding ${foreignBinding[0]} (only WP_OS_* bindings exist)`);
-    }
-    // The adapter itself must reach Network OS through the injected client only.
-    if (rel === ADAPTER && /\bfetch\s*\(/.test(source)) {
-      violations.push(`${rel}: direct fetch in the adapter (crossings must go through the injected NetworkOsClient)`);
     }
   }
   return violations;
@@ -194,10 +164,10 @@ function scanRealTree() {
 
 function selfTest() {
   const clean = {
-    "src/worker/services/networkAdapter.ts": "const page = await client.pull(resource, cursor);\nawait env.WP_OS_DB.prepare('SELECT 1').first();",
-    "src/worker/services/portfolio.ts": "await env.WP_OS_DB.prepare('SELECT 1').first();",
-    // P16: a declared provider credential is not another system's storage.
-    "src/worker/ai/routing.ts": "const key = env.OPENROUTER_API_KEY;",
+    "src/worker/index.ts": "await env.WP_OS_DB.prepare('SELECT 1').first();\nreturn env.ASSETS.fetch(request);",
+    "src/worker/boss/router/openrouter.ts": "const key = env.OPENROUTER_API_KEY;\nawait env.DB.prepare('SELECT 1').first();",
+    // A declared non-storage setting is not another system's storage.
+    "src/worker/effects/browserClient.ts": "const id = env.CF_ACCESS_CLIENT_ID;",
     // Boss intake's own private sender configuration, also read by Mac-side Node callers.
     "src/shared/boss/intake/mail.mjs": "const extra = process.env.BOSS_EXTRA_OWNER_SENDERS;",
     /*
@@ -224,15 +194,15 @@ function selfTest() {
       "src/shared/boss/grid.mjs": 'import x from "../../../west-peek-network-os/lib.mjs";',
     },
     "foreign binding": { ...clean, "src/worker/services/sneaky.ts": "await env.NETWORK_OS_DB.prepare('SELECT 1').all();" },
-    "network hostname outside the adapter": { ...clean, "src/worker/services/sneaky.ts": 'await get("https://network-os.example.com/api/contacts");' },
-    "direct fetch inside the adapter": {
+    "a Network OS hostname anywhere": { ...clean, "src/worker/services/sneaky.ts": 'await get("https://network-os.example.com/api/contacts");' },
+    // A declared setting must not become a hiding place for a storage binding.
+    "foreign storage binding alongside a declared setting": {
       ...clean,
-      "src/worker/services/networkAdapter.ts": 'await fetch("https://example.com/contacts");',
+      "src/worker/effects/browserClient.ts": "const id = env.CF_ACCESS_CLIENT_ID;\nawait env.PARTNER_DB.prepare('SELECT 1').all();",
     },
-    // The P16 credential exemption must not become a hiding place for a storage binding.
-    "foreign storage binding alongside a declared credential binding": {
+    "a retired fund-code credential outside the Boss OS subtree": {
       ...clean,
-      "src/worker/ai/routing.ts": "const k = env.OPENROUTER_API_KEY;\nawait env.PARTNER_DB.prepare('SELECT 1').all();",
+      "src/worker/services/sneaky.ts": "const k = env.OPENROUTER_API_KEY;",
     },
     "foreign storage alongside the owner sender setting": {
       ...clean,
@@ -278,10 +248,9 @@ if (violations.length > 0) {
   // What to do about it, for the same reason as the AI-boundary scan: the breach is only half the
   // message. D5 forbids one system reaching into another's storage or filesystem, not the crossing
   // itself — so the fix is nearly always "go through the adapter", not "give up on the data".
-  console.error("\nAnything West Peek OS needs from another West Peek system crosses through the");
-  console.error("declared Network OS adapter and its injected NetworkOsClient — an HTTP contract with");
-  console.error("a named owner on both sides. Never a partner repo path, never another system's");
-  console.error("database file, never a binding that is not WP_OS_*.");
+  console.error("\nAnything this Worker needs from a West Peek system comes through West Peek OS, which owns");
+  console.error("that crossing. Never a partner repo path, never another system's database file, never a");
+  console.error("binding that is not this Worker's own.");
   process.exit(1);
 }
-console.log("NETWORK BOUNDARY SCAN PASSED: no partner-repo paths, foreign DB files, foreign bindings, or Network OS hosts outside the declared adapter.");
+console.log("NETWORK BOUNDARY SCAN PASSED: no partner-repo paths, foreign DB files, foreign bindings, or Network OS hosts.");

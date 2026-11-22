@@ -347,6 +347,20 @@ describe("the Growth page", () => {
   }, 30_000);
 });
 
+describe("the page shows the newest decision of the day (22 Nov 2026)", () => {
+  it("a second cycle on the same day replaces the first on the page", async () => {
+    const { apiJson } = await import("./helpers");
+    const ins = (id: string, decision: string, at: number) => env.DB.prepare(`INSERT INTO growth_decisions (id, cycle, business, label, state, decision, created_at) VALUES (?, ?, 'porch-and-party', 'Porch & Party', 'decided', ?, ?)`).bind(id, dayIdInZone(NOW), decision, at).run();
+    await ins("gdc_first", "The morning cycle.", NOW - 3_600_000);
+    await ins("gdc_second", "The evening re-run.", NOW - 60_000);
+    const page = (await apiJson<any>("/api/growth/page")).body.data;
+    const pnp = page.businesses.find((b: any) => b.key === "porch-and-party");
+    expect(pnp.happening.decision.decision).toBe("The evening re-run.");
+    expect(pnp.happened.decisions.map((d: any) => d.decision)).toEqual(["The morning cycle."]);
+    expect(page.week).toEqual({ decided: 1, held: 0 });
+  }, 30_000);
+});
+
 describe("the Director owns the older work on its roster (22 Nov 2026)", () => {
   it("keeps, changes or drops each linked row, on its evidence; a row it was not shown is untouched", async () => {
     await reading("pnp-requests", "porch-and-party", "requests", "all", 2, dayIdInZone(NOW));
@@ -420,6 +434,19 @@ describe("the Director owns the older work on its roster (22 Nov 2026)", () => {
     await env.DB.exec("DELETE FROM owner_open_loops WHERE id IN ('olp_lp1','olp_hers1','olp_cust1')");
   }, 60_000);
 
+  it("a Spry Labs company judges its own rows, which are filed under the spry brain; another entry's list never reaches it", async () => {
+    await seedRow("olp_s1", "spry", "claude", "Carousels: start posting");
+    await reading("ap-sales", "approvalprep", "sales", "site", 1, dayIdInZone(NOW)); // read, so it reaches the model
+    await brain("spry", SPRY.replace("- limits: R-ADV-13\n", "- limits: R-ADV-13\n- linked to-dos: olp_s1 (screenshot carousels, start posting)\n"));
+    const seen = await week({ ...DECISION, queue: [], proposals: [], linked: [{ id: "olp_s1", verdict: "keep", why: "Carousels go out twice a week" }] }, NOW);
+    expect(seen.filter((t) => /olp_s1: screenshot carousels, start posting/.test(t))).toHaveLength(1); // ApprovalPrep's prompt only
+    expect(await getRow("olp_s1")).toEqual({ status: "open", next_step: `Growth Director, ${dayIdInZone(NOW)}: keep. Carousels go out twice a week\nRender the pictures after 6 PM.` });
+    const acts = (await decisions()).filter((d) => JSON.parse(d.actions).some((a: any) => a.kind === "linked" && a.id === "olp_s1")).map((d) => d.business);
+    expect(acts).toEqual(["approvalprep"]);
+    await env.DB.exec("DELETE FROM owner_open_loops WHERE id = 'olp_s1'");
+    await brain("spry", SPRY);
+  }, 60_000);
+
   it("no answer, or an answer with no verdicts, leaves the rows untouched", async () => {
     await seedRow("olp_q1");
     await brain("porch-and-party", PNP + "- linked to-dos: olp_q1\n");
@@ -428,4 +455,53 @@ describe("the Director owns the older work on its roster (22 Nov 2026)", () => {
     expect(await getRow("olp_q1")).toEqual({ status: "open", next_step: "Render the pictures after 6 PM." });
     await env.DB.exec("DELETE FROM owner_open_loops WHERE id = 'olp_q1'");
   }, 60_000);
+});
+
+describe("her report every two weeks (a section of Simone's morning email)", () => {
+  it("written on the first cycle, not again within the fortnight, plain words with the Growth page link", async () => {
+    await env.DB.exec("DELETE FROM morning_sections WHERE section = 'growth'; DELETE FROM settings WHERE key = 'growth_report_last_day';");
+    await reading("pnp-requests", "porch-and-party", "requests", "all", 2);
+    await reading("ap-sales", "approvalprep", "sales", "site", 1);
+    const { model } = fake(DECISION, (draft) => /★/.test(draft) ? { pass: false, broken: ["R-PRF-01"], why: "x" } : { pass: true, broken: [], why: "" });
+    const out = await runGrowthDirector(env as any, NOW, { model, fetchImpl: noTrends });
+    const row = await env.DB.prepare(`SELECT body, day FROM morning_sections WHERE section = 'growth'`).first<any>();
+    const body = JSON.parse(row.body);
+    expect(body.title).toMatch(/Growth/);
+    expect(out.cards).toBeGreaterThan(0);
+    expect(body.lines[0]).toBe(`${out.cards === 1 ? "One growth idea waits" : `${out.cards} growth ideas wait`} for your yes in Decide. Nothing else to do.`);
+    expect(body.lines.some((l: string) => /^Porch & Party: 2 requests in 28 days; 1 queued, \d asked in Decide\. More Instagram reels/.test(l))).toBe(true);
+    expect(body.lines.some((l: string) => /^Against the floors: Porch & Party requests in the last 28 days: 2 of 4 by/.test(l))).toBe(true);
+    expect(body.link.url).toMatch(/\?tab=growth$/);
+    expect(JSON.stringify(body)).not.toMatch(/NAMED STOP|olp_|apr_|gdc_|R-PRF/);
+    // A week later: no new report.
+    await env.DB.exec("UPDATE morning_sections SET body = '{}' WHERE section = 'growth'");
+    const later = async (days: number) => {
+      const t = NOW + days * 86_400_000;
+      await reading("pnp-requests", "porch-and-party", "requests", "all", 3, dayIdInZone(t));
+      await runGrowthDirector(env as any, t, { model, fetchImpl: noTrends });
+    };
+    await later(7);
+    expect((await env.DB.prepare(`SELECT body FROM morning_sections WHERE section = 'growth'`).first<any>()).body).toBe("{}");
+    // Two weeks later: a new one.
+    await later(14);
+    expect(JSON.parse((await env.DB.prepare(`SELECT body FROM morning_sections WHERE section = 'growth'`).first<any>()).body).title).toMatch(/Growth/);
+  }, 30_000);
+
+  it("a held cycle still reports; a refused write leaves the day unset so next Monday retries", async () => {
+    await env.DB.exec("DELETE FROM morning_sections WHERE section = 'growth'; DELETE FROM settings WHERE key = 'growth_report_last_day';");
+    await reading("pnp-requests", "porch-and-party", "requests", "all", 2);
+    const silent = async () => null;
+    await expect(runGrowthDirector(env as any, NOW, { model: silent as any, fetchImpl: noTrends })).rejects.toThrow();
+    const body = JSON.parse((await env.DB.prepare(`SELECT body FROM morning_sections WHERE section = 'growth'`).first<any>()).body);
+    expect(body.lines[0]).toBe("Nothing to do: nothing new was queued this fortnight. Why, below.");
+    expect(body.lines.join(" ")).toMatch(/Held, not guessed: .*no free writer answered/);
+    // A failed write (the table gone for a moment): the day is not set, so the next run writes it.
+    await env.DB.exec("DELETE FROM morning_sections WHERE section = 'growth'; DELETE FROM settings WHERE key = 'growth_report_last_day'; ALTER TABLE morning_sections RENAME TO morning_sections_away;");
+    try {
+      await expect(runGrowthDirector(env as any, NOW, { model: silent as any, fetchImpl: noTrends })).rejects.toThrow();
+    } finally { await env.DB.exec("ALTER TABLE morning_sections_away RENAME TO morning_sections;"); }
+    expect(await env.DB.prepare(`SELECT 1 FROM settings WHERE key = 'growth_report_last_day'`).first()).toBeNull();
+    await expect(runGrowthDirector(env as any, NOW + 3_600_000, { model: silent as any, fetchImpl: noTrends })).rejects.toThrow();
+    expect(await env.DB.prepare(`SELECT 1 FROM morning_sections WHERE section = 'growth'`).first()).not.toBeNull();
+  }, 30_000);
 });

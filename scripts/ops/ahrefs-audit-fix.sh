@@ -98,7 +98,7 @@ MODEL="${AHREFS_AUDIT_MODEL:-claude-opus-5}"
 # salvage as a draft PR, finished first by the next pass (own-open). tests/auditFixerMaxTurns.test.ts.
 MAX_TURNS="${AHREFS_AUDIT_MAX_TURNS:-250}"
 LOG_DIR="$HOME/Library/Logs/ahrefs-audit-fix"
-LOCK="$LOG_DIR/.lock${SR_SCOPE_REPO:+-sr-$SR_SCOPE_REPO}"
+LOCK="$LOG_DIR/.lock${SR_SCOPE_REPO:+-sr-$SR_SCOPE_REPO}.flock"
 RUN_LOG="$LOG_DIR/$(date +%Y-%m-%d-%H%M%S)-$$.log"
 
 mkdir -p "$LOG_DIR" "$OUT_DIR"
@@ -116,15 +116,14 @@ has_sentinel() { grep -qE 'AHREFS-AUDIT-COMPLETE: projects=[0-9]' "$1"; }
 usage_exhausted() { grep -qiE "usage limit|limit reached|out of (extra )?usage|rate.?limit|credit balance" "$1"; }
 
 # Two runs in the same minute shared a log file once and the second inherited the first's sentinel.
-# Seconds and pid in the name; a lock directory for the run itself.
-if ! mkdir "$LOCK" 2>/dev/null; then
-  if [ -f "$LOCK/pid" ] && kill -0 "$(cat "$LOCK/pid")" 2>/dev/null; then
-    say "NAMED STOP [ALREADY_RUNNING] pid $(cat "$LOCK/pid")"; exit 0
-  fi
-  say "stale lock; reclaiming"; rm -rf "$LOCK"; mkdir "$LOCK" 2>/dev/null || { say "FAILED to lock"; exit 3; }
-fi
-echo $$ > "$LOCK/pid"
-trap 'rm -rf "$LOCK"' EXIT
+# Seconds and pid in the name.
+source "$(dirname "$(readlink -f "${BASH_SOURCE[0]}")")/lib/flock.sh"  # one run at a time, held by the kernel (lib/flock.sh)
+LOCK_RC=0; hold_lock "$LOCK" || LOCK_RC=$?
+case $LOCK_RC in
+  0) ;;
+  1) say "NAMED STOP [ALREADY_RUNNING] another run holds $LOCK"; exit 0 ;;
+  *) say "NAMED STOP [LOCK_FAILED] cannot lock $LOCK"; exit 3 ;;
+esac
 
 # THE ENGINE IS ~/bin/ai-run IN THE ROLE src/shared/boss/aiRoles.mjs NAMES (owner, 3 Nov 2026: Codex
 # is the worker, Claude the brain). Missing → a named stop the next run retries (exit 13).
@@ -251,7 +250,18 @@ place of the mail, find the exact URLs on each live site, and fix at source as s
   say "mail pass from digest: $AHREFS_DIGEST"
 fi
 [[ "$MAX_TURNS" =~ ^[1-9][0-9]*$ ]] || { say "NAMED STOP [BAD_MAX_TURNS] AHREFS_AUDIT_MAX_TURNS='$MAX_TURNS' is not a positive whole number."; exit 5; }
-AI_RUN_CLAUDE_ARGS="--max-turns $MAX_TURNS --dangerously-skip-permissions" \
+# ONLY THE COMMANDS A PASS USES (22 Nov 2026). The Claude worker ran with every permission skipped;
+# it now runs in dontAsk mode with the allow and deny lists in sr-fix-permissions.json, built from
+# what the 17-21 Nov passes ran. A settings FILE, not --allowedTools: ai-run splits AI_RUN_CLAUDE_ARGS
+# on spaces, and "Bash(git status:*)" has one. Codex keeps its own sandbox.
+# THE FILE IS THE WHOLE LIST: `--setting-sources=` loads none of her own settings (with --cwd $HOME her
+# user, project and local files would all add their allow rules: her signed-in Chrome, `wrangler r2 *`,
+# any `git push`). Probed 22 Nov 2026: `wrangler r2 bucket list --help` ran without it, was refused with it.
+# Her command guard rides in the file itself, as the backstop for `node` and `python3`, which are code.
+SR_FIX_SETTINGS="$REPO/scripts/ops/sr-fix-permissions.json"
+[ -s "$SR_FIX_SETTINGS" ] || { say "NAMED STOP [NO_PERMISSIONS_FILE] $SR_FIX_SETTINGS is missing; the worker never runs without its allow list."; exit 6; }
+case "$SR_FIX_SETTINGS" in *[[:space:]]*) say "NAMED STOP [PERMISSIONS_PATH_SPACE] '$SR_FIX_SETTINGS' has a space, which ai-run would split."; exit 6;; esac
+AI_RUN_CLAUDE_ARGS="--max-turns $MAX_TURNS --permission-mode dontAsk --setting-sources= --settings $SR_FIX_SETTINGS" \
 "$AI_RUN" --role "$REPAIR_ROLE" --network --cwd "$HOME" --out "$RUN_LOG" -- "$PROMPT_TEXT" >> "$RUN_LOG" 2>&1
 RC=$?
 say "=== ai-run --role $REPAIR_ROLE exited rc=$RC ==="

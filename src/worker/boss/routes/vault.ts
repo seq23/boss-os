@@ -1,7 +1,7 @@
 import { Hono } from "hono";
 import type { Env, Vars } from "../env";
 import { newId, sha256Hex } from "../lib/id";
-import { audit } from "../lib/audit";
+import { audit, auditStatement } from "../lib/audit";
 import { logEvent } from "../lib/log";
 import { ok, badRequest, notFound, conflict, AppError } from "../lib/http";
 import { CHURN_TABLES, SNAPSHOT_KEEP } from "../cron/cadence";
@@ -765,7 +765,12 @@ export async function prunePreview(env: Env, keep = SNAPSHOT_KEEP) {
 }
 
 export async function pruneSnapshots(env: Env, keep = SNAPSHOT_KEEP) {
-  const { floor, rows } = await staleSnapshots(env, keep);
+  const { floor, rows: stale } = await staleSnapshots(env, keep);
+  // A prune that stopped between its delete and its record left rows `pruning`: finished here.
+  const unfinished = await env.DB
+    .prepare(`SELECT id, ts, label, bytes, sha256, r2_key FROM vault_snapshots WHERE status = 'pruning' AND r2_key IS NOT NULL`)
+    .all<{ id: string; ts: number; label: string; bytes: number; sha256: string | null; r2_key: string }>();
+  const rows = [...stale, ...(unfinished.results ?? [])];
   let deleted = 0;
   // Counted from the rows actually removed, so "bytes reclaimed" is a measurement and never an
   // estimate carried over from the preview — a failed delete reclaims nothing and must say so.
@@ -773,8 +778,23 @@ export async function pruneSnapshots(env: Env, keep = SNAPSHOT_KEEP) {
   const failures: { id: string; error: string }[] = [];
 
   for (const rowToPrune of rows) {
+    /*
+     * THE RECORD MOVES BEFORE THE FILE GOES. Deleting the object first meant a database failure in
+     * between left a `complete` row whose file was gone, offered as a restore that 404s. Now the row
+     * is marked `pruning` (key kept) first: a failure before the delete leaves it `complete` with its
+     * file, and a failure after leaves it `pruning`, which no restore offers and the next prune
+     * finishes (staleSnapshots picks it up again; deleting a missing object is a no-op).
+     */
+    let marked = false;
+    let gone = false;
     try {
+      await env.DB
+        .prepare(`UPDATE vault_snapshots SET status = 'pruning' WHERE id = ? AND status IN ('complete','pruning')`)
+        .bind(rowToPrune.id)
+        .run();
+      marked = true;
       await env.VAULT.delete(rowToPrune.r2_key);
+      gone = true;
       await env.DB
         .prepare(
           `UPDATE vault_snapshots SET status = 'pruned', pruned_at = ?, r2_key = NULL, bytes = 0 WHERE id = ?`,
@@ -784,10 +804,13 @@ export async function pruneSnapshots(env: Env, keep = SNAPSHOT_KEEP) {
       deleted += 1;
       reclaimed += rowToPrune.bytes ?? 0;
     } catch (err) {
-      // A failed delete leaves the row COMPLETE and the object in place, so the next run tries
-      // again. Marking it pruned here would orphan the object forever - unreachable from the
-      // database and never billed to anyone's attention.
       failures.push({ id: rowToPrune.id, error: err instanceof Error ? err.message : String(err) });
+      // The bucket refused the delete: the file is still there, so the snapshot is still whole. Once
+      // the file is gone the row stays `pruning`, never `complete` again.
+      if (marked && !gone) {
+        await env.DB.prepare(`UPDATE vault_snapshots SET status = 'complete' WHERE id = ? AND status = 'pruning' AND r2_key IS NOT NULL`)
+          .bind(rowToPrune.id).run().catch(() => {});
+      }
     }
   }
 
@@ -978,6 +1001,11 @@ vault.post("/restore", async (c) => {
     await fail(`Integrity check failed: the file hashes to ${computed.slice(0, 12)}… but ${declaredSha.slice(0, 12)}… was expected`);
   }
   if (!parsed.ok) await fail(parsed.reason ?? "The snapshot could not be parsed");
+  // A replace that carries no rows at all could only wipe the tables it names. No real snapshot
+  // is empty (the lanes alone are seeded), so this is a truncated or hand-made file, never a backup.
+  if (mode === "replace" && parsed.totalRows === 0) {
+    await fail("This snapshot holds no rows, so a replace would only wipe the tables it names");
+  }
 
   const counts: Record<string, number> = {};
   for (const [name, rows] of Object.entries(parsed.tables)) counts[name] = rows.length;
@@ -1040,6 +1068,44 @@ vault.post("/restore", async (c) => {
     applied[table] = written;
   }
 
+  /*
+   * A REPLACE IS JUDGED ON THE ROWS IT WILL WRITE, never the rows the file carries. A row is written
+   * only if it has a column this schema knows, so `{"memory_items":[{"bogus":1}]}` parses as one row
+   * and writes none, and its DELETE would wipe every memory item (review of #518, F1). Refused, before
+   * anything is deleted: a table that would be wiped while its rows in the file fit nothing, or a
+   * replace that writes nothing at all.
+   */
+  if (mode === "replace") {
+    const wipedEmpty = SNAPSHOT_TABLES.filter(
+      (t) => Array.isArray(parsed.tables[t]) && parsed.tables[t]!.length > 0 && !applied[t],
+    );
+    if (wipedEmpty.length) {
+      await fail(`No row of ${wipedEmpty.join(", ")} fits this schema, so a replace would only wipe ${wipedEmpty.length === 1 ? "it" : "them"}`);
+    }
+    if (Object.values(applied).every((n) => !n)) {
+      await fail("This snapshot holds no row this schema can write, so a replace would only wipe the tables it names");
+    }
+  }
+
+  // The restore's record and its audit row are the LAST statements of the same transaction: a
+  // restore never lands unrecorded, and a record never claims a restore that rolled back. Last,
+  // because audit_log is itself a snapshot table and a replace wipes it first.
+  statements.push(
+    c.env.DB
+      .prepare(
+        `INSERT INTO vault_restores (id, ts, source, mode, declared_sha, computed_sha, snapshot_ts, table_counts, applied, status)
+         VALUES (?,?,?,?,?,?,?,?,?,'applied')`,
+      )
+      .bind(
+        restoreId, Date.now(), source, mode, declaredSha, computed, parsed.ts ?? null,
+        JSON.stringify(counts), JSON.stringify(applied),
+      ),
+    auditStatement(c.env.DB, {
+      actor: "boss", lane: "ops", entityType: "restore", entityId: restoreId,
+      action: `restore_${mode}`, detail: { source, rows: applied },
+    }),
+  );
+
   if (statements.length > MAX_RESTORE_STATEMENTS) {
     await fail(
       `This snapshot needs ${statements.length} statements, over the ${MAX_RESTORE_STATEMENTS} a single ` +
@@ -1053,21 +1119,6 @@ vault.post("/restore", async (c) => {
     await fail(`The restore transaction was rolled back: ${err instanceof Error ? err.message : String(err)}`);
   }
 
-  await c.env.DB
-    .prepare(
-      `INSERT INTO vault_restores (id, ts, source, mode, declared_sha, computed_sha, snapshot_ts, table_counts, applied, status)
-       VALUES (?,?,?,?,?,?,?,?,?,'applied')`,
-    )
-    .bind(
-      restoreId, Date.now(), source, mode, declaredSha, computed, parsed.ts ?? null,
-      JSON.stringify(counts), JSON.stringify(applied),
-    )
-    .run();
-
-  await audit(c.env.DB, {
-    actor: "boss", lane: "ops", entityType: "restore", entityId: restoreId,
-    action: `restore_${mode}`, detail: { source, rows: applied },
-  });
   await logEvent(c.env.DB, {
     level: "warn", scope: "vault", event: "restore_applied", entityId: restoreId,
     detail: { mode, source, tables: Object.keys(applied).length },

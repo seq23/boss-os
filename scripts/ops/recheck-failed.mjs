@@ -1,0 +1,125 @@
+#!/usr/bin/env node
+/**
+ * WHAT FAILED LAST TIME RUNS FIRST (owner, 22 Nov 2026: "yes do both of those ci speedups").
+ *
+ * #537 pushed a fix and waited the whole gate (~10 minutes) to learn whether the two suites that failed
+ * were green now. This runs first on a pull request: it reads the PR's previous CI run on another commit,
+ * and if that run FAILED it re-runs exactly the suites that failed there (vitest's "FAIL tests/…" lines),
+ * as the FIRST step of shard 1 of each pool (`unit`, `boss`), so it has the gate's own setup by
+ * construction and runs through the gate's own runner (vitest-pool.mjs). Red stops that shard in about
+ * two minutes, so the PR shows red early; green lets the shard run on. The other shards never wait, and
+ * nothing the full gate checks is skipped.
+ *
+ * Nothing to re-check (not a PR, no earlier run, the earlier run passed or was cancelled, or its failure
+ * was not a test suite, e.g. a scan or the build) prints why and exits 0: the full gate decides.
+ *
+ *   node scripts/ops/recheck-failed.mjs --plan --pool node|boss    # in CI: files=<that pool's list> to GITHUB_OUTPUT
+ *   RECHECK_FILES="<files…>" node scripts/ops/recheck-failed.mjs --run --pool node|boss
+ *   node scripts/ops/recheck-failed.mjs --self-test
+ * Exit: 0 green or nothing to re-check · 1 a suite that failed last time still fails.
+ */
+import { execFileSync } from "node:child_process";
+import { appendFileSync, existsSync, readFileSync } from "node:fs";
+import { runPool } from "./vitest-pool.mjs";
+import { fileURLToPath } from "node:url";
+
+/** Only plain repo test paths pass (the list came from a log). Pure. */
+export const safeFiles = (list) => String(list).split(/\s+/).filter((f) => /^tests\/[A-Za-z0-9._/-]+\.test\.tsx?$/.test(f) && !f.includes("..") && existsSync(f));
+
+const ANSI = /\x1b\[[0-9;]*m/g;
+
+/** The test files vitest reported as FAIL in a run's log, repo-relative, sorted. Pure. */
+export function failedTestFiles(log) {
+  const out = new Set();
+  for (const line of String(log).replace(ANSI, "").split("\n")) {
+    const m = line.match(/\bFAIL\s+(tests\/[^\s>]+\.test\.tsx?)/);
+    if (m) out.add(m[1]);
+  }
+  return [...out].sort();
+}
+
+/** The run to compare against: the newest finished run on another commit. Pure over `gh run list` rows. */
+export function previousRun(runs, headSha) {
+  return runs.filter((r) => r.headSha !== headSha && r.status === "completed").sort((a, b) => b.databaseId - a.databaseId)[0] ?? null;
+}
+
+const gh = (args) => execFileSync("gh", args, { encoding: "utf8", stdio: ["ignore", "pipe", "pipe"], maxBuffer: 256 * 1024 * 1024 });
+
+/** The suites of one pool: boss suites live under tests/boss/, every other suite is the node pool. Pure. */
+export const ofPool = (files, pool) => files.filter((f) => f.startsWith("tests/boss/") === (pool === "boss"));
+
+/**
+ * At most this many suites re-run first, per pool: shard 1's headroom under its ceiling on a green main
+ * run (Boss 343 s of 480 s, unit 226 s of 360 s; review of #538). Past it the re-check alone could time
+ * a CORRECT fix out, so it steps aside and the full gate decides.
+ */
+export const CAP = { node: 40, boss: 10 };
+
+/** The pool's list if it fits the cap, else none (with why). Pure. */
+export function withinCap(files, pool) {
+  if (files.length <= CAP[pool]) return { files };
+  return { files: [], why: `${files.length} ${pool} suite(s) failed last time, more than the ${CAP[pool]} shard 1 has time for; the full gate decides` };
+}
+
+function plan(pool) {
+  const { files, why } = withinCap(ofPool(pick(), pool), pool);
+  if (why) console.log(`recheck: ${why}`);
+  if (process.env.GITHUB_OUTPUT) appendFileSync(process.env.GITHUB_OUTPUT, `files=${files.join(" ")}\n`);
+}
+
+function pick() {
+  const path = process.env.GITHUB_EVENT_PATH;
+  const event = path && existsSync(path) ? JSON.parse(readFileSync(path, "utf8")) : {};
+  const pr = event.pull_request;
+  const none = (why) => { console.log(`recheck: ${why}`); return []; };
+  if (!pr) return none("not a pull request, nothing to re-check");
+  let runs;
+  try {
+    runs = JSON.parse(gh(["run", "list", "-R", process.env.GITHUB_REPOSITORY, "--workflow", "ci.yml", "--branch", pr.head.ref,
+      "--event", "pull_request", "--limit", "20", "--json", "databaseId,headSha,status,conclusion"]));
+  } catch (e) { return none(`earlier runs not readable (${String(e.message).split("\n")[0]}); the full gate decides`); }
+  const prev = previousRun(runs, pr.head.sha);
+  if (!prev) return none("no earlier finished run on this PR");
+  if (prev.conclusion !== "failure") return none(`the earlier run (${prev.headSha.slice(0, 8)}) was ${prev.conclusion}, nothing to re-check`);
+  let log = "";
+  try { log = gh(["run", "view", String(prev.databaseId), "-R", process.env.GITHUB_REPOSITORY, "--log-failed"]); }
+  catch (e) { return none(`the earlier run's log is not readable (${String(e.message).split("\n")[0]}); the full gate decides`); }
+  const files = safeFiles(failedTestFiles(log).join(" "));
+  if (!files.length) return none("the earlier run failed outside the test suites (a scan or the build); the full gate decides");
+  console.log(`recheck: ${files.length} suite(s) failed on ${prev.headSha.slice(0, 8)}; running them first:\n  ${files.join("\n  ")}`);
+  return files;
+}
+
+async function run(pool, files) {
+  if (!files.length) return console.log("recheck: nothing to re-check in this pool");
+  if ((await runPool(pool, files)) !== 0) { console.log("::error::a suite that failed last time still fails; this shard stops here"); process.exit(1); }
+  console.log("recheck: every suite that failed last time passes now; this shard runs on");
+}
+
+function selfTest() {
+  const log = "shard 4/4\tUNKNOWN STEP\t2026Z \x1b[31m\x1b[1m\x1b[7m FAIL \x1b[27m\x1b[22m\x1b[39m tests/onlyColoured.test.ts\x1b[2m > \x1b[22mthe Worker entry\n"
+    + "x FAIL  tests/boss/bigMail.test.ts > a\nx FAIL  tests/workerEntryExports.test.ts > b\n ✓ tests/ok.test.ts\n";
+  const got = failedTestFiles(log);
+  const want = ["tests/boss/bigMail.test.ts", "tests/onlyColoured.test.ts", "tests/workerEntryExports.test.ts"];
+  if (JSON.stringify(got) !== JSON.stringify(want)) throw new Error(`failedTestFiles: ${JSON.stringify(got)}`);
+  if (failedTestFiles("all green\n ✓ tests/a.test.ts").length) throw new Error("failedTestFiles found a FAIL in a green log");
+  const runs = [{ databaseId: 3, headSha: "new", status: "in_progress" }, { databaseId: 2, headSha: "old", status: "completed", conclusion: "failure" }, { databaseId: 1, headSha: "older", status: "completed", conclusion: "success" }];
+  if (previousRun(runs, "new")?.databaseId !== 2) throw new Error("previousRun did not pick the newest finished run on another commit");
+  if (previousRun([{ databaseId: 1, headSha: "new", status: "completed" }], "new") !== null) throw new Error("previousRun picked this commit's own run");
+  if (safeFiles("tests/a.test.ts;rm tests/$(x).test.ts ../tests/b.test.ts").length) throw new Error("safeFiles let an unsafe path through");
+  if (safeFiles("tests/checkChanged.test.ts").length !== 1) throw new Error("safeFiles refused a real suite");
+  if (JSON.stringify(ofPool(["tests/a.test.ts", "tests/boss/b.test.ts"], "boss")) !== '["tests/boss/b.test.ts"]' || ofPool(["tests/boss/b.test.ts"], "node").length) throw new Error("ofPool split the pools wrong");
+  const many = Array.from({ length: CAP.boss + 1 }, (_, i) => `tests/boss/s${i}.test.ts`);
+  if (withinCap(many, "boss").files.length || !withinCap(many, "boss").why) throw new Error("withinCap let more Boss suites through than shard 1 has time for");
+  if (withinCap(many.slice(0, CAP.boss), "boss").files.length !== CAP.boss) throw new Error("withinCap refused a list at the cap");
+  if (withinCap(many, "node").files.length !== many.length) throw new Error("withinCap used the Boss cap for the node pool");
+  console.log("recheck-failed self-test: ok");
+}
+
+if (process.argv[1] && fileURLToPath(import.meta.url) === process.argv[1]) {
+  const pool = process.argv.includes("--pool") ? process.argv[process.argv.indexOf("--pool") + 1] : "";
+  if (process.argv.includes("--self-test")) selfTest();
+  else if (pool !== "node" && pool !== "boss") { console.error("recheck: --pool node|boss is required"); process.exit(2); }
+  else if (process.argv.includes("--plan")) plan(pool);
+  else run(pool, ofPool(safeFiles(process.env.RECHECK_FILES ?? ""), pool));
+}

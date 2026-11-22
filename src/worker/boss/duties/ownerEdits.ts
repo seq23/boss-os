@@ -14,6 +14,7 @@ import { newId } from "../lib/id";
 import { audit } from "../lib/audit";
 import { badRequest, notFound } from "../lib/http";
 import { EARLY_RUN_GRACE_MS, isDue, nextDueAt, type DutySchedule } from "./cadence";
+import { effectiveNextDue } from "./clock";
 import { composeBriefingPrompt, ctDayLabel } from "./briefingSpec";
 import {
   DUTY_PROMPT_FILES, choiceOf, choicesFor, localDate, macDueToday, scheduleFromChoice, scheduleWords, timeEditable,
@@ -243,7 +244,9 @@ export async function dutyBrief(env: Env, localJob: string, now = Date.now()) {
   ).bind(localJob).all<OwnedDuty>()).results ?? [];
   if (rows.length === 0) throw badRequest(`No standing duty names "${localJob}" as its local job`, "Refused rather than guessed at.");
   if (rows.length > 1) throw badRequest(`${rows.length} duties name "${localJob}" as their local job`, `They are: ${rows.map((r) => r.id).join(", ")}.`);
-  const d = rows[0]!;
+  const row = rows[0]!;
+  // Read through the one clock door (clock.ts), so the Mac is never told "not due" by a wrong clock.
+  const d: OwnedDuty = { ...row, next_due_at: (await effectiveNextDue(env, row, now)) as OwnedDuty["next_due_at"] };
   const ownerSchedule = d.owner_schedule_at !== null && d.owner_schedule_at !== undefined;
   /*
    * DUE WITHIN THE EARLY-RUN GRACE, THE SAME WINDOW THE RUN RECORDER CREDITS (31 Oct 2026).

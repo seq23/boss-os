@@ -43,7 +43,11 @@ export function theirWords(text: string): { text: string; greet: string | null }
 export function errandOffer(text: string): ErrandOffer;
 export function optionText(o: ErrandOption): string;
 export function paymentLinksIn(text: string): string[];
-export function readErrandReply(text: string, address?: string, subject?: string): { kind: "card" | "decide" | "confirmed" | "other"; what_they_said: string; what_you_do: string; offer: ErrandOffer };
+export type ErrandMeaning = "confirmed" | "unavailable" | "asks" | "other" | "unsure";
+export const ERRAND_MEANINGS: readonly Exclude<ErrandMeaning, "unsure">[];
+export function withErrandMeaning(offer: ErrandOffer, meaning: ErrandMeaning | null | undefined): ErrandOffer;
+export function errandKeywordMeaning(read: { kind: string; offer: ErrandOffer }): Exclude<ErrandMeaning, "unsure">;
+export function readErrandReply(text: string, address?: string, subject?: string, meaning?: ErrandMeaning | null): { kind: "card" | "decide" | "confirmed" | "other"; what_they_said: string; what_you_do: string; offer: ErrandOffer };
 export function errandAnswerIn(text: string, offer?: { options?: ErrandOption[]; needs?: string[] }): { choice: ErrandOption | null; phone: string | null; card: boolean; missing: string[]; cancel: boolean; keep: boolean };
 export function partyIn(words: string): number | null;
 export function errandDateIn(words: string, sentAt: number, tz?: string): { y: number; m: number; d: number } | null;

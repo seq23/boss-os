@@ -95,7 +95,7 @@ export function cpuLimitIn(toml) {
   return m ? Number(m[1]) : null;
 }
 
-export function theCapIsMeasuredOnTheReadableText(cap, her, cpuMs = 30000) {
+export async function theCapIsMeasuredOnTheReadableText(cap, her, cpuMs = 30000) {
   const bad = [];
   if (her === null) return ["her 12 September message is not committed, so the cap is unmeasured."];
   if (cap === null) return [`MAX_BODY_BYTES could not be read out of ${HANDLER}, so nothing about the cap is verified.`];
@@ -114,7 +114,7 @@ export function theCapIsMeasuredOnTheReadableText(cap, her, cpuMs = 30000) {
   }
 
   let read;
-  try { read = taskBodyFrom(her.raw); }
+  try { read = await taskBodyFrom(her.raw); }
   catch (e) { return [...bad, `taskBodyFrom threw on her real message — ${String(e.message).split("\n")[0]}.`]; }
 
   const readableBytes = Buffer.byteLength(read.readable, "utf8");
@@ -269,7 +269,7 @@ if (process.argv.includes("--self-test")) {
   const her = herMessage();
   const cap = envelopeCapIn(handlerSource);
 
-  expect("the shipped cap admits her real message and keeps the decode cap", theCapIsMeasuredOnTheReadableText(cap, her, cpuMs), false);
+  expect("the shipped cap admits her real message and keeps the decode cap", await theCapIsMeasuredOnTheReadableText(cap, her, cpuMs), false);
   expect("an unread message is never nothing to act on", unreadIsNeverNothingToActOn(), false);
   expect("the real handler passes the flag on", theHandlerPassesItOn(handlerSource), false);
 
@@ -278,11 +278,11 @@ if (process.argv.includes("--self-test")) {
    * Each defect restored, and required to come back red. A guard never shown failing is a comment
    * with an exit code.
    */
-  expect("the 512 KB cap that skipped her message", theCapIsMeasuredOnTheReadableText(512 * 1024, her), true);
-  expect("the 4 MB cap that left a 6 MB email with a deck unread", theCapIsMeasuredOnTheReadableText(4 * 1024 * 1024, her, cpuMs), true);
-  expect("a big-mail cap with no production CPU limit declared", theCapIsMeasuredOnTheReadableText(30 * 1024 * 1024, her, null), true);
-  expect("no fixture at all", theCapIsMeasuredOnTheReadableText(cap, null), true);
-  expect("a cap that cannot be read out of the handler", theCapIsMeasuredOnTheReadableText(null, her), true);
+  expect("the 512 KB cap that skipped her message", await theCapIsMeasuredOnTheReadableText(512 * 1024, her), true);
+  expect("the 4 MB cap that left a 6 MB email with a deck unread", await theCapIsMeasuredOnTheReadableText(4 * 1024 * 1024, her, cpuMs), true);
+  expect("a big-mail cap with no production CPU limit declared", await theCapIsMeasuredOnTheReadableText(30 * 1024 * 1024, her, null), true);
+  expect("no fixture at all", await theCapIsMeasuredOnTheReadableText(cap, null), true);
+  expect("a cap that cannot be read out of the handler", await theCapIsMeasuredOnTheReadableText(null, her), true);
   expect("a handler that stops telling the rules the text was unread", theHandlerPassesItOn(
     handlerSource?.replace(/,\s*unread: oversize/, "") ?? null,
   ), true);
@@ -316,7 +316,7 @@ if (UNREAD_CASES.length === 0) {
 }
 
 const problems = [
-  ...theCapIsMeasuredOnTheReadableText(envelopeCapIn(handlerSource), her, cpuMs),
+  ...(await theCapIsMeasuredOnTheReadableText(envelopeCapIn(handlerSource), her, cpuMs)),
   ...unreadIsNeverNothingToActOn(),
   ...theHandlerPassesItOn(handlerSource),
 ];
@@ -332,7 +332,7 @@ if (problems.length) {
 
 console.log(
   `UNREAD/EMPTY OK — her ${her.rawBytes}-byte message parses under a `
-  + `${envelopeCapIn(handlerSource)}-byte envelope cap, its ${Buffer.byteLength(taskBodyFrom(her.raw).readable, "utf8")} `
+  + `${envelopeCapIn(handlerSource)}-byte envelope cap, its ${Buffer.byteLength((await taskBodyFrom(her.raw)).readable, "utf8")} `
   + `readable bytes stay under the ${MAX_READABLE_BYTES}-byte decode cap, and `
   + `${UNREAD_CASES.length} clarification case(s) agree that unread is not empty.`,
 );

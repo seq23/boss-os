@@ -1,3 +1,5 @@
+import type { Brief } from "../intake/firstRead";
+import { riskAllows } from "../../../shared/boss/governance";
 import type { Env } from "../env";
 import { newId } from "../lib/id";
 import { audit } from "../lib/audit";
@@ -52,6 +54,11 @@ export interface AdmitInput {
   cost_mode?: string | null;
   /** R14: epoch ms before which the task must not run — a dated deferred item. Enqueued with that delay. */
   not_before?: number | null;
+  /**
+   * The email's one first read (inbound mail only). Its `outside`, `kind` and `risk` may only TIGHTEN or fill a
+   * gap the keywords left: never a looser audience, never a lower risk, never over a declared kind.
+   */
+  brief?: Brief | null;
 }
 
 export interface AdmitResult {
@@ -213,6 +220,46 @@ export async function admitTask(env: Env, b: AdmitInput): Promise<AdmitResult> {
     // Mail-born work carries who wrote it, so her own errand (classify's one outbound carve-out) is known.
     sender: input.source === "boss_inbound_mail" ? String(input.from ?? "") : null,
   });
+  /*
+   * WHAT THE FIRST READ SAYS ABOUT THE WORK (eng sweep row 7b, #514 review: one read per email). The keywords need a
+   * recipient AND a verb to call work external; her mail can say it other ways ("get this in front of the gallery
+   * buyers"). The read's `outside` (her exact words, standing in her sentence) makes the work external, which waits on
+   * her approval; its kind fills only a "no category matched"; its risk only raises. Nothing here ever loosens.
+   */
+  const brief = input.source === "boss_inbound_mail" ? b.brief ?? null : null;
+  if (brief?.outside && classification.audience === "internal" && !b.audience) {
+    classification = { ...classification, ...classify({
+      title: b.title, prompt: (input.prompt as string | undefined) ?? null, lane,
+      intakeKind: intakeKind ?? undefined, risk: b.risk ?? undefined, sensitivity: b.sensitivity ?? undefined,
+      model_access: b.model_access ?? undefined, audience: "external",
+      sender: String(input.from ?? ""),
+    }) };
+  }
+  /*
+   * THE READ'S KIND DECIDES (22 Nov 2026: meaning by the model, no keyword verdict in front of it). A declared kind
+   * (a tag, a repo change) still wins: that is structure. The read names the kind; what that kind would make stricter
+   * is taken (private access, higher risk, her own hands), and nothing it would loosen is: the keywords' access, risk,
+   * hands-off level, sensitivity and audience stand otherwise.
+   */
+  if (brief?.kind && !intakeKind && brief.kind !== classification.intakeKind) {
+    const byRead = classify({
+      title: b.title, prompt: (input.prompt as string | undefined) ?? null, lane,
+      intakeKind: brief.kind, risk: b.risk ?? undefined, sensitivity: b.sensitivity ?? undefined,
+      model_access: b.model_access ?? undefined, audience: classification.audience,
+      sender: String(input.from ?? ""),
+    });
+    classification = {
+      ...classification,
+      intakeKind: brief.kind,
+      modelAccess: byRead.modelAccess === "private_model_only" ? "private_model_only" : classification.modelAccess,
+      risk: riskAllows(classification.risk, byRead.risk) ? classification.risk : byRead.risk,
+      executionAssignment: byRead.executionAssignment === "USER_ONLY" ? "USER_ONLY" : classification.executionAssignment,
+      reason: `${classification.reason} Kind read from her words: ${brief.kind}.`,
+    };
+  }
+  if (brief?.risk && !b.risk && !riskAllows(classification.risk, brief.risk)) {
+    classification = { ...classification, risk: brief.risk };
+  }
 
   /*
    * ─── A HIGH-RISK REPAIR ON DANIELLE'S SEAT THAT NAMES NO REPOSITORY IS A REPO CHANGE (17 Nov 2026) ─

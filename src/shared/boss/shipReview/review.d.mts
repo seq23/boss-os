@@ -1,5 +1,5 @@
 import type { JobClass, RouteTier } from "../aiRoles.mjs";
-export type ShipKind = "page" | "email" | "video" | "profile" | "images";
+export type ShipKind = "page" | "email" | "video" | "profile" | "images" | "tap-through";
 export interface Shot { path?: string; label: string }
 export interface Finding { where: string; what: string; feels: string }
 export declare const KINDS: readonly ShipKind[];
@@ -19,3 +19,6 @@ export declare function findingLines(findings: Finding[]): string[];
 export declare const EMAIL_SENDS: (row: { runs?: string }) => boolean;
 export declare const SOCIAL_POSTS: (row: { status?: string }) => boolean;
 export declare function gateProblems(rows: Array<{ id: string; ship_ready?: { pass?: string; review?: string } } & Record<string, unknown>>, o: { live: (r: any) => boolean; liveBefore: readonly string[]; launch?: boolean; map: string }): string[];
+export interface TapFailure { code: string; where: string; what: string; shot?: string | null }
+export declare const TAP_THROUGH_BRIEF: string;
+export declare function withTapFailures<T extends { verdict?: string; findings?: Finding[]; error?: string } | null>(result: T, failures?: TapFailure[]): T;

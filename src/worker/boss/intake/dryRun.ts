@@ -17,7 +17,9 @@ import { layReply } from "./mailRefs";
 import { triageReply } from "./inboundMail";
 import { unheardLines, withVoiceNotes } from "./voiceNotes";
 import { taskBodyFrom, ownWords } from "../../../shared/boss/intake/messageBody.mjs";
-import { decodeMimeHeader, replyBody, routeToSeat } from "../../../shared/boss/intake/mail.mjs";
+import { parseMail } from "../../../shared/mail/parseMail.mjs";
+import { replyBody, routeToSeat } from "../../../shared/boss/intake/mail.mjs";
+import { decodeHeader } from "../../../shared/mail/parseMail.mjs";
 import { triage } from "../../../shared/boss/intake/triage.mjs";
 
 /** The header block of a raw message, as Headers. Pure. */
@@ -50,10 +52,11 @@ export interface DryRead {
 
 export async function dryReadMessage(env: Env, raw: string, opts: { rung?: string | null } = {}): Promise<DryRead> {
   const headers = headersOfRaw(raw);
-  const subject = decodeMimeHeader(headers.get("subject") ?? "");
+  const subject = decodeHeader(headers.get("subject") ?? "");
   const to = (headers.get("to") ?? "").toLowerCase();
-  const read = taskBodyFrom(raw);
-  const files = await readEverything(env, raw, read.readable ?? "");
+  const parsed = await parseMail(raw);
+  const read = await taskBodyFrom(parsed);
+  const files = await readEverything(env, parsed, read.readable ?? "");
   const own = withVoiceNotes(ownWords(read.readable ?? ""), files.heard);
   const roster = await activeRoster(env);
   const route = routeToSeat(`${subject}\n${own}`, roster, to);

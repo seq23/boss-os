@@ -51,7 +51,9 @@ import { audit } from "../lib/audit";
 import { logEvent } from "../lib/log";
 import { ok, badRequest, notFound } from "../lib/http";
 import { materialiseDueDuties } from "../duties/materialise";
+import { recordSlot } from "../cron/dispatch";
 import { isDue, nextDueAt, EARLY_RUN_GRACE_MS } from "../duties/cadence";
+import { effectiveNextDue } from "../duties/clock";
 export { EARLY_RUN_GRACE_MS };
 import { admitTask } from "../tasks/admit";
 import {
@@ -119,6 +121,15 @@ export function creditFrom(nextDueAt: number | null, now: number): number {
  * design: the caller knows what it ran, the duty row knows what it wants run, and the join is made
  * here against a column that has existed since 0201.
  */
+/** The cloud runner's report on one clock slot: its first step ("start") and its last ("end"). */
+duties.post("/slot", async (c) => {
+  const b = await c.req.json<any>().catch(() => null);
+  const marked = await recordSlot(c.env, { key: b?.key, phase: b?.phase, outcome: b?.outcome });
+  if (typeof marked === "string") throw badRequest(`Slot report refused: ${marked}`, "A slot report names a slot the clock dispatched, a phase and, at the end, the job's outcome.");
+  if (!marked) throw notFound("No accepted clock slot has that key");
+  return ok(c, { marked: true });
+});
+
 duties.post("/ran", async (c) => {
   const b = await c.req.json<any>().catch(() => null);
   const localJob = text(b?.local_job, 120);
@@ -271,7 +282,7 @@ duties.get("/due/:local_job", async (c) => {
   const localJob = c.req.param("local_job");
   const matches = await c.env.DB
     .prepare(
-      `SELECT id, name, suspended, next_due_at, last_run_at, executor
+      `SELECT *
          FROM standing_duties
         WHERE json_extract(task_input, '$.local_job') = ?`,
     )
@@ -293,8 +304,10 @@ duties.get("/due/:local_job", async (c) => {
     );
   }
 
-  const duty = rows[0];
+  const row = rows[0];
   const now = Date.now();
+  // Read through the one clock door, so a clock left ahead of the slot the duty owes answers right.
+  const duty = { ...row, next_due_at: await effectiveNextDue(c.env, row, now) };
   const due = duty.next_due_at !== null && isDue(duty.next_due_at, Boolean(duty.suspended), now);
 
   return ok(c, {

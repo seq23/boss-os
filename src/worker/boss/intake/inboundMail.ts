@@ -7,7 +7,7 @@ import { logEvent } from "../lib/log";
 import { admitTask } from "../tasks/admit";
 import {
   BOSS_INTAKE_MAILBOX, BOSS_INTAKE_DOMAIN,
-  decodeMimeHeader, dmarcPassed, extractAddress, isOwner,
+  dmarcPassed, extractAddress, isOwner,
   replyBody, routeToSeat, seatTag, strippedSubject,
   type BossRoute, type BossSeat,
 } from "../../../shared/boss/intake/mail.mjs";
@@ -22,13 +22,14 @@ import { readEverything, EMPTY_FILES, type FilesRead } from "./readFiles";
 import { asksIn, gotItLines, filesForTask } from "./gotIt";
 import { firstRead, briefForTask, unclearLines, type FirstRead } from "./firstRead";
 import { takenOverJob, addToTakenOver, takenOverReply } from "../service/takeover";
-import { taskBodyFrom, ownWords, readableText } from "../../../shared/boss/intake/messageBody.mjs";
+import { taskBodyFrom, ownWords, herWords, readableText } from "../../../shared/boss/intake/messageBody.mjs";
+import { parseMail, decodeHeader, type ParsedMail } from "../../../shared/mail/parseMail.mjs";
 import { triage, triageLines, shortTitle, type TriageJob } from "../../../shared/boss/intake/triage.mjs";
 import { parseResearchPage } from "../../../shared/boss/research/page.mjs";
 import { preApprovalIn } from "../../../shared/boss/repoChange/lane.mjs";
 import { closeDirectiveFor } from "../../../shared/boss/intake/close.mjs";
 import { storeLiveBook, amendLiveBook, removeFromLiveBook, type StoredBook } from "../capital/book";
-import { listEditsFromMail } from "../capital/grid"; // boss fix D
+import { listEditsFromMail, listChangeWords } from "../capital/grid"; // boss fix D
 import { brainEditsFromMail } from "../brains/store";
 import { parseBrainEdits } from "../../../shared/boss/brains/brain.mjs";
 import { stopDeliverable } from "../today/deliverables";
@@ -37,7 +38,7 @@ import { answerDutyFromMail, newDutyFromMail } from "../duties/mailLane";
 import { editDutyFromMail } from "../duties/editByMail";
 import { answerCommentWatchFromMail } from "../commentWatch/answer";
 import { answerKdpFromMail } from "../kdp/answer";
-import { dismissFromMail } from "../capital/dismiss";
+import { dismissFromMail, DISMISS_REPLY_RE } from "../capital/dismiss";
 import { prospectTemplateFromMail } from "../lp/templateReply";
 import { decideAnswerFromMail, morningDayOf } from "../lp/decideReply";
 import { morningReplyFromMail } from "./morningReply";
@@ -48,14 +49,80 @@ import { recordConstraints } from "../service/constraints";
 import { recordDriveWatches } from "../service/macWaits";
 import { standingConstraintsIn } from "../../../shared/boss/service/practices.mjs";
 import { dueTimeIn, dueLine, notBeforeIn, heldDue } from "../../../shared/boss/service/dueTime.mjs";
+import { askedIn, type SharedRead } from "./meaning";
+import { parseListEdits } from "../../../shared/boss/capital/partyLists.mjs";
+import { findDutyEdit, dutyCheckWords } from "../duties/editByMail";
+import type { LaneSeat } from "../../../shared/boss/duties/lane.mjs";
+
+const NO_READ: FirstRead = { brief: null, reader: null, tried: [], stop: null };
+
+/**
+ * ONE READ PER EMAIL (#514 review). Every door that acts on what her words found (a list edit, a duty edit, a
+ * deadline) puts its question to the same first read as a numbered check, and that read is also the reply read
+ * and the work's brief. The words find the candidates; the read says whether she asks for each.
+ *   · HER words only (#514 re-check): `her` is her text above any quote AND any forward (`herWords`), and
+ *     `subject` is her own subject, never a forwarded one (`herSubjectOf`). The lists, the duty, the deadline and
+ *     the hold are found there, and a check's quote must stand there: a forwarded sender's words change nothing.
+ *   · A not-before hold is never read away: a model "not" could only loosen it, so the words' hold always stands.
+ *   · A deadline the read says she did not set ("last Friday's report") is dropped; unsure or no read keeps it,
+ *     because a deadline orders work and never deletes, sends or approves.
+ *   · NOTHING HERE CALLS THE MODEL. `read`, `dutyAt`, `listsAt` and `dueAt` read when a door asks, so the
+ *     guards (ambiguous, a book that failed, a question back to her) still stand in front of the reader.
+ */
+export async function emailReading(env: Env, m: {
+  subject: string; her: string; own: string; readable: string; files: string[]; roster: LaneSeat[]; now: number; mailId: string; oversize: boolean; isReply: boolean;
+}) {
+  const lists = m.her.trim() ? parseListEdits(m.her) : [];
+  const duty = m.her.trim() ? await findDutyEdit(env, { roster: m.roster, subject: m.subject, text: m.her }) : null;
+  const dutyName = duty && !duty.ambiguous ? duty.duty.name : null;
+  // Her words only (#539 re-check): on a reply the subject is ours ("Re: Plan ready"), never hers, so it counts only on
+  // a fresh email. A check's quote and a reply's DECISION must stand in this text (decisionOf, checksOf).
+  const herText = m.isReply ? m.her : `${m.subject}\n${m.her}`;
+  const notBefore = notBeforeIn(herText, new Date(m.now));
+  const dueFound = dueTimeIn(herText, new Date(m.now));
+  const when = dueFound ? new Date(Date.parse(dueFound.due_at)).toLocaleString("en-US", { timeZone: "America/Chicago", weekday: "long", month: "short", day: "numeric", hour: "numeric", minute: "2-digit" }) : "";
+  const checks = [
+    ...lists.map(listChangeWords),
+    ...(dutyName ? [dutyCheckWords(dutyName)] : []),
+    ...(dueFound ? [`have this work done by ${when} Central`] : []),
+  ];
+  let once: Promise<FirstRead | null> | null = null;
+  const read = () => (once ??= !m.oversize && (m.own || m.readable).trim()
+    ? firstRead(env, { subject: m.subject, words: m.own || m.readable, checkWords: herText, files: m.files, checks, now: m.now, mailId: m.mailId })
+    : Promise.resolve(null));
+  const at = async (base: number): Promise<SharedRead> => ({ read: (await read()) ?? NO_READ, base });
+  const dueBase = lists.length + (dutyName ? 1 : 0);
+  return {
+    read,
+    /** The read only if a door already asked for it: a guard may use it, never start it. */
+    readSoFar: () => (once ?? Promise.resolve(null)),
+    listsAt: lists.length ? () => at(0) : null,
+    duty,
+    dutyAt: dutyName ? () => at(lists.length) : null,
+    notBefore,
+    dueFound,
+    dueAt: async () => {
+      if (!dueFound) return heldDue(null, notBefore);
+      const said = await askedIn(env, await at(dueBase), 1, { what: "a deadline in her email", keyword: "asks", mailId: m.mailId });
+      return heldDue(said === "skip" ? null : dueFound, notBefore);
+    },
+  };
+}
+
+/** Her own subject: on a forward, the subject is the forwarded email's unless she wrote her own. Pure. */
+export function herSubjectOf(subject: string, forwardedSubject: string | null): string {
+  const bare = (s: string) => s.replace(/^\s*((re|fwd?|fw)\s*:\s*)+/i, "").trim();
+  if (forwardedSubject == null) return subject;
+  return bare(subject).toLowerCase() === bare(forwardedSubject).toLowerCase() ? "" : bare(subject);
+}
 import { commandFromMail, openErrandFor, errandReplied } from "../commands/run";
 import { nudgeFromWords, nudgeAddressesIn } from "../lp/nudge";
 
 /**
  * MAIL TO `boss@sequoiataylor.com`.
  *
- * Boss OS's own inbox, written for Boss OS, importing nothing from `src/worker/effects/inboundEmail.ts`.
- * That file serves `os@joinwestpeek.com`, which is West Peek's mailbox on West Peek's domain,
+ * Boss OS's own inbox, written for Boss OS, importing nothing from West Peek's mail handler.
+ * That handler (retired from this repo 22 Nov 2026) serves `os@joinwestpeek.com`, which is West Peek's mailbox on West Peek's domain,
  * delivered to a Worker called `west-peek-os` and not to this one. Owner, 10 Sep 2026: "why are u
  * sharing anything with west peek's os? why? this is a separate repo and domain."
  *
@@ -158,7 +225,7 @@ export interface HandoffJob {
 /** The subject she meant: a forward's own subject when she forwarded something. */
 function trueSubjectOf(readable: string, subject: string): string {
   const origin = readable ? forwardedOrigin(readable) : null;
-  return origin?.subject ? decodeMimeHeader(origin.subject) : subject;
+  return origin?.subject ? decodeHeader(origin.subject) : subject;
 }
 
 /** Is this message for Boss OS at all? Checked on the domain, not the local part. */
@@ -273,11 +340,22 @@ export function consoleMessageId(mailId: string): string {
   return `<${mailId}@boss-os-console>`;
 }
 
+/** Her one plain line when the keywords decided because no model read her reply (an outage or the day's free cap). */
+export const FALLBACK_LINE = "No model could read this email just now (down, or today's free reads are used up), so I acted only on your exact lines.";
+type Said = { fellBack: boolean };
+const toldFallback = (reply: string, said: Said) => (said.fellBack && !reply.includes(FALLBACK_LINE) ? `${reply}\n\n${FALLBACK_LINE}` : reply);
+
 export async function handleBossInboundMail(message: BossMailMessage, env: Env): Promise<BossMailResult> {
+  const said: Said = { fellBack: false };
+  const result = await handleMail(message, env, said);
+  return result.reply ? { ...result, reply: toldFallback(result.reply, said) } : result;
+}
+
+async function handleMail(message: BossMailMessage, env: Env, said: Said): Promise<BossMailResult> {
   const mailId = newId("iml");
   const now = Date.now();
   const to = String(message.to ?? "").toLowerCase();
-  const subject = decodeMimeHeader(message.headers.get("subject") ?? "");
+  const subject = decodeHeader(message.headers.get("subject") ?? "");
   const sender = senderOf(message);
   const dmarc = dmarcPassed(message.headers.get("authentication-results"));
   const authorised = isOwner(sender, env.BOSS_EXTRA_OWNER_SENDERS ?? "") && dmarc;
@@ -398,6 +476,7 @@ export async function handleBossInboundMail(message: BossMailMessage, env: Env):
     outcome: string; why: string; tag?: string | null; employeeId?: string | null;
     taskId?: string | null; objectKey?: string | null; reply?: string | null;
   }) => {
+    if (row.reply) row = { ...row, reply: toldFallback(row.reply, said) };
     const replyState = !row.reply ? "none_due" : viaConsole ? "shown_on_screen" : "due";
     await env.DB.prepare(
       `UPDATE boss_inbound_mail
@@ -426,7 +505,7 @@ export async function handleBossInboundMail(message: BossMailMessage, env: Env):
    */
   const externalBytes = !isOwner(sender, env.BOSS_EXTRA_OWNER_SENDERS ?? "") && message.rawSize <= MAX_BODY_BYTES ? await new Response(message.raw).arrayBuffer() : null;
   const externalRaw = externalBytes === null ? null : new TextDecoder().decode(externalBytes);
-  const externalText = externalRaw === null ? "" : readableText(externalRaw, { full: true }).text;
+  const externalText = externalRaw === null ? "" : (await readableText(externalRaw, { full: true })).text;
   const errand = !isOwner(sender, env.BOSS_EXTRA_OWNER_SENDERS ?? "") ? await openErrandFor(env, sender, now, { subject, text: externalText }) : null;
   const externalKey = `boss-inbound-mail/${new Date(now).toISOString().slice(0, 10)}/${mailId}.eml`;
   const keepExternal = async () => {
@@ -507,6 +586,8 @@ export async function handleBossInboundMail(message: BossMailMessage, env: Env):
 
   let objectKey: string | null = null;
   let rawMessage = "";
+  /** The one parse of this message, shared by its text and its files, then let go. */
+  let parsed: ParsedMail | null = null;
   let secrets: Awaited<ReturnType<typeof secretDoor>> | null = null;
   if (oversize) {
     objectKey = objectKeyFor();
@@ -524,6 +605,7 @@ export async function handleBossInboundMail(message: BossMailMessage, env: Env):
     }
   } else {
     rawMessage = await new Response(message.raw).text();
+    parsed = await parseMail(rawMessage);
     /*
      * R3 — THE SECRET DOOR RUNS BEFORE THE MESSAGE IS KEPT ANYWHERE. A `SECRET NAME=value` line is
      * encrypted into `boss_secret_handoff` and the value is scrubbed out of the raw MIME here, so the
@@ -532,8 +614,10 @@ export async function handleBossInboundMail(message: BossMailMessage, env: Env):
      * key is stored from it.)
      */
     secrets = await secretDoor(env, {
-      raw: rawMessage, readable: taskBodyFrom(rawMessage)?.readable ?? "", subject, sender, mailId,
+      raw: rawMessage, readable: (await taskBodyFrom(parsed)).readable, subject, sender, mailId,
     });
+    // A scrubbed message is read again, so no value survives in the text or the files read from it.
+    if (secrets.raw !== rawMessage) parsed = await parseMail(secrets.raw);
     rawMessage = secrets.raw;
     /*
      * ─── THE RAW MESSAGE IS KEPT, AND THE CARD GETS THE WORDS ────────────────
@@ -571,7 +655,7 @@ export async function handleBossInboundMail(message: BossMailMessage, env: Env):
    * in an HTML-only message was previously matched against `=23monique`-shaped bytes and would have
    * missed. The subject is still in the haystack, because that is where she usually puts it.
    */
-  const read = rawMessage ? taskBodyFrom(rawMessage) : null;
+  const read = parsed ? await taskBodyFrom(parsed) : null;
   /*
    * HER VOICE NOTES ARE HER WORDS (intake/voiceNotes.ts). A recording is transcribed and joins what she
    * typed, everywhere below; one that cannot be heard is a named stop in the reply and on the job.
@@ -580,7 +664,9 @@ export async function handleBossInboundMail(message: BossMailMessage, env: Env):
    * AND EVERY FILE AND DRIVE LINK SHE SENT (15 Nov 2026, readFiles.ts): read before anything is decided
    * or answered, so the Got it can say what was read and name what could not be opened.
    */
-  const files: FilesRead = rawMessage ? await readEverything(env, rawMessage, read?.readable ?? "") : EMPTY_FILES;
+  const files: FilesRead = parsed ? await readEverything(env, parsed, read?.readable ?? "") : EMPTY_FILES;
+  // The parse (every file, as bytes) is let go here: what is needed below has been read out of it.
+  parsed = null;
   const voice = { heard: files.heard, failed: files.unopened.filter((u) => u.audio) };
   const unheard = unheardLines(voice.failed);
   const readable = withVoiceNotes(read?.readable ?? "", voice.heard);
@@ -596,6 +682,8 @@ export async function handleBossInboundMail(message: BossMailMessage, env: Env):
    * read a whole thread on purpose and the card's stored text.
    */
   const own = withVoiceNotes(ownWords(read?.readable ?? ""), voice.heard);
+  // What she herself wrote: above any quote and any forward. Every door that changes something of hers reads this.
+  const her = withVoiceNotes(herWords(read?.readable ?? ""), voice.heard);
 
   if (secrets?.line && secrets.onlySecrets) {
     await finish({ outcome: "SECRET_STORED", why: secrets.line, objectKey, reply: secrets.line });
@@ -627,7 +715,15 @@ export async function handleBossInboundMail(message: BossMailMessage, env: Env):
    * Monique email. Applied to D1 at once; Monique confirms in one line. When the edits are all the
    * reply said, nothing else opens; otherwise the rest of the message goes on as ordinary work.
    */
-  const listEdit = own ? await listEditsFromMail(env, own, mailId, now) : null;
+  const origin = readable ? forwardedOrigin(readable) : null;
+  const trueSubject = origin?.subject ? decodeHeader(origin.subject) : subject;
+  const fileNames = [...files.heard.map((h) => h.filename), ...files.read.map((r) => r.filename), ...files.unopened.map((u) => u.filename)];
+  const herSubject = herSubjectOf(subject, origin ? (origin.subject ? decodeHeader(origin.subject) : "") : null);
+  const isReply = isReplyMessage({
+    subject, inReplyTo: message.headers.get("in-reply-to"), references: message.headers.get("references"),
+  });
+  const reading = await emailReading(env, { subject: herSubject, her, own, readable, files: fileNames, roster, now, mailId, oversize, isReply });
+  const listEdit = reading.listsAt ? await listEditsFromMail(env, her, mailId, now, await reading.listsAt()) : null;
   if (listEdit?.onlyEdits) {
     await finish({ outcome: "LIST_EDITED", why: listEdit.note, objectKey, reply: listEdit.note });
     return { mailId, outcome: "LIST_EDITED", employeeId: null, taskId: null, reply: listEdit.note, messageId, signer: "Monique" };
@@ -675,14 +771,18 @@ export async function handleBossInboundMail(message: BossMailMessage, env: Env):
    * when no first read answered, logged "first read absent: keyword fallback". The same read is the work's brief below
    * (one read per email). Gemini free, then Workers AI; never Claude or Codex, never masked (firstRead.ts).
    */
-  const fileNames = [...files.heard.map((h) => h.filename), ...files.read.map((r) => r.filename), ...files.unopened.map((u) => u.filename)];
-  const mayCommand = Boolean(own) && (morningCommands(own).commands.length > 0 || nudgeAddressesIn(own).length > 0);
-  const replyRead: FirstRead | null = (threadRefs.refs.length || message.headers.get("in-reply-to") || mayCommand) && !oversize && (own || readable).trim()
-    ? await firstRead(env, { subject, words: own || readable, files: fileNames, now, mailId })
-    : null;
+  // Commands and dismissals are read from HER words only (#539 re-check): never from a forward she passes on, on the
+  // model's read and on the keyword fallback alike.
+  const herOwn = herWords(own);
+  const mayCommand = Boolean(herOwn) && (morningCommands(herOwn).commands.length > 0 || nudgeAddressesIn(own).length > 0 || DISMISS_REPLY_RE.test(herOwn));
+  const askReply = Boolean((threadRefs.refs.length || message.headers.get("in-reply-to") || mayCommand) && !oversize && (own || readable).trim());
+  const replyRead: FirstRead | null = askReply ? await reading.read() : null;
+  // OUTAGE, TOLD (#539 re-check): no model reading (down, or the day's free reads spent) means the keywords decide; her
+  // reply says so in one plain line, not only a warn row.
+  if (askReply && !replyRead?.brief) said.fellBack = true;
   const replyDecision = replyRead?.brief?.decision ?? null;
   const replyHasWork = Boolean(replyRead?.brief && (replyRead.brief.asks.length || replyRead.brief.questions.length || replyRead.brief.unclear.length));
-  const morningReply = own ? await morningReplyFromMail(env, { text: own, refs: threadRefs.refs, mailId, now, read: replyDecision, readHasWork: replyHasWork }) : null;
+  const morningReply = herOwn ? await morningReplyFromMail(env, { text: herOwn, refs: threadRefs.refs, mailId, now, read: replyDecision, readHasWork: replyHasWork }) : null;
   if (morningReply?.onlyCommands) {
     await finish({ outcome: "MORNING_REPLY", why: morningReply.note, employeeId: "emp_chief", objectKey, reply: morningReply.note });
     return { mailId, outcome: "MORNING_REPLY", employeeId: "emp_chief", taskId: null, reply: morningReply.note, messageId, signer: "Simone" };
@@ -749,12 +849,11 @@ export async function handleBossInboundMail(message: BossMailMessage, env: Env):
   // R12 — a deadline in her words rides on the task and is stated to the employee.
   // A start she named ("tomorrow … after 9am") holds the work until then, and a deadline before that
   // start is not hers (1 Nov 2026: a past-tense "today" made a Monday job URGENT on Sunday).
-  const notBefore = notBeforeIn(`${subject}\n${own}`, new Date(now));
-  const due = heldDue(dueTimeIn(`${subject}\n${own}`, new Date(now)), notBefore);
+  const { notBefore } = reading;
+  // Read inside the guard below (the model is asked only there); the words' deadline until then.
+  let due = reading.dueFound ? heldDue(reading.dueFound, notBefore) : null;
   const notBeforeMs = notBefore ? Date.parse(notBefore.at) : null;
 
-  const origin = readable ? forwardedOrigin(readable) : null;
-  const trueSubject = origin?.subject ? decodeMimeHeader(origin.subject) : subject;
   const haystack = `${subject}\n${own}`;
   const route = routeToSeat(haystack, roster, to)!;
 
@@ -904,10 +1003,8 @@ export async function handleBossInboundMail(message: BossMailMessage, env: Env):
    *
    * A REPLY IS NEVER QUESTIONED, which is what makes this terminate. Her answer routes as ordinary
    * work, and it also CLOSES the question it answers, a few lines further down.
+   * (`isReply` is decided once, above, where her words are read.)
    */
-  const isReply = isReplyMessage({
-    subject, inReplyTo: message.headers.get("in-reply-to"), references: message.headers.get("references"),
-  });
   /*
    * ─── UNREAD IS NOT EMPTY ───────────────────────────────────────────────────
    *
@@ -965,7 +1062,7 @@ export async function handleBossInboundMail(message: BossMailMessage, env: Env):
    */
   const dismissAnswer = !planAnswer && !commentAnswer && !kdpAnswer
     // …and her numbered answer to the prospect-email card ("5: try again"), the same way (25 Oct 2026).
-    ? (await dismissFromMail(env, own, now)) ?? (await prospectTemplateFromMail(env, own, now, morningDayOf(threadRefs.refs)))
+    ? (await dismissFromMail(env, herOwn, now, replyDecision, mailId)) ?? (await prospectTemplateFromMail(env, herOwn, now, morningDayOf(threadRefs.refs), mailId, replyDecision))
     : null;
 
   /*
@@ -996,16 +1093,20 @@ export async function handleBossInboundMail(message: BossMailMessage, env: Env):
    * changes THAT duty (its instructions, or the code that runs it), never a research page that says
    * "done" over nothing. Below the refusal for the same reason as the two doors above.
    */
-  const dutyEdit = planAnswer || commentAnswer || kdpAnswer || dismissAnswer || dutyAnswer || dutyRequest ? null : await editDutyFromMail(env, {
-    roster, subject: trueSubject, text: own || readable, mailId, now, sender,
-  });
+  const dutyEdit = planAnswer || commentAnswer || kdpAnswer || dismissAnswer || dutyAnswer || dutyRequest ? null : reading.duty ? await editDutyFromMail(env, {
+    // Her own words only: a pure forward's text is someone else's (#514 review).
+    roster, subject: herSubject, text: her, mailId, now, sender, found: reading.duty, shared: reading.dutyAt ? await reading.dutyAt() : undefined,
+  }) : null;
   const dutyNote = dutyAnswer ?? dutyRequest ?? dutyEdit;
 
-  const question = bookFailure || closedNote || planAnswer || commentAnswer || kdpAnswer || dismissAnswer || dutyNote ? null : clarificationFor({
+  let question = bookFailure || closedNote || planAnswer || commentAnswer || kdpAnswer || dismissAnswer || dutyNote ? null : clarificationFor({
     subject: trueSubject, body: readable, department: route.seat.department ?? "",
     seatName: route.seat.name, tag: route.tag, isReply, bookFiled: Boolean(bookNote),
     hasVerb: Boolean(directive), forwarded: Boolean(origin?.from), unread: oversize,
   });
+  // A short email the read found an ask in ("call Ron") is not "nothing to act on": the read wins over the word count.
+  // Only a read the email already had: the guard is never the thing that calls the model.
+  if (question?.reason === "nothing_to_act_on" && (await reading.readSoFar())?.brief?.asks.length) question = null;
 
   /*
    * HER ANSWER CLOSES THE QUESTION. Matched on the Message-ID her own client put in `References`,
@@ -1126,6 +1227,8 @@ export async function handleBossInboundMail(message: BossMailMessage, env: Env):
       try {
         const admitted = await admitTask(env, {
           title, lane: job.seat.lane, employee_id: job.seat.id, not_before: notBeforeMs,
+          // One kind is the email's, not each job's: it fills a job's kind only when the email is one job.
+          brief: first?.brief ? { ...first.brief, kind: triaged.length > 1 ? null : first.brief.kind ?? null } : null,
           input: {
             source: "boss_inbound_mail", mail_id: mailId, from: sender,
             ...(joinRound ? { round: joinRound } : {}),
@@ -1168,9 +1271,8 @@ export async function handleBossInboundMail(message: BossMailMessage, env: Env):
   if (route.outcome !== "AMBIGUOUS" && !bookFailure && !question && !filedByVerb) {
     // Inside the guard: nothing unclear, unread or already done ever reaches the free reader either.
     // One read per email: a reply was read above, before the reply doors.
-    first = replyRead ?? (!oversize && (own || readable).trim()
-      ? await firstRead(env, { subject: trueSubject, words: own || readable, files: fileNames, now, mailId })
-      : null);
+    first = await reading.read();
+    due = await reading.dueAt();
     briefBlock = first?.brief ? briefForTask(first.brief, first.reader) : first?.stop ?? null;
     triaged = route.outcome === "DEFAULTED" && !handoffNote && !followed && Boolean(readable || subject)
       ? triage({ subject: trueSubject, text: own || trueSubject, roster, asks: first?.brief?.asks ?? null })
@@ -1182,6 +1284,7 @@ export async function handleBossInboundMail(message: BossMailMessage, env: Env):
         lane: route.seat.lane,
         employee_id: route.seat.id,
         not_before: notBeforeMs,
+        brief: first?.brief ?? null,
         input: {
           source: "boss_inbound_mail",
           mail_id: mailId,
@@ -1310,6 +1413,8 @@ function headline(text: string): string {
   const stopped = question ? question.ask : planAnswer?.note ?? commentAnswer?.note ?? kdpAnswer?.note ?? dismissAnswer?.note ?? dutyNote?.note ?? closeQuestion ?? closedNote ?? bookFailure;
   const serviceLines = [
     ...unheard,
+    // The morning commands done (or asked once) from a mixed email: said here, never lost (22 Nov 2026).
+    ...(morningReply?.note && !decideAnswer ? [morningReply.note] : []),
     ...(secrets?.line ? [secrets.line] : []),
     ...(constraintNote ? [constraintNote] : []),
     ...(notBefore && taskId ? [`Held until ${dueLine({ due_at: notBefore.at, due_words: notBefore.words })!.replace(/^due /, "")}; nothing starts before then.`] : []),

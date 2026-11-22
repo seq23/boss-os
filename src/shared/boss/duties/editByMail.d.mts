@@ -14,3 +14,5 @@ export function dutyChangeBody(
   phrase: string,
   opts?: { source?: string; preApproved?: string | null },
 ): string;
+
+export function dutyChangeStands(subject: string, text: string): boolean;

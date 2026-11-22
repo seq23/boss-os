@@ -7,10 +7,10 @@
  *
  * She writes `SECRET RUNWARE_API_KEY=abc123` on its own line in an email to boss@. This file reads
  * those lines, refuses reserved names BY NAME, and scrubs every value — accepted or refused — out of
- * the raw MIME (plain, quoted-printable and base64 text parts alike), so nothing downstream can copy
+ * the raw MIME (plain, quoted-printable and base64 text parts alike, read by postal-mime), so nothing downstream can copy
  * it anywhere. The Worker half (`src/worker/boss/service/secretHandoff.ts`) encrypts and stores.
  */
-import { decodeBase64Text, decodeQuotedPrintable } from "../intake/messageBody.mjs";
+import { parseMail } from "../../mail/parseMail.mjs";
 
 export const SECRET_REDACTED = "[secret redacted]";
 /** The Worker secret that encrypts a hand-off. Vendor-prefixed; never a reserved name. */
@@ -72,57 +72,73 @@ export function nothingButSecrets(scrubbedWritten) {
 
 // ─── The MIME scrub ──────────────────────────────────────────────────────────
 
-function headerOf(part, name) {
-  const end = part.search(/\r?\n\r?\n/);
-  const block = (end === -1 ? part : part.slice(0, end)).replace(/\r?\n[ \t]+/g, " ");
-  const m = new RegExp(`^${name}\\s*:\\s*(.*)$`, "im").exec(block);
-  return m ? m[1].trim() : null;
-}
-
-function leaves(section, depth = 0) {
-  const type = headerOf(section, "content-type") ?? "";
-  const b = /boundary\s*=\s*"?([^";\r\n]+)"?/i.exec(type);
-  if (!b || depth > 6) return [section];
-  return section.split(`--${b[1]}`).slice(1).flatMap((p) => (p.startsWith("--") ? [] : leaves(p.replace(/^\r?\n/, ""), depth + 1)));
-}
-
-function decodedBody(part) {
-  const at = part.search(/\r?\n\r?\n/);
-  if (at === -1) return "";
-  const body = part.slice(at).replace(/^\r?\n\r?\n/, "");
-  const enc = (headerOf(part, "content-transfer-encoding") ?? "").toLowerCase();
-  return enc.includes("base64") ? decodeBase64Text(body) : enc.includes("quoted-printable") ? decodeQuotedPrintable(body) : body;
-}
-
-/**
- * EVERY VALUE OUT OF THE RAW MESSAGE: the literal text, and every encoded text part whose DECODED
- * body carries one (that part is re-emitted as 8bit with the value replaced). Nothing else changes.
+/*
+ * POSTAL-MIME READS, THIS FILE ONLY REWRITES (22 Nov 2026, row olp_m81m3hdh0dansp34: the home-made decoders are gone).
+ * First every literal copy of a value is replaced in the raw text. Then the message is parsed ONCE by postal-mime: if any
+ * decoded part (text, html, a text file) still carries a value, the kept message is REBUILT from that parse: her top
+ * headers, the scrubbed text and html as 8bit, every file re-encoded base64 from its own bytes (text files scrubbed).
+ * A message postal-mime cannot take apart keeps its headers and loses its body, never the other way round: a secret is
+ * never kept because a part could not be read (fails closed).
  */
-export function scrubSecretValues(raw, values, marker = SECRET_REDACTED) {
+const TOP_HEADERS_DROPPED = /^(?:content-type|content-transfer-encoding|mime-version|content-disposition)$/i;
+
+function base64Of(buffer) {
+  const bytes = new Uint8Array(buffer ?? new ArrayBuffer(0));
+  let bin = "";
+  for (let i = 0; i < bytes.length; i += 0x8000) bin += String.fromCharCode(...bytes.subarray(i, i + 0x8000));
+  return (btoa(bin).match(/.{1,76}/g) ?? []).join("\r\n");
+}
+
+function topHeaders(raw) {
+  const end = raw.search(/\r?\n\r?\n/);
+  const block = end === -1 ? raw : raw.slice(0, end);
+  return block.split(/\r?\n(?![ \t])/).filter((h) => h && !TOP_HEADERS_DROPPED.test(h.split(":")[0].trim())).join("\r\n");
+}
+
+const isTextFile = (a) => /^text\//i.test(a?.mimeType ?? "");
+const textOfFile = (a) => { try { return new TextDecoder("utf-8").decode(new Uint8Array(a.content)); } catch { return ""; } };
+
+/** Every decoded text the parse holds: the bodies and any text file. */
+function decodedTexts(mail) {
+  return [mail?.text ?? "", mail?.html ?? "", ...(mail?.attachments ?? []).filter(isTextFile).map(textOfFile)];
+}
+
+/** The message rebuilt from the one parse with every value replaced. */
+function rebuilt(raw, mail, replaceAll) {
+  const boundary = `boss-scrub-${Math.random().toString(36).slice(2, 12)}`;
+  const parts = [];
+  const part = (headers, body) => parts.push(`--${boundary}\r\n${headers.join("\r\n")}\r\n\r\n${body}\r\n`);
+  if (mail.text) part(["Content-Type: text/plain; charset=utf-8", "Content-Transfer-Encoding: 8bit"], replaceAll(mail.text));
+  if (mail.html) part(["Content-Type: text/html; charset=utf-8", "Content-Transfer-Encoding: 8bit"], replaceAll(mail.html));
+  for (const a of mail.attachments ?? []) {
+    const name = String(a.filename ?? "file").replace(/["\r\n]/g, "");
+    const bytes = isTextFile(a) ? new TextEncoder().encode(replaceAll(textOfFile(a))).buffer : a.content;
+    part([`Content-Type: ${a.mimeType || "application/octet-stream"}; name="${name}"`, "Content-Transfer-Encoding: base64",
+      `Content-Disposition: ${a.disposition === "inline" ? "inline" : "attachment"}; filename="${name}"`,
+      ...(a.contentId ? [`Content-ID: ${a.contentId}`] : [])], base64Of(bytes));
+  }
+  return `${topHeaders(raw)}\r\nMIME-Version: 1.0\r\nX-Boss-OS-Scrubbed: secret redacted\r\nContent-Type: multipart/mixed; boundary="${boundary}"\r\n\r\n${parts.join("")}--${boundary}--\r\n`;
+}
+
+/** EVERY VALUE OUT OF THE RAW MESSAGE, plain or encoded. Nothing else changes when nothing encoded carries one. */
+export async function scrubSecretValues(raw, values, marker = SECRET_REDACTED) {
   const wanted = (values ?? []).filter((v) => typeof v === "string" && v.length >= 4);
   if (!wanted.length || !raw) return raw;
-  const replaceAll = (text) => wanted.reduce((acc, v) => acc.split(v).join(marker), text);
-  let out = replaceAll(String(raw));
-  for (const part of leaves(out)) {
-    const enc = (headerOf(part, "content-transfer-encoding") ?? "").toLowerCase();
-    if (!enc.includes("base64") && !enc.includes("quoted-printable")) continue;
-    const type = (headerOf(part, "content-type") ?? "text/plain").toLowerCase();
-    if (!type.startsWith("text/")) continue;
-    const decoded = decodedBody(part);
-    if (!wanted.some((v) => decoded.includes(v))) continue;
-    const split = part.search(/\r?\n\r?\n/);
-    const headers = part.slice(0, split).replace(/^content-transfer-encoding:.*(?:\r?\n[ \t]+.*)*\r?\n?/gim, "").replace(/\r?\n$/, "");
-    out = out.replace(part, `${headers}\r\nContent-Transfer-Encoding: 8bit\r\nX-Boss-OS-Scrubbed: secret redacted\r\n\r\n${replaceAll(decoded)}\r\n`);
-  }
-  return out;
+  const replaceAll = (text) => wanted.reduce((acc, v) => acc.split(v).join(marker), String(text ?? ""));
+  const out = replaceAll(String(raw));
+  const parsed = await parseMail(out);
+  if (!parsed.mail) return `${topHeaders(out)}\r\nX-Boss-OS-Scrubbed: body withheld (${parsed.failed})\r\n\r\n${marker}\r\n`;
+  if (!decodedTexts(parsed.mail).some((t) => wanted.some((v) => t.includes(v)))) return out;
+  return rebuilt(out, parsed.mail, replaceAll);
 }
 
-/** True when any value is still readable in the message — plainly or in any decoded part. Used by the guard. */
-export function carriesSecretValue(raw, values) {
+/** True when any value is still readable in the message: plainly or in anything postal-mime decodes. Used by the guard. */
+export async function carriesSecretValue(raw, values) {
   const wanted = (values ?? []).filter((v) => typeof v === "string" && v.length >= 4);
   if (!wanted.length || !raw) return false;
   if (wanted.some((v) => String(raw).includes(v))) return true;
-  return leaves(String(raw)).some((p) => wanted.some((v) => decodedBody(p).includes(v)));
+  const { mail } = await parseMail(String(raw));
+  return decodedTexts(mail).some((t) => wanted.some((v) => t.includes(v)));
 }
 
 /** The one line her reply carries. Names only. */

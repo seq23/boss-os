@@ -169,8 +169,8 @@ export function violations(files) {
     /*
      * THE WRITE-SCOPE CHECK IS SCOPED TO IMPERSONATION, AND THE NARROWING IS THE POINT.
      *
-     * The first version failed on `src/worker/effects/googleClient.ts`, which does hold
-     * `gmail.send`. That is the West Peek chassis's partner path: a person completes an OAuth
+     * The first version failed on the West Peek chassis's Google client (retired 22 Nov 2026), which
+     * held `gmail.send` for its partner path: a person completes an OAuth
      * consent for THEIR OWN account and mail goes out as them. It cannot reach spry.vc — user
      * consent is not domain-wide delegation, and nobody at spry.vc has granted it — so failing on
      * it was a false alarm, and a false alarm from a validator is worse than no validator: it sends
@@ -326,7 +326,7 @@ if (process.argv.includes("--self-test")) {
     ["an impersonating script that acquires a send scope",
      { "scripts/ops/x.mjs": 'const creds = JSON.parse(process.env.GSC_SERVICE_ACCOUNT_JSON);\nconst S = "https://www.googleapis.com/auth/gmail.send";' }, true],
     ["a partner OAuth send path that cannot impersonate, which is allowed",
-     { "src/worker/effects/googleClient.ts": 'export const GMAIL_SEND_SCOPE = "https://www.googleapis.com/auth/gmail.send";' }, false],
+     { "src/worker/effects/partnerOauth.ts": 'export const GMAIL_SEND_SCOPE = "https://www.googleapis.com/auth/gmail.send";' }, false],
     ["reading it, which is allowed",
      { "scripts/ops/x.mjs": 'const creds = JSON.parse(process.env.GSC_SERVICE_ACCOUNT_JSON);\nconst MAILBOX = "staylor@spry.vc";\nconst SCOPE = "https://www.googleapis.com/auth/gmail.readonly";' }, false],
     ["prose about the rule, which is allowed",

@@ -25,8 +25,9 @@ import { newId } from "../lib/id";
 import { audit } from "../lib/audit";
 import { admitTask } from "../tasks/admit";
 import {
-  commandsIn, commandReplyIn, ownWords, readErrandReply, errandAnswerIn, errandFollowUpText, errandCancelText, followUpProblems, partyIn, errandDateIn, bookingAt, bookingWhen, reminderDueAt, ERRAND_TZ, errandReplyNotice, confirmLine, renderUrl, slotText, zoneLabel, OWNER_TZ, DEFAULT_MAILBOX, codeLines, ACCESS_CODE_SHAPE,
+  commandsIn, commandReplyIn, ownWords, readErrandReply, errandKeywordMeaning, errandAnswerIn, errandFollowUpText, errandCancelText, followUpProblems, partyIn, errandDateIn, bookingAt, bookingWhen, reminderDueAt, ERRAND_TZ, errandReplyNotice, confirmLine, renderUrl, slotText, zoneLabel, OWNER_TZ, DEFAULT_MAILBOX, codeLines, ACCESS_CODE_SHAPE,
 } from "../../../shared/boss/commands/parse.mjs";
+import { readMeaning } from "../intake/meaning";
 import { recipientLines } from "../../../shared/boss/mail/replyNeed.mjs";
 import { partiesAskIn } from "../../../shared/boss/capital/partiesAsk.mjs";
 import { partiesAnswer } from "../capital/grid";
@@ -715,10 +716,32 @@ async function ensureTap(env: Env, row: CommandRow, now: number): Promise<string
  * a choice, a question or a fee is a Decide item she answers by replying, and a card or deposit is
  * hers, never an agent's. Nothing goes back to them from here: her reply is what sends a follow-up.
  */
+/**
+ * THEIR ANSWER'S MEANING IS READ BY A MODEL; the keywords are the logged fallback (meaning.ts). The model
+ * reads their own words, never the quoted thread under them.
+ */
+export async function readErrandMeaning(env: Env, text: string, to: string | undefined, subject: string, mailId: string | null) {
+  const keyword = readErrandReply(text, to, subject);
+  const theirs = ownWords(text).trim();
+  if (!theirs) return keyword;
+  const m = await readMeaning(env, {
+    what: "the business's answer to her booking",
+    about: "This is a business's email reply to a booking request sent on the owner's behalf.",
+    options: {
+      confirmed: "they confirm the booking as asked, with nothing left to answer or pay",
+      unavailable: "they cannot do what was asked, or offer other times or dates instead",
+      asks: "they ask a question, need something (a name, a phone number, a card, a deposit) or set a condition",
+      other: "an automatic or holding reply, with nothing yet to act on",
+    },
+    text: theirs, keyword: errandKeywordMeaning(keyword), mailId, acts: ["confirmed"],
+  });
+  return m.by === "model" ? readErrandReply(text, to, subject, m.value) : keyword;
+}
+
 export async function errandReplied(env: Env, row: CommandRow, reply: { from: string; subject: string; text: string; dmarc: boolean; messageId?: string | null; mailId?: string; copied?: string[] }, now = Date.now()): Promise<void> {
   if (row.state === "done") return;
   const spec = j(row.spec); const result = j(row.result);
-  const read = readErrandReply(reply.text || reply.subject, spec.to, reply.subject);
+  const read = await readErrandMeaning(env, reply.text || reply.subject, spec.to, reply.subject, reply.mailId ?? null);
   const offer = read.offer;
   // Full originals live in R2; keep this operational preview bounded as a thread grows.
   const replies = [...(result.replies ?? []), { at: now, from: reply.from, subject: reply.subject.slice(0, 300), text: reply.text.slice(0, 8000), mail_id: reply.mailId ?? null, kind: read.kind, dmarc: reply.dmarc, message_id: reply.messageId ?? null }];

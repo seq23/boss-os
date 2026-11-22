@@ -71,17 +71,18 @@ export async function mailHistory(env: Env, filter: { employee?: string; counter
   const rows = (await env.DB.prepare(query).bind(...args).all<MailRow>()).results ?? [];
   const threads = new Map<string, { id: string; at: number; messages: (MailRow & { body: string | null; original_url: string | null })[] }>();
   // R2 is the full copy, including MIME and quoted history; command JSON is only the operational read.
-  const messages = await Promise.all(rows.map(async (r) => {
+  // Fetched together; parsed one at a time, so a thread of large attachments is never all decoded at once.
+  const raws = await Promise.all(rows.map(async (r) => (r.object_key ? (await env.VAULT.get(r.object_key))?.text() ?? null : null)));
+  const messages = [];
+  for (const [i, r] of rows.entries()) {
+    const raw = raws[i];
+    raws[i] = null;
     let body: string | null = null;
-    if (r.object_key) {
-      const object = await env.VAULT.get(r.object_key);
-      if (object) {
-        const raw = await object.text();
-        body = r.direction === "sent" ? (JSON.parse(raw).text || readableText(JSON.parse(raw).raw ?? "", { full: true }).text) : readableText(raw, { full: true }).text;
-      }
+    if (raw != null) {
+      body = r.direction === "sent" ? (JSON.parse(raw).text || (await readableText(JSON.parse(raw).raw ?? "", { full: true })).text) : (await readableText(raw, { full: true })).text;
     }
-    return { ...r, body, original_url: r.object_key ? `/api/boss/mail/${encodeURIComponent(r.id)}/original` : null };
-  }));
+    messages.push({ ...r, body, original_url: r.object_key ? `/api/boss/mail/${encodeURIComponent(r.id)}/original` : null });
+  }
   for (const m of messages) {
     const id = m.thread_id ?? m.id;
     if (!threads.has(id)) threads.set(id, { id, at: m.at, messages: [] });

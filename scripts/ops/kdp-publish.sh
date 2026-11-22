@@ -32,7 +32,7 @@ set -uo pipefail
 
 REPO="${BOSS_OS_REPO:-$(cd "$(dirname "$(readlink -f "${BASH_SOURCE[0]}")")/../.." && pwd)}"  # the checkout this script lives in, symlinks followed (launchd: the runtime)
 LOG_DIR="$HOME/Library/Logs/kdp-publish"
-LOCK="$LOG_DIR/.lock"
+LOCK="$LOG_DIR/.lock.flock"
 RUN_LOG="$LOG_DIR/$(date +%Y-%m-%d-%H%M%S)-$$.log"
 
 mkdir -p "$LOG_DIR"
@@ -40,14 +40,13 @@ say() { echo "[$(date +%H:%M:%S)] $*" | tee -a "$RUN_LOG"; }
 
 # Two runs uploading covers to the same bookshelf at once is the one collision that could put the
 # wrong image on a book, so the lock is not a nicety here.
-if ! mkdir "$LOCK" 2>/dev/null; then
-  if [ -f "$LOCK/pid" ] && kill -0 "$(cat "$LOCK/pid")" 2>/dev/null; then
-    say "NAMED STOP [ALREADY_RUNNING] pid $(cat "$LOCK/pid")"; exit 0
-  fi
-  say "stale lock; reclaiming"; rm -rf "$LOCK"; mkdir "$LOCK" 2>/dev/null || { say "FAILED to lock"; exit 3; }
-fi
-echo $$ > "$LOCK/pid"
-trap 'rm -rf "$LOCK"' EXIT
+source "$(dirname "$(readlink -f "${BASH_SOURCE[0]}")")/lib/flock.sh"  # one run at a time, held by the kernel (lib/flock.sh)
+LOCK_RC=0; hold_lock "$LOCK" || LOCK_RC=$?
+case $LOCK_RC in
+  0) ;;
+  1) say "NAMED STOP [ALREADY_RUNNING] another run holds $LOCK"; exit 0 ;;
+  *) say "NAMED STOP [LOCK_FAILED] cannot lock $LOCK"; exit 3 ;;
+esac
 
 if [ ! -d "$REPO" ]; then
   say "NAMED STOP [NO_REPO] $REPO — nothing to run and nothing to report with."

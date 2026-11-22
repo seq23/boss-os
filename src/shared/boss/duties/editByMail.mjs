@@ -10,6 +10,7 @@
  * the code. The Worker half is `src/worker/boss/duties/editByMail.ts`; the edit itself goes through
  * `ownerEdits.ts` (a `duty_versions` row, undoable), the same path the employee page uses.
  */
+import { stands } from "../text/wholeSentence.mjs";
 import { seatTag } from "../intake/mail.mjs";
 import { preApprovalIn } from "../repoChange/lane.mjs";
 import { NEW_DUTY_RE, UNTAGGED_NEW_DUTY_RE } from "./lane.mjs";
@@ -40,7 +41,9 @@ function tokens(s) {
  */
 export function dutyEditRequestIn(subject, text, { roster = [], duties = [] } = {}) {
   const haystack = `${String(subject ?? "")}\n${String(text ?? "")}`;
-  if (!DUTY_WORD_RE.test(haystack) || !CHANGE_RE.test(haystack)) return null;
+  // The words find WHICH duty (structure); whether she asks to change it is the first read's check (meaning by the
+  // model, 22 Nov 2026). The change words gate nothing here: they are only the logged fallback (`dutyChangeStands`).
+  if (!DUTY_WORD_RE.test(haystack)) return null;
   // A new duty is the duty lane's other door, never an edit.
   if (NEW_DUTY_RE.test(haystack) || UNTAGGED_NEW_DUTY_RE.test(haystack)) return null;
   const live = (duties ?? []).filter((d) => d && d.id && d.name && !d.removed_at);
@@ -62,6 +65,8 @@ export function dutyEditRequestIn(subject, text, { roster = [], duties = [] } = 
   const [best, second] = scored;
   const theSeat = (roster ?? []).find((s) => s.id === best.duty.employee_id) ?? seat;
   if (second && second.score * 1.5 > best.score) {
+    // "Which one?" goes to her only when her words plainly ask for a change: a question she did not invite is noise.
+    if (!dutyChangeStands(subject, text)) return null;
     return { ambiguous: scored.filter((s) => s.score * 1.5 > best.score).slice(0, 4).map((s) => s.duty), seat: theSeat };
   }
   return {
@@ -69,6 +74,15 @@ export function dutyEditRequestIn(subject, text, { roster = [], duties = [] } = 
     phrase: String(text ?? "").trim().slice(0, 8000) || String(subject ?? "").trim(),
     preApproved: preApprovalIn(haystack),
   };
+}
+
+/**
+ * The keyword reading of a duty edit, for when no first read answers (#514 review): her change words must STAND in
+ * their sentence (wholeSentence.mjs). "Don't change the … duty" negates and "Should I change …?" asks, so neither is
+ * an edit. Pure.
+ */
+export function dutyChangeStands(subject, text) {
+  return stands(`${String(subject ?? "")}\n${String(text ?? "")}`, CHANGE_RE);
 }
 
 /** The duty's instructions after her change: what it said, then her words, dated. Pure. */

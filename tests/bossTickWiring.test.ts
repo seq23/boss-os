@@ -13,11 +13,31 @@ describe("the Worker's scheduled() handler", () => {
   const src = readFileSync("src/worker/index.ts", "utf8");
   const handler = src.slice(src.indexOf("async scheduled("), src.indexOf("} satisfies ExportedHandler"));
 
-  it("runs the chassis jobs, the Boss drain, the duties, the reaper and the nightly, each in its own waitUntil", () => {
-    for (const call of ["runDueJobs(", "drainBossTasks(", "runBossDuties(", "runBossReaper(", "runBossNightly(", "runBossOpenLoops("]) {
+  it("runs every Boss lane, each in its own waitUntil", () => {
+    const lanes = [
+      "drainBossTasks(",
+      "runBossDuties(",
+      "runBossReaper(",
+      "runBossOutreach(",
+      "runBossEightraise(",
+      "runBossOpenLoops(",
+      "runBossKendra(",
+      "runBossNightly(",
+    ];
+    for (const call of lanes) {
       expect(handler, `scheduled() no longer calls ${call}`).toContain(call);
     }
-    expect((handler.match(/ctx\.waitUntil\(/g) ?? []).length).toBeGreaterThanOrEqual(5);
+    // The 8 hourly lanes plus the */5 tick's mail alarm and cloud clock: exactly one waitUntil each.
+    expect((handler.match(/ctx\.waitUntil\(/g) ?? []).length).toBe(lanes.length + 2);
+  });
+
+  it("no longer runs the copied West Peek fund jobs (chassis retirement, 22 Nov 2026)", () => {
+    // West Peek OS runs diagnostics_sweep, deck_reading and network_sync itself; the pause
+    // migration in #531 switched the rows off here. The tick must not reach the chassis scheduler.
+    expect(handler).not.toMatch(/runDueJobs\s*\(/);
+    // Nor may the Worker entry import it: the imports sit at the top of the file, not in the handler.
+    const jobsImport = /import\s*\{([^}]*)\}\s*from\s*"\.\/services\/jobs"/.exec(src)?.[1] ?? "";
+    expect(jobsImport).not.toMatch(/\brunDueJobs\b/);
   });
 
   it("the reaper is the Boss module's, re-exported through the mount like the duties are", () => {

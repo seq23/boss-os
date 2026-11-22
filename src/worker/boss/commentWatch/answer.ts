@@ -2,7 +2,7 @@ import type { Env } from "../env";
 import { newId } from "../lib/id";
 import { audit } from "../lib/audit";
 import { taskEvent } from "../repoChange/answer";
-import { tokenIn, parseReply, readCommentReply } from "../../../shared/boss/commentWatch/lane.mjs";
+import { tokenIn, parseReply, readCommentReply, REPLY_FORMS } from "../../../shared/boss/commentWatch/lane.mjs";
 import { logReplyDecision, type ReplyDecision } from "../intake/firstRead";
 
 /**
@@ -72,7 +72,7 @@ export async function answerCommentWatchFromMail(
     if (digest.task_id) await taskEvent(env, digest.task_id, "comment_watch_unread", { digest_id: digestId, mail_id: input.mailId, unread: parsed.unread, text: input.text.slice(0, 4000) });
     return {
       digestId, instructed: 0,
-      note: `I could not read an instruction in your reply to ${digestId}. One line per number — \`1 delete\`, \`2 reply as drafted\`, \`3 reply: <your words>\`, \`4 ignore\` — or \`your call\` on its own line. Nothing was changed.${parsed.unread.length ? ` Could not read: ${parsed.unread.map((u) => `"${u}"`).join(", ")}.` : ""}`,
+      note: `I could not read an instruction in your reply to ${digestId}. One line per number, as the digest showed:\n${REPLY_FORMS.map((f) => `  ${f}`).join("\n")}\nNothing was changed.${parsed.unread.length ? ` Could not read: ${parsed.unread.map((u) => `"${u}"`).join(", ")}.` : ""}`,
     };
   }
 

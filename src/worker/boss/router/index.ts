@@ -6,7 +6,7 @@ import { AppError } from "../lib/http";
 import { costPolicy } from "../../../shared/boss/governance";
 import { orderCandidates, vendorFamily } from "../../../shared/boss/router/candidateOrder.mjs";
 import { ATTEMPT_DEADLINE_MS, CHAIN_BUDGET_MS, nextAttemptDeadlineMs, RESEARCH_ATTEMPT_DEADLINE_MS } from "./deadlines";
-import { ProviderCallError, WEB_SEARCH_CALL_MICROS, readJsonObject, type ChatMessage, type JsonOutput } from "./types";
+import { ProviderCallError, WEB_SEARCH_CALL_MICROS, type ChatMessage } from "./types";
 import { evaluateModel, estimateCostMicros, type ModelRow, type RouteStage } from "./policy";
 import { rollBudgetWindows, laneBudgetState, employeeBudgetState } from "./budget";
 import { WIRING_BY_PROVIDER, adapterCredential, backendKindFor } from "./backends";
@@ -227,12 +227,6 @@ export interface RouteRequest {
    * instead of landing a bad answer. A paid answer is never discarded here; its caller checks it.
    */
   accept?: (text: string) => string | null;
-  /**
-   * ANSWER AS ONE JSON OBJECT IN THIS SHAPE (eng sweep row 8): every adapter asks its provider's
-   * structured output. A free answer that is not one JSON object is a failed call like `accept`;
-   * the parsed object is on the result as `json`.
-   */
-  json?: JsonOutput;
 }
 
 /**
@@ -271,8 +265,6 @@ export interface RouteResult {
   sources?: { title: string; url: string }[];
   /** Which stretch of `text` each source backs, when the provider said (Gemini grounding). */
   supports?: { start: number; end: number; sources: number[] }[];
-  /** The answer's object when the run asked for `json`; null when a paid answer was not one. */
-  json?: Record<string, unknown> | null;
   usedFallback: boolean;
   decisionId: string;
   backendId: string | null;
@@ -1122,7 +1114,6 @@ export async function routeCompletion(env: Env, rawOpts: RouteRequest): Promise<
             maxOutputTokens: effectiveOutputTokens,
             temperature: route.temperature,
             webSearch: opts.webSearch === true,
-            ...(opts.json ? { json: opts.json } : {}),
             /*
              * THE ROW'S PRIVACY CLAIM, SENT TO THE VENDOR TO HONOUR — see `openrouter.ts`.
              *
@@ -1155,7 +1146,7 @@ export async function routeCompletion(env: Env, rawOpts: RouteRequest): Promise<
 
     // A FREE ANSWER THAT FAILS THE JOB'S OWN CHECK IS A FAILED CALL, so the walk moves on.
     const unusable = called && !attemptError && free
-      ? (opts.json && !readJsonObject(called.text) ? `it is not one JSON object in the "${opts.json.name}" shape` : null) ?? (opts.accept?.(called.text) ?? null)
+      ? (opts.accept?.(called.text) ?? null)
       : null;
     if (unusable) attemptError = new Error(`the answer failed this job's check: ${unusable}`);
     // The free tier's memory: this candidate failed this kind of job. Out of allowance (429) is a
@@ -1262,7 +1253,6 @@ export async function routeCompletion(env: Env, rawOpts: RouteRequest): Promise<
 
     return {
       text: called.text,
-      ...(opts.json ? { json: readJsonObject(called.text) } : {}),
       costMicros,
       modelId: model.id,
       modelName: degraded

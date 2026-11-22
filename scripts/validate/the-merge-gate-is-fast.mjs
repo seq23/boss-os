@@ -32,7 +32,8 @@
  *      six-hour default.
  *   2. The unit suite and the Boss suites are sharded: a matrix with ≥2 shards, and the vitest
  *      `--shard=i/N` denominator equals the matrix length, so no file is skipped and none runs twice.
- *   3. Each unit shard stays serial inside (`--no-file-parallelism`), the way the suites are written.
+ *   3. Each unit shard stays serial inside (`--no-file-parallelism`), the way the suites are written: on a
+ *      bare `npx vitest run` line, or through `scripts/ops/vitest-pool.mjs node`, whose self-test pins it.
  *   4. ci.yml runs NO Playwright step — the journeys are not per merge, on any event.
  *   5. Every job in ci.yml has a ceiling ≤ 10 minutes, so the gate cannot quietly drift back to
  *      the shape this replaced.
@@ -178,7 +179,7 @@ function selfTest() {
     ["the journeys back in ci.yml (post-merge or not)", { ci: ci + "\n  e2e:\n    runs-on: ubuntu-latest\n    timeout-minutes: 40\n    if: github.event_name != 'pull_request'\n    steps:\n      - run: npm run e2e\n", e2e }, 1],
     ["a shard denominator that skips files", { ci: ci.replace("--shard=${{ matrix.shard }}/4", "--shard=${{ matrix.shard }}/5"), e2e }, 1],
     ["a one-shard matrix", { ci: ci.replace("shard: [1, 2, 3]", "shard: [1]"), e2e }, 1],
-    ["the unit shard gone parallel inside", { ci: ci.replace("npx vitest run --no-file-parallelism --shard", "npx vitest run --shard"), e2e }, 1],
+    ["the unit shard gone parallel inside", { ci: ci.replace("node scripts/ops/vitest-pool.mjs node --shard", "npx vitest run --shard"), e2e }, 1],
     ["a gate job whose ceiling is the old 30", { ci: ci.replace(/^    timeout-minutes: 8\n/m, "    timeout-minutes: 30\n"), e2e }, 1],
     ["e2e.yml back on push", { ci, e2e: e2e.replace("\non:\n", "\non:\n  push:\n    branches: [main]\n") }, 1],
     ["e2e.yml back on pull_request", { ci, e2e: e2e.replace("\non:\n", "\non:\n  pull_request:\n") }, 1],

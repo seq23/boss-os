@@ -18,4 +18,5 @@ export const brainLine: {
   coach(day: string, which: string, words: string): string;
 };
 export function dropTargets(digest: any, cmd: MorningCommand): { id: string; label: string }[];
-export function withKeywordsTheReadMissed(fromRead: MorningCommand[], keyword: MorningCommand[]): MorningCommand[];
+export function missedByRead(fromRead: MorningCommand[], keyword: MorningCommand[]): MorningCommand[];
+export function commandWords(c: MorningCommand): string;

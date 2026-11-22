@@ -17,11 +17,12 @@ import { audit } from "../lib/audit";
 import { admitTask } from "../tasks/admit";
 import { dayIdInZone } from "../../../shared/boss/timezone";
 import { appendToSection } from "../../../shared/boss/brains/brain.mjs";
-import { morningCommands, commandsFromRead, withKeywordsTheReadMissed, dropTargets, knownRule, brainLine } from "../../../shared/boss/mail/morningReply.mjs";
+import { morningCommands, commandsFromRead, missedByRead, commandWords, dropTargets, knownRule, brainLine } from "../../../shared/boss/mail/morningReply.mjs";
 import { logReplyDecision, type ReplyDecision } from "./firstRead";
 import { oneBrain, saveBrain } from "../brains/store";
 import { markPublic } from "../capital/publicCompanies";
 import { dropItems } from "../routes/morning";
+import { logEvent } from "../lib/log";
 import { closeMorningGate } from "../routes/today";
 import { morningDayOf } from "../lp/decideReply";
 
@@ -40,14 +41,22 @@ export async function morningReplyFromMail(env: Env, a: { text: string; refs: st
   const now = a.now ?? Date.now();
   const keyword = morningCommands(a.text);
   const fromRead = a.read ? commandsFromRead(a.read.commands.filter((c) => MORNING_KINDS.has(c.kind)), a.text) : null;
-  const commands = fromRead ? withKeywordsTheReadMissed(fromRead, keyword.commands) : keyword.commands;
+  // The read decides; with no read, the judged keywords (the logged last resort). Where they disagree, ask once.
+  const commands = fromRead ?? keyword.commands;
+  const unsure = fromRead ? missedByRead(fromRead, keyword.commands) : [];
   const morningDay = morningDayOf(a.refs);
   const usable = commands.filter((c: any) => morningDay || c.kind === "gate" || c.kind === "public");
   const kinds = (cs: any[]) => cs.map((c) => c.kind).join(", ") || "none";
   if (fromRead || usable.length) {
     await logReplyDecision(env, { mailId: a.mailId, what: "her morning commands", firstRead: fromRead ? kinds(fromRead) : null, keyword: kinds(keyword.commands) });
   }
-  if (!usable.length) return null;
+  if (unsure.length) {
+    await logEvent(env.DB, { level: "warn", scope: "intake", event: "meaning_disagrees", lane: "ops", entityId: a.mailId, detail: { what: "her morning commands", first_read: fromRead ? kinds(fromRead) : null, keyword: kinds(unsure), line: "the read and her exact words disagree: unknown, asked once, nothing done" } }).catch(() => undefined);
+  }
+  const askOnce = unsure.length
+    ? `I was not sure you meant ${unsure.map((c: any) => `"${commandWords(c)}"`).join(", ")}, so I did nothing with ${unsure.length === 1 ? "it" : "them"}. Reply with just that line if you did.`
+    : "";
+  if (!usable.length) return askOnce ? { note: askOnce, onlyCommands: !(fromRead && a.readHasWork === false ? "" : keyword.rest), acted: 0 } : null;
   // Only commands → done here. With the first read: the keywords found nothing else in it, or the read found no work.
   const rest = fromRead && a.readHasWork === false ? "" : keyword.rest;
   const today = dayIdInZone(now);
@@ -93,5 +102,6 @@ export async function morningReplyFromMail(env: Env, a: { text: string; refs: st
   }
   if (brainLines.length) await keepInPersonal(env, brainLines, now);
   await audit(env.DB, { actor: "owner", lane: "ops", entityType: "inbound_mail", entityId: a.mailId, action: "morning_reply", detail: { kinds: usable.map((c: any) => c.kind) } });
+  if (askOnce) said.push(askOnce);
   return { note: said.join("\n"), onlyCommands: !rest && usable.length === commands.length, acted: usable.length };
 }
