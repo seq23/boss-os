@@ -17,6 +17,7 @@
  */
 
 import { splitAsks } from "../intake/triage.mjs";
+import { civilIn, instantAt } from "../ownerTime.mjs";
 
 export const OWNER_TZ = "America/Chicago";
 export const DEFAULT_MINUTES = 30;
@@ -70,21 +71,6 @@ export function addressesIn(text) {
 
 // ─── Time ──────────────────────────────────────────────────────────────────
 
-function offsetMs(ts, tz) {
-  const f = new Intl.DateTimeFormat("en-US", { timeZone: tz, hourCycle: "h23", year: "numeric", month: "2-digit", day: "2-digit", hour: "2-digit", minute: "2-digit", second: "2-digit" });
-  const p = Object.fromEntries(f.formatToParts(new Date(ts)).map((x) => [x.type, x.value]));
-  return Date.UTC(+p.year, +p.month - 1, +p.day, +p.hour % 24, +p.minute, +p.second) - Math.floor(ts / 1000) * 1000;
-}
-/** The UTC instant of a wall-clock time in a zone (two passes, so the clock-change days land right). */
-export function zonedUtc(y, m, d, h, min, tz) {
-  const wall = Date.UTC(y, m - 1, d, h, min);
-  const first = wall - offsetMs(wall, tz);
-  return wall - offsetMs(first, tz);
-}
-export function wallIn(ts, tz) {
-  const l = new Date(ts + offsetMs(ts, tz));
-  return { y: l.getUTCFullYear(), m: l.getUTCMonth() + 1, d: l.getUTCDate(), h: l.getUTCHours(), min: l.getUTCMinutes(), dow: l.getUTCDay() };
-}
 const addDays = ({ y, m, d }, n) => { const t = new Date(Date.UTC(y, m - 1, d + n)); return { y: t.getUTCFullYear(), m: t.getUTCMonth() + 1, d: t.getUTCDate(), dow: t.getUTCDay() }; };
 
 const DAYS = ["sunday", "monday", "tuesday", "wednesday", "thursday", "friday", "saturday"];
@@ -128,7 +114,7 @@ export function whenIn(text, now = Date.now()) {
   } else if (NOON_RE.test(t)) h = 12;
   if (h === null || h > 23 || min > 59) return { error: "no time of day" };
 
-  const today = wallIn(now, OWNER_TZ);
+  const today = civilIn(now, OWNER_TZ);
   let day = null;
   let said = null;
   if (/\bday after tomorrow\b/i.test(t)) { day = addDays(today, 2); said = "the day after tomorrow"; }
@@ -162,11 +148,11 @@ export function whenIn(text, now = Date.now()) {
     } else {
       let n = (want - today.dow + 7) % 7;
       day = addDays(today, n);
-      if (n === 0 && zonedUtc(day.y, day.m, day.d, h, min, tz) <= now) day = addDays(today, 7);
+      if (n === 0 && instantAt(tz, day.y, day.m, day.d, h, min) <= now) day = addDays(today, 7);
     }
   }
   if (!day) return { error: "no day" };
-  const start = zonedUtc(day.y, day.m, day.d, h, min, tz);
+  const start = instantAt(tz, day.y, day.m, day.d, h, min);
   if (start <= now) return { error: "that time has already passed" };
   return { start, tz, tzLabel: zoneLabel(tz), minutes: minutesIn(t), said };
 }
@@ -722,7 +708,7 @@ export function errandDateIn(words, sentAt, tz = ERRAND_TZ) {
   if (!m) return null;
   const mon = MONTHS.indexOf((m[1] ?? m[4]).slice(0, 3).toLowerCase()) + 1;
   const d = Number(m[2] ?? m[3]);
-  const now = wallIn(sentAt, tz);
+  const now = civilIn(sentAt, tz);
   const y = mon < now.m || (mon === now.m && d < now.d) ? now.y + 1 : now.y;
   return { y, m: mon, d };
 }
@@ -739,7 +725,7 @@ export function bookingAt(date, option, tz = ERRAND_TZ) {
   let h = Number(m[1]) % 12;
   if (m[3] === "pm") h += 12;
   else if (!m[3] && h < 11) h += 12; // "6:30" for a table is evening unless they said am
-  return { at: zonedUtc(date.y, date.m, date.d, h, Number(m[2]), tz), date, time: option.time, tz };
+  return { at: instantAt(tz, date.y, date.m, date.d, h, Number(m[2])), date, time: option.time, tz };
 }
 /** When the "do you still want to go?" email goes: 28 hours before the booking's true instant. */
 export const reminderDueAt = (bookingAtMs) => bookingAtMs - REMINDER_LEAD_MS;
