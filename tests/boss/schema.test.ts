@@ -55,7 +55,8 @@ describe("schema", () => {
     const chassis = new Set<string>(CHASSIS_TABLES);
     const present = rows.results.map((r) => r.name).filter((n) => chassis.has(n));
     expect(present.length).toBeGreaterThan(0);
-    expect(present.length).toBeLessThanOrEqual(CHASSIS_TABLE_CEILING);
+    // Equal, not at most: when a chassis table goes, the ceiling must come down with it in the same PR.
+    expect(present.length, "the chassis table count moved: set CHASSIS_TABLE_CEILING to it (it may only fall)").toBe(CHASSIS_TABLE_CEILING);
   });
 
   it("seeds the trading authority denied by default", async () => {
