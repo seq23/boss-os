@@ -17,3 +17,4 @@ export declare const MIME_LIMITS: Readonly<{
 }>;
 export declare const mimeParseCount: { n: number };
 export declare function parseMail(raw: string): Promise<ParsedMail>;
+export declare function decodeHeader(value: string | null | undefined): string;

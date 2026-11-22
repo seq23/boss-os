@@ -6,7 +6,7 @@ import { describe, expect, it } from "vitest";
 import { buildPrep, guestFirm, recordsFor, roleOf, readResearch, researchPrompt, zonedTime } from "../src/shared/boss/meetingPrep/prep.mjs";
 import { researchGuest, prepEmail } from "../scripts/ops/meeting-prep.mjs";
 import { repairMojibake, replySubject, encodeSubject } from "../src/shared/boss/mail/subject.mjs";
-import { decodeMimeHeader } from "../src/shared/boss/intake/mail.mjs";
+import { decodeHeader } from "../src/shared/mail/parseMail.mjs";
 import { threadReplyMime } from "../src/worker/boss/wealth/gmailDraft";
 import { plainProblems } from "../src/shared/boss/mail/plain.mjs";
 
@@ -123,14 +123,14 @@ describe("c) times in her current zone, the other zone in brackets only when dif
 describe("d) subjects decoded once", () => {
   it("an em-dash subject round-trips into Re: unchanged, on both send paths", () => {
     const subject = "Pat — your intro";
-    expect(decodeMimeHeader(encodeSubject(replySubject(subject)))).toBe("Re: Pat — your intro");
+    expect(decodeHeader(encodeSubject(replySubject(subject)))).toBe("Re: Pat — your intro");
     const mime = threadReplyMime({ to: "pat@familyoffice.example", subject, body: "Hi Pat" });
     const header = /^Subject: (.*)$/m.exec(mime)![1];
-    expect(decodeMimeHeader(header!)).toBe("Re: Pat — your intro");
+    expect(decodeHeader(header!)).toBe("Re: Pat — your intro");
     // Already garbled on the way in: the reply still goes out right.
-    expect(decodeMimeHeader(/^Subject: (.*)$/m.exec(threadReplyMime({ to: "pat@familyoffice.example", subject: GARBLED, body: "x" }))![1]!)).toBe("Re: Pat — your intro");
+    expect(decodeHeader(/^Subject: (.*)$/m.exec(threadReplyMime({ to: "pat@familyoffice.example", subject: GARBLED, body: "x" }))![1]!)).toBe("Re: Pat — your intro");
     // A Latin-1 encoded word is read in its own charset.
-    expect(decodeMimeHeader("=?iso-8859-1?Q?Caf=E9?=")).toBe("Café");
+    expect(decodeHeader("=?iso-8859-1?Q?Caf=E9?=")).toBe("Café");
   });
 
   it("a stored mojibake subject displays correctly; a clean one is untouched", () => {

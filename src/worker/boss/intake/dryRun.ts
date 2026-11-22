@@ -18,7 +18,8 @@ import { triageReply } from "./inboundMail";
 import { unheardLines, withVoiceNotes } from "./voiceNotes";
 import { taskBodyFrom, ownWords } from "../../../shared/boss/intake/messageBody.mjs";
 import { parseMail } from "../../../shared/mail/parseMail.mjs";
-import { decodeMimeHeader, replyBody, routeToSeat } from "../../../shared/boss/intake/mail.mjs";
+import { replyBody, routeToSeat } from "../../../shared/boss/intake/mail.mjs";
+import { decodeHeader } from "../../../shared/mail/parseMail.mjs";
 import { triage } from "../../../shared/boss/intake/triage.mjs";
 
 /** The header block of a raw message, as Headers. Pure. */
@@ -51,7 +52,7 @@ export interface DryRead {
 
 export async function dryReadMessage(env: Env, raw: string, opts: { rung?: string | null } = {}): Promise<DryRead> {
   const headers = headersOfRaw(raw);
-  const subject = decodeMimeHeader(headers.get("subject") ?? "");
+  const subject = decodeHeader(headers.get("subject") ?? "");
   const to = (headers.get("to") ?? "").toLowerCase();
   const parsed = await parseMail(raw);
   const read = await taskBodyFrom(parsed);

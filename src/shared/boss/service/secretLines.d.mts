@@ -12,12 +12,10 @@ export declare const RESERVED_SECRET_PREFIXES: readonly string[];
 export declare function secretNameProblem(name: string): string | null;
 export declare function readSecretLines(text: string): SecretLinesRead;
 export declare function nothingButSecrets(scrubbedWritten: string): boolean;
-export declare function scrubSecretValues(raw: string, values: readonly string[], marker?: string): string;
-export declare function carriesSecretValue(raw: string, values: readonly string[]): boolean;
+export declare function scrubSecretValues(raw: string, values: readonly string[], marker?: string): Promise<string>;
+export declare function carriesSecretValue(raw: string, values: readonly string[]): Promise<boolean>;
 export declare function secretDoorLine(
   stored: ReadonlyArray<{ name: string; repo: string | null }>,
   refused: ReadonlyArray<{ name: string; why: string }>,
 ): string;
 
-export declare function decodeQuotedPrintable(text: string, charset?: string | null): string;
-export declare function decodeBase64Text(text: string, charset?: string | null): string;

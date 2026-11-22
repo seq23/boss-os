@@ -7,7 +7,7 @@ import { logEvent } from "../lib/log";
 import { admitTask } from "../tasks/admit";
 import {
   BOSS_INTAKE_MAILBOX, BOSS_INTAKE_DOMAIN,
-  decodeMimeHeader, dmarcPassed, extractAddress, isOwner,
+  dmarcPassed, extractAddress, isOwner,
   replyBody, routeToSeat, seatTag, strippedSubject,
   type BossRoute, type BossSeat,
 } from "../../../shared/boss/intake/mail.mjs";
@@ -23,7 +23,7 @@ import { asksIn, gotItLines, filesForTask } from "./gotIt";
 import { firstRead, briefForTask, unclearLines, type FirstRead } from "./firstRead";
 import { takenOverJob, addToTakenOver, takenOverReply } from "../service/takeover";
 import { taskBodyFrom, ownWords, herWords, readableText } from "../../../shared/boss/intake/messageBody.mjs";
-import { parseMail, type ParsedMail } from "../../../shared/mail/parseMail.mjs";
+import { parseMail, decodeHeader, type ParsedMail } from "../../../shared/mail/parseMail.mjs";
 import { triage, triageLines, shortTitle, type TriageJob } from "../../../shared/boss/intake/triage.mjs";
 import { parseResearchPage } from "../../../shared/boss/research/page.mjs";
 import { preApprovalIn } from "../../../shared/boss/repoChange/lane.mjs";
@@ -223,7 +223,7 @@ export interface HandoffJob {
 /** The subject she meant: a forward's own subject when she forwarded something. */
 function trueSubjectOf(readable: string, subject: string): string {
   const origin = readable ? forwardedOrigin(readable) : null;
-  return origin?.subject ? decodeMimeHeader(origin.subject) : subject;
+  return origin?.subject ? decodeHeader(origin.subject) : subject;
 }
 
 /** Is this message for Boss OS at all? Checked on the domain, not the local part. */
@@ -342,7 +342,7 @@ export async function handleBossInboundMail(message: BossMailMessage, env: Env):
   const mailId = newId("iml");
   const now = Date.now();
   const to = String(message.to ?? "").toLowerCase();
-  const subject = decodeMimeHeader(message.headers.get("subject") ?? "");
+  const subject = decodeHeader(message.headers.get("subject") ?? "");
   const sender = senderOf(message);
   const dmarc = dmarcPassed(message.headers.get("authentication-results"));
   const authorised = isOwner(sender, env.BOSS_EXTRA_OWNER_SENDERS ?? "") && dmarc;
@@ -702,9 +702,9 @@ export async function handleBossInboundMail(message: BossMailMessage, env: Env):
    * reply said, nothing else opens; otherwise the rest of the message goes on as ordinary work.
    */
   const origin = readable ? forwardedOrigin(readable) : null;
-  const trueSubject = origin?.subject ? decodeMimeHeader(origin.subject) : subject;
+  const trueSubject = origin?.subject ? decodeHeader(origin.subject) : subject;
   const fileNames = [...files.heard.map((h) => h.filename), ...files.read.map((r) => r.filename), ...files.unopened.map((u) => u.filename)];
-  const herSubject = herSubjectOf(subject, origin ? (origin.subject ? decodeMimeHeader(origin.subject) : "") : null);
+  const herSubject = herSubjectOf(subject, origin ? (origin.subject ? decodeHeader(origin.subject) : "") : null);
   const reading = await emailReading(env, { subject: herSubject, her, own, readable, files: fileNames, roster, now, mailId, oversize });
   const listEdit = reading.listsAt ? await listEditsFromMail(env, her, mailId, now, await reading.listsAt()) : null;
   if (listEdit?.onlyEdits) {

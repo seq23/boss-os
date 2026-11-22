@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
-import { classifyInbound, decodeMimeHeader, extractAddress, forwardedOrigin, MAX_BODY_BYTES, personFromMessage } from "../src/worker/effects/inboundEmail";
+import { decodeHeader } from "../src/shared/mail/parseMail.mjs";
+import { classifyInbound, extractAddress, forwardedOrigin, MAX_BODY_BYTES, personFromMessage } from "../src/worker/effects/inboundEmail";
 import { deckLinks, messageText, parseMail, pdfAttachments, unreadableDeckAttachments } from "../src/worker/effects/mimeAttachments";
 import { INTAKE_MAILBOX } from "../src/shared/intake/emailTriggers";
 import { defuseTriggers, wouldLoop } from "../src/worker/effects/emailTransport";
@@ -80,21 +81,21 @@ describe("a trigger in the subject line survives the mail client", () => {
    */
   it("decodes a Q-encoded subject and still finds the trigger", () => {
     const encoded = "=?UTF-8?Q?=23wpdealflow_Northwind_Robotics_?= =?UTF-8?Q?=E2=80=94_seed?=";
-    expect(decodeMimeHeader(encoded)).toBe("#wpdealflow Northwind Robotics — seed");
+    expect(decodeHeader(encoded)).toBe("#wpdealflow Northwind Robotics — seed");
     const out = classifyInbound({ ...base, subject: encoded, body: "no trigger down here" });
     expect(out.triggers).toEqual(["#wpdealflow"]);
   });
 
   it("decodes a B-encoded subject too, because clients choose between them by content", () => {
     const encoded = `=?UTF-8?B?${Buffer.from("#wpnetwork Dana Reyes").toString("base64")}?=`;
-    expect(decodeMimeHeader(encoded)).toBe("#wpnetwork Dana Reyes");
+    expect(decodeHeader(encoded)).toBe("#wpnetwork Dana Reyes");
     expect(classifyInbound({ ...base, subject: encoded, body: "" }).triggers).toEqual(["#wpnetwork"]);
   });
 
   it("leaves a plain subject alone and never drops one it cannot decode", () => {
-    expect(decodeMimeHeader("#wpdeck plain subject")).toBe("#wpdeck plain subject");
+    expect(decodeHeader("#wpdeck plain subject")).toBe("#wpdeck plain subject");
     // Malformed: still a subject. Losing it would trade a formatting problem for a lost message.
-    expect(decodeMimeHeader("=?UTF-8?Q?broken")).toBe("=?UTF-8?Q?broken");
+    expect(decodeHeader("=?UTF-8?Q?broken")).toBe("=?UTF-8?Q?broken");
   });
 
   it("records the readable subject, not the wire format", () => {
