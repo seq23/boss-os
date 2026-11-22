@@ -152,7 +152,8 @@ export async function runGrowthDirector(env: Env, now = Date.now(), deps: { mode
   let cards = 0;
   const results: { key: string; state: string }[] = [];
   const rows: any[] = [];
-  const record = async (r: any) => { rows.push(r); results.push({ key: r.business, state: r.state }); await writeDecision(db, r); };
+  // Counted only once its row is written: a failed write is never a quiet "decided".
+  const record = async (r: any) => { await writeDecision(db, r); rows.push(r); results.push({ key: r.business, state: r.state }); };
 
   for (const entry of roster) {
     const base = { id: newId("gdc"), cycle, business: entry.key ?? entry.label, label: entry.label, created_at: now };

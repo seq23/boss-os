@@ -135,9 +135,10 @@ export const NAMING_RULE = 'NAMING: "Black Bible Chat" appears only as "Hush Har
 export function namingProblems(draft) {
   const t = String(draft ?? "");
   const out = [];
-  if (/black\s*bible\s*stories/i.test(t.replace(/#/g, " "))) out.push('says "Black Bible Stories" (a third party\'s trademark application): say "Bible Stories with Black Faces"');
-  const bare = t.replace(/Hush Harbor\s*·\s*Black Bible Chat/gi, "");
-  if (/black\s*bible\s*chat/i.test(bare.replace(/#blackbiblechat/gi, "")) ) out.push('says "Black Bible Chat" outside "Hush Harbor · Black Bible Chat & Stories"');
+  const W = "[\\s\\-_.]*";
+  if (new RegExp(`black${W}bible${W}stories`, "i").test(t.replace(/#/g, " "))) out.push('says "Black Bible Stories" (a third party\'s trademark application): say "Bible Stories with Black Faces"');
+  const bare = t.replace(/Hush Harbor\s*·\s*Black Bible Chat\s*(&|and)\s*Stories/gi, "").replace(/#blackbiblechat\b/gi, "");
+  if (new RegExp(`black${W}bible${W}chat`, "i").test(bare)) out.push('says "Black Bible Chat" outside "Hush Harbor · Black Bible Chat & Stories"');
   return out;
 }
 

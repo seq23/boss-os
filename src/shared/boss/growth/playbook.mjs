@@ -44,7 +44,8 @@ Her ideas are weighed like a veteran would weigh them, against research and our 
 - real app screenshots of how it works, Hush Harbor first;
 - posts about the privacy feature;
 - the mindset side (quantum leaps, manifesting), introduced lightly and in a neutral tone. She prefers one account to separate faith and mindset accounts, but that is not a hard no. Research it and propose. Any proposal says how it keeps manifest words away from where the faith door sees them (the brand's do-not);
-- hashtags and licence-safe trending audio from the platform's own library, where they help that post.
+- hashtags and licence-safe trending audio from the platform's own library, where they help that post;
+- Facebook as a likely lead channel for the screenshot dramas (her input: "i think alot of these drama stories work well for FB"). The Page (facebook.com/peacebestillapp) is already posted to. Its audience skews older and church-going, and long story carousels and text-story posts tend to do well there. Weigh it against our own numbers.
 
 Naming (enforced in code on every draft): "Black Bible Chat" appears only as "Hush Harbor · Black Bible Chat & Stories". Never write "Black Bible Stories" or #blackbiblestories (USPTO sn 98839129); say "Bible Stories with Black Faces".
 
