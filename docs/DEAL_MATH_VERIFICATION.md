@@ -1,3 +1,8 @@
+> **Historical: retired 22 Nov 2026.** This describes the West Peek fund code copied into this repo,
+> which retired on 22 Nov 2026. West Peek OS (the `west-peek-os` repo) holds the live version. Files
+> it names may no longer exist here. Boss OS's own authority is [`docs/boss/`](../docs/boss/) and
+> [`STATUS.md`](../STATUS.md).
+
 # Deal Math Verification — West Peek OS (P6, D6 + ADR-005)
 
 Law (D6): **no formula is accepted as correct merely because it exists in the partner

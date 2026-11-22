@@ -28,14 +28,6 @@ import { parseMail, mimeParseCount, MIME_LIMITS, type ParsedMail } from "../../s
 
 export { parseMail, mimeParseCount, MIME_LIMITS, type ParsedMail };
 
-export interface Attachment {
-  filename: string;
-  mediaType: string;
-  /** Base64, exactly as `readDeck` wants it. */
-  dataBase64: string;
-  bytes: number;
-}
-
 /** A file as bytes: what Boss intake reads (a recording is made base64 only when it is heard). */
 export interface FilePart {
   filename: string;
@@ -44,12 +36,6 @@ export interface FilePart {
   bytes: number;
 }
 
-/** More than this and the firm is being sent a library, not a deck. */
-export const MAX_ATTACHMENTS = 3;
-
-/** A deck bigger than this is not going to be read inside one invocation. */
-export const MAX_ATTACHMENT_BYTES = 12 * 1024 * 1024;
-
 /**
  * A voice note up to this size is heard (15 Nov 2026: was 3 MB). Whisper takes it as base64; a phone's
  * few minutes of m4a is 1 to 20 MB; Email Routing refuses anything over 25 MB before it arrives.
@@ -57,7 +43,7 @@ export const MAX_ATTACHMENT_BYTES = 12 * 1024 * 1024;
 export const MAX_VOICE_NOTE_BYTES = 25 * 1024 * 1024;
 
 /** What the card says when the message itself could not be taken apart. */
-export const PARSE_FAILED_NAME = "the message";
+const PARSE_FAILED_NAME = "the message";
 /** postal-mime's refusal in plain words: this line reaches her Got it, so no error code is ever in it. */
 const PLAIN_REFUSAL: Record<string, string> = {
   EMAXNESTINGDEPTH: "its parts are nested deeper than any real email",
@@ -76,7 +62,7 @@ function filenameOf(part: MimePart): string {
 
 function partsOf(
   parsed: ParsedMail, accept: (part: MimePart, filename: string) => boolean, mediaTypeOf: (type: string) => string,
-  max: number, maxBytes = MAX_ATTACHMENT_BYTES,
+  max: number, maxBytes: number,
 ): { files: FilePart[]; unread: string[] } {
   const files: FilePart[] = [];
   const unread: string[] = [];
@@ -102,20 +88,6 @@ function partsOf(
     files.push({ filename, mediaType: mediaTypeOf(part.mimeType), content, bytes: content.byteLength });
   }
   return { files, unread };
-}
-
-/**
- * The PDFs in a raw MIME message. `unread` names what looked like one and could not be taken, so the
- * caller can SAY so on the work card. Silence about a dropped attachment is how the Sensori deck went missing.
- */
-export function pdfAttachments(parsed: ParsedMail): { attachments: Attachment[]; unread: string[] } {
-  // By type, or by name: some phone mail apps send a deck as application/octet-stream named deck.pdf.
-  const { files, unread } = partsOf(parsed, (p, name) => p.mimeType.includes("application/pdf") || /\.pdf$/i.test(name),
-    () => "application/pdf", MAX_ATTACHMENTS);
-  return {
-    attachments: files.map(({ filename, mediaType, content, bytes }) => ({ filename, mediaType, dataBase64: base64OfBytes(content), bytes })),
-    unread,
-  };
 }
 
 /** EVERY FILE IN THE MESSAGE (15 Nov 2026): every part that is not the message's own text, as bytes. */
@@ -147,68 +119,4 @@ export function base64OfBytes(bytes: Uint8Array): string {
     out.push(btoa(bin));
   }
   return out.join("");
-}
-
-/** Enough to carry a forwarded chain and its tags; not so much that scanning it costs real time. */
-const MAX_SCANNED_BODY = 256 * 1024;
-
-/**
- * The readable text of a message: its subject (decoded), and its text and HTML bodies. Used by the
- * scheduled reader to find a `#wpdeck` written in the body of a message too big to read at the door.
- * A message that cannot be taken apart falls back to its raw text after the headers, so a tag in it is
- * still found; `unread` says so.
- */
-export function messageText(parsed: ParsedMail): { subject: string; body: string; unread?: string } {
-  const { raw, mail, failed } = parsed;
-  if (!mail) {
-    const end = raw.search(/\r?\n\r?\n/);
-    const head = (end === -1 ? raw : raw.slice(0, end)).replace(/\r?\n[ \t]+/g, " ");
-    return {
-      subject: /^subject\s*:\s*(.+)$/im.exec(head)?.[1]?.trim() ?? "",
-      body: end === -1 ? "" : raw.slice(end).trim().slice(0, MAX_SCANNED_BODY),
-      unread: failedLine(failed ?? "unknown"),
-    };
-  }
-  return { subject: mail.subject ?? "", body: [mail.text ?? "", mail.html ?? ""].filter(Boolean).join("\n").slice(0, MAX_SCANNED_BODY) };
-}
-
-/**
- * A deck that arrived as something this cannot open, named precisely, never as silence (operator, 24 Aug
- * 2026: decks also arrive as .pptx, Keynote, and Docsend or Google Slides links). Nothing is converted.
- */
-const DECK_LIKE_TYPES: ReadonlyArray<{ match: RegExp; called: string }> = [
-  { match: /presentationml|\.pptx?$/i, called: "a PowerPoint file" },
-  { match: /keynote|\.key$/i, called: "a Keynote file" },
-  { match: /opendocument\.presentation|\.odp$/i, called: "an OpenDocument presentation" },
-  { match: /msword|wordprocessingml|\.docx?$/i, called: "a Word document" },
-];
-
-export function unreadableDeckAttachments(parsed: ParsedMail): string[] {
-  const { mail } = parsed;
-  if (!mail) return [];
-  const found: string[] = [];
-  for (const part of mail.attachments) {
-    const type = part.mimeType;
-    if (!type || type.includes("application/pdf") || type.startsWith("text/")) continue;
-    const filename = filenameOf(part);
-    const known = DECK_LIKE_TYPES.find((k) => k.match.test(type) || k.match.test(filename));
-    if (known) found.push(`${filename} (${known.called})`);
-  }
-  return found.slice(0, MAX_ATTACHMENTS);
-}
-
-/**
- * Deck links in the body, which is how a lot of decks travel now. SURFACED, NOT FETCHED: Docsend gates
- * on an email address and Google Slides needs paging through slides.
- */
-const DECK_HOSTS = /https:\/\/(?:www\.)?(docsend\.com|drive\.google\.com|docs\.google\.com|dropbox\.com|notion\.so|figma\.com|canva\.com|pitch\.com)\/[^\s"'<>)\]]+/gi;
-
-export function deckLinks(text: string): string[] {
-  const seen = new Set<string>();
-  for (const m of text.matchAll(DECK_HOSTS)) {
-    const url = m[0].replace(/[.,;:]+$/, "");
-    seen.add(url.slice(0, 300));
-    if (seen.size >= 5) break;
-  }
-  return [...seen];
 }

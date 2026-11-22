@@ -6,7 +6,7 @@
     "node": ">=24",
     "npm": ">=11"
   },
-  "description": "West Peek OS \u2014 governed institutional operating system (P0-P12 substrate, P13-P25 operating product).",
+  "description": "Boss OS \u2014 Sequoia's own operating system (boss.sequoiataylor.com).",
   "type": "module",
   "scripts": {
     "backup:local": "node scripts/backup/backup.mjs",
@@ -37,9 +37,9 @@
     "validate:migrations-keep-data": "node scripts/validate/migrations-keep-their-data.mjs && node scripts/validate/migrations-keep-their-data.mjs --self-test",
     "validate:brains": "node scripts/validate/brains.mjs && node scripts/validate/brains.mjs --self-test",
     "validate": "npm run validate:scans && npm run typecheck && npm run test",
-    "validate:ai-boundary": "node scripts/validate/no-direct-provider-calls.mjs && node scripts/validate/no-direct-provider-calls.mjs --self-test && node scripts/seed/generate-ai-employee-seed.mjs --check",
+    "validate:ai-boundary": "node scripts/validate/no-direct-provider-calls.mjs && node scripts/validate/no-direct-provider-calls.mjs --self-test",
     "validate:api-screens": "node scripts/validate/api-has-a-screen.mjs && node scripts/validate/api-has-a-screen.mjs --self-test",
-    "validate:authority": "node scripts/validate/no-unauthorized-effects.mjs && node scripts/validate/no-unauthorized-effects.mjs --self-test && node scripts/seed/generate-machine-seed.mjs --check",
+    "validate:authority": "node scripts/validate/no-unauthorized-effects.mjs && node scripts/validate/no-unauthorized-effects.mjs --self-test",
     "validate:classification": "node scripts/validate/data-classification.mjs",
     "validate:two-axes": "node scripts/validate/two-axes-are-independent.mjs && node scripts/validate/two-axes-are-independent.mjs --self-test",
     "validate:agent-poll": "node scripts/validate/the-agent-polls-without-overlap.mjs && node scripts/validate/the-agent-polls-without-overlap.mjs --self-test",

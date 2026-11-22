@@ -1,146 +1,30 @@
-> ### ⚠️ This document describes the West Peek chassis, not Boss OS.
->
-> This repository is **Boss OS v21**, live at boss.sequoiataylor.com. It was built by cloning West
-> Peek OS and porting the Boss OS v20 artifact into it, so the documents at the repository root —
-> this one included — were inherited from the chassis and describe *it*. They use **P0–P25**
-> numbering and talk about LPs, dealflow and Managing Partners. None of that is Boss OS.
->
-> **Boss OS's own authority is [`docs/boss/`](docs/boss/), and [`STATUS.md`](STATUS.md) is the plain
-> account of what this repo is, what is built, and what is deliberately not.**
->
-> This document is kept rather than deleted because the chassis is still in the tree and still under
-> test, and its rules still govern the half of the code it describes. It goes when the chassis does.
+# Boss OS — for agents working in this repo
 
-# West Peek OS — Repo-Local Agent Authority
+The rules for anyone working here are in [`CLAUDE.md`](CLAUDE.md); read it first. Boss OS's own
+authority is [`docs/boss/`](docs/boss/) and [`STATUS.md`](STATUS.md); operating facts and traps are
+in [`docs/boss/OPERATING_FACTS.md`](docs/boss/OPERATING_FACTS.md).
 
-This file is repo-local written authority for any agent working inside `west-peek-os/`.
-It is subordinate to, and implements, the approved task at `../../TASK/APPROVED_TASK.md`.
-P0–P12 built the governed substrate; the approved continuation task (2026-08-12) authorized
-**P13–P25**, which built the operating product on top of it. Both are implemented — see
-`IMPLEMENTATION_LEDGER.md` and `docs/WEST_PEEK_BLUEPRINT_COMPLIANCE_LEDGER.md`.
-Everything in §17 of that task (Productions, sponsorship, Market Intelligence Academy, external
-agent runtimes, self-modification, automatic capital/banking/legal action, mass workforce
-activation) remains OUT of scope and unbuilt.
-
-Parent authorities (IMMUTABLE — never modify, move, or rewrite):
-
-- `../WEST_PEEK_OS_v3_2_14_CANONICAL_MASTER_PLAN.md` — canonical product law (frozen to errata, D11).
-- `../WEST_PEEK_OS_ODYSSEUS_AUDIT_AND_IMPLEMENTATION_PLAN_v1_11.md` — cumulative implementation translation.
-- `WEST_PEEK_BRAND_SYSTEM.md` — the West Peek family brand contract, marked CANONICAL / LOCKED.
-  Byte-identical to the copy every other West Peek repo carries. Changing the canonical orange,
-  the parent-logo treatment, or the black/white-first rule requires owner approval **and** the same
-  change in every West Peek repo. Do not edit it locally.
-
-## Governing law
-
-> AI prepares the decision. The Managing Partners and authorized humans make the decision.
-
-- One authorization choke point: `authorize(actor, action, object, context)` → `ALLOW | REQUIRE_APPROVAL | DENY`.
-  Every external effect and every human-reserved action passes through it. No exceptions.
-- One governed AI boundary: `run_ai(...)`. No direct provider SDK/API call may exist outside provider adapters.
-- One append-only typed event spine feeds Activity, Audit, and Diagnostics (D15).
-- One evidence/provenance substrate for claims, contradictions, promotion, source resolution (D16).
-- CanonicalCompany-first entity model (D3). No parallel company-shaped pipeline entities.
-- Odysseus is reference-only (D2). Never import, fork, or depend on it.
-- TypeScript + React/Vite + Cloudflare (Workers/Pages, D1, R2, KV-only-for-ephemeral) + Playwright (D1).
-- 45 machines, seeded from ONE versioned registry source (`src/shared/registry/machines.ts`), tested from that source (D14).
-- A Managing Partner name may never be an AI employee (D10). MPs: Scooter Taylor, Sequoia Taylor.
-  **For Boss OS this is reshaped as ADR-026:** one principal (Sequoia Taylor), no five-employee cap,
-  and Boss names avoid the P and W initials West Peek's entire roster uses, so an employee of one
-  business can never be read as the other's.
-- Silence is never approval. Approval target ≤15 human cards/day steady-state (D7).
-- Privacy modes: `LOCAL | FRONTIER | LOCKDOWN` (D8). Cost modes: `NORMAL | CHEAPO | CRITICAL_ONLY | STRATEGIC_SURGE`.
-- Fail closed for authority, privacy, egress, external effects. Degrade gracefully for AI convenience features.
-- Secrets live ONLY in the encrypted vault at `~/.west-peek-os/vault/` (see `scripts/vault/`). Never in this repo,
-  logs, artifacts, or receipts. `.env.example` / `docs/ENVIRONMENT_CONTRACT.md` are names-only.
-
-## Layout
-
-- `src/worker/` — Cloudflare Worker API (entry `index.ts`). All server behavior.
-- `src/client/` — React/Vite UI (built to `dist/client`).
-- `src/shared/` — types, enums, registry reference data shared by worker/client/tests.
-- `migrations/` — D1 migrations `0001_…` … `0023_…`. Additive-first; applied migrations are never
-  rewritten. **firm_scope lives on the aggregate ROOT** (`intelligence_run`, `work_packet`,
-  `scheduled_job`, `notification`, `research_project`, `capability`, `connector`, `admin_source`,
-  `lp_engagement`, …); child rows inherit it through their foreign key rather than duplicating it,
-  so a scope can never disagree with itself. New action-type keys go in the TS registry, are emitted into the `0003` generated seed
-  block by `scripts/seed/generate-machine-seed.mjs`, AND are repeated as compensating
-  `INSERT OR IGNORE` in the new phase migration (the P4 convention).
-- `tests/` — vitest unit/integration (miniflare local D1; no credentials needed).
-- `e2e/` — Playwright browser tests against local `wrangler dev`.
-- `scripts/` — vault, backup/restore, validation, e2e preparation, packaging helpers.
-- `docs/` — ENVIRONMENT_CONTRACT, RECOVERY, adapter contracts, phase notes, and the design system.
-- `src/client/styles.css` — the design system. Its `:root` block is the ONLY place a colour, type
-  size, space, radius, duration, or easing is declared. Components consume `var(--wp-*)` tokens and
-  never declare colour. Read
-  `docs/WEST_PEEK_DESIGN_SYSTEM.md` before changing any UI, and
-  `docs/WEST_PEEK_DESIGN_REFERENCE_AUDIT.md` for why each rule exists.
+This repo began as a copy of West Peek OS. The copied fund code and the agent authority that
+governed it (P0–P25, the canonical master plan, the registry seed generators) were retired on
+22 Nov 2026; the fund's system is the `west-peek-os` repo. Documents under `docs/` that describe
+that code carry a "historical" banner and govern nothing here.
 
 ## Commands
 
-- `npm run typecheck` — strict TS, must be green.
-- `npm test` — vitest unit/integration, must be green.
-- `npm run e2e` — Playwright (resets the local D1, then starts its own `wrangler dev`; no
-  credentials). Safe to re-run back to back; that is a hard requirement, not a nicety. In CI it
-  runs on demand only (`e2e.yml`, `workflow_dispatch`; owner, 2 Oct 2026), never per merge and
-  never on a schedule. A small change ships to production on the fast check (`land <pr>` deploys it); the journeys
-  gate production only after a large change — `land` measures it and runs them, and "large" is defined once, in
-  `land` (seq23/seq-bin) — or when asked (`land <pr> --run-e2e`); a known-red e2e blocks every small change
-  (`docs/DEPLOYING.md`, "When production moves"; `scripts/deploy/production-gate.mjs`). Do not run it locally unless your change touches what the journeys cover.
-- `npm run migrate:local` — apply D1 migrations to local miniflare sqlite.
-- `npm run backup:local` / `npm run restore:local` — D1 export/restore proof path.
-- `npm run vault:*` — encrypted secret vault operations (values never printed).
+- `npm run typecheck`
+- Root tests: `npx vitest run tests/<file>.test.ts`. Boss OS tests:
+  `npx vitest run -c vitest.boss.config.ts tests/boss/<file>.test.ts`.
+- `npm run validate:scans` — the static validators; each has a `--self-test`
+  ([`scripts/validate/README.md`](scripts/validate/README.md)).
+- `npm run practice` — the practice run on a branch, before the PR.
+- Deploy only through `land <pr>` (`npm run deploy:production`), never a bare `wrangler deploy`.
 
-- `npm run validate:authority` / `validate:ai-boundary` / `validate:network-boundary` — static boundary
-  scans plus their own self-tests and seed-freshness checks. If a scan legitimately needs narrowing,
-  narrow it precisely AND add a self-test fixture proving it still catches what it exists to catch
-  (see the two P16 refinements in `IMPLEMENTATION_LEDGER.md`).
-- Scheduling: ONE Cloudflare Cron Trigger calls the Worker's `scheduled()` handler (ADR-017). A
-  trigger cannot fire in local `wrangler dev`, so the same path is reachable at `POST /api/jobs/tick`
-  and is called directly in tests. Remote firing is UNPROVEN until deployment.
+## Rules that bite
 
-`vitest.config.ts` caps `maxWorkers` at 4: each suite stands up its own miniflare instance and binds
-a port, and past ~8 in flight the machine runs out of ephemeral ports (EADDRNOTAVAIL — a resource
-limit, not a test failure).
-
-`e2e/d1-design-states.spec.ts` is the design system's own regression suite: it measures hover
-contrast, the focus ring, and the rule that no surface may render an ambiguous blank for a reader
-who lacks the authority to act on it. It provisions its own low-authority identity — read it before
-changing `styles.css`, an empty state, or a reserved control.
-
-Below 900px the primary nav is a sheet behind `data-testid="nav-toggle"`, so a Playwright spec that
-drives navigation at a phone width must go through `e2e/support/nav.ts` (`gotoSurface` /
-`openNavIfCollapsed`) rather than clicking a nav button directly. At laptop widths the rail is always
-on screen and every existing selector resolves unchanged.
-
-The e2e suite runs on ONE worker (`playwright.config.ts`): every spec drives the same local D1, so the
-isolation boundary is the database, not the file. If specs interleave, journeys corrupt each other's
-state.
-
-Several journeys also assume a **clean firm**. That precondition used to be a manual instruction here
-("`rm -rf .wrangler` before a full run"), which left `npm run e2e` non-idempotent: running it twice in
-a row failed six specs the second time, with assertion errors that look like product defects and are
-not. The precondition is now part of the command — `scripts/e2e/prepare-local.mjs` stops any stale
-listener on the e2e port and deletes the local D1 before Playwright starts, and
-`reuseExistingServer` is `false` so the suite can never attach to a server holding the database it
-just reset or serving an older build. Do not re-introduce the manual step, and do not set
-`reuseExistingServer` back to true. Override the port with `WPOS_E2E_PORT` if 8787 is taken.
-
-## Validation honesty
-
-- Never claim a test/proof ran when it did not. Never weaken a valid failing test to force green.
-- Label every provider/external layer PROVEN or UNPROVEN accurately in `IMPLEMENTATION_LEDGER.md`.
-- Forbidden test claims: legal/securities compliance, MNPI sufficiency, LP-marketing permissibility,
-  valuation/investment/accounting/fund-performance correctness (approved plan §12.4).
-- A financial formula enters the system only with independent hand-worked verification
-  (`docs/DEAL_MATH_VERIFICATION.md`, `docs/ALLOCATION_VERIFICATION.md`). Writing that verification is
-  engineering work; **accepting** it is the operator's, and until they do, live use stays gated (§7.2).
-- Remote Cloudflare deployment, live AI providers, Network OS writeback, email/calendar scopes,
-  VDR, and fund-admin sources are UNPROVEN until separately gated and actually exercised.
-
-## Change rules for agents
-
-- Keep changes minimal and scoped to the active phase. Update `IMPLEMENTATION_LEDGER.md` after each phase.
-- Record canon deviations as ADRs in `ARCHITECTURAL_DECISIONS.md` (canon stays frozen).
-- Do not add dependencies without checking existing usage first; prefer Node/Worker built-ins.
-- Do not add Cloudflare products (Durable Objects, Vectorize, Queues…) without a real requirement.
+- Migrations are numbered and additive only (no DROP); each ends with its `schema_version` row.
+- `event_record` and several other tables reject UPDATE or DELETE at the database layer: correct a
+  mistake with a compensating row.
+- Outbound `fetch` from worker code is allowlisted by file (`validate:authority`), and every model
+  call goes through Boss OS's router in `src/worker/boss/router/` (`validate:ai-boundary`).
+- The e2e suite runs on ONE worker against one local D1; `npm run e2e` resets that database first.
+- Never weaken a failing test to force green; never claim a check ran when it did not.

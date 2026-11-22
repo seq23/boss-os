@@ -1,7 +1,7 @@
 # Boss OS — rules for anyone working in this repo
 
-Boss OS's own authority is [`docs/boss/`](docs/boss/) and [`STATUS.md`](STATUS.md). The root
-documents (`AGENTS.md` and friends) describe the inherited West Peek chassis; read their banner.
+Boss OS's own authority is [`docs/boss/`](docs/boss/) and [`STATUS.md`](STATUS.md). The copied
+West Peek fund code retired on 22 Nov 2026; documents that describe it carry a "historical" banner.
 Operating facts and traps (the `/api/boss/*` mount, the passcode, mail keys, cadence, Mac runs,
 lanes, performance) are in [`docs/boss/OPERATING_FACTS.md`](docs/boss/OPERATING_FACTS.md).
 

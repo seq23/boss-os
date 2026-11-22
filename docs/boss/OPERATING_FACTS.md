@@ -76,9 +76,11 @@ they live in the repo, not only in someone's memory. Non-confidential. `STATUS.m
   in brackets only when different.
 
 ## Inherited West Peek chassis code
-- The repo carries West Peek's email intake (`src/shared/intake/emailTriggers.ts`,
-  `src/worker/effects/inboundEmail.ts`). Treat it as foreign: copy and diverge, never import it or
-  share a routing table or constant with West Peek OS.
+- **Retired 22 Nov 2026** (her yes, personal brain): the copied fund sign-in, fund screens, fund
+  routes, jobs and mail handler are gone. An old fund page on a non-Boss host shows a "moved" page;
+  an old fund `/api` route answers `410 Gone` naming West Peek OS; `/api/health` stays public. The
+  fund-era tables stay in the database, untouched. Boss OS's mail intake was always its own copy:
+  never import from or share a routing table or constant with West Peek OS.
 - **Superseded 31 Oct 2026:** Boss OS docs and UI used to never list West Peek sending paths. Her
   ruling ("Boss OS may handle anything she wants") put every business, the fund included, on the
   Email Map page (`src/shared/boss/emailMap/manifest.json`). What still holds: no LP, investor,

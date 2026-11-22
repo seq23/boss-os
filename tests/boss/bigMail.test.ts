@@ -4,7 +4,7 @@ import { handleBossInboundMail, INLINE_READ_ATTEMPTS, STALE_ARRIVAL_MS, MAX_BODY
 import { readEverything, driveIdsIn } from "../../src/worker/boss/intake/readFiles";
 import { asksIn, gotItLines, fileLabel } from "../../src/worker/boss/intake/gotIt";
 import { runMailAlarm } from "../../src/worker/boss/intake/mailAlarm";
-import { mimeParseCount, fileAttachments, parseMail, pdfAttachments, messageText, MIME_LIMITS } from "../../src/worker/effects/mimeAttachments";
+import { mimeParseCount, fileAttachments, parseMail, MIME_LIMITS } from "../../src/worker/effects/mimeAttachments";
 import { readableText } from "../../src/shared/boss/intake/messageBody.mjs";
 import { apiJson, row, all } from "./helpers";
 
@@ -302,9 +302,9 @@ describe("a forged or broken message (postal-mime, eng sweep row 9)", () => {
     expect(deep.unread).toEqual([expect.stringMatching(/^the message \(it could not be taken apart, its parts are nested deeper than any real email; it is kept as it arrived\)$/)]);
     const many = ["From: a@example.com", "Subject: many", 'Content-Type: multipart/mixed; boundary="m"', "",
       ...Array.from({ length: MIME_LIMITS.maxPartCount + 50 }, (_, i) => [`--m`, "Content-Type: text/plain", "", `part ${i}`]).flat(), "--m--", ""].join("\r\n");
-    expect((pdfAttachments(await parseMail(many))).unread).toEqual([expect.stringContaining("holds more parts than any real email")]);
+    expect((fileAttachments(await parseMail(many))).unread).toEqual([expect.stringContaining("holds more parts than any real email")]);
     // A real forward of a forward is far inside the limit and still read.
-    expect((pdfAttachments(await parseMail(nested(4)))).attachments.map((a) => a.filename)).toEqual(["deep.pdf"]);
+    expect((fileAttachments(await parseMail(nested(4)))).attachments.map((a) => a.filename)).toEqual(["deep.pdf"]);
   });
 
   it("outage: a message the parser refuses is kept, and her Got it names it in plain words", async () => {
@@ -315,20 +315,16 @@ describe("a forged or broken message (postal-mime, eng sweep row 9)", () => {
     expect(kept?.id).toBe(res.mailId);
     expect(res.reply ?? "").toContain("could not be taken apart");
     expect(res.reply ?? "").not.toMatch(/EMAX|Error|undefined/);
-    // The text still reaches the readers: a tag in a message that cannot be taken apart is found.
-    const text = messageText(await parseMail(raw));
-    expect(text.subject).toBe("#camille the forged one");
-    expect(text.unread).toContain("could not be taken apart");
   });
 
-  it("a PDF typed application/octet-stream but named .pdf is read as the deck", async () => {
+  it("a PDF typed application/octet-stream is still taken as her file, bytes intact", async () => {
     const raw = ["From: a@example.com", "Subject: deck", 'Content-Type: multipart/mixed; boundary="o"', "",
       "--o", "Content-Type: text/plain", "", "Deck attached.", "",
       "--o", 'Content-Type: application/octet-stream; name="Deck.pdf"', 'Content-Disposition: attachment; filename="Deck.pdf"', "Content-Transfer-Encoding: base64", "",
       btoa("%PDF-1.4 octet deck"), "--o--", ""].join("\r\n");
-    const { attachments, unread } = pdfAttachments(await parseMail(raw));
+    const { attachments, unread } = fileAttachments(await parseMail(raw));
     expect(unread).toEqual([]);
-    expect(attachments.map((a) => [a.filename, atob(a.dataBase64)])).toEqual([["Deck.pdf", "%PDF-1.4 octet deck"]]);
+    expect(attachments.map((a) => [a.filename, new TextDecoder().decode(a.content)])).toEqual([["Deck.pdf", "%PDF-1.4 octet deck"]]);
   });
 
   it("a named text/plain part with no disposition is read as her words, not dropped as an unsaid file", async () => {
