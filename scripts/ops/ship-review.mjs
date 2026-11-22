@@ -176,9 +176,11 @@ async function shoot(b, url, { width, height, scheme, file, focus = [], focusFil
   // appear after a tap could not be judged).
   const focused = [];
   const viewShot = (f) => page.screenshot({ path: f, timeout: 120_000, animations: "disabled" }).then(() => true, () => false);
+  let tapped = false;
   for (const [i, entry] of focus.entries()) {
-    const tap = /^tap:/i.test(entry), text = tap ? entry.replace(/^tap:\s*/i, "") : entry, f = focusFile(i, tap);
-    if (tap) {
+    const tap = entry.startsWith("tap:"), text = tap ? entry.slice(4).trim() : entry, f = focusFile(i, tap);
+    // A tap starts from the page as it loads; so does any entry after a tap (a link tap leaves the page).
+    if (tap || tapped) {
       await page.goto(url, { waitUntil: "domcontentloaded", timeout: 60_000 }).catch(() => {});
       await page.waitForLoadState("networkidle", { timeout: 20_000 }).catch(() => {});
     }
@@ -187,6 +189,7 @@ async function shoot(b, url, { width, height, scheme, file, focus = [], focusFil
     const centre = () => el.evaluate((e) => e.scrollIntoView({ block: "center" }), null, { timeout: 5_000 }).then(() => true, () => false);
     if (!(await centre())) { focused.push({ text, tap, file: null }); continue; }
     if (tap) {
+      tapped = true;
       if (!(await el.click({ timeout: 5_000 }).then(() => true, () => false))) { focused.push({ text, tap, file: null }); continue; }
       await page.waitForLoadState("networkidle", { timeout: 10_000 }).catch(() => {});
       await page.waitForTimeout(1_500);

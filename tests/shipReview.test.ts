@@ -209,42 +209,49 @@ describe("Danielle's lane hands the real output to the shared reviewer", () => {
 // The browser test runs wherever Chromium is installed (CI installs it in the unit job); only a laptop
 // without it skips.
 const hasChromium = (() => { try { return existsSync(chromium.executablePath()); } catch { return false; } })();
-async function redShare(png: string): Promise<number> {
-  const b = await chromium.launch();
+async function colourShare(png: string, [r, g, b]: [number, number, number]): Promise<number> {
+  const br = await chromium.launch();
   try {
-    const p = await b.newPage();
+    const p = await br.newPage();
     await p.setContent(`<img id="i" src="data:image/png;base64,${readFileSync(png, "base64")}">`);
-    return await p.evaluate(async () => {
+    return await p.evaluate(async ([r, g, b]) => {
       const i = document.getElementById("i") as HTMLImageElement; await i.decode();
       const c = document.createElement("canvas"); c.width = i.naturalWidth; c.height = i.naturalHeight;
       const x = c.getContext("2d")!; x.drawImage(i, 0, 0);
-      const d = x.getImageData(0, 0, c.width, c.height).data; let red = 0;
-      for (let k = 0; k < d.length; k += 4) if (d[k]! > 200 && d[k + 1]! < 60 && d[k + 2]! < 60) red++;
-      return red / (d.length / 4);
-    });
-  } finally { await b.close(); }
+      const d = x.getImageData(0, 0, c.width, c.height).data; let hit = 0;
+      for (let k = 0; k < d.length; k += 4) if (Math.abs(d[k]! - r) < 40 && Math.abs(d[k + 1]! - g) < 40 && Math.abs(d[k + 2]! - b) < 40) hit++;
+      return hit / (d.length / 4);
+    }, [r, g, b] as const);
+  } finally { await br.close(); }
 }
 describe("a message that only shows after a tap is captured, never left unseen", () => {
   it.skipIf(!process.env.CI && !hasChromium)("--tap loads the page, taps the button and shoots what it shows; text inside a scrolling panel is reached", async () => {
     const dir = mkdtempSync(join(tmpdir(), "sr-tap-"));
     const page = join(dir, "kit.html");
+    writeFileSync(join(dir, "elsewhere.html"), `<!doctype html><p>${"Another page entirely. ".repeat(20)}</p>`);
     writeFileSync(page, `<!doctype html><html><body style="margin:0;font:16px sans-serif">
       <div style="height:600px;overflow:auto"><div style="height:3000px">Kit</div>
-        <p>Deep in the panel</p>
+        <p style="background:#0c0;height:120px;margin:0">Deep in the panel</p>
+        <a href="elsewhere.html">Go elsewhere</a>
         <button onclick="document.getElementById('m').hidden=false">Get this kit, $19 once</button>
         <p id="m" hidden style="background:#f00;height:120px;margin:0">Preview: this kit is open for this visit.</p></div>
       ${"<p>filler words for the blank check</p>".repeat(20)}</body></html>`);
     expect(parseArgs(["--kind", "page", "--target", "https://x.test/", "--builder", "b", "--tap", "Get this kit"]).focus).toEqual(["tap:Get this kit"]);
-    const { shots, facts } = await capture({ kind: "email", target: page, focus: ["Deep in the panel", "tap:Get this kit", "tap:No such button"] } as any, join(dir, "out"));
+    const { shots, facts } = await capture({ kind: "email", target: page, focus: ["tap:Get this kit", "tap:Go elsewhere", "Deep in the panel", "tap:No such button"] } as any, join(dir, "out"));
     const labels = shots.map((s: any) => s.label);
-    expect(labels.some((l: string) => /-focus-1\.png$/.test(l))).toBe(true);
+    // Text after a link tap is looked for on the page itself again, inside its scrolling panel, and the
+    // shot shows it (the green block beside it), not some other part of the page.
+    const panelShot = shots.find((s: any) => /phone-390-light-focus-3\.png$/.test(s.label));
+    expect(panelShot).toBeTruthy();
+    expect(await colourShare(String(panelShot!.path), [0, 204, 0])).toBeGreaterThan(0.05);
     // The shot after the tap shows the message the tap revealed (a red block), not just the button.
-    const tapShot = shots.find((s: any) => /phone-390-light-tap-2\.png$/.test(s.label));
+    const tapShot = shots.find((s: any) => /phone-390-light-tap-1\.png$/.test(s.label));
     expect(tapShot).toBeTruthy();
-    expect(await redShare(String(tapShot!.path))).toBeGreaterThan(0.05);
+    expect(await colourShare(String(tapShot!.path), [255, 0, 0])).toBeGreaterThan(0.05);
+    expect(labels.some((l: string) => /-tap-2\.png$/.test(l))).toBe(true);
     expect(facts.some((f: string) => /after tapping "Get this kit"/.test(f))).toBe(true);
     // A tap that cannot happen is said, never a silent pass.
     expect(facts.some((f: string) => /could not tap "No such button"/.test(f))).toBe(true);
-    expect(labels.some((l: string) => /-tap-3\.png$/.test(l))).toBe(false);
+    expect(labels.some((l: string) => /-tap-4\.png$/.test(l))).toBe(false);
   }, 120_000);
 });
