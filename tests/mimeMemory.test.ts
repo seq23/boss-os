@@ -23,4 +23,16 @@ describe("the mail readers inside a Worker's 128 MB", () => {
       expect(out.trim()).toMatch(/^ok \d+$/);
     });
   }
+
+  it("a finished request leaves nothing of itself behind for the next one (no module-level cache)", () => {
+    const out = execFileSync(process.execPath, ["--max-old-space-size=128", "--expose-gc", child, "22", "retained"], {
+      encoding: "utf8",
+      stdio: ["ignore", "pipe", "pipe"],
+      timeout: 90_000,
+    });
+    const held = Number(/^retained (\d+)$/.exec(out.trim())?.[1]);
+    expect(held, out).toBeGreaterThan(0);
+    // 4 MB with nothing kept (the modules themselves); a cached 22 MB parse keeps 26+ (its 22 MB of file bytes).
+    expect(held, "MB still held after the request ended and three gc()").toBeLessThan(15);
+  });
 });
