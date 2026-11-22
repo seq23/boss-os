@@ -221,6 +221,9 @@ const SECTION_ALIASES = [
   [/^settled decisions?$|^decisions?$/, "Settled decisions"],
   [/^open questions?$|^questions?$/, "Open questions"],
   [/^who does what$|^roles?$/, "Who does what"],
+  // Optional ninth section (Growth Director, 21 Nov 2026): the growth roster, read by code
+  // (src/shared/boss/growth/roster.mjs). Only the businesses the Director serves carry it.
+  [/^growth$|^growth roster$/, "Growth"],
 ];
 export function canonicalSection(name) {
   const n = String(name ?? "").toLowerCase().replace(/[^a-z ]/g, " ").replace(/\s+/g, " ").trim();
