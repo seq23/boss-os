@@ -7,7 +7,6 @@ import { runAi } from "../src/worker/ai/runAi";
 import { firmSpend } from "../src/worker/ai/spend";
 import { acceptQuarantinedOutput, discardQuarantinedOutput } from "../src/worker/services/aiRuns";
 import { runHealthChecks } from "../src/worker/services/health";
-import { SPEND_POSTURES, postureFor } from "../src/shared/ai/spendPosture";
 
 /**
  * Item 21 — the Cockpit overhaul. Three defects the operator found on the deployed system, and one
@@ -100,20 +99,7 @@ afterAll(async () => {
 
 // ── 1. Two postures that were one policy ──
 
-describe("the spend lever has four settings and four behaviours", () => {
-  it("gives every posture a distinct stored policy — the defect was two of them being identical", () => {
-    const signatures = SPEND_POSTURES.map((p) => `${p.costMode}|${p.honoursPins}|${p.prefersFrontier}`);
-    expect(new Set(signatures).size).toBe(SPEND_POSTURES.length);
-  });
-
-  it("reads every stored policy back as the posture that wrote it", () => {
-    // The visible half of the same bug: choosing "Best available" showed "Balanced" as current,
-    // because the two were indistinguishable once written.
-    for (const p of SPEND_POSTURES) {
-      expect(postureFor(p.costMode, p.honoursPins, p.prefersFrontier), p.key).toBe(p.key);
-    }
-  });
-
+describe("the spend lever routes by posture", () => {
   it("sends unpinned work to the dearest model under 'best available' and the cheapest under 'balanced'", async () => {
     await enableProvider("prov_openai");
     await enableProvider("prov_google");

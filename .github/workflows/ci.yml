@@ -108,9 +108,6 @@ jobs:
       - name: Every var(--token) resolves
         run: npm run validate:css-variables
 
-      - name: Lists speak while loading
-        run: npm run validate:lists-speak
-
       - name: Every Boss entity is classified
         run: npm run validate:classification
 

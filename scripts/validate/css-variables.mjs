@@ -25,7 +25,6 @@ const ROOT = "src/client";
 /** Longest prefix wins, so a third surface is one line rather than a wider allowlist. */
 const APPS = [
   { name: "boss", prefix: "src/client/boss/", css: "src/client/boss/styles.css" },
-  { name: "chassis", prefix: "src/client/", css: "src/client/styles.css" },
 ];
 
 function appFor(file) {

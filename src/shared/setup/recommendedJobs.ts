@@ -8,7 +8,7 @@ import type { FundPriority } from "./recommendedTeam";
  * anything is. Creation stays on the existing governed path, and every proposal is `PAUSED`:
  *
  *   > "Every job starts PAUSED. Switching one on is a deliberate act, and the page says so."
- *   > — src/client/pages/JobsPage.tsx
+ *   > — the Jobs page of the West Peek fund screens (retired here 22 Nov 2026)
  *
  * The enums below are not invented. They mirror the CHECK constraints in
  * `migrations/0018_orchestration.sql`, and `tests/recommended-jobs.test.ts` asserts every proposal

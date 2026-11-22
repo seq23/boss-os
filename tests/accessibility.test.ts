@@ -129,25 +129,9 @@ describe("structure and reach", () => {
     expect(bad).toEqual([]);
   });
 
-  it("keeps a real touch target on the app's most-used control", () => {
-    // `.link-button` is the primary affordance in sixty-odd places and carried min-height: auto
-    // with 4px of padding — roughly half the 44px minimum, on the device most people would use.
-    const css = readFileSync(new URL("../src/client/styles.css", import.meta.url).pathname, "utf8");
-    const coarse = css.slice(css.indexOf("@media (pointer: coarse)"));
-    expect(coarse).toContain(".link-button");
-    expect(coarse).toContain("min-height: 44px");
-  });
-
   it("still honours a reduced-motion preference globally", () => {
-    const css = readFileSync(new URL("../src/client/styles.css", import.meta.url).pathname, "utf8");
-    expect(css).toMatch(/@media \(prefers-reduced-motion: reduce\)[\s\S]{0,200}\*,/);
-  });
-
-  it("keeps the skip link, so the keyboard can get past the rail", () => {
-    // Forty nav items before the content is a long way to tab.
-    const css = readFileSync(new URL("../src/client/styles.css", import.meta.url).pathname, "utf8");
-    expect(css).toContain(".skip-link");
-    expect(readFileSync(new URL("../src/client/App.tsx", import.meta.url).pathname, "utf8")).toContain("skip-link");
+    const css = readFileSync(new URL("../src/client/boss/styles.css", import.meta.url).pathname, "utf8");
+    expect(css).toMatch(/@media \(prefers-reduced-motion: reduce\)\s*\{\s*\*\s*[,{][^}]*animation: none/);
   });
 });
 
