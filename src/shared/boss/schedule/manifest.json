@@ -3277,7 +3277,7 @@
       "worstMin": {
         "minutes": 71,
         "measured": "2026-11-21",
-        "from": "ledger-hunt alone: 71.0 min on 19 Nov (boss-duty logs); the chain's first steps run before it from 03:45"
+        "from": "ledger-hunt alone: 71.0 min on 19 Nov (boss-duty logs); the whole capital chain from 03:45 is held to 80 min on its other rows"
       }
     },
     {
