@@ -8,6 +8,7 @@
  * Each rule is also proven negatively: break the manifest, watch it fail.
  */
 import { parseRepoCategories } from "../src/shared/boss/repos/categories.mjs";
+import { clockRows } from "../src/shared/boss/schedule/clock.mjs";
 import { readdirSync, readFileSync, existsSync } from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
@@ -139,8 +140,11 @@ describe("the Schedule manifest", () => {
       if (e) files.push(e as any);
     }
     files.push({ file: "wrangler.toml", crons: [...new Set<string>(wranglerCrons(readFileSync(path.join(ROOT, "wrangler.toml"), "utf8")))], gated: { "-5": [], "-6": [] } });
-    const clocked = m.rows.filter((r: any) => r.trigger?.clock === "worker");
-    expect(clocked.length).toBe(8);
+    // Counted from the source the Worker fires (clockRows, as cron/dispatch.ts calls it), never a literal: every
+    // worker-clocked row is one the Worker's clock fires (a row naming another repo would be fired by nothing).
+    const clocked = clockRows(m, "boss-os");
+    expect(clocked.length).toBeGreaterThan(0);
+    expect(m.rows.filter((r: any) => r.trigger?.clock === "worker").map((r: any) => r.id)).toEqual(clocked.map((r: any) => r.id));
     for (const r of clocked) {
       const f = files.find((x) => x.file === r.trigger.file);
       expect(f?.crons, `${r.trigger.file} keeps no schedule of its own`).toEqual([]);
