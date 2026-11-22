@@ -24,7 +24,6 @@
  *
  * It never posts, sends, spends, creates or deletes anything. Pinned by tests/boss/growthDirector.test.ts.
  */
-import { stripConfidential } from "../../../shared/boss/brains/brain.mjs";
 import type { Env } from "../env";
 import { newId } from "../lib/id";
 import { audit } from "../lib/audit";
@@ -172,12 +171,13 @@ export async function runGrowthDirector(env: Env, now = Date.now(), deps: { mode
       if (!s || s.state !== "read") { await record({ ...base, state: "held: no data", decision: "Held: nothing on the scoreboard was read for this business, so nothing is decided on zeros.", evidence: (s?.channels ?? []).map((c: any) => `${c.label}: ${c.unread}`), actions: [] }); continue; }
       const first = !(await db.prepare(`SELECT 1 FROM growth_decisions WHERE business = ? AND state = 'decided' LIMIT 1`).bind(entry.key).first());
       const todos = await inMotion(db, entry.key!);
-      // The older work on this business's roster: the Director decides each row. Read only when the row is
-      // open, this business's, and an agent's work item (never her own rows, which can hold people and
-      // money); its text is cut of any confidential span before a free model sees it.
-      const linked = entry.linked.length ? ((await db.prepare(
-        `SELECT id, title, next_step, finish_line FROM owner_open_loops WHERE status = 'open' AND business = ? AND owner <> 'sequoia' AND id IN (SELECT value FROM json_each(?))`,
-      ).bind(entry.key, JSON.stringify(entry.linked)).all<any>()).results ?? []).map((l: any) => ({ ...l, title: stripConfidential(l.title), next_step: stripConfidential(withoutDirectorLine(l.next_step)), finish_line: stripConfidential(l.finish_line) })) : [];
+      // The older work on this business's roster: the Director decides each row. Open Loops is LOCAL_ONLY
+      // (migration 0331), so no row text goes to the model: it sees the id and the roster's own words for it
+      // ("olp_x (what it is)" in the brain), and only open rows of this business, not hers, are judged.
+      const linkedIds = entry.linked.length ? ((await db.prepare(
+        `SELECT id FROM owner_open_loops WHERE status = 'open' AND business = ? AND owner <> 'sequoia' AND id IN (SELECT value FROM json_each(?))`,
+      ).bind(entry.key, JSON.stringify(entry.linked)).all<{ id: string }>()).results ?? []).map((r) => r.id) : [];
+      const linked = linkedIds.map((id) => ({ id, what: entry.linkedNotes[id] ?? "no description on the roster" }));
       const answer = parseDecision(await model(env, decisionPrompt({ playbook, entry, summary: s, trends, today, todos, first, linked }) as Msg[], "growth-decide"));
       if (!answer) { await record({ ...base, state: "held: no model", decision: "Held: no free model answered (every free route was busy or spent); the next cycle tries again.", evidence: [], actions: [] }); continue; }
       const { decision, dropped } = enforceHolds(answer, s);

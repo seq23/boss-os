@@ -85,7 +85,7 @@ OPEN TO-DOS ALREADY ON THE LIST
 ${(todos ?? []).map((t) => `- ${t}`).join("\n") || "- none"}
 
 OLDER WORK FOR THIS BUSINESS, STARTED BEFORE YOU (you own it now: keep, change or drop each, on the evidence)
-${(linked ?? []).map((l) => `- ${l.id}: ${l.title}. Next step: ${l.next_step}. Done when: ${l.finish_line}`).join("\n") || "- none"}
+${(linked ?? []).map((l) => `- ${l.id}: ${l.what}`).join("\n") || "- none"}
 
 SEARCH TRENDS TODAY (public, US)
 ${(trends ?? []).slice(0, 20).map((t) => `- ${t}`).join("\n") || "- not read"}

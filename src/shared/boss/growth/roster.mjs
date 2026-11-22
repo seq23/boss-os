@@ -66,7 +66,11 @@ export function parseRoster(body, brain) {
       label, brain: b, key: fields.key ?? null, buyer: fields.buyer ?? null, offer: fields.offer ?? null, money: fields["money number"] ?? null,
       channels: parseChannels(fields.channels), languages: list(fields.languages).map((l) => l.toLowerCase()), voice: fields.voice ?? null,
       design: fields["design skill"] ?? null, limits: (fields.limits ?? "").match(/R-[A-Z]+-\d+/g) ?? [], season: fields.season ?? null,
-      linked: (fields["linked to-dos"] ?? "").match(/olp_[a-z0-9]+/g) ?? [], paused,
+      linked: (fields["linked to-dos"] ?? "").match(/olp_[a-z0-9]+/g) ?? [],
+      // "olp_x (what it is)": the words the Director reads about older work come from the roster, never
+      // from the Open Loops row itself (that table is LOCAL_ONLY: no row text goes to a model).
+      linkedNotes: Object.fromEntries([...(fields["linked to-dos"] ?? "").matchAll(/(olp_[a-z0-9]+)\s*\(([^)]+)\)/g)].map((m) => [m[1], m[2].trim()])),
+      paused,
       problems: [
         ...REQUIRED.filter((k) => !fields[k]).map((k) => `${label}: no ${k}`),
         ...unknown.map((k) => `${label}: "${k}" is not a roster field (one of ${FIELDS.join(", ")})`),

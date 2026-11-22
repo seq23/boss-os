@@ -353,7 +353,7 @@ describe("the Director owns the older work on its roster (22 Nov 2026)", () => {
     const row = (id: string, title: string) => env.DB.prepare(`INSERT INTO owner_open_loops (id, title, finish_line, next_step, owner, next_date, business, section, status, source, created_at, updated_at)
       VALUES (?, ?, 'x', 'Render the pictures after 6 PM.', 'claude', '2026-11-22', 'porch-and-party', 'not_finished', 'open', 'agent_report', 1, 1)`).bind(id, title).run();
     await row("olp_keep1", "Engine pieces waiting for pictures"); await row("olp_change1", "Three short December weeks"); await row("olp_drop1", "Office party posts"); await row("olp_other1", "Not on the roster");
-    await brain("porch-and-party", PNP + "- linked to-dos: olp_keep1, olp_change1, olp_drop1\n");
+    await brain("porch-and-party", PNP + "- linked to-dos: olp_keep1 (Engine pieces waiting for pictures), olp_change1 (three short December weeks), olp_drop1\n");
     const answer = { ...DECISION, queue: [], proposals: [], linked: [
       { id: "olp_keep1", verdict: "keep", why: "Christmas porch pieces match the season and Instagram brings the requests." },
       { id: "olp_change1", verdict: "change", why: "Only porch weeks sell before 15 Dec.", next_step: "Fill the December weeks with porch pieces only." },
@@ -363,7 +363,11 @@ describe("the Director owns the older work on its roster (22 Nov 2026)", () => {
     const { model, seen } = fake(answer, () => ({ pass: true, broken: [], why: "" }));
     await runGrowthDirector(env as any, NOW, { model, fetchImpl: noTrends });
     const get = (id: string) => env.DB.prepare(`SELECT status, next_step, closed_reason FROM owner_open_loops WHERE id = ?`).bind(id).first<any>();
-    expect(seen.find((t) => /OLDER WORK/.test(t))).toMatch(/olp_keep1: Engine pieces waiting for pictures/);
+    const prompt = seen.find((t) => /OLDER WORK/.test(t))!;
+    expect(prompt).toMatch(/olp_keep1: Engine pieces waiting for pictures/);
+    expect(prompt).toMatch(/olp_drop1: no description on the roster/);
+    // Open Loops is LOCAL_ONLY: the row's own words never reach the model, only the roster's.
+    expect(prompt).not.toMatch(/Render the pictures after 6 PM|Office party posts/);
     expect((await get("olp_keep1")).next_step).toMatch(/^Growth Director, \d{4}-\d\d-\d\d: keep\. Christmas porch pieces [^\n]*\nRender the pictures after 6 PM\.$/);
     expect((await get("olp_change1")).next_step).toMatch(/: change\. Only porch weeks sell before 15 Dec\.\nFill the December weeks with porch pieces only\.$/);
     expect(await get("olp_drop1")).toMatchObject({ status: "closed" });
@@ -381,6 +385,7 @@ describe("the Director owns the older work on its roster (22 Nov 2026)", () => {
     await reading("pnp-requests", "porch-and-party", "requests", "all", 2, dayIdInZone(t));
     const f = fake(answer, () => ({ pass: true, broken: [], why: "" }));
     await runGrowthDirector(env as any, t, { model: f.model, fetchImpl: noTrends }).catch(() => null);
+    expect(f.seen.length).toBeGreaterThan(0); // the run reached the model: a "not shown" is never a crash
     return f.seen;
   };
 
@@ -402,14 +407,17 @@ describe("the Director owns the older work on its roster (22 Nov 2026)", () => {
     await env.DB.exec("DELETE FROM owner_open_loops WHERE id IN ('olp_k1','olp_k2')");
   }, 60_000);
 
-  it("another business's row, or her own row, is never shown to the model or changed, even when listed", async () => {
+  it("another business's row, or her own row, is never judged or changed; no row's own words reach the model", async () => {
     await seedRow("olp_lp1", "west-peek-ventures", "claude", "An LP named in a to-do"); await seedRow("olp_hers1", "porch-and-party", "sequoia", "Invoice a customer");
-    await brain("porch-and-party", PNP + "- linked to-dos: olp_lp1, olp_hers1\n");
+    await seedRow("olp_cust1", "porch-and-party", "claude", "Invoice the Smith wedding");
+    await brain("porch-and-party", PNP + "- linked to-dos: olp_lp1, olp_hers1, olp_cust1\n");
     const seen = await week({ ...DECISION, queue: [], proposals: [], linked: [{ id: "olp_lp1", verdict: "drop", why: "x" }, { id: "olp_hers1", verdict: "drop", why: "x" }] }, NOW);
-    expect(seen.join("\n")).not.toMatch(/An LP named|Invoice a customer/);
+    expect(seen.join("\n")).not.toMatch(/An LP named|Invoice a customer|Smith wedding/);
+    expect(seen.join("\n")).toMatch(/olp_cust1: no description on the roster/);
+    expect(seen.join("\n")).not.toMatch(/olp_lp1|olp_hers1/);
     expect(await getRow("olp_lp1")).toEqual({ status: "open", next_step: "Render the pictures after 6 PM." });
     expect(await getRow("olp_hers1")).toEqual({ status: "open", next_step: "Render the pictures after 6 PM." });
-    await env.DB.exec("DELETE FROM owner_open_loops WHERE id IN ('olp_lp1','olp_hers1')");
+    await env.DB.exec("DELETE FROM owner_open_loops WHERE id IN ('olp_lp1','olp_hers1','olp_cust1')");
   }, 60_000);
 
   it("no answer, or an answer with no verdicts, leaves the rows untouched", async () => {
