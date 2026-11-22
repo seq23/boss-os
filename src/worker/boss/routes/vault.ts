@@ -282,6 +282,8 @@ const SNAPSHOT_TABLES = [
   // 0370 — Boss OS's own clock: which slot of which GitHub job was started. A restore that lost it
   // would start every job of the last half hour a second time.
   "cloud_job_dispatches",
+  // 0372 — the growth scoreboard's daily readings: the Director's evidence.
+  "growth_readings",
   // 0202 — the register of owned work. THE MOST IMPORTANT ADDITION TO THIS LIST IN A WHILE: these
   // rows are the commitments she has personally handed people, and a restore that lost them would
   // silently drop every one of them — which is the precise thing the mechanism exists to make

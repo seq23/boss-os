@@ -1,0 +1,10 @@
+export const KINDS: readonly string[];
+export const MIN_VISITS_FOR_TESTS: number;
+export const NO_TRACKING: Readonly<Record<string, readonly string[]>>;
+export const UNREAD_PREFIX: string;
+export function scoreboardProblems(manifest: any): string[];
+export function activeMeasures(manifest: any): any[];
+export function toReading(m: any, result: any, day: string): any;
+export function readingProblems(body: any, manifest: any): string[];
+export const STALE_DAYS: number;
+export function summarize(manifest: any, latest: any[], before?: any[], today?: string | null): any[];

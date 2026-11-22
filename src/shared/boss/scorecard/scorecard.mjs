@@ -20,7 +20,7 @@
 
 export const STATES = Object.freeze(["On track", "Too early", "Trying version B", "Paused", "No number"]);
 /** Reader ids a row may name. scripts/ops/lib/scorecard-readers.mjs implements exactly these (pinned by the test). */
-export const READER_IDS = Object.freeze(["d1", "gsc", "gumroad", "stripe", "airtable", "repo-json", "lp-outcomes", "t2r", "kdp-units", "sum"]);
+export const READER_IDS = Object.freeze(["d1", "gsc", "gumroad", "stripe", "airtable", "repo-json", "lp-outcomes", "t2r", "kdp-units", "revenuecat", "sum"]);
 export const EXEMPT_KINDS = Object.freeze(["system", "helper", "excluded", "parked"]);
 export const FLOOR_OPS = Object.freeze([">=", "rising"]);
 export const DAY_MS = 86_400_000;
