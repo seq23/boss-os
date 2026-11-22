@@ -45,7 +45,7 @@ export function laneProblems(all: Flow[]): string[] {
     if (!j.group) { out.push(`${j.file}: no concurrency group of its own`); continue; }
     if (/\$\{\{/.test(j.group)) out.push(`${j.file}: group "${j.group}" is an expression, so it can resolve to another run's group`);
     if (j.byPullRequest) out.push(`${j.file}: a pull request starts it`);
-    for (const p of prGroups) {
+    for (const p of prGroups.filter((g) => g.file !== j.file)) {
       // A PR group with an expression (ci-${{ github.ref }}) is compared by its literal prefix.
       const prefix = p.group.split("${{")[0];
       if (p.group === j.group || (p.group.includes("${{") && prefix && j.group.startsWith(prefix))) out.push(`${j.file}: shares group "${j.group}" with PR CI ${p.file}`);
