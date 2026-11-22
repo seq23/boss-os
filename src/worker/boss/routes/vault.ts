@@ -978,6 +978,11 @@ vault.post("/restore", async (c) => {
     await fail(`Integrity check failed: the file hashes to ${computed.slice(0, 12)}… but ${declaredSha.slice(0, 12)}… was expected`);
   }
   if (!parsed.ok) await fail(parsed.reason ?? "The snapshot could not be parsed");
+  // A replace that carries no rows at all could only wipe the tables it names. No real snapshot
+  // is empty (the lanes alone are seeded), so this is a truncated or hand-made file, never a backup.
+  if (mode === "replace" && parsed.totalRows === 0) {
+    await fail("This snapshot holds no rows, so a replace would only wipe the tables it names");
+  }
 
   const counts: Record<string, number> = {};
   for (const [name, rows] of Object.entries(parsed.tables)) counts[name] = rows.length;

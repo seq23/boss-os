@@ -36,6 +36,8 @@ export const MAX_PERIOD_DAYS = 200;
 
 /** Canon asks for a twenty-four-month forward view. */
 export const HORIZON_MONTHS = 24;
+/** Far above any real almanac (two years is under a hundred periods), so the import stays one transaction. */
+export const MAX_IMPORT_EVENTS = 500;
 
 const SHADOW_PHASES = new Set(["pre", "post"]);
 
@@ -156,6 +158,13 @@ export async function importAlmanac(
     throw badRequest("events is a non-empty array", "Paste the retrograde and shadow periods from the almanac.");
   }
 
+  if (rawEvents.length > MAX_IMPORT_EVENTS) {
+    throw badRequest(
+      `A paste holds at most ${MAX_IMPORT_EVENTS} periods`,
+      "Two years of retrogrades and shadows is well under a hundred. Paste one almanac at a time.",
+    );
+  }
+
   const events = rawEvents.map(validateEvent);
 
   // Two rows for the same kind at the same instant are a copy/paste artefact,
@@ -169,6 +178,7 @@ export async function importAlmanac(
 
   const method = `Manual almanac entry (canon §42.3), from: ${sourceName}`;
   let replaced = 0;
+  let clear: D1PreparedStatement | null = null;
 
   if (input.replace === true) {
     const from = Math.min(...events.map((e) => e.starts_at));
@@ -181,16 +191,15 @@ export async function importAlmanac(
       .bind(from, to)
       .first<{ n: number }>();
     replaced = existing?.n ?? 0;
-    await db
+    clear = db
       .prepare(
         `DELETE FROM astro_calendar
           WHERE source = 'imported' AND kind IN ('retrograde','shadow') AND starts_at >= ? AND starts_at <= ?`,
       )
-      .bind(from, to)
-      .run();
+      .bind(from, to);
   }
 
-  const statements = events.map((event) =>
+  const inserts = events.map((event) =>
     db
       .prepare(
         `INSERT INTO astro_calendar (id, kind, label, starts_at, ends_at, detail, source, method, created_at)
@@ -220,9 +229,9 @@ export async function importAlmanac(
       ),
   );
 
-  for (let i = 0; i < statements.length; i += 50) {
-    await db.batch(statements.slice(i, i + 50));
-  }
+  // One batch is one transaction: a refresh that fails part-way leaves the old copy exactly as it
+  // was, never the old rows deleted and half the new ones written.
+  await db.batch(clear ? [clear, ...inserts] : inserts);
 
   return { imported: events.length, replaced, source_name: sourceName, coverage: await almanacCoverage(db, now) };
 }

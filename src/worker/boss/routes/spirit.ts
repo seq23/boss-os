@@ -16,7 +16,7 @@ import { Hono } from "hono";
 import { batchReads } from "../lib/batchReads";
 import type { Env, Vars } from "../env";
 import { newId } from "../lib/id";
-import { audit } from "../lib/audit";
+import { audit, auditStatement } from "../lib/audit";
 import { ok, badRequest, notFound, conflict } from "../lib/http";
 import {
   ADVISORY_NOTE, CANON_WINDOW_TYPES, DEFERRED_ASTRONOMY, MANUAL_ALMANAC, NO_EPHEMERIS,
@@ -992,15 +992,18 @@ spirit.delete("/contributions/:id", async (c) => {
     .prepare(`SELECT * FROM contributions WHERE id = ?`).bind(id).first<any>();
   if (!existing) throw notFound("No contribution with that id");
 
-  await c.env.DB.prepare(`DELETE FROM contributions WHERE id = ?`).bind(id).run();
-
-  await audit(c.env.DB, {
-    actor: "boss", lane: "ops", entityType: "contribution", entityId: id,
-    action: "removed",
-    // What it said, so the removal is reversible by hand and legible later. The audit row is the
-    // only remaining record, so it has to carry enough to be one.
-    detail: { kind: existing.kind, ts: existing.ts, month: existing.month, note: existing.note },
-  });
+  // One batch, one transaction: the row never goes without its audit entry, which is the only
+  // record left of it. If the audit write fails, the entry stays.
+  await c.env.DB.batch([
+    c.env.DB.prepare(`DELETE FROM contributions WHERE id = ?`).bind(id),
+    auditStatement(c.env.DB, {
+      actor: "boss", lane: "ops", entityType: "contribution", entityId: id,
+      action: "removed",
+      // What it said, so the removal is reversible by hand and legible later. The audit row is the
+      // only remaining record, so it has to carry enough to be one.
+      detail: { kind: existing.kind, ts: existing.ts, month: existing.month, note: existing.note },
+    }),
+  ]);
 
   const count = await c.env.DB
     .prepare(`SELECT COUNT(*) AS n FROM contributions WHERE month = ?`).bind(existing.month)
