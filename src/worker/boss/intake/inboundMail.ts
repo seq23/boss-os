@@ -48,6 +48,20 @@ import { recordConstraints } from "../service/constraints";
 import { recordDriveWatches } from "../service/macWaits";
 import { standingConstraintsIn } from "../../../shared/boss/service/practices.mjs";
 import { dueTimeIn, dueLine, notBeforeIn, heldDue } from "../../../shared/boss/service/dueTime.mjs";
+import { confirmAsk } from "./meaning";
+
+/**
+ * A TIME THE WORDS FOUND, KEPT ONLY WHEN SHE SET IT (eng sweep row 7b). The code reads the hour; the model reads
+ * whether her words set it ("done by Friday", not "last Friday's report"). Not set: dropped. Unsure, or model down
+ * (logged): kept, because a time on a task holds or orders work and never deletes, sends or approves.
+ */
+export async function herTime<T extends { at: string } | { due_at: string }>(env: Env, found: T | null, role: string, text: string, mailId: string, now: number): Promise<T | null> {
+  if (!found) return null;
+  const at = "at" in found ? found.at : found.due_at;
+  const when = new Date(Date.parse(at)).toLocaleString("en-US", { timeZone: "America/Chicago", weekday: "long", month: "short", day: "numeric", hour: "numeric", minute: "2-digit" });
+  const said = await confirmAsk(env, { what: "a time in her email", about: "This is the owner's email asking her team for work.", change: `she asks ${role} ${when} Central`, text, mailId, now });
+  return said === "skip" ? null : found;
+}
 import { commandFromMail, openErrandFor, errandReplied } from "../commands/run";
 import { nudgeFromWords, nudgeAddressesIn } from "../lp/nudge";
 
@@ -749,8 +763,8 @@ export async function handleBossInboundMail(message: BossMailMessage, env: Env):
   // R12 — a deadline in her words rides on the task and is stated to the employee.
   // A start she named ("tomorrow … after 9am") holds the work until then, and a deadline before that
   // start is not hers (1 Nov 2026: a past-tense "today" made a Monday job URGENT on Sunday).
-  const notBefore = notBeforeIn(`${subject}\n${own}`, new Date(now));
-  const due = heldDue(dueTimeIn(`${subject}\n${own}`, new Date(now)), notBefore);
+  const notBefore = await herTime(env, notBeforeIn(`${subject}\n${own}`, new Date(now)), "not to start this work before", `${subject}\n${own}`, mailId, now);
+  const due = heldDue(await herTime(env, dueTimeIn(`${subject}\n${own}`, new Date(now)), "to have this work done by", `${subject}\n${own}`, mailId, now), notBefore);
   const notBeforeMs = notBefore ? Date.parse(notBefore.at) : null;
 
   const origin = readable ? forwardedOrigin(readable) : null;

@@ -115,3 +115,23 @@ export async function readMeaning<T extends string>(env: Env, ask: MeaningAsk<T>
   }
   return out;
 }
+
+/*
+ * DOES SHE ASK FOR THIS? (eng sweep row 7, part b: duty edits, list edits, deadline words). The code finds the
+ * structure (which duty, which list and value, which hour); the model reads whether her words ASK for it. "Asks"
+ * acts and must quote words that stand in her sentence; "not" (she mentions, reports, conditions or asks about it)
+ * never acts; unsure never acts either, so the door asks her. Model down: the keywords' reading (`keyword`, default "asks": the
+ * words found it) stands, logged.
+ */
+export type Asked = "act" | "skip" | "ask";
+export async function confirmAsk(env: Env, input: { what: string; about: string; change: string; text: string; mailId?: string | null; now?: number; keyword?: "asks" | "not" }, rungs?: Rung[]): Promise<Asked> {
+  const m = await readMeaning<"asks" | "not">(env, {
+    what: input.what, about: input.about,
+    options: {
+      asks: `her words ask for this, now: ${input.change}`,
+      not: "her words do not ask for it: they mention it, report it, ask about it, make it depend on something, or ask for something else",
+    },
+    acts: ["asks"], keyword: input.keyword ?? "asks", text: input.text, mailId: input.mailId, now: input.now,
+  }, rungs);
+  return m.value === "asks" ? "act" : m.value === "not" ? "skip" : "ask";
+}

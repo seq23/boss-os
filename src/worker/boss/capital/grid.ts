@@ -1,5 +1,6 @@
 import type { Env } from "../env";
 import { newId } from "../lib/id";
+import { confirmAsk } from "../intake/meaning";
 import { audit } from "../lib/audit";
 import { badRequest, conflict } from "../lib/http";
 import {
@@ -108,8 +109,25 @@ export async function applyListEdit(env: Env, e: ListEdit, source: "seed" | "rep
 export async function listEditsFromMail(
   env: Env, body: string, mailId: string, now = Date.now(),
 ): Promise<{ note: string; edits: ListEdit[]; onlyEdits: boolean } | null> {
-  const edits = parseListEdits(body);
-  if (edits.length === 0) return null;
+  const found = parseListEdits(body);
+  if (found.length === 0) return null;
+  /*
+   * MEANING BY THE MODEL (eng sweep row 7b): the words found the list and the name; the model reads whether she
+   * asks for it. Not asked: the line is ordinary mail. Unsure: nothing changes and she is asked. Model down: the
+   * words act, logged (`meaning_keyword_fallback`).
+   */
+  const her = String(body).split(/\r?\n(?:>|On .+wrote:)/)[0] ?? "";
+  const edits: ListEdit[] = [];
+  const unsure: ListEdit[] = [];
+  let skipped = 0;
+  for (const e of found) {
+    const said = await confirmAsk(env, {
+      what: "her list edit", about: "This is the owner's email to her deal team, which keeps a Rainmaker list and a do-not-suggest list.",
+      change: listChangeWords(e), text: her, mailId, now,
+    });
+    if (said === "act") edits.push(e); else if (said === "ask") unsure.push(e); else skipped += 1;
+  }
+  if (edits.length === 0 && unsure.length === 0) return null;
   for (const e of edits) await applyListEdit(env, e, "reply", now);
   await audit(env.DB, {
     actor: "owner", lane: "ops", entityType: "inbound_mail", entityId: mailId, action: "party_list_edited",
@@ -119,7 +137,15 @@ export async function listEditsFromMail(
   const other = above.split(/\r?\n/).map((l) => l.trim()).filter((l) => l
     && parseListEdits(l).length === 0
     && !/^(hi|hey|hello|thanks|thank you|thx|ty|best|sequoia|s|-+|—.*)[,.!]?$/i.test(l));
-  return { note: edits.map(confirmEdit).join("\n"), edits, onlyEdits: other.length === 0 };
+  const asks = unsure.map((e) => `I could not tell whether you want this, so nothing changed: ${listChangeWords(e)}. Reply with it on its own line if you do.`);
+  return { note: [...edits.map(confirmEdit), ...asks].join("\n"), edits, onlyEdits: other.length === 0 && skipped === 0 };
+}
+
+/** One edit in plain words, for the model and for her. Pure. */
+export function listChangeWords(e: ListEdit): string {
+  const who = e.label || e.value;
+  if (e.list === "same_firm") return e.action === "add" ? `count ${who} as Rainmaker` : `take ${who} off the Rainmaker list`;
+  return e.action === "add" ? `never suggest ${who} again` : `suggest ${who} again`;
 }
 
 /**

@@ -1,3 +1,4 @@
+import { confirmAsk } from "../intake/meaning";
 import type { Env } from "../env";
 import { audit } from "../lib/audit";
 import { raiseJudgementCall } from "../approvals/raise";
@@ -53,6 +54,21 @@ export async function editDutyFromMail(env: Env, input: {
   }
 
   const d = req.duty;
+  /*
+   * MEANING BY THE MODEL (eng sweep row 7b): the words found the duty; the model reads whether she asks to change
+   * it. Not asked: no edit, the email goes on. Unsure: nothing changes and she is asked. Model down: logged keywords.
+   */
+  const said = await confirmAsk(env, {
+    what: "her duty edit", about: "This is the owner's email to her team, who run standing duties for her.",
+    change: `change the standing duty "${d.name}"`, text: `${input.subject}\n${input.text}`, mailId: input.mailId, now: input.now,
+  });
+  if (said === "skip") return null;
+  if (said === "ask") {
+    return {
+      draftId: null, taskId: null, employeeId: req.seat?.id ?? null, outcome: "DUTY_NOT_UNDERSTOOD",
+      note: [`I could not tell whether you want the duty "${d.name}" changed, so nothing was changed.`, "", "Reply with the change you want and I will make it.", "", `— ${signer}`].join("\n"),
+    };
+  }
   const seatName = req.seat?.name ?? input.roster.find((s) => s.id === d.employee_id)?.name ?? "the team";
   const repo = repoInstructions(d, input.now);
 

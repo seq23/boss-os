@@ -1,3 +1,4 @@
+import { confirmAsk } from "../intake/meaning";
 import type { Env } from "../env";
 import { newId } from "../lib/id";
 import { audit } from "../lib/audit";
@@ -213,6 +214,25 @@ export async function admitTask(env: Env, b: AdmitInput): Promise<AdmitResult> {
     // Mail-born work carries who wrote it, so her own errand (classify's one outbound carve-out) is known.
     sender: input.source === "boss_inbound_mail" ? String(input.from ?? "") : null,
   });
+  /*
+   * WHO READS THE RESULT, READ BY THE MODEL (eng sweep row 7b). The keywords need a recipient AND a verb to call work
+   * external; her mail can say it other ways ("get this in front of the Rainmaker folks"). The model may only TIGHTEN:
+   * its "asks" (quoting words that stand in her sentence) makes the work external, which waits on her approval; its
+   * "not", unsure or silence leaves the keywords' reading. Model down: keywords, logged.
+   */
+  if (input.source === "boss_inbound_mail" && classification.audience === "internal" && !b.audience) {
+    const said = await confirmAsk(env, {
+      what: "who reads her work", about: "This is the owner's email asking her team for work.",
+      change: "the result is sent, posted or published to someone outside her own team", keyword: "not",
+      text: [b.title, (input.prompt as string | undefined) ?? ""].join("\n"), mailId: typeof input.mail_id === "string" ? input.mail_id : null,
+    });
+    if (said === "act") classification = { ...classification, ...classify({
+      title: b.title, prompt: (input.prompt as string | undefined) ?? null, lane,
+      intakeKind: intakeKind ?? undefined, risk: b.risk ?? undefined, sensitivity: b.sensitivity ?? undefined,
+      model_access: b.model_access ?? undefined, audience: "external",
+      sender: String(input.from ?? ""),
+    }) };
+  }
 
   /*
    * ─── A HIGH-RISK REPAIR ON DANIELLE'S SEAT THAT NAMES NO REPOSITORY IS A REPO CHANGE (17 Nov 2026) ─
