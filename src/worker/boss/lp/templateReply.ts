@@ -23,7 +23,7 @@ import { ownWords } from "../../../shared/boss/intake/messageBody.mjs";
 import { decideCardOf } from "./decideReply";
 import { readMeaning } from "../intake/meaning";
 import { logReplyDecision, type ReplyDecision } from "../intake/firstRead";
-import { stands } from "../../../shared/boss/text/wholeSentence.mjs";
+import { sentencesOf, standingIn, stands, vetoOf } from "../../../shared/boss/text/wholeSentence.mjs";
 
 /** "5: …", "#5 …", "5. …", "5) …" at the start of her reply. */
 export const NUMBERED_REPLY_RE = /^\s*#?(\d{1,2})\s*(?::|\.|\)|-|—|\s)\s*([\s\S]*)$/;
@@ -68,13 +68,45 @@ const APPROVE_WORD_RE = /\bapprov(?:e|ed|es|ing)\b/i;
 
 export type TemplateMeaning = "approve" | "try_again" | "change" | "unsure";
 
+/*
+ * TRY AGAIN IS JUDGED IN ITS OWN CLAUSE (#510 review, F4a). A negation belongs to the clause it sits in: "I don't
+ * like this, try again" asks for a fresh draft; "don't try again, just shorten it" does not. A condition, a report
+ * or a question still holds the whole sentence back ("if it's off, try again" is not yet an ask). Only try again is
+ * judged this way: a redraft sends nothing. An approval keeps the whole-sentence judge, so "not approved, yes I
+ * read it" never approves.
+ */
+const CLAUSE_BREAK = /,|\s[-—–]\s|\bbut\b/i;
+const SENTENCE_SHAPES = ["CONDITIONS", "REPORTS", "ASKS"] as const;
+const flat = (t: string) => t.toLowerCase().replace(/[“”"'‘’`]/g, "").replace(/\s+/g, " ").trim();
+const clausesOf = (sentence: string) => sentence.split(CLAUSE_BREAK).map((c) => c.trim()).filter(Boolean);
+
+/** Her words ask for a different draft: the phrase stands in its clause, and nothing holds the sentence back. */
+export function tryAgainStands(words: string): boolean {
+  return sentencesOf(words).some((x) => standingIn(x.text, TRY_AGAIN_RE, SENTENCE_SHAPES)
+    && clausesOf(x.text).some((c) => standingIn(c, TRY_AGAIN_RE, ["NEGATES"]) !== null));
+}
+
+/** A model's try-again quote, judged the same way: in the clause that holds it, and its whole sentence. */
+export function tryAgainQuoteStands(words: string, quote: string): boolean {
+  const q = flat(quote);
+  if (!q) return false;
+  for (const x of sentencesOf(words)) {
+    if (!flat(x.text).includes(q) && !q.includes(flat(x.text))) continue;
+    if (vetoOf(x.text, null, SENTENCE_SHAPES)) return false;
+    const holding = clausesOf(x.text).filter((c) => flat(c).includes(q) || q.includes(flat(c)));
+    return holding.length === 0 ? !vetoOf(quote, null, ["NEGATES"]) : holding.every((c) => !vetoOf(c, null, ["NEGATES"]));
+  }
+  return !vetoOf(quote);
+}
+
 /**
  * Her words, by the keywords alone (the logged last resort and the reading of one numbered answer). Every phrase is
- * judged in its whole sentence (`stands`, the shared judge): "don't try again, just shorten it" is a change. Pure.
+ * judged in its whole sentence (`stands`, the shared judge); try again in its own clause (`tryAgainStands`): "I don't
+ * like this, try again" is a fresh draft, "don't try again, just shorten it" is a change. Pure.
  */
 export function templateKeywordMeaning(words: string): TemplateMeaning {
   if (APPROVE_RE.test(words.trim())) return "approve";
-  if (stands(words, TRY_AGAIN_RE)) return "try_again";
+  if (tryAgainStands(words)) return "try_again";
   if (stands(words, APPROVE_WORD_RE)) return "unsure";
   return words.trim() ? "change" : "unsure";
 }
@@ -94,21 +126,29 @@ export async function templateMeaningOf(env: Env, words: string, mailId: string 
       try_again: "she wants a different draft altogether",
       change: "she asks for changes to the draft (her words say what to change)",
     },
-    acts: ["approve", "try_again"],
+    // Approving sends, so its quote must stand in the whole sentence; try again only redrafts, and its quote is
+    // judged in its own clause just below (F4a).
+    acts: ["approve"],
     text: words, keyword, mailId,
   });
+  if (read.value === "try_again" && read.by === "model" && !tryAgainQuoteStands(words, read.quote ?? "")) return "change";
   return read.value;
 }
 
 /**
  * WHAT HER REPLY DECIDES, FROM THE EMAIL'S FIRST READ (fresh review of #510, F1). The email was already read once;
  * the card never reads it a second time. It approves only when the first read says the reply is `approved`, or
- * when this card's own numbered answer is a plain approval. Try again or change is told from that answer's
+ * when this card's own numbered answer is a plain approval (a numbered reply the read did not answer is judged on
+ * her card words alone, never on the reply's "approved"). Try again or change is told from that answer's
  * words. Anything else that names an approval is asked, never redrafted. Pure.
  */
 export function templateMeaningFromRead(read: ReplyDecision, card: number | null, words: string): TemplateMeaning {
   const answer = card === null ? null : read.answers.find((a) => a.n === card)?.text?.trim() || null;
   if (answer) return templateKeywordMeaning(answer);
+  // A numbered answer to THIS card that the read did not answer is judged on her card words alone: the reply's
+  // "approved" may belong to another card or the batch, and never approves this one (F4b). Only a bare
+  // "approved" in her own card words does.
+  if (card !== null) return templateKeywordMeaning(words);
   if (read.reply === "approved") return "approve";
   if (read.reply === "held") return "unsure";
   const kw = templateKeywordMeaning(words);

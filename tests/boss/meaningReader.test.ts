@@ -123,6 +123,29 @@ describe("the template door after a first read (#510 F1, F2)", () => {
     expect(await templateMeaningOf(env, "Approved! Let me know if anything bounces.")).toBe("approve");
   });
 
+  it("F4a: \"I don't like this, try again\" is a fresh draft, with the model up or down; a negated try again is a change", async () => {
+    setFirstReadRungs(says("try_again", "try again"));
+    expect(await templateMeaningOf(env, "I don't like this, try again")).toBe("try_again");
+    expect(await templateMeaningOf(env, "Don't try again, just shorten the opening.")).toBe("change");
+    expect(await templateMeaningOf(env, "If the opening is still off, try again?")).toBe("change");
+    setFirstReadRungs(down);
+    expect(await templateMeaningOf(env, "I don't like this, try again")).toBe("try_again");
+    // The first read's answer for the card goes through the same keywords.
+    expect(templateMeaningFromRead(firstRead("answers", [{ n: 5, text: "I don't like this, try again" }]) as any, 5, "x")).toBe("try_again");
+  });
+
+  it("F4b: a numbered answer the read did not answer never borrows the reply's \"approved\"; nothing is approved", async () => {
+    expect(templateMeaningFromRead(firstRead("approved") as any, 5, "shorten the opening")).toBe("change");
+    expect(templateMeaningFromRead(firstRead("approved") as any, 5, "approve it with a shorter opening")).toBe("unsure");
+    expect(templateMeaningFromRead(firstRead("approved") as any, 5, "approved")).toBe("approve");
+    const t = (await proposeTemplate(env.DB, null, NAMES)) as any;
+    const payload = { day: "2026-10-25", decide: ["a", "b", "c", "d", `prospect-template:${t.template.id}`].map((key, i) => ({ key, title: `Card ${i + 1}` })) };
+    await env.DB.exec("DELETE FROM morning_digests;");
+    await env.DB.prepare(`INSERT INTO morning_digests (day, payload, sent_at, created_at, updated_at) VALUES (?,?,?,?,?)`).bind("2026-10-25", JSON.stringify(payload), Date.now(), Date.now(), Date.now()).run();
+    await prospectTemplateFromMail(env, "5: shorten the opening", Date.now(), null, null, firstRead("approved") as any);
+    expect((await env.DB.prepare(`SELECT COUNT(*) AS n FROM prospect_templates WHERE status = 'approved'`).first<any>()).n).toBe(0);
+  });
+
   it("model down: \"Don't try again, just shorten the opening.\" is never try again", async () => {
     setFirstReadRungs(down);
     expect(await templateMeaningOf(env, "Don't try again, just shorten the opening.")).not.toBe("try_again");
@@ -142,6 +165,15 @@ describe("the free ladder itself (#510 F3)", () => {
     expect(called, "a blank opt-out is no opt-out").toBe(0);
     await freeLadder(env, { ...ask, privateScanOff: "test: a named ruling" }, rung);
     expect(called).toBe(1);
+  });
+
+  it("a private scan that cannot run fails closed: the rung is never asked", async () => {
+    let called = 0;
+    const rung: Rung[] = [{ id: "free-test", call: async () => { called += 1; return "{}"; } }];
+    const broken = { ...env, DB: { prepare() { throw new Error("D1 is down"); }, exec() { throw new Error("D1 is down"); } } } as any;
+    const walk = await freeLadder(broken, { prompt: "shorten the opening", json: { name: "x", schema: { type: "object" } }, read: () => ({ ok: true }) }, rung);
+    expect(called).toBe(0);
+    expect(walk.stop).toMatch(/kept off the free models/);
   });
 });
 
