@@ -3,7 +3,7 @@ import { readFileSync } from "node:fs";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { BOSS_INTAKE_SENDERS, isOwner } from "../src/shared/boss/intake/mail.mjs";
 import { toBossEnv } from "../src/worker/bossMount";
-import { bossOsProcessEnv } from "../scripts/lib/vault-env.mjs";
+import { bossOsProcessEnv, syncPlan } from "../scripts/lib/vault-env.mjs";
 
 describe("extra owner sender configuration", () => {
   beforeEach(() => vi.stubEnv("BOSS_EXTRA_OWNER_SENDERS", ""));
@@ -38,6 +38,18 @@ describe("extra owner sender configuration", () => {
     const mapping = JSON.parse(readFileSync("scripts/vault/cloudflare-mapping.json", "utf8"));
     expect(mapping.secret_names).toContain("BOSS_EXTRA_OWNER_SENDERS");
     expect(mapping.not_synced).not.toHaveProperty("BOSS_EXTRA_OWNER_SENDERS");
+  });
+
+  it("the Worker sync skips it when the vault has none (blank means the built-in list), and still refuses any other gap", () => {
+    const mapping = JSON.parse(readFileSync("scripts/vault/cloudflare-mapping.json", "utf8"));
+    const held = Object.fromEntries(mapping.secret_names.filter((n: string) => n !== "BOSS_EXTRA_OWNER_SENDERS").map((n: string) => [n, "x"]));
+    const plan = syncPlan(mapping, held);
+    expect(plan).toMatchObject({ skipped: ["BOSS_EXTRA_OWNER_SENDERS"], missing: [], strayOptional: [] });
+    expect(plan.upload).toHaveLength(mapping.secret_names.length - 1);
+    expect(syncPlan(mapping, { ...held, BOSS_EXTRA_OWNER_SENDERS: "work@example.com" }).upload).toContain("BOSS_EXTRA_OWNER_SENDERS");
+    const { ANTHROPIC_API_KEY: _gone, ...lacking } = held;
+    expect(syncPlan(mapping, lacking).missing).toEqual(["ANTHROPIC_API_KEY"]);
+    expect(syncPlan({ secret_names: ["A"], optional_secret_names: ["B"] }, { A: "x" }).strayOptional).toEqual(["B"]);
   });
 
   it("reads the same environment variable in Mac-side Node callers", () => {

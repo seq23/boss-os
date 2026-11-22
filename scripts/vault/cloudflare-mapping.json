@@ -20,6 +20,9 @@
     "BRAVE_SEARCH_API_KEY",
     "GITHUB_SEQ23_PAT"
   ],
+  "optional_secret_names": [
+    "BOSS_EXTRA_OWNER_SENDERS"
+  ],
   "not_synced": {
     "BOSS_NOTIFY_TO": "Where the Mac and cloud jobs send her mail (scripts/ops/notify.mjs ownerTo). The repo is public, so the address lives here and in the repo's secrets, never in a file. The Worker sends her nothing by address: it only replies to her own email.",
     "CLOUDFLARE_API_TOKEN": "The credential this sync authenticates WITH. Uploading it to the Worker would put the key that can rewrite every secret inside the thing it rewrites.",
