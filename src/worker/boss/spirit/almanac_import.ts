@@ -27,6 +27,7 @@
 import { AWAITING_ALMANAC, MANUAL_ALMANAC, MANUAL_ALMANAC_KINDS, type ManualAlmanacKind } from "./astro";
 import { batchReads } from "../lib/batchReads";
 import { newId } from "../lib/id";
+import { auditOfPrevious, auditStatement } from "../lib/audit";
 import { badRequest } from "../lib/http";
 
 const DAY_MS = 86_400_000;
@@ -36,6 +37,11 @@ export const MAX_PERIOD_DAYS = 200;
 
 /** Canon asks for a twenty-four-month forward view. */
 export const HORIZON_MONTHS = 24;
+/** Far above any real almanac (two years is under a hundred periods), so the import stays one transaction. */
+export const MAX_IMPORT_EVENTS = 500;
+/** A refresh may span the horizon plus this much, and no more (a mistyped year widens its delete). */
+export const REFRESH_SPAN_MARGIN_MONTHS = 12;
+export const MAX_REFRESH_SPAN_MS = (HORIZON_MONTHS + REFRESH_SPAN_MARGIN_MONTHS) * 31 * 86_400_000;
 
 const SHADOW_PHASES = new Set(["pre", "post"]);
 
@@ -156,6 +162,13 @@ export async function importAlmanac(
     throw badRequest("events is a non-empty array", "Paste the retrograde and shadow periods from the almanac.");
   }
 
+  if (rawEvents.length > MAX_IMPORT_EVENTS) {
+    throw badRequest(
+      `A paste holds at most ${MAX_IMPORT_EVENTS} periods`,
+      "Two years of retrogrades and shadows is well under a hundred. Paste one almanac at a time.",
+    );
+  }
+
   const events = rawEvents.map(validateEvent);
 
   // Two rows for the same kind at the same instant are a copy/paste artefact,
@@ -168,29 +181,29 @@ export async function importAlmanac(
   }
 
   const method = `Manual almanac entry (canon §42.3), from: ${sourceName}`;
-  let replaced = 0;
+  let clear: D1PreparedStatement | null = null;
 
   if (input.replace === true) {
     const from = Math.min(...events.map((e) => e.starts_at));
     const to = Math.max(...events.map((e) => e.ends_at));
-    const existing = await db
-      .prepare(
-        `SELECT COUNT(*) AS n FROM astro_calendar
-          WHERE source = 'imported' AND kind IN ('retrograde','shadow') AND starts_at >= ? AND starts_at <= ?`,
-      )
-      .bind(from, to)
-      .first<{ n: number }>();
-    replaced = existing?.n ?? 0;
-    await db
+    // A refresh deletes everything hand-entered between its first start and its last end, so one
+    // mistyped year would widen that delete across years of rows. No real almanac spans more than
+    // the horizon; a paste that does is refused before anything is deleted.
+    if (to - from > MAX_REFRESH_SPAN_MS) {
+      throw badRequest(
+        `A refresh spans at most ${HORIZON_MONTHS + REFRESH_SPAN_MARGIN_MONTHS} months`,
+        "One of the periods has a date far from the others (a mistyped year?). Check the dates, or import without replace.",
+      );
+    }
+    clear = db
       .prepare(
         `DELETE FROM astro_calendar
           WHERE source = 'imported' AND kind IN ('retrograde','shadow') AND starts_at >= ? AND starts_at <= ?`,
       )
-      .bind(from, to)
-      .run();
+      .bind(from, to);
   }
 
-  const statements = events.map((event) =>
+  const inserts = events.map((event) =>
     db
       .prepare(
         `INSERT INTO astro_calendar (id, kind, label, starts_at, ends_at, detail, source, method, created_at)
@@ -220,9 +233,14 @@ export async function importAlmanac(
       ),
   );
 
-  for (let i = 0; i < statements.length; i += 50) {
-    await db.batch(statements.slice(i, i + 50));
-  }
+  // One batch is one transaction: a refresh that fails part-way leaves the old copy exactly as it
+  // was, never the old rows deleted and half the new ones written, and the audit row is part of it,
+  // so nothing is replaced unrecorded. The count replaced is the delete's own, read in the batch.
+  const record = { actor: "boss", lane: "ops", entityType: "astro_calendar", action: "imported", detail: { imported: events.length, source_name: sourceName } };
+  const results = await db.batch(
+    clear ? [clear, auditOfPrevious(db, record, "replaced"), ...inserts] : [auditStatement(db, { ...record, detail: { ...record.detail, replaced: 0 } }), ...inserts],
+  );
+  const replaced = clear ? results[0]?.meta.changes ?? 0 : 0;
 
   return { imported: events.length, replaced, source_name: sourceName, coverage: await almanacCoverage(db, now) };
 }
