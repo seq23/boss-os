@@ -96,7 +96,7 @@ export function catchUpSlots(now = Date.now()) {
   for (const label of missedToday(readJobs(), now)) {
     try {
       execFileSync("launchctl", ["kickstart", `gui/${process.getuid()}/${label}`], { stdio: "ignore" });
-      console.log(`missed-weekly-slot: ${label} missed today's slot while the Mac was off; started it now.`);
+      console.log(`missed-slot: ${label} missed today's slot while the Mac was off; started it now.`);
       started.push(label);
     } catch (e) {
       console.error(`NAMED STOP [MISSED_SLOT_NOT_STARTED] ${label}: ${e.message}`);
@@ -104,9 +104,6 @@ export function catchUpSlots(now = Date.now()) {
   }
   return started;
 }
-
-/** Back-compat name for the morning catch-up's import. */
-export const catchUpWeeklySlots = catchUpSlots;
 
 const DAY_MS = 86_400_000;
 /**

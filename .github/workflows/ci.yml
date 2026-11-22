@@ -205,6 +205,10 @@ jobs:
       - name: Install (reproducible, from package-lock)
         run: npm ci
 
+      # ship-review's image tiling test needs ffmpeg/ffprobe; installed only if the runner lacks it.
+      - name: ffmpeg
+        run: command -v ffprobe >/dev/null || (sudo apt-get update -qq && sudo apt-get install -y -qq --no-install-recommends ffmpeg)
+
       # `--shard` splits the FILE list across the matrix; `--no-file-parallelism` keeps each shard
       # serial inside, because these suites share a miniflare per file and were never written to
       # run beside each other. Four shards, one runner each: the parallelism is between jobs.

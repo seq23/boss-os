@@ -6,6 +6,8 @@ export declare function isBlank(m: { words?: number; media?: number } | null | u
 export declare const YOUTUBE_CHANNEL: RegExp;
 export declare const MAX_TILES: number;
 export declare function tilesFor(fullH: number, width: number): Array<{ y: number; height: number }>;
+export declare function readDark(state: string): boolean;
+export declare function nextDarkState(state: string, m: { dark?: string | null; shot?: boolean }): string;
 export declare function changedLines(diff: string, cap?: number): string;
 export declare function writeCaptureFile(out: string, c: { shots: Shot[]; facts: string[] }): void;
 export declare function readCaptureFile(dir: string): { shots: Shot[]; facts: string[] };
