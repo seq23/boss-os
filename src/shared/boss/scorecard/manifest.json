@@ -2802,6 +2802,540 @@
     "succession-book": {
       "kind": "system",
       "why": "Keeps the emergency book current for Scooter; it has no customer result of its own."
+    },
+    "growth-scoreboard": {
+      "kind": "helper",
+      "why": "The Growth Director's daily count; it feeds the growth-director row's decisions and has no customer result of its own."
     }
+  },
+  "scoreboard": {
+    "_note": "THE GROWTH SCOREBOARD (Growth Director, 21 Nov 2026). One way to count across her six growth businesses: each measure is a Scorecard reader (scripts/ops/lib/scorecard-readers.mjs) read daily in the cloud by scripts/ops/growth-scoreboard.mjs over a 28-day window and stored in D1 (growth_readings). A source that cannot be read is stored as 'not read: <reason>', never 0. Counts and sums only: no name, address or row leaves its source. KeepMyProof promises no analytics: it is counted only from store and RevenueCat numbers and its in-app 'How did you hear about us?' answer, never site visits or tagged links (src/shared/boss/growth/scoreboard.mjs NO_TRACKING). Porch & Party requests are counted first (the Christmas season). Paused businesses carry no measures.",
+    "window_days": 28,
+    "businesses": [
+      {
+        "key": "porch-and-party",
+        "label": "Porch & Party",
+        "brain": "porch-and-party"
+      },
+      {
+        "key": "keepmyproof",
+        "label": "KeepMyProof",
+        "brain": "spry"
+      },
+      {
+        "key": "approvalprep",
+        "label": "ApprovalPrep",
+        "brain": "spry"
+      },
+      {
+        "key": "dream-wedding",
+        "label": "Dream Wedding",
+        "brain": "spry"
+      },
+      {
+        "key": "a-player-mode",
+        "label": "A Player Mode",
+        "brain": "spry"
+      },
+      {
+        "key": "peace-be-still",
+        "label": "Peace Be Still",
+        "brain": "spry"
+      },
+      {
+        "key": "how-we-know",
+        "label": "How We Know",
+        "brain": "spry",
+        "paused": "YouTube is paused until the Peace Be Still audio fill is done"
+      },
+      {
+        "key": "whisper-almanac",
+        "label": "Whisper Almanac",
+        "brain": "spry",
+        "paused": "YouTube is paused until the Peace Be Still audio fill is done"
+      }
+    ],
+    "measures": [
+      {
+        "id": "pnp-requests",
+        "business": "porch-and-party",
+        "kind": "requests",
+        "channel": "all",
+        "language": "en",
+        "label": "requests (all sources)",
+        "reader": "d1",
+        "params": {
+          "db": "pnp-admin",
+          "sql": "SELECT COUNT(*) AS n FROM requests WHERE is_test = 0 AND 1 = 1 AND datetime(submitted_at) >= datetime(:since_iso)",
+          "days": 28
+        }
+      },
+      {
+        "id": "pnp-requests-untagged",
+        "business": "porch-and-party",
+        "kind": "requests",
+        "channel": "untagged",
+        "language": "en",
+        "label": "requests with no source tag",
+        "reader": "d1",
+        "params": {
+          "db": "pnp-admin",
+          "sql": "SELECT COUNT(*) AS n FROM requests WHERE is_test = 0 AND COALESCE(source_tag, '') = '' AND datetime(submitted_at) >= datetime(:since_iso)",
+          "days": 28
+        }
+      },
+      {
+        "id": "pnp-requests-instagram",
+        "business": "porch-and-party",
+        "kind": "requests",
+        "channel": "instagram",
+        "language": "en",
+        "label": "requests from Instagram",
+        "reader": "d1",
+        "params": {
+          "db": "pnp-admin",
+          "sql": "SELECT COUNT(*) AS n FROM requests WHERE is_test = 0 AND source_tag = 'instagram' AND datetime(submitted_at) >= datetime(:since_iso)",
+          "days": 28
+        }
+      },
+      {
+        "id": "pnp-requests-tiktok",
+        "business": "porch-and-party",
+        "kind": "requests",
+        "channel": "tiktok",
+        "language": "en",
+        "label": "requests from TikTok",
+        "reader": "d1",
+        "params": {
+          "db": "pnp-admin",
+          "sql": "SELECT COUNT(*) AS n FROM requests WHERE is_test = 0 AND source_tag = 'tiktok' AND datetime(submitted_at) >= datetime(:since_iso)",
+          "days": 28
+        }
+      },
+      {
+        "id": "pnp-requests-facebook",
+        "business": "porch-and-party",
+        "kind": "requests",
+        "channel": "facebook",
+        "language": "en",
+        "label": "requests from Facebook",
+        "reader": "d1",
+        "params": {
+          "db": "pnp-admin",
+          "sql": "SELECT COUNT(*) AS n FROM requests WHERE is_test = 0 AND source_tag IN ('facebook','fb','marketplace') AND datetime(submitted_at) >= datetime(:since_iso)",
+          "days": 28
+        }
+      },
+      {
+        "id": "pnp-requests-google",
+        "business": "porch-and-party",
+        "kind": "requests",
+        "channel": "google",
+        "language": "en",
+        "label": "requests from Google (search or Business Profile)",
+        "reader": "d1",
+        "params": {
+          "db": "pnp-admin",
+          "sql": "SELECT COUNT(*) AS n FROM requests WHERE is_test = 0 AND source_tag IN ('google','gbp','gmb') AND datetime(submitted_at) >= datetime(:since_iso)",
+          "days": 28
+        }
+      },
+      {
+        "id": "pnp-money",
+        "business": "porch-and-party",
+        "kind": "money",
+        "channel": "all",
+        "language": "en",
+        "label": "dollars received",
+        "reader": "d1",
+        "params": {
+          "db": "pnp-admin",
+          "sql": "SELECT ROUND(COALESCE(SUM(amount_cents), 0) / 100.0, 2) AS n FROM payments WHERE voided_at IS NULL AND datetime(COALESCE(received_on, created_at)) >= datetime(:since_iso)",
+          "days": 28
+        }
+      },
+      {
+        "id": "pnp-search",
+        "business": "porch-and-party",
+        "kind": "visits",
+        "channel": "google-search",
+        "language": "en",
+        "label": "Google search clicks",
+        "reader": "gsc",
+        "params": {
+          "sites": [
+            "porchandparty901.com"
+          ],
+          "metric": "clicks",
+          "days": 28
+        }
+      },
+      {
+        "id": "kmp-new-users",
+        "business": "keepmyproof",
+        "kind": "installs",
+        "channel": "store",
+        "language": "all",
+        "label": "new app users (RevenueCat)",
+        "reader": "revenuecat",
+        "params": {
+          "key": "REVENUECAT_KMP_V2_SECRET_KEY",
+          "metric": "new_customers"
+        }
+      },
+      {
+        "id": "kmp-subscriptions",
+        "business": "keepmyproof",
+        "kind": "sales",
+        "channel": "store",
+        "language": "all",
+        "label": "active paid subscriptions",
+        "reader": "revenuecat",
+        "params": {
+          "key": "REVENUECAT_KMP_V2_SECRET_KEY",
+          "metric": "active_subscriptions"
+        }
+      },
+      {
+        "id": "kmp-money",
+        "business": "keepmyproof",
+        "kind": "money",
+        "channel": "store",
+        "language": "all",
+        "label": "app revenue, last 28 days (RevenueCat)",
+        "reader": "revenuecat",
+        "params": {
+          "key": "REVENUECAT_KMP_V2_SECRET_KEY",
+          "metric": "revenue"
+        }
+      },
+      {
+        "id": "kmp-search",
+        "business": "keepmyproof",
+        "kind": "visits",
+        "channel": "google-search",
+        "language": "en",
+        "label": "Google search clicks (Google's own count; nothing is added to the site)",
+        "reader": "gsc",
+        "params": {
+          "sites": [
+            "keepmyproof.com"
+          ],
+          "metric": "clicks",
+          "days": 28
+        }
+      },
+      {
+        "id": "kmp-search-es",
+        "business": "keepmyproof",
+        "kind": "visits",
+        "channel": "google-search",
+        "language": "es",
+        "label": "Google search clicks on Spanish pages",
+        "reader": "gsc",
+        "params": {
+          "sites": [
+            "keepmyproof.com"
+          ],
+          "metric": "clicks",
+          "days": 28,
+          "pages": [
+            "/es/"
+          ]
+        }
+      },
+      {
+        "id": "kmp-heard",
+        "business": "keepmyproof",
+        "kind": "installs",
+        "channel": "heard-answer",
+        "language": "all",
+        "label": "'How did you hear about us?' answers sent to support",
+        "reader": "none",
+        "why": "the in-app answer reaches the support mailbox as an email the person chooses to send; no reader counts that mailbox yet"
+      },
+      {
+        "id": "ap-sales",
+        "business": "approvalprep",
+        "kind": "sales",
+        "channel": "site",
+        "language": "en",
+        "label": "paid kit purchases",
+        "reader": "d1",
+        "params": {
+          "db": "approvalprep-products",
+          "sql": "SELECT COUNT(*) AS n FROM download_entitlements WHERE payment_status = 'paid' AND revoked_at IS NULL AND datetime(created_at) >= datetime(:since_iso)",
+          "days": 28
+        }
+      },
+      {
+        "id": "ap-money",
+        "business": "approvalprep",
+        "kind": "money",
+        "channel": "site",
+        "language": "en",
+        "label": "dollars from kit purchases",
+        "reader": "d1",
+        "params": {
+          "db": "approvalprep-products",
+          "sql": "SELECT ROUND(COALESCE(SUM(amount_total), 0) / 100.0, 2) AS n FROM download_entitlements WHERE payment_status = 'paid' AND revoked_at IS NULL AND datetime(created_at) >= datetime(:since_iso)",
+          "days": 28
+        }
+      },
+      {
+        "id": "ap-app-money",
+        "business": "approvalprep",
+        "kind": "money",
+        "channel": "store",
+        "language": "all",
+        "label": "app revenue, last 28 days (RevenueCat)",
+        "reader": "revenuecat",
+        "params": {
+          "key": "REVENUECAT_AP_V2_SECRET_KEY",
+          "metric": "revenue"
+        }
+      },
+      {
+        "id": "ap-search",
+        "business": "approvalprep",
+        "kind": "visits",
+        "channel": "google-search",
+        "language": "en",
+        "label": "Google search clicks",
+        "reader": "gsc",
+        "params": {
+          "sites": [
+            "approvalprep.com"
+          ],
+          "metric": "clicks",
+          "days": 28
+        }
+      },
+      {
+        "id": "dw-sales",
+        "business": "dream-wedding",
+        "kind": "sales",
+        "channel": "site",
+        "language": "en",
+        "label": "paid orders",
+        "reader": "d1",
+        "params": {
+          "db": "dream-wedding-builder",
+          "sql": "SELECT COUNT(*) AS n FROM orders WHERE status = 'PAID' AND datetime(created_at) >= datetime(:since_iso)",
+          "days": 28
+        }
+      },
+      {
+        "id": "dw-money",
+        "business": "dream-wedding",
+        "kind": "money",
+        "channel": "site",
+        "language": "en",
+        "label": "dollars from paid orders",
+        "reader": "d1",
+        "params": {
+          "db": "dream-wedding-builder",
+          "sql": "SELECT ROUND(COALESCE(SUM(amount_total), 0) / 100.0, 2) AS n FROM orders WHERE status = 'PAID' AND datetime(created_at) >= datetime(:since_iso)",
+          "days": 28
+        }
+      },
+      {
+        "id": "dw-pinterest",
+        "business": "dream-wedding",
+        "kind": "visits",
+        "channel": "pinterest",
+        "language": "en",
+        "label": "visits from Pinterest pins",
+        "reader": "d1",
+        "params": {
+          "db": "dream-wedding-builder",
+          "sql": "SELECT COALESCE(SUM(visits), 0) AS n FROM pinterest_visits WHERE day >= substr(:since_iso, 1, 10)",
+          "days": 28
+        }
+      },
+      {
+        "id": "dw-signups",
+        "business": "dream-wedding",
+        "kind": "requests",
+        "channel": "site",
+        "language": "en",
+        "label": "planner sign-ups",
+        "reader": "d1",
+        "params": {
+          "db": "dream-wedding-builder",
+          "sql": "SELECT COUNT(*) AS n FROM builder_signups WHERE datetime(created_at) >= datetime(:since_iso)",
+          "days": 28
+        }
+      },
+      {
+        "id": "dw-app-money",
+        "business": "dream-wedding",
+        "kind": "money",
+        "channel": "store",
+        "language": "all",
+        "label": "app revenue, last 28 days (RevenueCat)",
+        "reader": "revenuecat",
+        "params": {
+          "key": "REVENUECAT_DW_V2_SECRET_KEY",
+          "metric": "revenue"
+        }
+      },
+      {
+        "id": "dw-search",
+        "business": "dream-wedding",
+        "kind": "visits",
+        "channel": "google-search",
+        "language": "en",
+        "label": "Google search clicks",
+        "reader": "gsc",
+        "params": {
+          "sites": [
+            "weddingchecklistpdf.com"
+          ],
+          "metric": "clicks",
+          "days": 28
+        }
+      },
+      {
+        "id": "apm-app-money",
+        "business": "a-player-mode",
+        "kind": "money",
+        "channel": "store",
+        "language": "all",
+        "label": "app revenue, last 28 days (RevenueCat)",
+        "reader": "revenuecat",
+        "params": {
+          "key": "REVENUECAT_V2_SECRET_KEY",
+          "metric": "revenue"
+        }
+      },
+      {
+        "id": "apm-subscriptions",
+        "business": "a-player-mode",
+        "kind": "sales",
+        "channel": "store",
+        "language": "all",
+        "label": "active paid subscriptions",
+        "reader": "revenuecat",
+        "params": {
+          "key": "REVENUECAT_V2_SECRET_KEY",
+          "metric": "active_subscriptions"
+        }
+      },
+      {
+        "id": "apm-search",
+        "business": "a-player-mode",
+        "kind": "visits",
+        "channel": "google-search",
+        "language": "en",
+        "label": "Google search clicks",
+        "reader": "gsc",
+        "params": {
+          "sites": [
+            "aplayermode.com"
+          ],
+          "metric": "clicks",
+          "days": 28
+        }
+      },
+      {
+        "id": "pbs-new-users",
+        "business": "peace-be-still",
+        "kind": "installs",
+        "channel": "store",
+        "language": "all",
+        "label": "new app users (RevenueCat)",
+        "reader": "revenuecat",
+        "params": {
+          "key": "REVENUECAT_PBS_V2_SECRET_KEY",
+          "metric": "new_customers"
+        }
+      },
+      {
+        "id": "pbs-money",
+        "business": "peace-be-still",
+        "kind": "money",
+        "channel": "store",
+        "language": "all",
+        "label": "app revenue, last 28 days (RevenueCat)",
+        "reader": "revenuecat",
+        "params": {
+          "key": "REVENUECAT_PBS_V2_SECRET_KEY",
+          "metric": "revenue"
+        }
+      },
+      {
+        "id": "pbs-waitlist",
+        "business": "peace-be-still",
+        "kind": "requests",
+        "channel": "site",
+        "language": "all",
+        "label": "waitlist sign-ups",
+        "reader": "d1",
+        "params": {
+          "db": "peace-be-still",
+          "sql": "SELECT COUNT(*) AS n FROM waitlist WHERE datetime(created_at) >= datetime(:since_iso)",
+          "days": 28
+        }
+      },
+      {
+        "id": "pbs-waitlist-es",
+        "business": "peace-be-still",
+        "kind": "requests",
+        "channel": "site",
+        "language": "es",
+        "label": "Spanish waitlist sign-ups",
+        "reader": "d1",
+        "params": {
+          "db": "peace-be-still",
+          "sql": "SELECT COUNT(*) AS n FROM waitlist WHERE language = 'es' AND datetime(created_at) >= datetime(:since_iso)",
+          "days": 28
+        }
+      },
+      {
+        "id": "pbs-threads",
+        "business": "peace-be-still",
+        "kind": "visits",
+        "channel": "threads",
+        "language": "en",
+        "label": "site visits tagged from Threads",
+        "reader": "d1",
+        "params": {
+          "db": "peace-be-still",
+          "sql": "SELECT COALESCE(SUM(n), 0) AS n FROM social_visits WHERE source = 'threads' AND day >= substr(:since_iso, 1, 10)",
+          "days": 28
+        }
+      },
+      {
+        "id": "pbs-instagram",
+        "business": "peace-be-still",
+        "kind": "visits",
+        "channel": "instagram",
+        "language": "en",
+        "label": "site visits tagged from Instagram or Facebook",
+        "reader": "d1",
+        "params": {
+          "db": "peace-be-still",
+          "sql": "SELECT COALESCE(SUM(n), 0) AS n FROM social_visits WHERE source IN ('instagram','facebook') AND day >= substr(:since_iso, 1, 10)",
+          "days": 28
+        }
+      },
+      {
+        "id": "pbs-search",
+        "business": "peace-be-still",
+        "kind": "visits",
+        "channel": "google-search",
+        "language": "en",
+        "label": "Google search clicks",
+        "reader": "gsc",
+        "params": {
+          "sites": [
+            "peacebestillapp.com"
+          ],
+          "metric": "clicks",
+          "days": 28
+        }
+      }
+    ]
   }
 }

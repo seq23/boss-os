@@ -64,6 +64,13 @@ jobs:
           CAL_ICS_CRYPTOCLEARR: ${{ secrets.CAL_ICS_CRYPTOCLEARR }}
           # Valerie's list in the morning email (your-day): the P&P owner feed's read key.
           PNP_OWNER_FEED_TOKEN: ${{ secrets.PNP_OWNER_FEED_TOKEN }}
+          # The Growth scoreboard's store numbers (scripts/ops/growth-scoreboard.mjs): one read-only
+          # RevenueCat V2 key per app project.
+          REVENUECAT_KMP_V2_SECRET_KEY: ${{ secrets.REVENUECAT_KMP_V2_SECRET_KEY }}
+          REVENUECAT_AP_V2_SECRET_KEY: ${{ secrets.REVENUECAT_AP_V2_SECRET_KEY }}
+          REVENUECAT_DW_V2_SECRET_KEY: ${{ secrets.REVENUECAT_DW_V2_SECRET_KEY }}
+          REVENUECAT_PBS_V2_SECRET_KEY: ${{ secrets.REVENUECAT_PBS_V2_SECRET_KEY }}
+          REVENUECAT_V2_SECRET_KEY: ${{ secrets.REVENUECAT_V2_SECRET_KEY }}
           GH_TOKEN: ${{ github.token }}
         run: |
           if [ -n "$STATE" ]; then
