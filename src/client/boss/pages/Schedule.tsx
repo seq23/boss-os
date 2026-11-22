@@ -113,16 +113,16 @@ export function Schedule() {
           </details>
         );
       })}
-      <details className="brain-expander" data-testid="schedule-every-day">
+      <details className="brain-expander email-map-business" data-testid="schedule-every-day">
         <summary><span className="email-map-business-name">Every day</span><span className="email-map-count">Not moving — tap to open ▾</span></summary>
         <ul className="schedule-list">{SCHEDULE.everyDay.map((t, i) => <li key={i}>{t}</li>)}</ul>
       </details>
-      <details className="brain-expander" data-testid="schedule-not-shown">
+      <details className="brain-expander email-map-business" data-testid="schedule-not-shown">
         <summary><span className="email-map-business-name">Not shown on this page</span><span className="email-map-count">Tap to open ▾</span></summary>
         <ul className="schedule-list">{SCHEDULE.notShown.map((t, i) => <li key={i}>{t}</li>)}</ul>
       </details>
       </>}
-      <details className="brain-expander" data-testid="schedule-all-jobs" open={Boolean(only)}>
+      <details className="brain-expander email-map-business" data-testid="schedule-all-jobs" open={Boolean(only)}>
         <summary><span className="email-map-business-name">Every scheduled job</span><span className="email-map-count">{only ? SCHEDULE.rows.filter((r) => scheduleRepos(r, REPOS as any).includes(only)).length : SCHEDULE.rows.length} jobs, by where they run — tap to open ▾</span></summary>
         {Object.entries(SCHEDULE.systems).map(([key, label]) => {
           const rows = SCHEDULE.rows.filter((r) => r.system === key && (!only || scheduleRepos(r, REPOS as any).includes(only)));
