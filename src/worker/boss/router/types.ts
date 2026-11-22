@@ -38,6 +38,35 @@ export interface CompletionRequest {
    * run to the provider that can.
    */
   webSearch?: boolean;
+  /**
+   * ANSWER AS ONE JSON OBJECT IN THIS SHAPE (eng sweep row 8, 22 Nov 2026). Each adapter asks its
+   * provider's own structured-output feature (OpenAI and OpenRouter `response_format`, Gemini
+   * `responseJsonSchema`, Workers AI and Fireworks `response_format`, Anthropic a forced tool), so a
+   * caller reads fields instead of fishing labels out of prose. The text comes back as the JSON;
+   * `readJsonObject` is the one reader, and the router passes over a free answer it cannot read.
+   */
+  json?: JsonOutput;
+}
+
+/** A JSON Schema the answer must follow, and a short name for it (letters, digits, _ and -). */
+export interface JsonOutput {
+  name: string;
+  schema: Record<string, unknown>;
+}
+
+/**
+ * THE ONE READER OF A STRUCTURED ANSWER. A provider that honours the schema returns bare JSON; a
+ * few still wrap it in a ```json fence or a <think> block, which are cut. Anything that is not one
+ * JSON object is null: never a guess. Pure.
+ */
+export function readJsonObject(text: string): Record<string, unknown> | null {
+  const s = String(text ?? "").replace(/<think>[\s\S]*?<\/think>/gi, "").trim().replace(/^```(?:json)?\s*/i, "").replace(/\s*```$/, "").trim();
+  try {
+    const v = JSON.parse(s);
+    return v && typeof v === "object" && !Array.isArray(v) ? (v as Record<string, unknown>) : null;
+  } catch {
+    return null;
+  }
 }
 
 export interface CompletionResult {

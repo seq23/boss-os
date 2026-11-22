@@ -75,9 +75,15 @@ export const openrouter: ProviderAdapter = {
          * `max_price` 0 tells OpenRouter not to route it to a priced endpoint, and the usage it
          * reports is read below: any reported cost stops the lane.
          */
-        ...(req.requireNoTraining || free
-          ? { provider: { ...(req.requireNoTraining ? { data_collection: "deny" } : {}), ...(free ? { max_price: { prompt: 0, completion: 0 } } : {}) } }
+        ...(req.requireNoTraining || free || req.json
+          ? { provider: {
+              ...(req.requireNoTraining ? { data_collection: "deny" } : {}),
+              ...(free ? { max_price: { prompt: 0, completion: 0 } } : {}),
+              // Structured output: only an endpoint that honours response_format may take it.
+              ...(req.json ? { require_parameters: true } : {}),
+            } }
           : {}),
+        ...(req.json ? { response_format: { type: "json_schema", json_schema: { name: req.json.name, schema: req.json.schema, strict: false } } } : {}),
         ...(free ? { usage: { include: true } } : {}),
       }),
     });
