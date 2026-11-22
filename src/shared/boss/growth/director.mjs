@@ -29,7 +29,33 @@ import { mayAct } from "./roster.mjs";
 
 export const MAX_CARDS = 3;
 export const MAX_QUEUE_PER_BUSINESS = 3;
-export const STATES = Object.freeze(["decided", "paused", "held: no data", "held: no model"]);
+export const MAX_OPEN_PER_BUSINESS = 3;
+/** A Decide card she answered (or one still waiting) is not raised again for this many days. */
+export const ASKED_DAYS = 28;
+export const STATES = Object.freeze(["decided", "paused", "held: no data", "held: no model", "held: roster", "held: error"]);
+
+/**
+ * The risk rules every draft of a brand is checked against, whatever its roster entry lists (the
+ * roster's `limits:` add to these, never remove). A rule whose words are not in the risk brain holds
+ * the draft: a check against a rule the model never saw is not a check.
+ */
+export const REQUIRED_RULES = Object.freeze({
+  "*": Object.freeze(["R-PRF-01", "R-PRF-02", "R-END-01"]),
+  "approvalprep": Object.freeze(["R-ADV-13"]),
+  "a-player-mode": Object.freeze(["R-ADV-05", "R-ADV-06"]),
+  "porch-and-party": Object.freeze(["R-END-03"]),
+  "peace-be-still": Object.freeze(["R-END-03"]),
+  "dream-wedding": Object.freeze(["R-END-03"]),
+});
+export function rulesFor(entry) {
+  return [...new Set([...(REQUIRED_RULES["*"] ?? []), ...(REQUIRED_RULES[entry?.key] ?? []), ...(entry?.limits ?? [])])];
+}
+
+/** The claims rules with their words, or the ids whose words are missing (the draft is then held). */
+export function claimRules(entry, riskMd) {
+  const rules = rulesFor(entry).map((id) => ({ id, text: ruleText(riskMd, id) }));
+  return { rules: rules.filter((r) => r.text), missing: rules.filter((r) => !r.text).map((r) => r.id) };
+}
 
 const clip = (s, n) => String(s ?? "").replace(/\s+/g, " ").trim().slice(0, n);
 
@@ -97,11 +123,29 @@ export function enforceHolds(decision, summary) {
   return { decision: { ...decision, test: null }, dropped: `held: ${hold} — no new-format test on ${decision.test.channel} (${decision.test.what})` };
 }
 
+/**
+ * THE NAMING GUARD (her ruling, spry brain 21 Nov 2026; USPTO sn 98839129). A hard stop on exact
+ * names, so it is code, run on every draft of every brand before the claims model, and its words are
+ * in the claims prompt too:
+ *   - "Black Bible Chat" only as Hush Harbor's subtitle, right after "Hush Harbor · ";
+ *   - never "Black Bible Stories" as one phrase, nor #blackbiblestories (say "Bible Stories with Black Faces").
+ * Nothing else about a post (hashtags, music, format) is ever required per post: those are judgement.
+ */
+export const NAMING_RULE = 'NAMING: "Black Bible Chat" appears only as "Hush Harbor · Black Bible Chat & Stories"; never "Black Bible Stories" or #blackbiblestories (a third party\'s trademark application) — say "Bible Stories with Black Faces".';
+export function namingProblems(draft) {
+  const t = String(draft ?? "");
+  const out = [];
+  if (/black\s*bible\s*stories/i.test(t.replace(/#/g, " "))) out.push('says "Black Bible Stories" (a third party\'s trademark application): say "Bible Stories with Black Faces"');
+  const bare = t.replace(/Hush Harbor\s*·\s*Black Bible Chat/gi, "");
+  if (/black\s*bible\s*chat/i.test(bare.replace(/#blackbiblechat/gi, "")) ) out.push('says "Black Bible Chat" outside "Hush Harbor · Black Bible Chat & Stories"');
+  return out;
+}
+
 /** The claims-check prompt: the brand's own risk rules, read from the risk brain by id. */
 export function claimsPrompt({ entry, rules, draft }) {
   return [
     { role: "system", content: 'You check one social post or page lead against a business\'s legal and honesty rules. Answer with JSON only: {"pass": true|false, "broken": ["rule id", ...], "why": "one sentence"}. Fail it if it breaks any rule, names or describes a real child, names a client, investor or customer, invents a review, a person, a result or scarcity, or leaves out a label a rule requires.' },
-    { role: "user", content: `Business: ${entry.label}\n\nRULES\n${rules.map((r) => `${r.id}: ${r.text}`).join("\n")}\n\nDRAFT\n${draft}` },
+    { role: "user", content: `Business: ${entry.label}\n\nRULES\n${rules.map((r) => `${r.id}: ${r.text}`).join("\n")}\n${NAMING_RULE}\n\nDRAFT\n${draft}` },
   ];
 }
 
@@ -135,12 +179,32 @@ export function routeItem(roster, business, item) {
   return { to: "refused", stop: gate.stop, why: gate.why };
 }
 
-/** A proposal: a Decide card unless it is a spend or a new account (refused, written down). */
-export function routeProposal(roster, business, p) {
-  // A hard safety stop, so it is code: the model's own flag OR the plain words of paying out. A price
-  // she would CHARGE ("a $50 add-on") is not spending; "pay", "buy", "boost", "ads" are.
-  const spend = p.costs_money === true || /\b(ads?|advertis\w*|boost(ed|ing)?|paid|pay( for)?|buy|purchase|subscri\w*|sponsor(ed|ship)?|budget|spend\w*)\b/i.test(p.what);
-  const account = /\b(new|open|create|start)\b.{0,30}\b(account|profile|channel|page)\b/i.test(p.what);
+/**
+ * THE SPEND AND ACCOUNT CHECK on a proposal is read by a model (meaning), with a narrow backstop of
+ * paying-out words that can only ADD a refusal. No answer is a refusal: a spend never slips through
+ * because a route was busy.
+ */
+export function spendPrompt(p) {
+  return [
+    { role: "system", content: 'You check one growth proposal for a small business. Answer with JSON only: {"costs_money": true|false, "creates_account": true|false}. costs_money is true when doing it means the business PAYS anyone (ads, boosts, a paid tool or plan upgrade, a freelancer, a sponsorship, a purchase). A price the business would CHARGE customers is not a cost. creates_account is true when it means signing up for or opening a new account, profile or channel on any outside platform. A new page on its own website is not an account.' },
+    { role: "user", content: `PROPOSAL\n${p.what}\n\nWHY\n${p.why ?? ""}` },
+  ];
+}
+export function parseSpend(text) {
+  let j = null;
+  try { j = JSON.parse(/\{[\s\S]*\}/.exec(String(text ?? ""))?.[0] ?? "null"); } catch { j = null; }
+  if (!j || typeof j.costs_money !== "boolean" || typeof j.creates_account !== "boolean") return null;
+  return { costs_money: j.costs_money, creates_account: j.creates_account };
+}
+const PAYING_OUT = /\b(run (paid )?ads|(facebook|meta|google|tiktok|instagram|pinterest) ads|ad (spend|budget)|advertis(e|ing) (on|with)|boost(ed|ing)? (the|a|our|this|it)|sponsor(ed)? (post|placement)|pay (for|a|an|someone)|hire|purchase|buy (ads|followers|reviews|a|an)|upgrade (to|the|our)|pro plan|premium plan)\b/i;
+const NEW_ACCOUNT = /\b(new|open|create|start|sign up for)\b.{0,30}\b(account|profile|handle)\b/i;
+
+/** A proposal: a Decide card unless it is a spend or a new account (refused, written down). `check`
+ * is the model's answer (parseSpend); null means no answer, which refuses. */
+export function routeProposal(roster, business, p, check) {
+  if (check == null) return { to: "refused", stop: "NO_SPEND_CHECK", why: "the spend and account check got no model answer, so it is refused, never carded" };
+  const spend = check.costs_money || p.costs_money === true || PAYING_OUT.test(p.what);
+  const account = check.creates_account || NEW_ACCOUNT.test(p.what);
   const gate = mayAct(roster, { business, action: spend ? "ad" : account ? "create-account" : "propose" });
   return gate.ok ? { to: "card" } : { to: "refused", stop: gate.stop, why: gate.why };
 }

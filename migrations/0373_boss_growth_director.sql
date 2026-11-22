@@ -4,7 +4,7 @@
 -- Noelle, Director of Growth (the name and look follow the roster's casting sheet; she does not pick
 -- names). She counts what each growth business earns (the scoreboard, 0372), decides each week what to
 -- do more or less of, queues work only through tools that already exist (Open Loops rows for approved
--- pipelines, Decide cards for anything new), and reports with her evidence. She never posts, sends,
+-- pipelines, worked by the agent sessions; judgement calls in Decide for anything new), and reports with her evidence. She never posts, sends,
 -- spends, creates an account or deletes anything (src/shared/boss/growth/roster.mjs mayAct).
 --
 -- 1. The seat (emp_growth).
@@ -33,7 +33,7 @@ CREATE TABLE IF NOT EXISTS growth_decisions (
   cycle       TEXT NOT NULL,             -- the Central day the cycle ran (YYYY-MM-DD)
   business    TEXT NOT NULL,             -- the roster key
   label       TEXT NOT NULL,
-  state       TEXT NOT NULL CHECK (state IN ('decided','paused','held: no data','held: no model')),
+  state       TEXT NOT NULL CHECK (state IN ('decided','paused','held: no data','held: no model','held: roster','held: error')),
   decision    TEXT NOT NULL,
   evidence    TEXT NOT NULL DEFAULT '[]', -- JSON list of plain lines
   test        TEXT,                      -- JSON { channel, format, what, number, stop } or NULL

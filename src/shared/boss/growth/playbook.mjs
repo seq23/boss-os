@@ -38,6 +38,16 @@ Use every account she already has; add or take one away only on evidence.
 ## Channels beyond search and social (from the hostile review)
 App Store launch kit (ratings prompt at a good moment, featuring nominations, in-app events, store text written for AI answers); win-back and re-booking of past requesters and customers; for Porch & Party a review ask and a referral reward tied to a booking, never to a review (her 21 Nov 2026 ruling, "reverse those decisions for pnp", replaced the 18 Oct "no review ask" and "no reward"; she has a few Google reviews, so do not bother her about reviews often); B2B2C partners (housing counselors, legal aid, VA officers, venues, churches); cross-selling between her own businesses; email conversion of lists she already has; KDP and marketplaces; commission-only affiliates with approved copy; listicle and GEO inclusion; reporter requests; shareable outputs.
 
+## Her suggestions are inputs, never per-post rules
+Her ideas are weighed like a veteran would weigh them, against research and our own numbers, per platform and per post. None of them is required on every post (her words, 21 Nov 2026: "none of my suggestions must be on every post ----just do what a veteran would do"). The only hard rules are the risk brain and the naming guard. For Peace Be Still (spry brain, 21 Nov 2026) her suggestions are:
+- alternate the screenshot dramas with Pixar-style animated characters living the story (find who leads with it and how);
+- real app screenshots of how it works, Hush Harbor first;
+- posts about the privacy feature;
+- the mindset side (quantum leaps, manifesting), introduced lightly and in a neutral tone. She prefers one account to separate faith and mindset accounts, but that is not a hard no. Research it and propose. Any proposal says how it keeps manifest words away from where the faith door sees them (the brand's do-not);
+- hashtags and licence-safe trending audio from the platform's own library, where they help that post.
+
+Naming (enforced in code on every draft): "Black Bible Chat" appears only as "Hush Harbor · Black Bible Chat & Stories". Never write "Black Bible Stories" or #blackbiblestories (USPTO sn 98839129); say "Bible Stories with Black Faces".
+
 ## Email capture
 Only self-typed addresses; one-click unsubscribe and the mailing address in every marketing email; at most one email per 3 days; stop on purchase; each business from its own sender; Time-2-Read writes to parents only; a cross-sell to another brand's list only to people who ticked marketing. Never inside the no-account apps.
 

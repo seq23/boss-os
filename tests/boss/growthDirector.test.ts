@@ -49,35 +49,40 @@ const SPRY = `## Growth
 - paused: YouTube is paused
 `;
 const RISK = `| R-PRF-01 | No invented reviews, testimonials or ratings. | 16 CFR 465 |
+| R-PRF-02 | No invented people. | 16 CFR 465 |
+| R-END-01 | Affiliate links are labelled. | 16 CFR 255 |
+| R-END-03 | AI-made clips carry "Made with AI". | platforms |
 | R-ADV-13 | ApprovalPrep is marketed as self-service, never as paid credit repair. | CROA |
 | R-AI-02 | Agents never create an account. | judgment |`;
 
 async function brain(slug: string, body: string) {
   await env.DB.prepare(`INSERT INTO brains (slug, title, body_md, updated_at) VALUES (?, ?, ?, ?) ON CONFLICT(slug) DO UPDATE SET body_md = excluded.body_md`).bind(slug, slug, body, NOW).run();
 }
-async function reading(measure: string, business: string, kind: string, channel: string, value: number | null) {
-  await env.DB.prepare(`INSERT INTO growth_readings (day, measure, business, kind, channel, language, value, unread, at) VALUES (?,?,?,?,?,?,?,?,?)`)
-    .bind(DAY, measure, business, kind, channel, "en", value, value === null ? "not read: test" : null, NOW).run();
+async function reading(measure: string, business: string, kind: string, channel: string, value: number | null, day = DAY) {
+  await env.DB.prepare(`INSERT OR REPLACE INTO growth_readings (day, measure, business, kind, channel, language, value, unread, at) VALUES (?,?,?,?,?,?,?,?,?)`)
+    .bind(day, measure, business, kind, channel, "en", value, value === null ? "not read: test" : null, NOW).run();
 }
 const decisions = async () => ((await env.DB.prepare(`SELECT * FROM growth_decisions ORDER BY business`).all<any>()).results ?? []);
-const loops = async () => ((await env.DB.prepare(`SELECT * FROM owner_open_loops WHERE owner = 'emp_growth'`).all<any>()).results ?? []);
-const cards = async () => ((await env.DB.prepare(`SELECT * FROM approvals WHERE kind = 'growth_proposal'`).all<any>()).results ?? []);
+const loops = async () => ((await env.DB.prepare(`SELECT * FROM owner_open_loops WHERE source_key LIKE 'growth#%'`).all<any>()).results ?? []);
+const cards = async () => ((await env.DB.prepare(`SELECT a.* FROM approvals a JOIN judgement_calls j ON j.approval_id = a.id WHERE j.resume_kind = 'growth_proposal' AND a.status = 'pending'`).all<any>()).results ?? []);
 const noTrends = (async () => new Response("", { status: 503 })) as unknown as typeof fetch;
 
 /** A model that answers by job: the decision (per business label) and the claims check. */
-function fake(decide: Record<string, unknown> | null, claims: (draft: string) => unknown): { model: Model; seen: string[] } {
+const SPEND = (t: string) => ({ costs_money: /\$20|Boost/.test(t), creates_account: /Nextdoor account/.test(t) });
+function fake(decide: Record<string, unknown> | null, claims: (draft: string) => unknown, spend: (t: string) => unknown = SPEND): { model: Model; seen: string[] } {
   const seen: string[] = [];
   const model: Model = async (_e, messages, job) => {
     const text = messages.map((m) => m.content).join("\n");
     seen.push(text);
     if (job === "growth-claims") { const draft = /DRAFT\n([\s\S]*)$/.exec(text)?.[1] ?? text; return JSON.stringify(claims(draft)); }
+    if (job === "growth-spend") return JSON.stringify(spend(text));
     return decide ? JSON.stringify(decide) : null;
   };
   return { model, seen };
 }
 
 beforeEach(async () => {
-  await env.DB.exec("DELETE FROM growth_decisions; DELETE FROM growth_readings; DELETE FROM owner_open_loops WHERE owner = 'emp_growth'; DELETE FROM approvals WHERE kind = 'growth_proposal';");
+  await env.DB.exec("DELETE FROM growth_decisions; DELETE FROM growth_readings; DELETE FROM owner_open_loops WHERE source_key LIKE 'growth%' OR owner = 'emp_growth'; DELETE FROM approvals WHERE id IN (SELECT approval_id FROM judgement_calls WHERE resume_kind = 'growth_proposal'); DELETE FROM judgement_calls WHERE resume_kind = 'growth_proposal';");
   await brain("porch-and-party", PNP); await brain("spry", SPRY); await brain("risk", RISK);
 });
 
@@ -118,7 +123,7 @@ describe("one real cycle", () => {
     // Only the clean, approved draft became a to-do for a pipeline; the testimonial never did.
     const l = await loops();
     expect(l).toHaveLength(1); // ApprovalPrep's drafts are all on unapproved channels: cards, not rows
-    expect(l.some((x) => /done by 1 December/.test(x.next_step))).toBe(true);
+    expect(l.some((x) => /done by 1 December/.test(x.next_step) && x.owner === "claude" && /approved instagram pipeline only/.test(x.next_step))).toBe(true);
     expect(l.some((x) => /happy customer/.test(x.next_step + x.title))).toBe(false);
     // TikTok is not approved for P&P: her card, never a pipeline row. Spend and accounts: no card.
     const c = await cards();
@@ -182,4 +187,91 @@ describe("outages and holds", () => {
     expect(seen.some((t) => /named client|confidential/.test(t))).toBe(false);
     expect((await decisions()).some((x) => x.business === "porch-and-party")).toBe(false);
   });
+});
+
+describe("review round (21 Nov): her answer, no piling up, a lost record, a broken entry", () => {
+  const OK = (draft: string) => /★/.test(draft) ? { pass: false, broken: ["R-PRF-01"], why: "x" } : { pass: true, broken: [], why: "" };
+  const seed = async (t = NOW) => {
+    await reading("pnp-requests", "porch-and-party", "requests", "all", 2, dayIdInZone(t));
+    await reading("ap-sales", "approvalprep", "sales", "site", 1, dayIdInZone(t));
+  };
+
+  it("her yes on a card opens the follow-on to-do; her no is not asked again for four weeks", async () => {
+    const { apiJson } = await import("./helpers");
+    await seed();
+    const { model } = fake(DECISION, OK);
+    await runGrowthDirector(env as any, NOW, { model, fetchImpl: noTrends });
+    const c = await cards();
+    const tiktok = c.find((x) => /tiktok/i.test(x.title))!;
+    const addOn = c.find((x) => /refresh add-on/.test(x.title))!;
+    const yes = await apiJson<any>(`/api/approvals/${tiktok.id}/decide`, { method: "POST", body: { decision: "approved" } });
+    expect(yes.status).toBeLessThan(300);
+    const follow = await env.DB.prepare(`SELECT * FROM owner_open_loops WHERE source_key LIKE 'growth-yes#%'`).first<any>();
+    expect(follow.owner).toBe("claude");
+    expect(follow.next_step).toMatch(/She approved: add reel on tiktok to Porch & Party's Growth roster entry/);
+    await apiJson<any>(`/api/approvals/${addOn.id}/decide`, { method: "POST", body: { decision: "rejected", note: "not now" } });
+    // Next week, the same ideas come back from the model: neither is asked again.
+    await seed(NOW + 7 * 86_400_000);
+    await runGrowthDirector(env as any, NOW + 7 * 86_400_000, { model, fetchImpl: noTrends });
+    const again = (await cards()).map((x) => x.title);
+    expect(again.some((t) => /^Porch & Party: (try reel on tiktok|Add a \$50 porch refresh)/.test(t))).toBe(false);
+    expect(again.length).toBeGreaterThan(0); // other ideas still come through
+  }, 60_000);
+
+  it("two cycles: one pipeline row per business × channel × format, a cap on open rows, last week's waiting cards replaced", async () => {
+    await seed();
+    const many = { ...DECISION, queue: [{ channel: "instagram", format: "reel", draft: "Porch reel", why: "x" }, { channel: "instagram", format: "carousel", draft: "Porch carousel", why: "x" }, { channel: "facebook", format: "post", draft: "Porch post", why: "x" }], proposals: [] };
+    const { model } = fake(many, OK);
+    await runGrowthDirector(env as any, NOW, { model, fetchImpl: noTrends });
+    const first = (await loops()).filter((l) => l.status === "open" && /porch-and-party/.test(l.source_key));
+    expect(first).toHaveLength(3); // instagram-reel, instagram-carousel, facebook-post: one each
+    await seed(NOW + 7 * 86_400_000);
+    await runGrowthDirector(env as any, NOW + 7 * 86_400_000, { model, fetchImpl: noTrends });
+    const second = (await loops()).filter((l) => l.status === "open" && /porch-and-party/.test(l.source_key));
+    expect(second).toHaveLength(3);
+    // A fourth kind of item waits: the cap holds.
+    await seed(NOW + 14 * 86_400_000);
+    const { model: m2 } = fake({ ...many, queue: [{ channel: "instagram", format: "story", draft: "x", why: "x" }] }, OK);
+    await brain("porch-and-party", PNP.replace("instagram [reel, carousel]", "instagram [reel, carousel, story]"));
+    await runGrowthDirector(env as any, NOW + 14 * 86_400_000, { model: m2, fetchImpl: noTrends });
+    expect((await loops()).filter((l) => l.status === "open" && /porch-and-party/.test(l.source_key))).toHaveLength(3);
+    const acts = JSON.parse((await decisions()).filter((d) => d.business === "porch-and-party").sort((a, b) => b.created_at - a.created_at)[0].actions);
+    expect(acts.find((a: any) => a.kind === "held").why).toMatch(/already has 3 growth to-dos open/);
+  }, 60_000);
+
+  it("an error on one business keeps the others' record and writes its own as held: error", async () => {
+    await seed();
+    const { model } = fake(DECISION, OK);
+    let n = 0;
+    const flaky: Model = async (e, m, job) => { if (job === "growth-decide" && ++n === 2) throw new Error("D1 hiccup"); return model(e, m, job); };
+    await runGrowthDirector(env as any, NOW, { model: flaky, fetchImpl: noTrends });
+    const rows = await decisions();
+    expect(rows.find((r) => r.business === "porch-and-party").state).toBe("decided");
+    expect(rows.find((r) => r.business === "approvalprep")).toMatchObject({ state: "held: error" });
+  }, 30_000);
+
+  it("a broken roster entry is held, never a decision, and cannot make a green exit", async () => {
+    await brain("porch-and-party", PNP.replace("- money number: booked requests\n", ""));
+    await brain("spry", SPRY.replace("- money number: sales\n", ""));
+    await seed();
+    const { model, seen } = fake(DECISION, OK);
+    await expect(runGrowthDirector(env as any, NOW, { model, fetchImpl: noTrends })).rejects.toThrow(/HELD_ALL/);
+    expect((await decisions()).filter((d) => d.state === "held: roster").map((d) => d.business).sort()).toEqual(["approvalprep", "porch-and-party"]);
+    expect(seen).toHaveLength(0);
+  }, 30_000);
+
+  it("no Open Loops title ever reaches a model; each business sees only its own earlier work", async () => {
+    await env.DB.prepare(`INSERT INTO owner_open_loops (id, title, finish_line, next_step, owner, next_date, business, section, status, source, created_at, updated_at)
+      VALUES ('olp_secretish', 'Call Valerie about the Hendersons', 'x', 'x', 'emp_growth', '2026-11-30', 'porch-and-party', 'not_finished', 'open', 'agent_report', 1, 1)`).run();
+    await seed();
+    const { model, seen } = fake(DECISION, OK);
+    await runGrowthDirector(env as any, NOW, { model, fetchImpl: noTrends });
+    expect(seen.some((t) => /Hendersons/.test(t))).toBe(false);
+    await seed(NOW + 7 * 86_400_000);
+    const { model: m2, seen: s2 } = fake(DECISION, OK);
+    await runGrowthDirector(env as any, NOW + 7 * 86_400_000, { model: m2, fetchImpl: noTrends });
+    const ap = s2.find((t) => /Business: ApprovalPrep/.test(t))!;
+    expect(ap).not.toMatch(/instagram reel \(queued\)/); // P&P's queued reel is not ApprovalPrep's
+    expect(s2.find((t) => /Business: Porch & Party/.test(t))).toMatch(/instagram reel \(queued\)/);
+  }, 60_000);
 });
