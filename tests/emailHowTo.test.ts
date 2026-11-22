@@ -1,3 +1,4 @@
+import { EMPLOYEE_LOCAL_PARTS } from "../scripts/ops/notify.mjs";
 import { describe, expect, it } from "vitest";
 import { readFileSync } from "node:fs";
 import path from "node:path";
@@ -43,7 +44,9 @@ describe("the email how-to page matches the mailbox", () => {
     expect(DOC).toContain(`**${BOSS_INTAKE_MAILBOX}**`);
     for (const s of BOSS_INTAKE_SENDERS) expect(DOC).toContain(s);
     const inboxes = (RULES.rules as Array<{ matchers: Array<{ value: string }> }>).map((r) => String(r.matchers[0]?.value ?? "")).filter((a) => a.endsWith("@sequoiataylor.com") && a !== BOSS_INTAKE_MAILBOX);
-    expect(inboxes.length).toBe(8);
+    // Every employee's routed inbox (one per sender in notify.mjs's ROSTER, boss@ aside), none missed.
+    expect(inboxes.length).toBe(EMPLOYEE_LOCAL_PARTS.length);
+    expect(inboxes.length).toBeGreaterThan(0);
     for (const a of inboxes) expect(DOC).toContain(a.split("@")[0] + "@");
     expect(DOC).not.toMatch(/westpeek|joinwestpeek/i);
   });

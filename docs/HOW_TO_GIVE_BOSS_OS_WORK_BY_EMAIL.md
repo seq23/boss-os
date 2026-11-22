@@ -14,7 +14,7 @@ front door.
 
 You do not need to name anybody. Simone (Chief of Staff) reads it, splits it into its asks, and gives
 each ask to the employee who can do it. If you want a particular person, write to them directly:
-danielle@, camille@, monique@, zora@, toni@, imani@ or kendra@sequoiataylor.com, or put their
+danielle@, camille@, monique@, zora@, toni@, imani@, kendra@ or noelle@sequoiataylor.com, or put their
 name with a # in front (#danielle). Both are optional shortcuts.
 
 **Or use the "Tell Simone" box at the top of Today** in Boss OS. It is the same as emailing
