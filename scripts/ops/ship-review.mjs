@@ -186,6 +186,15 @@ export const isBlank = (m) => (m?.words ?? 0) < 40 && (m?.media ?? 0) === 0;
 export const pageSlug = (u) => { try { const p = new URL(u).pathname.replace(/\/+$/, ""); return p ? p.slice(1).replace(/[^a-z0-9]+/gi, "-").slice(0, 48) : "home"; } catch { return "page"; } };
 
 /**
+ * Dark on every page of a review (22 Nov 2026: a CSS change across three libraries could not be judged
+ * in dark on /about or a /daily/ page when only the first page was read dark). Each page is read dark
+ * until one shows the site has no dark scheme ("none"); a dark that could not be reached ("not read")
+ * keeps the next page trying, and each page that tried says so in its facts.
+ */
+export const readDark = (state) => state !== "none";
+export const nextDarkState = (state, m) => (m.dark === "none" ? "none" : m.shot ? "has" : state);
+
+/**
  * One page: phone light + dark and laptop. Several pages (a comma list, the pages a change touched):
  * phone and laptop of each, at most 4 pages, so every capture still fits one review.
  */
@@ -197,13 +206,13 @@ async function capturePage(a, out) {
   const b = await browser();
   const shots = [], facts = [], blanks = [];
   try {
+    let darkState = "unknown";
     for (const target of targets) {
       const url = a.kind === "email" ? pathToFileURL(resolve(target)).href : target;
       const pre = many ? `${pageSlug(target)}-` : "";
-      // Dark is read on the first page of a review (one page's dark tells whether the site has one).
       const sizes = [
         { label: `${pre}phone-390-light.png`, width: 390, height: 844, scheme: "light" },
-        ...(target === targets[0] ? [{ label: `${pre}phone-390-dark.png`, width: 390, height: 844, scheme: "dark" }] : []),
+        ...(readDark(darkState) ? [{ label: `${pre}phone-390-dark.png`, width: 390, height: 844, scheme: "dark" }] : []),
         { label: `${pre}laptop-1280-light.png`, width: 1280, height: 800, scheme: "light" },
       ];
       let lightColors = null;
@@ -213,6 +222,7 @@ async function capturePage(a, out) {
         const fbase = s.label.replace(/\.png$/, "");
         const m = await shoot(b, url, { ...s, file, lightColors: s.scheme === "dark" ? lightColors : null, focus: s.scheme === "light" ? (a.focus ?? []) : [], focusFile: (i) => join(out, `${fbase}-focus-${i + 1}.png`) });
         if (s === sizes[0]) lightColors = m.colors;
+        if (s.scheme === "dark") darkState = nextDarkState(darkState, m);
         if (s.scheme === "dark" && (m.dark === "none" || m.dark === "not read")) {
           say(m.dark === "none" ? "dark: the site has no dark scheme (the page looks the same with the phone in dark mode); nothing to judge" : "dark: not read (a theme toggle was there but the harness could not reach a dark page)");
           continue;
@@ -253,15 +263,42 @@ function captureVideo(a, out) {
   return { shots, facts: [`video length ${dur.toFixed(1)} s; the contact sheet holds 12 frames, one every ${(dur / 12).toFixed(1)} s, left to right, top to bottom`] };
 }
 
-function captureImages(a) {
-  const t = String(a.target);
-  const files = existsSync(t) && statSync(t).isDirectory()
-    ? readdirSync(t).filter((f) => IMAGE_EXT.test(f)).sort().map((f) => join(t, f))
-    : t.split(",").map((s) => s.trim()).filter(Boolean);
-  const shots = files.filter((f) => IMAGE_EXT.test(f) && existsSync(f)).slice(0, 8).map((f) => ({ path: resolve(f), label: basename(f) }));
-  return { shots, facts: files.length > 8 ? [`${files.length} images given; the first 8 are judged`] : [] };
+/** An image's pixel size (ffprobe), or null when it cannot be read. */
+function imageSize(f) {
+  const r = spawnSync("ffprobe", ["-v", "error", "-select_streams", "v:0", "-show_entries", "stream=width,height", "-of", "csv=p=0:s=x", f], { encoding: "utf8" });
+  const m = /^(\d+)x(\d+)/.exec(String(r.stdout || "").trim());
+  return m ? { width: Number(m[1]), height: Number(m[2]) } : null;
 }
 
+// A tall screenshot is read in tiles at real size, the same as a page capture (22 Nov 2026: whole-page
+// 390 px shots, 7,000 px tall, were shrunk to ~80 px wide and the review stopped CAPTURE_INCOMPLETE).
+export const MAX_IMAGE_SHOTS = 24;
+function captureImages(a, out) {
+  const t = String(a.target);
+  const files = (existsSync(t) && statSync(t).isDirectory()
+    ? readdirSync(t).filter((f) => IMAGE_EXT.test(f)).sort().map((f) => join(t, f))
+    : t.split(",").map((s) => s.trim()).filter(Boolean)).filter((f) => IMAGE_EXT.test(f) && existsSync(f));
+  const shots = [], facts = [], left = [], stems = new Map();
+  for (const f of files) {
+    // Two folders' home-390.png must not share a label (the reply names each one it looked at).
+    const base = basename(f, extname(f)), n = (stems.get(base) ?? 0) + 1; stems.set(base, n);
+    const stem = n > 1 ? `${base}-${n}` : base;
+    const size = imageSize(f);
+    if (!size) throw stop(9, "NOTHING_CAPTURED", `ffprobe could not read the size of ${f}, so a tall image would be judged shrunk; install ffmpeg or fix the file`);
+    const parts = tilesFor(size.height, size.width);
+    if (shots.length + parts.length > MAX_IMAGE_SHOTS) { left.push(basename(f)); continue; }
+    if (parts.length === 1) { shots.push({ path: resolve(f), label: n > 1 ? `${stem}${extname(f)}` : basename(f) }); continue; }
+    mkdirSync(out, { recursive: true });
+    parts.forEach((p, i) => {
+      const tile = join(out, `${stem}-${i + 1}of${parts.length}.png`);
+      spawnSync("ffmpeg", ["-y", "-v", "error", "-i", f, "-vf", `crop=${size.width}:${p.height}:0:${p.y}`, "-frames:v", "1", tile]);
+      if (existsSync(tile)) shots.push({ path: tile, label: basename(tile) });
+      else facts.push(`${basename(f)} part ${i + 1} of ${parts.length}: not read (the crop failed)`);
+    });
+  }
+  if (left.length) facts.push(`${files.length} images given; ${left.length} not judged (over ${MAX_IMAGE_SHOTS} shots): ${left.join(", ")}`);
+  return { shots, facts };
+}
 
 /**
  * A YOUTUBE CHANNEL IS READ THROUGH THE OFFICIAL DATA API (20 Nov 2026: a headless browser gets a blank
@@ -329,7 +366,7 @@ ${thumbs.length ? "" : `<div style="color:#606060;padding:32px 0">This channel d
 export async function capture(a, out, deps = {}) {
   if (YOUTUBE_CHANNEL.test(String(a.target)) && (a.kind === "profile" || a.kind === "page")) return captureYouTube(a, out, deps);
   if (a.kind === "video") return captureVideo(a, out);
-  if (a.kind === "images") return captureImages(a);
+  if (a.kind === "images") return captureImages(a, out);
   return capturePage(a, out);
 }
 
@@ -362,7 +399,7 @@ async function captureOnGithub(a, id, out, { run = spawnSync, wait = (ms) => new
     runId = (JSON.parse(l.stdout || "[]").find((r) => r.displayTitle === `ship-review capture ${id}`) ?? {}).databaseId ?? null;
   }
   if (!runId) throw stop(9, "GITHUB_CAPTURE", `the capture run for ${id} never appeared in two minutes`);
-  const w = gh(["run", "watch", String(runId), "-R", CAPTURE_REPO, "--exit-status", "-i", "15"], { timeout: 25 * 60_000 });
+  const w = gh(["run", "watch", String(runId), "-R", CAPTURE_REPO, "--exit-status", "-i", "30"], { timeout: 25 * 60_000 });
   if (w.status !== 0) throw stop(9, "GITHUB_CAPTURE", `the capture run ${runId} failed or timed out (gh run view ${runId} -R ${CAPTURE_REPO} --log-failed)`);
   const dl = gh(["run", "download", String(runId), "-R", CAPTURE_REPO, "-n", `ship-capture-${id}`, "-D", out]);
   if (dl.status !== 0) throw stop(9, "GITHUB_CAPTURE", `could not download the capture of run ${runId}: ${String(dl.stderr).trim().slice(0, 200)}`);
