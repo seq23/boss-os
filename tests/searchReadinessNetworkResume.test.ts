@@ -179,7 +179,7 @@ exit $rc
     const r = spawnSync("/bin/bash", [join(ops, "search-readiness-fix.sh"), ...args], { env, cwd: repo, encoding: "utf8", timeout: 60000 });
     return { rc: r.status, out: `${r.stdout}${r.stderr}` };
   };
-  return { home, repo, ops, env, net, state, mark: join(state, "run-unfinished.json"), lock: join(state, "run.flock"), read, run };
+  return { home, repo, ops, env, net, state, mark: join(state, "run-unfinished.json"), lock: join(state, "run.lock.flock"), read, run };
 }
 
 const EMPTY = "QUEUE total=0 workable=0 protected=0 no_repo=0";

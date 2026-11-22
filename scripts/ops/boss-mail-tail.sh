@@ -68,11 +68,15 @@ echo "[tail] $(printf '%s' "$ROWS" | grep -c . || true) tailed-outcome row(s) si
 
 PENDING="$(printf '%s\n' "$ROWS" | awk -F'\t' -v tailed="$TAILED_FILE" 'BEGIN{while((getline l < tailed)>0) t[l]=1} $1!="" && !($1 in t)')"
 COUNT="$(printf '%s' "$PENDING" | grep -c . || true)"
-FIXLOCK="$STATE_DIR/.agent-lock"
+# The running tail agent holds this kernel lock (lib/flock.sh) for its whole life; the tick only asks.
+FIXLOCK="$STATE_DIR/.agent-lock.flock"
 if [ "$COUNT" -eq 0 ]; then echo "[tail] nothing new"; exit 0; fi
-if [ -d "$FIXLOCK" ] && kill -0 "$(cat "$FIXLOCK/pid" 2>/dev/null)" 2>/dev/null; then
-  echo "[tail] $COUNT email(s) queued behind the agent running since $(cat "$FIXLOCK/started_at" 2>/dev/null)"; exit 0
-fi
+BUSY=0; lock_busy "$FIXLOCK" || BUSY=$?
+case $BUSY in
+  0) echo "[tail] $COUNT email(s) queued behind the agent already running"; exit 0 ;;
+  1) ;;
+  *) echo "[tail] NAMED STOP [LOCK_FAILED] cannot read $FIXLOCK; not dispatching blind (the next tick retries)"; exit 1 ;;
+esac
 rm -rf "$FIXLOCK"
 
 STAMP="$(date -u +%Y%m%dT%H%M%SZ)"
@@ -143,12 +147,13 @@ so in the report rather than omitting it):
      line "FRICTION_FIXED: <n>". No tables, no markdown.
 PROMPT
 
-mkdir -p "$FIXLOCK"
-date -u +%Y-%m-%dT%H:%M:%SZ > "$FIXLOCK/started_at"
 printf '%s\n' "$PENDING" | awk -F'\t' '{print $1}' >> "$TAILED_FILE"
 CLAUDE="${BOSS_MAIL_TAIL_CLAUDE_BIN:-$(command -v claude || echo /opt/homebrew/bin/claude)}"
 nohup bash "$REPO/scripts/ops/boss-mail-tail-run.sh" "$PROMPT_FILE" "$TAIL_LOG" "$FIXLOCK" "$CLAUDE" "$REPORT_FILE" "$SUBJECTS" "$LOCAL_STAMP" </dev/null >/dev/null 2>&1 &
-echo "$!" > "$FIXLOCK/pid"
-disown "$!" 2>/dev/null
-echo "[tail] agent dispatched (pid $(cat "$FIXLOCK/pid")) for $COUNT email(s): $SUBJECTS"
-exit 0
+AGENT_PID=$!
+disown "$AGENT_PID" 2>/dev/null
+# This tick still holds the tick lock, so no other tick can dispatch until the runner has taken the agent lock.
+i=0; while [ "$i" -lt 150 ] && ! lock_busy "$FIXLOCK" && kill -0 "$AGENT_PID" 2>/dev/null; do sleep 0.1; i=$((i + 1)); done
+if lock_busy "$FIXLOCK"; then echo "[tail] agent dispatched (pid $AGENT_PID) for $COUNT email(s): $SUBJECTS"; exit 0; fi
+echo "[tail] NAMED STOP [AGENT_NOT_STARTED] the tail agent (pid $AGENT_PID) never took $FIXLOCK; see $STATE_DIR/report.log"
+exit 1

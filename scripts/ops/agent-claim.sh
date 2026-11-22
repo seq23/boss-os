@@ -66,7 +66,7 @@ LOCK_FILE="${BOSS_OS_HOME:-$HOME/.boss-os}/agent-claim.flock"
 . "$REPO/scripts/ops/lib/flock.sh"
 LOCK_RC=0; hold_lock "$LOCK_FILE" || LOCK_RC=$?
 case $LOCK_RC in
-  0) trap release_lock EXIT ;;   # ours until this shell exits
+  0) ;;   # ours until this shell exits (hold_lock set release_lock as the EXIT trap)
   1) exit 0 ;;                   # a claim is already running; this tick has nothing to add
   *) echo "agent-claim: NAMED STOP [CLAIM_LOCK_UNAVAILABLE] could not take the lock on $LOCK_FILE; no claim this tick." >&2
      exit 3 ;;

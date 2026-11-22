@@ -5,7 +5,15 @@
 #                    1 = another run holds it (the caller steps aside, exit 0)
 #                    2 = it cannot be locked at all (the caller's NAMED STOP)
 #   lock_busy FILE   0 = a run holds FILE now, 1 = nobody does, 2 = it cannot tell. Never takes it.
-#   release_lock     lets go at once (normally the holder notices this shell is gone within a second)
+#                    On 0 it sets `trap release_lock EXIT`, so a normal exit frees the lock AT ONCE. A caller that
+#                    sets its own EXIT trap later calls release_lock inside it (tests/opsFlock.test.ts holds every
+#                    job to that).
+#   release_lock     lets go now and waits until the lock is really free; says LOCK_LOST if the holder was killed
+#
+# THE SWITCH-OVER FROM THE OLD DIRECTORY LOCK (22 Nov 2026). Each lock FILE is its old directory's path plus
+# ".flock". A run started by the old code holds that directory, with its pid inside, and never looks at FILE. So while
+# such a directory exists, a live pid in it counts as busy (both calls) and a dead one is removed. Once every old run
+# has ended no directory is left, and this costs one `[ -d ]`.
 #
 # Why not `mkdir "$LOCK"` any more: a directory lock is a mutex only if the `mkdir` binary is one atomic mkdir(2). The
 # ubuntu-26.04 runners ship uutils coreutils, whose mkdir checks for the path and then creates it, so several racers all
@@ -24,7 +32,7 @@ hold_lock() {
   mkdir -p "$(dirname "$file")" 2>/dev/null || return 2
   # The holder reads this shell's pid ($$ is the main shell's, also inside the process substitution).
   exec 8< <(perl -MFcntl=:flock -MErrno -e '
-    my ($file, $shell) = @ARGV; $| = 1;
+    my ($file, $shell) = @ARGV; $| = 1; $SIG{TERM} = sub { exit 0 };  # release_lock: leave quietly, no "Terminated" line
     open(my $fh, ">>", $file) or do { print "error\n"; exit 2 };
     flock($fh, LOCK_EX | LOCK_NB) or do { print(($!{EWOULDBLOCK} ? "busy" : "error") . "\n"); exit 1 };
     print "held $$\n"; close STDOUT;
@@ -34,17 +42,32 @@ hold_lock() {
   read -r -t 15 -u 8 state LOCK_HOLDER_PID
   exec 8<&-
   case "$state" in
-    held) LOCK_HELD_FILE="$file"; return 0 ;;
+    held) LOCK_HELD_FILE="$file" ;;
     busy) return 1 ;;
     *) return 2 ;;
   esac
+  # Held, so no NEW run can start; an OLD-code run may still be inside the old directory lock.
+  if old_lock_live "$file"; then release_lock; return 1; fi
+  [ "${file%.flock}" != "$file" ] && [ -d "${file%.flock}" ] && rm -rf "${file%.flock}"
+  trap release_lock EXIT
+  return 0
 }
 
-# Let go NOW, not within the holder's one-second look: for a job whose next run can start the moment this one ends
-# (agent-claim: the fixed-time claim and the five-minute poll). Use as `trap release_lock EXIT`. Waits (at most ~2 s)
-# until the lock is really free, so the next run never finds it held by a holder that is still on its way out.
+# 0 when FILE's old directory lock (FILE minus ".flock") holds the pid of a live process.
+old_lock_live() {
+  local old="${1%.flock}" pid
+  [ "$old" != "$1" ] && [ -d "$old" ] || return 1
+  pid="$(cat "$old/pid" 2>/dev/null)"
+  [ -n "$pid" ] && kill -0 "$pid" 2>/dev/null
+}
+
+# Let go NOW, not within the holder's one-second look: a run that had just ended still looked "running" to the next
+# check (CI shard 2/4 on #516; 20 of 20 local runs probed right after exit). hold_lock sets it as the EXIT trap. Waits
+# (at most ~2 s) until the lock is really free, so the next run never finds it held by a holder on its way out.
+# A holder already gone was killed from outside while this run worked: the run had no lock, and says so here.
 release_lock() {
   [ -n "${LOCK_HOLDER_PID:-}" ] || return 0
+  kill -0 "$LOCK_HOLDER_PID" 2>/dev/null || echo "NAMED STOP [LOCK_LOST] the holder of ${LOCK_HELD_FILE:-?} (pid $LOCK_HOLDER_PID) was killed while this run worked; another run could have started beside it" >&2
   kill "$LOCK_HOLDER_PID" 2>/dev/null
   local i=0
   while [ "$i" -lt 40 ] && lock_busy "${LOCK_HELD_FILE:-}"; do sleep 0.05; i=$((i + 1)); done
@@ -52,6 +75,7 @@ release_lock() {
 }
 
 lock_busy() {
+  old_lock_live "$1" && return 0
   [ -e "$1" ] || return 1
   perl -MFcntl=:flock -MErrno -e '
     open(my $fh, "<", $ARGV[0]) or exit 2;

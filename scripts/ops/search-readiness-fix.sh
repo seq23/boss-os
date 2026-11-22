@@ -51,7 +51,7 @@ write_status() {
 # MARK's path: while MARK exists launchd runs `--resume-if-unfinished` at most every 15 minutes, which
 # resumes a run nobody holds and never starts a second beside a live one.
 MARK="$STATE_DIR/run-unfinished.json"
-RUN_LOCK="$STATE_DIR/run.flock"
+RUN_LOCK="$STATE_DIR/run.lock.flock"   # the old directory lock was run.lock (lib/flock.sh honours it while it lives)
 mkdir -p "$LOG_DIR" "$STATE_DIR"
 LOG="$LOG_DIR/$(date +%Y-%m-%d-%H%M%S).log"
 say() { echo "[$(date +%H:%M:%S)] $*" | tee -a "$LOG"; }
@@ -156,7 +156,7 @@ take_run_lock() {
     1) say "NAMED STOP [ALREADY_RUNNING] another run holds $RUN_LOCK"; exit 0 ;;
     *) say "NAMED STOP [NO_RUN_LOCK] $RUN_LOCK"; exit 3 ;;
   esac
-  trap '[ -n "${RCS:-}" ] && rm -f "$RCS"' EXIT
+  trap 'release_lock; [ -n "${RCS:-}" ] && rm -f "$RCS"' EXIT   # keeps hold_lock's own release
 }
 
 # Each stop is reported once across resumes. Notes use a distinct receipt so an old repair

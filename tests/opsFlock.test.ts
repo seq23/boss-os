@@ -7,7 +7,7 @@
  */
 import { describe, it, expect } from "vitest";
 import { spawn, spawnSync } from "node:child_process";
-import { mkdtempSync, readFileSync, readdirSync, existsSync } from "node:fs";
+import { mkdtempSync, mkdirSync, writeFileSync, readFileSync, readdirSync, existsSync } from "node:fs";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
 
@@ -76,6 +76,46 @@ describe("lib/flock.sh: one holder, freed however the holder ends", () => {
     expect(sh('hold_lock /dev/null/nope/.lock.flock; echo "rc=$?"').stdout.trim()).toBe("rc=2");
     expect(busy(join(scratch(), "absent"))).toBe("rc=1");
   });
+
+  it("a run that ends normally frees the lock AT ONCE: the next check never sees a finished run as running (CI shard 2/4)", () => {
+    const lock = join(scratch(), ".lock.flock");
+    // The next check runs straight after the job, from the same parent (launchd's next tick, the resume check).
+    const r = sh(`for i in 1 2 3 4 5; do /bin/bash -c 'source "$2"; hold_lock "$1" || exit 9' x "$1" "$2"; lock_busy "$1"; echo "after=$?"; done`, lock, LIB);
+    expect(r.stdout.trim().split("\n")).toEqual(Array(5).fill("after=1"));
+  }, 60000);
+
+  it("a holder killed from outside while the run works is said by name at the end (LOCK_LOST), never silent", () => {
+    const lock = join(scratch(), ".lock.flock");
+    const r = sh('hold_lock "$1" || exit 9; kill -9 "$LOCK_HOLDER_PID"; sleep 0.3; exit 0', lock);
+    expect(r.stderr).toMatch(/NAMED STOP \[LOCK_LOST\]/);
+    expect(sh('hold_lock "$1" || exit 9; exit 0', lock).stderr, "a normal run says nothing").not.toMatch(/LOCK_LOST/);
+  }, 30000);
+});
+
+describe("the switch-over: a run of the OLD code still inside its directory lock", () => {
+  it("a live pid in the old .lock directory is busy for both calls; the next run steps aside", () => {
+    const dir = scratch();
+    const lock = join(dir, ".lock.flock");
+    mkdirSync(join(dir, ".lock"));
+    const old = spawn("sleep", ["20"], { stdio: "ignore" });
+    try {
+      writeFileSync(join(dir, ".lock/pid"), `${old.pid}\n`);
+      expect(busy(lock), "lock_busy").toBe("rc=0");
+      expect(sh('hold_lock "$1"; echo "rc=$?"', lock).stdout.trim(), "hold_lock").toBe("rc=1");
+      expect(existsSync(join(dir, ".lock")), "a live old lock is never removed").toBe(true);
+    } finally { old.kill("SIGKILL"); }
+  }, 30000);
+
+  it("a dead pid in the old directory is not busy, and taking the lock removes the old directory", () => {
+    const dir = scratch();
+    const lock = join(dir, ".lock.flock");
+    mkdirSync(join(dir, ".lock"));
+    const gone = spawnSync("/bin/bash", ["-c", "echo $$"], { encoding: "utf8" }).stdout.trim();
+    writeFileSync(join(dir, ".lock/pid"), `${gone}\n`);
+    expect(busy(lock)).toBe("rc=1");
+    expect(sh('hold_lock "$1"; echo "rc=$?"', lock).stdout.trim()).toBe("rc=0");
+    expect(existsSync(join(dir, ".lock"))).toBe(false);
+  }, 30000);
 });
 
 describe("every scripts/ops job that must run once at a time takes the kernel lock", () => {
@@ -86,8 +126,18 @@ describe("every scripts/ops job that must run once at a time takes the kernel lo
     expect(users.length).toBeGreaterThanOrEqual(10);
     expect(users, "agent-claim takes the shared lock").toContain("agent-claim.sh");
     for (const f of readdirSync(ops).filter((f) => f.endsWith(".sh"))) {
-      const src = readFileSync(join(ops, f), "utf8");
-      expect(src, f).not.toMatch(/mkdir\s+"\$(RUN_)?LOCK"\s+2>/);
+      const code = readFileSync(join(ops, f), "utf8").split("\n").filter((l) => !/^\s*#/.test(l)).join("\n");
+      // Any mkdir of a lock path, with or without -p, by any variable name (FIXLOCK hid from the old guard).
+      expect(code, f).not.toMatch(/mkdir\s+(-p\s+)?"?\$\{?\w*LOCK\w*|mkdir\s+(-p\s+)?"?[^\s"]*lock\b/i);
+    }
+  });
+
+  it("a job that sets its own EXIT trap after taking the lock keeps the lock's release in it", () => {
+    for (const f of users) {
+      const code = readFileSync(join(ops, f), "utf8").split("\n").filter((l) => !/^\s*#/.test(l));
+      const taken = code.findIndex((l) => /hold_lock\s/.test(l));
+      if (taken < 0) continue;
+      for (const l of code.slice(taken).filter((l) => /\btrap\b.*\bEXIT\b/.test(l))) expect(l, f).toMatch(/release_lock/);
     }
   });
 
@@ -106,4 +156,40 @@ describe("every scripts/ops job that must run once at a time takes the kernel lo
       holder.kill("SIGKILL");
     }
   }, 30000);
+});
+
+describe("boss-mail-tail's fix agent holds the kernel lock for its whole life (its old mkdir/pid lock is gone)", () => {
+  /** A copy of the runner's own tree, with a fake agent and a vault runner that does nothing. */
+  function tailTree() {
+    const repo = scratch();
+    mkdirSync(join(repo, "scripts/ops/lib"), { recursive: true });
+    mkdirSync(join(repo, "scripts/vault"), { recursive: true });
+    for (const f of ["boss-mail-tail-run.sh", "lib/flock.sh", "lib/tail-report.mjs"]) {
+      writeFileSync(join(repo, "scripts/ops", f), readFileSync(join(process.cwd(), "scripts/ops", f)));
+    }
+    writeFileSync(join(repo, "scripts/vault/vault.mjs"), "console.log('folded');\n");
+    const state = join(repo, "state");
+    mkdirSync(state);
+    const report = join(state, "report.txt");
+    const claude = join(repo, "fake-claude");
+    writeFileSync(claude, `#!/bin/bash\nsleep 3\nprintf 'subject\\nDone.\\nFRICTION_FIXED: 0\\n' > ${JSON.stringify(report)}\n`, { mode: 0o755 });
+    const prompt = join(state, "prompt.txt");
+    writeFileSync(prompt, "fix it");
+    const lock = join(state, ".agent-lock.flock");
+    const env = { ...(process.env as Record<string, string>), BOSS_OS_REPO: repo, HOME: repo };
+    const args = [join(repo, "scripts/ops/boss-mail-tail-run.sh"), prompt, join(state, "tail.jsonl"), lock, claude, report, "subject", ""];
+    return { state, lock, env, args };
+  }
+
+  it("busy while the agent works, a second agent beside it steps aside, and free the moment it ends", async () => {
+    const t = tailTree();
+    const first = spawn("/bin/bash", t.args, { env: t.env, stdio: "ignore" });
+    const done = new Promise<number | null>((r) => first.on("exit", r));
+    expect(await until(() => busy(t.lock) === "rc=0"), "the running agent holds it").toBe(true);
+    const second = spawnSync("/bin/bash", t.args, { env: t.env, encoding: "utf8", timeout: 20000 });
+    expect(second.status).toBe(0);
+    expect(readFileSync(join(t.state, "report.log"), "utf8")).toMatch(/steps aside/);
+    await done;
+    expect(busy(t.lock), "free straight after the agent ended").toBe("rc=1");
+  }, 60000);
 });
