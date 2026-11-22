@@ -197,13 +197,16 @@ async function capturePage(a, out) {
   const b = await browser();
   const shots = [], facts = [], blanks = [];
   try {
+    let siteHasDark = false;
     for (const target of targets) {
       const url = a.kind === "email" ? pathToFileURL(resolve(target)).href : target;
       const pre = many ? `${pageSlug(target)}-` : "";
-      // Dark is read on the first page of a review (one page's dark tells whether the site has one).
+      // Dark is read on the first page; once that page shows the site has a dark scheme, every page is
+      // read dark too (22 Nov 2026: a CSS change across three libraries could not be judged in dark on
+      // /about or a /daily/ page). A site with none is read dark once, not once per page.
       const sizes = [
         { label: `${pre}phone-390-light.png`, width: 390, height: 844, scheme: "light" },
-        ...(target === targets[0] ? [{ label: `${pre}phone-390-dark.png`, width: 390, height: 844, scheme: "dark" }] : []),
+        ...(target === targets[0] || siteHasDark ? [{ label: `${pre}phone-390-dark.png`, width: 390, height: 844, scheme: "dark" }] : []),
         { label: `${pre}laptop-1280-light.png`, width: 1280, height: 800, scheme: "light" },
       ];
       let lightColors = null;
@@ -217,6 +220,7 @@ async function capturePage(a, out) {
           say(m.dark === "none" ? "dark: the site has no dark scheme (the page looks the same with the phone in dark mode); nothing to judge" : "dark: not read (a theme toggle was there but the harness could not reach a dark page)");
           continue;
         }
+        if (s.scheme === "dark" && m.shot) siteHasDark = true;
         if (s.scheme === "dark") say(m.dark === "toggle" ? "dark: read through the site's own theme toggle" : "dark: the site has its own dark scheme; captured");
         for (const [i, f] of (m.focused ?? []).entries()) {
           if (f.file) shots.push({ path: f.file, label: `${fbase}-focus-${i + 1}.png` });
@@ -389,7 +393,7 @@ async function captureOnGithub(a, id, out, { run = spawnSync, wait = (ms) => new
     runId = (JSON.parse(l.stdout || "[]").find((r) => r.displayTitle === `ship-review capture ${id}`) ?? {}).databaseId ?? null;
   }
   if (!runId) throw stop(9, "GITHUB_CAPTURE", `the capture run for ${id} never appeared in two minutes`);
-  const w = gh(["run", "watch", String(runId), "-R", CAPTURE_REPO, "--exit-status", "-i", "15"], { timeout: 25 * 60_000 });
+  const w = gh(["run", "watch", String(runId), "-R", CAPTURE_REPO, "--exit-status", "-i", "30"], { timeout: 25 * 60_000 });
   if (w.status !== 0) throw stop(9, "GITHUB_CAPTURE", `the capture run ${runId} failed or timed out (gh run view ${runId} -R ${CAPTURE_REPO} --log-failed)`);
   const dl = gh(["run", "download", String(runId), "-R", CAPTURE_REPO, "-n", `ship-capture-${id}`, "-D", out]);
   if (dl.status !== 0) throw stop(9, "GITHUB_CAPTURE", `could not download the capture of run ${runId}: ${String(dl.stderr).trim().slice(0, 200)}`);
