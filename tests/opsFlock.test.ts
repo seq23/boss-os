@@ -192,4 +192,59 @@ describe("boss-mail-tail's fix agent holds the kernel lock for its whole life (i
     await done;
     expect(busy(t.lock), "free straight after the agent ended").toBe("rc=1");
   }, 60000);
+
+  it("a holder killed while the agent works is said in report.log (LOCK_LOST), where its other warnings go, never lost with its output", async () => {
+    const t = tailTree();
+    const first = spawn("/bin/bash", t.args, { env: t.env, stdio: "ignore" });
+    const done = new Promise<number | null>((r) => first.on("exit", r));
+    expect(await until(() => busy(t.lock) === "rc=0")).toBe(true);
+    const holders = spawnSync("/bin/bash", ["-c", 'for p in $(pgrep -f -- "-MFcntl=:flock"); do ps -o args= -p "$p" | grep -qF -- "$1" && echo "$p"; done', "x", t.lock], { encoding: "utf8" }).stdout.trim().split("\n").filter(Boolean);
+    expect(holders.length, "the one holder of the agent lock").toBe(1);
+    process.kill(Number(holders[0]), "SIGKILL");
+    await done;
+    expect(readFileSync(join(t.state, "report.log"), "utf8")).toMatch(/NAMED STOP \[LOCK_LOST\]/);
+  }, 60000);
+});
+
+describe("boss-mail-tail's tick never unlinks the agent lock (two agents could both hold it)", () => {
+  it("a runner that takes the lock just after the tick finds it free keeps it: the tick's own agent steps aside, never a second holder", async () => {
+    const home = scratch();
+    mkdirSync(join(home, "scripts/ops/lib"), { recursive: true });
+    mkdirSync(join(home, "scripts/vault"), { recursive: true });
+    for (const f of ["boss-mail-tail.sh", "boss-mail-tail-run.sh", "lib/flock.sh", "lib/tail-report.mjs"]) {
+      writeFileSync(join(home, "scripts/ops", f), readFileSync(join(process.cwd(), "scripts/ops", f)), { mode: 0o755 });
+    }
+    const state = join(home, "Library/Logs/boss-mail-tail/state");
+    const fixlock = join(state, ".agent-lock.flock");
+    const holderPid = join(home, "holder.pid");
+    // The race, made certain: the tick's first look at the agent lock finds it free, and in that moment another
+    // runner (one an earlier tick started late, after AGENT_NOT_STARTED) takes it and keeps working.
+    writeFileSync(join(home, "scripts/ops/lib/flock.sh"), `${readFileSync(LIB, "utf8")}
+eval "_real_$(declare -f lock_busy)"
+lock_busy() {
+  if [ "$1" = ${JSON.stringify(fixlock)} ] && [ ! -e ${JSON.stringify(holderPid)} ]; then
+    /bin/bash -c 'source "$1"; hold_lock "$2" || exit 9; exec sleep 30' x ${JSON.stringify(LIB)} "$1" </dev/null >/dev/null 2>&1 &
+    echo $! > ${JSON.stringify(holderPid)}
+    local i=0; while [ "$i" -lt 100 ] && ! _real_lock_busy "$1"; do sleep 0.1; i=$((i + 1)); done
+    return 1
+  fi
+  _real_lock_busy "$@"
+}
+`);
+    const row = { id: "m1", received_at: 2, to_addr: "boss@sequoiataylor.com", subject: "s", outcome: "TRIAGED", task_id: "", employee_id: "" };
+    writeFileSync(join(home, "scripts/vault/vault.mjs"), `if (process.argv.includes("d1")) console.log(${JSON.stringify(JSON.stringify([{ success: true, results: [row] }]))}); else console.log("folded");\n`);
+    const ran = join(home, "claude-ran");
+    const claude = join(home, "fake-claude");
+    writeFileSync(claude, `#!/bin/bash\ntouch ${JSON.stringify(ran)}\n`, { mode: 0o755 });
+    const env = { ...(process.env as Record<string, string>), HOME: home, BOSS_OS_REPO: home, BOSS_MAIL_TAIL_SINCE_MS: "1", BOSS_MAIL_TAIL_CLAUDE_BIN: claude };
+    try {
+      const tick = spawnSync("/bin/bash", [join(home, "scripts/ops/boss-mail-tail.sh")], { env, encoding: "utf8", timeout: 40000 });
+      expect(existsSync(holderPid), "the race was staged").toBe(true);
+      expect(await until(() => existsSync(join(state, "report.log")) && /steps aside|agent rc=/.test(readFileSync(join(state, "report.log"), "utf8")), 20000), tick.stdout).toBe(true);
+      expect(readFileSync(join(state, "report.log"), "utf8")).toMatch(/steps aside/);
+      expect(existsSync(ran), "a second agent ran beside the one holding the lock").toBe(false);
+    } finally {
+      if (existsSync(holderPid)) spawnSync("/bin/bash", ["-c", 'pkill -P "$1"; kill -9 "$1"', "x", readFileSync(holderPid, "utf8").trim()]);
+    }
+  }, 60000);
 });

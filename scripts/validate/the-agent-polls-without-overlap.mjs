@@ -428,7 +428,7 @@ if (selfTest) {
   check("a flock error read as \"busy\" (a silent tick forever) is caught", (await plant("errorisbusy", (t) => t, (l) => l.replace('($!{EWOULDBLOCK} ? "busy" : "error")', '"busy"'))).length > 0);
   // A lock that lets go only when the holder notices the shell is gone (up to a second): the next claim, started the
   // moment this one ends, finds it still held and skips its work.
-  check("a lock not let go the moment the run ends is caught", (await plant("slowrelease", (t) => t.replace("0) trap release_lock EXIT ;;", "0) ;;"))).length > 0);
+  check("a lock not let go the moment the run ends is caught", (await plant("slowrelease", (t) => t, (l) => l.replace("\n  trap release_lock EXIT\n", "\n"))).length > 0);
   check("a lock failure that exits quietly is caught", (await plant("quietfail", (t) => t.replace(/no claim this tick\." >&2\n     exit 3 ;;/, 'no claim this tick." >&2\n     exit 0 ;;'))).length > 0);
   check("a poll that claims without peeking is caught", (await plant("nopeek", (t) => t.replace("agent.mjs peek >/dev/null 2>&1 || exit 0", "agent.mjs peek >/dev/null 2>&1 || true"))).length > 0);
   check("a poll that claims without refreshing the briefing's data is caught", (await plant("norefresh", (t) => t.replace(/  if \[ -z "\$\(find "\$WORKSPACE\/SKY\.json"[\s\S]*?\n  fi\n  if \[ -z "\$\(find "\$WORKSPACE\/MARKETS\.json"[\s\S]*?\n  fi\n/, ""))).length > 0);

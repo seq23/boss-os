@@ -77,7 +77,6 @@ case $BUSY in
   1) ;;
   *) echo "[tail] NAMED STOP [LOCK_FAILED] cannot read $FIXLOCK; not dispatching blind (the next tick retries)"; exit 1 ;;
 esac
-rm -rf "$FIXLOCK"
 
 STAMP="$(date -u +%Y%m%dT%H%M%SZ)"
 LOCAL_STAMP="$(date +%Y%m%d-%H%M%S)"

@@ -22,6 +22,9 @@ LIB="$REPO/scripts/ops/lib/tail-report.mjs"
 STATE_DIR="$(dirname "$TAIL_LOG")"
 REPORT_LOG="$STATE_DIR/report.log"
 CAP_SECONDS="${BOSS_MAIL_TAIL_CAP_SECONDS:-7200}"
+# The tick starts this runner with its output thrown away, so every warning of its own (LOCK_LOST from release_lock at
+# exit included) goes to report.log beside the others. The agent, node and vault calls keep their own redirects.
+exec 2>>"$REPORT_LOG"
 export CLAUDE_CODE_PRINT_BG_WAIT_CEILING_MS=0
 # shellcheck source=lib/flock.sh
 . "$REPO/scripts/ops/lib/flock.sh"
