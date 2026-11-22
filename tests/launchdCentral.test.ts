@@ -45,7 +45,10 @@ describe("Central schedules on an Eastern Mac", () => {
     const sh = readFileSync("scripts/ops/install-agent-launchd.sh", "utf8");
     const lint = sh.slice(sh.indexOf("lint_plist() {"), sh.indexOf("}", sh.indexOf("lint_plist() {")));
     expect(lint).toContain('node "$REPO/scripts/ops/plist-central.mjs" "$1"');
-    // Every load is preceded by a lint of the same plist.
-    expect((sh.match(/launchctl load/g) ?? []).length).toBeLessThanOrEqual((sh.match(/lint_plist "/g) ?? []).length + 1);
+    // Every load goes through the one reload (launchd-reload, 21 Nov 2026) and is preceded by a lint of the same plist.
+    expect(sh.match(/^\s*launchctl (load|bootstrap)\b/gm)).toBeNull();
+    const reloads = [...sh.matchAll(/^\s*reload_plist "([^"]+)"/gm)].map((m) => m[1]);
+    expect(reloads.length).toBeGreaterThan(20);
+    for (const p of reloads) expect(sh, p).toContain(`lint_plist "${p}"`);
   });
 });

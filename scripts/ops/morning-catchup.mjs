@@ -23,7 +23,9 @@
  * 16 Nov 2026 (repair rc_m7j94r6q6f5dx58g): the Mac booted at 06:39 Central, so the boot run fell BEFORE
  * the email and refused the long "grid_repos" producer (sites:audit), and nothing ran after the email:
  * the after-email window was reachable only by a late boot. The plist now has two slots, 06:32 (before
- * the email) and 06:45 (after it), held by tests/morningCatchup.test.ts.
+ * the email) and 06:45 (after it), held by tests/morningCatchup.test.ts. THE MAC'S DAY (21 Nov 2026): the
+ * Mac is off 07:00-10:00, so the slots are 06:05 and 06:14 (before the email, with room for a slow run)
+ * and 10:10 (the after-the-email run, when the Mac is back).
  *
  *   npm run morning:catchup
  */

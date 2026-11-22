@@ -17,6 +17,7 @@ import {
   installerJobs, launchdProblems, plistEvents, readSchedule, scheduleCategoryProblems, shapeProblems, weekProblems, wranglerCrons, workflowCrons, workflowEntry, workflowDispatchTypes,
 } from "../scripts/ops/lib/schedule.mjs";
 import { composeSpryWeekly, hostAllowed, loopSection, SPRY_WEEKLY } from "../src/shared/boss/spryWeekly/compose.mjs";
+import { firedBy, jobTitle } from "../src/client/boss/pages/Schedule";
 import { createTestDb, disposeTestDb, type TestDb } from "./helpers/db";
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
@@ -199,6 +200,32 @@ describe("the slot language", () => {
 });
 
 describe("the Schedule page", () => {
+  it("shows the brand once whether or not the name already includes it", () => {
+    expect(jobTitle({ brand: "Example", name: "Example report" })).toBe("Example report");
+    expect(jobTitle({ brand: "Example", name: "Example: Report" })).toBe("Example: Report");
+    expect(jobTitle({ brand: "Example", name: "Report" })).toBe("Example: Report");
+    expect(jobTitle({ brand: "Authority network", name: "Authority Network Autopilot" })).toBe("Authority Network Autopilot");
+    expect(jobTitle({ brand: "Creator Network", name: "Daily Creator Network" })).toBe("Daily Creator Network");
+    expect(jobTitle({ name: "Report" })).toBe("Report");
+    const rows = (JSON.parse(readFileSync(path.join(ROOT, "src/shared/boss/schedule/manifest.json"), "utf8")) as { rows: Array<{ brand?: string; name: string }> }).rows;
+    const branded = rows.filter((r) => r.brand);
+    expect(branded.length).toBeGreaterThan(0);
+    for (const r of branded) {
+      const t = jobTitle(r).toLowerCase(), b = r.brand!.toLowerCase();
+      expect(t.split(b).length - 1, `${r.brand} / ${r.name}`).toBe(1);
+    }
+  });
+
+  it("says which clock starts each GitHub job: Boss OS's own clock for the Worker-fired rows", () => {
+    const rows = (JSON.parse(readFileSync(path.join(ROOT, "src/shared/boss/schedule/manifest.json"), "utf8")) as { rows: Array<{ system: string; trigger: { clock?: string } }> }).rows;
+    const worker = rows.filter((r) => r.trigger.clock === "worker");
+    expect(worker.length).toBeGreaterThan(0);
+    const ownClock = firedBy({ system: "github", trigger: { clock: "worker" } });
+    const github = firedBy({ system: "github", trigger: {} });
+    expect(new Set([ownClock, github, ""]).size).toBe(3);
+    for (const r of rows) expect(firedBy(r)).toBe(r.trigger.clock === "worker" ? ownClock : r.system === "github" ? github : "");
+  });
+
   it("renders the manifest itself and sits in ☰ More next to the Email Map", () => {
     const page = readFileSync(path.join(ROOT, "src/client/boss/pages/Schedule.tsx"), "utf8");
     expect(page).toContain('from "@shared/boss/schedule/manifest.json"');
@@ -227,7 +254,7 @@ describe("the Spry Labs weekly", () => {
       const row = m.rows.find((r: any) => r.trigger.repo === s.repo && r.trigger.file === s.workflow);
       expect(row, `${s.repo} ${s.workflow}`).toBeTruthy();
     }
-    expect(m.rows.find((r: any) => r.id === "spry-weekly").slots).toEqual(["wed 08:15"]);
+    expect(m.rows.find((r: any) => r.id === "spry-weekly").slots).toEqual(["wed 10:25"]);
   });
 
   it("every Wednesday source is ready on the slot it promises, before 08:15, on the week's 7:00–8:00 line", () => {

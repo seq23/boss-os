@@ -25,7 +25,7 @@ for (const vp of [PHONE, LAPTOP]) {
       if (!(await wed.getAttribute("open"))) await wed.locator("summary").click();
       const spry = manifest.week.find((d) => d.day === "wed")!.items.find((i) => i.text.includes("Spry Labs weekly"))!;
       const line = wed.locator(".schedule-row", { hasText: "Spry Labs weekly" });
-      await expect(line).toContainText("8:15");
+      await expect(line).toContainText((spry as unknown as { time: string }).time); // the time the manifest gives it (10:25 since the Mac's day)
       await expect(line).toContainText("✉ emails you");
       expect(spry.emails).toBe(true);
       await expect(s.locator(".schedule-row")).toHaveCount(manifest.week.reduce((a, d) => a + d.items.length, 0));

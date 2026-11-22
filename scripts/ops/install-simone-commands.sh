@@ -4,6 +4,7 @@
 # the Worker laid out. Never sends to a third party: every email to a person waits for her Send.
 # Called by install-agent-launchd.sh; safe to run on its own.
 set -euo pipefail
+"${LAUNCHD_RELOAD:-$HOME/bin/launchd-reload}" --seed >/dev/null
 REPO="${BOSS_OS_REPO:-$(cd "$(dirname "$(readlink -f "${BASH_SOURCE[0]}")")/../.." && pwd)}"  # the checkout this script lives in, symlinks followed (launchd: the runtime)
 LABEL="com.seq.boss-simone-commands"
 PLIST="$HOME/Library/LaunchAgents/$LABEL.plist"
@@ -11,8 +12,11 @@ LOGS="$HOME/Library/Logs/simone-commands"
 mkdir -p "$LOGS"
 
 INTERVALS=""
-for H in 6 7 8 9 10 11 12 13 14 15 16 17 18 19 20 21 22 23; do
+# The Mac's day (her ruling 21 Nov 2026): 06:00-06:20, then from 10:00; the Mac is off 07:00-10:00 and no
+# lookup starts in the forty minutes before it goes off.
+for H in 6 10 11 12 13 14 15 16 17 18 19 20 21 22 23; do
   for M in 0 10 20 30 40 50; do
+    [ "$H" = 6 ] && [ "$M" -gt 20 ] && continue
     INTERVALS="$INTERVALS    <dict><key>Hour</key><integer>$H</integer><key>Minute</key><integer>$M</integer></dict>
 "
   done
@@ -38,7 +42,6 @@ EOF
 # installer skipped it and Simone's commands ran 05:00-22:50 Central on an Eastern Mac).
 node "$REPO/scripts/ops/plist-central.mjs" "$PLIST" || { echo "NAMED STOP [PLIST_TZ] could not move $PLIST to this Mac's zone; not loaded." >&2; exit 1; }
 plutil -lint "$PLIST" >/dev/null
-launchctl unload "$PLIST" 2>/dev/null || true
-launchctl load "$PLIST"
-launchctl list | grep -q "$LABEL" || { echo "NOT INSTALLED: $LABEL"; exit 1; }
+"${LAUNCHD_RELOAD:-$HOME/bin/launchd-reload}" "$PLIST" || exit 1   # the one reload (seq-bin): pauses kept, old schedule on failure
+launchctl print "gui/$(id -u)/$LABEL" >/dev/null 2>&1 || { echo "NOT INSTALLED: $LABEL"; exit 1; }
 echo "Installed $LABEL — every 10 minutes 06:00–23:00 Central (simone-commands.mjs)."

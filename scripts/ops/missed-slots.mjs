@@ -6,7 +6,7 @@
  * 9 Nov 2026: the Mac booted at 07:36 Central, and launchd never replays a calendar slot missed
  * across a shutdown, so the Monday prospect finder (com.seq.boss-prospect-discovery, 07:00), the
  * people sweep (07:15) and the sites audit (06:00) did not run that week. The morning catch-up runs
- * at boot (RunAtLoad) and at 06:32, and calls this: every com.seq.* LaunchAgent with ONE weekly slot
+ * at boot (RunAtLoad) and at its morning slots (06:05, 06:14 and 10:10 since 21 Nov 2026), and calls this: every com.seq.* LaunchAgent with ONE weekly slot
  * whose slot is today, already past, and whose launchd log has not been written since that slot is
  * started once with `launchctl kickstart` (which never restarts a job already running).
  *
@@ -126,6 +126,14 @@ if (import.meta.url === `file://${process.argv[1]}`) {
   const started = catchUpSlots();
   const stale = staleDaily(readJobs());
   console.log(`OUTPUT ${started.length} missed slots started`);
+  // THE MAC'S DAY (21 Nov 2026): a job woken outside its window (seq-bin mac-window) left one pending
+  // record; this is where it is started, once, when its window opens. Never a paused job.
+  const mw = process.env.MAC_WINDOW_BIN || `${homedir()}/bin/mac-window`;
+  try {
+    process.stdout.write(execFileSync(mw, ["catch-up"], { encoding: "utf8", timeout: 120_000 }));
+  } catch (e) {
+    console.error(`NAMED STOP [MAC_WINDOW_CATCHUP_FAILED] ${mw} catch-up: ${String(e.message).slice(0, 160)}`);
+  }
   if (stale.length) {
     const line = `Mac jobs that have not run for 36+ hours: ${stale.map((s) => s.label.replace(/^com\.seq\./, "")).join(", ")}`;
     console.error(`NAMED NOTE [DAILY_JOB_STALE] ${line}`);

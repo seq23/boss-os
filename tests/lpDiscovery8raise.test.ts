@@ -39,6 +39,6 @@ describe("8Raise discovery: a lookup still running is kept, never lost (15 Nov 2
     expect(collectOnly({ collectFlag: true, now })).toBe(true);
     const { readFileSync } = await import("node:fs");
     const line = readFileSync("scripts/ops/install-agent-launchd.sh", "utf8").split("\n").find((l) => l.startsWith("install_l_job com.seq.boss-prospect-discovery "));
-    expect(line).toMatch(/<integer>9<\/integer><key>Minute<\/key><integer>15<\/integer>/);
+    expect(line).toMatch(/<integer>11<\/integer><key>Minute<\/key><integer>35<\/integer>/); // the Mac's day: 10:35 full run, 11:35 collect
   });
 });

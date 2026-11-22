@@ -18,7 +18,7 @@ import { FromRepoLine, repoOnly } from "./Maps";
 export interface ScheduleRow {
   id: string; name: string; what: string; business: string; brand?: string; system: string;
   slots: string[]; emails: boolean; heavy: boolean;
-  trigger: { duty?: string; launchd?: string[]; repo?: string; file?: string; crons?: string[]; wpos?: string };
+  trigger: { duty?: string; launchd?: string[]; repo?: string; file?: string; crons?: string[]; wpos?: string; clock?: string; event?: string };
 }
 export interface WeekItem { time: string; tag: string; text: string; emails: boolean; refs: string[]; pending?: boolean }
 export interface ScheduleManifest {
@@ -70,6 +70,18 @@ function Tag({ tag }: { tag: string }) {
   return <span className="schedule-tag" style={{ "--tag": t?.color } as CSSProperties}>{t?.label ?? tag}</span>;
 }
 
+/** Who starts a GitHub job, in her words: Boss OS's own clock (21 Nov 2026) or GitHub's schedule. */
+export function firedBy(r: { system: string; trigger: { clock?: string } }): string {
+  if (r.trigger.clock === "worker") return " · started by Boss OS's own clock";
+  return r.system === "github" ? " · started by GitHub" : "";
+}
+
+/** The card title names the brand once: a name that already says it, in any case, stands alone. */
+export function jobTitle({ brand, name }: Pick<ScheduleRow, "brand" | "name">): string {
+  if (!brand || name.toLowerCase().includes(brand.toLowerCase())) return name;
+  return `${brand}: ${name}`;
+}
+
 export function Schedule() {
   const only = repoOnly();
   const today = new Date().toLocaleDateString("en-US", { timeZone: "America/Chicago", weekday: "short" }).toLowerCase().slice(0, 3);
@@ -102,16 +114,16 @@ export function Schedule() {
           </details>
         );
       })}
-      <details className="brain-expander" data-testid="schedule-every-day">
+      <details className="brain-expander email-map-business" data-testid="schedule-every-day">
         <summary><span className="email-map-business-name">Every day</span><span className="email-map-count">Not moving — tap to open ▾</span></summary>
         <ul className="schedule-list">{SCHEDULE.everyDay.map((t, i) => <li key={i}>{t}</li>)}</ul>
       </details>
-      <details className="brain-expander" data-testid="schedule-not-shown">
+      <details className="brain-expander email-map-business" data-testid="schedule-not-shown">
         <summary><span className="email-map-business-name">Not shown on this page</span><span className="email-map-count">Tap to open ▾</span></summary>
         <ul className="schedule-list">{SCHEDULE.notShown.map((t, i) => <li key={i}>{t}</li>)}</ul>
       </details>
       </>}
-      <details className="brain-expander" data-testid="schedule-all-jobs" open={Boolean(only)}>
+      <details className="brain-expander email-map-business" data-testid="schedule-all-jobs" open={Boolean(only)}>
         <summary><span className="email-map-business-name">Every scheduled job</span><span className="email-map-count">{only ? SCHEDULE.rows.filter((r) => scheduleRepos(r, REPOS as any).includes(only)).length : SCHEDULE.rows.length} jobs, by where they run — tap to open ▾</span></summary>
         {Object.entries(SCHEDULE.systems).map(([key, label]) => {
           const rows = SCHEDULE.rows.filter((r) => r.system === key && (!only || scheduleRepos(r, REPOS as any).includes(only)));
@@ -122,10 +134,10 @@ export function Schedule() {
               <div className="brain-cards">
                 {rows.map((r) => (
                   <div key={r.id} className="brain-card email-map-card" data-testid={`schedule-job-${r.id}`}>
-                    <span className="email-map-what">{r.brand ? `${r.brand}: ` : ""}{r.name}</span>
+                    <span className="email-map-what">{jobTitle(r)}</span>
                     <span className="brain-card-line">{r.what}</span>
                     <span className="brain-card-line">{r.slots.map(slotWords).join(" · ")}</span>
-                    <span className="email-map-runs">{SCHEDULE.businesses.find((b) => b.key === r.business)?.label ?? r.business}{r.emails ? " · emails you" : ""}{r.heavy ? " · heavy" : ""}</span>
+                    <span className="email-map-runs">{SCHEDULE.businesses.find((b) => b.key === r.business)?.label ?? r.business}{r.emails ? " · emails you" : ""}{r.heavy ? " · heavy" : ""}{firedBy(r)}</span>
                   </div>
                 ))}
               </div>

@@ -129,7 +129,7 @@ describe("the duty and its tiers are data", () => {
     expect(d.employee_id).toBe("emp_relationship");
     expect(JSON.parse(d.task_input).local_job).toBe("t2r-groups.mjs");
     expect(JSON.parse(d.weekdays)).toEqual([1, 2, 3, 4, 5]);
-    expect([d.local_hour, d.local_minute, d.timezone]).toEqual([8, 15, "America/Chicago"]);
+    expect([d.local_hour, d.local_minute, d.timezone]).toEqual([10, 55, "America/Chicago"]); // the Mac's day (0373): from 10:00
   });
   it("tier 3 flips only by its setting, and a tier turned off says why", async () => {
     expect((await apiJson("/api/t2r-groups/tiers/3", { method: "PUT", body: { enabled: "yes" } })).status).toBe(400);
