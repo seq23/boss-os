@@ -1605,7 +1605,8 @@ export default {
       return;
     }
     // The copied West Peek fund jobs (runDueJobs) no longer run here: West Peek OS runs them itself
-    // and migration 0375 paused the rows (chassis retirement, her yes 22 Nov 2026).
+    // and the pause migration in #531 switched off diagnostics_sweep, deck_reading and network_sync
+    // (chassis retirement, her yes 22 Nov 2026).
     // Boss OS's employee work used Cloudflare Queues; here it waits in D1 and drains on this same
     // tick. Each lane below is its own waitUntil so a failure in one cannot swallow another.
     ctx.waitUntil(
