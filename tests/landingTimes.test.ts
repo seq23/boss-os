@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { dur, expectedRepos, failRounds, graphql, liveAt, passAt, prRow, readWeek, weekLines } from "../scripts/ops/landing-times.mjs";
+import { dur, endOfRun, expectedRepos, failRounds, graphql, liveAt, passAt, prRow, readWeek, weekLines } from "../scripts/ops/landing-times.mjs";
 
 /*
  * PR-to-live, measured (owner, 22 Nov 2026: "landing shit takes fucking forever"). The ways it breaks:
@@ -113,7 +113,7 @@ describe("landing-times: rule 0 and outages", () => {
       let calls = 0;
       const fetchImpl = async () => { calls++; return res(); };
       await expect(graphql("query { a }", {}, { fetchImpl, tok: "t", wait: async () => {} }))
-        .rejects.toMatchObject({ code: 3, message: expect.stringMatching(/NAMED STOP \[GITHUB_TOKEN_REFUSED\].*pull requests, checks, deployments/) });
+        .rejects.toMatchObject({ code: 3, message: expect.stringMatching(/NAMED STOP \[GITHUB_TOKEN_REFUSED\].*missing, expired or not valid/) });
       expect(calls).toBe(1);
     }
   });
@@ -140,21 +140,42 @@ describe("landing-times: rule 0 and outages", () => {
     const gql = (q: string, v?: Record<string, unknown>) => graphql(q, v, { fetchImpl, tok: "t", wait: async () => {} });
     await expect(readWeek({ owner: "nobody", gql })).rejects.toThrow(/OWNER_NOT_FOUND/);
   });
-  it("F6: a Repos-map repo the token cannot see is named in the line and returned as unreadable", async () => {
+  it("F6: a PUBLIC Repos-map repo the token cannot see is named in the line and the run is red", async () => {
     const gql = async (q: string) => q.includes("repositories(")
       ? { user: { repositories: { pageInfo: { hasNextPage: false }, nodes: [{ name: "r", isArchived: false, pushedAt: at(0) }] } } }
       : { repository: { pullRequests: { pageInfo: { hasNextPage: false }, nodes: [] } } };
     const expected = expectedRepos({ rows: [{ repo: "r", category: "mine" }, { repo: "hidden", category: "mine" }, { repo: "old", category: "retired" }] });
-    const { unreadable } = await readWeek({ now: Date.parse(at(1)), gql, expected });
+    const { unreadable, privateRepos } = await readWeek({ now: Date.parse(at(1)), gql, expected, isPublic: async () => true });
     expect(unreadable).toEqual(["hidden"]);
+    expect(privateRepos).toEqual([]);
     expect(weekLines([prRow(pr())], { unreadable }).at(-1)).toMatch(/^1 repo not readable with this token, so not measured: hidden\.$/);
+    expect(() => endOfRun({ unreadable, privateRepos })).toThrow(expect.objectContaining({ code: 3, message: expect.stringMatching(/NAMED STOP \[REPOS_NOT_READABLE\].*hidden/) }));
+  });
+  it("F6: only a PRIVATE repo unseen (authority-backlink-network, 22 Nov) is a note, exit 0, and the line says so", async () => {
+    const gql = async (q: string) => q.includes("repositories(")
+      ? { user: { repositories: { pageInfo: { hasNextPage: false }, nodes: [{ name: "r", isArchived: false, pushedAt: at(0) }] } } }
+      : { repository: { pullRequests: { pageInfo: { hasNextPage: false }, nodes: [] } } };
+    const asked: string[] = [];
+    const isPublic = async (_o: string, n: string) => { asked.push(n); return false; };
+    const { unreadable, privateRepos } = await readWeek({ now: Date.parse(at(1)), gql, expected: ["r", "secret"], isPublic });
+    expect(asked).toEqual(["secret"]);
+    expect({ unreadable, privateRepos }).toEqual({ unreadable: [], privateRepos: ["secret"] });
+    expect(weekLines([prRow(pr())], { unreadable, privateRepos }).at(-1)).toBe("Not measured: private (secret).");
+    expect(endOfRun({ unreadable, privateRepos })).toMatch(/^NOTE \[REPOS_NOT_READABLE\] not measured: private \(secret\)/);
+    expect(endOfRun({})).toBeNull();
+  });
+  it("F6: a public and a private repo both unseen is still red, naming the public one", () => {
+    expect(() => endOfRun({ unreadable: ["pub"], privateRepos: ["priv"] })).toThrow(/REPOS_NOT_READABLE.*\(pub\)/);
+  });
+  it("F6: zero PRs read stays red even when the only gap is a private repo", () => {
+    expect(() => weekLines([], { privateRepos: ["secret"] })).toThrow(expect.objectContaining({ code: 2, message: expect.stringMatching(/NO_PRS_READ/) }));
   });
   it("F6: a fork she owns (Deep-seek-infra-vault, 22 Nov) is read, not reported unreadable", async () => {
     // GitHub semantics: isFork: false hides forks from the listing.
     const gql = async (q: string) => q.includes("repositories(")
       ? { user: { repositories: { pageInfo: { hasNextPage: false }, nodes: [{ name: "r", isArchived: false, pushedAt: at(0) }, { name: "fork", isFork: true, isArchived: false, pushedAt: at(0) }].filter((n) => !(n.isFork && /isFork:\s*false/.test(q))) } } }
       : { repository: { pullRequests: { pageInfo: { hasNextPage: false }, nodes: [] } } };
-    const { unreadable, repos } = await readWeek({ now: Date.parse(at(1)), gql, expected: ["r", "fork"] });
+    const { unreadable, repos } = await readWeek({ now: Date.parse(at(1)), gql, expected: ["r", "fork"], isPublic: async () => true });
     expect(unreadable).toEqual([]);
     expect(repos).toBe(2);
   });

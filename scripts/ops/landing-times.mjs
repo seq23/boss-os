@@ -37,9 +37,11 @@
  * land waits on.
  * RULE 0: zero PRs read is NAMED STOP [NO_PRS_READ] (exit 2); GitHub not answering is
  * NAMED STOP [GITHUB_UNREACHABLE] (exit 75); a bad or under-scoped token is NAMED STOP
- * [GITHUB_TOKEN_REFUSED] (exit 3); a wrong owner is NAMED STOP [OWNER_NOT_FOUND] (exit 3); a repo in the
- * Repos map that this token cannot see is named in the line and is NAMED STOP [REPOS_NOT_READABLE]
- * (exit 3) after the line is written. None ever prints "0 minutes".
+ * [GITHUB_TOKEN_REFUSED] (exit 3); a wrong owner is NAMED STOP [OWNER_NOT_FOUND] (exit 3). A repo in the
+ * Repos map that this token cannot see is named in the line: a PUBLIC one is NAMED STOP
+ * [REPOS_NOT_READABLE] (exit 3) after the line is written; a private one (the job token reads public
+ * repos only, and the job is never given her token, 22 Nov 2026) is "not measured: private (<name>)" and a
+ * NOTE, exit 0. None ever prints "0 minutes".
  */
 import { execFileSync } from "node:child_process";
 import { outputLine } from "../../src/shared/boss/alarms/rules.mjs";
@@ -183,7 +185,7 @@ export function dur(ms) {
  * The week's line. Never "0 minutes" for nothing: no rows is a named stop before this is called, and a
  * step with no record says "not recorded". Pure.
  */
-export function weekLines(rows, { days = 7, unreadable = [] } = {}) {
+export function weekLines(rows, { days = 7, unreadable = [], privateRepos = [] } = {}) {
   if (!rows.length) throw stop("NO_PRS_READ", 2, "no merged PR was read, so there is no landing time to report");
   const live = rows.filter((r) => r.total_ms !== null);
   // Slowest LANDING (merge to live): opened-to-live is won by month-old PRs and says nothing about landing.
@@ -199,6 +201,7 @@ export function weekLines(rows, { days = 7, unreadable = [] } = {}) {
   const runners = `Waiting for a GitHub runner (each PR's last commit and its merge), all PRs together: ${dur(sum("ci_queued_ms") + sum("main_queued_ms"))} (running: ${dur(sum("ci_running_ms") + sum("main_running_ms"))}).`;
   const lines = [head, where, runners];
   if (unreadable.length) lines.push(`${unreadable.length} repo${unreadable.length === 1 ? "" : "s"} not readable with this token, so not measured: ${unreadable.join(", ")}.`);
+  if (privateRepos.length) lines.push(`Not measured: private (${privateRepos.join(", ")}).`);
   return lines;
 }
 
@@ -226,13 +229,13 @@ export async function graphql(query, variables = {}, { fetchImpl = fetch, tok = 
       if (res.ok && body?.data && !body.errors?.length) return body.data;
       const said = JSON.stringify(body?.errors ?? body?.message ?? "").slice(0, 200);
       const types = (body?.errors ?? []).map((e) => e?.type);
-      // GitHub answered and said no to this token: a retry cannot fix it, the token's permissions can.
+      // GitHub answered and said no to this token: a retry cannot fix it.
       // ...unless the "no" is a rate limit (primary or secondary): that one passes, so it is waited out.
       const limited = res.status === 429 || res.headers?.get?.("x-ratelimit-remaining") === "0"
         || res.headers?.get?.("retry-after") != null || /rate limit/i.test(said);
       if (limited) pause = Math.min(Math.max(Number(res.headers?.get?.("retry-after")) || 0, 60) * 1000, 180_000);
       if (res.status === 401 || (res.status === 403 && !limited) || types.includes("FORBIDDEN")) {
-        throw stop("GITHUB_TOKEN_REFUSED", 3, `GitHub refused this token (HTTP ${res.status} ${said}); give it read access to pull requests, checks, deployments and actions (workflow permissions, or the token's scopes); nothing was measured`);
+        throw stop("GITHUB_TOKEN_REFUSED", 3, `GitHub refused this token (HTTP ${res.status} ${said}); the token is missing, expired or not valid for GitHub's API (the cloud run's job token is read-only and reads public repos; a scope cannot be added to it); nothing was measured`);
       }
       if (types.includes("NOT_FOUND")) throw Object.assign(stop("GITHUB_NOT_FOUND", 3, `GitHub has no such owner or repository (${said}); nothing was measured`), { notFound: true });
       // GitHub answered and refused the query itself (too big, bad field): asking again cannot help, and
@@ -260,7 +263,16 @@ export function expectedRepos(map) {
   return (map?.rows ?? []).filter((r) => r.repo && r.category !== "retired").map((r) => r.repo);
 }
 
-export async function readWeek({ days = 7, now = Date.now(), gql = graphql, owner = OWNER, expected = [] } = {}) {
+/** Is github.com/<owner>/<name> public? Asked logged out, so the answer is GitHub's, never the token's.
+ * Anything but a clean 404 counts as public, so a probe that fails keeps the run red. */
+export async function isPublicRepo(owner, name) {
+  try {
+    const res = await fetch(`https://github.com/${owner}/${name}`, { method: "HEAD", redirect: "follow" });
+    return res.status !== 404;
+  } catch { return true; }
+}
+
+export async function readWeek({ days = 7, now = Date.now(), gql = graphql, owner = OWNER, expected = [], isPublic = isPublicRepo } = {}) {
   const since = now - days * 86_400_000;
   const repos = [], seen = new Set();
   let after = null;
@@ -279,7 +291,9 @@ export async function readWeek({ days = 7, now = Date.now(), gql = graphql, owne
     repos.push(...c.nodes.filter((r) => !r.isArchived && t(r.pushedAt) >= since).map((r) => r.name));
     after = c.pageInfo.hasNextPage ? c.pageInfo.endCursor : null;
   } while (after);
-  const unreadable = expected.filter((r) => !seen.has(r));
+  const unseen = expected.filter((r) => !seen.has(r));
+  const pub = await Promise.all(unseen.map((r) => isPublic(owner, r)));
+  const unreadable = unseen.filter((_, k) => pub[k]), privateRepos = unseen.filter((_, k) => !pub[k]);
 
   const prs = [];
   for (const name of repos) {
@@ -308,7 +322,7 @@ export async function readWeek({ days = 7, now = Date.now(), gql = graphql, owne
       cur = page.pageInfo.endCursor;
     }
   }
-  return { repos: repos.length, unreadable, rows: prs.map((p) => prRow(p)) };
+  return { repos: repos.length, unreadable, privateRepos, rows: prs.map((p) => prRow(p)) };
 }
 
 // ─── Run ─────────────────────────────────────────────────────────────────────────────────────────
@@ -321,9 +335,9 @@ async function main() {
   if (!(days > 0)) throw stop("BAD_ARGS", 64, "--days needs a positive number of days");
   const { readFileSync } = await import("node:fs");
   const map = JSON.parse(readFileSync(new URL("../../src/shared/boss/maps/repos.json", import.meta.url), "utf8"));
-  const { repos, rows, unreadable } = await readWeek({ days, expected: expectedRepos(map) });
+  const { repos, rows, unreadable, privateRepos } = await readWeek({ days, expected: expectedRepos(map) });
   if (!repos) throw stop("NO_REPOS_READ", 2, `no repository of ${OWNER} was pushed in the last ${days} days, or the list did not load`);
-  const lines = weekLines(rows, { days, unreadable });
+  const lines = weekLines(rows, { days, unreadable, privateRepos });
   if (args.includes("--json")) console.log(JSON.stringify(rows, null, 1));
   else if (dry) for (const r of rows) console.log([r.repo, `#${r.number}`, `review ${dur(r.review_ms)}`, `reviewed ${r.reviewed}`, `to merge ${dur(r.to_merge_ms)}`, `to live ${dur(r.to_live_ms)}`, `queued ${dur(r.ci_queued_ms + r.main_queued_ms)}`, `fails ${r.fail_rounds}`].join("  "));
   for (const l of lines) console.log(l);
@@ -332,7 +346,14 @@ async function main() {
     writeMorningSection("landing", { title: "Landing speed, PR to live", lines });
   }
   console.log(outputLine(rows.length, "PRs measured"));
-  if (unreadable.length) throw stop("REPOS_NOT_READABLE", 3, `${unreadable.length} repo(s) in the Repos map are not visible to this token (${unreadable.join(", ")}); the line says so, and this run is red until the token can read them`);
+  const note = endOfRun({ unreadable, privateRepos });
+  if (note) console.log(note);
+}
+
+/** Red only when a PUBLIC repo was unreadable (the token should see it); private ones are a note. */
+export function endOfRun({ unreadable = [], privateRepos = [] }) {
+  if (unreadable.length) throw stop("REPOS_NOT_READABLE", 3, `${unreadable.length} public repo(s) in the Repos map are not visible to this token (${unreadable.join(", ")}); the line says so, and this run is red until it can read them`);
+  return privateRepos.length ? `NOTE [REPOS_NOT_READABLE] not measured: private (${privateRepos.join(", ")}); the job token reads public repos only` : null;
 }
 
 if (process.argv[1] && import.meta.url === new URL(`file://${process.argv[1]}`).href) {
