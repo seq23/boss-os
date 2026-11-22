@@ -1,4 +1,4 @@
-import React from "react";
+import React, { useSyncExternalStore } from "react";
 import { westPeekOsUrlFor } from "./surface";
 
 /**
@@ -17,7 +17,14 @@ html, body { margin: 0; background: var(--bg); color: var(--fg); }
 .moved a { color: var(--link); font-weight: 600; overflow-wrap: anywhere; }
 `;
 
-export function Moved({ hash }: { hash: string }) {
+/** The address's hash, live: a second old link opened in the same tab changes only the hash. */
+function subscribeHash(onChange: () => void): () => void {
+  window.addEventListener("hashchange", onChange);
+  return () => window.removeEventListener("hashchange", onChange);
+}
+
+export function Moved() {
+  const hash = useSyncExternalStore(subscribeHash, () => window.location.hash, () => "");
   const target = westPeekOsUrlFor(hash);
   return (
     <main className="moved">

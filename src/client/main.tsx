@@ -31,7 +31,7 @@ if (surfaceFor(location.hostname, location.pathname) === "boss") {
   document.title = "This page has moved";
   root.render(
     <React.StrictMode>
-      <Moved hash={location.hash} />
+      <Moved />
     </React.StrictMode>,
   );
 }

@@ -17,7 +17,9 @@ export const WEST_PEEK_OS_ORIGIN = "https://os.joinwestpeek.com";
 export type Surface = "boss" | "moved";
 
 export function surfaceFor(hostname: string, pathname: string): Surface {
-  if (BOSS_HOSTS.has(hostname)) return "boss";
+  // `boss.sequoiataylor.com.` (the fully-qualified form, trailing dot) is her host too: it serves
+  // with a valid certificate and the browser reports the dot. Host names are case-blind.
+  if (BOSS_HOSTS.has(hostname.toLowerCase().replace(/\.$/, ""))) return "boss";
   if (pathname === "/boss" || pathname.startsWith("/boss/")) return "boss";
   return "moved";
 }
