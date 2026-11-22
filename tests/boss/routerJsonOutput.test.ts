@@ -97,4 +97,28 @@ describe("the free walk", () => {
     expect(calls.length, "the prose answer did not end the walk").toBe(2);
     expect(out.json).toEqual({ ok: true });
   });
+
+  it("an OpenRouter free model that will not take JSON mode is passed over cleanly, and the walk reaches one that will", async () => {
+    const seen: string[] = [];
+    const chat = (content: string) => new Response(JSON.stringify({ choices: [{ message: { content } }], usage: { prompt_tokens: 10, completion_tokens: 5 } }), { status: 200, headers: { "content-type": "application/json" } });
+    restore = stubFetch(async (r) => {
+      if (r.url.includes("openrouter")) {
+        const model = JSON.parse(await r.text()).model as string;
+        seen.push(model);
+        if (seen.length === 1) return new Response(JSON.stringify({ error: { message: "No endpoints found that can handle the requested parameters.", code: 404 } }), { status: 404, headers: { "content-type": "application/json" } });
+        return chat('{"ok":true}');
+      }
+      // Gemini's free quota is spent, so the walk goes on to OpenRouter.
+      return new Response(JSON.stringify({ error: { code: 429, message: "quota" } }), { status: 429, headers: { "content-type": "application/json" } });
+    });
+    const e = withKey(); (e as any).OPENROUTER_API_KEY = "test-key-not-a-real-credential";
+    const out = await routeCompletion(e, {
+      routeId: "rt_ops_default", lane: "ops", intakeKind: "research", sensitivity: "public", risk: "low", jobKey: "json-openrouter-test",
+      freeOnly: true, json: SHAPE,
+      messages: [{ role: "user", content: "Is the sky blue?" }],
+    } as never);
+    expect(seen.length, seen.join(" > ")).toBeGreaterThanOrEqual(2);
+    expect(new Set(seen).size, "the refusing model was not asked again").toBe(seen.length);
+    expect(out.json).toEqual({ ok: true });
+  });
 });

@@ -21,6 +21,7 @@ import { approveTemplate, redraftTemplate, followUpsReleased, storedTemplate } f
 import { renderProspect, tapUrl, hasTouchWords } from "../../../shared/boss/lp/plan.mjs";
 import { ownWords } from "../../../shared/boss/intake/messageBody.mjs";
 import { decideCardOf } from "./decideReply";
+import { readMeaning } from "../intake/meaning";
 
 /** "5: …", "#5 …", "5. …", "5) …" at the start of her reply. */
 export const NUMBERED_REPLY_RE = /^\s*#?(\d{1,2})\s*(?::|\.|\)|-|—|\s)\s*([\s\S]*)$/;
@@ -57,7 +58,36 @@ export function redraftReply(tpl: any, opts: { applied?: string[]; kept?: string
   ].join("\n");
 }
 
-export async function prospectTemplateFromMail(env: Env, text: string, now = Date.now(), day: string | null = null): Promise<{ note: string; outcome: string } | null> {
+/** Plainly "yes" and nothing else: what the keywords call an approval. */
+const APPROVE_RE = /^(?:approved?|yes|go|ok(?:ay)?)[.!]?$/i;
+const TRY_AGAIN_RE = /\btry again\b|\bstart over\b|\bdifferent (?:one|draft|version)\b|\banother (?:go|draft|version)\b/i;
+/** A no, a wait or a condition anywhere in her words: an approval from the model is then asked about, never acted on. */
+const HOLD_RE = /\b(?:not|no|don'?t|do not|never|isn'?t|wait|hold|stop|unless|but|if)\b|\?/i;
+
+export type TemplateMeaning = "approve" | "try_again" | "change" | "unsure";
+
+/**
+ * What her words to the card MEAN, read by the model (meaning.ts) with the keywords as the logged fallback.
+ * Approving sends email to prospects, so it is the one meaning held twice: the model must say it AND
+ * her words must hold no no, wait or condition; otherwise it is "unsure" and she is asked.
+ */
+export async function templateMeaningOf(env: Env, words: string, mailId: string | null = null): Promise<TemplateMeaning> {
+  const keyword: TemplateMeaning = APPROVE_RE.test(words) ? "approve" : TRY_AGAIN_RE.test(words) ? "try_again" : words.trim() ? "change" : "unsure";
+  const read = await readMeaning<Exclude<TemplateMeaning, "unsure">>(env, {
+    what: "her reply to the prospect email",
+    about: "This is the owner's reply to a draft prospect email waiting for her approval.",
+    options: {
+      approve: "she approves the draft as it is, to go out",
+      try_again: "she wants a different draft altogether",
+      change: "she asks for changes to the draft (her words say what to change)",
+    },
+    text: words, keyword, mailId,
+  });
+  if (read.value === "approve" && (read.by === "keywords" ? !APPROVE_RE.test(words) : HOLD_RE.test(words))) return "unsure";
+  return read.value;
+}
+
+export async function prospectTemplateFromMail(env: Env, text: string, now = Date.now(), day: string | null = null, mailId: string | null = null): Promise<{ note: string; outcome: string } | null> {
   // Her words only: never the quoted morning email under them.
   const her = ownWords(text);
   let templateId: string | null = null;
@@ -79,14 +109,19 @@ export async function prospectTemplateFromMail(env: Env, text: string, now = Dat
   const live = row.status === "pending" ? row : await env.DB.prepare(`SELECT * FROM prospect_templates WHERE status = 'pending' ORDER BY created_at DESC LIMIT 1`).first<any>() ?? row;
   const released = await followUpsReleased(env.DB);
 
-  if (/^(?:approved?|yes|go|ok(?:ay)?)[.!]?$/i.test(words)) {
+  const meaning = await templateMeaningOf(env, words, mailId);
+  if (meaning === "unsure") {
+    await audit(env.DB, { actor: "owner", lane: "ops", entityType: "prospect_template", entityId: live.id, action: "asked", detail: { via: "reply", why: "her reply did not plainly approve or change it" } });
+    return { outcome: "TEMPLATE_ANSWERED", note: `I could not tell whether that approves the prospect email, so nothing changed and nothing goes out. Reply "approved" to send it as it is, "try again" for a different draft, or tell me what to change.\n\nTap to approve: ${tapUrl(live.tap_token, "approve")}` };
+  }
+  if (meaning === "approve") {
     if (live.status !== "pending") return { outcome: "TEMPLATE_ANSWERED", note: "That prospect email is already approved; it goes out on the usual schedule." };
     await approveTemplate(env.DB, live.id, now);
     await audit(env.DB, { actor: "owner", lane: "ops", entityType: "prospect_template", entityId: live.id, action: "approved", detail: { via: "reply" } });
     return { outcome: "TEMPLATE_ANSWERED", note: `Approved. The prospect email goes out in the next sending window${released.count ? `, with one follow-up to the ${released.count} people who already got your first email` : ""}.` };
   }
 
-  const tryAgain = /\btry again\b|\bstart over\b|\bdifferent (?:one|draft|version)\b|\banother (?:go|draft|version)\b/i.test(words);
+  const tryAgain = meaning === "try_again";
   const notes = words.replace(/[,.;\s]*\b(?:try again|start over)\b[.!]?\s*$/i, "").trim();
   if (notes && GENERAL.test(notes)) {
     await env.DB.prepare(`INSERT OR IGNORE INTO prospect_template_rules (key, rule, said, created_at) VALUES (?,?,?,?)`)
