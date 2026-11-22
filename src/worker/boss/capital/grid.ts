@@ -128,7 +128,8 @@ export async function listEditsFromMail(
  * staged set in with ONE D1 batch, which is one SQL transaction: the live delete and the copy are
  * both guarded on the staged count equalling the total the Mac declared, so a missing part, a
  * lying total or a failure on any statement leaves the previous grid exactly as it was.
- * A replace of zero rows is refused unless `allowEmpty` is sent (the grid push never sends it).
+ * A replace of zero rows is refused unless the route sets `allowEmpty`: the grid route never does, and
+ * the Matches route only just after a grid push was saved (`routes/capital.ts`).
  */
 export interface PushPart { push: string; total: number; last: boolean; allowEmpty: boolean }
 
@@ -183,6 +184,11 @@ export async function stagedReplace(
   if (part.last && part.total === 0 && !part.allowEmpty) {
     throw badRequest(`Refused: a replace of ${t.live} with zero rows`, "An empty replace needs allowEmpty: true; the previous rows are kept.");
   }
+  // One id (or match key) once per push. Staging is keyed on it, so a repeat would collapse two rows
+  // into one and every later push would read "N-1 of N arrived": refused by name instead.
+  const ids = new Set(rows.map((r) => String(r[0])));
+  if (ids.size !== rows.length) throw badRequest(`DUPLICATE_ID: ${rows.length - ids.size} row(s) repeat an ${t.cols[0]} in this part; ${t.live} is unchanged`, `Send each ${t.cols[0]} once per push.`);
+  const before = await stagedCount(env, t, part.push);
   const width = t.cols.length + 2; // + push_id, staged_at
   const perStmt = Math.max(1, Math.floor(100 / width)); // D1 binds at most 100 parameters per statement
   const stage: D1PreparedStatement[] = [];
@@ -193,19 +199,35 @@ export async function stagedReplace(
       .bind(...chunk.flatMap((r) => [part.push, ...r, now])));
   }
   for (let i = 0; i < stage.length; i += 100) await env.DB.batch(stage.slice(i, i + 100));
+  const staged = await stagedCount(env, t, part.push);
+  if (staged !== before + rows.length) {
+    throw badRequest(`DUPLICATE_ID: this part repeats ${before + rows.length - staged} ${t.cols[0]}(s) sent in an earlier part; ${t.live} is unchanged`, `Send each ${t.cols[0]} once per push, under a new push id.`);
+  }
   if (!part.last) return null;
-
-  const staged = (await env.DB.prepare(`SELECT COUNT(*) AS n FROM ${t.staging} WHERE push_id = ?`).bind(part.push).first<{ n: number }>())?.n ?? 0;
   if (staged !== part.total) {
     throw conflict(`Push incomplete: ${staged} of ${part.total} row(s) arrived; ${t.live} is unchanged`, "Send every part again under a new push id.");
   }
-  await env.DB.batch([
+  return swapWhole(env, t, part, now, after);
+}
+
+const stagedCount = async (env: Env, t: StagedTable, push: string): Promise<number> =>
+  (await env.DB.prepare(`SELECT COUNT(*) AS n FROM ${t.staging} WHERE push_id = ?`).bind(push).first<{ n: number }>())?.n ?? 0;
+
+/**
+ * The swap, one D1 batch (one transaction). Both live statements carry the staged-count guard in
+ * SQL, so a count that changed after the check above clears nothing and copies nothing. Returns the
+ * rows the copy really wrote; anything but the total is refused, never reported as a commit.
+ */
+export async function swapWhole(env: Env, t: StagedTable, part: PushPart, now: number, after: D1PreparedStatement[] = []): Promise<number> {
+  const res = await env.DB.batch([
     env.DB.prepare(t.clear).bind(part.push, part.total),
     env.DB.prepare(t.copy).bind(part.push, part.total, now),
     ...after,
     env.DB.prepare(`DELETE FROM ${t.staging} WHERE push_id = ? OR staged_at < ?`).bind(part.push, now - STALE_STAGE_MS),
   ]);
-  return part.total;
+  const copied = Number(res[1]?.meta?.changes ?? 0);
+  if (copied !== part.total) throw conflict(`Push not swapped in: ${copied} of ${part.total} row(s) copied; ${t.live} is unchanged`, "Send every part again under a new push id.");
+  return copied;
 }
 
 /** Replace the grid (whole or not at all), and drop anything past her twelve-month window. */

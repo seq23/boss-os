@@ -173,7 +173,8 @@ capital.post("/deals", async (c) => {
   const body = await c.req.json<{ rows?: unknown[] } & Record<string, unknown>>().catch(() => null);
   if (!body || !Array.isArray(body.rows)) throw badRequest("A grid push needs rows", "{ rows: [...], total, push?, last? }");
   if (body.rows.length > 2000) throw badRequest("At most 2,000 rows per push", "Send the grid in parts under one push id.");
-  const part = pushPart(body, body.rows.length);
+  // An empty grid is never a true "no deals": the flag is the client's word, so this route ignores it.
+  const part = { ...pushPart(body, body.rows.length), allowEmpty: false };
   const rows = body.rows.map((r) => cleanDealRow((r ?? {}) as Record<string, unknown>));
   const bad = rows.filter((r) => r === null).length;
   if (bad > 0) throw badRequest(`${bad} row(s) are not deals`, "Each row needs id, company, side, direction, received_on and a Gmail link or none.");
@@ -192,12 +193,16 @@ capital.get("/matches", async (c) => {
   return ok(c, { matches: rows, updated_at: (r.results ?? []).reduce((n, x) => Math.max(n, x.updated_at), 0) || null });
 });
 
+export const EMPTY_MATCHES_AFTER_GRID_MS = 30 * 60_000;
 capital.post("/matches", async (c) => {
   const body = await c.req.json<{ matches?: unknown[]; offset?: number } & Record<string, unknown>>().catch(() => null);
   if (!body || !Array.isArray(body.matches)) throw badRequest("A matches push needs matches", "{ matches: [...], total, push?, last?, offset }");
   if (body.matches.length > 500) throw badRequest("At most 500 matches per push", "Send them in parts under one push id.");
-  const part = pushPart(body, body.matches.length);
+  const asked = pushPart(body, body.matches.length);
   const now = Date.now();
+  // Zero matches empties the screen only beside a grid Boss OS saved in the last half hour (the same run).
+  const gridAt = asked.allowEmpty ? (await c.env.DB.prepare(`SELECT MAX(updated_at) AS at FROM capital_deal_rows`).first<{ at: number | null }>())?.at ?? 0 : 0;
+  const part = { ...asked, allowEmpty: asked.allowEmpty && gridAt >= now - EMPTY_MATCHES_AFTER_GRID_MS };
   const offset = Number(body.offset ?? 0) || 0;
   // Each match gets its short code and one-tap link here, minted once per pair and orders and kept.
   const taps = await tapsFor(c.env, body.matches.filter((m: any) => m?.pair && m?.sig) as any[], now);

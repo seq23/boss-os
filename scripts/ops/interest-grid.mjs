@@ -787,9 +787,28 @@ export async function pushWhole(session, route, key, items, { allowEmpty = false
     if (!res?.ok) return { ok: false, why: `part ${i / size + 1}: ${res?.status ?? "no response"}` };
     const body = last ? await res.json().catch(() => null) : null;
     if (last && body?.data?.committed !== true) return { ok: false, why: "last part not committed" };
-    if (last) break;
+    if (last) return { ok: true, why: "", stored: Number(body?.data?.stored ?? 0) };
   }
-  return { ok: true, why: "" };
+  return { ok: true, why: "", stored: 0 };
+}
+
+/** Each id once, first wins: Boss OS refuses a push that repeats one (DUPLICATE_ID). Pure. */
+export function onceEach(items, keyOf) {
+  const seen = new Set();
+  return items.filter((x) => { const k = keyOf(x); if (seen.has(k)) return false; seen.add(k); return true; });
+}
+
+/**
+ * How the run ends, once the morning sections are written. A push that did not land is a NAMED STOP
+ * and a non-zero exit, so the duty records a failed run instead of a good one; OUTPUT counts only the
+ * rows Boss OS saved. Pure.
+ */
+export function gridRunEnd({ reached, grid, matches }) {
+  const stops = [];
+  if (!reached) stops.push("NAMED STOP [BOSS_UNREACHABLE] Boss OS could not be reached, so the Deals and Matches screens still show the last good push.");
+  else if (!grid?.ok) stops.push(`NAMED STOP [GRID_NOT_PUSHED] ${grid?.why || "no answer"}: the Deals page shows the last good push, whole.`);
+  else if (!matches?.ok) stops.push(`NAMED STOP [MATCHES_NOT_PUSHED] ${matches?.why || "no answer"}: the Matches screen shows the last good push, whole.`);
+  return { stops, exitCode: stops.length ? 4 : 0, output: outputLine(reached && grid?.ok ? grid.stored : 0, "grid rows") };
 }
 
 async function main() {
@@ -850,20 +869,19 @@ async function main() {
   writeMorning("monique_found", moniqueSection);
   fs.writeFileSync(firstSeenFile, JSON.stringify({ updated_at: new Date(nowMs).toISOString(), pairs: nextSeen }));
 
-  let pushed = false;
+  let gridPush = null;
+  let matchesPush = null;
   if (session) {
     // The Archive rides along (owner, 24 Oct 2026): a view by date on the Deals page, never matched.
     const archived = buildGrid(ledger.interests, { identity, lists, senders, wrong, archive: true });
-    const rows = [...grid, ...archived.filter((a) => !grid.some((g) => g.id === a.id))].map(publicRow);
-    const res = await pushWhole(session, "/capital/deals", "rows", rows);
-    pushed = res.ok;
-    if (!pushed) console.error(`  grid NOT pushed [${res.why}] — the Deals page shows the last good push, whole.`);
+    const rows = onceEach([...grid, ...archived].map(publicRow), (r) => r.id);
+    gridPush = await pushWhole(session, "/capital/deals", "rows", rows);
   }
+  const pushed = !!gridPush?.ok;
   // THE MATCHES SCREEN: every current match, best first, replaced whole. Zero matches beside a real
   // grid that just landed is a true "none now", so only then may the screen be emptied.
   if (session && pushed) {
-    const res = await pushWhole(session, "/capital/matches", "matches", matches, { allowEmpty: true });
-    if (!res.ok) console.error(`  matches NOT pushed [${res.why}] — the Matches screen shows the last good push, whole.`);
+    matchesPush = await pushWhole(session, "/capital/matches", "matches", onceEach(matches, (m) => m.key), { allowEmpty: true });
   }
   /*
    * THE HOLDERS TAB: every named holder Danielle's filings read found, per company in the grid's
@@ -883,7 +901,10 @@ async function main() {
   }
   if (!KEEP_SEEN) fs.writeFileSync(seenFile, JSON.stringify({ updated_at: new Date().toISOString(), ids: grid.map((g) => g.id) }, null, 2));
   console.log(`CAPITAL-GRID-COMPLETE: ${grid.length} row(s), ${newRows.length} new, morning sections written${pushed ? ", Deals page updated" : ""}${KEEP_SEEN ? " (--keep-seen: grid-seen.json untouched)" : ""}.`);
-  console.log(outputLine(grid.length, "grid rows"));
+  const end = gridRunEnd({ reached: !!session, grid: gridPush, matches: matchesPush });
+  for (const stop of end.stops) console.error(stop);
+  console.log(end.output);
+  process.exitCode = end.exitCode;
 }
 
 if (import.meta.url === `file://${process.argv[1]}`) {

@@ -4,7 +4,7 @@
  * Boss OS says it committed.
  */
 import { describe, expect, it } from "vitest";
-import { pushWhole } from "../scripts/ops/interest-grid.mjs";
+import { gridRunEnd, onceEach, pushWhole } from "../scripts/ops/interest-grid.mjs";
 
 function fakeSession(fail?: (n: number) => boolean, committed = true) {
   const calls: any[] = [];
@@ -13,7 +13,7 @@ function fakeSession(fail?: (n: number) => boolean, committed = true) {
     post: async (_route: string, body: any) => {
       calls.push(body);
       if (fail?.(calls.length)) return { ok: false, status: 503 };
-      return { ok: true, json: async () => ({ data: { committed: body.last && committed } }) };
+      return { ok: true, json: async () => ({ data: { committed: body.last && committed, stored: body.last && committed ? body.total : null } }) };
     },
   };
 }
@@ -50,5 +50,30 @@ describe("pushWhole", () => {
     const s = fakeSession();
     expect((await pushWhole(s, "/capital/matches", "matches", [], { allowEmpty: true })).ok).toBe(true);
     expect(s.calls).toEqual([expect.objectContaining({ matches: [], total: 0, last: true, allowEmpty: true })]);
+  });
+
+  it("reports the rows Boss OS saved", async () => {
+    expect((await pushWhole(fakeSession(), "/capital/deals", "rows", [1, 2, 3])).stored).toBe(3);
+  });
+});
+
+describe("how the run ends", () => {
+  it("OUTAGE: a push that did not land is a named stop and a non-zero exit, and OUTPUT counts only what was saved", () => {
+    const good = gridRunEnd({ reached: true, grid: { ok: true, stored: 853 }, matches: { ok: true } });
+    expect(good).toEqual({ stops: [], exitCode: 0, output: "OUTPUT 853 grid rows" });
+    const grid = gridRunEnd({ reached: true, grid: { ok: false, why: "part 2: 503" }, matches: null });
+    expect(grid.stops[0]).toMatch(/^NAMED STOP \[GRID_NOT_PUSHED\] part 2: 503/);
+    expect(grid.exitCode).not.toBe(0);
+    expect(grid.output).toBe("OUTPUT 0 grid rows");
+    const m = gridRunEnd({ reached: true, grid: { ok: true, stored: 5 }, matches: { ok: false, why: "last part not committed" } });
+    expect(m.stops[0]).toMatch(/MATCHES_NOT_PUSHED/);
+    expect(m.exitCode).not.toBe(0);
+    const away = gridRunEnd({ reached: false, grid: null, matches: null });
+    expect(away.stops[0]).toMatch(/BOSS_UNREACHABLE/);
+    expect([away.exitCode, away.output]).toEqual([4, "OUTPUT 0 grid rows"]);
+  });
+
+  it("each id once, first wins", () => {
+    expect(onceEach([{ id: "a", n: 1 }, { id: "b" }, { id: "a", n: 2 }], (x: any) => x.id)).toEqual([{ id: "a", n: 1 }, { id: "b" }]);
   });
 });

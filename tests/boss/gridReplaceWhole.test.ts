@@ -8,6 +8,7 @@
 import { env } from "cloudflare:test";
 import { beforeEach, describe, expect, it } from "vitest";
 import { api, apiJson } from "./helpers";
+import { DEALS_TABLE, swapWhole } from "../../src/worker/boss/capital/grid";
 
 const today = new Date().toISOString().slice(0, 10);
 const hex = (n: number) => n.toString(16).padStart(24, "0");
@@ -97,6 +98,42 @@ describe("ABUSE: a client that lies about the push", () => {
   it("refuses the old unguarded shape (replace with no total)", async () => {
     expect((await pushDeals({ rows: [deal(10)], replace: true })).status).toBe(400);
     expect(await gridIds()).toHaveLength(3);
+  });
+});
+
+describe("ABUSE and lock-out: the server decides, not the client's flags", () => {
+  it("ABUSE: a forged allowEmpty on the grid is refused and the grid kept", async () => {
+    expect((await pushDeals({ rows: [], total: 0, allowEmpty: true })).status).toBe(400);
+    expect(await gridIds()).toEqual(OLD.map((d) => d.id).sort());
+  });
+
+  it("ABUSE: empty Matches are refused unless a grid push was saved in the last half hour", async () => {
+    await env.DB.prepare("UPDATE capital_deal_rows SET updated_at = ?").bind(Date.now() - 2 * 3_600_000).run();
+    expect((await pushMatches({ matches: [], total: 0, allowEmpty: true })).status).toBe(400);
+    expect(await matchKeys()).toEqual([match(1).key, match(2).key].sort());
+  });
+
+  it("a repeated id is refused by name, within a part or across parts, and the grid kept", async () => {
+    const one = await apiJson<any>("/api/capital/deals", { method: "POST", body: { rows: [deal(10), deal(10)], total: 2 } });
+    expect(one.status).toBe(400);
+    expect(JSON.stringify(one.body)).toContain("DUPLICATE_ID");
+    const push = "mac-test-push-dup1";
+    await pushDeals({ rows: [deal(10)], push, total: 2, last: false });
+    const two = await apiJson<any>("/api/capital/deals", { method: "POST", body: { rows: [deal(10)], push, total: 2, last: true } });
+    expect(two.status).toBe(400);
+    expect(JSON.stringify(two.body)).toContain("DUPLICATE_ID");
+    expect(await gridIds()).toEqual(OLD.map((d) => d.id).sort());
+    // The next clean push still lands: nothing is locked out.
+    expect((await pushDeals({ rows: [deal(20)], total: 1 })).status).toBe(200);
+    expect(await gridIds()).toEqual([hex(20)]);
+  });
+
+  it("DATA LOSS: the swap's own SQL guard keeps the live grid when the staged count is not the total", async () => {
+    const push = "mac-test-push-guard";
+    await pushDeals({ rows: [deal(10), deal(11)], push, total: 3, last: false });
+    // Called past the count check, as a race would: only the SQL guard stands between this and a wipe.
+    await expect(swapWhole(env as never, DEALS_TABLE, { push, total: 3, last: true, allowEmpty: false }, Date.now())).rejects.toThrow(/not swapped in/);
+    expect(await gridIds()).toEqual(OLD.map((d) => d.id).sort());
   });
 });
 
