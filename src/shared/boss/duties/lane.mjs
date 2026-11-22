@@ -265,6 +265,7 @@ export const INSTALLED_LOCAL_JOBS = [
   "mac-cleanup.mjs",
   "preseed-watch.mjs",
   "waiting-on.mjs",
+  "growth-scoreboard.mjs",
   "errand-reminders.mjs",
   "ahrefs-audit-fix.sh",
   "search-readiness-fix.sh",
