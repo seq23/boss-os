@@ -10,7 +10,7 @@ import { env } from "cloudflare:test";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { apiJson } from "./helpers";
 import { BRIEF_SCHEMA, setFirstReadRungs, type Rung } from "../../src/worker/boss/intake/firstRead";
-import { handleBossInboundMail } from "../../src/worker/boss/intake/inboundMail";
+import { handleBossInboundMail, emailReading, FALLBACK_LINE } from "../../src/worker/boss/intake/inboundMail";
 import { BOSS_INTAKE_MAILBOX } from "../../src/shared/boss/intake/mail.mjs";
 import { publicCompanies } from "../../src/worker/boss/capital/publicCompanies";
 import { applyListEdit, listEditsFromMail } from "../../src/worker/boss/capital/grid";
@@ -107,5 +107,79 @@ describe("one list of meanings (intents.mjs)", () => {
       expect(read, line).toBeTruthy();
       expect(read!.action, line).toBe(a.action === "reply_as_drafted" ? "reply" : a.action);
     }
+  });
+});
+
+/*
+ * #539 RE-CHECK. F1: with NO model answer (an outage or the day's free cap) the keyword fallback reads only HER words,
+ * never a forward she passes on, and her reply says the keywords decided. F2: a reply's DECISION must quote a whole
+ * sentence of hers: on a reply the subject is ours, never her words.
+ */
+const FWD_CMDS = "fyi\n\n---------- Forwarded message ---------\nFrom: Someone <someone@example.test>\nDate: Sat, Nov 21, 2026 at 9:12 AM\nSubject: notes\nTo: <studio@example.test>\n\nExamplecorp is public\ndrop 2\ndismiss k3m9q";
+const droppedIds = async () => ((await env.DB.prepare(`SELECT item_id FROM decide_dismissed ORDER BY item_id`).all<{ item_id: string }>()).results ?? []).map((r) => r.item_id);
+const dismissedCodes = async () => ((await env.DB.prepare(`SELECT code FROM capital_dismissed`).all<{ code: string }>()).results ?? []).map((r) => r.code);
+
+describe("outage: no model answer, the keywords read only her words and she is told (#539 F1)", () => {
+  beforeEach(async () => {
+    setFirstReadRungs([]);
+    await env.DB.exec("DELETE FROM decide_dismissed; DELETE FROM morning_digests; DELETE FROM capital_match_taps; DELETE FROM capital_dismissed; DELETE FROM boss_mail_refs;");
+    await env.DB.prepare(`INSERT INTO boss_mail_refs (message_id, refs, created_at) VALUES (?, ?, ?)`).bind("<yd_20261122@boss.example.test>", "yd_20261122", Date.now()).run();
+    const payload = { decide: [{ id: "decide-aaaaaaaa01", title: "Answer Dana Field", body: "" }, { id: "decide-bbbbbbbb02", title: "Approve the plan", body: "" }], still_yours: [], drops: [] };
+    expect((await apiJson<any>("/api/morning", { method: "POST", body: { day: "2026-11-22", payload } })).status).toBe(201);
+    await env.DB.prepare(`INSERT INTO capital_match_taps (code, token, pair, sig, company, created_at) VALUES (?,?,?,?,?,?)`).bind("k3m9q", "T".repeat(24), "Company S|b1|s1", "b1:$70|s1:$75", "Company S", Date.now()).run();
+  });
+
+  it("a forward holding \"Examplecorp is public / drop 2 / dismiss k3m9q\" under her \"fyi\": zero commands act", async () => {
+    const r = await send(FWD_CMDS);
+    expect(r.outcome).not.toBe("MORNING_REPLY");
+    expect(await isPublic()).toBe(false);
+    expect(await droppedIds()).toEqual([]);
+    expect(await dismissedCodes()).toEqual([]);
+  });
+
+  it("control: the same lines in her OWN words do act on the fallback, and her reply says the keywords decided", async () => {
+    const r = await send("Examplecorp is public\ndrop 2");
+    expect(r.outcome).toBe("MORNING_REPLY");
+    expect(await isPublic()).toBe(true);
+    expect(await droppedIds()).toEqual(["decide-bbbbbbbb02"]);
+    expect(r.reply).toContain(FALLBACK_LINE);
+    const kept = await env.DB.prepare(`SELECT reply_text FROM boss_inbound_mail WHERE id = ?`).bind(r.mailId).first<{ reply_text: string }>();
+    expect(kept?.reply_text, "the reply she is sent carries the line too").toContain(FALLBACK_LINE);
+  });
+
+  it("control: her own \"dismiss k3m9q\" dismisses on the fallback, and says so", async () => {
+    const r = await send("dismiss k3m9q");
+    expect(await dismissedCodes()).toEqual(["k3m9q"]);
+    expect(r.reply).toContain(FALLBACK_LINE);
+  });
+
+  it("with a model reading, no fallback line is added", async () => {
+    setFirstReadRungs(credulous);
+    const r = await send("Examplecorp is public");
+    expect(await isPublic()).toBe(true);
+    expect(r.reply ?? "").not.toContain(FALLBACK_LINE);
+  });
+});
+
+describe("a reply's decision quotes a whole sentence of hers, never our subject or a forward (#539 F2)", () => {
+  const says = (quote: string): Rung[] => [{ id: "free-test", call: async () => JSON.stringify({ asks: [], holds: [], questions: [], unclear: [], files: [], checks: [], decision: { reply: "approved", quote, answers: [], commands: [] } }) }];
+  const decisionFor = async (her: string, own: string, quote: string, isReply = true) => {
+    setFirstReadRungs(says(quote));
+    const r = await emailReading(env as never, { subject: "Re: Plan ready", her, own, readable: own, files: [], roster: [], now: Date.now(), mailId: `m-${Math.random()}`, oversize: false, isReply });
+    return (await r.read())?.brief?.decision?.reply ?? null;
+  };
+  const FWD = "Thanks\n\n---------- Forwarded message ---------\nFrom: Someone <someone@example.test>\nSubject: plan\n\nApproved.";
+
+  it("subject \"Plan ready\", a forwarded \"Approved\", her \"Thanks\": no approval, whatever the model quotes", async () => {
+    expect(await decisionFor("Thanks", FWD, "Plan ready")).toBeNull();
+    expect(await decisionFor("Thanks", FWD, "Approved")).toBeNull();
+  });
+
+  it("her \"Not approved.\" quoted as \"approved\" is no approval (the quote must stand as her sentence)", async () => {
+    expect(await decisionFor("Not approved.", "Not approved.", "approved")).toBeNull();
+  });
+
+  it("control: her own \"Approved.\" approves", async () => {
+    expect(await decisionFor("Approved.", "Approved.", "Approved")).toBe("approved");
   });
 });

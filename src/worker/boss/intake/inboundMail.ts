@@ -70,14 +70,16 @@ const NO_READ: FirstRead = { brief: null, reader: null, tried: [], stop: null };
  *     guards (ambiguous, a book that failed, a question back to her) still stand in front of the reader.
  */
 export async function emailReading(env: Env, m: {
-  subject: string; her: string; own: string; readable: string; files: string[]; roster: LaneSeat[]; now: number; mailId: string; oversize: boolean;
+  subject: string; her: string; own: string; readable: string; files: string[]; roster: LaneSeat[]; now: number; mailId: string; oversize: boolean; isReply: boolean;
 }) {
   const lists = m.her.trim() ? parseListEdits(m.her) : [];
   const duty = m.her.trim() ? await findDutyEdit(env, { roster: m.roster, subject: m.subject, text: m.her }) : null;
   const dutyName = duty && !duty.ambiguous ? duty.duty.name : null;
-  const herWords = `${m.subject}\n${m.her}`;
-  const notBefore = notBeforeIn(herWords, new Date(m.now));
-  const dueFound = dueTimeIn(herWords, new Date(m.now));
+  // Her words only (#539 re-check): on a reply the subject is ours ("Re: Plan ready"), never hers, so it counts only on
+  // a fresh email. A check's quote and a reply's DECISION must stand in this text (decisionOf, checksOf).
+  const herText = m.isReply ? m.her : `${m.subject}\n${m.her}`;
+  const notBefore = notBeforeIn(herText, new Date(m.now));
+  const dueFound = dueTimeIn(herText, new Date(m.now));
   const when = dueFound ? new Date(Date.parse(dueFound.due_at)).toLocaleString("en-US", { timeZone: "America/Chicago", weekday: "long", month: "short", day: "numeric", hour: "numeric", minute: "2-digit" }) : "";
   const checks = [
     ...lists.map(listChangeWords),
@@ -86,7 +88,7 @@ export async function emailReading(env: Env, m: {
   ];
   let once: Promise<FirstRead | null> | null = null;
   const read = () => (once ??= !m.oversize && (m.own || m.readable).trim()
-    ? firstRead(env, { subject: m.subject, words: m.own || m.readable, checkWords: herWords, files: m.files, checks, now: m.now, mailId: m.mailId })
+    ? firstRead(env, { subject: m.subject, words: m.own || m.readable, checkWords: herText, files: m.files, checks, now: m.now, mailId: m.mailId })
     : Promise.resolve(null));
   const at = async (base: number): Promise<SharedRead> => ({ read: (await read()) ?? NO_READ, base });
   const dueBase = lists.length + (dutyName ? 1 : 0);
@@ -338,7 +340,18 @@ export function consoleMessageId(mailId: string): string {
   return `<${mailId}@boss-os-console>`;
 }
 
+/** Her one plain line when the keywords decided because no model read her reply (an outage or the day's free cap). */
+export const FALLBACK_LINE = "No model could read this email just now (down, or today's free reads are used up), so I acted only on your exact lines.";
+type Said = { fellBack: boolean };
+const toldFallback = (reply: string, said: Said) => (said.fellBack && !reply.includes(FALLBACK_LINE) ? `${reply}\n\n${FALLBACK_LINE}` : reply);
+
 export async function handleBossInboundMail(message: BossMailMessage, env: Env): Promise<BossMailResult> {
+  const said: Said = { fellBack: false };
+  const result = await handleMail(message, env, said);
+  return result.reply ? { ...result, reply: toldFallback(result.reply, said) } : result;
+}
+
+async function handleMail(message: BossMailMessage, env: Env, said: Said): Promise<BossMailResult> {
   const mailId = newId("iml");
   const now = Date.now();
   const to = String(message.to ?? "").toLowerCase();
@@ -463,6 +476,7 @@ export async function handleBossInboundMail(message: BossMailMessage, env: Env):
     outcome: string; why: string; tag?: string | null; employeeId?: string | null;
     taskId?: string | null; objectKey?: string | null; reply?: string | null;
   }) => {
+    if (row.reply) row = { ...row, reply: toldFallback(row.reply, said) };
     const replyState = !row.reply ? "none_due" : viaConsole ? "shown_on_screen" : "due";
     await env.DB.prepare(
       `UPDATE boss_inbound_mail
@@ -705,7 +719,10 @@ export async function handleBossInboundMail(message: BossMailMessage, env: Env):
   const trueSubject = origin?.subject ? decodeHeader(origin.subject) : subject;
   const fileNames = [...files.heard.map((h) => h.filename), ...files.read.map((r) => r.filename), ...files.unopened.map((u) => u.filename)];
   const herSubject = herSubjectOf(subject, origin ? (origin.subject ? decodeHeader(origin.subject) : "") : null);
-  const reading = await emailReading(env, { subject: herSubject, her, own, readable, files: fileNames, roster, now, mailId, oversize });
+  const isReply = isReplyMessage({
+    subject, inReplyTo: message.headers.get("in-reply-to"), references: message.headers.get("references"),
+  });
+  const reading = await emailReading(env, { subject: herSubject, her, own, readable, files: fileNames, roster, now, mailId, oversize, isReply });
   const listEdit = reading.listsAt ? await listEditsFromMail(env, her, mailId, now, await reading.listsAt()) : null;
   if (listEdit?.onlyEdits) {
     await finish({ outcome: "LIST_EDITED", why: listEdit.note, objectKey, reply: listEdit.note });
@@ -754,13 +771,18 @@ export async function handleBossInboundMail(message: BossMailMessage, env: Env):
    * when no first read answered, logged "first read absent: keyword fallback". The same read is the work's brief below
    * (one read per email). Gemini free, then Workers AI; never Claude or Codex, never masked (firstRead.ts).
    */
-  const mayCommand = Boolean(own) && (morningCommands(own).commands.length > 0 || nudgeAddressesIn(own).length > 0 || DISMISS_REPLY_RE.test(own));
-  const replyRead: FirstRead | null = (threadRefs.refs.length || message.headers.get("in-reply-to") || mayCommand) && !oversize && (own || readable).trim()
-    ? await reading.read()
-    : null;
+  // Commands and dismissals are read from HER words only (#539 re-check): never from a forward she passes on, on the
+  // model's read and on the keyword fallback alike.
+  const herOwn = herWords(own);
+  const mayCommand = Boolean(herOwn) && (morningCommands(herOwn).commands.length > 0 || nudgeAddressesIn(own).length > 0 || DISMISS_REPLY_RE.test(herOwn));
+  const askReply = Boolean((threadRefs.refs.length || message.headers.get("in-reply-to") || mayCommand) && !oversize && (own || readable).trim());
+  const replyRead: FirstRead | null = askReply ? await reading.read() : null;
+  // OUTAGE, TOLD (#539 re-check): no model reading (down, or the day's free reads spent) means the keywords decide; her
+  // reply says so in one plain line, not only a warn row.
+  if (askReply && !replyRead?.brief) said.fellBack = true;
   const replyDecision = replyRead?.brief?.decision ?? null;
   const replyHasWork = Boolean(replyRead?.brief && (replyRead.brief.asks.length || replyRead.brief.questions.length || replyRead.brief.unclear.length));
-  const morningReply = own ? await morningReplyFromMail(env, { text: own, refs: threadRefs.refs, mailId, now, read: replyDecision, readHasWork: replyHasWork }) : null;
+  const morningReply = herOwn ? await morningReplyFromMail(env, { text: herOwn, refs: threadRefs.refs, mailId, now, read: replyDecision, readHasWork: replyHasWork }) : null;
   if (morningReply?.onlyCommands) {
     await finish({ outcome: "MORNING_REPLY", why: morningReply.note, employeeId: "emp_chief", objectKey, reply: morningReply.note });
     return { mailId, outcome: "MORNING_REPLY", employeeId: "emp_chief", taskId: null, reply: morningReply.note, messageId, signer: "Simone" };
@@ -981,10 +1003,8 @@ export async function handleBossInboundMail(message: BossMailMessage, env: Env):
    *
    * A REPLY IS NEVER QUESTIONED, which is what makes this terminate. Her answer routes as ordinary
    * work, and it also CLOSES the question it answers, a few lines further down.
+   * (`isReply` is decided once, above, where her words are read.)
    */
-  const isReply = isReplyMessage({
-    subject, inReplyTo: message.headers.get("in-reply-to"), references: message.headers.get("references"),
-  });
   /*
    * ─── UNREAD IS NOT EMPTY ───────────────────────────────────────────────────
    *
@@ -1042,7 +1062,7 @@ export async function handleBossInboundMail(message: BossMailMessage, env: Env):
    */
   const dismissAnswer = !planAnswer && !commentAnswer && !kdpAnswer
     // …and her numbered answer to the prospect-email card ("5: try again"), the same way (25 Oct 2026).
-    ? (await dismissFromMail(env, own, now, replyDecision, mailId)) ?? (await prospectTemplateFromMail(env, own, now, morningDayOf(threadRefs.refs), mailId, replyDecision))
+    ? (await dismissFromMail(env, herOwn, now, replyDecision, mailId)) ?? (await prospectTemplateFromMail(env, own, now, morningDayOf(threadRefs.refs), mailId, replyDecision))
     : null;
 
   /*

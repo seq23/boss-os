@@ -154,7 +154,7 @@ describe("her duty edits", () => {
 describe("one read per email (#514 review)", () => {
   const NOW = Date.parse("2026-11-23T15:00:00Z");
   const reading = async (readable: string, subject = "", own = ownWords(readable)) => emailReading(env, {
-    subject, her: herWords(readable), own, readable, files: [], roster: (await activeRoster(env)) as any, now: NOW, mailId: "m5", oversize: false,
+    subject, her: herWords(readable), own, readable, files: [], roster: (await activeRoster(env)) as any, now: NOW, mailId: "m5", oversize: false, isReply: false,
   });
 
   it("a list edit, a duty edit and a deadline are all answered by ONE model call, and only when a door asks", async () => {

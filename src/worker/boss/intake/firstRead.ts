@@ -289,9 +289,10 @@ export function decisionOf(value: unknown, words: string, herOnly: string = word
   const d = value as { reply?: unknown; quote?: unknown; answers?: unknown; commands?: unknown };
   // HER words only decide (22 Nov 2026, the abuse case): a reading must quote her text above any quote or forward
   // (`herOnly`), so an old "yes" she quoted or a forwarded "Approved" never approves. No quote of hers: no reading.
+  // The quote must stand as her sentence (`quoteStands`): "not approved" or "approved?" around it is no reading.
   const body = norm(herOnly);
   const quote = str(d.quote);
-  const reply = typeof d.reply === "string" && (READ_MODES as readonly string[]).includes(d.reply) && quote.length > 0 && body.includes(norm(quote)) ? (d.reply as ReplyMode) : null;
+  const reply = typeof d.reply === "string" && (READ_MODES as readonly string[]).includes(d.reply) && quote.length > 0 && body.includes(norm(quote)) && quoteStands(herOnly, quote) ? (d.reply as ReplyMode) : null;
   const answers = list(d.answers)
     .map((a) => ({ n: Number((a as { n?: unknown })?.n), text: str((a as { text?: unknown })?.text) }))
     .filter((a) => Number.isInteger(a.n) && a.n > 0 && a.n < 100 && a.text.length > 0 && body.includes(norm(a.text)))
@@ -304,7 +305,7 @@ export function decisionOf(value: unknown, words: string, herOnly: string = word
       const action = kind === "comment" && typeof o.action === "string" && (COMMENT_ACTIONS as readonly string[]).includes(o.action) ? o.action : null;
       return { kind, n: n !== null && Number.isInteger(n) && n > 0 && n < 1000 ? n : null, text: String(o.text ?? "").trim(), ...(kind === "comment" ? { action } : {}) };
     })
-    .filter((c) => (COMMAND_KINDS as readonly string[]).includes(c.kind) && (c.kind === "gate" || (c.text.length > 0 && body.includes(norm(c.text)))) && (c.kind !== "comment" || (c.n !== null && c.action !== null)))
+    .filter((c) => (COMMAND_KINDS as readonly string[]).includes(c.kind) && (c.kind === "gate" || (c.text.length > 0 && body.includes(norm(c.text)) && quoteStands(herOnly, c.text))) && (c.kind !== "comment" || (c.n !== null && c.action !== null)))
     .slice(0, MAX_ITEMS);
   // A parsed DECISION line is a reading even when it decides nothing: then no keyword acts on this email.
   return { reply, answers, commands };

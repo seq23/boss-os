@@ -57,7 +57,6 @@ export async function morningReplyFromMail(env: Env, a: { text: string; refs: st
     ? `I was not sure you meant ${unsure.map((c: any) => `"${commandWords(c)}"`).join(", ")}, so I did nothing with ${unsure.length === 1 ? "it" : "them"}. Reply with just that line if you did.`
     : "";
   if (!usable.length) return askOnce ? { note: askOnce, onlyCommands: !(fromRead && a.readHasWork === false ? "" : keyword.rest), acted: 0 } : null;
-  if (!usable.length) return null;
   // Only commands → done here. With the first read: the keywords found nothing else in it, or the read found no work.
   const rest = fromRead && a.readHasWork === false ? "" : keyword.rest;
   const today = dayIdInZone(now);
