@@ -5,16 +5,15 @@
  * Worker bundles this file.
  */
 
-import { wallIn, zonedUtc } from "../commands/parse.mjs";
-import { HOME_TZ } from "../ownerTime.mjs";
+import { HOME_TZ, civilIn, instantAt } from "../ownerTime.mjs";
 
 export const MORNING_EMAIL_HOUR = 6;
 export const MORNING_EMAIL_MINUTE = 40;
 
 /** The scheduled email instant on the Central calendar day containing now. */
 export function morningEmailSlot(now = Date.now()) {
-  const { y, m, d } = wallIn(now, HOME_TZ);
-  return zonedUtc(y, m, d, MORNING_EMAIL_HOUR, MORNING_EMAIL_MINUTE, HOME_TZ);
+  const { y, m, d } = civilIn(now, HOME_TZ);
+  return instantAt(HOME_TZ, y, m, d, MORNING_EMAIL_HOUR, MORNING_EMAIL_MINUTE);
 }
 
 /**

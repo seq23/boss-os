@@ -42,6 +42,7 @@ export const openai: ProviderAdapter = {
         messages: req.messages,
         max_completion_tokens: req.maxOutputTokens,
         temperature: req.temperature,
+        ...(req.json ? { response_format: { type: "json_schema", json_schema: { name: req.json.name, schema: req.json.schema, strict: false } } } : {}),
       }),
     });
 
@@ -97,6 +98,7 @@ async function completeWithSearch(req: CompletionRequest, ctx: AdapterContext) {
       tools: [{ type: "web_search" }],
       max_output_tokens: req.maxOutputTokens,
       temperature: req.temperature,
+      ...(req.json ? { text: { format: { type: "json_schema", name: req.json.name, schema: req.json.schema, strict: false } } } : {}),
     }),
   });
   if (!res.ok) {

@@ -18,6 +18,8 @@
  * expanded and anything else is emitted ONCE and counted, rather than silently dropped.
  */
 
+import { civilIn, instantAt, validZone } from "../../src/shared/boss/ownerTime.mjs";
+
 /**
  * ICS unfolding, which is the one thing a naive parser always gets wrong.
  *
@@ -27,28 +29,6 @@
  */
 function unfold(text) {
   return text.replace(/\r\n/g, "\n").replace(/\n[ \t]/g, "");
-}
-
-/**
- * The UTC offset a zone was at on a given instant, in minutes.
- *
- * Intl already knows every rule, so this asks it rather than shipping a timezone database — and it
- * asks it FOR THAT DATE, which is the part a fixed offset gets wrong twice a year.
- */
-function offsetMinutes(zone, utcGuess) {
-  try {
-    const parts = new Intl.DateTimeFormat("en-US", {
-      timeZone: zone, hour12: false,
-      year: "numeric", month: "2-digit", day: "2-digit",
-      hour: "2-digit", minute: "2-digit", second: "2-digit",
-    }).formatToParts(new Date(utcGuess));
-    const get = (t) => Number(parts.find((p) => p.type === t)?.value);
-    const asUtc = Date.UTC(get("year"), get("month") - 1, get("day"), get("hour") % 24, get("minute"), get("second"));
-    return (asUtc - utcGuess) / 60000;
-  } catch {
-    // An unknown zone is treated as UTC and said so by the caller, rather than throwing away the event.
-    return 0;
-  }
 }
 
 /**
@@ -62,9 +42,8 @@ function offsetMinutes(zone, utcGuess) {
  * correctly from the Calendar API, so the screen showed one meeting twice, hours apart. A documented
  * approximation is still a wrong answer on a screen.
  *
- * Two passes because an offset depends on the instant it is asked about: guess UTC, ask the zone
- * what it was doing then, then re-ask at the corrected instant. That second pass is what makes the
- * hour before a DST change come out right.
+ * The zone's clock is turned into an instant by the one shared rule (`instantAt`, ownerTime.mjs), which
+ * reads the offset in force on that date. An unknown zone is treated as UTC rather than losing the event.
  */
 function icsTime(value, params) {
   const v = value.trim();
@@ -79,8 +58,9 @@ function icsTime(value, params) {
   // everywhere she is likely to be, and an all-day event has no hour to be wrong about.
   if (!tzid) return naive;
 
-  const first = naive - offsetMinutes(tzid, naive) * 60000;
-  return naive - offsetMinutes(tzid, first) * 60000;
+  const zone = validZone(tzid);
+  if (!zone) return naive;
+  return instantAt(zone, Number(y), Number(mo), Number(d), Number(hh), Number(mi)) + Number(ss) * 1000;
 }
 
 /**
@@ -189,12 +169,11 @@ export function parseIcs(text, now = Date.now(), horizonDays = 28, backDays = 1)
     const step = (freq === "DAILY" ? 1 : 7) * interval * 86_400_000;
     // A repeat keeps its WALL CLOCK in the zone it was set in (6 Nov 2026: a weekly 8am Central
     // sync set in October came out at 7am after the clocks went back, so the prep said 7am).
-    const tzid = /TZID=([^;:]+)/.exec(dtstart.params ?? "")?.[1] ?? null;
+    const zone = validZone(/TZID=([^;:]+)/.exec(dtstart.params ?? "")?.[1] ?? null);
     const next = (t) => {
-      if (!tzid) return t + step;
-      const wall = t + offsetMinutes(tzid, t) * 60000 + step;
-      const first = wall - offsetMinutes(tzid, wall) * 60000;
-      return wall - offsetMinutes(tzid, first) * 60000;
+      if (!zone) return t + step;
+      const w = civilIn(t, zone);
+      return instantAt(zone, w.y, w.m, w.d + step / 86_400_000, w.h, w.min) + (t % 60_000);
     };
     let at = start;
     let n = 0;

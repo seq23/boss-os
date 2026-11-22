@@ -11,7 +11,8 @@ import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import worker from "../../src/worker/boss/index";
 import { setCommandFetch } from "../../src/worker/boss/commands/google";
 import { runInvitations, setInviteModel } from "../../src/worker/boss/invitations/run";
-import { addDays, centralDay, wallToUtc, INVITE_INBOXES } from "../../src/shared/boss/invitations/invitations.mjs";
+import { addDays, centralDay, INVITE_INBOXES } from "../../src/shared/boss/invitations/invitations.mjs";
+import { HOME_TZ, instantAt } from "../../src/shared/boss/ownerTime.mjs";
 
 // Her own inbox is read from the module, never written in a test (the repo is public).
 const HER = INVITE_INBOXES[0]!.address;
@@ -21,7 +22,7 @@ const DAY = 86_400_000;
 const morningWent = (day: string, at: number) => env.DB.prepare(`INSERT INTO morning_digests (day, payload, sent_at, created_at, updated_at) VALUES (?, '{}', ?, ?, ?) ON CONFLICT(day) DO UPDATE SET sent_at = excluded.sent_at`).bind(day, at, at, at).run();
 // Mon 9 Nov 2026, 06:00 Central.
 const NOW = Date.parse("2026-11-09T12:00:00Z");
-const EVENT = wallToUtc(2026, 11, 19, 18, 30); // Thu 19 Nov, 6:30 pm Central
+const EVENT = instantAt(HOME_TZ, 2026, 11, 19, 18, 30); // Thu 19 Nov, 6:30 pm Central
 const REAL_NOW = Date.now;
 
 async function pem(): Promise<string> {

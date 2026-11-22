@@ -10,8 +10,6 @@ export function mailboxFor(text: string): string;
 export const PERSONAL_CALENDAR_RE: RegExp;
 export const PRODUCT_REPOS: ReadonlyArray<{ re: RegExp; product: string; github_repo: string }>;
 export function addressesIn(text: string): string[];
-export function zonedUtc(y: number, m: number, d: number, h: number, min: number, tz: string): number;
-export function wallIn(ts: number, tz: string): { y: number; m: number; d: number; h: number; min: number; dow: number };
 export function minutesIn(text: string): number;
 export type When = { start: number; tz: string; tzLabel: string; minutes: number; said: string | null };
 export function whenIn(text: string, now?: number): When | { error: string; start?: undefined };

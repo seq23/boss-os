@@ -43,6 +43,39 @@ export function wall(at, tz) {
   return { hour: g("hour") % 24, minute: g("minute") };
 }
 
+// One full formatter per zone, kept (same reason as WALL).
+const CIVIL = new Map();
+/** The zone's offset from UTC at an instant, in ms (positive = ahead of UTC). */
+function offsetAt(ts, tz) {
+  let f = CIVIL.get(tz);
+  if (!f) { f = new Intl.DateTimeFormat("en-US", { timeZone: tz, hourCycle: "h23", year: "numeric", month: "2-digit", day: "2-digit", hour: "2-digit", minute: "2-digit", second: "2-digit" }); CIVIL.set(tz, f); }
+  const p = Object.fromEntries(f.formatToParts(new Date(ts)).map((x) => [x.type, x.value]));
+  return Date.UTC(+p.year, +p.month - 1, +p.day, +p.hour % 24, +p.minute, +p.second) - Math.floor(ts / 1000) * 1000;
+}
+
+/** The civil clock in a zone at an instant: { y, m (1-12), d, h, min, dow (0 = Sunday) }. */
+export function civilIn(ts, tz) {
+  const l = new Date(ts + offsetAt(ts, tz));
+  return { y: l.getUTCFullYear(), m: l.getUTCMonth() + 1, d: l.getUTCDate(), h: l.getUTCHours(), min: l.getUTCMinutes(), dow: l.getUTCDay() };
+}
+
+/**
+ * THE ONE WALL CLOCK -> INSTANT RULE for the plain-JS side (22 Nov 2026: six copies, one of them an
+ * hour wrong on every deadline that crossed a clock change). The epoch ms at which the clock in `tz`
+ * reads y-m-d h:min. TWO PASSES: the offset depends on the instant being solved for, so the second
+ * pass re-reads it at the first guess and settles the clock-change days. Days past the month's end
+ * roll over (d = 32 is the next month's 1st). A time in the hour the clocks go back over is the first
+ * of its two instants west of UTC (the Americas) and the second east of it, as every earlier copy did; a
+ * time in the skipped hour lands an hour off it (`instantIn`, lp/schedule.mjs, says null instead). The
+ * Worker's offset-cached twin is `zonedTime` in timezone.ts; scripts/lib/seat-usage-limit.mjs mirrors
+ * another repo on purpose (repositories never import each other).
+ */
+export function instantAt(tz, y, m, d, h = 0, min = 0) {
+  const wallMs = Date.UTC(y, m - 1, d, h, min);
+  const first = wallMs - offsetAt(wallMs, tz);
+  return wallMs - offsetAt(first, tz);
+}
+
 /** "9:00 AM": the default clock. A sender with its own style passes `clock(hour, minute)`. */
 export const fullClock = (h, m) => `${h % 12 === 0 ? 12 : h % 12}:${String(m).padStart(2, "0")} ${h >= 12 ? "PM" : "AM"}`;
 

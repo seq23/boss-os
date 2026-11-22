@@ -24,7 +24,7 @@ function mail(subject: string, body: string) {
 }
 
 const match = (n: number, sig = `b${n}:$72|s${n}:$77`) => ({ key: `b${n}|s${n}`, company: "Company S", pair: `company s|buyer${n}@x.example|seller${n}@y.example`, sig, seller: { who: "Seller" }, buyer: { who: "Buyer" } });
-const push = (matches: any[]) => apiJson<any>("/api/capital/matches", { method: "POST", body: { matches, replace: true } });
+const push = (matches: any[]) => apiJson<any>("/api/capital/matches", { method: "POST", body: { matches, total: matches.length } });
 const listed = async () => ((await apiJson<any>("/api/capital/matches")).body.data.matches as any[]).map((m) => m.key);
 
 beforeEach(async () => {

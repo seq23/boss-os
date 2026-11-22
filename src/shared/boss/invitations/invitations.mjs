@@ -15,6 +15,7 @@
  */
 
 import { DEFAULT_MAILBOX, BRAND_MAILBOXES } from "../commands/parse.mjs";
+import { instantAt } from "../ownerTime.mjs";
 
 export const OWNER_TZ = "America/Chicago";
 export const SECTION = "invitations";
@@ -67,17 +68,6 @@ export function addDays(day, n) {
   const t = Date.UTC(+day.slice(0, 4), +day.slice(5, 7) - 1, +day.slice(8, 10)) + n * 86_400_000;
   return new Date(t).toISOString().slice(0, 10);
 }
-/** A wall-clock time in a zone, as epoch ms (two passes settle the offset across a DST edge). */
-export function wallToUtc(y, mo, d, h, mi, tz = OWNER_TZ) {
-  const guess = Date.UTC(y, mo - 1, d, h, mi);
-  let t = guess;
-  for (let i = 0; i < 2; i++) {
-    const p = parts(t, tz);
-    const asUtc = Date.UTC(p.y, p.m - 1, p.d, p.h, p.min);
-    t += guess - asUtc;
-  }
-  return t;
-}
 const MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
 function clock(p) {
   const h12 = p.h % 12 === 0 ? 12 : p.h % 12;
@@ -100,7 +90,7 @@ export function whenWords(start, end = null, allDay = false) {
 }
 /** "Mon 23 Nov" for a "YYYY-MM-DD". */
 export function dayWords(day) {
-  const t = wallToUtc(+day.slice(0, 4), +day.slice(5, 7), +day.slice(8, 10), 12, 0);
+  const t = instantAt(OWNER_TZ, +day.slice(0, 4), +day.slice(5, 7), +day.slice(8, 10), 12, 0);
   const p = parts(t);
   return `${p.wd} ${p.d} ${MONTHS[p.m - 1]}`;
 }
@@ -115,14 +105,14 @@ function icsTime(prop) {
   if (m || prop?.params?.VALUE === "DATE") {
     m = m ?? /^(\d{4})(\d{2})(\d{2})/.exec(v);
     if (!m) return null;
-    return { ms: wallToUtc(+m[1], +m[2], +m[3], 0, 0), allDay: true };
+    return { ms: instantAt(OWNER_TZ, +m[1], +m[2], +m[3], 0, 0), allDay: true };
   }
   m = /^(\d{4})(\d{2})(\d{2})T(\d{2})(\d{2})(\d{2})?(Z)?$/.exec(v);
   if (!m) return null;
   if (m[7]) return { ms: Date.UTC(+m[1], +m[2] - 1, +m[3], +m[4], +m[5]), allDay: false };
   let tz = prop?.params?.TZID ?? OWNER_TZ;
   try { new Intl.DateTimeFormat("en-US", { timeZone: tz }); } catch { tz = OWNER_TZ; }
-  return { ms: wallToUtc(+m[1], +m[2], +m[3], +m[4], +m[5], tz), allDay: false };
+  return { ms: instantAt(tz, +m[1], +m[2], +m[3], +m[4], +m[5]), allDay: false };
 }
 const mailtoOf = (v) => String(v ?? "").replace(/^mailto:/i, "").trim().toLowerCase();
 
@@ -224,8 +214,8 @@ export function proseDate(text, now) {
   if (m[4]) { h = (+m[4] % 12) + (/^p/i.test(m[6]) ? 12 : 0); mi = m[5] ? +m[5] : 0; allDay = false; }
   const today = centralDay(now);
   let y = m[3] ? +m[3] : +today.slice(0, 4);
-  let ms = wallToUtc(y, mo, d, allDay ? 0 : h, mi);
-  if (!m[3] && centralDay(ms) < today) ms = wallToUtc(++y, mo, d, allDay ? 0 : h, mi);
+  let ms = instantAt(OWNER_TZ, y, mo, d, allDay ? 0 : h, mi);
+  if (!m[3] && centralDay(ms) < today) ms = instantAt(OWNER_TZ, ++y, mo, d, allDay ? 0 : h, mi);
   return { ms, allDay };
 }
 
@@ -294,7 +284,7 @@ export function readInvitation(msg, { now, model = null } = {}) {
     if (!model.invitation) return { invitation: null, why: "the model read it as not an invitation" };
     const d = /^(\d{4})-(\d{2})-(\d{2})$/.exec(String(model.date ?? ""));
     const t = /^(\d{1,2}):(\d{2})$/.exec(String(model.time ?? ""));
-    if (d) { start = wallToUtc(+d[1], +d[2], +d[3], t ? +t[1] : 0, t ? +t[2] : 0); allDay = !t; }
+    if (d) { start = instantAt(OWNER_TZ, +d[1], +d[2], +d[3], t ? +t[1] : 0, t ? +t[2] : 0); allDay = !t; }
     title = model.title ? String(model.title).slice(0, 140) : null;
     where = model.where ? String(model.where).slice(0, 160) : null;
     if (typeof model.asks_answer === "boolean") asks = model.asks_answer;

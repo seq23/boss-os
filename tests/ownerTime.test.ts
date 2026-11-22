@@ -1,6 +1,6 @@
 // Times she reads follow the zone her Mac is on, with Central in brackets when different (6 Nov 2026).
 import { describe, expect, it } from "vitest";
-import { ownerTime, ownerZone, HOME_TZ } from "../src/shared/boss/ownerTime.mjs";
+import { civilIn, instantAt, ownerTime, ownerZone, HOME_TZ } from "../src/shared/boss/ownerTime.mjs";
 import { syncOwnerZone, zoneFromLink } from "../scripts/ops/owner-zone.mjs";
 
 const at = Date.parse("2026-11-09T14:00:00Z"); // 8:00 AM Central, 9:00 AM Eastern (both standard time)
@@ -49,4 +49,23 @@ describe("a repair report's date is her day, not New York's", async () => {
   const lateSunday = Date.parse("2026-11-09T05:30:00Z"); // 11:30 PM Sunday Central, 12:30 AM Monday Eastern
   it("Central when unset (was hard-coded New York)", () => expect(dayWords(lateSunday)).toBe("Sunday 8 November"));
   it("her zone when set", () => expect(dayWords(lateSunday, "America/New_York")).toBe("Monday 9 November"));
+});
+
+describe("instantAt / civilIn: the one wall clock -> instant rule", () => {
+  it("summer and winter offsets", () => {
+    expect(new Date(instantAt(HOME_TZ, 2026, 7, 15, 6, 30)).toISOString()).toBe("2026-07-15T11:30:00.000Z");
+    expect(new Date(instantAt(HOME_TZ, 2026, 1, 15, 6, 30)).toISOString()).toBe("2026-01-15T12:30:00.000Z");
+  });
+  it("the clock-change days land right", () => {
+    expect(new Date(instantAt(HOME_TZ, 2026, 11, 1, 9, 0)).toISOString()).toBe("2026-11-01T15:00:00.000Z");
+    expect(new Date(instantAt(HOME_TZ, 2027, 3, 14, 9, 0)).toISOString()).toBe("2027-03-14T14:00:00.000Z");
+    expect(new Date(instantAt("America/New_York", 2026, 11, 1, 0, 30)).toISOString()).toBe("2026-11-01T04:30:00.000Z");
+  });
+  it("a day past the month's end rolls over", () => {
+    expect(instantAt(HOME_TZ, 2026, 11, 31, 9, 0)).toBe(instantAt(HOME_TZ, 2026, 12, 1, 9, 0));
+  });
+  it("round-trips through civilIn", () => {
+    const t = instantAt("America/Los_Angeles", 2026, 12, 24, 18, 45);
+    expect(civilIn(t, "America/Los_Angeles")).toEqual({ y: 2026, m: 12, d: 24, h: 18, min: 45, dow: 4 });
+  });
 });

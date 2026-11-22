@@ -59,7 +59,11 @@ export const gemini: ProviderAdapter = {
       body: JSON.stringify({
         ...(system ? { systemInstruction: { parts: [{ text: system }] } } : {}),
         contents,
-        generationConfig: generationConfig(req.modelSlug, req.maxOutputTokens, req.temperature),
+        generationConfig: {
+          ...generationConfig(req.modelSlug, req.maxOutputTokens, req.temperature),
+          // Structured output (types.ts `json`): Google's JSON mode, held to the schema.
+          ...(req.json ? { responseMimeType: "application/json", responseJsonSchema: req.json.schema } : {}),
+        },
         ...(req.webSearch ? { tools: [{ google_search: {} }] } : {}),
       }),
     });

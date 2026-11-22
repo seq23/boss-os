@@ -23,6 +23,7 @@
  * NO NAMES LIVE HERE. Tests use invented names at example.com.
  */
 import { firstName } from "./plan.mjs";
+import { instantAt } from "../ownerTime.mjs";
 
 const DAY = 86_400_000;
 
@@ -84,15 +85,12 @@ export function wall(t, zone) {
   return { weekday: p.weekday, ymd: `${p.year}-${p.month}-${p.day}`, hour: Number(p.hour), minute: Number(p.minute) };
 }
 
-/** The instant of a wall-clock time on a date in a zone (DST-safe: searched, never an offset table). */
+/** The instant of a wall-clock time on a date in a zone, or null when that clock time never happens there (the hour skipped when clocks go forward). */
 export function instantIn(zone, ymd, hour, minute) {
-  const guess = Date.parse(`${ymd}T${String(hour).padStart(2, "0")}:${String(minute).padStart(2, "0")}:00Z`);
-  for (let off = -14; off <= 14; off += 0.5) {
-    const t = guess + off * 3600_000;
-    const w = wall(t, zone);
-    if (w.ymd === ymd && w.hour === hour && w.minute === minute) return t;
-  }
-  return null;
+  const [y, m, d] = ymd.split("-").map(Number);
+  const t = instantAt(zone, y, m, d, hour, minute);
+  const w = wall(t, zone);
+  return w.ymd === ymd && w.hour === hour && w.minute === minute ? t : null;
 }
 
 /** Busy intervals from several calendars as one sorted, non-overlapping list: a shared meeting counts once. */
