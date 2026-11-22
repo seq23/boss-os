@@ -1,6 +1,7 @@
 import type { Env } from "../env";
 import { newId } from "../lib/id";
 import { audit } from "../lib/audit";
+import { badRequest, conflict } from "../lib/http";
 import {
   LOOKBACK_DAYS, ARCHIVE_DAYS, archiveRows, isDoNotSuggest, parseListEdits, confirmEdit,
 } from "../../../shared/boss/capital/partyLists.mjs";
@@ -121,24 +122,98 @@ export async function listEditsFromMail(
   return { note: edits.map(confirmEdit).join("\n"), edits, onlyEdits: other.length === 0 };
 }
 
-/** Replace (or add to) the grid, and drop anything older than her ~6-month window. */
-export async function storeDeals(env: Env, rows: DealRow[], replace: boolean, now = Date.now()): Promise<number> {
-  const stmts = [];
-  if (replace) stmts.push(env.DB.prepare(`DELETE FROM capital_deal_rows`));
-  for (const r of rows) {
-    stmts.push(env.DB.prepare(
-      `INSERT OR REPLACE INTO capital_deal_rows
-         (id, company, side, direction, size_usd, size_text, price_text, structure_text, from_text,
-          rainmaker, received_on, email_url, parties, updated_at)
-       VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
-    ).bind(r.id, r.company, r.side, r.direction, r.size_usd, r.size_text, r.price_text, r.structure_text,
-      r.from_text, r.rainmaker, r.received_on, r.email_url, r.parties, now));
+/**
+ * A WHOLE-OR-NOTHING REPLACE (eng sweep row 10, 22 Nov 2026). The grid and the Matches arrive from
+ * her Mac in parts of up to 500. Each part is staged under its push id; the LAST part swaps the
+ * staged set in with ONE D1 batch, which is one SQL transaction: the live delete and the copy are
+ * both guarded on the staged count equalling the total the Mac declared, so a missing part, a
+ * lying total or a failure on any statement leaves the previous grid exactly as it was.
+ * A replace of zero rows is refused unless `allowEmpty` is sent (the grid push never sends it).
+ */
+export interface PushPart { push: string; total: number; last: boolean; allowEmpty: boolean }
+
+const STALE_STAGE_MS = 86_400_000;
+
+/** The push fields of a request body. A body with no `push` is one whole push in one part. */
+export function pushPart(body: Record<string, unknown>, rowsInBody: number): PushPart {
+  const total = Number(body.total);
+  if (!Number.isInteger(total) || total < 0) {
+    throw badRequest("A replace needs the whole push's row count", "{ total: <rows in the whole push>, push?: <id>, last?: true }");
   }
+  const push = body.push == null ? "" : String(body.push);
+  if (push && !/^[a-z0-9_-]{8,64}$/i.test(push)) throw badRequest("A push id is 8-64 letters, digits, - or _", "{ push: <id> }");
+  if (!push && rowsInBody !== total) {
+    throw conflict(`A one-part push carries all ${total} row(s); this one has ${rowsInBody}`, "Send every part under one push id, last: true on the final one.");
+  }
+  return { push: push || newId("push"), total, last: push ? body.last === true : true, allowEmpty: body.allowEmpty === true };
+}
+
+/**
+ * One staged table. The swap's two live statements are written out whole, so a search for who
+ * writes the live table finds them; both are guarded on the staged count (?1 push, ?2 total).
+ */
+interface StagedTable { live: string; staging: string; cols: readonly string[]; stage: string; clear: string; copy: string }
+
+const WHOLE = (staging: string) => `(SELECT COUNT(*) FROM ${staging} WHERE push_id = ?1) = ?2`;
+const DEAL_COLS = ["id", "company", "side", "direction", "size_usd", "size_text", "price_text", "structure_text", "from_text",
+  "rainmaker", "received_on", "email_url", "parties"] as const;
+export const DEALS_TABLE: StagedTable = {
+  live: "capital_deal_rows", staging: "capital_deal_rows_staging", cols: DEAL_COLS,
+  stage: `INSERT OR REPLACE INTO capital_deal_rows_staging (push_id, ${DEAL_COLS.join(", ")}, staged_at) VALUES `,
+  clear: `DELETE FROM capital_deal_rows WHERE ${WHOLE("capital_deal_rows_staging")}`,
+  copy: `INSERT OR REPLACE INTO capital_deal_rows (${DEAL_COLS.join(", ")}, updated_at)
+           SELECT ${DEAL_COLS.join(", ")}, ?3 FROM capital_deal_rows_staging WHERE push_id = ?1 AND ${WHOLE("capital_deal_rows_staging")}`,
+};
+export const MATCHES_TABLE: StagedTable = {
+  live: "capital_matches", staging: "capital_matches_staging", cols: ["key", "company", "rank", "payload"],
+  stage: "INSERT OR REPLACE INTO capital_matches_staging (push_id, key, company, rank, payload, staged_at) VALUES ",
+  clear: `DELETE FROM capital_matches WHERE ${WHOLE("capital_matches_staging")}`,
+  copy: `INSERT OR REPLACE INTO capital_matches (key, company, rank, payload, updated_at)
+           SELECT key, company, rank, payload, ?3 FROM capital_matches_staging WHERE push_id = ?1 AND ${WHOLE("capital_matches_staging")}`,
+};
+
+/**
+ * Stage one part, and on the last part swap the whole push in. Returns the rows now live (the
+ * total) on a commit, or null while parts are still arriving. `after` runs in the same batch.
+ */
+export async function stagedReplace(
+  env: Env, t: StagedTable, part: PushPart, rows: readonly (readonly unknown[])[], now: number,
+  after: D1PreparedStatement[] = [],
+): Promise<number | null> {
+  if (part.last && part.total === 0 && !part.allowEmpty) {
+    throw badRequest(`Refused: a replace of ${t.live} with zero rows`, "An empty replace needs allowEmpty: true; the previous rows are kept.");
+  }
+  const width = t.cols.length + 2; // + push_id, staged_at
+  const perStmt = Math.max(1, Math.floor(100 / width)); // D1 binds at most 100 parameters per statement
+  const stage: D1PreparedStatement[] = [];
+  for (let i = 0; i < rows.length; i += perStmt) {
+    const chunk = rows.slice(i, i + perStmt);
+    const marks = chunk.map(() => `(${Array(width).fill("?").join(",")})`).join(",");
+    stage.push(env.DB.prepare(t.stage + marks)
+      .bind(...chunk.flatMap((r) => [part.push, ...r, now])));
+  }
+  for (let i = 0; i < stage.length; i += 100) await env.DB.batch(stage.slice(i, i + 100));
+  if (!part.last) return null;
+
+  const staged = (await env.DB.prepare(`SELECT COUNT(*) AS n FROM ${t.staging} WHERE push_id = ?`).bind(part.push).first<{ n: number }>())?.n ?? 0;
+  if (staged !== part.total) {
+    throw conflict(`Push incomplete: ${staged} of ${part.total} row(s) arrived; ${t.live} is unchanged`, "Send every part again under a new push id.");
+  }
+  await env.DB.batch([
+    env.DB.prepare(t.clear).bind(part.push, part.total),
+    env.DB.prepare(t.copy).bind(part.push, part.total, now),
+    ...after,
+    env.DB.prepare(`DELETE FROM ${t.staging} WHERE push_id = ? OR staged_at < ?`).bind(part.push, now - STALE_STAGE_MS),
+  ]);
+  return part.total;
+}
+
+/** Replace the grid (whole or not at all), and drop anything past her twelve-month window. */
+export async function storeDeals(env: Env, rows: DealRow[], part: PushPart, now = Date.now()): Promise<number | null> {
   // Past twelve months a row leaves even the Archive view; her Mac's ledger keeps every one.
   const cutoff = new Date(now - ARCHIVE_DAYS * 86_400_000).toISOString().slice(0, 10);
-  stmts.push(env.DB.prepare(`DELETE FROM capital_deal_rows WHERE received_on < ?`).bind(cutoff));
-  for (let i = 0; i < stmts.length; i += 100) await env.DB.batch(stmts.slice(i, i + 100));
-  return rows.length;
+  return stagedReplace(env, DEALS_TABLE, part, rows.map((r) => DEAL_COLS.map((c) => r[c])), now,
+    [env.DB.prepare(`DELETE FROM capital_deal_rows WHERE received_on < ?`).bind(cutoff)]);
 }
 
 /** The grid as the page shows it: inside the window, nobody she has ruled out, newest first. */

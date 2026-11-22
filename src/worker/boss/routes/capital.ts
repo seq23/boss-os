@@ -33,6 +33,7 @@ import { dismissedSet, tapsFor, tapByCode, dismissMatch, refKey, currentMatch } 
 import { publicCompanies, markPublic } from "../capital/publicCompanies";
 import {
   activeLists, applyListEdit, cleanDealRow, cleanHolder, dealGrid, holdersList, storeDeals, storeHolders,
+  pushPart, stagedReplace, MATCHES_TABLE,
   type DealRow, type HolderRow,
 } from "../capital/grid";
 import { targetOf, confirmEdit, pairAllowed } from "../../../shared/boss/capital/partyLists.mjs";
@@ -169,14 +170,15 @@ capital.post("/preseed", async (c) => {
 capital.get("/deals", async (c) => ok(c, await dealGrid(c.env)));
 
 capital.post("/deals", async (c) => {
-  const body = await c.req.json<{ rows?: unknown[]; replace?: boolean }>().catch(() => null);
-  if (!body || !Array.isArray(body.rows)) throw badRequest("A grid push needs rows", "{ rows: [...], replace: true|false }");
-  if (body.rows.length > 2000) throw badRequest("At most 2,000 rows per push", "Send the grid in batches.");
+  const body = await c.req.json<{ rows?: unknown[] } & Record<string, unknown>>().catch(() => null);
+  if (!body || !Array.isArray(body.rows)) throw badRequest("A grid push needs rows", "{ rows: [...], total, push?, last? }");
+  if (body.rows.length > 2000) throw badRequest("At most 2,000 rows per push", "Send the grid in parts under one push id.");
+  const part = pushPart(body, body.rows.length);
   const rows = body.rows.map((r) => cleanDealRow((r ?? {}) as Record<string, unknown>));
   const bad = rows.filter((r) => r === null).length;
   if (bad > 0) throw badRequest(`${bad} row(s) are not deals`, "Each row needs id, company, side, direction, received_on and a Gmail link or none.");
-  const stored = await storeDeals(c.env, rows as DealRow[], body.replace === true);
-  return ok(c, { stored });
+  const stored = await storeDeals(c.env, rows as DealRow[], part);
+  return ok(c, { push: part.push, staged: rows.length, stored, committed: stored !== null });
 });
 
 /** Every current match (24 Oct 2026), best first — the Matches screen. Written whole by her Mac. */
@@ -191,26 +193,28 @@ capital.get("/matches", async (c) => {
 });
 
 capital.post("/matches", async (c) => {
-  const body = await c.req.json<{ matches?: unknown[]; replace?: boolean; offset?: number }>().catch(() => null);
-  if (!body || !Array.isArray(body.matches)) throw badRequest("A matches push needs matches", "{ matches: [...], replace: true|false, offset }");
-  if (body.matches.length > 500) throw badRequest("At most 500 matches per push", "Send them in batches.");
+  const body = await c.req.json<{ matches?: unknown[]; offset?: number } & Record<string, unknown>>().catch(() => null);
+  if (!body || !Array.isArray(body.matches)) throw badRequest("A matches push needs matches", "{ matches: [...], total, push?, last?, offset }");
+  if (body.matches.length > 500) throw badRequest("At most 500 matches per push", "Send them in parts under one push id.");
+  const part = pushPart(body, body.matches.length);
   const now = Date.now();
   const offset = Number(body.offset ?? 0) || 0;
-  const stmts: D1PreparedStatement[] = body.replace ? [c.env.DB.prepare(`DELETE FROM capital_matches`)] : [];
   // Each match gets its short code and one-tap link here, minted once per pair and orders and kept.
   const taps = await tapsFor(c.env, body.matches.filter((m: any) => m?.pair && m?.sig) as any[], now);
   const codes: Record<string, string> = {};
+  const rows: unknown[][] = [];
   body.matches.forEach((m: any, i: number) => {
     const key = String(m?.key ?? "").slice(0, 120);
     const company = String(m?.company ?? "").slice(0, 120);
     if (!key || !company) return;
     const tap = m?.pair && m?.sig ? taps.get(refKey(String(m.pair), String(m.sig))) : undefined;
     if (tap) codes[key] = tap.code;
-    stmts.push(c.env.DB.prepare(`INSERT OR REPLACE INTO capital_matches (key, company, rank, payload, updated_at) VALUES (?,?,?,?,?)`)
-      .bind(key, company, offset + i, JSON.stringify({ ...m, ...(tap ? { code: tap.code, tap: `/tap/${tap.token}?do=dismiss` } : {}) }).slice(0, 20000), now));
+    rows.push([key, company, offset + i, JSON.stringify({ ...m, ...(tap ? { code: tap.code, tap: `/tap/${tap.token}?do=dismiss` } : {}) }).slice(0, 20000)]);
   });
-  for (let i = 0; i < stmts.length; i += 100) await c.env.DB.batch(stmts.slice(i, i + 100));
-  return ok(c, { stored: stmts.length - (body.replace ? 1 : 0), codes });
+  // A match with no key or company is refused, not dropped: dropping it would make the count lie.
+  if (rows.length !== body.matches.length) throw badRequest(`${body.matches.length - rows.length} match(es) have no key or company`);
+  const stored = await stagedReplace(c.env, MATCHES_TABLE, part, rows, now);
+  return ok(c, { push: part.push, staged: rows.length, stored, committed: stored !== null, codes });
 });
 
 /** The companies now public (seed + stored): no match, no deal, no prospect question on them. */

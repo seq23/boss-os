@@ -39,7 +39,7 @@ beforeEach(async () => {
 
 describe("the grid (rule 5)", () => {
   it("stores a push and shows it newest first, and drops rows older than the 90-day window", async () => {
-    const res = await api("/api/capital/deals", { method: "POST", body: { replace: true, rows: [
+    const res = await api("/api/capital/deals", { method: "POST", body: { total: 3, rows: [
       deal(), deal({ id: "b1b2c3d4e5f6a1b2c3d4e5f6", side: "yours", received_on: daysAgo(3), from_text: "You", parties: "" }),
       deal({ id: "c1b2c3d4e5f6a1b2c3d4e5f6", received_on: daysAgo(LOOKBACK_DAYS + 5) }),
     ] } });
@@ -51,12 +51,12 @@ describe("the grid (rule 5)", () => {
   });
 
   it("refuses a row that is not a deal, or a link that is not Gmail", async () => {
-    expect((await api("/api/capital/deals", { method: "POST", body: { rows: [deal({ side: "maybe" })] } })).status).toBe(400);
-    expect((await api("/api/capital/deals", { method: "POST", body: { rows: [deal({ email_url: "https://evil.example/x" })] } })).status).toBe(400);
+    expect((await api("/api/capital/deals", { method: "POST", body: { total: 1, rows: [deal({ side: "maybe" })] } })).status).toBe(400);
+    expect((await api("/api/capital/deals", { method: "POST", body: { total: 1, rows: [deal({ email_url: "https://evil.example/x" })] } })).status).toBe(400);
   });
 
   it("hides anyone on her do-not-suggest list at read time", async () => {
-    await api("/api/capital/deals", { method: "POST", body: { replace: true, rows: [deal()] } });
+    await api("/api/capital/deals", { method: "POST", body: { total: 1, rows: [deal()] } });
     await api("/api/capital/lists", { method: "POST", body: { list: "do_not_suggest", action: "add", who: "pm@examplefund.com" } });
     expect((await apiJson("/api/capital/deals")).body.data.rows).toHaveLength(0);
   });

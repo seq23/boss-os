@@ -24,6 +24,7 @@ export function holdersLine(...args: any[]): any;
 export function moniqueFound(...args: any[]): any;
 export function morningDeals(...args: any[]): any;
 export function bossSession(...args: any[]): any;
+export function pushWhole(session: any, route: string, key: string, items: unknown[], opts?: { allowEmpty?: boolean; size?: number }): Promise<{ ok: boolean; why: string }>;
 export function loadLists(...args: any[]): any;
 export function writeMorning(...args: any[]): any;
 export const LOOKBACK_DAYS: number;
