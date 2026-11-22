@@ -12,7 +12,7 @@ const screens = {
   "": () => `<h1>Fixture app</h1><p>Keep your proof in one place.</p>
     <button data-go="task">Start</button><!-- a copy kept mounted out of sight (as stacked screens are): the sweep must tap the one on show --><button style="position:absolute;width:2px;height:2px;overflow:hidden;opacity:0.01">See plans</button><button data-go="plans">See plans</button>
     <button data-go="settings">Settings</button>${broken ? '<button id="help">Help</button>' : '<button data-go="help">Help</button>'}
-    <div role="radiogroup" aria-label="Look"><button role="radio" aria-checked="true">Light look, chosen</button></div>
+    <div role="radiogroup" aria-label="Look"><button role="radio" aria-checked="true">Light look, chosen</button></div><button aria-selected="true">✓ English</button>
     <button data-go="saved">Open the proof you saved last, with its photos, its receipt, its notes and the date it was taken, so you can show it to anyone who asks</button>
     <nav role="tablist"><button role="tab" aria-selected="true">Home, current tab</button><button role="tab" aria-selected="false" data-go="plans">Plans tab</button></nav>`,
   task: () => `<h1>New proof</h1><label>Title <input aria-label="Title"></label><button data-go="saved">Save</button><button data-go="">Back home</button>`,
