@@ -33,6 +33,7 @@ export function pairAllowed(
   opts?: { aIsHers?: boolean; bIsHers?: boolean },
 ): boolean;
 export function targetOf(phrase: string): (PartyEntry & { label: string }) | null;
+export function aboveQuote(text: string): string;
 export function parseListEdits(text: string): ListEdit[];
 export function confirmEdit(e: ListEdit): string;
 

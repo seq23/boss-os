@@ -36,6 +36,8 @@ export declare function htmlToText(html: string): string;
 export declare function readableText(source: string | ParsedMail, options?: { full?: boolean }): Promise<ReadableText>;
 export declare function stripSignature(text: string): string;
 export declare const QUOTE_START: RegExp;
+export declare const FORWARD_START: RegExp;
+export declare function herWords(text: string | null | undefined): string;
 export declare function ownWords(text: string | null | undefined): string;
 export declare function taskBodyFrom(source: string | ParsedMail): Promise<TaskBody>;
 export declare function mimeTellsIn(body: string | null | undefined): string[];

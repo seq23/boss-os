@@ -224,6 +224,23 @@ export function ownWords(text) {
   return (m ? t.slice(0, m.index) : t).trim();
 }
 
+/** Where a forwarded message starts: Gmail's "---------- Forwarded message ---------", Apple Mail's "Begin forwarded message:". */
+export const FORWARD_START = /\n[ \t]*-{2,}[ \t]*Forwarded message|\n[ \t]*Begin forwarded message:?/i;
+
+/**
+ * WHAT SHE HERSELF WROTE (#514 re-check, 22 Nov 2026): `ownWords` cut again at a forward. `ownWords` keeps a
+ * forward's body on purpose, because a forward is material she hands over (a broker's book, a deal to route,
+ * a thing to research). But a forward is someone else's words, so nothing that CHANGES something of hers is
+ * read from it: a list edit, a duty edit, a deadline, a hold. Each of those doors reads this, and only this,
+ * so a forwarded "change the frames duty: count the attic too" never edits her duty. ONE boundary for every
+ * such door (the list door's `aboveQuote` is this function). Pure.
+ */
+export function herWords(text) {
+  const t = `\n${ownWords(text)}`;
+  const m = FORWARD_START.exec(t);
+  return (m ? t.slice(0, m.index) : t).trim();
+}
+
 /**
  * What goes on the work card: readable, decoded, and without the trailer.
  *

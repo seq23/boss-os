@@ -16,7 +16,7 @@
 import type { Env } from "../env";
 import { logEvent } from "../lib/log";
 import { readJsonObject } from "../router/types";
-import { freeLadder, logReplyDecision, type Rung } from "./firstRead";
+import { freeLadder, logReplyDecision, type FirstRead, type Rung } from "./firstRead";
 import { quoteStands } from "../../../shared/boss/text/wholeSentence.mjs";
 
 export const UNSURE = "unsure" as const;
@@ -114,4 +114,33 @@ export async function readMeaning<T extends string>(env: Env, ask: MeaningAsk<T>
     await logEvent(env.DB, { level: "warn", scope: "intake", event: "meaning_keyword_fallback", lane: "ops", entityId: ask.mailId ?? undefined, detail: { what: ask.what, keyword: ask.keyword, tried: walk?.tried.slice(0, 10) ?? [], stop: walk?.stop ?? null, line } }).catch(() => undefined);
   }
   return out;
+}
+
+/*
+ * DOES SHE ASK FOR THIS? (eng sweep row 7, part b: duty edits, list edits, deadline words). The code finds the
+ * structure (which duty, which list and value, which hour) and hands it to the email's ONE first read as a numbered
+ * check (`BriefInput.checks`); the model says whether her words ASK for it. "asks" acts and its quote must stand in her
+ * sentence (`checksOf`); "not" never acts; unsure, or a check the read left out, never acts either: the door asks her.
+ * No brief at all (every free rung down, or the read stopped): the door's keyword reading stands, and that real
+ * outage is logged (`meaning_keyword_fallback`). An email with no words of hers is not an outage and logs nothing.
+ */
+export type Asked = "act" | "skip" | "ask";
+/** A door's slice of the email's one read: the read, and where this door's checks start (1-based). */
+export interface SharedRead { read: FirstRead; base: number }
+
+export async function askedIn(
+  env: Env, shared: SharedRead, i: number, input: { what: string; keyword: "asks" | "not"; mailId?: string | null },
+): Promise<Asked> {
+  const { read, base } = shared;
+  if (read.brief) {
+    const c = read.brief.checks?.[base + i];
+    return c?.meaning === "asks" ? "act" : c?.meaning === "not" ? "skip" : "ask";
+  }
+  if (read.tried.length || read.stop) {
+    await logEvent(env.DB, {
+      level: "warn", scope: "intake", event: "meaning_keyword_fallback", lane: "ops", entityId: input.mailId ?? undefined,
+      detail: { what: input.what, keyword: input.keyword, tried: read.tried.slice(0, 10), stop: read.stop },
+    }).catch(() => undefined);
+  }
+  return input.keyword === "asks" ? "act" : "skip";
 }

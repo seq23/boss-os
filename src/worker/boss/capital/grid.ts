@@ -1,9 +1,11 @@
 import type { Env } from "../env";
 import { newId } from "../lib/id";
+import { askedIn, type SharedRead } from "../intake/meaning";
+import { firstRead } from "../intake/firstRead";
 import { audit } from "../lib/audit";
 import { badRequest, conflict } from "../lib/http";
 import {
-  LOOKBACK_DAYS, ARCHIVE_DAYS, archiveRows, isDoNotSuggest, parseListEdits, confirmEdit,
+  LOOKBACK_DAYS, ARCHIVE_DAYS, archiveRows, isDoNotSuggest, parseListEdits, confirmEdit, aboveQuote,
 } from "../../../shared/boss/capital/partyLists.mjs";
 import { partiesReply, rowsForCompany } from "../../../shared/boss/capital/partiesAsk.mjs";
 import type { PartiesAsk } from "../../../shared/boss/capital/partiesAsk.mjs";
@@ -106,20 +108,45 @@ export async function applyListEdit(env: Env, e: ListEdit, source: "seed" | "rep
  * message when the edits were all it said.
  */
 export async function listEditsFromMail(
-  env: Env, body: string, mailId: string, now = Date.now(),
+  env: Env, body: string, mailId: string, now = Date.now(), shared?: SharedRead,
 ): Promise<{ note: string; edits: ListEdit[]; onlyEdits: boolean } | null> {
-  const edits = parseListEdits(body);
-  if (edits.length === 0) return null;
+  const found = parseListEdits(body);
+  if (found.length === 0) return null;
+  /*
+   * MEANING BY THE MODEL (eng sweep row 7b): the words found the list and the name; the email's one first read says
+   * whether she asks for each (`shared`, or a read of its own when called alone). Not asked: the line is ordinary
+   * mail. Unsure: nothing changes and she is asked. No read at all: the words act, logged.
+   */
+  const her = aboveQuote(body);
+  const read = shared ?? { read: await firstRead(env, { subject: "", words: her, checks: found.map(listChangeWords), now, mailId }), base: 0 };
+  const edits: ListEdit[] = [];
+  const unsure: ListEdit[] = [];
+  let skipped = 0;
+  for (const [i, e] of found.entries()) {
+    const said = await askedIn(env, read, i + 1, { what: "her list edit", keyword: "asks", mailId });
+    if (said === "act") edits.push(e); else if (said === "ask") unsure.push(e); else skipped += 1;
+  }
+  if (edits.length === 0 && unsure.length === 0) return null;
   for (const e of edits) await applyListEdit(env, e, "reply", now);
-  await audit(env.DB, {
-    actor: "owner", lane: "ops", entityType: "inbound_mail", entityId: mailId, action: "party_list_edited",
-    detail: { edits: edits.map((e) => ({ list: e.list, action: e.action, kind: e.kind })) },
-  });
-  const above = String(body).split(/\r?\n(?:>|On .+wrote:)/)[0] ?? "";
-  const other = above.split(/\r?\n/).map((l) => l.trim()).filter((l) => l
+  // An audit row records a change: none made, none written.
+  if (edits.length) {
+    await audit(env.DB, {
+      actor: "owner", lane: "ops", entityType: "inbound_mail", entityId: mailId, action: "party_list_edited",
+      detail: { edits: edits.map((e) => ({ list: e.list, action: e.action, kind: e.kind })) },
+    });
+  }
+  const other = her.split(/\r?\n/).map((l) => l.trim()).filter((l) => l
     && parseListEdits(l).length === 0
     && !/^(hi|hey|hello|thanks|thank you|thx|ty|best|sequoia|s|-+|—.*)[,.!]?$/i.test(l));
-  return { note: edits.map(confirmEdit).join("\n"), edits, onlyEdits: other.length === 0 };
+  const asks = unsure.map((e) => `I could not tell whether you want this, so nothing changed: ${listChangeWords(e)}. Reply with it on its own line if you do.`);
+  return { note: [...edits.map(confirmEdit), ...asks].join("\n"), edits, onlyEdits: other.length === 0 && skipped === 0 };
+}
+
+/** One edit in plain words, for the model and for her. Pure. */
+export function listChangeWords(e: ListEdit): string {
+  const who = e.label || e.value;
+  if (e.list === "same_firm") return e.action === "add" ? `count ${who} as Rainmaker` : `take ${who} off the Rainmaker list`;
+  return e.action === "add" ? `never suggest ${who} again` : `suggest ${who} again`;
 }
 
 /**

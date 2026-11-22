@@ -22,6 +22,7 @@ import { logReplyDecision, type ReplyDecision } from "./firstRead";
 import { oneBrain, saveBrain } from "../brains/store";
 import { markPublic } from "../capital/publicCompanies";
 import { dropItems } from "../routes/morning";
+import { logEvent } from "../lib/log";
 import { closeMorningGate } from "../routes/today";
 import { morningDayOf } from "../lp/decideReply";
 
@@ -46,6 +47,11 @@ export async function morningReplyFromMail(env: Env, a: { text: string; refs: st
   const kinds = (cs: any[]) => cs.map((c) => c.kind).join(", ") || "none";
   if (fromRead || usable.length) {
     await logReplyDecision(env, { mailId: a.mailId, what: "her morning commands", firstRead: fromRead ? kinds(fromRead) : null, keyword: kinds(keyword.commands) });
+  }
+  // A whole-line command the model's read missed still acts (live fix, 20 Nov 2026), and is logged as the keywords' (eng sweep row 7b). Not an outage: the model answered, so it is "meaning_keyword_added", never the fallback event.
+  const added = fromRead ? commands.slice(fromRead.length) : [];
+  if (added.length) {
+    await logEvent(env.DB, { level: "warn", scope: "intake", event: "meaning_keyword_added", lane: "ops", entityId: a.mailId, detail: { what: "her morning commands", keyword: kinds(added), stop: "the first read missed a whole-line command" } }).catch(() => undefined);
   }
   if (!usable.length) return null;
   // Only commands → done here. With the first read: the keywords found nothing else in it, or the read found no work.

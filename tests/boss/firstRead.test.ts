@@ -73,7 +73,7 @@ describe("the brief only quotes her", () => {
     expect(parseBrief('{"asks": [', words)).toBeNull();
     expect(parseBrief("```json\n" + ask(words) + "\n```", words)?.asks).toEqual([words]);
     // The schema the providers are held to names every field the parser reads.
-    expect(Object.keys(BRIEF_SCHEMA.properties).sort()).toEqual(["asks", "decision", "files", "holds", "questions", "unclear"]);
+    expect(Object.keys(BRIEF_SCHEMA.properties).sort()).toEqual(["asks", "checks", "decision", "files", "holds", "kind", "outside", "questions", "risk", "unclear"]);
     expect(briefPrompt({ subject: "s", words, files: [] })).not.toMatch(/^ASK:|DECISION:/m);
   });
 
