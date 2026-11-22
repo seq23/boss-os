@@ -150,7 +150,7 @@ const CONTROLS = ({ roles, mark }) => {
   for (const e of document.querySelectorAll("[role],a[href],button,input[type=checkbox]")) {
     const role = roleOf(e);
     if (!roles.includes(role) || !vis(e)) continue;
-    const full = fullName(e), n = full.slice(0, 120), key = `${role}|${full}`;
+    const full = fullName(e).slice(0, 120), n = full, key = `${role}|${full}`;
     const nth = seen.get(key) ?? 0; seen.set(key, nth + 1);
     if (mark) {
       if (role === mark.role && full === mark.full && nth === mark.nth) { e.setAttribute("data-tap-through-target", ""); return { marked: true }; }
