@@ -11,12 +11,23 @@
  * before the call. Accepted slots are final. Temporary refusals back off and stay in the ledger
  * until their retry deadline. Terminal refusals and expired retries raise the Kendra alarm
  * (`mail:cloud-clock`), which the next accepted dispatch closes.
+ *
+ * ACCEPTED IS NOT RAN (22 Nov 2026). That morning the 06:40 slot was accepted on time, sat in GitHub's
+ * queue for 65 minutes and sent at 07:46; the 07:30 and 07:50 starts were replaced in the job's
+ * one-pending concurrency group, and nobody was told. The runner now reports each slot's start and end
+ * (`recordSlot`, from scripts/ops/cloud-slot.mjs), and every tick reads each job's first slot of the
+ * day (`slotCheck`): not started 20 minutes after it was due, started late, or ended badly is ONE
+ * Updates notice per job per day, counted in the next morning email (noticeGate PAGE_KINDS), naming
+ * what each later slot of that day did. No email of its own and no repair: GitHub's queue is not a
+ * code fault, and the morning email's own 09:00 check still alarms when it has not gone.
  */
 import type { Env } from "../env";
 import schedule from "../../../shared/boss/schedule/manifest.json";
 import { CATCH_UP_MINUTES, clockRows, dueJobs, type DueJob } from "../../../shared/boss/schedule/clock.mjs";
 import { raiseAlarm, clearAlarm } from "../alarms/kendra";
 import { logEvent } from "../lib/log";
+import { newId } from "../lib/id";
+import { centralDay } from "../../../shared/boss/alarms/rules.mjs";
 
 /** One repository on one fixed host: never read from a request. */
 export const DISPATCH_URL = "https://api.github.com/repos/seq23/boss-os/dispatches";
@@ -26,6 +37,11 @@ export const RECLAIM_MS = 4 * 60_000;
 const TIMEOUT_MS = 10_000;
 const MINUTE_MS = 60_000;
 const TICK_MS = 5 * MINUTE_MS;
+/** A watched slot that has not started this long after it was due is late. */
+export const SLOT_LATE_MS = 20 * MINUTE_MS;
+export const SLOT_NOTICE_KIND = "slot_missed";
+const SLOT_KEY_RE = /^[a-z0-9-]{1,60}:\d{4}-\d{2}-\d{2}:\d{2}:\d{2}$/;
+const SLOT_OUTCOMES = new Set(["ok", "failed", "cancelled"]);
 
 /** GitHub's primary or secondary rate limit: a wait, never a fault. Pure. */
 export function rateLimited(status: number, headers: Headers, body: string): boolean {
@@ -185,7 +201,108 @@ export async function runCloudClock(env: Env, now = Date.now(), fetchImpl: Fetch
   } else if (out.dispatched.length) {
     await clearAlarm(env, CLOCK_ALARM_KEY, "the next start on GitHub was accepted", now).catch(() => false);
   }
+  await slotCheck(env, now).catch((err) => console.error("cloud clock: the slot check could not run", err));
   out.output = `OUTPUT ${out.dispatched.length} cloud_dispatches (due ${out.due}, already started ${out.already.length}, failed ${out.failed.length}, waiting ${out.waiting.length})${out.stop ? ` ${out.stop}` : ""}`;
   if (out.due) console.log(out.output);
   return out;
+}
+
+// ─── Did the accepted slot run? ─────────────────────────────────────────────────────────────
+
+/**
+ * The runner's report on one slot. Only a slot the clock itself dispatched can be marked, so a forged
+ * key changes nothing; the first start stands. Returns whether a row was marked.
+ */
+export async function recordSlot(env: Env, r: { key: unknown; phase: unknown; outcome?: unknown }, now = Date.now()): Promise<boolean | string> {
+  const key = typeof r.key === "string" ? r.key : "";
+  if (!SLOT_KEY_RE.test(key)) return "not a slot key";
+  if (r.phase === "start") {
+    const u = await env.DB.prepare(`UPDATE cloud_job_dispatches SET started_at = COALESCE(started_at, ?) WHERE key = ? AND status = 'accepted'`).bind(now, key).run();
+    return (u.meta.changes ?? 0) > 0;
+  }
+  if (r.phase === "end") {
+    const outcome = String(r.outcome ?? "");
+    if (!SLOT_OUTCOMES.has(outcome)) return "outcome is not ok, failed or cancelled";
+    const u = await env.DB.prepare(`UPDATE cloud_job_dispatches SET finished_at = ?, outcome = ? WHERE key = ? AND status = 'accepted'`).bind(now, outcome, key).run();
+    return (u.meta.changes ?? 0) > 0;
+  }
+  return "phase is not start or end";
+}
+
+export interface SlotRow { key: string; job: string; due_at: number; status: string; dispatched_at: number | null; started_at: number | null; finished_at: number | null; outcome: string | null }
+
+const hhmm = (ms: number): string =>
+  new Intl.DateTimeFormat("en-US", { timeZone: "America/Chicago", hour: "2-digit", minute: "2-digit", hourCycle: "h23" }).format(new Date(ms));
+
+/**
+ * What went wrong with a job's first slot of the day, or null when it ran on time. `day` is every
+ * slot of that job that day, first first. Pure.
+ *   · accepted and neither started nor finished SLOT_LATE_MS after it was due → it never started;
+ *   · started more than SLOT_LATE_MS after it was due → it started late;
+ *   · finished with an outcome other than ok → it ended badly.
+ * A run whose start report did not reach Boss OS but whose end did is judged by its end alone.
+ */
+export function slotVerdict(day: SlotRow[], now: number): string | null {
+  const first = day[0];
+  if (!first || first.status !== "accepted") return null;
+  const late = first.due_at + SLOT_LATE_MS;
+  let what: string | null = null;
+  if (first.started_at == null && first.finished_at == null) {
+    if (now < late) return null;
+    what = `was accepted by GitHub but had not started by ${hhmm(late)}`;
+  } else if (first.started_at != null && first.started_at > late) {
+    what = `waited in GitHub's queue and started late, at ${hhmm(first.started_at)}`;
+  }
+  if (first.finished_at != null && first.outcome !== "ok") {
+    what = `${what ? `${what}, and ` : ""}ended ${first.outcome ?? "without a result"} at ${hhmm(first.finished_at)}`;
+  }
+  if (!what) return null;
+  const later = day.slice(1).filter((s) => s.due_at <= now).map((s) => {
+    const at = hhmm(s.due_at);
+    if (s.status !== "accepted") return `${at} was not accepted by GitHub (${s.status})`;
+    if (s.finished_at != null) return `${at} ran${s.started_at != null ? ` from ${hhmm(s.started_at)}` : ""} and ended ${s.outcome} at ${hhmm(s.finished_at)}`;
+    if (s.started_at != null) return `${at} started at ${hhmm(s.started_at)} and is still running`;
+    return `${at} has not started (GitHub keeps one waiting run per job, so a newer start replaces a waiting one)`;
+  });
+  return [
+    `The ${hhmm(first.due_at)} Central run of ${first.job} ${what}.`,
+    later.length ? `Later runs today: ${later.join("; ")}.` : "No later run of it was due yet.",
+  ].join(" ");
+}
+
+/** Jobs at fixed times of day (not every-N-minutes): the ones whose first slot is worth watching. Pure. */
+export function watchedJobs(manifest: unknown): string[] {
+  return clockRows(manifest as never)
+    .filter((r: { trigger: { crons?: string[] } }) => (r.trigger.crons ?? []).length > 0 &&
+      (r.trigger.crons ?? []).every((c) => /^\d+$/.test(c.replace(/^CRON_TZ=\S+\s+/, "").split(/\s+/)[0] ?? "")))
+    .map((r: { id: string }) => r.id);
+}
+
+/**
+ * Each watched job's first slot today: ONE notice per job per day on the Updates page, its words kept
+ * current as the later slots report. Returns the jobs told about.
+ */
+export async function slotCheck(env: Env, now = Date.now(), jobs = watchedJobs(schedule)): Promise<string[]> {
+  const day = centralDay(now);
+  const told: string[] = [];
+  for (const job of jobs) {
+    const { results } = await env.DB.prepare(
+      `SELECT key, job, due_at, status, dispatched_at, started_at, finished_at, outcome FROM cloud_job_dispatches
+       WHERE job = ? AND key LIKE ? ORDER BY due_at`,
+    ).bind(job, `${job}:${day}:%`).all<SlotRow>();
+    const body = slotVerdict(results ?? [], now);
+    if (!body) continue;
+    const taskId = `slot-${job}-${day}`;
+    const subject = `${job}'s first run today did not go on time`;
+    const kept = await env.DB.prepare(
+      `UPDATE boss_task_notices SET body = ? WHERE task_id = ? AND kind = ? AND body <> ?`,
+    ).bind(body, taskId, SLOT_NOTICE_KIND, body).run();
+    const added = await env.DB.prepare(
+      `INSERT INTO boss_task_notices (id, task_id, lane, from_name, kind, subject, body, created_at, needs_her)
+       SELECT ?, ?, 'ops', 'Kendra', ?, ?, ?, ?, 0
+       WHERE NOT EXISTS (SELECT 1 FROM boss_task_notices WHERE task_id = ? AND kind = ?)`,
+    ).bind(newId("tnt"), taskId, SLOT_NOTICE_KIND, subject, body, now, taskId, SLOT_NOTICE_KIND).run();
+    if ((added.meta.changes ?? 0) > 0 || (kept.meta.changes ?? 0) > 0) told.push(job);
+  }
+  return told;
 }

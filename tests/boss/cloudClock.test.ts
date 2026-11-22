@@ -1,6 +1,10 @@
 import { env } from "cloudflare:test";
 import { describe, expect, it, vi } from "vitest";
-import { runCloudClock, CLOCK_ALARM_KEY, DISPATCH_URL, rateLimited, retryUntil } from "../../src/worker/boss/cron/dispatch";
+import { runCloudClock, CLOCK_ALARM_KEY, DISPATCH_URL, rateLimited, retryUntil, slotCheck, watchedJobs, SLOT_NOTICE_KIND } from "../../src/worker/boss/cron/dispatch";
+import { api } from "./helpers";
+import schedule from "../../src/shared/boss/schedule/manifest.json";
+import { slotReport } from "../../scripts/ops/cloud-slot.mjs";
+import { needsHer } from "../../src/shared/boss/mail/noticeGate.mjs";
 
 vi.setConfig({ testTimeout: 60_000 });
 
@@ -186,5 +190,92 @@ describe("the Worker starts the boss-os GitHub jobs", () => {
     expect(retryUntil(due, due + 5 * MIN)).toBe(due + 30 * MIN);
     expect(retryUntil(due, due + 55 * MIN)).toBe(due + 55 * MIN);
     expect(retryUntil(due, due + 5 * 60 * MIN)).toBe(due + 90 * MIN);
+  });
+});
+
+/**
+ * ACCEPTED IS NOT RAN (22 Nov 2026: the 06:40 morning email was accepted on time, waited 65 minutes in
+ * GitHub's queue and sent at 07:46; the later starts were replaced; nobody was told).
+ */
+describe("a slot GitHub accepted but did not run on time", () => {
+  const DAY = "2026-11-23";
+  const AT = (hm: string) => Date.parse(`${DAY}T${hm}:00-06:00`);
+  const key = (hm: string) => `your-day:${DAY}:${hm}`;
+  const accept = async (hm: string) => E.DB.prepare(
+    `INSERT INTO cloud_job_dispatches (key, job, event, due_at, claimed_at, dispatched_at, status, attempts) VALUES (?, 'your-day', 'job-your-day', ?, ?, ?, 'accepted', 1)`,
+  ).bind(key(hm), AT(hm), AT(hm), AT(hm)).run();
+  const report = (body: Record<string, unknown>) => api("/api/duties/slot", { method: "POST", body });
+  const notices = async () => ((await E.DB.prepare(`SELECT body, needs_her FROM boss_task_notices WHERE kind = ? AND task_id = ?`).bind(SLOT_NOTICE_KIND, `slot-your-day-${DAY}`).all()).results ?? []) as any[];
+  const reset = () => E.DB.exec(`DELETE FROM cloud_job_dispatches WHERE key LIKE 'your-day:${DAY}:%'; DELETE FROM boss_task_notices WHERE kind = '${SLOT_NOTICE_KIND}';`);
+
+  it("watches the fixed-time jobs (the morning email) and not the every-ten-minutes one", () => {
+    const w = watchedJobs(schedule);
+    expect(w).toContain("your-day");
+    expect(w).not.toContain("errand-reminders");
+  });
+
+  it("accepted but never started: ONE notice, on the Updates page, and two ticks still make one", async () => {
+    await reset();
+    await accept("06:40");
+    expect(await slotCheck(E, AT("06:55"), ["your-day"])).toEqual([]);
+    expect(await notices()).toHaveLength(0);
+    expect(await slotCheck(E, AT("07:01"), ["your-day"])).toEqual(["your-day"]);
+    await slotCheck(E, AT("07:06"), ["your-day"]);
+    const n = await notices();
+    expect(n).toHaveLength(1);
+    expect(n[0].body).toMatch(/06:40 Central run of your-day was accepted by GitHub but had not started by 07:00/);
+    expect(n[0].needs_her).toBe(0);
+    expect(needsHer({ kind: SLOT_NOTICE_KIND })).toBe(false);
+  });
+
+  it("started and failed, then a later run ends ok: still ONE notice, and it says what the later run did", async () => {
+    await reset();
+    await accept("06:40");
+    expect((await report({ key: key("06:40"), phase: "start" })).status).toBe(200);
+    expect((await report({ key: key("06:40"), phase: "end", outcome: "failed" })).status).toBe(200);
+    // The route stamps real time; place the run in the morning it belongs to.
+    await E.DB.prepare(`UPDATE cloud_job_dispatches SET started_at = ?, finished_at = ? WHERE key = ?`).bind(AT("06:41"), AT("06:45"), key("06:40")).run();
+    expect(await slotCheck(E, AT("06:50"), ["your-day"])).toEqual(["your-day"]);
+    await accept("07:50");
+    await E.DB.prepare(`UPDATE cloud_job_dispatches SET started_at = ?, finished_at = ?, outcome = 'ok' WHERE key = ?`).bind(AT("07:51"), AT("07:53"), key("07:50")).run();
+    await slotCheck(E, AT("08:00"), ["your-day"]);
+    const n = await notices();
+    expect(n).toHaveLength(1);
+    expect(n[0].body).toMatch(/ended failed/);
+    expect(n[0].body).toMatch(/ended failed at 06:45\. Later runs today: 07:50 ran from 07:51 and ended ok at 07:53/);
+  });
+
+  it("NEGATIVE: an on-time run that ends ok is no notice", async () => {
+    await reset();
+    await accept("06:40");
+    await E.DB.prepare(`UPDATE cloud_job_dispatches SET started_at = ?, finished_at = ?, outcome = 'ok' WHERE key = ?`).bind(AT("06:41"), AT("06:43"), key("06:40")).run();
+    expect(await slotCheck(E, AT("09:00"), ["your-day"])).toEqual([]);
+    expect(await notices()).toHaveLength(0);
+  });
+
+  it("OUTAGE: a start report that never reached Boss OS is judged by the end report alone", async () => {
+    await reset();
+    await accept("06:40");
+    await E.DB.prepare(`UPDATE cloud_job_dispatches SET finished_at = ?, outcome = 'ok' WHERE key = ?`).bind(AT("06:44"), key("06:40")).run();
+    expect(await slotCheck(E, AT("07:30"), ["your-day"])).toEqual([]);
+  });
+
+  it("ABUSE: a forged or unknown slot key marks nothing; the first start stands", async () => {
+    await reset();
+    await accept("06:40");
+    expect((await report({ key: "your-day:2026-11-23:06:41", phase: "start" })).status).toBe(404);
+    expect((await report({ key: "'; DROP TABLE x; --", phase: "start" })).status).toBe(400);
+    expect((await report({ key: key("06:40"), phase: "end", outcome: "great" })).status).toBe(400);
+    await report({ key: key("06:40"), phase: "start" });
+    const first = (await row(key("06:40")))?.started_at;
+    await report({ key: key("06:40"), phase: "start" });
+    expect((await row(key("06:40")))?.started_at).toBe(first);
+  });
+
+  it("the runner's report: nothing on a hand-started run; the job's status maps to an outcome", () => {
+    expect(slotReport({ SLOT_KEY: "", PHASE: "start" }).skip).toMatch(/no slot key/);
+    expect(slotReport({ SLOT_KEY: "your-day:2026-11-23:06:40", PHASE: "end", OUTCOME: "success" }).body).toEqual({ key: "your-day:2026-11-23:06:40", phase: "end", outcome: "ok" });
+    expect(slotReport({ SLOT_KEY: "k", PHASE: "end", OUTCOME: "cancelled" }).body?.outcome).toBe("cancelled");
+    expect(slotReport({ SLOT_KEY: "k", PHASE: "end", OUTCOME: "" }).body?.outcome).toBe("failed");
   });
 });

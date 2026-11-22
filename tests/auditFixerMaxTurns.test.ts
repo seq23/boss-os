@@ -35,12 +35,32 @@ printf 'role=%s args=%s\\n' "$role" "\${AI_RUN_CLAUDE_ARGS-<unset>}" >> "${calls
 it("the repair call carries --max-turns (default 250, override honoured); a bad value never reaches the worker", () => {
   const dflt = runFixer({});
   expect(dflt.worker.length, dflt.out).toBe(1);
-  expect(dflt.worker[0]).toBe("role=worker args=--max-turns 250 --dangerously-skip-permissions");
+  const perms = `--permission-mode dontAsk --settings ${process.cwd()}/scripts/ops/sr-fix-permissions.json`;
+  expect(dflt.worker[0]).toBe(`role=worker args=--max-turns 250 ${perms}`);
   const seven = runFixer({ AHREFS_AUDIT_MAX_TURNS: "7" });
-  expect(seven.worker).toEqual(["role=worker args=--max-turns 7 --dangerously-skip-permissions"]);
+  expect(seven.worker).toEqual([`role=worker args=--max-turns 7 ${perms}`]);
   // NEGATIVE: a value that is not a positive whole number is a named stop, and the worker never runs.
   const bad = runFixer({ AHREFS_AUDIT_MAX_TURNS: "lots" });
   expect(bad.worker).toEqual([]);
   expect(bad.out).toMatch(/NAMED STOP \[BAD_MAX_TURNS\]/);
   expect(bad.rc).toBe(5);
 }, 120000);
+
+/**
+ * THE WORKER'S ALLOW LIST IS ONE THE CLI CAN READ (22 Nov 2026). A rule that mixes a * with the
+ * trailing :* prefix, or several rules in one string, is matched literally and never allows anything
+ * (the 17 Nov Claude pass warned of exactly that). And what must stay refused is on the deny list.
+ */
+it("sr-fix's permissions: every allow rule is one well-formed rule, and pushes to main, force pushes and merges are denied", () => {
+  const p = JSON.parse(readFileSync("scripts/ops/sr-fix-permissions.json", "utf8")).permissions;
+  for (const r of [...p.allow, ...p.deny]) {
+    expect(r, r).toMatch(/^(Read|Glob|Grep|Edit|Write|Bash\([^()]+\))$/);
+    expect(r.replace(/:\*\)$/, ")"), `${r} mixes * with :*`).not.toMatch(/\*.*\)$|,/);
+  }
+  const prefix = (rule: string) => rule.replace(/^Bash\(/, "").replace(/(:\*)?\)$/, "");
+  const denied = (cmd: string) => p.deny.some((r: string) => cmd.startsWith(prefix(r)));
+  for (const cmd of ["git push origin HEAD:main", "git push --force origin x", "git push origin HEAD --force", "gh pr merge 12 --squash", "wrangler deploy", "rm -rf /", "gh secret set X"]) {
+    expect(denied(cmd), cmd).toBe(true);
+  }
+  for (const cmd of ["git push origin HEAD:sr-fix-branch", "gh pr create --fill", "land 12"]) expect(denied(cmd), cmd).toBe(false);
+});

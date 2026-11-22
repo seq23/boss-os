@@ -17,7 +17,7 @@
 /** Kinds that always need her: a decision, a reply, a key or a folder only she can give. */
 export const EMAIL_KINDS = Object.freeze(["stopped", "could_not_do", "missing_secret", "drive_empty", "duty_not_running", "morning_missing"]);
 /** Kinds that never need her: told on the Updates page and counted in the morning email. */
-export const PAGE_KINDS = Object.freeze(["open_loop_reminder", "update"]);
+export const PAGE_KINDS = Object.freeze(["open_loop_reminder", "update", "slot_missed"]);
 
 /**
  * Does this notice need her? Pure.

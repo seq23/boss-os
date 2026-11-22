@@ -132,6 +132,8 @@ const invokers = [
   ...opsShell,
   ...walk("scripts").map(read),
   ...readdirSync(join(ROOT, "docs/boss")).filter((f) => f.endsWith(".md")).map((f) => read(`docs/boss/${f}`)),
+  // A GitHub workflow step runs a script as surely as a launch agent does (cloud-slot.mjs, 22 Nov 2026).
+  ...readdirSync(join(ROOT, ".github/workflows")).filter((f) => /\.ya?ml$/.test(f)).map((f) => read(`.github/workflows/${f}`)),
 ].join("\n");
 
 const opsScripts = readdirSync(join(ROOT, "scripts/ops")).filter((f) => /\.(mjs|sh)$/.test(f));
