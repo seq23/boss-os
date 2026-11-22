@@ -353,10 +353,12 @@ describe("the page shows the newest decision of the day (22 Nov 2026)", () => {
     const ins = (id: string, decision: string, at: number) => env.DB.prepare(`INSERT INTO growth_decisions (id, cycle, business, label, state, decision, created_at) VALUES (?, ?, 'porch-and-party', 'Porch & Party', 'decided', ?, ?)`).bind(id, dayIdInZone(NOW), decision, at).run();
     await ins("gdc_first", "The morning cycle.", NOW - 3_600_000);
     await ins("gdc_second", "The evening re-run.", NOW - 60_000);
-    const pnp = (await apiJson<any>("/api/growth/page")).body.data.businesses.find((b: any) => b.key === "porch-and-party");
+    const page = (await apiJson<any>("/api/growth/page")).body.data;
+    const pnp = page.businesses.find((b: any) => b.key === "porch-and-party");
     expect(pnp.happening.decision.decision).toBe("The evening re-run.");
     expect(pnp.happened.decisions.map((d: any) => d.decision)).toEqual(["The morning cycle."]);
-  });
+    expect(page.week).toEqual({ decided: 1, held: 0 });
+  }, 30_000);
 });
 
 describe("the Director owns the older work on its roster (22 Nov 2026)", () => {

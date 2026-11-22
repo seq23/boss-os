@@ -114,7 +114,8 @@ growthRoutes.get("/page", async (c) => {
   const placed = new Set(businesses.flatMap((b: any) => [...b.upcoming.todos, ...b.happened.done].map((t: any) => t.id)));
   const general = loops.filter((l) => !placed.has(l.id) && l.status === "open").map((l) => ({ id: l.id, title: l.title, next: l.next_step, date: l.next_date, elsewhere: l.owner !== DIRECTOR && !String(l.source_key ?? "").startsWith("growth") }));
   // This week = this Monday's Central cycle (the duty runs Mondays); a held decision counts as written.
-  const thisWeek = decisions.filter((d) => d.cycle >= weekStart(today));
+  // One per business: the newest (rows arrive newest first), so a same-day re-run is not counted twice.
+  const thisWeek = decisions.filter((d, i) => d.cycle >= weekStart(today) && decisions.findIndex((x) => x.business === d.business) === i);
   const week = { decided: thisWeek.filter((d) => d.state === "decided").length, held: thisWeek.filter((d) => String(d.state).startsWith("held")).length };
   return ok(c, { day: today, problems, general, businesses, week });
 });
