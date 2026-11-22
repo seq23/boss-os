@@ -3119,7 +3119,7 @@
         "runs": 2
       },
       "macWindow": "HEAVY",
-      "macWindowIn": "peace-be-still audio/run.sh (execs mac-window run HEAVY com.seq.pbs-library-fill --no-wait, MAC_WINDOW_SLOTS=2)"
+      "macWindowIn": "peace-be-still audio/run.sh (execs mac-window run HEAVY com.seq.pbs-library-fill --no-wait, one heavy slot; the voicing runs on GitHub since peace-be-still #107)"
     },
     {
       "id": "hunt-ondemand",
