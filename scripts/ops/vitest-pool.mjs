@@ -60,6 +60,8 @@ function selfTest() {
   if (onlyTheHarnessRace("AssertionError: expected 1 to be 2")) throw new Error("retried a plain failure");
   let threw = false; try { argsFor("other", []); } catch { threw = true; }
   if (!threw) throw new Error("accepted an unknown pool");
+  // The unit suites share a miniflare per file and were written to run serially (the-merge-gate-is-fast relies on this).
+  if (!argsFor("node", []).includes("--no-file-parallelism")) throw new Error("the node pool runs files in parallel");
   if (!argsFor("boss", ["x"]).includes("vitest.boss.config.ts") || argsFor("node", []).includes("vitest.boss.config.ts")) throw new Error("ran a pool under the wrong config");
   console.log("vitest-pool self-test: ok");
 }
