@@ -48,8 +48,22 @@ const gh = (args) => execFileSync("gh", args, { encoding: "utf8", stdio: ["ignor
 /** The suites of one pool: boss suites live under tests/boss/, every other suite is the node pool. Pure. */
 export const ofPool = (files, pool) => files.filter((f) => f.startsWith("tests/boss/") === (pool === "boss"));
 
+/**
+ * At most this many suites re-run first, per pool: shard 1's headroom under its ceiling on a green main
+ * run (Boss 343 s of 480 s, unit 226 s of 360 s; review of #538). Past it the re-check alone could time
+ * a CORRECT fix out, so it steps aside and the full gate decides.
+ */
+export const CAP = { node: 40, boss: 10 };
+
+/** The pool's list if it fits the cap, else none (with why). Pure. */
+export function withinCap(files, pool) {
+  if (files.length <= CAP[pool]) return { files };
+  return { files: [], why: `${files.length} ${pool} suite(s) failed last time, more than the ${CAP[pool]} shard 1 has time for; the full gate decides` };
+}
+
 function plan(pool) {
-  const files = ofPool(pick(), pool);
+  const { files, why } = withinCap(ofPool(pick(), pool), pool);
+  if (why) console.log(`recheck: ${why}`);
   if (process.env.GITHUB_OUTPUT) appendFileSync(process.env.GITHUB_OUTPUT, `files=${files.join(" ")}\n`);
 }
 
@@ -95,6 +109,10 @@ function selfTest() {
   if (safeFiles("tests/a.test.ts;rm tests/$(x).test.ts ../tests/b.test.ts").length) throw new Error("safeFiles let an unsafe path through");
   if (safeFiles("tests/checkChanged.test.ts").length !== 1) throw new Error("safeFiles refused a real suite");
   if (JSON.stringify(ofPool(["tests/a.test.ts", "tests/boss/b.test.ts"], "boss")) !== '["tests/boss/b.test.ts"]' || ofPool(["tests/boss/b.test.ts"], "node").length) throw new Error("ofPool split the pools wrong");
+  const many = Array.from({ length: CAP.boss + 1 }, (_, i) => `tests/boss/s${i}.test.ts`);
+  if (withinCap(many, "boss").files.length || !withinCap(many, "boss").why) throw new Error("withinCap let more Boss suites through than shard 1 has time for");
+  if (withinCap(many.slice(0, CAP.boss), "boss").files.length !== CAP.boss) throw new Error("withinCap refused a list at the cap");
+  if (withinCap(many, "node").files.length !== many.length) throw new Error("withinCap used the Boss cap for the node pool");
   console.log("recheck-failed self-test: ok");
 }
 
