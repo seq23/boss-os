@@ -4386,6 +4386,34 @@
       }
     },
     {
+      "id": "landing-times",
+      "name": "Landing speed, PR to live",
+      "what": "How long changes take from PR opened to live, and where the time went.",
+      "business": "personal",
+      "brand": "Repos",
+      "system": "github",
+      "slots": [
+        "sun 05:40"
+      ],
+      "emails": false,
+      "heavy": false,
+      "trigger": {
+        "repo": "boss-os",
+        "file": ".github/workflows/job-landing-times.yml",
+        "clock": "worker",
+        "event": "job-landing-times",
+        "crons": [
+          "CRON_TZ=America/Chicago 40 5 * * 0"
+        ]
+      },
+      "output": {
+        "metric": "PRs measured",
+        "floor": 1,
+        "runs": 1,
+        "reason": "Every week merges PRs; zero read is NAMED STOP [NO_PRS_READ], a red run."
+      }
+    },
+    {
       "id": "property-gsc",
       "name": "Search Console week, per property",
       "what": "Reads what Google Search saw last week for every site.",

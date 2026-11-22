@@ -16,8 +16,8 @@ const at = (iso: string) => Date.parse(iso);
 const ids = (now: number) => dueJobs(M, now).map((j: any) => j.id).sort();
 
 describe("Boss OS's clock", () => {
-  it("fires the eight boss-os GitHub jobs, and the Schedule says so (rule 0: never zero rows)", () => {
-    expect(clockRows(M).map((r: any) => r.id).sort()).toEqual(["catchups", "errand-reminders", "growth-scoreboard", "preseed-watch", "properties", "t2r-numbers", "waiting-on", "your-day"]);
+  it("fires the nine boss-os GitHub jobs, and the Schedule says so (rule 0: never zero rows)", () => {
+    expect(clockRows(M).map((r: any) => r.id).sort()).toEqual(["catchups", "errand-reminders", "growth-scoreboard", "landing-times", "preseed-watch", "properties", "t2r-numbers", "waiting-on", "your-day"]);
     expect(clockRowProblems(M)).toEqual([]);
     // NEGATIVE: a row with no event, or a cron the clock cannot read, is named.
     const bad = { rows: [{ id: "x", trigger: { clock: "worker", repo: "boss-os", file: "f.yml", crons: ["CRON_TZ=Europe/Paris 0 7 * * *"] } }] };

@@ -22,6 +22,7 @@
     "market:snapshot": "node scripts/ops/market-snapshot.mjs --print",
     "restore:local": "node scripts/backup/restore.mjs",
     "test": "vitest run && vitest run --config vitest.boss.config.ts",
+    "landing:times": "node scripts/ops/landing-times.mjs",
     "test:boss": "vitest run --config vitest.boss.config.ts",
     "typecheck": "tsc --noEmit",
     "check:changed": "node scripts/ops/check-changed.mjs",

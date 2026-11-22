@@ -25,8 +25,9 @@
  *   node scripts/ops/landing-times.mjs --dry-run       # print the line and every PR's row; post nothing
  *   node scripts/ops/landing-times.mjs --days 7 --json # rows as JSON (for the readout)
  *
- * The morning email shows the line on Sundays (section "landing", MORNING_SECTION_SPECS); the job runs
- * nightly (job-landing-times.yml) so a broken read is seen the next morning, not a week later.
+ * The morning email shows the lines on Sundays (section "landing", MORNING_SECTION_SPECS), written by
+ * job-landing-times.yml (cloud, Sundays 05:40 Central, fired by the Worker clock), with that run's own
+ * token so it never spends the account's hourly allowance.
  * RULE 0: zero PRs read is NAMED STOP [NO_PRS_READ] (exit 2); GitHub not answering is
  * NAMED STOP [GITHUB_UNREACHABLE] (exit 75); neither ever prints "0 minutes".
  */
@@ -173,7 +174,7 @@ function token() {
 }
 
 /** One GraphQL query. Refuses a mutation, so this job can only read. */
-export async function graphql(query, variables = {}, { fetchImpl = fetch, tok = token() } = {}) {
+export async function graphql(query, variables = {}, { fetchImpl = fetch, tok = token(), wait = (ms) => new Promise((r) => setTimeout(r, ms)) } = {}) {
   if (/^\s*mutation\b/i.test(query) || /\bmutation\s*[({]/i.test(query)) throw stop("READ_ONLY", 9, "landing-times sends queries only; a mutation was refused");
   let last = "";
   for (let attempt = 1; attempt <= 3; attempt++) {
@@ -185,16 +186,18 @@ export async function graphql(query, variables = {}, { fetchImpl = fetch, tok = 
       });
       const body = await res.json().catch(() => null);
       if (res.ok && body?.data && !body.errors?.length) return body.data;
+      // GitHub answered and refused the query itself (too big, bad field): asking again cannot help.
+      if (res.ok && body?.errors?.length) throw stop("GITHUB_QUERY_REFUSED", 75, `GitHub refused the query (${JSON.stringify(body.errors).slice(0, 200)}); nothing was measured`);
       last = `HTTP ${res.status} ${JSON.stringify(body?.errors ?? body?.message ?? "").slice(0, 200)}`;
       if (res.status < 500 && res.status !== 403 && res.status !== 429) break;
-    } catch (e) { last = String(e?.message ?? e); }
-    await new Promise((r) => setTimeout(r, 2000 * attempt));
+    } catch (e) { if (e?.code === 75 || e?.code === 9) throw e; last = String(e?.message ?? e); }
+    await wait(2000 * attempt);
   }
   throw stop("GITHUB_UNREACHABLE", 75, `GitHub did not answer (${last}); nothing was measured, the next run tries again`);
 }
 
-const SUITES = `checkSuites(first: 25) { nodes { createdAt app { slug } workflowRun { workflow { name } }
-  checkRuns(first: 30) { nodes { name startedAt completedAt conclusion } } } }`;
+const SUITES = `checkSuites(first: 12) { nodes { createdAt app { slug } workflowRun { workflow { name } }
+  checkRuns(first: 15) { nodes { name startedAt completedAt conclusion } } } }`;
 const suitesOf = (c) => (c?.checkSuites?.nodes ?? []).map((s) => ({
   createdAt: s.createdAt, app: s.app?.slug ?? "", workflow: s.workflowRun?.workflow?.name ?? "",
   runs: (s.checkRuns?.nodes ?? []).map((r) => ({ name: r.name, startedAt: r.startedAt, completedAt: r.completedAt, conclusion: r.conclusion })),
@@ -218,11 +221,11 @@ export async function readWeek({ days = 7, now = Date.now(), gql = graphql } = {
     while (more) {
       const d = await gql(`query($o: String!, $n: String!, $a: String) { repository(owner: $o, name: $n) {
         deployments(last: 40, environments: ["production"]) { nodes { createdAt statuses(first: 5) { nodes { state createdAt } } } }
-        pullRequests(states: MERGED, first: 20, after: $a, orderBy: { field: UPDATED_AT, direction: DESC }) {
+        pullRequests(states: MERGED, first: 8, after: $a, orderBy: { field: UPDATED_AT, direction: DESC }) {
           pageInfo { hasNextPage endCursor }
           nodes { number createdAt mergedAt updatedAt body
-            comments(last: 40) { nodes { createdAt body } }
-            userContentEdits(first: 20) { nodes { editedAt diff } }
+            comments(last: 25) { nodes { createdAt body } }
+            userContentEdits(first: 10) { nodes { editedAt diff } }
             commits(last: 1) { nodes { commit { ${SUITES} } } }
             mergeCommit { ${SUITES} } } } } }`, { o: OWNER, n: name, a: cur });
       const repo = d.repository;

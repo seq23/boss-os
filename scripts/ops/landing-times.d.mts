@@ -1,0 +1,20 @@
+type Obj = Record<string, unknown>;
+export type LandingRow = {
+  repo: string; number: number; opened: string; pass: string | null; merged: string; live: string | null;
+  review_ms: number | null; to_merge_ms: number; to_live_ms: number | null; total_ms: number | null; open_to_merge_ms: number;
+  fail_rounds: number; ci_queued_ms: number; ci_running_ms: number; main_queued_ms: number; main_running_ms: number;
+};
+export const PASS_RE: RegExp;
+export const FAIL_RE: RegExp;
+export const BYPASS_RE: RegExp;
+export const DEPLOY_RE: RegExp;
+export function passAt(pr: Obj): number | null;
+export function failRounds(pr: Obj): number;
+export function ciWaits(suites: Obj[] | undefined): { queued: number; running: number; jobs: number };
+export function liveAt(pr: Obj, deployments: Obj[] | undefined): number | null;
+export function prRow(pr: Obj, deployments: Obj[] | undefined): LandingRow;
+export function median(xs: Array<number | null>): number | null;
+export function dur(ms: number | null | undefined): string;
+export function weekLines(rows: LandingRow[], opts?: { days?: number }): string[];
+export function graphql(query: string, variables?: Obj, opts?: { fetchImpl?: (url: string, init: Obj) => Promise<Response>; tok?: string; wait?: (ms: number) => Promise<unknown> }): Promise<any>;
+export function readWeek(opts?: { days?: number; now?: number; gql?: (q: string, v?: Obj) => Promise<any> }): Promise<{ repos: number; rows: LandingRow[] }>;

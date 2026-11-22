@@ -1,0 +1,81 @@
+import { describe, expect, it } from "vitest";
+import { dur, graphql, liveAt, passAt, prRow, readWeek, weekLines } from "../scripts/ops/landing-times.mjs";
+
+/*
+ * PR-to-live, measured (owner, 22 Nov 2026: "landing shit takes fucking forever"). The ways it breaks:
+ * zero PRs read or GitHub not answering must be a named stop, never "0 minutes"; a PR with no review
+ * or no deploy on record is "not recorded", never counted as instant; the job can only read.
+ */
+const H = 3_600_000;
+const at = (h: number) => new Date(Date.UTC(2026, 10, 20, 12) + h * H).toISOString();
+const pr = (o: Record<string, unknown> = {}) => ({
+  repo: "r", number: 1, createdAt: at(0), mergedAt: at(3), body: "x", comments: [], edits: [],
+  headSuites: [], mainSuites: [], ...o,
+});
+
+describe("landing-times: the moments of a PR", () => {
+  it("PASS is the first reviewer line, from a comment or a body edit; none is null, never instant", () => {
+    expect(passAt(pr({ comments: [{ createdAt: at(2), body: "Ship-ready: PASS — r looked; Engineering: PASS" }] }))).toBe(Date.parse(at(2)));
+    expect(passAt(pr({ edits: [{ editedAt: at(1), diff: "Engineering: PASS" }] }))).toBe(Date.parse(at(1)));
+    expect(passAt(pr({ body: 'Owner override: "ship it" (22 Nov)' }))).toBe(Date.parse(at(0)));
+    expect(passAt(pr({ comments: [{ createdAt: at(1), body: "Ship-ready: FAIL" }] }))).toBeNull();
+  });
+  it("live is the first green production deploy after the merge, else a green deploy run; none is null", () => {
+    const dep = [{ statuses: [{ state: "SUCCESS", createdAt: at(2) }, { state: "SUCCESS", createdAt: at(4) }] }];
+    expect(liveAt(pr(), dep)).toBe(Date.parse(at(4)));
+    const run = { app: "github-actions", workflow: "Deploy", runs: [{ name: "deploy", conclusion: "SUCCESS", completedAt: at(5) }] };
+    expect(liveAt(pr({ mainSuites: [run] }), [])).toBe(Date.parse(at(5)));
+    expect(liveAt(pr({ mainSuites: [{ ...run, workflow: "CI", runs: [{ ...run.runs[0], name: "test" }] }] }), [])).toBeNull();
+  });
+  it("a row with no review and no deploy says so, and the line says 'not recorded'", () => {
+    const row = prRow(pr(), []);
+    expect(row.review_ms).toBeNull();
+    expect(row.total_ms).toBeNull();
+    expect(weekLines([row]).join(" ")).toMatch(/none has a deploy on record.*review not recorded/s);
+    expect(dur(null)).toBe("not recorded");
+  });
+  it("runner waits come from each job's start minus its suite's creation", () => {
+    const suite = { app: "github-actions", createdAt: at(0), runs: [{ startedAt: at(0.5), completedAt: at(1) }] };
+    const row = prRow(pr({ headSuites: [suite] }), []);
+    expect(row.ci_queued_ms).toBe(0.5 * H);
+    expect(row.ci_running_ms).toBe(0.5 * H);
+  });
+});
+
+describe("landing-times: rule 0 and outages", () => {
+  it("zero PRs read is NAMED STOP [NO_PRS_READ], exit 2, never a line of zeros", () => {
+    expect(() => weekLines([])).toThrow(/NAMED STOP \[NO_PRS_READ\]/);
+    try { weekLines([]); } catch (e) { expect((e as { code: number }).code).toBe(2); }
+  });
+  it("GitHub not answering is NAMED STOP [GITHUB_UNREACHABLE], exit 75, after three tries", async () => {
+    let calls = 0;
+    const fetchImpl = async () => { calls++; throw new Error("ECONNRESET"); };
+    await expect(graphql("query { viewer { login } }", {}, { fetchImpl, tok: "t", wait: async () => {} }))
+      .rejects.toMatchObject({ code: 75, message: expect.stringMatching(/NAMED STOP \[GITHUB_UNREACHABLE\]/) });
+    expect(calls).toBe(3);
+  });
+  it("a query GitHub refuses is a named stop at once, not three retries and not 'unreachable'", async () => {
+    let calls = 0;
+    const fetchImpl = async () => { calls++; return new Response(JSON.stringify({ data: null, errors: [{ type: "RESOURCE_LIMITS_EXCEEDED" }] }), { status: 200 }); };
+    await expect(graphql("query { a }", {}, { fetchImpl, tok: "t", wait: async () => {} })).rejects.toThrow(/GITHUB_QUERY_REFUSED/);
+    expect(calls).toBe(1);
+  });
+  it("it can only read: a mutation is refused before anything is sent", async () => {
+    let calls = 0;
+    const fetchImpl = async () => { calls++; return new Response("{}"); };
+    await expect(graphql("mutation { mergePullRequest(input: {}) { clientMutationId } }", {}, { fetchImpl, tok: "t" })).rejects.toThrow(/READ_ONLY/);
+    expect(calls).toBe(0);
+  });
+  it("readWeek keeps only PRs merged inside the window", async () => {
+    const now = Date.parse(at(24 * 7));
+    const gql = async (q: string) => q.includes("repositories(")
+      ? { user: { repositories: { pageInfo: { hasNextPage: false }, nodes: [{ name: "r", isArchived: false, pushedAt: at(160) }] } } }
+      : { repository: { deployments: { nodes: [] }, pullRequests: { pageInfo: { hasNextPage: false }, nodes: [
+          { number: 2, createdAt: at(100), mergedAt: at(101), updatedAt: at(101), body: "", comments: { nodes: [] }, userContentEdits: { nodes: [] }, commits: { nodes: [] }, mergeCommit: null },
+          { number: 1, createdAt: at(-20), mergedAt: at(-10), updatedAt: at(-10), body: "", comments: { nodes: [] }, userContentEdits: { nodes: [] }, commits: { nodes: [] }, mergeCommit: null },
+        ] } } };
+    const { repos, rows } = await readWeek({ now, gql });
+    expect(repos).toBe(1);
+    expect(rows.map((r: { number: number }) => r.number)).toEqual([2]);
+  });
+});
