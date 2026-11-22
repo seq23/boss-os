@@ -64,11 +64,13 @@ jobs:
     runs-on: ubuntu-24.04
     timeout-minutes: 30
     steps:
-      - name: The runner (boss-os; main when another repo calls it)
+      # The runner at the same commit as this workflow file: the ref the caller wrote after `@` (job_workflow_sha),
+      # or this repo's own commit on a self-test PR.
+      - name: The runner (boss-os, at this workflow's own commit)
         uses: actions/checkout@v4
         with:
           repository: seq23/boss-os
-          ref: ${{ github.repository == 'seq23/boss-os' && github.sha || 'main' }}
+          ref: ${{ github.job_workflow_sha || github.sha }}
           path: boss
       - name: The app's flow file
         if: github.event_name != 'pull_request'
