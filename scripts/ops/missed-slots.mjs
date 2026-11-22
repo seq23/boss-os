@@ -105,9 +105,6 @@ export function catchUpSlots(now = Date.now()) {
   return started;
 }
 
-/** Back-compat name for the morning catch-up's import. */
-export const catchUpWeeklySlots = catchUpSlots;
-
 const DAY_MS = 86_400_000;
 /**
  * NEVER SILENT (20 Nov 2026): a DAILY job whose launchd log has not been written for 36 hours. Pure.
