@@ -52,6 +52,7 @@ import { logEvent } from "../lib/log";
 import { ok, badRequest, notFound } from "../lib/http";
 import { materialiseDueDuties } from "../duties/materialise";
 import { isDue, nextDueAt, EARLY_RUN_GRACE_MS } from "../duties/cadence";
+import { effectiveNextDue } from "../duties/clock";
 export { EARLY_RUN_GRACE_MS };
 import { admitTask } from "../tasks/admit";
 import {
@@ -271,7 +272,7 @@ duties.get("/due/:local_job", async (c) => {
   const localJob = c.req.param("local_job");
   const matches = await c.env.DB
     .prepare(
-      `SELECT id, name, suspended, next_due_at, last_run_at, executor
+      `SELECT *
          FROM standing_duties
         WHERE json_extract(task_input, '$.local_job') = ?`,
     )
@@ -293,8 +294,10 @@ duties.get("/due/:local_job", async (c) => {
     );
   }
 
-  const duty = rows[0];
+  const row = rows[0];
   const now = Date.now();
+  // Read through the one clock door, so a clock left ahead of the slot the duty owes answers right.
+  const duty = { ...row, next_due_at: await effectiveNextDue(c.env, row, now) };
   const due = duty.next_due_at !== null && isDue(duty.next_due_at, Boolean(duty.suspended), now);
 
   return ok(c, {
