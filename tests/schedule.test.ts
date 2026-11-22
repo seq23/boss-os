@@ -17,6 +17,7 @@ import {
   installerJobs, launchdProblems, plistEvents, readSchedule, scheduleCategoryProblems, shapeProblems, weekProblems, wranglerCrons, workflowCrons, workflowEntry, workflowDispatchTypes,
 } from "../scripts/ops/lib/schedule.mjs";
 import { composeSpryWeekly, hostAllowed, loopSection, SPRY_WEEKLY } from "../src/shared/boss/spryWeekly/compose.mjs";
+import { firedBy, jobTitle } from "../src/client/boss/pages/Schedule";
 import { createTestDb, disposeTestDb, type TestDb } from "./helpers/db";
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
@@ -199,6 +200,22 @@ describe("the slot language", () => {
 });
 
 describe("the Schedule page", () => {
+  it("shows the brand once whether or not the name already includes it", () => {
+    expect(jobTitle({ brand: "Example", name: "Example report" })).toBe("Example report");
+    expect(jobTitle({ brand: "Example", name: "Example: Report" })).toBe("Example: Report");
+    expect(jobTitle({ brand: "Example", name: "Report" })).toBe("Example: Report");
+    expect(jobTitle({ name: "Report" })).toBe("Report");
+  });
+
+  it("says which clock starts each GitHub job: Boss OS's own clock for the Worker-fired rows", () => {
+    const rows = (JSON.parse(readFileSync(path.join(ROOT, "src/shared/boss/schedule/manifest.json"), "utf8")) as { rows: Array<{ system: string; trigger: { clock?: string } }> }).rows;
+    const worker = rows.filter((r) => r.trigger.clock === "worker");
+    expect(worker.length).toBeGreaterThan(0);
+    for (const r of worker) expect(firedBy(r)).toBe(" · started by Boss OS's own clock");
+    expect(firedBy({ system: "github", trigger: {} })).toBe(" · started by GitHub");
+    expect(firedBy({ system: "mac", trigger: {} })).toBe("");
+  });
+
   it("renders the manifest itself and sits in ☰ More next to the Email Map", () => {
     const page = readFileSync(path.join(ROOT, "src/client/boss/pages/Schedule.tsx"), "utf8");
     expect(page).toContain('from "@shared/boss/schedule/manifest.json"');

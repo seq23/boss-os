@@ -18,7 +18,7 @@ import { FromRepoLine, repoOnly } from "./Maps";
 export interface ScheduleRow {
   id: string; name: string; what: string; business: string; brand?: string; system: string;
   slots: string[]; emails: boolean; heavy: boolean;
-  trigger: { duty?: string; launchd?: string[]; repo?: string; file?: string; crons?: string[]; wpos?: string };
+  trigger: { duty?: string; launchd?: string[]; repo?: string; file?: string; crons?: string[]; wpos?: string; clock?: string; event?: string };
 }
 export interface WeekItem { time: string; tag: string; text: string; emails: boolean; refs: string[]; pending?: boolean }
 export interface ScheduleManifest {
@@ -68,6 +68,17 @@ export function summaryLine(s: ScheduleManifest = SCHEDULE): string {
 function Tag({ tag }: { tag: string }) {
   const t = SCHEDULE.tags[tag];
   return <span className="schedule-tag" style={{ "--tag": t?.color } as CSSProperties}>{t?.label ?? tag}</span>;
+}
+
+/** Who starts a GitHub job, in her words: Boss OS's own clock (21 Nov 2026) or GitHub's schedule. */
+export function firedBy(r: { system: string; trigger: { clock?: string } }): string {
+  if (r.trigger.clock === "worker") return " · started by Boss OS's own clock";
+  return r.system === "github" ? " · started by GitHub" : "";
+}
+
+export function jobTitle({ brand, name }: Pick<ScheduleRow, "brand" | "name">): string {
+  if (!brand || name === brand || name.startsWith(`${brand} `) || name.startsWith(`${brand}:`)) return name;
+  return `${brand}: ${name}`;
 }
 
 export function Schedule() {
@@ -122,10 +133,10 @@ export function Schedule() {
               <div className="brain-cards">
                 {rows.map((r) => (
                   <div key={r.id} className="brain-card email-map-card" data-testid={`schedule-job-${r.id}`}>
-                    <span className="email-map-what">{r.brand ? `${r.brand}: ` : ""}{r.name}</span>
+                    <span className="email-map-what">{jobTitle(r)}</span>
                     <span className="brain-card-line">{r.what}</span>
                     <span className="brain-card-line">{r.slots.map(slotWords).join(" · ")}</span>
-                    <span className="email-map-runs">{SCHEDULE.businesses.find((b) => b.key === r.business)?.label ?? r.business}{r.emails ? " · emails you" : ""}{r.heavy ? " · heavy" : ""}</span>
+                    <span className="email-map-runs">{SCHEDULE.businesses.find((b) => b.key === r.business)?.label ?? r.business}{r.emails ? " · emails you" : ""}{r.heavy ? " · heavy" : ""}{firedBy(r)}</span>
                   </div>
                 ))}
               </div>
