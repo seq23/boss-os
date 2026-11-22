@@ -28,7 +28,7 @@ describe("an early run answers for its slot", () => {
 
   afterEach(() => vi.useRealTimers());
   // Friday 23 Oct 2026: the slot is 08:40 Central = 13:40 UTC; the Mac on Eastern fired at 12:40 UTC.
-  const SLOT = Date.UTC(2026, 9, 23, 13, 40);
+  const SLOT = Date.UTC(2026, 9, 23, 15, 35); // Friday 10:35 Central (CDT), the archive audit's slot since 0372
   const ran = async (at: number, due: number) => {
     await env.DB.prepare(`UPDATE standing_duties SET next_due_at = ? WHERE id = 'duty_archive_audit'`).bind(due).run();
     vi.useFakeTimers({ toFake: ["Date"] }); vi.setSystemTime(at);
@@ -43,7 +43,7 @@ describe("an early run answers for its slot", () => {
   });
 
   it("staleness agrees: the 23 Oct early run is not a missed run three days later (Today said 'missed 1')", () => {
-    const duty: any = { name: "Archive audit", suspended: 0, local_hour: 8, local_minute: 40, timezone: "America/Chicago", cadence: "weekly", weekday: 5, weekdays: null, last_run_at: SLOT - 3_600_000, created_at: SLOT - 30 * 86_400_000 };
+    const duty: any = { name: "Archive audit", suspended: 0, local_hour: 10, local_minute: 35, timezone: "America/Chicago", cadence: "weekly", weekday: 5, weekdays: null, last_run_at: SLOT - 3_600_000, created_at: SLOT - 30 * 86_400_000 };
     const s = dutyStaleness(duty, SLOT + 69 * 3_600_000);
     expect(s.stale).toBe(false);
     expect(s.next_expected).toBe(SLOT + 7 * 86_400_000);

@@ -76,11 +76,12 @@ describe("Phase 11 — Today renders the thirteen canon elements", () => {
      *
      * THE TIME IS READ OFF THE DUTY ROW, NOT A LITERAL (19 Sep 2026). This assertion pinned "06:30"
      * while the route said "06:30" in seven hard-coded sentences — and migration 0257 moved the
-     * duty to 06:00, which would have left every sentence lying. The seeded row is 06:00 now, so the
-     * sentence must say 06:00 and must not still say 06:30 anywhere.
+     * duty to 06:00, which would have left every sentence lying. Migration 0372 (the Mac's day) moved it to
+     * 04:00, so the sentence must say 04:00 and must not still say 06:00 or 06:30 anywhere.
      */
     expect(by.executive_briefing.is_empty).toBe(true);
-    expect(by.executive_briefing.content.reason).toContain("06:00");
+    expect(by.executive_briefing.content.reason).toContain("04:00");
+    expect(by.executive_briefing.content.reason).not.toContain("06:00");
     expect(by.executive_briefing.content.reason).not.toContain("06:30");
     expect(by.executive_briefing.content.reason).toContain("never fired");
     expect(by.executive_briefing.content).not.toHaveProperty("open_tasks");

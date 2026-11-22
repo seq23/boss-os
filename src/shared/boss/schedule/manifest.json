@@ -62,15 +62,6 @@
           ]
         },
         {
-          "time": "5:30",
-          "tag": "sv",
-          "text": "Brokerage sourcing sweep: looks for new sellers and deals (also Wed and Fri)",
-          "emails": false,
-          "refs": [
-            "brokerage-sourcing"
-          ]
-        },
-        {
           "time": "5:40",
           "tag": "sl",
           "text": "Search checklist audit of every side-business site",
@@ -104,6 +95,15 @@
           "emails": true,
           "refs": [
             "scooter-watch-digest"
+          ]
+        },
+        {
+          "time": "10:30",
+          "tag": "sv",
+          "text": "Brokerage sourcing sweep: looks for new sellers and deals (also Wed and Fri)",
+          "emails": false,
+          "refs": [
+            "brokerage-sourcing"
           ]
         },
         {
@@ -201,15 +201,6 @@
       "label": "Wednesday",
       "items": [
         {
-          "time": "5:30",
-          "tag": "sv",
-          "text": "Brokerage sourcing sweep",
-          "emails": false,
-          "refs": [
-            "brokerage-sourcing"
-          ]
-        },
-        {
           "time": "6:45",
           "tag": "sl",
           "text": "Spry heartbeat: are all side-business sites up and working",
@@ -270,6 +261,15 @@
           "emails": true,
           "refs": [
             "spry-weekly"
+          ]
+        },
+        {
+          "time": "10:30",
+          "tag": "sv",
+          "text": "Brokerage sourcing sweep",
+          "emails": false,
+          "refs": [
+            "brokerage-sourcing"
           ]
         },
         {
@@ -351,15 +351,6 @@
       "label": "Friday",
       "items": [
         {
-          "time": "5:30",
-          "tag": "sv",
-          "text": "Brokerage sourcing sweep",
-          "emails": false,
-          "refs": [
-            "brokerage-sourcing"
-          ]
-        },
-        {
           "time": "7:00",
           "tag": "sl",
           "text": "Checks which outside sites link to Citation Velocity",
@@ -384,6 +375,15 @@
           "emails": false,
           "refs": [
             "how-we-know-loop-fri-publish"
+          ]
+        },
+        {
+          "time": "10:30",
+          "tag": "sv",
+          "text": "Brokerage sourcing sweep",
+          "emails": false,
+          "refs": [
+            "brokerage-sourcing"
           ]
         },
         {
@@ -1375,7 +1375,7 @@
       "brand": "Brokerage",
       "system": "boss-os",
       "slots": [
-        "mon,wed,fri 05:30"
+        "mon,wed,fri 10:30"
       ],
       "emails": false,
       "heavy": true,

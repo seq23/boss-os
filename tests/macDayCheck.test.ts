@@ -93,7 +93,11 @@ describe("mac-day:check", () => {
     // launchctl: everything written counts as loaded, so the installers' own "is it listed?" checks pass.
     writeFileSync(path.join(bin, "launchctl"), `#!/bin/bash\ntrap "" PIPE\nif [ "$1" = list ]; then for f in "$HOME"/Library/LaunchAgents/*.plist; do echo "- 0 $(basename "$f" .plist)"; done; fi\nexit 0\n`);
     writeFileSync(path.join(bin, "npm"), "#!/bin/bash\nexit 0\n");
-    for (const f of ["launchctl", "npm"]) execFileSync("chmod", ["+x", path.join(bin, f)]);
+    // plutil exists only on a Mac: on a Linux runner the stub lints by the XML parser node already has
+    // (a plist the installers broke still fails here), and declines -convert so files are read as written.
+    const real = (() => { try { return execFileSync("which", ["plutil"], { encoding: "utf8" }).trim(); } catch { return ""; } })();
+    writeFileSync(path.join(bin, "plutil"), real ? `#!/bin/bash\nexec ${real} "$@"\n` : `#!/bin/bash\n[ "$1" = -lint ] && { grep -q "</plist>" "$2" && ! grep -q "&&" "$2"; exit $?; }\nexit 1\n`);
+    for (const f of ["launchctl", "npm", "plutil"]) execFileSync("chmod", ["+x", path.join(bin, f)]);
     writeFileSync(path.join(bin, "reload"), "#!/bin/bash\nexit 0\n"); execFileSync("chmod", ["+x", path.join(bin, "reload")]);
     const env = { ...process.env, HOME: home, PATH: `${bin}:${process.env.PATH}`, BOSS_OS_RUNTIME: process.cwd(), BOSS_OS_REPO: process.cwd(), BOSS_OS_DEVICE_ID: "test-mac", LAUNCHD_RELOAD: path.join(bin, "reload"), MAC_WINDOW_BIN: "/u/bin/mac-window", TZ: "America/Chicago" };
     for (const f of ["install-agent-launchd.sh", "install-morning-catchup.sh", "install-simone-commands.sh", "install-boss-mail-tail.sh"]) {

@@ -624,6 +624,9 @@ describe("the sourcing duty is scoped and honest about what it cannot do", () =>
 
   it("finishes before the report starts, so the two never contend for the single work slot", async () => {
     /*
+     * 21 Nov 2026 (the Mac's day, 0372): the report moved to 04:00 and sourcing to 10:30 Mon/Wed/Fri,
+     * AFTER it: the report's start plus twice its worst run (2 x 30 min) ends long before sourcing
+     * starts, and sourcing starts once the Mac is back (10:00). The rule is the same: never both.
      * 1 Nov 2026 (owner's rebalanced week): sourcing moved from 06:45 to 05:30, BEFORE the 06:00
      * report, because the report regularly ran past 06:45 and the two met on the one seat. The rule
      * is unchanged and now stricter: sourcing's start, plus its hard timeout, plus ten minutes for
@@ -634,7 +637,9 @@ describe("the sourcing duty is scoped and honest about what it cannot do", () =>
     const mins = (d: any) => d.local_hour * 60 + d.local_minute;
     const maxSeconds = Number(JSON.parse(sourcing.task_input).requested?.max_seconds);
     expect(maxSeconds).toBeGreaterThan(0);
-    expect(mins(sourcing) + Math.ceil(maxSeconds / 60) + 10).toBeLessThanOrEqual(mins(report));
+    expect(mins(report) + 2 * 30 + 10).toBeLessThanOrEqual(mins(sourcing));
+    expect(mins(sourcing)).toBeGreaterThanOrEqual(10 * 60);
+    expect(mins(sourcing) + Math.ceil(maxSeconds / 60)).toBeLessThan(22 * 60);
   });
 
   it("is told to write as it goes, because a timeout must degrade to partial", async () => {
