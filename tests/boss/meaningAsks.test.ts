@@ -34,7 +34,7 @@ const rainmaker = async () => (await apiJson("/api/capital/lists")).body.data.sa
 const WRITTEN = "duty_test_frames_7b";
 const PERSON = "Pat Sample";
 beforeEach(async () => {
-  await env.DB.exec("DELETE FROM capital_party_lists; DELETE FROM system_events; DELETE FROM duty_versions; DELETE FROM audit_log;");
+  await env.DB.exec("DELETE FROM capital_party_lists; DELETE FROM system_events; DELETE FROM duty_versions; DELETE FROM audit_log; DELETE FROM judgement_calls;");
   await env.DB.exec(`DELETE FROM standing_duties WHERE id = '${WRITTEN}'`);
   const cols = (await all<{ name: string }>(`PRAGMA table_info(standing_duties)`)).map((c) => c.name);
   const pick = cols.map((c) => (c === "id" ? "?1" : c === "name" ? "?2" : c === "task_input" ? "?3" : c === "executor" ? "'agent'" : c === "owner_prompt" || c === "removed_at" ? "NULL" : c));
@@ -210,17 +210,57 @@ describe("one read per email (#514 review)", () => {
     expect((await row<{ owner_prompt: string | null }>(`SELECT owner_prompt FROM standing_duties WHERE id = '${WRITTEN}'`))!.owner_prompt).toBeNull();
   });
 
-  it("through the inbound door: her Gmail forward never takes a name off her list or edits a duty (model down)", async () => {
+  /** One email from her through the real inbound door (handleBossInboundMail), the first read down. */
+  const door = async (body: string, subject: string, id: string) => {
     setFirstReadRungs(down);
     const from = "owner-test@example.test";
     const runtime = { ...env, BOSS_EXTRA_OWNER_SENDERS: from } as Env;
-    const raw = `From: ${from}\r\nSubject: Fwd: frames\r\nContent-Type: text/plain; charset=UTF-8\r\n\r\n${FORWARD.replace(/\n/g, "\r\n")}`;
-    const headers = new Headers({ from, subject: "Fwd: frames", "authentication-results": "mx.example.test; spf=pass; dkim=pass; dmarc=pass", "message-id": "<fwd-514@example.test>" });
+    const raw = `From: ${from}\r\nSubject: ${subject}\r\nContent-Type: text/plain; charset=UTF-8\r\n\r\n${body.replace(/\n/g, "\r\n")}`;
+    const headers = new Headers({ from, subject, "authentication-results": "mx.example.test; spf=pass; dkim=pass; dmarc=pass", "message-id": `<${id}@example.test>` });
     const result = await handleBossInboundMail({ from, to: BOSS_INTAKE_MAILBOX, headers, raw: new Response(raw).body!, rawSize: new TextEncoder().encode(raw).length } as never, runtime);
     expect(result.mailId).toBeTruthy();
+    return result;
+  };
+  const prompt = async () => (await row<{ owner_prompt: string | null }>(`SELECT owner_prompt FROM standing_duties WHERE id = '${WRITTEN}'`))!.owner_prompt;
+  /** The deadline the admitted task carries, or null; a door that admitted nothing has none either. */
+  const dueOf = async (taskId: string | null) => (taskId ? JSON.parse((await row<{ input: string }>(`SELECT input FROM tasks WHERE id = '${taskId}'`))!.input).due ?? null : null);
+  const OTHER = "Quinn Example";
+
+  it("through the inbound door: her Gmail forward never takes a name off her list, edits a duty or sets a deadline (model down)", async () => {
+    const result = await door(FORWARD, "Fwd: frames", "fwd-514");
     expect(await rainmaker()).toEqual([PERSON.toLowerCase()]);
     expect((await all<any>(`SELECT id FROM audit_log WHERE action = 'party_list_edited'`)).length).toBe(0);
-    expect((await row<{ owner_prompt: string | null }>(`SELECT owner_prompt FROM standing_duties WHERE id = '${WRITTEN}'`))!.owner_prompt).toBeNull();
+    expect(await prompt()).toBeNull();
+    expect(result.taskId, "the forward is ordinary work").toBeTruthy();
+    expect(await dueOf(result.taskId), "\"Have it done by Friday\" was the forwarded sender's").toBeNull();
+  });
+
+  it("through the inbound door: a forwarded \"call me after 3pm\" never holds her task (model down; inboundMail :78)", async () => {
+    const body = FORWARD.replace("Have it done by Friday.", "Call me after 3pm.");
+    const result = await door(body, "Fwd: frames", "fwd-514-hold");
+    expect(result.taskId, "the forward is ordinary work").toBeTruthy();
+    // The hold rides on the admitted task's input (and the queue delay admitTask takes from it).
+    const input = JSON.parse((await row<{ input: string }>(`SELECT input FROM tasks WHERE id = '${result.taskId}'`))!.input);
+    expect(input.body, "the forward's words are still the work").toContain("after 3pm");
+    expect(input.not_before ?? null, "\"after 3pm\" was the forwarded sender's").toBeNull();
+  });
+
+  it("the list door cuts at a forward itself: handed her whole email (inboundMail :701 passing `own`), only her line acts", async () => {
+    await applyListEdit(env, { list: "same_firm", action: "add", kind: "name", value: OTHER.toLowerCase(), label: OTHER } as any, "seed");
+    setFirstReadRungs(down);
+    const body = `Take ${PERSON} off the Rainmaker list.\n\n` + FORWARD.replace(`Take ${PERSON} off`, `Take ${OTHER} off`);
+    const out = await listEditsFromMail(env, ownWords(body), "m-own", NOW);
+    expect(out?.edits.map((e) => e.value)).toEqual([PERSON.toLowerCase()]);
+    expect(await rainmaker()).toEqual([OTHER.toLowerCase()]);
+  });
+
+  it("through the inbound door: her own question about a duty never becomes an edit because a forward under it says change (inboundMail :1070)", async () => {
+    const body = "Should we change Camille's gallery frames recount duty: count the attic too?\n\n" + FORWARD.replace(`Take ${PERSON} off the Rainmaker list.\n`, "");
+    const result = await door(body, "Fwd: frames", "fwd-514-duty");
+    expect(result.outcome).not.toBe("DUTY_EDITED");
+    expect(result.outcome).not.toBe("DUTY_EDIT_DRAFTED");
+    expect(await prompt()).toBeNull();
+    expect((await all<any>(`SELECT id FROM judgement_calls WHERE resume_kind = 'duty_edit'`)).length, "no duty change waits for her").toBe(0);
   });
 
   it("a forward keeps its body for the work (ownWords): only the doors that change her things cut at it", () => {
