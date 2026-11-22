@@ -2,7 +2,8 @@
  * THE ONE SHARED REVIEWER (grid row 6f): the rules that make its verdict trustworthy, and the phase-3
  * gate that keeps a new sender or channel off the maps until a fresh reviewer passed its real output.
  */
-import { existsSync, mkdirSync, mkdtempSync, readFileSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
+import { chromium } from "@playwright/test";
 import { spawnSync } from "node:child_process";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -203,4 +204,47 @@ describe("Danielle's lane hands the real output to the shared reviewer", () => {
     const imgs = shipReviewArgs(row, { shots: ["/a.png", "/b.png"], out: "/o" });
     expect(imgs).toEqual(expect.arrayContaining(["images", "/a.png,/b.png"]));
   });
+});
+
+// The browser test runs wherever Chromium is installed (CI installs it in the unit job); only a laptop
+// without it skips.
+const hasChromium = (() => { try { return existsSync(chromium.executablePath()); } catch { return false; } })();
+async function redShare(png: string): Promise<number> {
+  const b = await chromium.launch();
+  try {
+    const p = await b.newPage();
+    await p.setContent(`<img id="i" src="data:image/png;base64,${readFileSync(png, "base64")}">`);
+    return await p.evaluate(async () => {
+      const i = document.getElementById("i") as HTMLImageElement; await i.decode();
+      const c = document.createElement("canvas"); c.width = i.naturalWidth; c.height = i.naturalHeight;
+      const x = c.getContext("2d")!; x.drawImage(i, 0, 0);
+      const d = x.getImageData(0, 0, c.width, c.height).data; let red = 0;
+      for (let k = 0; k < d.length; k += 4) if (d[k]! > 200 && d[k + 1]! < 60 && d[k + 2]! < 60) red++;
+      return red / (d.length / 4);
+    });
+  } finally { await b.close(); }
+}
+describe("a message that only shows after a tap is captured, never left unseen", () => {
+  it.skipIf(!process.env.CI && !hasChromium)("--tap loads the page, taps the button and shoots what it shows; text inside a scrolling panel is reached", async () => {
+    const dir = mkdtempSync(join(tmpdir(), "sr-tap-"));
+    const page = join(dir, "kit.html");
+    writeFileSync(page, `<!doctype html><html><body style="margin:0;font:16px sans-serif">
+      <div style="height:600px;overflow:auto"><div style="height:3000px">Kit</div>
+        <p>Deep in the panel</p>
+        <button onclick="document.getElementById('m').hidden=false">Get this kit, $19 once</button>
+        <p id="m" hidden style="background:#f00;height:120px;margin:0">Preview: this kit is open for this visit.</p></div>
+      ${"<p>filler words for the blank check</p>".repeat(20)}</body></html>`);
+    expect(parseArgs(["--kind", "page", "--target", "https://x.test/", "--builder", "b", "--tap", "Get this kit"]).focus).toEqual(["tap:Get this kit"]);
+    const { shots, facts } = await capture({ kind: "email", target: page, focus: ["Deep in the panel", "tap:Get this kit", "tap:No such button"] } as any, join(dir, "out"));
+    const labels = shots.map((s: any) => s.label);
+    expect(labels.some((l: string) => /-focus-1\.png$/.test(l))).toBe(true);
+    // The shot after the tap shows the message the tap revealed (a red block), not just the button.
+    const tapShot = shots.find((s: any) => /phone-390-light-tap-2\.png$/.test(s.label));
+    expect(tapShot).toBeTruthy();
+    expect(await redShare(String(tapShot!.path))).toBeGreaterThan(0.05);
+    expect(facts.some((f: string) => /after tapping "Get this kit"/.test(f))).toBe(true);
+    // A tap that cannot happen is said, never a silent pass.
+    expect(facts.some((f: string) => /could not tap "No such button"/.test(f))).toBe(true);
+    expect(labels.some((l: string) => /-tap-3\.png$/.test(l))).toBe(false);
+  }, 120_000);
 });

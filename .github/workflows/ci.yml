@@ -209,6 +209,10 @@ jobs:
       - name: ffmpeg
         run: command -v ffprobe >/dev/null || (sudo apt-get update -qq && sudo apt-get install -y -qq --no-install-recommends ffmpeg)
 
+      # ship-review's tap test opens a real page (a message shown only after a tap); headless shell only.
+      - name: Chromium for the capture test
+        run: npx playwright install --only-shell chromium
+
       # `--shard` splits the FILE list across the matrix; `--no-file-parallelism` keeps each shard
       # serial inside, because these suites share a miniflare per file and were never written to
       # run beside each other. Four shards, one runner each: the parallelism is between jobs.
