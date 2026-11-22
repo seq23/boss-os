@@ -93,8 +93,8 @@ describe("mac-day:check", () => {
     // launchctl: everything written counts as loaded, so the installers' own "is it listed?" checks pass.
     writeFileSync(path.join(bin, "launchctl"), `#!/bin/bash\ntrap "" PIPE\nif [ "$1" = list ]; then for f in "$HOME"/Library/LaunchAgents/*.plist; do echo "- 0 $(basename "$f" .plist)"; done; fi\nexit 0\n`);
     writeFileSync(path.join(bin, "npm"), "#!/bin/bash\nexit 0\n");
-    // plutil exists only on a Mac: on a Linux runner the stub lints by the XML parser node already has
-    // (a plist the installers broke still fails here), and declines -convert so files are read as written.
+    // plutil exists only on a Mac: on a Linux runner the stub only checks the file
+    // closes its plist and has no raw && (the full lint runs on the Mac, where plutil is real), and declines -convert so files are read as written.
     const real = (() => { try { return execFileSync("which", ["plutil"], { encoding: "utf8" }).trim(); } catch { return ""; } })();
     writeFileSync(path.join(bin, "plutil"), real ? `#!/bin/bash\nexec ${real} "$@"\n` : `#!/bin/bash\n[ "$1" = -lint ] && { grep -q "</plist>" "$2" && ! grep -q "&&" "$2"; exit $?; }\nexit 1\n`);
     for (const f of ["launchctl", "npm", "plutil"]) execFileSync("chmod", ["+x", path.join(bin, f)]);

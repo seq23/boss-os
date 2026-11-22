@@ -27,7 +27,8 @@ describe("an early run answers for its slot", () => {
   });
 
   afterEach(() => vi.useRealTimers());
-  // Friday 23 Oct 2026: the slot is 08:40 Central = 13:40 UTC; the Mac on Eastern fired at 12:40 UTC.
+  // Friday 23 Oct 2026 (the incident: slot 08:40 Central, the Mac on Eastern fired an hour early). The slot is
+  // 10:35 Central since 0372 = 15:35 UTC; the early-run cases below keep the same one-hour shape.
   const SLOT = Date.UTC(2026, 9, 23, 15, 35); // Friday 10:35 Central (CDT), the archive audit's slot since 0372
   const ran = async (at: number, due: number) => {
     await env.DB.prepare(`UPDATE standing_duties SET next_due_at = ? WHERE id = 'duty_archive_audit'`).bind(due).run();

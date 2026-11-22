@@ -170,9 +170,9 @@ describe("duty_site_audit_repair after 0246", () => {
     // A Thursday, because that is the day the cadence names. 4 = Thursday, 0 = Sunday.
     expect(new Date(duty.next_due_at).getUTCDay()).toBe(5); // 22:15 CST Thursday is 04:15 UTC Friday
     /*
-     * 11:00 UTC is 05:00 America/Chicago in winter (0327 moved the pass from 06:00 to 05:00) and one
-     * hour EARLY in summer — the safe direction, because the daily tick asks "am I due?" at 05:00
-     * local and must already find yes. Seeding late would settle the run permanently on Friday.
+     * 04:15 UTC Friday is 22:15 America/Chicago Thursday in winter (0372, the Mac's day, moved the pass
+     * from 05:00 to Thursday night) and one hour EARLY in summer — the safe direction, because the daily
+     * tick asks "am I due?" at 22:15 local and must already find yes. Seeding late would settle the run permanently on Friday.
      */
     expect(new Date(duty.next_due_at).getUTCHours()).toBe(4);
     /*
