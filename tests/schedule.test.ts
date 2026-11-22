@@ -139,7 +139,7 @@ describe("the Schedule manifest", () => {
     }
     files.push({ file: "wrangler.toml", crons: [...new Set<string>(wranglerCrons(readFileSync(path.join(ROOT, "wrangler.toml"), "utf8")))], gated: { "-5": [], "-6": [] } });
     const clocked = m.rows.filter((r: any) => r.trigger?.clock === "worker");
-    expect(clocked.length).toBe(7);
+    expect(clocked.length).toBe(8);
     for (const r of clocked) {
       const f = files.find((x) => x.file === r.trigger.file);
       expect(f?.crons, `${r.trigger.file} keeps no schedule of its own`).toEqual([]);

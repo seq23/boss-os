@@ -184,6 +184,33 @@ async function airtable(params, ctx) {
   return { raw: n };
 }
 
+// ─── RevenueCat (each app's own project, V2 secret key, read-only) ────────────────────────────────
+
+/**
+ * One number from a RevenueCat project's overview (`params.metric`: revenue, mrr, new_customers,
+ * active_subscriptions, active_trials, active_users). RevenueCat's own windows: revenue and
+ * new_customers are its last 28 days; the active_* numbers are today's. A key without the
+ * charts_metrics:overview:read permission is KEY_REFUSED and says so, so the cell names what to fix.
+ * Store totals only: no customer, no transaction, no device leaves RevenueCat.
+ */
+async function revenuecat(params, ctx) {
+  const key = need(ctx.env, params.key);
+  const h = { authorization: `Bearer ${key}` };
+  const pr = await ctx.fetch("https://api.revenuecat.com/v2/projects", { headers: h });
+  const pj = await pr.json().catch(() => ({}));
+  if (pr.status === 401) throw new NamedStop("KEY_REFUSED", `RevenueCat refused ${params.key} (401).`);
+  if (!pr.ok) throw new NamedStop("REVENUECAT_UNREADABLE", `RevenueCat projects did not load (${pr.status}).`);
+  const projects = pj.items ?? [];
+  if (projects.length !== 1) throw new NamedStop("REVENUECAT_SHAPE", `${params.key} sees ${projects.length} projects, not one.`);
+  const r = await ctx.fetch(`https://api.revenuecat.com/v2/projects/${projects[0].id}/metrics/overview`, { headers: h });
+  const j = await r.json().catch(() => ({}));
+  if (r.status === 403) throw new NamedStop("KEY_REFUSED", `${params.key} lacks RevenueCat's charts_metrics:overview:read permission.`);
+  if (!r.ok) throw new NamedStop("REVENUECAT_UNREADABLE", `RevenueCat overview did not load (${r.status}).`);
+  const m = (j.metrics ?? []).find((x) => x.id === params.metric);
+  if (!m || !Number.isFinite(Number(m.value))) throw new NamedStop("REPORT_EMPTY", `RevenueCat's overview has no ${params.metric}.`);
+  return { raw: Number(m.value) };
+}
+
 // ─── Reports her repos already publish ────────────────────────────────────────────────────────────
 
 export function pick(obj, path) {
@@ -306,7 +333,7 @@ async function sum(params, ctx) {
 }
 
 export const READERS = Object.freeze({
-  d1, gsc, gumroad, stripe, airtable, "repo-json": repoJson, "lp-outcomes": lpOutcomes, t2r, "kdp-units": kdpUnits, sum,
+  d1, gsc, gumroad, stripe, airtable, "repo-json": repoJson, "lp-outcomes": lpOutcomes, t2r, "kdp-units": kdpUnits, revenuecat, sum,
 });
 
 /** The default context on her Mac. */

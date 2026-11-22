@@ -371,6 +371,9 @@ section), `tests/boss/brains.test.ts` and `npm run validate:brains`:
    Every brain but `risk` and `team` has the eight sections in order: Company, Numbers, Priorities, People, Voice,
    Settled decisions, Open questions, Who does what. Gaps are written `[MISSING]`; Settled decisions
    lines read `- YYYY-MM-DD — decision — why`; Numbers is `| Metric | Definition | Source | Value | Last updated |`.
+   An optional ninth section, **Growth** (21 Nov 2026), holds the Growth Director's roster in the
+   `porch-and-party` and `spry` brains: one `### ` entry per business, read by code
+   (`src/shared/boss/growth/roster.mjs`); a channel or format not listed there is not approved.
 2. **The repo is public: seeds are skeletons only.** No real brain content in any git file, fixture,
    commit or PR. `validate:brains` fails the build if a seed is anything but `seedFor(slug, title)`.
 3. **Private spans** (LP names, fund terms, deal terms, investor names) are wrapped
