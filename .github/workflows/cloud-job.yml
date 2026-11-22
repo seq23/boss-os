@@ -35,6 +35,14 @@ jobs:
     timeout-minutes: ${{ inputs.timeout }}
     steps:
       - uses: actions/checkout@v4
+      # The clock knows GitHub accepted the start; this tells it the run began (22 Nov 2026: the 06:40
+      # morning email waited 65 minutes in GitHub's queue and nobody knew). Best effort, 5 s, never fails.
+      - name: Tell Boss OS the slot started
+        env:
+          SLOT_KEY: ${{ github.event.client_payload.key }}
+          PHASE: start
+          BOSS_PASSCODE: ${{ secrets.BOSS_PASSCODE }}
+        run: node scripts/ops/cloud-slot.mjs
       - uses: actions/setup-node@v4
         with:
           node-version: 24
@@ -78,3 +86,11 @@ jobs:
           else
             bash scripts/ops/cloud-job.sh "$JOB" -- bash -c "$COMMAND"
           fi
+      - name: Tell Boss OS the slot ended
+        if: always()
+        env:
+          SLOT_KEY: ${{ github.event.client_payload.key }}
+          PHASE: end
+          OUTCOME: ${{ job.status }}
+          BOSS_PASSCODE: ${{ secrets.BOSS_PASSCODE }}
+        run: node scripts/ops/cloud-slot.mjs
