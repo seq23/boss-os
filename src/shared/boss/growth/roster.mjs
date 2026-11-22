@@ -14,27 +14,26 @@
  *   - spend anything (ads, boosts, paid tools, paid models, purchases): NAMED STOP [NEVER_SPEND];
  *   - create an account (R-AI-02): NAMED STOP [NO_NEW_ACCOUNTS];
  *   - retire or delete an account, pipeline or post: never (it proposes, with evidence);
- *   - anything for a paused business: refused;
+ *   - anything for a paused business, or for a half-written, misspelled or doubled entry: refused;
  *   - post on a channel/format not in the roster: refused → her decision.
  *
  * PRIVATE DATA: the Director reads ONLY this section (growthSection). A Growth section carrying a
  * confidential mark is refused whole (fail closed), so no private span can reach a free model.
  */
-import { sectionBody } from "../brains/brain.mjs";
+import { sectionBody, hasConfidential } from "../brains/brain.mjs";
 
 export const GROWTH_BRAINS = Object.freeze(["porch-and-party", "spry"]);
 export const FIELDS = Object.freeze(["key", "buyer", "offer", "money number", "channels", "languages", "voice", "design skill", "limits", "season", "linked to-dos", "paused"]);
 export const REQUIRED = Object.freeze(["key", "buyer", "offer", "money number", "channels", "languages", "limits"]);
 export const SPEND_ACTIONS = Object.freeze(["ad", "boost", "paid-tool", "paid-model", "purchase", "subscription", "promotion"]);
 export const NEVER_ACTIONS = Object.freeze({ "create-account": "NO_NEW_ACCOUNTS", "retire-account": "PROPOSE_ONLY", "delete-post": "PROPOSE_ONLY", "retire-pipeline": "PROPOSE_ONLY" });
-const CONFIDENTIAL = /<!--\s*\/?\s*confidential\s*-->/i;
 
 /** The Growth section of one brain, or a named refusal. Only the growth brains are ever read. */
 export function growthSection(slug, md) {
   if (!GROWTH_BRAINS.includes(slug)) throw Object.assign(new Error(`NAMED STOP [NOT_A_GROWTH_BRAIN] the Director never reads the ${slug} brain.`), { code: "NOT_A_GROWTH_BRAIN" });
   const body = sectionBody(md, "Growth");
   if (body == null || !body.trim() || body.trim() === "[MISSING]") return null;
-  if (CONFIDENTIAL.test(body)) throw Object.assign(new Error(`NAMED STOP [PRIVATE_IN_GROWTH] the ${slug} brain's Growth section carries a confidential mark; it is not read at all.`), { code: "PRIVATE_IN_GROWTH" });
+  if (hasConfidential(body)) throw Object.assign(new Error(`NAMED STOP [PRIVATE_IN_GROWTH] the ${slug} brain's Growth section carries a confidential mark; it is not read at all.`), { code: "PRIVATE_IN_GROWTH" });
   return body;
 }
 
@@ -54,11 +53,13 @@ export function parseRoster(body, brain) {
   let cur = null;
   for (const line of String(body ?? "").split("\n")) {
     const h = /^###\s+(.+?)\s*$/.exec(line);
-    if (h) { cur = { label: h[1], brain, fields: {} }; out.push(cur); continue; }
+    if (h) { cur = { label: h[1], brain, fields: {}, unknown: [] }; out.push(cur); continue; }
     const f = /^\s*-\s*([a-z][a-z -]*?)\s*:\s*(.*)$/i.exec(line);
-    if (cur && f) { const k = f[1].toLowerCase().trim(); if (FIELDS.includes(k)) cur.fields[k] = f[2].trim(); }
+    if (cur && f) { const k = f[1].toLowerCase().trim(); if (FIELDS.includes(k)) cur.fields[k] = f[2].trim(); else cur.unknown.push(k); }
   }
-  return out.map(({ label, brain: b, fields }) => {
+  const seen = new Map();
+  for (const e of out) if (e.fields.key) seen.set(e.fields.key, (seen.get(e.fields.key) ?? 0) + 1);
+  return out.map(({ label, brain: b, fields, unknown }) => {
     const pausedText = fields.paused ?? "no";
     const paused = /^(no|false|-)?$/i.test(pausedText.trim()) ? null : pausedText;
     return {
@@ -66,7 +67,11 @@ export function parseRoster(body, brain) {
       channels: parseChannels(fields.channels), languages: list(fields.languages).map((l) => l.toLowerCase()), voice: fields.voice ?? null,
       design: fields["design skill"] ?? null, limits: (fields.limits ?? "").match(/R-[A-Z]+-\d+/g) ?? [], season: fields.season ?? null,
       linked: (fields["linked to-dos"] ?? "").match(/olp_[a-z0-9]+/g) ?? [], paused,
-      problems: REQUIRED.filter((k) => !fields[k]).map((k) => `${label}: no ${k}`),
+      problems: [
+        ...REQUIRED.filter((k) => !fields[k]).map((k) => `${label}: no ${k}`),
+        ...unknown.map((k) => `${label}: "${k}" is not a roster field (one of ${FIELDS.join(", ")})`),
+        ...(fields.key && seen.get(fields.key) > 1 ? [`${label}: key ${fields.key} is listed twice`] : []),
+      ],
     };
   });
 }
@@ -75,11 +80,8 @@ export function parseRoster(body, brain) {
 export function rosterProblems(entries) {
   const out = [];
   if (!entries.length) out.push("NAMED STOP [ROSTER_EMPTY] no Growth section lists a business");
-  const keys = new Set();
   for (const e of entries) {
     out.push(...e.problems);
-    if (e.key && keys.has(e.key)) out.push(`${e.label}: key ${e.key} is listed twice`);
-    if (e.key) keys.add(e.key);
     if (!e.paused && !e.channels.length) out.push(`${e.label}: no approved channel`);
   }
   return out;
@@ -93,8 +95,11 @@ export function rosterProblems(entries) {
 export function mayAct(roster, { business, channel, format, action = "post" }) {
   if (SPEND_ACTIONS.includes(action)) return { ok: false, stop: "NEVER_SPEND", why: "agents never spend money; she pays, from a prepared checkout" };
   if (NEVER_ACTIONS[action]) return { ok: false, stop: NEVER_ACTIONS[action], why: action === "create-account" ? "agents never create accounts (R-AI-02)" : "the Director never retires or deletes; it proposes with evidence" };
-  const e = roster.find((x) => x.key === business);
+  const mine = roster.filter((x) => x.key === business);
+  const e = mine[0];
   if (!e) return { ok: false, stop: "NOT_ON_ROSTER", why: `${business} has no Growth roster entry` };
+  // A broken entry acts on nothing: a missing limits line would leave its drafts unchecked.
+  if (mine.length > 1 || e.problems.length) return { ok: false, stop: "ROSTER_BROKEN", why: mine.length > 1 ? `${business} is listed twice in the roster` : e.problems.join("; ") };
   if (e.paused) return { ok: false, stop: "PAUSED", why: `${e.label} is paused: ${e.paused}` };
   if (action === "propose") return { ok: true };
   if (action !== "post") return { ok: false, stop: "UNKNOWN_ACTION", why: `no action called ${action}` };

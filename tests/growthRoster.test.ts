@@ -69,6 +69,24 @@ describe("reading the roster", () => {
   });
 });
 
+describe("a broken entry acts on nothing", () => {
+  it("a doubled key is named and refused, even when the second copy says paused", () => {
+    const two = parseRoster(`${SECTION}\n### Shop A again\n- key: shop-a\n- buyer: x\n- offer: y\n- money number: z\n- channels: instagram [reel]\n- languages: en\n- limits: R-AI-02\n- paused: yes\n`, "spry");
+    expect(rosterProblems(two).join(" ")).toMatch(/key shop-a is listed twice/);
+    expect(mayAct(two, { business: "shop-a", channel: "instagram", format: "reel" })).toMatchObject({ ok: false, stop: "ROSTER_BROKEN" });
+  });
+  it("a half-written entry (no limits) is refused, so its drafts are never unchecked", () => {
+    const half = parseRoster("### Shop D\n- key: shop-d\n- buyer: x\n- offer: y\n- money number: z\n- channels: instagram [reel]\n- languages: en\n", "spry");
+    expect(rosterProblems(half).join(" ")).toMatch(/Shop D: no limits/);
+    expect(mayAct(half, { business: "shop-d", channel: "instagram", format: "reel" })).toMatchObject({ ok: false, stop: "ROSTER_BROKEN" });
+  });
+  it("a misspelled field (\"pause: yes\") is named and refused, never read as active", () => {
+    const typo = parseRoster(SECTION.replace("- paused: no", "- pause: yes"), "spry");
+    expect(rosterProblems(typo).join(" ")).toMatch(/"pause" is not a roster field/);
+    expect(mayAct(typo, { business: "shop-a", channel: "instagram", format: "reel" })).toMatchObject({ ok: false, stop: "ROSTER_BROKEN" });
+  });
+});
+
 describe("what the Director may do", () => {
   it("posts only on an approved channel AND format", () => {
     expect(mayAct(roster, { business: "shop-a", channel: "instagram", format: "reel" })).toEqual({ ok: true });
