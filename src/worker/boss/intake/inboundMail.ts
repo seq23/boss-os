@@ -38,7 +38,7 @@ import { answerDutyFromMail, newDutyFromMail } from "../duties/mailLane";
 import { editDutyFromMail } from "../duties/editByMail";
 import { answerCommentWatchFromMail } from "../commentWatch/answer";
 import { answerKdpFromMail } from "../kdp/answer";
-import { dismissFromMail } from "../capital/dismiss";
+import { dismissFromMail, DISMISS_REPLY_RE } from "../capital/dismiss";
 import { prospectTemplateFromMail } from "../lp/templateReply";
 import { decideAnswerFromMail, morningDayOf } from "../lp/decideReply";
 import { morningReplyFromMail } from "./morningReply";
@@ -754,7 +754,7 @@ export async function handleBossInboundMail(message: BossMailMessage, env: Env):
    * when no first read answered, logged "first read absent: keyword fallback". The same read is the work's brief below
    * (one read per email). Gemini free, then Workers AI; never Claude or Codex, never masked (firstRead.ts).
    */
-  const mayCommand = Boolean(own) && (morningCommands(own).commands.length > 0 || nudgeAddressesIn(own).length > 0);
+  const mayCommand = Boolean(own) && (morningCommands(own).commands.length > 0 || nudgeAddressesIn(own).length > 0 || DISMISS_REPLY_RE.test(own));
   const replyRead: FirstRead | null = (threadRefs.refs.length || message.headers.get("in-reply-to") || mayCommand) && !oversize && (own || readable).trim()
     ? await reading.read()
     : null;
@@ -1042,7 +1042,7 @@ export async function handleBossInboundMail(message: BossMailMessage, env: Env):
    */
   const dismissAnswer = !planAnswer && !commentAnswer && !kdpAnswer
     // …and her numbered answer to the prospect-email card ("5: try again"), the same way (25 Oct 2026).
-    ? (await dismissFromMail(env, own, now)) ?? (await prospectTemplateFromMail(env, own, now, morningDayOf(threadRefs.refs), mailId, replyDecision))
+    ? (await dismissFromMail(env, own, now, replyDecision, mailId)) ?? (await prospectTemplateFromMail(env, own, now, morningDayOf(threadRefs.refs), mailId, replyDecision))
     : null;
 
   /*
@@ -1393,6 +1393,8 @@ function headline(text: string): string {
   const stopped = question ? question.ask : planAnswer?.note ?? commentAnswer?.note ?? kdpAnswer?.note ?? dismissAnswer?.note ?? dutyNote?.note ?? closeQuestion ?? closedNote ?? bookFailure;
   const serviceLines = [
     ...unheard,
+    // The morning commands done (or asked once) from a mixed email: said here, never lost (22 Nov 2026).
+    ...(morningReply?.note && !decideAnswer ? [morningReply.note] : []),
     ...(secrets?.line ? [secrets.line] : []),
     ...(constraintNote ? [constraintNote] : []),
     ...(notBefore && taskId ? [`Held until ${dueLine({ due_at: notBefore.at, due_words: notBefore.words })!.replace(/^due /, "")}; nothing starts before then.`] : []),

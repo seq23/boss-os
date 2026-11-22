@@ -71,13 +71,23 @@ export function commandsFromRead(readCommands, words) {
 }
 
 /*
- * A whole-line command in her exact words that the read missed still acts (live, 20 Nov 2026: Workers AI dropped the
- * "drop 2" beside "gate done"). Both are judged already; one command is never done twice. Pure.
+ * WHERE THE READ AND HER EXACT WORDS DISAGREE (coordinator ruling, 22 Nov 2026): a whole-line command in her words
+ * that the read did not give is neither done nor dropped silently: it is "unknown", and she is asked once. Replaces
+ * the 20 Nov patch that let the keywords act beside the read. Pure: the keyword commands the read did not give.
  */
-export function withKeywordsTheReadMissed(fromRead, keyword) {
+export function missedByRead(fromRead, keyword) {
   const key = (c) => c.kind === "gate" ? "gate" : `${c.kind}:${c.number ?? ""}:${String(c.name ?? c.what ?? c.company ?? c.words ?? "").toLowerCase()}`;
   const have = new Set(fromRead.map(key));
-  return [...fromRead, ...keyword.filter((k) => !have.has(key(k)))];
+  return keyword.filter((k) => !have.has(key(k)));
+}
+
+/** Her exact line for a command, said back when she is asked once. */
+export function commandWords(c) {
+  if (c.kind === "drop") return c.number ? `drop ${c.number}` : `drop ${c.name}`;
+  if (c.kind === "gate") return "gate done";
+  if (c.kind === "grateful") return `grateful for ${c.what}`;
+  if (c.kind === "public") return `${c.company} is public`;
+  return String(c.words ?? "");
 }
 
 function keywordCommandOf(line) {

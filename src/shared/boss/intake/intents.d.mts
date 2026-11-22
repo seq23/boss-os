@@ -1,0 +1,11 @@
+export type ReplyMode = "approved" | "preview" | "forced" | "held" | "answers";
+export declare const REPLY_MODES: ReadonlyArray<{ mode: ReplyMode; means: string }>;
+export declare const READ_MODES: readonly ReplyMode[];
+export type CommentAction = "approve" | "hide" | "reply_as_drafted" | "reply" | "ignore";
+export declare const COMMENT_ACTION_TABLE: ReadonlyArray<{ action: CommentAction; form: string | null }>;
+export declare const COMMENT_ACTIONS: readonly CommentAction[];
+export type CommandKind = "drop" | "gate" | "grateful" | "public" | "rule" | "nudge" | "dismiss" | "comment" | "your_call";
+export declare const COMMANDS: ReadonlyArray<{ kind: CommandKind; means: string }>;
+export declare const COMMAND_KINDS: readonly CommandKind[];
+export type CheckMeaning = "asks" | "not" | "unsure";
+export declare const CHECK_MEANINGS: readonly CheckMeaning[];

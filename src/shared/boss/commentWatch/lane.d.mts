@@ -29,7 +29,6 @@ export interface Digest { new_comments?: number; by_class?: Record<string, numbe
 export function tokenIn(text: string | null | undefined): string | null;
 export function shouldEmail(digest: Digest | null | undefined): boolean;
 export function parseReply(text: string | null | undefined, items: DigestItem[]): ParsedReply;
-export const READ_ACTIONS: readonly ["approve", "hide", "ignore", "reply_as_drafted", "reply"];
 export function readCommentReply(
   text: string | null | undefined, items: DigestItem[],
   readCommands?: ReadonlyArray<{ kind: string; n: number | null; text: string; action?: string | null }> | null,

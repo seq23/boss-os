@@ -31,6 +31,7 @@
  * it at 14:05. The act half runs on its own daily slots so her reply never waits a week.
  */
 
+import { COMMENT_ACTIONS, COMMENT_ACTION_TABLE } from "../intake/intents.mjs";
 import { quoteStands } from "../text/wholeSentence.mjs";
 
 export const TASK_KIND = "youtube_comment_watch";
@@ -48,12 +49,10 @@ export const ACTIONS = ["hide", "reply", "ignore"];
 /** Words that hand the whole digest to Monique's proposals. Pre-approval, recorded by phrase. */
 export const YOUR_CALL_PHRASES = ["your call", "you decide", "your decision", "you choose", "monique decides"];
 
-/** The exact reply forms the digest email prints. One place, so the mail and the parser agree. */
+/** The exact reply forms the digest email prints: built from the reader's one action list (intake/intents.mjs), so the
+ * mail, the reader and the parser agree. */
 export const REPLY_FORMS = [
-  "`1 delete` — hide it (YouTube keeps it under Held for review; reversible)",
-  "`2 reply as drafted` — post Monique's drafted reply as the channel",
-  "`3 reply: <your words>` — post your words instead",
-  "`4 ignore` — leave it, and never raise it again",
+  ...COMMENT_ACTION_TABLE.map((a) => a.form).filter(Boolean),
   "`your call` — Monique applies every proposed action above, on your say-so",
 ];
 
@@ -176,7 +175,6 @@ function namedButUnread(own, byN, seen) {
  * Where her exact forms read an item plainly, they win over a read that disagrees; an item the read did not instruct
  * keeps what her exact words say; anything she named that neither reading instructed is listed back as unread. Pure.
  */
-export const READ_ACTIONS = ["approve", "hide", "ignore", "reply_as_drafted", "reply"];
 export function readCommentReply(text, items, readCommands = null) {
   const keyword = parseReply(text, items);
   if (!readCommands) return { ...keyword, instructions: [...keyword.instructions].sort((a, b) => a.n - b.n), by: "KEYWORD" };
@@ -193,7 +191,7 @@ export function readCommentReply(text, items, readCommands = null) {
     if (c.kind !== "comment") continue;
     const it = byN.get(Number(c.n));
     if (!it || seen.has(it.n ?? c.n)) continue;
-    if (!READ_ACTIONS.includes(c.action) || !quoteStands(ownText, c.text, CLAUSE_SHAPES)) { unread.push(c.text); continue; }
+    if (!COMMENT_ACTIONS.includes(c.action) || !quoteStands(ownText, c.text, CLAUSE_SHAPES)) { unread.push(c.text); continue; }
     let read = null;
     if (c.action === "approve") read = proposedOf(it);
     else if (c.action === "hide" || c.action === "ignore") read = { action: c.action, reply_text: null };
@@ -203,17 +201,21 @@ export function readCommentReply(text, items, readCommands = null) {
     seen.add(Number(c.n));
     instructions.push({ n: Number(c.n), comment_id: it.comment_id, ...read });
   }
-  // Her exact words win where they read an item plainly and the read says otherwise (live, 20 Nov 2026: Workers AI read
-  // "skip 2" as hide); the read fills only what her exact forms cannot read.
-  for (const k of keyword.instructions) {
+  // The read decides (coordinator ruling, 22 Nov 2026). Where her exact form reads an item another way than the read,
+  // or names an item the read left out, that item is "unknown": nothing is done to it and she is asked once. This
+  // replaces the 20 Nov patch that let the exact form overrule the read ("skip 2" read as hide).
+  const disputed = [];
+  for (const k of [...keyword.instructions].sort((a, b) => a.n - b.n)) {
     const at = instructions.findIndex((i) => i.n === k.n);
-    if (at >= 0) instructions[at] = k;
-    else if (!seen.has(k.n)) { seen.add(k.n); instructions.push(k); }
+    if (at >= 0 && instructions[at].action === k.action && (instructions[at].reply_text ?? null) === (k.reply_text ?? null)) continue;
+    if (at >= 0) instructions.splice(at, 1);
+    seen.add(k.n);
+    disputed.push(`${k.n}: I was not sure what you meant, so nothing was done to it. Reply with one line for it (${REPLY_FORMS.slice(0, 4).map((f) => f.replace(/\s+—.*$/, "")).join(", ")}).`);
   }
   const own = ownLines(text ?? "");
   const kept = keyword.unread.filter((u) => !/^\d{1,3}: no instruction read/.test(u));
   const saidBack = new Set(kept.map((u) => Number(/^#?\s*(\d{1,3})/.exec(u)?.[1])).filter((n) => n > 0));
-  const left = [...unread, ...kept.filter((u) => !seen.has(Number(/^#?\s*(\d{1,3})/.exec(u)?.[1]))), ...namedButUnread(own, byN, new Set([...seen, ...saidBack]))];
+  const left = [...disputed, ...unread, ...kept.filter((u) => !seen.has(Number(/^#?\s*(\d{1,3})/.exec(u)?.[1]))), ...namedButUnread(own, byN, new Set([...seen, ...saidBack]))];
   return { mode: instructions.length ? "per_number" : "none", phrase: null, instructions: instructions.sort((a, b) => a.n - b.n), unread: [...new Set(left)], by: "FIRST_READ" };
 }
 

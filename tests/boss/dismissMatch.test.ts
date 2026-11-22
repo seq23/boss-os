@@ -8,6 +8,7 @@ import { beforeEach, describe, expect, it } from "vitest";
 import worker from "../../src/worker/boss/index";
 import { apiJson } from "./helpers";
 import { handleBossInboundMail } from "../../src/worker/boss/intake/inboundMail";
+import { dismissFromMail } from "../../src/worker/boss/capital/dismiss";
 
 async function tap(path: string, method = "GET") {
   const ctx = createExecutionContext();
@@ -86,5 +87,37 @@ describe("a dismissed match stays dismissed until a new order", () => {
     await apiJson("/api/capital/dismiss", { method: "POST", body: { pair: m5.pair, sig: m5.sig, company: "Company S" } });
     const kept = (await apiJson<any>("/api/morning/2026-10-25")).body.data.payload;
     expect(kept.found_grid.map((r: any) => r.match_pair)).toEqual([match(6).pair]);
+  });
+});
+
+// MEANING BY THE MODEL (22 Nov 2026): the read decides which match she dismisses; her exact grammar is checked against it,
+// and when the two disagree nothing is dismissed and she is asked once. With no read, only a STANDING "dismiss <code>" acts.
+describe("her \"dismiss <code>\" is read by the model first", () => {
+  const read = (...codes: string[]) => ({ reply: null, answers: [], commands: codes.map((c) => ({ kind: "dismiss", n: null, text: `dismiss ${c}` })) }) as any;
+  const disagreed = async () => (await env.DB.prepare(`SELECT COUNT(*) AS n FROM system_events WHERE event = 'meaning_disagrees'`).first<any>()).n;
+  beforeEach(async () => { await env.DB.exec("DELETE FROM system_events;"); });
+
+  it("the read's dismissal acts", async () => {
+    const { body } = await push([match(5)]);
+    const code = body.data.codes["b5|s5"];
+    const out = await dismissFromMail(env as never, `dismiss ${code}`, Date.now(), read(code), "m-d1");
+    expect(out?.note).toMatch(/^Dismissed the Company S match/);
+    expect(await listed()).toEqual([]);
+  });
+
+  it("her words say dismiss but the read gave nothing: nothing is dismissed, she is asked once, and it is logged", async () => {
+    const { body } = await push([match(6)]);
+    const code = body.data.codes["b6|s6"];
+    const out = await dismissFromMail(env as never, `dismiss ${code}`, Date.now(), read(), "m-d2");
+    expect(out?.note).toContain(`I was not sure you meant to dismiss ${code}`);
+    expect(await listed()).toEqual(["b6|s6"]);
+    expect(await disagreed()).toBe(1);
+  });
+
+  it("model down: \"Don't dismiss <code>\" does not stand, so nothing is dismissed", async () => {
+    const { body } = await push([match(7)]);
+    const code = body.data.codes["b7|s7"];
+    expect(await dismissFromMail(env as never, `Don't dismiss ${code} yet.`, Date.now(), null, "m-d3")).toBeNull();
+    expect(await listed()).toEqual(["b7|s7"]);
   });
 });
