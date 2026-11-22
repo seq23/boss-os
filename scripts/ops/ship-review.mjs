@@ -20,6 +20,8 @@
  *     page/profile --target may be a comma list of up to 4 pages (the pages the change touched)
  *     --focus    "<text>" (repeatable): text the change touched; each page also gets a shot around it
  *                (with --brief the verdict is the CHANGE's; problems already there are listed apart)
+ *     --tap      "<button or link text>" (repeatable): load the page fresh, tap it, shoot what it shows
+ *                (a message or screen that only appears after a tap); sent to the capture as "tap:<text>"
  *     --launch   new and going public: judged against ship-ready section 3 too; prints Launch-ready
  *     --private  never a free route (default for emails and Boss OS's own screens); --public overrides
  *     --pr       owner/repo#N: on PASS the line is appended to that PR's body, where `land` reads it
@@ -60,6 +62,7 @@ export function parseArgs(argv) {
     if (["--launch", "--private", "--public", "--no-store", "--capture-only", "--on-github"].includes(k)) { a.flags.add(k.slice(2)); continue; }
     if (k === "--planned") { (a.planned ??= []).push(argv[++i]); continue; }
     if (k === "--focus") { (a.focus ??= []).push(argv[++i]); continue; }
+    if (k === "--tap") { (a.focus ??= []).push(`tap:${argv[++i]}`); continue; }
     a[k.slice(2)] = argv[++i];
   }
   a.planned ??= [];
@@ -166,14 +169,57 @@ async function shoot(b, url, { width, height, scheme, file, focus = [], focusFil
   const shot = tiles.length > 0;
   // THE CHANGED TEXT, WHEREVER IT SITS (20 Nov 2026: a footer note 6,500 px down was never in the
   // capture, so the change could not be judged). Each --focus text found on the page gets its own shot
-  // of the screen around it.
+  // of the screen around it. The text is scrolled into view by the browser, so it is reached inside an
+  // app's own scrolling panel too (22 Nov 2026: app screens scroll in a container, and a clip of the
+  // page never reached their prices and buy buttons). A "tap:<label>" entry (--tap) loads the page
+  // fresh, taps that button or text, and shoots what the tap shows (22 Nov 2026: messages that only
+  // appear after a tap could not be judged).
   const focused = [];
-  for (const [i, text] of focus.entries()) {
-    const box = await page.getByText(text, { exact: false }).first().boundingBox({ timeout: 5_000 }).catch(() => null);
-    if (!box) { focused.push({ text, file: null }); continue; }
-    const top = Math.max(0, box.y - height / 2), f = focusFile(i);
-    const ok = await page.screenshot({ path: f, fullPage: true, timeout: 120_000, animations: "disabled", clip: { x: 0, y: top, width, height: Math.min(height, Math.max(1, (m.fullH || height) - top)) } }).then(() => true, () => false);
-    focused.push({ text, file: ok ? f : null });
+  const viewShot = (f) => page.screenshot({ path: f, timeout: 120_000, animations: "disabled" }).then(() => true, () => false);
+  let tapped = false;
+  for (const [i, entry] of focus.entries()) {
+    const tap = entry.startsWith("tap:"), text = tap ? entry.slice(4).trim() : entry, f = focusFile(i, tap);
+    // A tap starts from the page as it loads; so does any entry after a tap (a link tap leaves the page).
+    if (tap || tapped) {
+      await page.goto(url, { waitUntil: "domcontentloaded", timeout: 60_000 }).catch(() => {});
+      await page.waitForLoadState("networkidle", { timeout: 20_000 }).catch(() => {});
+    }
+    const el = (tap ? page.getByRole("button", { name: text }).or(page.getByRole("link", { name: text })).or(page.getByText(text, { exact: false })) : page.getByText(text, { exact: false })).first();
+    // Centred, so what sits just below it (where a tap's message usually appears) is in the shot too.
+    const centre = () => el.evaluate((e) => e.scrollIntoView({ block: "center" }), null, { timeout: 5_000 }).then(() => true, () => false);
+    if (!(await centre())) { focused.push({ text, tap, file: null }); continue; }
+    if (tap) {
+      tapped = true;
+      // Watch what the tap changes, so the shot is centred on the message it shows, wherever that
+      // lands (22 Nov 2026: a preview message below a kit list fell under the shot's cut).
+      // Elements the tap adds or unhides rank above class/style churn (a ticking timer, a carousel);
+      // the tapped button itself (its "Adding…" label), what holds it, html and body never count.
+      await el.evaluate((btn) => {
+        const strong = [], weak = [];
+        const note = (n, list) => { const e = n.nodeType === 1 ? n : n.parentElement; if (e) list.push(e); };
+        const obs = new MutationObserver((ms) => ms.forEach((m) => {
+          if (m.type === "childList") m.addedNodes.forEach((n) => note(n, strong));
+          else if (m.type === "attributes" && (m.attributeName === "hidden" || m.attributeName === "open")) note(m.target, strong);
+          else note(m.target, m.type === "characterData" ? strong : weak);
+        }));
+        obs.observe(document.body, { subtree: true, childList: true, characterData: true, attributes: true, attributeFilter: ["hidden", "style", "class", "open"] });
+        window.__srTap = { btn, strong, weak, obs };
+      }).catch(() => {});
+      if (!(await el.click({ timeout: 5_000 }).then(() => true, () => false))) { focused.push({ text, tap, file: null }); continue; }
+      await page.waitForLoadState("networkidle", { timeout: 10_000 }).catch(() => {});
+      await page.waitForTimeout(1_500);
+      // The last such element that now shows text; the tapped button itself if none (a link tap that
+      // left the page, or a tap that changed nothing visible).
+      const shown = await page.evaluate(() => {
+        const t = window.__srTap; if (!t) return false;
+        t.obs.disconnect();
+        const ok = (e) => e.isConnected && e !== document.body && e !== document.documentElement && !(t.btn.isConnected && (e === t.btn || e.contains(t.btn) || t.btn.contains(e))) && e.innerText?.trim() && e.getClientRects().length;
+        const e = t.strong.filter(ok).at(-1) ?? t.weak.filter(ok).at(-1); if (!e) return false;
+        e.scrollIntoView({ block: "center" }); return true;
+      }).catch(() => false);
+      if (!shown) await centre();
+    }
+    focused.push({ text, tap, file: (await viewShot(f)) ? f : null });
   }
   await ctx.close();
   return { status: res?.status?.() ?? "unknown", errors, shot, tiles, missing, colors, dark, blank: isBlank(m), focused, ...m };
@@ -220,7 +266,7 @@ async function capturePage(a, out) {
       for (const s of sizes) {
         const file = join(out, s.label);
         const fbase = s.label.replace(/\.png$/, "");
-        const m = await shoot(b, url, { ...s, file, lightColors: s.scheme === "dark" ? lightColors : null, focus: s.scheme === "light" ? (a.focus ?? []) : [], focusFile: (i) => join(out, `${fbase}-focus-${i + 1}.png`) });
+        const m = await shoot(b, url, { ...s, file, lightColors: s.scheme === "dark" ? lightColors : null, focus: s.scheme === "light" ? (a.focus ?? []) : [], focusFile: (i, tap) => join(out, `${fbase}-${tap ? "tap" : "focus"}-${i + 1}.png`) });
         if (s === sizes[0]) lightColors = m.colors;
         if (s.scheme === "dark") darkState = nextDarkState(darkState, m);
         if (s.scheme === "dark" && (m.dark === "none" || m.dark === "not read")) {
@@ -229,8 +275,8 @@ async function capturePage(a, out) {
         }
         if (s.scheme === "dark") say(m.dark === "toggle" ? "dark: read through the site's own theme toggle" : "dark: the site has its own dark scheme; captured");
         for (const [i, f] of (m.focused ?? []).entries()) {
-          if (f.file) shots.push({ path: f.file, label: `${fbase}-focus-${i + 1}.png` });
-          else say(`the changed text "${f.text.slice(0, 80)}" was not found on this page at ${s.width} px`);
+          if (f.file) { shots.push({ path: f.file, label: basename(f.file) }); if (f.tap) say(`${basename(f.file)} is the screen after tapping "${f.text.slice(0, 80)}" at ${s.width} px`); }
+          else say(f.tap ? `could not tap "${f.text.slice(0, 80)}" on this page at ${s.width} px` : `the changed text "${f.text.slice(0, 80)}" was not found on this page at ${s.width} px`);
         }
         if (m.shot && !m.blank) for (const t of m.tiles) shots.push({ path: t, label: basename(t) });
         if (m.shot && !m.blank) say(`the ${fbase} capture is the whole page (${m.fullH} px) in ${m.tiles.length} part${m.tiles.length === 1 ? "" : "s"}${m.missing.length ? `; NOT captured: ${m.missing.join(", ")}` : ""}`);
@@ -573,7 +619,7 @@ export async function main(argv = process.argv.slice(2), { env = process.env, fe
   if (v.verdict === "UNSEEN") {
     writeFileSync(join(out, "verdict.json"), JSON.stringify({ id, subject, verdict: "UNSEEN", unseen: v.unseen, already: v.already, route: v.model, facts, at: new Date().toISOString() }, null, 2));
     print("OUTPUT 0 reviews");
-    throw stop(9, "CAPTURE_INCOMPLETE", `${v.model} could not see: ${v.unseen.join("; ")}. Nothing was judged; capture it (--focus "<changed text>", or the page that holds it) and rerun. Captures kept in ${out}`);
+    throw stop(9, "CAPTURE_INCOMPLETE", `${v.model} could not see: ${v.unseen.join("; ")}. Nothing was judged; capture it (--focus "<changed text>", --tap "<button>" for what a tap shows, or the page that holds it) and rerun. Captures kept in ${out}`);
   }
   const reviewer = `boss-os ship-review ${id} (${v.model})`;
   const line = v.verdict === "PASS" ? passLine({ reviewer, lookedAt, launch: base.launch }) : `${base.launch ? "Launch" : "Ship"}-ready: FAIL — ${reviewer} looked at ${lookedAt}`;

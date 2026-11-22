@@ -9,9 +9,9 @@ export function rulesFor(entry: { key: string | null; limits: string[] }): strin
 export function claimRules(entry: { key: string | null; limits: string[] }, riskMd: string): { rules: { id: string; text: string }[]; missing: string[] };
 export function spendPrompt(p: { what: string; why?: string }): { role: string; content: string }[];
 export function parseSpend(text: string | null | undefined): { costs_money: boolean; creates_account: boolean } | null;
-export interface Decision { decision: string; evidence: string[]; test: { channel: string; format: string; what: string; number: string; stop: string } | null; queue: { channel: string; format: string; draft: string; why: string }[]; proposals: { what: string; why: string; evidence: string; costs_money?: boolean }[]; next_check: string | null }
+export interface Decision { decision: string; evidence: string[]; test: { channel: string; format: string; what: string; number: string; stop: string } | null; queue: { channel: string; format: string; draft: string; why: string }[]; proposals: { what: string; why: string; evidence: string; costs_money?: boolean }[]; next_check: string | null; linked: { id: string; verdict: "keep" | "change" | "drop"; why: string; next_step: string | null }[] }
 export function numbersFor(summary: any): string;
-export function decisionPrompt(a: { playbook: string; entry: RosterEntry; summary: any; trends: string[]; today: string; todos: string[]; first?: boolean }): { role: string; content: string }[];
+export function decisionPrompt(a: { playbook: string; entry: RosterEntry; summary: any; trends: string[]; today: string; todos: string[]; first?: boolean; linked?: { id: string; what: string }[] }): { role: string; content: string }[];
 export function parseDecision(text: string | null | undefined): Decision | null;
 export function enforceHolds(decision: Decision, summary: any): { decision: Decision; dropped: string | null };
 export function claimsPrompt(a: { entry: { label: string }; rules: { id: string; text: string }[]; draft: string }): { role: string; content: string }[];

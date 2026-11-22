@@ -2290,6 +2290,49 @@
       "versionB": {
         "text": "Propose only: the Director queues nothing herself, and each move goes to her as one Decide card with its evidence."
       }
+    },
+    {
+      "id": "landing-speed",
+      "initiative": "Landing speed: PR to live, measured weekly (her yes 22 Nov 2026)",
+      "business": "personal",
+      "owner": "Boss OS · the Sunday Landing speed section of your morning email",
+      "result": "Changes she asks for go live the same day: merged PRs live within a day of opening",
+      "jobs": [
+        "landing-times"
+      ],
+      "start": "2026-11-23",
+      "first": {
+        "label": "merged PRs live within an hour of merging, last week (%)",
+        "by": 30,
+        "floor": {
+          "op": ">=",
+          "value": 70
+        },
+        "reader": "d1",
+        "params": {
+          "db": "boss-os",
+          "sql": "SELECT (SELECT json_extract(body, '$.measures.landed_in_hour_pct') FROM morning_sections WHERE section = 'landing' AND updated_at >= :since_ms) AS n",
+          "days": 9
+        }
+      },
+      "real": {
+        "label": "merged PRs live within a day of opening, last week (%)",
+        "unit": "%",
+        "by": 60,
+        "floor": {
+          "op": ">=",
+          "value": 80
+        },
+        "reader": "d1",
+        "params": {
+          "db": "boss-os",
+          "sql": "SELECT (SELECT json_extract(body, '$.measures.live_in_day_pct') FROM morning_sections WHERE section = 'landing' AND updated_at >= :since_ms) AS n",
+          "days": 9
+        }
+      },
+      "versionB": {
+        "text": "Under 80% live within a day by day 60: land holds 2 hosted runners for landing only, and every review starts within 30 minutes of the PR opening, with the Sunday section naming each PR that missed."
+      }
     }
   ],
   "exempt": {

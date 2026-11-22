@@ -40,6 +40,10 @@ import { raiseJudgementCall } from "../approvals/raise";
 import { latestReadings } from "../routes/growth";
 
 export const DIRECTOR = "emp_growth";
+/** A row's own next step, without the Director's one line on top (written as "Growth Director, …\n"). */
+export function withoutDirectorLine(step: string | null | undefined): string {
+  return String(step ?? "").replace(/^Growth Director, [^\n]*\n/, "");
+}
 const TREND_FEED = "https://trends.google.com/trending/rss?geo=US";
 
 type Msg = { role: string; content: string };
@@ -71,12 +75,15 @@ async function brainMd(db: D1Database, slug: string): Promise<string | null> {
 }
 
 /** The roster from the growth brains only; a broken section is a named problem, never a quiet skip. */
+/** Her words for the two growth brains, so a problem reads as a business, never a slug. */
+const BRAIN_NAMES: Record<string, string> = { "porch-and-party": "Porch & Party", spry: "Spry Labs" };
 export async function loadRoster(db: D1Database): Promise<{ roster: RosterEntry[]; problems: string[] }> {
   const roster: RosterEntry[] = []; const problems: string[] = [];
   for (const slug of GROWTH_BRAINS) {
     const md = await brainMd(db, slug);
-    if (!md) { problems.push(`the ${slug} brain is missing`); continue; }
-    try { const body = growthSection(slug, md); if (body) roster.push(...parseRoster(body, slug)); else problems.push(`the ${slug} brain has no Growth section`); }
+    const name = BRAIN_NAMES[slug] ?? slug;
+    if (!md) { problems.push(`${name}'s brain is missing`); continue; }
+    try { const body = growthSection(slug, md); if (body) roster.push(...parseRoster(body, slug)); else problems.push(`${name}'s brain has no Growth section yet`); }
     catch (e) { problems.push(String((e as Error).message)); }
   }
   return { roster, problems: [...problems, ...rosterProblems(roster)] };
@@ -164,7 +171,16 @@ export async function runGrowthDirector(env: Env, now = Date.now(), deps: { mode
       if (!s || s.state !== "read") { await record({ ...base, state: "held: no data", decision: "Held: nothing on the scoreboard was read for this business, so nothing is decided on zeros.", evidence: (s?.channels ?? []).map((c: any) => `${c.label}: ${c.unread}`), actions: [] }); continue; }
       const first = !(await db.prepare(`SELECT 1 FROM growth_decisions WHERE business = ? AND state = 'decided' LIMIT 1`).bind(entry.key).first());
       const todos = await inMotion(db, entry.key!);
-      const answer = parseDecision(await model(env, decisionPrompt({ playbook, entry, summary: s, trends, today, todos, first }) as Msg[], "growth-decide"));
+      // The older work on this business's roster: the Director decides each row. Open Loops is LOCAL_ONLY
+      // (migration 0331), so no row text goes to the model: it sees the id and the roster's own words for it
+      // ("olp_x (what it is)" in the brain), and only open rows filed under this entry's brain, not hers, are
+      // judged. A row's `business` is the BRAIN slug (the Director files its own rows that way, line above), so a
+      // Spry Labs company's rows are 'spry', never its roster key: keying on the key hid every PBS row (22 Nov).
+      const linkedIds = entry.linked.length ? ((await db.prepare(
+        `SELECT id FROM owner_open_loops WHERE status = 'open' AND business = ? AND owner <> 'sequoia' AND id IN (SELECT value FROM json_each(?))`,
+      ).bind(entry.brain, JSON.stringify(entry.linked)).all<{ id: string }>()).results ?? []).map((r) => r.id) : [];
+      const linked = linkedIds.map((id) => ({ id, what: entry.linkedNotes[id] ?? "no description on the roster" }));
+      const answer = parseDecision(await model(env, decisionPrompt({ playbook, entry, summary: s, trends, today, todos, first, linked }) as Msg[], "growth-decide"));
       if (!answer) { await record({ ...base, state: "held: no model", decision: "Held: no free model answered (every free route was busy or spent); the next cycle tries again.", evidence: [], actions: [] }); continue; }
       const { decision, dropped } = enforceHolds(answer, s);
       const actions: any[] = [];
@@ -191,13 +207,8 @@ export async function runGrowthDirector(env: Env, now = Date.now(), deps: { mode
         const verdict = parseClaims(await model(env, claimsPrompt({ entry, rules, draft: item.draft }) as Msg[], "growth-claims"));
         if (!verdict) { actions.push({ kind: "held", why: "the claims check got no model answer, so it is held, never passed", item }); continue; }
         if (!verdict.pass) { actions.push({ kind: "blocked", why: `breaks ${verdict.broken.join(", ") || "a rule"}: ${verdict.why}`, item }); continue; }
-        // The first post of a format on a channel waits for her yes (a card); after it, it queues.
-        const started = await db.prepare(`SELECT 1 FROM owner_open_loops WHERE source_key = ?`).bind(pipelineKey(entry.key!, item.channel, item.format)).first();
-        if (!started) {
-          const c = await raise(`${entry.label}: start posting ${item.format} on ${item.channel}? (first one below)`, `${item.why}\n\nThe first one, which passed the claims check: ${item.draft}`, { item, first: true });
-          actions.push({ kind: "proposal", why: c.why ?? "the first post of this format waits for her yes", item, card: c.card });
-          continue;
-        }
+        // A format on the roster is approved: it queues, first post included. Decide is only for a new
+        // account, channel, price or anything paid (her ruling, 22 Nov 2026: "why are they asking me anything?").
         const q = await queueRow(db, entry, item, decision.next_check ?? today);
         actions.push(q.id ? { kind: "queued", loop: q.id, item } : { kind: "held", why: q.why, item });
       }
@@ -209,6 +220,22 @@ export async function runGrowthDirector(env: Env, now = Date.now(), deps: { mode
         if (r.to === "refused") { actions.push({ kind: "refused", stop: r.stop, why: r.why, proposal: p }); continue; }
         const c = await raise(`${entry.label}: ${p.what}`, `${p.why}\n\nEvidence: ${p.evidence}`, { proposal: p });
         actions.push({ kind: "proposal", proposal: p, card: c.card, ...(c.why ? { why: c.why } : {}) });
+      }
+      // Her older rows get the Director's verdict, written where she and the working session read them.
+      const judged = new Set<string>();
+      for (const v of decision.linked ?? []) {
+        if (judged.has(v.id) || !linked.some((l: any) => l.id === v.id)) continue; // once each, only rows it was shown
+        judged.add(v.id);
+        // The Director's line is ONE line on top; the step under it is the row's own (or the changed one).
+        const say = `Growth Director, ${today}: ${v.verdict}. ${v.why.replace(/\s+/g, " ").trim()}`;
+        if (v.verdict === "drop") {
+          await db.prepare(`UPDATE owner_open_loops SET status = 'closed', closed_reason = ?, closed_at = ?, updated_at = ? WHERE id = ? AND business = ? AND status = 'open'`).bind(say.slice(0, 400), now, now, v.id, entry.brain).run();
+        } else {
+          const cur = await db.prepare(`SELECT next_step FROM owner_open_loops WHERE id = ?`).bind(v.id).first<{ next_step: string | null }>();
+          const step = v.verdict === "change" ? v.next_step : withoutDirectorLine(cur?.next_step);
+          await db.prepare(`UPDATE owner_open_loops SET next_step = ?, updated_at = ? WHERE id = ? AND business = ? AND status = 'open'`).bind(`${say}\n${step}`, now, v.id, entry.brain).run();
+        }
+        actions.push({ kind: "linked", id: v.id, verdict: v.verdict, why: v.why });
       }
       await record({ ...base, state: "decided", decision: decision.decision, evidence: decision.evidence, test: decision.test, next_check: decision.next_check, actions });
     } catch (e) {

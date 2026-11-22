@@ -65,7 +65,7 @@ export function numbersFor(summary) {
 }
 
 /** The decision prompt for one business. */
-export function decisionPrompt({ playbook, entry, summary, trends, today, todos, first = false }) {
+export function decisionPrompt({ playbook, entry, summary, trends, today, todos, first = false, linked = [] }) {
   const roster = [
     `Business: ${entry.label}`, `Buyer: ${entry.buyer}`, `Offer: ${entry.offer}`, `Money number: ${entry.money}`,
     `Approved channels and formats: ${entry.channels.map((c) => `${c.channel}${c.formats.length ? ` [${c.formats.join(", ")}]` : ""}${c.note ? ` (${c.note})` : ""}`).join(" · ")}`,
@@ -84,6 +84,9 @@ ${numbersFor(summary)}
 OPEN TO-DOS ALREADY ON THE LIST
 ${(todos ?? []).map((t) => `- ${t}`).join("\n") || "- none"}
 
+OLDER WORK FOR THIS BUSINESS, STARTED BEFORE YOU (you own it now: keep, change or drop each, on the evidence)
+${(linked ?? []).map((l) => `- ${l.id}: ${l.what}`).join("\n") || "- none"}
+
 SEARCH TRENDS TODAY (public, US)
 ${(trends ?? []).slice(0, 20).map((t) => `- ${t}`).join("\n") || "- not read"}
 
@@ -93,6 +96,7 @@ Return exactly:
  "test": null or {"channel": "...", "format": "...", "what": "...", "number": "the number that judges it", "stop": "when it stops"},
  "queue": [up to ${MAX_QUEUE_PER_BUSINESS} {"channel": "...", "format": "...", "draft": "the exact words of the post or page lead", "why": "..."}],
  "proposals": [{"what": "something new that needs her yes (a new channel, format, product, price or list)", "why": "...", "evidence": "...", "costs_money": true or false}],
+ "linked": [one per older-work row above: {"id": "olp_…", "verdict": "keep" | "change" | "drop", "why": "the evidence, plainly", "next_step": "for change: the new next step"}],
  "next_check": "YYYY-MM-DD"}
 Only approved channels and formats go in "queue"; anything else is a proposal. Never propose spending money or creating an account.${first && entry.season ? `\nThis is your FIRST decision for this business: it is about the season on its roster (${entry.season}), the money that season can still bring in before it ends.` : ""}` },
   ];
@@ -111,6 +115,9 @@ export function parseDecision(text) {
     queue: arr(j.queue).filter((q) => q && q.channel && q.draft).slice(0, MAX_QUEUE_PER_BUSINESS).map((q) => ({ channel: clip(q.channel, 40).toLowerCase(), format: clip(q.format, 40).toLowerCase(), draft: clip(q.draft, 1200), why: clip(q.why, 300) })),
     proposals: arr(j.proposals).filter((p) => p && p.what).slice(0, 3).map((p) => ({ what: clip(p.what, 300), why: clip(p.why, 300), evidence: clip(p.evidence, 300), costs_money: p.costs_money === true })),
     next_check: /^\d{4}-\d\d-\d\d$/.test(String(j.next_check)) ? j.next_check : null,
+    linked: arr(j.linked).filter((l) => l && /^olp_[a-z0-9]+$/.test(String(l.id)) && ["keep", "change", "drop"].includes(l.verdict) && String(l.why ?? "").trim())
+      .map((l) => ({ id: String(l.id), verdict: l.verdict, why: clip(l.why, 400), next_step: l.verdict === "change" ? clip(l.next_step, 400) || null : null }))
+      .filter((l) => l.verdict !== "change" || l.next_step),
   };
 }
 
@@ -221,10 +228,8 @@ export function cycleEnd(results) {
 }
 
 /**
- * One pipeline to-do per business × channel × format. The same key marks that her yes was given for
- * that format: the FIRST post of an approved format on a channel goes to her as a Decide card (her
- * ruling, 21 Nov 2026: nothing posts until she says yes to posting); her yes opens this row, and from
- * then on the format queues like any approved one.
+ * One pipeline to-do per business × channel × format. A format on the roster queues on it from its
+ * first post (her ruling, 22 Nov 2026); her yes to a NEW format's card opens the same row.
  */
 export function pipelineKey(business, channel, format) {
   return `growth#${business}#${channel}-${format}`.toLowerCase().replace(/[^a-z0-9#-]+/g, "-");
