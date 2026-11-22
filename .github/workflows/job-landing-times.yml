@@ -22,7 +22,7 @@ on:
         default: false
 
 # The token is cloud-job.yml's (contents: read; a caller cannot widen it): it reads every PUBLIC repo's
-# PRs, checks, deployments and runs. A private repo it cannot see is "not measured: private (<name>)", a
+# PRs, checks, deployments and runs. A private repo it cannot see is "not measured: private or gone (<name>)", a
 # note; a public one it cannot see turns the run red (REPOS_NOT_READABLE).
 
 concurrency:

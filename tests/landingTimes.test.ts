@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { dur, endOfRun, expectedRepos, failRounds, graphql, liveAt, passAt, prRow, readWeek, weekLines } from "../scripts/ops/landing-times.mjs";
+import { dur, endOfRun, expectedRepos, failRounds, isPublicRepo, graphql, liveAt, passAt, prRow, readWeek, weekLines } from "../scripts/ops/landing-times.mjs";
 
 /*
  * PR-to-live, measured (owner, 22 Nov 2026: "landing shit takes fucking forever"). The ways it breaks:
@@ -160,9 +160,19 @@ describe("landing-times: rule 0 and outages", () => {
     const { unreadable, privateRepos } = await readWeek({ now: Date.parse(at(1)), gql, expected: ["r", "secret"], isPublic });
     expect(asked).toEqual(["secret"]);
     expect({ unreadable, privateRepos }).toEqual({ unreadable: [], privateRepos: ["secret"] });
-    expect(weekLines([prRow(pr())], { unreadable, privateRepos }).at(-1)).toBe("Not measured: private (secret).");
-    expect(endOfRun({ unreadable, privateRepos })).toMatch(/^NOTE \[REPOS_NOT_READABLE\] not measured: private \(secret\)/);
+    expect(weekLines([prRow(pr())], { unreadable, privateRepos }).at(-1)).toBe("Not measured: private or gone (secret).");
+    expect(endOfRun({ unreadable, privateRepos })).toMatch(/^NOTE \[REPOS_NOT_READABLE\] not measured: private or gone \(secret\)/);
     expect(endOfRun({})).toBeNull();
+  });
+  it("F6: the visibility probe: only a 404 is private or gone; 5xx, 429 or a thrown error count as public (red)", async () => {
+    const urls: string[] = [];
+    const answer = (status: number) => async (url: string) => { urls.push(url); return { status }; };
+    expect(await isPublicRepo("seq23", "secret", answer(404))).toBe(false);
+    expect(urls).toEqual(["https://github.com/seq23/secret"]);
+    expect(await isPublicRepo("seq23", "r", answer(200))).toBe(true);
+    expect(await isPublicRepo("seq23", "r", answer(503))).toBe(true);
+    expect(await isPublicRepo("seq23", "r", answer(429))).toBe(true);
+    expect(await isPublicRepo("seq23", "r", async () => { throw new Error("ENOTFOUND"); })).toBe(true);
   });
   it("F6: a public and a private repo both unseen is still red, naming the public one", () => {
     expect(() => endOfRun({ unreadable: ["pub"], privateRepos: ["priv"] })).toThrow(/REPOS_NOT_READABLE.*\(pub\)/);

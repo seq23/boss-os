@@ -22,5 +22,5 @@ export function weekLines(rows: LandingRow[], opts?: { days?: number; unreadable
 export function expectedRepos(map: unknown): string[];
 export function graphql(query: string, variables?: Obj, opts?: { fetchImpl?: (url: string, init: Obj) => Promise<Response>; tok?: string; wait?: (ms: number) => Promise<unknown> }): Promise<any>;
 export function readWeek(opts?: { days?: number; now?: number; owner?: string; expected?: string[]; gql?: (q: string, v?: Obj) => Promise<any>; isPublic?: (owner: string, name: string) => Promise<boolean> }): Promise<{ repos: number; unreadable: string[]; privateRepos: string[]; rows: LandingRow[] }>;
-export function isPublicRepo(owner: string, name: string): Promise<boolean>;
+export function isPublicRepo(owner: string, name: string, fetchImpl?: (url: string, init: Obj) => Promise<{ status: number }>): Promise<boolean>;
 export function endOfRun(r: { unreadable?: string[]; privateRepos?: string[] }): string | null;

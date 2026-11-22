@@ -40,7 +40,7 @@
  * [GITHUB_TOKEN_REFUSED] (exit 3); a wrong owner is NAMED STOP [OWNER_NOT_FOUND] (exit 3). A repo in the
  * Repos map that this token cannot see is named in the line: a PUBLIC one is NAMED STOP
  * [REPOS_NOT_READABLE] (exit 3) after the line is written; a private one (the job token reads public
- * repos only, and the job is never given her token, 22 Nov 2026) is "not measured: private (<name>)" and a
+ * repos only, and the job is never given her token, 22 Nov 2026) is "not measured: private or gone (<name>)" and a
  * NOTE, exit 0. None ever prints "0 minutes".
  */
 import { execFileSync } from "node:child_process";
@@ -201,7 +201,7 @@ export function weekLines(rows, { days = 7, unreadable = [], privateRepos = [] }
   const runners = `Waiting for a GitHub runner (each PR's last commit and its merge), all PRs together: ${dur(sum("ci_queued_ms") + sum("main_queued_ms"))} (running: ${dur(sum("ci_running_ms") + sum("main_running_ms"))}).`;
   const lines = [head, where, runners];
   if (unreadable.length) lines.push(`${unreadable.length} repo${unreadable.length === 1 ? "" : "s"} not readable with this token, so not measured: ${unreadable.join(", ")}.`);
-  if (privateRepos.length) lines.push(`Not measured: private (${privateRepos.join(", ")}).`);
+  if (privateRepos.length) lines.push(`Not measured: private or gone (${privateRepos.join(", ")}).`);
   return lines;
 }
 
@@ -264,10 +264,11 @@ export function expectedRepos(map) {
 }
 
 /** Is github.com/<owner>/<name> public? Asked logged out, so the answer is GitHub's, never the token's.
- * Anything but a clean 404 counts as public, so a probe that fails keeps the run red. */
-export async function isPublicRepo(owner, name) {
+ * A 404 is private or gone (deleted, renamed); anything else (5xx, 429, a thrown error) counts as public,
+ * so a probe that fails keeps the run red. */
+export async function isPublicRepo(owner, name, fetchImpl = fetch) {
   try {
-    const res = await fetch(`https://github.com/${owner}/${name}`, { method: "HEAD", redirect: "follow" });
+    const res = await fetchImpl(`https://github.com/${owner}/${name}`, { method: "HEAD", redirect: "follow" });
     return res.status !== 404;
   } catch { return true; }
 }
@@ -353,7 +354,7 @@ async function main() {
 /** Red only when a PUBLIC repo was unreadable (the token should see it); private ones are a note. */
 export function endOfRun({ unreadable = [], privateRepos = [] }) {
   if (unreadable.length) throw stop("REPOS_NOT_READABLE", 3, `${unreadable.length} public repo(s) in the Repos map are not visible to this token (${unreadable.join(", ")}); the line says so, and this run is red until it can read them`);
-  return privateRepos.length ? `NOTE [REPOS_NOT_READABLE] not measured: private (${privateRepos.join(", ")}); the job token reads public repos only` : null;
+  return privateRepos.length ? `NOTE [REPOS_NOT_READABLE] not measured: private or gone (${privateRepos.join(", ")}); the job token reads public repos only` : null;
 }
 
 if (process.argv[1] && import.meta.url === new URL(`file://${process.argv[1]}`).href) {
