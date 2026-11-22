@@ -1062,7 +1062,7 @@ async function handleMail(message: BossMailMessage, env: Env, said: Said): Promi
    */
   const dismissAnswer = !planAnswer && !commentAnswer && !kdpAnswer
     // …and her numbered answer to the prospect-email card ("5: try again"), the same way (25 Oct 2026).
-    ? (await dismissFromMail(env, herOwn, now, replyDecision, mailId)) ?? (await prospectTemplateFromMail(env, own, now, morningDayOf(threadRefs.refs), mailId, replyDecision))
+    ? (await dismissFromMail(env, herOwn, now, replyDecision, mailId)) ?? (await prospectTemplateFromMail(env, herOwn, now, morningDayOf(threadRefs.refs), mailId, replyDecision))
     : null;
 
   /*
