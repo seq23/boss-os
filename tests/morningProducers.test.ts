@@ -55,7 +55,7 @@ beforeAll(async () => {
   const lists = { same_firm: [], do_not_suggest: [] };
   const found = { "company a": { holders: [{ fund: "Example Growth Fund", manager: "Example Advisers", value_usd: 1.2e8, as_of: "2026-06-30", filing_url: "https://www.sec.gov/Archives/example" }] } };
   grid.writeMorning("deals", grid.morningDeals(g, g.length, NOW));
-  grid.writeMorning("monique_found", grid.moniqueFound({ newRows: g, grid: g, lists, found }));
+  grid.writeMorning("monique_found", grid.moniqueFound({ newRows: g, grid: g, lists, found, now: NOW }));
 
   // ── L: one LP reply held two days, one interested prospect, one catch-up, the 8Raise footer.
   const lpRows = [{ status: "drafted", tap_token: "tok_lp_1", drafted_at: NOW - 3 * 86_400_000, name: "An Allocator", firm: "Example Endowment", bucket: "call", draft_message_id: "r-123" },
@@ -129,7 +129,8 @@ describe("D and L sections reach Simone's morning email through E's writer", () 
     expect(t.indexOf("Decide")).toBeLessThan(t.indexOf("New deals since yesterday"));
     // One match for the one buyer-seller pair (D), as ONE grid row and never in Decide (25 Oct 2026).
     expect(t).not.toContain("a buyer and a seller who could trade");
-    expect(t.match(/^- Company A · .* → .* · (size fits|fills part|size small), [^—]+ — Open ›: https:\/\/boss\.sequoiataylor\.com\/\?tab=capital&view=matches&match=/gm)).toHaveLength(1);
+    // The test's clock is pinned (NOW): orders a day old are fresh and close, so the pair earns its star.
+    expect(t.match(/^- ⭐ Company A · .* → .* · (size fits|fills part|size small), [^—]+ — Open ›: https:\/\/boss\.sequoiataylor\.com\/\?tab=capital&view=matches&match=/gm)).toHaveLength(1);
     expect(t).toMatch(/Company A · Buy · \$1B @ \$140[^·]* · Broker One \(Firm X\)/);
     expect(t).not.toMatch(/@\s*(?:·|—|$)/m);
     // An LP draft whose words are not on the row has no "Send as is": nothing goes that was not shown.
