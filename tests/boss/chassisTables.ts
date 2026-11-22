@@ -1,14 +1,12 @@
 /**
- * The West Peek tables this repo still carries, and the ceiling they must come down from.
+ * The West Peek tables this repo still carries, named one by one and held at an exact count.
  *
  * Boss OS was written to hold NO firm data - Phase 21"s whole premise is that the personal system
- * and the firm meet only at an audited bridge. Cloning the West Peek chassis put 230 firm tables
- * into the same D1 database, which breaks that premise by construction, and it also left them
- * outside the continuity vault"s snapshot list, so they would not survive a rebuild.
- *
- * Rather than weaken the two tests that caught this, the list is written down and RATCHETED: it
- * may shrink as the fund domain is removed and Boss OS replaces it, and a test fails the moment
- * it grows. That keeps both guards live instead of turning them off while the conversion runs.
+ * and the firm meet only at an audited bridge. Cloning the West Peek chassis put 229 firm tables
+ * into the same D1 database, outside the continuity vault"s snapshot list. The code that used them
+ * was retired on 22 Nov 2026 (chassis retire 1-4, her yes); the tables stay, because tables are
+ * never dropped. This list is what excuses them from the vault-coverage test, so the ratchet in
+ * schema.test.ts holds it to exactly the tables that exist: a new name here cannot hide a new table.
  *
  * Generated from migrations 0001-0151 (every migration before the Boss port), following
  * CREATE, DROP and SQLite's create-copy-drop-rename table rebuild so a rebuilt table is not lost.
@@ -19,8 +17,8 @@ export const CHASSIS_TABLES: readonly string[] = ["action_type", "admin_source",
 export const CHASSIS_FIRM_TABLES: readonly string[] = ["firm_skill", "firm_spend_budget", "firm_user", "firm_user_role"].map(String);
 
 /**
- * The ceiling. This number must only ever go DOWN. 229 since 22 Nov 2026: every table above is present (the list
- * once held "IF", a parse artefact of the generator, never a table). Migrations are additive only, so it falls when
- * a chassis table is retired from the code and dropped by the owner's own decision, never by a build.
+ * How many chassis tables there are: 229 since 22 Nov 2026 (the list once held "IF", a parse artefact of the
+ * generator, never a table, which left one slot for a new table to hide in). Tables are never dropped (her ruling,
+ * 22 Nov 2026), so this changes only by her own decision to drop one, and then only downwards.
  */
-export const CHASSIS_TABLE_CEILING = 229;
+export const CHASSIS_TABLE_COUNT = 230;
