@@ -341,7 +341,7 @@ async function sweep(browser, flow, target, origin, j, at, c, ctx) {
   const results = [], left = [];
   // Every tap starts from a replayed copy of this screen, never the journey's own page: the steps after a
   // sweep must find the screen the sweep saw (PBS first-open, 22 Nov 2026: the door was gone).
-  let cur = c, fresh = false, here = 0;
+  let cur = c, fresh = true, here = 0;
   if (noRole.length) notes.noRole.push(...noRole.map((n) => `${j.name} step ${at + 1}: "${n}"`));
   for (const k of controls) {
     const { full, ...shown } = k; // the report keeps the cut name
