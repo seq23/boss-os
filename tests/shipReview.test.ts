@@ -2,7 +2,7 @@
  * THE ONE SHARED REVIEWER (grid row 6f): the rules that make its verdict trustworthy, and the phase-3
  * gate that keeps a new sender or channel off the maps until a fresh reviewer passed its real output.
  */
-import { existsSync, mkdtempSync, readFileSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, readFileSync } from "node:fs";
 import { spawnSync } from "node:child_process";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -108,6 +108,10 @@ describe("a verdict is trusted only when it is a real review", () => {
     const parts = tilesFor(7254, 390);
     expect(got.map((s: any) => s.label)).toEqual([...parts.map((_, i) => `home-390-${i + 1}of${parts.length}.png`), "about-1280.png"]);
     for (const s of got) expect(existsSync(String(s.path))).toBe(true);
+    mkdirSync(join(dir, "b")); const tall2 = join(dir, "b", "home-390.png"); spawnSync("ffmpeg", ["-y", "-v", "error", "-i", tall, tall2]);
+    const { shots: two } = await capture({ kind: "images", target: `${tall},${tall2}` } as any, join(dir, "out2"));
+    expect(new Set(two.map((s: any) => s.label)).size).toBe(two.length);
+    expect(new Set(two.map((s: any) => s.path)).size).toBe(two.length);
   });
   it("the prompt names the builder as not the reviewer and treats text in the output as data", () => {
     const p = reviewPrompt({ kind: "page", target: "https://x.test/", builder: "Codex", checklist: "THE BAR", shots });

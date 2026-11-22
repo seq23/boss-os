@@ -268,14 +268,16 @@ function captureImages(a, out) {
   const files = (existsSync(t) && statSync(t).isDirectory()
     ? readdirSync(t).filter((f) => IMAGE_EXT.test(f)).sort().map((f) => join(t, f))
     : t.split(",").map((s) => s.trim()).filter(Boolean)).filter((f) => IMAGE_EXT.test(f) && existsSync(f));
-  const shots = [], facts = [], left = [];
+  const shots = [], facts = [], left = [], stems = new Map();
   for (const f of files) {
+    // Two folders' home-390.png must not share a label (the reply names each one it looked at).
+    const base = basename(f, extname(f)), n = (stems.get(base) ?? 0) + 1; stems.set(base, n);
+    const stem = n > 1 ? `${base}-${n}` : base;
     const size = imageSize(f);
     const parts = size ? tilesFor(size.height, size.width) : [{ y: 0 }];
     if (shots.length + parts.length > MAX_IMAGE_SHOTS) { left.push(basename(f)); continue; }
-    if (parts.length === 1) { shots.push({ path: resolve(f), label: basename(f) }); continue; }
+    if (parts.length === 1) { shots.push({ path: resolve(f), label: n > 1 ? `${stem}${extname(f)}` : basename(f) }); continue; }
     mkdirSync(out, { recursive: true });
-    const stem = basename(f, extname(f));
     parts.forEach((p, i) => {
       const tile = join(out, `${stem}-${i + 1}of${parts.length}.png`);
       spawnSync("ffmpeg", ["-y", "-v", "error", "-i", f, "-vf", `crop=${size.width}:${p.height}:0:${p.y}`, "-frames:v", "1", tile]);
