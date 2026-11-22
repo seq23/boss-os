@@ -245,7 +245,7 @@ export async function runDeckReading(env: Env): Promise<{ read: number; failed: 
     const rawEml = deck.object_key.endsWith(".eml") ? dataBase64 : "";
 
     if (deck.object_key.endsWith(".eml")) {
-      const { attachments, unread } = pdfAttachments(dataBase64);
+      const { attachments, unread } = await pdfAttachments(dataBase64);
       if (attachments.length === 0) {
         /*
          * SAY WHAT ARRIVED, not what was absent.
@@ -261,8 +261,8 @@ export async function runDeckReading(env: Env): Promise<{ read: number; failed: 
          * the browser tool cannot do. Reporting them precisely is the honest half, and it is the
          * half that lets somebody act.
          */
-        const otherFiles = unreadableDeckAttachments(dataBase64);
-        const { subject: emlSubject, body: emlBody } = messageText(dataBase64);
+        const otherFiles = await unreadableDeckAttachments(dataBase64);
+        const { subject: emlSubject, body: emlBody } = await messageText(dataBase64);
         const links = deckLinks(`${emlSubject}\n${emlBody}`);
 
         const reasons: string[] = [];
@@ -315,7 +315,7 @@ export async function runDeckReading(env: Env): Promise<{ read: number; failed: 
        * `=?utf-8?Q?Fwd:_Vynlo_=E2=80=94_pre-seed?=`, and any subject with an em dash or an accent
        * arrives this way — which is most forwards from founders.
        */
-      const raw = messageText(rawEml);
+      const raw = await messageText(rawEml);
       const emlSubject = decodeMimeHeader(raw.subject);
       const emlBody = raw.body;
       const tags = triggersIn(`${emlSubject}\n${emlBody}`);

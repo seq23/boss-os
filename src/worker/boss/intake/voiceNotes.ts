@@ -21,7 +21,7 @@ export interface VoiceNotes {
 
 /** Every recording attached to the message. Never throws: a failure is in `failed`. */
 export async function hearVoiceNotes(env: Env, raw: string): Promise<VoiceNotes> {
-  const { attachments, unread } = audioAttachments(raw);
+  const { attachments, unread } = await audioAttachments(raw);
   const out: VoiceNotes = { heard: [], failed: unread.map((u) => ({ filename: u.replace(/\s*\(.*$/, ""), reason: u.replace(/^[^(]*\(|\)$/g, "") })) };
   for (const a of attachments) {
     try {

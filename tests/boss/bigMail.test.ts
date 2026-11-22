@@ -4,7 +4,7 @@ import { handleBossInboundMail, INLINE_READ_ATTEMPTS, STALE_ARRIVAL_MS, MAX_BODY
 import { readEverything, driveIdsIn } from "../../src/worker/boss/intake/readFiles";
 import { asksIn, gotItLines, fileLabel } from "../../src/worker/boss/intake/gotIt";
 import { runMailAlarm } from "../../src/worker/boss/intake/mailAlarm";
-import { mimeSplitCount, fileAttachments, bytesOfBase64 } from "../../src/worker/effects/mimeAttachments";
+import { mimeParseCount, fileAttachments, bytesOfBase64, pdfAttachments, audioAttachments, messageText, MIME_LIMITS } from "../../src/worker/effects/mimeAttachments";
 import { apiJson, row, all } from "./helpers";
 
 /**
@@ -110,9 +110,9 @@ describe("a big email is read whole, then answered", () => {
     expect(raw.length).toBeGreaterThan(12 * 1024 * 1024);
     expect(raw.length).toBeLessThan(MAX_BODY_BYTES);
     const seen: Array<{ model: string; audioType: string }> = [];
-    const splits = mimeSplitCount.n;
+    const splits = mimeParseCount.n;
     const res = await handleBossInboundMail(mail(raw, "<big-12@mail.gmail.com>"), hearingEnv(seen) as never);
-    expect(mimeSplitCount.n - splits, "the files are read from ONE split of the message").toBe(1);
+    expect(mimeParseCount.n - splits, "the files are read from ONE parse of the message").toBe(1);
     const heard = seen.filter((x) => /whisper/.test(x.model));
     expect(heard.length).toBe(1);
     expect(heard[0]!.audioType, "Whisper is handed the base64 text, never a byte array the binding would JSON-serialise").toBe("string");
@@ -262,7 +262,7 @@ describe("the Got it's words", () => {
 });
 
 describe("a file sent quoted-printable or plain is still opened", () => {
-  it("a quoted-printable HTML attachment and a 7bit text file both come through, decoded", () => {
+  it("a quoted-printable HTML attachment and a 7bit text file both come through, decoded", async () => {
     const B = "b-qp";
     const raw = [
       "From: a@example.com", "Subject: qp", `Content-Type: multipart/mixed; boundary="${B}"`, "",
@@ -273,10 +273,59 @@ describe("a file sent quoted-printable or plain is still opened", () => {
       "three venues", "",
       `--${B}--`, "",
     ].join("\r\n");
-    const { attachments, unread } = fileAttachments(raw);
+    const { attachments, unread } = await fileAttachments(raw);
     expect(unread).toEqual([]);
     const text = (n: string) => new TextDecoder().decode(bytesOfBase64(attachments.find((a) => a.filename === n)!.dataBase64));
-    expect(text("Attachment.html")).toBe("<p>Café list for the week</p>");
-    expect(text("notes.txt")).toBe("three venues");
+    // Byte for byte, RFC 2046: the blank line above each boundary is the file's own last line break (the CRLF
+    // right before "--b-qp" belongs to the boundary). The old hand splitter trimmed it; postal-mime keeps the file whole.
+    expect(text("Attachment.html")).toBe("<p>Café list for the week</p>\r\n");
+    expect(text("notes.txt")).toBe("three venues\r\n");
+  });
+});
+
+describe("a forged or broken message (postal-mime, eng sweep row 9)", () => {
+  /** A PDF at the bottom of `depth` nested multiparts: the shape a forged message uses to make a parser recurse. */
+  function nested(depth: number) {
+    const head = ["From: a@example.com", "Subject: nested", "MIME-Version: 1.0", 'Content-Type: multipart/mixed; boundary="n0"', ""];
+    const open: string[] = [];
+    for (let i = 1; i <= depth; i++) open.push(`--n${i - 1}`, `Content-Type: multipart/mixed; boundary="n${i}"`, "");
+    const leaf = [`--n${depth}`, 'Content-Type: application/pdf; name="deep.pdf"', "Content-Transfer-Encoding: base64", "", btoa("%PDF-1.4 deep"), `--n${depth}--`];
+    const close: string[] = [];
+    for (let i = depth - 1; i >= 0; i--) close.push(`--n${i}--`);
+    return [...head, ...open, ...leaf, ...close, ""].join("\r\n");
+  }
+
+  it("abuse: parts nested past the limit, or thousands of parts, are refused fast and SAID, never thrown", async () => {
+    const t0 = Date.now();
+    const deep = await fileAttachments(nested(MIME_LIMITS.maxNestingDepth + 40));
+    expect(deep.attachments).toEqual([]);
+    expect(deep.unread).toEqual([expect.stringMatching(/^the message \(it could not be taken apart, its parts are nested deeper than any real email; it is kept as it arrived\)$/)]);
+    const many = ["From: a@example.com", "Subject: many", 'Content-Type: multipart/mixed; boundary="m"', "",
+      ...Array.from({ length: MIME_LIMITS.maxPartCount + 50 }, (_, i) => [`--m`, "Content-Type: text/plain", "", `part ${i}`]).flat(), "--m--", ""].join("\r\n");
+    expect((await pdfAttachments(many)).unread).toEqual([expect.stringContaining("holds more parts than any real email")]);
+    expect(Date.now() - t0, "bounded: refused, not walked").toBeLessThan(3000);
+    // A real forward of a forward is far inside the limit and still read.
+    expect((await pdfAttachments(nested(4))).attachments.map((a) => a.filename)).toEqual(["deep.pdf"]);
+  });
+
+  it("outage: a message the parser refuses is kept, and her Got it names it in plain words", async () => {
+    const raw = nested(MIME_LIMITS.maxNestingDepth + 40).replace("Subject: nested", "Subject: #camille the forged one");
+    const res = await handleBossInboundMail(mail(raw, "<forged-1@mail.gmail.com>"), hearingEnv([]) as never);
+    expect(res.mailId).toBeTruthy();
+    const kept = await row<{ id: string }>("SELECT id FROM boss_inbound_mail WHERE id = ?", res.mailId);
+    expect(kept?.id).toBe(res.mailId);
+    expect(res.reply ?? "").toContain("could not be taken apart");
+    expect(res.reply ?? "").not.toMatch(/EMAX|Error|undefined/);
+    // The text still reaches the readers: a tag in a message that cannot be taken apart is found.
+    const text = await messageText(raw);
+    expect(text.subject).toBe("#camille the forged one");
+    expect(text.unread).toContain("could not be taken apart");
+  });
+
+  it("one parse per message: the deck, the voice notes, every file and the text read the same parse", async () => {
+    const raw = bigEmail(64 * 1024);
+    const before = mimeParseCount.n;
+    await pdfAttachments(raw); await audioAttachments(raw); await fileAttachments(raw); await messageText(raw);
+    expect(mimeParseCount.n - before).toBe(1);
   });
 });

@@ -93,7 +93,7 @@ export async function readEverything(env: Env, raw: string, words: string, deps:
   const ai = (deps.ai === undefined ? (env.AI as Ai | undefined) : deps.ai) ?? null;
   const budget = { text: FILES_TEXT_MAX, recordings: MAX_RECORDINGS };
   try {
-    const { attachments, unread } = fileAttachments(raw);
+    const { attachments, unread } = await fileAttachments(raw);
     for (const u of unread) out.unopened.push({ filename: u.replace(/\s*\(.*$/, ""), reason: u.replace(/^[^(]*\(|\)$/g, "") });
     for (const a of attachments) {
       await readOne(ai, { filename: a.filename, mediaType: a.mediaType, base64: a.dataBase64, size: a.bytes }, out, budget, 0);
