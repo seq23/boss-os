@@ -98,7 +98,7 @@ MODEL="${AHREFS_AUDIT_MODEL:-claude-opus-5}"
 # salvage as a draft PR, finished first by the next pass (own-open). tests/auditFixerMaxTurns.test.ts.
 MAX_TURNS="${AHREFS_AUDIT_MAX_TURNS:-250}"
 LOG_DIR="$HOME/Library/Logs/ahrefs-audit-fix"
-LOCK="$LOG_DIR/.lock${SR_SCOPE_REPO:+-sr-$SR_SCOPE_REPO}"
+LOCK="$LOG_DIR/.lock${SR_SCOPE_REPO:+-sr-$SR_SCOPE_REPO}.flock"
 RUN_LOG="$LOG_DIR/$(date +%Y-%m-%d-%H%M%S)-$$.log"
 
 mkdir -p "$LOG_DIR" "$OUT_DIR"
@@ -116,15 +116,14 @@ has_sentinel() { grep -qE 'AHREFS-AUDIT-COMPLETE: projects=[0-9]' "$1"; }
 usage_exhausted() { grep -qiE "usage limit|limit reached|out of (extra )?usage|rate.?limit|credit balance" "$1"; }
 
 # Two runs in the same minute shared a log file once and the second inherited the first's sentinel.
-# Seconds and pid in the name; a lock directory for the run itself.
-if ! mkdir "$LOCK" 2>/dev/null; then
-  if [ -f "$LOCK/pid" ] && kill -0 "$(cat "$LOCK/pid")" 2>/dev/null; then
-    say "NAMED STOP [ALREADY_RUNNING] pid $(cat "$LOCK/pid")"; exit 0
-  fi
-  say "stale lock; reclaiming"; rm -rf "$LOCK"; mkdir "$LOCK" 2>/dev/null || { say "FAILED to lock"; exit 3; }
-fi
-echo $$ > "$LOCK/pid"
-trap 'rm -rf "$LOCK"' EXIT
+# Seconds and pid in the name.
+source "$(dirname "$(readlink -f "${BASH_SOURCE[0]}")")/lib/flock.sh"  # one run at a time, held by the kernel (lib/flock.sh)
+LOCK_RC=0; hold_lock "$LOCK" || LOCK_RC=$?
+case $LOCK_RC in
+  0) ;;
+  1) say "NAMED STOP [ALREADY_RUNNING] another run holds $LOCK"; exit 0 ;;
+  *) say "NAMED STOP [LOCK_FAILED] cannot lock $LOCK"; exit 3 ;;
+esac
 
 # THE ENGINE IS ~/bin/ai-run IN THE ROLE src/shared/boss/aiRoles.mjs NAMES (owner, 3 Nov 2026: Codex
 # is the worker, Claude the brain). Missing → a named stop the next run retries (exit 13).
