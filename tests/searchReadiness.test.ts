@@ -600,14 +600,15 @@ describe("the fix queue is worked to empty, then weekly on Tuesday (owner, 25 Oc
   });
   it("launchd only ticks and asks the duty row; the audit stays Monday; the fixer takes a one-repo scope", () => {
     const installer = readFileSync("scripts/ops/install-agent-launchd.sh", "utf8");
-    const block = installer.slice(installer.indexOf('SRF_LABEL="com.seq.boss-sr-fix"'), installer.indexOf("SRFEOF\n\n"));
+    const block = installer.slice(installer.indexOf('SRF_LABEL="com.seq.boss-sr-fix"'), installer.indexOf("\nSRFEOF\n", installer.indexOf('SRF_LABEL="com.seq.boss-sr-fix"')));
     expect(block).toContain("duty-run.sh search-readiness-fix.sh --only-if-due -- bash $REPO/scripts/ops/search-readiness-fix.sh");
     expect(block, "a Weekday in the plist is a second clock").not.toMatch(/Weekday/);
     // Tuesday 06:30 Central since the approved week (1 Nov 2026), the duty row's own time (0327).
-    expect(block).toMatch(/<key>Hour<\/key><integer>6<\/integer><key>Minute<\/key><integer>30<\/integer>/);
+    expect(block).toMatch(/<key>Hour<\/key><integer>22<\/integer><key>Minute<\/key><integer>15<\/integer>/); // the Mac\'s day: heavy work at night
     expect(readFileSync("migrations/0327_boss_the_rebalanced_week.sql", "utf8")).toMatch(/local_hour = 6, local_minute = 30, next_due_at = \(unixepoch\(date\('now', '\+1 day', 'weekday 2'\)\) \+ 12 \* 3600 \+ 30 \* 60\) \* 1000\n WHERE id = 'duty_search_readiness_repair'/);
-    const audit = installer.slice(installer.indexOf('SR_LABEL="com.seq.boss-sites-audit"'), installer.indexOf("SREOF\n\n"));
-    expect(audit).toMatch(/<key>Weekday<\/key><integer>1<\/integer><key>Hour<\/key><integer>6<\/integer>/);
+    const audit = installer.slice(installer.indexOf('SR_LABEL="com.seq.boss-sites-audit"'), installer.indexOf("\nSREOF\n", installer.indexOf('SR_LABEL="com.seq.boss-sites-audit"')));
+    expect(audit).toMatch(/<key>Weekday<\/key><integer>1<\/integer><key>Hour<\/key><integer>5<\/integer><key>Minute<\/key><integer>40<\/integer>/);
+    expect(readFileSync("migrations/0373_boss_the_macs_day.sql", "utf8")).toMatch(/local_hour = 22, local_minute = 15,[^\n]*WHERE id = 'duty_search_readiness_repair'/);
     expect(readFileSync("scripts/ops/ahrefs-audit-fix.sh", "utf8")).toMatch(/SR_SCOPE_REPO/);
     const driver = readFileSync("scripts/ops/search-readiness-fix.sh", "utf8");
     expect(driver).toMatch(/fixed nothing; stopping/);

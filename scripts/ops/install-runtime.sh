@@ -41,6 +41,7 @@ cat > "$PLIST" <<EOF
 </dict></plist>
 EOF
 
+"${LAUNCHD_RELOAD:-$HOME/bin/launchd-reload}" --seed >/dev/null
 FAILED=0 MOVED=0 DEFERRED=0
 # A job running right now is left exactly as it is (bootout would kill it mid-run); the sync job names
 # it every 10 minutes until this installer is run again.
@@ -48,9 +49,8 @@ running() { launchctl list 2>/dev/null | awk -v l="$1" '$3 == l && $1 != "-" { f
 reload() {
   local p="$1" label; label="$(basename "$p" .plist)"
   plutil -lint "$p" >/dev/null || { echo "NAMED STOP [PLIST_LINT] $label"; FAILED=$((FAILED + 1)); return; }
-  launchctl bootout "gui/$(id -u)/$label" 2>/dev/null || true
-  launchctl bootstrap "gui/$(id -u)" "$p" 2>/dev/null || launchctl bootstrap "gui/$(id -u)" "$p" 2>/dev/null
-  if launchctl print "gui/$(id -u)/$label" >/dev/null 2>&1; then echo "  loaded $label"; else echo "NAMED STOP [NOT_LOADED] $label"; FAILED=$((FAILED + 1)); fi
+  # The one reload (seq-bin launchd-reload, 21 Nov 2026): pauses kept, old schedule back on a failure.
+  if "${LAUNCHD_RELOAD:-$HOME/bin/launchd-reload}" "$p" | sed 's/^/  /'; [ "${PIPESTATUS[0]}" = 0 ]; then :; else echo "NAMED STOP [NOT_LOADED] $label"; FAILED=$((FAILED + 1)); fi
 }
 
 for p in "$AGENTS_DIR"/com.seq.*.plist; do

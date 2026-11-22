@@ -118,19 +118,23 @@ export function installerJobs(sh) {
 /** The labels this Mac's launchd holds that the Schedule must carry (her own families only). */
 export const LAUNCHD_FAMILIES = /^(com\.seq\.|com\.howweknow\.|ventures\.westpeek\.)/;
 
-/** Every plist installed on this Mac: `{ label: slots }` in Central (each Hour moved back from the Mac's zone). */
-export function installedJobs(dir = path.join(homedir(), "Library", "LaunchAgents"), shift = centralToLocalOffset()) {
-  const jobs = {};
+/** Every plist of her families in a LaunchAgents-like folder, as XML text (binary plists converted): `{ label: text }`. */
+export function installedPlists(dir = path.join(homedir(), "Library", "LaunchAgents"), families = LAUNCHD_FAMILIES) {
+  const out = {};
   for (const f of existsSync(dir) ? readdirSync(dir) : []) {
     if (!f.endsWith(".plist")) continue;
     const label = f.slice(0, -".plist".length);
-    if (!LAUNCHD_FAMILIES.test(label)) continue;
+    if (!families.test(label)) continue;
     let text;
     try { text = execFileSync("plutil", ["-convert", "xml1", "-o", "-", path.join(dir, f)], { encoding: "utf8" }); } catch { text = readFileSync(path.join(dir, f), "utf8"); }
-    text = text.replace(/<key>(\w+)<\/key>\s*\n\s*</g, "<key>$1</key><");
-    jobs[label] = canonical(plistEvents(text, shift));
+    out[label] = text.replace(/<key>(\w+)<\/key>\s*\n\s*</g, "<key>$1</key><");
   }
-  return jobs;
+  return out;
+}
+
+/** Every plist installed on this Mac: `{ label: slots }` in Central (each Hour moved back from the Mac's zone). */
+export function installedJobs(dir = path.join(homedir(), "Library", "LaunchAgents"), shift = centralToLocalOffset()) {
+  return Object.fromEntries(Object.entries(installedPlists(dir)).map(([label, text]) => [label, canonical(plistEvents(text, shift))]));
 }
 
 // ─── Duties ──────────────────────────────────────────────────────────────────────────────────

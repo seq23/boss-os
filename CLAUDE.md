@@ -240,7 +240,7 @@ site. Pinned by `tests/searchReadiness.test.ts`, which reads this section:
    generator's guide sites read their own city list. heygetonmylevel.com is IN since 1 Nov 2026
    (reverses the 25 Oct exclusion; its pages lead to Time-2-Read's free week); nothing West Peek,
    nothing of Shirley Brown's senior housing work.
-3. **Weekly, Monday 06:00** (`com.seq.boss-sites-audit`, `npm run sites:audit -- --morning`; by hand
+3. **Weekly, Monday 05:40** (`com.seq.boss-sites-audit`, `npm run sites:audit -- --morning`; by hand
    `npm run sites:audit`). Spends nothing: plain GETs, Search Console read-only, free PageSpeed, `gh` reads.
    Results go into the Monday morning email as "The grid repos" section, told once.
 4. **Every failure is a fix brief** in `~/.boss-os/search-readiness/fix-queue.json`
@@ -392,7 +392,7 @@ section), `tests/boss/brains.test.ts` and `npm run validate:brains`:
    `personal`, `risk` and `team` are not on it. On the 1st, Simone's morning email carries one grid; on Mondays
    one plain line from the weekly check (rule 8, never red).
 7. **Her local copy** is `npm run brains:pull` → `~/Brains/<slug>.md` (private spans kept; passcode
-   injected as `BOSS_PASSCODE` by the caller), hourly at :23 from launchd `com.seq.boss-brains-pull`,
+   injected as `BOSS_PASSCODE` by the caller), hourly at :23 (07:00-10:59 aside: the Mac is off until 10:00 and its boot pulls) from launchd `com.seq.boss-brains-pull`,
    installed by `scripts/ops/install-agent-launchd.sh`.
 8. **The weekly cohesion check** (plan step 10): launchd `com.seq.boss-cohesion`, Sunday 18:45 Central
    (counts for the week that starts Monday, so Monday's 06:40 email carries it; rebalanced week, 1 Nov 2026), runs `npm run brains:cohesion` (`scripts/brains/cohesion-check.mjs`). It
@@ -419,7 +419,7 @@ section), `tests/boss/brains.test.ts` and `npm run validate:brains`:
 Owner, 31 Oct 2026 ("Monique should do inst sales and i want to find like home school pods and
 institutions too"). Rules in `src/shared/boss/t2rGroups/rules.mjs`; the Worker half is
 `src/worker/boss/outreach/groups.ts` (desk `/api/boss/t2r-groups`), the Mac job
-`scripts/ops/t2r-groups.mjs` (`duty_t2r_groups`, weekdays 08:15 Central). Pinned by
+`scripts/ops/t2r-groups.mjs` (`duty_t2r_groups`, weekdays 10:55 Central). Pinned by
 `tests/t2rGroups.test.ts` (which reads this section) and `tests/boss/t2rGroups.test.ts`:
 1. **Tiers are data** (`t2r_group_tiers`, migration 0324): 1 homeschool pods, co-ops, microschools;
    2 libraries, after-school programs, literacy nonprofits, tutoring centers; 3 schools and districts,
@@ -523,8 +523,14 @@ forget"). Pinned by `tests/schedule.test.ts`, which reads this section's files:
    WAITING, never passed silently.
 3. **Every Mac time is Central.** The installer writes Central hours and `lint_plist` moves them to the
    Mac's zone (`scripts/ops/plist-central.mjs`); ~/bin and how-we-know install through the same file.
+   **The Mac's day** (her ruling 21 Nov 2026, every day): heavy work 22:00-06:55, the Mac OFF 07:00-10:00,
+   everything else from 10:00, and every morning job done by 06:30 with twice its worst measured runtime
+   to spare. Each mac row names its class (`macWindow`: HEAVY, MORNING, LIGHT, ANY; a MORNING row its
+   `worstMin`); `plist-central.mjs` puts seq-bin's `mac-window run <class> <label>` in front of every job
+   (a job woken outside its window waits and runs once when it opens), every installer reloads through
+   seq-bin's `launchd-reload` (a paused job keeps its pause), and `npm run mac-day:check` proves the plists.
 4. **Client repos never appear** (`scheduleClientProblems`, the Email Map's exclusion).
-5. **The Spry Labs weekly** (Wednesdays 08:15 Central, `com.seq.boss-spry-weekly`,
+5. **The Spry Labs weekly** (Wednesdays 10:25 Central, `com.seq.boss-spry-weekly`,
    `scripts/ops/spry-weekly.mjs`): each side business's repo computes its week on Wednesday morning,
    sends no email, and uploads a `spry-weekly-summary` artifact (`src/shared/boss/spryWeekly/sources.mjs`);
    Camille sends ONE email, a short section per business. A report that did not arrive is a plain line
@@ -557,13 +563,13 @@ Owner ruling, 1 Nov 2026 (personal brain, Settled decisions). Pinned by `tests/s
    a reader per floor, day-30 and day-60 floors, version B, owner). Every Schedule job is in exactly one
    row's `jobs` or in `exempt` with a kind and a reason; a new job, sender, outreach series, pin feed or
    page loop with neither fails the build. Rules: `src/shared/boss/scorecard/scorecard.mjs`.
-2. **The Monday run** (`npm run scorecard:monday`, launchd `com.seq.boss-scorecard` daily 06:10 Central,
+2. **The Monday run** (`npm run scorecard:monday`, launchd `com.seq.boss-scorecard` daily 05:50 Central,
    judging on Mondays; `-- --dry` judges and records nothing) reads each source
    (`scripts/ops/lib/scorecard-readers.mjs`, counts only), applies the five states, pauses through each
    job's own switch (never a deletion), records to `/api/boss/scorecard` and writes the "📊 Scorecard"
    section of Simone's morning email. Zero rows or every row unreadable is a NAMED STOP.
 3. **The page** is ☰ More → Scorecard (`/?tab=scorecard`). **Kendra's sweep** (`npm run scorecard:sweep`,
-   the 1st, 09:45) gives anything running with no row a default row.
+   the 1st, 10:50) gives anything running with no row a default row.
 
 ## Open Loops: everything approved but not finished
 

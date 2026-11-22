@@ -375,9 +375,9 @@ describe("the 22 Oct 2026 repairs stay repaired", () => {
     const at = installer.indexOf("duty-run.sh kdp-surface.sh");
     expect(at).toBeGreaterThan(-1);
     const cal = installer.slice(at, at + 600);
-    expect(cal).toMatch(/<key>Day<\/key><integer>1<\/integer><key>Hour<\/key><integer>9<\/integer><key>Minute<\/key><integer>30<\/integer>/);
-    expect(row).toMatch(/monthly, 1st at 09:30/);
-    expect(row).not.toMatch(/\bdaily 09:30\b/);
+    expect(cal).toMatch(/<key>Day<\/key><integer>1<\/integer><key>Hour<\/key><integer>10<\/integer><key>Minute<\/key><integer>30<\/integer>/);
+    expect(row).toMatch(/monthly, 1st at 10:30/);
+    expect(row).not.toMatch(/\bdaily 10:30\b/);
   });
 
   it("Porch & Party's five paths are on the map, from hello@porchandparty901.com through Cloudflare Email Service", () => {

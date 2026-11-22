@@ -254,7 +254,7 @@ describe("the Spry Labs weekly", () => {
       const row = m.rows.find((r: any) => r.trigger.repo === s.repo && r.trigger.file === s.workflow);
       expect(row, `${s.repo} ${s.workflow}`).toBeTruthy();
     }
-    expect(m.rows.find((r: any) => r.id === "spry-weekly").slots).toEqual(["wed 08:15"]);
+    expect(m.rows.find((r: any) => r.id === "spry-weekly").slots).toEqual(["wed 10:25"]);
   });
 
   it("every Wednesday source is ready on the slot it promises, before 08:15, on the week's 7:00–8:00 line", () => {

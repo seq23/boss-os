@@ -314,7 +314,7 @@ function parseJson<T>(raw: unknown, fallback: T): T {
  * actually when the retry happens.
  */
 export const MAC_CLAIM_SLOTS_CT: { h: number; m: number }[] = [
-  { h: 6, m: 5 }, { h: 6, m: 35 }, { h: 6, m: 50 }, { h: 7, m: 10 }, { h: 12, m: 35 }, { h: 18, m: 35 },
+  { h: 4, m: 5 }, { h: 4, m: 35 }, { h: 5, m: 5 }, { h: 10, m: 15 }, { h: 12, m: 35 }, { h: 18, m: 35 },
 ];
 
 /** "07:10 Central" for the next slot after `now`, or the first slot tomorrow. */

@@ -44,7 +44,7 @@ export function installerProblems(text) {
     if (!/agent-claim\.sh --poll<\/string>/.test(poll)) out.push("The poll does not run agent-claim.sh --poll.");
     if (!/<key>BOSS_OS_DEVICE_ID<\/key>/.test(poll)) out.push("The poll does not carry BOSS_OS_DEVICE_ID, so every claim would die on the missing device id.");
     if (/&&/.test(poll)) out.push("The poll carries a bare && (the installer escapes every & as &amp;).");
-    if (/launchctl load "\$POLL_PLIST"/.test(text) === false || !/lint_plist "\$POLL_PLIST"/.test(text)) out.push("The poll plist is not linted and loaded like the others.");
+    if (/reload_plist "\$POLL_PLIST"/.test(text) === false || !/lint_plist "\$POLL_PLIST"/.test(text)) out.push("The poll plist is not linted and loaded like the others.");
   }
   const fixed = text.match(/cat > "\$PLIST" <<PLISTEOF([\s\S]*?)PLISTEOF/)?.[1] ?? "";
   if (!fixed) out.push("The installer has no fixed-time agent plist.");
