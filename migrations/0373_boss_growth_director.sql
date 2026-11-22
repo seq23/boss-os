@@ -58,7 +58,8 @@ INSERT OR IGNORE INTO standing_duties
    (unixepoch(date('now', 'weekday 1')) + 12 * 3600) * 1000, 'worker', 'ops',
    'Growth: decide the week for every business',
    json_object(
-     'worker_job', 'growth_director',
+     'worker_job', 'growth',
+     'delivers', 'growth_decisions',
      'requested', json_object('model', 'free-route'),
      'sends', 'nothing: Open Loops rows for approved pipelines and at most three Decide cards'
    ),

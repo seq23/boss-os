@@ -1,6 +1,6 @@
 /**
  * THE GROWTH DIRECTOR'S WEEKLY CYCLE (21 Nov 2026). `duty_growth_director` (migration 0373) runs here,
- * on the Worker's hourly tick, Mondays at 06:00 Central (materialise.ts → `worker_job: "growth_director"`),
+ * on the Worker's hourly tick, Mondays at 06:00 Central (materialise.ts → `worker_job: "growth"`),
  * after the 05:20 scoreboard read. The rules are src/shared/boss/growth/director.mjs; this file reads
  * and writes:
  *
