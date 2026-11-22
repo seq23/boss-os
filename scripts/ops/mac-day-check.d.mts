@@ -3,3 +3,5 @@ export declare function slotsOf(text: string, shift?: number): MacSlot[];
 export declare function guardOf(text: string): { cls: string; label: string } | null;
 export declare function macDayProblems(jobs: Record<string, string>, manifest: unknown, opts?: { shift?: number; from?: Date; days?: number }): string[];
 export declare function rowProblems(manifest: unknown): string[];
+export declare const FAMILIES: RegExp;
+export declare const LEFT_AS_IS: Set<string>;
