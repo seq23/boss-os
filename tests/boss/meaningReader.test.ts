@@ -134,7 +134,14 @@ describe("the template door after a first read (#510 F1, F2)", () => {
     // F5: a quote that holds no ask for a new draft is no try again.
     setFirstReadRungs(says("try_again", "just shorten the opening"));
     expect(await templateMeaningOf(env, "Don't try again, just shorten the opening.")).toBe("change");
+    // F5b: the model quotes her whole two-sentence reply; it is judged on both sentences, so it agrees with the keywords.
+    setFirstReadRungs(says("try_again", "I don't like this. Try again."));
+    expect(await templateMeaningOf(env, "I don't like this. Try again.")).toBe("try_again");
+    setFirstReadRungs(says("try_again", "Hmm. Can you try again?"));
+    expect(await templateMeaningOf(env, "Hmm. Can you try again?")).toBe("change");
     setFirstReadRungs(down);
+    expect(await templateMeaningOf(env, "I don't like this. Try again.")).toBe("try_again");
+    expect(await templateMeaningOf(env, "Hmm. Can you try again?")).toBe("change");
     expect(await templateMeaningOf(env, "I don't like this, try again")).toBe("try_again");
     // The first read's answer for the card goes through the same keywords.
     expect(templateMeaningFromRead(firstRead("answers", [{ n: 5, text: "I don't like this, try again" }]) as any, 5, "x")).toBe("try_again");
@@ -157,6 +164,9 @@ describe("the template door after a first read (#510 F1, F2)", () => {
     expect(templateMeaningFromRead(firstRead("approved") as any, null, "Approved, thanks!")).toBe("approve");
     expect(templateMeaningFromRead(firstRead("approved") as any, null, "don't approve 2, try again on 1")).toBe("unsure");
     expect(templateMeaningFromRead(firstRead("approved") as any, null, "shorten the opening")).toBe("unsure");
+    // An exception carves something out: what it leaves out would be sent, so she is asked.
+    expect(templateMeaningFromRead(firstRead("approved") as any, null, "approve all except 2")).toBe("unsure");
+    expect(templateMeaningFromRead(firstRead("approved") as any, null, "approved, but not the second one")).toBe("unsure");
   });
 
   it("model down: \"Don't try again, just shorten the opening.\" is never try again", async () => {

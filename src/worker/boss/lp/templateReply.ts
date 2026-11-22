@@ -65,6 +65,8 @@ const APPROVE_RE = /^(?:approved?|yes|go|ok(?:ay)?)[.!]?$/i;
 const TRY_AGAIN_RE = /\btry again\b|\bstart over\b|\bdifferent (?:one|draft|version)\b|\banother (?:go|draft|version)\b/i;
 /** An approval word anywhere: never acted on unless it is the whole answer, but it means "ask", never "redraft". */
 const APPROVE_WORD_RE = /\bapprov(?:e|ed|es|ing)\b/i;
+/** Words that carve something out of an approval. */
+const EXCEPT_RE = /\bexcept\b|\bbut not\b|\bother than\b|\bapart from\b|\bexcluding\b/i;
 
 export type TemplateMeaning = "approve" | "try_again" | "change" | "unsure";
 
@@ -97,14 +99,26 @@ export function tryAgainStands(words: string): boolean {
 export function tryAgainQuoteStands(words: string, quote: string): boolean {
   const q = flat(quote);
   if (!q) return false;
-  for (const x of sentencesOf(words)) {
-    if (!flat(x.text).includes(q) && !q.includes(flat(x.text))) continue;
-    if (vetoOf(x.text, null, SENTENCE_SHAPES)) return false;
-    const holding = clausesOf(x.text).filter((c) => flat(c).includes(q) || q.includes(flat(c)));
-    if (TRY_AGAIN_RE.test(x.text)) return holding.some((c) => standingIn(c, TRY_AGAIN_RE, ["NEGATES"]) !== null);
-    return holding.length === 0 ? !vetoOf(quote, null, ["NEGATES"]) : holding.every((c) => !vetoOf(c, null, ["NEGATES"]));
+  // EVERY sentence the quote covers (#510 re-check, F5b): a quote of her whole reply "I don't like this. Try again."
+  // is judged on both sentences, never on the first one alone.
+  const covered = sentencesOf(words).map((x) => x.text).filter((t) => flat(t).includes(q) || q.includes(flat(t)));
+  if (!covered.length) return !vetoOf(quote);
+  const holdingIn = (t: string) => {
+    const inside = clausesOf(t).filter((c) => flat(c).includes(q) || q.includes(flat(c)));
+    return q.includes(flat(t)) ? clausesOf(t) : inside;
+  };
+  const asks = covered.filter((t) => TRY_AGAIN_RE.test(t));
+  if (asks.length) {
+    // A condition, a report or a question on a sentence that holds the ask holds it back ("Can you try again?").
+    if (asks.some((t) => vetoOf(t, null, SENTENCE_SHAPES))) return false;
+    return asks.some((t) => holdingIn(t).some((c) => standingIn(c, TRY_AGAIN_RE, ["NEGATES"]) !== null));
   }
-  return !vetoOf(quote);
+  // The model read a paraphrase: nothing covered may be held back or negated.
+  if (covered.some((t) => vetoOf(t, null, SENTENCE_SHAPES))) return false;
+  return covered.every((t) => {
+    const holding = holdingIn(t);
+    return holding.length === 0 ? !vetoOf(quote, null, ["NEGATES"]) : holding.every((c) => !vetoOf(c, null, ["NEGATES"]));
+  });
 }
 
 /**
@@ -159,7 +173,8 @@ export function templateMeaningFromRead(read: ReplyDecision, card: number | null
   if (card !== null) return templateKeywordMeaning(words);
   // Approving sends to prospects: the first read's "approved" approves only when her own words hold an approval that
   // stands ("approved", "yes", or an approve word no negation, question or condition holds back); else she is asked.
-  if (read.reply === "approved") return APPROVE_RE.test(words.trim()) || stands(words, APPROVE_WORD_RE) ? "approve" : "unsure";
+  // An exception ("approve all except 2", "but not the second") holds it back: what it leaves out would be sent.
+  if (read.reply === "approved") return !EXCEPT_RE.test(words) && (APPROVE_RE.test(words.trim()) || stands(words, APPROVE_WORD_RE)) ? "approve" : "unsure";
   if (read.reply === "held") return "unsure";
   const kw = templateKeywordMeaning(words);
   return kw === "approve" ? "unsure" : kw;
