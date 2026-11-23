@@ -110,7 +110,7 @@ export function capOk(week) {
   if (num(week?.held_by_cap) == null) return { ok: false, why: "the report does not say how many searches the cap held back" };
   if (!Array.isArray(week?.redirected) || week.redirected.some((x) => !x || !/^https?:\/\//.test(String(x.strengthen ?? "")))) return { ok: false, why: "the report does not list each same-intent search with the existing page it strengthens" };
   const unread = capUnread(week);
-  if (unread) return { ok: false, why: `the cap is frozen at ${max}: Search Console was not read (${unread}), so it can never grow with results` };
+  if (unread) return { ok: false, why: `the cap is held at ${max} without Search Console numbers to judge it (${unread}), so it cannot grow with results until they come in` };
   const live = num(cap.live), room = num(cap.room);
   const r = week.redirected.length;
   return { ok: true, why: `cap ${max} live pages${live != null ? ` (${live} live${room != null ? `, room for ${room}` : ""})` : ""}: ${cap.why}; ${week.held_by_cap} held back, ${r} sent to strengthen an existing page` };

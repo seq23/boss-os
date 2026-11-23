@@ -1204,7 +1204,7 @@ describe("F · the search growth loop on every selling site (owner, 1 Nov 2026)"
   it("f8 fails when the cap could not read Search Console (a 403 or no rows); a cap judged on Google numbers still passes", () => {
     const pbs = run("loop_pace", { weeks: [week(PBS_403)] });
     expect(pbs.status).toBe("fail");
-    expect(pbs.detail).toMatch(/frozen at 10: Search Console was not read \(Search Console: HTTP 403/);
+    expect(pbs.detail).toMatch(/held at 10 without Search Console numbers to judge it \(Search Console: HTTP 403/);
     expect(run("loop_pace", { weeks: [week(KMP_NO_ROWS)] }).status).toBe("fail");
     expect(run("loop_pace", { weeks: [week({ cap: { max_live_pages: 20, why: "held at 20: no Search Console numbers to judge results (not read); the cap never grows without data" } })] }).status).toBe("fail");
     // Genuine passes stay green: grown on results, fell on results, set by the site config.
