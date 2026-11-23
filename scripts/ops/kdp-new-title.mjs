@@ -1220,6 +1220,16 @@ export function routeMessage(state, kind) {
 /** Any of the run's messages as one line for her Updates page. Pure. */
 export const asUpdate = (key, msg) => ({ key: `kdp:${key}`, from_name: "Simone", subject: msg.subject, body: [msg.layout.happened, ...(msg.layout.details ?? [])].join(" ") });
 
+/**
+ * Older unfinished copies left as drafts: optional, harmless, and where to remove them (23 Nov 2026
+ * ship-review sr_mwtef1802kq3: "there" had no place, "from earlier runs" was system talk, and a task sat
+ * under "Nothing to do" without saying it was optional). Pure.
+ */
+export function olderDraftsLine(n, what) {
+  const one = n === 1;
+  return `Optional: ${n} older unfinished cop${one ? "y" : "ies"} of ${what} ${one ? "is" : "are"} still a draft on your KDP Bookshelf (https://kdp.amazon.com/bookshelf). Leaving ${one ? "it" : "them"} does no harm; to remove ${one ? "it" : "them"}, use the ⋯ menu on the draft and choose Delete draft. No new copies are made.`;
+}
+
 /** Every title that went live in this run, in ONE email. Pure. */
 export function liveMail(books) {
   if (books.length === 1) return doneMail(books[0]);
@@ -1228,7 +1238,7 @@ export function liveMail(books) {
     subject: `Kindle: ${books.length} books are live on Amazon`,
     layout: { happened: `${books.length} of your approved Kindle books are live on Amazon: ${quoted(books.map((b) => b.title))}.`, details: [
       ...books.map((b) => `${b.title}${b.price_usd ? `, $${Number(b.price_usd).toFixed(2)}` : ""}${b.asin ? `: https://www.amazon.com/dp/${b.asin}` : ""}`),
-      ...(drafts ? [`Your bookshelf also has ${drafts} unfinished draft${drafts === 1 ? "" : "s"} with the same titles from earlier runs. You can delete ${drafts === 1 ? "it" : "them"} there (the ⋯ menu, Delete draft); I never make another.`] : []),
+      ...(drafts ? [olderDraftsLine(drafts, "these books")] : []),
     ] },
     owner: { layout: "delivered", why: `${books.length} of your approved Kindle books are live.`, act: "Nothing to do" },
   };
@@ -1249,7 +1259,7 @@ export function doneMail({ title, asin, price_usd, extraDrafts = 0 }) {
     layout: { happened: price_usd ? `It is on sale at $${Number(price_usd).toFixed(2)}.` : "It is on sale now.", details: [
       // The link carries the ASIN; the code itself is not hers to read (23 Nov 2026 live read).
       ...(link ? [`See the book on Amazon: ${link}`] : []),
-      ...(extraDrafts ? [`Your bookshelf also has ${extraDrafts} unfinished draft${extraDrafts === 1 ? "" : "s"} with the same title from earlier runs. You can delete ${extraDrafts === 1 ? "it" : "them"} there (the ⋯ menu, Delete draft); I never make another.`] : []),
+      ...(extraDrafts ? [olderDraftsLine(extraDrafts, "this book")] : []),
     ] },
     owner: { layout: "delivered", why: `Your approved Kindle book "${title}" is live.`, act: "Nothing to do" },
   };

@@ -441,6 +441,8 @@ export function linkLabel(url) {
   if (/github\.com\/.+\/pull\//.test(u)) return "Open the change";
   if (/boss\.sequoiataylor\.com/.test(u)) return "Open Boss OS";
   if (/claude\.ai\/(?:code\/)?artifact/.test(u)) return "Open the page";
+  if (/kdp\.amazon\.com\/bookshelf/.test(u)) return "Open your KDP Bookshelf";
+  if (/amazon\.com\/dp\//.test(u)) return "Open the book's page";
   try { return `Open ${new URL(u).hostname.replace(/^www\./, "")}`; } catch { return "Open the link"; }
 }
 /** A Gmail search for a subject: the email itself, one tap, never a bare id (rule 2, 23 Oct 2026). */

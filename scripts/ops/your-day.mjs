@@ -956,7 +956,7 @@ export function brainsSectionFor(data, now = Date.now()) {
   if (parts(now).weekday !== "Monday") return null;
   // The email's short line (cohesionEmailLine); the full detail stays on the Brains page.
   const line = data.brainsCheck?.email_line ?? data.brainsCheck?.line ?? "Weekly check of the setup: it did not load this morning; the team is looking.";
-  return { title: "Weekly check", tone: "done", items: [{ text: line, links: [{ label: "Open Brains ›", url: BRAINS_URL }] }], empty: null };
+  return { title: "Weekly check", tone: "done", items: [{ text: line, links: [{ label: "The Brains page ›", url: BRAINS_URL }] }], empty: null };
 }
 
 /**
@@ -1293,7 +1293,7 @@ export function buildDay(data, now = Date.now()) {
   // section — what is broken, what was fixed, what is being built — never pooled into "Done for you",
   // where three lines would hide it.
   const gridLines = (m.grid_repos?.lines ?? []).slice(0, 4).map((l) => (typeof l === "string" ? { text: l, links: [] } : { links: [], ...l }));
-  const gridRepos = gridLines.length ? { title: "The grid repos: this week's search check", tone: "done", items: gridLines, link: m.grid_repos?.link ?? null, empty: null } : null;
+  const gridRepos = gridLines.length ? { title: "Your sites: this week's search check", tone: "done", items: gridLines, link: m.grid_repos?.link ?? null, empty: null } : null;
 
   // 4b'. The Scorecard (Mondays; owner ruling, 1 Nov 2026): its own section with its own count title —
   // switches, pauses and rows with no number only; a quiet week is one line.

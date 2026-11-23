@@ -58,7 +58,7 @@ export const MORNING_SECTION_SPECS = Object.freeze([
   { name: "notices", label: "Notices", expect: null },
   // Mondays 06:00: the weekly Search Readiness check of the grid repo sites (scripts/ops/search-readiness-audit.mjs).
   {
-    name: "grid_repos", label: "the grid repos' search check", expect: Object.freeze(["Monday"]),
+    name: "grid_repos", label: "your sites' search check", expect: Object.freeze(["Monday"]),
     catchUp: "sites:audit -- --morning",
     catchUpLongWhy: "the weekly Search Readiness audit (sites:audit) runs long — longer than the window before the email; it is caught up after the email instead",
   },
