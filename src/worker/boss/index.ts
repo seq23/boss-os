@@ -75,7 +75,7 @@ import { quality } from "./routes/quality";
 import { brains } from "./routes/brains";
 import { validators } from "./routes/validators";
 import { scorecardRoutes } from "./routes/scorecard";
-import { growthRoutes } from "./routes/growth";
+import { growthRoutes, BACKLINK_ORDERS_PATH } from "./routes/growth";
 import { aiAnswerRoutes, AI_MISSES_PATH } from "./growth/aiAnswers";
 import { openLoops, INTAKE_PATH as OPEN_LOOPS_INTAKE, runOpenLoopsDaily } from "./routes/openLoops";
 import { alarms } from "./routes/alarms";
@@ -146,6 +146,8 @@ app.use("/api/*", async (c, next) => {
   if (c.req.path === OPEN_LOOPS_INTAKE && c.req.method === "POST") return next();
   // The search loop's read of AI answer misses checks the same machine token itself: growth/aiAnswers.ts.
   if (c.req.path === AI_MISSES_PATH && c.req.method === "GET") return next();
+  // The backlink network's read of the Director's backlink orders: the same token, checked in routes/growth.ts.
+  if (c.req.path === BACKLINK_ORDERS_PATH && c.req.method === "GET") return next();
   return requireSession(c, next);
 });
 

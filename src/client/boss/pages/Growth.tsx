@@ -33,7 +33,7 @@ type Page = { day: string; problems: string[]; general: Todo[]; businesses: Biz[
 
 const num = (kind: string, v: number) => (kind === "money" ? `$${Math.round(v).toLocaleString("en-US")}` : v.toLocaleString("en-US"));
 const plural = (n: number, w: string) => `${n} ${w}${n === 1 ? "" : "s"}`;
-const ACT: Record<string, string> = { queued: "Queued", proposal: "Asked you", held: "Held", blocked: "Blocked by a rule", refused: "Refused" };
+const ACT: Record<string, string> = { queued: "Queued", ordered: "Ordered from the backlink network", proposal: "Asked you", held: "Held", blocked: "Blocked by a rule", refused: "Refused" };
 
 export function Growth() {
   const [data, setData] = useState<Page | null | undefined>(undefined);
@@ -103,7 +103,7 @@ function Business({ b }: { b: Biz }) {
           {d?.test ? <span className="brain-card-line">Testing: {d.test.what} on {d.test.channel}, judged by {d.test.number}, stops {d.test.stop}</span> : null}
           {d?.actions?.length ? (
             <details className="brain-expander"><summary>What she did with it ▾</summary>
-              <ul className="schedule-list">{d.actions.map((a, i) => <li key={i}>{ACT[a.kind] ?? a.kind}{a.item ? `: ${a.item.channel} ${a.item.format}` : a.proposal ? `: ${a.proposal.what}` : ""}{a.why ? ` — ${a.why}` : ""}</li>)}</ul>
+              <ul className="schedule-list">{d.actions.map((a, i) => <li key={i}>{ACT[a.kind] ?? a.kind}{a.item ? `: ${a.item.channel} ${a.item.format}${a.item.topic ? `, “${a.item.topic}”` : ""}` : a.proposal ? `: ${a.proposal.what}` : ""}{a.why ? ` — ${a.why}` : ""}</li>)}</ul>
             </details>
           ) : null}
         </div>}

@@ -15,6 +15,8 @@
  *                held). Passed → ONE Open Loops row per business × channel × format (source_key
  *                growth#…, owner "claude": the agent sessions that run her posting pipelines work it,
  *                posting only through that approved pipeline), at most MAX_OPEN_PER_BUSINESS open.
+ *                A `backlinks` item is the backlink network's ORDER (an `ordered` action, read by GET
+ *                /api/growth/backlink-orders), never an Open Loops row or a card; unapproved, it is refused.
  *                Not approved / proposals → a judgement call in Decide (raiseJudgementCall, resume kind
  *                growth_proposal: her yes opens the follow-on row, her no is remembered ASKED_DAYS),
  *                at most MAX_CARDS a cycle, each cycle's cards replacing the last's. A proposal passes a
@@ -34,7 +36,7 @@ import { GROWTH_BRAINS, growthSection, parseRoster, rosterProblems, type RosterE
 import { playbookBody } from "../../../shared/boss/growth/playbook.mjs";
 import {
   MAX_CARDS, MAX_OPEN_PER_BUSINESS, ASKED_DAYS, decisionPrompt, parseDecision, enforceHolds, claimsPrompt, parseClaims, claimRules,
-  routeItem, routeProposal, spendPrompt, parseSpend, cycleEnd, namingProblems, pipelineKey, reportDue, reportSection,
+  routeItem, routeProposal, spendPrompt, parseSpend, cycleEnd, namingProblems, pipelineKey, reportDue, reportSection, BACKLINKS, TOPIC_MAX,
 } from "../../../shared/boss/growth/director.mjs";
 import { raiseJudgementCall } from "../approvals/raise";
 import { latestReadings } from "../routes/growth";
@@ -153,6 +155,17 @@ async function inMotion(db: D1Database, key: string): Promise<string[]> {
   return [...new Set(out)].slice(0, 8);
 }
 
+/** The backlink topics this business already ordered, newest first, for the scale/stop rule (12 cycles). */
+async function orderedTopics(db: D1Database, key: string): Promise<string[]> {
+  const rows = (await db.prepare(`SELECT cycle, actions FROM growth_decisions WHERE business = ? AND state = 'decided' ORDER BY created_at DESC LIMIT 12`).bind(key).all<{ cycle: string; actions: string }>()).results ?? [];
+  const out: string[] = [];
+  for (const r of rows) {
+    let acts: any[] = []; try { acts = JSON.parse(r.actions); } catch { acts = []; }
+    if (Array.isArray(acts)) for (const a of acts) if (a?.kind === "ordered" && a.item?.topic) out.push(`${r.cycle}: ${a.item.topic}`);
+  }
+  return [...new Set(out)].slice(0, 24);
+}
+
 async function writeDecision(db: D1Database, r: any) {
   await db.prepare(`INSERT INTO growth_decisions (id, cycle, business, label, state, decision, evidence, test, actions, next_check, created_at) VALUES (?,?,?,?,?,?,?,?,?,?,?)`)
     .bind(r.id, r.cycle, r.business, r.label, r.state, r.decision, JSON.stringify(r.evidence ?? []), r.test ? JSON.stringify(r.test) : null, JSON.stringify(r.actions ?? []), r.next_check ?? null, r.created_at).run();
@@ -194,11 +207,13 @@ export async function runGrowthDirector(env: Env, now = Date.now(), deps: { mode
         `SELECT id FROM owner_open_loops WHERE status = 'open' AND business = ? AND owner <> 'sequoia' AND id IN (SELECT value FROM json_each(?))`,
       ).bind(entry.brain, JSON.stringify(entry.linked)).all<{ id: string }>()).results ?? []).map((r) => r.id) : [];
       const linked = linkedIds.map((id) => ({ id, what: entry.linkedNotes[id] ?? "no description on the roster" }));
-      const answer = parseDecision(await model(env, decisionPrompt({ playbook, entry, summary: s, trends, today, todos, first, linked }) as Msg[], "growth-decide"));
+      const topics = entry.channels.some((c) => c.channel === BACKLINKS) ? await orderedTopics(db, entry.key!) : [];
+      const answer = parseDecision(await model(env, decisionPrompt({ playbook, entry, summary: s, trends, today, todos, first, linked, topics }) as Msg[], "growth-decide"));
       if (!answer) { await record({ ...base, state: "held: no model", decision: "Held: no free model answered (every free route was busy or spent); the next cycle tries again.", evidence: [], actions: [] }); continue; }
       const { decision, dropped } = enforceHolds(answer, s);
       const actions: any[] = [];
       if (dropped) actions.push({ kind: "held", why: dropped });
+      if (decision.noTopic) actions.push({ kind: "held", why: `${decision.noTopic} backlink ${decision.noTopic === 1 ? "order had" : "orders had"} no topic of up to ${TOPIC_MAX} characters, so ${decision.noTopic === 1 ? "it was" : "they were"} dropped` });
       const { rules, missing } = claimRules(entry, riskMd);
       const raise = async (title: string, question: string, detail: Record<string, unknown>) => {
         if (asked.has(title.toLowerCase())) return { card: null, why: `asked in the last ${ASKED_DAYS} days` };
@@ -221,6 +236,8 @@ export async function runGrowthDirector(env: Env, now = Date.now(), deps: { mode
         const verdict = parseClaims(await model(env, claimsPrompt({ entry, rules, draft: item.draft }) as Msg[], "growth-claims"));
         if (!verdict) { actions.push({ kind: "held", why: "the claims check got no model answer, so it is held, never passed", item }); continue; }
         if (!verdict.pass) { actions.push({ kind: "blocked", why: `breaks ${verdict.broken.join(", ") || "a rule"}: ${verdict.why}`, item }); continue; }
+        // A backlinks item is the network's order: written on this decision, never a to-do for anyone.
+        if (item.channel === BACKLINKS) { actions.push({ kind: "ordered", item }); continue; }
         // A format on the roster is approved: it queues, first post included. Decide is only for a new
         // account, channel, price or anything paid (her ruling, 22 Nov 2026: "why are they asking me anything?").
         const q = await queueRow(db, entry, item, decision.next_check ?? today);

@@ -1,11 +1,13 @@
 import { Hono } from "hono";
 import type { Env, Vars } from "../env";
-import { ok, badRequest } from "../lib/http";
+import { AppError, ok, badRequest } from "../lib/http";
 import { dayIdInZone } from "../../../shared/boss/timezone";
 import manifest from "../../../shared/boss/scorecard/manifest.json";
 import { readingProblems, summarize } from "../../../shared/boss/growth/scoreboard.mjs";
 import { loadRoster } from "../growth/run";
 import { AI_SITES, aiCard } from "../../../shared/boss/growth/aiAnswers.mjs";
+import { backlinkOrders } from "../../../shared/boss/growth/director.mjs";
+import { machineTokenOk } from "./openLoops";
 
 /**
  * THE GROWTH DIRECTOR'S RECORD (21 Nov 2026).
@@ -19,6 +21,9 @@ import { AI_SITES, aiCard } from "../../../shared/boss/growth/aiAnswers.mjs";
  *                    her roster links, her pending Decide cards), happening (the scoreboard and the
  *                    newest decision), happened (earlier decisions and finished to-dos, 8 weeks),
  *                    and `ai`: the site's AI answers week (growth/aiAnswers.ts), apart from its numbers.
+ *   GET  /backlink-orders  (machine token, as ai-misses) the backlink network's weekly read:
+ *                    { cycle, read_at, orders: [{ business, topic, draft, why }] } from the NEWEST
+ *                    cycle's decisions only (director.mjs backlinkOrders). No cycle yet → orders [].
  */
 export const growthRoutes = new Hono<{ Bindings: Env; Variables: Vars }>();
 
@@ -56,6 +61,24 @@ export async function latestReadings(db: D1Database) {
 growthRoutes.get("/", async (c) => {
   const { latest, before, day } = await latestReadings(c.env.DB);
   return ok(c, { day, businesses: summarize(manifest, latest, before, dayIdInZone(Date.now())) });
+});
+
+export const BACKLINK_ORDERS_PATH = "/api/growth/backlink-orders";
+
+/** The newest cycle's backlink orders; never Open Loops rows. A malformed actions row is skipped and logged. */
+export async function readBacklinkOrders(db: D1Database, now = Date.now()) {
+  const top = await db.prepare(`SELECT MAX(cycle) AS cycle FROM growth_decisions`).first<{ cycle: string | null }>();
+  const cycle = top?.cycle ?? null;
+  if (!cycle) return { cycle: null, read_at: new Date(now).toISOString(), orders: [] };
+  const rows = (await db.prepare(`SELECT id, business, state, actions, created_at FROM growth_decisions WHERE cycle = ?`).bind(cycle).all<any>()).results ?? [];
+  const { orders, skipped } = backlinkOrders(rows);
+  if (skipped.length) console.warn(`backlink-orders: skipped ${skipped.length} growth_decisions row(s) whose actions are not a JSON list: ${skipped.join(", ")}`);
+  return { cycle, read_at: new Date(now).toISOString(), orders };
+}
+
+growthRoutes.get("/backlink-orders", async (c) => {
+  if (!(await machineTokenOk(c))) throw new AppError(401, "Locked");
+  return c.json(await readBacklinkOrders(c.env.DB));
 });
 
 const DIRECTOR = "emp_growth";

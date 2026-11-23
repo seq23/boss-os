@@ -37,7 +37,6 @@ export const TOKEN_KEY = "open_loops_intake_token_sha256";
 const ORIGIN = "https://boss.sequoiataylor.com";
 const FIELDS = ["title", "finish_line", "next_step", "owner", "next_date", "business", "section", "blocked_by"] as const;
 
-/** Also the AI answers loop's door (growth/aiAnswers.ts GET ai-misses): one token, one check. */
 export async function sha256(s: string): Promise<string> {
   const d = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(s));
   return [...new Uint8Array(d)].map((b) => b.toString(16).padStart(2, "0")).join("");
@@ -139,14 +138,22 @@ openLoops.post("/intake-token", async (c) => {
   return ok(c, { token }, 201);
 });
 
+/**
+ * THE MACHINE TOKEN'S ONE CHECK: `Bearer olt_<64 hex>` against its SHA-256 in settings. Used by the
+ * intake below and the two machine reads (growth/aiAnswers.ts GET ai-misses, routes/growth.ts GET
+ * backlink-orders); index.ts lets exactly those paths past the session check. One token, one check.
+ */
+const MACHINE_TOKEN = /^Bearer\s+(olt_[a-f0-9]{64})$/;
+export async function machineTokenOk(c: Context<{ Bindings: Env; Variables: Vars }>): Promise<boolean> {
+  const m = MACHINE_TOKEN.exec(c.req.header("authorization") ?? "");
+  if (!m) return false;
+  const want = await getSetting(c.env.DB, TOKEN_KEY);
+  return Boolean(want) && want === (await sha256(m[1]!));
+}
+
 /** The intake's door: the machine token, or (for her Mac's jobs) a normal session. */
 async function intakeAllowed(c: Context<{ Bindings: Env; Variables: Vars }>): Promise<boolean> {
-  const auth = c.req.header("authorization") ?? "";
-  const m = /^Bearer\s+(olt_[a-f0-9]{64})$/.exec(auth);
-  if (m) {
-    const want = await getSetting(c.env.DB, TOKEN_KEY);
-    return Boolean(want) && want === (await sha256(m[1]!));
-  }
+  if (MACHINE_TOKEN.test(c.req.header("authorization") ?? "")) return machineTokenOk(c);
   return Boolean(await readSession(c.env, getCookie(c, "boss_session")));
 }
 
