@@ -41,7 +41,7 @@ export async function recordMeasures(env: DB, a: { deliverable: string; taskId?:
   }
 }
 
-interface Run { at: number; pass: boolean; route: string | null; measured: Record<string, unknown> }
+interface Run { at: number; pass: boolean; route: string | null; measured: Record<string, unknown>; misses?: string[] }
 const num = (v: unknown): number | null => (typeof v === "number" && Number.isFinite(v) ? v : null);
 const mean = (xs: number[]): number | null => (xs.length ? xs.reduce((a, b) => a + b, 0) / xs.length : null);
 const show = (v: number | null): string => (v === null ? "not measured" : String(Math.round(v)));
@@ -71,7 +71,11 @@ export function driftLine(d: (typeof DELIVERABLES)[number], runs: Run[], now: nu
     const past = Array.from({ length: PAST_WEEKS }, (_, i) => at(i + 1)).filter((v): v is number => v !== null);
     return { name, words, this_week: at(0), best: past.length ? Math.max(...past) : null, trend };
   });
-  const misses = thisWeek.filter((r) => !r.pass).length;
+  const short = thisWeek.filter((r) => !r.pass);
+  const misses = short.length;
+  // What the newest short run missed, in the floor check's own words ("3 new firms (the floor is 5)"),
+  // so "its standard" is never left for her to guess (ship-review sr_mwtfu3xi47nr, 23 Nov 2026).
+  const latestMiss = [...short].sort((a, b) => b.at - a.at).flatMap((r) => r.misses ?? []).find((m) => typeof m === "string" && m.trim()) ?? null;
   // Slipping: more than 25% under the best run this week AND the week before.
   const under = (v: number | null, b: number | null) => v !== null && b !== null && b > 0 && v < b * (1 - DRIFT.slip);
   const slipped = measures.filter((m) => under(m.this_week, m.best) && under(m.trend[DRIFT.weeks - 2] ?? null, m.best));
@@ -91,7 +95,8 @@ export function driftLine(d: (typeof DELIVERABLES)[number], runs: Run[], now: nu
     const was = [last !== null ? `${show(last)} last week` : null, lead.best === null ? "the first week on record" : `${show(lead.best)} at its best before`].filter(Boolean);
     const head = `${show(lead.this_week)} ${unit(lead.this_week, lead.words)}${thisWeek.length > 1 ? " on average" : ""} this week (${was.join(", ")})`;
     const unmeasured = measures.filter((m) => m.this_week === null).map((m) => m.words);
-    const verdict = misses > 0 ? `It fell short of its standard ${misses === 1 ? "once" : `${misses} times`} this week.`
+    const shortRuns = thisWeek.length === 1 ? "Its one run this week" : `${misses} of its ${thisWeek.length} runs this week`;
+    const verdict = misses > 0 ? `${shortRuns} fell short of its standard${latestMiss ? `; the latest time, ${latestMiss.replace(/\.$/, "")}` : ""}.`
       : slipped.length ? `It has slipped two weeks running: ${slipped.map((m) => `${show(m.this_week)} ${m.words} against ${show(m.best)} at its best`).join("; ")}.`
       : "It is keeping its standard.";
     text = `${d.label}: ${head}. ${verdict}${unmeasured.length ? ` Not measured this week: ${unmeasured.join(", ")}.` : ""}`;
@@ -108,14 +113,16 @@ export interface DriftReport { at: number; lines: DriftLine[]; reads: { delivera
 /** The week's lines and the newest monthly read (shown for the week after it lands). */
 export async function driftReport(env: DB, now = Date.now()): Promise<DriftReport> {
   const since = now - 27 * DRIFT.week_ms;
-  const rows = await env.DB.prepare(`SELECT deliverable, at, pass, route, measured FROM delivery_measures WHERE at > ? ORDER BY at DESC LIMIT 4000`).bind(since)
-    .all<{ deliverable: string; at: number; pass: number; route: string | null; measured: string }>();
+  const rows = await env.DB.prepare(`SELECT deliverable, at, pass, route, measured, misses FROM delivery_measures WHERE at > ? ORDER BY at DESC LIMIT 4000`).bind(since)
+    .all<{ deliverable: string; at: number; pass: number; route: string | null; measured: string; misses: string | null }>();
   const by = new Map<string, Run[]>();
   for (const r of rows.results ?? []) {
     let measured: Record<string, unknown> = {};
     try { const m = JSON.parse(r.measured); if (m && typeof m === "object") measured = m; } catch { measured = {}; }
+    let misses: string[] = [];
+    try { const m = JSON.parse(r.misses ?? "[]"); if (Array.isArray(m)) misses = m.filter((x): x is string => typeof x === "string"); } catch { misses = []; }
     const list = by.get(r.deliverable) ?? [];
-    list.push({ at: r.at, pass: r.pass === 1, route: r.route, measured });
+    list.push({ at: r.at, pass: r.pass === 1, route: r.route, measured, misses });
     by.set(r.deliverable, list);
   }
   const reads = await env.DB.prepare(`SELECT deliverable, verdict, why, at FROM quality_reads WHERE kind = 'monthly' AND at > ? ORDER BY at DESC`).bind(now - DRIFT.week_ms)

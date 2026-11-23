@@ -9,3 +9,5 @@ export interface DueJob { id: string; event: string; file: string; due_at: numbe
 export declare function dueJobs(manifest: unknown, nowMs: number, opts?: { windowMinutes?: number; repo?: string }): DueJob[];
 export declare function clockRowProblems(manifest: unknown, repo?: string): string[];
 export declare function slotWords(slot: string): string;
+export declare function nextSlotAt(slot: string, nowMs: number): number | null;
+export declare function nextRunWords(slots: string[] | null | undefined, nowMs: number): string | null;

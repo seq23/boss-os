@@ -496,7 +496,7 @@ const SEC = (color = C.muted) => `style="margin:18px 0 8px;font-size:12px;font-w
  * for good" and "See it" were 17 px text links, one line apart). Inline links inside a sentence stay
  * links; anything that stands alone (a row's Open / Drop, an item's link, a section's link) is a button.
  */
-const BTN = (primary) => `style="display:inline-block;margin:0 8px 8px 0;padding:11px 14px;border-radius:8px;font-size:14px;font-weight:600;text-decoration:none;border:1px solid ${C.link};${primary ? `background:${C.link};color:#ffffff` : `background:#ffffff;color:${C.link}`}"`;
+const BTN = (primary) => `style="display:inline-block;margin:0 8px 8px 0;padding:11px 14px;border-radius:8px;font-size:14px;font-weight:600;text-decoration:none;white-space:nowrap;border:1px solid ${C.link};${primary ? `background:${C.link};color:#ffffff` : `background:#ffffff;color:${C.link}`}"`;
 
 function cardHtml(c, n, tone = "decide") {
   const border = tone === "decide" ? C.decideBorder : C.line;
@@ -557,11 +557,18 @@ function sectionHtml(sec) {
   if (sec.rows) {
     any = true;
     const th = `style="padding:6px;text-align:left;font-size:11px;color:${C.muted};font-weight:600;border-bottom:1px solid #D9DDE3"`;
-    const td = `style="padding:7px 6px;border-bottom:1px solid #EEF0F3;vertical-align:top"`;
+    // A row's buttons sit on their own line under its text, across the full width: in a fourth column
+    // at 390 px they stacked word by word ("Drop / for / good") and squeezed the names to one word a
+    // line (ship-review sr_mwtfu3xi47nr). No media query: phone mail apps drop them.
+    const td = (last) => `style="padding:7px 6px ${last ? 7 : 2}px;${last ? "border-bottom:1px solid #EEF0F3;" : ""}vertical-align:top"`;
+    const n = sec.rows.columns.length;
     inner += `<table role="presentation" style="border-collapse:collapse;width:100%;margin:0 0 8px;font-size:13px">`
-      + `<tr>${sec.rows.columns.map((c) => `<th ${th}>${esc(c.label)}</th>`).join("")}<th ${th}></th></tr>`
-      + sec.rows.data.map((r) => `<tr>${sec.rows.columns.map((c, i) => `<td ${td}>${i === 0 ? `<b>${esc(cell(r, c.key))}</b>` : esc(cell(r, c.key))}</td>`).join("")}`
-        + `<td ${td}>${[[r.url, r.url_label], [r.url2, r.url2_label]].filter(([u]) => u).map(([u, l]) => `<a href="${esc(u)}" ${BTN(false)}>${esc(l ?? linkLabel(u))}</a>`).join("")}</td></tr>`).join("")
+      + `<tr>${sec.rows.columns.map((c) => `<th ${th}>${esc(c.label)}</th>`).join("")}</tr>`
+      + sec.rows.data.map((r) => {
+        const links = [[r.url, r.url_label], [r.url2, r.url2_label]].filter(([u]) => u);
+        return `<tr>${sec.rows.columns.map((c, i) => `<td ${td(!links.length)}>${i === 0 ? `<b>${esc(cell(r, c.key))}</b>` : esc(cell(r, c.key))}</td>`).join("")}</tr>`
+          + (links.length ? `<tr><td colspan="${n}" ${td(true)}>${links.map(([u, l]) => `<a href="${esc(u)}" ${BTN(false)}>${esc(l ?? linkLabel(u))}</a>`).join("")}</td></tr>` : "");
+      }).join("")
       + `</table>`;
   }
   if (sec.cards.length) { any = true; inner += sec.cards.map((c, i) => cardHtml(c, i + 1, "plain")).join(""); }
@@ -614,7 +621,7 @@ export function layoutEmail({ who, subject, happened, decide = [], needs = [], d
    */
   const bannerList = (banners ?? []).map((b) => ({ tone: b?.tone === "coach" ? "coach" : "red", title: b?.tone === "coach" ? cleanText(b?.title ?? "") : cleanText(`🔴 ${b?.title ?? ""}`).replace(/^🔴\s*/u, ""), lines: (b?.lines ?? []).map((l) => cleanText(l)).filter(Boolean), button: cleanButtons(b?.button ? [b.button] : [])[0] ?? null })).filter((b) => b.title);
   const bannerText = bannerList.flatMap((b) => ["", `${b.tone === "red" ? "🔴 " : ""}${b.title.toUpperCase()}`, ...b.lines, ...(b.button ? [`${b.button.label}: ${b.button.url}`] : [])]);
-  const bannerHtml = bannerList.map((b) => `<div style="margin:0 0 12px;padding:14px 16px;border-radius:10px;background:${b.tone === "red" ? "#b3261e" : "#1d1d1f"};color:#ffffff;border-left:8px solid ${b.tone === "red" ? "#7a0f0a" : "#d93025"}"><p style="margin:0 0 6px;font-size:17px;line-height:1.35;font-weight:700;color:#ffffff">${b.tone === "red" ? "&#128308; " : ""}${esc(b.title)}</p>${b.lines.map((l) => `<p style="margin:4px 0 0;font-size:15px;line-height:1.45;color:#ffffff">${esc(l)}</p>`).join("")}${b.button ? `<p style="margin:12px 0 0"><a href="${esc(b.button.url)}" style="display:inline-block;padding:11px 14px;border-radius:8px;font-size:14px;font-weight:700;text-decoration:none;background:#ffffff;color:#b3261e">${esc(b.button.label)}</a></p>` : ""}</div>`).join("");
+  const bannerHtml = bannerList.map((b) => `<div style="margin:0 0 12px;padding:14px 16px;border-radius:10px;background:${b.tone === "red" ? "#b3261e" : "#1d1d1f"};color:#ffffff;border-left:8px solid ${b.tone === "red" ? "#7a0f0a" : "#d93025"}"><p style="margin:0 0 6px;font-size:17px;line-height:1.35;font-weight:700;color:#ffffff">${b.tone === "red" ? "&#128308; " : ""}${esc(b.title)}</p>${b.lines.map((l) => `<p style="margin:4px 0 0;font-size:15px;line-height:1.45;color:#ffffff">${esc(l)}</p>`).join("")}${b.button ? `<p style="margin:12px 0 0"><a href="${esc(b.button.url)}" style="display:inline-block;padding:11px 14px;border-radius:8px;font-size:14px;font-weight:700;text-decoration:none;white-space:nowrap;background:#ffffff;color:#b3261e">${esc(b.button.label)}</a></p>` : ""}</div>`).join("");
   const name = String(who ?? "").trim() || "Simone";
   const subj = cleanSubject(subject);
   /*

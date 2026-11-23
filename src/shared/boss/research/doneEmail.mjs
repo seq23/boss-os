@@ -270,7 +270,7 @@ export function researchFullEmail({ who, subject, page, url, refs = [], markdown
   // The owner layout (7 Nov 2026), "here's what you asked for" (D): line 1 says why and that she has nothing to do.
   const why = `The research you asked for is ready: ${p.title}`;
   const lead = ownerLine(why, NOTHING_TO_DO);
-  const button = `<p style="margin:22px 0 8px"><a href="${escHtml(url)}" style="display:inline-block;background:#1f1d1a;color:#ffffff;text-decoration:none;font-weight:700;padding:11px 18px;border-radius:8px">Open in Boss OS ›</a></p>`;
+  const button = `<p style="margin:22px 0 8px"><a href="${escHtml(url)}" style="display:inline-block;background:#1f1d1a;color:#ffffff;text-decoration:none;font-weight:700;padding:11px 18px;border-radius:8px;white-space:nowrap">Open in Boss OS ›</a></p>`;
   // The report usually ends with its own "What I could not confirm" section; never list the gaps twice.
   const ownGaps = /^#{1,4}\s+.*(could not|couldn.t) confirm/im.test(String(page?.markdown ?? ""));
   const gapHtml = gaps.length && !ownGaps ? `<h2 style="${STYLE.h2}">What couldn't be confirmed</h2><ul style="${STYLE.ul}">${gaps.map((g) => `<li style="${STYLE.li}">${escHtml(g)}</li>`).join("")}</ul>` : "";

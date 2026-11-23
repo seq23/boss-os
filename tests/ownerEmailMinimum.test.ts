@@ -202,6 +202,16 @@ function tapProblems(html: string): string[] {
     const boxed = /display:\s*(?:inline-)?block/.test(st);
     const h = Math.round((px(/font-size:\s*(\d+)px/) || 15) * 1.3 + (boxed ? 2 * px(/padding:\s*(\d+)px/) + 2 * px(/border:\s*(\d+)px/) : 0));
     if (h < 33) out.push(`"${(a.textContent ?? "").trim()}" is about ${h} px tall`);
+    // A button's label stays on one line ("Drop / for / good" stacked at 390 px, sr_mwtfu3xi47nr) ...
+    // A button has side padding; a list link (a source title, "padding:10px 0") may wrap like the text it is.
+    const button = boxed && Number(/padding:\s*\d+px\s+(\d+)(?:px)?/.exec(st)?.[1] ?? px(/padding:\s*(\d+)px/)) > 0;
+    if (button && !/white-space:\s*nowrap/.test(st)) out.push(`"${(a.textContent ?? "").trim()}" can wrap inside its button`);
+    // ... and a table row's buttons get the full width, never a narrow last column.
+    const cellOf = a.closest("td");
+    if (button && cellOf) {
+      const widest = Math.max(...[...cellOf.closest("table")!.querySelectorAll("tr")].map((tr) => [...tr.children].reduce((n, c) => n + Number(c.getAttribute("colspan") ?? 1), 0)));
+      if (Number(cellOf.getAttribute("colspan") ?? 1) < widest) out.push(`"${(a.textContent ?? "").trim()}" sits in a narrow table column`);
+    }
   }
   return out;
 }
@@ -249,7 +259,7 @@ describe("tap targets and links (23 Nov 2026 live read)", () => {
     const laid = layoutEmail({ who: "Simone", subject: "x", happened: "Something happened.",
       banners: [{ tone: "red", title: "A job stopped", lines: ["It waits on you."], button: { label: "See it on Open Loops", url: `${ORIGIN}/?tab=loops&loop=oloop_x` } }],
       sections: [
-        { title: "Deals", empty: null, rows: { columns: [{ key: "co", label: "Company" }], data: [{ co: "Acme", url: `${ORIGIN}/?tab=deals&id=1`, url_label: "Open ›", url2: `${ORIGIN}/tap/tokAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA?do=drop`, url2_label: "Drop for good" }] } },
+        { title: "Deals", empty: null, rows: { columns: [{ key: "co", label: "Company" }, { key: "side", label: "Side" }, { key: "from", label: "From" }], data: [{ co: "Acme", side: "Buy", from: "A broker", url: `${ORIGIN}/?tab=deals&id=1`, url_label: "Open ›", url2: `${ORIGIN}/tap/tokAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA?do=drop`, url2_label: "Drop for good" }] } },
         { title: "Done for you", empty: null, items: [{ text: "Stopped a paid call.", links: [{ label: "See it", url: `${ORIGIN}/?tab=jobs` }, { label: "Drop for good", url: `${ORIGIN}/tap/tokBBBBBBBBBBBBBBBBBBBBBBBBBBBBBB?do=drop` }] }], link: { label: "See every match", url: `${ORIGIN}/?tab=deals` } },
       ] } as any);
     expect((laid.html.match(/<a /g) ?? []).length, "the case renders its six links").toBe(6);
@@ -259,6 +269,9 @@ describe("tap targets and links (23 Nov 2026 live read)", () => {
   it("the checks catch a bare standalone link and a link to nowhere (negative proof)", () => {
     expect(tapProblems('<p><a href="https://example.com/x">Drop for good</a></p>')).toEqual(['"Drop for good" is about 20 px tall']);
     expect(tapProblems('<p>Read it <a href="https://example.com/x">here</a> today.</p>'), "a link in a sentence stays a link").toEqual([]);
+    const squeezed = '<table><tr><td>Acme</td><td><a href="https://example.com/x" style="display:inline-block;padding:11px 14px;font-size:14px;white-space:nowrap">Open</a></td></tr></table>';
+    expect(tapProblems(squeezed), "a button in a narrow last column").toEqual(['"Open" sits in a narrow table column']);
+    expect(tapProblems('<p><a href="https://example.com/x" style="display:inline-block;padding:11px 14px;font-size:14px">Drop for good</a></p>')).toEqual(['"Drop for good" can wrap inside its button']);
     expect(hrefProblems('<a href="/?tab=loops">x</a><a href="https://undefined/x">y</a><a href="#">z</a><a href="https://boss.example.com/x">ok</a>')).toHaveLength(3);
   });
 });

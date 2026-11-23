@@ -1226,14 +1226,14 @@ const sectionWords = (sections) => (sections ?? []).flatMap((sec) => [
 /**
  * The leftover drafts, said once and plainly (23 Nov 2026 live read: "You can delete it there … I never
  * make another" left "there" and "another" unclear, and read as a chore under "Nothing to do"). It is
- * optional and harmless, its button opens the bookshelf, and it says why there will be no more (a run
- * resumes the existing draft, never a second one). Pure: `[]` or one section.
+ * optional and harmless, and its button opens the bookshelf. It never explains the pipeline (ship-review
+ * sr_mwtfuyksuvpy: "a run resumes the draft" made deleting it sound unsafe). Pure: `[]` or one section.
  */
 export function extraDraftsSection(n, books = 1) {
   if (!(n > 0)) return [];
   const one = n === 1;
   return [{ title: "Optional tidy-up", empty: null, items: [{
-    text: `Your KDP bookshelf still has ${n} unused draft${one ? "" : "s"} of ${books === 1 ? "this book" : "these books"}, left from earlier tries. ${one ? "It does" : "They do"} no harm and readers never see ${one ? "it" : "them"}. To remove ${one ? "it" : "them"}, choose Delete draft from the ⋯ menu beside ${one ? "it" : "each one"}. Publishing resumes an existing draft, so no new duplicates are made.`,
+    text: `Your KDP bookshelf still has ${n} unused draft${one ? "" : "s"} of ${books === 1 ? "this book" : "these books"}, left from earlier tries. ${one ? "It does" : "They do"} no harm and readers never see ${one ? "it" : "them"}. To remove ${one ? "it" : "them"}, choose Delete draft from the ⋯ menu beside ${one ? "it" : "each one"}.`,
     links: [{ label: "Open your KDP bookshelf", url: `${KDP}/bookshelf` }],
   }] }];
 }
