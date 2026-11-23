@@ -110,6 +110,16 @@ async function api(path, body) {
  * needed. Replying to the email still works; the change's code rides in the hidden header.
  * Pure, so tests/plainEmail.test.ts runs every stop through the send-time gate.
  */
+/**
+ * Only the checks that failed, in words (23 Nov 2026 live read: "recorded what failed: Cloudflare Pages:
+ * pass, build validate: fail" listed a passing check under what failed). Pure.
+ */
+export function failedChecksWords(detail) {
+  const failed = String(detail ?? "").split(/,\s*/).map((x) => /^(.+?):\s*(?:fail|failure|failed|error|timed_out|cancel|cancelled)$/i.exec(x.trim())?.[1]).filter(Boolean);
+  if (!failed.length) return "what failed";
+  return `which check failed (${failed.slice(0, 3).join(", ")}${failed.length > 3 ? ` and ${failed.length - 3} more` : ""})`;
+}
+
 export function stoppedMail({ id, repo, reason, happened, did, origin = ORIGIN }) {
   const subject = `Stopped work on ${repo ?? "your package"}: ${reason} ${changeToken(id)}`;
   // The owner layout (7 Nov 2026): a stop on her own request is an alarm (C), with its REF.
@@ -192,7 +202,8 @@ export function planMail({ row, out, chosen, asks = [], step = null, ready = tru
   const notReady = ready ? "" : " It is not ready to go live yet, so you see a preview first.";
   if (!ready) bullets.unshift(`It has ${placeholders.length} unfinished part${placeholders.length === 1 ? "" : "s"}; the attached plan names them.`);
   if (step) bullets.push("One more step runs after it goes live; the attached plan says which.");
-  const askText = (a) => (typeof a === "string" ? a : `${a.question ?? ""} My pick: ${a.default ?? "none given, say which"}.`);
+  // The pick is the agent's own sentence; it keeps its own full stop (23 Nov 2026 live read: "…any of the four..").
+  const askText = (a) => (typeof a === "string" ? a : `${a.question ?? ""} My pick: ${String(a.default ?? "none given, say which").trim().replace(/[.!?]+$/, "")}.`);
   const subject = pre ? `Building ${chosen} now, as you said` : `Plan for ${chosen}: reply approved to go ahead`;
   // The owner layout (7 Nov 2026): a plan waiting on her word is "approve this" (A), with its REF.
   return ownerEmail({
@@ -1306,7 +1317,7 @@ async function watchChecks(row, log, waitMinutes) {
       const laid = stoppedMail({
         id: row.id, repo: row.repo, reason: stopWords("CHECKS_RED"),
         happened: `The checks on the ${row.repo} change went red, so I did not make it live.`,
-        did: `I left the pull request open for a fix (${row.pr_url}) and recorded what failed: ${String(verdict.detail ?? "").slice(0, 300)}`,
+        did: `I left the change open for a fix (${row.pr_url}) and kept a record of ${failedChecksWords(verdict.detail)}.`,
       });
       const id = await email(laid.subject, laid.text, [], laid);
       const r = await api(`/${row.id}/checks`, { state: "red", detail: verdict.detail, notified_message_id: id ?? undefined });

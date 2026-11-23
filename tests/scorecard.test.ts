@@ -274,6 +274,19 @@ describe("the Monday email section", () => {
     expect(JSON.stringify(switched.lines)).toMatch(/Trying version B · Test feed: 4 visits a week \(floor 10\)/);
   });
 
+  it("many rows with no number are one line, and the rest is counted as it is (23 Nov 2026 live read)", () => {
+    const rows = ["a", "b", "c", "d"].map((id) => ({ ...ROW, id, initiative: `Row ${id}` }));
+    const blind = rows.map((row) => judge({ row, record: null, reading: R(null, 0, "NAMED STOP [KEY_MISSING] X_KEY missing"), today: "2026-12-01" }));
+    const early = judge({ row: { ...ROW, id: "e", initiative: "Young" }, record: null, reading: R(1, 1), today: "2026-11-02" });
+    const s = emailSection([...blind, early], [...rows, { ...ROW, id: "e", initiative: "Young" }], { today: "2026-12-01", links });
+    const texts = s.lines.map((l: any) => (typeof l === "string" ? l : l.text));
+    expect(texts.filter((t: string) => /No number/.test(t))).toHaveLength(1);
+    expect(texts.join(" ")).toMatch(/4 rows/);
+    expect(texts.join(" ")).not.toMatch(/on track/);
+    const two = emailSection(blind.slice(0, 2), rows.slice(0, 2), { today: "2026-12-01", links });
+    expect(two.lines.filter((l: any) => /No number/.test(l.text ?? l))).toHaveLength(2);
+  });
+
   it("reaches Simone's morning email as its own section, not dropped by the plain-words gate", () => {
     const miss = judge({ row: ROW, record: null, reading: R(4, 0), today: "2026-12-01" });
     const s = emailSection([miss], [ROW], { today: "2026-12-01", links });

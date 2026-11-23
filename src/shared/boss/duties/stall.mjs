@@ -68,7 +68,10 @@ export function stallFrom({ job, what, noun, waiting, moved = 0, blocker, busine
     subject,
     banner: { tone: "red", title: `STOPPED: ${headline}`, lines },
     finish_line: `${what} moves again: the ${count(waiting, noun)} waiting go out.`.slice(0, 300),
-    next_step: lines[0].slice(0, 400),
+    // The morning banner shows only this line (stallBanners), so a stall she alone can clear carries
+    // her one action in it (23 Nov 2026 live read: "Nothing went out this run: 10 books are waiting."
+    // with no word on what moves them).
+    next_step: (fix ? `${lines[0]} ${fix}` : lines[0]).slice(0, 400),
     business,
     // The red block at the very top of the email (the layout's banners), then one plain line on how
     // she hears about it from here. Nothing for her to do: the team's repair job has it.

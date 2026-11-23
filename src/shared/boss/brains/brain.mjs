@@ -606,7 +606,7 @@ const plural = (n, one, many = `${one}s`) => `${n} ${n === 1 ? one : many}`;
  * Examples: "Cohesion: all clear", "Cohesion: moved 2 stray memory notes to the archive; the
  * dream-wedding-builder repo is missing its brain pointer".
  */
-export function cohesionCheckLine(brains, mac, now = Date.now()) {
+function cohesionParts(brains, mac, now) {
   const fixed = [];
   const problems = [];
   if (!mac) {
@@ -641,6 +641,25 @@ export function cohesionCheckLine(brains, mac, now = Date.now()) {
   }
   const stale = staleBit(brains, now); // the brain staleness, reused from cohesionLine
   if (stale) problems.push(stale);
+  return { fixed, problems, ran: Boolean(mac) };
+}
+
+export function cohesionCheckLine(brains, mac, now = Date.now()) {
+  const { fixed, problems } = cohesionParts(brains, mac, now);
   if (!problems.length) return fixed.length ? `Cohesion: all clear (${fixed.join(" and ")})` : "Cohesion: all clear";
   return `Cohesion: ${[...(fixed.length ? [fixed.join(" and ")] : []), ...problems].join("; ")}`;
+}
+
+/**
+ * THE MONDAY EMAIL'S LINE (23 Nov 2026 live read: the whole check line, with repo slugs, validator
+ * kinds and a quote cut mid-word, reached her inbox "like a server log"). The tidying is the team's,
+ * so the email says how many things and where the list is; the Brains page keeps every detail
+ * (`cohesionCheckLine`). A Mac check that did not run is still said plainly (Rule 0).
+ */
+export function cohesionEmailLine(brains, mac, now = Date.now()) {
+  const { fixed, problems, ran } = cohesionParts(brains, mac, now);
+  if (!ran) return `Weekly check of the setup: ${problems[0]}. The team is looking.`;
+  const did = fixed.length ? `${fixed.join(" and ")}. ` : "";
+  if (!problems.length) return `Weekly check of the setup: all clear. ${did}`.trim();
+  return `Weekly check of the setup: ${did}${problems.length} ${problems.length === 1 ? "thing" : "things"} for the team to tidy, nothing for you. The list is on the Brains page.`;
 }

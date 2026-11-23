@@ -8,7 +8,7 @@ import { existsSync, mkdirSync, mkdtempSync, readFileSync, utimesSync, writeFile
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { checkMemory, checkRepos, checkSkills, checkCopy, checkRestating, mapCheckWords, runChecks, MEMORY_INDEX_MAX_LINES } from "../scripts/brains/cohesion-check.mjs";
-import { cohesionCheckLine, cohesionLine } from "../src/shared/boss/brains/brain.mjs";
+import { cohesionCheckLine, cohesionEmailLine, cohesionLine } from "../src/shared/boss/brains/brain.mjs";
 
 const NOW = Date.parse("2026-11-02T12:05:00Z");
 const DAY = 86_400_000;
@@ -120,6 +120,16 @@ describe("the living maps ride in the Sunday check (8 Nov 2026)", () => {
     const home = mkdtempSync(join(tmpdir(), "cohesion-maps-"));
     const rec = await runChecks({ home, now: NOW, restart: () => {}, wait: async () => null, maps: () => ({ maps_flag: "1 thing is missing or wrong on the Schedule", unchecked: [] }) });
     expect(cohesionCheckLine([], rec, NOW)).toMatch(/1 thing is missing or wrong on the Schedule/);
+  });
+  it("the email's line counts the tidying and keeps repo words on the Brains page (23 Nov 2026 live read)", () => {
+    const mac = { strays_moved: ["a", "b"], repos_missing_pointer: [".pbs-runner", "keepmyproof", "peace-be-still", "x"], validators_flag: 'the validator matrix could not read everything (WPP-llm: "test:release-self-heal (source-text pins)" has kind "meta")', maps_flag: "29 things are missing or wrong on the Email Map", unchecked: [] };
+    const full = cohesionCheckLine([], mac as any, NOW);
+    const email = cohesionEmailLine([], mac as any, NOW);
+    expect(full).toMatch(/pbs-runner/);
+    expect(email).not.toMatch(/pbs-runner|WPP-llm|test:|matrix|"/);
+    expect(email).toMatch(/3 things for the team to tidy/);
+    expect(email).toMatch(/moved 2 stray memory notes/);
+    expect(cohesionEmailLine([], null, NOW)).toMatch(/did not run/);
   });
 });
 

@@ -305,9 +305,11 @@ export async function morningEmailCheck(env: Env, now = Date.now()): Promise<Mor
   const told = await env.DB.prepare(`SELECT id FROM boss_task_notices WHERE task_id = ? AND kind = 'morning_missing' LIMIT 1`).bind(noticeKey).first<{ id: string }>();
   if (told) return "already told";
   const body = [
-    "What broke: Your morning email has not gone out today.",
+    // Each part says something new (23 Nov 2026 live read: "What happened" repeated line 1 word for word,
+    // and "as soon as it works" was said twice).
+    `What broke: By ${hour <= 12 ? hour : hour - 12} ${hour < 12 ? "am" : "pm"} it still had not been sent.`,
     "What was lost: Nothing. Today's decisions, deals and briefing are on your Today page in Boss OS.",
-    "What is being done: Danielle has a repair job for it, and the email is tried again later this morning and at midday. It reaches you as soon as it works.",
+    "What is being done: Danielle has a repair job for it, and the email is tried again later this morning and at midday.",
   ].join("\n");
   await env.DB.prepare(
     `INSERT INTO boss_task_notices (id, task_id, lane, from_name, kind, subject, body, created_at, needs_her) VALUES (?,?,'ops','Kendra','morning_missing',?,?,?,1)`,

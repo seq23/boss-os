@@ -73,7 +73,9 @@ export function openrouterReading(credits, prevUsage) {
     return { key: "openrouter", state: "alert", line: `OpenRouter balance is $${balance.toFixed(2)} — below $0. Paid calls are being made on credit; every model call is meant to be free.`, usage };
   }
   if (Number.isFinite(prevUsage) && usage - prevUsage > 0.0001) {
-    return { key: "openrouter", state: "alert", line: `New OpenRouter spend: $${(usage - prevUsage).toFixed(4)} since the last check (balance $${balance.toFixed(2)}). Something called a paid model.`, usage };
+    // A sentence in cents she reads (23 Nov 2026 live read: "New OpenRouter spend: $0.5225 since …").
+    const spent = usage - prevUsage;
+    return { key: "openrouter", state: "alert", line: `OpenRouter charged ${spent < 0.01 ? "under 1 cent" : `$${spent.toFixed(2)}`} since the last check, and $${balance.toFixed(2)} is left on the account. Something called a paid model.`, usage };
   }
   return { key: "openrouter", state: "ok", line: `OpenRouter balance $${balance.toFixed(2)}, no new spend.`, usage };
 }

@@ -186,12 +186,22 @@ const SYSTEM_TEXT = /\b(?:intake assigned|USER_ONLY|AI_DRAFT|AI_EXECUTE|HUMAN_CO
  * anything with several lines, markup, or a model's opening words is dropped. Null = say nothing. Pure.
  */
 const MODEL_VOICE = /\*\*|`|^#|^(?:based on|to address|i will|i'll|i have|i am|i'm|here is|here's|here are|sure|certainly|okay|as an ai)\b/i;
+const fitSentences = (p, max) => {
+  if (p.length <= max) return p;
+  let out = "";
+  for (const sen of p.split(/(?<=[.!?])\s+/)) { const next = `${out} ${sen}`.trim(); if (next.length > max) break; out = next; }
+  return out || null;
+};
 export function plainSummary(a) {
   if (a?.kind === "task_output") return null;
   for (const x of [a?.summary, a?.reason]) {
     if (typeof x !== "string") continue;
-    const t = (a.kind === "backend_run" ? x.split(" — ")[0] : x).trim();
-    if (!t || SYSTEM_TEXT.test(t) || /\n/.test(t) || t.length > 240 || MODEL_VOICE.test(t)) continue;
+    // The first paragraph, cut at a sentence end to fit (23 Nov 2026 live read: a search-fix plan's
+    // 600-character summary and a two-paragraph one were dropped whole, so three cards said only
+    // "Yes: your team goes ahead with <its own title>").
+    const para = (a.kind === "backend_run" ? x.split(" — ")[0] : x).trim().split(/\n/)[0].trim();
+    const t = fitSentences(para, 240);
+    if (!t || SYSTEM_TEXT.test(x) || MODEL_VOICE.test(t) || /\b[A-Z]{4,}:/.test(t)) continue;
     return /[.!?]$/.test(t) ? t : `${t}.`;
   }
   return null;
@@ -229,7 +239,10 @@ export function yesLine(a, task, worker) {
   const what = String(a?.title ?? task?.title ?? "").replace(/\s+/g, " ").trim().replace(/[.?!]+$/, "");
   const who = worker ?? "Your team";
   const yes = what ? `Yes: ${who} goes ahead with “${what}”. No: nothing happens.` : `Yes: ${who} goes ahead. No: nothing happens.`;
-  return own ? `${own} ${yes}` : yes;
+  // With its own plain line the card already says what it is, under its title: yes and no are named
+  // once, without quoting the title a second time (23 Nov 2026 live read: every approval card read
+  // "…Yes: Your team goes ahead with “<the title above>”. No: nothing happens.").
+  return own ? `${own} Yes lets ${who === "Your team" ? "your team" : who} go ahead; no changes nothing.` : yes;
 }
 
 /**
@@ -300,7 +313,8 @@ export function bossDecisions(data) {
       key: `approval:${a.id}`, title: duty?.title ?? a.title,
       body: duty?.body ?? yesLine(a, task, worker),
       details: [],
-      buttons: [{ label: "Open it to approve or decline", url: `${ORIGIN}/?tab=inbox&approval=${encodeURIComponent(a.id)}` }], priority: 2,
+      // Says where it goes (23 Nov 2026 live read: "Open it to approve or decline" beside "Open ›").
+      buttons: [{ label: "Answer it in your Inbox", url: `${ORIGIN}/?tab=inbox&approval=${encodeURIComponent(a.id)}` }], priority: 2,
     });
   }
   // A superseded plan email no longer waits on her (25 Oct 2026); only a row still asking counts.
@@ -772,14 +786,17 @@ export function ancestralLine(day) {
  * plainly, her goal named, what it is costing in this morning's real numbers, and ONE non-negotiable
  * action with a deadline; firmer from four days. Null on a day she is on track. Pure.
  */
-export function neverMissTwice(missed, { waiting = 0, oldestWait = 0, action = null, deadline = "9 am", pressure = "softer" } = {}) {
+export function neverMissTwice(missed, { waiting = 0, owed = 0, oldestWait = 0, action = null, deadline = "9 am", pressure = "softer" } = {}) {
   const m = Number(missed);
   if (!Number.isInteger(m) || m < 1) return { line: null, banner: null };
   const todo = action ? `${action}` : "close today's morning gate";
   // Her reply "be harder on me" (kept in the personal brain) makes the first missed day the call-out.
   if (m === 1 && pressure !== "harder") return { line: `You missed yesterday's gate. Never miss twice: do the gate below before your feet touch the floor, then ${todo.charAt(0).toLowerCase()}${todo.slice(1)} by ${deadline}.`, banner: null };
-  const cost = waiting
-    ? `${waiting} ${waiting === 1 ? "decision is" : "decisions are"} waiting on you this morning${oldestWait > 0 ? `, and someone has waited ${oldestWait} day${oldestWait === 1 ? "" : "s"} for your answer` : ""}.`
+  // The same counts the email shows (23 Nov 2026: "5 decisions are waiting" over "Decide (3)" plus two
+  // still-yours lines read as two missing decisions).
+  const more = owed ? `${waiting ? ", " : ""}${owed} ${owed === 1 ? "reply is" : "replies are"} still yours to send` : "";
+  const cost = waiting || owed
+    ? `${waiting ? `${waiting} ${waiting === 1 ? "decision is" : "decisions are"} waiting on you this morning` : ""}${more}${oldestWait > 0 ? `, and someone has waited ${oldestWait} day${oldestWait === 1 ? "" : "s"} for your answer` : ""}.`.replace(/^./, (c) => c.toUpperCase())
     : "Every day without a gate is a day the habit you said you are done with gets stronger.";
   const title = m === 1 ? "You missed yesterday's gate. Never miss twice starts this morning." : m >= 4 ? `${m} days without a gate. This is how people stay where they are.` : `${m} days without a gate. You said you never miss twice. You just did.`;
   return {
@@ -790,7 +807,7 @@ export function neverMissTwice(missed, { waiting = 0, oldestWait = 0, action = n
       lines: [
         `You told me you are building a billionaire's life. Billionaires are built on the days nobody sees, and you have skipped ${m === 1 ? "one" : `${m} of them in a row`}.`,
         `What it is costing: ${cost}`,
-        `Non-negotiable, by ${deadline}: do the three things below in bed, reply "gate done", then ${todo.charAt(0).toLowerCase()}${todo.slice(1)}. No negotiating with yourself.`,
+        `Non-negotiable, by ${deadline}: do the three steps under "Before you get up" in bed, reply "gate done", then ${todo.charAt(0).toLowerCase()}${todo.slice(1)}. No negotiating with yourself.`,
       ],
     },
   };
@@ -921,7 +938,8 @@ export const SCOREBOARD_KEY_METRICS = 3;
  */
 export function brainsSectionFor(data, now = Date.now()) {
   if (parts(now).weekday !== "Monday") return null;
-  const line = data.brainsCheck?.line ?? "Cohesion: the weekly check did not load this morning; the team is looking.";
+  // The email's short line (cohesionEmailLine); the full detail stays on the Brains page.
+  const line = data.brainsCheck?.email_line ?? data.brainsCheck?.line ?? "Weekly check of the setup: it did not load this morning; the team is looking.";
   return { title: "Weekly check", tone: "done", items: [{ text: line, links: [{ label: "Open Brains ›", url: BRAINS_URL }] }], empty: null };
 }
 
@@ -1229,10 +1247,10 @@ export function buildDay(data, now = Date.now()) {
   if (stopsLine) doneRaw.push({ key: `team-stops:${today}`, text: stopsLine, links: [{ label: "Open ›", url: `${ORIGIN}/?tab=systems` }] });
   const prospects = prospectSection(data.prospects ?? null, now, data.prospectRows ?? []);
   // Today's one action: the first decision, else the oldest "still yours" (18 Nov 2026: the if-then is filled in).
-  const firstTitle = (d) => String(d?.title ?? "").replace(/^Waiting \d+ days?:\s*/i, "").split(":")[0].trim();
+  const firstTitle = (d) => cardTopic(d?.title).topic.split(":")[0].trim().replace(/[.?!]+$/, "");
   const action = decide.length ? `answer decision 1 (${firstTitle(decide[0])})` : stillYours.length ? `answer ${firstTitle(stillYours[0])}` : null;
-  const oldestWait = Math.max(0, ...stillYours.map((d) => Number(/(\d+) days?/.exec(String(d.thin ?? ""))?.[1] ?? d.days ?? 0)));
-  const coach = neverMissTwice(data.missedDays, { waiting: decide.length + stillYours.length, oldestWait, action, pressure: data.pressure });
+  const oldestWait = Math.max(0, ...stillYours.filter((d) => TURN_RANK(d) !== 0).map((d) => cardTopic(d.title).days ?? Number(/(\d+) days?/.exec(String(d.thin ?? ""))?.[1] ?? d.days ?? 0)));
+  const coach = neverMissTwice(data.missedDays, { waiting: decide.length, owed: stillYours.length, oldestWait, action, pressure: data.pressure });
   const grat = gratitudeLine({ wins: winsFrom({ lpRows: data.lpRows ?? [], prospects: data.prospects ?? null, deals: deals.length, now }), herList: data.gratitudeList ?? [], fallback: data.spirit?.practice?.gratitude?.sentence ?? null, history: data.told?.gratitude ?? [], today });
   const gate = gateLine({ gratitude: grat?.sentence ?? null, action, done: Boolean(data.gateDone) });
   const spirit = spiritSection(data.spirit ?? null, data.practiceWeek ?? null, now, data.lapseLine ?? null, { coach: coach.line, action });
@@ -1451,16 +1469,35 @@ export function onePerPerson(rows) {
  * line, whose turn it is, and how long — the day count saying which way ("they've waited 3 days",
  * "you've waited 3 days"). Pure.
  */
+/**
+ * A CARD TITLE SAID AS A TOPIC (23 Nov 2026 live read of the Monday email: "answer decision 1 (No
+ * answer in 9 days)", "nudge Sami Ahmed?. … you've waited 2 days" beside the title's own 9, and "Go?
+ * Flood Mason/Spry Intro." with no verb). A leading day count is lifted out as `days` (the true wait),
+ * "Go? X" becomes a question. Pure.
+ */
+export function cardTopic(title) {
+  let topic = String(title ?? "").replace(/\s+/g, " ").trim().replace(/^Still yours to answer:\s*/i, "");
+  let days = null;
+  const lead = /^(?:no answer|no reply|waiting)(?: in| for)? (\d+) days?:\s*/i.exec(topic);
+  if (lead) { days = Number(lead[1]); topic = topic.slice(lead[0].length); }
+  const go = /^Go\?\s+(.+)$/.exec(topic);
+  if (go) topic = `Going to ${go[1].replace(/[.?!]+$/, "")}?`;
+  return { topic, days };
+}
+/** A sentence ends once: "…Ahmed?" is never followed by a full stop. */
+const endOnce = (t) => (/[.?!…”"]$/.test(t) ? t : `${t}.`);
+
 export function stillPreview(d) {
-  const title = String(d.title ?? d.thin ?? "").replace(/^Still yours to answer:\s*/, "").replace(/^Waiting \d+ days?:\s*/i, "").replace(/\s*·.*$/, "").trim();
-  const days = Number(/(\d+) days?/.exec(String(d.thin ?? ""))?.[1] ?? d.days ?? 0);
+  const { topic, days: lifted } = cardTopic(String(d.title ?? d.thin ?? "").replace(/\s*·.*$/, ""));
+  const title = topic.trim();
+  const days = lifted ?? Number(/(\d+) days?/.exec(String(d.thin ?? ""))?.[1] ?? d.days ?? 0);
   const who = /^Who:\s*([^.]+)/.exec(String(d.body ?? ""))?.[1]?.trim() ?? null;
   const said = (d.details ?? []).map((x) => /^What they wrote:\s*(.+)$/.exec(String(x))?.[1]).find(Boolean) ?? null;
   const theirs = TURN_RANK(d) === 0;
   const n = `${days} day${days === 1 ? "" : "s"}`;
-  const turn = theirs ? `Waiting on them: you've waited ${n}` : `Yours to answer: they've waited ${n}`;
-  const saidLine = said ? ` Last said: ${said.length > 140 ? `${said.slice(0, 137).replace(/\s+\S*$/, "")}…”` : said}` : "";
-  return `${title}${who ? ` (${who})` : ""}.${saidLine} ${turn}.`.replace(/\.\./g, ".");
+  const turn = theirs ? `Their turn: you've waited ${n}` : `Your turn: they've waited ${n}`;
+  const saidLine = said ? ` Last said: ${endOnce(said.length > 140 ? `${said.slice(0, 137).replace(/\s+\S*$/, "")}…”` : said)}` : "";
+  return `${endOnce(`${title}${who ? ` (${who})` : ""}`)}${saidLine} ${turn}.`;
 }
 
 export function carriedLines(carried, { shown = new Set(), keys = new Set(), today }) {

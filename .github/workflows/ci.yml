@@ -204,8 +204,36 @@ jobs:
         run: npm ci
 
       # ship-review's image tiling test needs ffmpeg/ffprobe; installed only if the runner lacks it.
+      # The Ubuntu 26.04 runner has none, and its ffmpeg is 66 MB of packages. On 23 Nov 2026 the
+      # mirror gave some runners ~250 KB/s: an unbounded apt-get hung shard 2 into the job limit
+      # twice, silently. So the packages come from the Actions cache (seconds), the mirror is used
+      # only on a miss, every apt call shares one 200 s deadline (inside the job's 6 minutes) and
+      # a retry resumes the partial download. Out of time, the step fails by name.
+      - name: ffmpeg packages from the cache
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/ffmpeg-debs
+          key: ffmpeg-debs-${{ runner.os }}-${{ runner.arch }}-${{ env.ImageOS }}
+
       - name: ffmpeg
-        run: command -v ffprobe >/dev/null || (sudo apt-get update -qq && sudo apt-get install -y -qq --no-install-recommends ffmpeg)
+        run: |
+          command -v ffprobe >/dev/null && exit 0
+          debs="$HOME/.cache/ffmpeg-debs"; mkdir -p "$debs/partial"
+          apt_opts="-o Acquire::Retries=2 -o Acquire::http::Timeout=20 -o DPkg::Lock::Timeout=45 -o Dir::Cache::archives=$debs"
+          deadline=$((SECONDS + 200)); left() { echo $((deadline - SECONDS)); }
+          updated=0
+          for attempt in 1 2 3; do
+            [ "$(left)" -gt 5 ] || break
+            if [ "$updated" = 0 ]; then
+              if sudo timeout "$(left)" apt-get $apt_opts update -q; then updated=1; else echo "apt update attempt $attempt did not finish"; continue; fi
+            fi
+            if sudo timeout "$(left)" apt-get $apt_opts install -y -q --no-install-recommends ffmpeg; then
+              sudo chown -R "$USER" "$debs"; exit 0
+            fi
+            echo "ffmpeg install attempt $attempt did not finish; the next one resumes what it downloaded"
+          done
+          echo "::error::ffmpeg could not be installed in 3 attempts within 200 s (apt mirror or dpkg lock)"
+          exit 1
 
       # ship-review's tap test opens a real page (a message shown only after a tap); headless shell only.
       - name: Chromium for the capture test

@@ -579,8 +579,10 @@ function sectionHtml(sec) {
 }
 
 function page(inner) {
-  return `<!doctype html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"></head>`
-    + `<body style="margin:0;padding:0;background:${C.page}"><div style="max-width:560px;margin:0 auto;padding:16px;font-family:${FONT};font-size:14px;line-height:1.55;color:${C.ink}">`
+  // Links in the house blue, never the browser's default; a long link or table word breaks instead of
+  // pushing the page sideways (23 Nov 2026 live read: a research email was 839 px wide on a phone).
+  return `<!doctype html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><style>a{color:${C.link}}</style></head>`
+    + `<body style="margin:0;padding:0;background:${C.page}"><div style="max-width:560px;margin:0 auto;padding:16px;font-family:${FONT};font-size:14px;line-height:1.55;color:${C.ink};overflow-wrap:break-word">`
     + inner + `</div></body></html>`;
 }
 
@@ -625,7 +627,8 @@ export function layoutEmail({ who, subject, happened, decide = [], needs = [], d
   const extra = allDecide.length - shown.length;
   const moreLine = extra > 0 ? cleanText(moreDecide ?? `And ${extra} more on your Today page.`) : null;
   const detailListFull = (details ?? []).map((d) => (d && typeof d === "object" && "heading" in d ? { heading: cleanText(d.heading) } : cleanText(d)))
-    .filter((d) => (typeof d === "string" ? d : d.heading));
+    // A markdown divider is not a detail (23 Nov 2026 live read: "---" printed as its own bullet).
+    .filter((d) => (typeof d === "string" ? d && !/^[-*_\s]{3,}$/.test(d) : d.heading));
   let sectionList = (sections ?? []).map(cleanSection).filter((sec) => sec.title);
   const foot = footer ? cleanText(footer) : null;
   const ps = postscript ? cleanText(postscript) : null;
@@ -687,7 +690,10 @@ export function layoutEmail({ who, subject, happened, decide = [], needs = [], d
   if (detailList.length || cutNote) {
     let open = false;
     detailHtml += `<div style="margin:12px 0;padding:4px 14px 10px;border:1px solid ${C.line};border-radius:10px;background:#ffffff"><p ${SEC()}>Details</p>`;
-    for (const d of detailList) {
+    // One plain line is a sentence, not a list of one (23 Nov 2026 live read: a lone bullet read as a form).
+    const lone = detailList.length === 1 && typeof detailList[0] === "string" && !cutNote;
+    if (lone) detailHtml += `<p style="margin:0 0 8px">${linkify(detailList[0])}</p>`;
+    for (const d of lone ? [] : detailList) {
       if (typeof d === "string") { if (!open) { detailHtml += `<ul style="margin:0 0 8px;padding-left:20px">`; open = true; } detailHtml += `<li style="margin:0 0 6px">${linkify(d)}</li>`; }
       else { if (open) { detailHtml += "</ul>"; open = false; } detailHtml += `<p style="margin:12px 0 4px;font-weight:600">${esc(d.heading)}</p>`; }
     }

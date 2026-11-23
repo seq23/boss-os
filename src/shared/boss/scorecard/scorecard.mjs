@@ -360,14 +360,24 @@ export function emailSection(results, rows, { today, links }) {
   const title = `📊 Scorecard: ${counts.join(", ")}`;
   const rest = [early ? `${early} too early to judge` : null, trying ? `${trying} trying version B` : null, paused ? `${paused} paused` : null].filter(Boolean);
   if (!look.length) return { title, lines: [`Nothing needs a look this week${rest.length ? ` (${rest.join(", ")})` : ""}. Full list on the Scorecard page.`] };
-  const lines = look.map((r) => {
+  // Rows with no number are the team's repair, not her move (23 Nov 2026 live read: eight "No number
+  // · … Sent to repairs." rows filled a phone screen): up to two are said one by one, more are ONE line.
+  const blind = look.filter((r) => r.state === "No number");
+  const each = blind.length > 2 ? look.filter((r) => r.state !== "No number") : look;
+  const lines = each.map((r) => {
     const row = byId.get(r.id);
     const l = links(row);
     if (r.state === "Paused") return { text: `Paused · ${row.initiative}: ${r.note}`, links: [...(l.restart ? [{ label: "Restart it", url: l.restart }] : []), { label: "Open", url: l.open }] };
     if (r.state === "No number") return { text: `No number · ${row.initiative}: ${noNumberWords(r)}. Sent to repairs.`, links: [{ label: "Open", url: l.open }] };
     return { text: `Trying version B · ${row.initiative}: ${r.note}`, links: [{ label: "Open on Scorecard", url: l.open }] };
   });
-  if (rest.length || onTrack) lines.push(`Everything else is on track or too early to judge${rest.length ? ` (${rest.join(", ")})` : ""}. Full list on the Scorecard page.`);
+  if (blind.length > 2) {
+    const names = blind.map((r) => byId.get(r.id)?.initiative).filter(Boolean);
+    lines.push({ text: `No number this week for ${blind.length} rows (${names.slice(0, 3).join("; ")}${names.length > 3 ? `; and ${names.length - 3} more` : ""}). All sent to repairs; nothing to do.`, links: [{ label: "See them on Scorecard", url: links(byId.get(blind[0].id)).open.replace(/&row=[^&]*/, "") }] });
+  }
+  // The rest, counted as they are: never "on track or too early" when none is on track.
+  const others = [onTrack ? `${onTrack} on track` : null, ...rest].filter(Boolean);
+  if (others.length) lines.push(`The rest: ${others.join(", ")}. Full list on the Scorecard page.`);
   return { title, lines };
 }
 

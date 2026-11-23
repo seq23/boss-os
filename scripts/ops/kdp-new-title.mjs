@@ -1024,12 +1024,13 @@ export function headsUpMail({ titles, startAt, zone }) {
   const what = titles.length === 1 ? `put ${quoted(titles)} on Kindle` : `put ${titles.length} books on Kindle: ${quoted(titles)}`;
   return {
     subject: `Kindle: at ${when.split(" (")[0]} I open Chrome to ${titles.length === 1 ? `publish ${titles[0]}` : `publish ${titles.length} books`}`,
-    layout: { happened: `At ${when} a Chrome window for Amazon KDP opens on your Mac and I ${what}. You approved ${titles.length === 1 ? "it" : "them"}.`, details: [
-      "Please keep the Mac awake and on until it is done (about 20 minutes).",
+    // 23 Nov 2026 live read: "Nothing to do now; keep the Mac awake" asked and denied in one line, and
+    // the keep-awake ask came twice. The ask is the line; the times are hers.
+    layout: { happened: `At ${when} a Chrome window for Amazon KDP will open on your Mac and I will ${what}. You approved ${titles.length === 1 ? "it" : "them"}.`, details: [
       "If Amazon asks for a sign-in, I sign in for you; I only need you if Amazon shows a picture check, and then I email you at once.",
       "When the run is done I send one email with the Amazon links.",
     ] },
-    owner: { layout: "note", why: `In ${Math.round(HEADS_UP_LEAD_MS / 60_000)} minutes I put your approved Kindle book${titles.length === 1 ? "" : "s"} up on Amazon.`, act: "Nothing to do now; keep the Mac awake" },
+    owner: { layout: "note", why: `At ${when.split(" (")[0]} I will put your approved Kindle book${titles.length === 1 ? "" : "s"} up on Amazon.`, act: "Keep the Mac awake and on for about 20 minutes from then" },
   };
 }
 
@@ -1158,7 +1159,11 @@ export function kdpStallOf(r = RUN_STALL) {
   else if (r.draftCap) blocker = { noun: [`KDP's ${KDP_DRAFT_CAP}-draft limit`], why: "unfinished drafts fill every slot" };
   if (!blocker) return {};
   if (r.setAside.length === 1 && !r.runStop) waiting = Math.max(1, r.approved - 1);
-  return { stall: stallFrom({ job: "kdp-new-title", what, noun, waiting, moved: r.moved, blocker }) };
+  // Amazon's sign-in check is hers alone (a picture check or a code), so the line says what moves them.
+  const fix = ["SIGNIN", "SIGNIN_NOT_DONE", "NO_PASSCODE"].includes(r.runStop)
+    ? "To move them: when the Amazon sign-in email comes, sign in to Amazon in the Chrome window it opens on your Mac. The books then go out on the next run."
+    : null;
+  return { stall: stallFrom({ job: "kdp-new-title", what, noun, waiting, moved: r.moved, blocker, fix }) };
 }
 
 /** Plain words for a stop the code named. Pure. */
@@ -1240,9 +1245,10 @@ export function doneMail({ title, asin, price_usd, extraDrafts = 0 }) {
   const link = asin ? `https://www.amazon.com/dp/${asin}` : null;
   return {
     subject: `Kindle: ${title} is live on Amazon`,
-    layout: { happened: `"${title}" is live on Amazon${price_usd ? ` at $${Number(price_usd).toFixed(2)}` : ""}.`, details: [
-      ...(link ? [`Amazon page: ${link}`] : []),
-      ...(asin ? [`ASIN: ${asin}`] : []),
+    // Line 1 already says the title is live; the body adds what is new (23 Nov 2026 live read: it said it twice).
+    layout: { happened: price_usd ? `It is on sale at $${Number(price_usd).toFixed(2)}.` : "It is on sale now.", details: [
+      // The link carries the ASIN; the code itself is not hers to read (23 Nov 2026 live read).
+      ...(link ? [`See the book on Amazon: ${link}`] : []),
       ...(extraDrafts ? [`Your bookshelf also has ${extraDrafts} unfinished draft${extraDrafts === 1 ? "" : "s"} with the same title from earlier runs. You can delete ${extraDrafts === 1 ? "it" : "them"} there (the ⋯ menu, Delete draft); I never make another.`] : []),
     ] },
     owner: { layout: "delivered", why: `Your approved Kindle book "${title}" is live.`, act: "Nothing to do" },
