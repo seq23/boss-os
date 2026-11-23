@@ -227,7 +227,7 @@ main() {
   P="$(plan)" || { say "NAMED STOP [NO_QUEUE] the audit left no fix queue to plan from"; report_stop NO_QUEUE "the audit left no fix queue to plan from."; rm -f "$MARK" "$STATE_DIR/retry-after"; exit 3; }
   START="$(echo "$P" | grep '^QUEUE' | field workable)"; START="${START:-0}"
   say "queue: $(echo "$P" | grep '^QUEUE')"
-  LEFT="$START"; STALLED=0; ROUND=0
+  LEFT="$START"; STALLED=0; ROUND=0; REFUSED=0
   for ROUND in $(seq 1 "$MAX_ROUNDS"); do
     # One pass per CHUNK (at most 10 briefs of one repo), so no pass runs out of turns before it lands.
     CHUNKS="$(echo "$P" | awk '/^CHUNK /{print $2" "$3" "$4}')"
@@ -251,6 +251,8 @@ main() {
     done
     wait
     NET_HIT="$(awk '$2==13' "$RCS" | wc -l | tr -d ' ')"
+    # A pass that ends 14 had a command refused by its allow list (ahrefs-audit-fix.sh, 23 Nov 2026).
+    REFUSED=$(( REFUSED + $(awk '$2==14' "$RCS" | wc -l | tr -d ' ') ))
     RCS_COUNT="$(wc -l < "$RCS" | tr -d ' ')"
     # A ROUND WHERE EVERY PASS IS WAITING ON A SPENT AI ALLOWANCE DOES NOT BURN THE REMAINING ROUNDS
     # IN SECONDS (28 Oct 2026, SR_QUEUE_STALLED with 25 of 60 fixed: round 2's passes all exited 13 in
@@ -300,6 +302,15 @@ main() {
   say "SR-QUEUE-COMPLETE: started=$START fixed=$FIXED left=$LEFT protected=${PROT:-0} no_repo=${NOREPO:-0}"
   # The census line duty-run.sh reads (no line = NOTE [NO_OUTPUT_LINE], counted below the floor).
   echo "OUTPUT $FIXED search fixes live" | tee -a "$LOG"
+  # A REFUSED COMMAND IS NEVER A QUIET END (23 Nov 2026). The worker's allow list refused it, the
+  # model worked around it, and a stalled or finished queue ended 0 with nobody told. Named, on
+  # Danielle's repair desk, non-zero, whatever the queue says: the list is fixed, not waited out.
+  if [ "$REFUSED" -gt 0 ]; then
+    say "NAMED STOP [PERMISSION_DENIED] $REFUSED pass(es) had a command refused by scripts/ops/sr-fix-permissions.json (DENIED lines in $LOG); $LEFT workable left, $FIXED fixed of $START."
+    report_stop PERMISSION_DENIED "$REFUSED pass(es) had a command refused by the worker's allow list; $LEFT workable left, $FIXED fixed of $START."
+    rm -f "$MARK" "$STATE_DIR/retry-after"
+    exit 14
+  fi
   # RULE 0, WITH WORK LEFT: never a quiet exit 0. Named, on Danielle's repair desk, and non-zero unless
   # the queue stalled (see below). The run did reach its end, so the mark is cleared.
   if [ "$LEFT" -gt 0 ]; then
