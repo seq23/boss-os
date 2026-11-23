@@ -3,7 +3,7 @@ import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { Window } from "happy-dom";
 // @ts-expect-error — plain .mjs ops script, no types
-import { seriesDialogStep, seriesPick } from "../scripts/ops/kdp-new-title.mjs";
+import { seriesDialogStep, seriesPick, seriesHasNext } from "../scripts/ops/kdp-new-title.mjs";
 
 /**
  * THE SERIES PICKER READS KDP'S REAL MODAL (23 Nov 2026).
@@ -64,5 +64,32 @@ describe("the series is picked by its exact name", () => {
     li.parentElement!.insertBefore(twin, li);
     expect(seriesPick(doc, "Ambitious Grads")).toMatchObject({ id: null, ambiguous: true });
     expect(seriesPick(doc, "Ambitious Grads", AG).id).toBe(AG);
+  });
+  it("KDP's lower-case, oddly spaced name matches; the match is still the whole name", () => {
+    const doc = load("series-list.html");
+    expect(seriesPick(doc, "  AMBITIOUS   grads ").id).toBe(AG);
+    expect(seriesPick(doc, "Green Card and Citizenship Paperwork Guides").id).toBe("P261F2W3B56");
+    expect(seriesPick(doc, "Green Card and Citizenship Paperwork").id).toBeNull();
+  });
+  it("a name shown cut short with an ellipsis counts only as the recorded series", () => {
+    const doc = load("series-list.html");
+    const cell = doc.querySelector('[data-test-id="series-search-result-P261F2W3B56"] .a-size-medium div')!;
+    cell.textContent = "green card and citizenship paperw\u2026";
+    const want = "Green Card and Citizenship Paperwork Guides";
+    expect(seriesPick(doc, want, "P261F2W3B56").id).toBe("P261F2W3B56");
+    expect(seriesPick(doc, want).id).toBeNull();
+    expect(seriesPick(doc, want, AG).id).toBeNull();
+    expect(seriesPick(doc, "Green Card Stories", "P261F2W3B56").id).toBeNull();
+  });
+});
+
+describe("the list is paged", () => {
+  it("the full list (5 of 6) has a next page; the searched list (1 of 1) does not", () => {
+    expect(seriesHasNext(load("series-list.html"))).toBe(true);
+    expect(seriesHasNext(load("series-list-searched.html"))).toBe(false);
+    expect(seriesHasNext(load("series-choice.html"))).toBe(false);
+  });
+  it("the sixth series, on page 2, is not on page 1: page 1 alone picks nothing", () => {
+    expect(seriesPick(load("series-list.html"), "KeepMyProof Record Books", "23N3Q6SY440").id).toBeNull();
   });
 });

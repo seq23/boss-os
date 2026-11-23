@@ -553,8 +553,19 @@ export function seriesPick(doc, want, knownId = null) {
   if (hits.length === 1) return { id: hits[0].id, seen, ambiguous: false };
   const known = hits.find((r) => knownId && r.id === knownId);
   if (known) return { id: known.id, seen, ambiguous: false };
+  // A name shown cut short ("green card and citizenship paperw…"): its start alone could be another
+  // series, so it counts only as the row kdp-series.mjs recorded for this exact name.
+  if (!hits.length && knownId) {
+    const cut = rows.find((r) => r.id === knownId && /(\u2026|\.\.\.)$/.test(norm(r.name)));
+    const head = cut ? norm(cut.name).replace(/\s*(\u2026|\.\.\.)$/, "") : "";
+    if (head.length >= 3 && norm(want).startsWith(head)) return { id: cut.id, seen, ambiguous: false };
+  }
   return { id: null, seen, ambiguous: hits.length > 1 };
 }
+
+/** In-page: KDP's list shows 5 series a page; "Next →" is a button only while there is a next page. */
+export const seriesNextButton = '[data-test-id="series-search-next"] button';
+export function seriesHasNext(doc) { return Boolean(doc.querySelector('[data-test-id="series-search-next"] button')); }
 
 /**
  * Series (KDP strategy, 8 Nov 2026: each line is an Amazon series). The series itself is created once
@@ -581,12 +592,27 @@ async function seriesStep(page, series, dir) {
     const shot = await snapshot(page, dir, "stop-series");
     throw stop("SERIES_PICKER_NOT_OPEN", `KDP's list of existing series did not open after pressing Select series three times; nothing was chosen. Page kept at ${shot ?? "(screenshot failed)"}.`);
   }
-  // Searched by name: the unsearched list shows 5 series a page (live, 23 Nov 2026: "1-5 of 6").
+  // Searched by name first: the unsearched list shows 5 series a page (live, 23 Nov 2026: "1-5 of 6",
+  // names in lower case).
   const search = page.locator('input[name="series-search-input"]');
   if (await search.count().catch(() => 0)) { await search.fill(series.name).catch(() => {}); await search.press("Enter").catch(() => {}); await page.waitForTimeout(2500); }
   let known = null;
   try { known = Object.values(JSON.parse(await readFile(join(process.env.BOSS_OS_KDP_DIR ?? `${process.env.HOME}/.boss-os/kdp`, "series.json"), "utf8"))).find((x) => normTitle(x.name) === normTitle(series.name))?.id ?? null; } catch {}
-  const r = await page.evaluate(`(${seriesPick})(document, ${JSON.stringify(series.name)}, ${JSON.stringify(known)})`).catch(() => ({ id: null, seen: [], ambiguous: false }));
+  const read = () => page.evaluate(`(${seriesPick})(document, ${JSON.stringify(series.name)}, ${JSON.stringify(known)})`).catch(() => ({ id: null, seen: [], ambiguous: false }));
+  let r = await read();
+  // Not found by the search: the whole list, page by page (5 a page), at most 10 pages.
+  if (!r.id && !r.ambiguous && (await search.count().catch(() => 0))) {
+    await search.fill("").catch(() => {}); await search.press("Enter").catch(() => {}); await page.waitForTimeout(2500);
+    const seenAll = [];
+    for (let p = 0; p < 10; p += 1) {
+      r = await read();
+      seenAll.push(...r.seen);
+      if (r.id || r.ambiguous || !(await page.evaluate(`(${seriesHasNext})(document)`).catch(() => false))) break;
+      await page.locator(seriesNextButton).first().click({ timeout: 10_000 }).catch(() => {});
+      await page.waitForTimeout(2500);
+    }
+    if (!r.id) r = { ...r, seen: [...new Set(seenAll)] };
+  }
   if (!r.id) {
     const shot = await snapshot(page, dir, "stop-series");
     throw stop("SERIES_NOT_FOUND", `the series "${series.name}" is ${r.ambiguous ? "listed more than once in KDP and none is the recorded one" : "not in KDP's list"} (listed: ${r.seen.join(", ") || "none"}); run kdp-series.mjs for its line first. Page kept at ${shot ?? "(screenshot failed)"}.`);
