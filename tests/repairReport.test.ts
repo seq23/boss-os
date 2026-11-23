@@ -130,3 +130,18 @@ describe("Danielle's plan email reads in plain words (owner, 25 Oct 2026)", () =
     expect(m.problems).toEqual([]);
   });
 });
+
+describe("the Mac runner supersedes a repair whose open loop already closed (23 Nov 2026)", () => {
+  it("runPhase asks openLoopRepairStale and supersedes before any phase runs", () => {
+    const src = readFileSync("scripts/ops/repo-change.mjs", "utf8");
+    expect(src).toMatch(/import \{[^}]*openLoopRepairStale[^}]*\} from "..\/..\/src\/shared\/boss\/repoChange\/lane.mjs"/s);
+    const fn = src.slice(src.indexOf("async function supersededAsStale("), src.indexOf("async function runPhase("));
+    expect(fn).toMatch(/openLoopRepairStale\(/);
+    expect(fn).toMatch(/\/supersede`/);
+    const body = src.slice(src.indexOf("async function runPhase("));
+    const gate = body.indexOf("if (await supersededAsStale(row, log)) return;");
+    expect(gate).toBeGreaterThan(0);
+    expect(gate).toBeLessThan(body.indexOf("canEnterBuild(row)"));
+    expect(gate).toBeLessThan(body.indexOf("runPhaseModel("));
+  });
+});

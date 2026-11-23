@@ -42,7 +42,7 @@ import { fileURLToPath } from "node:url";
 import {
   PHASE_MODELS, PHASE_MAX_TURNS, PHASE_TIMEOUT_MIN, ASK_POLICY, TASK_KIND, EXECUTOR_SCRIPT,
   canEnterBuild, canLand, canPreview, needsPreview, isForced, changeToken, gridRepoNames, APPROVED_DEFAULTS_TEXT, PREVIEW_DEFAULTS_TEXT, FORCED_TEXT, MAX_REWORKS,
-  REGISTERED_REPOS, isRepair, planWaitsForOwner, namesPostLandStep, redChecksAction, reworkKind,
+  REGISTERED_REPOS, isRepair, planWaitsForOwner, openLoopRepairStale, loopIdOfTask, namesPostLandStep, redChecksAction, reworkKind,
 } from "../../src/shared/boss/repoChange/lane.mjs";
 import { GRID_OWNER } from "../../src/shared/boss/grid.mjs";
 import { sendersFor, employeeMail, postEmployeeMail, filesAt, FALLBACK_STOP, ownerTo } from "./notify.mjs";
@@ -753,6 +753,30 @@ async function release(row, reason, log) {
 
 let DEVICE = "";
 
+/**
+ * A REPAIR WHOSE REASON IS GONE IS NEVER BUILT (23 Nov 2026): an open-loop repair whose loop has
+ * closed (or is no longer late enough) is superseded before any model is spawned. The loop is read
+ * once from Boss OS, with Boss OS's own Central day; the verdict is `openLoopRepairStale` (lane.mjs).
+ * An unreadable loop list never supersedes: the run goes on as before.
+ */
+async function supersededAsStale(row, log) {
+  const loopId = loopIdOfTask(row.task?.input);
+  if (row.origin !== "repair" || row.repair_kind !== "open_loop_overdue" || !loopId || row.pr_url) return false;
+  const res = await fetch(`${ORIGIN}/api/boss/open-loops`, { headers: { cookie } }).catch(() => null);
+  const json = res?.ok ? await res.json().catch(() => null) : null;
+  const loops = json?.data?.loops;
+  const today = json?.data?.today;
+  if (!Array.isArray(loops) || !today) { appendFileSync(log, `=== open loop ${loopId} not read (${res?.status ?? "no answer"}); the run goes on\n`); return false; }
+  const stale = openLoopRepairStale(row, row.task?.input, loops.find((l) => l?.id === loopId) ?? null, today);
+  if (!stale) return false;
+  const reason = `nothing left to repair: ${stale.why}`;
+  appendFileSync(log, `=== ${reason}\n`);
+  const r = await api(`/${row.id}/supersede`, { reason });
+  if (!r.ok) { say(`NAMED STOP [STALE_REPAIR_NOT_SUPERSEDED] ${r.status} ${r.error ?? ""}`); await release(row, `runner found the repair stale but could not supersede it: ${reason}`, log); return true; }
+  say(`superseded ${row.id}: ${reason}`);
+  return true;
+}
+
 async function runPhase(claim) {
   const row = claim; // the claim response is the row plus phase/model/max_turns/task
   const phase = claim.phase;
@@ -760,6 +784,9 @@ async function runPhase(claim) {
   mkdirSync(dir, { recursive: true });
   const log = join(dir, `${phase}-${new Date().toISOString().replace(/[:.]/g, "-")}.log`);
   say(`── ${row.id} ${phase} (${row.repo ?? "package"}) → ${log}`);
+
+  // An open-loop repair whose loop already closed is superseded before anything is spent.
+  if (await supersededAsStale(row, log)) return;
 
   // Belt and braces: the Worker checked, and so does the runner.
   if (phase === "build" && !canEnterBuild(row).ok) { await release(row, `runner refused build: ${canEnterBuild(row).why}`, log); return; }

@@ -98,6 +98,13 @@ export function reworkKind(row: { rework_count?: number | null; pr_url?: string 
 export function redChecksAction(row: { rework_count?: number | null; origin?: string | null } | null | undefined): "rework" | "record" | "email";
 export function isRepair(row: { origin?: string | null } | null | undefined): boolean;
 export function planWaitsForOwner(row: { origin?: string | null; pre_approved_phrase?: string | null; pre_approved_by?: string | null } | null | undefined): boolean;
+export function loopIdOfTask(taskInput: unknown): string | null;
+export function openLoopRepairStale(
+  row: { origin?: string | null; repair_kind?: string | null; pr_url?: string | null } | null | undefined,
+  taskInput: unknown,
+  loop: { status?: string | null; section?: string | null; next_date?: string | null; title?: string | null; closed_reason?: string | null } | null | undefined,
+  today: string,
+): { why: string } | null;
 export function namesPostLandStep(text: string | null | undefined): boolean;
 
 export function anchoredReading(read: ReplyMode, words: string): ReplyMode;
