@@ -524,45 +524,81 @@ export async function details(page, book, dir, ref = null) {
 }
 
 /**
+ * In-page (fixture-tested in tests/kdpSeriesPicker.test.ts): which step KDP's "Add title to a series"
+ * modal shows. 23 Nov 2026, live: it opens on a two-choice step ("New series" / "Existing series:
+ * Select series") and only "Select series" leads to the list with its search box. A press that does
+ * not take leaves the choice step up, so the run reads the step instead of assuming it moved on.
+ * Self-contained (runs through `page.evaluate`). @returns {"list"|"choice"|"none"}
+ */
+export function seriesDialogStep(doc) {
+  if (doc.querySelector('input[name="series-search-input"], [data-test-id^="series-search-result-"]')) return "list";
+  if (doc.querySelector('[data-test-id="modal-button-create-or-select-existing"]')) return "choice";
+  return "none";
+}
+
+/**
+ * In-page (fixture-tested): the series to press in KDP's list, by its EXACT name (KDP shows names in
+ * lower case, so case and spacing are ignored; nothing else is). Never the first row, never a name that
+ * merely contains the wanted one. Two rows with the same name → the id kdp-series.mjs recorded, else
+ * none (ambiguous). Self-contained. @returns {{ id: string|null, seen: string[], ambiguous: boolean }}
+ */
+export function seriesPick(doc, want, knownId = null) {
+  const norm = (x) => String(x ?? "").normalize("NFKC").toLowerCase().replace(/[\u2010-\u2015\u2212]/g, "-").replace(/[\u2018\u2019\u201c\u201d"']/g, "").replace(/\s+/g, " ").trim();
+  const rows = [...doc.querySelectorAll('[data-test-id^="series-search-result-"]')].map((el) => ({
+    id: el.getAttribute("data-test-id").slice("series-search-result-".length),
+    name: (el.querySelector(".a-size-medium") ?? el).textContent,
+  }));
+  const hits = rows.filter((r) => r.id && norm(r.name) === norm(want));
+  const seen = rows.map((r) => norm(r.name));
+  if (hits.length === 1) return { id: hits[0].id, seen, ambiguous: false };
+  const known = hits.find((r) => knownId && r.id === knownId);
+  if (known) return { id: known.id, seen, ambiguous: false };
+  return { id: null, seen, ambiguous: hits.length > 1 };
+}
+
+/**
  * Series (KDP strategy, 8 Nov 2026: each line is an Amazon series). The series itself is created once
- * per line by kdp-series.mjs; here the title joins it: "Add to series" → Existing series → pick it →
- * Main content (live page, 8 Nov 2026). A title already in a series shows "Edit series" instead and
- * is left alone. A series missing from the list is a NAMED STOP, never a guessed one.
+ * per line by kdp-series.mjs; here the title joins it: "Add to series" → Select series (Existing) →
+ * search → the row with the exact name → Main content. A title already in a series shows "Edit series"
+ * instead and is left alone. The list not opening (SERIES_PICKER_NOT_OPEN) and the name not being
+ * listed (SERIES_NOT_FOUND) are NAMED STOPS, never a guessed series.
  */
 async function seriesStep(page, series, dir) {
   // "Already in a series" is the Edit button SHOWING; both buttons are always in the page (live page, 8 Nov 2026).
   if (await page.locator('[data-test-id="edit-series-details-button"]').first().isVisible().catch(() => false)) { console.log(`series: already set on this title.`); return; }
   await clickOne(page, "Add to series", ['[data-test-id="add-series-details-button"]', (p) => p.getByRole("button", { name: /^\s*Add to series\s*$/i })]);
-  await page.waitForTimeout(2500);
-  // The series picker is a React modal, not an AUI popover: its controls are found on the page (live, 8 Nov 2026).
-  const pop = () => page;
-  // The picker can be slow to draw; one more press of "Add to series" if it has not appeared (never a loop).
-  const selectBtn = page.getByRole("button", { name: /^\s*Select series\s*$/i }).last();
-  if (!(await selectBtn.waitFor({ state: "visible", timeout: 20_000 }).then(() => true).catch(() => false))) {
-    await page.locator('[data-test-id="add-series-details-button"]').first().click({ timeout: 10_000 }).catch(() => {});
-    await selectBtn.waitFor({ state: "visible", timeout: 20_000 }).catch(() => {});
+  const step = () => page.evaluate(`(${seriesDialogStep})(document)`).catch(() => "none");
+  const listShown = () => page.locator('input[name="series-search-input"], [data-test-id^="series-search-result-"]').first().waitFor({ state: "visible", timeout: 15_000 }).then(() => true).catch(() => false);
+  // The modal can be slow to draw and a press can fail to take (23 Nov 2026: "Select series" focused,
+  // the choice step stayed). Read the step, press what leads to the list, at most three rounds.
+  for (let i = 0; i < 3 && (await step()) !== "list"; i += 1) {
+    const now = await step();
+    if (now === "choice") await page.locator('[data-test-id="modal-button-create-or-select-existing"] button').first().click({ timeout: 10_000 }).catch(() => {});
+    else await page.locator('[data-test-id="add-series-details-button"]').first().click({ timeout: 10_000 }).catch(() => {});
+    await listShown();
   }
-  await selectBtn.click({ timeout: 15_000 });
-  await page.waitForTimeout(3000);
-  // By the id kdp-series.mjs recorded for this series when there is one (the picker lowercases names).
+  if ((await step()) !== "list") {
+    const shot = await snapshot(page, dir, "stop-series");
+    throw stop("SERIES_PICKER_NOT_OPEN", `KDP's list of existing series did not open after pressing Select series three times; nothing was chosen. Page kept at ${shot ?? "(screenshot failed)"}.`);
+  }
+  // Searched by name: the unsearched list shows 5 series a page (live, 23 Nov 2026: "1-5 of 6").
+  const search = page.locator('input[name="series-search-input"]');
+  if (await search.count().catch(() => 0)) { await search.fill(series.name).catch(() => {}); await search.press("Enter").catch(() => {}); await page.waitForTimeout(2500); }
   let known = null;
   try { known = Object.values(JSON.parse(await readFile(join(process.env.BOSS_OS_KDP_DIR ?? `${process.env.HOME}/.boss-os/kdp`, "series.json"), "utf8"))).find((x) => normTitle(x.name) === normTitle(series.name))?.id ?? null; } catch {}
-  const search = pop().locator('input[name="series-search-input"]');
-  if (await search.count().catch(() => 0)) { await search.fill(series.name).catch(() => {}); await search.press("Enter").catch(() => {}); await page.waitForTimeout(2500); }
-  const pick = known && (await pop().locator(`[data-test-id="series-search-result-${known}"]`).count().catch(() => 0))
-    ? pop().locator(`[data-test-id="series-search-result-${known}"]`)
-    : pop().getByText(series.name, { exact: false }).first();
-  if (!(await pick.count().catch(() => 0))) {
+  const r = await page.evaluate(`(${seriesPick})(document, ${JSON.stringify(series.name)}, ${JSON.stringify(known)})`).catch(() => ({ id: null, seen: [], ambiguous: false }));
+  if (!r.id) {
     const shot = await snapshot(page, dir, "stop-series");
-    throw stop("SERIES_NOT_FOUND", `the series "${series.name}" is not in KDP's list; run kdp-series.mjs for its line first. Page kept at ${shot ?? "(screenshot failed)"}.`);
+    throw stop("SERIES_NOT_FOUND", `the series "${series.name}" is ${r.ambiguous ? "listed more than once in KDP and none is the recorded one" : "not in KDP's list"} (listed: ${r.seen.join(", ") || "none"}); run kdp-series.mjs for its line first. Page kept at ${shot ?? "(screenshot failed)"}.`);
   }
+  const pick = page.locator(`[data-test-id="series-search-result-${r.id}"]`);
   await pick.click();
   await page.waitForTimeout(2500);
-  const next = pop().getByRole("button", { name: /^\s*(Select|Next|Continue|Add)\s*$/i }).last();
+  const next = page.getByRole("button", { name: /^\s*(Select|Next|Continue|Add)\s*$/i }).last();
   if (await next.count().catch(() => 0)) { await next.click().catch(() => {}); await page.waitForTimeout(2500); }
-  const main = pop().getByRole("button", { name: /^\s*Main content\s*$/i }).last();
+  const main = page.getByRole("button", { name: /^\s*Main content\s*$/i }).last();
   if (await main.count().catch(() => 0)) { await main.click(); await page.waitForTimeout(2500); }
-  const confirm = pop().getByRole("button", { name: /^\s*(Confirm|Add|Save|Done|Confirm and add)\b/i }).last();
+  const confirm = page.getByRole("button", { name: /^\s*(Confirm|Add|Save|Done|Confirm and add)\b/i }).last();
   if (await confirm.count().catch(() => 0)) { await confirm.click().catch(() => {}); await page.waitForTimeout(2500); }
   // KDP confirms with "Your series updates have been submitted" and a Done button that must be pressed.
   // It can take several seconds to appear, and until it is closed it covers the whole page.
@@ -1120,6 +1156,8 @@ export function plainStop(code, said = "") {
     SHELF_UNREADABLE: "I could not tell from your bookshelf whether the book is already there.",
     CONTROL_NOT_FOUND: "a button I press was not on the page.",
     CONTROL_STUCK: "a button I press stayed covered by one of Amazon's pop-ups.",
+    SERIES_PICKER_NOT_OPEN: "Amazon's list of your series did not open.",
+    SERIES_NOT_FOUND: "the book's series was not in Amazon's list of your series.",
   };
   return m[code] ?? `something on the page was not as expected.`;
 }
