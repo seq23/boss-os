@@ -180,9 +180,8 @@ jobs:
   unit:
     name: Unit and integration tests (shard ${{ matrix.shard }}/4)
     runs-on: ubuntu-latest
-    # Normal: ~2m30s a shard (7m55s serial on 21 Sep 2026, split four ways, plus install); 8 leaves
-    # room for the ffmpeg step's one bounded retry (at most 4 minutes) without a silent cancel.
-    timeout-minutes: 8
+    # Normal: ~2m30s a shard (7m55s serial on 21 Sep 2026, split four ways, plus install).
+    timeout-minutes: 6
     permissions:
       contents: read
       actions: read
@@ -207,9 +206,9 @@ jobs:
       # ship-review's image tiling test needs ffmpeg/ffprobe; installed only if the runner lacks it.
       # Normal: 20-75 s. On 23 Nov 2026 an unbounded, silent apt-get hung shard 2 twice (two
       # runners) until the job timed out; so each apt call is time-bound, prints what it is doing,
-      # and gets one retry. A second failure fails this step by name, never a silent job cancel.
+      # and gets one retry (at most ~3.7 min in all, inside the job's 6). A second failure fails this
+      # step by name, never a silent job cancel.
       - name: ffmpeg
-        timeout-minutes: 4
         run: |
           command -v ffprobe >/dev/null && exit 0
           apt_opts="-o Acquire::Retries=2 -o Acquire::http::Timeout=20 -o DPkg::Lock::Timeout=45"
