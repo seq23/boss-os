@@ -49,7 +49,11 @@ describe("KeepMyProof promises no analytics", () => {
   it("has no site-visit or tagged-link measure, and the list refuses one", () => {
     const kmp = manifest.scoreboard.measures.filter((m: any) => m.business === "keepmyproof");
     expect(kmp.length).toBeGreaterThan(0);
-    for (const m of kmp) expect(["revenuecat", "gsc", "none"]).toContain(m.reader);
+    // The one d1 reader it may have counts public AI answers (A1, 22 Nov 2026), never a visitor.
+    for (const m of kmp) {
+      expect(["revenuecat", "gsc", "none", "d1"]).toContain(m.reader);
+      if (m.reader === "d1") { expect(m.kind).toBe("answers"); expect(m.params.sql).toMatch(/FROM ai_answer_reads WHERE site = 'keepmyproof\.com'/); }
+    }
     const m = clone(); m.scoreboard.measures.push({ id: "kmp-visits", business: "keepmyproof", kind: "visits", channel: "site", language: "en", label: "x", reader: "d1", params: { db: "keepmyproof", sql: "SELECT 1 AS n" } });
     expect(scoreboardProblems(m).join(" ")).toMatch(/promises no analytics/);
   });

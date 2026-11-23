@@ -2333,6 +2333,48 @@
       "versionB": {
         "text": "Under 80% live within a day by day 60: land holds 2 hosted runners for landing only, and every review starts within 30 minutes of the PR opening, with the Sunday section naming each PR that missed."
       }
+    },
+    {
+      "id": "ai-answers",
+      "initiative": "AI answers: ChatGPT, Gemini and Google AI Overviews cite her six selling sites (her ask 22 Nov 2026, weekly)",
+      "business": "spry",
+      "owner": "Boss OS · Growth Director (the AI answers card on Growth, read every Tuesday)",
+      "result": "Buyers who ask an AI before choosing are pointed to her sites: buyer questions where an AI answer cites one of the six sites",
+      "jobs": [
+        "ai-visibility"
+      ],
+      "start": "2026-11-24",
+      "first": {
+        "label": "buyer questions cited in AI answers across the six sites, newest week",
+        "by": 30,
+        "floor": {
+          "op": ">=",
+          "value": 3
+        },
+        "reader": "d1",
+        "params": {
+          "db": "boss-os",
+          "sql": "SELECT SUM(c) AS n FROM (SELECT (SELECT CASE WHEN x.status = 'read' AND x.run_at >= :since_ms THEN x.cited END FROM ai_answer_reads x WHERE x.site = s.site ORDER BY x.week DESC LIMIT 1) AS c FROM (SELECT DISTINCT site FROM ai_answer_reads) s)",
+          "days": 8
+        }
+      },
+      "real": {
+        "label": "buyer questions cited in AI answers across the six sites, newest week",
+        "by": 60,
+        "floor": {
+          "op": ">=",
+          "value": 8
+        },
+        "reader": "d1",
+        "params": {
+          "db": "boss-os",
+          "sql": "SELECT SUM(c) AS n FROM (SELECT (SELECT CASE WHEN x.status = 'read' AND x.run_at >= :since_ms THEN x.cited END FROM ai_answer_reads x WHERE x.site = s.site ORDER BY x.week DESC LIMIT 1) AS c FROM (SELECT DISTINCT site FROM ai_answer_reads) s)",
+          "days": 8
+        }
+      },
+      "versionB": {
+        "text": "Under 8 cited questions by day 60: the OWN lane stops waiting on the search loop and each missed question gets a short direct-answer page section written for it that week, and the EARN lane works the top three cited source domains per site instead of one."
+      }
     }
   ],
   "exempt": {
@@ -2890,7 +2932,7 @@
     }
   },
   "scoreboard": {
-    "_note": "THE GROWTH SCOREBOARD (Growth Director, 21 Nov 2026). One way to count across her six growth businesses: each measure is a Scorecard reader (scripts/ops/lib/scorecard-readers.mjs) read daily in the cloud by scripts/ops/growth-scoreboard.mjs over a 28-day window and stored in D1 (growth_readings). A source that cannot be read is stored as 'not read: <reason>', never 0. Counts and sums only: no name, address or row leaves its source. KeepMyProof promises no analytics: it is counted only from store and RevenueCat numbers and its in-app 'How did you hear about us?' answer, never site visits or tagged links (src/shared/boss/growth/scoreboard.mjs NO_TRACKING). Porch & Party requests are counted first (the Christmas season). Paused businesses carry no measures.",
+    "_note": "THE GROWTH SCOREBOARD (Growth Director, 21 Nov 2026). One way to count across her six growth businesses: each measure is a Scorecard reader (scripts/ops/lib/scorecard-readers.mjs) read daily in the cloud by scripts/ops/growth-scoreboard.mjs over a 28-day window and stored in D1 (growth_readings). A source that cannot be read is stored as 'not read: <reason>', never 0. Counts and sums only: no name, address or row leaves its source. KeepMyProof promises no analytics: it is counted only from store and RevenueCat numbers and its in-app 'How did you hear about us?' answer, never site visits or tagged links (src/shared/boss/growth/scoreboard.mjs NO_TRACKING); its one d1 measure counts public AI answers, no visitor data. Each site's 'answers' measure is the weekly AI answers loop (cited buyer questions in the newest OpenSEO week no older than 8 days; older or unread is 'not read'), shown apart from the business's totals. Porch & Party requests are counted first (the Christmas season). Paused businesses carry no measures.",
     "window_days": 28,
     "businesses": [
       {
@@ -3415,6 +3457,90 @@
           ],
           "metric": "clicks",
           "days": 28
+        }
+      },
+      {
+        "id": "pnp-ai-answers",
+        "business": "porch-and-party",
+        "kind": "answers",
+        "channel": "ai-answers",
+        "language": "en",
+        "label": "buyer questions where ChatGPT, Gemini or Google AI Overviews cite porchandparty901.com",
+        "reader": "d1",
+        "params": {
+          "db": "boss-os",
+          "sql": "SELECT (SELECT CASE WHEN status = 'read' AND run_at >= :since_ms THEN cited END FROM ai_answer_reads WHERE site = 'porchandparty901.com' ORDER BY week DESC LIMIT 1) AS n",
+          "days": 8
+        }
+      },
+      {
+        "id": "kmp-ai-answers",
+        "business": "keepmyproof",
+        "kind": "answers",
+        "channel": "ai-answers",
+        "language": "en",
+        "label": "buyer questions where ChatGPT, Gemini or Google AI Overviews cite keepmyproof.com",
+        "reader": "d1",
+        "params": {
+          "db": "boss-os",
+          "sql": "SELECT (SELECT CASE WHEN status = 'read' AND run_at >= :since_ms THEN cited END FROM ai_answer_reads WHERE site = 'keepmyproof.com' ORDER BY week DESC LIMIT 1) AS n",
+          "days": 8
+        }
+      },
+      {
+        "id": "ap-ai-answers",
+        "business": "approvalprep",
+        "kind": "answers",
+        "channel": "ai-answers",
+        "language": "en",
+        "label": "buyer questions where ChatGPT, Gemini or Google AI Overviews cite approvalprep.com",
+        "reader": "d1",
+        "params": {
+          "db": "boss-os",
+          "sql": "SELECT (SELECT CASE WHEN status = 'read' AND run_at >= :since_ms THEN cited END FROM ai_answer_reads WHERE site = 'approvalprep.com' ORDER BY week DESC LIMIT 1) AS n",
+          "days": 8
+        }
+      },
+      {
+        "id": "dw-ai-answers",
+        "business": "dream-wedding",
+        "kind": "answers",
+        "channel": "ai-answers",
+        "language": "en",
+        "label": "buyer questions where ChatGPT, Gemini or Google AI Overviews cite weddingchecklistpdf.com",
+        "reader": "d1",
+        "params": {
+          "db": "boss-os",
+          "sql": "SELECT (SELECT CASE WHEN status = 'read' AND run_at >= :since_ms THEN cited END FROM ai_answer_reads WHERE site = 'weddingchecklistpdf.com' ORDER BY week DESC LIMIT 1) AS n",
+          "days": 8
+        }
+      },
+      {
+        "id": "apm-ai-answers",
+        "business": "a-player-mode",
+        "kind": "answers",
+        "channel": "ai-answers",
+        "language": "en",
+        "label": "buyer questions where ChatGPT, Gemini or Google AI Overviews cite aplayermode.com",
+        "reader": "d1",
+        "params": {
+          "db": "boss-os",
+          "sql": "SELECT (SELECT CASE WHEN status = 'read' AND run_at >= :since_ms THEN cited END FROM ai_answer_reads WHERE site = 'aplayermode.com' ORDER BY week DESC LIMIT 1) AS n",
+          "days": 8
+        }
+      },
+      {
+        "id": "pbs-ai-answers",
+        "business": "peace-be-still",
+        "kind": "answers",
+        "channel": "ai-answers",
+        "language": "en",
+        "label": "buyer questions where ChatGPT, Gemini or Google AI Overviews cite peacebestillapp.com",
+        "reader": "d1",
+        "params": {
+          "db": "boss-os",
+          "sql": "SELECT (SELECT CASE WHEN status = 'read' AND run_at >= :since_ms THEN cited END FROM ai_answer_reads WHERE site = 'peacebestillapp.com' ORDER BY week DESC LIMIT 1) AS n",
+          "days": 8
         }
       }
     ]

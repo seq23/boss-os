@@ -76,6 +76,7 @@ import { brains } from "./routes/brains";
 import { validators } from "./routes/validators";
 import { scorecardRoutes } from "./routes/scorecard";
 import { growthRoutes } from "./routes/growth";
+import { aiAnswerRoutes, AI_MISSES_PATH } from "./growth/aiAnswers";
 import { openLoops, INTAKE_PATH as OPEN_LOOPS_INTAKE, runOpenLoopsDaily } from "./routes/openLoops";
 import { alarms } from "./routes/alarms";
 import { runBrainsCohesion } from "./brains/store";
@@ -143,6 +144,8 @@ app.use("/api/*", async (c, next) => {
   if (c.req.path.startsWith("/api/auth/") || c.req.path === "/api/health" || c.req.path.startsWith("/api/outreach/u/") || c.req.path.startsWith("/api/outreach/p/")) return next();
   // Open Loops' intake checks its own door (the machine token or a session): routes/openLoops.ts.
   if (c.req.path === OPEN_LOOPS_INTAKE && c.req.method === "POST") return next();
+  // The search loop's read of AI answer misses checks the same machine token itself: growth/aiAnswers.ts.
+  if (c.req.path === AI_MISSES_PATH && c.req.method === "GET") return next();
   return requireSession(c, next);
 });
 
@@ -272,6 +275,7 @@ app.route("/api/validators", validators);
 app.route("/api/scorecard", scorecardRoutes);
 // The Growth Director (21 Nov 2026): the scoreboard readings, decisions and page data (routes/growth.ts).
 app.route("/api/growth", growthRoutes);
+app.route("/api/growth", aiAnswerRoutes);
 // Open Loops (1 Nov 2026): everything approved but not finished, chased each morning (routes/openLoops.ts).
 app.route("/api/open-loops", openLoops);
 // Kendra's alarms (5 Nov 2026): output floors, stuck tasks, owner emails that fail (routes/alarms.ts).

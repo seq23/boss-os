@@ -5,6 +5,7 @@ import { dayIdInZone } from "../../../shared/boss/timezone";
 import manifest from "../../../shared/boss/scorecard/manifest.json";
 import { readingProblems, summarize } from "../../../shared/boss/growth/scoreboard.mjs";
 import { loadRoster } from "../growth/run";
+import { AI_SITES, aiCard } from "../../../shared/boss/growth/aiAnswers.mjs";
 
 /**
  * THE GROWTH DIRECTOR'S RECORD (21 Nov 2026).
@@ -16,7 +17,8 @@ import { loadRoster } from "../growth/run";
  *                    from about 28 days earlier, and the newest day read.
  *   GET  /page       the Growth page, per business: upcoming (the Director's open to-dos, the rows
  *                    her roster links, her pending Decide cards), happening (the scoreboard and the
- *                    newest decision), happened (earlier decisions and finished to-dos, 8 weeks).
+ *                    newest decision), happened (earlier decisions and finished to-dos, 8 weeks),
+ *                    and `ai`: the site's AI answers week (growth/aiAnswers.ts), apart from its numbers.
  */
 export const growthRoutes = new Hono<{ Bindings: Env; Variables: Vars }>();
 
@@ -87,14 +89,19 @@ growthRoutes.get("/page", async (c) => {
     `SELECT business, cycle, state, decision, evidence, test, actions, next_check FROM growth_decisions WHERE created_at >= ? ORDER BY cycle DESC, created_at DESC`,
   ).bind(Date.now() - HAPPENED_DAYS * 86_400_000).all<any>()).results ?? []);
   const parse = (t: string | null, d: unknown) => { try { return t ? JSON.parse(t) : d; } catch { return d; } };
+  const aiReads = ((await db.prepare(`SELECT site, week, status, stop, run_at, prompts, answered, cited, mentioned, engines FROM ai_answer_reads WHERE read_at >= ? ORDER BY week DESC`)
+    .bind(Date.now() - 5 * 7 * 86_400_000).all<any>()).results ?? []);
+  const hostOf = (key: string) => Object.entries(AI_SITES).find(([, v]) => v.business === key)?.[0] ?? null;
   const businesses = (manifest as any).scoreboard.businesses.map((b: any) => {
     const entry = roster.find((e) => e.key === b.key);
     const mine = (l: any) => entry?.linked.includes(l.id) || String(l.source_key ?? "").startsWith(`growth#${b.key}#`) || String(l.source_key ?? "").startsWith(`growth-yes#${b.key}#`) || (l.owner === DIRECTOR && (l.title as string).startsWith(`${b.label}:`));
     const own = loops.filter(mine);
     const ds = decisions.filter((d) => d.business === b.key).map((d) => ({ ...d, evidence: parse(d.evidence, []), test: parse(d.test, null), actions: parse(d.actions, []) }));
     const cs = cards.filter((x) => parse(x.payload, {})?.business === b.key).map(({ payload: _p, ...x }) => x);
+    const host = hostOf(b.key);
     return {
       key: b.key, label: b.label,
+      ai: host ? { host, ...aiCard(aiReads.filter((r) => r.site === host)) } : null,
       paused: entry?.paused ?? (typeof b.paused === "string" ? b.paused : b.paused ? "paused for now" : null),
       onRoster: !!entry,
       upcoming: {

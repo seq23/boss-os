@@ -74,7 +74,7 @@ export async function readTrends(fetchImpl: typeof fetch = fetch): Promise<strin
   } catch { return []; }
 }
 
-async function brainMd(db: D1Database, slug: string): Promise<string | null> {
+export async function brainMd(db: D1Database, slug: string): Promise<string | null> {
   return (await db.prepare(`SELECT body_md FROM brains WHERE slug = ?`).bind(slug).first<{ body_md: string }>())?.body_md ?? null;
 }
 
@@ -96,14 +96,24 @@ export async function loadRoster(db: D1Database): Promise<{ roster: RosterEntry[
 /** The pipeline to-do for one business × channel × format: one row, its draft refreshed each week. */
 export const PIPELINE_OWNER = "claude";
 async function queueRow(db: D1Database, entry: RosterEntry, item: { channel: string; format: string; draft: string }, nextDate: string): Promise<{ id: string | null; why?: string }> {
-  const key = pipelineKey(entry.key!, item.channel, item.format);
+  return openTodo(db, entry, pipelineKey(entry.key!, item.channel, item.format), {
+    title: `Growth Director: ${entry.label} — ${item.channel} ${item.format}`,
+    next: `Post this through ${entry.label}'s approved ${item.channel} pipeline only, as written: ${item.draft}`,
+    finish: `This week's ${item.format} is live on ${entry.label}'s ${item.channel}`,
+  }, nextDate);
+}
+
+/**
+ * One Growth to-do by its key (`growth#<business>#…`): refreshed when it exists, opened when the
+ * business has under MAX_OPEN_PER_BUSINESS open. Shared by the Director's pipelines and the AI answers
+ * loop (src/worker/boss/growth/aiAnswers.ts), so both count against the same cap.
+ */
+export async function openTodo(db: D1Database, entry: RosterEntry, key: string, t: { title: string; next: string; finish: string }, nextDate: string): Promise<{ id: string | null; why?: string }> {
   const open = await db.prepare(`SELECT COUNT(*) AS n FROM owner_open_loops WHERE status = 'open' AND source_key LIKE ? AND source_key <> ?`).bind(`growth#${entry.key}#%`, key).first<{ n: number }>();
   const mine = await db.prepare(`SELECT id, status FROM owner_open_loops WHERE source_key = ?`).bind(key).first<{ id: string; status: string }>();
   if (!(mine?.status === "open") && (open?.n ?? 0) >= MAX_OPEN_PER_BUSINESS) return { id: null, why: `${entry.label} already has ${MAX_OPEN_PER_BUSINESS} growth to-dos open; this waits for one to finish` };
   const now = Date.now();
-  const title = `Growth Director: ${entry.label} — ${item.channel} ${item.format}`.slice(0, 200);
-  const next = `Post this through ${entry.label}'s approved ${item.channel} pipeline only, as written: ${item.draft}`.slice(0, 400);
-  const finish = `This week's ${item.format} is live on ${entry.label}'s ${item.channel}`.slice(0, 300);
+  const title = t.title.slice(0, 200), next = t.next.slice(0, 400), finish = t.finish.slice(0, 300);
   if (mine) {
     await db.prepare(`UPDATE owner_open_loops SET next_step = ?, next_date = ?, status = 'open', updated_at = ? WHERE id = ?`).bind(next, nextDate, now, mine.id).run();
     return { id: mine.id };
@@ -115,7 +125,7 @@ async function queueRow(db: D1Database, entry: RosterEntry, item: { channel: str
 }
 
 /** Her card for something new: a judgement call whose yes opens the follow-on, never a dead approval. */
-async function card(env: Env, entry: RosterEntry, title: string, question: string, detail: Record<string, unknown>, first: boolean) {
+export async function card(env: Env, entry: RosterEntry, title: string, question: string, detail: Record<string, unknown>, first: boolean) {
   const r = await raiseJudgementCall(env, {
     title: title.slice(0, 200), question: question.slice(0, 1000), resumeKind: "growth_proposal",
     employeeId: DIRECTOR, lane: "ops", risk: "low",
@@ -127,7 +137,7 @@ async function card(env: Env, entry: RosterEntry, title: string, question: strin
 }
 
 /** Titles she was asked about in the last ASKED_DAYS (answered or waiting): never asked again. */
-async function askedRecently(db: D1Database, now: number): Promise<Set<string>> {
+export async function askedRecently(db: D1Database, now: number): Promise<Set<string>> {
   const rows = (await db.prepare(`SELECT title FROM judgement_calls WHERE resume_kind = 'growth_proposal' AND state <> 'superseded' AND created_at >= ?`).bind(now - ASKED_DAYS * 86_400_000).all<{ title: string }>()).results ?? [];
   return new Set(rows.map((r) => r.title.toLowerCase()));
 }

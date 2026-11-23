@@ -296,6 +296,7 @@ export const INSTALLED_LOCAL_JOBS = [
   "risk-watch.mjs",
   "youtube-comment-watch.sh",
   "your-day.mjs",
+  "ai-visibility.sh", // the weekly AI answers read (her ask, 22 Nov 2026)
 ];
 
 /** A script her phrase names outright — "run buyer-hunt.mjs every friday". */

@@ -58,6 +58,17 @@ Reviews and testimonials only from real, traceable buyers; ONE polite post-purch
 ## Search, answers and AI engines
 The SEO/AEO/GEO checklist ethos: \`ship-ready\` search.md and the \`search-loop\` engine. Pages answer a real search in its first lines, carry the entity facts, and are fresh for a reason (a real change), never for a date.
 
+**The AI answer loop** (her ask 22 Nov 2026: "build the ai visibility loop"; from Granola's AEO playbook). Google and AI answers are measured apart, each its own scoreboard row with day-30 and day-60 floors.
+1. **Buyer decisions first**: for each site, the 10-15 questions a buyer asks an AI before choosing (from the brain's buyer, Search Console queries and OpenSEO prompt research), never keywords restated. Kept in the site brain's Growth roster as "Buyer prompts".
+2. **Ask the engines on a schedule** (OpenSEO tracker: ChatGPT, Gemini, Google AI Overviews; weekly by her yes 22 Nov 2026), set up under \`new-job\`: cost estimated first (estimate_ai_visibility_cost), monthly runs capped at ~25% of the plan's credits, sites with buyers first; never buying credits. Record per prompt: mentioned, cited, which rivals, which sources ("not read" when a run fails, never 0).
+3. **Diagnose every miss** and pick ONE lane per miss:
+   - **OWN**: an existing page of ours fits → strengthen it first (search-loop strengthen brief); a new page only when none fits.
+   - **CLAIM**: the cited source is a listing or profile we can hold (App Store, directories, Google Business Profile, marketplaces). A listing on an account we already hold is fixed at once; claiming a new one is a new account → proposed for her yes.
+   - **EARN**: the cited source is a third party (review sites, "best X" lists, comparison posts) → a pitch under \`outreach-voice\` (her exact words seen before any first send; a new list needs her yes; R-EML rules). Never pay, gift or offer anything for inclusion or a review; a paid listing is money → prepared for her, and if bought it is labelled per R-END-01/02.
+   - **CONTEST**: a cited page states something wrong about us → our page states the sourced fact (risk.md first; never naming or disparaging a rival), and one polite correction request goes to that page's own publisher. Anything that says a named rival is wrong → her yes first (legal-adjacent).
+4. **Reddit and forums: NOT NOW** (her ruling 1 Nov 2026, spry brain: ban risk, needs her own accounts). No drafts, no accounts. If she reopens it: real threads only, say who we are, at most one link and only when it answers the question, never vote rings or sock accounts.
+5. **Re-ask after changes**: a fixed miss is re-checked on the next run; a miss still missed after two fixes moves to the next lane, in the order OWN → CLAIM → EARN → CONTEST.
+
 ## Never (enforced in code: roster.mjs mayAct)
 - Ads, boosts, paid tools or paid models: prepare the checkout for her instead.
 - A new account, or retiring or deleting an account, pipeline or post: propose with evidence.

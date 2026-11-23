@@ -23,11 +23,18 @@
  */
 import { READER_IDS } from "../scorecard/scorecard.mjs";
 
-export const KINDS = Object.freeze(["money", "sales", "installs", "requests", "visits"]);
+export const KINDS = Object.freeze(["money", "sales", "installs", "requests", "visits", "answers"]);
+/**
+ * Kinds kept APART from the business's numbers: `answers` (cited prompts in AI answers, the weekly
+ * AI answers loop, src/shared/boss/growth/aiAnswers.mjs) is shown on its own card, never added into
+ * the totals and never what makes a business "read" — the Director decides on sales, not on AI answers.
+ */
+export const APART_KINDS = Object.freeze(["answers"]);
 /** No format test on a channel under this many visits a month (hostile review: "no tests on noise"). */
 export const MIN_VISITS_FOR_TESTS = 50;
 /** Businesses whose privacy promise forbids visit tracking and tagged links, and the readers they may use. */
-export const NO_TRACKING = Object.freeze({ keepmyproof: Object.freeze(["revenuecat", "gsc", "none"]) });
+// d1 for KeepMyProof is the AI answers count only: public AI answers, no visitor data.
+export const NO_TRACKING = Object.freeze({ keepmyproof: Object.freeze(["revenuecat", "gsc", "none", "d1"]) });
 export const UNREAD_PREFIX = "not read: ";
 
 const slug = (s) => typeof s === "string" && /^[a-z0-9][a-z0-9-]*$/.test(s);
@@ -57,6 +64,7 @@ export function scoreboardProblems(manifest) {
     else if (!READER_IDS.includes(m?.reader) || m?.reader === "sum") out.push(`${id}: reader "${m?.reader}" is not a Scorecard reader`);
     const allowed = NO_TRACKING[m?.business];
     if (allowed && !allowed.includes(m?.reader)) out.push(`${id}: ${m?.business} promises no analytics; reader "${m?.reader}" is not allowed (only ${allowed.join(", ")})`);
+    else if (allowed && m?.reader === "d1" && m?.kind !== "answers") out.push(`${id}: ${m?.business} promises no analytics; its d1 reader may only count public AI answers (kind "answers")`);
     if (JSON.stringify(m ?? {}).includes("@")) out.push(`${id}: carries an address`);
   }
   // Porch & Party's requests are counted first (the Christmas season ends mid-December).
@@ -126,13 +134,13 @@ export function summarize(manifest, latest, before = [], today = null) {
       return { measure: m.id, label: m.label, channel: m.channel, language: m.language, kind: m.kind, value, before: prev.get(m.id)?.value ?? null, unread, hold };
     });
     const totals = {};
-    for (const k of KINDS) {
+    for (const k of KINDS.filter((x) => !APART_KINDS.includes(x))) {
       const read = channels.filter((c) => c.kind === k && c.value !== null && c.channel !== "untagged");
       // An "all" channel is the total; otherwise the channels add up. Nothing read is null, never 0.
       const all = read.find((c) => c.channel === "all");
       totals[k] = all ? all.value : read.length ? read.reduce((a, c) => a + c.value, 0) : null;
     }
-    const state = channels.some((c) => c.value !== null) ? "read" : "no data";
+    const state = channels.some((c) => c.value !== null && !APART_KINDS.includes(c.kind)) ? "read" : "no data";
     return { key: b.key, label: b.label, paused: null, state, totals, channels, unread: channels.filter((c) => c.value === null).map((c) => c.measure) };
   });
 }

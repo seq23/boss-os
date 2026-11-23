@@ -91,3 +91,13 @@ jobs:
             test-results
           retention-days: 7
           if-no-files-found: ignore
+
+      # The journeys' own screenshots (Growth and the like), kept on a green run too, so a reviewer can
+      # look at the real page at 390 px and desktop without a run of their own. Fixture data only.
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: screens-${{ matrix.shard }}
+          path: test-results/**/*.png
+          retention-days: 7
+          if-no-files-found: ignore

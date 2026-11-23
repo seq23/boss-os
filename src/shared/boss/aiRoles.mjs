@@ -49,6 +49,9 @@ export const AI_ROLES = Object.freeze({
   "agent_queue.private_prompt": { role: BRAIN, why: "A seat prompt the privacy screen flags (LP, investor or deal terms, a private name, children's data, an unreadable lexicon) never reaches a free or cloud route, fail closed. It walks the private row of ROUTE_TABLE below: Claude's seat first, Codex's as the backup for short and clear-brief work, Claude's seat only for hard work (owner, 13 Nov 2026)." },
   "agent_queue.confidential_draft": { role: BRAIN, why: "LP and deal-terms drafts run on the Claude seat only (private-data-routing, 31 Oct 2026)." },
 
+  // ── The weekly AI answers read (duty_ai_visibility → scripts/ops/ai-visibility.sh) ─────────────
+  "ai_visibility.read": { role: BRAIN, jobClass: "short", why: "Reads OpenSEO's weekly AI answers through the openseo Claude plugin, which only a Claude session loads, locked to 9 read-only tools (ai-visibility-permissions.json); code recomputes every count it returns." },
+
   // ── Company brains ────────────────────────────────────────────────────────────────────────────
   // Owner, 13 Nov 2026: "recording can be a free model interpreting can be a more high quality model".
   "brain.record": { role: WORKER, jobClass: "short", why: "Saving her exact words or a measured number into a brain, read back after the save: short and checkable, so it starts on the free routes." },

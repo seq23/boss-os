@@ -17,3 +17,4 @@ export const LANE_LABELS: Readonly<{ can_be_one: string; striking: string }>;
 export const LANES_NOT_YET: string;
 export function laneText(x: any, opts?: { first?: boolean }): string;
 export function laneLine(week: any): string | null;
+export function strengthenedOf(week: any): { id: string; page_url: string; at: string }[];

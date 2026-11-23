@@ -288,6 +288,11 @@ const SNAPSHOT_TABLES = [
   // 0372 — the growth scoreboard's daily readings: the Director's evidence.
   "growth_readings",
   "growth_decisions",
+  // 0377 — the AI answers loop: each week's answers, its read, and every miss's lane and fix count.
+  // A restore that lost ai_misses would restart every miss at its first lane and fix it twice.
+  "ai_answer_obs",
+  "ai_answer_reads",
+  "ai_misses",
   // 0202 — the register of owned work. THE MOST IMPORTANT ADDITION TO THIS LIST IN A WHILE: these
   // rows are the commitments she has personally handed people, and a restore that lost them would
   // silently drop every one of them — which is the precise thing the mechanism exists to make

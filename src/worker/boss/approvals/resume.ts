@@ -454,8 +454,10 @@ export const RESUME_HANDLERS: Record<string, ResumeHandler> = {
    * THE GROWTH DIRECTOR'S CARD (21 Nov 2026, src/worker/boss/growth/run.ts). Something new she was
    * asked about: a channel or format not on the roster, a product, a price, a list. Her YES opens the
    * follow-on to-do for the agent sessions (owner "claude", one row per card), carrying exactly what
-   * she approved; anything that needs a new account or money is never a card (refused before it is
-   * raised). Her NO is remembered: the Director does not ask about the same thing for 28 days
+   * she approved; anything that needs money, or an account an agent would open, is never a card
+   * (refused before it is raised). One exception, the AI answers loop's CLAIM card
+   * (src/worker/boss/growth/aiAnswers.ts): a listing she does not hold is HERS to open, so the card
+   * asks her to, and her yes opens only the to-do to fill it once she has. Her NO is remembered: the Director does not ask about the same thing for 28 days
    * (`askedRecently` reads this judgement's row). Nothing is posted, sent or bought here.
    */
   growth_proposal: async (env, j, verdict, note, now) => {

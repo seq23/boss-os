@@ -2,6 +2,8 @@ import { useEffect, useState } from "react";
 import { api } from "../api";
 import { Loading } from "../components/Shell";
 import { shortDate } from "@shared/boss/scorecard/scorecard.mjs";
+import { APART_KINDS } from "@shared/boss/growth/scoreboard.mjs";
+import { ENGINE_LABEL } from "@shared/boss/growth/aiAnswers.mjs";
 
 /**
  * THE GROWTH PAGE (21 Nov 2026). ☰ More → Growth, /?tab=growth. Noelle, Director of Growth.
@@ -10,14 +12,19 @@ import { shortDate } from "@shared/boss/scorecard/scorecard.mjs";
  * the rows her roster links — work in progress elsewhere says so — and her cards waiting in Decide),
  * Happening (this 28-day window's numbers and this week's decision with its evidence), Happened
  * (earlier decisions and finished to-dos, eight weeks). "Not read" is said, never shown as zero.
+ * AI answers (ChatGPT, Gemini, Google AI Overviews citing the site, read weekly from OpenSEO) is its
+ * own card beside the 28-day numbers, never added into them.
  * Phone first, calm: line 1 says what needs her, which is only a card in Decide.
  */
 type Todo = { id: string; title: string; next: string; date: string | null; elsewhere: boolean };
 type Card = { id: string; title: string; status: string; requested_at: number };
 type Decision = { cycle: string; state: string; decision: string; evidence: string[]; test: any; actions: any[]; next_check: string | null };
 type Channel = { label: string; kind: string; value: number | null; before: number | null; hold: string | null; unread: string | null };
+type AiEngine = { engine: string; answered: number; mentioned: number; cited: number; before: { mentioned: number; cited: number } | null };
+type Ai = { host: string; state: string; why?: string; week: string | null; day?: string; prompts?: number; cited?: number; mentioned?: number;
+  before?: { week: string; cited: number; mentioned: number } | null; engines?: AiEngine[] };
 type Biz = {
-  key: string; label: string; paused: string | null; onRoster: boolean;
+  key: string; label: string; paused: string | null; onRoster: boolean; ai: Ai | null;
   upcoming: { todos: Todo[]; cards: Card[] };
   happening: { board: { state: string; channels: Channel[] } | null; decision: Decision | null; last: string | null };
   happened: { decisions: Decision[]; done: { id: string; title: string; at: number; status: string }[]; answered: Card[] };
@@ -66,7 +73,7 @@ function TodoCard({ t, label }: { t: Todo; label?: string }) {
 
 function Business({ b }: { b: Biz }) {
   const d = b.happening.decision;
-  const ch = b.happening.board?.channels ?? [];
+  const ch = (b.happening.board?.channels ?? []).filter((c) => !APART_KINDS.includes(c.kind));
   const read = ch.filter((c) => c.value != null);
   const unread = ch.filter((c) => c.value == null);
   return (
@@ -109,6 +116,7 @@ function Business({ b }: { b: Biz }) {
               <ul className="schedule-list">{unread.map((c, i) => <li key={i}>{c.label}: {(c.unread ?? "not read").replace(/^not read: /, "")}</li>)}</ul></details>}
           </div>
         )}
+        {!b.paused && b.ai ? <AiAnswers ai={b.ai} /> : null}
       </div>
 
       <h3 className="growth-when">Happened</h3>
@@ -120,5 +128,28 @@ function Business({ b }: { b: Biz }) {
         </ul>
       )}
     </section>
+  );
+}
+
+/** The site's AI answers week: cited and named out of its buyer questions, per engine, beside last week. */
+function AiAnswers({ ai }: { ai: Ai }) {
+  return (
+    <div className="brain-card email-map-card" data-testid={`growth-ai-${ai.host}`}>
+      <span className="email-map-what">AI answers{ai.state === "read" && ai.day ? `, ${shortDate(ai.day)}` : ""}</span>
+      {ai.state !== "read" ? <span className="brain-card-line">Not read: {ai.why}</span> : (
+        <>
+          <span className="brain-card-line">
+            Cited for {ai.cited} of {plural(ai.prompts!, "buyer question")}, named in {ai.mentioned}
+            {ai.before ? ` (last week cited ${ai.before.cited}, named ${ai.before.mentioned})` : " · first week read"}
+          </span>
+          <ul className="schedule-list">
+            {(ai.engines ?? []).map((e) => (
+              <li key={e.engine}>{ENGINE_LABEL[e.engine] ?? e.engine}: cited {e.cited}, named {e.mentioned} of {e.answered} answered{e.before ? ` (was ${e.before.cited} and ${e.before.mentioned})` : ""}</li>
+            ))}
+          </ul>
+        </>
+      )}
+      <span className="brain-card-line">ChatGPT, Gemini and Google AI Overviews, read every Tuesday; kept apart from Google search numbers.</span>
+    </div>
   );
 }

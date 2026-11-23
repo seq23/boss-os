@@ -38,3 +38,50 @@ for (const scheme of ["light"] as const) {
     expect(errors).toEqual([]);
   });
 }
+
+/**
+ * THE AI ANSWERS CARD (22 Nov 2026). A week is posted through the real route (POST /api/boss/growth/ai-week,
+ * every count recomputed there): KeepMyProof read, ApprovalPrep an honest stop. The card says cited and named
+ * out of its buyer questions per engine, kept apart from the 28-day numbers; the stop reads "Not read", never 0.
+ * Shot at 390 px and 1280 px, light and dark (Boss OS has one light theme: dark proves nothing breaks).
+ */
+const ENGINES = ["chatgpt", "gemini", "google_ai_overview"];
+function week(host: string) {
+  const prompts = [1, 2, 3, 4].map((i) => ({ id: `e2e-p${i}`, text: `buyer question ${i}` }));
+  const observations = prompts.flatMap((p, i) => ENGINES.map((e) => ({
+    id: `${p.id}-${e}`, prompt_id: p.id, engine: e, status: "answered",
+    mentioned: i < 2 && e !== "gemini", cited: i === 0 && e === "chatgpt", rivals: ["rival.example"], sources: ["review-site.example"],
+  })));
+  return {
+    site: host, tracker: { prompts, engines: ENGINES },
+    run: { id: "e2e-run-1", createdAt: new Date(Date.now() - 2 * 3_600_000).toISOString(), expected: 12, completed: 12, failed: 0 },
+    summary_own: { mentions: observations.filter((o) => o.mentioned).length, citations: observations.filter((o) => o.cited).length },
+    observations, lanes: [],
+  };
+}
+for (const [w, h, size] of [[390, 844, "390"], [1280, 900, "desktop"]] as const) {
+  for (const scheme of ["light", "dark"] as const) {
+    test(`Growth AI answers card at ${size} (${scheme})`, async ({ page }, info) => {
+      const errors: string[] = [];
+      page.on("console", (m) => { if (m.type() === "error") errors.push(m.text()); });
+      await page.emulateMedia({ colorScheme: scheme });
+      await page.setViewportSize({ width: w, height: h });
+      await unlock(page);
+      const posted = await page.request.post("/api/boss/growth/ai-week", { data: { sites: [
+        { host: "keepmyproof.com", block: week("keepmyproof.com"), prefix: "/questions/", strengthened: [] },
+        { host: "approvalprep.com", stop: "OPENSEO_NOT_YET" },
+      ] } });
+      expect(posted.status()).toBe(201);
+      await tab(page, "Growth");
+      const kmp = page.getByTestId("growth-ai-keepmyproof.com");
+      await expect(kmp).toContainText("Cited for 1 of 4 buyer questions, named in 2");
+      await expect(kmp).toContainText("ChatGPT: cited 1, named 2 of 4 answered");
+      await expect(page.getByTestId("growth-ai-approvalprep.com")).toContainText("Not read:");
+      await expect(page.getByTestId("growth")).not.toContainText("NAMED STOP");
+      await expectNoSidewaysScroll(page);
+      await kmp.scrollIntoViewIfNeeded();
+      await page.screenshot({ path: info.outputPath(`growth-ai-${size}-${scheme}.png`), fullPage: true });
+      expect(errors).toEqual([]);
+    });
+  }
+}
