@@ -972,19 +972,27 @@ from `READER_IDS`, a D1 query returning one number `n`, floors, version B). A so
 vault lacks shows "No number" with `NAMED STOP [KEY_MISSING]` naming the key. Dry run:
 `npm run scorecard:monday -- --dry`. Restart links are `/tap/sc…` (routes/scorecard.ts).
 
-## The Growth Director: backlink orders (22 Nov 2026)
+## The Growth Director: backlink requests (22 Nov 2026)
 
-Her words, 22 Nov 2026: "i thought the backlink network was going to defer to the growth director". In the Monday
-cycle (src/worker/boss/growth/run.ts) a queue item on the `backlinks` channel, for a business whose Growth roster
-lists it (e.g. `backlinks [guide]`), is an order for one article: the model names its `topic` (at most `TOPIC_MAX` =
-120 characters, src/shared/boss/growth/director.mjs; an item with none, or a longer one, is dropped and written on the
-decision as held) and is told the playbook's backlink rule (links against search visits 8 weeks later: rising → more
-topics, no rise → change topics), with the topics it already ordered. The draft goes through the naming guard and the
-claims check like any post; a pass is written on the decision as `ordered`, and is never an Open Loops to-do or a
-Decide card (an unapproved backlinks format is refused, not carded). The network reads them with
-`GET /api/boss/growth/backlink-orders` (the BOSS_OPEN_LOOPS_TOKEN machine token, the same check as ai-misses;
-anything else is 401): `{ cycle, read_at, orders: [{ business, topic, draft, why }] }`, from the newest cycle's
-decided rows only (a same-day re-run replaces the first), never from Open Loops. No cycle yet → `cycle: null,
+Her words, 22 Nov 2026: "i thought the backlink network was going to defer to the growth director"; "we are suppposed
+to assume we are not related and there is a separate cloudflare acct the director needs to know that"; "backlinks
+should be written about other companies and other things so its not just about us". The backlink network is an
+outside publisher on its own Cloudflare account; the Director sends it link REQUESTS, never commands, and its prompt
+says so (src/shared/boss/growth/director.mjs): the network writes mostly about other companies and subjects and fits
+at most 1 in 4 of its articles around requests; a request's topic must be one an existing page of the business
+genuinely answers, with the draft naming that page (the network refuses one with no such page, NO_FIT); and the
+network is never called ours in anything public. In the Monday cycle (src/worker/boss/growth/run.ts) a queue item on
+the `backlinks` channel, for a business whose Growth roster lists it (e.g. `backlinks [guide]`), is a request for one
+article: the model names its `topic` (at most `TOPIC_MAX` = 120 characters; an item with none, or a longer one, is
+dropped and written on the decision as held) and is told the playbook's backlink rule (links against search visits 8
+weeks later: rising → more topics, no rise → change topics), with the topics it already requested. The draft goes
+through the naming guard and the claims check like any post; a pass is written on the decision as `ordered` (the
+stored name), and is never an Open Loops to-do or a Decide card (an unapproved backlinks format is refused, not
+carded). At most `MAX_BACKLINKS_PER_CYCLE` = 1 request per business per cycle: a further approved backlinks item is
+held on the decision with its draft, never requested (a blocked or refused one does not use the place). The network
+reads them with `GET /api/boss/growth/backlink-orders` (the BOSS_OPEN_LOOPS_TOKEN machine token, the same check as
+ai-misses; anything else is 401): `{ cycle, read_at, orders: [{ business, topic, draft, why }] }`, from the newest
+cycle's decided rows only (a same-day re-run replaces the first), never from Open Loops. No cycle yet → `cycle: null,
 orders: []`; a decision row whose actions are not JSON is skipped and logged in the Worker log.
 
 ## The AI answers loop (22 Nov 2026)

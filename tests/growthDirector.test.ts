@@ -7,7 +7,7 @@
  *   - the claims prompt carries the brand's rule words from the risk brain, rulings included.
  */
 import { describe, expect, it } from "vitest";
-import { BACKLINKS, TOPIC_MAX, backlinkOrders, topicOf } from "../src/shared/boss/growth/director.mjs";
+import { BACKLINKS, MAX_BACKLINKS_PER_CYCLE, TOPIC_MAX, backlinkOrders, topicOf } from "../src/shared/boss/growth/director.mjs";
 import { parseDecision, enforceHolds, routeItem, routeProposal, cycleEnd, ruleText, parseClaims, claimsPrompt, decisionPrompt, parseSpend, claimRules, rulesFor, REQUIRED_RULES, namingProblems, reportSection, reportDue } from "../src/shared/boss/growth/director.mjs";
 import { parseRoster } from "../src/shared/boss/growth/roster.mjs";
 import { lineProblems } from "../src/shared/boss/mail/plain.mjs";
@@ -296,9 +296,17 @@ describe("backlink orders (22 Nov 2026: the network defers to the Director)", ()
 
   it("the prompt names the topic limit and the scale/stop rule only for a business with backlinks, with the topics already ordered", () => {
     const p = decisionPrompt({ playbook: "PB", entry: blRoster[0]!, summary, trends: [], today: "2026-11-23", todos: [], topics: ["2026-11-16: Rent receipts"] })[1]!.content;
-    expect(p).toContain(`"topic": "backlinks only: the article's subject, at most ${TOPIC_MAX} characters"`);
+    expect(p).toContain(`"topic": "backlinks only: the subject one of this business's existing pages answers, at most ${TOPIC_MAX} characters"`);
     expect(p).toMatch(/search visits 8 weeks later/);
-    expect(p).toMatch(/rising .*order more topics; no rise 8 weeks after a topic → change topics/);
+    expect(p).toMatch(/rising .*request more topics; no rise 8 weeks after a topic → change topics/);
+    // Her words, 22 Nov 2026: the network is not ours, it writes mostly about others, and a request must fit a real page.
+    expect(p).toMatch(/OUTSIDE publisher with its own Cloudflare account/);
+    expect(p).toMatch(/link REQUEST to it, never a command/);
+    expect(p).toMatch(/mostly about other companies and subjects, fits at most 1 in 4 of its articles around requests/);
+    expect(p).toMatch(/EXISTING pages genuinely answers/);
+    expect(p).toMatch(/NO_FIT; KeepMyProof "cash rent"/);
+    expect(p).toMatch(/Never call the network ours/);
+    expect(p).toContain(`At most ${MAX_BACKLINKS_PER_CYCLE} "backlinks" item per week`);
     expect(p).toContain("- 2026-11-16: Rent receipts");
     const none = decisionPrompt({ playbook: "PB", entry: roster[0]!, summary, trends: [], today: "2026-11-23", todos: [] })[1]!.content;
     expect(none).not.toMatch(/BACKLINK|"topic"/);
@@ -335,7 +343,7 @@ describe("backlink orders (22 Nov 2026: the network defers to the Director)", ()
   it("her report counts the orders, never as a post queued", () => {
     const rows = [{ label: "ApprovalPrep", business: "approvalprep", state: "decided", decision: "More guides.", actions: [{ kind: "ordered", item: { channel: "backlinks", format: "guide", draft: "d", why: "w", topic: "t" } }] }];
     const r = reportSection(rows, { cards: 0, origin: "https://x", at: 0 });
-    expect(r.lines[0]).toMatch(/^Nothing to do: one backlink article was ordered/);
-    expect(r.lines.join("\n")).toMatch(/ApprovalPrep: numbers not read in 28 days; 1 backlink article ordered\./);
+    expect(r.lines[0]).toMatch(/^Nothing to do: one backlink article was requested/);
+    expect(r.lines.join("\n")).toMatch(/ApprovalPrep: numbers not read in 28 days; 1 backlink article requested\./);
   });
 });

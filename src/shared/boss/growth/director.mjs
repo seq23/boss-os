@@ -18,8 +18,8 @@
  *   mayAct ok + claims fail/none → held (never queued); the reason is written down
  *   NOT_APPROVED / proposal      → a Decide card for her (at most MAX_CARDS a cycle)
  *   NEVER_SPEND / NO_NEW_ACCOUNTS / PROPOSE_ONLY on a retire → refused, written down, never a card for a spend
- *   backlinks + claims pass      → an `ordered` action only: the backlink network's order, never a to-do or card
- *   backlinks, not approved      → refused (NOT_APPROVED), never a card; no topic → dropped by parseDecision
+ *   backlinks + claims pass      → an `ordered` action only: a link REQUEST to the backlink network, never a to-do or card
+ *   backlinks, not approved      → refused (NOT_APPROVED), never a card; no topic, or past the one-a-week cap → dropped by parseDecision
  *
  * PRIVATE DATA: the model sees the Growth roster entry, the playbook, counts and public trend titles only.
  * No request name, contact, LP or client name exists in any of those inputs.
@@ -34,14 +34,21 @@ export const MAX_CARDS = 3;
 export const MAX_QUEUE_PER_BUSINESS = 3;
 export const MAX_OPEN_PER_BUSINESS = 3;
 /**
- * BACKLINK ORDERS (her words, 22 Nov 2026: "i thought the backlink network was going to defer to the
- * growth director"). A queue item on the `backlinks` channel is an ORDER for the backlink network: one
- * article on `topic` for that business. It is never a to-do or a card for her; the network reads the
- * newest cycle's orders (GET /api/growth/backlink-orders, `backlinkOrders` below). TOPIC_MAX is the one
- * limit: the prompt says it, the parser drops an item past it or without a topic, the route re-checks it.
+ * BACKLINK REQUESTS (her words, 22 Nov 2026: "i thought the backlink network was going to defer to the
+ * growth director"; "we are suppposed to assume we are not related and there is a separate cloudflare acct
+ * the director needs to know that"; "backlinks should be written about other companies and other things so
+ * its not just about us"). The backlink network is an OUTSIDE publisher on its own Cloudflare account. A
+ * queue item on the `backlinks` channel is a link REQUEST to it (business, page, topic), never a command:
+ * it writes mostly about other companies and subjects, fits at most 1 in 4 of its articles around requests,
+ * and refuses one no existing page of the business answers (NO_FIT). It is never a to-do or a card for her;
+ * the network reads the newest cycle's requests (GET /api/growth/backlink-orders, `backlinkOrders` below,
+ * field names unchanged). TOPIC_MAX is the one topic limit (prompt, parser, route); MAX_BACKLINKS_PER_CYCLE
+ * is the one cap: the cycle (run.ts) makes at most that many requests per business per cycle; any item
+ * after it is held, never requested.
  */
 export const BACKLINKS = "backlinks";
 export const TOPIC_MAX = 120;
+export const MAX_BACKLINKS_PER_CYCLE = 1;
 /** A Decide card she answered (or one still waiting) is not raised again for this many days. */
 export const ASKED_DAYS = 28;
 export const STATES = Object.freeze(["decided", "paused", "held: no data", "held: no model", "held: roster", "held: error"]);
@@ -103,19 +110,19 @@ ${(linked ?? []).map((l) => `- ${l.id}: ${l.what}`).join("\n") || "- none"}
 SEARCH TRENDS TODAY (public, US)
 ${(trends ?? []).slice(0, 20).map((t) => `- ${t}`).join("\n") || "- not read"}
 ${backlinks ? `
-BACKLINK TOPICS ALREADY ORDERED (the week each was ordered)
+BACKLINK TOPICS ALREADY REQUESTED (the week each was requested)
 ${(topics ?? []).map((t) => `- ${t}`).join("\n") || "- none yet"}
 ` : ""}
 Return exactly:
 {"decision": "one or two plain sentences: what to do more of, less of, or hold, and why",
  "evidence": ["each a number from the scoreboard or a fact from the roster, with its source"],
  "test": null or {"channel": "...", "format": "...", "what": "...", "number": "the number that judges it", "stop": "when it stops"},
- "queue": [up to ${MAX_QUEUE_PER_BUSINESS} {"channel": "...", "format": "...", "draft": "the exact words of the post or page lead", "why": "..."${backlinks ? `, "topic": "backlinks only: the article's subject, at most ${TOPIC_MAX} characters"` : ""}}],
+ "queue": [up to ${MAX_QUEUE_PER_BUSINESS} {"channel": "...", "format": "...", "draft": "the exact words of the post or page lead", "why": "..."${backlinks ? `, "topic": "backlinks only: the subject one of this business's existing pages answers, at most ${TOPIC_MAX} characters"` : ""}}],
  "proposals": [{"what": "something new that needs her yes (a new channel, format, product, price or list)", "why": "...", "evidence": "...", "costs_money": true or false}],
  "linked": [one per older-work row above: {"id": "olp_…", "verdict": "keep" | "change" | "drop", "why": "the evidence, plainly", "next_step": "for change: the new next step"}],
  "next_check": "YYYY-MM-DD"}
 Only approved channels and formats go in "queue"; anything else is a proposal. Never propose spending money or creating an account. "Too little data" holds a comparison between formats; it never holds older work she already approved to start on an approved channel and format: that goes in "queue" this week.${backlinks ? `
-BACKLINKS: each "${BACKLINKS}" item in "queue" orders ONE article from the backlink network, which links to this business; you decide how many (within the queue's ${MAX_QUEUE_PER_BUSINESS}) and on what. Name its "topic" (at most ${TOPIC_MAX} characters; an item without one is dropped). The rule (the playbook's backlink row): judge links against this business's search visits 8 weeks later. Search visits rising since the first topics → order more topics; no rise 8 weeks after a topic → change topics (never the same topic again).` : ""}${first && entry.season ? `\nThis is your FIRST decision for this business: it is about the season on its roster (${entry.season}), the money that season can still bring in before it ends.` : ""}` },
+BACKLINKS: the backlink network is an OUTSIDE publisher with its own Cloudflare account, not part of this business. A "${BACKLINKS}" item in "queue" is a link REQUEST to it, never a command: it writes mostly about other companies and subjects, fits at most 1 in 4 of its articles around requests, and refuses one that fits no page (NO_FIT; KeepMyProof "cash rent" was refused for having no such page). At most ${MAX_BACKLINKS_PER_CYCLE} "${BACKLINKS}" item per week; any more are not sent. Its "topic" (at most ${TOPIC_MAX} characters; an item without one is dropped) must be a subject one of this business's EXISTING pages genuinely answers, and its "draft" names that page's address and what it answers. Never call the network ours, a partner or related to this business in anything public. The rule (the playbook's backlink row): judge links against this business's search visits 8 weeks later. Search visits rising since the first topics → request more topics; no rise 8 weeks after a topic → change topics (never the same topic again).` : ""}${first && entry.season ? `\nThis is your FIRST decision for this business: it is about the season on its roster (${entry.season}), the money that season can still bring in before it ends.` : ""}` },
   ];
 }
 
@@ -125,7 +132,7 @@ export function parseDecision(text) {
   try { j = JSON.parse(/\{[\s\S]*\}/.exec(String(text ?? ""))?.[0] ?? "null"); } catch { j = null; }
   if (!j || typeof j.decision !== "string" || !j.decision.trim()) return null;
   const arr = (v) => (Array.isArray(v) ? v : []);
-  // A backlinks item is an order: without a topic (or with one past TOPIC_MAX) it is dropped, and counted.
+  // A backlinks item is a request: without a topic (or with one past TOPIC_MAX) it is dropped, and counted.
   let noTopic = 0;
   const queue = arr(j.queue).filter((q) => q && q.channel && q.draft).map((q) => {
     const item = { channel: clip(q.channel, 40).toLowerCase(), format: clip(q.format, 40).toLowerCase(), draft: clip(q.draft, 1200), why: clip(q.why, 300) };
@@ -370,7 +377,7 @@ export function reportSection(rows, { cards, origin, at, summaries = [], scoreca
   const lines = [
     cards ? `${one(cards, "One growth idea waits", "N growth ideas wait")} for your yes in Decide. Nothing else to do.`
       : queued.length ? `Nothing to do: ${one(queued.length, "one post was", "N posts were")} queued from formats you already approved.`
-      : orders ? `Nothing to do: ${one(orders, "one backlink article was", "N backlink articles were")} ordered from the backlink network.`
+      : orders ? `Nothing to do: ${one(orders, "one backlink article was", "N backlink articles were")} requested from the backlink network.`
       : "Nothing to do: nothing new was queued this fortnight. Why, below.",
   ];
   const floors = [floorLine(scorecard?.first, scorecard?.start, fv.first), floorLine(scorecard?.real, scorecard?.start, fv.real, fv.realMissing)].filter(Boolean);
@@ -380,7 +387,7 @@ export function reportSection(rows, { cards, origin, at, summaries = [], scoreca
     const q = acts.filter((a) => a.kind === "queued").length;
     const o = acts.filter((a) => a.kind === "ordered").length;
     const asked = acts.filter((a) => a.kind === "proposal").length;
-    const did = [q ? `${q} queued` : null, o ? `${one(o, "1 backlink article", "N backlink articles")} ordered` : null, asked ? `${asked} asked in Decide` : null].filter(Boolean).join(", ") || "nothing new queued";
+    const did = [q ? `${q} queued` : null, o ? `${one(o, "1 backlink article", "N backlink articles")} requested` : null, asked ? `${asked} asked in Decide` : null].filter(Boolean).join(", ") || "nothing new queued";
     const said = modelSentence(r.decision);
     lines.push(`${r.label}: ${numbersLine(sum(r.business)) ?? "numbers not read"} in 28 days; ${did}.${said ? ` ${said}` : ""}`);
   }

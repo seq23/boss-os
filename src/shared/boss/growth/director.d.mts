@@ -6,6 +6,7 @@ export const MAX_OPEN_PER_BUSINESS: number;
 export const ASKED_DAYS: number;
 export const BACKLINKS: string;
 export const TOPIC_MAX: number;
+export const MAX_BACKLINKS_PER_CYCLE: number;
 export function topicOf(v: unknown): string | null;
 export interface BacklinkOrder { business: string; topic: string; draft: string; why: string }
 export function backlinkOrders(rows: { id: string; business: string; state: string; actions: string; created_at: number }[]): { orders: BacklinkOrder[]; skipped: string[] };

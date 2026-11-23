@@ -15,8 +15,9 @@
  *                held). Passed → ONE Open Loops row per business × channel × format (source_key
  *                growth#…, owner "claude": the agent sessions that run her posting pipelines work it,
  *                posting only through that approved pipeline), at most MAX_OPEN_PER_BUSINESS open.
- *                A `backlinks` item is the backlink network's ORDER (an `ordered` action, read by GET
- *                /api/growth/backlink-orders), never an Open Loops row or a card; unapproved, it is refused.
+ *                A `backlinks` item is a link REQUEST to the outside backlink network (an `ordered` action,
+ *                read by GET /api/growth/backlink-orders; at most MAX_BACKLINKS_PER_CYCLE per business),
+ *                never an Open Loops row or a card; unapproved, it is refused.
  *                Not approved / proposals → a judgement call in Decide (raiseJudgementCall, resume kind
  *                growth_proposal: her yes opens the follow-on row, her no is remembered ASKED_DAYS),
  *                at most MAX_CARDS a cycle, each cycle's cards replacing the last's. A proposal passes a
@@ -36,7 +37,7 @@ import { GROWTH_BRAINS, growthSection, parseRoster, rosterProblems, type RosterE
 import { playbookBody } from "../../../shared/boss/growth/playbook.mjs";
 import {
   MAX_CARDS, MAX_OPEN_PER_BUSINESS, ASKED_DAYS, decisionPrompt, parseDecision, enforceHolds, claimsPrompt, parseClaims, claimRules,
-  routeItem, routeProposal, spendPrompt, parseSpend, cycleEnd, namingProblems, pipelineKey, reportDue, reportSection, BACKLINKS, TOPIC_MAX,
+  routeItem, routeProposal, spendPrompt, parseSpend, cycleEnd, namingProblems, pipelineKey, reportDue, reportSection, BACKLINKS, MAX_BACKLINKS_PER_CYCLE, TOPIC_MAX,
 } from "../../../shared/boss/growth/director.mjs";
 import { raiseJudgementCall } from "../approvals/raise";
 import { latestReadings } from "../routes/growth";
@@ -213,7 +214,7 @@ export async function runGrowthDirector(env: Env, now = Date.now(), deps: { mode
       const { decision, dropped } = enforceHolds(answer, s);
       const actions: any[] = [];
       if (dropped) actions.push({ kind: "held", why: dropped });
-      if (decision.noTopic) actions.push({ kind: "held", why: `${decision.noTopic} backlink ${decision.noTopic === 1 ? "order had" : "orders had"} no topic of up to ${TOPIC_MAX} characters, so ${decision.noTopic === 1 ? "it was" : "they were"} dropped` });
+      if (decision.noTopic) actions.push({ kind: "held", why: `${decision.noTopic} backlink ${decision.noTopic === 1 ? "request had" : "requests had"} no topic of up to ${TOPIC_MAX} characters, so ${decision.noTopic === 1 ? "it was" : "they were"} dropped` });
       const { rules, missing } = claimRules(entry, riskMd);
       const raise = async (title: string, question: string, detail: Record<string, unknown>) => {
         if (asked.has(title.toLowerCase())) return { card: null, why: `asked in the last ${ASKED_DAYS} days` };
@@ -222,6 +223,7 @@ export async function runGrowthDirector(env: Env, now = Date.now(), deps: { mode
         cards++; asked.add(title.toLowerCase());
         return { card: id };
       };
+      let requested = 0;
       for (const item of decision.queue) {
         const named = namingProblems(item.draft);
         if (named.length) { actions.push({ kind: "blocked", why: `naming: ${named.join("; ")}`, item }); continue; }
@@ -232,12 +234,14 @@ export async function runGrowthDirector(env: Env, now = Date.now(), deps: { mode
           actions.push({ kind: "proposal", why: c.why ?? r.why, item, card: c.card });
           continue;
         }
+        // The network is an outside publisher: at most MAX_BACKLINKS_PER_CYCLE requests per business a cycle.
+        if (item.channel === BACKLINKS && requested >= MAX_BACKLINKS_PER_CYCLE) { actions.push({ kind: "held", why: `at most ${MAX_BACKLINKS_PER_CYCLE} backlink request a week per business; this one was not sent`, item }); continue; }
         if (missing.length) { actions.push({ kind: "held", why: `the risk brain has no words for ${missing.join(", ")}, so the claims check cannot run`, item }); continue; }
         const verdict = parseClaims(await model(env, claimsPrompt({ entry, rules, draft: item.draft }) as Msg[], "growth-claims"));
         if (!verdict) { actions.push({ kind: "held", why: "the claims check got no model answer, so it is held, never passed", item }); continue; }
         if (!verdict.pass) { actions.push({ kind: "blocked", why: `breaks ${verdict.broken.join(", ") || "a rule"}: ${verdict.why}`, item }); continue; }
-        // A backlinks item is the network's order: written on this decision, never a to-do for anyone.
-        if (item.channel === BACKLINKS) { actions.push({ kind: "ordered", item }); continue; }
+        // A backlinks item is a request to the outside network: written on this decision, never a to-do for anyone.
+        if (item.channel === BACKLINKS) { requested++; actions.push({ kind: "ordered", item }); continue; }
         // A format on the roster is approved: it queues, first post included. Decide is only for a new
         // account, channel, price or anything paid (her ruling, 22 Nov 2026: "why are they asking me anything?").
         const q = await queueRow(db, entry, item, decision.next_check ?? today);

@@ -16,7 +16,7 @@ import { TOKEN_KEY, sha256 } from "../../src/worker/boss/routes/openLoops";
 import { setSetting } from "../../src/worker/boss/lib/settings";
 import { handleRequest } from "../../src/worker/index";
 import { dayIdInZone } from "../../src/shared/boss/timezone";
-import { TOPIC_MAX } from "../../src/shared/boss/growth/director.mjs";
+import { MAX_BACKLINKS_PER_CYCLE, TOPIC_MAX } from "../../src/shared/boss/growth/director.mjs";
 import type { Env } from "../../src/worker/env";
 
 const NOW = Date.parse("2026-11-23T12:00:00Z");
@@ -90,9 +90,26 @@ describe("the Director's cycle writes backlink orders, never to-dos or cards", (
     expect(row.state).toBe("decided");
     const acts = JSON.parse(row.actions);
     expect(acts.filter((a: any) => a.kind === "ordered").map((a: any) => a.item.topic)).toEqual(["Writing a credit dispute letter yourself"]);
-    expect(acts.find((a: any) => a.kind === "held").why).toMatch(new RegExp(`1 backlink order had no topic of up to ${TOPIC_MAX} characters`));
+    expect(acts.find((a: any) => a.kind === "held").why).toMatch(new RegExp(`1 backlink request had no topic of up to ${TOPIC_MAX} characters`));
     expect(acts.find((a: any) => a.kind === "refused")).toMatchObject({ stop: "NOT_APPROVED" });
     // Nothing for her and nothing for an agent session: the network acts on the order.
+    expect(await loops()).toEqual([]);
+    expect(await cards()).toEqual([]);
+  }, 30_000);
+
+  it("at most MAX_BACKLINKS_PER_CYCLE requests per business a cycle: the rest are held with their item, never requested; a blocked one does not use the place", async () => {
+    await reading("ap-sales", "approvalprep", 1);
+    const q = (topic: string, draft = `A guide on ${topic}`) => ({ channel: "backlinks", format: "guide", draft, why: "w", topic });
+    await runGrowthDirector(env as any, NOW, { model: decider([q("Blocked one", "★★★★★ guaranteed"), q("First that passes"), q("Second that passes"), q("Third that passes")]), fetchImpl: noTrends });
+    const acts = JSON.parse((await env.DB.prepare(`SELECT actions FROM growth_decisions WHERE business = 'approvalprep'`).first<any>()).actions);
+    expect(MAX_BACKLINKS_PER_CYCLE).toBe(1);
+    expect(acts.filter((a: any) => a.kind === "ordered").map((a: any) => a.item.topic)).toEqual(["First that passes"]);
+    expect(acts.filter((a: any) => a.kind === "blocked").map((a: any) => a.item.topic)).toEqual(["Blocked one"]);
+    const held = acts.filter((a: any) => a.kind === "held" && a.item);
+    expect(held.map((a: any) => a.item.topic)).toEqual(["Second that passes"]);
+    expect(held[0].why).toMatch(/at most 1 backlink request a week per business/);
+    const body = await (await orders()).json() as any;
+    expect(body.orders.map((o: any) => o.topic)).toEqual(["First that passes"]);
     expect(await loops()).toEqual([]);
     expect(await cards()).toEqual([]);
   }, 30_000);
