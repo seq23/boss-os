@@ -591,13 +591,13 @@
       "platform": "LinkedIn company page",
       "handle": "approvalprep",
       "url": "https://www.linkedin.com/company/approvalprep/",
-      "account_email": "unknown",
-      "status": "planned",
+      "account_email": "no account",
+      "status": "live_manual",
       "posts": {
-        "by": "none",
-        "what": "Nothing; the page is not created."
+        "by": "hand",
+        "what": "Nothing yet; a profile only (logo, cover, About from approvalprep.com)."
       },
-      "decision": "Pending in entity.json; waits on her LinkedIn (restricted since 9 Oct)."
+      "decision": "Created 23 Nov 2026 (company 147008522), run from her LinkedIn admin seat; a company page has no sign-in of its own. Cover and About added the same day."
     },
     {
       "id": "apm-pinterest",
@@ -632,6 +632,21 @@
         ]
       },
       "decision": "Spry's Pinterest became the aplayermode account (16 Oct 2026); 4 boards, 3 pins a day (1 Nov)."
+    },
+    {
+      "id": "apm-linkedin",
+      "business": "a-player-mode",
+      "site": "aplayermode.com",
+      "platform": "LinkedIn company page",
+      "handle": "aplayermode",
+      "url": "https://www.linkedin.com/company/aplayermode/",
+      "account_email": "no account",
+      "status": "live_manual",
+      "posts": {
+        "by": "hand",
+        "what": "Nothing yet; a profile only (logo, cover, About from aplayermode.com)."
+      },
+      "decision": "Created 23 Nov 2026 (company 147023183), run from her LinkedIn admin seat; a company page has no sign-in of its own. Also the page for billionairehighperformancecoach.com (same five roles). Cover and About added the same day."
     },
     {
       "id": "spry-gumroad",
@@ -691,7 +706,7 @@
         "by": "none",
         "what": "Nothing."
       },
-      "decision": "A session after the LinkedIn unlock (spry brain)."
+      "decision": "23 Nov 2026: A Player Mode and ApprovalPrep pages are live (their own rows). Dream Wedding, KeepMyProof, Peace Be Still, Whisper Almanac and Porch & Party hit LinkedIn's page creation limit; their forms are refilled after it lifts on 30 Nov 2026 (packages in the linkedin-grid work folder)."
     },
     {
       "id": "creator-buffer",
