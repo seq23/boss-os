@@ -68,6 +68,9 @@ describe("Toni's judgements", () => {
   it("OpenRouter: below $0 and any new spend alert", () => {
     expect(openrouterReading({ total_credits: 10, total_usage: 10.5 }, 10.5).state).toBe("alert");
     expect(openrouterReading({ total_credits: 10, total_usage: 2.01 }, 2).state).toBe("alert");
+    // 23 Nov 2026 live read: the spend reads in cents as a sentence, never "$0.5225".
+    expect(openrouterReading({ total_credits: 10, total_usage: 2.5225 }, 2).line).toMatch(/^OpenRouter charged \$0\.52 since the last check, and \$7\.48 is left/);
+    expect(openrouterReading({ total_credits: 10, total_usage: 2.004 }, 2).line).toMatch(/charged under 1 cent/);
     expect(openrouterReading({ total_credits: 10, total_usage: 2 }, 2).state).toBe("ok");
     expect(openrouterReading({}, 0).state).toBe("stop");
   });

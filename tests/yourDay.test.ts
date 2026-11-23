@@ -7,7 +7,7 @@ import { mkdtempSync, readdirSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
-import { qualitySectionFor, buildDay, replyContext, briefingLateLine, briefingBelowLine, briefingDecision, briefingLines, bounceLine, BRIEFING_CAP, briefingInProgress, bossDecisions, selfStartedWaiting, selfWaitingRepairs } from "../scripts/ops/your-day.mjs";
+import { brainsSectionFor, neverMissTwice, qualitySectionFor, buildDay, replyContext, briefingLateLine, briefingBelowLine, briefingDecision, briefingLines, bounceLine, BRIEFING_CAP, briefingInProgress, bossDecisions, selfStartedWaiting, selfWaitingRepairs } from "../scripts/ops/your-day.mjs";
 import { plainProblems } from "../src/shared/boss/mail/plain.mjs";
 import { sendersFor, employeeMail } from "../scripts/ops/notify.mjs";
 import { writeMorningSection, addMorningLines, readMorningSections, clearToldSections, morningSectionProblems, MORNING_SECTIONS } from "../src/shared/boss/mail/morning.mjs";
@@ -88,7 +88,7 @@ describe("the one morning email", () => {
     expect(e.digest.decide.map((d: any) => d.key)).toContain("approval:apr_x1");
     expect(e.digest.decide.some((d: any) => String(d.key).startsWith("rc:"))).toBe(true);
     // An Inbox approval opens that approval, never the home page.
-    expect(decide).toContain("Open it to approve or decline: https://boss.sequoiataylor.com/?tab=inbox&approval=apr_x1");
+    expect(decide).toContain("Answer it in your Inbox: https://boss.sequoiataylor.com/?tab=inbox&approval=apr_x1");
     expect(decide).not.toMatch(/: https:\/\/boss\.sequoiataylor\.com\/\n/);
     expect(e.html).toMatch(/<a href="https:\/\/mail\.google\.com\/mail\/u\/0\/#all\/d1" style="display:inline-block[^"]*">Send as is<\/a>/);
   });
@@ -365,7 +365,7 @@ describe("still yours to answer: three showings, and never an answered approval 
       const e = buildDay({ ...base, told, morning: { lp: { section: "lp", at: new Date(at).toISOString(), decide: [card] } } } as any, at);
       expect(e.text).not.toMatch(/^Decide \(\d+\)$/m);
       // 18 Nov 2026: the carried line is a preview of the card (its title, whose turn, how long).
-      if (d <= 3) expect(e.text, `day ${d}`).toMatch(/Still yours to answer\n- Reply to An LP at Example Fund\. Yours to answer: they've waited \d+ days?\./);
+      if (d <= 3) expect(e.text, `day ${d}`).toMatch(/Still yours to answer\n- Reply to An LP at Example Fund\. Your turn: they've waited \d+ days?\./);
       else expect(e.text, "the fourth later morning").not.toContain("Still yours to answer");
       told = e.memory;
     }
@@ -394,6 +394,13 @@ describe("no card prints a model's own words (owner, 13 Nov 2026)", () => {
     expect(plainSummary({ kind: "backend_run", summary: `The run asked for your decision before this is used — ${RAW}` })).toBe("The run asked for your decision before this is used.");
     expect(plainSummary({ kind: "manual", summary: RAW })).toBeNull();
     expect(plainSummary({ kind: "judgement_call", summary: "A synthetic guide is drafted and ready to publish" })).toBe("A synthetic guide is drafted and ready to publish.");
+    // 23 Nov 2026 live read: a long plan and a two-paragraph reason were dropped whole, so the card had no context.
+    const long = `example.org is slipping in search: shown 915 times in four weeks, down from 1,538. ${"A second sentence that runs on and on. ".repeat(8)}CONFIRMED: a raw finding.`;
+    const fitted = plainSummary({ kind: "search_fix_plan", summary: long });
+    expect(fitted).toMatch(/^example\.org is slipping in search/);
+    expect(fitted!.length).toBeLessThanOrEqual(240);
+    expect(fitted).not.toMatch(/CONFIRMED/);
+    expect(plainSummary({ kind: "judgement_call", summary: "To win back past customers\n\nEvidence: asked her" })).toBe("To win back past customers.");
     const e = buildDay({ ...DATA, tasks: [], approvals: [{ id: "apr_synraw", kind: "task_output", title: "A synthetic library: pages indexed", summary: RAW, origin_type: "tasks", origin_id: "tsk_synraw" }], repoChanges: [], morning: {} } as any, NOW);
     expect(e.problems).toEqual([]);
     expect(e.text).toContain("A synthetic library: pages indexed");
@@ -515,6 +522,12 @@ describe("work Boss OS started itself is never a Decide card (owner, 2 Nov and 1
     const [card] = bossDecisions({ ...DATA, tasks: [mine], approvals: [apr], repoChanges: [], morning: {} });
     expect(card!.body).toBe("Yes: Simone goes ahead with “Book the synthetic venue for Friday”. No: nothing happens.");
   });
+  it("a card with its own plain line names yes and no once, without quoting its title a second time", () => {
+    const mine = { id: "tsk_synmine02", title: "Synthetic Co: approve the search fix plan?", status: "awaiting_approval", employee_name: "Simone", approval_id: "apr_synmine2", input: JSON.stringify({ from: "o@example.com", mail_id: "iml_syn" }) };
+    const apr = { id: "apr_synmine2", title: "Synthetic Co: approve the search fix plan?", kind: "manual", summary: "The synthetic site is slipping in search: views are down 41% over four weeks.", origin_type: "tasks", origin_id: mine.id };
+    const [card] = bossDecisions({ ...DATA, tasks: [mine], approvals: [apr], repoChanges: [], morning: {} });
+    expect(card!.body).toBe("The synthetic site is slipping in search: views are down 41% over four weeks. Yes lets Simone go ahead; no changes nothing.");
+  });
   it("a real approval on a duty's run (money, a send in her name) still reaches Decide", () => {
     const data = { ...DATA, tasks: [{ ...duty, approval_id: "apr_synpay" }], approvals: [{ id: "apr_synpay", title: "Pay the synthetic invoice", origin_type: "tasks", origin_id: duty.id }], repoChanges: [], morning: {} };
     expect(bossDecisions(data).map((c) => c.key)).toEqual(["approval:apr_synpay"]);
@@ -565,5 +578,19 @@ describe("the weekly quality check in the morning email", () => {
       expect(s.items[0].text).toBe("The weekly quality check did not load this morning; the team is looking.");
     }
     expect(qualitySectionFor({ quality: { lines: [lines[0]] } }, MONDAY).title).toBe("Quality check: holding");
+  });
+});
+
+describe("the 23 Nov 2026 live read of the Monday morning email", () => {
+  const monday = Date.parse("2026-11-23T13:00:00Z");
+  it("the weekly check shows the short email line, never the Brains page's long line", () => {
+    const s = brainsSectionFor({ brainsCheck: { line: "Weekly check of the setup (ran Sunday): 4 problems: a long list", email_line: "Weekly check of the setup: all clear." } }, monday);
+    expect(s.items[0].text).toBe("Weekly check of the setup: all clear.");
+    expect(brainsSectionFor({ brainsCheck: null }, monday).items[0].text).toMatch(/did not load/);
+  });
+  it("the missed-day line counts the replies still hers to send, not only today's decisions", () => {
+    const c = neverMissTwice(2, { waiting: 3, owed: 2, oldestWait: 4, action: "answer decision 1" });
+    const all = JSON.stringify(c);
+    expect(all).toMatch(/3 decisions are waiting on you this morning, 2 replies are still yours to send/);
   });
 });

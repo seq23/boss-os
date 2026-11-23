@@ -314,7 +314,8 @@ describe("C: the morning email can never go missing silently (13 Nov 2026; both 
     const rows = await notices();
     expect(rows).toHaveLength(1);
     expect(rows[0]).toMatchObject({ task_id: "morning-2026-11-10", from_name: "Kendra", needs_her: 1 });
-    expect(rows[0].body).toMatch(/^What broke: Your morning email has not gone out today\./);
+    expect(rows[0].body).toMatch(/^What broke: By 9 am it still had not been sent\./);
+    expect(rows[0].body, "the body never repeats the subject line").not.toContain("has not gone out today");
     // The email goes on a later tick: the alarm closes and nothing more is written.
     await E.DB.prepare(`INSERT INTO morning_digests (day, payload, sent_at, created_at, updated_at) VALUES ('2026-11-10','{}',?,?,?)`).bind(at("09:31"), at("09:31"), at("09:31")).run();
     expect(await morningEmailCheck(E, at("10:00"))).toBe("sent");

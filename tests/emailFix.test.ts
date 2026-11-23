@@ -7,6 +7,13 @@ import { chooseReplacement } from "../src/worker/boss/outreach/bounceFix";
 import { planRisk } from "../scripts/ops/risk-watch.mjs";
 import { planLocks } from "../scripts/ops/outside-locks.mjs";
 import { planArchive } from "../scripts/ops/archive-audit.mjs";
+// @ts-expect-error — plain ESM with no declaration file
+import { failedChecksWords, planMail } from "../scripts/ops/repo-change.mjs";
+
+// @ts-expect-error — plain ESM with no declaration file
+import { pickPeople } from "../scripts/ops/people-worth-a-call.mjs";
+import { ownerLine } from "../src/shared/boss/mail/ownerLayout.mjs";
+import { layoutEmail } from "../src/shared/boss/mail/plain.mjs";
 import { tailLine } from "../scripts/ops/boss-mail-tail-report.mjs";
 import { stoppedEmail, stillStopped, mergeNotices } from "../scripts/ops/task-notices.mjs";
 import { layoutProblem, lineProblems, refCode } from "../src/shared/boss/mail/plain.mjs";
@@ -94,7 +101,9 @@ describe("a Stopped email is a problem email, and only while it is true (rule 3)
     expect(e.problems).toEqual([]);
     // The owner layout (7 Nov 2026): a stop waits on her reply, so its subject carries the REF code.
     expect(e.subject).toBe(`Stopped: Make the cover · REF ${refCode("tsk_m5jh8bjbxmhtfz1w")}`);
-    expect(e.text.split("\n")[0]).toMatch(/^"Make the cover" stopped before it finished.* Reply try again, or drop it\.$/);
+    // 23 Nov 2026 live read: the words to reply with are quoted, and the same three choices are offered everywhere.
+    expect(e.text.split("\n")[0]).toMatch(/^"Make the cover" stopped before it finished.* Reply "try again", "drop it", or what to change\.$/);
+    expect(e.text.match(/try again/g)?.length).toBe(2);
     expect(e.text).toContain('What happened: "Make the cover" stopped before it finished: the model answered without the file.');
     expect(e.text).toContain("What we did: Tried it 3 times, and sent nothing to anyone outside Boss OS.");
     expect(e.text).toContain("What was lost: Nothing. Everything was kept as it was.");
@@ -143,5 +152,44 @@ describe("the reaper's log sentence is said to her plainly (7 Nov 2026 live read
     const said = plainStopWhy("No device claimed this run in the 25 hours since it was parked. The claimer on her Mac (com.seq.boss-agent) is not picking work up; the work did not happen.");
     expect(said).toBe("your Mac did not pick the work up, so it never started");
     expect(plainStopWhy("mac-mini claimed this run 3 hours ago and never reported. The runner most likely stopped with the machine; the work did not happen.")).toBe("the Mac running it stopped before it finished");
+  });
+});
+
+describe("the 23 Nov 2026 live read of last week's emails", () => {
+  it("a red change names only the checks that failed, never a passing one", () => {
+    const w = failedChecksWords("Cloudflare Pages: pass, build validate: fail");
+    expect(w).toContain("build validate");
+    expect(w).not.toContain("Cloudflare Pages");
+    expect(failedChecksWords("")).toBe("what failed");
+  });
+  it("a slipped correspondence says days and a dated year, never a bare number or a yearless date", () => {
+    const now = Date.parse("2026-11-23T12:00:00Z");
+    const last = new Date(now - 92 * 86_400_000).toISOString();
+    const c = { email: "a.person@example.com", name: "A. Person", sent: 30, received: 26, first_at: "2025-11-20T18:00:00Z", last_at: last, last_outbound_at: last };
+    const why = pickPeople([c], {}, now).map((p: any) => p.why).join(" ");
+    expect(why).toMatch(/it has been 92 days\./);
+    expect(why).toMatch(/since November 20, 2025/);
+  });
+  it("line 1 never adds a full stop after a quote that already ends a sentence", () => {
+    expect(ownerLine('Law 9: "Do not claim it when unsupported."', "One small thing to do, below.")).toBe('Law 9: "Do not claim it when unsupported." One small thing to do, below.');
+    expect(ownerLine('They said "maybe"', "Nothing to do")).toBe('They said "maybe". Nothing to do.');
+  });
+  it("a plan's question keeps one full stop after the agent's own pick", () => {
+    const m = planMail({ row: { id: "rc_synthetic01" }, out: { in_plain: { change: "a page", so_that: "it reads well", bullets: ["One thing."] } }, chosen: "boss-os", asks: [{ question: "Count them or exempt them?", default: "Exempt all four." }], ready: false } as any);
+    const all = JSON.stringify(m);
+    expect(all).toContain("My pick: Exempt all four.");
+    expect(all).not.toMatch(/four\.\./);
+  });
+  it("the shared layout: house-blue links, long words wrap, one detail is a sentence, a divider is not a bullet", () => {
+    const one = layoutEmail({ who: "Toni", subject: "A synthetic note", lead: "Nothing to do.", details: ["One plain line about https://example.com/a/very/long/path"] } as any);
+    expect(one.html).toMatch(/<style>a\{color:#1F4E8C\}<\/style><\/head>/);
+    // break-word wraps a long link without shrinking table columns; "anywhere" split "Neuralink" and "Open ›" mid-word in the deal grid.
+    expect(one.html).toMatch(/overflow-wrap:break-word/);
+    expect(one.html).not.toMatch(/overflow-wrap:anywhere|word-break:break-(word|all)/);
+    expect(one.html).not.toMatch(/<li/);
+    const many = layoutEmail({ who: "Toni", subject: "A synthetic note", lead: "Nothing to do.", details: ["First", "---", "Second"] } as any);
+    expect(many.html.match(/<li/g)?.length).toBe(2);
+    expect(many.html).not.toMatch(/>---</);
+    expect(many.text).not.toMatch(/^- ---$/m);
   });
 });

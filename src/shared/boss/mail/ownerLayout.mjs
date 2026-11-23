@@ -30,7 +30,8 @@ const KNOWN = new Set(Object.keys(LAYOUTS));
 /** The layout an email is filed under; anything unknown or missing is a Note (never blocked). */
 export const layoutOf = (name) => (KNOWN.has(String(name ?? "")) ? String(name) : "note");
 
-const sentence = (s) => { const t = String(s ?? "").trim(); return !t ? "" : /[.!?…:]$/.test(t) ? t : `${t}.`; };
+// A sentence that ends inside a quote is already ended (23 Nov 2026 live read: `…when unsupported.".`).
+const sentence = (s) => { const t = String(s ?? "").trim(); return !t ? "" : /[.!?…:]["”’']?$/.test(t) ? t : `${t}.`; };
 /** True when the act part of line 1 says she has nothing to do. */
 export const saysNothingToDo = (act) => { const t = String(act ?? "").trim(); return t.startsWith(NOTHING_TO_DO) || /^Nothing for you to do\b/.test(t); };
 

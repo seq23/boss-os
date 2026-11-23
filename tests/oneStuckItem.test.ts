@@ -69,6 +69,9 @@ describe("the stall alert", () => {
   it("the Kindle run: a sign-in stop with books waiting is a stall; a run that moved one clears it; Amazon's weekly limit leaves it", () => {
     const base = { approved: 11, moved: 0, setAside: [], held: [], runStop: null, weekly: false, draftCap: false };
     expect(kdpStallOf({ ...base, runStop: "SIGNIN_NOT_DONE" }).stall.subject).toBe("🔴 STOPPED: Kindle publishing — 11 books stuck behind the KDP sign-in");
+    // 23 Nov 2026 live read: the morning banner (next_step) said only "Nothing went out"; a sign-in stop is hers, so it says what moves them.
+    expect(kdpStallOf({ ...base, runStop: "SIGNIN_NOT_DONE" }).stall.next_step).toMatch(/sign in to Amazon in the Chrome window/);
+    expect(kdpStallOf({ ...base, runStop: "PROFILE_IN_USE" }).stall.next_step).not.toMatch(/sign in/);
     expect(kdpStallOf({ ...base, moved: 1, setAside: [{ title: "X", code: "FIELD_NOT_FOUND" }] })).toEqual({ clear: true });
     expect(kdpStallOf({ ...base, weekly: true })).toEqual({});
     expect(kdpStallOf({ ...base, approved: 0 })).toEqual({ clear: true });

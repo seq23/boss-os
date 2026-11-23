@@ -3,7 +3,7 @@
  * One behaviour per fix, each where the behaviour lives. Every name here is invented.
  */
 import { describe, expect, it } from "vitest";
-import { buildDay, calendarItems, cardButtons, onePerPerson, stillPreview, prospectSection, publicFromBriefing, neverMissTwice, gateLine, gratitudeLine, spiritSection } from "../scripts/ops/your-day.mjs";
+import { buildDay, calendarItems, cardButtons, cardTopic, onePerPerson, stillPreview, prospectSection, publicFromBriefing, neverMissTwice, gateLine, gratitudeLine, spiritSection } from "../scripts/ops/your-day.mjs";
 import { realMatch } from "../scripts/ops/interest-grid.mjs";
 import { isPublicCompany, publicList, publicFromHeadline, publicFromReply } from "../src/shared/boss/deals/publicCompanies.mjs";
 import { morningCommands, dropTargets, coachPressure, gratitudeFromBrain, brainLine } from "../src/shared/boss/mail/morningReply.mjs";
@@ -66,9 +66,17 @@ describe("Still yours to answer (items 12-16)", () => {
   it("each row is a preview whose day count says which way the wait runs", () => {
     const mine = stillPreview({ title: "Answer Dana Field", thin: "Still yours to answer: Answer Dana Field · waiting 3 days", key: "lp-again:p1", details: ["What they wrote: “Happy to talk next week.”"] });
     expect(mine).toMatch(/Last said: “Happy to talk next week\.”/);
-    expect(mine).toMatch(/Yours to answer: they've waited 3 days/);
+    expect(mine).toMatch(/Your turn: they've waited 3 days/);
     const theirs = stillPreview({ title: "Nudge Rory Vale", thin: "waiting 5 days", key: "lpnudge:p2" });
-    expect(theirs).toMatch(/Waiting on them: you've waited 5 days/);
+    expect(theirs).toMatch(/Their turn: you've waited 5 days/);
+  });
+  it("the day count in a title is the one the line uses, a question never gains a full stop, and 'Go?' gets its verb (23 Nov 2026 live read)", () => {
+    const row = stillPreview({ title: "No answer in 9 days: nudge Dana Field?", thin: "waiting 2 days", key: "lpnudge:p3" });
+    expect(row).toMatch(/you've waited 9 days/);
+    expect(row).not.toMatch(/2 days/);
+    expect(row).not.toMatch(/\?\./);
+    expect(cardTopic("Go? A synthetic dinner").topic).toBe("Going to A synthetic dinner?");
+    expect(cardTopic("Answer Rory Vale")).toEqual({ topic: "Answer Rory Vale", days: null });
   });
 });
 

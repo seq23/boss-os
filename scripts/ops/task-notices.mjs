@@ -100,13 +100,15 @@ export function stoppedEmail(notice, task = null) {
     who: notice.from_name,
     layout: "alarm",
     why: `"${title}" stopped before it finished, and only you can say whether it runs again`,
-    act: "Reply try again, or drop it",
+    // The words to reply with are quoted, and the choices are the same everywhere (23 Nov 2026 live read:
+    // "Reply try again, or drop it" read as broken English, and the Decide card offered a third choice).
+    act: 'Reply "try again", "drop it", or what to change',
     subject: `Stopped: ${title}`,
     broke: `"${title}" stopped before it finished${why ? `: ${why.replace(/[.!?]?$/, ".")}` : "."}`,
     lost: "Nothing. Everything was kept as it was.",
     doing: `Tried it ${tried}, and sent nothing to anyone outside Boss OS.`,
-    status: "Waiting for your word. Reply to this email with try again, or with drop it to close it.",
-    decide: [{ title: "Run it again, change it, or drop it?", body: "Reply to this email with your answer; it goes straight back to this job.", buttons: [{ label: "See the job in Boss OS", url: taskId ? `${ORIGIN_URL}/?task=${taskId}` : `${ORIGIN_URL}/` }] }],
+    status: "Waiting for your word.",
+    decide: [{ title: "Run it again, change it, or drop it?", body: 'Reply "try again" to run it as it was, "drop it" to close it, or write what to change and it runs again with your words.', buttons: [{ label: "See the job in Boss OS", url: taskId ? `${ORIGIN_URL}/?task=${taskId}` : `${ORIGIN_URL}/` }] }],
     refs: [String(notice.task_id ?? "")].filter((r) => /^tsk_/.test(r)),
   });
 }

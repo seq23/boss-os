@@ -38,7 +38,7 @@ describe("a Decide item she has already seen is one thin line", () => {
     expect(day2.text).not.toContain("They asked for a call next week.");
     // 18 Nov 2026: the carried line is a preview: whose turn, which way the days run, and its links.
     const line = day2.text.split("\n").find((l) => l.startsWith("- Answer Ken Example"))!;
-    expect(line).toMatch(/Yours to answer: they've waited 12 days\..*Open ›: https:\/\//);
+    expect(line).toMatch(/Your turn: they've waited 12 days\..*Open ›: https:\/\//);
     expect(thinDecideLine(lpDecide, "2026-10-26", TUE)!.length).toBeLessThan(120);
     expect(day2.html).toContain("Still yours to answer");
     expect(day2.digest.still_yours).toHaveLength(1);

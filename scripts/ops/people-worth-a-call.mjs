@@ -80,7 +80,9 @@ const ROBOT = /^(no-?reply|donotreply|do-not-reply|notifications?|alerts?|mailer
 
 const isRobot = (email) => ROBOT.test(String(email).split("@")[0] ?? "");
 
-const onDay = (iso) => new Date(iso).toISOString().slice(0, 10);
+// A date she reads with its year (23 Nov 2026 live read: "since November 20" meant 2025 and read as three
+// days ago; an ISO date was turned into a month and day by the layout and lost its year).
+export const onDay = (iso) => new Date(iso).toLocaleDateString("en-US", { month: "long", day: "numeric", year: "numeric", timeZone: "America/Chicago" });
 const daysBetween = (a, b) => Math.round(Math.abs(a - b) / DAY);
 
 /**
@@ -124,7 +126,7 @@ function reasonFor(c, now) {
     return {
       rank: 1,
       why:
-        `You two normally exchange mail about every ${cadence} days and it has been ${quietDays}. ` +
+        `You two normally exchange mail about every ${cadence} days and it has been ${quietDays} days. ` +
         `${exchanges} exchanges between you since ${onDay(c.first_at)}, so this is a real correspondence that has slipped, not a cold contact.`,
       say: `No agenda. Tell them what you are working on now and ask what they are seeing.`,
     };

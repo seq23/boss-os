@@ -5,7 +5,7 @@ import { getSetting, setSetting } from "../lib/settings";
 import { notFound } from "../lib/http";
 import { dayIdInZone, wallClock } from "../../../shared/boss/timezone";
 import {
-  BRAIN_SLUGS, applyEdit, historySlugsFor, resolveBrainSlug, brainBlock, brainsFor, cohesionCheckLine, cohesionLine, type MacCheck, daysSince, isStale, missingCount,
+  BRAIN_SLUGS, applyEdit, historySlugsFor, resolveBrainSlug, brainBlock, brainsFor, cohesionCheckLine, cohesionEmailLine, cohesionLine, type MacCheck, daysSince, isStale, missingCount,
   parseBrainEdits, scoreboardRows, shortName, whosWhoBlock, TEAM_SLUG, type BrainEdit, type BrainRow,
 } from "../../../shared/boss/brains/brain.mjs";
 
@@ -222,5 +222,5 @@ export async function currentCohesion(env: Env, now = Date.now()) {
   try { if (prev) { const r = JSON.parse(prev); if (r.week === weekOf(now)) rec = r; } } catch { /* recompute */ }
   if (!rec) rec = await computeCohesion(env, now);
   const [brains, mac] = await Promise.all([allBrains(env), macCohesionThisWeek(env, now)]);
-  return { ...rec, brains_line: rec.line, line: cohesionCheckLine(brains, mac, now), mac };
+  return { ...rec, brains_line: rec.line, line: cohesionCheckLine(brains, mac, now), email_line: cohesionEmailLine(brains, mac, now), mac };
 }

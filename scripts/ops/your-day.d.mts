@@ -1,5 +1,6 @@
 import type { LaidOutEmail } from "../../src/shared/boss/mail/plain.mjs";
 export function dayOf(at: number): string;
+export function cardTopic(title: string): { topic: string; days: number | null };
 export function timeOf(at: number, tz?: string | null): string;
 export function dayWords(iso: string, opts?: { weekday?: boolean }): string;
 export function bounceLine(b: { replaced?: number; dropped?: number; restarted?: string[]; restarts?: { business: string; why: string; sent_since: number }[] } | null): string | null;
@@ -71,7 +72,7 @@ export function cardButtons(buttons: any[] | null | undefined, screen: string): 
 export function onePerPerson<T>(rows: T[]): T[];
 export function stillPreview(d: any): string;
 export function publicFromBriefing(briefing: any, list?: any[]): { company: string; evidence: string }[];
-export function neverMissTwice(missed: unknown, o?: { waiting?: number; oldestWait?: number; action?: string | null; deadline?: string; pressure?: string }): { line: string | null; banner: { tone: string; title: string; lines: string[] } | null };
+export function neverMissTwice(missed: unknown, o?: { waiting?: number; owed?: number; oldestWait?: number; action?: string | null; deadline?: string; pressure?: string }): { line: string | null; banner: { tone: string; title: string; lines: string[] } | null };
 export function gateLine(o: { gratitude?: string | null; action?: string | null; done?: boolean }): string | null;
 export function gratitudeLine(o: { wins?: { sentence: string; theme: string }[]; herList?: string[]; fallback?: string | null; history?: any[]; today: string }): { sentence: string; theme: string } | null;
 export function winsFrom(o: { lpRows?: any[]; prospects?: any; deals?: number; now?: number }): { sentence: string; theme: string }[];

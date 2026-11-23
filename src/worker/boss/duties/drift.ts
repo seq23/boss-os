@@ -81,7 +81,13 @@ export function driftLine(d: (typeof DELIVERABLES)[number], runs: Run[], now: nu
   if (thisWeek.length === 0) {
     text = `${d.label}: not measured this week (no run was checked).`;
   } else {
-    const bits = [`${thisWeek.length > 1 ? "averaging " : ""}${show(lead.this_week)} ${lead.words} this week`, lead.best === null ? "no earlier week on record yet" : `best week ${show(lead.best)}`, `last four weeks ${lead.trend.map(show).join(", ")}`];
+    // 23 Nov 2026 live read: "averaging 34 sources this week, best week 28, last four weeks not
+    // measured, not measured, 28, 34" read as this week beating its best, and "1 new firms" as a
+    // typo. "Best" is the best EARLIER week, said so; unmeasured weeks are left out of the run of
+    // weeks (said only when two or more were measured); one of a thing is singular.
+    const unit = (v: number | null, w: string) => (v !== null && Math.round(v) === 1 ? w.replace(/s\b/, "") : w);
+    const seen = lead.trend.filter((v): v is number => v !== null);
+    const bits = [`${thisWeek.length > 1 ? "averaging " : ""}${show(lead.this_week)} ${unit(lead.this_week, lead.words)} this week`, lead.best === null ? "no earlier week on record yet" : `best earlier week ${show(lead.best)}`, ...(seen.length >= 2 ? [`recent weeks ${seen.map(show).join(", ")}`] : [])];
     const unmeasured = measures.filter((m) => m.this_week === null).map((m) => m.words);
     const verdict = misses > 0 ? `Missed its standard ${misses === 1 ? "once" : `${misses} times`} this week.`
       : slipped.length ? `Slipping: ${slipped.map((m) => `${m.words} ${show(m.this_week)} against a best week of ${show(m.best)}`).join("; ")}, two weeks running.`

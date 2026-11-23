@@ -35,7 +35,16 @@ describe("the weekly drift line", () => {
     const runs = [day(30, 52), ...[29, 28, 27, 26].map((d) => day(d, 30)), ...[13, 12, 11, 10, 9].map((d) => day(d, 30)), ...[6, 5, 4, 3, 2, 1, 0].map((d) => day(d, 30))];
     const l = driftLine(BRIEF, runs, NOW);
     expect(l.flagged).toBe(false);
-    expect(l.text).toMatch(/^Daily briefing: averaging 30 sources this week, best week 37,/);
+    expect(l.text).toMatch(/^Daily briefing: averaging 30 sources this week, best earlier week 37,/);
+  });
+
+  it("a run of weeks never lists unmeasured weeks, and one of a thing is singular (23 Nov 2026 live read)", () => {
+    const l = driftLine(BRIEF, [run(2, { sources: 28, headlines: 5, sections: 11 }), run(0, { sources: 34, headlines: 5, sections: 11 })], NOW);
+    expect(l.measures[0]!.trend.filter((v) => v === null).length).toBeGreaterThan(0);
+    expect(l.text).not.toMatch(/not measured, /);
+    expect(l.text).toMatch(/recent weeks 28, 34/);
+    const one = driftLine(BRIEF, [run(0, { sources: 1, headlines: 5, sections: 11 })], NOW);
+    expect(one.text).toMatch(/1 source this week/);
   });
 
   it("a floor miss this week is flagged whatever the trend", () => {

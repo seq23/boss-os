@@ -157,7 +157,12 @@ describe("messages to her: told once, plain, the one thing to do", () => {
     expect(headsUpMail({ titles: [T], startAt: at, zone: "America/Chicago" }).layout.happened).toContain("10:15 am");
     expect(headsUpMail({ titles: [T], startAt: at, zone: "America/New_York" }).layout.happened).toContain("11:15 am (10:15 am Central)");
     expect(stopMail({ title: T, code: "SIGNIN" }).layout.details[0]).toMatch(/^The one thing to do: Sign in to Amazon in that Chrome window/);
-    expect(doneMail({ title: T, asin: "B0HQVR4HD3", price_usd: 4.99 }).layout.details).toEqual(["Amazon page: https://www.amazon.com/dp/B0HQVR4HD3", "ASIN: B0HQVR4HD3"]);
+    expect(doneMail({ title: T, asin: "B0HQVR4HD3", price_usd: 4.99 }).layout.details).toEqual(["See the book on Amazon: https://www.amazon.com/dp/B0HQVR4HD3"]);
+    expect(doneMail({ title: T, asin: "B0HQVR4HD3", price_usd: 4.99 }).layout.happened, "the body never repeats line 1").toBe("It is on sale at $4.99.");
+    // 23 Nov 2026 live read: the heads-up asked her to keep the Mac awake and said "Nothing to do" in one line.
+    const hu = headsUpMail({ titles: [T], startAt: at, zone: "America/Chicago" });
+    expect(hu.owner.act).toMatch(/^Keep the Mac awake/);
+    expect(JSON.stringify(hu)).not.toMatch(/Nothing to do/);
     expect(stillWaitingMail({ title: T, code: "SIGNIN" }).layout.details.join(" ")).toMatch(/try again by myself/);
     expect(reviewUpdate({ id: "JC_1", title: T }).key).toBe("kdp-review:jc_1");
     expect(waitingLoop({ title: T, folder: "divorce", day: "2026-11-09" })).toMatchObject({ stop: "KDP_NEW_TITLE_DIVORCE", owner: "sequoia" });
