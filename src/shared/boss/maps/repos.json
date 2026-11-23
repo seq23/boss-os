@@ -357,6 +357,7 @@
         "com.seq.housekeeping",
         "com.seq.disk-sweep",
         "com.seq.ci-sweep-resume",
+        "com.seq.post-land-check",
         "com.seq.ci-sweep-retry",
         "com.seq.dev-housekeeping",
         "com.seq.scooter-watch",
