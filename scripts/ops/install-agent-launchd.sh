@@ -1230,6 +1230,48 @@ lint_plist "$AHREFS_PLIST"
 reload_plist "$AHREFS_PLIST"
 echo "Installed $AHREFS_LABEL — daily 22:15 Central tick (heavy: night only, 21 Nov 2026), weekly Thursday-night work (asks the duty row)."
 
+# ─── The AI answers loop's weekly read (her ask, 22 Nov 2026; weekly by her yes) ──
+#
+# `duty_ai_visibility` (migration 0377), executor scripts/ops/ai-visibility.sh: a locked Claude session
+# reads OpenSEO's six weekly runs through the openseo plugin (nine read-only tools,
+# scripts/ops/ai-visibility-permissions.json) and code posts the week to Boss OS Growth.
+# DAILY 12:00 CENTRAL TICK, WEEKLY TUESDAY WORK (the duty row decides through --only-if-due). All six
+# OpenSEO checks run Tuesday 04:00 UTC; 12:00 Central is 14 hours later and LIGHT (10:00-21:59).
+AIV_LABEL="com.seq.boss-ai-visibility"
+AIV_PLIST="$HOME/Library/LaunchAgents/$AIV_LABEL.plist"
+AIV_LOGS="$HOME/Library/Logs/ai-visibility"
+
+mkdir -p "$AIV_LOGS"
+chmod +x "$REPO/scripts/ops/ai-visibility.sh"
+ln -sfn "$REPO/scripts/ops/ai-visibility.sh" "$HOME/bin/ai-visibility.sh"
+
+cat > "$AIV_PLIST" <<AIVEOF
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN"
+  "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0"><dict>
+  <key>Label</key><string>$AIV_LABEL</string>
+  <key>ProgramArguments</key>
+  <array>
+    <string>/bin/bash</string>
+    <string>-lc</string>
+    <string>bash $REPO/scripts/ops/duty-run.sh ai-visibility.sh --only-if-due -- bash $REPO/scripts/ops/ai-visibility.sh</string>
+  </array>
+  <key>StartCalendarInterval</key>
+  <array>
+    <dict><key>Hour</key><integer>12</integer><key>Minute</key><integer>0</integer></dict>
+  </array>
+  <key>EnvironmentVariables</key>
+  <dict><key>BOSS_OS_REPO</key><string>$REPO</string></dict>
+  <key>StandardOutPath</key><string>$AIV_LOGS/launchd.log</string>
+  <key>StandardErrorPath</key><string>$AIV_LOGS/launchd.err</string>
+  <key>RunAtLoad</key><false/>
+</dict></plist>
+AIVEOF
+lint_plist "$AIV_PLIST"
+reload_plist "$AIV_PLIST"
+echo "Installed $AIV_LABEL — daily 12:00 Central tick (LIGHT), weekly Tuesday read (asks the duty row)."
+
 # ─── Danielle's on-demand repo-change lane ───────────────────────────────────
 #
 # Plan B, approved 20 September 2026. She emails boss@ with `#danielle`, a grid repo and/or a Drive
@@ -1836,6 +1878,7 @@ require_loaded "$BUYERS_LABEL"
 require_loaded "$HUNT_LABEL"
 require_loaded "$SELLERS_LABEL"
 require_loaded "$AHREFS_LABEL"
+require_loaded "$AIV_LABEL"
 # A FIFTH TIME, on 21 September: the repo-change lane was installed, loaded, and the "Verified" line
 # did not name it. `validate:plists-well-formed` now fails the build when a label the installer
 # defines is missing from this list, so a sixth time cannot happen through this file.
@@ -1871,6 +1914,9 @@ require_loaded com.seq.boss-owner-mail-watch
 [ -L "$HOME/bin/ahrefs-audit-fix.sh" ] || missing="$missing ~/bin/ahrefs-audit-fix.sh(symlink)"
 [ -L "$HOME/bin/ahrefs-audit-fix-prompt.md" ] || missing="$missing ~/bin/ahrefs-audit-fix-prompt.md"
 [ -f "$REPO/scripts/ops/ahrefs-audit-fix-prompt.md" ] || missing="$missing scripts/ops/ahrefs-audit-fix-prompt.md"
+[ -L "$HOME/bin/ai-visibility.sh" ] || missing="$missing ~/bin/ai-visibility.sh(symlink)"
+[ -f "$REPO/scripts/ops/ai-visibility-prompt.md" ] || missing="$missing scripts/ops/ai-visibility-prompt.md"
+[ -s "$REPO/scripts/ops/ai-visibility-permissions.json" ] || missing="$missing scripts/ops/ai-visibility-permissions.json"
 # lp-replies is retired (boss fix L): lp-daily reads the LP mailbox through the delegation instead.
 [ -e "$HOME/bin/lp-replies-prompt.md" ] && missing="$missing ~/bin/lp-replies-prompt.md(should-be-retired)"
 [ -e "$HOME/bin/lp-replies.sh" ] && missing="$missing ~/bin/lp-replies.sh(should-be-retired)"

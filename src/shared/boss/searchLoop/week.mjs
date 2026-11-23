@@ -5,7 +5,10 @@
  * Every site that runs the shared engine (seq23/search-loop) uploads one GitHub Actions artifact a
  * week named `search-loop-week`, holding JSON of schema `search-loop-week-v1`:
  *   { site, generated_at, state, published, indexed, pace, ai_visitors, ai_bot_hits, conversions,
- *     wins, undone, merged, held_by_cap, redirected[], cap, notes[], run_url }
+ *     wins, undone, merged, held_by_cap, redirected[], cap, notes[], run_url, ai_misses? }
+ * `ai_misses` (AI answers loop, 22 Nov 2026; ~/Work/ai-visibility/CONTRACT.md) = { strengthened: [{ id,
+ * page_url, at }] }: the Boss OS "own" misses (GET /api/boss/growth/ai-misses, by `id`) whose page the
+ * loop strengthened, and when (ISO). Only these grow a miss's fix_attempts (`strengthenedOf`).
  * Since engine v1.3.0 (owner, 3 Nov 2026) there is no fixed pace: new pages publish only while the
  * site's live engine pages are under a per-site cap that grows 10% a week only when Google
  * impressions grow (falls 10% on a drop, holds when Search Console has no numbers), and a search with
@@ -181,4 +184,15 @@ export function laneLine(week) {
   const one = laneText(L.can_be_one, { first: true });
   const two = laneText(L.striking, { first: !/^\d/.test(one) });
   return `${LANE_LABELS.can_be_one}: ${one} · ${LANE_LABELS.striking}: ${two}`;
+}
+
+/**
+ * The AI answers misses this week's report says the loop strengthened: [{ id, page_url, at }], each
+ * with a hex id, an https page and a real date. Anything else in the list is dropped, never guessed.
+ */
+export function strengthenedOf(week) {
+  const xs = week?.ai_misses?.strengthened;
+  if (!Array.isArray(xs)) return [];
+  return xs.filter((x) => x && /^[a-f0-9]{40}$/.test(String(x.id ?? "")) && /^https:\/\//.test(String(x.page_url ?? "")) && !Number.isNaN(Date.parse(String(x.at ?? ""))))
+    .map((x) => ({ id: x.id, page_url: x.page_url, at: new Date(Date.parse(x.at)).toISOString() })).slice(0, 200);
 }

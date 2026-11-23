@@ -547,7 +547,7 @@
     "Creator studio emails to you are cancelled, including P&P Studio. Sign-in codes still come."
   ],
   "about": "Every scheduled job across her systems, in Central time: Boss OS duties, the Mac's launchd jobs, GitHub Actions and Cloudflare crons in her repos, and West Peek OS's jobs. Client repos are never listed (clientRepoProblems). The Schedule page renders this and nothing else; tests/schedule.test.ts and npm run schedule:check hold it to the real triggers.",
-  "updated": "2026-11-21",
+  "updated": "2026-11-22",
   "businesses": [
     {
       "key": "brokerage",
@@ -4918,6 +4918,37 @@
         "reason": "Fixes only what the audit flagged; none is the goal."
       },
       "macWindow": "HEAVY"
+    },
+    {
+      "id": "ai-visibility",
+      "name": "AI answers read",
+      "what": "Reads OpenSEO's weekly ChatGPT, Gemini and Google AI Overviews answers for the six selling sites, scores each site on Growth and starts one fix per miss.",
+      "business": "spry",
+      "brand": "Spry Labs",
+      "system": "mac",
+      "slots": [
+        "tue 12:00"
+      ],
+      "emails": false,
+      "heavy": false,
+      "trigger": {
+        "duty": "duty_ai_visibility",
+        "launchd": [
+          "com.seq.boss-ai-visibility"
+        ],
+        "ticks": {
+          "com.seq.boss-ai-visibility": [
+            "daily 12:00"
+          ]
+        }
+      },
+      "output": {
+        "metric": "sites_read",
+        "floor": 1,
+        "runs": 2,
+        "reason": "At least one site's OpenSEO week is read each week; nothing read is a named stop, never a zero."
+      },
+      "macWindow": "LIGHT"
     },
     {
       "id": "sites-audit",

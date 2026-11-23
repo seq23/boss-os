@@ -37,7 +37,8 @@ export const TOKEN_KEY = "open_loops_intake_token_sha256";
 const ORIGIN = "https://boss.sequoiataylor.com";
 const FIELDS = ["title", "finish_line", "next_step", "owner", "next_date", "business", "section", "blocked_by"] as const;
 
-async function sha256(s: string): Promise<string> {
+/** Also the AI answers loop's door (growth/aiAnswers.ts GET ai-misses): one token, one check. */
+export async function sha256(s: string): Promise<string> {
   const d = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(s));
   return [...new Uint8Array(d)].map((b) => b.toString(16).padStart(2, "0")).join("");
 }

@@ -971,3 +971,42 @@ initiative, add a row to `src/shared/boss/scorecard/manifest.json` in the same P
 from `READER_IDS`, a D1 query returning one number `n`, floors, version B). A source needing a key the
 vault lacks shows "No number" with `NAMED STOP [KEY_MISSING]` naming the key. Dry run:
 `npm run scorecard:monday -- --dry`. Restart links are `/tap/sc…` (routes/scorecard.ts).
+
+## The AI answers loop (22 Nov 2026)
+
+Her ask, 22 Nov 2026 ("build the ai visibility loop"; weekly by her yes). Each of the six selling sites gets a weekly
+"AI answers" number on Growth, kept apart from Google: how many of its buyer questions ChatGPT, Gemini and Google AI
+Overviews answered while citing the site, and how many named it. Every miss gets one fix started in one lane.
+
+- **The read (her Mac).** OpenSEO runs each site's tracker every Tuesday 04:00 UTC (set in OpenSEO, outside this
+  repo). `duty_ai_visibility` (migration 0377) runs `scripts/ops/ai-visibility.sh` through `duty-run.sh` at 12:00
+  Central on Tuesdays (launchd `com.seq.boss-ai-visibility`, class LIGHT). It builds the context in code
+  (`scripts/ops/ai-visibility-report.mjs context`: each site's lanes, its search-loop `output.url_prefix` and its live
+  sitemap), then a locked Claude session (`ai-run --role ai_visibility.read`, `--permission-mode dontAsk
+  --setting-sources= --settings scripts/ops/ai-visibility-permissions.json`) reads OpenSEO through the openseo plugin.
+  It can call nine read-only tools and nothing else; `npm run validate:ai-visibility` fails the build on any other
+  allow entry, and on any OpenSEO HTTP call in repo code. Then `ai-visibility-report.mjs post` checks every block
+  (`readSite`, src/shared/boss/growth/aiAnswers.mjs) and posts the week to `POST /api/boss/growth/ai-week`.
+- **Honest stops, never a zero.** Plugin not loaded, OpenSEO unreachable, out of credits, no tracker, no answers,
+  a run older than 8 days (`OPENSEO_NOT_YET`), fewer observations than prompts × engines (short read), OpenSEO's own
+  summary disagreeing with the recount, bad JSON for one site: that site is "not read: <why>", the others still
+  count. Nothing read at all → `NAMED STOP [AI_ANSWERS_NOTHING_READ]`, exit 9. Credits moving between the two
+  `whoami` reads → exit 10. A weekly estimate over 500 credits → `NAMED STOP [OPENSEO_OVER_PLAN]` and an Open Loops
+  row (cleared on the next run under plan). Each run prints `OUTPUT <n> sites_read`.
+- **Stored** (additive tables `ai_answer_obs`, `ai_answer_reads`, `ai_misses`; unique on site + week + prompt +
+  engine, so the same week twice changes nothing): prompts, engines, yes/no, counts and DOMAINS only. Never an
+  answer's text, never a person's name.
+- **Shown.** Growth → each business: an "AI answers" card per site (cited for X of N questions, named in M, last
+  week's numbers, one line per engine). One Growth measure per site (kind `answers`, channel `ai-answers`, reader
+  `d1`): the newest week decides; older than 8 days or not read → "not read". KeepMyProof's d1 reader is allowed
+  ("public AI answers, no visitor data"); its links are never tagged. Scorecard row "AI answers".
+- **The lanes** (one per miss; after 2 fix attempts still missed, the next lane: OWN → CLAIM → EARN → CONTEST):
+  OWN is served to search-loop (`GET /api/boss/growth/ai-misses?host=`, BOSS_OPEN_LOOPS_TOKEN, contract in
+  the search-loop repo); an engine page or null only, a better non-engine page is a Director to-do. CLAIM, EARN and
+  CONTEST are one Growth Director to-do per cited domain per site (its prompts listed) through `routeItem`/`mayAct`
+  and the claims check, inside `MAX_OPEN_PER_BUSINESS`; the rest wait, ranked. CLAIM on a listing she does not
+  hold is her Decide card (agents never open accounts); EARN follows `outreach-voice`; CONTEST needs her yes and is
+  checked against the risk brain. Reddit and forums: NOT NOW. Nothing is posted or sent by this loop.
+- **aplayermode.com** has no search loop: its feed answers `status:'read', misses:[]` with a note, and its OWN misses
+  are Director to-dos.
+- **Rerun by hand:** `bash scripts/ops/ai-visibility.sh` (logs `~/Library/Logs/ai-visibility/`, newest `latest.log`).
