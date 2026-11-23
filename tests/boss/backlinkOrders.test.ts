@@ -14,7 +14,7 @@ import { beforeEach, describe, expect, it } from "vitest";
 import { runGrowthDirector, type Model } from "../../src/worker/boss/growth/run";
 import { TOKEN_KEY, sha256 } from "../../src/worker/boss/routes/openLoops";
 import { setSetting } from "../../src/worker/boss/lib/settings";
-import { handleRequest } from "../../src/worker/index";
+import worker, { handleRequest } from "../../src/worker/index";
 import { dayIdInZone } from "../../src/shared/boss/timezone";
 import { MAX_BACKLINKS_PER_CYCLE, TOPIC_MAX } from "../../src/shared/boss/growth/director.mjs";
 import type { Env } from "../../src/worker/env";
@@ -149,7 +149,7 @@ describe("the Director's cycle writes backlink orders, never to-dos or cards", (
   }, 30_000);
 });
 
-describe("GET /api/growth/backlink-orders", () => {
+describe("GET /api/boss/growth/backlink-orders", () => {
   const ins = (id: string, cycle: string, business: string, actions: string, at: number, state = "decided", evidence = "[]") =>
     env.DB.prepare(`INSERT INTO growth_decisions (id, cycle, business, label, state, decision, evidence, actions, created_at) VALUES (?,?,?,?,?,?,?,?,?)`)
       .bind(id, cycle, business, business, state, "Brain text: the LP Jane Investor and sequoia@example.com", evidence, actions, at).run();
@@ -195,5 +195,29 @@ describe("GET /api/growth/backlink-orders", () => {
       VALUES ('olp_bl', 'Growth Director: ApprovalPrep — backlinks guide', 'x', 'A to-do topic', 'claude', '2026-11-30', 'spry', 'not_finished', 'open', 'agent_report', 'growth#approvalprep#backlinks-guide', 1, 1)`).run();
     const body: any = await (await orders()).json();
     expect(body.orders).toEqual([]);
+  });
+});
+
+/**
+ * THE ADDRESS CALLERS USE (22 Nov 2026: the backlink network was handed /api/growth/backlink-orders, the
+ * path inside the Boss app, and got the retired fund API's 410). Through the Worker's own fetch entry,
+ * the public addresses answer with the token; the inner paths are the 410, never the orders.
+ */
+describe("the machine reads' public addresses, through the Worker's fetch entry", () => {
+  const viaEntry = (path: string, auth?: string) => worker.fetch(new Request(`https://boss.sequoiataylor.com${path}`, { headers: auth ? { authorization: auth } : {} }), outer, { waitUntil: () => undefined, passThroughOnException: () => undefined } as unknown as ExecutionContext);
+  it("/api/boss/growth/backlink-orders and /api/boss/growth/ai-misses answer with the token, 401 without; the inner paths are 410", async () => {
+    const bl = await viaEntry("/api/boss/growth/backlink-orders", `Bearer ${TOKEN}`);
+    expect(bl.status).toBe(200);
+    expect(await bl.json()).toEqual({ cycle: null, read_at: expect.any(String), orders: [] });
+    const am = await viaEntry("/api/boss/growth/ai-misses?host=keepmyproof.com", `Bearer ${TOKEN}`);
+    expect(am.status).toBe(200);
+    expect((await am.json() as any).host).toBe("keepmyproof.com");
+    expect((await viaEntry("/api/boss/growth/backlink-orders")).status).toBe(401);
+    expect((await viaEntry("/api/boss/growth/ai-misses?host=keepmyproof.com")).status).toBe(401);
+    for (const inner of ["/api/growth/backlink-orders", "/api/growth/ai-misses?host=keepmyproof.com"]) {
+      const r = await viaEntry(inner, `Bearer ${TOKEN}`);
+      expect(r.status).toBe(410);
+      expect(await r.json()).not.toHaveProperty("orders");
+    }
   });
 });

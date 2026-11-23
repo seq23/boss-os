@@ -21,7 +21,8 @@ import { machineTokenOk } from "../routes/openLoops";
  *                    Growth to-do or Decide card is started per cited source (per page for OWN fits).
  *   GET  /ai-lanes   (session) each site's open misses and their lanes, for the reading session's
  *                    prompt (lanes are code-owned once set: the model only fills a new miss's lane).
- *   GET  /ai-misses  (machine token) the "own" misses per host for the search loop, exactly as
+ *   GET  /ai-misses  (machine token; public address /api/boss/growth/ai-misses) the "own" misses per
+ *                    host for the search loop, exactly as
  *                    ~/Work/ai-visibility/CONTRACT.md (docs/OPERATIONS.md "AI answers loop").
  *
  * MONEY AND ACCOUNTS. Nothing here posts, sends or buys. A to-do opens only on an approved roster
@@ -297,4 +298,5 @@ aiAnswerRoutes.get("/ai-misses", async (c) => {
   return c.json(await aiMisses(c.env.DB, host));
 });
 
+/** The path INSIDE the Boss app; its public address is `/api/boss/growth/ai-misses` (see BACKLINK_ORDERS_PATH). */
 export const AI_MISSES_PATH = "/api/growth/ai-misses";
