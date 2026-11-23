@@ -92,3 +92,23 @@ describe("a failed task is the team's to fix, told as done", () => {
     expect(lines).toEqual([{ id: "tsk_1", text: 'What happened: Camille\'s "Weekly report" stopped (stdout was not JSON). What we did: Danielle has a job to find the cause and fix it at source. Status: being fixed.' }]);
   });
 });
+
+describe("every spirit line has its one-tap Drop for good (item 19, 18 Nov 2026)", () => {
+  it("a dropped kind of line stays gone the next day", () => {
+    const base: any = { diary: [], tasks: [], approvals: [], repoChanges: [], briefing: null, feed: { items: [] }, morning: {}, spirit: DAY, practiceWeek: WEEK, mintToken: () => `drop_${"b".repeat(24)}` };
+    const first = buildDay(base, NOW);
+    const t = first.text.replace(/⁣/g, "");
+    const block = t.slice(t.indexOf("✨ Spirit"), t.indexOf("See the full sky"));
+    const lines = block.split("\n").filter((l: string) => l.startsWith("- "));
+    expect(lines.length).toBeGreaterThan(0);
+    for (const l of lines) expect(l).toMatch(/Drop for good: https:\/\/boss\.sequoiataylor\.com\/tap\/drop_/);
+    const drop: any = first.digest.drops.find((d: any) => d.item_id.startsWith("spirit-"));
+    expect(drop).toBeTruthy();
+    const next = buildDay({ ...base, dropped: [{ item_id: drop.item_id, dropped_at: NOW - 1000 }] }, NOW + 86_400_000);
+    const t2 = String(next.text).replace(/⁣/g, "");
+    const kind = (String(drop.label).split(/[:\d]/)[0] ?? "").trim();
+    expect(t2.split("\n").filter((l: string) => l.startsWith(`- ${kind}`))).toEqual([]);
+    expect(t.split("\n").filter((l: string) => l.startsWith(`- ${kind}`))).toHaveLength(1);
+  });
+});
+

@@ -12,7 +12,7 @@
  */
 import { env } from "cloudflare:test";
 import { beforeEach, describe, expect, it } from "vitest";
-import { runGrowthDirector, type Model } from "../../src/worker/boss/growth/run";
+import { openTodo, runGrowthDirector, type Model } from "../../src/worker/boss/growth/run";
 import { PROMPT_BUDGET_CHARS } from "../../src/shared/boss/growth/director.mjs";
 import { dayIdInZone } from "../../src/shared/boss/timezone";
 
@@ -670,5 +670,27 @@ describe("the privacy check runs inside the cycle, on the prompt built, before a
     const rows = (await decisions()).filter((x) => x.state !== "paused");
     expect(rows.length).toBe(2);
     expect(rows.every((x) => x.state === "held: roster" && /NAMED STOP \[PRIVACY_UNREAD\]/.test(x.decision))).toBe(true);
+  });
+});
+
+describe("a weekly post is asked for once a week, however often the cycle runs (23 Nov 2026)", () => {
+  it("a re-run in the week it was done never reopens it; next week it comes back", async () => {
+    const entry = { key: "porch-and-party", label: "Porch & Party", brain: "porch-and-party" } as any;
+    const key = "growth#porch-and-party#google-business-profile-weekly-christmas-post";
+    const t = { title: "Growth Director: Porch & Party — google-business-profile weekly christmas post", next: "Post it", finish: "Live" };
+    const first = await openTodo(env.DB as any, entry, key, t, DAY, NOW);
+    expect(first.id).toBeTruthy();
+    // Done on Wednesday of the same week.
+    await env.DB.prepare(`UPDATE owner_open_loops SET status = 'closed', closed_at = ?, updated_at = ? WHERE id = ?`).bind(NOW + 2 * 86_400_000, NOW + 2 * 86_400_000, first.id).run();
+    // Sunday evening Central (Monday in UTC) is still the same week: a retry asks nothing.
+    const sunday = Date.parse("2026-11-30T02:00:00Z");
+    const again = await openTodo(env.DB as any, entry, key, t, dayIdInZone(sunday), sunday);
+    expect(again.id).toBeNull();
+    expect(again.why).toMatch(/already done/);
+    expect((await env.DB.prepare(`SELECT status FROM owner_open_loops WHERE id = ?`).bind(first.id).first<any>()).status).toBe("closed");
+    // The Monday after, it opens again: one row, open.
+    const next = Date.parse("2026-11-30T12:00:00Z");
+    expect((await openTodo(env.DB as any, entry, key, t, dayIdInZone(next), next)).id).toBe(first.id);
+    expect((await loops()).filter((l) => l.source_key === key).map((l) => l.status)).toEqual(["open"]);
   });
 });

@@ -38,7 +38,7 @@
 import type { Env } from "../env";
 import { newId } from "../lib/id";
 import { audit } from "../lib/audit";
-import { dayIdInZone } from "../../../shared/boss/timezone";
+import { dayIdInZone, weekIdInZone } from "../../../shared/boss/timezone";
 import manifest from "../../../shared/boss/scorecard/manifest.json";
 import { summarize } from "../../../shared/boss/growth/scoreboard.mjs";
 import { GROWTH_BRAINS, growthSection, parseRoster, rosterProblems, rulingsFor, BRAIN_NAMES, type RosterEntry } from "../../../shared/boss/growth/roster.mjs";
@@ -108,12 +108,12 @@ export async function loadRoster(db: D1Database): Promise<{ roster: RosterEntry[
 
 /** The pipeline to-do for one business × channel × format: one row, its draft refreshed each week. */
 export const PIPELINE_OWNER = "claude";
-async function queueRow(db: D1Database, entry: RosterEntry, item: { channel: string; format: string; draft: string }, nextDate: string): Promise<{ id: string | null; why?: string }> {
+async function queueRow(db: D1Database, entry: RosterEntry, item: { channel: string; format: string; draft: string }, nextDate: string, now = Date.now()): Promise<{ id: string | null; why?: string }> {
   return openTodo(db, entry, pipelineKey(entry.key!, item.channel, item.format), {
     title: `Growth Director: ${entry.label} — ${item.channel} ${item.format}`,
     next: `Post this through ${entry.label}'s approved ${item.channel} pipeline only, as written: ${item.draft}`,
     finish: `This week's ${item.format} is live on ${entry.label}'s ${item.channel}`,
-  }, nextDate);
+  }, nextDate, now);
 }
 
 /**
@@ -121,11 +121,18 @@ async function queueRow(db: D1Database, entry: RosterEntry, item: { channel: str
  * business has under MAX_OPEN_PER_BUSINESS open. Shared by the Director's pipelines and the AI answers
  * loop (src/worker/boss/growth/aiAnswers.ts), so both count against the same cap.
  */
-export async function openTodo(db: D1Database, entry: RosterEntry, key: string, t: { title: string; next: string; finish: string }, nextDate: string): Promise<{ id: string | null; why?: string }> {
+export async function openTodo(db: D1Database, entry: RosterEntry, key: string, t: { title: string; next: string; finish: string }, nextDate: string, now = Date.now()): Promise<{ id: string | null; why?: string }> {
   const open = await db.prepare(`SELECT COUNT(*) AS n FROM owner_open_loops WHERE status = 'open' AND source_key LIKE ? AND source_key <> ?`).bind(`growth#${entry.key}#%`, key).first<{ n: number }>();
-  const mine = await db.prepare(`SELECT id, status FROM owner_open_loops WHERE source_key = ?`).bind(key).first<{ id: string; status: string }>();
+  const mine = await db.prepare(`SELECT id, status, closed_at, updated_at FROM owner_open_loops WHERE source_key = ?`).bind(key).first<{ id: string; status: string; closed_at: number | null; updated_at: number }>();
+  /*
+   * ONE POST A WEEK, EVEN WHEN THE CYCLE RUNS TWICE (23 Nov 2026, her weekly Christmas post on Google):
+   * a weekly to-do closed this week (Central, Monday to Sunday) stays closed until next week, so a
+   * re-run or a retry of Monday's cycle never asks for the same week's post again.
+   */
+  if (mine && mine.status !== "open" && weekIdInZone(Number(mine.closed_at ?? mine.updated_at)) === weekIdInZone(now)) {
+    return { id: null, why: `this week's ${t.title.replace(/^Growth Director:\s*/, "")} is already done; it comes back next week` };
+  }
   if (!(mine?.status === "open") && (open?.n ?? 0) >= MAX_OPEN_PER_BUSINESS) return { id: null, why: `${entry.label} already has ${MAX_OPEN_PER_BUSINESS} growth to-dos open; this waits for one to finish` };
-  const now = Date.now();
   const title = t.title.slice(0, 200), next = t.next.slice(0, 400), finish = t.finish.slice(0, 300);
   if (mine) {
     await db.prepare(`UPDATE owner_open_loops SET next_step = ?, next_date = ?, status = 'open', updated_at = ? WHERE id = ?`).bind(next, nextDate, now, mine.id).run();
@@ -280,7 +287,7 @@ export async function runGrowthDirector(env: Env, now = Date.now(), deps: { mode
         if (item.channel === BACKLINKS) { requested++; actions.push({ kind: "ordered", item }); continue; }
         // A format on the roster is approved: it queues, first post included. Decide is only for a new
         // account, channel, price or anything paid (her ruling, 22 Nov 2026: "why are they asking me anything?").
-        const q = await queueRow(db, entry, item, decision.next_check ?? today);
+        const q = await queueRow(db, entry, item, decision.next_check ?? today, now);
         actions.push(q.id ? { kind: "queued", loop: q.id, item } : { kind: "held", why: q.why, item });
       }
       for (const p of decision.proposals) {

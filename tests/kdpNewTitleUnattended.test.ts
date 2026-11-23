@@ -186,3 +186,18 @@ describe("a book Live on the bookshelf counts as live in the brain", () => {
     expect(lineCounts(withPublished(reg, { drafts: "/d", read: () => { throw new Error("ENOENT"); } }))["Kindle books: KeepMyProof"]).toBe("1 (0 live)");
   });
 });
+
+describe("an older draft left on the shelf is optional, harmless and has its place (ship-review sr_mwtef1802kq3, 23 Nov 2026)", () => {
+  it("the line links her KDP Bookshelf by name, and the book link says it opens the book", async () => {
+    const { layoutEmail } = await import("../src/shared/boss/mail/plain.mjs");
+    for (const msg of [doneMail({ title: "A Book", asin: "B0TEST0001", price_usd: 4.99, extraDrafts: 1 }), liveMail([{ title: "A", asin: "B0TEST0002", extraDrafts: 1 }, { title: "B", asin: "B0TEST0003", extraDrafts: 1 }])]) {
+      const line = msg.layout.details.find((d: string) => /draft/i.test(d))!;
+      expect(line).toContain("https://kdp.amazon.com/bookshelf");
+      expect(line).toMatch(/^Optional\b/);
+      expect(line).not.toMatch(/earlier runs|\bthere\b/);
+      const html = layoutEmail({ ...msg.layout, owner: msg.owner } as any).html ?? "";
+      expect(html).toContain(">Open your KDP Bookshelf<");
+      expect(html).not.toContain(">Open amazon.com<");
+    }
+  });
+});

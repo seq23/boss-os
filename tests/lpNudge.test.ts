@@ -1,6 +1,6 @@
 /** One gentle LP nudge for her yes after 7 days without an answer (owner, 26 Oct 2026). Fake names. */
 import { describe, expect, it } from "vitest";
-import { lpNudgeItems, LP_NUDGE_DAYS } from "../src/shared/boss/lp/plan.mjs";
+import { lpNudgeItems, lpNudgeBody, LP_NUDGE_DAYS } from "../src/shared/boss/lp/plan.mjs";
 import { lpMorning } from "../scripts/ops/lp-daily.mjs";
 
 const DAY = 86_400_000;
@@ -22,6 +22,21 @@ describe("the LP nudge", () => {
     expect(lpNudgeItems([row({ sent_at: NOW - 6 * DAY })], NOW)).toEqual([]);
     expect(lpNudgeItems([row({ sent_at: NOW - 15 * DAY })], NOW)).toEqual([]);
     expect(lpNudgeItems([row({ status: "replied_again" }), row({ status: "drafted" })], NOW)).toEqual([]);
+  });
+  it("quotes a whole sentence of theirs, never their greeting and never cut mid-thought (23 Nov 2026 live read)", () => {
+    const said = "Hi Pat, Glad to hear that. Short version below. The idea is to keep one template and one set of protective terms across every fund we look at, so each new round is a fill-in rather than a fresh negotiation. We review managers each quarter and would like to hear more.";
+    const body = lpNudgeBody({ name: "Pat Example", bucket: "call", said });
+    expect(body).toMatch(/Picking up from your note \("We review managers each quarter and would like to hear more\."\)/);
+    expect(body).not.toMatch(/Hi Pat, Glad|…/);
+    // Their question wins; nothing whole that fits names the thread instead.
+    expect(lpNudgeBody({ name: "Pat", bucket: "call", said: "Hi, I'm happy to connect. What did you have in mind?" })).toMatch(/\("What did you have in mind\?"\)/);
+    expect(lpNudgeBody({ name: "Pat", bucket: "call", said: "Hello Sequoia, Sure. Ok.", subject: "Re: SAFE rounds" })).toMatch(/Picking up our thread on SAFE rounds:/);
+  });
+  it("a call is a Done line when booked and the day after it is held, never a week later (23 Nov 2026 live read)", () => {
+    const call = (start: number) => row({ status: "scheduled", picked_start: start });
+    expect(lpMorning([call(NOW + 2 * DAY)], NOW).lines.map((l: any) => l.text)).toEqual([expect.stringMatching(/^Pat Example — Call booked: /)]);
+    expect(lpMorning([call(NOW - 12 * 3_600_000)], NOW).lines.map((l: any) => l.text)).toEqual([expect.stringMatching(/^Pat Example — Call held: /)]);
+    expect(lpMorning([call(NOW - 7 * DAY)], NOW).lines.filter((l: any) => /Call held/.test(l.text))).toEqual([]);
   });
   it("rides in Monique's morning section as a Decide item", () => {
     expect(lpMorning([row({})], NOW).decide.map((d: any) => d.key)).toEqual(["lpnudge:l1"]);

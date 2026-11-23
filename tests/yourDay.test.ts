@@ -102,7 +102,10 @@ describe("the one morning email", () => {
   });
   it("Camille's briefing: three one-line headlines, then one link to the whole briefing on its screen", () => {
     const brief = e.text.slice(e.text.indexOf("This morning's briefing"), e.text.indexOf("Read the full briefing")).split("\n").filter((l) => l.startsWith("- "));
-    expect(brief.map((l) => l.replace(/\u2063/g, ""))).toEqual(["- Rates held.", "- A large AI secondary priced up.", "- Two IPO filings."]);
+    // Each headline ends with its own Drop for good (item 19, 18 Nov 2026).
+    const DROP = / — Drop for good: https:\/\/boss\.sequoiataylor\.com\/tap\/drop_[\w-]{24}$/;
+    for (const l of brief) expect(l).toMatch(DROP);
+    expect(brief.map((l) => l.replace(/\u2063/g, "").replace(DROP, ""))).toEqual(["- Rates held.", "- A large AI secondary priced up.", "- Two IPO filings."]);
     expect(e.text.replace(/\u2063/g, "")).not.toContain("A launch slipped.");
     expect(e.text).toContain("Read the full briefing →: https://boss.sequoiataylor.com/?view=briefing");
     // The rest of the report is on its screen, never in the email (owner, 24 Oct 2026: "never risk the size limit").
@@ -594,3 +597,20 @@ describe("the 23 Nov 2026 live read of the Monday morning email", () => {
     expect(all).toMatch(/3 decisions are waiting on you this morning, 2 replies are still yours to send/);
   });
 });
+
+describe("every briefing headline has its one-tap Drop for good (item 19, 18 Nov 2026)", () => {
+  it("a dropped headline never comes back; the others stay", () => {
+    const base: any = { ...DATA, mintToken: () => `drop_${"c".repeat(24)}` };
+    const t = buildDay(base, NOW).text;
+    const block = t.slice(t.indexOf("This morning's briefing"), t.indexOf("Read the full briefing"));
+    const heads = block.split("\n").filter((l: string) => l.startsWith("- "));
+    expect(heads.length).toBeGreaterThan(1);
+    for (const l of heads) expect(l).toMatch(/Drop for good: https:\/\/boss\.sequoiataylor\.com\/tap\/drop_/);
+    const first = buildDay(base, NOW).digest.drops.find((d: any) => d.item_id.startsWith("brief-"));
+    const again = buildDay({ ...base, dropped: [{ item_id: first.item_id, dropped_at: NOW - 1000 }] }, NOW).text;
+    const block2 = again.slice(again.indexOf("This morning's briefing"), again.indexOf("Read the full briefing"));
+    expect(block2).not.toContain(first.label);
+    expect(block2.split("\n").filter((l: string) => l.startsWith("- "))).toHaveLength(heads.length - 1);
+  });
+});
+

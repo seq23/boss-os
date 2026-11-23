@@ -8,6 +8,7 @@ export function saveState(name: string, state: unknown): void;
 export function movedReadings(readings: Reading[], prev?: Record<string, string>): (Reading & { was: string | null })[];
 export function stateMap(readings: Reading[]): Record<string, string>;
 export function readNothingStop(readings: Reading[], code: string): string | null;
+export function fixJob(api: { post(p: string, b: unknown): Promise<unknown> }, job: { title: string; prompt: string; touches?: "money" | "outreach" | "none" | null }): Promise<string | null>;
 export function bossApi(fetchImpl?: typeof fetch): Promise<{ get(p: string): Promise<any>; post(p: string, b: unknown): Promise<any>; put(p: string, b: unknown): Promise<any> }>;
 export function sendAs(who: string, msg: { subject: string; text: string; html?: string; to?: string }, fetchImpl?: typeof fetch): Promise<boolean>;
 export function googleToken(scope: string, sub: string, fetchImpl?: typeof fetch): Promise<string>;

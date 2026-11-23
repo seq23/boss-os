@@ -628,12 +628,28 @@ export const MONEY_OR_OUTREACH = /\b(?:outreach|send|sends|sender|follow-?ups?|i
 export function teamStopsLine(tasks) {
   const list = (tasks ?? []).filter(Boolean);
   if (!list.length) return null;
-  const names = [...new Set(list.map((t) => jobName(t).name))];
+  // "Paid AI calls on OpenRouter — switch them back to free": the job is what comes before the dash.
+  const nameOf = (t) => jobName(t).name.split(/\s+—\s+/)[0].replace(/[.:]/g, ",");
+  const names = [...new Set(list.map(nameOf))];
   const shown = names.slice(0, 4).join("; ");
-  const touch = list.filter((t) => MONEY_OR_OUTREACH.test(`${t.title ?? ""} ${jobName(t).name}`)).map((t) => jobName(t).name);
-  const effect = touch.length ? `${[...new Set(touch)].slice(0, 2).join(" and ").replace(/[.:]/g, ",")} ${touch.length === 1 ? "touches" : "touch"} outreach or money, so nothing goes out from ${touch.length === 1 ? "it" : "them"} until it is fixed` : "none of them touches money or outreach";
+  /*
+   * The job that opened the fix says whether it touches money or outreach (input.touches, from
+   * fixJob); the title words are read only for a task that did not say (23 Nov 2026 live read: "Paid
+   * AI calls on OpenRouter" went to her as "none of them touches money or outreach").
+   */
+  const declared = (t) => { try { return (typeof t.input === "string" ? JSON.parse(t.input) : t.input)?.touches ?? null; } catch { return null; } };
+  const kindOf = (t) => declared(t) ? (["money", "outreach"].includes(declared(t)) ? declared(t) : null) : MONEY_OR_OUTREACH.test(`${t.title ?? ""} ${jobName(t).name}`) ? "outreach or money" : null;
+  const hit = list.map((t) => ({ name: nameOf(t), kind: kindOf(t) })).filter((x) => x.kind);
+  const kinds = [...new Set(hit.map((x) => x.kind))];
+  const what = kinds.length === 1 ? kinds[0] : "outreach or money";
+  const who = [...new Set(hit.map((x) => x.name))];
+  // "Touches nothing" is said only when every job said so: a title word can warn, never clear.
+  const effect = who.length
+    ? `${who.slice(0, 2).join(" and ")} ${who.length === 1 ? "touches" : "touch"} ${what}${what === "money" ? "" : `, so nothing goes out from ${who.length === 1 ? "it" : "them"} until it is fixed`}`
+    : !list.every(declared) ? null
+    : names.length === 1 ? "it does not touch money or outreach" : "none of them touches money or outreach";
   // One sentence: Done for you keeps the first sentence of a line.
-  return `Stopped, and Danielle is fixing ${names.length === 1 ? "it" : "them"}: ${shown.replace(/[.:]/g, ",")}${names.length > 4 ? ` and ${names.length - 4} more` : ""} (${effect}).`;
+  return `Stopped, and Danielle is fixing ${names.length === 1 ? "it" : "them"}: ${shown}${names.length > 4 ? ` and ${names.length - 4} more` : ""}${effect ? ` (${effect})` : ""}.`;
 }
 
 /** The exit code that tells duty-run.sh "not yet, ask me again on the next tick": named, never recorded as a run. */
@@ -845,7 +861,7 @@ export function winsFrom({ lpRows = [], prospects = null, deals = 0, now = Date.
   for (const r of prospects?.replies ?? []) {
     if (r.status === "replied" && r.name && !/\b(?:out of (?:the )?office|automatic reply|not interested|no thanks)\b/i.test(String(r.reply_note ?? ""))) out.push({ sentence: `Grateful ${r.name}${r.firm ? ` at ${r.firm}` : ""} wrote back to me.`, theme: "win:reply" });
   }
-  if (deals > 0) out.push({ sentence: `Grateful ${deals === 1 ? "a new deal" : `${deals} new deals`} reached my desk since yesterday.`, theme: "win:deals" });
+  if (deals > 0) out.push({ sentence: `Grateful for ${deals === 1 ? "the new deal that" : `the ${deals} new deals that`} came in since yesterday.`, theme: "win:deals" });
   return out;
 }
 
@@ -940,7 +956,7 @@ export function brainsSectionFor(data, now = Date.now()) {
   if (parts(now).weekday !== "Monday") return null;
   // The email's short line (cohesionEmailLine); the full detail stays on the Brains page.
   const line = data.brainsCheck?.email_line ?? data.brainsCheck?.line ?? "Weekly check of the setup: it did not load this morning; the team is looking.";
-  return { title: "Weekly check", tone: "done", items: [{ text: line, links: [{ label: "Open Brains ›", url: BRAINS_URL }] }], empty: null };
+  return { title: "Weekly check", tone: "done", items: [{ text: line, links: [{ label: "The Brains page ›", url: BRAINS_URL }] }], empty: null };
 }
 
 /**
@@ -1210,7 +1226,8 @@ export function buildDay(data, now = Date.now()) {
   const raw = briefingRaw(data.briefing, today);
   const src = briefingSourceUrl(data.briefing);
   const below = raw ? briefingBelowLine(data.briefing) : null;
-  const briefTop = raw ? [...(below ? [below] : []), ...raw.map((l) => ({ runs: proseRuns(headline(l), src) }))] : null;
+  // Every headline has its one-tap "Drop for good" (item 19, 18 Nov 2026); a dropped one never comes back.
+  const briefTop = raw ? [...(below ? [below] : []), ...raw.map((l) => ({ l, id: idFor("brief", headline(l)) })).filter(({ id }) => !isGone(id)).map(({ l, id }) => ({ runs: proseRuns(headline(l), src), links: [dropLink(id, headline(l))] }))] : null;
 
   /*
    * 4. Done for you (owner, 26 Oct 2026: "no need to repeat ever and do not use a lot of space"): each
@@ -1253,7 +1270,15 @@ export function buildDay(data, now = Date.now()) {
   const coach = neverMissTwice(data.missedDays, { waiting: decide.length, owed: stillYours.length, oldestWait, action, pressure: data.pressure });
   const grat = gratitudeLine({ wins: winsFrom({ lpRows: data.lpRows ?? [], prospects: data.prospects ?? null, deals: deals.length, now }), herList: data.gratitudeList ?? [], fallback: data.spirit?.practice?.gratitude?.sentence ?? null, history: data.told?.gratitude ?? [], today });
   const gate = gateLine({ gratitude: grat?.sentence ?? null, action, done: Boolean(data.gateDone) });
-  const spirit = spiritSection(data.spirit ?? null, data.practiceWeek ?? null, now, data.lapseLine ?? null, { coach: coach.line, action });
+  const spiritRaw = spiritSection(data.spirit ?? null, data.practiceWeek ?? null, now, data.lapseLine ?? null, { coach: coach.line, action });
+  /*
+   * A spirit line's numbers change every day ("Giving: 2 this month"), so its Drop for good drops the KIND
+   * of line (item 19, 18 Nov 2026: "permanently dismissed, never returns"), keyed by its words before the
+   * first number or colon.
+   */
+  const spiritKind = (t) => String(t).split(/[:\d]/)[0].trim().slice(0, 60);
+  const spiritItems = (spiritRaw?.items ?? []).map((i) => { const text = (i.runs ?? []).map((r) => r.text).join(""); return { ...i, id: idFor("spirit", spiritKind(text)), text }; }).filter((i) => !isGone(i.id)).map(({ id, text, ...i }) => ({ ...i, links: [...(i.links ?? []), dropLink(id, text)] }));
+  const spirit = spiritRaw && spiritItems.length ? { ...spiritRaw, items: spiritItems } : null;
   const ancestral = ancestralLine(data.spirit ?? null);
   // The prospects producer's count line is in "Prospect emails" when that loaded; not said twice.
   for (const name of DONE_SOURCES.filter((n) => !(data.prospects && n === "prospects"))) for (const l of m[name]?.lines ?? []) doneRaw.push(typeof l === "string" ? { text: l, links: [] } : { links: [], ...l });
@@ -1268,7 +1293,7 @@ export function buildDay(data, now = Date.now()) {
   // section — what is broken, what was fixed, what is being built — never pooled into "Done for you",
   // where three lines would hide it.
   const gridLines = (m.grid_repos?.lines ?? []).slice(0, 4).map((l) => (typeof l === "string" ? { text: l, links: [] } : { links: [], ...l }));
-  const gridRepos = gridLines.length ? { title: "The grid repos: this week's search check", tone: "done", items: gridLines, link: m.grid_repos?.link ?? null, empty: null } : null;
+  const gridRepos = gridLines.length ? { title: "Your sites: this week's search check", tone: "done", items: gridLines, link: m.grid_repos?.link ?? null, empty: null } : null;
 
   // 4b'. The Scorecard (Mondays; owner ruling, 1 Nov 2026): its own section with its own count title —
   // switches, pauses and rows with no number only; a quiet week is one line.

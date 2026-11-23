@@ -3,13 +3,15 @@
  * One behaviour per fix, each where the behaviour lives. Every name here is invented.
  */
 import { describe, expect, it } from "vitest";
-import { buildDay, calendarItems, cardButtons, cardTopic, onePerPerson, stillPreview, prospectSection, publicFromBriefing, neverMissTwice, gateLine, gratitudeLine, spiritSection } from "../scripts/ops/your-day.mjs";
+import { buildDay, calendarItems, cardButtons, cardTopic, onePerPerson, stillPreview, prospectSection, publicFromBriefing, neverMissTwice, gateLine, gratitudeLine, spiritSection, teamStopsLine } from "../scripts/ops/your-day.mjs";
 import { realMatch } from "../scripts/ops/interest-grid.mjs";
 import { isPublicCompany, publicList, publicFromHeadline, publicFromReply } from "../src/shared/boss/deals/publicCompanies.mjs";
 import { morningCommands, dropTargets, coachPressure, gratitudeFromBrain, brainLine } from "../src/shared/boss/mail/morningReply.mjs";
 import { layoutEmail } from "../src/shared/boss/mail/plain.mjs";
 import { pruneDropped } from "../src/worker/boss/routes/morning";
 import { lpDecideItems, closesThread } from "../src/shared/boss/lp/plan.mjs";
+import { planRisk } from "../scripts/ops/risk-watch.mjs";
+import { fixJob } from "../scripts/ops/lib/duty-kit.mjs";
 
 describe("a thanks closes the thread; an auto-reply is never a new message (item 14)", () => {
   const row = (said: string) => ({ id: "lpr_t1", address: "dana@lp.example", name: "Dana Field", status: "replied_again", thread_id: "t1", sent_at: NOW - 9 * 86_400_000, last_reply_at: NOW - 86_400_000, said });
@@ -219,5 +221,28 @@ describe("the banner (top of the email)", () => {
     const e = layoutEmail({ who: "Simone", subject: "S", happened: "Line one.", sections: [{ title: "Decide", items: [{ text: "One." }] }], banners: [{ tone: "red", title: "STOPPED: a job", lines: ["Why."] }] } as any);
     expect(e.text.indexOf("STOPPED: a job")).toBeLessThan(e.text.indexOf("Decide"));
     expect(e.html.indexOf("STOPPED: a job")).toBeLessThan(e.html.indexOf("Decide"));
+  });
+});
+
+describe("done for you: a stopped job says truly whether it touches money (item 31, 23 Nov 2026 live read)", () => {
+  it("the job that opened the fix decides; the title is read only when it did not say", () => {
+    const paid = { title: "Paid AI calls on OpenRouter — switch them back to free", input: JSON.stringify({ origin: "repair", touches: "money" }) };
+    const late = { title: "Camille's briefing was late for the morning email", input: { origin: "repair" } };
+    expect(teamStopsLine([late, paid])).toMatch(/\(Paid AI calls on OpenRouter touches money\)/);
+    expect(teamStopsLine([late, paid])).not.toMatch(/none of them|switch them back/);
+    // A job that did not say is never cleared by its title (the live 23 Nov task predates the field).
+    expect(teamStopsLine([late, { title: "Paid AI calls on OpenRouter — switch them back to free", input: { origin: "repair" } }])).not.toMatch(/none of them|does not touch/);
+    const none = { input: { touches: "none" } };
+    expect(teamStopsLine([{ ...late, ...none }, { ...late, ...none, title: "Search pages stopped" }])).toMatch(/none of them touches money or outreach/);
+    expect(teamStopsLine([{ ...late, ...none }])).toMatch(/\(it does not touch money or outreach\)/);
+    // A fix that says it touches nothing is believed over a title word.
+    expect(teamStopsLine([{ title: "Campaign report layout", input: { touches: "none" } }])).toMatch(/it does not touch money/);
+  });
+  it("the real path: Toni's paid-model alert opens a fix that the morning tells as touching money", async () => {
+    const plan = planRisk([{ key: "openrouter", state: "alert", was: "ok", line: "New OpenRouter spend: $0.0120 since the last check. Something called a paid model." }]);
+    const posted: any[] = [];
+    for (const f of plan.fixes) expect(await fixJob({ post: async (_p: string, body: any) => { posted.push(body); } }, f)).toBeNull();
+    expect(posted).toHaveLength(1);
+    expect(teamStopsLine(posted)).toMatch(/touches money/);
   });
 });
