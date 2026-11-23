@@ -608,7 +608,8 @@ export const CHECKS = {
   clarity(ctx) {
     // A site marked clarity: false in sites.json does not use Clarity, by the owner's ruling (25 Oct
     // 2026: Clarity only where visitors fill a form or buy; how-we-know's audience is on YouTube).
-    if (ctx.site?.clarity === false) return pass(`Clarity not used on this site: ${ctx.site.clarity_why || "owner ruling"}`);
+    const off = clarityOff(ctx);
+    if (off) return off;
     const h = ctx.home?.html ?? "";
     if (loadsClarity(h) || ctx.files?.__clarity_loader) return pass("Clarity loads on the homepage");
     // Clarity belongs on the pages where visitors fill a form or buy (e9), so one of those loading it
@@ -633,7 +634,8 @@ export const CHECKS = {
    * page and data nobody reads. Any sampled page that loads Clarity must carry a form or a buy link.
    */
   clarity_scoped(ctx) {
-    if (ctx.site?.clarity === false) return pass(`Clarity not used on this site: ${ctx.site.clarity_why || "owner ruling"}`);
+    const off = clarityOff(ctx);
+    if (off) return off;
     const loading = okPages(ctx).filter((p) => loadsClarity(p.html));
     if (!loading.length) return pass("no sampled page loads Clarity outside a form or buy page");
     const bad = loading.filter((p) => !formOrBuy(p.html, p.url)).map((p) => p.url);
@@ -1294,7 +1296,21 @@ function ownHosts(ctx, e) {
 export const CLARITY_RE = /clarity\.ms|clarity\.js|\/clarity[-.]/i;
 
 /** Privacy disclosures and documentation links do not load a recording script. */
-export function loadsClarity(html) {
+export /**
+ * A site marked `clarity: false` in sites.json (e6/i8 and e9). The mark is a ruling, so it carries her
+ * reason (`clarity_why`) or it fails; and a site marked off that still loads Clarity on the homepage or a
+ * sampled page fails, so the mark can never hide a live tag (time-2-read.com, 22 Nov 2026: Microsoft
+ * Clarity is not for under-18 sites). null = the site is not marked off.
+ */
+function clarityOff(ctx) {
+  if (ctx.site?.clarity !== false) return null;
+  const why = String(ctx.site.clarity_why ?? "").trim();
+  if (!why) return fail("marked clarity: false in sites.json with no clarity_why: the exemption needs its reason");
+  const live = [ctx.home?.html && loadsClarity(ctx.home.html) ? (ctx.home.url ?? `https://${ctx.host}/`) : null, ...(ctx.pages ?? []).filter((p) => p.status === 200 && p.html && loadsClarity(p.html)).map((p) => p.url)].filter(Boolean);
+  if (live.length || ctx.files?.__clarity_loader) return fail(`marked clarity: false (${why}) but Clarity still loads: ${live.length ? list([...new Set(live)]) : "the repo's Clarity loader"}`, { evidence: live });
+  return pass(`Clarity not used on this site: ${why}`);
+}
+function loadsClarity(html) {
   const active = String(html ?? "").replace(/<!--[\s\S]*?-->/g, "")
     .replace(/<(template|noscript)\b[^>]*>[\s\S]*?<\/\1>/gi, "");
   return [...active.matchAll(/<script\b([^>]*)>([\s\S]*?)<\/script>/gi)].some((m) => {

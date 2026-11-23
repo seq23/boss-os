@@ -714,16 +714,47 @@ describe("known limits and one page counted once (25 Oct 2026)", () => {
     const dental = CHECKS.clarity!({ site: cbd, home: { html: "<html></html>" }, files: {} } as any);
     expect(dental.status).toBe("pass");
     expect(dental.detail).toMatch(/no form and no sale/);
-    const t2r = sites.grid_repos.find((s: any) => s.domain === "time-2-read.com");
-    expect(CHECKS.clarity!({ site: t2r, home: { html: "<html></html>" }, files: {} } as any).status).toBe("fail");
+    const kmp = sites.grid_repos.find((s: any) => s.domain === "keepmyproof.com");
+    expect(kmp.clarity).not.toBe(false);
+    expect(CHECKS.clarity!({ site: kmp, home: { html: "<html></html>" }, files: {} } as any).status).toBe("fail");
     // The exemption is a ruling with a reason, never a flag someone reached for to clear an item:
     // every exempt site is named here AND has to say why, in a sentence long enough to be one.
     const exempt = sites.grid_repos.filter((s: any) => s.clarity === false);
-    expect(exempt.map((s: any) => s.domain).sort()).toEqual(["cynthiabrowndds.com", "howweknowdeep.com"]);
+    expect(exempt.map((s: any) => s.domain).sort()).toEqual(["cynthiabrowndds.com", "howweknowdeep.com", "time-2-read.com"]);
     for (const s of exempt) {
       expect(typeof s.clarity_why).toBe("string");
       expect(s.clarity_why.length).toBeGreaterThan(40);
       expect(CHECKS.clarity!({ site: s, home: { html: "<html></html>" }, files: {} } as any).detail).toContain(s.clarity_why);
+    }
+  });
+  it("time-2-read.com is marked off (22 Nov 2026, under-18 site): e6/i8 and e9 pass with the reason shown", () => {
+    const t2r = sites.grid_repos.find((s: any) => s.domain === "time-2-read.com");
+    expect(t2r.clarity).toBe(false);
+    expect(t2r.clarity_why).toBe("removed 22 Nov 2026: Microsoft Clarity is not for under-18 sites (dailystory #182)");
+    const page = { url: "https://time-2-read.com/signup/", status: 200, html: '<html><body><form action="/api/lead"><input name=email></form></body></html>' };
+    for (const check of [CHECKS.clarity!, CHECKS.clarity_scoped!]) {
+      const r = check({ site: t2r, host: t2r.domain, home: { url: "https://time-2-read.com/", html: "<html></html>" }, files: {}, pages: [page] } as any);
+      expect(r).toMatchObject({ status: "pass", detail: `Clarity not used on this site: ${t2r.clarity_why}` });
+    }
+  });
+  it("a clarity: false mark with no reason fails, and so does one over a page that still loads Clarity", () => {
+    const tag = '<script async src="https://www.clarity.ms/tag/abc"></script>';
+    const quiet = { url: "https://x.example/", status: 200, html: "<html></html>" };
+    for (const check of [CHECKS.clarity!, CHECKS.clarity_scoped!]) {
+      for (const why of [undefined, "", "   "]) {
+        const r = check({ site: { domain: "x.example", clarity: false, clarity_why: why }, host: "x.example", home: quiet, files: {}, pages: [quiet] } as any);
+        expect(r.status).toBe("fail");
+        expect(r.detail).toMatch(/no clarity_why/);
+      }
+      const site = { domain: "x.example", clarity: false, clarity_why: "removed: not for this audience, in her words" };
+      const onHome = check({ site, host: "x.example", home: { url: "https://x.example/", html: `<html>${tag}</html>` }, files: {}, pages: [] } as any);
+      expect(onHome).toMatchObject({ status: "fail" });
+      expect(onHome.detail).toMatch(/still loads: https:\/\/x\.example\//);
+      const onPage = check({ site, host: "x.example", home: quiet, files: {}, pages: [quiet, { url: "https://x.example/buy/", status: 200, html: `<html>${tag}</html>` }] } as any);
+      expect(onPage.status).toBe("fail");
+      expect(onPage.detail).toMatch(/x\.example\/buy\//);
+      expect(check({ site, host: "x.example", home: quiet, files: { __clarity_loader: true }, pages: [quiet] } as any).status).toBe("fail");
+      expect(check({ site, host: "x.example", home: quiet, files: {}, pages: [quiet] } as any)).toMatchObject({ status: "pass", detail: `Clarity not used on this site: ${site.clarity_why}` });
     }
   });
   it("a known limit stays in the queue with its reason and is never workable", () => {
@@ -733,7 +764,7 @@ describe("known limits and one page counted once (25 Oct 2026)", () => {
     const briefs = fixBriefs(checklist, [{ site, host: site.domain, results }]);
     const by = Object.fromEntries(briefs.map((b: any) => [b.item_id, b]));
     for (const id of ["a1", "a9"]) { expect(by[id].disposition).toBe("known_limit"); expect(by[id].known_limit.length).toBeGreaterThan(20); }
-    // Clarity went live on time-2-read.com on 25 Oct 2026 (project z3erswoh8e): a failing e6/i8 is real fix work, never excused.
+    // A failing b1 or e6/i8 is never a known limit: handed to the queue, it is fix work.
     for (const id of ["b1", "e6", "i8"]) expect(by[id].disposition).toBe("fix");
     expect(workQueue(briefs)).toMatchObject({ total: 6, workable: 4 });
   });
@@ -765,18 +796,18 @@ describe("the 26 Oct 2026 lessons catch what they guard", () => {
   const html = (title: string, body = "x", head = "") => `<html><head><title>${title}</title>${head}</head><body>${body}</body></html>`;
   const at = (url: string, h: string) => ({ url, status: 200, html: h });
   const CLARITY = '<script src="https://www.clarity.ms/tag/abc"></script>';
-  const t2r = sites.grid_repos.find((s: any) => s.domain === "time-2-read.com");
+  const kmp = sites.grid_repos.find((s: any) => s.domain === "keepmyproof.com");
 
   it("e9: Clarity on an article with no form fails; on the form page only, it passes — and e6 accepts the form page", () => {
-    const article = at("https://time-2-read.com/blog/a/", html("Story time for kids at Time2Read", "<p>words</p>" + CLARITY));
-    const form = at("https://time-2-read.com/signup/", html("Sign up for Time2Read reading", '<form action="/api/lead"><input name=email></form>' + CLARITY));
-    const bad = CHECKS.clarity_scoped!({ site: t2r, pages: [article, form] } as any);
+    const article = at("https://keepmyproof.com/blog/a/", html("Story time for kids at KeepMyProof", "<p>words</p>" + CLARITY));
+    const form = at("https://keepmyproof.com/signup/", html("Sign up for KeepMyProof reading", '<form action="/api/lead"><input name=email></form>' + CLARITY));
+    const bad = CHECKS.clarity_scoped!({ site: kmp, pages: [article, form] } as any);
     expect(bad.status).toBe("fail");
     expect(bad.detail).toMatch(/blog\/a/);
-    expect(CHECKS.clarity_scoped!({ site: t2r, pages: [form, at("https://time-2-read.com/x/", html("Plain page for Time2Read readers"))] } as any).status).toBe("pass");
-    expect(CHECKS.clarity!({ site: t2r, home: { html: "<html></html>" }, files: {}, pages: [form] } as any).status).toBe("pass");
+    expect(CHECKS.clarity_scoped!({ site: kmp, pages: [form, at("https://keepmyproof.com/x/", html("Plain page for KeepMyProof readers"))] } as any).status).toBe("pass");
+    expect(CHECKS.clarity!({ site: kmp, home: { html: "<html></html>" }, files: {}, pages: [form] } as any).status).toBe("pass");
     const buy = at("https://x.com/p/", html("Buy it", '<a href="https://sprylabs.gumroad.com/l/x">Buy</a>' + CLARITY));
-    expect(CHECKS.clarity_scoped!({ site: t2r, pages: [buy] } as any).status).toBe("pass");
+    expect(CHECKS.clarity_scoped!({ site: kmp, pages: [buy] } as any).status).toBe("pass");
   });
 
   /*

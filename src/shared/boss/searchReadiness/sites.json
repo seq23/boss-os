@@ -1046,6 +1046,8 @@
    "kind": "brand",
    "roles": [],
    "label": "Time2Read",
+   "clarity": false,
+   "clarity_why": "removed 22 Nov 2026: Microsoft Clarity is not for under-18 sites (dailystory #182)",
    "coverage": {
     "model": "not_local",
     "why": "A subscription product; no place-based pages."

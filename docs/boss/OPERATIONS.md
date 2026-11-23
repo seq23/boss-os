@@ -1018,11 +1018,16 @@ from the WHOLE brain before it is split into sections and groups (`stripConfiden
 `headingGroups`), so a span that wraps a `### ` or `## ` heading takes the text under it too; Settled decisions lying
 inside a span are "rulings not read", and a Growth section lying inside one is refused (`PRIVATE_IN_GROWTH`). The
 router cuts again on every message (src/worker/boss/router/index.ts) and refuses one that still holds a mark, and
-the free-only lane still applies. A name or address she has NOT marked would still reach the model, so
-`npm run growth:privacy` (scripts/ops/growth-privacy.mjs; `-- <dir>` for another copy than ~/Brains) builds every
-active business's decision prompt from the brain copies and fails on a word the brains hold only inside a span, or
-on a personal mail address (gmail and the like): exit 1, naming the business and ruling heading, never the word. It
-fails closed with exit 2 on a missing copy, no private span at all, rulings not read, or fewer than 6 prompts.
+the free-only lane still applies. EVERY CYCLE then checks each decision prompt it built, before the model call
+(`promptLeak`, src/shared/boss/growth/privacy.mjs, in run.ts): a word her brains hold only inside a span (a cut that
+missed), or any personal mail address (gmail and the like, marked or not), holds that business as `held: roster` with
+NAMED STOP [PRIVATE_IN_PROMPT], naming the ruling heading and a count, never the word; nothing is sent. No private
+word known at all (no span in either growth brain, or the read failed) is [PRIVACY_UNREAD], every business held, never
+a clean pass. A client name she never marks anywhere cannot be told from any other word by code: marking it is the
+fix. `npm run growth:privacy` (scripts/ops/growth-privacy.mjs; `-- <dir>` for another copy than ~/Brains) runs the
+same check on a brain copy before the cycle: exit 1 on a leak; exit 2 on a missing copy, no private span, rulings not
+read, an empty roster, or no active business. It checks one prompt per ACTIVE business, however many: pausing one never
+breaks it.
 
 **Size.** The decision prompt is held to `PROMPT_BUDGET_CHARS` = 60,000 characters, about 15,000 tokens. That fits
 the smallest free route (32,768 tokens) with room for the answer. Over the budget, `fitDecisionPrompt` leaves shared

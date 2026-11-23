@@ -26,7 +26,8 @@
  * roster.mjs), the playbook, counts and public trend titles. Her brains DO hold client names and personal
  * mail addresses; they sit inside confidential marks, which are cut from the whole brain before any of it
  * is read, and the router refuses a message that still carries a mark. A name or address she has not
- * marked would reach the model: `npm run growth:privacy` checks the live brain copy for both.
+ * marked would reach the model, so every cycle checks each prompt it built before the model call
+ * (promptLeak, privacy.mjs; run.ts holds that business), and `npm run growth:privacy` runs the same check on a copy.
  *
  * RULE 0: `OUTPUT n decisions`; zero businesses measured → NAMED STOP [GROWTH_NOTHING_MEASURED];
  * every active business held → NAMED STOP [HELD_ALL] with the counts.

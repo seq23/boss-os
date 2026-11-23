@@ -6,7 +6,9 @@
  *     an Open Loops row for a pipeline;
  *   - outage: no readings → "held: no data"; no model answer → "held: no model"; all held → HELD_ALL;
  *   - paused → nothing; a business missing from the roster → nothing acts for it;
- *   - private data: a Growth section holding a confidential span is refused before any model call.
+ *   - private data: a Growth section holding a confidential span is refused before any model call; the
+ *     prompt actually built is checked before the model call, and a private word or personal address in it,
+ *     or no private word known at all, holds that business with nothing sent.
  */
 import { env } from "cloudflare:test";
 import { beforeEach, describe, expect, it } from "vitest";
@@ -19,7 +21,7 @@ const DAY = dayIdInZone(NOW);
 
 const PNP = `## Settled decisions
 ### Growth
-- 2026-11-21 — Porch reels lead in December.
+- 2026-11-21 — Porch reels lead in December. <!-- confidential -->Customer Brindlewood.<!-- /confidential -->
 
 ## Growth
 ### Porch & Party
@@ -625,5 +627,48 @@ ${entry("KeepMyProof", "keepmyproof")}${entry("Dream Wedding", "dream-wedding")}
     expect(kmp!.length).toBeLessThanOrEqual(PROMPT_BUDGET_CHARS);
     expect(r.problems).toContain(`KeepMyProof: the prompt was over ${PROMPT_BUDGET_CHARS} characters, so the shared rulings "Search, sites and freshness", "All apps" were left out this cycle`);
     expect(r.rulings.find((x) => x.business === "keepmyproof")!.left).toEqual(["Search, sites and freshness", "All apps"]);
+  });
+});
+
+describe("the privacy check runs inside the cycle, on the prompt built, before any model call (22 Nov 2026)", () => {
+  const read = async () => { await reading("pnp-requests", "porch-and-party", "requests", "all", 2); await reading("ap-sales", "approvalprep", "sales", "site", 1); };
+  const QUIET = { ...DECISION, queue: [], proposals: [] };
+  const decidePrompts = (seen: string[], label: string) => seen.filter((t) => t.includes(`Business: ${label}\n`));
+
+  it("an unmarked personal address in a ruling holds that business with a named stop; no model sees it; the other is decided", async () => {
+    await brain("spry", SPRY.replace("ApprovalPrep is self-service, in her words.", "ApprovalPrep is self-service; letters come from zz.placeholder@gmail.com."));
+    await read();
+    const { model, seen } = fake(QUIET, () => ({ pass: true, broken: [], why: "" }));
+    const r = await runGrowthDirector(env as any, NOW, { model, fetchImpl: noTrends });
+    expect(seen.some((t) => t.includes("zz.placeholder"))).toBe(false);
+    expect(decidePrompts(seen, "ApprovalPrep")).toEqual([]);
+    const ap = (await decisions()).find((x) => x.business === "approvalprep")!;
+    expect(ap.state).toBe("held: roster");
+    expect(ap.decision).toMatch(/NAMED STOP \[PRIVATE_IN_PROMPT\] the prompt carried 0 private words and 1 personal mail address, in her rulings under "ApprovalPrep"/);
+    expect(ap.decision).not.toContain("zz.placeholder");
+    expect(r.problems.join(" ")).toMatch(/ApprovalPrep: NAMED STOP \[PRIVATE_IN_PROMPT\]/);
+    expect((await decisions()).find((x) => x.business === "porch-and-party")!.state).toBe("decided");
+  });
+
+  it("a marked name stays out of every prompt and the business is decided; the cut and the check agree", async () => {
+    await brain("spry", SPRY.replace("ApprovalPrep is self-service, in her words.", "ApprovalPrep is self-service. <!-- confidential -->Quillon asked for it.<!-- /confidential -->"));
+    await read();
+    const { model, seen } = fake(QUIET, () => ({ pass: true, broken: [], why: "" }));
+    await runGrowthDirector(env as any, NOW, { model, fetchImpl: noTrends });
+    expect(decidePrompts(seen, "ApprovalPrep").length).toBe(1);
+    expect(seen.some((t) => /Quillon|Brindlewood/.test(t))).toBe(false);
+    const rows = await decisions();
+    expect(rows.filter((x) => x.state !== "paused").map((x) => [x.business, x.state])).toEqual([["approvalprep", "decided"], ["porch-and-party", "decided"]]);
+  });
+
+  it("no confidential word anywhere in her growth brains is unread: every business held, no model called", async () => {
+    await brain("porch-and-party", PNP.replace(/<!--\s*\/?confidential\s*-->/g, "").replace(" Customer Brindlewood.", ""));
+    await read();
+    const { model, seen } = fake(QUIET, () => ({ pass: true, broken: [], why: "" }));
+    await expect(runGrowthDirector(env as any, NOW, { model, fetchImpl: noTrends })).rejects.toThrow(/NAMED STOP \[HELD_ALL\]/);
+    expect(seen).toEqual([]);
+    const rows = (await decisions()).filter((x) => x.state !== "paused");
+    expect(rows.length).toBe(2);
+    expect(rows.every((x) => x.state === "held: roster" && /NAMED STOP \[PRIVACY_UNREAD\]/.test(x.decision))).toBe(true);
   });
 });
