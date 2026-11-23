@@ -15,6 +15,7 @@
 
 import { repairMojibake } from "../mail/subject.mjs";
 import { HOME_TZ, OWNER_TZ_KEY, validZone, zoneWord, ownerTime } from "../ownerTime.mjs";
+import { GO_CARD_NOTE } from "../invitations/invitations.mjs";
 
 export const PREP_PREFIX = "Prep: ";
 export const PREP_TZ = "America/Chicago";
@@ -112,10 +113,24 @@ export function isAttending(event, herAddresses = []) {
   return a !== "declined" && a !== "tentative";
 }
 
+/*
+ * OUR OWN COPY YIELDS TO THE REAL INVITE (23 Nov 2026 live read: "2:30 pm CT Sample Intro
+ * with three guests; 3:30 pm CT Sample Intro", and two prep emails). Her Go? card puts a
+ * copy on her calendar (marked GO_CARD_NOTE) when the invite sits in a mailbox Boss OS may not answer
+ * from; the organizer then moved the meeting, and the copy stayed at the old hour. A copy is dropped
+ * whenever the real event, same title, is on her calendars that day: the real one has the true time
+ * and the guests. A copy with no real twin stays (it is the only record she has).
+ */
+const isGoCardCopy = (e) => String(e?.description ?? "").includes(GO_CARD_NOTE);
+function withoutStaleCopies(events) {
+  const real = new Set(events.filter((e) => !isGoCardCopy(e)).map((e) => `${dayOfCt(e.scheduled_at)}|${norm(e.title)}`));
+  return events.filter((e) => !isGoCardCopy(e) || !real.has(`${dayOfCt(e.scheduled_at)}|${norm(e.title)}`));
+}
+
 /** Every event once: copies merged, attendees unioned, a join link kept from whichever copy had it. */
 export function dedupeEvents(events) {
   const out = [];
-  for (const e of [...(events ?? [])].sort((a, b) => a.scheduled_at - b.scheduled_at)) {
+  for (const e of withoutStaleCopies([...(events ?? [])]).sort((a, b) => a.scheduled_at - b.scheduled_at)) {
     const hit = out.find((m) => sameCalendarEvent(m, e));
     if (!hit) { out.push({ ...e, attendees: (e.attendees ?? []).map((a) => ({ ...a })) }); continue; }
     for (const a of e.attendees ?? []) {

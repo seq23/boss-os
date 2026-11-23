@@ -30,6 +30,13 @@ const data = {
 };
 
 describe("meeting prep: one email per meeting, once", () => {
+  it("her Go? card's copy left at the old hour yields to the moved real invite: one meeting, the real time, one prep (23 Nov 2026)", () => {
+    const real = { ...kate, ical_uid: "fm@spry", calendar_uid: "fm", title: "Sample Intro", scheduled_at: FRI_NOON };
+    const copy = { calendar_uid: "copy1", ical_uid: "copy1@google.com", title: "Sample Intro", scheduled_at: FRI_NOON + 3_600_000, description: "You said yes from your Go? card in Boss OS.", attendees: [] };
+    expect(dueMeetings([real, copy], { now: EVENING }).map((e) => e.scheduled_at)).toEqual([FRI_NOON]);
+    // With no real twin, the copy is her only record of the meeting and stays.
+    expect(dueMeetings([copy, terri], { now: EVENING }).map((e) => e.title)).toEqual(["Sample Intro", "Call- Terri Sample"]);
+  });
   it("one event on two calendars is one prep; two different meetings are two (the #156 rule, shared with the diary)", () => {
     const due = dueMeetings([kate, kateCopy, terri], { now: EVENING });
     expect(due.map((e) => e.title)).toEqual(["Kate Example <> Sequoia", "Call- Terri Sample"]);

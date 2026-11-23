@@ -123,8 +123,10 @@ export function toMorning(section, add) {
  * permission, a DNS record — a task on Danielle's desk with what was seen. Best effort; returns the
  * reason it was not opened, or null.
  */
-export async function fixJob(api, { title, prompt }) {
-  try { await api.post("/tasks", { title: String(title).slice(0, 160), lane: "ops", employee_id: "emp_repo", input: { origin: "repair", repair_kind: "self_repair", prompt: `seq23/boss-os — ${prompt}` } }); return null; }
+// `touches` ("money" or "outreach") is said by the job that opens the fix, which knows; her morning
+// email's "Stopped" line reads it rather than guessing from the title (23 Nov 2026).
+export async function fixJob(api, { title, prompt, touches = null }) {
+  try { await api.post("/tasks", { title: String(title).slice(0, 160), lane: "ops", employee_id: "emp_repo", input: { origin: "repair", repair_kind: "self_repair", prompt: `seq23/boss-os — ${prompt}`, ...(touches ? { touches } : {}) } }); return null; }
   catch (e) { return String(e?.message ?? e); }
 }
 

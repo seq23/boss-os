@@ -151,14 +151,26 @@ export function closesThread(text) {
   return THANKS.test(t.replace(/^(?:hi|hey|hello)\b[^,!.]*[,!.]?\s*/i, ""));
 }
 
+/*
+ * THEIR OWN WORDS IN A NUDGE ARE A WHOLE SENTENCE (23 Nov 2026 live read: an LP nudge
+ * quoted their own greeting back at them and cut their sentence off mid-thought at 80 characters). Their greeting goes; then the first question they asked,
+ * else their first sentence of five words or more, whole and at most 120 characters. Nothing fits:
+ * null, and the nudge names the thread's subject instead. Structure only (sentence ends, length). Pure.
+ */
+export function nudgeQuote(said) {
+  const t = theirWords(said).replace(/\s+/g, " ").trim().replace(/^(?:hi|hey|hello|dear|good (?:morning|afternoon|evening))\b[^,!.:]{0,40}[,!.:]\s*/i, "");
+  const sentences = t.split(/(?<=[.!?])\s+/).map((x) => x.trim()).filter((x) => /[.!?]$/.test(x) && x.length <= 120);
+  return sentences.find((x) => x.endsWith("?")) ?? sentences.find((x) => x.split(/\s+/).length >= 5) ?? null;
+}
+
 /**
  * The nudge, a fixed template (no model, no names to a model). It names the last exchange — what
  * they last said, in a few of their own words — and asks one concrete thing (owner, 18 Nov 2026).
  */
 export function lpNudgeBody({ name, bucket, said = null, subject = null }) {
-  const theirs = theirWords(said).replace(/\s+/g, " ").trim();
+  const theirs = nudgeQuote(said);
   const about = String(subject ?? "").replace(/^\s*(?:re|fwd?)\s*:\s*/gi, "").replace(/\s+/g, " ").trim();
-  const last = theirs ? `Picking up from your note ("${theirs.length > 90 ? `${theirs.slice(0, 87).replace(/\s+\S*$/, "")}…` : theirs}")` : about ? `Picking up our thread on ${about}` : "Picking up our last exchange";
+  const last = theirs ? `Picking up from your note ("${theirs}")` : about ? `Picking up our thread on ${about}` : "Picking up our last exchange";
   return [
     `Hi ${firstName(name)},`,
     "",

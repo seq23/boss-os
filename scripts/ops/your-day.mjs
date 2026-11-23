@@ -628,12 +628,28 @@ export const MONEY_OR_OUTREACH = /\b(?:outreach|send|sends|sender|follow-?ups?|i
 export function teamStopsLine(tasks) {
   const list = (tasks ?? []).filter(Boolean);
   if (!list.length) return null;
-  const names = [...new Set(list.map((t) => jobName(t).name))];
+  // "Paid AI calls on OpenRouter — switch them back to free": the job is what comes before the dash.
+  const nameOf = (t) => jobName(t).name.split(/\s+—\s+/)[0].replace(/[.:]/g, ",");
+  const names = [...new Set(list.map(nameOf))];
   const shown = names.slice(0, 4).join("; ");
-  const touch = list.filter((t) => MONEY_OR_OUTREACH.test(`${t.title ?? ""} ${jobName(t).name}`)).map((t) => jobName(t).name);
-  const effect = touch.length ? `${[...new Set(touch)].slice(0, 2).join(" and ").replace(/[.:]/g, ",")} ${touch.length === 1 ? "touches" : "touch"} outreach or money, so nothing goes out from ${touch.length === 1 ? "it" : "them"} until it is fixed` : "none of them touches money or outreach";
+  /*
+   * The job that opened the fix says whether it touches money or outreach (input.touches, from
+   * fixJob); the title words are read only for a task that did not say (23 Nov 2026 live read: "Paid
+   * AI calls on OpenRouter" went to her as "none of them touches money or outreach").
+   */
+  const declared = (t) => { try { return (typeof t.input === "string" ? JSON.parse(t.input) : t.input)?.touches ?? null; } catch { return null; } };
+  const kindOf = (t) => declared(t) ? (["money", "outreach"].includes(declared(t)) ? declared(t) : null) : MONEY_OR_OUTREACH.test(`${t.title ?? ""} ${jobName(t).name}`) ? "outreach or money" : null;
+  const hit = list.map((t) => ({ name: nameOf(t), kind: kindOf(t) })).filter((x) => x.kind);
+  const kinds = [...new Set(hit.map((x) => x.kind))];
+  const what = kinds.length === 1 ? kinds[0] : "outreach or money";
+  const who = [...new Set(hit.map((x) => x.name))];
+  // "Touches nothing" is said only when every job said so: a title word can warn, never clear.
+  const effect = who.length
+    ? `${who.slice(0, 2).join(" and ")} ${who.length === 1 ? "touches" : "touch"} ${what}${what === "money" ? "" : `, so nothing goes out from ${who.length === 1 ? "it" : "them"} until it is fixed`}`
+    : !list.every(declared) ? null
+    : names.length === 1 ? "it does not touch money or outreach" : "none of them touches money or outreach";
   // One sentence: Done for you keeps the first sentence of a line.
-  return `Stopped, and Danielle is fixing ${names.length === 1 ? "it" : "them"}: ${shown.replace(/[.:]/g, ",")}${names.length > 4 ? ` and ${names.length - 4} more` : ""} (${effect}).`;
+  return `Stopped, and Danielle is fixing ${names.length === 1 ? "it" : "them"}: ${shown}${names.length > 4 ? ` and ${names.length - 4} more` : ""}${effect ? ` (${effect})` : ""}.`;
 }
 
 /** The exit code that tells duty-run.sh "not yet, ask me again on the next tick": named, never recorded as a run. */
@@ -845,7 +861,7 @@ export function winsFrom({ lpRows = [], prospects = null, deals = 0, now = Date.
   for (const r of prospects?.replies ?? []) {
     if (r.status === "replied" && r.name && !/\b(?:out of (?:the )?office|automatic reply|not interested|no thanks)\b/i.test(String(r.reply_note ?? ""))) out.push({ sentence: `Grateful ${r.name}${r.firm ? ` at ${r.firm}` : ""} wrote back to me.`, theme: "win:reply" });
   }
-  if (deals > 0) out.push({ sentence: `Grateful ${deals === 1 ? "a new deal" : `${deals} new deals`} reached my desk since yesterday.`, theme: "win:deals" });
+  if (deals > 0) out.push({ sentence: `Grateful for ${deals === 1 ? "the new deal that" : `the ${deals} new deals that`} came in since yesterday.`, theme: "win:deals" });
   return out;
 }
 

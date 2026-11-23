@@ -34,6 +34,8 @@ export const INVITE_INBOXES = Object.freeze([
 ]);
 /** The calendar a Yes lands on when the invitation's own calendar cannot be answered. */
 export const HER_CALENDAR = DEFAULT_MAILBOX;
+/** The note on the copy her Go? card puts on her calendar: how a calendar reader knows the copy is ours. */
+export const GO_CARD_NOTE = "You said yes from your Go? card in Boss OS.";
 
 export const PLATFORMS = Object.freeze([
   Object.freeze({ name: "Luma", re: /(?:^|\.)(?:lu\.ma|luma-mail\.com|luma\.com)$/i, link: /^https:\/\/(?:[\w-]+\.)?(?:lu\.ma|luma\.com)\//i }),

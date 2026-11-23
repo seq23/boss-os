@@ -554,7 +554,7 @@ export function planRisk(moved, { github = null } = {}) {
       continue;
     }
     if (key === "openrouter") {
-      out.fixes.push({ title: "Paid AI calls on OpenRouter — switch them back to free", prompt: `Toni's risk watch: ${r.line} Every model call is meant to be $0 (AI cost posture). Find which job called a paid model, switch it back to a free one, and say what it was.` });
+      out.fixes.push({ title: "Paid AI calls on OpenRouter — switch them back to free", touches: "money", prompt: `Toni's risk watch: ${r.line} Every model call is meant to be $0 (AI cost posture). Find which job called a paid model, switch it back to a free one, and say what it was.` });
       out.urgent = {
         subject: "Paid AI calls are being charged — the team is on it",
         happened: r.line.replace(/\s*Paid calls are being made on credit;.*$/, "").replace(/\s*Something called a paid model\.?$/, ""),
@@ -580,7 +580,7 @@ export function planRisk(moved, { github = null } = {}) {
       continue;
     }
     if (key.startsWith("dkim:")) {
-      out.fixes.push({ title: `Publish the Google DKIM key for ${key.slice(5)}`, prompt: `Toni's risk watch: ${r.line} Publish the google._domainkey record (Google Admin → Gmail → Authenticate email, then the DNS record) and confirm live sends are allowed again.` });
+      out.fixes.push({ title: `Publish the Google DKIM key for ${key.slice(5)}`, touches: "outreach", prompt: `Toni's risk watch: ${r.line} Publish the google._domainkey record (Google Admin → Gmail → Authenticate email, then the DNS record) and confirm live sends are allowed again.` });
       continue;
     }
     if (key.startsWith("sender:")) {
