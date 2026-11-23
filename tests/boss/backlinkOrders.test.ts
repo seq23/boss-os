@@ -47,7 +47,7 @@ const SPRY = `## Settled decisions
 `;
 const PNP = `## Settled decisions
 ### Growth
-- 2026-11-21 — Porch reels lead in December.
+- 2026-11-21 — Porch reels lead in December. <!-- confidential -->Customer Brindlewood.<!-- /confidential -->
 
 ## Growth
 ### Porch & Party

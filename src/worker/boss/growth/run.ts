@@ -14,7 +14,10 @@
  *                "held: no model") reads the playbook, the roster entry, her rulings, the counts and
  *                the to-dos, within PROMPT_BUDGET_CHARS (over it, shared rulings are left out first,
  *                never the business's own, and the run says so). Ruling characters per business are
- *                logged on the cycle's audit row.
+ *                logged on the cycle's audit row. BEFORE the call, the prompt actually built is checked
+ *                (promptLeak, privacy.mjs): a word her brains keep only inside a confidential mark, or a
+ *                personal mail address, holds that business ("held: roster", NAMED STOP
+ *                [PRIVATE_IN_PROMPT], headings only); no private word known at all is [PRIVACY_UNREAD].
  *   4. QUEUE     each item through mayAct, then the claims check (a free model reads the draft against
  *                that brand's REQUIRED rules plus its roster limits; a rule with no words, or no answer =
  *                held). Passed → ONE Open Loops row per business × channel × format (source_key
@@ -39,6 +42,7 @@ import { dayIdInZone } from "../../../shared/boss/timezone";
 import manifest from "../../../shared/boss/scorecard/manifest.json";
 import { summarize } from "../../../shared/boss/growth/scoreboard.mjs";
 import { GROWTH_BRAINS, growthSection, parseRoster, rosterProblems, rulingsFor, BRAIN_NAMES, type RosterEntry } from "../../../shared/boss/growth/roster.mjs";
+import { privateOnlyTerms, promptLeak } from "../../../shared/boss/growth/privacy.mjs";
 import { playbookBody } from "../../../shared/boss/growth/playbook.mjs";
 import {
   MAX_CARDS, MAX_OPEN_PER_BUSINESS, ASKED_DAYS, fitDecisionPrompt, PROMPT_BUDGET_CHARS, parseDecision, enforceHolds, claimsPrompt, parseClaims, claimRules,
@@ -192,6 +196,10 @@ export async function runGrowthDirector(env: Env, now = Date.now(), deps: { mode
   const riskMd = (await brainMd(db, "risk")) ?? "";
   const trends = await readTrends(deps.fetchImpl ?? fetch);
   const playbook = playbookBody();
+  // The words her growth brains hold only inside a confidential mark: none may reach a model (22 Nov 2026).
+  // A failure here is "unread" for every business (promptLeak holds it), never a clean prompt.
+  let terms: ReturnType<typeof privateOnlyTerms> | null = null;
+  try { terms = privateOnlyTerms(mds, playbook); } catch { terms = null; }
   const asked = await askedRecently(db, now);
   let cards = 0;
   const results: { key: string; state: string }[] = [];
@@ -225,6 +233,18 @@ export async function runGrowthDirector(env: Env, now = Date.now(), deps: { mode
       rulingSizes.push({ business: base.business, chars: fit.rulingChars, left: fit.left });
       if (fit.left.length) problem(`${entry.label}: the prompt was over ${PROMPT_BUDGET_CHARS} characters, so the shared rulings ${fit.left.map((h) => `"${h}"`).join(", ")} were left out this cycle`);
       if (fit.over) problem(`${entry.label}: the prompt is still over ${PROMPT_BUDGET_CHARS} characters with only its own rulings (${fit.chars})`);
+      // THE PROMPT ACTUALLY BUILT is checked before any model call: a word her brains keep only inside a mark, or
+      // a personal mail address, holds this business with a NAMED STOP and nothing is sent. No private word known
+      // at all is unread, never clean. Only headings and counts are written, never the word.
+      const leak = promptLeak({ fit, bare: fitDecisionPrompt({ playbook, entry, summary: s, trends, today, todos, first, linked, topics }), rulings, terms });
+      if (leak.unread || leak.private || leak.mail) {
+        const why = leak.unread
+          ? "NAMED STOP [PRIVACY_UNREAD] no confidential word could be read from her growth brains (none marked, or the read failed), so a client name cannot be told from any other word"
+          : `NAMED STOP [PRIVATE_IN_PROMPT] the prompt carried ${leak.private} private ${leak.private === 1 ? "word" : "words"} and ${leak.mail} personal mail ${leak.mail === 1 ? "address" : "addresses"}${leak.where.length ? `, in her rulings under ${leak.where.map((h) => `"${h}"`).join(", ")}` : ""}; mark ${leak.private + leak.mail === 1 ? "it" : "them"} confidential in the brain`;
+        problem(`${entry.label}: ${why}`);
+        await record({ ...base, state: "held: roster", decision: `Held: ${why}. Nothing was sent to a model; the next cycle checks again.`, evidence: [], actions: [] });
+        continue;
+      }
       const answer = parseDecision(await model(env, fit.messages as Msg[], "growth-decide"));
       if (!answer) { await record({ ...base, state: "held: no model", decision: "Held: no free model answered (every free route was busy or spent); the next cycle tries again.", evidence: [], actions: [] }); continue; }
       const { decision, dropped } = enforceHolds(answer, s);

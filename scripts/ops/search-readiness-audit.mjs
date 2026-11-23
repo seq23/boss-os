@@ -41,7 +41,7 @@ import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { passingItems, auditHost, socialCardPage, currentBriefs, failureSplit, splitLine,
   loadChecklist, loadSites, applies, runChecks, expandCoverage, fixBriefs, morningLines, searchLanes, summaryLines, liveSameAs, hostOf, bare, entityFor, ENTITY_WATCH_RE,
-  metaContent, links, tags, FRESH_FILE_NAMES, indexnowKeyFiles, definitionChoice, CHECKLIST_PATH, SITES_PATH,
+  metaContent, links, tags, clarityInBundles, FRESH_FILE_NAMES, indexnowKeyFiles, definitionChoice, CHECKLIST_PATH, SITES_PATH,
 } from "../../src/shared/boss/searchReadiness/audit.mjs";
 import { fetchLoopWeeks } from "./lib/search-loop-week.mjs";
 import { outcomeVerdict, outcomeWindows, redLines, slipLines, weeklyBriefs, pickLastWeekDay, approvalCard } from "../../src/shared/boss/searchReadiness/search-outcomes.mjs";
@@ -452,6 +452,13 @@ async function auditSite(site, checklist, g, gscSites, portfolio, firstSeen = {}
   if (ogUrl) { const abs = new URL(ogUrl, cardPage.final ?? cardPage.url).href; const r = await get(abs, { text: false }); files.__og_image = { url: abs, status: r.status }; }
   const loader = tags(home.html, "script").map((t) => t.src).find((s) => s && /clarity/i.test(s));
   if (loader) files.__clarity_loader = true;
+  // A site marked clarity: false must not load it from its own bundle either: a tag the app injects at
+  // runtime is not in the HTML (time-2-read.com, 22 Nov 2026). Only marked sites are read this way.
+  else if (site.clarity === false && home.status === 200 && home.html) {
+    const b = await clarityInBundles(home.html, home.final ?? home.url, (u) => get(u, { accept: "*/*" }));
+    if (b.loader) files.__clarity_loader = b.loader;
+    if (b.unread.length) files.__bundles_unread = b.unread;
+  } else if (site.clarity === false) files.__bundles_unread = [home.url ?? `https://${host}/`];
   // Probe every key the repo holds: this host answers at most one of them (readRepo, indexnowKeys).
   for (const key of repo.ok ? repo.indexnowKeys ?? [] : []) {
     const r = await get(`https://${host}/${key}.txt`);
