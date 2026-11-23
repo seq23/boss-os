@@ -972,6 +972,21 @@ from `READER_IDS`, a D1 query returning one number `n`, floors, version B). A so
 vault lacks shows "No number" with `NAMED STOP [KEY_MISSING]` naming the key. Dry run:
 `npm run scorecard:monday -- --dry`. Restart links are `/tap/sc…` (routes/scorecard.ts).
 
+## The Growth Director: backlink orders (22 Nov 2026)
+
+Her words, 22 Nov 2026: "i thought the backlink network was going to defer to the growth director". In the Monday
+cycle (src/worker/boss/growth/run.ts) a queue item on the `backlinks` channel, for a business whose Growth roster
+lists it (e.g. `backlinks [guide]`), is an order for one article: the model names its `topic` (at most `TOPIC_MAX` =
+120 characters, src/shared/boss/growth/director.mjs; an item with none, or a longer one, is dropped and written on the
+decision as held) and is told the playbook's backlink rule (links against search visits 8 weeks later: rising → more
+topics, no rise → change topics), with the topics it already ordered. The draft goes through the naming guard and the
+claims check like any post; a pass is written on the decision as `ordered`, and is never an Open Loops to-do or a
+Decide card (an unapproved backlinks format is refused, not carded). The network reads them with
+`GET /api/boss/growth/backlink-orders` (the BOSS_OPEN_LOOPS_TOKEN machine token, the same check as ai-misses;
+anything else is 401): `{ cycle, read_at, orders: [{ business, topic, draft, why }] }`, from the newest cycle's
+decided rows only (a same-day re-run replaces the first), never from Open Loops. No cycle yet → `cycle: null,
+orders: []`; a decision row whose actions are not JSON is skipped and logged in the Worker log.
+
 ## The AI answers loop (22 Nov 2026)
 
 Her ask, 22 Nov 2026 ("build the ai visibility loop"; weekly by her yes). Each of the six selling sites gets a weekly

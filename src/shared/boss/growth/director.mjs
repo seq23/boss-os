@@ -18,6 +18,8 @@
  *   mayAct ok + claims fail/none → held (never queued); the reason is written down
  *   NOT_APPROVED / proposal      → a Decide card for her (at most MAX_CARDS a cycle)
  *   NEVER_SPEND / NO_NEW_ACCOUNTS / PROPOSE_ONLY on a retire → refused, written down, never a card for a spend
+ *   backlinks + claims pass      → an `ordered` action only: the backlink network's order, never a to-do or card
+ *   backlinks, not approved      → refused (NOT_APPROVED), never a card; no topic → dropped by parseDecision
  *
  * PRIVATE DATA: the model sees the Growth roster entry, the playbook, counts and public trend titles only.
  * No request name, contact, LP or client name exists in any of those inputs.
@@ -31,6 +33,15 @@ import { lineProblems } from "../mail/plain.mjs";
 export const MAX_CARDS = 3;
 export const MAX_QUEUE_PER_BUSINESS = 3;
 export const MAX_OPEN_PER_BUSINESS = 3;
+/**
+ * BACKLINK ORDERS (her words, 22 Nov 2026: "i thought the backlink network was going to defer to the
+ * growth director"). A queue item on the `backlinks` channel is an ORDER for the backlink network: one
+ * article on `topic` for that business. It is never a to-do or a card for her; the network reads the
+ * newest cycle's orders (GET /api/growth/backlink-orders, `backlinkOrders` below). TOPIC_MAX is the one
+ * limit: the prompt says it, the parser drops an item past it or without a topic, the route re-checks it.
+ */
+export const BACKLINKS = "backlinks";
+export const TOPIC_MAX = 120;
 /** A Decide card she answered (or one still waiting) is not raised again for this many days. */
 export const ASKED_DAYS = 28;
 export const STATES = Object.freeze(["decided", "paused", "held: no data", "held: no model", "held: roster", "held: error"]);
@@ -66,7 +77,8 @@ export function numbersFor(summary) {
 }
 
 /** The decision prompt for one business. */
-export function decisionPrompt({ playbook, entry, summary, trends, today, todos, first = false, linked = [] }) {
+export function decisionPrompt({ playbook, entry, summary, trends, today, todos, first = false, linked = [], topics = [] }) {
+  const backlinks = entry.channels.some((c) => c.channel === BACKLINKS);
   const roster = [
     `Business: ${entry.label}`, `Buyer: ${entry.buyer}`, `Offer: ${entry.offer}`, `Money number: ${entry.money}`,
     `Approved channels and formats: ${entry.channels.map((c) => `${c.channel}${c.formats.length ? ` [${c.formats.join(", ")}]` : ""}${c.note ? ` (${c.note})` : ""}`).join(" · ")}`,
@@ -90,16 +102,20 @@ ${(linked ?? []).map((l) => `- ${l.id}: ${l.what}`).join("\n") || "- none"}
 
 SEARCH TRENDS TODAY (public, US)
 ${(trends ?? []).slice(0, 20).map((t) => `- ${t}`).join("\n") || "- not read"}
-
+${backlinks ? `
+BACKLINK TOPICS ALREADY ORDERED (the week each was ordered)
+${(topics ?? []).map((t) => `- ${t}`).join("\n") || "- none yet"}
+` : ""}
 Return exactly:
 {"decision": "one or two plain sentences: what to do more of, less of, or hold, and why",
  "evidence": ["each a number from the scoreboard or a fact from the roster, with its source"],
  "test": null or {"channel": "...", "format": "...", "what": "...", "number": "the number that judges it", "stop": "when it stops"},
- "queue": [up to ${MAX_QUEUE_PER_BUSINESS} {"channel": "...", "format": "...", "draft": "the exact words of the post or page lead", "why": "..."}],
+ "queue": [up to ${MAX_QUEUE_PER_BUSINESS} {"channel": "...", "format": "...", "draft": "the exact words of the post or page lead", "why": "..."${backlinks ? `, "topic": "backlinks only: the article's subject, at most ${TOPIC_MAX} characters"` : ""}}],
  "proposals": [{"what": "something new that needs her yes (a new channel, format, product, price or list)", "why": "...", "evidence": "...", "costs_money": true or false}],
  "linked": [one per older-work row above: {"id": "olp_…", "verdict": "keep" | "change" | "drop", "why": "the evidence, plainly", "next_step": "for change: the new next step"}],
  "next_check": "YYYY-MM-DD"}
-Only approved channels and formats go in "queue"; anything else is a proposal. Never propose spending money or creating an account. "Too little data" holds a comparison between formats; it never holds older work she already approved to start on an approved channel and format: that goes in "queue" this week.${first && entry.season ? `\nThis is your FIRST decision for this business: it is about the season on its roster (${entry.season}), the money that season can still bring in before it ends.` : ""}` },
+Only approved channels and formats go in "queue"; anything else is a proposal. Never propose spending money or creating an account. "Too little data" holds a comparison between formats; it never holds older work she already approved to start on an approved channel and format: that goes in "queue" this week.${backlinks ? `
+BACKLINKS: each "${BACKLINKS}" item in "queue" orders ONE article from the backlink network, which links to this business; you decide how many (within the queue's ${MAX_QUEUE_PER_BUSINESS}) and on what. Name its "topic" (at most ${TOPIC_MAX} characters; an item without one is dropped). The rule (the playbook's backlink row): judge links against this business's search visits 8 weeks later. Search visits rising since the first topics → order more topics; no rise 8 weeks after a topic → change topics (never the same topic again).` : ""}${first && entry.season ? `\nThis is your FIRST decision for this business: it is about the season on its roster (${entry.season}), the money that season can still bring in before it ends.` : ""}` },
   ];
 }
 
@@ -109,17 +125,62 @@ export function parseDecision(text) {
   try { j = JSON.parse(/\{[\s\S]*\}/.exec(String(text ?? ""))?.[0] ?? "null"); } catch { j = null; }
   if (!j || typeof j.decision !== "string" || !j.decision.trim()) return null;
   const arr = (v) => (Array.isArray(v) ? v : []);
+  // A backlinks item is an order: without a topic (or with one past TOPIC_MAX) it is dropped, and counted.
+  let noTopic = 0;
+  const queue = arr(j.queue).filter((q) => q && q.channel && q.draft).map((q) => {
+    const item = { channel: clip(q.channel, 40).toLowerCase(), format: clip(q.format, 40).toLowerCase(), draft: clip(q.draft, 1200), why: clip(q.why, 300) };
+    if (item.channel !== BACKLINKS) return item;
+    const topic = topicOf(q.topic);
+    if (!topic) { noTopic++; return null; }
+    return { ...item, topic };
+  }).filter(Boolean);
   return {
     decision: clip(j.decision, 600),
     evidence: arr(j.evidence).map((e) => clip(e, 300)).filter(Boolean).slice(0, 8),
     test: j.test && typeof j.test === "object" && j.test.channel ? { channel: clip(j.test.channel, 40).toLowerCase(), format: clip(j.test.format, 40).toLowerCase(), what: clip(j.test.what, 300), number: clip(j.test.number, 200), stop: clip(j.test.stop, 200) } : null,
-    queue: arr(j.queue).filter((q) => q && q.channel && q.draft).slice(0, MAX_QUEUE_PER_BUSINESS).map((q) => ({ channel: clip(q.channel, 40).toLowerCase(), format: clip(q.format, 40).toLowerCase(), draft: clip(q.draft, 1200), why: clip(q.why, 300) })),
+    queue: queue.slice(0, MAX_QUEUE_PER_BUSINESS),
+    noTopic,
     proposals: arr(j.proposals).filter((p) => p && p.what).slice(0, 3).map((p) => ({ what: clip(p.what, 300), why: clip(p.why, 300), evidence: clip(p.evidence, 300), costs_money: p.costs_money === true })),
     next_check: /^\d{4}-\d\d-\d\d$/.test(String(j.next_check)) ? j.next_check : null,
     linked: arr(j.linked).filter((l) => l && /^olp_[a-z0-9]+$/.test(String(l.id)) && ["keep", "change", "drop"].includes(l.verdict) && String(l.why ?? "").trim())
       .map((l) => ({ id: String(l.id), verdict: l.verdict, why: clip(l.why, 400), next_step: l.verdict === "change" ? clip(l.next_step, 400) || null : null }))
       .filter((l) => l.verdict !== "change" || l.next_step),
   };
+}
+
+/** A topic as the network gets it: one line, 1 to TOPIC_MAX characters, else null (never cut short). */
+export function topicOf(v) {
+  const t = typeof v === "string" ? v.replace(/\s+/g, " ").trim() : "";
+  return t && t.length <= TOPIC_MAX ? t : null;
+}
+
+/**
+ * The backlink network's orders from the NEWEST cycle's decision rows ({ id, business, state, actions,
+ * created_at }, any order): per business its newest decided row only (a same-day re-run replaces the
+ * first), each `ordered` backlinks item as { business, topic, draft, why }. Nothing else of the row (no
+ * evidence, decision text or other channel's draft) leaves. A row whose actions are not a JSON list is
+ * skipped and named in `skipped`, never a crash.
+ */
+export function backlinkOrders(rows) {
+  const newest = new Map();
+  for (const r of rows ?? []) {
+    if (r?.state !== "decided") continue;
+    const cur = newest.get(r.business);
+    if (!cur || Number(r.created_at) > Number(cur.created_at)) newest.set(r.business, r);
+  }
+  const orders = []; const skipped = [];
+  for (const r of newest.values()) {
+    let acts = null;
+    try { acts = JSON.parse(r.actions); } catch { acts = null; }
+    if (!Array.isArray(acts)) { skipped.push(r.id); continue; }
+    for (const a of acts) {
+      const it = a?.kind === "ordered" ? a.item : null;
+      const topic = topicOf(it?.topic);
+      if (!it || it.channel !== BACKLINKS || !topic || typeof it.draft !== "string" || !it.draft.trim()) continue;
+      orders.push({ business: String(r.business), topic, draft: it.draft, why: typeof it.why === "string" ? it.why : "" });
+    }
+  }
+  return { orders: orders.sort((a, b) => a.business.localeCompare(b.business)), skipped };
 }
 
 /** Code's holds over the model's test: a channel with too little or no data gets no format test. */
@@ -184,7 +245,8 @@ export function ruleText(riskMd, id) {
 export function routeItem(roster, business, item) {
   const gate = mayAct(roster, { business, channel: item.channel, format: item.format, action: "post" });
   if (gate.ok) return { to: "claims" };
-  if (gate.stop === "NOT_APPROVED") return { to: "card", why: gate.why };
+  // A backlinks item is an order for the network, never her card: unapproved, it is refused and written down.
+  if (gate.stop === "NOT_APPROVED" && String(item.channel ?? "").toLowerCase() !== BACKLINKS) return { to: "card", why: gate.why };
   return { to: "refused", stop: gate.stop, why: gate.why };
 }
 
@@ -300,6 +362,7 @@ export function reportSection(rows, { cards, origin, at, summaries = [], scoreca
   const sum = (k) => summaries.find((x) => x.key === k);
   const fv = floorValues(summaries, (k) => sum(k)?.label ?? rows.find((r) => r.business === k)?.label ?? "one business");
   const queued = rows.flatMap((r) => (r.actions ?? []).filter((a) => a.kind === "queued").map((a) => ({ label: r.label, item: a.item })));
+  const orders = rows.flatMap((r) => (r.actions ?? []).filter((a) => a.kind === "ordered")).length;
   const decided = rows.filter((r) => r.state === "decided");
   const held = rows.filter((r) => String(r.state).startsWith("held"));
   const paused = rows.filter((r) => r.state === "paused");
@@ -307,6 +370,7 @@ export function reportSection(rows, { cards, origin, at, summaries = [], scoreca
   const lines = [
     cards ? `${one(cards, "One growth idea waits", "N growth ideas wait")} for your yes in Decide. Nothing else to do.`
       : queued.length ? `Nothing to do: ${one(queued.length, "one post was", "N posts were")} queued from formats you already approved.`
+      : orders ? `Nothing to do: ${one(orders, "one backlink article was", "N backlink articles were")} ordered from the backlink network.`
       : "Nothing to do: nothing new was queued this fortnight. Why, below.",
   ];
   const floors = [floorLine(scorecard?.first, scorecard?.start, fv.first), floorLine(scorecard?.real, scorecard?.start, fv.real, fv.realMissing)].filter(Boolean);
@@ -314,8 +378,9 @@ export function reportSection(rows, { cards, origin, at, summaries = [], scoreca
   for (const r of decided) {
     const acts = r.actions ?? [];
     const q = acts.filter((a) => a.kind === "queued").length;
+    const o = acts.filter((a) => a.kind === "ordered").length;
     const asked = acts.filter((a) => a.kind === "proposal").length;
-    const did = [q ? `${q} queued` : null, asked ? `${asked} asked in Decide` : null].filter(Boolean).join(", ") || "nothing new queued";
+    const did = [q ? `${q} queued` : null, o ? `${one(o, "1 backlink article", "N backlink articles")} ordered` : null, asked ? `${asked} asked in Decide` : null].filter(Boolean).join(", ") || "nothing new queued";
     const said = modelSentence(r.decision);
     lines.push(`${r.label}: ${numbersLine(sum(r.business)) ?? "numbers not read"} in 28 days; ${did}.${said ? ` ${said}` : ""}`);
   }

@@ -1,7 +1,6 @@
-import { Hono, type Context } from "hono";
+import { Hono } from "hono";
 import type { Env, Vars } from "../env";
 import { AppError, badRequest, notFound, ok } from "../lib/http";
-import { getSetting } from "../lib/settings";
 import { dayIdInZone } from "../../../shared/boss/timezone";
 import {
   AI_SITES, LANES, MAX_FIX_ATTEMPTS, NEXT_LANE, NO_LOOP_NOTE, WEEK_MAX_AGE_DAYS, expectedWeek, missId, pageOnHost, prefixOk, readSite,
@@ -10,7 +9,7 @@ import {
 import { ASKED_DAYS, MAX_CARDS, claimRules, claimsPrompt, namingProblems, parseClaims, routeItem } from "../../../shared/boss/growth/director.mjs";
 import type { RosterEntry } from "../../../shared/boss/growth/roster.mjs";
 import { askedRecently, brainMd, card, freeModel, loadRoster, openTodo, type Model } from "./run";
-import { TOKEN_KEY, sha256 } from "../routes/openLoops";
+import { machineTokenOk } from "../routes/openLoops";
 
 /**
  * THE AI ANSWERS LOOP, STORED (her ask 22 Nov 2026; the rules: src/shared/boss/growth/aiAnswers.mjs).
@@ -272,14 +271,6 @@ aiAnswerRoutes.get("/ai-lanes", async (c) => {
   return ok(c, { lanes: rows.map((r) => ({ ...r, lanes_tried: parse(r.lanes_tried, []) })), channels });
 });
 
-/** The machine token's door, exactly as the Open Loops intake checks it (routes/openLoops.ts). */
-async function tokenAllowed(c: Context<{ Bindings: Env; Variables: Vars }>): Promise<boolean> {
-  const m = /^Bearer\s+(olt_[a-f0-9]{64})$/.exec(c.req.header("authorization") ?? "");
-  if (!m) return false;
-  const want = await getSetting(c.env.DB, TOKEN_KEY);
-  return Boolean(want) && want === (await sha256(m[1]!));
-}
-
 /** The search loop's read of one host's OWN misses (CONTRACT). Never a page off that host. */
 export async function aiMisses(db: D1Database, host: string, now = Date.now()) {
   const site = AI_SITES[host];
@@ -300,7 +291,7 @@ export async function aiMisses(db: D1Database, host: string, now = Date.now()) {
 }
 
 aiAnswerRoutes.get("/ai-misses", async (c) => {
-  if (!(await tokenAllowed(c))) throw new AppError(401, "Locked");
+  if (!(await machineTokenOk(c))) throw new AppError(401, "Locked");
   const host = c.req.query("host") ?? "";
   if (!Object.prototype.hasOwnProperty.call(AI_SITES, host)) throw notFound("No such selling site");
   return c.json(await aiMisses(c.env.DB, host));

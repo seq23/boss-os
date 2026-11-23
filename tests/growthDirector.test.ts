@@ -7,6 +7,7 @@
  *   - the claims prompt carries the brand's rule words from the risk brain, rulings included.
  */
 import { describe, expect, it } from "vitest";
+import { BACKLINKS, TOPIC_MAX, backlinkOrders, topicOf } from "../src/shared/boss/growth/director.mjs";
 import { parseDecision, enforceHolds, routeItem, routeProposal, cycleEnd, ruleText, parseClaims, claimsPrompt, decisionPrompt, parseSpend, claimRules, rulesFor, REQUIRED_RULES, namingProblems, reportSection, reportDue } from "../src/shared/boss/growth/director.mjs";
 import { parseRoster } from "../src/shared/boss/growth/roster.mjs";
 import { lineProblems } from "../src/shared/boss/mail/plain.mjs";
@@ -255,5 +256,86 @@ describe("her fortnightly report: built from the record, plain words, honest lin
     expect(reportDue(null, "2026-11-23")).toBe(true);
     expect(reportDue("2026-11-23", "2026-12-05")).toBe(false);
     expect(reportDue("2026-11-23", "2026-12-06")).toBe(true);
+  });
+});
+
+describe("backlink orders (22 Nov 2026: the network defers to the Director)", () => {
+  const blRoster = parseRoster(`### Shop B
+- key: shop-b
+- buyer: b
+- offer: o
+- money number: m
+- channels: backlinks [guide] · pinterest [pin]
+- languages: en
+- limits: R-PRF-01
+`, "spry");
+  const answer = (queue: unknown[]) => JSON.stringify({ decision: "More guides.", evidence: [], test: null, queue, proposals: [], next_check: "2026-11-30" });
+  const at = (n: number) => "t".repeat(n);
+
+  it("a backlinks item needs a topic of 1 to TOPIC_MAX characters: none, blank or too long is dropped and counted; the rest carry on", () => {
+    const d = parseDecision(answer([
+      { channel: "Backlinks", format: "guide", draft: "A guide lead", why: "w", topic: `  How to keep a rent   receipt ` },
+      { channel: "backlinks", format: "guide", draft: "no topic", why: "w" },
+      { channel: "backlinks", format: "guide", draft: "blank topic", why: "w", topic: "   " },
+      { channel: "backlinks", format: "guide", draft: "long topic", why: "w", topic: at(TOPIC_MAX + 1) },
+      { channel: "pinterest", format: "pin", draft: "A pin", why: "w", topic: "ignored off backlinks" },
+    ]))!;
+    expect(d.noTopic).toBe(3);
+    expect(d.queue).toEqual([
+      { channel: BACKLINKS, format: "guide", draft: "A guide lead", why: "w", topic: "How to keep a rent receipt" },
+      { channel: "pinterest", format: "pin", draft: "A pin", why: "w" },
+    ]);
+    // The boundary: exactly TOPIC_MAX is kept, one more is not; never cut short.
+    expect(topicOf(at(TOPIC_MAX))).toBe(at(TOPIC_MAX));
+    expect(topicOf(at(TOPIC_MAX + 1))).toBeNull();
+    expect(topicOf(42)).toBeNull();
+    // Dropped items do not use up the queue's three places.
+    const many = parseDecision(answer([{ channel: "backlinks", format: "guide", draft: "x", why: "w" }, ...[1, 2, 3].map((i) => ({ channel: "backlinks", format: "guide", draft: `d${i}`, why: "w", topic: `t${i}` }))]))!;
+    expect(many.queue.map((q) => q.topic)).toEqual(["t1", "t2", "t3"]);
+  });
+
+  it("the prompt names the topic limit and the scale/stop rule only for a business with backlinks, with the topics already ordered", () => {
+    const p = decisionPrompt({ playbook: "PB", entry: blRoster[0]!, summary, trends: [], today: "2026-11-23", todos: [], topics: ["2026-11-16: Rent receipts"] })[1]!.content;
+    expect(p).toContain(`"topic": "backlinks only: the article's subject, at most ${TOPIC_MAX} characters"`);
+    expect(p).toMatch(/search visits 8 weeks later/);
+    expect(p).toMatch(/rising .*order more topics; no rise 8 weeks after a topic → change topics/);
+    expect(p).toContain("- 2026-11-16: Rent receipts");
+    const none = decisionPrompt({ playbook: "PB", entry: roster[0]!, summary, trends: [], today: "2026-11-23", todos: [] })[1]!.content;
+    expect(none).not.toMatch(/BACKLINK|"topic"/);
+  });
+
+  it("an unapproved backlinks format is refused, never her card; an approved one goes to the claims check", () => {
+    expect(routeItem(blRoster, "shop-b", { channel: "backlinks", format: "guide" })).toEqual({ to: "claims" });
+    expect(routeItem(blRoster, "shop-b", { channel: "backlinks", format: "listicle" })).toMatchObject({ to: "refused", stop: "NOT_APPROVED" });
+    expect(routeItem(roster, "shop-a", { channel: "backlinks", format: "guide" })).toMatchObject({ to: "refused", stop: "NOT_APPROVED" });
+  });
+
+  it("orders: ordered backlinks items of each business's newest decided row only, four fields, a broken row skipped", () => {
+    const ordered = (topic: string, draft = "lead") => ({ kind: "ordered", item: { channel: "backlinks", format: "guide", draft, why: "visits rose", topic } });
+    const rows = [
+      { id: "gdc_a1", business: "approvalprep", state: "decided", created_at: 1, actions: JSON.stringify([ordered("old run")]) },
+      { id: "gdc_a2", business: "approvalprep", state: "decided", created_at: 2, actions: JSON.stringify([
+        ordered("Dispute letters by mail"),
+        { kind: "queued", item: { channel: "pinterest", format: "pin", draft: "PIN DRAFT", why: "w" } },
+        { kind: "blocked", why: "x", item: { channel: "backlinks", format: "guide", draft: "BLOCKED", why: "w", topic: "blocked topic" } },
+        { kind: "ordered", item: { channel: "pinterest", format: "pin", draft: "WRONG CHANNEL", why: "w", topic: "t" } },
+        { kind: "ordered", item: { channel: "backlinks", format: "guide", draft: "LONG", why: "w", topic: at(TOPIC_MAX + 1) } },
+        null,
+      ]) },
+      { id: "gdc_k1", business: "keepmyproof", state: "held: no model", created_at: 3, actions: JSON.stringify([ordered("held row")]) },
+      { id: "gdc_bad", business: "dream-wedding", state: "decided", created_at: 4, actions: "{not json" },
+      { id: "gdc_obj", business: "a-player-mode", state: "decided", created_at: 5, actions: JSON.stringify({ kind: "ordered" }) },
+    ];
+    const { orders, skipped } = backlinkOrders(rows);
+    expect(orders).toEqual([{ business: "approvalprep", topic: "Dispute letters by mail", draft: "lead", why: "visits rose" }]);
+    expect(skipped.sort()).toEqual(["gdc_bad", "gdc_obj"]);
+    expect(backlinkOrders([])).toEqual({ orders: [], skipped: [] });
+  });
+
+  it("her report counts the orders, never as a post queued", () => {
+    const rows = [{ label: "ApprovalPrep", business: "approvalprep", state: "decided", decision: "More guides.", actions: [{ kind: "ordered", item: { channel: "backlinks", format: "guide", draft: "d", why: "w", topic: "t" } }] }];
+    const r = reportSection(rows, { cards: 0, origin: "https://x", at: 0 });
+    expect(r.lines[0]).toMatch(/^Nothing to do: one backlink article was ordered/);
+    expect(r.lines.join("\n")).toMatch(/ApprovalPrep: numbers not read in 28 days; 1 backlink article ordered\./);
   });
 });
