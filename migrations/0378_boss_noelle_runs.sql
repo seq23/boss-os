@@ -40,7 +40,6 @@ UPDATE standing_duties
    SET name = 'Growth: check Noelle ran today',
        task_title = 'Growth: check Noelle ran today',
        cadence = 'daily', weekday = NULL, local_hour = 22, local_minute = 5,
-       next_due_at = (unixepoch(date('now', '+1 day')) + 4 * 3600 + 5 * 60) * 1000,  -- tonight 22:05 CST (04:05 UTC)
        task_input = json_object(
          'worker_job', 'growth',
          'delivers', 'noelle_runs',

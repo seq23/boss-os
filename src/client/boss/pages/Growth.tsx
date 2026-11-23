@@ -51,7 +51,7 @@ export function Growth() {
         {cards ? `${plural(cards, "growth idea")} waiting for you in Decide` : "Nothing needs you here"}
         {decided + held ? ` · this week ${decided} decided, ${held} held` : " · no decision written yet this week"}
       </p>
-      <p className="brain-hint">Noelle, Director of Growth, reads what each business earns once a day, decides, and changes only the targets of the jobs that already post. She never sends email, spends or opens an account; anything new comes to you as a card.</p>
+      <p className="brain-hint">Noelle, Director of Growth, reads what each business earns once a day, writes a decision for each one here, and makes Porch & Party's Studio posts, each passed by a fresh reviewer before it is queued. She never sends email, spends or opens an account; anything new comes to you as a card.</p>
       {data.problems.length > 0 && <p className="brain-hint" data-testid="growth-problems">The Growth roster needs a fix: {data.problems.slice(0, 3).map((p) => p.replace(/NAMED STOP \[[A-Z0-9_]+\]\s*/g, "")).join(" · ")}</p>}
       {data.general.length > 0 && (
         <section className="scorecard-business" data-testid="growth-general">
