@@ -1226,7 +1226,8 @@ export function buildDay(data, now = Date.now()) {
   const raw = briefingRaw(data.briefing, today);
   const src = briefingSourceUrl(data.briefing);
   const below = raw ? briefingBelowLine(data.briefing) : null;
-  const briefTop = raw ? [...(below ? [below] : []), ...raw.map((l) => ({ runs: proseRuns(headline(l), src) }))] : null;
+  // Every headline has its one-tap "Drop for good" (item 19, 18 Nov 2026); a dropped one never comes back.
+  const briefTop = raw ? [...(below ? [below] : []), ...raw.map((l) => ({ l, id: idFor("brief", headline(l)) })).filter(({ id }) => !isGone(id)).map(({ l, id }) => ({ runs: proseRuns(headline(l), src), links: [dropLink(id, headline(l))] }))] : null;
 
   /*
    * 4. Done for you (owner, 26 Oct 2026: "no need to repeat ever and do not use a lot of space"): each
@@ -1269,7 +1270,15 @@ export function buildDay(data, now = Date.now()) {
   const coach = neverMissTwice(data.missedDays, { waiting: decide.length, owed: stillYours.length, oldestWait, action, pressure: data.pressure });
   const grat = gratitudeLine({ wins: winsFrom({ lpRows: data.lpRows ?? [], prospects: data.prospects ?? null, deals: deals.length, now }), herList: data.gratitudeList ?? [], fallback: data.spirit?.practice?.gratitude?.sentence ?? null, history: data.told?.gratitude ?? [], today });
   const gate = gateLine({ gratitude: grat?.sentence ?? null, action, done: Boolean(data.gateDone) });
-  const spirit = spiritSection(data.spirit ?? null, data.practiceWeek ?? null, now, data.lapseLine ?? null, { coach: coach.line, action });
+  const spiritRaw = spiritSection(data.spirit ?? null, data.practiceWeek ?? null, now, data.lapseLine ?? null, { coach: coach.line, action });
+  /*
+   * A spirit line's numbers change every day ("Giving: 2 this month"), so its Drop for good drops the KIND
+   * of line (item 19, 18 Nov 2026: "permanently dismissed, never returns"), keyed by its words before the
+   * first number or colon.
+   */
+  const spiritKind = (t) => String(t).split(/[:\d]/)[0].trim().slice(0, 60);
+  const spiritItems = (spiritRaw?.items ?? []).map((i) => { const text = (i.runs ?? []).map((r) => r.text).join(""); return { ...i, id: idFor("spirit", spiritKind(text)), text }; }).filter((i) => !isGone(i.id)).map(({ id, text, ...i }) => ({ ...i, links: [...(i.links ?? []), dropLink(id, text)] }));
+  const spirit = spiritRaw && spiritItems.length ? { ...spiritRaw, items: spiritItems } : null;
   const ancestral = ancestralLine(data.spirit ?? null);
   // The prospects producer's count line is in "Prospect emails" when that loaded; not said twice.
   for (const name of DONE_SOURCES.filter((n) => !(data.prospects && n === "prospects"))) for (const l of m[name]?.lines ?? []) doneRaw.push(typeof l === "string" ? { text: l, links: [] } : { links: [], ...l });

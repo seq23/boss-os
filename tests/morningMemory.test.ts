@@ -129,7 +129,10 @@ describe("a job with an empty title is named, never empty quotes (2 Nov 2026)", 
     expect(lines).toHaveLength(1);
     expect(lines[0]).toContain("Tools worth knowing about");
     expect(lines[0]).toContain("Fix a held email");
-    expect(lines[0]).toMatch(/touch(?:es)? outreach or money|touches money or outreach/);
+    // 23 Nov 2026: neither job said what it touches, so nothing is claimed either way; once both say, it is said.
+    expect(lines[0]).not.toMatch(/none of them|does not touch/);
+    const said = (t: any) => ({ ...t, input: JSON.stringify({ ...JSON.parse(t.input), touches: "none" }) });
+    expect(buildDay({ ...base(MON), tasks: [said(rep), said(duty)], morning: {} }, MON).text).toMatch(/none of them touches money or outreach/);
     const send = { ...duty, id: "t5", title: "Time2Read outreach sends" };
     expect(buildDay({ ...base(MON), tasks: [send], morning: {} }, MON).text).toMatch(/Time2Read outreach sends touches outreach or money, so nothing goes out/i);
   });
