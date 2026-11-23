@@ -26,7 +26,7 @@ import { newId } from "../lib/id";
 import { audit } from "../lib/audit";
 import { logEvent } from "../lib/log";
 import {
-  readSecretLines, scrubSecretValues, nothingButSecrets, secretDoorLine, SECRET_HANDOFF_KEY_NAME,
+  readSecretLines, scrubSecretValues, scrubSecretHeader, nothingButSecrets, secretDoorLine, SECRET_HANDOFF_KEY_NAME,
 } from "../../../shared/boss/service/secretLines.mjs";
 import { registeredRepoIn, repoIn } from "../../../shared/boss/repoChange/lane.mjs";
 
@@ -77,6 +77,8 @@ export async function decryptSecret(env: Env, row: { ciphertext: string; iv: str
 export interface SecretDoorOutcome {
   /** The raw MIME with every value scrubbed — what every door downstream must read instead. */
   raw: string;
+  /** The subject as it may be kept: read before any value was known, so scrubbed here too (encoded words included). */
+  subject: string;
   stored: Array<{ name: string; repo: string | null }>;
   refused: Array<{ name: string; why: string }>;
   /** True when the written part was nothing but SECRET lines and a greeting: no task is opened. */
@@ -97,10 +99,11 @@ export async function secretDoor(
 ): Promise<SecretDoorOutcome> {
   const read = readSecretLines(input.readable);
   if (!read.found.length && !read.refused.length) {
-    return { raw: input.raw, stored: [], refused: [], onlySecrets: false, resumed: [], line: null };
+    return { raw: input.raw, subject: input.subject, stored: [], refused: [], onlySecrets: false, resumed: [], line: null };
   }
   const raw = await scrubSecretValues(input.raw, read.values);
-  const repo = repoIn(`${input.subject}\n${read.scrubbed}`) ?? registeredRepoIn(`${input.subject}\n${read.scrubbed}`)?.repo ?? null;
+  const subject = scrubSecretHeader(input.subject, read.values);
+  const repo = repoIn(`${subject}\n${read.scrubbed}`) ?? registeredRepoIn(`${subject}\n${read.scrubbed}`)?.repo ?? null;
   const configured = await secretDoorConfigured(env);
   const stored: SecretDoorOutcome["stored"] = [];
   const refused: SecretDoorOutcome["refused"] = [...read.refused];
@@ -129,7 +132,7 @@ export async function secretDoor(
   const resumed: string[] = [];
   for (const s of stored) resumed.push(...(await resumeForSecret(env, s.name)));
   const line = `${secretDoorLine(stored, refused)}${resumed.length ? ` ${resumed.length} piece${resumed.length === 1 ? "" : "s"} of work that waited for it ${resumed.length === 1 ? "is" : "are"} running again now.` : ""}`;
-  return { raw, stored, refused, onlySecrets: nothingButSecrets(read.scrubbed), resumed, line };
+  return { raw, subject, stored, refused, onlySecrets: nothingButSecrets(read.scrubbed), resumed, line };
 }
 
 /** Record that a task or a repo change waits for a key, by NAME. Idempotent per (name, task, change). */

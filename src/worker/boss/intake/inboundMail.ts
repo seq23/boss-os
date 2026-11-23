@@ -355,7 +355,7 @@ async function handleMail(message: BossMailMessage, env: Env, said: Said): Promi
   const mailId = newId("iml");
   const now = Date.now();
   const to = String(message.to ?? "").toLowerCase();
-  const subject = decodeHeader(message.headers.get("subject") ?? "");
+  let subject = decodeHeader(message.headers.get("subject") ?? "");
   const sender = senderOf(message);
   const dmarc = dmarcPassed(message.headers.get("authentication-results"));
   const authorised = isOwner(sender, env.BOSS_EXTRA_OWNER_SENDERS ?? "") && dmarc;
@@ -619,6 +619,11 @@ async function handleMail(message: BossMailMessage, env: Env, said: Said): Promi
     // A scrubbed message is read again, so no value survives in the text or the files read from it.
     if (secrets.raw !== rawMessage) parsed = await parseMail(secrets.raw);
     rawMessage = secrets.raw;
+    // The subject was read, and the arrival row written, before any value was known: both take the scrubbed one.
+    if (secrets.subject !== subject) {
+      subject = secrets.subject;
+      await env.DB.prepare(`UPDATE boss_inbound_mail SET subject = ? WHERE id = ?`).bind(subject.slice(0, 400), mailId).run();
+    }
     /*
      * ─── THE RAW MESSAGE IS KEPT, AND THE CARD GETS THE WORDS ────────────────
      *

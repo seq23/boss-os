@@ -13,6 +13,7 @@ export declare function secretNameProblem(name: string): string | null;
 export declare function readSecretLines(text: string): SecretLinesRead;
 export declare function nothingButSecrets(scrubbedWritten: string): boolean;
 export declare function scrubSecretValues(raw: string, values: readonly string[], marker?: string): Promise<string>;
+export declare function scrubSecretHeader(value: string, values: readonly string[], marker?: string): string;
 export declare function carriesSecretValue(raw: string, values: readonly string[]): Promise<boolean>;
 export declare function secretDoorLine(
   stored: ReadonlyArray<{ name: string; repo: string | null }>,

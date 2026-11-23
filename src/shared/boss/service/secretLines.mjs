@@ -10,7 +10,7 @@
  * the raw MIME (plain, quoted-printable and base64 text parts alike, read by postal-mime), so nothing downstream can copy
  * it anywhere. The Worker half (`src/worker/boss/service/secretHandoff.ts`) encrypts and stores.
  */
-import { parseMail } from "../../mail/parseMail.mjs";
+import { decodeHeader, parseMail } from "../../mail/parseMail.mjs";
 
 export const SECRET_REDACTED = "[secret redacted]";
 /** The Worker secret that encrypts a hand-off. Vendor-prefixed; never a reserved name. */
@@ -79,6 +79,13 @@ export function nothingButSecrets(scrubbedWritten) {
  * headers, the scrubbed text and html as 8bit, every file re-encoded base64 from its own bytes (text files scrubbed).
  * A message postal-mime cannot take apart keeps its headers and loses its body, never the other way round: a secret is
  * never kept because a part could not be read (fails closed).
+ *
+ * ENCODED HEADERS (RFC 2047, engineering review 22 Nov 2026: a value in `Subject: =?utf-8?B?…?=` survived). Every top
+ * header holding an encoded word is decoded by `decodeHeader` (postal-mime's decodeWords, the repo's one header decoder).
+ * One that decodes to a value is written back decoded with the value replaced (RFC 6532 UTF-8, which postal-mime reads;
+ * its decoder turns a decoded CR LF into a space, so no header of its own can start). One whose word cannot be read (left standing
+ * by the decoder, or bytes its charset rejects) becomes the marker: a header we cannot read is never kept raw. The same
+ * reading runs over the parts: a value in an encoded part header or file name sends the message to the rebuild.
  */
 const TOP_HEADERS_DROPPED = /^(?:content-type|content-transfer-encoding|mime-version|content-disposition)$/i;
 
@@ -95,12 +102,69 @@ function topHeaders(raw) {
   return block.split(/\r?\n(?![ \t])/).filter((h) => h && !TOP_HEADERS_DROPPED.test(h.split(":")[0].trim())).join("\r\n");
 }
 
+/** An encoded word the decoder could not read: its opener still standing, or bytes its charset rejected. */
+const unreadWord = (decoded) => /=\?[^?\s]*\?[^?\s]*\?/.test(decoded) || decoded.includes("\uFFFD");
+/** One top header line, folds included. */
+const HEADER_LINE = /^([!-9;-~]+):([^\r\n]*(?:\r?\n[ \t][^\r\n]*)*)/gm;
+
+/** The value as anything reading the mail would see it: literally, or through its encoded words. */
+const exposes = (wanted, text) => {
+  const t = String(text ?? "");
+  if (wanted.some((v) => t.includes(v))) return true;
+  return t.includes("=?") && wanted.some((v) => decodeHeader(t).includes(v));
+};
+
+/** Text with every value replaced, its encoded words decoded first when they are what carries one. */
+const scrubberFor = (wanted, marker) => {
+  const replaceAll = (text) => wanted.reduce((acc, v) => acc.split(v).join(marker), String(text ?? ""));
+  return (text) => {
+    const plain = replaceAll(text);
+    return exposes(wanted, plain) ? replaceAll(decodeHeader(plain)) : plain;
+  };
+};
+
+function splitHead(raw) {
+  const end = raw.search(/\r?\n\r?\n/);
+  return end === -1 ? [raw, ""] : [raw.slice(0, end), raw.slice(end)];
+}
+
+/**
+ * ONE HEADER VALUE, as it may be kept: every value replaced, read through its encoded words (decoded, value replaced, one
+ * line) when they are what carries one, and the marker alone when an encoded word in it cannot be read. Unchanged when
+ * nothing in it carries a value. Also the subject the door hands back, which was read before any value was known.
+ */
+export function scrubSecretHeader(value, values, marker = SECRET_REDACTED) {
+  const wanted = (values ?? []).filter((v) => typeof v === "string" && v.length >= 4);
+  const plain = wanted.reduce((acc, v) => acc.split(v).join(marker), String(value ?? ""));
+  if (!wanted.length || !plain.includes("=?")) return plain;
+  const decoded = decodeHeader(plain.replace(/\r?\n[ \t]+/g, " "));
+  if (unreadWord(decoded)) return marker;
+  if (!wanted.some((v) => decoded.includes(v))) return plain;
+  return wanted.reduce((acc, v) => acc.split(v).join(marker), decoded).trim();
+}
+
+/** The top headers with every encoded value scrubbed and every unreadable encoded word withheld. */
+function scrubTopHeaders(raw, wanted, marker) {
+  const [head, rest] = splitHead(raw);
+  return head.replace(HEADER_LINE, (line, name, value) => {
+    const kept = scrubSecretHeader(value, wanted, marker);
+    return kept === value ? line : `${name}: ${kept}`;
+  }) + rest;
+}
+
+/** True when a top header holds an encoded word nobody can read: unsure, so it counts as carrying a value. */
+function unreadTopHeader(raw) {
+  const [head] = splitHead(raw);
+  return [...head.matchAll(HEADER_LINE)].some(([, , value]) => value.includes("=?") && unreadWord(decodeHeader(value.replace(/\r?\n[ \t]+/g, " "))));
+}
+
 const isTextFile = (a) => /^text\//i.test(a?.mimeType ?? "");
 const textOfFile = (a) => { try { return new TextDecoder("utf-8").decode(new Uint8Array(a.content)); } catch { return ""; } };
 
-/** Every decoded text the parse holds: the bodies and any text file. */
+/** Every decoded text the parse holds: the bodies, any text file, and every file's name. */
 function decodedTexts(mail) {
-  return [mail?.text ?? "", mail?.html ?? "", ...(mail?.attachments ?? []).filter(isTextFile).map(textOfFile)];
+  const files = mail?.attachments ?? [];
+  return [mail?.text ?? "", mail?.html ?? "", ...files.filter(isTextFile).map(textOfFile), ...files.map((a) => a.filename ?? "")];
 }
 
 /** The message rebuilt from the one parse with every value replaced. */
@@ -111,7 +175,7 @@ function rebuilt(raw, mail, replaceAll) {
   if (mail.text) part(["Content-Type: text/plain; charset=utf-8", "Content-Transfer-Encoding: 8bit"], replaceAll(mail.text));
   if (mail.html) part(["Content-Type: text/html; charset=utf-8", "Content-Transfer-Encoding: 8bit"], replaceAll(mail.html));
   for (const a of mail.attachments ?? []) {
-    const name = String(a.filename ?? "file").replace(/["\r\n]/g, "");
+    const name = replaceAll(String(a.filename ?? "file")).replace(/["\r\n]/g, "");
     const bytes = isTextFile(a) ? new TextEncoder().encode(replaceAll(textOfFile(a))).buffer : a.content;
     part([`Content-Type: ${a.mimeType || "application/octet-stream"}; name="${name}"`, "Content-Transfer-Encoding: base64",
       `Content-Disposition: ${a.disposition === "inline" ? "inline" : "attachment"}; filename="${name}"`,
@@ -124,21 +188,22 @@ function rebuilt(raw, mail, replaceAll) {
 export async function scrubSecretValues(raw, values, marker = SECRET_REDACTED) {
   const wanted = (values ?? []).filter((v) => typeof v === "string" && v.length >= 4);
   if (!wanted.length || !raw) return raw;
-  const replaceAll = (text) => wanted.reduce((acc, v) => acc.split(v).join(marker), String(text ?? ""));
-  const out = replaceAll(String(raw));
+  const scrub = scrubberFor(wanted, marker);
+  const out = scrubTopHeaders(wanted.reduce((acc, v) => acc.split(v).join(marker), String(raw)), wanted, marker);
   const parsed = await parseMail(out);
   if (!parsed.mail) return `${topHeaders(out)}\r\nX-Boss-OS-Scrubbed: body withheld (${parsed.failed})\r\n\r\n${marker}\r\n`;
-  if (!decodedTexts(parsed.mail).some((t) => wanted.some((v) => t.includes(v)))) return out;
-  return rebuilt(out, parsed.mail, replaceAll);
+  if (!exposes(wanted, out) && !decodedTexts(parsed.mail).some((t) => exposes(wanted, t))) return out;
+  return rebuilt(out, parsed.mail, scrub);
 }
 
-/** True when any value is still readable in the message: plainly or in anything postal-mime decodes. Used by the guard. */
+/** True when any value is still readable in the message, plainly, through an encoded word or in anything postal-mime
+ * decodes, or when a top header holds an encoded word that cannot be read (unsure counts as carrying). */
 export async function carriesSecretValue(raw, values) {
   const wanted = (values ?? []).filter((v) => typeof v === "string" && v.length >= 4);
   if (!wanted.length || !raw) return false;
-  if (wanted.some((v) => String(raw).includes(v))) return true;
+  if (exposes(wanted, raw) || unreadTopHeader(String(raw))) return true;
   const { mail } = await parseMail(String(raw));
-  return decodedTexts(mail).some((t) => wanted.some((v) => t.includes(v)));
+  return decodedTexts(mail).some((t) => exposes(wanted, t));
 }
 
 /** The one line her reply carries. Names only. */

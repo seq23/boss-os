@@ -7,7 +7,7 @@ import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
 import { decodeHeader, parseMail } from "../src/shared/mail/parseMail.mjs";
 import { readableText } from "../src/shared/boss/intake/messageBody.mjs";
-import { carriesSecretValue, scrubSecretValues } from "../src/shared/boss/service/secretLines.mjs";
+import { carriesSecretValue, scrubSecretHeader, scrubSecretValues } from "../src/shared/boss/service/secretLines.mjs";
 
 const eml = (name: string) => readFileSync(new URL(`./fixtures/mail/${name}`, import.meta.url), "utf8");
 const header = (raw: string, name: string) =>
@@ -70,6 +70,86 @@ describe("the secret scrub reads with postal-mime and rewrites from its parse", 
   it("a message with no encoded copy is left exactly as the literal replace made it", async () => {
     const raw = `From: a@example.com\r\nSubject: k\r\n\r\nSECRET RESEND_API_KEY=${v}\r\n`;
     expect(await scrubSecretValues(raw, [v])).toBe(raw.split(v).join("[secret redacted]"));
+  });
+
+  describe("encoded headers (RFC 2047): a value in an encoded word is scrubbed, never passed through raw", () => {
+    const b = (t: string) => Buffer.from(t, "utf8").toString("base64");
+    const q = (t: string) => [...Buffer.from(t, "utf8")].map((c) => (/[A-Za-z0-9]/.test(String.fromCharCode(c)) ? String.fromCharCode(c) : `=${c.toString(16).toUpperCase().padStart(2, "0")}`)).join("");
+    const withSubject = (subject: string, extra = "") =>
+      `From: Owner Example <owner@example.com>\r\nSubject: ${subject}\r\n${extra}MIME-Version: 1.0\r\nContent-Type: text/plain; charset=utf-8\r\n\r\nSECRET RESEND_API_KEY=${v}\r\nthanks\r\n`;
+    const scrubbed = async (raw: string) => {
+      expect(await carriesSecretValue(raw, [v])).toBe(true);
+      const clean = await scrubSecretValues(raw, [v]);
+      expect(await carriesSecretValue(clean, [v])).toBe(false);
+      const mail = (await parseMail(clean)).mail!;
+      expect(mail.text).toContain("SECRET RESEND_API_KEY=[secret redacted]");
+      expect(mail.from?.address).toBe("owner@example.com");
+      return { clean, mail };
+    };
+
+    it("a B-encoded subject: the value is gone and the rest of the subject reads", async () => {
+      const { clean, mail } = await scrubbed(withSubject(`=?utf-8?B?${b(`Clé ${v} for Resend`)}?=`));
+      expect(clean).not.toContain(b(v).slice(0, 12));
+      expect(mail.subject).toBe("Clé [secret redacted] for Resend");
+    });
+
+    it("a Q-encoded subject", async () => {
+      const { mail } = await scrubbed(withSubject(`=?UTF-8?Q?key_${q(v)}?=`));
+      expect(mail.subject).toBe("key [secret redacted]");
+    });
+
+    it("a value split across encoded words, folded, B and Q mixed", async () => {
+      const { mail } = await scrubbed(withSubject(`=?utf-8?B?${b(`key ${v.slice(0, 7)}`)}?=\r\n =?utf-8?Q?${q(v.slice(7))}?=`));
+      expect(mail.subject).toBe("key [secret redacted]");
+    });
+
+    it.each([
+      ["an unknown encoding", `=?utf-8?X?${b(v)}?=`],
+      ["no closing ?=", `=?utf-8?B?${b(v)}`],
+      ["bytes its charset rejects", `=?utf-8?B?${b(v)}?= =?utf-8?B?/w==?=`],
+    ])("a malformed encoded word (%s) fails closed: the header is the marker", async (_why, subject) => {
+      expect(await carriesSecretValue(`From: owner@example.com\r\nSubject: ${subject}\r\n\r\nhello\r\n`, [v]), "unsure counts as carrying").toBe(true);
+      const { clean, mail } = await scrubbed(withSubject(subject));
+      expect(clean).not.toContain(b(v).slice(0, 12));
+      expect(mail.subject).toBe("[secret redacted]");
+    });
+
+    it("a decoded CR LF never starts a header of its own", async () => {
+      const { clean, mail } = await scrubbed(withSubject(`=?utf-8?Q?${q(`${v}\r\nBcc: someone@example.net`)}?=`));
+      expect(clean).not.toMatch(/^Bcc:/im);
+      expect(mail.bcc ?? []).toEqual([]);
+    });
+
+    const withFile = (disposition: string) => withSubject("key")
+      .replace("Content-Type: text/plain; charset=utf-8\r\n\r\n", 'Content-Type: multipart/mixed; boundary="m"\r\n\r\n--m\r\nContent-Type: text/plain; charset=utf-8\r\n\r\n')
+      .replace("thanks\r\n", `thanks\r\n--m\r\nContent-Type: application/pdf\r\nContent-Disposition: attachment; ${disposition}\r\nContent-Transfer-Encoding: base64\r\n\r\n${b("%PDF-1.4 keep me")}\r\n--m--\r\n`);
+
+    it.each([
+      ["RFC 2047", `filename="=?utf-8?B?${b(`${v}.pdf`)}?="`],
+      ["RFC 2231", `filename*=utf-8''${encodeURIComponent(`${v}.pdf`).replace(/_/g, "%5F")}`],
+    ])("a file name carrying the value (%s) sends the message to the rebuild, the file kept byte for byte", async (_how, disposition) => {
+      const { mail } = await scrubbed(withFile(disposition));
+      expect(mail.attachments.map((a) => a.filename)).toEqual(["[secret redacted].pdf"]);
+      expect(new TextDecoder().decode(new Uint8Array(mail.attachments[0]!.content as ArrayBuffer))).toBe("%PDF-1.4 keep me");
+    });
+
+    it("a value in an encoded part header postal-mime never hands back (Content-Description) sends the message to the rebuild", async () => {
+      const { clean, mail } = await scrubbed(withFile(`filename="a.pdf"\r\nContent-Description: =?utf-8?B?${b(`key ${v}`)}?=`));
+      expect(clean).not.toContain(b(`key ${v}`).slice(0, 12));
+      expect(mail.attachments.map((a) => a.filename)).toEqual(["a.pdf"]);
+    });
+
+    it("an encoded subject with no value in it is left exactly as it came", async () => {
+      const raw = withSubject("=?utf-8?Q?caf=C3=A9_plans?=");
+      expect(await scrubSecretValues(raw, [v])).toBe(raw.split(v).join("[secret redacted]"));
+    });
+
+    it("the subject the door hands back: decoded and scrubbed, the marker when unreadable, untouched otherwise", () => {
+      expect(scrubSecretHeader(`=?utf-8?B?${b(`k ${v}`)}?=`, [v])).toBe("k [secret redacted]");
+      expect(scrubSecretHeader(`k ${v}`, [v])).toBe("k [secret redacted]");
+      expect(scrubSecretHeader(`=?utf-8?X?${b(v)}?=`, [v])).toBe("[secret redacted]");
+      expect(scrubSecretHeader("Re: plans", [v])).toBe("Re: plans");
+    });
   });
 
   it("a message postal-mime cannot take apart keeps its headers and loses its body (fails closed)", async () => {
