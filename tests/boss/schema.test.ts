@@ -1,7 +1,7 @@
 import { env } from "cloudflare:test";
 import { describe, expect, it } from "vitest";
 import { SNAPSHOT_TABLES } from "../../src/worker/boss/routes/vault";
-import { CHASSIS_TABLES, CHASSIS_TABLE_CEILING } from "./chassisTables";
+import { CHASSIS_TABLES, CHASSIS_TABLE_COUNT } from "./chassisTables";
 import { LOCAL_DEFAULT_MIN_BENCHMARKS } from "../../src/worker/boss/router/policy";
 
 describe("schema", () => {
@@ -45,17 +45,19 @@ describe("schema", () => {
 
   /**
    * The ratchet. Cloning the chassis put West Peek's tables in this database, outside the vault's
-   * snapshot list. That is recorded rather than excused: the count may fall as the fund domain is
-   * removed, and this fails the moment it rises.
+   * snapshot list, and CHASSIS_TABLES is what excuses them from the coverage test above. So the list
+   * must name exactly the chassis tables that exist: none gone (tables are never dropped, her ruling
+   * 22 Nov 2026), no name that is not a table, and no new name, which would let a new table skip the
+   * vault. The count is held exact at CHASSIS_TABLE_COUNT so any change to it is a visible edit.
    */
-  it("carries no more West Peek tables than it did at the port", async () => {
+  it("names exactly the West Peek tables of the port: none gone, none added", async () => {
     const rows = await env.DB
       .prepare(`SELECT name FROM sqlite_master WHERE type = 'table' AND name NOT LIKE 'sqlite_%' AND name NOT LIKE '_cf_%' AND name NOT LIKE 'd1_%'`)
       .all<{ name: string }>();
-    const chassis = new Set<string>(CHASSIS_TABLES);
-    const present = rows.results.map((r) => r.name).filter((n) => chassis.has(n));
-    expect(present.length).toBeGreaterThan(0);
-    expect(present.length).toBeLessThanOrEqual(CHASSIS_TABLE_CEILING);
+    const existing = new Set(rows.results.map((r) => r.name));
+    expect(existing.size).toBeGreaterThan(0);
+    expect(CHASSIS_TABLES.filter((t) => !existing.has(t)), "a listed chassis table is missing, or the list names something that is not a table").toEqual([]);
+    expect(new Set(CHASSIS_TABLES).size, "the chassis list changed size: it may not grow to excuse a new table from the vault").toBe(CHASSIS_TABLE_COUNT);
   });
 
   it("seeds the trading authority denied by default", async () => {

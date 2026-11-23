@@ -2,14 +2,14 @@ import { env } from "cloudflare:test";
 import { describe, expect, it } from "vitest";
 import { handleRequest } from "../../src/worker/index";
 import type { Env } from "../../src/worker/env";
-import { CHASSIS_TABLES } from "./chassisTables";
 
 /**
  * THE OWNER PASSWORD STILL OPENS EVERY BOSS OS DOOR, AND ONLY THE FUND API WENT (chassis
  * retirement, her yes 22 Nov 2026; her words: "the owner password should be accepted in every
  * fucking door"). Driven through the Worker's own outer handler, the one production runs: unlock
  * with her passcode, then the kept routes open with that session, each is shut without it, and an
- * old fund path is still 410 even with her session. The fund's tables all still exist.
+ * old fund path is still 410 even with her session. That no fund table was dropped is held by the
+ * chassis ratchet in schema.test.ts.
  */
 
 const outer = {
@@ -92,16 +92,5 @@ describe("her email's page links still reach Boss OS", () => {
     const locked = await get("/research/rpg_missing");
     expect(locked.status).toBe(401);
     expect(locked.headers.get("content-type")).toMatch(/text\/html/);
-  });
-});
-
-describe("no table was dropped", () => {
-  it("every copied fund table still exists", async () => {
-    const names = new Set(
-      ((await env.DB.prepare("SELECT name FROM sqlite_master WHERE type = 'table'").all<{ name: string }>()).results ?? []).map((r) => r.name),
-    );
-    const expected = CHASSIS_TABLES.filter((t) => t !== "IF");
-    expect(expected.length).toBeGreaterThan(100);
-    expect(expected.filter((t) => !names.has(t))).toEqual([]);
   });
 });
