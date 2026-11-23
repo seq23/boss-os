@@ -11,12 +11,17 @@
 import { env } from "cloudflare:test";
 import { beforeEach, describe, expect, it } from "vitest";
 import { runGrowthDirector, type Model } from "../../src/worker/boss/growth/run";
+import { PROMPT_BUDGET_CHARS } from "../../src/shared/boss/growth/director.mjs";
 import { dayIdInZone } from "../../src/shared/boss/timezone";
 
 const NOW = Date.parse("2026-11-23T12:00:00Z"); // Mon 23 Nov 2026, 06:00 Central
 const DAY = dayIdInZone(NOW);
 
-const PNP = `## Growth
+const PNP = `## Settled decisions
+### Growth
+- 2026-11-21 — Porch reels lead in December.
+
+## Growth
 ### Porch & Party
 - key: porch-and-party
 - buyer: families hosting parties
@@ -27,7 +32,21 @@ const PNP = `## Growth
 - limits: R-PRF-01
 - season: Christmas porches until about 15 Dec
 `;
-const SPRY = `## Growth
+const SPRY = `## Settled decisions
+### Umbrella, scope and money
+- 2026-11-01 — Spry Labs spends nothing without her yes.
+### Growth (Shoestring Growth Plan, 21 Nov 2026)
+- 2026-11-22 — The backlink network is an outside publisher with its own Cloudflare account; the Director sends it link requests, never commands.
+### Search, sites and freshness
+- 2026-11-02 — Every site keeps a fresh sitemap.
+### Brand and social
+- 2026-11-03 — Calm, plain voice everywhere.
+### All apps
+- 2026-11-04 — Every app has a privacy page.
+### ApprovalPrep
+- 2026-11-05 — ApprovalPrep is self-service, in her words.
+
+## Growth
 ### ApprovalPrep
 - key: approvalprep
 - buyer: people fixing their credit themselves
@@ -504,4 +523,107 @@ describe("her report every two weeks (a section of Simone's morning email)", () 
     await expect(runGrowthDirector(env as any, NOW + 3_600_000, { model: silent as any, fetchImpl: noTrends })).rejects.toThrow();
     expect(await env.DB.prepare(`SELECT 1 FROM morning_sections WHERE section = 'growth'`).first()).not.toBeNull();
   }, 30_000);
+});
+
+describe("her rulings reach the Director (her yes, 22 Nov 2026: \"yea let it read the settled decisions\")", () => {
+  const entry = (label: string, key: string) => `### ${label}\n- key: ${key}\n- buyer: b\n- offer: o\n- money number: sales\n- channels: app-store [listing] · backlinks [guide]\n- languages: en\n- limits: R-PRF-01\n\n`;
+  const TWO = `## Settled decisions
+### Umbrella, scope and money
+- 2026-11-01 — UMBRELLA-RULING
+### Growth (Shoestring Growth Plan, 21 Nov 2026)
+- 2026-11-22 — The backlink network is an outside publisher with its own Cloudflare account; the Director sends it link REQUESTS, never commands.
+### Search, sites and freshness
+- 2026-11-02 — SEARCH-RULING
+### Brand and social
+- 2026-11-03 — BRAND-RULING
+### All apps
+- 2026-11-04 — APPS-RULING
+### KeepMyProof
+- 2026-11-05 — KMP-RULING: receipts first. <!-- confidential -->A-PRIVATE-CLIENT<!-- /confidential -->
+### Dream Wedding
+- 2026-11-06 — DW-RULING: checklists first.
+
+## Growth
+${entry("KeepMyProof", "keepmyproof")}${entry("Dream Wedding", "dream-wedding")}`;
+  const ANSWER = { decision: "Hold steady.", evidence: ["sales: 1"], test: null, queue: [], proposals: [], next_check: "2026-11-30" };
+  const read = async () => { await reading("kmp-subscriptions", "keepmyproof", "sales", "store", 1); await reading("dw-sales", "dream-wedding", "sales", "site", 1); await reading("pnp-requests", "porch-and-party", "requests", "all", 1); };
+  const promptFor = (seen: string[], label: string) => seen.filter((t) => t.includes(`Business: ${label}\n`) && t.includes("HER RULINGS"));
+
+  it("a KeepMyProof ruling reaches the KeepMyProof prompt and never Dream Wedding's; the backlink ruling reaches both; a private span reaches neither", async () => {
+    await brain("spry", TWO); await read();
+    const { model, seen } = fake(ANSWER, () => ({ pass: true, broken: [], why: "" }));
+    const r = await runGrowthDirector(env as any, NOW, { model, fetchImpl: noTrends });
+    const [kmp] = promptFor(seen, "KeepMyProof"); const [dw] = promptFor(seen, "Dream Wedding");
+    expect(kmp).toContain("KMP-RULING: receipts first.");
+    expect(kmp).not.toContain("DW-RULING");
+    expect(dw).toContain("DW-RULING: checklists first.");
+    expect(dw).not.toContain("KMP-RULING");
+    for (const p of [kmp, dw]) { expect(p).toMatch(/backlink network is an outside publisher with its own Cloudflare account/); expect(p).toContain("APPS-RULING"); }
+    expect(seen.every((t) => !t.includes("A-PRIVATE-CLIENT") && !/<!--\s*\/?confidential/i.test(t))).toBe(true);
+    // The size of her rulings per business is on the run and its audit row.
+    expect(r.rulings.map((x) => x.business).sort()).toEqual(["dream-wedding", "keepmyproof", "porch-and-party"]);
+    expect(r.rulings.every((x) => x.chars > 0 && x.left.length === 0)).toBe(true);
+    const row = await env.DB.prepare(`SELECT detail FROM audit_log WHERE entity_type = 'growth_cycle' AND entity_id = ? ORDER BY ts DESC LIMIT 1`).bind(DAY).first<{ detail: string }>();
+    expect(JSON.parse(row!.detail).rulings).toEqual(r.rulings);
+    expect(r.problems.filter((p) => /ruling|Settled/.test(p))).toEqual([]);
+  });
+
+  it("a renamed heading is a named problem on the run; that business is still decided with the shared rulings", async () => {
+    await brain("spry", TWO.replace("### KeepMyProof\n- 2026-11-05", "### Keep My Proof\n- 2026-11-05")); await read();
+    const { model, seen } = fake(ANSWER, () => ({ pass: true, broken: [], why: "" }));
+    const r = await runGrowthDirector(env as any, NOW, { model, fetchImpl: noTrends });
+    expect(r.problems).toContain(`KeepMyProof has no "### KeepMyProof" group in the Spry Labs brain's Settled decisions; it reads the shared rulings only`);
+    expect((await decisions()).find((x) => x.business === "keepmyproof")?.state).toBe("decided");
+    expect(promptFor(seen, "KeepMyProof")[0]).toMatch(/backlink network is an outside publisher/);
+  });
+
+  it("no Settled decisions section: each of its businesses is held \"rulings not read\", named on the run, no model call for it", async () => {
+    await brain("spry", TWO.slice(TWO.indexOf("## Growth"))); await read();
+    const { model, seen } = fake(ANSWER, () => ({ pass: true, broken: [], why: "" }));
+    const r = await runGrowthDirector(env as any, NOW, { model, fetchImpl: noTrends });
+    const rows = await decisions();
+    for (const k of ["keepmyproof", "dream-wedding"]) {
+      const row = rows.find((x) => x.business === k)!;
+      expect(row.state).toBe("held: roster");
+      expect(row.decision).toMatch(/her rulings were not read \(the Spry Labs brain has no Settled decisions section\)/);
+    }
+    expect(r.problems).toContain("KeepMyProof: rulings not read (the Spry Labs brain has no Settled decisions section)");
+    expect(r.problems).toContain("Dream Wedding: rulings not read (the Spry Labs brain has no Settled decisions section)");
+    expect(seen.some((t) => /Business: (KeepMyProof|Dream Wedding)\n/.test(t))).toBe(false);
+    expect(rows.find((x) => x.business === "porch-and-party")?.state).toBe("decided");
+  });
+
+  it("a brain that fails to read: its businesses are named \"rulings not read\", never decided as if she had none; the other brain's cycle carries on", async () => {
+    await brain("spry", TWO); await read();
+    const db = env.DB;
+    const flaky = new Proxy(db, { get(t, k) {
+      if (k === "prepare") return (sql: string) => {
+        const st = t.prepare(sql);
+        if (!/FROM brains WHERE slug/.test(sql)) return st;
+        return { bind: (...a: unknown[]) => a[0] === "spry" ? { first: async () => { throw new Error("D1 timed out"); } } : st.bind(...a) };
+      };
+      const v = (t as any)[k]; return typeof v === "function" ? v.bind(t) : v;
+    } });
+    const { model, seen } = fake(ANSWER, () => ({ pass: true, broken: [], why: "" }));
+    const r = await runGrowthDirector({ ...env, DB: flaky } as any, NOW, { model, fetchImpl: noTrends });
+    expect(r.problems).toContain("Spry Labs's brain could not be read (D1 timed out): its roster and rulings not read");
+    const rows = await decisions();
+    expect(rows.some((x) => ["keepmyproof", "dream-wedding"].includes(x.business))).toBe(false);
+    expect(seen.some((t) => /Business: (KeepMyProof|Dream Wedding)\n/.test(t))).toBe(false);
+    expect(rows.find((x) => x.business === "porch-and-party")?.state).toBe("decided");
+  });
+
+  it("over the prompt budget, the shared rulings are left out and the run says so; her own ruling stays", async () => {
+    await brain("spry", TWO.replace("- 2026-11-02 — SEARCH-RULING", `- 2026-11-02 — SEARCH-RULING ${"x".repeat(70_000)}`)); await read();
+    const { model, seen } = fake(ANSWER, () => ({ pass: true, broken: [], why: "" }));
+    const r = await runGrowthDirector(env as any, NOW, { model, fetchImpl: noTrends });
+    const [kmp] = promptFor(seen, "KeepMyProof");
+    expect(kmp).toContain("KMP-RULING");
+    expect(kmp).not.toContain("SEARCH-RULING");
+    expect(kmp).not.toContain("APPS-RULING"); // left out from the end of the list first
+    expect(kmp).toContain("UMBRELLA-RULING");
+    expect(kmp!.length).toBeLessThanOrEqual(PROMPT_BUDGET_CHARS);
+    expect(r.problems).toContain(`KeepMyProof: the prompt was over ${PROMPT_BUDGET_CHARS} characters, so the shared rulings "Search, sites and freshness", "All apps" were left out this cycle`);
+    expect(r.rulings.find((x) => x.business === "keepmyproof")!.left).toEqual(["Search, sites and freshness", "All apps"]);
+  });
 });

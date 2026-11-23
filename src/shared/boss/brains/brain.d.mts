@@ -44,6 +44,7 @@ export const CONFIDENTIAL_CLOSE: string;
 export const PRIVATE_PLACEHOLDER: string;
 export function hasConfidential(text: string | null | undefined): boolean;
 export function stripConfidential(text: string | null | undefined): string;
+export function confidentialSpans(text: string | null | undefined): string[];
 export const EMPLOYEE_BRAINS: Readonly<Record<string, "all" | "all+personal" | string[]>>;
 export function brainsFor(employeeId: string | null | undefined): { slugs: string[]; summarised: boolean };
 export function brainBlock(brains: { slug: string; title: string; body_md: string }[], opts?: { summarised?: boolean; keepConfidential?: boolean }): string;

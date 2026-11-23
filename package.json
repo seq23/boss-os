@@ -106,6 +106,7 @@
     "your-day": "node scripts/vault/vault.mjs run -- node scripts/ops/your-day.mjs",
     "pnp:photo-ask": "node scripts/vault/vault.mjs run -- node scripts/ops/pnp-photo-ask.mjs",
     "growth:playbook": "node scripts/ops/growth-playbook.mjs",
+    "growth:privacy": "node scripts/ops/growth-privacy.mjs",
     "growth:scoreboard": "node scripts/ops/growth-scoreboard.mjs",
     "scorecard:monday": "node scripts/vault/vault.mjs run -- node scripts/ops/scorecard-monday.mjs",
     "scorecard:sweep": "node scripts/vault/vault.mjs run -- node scripts/ops/scorecard-sweep.mjs",

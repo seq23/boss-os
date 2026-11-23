@@ -33,7 +33,7 @@ type Page = { day: string; problems: string[]; general: Todo[]; businesses: Biz[
 
 const num = (kind: string, v: number) => (kind === "money" ? `$${Math.round(v).toLocaleString("en-US")}` : v.toLocaleString("en-US"));
 const plural = (n: number, w: string) => `${n} ${w}${n === 1 ? "" : "s"}`;
-const ACT: Record<string, string> = { queued: "Queued", ordered: "Ordered from the backlink network", proposal: "Asked you", held: "Held", blocked: "Blocked by a rule", refused: "Refused" };
+const ACT: Record<string, string> = { queued: "Queued", ordered: "Requested from the backlink network", proposal: "Asked you", held: "Held", blocked: "Blocked by a rule", refused: "Refused" };
 
 export function Growth() {
   const [data, setData] = useState<Page | null | undefined>(undefined);

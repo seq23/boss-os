@@ -311,6 +311,21 @@ export function hasConfidential(text) {
   return ANY_MARK_RE.test(String(text ?? ""));
 }
 
+/** The text inside each confidential span, in order (an unclosed mark runs to the end), the same reading stripConfidential cuts. */
+export function confidentialSpans(text) {
+  let rest = String(text ?? "");
+  const out = [];
+  for (;;) {
+    const open = OPEN_RE.exec(rest);
+    if (!open) break;
+    const after = rest.slice(open.index + open[0].length);
+    const close = CLOSE_RE.exec(after);
+    if (!close) { out.push(after); break; }
+    out.push(after.slice(0, close.index));
+    rest = after.slice(close.index + close[0].length);
+  }
+  return out;
+}
 export function stripConfidential(text) {
   let rest = String(text ?? "");
   let out = "";
@@ -350,8 +365,9 @@ export const EMPLOYEE_BRAINS = Object.freeze({
   emp_continuity: [],
   emp_risk: ["risk"],
   emp_practice: [],
-  // Noelle (Growth, 21 Nov 2026) reads ONLY the Growth sections of porch-and-party and spry, through
-  // roster.mjs growthSection, never a whole brain: P&P's request names and private spans stay out.
+  // Noelle (Growth, 21 Nov 2026) reads ONLY the Growth sections of porch-and-party and spry (roster.mjs
+  // growthSection) and each business's own groups of their Settled decisions (rulingsFor, her yes 22 Nov
+  // 2026), never a whole brain: P&P's request names and private spans stay out.
   emp_growth: [],
 });
 

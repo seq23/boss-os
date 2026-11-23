@@ -18,11 +18,15 @@
  *   mayAct ok + claims fail/none → held (never queued); the reason is written down
  *   NOT_APPROVED / proposal      → a Decide card for her (at most MAX_CARDS a cycle)
  *   NEVER_SPEND / NO_NEW_ACCOUNTS / PROPOSE_ONLY on a retire → refused, written down, never a card for a spend
- *   backlinks + claims pass      → an `ordered` action only: the backlink network's order, never a to-do or card
- *   backlinks, not approved      → refused (NOT_APPROVED), never a card; no topic → dropped by parseDecision
+ *   backlinks + claims pass      → an `ordered` action only: a link REQUEST to the backlink network, never a to-do or card
+ *   backlinks, not approved      → refused (NOT_APPROVED), never a card; no topic → dropped by parseDecision;
+ *                                  past MAX_BACKLINKS_PER_CYCLE for the business → held with its draft by the cycle (run.ts)
  *
- * PRIVATE DATA: the model sees the Growth roster entry, the playbook, counts and public trend titles only.
- * No request name, contact, LP or client name exists in any of those inputs.
+ * PRIVATE DATA: the model sees the Growth roster entry, her Settled rulings for that business (rulingsFor,
+ * roster.mjs), the playbook, counts and public trend titles. Her brains DO hold client names and personal
+ * mail addresses; they sit inside confidential marks, which are cut from the whole brain before any of it
+ * is read, and the router refuses a message that still carries a mark. A name or address she has not
+ * marked would reach the model: `npm run growth:privacy` checks the live brain copy for both.
  *
  * RULE 0: `OUTPUT n decisions`; zero businesses measured → NAMED STOP [GROWTH_NOTHING_MEASURED];
  * every active business held → NAMED STOP [HELD_ALL] with the counts.
@@ -34,14 +38,26 @@ export const MAX_CARDS = 3;
 export const MAX_QUEUE_PER_BUSINESS = 3;
 export const MAX_OPEN_PER_BUSINESS = 3;
 /**
- * BACKLINK ORDERS (her words, 22 Nov 2026: "i thought the backlink network was going to defer to the
- * growth director"). A queue item on the `backlinks` channel is an ORDER for the backlink network: one
- * article on `topic` for that business. It is never a to-do or a card for her; the network reads the
- * newest cycle's orders (GET /api/boss/growth/backlink-orders, `backlinkOrders` below). TOPIC_MAX is the one
- * limit: the prompt says it, the parser drops an item past it or without a topic, the route re-checks it.
+ * BACKLINK REQUESTS (her words, 22 Nov 2026: "i thought the backlink network was going to defer to the
+ * growth director"; "we are suppposed to assume we are not related and there is a separate cloudflare acct
+ * the director needs to know that"). A queue item on the `backlinks` channel is a link REQUEST to the
+ * backlink network, an outside publisher. How it works with us (requests not commands, mostly other
+ * subjects, a topic one of our pages answers) is HER RULING in the spry brain's Settled "### Growth"
+ * group, which the model reads with the rest of her rulings (rulingsFor, roster.mjs); code keeps only
+ * the hard limits: TOPIC_MAX (prompt, parser, route), MAX_BACKLINKS_PER_CYCLE (the cycle, run.ts, makes
+ * at most that many requests per business per cycle; the rest are held, never requested), and never
+ * calling the network ours. It is never a to-do or a card for her; the network reads the newest cycle's
+ * requests (GET /api/boss/growth/backlink-orders, `backlinkOrders` below, field names unchanged).
  */
 export const BACKLINKS = "backlinks";
 export const TOPIC_MAX = 120;
+export const MAX_BACKLINKS_PER_CYCLE = 1;
+/**
+ * The decision prompt's size limit, in characters. The smallest free route the router may pick holds
+ * 32,768 tokens; 60,000 characters is about 15,000 tokens, which leaves room for the 1,200-token answer and
+ * for text that tokenises worse than English. Over it, fitDecisionPrompt leaves out shared rulings.
+ */
+export const PROMPT_BUDGET_CHARS = 60_000;
 /** A Decide card she answered (or one still waiting) is not raised again for this many days. */
 export const ASKED_DAYS = 28;
 export const STATES = Object.freeze(["decided", "paused", "held: no data", "held: no model", "held: roster", "held: error"]);
@@ -77,7 +93,30 @@ export function numbersFor(summary) {
 }
 
 /** The decision prompt for one business. */
-export function decisionPrompt({ playbook, entry, summary, trends, today, todos, first = false, linked = [], topics = [] }) {
+/** Her rulings as the prompt shows them: her own group(s) first, then those for every business. */
+export function rulingsBlock(rulings) {
+  if (!rulings || rulings.notRead) return `HER RULINGS\n- not read${rulings?.notRead ? ` (${rulings.notRead})` : ""}`;
+  const groups = [...rulings.own, ...rulings.shared];
+  return `HER RULINGS (her Settled decisions, dated, in her words: this business's own, then those for every business)\n${groups.map((g) => `### ${g.heading}\n${g.body}`).join("\n\n") || "- none written"}`;
+}
+
+/**
+ * The decision prompt within PROMPT_BUDGET_CHARS: over it, the shared rulings are left out from the end
+ * of SHARED_RULINGS' order, never the business's own. { messages, chars, rulingChars, left, over }.
+ */
+export function fitDecisionPrompt(args) {
+  const shared = [...(args.rulings?.shared ?? [])];
+  const left = [];
+  for (;;) {
+    const rulings = args.rulings ? { ...args.rulings, shared } : args.rulings;
+    const messages = decisionPrompt({ ...args, rulings });
+    const chars = messages.reduce((n, m) => n + m.content.length, 0);
+    if (chars <= PROMPT_BUDGET_CHARS || !shared.length) return { messages, chars, rulingChars: rulingsBlock(rulings).length, left, over: chars > PROMPT_BUDGET_CHARS };
+    left.unshift(shared.pop().heading);
+  }
+}
+
+export function decisionPrompt({ playbook, entry, summary, trends, today, todos, first = false, linked = [], topics = [], rulings = null }) {
   const backlinks = entry.channels.some((c) => c.channel === BACKLINKS);
   const roster = [
     `Business: ${entry.label}`, `Buyer: ${entry.buyer}`, `Offer: ${entry.offer}`, `Money number: ${entry.money}`,
@@ -91,6 +130,8 @@ export function decisionPrompt({ playbook, entry, summary, trends, today, todos,
 ROSTER ENTRY
 ${roster}
 
+${rulingsBlock(rulings)}
+
 SCOREBOARD (28-day windows; "not read" means unknown, never zero)
 ${numbersFor(summary)}
 
@@ -103,7 +144,7 @@ ${(linked ?? []).map((l) => `- ${l.id}: ${l.what}`).join("\n") || "- none"}
 SEARCH TRENDS TODAY (public, US)
 ${(trends ?? []).slice(0, 20).map((t) => `- ${t}`).join("\n") || "- not read"}
 ${backlinks ? `
-BACKLINK TOPICS ALREADY ORDERED (the week each was ordered)
+BACKLINK TOPICS ALREADY REQUESTED (the week each was requested)
 ${(topics ?? []).map((t) => `- ${t}`).join("\n") || "- none yet"}
 ` : ""}
 Return exactly:
@@ -115,7 +156,7 @@ Return exactly:
  "linked": [one per older-work row above: {"id": "olp_…", "verdict": "keep" | "change" | "drop", "why": "the evidence, plainly", "next_step": "for change: the new next step"}],
  "next_check": "YYYY-MM-DD"}
 Only approved channels and formats go in "queue"; anything else is a proposal. Never propose spending money or creating an account. "Too little data" holds a comparison between formats; it never holds older work she already approved to start on an approved channel and format: that goes in "queue" this week.${backlinks ? `
-BACKLINKS: each "${BACKLINKS}" item in "queue" orders ONE article from the backlink network, which links to this business; you decide how many (within the queue's ${MAX_QUEUE_PER_BUSINESS}) and on what. Name its "topic" (at most ${TOPIC_MAX} characters; an item without one is dropped). The rule (the playbook's backlink row): judge links against this business's search visits 8 weeks later. Search visits rising since the first topics → order more topics; no rise 8 weeks after a topic → change topics (never the same topic again).` : ""}${first && entry.season ? `\nThis is your FIRST decision for this business: it is about the season on its roster (${entry.season}), the money that season can still bring in before it ends.` : ""}` },
+BACKLINKS: a "${BACKLINKS}" item in "queue" is one link request to the backlink network; her rulings above say how it works with us. Hard limits. At most ${MAX_BACKLINKS_PER_CYCLE} "${BACKLINKS}" item in this decision; any more are not sent. Its "topic" is at most ${TOPIC_MAX} characters; an item without one is dropped. Never call the network ours, a partner or related to this business in anything public. The rule (the playbook's backlink row): judge links against this business's search visits 8 weeks later. Search visits rising since the first topics → request more topics; no rise 8 weeks after a topic → change topics (never the same topic again).` : ""}${first && entry.season ? `\nThis is your FIRST decision for this business: it is about the season on its roster (${entry.season}), the money that season can still bring in before it ends.` : ""}` },
   ];
 }
 
@@ -125,7 +166,7 @@ export function parseDecision(text) {
   try { j = JSON.parse(/\{[\s\S]*\}/.exec(String(text ?? ""))?.[0] ?? "null"); } catch { j = null; }
   if (!j || typeof j.decision !== "string" || !j.decision.trim()) return null;
   const arr = (v) => (Array.isArray(v) ? v : []);
-  // A backlinks item is an order: without a topic (or with one past TOPIC_MAX) it is dropped, and counted.
+  // A backlinks item is a request: without a topic (or with one past TOPIC_MAX) it is dropped, and counted.
   let noTopic = 0;
   const queue = arr(j.queue).filter((q) => q && q.channel && q.draft).map((q) => {
     const item = { channel: clip(q.channel, 40).toLowerCase(), format: clip(q.format, 40).toLowerCase(), draft: clip(q.draft, 1200), why: clip(q.why, 300) };
@@ -370,7 +411,7 @@ export function reportSection(rows, { cards, origin, at, summaries = [], scoreca
   const lines = [
     cards ? `${one(cards, "One growth idea waits", "N growth ideas wait")} for your yes in Decide. Nothing else to do.`
       : queued.length ? `Nothing to do: ${one(queued.length, "one post was", "N posts were")} queued from formats you already approved.`
-      : orders ? `Nothing to do: ${one(orders, "one backlink article was", "N backlink articles were")} ordered from the backlink network.`
+      : orders ? `Nothing to do: ${one(orders, "one backlink article was", "N backlink articles were")} requested from the backlink network.`
       : "Nothing to do: nothing new was queued this fortnight. Why, below.",
   ];
   const floors = [floorLine(scorecard?.first, scorecard?.start, fv.first), floorLine(scorecard?.real, scorecard?.start, fv.real, fv.realMissing)].filter(Boolean);
@@ -380,7 +421,7 @@ export function reportSection(rows, { cards, origin, at, summaries = [], scoreca
     const q = acts.filter((a) => a.kind === "queued").length;
     const o = acts.filter((a) => a.kind === "ordered").length;
     const asked = acts.filter((a) => a.kind === "proposal").length;
-    const did = [q ? `${q} queued` : null, o ? `${one(o, "1 backlink article", "N backlink articles")} ordered` : null, asked ? `${asked} asked in Decide` : null].filter(Boolean).join(", ") || "nothing new queued";
+    const did = [q ? `${q} queued` : null, o ? `${one(o, "1 backlink article", "N backlink articles")} requested` : null, asked ? `${asked} asked in Decide` : null].filter(Boolean).join(", ") || "nothing new queued";
     const said = modelSentence(r.decision);
     lines.push(`${r.label}: ${numbersLine(sum(r.business)) ?? "numbers not read"} in 28 days; ${did}.${said ? ` ${said}` : ""}`);
   }
