@@ -37,7 +37,7 @@ export const MAX_OPEN_PER_BUSINESS = 3;
  * BACKLINK ORDERS (her words, 22 Nov 2026: "i thought the backlink network was going to defer to the
  * growth director"). A queue item on the `backlinks` channel is an ORDER for the backlink network: one
  * article on `topic` for that business. It is never a to-do or a card for her; the network reads the
- * newest cycle's orders (GET /api/growth/backlink-orders, `backlinkOrders` below). TOPIC_MAX is the one
+ * newest cycle's orders (GET /api/boss/growth/backlink-orders, `backlinkOrders` below). TOPIC_MAX is the one
  * limit: the prompt says it, the parser drops an item past it or without a topic, the route re-checks it.
  */
 export const BACKLINKS = "backlinks";

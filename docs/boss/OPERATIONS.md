@@ -985,7 +985,9 @@ Decide card (an unapproved backlinks format is refused, not carded). The network
 `GET /api/boss/growth/backlink-orders` (the BOSS_OPEN_LOOPS_TOKEN machine token, the same check as ai-misses;
 anything else is 401): `{ cycle, read_at, orders: [{ business, topic, draft, why }] }`, from the newest cycle's
 decided rows only (a same-day re-run replaces the first), never from Open Loops. No cycle yet → `cycle: null,
-orders: []`; a decision row whose actions are not JSON is skipped and logged in the Worker log.
+orders: []`; a decision row whose actions are not JSON is skipped and logged in the Worker log. The address is the
+full `https://boss.sequoiataylor.com/api/boss/growth/backlink-orders`: `/api/growth/backlink-orders` is the path inside the
+Boss app only, and from outside it is the retired fund API's 410 (`tests/boss/backlinkOrders.test.ts` pins both).
 
 ## The AI answers loop (22 Nov 2026)
 
