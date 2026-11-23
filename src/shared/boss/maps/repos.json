@@ -362,7 +362,8 @@
         "com.seq.dev-housekeeping",
         "com.seq.scooter-watch",
         "com.seq.scooter-watch-digest",
-        "com.seq.shorts-arm"
+        "com.seq.shorts-arm",
+        "com.seq.pr-watch"
       ]
     }
   ]

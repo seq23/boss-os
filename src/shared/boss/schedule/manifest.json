@@ -1582,6 +1582,29 @@
       "macWindow": "ANY"
     },
     {
+      "id": "pr-watch",
+      "name": "PR watch",
+      "what": "Every 30 minutes in the day, finds open pull requests that have sat red or unmerged for 30+ minutes: lands the green ones through land-after and names the rest in HANDOFF, with one banner a day per PR.",
+      "business": "personal",
+      "brand": "Repos",
+      "system": "mac",
+      "slots": [
+        "every 1800s"
+      ],
+      "emails": false,
+      "heavy": false,
+      "trigger": {
+        "launchd": [
+          "com.seq.pr-watch"
+        ]
+      },
+      "output": {
+        "floor": 0,
+        "reason": "A watch: a run with nothing stuck starts no land and writes 'none stuck'."
+      },
+      "macWindow": "LIGHT"
+    },
+    {
       "id": "housekeeping",
       "name": "Mac housekeeping",
       "what": "Turns unsaved work, backup stops and the monthly rules clean-up into Open Loops rows.",
