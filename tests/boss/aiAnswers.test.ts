@@ -244,7 +244,7 @@ describe("GET /api/boss/growth/ai-misses and POST ai-week, through the productio
     expect((await get(`host=${KMP}`, `Bearer olt_${"b2".repeat(32)}`)).status).toBe(401);
     expect((await get(`host=${KMP}`, `Token ${TOKEN}`)).status).toBe(401);
     expect((await get(`host=${KMP}`, `Bearer ${TOKEN}x`)).status).toBe(401);
-    for (const h of ["evil.com", "keepmyproof.com.evil.com", "www.keepmyproof.com", "KEEPMYPROOF.COM", ""]) expect((await get(`host=${encodeURIComponent(h)}`, `Bearer ${TOKEN}`)).status).toBe(404);
+    for (const h of ["evil.com", "keepmyproof.com.evil.com", "www.keepmyproof.com", "KEEPMYPROOF.COM", "__proto__", "constructor", ""]) expect((await get(`host=${encodeURIComponent(h)}`, `Bearer ${TOKEN}`)).status).toBe(404);
   });
 
   it("serves OWN misses only, with an on-host engine page or null, in the contract's shape", async () => {
