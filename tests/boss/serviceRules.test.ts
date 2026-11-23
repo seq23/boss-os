@@ -39,8 +39,8 @@ async function sinks(): Promise<string> {
     const rows = await all(`SELECT * FROM ${t}`).catch(() => []);
     parts.push(JSON.stringify(rows));
   }
-  const listed = await env.VAULT.list({ prefix: "boss-inbound-mail/" });
-  for (const o of listed.objects) parts.push(await (await env.VAULT.get(o.key))!.text());
+  const listed = await env.VAULT.list({ prefix: "boss-inbound-mail/", include: ["customMetadata"] });
+  for (const o of listed.objects) parts.push(await (await env.VAULT.get(o.key))!.text(), JSON.stringify(o.customMetadata ?? {}));
   return parts.join("\n");
 }
 
@@ -83,6 +83,16 @@ describe("R3 — a key by email is stored encrypted and scrubbed from every sink
     expect(res.taskId).toBeTruthy();
     expect(await sinks()).not.toContain(VALUE);
     expect(await sinks()).not.toContain(b64.slice(0, 40));
+  });
+  it("a value in her encoded subject is scrubbed from the arrival row, the task, the stored mail and its metadata", async () => {
+    const encoded = `=?utf-8?B?${btoa(`errand ${VALUE}`)}?=`;
+    const raw = `From: seq.taylor@gmail.com\r\nSubject: ${encoded}\r\nContent-Type: text/plain; charset=utf-8\r\n\r\n#simone please book the dentist\r\nSECRET RUNWARE_API_KEY=${VALUE}\r\n`;
+    const res = await handleBossInboundMail(mail({ subject: encoded, raw }), env as never);
+    expect(res.taskId).toBeTruthy();
+    const all = await sinks();
+    expect(all).not.toContain(VALUE);
+    expect(all).not.toContain(encoded);
+    expect((await row<any>(`SELECT subject FROM boss_inbound_mail WHERE id = ?`, res.mailId)).subject).toBe("errand [secret redacted]");
   });
 });
 
