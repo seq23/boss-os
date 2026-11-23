@@ -7,7 +7,7 @@
  *   - a paused business gets nothing; adding a business is one entry.
  */
 import { describe, expect, it } from "vitest";
-import { growthSection, parseRoster, rosterProblems, mayAct, SPEND_ACTIONS, rulingsFor, headingGroups, SHARED_RULINGS, APPS_ONLY } from "../src/shared/boss/growth/roster.mjs";
+import { growthSection, parseRoster, rosterProblems, mayAct, SPEND_ACTIONS, rulingsFor, headingGroups, SHARED_RULINGS, CHANNEL_RULINGS } from "../src/shared/boss/growth/roster.mjs";
 import { canonicalSection, replaceSection, skeleton, hasConfidential } from "../src/shared/boss/brains/brain.mjs";
 
 const SECTION = `### Shop A
@@ -158,7 +158,7 @@ describe("rulingsFor: her Settled decisions, by heading, per business", () => {
     expect(rulingsFor(kmp, SPRY_MD).shared.map((g) => g.heading)).toEqual(["Growth (Shoestring Growth Plan, 21 Nov 2026)", "Umbrella, scope and money", "Brand and social", "Search, sites and freshness", "All apps"]);
     expect(all(rulingsFor(kmp, SPRY_MD))).toMatch(/backlink network is an outside publisher/);
     expect(rulingsFor(yt, SPRY_MD).shared.map((g) => g.heading)).not.toContain("All apps");
-    expect(SHARED_RULINGS[SHARED_RULINGS.length - 1]).toBe(APPS_ONLY);
+    expect(SHARED_RULINGS.slice(-3)).toEqual(Object.keys(CHANNEL_RULINGS));
     // Other sections of the brain never come along.
     expect(all(rulingsFor(kmp, SPRY_MD))).not.toContain("OPEN-QUESTION");
   });
@@ -198,6 +198,48 @@ describe("rulingsFor: her Settled decisions, by heading, per business", () => {
     const lost = rulingsFor(pnp, null);
     expect(lost.notRead).toBe("the Porch & Party brain could not be read");
     expect(lost.own).toEqual([]);
+  });
+
+  it("a private span that wraps a ### heading takes the group under it too: nothing of it reaches any group", () => {
+    // The review's repro (22 Nov 2026): split first, the open mark fell in the group above and the
+    // private group kept its text with only a stray close mark, which the cut then removed.
+    const wrapped = SPRY_MD.replace("### Dream Wedding", "<!-- confidential -->\n### KeepMyProof partner terms\n- PRIVATE-TERMS\n<!-- /confidential -->\n### Dream Wedding");
+    const r = rulingsFor(kmp, wrapped);
+    expect(r.notRead).toBeNull();
+    expect(all(r)).not.toContain("PRIVATE-TERMS");
+    expect(r.own.map((g) => g.heading)).toEqual(["KeepMyProof", "KeepMyProof store listing"]);
+    expect(hasConfidential(all(r))).toBe(false);
+    // One that opens in one group and closes in the next cuts across both.
+    const across = SPRY_MD.replace("- 2026-11-06 — KMP-LISTING-RULING", "- 2026-11-06 — KMP-LISTING-RULING <!-- confidential -->SPAN-START").replace("- 2026-11-07 — DW-RULING", "SPAN-END<!-- /confidential --> DW-RULING");
+    expect(all(rulingsFor(dw, across))).not.toMatch(/SPAN-START|SPAN-END/);
+    expect(all(rulingsFor(kmp, across))).not.toMatch(/SPAN-START|SPAN-END/);
+  });
+
+  it("a span that crosses a ## boundary over Settled decisions or Growth is private there too, never read as public", () => {
+    const people = `## People\n- <!-- confidential -->A-PRIVATE-PERSON\n`;
+    const overSettled = people + SPRY_MD.replace("### Umbrella, scope and money", "### Umbrella, scope and money<!-- /confidential -->");
+    const r = rulingsFor(kmp, overSettled);
+    expect(r.notRead).toBe("the Spry Labs brain's Settled decisions sit inside a confidential mark");
+    expect(r.own).toEqual([]); expect(r.shared).toEqual([]);
+    // The same span runs over the whole Growth section above Settled, which itself carries no mark.
+    expect(growthSection("spry", SPRY_MD)).toContain("### KeepMyProof");
+    expect(() => growthSection("spry", overSettled)).toThrow(/PRIVATE_IN_GROWTH/);
+  });
+
+  it("Pinterest and KDP are read only by a business whose roster has that channel, last in the order", () => {
+    const md = SPRY_MD.replace("### KeepMyProof\n- 2026-11-05", "### Pinterest\n- 2026-11-08 — PIN-RULING\n### KDP\n- 2026-11-09 — KDP-RULING\n### KeepMyProof\n- 2026-11-05");
+    const heads = (e: any) => rulingsFor(e, md).shared.map((g) => g.heading);
+    const both = { ...kmp, channels: [...kmp.channels, { channel: "pinterest", formats: ["pin"] }, { channel: "kdp", formats: ["book"] }] };
+    expect(heads(both).slice(-3)).toEqual(["All apps", "Pinterest", "KDP"]);
+    expect(all(rulingsFor(both, md))).toMatch(/PIN-RULING[\s\S]*KDP-RULING/);
+    expect(heads(kmp)).not.toContain("Pinterest"); expect(heads(kmp)).not.toContain("KDP");
+    expect(all(rulingsFor(kmp, md))).not.toMatch(/PIN-RULING|KDP-RULING/);
+    const pinOnly = { ...yt, channels: [{ channel: "pinterest", formats: ["pin"] }] };
+    expect(heads(pinOnly)).toContain("Pinterest"); expect(heads(pinOnly)).not.toContain("KDP");
+    expect(rulingsFor(both, md).problems).toEqual([]);
+    // A channel group she has not written yet is a named problem for that business only.
+    expect(rulingsFor(both, SPRY_MD).problems).toEqual([`the Spry Labs brain's Settled decisions has no "### Pinterest" group`, `the Spry Labs brain's Settled decisions has no "### KDP" group`]);
+    expect(rulingsFor(kmp, SPRY_MD).problems).toEqual([]);
   });
 
   it("headingGroups splits on ### only", () => {

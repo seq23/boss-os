@@ -19,10 +19,14 @@
  *   NOT_APPROVED / proposal      → a Decide card for her (at most MAX_CARDS a cycle)
  *   NEVER_SPEND / NO_NEW_ACCOUNTS / PROPOSE_ONLY on a retire → refused, written down, never a card for a spend
  *   backlinks + claims pass      → an `ordered` action only: a link REQUEST to the backlink network, never a to-do or card
- *   backlinks, not approved      → refused (NOT_APPROVED), never a card; no topic, or past the one-a-week cap → dropped by parseDecision
+ *   backlinks, not approved      → refused (NOT_APPROVED), never a card; no topic → dropped by parseDecision;
+ *                                  past MAX_BACKLINKS_PER_CYCLE for the business → held with its draft by the cycle (run.ts)
  *
- * PRIVATE DATA: the model sees the Growth roster entry, the playbook, counts and public trend titles only.
- * No request name, contact, LP or client name exists in any of those inputs.
+ * PRIVATE DATA: the model sees the Growth roster entry, her Settled rulings for that business (rulingsFor,
+ * roster.mjs), the playbook, counts and public trend titles. Her brains DO hold client names and personal
+ * mail addresses; they sit inside confidential marks, which are cut from the whole brain before any of it
+ * is read, and the router refuses a message that still carries a mark. A name or address she has not
+ * marked would reach the model: `npm run growth:privacy` checks the live brain copy for both.
  *
  * RULE 0: `OUTPUT n decisions`; zero businesses measured → NAMED STOP [GROWTH_NOTHING_MEASURED];
  * every active business held → NAMED STOP [HELD_ALL] with the counts.
@@ -152,7 +156,7 @@ Return exactly:
  "linked": [one per older-work row above: {"id": "olp_…", "verdict": "keep" | "change" | "drop", "why": "the evidence, plainly", "next_step": "for change: the new next step"}],
  "next_check": "YYYY-MM-DD"}
 Only approved channels and formats go in "queue"; anything else is a proposal. Never propose spending money or creating an account. "Too little data" holds a comparison between formats; it never holds older work she already approved to start on an approved channel and format: that goes in "queue" this week.${backlinks ? `
-BACKLINKS: a "${BACKLINKS}" item in "queue" is one link request to the backlink network; her rulings above say how it works with us. Hard limits. At most ${MAX_BACKLINKS_PER_CYCLE} "${BACKLINKS}" item per week; any more are not sent. Its "topic" is at most ${TOPIC_MAX} characters; an item without one is dropped. Never call the network ours, a partner or related to this business in anything public. The rule (the playbook's backlink row): judge links against this business's search visits 8 weeks later. Search visits rising since the first topics → request more topics; no rise 8 weeks after a topic → change topics (never the same topic again).` : ""}${first && entry.season ? `\nThis is your FIRST decision for this business: it is about the season on its roster (${entry.season}), the money that season can still bring in before it ends.` : ""}` },
+BACKLINKS: a "${BACKLINKS}" item in "queue" is one link request to the backlink network; her rulings above say how it works with us. Hard limits. At most ${MAX_BACKLINKS_PER_CYCLE} "${BACKLINKS}" item in this decision; any more are not sent. Its "topic" is at most ${TOPIC_MAX} characters; an item without one is dropped. Never call the network ours, a partner or related to this business in anything public. The rule (the playbook's backlink row): judge links against this business's search visits 8 weeks later. Search visits rising since the first topics → request more topics; no rise 8 weeks after a topic → change topics (never the same topic again).` : ""}${first && entry.season ? `\nThis is your FIRST decision for this business: it is about the season on its roster (${entry.season}), the money that season can still bring in before it ends.` : ""}` },
   ];
 }
 

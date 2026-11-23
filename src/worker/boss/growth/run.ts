@@ -38,7 +38,7 @@ import { audit } from "../lib/audit";
 import { dayIdInZone } from "../../../shared/boss/timezone";
 import manifest from "../../../shared/boss/scorecard/manifest.json";
 import { summarize } from "../../../shared/boss/growth/scoreboard.mjs";
-import { GROWTH_BRAINS, growthSection, parseRoster, rosterProblems, rulingsFor, type RosterEntry } from "../../../shared/boss/growth/roster.mjs";
+import { GROWTH_BRAINS, growthSection, parseRoster, rosterProblems, rulingsFor, BRAIN_NAMES, type RosterEntry } from "../../../shared/boss/growth/roster.mjs";
 import { playbookBody } from "../../../shared/boss/growth/playbook.mjs";
 import {
   MAX_CARDS, MAX_OPEN_PER_BUSINESS, ASKED_DAYS, fitDecisionPrompt, PROMPT_BUDGET_CHARS, parseDecision, enforceHolds, claimsPrompt, parseClaims, claimRules,
@@ -87,12 +87,10 @@ export async function brainMd(db: D1Database, slug: string): Promise<string | nu
 }
 
 /** The roster from the growth brains only; a broken section is a named problem, never a quiet skip. */
-/** Her words for the two growth brains, so a problem reads as a business, never a slug. */
-const BRAIN_NAMES: Record<string, string> = { "porch-and-party": "Porch & Party", spry: "Spry Labs" };
 export async function loadRoster(db: D1Database): Promise<{ roster: RosterEntry[]; problems: string[]; mds: Record<string, string | null> }> {
   const roster: RosterEntry[] = []; const problems: string[] = []; const mds: Record<string, string | null> = {};
   for (const slug of GROWTH_BRAINS) {
-    const name = BRAIN_NAMES[slug] ?? slug;
+    const name = (BRAIN_NAMES as Record<string, string>)[slug] ?? slug;
     // One brain failing to read never stops the other's cycle, and never reads as "no rulings".
     let md: string | null = null;
     try { md = await brainMd(db, slug); } catch (e) { mds[slug] = null; problems.push(`${name}'s brain could not be read (${String((e as Error)?.message ?? e).slice(0, 120)}): its roster and rulings not read`); continue; }

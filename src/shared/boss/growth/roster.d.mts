@@ -9,7 +9,8 @@ export function parseChannels(v: string): { channel: string; formats: string[]; 
 export function parseRoster(body: string, brain: string): RosterEntry[];
 export function rosterProblems(entries: RosterEntry[]): string[];
 export const SHARED_RULINGS: readonly string[];
-export const APPS_ONLY: string;
+export const CHANNEL_RULINGS: Readonly<Record<string, string>>;
+export const BRAIN_NAMES: Readonly<Record<string, string>>;
 export interface RulingGroup { heading: string; body: string }
 export interface Rulings { notRead: string | null; own: RulingGroup[]; shared: RulingGroup[]; problems: string[] }
 export function headingGroups(body: string): RulingGroup[];

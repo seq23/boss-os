@@ -1003,8 +1003,9 @@ without anyone copying it into a roster field. For each roster entry, `rulingsFo
 takes its brain's `## Settled decisions`, matched on `### ` headings only (the model reads what a ruling means):
 - a Spry Labs business: the groups whose heading starts with its roster label (KeepMyProof, ApprovalPrep, Dream
   Wedding, A Player Mode and BHPC, Peace Be Still, Whisper Almanac, How We Know), then the shared groups in
-  `SHARED_RULINGS` order: Growth, Umbrella scope and money, Brand and social, Search sites and freshness, and All apps
-  (only for a business with an `app-store` channel);
+  `SHARED_RULINGS` order: Growth, Umbrella scope and money, Brand and social, Search sites and freshness, then the
+  channel groups, each only for a business whose roster lists that channel (`CHANNEL_RULINGS`): All apps
+  (`app-store`), Pinterest (`pinterest`) and KDP (`kdp`);
 - Porch & Party: its whole Settled decisions section.
 
 **Missing pieces are named.** A business with no group of its own is a named problem on the run, and it still gets
@@ -1012,9 +1013,16 @@ the shared groups. The same goes for a missing shared group. A brain with no Set
 or one that could not be read is "rulings not read". That business is held (`held: roster`) and never decided
 without its rulings; the next cycle tries again. A brain that fails to read never stops the other brain's cycle.
 
-**Privacy.** Each group's confidential spans are cut at the source (`stripConfidential`). The router cuts them again
-on every message (src/worker/boss/router/index.ts) and refuses one that still holds a mark, and the free-only lane
-still applies.
+**Privacy.** Her brains hold client names and personal mail addresses, inside confidential marks. Every span is cut
+from the WHOLE brain before it is split into sections and groups (`stripConfidential`, then `sectionBody` and
+`headingGroups`), so a span that wraps a `### ` or `## ` heading takes the text under it too; Settled decisions lying
+inside a span are "rulings not read", and a Growth section lying inside one is refused (`PRIVATE_IN_GROWTH`). The
+router cuts again on every message (src/worker/boss/router/index.ts) and refuses one that still holds a mark, and
+the free-only lane still applies. A name or address she has NOT marked would still reach the model, so
+`npm run growth:privacy` (scripts/ops/growth-privacy.mjs; `-- <dir>` for another copy than ~/Brains) builds every
+active business's decision prompt from the brain copies and fails on a word the brains hold only inside a span, or
+on a personal mail address (gmail and the like): exit 1, naming the business and ruling heading, never the word. It
+fails closed with exit 2 on a missing copy, no private span at all, rulings not read, or fewer than 6 prompts.
 
 **Size.** The decision prompt is held to `PROMPT_BUDGET_CHARS` = 60,000 characters, about 15,000 tokens. That fits
 the smallest free route (32,768 tokens) with room for the answer. Over the budget, `fitDecisionPrompt` leaves shared

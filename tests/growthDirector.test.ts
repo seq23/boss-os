@@ -302,7 +302,7 @@ describe("backlink orders (22 Nov 2026: the network defers to the Director)", ()
     // How the network works with us is her ruling, read from the brain; code keeps only the hard limits.
     expect(p).toMatch(/her rulings above say how it works with us/);
     expect(p).toMatch(/Never call the network ours/);
-    expect(p).toContain(`At most ${MAX_BACKLINKS_PER_CYCLE} "backlinks" item per week`);
+    expect(p).toContain(`At most ${MAX_BACKLINKS_PER_CYCLE} "backlinks" item in this decision`);
     expect(p).toContain("- 2026-11-16: Rent receipts");
     const none = decisionPrompt({ playbook: "PB", entry: roster[0]!, summary, trends: [], today: "2026-11-23", todos: [] })[1]!.content;
     expect(none).not.toMatch(/BACKLINK|"topic"/);

@@ -18,13 +18,17 @@
  *   - post on a channel/format not in the roster: refused → her decision.
  *
  * PRIVATE DATA: the Director reads this section (growthSection) and her rulings (rulingsFor, below),
- * nothing else of any brain. A Growth section carrying a confidential mark is refused whole (fail
- * closed); a ruling's confidential span is cut (stripConfidential) here and again by the router.
+ * nothing else of any brain. A Growth section carrying a confidential mark, or lying inside a span
+ * from another section, is refused whole (fail closed); her rulings are read from the brain with
+ * every confidential span cut first (stripConfidential over the whole document, then split), and the
+ * router cuts again and refuses a message that still carries a mark. `npm run growth:privacy`
+ * proves it on the live brain copy: no word her brains keep only inside a private span, and no
+ * personal mail address, in any decision prompt.
  *
  * HER RULINGS (her words, 22 Nov 2026: "yea let it read the settled decisions"). Each entry's model
  * input carries its own brain's "## Settled decisions": for a Spry Labs business, the "### " groups
- * whose heading starts with its label plus the SHARED_RULINGS groups (All apps only for a business
- * with an app-store channel); for Porch & Party, the whole section. Matching is on headings only; the
+ * whose heading starts with its label plus the SHARED_RULINGS groups (All apps, Pinterest and KDP only
+ * for a business whose roster has that channel); for Porch & Party, the whole section. Matching is on headings only; the
  * model reads what a ruling means. A missing group is a named problem; a missing section, or a brain
  * that could not be read, is "rulings not read" and the business is held, never decided without them.
  */
@@ -41,7 +45,9 @@ export function growthSection(slug, md) {
   if (!GROWTH_BRAINS.includes(slug)) throw Object.assign(new Error(`NAMED STOP [NOT_A_GROWTH_BRAIN] the Director never reads the ${slug} brain.`), { code: "NOT_A_GROWTH_BRAIN" });
   const body = sectionBody(md, "Growth");
   if (body == null || !body.trim() || body.trim() === "[MISSING]") return null;
-  if (hasConfidential(body)) throw Object.assign(new Error(`NAMED STOP [PRIVATE_IN_GROWTH] the ${slug} brain's Growth section carries a confidential mark; it is not read at all.`), { code: "PRIVATE_IN_GROWTH" });
+  // A mark inside the section, or a span from another section that runs over it (its own text then
+  // carries no mark), both stop it: the section must read the same with the brain's private parts cut.
+  if (hasConfidential(body) || sectionBody(stripConfidential(md), "Growth") !== body) throw Object.assign(new Error(`NAMED STOP [PRIVATE_IN_GROWTH] the ${slug} brain's Growth section carries a confidential mark; it is not read at all.`), { code: "PRIVATE_IN_GROWTH" });
   return body;
 }
 
@@ -122,14 +128,17 @@ export function mayAct(roster, { business, channel, format, action = "post" }) {
 }
 
 /**
- * The spry Settled groups every Spry Labs business reads, matched by the START of the "### " heading
+ * The spry Settled groups a Spry Labs business reads, matched by the START of the "### " heading
  * ("Growth" is "### Growth (Shoestring Growth Plan, 21 Nov 2026)"). Listed most needed first: when the
  * prompt is over its budget, the Director leaves them out from the END of this list, never its own group.
+ * The channel groups come last and are read only by a business whose roster lists that channel
+ * (CHANNEL_RULINGS): "All apps" with app-store, "Pinterest" with pinterest, "KDP" with kdp.
  */
-export const SHARED_RULINGS = Object.freeze(["Growth", "Umbrella, scope and money", "Brand and social", "Search, sites and freshness", "All apps"]);
-export const APPS_ONLY = "All apps";
+export const SHARED_RULINGS = Object.freeze(["Growth", "Umbrella, scope and money", "Brand and social", "Search, sites and freshness", "All apps", "Pinterest", "KDP"]);
+export const CHANNEL_RULINGS = Object.freeze({ "All apps": "app-store", Pinterest: "pinterest", KDP: "kdp" });
 const SINGLE_BUSINESS_BRAINS = Object.freeze(["porch-and-party"]);
-const BRAIN_NAMES = Object.freeze({ "porch-and-party": "Porch & Party", spry: "Spry Labs" });
+/** Her words for the two growth brains, so a problem reads as a business, never a slug. */
+export const BRAIN_NAMES = Object.freeze({ "porch-and-party": "Porch & Party", spry: "Spry Labs" });
 
 /** "### heading" groups of a section body, in order: [{ heading, body }]. */
 export function headingGroups(body) {
@@ -144,26 +153,33 @@ export function headingGroups(body) {
 /**
  * One roster entry's rulings from its brain's markdown (null = the brain was not read):
  * { notRead, own: [{ heading, body }], shared: [{ heading, body }], problems }.
+ * The brain's private spans are cut from the WHOLE document before it is split, so a span that wraps
+ * a "### " or "## " heading takes the text under it too (cut per group, the text below the heading
+ * would keep no mark and reach the model).
  */
 export function rulingsFor(entry, md) {
   const name = BRAIN_NAMES[entry?.brain] ?? entry?.brain;
   const none = (why) => ({ notRead: why, own: [], shared: [], problems: [`${entry.label}: rulings not read (${why})`] });
   if (md == null) return none(`the ${name} brain could not be read`);
-  const body = sectionBody(md, "Settled decisions");
-  if (body == null || !body.trim() || body.trim() === "[MISSING]") return none(`the ${name} brain has no Settled decisions section`);
-  const cut = (g) => ({ heading: g.heading, body: stripConfidential(g.body).trim() });
-  if (SINGLE_BUSINESS_BRAINS.includes(entry.brain)) return { notRead: null, own: [cut({ heading: "Settled decisions", body })], shared: [], problems: [] };
+  const written = (b) => Boolean(b) && b !== "[MISSING]";
+  const body = sectionBody(stripConfidential(md), "Settled decisions")?.trim();
+  if (!written(body)) {
+    return none(written(sectionBody(md, "Settled decisions")?.trim())
+      ? `the ${name} brain's Settled decisions sit inside a confidential mark`
+      : `the ${name} brain has no Settled decisions section`);
+  }
+  if (SINGLE_BUSINESS_BRAINS.includes(entry.brain)) return { notRead: null, own: [{ heading: "Settled decisions", body }], shared: [], problems: [] };
   const groups = headingGroups(body);
   const starts = (h, w) => h.toLowerCase().startsWith(String(w).toLowerCase());
   const problems = [];
-  const own = groups.filter((g) => starts(g.heading, entry.label)).map(cut);
+  const own = groups.filter((g) => starts(g.heading, entry.label));
   if (!own.length) problems.push(`${entry.label} has no "### ${entry.label}" group in the ${name} brain's Settled decisions; it reads the shared rulings only`);
-  const app = (entry.channels ?? []).some((c) => c.channel === "app-store");
+  const has = new Set((entry.channels ?? []).map((c) => c.channel));
   const shared = [];
   for (const w of SHARED_RULINGS) {
-    if (w === APPS_ONLY && !app) continue;
+    if (CHANNEL_RULINGS[w] && !has.has(CHANNEL_RULINGS[w])) continue;
     const g = groups.find((x) => starts(x.heading, w));
-    if (g) shared.push(cut(g)); else problems.push(`the ${name} brain's Settled decisions has no "### ${w}" group`);
+    if (g) shared.push(g); else problems.push(`the ${name} brain's Settled decisions has no "### ${w}" group`);
   }
   return { notRead: null, own, shared, problems };
 }
