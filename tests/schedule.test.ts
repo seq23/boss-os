@@ -15,7 +15,7 @@ import { fileURLToPath } from "node:url";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import {
   canonical, chicagoOffset, cronEvents, cronProblems, displayWindow, dutyProblems, dutySlots, gatedCrons, activeCrons,
-  installerJobs, launchdProblems, plistEvents, readSchedule, scheduleCategoryProblems, shapeProblems, weekProblems, wranglerCrons, workflowCrons, workflowEntry, workflowDispatchTypes,
+  installerJobs, launchdProblems, plistEvents, unloadedLabels, readSchedule, scheduleCategoryProblems, shapeProblems, weekProblems, wranglerCrons, workflowCrons, workflowEntry, workflowDispatchTypes,
 } from "../scripts/ops/lib/schedule.mjs";
 import { composeSpryWeekly, hostAllowed, loopSection, SPRY_WEEKLY } from "../src/shared/boss/spryWeekly/compose.mjs";
 import { firedBy, jobTitle } from "../src/client/boss/pages/Schedule";
@@ -379,5 +379,23 @@ describe("the Spry Labs weekly", () => {
   it("a quiet week says so in one line", () => {
     const all = Object.fromEntries(SPRY_WEEKLY.sources.map((s: any) => [s.key, fresh([{ host: "aplayermode.com", state: "fine", why: [] }])]));
     expect(composeSpryWeekly(all, { now }).happened).toBe("Every Spry Labs business reported this week, and all is quiet.");
+  });
+});
+
+describe("schedule-check sees a launchd job that is installed and not loaded (23 Nov 2026)", () => {
+  it("names an installed, unloaded label; passes a loaded one and her pauses; a list it could not read is unknown, never loaded", () => {
+    const m = { rows: [
+      { id: "a", trigger: { launchd: "com.seq.boss-ai-visibility" } },
+      { id: "b", trigger: { launchd: "com.seq.loaded-job" } },
+      { id: "c", trigger: { launchd: "com.seq.paused-job" } },
+      { id: "d", trigger: { launchd: "com.seq.not-installed" } },
+    ] };
+    const jobs = { "com.seq.boss-ai-visibility": ["tue 12:00"], "com.seq.loaded-job": ["daily 03:00"], "com.seq.paused-job": ["daily 04:00"] };
+    const list = "PID\tStatus\tLabel\n-\t0\tcom.seq.loaded-job\n123\t0\tcom.apple.something\n";
+    const disabled = 'disabled services = {\n\t"com.seq.paused-job" => disabled\n\t"com.seq.boss-ai-visibility" => enabled\n}';
+    expect(unloadedLabels(m, jobs, list, disabled)).toEqual([{ label: "com.seq.boss-ai-visibility", state: "not loaded" }]);
+    expect(unloadedLabels(m, jobs, list + "-\t0\tcom.seq.boss-ai-visibility\n", disabled)).toEqual([]);
+    expect(unloadedLabels(m, jobs, null, disabled).map((u: any) => u.state)).toEqual(["unknown", "unknown", "unknown"]);
+    expect(unloadedLabels(m, jobs, "", "")).toHaveLength(3);
   });
 });

@@ -37,6 +37,9 @@ function world() {
     BOSS_OS_LAUNCH_AGENTS: join(base, "agents"),
     BOSS_OS_RUNTIME_NO_NPM: "1",
     BOSS_OS_RUNTIME_NO_LAUNCHCTL: "1",
+    BOSS_OS_RUNTIME_INSTALLED_MARK: join(base, "installed"),
+    STUB_INSTALL_LOG: join(base, "install-calls.log"),
+    STUB_INSTALL_FAIL: join(base, "install-should-fail"),
   };
   const sync = () => {
     const r = spawnSync("bash", [SYNC], { env, encoding: "utf8" });
@@ -47,7 +50,14 @@ function world() {
     git(seed, "commit", "-qam", text.trim()); git(seed, "push", "-q", "origin", "main");
     return git(seed, "rev-parse", "HEAD");
   };
-  return { base, rt: env.BOSS_OS_RUNTIME, working: env.BOSS_OS_WORKING, sync, push, seed };
+  // The launchd installer as a stub: logs each run (with the runtime it was given), fails on demand.
+  const pushInstaller = (version: string) => {
+    mkdirSync(join(seed, "scripts/ops"), { recursive: true });
+    writeFileSync(join(seed, "scripts/ops/install-agent-launchd.sh"), `# ${version}\necho "$BOSS_OS_RUNTIME ${version}" >> "$STUB_INSTALL_LOG"\n[ -e "$STUB_INSTALL_FAIL" ] && exit 1\nexit 0\n`);
+    git(seed, "add", "."); git(seed, "commit", "-qm", `installer ${version}`); git(seed, "push", "-q", "origin", "main");
+  };
+  const installs = () => (existsSync(env.STUB_INSTALL_LOG) ? readFileSync(env.STUB_INSTALL_LOG, "utf8").trim().split("\n") : []);
+  return { base, rt: env.BOSS_OS_RUNTIME, working: env.BOSS_OS_WORKING, sync, push, seed, pushInstaller, installs, failFlag: env.STUB_INSTALL_FAIL };
 }
 
 describe("runtime-sync: the jobs' checkout is always origin/main", () => {
@@ -117,5 +127,56 @@ describe("nothing launchd runs points at her working checkout", () => {
       .filter((f) => /^\s*(?:REPO=|const REPO\b).*GitHub\/boss-os/m.test(readFileSync(join(OPS, f), "utf8")));
     expect(offenders).toEqual([]);
     expect(readFileSync(join(OPS, "install-agent-launchd.sh"), "utf8")).toMatch(/^REPO="\$\{BOSS_OS_RUNTIME:-\$HOME\/\.boss-os\/runtime\}"/m);
+  });
+});
+
+describe("runtime-sync: a launchd job merged to main is loaded on the Mac (23 Nov 2026)", () => {
+  it("runs the launchd installer once per change to the installers, from the runtime, and not on other pulls", () => {
+    const w = world();
+    w.pushInstaller("v1");
+    expect(w.sync().code).toBe(0);
+    expect(w.installs()).toEqual([`${w.rt} v1`]);
+    expect(w.sync().code).toBe(0);
+    w.push("echo unrelated change\n");
+    expect(w.sync().code).toBe(0);
+    expect(w.installs()).toHaveLength(1);
+    w.pushInstaller("v2");
+    const r = w.sync();
+    expect(r.code).toBe(0);
+    expect(r.out).toContain("launchd jobs installed");
+    expect(w.installs()).toEqual([`${w.rt} v1`, `${w.rt} v2`]);
+  });
+
+  it("a failed install is a NAMED STOP, exit 4, said once, and retried until it succeeds", () => {
+    const w = world();
+    writeFileSync(w.failFlag, "");
+    w.pushInstaller("v1");
+    const first = w.sync();
+    expect(first.code).toBe(4);
+    expect(first.out).toContain("NAMED STOP [RUNTIME_INSTALL_FAILED]");
+    expect(existsSync(join(w.base, "installed"))).toBe(false);
+    const again = w.sync();
+    expect(again.code).toBe(4);
+    expect(w.installs()).toHaveLength(2);
+    execFileSync("rm", [w.failFlag]);
+    expect(w.sync().code).toBe(0);
+    expect(w.installs()).toHaveLength(3);
+    expect(w.sync().code).toBe(0);
+    expect(w.installs()).toHaveLength(3);
+  });
+
+  it("stray work in the runtime is saved before the installer runs, never lost", () => {
+    const w = world();
+    w.pushInstaller("v1");
+    w.sync();
+    writeFileSync(join(w.rt, "job.sh"), "echo someones-uncommitted-edit\n");
+    w.pushInstaller("v2");
+    const r = w.sync();
+    expect(r.code).toBe(0);
+    expect(r.out).toContain("NAMED STOP [RUNTIME_WAS_DIRTY]");
+    const saved = readdirSync(join(w.base, "salvage"));
+    expect(saved).toHaveLength(1);
+    expect(readFileSync(join(w.base, "salvage", saved[0] ?? "", "changes.diff"), "utf8")).toContain("+echo someones-uncommitted-edit");
+    expect(w.installs()).toEqual([`${w.rt} v1`, `${w.rt} v2`]);
   });
 });

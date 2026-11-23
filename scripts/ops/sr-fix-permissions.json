@@ -55,7 +55,19 @@
       "Bash(npm ci)",
       "Bash(rm package-lock.json)",
       "Bash(land:*)",
-      "Bash(bash ~/.boss-os/runtime/scripts/ops/audit-worktree.sh:*)"
+      "Bash(bash ~/.boss-os/runtime/scripts/ops/audit-worktree.sh:*)",
+      "Bash(grep:*)",
+      "Bash(git worktree list:*)",
+      "Bash(git remote -v)",
+      "Bash(git ls-files:*)",
+      "Bash(git ls-tree:*)",
+      "Bash(git checkout --:*)",
+      "Bash(git --version)",
+      "Bash(curl -s:*)",
+      "Bash(curl -sL:*)",
+      "Bash(gh run list:*)",
+      "Bash(gh run view:*)",
+      "Bash(gh pr diff:*)"
     ],
     "deny": [
       "Bash(git push --force:*)",

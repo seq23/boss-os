@@ -8,14 +8,14 @@
  * once, two passes of one repo at once, drops a chunk, or stops being parallel at all.
  */
 import { describe, it, expect } from "vitest";
-import { execFileSync } from "node:child_process";
+import { execFileSync, spawnSync } from "node:child_process";
 import { mkdtempSync, mkdirSync, writeFileSync, readFileSync, copyFileSync, chmodSync } from "node:fs";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
 
 type Ev = { kind: "start" | "end"; repo: string; ids: string; t: number };
 
-function runDriver(parallel: string | null, chunks: string[]): Ev[] {
+function runDriver(parallel: string | null, chunks: string[], refuse?: { repo: string; result: (r: { rc: number | null; out: string }) => void }): Ev[] {
   const home = mkdtempSync(join(tmpdir(), "srpar-"));
   const repo = join(home, "boss-os");
   mkdirSync(join(repo, "scripts/ops"), { recursive: true });
@@ -42,11 +42,21 @@ else { writeFileSync(f, "1"); console.log("QUEUE total=${chunks.length} workable
 echo "start $SR_SCOPE_REPO $SR_SCOPE_BRIEFS $(node -e 'console.log(Date.now())')" >> ${JSON.stringify(events)}
 sleep 1
 echo "end $SR_SCOPE_REPO $SR_SCOPE_BRIEFS $(node -e 'console.log(Date.now())')" >> ${JSON.stringify(events)}
+[ "$SR_SCOPE_REPO" = "\${STUB_REFUSED_REPO:-}" ] && exit 14
+exit 0
 `);
   writeFileSync(join(repo, "src/shared/boss/searchReadiness/audit.mjs"), "export const queueRunLine = () => 'ok';\n");
   const env: Record<string, string> = { ...process.env as Record<string, string>, HOME: home, BOSS_OS_REPO: repo, PATH: `${bin}:${process.env.PATH}` };
   if (parallel === null) delete env.SR_PARALLEL; else env.SR_PARALLEL = parallel;
-  execFileSync("/bin/bash", [join(repo, "scripts/ops/search-readiness-fix.sh")], { env, cwd: repo, stdio: "pipe", timeout: 60000 });
+  if (refuse) {
+    env.STUB_REFUSED_REPO = refuse.repo;
+    const r = spawnSync("/bin/bash", [join(repo, "scripts/ops/search-readiness-fix.sh")], { env, cwd: repo, encoding: "utf8", timeout: 60000 });
+    let log = "";
+    try { log = readFileSync(join(home, "Library/Logs/search-readiness-fix/latest.log"), "utf8"); } catch { /* the output below has it */ }
+    refuse.result({ rc: r.status, out: `${r.stdout}${r.stderr}${log}` });
+  } else {
+    execFileSync("/bin/bash", [join(repo, "scripts/ops/search-readiness-fix.sh")], { env, cwd: repo, stdio: "pipe", timeout: 60000 });
+  }
   return readFileSync(events, "utf8").trim().split("\n").map((l) => {
     const [kind, r, ids, t] = l.split(" ");
     return { kind: kind as Ev["kind"], repo: r ?? "", ids: ids ?? "", t: Number(t) };
@@ -82,6 +92,18 @@ describe("search-readiness-fix.sh runs repos in parallel, one pass per repo at a
   it("NEGATIVE: SR_PARALLEL=1 is strictly one pass at a time (the old shape)", () => {
     const { max } = concurrency(runDriver("1", CHUNKS));
     expect(max).toBe(1);
+  }, 60000);
+
+  it("a pass whose worker was refused a command (exit 14) ends the run non-zero as PERMISSION_DENIED, even with the queue empty", () => {
+    let got: { rc: number | null; out: string } = { rc: null, out: "" };
+    runDriver(null, CHUNKS, { repo: "big", result: (r) => { got = r; } });
+    expect(got.out).toMatch(/NAMED STOP \[PERMISSION_DENIED\] 2 pass\(es\) had a command refused/);
+    expect(got.rc, got.out).toBe(14);
+    // NEGATIVE: the same run with no refused pass ends 0, as before.
+    let clean: { rc: number | null; out: string } = { rc: null, out: "" };
+    runDriver(null, CHUNKS, { repo: "no-such-repo", result: (r) => { clean = r; } });
+    expect(clean.out).not.toMatch(/PERMISSION_DENIED/);
+    expect(clean.rc, clean.out).toBe(0);
   }, 60000);
 
   it("the body runs as one parsed function, and the fixer scopes its lock and findings per repo", () => {

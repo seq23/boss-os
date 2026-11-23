@@ -327,6 +327,21 @@ export function launchdProblems(m, jobs) {
 export const missingLabels = (m, jobs) => [...rowsByLabel(m).keys()].filter((l) => !(l in jobs));
 
 /**
+ * The labels rows name whose plist IS installed but launchd does not hold: a file alone never fires.
+ * 23 Nov 2026: com.seq.boss-ai-visibility's plist was on disk and never loaded, and this check read
+ * only the files, so it passed. `launchctlList` is `launchctl list` output; `disabledText` is
+ * `launchctl print-disabled gui/<uid>` (her pauses are disabled on purpose and are not named).
+ * A list that could not be read is null and every installed label is unknown, never "loaded".
+ */
+export function unloadedLabels(m, jobs, launchctlList, disabledText = "") {
+  const labels = [...rowsByLabel(m).keys()].filter((l) => l in jobs);
+  if (launchctlList == null) return labels.map((l) => ({ label: l, state: "unknown" }));
+  const loaded = new Set(String(launchctlList).split("\n").map((line) => line.trim().split(/\s+/)[2]).filter(Boolean));
+  const disabled = new Set([...String(disabledText).matchAll(/"([^"]+)" => (?:disabled|true)/g)].map((x) => x[1]));
+  return labels.filter((l) => !loaded.has(l) && !disabled.has(l)).map((l) => ({ label: l, state: "not loaded" }));
+}
+
+/**
  * Crons of one repo (`[{ file, crons, dispatch? }]`) against the manifest: every scheduled file has a
  * row whose crons are exactly the file's, and every row's slots are among what those crons really fire now.
  *
