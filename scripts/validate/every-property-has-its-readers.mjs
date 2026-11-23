@@ -137,7 +137,7 @@ function selfTest(real) {
   const cases = [
     { name: "the real tree passes", mutate: () => {}, want: 0 },
     { name: "a property missing a cell fails", mutate: (i) => { i.registry = i.registry.filter((c) => !(c.property_key === "hpc" && c.reader === "gsc")); }, want: 1 },
-    { name: "a CANNOT with a throwaway reason fails", mutate: (i) => { const c = i.registry.find((x) => !x.wired); c.cannot = "n/a"; }, want: 1 },
+    { name: "a CANNOT with a throwaway reason fails", mutate: (i) => { const c = i.registry[0]; c.wired = false; c.cannot = "n/a"; }, want: 1 }, // planted: the real grid has no CANNOT since Whisper Almanac's site went live (23 Nov 2026)
     { name: "a registry key outside the grid fails", mutate: (i) => { i.registry.push({ property_key: "west_peek", reader: "uptime", runs_on: "worker", wired: true, cannot: null }); }, want: 1 },
     { name: "a Worker reader nobody registered fails", mutate: (i) => { i.files[READERS_TS] = i.files[READERS_TS].replace(/^\s*gsc\s*:/m, "  gsc_renamed:"); }, want: 1 },
     { name: "a Worker reader with no duty row fails", mutate: (i) => { for (const p of Object.keys(i.files)) if (p.startsWith("migrations/")) i.files[p] = i.files[p].replace(/'worker_reader',\s*'uptime'/g, "'worker_reader', 'uptime_x'"); }, want: 1 },

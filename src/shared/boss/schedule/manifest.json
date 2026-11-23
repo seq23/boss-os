@@ -6859,6 +6859,30 @@
       }
     },
     {
+      "id": "peace-be-still-search-loop",
+      "name": "Search loop",
+      "what": "Finds easy searches and publishes gated question pages (the shared search loop) on peacebestillapp.com.",
+      "business": "spry",
+      "brand": "Peace Be Still",
+      "system": "github",
+      "slots": [
+        "daily 04:37"
+      ],
+      "emails": false,
+      "heavy": false,
+      "trigger": {
+        "repo": "peace-be-still",
+        "file": ".github/workflows/search-loop.yml",
+        "crons": [
+          "37 10 * * *"
+        ]
+      },
+      "output": {
+        "floor": 0,
+        "reason": "Publishes only searches that pass its quality gate; the weekly search-loop-week report and Search Readiness f7-f10 judge what it made."
+      }
+    },
+    {
       "id": "peace-be-still-threads-posts",
       "name": "Threads posts",
       "what": "Daily: keeps the next 4 evenings filled on Threads @peacebestillapp, one post at 21:30 CT through Peace Be Still's own Buffer, from data/threads/posts.json; recycles evergreen posts once the bank is spent, so it never stops.",
