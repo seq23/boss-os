@@ -2446,6 +2446,10 @@
       "kind": "system",
       "why": "Keeps the system running or checks it; it has no customer result of its own."
     },
+    "post-land-check": {
+      "kind": "system",
+      "why": "Keeps the system running or checks it; it has no customer result of its own."
+    },
     "drive-backup": {
       "kind": "system",
       "why": "Keeps the system running or checks it; it has no customer result of its own."

@@ -1441,6 +1441,29 @@
       }
     },
     {
+      "id": "post-land-check",
+      "name": "Post-land check",
+      "what": "Each night one fresh reviewer checks the day's merged changes that skipped review, and proves each changed form on production with a marked TEST submission.",
+      "business": "personal",
+      "brand": "Repos",
+      "system": "mac",
+      "slots": [
+        "daily 23:15"
+      ],
+      "emails": false,
+      "heavy": true,
+      "trigger": {
+        "launchd": [
+          "com.seq.post-land-check"
+        ]
+      },
+      "output": {
+        "floor": 0,
+        "reason": "Runs only when a land left a DUE line in HANDOFF; a day with none is quiet."
+      },
+      "macWindow": "HEAVY"
+    },
+    {
       "id": "ci-sweep",
       "name": "CI sweep",
       "what": "Finds and fixes red checks across the repos.",
