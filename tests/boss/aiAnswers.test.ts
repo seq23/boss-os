@@ -16,7 +16,7 @@ import { beforeEach, describe, expect, it } from "vitest";
 import { recordAiWeek, aiMisses } from "../../src/worker/boss/growth/aiAnswers";
 import type { Model } from "../../src/worker/boss/growth/run";
 import { MAX_OPEN_PER_BUSINESS } from "../../src/shared/boss/growth/director.mjs";
-import { ENGINES, missId } from "../../src/shared/boss/growth/aiAnswers.mjs";
+import { ENGINES, RUN_DAY_UTC, RUN_HOUR_UTC, missId } from "../../src/shared/boss/growth/aiAnswers.mjs";
 import { TOKEN_KEY, sha256 } from "../../src/worker/boss/routes/openLoops";
 import { setSetting } from "../../src/worker/boss/lib/settings";
 import { handleRequest } from "../../src/worker/index";
@@ -24,7 +24,14 @@ import type { Env } from "../../src/worker/env";
 
 const DAY = 86_400_000;
 const NOW = Date.now();
-const RUN_AT = NOW - 3_600_000;
+/** OpenSEO's newest scheduled run at or before NOW (Tuesday 04:00 UTC), as in real life: a run stamped
+ * off-schedule put the read and the not-read rows in different weeks on Mondays before 04:00 UTC Tuesday. */
+const RUN_AT = (() => {
+  const d = new Date(NOW);
+  let t = Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), d.getUTCDate(), RUN_HOUR_UTC);
+  while (new Date(t).getUTCDay() !== RUN_DAY_UTC || t > NOW) t -= DAY;
+  return t;
+})();
 const KMP = "keepmyproof.com";
 const APM = "aplayermode.com";
 const Q1 = "https://keepmyproof.com/questions/rent-receipts/";
@@ -186,7 +193,7 @@ describe("asked once", () => {
 describe("lanes move after two fixes", () => {
   it("OWN counts the loop's strengthened pages once each, then moves to CLAIM", async () => {
     const id = await missId(KMP, P_OWN.text);
-    const w1 = NOW - 14 * DAY, w2 = NOW - 7 * DAY, w3 = RUN_AT;
+    const w1 = RUN_AT - 14 * DAY, w2 = RUN_AT - 7 * DAY, w3 = RUN_AT;
     const s = (at: number) => ({ id, page_url: Q1, at: new Date(at).toISOString() });
     await recordAiWeek(env, [kmp([P_OWN], { runAt: w1, runId: "r1" })], w1 + 3_600_000, { model: fake().model });
     await recordAiWeek(env, [kmp([P_OWN], { runAt: w2, runId: "r2", strengthened: [s(w1 + DAY)] })], w2 + 3_600_000, { model: fake().model });
