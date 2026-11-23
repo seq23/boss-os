@@ -21,7 +21,8 @@ import { machineTokenOk } from "./openLoops";
  *                    her roster links, her pending Decide cards), happening (the scoreboard and the
  *                    newest decision), happened (earlier decisions and finished to-dos, 8 weeks),
  *                    and `ai`: the site's AI answers week (growth/aiAnswers.ts), apart from its numbers.
- *   GET  /backlink-orders  (machine token, as ai-misses) the backlink network's weekly read:
+ *   GET  /backlink-orders  (machine token, as ai-misses; public address /api/boss/growth/backlink-orders)
+ *                    the backlink network's weekly read:
  *                    { cycle, read_at, orders: [{ business, topic, draft, why }] } from the NEWEST
  *                    cycle's decisions only (director.mjs backlinkOrders). No cycle yet → orders [].
  */
@@ -63,6 +64,12 @@ growthRoutes.get("/", async (c) => {
   return ok(c, { day, businesses: summarize(manifest, latest, before, dayIdInZone(Date.now())) });
 });
 
+/**
+ * The route's path INSIDE the Boss app (the session gate in boss/index.ts matches on it). Its public
+ * address is `/api/boss/growth/backlink-orders`: the Worker's entry hands only `/api/boss/*` to this app
+ * (bossMount.ts handleBossRequest) and answers every other /api path with the retired fund API's 410.
+ * Give callers the public address, never this one.
+ */
 export const BACKLINK_ORDERS_PATH = "/api/growth/backlink-orders";
 
 /** The newest cycle's backlink orders; never Open Loops rows. A malformed actions row is skipped and logged. */
