@@ -159,6 +159,11 @@ describe("G11 seeds caught by code before the reviewer", () => {
     expect(r.refused[0].action.pieces.map((x: any) => x.id)).toEqual(["p1"]);
     expect(r.accepted[0].pieces.map((x: any) => x.id)).toEqual(["p2"]);
   });
+  it("a piece that names no roster format is dropped: the gate cannot judge what it would post as", () => {
+    const r = plan({ kind: "studio-plan", business: "porch-and-party", pieces: [{ id: "p1", at: "2026-12-02 18:15", format: "real-montage", platforms: ["instagram"], theme: "christmas-porch", hook: "Porch ready" }] });
+    expect(r.accepted).toEqual([]);
+    expect(r.refused[0].why).toMatch(/^p1: no post/);
+  });
 });
 
 describe("G13 + G12: cadence and the read grid", () => {
