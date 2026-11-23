@@ -5,11 +5,16 @@
  * and writes:
  *
  *   1. MEASURE   the scoreboard (D1 growth_readings → summarize), the roster (the Growth sections of the
- *                porch-and-party and spry brains, nothing else of any brain), the risk rules by id.
+ *                porch-and-party and spry brains), her rulings (each business's groups of its brain's
+ *                Settled decisions, rulingsFor in roster.mjs: nothing else of any brain), the risk rules
+ *                by id. Rulings not read → that business is held; a missing group is a named problem.
  *   2. SCAN      Google's public US trending-searches feed (titles only); rivals' long-running ads are
  *                "not read" until a free source exists.
  *   3. DECIDE    per business, a FREE model (the router's free routes in order; none answering =
- *                "held: no model") reads the playbook, the roster entry, the counts and the to-dos.
+ *                "held: no model") reads the playbook, the roster entry, her rulings, the counts and
+ *                the to-dos, within PROMPT_BUDGET_CHARS (over it, shared rulings are left out first,
+ *                never the business's own, and the run says so). Ruling characters per business are
+ *                logged on the cycle's audit row.
  *   4. QUEUE     each item through mayAct, then the claims check (a free model reads the draft against
  *                that brand's REQUIRED rules plus its roster limits; a rule with no words, or no answer =
  *                held). Passed → ONE Open Loops row per business × channel × format (source_key
@@ -33,10 +38,10 @@ import { audit } from "../lib/audit";
 import { dayIdInZone } from "../../../shared/boss/timezone";
 import manifest from "../../../shared/boss/scorecard/manifest.json";
 import { summarize } from "../../../shared/boss/growth/scoreboard.mjs";
-import { GROWTH_BRAINS, growthSection, parseRoster, rosterProblems, type RosterEntry } from "../../../shared/boss/growth/roster.mjs";
+import { GROWTH_BRAINS, growthSection, parseRoster, rosterProblems, rulingsFor, type RosterEntry } from "../../../shared/boss/growth/roster.mjs";
 import { playbookBody } from "../../../shared/boss/growth/playbook.mjs";
 import {
-  MAX_CARDS, MAX_OPEN_PER_BUSINESS, ASKED_DAYS, decisionPrompt, parseDecision, enforceHolds, claimsPrompt, parseClaims, claimRules,
+  MAX_CARDS, MAX_OPEN_PER_BUSINESS, ASKED_DAYS, fitDecisionPrompt, PROMPT_BUDGET_CHARS, parseDecision, enforceHolds, claimsPrompt, parseClaims, claimRules,
   routeItem, routeProposal, spendPrompt, parseSpend, cycleEnd, namingProblems, pipelineKey, reportDue, reportSection, BACKLINKS, MAX_BACKLINKS_PER_CYCLE, TOPIC_MAX,
 } from "../../../shared/boss/growth/director.mjs";
 import { raiseJudgementCall } from "../approvals/raise";
@@ -84,16 +89,19 @@ export async function brainMd(db: D1Database, slug: string): Promise<string | nu
 /** The roster from the growth brains only; a broken section is a named problem, never a quiet skip. */
 /** Her words for the two growth brains, so a problem reads as a business, never a slug. */
 const BRAIN_NAMES: Record<string, string> = { "porch-and-party": "Porch & Party", spry: "Spry Labs" };
-export async function loadRoster(db: D1Database): Promise<{ roster: RosterEntry[]; problems: string[] }> {
-  const roster: RosterEntry[] = []; const problems: string[] = [];
+export async function loadRoster(db: D1Database): Promise<{ roster: RosterEntry[]; problems: string[]; mds: Record<string, string | null> }> {
+  const roster: RosterEntry[] = []; const problems: string[] = []; const mds: Record<string, string | null> = {};
   for (const slug of GROWTH_BRAINS) {
-    const md = await brainMd(db, slug);
     const name = BRAIN_NAMES[slug] ?? slug;
-    if (!md) { problems.push(`${name}'s brain is missing`); continue; }
+    // One brain failing to read never stops the other's cycle, and never reads as "no rulings".
+    let md: string | null = null;
+    try { md = await brainMd(db, slug); } catch (e) { mds[slug] = null; problems.push(`${name}'s brain could not be read (${String((e as Error)?.message ?? e).slice(0, 120)}): its roster and rulings not read`); continue; }
+    mds[slug] = md;
+    if (!md) { problems.push(`${name}'s brain is missing: its roster and rulings not read`); continue; }
     try { const body = growthSection(slug, md); if (body) roster.push(...parseRoster(body, slug)); else problems.push(`${name}'s brain has no Growth section yet`); }
     catch (e) { problems.push(String((e as Error).message)); }
   }
-  return { roster, problems: [...problems, ...rosterProblems(roster)] };
+  return { roster, problems: [...problems, ...rosterProblems(roster)], mds };
 }
 
 /** The pipeline to-do for one business × channel × format: one row, its draft refreshed each week. */
@@ -179,7 +187,10 @@ export async function runGrowthDirector(env: Env, now = Date.now(), deps: { mode
   const cycle = today;
   const { latest, before } = await latestReadings(db);
   const summaries = summarize(manifest, latest, before, today);
-  const { roster, problems } = await loadRoster(db);
+  const { roster, problems, mds } = await loadRoster(db);
+  const problem = (p: string) => { if (!problems.includes(p)) problems.push(p); };
+  // Her rulings' size per business this cycle (characters added to the decision prompt), for the audit row.
+  const rulingSizes: { business: string; chars: number; left: string[] }[] = [];
   const riskMd = (await brainMd(db, "risk")) ?? "";
   const trends = await readTrends(deps.fetchImpl ?? fetch);
   const playbook = playbookBody();
@@ -196,6 +207,9 @@ export async function runGrowthDirector(env: Env, now = Date.now(), deps: { mode
       const s = summaries.find((x: any) => x.key === entry.key);
       if (entry.paused) { await record({ ...base, state: "paused", decision: `Paused: ${entry.paused}. Nothing measured, queued or posted.`, evidence: [], actions: [] }); continue; }
       if (entry.problems.length) { await record({ ...base, state: "held: roster", decision: `Held: its roster entry needs fixing first (${entry.problems.join("; ")}).`, evidence: [], actions: [] }); continue; }
+      const rulings = rulingsFor(entry, mds[entry.brain] ?? null);
+      for (const p of rulings.problems) problem(p);
+      if (rulings.notRead) { await record({ ...base, state: "held: roster", decision: `Held: her rulings were not read (${rulings.notRead}), so nothing is decided without them; the next cycle tries again.`, evidence: [], actions: [] }); continue; }
       if (!s || s.state !== "read") { await record({ ...base, state: "held: no data", decision: "Held: nothing on the scoreboard was read for this business, so nothing is decided on zeros.", evidence: (s?.channels ?? []).map((c: any) => `${c.label}: ${c.unread}`), actions: [] }); continue; }
       const first = !(await db.prepare(`SELECT 1 FROM growth_decisions WHERE business = ? AND state = 'decided' LIMIT 1`).bind(entry.key).first());
       const todos = await inMotion(db, entry.key!);
@@ -209,7 +223,11 @@ export async function runGrowthDirector(env: Env, now = Date.now(), deps: { mode
       ).bind(entry.brain, JSON.stringify(entry.linked)).all<{ id: string }>()).results ?? []).map((r) => r.id) : [];
       const linked = linkedIds.map((id) => ({ id, what: entry.linkedNotes[id] ?? "no description on the roster" }));
       const topics = entry.channels.some((c) => c.channel === BACKLINKS) ? await orderedTopics(db, entry.key!) : [];
-      const answer = parseDecision(await model(env, decisionPrompt({ playbook, entry, summary: s, trends, today, todos, first, linked, topics }) as Msg[], "growth-decide"));
+      const fit = fitDecisionPrompt({ playbook, entry, summary: s, trends, today, todos, first, linked, topics, rulings });
+      rulingSizes.push({ business: base.business, chars: fit.rulingChars, left: fit.left });
+      if (fit.left.length) problem(`${entry.label}: the prompt was over ${PROMPT_BUDGET_CHARS} characters, so the shared rulings ${fit.left.map((h) => `"${h}"`).join(", ")} were left out this cycle`);
+      if (fit.over) problem(`${entry.label}: the prompt is still over ${PROMPT_BUDGET_CHARS} characters with only its own rulings (${fit.chars})`);
+      const answer = parseDecision(await model(env, fit.messages as Msg[], "growth-decide"));
       if (!answer) { await record({ ...base, state: "held: no model", decision: "Held: no free model answered (every free route was busy or spent); the next cycle tries again.", evidence: [], actions: [] }); continue; }
       const { decision, dropped } = enforceHolds(answer, s);
       const actions: any[] = [];
@@ -281,7 +299,7 @@ export async function runGrowthDirector(env: Env, now = Date.now(), deps: { mode
   }
 
   const end = cycleEnd(results);
-  await audit(db, { actor: "system", lane: "ops", entityType: "growth_cycle", entityId: cycle, action: end.ok ? "decided" : "held", detail: { line: end.line, problems, trends: trends.length } });
+  await audit(db, { actor: "system", lane: "ops", entityType: "growth_cycle", entityId: cycle, action: end.ok ? "decided" : "held", detail: { line: end.line, problems, trends: trends.length, rulings: rulingSizes } });
   // Her report, every two weeks, as a section of Simone's morning email (written even on a held
   // cycle: "held, not guessed" is news too). The last day is kept so a missed Monday catches up.
   if (rows.length && reportDue(await getSetting(db, REPORT_KEY), today)) {
@@ -292,5 +310,5 @@ export async function runGrowthDirector(env: Env, now = Date.now(), deps: { mode
     await setSetting(db, REPORT_KEY, today);
   }
   if (!end.ok) throw new Error(`${end.line}${problems.length ? `; roster: ${problems.slice(0, 3).join("; ")}` : ""}`);
-  return { written: results.filter((r) => r.state === "decided").length, line: end.line, problems, cards };
+  return { written: results.filter((r) => r.state === "decided").length, line: end.line, problems, cards, rulings: rulingSizes };
 }

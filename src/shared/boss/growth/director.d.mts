@@ -7,6 +7,9 @@ export const ASKED_DAYS: number;
 export const BACKLINKS: string;
 export const TOPIC_MAX: number;
 export const MAX_BACKLINKS_PER_CYCLE: number;
+export const PROMPT_BUDGET_CHARS: number;
+export function rulingsBlock(rulings: import("./roster.mjs").Rulings | null): string;
+export function fitDecisionPrompt(args: Parameters<typeof decisionPrompt>[0]): { messages: { role: string; content: string }[]; chars: number; rulingChars: number; left: string[]; over: boolean };
 export function topicOf(v: unknown): string | null;
 export interface BacklinkOrder { business: string; topic: string; draft: string; why: string }
 export function backlinkOrders(rows: { id: string; business: string; state: string; actions: string; created_at: number }[]): { orders: BacklinkOrder[]; skipped: string[] };
@@ -17,7 +20,7 @@ export function spendPrompt(p: { what: string; why?: string }): { role: string; 
 export function parseSpend(text: string | null | undefined): { costs_money: boolean; creates_account: boolean } | null;
 export interface Decision { decision: string; evidence: string[]; test: { channel: string; format: string; what: string; number: string; stop: string } | null; queue: { channel: string; format: string; draft: string; why: string; topic?: string }[]; noTopic: number; proposals: { what: string; why: string; evidence: string; costs_money?: boolean }[]; next_check: string | null; linked: { id: string; verdict: "keep" | "change" | "drop"; why: string; next_step: string | null }[] }
 export function numbersFor(summary: any): string;
-export function decisionPrompt(a: { playbook: string; entry: RosterEntry; summary: any; trends: string[]; today: string; todos: string[]; first?: boolean; linked?: { id: string; what: string }[]; topics?: string[] }): { role: string; content: string }[];
+export function decisionPrompt(a: { playbook: string; entry: RosterEntry; summary: any; trends: string[]; today: string; todos: string[]; first?: boolean; linked?: { id: string; what: string }[]; topics?: string[]; rulings?: import("./roster.mjs").Rulings | null }): { role: string; content: string }[];
 export function parseDecision(text: string | null | undefined): Decision | null;
 export function enforceHolds(decision: Decision, summary: any): { decision: Decision; dropped: string | null };
 export function claimsPrompt(a: { entry: { label: string }; rules: { id: string; text: string }[]; draft: string }): { role: string; content: string }[];

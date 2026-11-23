@@ -36,19 +36,24 @@ export const MAX_OPEN_PER_BUSINESS = 3;
 /**
  * BACKLINK REQUESTS (her words, 22 Nov 2026: "i thought the backlink network was going to defer to the
  * growth director"; "we are suppposed to assume we are not related and there is a separate cloudflare acct
- * the director needs to know that"; "backlinks should be written about other companies and other things so
- * its not just about us"). The backlink network is an OUTSIDE publisher on its own Cloudflare account. A
- * queue item on the `backlinks` channel is a link REQUEST to it (business, page, topic), never a command:
- * it writes mostly about other companies and subjects, fits at most 1 in 4 of its articles around requests,
- * and refuses one no existing page of the business answers (NO_FIT). It is never a to-do or a card for her;
- * the network reads the newest cycle's requests (GET /api/growth/backlink-orders, `backlinkOrders` below,
- * field names unchanged). TOPIC_MAX is the one topic limit (prompt, parser, route); MAX_BACKLINKS_PER_CYCLE
- * is the one cap: the cycle (run.ts) makes at most that many requests per business per cycle; any item
- * after it is held, never requested.
+ * the director needs to know that"). A queue item on the `backlinks` channel is a link REQUEST to the
+ * backlink network, an outside publisher. How it works with us (requests not commands, mostly other
+ * subjects, a topic one of our pages answers) is HER RULING in the spry brain's Settled "### Growth"
+ * group, which the model reads with the rest of her rulings (rulingsFor, roster.mjs); code keeps only
+ * the hard limits: TOPIC_MAX (prompt, parser, route), MAX_BACKLINKS_PER_CYCLE (the cycle, run.ts, makes
+ * at most that many requests per business per cycle; the rest are held, never requested), and never
+ * calling the network ours. It is never a to-do or a card for her; the network reads the newest cycle's
+ * requests (GET /api/growth/backlink-orders, `backlinkOrders` below, field names unchanged).
  */
 export const BACKLINKS = "backlinks";
 export const TOPIC_MAX = 120;
 export const MAX_BACKLINKS_PER_CYCLE = 1;
+/**
+ * The decision prompt's size limit, in characters. The smallest free route the router may pick holds
+ * 32,768 tokens; 60,000 characters is about 15,000 tokens, which leaves room for the 1,200-token answer and
+ * for text that tokenises worse than English. Over it, fitDecisionPrompt leaves out shared rulings.
+ */
+export const PROMPT_BUDGET_CHARS = 60_000;
 /** A Decide card she answered (or one still waiting) is not raised again for this many days. */
 export const ASKED_DAYS = 28;
 export const STATES = Object.freeze(["decided", "paused", "held: no data", "held: no model", "held: roster", "held: error"]);
@@ -84,7 +89,30 @@ export function numbersFor(summary) {
 }
 
 /** The decision prompt for one business. */
-export function decisionPrompt({ playbook, entry, summary, trends, today, todos, first = false, linked = [], topics = [] }) {
+/** Her rulings as the prompt shows them: her own group(s) first, then those for every business. */
+export function rulingsBlock(rulings) {
+  if (!rulings || rulings.notRead) return `HER RULINGS\n- not read${rulings?.notRead ? ` (${rulings.notRead})` : ""}`;
+  const groups = [...rulings.own, ...rulings.shared];
+  return `HER RULINGS (her Settled decisions, dated, in her words: this business's own, then those for every business)\n${groups.map((g) => `### ${g.heading}\n${g.body}`).join("\n\n") || "- none written"}`;
+}
+
+/**
+ * The decision prompt within PROMPT_BUDGET_CHARS: over it, the shared rulings are left out from the end
+ * of SHARED_RULINGS' order, never the business's own. { messages, chars, rulingChars, left, over }.
+ */
+export function fitDecisionPrompt(args) {
+  const shared = [...(args.rulings?.shared ?? [])];
+  const left = [];
+  for (;;) {
+    const rulings = args.rulings ? { ...args.rulings, shared } : args.rulings;
+    const messages = decisionPrompt({ ...args, rulings });
+    const chars = messages.reduce((n, m) => n + m.content.length, 0);
+    if (chars <= PROMPT_BUDGET_CHARS || !shared.length) return { messages, chars, rulingChars: rulingsBlock(rulings).length, left, over: chars > PROMPT_BUDGET_CHARS };
+    left.unshift(shared.pop().heading);
+  }
+}
+
+export function decisionPrompt({ playbook, entry, summary, trends, today, todos, first = false, linked = [], topics = [], rulings = null }) {
   const backlinks = entry.channels.some((c) => c.channel === BACKLINKS);
   const roster = [
     `Business: ${entry.label}`, `Buyer: ${entry.buyer}`, `Offer: ${entry.offer}`, `Money number: ${entry.money}`,
@@ -97,6 +125,8 @@ export function decisionPrompt({ playbook, entry, summary, trends, today, todos,
 
 ROSTER ENTRY
 ${roster}
+
+${rulingsBlock(rulings)}
 
 SCOREBOARD (28-day windows; "not read" means unknown, never zero)
 ${numbersFor(summary)}
@@ -117,12 +147,12 @@ Return exactly:
 {"decision": "one or two plain sentences: what to do more of, less of, or hold, and why",
  "evidence": ["each a number from the scoreboard or a fact from the roster, with its source"],
  "test": null or {"channel": "...", "format": "...", "what": "...", "number": "the number that judges it", "stop": "when it stops"},
- "queue": [up to ${MAX_QUEUE_PER_BUSINESS} {"channel": "...", "format": "...", "draft": "the exact words of the post or page lead", "why": "..."${backlinks ? `, "topic": "backlinks only: the subject one of this business's existing pages answers, at most ${TOPIC_MAX} characters"` : ""}}],
+ "queue": [up to ${MAX_QUEUE_PER_BUSINESS} {"channel": "...", "format": "...", "draft": "the exact words of the post or page lead", "why": "..."${backlinks ? `, "topic": "backlinks only: the article's subject, at most ${TOPIC_MAX} characters"` : ""}}],
  "proposals": [{"what": "something new that needs her yes (a new channel, format, product, price or list)", "why": "...", "evidence": "...", "costs_money": true or false}],
  "linked": [one per older-work row above: {"id": "olp_…", "verdict": "keep" | "change" | "drop", "why": "the evidence, plainly", "next_step": "for change: the new next step"}],
  "next_check": "YYYY-MM-DD"}
 Only approved channels and formats go in "queue"; anything else is a proposal. Never propose spending money or creating an account. "Too little data" holds a comparison between formats; it never holds older work she already approved to start on an approved channel and format: that goes in "queue" this week.${backlinks ? `
-BACKLINKS: the backlink network is an OUTSIDE publisher with its own Cloudflare account, not part of this business. A "${BACKLINKS}" item in "queue" is a link REQUEST to it, never a command: it writes mostly about other companies and subjects, fits at most 1 in 4 of its articles around requests, and refuses one that fits no page (NO_FIT; KeepMyProof "cash rent" was refused for having no such page). At most ${MAX_BACKLINKS_PER_CYCLE} "${BACKLINKS}" item per week; any more are not sent. Its "topic" (at most ${TOPIC_MAX} characters; an item without one is dropped) must be a subject one of this business's EXISTING pages genuinely answers, and its "draft" names that page's address and what it answers. Never call the network ours, a partner or related to this business in anything public. The rule (the playbook's backlink row): judge links against this business's search visits 8 weeks later. Search visits rising since the first topics → request more topics; no rise 8 weeks after a topic → change topics (never the same topic again).` : ""}${first && entry.season ? `\nThis is your FIRST decision for this business: it is about the season on its roster (${entry.season}), the money that season can still bring in before it ends.` : ""}` },
+BACKLINKS: a "${BACKLINKS}" item in "queue" is one link request to the backlink network; her rulings above say how it works with us. Hard limits. At most ${MAX_BACKLINKS_PER_CYCLE} "${BACKLINKS}" item per week; any more are not sent. Its "topic" is at most ${TOPIC_MAX} characters; an item without one is dropped. Never call the network ours, a partner or related to this business in anything public. The rule (the playbook's backlink row): judge links against this business's search visits 8 weeks later. Search visits rising since the first topics → request more topics; no rise 8 weeks after a topic → change topics (never the same topic again).` : ""}${first && entry.season ? `\nThis is your FIRST decision for this business: it is about the season on its roster (${entry.season}), the money that season can still bring in before it ends.` : ""}` },
   ];
 }
 

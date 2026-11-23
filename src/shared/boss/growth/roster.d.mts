@@ -8,4 +8,10 @@ export function growthSection(slug: string, md: string): string | null;
 export function parseChannels(v: string): { channel: string; formats: string[]; note: string | null }[];
 export function parseRoster(body: string, brain: string): RosterEntry[];
 export function rosterProblems(entries: RosterEntry[]): string[];
+export const SHARED_RULINGS: readonly string[];
+export const APPS_ONLY: string;
+export interface RulingGroup { heading: string; body: string }
+export interface Rulings { notRead: string | null; own: RulingGroup[]; shared: RulingGroup[]; problems: string[] }
+export function headingGroups(body: string): RulingGroup[];
+export function rulingsFor(entry: RosterEntry, md: string | null): Rulings;
 export function mayAct(roster: RosterEntry[], a: { business: string; channel?: string; format?: string; action?: string }): { ok: true } | { ok: false; stop: string; why: string };

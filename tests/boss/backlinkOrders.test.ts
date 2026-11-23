@@ -21,7 +21,21 @@ import type { Env } from "../../src/worker/env";
 
 const NOW = Date.parse("2026-11-23T12:00:00Z");
 const DAY = dayIdInZone(NOW);
-const SPRY = `## Growth
+const SPRY = `## Settled decisions
+### Umbrella, scope and money
+- 2026-11-01 — Spry Labs spends nothing without her yes.
+### Growth (Shoestring Growth Plan, 21 Nov 2026)
+- 2026-11-22 — The backlink network is an outside publisher with its own Cloudflare account; the Director sends it link requests, never commands.
+### Search, sites and freshness
+- 2026-11-02 — Every site keeps a fresh sitemap.
+### Brand and social
+- 2026-11-03 — Calm, plain voice everywhere.
+### All apps
+- 2026-11-04 — Every app has a privacy page.
+### ApprovalPrep
+- 2026-11-05 — ApprovalPrep is self-service, in her words.
+
+## Growth
 ### ApprovalPrep
 - key: approvalprep
 - buyer: people fixing their credit themselves
@@ -31,7 +45,11 @@ const SPRY = `## Growth
 - languages: en
 - limits: R-ADV-13
 `;
-const PNP = `## Growth
+const PNP = `## Settled decisions
+### Growth
+- 2026-11-21 — Porch reels lead in December.
+
+## Growth
 ### Porch & Party
 - key: porch-and-party
 - buyer: families

@@ -7,7 +7,7 @@
  *   - the claims prompt carries the brand's rule words from the risk brain, rulings included.
  */
 import { describe, expect, it } from "vitest";
-import { BACKLINKS, MAX_BACKLINKS_PER_CYCLE, TOPIC_MAX, backlinkOrders, topicOf } from "../src/shared/boss/growth/director.mjs";
+import { BACKLINKS, MAX_BACKLINKS_PER_CYCLE, TOPIC_MAX, PROMPT_BUDGET_CHARS, backlinkOrders, topicOf, fitDecisionPrompt, rulingsBlock } from "../src/shared/boss/growth/director.mjs";
 import { parseDecision, enforceHolds, routeItem, routeProposal, cycleEnd, ruleText, parseClaims, claimsPrompt, decisionPrompt, parseSpend, claimRules, rulesFor, REQUIRED_RULES, namingProblems, reportSection, reportDue } from "../src/shared/boss/growth/director.mjs";
 import { parseRoster } from "../src/shared/boss/growth/roster.mjs";
 import { lineProblems } from "../src/shared/boss/mail/plain.mjs";
@@ -296,20 +296,45 @@ describe("backlink orders (22 Nov 2026: the network defers to the Director)", ()
 
   it("the prompt names the topic limit and the scale/stop rule only for a business with backlinks, with the topics already ordered", () => {
     const p = decisionPrompt({ playbook: "PB", entry: blRoster[0]!, summary, trends: [], today: "2026-11-23", todos: [], topics: ["2026-11-16: Rent receipts"] })[1]!.content;
-    expect(p).toContain(`"topic": "backlinks only: the subject one of this business's existing pages answers, at most ${TOPIC_MAX} characters"`);
+    expect(p).toContain(`"topic": "backlinks only: the article's subject, at most ${TOPIC_MAX} characters"`);
     expect(p).toMatch(/search visits 8 weeks later/);
     expect(p).toMatch(/rising .*request more topics; no rise 8 weeks after a topic → change topics/);
-    // Her words, 22 Nov 2026: the network is not ours, it writes mostly about others, and a request must fit a real page.
-    expect(p).toMatch(/OUTSIDE publisher with its own Cloudflare account/);
-    expect(p).toMatch(/link REQUEST to it, never a command/);
-    expect(p).toMatch(/mostly about other companies and subjects, fits at most 1 in 4 of its articles around requests/);
-    expect(p).toMatch(/EXISTING pages genuinely answers/);
-    expect(p).toMatch(/NO_FIT; KeepMyProof "cash rent"/);
+    // How the network works with us is her ruling, read from the brain; code keeps only the hard limits.
+    expect(p).toMatch(/her rulings above say how it works with us/);
     expect(p).toMatch(/Never call the network ours/);
     expect(p).toContain(`At most ${MAX_BACKLINKS_PER_CYCLE} "backlinks" item per week`);
     expect(p).toContain("- 2026-11-16: Rent receipts");
     const none = decisionPrompt({ playbook: "PB", entry: roster[0]!, summary, trends: [], today: "2026-11-23", todos: [] })[1]!.content;
     expect(none).not.toMatch(/BACKLINK|"topic"/);
+  });
+
+  it("her rulings sit in the prompt, her own group first; rulings not read are said, never shown as none", () => {
+    const rulings = { notRead: null, own: [{ heading: "ApprovalPrep", body: "- 2026-11-20 — AP-OWN-RULING" }], shared: [{ heading: "Growth (Shoestring)", body: "- 2026-11-22 — the backlink network is an outside publisher" }], problems: [] };
+    const p = decisionPrompt({ playbook: "PB", entry: roster[0]!, summary, trends: [], today: "2026-11-23", todos: [], rulings })[1]!.content;
+    expect(p).toMatch(/HER RULINGS[^\n]*\n### ApprovalPrep\n- 2026-11-20 — AP-OWN-RULING\n\n### Growth \(Shoestring\)\n- 2026-11-22 — the backlink network is an outside publisher/);
+    expect(rulingsBlock({ notRead: "the Spry Labs brain could not be read", own: [], shared: [], problems: [] })).toBe("HER RULINGS\n- not read (the Spry Labs brain could not be read)");
+    expect(rulingsBlock({ notRead: null, own: [], shared: [], problems: [] })).toBe("HER RULINGS (her Settled decisions, dated, in her words: this business's own, then those for every business)\n- none written");
+  });
+
+  it("over the prompt budget, shared rulings are left out from the end, never the business's own", () => {
+    const big = (n: number) => "x".repeat(n);
+    const own = [{ heading: "ApprovalPrep", body: `OWN ${big(25_000)}` }];
+    const shared = [{ heading: "Growth", body: `GROWTH ${big(10_000)}` }, { heading: "Brand and social", body: `BRAND ${big(25_000)}` }, { heading: "All apps", body: `APPS ${big(25_000)}` }];
+    const args = { playbook: "PB", entry: roster[0]!, summary, trends: [], today: "2026-11-23", todos: [] };
+    const fit = fitDecisionPrompt({ ...args, rulings: { notRead: null, own, shared, problems: [] } });
+    expect(fit.left).toEqual(["Brand and social", "All apps"]);
+    expect(fit.over).toBe(false);
+    expect(fit.chars).toBeLessThanOrEqual(PROMPT_BUDGET_CHARS);
+    const text = fit.messages.map((m) => m.content).join("\n");
+    expect(text).toContain("OWN x"); expect(text).toContain("GROWTH x"); expect(text).not.toContain("BRAND x"); expect(text).not.toContain("APPS x");
+    expect(fit.rulingChars).toBeGreaterThan(30_000);
+    // Inside the budget nothing is left out; the boundary is the budget itself.
+    expect(fitDecisionPrompt({ ...args, rulings: { notRead: null, own, shared: shared.slice(0, 1), problems: [] } }).left).toEqual([]);
+    // Her own group alone over the budget: kept whole and said, never cut.
+    const huge = fitDecisionPrompt({ ...args, rulings: { notRead: null, own: [{ heading: "ApprovalPrep", body: big(PROMPT_BUDGET_CHARS) }], shared, problems: [] } });
+    expect(huge.over).toBe(true);
+    expect(huge.left).toEqual(["Growth", "Brand and social", "All apps"]);
+    expect(huge.messages.map((m) => m.content).join("")).toContain(big(PROMPT_BUDGET_CHARS));
   });
 
   it("an unapproved backlinks format is refused, never her card; an approved one goes to the claims check", () => {
