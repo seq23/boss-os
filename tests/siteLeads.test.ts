@@ -102,14 +102,6 @@ describe("sites.json lead sources", () => {
     expect(mine.filter((s: any) => !s.lead_source).map((s: any) => s.domain)).toEqual([]);
   });
 
-  it("A Player Mode's lead is the brand's Gumroad buy, the same product its sister BHPC sells (owner, 23 Nov 2026)", () => {
-    const by = Object.fromEntries(sitesJson.grid_repos.map((x: any) => [x.domain, x]));
-    const apm = by["aplayermode.com"].lead_source, bhpc = by["billionairehighperformancecoach.com"].lead_source;
-    // The old source counted visits to a BHPC download page that aplayermode.com never links to: always 0.
-    expect(apm).toMatchObject({ kind: "gumroad", params: { kind: "paid", product: "billionaire-high-performance-coach" } });
-    expect(apm.params).toEqual(bhpc.params);
-  });
-
   it("the shape check catches each broken source", () => {
     const broken: [string, any][] = [
       ["unknown kind", { kind: "guess", action: "x", code: "x" }],

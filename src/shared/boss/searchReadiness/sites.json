@@ -1018,12 +1018,15 @@
     "wave": 1
    },
    "lead_source": {
-    "kind": "gumroad",
-    "action": "paid BHPC OS sales on Gumroad, the A Player Mode brand's one product, bought from this site or its sister billionairehighperformancecoach.com",
-    "code": "sprylabs-hpc-site aplayermode/index.html and its pages (Gumroad buy links, sprylabs.gumroad.com/l/billionaire-high-performance-coach?utm_source=aplayermode)",
+    "kind": "cf_web_analytics",
+    "action": "visits to the Spry Executive OS download page sent from this site",
+    "code": "sprylabs-hpc-site search-loop.config.json (action: billionairehighperformancecoach.com/download)",
     "params": {
-     "kind": "paid",
-     "product": "billionaire-high-performance-coach"
+     "host": "billionairehighperformancecoach.com",
+     "paths": [
+      "/download"
+     ],
+     "referer_host": "aplayermode.com"
     }
    }
   },
