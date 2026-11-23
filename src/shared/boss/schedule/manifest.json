@@ -768,7 +768,7 @@
       "brand": "ApprovalPrep",
       "system": "github",
       "slots": [
-        "mon,tue,wed,thu,fri 04:27"
+        "mon 04:27"
       ],
       "emails": false,
       "heavy": false,
@@ -776,7 +776,7 @@
         "repo": "approvalprep",
         "file": ".github/workflows/content-opportunity-analysis.yml",
         "crons": [
-          "CRON_TZ=America/Chicago 27 4 * * 1-5"
+          "CRON_TZ=America/Chicago 27 4 * * 1"
         ]
       },
       "output": {
@@ -841,7 +841,7 @@
       "brand": "ApprovalPrep",
       "system": "github",
       "slots": [
-        "daily 03:17"
+        "tue 03:17"
       ],
       "emails": false,
       "heavy": false,
@@ -849,7 +849,7 @@
         "repo": "approvalprep",
         "file": ".github/workflows/intelligence-ingest-free-sources.yml",
         "crons": [
-          "CRON_TZ=America/Chicago 17 3 * * *"
+          "CRON_TZ=America/Chicago 17 3 * * 2"
         ]
       },
       "output": {
@@ -1825,7 +1825,7 @@
       "brand": "Creator studios",
       "system": "github",
       "slots": [
-        "daily 09:17"
+        "wed 09:17"
       ],
       "emails": false,
       "heavy": false,
@@ -1833,7 +1833,7 @@
         "repo": "creator-studios",
         "file": ".github/workflows/parity.yml",
         "crons": [
-          "CRON_TZ=America/Chicago 17 9 * * *"
+          "CRON_TZ=America/Chicago 17 9 * * 3"
         ]
       },
       "output": {
@@ -2101,7 +2101,7 @@
       "brand": "Time-2-Read",
       "system": "github",
       "slots": [
-        "daily 01:40"
+        "mon 01:40"
       ],
       "emails": false,
       "heavy": true,
@@ -2109,7 +2109,7 @@
         "repo": "dailystory",
         "file": ".github/workflows/search-console-daily.yml",
         "crons": [
-          "CRON_TZ=America/Chicago 40 1 * * *"
+          "CRON_TZ=America/Chicago 40 1 * * 1"
         ]
       },
       "output": {
@@ -2316,7 +2316,7 @@
       "brand": "Dream Wedding",
       "system": "github",
       "slots": [
-        "daily 06:41"
+        "tue 06:41"
       ],
       "emails": false,
       "heavy": false,
@@ -2324,7 +2324,7 @@
         "repo": "dream-wedding-builder",
         "file": ".github/workflows/search-intelligence.yml",
         "crons": [
-          "CRON_TZ=America/Chicago 41 6 * * *"
+          "CRON_TZ=America/Chicago 41 6 * * 2"
         ]
       },
       "output": {
@@ -2962,7 +2962,7 @@
       "brand": "How We Know",
       "system": "github",
       "slots": [
-        "daily 04:40"
+        "mon 04:40"
       ],
       "emails": false,
       "heavy": false,
@@ -2970,7 +2970,7 @@
         "repo": "how-we-know",
         "file": ".github/workflows/search-console-daily.yml",
         "crons": [
-          "CRON_TZ=America/Chicago 40 4 * * *"
+          "CRON_TZ=America/Chicago 40 4 * * 1"
         ]
       },
       "output": {
@@ -2986,7 +2986,7 @@
       "brand": "How We Know",
       "system": "github",
       "slots": [
-        "daily 06:20"
+        "wed 06:20"
       ],
       "emails": false,
       "heavy": false,
@@ -2994,7 +2994,7 @@
         "repo": "how-we-know",
         "file": ".github/workflows/site-post-deploy-check.yml",
         "crons": [
-          "CRON_TZ=America/Chicago 20 6 * * *"
+          "CRON_TZ=America/Chicago 20 6 * * 3"
         ]
       },
       "output": {
@@ -3413,7 +3413,7 @@
       "brand": "Industry Guides",
       "system": "github",
       "slots": [
-        "daily 07:17"
+        "tue 07:17"
       ],
       "emails": false,
       "heavy": false,
@@ -3421,7 +3421,7 @@
         "repo": "local-guides-citation-velocity",
         "file": ".github/workflows/daily-citation-intelligence.yml",
         "crons": [
-          "17 13 * * *"
+          "17 13 * * 2"
         ]
       },
       "output": {
@@ -3461,7 +3461,7 @@
       "brand": "Industry Guides",
       "system": "github",
       "slots": [
-        "daily 01:10"
+        "wed 01:10"
       ],
       "emails": false,
       "heavy": false,
@@ -3469,7 +3469,7 @@
         "repo": "local-guides-citation-velocity",
         "file": ".github/workflows/post-deploy-live-check.yml",
         "crons": [
-          "10 7 * * *"
+          "10 7 * * 3"
         ]
       },
       "output": {
@@ -3485,7 +3485,7 @@
       "brand": "Industry Guides",
       "system": "github",
       "slots": [
-        "daily 00:23"
+        "tue 00:23"
       ],
       "emails": false,
       "heavy": true,
@@ -3493,7 +3493,7 @@
         "repo": "local-guides-citation-velocity",
         "file": ".github/workflows/query-evidence-refresh.yml",
         "crons": [
-          "23 6 * * *"
+          "23 6 * * 2"
         ]
       },
       "output": {
@@ -3509,7 +3509,7 @@
       "brand": "Industry Guides",
       "system": "github",
       "slots": [
-        "daily 08:41"
+        "tue 08:41"
       ],
       "emails": false,
       "heavy": false,
@@ -3517,7 +3517,7 @@
         "repo": "local-guides-citation-velocity",
         "file": ".github/workflows/search-intelligence-loop.yml",
         "crons": [
-          "41 14 * * *"
+          "41 14 * * 2"
         ]
       },
       "output": {
@@ -4062,7 +4062,7 @@
       "brand": "Porch & Party",
       "system": "github",
       "slots": [
-        "daily 08:10"
+        "wed 08:10"
       ],
       "emails": false,
       "heavy": false,
@@ -4070,7 +4070,7 @@
         "repo": "p-n-p",
         "file": ".github/workflows/live-check.yml",
         "crons": [
-          "CRON_TZ=America/Chicago 10 8 * * *"
+          "CRON_TZ=America/Chicago 10 8 * * 3"
         ]
       },
       "output": {
@@ -5376,7 +5376,7 @@
       "brand": "westpeek.live",
       "system": "github",
       "slots": [
-        "daily 02:17"
+        "sat 02:17"
       ],
       "emails": false,
       "heavy": true,
@@ -5384,7 +5384,7 @@
         "repo": "westpeek-live",
         "file": ".github/workflows/browser-e2e.yml",
         "crons": [
-          "CRON_TZ=America/Chicago 17 2 * * *"
+          "CRON_TZ=America/Chicago 17 2 * * 6"
         ]
       },
       "output": {
@@ -5939,8 +5939,7 @@
       "brand": "WPP",
       "system": "github",
       "slots": [
-        "daily 02:10",
-        "daily 14:10"
+        "tue 02:10"
       ],
       "emails": false,
       "heavy": true,
@@ -5948,7 +5947,7 @@
         "repo": "WPP-llm",
         "file": ".github/workflows/query-intelligence.yml",
         "crons": [
-          "CRON_TZ=America/Chicago 10 2,14 * * *"
+          "CRON_TZ=America/Chicago 10 2 * * 2"
         ]
       },
       "output": {
@@ -5964,7 +5963,7 @@
       "brand": "WPP",
       "system": "github",
       "slots": [
-        "daily 05:40"
+        "tue 05:40"
       ],
       "emails": false,
       "heavy": false,
@@ -5972,7 +5971,7 @@
         "repo": "WPP-llm",
         "file": ".github/workflows/search-repair-retest.yml",
         "crons": [
-          "CRON_TZ=America/Chicago 40 5 * * *"
+          "CRON_TZ=America/Chicago 40 5 * * 2"
         ]
       },
       "output": {
@@ -6436,7 +6435,7 @@
       "brand": "KeepMyProof",
       "system": "github",
       "slots": [
-        "daily 05:23"
+        "mon 05:23"
       ],
       "emails": false,
       "heavy": false,
@@ -6444,7 +6443,7 @@
         "repo": "keepmyproof",
         "file": ".github/workflows/search-console-daily.yml",
         "crons": [
-          "23 11 * * *"
+          "23 11 * * 1"
         ]
       },
       "output": {
@@ -6628,7 +6627,7 @@
       "brand": "Time-2-Read",
       "system": "github",
       "slots": [
-        "daily 06:20"
+        "wed 06:20"
       ],
       "emails": false,
       "heavy": false,
@@ -6636,7 +6635,7 @@
         "repo": "heygetonmylevel",
         "file": ".github/workflows/post-deploy-live-check.yml",
         "crons": [
-          "20 12 * * *"
+          "20 12 * * 3"
         ]
       },
       "output": {
@@ -6652,7 +6651,7 @@
       "brand": "Time-2-Read",
       "system": "github",
       "slots": [
-        "daily 01:55"
+        "mon 01:55"
       ],
       "emails": false,
       "heavy": false,
@@ -6660,7 +6659,7 @@
         "repo": "heygetonmylevel",
         "file": ".github/workflows/search-console-daily.yml",
         "crons": [
-          "CRON_TZ=America/Chicago 55 1 * * *"
+          "CRON_TZ=America/Chicago 55 1 * * 1"
         ]
       },
       "output": {
@@ -6821,7 +6820,7 @@
       "brand": "Dream Wedding",
       "system": "github",
       "slots": [
-        "daily 05:55"
+        "mon 05:55"
       ],
       "emails": false,
       "heavy": false,
@@ -6829,7 +6828,7 @@
         "repo": "dream-wedding-builder",
         "file": ".github/workflows/brand-social-metrics.yml",
         "crons": [
-          "CRON_TZ=America/Chicago 55 5 * * *"
+          "CRON_TZ=America/Chicago 55 5 * * 1"
         ]
       },
       "output": {
@@ -6869,7 +6868,7 @@
       "brand": "ApprovalPrep",
       "system": "github",
       "slots": [
-        "daily 06:10"
+        "mon 06:10"
       ],
       "emails": false,
       "heavy": false,
@@ -6877,7 +6876,7 @@
         "repo": "approvalprep",
         "file": ".github/workflows/brand-social-metrics.yml",
         "crons": [
-          "CRON_TZ=America/Chicago 10 6 * * *"
+          "CRON_TZ=America/Chicago 10 6 * * 1"
         ]
       },
       "output": {
