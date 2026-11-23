@@ -186,7 +186,7 @@ describe("Simone's morning email", () => {
     expect(s!.items[0].text).toBe("Cohesion: all clear");
     expect(s!.tone).not.toBe("alarm");
     expect(brainsSectionFor({ brainsCheck: { line: "x" } }, TUESDAY)).toBeNull();
-    expect(brainsSectionFor({}, MONDAY)!.items[0].text).toMatch(/^Cohesion: .*did not load/);
+    expect(brainsSectionFor({}, MONDAY)!.items[0].text).toMatch(/^Weekly check of the setup: .*did not load/);
     expect(brainsSectionFor({}, MONDAY)!.items[0].text).not.toMatch(/all clear/);
   });
 
