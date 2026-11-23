@@ -141,6 +141,12 @@ describe("promptLeak, the check the Monday cycle runs on each prompt before its 
     expect(promptLeak({ fit: msg("Calm voice."), bare, rulings: rulings("Calm."), terms })).toEqual({ unread: false, private: 0, mail: 0, where: [] });
   });
 
+  it("a personal address ends at the provider's own domain; a brand host that starts with a provider word is not one", () => {
+    const none = { names: [], mails: [] };
+    for (const t of ["write to zz.placeholder@gmail.com.", "zz@yahoo.co.uk", "(zz@outlook.com)", "zz@me.com, then", "ZZ@ICLOUD.COM"]) expect(leaksIn(t, none).mail, t).toBe(1);
+    for (const t of ["hello@live.brand.com", "x@mac.brand.co", "team@me.brandname.io", "help@gmail.company.org", "support@keepmyproof.com"]) expect(leaksIn(t, none).mail, t).toBe(0);
+  });
+
   it("no private word known, or a failed read, is unread, never clean", () => {
     for (const t of [{ names: [], mails: [] }, null]) expect(promptLeak({ fit: msg("Calm."), bare, rulings: rulings("Calm."), terms: t }).unread).toBe(true);
   });

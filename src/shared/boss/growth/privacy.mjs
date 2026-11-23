@@ -16,7 +16,9 @@
  */
 import { confidentialSpans, stripConfidential } from "../brains/brain.mjs";
 
-export const PERSONAL_MAIL_RE = /[\w.+-]+@(?:gmail|googlemail|yahoo|ymail|icloud|me|mac|hotmail|outlook|live|aol|proton|protonmail)\.[a-z.]+/gi;
+// The provider's own domain ends the address (gmail.com, yahoo.co.uk), so a brand's own host that starts
+// with a provider word (hello@live.brand.com, x@mac.brand.co) is not a personal address.
+export const PERSONAL_MAIL_RE = /[\w.+-]+@(?:gmail|googlemail|yahoo|ymail|icloud|me|mac|hotmail|outlook|live|aol|proton|protonmail)\.[a-z]{2,3}(?:\.[a-z]{2})?(?![\w-])(?!\.\w)/gi;
 const MAIL_RE = /[\w.+-]+@[\w-]+(?:\.[\w-]+)+/g;
 const NAME_RE = /\b[A-Z][a-z]{2,}\b/g;
 export const wordsOf = (text) => new Set(String(text).toLowerCase().match(/[a-z]+/g) ?? []);

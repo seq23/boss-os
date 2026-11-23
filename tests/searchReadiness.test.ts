@@ -13,7 +13,7 @@ import {
   morningLines, haversineMiles, workQueue, queueRunLine, repairLine, definitionChoice, nextFixStatus,
   indexnowKeyFiles, INDEXNOW_KEY_NAME, entityFor, SPRY_LABS_ID, ENTITY_PARENTS,
   siteSection, loopConfigFor, oneActionOf, actionMatches, searchLanes,
-  failureSplit, splitLine, currentBriefs, auditHost, socialCardPage,
+  failureSplit, splitLine, currentBriefs, auditHost, socialCardPage, clarityInBundles, MAX_BUNDLES,
 } from "../src/shared/boss/searchReadiness/audit.mjs";
 import { parseRepoCategories } from "../src/shared/boss/repos/categories.mjs";
 import { renderChecklistPage, loadTemplate, standingsSummary, renderStandings } from "../src/shared/boss/searchReadiness/page.mjs";
@@ -727,14 +727,48 @@ describe("known limits and one page counted once (25 Oct 2026)", () => {
       expect(CHECKS.clarity!({ site: s, home: { html: "<html></html>" }, files: {} } as any).detail).toContain(s.clarity_why);
     }
   });
-  it("time-2-read.com is marked off (22 Nov 2026, under-18 site): e6/i8 and e9 pass with the reason shown", () => {
+  it("time-2-read.com is marked off (under-18 site): with no tag anywhere, e6/i8 and e9 pass and show the reason", () => {
     const t2r = sites.grid_repos.find((s: any) => s.domain === "time-2-read.com");
     expect(t2r.clarity).toBe(false);
-    expect(t2r.clarity_why).toBe("removed 22 Nov 2026: Microsoft Clarity is not for under-18 sites (dailystory #182)");
     const page = { url: "https://time-2-read.com/signup/", status: 200, html: '<html><body><form action="/api/lead"><input name=email></form></body></html>' };
     for (const check of [CHECKS.clarity!, CHECKS.clarity_scoped!]) {
       const r = check({ site: t2r, host: t2r.domain, home: { url: "https://time-2-read.com/", html: "<html></html>" }, files: {}, pages: [page] } as any);
-      expect(r).toMatchObject({ status: "pass", detail: `Clarity not used on this site: ${t2r.clarity_why}` });
+      expect(r.status).toBe("pass");
+      expect(r.detail).toContain(t2r.clarity_why);
+    }
+  });
+  it("a tag the site's own bundle injects is found: the mark fails on it, and an unread bundle is never clean", async () => {
+    // time-2-read.com, 22 Nov 2026: the page HTML had no Clarity tag; the app's bundle wrote one in for signed-out visitors.
+    const html = '<html><head><script src="https://cdn.other.example/lib.js"></script><script type="module" src="/assets/index-a1.js"></script>'
+      + '<script src="/assets/vendor-b2.js"></script></head><body><div id="root"></div></body></html>';
+    const bundles: Record<string, string> = {
+      "https://x.example/assets/index-a1.js": 'function boot(){render(App)}',
+      "https://x.example/assets/vendor-b2.js": 'if(!user){const e=document.createElement("script");e.async=!0,e.src="https://www.clarity.ms/tag/abc",document.head.appendChild(e)}',
+    };
+    const asked: string[] = [];
+    const get = async (u: string) => { asked.push(u); return u in bundles ? { status: 200, text: bundles[u] } : { status: 404, text: "" }; };
+    const found = await clarityInBundles(html, "https://x.example/", get);
+    expect(found).toEqual({ loader: "https://x.example/assets/vendor-b2.js", unread: [] });
+    expect(asked).not.toContain("https://cdn.other.example/lib.js"); // another host's script is not this site's bundle
+    // A clean bundle reads clean; one that does not answer is unread, never clean.
+    expect(await clarityInBundles('<script src="/assets/index-a1.js"></script>', "https://x.example/", get)).toEqual({ loader: null, unread: [] });
+    const down = async () => { throw new Error("ECONNRESET"); };
+    expect(await clarityInBundles('<script src="/assets/index-a1.js"></script>', "https://x.example/", down)).toEqual({ loader: null, unread: ["https://x.example/assets/index-a1.js"] });
+    expect(await clarityInBundles('<script src="/a.js"></script>', "https://x.example/", async () => ({ status: 500, text: "" }))).toEqual({ loader: null, unread: ["https://x.example/a.js"] });
+    // The read is bounded: a page with many scripts costs at most MAX_BUNDLES fetches.
+    asked.length = 0;
+    await clarityInBundles(Array.from({ length: 30 }, (_, i) => `<script src="/s${i}.js"></script>`).join(""), "https://x.example/", get);
+    expect(asked.length).toBe(MAX_BUNDLES);
+    // What the audit hands the checks: the bundle's URL fails the mark; an unread bundle fails it too.
+    const site = { domain: "x.example", clarity: false, clarity_why: "removed: not for this audience, in her words" };
+    const quiet = { url: "https://x.example/", status: 200, html };
+    for (const check of [CHECKS.clarity!, CHECKS.clarity_scoped!]) {
+      const hit = check({ site, host: "x.example", home: quiet, files: { __clarity_loader: found.loader }, pages: [quiet] } as any);
+      expect(hit.status).toBe("fail");
+      expect(hit.detail).toContain("https://x.example/assets/vendor-b2.js");
+      const unread = check({ site, host: "x.example", home: quiet, files: { __bundles_unread: ["https://x.example/assets/index-a1.js"] }, pages: [quiet] } as any);
+      expect(unread.status).toBe("fail");
+      expect(unread.detail).toContain("https://x.example/assets/index-a1.js");
     }
   });
   it("a clarity: false mark with no reason fails, and so does one over a page that still loads Clarity", () => {
@@ -754,7 +788,9 @@ describe("known limits and one page counted once (25 Oct 2026)", () => {
       expect(onPage.status).toBe("fail");
       expect(onPage.detail).toMatch(/x\.example\/buy\//);
       expect(check({ site, host: "x.example", home: quiet, files: { __clarity_loader: true }, pages: [quiet] } as any).status).toBe("fail");
-      expect(check({ site, host: "x.example", home: quiet, files: {}, pages: [quiet] } as any)).toMatchObject({ status: "pass", detail: `Clarity not used on this site: ${site.clarity_why}` });
+      const clean = check({ site, host: "x.example", home: quiet, files: {}, pages: [quiet] } as any);
+      expect(clean.status).toBe("pass");
+      expect(clean.detail).toContain(site.clarity_why);
     }
   });
   it("a known limit stays in the queue with its reason and is never workable", () => {

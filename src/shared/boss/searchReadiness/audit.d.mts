@@ -75,6 +75,10 @@ export function searchLanes(ctx: any): { line: string } | null;
 export function laneMorningLines(siteResults: any[]): string[];
 export function auditHost(domain: string, finalUrl: string | null | undefined): string;
 export function socialCardPage<P extends { url: string; final?: string | null; status: unknown; html?: string | null }>(domain: string, pages: P[] | null | undefined): P | null;
+/** How many of the homepage's own scripts are read for a Clarity tag they inject. */
+export const MAX_BUNDLES: number;
+/** The homepage's same-origin scripts, read for an injected Clarity tag; a script that does not answer 200 is unread. */
+export function clarityInBundles(html: string, base: string, get: (url: string) => Promise<{ status: number | null; text?: string } | null>): Promise<{ loader: string | null; unread: string[] }>;
 export function currentBriefs(checklist: any, briefs: unknown[]): any[];
 export const NEW_WINDOW_DAYS: number;
 export type FailureSplit = { total: number; new_sites: number; slipped_back: number; new_items: number; still_open: number; groups: { new_sites: string[]; slipped_back: string[]; new_items: string[]; still_open: string[] } };

@@ -1296,21 +1296,7 @@ function ownHosts(ctx, e) {
 export const CLARITY_RE = /clarity\.ms|clarity\.js|\/clarity[-.]/i;
 
 /** Privacy disclosures and documentation links do not load a recording script. */
-export /**
- * A site marked `clarity: false` in sites.json (e6/i8 and e9). The mark is a ruling, so it carries her
- * reason (`clarity_why`) or it fails; and a site marked off that still loads Clarity on the homepage or a
- * sampled page fails, so the mark can never hide a live tag (time-2-read.com, 22 Nov 2026: Microsoft
- * Clarity is not for under-18 sites). null = the site is not marked off.
- */
-function clarityOff(ctx) {
-  if (ctx.site?.clarity !== false) return null;
-  const why = String(ctx.site.clarity_why ?? "").trim();
-  if (!why) return fail("marked clarity: false in sites.json with no clarity_why: the exemption needs its reason");
-  const live = [ctx.home?.html && loadsClarity(ctx.home.html) ? (ctx.home.url ?? `https://${ctx.host}/`) : null, ...(ctx.pages ?? []).filter((p) => p.status === 200 && p.html && loadsClarity(p.html)).map((p) => p.url)].filter(Boolean);
-  if (live.length || ctx.files?.__clarity_loader) return fail(`marked clarity: false (${why}) but Clarity still loads: ${live.length ? list([...new Set(live)]) : "the repo's Clarity loader"}`, { evidence: live });
-  return pass(`Clarity not used on this site: ${why}`);
-}
-function loadsClarity(html) {
+export function loadsClarity(html) {
   const active = String(html ?? "").replace(/<!--[\s\S]*?-->/g, "")
     .replace(/<(template|noscript)\b[^>]*>[\s\S]*?<\/\1>/gi, "");
   return [...active.matchAll(/<script\b([^>]*)>([\s\S]*?)<\/script>/gi)].some((m) => {
@@ -1318,6 +1304,48 @@ function loadsClarity(html) {
     if (a.type && !/^(?:module|(?:text|application)\/(?:java|ecma)script)$/i.test(a.type.trim())) return false;
     return CLARITY_RE.test(a.src ?? "") || (!a.src && CLARITY_RE.test(m[2]));
   });
+}
+
+/**
+ * A site marked `clarity: false` in sites.json (e6/i8 and e9). The mark is a ruling, so it carries her
+ * reason (`clarity_why`) or it fails. A site marked off that still loads Clarity fails: on the homepage
+ * or a sampled page, or from a script bundle of its own that starts it (`__clarity_loader`, from
+ * clarityInBundles: time-2-read.com's app injects the tag from its JS bundle, 22 Nov 2026), so the mark
+ * can never hide a live tag. A bundle that could not be read is not evidence of none: that fails too.
+ * null = the site is not marked off.
+ */
+function clarityOff(ctx) {
+  if (ctx.site?.clarity !== false) return null;
+  const why = String(ctx.site.clarity_why ?? "").trim();
+  if (!why) return fail("marked clarity: false in sites.json with no clarity_why: the exemption needs its reason");
+  const loader = ctx.files?.__clarity_loader;
+  const live = [ctx.home?.html && loadsClarity(ctx.home.html) ? (ctx.home.url ?? `https://${ctx.host}/`) : null,
+    ...(ctx.pages ?? []).filter((p) => p.status === 200 && p.html && loadsClarity(p.html)).map((p) => p.url),
+    typeof loader === "string" ? `the script ${loader}` : loader ? "the homepage's Clarity loader" : null].filter(Boolean);
+  if (live.length) return fail(`marked clarity: false (${why}) but Clarity still loads: ${list([...new Set(live)])}`, { evidence: live });
+  const unread = ctx.files?.__bundles_unread ?? [];
+  if (unread.length) return fail(`marked clarity: false (${why}) but ${unread.length === 1 ? "a script" : `${unread.length} scripts`} of the homepage could not be read, so Clarity is not ruled out: ${list(unread)}`, { evidence: unread });
+  return pass(`Clarity not used on this site: ${why}`);
+}
+
+/** How many of the homepage's own scripts are read for a Clarity tag they inject. */
+export const MAX_BUNDLES = 8;
+/**
+ * The homepage's SAME-ORIGIN scripts (an app's bundles), read for a Clarity tag they inject at runtime,
+ * which the page HTML never shows. `get(url)` → { status, text }. Returns { loader: url | null, unread:
+ * [url] }: a script that does not answer 200 is unread, never clean. Other hosts' scripts are not read.
+ */
+export async function clarityInBundles(html, base, get) {
+  let origin; try { origin = new URL(base).origin; } catch { return { loader: null, unread: [String(base)] }; }
+  const srcs = [...new Set(tags(html, "script").map((t) => t.src).filter(Boolean).map((s) => { try { return new URL(s, base).href; } catch { return null; } })
+    .filter((u) => u && new URL(u).origin === origin))].slice(0, MAX_BUNDLES);
+  const unread = [];
+  for (const u of srcs) {
+    const r = await get(u).catch(() => null);
+    if (r?.status !== 200 || typeof r.text !== "string") { unread.push(u); continue; }
+    if (CLARITY_RE.test(r.text)) return { loader: u, unread };
+  }
+  return { loader: null, unread };
 }
 
 /** A page where a visitor fills a form or buys: a real <form>, or a link to a checkout. */
