@@ -496,7 +496,10 @@ const SEC = (color = C.muted) => `style="margin:18px 0 8px;font-size:12px;font-w
  * for good" and "See it" were 17 px text links, one line apart). Inline links inside a sentence stay
  * links; anything that stands alone (a row's Open / Drop, an item's link, a section's link) is a button.
  */
-const BTN = (primary) => `style="display:inline-block;margin:0 8px 8px 0;padding:11px 14px;border-radius:8px;font-size:14px;font-weight:600;text-decoration:none;white-space:nowrap;border:1px solid ${C.link};${primary ? `background:${C.link};color:#ffffff` : `background:#ffffff;color:${C.link}`}"`;
+// A short label stays on one line ("Drop / for / good" stacked in a narrow cell); a long one may wrap but
+// never runs past its card (a 48-character Spirit link pushed the page to 393 px, sr_mwtg1musb3c8).
+const BTN_ONE_LINE_MAX = 28;
+const BTN = (primary, label = "") => `style="display:inline-block;max-width:100%;box-sizing:border-box;margin:0 8px 8px 0;padding:11px 14px;border-radius:8px;font-size:14px;font-weight:600;text-decoration:none;${String(label).length <= BTN_ONE_LINE_MAX ? "white-space:nowrap;" : ""}border:1px solid ${C.link};${primary ? `background:${C.link};color:#ffffff` : `background:#ffffff;color:${C.link}`}"`;
 
 function cardHtml(c, n, tone = "decide") {
   const border = tone === "decide" ? C.decideBorder : C.line;
@@ -507,7 +510,7 @@ function cardHtml(c, n, tone = "decide") {
     + (c.details.length ? `<ul style="margin:0 0 10px;padding-left:18px;font-size:13px">${c.details.map((d) => `<li>${linkify(d)}</li>`).join("")}</ul>` : "")
     + (c.draft ? `<p style="margin:0 0 4px;font-size:12px;font-weight:600;color:${C.muted}">${esc(c.draft.heading)}</p>`
       + `<div style="margin:0 0 10px;padding:10px 12px;border-left:3px solid ${C.decideBorder};background:#ffffff;white-space:pre-wrap"><!--prose-->${esc(c.draft.text)}<!--/prose--></div>` : "")
-    + (c.buttons.length ? `<div>${c.buttons.map((b, i) => `<a href="${esc(b.url)}" ${BTN(i === 0)}>${esc(b.label)}</a>`).join("")}</div>` : "")
+    + (c.buttons.length ? `<div>${c.buttons.map((b, i) => `<a href="${esc(b.url)}" ${BTN(i === 0, b.label)}>${esc(b.label)}</a>`).join("")}</div>` : "")
     + `</div>`;
 }
 
@@ -567,17 +570,17 @@ function sectionHtml(sec) {
       + sec.rows.data.map((r) => {
         const links = [[r.url, r.url_label], [r.url2, r.url2_label]].filter(([u]) => u);
         return `<tr>${sec.rows.columns.map((c, i) => `<td ${td(!links.length)}>${i === 0 ? `<b>${esc(cell(r, c.key))}</b>` : esc(cell(r, c.key))}</td>`).join("")}</tr>`
-          + (links.length ? `<tr><td colspan="${n}" ${td(true)}>${links.map(([u, l]) => `<a href="${esc(u)}" ${BTN(false)}>${esc(l ?? linkLabel(u))}</a>`).join("")}</td></tr>` : "");
+          + (links.length ? `<tr><td colspan="${n}" ${td(true)}>${links.map(([u, l]) => `<a href="${esc(u)}" ${BTN(false, l ?? linkLabel(u))}>${esc(l ?? linkLabel(u))}</a>`).join("")}</td></tr>` : "");
       }).join("")
       + `</table>`;
   }
   if (sec.cards.length) { any = true; inner += sec.cards.map((c, i) => cardHtml(c, i + 1, "plain")).join(""); }
   if (sec.items.length) {
     any = true;
-    inner += sec.items.map((i) => `<p ${P}>${i.runs ? proseHtml(i.runs) : linkify(i.text)}</p>${i.links.length ? `<p style="margin:0 0 4px">${i.links.map((l) => `<a href="${esc(l.url)}" ${BTN(false)}>${esc(l.label)}</a>`).join("")}</p>` : ""}`).join("");
+    inner += sec.items.map((i) => `<p ${P}>${i.runs ? proseHtml(i.runs) : linkify(i.text)}</p>${i.links.length ? `<p style="margin:0 0 4px">${i.links.map((l) => `<a href="${esc(l.url)}" ${BTN(false, l.label)}>${esc(l.label)}</a>`).join("")}</p>` : ""}`).join("");
   }
   if (!any && sec.empty) { any = true; inner += `<p ${P}>${esc(sec.empty)}</p>`; }
-  if (sec.link) { any = true; inner += `<p style="margin:4px 0 0"><a href="${esc(sec.link.url)}" ${BTN(false)}>${esc(sec.link.label)}</a></p>`; }
+  if (sec.link) { any = true; inner += `<p style="margin:4px 0 0"><a href="${esc(sec.link.url)}" ${BTN(false, sec.link.label)}>${esc(sec.link.label)}</a></p>`; }
   if (sec.full) {
     any = true;
     // One prose mark around each block, not each line: the gate reads the same words, the email is lighter.
