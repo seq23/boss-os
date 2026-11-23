@@ -287,6 +287,22 @@ describe("the Monday email section", () => {
     expect(two.lines.filter((l: any) => /No number/.test(l.text ?? l))).toHaveLength(2);
   });
 
+  it("the closing line counts the other rows as they are, and the counts add up to the rows (23 Nov 2026)", () => {
+    const miss = judge({ row: ROW, record: null, reading: R(4, 0), today: "2026-12-01" });
+    const paused = judge({ row: ROW, record: { ...miss.record, bOn: "2026-10-31", missed: "first" }, reading: R(4, 0), today: "2026-12-01" });
+    const mk = (id: string, reading: any, today: string) => ({ row: { ...ROW, id, initiative: `Row ${id}` }, res: judge({ row: { ...ROW, id, initiative: `Row ${id}` }, record: null, reading, today }) });
+    const fine = ["f1", "f2"].map((id) => mk(id, R(20, 0), "2026-12-01"));
+    const young = ["y1", "y2", "y3"].map((id) => mk(id, R(1, 1), "2026-11-02"));
+    const lineOf = (xs: typeof fine) => {
+      const s = emailSection([paused, ...xs.map((x) => x.res)], [ROW, ...xs.map((x) => x.row)], { today: "2026-12-01", links });
+      return s.lines.map((l: any) => (typeof l === "string" ? l : l.text)).find((t: string) => /Scorecard page/.test(t)) ?? "";
+    };
+    const both = /Of the other (\d+), (\d+) are on track and (\d+) are too early to judge\./.exec(lineOf([...fine, ...young]));
+    expect(both?.slice(1).map(Number)).toEqual([5, 2, 3]);
+    expect(/The other (\d+) are too early to judge\./.exec(lineOf(young))?.[1]).toBe("3");
+    expect(lineOf([mk("y9", R(1, 1), "2026-11-02")])).toMatch(/^The other row is too early to judge\./);
+  });
+
   it("reaches Simone's morning email as its own section, not dropped by the plain-words gate", () => {
     const miss = judge({ row: ROW, record: null, reading: R(4, 0), today: "2026-12-01" });
     const s = emailSection([miss], [ROW], { today: "2026-12-01", links });

@@ -106,3 +106,61 @@ export function clockRowProblems(manifest, repo = "boss-os") {
   }
   return out;
 }
+
+const DAY_WORDS = { mon: "Mon", tue: "Tue", wed: "Wed", thu: "Thu", fri: "Fri", sat: "Sat", sun: "Sun" };
+const clock12 = (hhmm) => {
+  const [h = 0, m = 0] = String(hhmm).split(":").map(Number);
+  return `${h % 12 === 0 ? 12 : h % 12}:${String(m).padStart(2, "0")} ${h < 12 ? "am" : "pm"}`;
+};
+
+/** One Schedule slot in plain words (Central): "Mon & Fri 8:00 am", "Every day 6:15 am", "Every 5 minutes". Pure. */
+export function slotWords(slot) {
+  if (slot === "always") return "Always on";
+  let m = /^every (\d+)([sm])$/.exec(slot);
+  if (m) { const mins = m[2] === "s" ? Math.round(Number(m[1]) / 60) : Number(m[1]); return mins <= 1 ? "Every minute" : `Every ${mins} minutes`; }
+  m = /^hourly :(\d\d)$/.exec(slot);
+  if (m) return `Every hour at :${m[1]}`;
+  m = /^(\S+) (\d\d:\d\d)(?:-(\d\d:\d\d)\/(\d+)m)?$/.exec(slot);
+  if (!m) return slot;
+  const [, d = "", start = "00:00", end, step] = m;
+  const days = d === "daily" ? "Every day"
+    : d === "mon,tue,wed,thu,fri" ? "Weekdays"
+    : d.startsWith("day") ? `Monthly, the ${d.split(",").map((x) => x.slice(3)).join(" & ")}`
+    : d.split(",").map((x) => DAY_WORDS[x] ?? x).join(" & ");
+  return end ? `${days}, every ${step} min, ${clock12(start)}–${clock12(end)}` : `${days} ${clock12(start)}`;
+}
+
+const MONTH_WORDS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+const DOW_KEYS = ["sun", "mon", "tue", "wed", "thu", "fri", "sat"];
+
+/**
+ * The next instant at or after `nowMs` that a "<days> HH:MM" Schedule slot fires (Central wall clock,
+ * so a clock change moves the instant, never the 10:15 pm), or null for a slot that is not a plain
+ * day-and-time ("always", "every 5m", ranges). Pure.
+ */
+export function nextSlotAt(slot, nowMs) {
+  const m = /^(\S+) (\d\d):(\d\d)$/.exec(String(slot));
+  if (!m || !Number.isFinite(nowMs)) return null;
+  const [, d = "", hh = "0", mm = "0"] = m;
+  const days = d === "daily" ? DOW_KEYS : d === "mon,tue,wed,thu,fri" ? DOW_KEYS.slice(1, 6) : d.split(",");
+  if (!days.every((x) => DOW_KEYS.includes(x))) return null;
+  for (let i = 0; i <= 8; i++) {
+    const w = wallParts(nowMs + i * 86_400_000);
+    if (!days.includes(DOW_KEYS[w.dow])) continue;
+    // Central is UTC-5 or UTC-6: the right one is the instant that reads back as that wall time.
+    for (const off of [5, 6]) {
+      const at = Date.UTC(w.year, w.month - 1, w.day, Number(hh) + off, Number(mm));
+      const back = wallParts(at);
+      if (back.day === w.day && back.hour === Number(hh) && back.minute === Number(mm) && at >= nowMs) return at;
+    }
+  }
+  return null;
+}
+
+/** When the next of a job's slots fires, in her words: "Sun 29 Nov, 10:15 pm CT"; null when none can be dated. Pure. */
+export function nextRunWords(slots, nowMs) {
+  const next = (slots ?? []).map((s) => nextSlotAt(s, nowMs)).filter((v) => v !== null).sort((a, b) => a - b)[0];
+  if (next == null) return null;
+  const w = wallParts(next);
+  return `${["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"][w.dow]} ${w.day} ${MONTH_WORDS[w.month - 1]}, ${clock12(`${w.hour}:${w.minute}`)} CT`;
+}

@@ -1159,11 +1159,9 @@ export function kdpStallOf(r = RUN_STALL) {
   else if (r.draftCap) blocker = { noun: [`KDP's ${KDP_DRAFT_CAP}-draft limit`], why: "unfinished drafts fill every slot" };
   if (!blocker) return {};
   if (r.setAside.length === 1 && !r.runStop) waiting = Math.max(1, r.approved - 1);
-  // Amazon's sign-in check is hers alone (a picture check or a code), so the line says what moves them.
-  const fix = ["SIGNIN", "SIGNIN_NOT_DONE", "NO_PASSCODE"].includes(r.runStop)
-    ? "To move them: when the Amazon sign-in email comes, sign in to Amazon in the Chrome window it opens on your Mac. The books then go out on the next run."
-    : null;
-  return { stall: stallFrom({ job: "kdp-new-title", what, noun, waiting, moved: r.moved, blocker, fix }) };
+  // Amazon's sign-in check is hers alone (a picture check or a code): stallFrom adds her one action
+  // for "the KDP sign-in" from HER_ACTIONS, the same words the morning banner shows.
+  return { stall: stallFrom({ job: "kdp-new-title", what, noun, waiting, moved: r.moved, blocker }) };
 }
 
 /** Plain words for a stop the code named. Pure. */
@@ -1218,16 +1216,26 @@ export function routeMessage(state, kind) {
 }
 
 /** Any of the run's messages as one line for her Updates page. Pure. */
-export const asUpdate = (key, msg) => ({ key: `kdp:${key}`, from_name: "Simone", subject: msg.subject, body: [msg.layout.happened, ...(msg.layout.details ?? [])].join(" ") });
+export const asUpdate = (key, msg) => ({ key: `kdp:${key}`, from_name: "Simone", subject: msg.subject, body: [msg.layout.happened, ...sectionWords(msg.layout.sections), ...(msg.layout.details ?? [])].join(" ") });
+/** A section's words and links as plain text, so a message routed to Updates keeps its links. Pure. */
+const sectionWords = (sections) => (sections ?? []).flatMap((sec) => [
+  ...(sec.items ?? []).map((i) => [i.text, ...(i.links ?? []).map((l) => `${l.label}: ${l.url}`)].join(" ")),
+  ...(sec.link ? [`${sec.link.label}: ${sec.link.url}`] : []),
+]);
 
 /**
- * Older unfinished copies left as drafts: optional, harmless, and where to remove them (23 Nov 2026
- * ship-review sr_mwtef1802kq3: "there" had no place, "from earlier runs" was system talk, and a task sat
- * under "Nothing to do" without saying it was optional). Pure.
+ * The leftover drafts, said once and plainly (23 Nov 2026 live read: "You can delete it there … I never
+ * make another" left "there" and "another" unclear, and read as a chore under "Nothing to do"). It is
+ * optional and harmless, and its button opens the bookshelf. It never explains the pipeline (ship-review
+ * sr_mwtfuyksuvpy: "a run resumes the draft" made deleting it sound unsafe). Pure: `[]` or one section.
  */
-export function olderDraftsLine(n, what) {
+export function extraDraftsSection(n, books = 1) {
+  if (!(n > 0)) return [];
   const one = n === 1;
-  return `Optional: ${n} older unfinished cop${one ? "y" : "ies"} of ${what} ${one ? "is" : "are"} still a draft on your KDP Bookshelf (https://kdp.amazon.com/bookshelf). Leaving ${one ? "it" : "them"} does no harm; to remove ${one ? "it" : "them"}, use the ⋯ menu on the draft and choose Delete draft. No new copies are made.`;
+  return [{ title: "Optional tidy-up", empty: null, items: [{
+    text: `Your KDP bookshelf still has ${n} unused draft${one ? "" : "s"} of ${books === 1 ? "this book" : "these books"}, left from earlier tries. ${one ? "It does" : "They do"} no harm and readers never see ${one ? "it" : "them"}. To remove ${one ? "it" : "them"}, choose Delete draft from the ⋯ menu beside ${one ? "it" : "each one"}.`,
+    links: [{ label: "Open your KDP bookshelf", url: `${KDP}/bookshelf` }],
+  }] }];
 }
 
 /** Every title that went live in this run, in ONE email. Pure. */
@@ -1236,10 +1244,9 @@ export function liveMail(books) {
   const drafts = books.reduce((n, b) => n + (b.extraDrafts ?? 0), 0);
   return {
     subject: `Kindle: ${books.length} books are live on Amazon`,
-    layout: { happened: `${books.length} of your approved Kindle books are live on Amazon: ${quoted(books.map((b) => b.title))}.`, details: [
-      ...books.map((b) => `${b.title}${b.price_usd ? `, $${Number(b.price_usd).toFixed(2)}` : ""}${b.asin ? `: https://www.amazon.com/dp/${b.asin}` : ""}`),
-      ...(drafts ? [olderDraftsLine(drafts, "these books")] : []),
-    ] },
+    // Each book's link is a button that says where it goes (23 Nov 2026 live read: "Open amazon.com").
+    layout: { happened: `${books.length} of your approved Kindle books are live on Amazon: ${quoted(books.map((b) => b.title))}.`,
+      sections: [{ title: "On Amazon", empty: null, items: books.map((b) => ({ text: `${b.title}${b.price_usd ? `, $${Number(b.price_usd).toFixed(2)}` : ""}`, links: b.asin ? [{ label: "See it on Amazon", url: `https://www.amazon.com/dp/${b.asin}` }] : [] })) }, ...extraDraftsSection(drafts, books.length)] },
     owner: { layout: "delivered", why: `${books.length} of your approved Kindle books are live.`, act: "Nothing to do" },
   };
 }
@@ -1256,11 +1263,10 @@ export function doneMail({ title, asin, price_usd, extraDrafts = 0 }) {
   return {
     subject: `Kindle: ${title} is live on Amazon`,
     // Line 1 already says the title is live; the body adds what is new (23 Nov 2026 live read: it said it twice).
-    layout: { happened: price_usd ? `It is on sale at $${Number(price_usd).toFixed(2)}.` : "It is on sale now.", details: [
-      // The link carries the ASIN; the code itself is not hers to read (23 Nov 2026 live read).
-      ...(link ? [`See the book on Amazon: ${link}`] : []),
-      ...(extraDrafts ? [olderDraftsLine(extraDrafts, "this book")] : []),
-    ] },
+    // The link carries the ASIN; the code itself is not hers to read, and the button says where it goes
+    // (23 Nov 2026 live reads).
+    layout: { happened: price_usd ? `It is on sale at $${Number(price_usd).toFixed(2)}.` : "It is on sale now.",
+      sections: [...(link ? [{ title: "The book", empty: null, link: { label: "See it on Amazon", url: link } }] : []), ...extraDraftsSection(extraDrafts, 1)] },
     owner: { layout: "delivered", why: `Your approved Kindle book "${title}" is live.`, act: "Nothing to do" },
   };
 }

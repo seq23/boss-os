@@ -19,7 +19,8 @@ describe("the weekly drift line", () => {
   it("a measure more than 25% under its best week two weeks running is flagged, with the numbers", () => {
     const l = driftLine(BRIEF, [run(5, { sources: 30, headlines: 5, sections: 11 }), run(1, { sources: 21, headlines: 5, sections: 11 }), run(0, { sources: 20, headlines: 5, sections: 11 })], NOW);
     expect(l.flagged).toBe(true);
-    expect(l.text).toMatch(/Slipping: sources 20 against a best week of 30, two weeks running/);
+    // The slip names this week's number against the best week's, so she can check it.
+    expect(l.text).toMatch(/\b20 sources\b.*\b30\b/);
   });
 
   it("one soft week is not a flag, and neither is a slide of 25% or less", () => {
@@ -27,7 +28,7 @@ describe("the weekly drift line", () => {
     expect(oneWeek.flagged).toBe(false);
     const small = driftLine(BRIEF, [run(5, { sources: 30, headlines: 5, sections: 11 }), run(1, { sources: 23, headlines: 5, sections: 11 }), run(0, { sources: 23, headlines: 5, sections: 11 })], NOW);
     expect(small.flagged).toBe(false);
-    expect(small.text).toMatch(/Holding\./);
+    expect(small.text, "a line that is not flagged never says it slipped").not.toMatch(/slipped|fell short/);
   });
 
   it("one exceptional morning does not flag every ordinary week after it: a week is measured against the best WEEK", () => {
@@ -35,30 +36,40 @@ describe("the weekly drift line", () => {
     const runs = [day(30, 52), ...[29, 28, 27, 26].map((d) => day(d, 30)), ...[13, 12, 11, 10, 9].map((d) => day(d, 30)), ...[6, 5, 4, 3, 2, 1, 0].map((d) => day(d, 30))];
     const l = driftLine(BRIEF, runs, NOW);
     expect(l.flagged).toBe(false);
-    expect(l.text).toMatch(/^Daily briefing: averaging 30 sources this week, best earlier week 37,/);
+    expect(Math.round(l.measures[0]!.best!)).toBe(37);
+    expect(l.text).toMatch(/^Daily briefing: 30 sources on average this week \(.*\b37 at its best before\)/);
+    expect(l.text).not.toMatch(/\b52\b/);
   });
 
   it("a run of weeks never lists unmeasured weeks, and one of a thing is singular (23 Nov 2026 live read)", () => {
     const l = driftLine(BRIEF, [run(2, { sources: 28, headlines: 5, sections: 11 }), run(0, { sources: 34, headlines: 5, sections: 11 })], NOW);
     expect(l.measures[0]!.trend.filter((v) => v === null).length).toBeGreaterThan(0);
     expect(l.text).not.toMatch(/not measured, /);
-    expect(l.text).toMatch(/recent weeks 28, 34/);
+    expect(l.text, "an unmeasured last week is left out, never said as a number").not.toMatch(/last week/);
+    const lastWeek = driftLine(BRIEF, [run(1, { sources: 28, headlines: 5, sections: 11 }), run(0, { sources: 34, headlines: 5, sections: 11 })], NOW);
+    expect(lastWeek.text).toMatch(/\b34 sources this week \(28 last week, 28 at its best before\)/);
     const one = driftLine(BRIEF, [run(0, { sources: 1, headlines: 5, sections: 11 })], NOW);
     expect(one.text).toMatch(/1 source this week/);
   });
 
   it("a floor miss this week is flagged whatever the trend", () => {
-    const l = driftLine(BRIEF, [run(0, { sources: 30, headlines: 4, sections: 11 }, false)], NOW);
+    const miss = { ...run(0, { sources: 30, headlines: 4, sections: 11 }, false), misses: ["4 headlines (the floor is 5)"] };
+    const l = driftLine(BRIEF, [miss, { ...run(0, { sources: 30, headlines: 5, sections: 11 }), at: miss.at - 3600_000 }], NOW);
     expect(l.flagged).toBe(true);
-    expect(l.text).toMatch(/Missed its standard once this week/);
+    // How many runs fell short, of how many, and what the standard was, from the floor check's own words.
+    expect(l.text).toMatch(/1 of its 2 runs this week fell short of its standard; the latest time, 4 headlines \(the floor is 5\)\./);
+    expect(driftLine(BRIEF, [run(0, { sources: 30, headlines: 4, sections: 11 }, false)], NOW).text).toMatch(/Its one run this week fell short of its standard\./);
   });
 
   it("nothing checked this week reads 'not measured', never as fine; a measure nobody recorded is named", () => {
     const none = driftLine(BRIEF, [run(3, { sources: 30 })], NOW);
-    expect(none.text).toBe("Daily briefing: not measured this week (no run was checked).");
+    expect(none.flagged).toBe(false);
+    expect(none.text).toMatch(/^Daily briefing: no run was checked this week/);
+    expect(none.text, "never read as fine").not.toMatch(/keeping its standard/);
     const partial = driftLine(BRIEF, [run(0, { sources: 24, headlines: 5, sections: 11, sources_reachable: "not read: no source answered the check at all" })], NOW);
-    expect(partial.text).toMatch(/Not measured: sources that open\./);
-    expect(partial.text).toMatch(/no earlier week on record yet/);
+    expect(partial.text).toMatch(/Not measured this week: sources that open\./);
+    expect(partial.measures[0]!.best).toBeNull();
+    expect(partial.text).toMatch(/first week on record/);
     expect(partial.measures[0]!.trend).toEqual([null, null, null, 24]);
   });
 
@@ -71,8 +82,11 @@ describe("the weekly drift line", () => {
     const tools = r.lines.find((l) => l.deliverable === "tool_suggestions")!;
     expect(tools).toMatchObject({ flagged: false, runs_this_week: 1, routes: ["bk_codex"] });
     expect(tools.text).toMatch(/^Tools worth knowing: 5 new tools this week/);
-    expect(r.lines.find((l) => l.deliverable === "link_prospects")!.flagged).toBe(true);
-    expect(r.lines.find((l) => l.deliverable === "executive_reports")!.text).toMatch(/not measured this week/);
+    const links = r.lines.find((l) => l.deliverable === "link_prospects")!;
+    expect(links.flagged).toBe(true);
+    // The standard it missed is named from the stored floor check, never left as a bare "its standard".
+    expect(links.text).toMatch(/Its one run this week fell short of its standard; the latest time, it delivered zero prospects\./);
+    expect(r.lines.find((l) => l.deliverable === "executive_reports")!.text).toMatch(/no run was checked this week/);
   });
 });
 

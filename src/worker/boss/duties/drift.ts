@@ -41,7 +41,7 @@ export async function recordMeasures(env: DB, a: { deliverable: string; taskId?:
   }
 }
 
-interface Run { at: number; pass: boolean; route: string | null; measured: Record<string, unknown> }
+interface Run { at: number; pass: boolean; route: string | null; measured: Record<string, unknown>; misses?: string[] }
 const num = (v: unknown): number | null => (typeof v === "number" && Number.isFinite(v) ? v : null);
 const mean = (xs: number[]): number | null => (xs.length ? xs.reduce((a, b) => a + b, 0) / xs.length : null);
 const show = (v: number | null): string => (v === null ? "not measured" : String(Math.round(v)));
@@ -71,7 +71,11 @@ export function driftLine(d: (typeof DELIVERABLES)[number], runs: Run[], now: nu
     const past = Array.from({ length: PAST_WEEKS }, (_, i) => at(i + 1)).filter((v): v is number => v !== null);
     return { name, words, this_week: at(0), best: past.length ? Math.max(...past) : null, trend };
   });
-  const misses = thisWeek.filter((r) => !r.pass).length;
+  const short = thisWeek.filter((r) => !r.pass);
+  const misses = short.length;
+  // What the newest short run missed, in the floor check's own words ("3 new firms (the floor is 5)"),
+  // so "its standard" is never left for her to guess (ship-review sr_mwtfu3xi47nr, 23 Nov 2026).
+  const latestMiss = [...short].sort((a, b) => b.at - a.at).flatMap((r) => r.misses ?? []).find((m) => typeof m === "string" && m.trim()) ?? null;
   // Slipping: more than 25% under the best run this week AND the week before.
   const under = (v: number | null, b: number | null) => v !== null && b !== null && b > 0 && v < b * (1 - DRIFT.slip);
   const slipped = measures.filter((m) => under(m.this_week, m.best) && under(m.trend[DRIFT.weeks - 2] ?? null, m.best));
@@ -79,20 +83,23 @@ export function driftLine(d: (typeof DELIVERABLES)[number], runs: Run[], now: nu
   const lead = measures[0]!;
   let text: string;
   if (thisWeek.length === 0) {
-    text = `${d.label}: not measured this week (no run was checked).`;
+    text = `${d.label}: no run was checked this week, so there is no number.`;
   } else {
     // 23 Nov 2026 live read: "averaging 34 sources this week, best week 28, last four weeks not
     // measured, not measured, 28, 34" read as this week beating its best, and "1 new firms" as a
-    // typo. "Best" is the best EARLIER week, said so; unmeasured weeks are left out of the run of
-    // weeks (said only when two or more were measured); one of a thing is singular.
+    // typo. "Best" is the best EARLIER week, said so; one of a thing is singular. The second read the
+    // same day: "best earlier week 0, recent weeks 0, 2. Holding." is a report, not a sentence, so the
+    // line says this week, last week and the best week before in words, then one plain verdict.
     const unit = (v: number | null, w: string) => (v !== null && Math.round(v) === 1 ? w.replace(/s\b/, "") : w);
-    const seen = lead.trend.filter((v): v is number => v !== null);
-    const bits = [`${thisWeek.length > 1 ? "averaging " : ""}${show(lead.this_week)} ${unit(lead.this_week, lead.words)} this week`, lead.best === null ? "no earlier week on record yet" : `best earlier week ${show(lead.best)}`, ...(seen.length >= 2 ? [`recent weeks ${seen.map(show).join(", ")}`] : [])];
+    const last = lead.trend[DRIFT.weeks - 2] ?? null;
+    const was = [last !== null ? `${show(last)} last week` : null, lead.best === null ? "the first week on record" : `${show(lead.best)} at its best before`].filter(Boolean);
+    const head = `${show(lead.this_week)} ${unit(lead.this_week, lead.words)}${thisWeek.length > 1 ? " on average" : ""} this week (${was.join(", ")})`;
     const unmeasured = measures.filter((m) => m.this_week === null).map((m) => m.words);
-    const verdict = misses > 0 ? `Missed its standard ${misses === 1 ? "once" : `${misses} times`} this week.`
-      : slipped.length ? `Slipping: ${slipped.map((m) => `${m.words} ${show(m.this_week)} against a best week of ${show(m.best)}`).join("; ")}, two weeks running.`
-      : "Holding.";
-    text = `${d.label}: ${bits.join(", ")}. ${verdict}${unmeasured.length ? ` Not measured: ${unmeasured.join(", ")}.` : ""}`;
+    const shortRuns = thisWeek.length === 1 ? "Its one run this week" : `${misses} of its ${thisWeek.length} runs this week`;
+    const verdict = misses > 0 ? `${shortRuns} fell short of its standard${latestMiss ? `; the latest time, ${latestMiss.replace(/\.$/, "")}` : ""}.`
+      : slipped.length ? `It has slipped two weeks running: ${slipped.map((m) => `${show(m.this_week)} ${m.words} against ${show(m.best)} at its best`).join("; ")}.`
+      : "It is keeping its standard.";
+    text = `${d.label}: ${head}. ${verdict}${unmeasured.length ? ` Not measured this week: ${unmeasured.join(", ")}.` : ""}`;
   }
   return {
     deliverable: d.key, label: d.label, text, flagged: misses > 0 || slipped.length > 0, measures,
@@ -106,14 +113,16 @@ export interface DriftReport { at: number; lines: DriftLine[]; reads: { delivera
 /** The week's lines and the newest monthly read (shown for the week after it lands). */
 export async function driftReport(env: DB, now = Date.now()): Promise<DriftReport> {
   const since = now - 27 * DRIFT.week_ms;
-  const rows = await env.DB.prepare(`SELECT deliverable, at, pass, route, measured FROM delivery_measures WHERE at > ? ORDER BY at DESC LIMIT 4000`).bind(since)
-    .all<{ deliverable: string; at: number; pass: number; route: string | null; measured: string }>();
+  const rows = await env.DB.prepare(`SELECT deliverable, at, pass, route, measured, misses FROM delivery_measures WHERE at > ? ORDER BY at DESC LIMIT 4000`).bind(since)
+    .all<{ deliverable: string; at: number; pass: number; route: string | null; measured: string; misses: string | null }>();
   const by = new Map<string, Run[]>();
   for (const r of rows.results ?? []) {
     let measured: Record<string, unknown> = {};
     try { const m = JSON.parse(r.measured); if (m && typeof m === "object") measured = m; } catch { measured = {}; }
+    let misses: string[] = [];
+    try { const m = JSON.parse(r.misses ?? "[]"); if (Array.isArray(m)) misses = m.filter((x): x is string => typeof x === "string"); } catch { misses = []; }
     const list = by.get(r.deliverable) ?? [];
-    list.push({ at: r.at, pass: r.pass === 1, route: r.route, measured });
+    list.push({ at: r.at, pass: r.pass === 1, route: r.route, measured, misses });
     by.set(r.deliverable, list);
   }
   const reads = await env.DB.prepare(`SELECT deliverable, verdict, why, at FROM quality_reads WHERE kind = 'monthly' AND at > ? ORDER BY at DESC`).bind(now - DRIFT.week_ms)
@@ -207,7 +216,9 @@ export async function composeQualityRead(env: DB): Promise<QualityReadAsk | null
     // must be one JSON object), so a finished read delivered nothing. The shape is now the literal file.
     "Write delivers.json in your working directory as ONE JSON object (never a bare array), then read it back and confirm it parses. Exactly this shape:",
     `  ${READS_SHAPE}`,
-    'Each "deliverable" is one of the deliverable keys above; "verdict" is "holds" or "slipped"; "why" is one or two plain sentences a person can check against the output, naming what is as good as the best example or what is worse.',
+    // 23 Nov 2026 live read: three "why"s of ~450 characters each, quoting "::" and "first-order/second-order"
+    // section labels, filled her morning email. The read is for her, on her phone.
+    'Each "deliverable" is one of the deliverable keys above; "verdict" is "holds" or "slipped"; "why" is at most two short sentences (under 50 words) a person can check against the output, naming what is as good as the best example or what is worse. Write it for her, not an engineer: everyday words, no quoted markup or symbols, no section labels or jargon.',
     `One read for each of: ${expect.join(", ")}. "holds" means it is as good as the best example in substance; "slipped" means it is not, and "why" says where.`,
   ].join("\n");
   return { prompt, expect };

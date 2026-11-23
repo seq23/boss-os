@@ -9,7 +9,8 @@ import { readdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 // @ts-expect-error — plain .mjs ops libs, no types
-import { eachItem, stallFrom, stallBanners } from "../src/shared/boss/duties/stall.mjs";
+import { eachItem, stallFrom, stallBanners, herActionFor } from "../src/shared/boss/duties/stall.mjs";
+import { nextSlotAt, nextRunWords } from "../src/shared/boss/schedule/clock.mjs";
 // @ts-expect-error — plain .mjs ops libs, no types
 import { reportStall } from "../scripts/ops/lib/stall-report.mjs";
 // @ts-expect-error — plain .mjs ops libs, no types
@@ -93,6 +94,41 @@ describe("the stall alert", () => {
     expect(before[0]).toMatch(/^Good morning\./);
     expect(e.html).toContain("10 books stuck behind 1 blocked book");
   });
+  it("the banner carries her action and a working link even when the stored row predates them (23 Nov 2026)", () => {
+    const ORIGIN = "https://boss.sequoiataylor.com";
+    // The row was written before the action existed: its next_step says only that nothing went out.
+    const stale = { id: "oloop_abc123", status: "open", source_key: "seq23/boss-os#STALLED_KDP_NEW_TITLE", title: "🔴 STOPPED: Kindle publishing — 11 books stuck behind the KDP sign-in", next_step: "Nothing went out." };
+    // Monday 23 Nov 2026, 06:40 Central: the morning email's moment.
+    const MON = Date.UTC(2026, 10, 23, 12, 40);
+    const act = herActionFor(stale.title, MON);
+    const [b] = stallBanners([stale], { origin: ORIGIN, now: MON });
+    expect(b.lines).toEqual(["Nothing went out.", act]);
+    // The action names the real run from the schedule, with its date: "Sun" alone on a Monday is ambiguous.
+    expect(b.lines[1]).toMatch(/\(Sun 29 Nov, 10:15 pm CT\)/);
+    expect(b.button).toEqual({ label: "See it on Open Loops", url: `${ORIGIN}/?tab=loops&loop=oloop_abc123` });
+    // A fresh row already carrying the action does not say it twice.
+    const fresh = kdpStallOf({ approved: 11, moved: 0, setAside: [], held: [], runStop: "SIGNIN_NOT_DONE", weekly: false, draftCap: false }).stall;
+    const [f] = stallBanners([{ ...stale, next_step: fresh.next_step }], { origin: ORIGIN, now: MON });
+    expect(f.lines.filter((l: string) => /be near your Mac/.test(l))).toHaveLength(1);
+    // A row stored a week ago carries LAST week's date: the banner says this week's, once.
+    const old = { ...stale, next_step: `Nothing went out. ${herActionFor(stale.title, MON - 7 * 86_400_000)}` };
+    const [o] = stallBanners([old], { origin: ORIGIN, now: MON });
+    expect(o.lines).toEqual(["Nothing went out.", act]);
+    expect(o.lines.join(" ")).not.toContain("22 Nov");
+    // No id: the Open Loops page itself. No https origin: no button rather than a broken one.
+    expect(stallBanners([{ ...stale, id: undefined }], { origin: ORIGIN })[0].button.url).toBe(`${ORIGIN}/?tab=loops`);
+    expect(stallBanners([stale], { origin: "" })[0]).not.toHaveProperty("button");
+    expect(stallBanners([stale], { origin: "http://boss.example.com" })[0]).not.toHaveProperty("button");
+  });
+  it("a failed Open Loops read is a banner that says so, never an empty top that reads as all clear", () => {
+    const ORIGIN = "https://boss.sequoiataylor.com";
+    for (const failed of [null, undefined, { error: "x" }]) {
+      const out = stallBanners(failed as any, { origin: ORIGIN });
+      expect(out).toHaveLength(1);
+      expect(out[0]).toMatchObject({ tone: "red", button: { url: `${ORIGIN}/?tab=loops` } });
+    }
+    expect(stallBanners([], { origin: ORIGIN }), "a read that worked and found nothing is quiet").toEqual([]);
+  });
 });
 
 /** The 16 Nov shape: inside a loop, a catch block whose own body ends the loop with a bare `break;`. */
@@ -126,5 +162,22 @@ describe("the sweep: no Mac job lets one item's failure end its whole list", () 
     expect(files.length).toBeGreaterThan(50);
     const found = files.flatMap((f) => haltingCatches(readFileSync(join(dir, f), "utf8")).map((n) => `${f}:${n}`));
     expect(found).toEqual([]);
+  });
+});
+
+describe("the next run's date (Central wall clock)", () => {
+  const at = (y: number, mo: number, d: number, h: number, mi: number, off: number) => Date.UTC(y, mo - 1, d, h + off, mi);
+  it("is the same evening just before the slot, next week just after it, and moves with the clock change", () => {
+    // Sun 29 Nov 2026 is CST (UTC-6).
+    expect(nextSlotAt("sun 22:15", at(2026, 11, 29, 22, 14, 6))).toBe(at(2026, 11, 29, 22, 15, 6));
+    expect(nextSlotAt("sun 22:15", at(2026, 11, 29, 22, 15, 6)), "the slot's own minute is that run").toBe(at(2026, 11, 29, 22, 15, 6));
+    expect(nextSlotAt("sun 22:15", at(2026, 11, 29, 22, 16, 6))).toBe(at(2026, 12, 6, 22, 15, 6));
+    // Sat 31 Oct 2026 is CDT (UTC-5); the clocks go back early on Sun 1 Nov, so that run is 22:15 CST.
+    expect(nextSlotAt("sun 22:15", at(2026, 10, 31, 12, 0, 5))).toBe(at(2026, 11, 1, 22, 15, 6));
+    expect(nextRunWords(["sun 22:15"], at(2026, 10, 31, 12, 0, 5))).toBe("Sun 1 Nov, 10:15 pm CT");
+    // The earliest of several slots; a slot that is not a day and time cannot be dated.
+    expect(nextRunWords(["sun 22:15", "wed 09:05"], at(2026, 11, 23, 6, 40, 6))).toBe("Wed 25 Nov, 9:05 am CT");
+    expect(nextSlotAt("every 5m", 0)).toBeNull();
+    expect(nextRunWords([], 0)).toBeNull();
   });
 });
