@@ -1732,6 +1732,11 @@
       "repo": "boss-os",
       "path": "scripts/ops/lib/buffer-channels.mjs",
       "why": "Reads each Buffer's channel list for the Accounts map drift check (read-only); posts nothing."
+    },
+    {
+      "repo": "boss-os",
+      "path": "scripts/ops/lib/noelle-reads.mjs",
+      "why": "Reads Buffer's queue counts (a GraphQL read) so Noelle knows what is already scheduled; it never posts. P&P posts go through the Studio's own routes."
     }
   ],
   "schedule_exempt": [

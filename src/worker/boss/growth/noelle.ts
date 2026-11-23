@@ -10,8 +10,9 @@
  *                          privacy check already run (a leak holds that business, the words never leave),
  *                          the scoreboard grid, the open linked rows, recent runs, this week's calls.
  *   POST /noelle/plan      (machine token) { day, slot, kind, calls, plan, reads, facts } → re-checked;
- *                          growth_decisions (one per business), cards for her calls, linked verdicts, the
- *                          ai-fix attempt keys; returns only the ACCEPTED acts for the Mac to carry out.
+ *                          growth_decisions (one per business), cards for her calls, linked verdicts;
+ *                          returns only the ACCEPTED acts for the Mac to carry out. The same day, slot
+ *                          and kind posted again is a replay: the first run's id, nothing accepted, no rows.
  *   POST /noelle/done      (machine token) { run, published, failed, checked } or { day, slot, kind, stop }
  *                          → the Notices lines ("Noelle published: …"), the run's end, the 14-day report.
  *
@@ -148,6 +149,7 @@ export function planProblems(body: any): string[] {
   if (!body.plan || !Array.isArray(body.plan.actions)) p.push("no plan.actions");
   else if (body.plan.actions.length > MAX_ACTIONS) p.push(`at most ${MAX_ACTIONS} actions`);
   if (!body.reads || typeof body.reads !== "object") p.push("no reads");
+  if (typeof body.slot !== "string" || !/^\d{2}:\d{2}$/.test(body.slot)) p.push("slot is HH:MM (one plan per slot)");
   if (JSON.stringify(body).length > 400_000) p.push("over 400 KB");
   return p;
 }
@@ -159,6 +161,9 @@ export function planProblems(body: any): string[] {
 export async function recordPlan(env: Env, body: any, now = Date.now()) {
   const db = env.DB;
   const today = body.day as string;
+  // A replay (the Mac retried, a second launch of the same slot): the first run stands, and nothing is acted twice.
+  const prior = await db.prepare(`SELECT id, line FROM noelle_runs WHERE day = ? AND slot = ? AND kind = ? AND state IN ('planned','done')`).bind(today, String(body.slot).slice(0, 5), body.kind).first<{ id: string; line: string | null }>();
+  if (prior) return { run: prior.id, replay: true, accepted: [], refused: [], lines: [], notices: [], roster: [], stops: [], decisions: 0 };
   const runId = newId("nrn");
   const { roster } = await loadRoster(db);
   const used = await weekCalls(db, today);
@@ -170,6 +175,15 @@ export async function recordPlan(env: Env, body: any, now = Date.now()) {
     await db.prepare(`INSERT INTO noelle_runs (id, day, slot, kind, state, stops, calls, line, created_at, updated_at) VALUES (?,?,?,?,'stopped',?,?,?,?,?)`)
       .bind(runId, today, slot, body.kind, JSON.stringify([stop.match(/\[([A-Z_]+)\]/)?.[1] ?? "WEEK_CALL_BUDGET"]), body.calls, stop, now, now).run();
     return { run: runId, accepted: [], refused: [], lines: [], stops: [stop] };
+  }
+  // Claim the slot BEFORE any row is written: two posts racing for one slot, the second meets the unique index.
+  try {
+    await db.prepare(`INSERT INTO noelle_runs (id, day, slot, kind, state, stops, calls, line, created_at, updated_at) VALUES (?,?,?,?,'planned','[]',?,'planning',?,?)`)
+      .bind(runId, today, slot, body.kind, body.calls, now, now).run();
+  } catch (e) {
+    if (!/UNIQUE/i.test(String((e as Error)?.message ?? e))) throw e;
+    const won = await db.prepare(`SELECT id FROM noelle_runs WHERE day = ? AND slot = ? AND kind = ? AND state IN ('planned','done')`).bind(today, slot, body.kind).first<{ id: string }>();
+    return { run: won?.id ?? null, replay: true, accepted: [], refused: [], lines: [], notices: [], roster: [], stops: [], decisions: 0 };
   }
   const facts = cleanFacts(body.facts);
   const { unread, ...gateFacts } = facts;
@@ -214,12 +228,6 @@ export async function recordPlan(env: Env, body: any, now = Date.now()) {
         actions.push({ kind: "linked", id: a.id, verdict: a.verdict, why: a.why });
         continue;
       }
-      if (a.kind === "ai-fix") {
-        // The attempt is counted by the AI answers week (aiAnswers.ts fixOutcome, key noelle:<decision>).
-        const r = await db.prepare(`UPDATE ai_misses SET todo_key = ?, updated_at = ? WHERE id = ? AND fixed_week IS NULL AND (todo_key IS NULL OR todo_key NOT LIKE 'noelle:%')`).bind(`noelle:${id}`, now, String(a.miss ?? "")).run();
-        actions.push(r.meta.changes ? { kind: "ai-fix", miss: a.miss, what: a.what } : { kind: "refused", stop: "NO_SUCH_MISS", why: `${a.miss} is not an open AI-answers miss without a fix in hand` });
-        continue;
-      }
       actions.push({ ...a, kind: a.kind });
     }
     for (const l of lines) {
@@ -246,8 +254,8 @@ export async function recordPlan(env: Env, body: any, now = Date.now()) {
   for (const m of owed) stops.push(`NAMED STOP [NO_DECISION] ${m.business}: no decision on ${m.source}`);
   const codes = [...new Set(stops.map((s) => s.match(/\[([A-Z_]+)\]/)?.[1]).filter(Boolean) as string[])];
   const sources = Object.fromEntries(Object.entries(body.reads ?? {}).slice(0, 80).map(([k, v]: [string, any]) => [k.slice(0, 80), { at: v?.at ?? null, sha: v?.sha ? String(v.sha).slice(0, 40) : null, error: v?.error ? String(v.error).slice(0, 160) : null }]));
-  await db.prepare(`INSERT INTO noelle_runs (id, day, slot, kind, state, stops, calls, line, reads, created_at, updated_at) VALUES (?,?,?,?,'planned',?,?,?,?,?,?)`)
-    .bind(runId, today, slot, body.kind, JSON.stringify(codes), body.calls, `${checked.accepted.length} accepted, ${checked.refused.length} refused, ${cards} cards`, JSON.stringify({ sources, queues: facts.queues, unread }), now, now).run();
+  await db.prepare(`UPDATE noelle_runs SET stops = ?, line = ?, reads = ?, notices = ?, updated_at = ? WHERE id = ?`)
+    .bind(JSON.stringify(codes), `${checked.accepted.length} accepted, ${checked.refused.length} refused, ${cards} cards`, JSON.stringify({ sources, queues: facts.queues, unread }), JSON.stringify(checked.notices.map((x: any) => x.key)), now, runId).run();
   await audit(db, { actor: DIRECTOR, lane: "ops", entityType: "noelle_run", entityId: runId, action: "planned", detail: { accepted: checked.accepted.length, refused: checked.refused.map((r: any) => r.stop), stops: codes, cards } });
   // The acts the Mac carries out: only kinds with a lever there (owned jobs' targets, Studio, search-loop, outreach lists, tests).
   const toAct = checked.accepted.filter((a: any) => ["studio-plan", "job-target", "search-loop", "outreach-target", "test", "name-source"].includes(a.kind));
@@ -272,10 +280,12 @@ export async function recordDone(env: Env, body: any, now = Date.now()) {
   if (!run || run.state !== "planned") throw new Error("No planned run by that id");
   const { roster } = await loadRoster(db);
   let notices = 0;
+  // Only a new thing the gate passed for THIS run may be announced (an injected plan or a confused act cannot).
+  const passed = new Set(parse<string[]>(run.notices, []));
   const published = (Array.isArray(body.published) ? body.published : []).slice(0, MAX_PUBLISHED);
   for (const p of published) {
     const e = roster.find((x: any) => x.key === p?.business);
-    if (!e || typeof p.what !== "string" || typeof p.where !== "string" || typeof p.key !== "string" || !/^noelle:/.test(p.key)) continue;
+    if (!e || typeof p.what !== "string" || typeof p.where !== "string" || typeof p.key !== "string" || !passed.has(p.key) || !p.key.startsWith(`noelle:${e.key}:`)) continue;
     const link = typeof p.link === "string" && /^https:\/\//.test(p.link) ? p.link : null;
     const line = noticeLine({ label: e.label, what: p.what.slice(0, 160), where: p.where.slice(0, 80), link });
     const have = await db.prepare(`SELECT 1 FROM boss_task_notices WHERE task_id = ? AND kind = 'update' LIMIT 1`).bind(p.key.slice(0, 200)).first();
@@ -286,8 +296,10 @@ export async function recordDone(env: Env, body: any, now = Date.now()) {
   }
   const failed = (Array.isArray(body.failed) ? body.failed : []).slice(0, 40).map((f: any) => `${String(f?.kind ?? "act")}: ${String(f?.why ?? "").slice(0, 200)}`);
   const stops = [...new Set([...parse<string[]>(run.stops, []), ...failed.map(() => "ACT_FAILED")])];
-  await db.prepare(`UPDATE noelle_runs SET state = 'done', stops = ?, line = ?, updated_at = ? WHERE id = ?`)
-    .bind(JSON.stringify(stops), `${run.line}; ${notices} published${failed.length ? `; ${failed.length} failed: ${failed.join(" | ").slice(0, 600)}` : ""}`, now, run.id).run();
+  // The run's calls grow with the reviewer and the remake; never shrink (the week's budget reads them).
+  const calls = Number.isInteger(body.calls) && body.calls > run.calls ? Math.min(body.calls, 10_000) : run.calls;
+  await db.prepare(`UPDATE noelle_runs SET state = 'done', stops = ?, calls = ?, line = ?, updated_at = ? WHERE id = ?`)
+    .bind(JSON.stringify(stops), calls, `${run.line}; ${notices} published${failed.length ? `; ${failed.length} failed: ${failed.join(" | ").slice(0, 600)}` : ""}`, now, run.id).run();
   // Her report, every two weeks (G5: decisions go to the page; the email gets the report, notices and stops).
   if (reportDue(await getSetting(db, REPORT_KEY), today)) {
     const rows = ((await db.prepare(`SELECT * FROM growth_decisions WHERE cycle = ?`).bind(today).all<any>()).results ?? []).map((r) => ({ ...r, actions: parse(r.actions, []), evidence: parse(r.evidence, []) }));

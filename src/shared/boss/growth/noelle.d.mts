@@ -2,7 +2,9 @@
 export const CADENCE: any;
 export const CHANNEL_OWNERS: any;
 export const CLOSE_ONLY: any;
-export const CORPORATE_STOP: any;
+export const CORPORATE_WINDOW: any;
+export function corporateOpen(...args: any[]): any;
+export function pieceText(...args: any[]): any;
 export const JOB_FIELDS: any;
 export const KEEP_OPEN: any;
 export const KINDS: any;

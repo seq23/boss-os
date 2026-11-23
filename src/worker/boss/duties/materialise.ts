@@ -199,7 +199,7 @@ export async function materialiseDueDuties(
       try {
         const result = job === "invitations"
           ? await (await import("../invitations/run")).runInvitations(env, now)
-          : job === "noelle-watch"
+          : job === "growth"
           ? await (await import("../growth/noelle")).noelleWatch(env, now)
           : job ? (() => { throw new Error(`No Worker job is called "${job}".`); })()
           : await runWorkerReader(env, readerName, now);

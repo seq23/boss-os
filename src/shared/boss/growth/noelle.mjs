@@ -19,7 +19,7 @@ import { NO_TRACKING_DOMAINS } from "./taggedLink.mjs";
 /** Every action kind a plan may carry. Anything else is refused UNKNOWN_KIND. */
 export const KINDS = Object.freeze([
   "decision", "studio-plan", "job-target", "search-loop", "backlink", "proposal", "sequoia-line",
-  "linked", "ai-fix", "test", "outreach-target", "name-source", "post", "page-edit",
+  "linked", "test", "outreach-target", "name-source", "post", "page-edit",
 ]);
 /** Kinds a search-watch business may carry: search levers, the weekly read and her calls only (G8). */
 export const WATCH_KINDS = Object.freeze(["decision", "search-loop", "proposal", "sequoia-line", "name-source", "linked", "page-edit"]);
@@ -92,7 +92,9 @@ export const PIECE_THEMES = Object.freeze({
   takedown: ["takedown", "rentals", "events", "party", "grazing"],
   spring: ["spring-porch", "party", "grazing", "rentals", "events"],
 });
-export const CORPORATE_STOP = "12-05";
+/** Corporate Christmas outreach runs 1 Sep to 5 Dec of the same year (full dates, so January never passes). */
+export const CORPORATE_WINDOW = Object.freeze({ from: "09-01", to: "12-05" });
+export const corporateOpen = (day) => /^\d{4}-\d{2}-\d{2}$/.test(String(day)) && day >= `${day.slice(0, 4)}-${CORPORATE_WINDOW.from}` && day <= `${day.slice(0, 4)}-${CORPORATE_WINDOW.to}`;
 
 /**
  * B2 + G14: every source of the weekly read. Each must be fresh (≤ STALE_DAYS) and get a decision per
@@ -208,6 +210,8 @@ export function taggedLinkProblems(text) {
   }
   return out;
 }
+/** All the words a studio piece puts in front of people. */
+export const pieceText = (p) => [p?.hook, ...(Array.isArray(p?.lines) ? p.lines : []), ...Object.values(p?.captions ?? {})].filter((x) => typeof x === "string").join("\n");
 /** Every code check a piece of copy goes through BEFORE the reviewer (G6: namingProblems on every piece). */
 export function copyProblems(text, entry) {
   return [...namingProblems(text), ...priceProblems(text, entry), ...taggedLinkProblems(text)];
@@ -247,7 +251,8 @@ export function checkPlan(plan, ctx) {
     if (!e) { refuse(a, "NOT_ON_ROSTER", `${a.business} has no Growth roster entry (Detox Denver, Cynthia Brown DDS, T2R and the fund are not hers)`); continue; }
     if (e.paused) { refuse(a, "PAUSED", `${e.label} is paused`); continue; }
     if (e.tier === "search-watch" && !WATCH_KINDS.includes(a.kind)) { refuse(a, "WATCH_TIER", `${e.label} is search-watch: search levers and her calls only, no ${a.kind}`); continue; }
-    const text = [a.draft, a.decision, a.what, a.why, a.value, ...(a.pieces ?? []).flatMap((p) => [p.hook, ...(p.lines ?? []), ...Object.values(p.captions ?? {})])].filter((x) => typeof x === "string").join("\n");
+    // A studio plan's pieces are checked one by one below, so one bad caption drops that piece only.
+    const text = [a.draft, a.decision, a.what, a.why, a.value].filter((x) => typeof x === "string").join("\n");
     const copy = copyProblems(text, e);
     if (copy.length && a.kind !== "decision") { refuse(a, "COPY", copy.join("; ")); continue; }
 
@@ -276,6 +281,8 @@ export function checkPlan(plan, ctx) {
           const phase = season(day);
           if (!/^\d{4}-\d{2}-\d{2} \d{2}:\d{2}$/.test(String(p.at ?? ""))) { bad.push(`${p.id}: no time`); continue; }
           if (day < ctx.today) { bad.push(`${p.id}: ${day} is in the past`); continue; }
+          const pieceCopy = copyProblems(pieceText(p), e);
+          if (pieceCopy.length) { bad.push(`${p.id}: [COPY] ${pieceCopy.join("; ")}`); continue; }
           if (!PIECE_THEMES[phase].includes(p.theme)) { bad.push(`${p.id}: ${p.theme} is out of season on ${day} (${phase})`); continue; }
           const plats = Array.isArray(p.platforms) ? p.platforms : [];
           let ok = plats.length > 0;
@@ -327,13 +334,14 @@ export function checkPlan(plan, ctx) {
         break;
       }
       case "test": {
+        if (typeof a.what !== "string" || !a.what.trim() || typeof a.number !== "string" || !a.number.trim() || typeof a.stop !== "string" || !a.stop.trim()) { refuse(a, "SHAPE", "a test names what it tries, the one number it moves and when it stops (playbook rule 4)"); continue; }
         if (tests.has(e.key)) { refuse(a, "ONE_TEST", `${e.label} already has a test this cycle (playbook rule 4)`); continue; }
         tests.set(e.key, a); accepted.push(a); break;
       }
       case "outreach-target": {
         if (!OUTREACH_SENDERS.includes(a.sender)) { refuse(a, "SENDER", "outreach goes only through Camille's or Monique's senders; she never sends"); continue; }
         if (!Number.isInteger(a.count) || a.count < 0) { refuse(a, "COUNT", "an outreach target is a count, never a list of people"); continue; }
-        if (a.list === "corporate-christmas" && ctx.today.slice(5) > CORPORATE_STOP) { refuse(a, "SEASON", "corporate Christmas outreach stops 5 Dec"); continue; }
+        if (a.list === "corporate-christmas" && !corporateOpen(ctx.today)) { refuse(a, "SEASON", "corporate Christmas outreach runs 1 Sep to 5 Dec only"); continue; }
         accepted.push({ kind: a.kind, business: e.key, sender: a.sender, list: String(a.list ?? ""), count: a.count, why: a.why ?? "" }); break;
       }
       case "name-source": {
@@ -353,7 +361,11 @@ export function checkPlan(plan, ctx) {
         if (!(ctx.linkedOpen ?? []).includes(a.id)) { refuse(a, "NOT_LINKED", `${a.id} is not an open to-do on ${e.label}'s roster`); continue; }
         accepted.push(a); break;
       }
-      default: accepted.push(a);
+      case "sequoia-line": {
+        if (typeof a.what !== "string" || !a.what.trim() || a.what.length > 300) { refuse(a, "SHAPE", "a line for Sequoia is one plain sentence (up to 300 characters) in `what`"); continue; }
+        accepted.push({ kind: a.kind, business: e.key, what: a.what.trim(), why: typeof a.why === "string" ? a.why.slice(0, 600) : "", evidence: typeof a.evidence === "string" ? a.evidence.slice(0, 600) : "" }); break;
+      }
+      default: refuse(a, "UNKNOWN_KIND", `no gate for ${a.kind}`);
     }
   }
   return { accepted, refused, lines, roster: rosterLines, notices };

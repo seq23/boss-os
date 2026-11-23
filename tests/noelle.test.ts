@@ -8,7 +8,7 @@ import { parseRoster, growthSection } from "../src/shared/boss/growth/roster.mjs
 import { replaceSection, skeleton } from "../src/shared/boss/brains/brain.mjs";
 import {
   checkPlan, season, slotFor, didNotRunLine, escalations, callBudget, sourceProblems, READ_SOURCES, readGrid, cadenceOf,
-  copyProblems, parsePlan, PLAN_BEGIN, PLAN_END, missingDecisions, noticeLine, CLOSE_ONLY, KEEP_OPEN, RUN_CALLS, WEEK_CALLS,
+  copyProblems, parsePlan, PLAN_BEGIN, PLAN_END, missingDecisions, noticeLine, CLOSE_ONLY, KEEP_OPEN, RUN_CALLS, WEEK_CALLS, corporateOpen,
 } from "../src/shared/boss/growth/noelle.mjs";
 
 const SPRY = `### Peace Be Still
@@ -147,8 +147,13 @@ describe("G11 seeds caught by code before the reviewer", () => {
     expect(copyProblems("Black Bible Stories tonight", e("peace-be-still")).length).toBeGreaterThan(0);
     expect(copyProblems("Only $19.99 for the checklist", e("dream-wedding")).join()).toMatch(/\$19.99/);
     expect(copyProblems("Only $9.99 for the checklist", e("dream-wedding"))).toEqual([]);
-    const r = plan({ kind: "studio-plan", business: "porch-and-party", pieces: [{ id: "p1", at: "2026-12-02 11:15", format: "reel", platforms: ["instagram"], theme: "christmas-porch", hook: "Installs from $99" }] });
-    expect(r.refused[0].stop).toBe("COPY");
+    // One bad caption drops that piece only; its neighbour in the same plan is still accepted.
+    const good = { id: "p2", at: "2026-12-03 11:15", format: "reel", platforms: ["instagram"], theme: "christmas-porch", hook: "Porch ready for the holidays" };
+    const r = plan({ kind: "studio-plan", business: "porch-and-party", pieces: [{ id: "p1", at: "2026-12-02 11:15", format: "reel", platforms: ["instagram"], theme: "christmas-porch", hook: "Installs from $99" }, good] });
+    expect(r.refused[0].stop).toBe("PIECES");
+    expect(r.refused[0].why).toMatch(/^p1: \[COPY\]/);
+    expect(r.refused[0].action.pieces.map((x: any) => x.id)).toEqual(["p1"]);
+    expect(r.accepted[0].pieces.map((x: any) => x.id)).toEqual(["p2"]);
   });
 });
 
@@ -178,10 +183,27 @@ describe("G17 + G21: conversion sources are named, never wired", () => {
 
 describe("Beyond the list", () => {
   it("one test per business per cycle", () => {
-    const t = { kind: "test", business: "dream-wedding", what: "a second pin title" };
+    const t = { kind: "test", business: "dream-wedding", what: "a second pin title", number: "pin saves", stop: "after 14 days" };
     const r = plan(t, t);
     expect(r.accepted).toHaveLength(1);
     expect(r.refused[0].stop).toBe("ONE_TEST");
+    // A test with no number or no stop is not a test (playbook rule 4).
+    expect(plan({ kind: "test", business: "dream-wedding", what: "a second pin title" }).refused[0].stop).toBe("SHAPE");
+    expect(plan({ kind: "test", business: "dream-wedding", what: "x", number: "saves", stop: " " }).refused[0].stop).toBe("SHAPE");
+  });
+  it("an unknown kind is refused, never accepted by default; a Sequoia line is shape-checked", () => {
+    expect(plan({ kind: "ai-fix", business: "dream-wedding", what: "x" }).refused[0].stop).toBe("UNKNOWN_KIND");
+    expect(plan({ kind: "upgrade-buffer", business: "porch-and-party" }).refused[0].stop).toMatch(/UNKNOWN_KIND|NEEDS_MONEY|SPEND/);
+    expect(plan({ kind: "sequoia-line", business: "dream-wedding", what: "Raise the pin cap?" }).accepted).toHaveLength(1);
+    expect(plan({ kind: "sequoia-line", business: "dream-wedding", what: "x".repeat(301) }).refused[0].stop).toBe("SHAPE");
+    expect(plan({ kind: "sequoia-line", business: "dream-wedding" }).refused[0].stop).toBe("SHAPE");
+  });
+  it("corporate Christmas outreach is open 1 Sep to 5 Dec of the same year, closed in January", () => {
+    expect(corporateOpen("2026-12-05")).toBe(true);
+    expect(corporateOpen("2026-12-06")).toBe(false);
+    expect(corporateOpen("2027-01-10")).toBe(false);
+    expect(corporateOpen("2026-09-01")).toBe(true);
+    expect(corporateOpen("2026-08-31")).toBe(false);
   });
   it("P&P's first decision is bookings this season; pieces follow the season; corporate stops 5 Dec", () => {
     expect(plan({ kind: "decision", business: "porch-and-party", source: "grid", decision: "d" }).refused[0].stop).toBe("SEASON_FIRST");
@@ -192,6 +214,7 @@ describe("Beyond the list", () => {
     const late = plan({ kind: "studio-plan", business: "porch-and-party", pieces: [{ id: "p1", at: "2026-12-20 11:15", format: "reel", platforms: ["instagram"], theme: "christmas-porch", hook: "x" }] });
     expect(late.refused[0].why).toMatch(/out of season/);
     expect(checkPlan({ actions: [{ kind: "outreach-target", business: "porch-and-party", sender: "camille", list: "corporate-christmas", count: 10 }] }, { ...ctx, today: "2026-12-06" }).refused[0].stop).toBe("SEASON");
+    expect(checkPlan({ actions: [{ kind: "outreach-target", business: "porch-and-party", sender: "camille", list: "corporate-christmas", count: 10 }] }, { ...ctx, today: "2027-01-10" }).refused[0].stop).toBe("SEASON");
     expect(plan({ kind: "outreach-target", business: "porch-and-party", sender: "noelle", list: "x", count: 1 }).refused[0].stop).toBe("SENDER");
   });
   it("Detox Denver and Cynthia Brown DDS are not hers", () => {

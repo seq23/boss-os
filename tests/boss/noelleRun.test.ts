@@ -20,6 +20,7 @@ import { handleRequest } from "../../src/worker/index";
 import { dayIdInZone } from "../../src/shared/boss/timezone";
 import { READ_SOURCES, WEEK_CALLS } from "../../src/shared/boss/growth/noelle.mjs";
 import { noelleWatch } from "../../src/worker/boss/growth/noelle";
+import { RESUME_HANDLERS } from "../../src/worker/boss/approvals/resume";
 import type { Env } from "../../src/worker/env";
 
 const NOW = Date.parse("2026-11-23T20:00:00Z"); // Mon 23 Nov 2026, 14:00 Central
@@ -163,9 +164,22 @@ describe("the Worker re-checks the plan; only accepted acts go back (A6, G1, G3,
     expect(out.refused.map((x: any) => x.stop)).toContain("SEASON_FIRST");
   });
 
+  it("the same slot posted twice is ONE run: the replay gets the first run's id and nothing to act, no second decision", async () => {
+    const body = plan([SEASON, { kind: "test", business: "approvalprep", what: "a second pin title", number: "pin saves", stop: "after 14 days" }]);
+    const first = await json(await call("/noelle/plan", body));
+    expect(first.accepted.length).toBeGreaterThan(0);
+    const decisions = (await rows(`SELECT id FROM growth_decisions`)).length;
+    const again = await json(await call("/noelle/plan", body));
+    expect(again).toMatchObject({ run: first.run, replay: true, accepted: [], notices: [] });
+    expect(await rows(`SELECT id FROM noelle_runs WHERE day = ? AND slot = '14:37' AND kind = 'daily'`, DAY)).toHaveLength(1);
+    expect(await rows(`SELECT id FROM growth_decisions`)).toHaveLength(decisions);
+    // A different slot the same day is its own run.
+    expect((await json(await call("/noelle/plan", plan([SEASON], { slot: "18:02" })))).run).not.toBe(first.run);
+  });
+
   it("a second backlink inside 4 articles is refused (≤1 per 4 articles, counted over 28 days)", async () => {
     await call("/noelle/plan", plan([{ kind: "backlink", business: "approvalprep", topic: "One", why: "w" }]));
-    const out = await json(await call("/noelle/plan", plan([{ kind: "backlink", business: "approvalprep", topic: "Two", why: "w" }])));
+    const out = await json(await call("/noelle/plan", plan([{ kind: "backlink", business: "approvalprep", topic: "Two", why: "w" }], { slot: "16:12" })));
     expect(out.refused.map((x: any) => x.stop)).toEqual(["ONE_IN_FOUR"]);
   });
 });
@@ -241,18 +255,27 @@ describe("what she changes and tells", () => {
   });
 
   it("done: one Notices line per NEW thing, her wording, https links only, a repeat is not told twice; a done run cannot be re-done", async () => {
-    const { run } = await json(await call("/noelle/plan", plan([SEASON])));
+    // Two new formats the gate passed (each with its scorecard row, G10): only their keys may be told.
+    const sc = { number: "saves", floor30: 5, floor60: 10, versionB: "a single photo" };
+    const piece = (id: string, platform: string) => ({ id, at: "2026-12-02 11:15", format: "photo-set", platforms: [platform], theme: "christmas-porch", hook: "Porch ready for the holidays", scorecard: sc });
+    const planned = await json(await call("/noelle/plan", plan([SEASON, { kind: "studio-plan", business: "porch-and-party", pieces: [piece("p1", "instagram"), piece("p2", "tiktok")] }])));
+    const { run } = planned;
+    expect(planned.notices.map((x: any) => x.key).sort()).toEqual(["noelle:porch-and-party:format:instagram:photo-set", "noelle:porch-and-party:format:tiktok:photo-set"]);
     const pub = [
-      { business: "porch-and-party", key: "noelle:porch-and-party:format:instagram:carousel", what: "new format carousel", where: "on Instagram", link: "https://www.instagram.com/p/abc" },
-      { business: "porch-and-party", key: "noelle:porch-and-party:format:instagram:carousel", what: "again", where: "on Instagram", link: "https://www.instagram.com/p/abc" },
-      { business: "approvalprep", key: "noelle:approvalprep:x", what: "a pin board", where: "on Pinterest", link: "javascript:alert(1)" },
+      { business: "porch-and-party", key: "noelle:porch-and-party:format:instagram:photo-set", what: "new format photo-set", where: "on Instagram", link: "https://www.instagram.com/p/abc" },
+      { business: "porch-and-party", key: "noelle:porch-and-party:format:instagram:photo-set", what: "again", where: "on Instagram", link: "https://www.instagram.com/p/abc" },
+      { business: "porch-and-party", key: "noelle:porch-and-party:format:tiktok:photo-set", what: "new format photo-set", where: "on TikTok", link: "javascript:alert(1)" },
+      { business: "porch-and-party", key: "noelle:porch-and-party:format:facebook-page:reel", what: "a key the gate never passed", where: "on Facebook", link: "https://x.test" },
+      { business: "approvalprep", key: "noelle:approvalprep:x", what: "a pin board", where: "on Pinterest", link: "https://x.test" },
       { business: "approvalprep", key: "not-noelle", what: "forged", where: "x", link: "https://x.test" },
       { business: "detox-denver", key: "noelle:dd", what: "not hers", where: "x", link: "https://x.test" },
     ];
-    const r = await json(await call("/noelle/done", { run, published: pub, failed: [{ kind: "job-target", why: "PR refused" }] }));
+    const r = await json(await call("/noelle/done", { run, calls: 19, published: pub, failed: [{ kind: "job-target", why: "PR refused" }] }));
     expect(r.notices).toBe(2);
     const n = (await rows(`SELECT body, needs_her FROM boss_task_notices WHERE from_name = 'Noelle' ORDER BY body`)).map((x: any) => x.body);
-    expect(n).toEqual(["Noelle published: ApprovalPrep a pin board on Pinterest", "Noelle published: Porch & Party new format carousel on Instagram https://www.instagram.com/p/abc"]);
+    expect(n).toEqual(["Noelle published: Porch & Party new format photo-set on Instagram https://www.instagram.com/p/abc", "Noelle published: Porch & Party new format photo-set on TikTok"]);
+    // The Mac's review calls count against the week: done raises the run's calls, never lowers them.
+    expect((await rows(`SELECT calls FROM noelle_runs WHERE id = ?`, run))[0].calls).toBe(19);
     const done = (await rows(`SELECT state, stops, line FROM noelle_runs WHERE id = ?`, run))[0];
     expect(done.state).toBe("done");
     expect(done.stops).toMatch(/ACT_FAILED/);
@@ -269,6 +292,20 @@ describe("what she changes and tells", () => {
     const again = await json(await call("/noelle/plan", plan([SEASON])));
     await call("/noelle/done", { run: again.run, published: [] });
     expect((await rows(`SELECT body FROM morning_sections WHERE section = 'growth'`))[0].body).toBe("{}");
+  });
+});
+
+describe("her yes to a Decide card opens one follow-on, never a retired growth# pipeline row", () => {
+  it("a yes to a new format writes growth-yes#<business>#<judgement id>; no growth# row is written", async () => {
+    const jid = "jc_noelle_yes1";
+    await env.DB.prepare(`INSERT INTO judgement_calls (id, approval_id, employee_id, title, question, resume_kind, state, attempt, resume_detail, created_at, updated_at) VALUES (?, 'apv_noelle_yes1', 'emp_growth', 'Porch & Party: add photo-set on Instagram?', 'q', 'growth_proposal', 'awaiting', 1, ?, ?, ?)`)
+      .bind(jid, JSON.stringify({ business: "porch-and-party", brain: "porch-and-party", label: "Porch & Party", item: { channel: "instagram", format: "photo-set", draft: "Porch ready" } }), NOW, NOW).run();
+    const j = { id: jid, approval_id: "apv_noelle_yes1", employee_id: "emp_growth", deliverable_id: null, title: "Porch & Party: add photo-set on Instagram?", question: "q", resume_kind: "growth_proposal", state: "awaiting", attempt: 1 };
+    await RESUME_HANDLERS.growth_proposal!(env as unknown as Parameters<NonNullable<typeof RESUME_HANDLERS.growth_proposal>>[0], j, "approved", null, NOW);
+    expect((await rows(`SELECT source_key FROM owner_open_loops WHERE source_key LIKE 'growth%' AND source_key LIKE ?`, `%${jid}`)).map((x: any) => x.source_key)).toEqual([`growth-yes#porch-and-party#${jid}`]);
+    expect(await rows(`SELECT id FROM owner_open_loops WHERE source_key LIKE 'growth#porch-and-party#instagram%'`)).toEqual([]);
+    await env.DB.prepare(`DELETE FROM owner_open_loops WHERE source_key = ?`).bind(`growth-yes#porch-and-party#${jid}`).run();
+    await env.DB.prepare(`DELETE FROM judgement_calls WHERE id = ?`).bind(jid).run();
   });
 });
 

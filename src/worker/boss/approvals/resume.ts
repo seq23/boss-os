@@ -1,5 +1,4 @@
 import { newId } from "../lib/id";
-import { pipelineKey } from "../../../shared/boss/growth/director.mjs";
 import type { Env } from "../env";
 import { recordDeliverableActivity } from "../today/deliverables";
 import { createDutyFromDraft, DutyCannotRun } from "../duties/create";
@@ -469,9 +468,9 @@ export const RESUME_HANDLERS: Record<string, ResumeHandler> = {
     try { d = row?.resume_detail ? JSON.parse(row.resume_detail) : null; } catch { d = null; }
     if (!d?.business || !(d.item || d.proposal)) throw new Error("The idea this approval was for is missing, so nothing was started. It stays on your screen.");
     const what = d.item ? `add ${d.item.format} on ${d.item.channel} to ${d.label}'s Growth roster entry, then post this draft through that pipeline: ${d.item.draft}` : `${d.proposal.what}`;
-    // Her yes to a new format opens that format's pipeline row: once the format is on the roster,
-    // later weeks queue on it without asking her twice. queueRow still needs the roster.
-    const key = d.item ? pipelineKey(d.business, d.item.channel, d.item.format) : `growth-yes#${d.business}#${j.id}`;
+    // One follow-on per card she said yes to (the per-pipeline growth# rows are retired with the rebuild):
+    // the agent session adds the roster line, and Noelle publishes on it once it is there.
+    const key = `growth-yes#${d.business}#${j.id}`;
     const id = newId("olp");
     await env.DB.prepare(
       `INSERT INTO owner_open_loops (id, title, finish_line, next_step, owner, next_date, business, section, status, source, source_key, created_at, updated_at)

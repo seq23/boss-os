@@ -191,6 +191,13 @@ async function cmdPlan(runLog, dir, slot) {
   state.calls = 1;
   const api = bossMachine();
   const res = await api("POST", "/plan", { day: state.day, slot, kind: state.kind, calls: state.calls, plan, reads: state.reads, facts: factsOf(state) });
+  if (res.replay) {
+    // This slot already ran (a retry or a second launch): the first run stands and nothing is acted twice.
+    writeFileSync(join(dir, "accepted.json"), JSON.stringify({ ...res, accepted: [] }, null, 2));
+    console.log(`NAMED STOP [REPLAY] ${state.day} ${slot} ${state.kind} already ran as ${res.run}; nothing acted twice`);
+    console.log("OUTPUT 0 actions accepted (replay)");
+    process.exit(10);
+  }
   state.run = res.run; state.slot = slot; state.notices = res.notices ?? [];
   saveState(dir, state);
   writeFileSync(join(dir, "accepted.json"), JSON.stringify(res, null, 2));

@@ -4,7 +4,7 @@
  * is what the record and its readers share, tested by tests/growthDirector.test.ts:
  *   - the backlink orders the network reads (topicOf, backlinkOrders; GET /api/boss/growth/backlink-orders);
  *   - the naming guard run on every draft (namingProblems);
- *   - the Open Loops key of a pipeline (pipelineKey) and the Decide-card repeat window (ASKED_DAYS);
+ *   - the Decide-card repeat window (ASKED_DAYS);
  *   - her fortnightly Growth section of the morning email (reportDue, reportSection), built from the record,
  *     never from a model's paragraph.
  */
@@ -80,14 +80,6 @@ export function namingProblems(draft) {
   const bare = t.replace(/Hush Harbor\s*·\s*Black Bible Chat\s*(&|and)\s*Stories/gi, "").replace(/#blackbiblechat\b/gi, "");
   if (new RegExp(`black${W}bible${W}chat`, "i").test(bare)) out.push('says "Black Bible Chat" outside "Hush Harbor · Black Bible Chat & Stories"');
   return out;
-}
-
-/**
- * One pipeline to-do per business × channel × format. A format on the roster queues on it from its
- * first post (her ruling, 22 Nov 2026); her yes to a NEW format's card opens the same row.
- */
-export function pipelineKey(business, channel, format) {
-  return `growth#${business}#${channel}-${format}`.toLowerCase().replace(/[^a-z0-9#-]+/g, "-");
 }
 
 /** Her report runs every two weeks: due when none was written, or the last one is 13+ days old. */

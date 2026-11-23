@@ -8,7 +8,6 @@ export interface BacklinkOrder { business: string; topic: string; draft: string;
 export function backlinkOrders(rows: { id: string; business: string; state: string; actions: string; created_at: number }[]): { orders: BacklinkOrder[]; skipped: string[] };
 export const NAMING_RULE: string;
 export function namingProblems(draft: string): string[];
-export function pipelineKey(business: string, channel: string, format: string): string;
 export const REPORT_EVERY_DAYS: number;
 export function reportDue(lastDay: string | null, today: string): boolean;
 export function numbersLine(summary: any): string | null;

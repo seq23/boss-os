@@ -3,7 +3,7 @@
  * HOW IT BREAKS, each proven here:
  *   - data integrity: the same week twice changes nothing; a not-read week never overwrites a read one;
  *   - G16e: the week is stored whether or not Noelle runs, and nothing here opens a to-do, a card or a
- *     model call (the fixes are Noelle's `ai-fix`, keyed noelle:<decision id>);
+ *     model call (a Noelle decision is never a fix attempt: she has no AI-answers lever yet);
  *   - lanes: after 2 fixes a miss moves to the next lane, and a rerun never counts a fix twice (the
  *     loop's strengthened pages for OWN, Noelle's decisions made before the answers for the rest);
  *   - abuse: GET ai-misses is 401 without the machine token, 404 for any host but the six (exact
@@ -161,29 +161,17 @@ describe("lanes move after two fixes", () => {
     expect((await aiMisses(env.DB, KMP, NOW)).misses).toEqual([]);
   });
 
-  it("Noelle's ai-fix counts once, only when her decision came before the answers, then the lane moves", async () => {
+  it("a Noelle decision is never a fix attempt: an old noelle: key leaves fix_attempts unchanged and the lane where it was", async () => {
     const id = await missId(KMP, P_EARN_A.text);
-    const w1 = RUN_AT - 14 * DAY, w2 = RUN_AT - 7 * DAY, w3 = RUN_AT;
-    const decide = async (dId: string, at: number) => {
-      await env.DB.prepare(`INSERT INTO growth_decisions (id, cycle, business, label, state, decision, created_at) VALUES (?, '2026-11-20', 'keepmyproof', 'KeepMyProof', 'decided', 'earn a mention', ?)`).bind(dId, at).run();
-      await env.DB.prepare(`UPDATE ai_misses SET todo_key = ? WHERE id = ?`).bind(`noelle:${dId}`, id).run();
-    };
+    const w1 = RUN_AT - 14 * DAY, w2 = RUN_AT - 7 * DAY;
     await env.DB.exec("DELETE FROM growth_decisions");
     await recordAiWeek(env, [kmp([P_EARN_A], { runAt: w1, runId: "r1" })], w1 + 3_600_000);
-    // A decision made AFTER week 2's answers were collected is not an attempt yet.
-    await decide("gdc_one", w2 + DAY);
-    await recordAiWeek(env, [kmp([P_EARN_A], { runAt: w2, runId: "r2" })], w2 + 2 * DAY);
-    expect((await all(`SELECT fix_attempts, todo_key FROM ai_misses WHERE id = ?`, id))[0]).toEqual({ fix_attempts: 0, todo_key: "noelle:gdc_one" });
-    await recordAiWeek(env, [kmp([P_EARN_A], { runAt: w3, runId: "r3" })], NOW);
-    expect((await all(`SELECT lane, fix_attempts, todo_key FROM ai_misses WHERE id = ?`, id))[0]).toEqual({ lane: "earn", fix_attempts: 1, todo_key: null });
-    // The same week read again never counts the same decision twice.
+    // A decision made BEFORE the next answers, keyed on the miss: the old path counted this as one attempt.
+    await env.DB.prepare(`INSERT INTO growth_decisions (id, cycle, business, label, state, decision, created_at) VALUES ('gdc_one', '2026-11-20', 'keepmyproof', 'KeepMyProof', 'decided', 'earn a mention', ?)`).bind(w1 + DAY).run();
     await env.DB.prepare(`UPDATE ai_misses SET todo_key = 'noelle:gdc_one' WHERE id = ?`).bind(id).run();
-    await recordAiWeek(env, [kmp([P_EARN_A], { runAt: w3, runId: "r3" })], NOW + 60_000);
-    expect((await all(`SELECT fix_attempts FROM ai_misses WHERE id = ?`, id))[0].fix_attempts).toBe(1);
-    // A second decision before the next answers: two attempts, the miss moves on to the next lane.
-    await decide("gdc_two", w3 + DAY);
-    await recordAiWeek(env, [kmp([P_EARN_A], { runAt: w3 + 7 * DAY, runId: "r4" })], w3 + 8 * DAY);
-    expect((await all(`SELECT lane, fix_attempts, lanes_tried FROM ai_misses WHERE id = ?`, id))[0]).toMatchObject({ fix_attempts: 0, lanes_tried: '["earn"]' });
+    const before = (await all(`SELECT lane FROM ai_misses WHERE id = ?`, id))[0].lane;
+    for (const [at, run] of [[w2, "r2"], [RUN_AT, "r3"]] as const) await recordAiWeek(env, [kmp([P_EARN_A], { runAt: at, runId: run })], at + DAY);
+    expect((await all(`SELECT lane, fix_attempts, todo_key FROM ai_misses WHERE id = ?`, id))[0]).toEqual({ lane: before, fix_attempts: 0, todo_key: null });
   });
 
   it("a deleted decision is no attempt", async () => {

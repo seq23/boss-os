@@ -15,9 +15,10 @@ import { machineTokenOk } from "../routes/openLoops";
  *   POST /ai-week    (session) the Mac duty's weekly read, one entry per selling site. Every count is
  *                    recomputed here (readSite); a site that is not read is stored as not read with
  *                    its NAMED STOP and never overwrites a read week. The same week twice changes
- *                    nothing. Then each miss's lane is moved on when its fixes ran out. The fixes are
- *                    Noelle's (growth/noelle.ts `ai-fix`, attempt key noelle:<decision id>): this week is
- *                    stored whether or not she runs (G16e), and nothing here asks a model.
+ *                    nothing. Then each miss's lane is moved on when its fixes ran out. A fix counts only
+ *                    from its own record (the search loop's strengthened[], a closed to-do, her card);
+ *                    Noelle has no AI-answers lever yet, so nothing of hers counts as an attempt. This
+ *                    week is stored whether or not she runs (G16e), and nothing here asks a model.
  *   GET  /ai-lanes   (session) each site's open misses and their lanes, for the reading session's
  *                    prompt (lanes are code-owned once set: the model only fills a new miss's lane).
  *   GET  /ai-misses  (machine token; public address /api/boss/growth/ai-misses) the "own" misses per
@@ -129,12 +130,9 @@ async function updateMisses(env: Env, e: WeekEntry, site: { loop: boolean }, r: 
 
 /** What became of a miss's to-do or card: still open, done (one attempt), her yes, her no, or gone. */
 async function fixOutcome(db: D1Database, todo: string, runAt: number): Promise<{ state: "open" | "closed" | "yes" | "no" | "gone"; tag: string; key: string }> {
-  // Noelle's fix (growth/noelle.ts ai-fix): one attempt once her decision was made before this week's answers.
-  if (todo.startsWith("noelle:")) {
-    const d = await db.prepare(`SELECT created_at FROM growth_decisions WHERE id = ?`).bind(todo.slice(7)).first<{ created_at: number }>();
-    if (!d) return { state: "gone", tag: "", key: "" };
-    return d.created_at < runAt ? { state: "closed", tag: `${todo}@${d.created_at}`, key: todo } : { state: "open", tag: "", key: todo };
-  }
+  // A decision is not a fix (review 23 Nov 2026): Noelle has no lever that carries one out, so an old
+  // noelle:<decision> key is dropped and never counted as an attempt.
+  if (todo.startsWith("noelle:")) return { state: "gone", tag: "", key: "" };
   if (todo.startsWith("card:")) {
     const j = await db.prepare(`SELECT j.id, j.state, j.resume_detail FROM judgement_calls j WHERE j.approval_id = ?`).bind(todo.slice(5)).first<{ id: string; state: string; resume_detail: string | null }>();
     if (!j || j.state === "superseded") return { state: "gone", tag: "", key: "" };

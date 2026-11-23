@@ -7,7 +7,7 @@
 --
 -- 1. noelle_runs: one row per run (planned → done, or stopped with its NAMED STOP codes). Counts, stop
 --    codes and one plain line; no customer, LP or client name.
--- 2. duty_growth_director becomes her heartbeat: daily 22:05 Central, worker_job 'noelle-watch'. No run row
+-- 2. duty_growth_director becomes her heartbeat: daily 22:05 Central, worker_job 'growth' (her module, src/worker/boss/growth/noelle.ts noelleWatch). No run row
 --    today → "Noelle did not run" in tomorrow's morning email and NAMED STOP [NOELLE_DID_NOT_RUN]; the same
 --    stop three days running → one line to Sequoia.
 --
@@ -23,10 +23,13 @@ CREATE TABLE IF NOT EXISTS noelle_runs (
   calls       INTEGER NOT NULL DEFAULT 0,   -- Claude calls this run used
   line        TEXT,
   reads       TEXT NOT NULL DEFAULT '{}',   -- JSON { sources: {id: {at, sha, error}}, queues: {"biz:channel": n}, unread: {"biz:channel": why} }
+  notices     TEXT NOT NULL DEFAULT '[]',   -- JSON list of the notice keys the gate passed for this run; done may announce only these
   created_at  INTEGER NOT NULL,
   updated_at  INTEGER NOT NULL
 );
 CREATE INDEX IF NOT EXISTS idx_noelle_runs_day ON noelle_runs(day DESC, created_at DESC);
+-- One plan per slot: a plan posted twice for the same day, slot and kind is a replay, never a second run.
+CREATE UNIQUE INDEX IF NOT EXISTS idx_noelle_runs_slot ON noelle_runs(day, slot, kind) WHERE state IN ('planned','done');
 
 INSERT INTO data_policy (entity, subsystem, residency, ai_processing, reason) VALUES
   ('noelle_runs', 'growth', 'CLOUD_SYNC', 'EXTERNAL_OK',
@@ -39,7 +42,7 @@ UPDATE standing_duties
        cadence = 'daily', weekday = NULL, local_hour = 22, local_minute = 5,
        next_due_at = (unixepoch(date('now', '+1 day')) + 4 * 3600 + 5 * 60) * 1000,  -- tonight 22:05 CST (04:05 UTC)
        task_input = json_object(
-         'worker_job', 'noelle-watch',
+         'worker_job', 'growth',
          'delivers', 'noelle_runs',
          'sends', 'nothing: one morning line when she did not run, one Notices line to Sequoia when the same stop repeats three days'
        ),

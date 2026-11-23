@@ -12,8 +12,8 @@
  *   - a measure that could not be read is stored with value NULL and `unread: "not read: <reason>"`,
  *     never 0, never last week's number;
  *   - a business whose every measure is unread is `state: "no data"`, and the Director holds it;
- *   - a channel with too few visits to judge a format is held "too little data" (under
- *     MIN_VISITS_FOR_TESTS a month), a separate hold from "no data"; holds are per channel;
+ *   - no visit floor (review 23 Nov 2026): a few visits are evidence; only an unread channel is
+ *     held "no data"; holds are per channel;
  *   - a reading older than STALE_DAYS is "not read: stale since <day>".
  *
  * PRIVACY PROMISES BEAT THE COUNT. KeepMyProof promises no analytics (spry brain, 6 Nov 2026): it is
@@ -31,7 +31,6 @@ export const KINDS = Object.freeze(["money", "sales", "installs", "requests", "v
  */
 export const APART_KINDS = Object.freeze(["answers"]);
 /** No format test on a channel under this many visits a month (hostile review: "no tests on noise"). */
-export const MIN_VISITS_FOR_TESTS = 50;
 /** Businesses whose privacy promise forbids visit tracking and tagged links, and the readers they may use. */
 // d1 for KeepMyProof is the AI answers count only: public AI answers, no visitor data.
 export const NO_TRACKING = Object.freeze({ keepmyproof: Object.freeze(["revenuecat", "gsc", "none", "d1"]) });
@@ -115,7 +114,7 @@ const dayGap = (a, b) => Math.round((Date.parse(`${b}T12:00:00Z`) - Date.parse(`
  *   { key, label, paused, state: "read" | "no data" | "paused", totals: {kind: n|null},
  *     channels: [{ measure, channel, language, kind, value, before, unread, hold }], unread: [measure ids] }
  * A channel's `hold` is the rule for format tests there: "no data" when it was not read,
- * "too little data" when a visits channel has under MIN_VISITS_FOR_TESTS, else null. A hold is per
+ * never a floor on small numbers (null otherwise). A hold is per
  * channel: a thin Google channel never holds Porch & Party's requests or money.
  * `today` (YYYY-MM-DD) makes a reading older than STALE_DAYS "not read: stale since <day>".
  */
@@ -130,7 +129,7 @@ export function summarize(manifest, latest, before = [], today = null) {
       const stale = r && today && dayGap(r.day, today) > STALE_DAYS;
       const value = r && !stale ? r.value : null;
       const unread = !r ? `${UNREAD_PREFIX}no reading yet` : stale ? `${UNREAD_PREFIX}stale since ${r.day}` : r.value === null ? r.unread : null;
-      const hold = value === null ? "no data" : m.kind === "visits" && value < MIN_VISITS_FOR_TESTS ? "too little data" : null;
+      const hold = value === null ? "no data" : null;
       return { measure: m.id, label: m.label, channel: m.channel, language: m.language, kind: m.kind, value, before: prev.get(m.id)?.value ?? null, unread, hold };
     });
     const totals = {};
