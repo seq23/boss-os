@@ -88,10 +88,13 @@ describe("a broken entry acts on nothing", () => {
 });
 
 describe("what the Director may do", () => {
-  it("posts only on an approved channel AND format", () => {
+  it("posts on an approved channel; a new format there or a new channel on a LIVE account is allowed and flagged (G7); a new account never", () => {
     expect(mayAct(roster, { business: "shop-a", channel: "instagram", format: "reel" })).toEqual({ ok: true });
-    expect(mayAct(roster, { business: "shop-a", channel: "instagram", format: "carousel" })).toMatchObject({ ok: false, stop: "NOT_APPROVED" });
-    expect(mayAct(roster, { business: "shop-a", channel: "threads", format: "text-post" })).toMatchObject({ ok: false, stop: "NOT_APPROVED" });
+    expect(mayAct(roster, { business: "shop-a", channel: "instagram", format: "carousel" })).toEqual({ ok: true, newFormat: true });
+    expect(mayAct(roster, { business: "shop-a", channel: "instagram" })).toMatchObject({ ok: false, stop: "NOT_APPROVED" });
+    expect(mayAct(roster, { business: "shop-a", channel: "threads", format: "text-post" })).toMatchObject({ ok: false, stop: "NO_NEW_ACCOUNTS" });
+    expect(mayAct(roster, { business: "shop-a", channel: "threads", format: "text-post" }, { accounts: ["shop-a:threads"] })).toEqual({ ok: true, newFormat: true, newChannel: true });
+    expect(mayAct(roster, { business: "shop-a", channel: "threads", format: "text-post" }, { accounts: ["shop-a:threads"], bufferFull: ["shop-a"] })).toMatchObject({ ok: false, stop: "NEEDS_MONEY" });
     expect(mayAct(roster, { business: "shop-a", channel: "google-business-profile", format: "post" })).toMatchObject({ ok: false, stop: "NOT_APPROVED" });
     expect(mayAct(roster, { business: "shop-z", channel: "instagram", format: "reel" })).toMatchObject({ ok: false, stop: "NOT_ON_ROSTER" });
   });

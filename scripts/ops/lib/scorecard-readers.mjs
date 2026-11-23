@@ -33,7 +33,7 @@ const sinceIso = (now, days) => new Date(sinceMs(now, days)).toISOString().repla
 // ─── Cloudflare D1 (counts from her own databases, read-only) ─────────────────────────────────────
 
 const dbIds = new Map();
-async function d1Query(ctx, db, sql) {
+export async function d1Query(ctx, db, sql) {
   const acct = need(ctx.env, "CLOUDFLARE_ACCOUNT_ID");
   const tok = need(ctx.env, "CLOUDFLARE_API_TOKEN");
   const h = { authorization: `Bearer ${tok}`, "content-type": "application/json" };

@@ -8,6 +8,7 @@ import { loadRoster } from "../growth/run";
 import { AI_SITES, aiCard } from "../../../shared/boss/growth/aiAnswers.mjs";
 import { backlinkOrders } from "../../../shared/boss/growth/director.mjs";
 import { machineTokenOk } from "./openLoops";
+import { noelleContext, planProblems, queueView, recordPlan, recordDone } from "../growth/noelle";
 
 /**
  * THE GROWTH DIRECTOR'S RECORD (21 Nov 2026).
@@ -71,17 +72,48 @@ growthRoutes.get("/", async (c) => {
  * Give callers the public address, never this one.
  */
 export const BACKLINK_ORDERS_PATH = "/api/growth/backlink-orders";
+/** Noelle's three routes (her Mac's run): the machine token only, checked in each handler below. */
+export const NOELLE_PATHS: ReadonlySet<string> = new Set(["/api/growth/noelle/context", "/api/growth/noelle/plan", "/api/growth/noelle/done"]);
 
-/** The newest cycle's backlink orders; never Open Loops rows. A malformed actions row is skipped and logged. */
+/**
+ * The backlink orders of the newest WEEK (Noelle runs daily since 23 Nov 2026, so a week is the 7 days
+ * ending on the newest cycle): every decided row's orders, once each per business and topic. Never Open
+ * Loops rows. A malformed actions row is skipped and logged.
+ */
 export async function readBacklinkOrders(db: D1Database, now = Date.now()) {
   const top = await db.prepare(`SELECT MAX(cycle) AS cycle FROM growth_decisions`).first<{ cycle: string | null }>();
   const cycle = top?.cycle ?? null;
   if (!cycle) return { cycle: null, read_at: new Date(now).toISOString(), orders: [] };
-  const rows = (await db.prepare(`SELECT id, business, state, actions, created_at FROM growth_decisions WHERE cycle = ?`).bind(cycle).all<any>()).results ?? [];
-  const { orders, skipped } = backlinkOrders(rows);
+  const rows = (await db.prepare(`SELECT id, business, state, actions, created_at FROM growth_decisions WHERE cycle > date(?, '-7 days') ORDER BY created_at DESC`).bind(cycle).all<any>()).results ?? [];
+  const seen = new Set<string>(); const orders: any[] = []; const skipped: string[] = [];
+  for (const r of rows) {
+    const one = backlinkOrders([r]);
+    skipped.push(...one.skipped);
+    for (const o of one.orders) { const k = `${o.business}|${o.topic.toLowerCase()}`; if (!seen.has(k)) { seen.add(k); orders.push(o); } }
+  }
+  orders.sort((a, b) => a.business.localeCompare(b.business));
   if (skipped.length) console.warn(`backlink-orders: skipped ${skipped.length} growth_decisions row(s) whose actions are not a JSON list: ${skipped.join(", ")}`);
   return { cycle, read_at: new Date(now).toISOString(), orders };
 }
+
+// Noelle's run (growth/noelle.ts): the machine token only, as the backlink network's read.
+growthRoutes.get("/noelle/context", async (c) => {
+  if (!(await machineTokenOk(c))) throw new AppError(401, "Locked");
+  return ok(c, await noelleContext(c.env));
+});
+growthRoutes.post("/noelle/plan", async (c) => {
+  if (!(await machineTokenOk(c))) throw new AppError(401, "Locked");
+  const body = await c.req.json<any>().catch(() => null);
+  const problems = planProblems(body);
+  if (problems.length) throw badRequest("The plan was refused", problems.slice(0, 8).join("; "));
+  return ok(c, await recordPlan(c.env, body), 201);
+});
+growthRoutes.post("/noelle/done", async (c) => {
+  if (!(await machineTokenOk(c))) throw new AppError(401, "Locked");
+  const body = await c.req.json<any>().catch(() => null);
+  try { return ok(c, await recordDone(c.env, body), 201); }
+  catch (e) { const m = String((e as Error)?.message ?? e); if (/NAMED STOP/.test(m)) throw e; throw badRequest("The run's end was refused", m.slice(0, 200)); }
+});
 
 growthRoutes.get("/backlink-orders", async (c) => {
   if (!(await machineTokenOk(c))) throw new AppError(401, "Locked");
@@ -121,6 +153,7 @@ growthRoutes.get("/page", async (c) => {
   const parse = (t: string | null, d: unknown) => { try { return t ? JSON.parse(t) : d; } catch { return d; } };
   const aiReads = ((await db.prepare(`SELECT site, week, status, stop, run_at, prompts, answered, cited, mentioned, engines FROM ai_answer_reads WHERE read_at >= ? ORDER BY week DESC`)
     .bind(Date.now() - 5 * 7 * 86_400_000).all<any>()).results ?? []);
+  const noelle = await queueView(db);
   const hostOf = (key: string) => Object.entries(AI_SITES).find(([, v]) => v.business === key)?.[0] ?? null;
   const businesses = (manifest as any).scoreboard.businesses.map((b: any) => {
     const entry = roster.find((e) => e.key === b.key);
@@ -134,6 +167,8 @@ growthRoutes.get("/page", async (c) => {
       ai: host ? { host, ...aiCard(aiReads.filter((r) => r.site === host)) } : null,
       paused: entry?.paused ?? (typeof b.paused === "string" ? b.paused : b.paused ? "paused for now" : null),
       onRoster: !!entry,
+      // What Noelle last saw queued on each owned channel; a failed read says "not read", never an empty queue.
+      queue: noelle.unread ? { unread: noelle.unread, channels: [] } : { unread: null, channels: noelle.queues[b.key] ?? [] },
       upcoming: {
         todos: own.filter((l) => l.status === "open").map((l) => ({ id: l.id, title: l.title, next: l.next_step, date: l.next_date, elsewhere: l.owner !== DIRECTOR && !String(l.source_key ?? "").startsWith("growth") })),
         cards: cs.filter((x) => x.status === "pending"),
@@ -154,5 +189,5 @@ growthRoutes.get("/page", async (c) => {
   // One per business: the newest (rows arrive newest first), so a same-day re-run is not counted twice.
   const thisWeek = decisions.filter((d, i) => d.cycle >= weekStart(today) && decisions.findIndex((x) => x.business === d.business) === i);
   const week = { decided: thisWeek.filter((d) => d.state === "decided").length, held: thisWeek.filter((d) => String(d.state).startsWith("held")).length };
-  return ok(c, { day: today, problems, general, businesses, week });
+  return ok(c, { day: today, problems, general, businesses, week, noelle: noelle.last });
 });

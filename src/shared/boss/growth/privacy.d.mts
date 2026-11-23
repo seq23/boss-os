@@ -6,4 +6,3 @@ export function termCount(terms: PrivateTerms | null | undefined): number;
 export function leaksIn(text: string, terms: PrivateTerms, known?: Set<string>): { private: number; mail: number };
 type Prompt = { messages: { role: string; content: string }[]; left?: string[] };
 type Group = { heading: string; body: string };
-export function promptLeak(args: { fit: Prompt; bare: Prompt; rulings: { own?: Group[]; shared?: Group[] } | null; terms: PrivateTerms | null }): { unread: boolean; private: number; mail: number; where: string[] };

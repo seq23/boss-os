@@ -21,9 +21,9 @@
  * nothing else of any brain. A Growth section carrying a confidential mark, or lying inside a span
  * from another section, is refused whole (fail closed); her rulings are read from the brain with
  * every confidential span cut first (stripConfidential over the whole document, then split), and the
- * router cuts again and refuses a message that still carries a mark. Every cycle then checks each
- * decision prompt it built before the model call (promptLeak, privacy.mjs): no word her brains keep
- * only inside a private span, and no personal mail address; `npm run growth:privacy` runs it on a copy.
+ * router cuts again and refuses a message that still carries a mark. Noelle's context then checks each
+ * business's rulings before they leave the Worker (leaksIn, privacy.mjs, in noelle.ts noelleContext):
+ * no word her brains keep only inside a private span, and no personal mail address.
  *
  * HER RULINGS (her words, 22 Nov 2026: "yea let it read the settled decisions"). Each entry's model
  * input carries its own brain's "## Settled decisions": for a Spry Labs business, the "### " groups
@@ -34,15 +34,29 @@
  */
 import { sectionBody, hasConfidential, stripConfidential } from "../brains/brain.mjs";
 
-export const GROWTH_BRAINS = Object.freeze(["porch-and-party", "spry"]);
-export const FIELDS = Object.freeze(["key", "buyer", "offer", "money number", "channels", "languages", "voice", "design skill", "limits", "season", "linked to-dos", "paused"]);
+export const GROWTH_BRAINS = Object.freeze(["porch-and-party", "spry", "friends", "west-peek"]);
+/**
+ * G8 (23 Nov 2026): the friends' sites (Hicks, Horse) and WPP-llm are read for SEARCH-WATCH only.
+ * Their brains carry owners' and members' names, so their Growth section is read with every
+ * confidential span cut (never refused whole), and every entry there is search-watch whatever it says.
+ */
+export const WATCH_ONLY_BRAINS = Object.freeze(["friends", "west-peek"]);
+export const TIERS = Object.freeze(["full", "search-watch"]);
+export const FIELDS = Object.freeze(["key", "tier", "buyer", "offer", "money number", "channels", "languages", "voice", "design skill", "limits", "season", "linked to-dos", "paused"]);
 export const REQUIRED = Object.freeze(["key", "buyer", "offer", "money number", "channels", "languages", "limits"]);
+/** What each tier must state. A search-watch entry is judged on its search levers only. */
+export const REQUIRED_BY_TIER = Object.freeze({ full: REQUIRED, "search-watch": Object.freeze(["key", "channels"]) });
 export const SPEND_ACTIONS = Object.freeze(["ad", "boost", "paid-tool", "paid-model", "purchase", "subscription", "promotion"]);
 export const NEVER_ACTIONS = Object.freeze({ "create-account": "NO_NEW_ACCOUNTS", "retire-account": "PROPOSE_ONLY", "delete-post": "PROPOSE_ONLY", "retire-pipeline": "PROPOSE_ONLY" });
 
 /** The Growth section of one brain, or a named refusal. Only the growth brains are ever read. */
 export function growthSection(slug, md) {
   if (!GROWTH_BRAINS.includes(slug)) throw Object.assign(new Error(`NAMED STOP [NOT_A_GROWTH_BRAIN] the Director never reads the ${slug} brain.`), { code: "NOT_A_GROWTH_BRAIN" });
+  if (WATCH_ONLY_BRAINS.includes(slug)) {
+    // Cut first, then read: no owner or member name in a private span ever reaches a prompt.
+    const cut = sectionBody(stripConfidential(md), "Growth");
+    return cut == null || !cut.trim() || cut.trim() === "[MISSING]" ? null : cut;
+  }
   const body = sectionBody(md, "Growth");
   if (body == null || !body.trim() || body.trim() === "[MISSING]") return null;
   // A mark inside the section, or a span from another section that runs over it (its own text then
@@ -76,8 +90,10 @@ export function parseRoster(body, brain) {
   return out.map(({ label, brain: b, fields, unknown }) => {
     const pausedText = fields.paused ?? "no";
     const paused = /^(no|false|-)?$/i.test(pausedText.trim()) ? null : pausedText;
+    const said = String(fields.tier ?? "full").trim().toLowerCase();
+    const tier = WATCH_ONLY_BRAINS.includes(b) ? "search-watch" : said;
     return {
-      label, brain: b, key: fields.key ?? null, buyer: fields.buyer ?? null, offer: fields.offer ?? null, money: fields["money number"] ?? null,
+      label, brain: b, key: fields.key ?? null, tier, buyer: fields.buyer ?? null, offer: fields.offer ?? null, money: fields["money number"] ?? null,
       channels: parseChannels(fields.channels), languages: list(fields.languages).map((l) => l.toLowerCase()), voice: fields.voice ?? null,
       design: fields["design skill"] ?? null, limits: (fields.limits ?? "").match(/R-[A-Z]+-\d+/g) ?? [], season: fields.season ?? null,
       linked: (fields["linked to-dos"] ?? "").match(/olp_[a-z0-9]+/g) ?? [],
@@ -86,7 +102,8 @@ export function parseRoster(body, brain) {
       linkedNotes: Object.fromEntries([...(fields["linked to-dos"] ?? "").matchAll(/(olp_[a-z0-9]+)\s*\(([^)]+)\)/g)].map((m) => [m[1], m[2].trim()])),
       paused,
       problems: [
-        ...REQUIRED.filter((k) => !fields[k]).map((k) => `${label}: no ${k}`),
+        ...(TIERS.includes(tier) ? REQUIRED_BY_TIER[tier] : REQUIRED).filter((k) => !fields[k]).map((k) => `${label}: no ${k}`),
+        ...(TIERS.includes(tier) ? [] : [`${label}: tier "${tier}" is not one of ${TIERS.join(", ")}`]),
         ...unknown.map((k) => `${label}: "${k}" is not a roster field (one of ${FIELDS.join(", ")})`),
         ...(fields.key && seen.get(fields.key) > 1 ? [`${label}: key ${fields.key} is listed twice`] : []),
       ],
@@ -106,11 +123,19 @@ export function rosterProblems(entries) {
 }
 
 /**
- * May the Director do this? `{ ok: true }` or `{ ok: false, stop, why }`. The ONLY gate between a
- * decision and any act; anything refused here can only become a proposal to her.
- *   action: "post" (on an approved channel/format), "propose", or a spend/never action.
+ * May the Director do this? `{ ok: true, newFormat?, newChannel? }` or `{ ok: false, stop, why }`.
+ * The ONLY gate between a decision and any act; anything refused here can only become a proposal.
+ *   action: "post", "propose", "page-edit", "wire", or a spend/never action.
+ *   ctx: { accounts: ["<business>:<channel>"] live accounts outside the roster, bufferFull: [business] }.
+ * G7 (23 Nov 2026): a new FORMAT on a roster channel, or a new CHANNEL on an account that already
+ * exists, is allowed: the caller then writes its roster line, scorecard row (G10) and Notices line in
+ * the same run. A new account, product or price is refused. G3: Porch & Party's roster is closed (a
+ * channel not on it is her call). G9: a client site's live page is never edited. G17: KeepMyProof
+ * is never wired (no tags, analytics or email capture).
  */
-export function mayAct(roster, { business, channel, format, action = "post" }) {
+export const CLIENT_KEYS = Object.freeze(["hicks", "horse"]);
+export const CLOSED_ROSTERS = Object.freeze(["porch-and-party"]);
+export function mayAct(roster, { business, channel, format, action = "post" }, ctx = {}) {
   if (SPEND_ACTIONS.includes(action)) return { ok: false, stop: "NEVER_SPEND", why: "agents never spend money; she pays, from a prepared checkout" };
   if (NEVER_ACTIONS[action]) return { ok: false, stop: NEVER_ACTIONS[action], why: action === "create-account" ? "agents never create accounts (R-AI-02)" : "the Director never retires or deletes; it proposes with evidence" };
   const mine = roster.filter((x) => x.key === business);
@@ -120,11 +145,21 @@ export function mayAct(roster, { business, channel, format, action = "post" }) {
   if (mine.length > 1 || e.problems.length) return { ok: false, stop: "ROSTER_BROKEN", why: mine.length > 1 ? `${business} is listed twice in the roster` : e.problems.join("; ") };
   if (e.paused) return { ok: false, stop: "PAUSED", why: `${e.label} is paused: ${e.paused}` };
   if (action === "propose") return { ok: true };
+  if (action === "page-edit") return CLIENT_KEYS.includes(e.key) ? { ok: false, stop: "CLIENT_APPROVAL", why: `${e.label}'s live pages change only with their owner's yes: a proposal card` } : { ok: false, stop: "NO_LEVER", why: "live pages change through sr-fix or the search loop, never a run-time edit" };
+  if (action === "wire") return e.key === "keepmyproof" ? { ok: false, stop: "KMP_PRIVACY", why: "KeepMyProof conversions are RevenueCat, Search Console and the in-app answer only: no tags, analytics or email capture" } : { ok: false, stop: "NO_LEVER", why: "wiring is a builder PR, never a run-time act: she names the source" };
   if (action !== "post") return { ok: false, stop: "UNKNOWN_ACTION", why: `no action called ${action}` };
-  const c = e.channels.find((x) => x.channel === String(channel ?? "").toLowerCase());
-  if (!c) return { ok: false, stop: "NOT_APPROVED", why: `${channel} is not an approved channel for ${e.label}` };
-  if (!format || !c.formats.includes(String(format).toLowerCase())) return { ok: false, stop: "NOT_APPROVED", why: `${format ?? "(no format)"} is not an approved format on ${e.label}'s ${channel}` };
-  return { ok: true };
+  if (e.tier === "search-watch") return { ok: false, stop: "WATCH_TIER", why: `${e.label} is search-watch: search levers and her calls only` };
+  const ch = String(channel ?? "").toLowerCase();
+  const c = e.channels.find((x) => x.channel === ch);
+  if (c) {
+    if (/by hand/i.test(c.note ?? "")) return { ok: false, stop: "NOT_APPROVED", why: `${e.label}'s ${ch} is done by hand; no agent posts there` };
+    if (!format) return { ok: false, stop: "NOT_APPROVED", why: `no format given for ${e.label}'s ${ch}` };
+    return c.formats.includes(String(format).toLowerCase()) ? { ok: true } : { ok: true, newFormat: true };
+  }
+  if (CLOSED_ROSTERS.includes(e.key)) return { ok: false, stop: "NOT_APPROVED", why: `${ch} is not on ${e.label}'s roster: adding it is her call` };
+  if (!(ctx.accounts ?? []).includes(`${e.key}:${ch}`)) return { ok: false, stop: "NO_NEW_ACCOUNTS", why: `${e.label} has no ${ch} account; agents never open accounts (R-AI-02)` };
+  if ((ctx.bufferFull ?? []).includes(e.key)) return { ok: false, stop: "NEEDS_MONEY", why: `${e.label}'s ${ch} would need a Buffer slot and its Buffer is full: a paid slot is her call` };
+  return { ok: true, newFormat: true, newChannel: true };
 }
 
 /**
