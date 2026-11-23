@@ -196,7 +196,11 @@
         "PITCH_LAB_TURNSTILE_SECRET_KEY",
         "PITCH_LAB_TURNSTILE_SITE_KEY",
         "WEST_PEEK_VENTURES_TURNSTILE_SECRET_KEY",
-        "WEST_PEEK_VENTURES_TURNSTILE_SITE_KEY"
+        "WEST_PEEK_VENTURES_TURNSTILE_SITE_KEY",
+        "WEST_PEEK_COMMUNITY_TURNSTILE_SECRET_KEY",
+        "WEST_PEEK_COMMUNITY_TURNSTILE_SITE_KEY",
+        "WEST_PEEK_PRODUCTIONS_TURNSTILE_SECRET_KEY",
+        "WEST_PEEK_PRODUCTIONS_TURNSTILE_SITE_KEY"
       ],
       "used_by": "Holds 92 of your domains, every Pages site and Worker, D1, Stream and Workers AI (Workers Paid since 16 Sep 2026).",
       "security": "not known yet",
