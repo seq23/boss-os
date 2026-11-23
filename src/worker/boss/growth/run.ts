@@ -21,7 +21,7 @@
  *                growth#…, owner "claude": the agent sessions that run her posting pipelines work it,
  *                posting only through that approved pipeline), at most MAX_OPEN_PER_BUSINESS open.
  *                A `backlinks` item is a link REQUEST to the outside backlink network (an `ordered` action,
- *                read by GET /api/growth/backlink-orders; at most MAX_BACKLINKS_PER_CYCLE per business),
+ *                read by GET /api/boss/growth/backlink-orders; at most MAX_BACKLINKS_PER_CYCLE per business),
  *                never an Open Loops row or a card; unapproved, it is refused.
  *                Not approved / proposals → a judgement call in Decide (raiseJudgementCall, resume kind
  *                growth_proposal: her yes opens the follow-on row, her no is remembered ASKED_DAYS),

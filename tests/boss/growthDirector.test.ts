@@ -546,7 +546,7 @@ describe("her rulings reach the Director (her yes, 22 Nov 2026: \"yea let it rea
 ## Growth
 ${entry("KeepMyProof", "keepmyproof")}${entry("Dream Wedding", "dream-wedding")}`;
   const ANSWER = { decision: "Hold steady.", evidence: ["sales: 1"], test: null, queue: [], proposals: [], next_check: "2026-11-30" };
-  const read = async () => { for (const k of ["keepmyproof", "dream-wedding", "porch-and-party"]) await reading(`${k}-sales`, k, "sales", "site", 1); };
+  const read = async () => { await reading("kmp-subscriptions", "keepmyproof", "sales", "store", 1); await reading("dw-sales", "dream-wedding", "sales", "site", 1); await reading("pnp-requests", "porch-and-party", "requests", "all", 1); };
   const promptFor = (seen: string[], label: string) => seen.filter((t) => t.includes(`Business: ${label}\n`) && t.includes("HER RULINGS"));
 
   it("a KeepMyProof ruling reaches the KeepMyProof prompt and never Dream Wedding's; the backlink ruling reaches both; a private span reaches neither", async () => {
@@ -622,7 +622,7 @@ ${entry("KeepMyProof", "keepmyproof")}${entry("Dream Wedding", "dream-wedding")}
     expect(kmp).not.toContain("SEARCH-RULING");
     expect(kmp).not.toContain("APPS-RULING"); // left out from the end of the list first
     expect(kmp).toContain("UMBRELLA-RULING");
-    expect(kmp.length).toBeLessThanOrEqual(PROMPT_BUDGET_CHARS);
+    expect(kmp!.length).toBeLessThanOrEqual(PROMPT_BUDGET_CHARS);
     expect(r.problems).toContain(`KeepMyProof: the prompt was over ${PROMPT_BUDGET_CHARS} characters, so the shared rulings "Search, sites and freshness", "All apps" were left out this cycle`);
     expect(r.rulings.find((x) => x.business === "keepmyproof")!.left).toEqual(["Search, sites and freshness", "All apps"]);
   });

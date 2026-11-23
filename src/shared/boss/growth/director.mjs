@@ -43,7 +43,7 @@ export const MAX_OPEN_PER_BUSINESS = 3;
  * the hard limits: TOPIC_MAX (prompt, parser, route), MAX_BACKLINKS_PER_CYCLE (the cycle, run.ts, makes
  * at most that many requests per business per cycle; the rest are held, never requested), and never
  * calling the network ours. It is never a to-do or a card for her; the network reads the newest cycle's
- * requests (GET /api/growth/backlink-orders, `backlinkOrders` below, field names unchanged).
+ * requests (GET /api/boss/growth/backlink-orders, `backlinkOrders` below, field names unchanged).
  */
 export const BACKLINKS = "backlinks";
 export const TOPIC_MAX = 120;

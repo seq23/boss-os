@@ -976,12 +976,11 @@ vault lacks shows "No number" with `NAMED STOP [KEY_MISSING]` naming the key. Dr
 
 Her words, 22 Nov 2026: "i thought the backlink network was going to defer to the growth director"; "we are suppposed
 to assume we are not related and there is a separate cloudflare acct the director needs to know that"; "backlinks
-should be written about other companies and other things so its not just about us". The backlink network is an
-outside publisher on its own Cloudflare account; the Director sends it link REQUESTS, never commands, and its prompt
-says so (src/shared/boss/growth/director.mjs): the network writes mostly about other companies and subjects and fits
-at most 1 in 4 of its articles around requests; a request's topic must be one an existing page of the business
-genuinely answers, with the draft naming that page (the network refuses one with no such page, NO_FIT); and the
-network is never called ours in anything public. In the Monday cycle (src/worker/boss/growth/run.ts) a queue item on
+should be written about other companies and other things so its not just about us". How the network works with us
+(an outside publisher on its own Cloudflare account; link REQUESTS, never commands; mostly other subjects) is her
+ruling in the spry brain's Settled "### Growth" group, which the Director reads with her other rulings (below). Code
+keeps only the hard limits: the topic length, one request per business per cycle, and never calling the network ours
+in anything public. In the Monday cycle (src/worker/boss/growth/run.ts) a queue item on
 the `backlinks` channel, for a business whose Growth roster lists it (e.g. `backlinks [guide]`), is a request for one
 article: the model names its `topic` (at most `TOPIC_MAX` = 120 characters; an item with none, or a longer one, is
 dropped and written on the decision as held) and is told the playbook's backlink rule (links against search visits 8
@@ -994,6 +993,32 @@ reads them with `GET /api/boss/growth/backlink-orders` (the BOSS_OPEN_LOOPS_TOKE
 ai-misses; anything else is 401): `{ cycle, read_at, orders: [{ business, topic, draft, why }] }`, from the newest
 cycle's decided rows only (a same-day re-run replaces the first), never from Open Loops. No cycle yet → `cycle: null,
 orders: []`; a decision row whose actions are not JSON is skipped and logged in the Worker log.
+
+## The Growth Director reads her Settled decisions (22 Nov 2026)
+
+Her yes, 22 Nov 2026: "yea let it read the settled decisions". Every growth ruling she makes reaches the Director
+without anyone copying it into a roster field. For each roster entry, `rulingsFor` (src/shared/boss/growth/roster.mjs)
+takes its brain's `## Settled decisions`, matched on `### ` headings only (the model reads what a ruling means):
+- a Spry Labs business: the groups whose heading starts with its roster label (KeepMyProof, ApprovalPrep, Dream
+  Wedding, A Player Mode and BHPC, Peace Be Still, Whisper Almanac, How We Know), then the shared groups in
+  `SHARED_RULINGS` order: Growth, Umbrella scope and money, Brand and social, Search sites and freshness, and All apps
+  (only for a business with an `app-store` channel);
+- Porch & Party: its whole Settled decisions section.
+
+**Missing pieces are named.** A business with no group of its own is a named problem on the run, and it still gets
+the shared groups. The same goes for a missing shared group. A brain with no Settled decisions section, an empty one,
+or one that could not be read is "rulings not read". That business is held (`held: roster`) and never decided
+without its rulings; the next cycle tries again. A brain that fails to read never stops the other brain's cycle.
+
+**Privacy.** Each group's confidential spans are cut at the source (`stripConfidential`). The router cuts them again
+on every message (src/worker/boss/router/index.ts) and refuses one that still holds a mark, and the free-only lane
+still applies.
+
+**Size.** The decision prompt is held to `PROMPT_BUDGET_CHARS` = 60,000 characters, about 15,000 tokens. That fits
+the smallest free route (32,768 tokens) with room for the answer. Over the budget, `fitDecisionPrompt` leaves shared
+groups out from the end of `SHARED_RULINGS`, never the business's own, and the run names what it left out. The
+characters of her rulings added per business, and what was left out, are written each cycle on the cycle's audit
+row (`detail.rulings`) and returned by the run.
 
 ## The AI answers loop (22 Nov 2026)
 
