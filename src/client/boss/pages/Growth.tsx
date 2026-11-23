@@ -14,6 +14,8 @@ import { ENGINE_LABEL } from "@shared/boss/growth/aiAnswers.mjs";
  * (earlier decisions and finished to-dos, eight weeks). "Not read" is said, never shown as zero.
  * AI answers (ChatGPT, Gemini, Google AI Overviews citing the site, read weekly from OpenSEO) is its
  * own card beside the 28-day numbers, never added into them.
+ * Upcoming also shows what Noelle last saw queued on each owned channel (Studio, Buffer, the search
+ * loop): a count, or "Not read: …" when that read failed, never "Nothing queued" on a failed read.
  * Phone first, calm: line 1 says what needs her, which is only a card in Decide.
  */
 type Todo = { id: string; title: string; next: string; date: string | null; elsewhere: boolean };
@@ -23,8 +25,9 @@ type Channel = { label: string; kind: string; value: number | null; before: numb
 type AiEngine = { engine: string; answered: number; mentioned: number; cited: number; before: { mentioned: number; cited: number } | null };
 type Ai = { host: string; state: string; why?: string; week: string | null; day?: string; prompts?: number; cited?: number; mentioned?: number;
   before?: { week: string; cited: number; mentioned: number } | null; engines?: AiEngine[] };
+type Queue = { unread: string | null; channels: { channel: string; value: number | null; unread: string | null }[] };
 type Biz = {
-  key: string; label: string; paused: string | null; onRoster: boolean; ai: Ai | null;
+  key: string; label: string; paused: string | null; onRoster: boolean; ai: Ai | null; queue?: Queue;
   upcoming: { todos: Todo[]; cards: Card[] };
   happening: { board: { state: string; channels: Channel[] } | null; decision: Decision | null; last: string | null };
   happened: { decisions: Decision[]; done: { id: string; title: string; at: number; status: string }[]; answered: Card[] };
@@ -48,7 +51,7 @@ export function Growth() {
         {cards ? `${plural(cards, "growth idea")} waiting for you in Decide` : "Nothing needs you here"}
         {decided + held ? ` · this week ${decided} decided, ${held} held` : " · no decision written yet this week"}
       </p>
-      <p className="brain-hint">Noelle, Director of Growth, counts what each business earns every morning and decides the week every Monday. She never posts, sends or spends; anything new comes to you as a card.</p>
+      <p className="brain-hint">Noelle, Director of Growth, reads what each business earns once a day, decides, and changes only the targets of the jobs that already post. She never sends email, spends or opens an account; anything new comes to you as a card.</p>
       {data.problems.length > 0 && <p className="brain-hint" data-testid="growth-problems">The Growth roster needs a fix: {data.problems.slice(0, 3).map((p) => p.replace(/NAMED STOP \[[A-Z0-9_]+\]\s*/g, "")).join(" · ")}</p>}
       {data.general.length > 0 && (
         <section className="scorecard-business" data-testid="growth-general">
@@ -83,7 +86,8 @@ function Business({ b }: { b: Biz }) {
         : !b.onRoster ? <p className="brain-hint">Not on the Growth roster yet, so nothing acts for it.</p> : null}
 
       <h3 className="growth-when">Upcoming</h3>
-      {b.upcoming.cards.length + b.upcoming.todos.length === 0 ? <p className="brain-hint">Nothing queued.</p> : (
+      {b.queue && !b.paused ? <QueueLine q={b.queue} /> : null}
+      {b.upcoming.cards.length + b.upcoming.todos.length === 0 ? (b.queue?.unread || b.queue?.channels.length ? null : <p className="brain-hint">Nothing queued.</p>) : (
         <div className="brain-cards">
           {b.upcoming.cards.map((c) => (
             <a key={c.id} className="brain-card email-map-card" href="/?tab=today">
@@ -97,7 +101,7 @@ function Business({ b }: { b: Biz }) {
       {b.paused && !d ? null : <h3 className="growth-when">Happening</h3>}
       <div className="brain-cards">
         {b.paused && !d ? null : <div className="brain-card email-map-card">
-          <span className="email-map-what">{d ? d.decision : b.happening.last ? `No decision this week yet (last: ${shortDate(b.happening.last)}). The next one is written on Monday morning.` : "No decision yet: the first one is written on Monday morning."}</span>
+          <span className="email-map-what">{d ? d.decision : b.happening.last ? `No decision this week yet (last: ${shortDate(b.happening.last)}). Noelle runs once a day.` : "No decision yet: Noelle runs once a day."}</span>
           {d ? <span className="brain-card-line">Week of {shortDate(d.cycle)}{d.next_check ? ` · next check ${shortDate(d.next_check)}` : ""}</span> : null}
           {d?.evidence?.length ? <ul className="schedule-list">{d.evidence.slice(0, 4).map((e, i) => <li key={i}>{e}</li>)}</ul> : null}
           {d?.test ? <span className="brain-card-line">Testing: {d.test.what} on {d.test.channel}, judged by {d.test.number}, stops {d.test.stop}</span> : null}
@@ -128,6 +132,17 @@ function Business({ b }: { b: Biz }) {
         </ul>
       )}
     </section>
+  );
+}
+
+/** What Noelle last saw queued per owned channel; a failed read is "Not read", never an empty queue. */
+function QueueLine({ q }: { q: Queue }) {
+  if (q.unread) return <p className="brain-hint" data-testid="growth-queue-unread">Queued posts {q.unread.replace(/^not read/, "not read")}</p>;
+  if (!q.channels.length) return null;
+  return (
+    <ul className="schedule-list" data-testid="growth-queue">
+      {q.channels.map((c) => <li key={c.channel}>{c.channel}: {c.value == null ? (c.unread ?? "not read").replace(/^not read/, "Not read") : `${plural(c.value, "post")} queued`}</li>)}
+    </ul>
   );
 }
 

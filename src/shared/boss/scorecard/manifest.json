@@ -2253,10 +2253,11 @@
       "id": "growth-director",
       "initiative": "Growth Director",
       "business": "spry",
-      "owner": "Noelle · the Growth page and her email every two weeks",
+      "owner": "Noelle (a Claude session on your Mac, daily) · the Growth page, Notices, and her email every two weeks",
       "result": "More paid work and sales for the growth businesses, Porch & Party's Christmas requests first",
       "jobs": [
         "growth-director",
+        "growth-director-watch",
         "growth-scoreboard"
       ],
       "start": "2026-11-23",
@@ -2288,7 +2289,7 @@
         }
       },
       "versionB": {
-        "text": "Propose only: the Director queues nothing herself, and each move goes to her as one Decide card with its evidence."
+        "text": "Propose only: Noelle acts on nothing herself, and each move goes to her as one Decide card with its evidence."
       }
     },
     {

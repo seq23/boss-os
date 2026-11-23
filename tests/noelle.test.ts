@@ -231,6 +231,7 @@ describe("G15 + G16: closing, did-not-run, escalation, budget, slot", () => {
     const r = (day: string, stops: string[]) => ({ day, stops });
     expect(escalations([r("2026-11-21", ["SOURCE_STALE"]), r("2026-11-22", ["SOURCE_STALE"]), r("2026-11-23", ["SOURCE_STALE", "X"])])).toHaveLength(1);
     expect(escalations([r("2026-11-21", ["A"]), r("2026-11-22", ["SOURCE_STALE"]), r("2026-11-23", ["SOURCE_STALE"])])).toHaveLength(0);
+    expect(escalations([r("2026-11-19", ["SOURCE_STALE"]), r("2026-11-22", ["SOURCE_STALE"]), r("2026-11-23", ["SOURCE_STALE"])])).toHaveLength(0); // a gap is not "running"
   });
   it("run and week Claude-call budgets end in named stops", () => {
     expect(callBudget({ runUsed: RUN_CALLS }).stop).toMatch(/RUN_CALL_CAP/);

@@ -1,21 +1,18 @@
 /**
  * THE AI ANSWERS LOOP IN D1, END TO END (her ask 22 Nov 2026; the pure half is tests/aiAnswers.test.ts).
  * HOW IT BREAKS, each proven here:
- *   - data integrity: the same week twice changes nothing (no second to-do or card); a not-read week
- *     never overwrites a read one; one to-do or card per cited source, its prompts listed;
- *   - lanes: after 2 fixes a miss moves to the next lane, and a rerun never counts a fix twice;
- *   - her yes: EARN and CONTEST are cards, a CLAIM on a listing she does not hold is a card (R-AI-02),
- *     and the claims check failing or not answering opens nothing;
- *   - the cap: at most MAX_OPEN_PER_BUSINESS Growth to-dos per business, the rest wait;
+ *   - data integrity: the same week twice changes nothing; a not-read week never overwrites a read one;
+ *   - G16e: the week is stored whether or not Noelle runs, and nothing here opens a to-do, a card or a
+ *     model call (the fixes are Noelle's `ai-fix`, keyed noelle:<decision id>);
+ *   - lanes: after 2 fixes a miss moves to the next lane, and a rerun never counts a fix twice (the
+ *     loop's strengthened pages for OWN, Noelle's decisions made before the answers for the rest);
  *   - abuse: GET ai-misses is 401 without the machine token, 404 for any host but the six (exact
  *     match), serves only OWN misses with a page on the host or null; POST ai-week needs a session;
- *   - aplayermode.com (no loop): read, no misses, the note; its OWN misses are to-dos.
+ *   - aplayermode.com (no loop): read, its misses stored, none served to the loop (the note).
  */
 import { env } from "cloudflare:test";
 import { beforeEach, describe, expect, it } from "vitest";
 import { recordAiWeek, aiMisses } from "../../src/worker/boss/growth/aiAnswers";
-import type { Model } from "../../src/worker/boss/growth/run";
-import { MAX_OPEN_PER_BUSINESS } from "../../src/shared/boss/growth/director.mjs";
 import { ENGINES, RUN_DAY_UTC, RUN_HOUR_UTC, missId } from "../../src/shared/boss/growth/aiAnswers.mjs";
 import { TOKEN_KEY, sha256 } from "../../src/worker/boss/routes/openLoops";
 import { setSetting } from "../../src/worker/boss/lib/settings";
@@ -69,18 +66,6 @@ const all = async (sql: string, ...b: unknown[]) => ((await env.DB.prepare(sql).
 const loops = () => all(`SELECT * FROM owner_open_loops WHERE source_key LIKE 'growth#%#ai-%' ORDER BY source_key`);
 const cards = () => all(`SELECT a.*, j.title AS jtitle, j.question FROM approvals a JOIN judgement_calls j ON j.approval_id = a.id WHERE j.resume_kind = 'growth_proposal' AND a.status = 'pending' ORDER BY j.title`);
 
-/** The claims check: passes unless the draft says BADCLAIM; `null` = no model answered. */
-function fake(answer: "pass" | "fail" | null = "pass"): { model: Model; calls: number } {
-  const st = { calls: 0, model: null as unknown as Model };
-  st.model = async (_e, messages, job) => {
-    st.calls++;
-    if (job !== "growth-claims" || answer === null) return null;
-    const text = messages.map((m) => m.content).join("\n");
-    return JSON.stringify(answer === "fail" || /BADCLAIM/.test(text) ? { pass: false, broken: ["R-AI-02"], why: "breaks it" } : { pass: true, broken: [], why: "" });
-  };
-  return st;
-}
-
 type P = { id: string; text: string; cited?: string[]; sources?: string[]; lane?: Record<string, unknown> };
 /** One whole OpenSEO week for a site, as the reading session prints it. */
 function week(host: string, prompts: P[], runAt = RUN_AT, runId = "run-1") {
@@ -114,9 +99,8 @@ beforeEach(async () => {
 
 describe("one week, stored", () => {
   it("stores the recount, and the same week twice changes nothing", async () => {
-    const f = fake();
     const entry = kmp([P_CITED, P_OWN, P_EARN_A, P_EARN_B, P_CLAIM_NEW, P_CLAIM_HELD, P_CONTEST]);
-    const [first] = await recordAiWeek(env, [entry], NOW, { model: f.model });
+    const [first] = await recordAiWeek(env, [entry], NOW);
     expect(first).toMatchObject({ status: "read", prompts: 7, cited: 1, misses: 6, unchanged: false });
     const snap = async () => JSON.stringify([
       await all(`SELECT site, week, status, cited, prompts FROM ai_answer_reads`),
@@ -126,67 +110,35 @@ describe("one week, stored", () => {
     ]);
     const before = await snap();
     expect((await all(`SELECT COUNT(*) AS n FROM ai_answer_obs`))[0].n).toBe(21);
-    const [again] = await recordAiWeek(env, [entry], NOW + 60_000, { model: f.model });
+    const [again] = await recordAiWeek(env, [entry], NOW + 60_000);
     expect(again).toMatchObject({ status: "read", unchanged: true });
-    expect(again.actions.every((a: any) => a.kind === "working")).toBe(true);
     expect(await snap()).toBe(before);
   });
 
-  it("one fix per cited source: EARN, CONTEST and a CLAIM she does not hold are cards; a CLAIM on her channel is a to-do", async () => {
-    await recordAiWeek(env, [kmp([P_CITED, P_OWN, P_EARN_A, P_EARN_B, P_CLAIM_NEW, P_CLAIM_HELD, P_CONTEST])], NOW, { model: fake().model });
-    const c = await cards();
-    expect(c.map((x) => x.jtitle)).toEqual([
-      "KeepMyProof: AI answers claim, claim app-directory.com?",
-      "KeepMyProof: AI answers contest, correct wrong-facts.com?",
-      "KeepMyProof: AI answers earn, earn a mention on review-site.com?",
-    ]);
-    // ONE earn card for review-site.com, listing both of its prompts.
-    const earn = c.find((x) => /earn/.test(x.jtitle));
-    expect(earn.question).toContain(P_EARN_A.text);
-    expect(earn.question).toContain(P_EARN_B.text);
-    expect(c.find((x) => /claim/.test(x.jtitle)).question).toMatch(/You open the account yourself/);
-    // R-AI-02: the reason on the card is that agents never open accounts, not a channel the roster lacks.
-    expect(c.find((x) => /claim/.test(x.jtitle)).question).toMatch(/agents never open accounts/);
-    // The held listing is a to-do through the roster; OWN on a loop site is the loop's, never a to-do.
-    expect((await loops()).map((l) => l.source_key)).toEqual(["growth#keepmyproof#ai-claim-apps-apple-com"]);
-  });
-
-  it("the claims check failing or not answering opens nothing", async () => {
-    await recordAiWeek(env, [kmp([P_CLAIM_HELD])], NOW, { model: fake(null).model });
-    expect(await loops()).toEqual([]);
-    await env.DB.exec("DELETE FROM ai_answer_reads; DELETE FROM ai_answer_obs;");
-    const [r] = await recordAiWeek(env, [kmp([P_CLAIM_HELD])], NOW, { model: fake("fail").model });
-    expect(r.actions[0]).toMatchObject({ kind: "blocked" });
+  it("G16e: the week is stored with Noelle absent, and nothing here opens a to-do, a card or a fix", async () => {
+    const [r] = await recordAiWeek(env, [kmp([P_CITED, P_OWN, P_EARN_A, P_EARN_B, P_CLAIM_NEW, P_CLAIM_HELD, P_CONTEST])], NOW);
+    expect(r).toMatchObject({ status: "read", misses: 6 });
+    expect(r).not.toHaveProperty("actions");
+    expect((await all(`SELECT COUNT(*) AS n FROM ai_misses`))[0].n).toBe(6);
     expect(await loops()).toEqual([]);
     expect(await cards()).toEqual([]);
+    expect((await all(`SELECT COUNT(*) AS n FROM ai_misses WHERE todo_key IS NOT NULL`))[0].n).toBe(0);
   });
 
   it("a not-read week is stored as not read and never overwrites a read week", async () => {
-    await recordAiWeek(env, [{ host: "approvalprep.com", stop: "OPENSEO_UNREACHABLE" }], NOW, { model: fake().model });
+    await recordAiWeek(env, [{ host: "approvalprep.com", stop: "OPENSEO_UNREACHABLE" }], NOW);
     expect(await all(`SELECT site, status, stop, cited FROM ai_answer_reads`)).toEqual([{ site: "approvalprep.com", status: "not_read", stop: "OPENSEO_UNREACHABLE", cited: null }]);
-    await recordAiWeek(env, [kmp([P_CITED])], NOW, { model: fake().model });
-    await recordAiWeek(env, [{ host: KMP, stop: "OPENSEO_UNREACHABLE" }], NOW + 60_000, { model: fake().model });
+    await recordAiWeek(env, [kmp([P_CITED])], NOW);
+    await recordAiWeek(env, [{ host: KMP, stop: "OPENSEO_UNREACHABLE" }], NOW + 60_000);
     expect(await all(`SELECT status, stop, cited, read_at FROM ai_answer_reads WHERE site = ?`, KMP)).toEqual([{ status: "read", stop: null, cited: 1, read_at: NOW }]);
   });
 
   it("a site that is not one of the six is refused; a summary that disagrees is not read", async () => {
     const bad = kmp([P_CITED]); (bad.block.summary_own as any).citations = 3;
-    const out = await recordAiWeek(env, [{ host: "evil.com", stop: "OPENSEO_UNREACHABLE" }, bad], NOW, { model: fake().model });
+    const out = await recordAiWeek(env, [{ host: "evil.com", stop: "OPENSEO_UNREACHABLE" }, bad], NOW);
     expect(out[0]).toMatchObject({ status: "refused" });
     expect(out[1]).toMatchObject({ status: "not_read", stop: "OPENSEO_SHORT_READ" });
     expect(await all(`SELECT site FROM ai_answer_reads WHERE status = 'read'`)).toEqual([]);
-  });
-});
-
-describe("asked once", () => {
-  it("a new prompt citing the same source within 14 days of its card is never a second card", async () => {
-    const w1 = NOW - 7 * DAY;
-    await recordAiWeek(env, [kmp([P_EARN_A], { runAt: w1, runId: "r1" })], w1 + 3_600_000, { model: fake().model });
-    expect((await cards()).length).toBe(1);
-    // Week 2: the first prompt is cited now (fixed); a second prompt misses on the same domain.
-    const [r] = await recordAiWeek(env, [kmp([{ ...P_EARN_A, cited: ["chatgpt"], lane: undefined }, P_EARN_B], { runId: "r2" })], NOW, { model: fake().model });
-    expect(r.actions).toEqual([expect.objectContaining({ kind: "waiting", target: "review-site.com" })]);
-    expect((await all(`SELECT COUNT(*) AS n FROM judgement_calls WHERE resume_kind = 'growth_proposal'`))[0].n).toBe(1);
   });
 });
 
@@ -195,43 +147,67 @@ describe("lanes move after two fixes", () => {
     const id = await missId(KMP, P_OWN.text);
     const w1 = RUN_AT - 14 * DAY, w2 = RUN_AT - 7 * DAY, w3 = RUN_AT;
     const s = (at: number) => ({ id, page_url: Q1, at: new Date(at).toISOString() });
-    await recordAiWeek(env, [kmp([P_OWN], { runAt: w1, runId: "r1" })], w1 + 3_600_000, { model: fake().model });
-    await recordAiWeek(env, [kmp([P_OWN], { runAt: w2, runId: "r2", strengthened: [s(w1 + DAY)] })], w2 + 3_600_000, { model: fake().model });
+    await recordAiWeek(env, [kmp([P_OWN], { runAt: w1, runId: "r1" })], w1 + 3_600_000);
+    await recordAiWeek(env, [kmp([P_OWN], { runAt: w2, runId: "r2", strengthened: [s(w1 + DAY)] })], w2 + 3_600_000);
     const one = await all(`SELECT lane, fix_attempts FROM ai_misses WHERE id = ?`, id);
     expect(one).toEqual([{ lane: "own", fix_attempts: 1 }]);
     // The same strengthening again plus one made AFTER this run's answers: neither counts.
-    await recordAiWeek(env, [kmp([P_OWN], { runAt: w2, runId: "r2", strengthened: [s(w1 + DAY), s(w2 + DAY)] })], w2 + 7_200_000, { model: fake().model });
+    await recordAiWeek(env, [kmp([P_OWN], { runAt: w2, runId: "r2", strengthened: [s(w1 + DAY), s(w2 + DAY)] })], w2 + 7_200_000);
     expect((await all(`SELECT fix_attempts FROM ai_misses WHERE id = ?`, id))[0].fix_attempts).toBe(1);
-    await recordAiWeek(env, [kmp([P_OWN], { runAt: w3, runId: "r3", strengthened: [s(w1 + DAY), s(w2 + DAY)] })], NOW, { model: fake().model });
+    await recordAiWeek(env, [kmp([P_OWN], { runAt: w3, runId: "r3", strengthened: [s(w1 + DAY), s(w2 + DAY)] })], NOW);
     const moved = (await all(`SELECT lane, fix_attempts, lanes_tried, page_url FROM ai_misses WHERE id = ?`, id))[0];
     expect(moved).toMatchObject({ lane: "claim", fix_attempts: 0, lanes_tried: '["own"]', page_url: null });
     // Moved off OWN: the search loop no longer gets it.
     expect((await aiMisses(env.DB, KMP, NOW)).misses).toEqual([]);
   });
 
+  it("Noelle's ai-fix counts once, only when her decision came before the answers, then the lane moves", async () => {
+    const id = await missId(KMP, P_EARN_A.text);
+    const w1 = RUN_AT - 14 * DAY, w2 = RUN_AT - 7 * DAY, w3 = RUN_AT;
+    const decide = async (dId: string, at: number) => {
+      await env.DB.prepare(`INSERT INTO growth_decisions (id, cycle, business, label, state, decision, created_at) VALUES (?, '2026-11-20', 'keepmyproof', 'KeepMyProof', 'decided', 'earn a mention', ?)`).bind(dId, at).run();
+      await env.DB.prepare(`UPDATE ai_misses SET todo_key = ? WHERE id = ?`).bind(`noelle:${dId}`, id).run();
+    };
+    await env.DB.exec("DELETE FROM growth_decisions");
+    await recordAiWeek(env, [kmp([P_EARN_A], { runAt: w1, runId: "r1" })], w1 + 3_600_000);
+    // A decision made AFTER week 2's answers were collected is not an attempt yet.
+    await decide("gdc_one", w2 + DAY);
+    await recordAiWeek(env, [kmp([P_EARN_A], { runAt: w2, runId: "r2" })], w2 + 2 * DAY);
+    expect((await all(`SELECT fix_attempts, todo_key FROM ai_misses WHERE id = ?`, id))[0]).toEqual({ fix_attempts: 0, todo_key: "noelle:gdc_one" });
+    await recordAiWeek(env, [kmp([P_EARN_A], { runAt: w3, runId: "r3" })], NOW);
+    expect((await all(`SELECT lane, fix_attempts, todo_key FROM ai_misses WHERE id = ?`, id))[0]).toEqual({ lane: "earn", fix_attempts: 1, todo_key: null });
+    // The same week read again never counts the same decision twice.
+    await env.DB.prepare(`UPDATE ai_misses SET todo_key = 'noelle:gdc_one' WHERE id = ?`).bind(id).run();
+    await recordAiWeek(env, [kmp([P_EARN_A], { runAt: w3, runId: "r3" })], NOW + 60_000);
+    expect((await all(`SELECT fix_attempts FROM ai_misses WHERE id = ?`, id))[0].fix_attempts).toBe(1);
+    // A second decision before the next answers: two attempts, the miss moves on to the next lane.
+    await decide("gdc_two", w3 + DAY);
+    await recordAiWeek(env, [kmp([P_EARN_A], { runAt: w3 + 7 * DAY, runId: "r4" })], w3 + 8 * DAY);
+    expect((await all(`SELECT lane, fix_attempts, lanes_tried FROM ai_misses WHERE id = ?`, id))[0]).toMatchObject({ fix_attempts: 0, lanes_tried: '["earn"]' });
+  });
+
+  it("a deleted decision is no attempt", async () => {
+    const id = await missId(KMP, P_EARN_A.text);
+    await recordAiWeek(env, [kmp([P_EARN_A], { runAt: RUN_AT - 7 * DAY, runId: "r1" })], RUN_AT - 6 * DAY);
+    await env.DB.prepare(`UPDATE ai_misses SET todo_key = 'noelle:gdc_gone' WHERE id = ?`).bind(id).run();
+    await recordAiWeek(env, [kmp([P_EARN_A], { runId: "r2" })], NOW);
+    expect((await all(`SELECT fix_attempts, todo_key FROM ai_misses WHERE id = ?`, id))[0]).toEqual({ fix_attempts: 0, todo_key: null });
+  });
+
   it("a cited week marks the miss fixed", async () => {
-    await recordAiWeek(env, [kmp([P_OWN], { runAt: NOW - 7 * DAY, runId: "r1" })], NOW - 7 * DAY + 3_600_000, { model: fake().model });
-    await recordAiWeek(env, [kmp([{ ...P_OWN, cited: ["gemini"], lane: undefined }], { runId: "r2" })], NOW, { model: fake().model });
+    await recordAiWeek(env, [kmp([P_OWN], { runAt: NOW - 7 * DAY, runId: "r1" })], NOW - 7 * DAY + 3_600_000);
+    await recordAiWeek(env, [kmp([{ ...P_OWN, cited: ["gemini"], lane: undefined }], { runId: "r2" })], NOW);
     expect((await all(`SELECT fixed_week FROM ai_misses`))[0].fixed_week).toMatch(/^\d{4}-W\d\d$/);
   });
 });
 
 describe("aplayermode.com has no search loop (A6)", () => {
   const apm = (prompts: P[]) => ({ host: APM, block: week(APM, prompts), prefix: "/questions/", strengthened: [] });
-  it("its OWN misses are to-dos, at most MAX_OPEN_PER_BUSINESS open; the rest wait", async () => {
-    const fits = ["a", "b", "c", "d"].map((x, i) => ({ id: `q${i}`, text: `how to perform under pressure ${x}`, lane: { lane: "own", page_url: `https://aplayermode.com/${x}/` } }));
-    const nofit = { id: "q9", text: "how to stay calm on stage", lane: { lane: "own", page_url: null } };
-    const [r] = await recordAiWeek(env, [apm([...fits, nofit])], NOW, { model: fake().model });
-    expect(MAX_OPEN_PER_BUSINESS).toBe(3);
-    expect((await loops()).length).toBe(3);
-    expect(r.actions.filter((a: any) => a.kind === "waiting").length).toBe(2);
-    // Never a page_url served for it: the loop-less site's fits are fit_url only.
+  it("its misses are stored, none served to a loop, never a page_url", async () => {
+    await recordAiWeek(env, [apm([{ id: "q1", text: "how to perform under pressure", lane: { lane: "own", page_url: "https://aplayermode.com/a/" } }, { id: "q9", text: "how to stay calm on stage", lane: { lane: "own", page_url: null } }])], NOW);
+    expect((await all(`SELECT COUNT(*) AS n FROM ai_misses WHERE site = ?`, APM))[0].n).toBe(2);
     expect((await all(`SELECT COUNT(*) AS n FROM ai_misses WHERE page_url IS NOT NULL`))[0].n).toBe(0);
-  });
-  it("a miss with no page that fits becomes 'write one page'", async () => {
-    await recordAiWeek(env, [apm([{ id: "q9", text: "how to stay calm on stage", lane: { lane: "own", page_url: null } }])], NOW, { model: fake().model });
-    const [l] = await loops();
-    expect(l.next_step).toMatch(/^own: write one page on aplayermode\.com/);
+    expect(await loops()).toEqual([]);
     expect(await aiMisses(env.DB, APM, NOW)).toMatchObject({ status: "read", misses: [], note: "no search loop on this host" });
   });
 });
@@ -256,7 +232,7 @@ describe("GET /api/boss/growth/ai-misses and POST ai-week, through the productio
 
   it("serves OWN misses only, with an on-host engine page or null, in the contract's shape", async () => {
     const offHost: P = { id: "p8", text: "rent cash receipt template", lane: { lane: "own", page_url: "https://evil.com/questions/x/" } };
-    await recordAiWeek(env, [kmp([P_CITED, P_OWN, P_EARN_A, offHost])], NOW, { model: fake().model });
+    await recordAiWeek(env, [kmp([P_CITED, P_OWN, P_EARN_A, offHost])], NOW);
     const res = await get(`host=${KMP}`, `Bearer ${TOKEN}`);
     expect(res.status).toBe(200);
     const body: any = await res.json();
@@ -267,14 +243,14 @@ describe("GET /api/boss/growth/ai-misses and POST ai-week, through the productio
   });
 
   it("a stored page off the host is never served, whatever wrote it", async () => {
-    await recordAiWeek(env, [kmp([P_OWN])], NOW, { model: fake().model });
+    await recordAiWeek(env, [kmp([P_OWN])], NOW);
     await env.DB.prepare(`UPDATE ai_misses SET page_url = 'https://keepmyproof.com.evil.com/questions/x/'`).run();
     const body: any = await (await get(`host=${KMP}`, `Bearer ${TOKEN}`)).json();
     expect(body.misses.map((m: any) => m.page_url)).toEqual([null]);
   });
 
   it("a newest week over 8 days old, or not read, serves no misses", async () => {
-    await recordAiWeek(env, [kmp([P_OWN])], NOW, { model: fake().model });
+    await recordAiWeek(env, [kmp([P_OWN])], NOW);
     expect((await aiMisses(env.DB, KMP, RUN_AT + 9 * DAY)).status).toBe("not_read");
     expect((await aiMisses(env.DB, KMP, RUN_AT + 6 * DAY)).misses.length).toBe(1);
     await env.DB.prepare(`INSERT INTO ai_answer_reads (site, week, status, stop, engines, read_at) VALUES (?, '2099-W01', 'not_read', 'OPENSEO_UNREACHABLE', '{}', ?)`).bind(KMP, NOW).run();

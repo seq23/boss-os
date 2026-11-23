@@ -186,6 +186,8 @@ export function didNotRunLine(runs, day) {
 export function escalations(runs) {
   const days = [...new Set(runs.map((r) => r.day))].sort().slice(-3);
   if (days.length < 3) return [];
+  // "Running" means three calendar days in a row; a day with no run is NOELLE_DID_NOT_RUN's, not this.
+  if (Date.parse(`${days[2]}T12:00:00Z`) - Date.parse(`${days[0]}T12:00:00Z`) !== 2 * 86_400_000) return [];
   const byDay = days.map((d) => new Set(runs.filter((r) => r.day === d).flatMap((r) => r.stops ?? [])));
   return [...byDay[0]].filter((s) => byDay.every((set) => set.has(s))).map((s) => ({ stop: s, line: `Noelle has stopped on ${s} three days running (${days[0]} to ${days[2]}); it needs a fix` }));
 }

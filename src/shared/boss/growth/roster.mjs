@@ -21,9 +21,9 @@
  * nothing else of any brain. A Growth section carrying a confidential mark, or lying inside a span
  * from another section, is refused whole (fail closed); her rulings are read from the brain with
  * every confidential span cut first (stripConfidential over the whole document, then split), and the
- * router cuts again and refuses a message that still carries a mark. Every cycle then checks each
- * decision prompt it built before the model call (promptLeak, privacy.mjs): no word her brains keep
- * only inside a private span, and no personal mail address; `npm run growth:privacy` runs it on a copy.
+ * router cuts again and refuses a message that still carries a mark. Noelle's context then checks each
+ * business's rulings before they leave the Worker (leaksIn, privacy.mjs, in noelle.ts noelleContext):
+ * no word her brains keep only inside a private span, and no personal mail address.
  *
  * HER RULINGS (her words, 22 Nov 2026: "yea let it read the settled decisions"). Each entry's model
  * input carries its own brain's "## Settled decisions": for a Spry Labs business, the "### " groups
