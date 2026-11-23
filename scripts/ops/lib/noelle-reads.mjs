@@ -179,9 +179,9 @@ export function readPinQueue(key, { gh, today }) {
 }
 
 /** P&P Studio's own calendar (D1 social_posts, scheduled from now on), by platform. */
-export function readStudio({ d1, now }) {
+export async function readStudio({ d1, now }) {
   try {
-    const rows = d1(`SELECT platform, substr(scheduled_at, 1, 10) AS day, COUNT(*) AS n FROM social_posts WHERE status IN ('scheduled','waiting') AND scheduled_at >= '${new Date(now).toISOString()}' GROUP BY platform, day`);
+    const rows = await d1(`SELECT platform, substr(scheduled_at, 1, 10) AS day, COUNT(*) AS n FROM social_posts WHERE status IN ('scheduled','waiting') AND scheduled_at >= '${new Date(now).toISOString()}' GROUP BY platform, day`);
     if (!Array.isArray(rows)) return { error: "the Studio answered with no rows list" };
     const counts = {}, days = {};
     for (const r of rows) {
@@ -207,7 +207,7 @@ export function centralDay(ms) {
  */
 export async function readCalendar({ env, fetchImpl, gh, d1, now, today }) {
   const queues = {}, days = {}, unread = {};
-  const studio = readStudio({ d1, now });
+  const studio = await readStudio({ d1, now });
   for (const ch of ["instagram", "tiktok", "facebook-page"]) {
     const key = `porch-and-party:${ch}`;
     if (studio.error) unread[key] = studio.error;
@@ -267,14 +267,18 @@ export async function collectReads({ context, env, fetchImpl, gh, d1, readMetric
   return { reads, calendar };
 }
 
-/** The photo shelf she may choose from: real job photos first (A3), then the existing AI shots. */
-export function photoShelf({ sources, list = (d) => readdirSync(d) }) {
+/**
+ * The photo shelf she may choose from: real job photos first (A3), then the existing AI shots, each as
+ * the path under its folder (the AI folder has subfolders: "ai:porch/x.jpg"). A folder that cannot be
+ * read is { error }, never an empty shelf she would plan around.
+ */
+export function photoShelf({ sources, list = (d) => readdirSync(d, { recursive: true }) }) {
   const out = {};
   for (const [kind, dir] of Object.entries(sources)) {
     try {
-      out[kind] = list(expand(dir)).filter((f) => /\.(jpe?g|png|webp)$/i.test(f)).sort();
-    } catch {
-      out[kind] = [];
+      out[kind] = list(expand(dir)).map(String).filter((f) => /\.(jpe?g|png|webp)$/i.test(f) && !f.split("/").some((x) => x.startsWith("."))).sort();
+    } catch (e) {
+      out[kind] = { error: `${dir}: ${String(e?.code ?? e?.message ?? e).slice(0, 60)}` };
     }
   }
   return out;
