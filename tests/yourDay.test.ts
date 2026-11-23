@@ -473,6 +473,23 @@ describe("the held jobs are read whole, never only the newest 100 (13 Nov 2026)"
   });
 });
 
+describe("the stalled-job banner on the real read path (23 Nov 2026)", () => {
+  const base = async (p: string) => (p === "/today" ? { blocks: [] } : p === "/tasks" || p === "/tasks?status=awaiting_approval" || p === "/approvals" ? [] : p === "/lp/replies" ? { rows: [] } : {});
+  it("Open Loops failing to load is a red banner with a link, never no banner", async () => {
+    const { read } = await import("../scripts/ops/your-day.mjs");
+    const down = await read({ get: async (p: string) => { if (p === "/open-loops") throw new Error("503"); return base(p); } }, NOW);
+    expect(down.stallBanners).toHaveLength(1);
+    expect(down.stallBanners[0].button.url).toMatch(/^https:\/\/[^/]+\/\?tab=loops$/);
+    const stale = { id: "oloop_syn1", status: "open", source_key: "seq23/boss-os#STALLED_KDP_NEW_TITLE", title: "🔴 STOPPED: Kindle publishing — 2 books stuck behind the KDP sign-in", next_step: "Nothing went out." };
+    const up = await read({ get: async (p: string) => (p === "/open-loops" ? { loops: [stale] } : base(p)) }, NOW);
+    expect(up.stallBanners).toHaveLength(1);
+    expect(up.stallBanners[0].button.url).toMatch(/\/\?tab=loops&loop=oloop_syn1$/);
+    expect(up.stallBanners[0].lines.join(" ")).toMatch(/Chrome window/);
+    const quiet = await read({ get: async (p: string) => (p === "/open-loops" ? { loops: [] } : base(p)) }, NOW);
+    expect(quiet.stallBanners).toEqual([]);
+  });
+});
+
 describe("work Boss OS started itself is never a Decide card (owner, 2 Nov and 13 Nov 2026)", () => {
   const duty = { id: "tsk_synduty001", title: "A synthetic sweep", status: "awaiting_approval", employee_id: "emp_relationship", employee_name: "Monique", approval_id: null, input: JSON.stringify({ duty_id: "duty_synthetic" }) };
   const hers = { ...duty, id: "tsk_synhers001", title: "Draft a synthetic note", input: JSON.stringify({ from: "o@example.com", mail_id: "iml_syn" }) };
@@ -564,15 +581,18 @@ describe("the weekly quality check in the morning email", () => {
     expect(qualitySectionFor({ quality: { lines } }, MONDAY + 24 * 3600_000)).toBeNull();
     const s = qualitySectionFor({ quality: { lines, reads: [{ label: "Daily briefing", verdict: "holds", why: "The reasoning is as specific as the best example." }] } }, MONDAY);
     expect(s.title).toBe("Quality check: 1 to look at");
-    expect(s.items.map((i: { text: string }) => i.text.split(":")[0])).toEqual(["Tools worth knowing", "Daily briefing", "Monthly read, Daily briefing"]);
+    expect(s.items.map((i: { text: string }) => i.text.split(":")[0])).toEqual(["Tools worth knowing", "Daily briefing", "This month's read of Daily briefing"]);
+    expect(s.items[2].text, "the read's verdict and its reason both reach her").toMatch(/holds up\. The reasoning is as specific as the best example\.$/);
   });
 
   it("deliverables with nothing checked this week are each named on one 'not measured' line", () => {
-    const blank = (label: string) => ({ label, text: `${label}: not measured this week (no run was checked).`, flagged: false, runs_this_week: 0 });
+    const blank = (label: string) => ({ label, text: `${label}: no run was checked this week, so there is no number.`, flagged: false, runs_this_week: 0 });
     const s = qualitySectionFor({ quality: { lines: [lines[0], blank("Brokerage sourcing"), blank("Research pages")] } }, MONDAY);
-    expect(s.items.map((i: { text: string }) => i.text)).toEqual([lines[0]!.text, "Not measured this week (no run was checked): Brokerage sourcing, Research pages."]);
+    expect(s.items).toHaveLength(2);
+    expect(s.items[0].text).toBe(lines[0]!.text);
+    expect(s.items[1].text, "both blanks named on ONE line").toMatch(/no number for: Brokerage sourcing, Research pages\.$/);
     const one = qualitySectionFor({ quality: { lines: [lines[0], blank("Research pages")] } }, MONDAY);
-    expect(one.items[1].text).toBe("Research pages: not measured this week (no run was checked).");
+    expect(one.items[1].text).toBe(blank("Research pages").text);
   });
 
   it("a check that did not load says so; it is never left out or read as fine", () => {
@@ -580,7 +600,9 @@ describe("the weekly quality check in the morning email", () => {
       const s = qualitySectionFor({ quality }, MONDAY);
       expect(s.items[0].text).toBe("The weekly quality check did not load this morning; the team is looking.");
     }
-    expect(qualitySectionFor({ quality: { lines: [lines[0]] } }, MONDAY).title).toBe("Quality check: holding");
+    const quiet = qualitySectionFor({ quality: { lines: [lines[0]] } }, MONDAY).title;
+    expect(quiet).toMatch(/^Quality check: /);
+    expect(quiet, "nothing flagged: no count of things to look at").not.toMatch(/\d+ to look at/);
   });
 });
 

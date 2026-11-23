@@ -9,7 +9,7 @@ import { readdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 // @ts-expect-error — plain .mjs ops libs, no types
-import { eachItem, stallFrom, stallBanners } from "../src/shared/boss/duties/stall.mjs";
+import { eachItem, stallFrom, stallBanners, HER_ACTIONS } from "../src/shared/boss/duties/stall.mjs";
 // @ts-expect-error — plain .mjs ops libs, no types
 import { reportStall } from "../scripts/ops/lib/stall-report.mjs";
 // @ts-expect-error — plain .mjs ops libs, no types
@@ -92,6 +92,33 @@ describe("the stall alert", () => {
     expect(before.length).toBeLessThanOrEqual(2);
     expect(before[0]).toMatch(/^Good morning\./);
     expect(e.html).toContain("10 books stuck behind 1 blocked book");
+  });
+  it("the banner carries her action and a working link even when the stored row predates them (23 Nov 2026)", () => {
+    const ORIGIN = "https://boss.sequoiataylor.com";
+    // The row was written before the action existed: its next_step says only that nothing went out.
+    const stale = { id: "oloop_abc123", status: "open", source_key: "seq23/boss-os#STALLED_KDP_NEW_TITLE", title: "🔴 STOPPED: Kindle publishing — 11 books stuck behind the KDP sign-in", next_step: "Nothing went out." };
+    const [b] = stallBanners([stale], { origin: ORIGIN });
+    expect(b.lines).toEqual(["Nothing went out.", HER_ACTIONS["the KDP sign-in"]]);
+    // The action names the real run time from the schedule, not a guess.
+    expect(b.lines[1]).toMatch(/\(Sun 10:15 pm CT\)/);
+    expect(b.button).toEqual({ label: "See it on Open Loops", url: `${ORIGIN}/?tab=loops&loop=oloop_abc123` });
+    // A fresh row already carrying the action does not say it twice.
+    const fresh = kdpStallOf({ approved: 11, moved: 0, setAside: [], held: [], runStop: "SIGNIN_NOT_DONE", weekly: false, draftCap: false }).stall;
+    const [f] = stallBanners([{ ...stale, next_step: fresh.next_step }], { origin: ORIGIN });
+    expect(f.lines.filter((l: string) => l.includes(HER_ACTIONS["the KDP sign-in"]))).toHaveLength(1);
+    // No id: the Open Loops page itself. No https origin: no button rather than a broken one.
+    expect(stallBanners([{ ...stale, id: undefined }], { origin: ORIGIN })[0].button.url).toBe(`${ORIGIN}/?tab=loops`);
+    expect(stallBanners([stale], { origin: "" })[0]).not.toHaveProperty("button");
+    expect(stallBanners([stale], { origin: "http://boss.example.com" })[0]).not.toHaveProperty("button");
+  });
+  it("a failed Open Loops read is a banner that says so, never an empty top that reads as all clear", () => {
+    const ORIGIN = "https://boss.sequoiataylor.com";
+    for (const failed of [null, undefined, { error: "x" }]) {
+      const out = stallBanners(failed as any, { origin: ORIGIN });
+      expect(out).toHaveLength(1);
+      expect(out[0]).toMatchObject({ tone: "red", button: { url: `${ORIGIN}/?tab=loops` } });
+    }
+    expect(stallBanners([], { origin: ORIGIN }), "a read that worked and found nothing is quiet").toEqual([]);
   });
 });
 

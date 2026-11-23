@@ -142,7 +142,7 @@ describe("messages to her: told once, plain, the one thing to do", () => {
     // Three titles live in one run are one message that links all three.
     const three = [1, 2, 3].map((n) => ({ title: `Book ${n}`, asin: `B0SYNTH000${n}`, price_usd: 4.99 }));
     const one = liveMail(three);
-    for (const b of three) expect(one.layout.details.join("\n")).toContain(`https://www.amazon.com/dp/${b.asin}`);
+    for (const b of three) expect(one.layout.sections[0].items.flatMap((i: any) => i.links)).toContainEqual({ label: "See it on Amazon", url: `https://www.amazon.com/dp/${b.asin}` });
     // A stop carries what went live before it, so that news is not a second email.
     expect(withLive(stopMail({ title: T, code: "SIGNIN" }), three.slice(0, 1)).layout.details.join("\n")).toContain("https://www.amazon.com/dp/B0SYNTH0001");
     // What is not emailed still reaches her Updates page with its words.
@@ -157,7 +157,18 @@ describe("messages to her: told once, plain, the one thing to do", () => {
     expect(headsUpMail({ titles: [T], startAt: at, zone: "America/Chicago" }).layout.happened).toContain("10:15 am");
     expect(headsUpMail({ titles: [T], startAt: at, zone: "America/New_York" }).layout.happened).toContain("11:15 am (10:15 am Central)");
     expect(stopMail({ title: T, code: "SIGNIN" }).layout.details[0]).toMatch(/^The one thing to do: Sign in to Amazon in that Chrome window/);
-    expect(doneMail({ title: T, asin: "B0HQVR4HD3", price_usd: 4.99 }).layout.details).toEqual(["See the book on Amazon: https://www.amazon.com/dp/B0HQVR4HD3"]);
+    // The link says where it goes (23 Nov 2026 live read: "Open amazon.com"), and no drafts means no draft line.
+    expect(doneMail({ title: T, asin: "B0HQVR4HD3", price_usd: 4.99 }).layout.sections).toEqual([{ title: "The book", empty: null, link: { label: "See it on Amazon", url: "https://www.amazon.com/dp/B0HQVR4HD3" } }]);
+    // A leftover draft: one optional section, its count, and a button to the bookshelf.
+    const tidy = doneMail({ title: T, asin: "B0HQVR4HD3", price_usd: 4.99, extraDrafts: 2 }).layout.sections;
+    expect(tidy).toHaveLength(2);
+    expect(tidy[1].title).toMatch(/^Optional/);
+    expect(tidy[1].items[0].text).toMatch(/\b2 unused drafts\b/);
+    expect(tidy[1].items[0].links).toEqual([{ label: "Open your KDP bookshelf", url: "https://kdp.amazon.com/en_US/bookshelf" }]);
+    // Routed to her Updates page instead, the note still carries both links.
+    const note = asUpdate("live:x", doneMail({ title: T, asin: "B0HQVR4HD3", price_usd: 4.99, extraDrafts: 2 })).body;
+    expect(note).toContain("https://www.amazon.com/dp/B0HQVR4HD3");
+    expect(note).toContain("https://kdp.amazon.com/en_US/bookshelf");
     expect(doneMail({ title: T, asin: "B0HQVR4HD3", price_usd: 4.99 }).layout.happened, "the body never repeats line 1").toBe("It is on sale at $4.99.");
     // 23 Nov 2026 live read: the heads-up asked her to keep the Mac awake and said "Nothing to do" in one line.
     const hu = headsUpMail({ titles: [T], startAt: at, zone: "America/Chicago" });
@@ -191,12 +202,13 @@ describe("an older draft left on the shelf is optional, harmless and has its pla
   it("the line links her KDP Bookshelf by name, and the book link says it opens the book", async () => {
     const { layoutEmail } = await import("../src/shared/boss/mail/plain.mjs");
     for (const msg of [doneMail({ title: "A Book", asin: "B0TEST0001", price_usd: 4.99, extraDrafts: 1 }), liveMail([{ title: "A", asin: "B0TEST0002", extraDrafts: 1 }, { title: "B", asin: "B0TEST0003", extraDrafts: 1 }])]) {
-      const line = msg.layout.details.find((d: string) => /draft/i.test(d))!;
-      expect(line).toContain("https://kdp.amazon.com/bookshelf");
-      expect(line).toMatch(/^Optional\b/);
-      expect(line).not.toMatch(/earlier runs|\bthere\b/);
+      const tidy = (msg.layout.sections ?? []).find((x: any) => /draft/i.test(x.items?.[0]?.text ?? ""));
+      expect(tidy.title).toMatch(/^Optional\b/);
+      expect(tidy.items[0].text).not.toMatch(/earlier runs|\bthere\b/);
+      expect(tidy.items[0].links[0].url).toMatch(/^https:\/\/kdp\.amazon\.com\/.*bookshelf$/);
       const html = layoutEmail({ ...msg.layout, owner: msg.owner } as any).html ?? "";
-      expect(html).toContain(">Open your KDP Bookshelf<");
+      expect(html).toContain(">Open your KDP bookshelf<");
+      expect(html).toContain(">See it on Amazon<");
       expect(html).not.toContain(">Open amazon.com<");
     }
   });

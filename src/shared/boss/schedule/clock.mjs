@@ -106,3 +106,26 @@ export function clockRowProblems(manifest, repo = "boss-os") {
   }
   return out;
 }
+
+const DAY_WORDS = { mon: "Mon", tue: "Tue", wed: "Wed", thu: "Thu", fri: "Fri", sat: "Sat", sun: "Sun" };
+const clock12 = (hhmm) => {
+  const [h = 0, m = 0] = String(hhmm).split(":").map(Number);
+  return `${h % 12 === 0 ? 12 : h % 12}:${String(m).padStart(2, "0")} ${h < 12 ? "am" : "pm"}`;
+};
+
+/** One Schedule slot in plain words (Central): "Mon & Fri 8:00 am", "Every day 6:15 am", "Every 5 minutes". Pure. */
+export function slotWords(slot) {
+  if (slot === "always") return "Always on";
+  let m = /^every (\d+)([sm])$/.exec(slot);
+  if (m) { const mins = m[2] === "s" ? Math.round(Number(m[1]) / 60) : Number(m[1]); return mins <= 1 ? "Every minute" : `Every ${mins} minutes`; }
+  m = /^hourly :(\d\d)$/.exec(slot);
+  if (m) return `Every hour at :${m[1]}`;
+  m = /^(\S+) (\d\d:\d\d)(?:-(\d\d:\d\d)\/(\d+)m)?$/.exec(slot);
+  if (!m) return slot;
+  const [, d = "", start = "00:00", end, step] = m;
+  const days = d === "daily" ? "Every day"
+    : d === "mon,tue,wed,thu,fri" ? "Weekdays"
+    : d.startsWith("day") ? `Monthly, the ${d.split(",").map((x) => x.slice(3)).join(" & ")}`
+    : d.split(",").map((x) => DAY_WORDS[x] ?? x).join(" & ");
+  return end ? `${days}, every ${step} min, ${clock12(start)}–${clock12(end)}` : `${days} ${clock12(start)}`;
+}

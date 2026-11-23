@@ -18,6 +18,10 @@
  * the halting shape). Pure apart from the one console line per item set aside.
  */
 
+import { PAGE_PATH } from "../openLoops/openLoops.mjs";
+import SCHEDULE from "../schedule/manifest.json" with { type: "json" };
+import { slotWords } from "../schedule/clock.mjs";
+
 /** The run-level codes every job shares; a job adds its own through `endsRun`. */
 export const ACCOUNT_STOPS = new Set(["SIGNIN", "SIGNIN_NOT_DONE", "NO_PASSCODE", "UNLOCK_REFUSED", "PROFILE_IN_USE"]);
 
@@ -45,6 +49,28 @@ export async function eachItem(items, fn, { endsRun = (code) => ACCOUNT_STOPS.ha
   return { done, setAside, stopped: null, left: [] };
 }
 
+/**
+ * HER ONE ACTION, BY WHAT HOLDS THE WORK (23 Nov 2026 live read: the morning banner said "Nothing went
+ * out this run: 10 books are waiting." and nothing on what moves them). Keyed by the blocker's words,
+ * which `stallFrom` writes into the title ("… stuck behind <blocker>"), so the alert email and the
+ * morning banner both carry it, and an Open Loops row written before this line existed still gets it.
+ * A blocker with no entry here is the team's to clear, never hers.
+ *
+ * The KDP session lives in the job's own Chrome profile on her Mac, so a sign-in in any other browser
+ * (a link in this email, her phone) does not move the books, and a line to type at a terminal is never
+ * hers (plain.mjs drops it). What moves them is her answer to the sign-in email during the next run, so
+ * the line names when that run is, read from the Schedule manifest (the launchd job's own slots).
+ */
+const runWhen = (id) => {
+  const slots = SCHEDULE.rows.find((r) => r.id === id)?.slots ?? [];
+  return slots.length ? ` (${slots.map(slotWords).join(" and ")} CT)` : "";
+};
+export const HER_ACTIONS = Object.freeze({
+  "the KDP sign-in": `To move them, be near your Mac for the next Kindle run${runWhen("kdp-publish")}: when Amazon's sign-in email comes, sign in to Amazon in the Chrome window it opens there. The books go out in that run.`,
+});
+/** Her action for a stall title, or null. Pure. */
+export const herActionFor = (title) => HER_ACTIONS[/stuck behind (.+)$/u.exec(String(title ?? "").trim())?.[1] ?? ""] ?? null;
+
 const count = (n, [one, many]) => `${n} ${n === 1 ? one : many}`;
 
 /**
@@ -58,6 +84,7 @@ export function stallFrom({ job, what, noun, waiting, moved = 0, blocker, busine
   const behind = blocker.count ? count(blocker.count, blocker.noun) : blocker.noun?.[0] ?? "one stop";
   const headline = `${what} — ${count(waiting, noun)} stuck behind ${behind}`;
   const subject = `🔴 STOPPED: ${headline}`;
+  fix = fix ?? HER_ACTIONS[behind] ?? null;
   const named = blocker.name ? `"${blocker.name}"${blocker.why ? ` (${blocker.why})` : ""}` : blocker.why ?? "";
   const lines = [
     `Nothing went out this run: ${count(waiting, noun)} ${Number(waiting) === 1 ? "is" : "are"} waiting${named ? ` behind ${named}` : ""}.`,
@@ -83,9 +110,22 @@ export function stallFrom({ job, what, noun, waiting, moved = 0, blocker, busine
   };
 }
 
-/** An open Open Loops row of a stall, as the morning email's red banner (rows from GET /open-loops). */
-export function stallBanners(loops) {
-  return (loops ?? [])
+/**
+ * An open Open Loops row of a stall, as the morning email's red banner (rows from GET /open-loops).
+ * Her action comes from the title (HER_ACTIONS), never only from the stored next_step, which may
+ * predate it; the button opens that row on the Open Loops page.
+ */
+export function stallBanners(loops, { origin = "" } = {}) {
+  const page = /^https:\/\//.test(origin) ? `${origin}${PAGE_PATH}` : null;
+  // A failed read is unknown, never "nothing stalled": an empty top of the email would say all is well.
+  if (!Array.isArray(loops)) return [{ tone: "red", title: "Stopped jobs could not be checked this morning", lines: ["The Open Loops list did not load, so a job that stopped would not show here. The Open Loops page lists every one."], ...(page ? { button: { label: "See Open Loops", url: page } } : {}) }];
+  return loops
     .filter((l) => l?.status === "open" && /#STALLED_[A-Z0-9_]+$/.test(String(l?.source_key ?? "")))
-    .map((l) => ({ tone: "red", title: String(l.title ?? "").replace(/^🔴\s*/u, ""), lines: [l.next_step].filter(Boolean) }));
+    .map((l) => {
+      const title = String(l.title ?? "").replace(/^🔴\s*/u, "");
+      const act = herActionFor(title);
+      const said = act ? String(l.next_step ?? "").replace(act, "").trim() : String(l.next_step ?? "").trim();
+      const url = page ? `${page}${l.id ? `&loop=${encodeURIComponent(l.id)}` : ""}` : null;
+      return { tone: "red", title, lines: [said, act].filter(Boolean), ...(url ? { button: { label: "See it on Open Loops", url } } : {}) };
+    });
 }

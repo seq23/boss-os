@@ -8,3 +8,4 @@ export declare function clockRows(manifest: unknown, repo?: string): Array<{ id:
 export interface DueJob { id: string; event: string; file: string; due_at: number; key: string }
 export declare function dueJobs(manifest: unknown, nowMs: number, opts?: { windowMinutes?: number; repo?: string }): DueJob[];
 export declare function clockRowProblems(manifest: unknown, repo?: string): string[];
+export declare function slotWords(slot: string): string;

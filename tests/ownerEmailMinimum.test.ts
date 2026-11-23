@@ -37,7 +37,7 @@ import { peopleOwner } from "../scripts/ops/people-worth-a-call.mjs";
 // @ts-expect-error — plain ESM with no declaration file
 import { askEmail, chaseEmail } from "../scripts/ops/kdp-surface-report.mjs";
 // @ts-expect-error — plain ESM with no declaration file
-import { headsUpMail, stopMail, stillWaitingMail, doneMail, liveMail } from "../scripts/ops/kdp-new-title.mjs";
+import { headsUpMail, stopMail, stillWaitingMail, doneMail, liveMail, withLive } from "../scripts/ops/kdp-new-title.mjs";
 import { digestEmail, confirmationEmail } from "../src/shared/boss/commentWatch/lane.mjs";
 import { approvalNotice, composeDraft } from "../src/shared/boss/clients/hicksUpdate.mjs";
 import { composeSpryWeekly } from "../src/shared/boss/spryWeekly/compose.mjs";
@@ -46,6 +46,10 @@ import { reminderNotice as ancestralNotice, ancestralHourState } from "../src/wo
 import { middayNotice } from "../src/worker/boss/practice/lapse";
 import { reminderNotice as errandNotice } from "../src/worker/boss/commands/run";
 import { plainReply } from "../src/worker/boss/intake/mailRefs";
+import { layoutEmail } from "../src/shared/boss/mail/plain.mjs";
+// @ts-expect-error — plain .mjs ops libs, no types
+import { stallBanners } from "../src/shared/boss/duties/stall.mjs";
+import { Window } from "happy-dom";
 
 process.env.BOSS_OS_MAIL_KEY = process.env.BOSS_OS_MAIL_KEY ?? "test-key-not-real";
 const NOW = Date.parse("2026-11-07T12:15:00Z");
@@ -86,7 +90,9 @@ function cases(): Case[] {
   add("scripts/ops/task-notices.mjs", "Simone", "could not do (Note, she must reply)", mail("Simone", { subject: cnd.subject, text: cnd.body, owner: noticeOwner(cnd) }));
 
   // The morning email (B).
-  const day = buildDay({ diary: [], tasks: [], approvals: [], repoChanges: [], briefing: null, feed: { items: [] }, morning: {} }, NOW);
+  // With a stalled job whose stored row is stale (the 23 Nov 2026 Kindle banner), and one the read failed for.
+  const stalled = [{ id: "oloop_synth0001", status: "open", source_key: "seq23/boss-os#STALLED_KDP_NEW_TITLE", title: "🔴 STOPPED: Kindle publishing — 3 books stuck behind the KDP sign-in", next_step: "Nothing went out." }];
+  const day = buildDay({ stallBanners: [...stallBanners(stalled, { origin: ORIGIN }), ...stallBanners(null, { origin: ORIGIN })], diary: [], tasks: [], approvals: [], repoChanges: [], briefing: null, feed: { items: [] }, morning: {} }, NOW);
   add("scripts/ops/your-day.mjs", "Simone", "morning digest (B)", mail("Simone", { subject: day.subject, prelaid: day }));
 
   // Simone's commands and her errand reminders.
@@ -133,6 +139,7 @@ function cases(): Case[] {
   add("scripts/ops/kdp-new-title.mjs", "Simone", "Kindle step stopped (Note)", kmail(stopMail({ title: "A Synthetic Book", code: "CATEGORIES_NOT_SET", id: "jc_m5guard0014" })));
   add("scripts/ops/kdp-new-title.mjs", "Simone", "Kindle still waiting (Note)", kmail(stillWaitingMail({ title: "A Synthetic Book", code: "SIGNIN", id: "jc_m5guard0015" })));
   add("scripts/ops/kdp-new-title.mjs", "Simone", "Kindle live (D)", kmail(doneMail({ title: "A Synthetic Book", asin: "B0SYNTH0001", price_usd: 4.99 })));
+  add("scripts/ops/kdp-new-title.mjs", "Simone", "Kindle stop carrying a book that went live (Note)", kmail(withLive(stopMail({ title: "Another Synthetic Book", code: "SIGNIN", id: "jc_m5guard0016" }), [{ title: "A Synthetic Book", asin: "B0SYNTH0001", price_usd: 4.99 }])));
   add("scripts/ops/kdp-new-title.mjs", "Simone", "Kindle several live (D)", kmail(liveMail([{ title: "A Synthetic Book", asin: "B0SYNTH0001", price_usd: 4.99 }, { title: "Another Synthetic Book", asin: "B0SYNTH0002", price_usd: 4.99 }])));
 
   // Toni: money at risk.
@@ -176,6 +183,38 @@ function sendingFiles(): string[] {
     .filter((f) => !NOT_A_SENDER[f] && !/(?:^|\/)(?:validate|tests?)\//.test(f));
 }
 
+/**
+ * Tap targets (23 Nov 2026 live read: "Drop for good" and "See it" were 17 px text links one line apart).
+ * A link that stands alone in its block is a button about 44 px tall at phone width; under ~33 px fails.
+ * A link inside a sentence stays a link. The height is read from the inline style the email carries.
+ */
+function tapProblems(html: string): string[] {
+  const doc = new Window().document;
+  doc.body.innerHTML = html;
+  const out: string[] = [];
+  for (const a of [...doc.querySelectorAll("a")]) {
+    const parent = a.parentElement!;
+    let rest = parent.textContent ?? "";
+    for (const x of [...parent.querySelectorAll("a")]) rest = rest.replace(x.textContent ?? "", "");
+    if (rest.replace(/[\s·|—–-]/g, "")) continue;
+    const st = a.getAttribute("style") ?? "";
+    const px = (re: RegExp) => Number(re.exec(st)?.[1] ?? 0);
+    const boxed = /display:\s*(?:inline-)?block/.test(st);
+    const h = Math.round((px(/font-size:\s*(\d+)px/) || 15) * 1.3 + (boxed ? 2 * px(/padding:\s*(\d+)px/) + 2 * px(/border:\s*(\d+)px/) : 0));
+    if (h < 33) out.push(`"${(a.textContent ?? "").trim()}" is about ${h} px tall`);
+  }
+  return out;
+}
+/** Every link goes somewhere real: https with a real host, or a mail address. Never "undefined", a path or a bare "#". */
+function hrefProblems(html: string): string[] {
+  const doc = new Window().document;
+  doc.body.innerHTML = html;
+  return [...doc.querySelectorAll("a")].map((a) => a.getAttribute("href") ?? "").filter((h) => {
+    if (/^mailto:[^@\s]+@[^@\s]+\.[a-z]+$/i.test(h)) return false;
+    try { const u = new URL(h); return u.protocol !== "https:" || !/\.[a-z]{2,}$/i.test(u.hostname) || /undefined|null/.test(h); } catch { return true; }
+  });
+}
+
 describe("every email to her meets the 3-point minimum (owner, 7 Nov 2026)", async () => {
   const all = [...cases(), ...(await workerReplies())];
 
@@ -192,6 +231,10 @@ describe("every email to her meets the 3-point minimum (owner, 7 Nov 2026)", asy
   for (const c of all) {
     it(`${c.who}: ${c.what}`, () => {
       expect(minimumProblems(c.payload, c.payload.minimum, { routed: [...ROUTED, INTAKE] }), `${c.file}`).toEqual([]);
+      expect(tapProblems(c.payload.html), `${c.file}: a tap target under ~33 px`).toEqual([]);
+      expect(hrefProblems(c.payload.html), `${c.file}: a link that goes nowhere real`).toEqual([]);
+      // A link's words say where it goes, never a bare domain (23 Nov 2026 live read: "Open amazon.com").
+      expect([...c.payload.html.matchAll(/<a [^>]*>([^<]*)<\/a>/g)].map((m) => m[1]).filter((t) => /^(?:Open )?[a-z0-9-]+(?:\.[a-z0-9-]+)*\.[a-z]{2,}$/i.test(t.trim())), `${c.file}: a link named by its domain`).toEqual([]);
       // What leaves after the send-time gate still meets it, and is never held.
       const r: any = c.file.startsWith("src/worker") ? { held: null, payload: c.payload } : plainOrSimplified(c.payload);
       expect(r.held, JSON.stringify(r.held)).toBeNull();
@@ -199,6 +242,25 @@ describe("every email to her meets the 3-point minimum (owner, 7 Nov 2026)", asy
       expect(EMPLOYEE_LOCAL_PARTS.length).toBeGreaterThan(0);
     });
   }
+});
+
+describe("tap targets and links (23 Nov 2026 live read)", () => {
+  it("every standalone link the layout makes is a ~44 px button: banner, table row, item and section links", () => {
+    const laid = layoutEmail({ who: "Simone", subject: "x", happened: "Something happened.",
+      banners: [{ tone: "red", title: "A job stopped", lines: ["It waits on you."], button: { label: "See it on Open Loops", url: `${ORIGIN}/?tab=loops&loop=oloop_x` } }],
+      sections: [
+        { title: "Deals", empty: null, rows: { columns: [{ key: "co", label: "Company" }], data: [{ co: "Acme", url: `${ORIGIN}/?tab=deals&id=1`, url_label: "Open ›", url2: `${ORIGIN}/tap/tokAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA?do=drop`, url2_label: "Drop for good" }] } },
+        { title: "Done for you", empty: null, items: [{ text: "Stopped a paid call.", links: [{ label: "See it", url: `${ORIGIN}/?tab=jobs` }, { label: "Drop for good", url: `${ORIGIN}/tap/tokBBBBBBBBBBBBBBBBBBBBBBBBBBBBBB?do=drop` }] }], link: { label: "See every match", url: `${ORIGIN}/?tab=deals` } },
+      ] } as any);
+    expect((laid.html.match(/<a /g) ?? []).length, "the case renders its six links").toBe(6);
+    expect(tapProblems(laid.html)).toEqual([]);
+    expect(hrefProblems(laid.html)).toEqual([]);
+  });
+  it("the checks catch a bare standalone link and a link to nowhere (negative proof)", () => {
+    expect(tapProblems('<p><a href="https://example.com/x">Drop for good</a></p>')).toEqual(['"Drop for good" is about 20 px tall']);
+    expect(tapProblems('<p>Read it <a href="https://example.com/x">here</a> today.</p>'), "a link in a sentence stays a link").toEqual([]);
+    expect(hrefProblems('<a href="/?tab=loops">x</a><a href="https://undefined/x">y</a><a href="#">z</a><a href="https://boss.example.com/x">ok</a>')).toHaveLength(3);
+  });
 });
 
 describe("the guard catches an email that misses the minimum (negative proof)", () => {

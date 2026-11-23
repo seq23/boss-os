@@ -989,10 +989,10 @@ export function qualitySectionFor(data, now = Date.now()) {
   const blank = q.lines.filter((l) => l.runs_this_week === 0);
   const lines = [...measured.filter((l) => l.flagged), ...measured.filter((l) => !l.flagged)].map((l) => ({ text: String(l.text), links: [] }));
   if (blank.length === 1) lines.push({ text: String(blank[0].text), links: [] });
-  if (blank.length > 1) lines.push({ text: `Not measured this week (no run was checked): ${blank.map((l) => l.label).join(", ")}.`, links: [] });
-  const reads = (Array.isArray(q.reads) ? q.reads : []).map((r) => ({ text: `Monthly read, ${r.label}: ${r.verdict === "slipped" ? "slipped" : "holds"}. ${String(r.why)}`, links: [] }));
+  if (blank.length > 1) lines.push({ text: `No run was checked this week, so there is no number for: ${blank.map((l) => l.label).join(", ")}.`, links: [] });
+  const reads = (Array.isArray(q.reads) ? q.reads : []).map((r) => ({ text: `This month's read of ${r.label}: ${r.verdict === "slipped" ? "it has slipped" : "it holds up"}. ${String(r.why)}`, links: [] }));
   const flagged = q.lines.filter((l) => l.flagged).length;
-  return { title: flagged ? `Quality check: ${flagged} to look at` : "Quality check: holding", tone: "done", items: [...lines, ...reads], empty: null };
+  return { title: flagged ? `Quality check: ${flagged} to look at` : "Quality check: all keeping their standard", tone: "done", items: [...lines, ...reads], empty: null };
 }
 
 /**
@@ -1605,7 +1605,7 @@ export async function read(api, now) {
   const lapse = await api.get("/practice/lapse-line").catch((e) => { console.error(`your-day: the practice streak not read (${e.message})`); return null; });
   const lapseLine = lapse?.line ?? null;
   // A stalled job (src/shared/boss/duties/stall.mjs): a red line at the very top until its Open Loops row clears.
-  const stalls = await api.get("/open-loops").then((d) => stallBanners(d?.loops)).catch((e) => { console.error(`your-day: stalled jobs not read (${e.message})`); return []; });
+  const stalls = await api.get("/open-loops").then((d) => stallBanners(d?.loops, { origin: ORIGIN })).catch((e) => { console.error(`your-day: stalled jobs not read (${e.message})`); return stallBanners(null, { origin: ORIGIN }); });
   const missedDays = Number.isInteger(lapse?.missed) ? lapse.missed : null;
   const waiting = await api.get("/waiting-on").then((d) => d?.items ?? []).catch((e) => { console.error(`your-day: the waiting-on register not read (${e.message})`); return []; });
   // Every unanswered Decide item from earlier mornings (Today v4: they never drop off), with one-tap send.

@@ -49,7 +49,7 @@ describe("the leads verdict", () => {
     const red = leadVerdict({ site, read: { ok: true, current: 0, previous: 3 }, outcome: clicks(10) })!;
     expect(red.red).toBe(true);
     expect(red.line).toBe("leads: 0 (was 3)");
-    expect(leadRedLine(site, red)).toMatch(/10 visits.*people come, nobody acts/);
+    expect(leadRedLine(site, red), "the visits and the zero both said").toMatch(/\b10 visits\b.*: 0\.$/);
     expect(redLines([{ site, outcome: clicks(10), leads: red }]).filter((l) => l.kind === "leads").map((l) => l.domain)).toEqual(["own.example"]);
     // 9 clicks and no lead: plain, not red, and it says why it is not judged.
     const few = leadVerdict({ site, read: { ok: true, current: 0, previous: 3 }, outcome: clicks(9) })!;
@@ -176,7 +176,7 @@ describe("where the line shows", () => {
     const all = lines.join("\n");
     expect(all).toMatch(/own\.example 10 Google visits → 0 \(was 2\)/);
     expect(all).toMatch(/not tracked yet on 1 site \(quiet\.example\)/);
-    expect(all).toMatch(/Red: own\.example: .*nobody acts/);
+    expect(all).toMatch(/Red: own\.example: Google sent 10 visits.*: 0\./);
     expect(all).not.toMatch(/client\.example/);
     for (const l of lines) expect(lineProblems(l), l).toEqual([]);
   });
