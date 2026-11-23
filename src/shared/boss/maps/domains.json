@@ -1470,15 +1470,15 @@
     {
       "domain": "whisperalmanac.com",
       "business": "spry",
-      "repo": "how-we-know",
+      "repo": "whisperalmanac-site",
       "registrar": "Cloudflare",
       "dns": "main",
       "mail": "none",
       "mail_words": "No mail.",
-      "site": null,
+      "site": "whisperalmanac",
       "tier": "keep",
       "tier_why": "The Whisper Almanac brand.",
-      "note": "Bought 6 Nov 2026 for the Whisper Almanac channel; a one-page site comes once the first videos are up.",
+      "note": "Bought 6 Nov 2026 for the Whisper Almanac channel; its site went live 23 Nov 2026 (whisperalmanac-site).",
       "expires": "2027-11-06",
       "auto_renew": true,
       "renew_read": "8 Nov 2026, by hand"

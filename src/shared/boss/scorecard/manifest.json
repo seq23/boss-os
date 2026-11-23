@@ -1237,7 +1237,8 @@
       "owner": "Spry Labs · Wednesday Spry Labs email",
       "result": "Waitlist sign-ups before launch, then installs and paid members after launch",
       "jobs": [
-        "pbs-library-fill"
+        "pbs-library-fill",
+        "peace-be-still-search-loop"
       ],
       "start": null,
       "startWhen": {

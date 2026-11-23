@@ -720,7 +720,7 @@ describe("known limits and one page counted once (25 Oct 2026)", () => {
     // The exemption is a ruling with a reason, never a flag someone reached for to clear an item:
     // every exempt site is named here AND has to say why, in a sentence long enough to be one.
     const exempt = sites.grid_repos.filter((s: any) => s.clarity === false);
-    expect(exempt.map((s: any) => s.domain).sort()).toEqual(["cynthiabrowndds.com", "howweknowdeep.com", "time-2-read.com"]);
+    expect(exempt.map((s: any) => s.domain).sort()).toEqual(["cynthiabrowndds.com", "howweknowdeep.com", "time-2-read.com", "whisperalmanac.com"]);
     for (const s of exempt) {
       expect(typeof s.clarity_why).toBe("string");
       expect(s.clarity_why.length).toBeGreaterThan(40);
@@ -1195,6 +1195,36 @@ describe("F · the search growth loop on every selling site (owner, 1 Nov 2026)"
     expect(run("loop_pace", { weeks: [] }).status).toBe("fail");
   });
 
+  // Real weeks of 22–23 Nov 2026, copied from each site's search-loop-week report (cap.why is the engine's own sentence).
+  const PBS_403 = { published: 10, held_by_cap: 0, cap: { max_live_pages: 10, live: 10, room: 0, why: "held at 10: no Search Console numbers to judge results (Search Console: HTTP 403 User does not have sufficient permission for site 'sc-domain:peacebestillapp.com'. See also: https:/); the cap never grows without data" } };
+  const KMP_NO_ROWS = { published: 0, held_by_cap: 74, cap: { max_live_pages: 20, live: 20, room: 0, why: "held at 20: no Search Console numbers to judge results (Search Console has no rows for 2026-09-19..2026-10-16, so there is nothing to compare the last 28 days with); the cap never grows without data" } };
+  const HICKS_JUDGED_FULL = { published: 0, held_by_cap: 7, cap: { max_live_pages: 14, live: 18, room: 0, why: "down from 16 to 14: Google impressions fell to 1017 in the last 28 days from 1651 in the 28 before" } };
+  const AP_REAL_PASS = { published: 3, held_by_cap: 59, cap: { max_live_pages: 28, live: 28, room: 0, why: "up from 25 to 28: Google impressions 43 in the last 28 days beat 27 in the 28 before" } };
+
+  it("f8 fails when the cap could not read Search Console (a 403 or no rows); a cap judged on Google numbers still passes", () => {
+    const pbs = run("loop_pace", { weeks: [week(PBS_403)] });
+    expect(pbs.status).toBe("fail");
+    expect(pbs.detail).toMatch(/frozen at 10: Search Console was not read \(Search Console: HTTP 403/);
+    expect(run("loop_pace", { weeks: [week(KMP_NO_ROWS)] }).status).toBe("fail");
+    expect(run("loop_pace", { weeks: [week({ cap: { max_live_pages: 20, why: "held at 20: no Search Console numbers to judge results (not read); the cap never grows without data" } })] }).status).toBe("fail");
+    // Genuine passes stay green: grown on results, fell on results, set by the site config.
+    expect(run("loop_pace", { weeks: [week(AP_REAL_PASS)] }).status).toBe("pass");
+    expect(run("loop_pace", { weeks: [week(HICKS_JUDGED_FULL)] }).status).toBe("pass");
+    expect(run("loop_pace", { weeks: [week({ cap: { max_live_pages: 13, live: 13, room: 0, why: "set from the site config (cap.max_live_pages 13)" } })] }).status).toBe("pass");
+  });
+
+  it("f2 fails on 0 pages published while searches wait behind a cap frozen without data; a full cap earned on results passes", () => {
+    const kmp = run("publish_straight_away", { weeks: [week(KMP_NO_ROWS)] });
+    expect(kmp.status).toBe("fail");
+    expect(kmp.detail).toMatch(/0 pages published this week while 74 searches are held/);
+    expect(run("publish_straight_away", { weeks: [week(AP_REAL_PASS)] }).status).toBe("pass");
+    expect(run("publish_straight_away", { weeks: [week(HICKS_JUDGED_FULL)] }).status).toBe("pass");
+    // Boundaries: one page published, or nothing held, is not this failure.
+    expect(run("publish_straight_away", { weeks: [week({ ...KMP_NO_ROWS, published: 1 })] }).status).toBe("pass");
+    expect(run("publish_straight_away", { weeks: [week({ ...KMP_NO_ROWS, held_by_cap: 0 })] }).status).toBe("pass");
+    expect(run("publish_straight_away", { weeks: [week({ ...KMP_NO_ROWS, held_by_cap: 1 })] }).status).toBe("fail");
+  });
+
   it("f9: every sampled content page leads to the config's action.url", () => {
     const pages = (b: string) => ({ ctx: { pages: [page("/a/", b), page("/b/", "<form action='/checkout/start'></form>")] } });
     expect(run("one_action_every_page", pages("<a href='/checkout/'>Buy</a>")).status).toBe("pass");
@@ -1247,14 +1277,22 @@ describe("F · the search growth loop on every selling site (owner, 1 Nov 2026)"
       "aplayermode.com", "approvalprep.com", "billionairehighperformancecoach.com", "cynthiabrowndds.com", "dentistryguides.com", "detoxdenver.org",
       "heygetonmylevel.com", "hicksconsulting.org", "hormonesivhair.com", "horselegalguide.com", "keepmyproof.com", "memphisseniorcarehomes.com", "neuroevalguides.com", "peacebestillapp.com",
       "porchandparty901.com", "theaccidentguides.com", "theindustryguides.com", "time-2-read.com", "uscisexam.com",
-      "weddingbudgetspreadsheet.com", "weddingchecklistpdf.com", "weddingseatingchartmaker.com", "weddingtimelinetemplate.com",
+      "virtualagency-os.com", "weddingbudgetspreadsheet.com", "weddingchecklistpdf.com", "weddingseatingchartmaker.com", "weddingtimelinetemplate.com",
     ]);
     for (const s of sites.grid_repos.filter((x: any) => x.search_loop)) expect([1, 2, 3], s.domain).toContain(s.search_loop.wave);
     const by = Object.fromEntries(sites.grid_repos.map((x: any) => [x.domain, x]));
-    for (const d of ["horselegalguide.com", "hicksconsulting.org"]) expect(by[d].search_loop.menu_pages_need_approval).toBe(true);
+    // Horse search pages need no approval and stay hidden (owner, 23 Nov 2026; horse-legal-guide-velocity#94); Hicks keeps its gate.
+    expect(by["hicksconsulting.org"].search_loop.menu_pages_need_approval).toBe(true);
+    expect(by["horselegalguide.com"].search_loop).toEqual({ wave: 3 });
+    // Whisper Almanac's site is in the grid (23 Nov 2026) but has nothing to sell, so the loop never reaches it.
+    expect(by["whisperalmanac.com"]).toMatchObject({ repo: "whisperalmanac-site", business: "Whisper Almanac", group: "divine_9", category: "side_business", kind: "brand", channel: { handle: "@whisperalmanac", repo: "how-we-know" } });
+    expect(by["whisperalmanac.com"].search_loop).toBeUndefined();
+    expect(by["billionairehighperformancecoach.com"].category).toBe(by["aplayermode.com"].category);
     for (const d of ["detoxdenver.org", "cynthiabrowndds.com"]) expect(by[d]).toMatchObject({ category: "client", entity_parent: "client", ymyl: true, search_loop: { wave: 3, strict_health_gate: true } });
     expect(by["detoxdenver.org"].repo).toBe("dianne-place-recovery-services");
     expect(by["cynthiabrowndds.com"].repo).toBe("cynthia-brown-dds-site");
+    // WPP-llm runs the engine (search-loop.config.json names virtualagency-os.com), so its loop items are judged, never left out.
+    expect(by["virtualagency-os.com"]).toMatchObject({ repo: "WPP-llm", search_loop: { wave: 1 } });
   });
 
   it("repo categories (personal brain) decide: friends' sites show apart, and reach her email only when they need her", () => {
