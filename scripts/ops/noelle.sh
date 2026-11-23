@@ -39,7 +39,6 @@ DAY="${NOELLE_DAY:-$(TZ=America/Chicago date +%F)}"
 NOW="${NOELLE_NOW:-$(TZ=America/Chicago date +%H:%M)}"
 MARK="$RUNS/$DAY.json"
 say() { echo "[$(date +%H:%M:%S)] $*" | tee -a "${RUN_LOG:-$LOG_DIR/ticks.log}"; }
-usage_exhausted() { grep -qiE "CLAUDE_LIMIT|usage limit|limit reached|out of (extra )?usage|credit balance" "$1"; }
 step() { (cd "$REPO" && npm run --silent vault:run -- node scripts/ops/noelle.mjs "$@") 2>&1 | tee -a "$RUN_LOG"; return "${PIPESTATUS[0]}"; }
 
 source "$(dirname "$(readlink -f "${BASH_SOURCE[0]}")")/lib/flock.sh"
@@ -95,14 +94,18 @@ AI_RUN_CLAUDE_ARGS="--max-turns $MAX_TURNS --permission-mode dontAsk --setting-s
 "$AI_RUN" --role "$ROLE" --network --cwd "$HOME" --out "$PLAN_LOG" -- "$PROMPT_TEXT" >> "$RUN_LOG" 2>&1
 RC=$?
 say "=== her session (ai-run --role $ROLE, $MODEL) exited rc=$RC ==="
-if [ "$RC" -eq 76 ] || { [ -f "$PLAN_LOG" ] && ! grep -q "NOELLE-PLAN-END" "$PLAN_LOG" && usage_exhausted "$RUN_LOG"; }; then
+# ai-run turns Claude's usage notice into exit 76 on any exit code; nothing here re-reads the log for it.
+if [ "$RC" -eq 76 ]; then
   stopped CLAUDE_LIMIT "NAMED STOP [CLAUDE_LIMIT] out of Claude credits before her plan; $(node -e 'import("'"$REPO"'/scripts/ops/noelle.mjs").then(m=>console.log(m.RESUME_WORDS))')" 76
 fi
 grep -q "NOELLE-PLAN-END" "$PLAN_LOG" 2>/dev/null || stopped NO_PLAN "NAMED STOP [NO_PLAN] her session ended (rc=$RC) without a plan between the sentinels" 9
 
-# plan: the Worker re-checks it. Exit 10 is a replay of a slot already planned: nothing is acted twice.
+# plan: the Worker re-checks it. Exit 10 is a replay of a slot that already ran to the end: nothing is
+# acted twice. Exit 11: that slot was planned and never finished (a reboot mid-run); the Worker closed
+# it [ACT_LOST], so the day is marked stopped and a tick two hours on retries it as a new slot.
 step plan "$PLAN_LOG" "$WORK" "$SLOT"; PRC=$?
 if [ "$PRC" -eq 10 ]; then node "$REPO/scripts/ops/noelle.mjs" mark "$MARK" done REPLAY "$TRY"; echo "OUTPUT 0 (replay of $SLOT)"; exit 0; fi
+[ "$PRC" -eq 11 ] && stopped ACT_LOST "NAMED STOP [ACT_LOST] $SLOT was planned and never finished; the retry runs as a new slot" 11
 [ "$PRC" -eq 0 ] || stopped PLAN_REFUSED "NAMED STOP [PLAN_REFUSED] rc=$PRC $(grep -h 'NAMED STOP' "$RUN_LOG" | tail -1)" "$PRC"
 
 # act, then done ALWAYS (a stopped act still reports what it queued and what failed).

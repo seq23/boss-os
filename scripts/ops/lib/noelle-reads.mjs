@@ -178,19 +178,35 @@ export function readPinQueue(key, { gh, today }) {
   }
 }
 
-/** P&P Studio's own calendar (D1 social_posts, scheduled from now on), by platform. */
+/** A Studio post this long past its time and not posted is a miss (G16c: "read published status 24 h after the slot"). */
+export const PUBLISH_GRACE_MS = 24 * 3_600_000;
+const LOOK_BACK_MS = 7 * 86_400_000;
+
+/**
+ * P&P Studio's own calendar (D1 social_posts), by platform and CENTRAL day (scheduled_at is UTC, and an
+ * evening post in Memphis is the next day in UTC), plus the misses: a post that failed, or is still
+ * scheduled, sending or held a day after its time. A 'waiting' post (its platform not connected) and a
+ * 'skipped' one (she tapped Skip) are known states, not misses.
+ */
 export async function readStudio({ d1, now }) {
   try {
-    const rows = await d1(`SELECT platform, substr(scheduled_at, 1, 10) AS day, COUNT(*) AS n FROM social_posts WHERE status IN ('scheduled','waiting') AND scheduled_at >= '${new Date(now).toISOString()}' GROUP BY platform, day`);
+    const since = new Date(now - LOOK_BACK_MS).toISOString();
+    const rows = await d1(`SELECT id, platform, scheduled_at, status, error FROM social_posts WHERE scheduled_at >= '${since}' AND status IN ('scheduled','waiting','sending','failed','held')`);
     if (!Array.isArray(rows)) return { error: "the Studio answered with no rows list" };
-    const counts = {}, days = {};
+    const counts = {}, days = {}, missed = [];
     for (const r of rows) {
       const ch = SERVICE[r.platform];
-      if (!ch) continue;
-      counts[ch] = (counts[ch] ?? 0) + Number(r.n);
-      (days[ch] ??= []).push(r.day);
+      const t = Date.parse(r.scheduled_at);
+      if (!ch || !Number.isFinite(t)) continue;
+      if (t >= now) {
+        if (r.status !== "scheduled" && r.status !== "waiting") continue;
+        counts[ch] = (counts[ch] ?? 0) + 1;
+        (days[ch] ??= []).push(centralDay(t));
+      } else if (r.status === "failed" || (r.status !== "waiting" && t < now - PUBLISH_GRACE_MS)) {
+        missed.push({ id: String(r.id), channel: ch, day: centralDay(t), status: r.status, error: String(r.error ?? "").slice(0, 120) });
+      }
     }
-    return { counts, days };
+    return { counts, days, missed };
   } catch (e) {
     return { error: `the Studio's calendar: ${String(e?.message ?? e).split("\n")[0].slice(0, 100)}` };
   }
@@ -202,12 +218,14 @@ export function centralDay(ms) {
 }
 
 /**
- * The calendar: { queues: {"biz:channel": n}, days: {"biz:channel": [day]}, unread: {"biz:channel": why} }.
+ * The calendar: { queues: {"biz:channel": n}, days: {"biz:channel": [day]}, unread: {"biz:channel": why},
+ * missed: [Studio posts not published a day after their time] }.
  * Every owned channel ends in exactly one of queues or unread.
  */
 export async function readCalendar({ env, fetchImpl, gh, d1, now, today }) {
   const queues = {}, days = {}, unread = {};
   const studio = await readStudio({ d1, now });
+  const missed = studio.missed ?? [];
   for (const ch of ["instagram", "tiktok", "facebook-page"]) {
     const key = `porch-and-party:${ch}`;
     if (studio.error) unread[key] = studio.error;
@@ -227,7 +245,7 @@ export async function readCalendar({ env, fetchImpl, gh, d1, now, today }) {
     else { queues[key] = p.count; days[key] = p.days.sort(); }
   }
   for (const key of Object.keys(CHANNEL_OWNERS)) if (!(key in queues) && !(key in unread)) unread[key] = "no ledger read for this channel yet (its job keeps no readable queue)";
-  return { queues, days, unread };
+  return { queues, days, unread, missed };
 }
 
 // ─── Everything ─────────────────────────────────────────────────────────────────

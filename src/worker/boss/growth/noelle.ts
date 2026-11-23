@@ -162,7 +162,15 @@ export async function recordPlan(env: Env, body: any, now = Date.now()) {
   const db = env.DB;
   const today = body.day as string;
   // A replay (the Mac retried, a second launch of the same slot): the first run stands, and nothing is acted twice.
-  const prior = await db.prepare(`SELECT id, line FROM noelle_runs WHERE day = ? AND slot = ? AND kind = ? AND state IN ('planned','done')`).bind(today, String(body.slot).slice(0, 5), body.kind).first<{ id: string; line: string | null }>();
+  // A prior row still 'planned' is a run that died between /plan and /done (the Mac rebooted): the Mac
+  // always posts /done after act, under one lock. It is closed [ACT_LOST] and the answer says so, so the
+  // Mac marks the day stopped and the 2-hour retry runs as a new slot; a lost day never reads "done".
+  const prior = await db.prepare(`SELECT id, state FROM noelle_runs WHERE day = ? AND slot = ? AND kind = ? AND state IN ('planned','done')`).bind(today, String(body.slot).slice(0, 5), body.kind).first<{ id: string; state: string }>();
+  if (prior?.state === "planned") {
+    await db.prepare(`UPDATE noelle_runs SET state = 'stopped', stops = ?, line = ?, updated_at = ? WHERE id = ?`)
+      .bind(JSON.stringify(["ACT_LOST"]), "NAMED STOP [ACT_LOST] planned but never finished; the retry runs as a new slot", now, prior.id).run();
+    return { run: prior.id, replay: true, lost: true, accepted: [], refused: [], lines: [], notices: [], roster: [], stops: ["NAMED STOP [ACT_LOST]"], decisions: 0 };
+  }
   if (prior) return { run: prior.id, replay: true, accepted: [], refused: [], lines: [], notices: [], roster: [], stops: [], decisions: 0 };
   const runId = newId("nrn");
   const { roster } = await loadRoster(db);
@@ -307,7 +315,9 @@ export async function recordDone(env: Env, body: any, now = Date.now()) {
     notices++;
   }
   const failed = (Array.isArray(body.failed) ? body.failed : []).slice(0, 40).map((f: any) => `${String(f?.kind ?? "act")}: ${String(f?.why ?? "").slice(0, 200)}`);
-  const stops = [...new Set([...parse<string[]>(run.stops, []), ...failed.map(() => "ACT_FAILED")])];
+  // A failure that names its stop keeps its code (POST_NOT_PUBLISHED, CALENDAR_UNREAD), so the
+  // three-days-running line (G16b) can see the same stop repeat; any other is ACT_FAILED.
+  const stops = [...new Set([...parse<string[]>(run.stops, []), ...failed.map((f: string) => f.match(/NAMED STOP \[([A-Z_]+)\]/)?.[1] ?? "ACT_FAILED")])];
   // The run's calls grow with the reviewer and the remake; never shrink (the week's budget reads them).
   const calls = Number.isInteger(body.calls) && body.calls > run.calls ? Math.min(body.calls, 10_000) : run.calls;
   await db.prepare(`UPDATE noelle_runs SET state = 'done', stops = ?, calls = ?, line = ?, updated_at = ? WHERE id = ?`)

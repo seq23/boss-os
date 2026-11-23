@@ -173,6 +173,11 @@ describe("the Worker re-checks the plan; only accepted acts go back (A6, G1, G3,
     expect(again).toMatchObject({ run: first.run, replay: true, accepted: [], notices: [] });
     expect(await rows(`SELECT id FROM noelle_runs WHERE day = ? AND slot = '14:37' AND kind = 'daily'`, DAY)).toHaveLength(1);
     expect(await rows(`SELECT id FROM growth_decisions`)).toHaveLength(decisions);
+    // A run still 'planned' when its slot is posted again died mid-run: closed [ACT_LOST], never a quiet "done".
+    await env.DB.prepare(`UPDATE noelle_runs SET state = 'planned' WHERE id = ?`).bind(first.run).run();
+    const lost = await json(await call("/noelle/plan", body));
+    expect(lost).toMatchObject({ run: first.run, replay: true, lost: true, accepted: [] });
+    expect(await rows(`SELECT state, stops FROM noelle_runs WHERE id = ?`, first.run)).toEqual([{ state: "stopped", stops: '["ACT_LOST"]' }]);
     // A different slot the same day is its own run.
     expect((await json(await call("/noelle/plan", plan([SEASON], { slot: "18:02" })))).run).not.toBe(first.run);
   });
@@ -282,7 +287,7 @@ describe("what she changes and tells", () => {
       { business: "approvalprep", key: "not-noelle", what: "forged", where: "x", link: "https://x.test" },
       { business: "detox-denver", key: "noelle:dd", what: "not hers", where: "x", link: "https://x.test" },
     ];
-    const r = await json(await call("/noelle/done", { run, calls: 19, published: pub, failed: [{ kind: "job-target", why: "PR refused" }] }));
+    const r = await json(await call("/noelle/done", { run, calls: 19, published: pub, failed: [{ kind: "job-target", why: "PR refused" }, { kind: "published-check", why: "NAMED STOP [POST_NOT_PUBLISHED] porch-and-party:tiktok 2026-11-22 post b is failed" }] }));
     expect(r.notices).toBe(2);
     const n = (await rows(`SELECT body, needs_her FROM boss_task_notices WHERE from_name = 'Noelle' ORDER BY body`)).map((x: any) => x.body);
     expect(n).toEqual(["Noelle published: Porch & Party new format photo-set on Instagram https://www.instagram.com/p/abc", "Noelle published: Porch & Party new format photo-set on TikTok"]);
@@ -290,7 +295,8 @@ describe("what she changes and tells", () => {
     expect((await rows(`SELECT calls FROM noelle_runs WHERE id = ?`, run))[0].calls).toBe(19);
     const done = (await rows(`SELECT state, stops, line FROM noelle_runs WHERE id = ?`, run))[0];
     expect(done.state).toBe("done");
-    expect(done.stops).toMatch(/ACT_FAILED/);
+    // A failure that names its stop keeps its code, so three days of it reach her as one line (G16b, G16c).
+    expect(JSON.parse(done.stops).sort()).toEqual(["ACT_FAILED", "POST_NOT_PUBLISHED"]);
     expect((await call("/noelle/done", { run, published: pub })).status).toBe(400);
   });
 

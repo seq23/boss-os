@@ -5,11 +5,14 @@
  *     two hours on (at most three tries), else tomorrow (reviewer batch 3: "show how it resumes");
  *   - a resume never queues a piece twice (the calendar's taken days and the slot key);
  *   - a piece's engine format must post as the roster format the gate judged;
+ *   - G16c: the Studio is read by Central day, and a post not published a day after its time is a named stop;
  *   - A6: a planted "upgrade Buffer" line stays data, and a plan that obeys it is refused.
  */
 import { describe, expect, it } from "vitest";
 // @ts-expect-error — plain ESM with no declaration file
-import { RETRY_AFTER_MS, contextText, enginePlan, tickDecision, untrusted } from "../scripts/ops/noelle.mjs";
+import { RETRY_AFTER_MS, contextText, enginePlan, missedLine, tickDecision, untrusted } from "../scripts/ops/noelle.mjs";
+// @ts-expect-error — plain ESM with no declaration file
+import { readCalendar, readStudio } from "../scripts/ops/lib/noelle-reads.mjs";
 import { checkPlan, slotFor } from "../src/shared/boss/growth/noelle.mjs";
 import { parseRoster, growthSection } from "../src/shared/boss/growth/roster.mjs";
 import { replaceSection, skeleton } from "../src/shared/boss/brains/brain.mjs";
@@ -123,5 +126,37 @@ describe("her session has no tools (validate:noelle)", () => {
     expect([...permissionProblems(settings), ...scriptProblems(sh, mjs)]).toEqual([]);
     expect(permissionProblems({ ...settings, permissions: { ...settings.permissions, allow: ["WebFetch"] } }).join()).toMatch(/allow must be empty/);
     expect(scriptProblems(sh, mjs.replaceAll(" --strict-mcp-config", "")).join()).toMatch(/remake call/);
+  });
+});
+
+describe("G16c: the Studio's calendar by Central day, and what did not publish", () => {
+  const NOW = Date.parse("2026-11-23T20:00:00Z");
+  const ROWS = [
+    { id: "a", platform: "instagram", scheduled_at: "2026-11-25T01:30:00.000Z", status: "scheduled" }, // 19:30 Central on the 24th
+    { id: "b", platform: "tiktok", scheduled_at: "2026-11-23T10:00:00.000Z", status: "failed", error: "token expired" },
+    { id: "c", platform: "facebook", scheduled_at: "2026-11-22T00:00:00.000Z", status: "scheduled" },
+    { id: "d", platform: "instagram", scheduled_at: "2026-11-23T12:00:00.000Z", status: "sending" },
+    { id: "e", platform: "instagram", scheduled_at: "2026-11-20T12:00:00.000Z", status: "waiting" },
+  ];
+  it("an evening post counts on its Memphis day, not the UTC one; failed or a day late is a miss; waiting or still inside the day is not", async () => {
+    const r = await readStudio({ d1: async () => ROWS, now: NOW });
+    expect(r.days).toEqual({ instagram: ["2026-11-24"] });
+    expect(r.counts).toEqual({ instagram: 1 });
+    expect(r.missed.map((m: any) => [m.id, m.channel, m.status])).toEqual([["b", "tiktok", "failed"], ["c", "facebook-page", "scheduled"]]);
+    expect(missedLine(r.missed[0])).toBe("NAMED STOP [POST_NOT_PUBLISHED] porch-and-party:tiktok 2026-11-23 post b is failed (token expired)");
+  });
+  it("a Studio that cannot be read is NOT READ on every P&P channel, never an empty calendar or a clean publish record", async () => {
+    const cal = await readCalendar({ env: {}, fetchImpl: async () => { throw new Error("offline"); }, gh: () => { throw new Error("offline"); }, d1: async () => { throw new Error("D1 timeout"); }, now: NOW, today: DAY });
+    for (const ch of ["instagram", "tiktok", "facebook-page"]) expect(cal.unread[`porch-and-party:${ch}`]).toMatch(/D1 timeout/);
+    expect(Object.keys(cal.queues)).toEqual([]);
+    expect(cal.missed).toEqual([]);
+  });
+  it("her context shows each miss inside the calendar data", () => {
+    const text = contextText({
+      context: { today: DAY, season: "christmas", budget: { left: 40 }, businesses: [{ key: "porch-and-party", label: "Porch & Party", tier: "full", channels: [], rulings: "" }], summaries: [], aiMisses: [], runs: [] },
+      reads: {}, calendar: { queues: {}, unread: {}, days: {}, missed: [{ id: "b", channel: "tiktok", day: "2026-11-23", status: "failed", error: "token expired" }] },
+      shelf: { real: [], ai: [] }, formats: [], music: [], kind: "daily",
+    });
+    expect(text).toMatch(/<untrusted source="calendar">[^<]*NOT PUBLISHED a day after its time: tiktok 2026-11-23 \(failed: token expired\)/);
   });
 });
