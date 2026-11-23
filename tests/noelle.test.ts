@@ -8,7 +8,7 @@ import { parseRoster, growthSection } from "../src/shared/boss/growth/roster.mjs
 import { replaceSection, skeleton } from "../src/shared/boss/brains/brain.mjs";
 import {
   checkPlan, season, slotFor, didNotRunLine, escalations, callBudget, sourceProblems, READ_SOURCES, readGrid, cadenceOf,
-  copyProblems, parsePlan, PLAN_BEGIN, PLAN_END, missingDecisions, noticeLine, CLOSE_ONLY, KEEP_OPEN, RUN_CALLS, WEEK_CALLS, corporateOpen,
+  copyProblems, priceProblems, parsePlan, PLAN_BEGIN, PLAN_END, missingDecisions, noticeLine, CLOSE_ONLY, KEEP_OPEN, RUN_CALLS, WEEK_CALLS, corporateOpen,
 } from "../src/shared/boss/growth/noelle.mjs";
 
 const SPRY = `### Peace Be Still
@@ -79,17 +79,17 @@ describe("G1: owned channels are changed through their job, never posted", () =>
 
 describe("G3 + G7 + G10: formats and channels", () => {
   it("P&P has no Pinterest: an unrostered P&P channel is a line to her, never a fix", () => {
-    const r = plan({ kind: "studio-plan", business: "porch-and-party", pieces: [{ id: "p1", at: "2026-12-02 11:15", format: "pin", platforms: ["pinterest"], theme: "christmas-porch", hook: "Porch ready" }] });
+    const r = plan({ kind: "studio-plan", business: "porch-and-party", pieces: [{ id: "p1", at: "2026-12-02 11:15", post: "pin", format: "single-photo", platforms: ["pinterest"], theme: "christmas-porch", hook: "Porch ready" }] });
     expect(r.accepted).toHaveLength(0);
     expect(r.lines.some((l: any) => /add pinterest/i.test(l.what))).toBe(true);
   });
   it("an unlisted format is published WITH its roster line, scorecard row and notice; without the row it is not published", () => {
     const sc = { number: "saves per post", floor30: 5, floor60: 10, versionB: "a three-photo set instead" };
-    const ok = plan({ kind: "studio-plan", business: "porch-and-party", pieces: [{ id: "p1", at: "2026-12-02 11:15", format: "carousel", platforms: ["instagram"], theme: "christmas-porch", hook: "Porch ready", scorecard: sc }] });
+    const ok = plan({ kind: "studio-plan", business: "porch-and-party", pieces: [{ id: "p1", at: "2026-12-02 11:15", post: "photo-set", format: "carousel", platforms: ["tiktok"], theme: "christmas-porch", hook: "Porch ready", scorecard: sc }] });
     expect(ok.accepted[0].pieces).toHaveLength(1);
-    expect(ok.roster).toEqual([{ business: "porch-and-party", channel: "instagram", format: "carousel" }]);
-    expect(ok.notices[0].key).toBe("noelle:porch-and-party:format:instagram:carousel");
-    const no = plan({ kind: "studio-plan", business: "porch-and-party", pieces: [{ id: "p1", at: "2026-12-02 11:15", format: "carousel", platforms: ["instagram"], theme: "christmas-porch", hook: "Porch ready" }] });
+    expect(ok.roster).toEqual([{ business: "porch-and-party", channel: "tiktok", format: "photo-set" }]);
+    expect(ok.notices[0].key).toBe("noelle:porch-and-party:format:tiktok:photo-set");
+    const no = plan({ kind: "studio-plan", business: "porch-and-party", pieces: [{ id: "p1", at: "2026-12-02 11:15", post: "photo-set", format: "carousel", platforms: ["tiktok"], theme: "christmas-porch", hook: "Porch ready" }] });
     expect(no.accepted).toHaveLength(0);
     expect(no.refused[0].why).toMatch(/no scorecard row/);
   });
@@ -147,9 +147,13 @@ describe("G11 seeds caught by code before the reviewer", () => {
     expect(copyProblems("Black Bible Stories tonight", e("peace-be-still")).length).toBeGreaterThan(0);
     expect(copyProblems("Only $19.99 for the checklist", e("dream-wedding")).join()).toMatch(/\$19.99/);
     expect(copyProblems("Only $9.99 for the checklist", e("dream-wedding"))).toEqual([]);
+    // BHPC's Gumroad book at a price its offer line never states.
+    const bhpc = { label: "Billionaire High Performance Coach", offer: "the playbook on Gumroad, $27" };
+    expect(priceProblems("The playbook is $47 on Gumroad", bhpc).join()).toMatch(/\$47/);
+    expect(priceProblems("The playbook is $27 on Gumroad", bhpc)).toEqual([]);
     // One bad caption drops that piece only; its neighbour in the same plan is still accepted.
-    const good = { id: "p2", at: "2026-12-03 11:15", format: "reel", platforms: ["instagram"], theme: "christmas-porch", hook: "Porch ready for the holidays" };
-    const r = plan({ kind: "studio-plan", business: "porch-and-party", pieces: [{ id: "p1", at: "2026-12-02 11:15", format: "reel", platforms: ["instagram"], theme: "christmas-porch", hook: "Installs from $99" }, good] });
+    const good = { id: "p2", at: "2026-12-03 11:15", post: "reel", format: "real-montage", platforms: ["instagram"], theme: "christmas-porch", hook: "Porch ready for the holidays" };
+    const r = plan({ kind: "studio-plan", business: "porch-and-party", pieces: [{ id: "p1", at: "2026-12-02 11:15", post: "reel", format: "real-montage", platforms: ["instagram"], theme: "christmas-porch", hook: "Installs from $99" }, good] });
     expect(r.refused[0].stop).toBe("PIECES");
     expect(r.refused[0].why).toMatch(/^p1: \[COPY\]/);
     expect(r.refused[0].action.pieces.map((x: any) => x.id)).toEqual(["p1"]);
@@ -211,7 +215,7 @@ describe("Beyond the list", () => {
     expect(season("2026-12-14")).toBe("christmas");
     expect(season("2026-12-15")).toBe("takedown");
     expect(season("2027-03-01")).toBe("spring");
-    const late = plan({ kind: "studio-plan", business: "porch-and-party", pieces: [{ id: "p1", at: "2026-12-20 11:15", format: "reel", platforms: ["instagram"], theme: "christmas-porch", hook: "x" }] });
+    const late = plan({ kind: "studio-plan", business: "porch-and-party", pieces: [{ id: "p1", at: "2026-12-20 11:15", post: "reel", format: "real-montage", platforms: ["instagram"], theme: "christmas-porch", hook: "x" }] });
     expect(late.refused[0].why).toMatch(/out of season/);
     expect(checkPlan({ actions: [{ kind: "outreach-target", business: "porch-and-party", sender: "camille", list: "corporate-christmas", count: 10 }] }, { ...ctx, today: "2026-12-06" }).refused[0].stop).toBe("SEASON");
     expect(checkPlan({ actions: [{ kind: "outreach-target", business: "porch-and-party", sender: "camille", list: "corporate-christmas", count: 10 }] }, { ...ctx, today: "2027-01-10" }).refused[0].stop).toBe("SEASON");

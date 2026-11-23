@@ -13,6 +13,8 @@
  *   done <dir>             POST /noelle/done: the new things published (one Notices line each), the
  *                          failures, and every Claude call the run used
  *   stop "<line>" <dir>    a run that ended before a plan (exit 76, out of credits): its NAMED STOP
+ *   due <day> <HH:MM> <mark>   one launchd tick: RUN <slot> <kind> <try> [resume], or WAIT <why>
+ *   mark <mark> done|stopped [code] [try]   today's record on this Mac, read by the next tick
  *
  * WHAT SHE CAN DO. Her session has no tools (scripts/ops/noelle-permissions.json, allow list empty); her
  * only output is a JSON plan. Code acts on the Worker's `accepted` list only, and in this PR only the
@@ -27,7 +29,7 @@ import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node
 import { homedir } from "node:os";
 import { basename, dirname, join } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
-import { PIECE_THEMES, PLAN_BEGIN, PLAN_END, RUN_CALLS, checkPlan, parsePlan, season } from "../../src/shared/boss/growth/noelle.mjs";
+import { JOB_FIELDS, OUTREACH_SENDERS, PIECE_THEMES, PLAN_BEGIN, PLAN_END, RUN_CALLS, SEARCH_LOOP_CHANGES, SOURCES_ALLOWED, checkPlan, parsePlan, season, slotFor, sourcesFor } from "../../src/shared/boss/growth/noelle.mjs";
 import { collectReads, photoShelf } from "./lib/noelle-reads.mjs";
 import { d1Query, macContext, readMetric } from "./lib/scorecard-readers.mjs";
 import { fetchLoopWeeks } from "./lib/search-loop-week.mjs";
@@ -47,6 +49,8 @@ export const STUDIO = Object.freeze({
 /** The site's AI scene folders she may use; icons, social cards and form art are not scenes. */
 export const AI_SCENE_DIRS = Object.freeze(["porch", "celebrations", "grazing", "rentals", "areas"]);
 const PLATFORM_CHANNEL = { tiktok: "tiktok", instagram: "instagram", facebook: "facebook-page" };
+/** The engine's kinds as the roster names them (P&P's roster lists reel and photo-set). */
+export const POST_OF_KIND = Object.freeze({ reel: "reel", carousel: "photo-set" });
 
 /**
  * Her studio-plan pieces → the engine's plan. Code sets what must never be hers to get wrong: the
@@ -60,11 +64,13 @@ export function enginePlan(pieces, { name, calendarDays, formats }) {
   for (const p of pieces) {
     const f = formats.find((x) => x.id === p.format);
     if (!f) { dropped.push({ id: p.id, why: `unknown format ${p.format}` }); continue; }
+    // The gate judged the roster format she named (`post`); the engine format must really post as it.
+    if (p.post !== POST_OF_KIND[f.kind]) { dropped.push({ id: p.id, why: `${p.format} posts as a ${POST_OF_KIND[f.kind] ?? f.kind}, not the "${p.post ?? "(none)"}" the plan named` }); continue; }
     const day = String(p.at).slice(0, 10);
     const taken = (p.platforms ?? []).filter((pl) => (calendarDays[`porch-and-party:${PLATFORM_CHANNEL[pl]}`] ?? []).includes(day) || seen.has(`${pl}:${day}:${f.kind}`));
     if (taken.length) { dropped.push({ id: p.id, why: `${day} already holds a Studio post on ${taken.join(", ")}` }); continue; }
     for (const pl of p.platforms) seen.add(`${pl}:${day}:${f.kind}`);
-    const { theme, scorecard, why, ...piece } = p;
+    const { theme, scorecard, why, post, ...piece } = p;
     kept.push({ ...piece, slot: `${day}#${f.kind}` });
   }
   return { plan: { _why: `Noelle's plan ${name}: every piece reviewed by a fresh reviewer before it is queued.`, studio: STUDIO.studio, brand: STUDIO.brand, tz: STUDIO.tz, window: STUDIO.window, cta: STUDIO.cta, sources: STUDIO.sources, pieces: kept }, dropped };
@@ -100,6 +106,12 @@ export function contextText({ context, reads, calendar, shelf, formats, music, k
     "## Her rulings and the roster (trusted: from her own brains)",
     ...context.businesses.map((b) => `### ${b.label} (${b.key}, tier ${b.tier}${b.paused ? ", PAUSED" : ""})\nbuyer: ${b.buyer ?? ""}\noffer: ${b.offer ?? ""}\nmoney: ${b.money ?? ""}\nchannels: ${(b.channels ?? []).map((c) => `${c.channel}${c.formats?.length ? ` [${c.formats.join(", ")}]` : ""}`).join("; ")}\n${b.held ? `HELD: ${b.held}` : b.rulings}`),
     "",
+    "## Read list (a decision per source; the weekly run owes every one)",
+    ...context.businesses.map((b) => `${b.key}: ${sourcesFor(b.key).map((s) => s.id).join(", ")}`),
+    "",
+    "## Action kinds (every action names its kind and business; anything else is refused)",
+    ...ACTION_FIELDS,
+    "",
     "## Themes by season (studio-plan pieces must carry one)",
     ...seasons.map((s) => `${s}: ${PIECE_THEMES[s].join(", ")}`),
     "",
@@ -118,6 +130,21 @@ export function contextText({ context, reads, calendar, shelf, formats, music, k
     `P&P studio sources on this Mac: real ${pnp ? "listed above" : "n/a"}`,
   ].join("\n");
 }
+/** The fields of each kind, from the gate's own lists (checkPlan), so the prompt cannot drift from it. */
+const ACTION_FIELDS = [
+  `decision: source (a read-list id), decision (one or two plain sentences), file?, sha?`,
+  `studio-plan: pieces (Porch & Party only; see the prompt)`,
+  `job-target: channel (one an existing job fills), field (${JOB_FIELDS.join(" | ")}), value, why`,
+  `search-loop: change (${SEARCH_LOOP_CHANGES.join(" | ")}), value (a cap may only go DOWN; raising it is her call), why`,
+  `backlink: topic (≤120 chars), draft?, why (at most 1 link request per 4 articles)`,
+  `test: what, number, stop, channel?, format? (one per business per cycle)`,
+  `outreach-target: sender (${OUTREACH_SENDERS.join(" | ")}), list, count (a whole number, never names), why`,
+  `name-source: source (${[...new Set(Object.values(SOURCES_ALLOWED).flat())].join(" | ")}), why`,
+  `proposal: what, why, evidence (her call; becomes a Decide card)`,
+  `sequoia-line: what (one plain sentence ≤300 chars), why, evidence`,
+  `linked: id (an open linked to-do), verdict (keep | change), next_step? (when change), why`,
+  `page-edit: url, field, why (client sites become her proposal; never a live edit)`,
+];
 const listOr = (x) => (Array.isArray(x) ? (x.length ? x.join(", ") : "none") : `NOT READ (${x?.error ?? "unknown"})`);
 function addDays(day, n) {
   const d = new Date(`${day}T12:00:00Z`); d.setUTCDate(d.getUTCDate() + n); return d.toISOString().slice(0, 10);
@@ -248,7 +275,7 @@ const REMAKE_ASK = `You are Noelle. A fresh reviewer FAILED these Porch & Party 
 /** One Claude call through ai-run with her no-tools settings (noelle.sh passes them). Exit 76 = limit. */
 function claudeCall(prompt, outFile, env = process.env) {
   const args = ["--role", env.NOELLE_ROLE, "--network", "--cwd", homedir(), "--out", outFile, "--", prompt];
-  const r = spawnSync(env.NOELLE_AI_RUN, args, { encoding: "utf8", env: { ...env, ENABLE_CLAUDEAI_MCP_SERVERS: "false", AI_RUN_CLAUDE_MODEL: env.NOELLE_MODEL, AI_RUN_CLAUDE_ARGS: `--max-turns 4 --permission-mode dontAsk --setting-sources= --settings ${env.NOELLE_SETTINGS}` }, maxBuffer: 20 << 20 });
+  const r = spawnSync(env.NOELLE_AI_RUN, args, { encoding: "utf8", env: { ...env, ENABLE_CLAUDEAI_MCP_SERVERS: "false", AI_RUN_CLAUDE_MODEL: env.NOELLE_MODEL, AI_RUN_CLAUDE_ARGS: `--max-turns 4 --permission-mode dontAsk --setting-sources= --settings ${env.NOELLE_SETTINGS} --strict-mcp-config` }, maxBuffer: 20 << 20 });
   const text = `${existsSync(outFile) ? readFileSync(outFile, "utf8") : ""}\n${r.stdout ?? ""}\n${r.stderr ?? ""}`;
   return { rc: r.status, text, limit: r.status === 76 || limitHit(text) };
 }
@@ -327,7 +354,7 @@ async function cmdAct(dir) {
       }).join("\n\n");
       const c = claudeCall(`${REMAKE_ASK}\n\n${readFileSync(join(dir, "context.txt"), "utf8")}\n\n${notes}`, join(dir, "remake.log"));
       state.calls++;
-      if (c.limit) { state.stop = "NAMED STOP [CLAUDE_LIMIT] out of Claude credits during the remake; the next slot carries on (queued pieces are never queued twice)"; }
+      if (c.limit) { state.stop = `NAMED STOP [CLAUDE_LIMIT] out of Claude credits during the remake; ${RESUME_WORDS}`; }
       else {
         const origs = failed.map((p) => ({ ...p, theme: pieces.find((x) => x.id === p.id)?.theme }));
         const r = remadePieces(c.text, origs, { roster: state.businesses, today: state.day, queues: state.calendar.queues });
@@ -368,7 +395,7 @@ async function renderReviewQueue({ cs, plan, name, outRoot, state, dir, log }) {
   const res = reviewResults(rv.out);
   state.calls += res.pass.length + res.fail.length + res.error.length;
   for (const e of res.error) state.failed.push({ kind: "review", why: `${e.id}: the reviewer did not answer (${e.why.slice(0, 120)})` });
-  if (res.error.some((e) => limitHit(e.why)) || limitHit(rv.out.split("\n").filter((l) => /ERROR/.test(l)).join("\n"))) state.stop = "NAMED STOP [CLAUDE_LIMIT] the reviewer ran out of Claude credits; unreviewed pieces were not queued and the next slot carries on";
+  if (res.error.some((e) => limitHit(e.why)) || limitHit(rv.out.split("\n").filter((l) => /ERROR/.test(l)).join("\n"))) state.stop = `NAMED STOP [CLAUDE_LIMIT] the reviewer ran out of Claude credits; unreviewed pieces were not queued; ${RESUME_WORDS}`;
   if (res.pass.length) {
     const q = sh("node", ["scripts/studio.mjs", "engine-queue", STUDIO.studio, planFile, `--only=${res.pass.join(",")}`], { cwd: cs, env });
     log(q.out.trim());
@@ -377,6 +404,44 @@ async function renderReviewQueue({ cs, plan, name, outRoot, state, dir, log }) {
   }
   saveState(dir, state);
   return { ...res, stop: state.stop ?? null };
+}
+
+// ─── When to run, and the resume ────────────────────────────────────────────────
+
+/** Ticks start runs until 21:00 Central, so a run (render and review included) ends inside the LIGHT window. */
+export const LAST_START = "21:00";
+/** A stopped run (out of Claude credits, a read or step that failed) is tried again this long after. */
+export const RETRY_AFTER_MS = 2 * 3_600_000;
+export const MAX_TRIES = 3;
+export const RESUME_WORDS = `a tick ${RETRY_AFTER_MS / 3_600_000} hours on carries on today if it is before ${LAST_START} Central, else tomorrow's slot; pieces already queued are never queued twice (their days are taken and the Studio's idem_key holds)`;
+
+/**
+ * One launchd tick (every 30 minutes; noelle.sh): run now, or wait. `mark` is today's record on this Mac
+ * ({state: "done"|"stopped", at, code, tries}) or null. A resume runs as its own slot (the tick's time), so
+ * the Worker's one-plan-per-slot rule never turns it into a replay of nothing.
+ */
+export function tickDecision({ day, now, nowMs, mark }) {
+  const s = slotFor(day);
+  const slot = `${String(s.hour).padStart(2, "0")}:${String(s.minute).padStart(2, "0")}`;
+  if (mark?.state === "done") return { run: false, why: `today's ${s.kind} run is done` };
+  if (now >= LAST_START) return { run: false, why: `past ${LAST_START} Central; tomorrow's slot runs` };
+  if (now < slot) return { run: false, why: `today's slot is ${slot} Central` };
+  if (mark?.state === "stopped") {
+    if ((mark.tries ?? 1) >= MAX_TRIES) return { run: false, why: `stopped ${mark.tries} times today (${mark.code}); tomorrow's slot runs` };
+    if (nowMs - Number(mark.at) < RETRY_AFTER_MS) return { run: false, why: `stopped on ${mark.code}; the retry waits until ${RETRY_AFTER_MS / 3_600_000} hours after it` };
+    return { run: true, slot: now, kind: s.kind, resume: true, tries: (mark.tries ?? 1) + 1 };
+  }
+  return { run: true, slot, kind: s.kind, resume: false, tries: 1 };
+}
+
+function cmdDue(day, now, markFile) {
+  const mark = existsSync(markFile) ? JSON.parse(readFileSync(markFile, "utf8")) : null;
+  const d = tickDecision({ day, now, nowMs: Date.now(), mark });
+  console.log(d.run ? `RUN ${d.slot} ${d.kind} ${d.tries}${d.resume ? " resume" : ""}` : `WAIT ${d.why}`);
+}
+
+function cmdMark(markFile, state, code, tries) {
+  writeFileSync(markFile, JSON.stringify({ state, code: code || null, tries: Number(tries) || 1, at: Date.now() }));
 }
 
 // ─── Done / stop ────────────────────────────────────────────────────────────────
@@ -403,6 +468,8 @@ async function main() {
   if (cmd === "act") return cmdAct(a);
   if (cmd === "done") return cmdDone(a);
   if (cmd === "stop") return cmdStop(a, b, c);
+  if (cmd === "due") return cmdDue(a, b, c);
+  if (cmd === "mark") return cmdMark(a, b, c, process.argv[6]);
   console.error("usage: noelle.mjs context <dir> [weekly] | plan <runlog> <dir> <HH:MM> | act <dir> | done <dir> | stop '<NAMED STOP …>' <dir> <HH:MM>");
   process.exit(2);
 }

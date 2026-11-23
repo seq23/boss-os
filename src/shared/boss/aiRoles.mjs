@@ -54,6 +54,8 @@ export const AI_ROLES = Object.freeze({
 
   // ── Company brains ────────────────────────────────────────────────────────────────────────────
   // Owner, 13 Nov 2026: "recording can be a free model interpreting can be a more high quality model".
+  // ── Noelle, the Growth Director (scripts/ops/noelle.sh; her plan, then the remake of a failed piece) ──
+  "growth.noelle": { role: BRAIN, jobClass: "hard", why: "Noelle's daily read-decide-plan session: a veteran's growth judgement over every ledger, Claude only (private brain lines reach her), with no tools at all (noelle-permissions.json); code re-checks every action she prints." },
   "brain.record": { role: WORKER, jobClass: "short", why: "Saving her exact words or a measured number into a brain, read back after the save: short and checkable, so it starts on the free routes." },
   "brain.interpret": { role: BRAIN, jobClass: "hard", why: "Rewriting, merging, summarising or deciding what a ruling means: hard judgement." },
   "brain.write": { role: BRAIN, jobClass: "hard", why: "A company-brain write that does not say whether it records or interprets is treated as interpreting: the strongest route." },

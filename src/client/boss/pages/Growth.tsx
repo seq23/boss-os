@@ -104,7 +104,7 @@ function Business({ b }: { b: Biz }) {
           <span className="email-map-what">{d ? d.decision : b.happening.last ? `No decision this week yet (last: ${shortDate(b.happening.last)}). Noelle runs once a day.` : "No decision yet: Noelle runs once a day."}</span>
           {d ? <span className="brain-card-line">Week of {shortDate(d.cycle)}{d.next_check ? ` · next check ${shortDate(d.next_check)}` : ""}</span> : null}
           {d?.evidence?.length ? <ul className="schedule-list">{d.evidence.slice(0, 4).map((e, i) => <li key={i}>{e}</li>)}</ul> : null}
-          {d?.test ? <span className="brain-card-line">Testing: {d.test.what} on {d.test.channel}, judged by {d.test.number}, stops {d.test.stop}</span> : null}
+          {d?.test ? <span className="brain-card-line">Test recorded, not yet started: {d.test.what}{d.test.channel ? ` on ${d.test.channel}` : ""}, to be judged by {d.test.number}, stops {d.test.stop}</span> : null}
           {d?.actions?.length ? (
             <details className="brain-expander"><summary>What she did with it ▾</summary>
               <ul className="schedule-list">{d.actions.map((a, i) => <li key={i}>{ACT[a.kind] ?? a.kind}{a.item ? `: ${a.item.channel} ${a.item.format}${a.item.topic ? `, “${a.item.topic}”` : ""}` : a.proposal ? `: ${a.proposal.what}` : ""}{a.why ? ` — ${a.why}` : ""}</li>)}</ul>

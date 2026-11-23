@@ -19,7 +19,7 @@ import { setSetting } from "../../src/worker/boss/lib/settings";
 import { handleRequest } from "../../src/worker/index";
 import { dayIdInZone } from "../../src/shared/boss/timezone";
 import { READ_SOURCES, WEEK_CALLS } from "../../src/shared/boss/growth/noelle.mjs";
-import { noelleWatch } from "../../src/worker/boss/growth/noelle";
+import { noelleWatch, recordPlan } from "../../src/worker/boss/growth/noelle";
 import { RESUME_HANDLERS } from "../../src/worker/boss/approvals/resume";
 import type { Env } from "../../src/worker/env";
 
@@ -177,6 +177,18 @@ describe("the Worker re-checks the plan; only accepted acts go back (A6, G1, G3,
     expect((await json(await call("/noelle/plan", plan([SEASON], { slot: "18:02" })))).run).not.toBe(first.run);
   });
 
+  it("a throw after the slot is claimed marks the row stopped [PLAN_FAILED], so a retry of that slot is a new run, not a replay of nothing", async () => {
+    const real = env.DB;
+    const broken = { prepare: (sql: string) => { if (/INSERT INTO growth_decisions/.test(sql)) throw new Error("D1 went away"); return real.prepare(sql); } };
+    await expect(recordPlan({ DB: broken } as unknown as Parameters<typeof recordPlan>[0], plan([SEASON]), NOW)).rejects.toThrow(/D1 went away/);
+    const [row] = await rows(`SELECT state, stops, line FROM noelle_runs WHERE day = ? AND slot = '14:37'`, DAY);
+    expect(row).toMatchObject({ state: "stopped", stops: '["PLAN_FAILED"]' });
+    expect(row.line).toMatch(/^NAMED STOP \[PLAN_FAILED\] D1 went away/);
+    const retry = await json(await call("/noelle/plan", plan([SEASON])));
+    expect(retry.replay).toBeUndefined();
+    expect(retry.decisions).toBe(1);
+  });
+
   it("a second backlink inside 4 articles is refused (≤1 per 4 articles, counted over 28 days)", async () => {
     await call("/noelle/plan", plan([{ kind: "backlink", business: "approvalprep", topic: "One", why: "w" }]));
     const out = await json(await call("/noelle/plan", plan([{ kind: "backlink", business: "approvalprep", topic: "Two", why: "w" }], { slot: "16:12" })));
@@ -257,7 +269,7 @@ describe("what she changes and tells", () => {
   it("done: one Notices line per NEW thing, her wording, https links only, a repeat is not told twice; a done run cannot be re-done", async () => {
     // Two new formats the gate passed (each with its scorecard row, G10): only their keys may be told.
     const sc = { number: "saves", floor30: 5, floor60: 10, versionB: "a single photo" };
-    const piece = (id: string, platform: string) => ({ id, at: "2026-12-02 11:15", format: "photo-set", platforms: [platform], theme: "christmas-porch", hook: "Porch ready for the holidays", scorecard: sc });
+    const piece = (id: string, platform: string) => ({ id, at: "2026-12-02 11:15", post: "photo-set", format: "carousel", platforms: [platform], theme: "christmas-porch", hook: "Porch ready for the holidays", scorecard: sc });
     const planned = await json(await call("/noelle/plan", plan([SEASON, { kind: "studio-plan", business: "porch-and-party", pieces: [piece("p1", "instagram"), piece("p2", "tiktok")] }])));
     const { run } = planned;
     expect(planned.notices.map((x: any) => x.key).sort()).toEqual(["noelle:porch-and-party:format:instagram:photo-set", "noelle:porch-and-party:format:tiktok:photo-set"]);

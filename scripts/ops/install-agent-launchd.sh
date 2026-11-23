@@ -1272,6 +1272,45 @@ lint_plist "$AIV_PLIST"
 reload_plist "$AIV_PLIST"
 echo "Installed $AIV_LABEL — daily 12:00 Central tick (LIGHT), weekly Tuesday read (asks the duty row)."
 
+# ─── Noelle, the Growth Director (plan artifact 8LfYgMaHj7XLVB1fJ1vYxM, approved 23 Nov 2026) ─────────
+#
+# scripts/ops/noelle.sh: her Claude session (ai-run --role brain, Claude only, no tools) reads, decides and
+# plans; code acts. A TICK EVERY 30 MINUTES, LIGHT (mac-window holds it to 10:00-21:59 Central): each tick
+# asks `noelle.mjs due` and runs only at today's slot (a time that varies by day, never on the hour), or
+# two hours after a stopped run. No duty row: the Worker's 22:05 watch (duty_growth_director) names a day
+# with no recorded run. New-job free ladder: N/A, Claude only (her brain lines reach the session).
+NOELLE_LABEL="com.seq.boss-noelle"
+NOELLE_PLIST="$HOME/Library/LaunchAgents/$NOELLE_LABEL.plist"
+NOELLE_LOGS="$HOME/Library/Logs/noelle"
+
+mkdir -p "$NOELLE_LOGS"
+chmod +x "$REPO/scripts/ops/noelle.sh"
+ln -sfn "$REPO/scripts/ops/noelle.sh" "$HOME/bin/noelle.sh"
+
+cat > "$NOELLE_PLIST" <<NOELLEEOF
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN"
+  "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0"><dict>
+  <key>Label</key><string>$NOELLE_LABEL</string>
+  <key>ProgramArguments</key>
+  <array>
+    <string>/bin/bash</string>
+    <string>-lc</string>
+    <string>bash $REPO/scripts/ops/noelle.sh</string>
+  </array>
+  <key>StartInterval</key><integer>1800</integer>
+  <key>EnvironmentVariables</key>
+  <dict><key>BOSS_OS_REPO</key><string>$REPO</string></dict>
+  <key>StandardOutPath</key><string>$NOELLE_LOGS/launchd.log</string>
+  <key>StandardErrorPath</key><string>$NOELLE_LOGS/launchd.err</string>
+  <key>RunAtLoad</key><false/>
+</dict></plist>
+NOELLEEOF
+lint_plist "$NOELLE_PLIST"
+reload_plist "$NOELLE_PLIST"
+echo "Installed $NOELLE_LABEL — a tick every 30 minutes (LIGHT); runs once a day at its slot."
+
 # ─── Danielle's on-demand repo-change lane ───────────────────────────────────
 #
 # Plan B, approved 20 September 2026. She emails boss@ with `#danielle`, a grid repo and/or a Drive
@@ -1879,6 +1918,7 @@ require_loaded "$HUNT_LABEL"
 require_loaded "$SELLERS_LABEL"
 require_loaded "$AHREFS_LABEL"
 require_loaded "$AIV_LABEL"
+require_loaded "$NOELLE_LABEL"
 # A FIFTH TIME, on 21 September: the repo-change lane was installed, loaded, and the "Verified" line
 # did not name it. `validate:plists-well-formed` now fails the build when a label the installer
 # defines is missing from this list, so a sixth time cannot happen through this file.
@@ -1915,6 +1955,8 @@ require_loaded com.seq.boss-owner-mail-watch
 [ -L "$HOME/bin/ahrefs-audit-fix-prompt.md" ] || missing="$missing ~/bin/ahrefs-audit-fix-prompt.md"
 [ -f "$REPO/scripts/ops/ahrefs-audit-fix-prompt.md" ] || missing="$missing scripts/ops/ahrefs-audit-fix-prompt.md"
 [ -L "$HOME/bin/ai-visibility.sh" ] || missing="$missing ~/bin/ai-visibility.sh(symlink)"
+[ -L "$HOME/bin/noelle.sh" ] || missing="$missing ~/bin/noelle.sh(symlink)"
+[ -f "$REPO/scripts/ops/noelle-prompt.md" ] || missing="$missing scripts/ops/noelle-prompt.md"
 [ -f "$REPO/scripts/ops/ai-visibility-prompt.md" ] || missing="$missing scripts/ops/ai-visibility-prompt.md"
 [ -s "$REPO/scripts/ops/ai-visibility-permissions.json" ] || missing="$missing scripts/ops/ai-visibility-permissions.json"
 # lp-replies is retired (boss fix L): lp-daily reads the LP mailbox through the delegation instead.

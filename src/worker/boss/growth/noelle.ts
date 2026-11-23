@@ -185,6 +185,18 @@ export async function recordPlan(env: Env, body: any, now = Date.now()) {
     const won = await db.prepare(`SELECT id FROM noelle_runs WHERE day = ? AND slot = ? AND kind = ? AND state IN ('planned','done')`).bind(today, slot, body.kind).first<{ id: string }>();
     return { run: won?.id ?? null, replay: true, accepted: [], refused: [], lines: [], notices: [], roster: [], stops: [], decisions: 0 };
   }
+  // The slot is claimed: a throw from here on marks the claimed row stopped, so a retry is a new run, never a replay of nothing.
+  try {
+    return await planClaimed(env, body, { runId, roster, stops, today, now });
+  } catch (e) {
+    const why = `NAMED STOP [PLAN_FAILED] ${String((e as Error)?.message ?? e).slice(0, 300)}`;
+    await db.prepare(`UPDATE noelle_runs SET state = 'stopped', stops = '["PLAN_FAILED"]', line = ?, updated_at = ? WHERE id = ?`).bind(why, now, runId).run();
+    throw e;
+  }
+}
+
+async function planClaimed(env: Env, body: any, { runId, roster, stops, today, now }: { runId: string; roster: any[]; stops: string[]; today: string; now: number }) {
+  const db = env.DB;
   const facts = cleanFacts(body.facts);
   const { unread, ...gateFacts } = facts;
   const ctx = { roster, today, ...gateFacts, orderedRecent: await orderedRecent(db, now), linkedOpen: await linkedOpen(db, roster) };

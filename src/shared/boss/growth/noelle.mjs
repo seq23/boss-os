@@ -162,7 +162,7 @@ export const WEEK_CALLS = 220;
 export function callBudget({ weekUsed = 0, runUsed = 0 }) {
   const left = Math.min(RUN_CALLS - runUsed, WEEK_CALLS - weekUsed);
   if (WEEK_CALLS - weekUsed <= 0) return { left: 0, stop: "NAMED STOP [WEEK_CALL_BUDGET] this week's Claude calls are spent; the next week's first run carries on" };
-  if (RUN_CALLS - runUsed <= 0) return { left: 0, stop: "NAMED STOP [RUN_CALL_CAP] this run's Claude calls are spent; the next slot carries on" };
+  if (RUN_CALLS - runUsed <= 0) return { left: 0, stop: "NAMED STOP [RUN_CALL_CAP] this run's Claude calls are spent; the next run carries on" };
   return { left, stop: null };
 }
 
@@ -284,15 +284,19 @@ export function checkPlan(plan, ctx) {
           const pieceCopy = copyProblems(pieceText(p), e);
           if (pieceCopy.length) { bad.push(`${p.id}: [COPY] ${pieceCopy.join("; ")}`); continue; }
           if (!PIECE_THEMES[phase].includes(p.theme)) { bad.push(`${p.id}: ${p.theme} is out of season on ${day} (${phase})`); continue; }
+          // `post` is the roster format (reel, photo-set) the gate judges; `format` is the engine's layout,
+          // and the Mac drops a piece whose layout does not really post as `post` (enginePlan).
+          const post = typeof p.post === "string" ? p.post.trim().toLowerCase() : "";
+          if (!post) { bad.push(`${p.id}: no post (the roster format, e.g. reel or photo-set)`); continue; }
           const plats = Array.isArray(p.platforms) ? p.platforms : [];
           let ok = plats.length > 0;
           for (const pl of plats) {
-            const g = channelGate(e, { channel: pl === "facebook" ? "facebook-page" : pl, format: p.format }, ctx, roster);
+            const g = channelGate(e, { channel: pl === "facebook" ? "facebook-page" : pl, format: post }, ctx, roster);
             if (!g.ok) { bad.push(`${p.id}: ${g.why}`); if (g.line) lines.push({ business: e.key, what: g.line, why: g.why }); ok = false; break; }
             if (g.newFormat) {
-              if (!validScorecard(p.scorecard)) { bad.push(`${p.id}: ${p.format} is a new format on ${pl}, and it carries no scorecard row (one number, day-30 and day-60 floors, version B), so it is not published (G10)`); ok = false; break; }
-              rosterLines.push({ business: e.key, channel: g.channel, format: String(p.format).toLowerCase() });
-              notices.push({ business: e.key, key: `noelle:${e.key}:format:${g.channel}:${String(p.format).toLowerCase()}`, what: `${e.label} new format ${p.format} on ${g.channel}`, scorecard: p.scorecard });
+              if (!validScorecard(p.scorecard)) { bad.push(`${p.id}: ${post} is a new format on ${pl}, and it carries no scorecard row (one number, day-30 and day-60 floors, version B), so it is not published (G10)`); ok = false; break; }
+              rosterLines.push({ business: e.key, channel: g.channel, format: post });
+              notices.push({ business: e.key, key: `noelle:${e.key}:format:${g.channel}:${post}`, what: `${e.label} new format ${post} on ${g.channel}`, scorecard: p.scorecard });
             }
           }
           if (ok) kept.push(p);
