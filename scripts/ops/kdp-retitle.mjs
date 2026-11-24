@@ -163,7 +163,7 @@ async function main() {
     if (liveTitle !== entry.title) return out("title_mismatch", `the page's title is "${liveTitle}" and the register says "${entry.title}" — refusing to edit a book that is not the one recorded.`, 9);
     const before = (await subtitleField.inputValue()).trim();
     const lock = await subtitleField.evaluate((el) => ({ type: el.type, disabled: el.disabled, readOnly: el.readOnly })).catch(() => null);
-    if (lockedInput(lock)) return out("locked_after_publish", `"${entry.title}" is published, and Amazon locks a published eBook's subtitle (KDP help G200736410); only a new edition changes it, which is her call. Nothing was edited.`, 16);
+    if (lockedInput(lock)) return out("locked_after_publish", `"${entry.title}" is published, and Amazon locks a published eBook's subtitle (KDP help G200736410); only a new edition changes it, and she declined new editions (24 Nov 2026). Nothing was edited.`, 16);
     if (DRY_RUN) return out("dry_run", `would change the subtitle of "${entry.title}" from "${before}" to "${subtitle}"; Save and Publish deliberately not clicked.`, 0);
     const typed = await typeLikeAPerson(page, subtitleField, subtitle);
     if (typed !== subtitle) return out("value_did_not_stick", `typed "${subtitle}" into the subtitle and the field reads "${typed}" — nothing was saved.`, 14);
