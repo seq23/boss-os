@@ -128,4 +128,42 @@ describe("the RevenueCat reader", () => {
   it("a missing key is KEY_MISSING", async () => {
     await expect(READERS.revenuecat!({ key: "NOPE", metric: "revenue" }, ctx({ status: 200, body: {} }))).rejects.toThrow(/KEY_MISSING/);
   });
+  // 23 Nov 2026: KeepMyProof's 39 "new users" were test and review devices while it sat in App Review.
+  const store = (apple: number | null, play: number | null) => ({
+    env: { K: "sk" }, now: Date.now(),
+    fetch: async (url: string) => {
+      if (url.includes("itunes.apple.com")) {
+        if (apple === null) throw new Error("offline");
+        return { ok: true, status: 200, json: async () => ({ resultCount: apple }) };
+      }
+      if (url.includes("play.google.com")) {
+        if (play === null) throw new Error("offline");
+        return { ok: play === 200, status: play, json: async () => ({}) };
+      }
+      return { ok: true, status: 200, json: async () => (url.endsWith("/projects") ? { items: [{ id: "p" }] } : { metrics: [{ id: "new_customers", value: 39 }] }) };
+    },
+  });
+  const people = { key: "K", metric: "new_customers", storeId: "com.example.app" };
+  it("an app in neither store has no people yet: NOT_IN_STORE, never 39 users", async () => {
+    await expect(READERS.revenuecat!(people, store(0, 404))).rejects.toThrow(/NOT_IN_STORE/);
+  });
+  it("an app live in either store is counted", async () => {
+    expect(await READERS.revenuecat!(people, store(1, 404))).toEqual({ raw: 39 });
+    expect(await READERS.revenuecat!(people, store(0, 200))).toEqual({ raw: 39 });
+  });
+  it("a store that cannot be read is 'couldn't check', never counted", async () => {
+    await expect(READERS.revenuecat!(people, store(null, null))).rejects.toThrow(/STORE_UNREADABLE/);
+    await expect(READERS.revenuecat!(people, store(0, 503))).rejects.toThrow(/STORE_UNREADABLE/);
+  });
+  it("money is never gated on the store (sandbox is already out of it)", async () => {
+    const c = store(0, 404);
+    const f = c.fetch;
+    c.fetch = async (u: string) => (u.endsWith("/overview") ? { ok: true, status: 200, json: async () => ({ metrics: [{ id: "revenue", value: 0 }] }) } : f(u)) as any;
+    expect(await READERS.revenuecat!({ ...people, metric: "revenue" }, c)).toEqual({ raw: 0 });
+  });
+  it("every RevenueCat people count names its store id", () => {
+    const rc = manifest.scoreboard.measures.filter((m: any) => m.reader === "revenuecat" && ["new_customers", "active_users"].includes(m.params.metric));
+    expect(rc.length).toBeGreaterThan(0);
+    for (const m of rc) expect(m.params.storeId, m.id).toMatch(/^[a-z0-9]+(\.[a-z0-9]+)+$/);
+  });
 });

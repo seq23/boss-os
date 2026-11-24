@@ -187,6 +187,24 @@ async function airtable(params, ctx) {
 // ─── RevenueCat (each app's own project, V2 secret key, read-only) ────────────────────────────────
 
 /**
+ * RevenueCat counts every phone that opened the app: before it is in a store those are test
+ * devices, App Review and our own test runs, never people (23 Nov 2026: KeepMyProof's 39 "new
+ * users" while it sat in App Review read as a free-to-paid gap). A people count is read only once
+ * the app is public in the App Store or Google Play (`params.storeId`, the bundle id and package).
+ * A store that cannot be read is "couldn't check", never "live".
+ */
+const PEOPLE_METRICS = new Set(["new_customers", "active_users"]);
+async function mustBeInAStore(storeId, ctx) {
+  const apple = await ctx.fetch(`https://itunes.apple.com/lookup?bundleId=${encodeURIComponent(storeId)}`).catch(() => null);
+  const aj = apple?.ok ? await apple.json().catch(() => null) : null;
+  if (Number(aj?.resultCount) > 0) return;
+  const play = await ctx.fetch(`https://play.google.com/store/apps/details?id=${encodeURIComponent(storeId)}&hl=en`).catch(() => null);
+  if (play?.status === 200) return;
+  if (!aj || !play || play.status !== 404) throw new NamedStop("STORE_UNREADABLE", `couldn't check whether ${storeId} is in the App Store or Google Play.`);
+  throw new NamedStop("NOT_IN_STORE", `${storeId} is not in the App Store or Google Play yet: RevenueCat's count is test and review devices, not people.`);
+}
+
+/**
  * One number from a RevenueCat project's overview (`params.metric`: revenue, mrr, new_customers,
  * active_subscriptions, active_trials, active_users). RevenueCat's own windows: revenue and
  * new_customers are its last 28 days; the active_* numbers are today's. A key without the
@@ -195,6 +213,7 @@ async function airtable(params, ctx) {
  */
 async function revenuecat(params, ctx) {
   const key = need(ctx.env, params.key);
+  if (params.storeId && PEOPLE_METRICS.has(params.metric)) await mustBeInAStore(params.storeId, ctx);
   const h = { authorization: `Bearer ${key}` };
   const pr = await ctx.fetch("https://api.revenuecat.com/v2/projects", { headers: h });
   const pj = await pr.json().catch(() => ({}));
