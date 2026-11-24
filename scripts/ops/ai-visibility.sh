@@ -18,7 +18,8 @@
 # list (`--setting-sources=` loads none of her own settings): nine read-only OpenSEO tools, every other
 # OpenSEO tool and every file, shell and web tool denied, the claude.ai connectors switched off.
 # `npm run validate:claude-runs` fails the build on any other allow entry. The session prints
-# OpenSEO's credits before and after; the report refuses a run where they moved.
+# OpenSEO's credits before and after; the report refuses a run where they moved. The session's printed
+# lines are read from its stream-json event stream (the transcript step), never from its last message.
 #
 # RULE 0: this may not exit 0 having done nothing. No sentinel with a real number → NAMED STOP exit 9;
 # no site read → exit 9 from the report; a money proof missing → exit 10.
@@ -53,6 +54,10 @@ case $LOCK_RC in
   *) say "NAMED STOP [LOCK_FAILED] cannot lock $LOCK"; exit 3 ;;
 esac
 
+# The work dir holds the session's raw event stream (OpenSEO's answer text): it never outlives the run,
+# on any exit. release_lock is kept inside this trap (lib/flock.sh: a caller's own EXIT trap calls it).
+trap 'rm -rf "$WORK"; release_lock' EXIT
+
 AI_RUN="${AI_RUN_BIN:-$HOME/bin/ai-run}"
 [ -x "$AI_RUN" ] || { say "NAMED STOP [AI_RUN_MISSING] $AI_RUN is not installed (seq-bin); the next run retries."; exit 13; }
 [ -f "$PROMPT_FILE" ] || { say "NAMED STOP [NO_PROMPT_FILE] $PROMPT_FILE"; exit 5; }
@@ -72,10 +77,16 @@ PROMPT_TEXT="$(cat "$PROMPT_FILE")
 
 $(cat "$WORK/context.txt")"
 ENABLE_CLAUDEAI_MCP_SERVERS=false AI_RUN_CLAUDE_MODEL="$MODEL" \
-AI_RUN_CLAUDE_ARGS="--max-turns $MAX_TURNS --permission-mode dontAsk --setting-sources= --settings $SETTINGS" \
-"$AI_RUN" --role "$ROLE" --network --cwd "$HOME" --out "$RUN_LOG" -- "$PROMPT_TEXT" >> "$RUN_LOG" 2>&1
+AI_RUN_CLAUDE_ARGS="--max-turns $MAX_TURNS --permission-mode dontAsk --setting-sources= --settings $SETTINGS --output-format stream-json --verbose" \
+"$AI_RUN" --role "$ROLE" --network --cwd "$HOME" --out "$WORK/session.jsonl" -- "$PROMPT_TEXT" >> "$RUN_LOG" 2>&1
 RC=$?
 say "=== ai-run --role $ROLE exited rc=$RC ==="
+
+# THE SESSION'S OWN WORDS, FROM ITS EVENT STREAM (24 Nov 2026). In text mode `claude -p` prints only its
+# LAST message, so the site blocks printed in earlier turns never reached this log: 0 sites read on 23 and
+# 24 Nov. The stream holds every turn; this writes every assistant text block into the log, verbatim, and
+# names OPENSEO_NOT_REACHED when no OpenSEO call succeeded. The raw stream dies with $WORK.
+(cd "$REPO" && node scripts/ops/ai-visibility-report.mjs transcript "$WORK/session.jsonl") >> "$RUN_LOG" 2>&1
 
 if ! has_sentinel "$RUN_LOG"; then
   if usage_exhausted "$RUN_LOG"; then say "NAMED STOP [AI_USAGE_EXHAUSTED] the reading session is out of usage; the next run retries."; echo "OUTPUT 0 sites_read"; exit 13; fi
