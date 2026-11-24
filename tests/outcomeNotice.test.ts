@@ -1,14 +1,14 @@
 /**
  * The live outcome verdicts in Simone's morning email (her order 24 Nov 2026, after Noelle landed green and acted on
  * 0 of 11 decisions: "u said nothing yesterday"). seq-bin's post-land-check writes one Notices line per verdict
- * through scripts/ops/outcome-notice.mjs; your-day shows them first in Done for you.
+ * through scripts/ops/outcome-notice.mjs; your-day shows NOT WORKING as a red banner, the rest first in Done for you.
  */
 import { mkdtempSync, readFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
 import { noticeArgs, writeOutcomeNotice } from "../scripts/ops/outcome-notice.mjs";
-import { buildDay, outcomeRank } from "../scripts/ops/your-day.mjs";
+import { buildDay, outcomeBanners, outcomeRank } from "../scripts/ops/your-day.mjs";
 import { addMorningLines } from "../src/shared/boss/mail/morning.mjs";
 
 const KEY = "outcome:seq23/boss-os#557:not-working";
@@ -102,25 +102,35 @@ describe("your-day: outcome verdicts lead Done for you", () => {
       morning: { notices: { section: "notices", at: new Date(NOW).toISOString(), decide: [], rows: [], lines: notices } } }, NOW);
   const doneText = (d: any) => String(d.text);
 
-  it("ranks NOT WORKING, then NOT CHECKED, then working, then everything else", () => {
+  it("ranks NOT CHECKED, then working, then everything else", () => {
     expect([
-      line("x"), line("w", "outcome:seq23/a#1:working"), line("c", "outcome:seq23/a#2:not-checked:2026-11-25"), line("f", "outcome:seq23/a#3:not-working"),
-    ].sort((a, b) => outcomeRank(a) - outcomeRank(b)).map((l) => l.text)).toEqual(["f", "c", "w", "x"]);
+      line("x"), line("w", "outcome:seq23/a#1:working"), line("c", "outcome:seq23/a#2:not-checked:2026-11-25"),
+    ].sort((a, b) => outcomeRank(a) - outcomeRank(b)).map((l) => l.text)).toEqual(["c", "w", "x"]);
   });
-  // What she reads: the email's plain-words gate (her 23 Oct 2026 rules: no PR numbers, no shouting) writes
-  // "boss-os #557 … NOT WORKING" as "boss-os … not working"; the verdict and what was seen stay whole.
-  const SHOWN = "boss-os Noelle acts on her decisions: not working — saw 0 decisions acted on, needed at least 3";
-  it("in the real email: three other done lines never hide a NOT WORKING verdict, and it reads whole", () => {
+  // Review of #567 (24 Nov 2026): a failure is never in the green "Done for you" box. It is a red banner at the
+  // top of the email, beside stopped jobs, and says NOT WORKING.
+  it("in the real email: a NOT WORKING verdict is a red banner above Decide, never a Done for you line", () => {
     const d = day([
-      line("Monique sent 4 follow-ups."), line("Danielle fixed the sitemap."), line("The tail found nothing new."),
+      line("Monique sent 4 follow-ups."), line("Danielle fixed the sitemap."),
       line("seq-bin #168 verdicts posted: working — saw 2 verdict comments", "outcome:seq23/seq-bin#168:working"),
       line(TEXT, KEY),
     ]);
     const text = doneText(d);
+    const at = text.indexOf("NOT WORKING");
+    expect(at).toBeGreaterThan(-1);
+    expect(at).toBeLessThan(text.indexOf("Done for you"));
+    expect(text.slice(at, at + 400)).toMatch(/Noelle acts on her decisions/);
     const done = text.slice(text.indexOf("Done for you"));
-    expect(done.split("\n")[1]).toMatch(new RegExp(`^- ${SHOWN} — See it: `));
-    expect(done.split("\n")[2]).toMatch(/^- seq-bin verdicts posted: working — saw 2 verdict comments — See it: /);
-    expect(text).not.toContain("The tail found nothing new.");
+    expect(done).not.toMatch(/Noelle acts on her decisions/i);
+    expect(done.split("\n")[1]).toMatch(/^- seq-bin verdicts posted: working — saw 2 verdict comments — See it: /);
+    expect(String(d.html)).toMatch(/NOT WORKING/);
+  });
+  it("outcomeBanners: one red banner per morning, every failure listed; nothing else makes one", () => {
+    expect(outcomeBanners([line("a"), line("w", "outcome:seq23/a#1:working")])).toEqual([]);
+    const b = outcomeBanners([line(TEXT, KEY), line("x: NOT WORKING — y", "outcome:seq23/b#2:not-working")]);
+    expect(b).toHaveLength(1);
+    expect(b[0]!.tone).toBe("red");
+    expect(b[0]!.lines).toEqual([TEXT, "x: NOT WORKING — y"]);
   });
   it("a working verdict already told is not told again; a NOT CHECKED one carries its day, so it shows each morning", () => {
     const w = line("seq-bin #168 verdicts posted: working — saw 2", "outcome:seq23/seq-bin#168:working");
