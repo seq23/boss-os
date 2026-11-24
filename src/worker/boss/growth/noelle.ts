@@ -285,7 +285,7 @@ async function planClaimed(env: Env, body: any, { runId, roster, stops, today, n
 /** The run's end: publish notices (one per NEW thing, deduped by key), the stop, the 14-day report. */
 export async function recordDone(env: Env, body: any, now = Date.now()) {
   const db = env.DB;
-  const today = isDay(body?.day) ? body.day : dayIdInZone(now);
+  let today = isDay(body?.day) ? body.day : dayIdInZone(now);
   // A run that stopped before any plan (exit 76 out of credits, a NAMED STOP in the Mac's read).
   if (!body?.run) {
     const stop = String(body?.stop ?? "").slice(0, 400);
@@ -298,6 +298,8 @@ export async function recordDone(env: Env, body: any, now = Date.now()) {
   }
   const run = await db.prepare(`SELECT * FROM noelle_runs WHERE id = ?`).bind(String(body.run)).first<any>();
   if (!run || run.state !== "planned") throw new Error("No planned run by that id");
+  // The run's own day, never the clock: a 22:00 run whose render ends after midnight still reports its decisions.
+  if (isDay(run.day)) today = run.day;
   const { roster } = await loadRoster(db);
   let notices = 0;
   // Only a new thing the gate passed for THIS run may be announced (an injected plan or a confused act cannot).
