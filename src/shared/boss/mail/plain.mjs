@@ -227,7 +227,9 @@ function protect(s) {
   const keep = (m) => { kept.push(m); return `\u0000${kept.length - 1}\u0000`; };
   // `SECRET NAME=<value>` is a line she types exactly, so the key's name is kept as written.
   // A REF code ("BOS-7K2M9Q") is how her reply finds its job: kept exactly, never lower-cased as shouting.
-  const out = String(s).replace(SECRET_LINE_RE, keep).replace(URL_RE, (u) => keep(pageLinkFor(u))).replace(EMAIL_RE, keep).replace(new RegExp(REF_CODE_RE.source, "g"), keep);
+  // "NOT WORKING" is the live check's verdict word, in capitals by her rule (24 Nov 2026: the next-day check
+  // posts "'NOT WORKING' when it fails"): kept exactly, never lower-cased as shouting.
+  const out = String(s).replace(SECRET_LINE_RE, keep).replace(URL_RE, (u) => keep(pageLinkFor(u))).replace(EMAIL_RE, keep).replace(new RegExp(REF_CODE_RE.source, "g"), keep).replace(/\bNOT WORKING\b/g, keep);
   return { out, restore: (t) => t.replace(/\u0000(\d+)\u0000/g, (_, i) => kept[Number(i)]) };
 }
 
