@@ -34,7 +34,7 @@ export function queueLines(state) {
 /** The plan's verdict from the same gate the Worker runs, on this run's roster and facts. */
 export function checkLines(plan, state) {
   if (!plan || !Array.isArray(plan.actions)) return { ok: false, lines: ["NOT CHECKED: give one plan object { \"actions\": [ … ] } as JSON"] };
-  const res = checkPlan(plan, { roster: state.businesses ?? [], today: state.day, queues: state.calendar?.queues ?? {}, unread: state.calendar?.unread ?? {}, linkedOpen: state.linkedOpen ?? [], orderedRecent: state.orderedRecent ?? {}, caps: {}, articles: {}, accounts: [], bufferFull: [] });
+  const res = checkPlan(plan, { roster: state.businesses ?? [], today: state.day, queues: state.calendar?.queues ?? {}, unread: state.calendar?.unread ?? {}, linkedOpen: state.linkedOpen ?? [], orderedRecent: state.orderedRecent ?? {}, caps: state.caps ?? {}, articles: {}, accounts: [], bufferFull: [] });
   const lines = [`ACCEPTED ${res.accepted.length}, REFUSED ${res.refused.length}`];
   for (const a of res.accepted) lines.push(`  ok ${a.kind} ${a.business}${a.pieces ? ` (${a.pieces.length} pieces)` : ""}`);
   for (const r of res.refused) lines.push(`  refused ${r.action?.kind ?? "?"} ${r.action?.business ?? ""}: [${r.stop}] ${r.why}`);

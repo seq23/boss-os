@@ -8,10 +8,10 @@ import { mkdtempSync, readFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 // @ts-expect-error — plain ESM with no declaration file
-import { ALARM_DAYS, CONTEXT_MAX, REPLY_BEGIN, REPLY_END, START_AT, actExit, callBlock, callReplyText, replyFrom, bankRows, bankVerdicts, contextTooBig, heldUntil, jobTarget, lowChannels, nicheBlock, rulingsFiles, splitRulings, tickDecision } from "../scripts/ops/noelle.mjs";
+import { ALARM_DAYS, CONTEXT_MAX, REPLY_BEGIN, REPLY_END, START_AT, actExit, callBlock, callReplyText, replyFrom, bankRows, bankVerdicts, contextTooBig, heldUntil, jobTarget, lowChannels, nicheBlock, rulingsFiles, splitRulings, tickDecision, searchLoopEdit, searchLoopAct, pinRefill, searchLoopCaps, capLines, factsOf } from "../scripts/ops/noelle.mjs";
 // @ts-expect-error — plain ESM with no declaration file
 import { checkLines, queueLines } from "../scripts/ops/noelle-tools.mjs";
-import { CHANNEL_OWNERS, JOB_KNOBS, hardStops, settledNo } from "../src/shared/boss/growth/noelle.mjs";
+import { CHANNEL_OWNERS, JOB_KNOBS, PIN_REFILLS, SEARCH_LOOPS, checkPlan, hardStops, settledNo } from "../src/shared/boss/growth/noelle.mjs";
 
 const SAT = Date.parse(START_AT);
 
@@ -203,5 +203,88 @@ describe("a #noelle call: her email in her context, her reply read back (item 7)
     expect(t.trim().endsWith("Noelle")).toBe(true);
     expect(callReplyText(null, {})).toContain("wrote no reply");
     expect(callReplyText(null, {})).toContain("0 posts queued");
+  });
+});
+
+describe("items 3 and 4: her search-loop changes, new pages and pin refills really act", () => {
+  const ent = (key: string, channels: string[], extra: object = {}) => ({ key, label: key, tier: "full", channels: channels.map((channel) => ({ channel, formats: [] })), rulings: [], ...extra });
+  const roster = [ent("keepmyproof", ["search-pages"]), ent("dream-wedding", ["pinterest"]), ent("approvalprep", ["search-pages"]), ent("time-2-read", ["search-pages"]), ent("hicks", ["search-pages"], { tier: "search-watch" })];
+  const gate = (...actions: object[]) => checkPlan({ actions }, { roster, today: "2026-11-28", queues: {}, caps: { keepmyproof: 40 }, articles: {}, orderedRecent: {}, accounts: [], bufferFull: [], linkedOpen: [] });
+
+  it("page-new: a words-only topic is accepted with its repo; a link, markup or a site with no loop is refused; at most 5 a run", () => {
+    expect(gate({ kind: "page-new", business: "keepmyproof", topic: "salario minimo 2027 texas", why: "due before 1 Jan" }).accepted[0]).toMatchObject({ repo: "keepmyproof", topic: "salario minimo 2027 texas" });
+    expect(gate({ kind: "page-new", business: "keepmyproof", topic: "see https://x.example" }).refused[0].stop).toBe("TOPIC");
+    expect(gate({ kind: "page-new", business: "keepmyproof", topic: "<b>x</b> y" }).refused[0].stop).toBe("TOPIC");
+    expect(gate({ kind: "page-new", business: "time-2-read", topic: "bedtime stories" }).refused[0].stop).toBe("NO_SEARCH_LOOP");
+    const six = gate(...[1, 2, 3, 4, 5, 6].map((i) => ({ kind: "page-new", business: "keepmyproof", topic: `pay stub question ${i}` })));
+    expect(six.accepted).toHaveLength(5);
+    expect(six.refused[0].stop).toBe("PAGES_PER_RUN");
+  });
+  it("search-loop: topics are 1-10 words-only searches; a cap only goes down against the cap READ; no read, no change", () => {
+    expect(gate({ kind: "search-loop", business: "keepmyproof", change: "topics-add", value: ["va claim evidence list"] }).accepted[0].repo).toBe("keepmyproof");
+    expect(gate({ kind: "search-loop", business: "keepmyproof", change: "topics-add", value: [] }).refused[0].stop).toBe("VALUE");
+    expect(gate({ kind: "search-loop", business: "keepmyproof", change: "cap", value: 30 }).accepted).toHaveLength(1);
+    expect(gate({ kind: "search-loop", business: "keepmyproof", change: "cap", value: 50 }).refused[0].stop).toBe("CAP_RAISE_IS_HERS");
+    expect(gate({ kind: "search-loop", business: "approvalprep", change: "cap", value: 20 }).refused[0].stop).toBe("CAP_NOT_READ");
+  });
+  it("pin-refill: only the three existing refills, only where Pinterest is on the roster, once a run", () => {
+    expect(gate({ kind: "pin-refill", business: "dream-wedding" }).accepted[0]).toMatchObject({ repo: "dream-wedding-builder", workflow: "pinterest-drip.yml" });
+    expect(gate({ kind: "pin-refill", business: "dream-wedding" }, { kind: "pin-refill", business: "dream-wedding" }).refused[0].stop).toBe("ONCE");
+    expect(gate({ kind: "pin-refill", business: "keepmyproof" }).refused[0].stop).toBe("NO_PIN_REFILL");
+    expect(gate({ kind: "pin-refill", business: "approvalprep" }).refused[0].stop).toBe("NOT_APPROVED");
+    expect(Object.keys(PIN_REFILLS).sort()).toEqual(["a-player-mode", "approvalprep", "dream-wedding"]);
+  });
+
+  it("the config edit: new pages go first as priority searches; removes keep the priority count true; no duplicates", () => {
+    const cfg = { topics: ["a first", "b second", "c third"], find: { priority_topics: 2, exclude_words: ["best"] }, mode: "normal", cap: { max_live_pages: 40 } };
+    const r = searchLoopEdit(cfg, [{ kind: "page-new", topic: "New One" }, { kind: "page-new", topic: "new one" }, { kind: "page-new", topic: "A First" },
+      { kind: "search-loop", change: "topics-remove", value: ["b second"] }, { kind: "search-loop", change: "exclude-add", value: ["BEST", "lawyer"] }, { kind: "search-loop", change: "cap", value: 30 }]);
+    expect(r.data.topics).toEqual(["New One", "a first", "c third"]);
+    expect(r.data.find.priority_topics).toBe(2);
+    expect(r.data.find.exclude_words).toEqual(["best", "lawyer"]);
+    expect(r.data.cap.max_live_pages).toBe(30);
+    expect(cfg.topics).toHaveLength(3);
+    expect(searchLoopEdit(cfg, [{ kind: "page-new", topic: "a first" }]).whats).toEqual([]);
+  });
+  it("searchLoopAct: one branch, one PUT, one PR, land-after; an unread config changes nothing", () => {
+    const cfg = { topics: ["a first"], find: { priority_topics: 0 } };
+    const calls: string[][] = [];
+    const run = (cmd: string, args: string[]) => {
+      calls.push([cmd, ...args]);
+      if (args[0] === "api" && args[1]?.endsWith("/contents/search-loop.config.json")) return { rc: 0, out: JSON.stringify({ sha: "s1", content: Buffer.from(JSON.stringify(cfg, null, 2)).toString("base64") }) };
+      if (args.includes(".object.sha")) return { rc: 0, out: "m\n" };
+      if (cmd === "gh" && args[0] === "pr") return { rc: 0, out: "https://github.com/seq23/keepmyproof/pull/9\n" };
+      return { rc: 0, out: "" };
+    };
+    const r = searchLoopAct("keepmyproof", [{ kind: "page-new", topic: "va claim evidence", repo: "keepmyproof", why: "x" }], { day: "2026-11-28" }, { run });
+    expect(r.pr).toBe("seq23/keepmyproof#9");
+    const put = calls.find((c) => c.includes("PUT"))!;
+    const content = JSON.parse(Buffer.from(put.find((x) => x.startsWith("content="))!.slice(8), "base64").toString());
+    expect(content.topics[0]).toBe("va claim evidence");
+    expect(content.find.priority_topics).toBe(1);
+    expect(calls.filter((c) => c[0] === "land-after")).toHaveLength(1);
+    const prBody = calls.find((c) => c[1] === "pr")!.join(" ");
+    for (const h of ["Outcome:", "## Not built", "Mutation proof:", "Review class:", "Forms:", "## Self-review"]) expect(prBody).toContain(h);
+    const none = searchLoopAct("keepmyproof", [{ kind: "page-new", topic: "x y z", repo: "keepmyproof" }], { day: "2026-11-28" }, { run: () => ({ rc: 1, out: "404" }) });
+    expect(none.line).toMatch(/SEARCH_LOOP_UNREAD/);
+    expect(none.pr).toBeUndefined();
+  });
+  it("pinRefill starts the workflow on main with NO inputs (a pin sample's release is Sequoia's); a failed start is a named stop", () => {
+    const calls: string[][] = [];
+    const r = pinRefill({ business: "approvalprep", repo: "approvalprep", workflow: "pinterest-refill.yml" }, {}, { run: (c: string, a: string[]) => { calls.push([c, ...a]); return { rc: 0, out: "" }; } });
+    expect(calls).toEqual([["gh", "workflow", "run", "pinterest-refill.yml", "-R", "seq23/approvalprep", "--ref", "main"]]);
+    expect(r.dispatched).toBeTruthy();
+    expect(pinRefill({ business: "approvalprep", repo: "approvalprep", workflow: "x.yml" }, {}, { run: () => ({ rc: 1, out: "boom" }) }).line).toMatch(/NAMED STOP \[PIN_REFILL\]/);
+  });
+  it("caps are read from each loop's cap.json into her facts; one not read says NOT READ, never 0", () => {
+    const r = searchLoopCaps((args: string[]) => args.at(-1)!.includes("seq23/keepmyproof/") ? { rc: 0, out: JSON.stringify({ max_live_pages: 61 }) } : { rc: 1, out: "404" });
+    expect(r.caps).toEqual({ keepmyproof: 61 });
+    expect(Object.keys(r.unread)).toHaveLength(Object.keys(SEARCH_LOOPS).length - 1);
+    expect(capLines(r).join("\n")).toMatch(/keepmyproof \(keepmyproof.com\): 61[\s\S]*approvalprep \(approvalprep.com\): NOT READ/);
+    expect(factsOf({ calendar: { queues: {}, unread: {} }, caps: r.caps }).caps).toEqual({ keepmyproof: 61 });
+  });
+  it("Rule 0: a started refill or an opened PR counts as acting; nothing done is still red", () => {
+    expect(actExit({ queued: [], jobs: [{ dispatched: "x" }] }).code).toBe(0);
+    expect(actExit({ queued: [], jobs: [{ line: "NAMED STOP [PIN_REFILL] x" }] }).code).toBe(14);
   });
 });

@@ -20,7 +20,9 @@
  * (scripts/ops/noelle-permissions.json, held exactly by scripts/validate/noelle-no-tools.mjs); its output
  * is one JSON plan. Code acts on the Worker's `accepted` list only: studio-plan pieces (Studio queue) and
  * job-target changes (a PR on the owning repo, landed on green checks; a bank add only with the posts a
- * fresh no-tools reviewer passed). Other accepted kinds are recorded as decisions on the growth page.
+ * fresh no-tools reviewer passed), search-loop changes and page-new topics (one Search Loop config PR per
+ * business, landed on green CI) and pin-refill (the brand's own Pinterest refill, started with no inputs).
+ * Other accepted kinds are recorded as decisions on the growth page.
  * Nothing here can spend, open an account, send an email or post outside those owning jobs.
  *
  * RULE 0. Every step prints one OUTPUT line; nothing done is a NAMED STOP and a non-zero exit.
@@ -30,7 +32,7 @@ import { chmodSync, existsSync, mkdirSync, readFileSync, rmSync, writeFileSync }
 import { homedir } from "node:os";
 import { basename, dirname, join } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
-import { CHANNEL_OWNERS, JOB_FIELDS, JOB_KNOBS, OUTREACH_SENDERS, PIECE_THEMES, PLAN_BEGIN, PLAN_END, RUN_CALLS, SEARCH_LOOP_CHANGES, SOURCES_ALLOWED, checkPlan, parsePlan, season, slotFor, sourcesFor } from "../../src/shared/boss/growth/noelle.mjs";
+import { CHANNEL_OWNERS, JOB_FIELDS, JOB_KNOBS, OUTREACH_SENDERS, PIECE_THEMES, PLAN_BEGIN, PLAN_END, RUN_CALLS, SEARCH_LOOP_CHANGES, SEARCH_LOOPS, PIN_REFILLS, SOURCES_ALLOWED, checkPlan, parsePlan, season, slotFor, sourcesFor } from "../../src/shared/boss/growth/noelle.mjs";
 import { headingGroups } from "../../src/shared/boss/growth/roster.mjs";
 import { collectReads, photoShelf } from "./lib/noelle-reads.mjs";
 import { d1Query, macContext, readMetric } from "./lib/scorecard-readers.mjs";
@@ -259,7 +261,9 @@ const ACTION_FIELDS = [
   `decision: source (a read-list id), decision (one or two plain sentences), file?, sha?`,
   `studio-plan: pieces (Porch & Party only; see the prompt)`,
   `job-target: channel (one an existing job fills), field (${JOB_FIELDS.join(" | ")}), value, why`,
-  `search-loop: change (${SEARCH_LOOP_CHANGES.join(" | ")}), value (a cap may only go DOWN; raising it is her call), why`,
+  `search-loop: change (${SEARCH_LOOP_CHANGES.join(" | ")}), value (topics/excludes: a list of 1-10 search words; a cap may only go DOWN; raising it is her call), why (${Object.keys(SEARCH_LOOPS).join(", ")}; one config PR per business, landed on green CI)`,
+  `page-new: topic (one search, 3-80 chars, words only), why (goes first in that site's Search Loop; its cap and page gate decide; at most 5 a business a run)`,
+  `pin-refill: why (${Object.keys(PIN_REFILLS).join(", ")}; starts that brand's own Pinterest refill once; its pin gate judges each pin)`,
   `backlink: topic (≤120 chars), draft?, why (at most 1 link request per 4 articles)`,
   `test: what, number, stop, channel?, format? (one per business per cycle)`,
   `outreach-target: sender (${OUTREACH_SENDERS.join(" | ")}), list, count (a whole number, never names), why`,
@@ -363,19 +367,35 @@ async function cmdContext(dir, { kind = "daily" } = {}) {
   const shelf = shelfFrom(raw);
   let niche;
   try { niche = { rows: await d1Query(mctx, STUDIO.db, NICHE_SQL) }; } catch (e) { niche = { error: String(e?.message ?? e).slice(0, 160) }; }
+  const loopCaps = searchLoopCaps((args) => sh("gh", args));
   const call = existsSync(join(dir, "call.json")) ? JSON.parse(readFileSync(join(dir, "call.json"), "utf8")) : null;
-  const text = contextText({ context, reads, calendar, shelf, formats: FORMATS, music, kind, niche, call });
+  const text = `${contextText({ context, reads, calendar, shelf, formats: FORMATS, music, kind, niche, call })}\n\n${capLines(loopCaps).join("\n")}\n`;
   const big = contextTooBig(text);
   if (big) throw new Error(big);
   writeFileSync(join(dir, "context.txt"), text);
   mkdirSync(join(dir, RULINGS_DIR), { recursive: true });
   for (const [f, t] of Object.entries(rulingsFiles(context.businesses))) writeFileSync(join(dir, RULINGS_DIR, f), t);
   writeTools(dir);
-  writeFileSync(join(dir, "state.json"), JSON.stringify({ day: context.today, kind, reads, calendar, shelf, businesses: context.businesses, linkedOpen: context.linkedOpen, orderedRecent: context.orderedRecent, cs, calls: 0 }, null, 2));
+  writeFileSync(join(dir, "state.json"), JSON.stringify({ day: context.today, kind, reads, calendar, shelf, businesses: context.businesses, linkedOpen: context.linkedOpen, orderedRecent: context.orderedRecent, caps: loopCaps.caps, cs, calls: 0 }, null, 2));
   console.log("CALENDAR (business:channel → scheduled ahead)");
   for (const k of Object.keys({ ...calendar.queues, ...calendar.unread }).sort()) console.log(`  ${k}: ${k in calendar.queues ? `${calendar.queues[k]} (${(calendar.days[k] ?? []).length} days)` : `NOT READ: ${calendar.unread[k]}`}`);
   const unread = Object.values(reads).filter((r) => r.error).length;
   console.log(`OUTPUT ${Object.keys(reads).length - unread} sources read, ${unread} not read; ${Object.keys(calendar.queues).length} calendars read`);
+}
+
+/** Each Search Loop's live page cap (data/search-loop/cap.json); one that is not read says so, never 0. */
+export function searchLoopCaps(gh) {
+  const caps = {}, unread = {};
+  for (const [biz, l] of Object.entries(SEARCH_LOOPS)) {
+    const r = gh(["api", "-H", "Accept: application/vnd.github.raw", `repos/seq23/${l.repo}/contents/data/search-loop/cap.json`]);
+    let j; try { j = JSON.parse(r.out); } catch { j = null; }
+    if (r.rc === 0 && Number.isInteger(j?.max_live_pages)) caps[biz] = j.max_live_pages; else unread[biz] = "cap.json not read";
+  }
+  return { caps, unread };
+}
+export function capLines({ caps, unread }) {
+  return ["SEARCH LOOP PAGE CAPS (live engine pages allowed; you may only lower one, raising is Sequoia's call)",
+    ...Object.keys(SEARCH_LOOPS).map((b) => `  ${b} (${SEARCH_LOOPS[b].site}): ${b in caps ? caps[b] : `NOT READ (${unread[b] ?? "no read"})`}`)];
 }
 
 // ─── Plan ───────────────────────────────────────────────────────────────────────
@@ -385,7 +405,7 @@ const saveState = (dir, s) => writeFileSync(join(dir, "state.json"), JSON.string
 
 /** The facts only the Mac reads, in the shape the Worker's cleanFacts keeps. */
 export function factsOf(state) {
-  return { queues: state.calendar.queues, unread: state.calendar.unread, caps: {}, articles: {}, accounts: [], bufferFull: [] };
+  return { queues: state.calendar.queues, unread: state.calendar.unread, caps: state.caps ?? {}, articles: {}, accounts: [], bufferFull: [] };
 }
 
 async function cmdPlan(runLog, dir, slot) {
@@ -499,9 +519,13 @@ async function cmdAct(dir) {
   state.jobs ??= [];
   const studio = (res.accepted ?? []).filter((a) => a.kind === "studio-plan");
   const jobs = (res.accepted ?? []).filter((a) => a.kind === "job-target");
-  const recorded = (res.accepted ?? []).filter((a) => a.kind !== "studio-plan" && a.kind !== "job-target");
+  const ACTED = ["studio-plan", "job-target", "search-loop", "page-new", "pin-refill"];
+  const recorded = (res.accepted ?? []).filter((a) => !ACTED.includes(a.kind));
   if (recorded.length) log(`${recorded.length} other accepted actions recorded as decisions on the growth page (${[...new Set(recorded.map((a) => a.kind))].join(", ")}; no executor yet: see the PR's Not built)`);
   for (const a of jobs) { const r = jobTarget(a, state, dir); state.jobs.push(r); log(r.line); if (r.limit) { state.stop = `NAMED STOP [CLAUDE_LIMIT] out of Claude credits during a bank review; ${RESUME_WORDS}`; break; } }
+  const loops = (res.accepted ?? []).filter((a) => a.kind === "search-loop" || a.kind === "page-new");
+  for (const b of [...new Set(loops.map((a) => a.business))]) { const r = searchLoopAct(b, loops.filter((a) => a.business === b), state); state.jobs.push(r); log(r.line); if (r.pr) state.published.push({ business: b, what: r.what, where: `Search Loop PR ${r.pr}`, key: `noelle:${b}:search-loop:${state.day}` }); }
+  for (const a of (res.accepted ?? []).filter((x) => x.kind === "pin-refill")) { const r = pinRefill(a, state); state.jobs.push(r); log(r.line); if (!r.dispatched) state.failed.push({ kind: "pin-refill", why: r.line }); }
   if (!studio.length) return finishAct(dir, state);
   // A calendar that was not read is never planned around (HOW IT BREAKS "outage": couldn't read, never a fill).
   const unread = unreadTargets(state.calendar.unread, studio.flatMap((a) => a.pieces ?? []));
@@ -568,7 +592,7 @@ async function cmdAct(dir) {
  * run, exit 14 NAMED STOP [NOTHING_ACTED] (or the stop that caused it: 9, 12), never "done".
  */
 export function actExit(state, cause = 0) {
-  const acted = (state.queued ?? []).length + (state.jobs ?? []).filter((j) => j.pr).length;
+  const acted = (state.queued ?? []).length + (state.jobs ?? []).filter((j) => j.pr || j.dispatched).length;
   if (state.stop) return { code: 76, acted, line: state.stop };
   if (acted > 0) return { code: 0, acted };
   return { code: cause || 14, acted, line: cause ? null : "NAMED STOP [NOTHING_ACTED] her run queued nothing and changed no job (Rule 0: a run that does nothing is red)" };
@@ -577,7 +601,7 @@ function finishAct(dir, state, cause = 0) {
   const x = actExit(state, cause);
   if (x.line && x.code === 14) state.failed.push({ kind: "run", why: x.line });
   saveState(dir, state);
-  console.log(`OUTPUT ${state.queued.length} pieces queued, ${state.jobs.filter((j) => j.pr).length} job changes opened`);
+  console.log(`OUTPUT ${state.queued.length} pieces queued, ${state.jobs.filter((j) => j.pr).length} PRs opened, ${state.jobs.filter((j) => j.dispatched).length} refills started`);
   if (x.line) console.log(x.line);
   if (x.code) process.exit(x.code);
 }
@@ -631,21 +655,95 @@ export function jobTarget(a, state, dir, { run = sh, call = claudeCall } = {}) {
     data[a.key] = Number(a.value);
     what = `${a.key} ${was} → ${a.value}`;
   }
-  const branch = `noelle/${state.day}-${a.job}-${a.field}`;
-  const head = run("gh", ["api", `repos/${repo}/git/ref/heads/main`, "--jq", ".object.sha"]);
-  const mk = run("gh", ["api", "-X", "POST", `repos/${repo}/git/refs`, "-f", `ref=refs/heads/${branch}`, "-f", `sha=${head.out.trim()}`]);
-  if (head.rc !== 0 || mk.rc !== 0) return { tag, line: `NAMED STOP [JOB_BRANCH] ${tag}: could not start ${branch} (${(mk.out || head.out).trim().slice(0, 160)}); nothing changed` };
   const body = `${JSON.stringify(data, null, indent)}\n`;
-  const put = run("gh", ["api", "-X", "PUT", `repos/${repo}/contents/${a.file}`, "-f", `message=Noelle: ${a.job} ${what}`, "-f", `content=${Buffer.from(body).toString("base64")}`, "-f", `sha=${file.sha}`, "-f", `branch=${branch}`]);
-  if (put.rc !== 0) return { tag, line: `NAMED STOP [JOB_WRITE] ${tag}: ${put.out.trim().slice(0, 160)}` };
-  const prBody = [`Noelle (Growth Director), her run of ${state.day}: ${what}.`, "", `Why: ${String(a.why ?? "").slice(0, 600)}`, "",
-    `Outcome: ${a.business} ${a.channel} is fed from the new ${a.field} — check: ${repo} ${a.file} on main, and the channel on her next run's queue read — expect: ${what} merged and the channel's waiting posts not falling — by: ${addDays(state.day, 2)} 07:00 CT`,
-    "", "## Not built", "- nothing: one data file, one knob", "", "Mutation proof: none — a data-only knob change in one JSON file, no code", "", "Review class: none (a job knob inside its free limit; bank posts passed a fresh no-tools review)", "Forms: none", "", "## Self-review", "- the Worker's checkPlan accepted it; the value is inside the job's free Buffer limit; JSON re-read before write"].join("\n");
-  const pr = run("gh", ["pr", "create", "-R", repo, "-H", branch, "-B", "main", "-t", `Noelle: ${a.job} ${what}`.slice(0, 120), "-b", prBody]);
+  return dataPR({ run, repo, file: a.file, sha: file.sha, body, tag, what, branch: `noelle/${state.day}-${a.job}-${a.field}`, task: `noelle-${state.day}-${a.job}-${a.field}`, stop: "JOB",
+    title: `Noelle: ${a.job} ${what}`, prBody: [`Noelle (Growth Director), her run of ${state.day}: ${what}.`, "", `Why: ${String(a.why ?? "").slice(0, 600)}`, "",
+      `Outcome: ${a.business} ${a.channel} is fed from the new ${a.field} — check: ${repo} ${a.file} on main, and the channel on her next run's queue read — expect: ${what} merged and the channel's waiting posts not falling — by: ${addDays(state.day, 2)} 07:00 CT`,
+      "", "## Not built", "- nothing: one data file, one knob", "", "Mutation proof: none — a data-only knob change in one JSON file, no code", "", "Review class: none (a job knob inside its free limit; bank posts passed a fresh no-tools review)", "Forms: none", "", "## Self-review", "- the Worker's checkPlan accepted it; the value is inside the job's free Buffer limit; JSON re-read before write"].join("\n") });
+}
+
+/** One data file changed on a new branch, a PR, and `land-after` (lands on green CI). Every failure is a named stop. */
+export function dataPR({ run = sh, repo, file, sha, body, tag, what, branch, task, title, prBody, stop }) {
+  const head = run("gh", ["api", `repos/${repo}/git/ref/heads/main`, "--jq", ".object.sha"]);
+  const mk = head.rc === 0 ? run("gh", ["api", "-X", "POST", `repos/${repo}/git/refs`, "-f", `ref=refs/heads/${branch}`, "-f", `sha=${head.out.trim()}`]) : head;
+  if (head.rc !== 0 || mk.rc !== 0) return { tag, line: `NAMED STOP [${stop}_BRANCH] ${tag}: could not start ${branch} (${(mk.out || head.out).trim().slice(0, 160)}); nothing changed` };
+  const put = run("gh", ["api", "-X", "PUT", `repos/${repo}/contents/${file}`, "-f", `message=${title}`, "-f", `content=${Buffer.from(body).toString("base64")}`, "-f", `sha=${sha}`, "-f", `branch=${branch}`]);
+  if (put.rc !== 0) return { tag, line: `NAMED STOP [${stop}_WRITE] ${tag}: ${put.out.trim().slice(0, 160)}` };
+  const pr = run("gh", ["pr", "create", "-R", repo, "-H", branch, "-B", "main", "-t", title.slice(0, 120), "-b", `${prBody}\n\n🤖 Opened by Noelle's run (Boss OS)`]);
   const num = pr.out.match(/\/pull\/(\d+)/)?.[1];
-  if (pr.rc !== 0 || !num) return { tag, line: `NAMED STOP [JOB_PR] ${tag}: ${pr.out.trim().slice(0, 160)}` };
-  const la = run("land-after", [num, "--repo", repo, "--task", `noelle-${state.day}-${a.job}-${a.field}`]);
-  return { tag, pr: `${repo}#${num}`, what, landing: la.rc === 0, line: `${tag}: PR ${repo}#${num} (${what})${la.rc === 0 ? ", landing on green CI" : `; NAMED STOP [JOB_LAND] land-after refused: ${la.out.trim().slice(0, 160)}`}` };
+  if (pr.rc !== 0 || !num) return { tag, line: `NAMED STOP [${stop}_PR] ${tag}: ${pr.out.trim().slice(0, 160)}` };
+  const la = run("land-after", [num, "--repo", repo, "--task", task]);
+  return { tag, pr: `${repo}#${num}`, what, landing: la.rc === 0, line: `${tag}: PR ${repo}#${num} (${what})${la.rc === 0 ? ", landing on green CI" : `; NAMED STOP [${stop}_LAND] land-after refused: ${la.out.trim().slice(0, 160)}`}` };
+}
+
+// ─── search-loop and page-new (item 4): one Search Loop config PR per business per run ─────────────────
+
+/** Her accepted search-loop changes and page-new topics applied to a site's config. Pure: returns what changed. */
+export function searchLoopEdit(cfg, actions) {
+  const data = structuredClone(cfg);
+  const whats = [];
+  const low = (t) => t.trim().toLowerCase();
+  data.topics = Array.isArray(data.topics) ? data.topics : [];
+  const has = (t) => data.topics.some((x) => low(String(x)) === low(t));
+  const pages = actions.filter((a) => a.kind === "page-new").map((a) => a.topic).filter((t, i, xs) => !has(t) && xs.findIndex((x) => low(x) === low(t)) === i);
+  if (pages.length) {
+    // New pages go to the front as priority searches: the engine builds those first, under its own cap.
+    const pri = Number.isInteger(data.find?.priority_topics) ? data.find.priority_topics : 0;
+    data.topics = [...pages, ...data.topics];
+    data.find = { ...(data.find ?? {}), priority_topics: pri + pages.length };
+    whats.push(`new page topics first: ${pages.join("; ")}`);
+  }
+  for (const a of actions.filter((x) => x.kind === "search-loop")) {
+    const vs = (Array.isArray(a.value) ? a.value : [a.value]).map(String);
+    if (a.change === "topics-add") { const add = vs.filter((t, i) => !has(t) && vs.findIndex((x) => low(x) === low(t)) === i); if (add.length) { data.topics.push(...add); whats.push(`topics + ${add.join("; ")}`); } }
+    if (a.change === "topics-remove") {
+      const pri = Number.isInteger(data.find?.priority_topics) ? data.find.priority_topics : 0;
+      const gone = data.topics.filter((t) => vs.some((v) => low(v) === low(String(t))));
+      if (gone.length) {
+        const priGone = data.topics.slice(0, pri).filter((t) => gone.includes(t)).length;
+        data.topics = data.topics.filter((t) => !gone.includes(t));
+        if (pri) data.find = { ...data.find, priority_topics: pri - priGone };
+        whats.push(`topics − ${gone.join("; ")}`);
+      }
+    }
+    if (a.change === "exclude-add") {
+      const ex = Array.isArray(data.find?.exclude_words) ? data.find.exclude_words : [];
+      const add = vs.filter((v) => !ex.some((x) => low(String(x)) === low(v)));
+      if (add.length) { data.find = { ...(data.find ?? {}), exclude_words: [...ex, ...add] }; whats.push(`never search + ${add.join("; ")}`); }
+    }
+    if (a.change === "mode" && data.mode !== a.value) { whats.push(`mode ${data.mode} → ${a.value}`); data.mode = a.value; }
+    if (a.change === "cap") { const was = data.cap?.max_live_pages; data.cap = { ...(data.cap ?? {}), max_live_pages: Number(a.value) }; whats.push(`page cap ${was ?? "(engine's)"} → ${a.value}`); }
+  }
+  return { data, whats };
+}
+
+export function searchLoopAct(business, actions, state, { run = sh } = {}) {
+  const repo = `seq23/${actions[0].repo}`;
+  const file = "search-loop.config.json";
+  const tag = `${business} search-loop`;
+  const got = run("gh", ["api", `repos/${repo}/contents/${file}`, "--jq", "{sha: .sha, content: .content}"]);
+  let f; try { const j = JSON.parse(got.out); f = { sha: j.sha, text: Buffer.from(j.content, "base64").toString("utf8") }; } catch { f = null; }
+  if (got.rc !== 0 || !f) return { tag, line: `NAMED STOP [SEARCH_LOOP_UNREAD] ${tag}: ${repo}/${file} not read; nothing changed` };
+  let cfg; try { cfg = JSON.parse(f.text); } catch { return { tag, line: `NAMED STOP [SEARCH_LOOP_UNREAD] ${tag}: ${file} is not JSON; nothing changed` }; }
+  const { data, whats } = searchLoopEdit(cfg, actions);
+  if (!whats.length) return { tag, line: `${tag}: every change is already in ${file}; nothing to change` };
+  const what = whats.join("; ");
+  const indent = (f.text.split("\n")[1] ?? "").match(/^ */)[0].length || 2;
+  const why = actions.map((a) => `- ${a.kind === "page-new" ? `page: ${a.topic}` : a.change}: ${String(a.why ?? "").slice(0, 300)}`).join("\n");
+  return dataPR({ run, repo, file, sha: f.sha, body: `${JSON.stringify(data, null, indent)}\n`, tag, what, branch: `noelle/${state.day}-${business}-search-loop`, task: `noelle-${state.day}-${business}-search-loop`, stop: "SEARCH_LOOP",
+    title: `Noelle: ${business} Search Loop ${what}`, prBody: [`Noelle (Growth Director), her run of ${state.day}: ${what}.`, "", "Why:", why, "",
+      `Outcome: the Search Loop builds from the new config — check: the site's next search-loop-week report (published, held_by_cap) — expect: ${actions.some((a) => a.kind === "page-new") ? "the new topics found and built or held by the cap, named" : "the change shown in the report"} — by: ${addDays(state.day, 8)} 07:00 CT`,
+      "", "## Not built", "- nothing: one config file; the engine's own cap, distinct gate and page gate decide what publishes", "", "Mutation proof: none — a data-only change to search-loop.config.json, no code", "", "Review class: none (topics and a lower cap; raising a cap is Sequoia's call and is refused upstream)", "Forms: none", "", "## Self-review", "- the Worker's checkPlan accepted each change; topics are words only (3 to 80 characters) and passed the brand's copy checks; JSON re-read before write"].join("\n") });
+}
+
+// ─── pin-refill (item 3): start the brand's existing Pinterest refill, never with an approval input ──────
+
+export function pinRefill(a, state, { run = sh } = {}) {
+  const tag = `${a.business} pin-refill`;
+  // No -f inputs, ever: release_held / approve are Sequoia's yes to a pin sample, never Noelle's.
+  const r = run("gh", ["workflow", "run", a.workflow, "-R", `seq23/${a.repo}`, "--ref", "main"]);
+  if (r.rc !== 0) return { tag, line: `NAMED STOP [PIN_REFILL] ${tag}: ${r.out.trim().slice(0, 160)}` };
+  return { tag, dispatched: `seq23/${a.repo} ${a.workflow}`, line: `${tag}: started ${a.workflow} in seq23/${a.repo} (its pin gate judges each pin; queued pins are counted on her next run, not here)` };
 }
 
 /** A business's rulings for a reviewer, from this run's rulings files (data only). */

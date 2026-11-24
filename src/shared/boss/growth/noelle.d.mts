@@ -15,6 +15,8 @@ export const PLAN_END: any;
 export const READ_SOURCES: any;
 export const RUN_CALLS: any;
 export const SEARCH_LOOP_CHANGES: any;
+export const SEARCH_LOOPS: any;
+export const PIN_REFILLS: any;
 export const SOURCES_ALLOWED: any;
 export const STALE_DAYS: any;
 export const WATCH_KINDS: any;

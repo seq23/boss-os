@@ -20,10 +20,10 @@ import SITES from "../searchReadiness/sites.json" with { type: "json" };
 /** Every action kind a plan may carry. Anything else is refused UNKNOWN_KIND. */
 export const KINDS = Object.freeze([
   "decision", "studio-plan", "job-target", "search-loop", "backlink", "proposal", "sequoia-line",
-  "linked", "test", "outreach-target", "name-source", "post", "page-edit",
+  "linked", "test", "outreach-target", "name-source", "post", "page-edit", "pin-refill", "page-new",
 ]);
 /** Kinds a search-watch business may carry: search levers, the weekly read and her calls only (G8). */
-export const WATCH_KINDS = Object.freeze(["decision", "search-loop", "proposal", "sequoia-line", "name-source", "linked", "page-edit"]);
+export const WATCH_KINDS = Object.freeze(["decision", "search-loop", "page-new", "proposal", "sequoia-line", "name-source", "linked", "page-edit"]);
 
 /**
  * G1: channels a scheduled job already fills. Noelle changes only that job's bank, plan.json or target
@@ -288,6 +288,32 @@ export const SOURCES_ALLOWED = Object.freeze({
   default: ["revenuecat", "gsc", "in-app-answer", "d1", "gumroad", "cf_web_analytics", "stripe", "kdp", "app-store"],
 });
 export const SEARCH_LOOP_CHANGES = Object.freeze(["cap", "topics-add", "topics-remove", "exclude-add", "mode"]);
+/**
+ * Item 4: each business's Search Loop (seq23/<repo>/search-loop.config.json). Her search-loop changes and
+ * page-new topics become ONE config PR per business per run, landed on green CI; the engine's own run
+ * builds the pages under its own cap, distinct gate and page gate. A-Player-Mode's search pages live on its
+ * sister site billionairehighperformancecoach.com (aplayermode.com has no Search Loop of its own).
+ */
+export const SEARCH_LOOPS = Object.freeze({
+  keepmyproof: { repo: "keepmyproof", site: "keepmyproof.com" },
+  approvalprep: { repo: "approvalprep", site: "approvalprep.com" },
+  "dream-wedding": { repo: "dream-wedding-builder", site: "weddingchecklistpdf.com" },
+  "a-player-mode": { repo: "sprylabs-hpc-site", site: "billionairehighperformancecoach.com" },
+  "peace-be-still": { repo: "peace-be-still", site: "peacebestillapp.com" },
+  "porch-and-party": { repo: "p-n-p", site: "porchandparty901.com" },
+});
+/**
+ * Item 3: the existing Pinterest refills she may start (`gh workflow run`, on main, with NO inputs: a pin
+ * sample's release or approval is Sequoia's, never hers). The repo's own pin gate judges every pin.
+ */
+export const PIN_REFILLS = Object.freeze({
+  approvalprep: { repo: "approvalprep", workflow: "pinterest-refill.yml" },
+  "dream-wedding": { repo: "dream-wedding-builder", workflow: "pinterest-drip.yml" },
+  "a-player-mode": { repo: "sprylabs-hpc-site", workflow: "aplayermode-pin-drip.yml" },
+});
+/** A search topic: 3 to 80 characters, words only (no link, no markup). */
+const topicOk = (t) => typeof t === "string" && t.trim().length >= 3 && t.trim().length <= 80 && !/[<>{}]|https?:|www\./i.test(t);
+const PAGES_PER_RUN = 5;
 export const OUTREACH_SENDERS = Object.freeze(["camille", "monique"]);
 
 /**
@@ -393,7 +419,29 @@ export function checkPlan(plan, ctx) {
         if (a.field === "topics") { refuse(a, "NO_KNOB", "topics are a search-loop lever (search-loop topics-add), not a job knob"); continue; }
         accepted.push({ ...a, job: owner.job, repo: owner.repo, file: JOB_KNOBS[owner.job].file, key: knob }); break;
       }
+      case "pin-refill": {
+        const pin = PIN_REFILLS[e.key];
+        if (!pin) { refuse(a, "NO_PIN_REFILL", `${e.label} has no Pinterest refill to start`); continue; }
+        if (!e.channels.some((c) => c.channel === "pinterest")) { refuse(a, "NOT_APPROVED", `Pinterest is not on ${e.label}'s roster`); continue; }
+        if (accepted.some((x) => x.kind === "pin-refill" && x.business === e.key)) { refuse(a, "ONCE", `one ${e.label} refill a run`); continue; }
+        accepted.push({ kind: "pin-refill", business: e.key, why: a.why ?? "", repo: pin.repo, workflow: pin.workflow }); break;
+      }
+      case "page-new": {
+        if (!SEARCH_LOOPS[e.key]) { refuse(a, "NO_SEARCH_LOOP", `${e.label} has no Search Loop`); continue; }
+        if (!topicOk(a.topic)) { refuse(a, "TOPIC", "a new page is one search topic of 3 to 80 characters, words only"); continue; }
+        const tc = copyProblems(a.topic, e);
+        if (tc.length) { refuse(a, "COPY", tc.join("; ")); continue; }
+        if (accepted.filter((x) => x.kind === "page-new" && x.business === e.key).length >= PAGES_PER_RUN) { refuse(a, "PAGES_PER_RUN", `at most ${PAGES_PER_RUN} new page topics for ${e.label} a run; the engine's cap decides how many publish`); continue; }
+        accepted.push({ kind: "page-new", business: e.key, topic: a.topic.trim(), why: a.why ?? "", repo: SEARCH_LOOPS[e.key].repo }); break;
+      }
       case "search-loop": {
+        if (!SEARCH_LOOPS[e.key]) { refuse(a, "NO_SEARCH_LOOP", `${e.label} has no Search Loop`); continue; }
+        if (["topics-add", "topics-remove", "exclude-add"].includes(a.change)) {
+          const vs = Array.isArray(a.value) ? a.value : [a.value];
+          if (!vs.length || vs.length > 10 || !vs.every(topicOk)) { refuse(a, "VALUE", `${a.change} is 1 to 10 search words, each 3 to 80 characters, words only`); continue; }
+          const tc = vs.flatMap((v) => copyProblems(v, e));
+          if (tc.length) { refuse(a, "COPY", tc.join("; ")); continue; }
+        }
         if (!SEARCH_LOOP_CHANGES.includes(a.change)) { refuse(a, "SEARCH_LOOP_CHANGE", `${a.change} is not a search-loop lever she has (${SEARCH_LOOP_CHANGES.join(", ")}); menus, links and the engine are never hers`); continue; }
         if (a.change === "cap") {
           const cur = Number(ctx.caps?.[e.key]);
@@ -403,7 +451,7 @@ export function checkPlan(plan, ctx) {
           if (v >= cur) { refuse(a, "CAP_RAISE_IS_HERS", `raising ${e.label}'s search-loop cap from ${cur} to ${v} is Sequoia's call`, `${e.label}: raise the search-loop cap from ${cur} to ${v}?`); continue; }
         }
         if (a.change === "mode" && !["normal", "slow", "paused"].includes(a.value)) { refuse(a, "MODE", `${a.value} is not a mode`); continue; }
-        accepted.push(a); break;
+        accepted.push({ ...a, repo: SEARCH_LOOPS[e.key].repo }); break;
       }
       case "backlink": {
         if (!e.channels.some((c) => c.channel === BACKLINKS)) { refuse(a, "NOT_APPROVED", `${e.label} has no backlinks channel`); continue; }

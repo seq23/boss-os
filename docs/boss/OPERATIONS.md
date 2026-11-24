@@ -1009,6 +1009,8 @@ Plan artifact 8LfYgMaHj7XLVB1fJ1vYxM, gap review G1-G21. Noelle is a scheduled C
 5. Measure: 24 hours after the slot the next run reads whether each piece actually published (Buffer/Studio); a
    miss is a defect, fixed that run.
 
+**Her levers that act (24 Nov 2026).** Besides Studio pieces and job targets: `search-loop` (topics, never-search words, mode, a LOWER page cap judged against the cap read from `data/search-loop/cap.json`) and `page-new` (a search topic put first as a priority search) become one `search-loop.config.json` PR per business per run, landed on green CI; the Search Loop's own cap, distinct gate and page gate decide what publishes (A Player Mode's pages live on billionairehighperformancecoach.com). `pin-refill` starts the existing Pinterest refill for ApprovalPrep, Dream Wedding or A Player Mode once a run, with no inputs: releasing a held pin sample stays Sequoia's. A started refill counts as acting for Rule 0; its pins are counted on her next run's queue read, never as "scheduled" here.
+
 **When called (24 Nov 2026).** Her words: "she has a schedule yes but she should be able to work when called too".
 An email tagged #noelle becomes a task on her seat (`emp_growth`, intake/inboundMail.ts). The queue parks it for her
 Mac (`parked_for_mac`, lane `noelle_call`, queue/consumer.ts): no cloud model answers for her. Each tick, after the
