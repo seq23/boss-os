@@ -98,3 +98,27 @@ export function scopeSnapshot({ queue, queueFile, repo, briefIds = [], now = Dat
     snapshot_at: new Date(now).toISOString(),
   };
 }
+
+/**
+ * THE DIGEST'S OWN SEARCH RECORD (24 Nov 2026). A mail pass runs in two steps: the brain reads Gmail
+ * and writes ahrefs-digest.md, the worker repairs from the digest and never opens the mailbox, so the
+ * worker's `searched` came back empty and every report since 12 Nov stopped at NO_SEARCH_EVIDENCE.
+ * The digest's first line records the search:
+ *   SEARCHED: mailbox=<addr> since=<YYYY-MM-DD> until=<YYYY-MM-DD> messages=<n> queries=<q1> | <q2>
+ * Returns that as a `searched` object, or null when the line is absent or malformed (the caller then
+ * stops as before: a missing record is never invented).
+ */
+export function digestSearched(text) {
+  const line = String(text ?? "").split("\n").map((l) => l.trim()).find((l) => /^SEARCHED:/i.test(l));
+  if (!line) return null;
+  const field = (k) => new RegExp(`\\b${k}=(.*?)(?=\\s+(?:mailbox|since|until|messages|queries)=|$)`, "i").exec(line)?.[1]?.trim() ?? "";
+  const out = {
+    mailbox: field("mailbox"),
+    since: field("since"),
+    until: field("until"),
+    messages: /^\d+$/.test(field("messages")) ? Number(field("messages")) : null,
+    queries: field("queries").split("|").map((q) => q.trim()).filter(Boolean),
+    source: "digest",
+  };
+  return searchEvidenceGap(out) ? null : out;
+}

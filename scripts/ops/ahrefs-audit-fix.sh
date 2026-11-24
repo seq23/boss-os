@@ -235,7 +235,7 @@ fi
 if [ -z "${SR_SCOPE_REPO:-}" ] && { [ -z "${AHREFS_DIGEST:-}" ] || [ ! -s "$AHREFS_DIGEST" ]; }; then
   AHREFS_DIGEST="$OUT_DIR/ahrefs-digest.md"
   rm -f "$AHREFS_DIGEST"
-  AI_RUN_CLAUDE_MODEL="$MODEL" "$AI_RUN" --role "$DIGEST_ROLE" --out "$AHREFS_DIGEST" -- "Read seq.taylor@gmail.com through the Gmail connector for every Ahrefs Site Audit email of the last 8 days. Run these searches and record each one: from:sa@ahrefs.com newer_than:8d in:anywhere, and from:ahrefs.com newer_than:8d in:anywhere. Ahrefs sends two kinds and both count: the weekly report, and one alert email per issue whose subject is '(Project) Issue name: N URLs' (for example '(Spry) 3XX redirect: 2 URLs'), which never contains the words Site Audit. Change nothing and fix nothing. Reply with ONLY a markdown digest: for each project, the site, the crawl date, the health score if given, and every issue named with its count and severity, exactly as the mail says. If there were none, reply with the line NO AHREFS SITE AUDIT MAIL THIS WEEK followed by every search you ran and how many emails each returned." >> "$RUN_LOG" 2>&1
+  AI_RUN_CLAUDE_MODEL="$MODEL" "$AI_RUN" --role "$DIGEST_ROLE" --out "$AHREFS_DIGEST" -- "Read seq.taylor@gmail.com through the Gmail connector for every Ahrefs Site Audit email of the last 8 days. Run these searches and record each one: from:sa@ahrefs.com newer_than:8d in:anywhere, and from:ahrefs.com newer_than:8d in:anywhere. Ahrefs sends two kinds and both count: the weekly report, and one alert email per issue whose subject is '(Project) Issue name: N URLs' (for example '(Spry) 3XX redirect: 2 URLs'), which never contains the words Site Audit. Change nothing and fix nothing. Reply with ONLY a markdown digest. Its first line is always SEARCHED: mailbox=seq.taylor@gmail.com since=<YYYY-MM-DD> until=<YYYY-MM-DD> messages=<total emails read> queries=<each search, separated by | >. Then, for each project, the site, the crawl date, the health score if given, and every issue named with its count and severity, exactly as the mail says. If there were none, reply with the line NO AHREFS SITE AUDIT MAIL THIS WEEK followed by every search you ran and how many emails each returned." >> "$RUN_LOG" 2>&1
   DIGEST_RC=$?
   if [ ! -s "$AHREFS_DIGEST" ]; then
     say "NAMED STOP [NO_DIGEST] the brain step (rc=$DIGEST_RC) wrote no Ahrefs digest; the next run retries."
@@ -246,7 +246,9 @@ fi
 if [ -n "${AHREFS_DIGEST:-}" ] && [ -s "$AHREFS_DIGEST" ] && [ -z "${SR_SCOPE_REPO:-}" ]; then
   PROMPT_TEXT="$PROMPT_TEXT
 Do NOT read Gmail this pass. This week's Ahrefs reports are summarised in $AHREFS_DIGEST: read it in
-place of the mail, find the exact URLs on each live site, and fix at source as section 1 says."
+place of the mail, find the exact URLs on each live site, and fix at source as section 1 says.
+The digest's first line (SEARCHED: …) is the mail search the brain ran for you: copy it into your report's
+\`searched\` (mailbox, queries as a list, since, until, messages) exactly as written. Never leave \`searched\` empty."
   say "mail pass from digest: $AHREFS_DIGEST"
 fi
 [[ "$MAX_TURNS" =~ ^[1-9][0-9]*$ ]] || { say "NAMED STOP [BAD_MAX_TURNS] AHREFS_AUDIT_MAX_TURNS='$MAX_TURNS' is not a positive whole number."; exit 5; }
