@@ -7,3 +7,6 @@ export function floorsFor(scorecard: { floor30: number; floor60: number } | null
 export function resultAt(row: any, readings: any[] | undefined, today: string, n: 30 | 60): "met" | "missed" | "not read" | "not yet";
 export function resultLines(rows: any[], readingsByMeasure: Record<string, any[]>, o: { today: string; labels?: Record<string, string>; names?: Record<string, string> }): string[];
 export const MEASURE_CHANNEL: Readonly<Record<string, string>>;
+export const RUN_CHANNEL: Readonly<Record<string, string>>;
+export function ledgerRowsFrom(doc: any, o: { business: string; channel?: string | null; now?: number; days?: number; since?: string | null }): Array<{ kind: "post"; business: string; channel: string; item: string; receipt: { id: string }; at: string }>;
+export function postsWithoutRows(doc: any, items: string[], o: { business?: string; channel: string; since?: string | null; now?: number; days?: number }): { posted: number; missing: string[] };

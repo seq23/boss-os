@@ -313,6 +313,8 @@ export const api = {
    * filed exactly as the mail door files it — a duty_drafts row and a duty_created card in the
    * Inbox whose Approve creates it. A phrase carrying "your call" creates at once.
    */
+  /** H3b: her message on Noelle's page, a call on the same claim path as her email. */
+  messageNoelle: (text: string) => call<{ task_id: string | null; line: string }>("/growth/noelle/message", post("", { text })),
   draftDuty: (body: { employee_id: string; phrase: string; preview?: boolean; overrides?: Record<string, unknown> }) =>
     call<any>("/employees/duties/draft", post("", body)),
   dutyDrafts: () => call<any>("/employees/duties/drafts"),

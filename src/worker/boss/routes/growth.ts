@@ -8,7 +8,10 @@ import { loadRoster } from "../growth/run";
 import { AI_SITES, aiCard } from "../../../shared/boss/growth/aiAnswers.mjs";
 import { backlinkOrders } from "../../../shared/boss/growth/director.mjs";
 import { machineTokenOk } from "./openLoops";
-import { noelleContext, planProblems, queueView, recordPlan, recordDone, claimCall, replyCall, releaseCall } from "../growth/noelle";
+import { noelleContext, queueView, recordDone, recordNotice, writeLedger, claimCall, replyCall, releaseCall } from "../growth/noelle";
+import { admitTask } from "../tasks/admit";
+import { callAckLine } from "../../../shared/boss/growth/noelle.mjs";
+import { wallClock } from "../../../shared/boss/timezone";
 
 /**
  * THE GROWTH DIRECTOR'S RECORD (21 Nov 2026).
@@ -72,8 +75,8 @@ growthRoutes.get("/", async (c) => {
  * Give callers the public address, never this one.
  */
 export const BACKLINK_ORDERS_PATH = "/api/growth/backlink-orders";
-/** Noelle's three routes (her Mac's run): the machine token only, checked in each handler below. */
-export const NOELLE_PATHS: ReadonlySet<string> = new Set(["/api/growth/noelle/context", "/api/growth/noelle/plan", "/api/growth/noelle/done", "/api/growth/noelle/call/claim", "/api/growth/noelle/call/reply", "/api/growth/noelle/call/release"]);
+/** Noelle's machine routes (her Mac's run and the posting jobs' ledger rows): the machine token only, checked in each handler below. */
+export const NOELLE_PATHS: ReadonlySet<string> = new Set(["/api/growth/noelle/context", "/api/growth/noelle/done", "/api/growth/noelle/notice", "/api/growth/noelle/ledger", "/api/growth/noelle/call/claim", "/api/growth/noelle/call/reply", "/api/growth/noelle/call/release"]);
 
 /**
  * The backlink orders of the newest WEEK (Noelle runs daily since 23 Nov 2026, so a week is the 7 days
@@ -101,18 +104,36 @@ growthRoutes.get("/noelle/context", async (c) => {
   if (!(await machineTokenOk(c))) throw new AppError(401, "Locked");
   return ok(c, await noelleContext(c.env));
 });
-growthRoutes.post("/noelle/plan", async (c) => {
-  if (!(await machineTokenOk(c))) throw new AppError(401, "Locked");
-  const body = await c.req.json<any>().catch(() => null);
-  const problems = planProblems(body);
-  if (problems.length) throw badRequest("The plan was refused", problems.slice(0, 8).join("; "));
-  return ok(c, await recordPlan(c.env, body), 201);
-});
 growthRoutes.post("/noelle/done", async (c) => {
   if (!(await machineTokenOk(c))) throw new AppError(401, "Locked");
   const body = await c.req.json<any>().catch(() => null);
   try { return ok(c, await recordDone(c.env, body), 201); }
   catch (e) { const m = String((e as Error)?.message ?? e); if (/NAMED STOP/.test(m)) throw e; throw badRequest("The run's end was refused", m.slice(0, 200)); }
+});
+
+growthRoutes.post("/noelle/notice", async (c) => {
+  if (!(await machineTokenOk(c))) throw new AppError(401, "Locked");
+  return ok(c, await recordNotice(c.env, await c.req.json<any>().catch(() => null)));
+});
+// One row (her own call) or { rows } from a posting job on the platform's confirmation (H5).
+growthRoutes.post("/noelle/ledger", async (c) => {
+  if (!(await machineTokenOk(c))) throw new AppError(401, "Locked");
+  return ok(c, await writeLedger(c.env, await c.req.json<any>().catch(() => null)));
+});
+
+/**
+ * H3b: her message on Noelle's page (her own session, the passcode gate in boss/index.ts). It is a call on
+ * the same claim path as her email: a task on Noelle's seat, source boss_page, parked for her Mac
+ * (queue/consumer.ts), answered on the card. Says when Noelle answers (H3c).
+ */
+growthRoutes.post("/noelle/message", async (c) => {
+  const body = await c.req.json<any>().catch(() => null);
+  const text = typeof body?.text === "string" ? body.text.trim().slice(0, 20_000) : "";
+  if (!text) throw badRequest("Write a message for Noelle", "Send { text }.");
+  const subject = text.split("\n")[0].slice(0, 120);
+  const r = await admitTask(c.env, { title: `Noelle: ${subject}`, lane: "ops", employee_id: "emp_growth", input: { source: "boss_page", subject, body: text } });
+  const w = wallClock(Date.now());
+  return ok(c, { task_id: r.task_id, line: callAckLine(`${String(w.h).padStart(2, "0")}:${String(w.min).padStart(2, "0")}`) }, 201);
 });
 
 // A #noelle call (growth/noelle.ts claimCall): her Mac claims one waiting email, replies once, or releases it.

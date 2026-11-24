@@ -13,7 +13,9 @@
  * "not yet". A summary with nothing old enough says so with the ledger's first day, never an empty line.
  * Pure: no I/O. The Worker (src/worker/boss/growth/noelle.ts) stores and reads the rows.
  */
-export const LEDGER_KINDS = Object.freeze(["studio-plan", "job-target", "search-loop", "page-new", "pin-refill"]);
+export const LEDGER_KINDS = Object.freeze(["studio-plan", "job-target", "search-loop", "page-new", "pin-refill", "post"]);
+/** A post's receipt: the id the platform (or Buffer) gave it when it accepted the post. */
+const RECEIPT = /^[\w.:-]{1,80}$/;
 export const MAX_ACTED = 60;
 /** A day-30 reading is looked for in the week after day 30 (readings are daily; a missed week is "not read"). */
 export const READ_WINDOW_DAYS = 7;
@@ -44,6 +46,8 @@ export function cleanActed(a, rosterKeys) {
   if (!LEDGER_KINDS.includes(a.kind) || !rosterKeys.has(a.business) || !SLUG.test(String(a.channel ?? ""))) return null;
   const item = String(a.item ?? "").replace(/[^\w.#:/-]+/g, "").slice(0, 120);
   if (!item) return null;
+  // H5: a post is ledgered only on the platform's confirmation, so it carries the receipt id in its item.
+  if (a.kind === "post" && !(RECEIPT.test(String(a.receipt?.id ?? "")) && item.endsWith(`:${a.receipt.id}`))) return null;
   const at = typeof a.at === "string" && /^\d{4}-\d{2}-\d{2}(T[\d:.]+Z)?$/.test(a.at) ? a.at : null;
   const sc = a.scorecard && Number.isFinite(Number(a.scorecard.floor30)) && Number.isFinite(Number(a.scorecard.floor60))
     ? { floor30: Number(a.scorecard.floor30), floor60: Number(a.scorecard.floor60) } : null;
@@ -102,4 +106,38 @@ export function resultLines(rows, readingsByMeasure, { today, labels = {}, names
     out.push(`${who}: ${g.n} past day 30: ${parts.join(", ")}${sixty}`);
   }
   return out;
+}
+
+// ─── H5: posting jobs write their own rows (24 Nov 2026) ───────────────────────────────────────────────
+
+/** A posted file's run channel as the roster spells it (Peace Be Still's posted.json says "facebook"). */
+export const RUN_CHANNEL = Object.freeze({ facebook: "facebook-page" });
+const DAY_MS = 86_400_000;
+
+/**
+ * Every post a posting job recorded (`{ posts: { <id>: { runs: [{ channel?, buffer_id | id, queued_at }] } } }`,
+ * written only after the platform accepted it) in the last `days` days, as ledger rows. One definition for
+ * the posting jobs' writer (.github/actions/ledger-rows) and Monday's reconciliation (postsWithoutRows).
+ */
+export function ledgerRowsFrom(doc, { business, channel = null, now = Date.now(), days = 8, since = null }) {
+  const from = Math.max(now - days * DAY_MS, since ? Date.parse(`${since}T00:00:00Z`) : 0);
+  const rows = [];
+  for (const [id, p] of Object.entries(doc?.posts ?? {})) {
+    for (const r of Array.isArray(p?.runs) ? p.runs : []) {
+      const receipt = String(r?.buffer_id ?? r?.id ?? "");
+      const at = String(r?.queued_at ?? "");
+      const ch = RUN_CHANNEL[r?.channel] ?? r?.channel ?? channel;
+      if (!receipt || !ch || !(Date.parse(at) >= from)) continue;
+      const item = `${String(id).replace(/[^\w.-]+/g, "").slice(0, 40)}:${receipt}`;
+      rows.push({ kind: "post", business, channel: ch, item, receipt: { id: receipt }, at: new Date(Date.parse(at)).toISOString() });
+    }
+  }
+  return rows;
+}
+
+/** Monday's H5 check: the posts on (business, channel) this week whose ledger row is missing. */
+export function postsWithoutRows(doc, items, { business = "", channel, since = null, now = Date.now(), days = 7 }) {
+  const have = new Set(items);
+  const posted = ledgerRowsFrom(doc, { business, channel, now, days, since }).filter((r) => r.channel === channel);
+  return { posted: posted.length, missing: posted.filter((r) => !have.has(r.item)).map((r) => r.item) };
 }

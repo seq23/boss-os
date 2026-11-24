@@ -46,3 +46,5 @@ export declare function extractAddress(header: string | null | undefined): strin
 export declare function strippedSubject(subject: string): string;
 export declare function dmarcPassed(authResults: string | null | undefined): boolean;
 export declare function isOwner(address: string | null | undefined, extraOwnerSenders?: string): boolean;
+export const SALUTATION_SEATS: readonly string[];
+export function seatBySalutation(text: string, roster: BossSeat[]): BossSeat | null;

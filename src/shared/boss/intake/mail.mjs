@@ -128,6 +128,23 @@ export function seatByAddress(to, roster) {
   return hits.length === 1 ? hits[0] : null;
 }
 
+/** Seats a salutation reaches without a tag (H3a): Noelle, Director of Growth. */
+export const SALUTATION_SEATS = Object.freeze(["emp_growth"]);
+
+/** The seat whose first name is a word of the subject (line 1) or opens the first line of the body. */
+export function seatBySalutation(text, roster) {
+  const lines = String(text ?? "").split("\n");
+  const subject = (lines[0] ?? "").toLowerCase();
+  const first = (lines.slice(1).find((l) => l.trim()) ?? "").trim().toLowerCase();
+  const hits = roster.filter((s) => SALUTATION_SEATS.includes(s.id) && s.name).filter((s) => {
+    const n = String(s.name).trim().toLowerCase().split(/\s+/)[0].replace(/[^a-z]/g, "");
+    if (!n) return false;
+    const word = new RegExp(`(^|[^a-z])${n}([^a-z]|$)`);
+    return word.test(subject) || new RegExp(`^(hi|hey|hello|dear|good morning|morning)?[ ,]*${n}([^a-z]|$)`).test(first);
+  });
+  return hits.length === 1 ? hits[0] : null;
+}
+
 export function routeToSeat(text, roster, to = null) {
   const active = roster.filter((s) => s && s.id && s.name);
   if (active.length === 0) return null;
@@ -183,6 +200,20 @@ export function routeToSeat(text, roster, to = null) {
    * its asks exactly like boss@, not filed whole on her desk. Every other name@ still goes straight
    * to that person. Pinned by tests/boss/tellSimone.test.ts.
    */
+  /*
+   * ─── HER NAME IN THE SUBJECT OR THE FIRST LINE (Noelle, 24 Nov 2026, brief noelle-builds H3a) ────
+   * "Noelle, can you …" or a subject naming her reaches her desk without a tag, as a salutation does in
+   * any office. Only the seats in SALUTATION_SEATS (a name like Camille is also the name of her
+   * briefing, so it would misroute); a typed tag still wins, and it never grants anything.
+   */
+  const named = typed.length === 0 ? seatBySalutation(text, active) : null;
+  if (named && named.id !== fallback.id) {
+    return {
+      outcome: "ROUTED", seat: named, tag: seatTag(named.name), unknownTags, candidates: [named],
+      why: `Your message is addressed to ${named.name}, ${named.role}.`,
+    };
+  }
+
   const addressed = typed.length === 0 ? seatByAddress(to, active) : null;
   if (addressed && addressed.id !== fallback.id) {
     return {

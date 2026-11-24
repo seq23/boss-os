@@ -99,12 +99,14 @@ export async function handleTask(env: Env, msg: TaskMessage): Promise<void> {
   }
 
   /*
-   * ─── A #noelle EMAIL IS PARKED FOR NOELLE'S OWN RUN ON HER MAC (24 Nov 2026) ─────────────────────
-   * Her session has her tools (./noelle-tools: the queues, the banks, the same plan gate) and Claude only;
-   * a cloud rung asked the same thing would answer without either. Her Mac claims it within 30 minutes
-   * (growth/noelle.ts claimCall) and the reply comes back from her run (replyCall), once.
+   * ─── A CALL TO NOELLE IS PARKED FOR HER OWN RUN ON HER MAC (24 Nov 2026) ──────────────────────────
+   * Her email to boss@ or her message on Noelle's page. Noelle is Claude Code with her tools; a cloud rung
+   * asked the same thing would answer without them. Her Mac claims it within 30 minutes
+   * (growth/noelle.ts claimCall) and the reply comes back from her run (replyCall), once. Only when Claude
+   * and Codex are both out of usage does her run hand it back marked noelle_cloud (releaseCall), and the
+   * ladder answers it like any other task.
    */
-  if (task.employee_id === "emp_growth" && parkedInput.source === "boss_inbound_mail") {
+  if (task.employee_id === "emp_growth" && (parkedInput.source === "boss_inbound_mail" || parkedInput.source === "boss_page") && !parkedInput.noelle_cloud) {
     const seen = await env.DB.prepare(`SELECT 1 FROM task_events WHERE task_id = ? AND event = 'parked_for_mac' LIMIT 1`).bind(task.id).first();
     if (!seen) await env.DB
       .prepare(`INSERT INTO task_events (id, task_id, ts, event, detail) VALUES (?,?,?,'parked_for_mac',?)`)

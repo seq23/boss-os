@@ -456,12 +456,13 @@ export const RESUME_HANDLERS: Record<string, ResumeHandler> = {
    * she approved; anything that needs money, or an account an agent would open, is never a card
    * (refused before it is raised). One exception, the AI answers loop's CLAIM card
    * (src/worker/boss/growth/aiAnswers.ts): a listing she does not hold is HERS to open, so the card
-   * asks her to, and her yes opens only the to-do to fill it once she has. Her NO is remembered: the Director does not ask about the same thing for 28 days
-   * (`askedRecently` reads this judgement's row). Nothing is posted, sent or bought here.
+   * asks her to, and her yes opens only the to-do to fill it once she has.
+   * Noelle raises no new cards since 24 Nov 2026 (she is full Claude Code); this resolves the ones still
+   * on her screen and the AI answers claim cards. Nothing is posted, sent or bought here.
    */
   growth_proposal: async (env, j, verdict, note, now) => {
     if (verdict === "try_again") {
-      return { detail: note ? "Noted: not now. Noelle won't raise it again for four weeks, and your note is on the record." : "Noted: not now. Noelle won't raise it again for four weeks." };
+      return { detail: note ? "Noted: not now. Your note is on the record." : "Noted: not now." };
     }
     const row = await env.DB.prepare(`SELECT resume_detail FROM judgement_calls WHERE id = ?`).bind(j.id).first<{ resume_detail: string | null }>();
     let d: any = null;

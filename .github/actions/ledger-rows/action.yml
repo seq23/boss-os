@@ -1,0 +1,37 @@
+# H5 (brief noelle-builds, 24 Nov 2026): a posting job writes its ledger rows on the platform's
+# confirmation. Each posting workflow calls this as its last step (`if: always()`), after the job has
+# written the platform's receipt (Buffer's post id) into its posted file. The rows go to Boss OS
+# (/api/boss/growth/noelle/ledger); a replay is counted as already there; Monday's reconciliation
+# compares the posted file against the rows and turns red on a post with no row.
+name: Ledger rows
+description: Send a posting job's confirmed posts to the Boss OS results ledger.
+inputs:
+  business:
+    description: The roster key (for example peace-be-still).
+    required: true
+  file:
+    description: The posted file the job writes (for example data/instagram/posted.json).
+    required: true
+  channel:
+    description: The channel, when the file's runs do not name one (for example threads).
+    required: false
+    default: ""
+  token:
+    description: The Boss OS machine token (BOSS_OPEN_LOOPS_TOKEN).
+    required: true
+  origin:
+    description: Boss OS.
+    required: false
+    default: https://boss.sequoiataylor.com
+runs:
+  using: composite
+  steps:
+    - name: Send the confirmed posts to the ledger
+      shell: bash
+      env:
+        LEDGER_BUSINESS: ${{ inputs.business }}
+        LEDGER_FILE: ${{ inputs.file }}
+        LEDGER_CHANNEL: ${{ inputs.channel }}
+        LEDGER_TOKEN: ${{ inputs.token }}
+        LEDGER_ORIGIN: ${{ inputs.origin }}
+      run: node "${{ github.action_path }}/ledger-rows.mjs"

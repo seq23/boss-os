@@ -1272,13 +1272,14 @@ lint_plist "$AIV_PLIST"
 reload_plist "$AIV_PLIST"
 echo "Installed $AIV_LABEL — daily 12:00 Central tick (LIGHT), weekly Tuesday read (asks the duty row)."
 
-# ─── Noelle, the Growth Director (plan artifact 8LfYgMaHj7XLVB1fJ1vYxM, approved 23 Nov 2026) ─────────
+# ─── Noelle, the Director of Growth (full Claude Code with her persona; her go 24 Nov 2026) ─────────────
 #
-# scripts/ops/noelle.sh: her Claude session (ai-run --role brain, Claude only, no tools) reads, decides and
-# plans; code acts. A TICK EVERY 30 MINUTES, LIGHT (mac-window holds it to 10:00-21:59 Central): each tick
-# asks `noelle.mjs due` and runs only at today's slot (a time that varies by day, never on the hour), or
-# two hours after a stopped run. No duty row: the Worker's 22:05 watch (duty_growth_director) names a day
-# with no recorded run. New-job free ladder: N/A, Claude only (her brain lines reach the session).
+# scripts/ops/noelle.sh starts Claude Code as Noelle in ~/Work/noelle (builder tools, the rules file, skills; her
+# guard scripts/ops/noelle-guard.mjs holds the hard stops). A TICK EVERY 30 MINUTES, ANY: each tick claims a call
+# from Sequoia (07:00-22:59 Central, answered within 30 minutes) or asks `noelle.mjs due` and runs only at today's
+# slot (10:00-20:58, never on the hour), or two hours after a stopped run. No duty row: the Worker's 22:05 watch
+# (duty_growth_director) names a day with no recorded run. Free ladder: Claude, then Codex (ai-run); with both
+# out, her call is answered by the Boss OS ladder (Workers AI, then Gemini).
 NOELLE_LABEL="com.seq.boss-noelle"
 NOELLE_PLIST="$HOME/Library/LaunchAgents/$NOELLE_LABEL.plist"
 NOELLE_LOGS="$HOME/Library/Logs/noelle"
@@ -1309,7 +1310,7 @@ cat > "$NOELLE_PLIST" <<NOELLEEOF
 NOELLEEOF
 lint_plist "$NOELLE_PLIST"
 reload_plist "$NOELLE_PLIST"
-echo "Installed $NOELLE_LABEL — a tick every 30 minutes (LIGHT); runs once a day at its slot."
+echo "Installed $NOELLE_LABEL — a tick every 30 minutes (ANY): her calls 07:00-22:59, her run once a day at its slot."
 
 # ─── Danielle's on-demand repo-change lane ───────────────────────────────────
 #
@@ -1956,7 +1957,8 @@ require_loaded com.seq.boss-owner-mail-watch
 [ -f "$REPO/scripts/ops/ahrefs-audit-fix-prompt.md" ] || missing="$missing scripts/ops/ahrefs-audit-fix-prompt.md"
 [ -L "$HOME/bin/ai-visibility.sh" ] || missing="$missing ~/bin/ai-visibility.sh(symlink)"
 [ -L "$HOME/bin/noelle.sh" ] || missing="$missing ~/bin/noelle.sh(symlink)"
-[ -f "$REPO/scripts/ops/noelle-prompt.md" ] || missing="$missing scripts/ops/noelle-prompt.md"
+[ -f "$REPO/scripts/ops/noelle/persona.md" ] || missing="$missing scripts/ops/noelle/persona.md"
+[ -f "$REPO/scripts/ops/noelle-guard.mjs" ] || missing="$missing scripts/ops/noelle-guard.mjs"
 [ -f "$REPO/scripts/ops/ai-visibility-prompt.md" ] || missing="$missing scripts/ops/ai-visibility-prompt.md"
 [ -s "$REPO/scripts/ops/ai-visibility-permissions.json" ] || missing="$missing scripts/ops/ai-visibility-permissions.json"
 # lp-replies is retired (boss fix L): lp-daily reads the LP mailbox through the delegation instead.

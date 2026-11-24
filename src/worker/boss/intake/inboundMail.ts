@@ -117,6 +117,10 @@ export function herSubjectOf(subject: string, forwardedSubject: string | null): 
 }
 import { commandFromMail, openErrandFor, errandReplied } from "../commands/run";
 import { nudgeFromWords, nudgeAddressesIn } from "../lp/nudge";
+import { callAckLine } from "../../../shared/boss/growth/noelle.mjs";
+import { wallClock } from "../../../shared/boss/timezone";
+/** Central "HH:MM" for Noelle's call hours (H3c). */
+const callClock = (ts: number) => { const w = wallClock(ts); return `${String(w.h).padStart(2, "0")}:${String(w.min).padStart(2, "0")}`; };
 
 /**
  * MAIL TO `boss@sequoiataylor.com`.
@@ -1424,6 +1428,8 @@ function headline(text: string): string {
     ...(constraintNote ? [constraintNote] : []),
     ...(notBefore && taskId ? [`Held until ${dueLine({ due_at: notBefore.at, due_words: notBefore.words })!.replace(/^due /, "")}; nothing starts before then.`] : []),
     ...(due && taskId ? [`Deadline read from your words: ${dueLine(due)}.`] : []),
+    // H3c: a call to Noelle says when she answers (within 30 minutes, or 07:00 Central outside her hours).
+    ...(taskId && route.seat.id === "emp_growth" ? [callAckLine(callClock(Date.now()))] : []),
   ];
   /*
    * THE GOT IT, AFTER A REAL READ (15 Nov 2026). Work was opened: her asks back in her words, what was

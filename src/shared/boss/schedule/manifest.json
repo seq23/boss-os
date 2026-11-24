@@ -5108,13 +5108,13 @@
     },
     {
       "id": "growth-director",
-      "name": "Noelle: read, decide, act, tell",
-      "what": "Noelle, the Growth Director, a Claude session on your Mac once a day at a slot that varies between 10:00 and 21:59 (never on the hour; Thursdays after 14:00 her weekly read). She reads every growth ledger, writes a decision per business to the Growth page, makes Porch & Party's Studio pieces (each one passed by a fresh reviewer before it is queued), and posts one Notices line per new thing she publishes. A post that did not go out a day after its time is a stop on her run. Every other week a Growth section in Simone's morning email. Never sends email, spends, or opens an account.",
+      "name": "Noelle: Director of Growth (Claude Code)",
+      "what": "Noelle, the Director of Growth: full Claude Code with her persona on your Mac, in ~/Work/noelle. Once a day at a slot between 10:00 and 20:58 (never on the hour; Thursdays after 14:00 her weekly look back) she reads the growth ledgers and queues, builds and posts her businesses' growth work through her own PRs (a fresh reviewer per PR, landed with land-after), and posts one Notices line per new thing she publishes. Your email to boss@ naming her, or your message on her Boss OS page, is answered within 30 minutes from 07:00 to 22:59 (after that: \"Noelle picks this up at 07:00 Central\"). Never spends, opens an account or uses a paid API (her guard).",
       "business": "spry",
       "brand": "Spry Labs",
       "system": "mac",
       "slots": [
-        "daily 10:00-21:59/30m"
+        "every 1800s"
       ],
       "emails": false,
       "heavy": false,
@@ -5132,7 +5132,7 @@
         "floor": 0,
         "reason": "Her run is counted by the heartbeat row below (noelle_runs); a slot with nothing to act on still writes its decisions."
       },
-      "macWindow": "LIGHT"
+      "macWindow": "ANY"
     },
     {
       "id": "growth-director-watch",

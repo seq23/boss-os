@@ -1,63 +1,49 @@
 /**
- * NOELLE'S RECORD (23 Nov 2026; plan artifact 8LfYgMaHj7XLVB1fJ1vYxM, gap review G1-G21).
+ * NOELLE'S RECORD (rebuilt 24 Nov 2026, brief noelle-builds: "what wakes is full Claude Code with a persona").
  *
- * Noelle is a scheduled Claude session on her Mac (scripts/ops/noelle.sh → ~/bin/ai-run --role brain)
- * with NO tools: code collects what she reads, she writes one plan, code acts. This file is the Boss OS
- * half, and it is the authority: the Mac's plan is re-checked here (checkPlan, the same gate the Mac ran)
- * against the roster read HERE, before anything is written or handed back to act on.
+ * Noelle is Claude Code with a persona on her Mac (scripts/ops/noelle.sh → ~/bin/ai-run --role brain,
+ * scripts/ops/noelle/persona.md), held by her guard (scripts/ops/noelle-guard.mjs: hard stops only).
+ * She decides and builds herself; Boss OS only records. Every route takes the machine token.
  *
- *   GET  /noelle/context   (machine token) the roster (public fields), her rulings per business with the
- *                          privacy check already run (a leak holds that business, the words never leave),
- *                          the scoreboard grid, the open linked rows, recent runs, this week's calls.
- *   POST /noelle/plan      (machine token) { day, slot, kind, calls, plan, reads, facts } → re-checked;
- *                          growth_decisions (one per business), cards for her calls, linked verdicts;
- *                          returns only the ACCEPTED acts for the Mac to carry out. The same day, slot
- *                          and kind posted again is a replay: the first run's id, nothing accepted, no rows.
- *   POST /noelle/done      (machine token) { run, published, failed, checked } or { day, slot, kind, stop }
- *                          → the Notices lines ("Noelle published: …"), the run's end, the 14-day report.
+ *   GET  /noelle/context   what she reads first: the roster's public fields, her rulings per business with
+ *                          the privacy check already run, the scoreboard, recent runs, the ledger's results.
+ *   POST /noelle/done      { id, day, slot, kind, state, stops, turns, line, reads, twice } → her run's row
+ *                          (one per id: a replay writes nothing). The same failure twice → a Notices line.
+ *   POST /noelle/notice    { business, what, where, link, key } → "Noelle published: …" on Notices, once per key.
+ *   POST /noelle/ledger    one row, or { rows: [...] } from a posting job (H5): one row per thing acted on,
+ *                          a post only with the platform's receipt id. A replay writes nothing twice.
  *
- * `duty_growth_director` (migration 0378) is Noelle's heartbeat on the Worker: 22:05 Central daily it runs
- * noelleWatch — no run row today → "Noelle did not run" in tomorrow's morning email (G16a); the same stop
- * three days running → one line to Sequoia (G16b).
+ * `duty_growth_director` (migration 0378) is her heartbeat on the Worker: 22:05 Central daily it runs
+ * noelleWatch — no run row today → "Noelle did not run" in tomorrow's morning email; the same stop three
+ * days running → one line to Sequoia; Sundays, the week ahead, results against floors and the posts
+ * reconciliation (a post with no ledger row is red, POST_NOT_LEDGERED).
  *
- * Never: a post, an email, a spend, an account, a delete of anyone's data. Pinned by tests/boss/noelleRun.test.ts.
+ * Never here: a post, a spend, an account, a delete of anyone's data.
  */
 import type { Env } from "../env";
 import { newId } from "../lib/id";
-import { audit } from "../lib/audit";
 import { dayIdInZone } from "../../../shared/boss/timezone";
 import manifest from "../../../shared/boss/scorecard/manifest.json";
 import { summarize } from "../../../shared/boss/growth/scoreboard.mjs";
 import { rulingsFor } from "../../../shared/boss/growth/roster.mjs";
 import { privateOnlyTerms, leaksIn, termCount } from "../../../shared/boss/growth/privacy.mjs";
 import { playbookBody } from "../../../shared/boss/growth/playbook.mjs";
-import { MAX_CARDS, reportDue, reportSection } from "../../../shared/boss/growth/director.mjs";
-import {
-  checkPlan, slotOf, sourceProblems, missingDecisions, readGrid, season, slotFor, callBudget, didNotRunLine, escalations, noticeLine, scheduleLines, CHANNEL_NAMES,
-  WEEK_CALLS, KINDS, MAC_KINDS,
-} from "../../../shared/boss/growth/noelle.mjs";
+import { readGrid, season, slotFor, didNotRunLine, escalations, noticeLine, scheduleLines, CHANNEL_NAMES, CHANNEL_OWNERS } from "../../../shared/boss/growth/noelle.mjs";
 import { appendToSection } from "../../../shared/boss/mail/morningSections.mjs";
-import { MAX_ACTED, cleanActed, floorsFor, measureFor, resultLines } from "../../../shared/boss/growth/ledger.mjs";
+import { MAX_ACTED, cleanActed, floorsFor, measureFor, resultLines, postsWithoutRows } from "../../../shared/boss/growth/ledger.mjs";
 import { latestReadings } from "../routes/growth";
-import { getSetting, setSetting } from "../lib/settings";
 import { putMorningSection } from "../mail/morningSection";
 import { BOSS_ORIGIN } from "../../../shared/boss/research/page.mjs";
-import { DIRECTOR, askedRecently, card, loadRoster, withoutDirectorLine } from "./run";
+import { DIRECTOR, loadRoster } from "./run";
 
 const DAY_MS = 86_400_000;
-const REPORT_KEY = "growth_report_last_day";
-const MAX_ACTIONS = 120;
-const MAX_PUBLISHED = 60;
 const parse = <T>(t: unknown, d: T): T => { try { return typeof t === "string" ? JSON.parse(t) : d; } catch { return d; } };
 const isDay = (d: unknown): d is string => typeof d === "string" && /^\d{4}-\d\d-\d\d$/.test(d);
-const weekOf = (day: string) => { const d = new Date(`${day}T12:00:00Z`); d.setUTCDate(d.getUTCDate() - ((d.getUTCDay() + 6) % 7)); return d.toISOString().slice(0, 10); };
 
 /**
  * What the Growth page says Noelle last saw queued, per business and channel: a number, or "not read: …"
  * when that read failed (never "nothing scheduled" on a failed read). No run in 2 days → every queue not read.
  */
-/** Stops that are a Notices line as well as the run card (Rule 0 and the 3-days alarm). */
-export const NOTICE_STOPS = new Set(["NOTHING_ACTED", "UNDER_3_DAYS", "CHANNEL_UNREAD", "CALENDAR_UNREAD", "NOTHING_TO_RENDER"]);
 
 export async function queueView(db: D1Database, now = Date.now()) {
   const r = await db.prepare(`SELECT day, state, stops, line, reads, created_at FROM noelle_runs WHERE created_at >= ? ORDER BY created_at DESC LIMIT 1`).bind(now - 2 * DAY_MS).first<any>();
@@ -75,19 +61,6 @@ export async function recentRuns(db: D1Database, today: string, days = 10) {
   const from = new Date(Date.parse(`${today}T12:00:00Z`) - days * DAY_MS).toISOString().slice(0, 10);
   const rows = (await db.prepare(`SELECT * FROM noelle_runs WHERE day >= ? ORDER BY created_at DESC`).bind(from).all<any>()).results ?? [];
   return rows.map((r) => ({ ...r, stops: parse<string[]>(r.stops, []) }));
-}
-
-async function weekCalls(db: D1Database, today: string) {
-  const r = await db.prepare(`SELECT COALESCE(SUM(calls), 0) AS n FROM noelle_runs WHERE day >= ?`).bind(weekOf(today)).first<{ n: number }>();
-  return Number(r?.n ?? 0);
-}
-
-/** Backlink requests ordered in the last 28 days per business (the 1-in-4 rule counts against these). */
-async function orderedRecent(db: D1Database, now: number) {
-  const rows = (await db.prepare(`SELECT business, actions FROM growth_decisions WHERE state = 'decided' AND created_at >= ?`).bind(now - 28 * DAY_MS).all<{ business: string; actions: string }>()).results ?? [];
-  const out: Record<string, number> = {};
-  for (const r of rows) for (const a of parse<any[]>(r.actions, [])) if (a?.kind === "ordered") out[r.business] = (out[r.business] ?? 0) + 1;
-  return out;
 }
 
 /** The open rows each roster entry links (her older work, G15 keeps three of them open on purpose). */
@@ -125,281 +98,96 @@ export async function noelleContext(env: Env, now = Date.now()) {
   });
   const measures = summaries.flatMap((s: any) => (s.channels ?? []).map((c: any) => ({ business: s.key, channel: c.channel, language: c.language, value: c.value, unread: c.unread })));
   const runs = await recentRuns(db, today);
-  const calls = await weekCalls(db, today);
   const misses = (await db.prepare(`SELECT id, site, prompt, lane, fix_attempts, todo_key FROM ai_misses WHERE fixed_week IS NULL ORDER BY site, first_missed_week LIMIT 120`).all<any>()).results ?? [];
-  const asked = [...(await askedRecently(db, now))];
   return {
-    today, season: season(today), slot: slotFor(today), budget: callBudget({ weekUsed: calls }), weekCalls: calls, weekLimit: WEEK_CALLS,
+    today, season: season(today), slot: slotFor(today),
     businesses, problems, summaries, grid: readGrid(roster, measures), linkedOpen: await linkedOpen(db, roster),
-    orderedRecent: await orderedRecent(db, now), runs: runs.slice(0, 10).map((r) => ({ day: r.day, kind: r.kind, state: r.state, stops: r.stops, line: r.line })),
-    aiMisses: misses, asked,
+    runs: runs.slice(0, 10).map((r) => ({ day: r.day, kind: r.kind, state: r.state, stops: r.stops, line: r.line })),
+    aiMisses: misses,
     results: await ledgerResults(db, today, Object.fromEntries(roster.map((e: any) => [e.key, e.label]))),
   };
 }
 
-/** Facts only the Mac can read (queues, caps, articles, accounts); any other key is dropped. */
-function cleanFacts(f: any) {
-  const nums = (o: any) => Object.fromEntries(Object.entries(o && typeof o === "object" ? o : {}).filter(([k, v]) => typeof k === "string" && Number.isFinite(Number(v))).map(([k, v]) => [k, Number(v)]));
-  const strs = (a: any) => (Array.isArray(a) ? a.filter((x) => typeof x === "string" && x.length < 80).slice(0, 60) : []);
-  const why = (o: any) => Object.fromEntries(Object.entries(o && typeof o === "object" ? o : {}).filter(([k, v]) => k.length < 80 && typeof v === "string" && v.trim()).slice(0, 80).map(([k, v]) => [k, String(v).slice(0, 160)]));
-  return { queues: nums(f?.queues), caps: nums(f?.caps), articles: nums(f?.articles), accounts: strs(f?.accounts), bufferFull: strs(f?.bufferFull), unread: why(f?.unread), items: cleanItems(f?.items) };
+/** A Notices line from Noelle, once per key (her run's tools and the twice line). */
+async function noticeOnce(db: D1Database, key: string, line: string, needsHer: 0 | 1, now: number) {
+  if (await db.prepare(`SELECT 1 FROM boss_task_notices WHERE task_id = ? LIMIT 1`).bind(key).first()) return false;
+  await db.prepare(`INSERT INTO boss_task_notices (id, task_id, lane, from_name, kind, subject, body, created_at, needs_her) VALUES (?,?,'ops','Noelle','update',?,?,?,?)`)
+    .bind(newId("ntc"), key, line.slice(0, 200), line, now, needsHer).run();
+  return true;
 }
 
-/** Queued posts as read (item 8): per channel at most 14, each { at: a day or instant, text: ≤80 chars, one line }. */
-export function cleanItems(o: any): Record<string, Array<{ at: string; text: string }>> {
-  const out: Record<string, Array<{ at: string; text: string }>> = {};
-  for (const [k, v] of Object.entries(o && typeof o === "object" ? o : {}).slice(0, 80)) {
-    if (k.length >= 80 || !/^[a-z0-9-]+:[a-z0-9-]+$/.test(k) || !Array.isArray(v)) continue;
-    out[k] = v.filter((x: any) => typeof x?.at === "string" && /^\d{4}-\d{2}-\d{2}(T[\d:.]+Z)?$/.test(x.at))
-      .slice(0, 14).map((x: any) => ({ at: x.at, text: String(x.text ?? "").replace(/[\u0000-\u001f\u007f]+/g, " ").trim().slice(0, 80) }));
-  }
-  return out;
-}
-
-export function planProblems(body: any): string[] {
-  const p: string[] = [];
-  if (!body || typeof body !== "object") return ["not an object"];
-  if (!isDay(body.day)) p.push("no day");
-  if (!["daily", "weekly"].includes(body.kind)) p.push("kind is daily or weekly");
-  if (!Number.isInteger(body.calls) || body.calls < 0) p.push("calls is a whole number");
-  if (!body.plan || !Array.isArray(body.plan.actions)) p.push("no plan.actions");
-  else if (body.plan.actions.length > MAX_ACTIONS) p.push(`at most ${MAX_ACTIONS} actions`);
-  if (!body.reads || typeof body.reads !== "object") p.push("no reads");
-  if (!slotOf(body.slot)) p.push("slot is HH:MM, or call:<task id> for a #noelle call (one plan per slot)");
-  if (JSON.stringify(body).length > 400_000) p.push("over 400 KB");
-  return p;
-}
+const RUN_ID = /^noelle-[\w.-]{1,80}$/;
+const SLOT = /^(\d\d:\d\d|call:[\w-]{1,60}|weekly)$/;
 
 /**
- * The plan, re-checked and recorded. Returns { run, accepted, refused, lines, stops } — `accepted` is the
- * only list the Mac acts on. A run over its call budget is refused whole, never half-acted.
+ * Her run's end (scripts/ops/noelle.mjs finish). One row per run id: a replayed done writes nothing.
+ * Rule 0 is the Mac's verdict on her last line; this records it. The same failure twice in a row (H6) is a
+ * Notices line for Sequoia (needs_her) as well as the row's SAME_FAILURE_TWICE stop.
  */
-export async function recordPlan(env: Env, body: any, now = Date.now()) {
-  const db = env.DB;
-  const today = body.day as string;
-  // A replay (the Mac retried, a second launch of the same slot): the first run stands, and nothing is acted twice.
-  // A prior row still 'planned' is a run that died between /plan and /done (the Mac rebooted): the Mac
-  // always posts /done after act, under one lock. It is closed [ACT_LOST] and the answer says so, so the
-  // Mac marks the day stopped and the 2-hour retry runs as a new slot; a lost day never reads "done".
-  const prior = await db.prepare(`SELECT id, state FROM noelle_runs WHERE day = ? AND slot = ? AND kind = ? AND state IN ('planned','done')`).bind(today, slotOf(body.slot), body.kind).first<{ id: string; state: string }>();
-  if (prior?.state === "planned") {
-    await db.prepare(`UPDATE noelle_runs SET state = 'stopped', stops = ?, line = ?, updated_at = ? WHERE id = ?`)
-      .bind(JSON.stringify(["ACT_LOST"]), "NAMED STOP [ACT_LOST] planned but never finished; the retry runs as a new slot", now, prior.id).run();
-    return { run: prior.id, replay: true, lost: true, accepted: [], refused: [], lines: [], notices: [], roster: [], stops: ["NAMED STOP [ACT_LOST]"], decisions: 0 };
-  }
-  if (prior) return { run: prior.id, replay: true, accepted: [], refused: [], lines: [], notices: [], roster: [], stops: [], decisions: 0 };
-  const runId = newId("nrn");
-  const { roster } = await loadRoster(db);
-  const used = await weekCalls(db, today);
-  const budget = callBudget({ weekUsed: used, runUsed: 0 });
-  const stops: string[] = [];
-  const slot = slotOf(body.slot);
-  if (used + body.calls > WEEK_CALLS || !budget.left) {
-    const stop = budget.stop ?? `NAMED STOP [WEEK_CALL_BUDGET] this run's ${body.calls} calls would pass the week's ${WEEK_CALLS}`;
-    await db.prepare(`INSERT INTO noelle_runs (id, day, slot, kind, state, stops, calls, line, created_at, updated_at) VALUES (?,?,?,?,'stopped',?,?,?,?,?)`)
-      .bind(runId, today, slot, body.kind, JSON.stringify([stop.match(/\[([A-Z0-9_]+)\]/)?.[1] ?? "WEEK_CALL_BUDGET"]), body.calls, stop, now, now).run();
-    return { run: runId, accepted: [], refused: [], lines: [], stops: [stop] };
-  }
-  // A retry is a new row naming the stopped run it follows (the newest stopped run of this day and kind).
-  const stopped = await db.prepare(`SELECT id FROM noelle_runs WHERE day = ? AND kind = ? AND state = 'stopped' ORDER BY created_at DESC LIMIT 1`).bind(today, body.kind).first<{ id: string }>();
-  // Claim the slot BEFORE any row is written: two posts racing for one slot, the second meets the unique index.
-  try {
-    await db.prepare(`INSERT INTO noelle_runs (id, day, slot, kind, state, stops, calls, line, retry_of, created_at, updated_at) VALUES (?,?,?,?,'planned','[]',?,'planning',?,?,?)`)
-      .bind(runId, today, slot, body.kind, body.calls, stopped?.id ?? null, now, now).run();
-  } catch (e) {
-    if (!/UNIQUE/i.test(String((e as Error)?.message ?? e))) throw e;
-    const won = await db.prepare(`SELECT id FROM noelle_runs WHERE day = ? AND slot = ? AND kind = ? AND state IN ('planned','done')`).bind(today, slot, body.kind).first<{ id: string }>();
-    return { run: won?.id ?? null, replay: true, accepted: [], refused: [], lines: [], notices: [], roster: [], stops: [], decisions: 0 };
-  }
-  // The slot is claimed: a throw from here on marks the claimed row stopped, so a retry is a new run, never a replay of nothing.
-  try {
-    return await planClaimed(env, body, { runId, roster, stops, today, now });
-  } catch (e) {
-    const why = `NAMED STOP [PLAN_FAILED] ${String((e as Error)?.message ?? e).slice(0, 300)}`;
-    await db.prepare(`UPDATE noelle_runs SET state = 'stopped', stops = '["PLAN_FAILED"]', line = ?, updated_at = ? WHERE id = ?`).bind(why, now, runId).run();
-    throw e;
-  }
-}
-
-async function planClaimed(env: Env, body: any, { runId, roster, stops, today, now }: { runId: string; roster: any[]; stops: string[]; today: string; now: number }) {
-  const db = env.DB;
-  const facts = cleanFacts(body.facts);
-  const { unread, items, ...gateFacts } = facts;
-  const ctx = { roster, today, ...gateFacts, orderedRecent: await orderedRecent(db, now), linkedOpen: await linkedOpen(db, roster) };
-  const checked = checkPlan(body.plan, ctx);
-  for (const s of sourceProblems(body.reads, now)) stops.push(`NAMED STOP [${s.stop}] ${s.why}`);
-  // B2/G14: every source gets a decision per business per WEEK, so only the weekly run owes them all.
-  const owed = body.kind === "weekly" ? missingDecisions(roster.filter((e: any) => !e.problems?.length), checked.accepted) : [];
-  const asked = await askedRecently(db, now);
-  let cards = 0;
-  const raise = async (e: any, title: string, question: string, detail: Record<string, unknown>) => {
-    if (asked.has(title.toLowerCase())) return { card: null, why: "asked in the last four weeks" };
-    if (cards >= MAX_CARDS) return { card: null, why: `${MAX_CARDS} cards already this run` };
-    const id = await card(env, e, title, question, detail, false);
-    cards++; asked.add(title.toLowerCase());
-    return { card: id, why: null };
-  };
-  const rows: any[] = [];
-  for (const e of roster as any[]) {
-    const mine = (x: any) => x?.business === e.key;
-    const decisions = checked.accepted.filter((a: any) => mine(a) && a.kind === "decision");
-    const acts = checked.accepted.filter((a: any) => mine(a) && a.kind !== "decision");
-    const refused = checked.refused.filter((r: any) => mine(r.action));
-    const lines = checked.lines.filter(mine);
-    const missing = owed.filter(mine);
-    if (!decisions.length && !acts.length && !refused.length && !lines.length && !missing.length) continue;
-    const id = newId("gdc");
-    const actions: any[] = [];
-    for (const a of acts) {
-      if (a.kind === "backlink") { actions.push({ kind: "ordered", item: { channel: "backlinks", format: "article", topic: a.topic, draft: a.draft ?? a.why ?? "", why: a.why ?? "" } }); continue; }
-      if (a.kind === "proposal" || a.kind === "sequoia-line") {
-        const c = await raise(e, `${e.label}: ${String(a.what ?? "").slice(0, 160)}`, `${a.why ?? ""}${a.evidence ? `\n\nEvidence: ${a.evidence}` : ""}`, { proposal: { what: a.what, why: a.why, evidence: a.evidence, from: a.from ?? "noelle" } });
-        actions.push({ kind: "proposal", proposal: { what: a.what, why: a.why }, card: c.card, ...(c.why ? { why: c.why } : {}) });
-        continue;
-      }
-      if (a.kind === "linked") {
-        const say = `Growth Director, ${today}: ${a.verdict}. ${String(a.why ?? "").replace(/\s+/g, " ").trim()}`;
-        const cur = await db.prepare(`SELECT next_step FROM owner_open_loops WHERE id = ? AND business = ? AND status = 'open'`).bind(a.id, e.brain).first<{ next_step: string | null }>();
-        if (!cur) { actions.push({ kind: "refused", stop: "NOT_LINKED", why: `${a.id} is not an open row of ${e.label}` }); continue; }
-        const step = a.verdict === "change" && typeof a.next_step === "string" ? a.next_step : withoutDirectorLine(cur.next_step);
-        await db.prepare(`UPDATE owner_open_loops SET next_step = ?, updated_at = ? WHERE id = ? AND business = ? AND status = 'open'`).bind(`${say}\n${step}`, now, a.id, e.brain).run();
-        actions.push({ kind: "linked", id: a.id, verdict: a.verdict, why: a.why });
-        continue;
-      }
-      actions.push({ ...a, kind: a.kind });
-    }
-    for (const l of lines) {
-      const c = await raise(e, String(l.what).slice(0, 200), l.why ?? "", { line: l });
-      actions.push({ kind: "proposal", proposal: { what: l.what, why: l.why }, card: c.card, ...(c.why ? { why: c.why } : {}) });
-    }
-    for (const r of refused) actions.push({ kind: "refused", stop: r.stop, why: r.why, action: { kind: r.action?.kind, channel: r.action?.channel, format: r.action?.format } });
-    const evidence = decisions.map((d: any) => `${d.source}${d.sha ? `@${String(d.sha).slice(0, 12)}` : ""}${d.file ? ` (${d.file})` : ""}: ${String(d.decision ?? "").slice(0, 400)}`);
-    for (const m of missing) evidence.push(`NAMED STOP [NO_DECISION] no decision on ${m.source}`);
-    const test = acts.find((a: any) => a.kind === "test") ?? null;
-    const row = {
-      // An accepted act (a backlink order, a target) is a decision too: a row held "no data" would hide it from the
-      // backlink network's read and from the 1-in-4 count.
-      id, cycle: today, business: e.key, label: e.label, state: decisions.length || acts.length ? "decided" : "held: no data",
-      decision: decisions.length ? String(decisions[0].decision ?? "").slice(0, 600)
-        : acts.length ? `Acted: ${[...new Set(acts.map((a: any) => a.kind))].join(", ")}.`
-        : `Held: no decision was made on ${missing.map((m: any) => m.source).join(", ") || "its sources"}.`,
-      evidence, test: test ? { channel: test.channel, format: test.format, what: test.what, number: test.number, stop: test.stop } : null, actions, next_check: null, created_at: now,
-    };
-    await db.prepare(`INSERT INTO growth_decisions (id, cycle, business, label, state, decision, evidence, test, actions, next_check, created_at) VALUES (?,?,?,?,?,?,?,?,?,?,?)`)
-      .bind(row.id, row.cycle, row.business, row.label, row.state, row.decision, JSON.stringify(row.evidence), row.test ? JSON.stringify(row.test) : null, JSON.stringify(row.actions), null, now).run();
-    rows.push(row);
-  }
-  for (const m of owed) stops.push(`NAMED STOP [NO_DECISION] ${m.business}: no decision on ${m.source}`);
-  const codes = [...new Set(stops.map((s) => s.match(/\[([A-Z0-9_]+)\]/)?.[1]).filter(Boolean) as string[])];
-  const sources = Object.fromEntries(Object.entries(body.reads ?? {}).slice(0, 80).map(([k, v]: [string, any]) => [k.slice(0, 80), { at: v?.at ?? null, sha: v?.sha ? String(v.sha).slice(0, 40) : null, error: v?.error ? String(v.error).slice(0, 160) : null }]));
-  await db.prepare(`UPDATE noelle_runs SET stops = ?, line = ?, reads = ?, notices = ?, updated_at = ? WHERE id = ?`)
-    .bind(JSON.stringify(codes), `${checked.accepted.length} accepted, ${checked.refused.length} refused, ${cards} cards`, JSON.stringify({ sources, queues: facts.queues, unread, items }), JSON.stringify(checked.notices.map((x: any) => x.key)), now, runId).run();
-  await audit(db, { actor: DIRECTOR, lane: "ops", entityType: "noelle_run", entityId: runId, action: "planned", detail: { accepted: checked.accepted.length, refused: checked.refused.map((r: any) => r.stop), stops: codes, cards } });
-  // The acts the Mac carries out: only kinds with a lever there (owned jobs' targets, Studio, search-loop, outreach lists, tests).
-  const toAct = checked.accepted.filter((a: any) => MAC_KINDS.includes(a.kind));
-  return { run: runId, accepted: toAct, refused: checked.refused, lines: checked.lines, notices: checked.notices, roster: checked.roster, stops, decisions: rows.length };
-}
-
-/** The run's end: publish notices (one per NEW thing, deduped by key), the stop, the 14-day report. */
 export async function recordDone(env: Env, body: any, now = Date.now()) {
   const db = env.DB;
-  let today = isDay(body?.day) ? body.day : dayIdInZone(now);
-  // A run that stopped before any plan (exit 76 out of credits, a NAMED STOP in the Mac's read).
-  if (!body?.run) {
-    const stop = String(body?.stop ?? "").slice(0, 400);
-    const code = stop.match(/\[([A-Z0-9_]+)\]/)?.[1];
-    if (!code) throw new Error("A stopped run must name its stop code in brackets, e.g. [CLAUDE_LIMIT]");
-    const id = newId("nrn");
-    await db.prepare(`INSERT INTO noelle_runs (id, day, slot, kind, state, stops, calls, line, created_at, updated_at) VALUES (?,?,?,?,'stopped',?,?,?,?,?)`)
-      .bind(id, today, slotOf(body.slot), body.kind === "weekly" ? "weekly" : "daily", JSON.stringify([code]), Number.isInteger(body.calls) ? body.calls : 0, stop, now, now).run();
-    return { run: id, state: "stopped", notices: 0 };
-  }
-  const run = await db.prepare(`SELECT * FROM noelle_runs WHERE id = ?`).bind(String(body.run)).first<any>();
-  if (!run || run.state !== "planned") throw new Error("No planned run by that id");
-  // The run's own day, never the clock: a 22:00 run whose render ends after midnight still reports its decisions.
-  if (isDay(run.day)) today = run.day;
-  const { roster } = await loadRoster(db);
+  const id = typeof body?.id === "string" && RUN_ID.test(body.id) ? body.id : null;
+  if (!id) throw new Error("send the run's id (noelle-<dir>-<try>)");
+  const day = isDay(body.day) ? body.day : dayIdInZone(now);
+  const slot = typeof body.slot === "string" && SLOT.test(body.slot) ? body.slot : null;
+  const state = body.state === "done" ? "done" : "stopped";
+  const stops = (Array.isArray(body.stops) ? body.stops : []).map(String).filter((s: string) => /^[A-Z0-9_]{2,40}$/.test(s)).slice(0, 8);
+  if (state === "stopped" && !stops.length) throw new Error("A stopped run must name its stop code");
+  const line = String(body.line ?? "").slice(0, 600);
+  const turns = Number.isInteger(body.turns) && body.turns >= 0 ? Math.min(body.turns, 10_000) : 0;
+  const reads = body.reads && typeof body.reads === "object" ? JSON.stringify(body.reads).slice(0, 60_000) : "{}";
+  const r = await db.prepare(`INSERT OR IGNORE INTO noelle_runs (id, day, slot, kind, state, stops, calls, line, reads, created_at, updated_at) VALUES (?,?,?,?,?,?,?,?,?,?,?)`)
+    .bind(id, day, slot, body.kind === "weekly" ? "weekly" : "daily", state, JSON.stringify(stops), turns, line, reads, now, now).run();
+  const written = Boolean(r.meta?.changes);
   let notices = 0;
-  // Only a new thing the gate passed for THIS run may be announced (an injected plan or a confused act cannot).
-  const passed = new Set(parse<string[]>(run.notices, []));
-  const published = (Array.isArray(body.published) ? body.published : []).slice(0, MAX_PUBLISHED);
-  for (const p of published) {
-    const e = roster.find((x: any) => x.key === p?.business);
-    if (!e || typeof p.what !== "string" || typeof p.where !== "string" || typeof p.key !== "string" || !passed.has(p.key) || !p.key.startsWith(`noelle:${e.key}:`)) continue;
-    const link = typeof p.link === "string" && /^https:\/\//.test(p.link) ? p.link : null;
-    const line = noticeLine({ label: e.label, what: p.what.slice(0, 160), where: p.where.slice(0, 80), link });
-    const have = await db.prepare(`SELECT 1 FROM boss_task_notices WHERE task_id = ? AND kind = 'update' LIMIT 1`).bind(p.key.slice(0, 200)).first();
-    if (have) continue;
-    await db.prepare(`INSERT INTO boss_task_notices (id, task_id, lane, from_name, kind, subject, body, created_at, needs_her) VALUES (?,?,'ops','Noelle','update',?,?,?,0)`)
-      .bind(newId("ntc"), p.key.slice(0, 200), line.slice(0, 200), line, now).run();
-    notices++;
+  if (written && body.twice === true) {
+    const code = stops[0] ?? "UNKNOWN";
+    if (await noticeOnce(db, `noelle:twice:${day}:${code}`, `Noelle stopped the same way twice today (${code}); no more tries today. ${line.replace(/NAMED STOP \[[A-Z0-9_]+\]\s*/g, "").slice(0, 160)}`, 1, now)) notices++;
   }
-  // Each job change she opened is told once on Notices (she publishes; "just tell me explicitly").
-  for (const j of (Array.isArray(body.jobs) ? body.jobs : []).slice(0, 20)) {
-    const e = roster.find((x: any) => x.key === String(j?.tag ?? "").split(" ")[0]);
-    if (!e || typeof j.pr !== "string" || !/^seq23\/[\w.-]+#\d+$/.test(j.pr)) continue;
-    const key = `noelle:job:${j.pr}`;
-    if (await db.prepare(`SELECT 1 FROM boss_task_notices WHERE task_id = ? LIMIT 1`).bind(key).first()) continue;
-    const channel = String(j.tag).split(" ")[1] ?? "";
-    const line = `Noelle changed ${e.label} ${channel}: ${String(j.what ?? "a job change").slice(0, 160)} (lands on green checks) https://github.com/${j.pr.replace("#", "/pull/")}`;
-    await db.prepare(`INSERT INTO boss_task_notices (id, task_id, lane, from_name, kind, subject, body, created_at, needs_her) VALUES (?,?,'ops','Noelle','update',?,?,?,0)`)
-      .bind(newId("ntc"), key, line.slice(0, 200), line, now).run();
-    notices++;
-  }
-  // RULE 0: a red stop (nothing acted, a channel under 3 days ahead or unread) is a Notices line too, once per run and stop.
-  for (const f of (Array.isArray(body.failed) ? body.failed : []).slice(0, 40)) {
-    const why = String(f?.why ?? "");
-    const code = why.match(/NAMED STOP \[([A-Z0-9_]+)\]/)?.[1];
-    if (!code || !NOTICE_STOPS.has(code)) continue;
-    const key = `noelle:stop:${run.id}:${code}:${why.slice(0, 80)}`.slice(0, 200);
-    if (await db.prepare(`SELECT 1 FROM boss_task_notices WHERE task_id = ? LIMIT 1`).bind(key).first()) continue;
-    const line = `Noelle: ${why.replace(/NAMED STOP \[[A-Z0-9_]+\]\s*/, "").slice(0, 180)}`;
-    await db.prepare(`INSERT INTO boss_task_notices (id, task_id, lane, from_name, kind, subject, body, created_at, needs_her) VALUES (?,?,'ops','Noelle','update',?,?,?,0)`)
-      .bind(newId("ntc"), key, line.slice(0, 200), line, now).run();
-  }
-  const ledgered = await writeLedger(db, run, roster, body.acted, now);
-  const failed = (Array.isArray(body.failed) ? body.failed : []).slice(0, 40).map((f: any) => `${String(f?.kind ?? "act")}: ${String(f?.why ?? "").slice(0, 200)}`);
-  // A failure that names its stop keeps its code (POST_NOT_PUBLISHED, CALENDAR_UNREAD), so the
-  // three-days-running line (G16b) can see the same stop repeat; any other is ACT_FAILED.
-  const stops = [...new Set([...parse<string[]>(run.stops, []), ...failed.map((f: string) => f.match(/NAMED STOP \[([A-Z0-9_]+)\]/)?.[1] ?? "ACT_FAILED")])];
-  // The run's calls grow with the reviewer and the remake; never shrink (the week's budget reads them).
-  const calls = Number.isInteger(body.calls) && body.calls > run.calls ? Math.min(body.calls, 10_000) : run.calls;
-  await db.prepare(`UPDATE noelle_runs SET state = 'done', stops = ?, calls = ?, line = ?, updated_at = ? WHERE id = ?`)
-    .bind(JSON.stringify(stops), calls, `${run.line}; ${notices} published${failed.length ? `; ${failed.length} failed: ${failed.join(" | ").slice(0, 600)}` : ""}`, now, run.id).run();
-  // Her report, every two weeks (G5: decisions go to the page; the email gets the report, notices and stops).
-  if (reportDue(await getSetting(db, REPORT_KEY), today)) {
-    const rows = ((await db.prepare(`SELECT * FROM growth_decisions WHERE cycle = ?`).bind(today).all<any>()).results ?? []).map((r) => ({ ...r, actions: parse(r.actions, []), evidence: parse(r.evidence, []) }));
-    if (rows.length) {
-      const { latest, before } = await latestReadings(db);
-      const summaries = summarize(manifest, latest, before, today);
-      const row = (manifest as any).rows.find((r: any) => r.id === "growth-director") ?? null;
-      const cards = rows.reduce((n: number, r: any) => n + r.actions.filter((a: any) => a.kind === "proposal" && a.card).length, 0);
-      const obj = reportSection(rows, { cards, origin: BOSS_ORIGIN, at: now, summaries, scorecard: row });
-      const bad = await putMorningSection(db, { section: "growth", job: "duty_growth_director", day: today, obj, now });
-      if (bad.length) throw new Error(`NAMED STOP [GROWTH_REPORT_REFUSED] ${bad.join("; ")}`);
-      await setSetting(db, REPORT_KEY, today);
-    }
-  }
-  return { run: run.id, state: "done", notices, ledgered };
+  return { run: id, written, state, notices };
+}
+
+/** "Noelle published: …" (she MAY publish new things and tells Sequoia each time): one line per key. */
+export async function recordNotice(env: Env, body: any, now = Date.now()) {
+  const { roster } = await loadRoster(env.DB);
+  const e = roster.find((x: any) => x.key === body?.business);
+  if (!e) return { written: false, duplicate: false, why: "not a business on her roster" };
+  if (typeof body.what !== "string" || !body.what.trim() || typeof body.where !== "string" || !body.where.trim()) return { written: false, duplicate: false, why: "send what and where" };
+  const key = typeof body.key === "string" && body.key.startsWith(`noelle:${e.key}:`) ? body.key.slice(0, 200) : null;
+  if (!key) return { written: false, duplicate: false, why: `the key starts noelle:${e.key}:` };
+  const link = typeof body.link === "string" && /^https:\/\/\S+$/.test(body.link) ? body.link : null;
+  const line = noticeLine({ label: e.label, what: body.what.slice(0, 160), where: body.where.slice(0, 80), link });
+  const written = await noticeOnce(env.DB, key, line, 0, now);
+  return { written, duplicate: !written, why: null };
 }
 
 /**
- * The measurement ledger (item 11): one row per acted thing, with its measure and floors. A replayed done
- * writes nothing twice (the unique index); a row the roster or the kinds do not know is dropped.
+ * The results ledger: one row per thing acted on, with its measure and floors. Her own call (run = her run
+ * id) or a posting job's rows on the platform's confirmation (H5, .github/actions/ledger-rows: run_id
+ * `job:<business>-<channel>`). A post needs its receipt id; a row the roster or the kinds do not know is
+ * refused by name; a replay writes nothing twice (the unique index).
  */
-async function writeLedger(db: D1Database, run: any, roster: any[], acted: unknown, now: number) {
+export async function writeLedger(env: Env, body: any, now = Date.now()) {
+  const db = env.DB;
+  const many = Array.isArray(body?.rows);
+  const input = (many ? body.rows : [body]).slice(0, MAX_ACTED);
+  const { roster } = await loadRoster(db);
   const keys = new Set<string>(roster.map((e: any) => e.key));
-  const rows = (Array.isArray(acted) ? acted : []).slice(0, MAX_ACTED).map((a) => cleanActed(a, keys)).filter(Boolean) as NonNullable<ReturnType<typeof cleanActed>>[];
-  let n = 0;
-  for (const a of rows) {
+  let written = 0, duplicate = 0;
+  const refused: string[] = [];
+  for (const raw of input) {
+    const a = cleanActed(raw, keys);
+    if (!a) { refused.push(`${String(raw?.business ?? "?")}:${String(raw?.channel ?? "?")}:${String(raw?.item ?? "?").slice(0, 40)}`); continue; }
+    const run = typeof raw.run === "string" && RUN_ID.test(raw.run) ? raw.run : `job:${a.business}-${a.channel}`;
+    const day = a.at ? dayIdInZone(Date.parse(a.at.length === 10 ? `${a.at}T18:00:00Z` : a.at)) : dayIdInZone(now);
     const m = measureFor(manifest, a.business, a.channel);
-    const base = m ? await db.prepare(`SELECT value, unread FROM growth_readings WHERE measure = ? AND day <= ? ORDER BY day DESC LIMIT 1`).bind(m.id, run.day).first<{ value: number | null; unread: string | null }>() : null;
+    const base = m ? await db.prepare(`SELECT value, unread FROM growth_readings WHERE measure = ? AND day <= ? ORDER BY day DESC LIMIT 1`).bind(m.id, day).first<{ value: number | null; unread: string | null }>() : null;
     const f = floorsFor(a.scorecard, base && !base.unread && base.value !== null ? Number(base.value) : null);
     const r = await db.prepare(`INSERT OR IGNORE INTO noelle_actions (id, run_id, day, kind, business, channel, item, post_at, measure, floor30, floor60, floor_source, created_at) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)`)
-      .bind(newId("nac"), run.id, run.day, a.kind, a.business, a.channel, a.item, a.at, m?.id ?? null, f.floor30, f.floor60, f.source, now).run();
-    n += r.meta?.changes ?? 0;
+      .bind(newId("nac"), run, day, a.kind, a.business, a.channel, a.item, a.at, m?.id ?? null, f.floor30, f.floor60, f.source, now).run();
+    if (r.meta?.changes) written++; else duplicate++;
   }
-  return n;
+  return many ? { written, duplicate, refused } : { written: written > 0, duplicate: duplicate > 0, why: refused.length ? `refused: ${refused[0]} (kind, business, channel, item; a post needs its receipt id)` : null };
 }
 
 /** Results against floors for the last 90 days of the ledger (item 11): her weekly context and Monday's email. */
@@ -417,7 +205,7 @@ export async function ledgerResults(db: D1Database, today: string, labels: Recor
  * NAMED STOP, so the duty is red, never a quiet green. The same stop three days running → one line to
  * Sequoia (G16b), once per stop per day.
  */
-export async function noelleWatch(env: Env, now = Date.now()) {
+export async function noelleWatch(env: Env, now = Date.now(), fetchImpl: typeof fetch = fetch) {
   const db = env.DB;
   const today = dayIdInZone(now);
   const runs = await recentRuns(db, today, 4);
@@ -425,7 +213,7 @@ export async function noelleWatch(env: Env, now = Date.now()) {
   const missed = didNotRunLine(runs, today);
   if (missed) lines.push(missed);
   // Item 9: Sunday's heartbeat writes the week ahead, so it is in Monday's morning email.
-  if (new Date(`${today}T12:00:00Z`).getUTCDay() === 0) lines.push(...(await weekSchedule(env, today, now)));
+  if (new Date(`${today}T12:00:00Z`).getUTCDay() === 0) lines.push(...(await weekSchedule(env, today, now, fetchImpl)));
   for (const x of escalations(runs.filter((r) => r.day <= today))) {
     const key = `noelle:escalate:${x.stop}:${today}`;
     const have = await db.prepare(`SELECT 1 FROM boss_task_notices WHERE task_id = ? LIMIT 1`).bind(key).first();
@@ -447,30 +235,70 @@ export async function noelleWatch(env: Env, now = Date.now()) {
 }
 
 /** The week ahead from the latest run (two days at most) that read queues; labels from the roster when it reads. */
-export async function weekSchedule(env: Env, today: string, now = Date.now()) {
-  const r = await env.DB.prepare(`SELECT day, reads FROM noelle_runs WHERE created_at >= ? AND reads IS NOT NULL ORDER BY created_at DESC LIMIT 1`).bind(now - 2 * DAY_MS).first<any>();
+export async function weekSchedule(env: Env, today: string, now = Date.now(), fetchImpl: typeof fetch = fetch) {
+  const r = await env.DB.prepare(`SELECT day, reads FROM noelle_runs WHERE created_at >= ? AND reads IS NOT NULL AND reads <> '{}' ORDER BY created_at DESC LIMIT 1`).bind(now - 2 * DAY_MS).first<any>();
   let labels: Record<string, string> = {};
   try { labels = Object.fromEntries((await loadRoster(env.DB)).roster.map((e: any) => [e.key, e.label])); } catch { /* keys stand in for names */ }
-  return [...scheduleLines(r ? { day: r.day, reads: parse<any>(r.reads, {}) } : null, { today, labels }), ...(await ledgerResults(env.DB, today, labels))];
+  return [...scheduleLines(r ? { day: r.day, reads: parse<any>(r.reads, {}) } : null, { today, labels }), ...(await ledgerResults(env.DB, today, labels)), ...(await postsReconciled(env.DB, today, now, fetchImpl))];
 }
 
-export const NOELLE_KINDS = KINDS;
+const RAW = "https://raw.githubusercontent.com/seq23";
+
+/**
+ * H5, Monday's line: every post a posting job recorded in the last 7 days (its repo's posted file, public)
+ * has its ledger row. A post with no row → NAMED STOP [POST_NOT_LEDGERED] (red); a posted file that could
+ * not be read → "not read", never "all ledgered"; a path not wired to the ledger yet is named, never passed.
+ */
+export async function postsReconciled(db: D1Database, today: string, now = Date.now(), fetchImpl: typeof fetch = fetch) {
+  const lines: string[] = [];
+  const files = new Map<string, Array<[string, any]>>();
+  const notWired: string[] = [];
+  for (const [path, o] of Object.entries(CHANNEL_OWNERS) as Array<[string, any]>) {
+    if (!o.ledger) { notWired.push(path); continue; }
+    const k = `${o.repo}/${o.posted}`;
+    files.set(k, [...(files.get(k) ?? []), [path, o]]);
+  }
+  for (const [k, paths] of files) {
+    let doc: any = null; let why = "";
+    try {
+      const first = paths[0]![1];
+      const res = await fetchImpl(`${RAW}/${first.repo}/main/${first.posted}`);
+      if (res.ok) doc = await res.json(); else why = `answered ${res.status}`;
+    } catch (e) { why = String((e as Error)?.message ?? e).slice(0, 80); }
+    for (const [path, o] of paths) {
+      const [business = "", channel = ""] = path.split(":");
+      if (!doc) { lines.push(`Posts ledger, ${business} ${channel}: not read (${k}: ${why || "not JSON"})`); continue; }
+      const rows = (await db.prepare(`SELECT item FROM noelle_actions WHERE kind = 'post' AND business = ? AND channel = ? AND day >= ?`).bind(business, channel, o.ledger).all<{ item: string }>()).results ?? [];
+      const miss = postsWithoutRows(doc, rows.map((x) => x.item), { business, channel, since: o.ledger, now, days: 7 });
+      lines.push(miss.missing.length
+        ? `NAMED STOP [POST_NOT_LEDGERED] ${business} ${channel}: ${miss.missing.length} of ${miss.posted} posts this week have no ledger row (${miss.missing.slice(0, 3).join(", ")})`
+        : `Posts ledger, ${business} ${channel}: ${miss.posted} posts this week, every one has its row`);
+    }
+  }
+  if (notWired.length) lines.push(`Posts ledger: not wired yet, so not reconciled: ${notWired.join(", ")}`);
+  return lines;
+}
 
 /*
- * ─── A #noelle EMAIL IS ONE RUN OF NOELLE AND ONE REPLY (24 Nov 2026) ───────────────────────────────
+ * ─── SEQUOIA CALLS NOELLE: ONE RUN OF HER AND ONE REPLY (24 Nov 2026, brief noelle-builds H3) ──────────
  *
- * Her words: "she has a schedule yes but she should be able to work when called too". An email tagged
- * #noelle is admitted as a task on her seat (intake/inboundMail.ts); the queue parks it for her Mac
- * (queue/consumer.ts: a cloud model asked to "do" it would answer without her tools). Her Mac's tick
- * (scripts/ops/noelle.sh, every 30 minutes, after the hold check) claims it here, runs her full session
- * with the email in her context under the slot `call:<task id>` (so the slot's unique index makes one
- * email one run), then replies once: the card's output and, through afterResult, the email signed Noelle.
- * A stopped call goes back to waiting; a usage stop costs no try and waits 2 hours; the third real stop
- * replies with what stopped it, so an email never waits forever unseen.
+ * Her words: "she has a schedule yes but she should be able to work when called too". Two doors, one path:
+ * her own email to boss@ that names Noelle (a #noelle tag, "Noelle" in the subject, or a first line that
+ * opens with her name; intake/inboundMail.ts, admitted only when isOwner && DMARC passed, H4) and her
+ * message on Noelle's Boss OS page (POST /growth/noelle/message, her session). Both are a task on Noelle's
+ * seat; the queue parks it for her Mac (queue/consumer.ts). Her Mac's tick (scripts/ops/noelle.sh, every
+ * 30 minutes, 07:00-22:59 Central) claims it here and runs her full Claude Code session with the call in
+ * her system prompt, then replies once: the card's output, and for an email the reply on its thread
+ * (afterResult, signed Noelle). A stopped call goes back to waiting; a usage stop costs no try and waits
+ * 2 hours; Claude and Codex both out hands it to the Boss OS ladder; the third real stop replies with
+ * what stopped it, so a call never waits forever unseen.
  */
 export const CALL_TRIES = 3;
 export const CALL_LIMIT_WAIT_MS = 2 * 3_600_000;
-const CALL_WHERE = `t.employee_id = '${DIRECTOR}' AND t.status = 'queued' AND json_extract(t.input, '$.source') = 'boss_inbound_mail'`;
+/** Her calls: her own email to boss@ (the owner check admitted it) or her message on Noelle's page (H3b). */
+export const CALL_SOURCES = ["boss_inbound_mail", "boss_page"] as const;
+const CALL_SOURCE_SQL = `json_extract(t.input, '$.source') IN ('boss_inbound_mail','boss_page') AND COALESCE(json_extract(t.input, '$.noelle_cloud'), 0) = 0`;
+const CALL_WHERE = `t.employee_id = '${DIRECTOR}' AND t.status = 'queued' AND ${CALL_SOURCE_SQL}`;
 
 /** A claimed call whose run died (Mac asleep, reboot) and never replied or released: no other reaper sees it. */
 export const CALL_STALE_MS = 3 * 3_600_000;
@@ -478,7 +306,7 @@ export const CALL_STALE_MS = 3 * 3_600_000;
 async function returnStaleCalls(env: Env, now: number) {
   const stale = (await env.DB.prepare(
     `SELECT t.id, t.attempts FROM tasks t WHERE t.employee_id = '${DIRECTOR}' AND t.status = 'running'
-       AND json_extract(t.input, '$.source') = 'boss_inbound_mail'
+       AND ${CALL_SOURCE_SQL}
        AND COALESCE((SELECT MAX(e.ts) FROM task_events e WHERE e.task_id = t.id AND e.event = 'noelle_call_claimed'), 0) < ?
      LIMIT 20`).bind(now - CALL_STALE_MS).all<any>()).results ?? [];
   for (const r of stale) await releaseCall(env, { task_id: String(r.id), stop: "NAMED STOP [CALL_RUN_LOST] her run on the Mac ended without a reply or a stop (asleep or restarted)" }, now);
@@ -497,7 +325,7 @@ export async function claimCall(env: Env, deviceId: string, now = Date.now()) {
     await db.prepare(`INSERT INTO task_events (id, task_id, ts, event, detail) VALUES (?,?,?,'noelle_call_claimed',?)`)
       .bind(newId("tev"), r.id, now, JSON.stringify({ device_id: deviceId.slice(0, 80), try: Number(r.attempts ?? 0) + 1 })).run();
     let input: any = {}; try { input = JSON.parse(r.input ?? "{}"); } catch { input = {}; }
-    return { task_id: String(r.id), slot: `call:${r.id}`, title: String(r.title ?? ""), subject: String(input.subject ?? r.title ?? ""), body: String(input.body ?? "").slice(0, 20_000), try: Number(r.attempts ?? 0) + 1 };
+    return { task_id: String(r.id), slot: `call:${r.id}`, source: String(input.source ?? ""), title: String(r.title ?? ""), subject: String(input.subject ?? r.title ?? ""), body: String(input.body ?? "").slice(0, 20_000), try: Number(r.attempts ?? 0) + 1 };
   }
   return null;
 }
@@ -530,9 +358,20 @@ export async function releaseCall(env: Env, body: any, now = Date.now()) {
   const stop = typeof body?.stop === "string" ? body.stop.slice(0, 400) : "NAMED STOP [CALL_STOPPED]";
   const t = id ? await callTask(env.DB, id) : null;
   if (!t || t.status !== "running") return { released: false, why: "not a running call" };
+  // Claude and Codex both out of usage: the Boss OS ladder (Workers AI, then Gemini) answers this call
+  // (coordinator ruling 24 Nov 2026, the full chain, unmasked). Marked so the Mac never claims it again.
+  if (/\[CLOUD_ANSWER\]/.test(stop)) {
+    let input: Record<string, unknown> = {}; try { input = JSON.parse(t.input ?? "{}"); } catch { input = {}; }
+    await env.DB.batch([
+      env.DB.prepare(`UPDATE tasks SET status = 'queued', input = ? WHERE id = ? AND status = 'running'`).bind(JSON.stringify({ ...input, noelle_cloud: true }), id),
+      env.DB.prepare(`INSERT INTO task_events (id, task_id, ts, event, detail) VALUES (?,?,?,'noelle_call_cloud',?)`).bind(newId("tev"), id, now, JSON.stringify({ stop })),
+    ]);
+    await env.TASKS.send({ taskId: id, lane: t.lane });
+    return { released: true, cloud: true, waits: false };
+  }
   const limit = /\[CLAUDE_LIMIT\]|\[HELD_UNTIL\]/.test(stop);
   if (!limit && Number(t.attempts ?? 0) >= CALL_TRIES) {
-    const r = await replyCall(env, { task_id: id, text: `I could not do this after ${CALL_TRIES} tries. What stopped me: ${stop.replace(/\s+/g, " ")}\n\nNothing was posted or changed for it. Send it again once that is fixed.\n\nNoelle` }, now);
+    const r = await replyCall(env, { task_id: id, text: `I could not do this after ${CALL_TRIES} tries. What stopped me: ${stop.replace(/\s+/g, " ")}\n\nSend it again once that is fixed.\n\nNoelle` }, now);
     return { released: false, gave_up: true, replied: r.replied };
   }
   await env.DB.batch([

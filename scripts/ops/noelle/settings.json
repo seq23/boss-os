@@ -1,0 +1,14 @@
+{
+  "$comment": "Noelle's project settings (24 Nov 2026). scripts/ops/noelle.sh writes this into ~/Work/noelle/.claude/settings.json on every run, with __HOME__ and __REPO__ filled in; her own run can never change it (her guard: PROTECTED). The same command guard and agent gate as the coordinator, plus her guard on every tool, the 200K handoff and nothing else.",
+  "hooks": {
+    "PreToolUse": [
+      { "matcher": "Bash", "hooks": [{ "type": "command", "command": "node __HOME__/bin/command-guard.mjs", "timeout": 10 }] },
+      { "matcher": "Agent", "hooks": [{ "type": "command", "command": "node __HOME__/bin/brief-gate.mjs", "timeout": 10 }] },
+      { "matcher": "*", "hooks": [{ "type": "command", "command": "node __REPO__/scripts/ops/noelle-guard.mjs", "timeout": 10 }] }
+    ],
+    "PreCompact": [
+      { "hooks": [{ "type": "command", "command": "node __REPO__/scripts/ops/noelle-guard.mjs --precompact", "timeout": 10 }] }
+    ]
+  },
+  "env": { "CLAUDE_CODE_AUTO_COMPACT_WINDOW": "200000", "NOELLE_HOME": "__HOME__/Work/noelle" }
+}
