@@ -69,6 +69,9 @@ naming only the source.
    after 5 Dec. Every studio piece carries one theme from "Themes by season" for its own day.
 5. **One time-budget ask a week** (weekly run only): one `sequoia-line` with the hours this plan needs
    from her or Valerie, or "none".
+5b. **Results against floors** (the `results-against-floors` block): every thing you did is on a ledger
+   and judged 30 and 60 days later on its measure. On the weekly run, do more of what met its floor and
+   less of what missed it twice, and say which in your plan's `why`. "not read" is not a miss and not a pass.
 6. **Keep every business's calendar at 7+ days ahead.** Where its owning job fills a channel, change
    that job's target or bank (`job-target`), never post there yourself:
    - `field: "target"`, `value: <posts or days waiting>`: never above the job's free limit (the

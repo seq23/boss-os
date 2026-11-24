@@ -8,7 +8,8 @@ import { mkdtempSync, readFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 // @ts-expect-error — plain ESM with no declaration file
-import { ALARM_DAYS, CONTEXT_MAX, REPLY_BEGIN, REPLY_END, START_AT, actExit, callBlock, callReplyText, replyFrom, bankRows, bankVerdicts, contextTooBig, heldUntil, jobTarget, lowChannels, nicheBlock, rulingsFiles, splitRulings, tickDecision, searchLoopEdit, searchLoopAct, pinRefill, searchLoopCaps, capLines, factsOf } from "../scripts/ops/noelle.mjs";
+import { ALARM_DAYS, CONTEXT_MAX, REPLY_BEGIN, REPLY_END, START_AT, actExit, callBlock, callReplyText, replyFrom, bankRows, bankVerdicts, contextTooBig, heldUntil, jobTarget, lowChannels, nicheBlock, rulingsFiles, splitRulings, tickDecision, searchLoopEdit, searchLoopAct, pinRefill, searchLoopCaps, capLines, factsOf, actedRows } from "../scripts/ops/noelle.mjs";
+import * as L from "../src/shared/boss/growth/ledger.mjs";
 // @ts-expect-error — plain ESM with no declaration file
 import { checkLines, queueLines } from "../scripts/ops/noelle-tools.mjs";
 import { ACTED_KINDS, MAC_KINDS, KINDS, CHANNEL_OWNERS, JOB_KNOBS, PIN_REFILLS, SEARCH_LOOPS, checkPlan, hardStops, settledNo } from "../src/shared/boss/growth/noelle.mjs";
@@ -324,4 +325,83 @@ it("item 9: a reel cross-posted at the same minute keeps its line on each channe
   const lines = scheduleLines({ day: "2026-11-29", reads: { queues: { "p:instagram": 1, "p:tiktok": 1 }, unread: {}, items: { "p:instagram": reel, "p:tiktok": reel } } }, { today: "2026-11-29" });
   const merged = appendToSection(null, "growth", { lines }, Date.parse("2026-11-30T04:05:00Z"));
   expect((merged.lines ?? []).filter((l: any) => /Porch reveal/.test(typeof l === "string" ? l : l.text))).toHaveLength(2);
+});
+
+describe("item 11: the measurement ledger and its floors", () => {
+  const manifest = JSON.parse(readFileSync(new URL("../src/shared/boss/scorecard/manifest.json", import.meta.url), "utf8"));
+
+  it("each action is judged on its channel's own measure, else the business's result; never an AI-answers count", () => {
+    expect(L.measureFor(manifest, "porch-and-party", "facebook-page")?.id).toBe("pnp-requests-facebook");
+    expect(L.measureFor(manifest, "porch-and-party", "search-pages")?.id).toBe("pnp-search");
+    expect(L.measureFor(manifest, "approvalprep", "linkedin")?.id).toBe("ap-sales");
+    expect(L.measureFor(manifest, "keepmyproof", "google-search")?.id).toBe("kmp-search");
+    for (const m of manifest.scoreboard.measures) expect(L.measureFor(manifest, m.business, "nowhere")?.kind).not.toBe("answers");
+    expect(L.measureFor(manifest, "porch-and-party", "ai-answers")?.id).toBe("pnp-requests");
+  });
+
+  it("a forged acted row (off-roster business, unknown kind, bad channel, no item) is dropped; post text never kept", () => {
+    const keys = new Set(["porch-and-party"]);
+    expect(L.cleanActed({ kind: "spend", business: "porch-and-party", channel: "instagram", item: "x" }, keys)).toBeNull();
+    expect(L.cleanActed({ kind: "studio-plan", business: "brindlewood", channel: "instagram", item: "x" }, keys)).toBeNull();
+    expect(L.cleanActed({ kind: "studio-plan", business: "porch-and-party", channel: "Insta gram", item: "x" }, keys)).toBeNull();
+    expect(L.cleanActed({ kind: "studio-plan", business: "porch-and-party", channel: "instagram", item: "" }, keys)).toBeNull();
+    const ok = L.cleanActed({ kind: "studio-plan", business: "porch-and-party", channel: "instagram", item: "p1 <script>", at: "2026-12-01T00:00:00Z", text: "secret caption" }, keys);
+    expect(ok).toEqual({ kind: "studio-plan", business: "porch-and-party", channel: "instagram", item: "p1script", at: "2026-12-01T00:00:00Z", scorecard: null });
+  });
+
+  it("floors: the scorecard's when it has one, else the reading the day she acted, else none (not read)", () => {
+    expect(L.floorsFor({ floor30: 3, floor60: 6 }, 10)).toEqual({ floor30: 3, floor60: 6, source: "scorecard" });
+    expect(L.floorsFor(null, 4)).toEqual({ floor30: 4, floor60: 4, source: "baseline" });
+    expect(L.floorsFor(null, null)).toEqual({ floor30: null, floor60: null, source: "not read" });
+  });
+
+  it("a result is met or missed only from a real reading in the week after day 30; else not read; before day 30 not yet", () => {
+    const row = { day: "2026-11-01", measure: "m", floor30: 5, floor60: 8 };
+    expect(L.resultAt(row, [{ day: "2026-12-01", value: 9 }], "2026-11-30", 30)).toBe("not yet");
+    expect(L.resultAt(row, [{ day: "2026-12-01", value: 5 }], "2026-12-01", 30)).toBe("met");
+    expect(L.resultAt(row, [{ day: "2026-12-03", value: 4 }], "2026-12-05", 30)).toBe("missed");
+    expect(L.resultAt(row, [{ day: "2026-12-02", value: null, unread: "not read: key" }], "2026-12-05", 30)).toBe("not read");
+    expect(L.resultAt(row, [{ day: "2026-12-02", value: 9, unread: "not read: stale since 2026-11-20" }], "2026-12-05", 30)).toBe("not read");
+    expect(L.resultAt(row, [], "2026-12-04", 30)).toBe("not yet");
+    expect(L.resultAt(row, [], "2026-12-09", 30)).toBe("not read");
+    expect(L.resultAt(row, [{ day: "2026-12-20", value: 99 }], "2026-12-20", 30)).toBe("not read");
+    expect(L.resultAt({ ...row, floor30: null }, [{ day: "2026-12-01", value: 9 }], "2026-12-01", 30)).toBe("not read");
+    expect(L.resultAt(row, [{ day: "2026-12-31", value: 7 }], "2026-12-31", 60)).toBe("missed");
+  });
+
+  it("the summary: one line per business · channel · kind past day 30; nothing old enough says when results start", () => {
+    expect(L.resultLines([], {}, { today: "2026-12-01" })).toEqual(["Results against floors: the ledger has no action yet."]);
+    expect(L.resultLines([{ day: "2026-11-28", kind: "studio-plan", business: "p", channel: "instagram", measure: "m", floor30: 1, floor60: 1 }], {}, { today: "2026-12-01" }))
+      .toEqual(["Results against floors: no action is 30 days old yet (the ledger started 2026-11-28; the first results come 2026-12-28)."]);
+    const rows = [
+      { day: "2026-10-01", kind: "studio-plan", business: "p", channel: "instagram", measure: "m", floor30: 5, floor60: 5 },
+      { day: "2026-10-02", kind: "studio-plan", business: "p", channel: "instagram", measure: "m", floor30: 9, floor60: 9 },
+      { day: "2026-10-02", kind: "studio-plan", business: "p", channel: "instagram", measure: null, floor30: null, floor60: null },
+    ];
+    const r = { m: [{ day: "2026-10-31", value: 6 }, { day: "2026-11-01", value: 6 }, { day: "2026-11-30", value: 10 }, { day: "2026-12-01", value: 10 }] };
+    expect(L.resultLines(rows, r, { today: "2026-12-05", labels: { p: "Porch & Party" }, names: { instagram: "Instagram" } })).toEqual([
+      "Results against floors (each action's measure 30 and 60 days after it went out):",
+      "Porch & Party · Instagram · studio-plan: 3 past day 30: 1 met, 1 missed, 1 not read; day 60: 2 met, 0 missed",
+    ]);
+  });
+
+  it("the Mac's rows: one per platform a Studio piece went to (with its scorecard floors, remakes too), one per PR or dispatch", () => {
+    const rowsOut = actedRows({
+      scorecards: { "pnp-1": { floor30: 2, floor60: 4 } },
+      queued: [{ id: "pnp-1-r", at: "2026-12-01T00:00:00Z", platforms: ["instagram", "facebook"] }],
+      jobs: [
+        { tag: "approvalprep threads ap-threads.days_ahead", pr: "seq23/approvalprep#12" },
+        { tag: "dream-wedding search-loop", pr: "seq23/dream-wedding#3" },
+        { tag: "dream-wedding pin-refill", dispatched: "seq23/dw-pins pins.yml" },
+        { tag: "keepmyproof threads kmp.x", line: "nothing to change" },
+      ],
+    });
+    expect(rowsOut).toEqual([
+      { kind: "studio-plan", business: "porch-and-party", channel: "instagram", item: "pnp-1-r", at: "2026-12-01T00:00:00Z", scorecard: { floor30: 2, floor60: 4 } },
+      { kind: "studio-plan", business: "porch-and-party", channel: "facebook-page", item: "pnp-1-r", at: "2026-12-01T00:00:00Z", scorecard: { floor30: 2, floor60: 4 } },
+      { kind: "job-target", business: "approvalprep", channel: "threads", item: "seq23/approvalprep#12", at: null },
+      { kind: "search-loop", business: "dream-wedding", channel: "search-pages", item: "seq23/dream-wedding#3", at: null },
+      { kind: "pin-refill", business: "dream-wedding", channel: "pinterest", item: "seq23/dw-pins pins.yml", at: null },
+    ]);
+  });
 });

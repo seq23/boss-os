@@ -33,10 +33,11 @@ import { privateOnlyTerms, leaksIn, termCount } from "../../../shared/boss/growt
 import { playbookBody } from "../../../shared/boss/growth/playbook.mjs";
 import { MAX_CARDS, reportDue, reportSection } from "../../../shared/boss/growth/director.mjs";
 import {
-  checkPlan, slotOf, sourceProblems, missingDecisions, readGrid, season, slotFor, callBudget, didNotRunLine, escalations, noticeLine, scheduleLines,
+  checkPlan, slotOf, sourceProblems, missingDecisions, readGrid, season, slotFor, callBudget, didNotRunLine, escalations, noticeLine, scheduleLines, CHANNEL_NAMES,
   WEEK_CALLS, KINDS, MAC_KINDS,
 } from "../../../shared/boss/growth/noelle.mjs";
 import { appendToSection } from "../../../shared/boss/mail/morningSections.mjs";
+import { MAX_ACTED, cleanActed, floorsFor, measureFor, resultLines } from "../../../shared/boss/growth/ledger.mjs";
 import { latestReadings } from "../routes/growth";
 import { getSetting, setSetting } from "../lib/settings";
 import { putMorningSection } from "../mail/morningSection";
@@ -132,6 +133,7 @@ export async function noelleContext(env: Env, now = Date.now()) {
     businesses, problems, summaries, grid: readGrid(roster, measures), linkedOpen: await linkedOpen(db, roster),
     orderedRecent: await orderedRecent(db, now), runs: runs.slice(0, 10).map((r) => ({ day: r.day, kind: r.kind, state: r.state, stops: r.stops, line: r.line })),
     aiMisses: misses, asked,
+    results: await ledgerResults(db, today, Object.fromEntries(roster.map((e: any) => [e.key, e.label]))),
   };
 }
 
@@ -353,6 +355,7 @@ export async function recordDone(env: Env, body: any, now = Date.now()) {
     await db.prepare(`INSERT INTO boss_task_notices (id, task_id, lane, from_name, kind, subject, body, created_at, needs_her) VALUES (?,?,'ops','Noelle','update',?,?,?,0)`)
       .bind(newId("ntc"), key, line.slice(0, 200), line, now).run();
   }
+  const ledgered = await writeLedger(db, run, roster, body.acted, now);
   const failed = (Array.isArray(body.failed) ? body.failed : []).slice(0, 40).map((f: any) => `${String(f?.kind ?? "act")}: ${String(f?.why ?? "").slice(0, 200)}`);
   // A failure that names its stop keeps its code (POST_NOT_PUBLISHED, CALENDAR_UNREAD), so the
   // three-days-running line (G16b) can see the same stop repeat; any other is ACT_FAILED.
@@ -375,7 +378,36 @@ export async function recordDone(env: Env, body: any, now = Date.now()) {
       await setSetting(db, REPORT_KEY, today);
     }
   }
-  return { run: run.id, state: "done", notices };
+  return { run: run.id, state: "done", notices, ledgered };
+}
+
+/**
+ * The measurement ledger (item 11): one row per acted thing, with its measure and floors. A replayed done
+ * writes nothing twice (the unique index); a row the roster or the kinds do not know is dropped.
+ */
+async function writeLedger(db: D1Database, run: any, roster: any[], acted: unknown, now: number) {
+  const keys = new Set<string>(roster.map((e: any) => e.key));
+  const rows = (Array.isArray(acted) ? acted : []).slice(0, MAX_ACTED).map((a) => cleanActed(a, keys)).filter(Boolean) as NonNullable<ReturnType<typeof cleanActed>>[];
+  let n = 0;
+  for (const a of rows) {
+    const m = measureFor(manifest, a.business, a.channel);
+    const base = m ? await db.prepare(`SELECT value, unread FROM growth_readings WHERE measure = ? AND day <= ? ORDER BY day DESC LIMIT 1`).bind(m.id, run.day).first<{ value: number | null; unread: string | null }>() : null;
+    const f = floorsFor(a.scorecard, base && !base.unread && base.value !== null ? Number(base.value) : null);
+    const r = await db.prepare(`INSERT OR IGNORE INTO noelle_actions (id, run_id, day, kind, business, channel, item, post_at, measure, floor30, floor60, floor_source, created_at) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)`)
+      .bind(newId("nac"), run.id, run.day, a.kind, a.business, a.channel, a.item, a.at, m?.id ?? null, f.floor30, f.floor60, f.source, now).run();
+    n += r.meta?.changes ?? 0;
+  }
+  return n;
+}
+
+/** Results against floors for the last 90 days of the ledger (item 11): her weekly context and Monday's email. */
+export async function ledgerResults(db: D1Database, today: string, labels: Record<string, string> = {}) {
+  const from = new Date(Date.parse(`${today}T12:00:00Z`) - 90 * DAY_MS).toISOString().slice(0, 10);
+  const rows = (await db.prepare(`SELECT day, kind, business, channel, measure, floor30, floor60 FROM noelle_actions WHERE day >= ? ORDER BY day LIMIT 2000`).bind(from).all<any>()).results ?? [];
+  const ids = [...new Set(rows.map((r) => r.measure).filter(Boolean))] as string[];
+  const by: Record<string, any[]> = {};
+  for (const id of ids) by[id] = (await db.prepare(`SELECT day, value, unread FROM growth_readings WHERE measure = ? AND day >= ? ORDER BY day`).bind(id, from).all<any>()).results ?? [];
+  return resultLines(rows, by, { today, labels, names: CHANNEL_NAMES });
 }
 
 /**
@@ -417,7 +449,7 @@ export async function weekSchedule(env: Env, today: string, now = Date.now()) {
   const r = await env.DB.prepare(`SELECT day, reads FROM noelle_runs WHERE created_at >= ? AND reads IS NOT NULL ORDER BY created_at DESC LIMIT 1`).bind(now - 2 * DAY_MS).first<any>();
   let labels: Record<string, string> = {};
   try { labels = Object.fromEntries((await loadRoster(env.DB)).roster.map((e: any) => [e.key, e.label])); } catch { /* keys stand in for names */ }
-  return scheduleLines(r ? { day: r.day, reads: parse<any>(r.reads, {}) } : null, { today, labels });
+  return [...scheduleLines(r ? { day: r.day, reads: parse<any>(r.reads, {}) } : null, { today, labels }), ...(await ledgerResults(env.DB, today, labels))];
 }
 
 export const NOELLE_KINDS = KINDS;

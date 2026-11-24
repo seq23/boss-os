@@ -185,6 +185,7 @@ export function contextText({ context, reads, calendar, shelf, formats, music, k
     untrusted("sources", Object.entries(reads).map(([id, r]) => r.error ? `${id}: NOT READ (${r.error})` : `${id}: read ${r.at}${r.sha ? ` sha ${r.sha.slice(0, 12)}` : ""}${r.rows != null ? `, ${r.rows} rows` : ""}${r.value != null ? `, value ${r.value}` : ""}${r.note ? ` (${r.note})` : ""}`).join("\n")),
     untrusted("pnp-niche", nicheBlock(niche)),
     untrusted("scorecard", JSON.stringify(context.summaries ?? []).slice(0, 12000)),
+    untrusted("results-against-floors", (context.results ?? ["NOT READ: Boss OS sent no ledger results"]).join("\n").slice(0, 6000)),
     untrusted("ai-answer-misses", (context.aiMisses ?? []).map((m) => `${m.site}: ${m.prompt}`).join("\n").slice(0, 8000)),
     untrusted("recent-runs", (context.runs ?? []).map((r) => `${r.day} ${r.kind} ${r.state} ${r.line ?? ""}`).join("\n")),
     `asked in the last four weeks (do not ask again): ${(context.asked ?? []).join("; ") || "none"}`,
@@ -537,6 +538,8 @@ async function cmdAct(dir) {
   const { FORMATS, validatePlan } = await engineLib(cs);
   const name = `noelle-${state.day}-${String(state.slot ?? "0000").replace(":", "")}`;
   const pieces = studio.flatMap((a) => a.pieces);
+  // A new format's scorecard floors follow its piece (and its remake, id + "-r") into the ledger (item 11).
+  state.scorecards = Object.fromEntries(pieces.filter((p) => p.scorecard).map((p) => [p.id, { floor30: p.scorecard.floor30, floor60: p.scorecard.floor60 }]));
   const built = enginePlan(pieces, { name, calendarDays: state.calendar.days, formats: FORMATS });
   for (const d of built.dropped) { log(`  - ${d.id}: dropped (${d.why})`); state.failed.push({ kind: "studio-plan", why: `${d.id}: ${d.why}` }); }
   const invalid = validatePlan(built.plan, Date.now());
@@ -663,6 +666,24 @@ export function jobTarget(a, state, dir, { run = sh, call = claudeCall } = {}) {
 }
 
 /** One data file changed on a new branch, a PR, and `land-after` (lands on green CI). Every failure is a named stop. */
+/**
+ * The ledger rows for /done (item 11): each Studio piece once per platform it went to, each PR or
+ * dispatched workflow once, with the channel it serves. Ids only, never post text.
+ */
+export function actedRows(state) {
+  const out = [];
+  const sc = state.scorecards ?? {};
+  for (const q of state.queued ?? []) for (const pl of q.platforms ?? [])
+    out.push({ kind: "studio-plan", business: "porch-and-party", channel: PLATFORM_CHANNEL[pl] ?? pl, item: q.id, at: q.at ?? null, scorecard: sc[q.id] ?? sc[String(q.id).replace(/-r$/, "")] ?? null });
+  for (const j of state.jobs ?? []) {
+    if (!j.pr && !j.dispatched) continue;
+    const [business, second] = String(j.tag ?? "").split(" ");
+    const kind = second === "search-loop" ? "search-loop" : second === "pin-refill" ? "pin-refill" : "job-target";
+    out.push({ kind, business, channel: kind === "search-loop" ? "search-pages" : kind === "pin-refill" ? "pinterest" : second, item: j.pr ?? j.dispatched, at: null });
+  }
+  return out.slice(0, 60);
+}
+
 export function dataPR({ run = sh, repo, file, sha, body, tag, what, branch, task, title, prBody, stop }) {
   const head = run("gh", ["api", `repos/${repo}/git/ref/heads/main`, "--jq", ".object.sha"]);
   const mk = head.rc === 0 ? run("gh", ["api", "-X", "POST", `repos/${repo}/git/refs`, "-f", `ref=refs/heads/${branch}`, "-f", `sha=${head.out.trim()}`]) : head;
@@ -771,7 +792,7 @@ async function renderReviewQueue({ cs, plan, name, outRoot, state, dir, log }) {
   if (res.pass.length) {
     const q = sh("node", ["scripts/studio.mjs", "engine-queue", STUDIO.studio, planFile, `--only=${res.pass.join(",")}`], { cwd: cs, env });
     log(q.out.trim());
-    for (const m of q.out.matchAll(/✓ (\S+): (\d+) posts/g)) { const p = plan.pieces.find((x) => x.id === m[1]); state.queued.push({ id: m[1], posts: Number(m[2]), at: p?.at, format: p?.format }); }
+    for (const m of q.out.matchAll(/✓ (\S+): (\d+) posts/g)) { const p = plan.pieces.find((x) => x.id === m[1]); state.queued.push({ id: m[1], posts: Number(m[2]), at: p?.at, format: p?.format, platforms: p?.platforms ?? [] }); }
     if (q.rc !== 0) state.failed.push({ kind: "studio-plan", why: `engine-queue: ${q.out.trim().split("\n").pop().slice(0, 200)}` });
   }
   saveState(dir, state);
@@ -857,7 +878,7 @@ async function cmdDone(dir) {
   const alarms = lowChannels(state); for (const why of alarms) console.log(why);
   state.failed = [...alarms.map((why) => ({ kind: "alarm", why })), ...(state.failed ?? [])];
   const api = bossMachine();
-  const res = await api("POST", "/done", { run: state.run, calls: state.calls, published: state.published ?? [], jobs: (state.jobs ?? []).filter((j) => j.pr).map(({ tag, pr, what }) => ({ tag, pr, what })), failed: (state.failed ?? []).slice(0, 40) });
+  const res = await api("POST", "/done", { run: state.run, calls: state.calls, published: state.published ?? [], acted: actedRows(state), jobs: (state.jobs ?? []).filter((j) => j.pr).map(({ tag, pr, what }) => ({ tag, pr, what })), failed: (state.failed ?? []).slice(0, 40) });
   console.log(`OUTPUT run ${state.run} done: ${state.queued?.length ?? 0} pieces queued, ${(state.jobs ?? []).filter((j) => j.pr).length} job changes opened, ${res.notices ?? 0} notices, ${state.calls} Claude calls`);
 }
 

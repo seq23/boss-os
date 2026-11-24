@@ -102,7 +102,7 @@ const rows = async (sql: string, ...b: unknown[]) => ((await env.DB.prepare(sql)
 const cards = () => rows(`SELECT a.title FROM approvals a JOIN judgement_calls j ON j.approval_id = a.id WHERE j.resume_kind = 'growth_proposal'`);
 
 beforeEach(async () => {
-  await env.DB.exec(`DELETE FROM noelle_runs; DELETE FROM growth_decisions; DELETE FROM growth_readings; DELETE FROM boss_task_notices WHERE from_name = 'Noelle';
+  await env.DB.exec(`DELETE FROM noelle_runs; DELETE FROM noelle_actions; DELETE FROM growth_decisions; DELETE FROM growth_readings; DELETE FROM boss_task_notices WHERE from_name = 'Noelle';
     DELETE FROM owner_open_loops WHERE id LIKE 'olp_linked%' OR id LIKE 'olp_herown%';
     DELETE FROM approvals WHERE id IN (SELECT approval_id FROM judgement_calls WHERE resume_kind = 'growth_proposal'); DELETE FROM judgement_calls WHERE resume_kind = 'growth_proposal';
     DELETE FROM morning_sections WHERE section = 'growth'; DELETE FROM settings WHERE key = 'growth_report_last_day';`);
@@ -446,5 +446,51 @@ describe("the queued posts and Monday's schedule", () => {
     await run({ queues: { "porch-and-party:instagram": 1 }, unread: {}, items: {} }, SUN + 86_400_000 - 3_600_000);
     await noelleWatch(env as any, SUN + 86_400_000);
     expect(await growth()).toBeNull();
+  });
+});
+
+describe("item 11: every acted thing is on the ledger with its measure and floors", () => {
+  const reading = (day: string, measure: string, business: string, channel: string, value: number | null, unread: string | null = null) =>
+    env.DB.prepare(`INSERT INTO growth_readings (day, measure, business, kind, channel, language, value, unread, at) VALUES (?,?,?,?,?,'en',?,?,?)`).bind(day, measure, business, "requests", channel, value, unread, NOW).run();
+
+  it("done writes one row per acted thing: the channel's measure, the reading that day as the floor; forged rows dropped; a replayed done writes nothing", async () => {
+    await reading(DAY, "pnp-requests-instagram", "porch-and-party", "instagram", 4);
+    await reading(DAY, "ap-sales", "approvalprep", "site", null, "not read: Stripe key");
+    await reading("2026-12-20", "pnp-requests-instagram", "porch-and-party", "instagram", 40);
+    const { run } = await json(await call("/noelle/plan", plan([SEASON])));
+    const body = { run, published: [], acted: [
+      { kind: "studio-plan", business: "porch-and-party", channel: "instagram", item: "pnp-1", at: "2026-11-25T00:00:00Z" },
+      { kind: "studio-plan", business: "porch-and-party", channel: "tiktok", item: "pnp-2", at: "2026-11-25T00:00:00Z", scorecard: { floor30: 2, floor60: 3 } },
+      { kind: "job-target", business: "approvalprep", channel: "threads", item: "seq23/approvalprep#9" },
+      { kind: "studio-plan", business: "brindlewood", channel: "instagram", item: "x" },
+      { kind: "spend", business: "porch-and-party", channel: "instagram", item: "y" },
+      { kind: "studio-plan", business: "porch-and-party", channel: "instagram", item: "pnp-1", at: "2026-11-25T00:00:00Z" },
+    ] };
+    const res = await json(await call("/noelle/done", body));
+    expect(res.ledgered).toBe(3);
+    const got = await rows(`SELECT kind, business, channel, item, measure, floor30, floor60, floor_source, day FROM noelle_actions ORDER BY item`);
+    expect(got).toEqual([
+      { kind: "studio-plan", business: "porch-and-party", channel: "instagram", item: "pnp-1", measure: "pnp-requests-instagram", floor30: 4, floor60: 4, floor_source: "baseline", day: DAY },
+      { kind: "studio-plan", business: "porch-and-party", channel: "tiktok", item: "pnp-2", measure: "pnp-requests-tiktok", floor30: 2, floor60: 3, floor_source: "scorecard", day: DAY },
+      { kind: "job-target", business: "approvalprep", channel: "threads", item: "seq23/approvalprep#9", measure: "ap-sales", floor30: null, floor60: null, floor_source: "not read", day: DAY },
+    ]);
+    expect((await call("/noelle/done", body)).status).toBe(400);
+    expect((await rows(`SELECT id FROM noelle_actions`)).length).toBe(3);
+  });
+
+  it("her context carries the results against floors; with an empty ledger it says so, never an empty block", async () => {
+    const ctx = await json(await call("/noelle/context"));
+    expect(ctx.results).toEqual(["Results against floors: the ledger has no action yet."]);
+  });
+
+  it("Sunday's heartbeat puts results against floors under the week's schedule", async () => {
+    const SUN = Date.parse("2026-11-30T03:05:00Z");
+    await env.DB.prepare(`INSERT INTO noelle_runs (id, day, slot, kind, state, stops, calls, line, reads, created_at, updated_at) VALUES ('nrn_led', '2026-11-29', '12:12', 'daily', 'done', '[]', 1, 'x', '{"queues":{"porch-and-party:instagram":0},"unread":{},"items":{}}', ?, ?)`).bind(SUN - 3_600_000, SUN - 3_600_000).run();
+    for (const [id, floor] of [["a", 3], ["b", 9]] as const)
+      await env.DB.prepare(`INSERT INTO noelle_actions (id, run_id, day, kind, business, channel, item, measure, floor30, floor60, floor_source, created_at) VALUES (?, 'nrn_x', '2026-10-20', 'studio-plan', 'porch-and-party', 'instagram', ?, 'pnp-requests-instagram', ?, ?, 'baseline', 0)`).bind(`nac_${id}`, id, floor, floor).run();
+    await reading("2026-11-19", "pnp-requests-instagram", "porch-and-party", "instagram", 5);
+    await noelleWatch(env as any, SUN);
+    const lines: string[] = JSON.parse((await rows(`SELECT body FROM morning_sections WHERE section = 'growth'`))[0].body).lines.map((l: any) => (typeof l === "string" ? l : l.text));
+    expect(lines).toContain("Porch & Party · Instagram · studio-plan: 2 past day 30: 1 met, 1 missed");
   });
 });
