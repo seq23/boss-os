@@ -59,7 +59,7 @@ describe("her Ultimate titles are recorded, and the Live titles stay as Amazon s
   // Both books are Live (Wall Street 19 Nov, tech 23 Nov 2026). Amazon locks a published eBook's title and
   // subtitle (KDP help G200736410), so the spec, the register and the cover keep the Live title, one value,
   // and her chosen title is recorded on the register row as not applied: only a new edition, a second book,
-  // could carry it, and that is never made without her yes.
+  // could carry it, and she declined one on 24 Nov 2026.
   const CHOSEN: Record<string, string> = {
     "ambitious-grads-wall-street": "The Ultimate Guide to Wall Street | Everything You Need to Break Into Investment Banking, in One Book",
     "ambitious-grads-silicon-valley": "The Ultimate Guide to Silicon Valley | Everything You Need to Get a Job in Tech, in One Book",
@@ -73,6 +73,8 @@ describe("her Ultimate titles are recorded, and the Live titles stay as Amazon s
     expect(frontHtml(spec, book).replace(/‑/g, "-")).toContain(`>${book.title}</h1>`);
     expect(row.ultimate_title).toMatchObject({ on: "2026-11-24", chosen: CHOSEN[slug] });
     expect(row.ultimate_title.not_applied).toMatch(/G200736410/);
+    // 24 Nov 2026 she declined a new edition: the row says so, so no run or agent reads it as pending.
+    expect(row.ultimate_title.declined).toMatch(/^2026-11-24: she said no new edition/);
     expect(book._title_why).toContain(CHOSEN[slug]!.split(" | ")[0]);
     const [t, sub] = CHOSEN[slug]!.split(" | ");
     expect(codes({ ...listing, title: t, subtitle: sub })).toEqual([]); // the gate would pass her title
