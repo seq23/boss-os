@@ -7,6 +7,7 @@ import { isWestPeekDay } from "../spirit/arcs";
 import { stalledDeals, anchorStreak } from "./close";
 import { ownerTime, OWNER_TZ_KEY } from "../../../shared/boss/ownerTime.mjs";
 import { getSetting } from "../lib/settings";
+import { dayOf } from "../../../shared/boss/schedule/clock.mjs";
 
 /**
  * THE THREE PILLAR CONTRACTS THAT SAID `available: false`.
@@ -596,9 +597,7 @@ type Touch = { ref_id: string; action: string; why: string; detail?: string[] };
  * dinner, which is the cap failing in the one direction nobody would notice.
  */
 export function herDay(at: number = Date.now()): string {
-  return new Intl.DateTimeFormat("en-CA", {
-    timeZone: "America/Chicago", year: "numeric", month: "2-digit", day: "2-digit",
-  }).format(new Date(at));
+  return dayOf(at);
 }
 
 /**

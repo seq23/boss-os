@@ -42,6 +42,7 @@
  */
 
 import { PROJECTS, type Project } from "./projects";
+import { monthIdInZone, monthRange as zoneMonthRange, OWNER_TIMEZONE } from "@shared/boss/timezone";
 
 /** One effort→outcome pair. The unit of this whole ledger. */
 export interface ReturnPair {
@@ -99,40 +100,19 @@ export interface Ledger {
 const MONTH = /^\d{4}-(0[1-9]|1[0-2])$/;
 
 /** 'YYYY-MM' for a timestamp, in her timezone rather than UTC — a month boundary is local or wrong. */
-export function monthKey(ts: number, timeZone = "America/Chicago"): string {
-  const parts = new Intl.DateTimeFormat("en-CA", { timeZone, year: "numeric", month: "2-digit" }).format(new Date(ts));
-  return parts.slice(0, 7);
+export function monthKey(ts: number, timeZone = OWNER_TIMEZONE): string {
+  return monthIdInZone(ts, timeZone);
 }
 
 /**
- * The half-open millisecond range of a 'YYYY-MM' key, in America/Chicago.
- *
- * WHY THE ARITHMETIC LOOKS LIKE THIS. Workers have full ICU but no timezone maths, so the honest
- * way to find the local start of a month is to ask the formatter what the offset was at a candidate
- * instant and correct by it. Doing it naively in UTC would put every month boundary five or six
- * hours early, which silently moves a whole evening of activity — and an LP email sent at 7pm on
- * the 31st is precisely the kind of row that would land in the wrong month and never be noticed.
+ * The half-open millisecond range of a 'YYYY-MM' key, in her timezone. The local midnight that
+ * opens and closes the month comes from the one clock (schedule/clock.mjs via timezone.ts), never
+ * from a UTC midnight: a UTC boundary sits five or six hours early and moves a 7pm email on the
+ * 31st into the wrong month.
  */
-export function monthRange(period: string, timeZone = "America/Chicago"): { from: number; to: number } {
-  const y = Number(period.slice(0, 4));
-  const m = Number(period.slice(5, 7));
-  const startOfMonthUtc = Date.UTC(y, m - 1, 1);
-  const nextMonthUtc = Date.UTC(m === 12 ? y + 1 : y, m === 12 ? 0 : m, 1);
-  return { from: startOfMonthUtc - offsetMs(startOfMonthUtc, timeZone), to: nextMonthUtc - offsetMs(nextMonthUtc, timeZone) };
-}
-
-function offsetMs(utc: number, timeZone: string): number {
-  const f = new Intl.DateTimeFormat("en-US", {
-    timeZone, hour12: false,
-    year: "numeric", month: "2-digit", day: "2-digit", hour: "2-digit", minute: "2-digit", second: "2-digit",
-  });
-  const p: Record<string, string> = {};
-  for (const part of f.formatToParts(new Date(utc))) if (part.type !== "literal") p[part.type] = part.value;
-  const asUtc = Date.UTC(
-    Number(p.year), Number(p.month) - 1, Number(p.day),
-    Number(p.hour) % 24, Number(p.minute), Number(p.second),
-  );
-  return asUtc - utc;
+export function monthRange(period: string, timeZone = OWNER_TIMEZONE): { from: number; to: number } {
+  const { start, end } = zoneMonthRange(period, timeZone);
+  return { from: start, to: end };
 }
 
 export function isMonth(period: string): boolean {

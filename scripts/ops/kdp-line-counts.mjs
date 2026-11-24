@@ -17,6 +17,7 @@ import { readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { setNumber } from "../../src/shared/boss/brains/brain.mjs";
+import { dayOf } from "../../src/shared/boss/schedule/clock.mjs";
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), "../..");
 const REGISTER = process.env.BOSS_OS_KDP_REGISTER ?? join(ROOT, "scripts/ops/kdp-register.json");
@@ -66,7 +67,7 @@ export function readRegister(path = REGISTER) {
   catch (e) { return { register: null, problem: `could not read the KDP register (${String(e?.code ?? e?.message ?? e).slice(0, 80)})` }; }
 }
 
-const centralDay = (now) => new Intl.DateTimeFormat("en-CA", { timeZone: "America/Chicago" }).format(new Date(now));
+const centralDay = (now) => dayOf(now);
 
 export async function run({ dryRun = false, env = process.env, now = Date.now(), fetchImpl = fetch, path = REGISTER } = {}) {
   const { register, problem } = readRegister(path);

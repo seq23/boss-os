@@ -1,4 +1,5 @@
 import { freeDailyCap, freeMonthlyCap } from "../backends/guard";
+import { dayOf } from "../../../shared/boss/schedule/clock.mjs";
 
 /**
  * A FREE SEARCH SERVICE'S DAILY ALLOWANCE, CLAIMED BEFORE THE CALL (owner, 5 Nov 2026: Brave Search
@@ -7,7 +8,7 @@ import { freeDailyCap, freeMonthlyCap } from "../backends/guard";
  * researches at once cannot both take the twentieth. The day is Central, her day.
  */
 export function centralDay(now: number): string {
-  return new Intl.DateTimeFormat("en-CA", { timeZone: "America/Chicago", year: "numeric", month: "2-digit", day: "2-digit" }).format(new Date(now));
+  return dayOf(now);
 }
 
 export async function claimFreeSearch(

@@ -43,6 +43,7 @@ import { homedir } from "node:os";
 import { join } from "node:path";
 import { pathToFileURL } from "node:url";
 import { numbersRows, sectionBody, setNumber } from "../../src/shared/boss/brains/brain.mjs";
+import { dayOf } from "../../src/shared/boss/schedule/clock.mjs";
 
 const ORIGIN = process.env.BOSS_ORIGIN ?? "https://boss.sequoiataylor.com";
 export const SLUG = "time-2-read";
@@ -65,7 +66,7 @@ export const METRICS = Object.freeze({
 
 /** YYYY-MM-DD in Central. */
 export function centralDay(t) {
-  return new Date(t).toLocaleDateString("en-CA", { timeZone: "America/Chicago" });
+  return dayOf(t);
 }
 export const monthKey = (t) => centralDay(t).slice(0, 7);
 export function previousMonthKey(key) {

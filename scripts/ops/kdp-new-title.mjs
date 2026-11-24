@@ -54,6 +54,7 @@ import { reportStall } from "./lib/stall-report.mjs";
 import { openProfile, profilePath } from "./browser.mjs";
 import { findSeriesBook, BOOKS_DIR } from "./kdp-build.mjs";
 import { gateFolder } from "./kdp-books/quality-gate.mjs";
+import { CENTRAL, dayOf } from "../../src/shared/boss/schedule/clock.mjs";
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const ORIGIN = process.env.BOSS_OS_ORIGIN ?? "https://boss.sequoiataylor.com";
@@ -1010,7 +1011,7 @@ async function handOff(context, page, dir, ans) {
 
 /* ── What Simone tells her (owner, 8 Nov 2026), through her one channel: Simone's mail ──────── */
 
-const CT = "America/Chicago";
+const CT = CENTRAL;
 /** Pure: "10:15 am" in her Mac's zone, with Central in brackets when it differs. */
 export function herTime(ms, zone = Intl.DateTimeFormat().resolvedOptions().timeZone) {
   const f = (tz) => new Intl.DateTimeFormat("en-US", { timeZone: tz, hour: "numeric", minute: "2-digit", hour12: true }).format(new Date(ms)).replace(" AM", " am").replace(" PM", " pm");
@@ -1348,7 +1349,7 @@ export function profileBusy(dir, { lstat = lstatSync, readlink = readlinkSync, a
   return Number.isFinite(pid) && pid > 0 ? alive(pid) : true;
 }
 
-const dayCT = (ms = Date.now()) => new Intl.DateTimeFormat("en-CA", { timeZone: CT }).format(new Date(ms));
+const dayCT = (ms = Date.now()) => dayOf(ms, CT);
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
 /** Simone's own sign-in on the open window: the existing kdp-signin.mjs steps, with the vault's launch env. */

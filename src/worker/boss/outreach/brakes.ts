@@ -9,6 +9,7 @@
  *   · a global kill switch and a sending flag, checked before every send;
  *   · a sending window (weekdays, 09:00–16:59 America/Chicago) so mail lands in working hours.
  */
+import { CENTRAL, dayOf, wallClock } from "../../../shared/boss/schedule/clock.mjs";
 
 export const DAY_MS = 86_400_000;
 
@@ -53,16 +54,10 @@ export function pauseReason(h: Health): string | null {
   return null;
 }
 
-/** Wall-clock parts in America/Chicago, never a UTC hour. */
+/** Wall-clock parts in America/Chicago, never a UTC hour (read from schedule/clock.mjs, the one clock). */
 export function chicagoParts(now: number): { weekday: number; hour: number; day: string } {
-  const f = new Intl.DateTimeFormat("en-US", {
-    timeZone: "America/Chicago", weekday: "short", hour: "numeric", hour12: false,
-    year: "numeric", month: "2-digit", day: "2-digit",
-  });
-  const parts = Object.fromEntries(f.formatToParts(new Date(now)).map((p) => [p.type, p.value]));
-  const weekday = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"].indexOf(parts.weekday ?? "");
-  const hour = Number(parts.hour) % 24;
-  return { weekday, hour, day: `${parts.year}-${parts.month}-${parts.day}` };
+  const w = wallClock(now, CENTRAL);
+  return { weekday: w.dow, hour: w.h, day: dayOf(now, CENTRAL) };
 }
 
 export function inSendWindow(now: number): boolean {

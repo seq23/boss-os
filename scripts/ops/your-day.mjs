@@ -63,19 +63,20 @@ import { yoursThisWeek } from "../../src/shared/boss/waiting/register.mjs";
 import { dedupeEvents, isAttending, others } from "../../src/shared/boss/meetingPrep/prep.mjs";
 import { gratitudeFromBrain, coachPressure } from "../../src/shared/boss/mail/morningReply.mjs";
 import { stallBanners } from "../../src/shared/boss/duties/stall.mjs";
+import { CENTRAL, dayOf as dayIn, wallClock } from "../../src/shared/boss/schedule/clock.mjs";
 
 const ORIGIN = process.env.BOSS_OS_ORIGIN ?? "https://boss.sequoiataylor.com";
 const FEED = process.env.PNP_OWNER_FEED_URL ?? "https://porchandparty901.com/api/owner-feed";
-const TZ = "America/Chicago";
+const TZ = CENTRAL;
 const SENT_DIR = path.join(os.homedir(), ".boss-os", "your-day");
 const DAY_MS = 86_400_000;
 
 // ─── Time, in her zone ─────────────────────────────────────────────────────────
 
+const WEEKDAYS = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"];
 function parts(at) {
-  const p = new Intl.DateTimeFormat("en-US", { timeZone: TZ, year: "numeric", month: "2-digit", day: "2-digit", weekday: "long", hour: "numeric", minute: "2-digit", hour12: false }).formatToParts(new Date(at));
-  const g = (t) => p.find((x) => x.type === t)?.value ?? "";
-  return { date: `${g("year")}-${g("month")}-${g("day")}`, weekday: g("weekday"), hour: Number(g("hour")) % 24, minute: Number(g("minute")) };
+  const w = wallClock(at, TZ);
+  return { date: dayIn(at, TZ), weekday: WEEKDAYS[w.dow], hour: w.h, minute: w.min };
 }
 export const dayOf = (at) => parts(at).date;
 // A time she reads: her current zone, Central in brackets when away ("10 am ET (9 am CT)"); 6 Nov 2026.

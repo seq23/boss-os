@@ -15,9 +15,9 @@
  */
 
 import { DEFAULT_MAILBOX, BRAND_MAILBOXES } from "../commands/parse.mjs";
-import { instantAt } from "../ownerTime.mjs";
+import { CENTRAL, dayOf, instantAt, wallClock } from "../schedule/clock.mjs";
 
-export const OWNER_TZ = "America/Chicago";
+export const OWNER_TZ = CENTRAL;
 export const SECTION = "invitations";
 export const FIRST_LOOKBACK_DAYS = 7;
 /** A free model reads the subject and this many characters of the body, never more. */
@@ -57,14 +57,13 @@ export function mailQuery(afterSec) {
 // ─── Time in her clock ────────────────────────────────────────────────────────────────────────
 
 const pad = (n) => String(n).padStart(2, "0");
+const SHORT_WEEKDAYS = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
 function parts(ms, tz = OWNER_TZ) {
-  const f = new Intl.DateTimeFormat("en-US", { timeZone: tz, year: "numeric", month: "2-digit", day: "2-digit", hour: "2-digit", minute: "2-digit", hourCycle: "h23", weekday: "short" });
-  const o = {};
-  for (const p of f.formatToParts(new Date(ms))) o[p.type] = p.value;
-  return { y: +o.year, m: +o.month, d: +o.day, h: +o.hour % 24, min: +o.minute, wd: o.weekday };
+  const w = wallClock(ms, tz);
+  return { ...w, wd: SHORT_WEEKDAYS[w.dow] };
 }
 /** "2026-11-08" in Central. */
-export function centralDay(ms) { const p = parts(ms); return `${p.y}-${pad(p.m)}-${pad(p.d)}`; }
+export function centralDay(ms) { return dayOf(ms, OWNER_TZ); }
 /** Add whole days to a "YYYY-MM-DD". */
 export function addDays(day, n) {
   const t = Date.UTC(+day.slice(0, 4), +day.slice(5, 7) - 1, +day.slice(8, 10)) + n * 86_400_000;

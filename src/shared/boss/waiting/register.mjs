@@ -2,10 +2,11 @@
  * ZORA'S WAITING-ON REGISTER — the pure rules (owner-approved 26 Oct 2026: nothing that waits goes
  * unowned). The table is `waiting_on` (migration 0313); Zora's daily run is scripts/ops/waiting-on.mjs.
  */
+import { dayOf } from "../schedule/clock.mjs";
 export const HER = "sequoia";
 
 /** Today, in her zone, as YYYY-MM-DD. */
-export const ctDay = (at = Date.now()) => new Intl.DateTimeFormat("en-CA", { timeZone: "America/Chicago" }).format(new Date(at));
+export const ctDay = (at = Date.now()) => dayOf(at);
 
 /**
  * What Zora does today (pure). `act`: open items due today or earlier that carry an owner and an

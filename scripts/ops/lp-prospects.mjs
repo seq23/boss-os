@@ -51,6 +51,7 @@ import {
 } from "../../src/shared/boss/lp/plan.mjs";
 import { outputLine } from "../../src/shared/boss/alarms/rules.mjs";
 import { wantsToMeet } from "../../src/shared/boss/lp/schedule.mjs";
+import { CENTRAL, instantAt, wallClock } from "../../src/shared/boss/schedule/clock.mjs";
 
 const MAILBOX = "sequoia@westpeek.ventures";
 const SCOPE = "https://www.googleapis.com/auth/gmail.compose";
@@ -91,10 +92,9 @@ export function isSendDay(now = Date.now()) {
 export const WINDOW_OPENS_HOUR = 9;
 export const WAIT_MAX_MS = 2 * 3_600_000;
 export function waitForWindowMs(now = Date.now()) {
-  const p = Object.fromEntries(new Intl.DateTimeFormat("en-US", { timeZone: "America/Chicago", hour: "numeric", minute: "numeric", second: "numeric", hourCycle: "h23" }).formatToParts(new Date(now)).map((x) => [x.type, x.value]));
-  const into = (Number(p.hour) * 3600 + Number(p.minute) * 60 + Number(p.second)) * 1000;
-  const opens = WINDOW_OPENS_HOUR * 3_600_000 + 30_000;
-  return into >= opens ? 0 : opens - into;
+  const w = wallClock(now);
+  const opens = instantAt(CENTRAL, w.y, w.m, w.d, WINDOW_OPENS_HOUR) + 30_000;
+  return Math.max(0, opens - now);
 }
 const VERIFY_ONLY = process.argv.includes("--verify-only");
 

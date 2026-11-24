@@ -17,6 +17,7 @@
  * THE BUILD CHECK (coverageProblems): every job in the Schedule manifest is in exactly one row's `jobs`
  * or in `exempt` with a kind and a reason. A new job with neither fails tests/scorecard.test.ts.
  */
+import { dayOf } from "../schedule/clock.mjs";
 
 export const STATES = Object.freeze(["On track", "Too early", "Trying version B", "Paused", "No number"]);
 /** Reader ids a row may name. scripts/ops/lib/scorecard-readers.mjs implements exactly these (pinned by the test). */
@@ -29,7 +30,7 @@ export const DAY_MS = 86_400_000;
 
 /** "YYYY-MM-DD" in Central time. */
 export function centralDay(t = Date.now()) {
-  return new Intl.DateTimeFormat("en-CA", { timeZone: "America/Chicago", year: "numeric", month: "2-digit", day: "2-digit" }).format(new Date(t));
+  return dayOf(t);
 }
 export function addDays(day, n) {
   const d = new Date(`${day}T12:00:00Z`);

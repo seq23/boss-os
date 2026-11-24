@@ -23,7 +23,7 @@
  */
 import type { Env } from "../env";
 import schedule from "../../../shared/boss/schedule/manifest.json";
-import { CATCH_UP_MINUTES, clockRows, dueJobs, type DueJob } from "../../../shared/boss/schedule/clock.mjs";
+import { CATCH_UP_MINUTES, clockRows, dueJobs, formatIn, type DueJob } from "../../../shared/boss/schedule/clock.mjs";
 import { raiseAlarm, clearAlarm } from "../alarms/kendra";
 import { logEvent } from "../lib/log";
 import { newId } from "../lib/id";
@@ -239,7 +239,7 @@ export async function recordSlot(env: Env, r: { key: unknown; phase: unknown; ou
 export interface SlotRow { key: string; job: string; due_at: number; status: string; dispatched_at: number | null; started_at: number | null; finished_at: number | null; outcome: string | null }
 
 const hhmm = (ms: number): string =>
-  new Intl.DateTimeFormat("en-US", { timeZone: "America/Chicago", hour: "2-digit", minute: "2-digit", hourCycle: "h23" }).format(new Date(ms));
+  formatIn(ms, { hour: "2-digit", minute: "2-digit", hourCycle: "h23" });
 
 /**
  * What went wrong with a job's first slot of the day, or null when it ran on time. `day` is every

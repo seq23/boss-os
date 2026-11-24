@@ -18,6 +18,7 @@ export { whenCT };
 import { namingProblems, BACKLINKS } from "./director.mjs";
 import { NO_TRACKING_DOMAINS } from "./taggedLink.mjs";
 import SITES from "../searchReadiness/sites.json" with { type: "json" };
+import { CENTRAL, dayOf } from "../schedule/clock.mjs";
 
 /** Every action kind a plan may carry. Anything else is refused UNKNOWN_KIND. */
 export const KINDS = Object.freeze([
@@ -582,11 +583,11 @@ export function missingDecisions(roster, accepted) {
  */
 export const SCHEDULE_SHOWN = 3;
 export const CHANNEL_NAMES = Object.freeze({ instagram: "Instagram", tiktok: "TikTok", "facebook-page": "Facebook page", threads: "Threads", pinterest: "Pinterest", linkedin: "LinkedIn", "search-pages": "Search pages", "facebook-marketplace": "Facebook Marketplace", youtube: "YouTube", blogger: "Blogger", wordpress: "WordPress" });
-const CT = "America/Chicago";
+const CT = CENTRAL;
 function dayCT(at) {
   if (/^\d{4}-\d{2}-\d{2}$/.test(at)) return at;
   const t = Date.parse(at);
-  return Number.isFinite(t) ? new Intl.DateTimeFormat("en-CA", { timeZone: CT, year: "numeric", month: "2-digit", day: "2-digit" }).format(new Date(t)) : "";
+  return Number.isFinite(t) ? dayOf(t, CT) : "";
 }
 export function scheduleLines(run, { today, labels = {} } = {}) {
   if (!run) return ["This week's schedule: NOT READ. Noelle has not run in two days, so no queue was read."];

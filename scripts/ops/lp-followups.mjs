@@ -48,10 +48,11 @@ import path from "node:path";
 import os from "node:os";
 import { lpReplyBody, lpAgainBody } from "../../src/shared/boss/lp/plan.mjs";
 import {
-  instantIn, openSlots, slotText, slotsFrom, zoneResolver, wantsToMeet, pickedSlot, proposedFit, lpTimesBody, lpConfirmBody, laterWindow, lpLaterBody,
+  openSlots, slotText, slotsFrom, zoneResolver, wantsToMeet, pickedSlot, proposedFit, lpTimesBody, lpConfirmBody, laterWindow, lpLaterBody,
   offeredIn, zonelessTime, lpAskZoneBody, SLOT_MINUTES,
 } from "../../src/shared/boss/lp/schedule.mjs";
 import { herBusyAndZone } from "./lp-calendar.mjs";
+import { CENTRAL, instantAt } from "../../src/shared/boss/schedule/clock.mjs";
 import { replyNeed, replyAllRecipients } from "../../src/shared/boss/mail/replyNeed.mjs";
 import { encodeSubject, replySubject, repairMojibake } from "../../src/shared/boss/mail/subject.mjs";
 
@@ -62,7 +63,7 @@ const READ_SCOPE = "https://www.googleapis.com/auth/gmail.readonly";
 const DRAFT_SCOPE = "https://www.googleapis.com/auth/gmail.compose";
 // The zone a test or a caller with no "where she is" falls back to; her real zone comes from her
 // calendar setting and the "where I am until" setting (zoneResolver), never from this line.
-const TZ = "America/Chicago";
+const TZ = CENTRAL;
 const DAY = 86_400_000;
 export const PASS_LABELS = Object.freeze(["pass", "lp-pass"]);
 
@@ -80,9 +81,14 @@ export function firstName(name) {
   return /^[A-Za-z][A-Za-z'’-]{0,30}$/.test(w) ? w : "there";
 }
 
-/** The instant of a Chicago wall-clock time on a Chicago date (DST-safe by search). */
+/**
+ * The instant of a Chicago wall-clock time on a Chicago date, from Boss OS's one clock. A time in the
+ * skipped spring hour is that far past the jump (02:30 → 03:30 CDT); it used to fall back to 02:30 UTC,
+ * six hours early and on the day before.
+ */
 export function chicagoInstant(ymd, hour, minute) {
-  return instantIn(TZ, ymd, hour, minute) ?? Date.parse(`${ymd}T${String(hour).padStart(2, "0")}:${String(minute).padStart(2, "0")}:00Z`);
+  const [y, m, d] = ymd.split("-").map(Number);
+  return instantAt(TZ, y, m, d, hour, minute);
 }
 
 /**

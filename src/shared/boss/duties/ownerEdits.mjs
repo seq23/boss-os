@@ -15,6 +15,7 @@
  * A Mac duty with no prompt (fixed steps in code) shows no instructions box: there is nothing to
  * read one. Its "ask for a change" goes to Danielle as a task instead.
  */
+import { dayOf } from "../schedule/clock.mjs";
 
 /** Mac duties whose script reads a prompt file, and that file. The script honours BOSS_DUTY_PROMPT_FILE first. */
 export const DUTY_PROMPT_FILES = Object.freeze({
@@ -99,9 +100,7 @@ export function timeEditable(duty) {
 
 /** The civil date (YYYY-MM-DD) of an instant in a zone. */
 export function localDate(timeZone, at) {
-  const p = new Intl.DateTimeFormat("en-CA", { timeZone, year: "numeric", month: "2-digit", day: "2-digit" }).formatToParts(new Date(at));
-  const get = (t) => p.find((x) => x.type === t)?.value ?? "";
-  return `${get("year")}-${get("month")}-${get("day")}`;
+  return dayOf(at, timeZone);
 }
 
 /**

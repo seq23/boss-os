@@ -8,6 +8,7 @@
  * read says so in one plain line; it is never left out.
  */
 import { GRID } from "../grid.mjs";
+import { CENTRAL, formatIn, instantAt, weekOf } from "../schedule/clock.mjs";
 
 /** Client property domains (grid.mjs `owner: "client"`), never named in her email. */
 const CLIENT_DOMAINS = GRID.filter((p) => p.owner === "client").flatMap((p) => p.domains ?? []);
@@ -30,13 +31,8 @@ export function hostAllowed(host, parked = SPRY_WEEKLY.parked_hosts) {
   return !parked.some((p) => h === p || h.endsWith(`.${p}`));
 }
 
-/** The Monday that starts the week holding `ms`, on her clock (America/Chicago), as YYYY-MM-DD. Pure. */
-export function chicagoWeekOf(ms) {
-  const [y, m, d] = new Date(ms).toLocaleDateString("en-CA", { timeZone: "America/Chicago" }).split("-").map(Number);
-  const day = new Date(Date.UTC(y, m - 1, d));
-  day.setUTCDate(day.getUTCDate() - ((day.getUTCDay() + 6) % 7));
-  return day.toISOString().slice(0, 10);
-}
+/** The Monday that starts the week holding `ms`, on her clock (America/Chicago), as YYYY-MM-DD: schedule/clock.mjs's `weekOf`. Pure. */
+export const chicagoWeekOf = (ms) => weekOf(ms, CENTRAL);
 
 /**
  * Why a fetched summary cannot be used, or null. A report from this week (Monday to Sunday, her clock)
@@ -50,8 +46,11 @@ export function summaryProblem(summary, { now = Date.now(), maxAgeHours = 36 } =
   if (Number.isNaN(at)) return "it carried no date";
   // A source that runs before Monday (How We Know on Sunday: `max_age_hours` past the default 36) gets
   // that much slack before the week's Monday too, so its report counts all week.
-  const weekStart = Date.parse(`${chicagoWeekOf(now)}T06:00:00Z`) - Math.max(0, maxAgeHours - 36) * 3_600_000;
-  if (now - at > maxAgeHours * 3_600_000 && at < weekStart) return `the newest one is from ${new Date(at).toLocaleDateString("en-US", { timeZone: "America/Chicago", weekday: "long", month: "short", day: "numeric" })}, not this week`;
+  // Monday 00:00 on her clock: 05:00 UTC in summer, 06:00 in winter (a fixed 06:00 UTC here counted the
+  // first summer hour of Monday as last week until 24 Nov 2026).
+  const [wy, wm, wd] = chicagoWeekOf(now).split("-").map(Number);
+  const weekStart = instantAt(CENTRAL, wy, wm, wd) - Math.max(0, maxAgeHours - 36) * 3_600_000;
+  if (now - at > maxAgeHours * 3_600_000 && at < weekStart) return `the newest one is from ${formatIn(at, { weekday: "long", month: "short", day: "numeric" })}, not this week`;
   return null;
 }
 
@@ -152,6 +151,6 @@ export function composeSpryWeekly(got, { now = Date.now(), loop = null, refresh 
   const happened = looks === 0 && missing === 0
     ? "Every Spry Labs business reported this week, and all is quiet."
     : [looks ? `${plural(looks, "thing")} worth a look` : null, missing ? `${plural(missing, "report")} did not arrive` : null].filter(Boolean).join("; ").replace(/^./, (c) => c.toUpperCase()) + ". The team has each one.";
-  const date = new Date(now).toLocaleDateString("en-US", { timeZone: "America/Chicago", month: "short", day: "numeric" });
+  const date = formatIn(now, { month: "short", day: "numeric" });
   return { subject: `Spry Labs weekly, ${date}`, happened, sections: [...sections, loopPart.section], missing, looks, loopLate: loopPart.late };
 }

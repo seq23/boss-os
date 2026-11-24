@@ -16,9 +16,10 @@
 import { repairMojibake } from "../mail/subject.mjs";
 import { HOME_TZ, OWNER_TZ_KEY, validZone, zoneWord, ownerTime } from "../ownerTime.mjs";
 import { GO_CARD_NOTE } from "../invitations/invitations.mjs";
+import { CENTRAL, dayOf, wallClock } from "../schedule/clock.mjs";
 
 export const PREP_PREFIX = "Prep: ";
-export const PREP_TZ = "America/Chicago";
+export const PREP_TZ = CENTRAL;
 /**
  * THE TIMES SHE READS ARE IN HER CURRENT ZONE (owner, 4 Nov 2026; was hard-coded Eastern since
  * 26 Oct). Her zone is the owner setting `owner_timezone` (default Central, HOME_TZ), set by her Mac
@@ -47,10 +48,10 @@ const SHORT_MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "S
 
 // ─── Time, in her zone ───────────────────────────────────────────────────────
 
+const SHORT_WEEKDAYS = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
 function parts(at, tz = PREP_TZ) {
-  const p = new Intl.DateTimeFormat("en-US", { timeZone: tz, year: "numeric", month: "2-digit", day: "2-digit", weekday: "short", hour: "numeric", minute: "2-digit", hour12: false }).formatToParts(new Date(at));
-  const g = (t) => p.find((x) => x.type === t)?.value ?? "";
-  return { date: `${g("year")}-${g("month")}-${g("day")}`, weekday: g("weekday"), hour: Number(g("hour")) % 24, minute: Number(g("minute")) };
+  const w = wallClock(at, tz);
+  return { date: dayOf(at, tz), weekday: SHORT_WEEKDAYS[w.dow], hour: w.h, minute: w.min };
 }
 export const dayOfCt = (at) => parts(at).date;
 export const hourOfCt = (at) => parts(at).hour;
