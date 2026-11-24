@@ -1299,6 +1299,10 @@ export function buildDay(data, now = Date.now()) {
   // switches, pauses and rows with no number only; a quiet week is one line.
   const scLines = (m.scorecard?.lines ?? []).map((l) => (typeof l === "string" ? { text: l, links: [] } : { links: [], ...l }));
   const scorecardSection = scLines.length ? { title: m.scorecard.title ?? "📊 Scorecard", tone: "done", items: scLines, empty: null } : null;
+  // Noelle's growth section (24 Nov 2026): her report, Sunday's "This week's schedule" and the results against floors
+  // were written to it but never read here, so Monday's promised schedule could not reach her.
+  const grLines = (m.growth?.lines ?? []).map((l) => (typeof l === "string" ? { text: l, links: [] } : { links: [], ...l }));
+  const growthSection = grLines.length ? { title: m.growth.title ?? "📈 Growth, from Noelle", items: grLines, link: m.growth.link ?? null, empty: null } : null;
 
   // 4b''. Your open loops (owner, 13 Nov 2026): her own overdue rows only (written by the Worker's
   // tick, openLoops.mjs `morningSection`), the same row once however many copies the list holds, five
@@ -1389,6 +1393,7 @@ export function buildDay(data, now = Date.now()) {
       ...(doneShown.length ? [{ title: "Done for you", tone: "done", items: doneShown, empty: null }] : []),
       ...(gridRepos ? [gridRepos] : []),
       ...(openLoopsSection ? [openLoopsSection] : []),
+      ...(growthSection ? [growthSection] : []),
       ...(scorecardSection ? [scorecardSection] : []),
       ...(scoreSection ? [scoreSection] : []),
       ...(brainsSection ? [brainsSection] : []),
