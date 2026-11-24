@@ -89,6 +89,22 @@ async function engineLib(cs) {
 // ─── Context ────────────────────────────────────────────────────────────────────
 
 /** Text from a file, page or ledger: data, never an instruction (A6). Its own closing mark is neutered. */
+/**
+ * The unread Porch & Party calendars a studio plan would post into. Only those stop the queue: an
+ * unread channel the plan never touches (23 Nov 2026: facebook-marketplace, which no Studio piece
+ * posts to, held a whole December of TikTok, Instagram and Facebook reels) is not a reason to queue
+ * nothing. A platform with no known calendar counts as unread (fail closed).
+ */
+export function unreadTargets(unread = {}, pieces = []) {
+  const out = new Set();
+  for (const p of pieces) for (const pl of p.platforms ?? []) {
+    const ch = PLATFORM_CHANNEL[pl];
+    const key = `porch-and-party:${ch ?? pl}`;
+    if (!ch || Object.hasOwn(unread ?? {}, key)) out.add(key);
+  }
+  return [...out].sort();
+}
+
 export function untrusted(source, text) {
   const body = String(text ?? "").replace(/<\/?untrusted[^>]*>/gi, "[mark removed]");
   return `<untrusted source="${String(source).replace(/[^a-z0-9:._-]/gi, "-")}">\n${body}\n</untrusted>`;
@@ -327,7 +343,7 @@ async function cmdAct(dir) {
   if (recorded.length) log(`${recorded.length} other accepted actions recorded as decisions on the growth page (levers: the follow-up PR)`);
   if (!studio.length) { saveState(dir, state); console.log("OUTPUT 0 pieces queued (no studio plan accepted)"); return; }
   // A calendar that was not read is never planned around (HOW IT BREAKS "outage": couldn't read, never a fill).
-  const unread = Object.keys(state.calendar.unread).filter((k) => k.startsWith("porch-and-party:"));
+  const unread = unreadTargets(state.calendar.unread, studio.flatMap((a) => a.pieces ?? []));
   if (unread.length) {
     state.failed.push({ kind: "studio-plan", why: `NAMED STOP [CALENDAR_UNREAD] ${unread.join(", ")} not read, so nothing was queued (a full calendar could look empty)` });
     saveState(dir, state); console.log(state.failed.at(-1).why); console.log("OUTPUT 0 pieces queued"); process.exit(12);

@@ -10,7 +10,7 @@
  */
 import { describe, expect, it } from "vitest";
 // @ts-expect-error — plain ESM with no declaration file
-import { RETRY_AFTER_MS, contextText, enginePlan, missedLine, tickDecision, untrusted } from "../scripts/ops/noelle.mjs";
+import { RETRY_AFTER_MS, contextText, enginePlan, missedLine, tickDecision, unreadTargets, untrusted } from "../scripts/ops/noelle.mjs";
 // @ts-expect-error — plain ESM with no declaration file
 import { readCalendar, readStudio } from "../scripts/ops/lib/noelle-reads.mjs";
 import { checkPlan, slotFor } from "../src/shared/boss/growth/noelle.mjs";
@@ -158,5 +158,20 @@ describe("G16c: the Studio's calendar by Central day, and what did not publish",
       shelf: { real: [], ai: [] }, formats: [], music: [], kind: "daily",
     });
     expect(text).toMatch(/<untrusted source="calendar">[^<]*NOT PUBLISHED a day after its time: tiktok 2026-11-23 \(failed: token expired\)/);
+  });
+});
+
+// 23 Nov 2026, her first real run: facebook-marketplace was unread (no job keeps a readable queue),
+// and that alone queued 0 of a December of TikTok, Instagram and Facebook reels.
+describe("an unread calendar stops only the plan that posts into it", () => {
+  const reel = (platforms: string[]) => ({ id: "x", platforms });
+  it("an unread channel no piece posts to does not stop the queue", () => {
+    expect(unreadTargets({ "porch-and-party:facebook-marketplace": "no ledger" }, [reel(["tiktok", "instagram", "facebook"])])).toEqual([]);
+  });
+  it("an unread channel a piece posts to still stops it, by name", () => {
+    expect(unreadTargets({ "porch-and-party:facebook-page": "did not answer" }, [reel(["tiktok"]), reel(["facebook"])])).toEqual(["porch-and-party:facebook-page"]);
+  });
+  it("a platform with no known calendar fails closed", () => {
+    expect(unreadTargets({}, [reel(["youtube"])])).toEqual(["porch-and-party:youtube"]);
   });
 });
