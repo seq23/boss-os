@@ -13,10 +13,16 @@
  *   GET  /referrals             partners, codes and the payout ledger.
  *   POST /referrals/conversions { code, order_ref, amount_cents, customer_ref?, occurred_at? }
  *
- *   GET|POST /u/:token          THE UNSUBSCRIBE LINK. Public by necessity (a recipient has no
- *                               passcode), so it does exactly one thing: suppress the address the
- *                               token belongs to. The token is 144 random bits, stored per address,
- *                               and reveals nothing; an unknown token gets the same page.
+ *   GET  /u/:token              THE UNSUBSCRIBE LINK. Public by necessity (a recipient has no
+ *                               passcode). A visit shows one page with one Unsubscribe button and
+ *                               changes nothing: company mail scanners open every link in a new email,
+ *                               and until 24 Nov 2026 a visit unsubscribed at once (48 of 65 link
+ *                               unsubscribes landed within 10 minutes of the first email, e.g. all 3
+ *                               Time2Read partner contacts at one company, ~2 minutes after each send).
+ *   POST /u/:token              The button, and RFC 8058 one-click from the List-Unsubscribe header:
+ *                               suppresses the address the token belongs to. The token is 144 random
+ *                               bits, stored per address, and reveals nothing; an unknown token gets
+ *                               the same page. One page visit and one click (CAN-SPAM, 16 CFR 316.5).
  */
 import { Hono } from "hono";
 import type { Env, Vars } from "../env";
@@ -205,19 +211,28 @@ async function unsubscribeByToken(env: Env, token: string): Promise<void> {
   if (p) await suppress(env.DB, p.email, "unsubscribe link", "link");
 }
 
-const PAGE = `<!doctype html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Unsubscribed</title></head>` +
-  `<body style="font-family:system-ui,sans-serif;max-width:32rem;margin:4rem auto;padding:0 1rem;line-height:1.5">` +
-  `<h1 style="font-size:1.4rem">You are unsubscribed.</h1><p>You will not receive any more emails from us. No further action is needed.</p></body></html>`;
+const SHELL = (title: string, inner: string) =>
+  `<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="robots" content="noindex"><title>${title}</title>` +
+  `<style>:root{color-scheme:light dark}body{font-family:system-ui,sans-serif;max-width:32rem;margin:4rem auto;padding:0 1rem;line-height:1.5}` +
+  `button{font:inherit;font-weight:600;padding:.75rem 1.5rem;min-height:44px;border-radius:.5rem;border:1px solid currentColor;background:transparent;color:inherit;cursor:pointer}</style></head>` +
+  `<body>${inner}</body></html>`;
 
-unsubscribe.get("/:token", async (c) => {
-  await unsubscribeByToken(c.env, c.req.param("token"));
-  return c.html(PAGE);
-});
+/** Done: shown after the button or a one-click POST. */
+export const UNSUBSCRIBED_PAGE = SHELL("Unsubscribed",
+  `<h1 style="font-size:1.4rem">You are unsubscribed.</h1><p>You will not receive any more emails from us. No further action is needed.</p>`);
 
-// RFC 8058 one-click: mail clients POST here from the List-Unsubscribe header.
+/** A visit: one button, nothing changed yet. The form posts back to this same address. */
+export const CONFIRM_PAGE = SHELL("Unsubscribe",
+  `<h1 style="font-size:1.4rem">Unsubscribe from these emails?</h1><p>Press the button and you will not hear from us again.</p>` +
+  `<form method="post"><button type="submit">Unsubscribe</button></form>`);
+
+// A GET never unsubscribes: mail scanners and link previews fetch every link in a new email.
+unsubscribe.get("/:token", (c) => c.html(CONFIRM_PAGE));
+
+// The button, and RFC 8058 one-click: mail clients POST here from the List-Unsubscribe header.
 unsubscribe.post("/:token", async (c) => {
   await unsubscribeByToken(c.env, c.req.param("token"));
-  return c.html(PAGE);
+  return c.html(UNSUBSCRIBED_PAGE);
 });
 
 /**
