@@ -10,7 +10,7 @@
  */
 import { describe, expect, it } from "vitest";
 // @ts-expect-error — plain ESM with no declaration file
-import { RETRY_AFTER_MS, contextText, enginePlan, missedLine, tickDecision, unreadTargets, untrusted } from "../scripts/ops/noelle.mjs";
+import { PHOTO_VERDICTS, RETRY_AFTER_MS, contextText, enginePlan, shelfFrom, missedLine, tickDecision, unreadTargets, untrusted } from "../scripts/ops/noelle.mjs";
 // @ts-expect-error — plain ESM with no declaration file
 import { readCalendar, readStudio } from "../scripts/ops/lib/noelle-reads.mjs";
 import { checkPlan, slotFor } from "../src/shared/boss/growth/noelle.mjs";
@@ -173,5 +173,31 @@ describe("an unread calendar stops only the plan that posts into it", () => {
   });
   it("a platform with no known calendar fails closed", () => {
     expect(unreadTargets({}, [reel(["youtube"])])).toEqual(["porch-and-party:youtube"]);
+  });
+});
+
+describe("her photo check (24 Nov 2026): never-use photos are gone, touched-up real photos are named", () => {
+  const raw = { real: ["anniversary-fireplace.jpeg", "hallway-before-empty.jpg", "rose-petal-heart-bed.jpg"], ai: ["porch/ai-fall-porch.webp", "porch/collierville-christmas-porch-decorating-front-door.jpg", "rentals/ai-connect-four-backyard.webp", "rentals/ai-yard-games-party.webp", "icons/x.png"] };
+  it("drops every never-use photo from the shelf and names the untouched real ones and her picks", () => {
+    const shelf = shelfFrom(raw);
+    expect(shelf.ai).toEqual(["porch/collierville-christmas-porch-decorating-front-door.jpg", "rentals/ai-yard-games-party.webp"]);
+    expect(shelf.untouched).toEqual(["hallway-before-empty.jpg", "rose-petal-heart-bed.jpg"]);
+    expect(shelf.picks).toEqual(["porch/collierville-christmas-porch-decorating-front-door.jpg"]);
+    expect(shelf.real).toContain("anniversary-fireplace.jpeg");
+  });
+  it("a folder that could not be read stays NOT READ, never an empty pass", () => {
+    const shelf = shelfFrom({ real: { error: "x: ENOENT" }, ai: { error: "y: ENOENT" } });
+    expect(shelf.real).toEqual({ error: "x: ENOENT" });
+    expect(shelf.untouched).toEqual([]);
+  });
+  it("a plan naming a never-use photo is dropped before render", () => {
+    for (const bad of PHOTO_VERDICTS.neverUse) {
+      const p = { ...piece("a", "2026-12-01 18:15", "photo-set", "carousel"), pics: [{ src: `ai:${bad}` }] };
+      const { plan, dropped } = enginePlan([p], { name: "t", calendarDays: {}, formats: FORMATS });
+      expect(plan.pieces).toEqual([]);
+      expect(dropped[0].why).toMatch(/never to use/);
+    }
+    const ok = { ...piece("b", "2026-12-02 18:15", "photo-set", "carousel"), pics: [{ src: "ai:rentals/ai-yard-games-party.webp" }] };
+    expect(enginePlan([ok], { name: "t", calendarDays: {}, formats: FORMATS }).plan.pieces).toHaveLength(1);
   });
 });
