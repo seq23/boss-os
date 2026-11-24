@@ -9,8 +9,9 @@
 #
 # THE STEPS (each in noelle.mjs, each through the vault):
 #   context → her Claude session (ai-run --role brain: Claude only, never a free model) → plan (the
-#   Worker re-checks every action) → act (P&P Studio: render on GitHub, a fresh reviewer per piece, one
-#   remake, queue with idem_key) → done (notices, failures, calls).
+#   Worker re-checks every action) → act (P&P Studio: start the render on GitHub and park the run) →
+#   collect, on each later tick (one look at the render, never a wait on the Mac; when it finished: a fresh
+#   reviewer per piece, one remake as a second render, queue with idem_key) → done (notices, failures, calls).
 #
 # HER TOOLS ARE NAMED, NOTHING ELSE (24 Nov 2026, "u made her an agent and have the intelligence of you").
 # scripts/ops/noelle-permissions.json allows exactly Read inside her run folder (her context, the rulings
@@ -37,14 +38,83 @@ MODEL="${NOELLE_MODEL:-claude-opus-5}"
 MAX_TURNS="${NOELLE_MAX_TURNS:-60}"
 LOG_DIR="$HOME/Library/Logs/noelle"
 RUNS="$HOME/.boss-os/noelle/runs"
+PENDING="$RUNS/rendering"
 LOCK="$LOG_DIR/.lock.flock"
 
-mkdir -p "$LOG_DIR" "$RUNS"
+mkdir -p "$LOG_DIR" "$RUNS" "$PENDING"
 DAY="${NOELLE_DAY:-$(TZ=America/Chicago date +%F)}"
 NOW="${NOELLE_NOW:-$(TZ=America/Chicago date +%H:%M)}"
 MARK="$RUNS/$DAY.json"
 say() { echo "[$(date +%H:%M:%S)] $*" | tee -a "${RUN_LOG:-$LOG_DIR/ticks.log}"; }
 step() { (cd "$REPO" && npm run --silent vault:run -- node scripts/ops/noelle.mjs "$@") 2>&1 | tee -a "$RUN_LOG"; return "${PIPESTATUS[0]}"; }
+
+# The end of a run whose act finished (now, or when a tick collected its render): done, then the mark or the
+# call's reply. Exit codes as before: 0 done; 9, 12, 14 red named stops; 76 out of Claude credits.
+finish_run() { # <act exit>
+local ARC="$1"
+step done "$WORK"; DRC=$?
+if [ -n "$CALL" ]; then
+  # A call's output is its reply: what she did, from the run's own state (nothing acted is a fine answer to a question).
+  ln -sf "$RUN_LOG" "$LOG_DIR/latest.log"
+  if [ "$ARC" -eq 76 ]; then step call-release "$WORK" "NAMED STOP [CLAUDE_LIMIT] the run stopped part-way; $(node -e 'import("'"$REPO"'/scripts/ops/noelle.mjs").then(m=>console.log(m.RESUME_WORDS))')"; exit 76; fi
+  case "$ARC" in 0|14) STOPLINE="" ;; *) STOPLINE="$(grep -h 'NAMED STOP' "$RUN_LOG" | tail -1)" ;; esac
+  step call-reply "$WORK" "$STOPLINE"; exit $?
+fi
+if [ "$ARC" -eq 76 ]; then
+  node "$REPO/scripts/ops/noelle.mjs" mark "$MARK" stopped CLAUDE_LIMIT "$TRY"
+  say "NAMED STOP [CLAUDE_LIMIT] the run stopped part-way; $(grep -h 'OUTPUT' "$RUN_LOG" | tail -2 | tr '\n' ' ')"
+  exit 76
+fi
+[ "$DRC" -eq 0 ] || { node "$REPO/scripts/ops/noelle.mjs" mark "$MARK" stopped DONE_FAILED "$TRY"; say "NAMED STOP [DONE_FAILED] rc=$DRC"; exit "$DRC"; }
+ln -sf "$RUN_LOG" "$LOG_DIR/latest.log"
+# RULE 0: only a run that queued or changed something is done. 9 (nothing to render), 12 (calendar not
+# read) and 14 (nothing acted) are red: a named stop on the card and Notices (done wrote them), and a later
+# tick tries again (its queued pieces are dropped then as taken days).
+case "$ARC" in
+  0) node "$REPO/scripts/ops/noelle.mjs" mark "$MARK" done "" "$TRY"; exit 0 ;;
+  9) node "$REPO/scripts/ops/noelle.mjs" mark "$MARK" stopped NOTHING_TO_RENDER "$TRY"; say "NAMED STOP [NOTHING_TO_RENDER]"; exit 9 ;;
+  12) node "$REPO/scripts/ops/noelle.mjs" mark "$MARK" stopped CALENDAR_UNREAD "$TRY"; say "NAMED STOP [CALENDAR_UNREAD]"; exit 12 ;;
+  14) node "$REPO/scripts/ops/noelle.mjs" mark "$MARK" stopped NOTHING_ACTED "$TRY"; say "NAMED STOP [NOTHING_ACTED]"; exit 14 ;;
+  *) node "$REPO/scripts/ops/noelle.mjs" mark "$MARK" stopped "ACT_FAILED" "$TRY"; say "NAMED STOP [ACT_FAILED] rc=$ARC"; exit "$ARC" ;;
+esac
+}
+
+# A run whose render is on GitHub: its facts in one file per run, the day marked "rendering" (the tick
+# never starts today's slot again while it renders). A call's task stays claimed (running) meanwhile.
+park() {
+  printf 'WORK=%q\nMARK=%q\nTRY=%q\nSLOT=%q\nCALL=%q\n' "$WORK" "$MARK" "$TRY" "$SLOT" "$CALL" > "$PENDING/$(basename "$WORK").env"
+  node "$REPO/scripts/ops/noelle.mjs" mark "$MARK" rendering "" "$TRY"
+  say "OUTPUT render started on GitHub; a tick collects it"
+}
+
+# ITEM 10: before anything else, each parked run's render is looked at ONCE (no wait on the Mac). Still
+# rendering (21) or its remake started (20): it stays parked. Anything else ends the run as act would have.
+collect_parked() {
+  local f ready=""
+  for f in "$PENDING"/*.env; do
+    [ -e "$f" ] || continue
+    if [ -z "$ready" ]; then
+      # The reviewer and the remake run exactly as in a started run: Claude only, the empty allow list.
+      local role; role="$(node "$REPO/scripts/ops/lib/ai-run.mjs" role growth.noelle)"
+      if [ "$role" != "brain" ] || [ ! -s "$REVIEW_SETTINGS" ] || ! node "$REPO/scripts/validate/noelle-no-tools.mjs" >/dev/null 2>&1; then
+        say "NAMED STOP [COLLECT_UNSAFE] a parked render waits: the reviewer's role or allow list is not as named"; return 0
+      fi
+      export NOELLE_AI_RUN="${AI_RUN_BIN:-$HOME/bin/ai-run}" NOELLE_ROLE="$role" NOELLE_MODEL="$MODEL" NOELLE_SETTINGS="$SETTINGS" NOELLE_REVIEW_SETTINGS="$REVIEW_SETTINGS"
+      ready=1
+    fi
+    WORK=""; MARK=""; TRY=1; SLOT=""; CALL=""
+    # shellcheck disable=SC1090
+    source "$f"
+    RUN_LOG="$LOG_DIR/$(basename "$WORK")-collect-$$.log"
+    step collect "$WORK"; local CRC=$?
+    case "$CRC" in
+      21) continue ;;
+      20) say "OUTPUT the remake render started on GitHub; a tick collects it"; continue ;;
+    esac
+    rm -f "$f"
+    ( finish_run "$CRC" )
+  done
+}
 
 source "$(dirname "$(readlink -f "${BASH_SOURCE[0]}")")/lib/flock.sh"
 LOCK_RC=0; hold_lock "$LOCK" || LOCK_RC=$?
@@ -54,6 +124,7 @@ case $LOCK_RC in
   *) say "NAMED STOP [LOCK_FAILED] cannot lock $LOCK"; exit 3 ;;
 esac
 
+collect_parked
 DUE="$(node "$REPO/scripts/ops/noelle.mjs" due "$DAY" "$NOW" "$MARK")" || { say "NAMED STOP [NOELLE_DUE_FAILED] the tick could not read today's slot"; exit 3; }
 case "$DUE" in
   HELD*) say "${DUE#HELD }"; exit 0 ;;  # her hold (NOELLE_START_AT): nothing is read, called or queued before it, calls included
@@ -132,33 +203,11 @@ if [ "$PRC" -eq 10 ]; then node "$REPO/scripts/ops/noelle.mjs" mark "$MARK" done
 [ "$PRC" -eq 11 ] && stopped ACT_LOST "NAMED STOP [ACT_LOST] $SLOT was planned and never finished; the retry runs as a new slot" 11
 [ "$PRC" -eq 0 ] || stopped PLAN_REFUSED "NAMED STOP [PLAN_REFUSED] rc=$PRC $(grep -h 'NAMED STOP' "$RUN_LOG" | tail -1)" "$PRC"
 
-# act, then done ALWAYS (a stopped act still reports what it queued and what failed).
+# act, then done ALWAYS (a stopped act still reports what it queued and what failed). Exit 20: the Studio
+# render was started on GitHub; the run is parked in $PENDING and a later tick collects it (item 10).
 step act "$WORK"; ARC=$?
-step done "$WORK"; DRC=$?
-if [ -n "$CALL" ]; then
-  # A call's output is its reply: what she did, from the run's own state (nothing acted is a fine answer to a question).
-  ln -sf "$RUN_LOG" "$LOG_DIR/latest.log"
-  if [ "$ARC" -eq 76 ]; then step call-release "$WORK" "NAMED STOP [CLAUDE_LIMIT] the run stopped part-way; $(node -e 'import("'"$REPO"'/scripts/ops/noelle.mjs").then(m=>console.log(m.RESUME_WORDS))')"; exit 76; fi
-  case "$ARC" in 0|14) STOPLINE="" ;; *) STOPLINE="$(grep -h 'NAMED STOP' "$RUN_LOG" | tail -1)" ;; esac
-  step call-reply "$WORK" "$STOPLINE"; exit $?
-fi
-if [ "$ARC" -eq 76 ]; then
-  node "$REPO/scripts/ops/noelle.mjs" mark "$MARK" stopped CLAUDE_LIMIT "$TRY"
-  say "NAMED STOP [CLAUDE_LIMIT] the run stopped part-way; $(grep -h 'OUTPUT' "$RUN_LOG" | tail -2 | tr '\n' ' ')"
-  exit 76
-fi
-[ "$DRC" -eq 0 ] || { node "$REPO/scripts/ops/noelle.mjs" mark "$MARK" stopped DONE_FAILED "$TRY"; say "NAMED STOP [DONE_FAILED] rc=$DRC"; exit "$DRC"; }
-ln -sf "$RUN_LOG" "$LOG_DIR/latest.log"
-# RULE 0: only a run that queued or changed something is done. 9 (nothing to render), 12 (calendar not
-# read) and 14 (nothing acted) are red: a named stop on the card and Notices (done wrote them), and a later
-# tick tries again (its queued pieces are dropped then as taken days).
-case "$ARC" in
-  0) node "$REPO/scripts/ops/noelle.mjs" mark "$MARK" done "" "$TRY"; exit 0 ;;
-  9) node "$REPO/scripts/ops/noelle.mjs" mark "$MARK" stopped NOTHING_TO_RENDER "$TRY"; say "NAMED STOP [NOTHING_TO_RENDER]"; exit 9 ;;
-  12) node "$REPO/scripts/ops/noelle.mjs" mark "$MARK" stopped CALENDAR_UNREAD "$TRY"; say "NAMED STOP [CALENDAR_UNREAD]"; exit 12 ;;
-  14) node "$REPO/scripts/ops/noelle.mjs" mark "$MARK" stopped NOTHING_ACTED "$TRY"; say "NAMED STOP [NOTHING_ACTED]"; exit 14 ;;
-  *) node "$REPO/scripts/ops/noelle.mjs" mark "$MARK" stopped "ACT_FAILED" "$TRY"; say "NAMED STOP [ACT_FAILED] rc=$ARC"; exit "$ARC" ;;
-esac
+if [ "$ARC" -eq 20 ]; then park; exit 0; fi
+finish_run "$ARC"
 }
 
 main "$@"; exit $?

@@ -7,9 +7,12 @@
  *                          session reads, every outside text marked untrusted) and <dir>/state.json
  *   plan <runlog> <dir>    her plan from the run log → POST /noelle/plan (the Worker re-checks it with the
  *                          same gate, src/shared/boss/growth/noelle.mjs checkPlan) → <dir>/accepted.json
- *   act <dir>              the accepted P&P Studio plan: engine-push → engine-render on GitHub →
- *                          a fresh reviewer per piece (engine/review.mjs, unchanged) → a failed piece
- *                          remade ONCE, then dropped with its reason → engine-queue (idem_key per slot)
+ *   act <dir>              the accepted plan's jobs, then the P&P Studio plan: engine-push and START the
+ *                          render on GitHub; the run is parked (exit 20) and never waits on the Mac
+ *   collect <dir>          each later tick: one look at the render (still running: exit 21). Finished: a
+ *                          fresh reviewer per piece (engine/review.mjs, unchanged) → a failed piece remade
+ *                          ONCE as a second render (exit 20 again), then dropped with its reason →
+ *                          engine-queue (idem_key per slot); then act's own exit codes
  *   done <dir>             POST /noelle/done: the new things published (one Notices line each), the
  *                          failures, and every Claude call the run used
  *   stop "<line>" <dir>    a run that ended before a plan (exit 76, out of credits): its NAMED STOP
@@ -485,8 +488,18 @@ function sh(cmd, args, opts = {}) {
   return { rc: r.status, out: `${r.stdout ?? ""}${r.stderr ?? ""}` };
 }
 
-/** engine-push, dispatch the GitHub render, wait for it (bounded), download. Returns { runId } or { stop }. */
-function renderOnGitHub(cs, planFile, name, outDir, log) {
+/**
+ * ITEM 10 (brief noelle-v2): the render never waits on the Mac. `act` pushes the plan and starts the GitHub
+ * render, then ends (exit 20, RENDERING); every later tick runs `collect`, which reads the run's state once
+ * (no `gh run watch`) and, when it finished, downloads, reviews and queues. A render still running after
+ * RENDER_MAX_MS is a named stop; a state GitHub would not give is "not read yet", never a pass or a failure.
+ */
+export const RENDER_MAX_MS = 150 * 60_000;
+export const EXIT_RENDERING = 20;
+export const EXIT_STILL_RENDERING = 21;
+
+/** engine-push, dispatch the GitHub render, find its run. Returns { runId } or { stop }. Never waits on the render. */
+function renderStart(cs, planFile, name, log) {
   const push = sh("node", ["scripts/studio.mjs", "engine-push", STUDIO.studio, planFile], { cwd: cs });
   log(push.out.trim());
   if (push.rc !== 0) return { stop: `NAMED STOP [ENGINE_PUSH] ${push.out.trim().split("\n").pop()}` };
@@ -500,13 +513,27 @@ function renderOnGitHub(cs, planFile, name, outDir, log) {
     try { runId = JSON.parse(l.out).filter((x) => x.createdAt >= since).map((x) => x.databaseId).sort().pop() ?? null; } catch { runId = null; }
   }
   if (!runId) return { stop: "NAMED STOP [RENDER_NOT_FOUND] the render was dispatched but no run appeared" };
-  log(`render run https://github.com/seq23/creator-studios/actions/runs/${runId}`);
-  const w = sh("timeout", ["6000", "gh", "run", "watch", String(runId), "-R", "seq23/creator-studios", "--exit-status", "--interval", "30"]);
-  if (w.rc !== 0) return { runId, stop: `NAMED STOP [RENDER_FAILED] run ${runId} ended rc=${w.rc}` };
+  log(`render run https://github.com/seq23/creator-studios/actions/runs/${runId} started; a tick collects it`);
+  return { runId };
+}
+
+/** One look at a render: `view` is GitHub's {status, conclusion} or null (not read). → "wait" | "ready" | { stop }. */
+export function renderStatus(view, startedAt, nowMs) {
+  const late = nowMs - startedAt > RENDER_MAX_MS;
+  if (view?.status === "completed") return view.conclusion === "success" ? "ready" : { stop: `NAMED STOP [RENDER_FAILED] the render ended ${view.conclusion || "with no conclusion"}` };
+  if (late) return { stop: `NAMED STOP [RENDER_TIMEOUT] the render was ${view ? `still ${view.status}` : "not readable"} ${Math.round((nowMs - startedAt) / 60_000)} minutes after it started` };
+  return "wait";
+}
+
+function renderView(runId) {
+  const v = sh("gh", ["run", "view", String(runId), "-R", "seq23/creator-studios", "--json", "status,conclusion"]);
+  try { return v.rc === 0 ? JSON.parse(v.out) : null; } catch { return null; }
+}
+
+function renderFetch(runId, name, outDir) {
   rmSync(outDir, { recursive: true, force: true });
   const dl = sh("gh", ["run", "download", String(runId), "-R", "seq23/creator-studios", "-n", `engine-out-${name}`, "-D", outDir]);
-  if (dl.rc !== 0) return { runId, stop: `NAMED STOP [RENDER_DOWNLOAD] ${dl.out.trim().slice(0, 200)}` };
-  return { runId };
+  return dl.rc === 0 ? null : `NAMED STOP [RENDER_DOWNLOAD] ${dl.out.trim().slice(0, 200)}`;
 }
 
 async function cmdAct(dir) {
@@ -551,36 +578,79 @@ async function cmdAct(dir) {
     for (const id of bad) state.failed.push({ kind: "studio-plan", why: `${id}: the engine's plan check refused it` });
   }
   if (!built.plan.pieces.length) { console.log("NAMED STOP [NOTHING_TO_RENDER] every piece was dropped"); return finishAct(dir, state, 9); }
-  const outRoot = join(homedir(), ".boss-os", "noelle", "engine-out");
-  const pass = await renderReviewQueue({ cs, plan: built.plan, name, outRoot, state, dir, log });
-  // One remake of each failed piece, then dropped with its reason.
-  const failedIds = pass.fail;
-  if (failedIds.length && !pass.stop) {
-    const left = RUN_CALLS - state.calls - 1;
-    const failed = built.plan.pieces.filter((p) => failedIds.includes(p.id)).slice(0, Math.max(0, Math.floor(left / 2)));
-    for (const p of built.plan.pieces.filter((x) => failedIds.includes(x.id) && !failed.includes(x))) state.failed.push({ kind: "studio-plan", why: `${p.id}: failed review; no calls left this run for a remake` });
-    if (failed.length) {
-      const notes = failed.map((p) => {
-        const rv = JSON.parse(readFileSync(join(outRoot, name, p.id, "review.json"), "utf8"));
-        return `PIECE ${JSON.stringify({ ...p, theme: pieces.find((x) => x.id === p.id)?.theme })}\nREVIEWER SAID ${JSON.stringify(rv.fails)}`;
-      }).join("\n\n");
-      const c = claudeCall(`${REMAKE_ASK}\n\n${readFileSync(join(dir, "context.txt"), "utf8")}\n\n${notes}`, join(dir, "remake.log"));
-      state.calls++;
-      if (c.limit) { state.stop = `NAMED STOP [CLAUDE_LIMIT] out of Claude credits during the remake; ${RESUME_WORDS}`; }
-      else {
-        const origs = failed.map((p) => ({ ...p, theme: pieces.find((x) => x.id === p.id)?.theme }));
-        const r = remadePieces(c.text, origs, { roster: state.businesses, today: state.day, queues: state.calendar.queues });
-        if (r.why) log(`  remake: ${r.why}`);
-        const again = enginePlan(r.pieces, { name: `${name}-r`, calendarDays: state.calendar.days, formats: FORMATS });
-        again.plan.pieces = again.plan.pieces.filter((p) => !validatePlan({ ...again.plan, pieces: [p] }, Date.now()).length);
-        if (again.plan.pieces.length) {
-          const second = await renderReviewQueue({ cs, plan: again.plan, name: `${name}-r`, outRoot, state, dir, log });
-          for (const id of second.fail) state.failed.push({ kind: "studio-plan", why: `${id}: failed review twice; dropped` });
-        }
-        for (const p of failed) if (!again.plan.pieces.some((x) => x.id === `${p.id}-r`)) state.failed.push({ kind: "studio-plan", why: `${p.id}: failed review; the remake did not pass the gate (${r.why || "engine check"})` });
-      }
-    }
+  state.studioPieces = pieces.map((p) => ({ ...p }));
+  return startRender(dir, state, { stage: "first", plan: built.plan, name, log });
+}
+
+const OUT_ROOT = () => join(homedir(), ".boss-os", "noelle", "engine-out");
+
+/** Push and start the render, record it as pending in the run's state, and end the step (exit 20). */
+function startRender(dir, state, { stage, plan, name, log, remakeOf = [] }) {
+  const planFile = join(dir, `${name}.json`);
+  writeFileSync(planFile, JSON.stringify(plan, null, 2));
+  const r = renderStart(state.cs, planFile, name, log);
+  state.renders.push({ name, runId: r.runId ?? null, stop: r.stop ?? null });
+  if (r.stop) { state.failed.push({ kind: "studio-plan", why: r.stop }); log(r.stop); return finishStudio(dir, state); }
+  state.pending = { stage, name, runId: r.runId, planFile, plan, at: Date.now(), remakeOf };
+  saveState(dir, state);
+  console.log(`RENDERING ${stage} render ${r.runId} (${plan.pieces.length} pieces); a tick collects it`);
+  process.exit(EXIT_RENDERING);
+}
+
+/**
+ * A tick's look at the pending render: still running → exit 21 (nothing changed); finished → download,
+ * a fresh reviewer per piece, queue the passes; a first render's failures get ONE remake (a new render,
+ * exit 20 again); then the act ends as before (finishAct's Rule 0 exit codes).
+ */
+async function cmdCollect(dir, nowMs = Date.now()) {
+  const state = loadState(dir);
+  const log = (x) => { if (x) console.log(x); };
+  const p = state.pending;
+  if (!p) { console.log("NAMED STOP [NOTHING_PENDING] collect found no render to collect in this run"); process.exit(3); }
+  const st = renderStatus(renderView(p.runId), p.at, nowMs);
+  if (st === "wait") { console.log(`WAIT render ${p.runId} is still running (started ${Math.round((nowMs - p.at) / 60_000)} minutes ago)`); process.exit(EXIT_STILL_RENDERING); }
+  const ren = state.renders.find((r) => r.runId === p.runId);
+  const outDir = join(OUT_ROOT(), p.name);
+  const stop = typeof st === "object" ? st.stop : renderFetch(p.runId, p.name, outDir);
+  if (stop) {
+    if (ren) ren.stop = stop;
+    state.failed.push({ kind: "studio-plan", why: `${stop} (run ${p.runId})` }); log(stop);
+    return finishStudio(dir, state);
   }
+  const res = await reviewQueue({ cs: state.cs, plan: p.plan, planFile: p.planFile, state, dir, log });
+  if (p.stage === "remake") {
+    for (const id of res.fail) state.failed.push({ kind: "studio-plan", why: `${id}: failed review twice; dropped` });
+    return finishStudio(dir, state);
+  }
+  // One remake of each failed piece, then dropped with its reason.
+  const failedIds = res.fail;
+  if (!failedIds.length || state.stop) return finishStudio(dir, state);
+  const pieces = state.studioPieces ?? [];
+  const left = RUN_CALLS - state.calls - 1;
+  const failed = p.plan.pieces.filter((x) => failedIds.includes(x.id)).slice(0, Math.max(0, Math.floor(left / 2)));
+  for (const x of p.plan.pieces.filter((y) => failedIds.includes(y.id) && !failed.includes(y))) state.failed.push({ kind: "studio-plan", why: `${x.id}: failed review; no calls left this run for a remake` });
+  if (!failed.length) return finishStudio(dir, state);
+  const notes = failed.map((x) => {
+    const rv = JSON.parse(readFileSync(join(outDir, x.id, "review.json"), "utf8"));
+    return `PIECE ${JSON.stringify({ ...x, theme: pieces.find((y) => y.id === x.id)?.theme })}\nREVIEWER SAID ${JSON.stringify(rv.fails)}`;
+  }).join("\n\n");
+  const c = claudeCall(`${REMAKE_ASK}\n\n${readFileSync(join(dir, "context.txt"), "utf8")}\n\n${notes}`, join(dir, "remake.log"));
+  state.calls++;
+  if (c.limit) { state.stop = `NAMED STOP [CLAUDE_LIMIT] out of Claude credits during the remake; ${RESUME_WORDS}`; return finishStudio(dir, state); }
+  const { FORMATS, validatePlan } = await engineLib(state.cs);
+  const origs = failed.map((x) => ({ ...x, theme: pieces.find((y) => y.id === x.id)?.theme }));
+  const r = remadePieces(c.text, origs, { roster: state.businesses, today: state.day, queues: state.calendar.queues });
+  if (r.why) log(`  remake: ${r.why}`);
+  const again = enginePlan(r.pieces, { name: `${p.name}-r`, calendarDays: state.calendar.days, formats: FORMATS });
+  again.plan.pieces = again.plan.pieces.filter((x) => !validatePlan({ ...again.plan, pieces: [x] }, Date.now()).length);
+  for (const x of failed) if (!again.plan.pieces.some((y) => y.id === `${x.id}-r`)) state.failed.push({ kind: "studio-plan", why: `${x.id}: failed review; the remake did not pass the gate (${r.why || "engine check"})` });
+  if (!again.plan.pieces.length) return finishStudio(dir, state);
+  return startRender(dir, state, { stage: "remake", plan: again.plan, name: `${p.name}-r`, log, remakeOf: failed.map((x) => x.id) });
+}
+
+/** The Studio part is over (rendered and reviewed, or stopped): notices for new formats, then the act's exit. */
+function finishStudio(dir, state) {
+  delete state.pending;
   // The new things (a new format on a channel) get one Notices line each, only when a piece of it went out.
   for (const n of state.notices ?? []) {
     const fmt = n.key.split(":").pop();
@@ -773,15 +843,9 @@ function rulingsFor(dir, business) {
   return `${read(`${business}.md`)}\n${read("shared.md")}`.slice(0, 30000) || "NOT READ: no rulings file for this business";
 }
 
-/** Render on GitHub → review each piece → queue the passes. Counts every reviewer call. */
-async function renderReviewQueue({ cs, plan, name, outRoot, state, dir, log }) {
-  const planFile = join(dir, `${name}.json`);
-  writeFileSync(planFile, JSON.stringify(plan, null, 2));
-  const outDir = join(outRoot, name);
-  const r = renderOnGitHub(cs, planFile, name, outDir, log);
-  state.renders.push({ name, runId: r.runId ?? null, stop: r.stop ?? null });
-  saveState(dir, state);
-  if (r.stop) { state.failed.push({ kind: "studio-plan", why: r.stop }); log(r.stop); return { pass: [], fail: [], stop: r.stop }; }
+/** The downloaded render → a fresh reviewer per piece → queue the passes. Counts every reviewer call. */
+async function reviewQueue({ cs, plan, planFile, state, dir, log }) {
+  const outRoot = OUT_ROOT();
   const env = { ...process.env, ENGINE_OUT: outRoot };
   const rv = sh("node", ["engine/review.mjs", planFile], { cwd: cs, env, timeout: 90 * 60_000 });
   log(rv.out.trim());
@@ -832,6 +896,7 @@ export function tickDecision({ day, now, nowMs, mark, env = process.env }) {
   const s = slotFor(day);
   const slot = `${String(s.hour).padStart(2, "0")}:${String(s.minute).padStart(2, "0")}`;
   if (mark?.state === "done") return { run: false, why: `today's ${s.kind} run is done` };
+  if (mark?.state === "rendering") return { run: false, why: "today's run is rendering on GitHub; a tick collects it" };
   if (now >= LAST_START) return { run: false, why: `past ${LAST_START} Central; tomorrow's slot runs` };
   if (now < slot) return { run: false, why: `today's slot is ${slot} Central` };
   if (mark?.state === "stopped") {
@@ -919,6 +984,7 @@ async function main() {
   if (cmd === "context") return cmdContext(a, { kind: b === "weekly" ? "weekly" : "daily" });
   if (cmd === "plan") return cmdPlan(a, b, c);
   if (cmd === "act") return cmdAct(a);
+  if (cmd === "collect") return cmdCollect(a);
   if (cmd === "done") return cmdDone(a);
   if (cmd === "stop") return cmdStop(a, b, c);
   if (cmd === "due") return cmdDue(a, b, c);
