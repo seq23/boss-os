@@ -984,12 +984,24 @@ The plan/accept path, the read-only lock and `noelle-tools` are gone: she reads,
 run). She works in her own worktrees, opens at most 3 PRs, launches one fresh `reviewer` per PR, lands with
 `land-after`, and hands off at ~200K context into `~/Work/noelle/HANDOFF.md`.
 
-**Her guard** (`scripts/ops/noelle-guard.mjs`, a PreToolUse hook from `scripts/ops/noelle-permissions.json`, the list her run is locked to (dontAsk, none of her own settings); self-test
-`npm run validate:noelle`) holds only the hard stops: no paid API or model, no money tools, no secret printed or on
-a command line, deploy only through `land`/`land-after`, no repo outside her businesses, no edit to Boss OS, the
-guard, the rules file or `~/bin`, one reviewer per PR, 3 PRs a run. It reads command text, so it is a guard for
-hard stops, not a cage. Brains: `noelle-tool brain <slug>` reads only spry, porch-and-party, time-2-read, personal,
-team and risk (`NOELLE_BRAINS`).
+**Her sandbox** (redesign 24 Nov 2026: safety by taking access away, never by spotting bad input). `noelle.sh`
+calls `noelle_prepare` (`scripts/ops/lib/noelle-sandbox.sh`), which fills `scripts/ops/noelle-permissions.json` into
+`~/.boss-os/noelle/settings.json` (outside anything she can write) and runs her with `--permission-mode dontAsk
+--setting-sources= --settings <that file>`. Claude Code's own OS sandbox (macOS Seatbelt) holds every bash command
+and child process: writes only in `~/Work/noelle` (her clones in `repos/`, worktrees in `wt/`, notes) and her run
+folder; reads of the whole home denied except those, her gitconfig, the skills and the rules file; network only to
+GitHub, npm, Cloudflare preview hosts and Buffer (no model, paid-API or payment host); `allowUnsandboxedCommands`
+false, and only her two brokers in `~/.boss-os/noelle/bin` run outside it (`noelle-tool` for her four vault tools,
+`land-after` for `<pr> --task noelle-<job> --repo seq23/<her repo>` only), each from an empty environment. Her git
+loads only `~/.boss-os/noelle/gitconfig` (`GIT_CONFIG_NOSYSTEM`, no Keychain helper) and pushes with
+`GITHUB_NOELLE_TOKEN` from the vault, a fine-grained token on her repos only; without it the run is `NAMED STOP
+[NOELLE_GITHUB_TOKEN_MISSING]` with Sequoia's steps. `scripts/validate/claude-runs-locked.mjs` fails the build if the
+sandbox block, or any line of it, is missing or widened.
+
+**Her guard** (`scripts/ops/noelle-guard.mjs`, a PreToolUse hook; self-test `npm run validate:noelle`) holds only
+what is judged by name: one `reviewer` agent per PR (AGENT), 3 PRs a run (PR_CAP), the ~200K handoff
+(CONTEXT_HANDOFF), and no `gh pr merge` or push to main outside `land-after` (DEPLOY_ONLY_LAND). Brains:
+`noelle-tool brain <slug>` reads only spry, porch-and-party, time-2-read, personal, team and risk (`NOELLE_BRAINS`).
 
 **Reaching her.** Her email to boss@ (owner check and DMARC, `inboundMail.ts`) with `#noelle`, or with "Noelle"
 opening the subject or first line (`seatBySalutation`, `mail.mjs`), or her message on Noelle's page

@@ -10,7 +10,7 @@ import { join } from "node:path";
 import { tmpdir } from "node:os";
 import { spawnSync } from "node:child_process";
 // @ts-expect-error plain .mjs
-import { JOBS, jobProblems, scanProblems, unlockedCalls } from "../scripts/validate/claude-runs-locked.mjs";
+import { JOBS, jobProblems, scanProblems, unlockedCalls, sandboxProblems, SANDBOX_BREAKS } from "../scripts/validate/claude-runs-locked.mjs";
 // @ts-expect-error plain .mjs
 import { lockedArgs, refusals, resultText } from "../scripts/ops/lib/claude-lock.mjs";
 // @ts-expect-error plain .mjs
@@ -45,8 +45,7 @@ describe("each job's permissions file", () => {
     const job = JOBS.find((j: { name: string }) => j.name === "noelle");
     const real = settings("noelle");
     expect(real.permissions.allow).toContain("Agent");
-    // dontAsk refuses any path outside the cwd and these (a real locked run: ls of ~/GitHub refused)
-    expect(real.permissions.additionalDirectories).toEqual(expect.arrayContaining(["__HOME__/GitHub", "__HOME__/.claude/skills"]));
+    expect(real.permissions.additionalDirectories).toBeUndefined(); // her sandbox, not a widened list, sets her paths
     expect(jobProblems(real, job)).toEqual([]);
     const s = structuredClone(real);
     s.hooks.PreToolUse = s.hooks.PreToolUse.filter((h: { matcher: string }) => h.matcher !== "*");
@@ -57,6 +56,18 @@ describe("each job's permissions file", () => {
     const b = structuredClone(settings("builder"));
     b.permissions.deny = b.permissions.deny.filter((d: string) => d !== "Agent");
     expect(jobProblems(b, JOBS.find((j: { name: string }) => j.name === "builder")).join("\n")).toMatch(/deny is missing Agent/);
+  });
+  it("noelle: her settings without the sandbox, or with any way out of it, fail the build", () => {
+    const job = JOBS.find((j: { name: string }) => j.name === "noelle");
+    const real = settings("noelle");
+    expect(sandboxProblems(real, job.sandbox)).toEqual([]);
+    for (const [name, f] of SANDBOX_BREAKS) {
+      const s = structuredClone(real);
+      f(s);
+      expect(jobProblems(s, job).length, name).toBeGreaterThan(0);
+    }
+    const none = structuredClone(real); delete none.sandbox;
+    expect(jobProblems(none, job).join("\n")).toMatch(/has no sandbox block/);
   });
   it("a deny rule's refusal is counted, in its own wording, as well as dontAsk's", () => {
     const line = (content: string) => JSON.stringify({ type: "assistant", message: { content: [{ type: "tool_use", id: "t1", name: "Bash", input: { command: "gh api user" } }] } }) + "\n"

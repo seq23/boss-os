@@ -2,7 +2,7 @@
  * NOELLE'S RECORD (rebuilt 24 Nov 2026, brief noelle-builds: "what wakes is full Claude Code with a persona").
  *
  * Noelle is Claude Code with a persona on her Mac (scripts/ops/noelle.sh → ~/bin/ai-run --role brain,
- * scripts/ops/noelle/persona.md), held by her guard (scripts/ops/noelle-guard.mjs: hard stops only).
+ * scripts/ops/noelle/persona.md), held by Claude Code's OS sandbox (scripts/ops/lib/noelle-sandbox.sh) and her guard (scripts/ops/noelle-guard.mjs).
  * She decides and builds herself; Boss OS only records. Every route takes the machine token.
  *
  *   GET  /noelle/context   what she reads first: the roster's public fields, her rulings per business with

@@ -24,10 +24,10 @@
  *
  * RULE 0. Every step prints one OUTPUT line; a step that did nothing is a NAMED STOP and a non-zero exit.
  */
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync, realpathSync, writeFileSync } from "node:fs";
 import { createHash } from "node:crypto";
 import { homedir } from "node:os";
-import { dirname, join } from "node:path";
+import { dirname, join, resolve } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { slotFor, callWindow } from "../../src/shared/boss/growth/noelle.mjs";
 export { callWindow };
@@ -187,7 +187,7 @@ export function personaText({ rules, persona, call = null, dir }) {
 function cmdPersona(dir) {
   const read = (f) => { try { return readFileSync(f, "utf8"); } catch { return ""; } };
   const call = existsSync(join(dir, "call.json")) ? JSON.parse(readFileSync(join(dir, "call.json"), "utf8")) : null;
-  const text = personaText({ rules: read(process.env.NOELLE_RULES ?? join(homedir(), ".claude", "CLAUDE.md")), persona: read(PERSONA_FILE), call, dir });
+  const text = personaText({ rules: read(process.env.NOELLE_RULES ?? join(homedir(), ".claude", "CLAUDE.md")), persona: read(PERSONA_FILE).replaceAll("__HOME__", homedir()), call, dir });
   writeFileSync(join(dir, "persona-full.md"), text);
   // Her run loads none of Sequoia's settings (--setting-sources=), so the one agent she may launch is passed in.
   const agents = reviewerAgent(read(process.env.NOELLE_REVIEWER ?? join(homedir(), ".claude", "agents", "reviewer.md")));
@@ -312,7 +312,12 @@ async function cmdLedger(business, channel, kind, item, receipt) {
 /** `backlinks <business> <file.json>`: her link requests to the backlink network, [{ topic, draft, why }]. */
 async function cmdBacklinks(business, file) {
   let requests = null;
-  try { requests = JSON.parse(readFileSync(file, "utf8")); } catch { requests = null; }
+  // This runs outside her sandbox (her broker), so the file must really be hers: resolved through any link, it
+  // lies in her home or a run folder, never a path she names elsewhere (~/.config, the vault, another repo).
+  const real = (() => { try { return realpathSync(resolve(process.env.NOELLE_CALLER_CWD ?? process.cwd(), String(file ?? ""))); } catch { return null; } })();
+  const roots = [process.env.NOELLE_HOME ?? join(homedir(), "Work", "noelle"), process.env.NOELLE_RUNS ?? join(homedir(), ".boss-os", "noelle", "runs")].map((r) => { try { return realpathSync(r); } catch { return r; } });
+  if (!real || !roots.some((r) => real.startsWith(`${r}/`))) throw new Error("NAMED STOP [BACKLINKS_PATH] the requests file must be in ~/Work/noelle or your run folder");
+  try { requests = JSON.parse(readFileSync(real, "utf8")); } catch { requests = null; }
   if (!business || !Array.isArray(requests) || !requests.length) throw new Error("NAMED STOP [BACKLINKS_SHAPE] backlinks <business> <file.json holding [{ topic, draft, why }]>");
   const res = await bossMachine()("POST", "/backlinks", { business, requests });
   for (const r of res.refused ?? []) console.log(`refused: ${r}`);

@@ -4,7 +4,7 @@
  * failure twice is a named stop; turn cap; PR cap) and Rule 0 on her own last line. Each fails without its fix.
  */
 import { describe, expect, it } from "vitest";
-import { execFileSync } from "node:child_process";
+import { execFileSync, spawnSync } from "node:child_process";
 import { mkdtempSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -38,11 +38,16 @@ describe("H1: her brains are spry, porch-and-party, time-2-read, personal, team 
     expect(() => readBrain("spry", { dir: "/b", read: () => { throw Object.assign(new Error("x"), { code: "ENOENT" }); } })).toThrow(/BRAIN_UNREAD\] spry: ENOENT/);
     expect(() => readBrain("spry", { dir: "/b", read: () => "  \n" })).toThrow(/BRAIN_UNREAD\] spry is empty/);
   });
-  it("her guard refuses ~/Brains any way but her brain tool", () => {
-    const h = mkdtempSync(join(tmpdir(), "noelle-guard-"));
-    expect(judge({ tool_name: "Read", tool_input: { file_path: "~/Brains/brokerage.md" }, cwd: h }, { h })?.stop).toBe("PRIVATE_BRAIN");
-    expect(judge({ tool_name: "Bash", tool_input: { command: "curl -s https://boss.sequoiataylor.com/api/boss/brains/brokerage" }, cwd: h }, { h })?.stop).toBe("PRIVATE_BRAIN");
-    expect(judge({ tool_name: "Bash", tool_input: { command: "noelle-tool brain spry" }, cwd: h }, { h })).toBeNull();
+  it("her sandbox cannot read ~/Brains at all: the home is denied and no brain path is re-opened", () => {
+    const sb = JSON.parse(readFileSync(join(__dirname, "../scripts/ops/noelle-permissions.json"), "utf8")).sandbox;
+    expect(sb.filesystem.denyRead).toContain("~/");
+    expect(sb.filesystem.allowRead.filter((p: string) => /Brains|\.boss-os\/(vault|secrets)|\.config|\.ssh|Keychains/.test(p))).toEqual([]);
+  });
+  it("her backlinks file must be hers: a path outside her home or run folder is a named stop before any send", () => {
+    const home = mkdtempSync(join(tmpdir(), "noelle-bl-"));
+    const r = spawnSync(process.execPath, [join(__dirname, "../scripts/ops/noelle.mjs"), "backlinks", "spry", "/etc/hosts"], { encoding: "utf8", env: { ...process.env, NOELLE_HOME: home, NOELLE_RUNS: join(home, "runs"), NOELLE_CALLER_CWD: home } });
+    expect(r.status).not.toBe(0);
+    expect(r.stderr + r.stdout).toMatch(/NAMED STOP \[BACKLINKS_PATH\]/);
   });
 });
 
@@ -108,16 +113,61 @@ describe("her run is locked (#573): a refusal is a stop, and her one agent is pa
     expect(reviewerAgent("---\nname: reviewer\n---\nbody")).toBeNull();
     expect(reviewerAgent("")).toBeNull();
   });
-  it("her launcher runs ai-run only with the lock, and never links her own settings in", () => {
+  it("her launcher runs ai-run only with the lock, on the sandboxed settings her run cannot write", () => {
     const sh = readFileSync(join(__dirname, "../scripts/ops/noelle.sh"), "utf8");
     const calls = sh.split("\n").filter((l) => /AI_RUN_CLAUDE_ARGS=/.test(l));
     expect(calls).toHaveLength(2);
     for (const l of calls) expect(l).toMatch(/AI_RUN_CLAUDE_ARGS="\$CLAUDE_LOCK[ "]/);
-    expect(sh).toMatch(/CLAUDE_LOCK="\$\(claude_lock_args "\$NHOME\/\.claude\/settings\.json"/);
+    expect(sh).toMatch(/SETTINGS="\$\(noelle_prepare "\$REPO" "\$NHOME" "\$WORK"/);
+    expect(sh).toMatch(/CLAUDE_LOCK="\$\(claude_lock_args "\$SETTINGS"/);
     expect(sh).toMatch(/--agents \$WORK\/agents\.json/);
     expect(sh).toMatch(/DENIED="\$\(claude_denials "\$SID"/);
     expect(sh).toMatch(/^step finish "\$WORK" "\$SESSION_LOG" "\$SLOT" "\$KIND" "\$DENIED";/m); // the count is finish's fifth argument
-    expect(sh).not.toMatch(/dangerously-skip-permissions|setting-sources project/);
+    expect(sh).not.toMatch(/dangerously-skip-permissions|setting-sources project|PATH="\$NHOME\/bin/);
+    expect(sh).toMatch(/\[ -n "\$GH_TOKEN" \] \|\| stopped NOELLE_GITHUB_TOKEN_MISSING/);
+  });
+});
+
+describe("her sandbox, as noelle_prepare writes it", () => {
+  const prep = () => {
+    const home = mkdtempSync(join(tmpdir(), "noelle-prep-"));
+    const work = join(home, ".boss-os/noelle/runs/2026-11-25-1000");
+    const r = spawnSync("bash", ["-c", `source "${join(__dirname, "../scripts/ops/lib/noelle-sandbox.sh")}"; noelle_prepare "$1" "$HOME/Work/noelle" "$2" noelle-test-1`, "x", join(__dirname, ".."), work],
+      { encoding: "utf8", env: { ...process.env, HOME: home } });
+    return { home, work, r };
+  };
+  it("writes the settings outside her home with the sandbox block and every placeholder filled", () => {
+    const { home, r } = prep();
+    expect(r.status).toBe(0);
+    expect(r.stdout).toBe(join(home, ".boss-os/noelle/settings.json"));
+    const text = readFileSync(r.stdout, "utf8");
+    expect(text).not.toMatch(/__(HOME|REPO|RUN)__/);
+    const s = JSON.parse(text);
+    expect(s.sandbox).toMatchObject({ enabled: true, failIfUnavailable: true, allowUnsandboxedCommands: false });
+    expect(s.sandbox.filesystem.allowWrite).toEqual(["~/Work/noelle", "~/.boss-os/noelle/runs/2026-11-25-1000"]);
+    expect(s.sandbox.excludedCommands).toEqual([`${home}/.boss-os/noelle/bin/noelle-tool *`, `${home}/.boss-os/noelle/bin/land-after *`]);
+    expect(readFileSync(join(home, ".boss-os/noelle/gitconfig"), "utf8")).toMatch(/helper =\n\[credential "https:\/\/github\.com"\]\n\thelper = "!f\(\) \{ test \\"\$1\\" = get/);
+    expect(JSON.parse(readFileSync(join(home, ".boss-os/noelle/guard/run.json"), "utf8"))).toMatchObject({ prs: 0, reviewers: 0 });
+  });
+  it("refuses a run folder outside her runs, and a moved home", () => {
+    const home = mkdtempSync(join(tmpdir(), "noelle-prep-"));
+    const lib = join(__dirname, "../scripts/ops/lib/noelle-sandbox.sh");
+    const go = (nh: string, w: string) => spawnSync("bash", ["-c", `source "${lib}"; noelle_prepare "$1" "$2" "$3" id`, "x", join(__dirname, ".."), nh, w], { encoding: "utf8", env: { ...process.env, HOME: home } });
+    expect(go(join(home, "Work/noelle"), join(home, "GitHub/boss-os")).stderr).toMatch(/NAMED STOP \[RUN_FOLDER\]/);
+    expect(go(join(home, "elsewhere"), join(home, ".boss-os/noelle/runs/x")).stderr).toMatch(/NAMED STOP \[NOELLE_HOME_MOVED\]/);
+  });
+  it("her land-after broker takes only <pr> --task noelle-<job> --repo seq23/<her repo>", () => {
+    const { home } = prep();
+    const b = join(home, ".boss-os/noelle/bin/land-after");
+    const go = (...a: string[]) => spawnSync(b, a, { encoding: "utf8", env: { ...process.env, HOME: home } });
+    expect(go("12", "--task", "noelle-x", "--repo", "seq23/peace-be-still", "--then", "rm -rf ~").stderr).toMatch(/LAND_SHAPE/);
+    expect(go("12", "--task", "x", "--repo", "seq23/peace-be-still").stderr).toMatch(/LAND_SHAPE/);
+    expect(go("12", "--task", "noelle-x", "--repo", "seq23/boss-os").stderr).toMatch(/OTHER_BUSINESS_REPO/);
+    expect(go("12", "--task", "noelle-x", "--repo", "other/peace-be-still").stderr).toMatch(/LAND_SHAPE/);
+    const ok = go("12", "--task", "noelle-x", "--repo", "seq23/peace-be-still"); // the shape passes; ~/bin/land-after is absent in this home
+    expect(ok.stderr).not.toMatch(/LAND_SHAPE|OTHER_BUSINESS_REPO/);
+    expect(ok.status).toBe(127);
+    expect(spawnSync(join(home, ".boss-os/noelle/bin/noelle-tool"), ["vault:run"], { encoding: "utf8" }).status).toBe(2);
   });
 });
 

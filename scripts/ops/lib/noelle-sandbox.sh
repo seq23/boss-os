@@ -1,0 +1,71 @@
+# shellcheck shell=bash
+# NOELLE'S SANDBOXED RUN, WRITTEN FRESH EVERY RUN (redesign 24 Nov 2026: safety by taking access away). Sourced by
+# scripts/ops/noelle.sh (and by the TEST run that proves it). Everything here lives in ~/.boss-os/noelle, which her
+# sandbox neither writes nor (except the gitconfig) reads:
+#   settings.json   scripts/ops/noelle-permissions.json with __HOME__, __REPO__ and __RUN__ filled in
+#   gitconfig       her git's only config (GIT_CONFIG_GLOBAL; GIT_CONFIG_NOSYSTEM drops the system osxkeychain
+#                   helper): pushes authenticate only with the GH_TOKEN her run is given, never Sequoia's login
+#   bin/noelle-tool her four vault tools; bin/land-after her one way to merge. Both run OUTSIDE the sandbox
+#                   (excludedCommands), so each checks its arguments' shape and starts from an empty environment
+#                   (env -i): nothing she sets, no PATH, NODE_OPTIONS or token of hers, reaches them.
+#   guard/          her guard's state (PR count, reviewers, the compaction mark), out of her reach
+#
+#   noelle_prepare <repo> <noelle-home> <run-folder> <run-id>   prints the settings path; non-zero on any failure
+
+noelle_prepare() {
+  local repo="$1" nhome="$2" work="$3" run_id="$4"
+  local lock="$HOME/.boss-os/noelle" runs="$HOME/.boss-os/noelle/runs" run her email
+  [ "$nhome" = "$HOME/Work/noelle" ] || { echo "NAMED STOP [NOELLE_HOME_MOVED] her sandbox is written for ~/Work/noelle, not $nhome" >&2; return 6; }
+  case "$work" in "$runs"/*) run="${work#"$runs"/}" ;; *) echo "NAMED STOP [RUN_FOLDER] $work is not under $runs" >&2; return 6 ;; esac
+  [[ "$run" =~ ^[A-Za-z0-9._-]+$ ]] || { echo "NAMED STOP [RUN_FOLDER] run folder name '$run'" >&2; return 6; }
+  mkdir -p "$nhome/notes" "$nhome/tasks" "$nhome/repos" "$nhome/wt" "$nhome/.config/gh" "$lock/bin" "$lock/guard" "$work" || return 6
+  her="$(NOELLE_GUARD_FILE="$repo/scripts/ops/noelle-guard.mjs" node -e 'import(process.env.NOELLE_GUARD_FILE).then((m) => console.log(m.HER_REPOS.join(" ")))')" || return 6
+  [ -n "$her" ] || return 6
+
+  sed -e "s#__HOME__#$HOME#g" -e "s#__REPO__#$repo#g" -e "s#__RUN__#$run#g" "$repo/scripts/ops/noelle-permissions.json" > "$lock/settings.json.tmp" || return 6
+  node -e 'const s=JSON.parse(require("fs").readFileSync(process.argv[1],"utf8")); if(!s.sandbox||s.sandbox.enabled!==true) process.exit(1)' "$lock/settings.json.tmp" \
+    || { echo "NAMED STOP [NO_SANDBOX] her settings carry no sandbox; she never runs without it" >&2; return 6; }
+  mv "$lock/settings.json.tmp" "$lock/settings.json" && chmod 644 "$lock/settings.json" || return 6
+
+  email="$(git config --global user.email 2>/dev/null)"
+  cat > "$lock/gitconfig" <<EOF || return 6
+# Noelle's git config, written by scripts/ops/lib/noelle-sandbox.sh every run. No other config loads in her run.
+[user]
+	name = Noelle (growth)
+	email = ${email:-noelle@invalid}
+[credential]
+	helper =
+[credential "https://github.com"]
+	helper = "!f() { test \"\$1\" = get || exit 0; test -n \"\$GH_TOKEN\" || exit 0; echo username=x-access-token; echo \"password=\$GH_TOKEN\"; }; f"
+[init]
+	defaultBranch = main
+EOF
+
+  cat > "$lock/bin/noelle-tool" <<EOF || return 6
+#!/bin/bash
+# Noelle's four vault tools; written by scripts/ops/lib/noelle-sandbox.sh. Runs outside her sandbox.
+case "\${1:-}" in brain|notice|ledger|backlinks) ;; *) echo "usage: noelle-tool brain|notice|ledger|backlinks ..." >&2; exit 2 ;; esac
+CALLER_CWD="\$PWD"
+cd $(printf %q "$repo") || exit 6
+exec /usr/bin/env -i HOME=$(printf %q "$HOME") USER=$(printf %q "$USER") PATH=/opt/homebrew/bin:/usr/bin:/bin TMPDIR=$(printf %q "${TMPDIR:-/tmp}") \\
+  NOELLE_HOME=$(printf %q "$nhome") NOELLE_RUNS=$(printf %q "$runs") NOELLE_RUN_ID=$(printf %q "$run_id") NOELLE_CALLER_CWD="\$CALLER_CWD" \\
+  npm run --silent vault:run -- node scripts/ops/noelle.mjs "\$@"
+EOF
+
+  cat > "$lock/bin/land-after" <<EOF || return 6
+#!/bin/bash
+# Noelle's one way to merge and deploy; written by scripts/ops/lib/noelle-sandbox.sh. Runs outside her sandbox.
+# Only: land-after <pr> --task noelle-<job> --repo seq23/<one of her repos>  (no --then, no --owner).
+HER=" $her "
+usage() { echo "NAMED STOP [LAND_SHAPE] land-after <pr> --task noelle-<job> --repo seq23/<your repo>" >&2; exit 2; }
+[ "\$#" -eq 5 ] && [[ "\$1" =~ ^[0-9]{1,6}\$ ]] && [ "\$2" = --task ] && [[ "\$3" =~ ^noelle-[a-z0-9-]{1,60}\$ ]] && [ "\$4" = --repo ] && [[ "\$5" =~ ^seq23/[A-Za-z0-9_.-]+\$ ]] || usage
+case "\$HER" in *" \${5#seq23/} "*) ;; *) echo "NAMED STOP [OTHER_BUSINESS_REPO] \$5 is not one of your businesses' repos" >&2; exit 2 ;; esac
+cd $(printf %q "$HOME") || exit 6
+exec /usr/bin/env -i HOME=$(printf %q "$HOME") USER=$(printf %q "$USER") PATH=$(printf %q "$HOME/bin"):/opt/homebrew/bin:/usr/bin:/bin TMPDIR=$(printf %q "${TMPDIR:-/tmp}") \\
+  $(printf %q "$HOME/bin/land-after") "\$1" --task "\$3" --repo "\$5"
+EOF
+  chmod 755 "$lock/bin/noelle-tool" "$lock/bin/land-after" || return 6
+  printf '{"prs":0,"reviewers":0,"run":"%s"}' "$run_id" > "$lock/guard/run.json" || return 6
+  rm -f "$lock/guard/compacted"
+  printf '%s' "$lock/settings.json"
+}

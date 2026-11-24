@@ -1,8 +1,8 @@
 /**
  * NOELLE, THE DIRECTOR OF GROWTH (24 Nov 2026: full Claude Code with a persona). Pure helpers; no I/O.
  *
- * She is no longer judged by a plan gate here: she has builder tools and her guard (scripts/ops/noelle-guard.mjs)
- * holds the hard stops. What stays is what the Worker and the Mac share: which job owns which channel, the read
+ * She is no longer judged by a plan gate here: she has builder tools inside Claude Code's OS sandbox
+ * (scripts/ops/lib/noelle-sandbox.sh) and her guard (scripts/ops/noelle-guard.mjs) holds the checks judged by name. What stays is what the Worker and the Mac share: which job owns which channel, the read
  * grid, P&P's season, her daily slot, the call slot, the morning lines and the Monday schedule.
  */
 import { whenCT } from "./whenCT.mjs";

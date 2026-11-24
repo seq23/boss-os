@@ -2,10 +2,12 @@
 # NOELLE, THE DIRECTOR OF GROWTH (24 Nov 2026, her words: "go - scheduled job that wakes up as a full agent";
 # brief ~/Work/tasks/noelle-builds-brief.md). What wakes is full Claude Code as Noelle (scripts/ops/noelle/persona.md
 # on top of the whole rules file), in her own home ~/Work/noelle, with builder-level tools, the skills (read by
-# path) and one fresh `reviewer` per PR she opens. Her run is LOCKED like every claude run a script starts (#573):
-# --permission-mode dontAsk --setting-sources= --settings <scripts/ops/noelle-permissions.json, filled in>, so none
-# of Sequoia's own settings load and a tool outside the list is refused and ends the run [PERMISSION_DENIED]. Her
-# guard (scripts/ops/noelle-guard.mjs, a PreToolUse hook on every tool) holds the hard stops by name on top.
+# path) and one fresh `reviewer` per PR she opens. Her run is SANDBOXED and LOCKED (redesign 24 Nov 2026: safety by
+# taking access away): --permission-mode dontAsk --setting-sources= --settings ~/.boss-os/noelle/settings.json
+# (scripts/ops/noelle-permissions.json, filled in by lib/noelle-sandbox.sh), so none of Sequoia's own settings load,
+# Claude Code's OS sandbox holds every command she runs (writes only in ~/Work/noelle and her run folder, home reads
+# denied, network only to her hosts), and her GitHub access is her own scoped token. Her guard
+# (scripts/ops/noelle-guard.mjs) holds only what is judged by name: one reviewer per PR, 3 PRs, the handoff, land.
 #
 # launchd com.seq.boss-noelle ticks every 30 minutes, 10:00-22:59 Central (mac-window ANY holds 07:00-09:59):
 #   - a call from Sequoia (her email to boss@ that passed the owner check, or her message on Noelle's Boss OS
@@ -28,7 +30,6 @@ main() {
 
 REPO="${BOSS_OS_REPO:-$(cd "$(dirname "$(readlink -f "${BASH_SOURCE[0]}")")/../.." && pwd)}"
 NHOME="${NOELLE_HOME:-$HOME/Work/noelle}"
-TEMPLATE="$REPO/scripts/ops/noelle-permissions.json"
 GUARD="$REPO/scripts/ops/noelle-guard.mjs"
 MODEL="${NOELLE_MODEL:-claude-opus-5}"
 MAX_TURNS="${NOELLE_MAX_TURNS:-200}"
@@ -46,6 +47,7 @@ local_step() { node "$REPO/scripts/ops/noelle.mjs" "$@" 2>&1 | tee -a "$RUN_LOG"
 
 source "$(dirname "$(readlink -f "${BASH_SOURCE[0]}")")/lib/flock.sh"
 source "$(dirname "$(readlink -f "${BASH_SOURCE[0]}")")/lib/claude-lock.sh"
+source "$(dirname "$(readlink -f "${BASH_SOURCE[0]}")")/lib/noelle-sandbox.sh"
 LOCK_RC=0; hold_lock "$LOCK" || LOCK_RC=$?
 case $LOCK_RC in
   0) ;;
@@ -98,15 +100,13 @@ ROLE="$(node "$REPO/scripts/ops/lib/ai-run.mjs" role growth.noelle)" || stopped 
 # Her guard proves itself before every run: a guard that lets a hard stop through means no run.
 node "$GUARD" --self-test >> "$RUN_LOG" 2>&1 || stopped GUARD_BROKEN "NAMED STOP [GUARD_BROKEN] her guard's self-test failed; she does not run without it" 6
 
-# Her home, rebuilt from the repo every run (her own run can never change these: her guard, PROTECTED).
-mkdir -p "$NHOME/.claude" "$NHOME/notes" "$NHOME/tasks" "$NHOME/.run" "$NHOME/bin"
-sed -e "s#__HOME__#$HOME#g" -e "s#__REPO__#$REPO#g" "$TEMPLATE" > "$NHOME/.claude/settings.json" || stopped NO_SETTINGS "NAMED STOP [NO_SETTINGS] her settings could not be written" 6
-printf '#!/bin/bash\n# Noelle'"'"'s four vault tools (brain, notice, ledger, backlinks); written by scripts/ops/noelle.sh.\ncase "${1:-}" in brain|notice|ledger|backlinks) ;; *) echo "usage: noelle-tool brain|notice|ledger|backlinks ..."; exit 2 ;; esac\ncd %q && exec npm run --silent vault:run -- node scripts/ops/noelle.mjs "$@"\n' "$REPO" > "$NHOME/bin/noelle-tool"
-chmod 755 "$NHOME/bin/noelle-tool"
-printf '{"prs":0,"reviewers":0,"run":"%s"}' "$NOELLE_RUN_ID" > "$NHOME/.run/run.json"
-rm -f "$NHOME/.run/compacted"
-grep -q '"matcher": "\*"' "$NHOME/.claude/settings.json" || stopped NO_GUARD_HOOK "NAMED STOP [NO_GUARD_HOOK] her settings carry no guard hook" 6
-CLAUDE_LOCK="$(claude_lock_args "$NHOME/.claude/settings.json" 2>>"$RUN_LOG")" || stopped NO_PERMISSIONS_FILE "NAMED STOP [NO_PERMISSIONS_FILE] her permissions file could not be used; she never runs unlocked" 6
+# Her sandbox, rebuilt from the repo every run, in ~/.boss-os/noelle where her run can neither write nor read it
+# (lib/noelle-sandbox.sh): the settings with the sandbox block, her gitconfig, her two brokers and her guard's state.
+SETTINGS="$(noelle_prepare "$REPO" "$NHOME" "$WORK" "$NOELLE_RUN_ID" 2>>"$RUN_LOG")" || stopped NO_SETTINGS "NAMED STOP [NO_SETTINGS] her sandboxed settings could not be written; $(grep -h 'NAMED STOP' "$RUN_LOG" | tail -1)" 6
+CLAUDE_LOCK="$(claude_lock_args "$SETTINGS" 2>>"$RUN_LOG")" || stopped NO_PERMISSIONS_FILE "NAMED STOP [NO_PERMISSIONS_FILE] her permissions file could not be used; she never runs unlocked" 6
+# Her GitHub access is her own fine-grained token (her business repos only), never Sequoia's gh or Keychain login.
+GH_TOKEN="$( (cd "$REPO" && npm run --silent vault:run -- node -e 'process.stdout.write(process.env.GITHUB_NOELLE_TOKEN ?? "")') 2>>"$RUN_LOG")"
+[ -n "$GH_TOKEN" ] || stopped NOELLE_GITHUB_TOKEN_MISSING "NAMED STOP [NOELLE_GITHUB_TOKEN_MISSING] her run has no GitHub token of its own. Sequoia, once: github.com/settings/personal-access-tokens/new -> Fine-grained, name noelle-growth, expiry 1 year, Resource owner seq23, Only select repositories: $(node -e 'import(process.argv[1]).then((m) => console.log(m.HER_REPOS.join(", ")))' "$GUARD"); Repository permissions: Contents read and write, Pull requests read and write, Workflows read and write, Actions read, Commit statuses read, Metadata read; Generate, copy, then in Terminal: cd ~/GitHub/boss-os && npm run -s vault:set GITHUB_NOELLE_TOKEN (paste when asked)" 6
 
 say "=== Noelle ${CALL:+called }$KIND run, slot $SLOT, try $TRY${RESUME:+ (resume)} ==="
 step reads "$WORK" || stopped NO_READS "NAMED STOP [NO_READS] her reads could not be gathered; $(grep -h 'NAMED STOP' "$RUN_LOG" | tail -1)" 13
@@ -118,7 +118,7 @@ else KICK="Your daily run: read today's reads, yesterday's note and HANDOFF.md, 
 
 SESSION_LOG="$WORK/session.log"
 SID="$(uuidgen | tr 'A-Z' 'a-z')" || stopped NO_SESSION_ID "NAMED STOP [NO_SESSION_ID] uuidgen failed" 6
-export NOELLE_HOME="$NHOME" NOELLE_REPO="$REPO" PATH="$NHOME/bin:$PATH"
+export NOELLE_HOME="$NHOME" NOELLE_REPO="$REPO" NOELLE_GUARD_DIR="$HOME/.boss-os/noelle/guard" GH_TOKEN
 ENABLE_CLAUDEAI_MCP_SERVERS=false AI_RUN_CLAUDE_MODEL="$MODEL" \
 AI_RUN_CLAUDE_ARGS="$CLAUDE_LOCK --strict-mcp-config --session-id $SID --max-turns $MAX_TURNS --output-format json --agents $WORK/agents.json --append-system-prompt-file $WORK/persona-full.md" \
 "$AI_RUN" --role "$ROLE" --network --cwd "$NHOME" --out "$SESSION_LOG" -- "$KICK" >> "$RUN_LOG" 2>&1
