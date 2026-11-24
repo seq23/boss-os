@@ -30,7 +30,7 @@ const SHARED_DENY = [
   "mcp__claude_ai_Gmail", "mcp__claude_ai_Google_Drive", "mcp__claude_ai_Google_Calendar", "mcp__claude_ai_8Raise",
 ];
 export const MUST_DENY = Object.freeze({
-  her: Object.freeze([...SHARED_DENY.filter((d) => !["Bash", "Read", "Glob", "Grep"].includes(d)), "Read(~/**)"]),
+  her: Object.freeze([...SHARED_DENY.filter((d) => !["Bash", "Read", "Glob", "Grep"].includes(d)), "Read(~/Brains/**)"]),
   review: Object.freeze(SHARED_DENY),
 });
 const SH_FLAGS = /--permission-mode dontAsk --setting-sources= --settings \$\{?SETTINGS\}? --strict-mcp-config/;
@@ -48,6 +48,20 @@ export function permissionProblems(settings, which = "her") {
   if (missing.length) out.push(`${name} no longer allows ${missing.join(", ")} (her tools are named; the run would stall)`);
   const deny = new Set(settings.permissions.deny ?? []);
   for (const d of MUST_DENY[which]) if (!deny.has(d)) out.push(`${name}: deny is missing ${d}`);
+  // 24 Nov 2026 review F1: a Read deny over her own run folder (~/.boss-os/noelle/runs/<day>) beats Read(./**) and
+  // leaves her blind. Deny wins over allow, so any deny whose path holds that folder fails here.
+  if (which === "her") {
+    const RUN_FOLDER = "~/.boss-os/noelle/runs/2026-01-01-0900/brief.md";
+    const covers = (p) => {
+      const glob = p.replace(/^\/\/Users\/[^/]+/, "~").replace(/^\/\/private\/?/, "//private/");
+      const re = new RegExp(`^${glob.replace(/[.+^${}()|[\]\\]/g, "\\$&").replace(/\*\*/g, "\u0000").replace(/\*/g, "[^/]*").replace(/\u0000/g, ".*")}$`);
+      return re.test(RUN_FOLDER) || (p.startsWith("//Users/") && /^\/\/Users\/(\*\*|\*)/.test(p));
+    };
+    for (const d of deny) {
+      const m = /^Read\((.+)\)$/.exec(String(d));
+      if (m && covers(m[1])) out.push(`${name}: deny ${d} covers her own run folder, so she could read nothing (deny beats allow)`);
+    }
+  }
   if (settings.env?.ENABLE_CLAUDEAI_MCP_SERVERS !== "false") out.push(`${name}: env ENABLE_CLAUDEAI_MCP_SERVERS is not "false" (her claude.ai connectors would load)`);
   if (settings.enabledPlugins && Object.values(settings.enabledPlugins).some(Boolean)) out.push(`${name}: a plugin is enabled (its tools would load)`);
   if (settings.extraKnownMarketplaces && Object.keys(settings.extraKnownMarketplaces).length) out.push(`${name}: a plugin marketplace is named`);
@@ -78,7 +92,8 @@ function selfTest(settings, review, sh, mjs) {
     ["Write allowed", her((s) => { s.permissions.allow.push("Write"); })],
     ["her tool dropped", her((s) => { s.permissions.allow = ["Read(./**)"]; })],
     ["WebFetch not denied", her((s) => { s.permissions.deny = s.permissions.deny.filter((d) => d !== "WebFetch"); })],
-    ["home Read not denied", her((s) => { s.permissions.deny = s.permissions.deny.filter((d) => d !== "Read(~/**)"); })],
+    ["Brains Read not denied", her((s) => { s.permissions.deny = s.permissions.deny.filter((d) => d !== "Read(~/Brains/**)"); })],
+    ["a home-wide Read deny (it blocks her own run folder)", her((s) => { s.permissions.deny.push("Read(~/**)"); })],
     ["connectors on", her((s) => { s.env = {}; })],
     ["a plugin enabled", her((s) => { s.enabledPlugins = { "openseo@openseo": true }; })],
     ["bypass mode", her((s) => { s.permissions.defaultMode = "bypassPermissions"; })],
