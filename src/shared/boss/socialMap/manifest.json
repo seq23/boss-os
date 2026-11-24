@@ -594,10 +594,23 @@
       "account_email": "unknown",
       "status": "planned",
       "posts": {
-        "by": "none",
-        "what": "Nothing; the page is not created."
+        "by": "job",
+        "what": "Weekdays 09:10 CT: the next banked post in data/linkedin/posts.json, as the ApprovalPrep page, through LinkedIn's own Posts API, each ending with the self-help line. Noelle banks the posts. Dormant (posts nothing) until LinkedIn grants page API access and data/linkedin/posted.json reads access: granted.",
+        "code": [
+          {
+            "repo": "approvalprep",
+            "paths": [
+              ".github/workflows/linkedin-posts.yml",
+              "scripts/linkedin/linkedin_poster.mjs",
+              "data/linkedin/posts.json"
+            ]
+          }
+        ],
+        "jobs": [
+          "approvalprep-linkedin-posts"
+        ]
       },
-      "decision": "Pending in entity.json; waits on her LinkedIn (restricted since 9 Oct)."
+      "decision": "Page exists (organization 147008522). Her words 24 Nov 2026: \"make sure noelle is in charge of linkedin also for the apps that have a linkedin page\". Poster built in approvalprep #209; live_auto once LinkedIn grants Community Management API access."
     },
     {
       "id": "apm-pinterest",
@@ -632,6 +645,34 @@
         ]
       },
       "decision": "Spry's Pinterest became the aplayermode account (16 Oct 2026); 4 boards, 3 pins a day (1 Nov)."
+    },
+    {
+      "id": "apm-linkedin",
+      "business": "a-player-mode",
+      "site": "aplayermode.com",
+      "platform": "LinkedIn company page",
+      "handle": "A Player Mode",
+      "url": null,
+      "account_email": "unknown",
+      "status": "planned",
+      "posts": {
+        "by": "job",
+        "what": "Weekdays 09:20 CT: the next banked post in aplayermode/data/linkedin/posts.json, as the A Player Mode page, through LinkedIn's own Posts API, checked against A Player Mode's gate list. Noelle banks the posts. Dormant until LinkedIn grants page API access and posted.json reads access: granted.",
+        "code": [
+          {
+            "repo": "sprylabs-hpc-site",
+            "paths": [
+              ".github/workflows/aplayermode-linkedin.yml",
+              "scripts/aplayermode/linkedin_poster.mjs",
+              "aplayermode/data/linkedin/posts.json"
+            ]
+          }
+        ],
+        "jobs": [
+          "sprylabs-hpc-site-aplayermode-linkedin"
+        ]
+      },
+      "decision": "Page exists (organization 147023183). Her words 24 Nov 2026: \"make sure noelle is in charge of linkedin also for the apps that have a linkedin page\". Poster built in sprylabs-hpc-site #265; live_auto once LinkedIn grants Community Management API access."
     },
     {
       "id": "spry-gumroad",
