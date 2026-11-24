@@ -6467,7 +6467,7 @@
         "repo": "sprylabs-hpc-site",
         "file": ".github/workflows/aplayermode-linkedin.yml",
         "crons": [
-          "CRON_TZ=America/Chicago 20 9 * * 1-5"
+          "20 15 * * 1-5"
         ]
       },
       "output": {
@@ -6828,7 +6828,7 @@
         "repo": "approvalprep",
         "file": ".github/workflows/linkedin-posts.yml",
         "crons": [
-          "CRON_TZ=America/Chicago 10 9 * * 1-5"
+          "10 15 * * 1-5"
         ]
       },
       "output": {
