@@ -36,3 +36,7 @@ export function slotFor(...args: any[]): any;
 export function sourceProblems(...args: any[]): any;
 export function sourcesFor(...args: any[]): any;
 export function taggedLinkProblems(...args: any[]): any;
+export const JOB_KNOBS: any;
+export const SETTLED_NOS: any;
+export function hardStops(...args: any[]): any;
+export function settledNo(...args: any[]): any;

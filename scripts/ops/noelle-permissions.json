@@ -3,14 +3,16 @@
     "ENABLE_CLAUDEAI_MCP_SERVERS": "false"
   },
   "permissions": {
-    "allow": [],
+    "allow": [
+      "Read(./**)",
+      "Bash(./noelle-tools:*)"
+    ],
     "deny": [
       "Agent",
       "Artifact",
       "ArtifactComments",
       "ArtifactData",
       "AskUserQuestion",
-      "Bash",
       "BashOutput",
       "CronCreate",
       "CronDelete",
@@ -20,8 +22,6 @@
       "EnterWorktree",
       "ExitPlanMode",
       "ExitWorktree",
-      "Glob",
-      "Grep",
       "KillShell",
       "LSP",
       "ListAgents",
@@ -29,7 +29,6 @@
       "Monitor",
       "NotebookEdit",
       "PushNotification",
-      "Read",
       "ReadMcpResourceDirTool",
       "ReadMcpResourceTool",
       "RemoteTrigger",
@@ -52,7 +51,11 @@
       "mcp__claude_ai_Google_Docs",
       "mcp__claude_ai_Google_Drive",
       "mcp__claude_ai_Google_Sheets",
-      "mcp__claude_ai_Google_Slides"
+      "mcp__claude_ai_Google_Slides",
+      "Read(~/**)",
+      "Read(//Users/**)",
+      "Read(//private/**)",
+      "Read(//etc/**)"
     ],
     "defaultMode": "dontAsk"
   }

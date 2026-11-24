@@ -55,6 +55,9 @@ const weekOf = (day: string) => { const d = new Date(`${day}T12:00:00Z`); d.setU
  * What the Growth page says Noelle last saw queued, per business and channel: a number, or "not read: …"
  * when that read failed (never "nothing scheduled" on a failed read). No run in 2 days → every queue not read.
  */
+/** Stops that are a Notices line as well as the run card (Rule 0 and the 3-days alarm). */
+export const NOTICE_STOPS = new Set(["NOTHING_ACTED", "UNDER_3_DAYS", "CHANNEL_UNREAD", "CALENDAR_UNREAD", "NOTHING_TO_RENDER"]);
+
 export async function queueView(db: D1Database, now = Date.now()) {
   const r = await db.prepare(`SELECT day, state, stops, line, reads, created_at FROM noelle_runs WHERE created_at >= ? ORDER BY created_at DESC LIMIT 1`).bind(now - 2 * DAY_MS).first<any>();
   if (!r) return { last: null, queues: {} as Record<string, Array<{ channel: string; value: number | null; unread: string | null }>>, unread: "not read: Noelle has not run in two days" };
@@ -181,7 +184,7 @@ export async function recordPlan(env: Env, body: any, now = Date.now()) {
   if (used + body.calls > WEEK_CALLS || !budget.left) {
     const stop = budget.stop ?? `NAMED STOP [WEEK_CALL_BUDGET] this run's ${body.calls} calls would pass the week's ${WEEK_CALLS}`;
     await db.prepare(`INSERT INTO noelle_runs (id, day, slot, kind, state, stops, calls, line, created_at, updated_at) VALUES (?,?,?,?,'stopped',?,?,?,?,?)`)
-      .bind(runId, today, slot, body.kind, JSON.stringify([stop.match(/\[([A-Z_]+)\]/)?.[1] ?? "WEEK_CALL_BUDGET"]), body.calls, stop, now, now).run();
+      .bind(runId, today, slot, body.kind, JSON.stringify([stop.match(/\[([A-Z0-9_]+)\]/)?.[1] ?? "WEEK_CALL_BUDGET"]), body.calls, stop, now, now).run();
     return { run: runId, accepted: [], refused: [], lines: [], stops: [stop] };
   }
   // Claim the slot BEFORE any row is written: two posts racing for one slot, the second meets the unique index.
@@ -272,7 +275,7 @@ async function planClaimed(env: Env, body: any, { runId, roster, stops, today, n
     rows.push(row);
   }
   for (const m of owed) stops.push(`NAMED STOP [NO_DECISION] ${m.business}: no decision on ${m.source}`);
-  const codes = [...new Set(stops.map((s) => s.match(/\[([A-Z_]+)\]/)?.[1]).filter(Boolean) as string[])];
+  const codes = [...new Set(stops.map((s) => s.match(/\[([A-Z0-9_]+)\]/)?.[1]).filter(Boolean) as string[])];
   const sources = Object.fromEntries(Object.entries(body.reads ?? {}).slice(0, 80).map(([k, v]: [string, any]) => [k.slice(0, 80), { at: v?.at ?? null, sha: v?.sha ? String(v.sha).slice(0, 40) : null, error: v?.error ? String(v.error).slice(0, 160) : null }]));
   await db.prepare(`UPDATE noelle_runs SET stops = ?, line = ?, reads = ?, notices = ?, updated_at = ? WHERE id = ?`)
     .bind(JSON.stringify(codes), `${checked.accepted.length} accepted, ${checked.refused.length} refused, ${cards} cards`, JSON.stringify({ sources, queues: facts.queues, unread }), JSON.stringify(checked.notices.map((x: any) => x.key)), now, runId).run();
@@ -289,7 +292,7 @@ export async function recordDone(env: Env, body: any, now = Date.now()) {
   // A run that stopped before any plan (exit 76 out of credits, a NAMED STOP in the Mac's read).
   if (!body?.run) {
     const stop = String(body?.stop ?? "").slice(0, 400);
-    const code = stop.match(/\[([A-Z_]+)\]/)?.[1];
+    const code = stop.match(/\[([A-Z0-9_]+)\]/)?.[1];
     if (!code) throw new Error("A stopped run must name its stop code in brackets, e.g. [CLAUDE_LIMIT]");
     const id = newId("nrn");
     await db.prepare(`INSERT INTO noelle_runs (id, day, slot, kind, state, stops, calls, line, created_at, updated_at) VALUES (?,?,?,?,'stopped',?,?,?,?,?)`)
@@ -316,10 +319,33 @@ export async function recordDone(env: Env, body: any, now = Date.now()) {
       .bind(newId("ntc"), p.key.slice(0, 200), line.slice(0, 200), line, now).run();
     notices++;
   }
+  // Each job change she opened is told once on Notices (she publishes; "just tell me explicitly").
+  for (const j of (Array.isArray(body.jobs) ? body.jobs : []).slice(0, 20)) {
+    const e = roster.find((x: any) => x.key === String(j?.tag ?? "").split(" ")[0]);
+    if (!e || typeof j.pr !== "string" || !/^seq23\/[\w.-]+#\d+$/.test(j.pr)) continue;
+    const key = `noelle:job:${j.pr}`;
+    if (await db.prepare(`SELECT 1 FROM boss_task_notices WHERE task_id = ? LIMIT 1`).bind(key).first()) continue;
+    const channel = String(j.tag).split(" ")[1] ?? "";
+    const line = `Noelle changed ${e.label} ${channel}: ${String(j.what ?? "a job change").slice(0, 160)} (lands on green checks) https://github.com/${j.pr.replace("#", "/pull/")}`;
+    await db.prepare(`INSERT INTO boss_task_notices (id, task_id, lane, from_name, kind, subject, body, created_at, needs_her) VALUES (?,?,'ops','Noelle','update',?,?,?,0)`)
+      .bind(newId("ntc"), key, line.slice(0, 200), line, now).run();
+    notices++;
+  }
+  // RULE 0: a red stop (nothing acted, a channel under 3 days ahead or unread) is a Notices line too, once per run and stop.
+  for (const f of (Array.isArray(body.failed) ? body.failed : []).slice(0, 40)) {
+    const why = String(f?.why ?? "");
+    const code = why.match(/NAMED STOP \[([A-Z0-9_]+)\]/)?.[1];
+    if (!code || !NOTICE_STOPS.has(code)) continue;
+    const key = `noelle:stop:${run.id}:${code}:${why.slice(0, 80)}`.slice(0, 200);
+    if (await db.prepare(`SELECT 1 FROM boss_task_notices WHERE task_id = ? LIMIT 1`).bind(key).first()) continue;
+    const line = `Noelle: ${why.replace(/NAMED STOP \[[A-Z0-9_]+\]\s*/, "").slice(0, 180)}`;
+    await db.prepare(`INSERT INTO boss_task_notices (id, task_id, lane, from_name, kind, subject, body, created_at, needs_her) VALUES (?,?,'ops','Noelle','update',?,?,?,0)`)
+      .bind(newId("ntc"), key, line.slice(0, 200), line, now).run();
+  }
   const failed = (Array.isArray(body.failed) ? body.failed : []).slice(0, 40).map((f: any) => `${String(f?.kind ?? "act")}: ${String(f?.why ?? "").slice(0, 200)}`);
   // A failure that names its stop keeps its code (POST_NOT_PUBLISHED, CALENDAR_UNREAD), so the
   // three-days-running line (G16b) can see the same stop repeat; any other is ACT_FAILED.
-  const stops = [...new Set([...parse<string[]>(run.stops, []), ...failed.map((f: string) => f.match(/NAMED STOP \[([A-Z_]+)\]/)?.[1] ?? "ACT_FAILED")])];
+  const stops = [...new Set([...parse<string[]>(run.stops, []), ...failed.map((f: string) => f.match(/NAMED STOP \[([A-Z0-9_]+)\]/)?.[1] ?? "ACT_FAILED")])];
   // The run's calls grow with the reviewer and the remake; never shrink (the week's budget reads them).
   const calls = Number.isInteger(body.calls) && body.calls > run.calls ? Math.min(body.calls, 10_000) : run.calls;
   await db.prepare(`UPDATE noelle_runs SET state = 'done', stops = ?, calls = ?, line = ?, updated_at = ? WHERE id = ?`)

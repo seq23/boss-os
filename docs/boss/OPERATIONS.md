@@ -986,8 +986,10 @@ Plan artifact 8LfYgMaHj7XLVB1fJ1vYxM, gap review G1-G21. Noelle is a scheduled C
    [PRIVACY_UNREAD]), the playbook, the 28-day numbers, the last runs and their stops.
 2. The Mac adds the week's sources (each with its file, sha and age; older than 8 days, missing or empty is a
    named stop for the items it feeds), the owning jobs' queue lengths ("not read" when a queue cannot be read)
-   and the search-loop caps, then runs Claude through `ai-run --role brain` with NO tools (an empty allow list,
-   `scripts/validate/noelle-no-tools.mjs`). Everything read is marked as untrusted data. Her answer is one JSON
+   and the search-loop caps, then runs Claude through `ai-run --role brain` from her run folder with two tools
+   only: Read inside that folder and `./noelle-tools queue|bank|check` (the same checkPlan gate the Worker runs;
+   the exact allow list is held by `scripts/validate/noelle-no-tools.mjs`). The context is at most 60 KB, each
+   shared ruling once, or the run stops [CONTEXT_TOO_BIG]. Everything read is marked as untrusted data. Her answer is one JSON
    plan between NOELLE-PLAN-BEGIN and NOELLE-PLAN-END.
 3. `POST /noelle/plan`: the Worker re-runs `checkPlan` (`src/shared/boss/growth/noelle.mjs`) on the plan and
    returns only what it accepts. She changes only the owning job's bank, plan or target (G1); she may lower a
@@ -998,6 +1000,12 @@ Plan artifact 8LfYgMaHj7XLVB1fJ1vYxM, gap review G1-G21. Noelle is a scheduled C
 4. The Mac acts through the owning jobs only, then `POST /noelle/done`: one Notices line per NEW published thing
    ("Noelle published: <business> <what> <where> <link>", https links only, Noelle's own pieces only), the stop
    codes, the call count. ai-run exit 76 (Claude limit) is a clean stop, `[CLAUDE_LIMIT]`, resumed next slot.
+   A job-target is a PR on the owning repo (`target`/`posts_per_week` in its data file, or a `bank` add of 1–14
+   posts that a fresh no-tools reviewer passed), landed by `land-after`; each PR is one Notices line
+   ("Noelle changed …"). A target above the free Buffer limit is refused [NEEDS_MONEY] and becomes her call.
+   Rule 0: a run that queued nothing and opened no PR exits 14, `[NOTHING_ACTED]`, on the card and on Notices;
+   any owned channel under 3 days ahead after the run is `[UNDER_3_DAYS]` (unread: `[CHANNEL_UNREAD]`).
+   Hold: nothing runs before `NOELLE_START_AT` (Sat 28 Nov 2026 00:00 CT), `[HELD_UNTIL]`.
 5. Measure: 24 hours after the slot the next run reads whether each piece actually published (Buffer/Studio); a
    miss is a defect, fixed that run.
 
@@ -1005,7 +1013,8 @@ Plan artifact 8LfYgMaHj7XLVB1fJ1vYxM, gap review G1-G21. Noelle is a scheduled C
 [NOELLE_DID_NOT_RUN] and one line in the next morning email; the same stop three days running is one line to
 Sequoia. A per-run and a per-week Claude-call budget end in a named stop (`WEEK_CALL_BUDGET`). Her fortnightly
 report (`reportSection`, director.mjs) is still built from the record, never from a model's words.
-Tests: `tests/noelle.test.ts` (the gate), `tests/growthRoster.test.ts` (tiers, G8), `tests/boss/noelleRun.test.ts`
+Tests: `tests/noelle.test.ts` (the gate), `tests/noelleV2.test.ts` (hold, stops, context, Rule 0, alarm, bank,
+job PRs, her tools), `tests/growthRoster.test.ts` (tiers, G8), `tests/boss/noelleRun.test.ts`
 (the routes, the record, privacy, the watch).
 
 ## Backlink requests (22 Nov 2026)
