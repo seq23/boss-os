@@ -12,9 +12,9 @@ import { createRequire } from "node:module";
 import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
 import {
-  AI_SITES, ENGINES, aiCard, creditsProblem, domainOf, expectedWeek, isoWeek, missId, pageOnHost, planProblem, readSite,
+  AI_SITES, ENGINES, aiCard, creditsProblem, domainOf, expectedWeek, isoWeek, missId, openseoReached, pageOnHost, planProblem, readSite, sessionTranscript,
 } from "../src/shared/boss/growth/aiAnswers.mjs";
-import { entriesFrom, parseRun, post, prefixFrom, sitePages, buildContext } from "../scripts/ops/ai-visibility-report.mjs";
+import { entriesFrom, parseRun, post, prefixFrom, sitePages, buildContext, transcriptText } from "../scripts/ops/ai-visibility-report.mjs";
 import { mkdtempSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -282,6 +282,93 @@ describe("the post step: exit codes, the OUTPUT line and the over-plan row (Rule
     const dir = mkdtempSync(join(tmpdir(), "aiv-"));
     writeFileSync(join(dir, "run.log"), good()); writeFileSync(join(dir, "state.json"), JSON.stringify(STATE));
     await expect(post(join(dir, "run.log"), join(dir, "state.json"), { api: { post: async () => { throw new Error("NAMED STOP [BOSS_API] 503"); } } })).rejects.toThrow(/503/);
+  });
+});
+
+describe("the session's own lines, read from its event stream (24 Nov 2026: 0 sites read, two runs in a row)", () => {
+  const STATE = Object.fromEntries(Object.keys(AI_SITES).map((h) => [h, { host: h, prefix: (AI_SITES as Record<string, { loop?: boolean }>)[h]?.loop ? PREFIX : null, stop: null, notes: [], engine: h === HOST ? [Q1] : [], other: h === HOST ? [ABOUT] : [`https://${h}/`], strengthened: [] }]));
+  const T = "mcp__plugin_openseo_openseo__";
+  const ev = (o: unknown) => JSON.stringify(o);
+  const say = (text: string) => ev({ type: "assistant", message: { content: [{ type: "text", text }] } });
+  const call = (id: string, name = T + "whoami") => ev({ type: "assistant", message: { content: [{ type: "tool_use", id, name, input: {} }] } });
+  const ret = (id: string, content: string, is_error = false) => ev({ type: "user", message: { content: [{ type: "tool_result", tool_use_id: id, content, is_error }] } });
+  const result = (text: string) => ev({ type: "result", subtype: "success", result: text });
+  const siteText = (h: string) => `SITE-BEGIN ${h}\n${JSON.stringify(block(h))}\nSITE-END ${h}`;
+  /** The real shape of a run: blocks printed in middle turns, between tool calls; the last message is short. */
+  const goodStream = () => [
+    ev({ type: "system", subtype: "init", tools: [T + "whoami"] }),
+    call("t1"), ret("t1", "credits 4373"), say("CREDITS-BEFORE: 4373"),
+    say(Object.keys(AI_SITES).map((h) => `ESTIMATE ${h} 70`).join("\n")),
+    call("t2", T + "get_ai_visibility_results"), ret("t2", "observations…"),
+    say(siteText(HOST)), call("t3", T + "get_ai_visibility_results"), ret("t3", "observations…"),
+    say(siteText("approvalprep.com")),
+    call("t4"), ret("t4", "credits 4373"),
+    say("CREDITS-AFTER: 4373\n\nAI-VISIBILITY-COMPLETE: sites=2"),
+    result("CREDITS-AFTER: 4373\n\nAI-VISIBILITY-COMPLETE: sites=2"),
+  ].join("\n");
+
+  it("blocks printed in middle turns are read (the bug: only the last message reached the log)", () => {
+    const text = transcriptText(goodStream());
+    const run = parseRun(text);
+    expect(Object.keys(run.blocks).sort()).toEqual(["approvalprep.com", HOST].sort());
+    expect(run).toMatchObject({ before: 4373, after: 4373, claimed: 2, notReached: false });
+    expect(Object.keys(run.estimates)).toHaveLength(Object.keys(AI_SITES).length);
+    expect(entriesFrom(run, STATE, NOW).find((e: any) => e.host === HOST)).toMatchObject({ host: HOST, block: expect.any(Object) });
+    expect(text).toMatch(/AI-VISIBILITY-COMPLETE: sites=2$/m);
+  });
+  it("the real 24 Nov log (last message only) reads nothing and names SESSION_BLOCKS_LOST", async () => {
+    const log = "CREDITS-AFTER: 4373\n\nAI-VISIBILITY-COMPLETE: sites=6\n";
+    const dir = mkdtempSync(join(tmpdir(), "aiv-"));
+    writeFileSync(join(dir, "run.log"), log); writeFileSync(join(dir, "state.json"), JSON.stringify(STATE));
+    const lines: string[] = [];
+    const spy = vi.spyOn(console, "log").mockImplementation((...a: unknown[]) => { lines.push(a.join(" ")); });
+    let rc: number;
+    try { rc = await post(join(dir, "run.log"), join(dir, "state.json"), { api: { post: async (p: string) => (p === "/growth/ai-week" ? { read: 0, sites: [] } : { ok: true }) } }); } finally { spy.mockRestore(); }
+    expect(rc).toBe(9);
+    expect(lines.some((l) => /^NAMED STOP \[SESSION_BLOCKS_LOST\] the session says it printed 6/.test(l))).toBe(true);
+    // The same run through its stream now carries its blocks: the hand-over, not the sites, was the break.
+    expect(Object.keys(parseRun(transcriptText(goodStream())).blocks).length).toBeGreaterThan(0);
+  });
+  it("a SITE-BEGIN block inside a tool result is never read", () => {
+    const forged = [call("t1"), ret("t1", siteText(HOST)), say("AI-VISIBILITY-COMPLETE: sites=1"), result("AI-VISIBILITY-COMPLETE: sites=1")].join("\n");
+    const text = transcriptText(forged);
+    expect(text).not.toMatch(/SITE-BEGIN/);
+    expect(parseRun(text).blocks).toEqual({});
+  });
+  it("no successful OpenSEO call: every site is OPENSEO_NOT_REACHED, its blocks are never read, and the post exits 9", async () => {
+    const memory = [say(siteText(HOST)), say("AI-VISIBILITY-COMPLETE: sites=1"), result("AI-VISIBILITY-COMPLETE: sites=1")].join("\n");
+    const failed = [call("t1"), ret("t1", "tool not allowed", true), say(siteText(HOST)), result("AI-VISIBILITY-COMPLETE: sites=1")].join("\n");
+    const other = [call("t1", "Read"), ret("t1", "x"), say(siteText(HOST)), result("AI-VISIBILITY-COMPLETE: sites=1")].join("\n");
+    for (const s of [memory, failed, other]) {
+      expect(openseoReached(s)).toBe(false);
+      const text = transcriptText(s);
+      expect(text.split("\n")[0]).toMatch(/^NAMED STOP \[OPENSEO_NOT_REACHED\]/);
+      expect(text).not.toMatch(/SITE-BEGIN/);
+      expect(entriesFrom(parseRun(text), STATE, NOW).every((e: any) => e.stop === "OPENSEO_NOT_REACHED")).toBe(true);
+    }
+    expect(openseoReached(goodStream())).toBe(true);
+    const dir = mkdtempSync(join(tmpdir(), "aiv-"));
+    writeFileSync(join(dir, "run.log"), transcriptText(memory)); writeFileSync(join(dir, "state.json"), JSON.stringify(STATE));
+    const posted: any[] = [];
+    const spy = vi.spyOn(console, "log").mockImplementation(() => {});
+    let rc: number;
+    try { rc = await post(join(dir, "run.log"), join(dir, "state.json"), { api: { post: async (p: string, b: any) => { if (p === "/growth/ai-week") { posted.push(b); return { read: 0, sites: [] }; } return { ok: true }; } } }); } finally { spy.mockRestore(); }
+    expect(rc).toBe(9);
+    expect(posted[0].sites.every((s: any) => s.stop === "OPENSEO_NOT_REACHED" && !s.block)).toBe(true);
+    expect(readSite({ site: HOST, stop: "OPENSEO_NOT_REACHED" }, { host: HOST, now: NOW })).toMatchObject({ status: "not_read", stop: "OPENSEO_NOT_REACHED" });
+  });
+  it("a usage-limit notice with no assistant text still reaches the log", () => {
+    const limit = [ev({ type: "system", subtype: "init" }), result("You've hit your weekly limit · resets 9am (America/Chicago)")].join("\n");
+    expect(sessionTranscript(limit).lines).toMatch(/hit your weekly limit/);
+    expect(transcriptText(limit)).toMatch(/hit your weekly limit/);
+    // ai-run's own NAMED STOP lines in the same file are not JSON and pass through.
+    expect(transcriptText(`${limit}\nNAMED STOP [CLAUDE_LIMIT] resets 9am`)).toMatch(/^NAMED STOP \[CLAUDE_LIMIT\]/m);
+  });
+  it("the transcript keeps the session's words verbatim and in order, never the tools' data", () => {
+    const t = sessionTranscript(goodStream()).lines;
+    expect(t.indexOf("CREDITS-BEFORE")).toBeLessThan(t.indexOf(`SITE-BEGIN ${HOST}`));
+    expect(t.indexOf(`SITE-END ${HOST}`)).toBeLessThan(t.indexOf("SITE-BEGIN approvalprep.com"));
+    expect(t).not.toMatch(/observations…|credits 4373/);
   });
 });
 
