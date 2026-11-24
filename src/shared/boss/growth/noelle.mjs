@@ -23,6 +23,10 @@ export const KINDS = Object.freeze([
   "linked", "test", "outreach-target", "name-source", "post", "page-edit", "pin-refill", "page-new",
 ]);
 /** Kinds a search-watch business may carry: search levers, the weekly read and her calls only (G8). */
+/** Kinds the Mac's act step carries out (a PR, the Studio queue or a refill); the Worker hands back these
+ * plus the kinds the Mac records, and nothing else. One list, so a lever the Worker drops cannot exist. */
+export const ACTED_KINDS = Object.freeze(["studio-plan", "job-target", "search-loop", "page-new", "pin-refill"]);
+export const MAC_KINDS = Object.freeze([...ACTED_KINDS, "outreach-target", "test", "name-source"]);
 export const WATCH_KINDS = Object.freeze(["decision", "search-loop", "page-new", "proposal", "sequoia-line", "name-source", "linked", "page-edit"]);
 
 /**

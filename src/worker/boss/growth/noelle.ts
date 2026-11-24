@@ -34,7 +34,7 @@ import { playbookBody } from "../../../shared/boss/growth/playbook.mjs";
 import { MAX_CARDS, reportDue, reportSection } from "../../../shared/boss/growth/director.mjs";
 import {
   checkPlan, slotOf, sourceProblems, missingDecisions, readGrid, season, slotFor, callBudget, didNotRunLine, escalations, noticeLine,
-  WEEK_CALLS, KINDS,
+  WEEK_CALLS, KINDS, MAC_KINDS,
 } from "../../../shared/boss/growth/noelle.mjs";
 import { appendToSection } from "../../../shared/boss/mail/morningSections.mjs";
 import { latestReadings } from "../routes/growth";
@@ -281,7 +281,7 @@ async function planClaimed(env: Env, body: any, { runId, roster, stops, today, n
     .bind(JSON.stringify(codes), `${checked.accepted.length} accepted, ${checked.refused.length} refused, ${cards} cards`, JSON.stringify({ sources, queues: facts.queues, unread }), JSON.stringify(checked.notices.map((x: any) => x.key)), now, runId).run();
   await audit(db, { actor: DIRECTOR, lane: "ops", entityType: "noelle_run", entityId: runId, action: "planned", detail: { accepted: checked.accepted.length, refused: checked.refused.map((r: any) => r.stop), stops: codes, cards } });
   // The acts the Mac carries out: only kinds with a lever there (owned jobs' targets, Studio, search-loop, outreach lists, tests).
-  const toAct = checked.accepted.filter((a: any) => ["studio-plan", "job-target", "search-loop", "outreach-target", "test", "name-source"].includes(a.kind));
+  const toAct = checked.accepted.filter((a: any) => MAC_KINDS.includes(a.kind));
   return { run: runId, accepted: toAct, refused: checked.refused, lines: checked.lines, notices: checked.notices, roster: checked.roster, stops, decisions: rows.length };
 }
 

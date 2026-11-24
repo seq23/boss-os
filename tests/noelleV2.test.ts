@@ -11,7 +11,7 @@ import { join } from "node:path";
 import { ALARM_DAYS, CONTEXT_MAX, REPLY_BEGIN, REPLY_END, START_AT, actExit, callBlock, callReplyText, replyFrom, bankRows, bankVerdicts, contextTooBig, heldUntil, jobTarget, lowChannels, nicheBlock, rulingsFiles, splitRulings, tickDecision, searchLoopEdit, searchLoopAct, pinRefill, searchLoopCaps, capLines, factsOf } from "../scripts/ops/noelle.mjs";
 // @ts-expect-error — plain ESM with no declaration file
 import { checkLines, queueLines } from "../scripts/ops/noelle-tools.mjs";
-import { CHANNEL_OWNERS, JOB_KNOBS, PIN_REFILLS, SEARCH_LOOPS, checkPlan, hardStops, settledNo } from "../src/shared/boss/growth/noelle.mjs";
+import { ACTED_KINDS, MAC_KINDS, KINDS, CHANNEL_OWNERS, JOB_KNOBS, PIN_REFILLS, SEARCH_LOOPS, checkPlan, hardStops, settledNo } from "../src/shared/boss/growth/noelle.mjs";
 
 const SAT = Date.parse(START_AT);
 
@@ -207,6 +207,12 @@ describe("a #noelle call: her email in her context, her reply read back (item 7)
 });
 
 describe("items 3 and 4: her search-loop changes, new pages and pin refills really act", () => {
+  it("every lever the Mac acts on is one the Worker hands back (page-new and pin-refill were dropped once)", () => {
+    for (const k of ["page-new", "pin-refill", "search-loop", "job-target", "studio-plan"]) { expect(ACTED_KINDS).toContain(k); expect(MAC_KINDS).toContain(k); }
+    for (const k of MAC_KINDS) expect(KINDS).toContain(k);
+    const worker = readFileSync(join(__dirname, "../src/worker/boss/growth/noelle.ts"), "utf8");
+    expect(worker).toMatch(/const toAct = checked\.accepted\.filter\(\(a: any\) => MAC_KINDS\.includes\(a\.kind\)\)/);
+  });
   const ent = (key: string, channels: string[], extra: object = {}) => ({ key, label: key, tier: "full", channels: channels.map((channel) => ({ channel, formats: [] })), rulings: [], ...extra });
   const roster = [ent("keepmyproof", ["search-pages"]), ent("dream-wedding", ["pinterest"]), ent("approvalprep", ["search-pages"]), ent("time-2-read", ["search-pages"]), ent("hicks", ["search-pages"], { tier: "search-watch" })];
   const gate = (...actions: object[]) => checkPlan({ actions }, { roster, today: "2026-11-28", queues: {}, caps: { keepmyproof: 40 }, articles: {}, orderedRecent: {}, accounts: [], bufferFull: [], linkedOpen: [] });

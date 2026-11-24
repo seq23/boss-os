@@ -32,7 +32,7 @@ import { chmodSync, existsSync, mkdirSync, readFileSync, rmSync, writeFileSync }
 import { homedir } from "node:os";
 import { basename, dirname, join } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
-import { CHANNEL_OWNERS, JOB_FIELDS, JOB_KNOBS, OUTREACH_SENDERS, PIECE_THEMES, PLAN_BEGIN, PLAN_END, RUN_CALLS, SEARCH_LOOP_CHANGES, SEARCH_LOOPS, PIN_REFILLS, SOURCES_ALLOWED, checkPlan, parsePlan, season, slotFor, sourcesFor } from "../../src/shared/boss/growth/noelle.mjs";
+import { ACTED_KINDS, CHANNEL_OWNERS, JOB_FIELDS, JOB_KNOBS, OUTREACH_SENDERS, PIECE_THEMES, PLAN_BEGIN, PLAN_END, RUN_CALLS, SEARCH_LOOP_CHANGES, SEARCH_LOOPS, PIN_REFILLS, SOURCES_ALLOWED, checkPlan, parsePlan, season, slotFor, sourcesFor } from "../../src/shared/boss/growth/noelle.mjs";
 import { headingGroups } from "../../src/shared/boss/growth/roster.mjs";
 import { collectReads, photoShelf } from "./lib/noelle-reads.mjs";
 import { d1Query, macContext, readMetric } from "./lib/scorecard-readers.mjs";
@@ -519,7 +519,7 @@ async function cmdAct(dir) {
   state.jobs ??= [];
   const studio = (res.accepted ?? []).filter((a) => a.kind === "studio-plan");
   const jobs = (res.accepted ?? []).filter((a) => a.kind === "job-target");
-  const ACTED = ["studio-plan", "job-target", "search-loop", "page-new", "pin-refill"];
+  const ACTED = ACTED_KINDS;
   const recorded = (res.accepted ?? []).filter((a) => !ACTED.includes(a.kind));
   if (recorded.length) log(`${recorded.length} other accepted actions recorded as decisions on the growth page (${[...new Set(recorded.map((a) => a.kind))].join(", ")}; no executor yet: see the PR's Not built)`);
   for (const a of jobs) { const r = jobTarget(a, state, dir); state.jobs.push(r); log(r.line); if (r.limit) { state.stop = `NAMED STOP [CLAUDE_LIMIT] out of Claude credits during a bank review; ${RESUME_WORDS}`; break; } }

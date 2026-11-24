@@ -20,6 +20,8 @@ export const PIN_REFILLS: any;
 export const SOURCES_ALLOWED: any;
 export const STALE_DAYS: any;
 export const WATCH_KINDS: any;
+export const ACTED_KINDS: readonly string[];
+export const MAC_KINDS: readonly string[];
 export const WEEK_CALLS: any;
 export function cadenceOf(...args: any[]): any;
 export function callBudget(...args: any[]): any;
