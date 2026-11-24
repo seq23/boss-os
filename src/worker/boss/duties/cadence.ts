@@ -60,8 +60,8 @@ export function nextDueAt(schedule: DutySchedule, after: number): number {
    * thousand of those calls, and on the Workers runtime each is real CPU. The screen was being
    * killed for it. Now a day is rejected by its civil date alone: the weekday of (y, m, d) is
    * arithmetic, and the first of the month is `d === 1`. The instant is only placed for a day that
-   * could be the answer, and the answers are the same — checked against the old walk across four
-   * zones, every cadence, and every hour of a year including both transitions.
+   * could be the answer. The answers match the old walk on every ordinary day; they differ only on
+   * a clock-change day, where the old walk was wrong (below), pinned by tests/boss/centralClockCallers.test.ts.
    */
   // Advance in CIVIL days, not 24-hour steps (24 Nov 2026 fix): on a transition day the local date
   // changes after 23 or 25 hours, and the old `after + i * 24h` walk skipped the spring day whenever
