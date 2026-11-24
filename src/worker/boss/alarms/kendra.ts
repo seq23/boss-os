@@ -25,6 +25,7 @@ import { admitTask } from "../tasks/admit";
 import {
   KENDRA, floorVerdict, floorAlarmText, firstRunLoop, firstRunMet, usualDuration, staleTaskVerdict, staleTaskText, centralDay,
 } from "../../../shared/boss/alarms/rules.mjs";
+import { wallClock } from "../../../shared/boss/schedule/clock.mjs";
 
 export type AlarmKind = "output_floor" | "stale_task" | "owner_mail";
 
@@ -287,7 +288,7 @@ export type MorningVerdict = "sent" | "early" | "told" | "already told";
  */
 export async function morningEmailCheck(env: Env, now = Date.now()): Promise<MorningVerdict> {
   const day = centralDay(now);
-  const hour = Number(new Intl.DateTimeFormat("en-US", { timeZone: "America/Chicago", hour: "numeric", hourCycle: "h23" }).format(new Date(now)));
+  const hour = wallClock(now).h;
   const marked = await env.DB.prepare(`SELECT sent_at FROM morning_digests WHERE day = ?`).bind(day).first<{ sent_at: number | null }>();
   const mailed = marked?.sent_at != null || (await env.DB
     .prepare(`SELECT 1 AS x FROM boss_sent_mail WHERE layout = 'digest' AND delivery_state = 'sent' AND sent_at >= ? LIMIT 1`)

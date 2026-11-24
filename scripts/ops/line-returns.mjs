@@ -25,6 +25,7 @@
  */
 
 import { createSign } from "node:crypto";
+import { dayOf } from "../../src/shared/boss/schedule/clock.mjs";
 
 const ORIGIN = process.env.BOSS_OS_ORIGIN ?? "https://boss.sequoiataylor.com";
 const DRY = process.argv.includes("--dry-run");
@@ -60,8 +61,7 @@ async function main() {
   const creds = JSON.parse(process.env.GSC_SERVICE_ACCOUNT_JSON ?? "null");
   if (!creds) throw new Error("No service account in the environment. Run this through `npm run returns:contribute`.");
 
-  const nowMonth = new Intl.DateTimeFormat("en-CA", { timeZone: "America/Chicago", year: "numeric", month: "2-digit" })
-    .format(new Date()).slice(0, 7);
+  const nowMonth = dayOf(Date.now()).slice(0, 7);
   const month = TARGET_MONTH ?? nowMonth;
   if (!/^\d{4}-(0[1-9]|1[0-2])$/.test(month)) throw new Error(`"${month}" is not a month. Use YYYY-MM.`);
 

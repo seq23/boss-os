@@ -73,6 +73,7 @@ import path from "node:path";
 import os from "node:os";
 import { namesOnce } from "./notify.mjs";
 import { withinLookback, pairAllowed, isDoNotSuggest, LOOKBACK_DAYS } from "../../src/shared/boss/capital/partyLists.mjs";
+import { dayOf } from "../../src/shared/boss/schedule/clock.mjs";
 
 /*
  * ─── THE WINDOW SHE SET, 23 OCT 2026 ────────────────────────────────────────
@@ -781,7 +782,7 @@ export function morningWrittenToday(name, now = Date.now()) {
   const dir = process.env.BOSS_OS_MORNING_DIR ?? path.join(os.homedir(), ".boss-os", "morning");
   try {
     const at = JSON.parse(fs.readFileSync(path.join(dir, `${name}.json`), "utf8")).at; // writeMorningSection stamps "at"
-    const day = (t) => new Intl.DateTimeFormat("en-CA", { timeZone: "America/Chicago" }).format(t);
+    const day = (t) => dayOf(t);
     return Boolean(at) && day(Date.parse(at)) === day(now);
   } catch { return false; }
 }

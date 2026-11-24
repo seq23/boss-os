@@ -24,6 +24,7 @@
  */
 
 import { NEVER_SPEND_RULE } from "../duties/executors.mjs";
+import { CENTRAL, instantAt } from "../schedule/clock.mjs";
 
 /** Where every clearing email goes. Boss OS's own mailbox, never West Peek's. */
 export const SERVICE_INTAKE_ADDRESS = "boss@sequoiataylor.com";
@@ -80,7 +81,9 @@ export function deferredItemsIn(text) {
   const out = [];
   const seen = new Set();
   for (const m of String(text ?? "").matchAll(DEFERRED_LINE)) {
-    const due = Date.parse(`${m[1]}T09:00:00-05:00`);
+    const [y, mo, d] = m[1].split("-").map(Number);
+    // 09:00 on her clock, from the one clock: a fixed -05:00 was 08:00 CST all winter. A bad date reads NaN.
+    const due = Number.isFinite(Date.parse(m[1])) ? instantAt(CENTRAL, y, mo, d, 9) : NaN;
     if (!Number.isFinite(due)) continue;
     const ask = (m[2] ?? "").trim();
     const key = `${m[1]}|${ask.toLowerCase()}`;

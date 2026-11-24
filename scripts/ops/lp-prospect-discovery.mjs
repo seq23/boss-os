@@ -32,6 +32,7 @@ import { bossApi } from "./lib/duty-kit.mjs";
 import { OUR_DOMAINS } from "./mail-bulk.mjs";
 import { INBOX_LOOKBACK_DAYS, excluded } from "../../src/shared/boss/lp/plan.mjs";
 import { outputLine } from "../../src/shared/boss/alarms/rules.mjs";
+import { dayOf } from "../../src/shared/boss/schedule/clock.mjs";
 
 const COLLECT_FLAG = process.argv.includes("--collect"); // only poll unfinished lookups: spends nothing
 const LIVE = process.argv.includes("--live") || COLLECT_FLAG;
@@ -89,7 +90,7 @@ export function withPending(file, pending) {
 export function collectOnly({ collectFlag = false, fullRunAt = null, now = Date.now() } = {}) {
   if (collectFlag) return true;
   if (!fullRunAt) return false;
-  const day = (ms) => new Intl.DateTimeFormat("en-CA", { timeZone: "America/Chicago" }).format(new Date(ms));
+  const day = (ms) => dayOf(ms);
   const t = Date.parse(fullRunAt);
   return Number.isFinite(t) && day(t) === day(now);
 }

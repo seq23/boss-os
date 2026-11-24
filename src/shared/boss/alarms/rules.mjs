@@ -13,6 +13,7 @@
  * Every alarm belongs to Kendra (emp_continuity, Systems). It reaches her Today screen only when
  * she alone can fix it (`hers`), e.g. a credential only she holds.
  */
+import { CENTRAL, dayOf, wallClock } from "../schedule/clock.mjs";
 
 export const KENDRA = "emp_continuity";
 export const DEFAULT_OUTPUT_RUNS = 2;
@@ -91,8 +92,7 @@ export function floorAlarmText(duty, verdict) {
 
 /** YYYY-MM-DD in Central, `days` after `ms`. Pure. */
 export function centralDay(ms, days = 0) {
-  return new Intl.DateTimeFormat("en-CA", { timeZone: "America/Chicago", year: "numeric", month: "2-digit", day: "2-digit" })
-    .format(new Date(Number(ms) + days * 86_400_000));
+  return dayOf(Number(ms), CENTRAL, days);
 }
 
 /** The Open Loops row for a new job. Closes itself on the first above-floor run. Pure. */
@@ -143,7 +143,7 @@ export const POLL_WINDOW = Object.freeze([6, 22]);
 /** A run parked on a seat and claimed by no machine through this many polling hours is said. */
 export const NEVER_CLAIMED_POLLING_MS = 4 * 3_600_000;
 
-const chicagoHour = (ms) => Number(new Intl.DateTimeFormat("en-US", { timeZone: "America/Chicago", hour: "numeric", hourCycle: "h23" }).format(new Date(ms))) % 24;
+const chicagoHour = (ms) => wallClock(ms).h;
 
 /**
  * The milliseconds between `from` and `to` that fall inside POLL_WINDOW in Central. Central's offset

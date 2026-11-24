@@ -23,7 +23,7 @@
  * NO NAMES LIVE HERE. Tests use invented names at example.com.
  */
 import { firstName } from "./plan.mjs";
-import { instantAt } from "../ownerTime.mjs";
+import { dayOf, instantAt, wallClock } from "../schedule/clock.mjs";
 
 const DAY = 86_400_000;
 
@@ -78,14 +78,14 @@ export function zoneResolver({ awayCity = null, awayUntil = null, homeZone = nul
   };
 }
 
-/** Wall-clock parts of an instant in a zone. */
+const WEEKDAY = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
+/** Wall-clock parts of an instant in a zone (read from schedule/clock.mjs, the one clock). */
 export function wall(t, zone) {
-  const f = new Intl.DateTimeFormat("en-US", { timeZone: zone, weekday: "short", year: "numeric", month: "2-digit", day: "2-digit", hour: "2-digit", minute: "2-digit", hourCycle: "h23" });
-  const p = Object.fromEntries(f.formatToParts(new Date(t)).map((x) => [x.type, x.value]));
-  return { weekday: p.weekday, ymd: `${p.year}-${p.month}-${p.day}`, hour: Number(p.hour), minute: Number(p.minute) };
+  const w = wallClock(t, zone);
+  return { weekday: WEEKDAY[w.dow], ymd: dayOf(t, zone), hour: w.h, minute: w.min };
 }
 
-/** The instant of a wall-clock time on a date in a zone, or null when that clock time never happens there (the hour skipped when clocks go forward). */
+/** The instant of a wall-clock time on a date in a zone, or null when that clock time never happens there (the hour skipped when clocks go forward): a meeting is never offered at a time that does not exist. */
 export function instantIn(zone, ymd, hour, minute) {
   const [y, m, d] = ymd.split("-").map(Number);
   const t = instantAt(zone, y, m, d, hour, minute);

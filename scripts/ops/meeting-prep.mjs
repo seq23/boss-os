@@ -30,6 +30,7 @@ import { isInstitution, buildPrep, buildCatchUp, isScooterCatchUp, roundupFrom, 
 import { askClaudeJson, googleToken, gmailHeaders } from "./lib/duty-kit.mjs";
 import { repairMojibake } from "../../src/shared/boss/mail/subject.mjs";
 import { eachItem } from "../../src/shared/boss/duties/stall.mjs";
+import { dayOf } from "../../src/shared/boss/schedule/clock.mjs";
 
 const ORIGIN = process.env.BOSS_OS_ORIGIN ?? "https://boss.sequoiataylor.com";
 const DIR = path.join(os.homedir(), ".boss-os", "meeting-prep");
@@ -374,7 +375,7 @@ export function catchUpSince(event, last) {
 
 /** The most prep EMAILS she gets in one Central day. Every prep is still made and filed; past the cap only the email is not sent. */
 export const MAX_PREP_EMAILS_PER_DAY = 3;
-const dayKeyCt = (ms) => new Intl.DateTimeFormat("en-CA", { timeZone: "America/Chicago" }).format(new Date(ms));
+const dayKeyCt = (ms) => dayOf(ms);
 
 /**
  * Does someone from outside sit in this meeting (an LP, an investor, a brand, a customer)? Any other

@@ -28,6 +28,7 @@ import { homedir } from "node:os";
 import path from "node:path";
 import { centralToLocalOffset } from "../plist-central.mjs";
 import { categoryProblems, isClientRepo, repoDir } from "./email-map.mjs";
+import { CENTRAL, zoneOffsetMs } from "../../../src/shared/boss/schedule/clock.mjs";
 
 export const DAY_NAMES = ["sun", "mon", "tue", "wed", "thu", "fri", "sat"];
 const ORDER = ["mon", "tue", "wed", "thu", "fri", "sat", "sun"];
@@ -194,11 +195,9 @@ export function cronEvents(cron, utcOffsetHours = chicagoOffset()) {
   return ev;
 }
 
-/** Chicago's offset from UTC in hours at `now` (-6 or -5). */
+/** Chicago's offset from UTC in hours at `now` (-6 or -5), read from Boss OS's one clock. */
 export function chicagoOffset(now = new Date()) {
-  const p = new Intl.DateTimeFormat("en-US", { timeZone: "America/Chicago", hour12: false, hourCycle: "h23", year: "numeric", month: "2-digit", day: "2-digit", hour: "2-digit", minute: "2-digit" }).formatToParts(now);
-  const g = (t) => Number(p.find((x) => x.type === t)?.value);
-  return Math.round((Date.UTC(g("year"), g("month") - 1, g("day"), g("hour"), g("minute")) - now.getTime()) / 3_600_000);
+  return Math.round(zoneOffsetMs(now.getTime(), CENTRAL) / 3_600_000);
 }
 
 /**

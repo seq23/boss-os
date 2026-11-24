@@ -15,6 +15,7 @@ import { slotText, slotsFrom, laterWindow } from "./schedule.mjs";
 import { recipientLines } from "../mail/replyNeed.mjs";
 import { PUBLIC_SEED, isPublicCompany } from "../deals/publicCompanies.mjs";
 import { callLine } from "./callBooked.mjs";
+import { dayOf } from "../schedule/clock.mjs";
 
 export const LP_MAILBOX = "sequoia@westpeek.ventures";
 /**
@@ -848,8 +849,7 @@ export const MONIQUE_MONTHLY = EIGHTRAISE_BUDGET.prospecting + EIGHTRAISE_BUDGET
 
 /** Calendar month in America/Chicago, YYYY-MM. */
 export function monthOf(ms = Date.now()) {
-  const p = new Intl.DateTimeFormat("en-CA", { timeZone: "America/Chicago", year: "numeric", month: "2-digit" }).formatToParts(new Date(ms));
-  return `${p.find((x) => x.type === "year").value}-${p.find((x) => x.type === "month").value}`;
+  return dayOf(ms).slice(0, 7);
 }
 
 /**

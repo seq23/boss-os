@@ -18,6 +18,7 @@ import {
   DEFAULT_PROSPECT_TEMPLATE, MAX_NEW_PER_DAY, MAX_TOUCHES, dueTouch, nextTouchAt, excluded, prospectProblems, renderProspect,
   templateHash, verdictGate, hasTouchWords, PROSPECT_VARIANTS, templateAsksForCall, applyTemplateNotes, featuredNamesProblems, type Template, type ProspectForecast,
 } from "../../../shared/boss/lp/plan.mjs";
+import { dayOf } from "../../../shared/boss/schedule/clock.mjs";
 
 /** 144 random bits, url-safe. The tap links carry it and nothing else. */
 export function tapToken(): string {
@@ -310,7 +311,7 @@ async function prospectHealth(db: D1Database, now: number) {
 /** When prospect emails go, said once, for a plan made outside those hours. Never one of `stops`. */
 export const SEND_WINDOW_WORDS = "Prospect emails go out on weekdays, 9 to 5 Central.";
 
-const chicagoDay = (ms: number) => new Intl.DateTimeFormat("en-CA", { timeZone: "America/Chicago" }).format(new Date(ms));
+const chicagoDay = (ms: number) => dayOf(ms);
 
 /**
  * Today's sends. Nothing goes without: an approved template, the kill switch off, sending live (else

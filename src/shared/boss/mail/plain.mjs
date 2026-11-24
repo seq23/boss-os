@@ -33,6 +33,7 @@
  * Message-ID (`boss_mail_refs`); her reply quotes that Message-ID and the inbound handler reads the refs
  * back from it (`refsForChain`). Nothing she sees carries a code.
  */
+import { wallClock } from "../schedule/clock.mjs";
 
 /** Words that stay in capitals: real acronyms, not shouting. */
 export const ACRONYMS = new Set([
@@ -212,9 +213,8 @@ export function clockWords(h, m) {
 export function utcClockWords(h, m, now = Date.now()) {
   const d = new Date(now);
   const at = Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), d.getUTCDate(), Number(h), Number(m));
-  const p = new Intl.DateTimeFormat("en-US", { timeZone: "America/Chicago", hour: "numeric", minute: "2-digit", hour12: false }).formatToParts(new Date(at));
-  const g = (t) => p.find((x) => x.type === t)?.value ?? "0";
-  return clockWords(Number(g("hour")) % 24, Number(g("minute")));
+  const w = wallClock(at);
+  return clockWords(w.h, w.min);
 }
 
 /** Drop any whole sentence that reads as a command to type (the one place this rule lives). */

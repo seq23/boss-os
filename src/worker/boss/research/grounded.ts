@@ -25,6 +25,7 @@ import { newId } from "../lib/id";
 import { routeCompletion } from "../router";
 import { claimFreeSearch } from "./searchQuota";
 import { braveSearch, type BraveResult } from "../../effects/braveSearchClient";
+import { CENTRAL, instantAt, wallClock } from "../../../shared/boss/schedule/clock.mjs";
 
 export const GROUNDED_SERVICE = "svc_gemini_grounded";
 export const GROUNDED_SEARCH_JOB = "research_grounded_search";
@@ -153,11 +154,10 @@ export function sourcedSummary(summary: string, maxRef: number): string {
 
 /** The next midnight in Google's own zone (Pacific), when the free allowance resets, plus five minutes. */
 export function freeTierResetAt(now: number): number {
-  const parts = Object.fromEntries(new Intl.DateTimeFormat("en-US", { timeZone: "America/Los_Angeles", hourCycle: "h23", hour: "numeric", minute: "numeric", second: "numeric" })
-    .formatToParts(new Date(now)).map((p) => [p.type, p.value]));
-  const into = ((Number(parts.hour) % 24) * 3600 + Number(parts.minute) * 60 + Number(parts.second)) * 1000;
-  return now - into + 24 * 3600_000 + 5 * 60_000;
+  const w = wallClock(now, PACIFIC);
+  return instantAt(PACIFIC, w.y, w.m, w.d + 1, 0, 5);
 }
+const PACIFIC = "America/Los_Angeles";
 
 /** Google's grounding links are redirects; the page a person reads is where they land. */
 async function landingUrl(url: string): Promise<string> {
@@ -233,18 +233,16 @@ function bravePrompt(brief: GroundedBrief, s: GroundedSection, today: string, re
 
 /** The first of next month, Central midnight (Brave's monthly credits), plus five minutes. */
 export function nextCentralMonth(now: number): number {
-  const d = new Intl.DateTimeFormat("en-CA", { timeZone: "America/Chicago", year: "numeric", month: "2-digit", day: "2-digit" }).format(new Date(now));
-  const [y, m] = d.split("-").map(Number) as [number, number];
-  // Central is UTC-5 or -6; 06:05 UTC on the 1st is just past Central midnight either way.
-  return Date.UTC(m === 12 ? y + 1 : y, m === 12 ? 0 : m, 1, 6, 5);
+  const w = wallClock(now, CENTRAL);
+  // instantAt rolls month 13 into January. A fixed 06:05 UTC was an hour late in summer (01:05 CDT).
+  return instantAt(CENTRAL, w.y, w.m + 1, 1, 0, 5);
 }
 
 /** The next midnight in Central (Brave's allowance is counted by her day), plus five minutes. */
 export function nextCentralMidnight(now: number): number {
-  const parts = Object.fromEntries(new Intl.DateTimeFormat("en-US", { timeZone: "America/Chicago", hourCycle: "h23", hour: "numeric", minute: "numeric", second: "numeric" })
-    .formatToParts(new Date(now)).map((p) => [p.type, p.value]));
-  const into = ((Number(parts.hour) % 24) * 3600 + Number(parts.minute) * 60 + Number(parts.second)) * 1000;
-  return now - into + 24 * 3600_000 + 5 * 60_000;
+  const w = wallClock(now, CENTRAL);
+  // Tomorrow's 00:05 on the clock: "now minus the time into today plus 24 hours" missed by an hour on change days.
+  return instantAt(CENTRAL, w.y, w.m, w.d + 1, 0, 5);
 }
 
 /**
