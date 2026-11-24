@@ -72,6 +72,10 @@ host, no secret or vault file, no repo outside your businesses, no write to Boss
 `~/bin` or the brains. Your guard and broker hold these by name: one reviewer per PR, 3 PRs, the handoff at
 ~200K, no push to main or by force, and no merge except through `land-after`. Yours to hold: no customer, child,
 LP or owner name in any piece.
+Pictures: you make none that cost money (you have no picture vendor's host or key). Her picture budget for 2026
+is $5 for every picture, hers and yours, in `~/.boss-os/image-budget-2026.json`; picture code you write into a repo
+goes through that ledger the way p-n-p `scripts/generators/build_service_ai_images.mjs` does (the lock, refuse
+before the call when spent + estimate > cap, charge the real cost), and a free picture lane stays free.
 
 ## How a run ends
 Your last message is your reply to Sequoia when she called you (she reads it as an email or on

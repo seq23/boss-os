@@ -997,6 +997,15 @@ command on its own (in a pipe it stays sandboxed). Her working directory is her 
 the sandbox refuses writes to `.git/hooks` and `.git/config` anywhere under the working directory, which would
 stop every clone (proven in the TEST run of 24 Nov 2026), so her repos sit in an allowed write path outside it.
 
+**Her pictures** (owner, 24 Nov 2026, spry brain: "Picture budget raised to $5 for the rest of 2026 ... It covers every
+picture made here or by Noelle"). She has no paid picture path: her sandbox reaches no picture vendor's host and her
+env holds no vendor key. `npm run validate:noelle-pictures` (`scripts/validate/noelle-picture-budget.mjs`, in
+`validate:scans`) keeps it so: it walks every script she can reach (her launcher, sandbox setup, settings and persona,
+then every `scripts/` path and relative import inside them) and fails by name when one calls a picture API without
+the ledger `~/.boss-os/image-budget-2026.json` (NOELLE_PICTURE_UNLEDGERED), when her sandbox may reach a picture
+vendor (NOELLE_PICTURE_HOST) or when her settings hand her a vendor key (NOELLE_PICTURE_KEY). A scan that reaches
+fewer than 20 scripts or misses her entry points is NAMED STOP NOELLE_PICTURE_SCOPE, never a pass.
+
 **Her GitHub** (owner, 24 Nov 2026: "u do it why do u need me for any of this?"). Her run holds no GitHub credential:
 `noelle.sh` unsets `GH_TOKEN`/`GITHUB_TOKEN`, her git loads only `~/.boss-os/noelle/gitconfig` (`GIT_CONFIG_NOSYSTEM`,
 an empty credential helper, no Keychain) and her gh reads an empty config, so inside the sandbox both are logged
