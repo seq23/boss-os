@@ -45,6 +45,9 @@ export const CHANNEL_OWNERS = Object.freeze({
   "dream-wedding:instagram": { job: "dw-brand-social", repo: "dream-wedding-builder", max: 3 },
   "dream-wedding:tiktok": { job: "dw-brand-social", repo: "dream-wedding-builder", max: 3 },
   "a-player-mode:pinterest": { job: "apm-pinterest", repo: "sprylabs-hpc-site", max: 10 },
+  // Her words 24 Nov 2026: "make sure noelle is in charge of linkedin also for the apps that have a linkedin page".
+  "approvalprep:linkedin": { job: "ap-linkedin", repo: "approvalprep", max: 7 },
+  "a-player-mode:linkedin": { job: "apm-linkedin", repo: "sprylabs-hpc-site", max: 7 },
   "keepmyproof:blogger": { job: "kmp-syndication", repo: "keepmyproof", max: 4 },
   "keepmyproof:wordpress": { job: "kmp-syndication", repo: "keepmyproof", max: 4 },
   "porch-and-party:instagram": { job: "pnp-studio", repo: "creator-studios", max: 14 },
@@ -64,6 +67,8 @@ export const JOB_KNOBS = Object.freeze({
   "pbs-instagram": { file: "data/instagram/posts.json", target: "posts_ahead" },
   "ap-brand-social": { file: "data/brand-social/plan.json", target: "per_channel_queue_max", posts_per_week: "posts_per_week" },
   "dw-brand-social": { file: "data/brand-social/plan.json", target: "per_channel_queue_max", posts_per_week: "posts_per_week" },
+  "ap-linkedin": { file: "data/linkedin/posts.json", target: "days_ahead", bank: "posts", idPrefix: "li" },
+  "apm-linkedin": { file: "aplayermode/data/linkedin/posts.json", target: "days_ahead", bank: "posts", idPrefix: "li" },
 });
 /** The fields of each owned job she may change (its bank, plan or target), and nothing else. */
 export const JOB_FIELDS = Object.freeze(["bank", "posts_per_week", "topics", "target"]);
@@ -72,7 +77,7 @@ export const JOB_FIELDS = Object.freeze(["bank", "posts_per_week", "topics", "ta
 export const CADENCE = Object.freeze(["queue", "weekly", "event", "by-hand", "none"]);
 const CHANNEL_CADENCE = Object.freeze({
   instagram: "queue", tiktok: "queue", "facebook-page": "queue", threads: "queue", pinterest: "queue",
-  blogger: "queue", wordpress: "queue", "facebook-marketplace": "queue",
+  blogger: "queue", wordpress: "queue", "facebook-marketplace": "queue", linkedin: "queue",
   "search-pages": "weekly", backlinks: "weekly", "google-business-profile": "by-hand", "facebook-groups": "by-hand",
   kdp: "event", "app-store": "event",
 });

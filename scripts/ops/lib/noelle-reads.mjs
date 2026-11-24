@@ -178,6 +178,39 @@ export function readPinQueue(key, { gh, today }) {
   }
 }
 
+/**
+ * The LinkedIn page banks (her words 24 Nov 2026: Noelle is in charge of LinkedIn for every app with a page).
+ * Each app's repo keeps the bank (posts.json) and its poster's record (posted.json: { access, posted: [{id}] }).
+ * Until the poster has LinkedIn API access, the banked posts are NOT queued: the channel is "not read" with
+ * why, never a count that reads as scheduled.
+ */
+export const LINKEDIN_QUEUES = Object.freeze({
+  "approvalprep:linkedin": ["approvalprep", "data/linkedin"],
+  "a-player-mode:linkedin": ["sprylabs-hpc-site", "aplayermode/data/linkedin"],
+});
+/** The poster posts the next banked post once each weekday (Mon–Fri, Central), so N waiting posts fill the next N weekdays. */
+export function weekdaysAfter(today, n) {
+  const out = []; let t = Date.parse(`${today}T12:00:00Z`);
+  while (out.length < n) { t += 86_400_000; const d = new Date(t).getUTCDay(); if (d !== 0 && d !== 6) out.push(new Date(t).toISOString().slice(0, 10)); }
+  return out;
+}
+export function readLinkedIn(key, { gh, today }) {
+  const [repo, dir] = LINKEDIN_QUEUES[key];
+  const file = (f) => JSON.parse(gh(["api", "-H", "Accept: application/vnd.github.raw", `repos/${OWNER}/${repo}/contents/${dir}/${f}`]));
+  try {
+    const bank = file("posts.json");
+    const rec = file("posted.json");
+    const posts = Array.isArray(bank?.posts) ? bank.posts : null;
+    if (!posts || !Array.isArray(rec?.posted)) return { error: `${repo}/${dir}: no posts or posted list` };
+    const done = new Set(rec.posted.map((x) => x?.id));
+    const waiting = posts.filter((x) => x?.id && !done.has(x.id));
+    if (rec.access !== "granted") return { error: `LinkedIn has not granted the page API yet: ${waiting.length} posts written, none can post` };
+    return { count: waiting.length, days: weekdaysAfter(today, waiting.length) };
+  } catch (e) {
+    return { error: `${repo}/${dir}: ${String(e?.message ?? e).split("\n")[0].slice(0, 80)}` };
+  }
+}
+
 /** A Studio post this long past its time and not posted is a miss (G16c: "read published status 24 h after the slot"). */
 export const PUBLISH_GRACE_MS = 24 * 3_600_000;
 const LOOK_BACK_MS = 7 * 86_400_000;
@@ -233,7 +266,7 @@ export async function readCalendar({ env, fetchImpl, gh, d1, now, today }) {
   }
   for (const [tokenName, biz] of Object.entries(BUFFERS)) {
     const b = await readBuffer(env[tokenName], { fetchImpl, now });
-    for (const key of Object.keys(CHANNEL_OWNERS).filter((k) => k.startsWith(`${biz}:`) && !PIN_QUEUES[k])) {
+    for (const key of Object.keys(CHANNEL_OWNERS).filter((k) => k.startsWith(`${biz}:`) && !PIN_QUEUES[k] && !LINKEDIN_QUEUES[k])) {
       const ch = key.slice(biz.length + 1);
       if (b.error) unread[key] = b.error;
       else { queues[key] = b.counts[ch] ?? 0; days[key] = [...new Set(b.days[ch] ?? [])].sort(); }
@@ -243,6 +276,11 @@ export async function readCalendar({ env, fetchImpl, gh, d1, now, today }) {
     const p = readPinQueue(key, { gh, today });
     if (p.error) unread[key] = p.error;
     else { queues[key] = p.count; days[key] = p.days.sort(); }
+  }
+  for (const key of Object.keys(LINKEDIN_QUEUES)) {
+    const l = readLinkedIn(key, { gh, today });
+    if (l.error) unread[key] = l.error;
+    else { queues[key] = l.count; days[key] = l.days; }
   }
   for (const key of Object.keys(CHANNEL_OWNERS)) if (!(key in queues) && !(key in unread)) unread[key] = "no ledger read for this channel yet (its job keeps no readable queue)";
   return { queues, days, unread, missed };
