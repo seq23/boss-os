@@ -164,7 +164,7 @@ describe("boss-mail-tail's fix agent holds the kernel lock for its whole life (i
     const repo = scratch();
     mkdirSync(join(repo, "scripts/ops/lib"), { recursive: true });
     mkdirSync(join(repo, "scripts/vault"), { recursive: true });
-    for (const f of ["boss-mail-tail-run.sh", "lib/flock.sh", "lib/tail-report.mjs"]) {
+    for (const f of ["boss-mail-tail-run.sh", "lib/flock.sh", "lib/tail-report.mjs", "lib/claude-lock.sh", "lib/permission-denials.mjs", "builder-permissions.json"]) {
       writeFileSync(join(repo, "scripts/ops", f), readFileSync(join(process.cwd(), "scripts/ops", f)));
     }
     writeFileSync(join(repo, "scripts/vault/vault.mjs"), "console.log('folded');\n");
@@ -211,7 +211,7 @@ describe("boss-mail-tail's tick never unlinks the agent lock (two agents could b
     const home = scratch();
     mkdirSync(join(home, "scripts/ops/lib"), { recursive: true });
     mkdirSync(join(home, "scripts/vault"), { recursive: true });
-    for (const f of ["boss-mail-tail.sh", "boss-mail-tail-run.sh", "lib/flock.sh", "lib/tail-report.mjs"]) {
+    for (const f of ["boss-mail-tail.sh", "boss-mail-tail-run.sh", "lib/flock.sh", "lib/tail-report.mjs", "lib/claude-lock.sh", "lib/permission-denials.mjs", "builder-permissions.json"]) {
       writeFileSync(join(home, "scripts/ops", f), readFileSync(join(process.cwd(), "scripts/ops", f)), { mode: 0o755 });
     }
     const state = join(home, "Library/Logs/boss-mail-tail/state");

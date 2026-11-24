@@ -1057,7 +1057,7 @@ Overviews answered while citing the site, and how many named it. Every miss gets
   (`scripts/ops/ai-visibility-report.mjs context`: each site's lanes, its search-loop `output.url_prefix` and its live
   sitemap), then a locked Claude session (`ai-run --role ai_visibility.read`, `--permission-mode dontAsk
   --setting-sources= --settings scripts/ops/ai-visibility-permissions.json`) reads OpenSEO through the openseo plugin.
-  It can call nine read-only tools and nothing else; `npm run validate:ai-visibility` fails the build on any other
+  It can call nine read-only tools and nothing else; `npm run validate:claude-runs` fails the build on any other
   allow entry, and on any OpenSEO HTTP call in repo code. Then `ai-visibility-report.mjs post` checks every block
   (`readSite`, src/shared/boss/growth/aiAnswers.mjs) and posts the week to `POST /api/boss/growth/ai-week`.
 - **Honest stops, never a zero.** Plugin not loaded, OpenSEO unreachable, out of credits, no tracker, no answers,

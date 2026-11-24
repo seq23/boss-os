@@ -55,6 +55,7 @@ import { createHash } from "node:crypto";
 import { loadIdentity, isHers, RRLIST } from "./interest-grid.mjs";
 import { decideSide, isRelayedNote } from "../../src/shared/boss/deals/side.mjs";
 import { outputLine } from "../../src/shared/boss/alarms/rules.mjs";
+import { lockedArgs } from "./lib/claude-lock.mjs";
 
 const DIR = process.env.BOSS_OS_CAPITAL_DIR ?? path.join(os.homedir(), ".boss-os", "capital");
 const BATCH_DIR = path.join(DIR, "candidates");
@@ -299,7 +300,7 @@ export function structuredOrder(msg) {
  */
 function runClaude(input) {
   return new Promise((resolve) => {
-    const child = spawn("claude", ["-p", "--model", MODEL, "--max-turns", "1"], {
+    const child = spawn("claude", ["-p", "--model", MODEL, "--max-turns", "1", ...lockedArgs("text-only")], { // locked: no tool at all (lib/claude-lock.mjs)
       cwd: os.homedir(),
       stdio: ["pipe", "pipe", "pipe"],
       env: seatEnv(process.env), // her seat, never an API key — scripts/ops/lib/seat-env.mjs

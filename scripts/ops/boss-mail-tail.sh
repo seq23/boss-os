@@ -122,7 +122,7 @@ read, edit, build and test inside $WORKTREE, never in $REPO. Root cause, fix at 
 or skip a test, guard the fix with a test. COMMIT inside $WORKTREE before any wait longer than a
 couple of minutes, and again before ending your turn for ANY reason — uncommitted work in a
 worktree nothing points at is work that can be lost. Push and open the PR yourself; run
-'gh pr checks <pr>' yourself and land it with '$HOME/bin/land <pr>' (it watches main and deploys).
+'gh pr checks <pr>' yourself and land it with 'land <pr>' (it watches main and deploys).
 NEVER hand a fix to a background subagent and end your own turn to wait for it — finish the fix
 inline, in this same turn, or leave it visibly unfinished (committed, pushed, PR open) and say so in
 the report; a turn that ends with work still running in the background is a turn that can be killed
