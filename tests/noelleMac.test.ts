@@ -142,6 +142,9 @@ describe("her run is locked (#573): a refusal is a stop, and her one agent is pa
     const repos = r.stdout.match(/Only select repositories: ([^;]*);/)?.[1]?.split(", ") ?? [];
     expect(repos).toEqual([...HER_REPOS]);
     expect(r.stdout).not.toMatch(/GUARD_UNREAD/);
+    // no Workflows write: a workflow she pushed would run on GitHub with the repo's secrets, outside her sandbox
+    expect(r.stdout).toMatch(/Repository permissions: Contents read and write, Pull requests read and write, Actions read/);
+    expect(r.stdout).not.toMatch(/Workflows|Secrets|Administration/i);
   });
 });
 

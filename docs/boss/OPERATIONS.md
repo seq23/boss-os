@@ -997,8 +997,9 @@ command on its own (in a pipe it stays sandboxed). Her working directory is her 
 the sandbox refuses writes to `.git/hooks` and `.git/config` anywhere under the working directory, which would
 stop every clone (proven in the TEST run of 24 Nov 2026), so her repos sit in an allowed write path outside it. Her git
 loads only `~/.boss-os/noelle/gitconfig` (`GIT_CONFIG_NOSYSTEM`, no Keychain helper) and pushes with
-`GITHUB_NOELLE_TOKEN` from the vault, a fine-grained token on her repos only; without it the run is `NAMED STOP
-[NOELLE_GITHUB_TOKEN_MISSING]` with Sequoia's steps. `scripts/validate/claude-runs-locked.mjs` fails the build if the
+`GITHUB_NOELLE_TOKEN` from the vault, a fine-grained token on her repos only (Contents and Pull requests write, Actions
+read; never Workflows, since a workflow she pushed would run on GitHub with the repo's secrets, outside her sandbox);
+without it the run is `NAMED STOP [NOELLE_GITHUB_TOKEN_MISSING]` with Sequoia's steps. `scripts/validate/claude-runs-locked.mjs` fails the build if the
 sandbox block, or any line of it, is missing or widened.
 
 **Her guard** (`scripts/ops/noelle-guard.mjs`, a PreToolUse hook; self-test `npm run validate:noelle`) holds only
