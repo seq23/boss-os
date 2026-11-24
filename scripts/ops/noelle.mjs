@@ -131,11 +131,26 @@ export function untrusted(source, text) {
   return `<untrusted source="${String(source).replace(/[^a-z0-9:._-]/gi, "-")}">\n${body}\n</untrusted>`;
 }
 
+/**
+ * P&P Studio's own niche research (her ask, 24 Nov 2026: "pnp creator studio does a brand page where it shows
+ * whats working in the niche ---noelle can use that for pnp"): the newest `niche_playbooks` row the Studio's
+ * monthly job-niche wrote, the same one its Brand page shows. Data only; a failed or empty read says NOT READ.
+ */
+export const NICHE_SQL = "SELECT summary, body, created_at FROM niche_playbooks ORDER BY created_at DESC LIMIT 1";
+export function nicheBlock(read) {
+  if (!read || read.error) return `NOT READ (${read?.error ?? "no read"}): plan P&P from the scorecard and her rulings only`;
+  const row = read.rows?.[0];
+  if (!row) return "NOT READ (the Studio has no niche research yet)";
+  let summary = []; try { summary = JSON.parse(row.summary ?? "[]"); } catch { summary = []; }
+  let body = row.body ?? ""; try { body = JSON.stringify(JSON.parse(body)); } catch { /* keep the text */ }
+  return [`researched ${String(row.created_at).slice(0, 10)} (the Studio Brand page, "What's working in your niche")`, ...(Array.isArray(summary) ? summary : []).map((l) => `- ${l}`), `playbook: ${String(body).slice(0, 6000)}`].join("\n");
+}
+
 /** The context her session reads: her rulings (trusted, from her brains), then every read as data. */
 /** One Studio miss, as the run's named stop. */
 export const missedLine = (m) => `NAMED STOP [POST_NOT_PUBLISHED] porch-and-party:${m.channel} ${m.day} post ${m.id} is ${m.status}${m.error ? ` (${m.error})` : ""}`;
 
-export function contextText({ context, reads, calendar, shelf, formats, music, kind }) {
+export function contextText({ context, reads, calendar, shelf, formats, music, kind, niche }) {
   const pnp = context.businesses.find((b) => b.key === "porch-and-party");
   const days = (k) => calendar.days[k] ?? [];
   const calRows = Object.keys({ ...calendar.queues, ...calendar.unread }).sort().map((k) => k in calendar.queues ? `${k}: ${calendar.queues[k]} scheduled${days(k).length ? ` (days: ${days(k).join(", ")})` : ""}` : `${k}: NOT READ (${calendar.unread[k]})`);
@@ -165,6 +180,7 @@ export function contextText({ context, reads, calendar, shelf, formats, music, k
     untrusted("calendar", [...calRows, ...(calendar.missed ?? []).map((m) => `NOT PUBLISHED a day after its time: ${m.channel} ${m.day} (${m.status}${m.error ? `: ${m.error}` : ""})`)].join("\n")),
     untrusted("photo-shelf", `real (our own jobs, may be shown as ours): ${listOr(shelf.real)}\nreal and untouched (prefer these; every other real photo is a real job she touched up, so pick the ones with no visible flaws): ${listOr(shelf.untouched ?? [])}\nai (AI scenes: ideas only, never captioned as a job we did): ${listOr(shelf.ai)}\nher picks among the AI scenes (use these first for porches): ${listOr(shelf.picks ?? [])}`),
     untrusted("sources", Object.entries(reads).map(([id, r]) => r.error ? `${id}: NOT READ (${r.error})` : `${id}: read ${r.at}${r.sha ? ` sha ${r.sha.slice(0, 12)}` : ""}${r.rows != null ? `, ${r.rows} rows` : ""}${r.value != null ? `, value ${r.value}` : ""}${r.note ? ` (${r.note})` : ""}`).join("\n")),
+    untrusted("pnp-niche", nicheBlock(niche)),
     untrusted("scorecard", JSON.stringify(context.summaries ?? []).slice(0, 12000)),
     untrusted("ai-answer-misses", (context.aiMisses ?? []).map((m) => `${m.site}: ${m.prompt}`).join("\n").slice(0, 8000)),
     untrusted("recent-runs", (context.runs ?? []).map((r) => `${r.day} ${r.kind} ${r.state} ${r.line ?? ""}`).join("\n")),
@@ -299,7 +315,9 @@ async function cmdContext(dir, { kind = "daily" } = {}) {
   });
   const raw = photoShelf({ sources: STUDIO.sources });
   const shelf = shelfFrom(raw);
-  const text = contextText({ context, reads, calendar, shelf, formats: FORMATS, music, kind });
+  let niche;
+  try { niche = { rows: await d1Query(mctx, STUDIO.db, NICHE_SQL) }; } catch (e) { niche = { error: String(e?.message ?? e).slice(0, 160) }; }
+  const text = contextText({ context, reads, calendar, shelf, formats: FORMATS, music, kind, niche });
   const big = contextTooBig(text);
   if (big) throw new Error(big);
   writeFileSync(join(dir, "context.txt"), text);

@@ -8,7 +8,7 @@ import { mkdtempSync, readFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 // @ts-expect-error — plain ESM with no declaration file
-import { ALARM_DAYS, CONTEXT_MAX, START_AT, actExit, bankRows, bankVerdicts, contextTooBig, heldUntil, jobTarget, lowChannels, rulingsFiles, splitRulings, tickDecision } from "../scripts/ops/noelle.mjs";
+import { ALARM_DAYS, CONTEXT_MAX, START_AT, actExit, bankRows, bankVerdicts, contextTooBig, heldUntil, jobTarget, lowChannels, nicheBlock, rulingsFiles, splitRulings, tickDecision } from "../scripts/ops/noelle.mjs";
 // @ts-expect-error — plain ESM with no declaration file
 import { checkLines, queueLines } from "../scripts/ops/noelle-tools.mjs";
 import { CHANNEL_OWNERS, JOB_KNOBS, hardStops, settledNo } from "../src/shared/boss/growth/noelle.mjs";
@@ -165,5 +165,17 @@ describe("her tools: the same gate as the Worker, and NOT READ is never an empty
     expect(p).not.toMatch(/You have NO tools/);
     for (const v of ["./noelle-tools queue", "./noelle-tools bank", "./noelle-tools check"]) expect(p).toContain(v);
     expect(p).not.toMatch(/sell the\s+January takedown/);
+  });
+});
+
+describe("P&P's niche research from the Studio Brand page reaches her (her ask, 24 Nov 2026)", () => {
+  it("the newest playbook's summary and body are shown; a failed or empty read is NOT READ, never blank", () => {
+    const b = nicheBlock({ rows: [{ created_at: "2026-11-20T10:00:00Z", summary: JSON.stringify(["Before/after porch reels lead saves"]), body: JSON.stringify({ hooks: ["Your porch, done by Friday"] }) }] });
+    expect(b).toMatch(/researched 2026-11-20/);
+    expect(b).toContain("- Before/after porch reels lead saves");
+    expect(b).toContain("Your porch, done by Friday");
+    expect(nicheBlock({ error: "D1_QUERY_FAILED x" })).toMatch(/^NOT READ \(D1_QUERY_FAILED/);
+    expect(nicheBlock({ rows: [] })).toMatch(/^NOT READ/);
+    expect(readFileSync("scripts/ops/noelle-prompt.md", "utf8")).toContain("pnp-niche");
   });
 });
