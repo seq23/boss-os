@@ -3,11 +3,12 @@
  * NOELLE'S GUARD (24 Nov 2026; shrunk the same day by the sandbox redesign). A Claude Code PreToolUse hook on
  * every tool of HER run only (~/.boss-os/noelle/settings.json, written by scripts/ops/lib/noelle-sandbox.sh from
  * scripts/ops/noelle-permissions.json). Paid APIs, money, secrets, other repos and protected files are NOT judged
- * here: her run's OS sandbox takes that access away (no such host, no such file, no such write), and her GitHub
- * token reaches only her repos. This guard holds only what can be judged by name, each a NAMED STOP she reads:
+ * here: her run's OS sandbox takes that access away (no such host, no such file, no such write), and her run holds
+ * no GitHub credential: she pushes and opens PRs only through her broker (noelle-tool push-branch / open-pr,
+ * scripts/ops/noelle-github.mjs), which refuses other repos, main, force and a 4th PR in one run (PR_CAP) and counts
+ * her PRs in this guard's state. This guard holds only what can be judged by name, each a NAMED STOP she reads:
  *
- *   AGENT             any agent but ONE fresh `reviewer` per PR she opened this run
- *   PR_CAP            a 4th `gh pr create` in one run
+ *   AGENT             any agent but ONE fresh `reviewer` per PR she opened this run (the broker's count)
  *   CONTEXT_HANDOFF   after her context was compacted (~200K), anything but reading and writing her handoff/notes
  *   DEPLOY_ONLY_LAND  `gh pr merge` or a `git push` naming main/master: merges go only through her land-after broker
  *
@@ -24,7 +25,7 @@ const HOME = homedir();
 export const NOELLE_HOME = () => process.env.NOELLE_HOME ?? join(HOME, "Work", "noelle");
 export const GUARD_DIR = () => process.env.NOELLE_GUARD_DIR ?? join(HOME, ".boss-os", "noelle", "guard");
 
-/** Her businesses' repos (Full and search-watch; brief 24 Nov 2026): her token's repos and land-after's list. */
+/** Her businesses' repos (Full and search-watch; brief 24 Nov 2026): her broker's and land-after's only repos. */
 export const HER_REPOS = Object.freeze([
   "p-n-p", "approvalprep", "aplayer-mode", "sprylabs-hpc-site", "peace-be-still", "creator-studios",
   "dream-wedding-builder", "keepmyproof", "search-loop",
@@ -69,10 +70,6 @@ export function judge(input, { h = NOELLE_HOME(), g = GUARD_DIR(), mutate = true
   const cmd = String(ti.command ?? "");
   if (!cmd.trim()) return { stop: "GUARD_UNREAD", why: "an empty command" };
   if (MERGE.test(cmd)) return { stop: "DEPLOY_ONLY_LAND", why: "merges and deploys go only through ~/.boss-os/noelle/bin/land-after <pr> --task noelle-<job> --repo seq23/<repo>" };
-  if (/\bgh\s+pr\s+create\b/.test(cmd)) {
-    if ((st.prs ?? 0) >= MAX_PRS) return { stop: "PR_CAP", why: `${MAX_PRS} PRs is the most in one run; write the rest into your handoff` };
-    if (mutate) saveState({ ...st, prs: (st.prs ?? 0) + 1 }, g);
-  }
   return null;
 }
 
@@ -99,15 +96,15 @@ function selfTest() {
   const check = (label, got, want) => { if ((got?.stop ?? null) !== want) { bad++; console.log(`FAIL ${label}: want ${want}, got ${got?.stop ?? "null"}`); } };
   const j = (tool, ti) => judge({ tool_name: tool, tool_input: ti, cwd: h }, { h, g });
   for (const [tool, ti, want] of CASES) check(`${tool} ${JSON.stringify(ti).slice(0, 80)}`, j(tool, ti), want);
-  for (let i = 1; i <= MAX_PRS; i++) check(`PR ${i}`, j("Bash", { command: "gh pr create --fill" }), null);
-  check("PR 4", j("Bash", { command: "gh pr create --fill" }), "PR_CAP");
+  check("reviewer with no PR", j("Agent", { subagent_type: "reviewer" }), "AGENT");
+  saveState({ prs: MAX_PRS, reviewers: 0 }, g); // the broker's count after three PRs
   for (let i = 1; i <= MAX_PRS; i++) check(`reviewer ${i}`, j("Agent", { subagent_type: "reviewer" }), null);
   check("reviewer 4", j("Agent", { subagent_type: "reviewer" }), "AGENT");
   writeFileSync(join(g, "compacted"), "1");
   check("after compaction: a command", j("Bash", { command: "git status" }), "CONTEXT_HANDOFF");
   check("after compaction: the handoff", j("Write", { file_path: join(h, "HANDOFF.md") }), null);
   check("no tool", judge({}, { h, g }), "GUARD_UNREAD");
-  const n = CASES.length + 2 * MAX_PRS + 5;
+  const n = CASES.length + MAX_PRS + 5;
   if (bad) { console.log(`NAMED STOP [GUARD_SELF_TEST] ${bad} of ${n} checks failed`); process.exit(1); }
   console.log(`OUTPUT: noelle-guard self-test ${n} checks passed`);
 }

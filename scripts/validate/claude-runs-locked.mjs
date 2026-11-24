@@ -96,11 +96,11 @@ export const JOBS = Object.freeze([
     needs: ["Edit", "Bash(git -C:*)", "Bash(git worktree add:*)", "Bash(git commit:*)", "Bash(gh pr create:*)", "Bash(gh pr checks:*)", "Bash(npm run:*)", "Bash(land:*)"],
     mustDeny: ["Bash(claude:*)", "Bash(ai-run:*)", "Bash(gh pr merge:*)", "Bash(git push --force:*)", "Bash(wrangler deploy:*)", "Bash(gh secret:*)", "mcp__claude_ai_8Raise", "mcp__8raise"],
     hook: "command-guard.mjs" },
-  // Noelle (24 Nov 2026; sandbox redesign the same day): builder-level tools inside Claude Code's OS sandbox, her two
-  // brokers outside it, one reviewer agent per PR (the Agent tool held by her guard).
+  // Noelle (24 Nov 2026; sandbox redesign the same day): builder-level tools inside Claude Code's OS sandbox with no
+  // GitHub login (gh is not allowed at all; she pushes and opens PRs through noelle-tool), her two brokers outside it, one reviewer agent per PR (the Agent tool held by her guard).
   { name: "noelle", scripts: ["scripts/ops/noelle.sh"],
     needs: ["Agent", "WebFetch", "Edit(~/Work/noelle/**)", "Bash(__HOME__/.boss-os/noelle/bin/noelle-tool *)", "Bash(__HOME__/.boss-os/noelle/bin/land-after *)",
-      "Bash(git:*)", "Bash(gh pr:*)", "Bash(npm:*)"],
+      "Bash(git:*)", "Bash(npm:*)"],
     mustDeny: ["Bash(claude:*)", "Bash(ai-run:*)", "Bash(gh pr merge:*)", "Bash(git push --force:*)", "Bash(wrangler deploy:*)", "Bash(gh secret:*)", "Bash(npm run -s vault:set:*)", "Skill",
       "Edit(~/Work/noelle/.claude/**)", "Edit(~/bin/**)", "Edit(~/.boss-os/**)", "Edit(~/Brains/**)"],
     hook: "noelle-guard.mjs", agentGuard: "noelle-guard.mjs",

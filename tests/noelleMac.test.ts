@@ -127,24 +127,8 @@ describe("her run is locked (#573): a refusal is a stop, and her one agent is pa
     expect(sh).toMatch(/DENIED="\$\(claude_denials "\$SID"/);
     expect(sh).toMatch(/^step finish "\$WORK" "\$SESSION_LOG" "\$SLOT" "\$KIND" "\$DENIED";/m); // the count is finish's fifth argument
     expect(sh).not.toMatch(/dangerously-skip-permissions|setting-sources project|PATH="\$NHOME\/bin/);
-    expect(sh).toMatch(/\[ -n "\$GH_TOKEN" \] \|\| stopped NOELLE_GITHUB_TOKEN_MISSING/);
-  });
-
-  it("the missing-token stop names every one of her repos for Sequoia's token, from the launcher's own line", () => {
-    const sh = readFileSync(join(__dirname, "../scripts/ops/noelle.sh"), "utf8");
-    const line = sh.split("\n").find((l) => l.includes("stopped NOELLE_GITHUB_TOKEN_MISSING"));
-    expect(line, "the stop's line").toBeTruthy();
-    const lib = join(__dirname, "../scripts/ops/lib/noelle-sandbox.sh");
-    // the launcher's real line, run as it runs: no token, $REPO and $GUARD as noelle.sh sets them, `stopped` prints its message
-    const r = spawnSync("bash", ["-c", `source "${lib}"; REPO="$1"; GUARD="$REPO/scripts/ops/noelle-guard.mjs"; GH_TOKEN=; stopped() { printf '%s' "$2"; }; eval "$2"`, "x", join(__dirname, ".."), line!],
-      { encoding: "utf8", input: "" });
-    expect(r.status).toBe(0);
-    const repos = r.stdout.match(/Only select repositories: ([^;]*);/)?.[1]?.split(", ") ?? [];
-    expect(repos).toEqual([...HER_REPOS]);
-    expect(r.stdout).not.toMatch(/GUARD_UNREAD/);
-    // no Workflows write: a workflow she pushed would run on GitHub with the repo's secrets, outside her sandbox
-    expect(r.stdout).toMatch(/Repository permissions: Contents read and write, Pull requests read and write, Actions read/);
-    expect(r.stdout).not.toMatch(/Workflows|Secrets|Administration/i);
+    // no GitHub credential reaches her run: she pushes and opens PRs only through noelle-tool (tests/noelleGithub.test.ts)
+    expect(sh).toMatch(/^unset GH_TOKEN GITHUB_TOKEN /m);
   });
 });
 
@@ -166,7 +150,9 @@ describe("her sandbox, as noelle_prepare writes it", () => {
     expect(s.sandbox).toMatchObject({ enabled: true, failIfUnavailable: true, allowUnsandboxedCommands: false });
     expect(s.sandbox.filesystem.allowWrite).toEqual(["~/Work/noelle", "~/.boss-os/noelle/runs/2026-11-25-1000"]);
     expect(s.sandbox.excludedCommands).toEqual([`${home}/.boss-os/noelle/bin/noelle-tool *`, `${home}/.boss-os/noelle/bin/land-after *`]);
-    expect(readFileSync(join(home, ".boss-os/noelle/gitconfig"), "utf8")).toMatch(/helper =\n\[credential "https:\/\/github\.com"\]\n\thelper = "!f\(\) \{ test \\"\$1\\" = get/);
+    const gc = readFileSync(join(home, ".boss-os/noelle/gitconfig"), "utf8");
+    expect(gc).toMatch(/\[credential\]\n\thelper =\n/);
+    expect(gc).not.toMatch(/GH_TOKEN|password|\[credential "/);
     expect(JSON.parse(readFileSync(join(home, ".boss-os/noelle/guard/run.json"), "utf8"))).toMatchObject({ prs: 0, reviewers: 0 });
   });
   it("refuses a run folder outside her runs, and a moved home", () => {
@@ -265,7 +251,7 @@ describe("H6: the same failure twice is a named stop and a Notices line, never a
     expect(r.sent.find((x) => x[1] === "/done")![2]).toMatchObject({ state: "stopped", stops: ["PERMISSION_DENIED"] });
     expect(r.sent.find((x) => x[1] === "/call/reply")![2].text).toMatch(/What stopped me: NAMED STOP \[PERMISSION_DENIED\]/);
   });
-  it("her guard caps PRs at 3 and reviewers at one per PR", () => {
+  it("her guard allows one reviewer per PR the broker counted (the PR cap itself is the broker's: tests/noelleGithub.test.ts)", () => {
     const out = execFileSync(process.execPath, [join(__dirname, "../scripts/ops/noelle-guard.mjs"), "--self-test"], { encoding: "utf8" });
     expect(out).toMatch(/^OUTPUT: noelle-guard self-test \d+ checks passed/m);
   });

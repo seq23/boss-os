@@ -105,9 +105,9 @@ node "$GUARD" --self-test >> "$RUN_LOG" 2>&1 || stopped GUARD_BROKEN "NAMED STOP
 # (lib/noelle-sandbox.sh): the settings with the sandbox block, her gitconfig, her two brokers and her guard's state.
 SETTINGS="$(noelle_prepare "$REPO" "$NHOME" "$WORK" "$NOELLE_RUN_ID" 2>>"$RUN_LOG")" || stopped NO_SETTINGS "NAMED STOP [NO_SETTINGS] her sandboxed settings could not be written; $(grep -h 'NAMED STOP' "$RUN_LOG" | tail -1)" 6
 CLAUDE_LOCK="$(claude_lock_args "$SETTINGS" 2>>"$RUN_LOG")" || stopped NO_PERMISSIONS_FILE "NAMED STOP [NO_PERMISSIONS_FILE] her permissions file could not be used; she never runs unlocked" 6
-# Her GitHub access is her own fine-grained token (her business repos only), never Sequoia's gh or Keychain login.
-GH_TOKEN="$( (cd "$REPO" && npm run --silent vault:run -- node -e 'process.stdout.write(process.env.GITHUB_NOELLE_TOKEN ?? "")') 2>>"$RUN_LOG")"
-[ -n "$GH_TOKEN" ] || stopped NOELLE_GITHUB_TOKEN_MISSING "NAMED STOP [NOELLE_GITHUB_TOKEN_MISSING] her run has no GitHub token of its own. Sequoia, once: github.com/settings/personal-access-tokens/new -> Fine-grained, name noelle-growth, expiry 1 year, Resource owner seq23, Only select repositories: $(noelle_her_repos "$REPO" ", "); Repository permissions: Contents read and write, Pull requests read and write, Actions read, Commit statuses read, Metadata read; Generate, copy, then in Terminal: cd ~/GitHub/boss-os && npm run -s vault:set GITHUB_NOELLE_TOKEN (paste when asked)" 6
+# No GitHub credential reaches her run (owner, 24 Nov 2026: "u do it why do u need me for any of this?"): inside her
+# sandbox git and gh are logged out. She pushes and opens PRs only through noelle-tool push-branch / open-pr, outside it.
+unset GH_TOKEN GITHUB_TOKEN GH_ENTERPRISE_TOKEN GITHUB_ENTERPRISE_TOKEN
 
 say "=== Noelle ${CALL:+called }$KIND run, slot $SLOT, try $TRY${RESUME:+ (resume)} ==="
 step reads "$WORK" || stopped NO_READS "NAMED STOP [NO_READS] her reads could not be gathered; $(grep -h 'NAMED STOP' "$RUN_LOG" | tail -1)" 13
@@ -119,7 +119,7 @@ else KICK="Your daily run: read today's reads, yesterday's note and HANDOFF.md, 
 
 SESSION_LOG="$WORK/session.log"
 SID="$(uuidgen | tr 'A-Z' 'a-z')" || stopped NO_SESSION_ID "NAMED STOP [NO_SESSION_ID] uuidgen failed" 6
-export NOELLE_HOME="$NHOME" NOELLE_REPO="$REPO" NOELLE_GUARD_DIR="$HOME/.boss-os/noelle/guard" GH_TOKEN
+export NOELLE_HOME="$NHOME" NOELLE_REPO="$REPO" NOELLE_GUARD_DIR="$HOME/.boss-os/noelle/guard"
 ENABLE_CLAUDEAI_MCP_SERVERS=false AI_RUN_CLAUDE_MODEL="$MODEL" \
 AI_RUN_CLAUDE_ARGS="$CLAUDE_LOCK --strict-mcp-config --session-id $SID --max-turns $MAX_TURNS --output-format json --agents $WORK/agents.json --append-system-prompt-file $WORK/persona-full.md" \
 "$AI_RUN" --role "$ROLE" --network --cwd "$WORK" --out "$SESSION_LOG" -- "$KICK" >> "$RUN_LOG" 2>&1

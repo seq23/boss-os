@@ -48,12 +48,6 @@
       "Bash(npx:*)",
       "Bash(curl:*)",
       "Bash(git:*)",
-      "Bash(gh pr:*)",
-      "Bash(gh run:*)",
-      "Bash(gh issue:*)",
-      "Bash(gh repo view:*)",
-      "Bash(gh repo clone:*)",
-      "Bash(gh auth status)",
       "Agent",
       "WebFetch",
       "WebSearch"

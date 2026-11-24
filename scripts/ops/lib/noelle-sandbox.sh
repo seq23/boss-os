@@ -4,8 +4,9 @@
 # sandbox neither writes nor (except the gitconfig) reads:
 #   settings.json   scripts/ops/noelle-permissions.json with __HOME__, __REPO__ and __RUN__ filled in
 #   gitconfig       her git's only config (GIT_CONFIG_GLOBAL; GIT_CONFIG_NOSYSTEM drops the system osxkeychain
-#                   helper): pushes authenticate only with the GH_TOKEN her run is given, never Sequoia's login
-#   bin/noelle-tool her four vault tools; bin/land-after her one way to merge. Both run OUTSIDE the sandbox
+#                   helper): no credential helper at all, so her git inside the sandbox is logged out
+#   bin/noelle-tool her four vault tools and her two GitHub verbs (push-branch, open-pr: scripts/ops/noelle-github.mjs,
+#                   on the Mac's gh login, never the vault); bin/land-after her one way to merge. Both run OUTSIDE the sandbox
 #                   (excludedCommands), so each checks its arguments' shape and starts from an empty environment
 #                   (env -i): nothing she sets, no PATH, NODE_OPTIONS or token of hers, reaches them.
 #   guard/          her guard's state (PR count, reviewers, the compaction mark), out of her reach
@@ -42,25 +43,30 @@ noelle_prepare() {
 	email = ${email:-noelle@invalid}
 [credential]
 	helper =
-[credential "https://github.com"]
-	helper = "!f() { test \"\$1\" = get || exit 0; test -n \"\$GH_TOKEN\" || exit 0; echo username=x-access-token; echo \"password=\$GH_TOKEN\"; }; f"
 [init]
 	defaultBranch = main
 EOF
 
   cat > "$lock/bin/noelle-tool" <<EOF || return 6
-#!/bin/bash
-# Noelle's four vault tools; written by scripts/ops/lib/noelle-sandbox.sh. Runs outside her sandbox.
-case "\${1:-}" in brain|notice|ledger|backlinks) ;; *) echo "usage: noelle-tool brain|notice|ledger|backlinks ..." >&2; exit 2 ;; esac
+#!/bin/bash -p
+# Noelle's broker; written by scripts/ops/lib/noelle-sandbox.sh. Runs outside her sandbox, from an empty environment.
+# bash -p: no BASH_ENV, no ENV and no exported function of hers is read before this line runs.
+# brain|notice|ledger|backlinks go through the vault; push-branch|open-pr go to GitHub on the Mac's gh login and
+# never see the vault. Nothing else: no merge, approve, api, secret, settings or delete verb.
+case "\${1:-}" in
+  brain|notice|ledger|backlinks) TOOL=(npm run --silent vault:run -- node scripts/ops/noelle.mjs) ;;
+  push-branch|open-pr) TOOL=(node scripts/ops/noelle-github.mjs) ;;
+  *) echo "usage: noelle-tool brain|notice|ledger|backlinks|push-branch|open-pr ..." >&2; exit 2 ;;
+esac
 CALLER_CWD="\$PWD"
 cd $(printf %q "$repo") || exit 6
-exec /usr/bin/env -i HOME=$(printf %q "$HOME") USER=$(printf %q "$USER") PATH=/opt/homebrew/bin:/usr/bin:/bin TMPDIR=$(printf %q "${TMPDIR:-/tmp}") \\
-  NOELLE_HOME=$(printf %q "$nhome") NOELLE_RUNS=$(printf %q "$runs") NOELLE_RUN_ID=$(printf %q "$run_id") NOELLE_CALLER_CWD="\$CALLER_CWD" \\
-  npm run --silent vault:run -- node scripts/ops/noelle.mjs "\$@"
+exec /usr/bin/env -i HOME=$(printf %q "$HOME") USER=$(printf %q "$USER") PATH=/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin TMPDIR=$(printf %q "${TMPDIR:-/tmp}") \\
+  NOELLE_HOME=$(printf %q "$nhome") NOELLE_RUNS=$(printf %q "$runs") NOELLE_RUN_ID=$(printf %q "$run_id") NOELLE_GUARD_DIR=$(printf %q "$lock/guard") NOELLE_CALLER_CWD="\$CALLER_CWD" \\
+  "\${TOOL[@]}" "\$@"
 EOF
 
   cat > "$lock/bin/land-after" <<EOF || return 6
-#!/bin/bash
+#!/bin/bash -p
 # Noelle's one way to merge and deploy; written by scripts/ops/lib/noelle-sandbox.sh. Runs outside her sandbox.
 # Only: land-after <pr> --task noelle-<job> --repo seq23/<one of her repos>  (no --then, no --owner).
 HER=" $her "

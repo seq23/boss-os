@@ -991,19 +991,32 @@ calls `noelle_prepare` (`scripts/ops/lib/noelle-sandbox.sh`), which fills `scrip
 and child process: writes only in `~/Work/noelle` (her clones in `repos/`, worktrees in `wt/`, notes) and her run
 folder; reads of the whole home denied except those, her gitconfig, the skills and the rules file; network only to
 GitHub, npm, Cloudflare preview hosts and Buffer (no model, paid-API or payment host); `allowUnsandboxedCommands`
-false, and only her two brokers in `~/.boss-os/noelle/bin` run outside it (`noelle-tool` for her four vault tools,
-`land-after` for `<pr> --task noelle-<job> --repo seq23/<her repo>` only), each from an empty environment and only as a
+false, and only her two brokers in `~/.boss-os/noelle/bin` run outside it (`noelle-tool` for her four vault tools
+and her two GitHub verbs, `land-after` for `<pr> --task noelle-<job> --repo seq23/<her repo>` only), each from an empty environment and only as a
 command on its own (in a pipe it stays sandboxed). Her working directory is her run folder, never `~/Work/noelle`:
 the sandbox refuses writes to `.git/hooks` and `.git/config` anywhere under the working directory, which would
-stop every clone (proven in the TEST run of 24 Nov 2026), so her repos sit in an allowed write path outside it. Her git
-loads only `~/.boss-os/noelle/gitconfig` (`GIT_CONFIG_NOSYSTEM`, no Keychain helper) and pushes with
-`GITHUB_NOELLE_TOKEN` from the vault, a fine-grained token on her repos only (Contents and Pull requests write, Actions
-read; never Workflows, since a workflow she pushed would run on GitHub with the repo's secrets, outside her sandbox);
-without it the run is `NAMED STOP [NOELLE_GITHUB_TOKEN_MISSING]` with Sequoia's steps. `scripts/validate/claude-runs-locked.mjs` fails the build if the
+stop every clone (proven in the TEST run of 24 Nov 2026), so her repos sit in an allowed write path outside it.
+
+**Her GitHub** (owner, 24 Nov 2026: "u do it why do u need me for any of this?"). Her run holds no GitHub credential:
+`noelle.sh` unsets `GH_TOKEN`/`GITHUB_TOKEN`, her git loads only `~/.boss-os/noelle/gitconfig` (`GIT_CONFIG_NOSYSTEM`,
+an empty credential helper, no Keychain) and her gh reads an empty config, so inside the sandbox both are logged
+out. She pushes and opens PRs only through `noelle-tool push-branch <repo> <branch>` and `noelle-tool open-pr <repo>
+<branch> <title> <bodyfile>` (`scripts/ops/noelle-github.mjs`), which run outside the sandbox on the Mac's own gh login
+and never through the vault. They refuse a repo that is not exactly one of hers (no owner, no URL), a branch that is not
+`noelle/<safe name>` (main, master, `refs/…`, `a:b`, `+force`, `..`), a push that changes `.github/` (a workflow she
+pushed would run on GitHub with the repo's secrets), a body file outside her home and run folder, and a 4th PR in a
+run (PR_CAP, counted in the guard's state). The push never runs her clone's config or hooks: the branch is fetched
+into a mirror the broker owns (`~/.boss-os/noelle/push/<repo>.git`) and pushed from there, never forced, to the fixed
+`https://github.com/seq23/<repo>.git`, then read back with `git ls-remote`. gh gets every value as one argument
+(`--title=…`, the body on stdin), never through a shell, and a PR is read back as open and not a draft. gh logged out,
+the network down or a sha GitHub does not show is a NAMED STOP (`NOELLE_GH_LOGGED_OUT`, `NOELLE_PUSH_FAILED`,
+`NOELLE_PUSH_UNPROVEN`, `NOELLE_PR_FAILED`, `NOELLE_PR_UNPROVEN`), exit 3, never success. There is no merge, approve,
+API, secret, settings or delete verb: landing stays `land-after`, which waits for CI itself; she reads CI from the
+public API. `scripts/validate/claude-runs-locked.mjs` fails the build if the
 sandbox block, or any line of it, is missing or widened.
 
 **Her guard** (`scripts/ops/noelle-guard.mjs`, a PreToolUse hook; self-test `npm run validate:noelle`) holds only
-what is judged by name: one `reviewer` agent per PR (AGENT), 3 PRs a run (PR_CAP), the ~200K handoff
+what is judged by name: one `reviewer` agent per PR the broker counted (AGENT), the ~200K handoff
 (CONTEXT_HANDOFF), and no `gh pr merge` or push to main outside `land-after` (DEPLOY_ONLY_LAND). Brains:
 `noelle-tool brain <slug>` reads only spry, porch-and-party, time-2-read, personal, team and risk (`NOELLE_BRAINS`).
 
