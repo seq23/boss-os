@@ -123,15 +123,6 @@
           "refs": [
             "people-worth-a-call"
           ]
-        },
-        {
-          "time": "22:15",
-          "tag": "me",
-          "text": "CI sweep: finds any repo with failing tests and fixes it (also Saturday)",
-          "emails": false,
-          "refs": [
-            "ci-sweep"
-          ]
         }
       ]
     },
@@ -139,33 +130,6 @@
       "day": "tue",
       "label": "Tuesday",
       "items": [
-        {
-          "time": "7:30",
-          "tag": "wf",
-          "text": "Pre-seed watch: new pre-seed companies worth knowing",
-          "emails": true,
-          "refs": [
-            "preseed-watch"
-          ]
-        },
-        {
-          "time": "8:11",
-          "tag": "sl",
-          "text": "Backlink network: updates its USCIS form-and-fee page",
-          "emails": false,
-          "refs": [
-            "authority-backlink-network-uscis-changelog"
-          ]
-        },
-        {
-          "time": "9:00",
-          "tag": "wc",
-          "text": "westpeek.live: weekly hire search for Scooter",
-          "emails": false,
-          "refs": [
-            "wpos-productions-hire-search"
-          ]
-        },
         {
           "time": "10:05",
           "tag": "sv",
@@ -192,6 +156,42 @@
           "emails": false,
           "refs": [
             "search-readiness-repair"
+          ]
+        },
+        {
+          "time": "22:15",
+          "tag": "me",
+          "text": "CI sweep: finds any repo with failing tests and fixes it (Tuesday and Saturday)",
+          "emails": false,
+          "refs": [
+            "ci-sweep"
+          ]
+        },
+        {
+          "time": "7:30",
+          "tag": "wf",
+          "text": "Pre-seed watch: new pre-seed companies worth knowing",
+          "emails": true,
+          "refs": [
+            "preseed-watch"
+          ]
+        },
+        {
+          "time": "8:11",
+          "tag": "sl",
+          "text": "Backlink network: updates its USCIS form-and-fee page",
+          "emails": false,
+          "refs": [
+            "authority-backlink-network-uscis-changelog"
+          ]
+        },
+        {
+          "time": "9:00",
+          "tag": "wc",
+          "text": "westpeek.live: weekly hire search for Scooter",
+          "emails": false,
+          "refs": [
+            "wpos-productions-hire-search"
           ]
         }
       ]
@@ -412,15 +412,6 @@
           "refs": [
             "how-we-know-loop-fri-measure"
           ]
-        },
-        {
-          "time": "22:15",
-          "tag": "me",
-          "text": "CI sweep: finds any repo with failing tests and fixes it (also Saturday)",
-          "emails": false,
-          "refs": [
-            "ci-sweep"
-          ]
         }
       ]
     },
@@ -428,6 +419,15 @@
       "day": "sat",
       "label": "Saturday",
       "items": [
+        {
+          "time": "22:15",
+          "tag": "me",
+          "text": "CI sweep: finds any repo with failing tests and fixes it (Tuesday and Saturday)",
+          "emails": false,
+          "refs": [
+            "ci-sweep"
+          ]
+        },
         {
           "time": "4:00–8:00",
           "tag": "sl",
@@ -768,7 +768,7 @@
       "brand": "ApprovalPrep",
       "system": "github",
       "slots": [
-        "mon,tue,wed,thu,fri 04:27"
+        "mon 04:27"
       ],
       "emails": false,
       "heavy": false,
@@ -776,7 +776,7 @@
         "repo": "approvalprep",
         "file": ".github/workflows/content-opportunity-analysis.yml",
         "crons": [
-          "CRON_TZ=America/Chicago 27 4 * * 1-5"
+          "CRON_TZ=America/Chicago 27 4 * * 1"
         ]
       },
       "output": {
@@ -841,7 +841,7 @@
       "brand": "ApprovalPrep",
       "system": "github",
       "slots": [
-        "daily 03:17"
+        "tue 03:17"
       ],
       "emails": false,
       "heavy": false,
@@ -849,7 +849,7 @@
         "repo": "approvalprep",
         "file": ".github/workflows/intelligence-ingest-free-sources.yml",
         "crons": [
-          "CRON_TZ=America/Chicago 17 3 * * *"
+          "CRON_TZ=America/Chicago 17 3 * * 2"
         ]
       },
       "output": {
@@ -1471,7 +1471,7 @@
       "brand": "Repos",
       "system": "mac",
       "slots": [
-        "mon,fri 22:15"
+        "tue,sat 22:15"
       ],
       "emails": true,
       "heavy": true,
@@ -1681,7 +1681,7 @@
       "brand": "Repos",
       "system": "mac",
       "slots": [
-        "mon,fri 22:20"
+        "tue,sat 22:20"
       ],
       "emails": true,
       "heavy": true,
@@ -1770,30 +1770,6 @@
       }
     },
     {
-      "id": "creator-studios-e2e",
-      "name": "e2e",
-      "what": "Runs the full browser tests.",
-      "business": "spry",
-      "brand": "Creator studios",
-      "system": "github",
-      "slots": [
-        "daily 02:17"
-      ],
-      "emails": false,
-      "heavy": true,
-      "trigger": {
-        "repo": "creator-studios",
-        "file": ".github/workflows/e2e.yml",
-        "crons": [
-          "CRON_TZ=America/Chicago 17 2 * * *"
-        ]
-      },
-      "output": {
-        "floor": 0,
-        "reason": "A check: its result is pass or fail, and a fail is already its own red run."
-      }
-    },
-    {
       "id": "creator-studios-golden-set",
       "name": "golden-set",
       "what": "Runs the full browser tests.",
@@ -1825,7 +1801,7 @@
       "brand": "Creator studios",
       "system": "github",
       "slots": [
-        "daily 09:17"
+        "wed 09:17"
       ],
       "emails": false,
       "heavy": false,
@@ -1833,7 +1809,7 @@
         "repo": "creator-studios",
         "file": ".github/workflows/parity.yml",
         "crons": [
-          "CRON_TZ=America/Chicago 17 9 * * *"
+          "CRON_TZ=America/Chicago 17 9 * * 3"
         ]
       },
       "output": {
@@ -1974,30 +1950,6 @@
       }
     },
     {
-      "id": "dailystory-monitor-ai-visual",
-      "name": "Monitor AI Visual Scene Creator - ERROR-001 FIX",
-      "what": "Watches a service and flags a failure.",
-      "business": "time-2-read",
-      "brand": "Time-2-Read",
-      "system": "github",
-      "slots": [
-        "daily 01:15"
-      ],
-      "emails": false,
-      "heavy": false,
-      "trigger": {
-        "repo": "dailystory",
-        "file": ".github/workflows/monitor-ai-visual.yml",
-        "crons": [
-          "CRON_TZ=America/Chicago 15 1 * * *"
-        ]
-      },
-      "output": {
-        "floor": 0,
-        "reason": "A check: its result is pass or fail, and a fail is already its own red run."
-      }
-    },
-    {
       "id": "dailystory-monitor-runware-generate",
       "name": "Monitor Runware Generate Image",
       "what": "Watches a service and flags a failure.",
@@ -2014,54 +1966,6 @@
         "file": ".github/workflows/monitor-runware-generate.yml",
         "crons": [
           "CRON_TZ=America/Chicago 0 1 * * *"
-        ]
-      },
-      "output": {
-        "floor": 0,
-        "reason": "A check: its result is pass or fail, and a fail is already its own red run."
-      }
-    },
-    {
-      "id": "dailystory-monitor-template-ab",
-      "name": "Monitor Template AB",
-      "what": "Watches a service and flags a failure.",
-      "business": "time-2-read",
-      "brand": "Time-2-Read",
-      "system": "github",
-      "slots": [
-        "daily 01:30"
-      ],
-      "emails": false,
-      "heavy": false,
-      "trigger": {
-        "repo": "dailystory",
-        "file": ".github/workflows/monitor-template-ab.yml",
-        "crons": [
-          "CRON_TZ=America/Chicago 30 1 * * *"
-        ]
-      },
-      "output": {
-        "floor": 0,
-        "reason": "A check: its result is pass or fail, and a fail is already its own red run."
-      }
-    },
-    {
-      "id": "dailystory-monitor-template-cd",
-      "name": "Monitor Template CD",
-      "what": "Watches a service and flags a failure.",
-      "business": "time-2-read",
-      "brand": "Time-2-Read",
-      "system": "github",
-      "slots": [
-        "daily 01:45"
-      ],
-      "emails": false,
-      "heavy": false,
-      "trigger": {
-        "repo": "dailystory",
-        "file": ".github/workflows/monitor-template-cd.yml",
-        "crons": [
-          "CRON_TZ=America/Chicago 45 1 * * *"
         ]
       },
       "output": {
@@ -2101,7 +2005,7 @@
       "brand": "Time-2-Read",
       "system": "github",
       "slots": [
-        "daily 01:40"
+        "mon 01:40"
       ],
       "emails": false,
       "heavy": true,
@@ -2109,7 +2013,7 @@
         "repo": "dailystory",
         "file": ".github/workflows/search-console-daily.yml",
         "crons": [
-          "CRON_TZ=America/Chicago 40 1 * * *"
+          "CRON_TZ=America/Chicago 40 1 * * 1"
         ]
       },
       "output": {
@@ -2163,30 +2067,6 @@
         "reason": "Housekeeping: doing nothing on a clean machine is fine."
       },
       "macWindow": "LIGHT"
-    },
-    {
-      "id": "dream-wedding-builder-authority-preflight-validation",
-      "name": "Authority Preflight Validation",
-      "what": "Authority Preflight Validation",
-      "business": "spry",
-      "brand": "Dream Wedding",
-      "system": "github",
-      "slots": [
-        "daily 04:17"
-      ],
-      "emails": false,
-      "heavy": false,
-      "trigger": {
-        "repo": "dream-wedding-builder",
-        "file": ".github/workflows/authority-preflight-validation.yml",
-        "crons": [
-          "CRON_TZ=America/Chicago 17 4 * * *"
-        ]
-      },
-      "output": {
-        "floor": 0,
-        "reason": "A check: its result is pass or fail, and a fail is already its own red run."
-      }
     },
     {
       "id": "dream-wedding-builder-email-health",
@@ -2316,7 +2196,7 @@
       "brand": "Dream Wedding",
       "system": "github",
       "slots": [
-        "daily 06:41"
+        "tue 06:41"
       ],
       "emails": false,
       "heavy": false,
@@ -2324,7 +2204,7 @@
         "repo": "dream-wedding-builder",
         "file": ".github/workflows/search-intelligence.yml",
         "crons": [
-          "CRON_TZ=America/Chicago 41 6 * * *"
+          "CRON_TZ=America/Chicago 41 6 * * 2"
         ]
       },
       "output": {
@@ -2621,7 +2501,7 @@
       "brand": "Whisper Almanac",
       "system": "github",
       "slots": [
-        "wed 14:00"
+        "daily 14:00"
       ],
       "emails": false,
       "heavy": true,
@@ -2629,7 +2509,7 @@
         "repo": "how-we-know",
         "file": ".github/workflows/loop-whisper-author.yml",
         "crons": [
-          "CRON_TZ=America/Chicago 0 14 * * 3"
+          "CRON_TZ=America/Chicago 0 14 * * *"
         ]
       },
       "output": {
@@ -2962,7 +2842,7 @@
       "brand": "How We Know",
       "system": "github",
       "slots": [
-        "daily 04:40"
+        "mon 04:40"
       ],
       "emails": false,
       "heavy": false,
@@ -2970,7 +2850,7 @@
         "repo": "how-we-know",
         "file": ".github/workflows/search-console-daily.yml",
         "crons": [
-          "CRON_TZ=America/Chicago 40 4 * * *"
+          "CRON_TZ=America/Chicago 40 4 * * 1"
         ]
       },
       "output": {
@@ -2986,7 +2866,7 @@
       "brand": "How We Know",
       "system": "github",
       "slots": [
-        "daily 06:20"
+        "wed 06:20"
       ],
       "emails": false,
       "heavy": false,
@@ -2994,7 +2874,7 @@
         "repo": "how-we-know",
         "file": ".github/workflows/site-post-deploy-check.yml",
         "crons": [
-          "CRON_TZ=America/Chicago 20 6 * * *"
+          "CRON_TZ=America/Chicago 20 6 * * 3"
         ]
       },
       "output": {
@@ -3413,7 +3293,7 @@
       "brand": "Industry Guides",
       "system": "github",
       "slots": [
-        "daily 07:17"
+        "tue 07:17"
       ],
       "emails": false,
       "heavy": false,
@@ -3421,7 +3301,7 @@
         "repo": "local-guides-citation-velocity",
         "file": ".github/workflows/daily-citation-intelligence.yml",
         "crons": [
-          "17 13 * * *"
+          "17 13 * * 2"
         ]
       },
       "output": {
@@ -3461,7 +3341,7 @@
       "brand": "Industry Guides",
       "system": "github",
       "slots": [
-        "daily 01:10"
+        "wed 01:10"
       ],
       "emails": false,
       "heavy": false,
@@ -3469,7 +3349,7 @@
         "repo": "local-guides-citation-velocity",
         "file": ".github/workflows/post-deploy-live-check.yml",
         "crons": [
-          "10 7 * * *"
+          "10 7 * * 3"
         ]
       },
       "output": {
@@ -3485,7 +3365,7 @@
       "brand": "Industry Guides",
       "system": "github",
       "slots": [
-        "daily 00:23"
+        "tue 00:23"
       ],
       "emails": false,
       "heavy": true,
@@ -3493,7 +3373,7 @@
         "repo": "local-guides-citation-velocity",
         "file": ".github/workflows/query-evidence-refresh.yml",
         "crons": [
-          "23 6 * * *"
+          "23 6 * * 2"
         ]
       },
       "output": {
@@ -3509,7 +3389,7 @@
       "brand": "Industry Guides",
       "system": "github",
       "slots": [
-        "daily 08:41"
+        "tue 08:41"
       ],
       "emails": false,
       "heavy": false,
@@ -3517,7 +3397,7 @@
         "repo": "local-guides-citation-velocity",
         "file": ".github/workflows/search-intelligence-loop.yml",
         "crons": [
-          "41 14 * * *"
+          "41 14 * * 2"
         ]
       },
       "output": {
@@ -4062,7 +3942,7 @@
       "brand": "Porch & Party",
       "system": "github",
       "slots": [
-        "daily 08:10"
+        "wed 08:10"
       ],
       "emails": false,
       "heavy": false,
@@ -4070,7 +3950,7 @@
         "repo": "p-n-p",
         "file": ".github/workflows/live-check.yml",
         "crons": [
-          "CRON_TZ=America/Chicago 10 8 * * *"
+          "CRON_TZ=America/Chicago 10 8 * * 3"
         ]
       },
       "output": {
@@ -5376,7 +5256,7 @@
       "brand": "westpeek.live",
       "system": "github",
       "slots": [
-        "daily 02:17"
+        "sat 02:17"
       ],
       "emails": false,
       "heavy": true,
@@ -5384,7 +5264,7 @@
         "repo": "westpeek-live",
         "file": ".github/workflows/browser-e2e.yml",
         "crons": [
-          "CRON_TZ=America/Chicago 17 2 * * *"
+          "CRON_TZ=America/Chicago 17 2 * * 6"
         ]
       },
       "output": {
@@ -5939,8 +5819,7 @@
       "brand": "WPP",
       "system": "github",
       "slots": [
-        "daily 02:10",
-        "daily 14:10"
+        "tue 02:10"
       ],
       "emails": false,
       "heavy": true,
@@ -5948,7 +5827,7 @@
         "repo": "WPP-llm",
         "file": ".github/workflows/query-intelligence.yml",
         "crons": [
-          "CRON_TZ=America/Chicago 10 2,14 * * *"
+          "CRON_TZ=America/Chicago 10 2 * * 2"
         ]
       },
       "output": {
@@ -5964,7 +5843,7 @@
       "brand": "WPP",
       "system": "github",
       "slots": [
-        "daily 05:40"
+        "tue 05:40"
       ],
       "emails": false,
       "heavy": false,
@@ -5972,7 +5851,7 @@
         "repo": "WPP-llm",
         "file": ".github/workflows/search-repair-retest.yml",
         "crons": [
-          "CRON_TZ=America/Chicago 40 5 * * *"
+          "CRON_TZ=America/Chicago 40 5 * * 2"
         ]
       },
       "output": {
@@ -6436,7 +6315,7 @@
       "brand": "KeepMyProof",
       "system": "github",
       "slots": [
-        "daily 05:23"
+        "mon 05:23"
       ],
       "emails": false,
       "heavy": false,
@@ -6444,7 +6323,7 @@
         "repo": "keepmyproof",
         "file": ".github/workflows/search-console-daily.yml",
         "crons": [
-          "23 11 * * *"
+          "23 11 * * 1"
         ]
       },
       "output": {
@@ -6628,7 +6507,7 @@
       "brand": "Time-2-Read",
       "system": "github",
       "slots": [
-        "daily 06:20"
+        "wed 06:20"
       ],
       "emails": false,
       "heavy": false,
@@ -6636,7 +6515,7 @@
         "repo": "heygetonmylevel",
         "file": ".github/workflows/post-deploy-live-check.yml",
         "crons": [
-          "20 12 * * *"
+          "20 12 * * 3"
         ]
       },
       "output": {
@@ -6652,7 +6531,7 @@
       "brand": "Time-2-Read",
       "system": "github",
       "slots": [
-        "daily 01:55"
+        "mon 01:55"
       ],
       "emails": false,
       "heavy": false,
@@ -6660,7 +6539,7 @@
         "repo": "heygetonmylevel",
         "file": ".github/workflows/search-console-daily.yml",
         "crons": [
-          "CRON_TZ=America/Chicago 55 1 * * *"
+          "CRON_TZ=America/Chicago 55 1 * * 1"
         ]
       },
       "output": {
@@ -6821,7 +6700,7 @@
       "brand": "Dream Wedding",
       "system": "github",
       "slots": [
-        "daily 05:55"
+        "mon 05:55"
       ],
       "emails": false,
       "heavy": false,
@@ -6829,7 +6708,7 @@
         "repo": "dream-wedding-builder",
         "file": ".github/workflows/brand-social-metrics.yml",
         "crons": [
-          "CRON_TZ=America/Chicago 55 5 * * *"
+          "CRON_TZ=America/Chicago 55 5 * * 1"
         ]
       },
       "output": {
@@ -6869,7 +6748,7 @@
       "brand": "ApprovalPrep",
       "system": "github",
       "slots": [
-        "daily 06:10"
+        "mon 06:10"
       ],
       "emails": false,
       "heavy": false,
@@ -6877,7 +6756,7 @@
         "repo": "approvalprep",
         "file": ".github/workflows/brand-social-metrics.yml",
         "crons": [
-          "CRON_TZ=America/Chicago 10 6 * * *"
+          "CRON_TZ=America/Chicago 10 6 * * 1"
         ]
       },
       "output": {
@@ -6979,6 +6858,176 @@
       "output": {
         "floor": 0,
         "reason": "Queues 0 when the next 3 slots are already queued on each channel; it prints OUTPUT: queued N (instagram I, facebook F), scheduled ahead M, and 0 queued with too few ahead and no named note is the named stop IG_NOTHING_QUEUED."
+      }
+    },
+    {
+      "id": "how-we-know-loop-money-author",
+      "name": "Money author",
+      "what": "How We Know: writes the next Money-lane episode from the public record, $0 free models.",
+      "business": "spry",
+      "brand": "How We Know",
+      "system": "github",
+      "slots": [
+        "daily 11:00"
+      ],
+      "emails": false,
+      "heavy": true,
+      "trigger": {
+        "repo": "how-we-know",
+        "file": ".github/workflows/loop-money-author.yml",
+        "crons": [
+          "CRON_TZ=America/Chicago 0 11 * * *"
+        ]
+      },
+      "output": {
+        "floor": 0,
+        "reason": "Writes only while the Money runway has room; a full runway is a quiet day, and a failed draft is a named stop."
+      }
+    },
+    {
+      "id": "peace-be-still-entity-backlink-watch",
+      "name": "Entity backlink watch",
+      "what": "Peace Be Still: weekly check of who links to and names the app.",
+      "business": "spry",
+      "brand": "Peace Be Still",
+      "system": "github",
+      "slots": [
+        "mon 07:27"
+      ],
+      "emails": false,
+      "heavy": false,
+      "trigger": {
+        "repo": "peace-be-still",
+        "file": ".github/workflows/entity-backlink-watch.yml",
+        "crons": [
+          "27 13 * * 1"
+        ]
+      },
+      "output": {
+        "floor": 0,
+        "reason": "A check: its result is pass or fail, and a fail is already its own red run."
+      }
+    },
+    {
+      "id": "peace-be-still-fill-cloud",
+      "name": "Library fill (cloud)",
+      "what": "Peace Be Still: fills the read-aloud library on GitHub while the launch fill runs.",
+      "business": "spry",
+      "brand": "Peace Be Still",
+      "system": "github",
+      "slots": [
+        "hourly :40"
+      ],
+      "emails": false,
+      "heavy": true,
+      "trigger": {
+        "repo": "peace-be-still",
+        "file": ".github/workflows/fill-cloud.yml",
+        "crons": [
+          "40 * * * *"
+        ]
+      },
+      "output": {
+        "floor": 0,
+        "reason": "Each run voices the next chapters until the library is full; the fill's own progress file shows what it made."
+      }
+    },
+    {
+      "id": "peace-be-still-search-console-daily",
+      "name": "Search Console read",
+      "what": "Peace Be Still: weekly Search Console numbers for peacebestillapp.com.",
+      "business": "spry",
+      "brand": "Peace Be Still",
+      "system": "github",
+      "slots": [
+        "mon 04:43"
+      ],
+      "emails": false,
+      "heavy": false,
+      "trigger": {
+        "repo": "peace-be-still",
+        "file": ".github/workflows/search-console-daily.yml",
+        "crons": [
+          "43 10 * * 1"
+        ]
+      },
+      "output": {
+        "floor": 0,
+        "reason": "A check: its result is pass or fail, and a fail is already its own red run."
+      }
+    },
+    {
+      "id": "peace-be-still-worker-wrangler-jsonc",
+      "name": "App worker tick",
+      "what": "Peace Be Still: the app worker's hourly tick (day boundaries decided in Central).",
+      "business": "spry",
+      "brand": "Peace Be Still",
+      "system": "cloudflare",
+      "slots": [
+        "hourly :00"
+      ],
+      "emails": false,
+      "heavy": false,
+      "trigger": {
+        "repo": "peace-be-still",
+        "file": "worker/wrangler.jsonc",
+        "crons": [
+          "0 * * * *"
+        ]
+      },
+      "output": {
+        "floor": 0,
+        "reason": "A check: its result is pass or fail, and a fail is already its own red run."
+      }
+    },
+    {
+      "id": "dailystory-ops-reports",
+      "name": "Ops reports",
+      "what": "Time-2-Read: the monthly and quarterly operations reports.",
+      "business": "time-2-read",
+      "brand": "Time-2-Read",
+      "system": "github",
+      "slots": [
+        "day1 04:00",
+        "day1 04:20"
+      ],
+      "emails": false,
+      "heavy": false,
+      "trigger": {
+        "repo": "dailystory",
+        "file": ".github/workflows/ops-reports.yml",
+        "crons": [
+          "CRON_TZ=America/Chicago 0 4 1 * *",
+          "CRON_TZ=America/Chicago 20 4 1 1,4,7,10 *"
+        ]
+      },
+      "output": {
+        "floor": 0,
+        "reason": "A check: its result is pass or fail, and a fail is already its own red run."
+      }
+    },
+    {
+      "id": "local-guides-generator-edge-cache",
+      "name": "Edge cache warm",
+      "what": "Local guides: warms the edge cache for the guide sites once a day.",
+      "business": "spry",
+      "brand": "Industry Guides",
+      "system": "github",
+      "slots": [
+        "daily 09:00"
+      ],
+      "emails": false,
+      "heavy": false,
+      "trigger": {
+        "repo": "local-guides-generator",
+        "file": ".github/workflows/edge_cache.yml",
+        "crons": [
+          "0 15 * * *"
+        ]
+      },
+      "output": {
+        "floor": 0,
+        "reason": "A check: its result is pass or fail, and a fail is already its own red run."
       }
     }
   ]
