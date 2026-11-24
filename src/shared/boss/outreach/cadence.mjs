@@ -10,6 +10,7 @@
  *
  * Every sender reads these numbers; tests and scripts/validate/lp-rules.mjs pin them. Pure, no I/O.
  */
+import { CENTRAL, startOfDay } from "../schedule/clock.mjs";
 export const DAY_MS = 86_400_000;
 export const MAX_EMAILS_PER_PERSON = 4;
 export const MAX_FOLLOW_UPS = MAX_EMAILS_PER_PERSON - 1;
@@ -40,13 +41,11 @@ export function nextTouchDueAt({ touches, firstSentAt, lastTouchAt }) {
   return startOfCentralDay(Math.max(byFirst, byLast));
 }
 
-const CENTRAL = new Intl.DateTimeFormat("en-CA", { timeZone: "America/Chicago", year: "numeric", month: "2-digit", day: "2-digit", hour: "2-digit", minute: "2-digit", second: "2-digit", hourCycle: "h23" });
-/** The first millisecond of the America/Chicago calendar day that `ms` falls in. Pure. */
-export function startOfCentralDay(ms) {
-  const part = Object.fromEntries(CENTRAL.formatToParts(new Date(ms)).map((x) => [x.type, Number(x.value)]));
-  const intoDay = (part.hour * 3600 + part.minute * 60 + part.second) * 1000 + (ms % 1000);
-  return ms - intoDay;
-}
+/**
+ * The first millisecond of the America/Chicago calendar day that `ms` falls in (the one clock's
+ * startOfDay). Subtracting the wall time already elapsed was an hour off on both clock-change days. Pure.
+ */
+export const startOfCentralDay = (ms) => startOfDay(ms, CENTRAL);
 
 /** The touch number due now (2, 3 or 4), or null. Never a fifth email, whatever the input. */
 export function followUpDue(p, now = Date.now()) {

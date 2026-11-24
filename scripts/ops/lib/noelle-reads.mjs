@@ -15,6 +15,7 @@ import { existsSync, readFileSync, statSync, readdirSync } from "node:fs";
 import { homedir } from "node:os";
 import { join } from "node:path";
 import { CHANNEL_OWNERS, READ_SOURCES } from "../../../src/shared/boss/growth/noelle.mjs";
+import { dayOf } from "../../../src/shared/boss/schedule/clock.mjs";
 
 export const OWNER = "seq23";
 
@@ -261,7 +262,7 @@ export async function readStudio({ d1, now }) {
 
 /** The Central day of a UTC instant. */
 export function centralDay(ms) {
-  return new Intl.DateTimeFormat("en-CA", { timeZone: "America/Chicago", year: "numeric", month: "2-digit", day: "2-digit" }).format(new Date(ms));
+  return dayOf(ms);
 }
 
 /**

@@ -28,6 +28,7 @@ import { bossApi, fixJob, sendAs } from "./lib/duty-kit.mjs";
 import { fetchLoopWeeks } from "./lib/search-loop-week.mjs";
 import { ownerEmail } from "../../src/shared/boss/mail/ownerLayout.mjs";
 import { REFRESH_LEDGERS } from "../../src/shared/boss/spryWeekly/refresh.mjs";
+import { dayOf } from "../../src/shared/boss/schedule/clock.mjs";
 
 const gh = (args) => execFileSync("gh", args, { encoding: "utf8", maxBuffer: 32 << 20, stdio: ["ignore", "pipe", "pipe"] });
 
@@ -76,7 +77,7 @@ export function fetchRefreshLedgers({ run = gh } = {}) {
 }
 
 const STATE_DIR = join(homedir(), ".boss-os", "spry-weekly");
-const weekKey = (now) => new Date(now).toLocaleDateString("en-CA", { timeZone: "America/Chicago" });
+const weekKey = (now) => dayOf(now);
 
 async function main() {
   const dry = process.argv.includes("--dry");

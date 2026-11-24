@@ -35,8 +35,9 @@ import { bossApi } from "./lib/duty-kit.mjs";
 import { outputLine } from "../../src/shared/boss/alarms/rules.mjs";
 import { readMorningSections, freshSections } from "../../src/shared/boss/mail/morning.mjs";
 import { MORNING_SECTION_SPECS, sectionsNotReported, catchUpPlan } from "../../src/shared/boss/mail/morningSections.mjs";
+import { CENTRAL, formatIn, wallClock } from "../../src/shared/boss/schedule/clock.mjs";
 
-const TZ = "America/Chicago";
+const TZ = CENTRAL;
 /** Before the email: eight minutes, so the email is never raced. After it there is no deadline, so a
  * long producer (catchUpLongWhy, e.g. the Monday sites:audit: 7 minutes for 27 sites on 2 Nov) runs
  * too, within 45 minutes so a boot run never hangs (repair rc_m708yx6am3k3arpe, 9 Nov 2026). */
@@ -54,11 +55,10 @@ export const EMAIL_MINUTE_CENTRAL = 6 * 60 + 40;
  * "before_email" → it can still put a section in today's email; "after_email" → Today and tomorrow's.
  */
 export function catchUpWindow(now = Date.now(), tz = TZ) {
-  const parts = new Intl.DateTimeFormat("en-US", { timeZone: tz, hour: "2-digit", minute: "2-digit", hourCycle: "h23" }).formatToParts(new Date(now));
-  const hour = Number(parts.find((p) => p.type === "hour")?.value);
-  const minute = Number(parts.find((p) => p.type === "minute")?.value);
-  if (!Number.isFinite(hour) || !Number.isFinite(minute)) throw new Error(`NAMED STOP [MORNING_CATCHUP_CLOCK] could not read the time in ${tz}`);
-  return hour * 60 + minute < EMAIL_MINUTE_CENTRAL ? "before_email" : "after_email";
+  let w;
+  try { w = wallClock(now, tz); } catch { w = null; }
+  if (!w || !Number.isFinite(w.h) || !Number.isFinite(w.min)) throw new Error(`NAMED STOP [MORNING_CATCHUP_CLOCK] could not read the time in ${tz}`);
+  return w.h * 60 + w.min < EMAIL_MINUTE_CENTRAL ? "before_email" : "after_email";
 }
 
 /** The words for the completion line. Pure. */
@@ -74,7 +74,7 @@ export function expectedSections(weekday, specs = MORNING_SECTION_SPECS) {
 }
 
 export function weekdayIn(tz, now = Date.now()) {
-  return new Intl.DateTimeFormat("en-US", { timeZone: tz, weekday: "long" }).format(new Date(now));
+  return formatIn(now, { weekday: "long" }, tz);
 }
 
 /** Of what was missing before the catch-up ran, the ones it actually attempted (had a `catchUp`). Pure. */

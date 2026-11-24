@@ -11,6 +11,7 @@
  *
  * This is the default only. Pure; pinned by tests/morningRoutine.test.ts.
  */
+import { dayOf } from "../schedule/clock.mjs";
 
 /** [start minute, end minute, place, move, alternate, purpose]. Purpose is one word or pair. */
 export const DEFAULT_MORNING_ROUTINE = Object.freeze([
@@ -40,7 +41,7 @@ function seed(ymd) {
 
 /** Her Central calendar day for an instant: "2026-11-02". */
 export function centralDay(now = Date.now()) {
-  return new Intl.DateTimeFormat("en-CA", { timeZone: "America/Chicago", year: "numeric", month: "2-digit", day: "2-digit" }).format(new Date(now));
+  return dayOf(now);
 }
 
 /** Minutes into the routine, as a stopwatch reads it: 1 → "1:00". */

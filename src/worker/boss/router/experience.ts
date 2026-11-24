@@ -47,6 +47,7 @@
 import type { D1Database } from "@cloudflare/workers-types";
 import { newId } from "../lib/id";
 import { logEvent } from "../lib/log";
+import { startOfDay } from "../../../shared/boss/schedule/clock.mjs";
 
 export const OUTCOMES = ["succeeded", "reworked", "rejected"] as const;
 export type JobOutcome = (typeof OUTCOMES)[number];
@@ -476,9 +477,8 @@ export const GROUNDING_KIND = "grounded_search";
 
 /** Google's free tier resets at midnight Pacific: when the current day's allowance began. */
 export function freeDayStartedAt(now: number): number {
-  const parts = Object.fromEntries(new Intl.DateTimeFormat("en-US", { timeZone: "America/Los_Angeles", hourCycle: "h23", hour: "numeric", minute: "numeric", second: "numeric" })
-    .formatToParts(new Date(now)).map((p) => [p.type, p.value]));
-  return now - ((Number(parts.hour) % 24) * 3600 + Number(parts.minute) * 60 + Number(parts.second)) * 1000;
+  // Pacific midnight from the one clock; "now minus the time into today" was an hour off on change days.
+  return startOfDay(now, "America/Los_Angeles");
 }
 
 /** Does this failure say the model itself is gone (not the key, not the request)? */

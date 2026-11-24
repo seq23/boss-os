@@ -10,7 +10,9 @@
  *
  * Pure; shared by the Worker and the Mac scripts. The one place a zone word or bracket is built.
  */
-export const HOME_TZ = "America/Chicago";
+import { CENTRAL, wallClock } from "./schedule/clock.mjs";
+
+export const HOME_TZ = CENTRAL;
 export const OWNER_TZ_KEY = "owner_timezone";
 
 const ZONE_WORDS = { "America/New_York": "ET", "America/Detroit": "ET", "America/Chicago": "CT", "America/Denver": "MT", "America/Phoenix": "MT", "America/Los_Angeles": "PT", "Pacific/Honolulu": "HT", "America/Anchorage": "AKT" };
@@ -32,48 +34,17 @@ export function zoneWord(tz, at = Date.now()) {
   } catch { return tz; }
 }
 
-// One formatter per zone, kept: constructing one costs real CPU on the Worker (timezone.ts).
-const WALL = new Map();
+/**
+ * THE CONVERSION LIVES IN schedule/clock.mjs (24 Nov 2026): this file builds the words, never the
+ * clock. `civilIn` and `instantAt` are its names, kept for their callers; the skipped and repeated
+ * hours follow clock.mjs's rule (a skipped 02:30 is 03:30 after the jump, a repeated 01:30 the first one).
+ */
+export { wallClock as civilIn, instantAt } from "./schedule/clock.mjs";
+
 /** The wall clock in a zone: { hour 0-23, minute }. */
 export function wall(at, tz) {
-  let f = WALL.get(tz);
-  if (!f) { f = new Intl.DateTimeFormat("en-US", { timeZone: tz, hour: "numeric", minute: "2-digit", hourCycle: "h23" }); WALL.set(tz, f); }
-  const p = f.formatToParts(new Date(at));
-  const g = (t) => Number(p.find((x) => x.type === t)?.value ?? 0);
-  return { hour: g("hour") % 24, minute: g("minute") };
-}
-
-// One full formatter per zone, kept (same reason as WALL).
-const CIVIL = new Map();
-/** The zone's offset from UTC at an instant, in ms (positive = ahead of UTC). */
-function offsetAt(ts, tz) {
-  let f = CIVIL.get(tz);
-  if (!f) { f = new Intl.DateTimeFormat("en-US", { timeZone: tz, hourCycle: "h23", year: "numeric", month: "2-digit", day: "2-digit", hour: "2-digit", minute: "2-digit", second: "2-digit" }); CIVIL.set(tz, f); }
-  const p = Object.fromEntries(f.formatToParts(new Date(ts)).map((x) => [x.type, x.value]));
-  return Date.UTC(+p.year, +p.month - 1, +p.day, +p.hour % 24, +p.minute, +p.second) - Math.floor(ts / 1000) * 1000;
-}
-
-/** The civil clock in a zone at an instant: { y, m (1-12), d, h, min, dow (0 = Sunday) }. */
-export function civilIn(ts, tz) {
-  const l = new Date(ts + offsetAt(ts, tz));
-  return { y: l.getUTCFullYear(), m: l.getUTCMonth() + 1, d: l.getUTCDate(), h: l.getUTCHours(), min: l.getUTCMinutes(), dow: l.getUTCDay() };
-}
-
-/**
- * THE ONE WALL CLOCK -> INSTANT RULE for the plain-JS side (22 Nov 2026: six copies, one of them an
- * hour wrong on every deadline that crossed a clock change). The epoch ms at which the clock in `tz`
- * reads y-m-d h:min. TWO PASSES: the offset depends on the instant being solved for, so the second
- * pass re-reads it at the first guess and settles the clock-change days. Days past the month's end
- * roll over (d = 32 is the next month's 1st). A time in the hour the clocks go back over is the first
- * of its two instants west of UTC (the Americas) and the second east of it, as every earlier copy did; a
- * time in the skipped hour lands an hour off it (`instantIn`, lp/schedule.mjs, says null instead). The
- * Worker's offset-cached twin is `zonedTime` in timezone.ts; scripts/lib/seat-usage-limit.mjs mirrors
- * another repo on purpose (repositories never import each other).
- */
-export function instantAt(tz, y, m, d, h = 0, min = 0) {
-  const wallMs = Date.UTC(y, m - 1, d, h, min);
-  const first = wallMs - offsetAt(wallMs, tz);
-  return wallMs - offsetAt(first, tz);
+  const w = wallClock(at, tz);
+  return { hour: w.h, minute: w.min };
 }
 
 /** "9:00 AM": the default clock. A sender with its own style passes `clock(hour, minute)`. */

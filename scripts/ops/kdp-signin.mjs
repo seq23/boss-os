@@ -38,6 +38,7 @@ import { join, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
 import { openProfile } from "./browser.mjs";
 import { seatEnv } from "./lib/seat-env.mjs";
+import { lockedArgs, refusals, resultText } from "./lib/claude-lock.mjs";
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const OUT_DIR = process.env.BOSS_OS_KDP_DIR ?? `${process.env.HOME}/.boss-os/kdp`;
@@ -106,15 +107,26 @@ export function otpIn(text) {
   return m ? m[1] : null;
 }
 
-/** One question to her mailbox through the Gmail connector (`claude -p` on her seat); its printed answer, or "". */
+/**
+ * One question to her mailbox through the Gmail connector (`claude -p` on her seat); its answer, or "".
+ * Locked to kdp-signin-permissions.json (search and read mail, nothing else; lib/claude-lock.mjs). A
+ * call that list refuses answers `REFUSED_ANSWER`, never a code and never "none", so the sign-in stops
+ * by name instead of polling a mailbox it is not allowed to read.
+ */
+export const REFUSED_ANSWER = "NAMED STOP [PERMISSION_DENIED]";
+export function gmailAnswer(stream) {
+  const denied = refusals(stream);
+  if (denied.length) return `${REFUSED_ANSWER} ${denied.map((d) => d.tool).join(", ")}`;
+  return resultText(stream);
+}
 export function askGmail(prompt, { model = OTP_MODEL, timeoutMs = 120_000 } = {}) {
   return new Promise((resolve) => {
-    const child = spawn("claude", ["-p", prompt, "--model", model, "--dangerously-skip-permissions"], { env: seatEnv(process.env), stdio: ["ignore", "pipe", "pipe"] });
+    const child = spawn("claude", ["-p", prompt, "--model", model, ...lockedArgs("kdp-signin"), "--output-format", "stream-json", "--verbose"], { env: seatEnv(process.env), stdio: ["ignore", "pipe", "pipe"] });
     let text = "";
     child.stdout.on("data", (d) => { text += d.toString(); });
     child.stderr.on("data", () => {});
     const t = setTimeout(() => child.kill("SIGTERM"), timeoutMs);
-    child.on("close", () => { clearTimeout(t); resolve(text); });
+    child.on("close", () => { clearTimeout(t); resolve(gmailAnswer(text)); });
     child.on("error", () => { clearTimeout(t); resolve(""); });
   });
 }
@@ -132,6 +144,7 @@ async function readOtpFromGmail(sinceIso) {
   while (Date.now() < deadline) {
     attempt += 1;
     const answer = await askGmail(prompt);
+    if (answer.startsWith(REFUSED_ANSWER)) { console.error(answer); return { code: null, attempt, refused: true }; }
     const code = otpIn(answer);
     if (code) return { code, attempt };
     if (Date.now() + 25_000 >= deadline) break;

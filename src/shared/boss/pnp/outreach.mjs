@@ -1,14 +1,12 @@
 /** Campaign decisions shared by the Mac runner and its authenticated D1 desk. No contact data. */
 import { DAY_MS, TOUCH_DAYS } from "../outreach/cadence.mjs";
+import { dayOf, startOfDay, wallClock } from "../schedule/clock.mjs";
 export const DAILY_FIRST_CAP = 12;
 export const DAILY_FOLLOWUP_CAP = 15;
-export const chicagoDay = (now) => new Intl.DateTimeFormat("en-CA", { timeZone: "America/Chicago", year: "numeric", month: "2-digit", day: "2-digit" }).format(new Date(now));
-export const weekday = (now) => !["Sat", "Sun"].includes(new Intl.DateTimeFormat("en-US", { timeZone: "America/Chicago", weekday: "short" }).format(new Date(now)));
-export function dayStart(now) {
-  const parts = new Intl.DateTimeFormat("en-US", { timeZone: "America/Chicago", hour: "numeric", minute: "numeric", second: "numeric", hourCycle: "h23" }).formatToParts(new Date(now));
-  const get = (key) => Number(parts.find((p) => p.type === key).value);
-  return now - (get("hour") * 3600 + get("minute") * 60 + get("second")) * 1000 - now % 1000;
-}
+export const chicagoDay = (now) => dayOf(now);
+export const weekday = (now) => ![0, 6].includes(wallClock(now).dow);
+/** Central midnight of the day holding `now` (an hour off on clock-change days before 24 Nov 2026). */
+export const dayStart = (now) => startOfDay(now);
 const lower = (s) => String(s ?? "").trim().toLowerCase();
 export const emailDomain = (email) => lower(email).split("@")[1] ?? "";
 const domainMatches = (a, b) => a === b || a.endsWith(`.${b}`);

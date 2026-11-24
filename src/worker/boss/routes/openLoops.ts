@@ -23,7 +23,7 @@ import { ok, badRequest, notFound, AppError } from "../lib/http";
 import { newId } from "../lib/id";
 import { getSetting, setSetting } from "../lib/settings";
 import { readSession } from "../auth";
-import { dayIdInZone } from "../../../shared/boss/timezone";
+import { dayIdInZone, wallClock } from "../../../shared/boss/timezone";
 import { BRAIN_SLUGS } from "../../../shared/boss/brains/brain.mjs";
 import { MORNING_SECTIONS } from "../../../shared/boss/mail/morningSections.mjs";
 import { HER, loopKey, loopProblems, morningSection, systemRow, repairsDue, remindersDue, reminderEmail, sourceKeyOf, visibleLoops, isOwner, isDay, type Loop } from "../../../shared/boss/openLoops/openLoops.mjs";
@@ -197,9 +197,7 @@ const JOB = "open-loops";
 /** The section is written once per Central day, from this hour (before the 06:40 email). */
 export const WRITE_FROM_HOUR = 5;
 
-function centralHour(now: number): number {
-  return Number(new Intl.DateTimeFormat("en-US", { timeZone: "America/Chicago", hour: "numeric", hourCycle: "h23" }).format(new Date(now)));
-}
+const centralHour = (now: number): number => wallClock(now).h;
 
 /**
  * ONCE A DAY: writes the "open_loops" morning section (an empty list included, so a missing copy

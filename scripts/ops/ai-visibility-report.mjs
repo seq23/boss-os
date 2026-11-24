@@ -10,6 +10,15 @@
  *       week.mjs `strengthenedOf`), and from Boss OS the open lanes and the channels each business
  *       holds. The session has no file or web tools, so this is written into its prompt.
  *
+ *   node ai-visibility-report.mjs transcript <session.jsonl>
+ *       Between the session and the post. The session runs with `--output-format stream-json`, so its
+ *       whole event stream is in the run's work dir; this prints the session's OWN printed words (every
+ *       assistant text block, in order) into the kept log. The final message alone holds only its last
+ *       turn: on 23 and 24 Nov 2026 the six site blocks were printed earlier and lost, 0 sites read twice.
+ *       A run whose events show no successful OpenSEO call prints NAMED STOP [OPENSEO_NOT_REACHED] and
+ *       only its final message (so a usage-limit notice still reaches the log): its blocks are never read.
+ *       The raw stream (OpenSEO's answer text) dies with the work dir; the log keeps the session's words.
+ *
  *   node ai-visibility-report.mjs post <run.log> <state.json>
  *       After it. Reads the session's SITE-BEGIN/SITE-END blocks, checks each against that site's own
  *       pages (readSite with the sitemap: an OWN page is one of the site's engine pages, A3), and posts
@@ -26,7 +35,7 @@
 import { execFileSync } from "node:child_process";
 import { readFileSync, writeFileSync } from "node:fs";
 import { pathToFileURL } from "node:url";
-import { AI_SITES, STOPS, creditsProblem, pageOnHost, planProblem, prefixOk, readSite } from "../../src/shared/boss/growth/aiAnswers.mjs";
+import { AI_SITES, STOPS, creditsProblem, pageOnHost, planProblem, prefixOk, readSite, sessionTranscript } from "../../src/shared/boss/growth/aiAnswers.mjs";
 import { strengthenedOf, weekFor } from "../../src/shared/boss/searchLoop/week.mjs";
 import { fetchLoopWeeks } from "./lib/search-loop-week.mjs";
 import { bossApi } from "./lib/duty-kit.mjs";
@@ -108,6 +117,15 @@ export async function buildContext({ api, fetchImpl = fetch, config = loopConfig
   return { state, text: `## SITES\n\n${parts.join("\n\n")}\n` };
 }
 
+export const NOT_REACHED_LINE = `NAMED STOP [OPENSEO_NOT_REACHED] ${STOPS.OPENSEO_NOT_REACHED}`;
+
+/** The `transcript` step, pure: the session's stream-json → the text that goes into the kept log. */
+export function transcriptText(stream) {
+  const t = sessionTranscript(stream);
+  if (t.openseo) return t.lines;
+  return [NOT_REACHED_LINE, t.final, t.raw].filter((x) => x && x.trim()).join("\n");
+}
+
 /** The session's log, read: each site's block (parsed JSON or a parse failure), credits, estimates. */
 export function parseRun(log) {
   const text = String(log ?? "");
@@ -125,6 +143,8 @@ export function parseRun(log) {
     blocks, estimates,
     before: last(/^CREDITS-BEFORE: (\d+)\s*$/gm), after: last(/^CREDITS-AFTER: (\d+)\s*$/gm),
     pluginMissing: /^NAMED STOP \[PLUGIN_NOT_LOADED\]/m.test(text),
+    notReached: /^NAMED STOP \[OPENSEO_NOT_REACHED\]/m.test(text),
+    claimed: last(/AI-VISIBILITY-COMPLETE: sites=(\d+)/g),
   };
 }
 
@@ -134,6 +154,7 @@ export function entriesFrom(run, state, now = Date.now()) {
   for (const host of Object.keys(AI_SITES)) {
     const s = state[host] ?? { stop: "SITE_MISSING" };
     const b = run.blocks[host];
+    if (run.notReached) { out.push({ host, stop: "OPENSEO_NOT_REACHED" }); continue; }
     if (run.pluginMissing) { out.push({ host, stop: "PLUGIN_NOT_LOADED" }); continue; }
     if (!b) { out.push({ host, stop: "SITE_MISSING" }); continue; }
     if (b.stop) { out.push({ host, stop: b.stop }); continue; }
@@ -166,6 +187,10 @@ export async function post(logFile, stateFile, { api } = {}) {
     else console.log(`NAMED STOP [${s.stop ?? "REFUSED"}] ${s.host}: ${s.why ?? STOPS[s.stop] ?? "not read"}`);
   }
   const read = res.read ?? 0;
+  // The session said it printed blocks and none reached the log: the hand-over broke, not six sites.
+  if (run.claimed > 0 && !Object.keys(run.blocks).length && !run.notReached && !run.pluginMissing) {
+    console.log(`NAMED STOP [SESSION_BLOCKS_LOST] the session says it printed ${run.claimed} site blocks and none reached the log; the hand-over from the session to code is broken, not the sites`);
+  }
   console.log(outputLine(read, "sites_read"));
   const money = creditsProblem(run.before, run.after);
   if (money) { console.log(money); rc = 10; }
@@ -197,7 +222,14 @@ async function main(argv) {
     return 0;
   }
   if (cmd === "post") return post(a, b);
-  console.error("usage: ai-visibility-report.mjs context <context.txt> <state.json> | post <run.log> <state.json>");
+  if (cmd === "transcript") {
+    let stream;
+    try { stream = readFileSync(a, "utf8"); } catch { console.log(`NAMED STOP [SESSION_STREAM_UNREAD] the session's event stream ${a} could not be read`); return 9; }
+    const text = transcriptText(stream);
+    if (text) console.log(text);
+    return 0;
+  }
+  console.error("usage: ai-visibility-report.mjs context <context.txt> <state.json> | transcript <session.jsonl> | post <run.log> <state.json>");
   return 2;
 }
 

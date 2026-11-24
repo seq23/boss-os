@@ -63,19 +63,20 @@ import { yoursThisWeek } from "../../src/shared/boss/waiting/register.mjs";
 import { dedupeEvents, isAttending, others } from "../../src/shared/boss/meetingPrep/prep.mjs";
 import { gratitudeFromBrain, coachPressure } from "../../src/shared/boss/mail/morningReply.mjs";
 import { stallBanners } from "../../src/shared/boss/duties/stall.mjs";
+import { CENTRAL, dayOf as dayIn, wallClock } from "../../src/shared/boss/schedule/clock.mjs";
 
 const ORIGIN = process.env.BOSS_OS_ORIGIN ?? "https://boss.sequoiataylor.com";
 const FEED = process.env.PNP_OWNER_FEED_URL ?? "https://porchandparty901.com/api/owner-feed";
-const TZ = "America/Chicago";
+const TZ = CENTRAL;
 const SENT_DIR = path.join(os.homedir(), ".boss-os", "your-day");
 const DAY_MS = 86_400_000;
 
 // ─── Time, in her zone ─────────────────────────────────────────────────────────
 
+const WEEKDAYS = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"];
 function parts(at) {
-  const p = new Intl.DateTimeFormat("en-US", { timeZone: TZ, year: "numeric", month: "2-digit", day: "2-digit", weekday: "long", hour: "numeric", minute: "2-digit", hour12: false }).formatToParts(new Date(at));
-  const g = (t) => p.find((x) => x.type === t)?.value ?? "";
-  return { date: `${g("year")}-${g("month")}-${g("day")}`, weekday: g("weekday"), hour: Number(g("hour")) % 24, minute: Number(g("minute")) };
+  const w = wallClock(at, TZ);
+  return { date: dayIn(at, TZ), weekday: WEEKDAYS[w.dow], hour: w.h, minute: w.min };
 }
 export const dayOf = (at) => parts(at).date;
 // A time she reads: her current zone, Central in brackets when away ("10 am ET (9 am CT)"); 6 Nov 2026.
@@ -922,6 +923,28 @@ export function failedTaskLines(tasks, now = Date.now()) {
 
 const DONE_SOURCES = ["pnp_outreach", "bounces", "lp", "prospects", "tail", "notices", "risk", "archive"];
 const MAX_DONE = 3;
+/**
+ * Live outcome verdicts lead Done for you (her order 24 Nov 2026, "u said nothing yesterday"): seq-bin's
+ * post-land-check writes them to "notices" keyed `outcome:<repo>#<pr>:<verdict>` (scripts/ops/outcome-notice.mjs).
+ * NOT CHECKED first, then working, so three lines never hide one (NOT WORKING is a red banner instead:
+ * outcomeBanners). Pure.
+ */
+export function outcomeRank(line) {
+  const k = String(line?.key ?? "");
+  if (!k.startsWith("outcome:")) return 3;
+  return k.endsWith(":not-working") ? 0 : k.includes(":not-checked:") ? 1 : 2;
+}
+
+/**
+ * A live outcome that is NOT WORKING is never a "Done for you" line (review of #567, 24 Nov 2026: it sat first in
+ * the green box, lower-cased). It is a red banner at the top, beside stopped jobs, saying NOT WORKING in her words
+ * ("the next-day live check posts its verdict … 'NOT WORKING' when it fails"). Pure.
+ */
+export const isNotWorking = (l) => typeof l === "object" && String(l?.key ?? "").startsWith("outcome:") && String(l.key).endsWith(":not-working");
+export function outcomeBanners(lines) {
+  const bad = (lines ?? []).filter(isNotWorking).map((l) => String(l.text ?? "").trim()).filter(Boolean);
+  return bad.length ? [{ tone: "red", title: bad.length === 1 ? "NOT WORKING: one thing checked live last night" : `NOT WORKING: ${bad.length} things checked live last night`, lines: bad }] : [];
+}
 
 /** 8Raise is said only when something is wrong (owner, 24 Oct 2026: "drop the footer unless"). */
 export function eightRaiseLine(credits) {
@@ -1281,7 +1304,8 @@ export function buildDay(data, now = Date.now()) {
   const spirit = spiritRaw && spiritItems.length ? { ...spiritRaw, items: spiritItems } : null;
   const ancestral = ancestralLine(data.spirit ?? null);
   // The prospects producer's count line is in "Prospect emails" when that loaded; not said twice.
-  for (const name of DONE_SOURCES.filter((n) => !(data.prospects && n === "prospects"))) for (const l of m[name]?.lines ?? []) doneRaw.push(typeof l === "string" ? { text: l, links: [] } : { links: [], ...l });
+  for (const name of DONE_SOURCES.filter((n) => !(data.prospects && n === "prospects"))) for (const l of (m[name]?.lines ?? []).filter((x) => !isNotWorking(x))) doneRaw.push(typeof l === "string" ? { text: l, links: [] } : { links: [], ...l });
+  doneRaw.sort((a, b) => outcomeRank(a) - outcomeRank(b));
   const doneOnce = doneForYou(doneRaw, { told: new Set(data.told?.done ?? []), max: MAX_DONE });
   const done = doneOnce.all.map((l) => { const id = idFor("done", l.text); return { ...l, id, screen: itemUrl(today, id) }; }).filter((l) => !isGone(l.id));
   // A line that carries its own links inline (`runs`: the filed meeting preps, each with its "Open ›") keeps them.
@@ -1376,7 +1400,7 @@ export function buildDay(data, now = Date.now()) {
     subject,
     lineTail: morningRest,
     // Never miss twice (above Decide), then any job that has STOPPED (red), 18 Nov 2026.
-    banners: [...(data.stallBanners ?? []), ...(coach.banner ? [coach.banner] : [])],
+    banners: [...(data.stallBanners ?? []), ...outcomeBanners(m.notices?.lines), ...(coach.banner ? [coach.banner] : [])],
     decide,
     sections: [
       ...(stillYours.length ? [{ title: "Still yours to answer", items: stillYours.map((d) => ({

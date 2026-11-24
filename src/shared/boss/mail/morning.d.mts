@@ -5,7 +5,7 @@ export interface MorningSection {
   section: string; at: string;
   decide?: MorningDecide[];
   rows?: Array<{ company: string; side?: string; size?: string; price?: string; structure?: string; from?: string; when?: string; url?: string; tag?: string }>;
-  lines?: Array<string | { text: string; links?: Button[] }>;
+  lines?: Array<string | { text: string; links?: Button[]; key?: string }>;
   link?: Button | null;
   credits?: { used: number; budget: number; kept: number };
 }

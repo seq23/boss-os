@@ -1,7 +1,7 @@
 import { buildAlmanac, type AlmanacEvent } from "./astro";
 import { natalChart, transitAspects, type BirthData } from "./natal";
 import { ORB, TRANSIT_BODY, NATAL_POINT, ASPECT_TONE } from "./transitMeaning";
-import { monthIdInZone, OWNER_TIMEZONE_LABEL, dateTimeFormat } from "@shared/boss/timezone";
+import { dayIdInZone, monthIdInZone, OWNER_TIMEZONE_LABEL } from "@shared/boss/timezone";
 
 /**
  * THE MONTH'S DATES THAT ACTUALLY MATTER — asked for because a list of everything is not a month.
@@ -72,8 +72,7 @@ const WEIGHT: Record<string, number> = {
   uranus: 3, neptune: 3, pluto: 3, chiron: 3, lilith: 3,
 };
 
-const dayIn = (ts: number, tz: string) =>
-  dateTimeFormat("en-CA", { timeZone: tz, year: "numeric", month: "2-digit", day: "2-digit" }).format(new Date(ts));
+const dayIn = (ts: number, tz: string) => dayIdInZone(ts, tz);
 
 /**
  * When each slow transit reaches its tightest point inside the window.

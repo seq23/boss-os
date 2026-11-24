@@ -29,6 +29,7 @@ import { fileURLToPath, pathToFileURL } from "node:url";
 import { execFileSync, spawnSync } from "node:child_process";
 import { randomUUID } from "node:crypto";
 import * as L from "./kdp-books/lib.mjs";
+import { dayOf } from "../../src/shared/boss/schedule/clock.mjs";
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 export const SPEC_PATH = join(HERE, "kdp-books/keepmyproof.json");
@@ -199,7 +200,7 @@ export async function run({ folder = null, next = false, rewrite = false, doRevi
   if (!book0) throw stop("NO_SUCH_FOLDER", `"${folder}" is not one of ${spec.books.map((b) => b.folder).join(", ")}.`, 2);
   if (next && unpublished(register) >= KDP_DRAFT_LIMIT) throw stop("KDP_DRAFT_CAP", `${unpublished(register)} titles are not Live (KDP holds at most ${KDP_DRAFT_LIMIT} unpublished); publish or retire one first. The next run retries.`, 2);
   const book = { ...book0, author: spec.author };
-  const day = new Intl.DateTimeFormat("en-CA", { timeZone: "America/Chicago" }).format(now);
+  const day = dayOf(now);
   const dir = join(OUT_ROOT, book.folder);
   await mkdir(dir, { recursive: true });
   const read = await sourceReader(sourceDir, fetchImpl);

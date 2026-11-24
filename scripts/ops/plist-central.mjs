@@ -13,6 +13,7 @@
 import fs from "node:fs";
 import os from "node:os";
 import { pathToFileURL } from "node:url";
+import { CENTRAL, zoneOffsetMs } from "../../src/shared/boss/schedule/clock.mjs";
 
 /**
  * Hours to add to a Central hour to get the Mac's local hour (both zones' DST included).
@@ -33,12 +34,7 @@ export function centralToLocalOffset(now = new Date(), localTz = Intl.DateTimeFo
 
 /** The offset at exactly this instant: wrong for the hour between the two zones' clock changes. */
 export function rawOffset(now = new Date(), localTz = Intl.DateTimeFormat().resolvedOptions().timeZone) {
-  const off = (tz) => {
-    const p = new Intl.DateTimeFormat("en-US", { timeZone: tz, hour12: false, year: "numeric", month: "2-digit", day: "2-digit", hour: "2-digit", minute: "2-digit" }).formatToParts(now);
-    const g = (t) => Number(p.find((x) => x.type === t)?.value);
-    return (Date.UTC(g("year"), g("month") - 1, g("day"), g("hour") % 24, g("minute")) - now.getTime()) / 3_600_000;
-  };
-  return Math.round(off(localTz) - off("America/Chicago"));
+  return Math.round((zoneOffsetMs(now.getTime(), localTz) - zoneOffsetMs(now.getTime(), CENTRAL)) / 3_600_000);
 }
 
 /** The plist text with each StartCalendarInterval Hour shifted by `offset` hours. Pure. */
