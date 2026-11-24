@@ -11,6 +11,13 @@
 #   guard/          her guard's state (PR count, reviewers, the compaction mark), out of her reach
 #
 #   noelle_prepare <repo> <noelle-home> <run-folder> <run-id>   prints the settings path; non-zero on any failure
+#   noelle_her_repos <repo> [sep]   her business repos (the guard's HER_REPOS), joined by sep (default a space)
+
+# The path goes in through the environment, never argv: `node -e 'import(argv[1])' <guard>` makes the guard its own main
+# script, so it runs as a hook and prints GUARD_UNREAD instead of the list.
+noelle_her_repos() {
+  NOELLE_GUARD_FILE="$1/scripts/ops/noelle-guard.mjs" NOELLE_SEP="${2:- }" node -e 'import(process.env.NOELLE_GUARD_FILE).then((m) => console.log(m.HER_REPOS.join(process.env.NOELLE_SEP)))' </dev/null
+}
 
 noelle_prepare() {
   local repo="$1" nhome="$2" work="$3" run_id="$4"
@@ -19,7 +26,7 @@ noelle_prepare() {
   case "$work" in "$runs"/*) run="${work#"$runs"/}" ;; *) echo "NAMED STOP [RUN_FOLDER] $work is not under $runs" >&2; return 6 ;; esac
   [[ "$run" =~ ^[A-Za-z0-9._-]+$ ]] || { echo "NAMED STOP [RUN_FOLDER] run folder name '$run'" >&2; return 6; }
   mkdir -p "$nhome/notes" "$nhome/tasks" "$nhome/repos" "$nhome/wt" "$nhome/.config/gh" "$lock/bin" "$lock/guard" "$work" || return 6
-  her="$(NOELLE_GUARD_FILE="$repo/scripts/ops/noelle-guard.mjs" node -e 'import(process.env.NOELLE_GUARD_FILE).then((m) => console.log(m.HER_REPOS.join(" ")))')" || return 6
+  her="$(noelle_her_repos "$repo")" || return 6
   [ -n "$her" ] || return 6
 
   sed -e "s#__HOME__#$HOME#g" -e "s#__REPO__#$repo#g" -e "s#__RUN__#$run#g" "$repo/scripts/ops/noelle-permissions.json" > "$lock/settings.json.tmp" || return 6

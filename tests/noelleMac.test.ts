@@ -11,7 +11,7 @@ import { join } from "node:path";
 // @ts-expect-error plain .mjs script, no types
 import { NOELLE_BRAINS, readBrain, callBlock, personaText, readsText, runVerdict, runResult, failureStep, finish, finishOptions, tickDecision, heldUntil, untrusted, missedLine, RETRY_AFTER_MS, CLOUD_STOP, deniedVerdict, reviewerAgent } from "../scripts/ops/noelle.mjs";
 // @ts-expect-error plain .mjs script, no types
-import { judge } from "../scripts/ops/noelle-guard.mjs";
+import { judge, HER_REPOS } from "../scripts/ops/noelle-guard.mjs";
 // @ts-expect-error plain .mjs script, no types
 import { readCalendar, readStudio, readLinkedIn, weekdaysAfter } from "../scripts/ops/lib/noelle-reads.mjs";
 import { slotFor } from "../src/shared/boss/growth/noelle.mjs";
@@ -128,6 +128,20 @@ describe("her run is locked (#573): a refusal is a stop, and her one agent is pa
     expect(sh).toMatch(/^step finish "\$WORK" "\$SESSION_LOG" "\$SLOT" "\$KIND" "\$DENIED";/m); // the count is finish's fifth argument
     expect(sh).not.toMatch(/dangerously-skip-permissions|setting-sources project|PATH="\$NHOME\/bin/);
     expect(sh).toMatch(/\[ -n "\$GH_TOKEN" \] \|\| stopped NOELLE_GITHUB_TOKEN_MISSING/);
+  });
+
+  it("the missing-token stop names every one of her repos for Sequoia's token, from the launcher's own line", () => {
+    const sh = readFileSync(join(__dirname, "../scripts/ops/noelle.sh"), "utf8");
+    const line = sh.split("\n").find((l) => l.includes("stopped NOELLE_GITHUB_TOKEN_MISSING"));
+    expect(line, "the stop's line").toBeTruthy();
+    const lib = join(__dirname, "../scripts/ops/lib/noelle-sandbox.sh");
+    // the launcher's real line, run as it runs: no token, $REPO and $GUARD as noelle.sh sets them, `stopped` prints its message
+    const r = spawnSync("bash", ["-c", `source "${lib}"; REPO="$1"; GUARD="$REPO/scripts/ops/noelle-guard.mjs"; GH_TOKEN=; stopped() { printf '%s' "$2"; }; eval "$2"`, "x", join(__dirname, ".."), line!],
+      { encoding: "utf8", input: "" });
+    expect(r.status).toBe(0);
+    const repos = r.stdout.match(/Only select repositories: ([^;]*);/)?.[1]?.split(", ") ?? [];
+    expect(repos).toEqual([...HER_REPOS]);
+    expect(r.stdout).not.toMatch(/GUARD_UNREAD/);
   });
 });
 
