@@ -120,6 +120,9 @@ describe("her run is locked (#573): a refusal is a stop, and her one agent is pa
     for (const l of calls) expect(l).toMatch(/AI_RUN_CLAUDE_ARGS="\$CLAUDE_LOCK[ "]/);
     expect(sh).toMatch(/SETTINGS="\$\(noelle_prepare "\$REPO" "\$NHOME" "\$WORK"/);
     expect(sh).toMatch(/CLAUDE_LOCK="\$\(claude_lock_args "\$SETTINGS"/);
+    // her Claude runs from the run folder: under the working directory the sandbox refuses .git/hooks and .git/config,
+    // so a cwd of ~/Work/noelle stops every clone (the TEST run of 24 Nov 2026: git init "Operation not permitted")
+    expect(sh).toMatch(/"\$AI_RUN" --role "\$ROLE" --network --cwd "\$WORK" /);
     expect(sh).toMatch(/--agents \$WORK\/agents\.json/);
     expect(sh).toMatch(/DENIED="\$\(claude_denials "\$SID"/);
     expect(sh).toMatch(/^step finish "\$WORK" "\$SESSION_LOG" "\$SLOT" "\$KIND" "\$DENIED";/m); // the count is finish's fifth argument

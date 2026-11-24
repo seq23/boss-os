@@ -976,7 +976,7 @@ vault lacks shows "No number" with `NAMED STOP [KEY_MISSING]` naming the key. Dr
 
 Noelle is a scheduled job whose run is full Claude Code with a persona (`scripts/ops/noelle/persona.md`, appended
 to the system prompt with her rules file). `scripts/ops/noelle.sh` (launchd `com.seq.boss-noelle`, every 30 minutes,
-ANY) starts `ai-run --role brain --network --cwd ~/Work/noelle` with `--max-turns 200`; Codex answers when Claude is
+ANY) starts `ai-run --role brain --network --cwd <her run folder>` with `--max-turns 200`; Codex answers when Claude is
 out (exit 76); both out on a call → `NAMED STOP [CLOUD_ANSWER]`, and the call goes back to the Boss OS ladder.
 The plan/accept path, the read-only lock and `noelle-tools` are gone: she reads, decides, builds and posts.
 
@@ -992,7 +992,10 @@ and child process: writes only in `~/Work/noelle` (her clones in `repos/`, workt
 folder; reads of the whole home denied except those, her gitconfig, the skills and the rules file; network only to
 GitHub, npm, Cloudflare preview hosts and Buffer (no model, paid-API or payment host); `allowUnsandboxedCommands`
 false, and only her two brokers in `~/.boss-os/noelle/bin` run outside it (`noelle-tool` for her four vault tools,
-`land-after` for `<pr> --task noelle-<job> --repo seq23/<her repo>` only), each from an empty environment. Her git
+`land-after` for `<pr> --task noelle-<job> --repo seq23/<her repo>` only), each from an empty environment and only as a
+command on its own (in a pipe it stays sandboxed). Her working directory is her run folder, never `~/Work/noelle`:
+the sandbox refuses writes to `.git/hooks` and `.git/config` anywhere under the working directory, which would
+stop every clone (proven in the TEST run of 24 Nov 2026), so her repos sit in an allowed write path outside it. Her git
 loads only `~/.boss-os/noelle/gitconfig` (`GIT_CONFIG_NOSYSTEM`, no Keychain helper) and pushes with
 `GITHUB_NOELLE_TOKEN` from the vault, a fine-grained token on her repos only; without it the run is `NAMED STOP
 [NOELLE_GITHUB_TOKEN_MISSING]` with Sequoia's steps. `scripts/validate/claude-runs-locked.mjs` fails the build if the

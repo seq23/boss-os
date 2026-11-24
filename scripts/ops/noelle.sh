@@ -1,7 +1,8 @@
 #!/bin/bash
 # NOELLE, THE DIRECTOR OF GROWTH (24 Nov 2026, her words: "go - scheduled job that wakes up as a full agent";
 # brief ~/Work/tasks/noelle-builds-brief.md). What wakes is full Claude Code as Noelle (scripts/ops/noelle/persona.md
-# on top of the whole rules file), in her own home ~/Work/noelle, with builder-level tools, the skills (read by
+# on top of the whole rules file), working in her own home ~/Work/noelle (her working directory is the run folder:
+# the sandbox refuses .git/hooks and .git/config under it, which would stop every clone), with builder-level tools, the skills (read by
 # path) and one fresh `reviewer` per PR she opens. Her run is SANDBOXED and LOCKED (redesign 24 Nov 2026: safety by
 # taking access away): --permission-mode dontAsk --setting-sources= --settings ~/.boss-os/noelle/settings.json
 # (scripts/ops/noelle-permissions.json, filled in by lib/noelle-sandbox.sh), so none of Sequoia's own settings load,
@@ -121,7 +122,7 @@ SID="$(uuidgen | tr 'A-Z' 'a-z')" || stopped NO_SESSION_ID "NAMED STOP [NO_SESSI
 export NOELLE_HOME="$NHOME" NOELLE_REPO="$REPO" NOELLE_GUARD_DIR="$HOME/.boss-os/noelle/guard" GH_TOKEN
 ENABLE_CLAUDEAI_MCP_SERVERS=false AI_RUN_CLAUDE_MODEL="$MODEL" \
 AI_RUN_CLAUDE_ARGS="$CLAUDE_LOCK --strict-mcp-config --session-id $SID --max-turns $MAX_TURNS --output-format json --agents $WORK/agents.json --append-system-prompt-file $WORK/persona-full.md" \
-"$AI_RUN" --role "$ROLE" --network --cwd "$NHOME" --out "$SESSION_LOG" -- "$KICK" >> "$RUN_LOG" 2>&1
+"$AI_RUN" --role "$ROLE" --network --cwd "$WORK" --out "$SESSION_LOG" -- "$KICK" >> "$RUN_LOG" 2>&1
 RC=$?
 say "=== her session (Claude, $MODEL) exited rc=$RC ==="
 # Every refusal by her list, counted from her own transcript: a number or "unknown" is a stop, never 0.
