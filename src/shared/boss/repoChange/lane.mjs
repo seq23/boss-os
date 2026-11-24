@@ -32,6 +32,7 @@ import { propertyForRepo, isExcluded, whyExcluded, GRID, GRID_OWNER } from "../g
 
 /** The task-kind token. The Mac lane and `validate:duty-delivery` cross-check it against the script. */
 import { sentencesOf, vetoOf } from "../text/wholeSentence.mjs";
+import { isOverdue, daysBetween, REPAIR_AFTER_DAYS } from "../openLoops/openLoops.mjs";
 
 export const TASK_KIND = "repo_change";
 /** The executor on her Mac, named once. `install-agent-launchd.sh` must name it too. */
@@ -422,6 +423,35 @@ export function planWaitsForOwner(row) {
   if (isRepair(row)) return false;
   if (row?.pre_approved_phrase && row?.pre_approved_by) return false;
   return true;
+}
+
+/**
+ * ─── A REPAIR WHOSE REASON IS GONE IS NEVER BUILT (23 Nov 2026) ─────────────
+ *
+ * The daily chase opens an `open_loop_overdue` repair at 05:00 and writes the loop's id onto the task
+ * (`loop_id`). By the time the Mac runs it the loop may have closed itself (an UNSAVED_* row clears
+ * the moment the checkout is tidied): on 23 Nov 2026 olp_m7mdf4ha1pm0e40c closed at 08:23 and a full
+ * plan/build cycle was still spent on it. This asks, before any phase runs, whether the loop still
+ * meets the very condition that opened the repair — the opener's own `isOverdue` and
+ * `REPAIR_AFTER_DAYS`, imported, so the two cannot drift. Returns null (go on) or `{ why }` (supersede).
+ * A change that already holds a pull request is never thrown away. Pure.
+ */
+export function loopIdOfTask(taskInput) {
+  let o = taskInput;
+  if (typeof o === "string") { try { o = JSON.parse(o); } catch { return null; } }
+  const id = o && typeof o === "object" ? String(o.loop_id ?? "").trim() : "";
+  return id || null;
+}
+
+export function openLoopRepairStale(row, taskInput, loop, today) {
+  if (row?.origin !== "repair" || row?.repair_kind !== "open_loop_overdue") return null;
+  if (row?.pr_url) return null;
+  const loopId = loopIdOfTask(taskInput);
+  if (!loopId) return null;
+  if (!loop) return { why: `the open loop ${loopId} this repair was opened for no longer exists` };
+  if (isOverdue(loop, today) && daysBetween(loop.next_date, today) > REPAIR_AFTER_DAYS) return null;
+  if (loop.status !== "open") return { why: `the open loop ${loopId} ("${String(loop.title ?? "").slice(0, 120)}") is already ${loop.status || "closed"}${loop.closed_reason ? `: ${String(loop.closed_reason).slice(0, 160)}` : ""}` };
+  return { why: `the open loop ${loopId} is no longer more than ${REPAIR_AFTER_DAYS} days late (next date ${loop.next_date ?? "none"}, today ${today})` };
 }
 
 /**

@@ -3,6 +3,7 @@ import manifest from "@shared/boss/schedule/manifest.json";
 import REPOS from "@shared/boss/maps/repos.json";
 import { scheduleRepos } from "@shared/boss/maps/chain.mjs";
 import { FromRepoLine, repoOnly } from "./Maps";
+import { slotWords } from "@shared/boss/schedule/clock.mjs";
 
 /**
  * THE SCHEDULE (owner approved the rebalanced week, 1 Nov 2026: "a Schedule page in Boss OS, next to
@@ -33,31 +34,6 @@ export interface ScheduleManifest {
 }
 
 export const SCHEDULE = manifest as unknown as ScheduleManifest;
-
-const DAY_WORDS: Record<string, string> = { mon: "Mon", tue: "Tue", wed: "Wed", thu: "Thu", fri: "Fri", sat: "Sat", sun: "Sun" };
-
-function clock(hhmm: string): string {
-  const [h = 0, m = 0] = hhmm.split(":").map(Number);
-  const h12 = h % 12 === 0 ? 12 : h % 12;
-  return `${h12}:${String(m).padStart(2, "0")} ${h < 12 ? "am" : "pm"}`;
-}
-
-/** One slot in plain words: "Mon & Fri 8:00 am", "Every day 6:15 am", "Every 5 minutes". */
-export function slotWords(slot: string): string {
-  if (slot === "always") return "Always on";
-  let m = /^every (\d+)([sm])$/.exec(slot);
-  if (m) { const mins = m[2] === "s" ? Math.round(Number(m[1]) / 60) : Number(m[1]); return mins <= 1 ? "Every minute" : `Every ${mins} minutes`; }
-  m = /^hourly :(\d\d)$/.exec(slot);
-  if (m) return `Every hour at :${m[1]}`;
-  m = /^(\S+) (\d\d:\d\d)(?:-(\d\d:\d\d)\/(\d+)m)?$/.exec(slot);
-  if (!m) return slot;
-  const [, d = "", start = "00:00", end, step] = m;
-  const days = d === "daily" ? "Every day"
-    : d === "mon,tue,wed,thu,fri" ? "Weekdays"
-    : d.startsWith("day") ? `Monthly, the ${d.split(",").map((x) => x.slice(3)).join(" & ")}`
-    : d.split(",").map((x) => DAY_WORDS[x] ?? x).join(" & ");
-  return end ? `${days}, every ${step} min, ${clock(start)}–${clock(end)}` : `${days} ${clock(start)}`;
-}
 
 export function summaryLine(s: ScheduleManifest = SCHEDULE): string {
   const lines = s.week.reduce((a, d) => a + d.items.length, 0);

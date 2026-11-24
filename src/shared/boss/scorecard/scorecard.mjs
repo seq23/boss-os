@@ -17,6 +17,7 @@
  * THE BUILD CHECK (coverageProblems): every job in the Schedule manifest is in exactly one row's `jobs`
  * or in `exempt` with a kind and a reason. A new job with neither fails tests/scorecard.test.ts.
  */
+import { dayOf } from "../schedule/clock.mjs";
 
 export const STATES = Object.freeze(["On track", "Too early", "Trying version B", "Paused", "No number"]);
 /** Reader ids a row may name. scripts/ops/lib/scorecard-readers.mjs implements exactly these (pinned by the test). */
@@ -29,7 +30,7 @@ export const DAY_MS = 86_400_000;
 
 /** "YYYY-MM-DD" in Central time. */
 export function centralDay(t = Date.now()) {
-  return new Intl.DateTimeFormat("en-CA", { timeZone: "America/Chicago", year: "numeric", month: "2-digit", day: "2-digit" }).format(new Date(t));
+  return dayOf(t);
 }
 export function addDays(day, n) {
   const d = new Date(`${day}T12:00:00Z`);
@@ -375,9 +376,13 @@ export function emailSection(results, rows, { today, links }) {
     const names = blind.map((r) => byId.get(r.id)?.initiative).filter(Boolean);
     lines.push({ text: `No number this week for ${blind.length} rows (${names.slice(0, 3).join("; ")}${names.length > 3 ? `; and ${names.length - 3} more` : ""}). All sent to repairs; nothing to do.`, links: [{ label: "See them on Scorecard", url: links(byId.get(blind[0].id)).open.replace(/&row=[^&]*/, "") }] });
   }
-  // The rest, counted as they are: never "on track or too early" when none is on track.
-  const others = [onTrack ? `${onTrack} on track` : null, ...rest].filter(Boolean);
-  if (others.length) lines.push(`The rest: ${others.join(", ")}. Full list on the Scorecard page.`);
+  // The rest, counted as they are: never "on track or too early" when none is on track, and said
+  // the way a person would ("The other 36 are too early to judge."), not as a label and a list.
+  const groups = [[onTrack, "on track"], [early, "too early to judge"], [trying, "trying version B"], [paused, "paused"]].filter(([n]) => n > 0);
+  const total = groups.reduce((a, [n]) => a + n, 0);
+  const are = ([n, w]) => `${n} ${n === 1 ? "is" : "are"} ${w}`;
+  if (groups.length === 1) lines.push(`${total === 1 ? "The other row is" : `The other ${total} are`} ${groups[0][1]}. The full list is on the Scorecard page.`);
+  if (groups.length > 1) lines.push(`Of the other ${total}, ${groups.slice(0, -1).map(are).join(", ")} and ${are(groups.at(-1))}. The full list is on the Scorecard page.`);
   return { title, lines };
 }
 

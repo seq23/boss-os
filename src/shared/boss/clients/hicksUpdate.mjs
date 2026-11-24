@@ -23,13 +23,14 @@
  * with the approved words, because Boss OS has no route that sends as her personal Gmail
  * (`SEND_ROUTE_STOP`).
  */
+import { CENTRAL, wallClock } from "../schedule/clock.mjs";
 
 export const CLIENT = "hicks";
 export const SITE = "hicksconsulting.org";
 export const REPO = "seq23/hicks-consulting-canonical";
 export const QUARTER_MONTHS = [2, 5, 8, 11];
 export const DUE_HOUR_CT = 8;
-export const TIMEZONE = "America/Chicago";
+export const TIMEZONE = CENTRAL;
 /** Search Console publishes two to three days late; the window ends before the lag. */
 export const GSC_LAG_DAYS = 3;
 export const WINDOW_DAYS = 28;
@@ -46,13 +47,7 @@ export const RECIPIENT_STOP = "NAMED STOP [HICKS_UPDATE_NO_RECIPIENT] The recipi
 const DAY = 86_400_000;
 
 /** Her wall clock in Central: year, month (1-12), day, hour, weekday (0 = Sunday). */
-export function centralClock(now) {
-  const parts = Object.fromEntries(new Intl.DateTimeFormat("en-US", {
-    timeZone: TIMEZONE, year: "numeric", month: "numeric", day: "numeric", hour: "numeric", hourCycle: "h23", weekday: "short",
-  }).formatToParts(new Date(now)).map((p) => [p.type, p.value]));
-  const dow = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"].indexOf(parts.weekday);
-  return { y: Number(parts.year), m: Number(parts.month), d: Number(parts.day), h: Number(parts.hour) % 24, dow };
-}
+export const centralClock = (now) => wallClock(now, TIMEZONE);
 
 /**
  * Is a quarterly draft due at `now`? The first Monday of Feb/May/Aug/Nov, from 08:00 Central, for the

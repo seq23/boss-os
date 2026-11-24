@@ -357,11 +357,13 @@
         "com.seq.housekeeping",
         "com.seq.disk-sweep",
         "com.seq.ci-sweep-resume",
+        "com.seq.post-land-check",
         "com.seq.ci-sweep-retry",
         "com.seq.dev-housekeeping",
         "com.seq.scooter-watch",
         "com.seq.scooter-watch-digest",
-        "com.seq.shorts-arm"
+        "com.seq.shorts-arm",
+        "com.seq.pr-watch"
       ]
     }
   ]

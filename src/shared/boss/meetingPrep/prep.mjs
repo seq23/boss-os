@@ -15,9 +15,11 @@
 
 import { repairMojibake } from "../mail/subject.mjs";
 import { HOME_TZ, OWNER_TZ_KEY, validZone, zoneWord, ownerTime } from "../ownerTime.mjs";
+import { GO_CARD_NOTE } from "../invitations/invitations.mjs";
+import { CENTRAL, dayOf, wallClock } from "../schedule/clock.mjs";
 
 export const PREP_PREFIX = "Prep: ";
-export const PREP_TZ = "America/Chicago";
+export const PREP_TZ = CENTRAL;
 /**
  * THE TIMES SHE READS ARE IN HER CURRENT ZONE (owner, 4 Nov 2026; was hard-coded Eastern since
  * 26 Oct). Her zone is the owner setting `owner_timezone` (default Central, HOME_TZ), set by her Mac
@@ -46,10 +48,10 @@ const SHORT_MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "S
 
 // ─── Time, in her zone ───────────────────────────────────────────────────────
 
+const SHORT_WEEKDAYS = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
 function parts(at, tz = PREP_TZ) {
-  const p = new Intl.DateTimeFormat("en-US", { timeZone: tz, year: "numeric", month: "2-digit", day: "2-digit", weekday: "short", hour: "numeric", minute: "2-digit", hour12: false }).formatToParts(new Date(at));
-  const g = (t) => p.find((x) => x.type === t)?.value ?? "";
-  return { date: `${g("year")}-${g("month")}-${g("day")}`, weekday: g("weekday"), hour: Number(g("hour")) % 24, minute: Number(g("minute")) };
+  const w = wallClock(at, tz);
+  return { date: dayOf(at, tz), weekday: SHORT_WEEKDAYS[w.dow], hour: w.h, minute: w.min };
 }
 export const dayOfCt = (at) => parts(at).date;
 export const hourOfCt = (at) => parts(at).hour;
@@ -112,10 +114,24 @@ export function isAttending(event, herAddresses = []) {
   return a !== "declined" && a !== "tentative";
 }
 
+/*
+ * OUR OWN COPY YIELDS TO THE REAL INVITE (23 Nov 2026 live read: "2:30 pm CT Sample Intro
+ * with three guests; 3:30 pm CT Sample Intro", and two prep emails). Her Go? card puts a
+ * copy on her calendar (marked GO_CARD_NOTE) when the invite sits in a mailbox Boss OS may not answer
+ * from; the organizer then moved the meeting, and the copy stayed at the old hour. A copy is dropped
+ * whenever the real event, same title, is on her calendars that day: the real one has the true time
+ * and the guests. A copy with no real twin stays (it is the only record she has).
+ */
+const isGoCardCopy = (e) => String(e?.description ?? "").includes(GO_CARD_NOTE);
+function withoutStaleCopies(events) {
+  const real = new Set(events.filter((e) => !isGoCardCopy(e)).map((e) => `${dayOfCt(e.scheduled_at)}|${norm(e.title)}`));
+  return events.filter((e) => !isGoCardCopy(e) || !real.has(`${dayOfCt(e.scheduled_at)}|${norm(e.title)}`));
+}
+
 /** Every event once: copies merged, attendees unioned, a join link kept from whichever copy had it. */
 export function dedupeEvents(events) {
   const out = [];
-  for (const e of [...(events ?? [])].sort((a, b) => a.scheduled_at - b.scheduled_at)) {
+  for (const e of withoutStaleCopies([...(events ?? [])]).sort((a, b) => a.scheduled_at - b.scheduled_at)) {
     const hit = out.find((m) => sameCalendarEvent(m, e));
     if (!hit) { out.push({ ...e, attendees: (e.attendees ?? []).map((a) => ({ ...a })) }); continue; }
     for (const a of e.attendees ?? []) {

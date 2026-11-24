@@ -972,68 +972,78 @@ from `READER_IDS`, a D1 query returning one number `n`, floors, version B). A so
 vault lacks shows "No number" with `NAMED STOP [KEY_MISSING]` naming the key. Dry run:
 `npm run scorecard:monday -- --dry`. Restart links are `/tap/sc…` (routes/scorecard.ts).
 
-## The Growth Director: backlink requests (22 Nov 2026)
+## Noelle, the Growth Director (23 Nov 2026)
+
+Plan artifact 8LfYgMaHj7XLVB1fJ1vYxM, gap review G1-G21. Noelle is a scheduled Claude session on her Mac
+(`scripts/ops/noelle.sh`, launchd `com.seq.boss-noelle`, LIGHT): once a day at a slot that varies between 10:00 and
+21:59 Central and is never on the hour, and Thursday after 14:00 the weekly run. The free-model Monday cycle
+(run.ts's old cycle, `npm run growth:privacy`) is gone.
+
+**One run.** Read → Decide → Act → Tell → Measure:
+1. `GET /api/boss/growth/noelle/context` (the BOSS_OPEN_LOOPS_TOKEN machine token): the roster with tiers, her
+   rulings per business (confidential spans cut, then checked by `leaksIn`: a word her brains hold only inside a
+   span holds that business, NAMED STOP [PRIVATE_IN_PROMPT]; no private word known at all holds every business,
+   [PRIVACY_UNREAD]), the playbook, the 28-day numbers, the last runs and their stops.
+2. The Mac adds the week's sources (each with its file, sha and age; older than 8 days, missing or empty is a
+   named stop for the items it feeds), the owning jobs' queue lengths ("not read" when a queue cannot be read)
+   and the search-loop caps, then runs Claude through `ai-run --role brain` from her run folder with two tools
+   only: Read inside that folder and `./noelle-tools queue|bank|check` (the same checkPlan gate the Worker runs;
+   the exact allow list is held by `scripts/validate/noelle-no-tools.mjs`). The context is at most 60 KB, each
+   shared ruling once, or the run stops [CONTEXT_TOO_BIG]. Everything read is marked as untrusted data. Her answer is one JSON
+   plan between NOELLE-PLAN-BEGIN and NOELLE-PLAN-END.
+3. `POST /noelle/plan`: the Worker re-runs `checkPlan` (`src/shared/boss/growth/noelle.mjs`) on the plan and
+   returns only what it accepts. She changes only the owning job's bank, plan or target (G1); she may lower a
+   search-loop cap, never raise one (a raise is a card for Sequoia, G4); money, new accounts, products and prices,
+   fund or LP marketing, and a friend's live page (Hicks) are refused and become one line or card for Sequoia.
+   Decisions go to `growth_decisions` and the Growth page; the first Porch & Party decision of every run is
+   bookings this season (`SEASON_FIRST`).
+4. The Mac acts through the owning jobs only, then `POST /noelle/done`: one Notices line per NEW published thing
+   ("Noelle published: <business> <what> <where> <link>", https links only, Noelle's own pieces only), the stop
+   codes, the call count. ai-run exit 76 (Claude limit) is a clean stop, `[CLAUDE_LIMIT]`, resumed next slot.
+   A job-target is a PR on the owning repo (`target`/`posts_per_week` in its data file, or a `bank` add of 1–14
+   posts that a fresh no-tools reviewer passed), landed by `land-after`; each PR is one Notices line
+   ("Noelle changed …"). A target above the free Buffer limit is refused [NEEDS_MONEY] and becomes her call.
+   Rule 0: a run that queued nothing and opened no PR exits 14, `[NOTHING_ACTED]`, on the card and on Notices;
+   any owned channel under 3 days ahead after the run is `[UNDER_3_DAYS]` (unread: `[CHANNEL_UNREAD]`).
+   Hold: nothing runs before `NOELLE_START_AT` (Sat 28 Nov 2026 00:00 CT), `[HELD_UNTIL]`.
+5. Measure: 24 hours after the slot the next run reads whether each piece actually published (Buffer/Studio); a
+   miss is a defect, fixed that run.
+
+**Her levers that act (24 Nov 2026).** Besides Studio pieces and job targets: `search-loop` (topics, never-search words, mode, a LOWER page cap judged against the cap read from `data/search-loop/cap.json`) and `page-new` (a search topic put first as a priority search) become one `search-loop.config.json` PR per business per run, landed on green CI; the Search Loop's own cap, distinct gate and page gate decide what publishes (A Player Mode's pages live on billionairehighperformancecoach.com). `pin-refill` starts the existing Pinterest refill for ApprovalPrep, Dream Wedding or A Player Mode once a run, with no inputs: releasing a held pin sample stays Sequoia's. A started refill counts as acting for Rule 0; its pins are counted on her next run's queue read, never as "scheduled" here.
+
+**When called (24 Nov 2026).** Her words: "she has a schedule yes but she should be able to work when called too".
+An email tagged #noelle becomes a task on her seat (`emp_growth`, intake/inboundMail.ts). The queue parks it for her
+Mac (`parked_for_mac`, lane `noelle_call`, queue/consumer.ts): no cloud model answers for her. Each tick, after the
+hold check, `noelle.sh` asks `POST /noelle/call/claim`; a waiting email runs her full session first, with the email
+at the top of her context (fenced as data where she quotes others), under the slot `call:<task id>`, so the runs
+table's unique index makes one email one run. Her reply (between `NOELLE-REPLY-BEGIN`/`-END` lines) plus what the run
+actually queued goes back through `POST /noelle/call/reply`: the card's output and, once, the email signed Noelle
+(a second reply changes nothing). A stopped call goes back through `/call/release`: a `[CLAUDE_LIMIT]` or
+`[HELD_UNTIL]` stop costs no try and waits 2 hours; the third real stop replies with what stopped it. Call runs never
+count as her daily run (`didNotRunLine`, `escalations`). The hold covers calls: none is claimed before
+`NOELLE_START_AT`. Tests: `tests/boss/noelleCall.test.ts`, the call block in `tests/noelleV2.test.ts`.
+
+**Watched.** `duty_growth_director` (migration 0378) runs at 22:05 Central: no `noelle_runs` row today is NAMED STOP
+[NOELLE_DID_NOT_RUN] and one line in the next morning email; the same stop three days running is one line to
+Sequoia. A per-run and a per-week Claude-call budget end in a named stop (`WEEK_CALL_BUDGET`). Her fortnightly
+report (`reportSection`, director.mjs) is still built from the record, never from a model's words.
+Tests: `tests/noelle.test.ts` (the gate), `tests/noelleV2.test.ts` (hold, stops, context, Rule 0, alarm, bank,
+job PRs, her tools), `tests/growthRoster.test.ts` (tiers, G8), `tests/boss/noelleRun.test.ts`
+(the routes, the record, privacy, the watch).
+
+## Backlink requests (22 Nov 2026)
 
 Her words, 22 Nov 2026: "i thought the backlink network was going to defer to the growth director"; "we are suppposed
-to assume we are not related and there is a separate cloudflare acct the director needs to know that"; "backlinks
-should be written about other companies and other things so its not just about us". How the network works with us
-(an outside publisher on its own Cloudflare account; link REQUESTS, never commands; mostly other subjects) is her
-ruling in the spry brain's Settled "### Growth" group, which the Director reads with her other rulings (below). Code
-keeps only the hard limits: the topic length, one request per business per cycle, and never calling the network ours
-in anything public. In the Monday cycle (src/worker/boss/growth/run.ts) a queue item on
-the `backlinks` channel, for a business whose Growth roster lists it (e.g. `backlinks [guide]`), is a request for one
-article: the model names its `topic` (at most `TOPIC_MAX` = 120 characters; an item with none, or a longer one, is
-dropped and written on the decision as held) and is told the playbook's backlink rule (links against search visits 8
-weeks later: rising → more topics, no rise → change topics), with the topics it already requested. The draft goes
-through the naming guard and the claims check like any post; a pass is written on the decision as `ordered` (the
-stored name), and is never an Open Loops to-do or a Decide card (an unapproved backlinks format is refused, not
-carded). At most `MAX_BACKLINKS_PER_CYCLE` = 1 request per business per cycle: a further approved backlinks item is
-held on the decision with its draft, never requested (a blocked or refused one does not use the place). The network
-reads them with `GET /api/boss/growth/backlink-orders` (the BOSS_OPEN_LOOPS_TOKEN machine token, the same check as
-ai-misses; anything else is 401): `{ cycle, read_at, orders: [{ business, topic, draft, why }] }`, from the newest
-cycle's decided rows only (a same-day re-run replaces the first), never from Open Loops. No cycle yet → `cycle: null,
-orders: []`; a decision row whose actions are not JSON is skipped and logged in the Worker log. The address is the full
-`https://boss.sequoiataylor.com/api/boss/growth/backlink-orders`: `/api/growth/backlink-orders` is the path inside the
-Boss app only, and from outside it is the retired fund API's 410 (`tests/boss/backlinkOrders.test.ts` pins both).
-
-## The Growth Director reads her Settled decisions (22 Nov 2026)
-
-Her yes, 22 Nov 2026: "yea let it read the settled decisions". Every growth ruling she makes reaches the Director
-without anyone copying it into a roster field. For each roster entry, `rulingsFor` (src/shared/boss/growth/roster.mjs)
-takes its brain's `## Settled decisions`, matched on `### ` headings only (the model reads what a ruling means):
-- a Spry Labs business: the groups whose heading starts with its roster label (KeepMyProof, ApprovalPrep, Dream
-  Wedding, A Player Mode and BHPC, Peace Be Still, Whisper Almanac, How We Know), then the shared groups in
-  `SHARED_RULINGS` order: Growth, Umbrella scope and money, Brand and social, Search sites and freshness, then the
-  channel groups, each only for a business whose roster lists that channel (`CHANNEL_RULINGS`): All apps
-  (`app-store`), Pinterest (`pinterest`) and KDP (`kdp`);
-- Porch & Party: its whole Settled decisions section.
-
-**Missing pieces are named.** A business with no group of its own is a named problem on the run, and it still gets
-the shared groups. The same goes for a missing shared group. A brain with no Settled decisions section, an empty one,
-or one that could not be read is "rulings not read". That business is held (`held: roster`) and never decided
-without its rulings; the next cycle tries again. A brain that fails to read never stops the other brain's cycle.
-
-**Privacy.** Her brains hold client names and personal mail addresses, inside confidential marks. Every span is cut
-from the WHOLE brain before it is split into sections and groups (`stripConfidential`, then `sectionBody` and
-`headingGroups`), so a span that wraps a `### ` or `## ` heading takes the text under it too; Settled decisions lying
-inside a span are "rulings not read", and a Growth section lying inside one is refused (`PRIVATE_IN_GROWTH`). The
-router cuts again on every message (src/worker/boss/router/index.ts) and refuses one that still holds a mark, and
-the free-only lane still applies. EVERY CYCLE then checks each decision prompt it built, before the model call
-(`promptLeak`, src/shared/boss/growth/privacy.mjs, in run.ts): a word her brains hold only inside a span (a cut that
-missed), or any personal mail address (gmail and the like, marked or not), holds that business as `held: roster` with
-NAMED STOP [PRIVATE_IN_PROMPT], naming the ruling heading and a count, never the word; nothing is sent. No private
-word known at all (no span in either growth brain, or the read failed) is [PRIVACY_UNREAD], every business held, never
-a clean pass. A client name she never marks anywhere cannot be told from any other word by code: marking it is the
-fix. `npm run growth:privacy` (scripts/ops/growth-privacy.mjs; `-- <dir>` for another copy than ~/Brains) runs the
-same check on a brain copy before the cycle: exit 1 on a leak; exit 2 on a missing copy, no private span, rulings not
-read, an empty roster, or no active business. It checks one prompt per ACTIVE business, however many: pausing one never
-breaks it.
-
-**Size.** The decision prompt is held to `PROMPT_BUDGET_CHARS` = 60,000 characters, about 15,000 tokens. That fits
-the smallest free route (32,768 tokens) with room for the answer. Over the budget, `fitDecisionPrompt` leaves shared
-groups out from the end of `SHARED_RULINGS`, never the business's own, and the run names what it left out. The
-characters of her rulings added per business, and what was left out, are written each cycle on the cycle's audit
-row (`detail.rulings`) and returned by the run.
+to assume we are not related and there is a separate cloudflare acct the director needs to know that". How the
+network works with us is her ruling in the spry brain's Settled "### Growth" group, which Noelle reads with her other
+rulings. Code keeps only the hard limits: a topic of at most `TOPIC_MAX` = 120 characters, at most one request per
+four articles a business published (`ONE_IN_FOUR`, checkPlan), the naming guard (`namingProblems`) on the draft, and
+never calling the network ours. An accepted request is written on the decision as `ordered`, never an Open Loops
+to-do or a Decide card. The network reads them with `GET /api/boss/growth/backlink-orders` (the machine token;
+anything else is 401): `{ cycle, read_at, orders: [{ business, topic, draft, why }] }`, from the newest decided rows.
+No decision yet → `cycle: null, orders: []`; a row whose actions are not JSON is skipped and logged. The address is the
+full `https://boss.sequoiataylor.com/api/boss/growth/backlink-orders`: from outside, `/api/growth/backlink-orders` is
+the retired fund API's 410 (`tests/boss/backlinkOrders.test.ts` pins both).
 
 ## The AI answers loop (22 Nov 2026)
 
@@ -1047,13 +1057,19 @@ Overviews answered while citing the site, and how many named it. Every miss gets
   (`scripts/ops/ai-visibility-report.mjs context`: each site's lanes, its search-loop `output.url_prefix` and its live
   sitemap), then a locked Claude session (`ai-run --role ai_visibility.read`, `--permission-mode dontAsk
   --setting-sources= --settings scripts/ops/ai-visibility-permissions.json`) reads OpenSEO through the openseo plugin.
-  It can call nine read-only tools and nothing else; `npm run validate:ai-visibility` fails the build on any other
-  allow entry, and on any OpenSEO HTTP call in repo code. Then `ai-visibility-report.mjs post` checks every block
+  It can call nine read-only tools and nothing else; `npm run validate:claude-runs` fails the build on any other
+  allow entry, and on any OpenSEO HTTP call in repo code. The session runs with `--output-format stream-json`
+  into the run's work dir, and `ai-visibility-report.mjs transcript` writes its own printed words (every assistant
+  text block, in order) into the kept log: its final message alone carries only its last turn, and on 23 and 24 Nov
+  2026 the six site blocks printed earlier were lost (0 sites read, twice). The raw stream dies with the work dir.
+  Then `ai-visibility-report.mjs post` checks every block
   (`readSite`, src/shared/boss/growth/aiAnswers.mjs) and posts the week to `POST /api/boss/growth/ai-week`.
 - **Honest stops, never a zero.** Plugin not loaded, OpenSEO unreachable, out of credits, no tracker, no answers,
   a run older than 8 days (`OPENSEO_NOT_YET`), fewer observations than prompts × engines (short read), OpenSEO's own
   summary disagreeing with the recount, bad JSON for one site: that site is "not read: <why>", the others still
-  count. Nothing read at all → `NAMED STOP [AI_ANSWERS_NOTHING_READ]`, exit 9. Credits moving between the two
+  count. A session whose own events show no successful OpenSEO call → every site `OPENSEO_NOT_REACHED` (its
+  printed blocks would be a guess). The session claiming blocks that never reached the log → `NAMED STOP
+  [SESSION_BLOCKS_LOST]` (the hand-over broke, not the sites). Nothing read at all → `NAMED STOP [AI_ANSWERS_NOTHING_READ]`, exit 9. Credits moving between the two
   `whoami` reads → exit 10. A weekly estimate over 500 credits → `NAMED STOP [OPENSEO_OVER_PLAN]` and an Open Loops
   row (cleared on the next run under plan). Each run prints `OUTPUT <n> sites_read`.
 - **Stored** (additive tables `ai_answer_obs`, `ai_answer_reads`, `ai_misses`; unique on site + week + prompt +

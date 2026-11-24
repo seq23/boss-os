@@ -18,7 +18,7 @@ import type { Context } from "hono";
 import type { Env } from "../env";
 import { audit } from "../lib/audit";
 import { answerInvite, putOnCalendar, sendOne, mailboxAllowed } from "../commands/google";
-import { HER_CALENDAR, centralDay, unsureAskDay, dayWords, gmailLink } from "../../../shared/boss/invitations/invitations.mjs";
+import { HER_CALENDAR, GO_CARD_NOTE, centralDay, unsureAskDay, dayWords, gmailLink } from "../../../shared/boss/invitations/invitations.mjs";
 
 export const isInviteToken = (t: string) => /^iv[A-Za-z0-9]{30}$/.test(t);
 
@@ -63,7 +63,7 @@ export async function claimTap(db: D1Database, token: string, answer: "yes" | "n
 /** After her claimed tap only. Every send is the exact words the card showed. */
 async function act(env: Env, row: any, answer: "yes" | "no"): Promise<{ line: string; link?: { label: string; url: string } }> {
   const writable = mailboxAllowed(row.inbox);
-  const note = "You said yes from your Go? card in Boss OS.";
+  const note = GO_CARD_NOTE;
   const onHerCalendar = () => putOnCalendar(env, { mailbox: HER_CALENDAR, title: row.title, start: row.starts_at, end: row.ends_at, allDay: row.all_day === 1, where: row.location, note });
   const reply = (text: string) => sendOne(env, {
     from: row.inbox, to: row.from_address, subject: /^re:/i.test(row.subject ?? "") ? row.subject : `Re: ${row.subject ?? row.title}`,

@@ -17,8 +17,9 @@
 # MONEY: THE SESSION CAN ONLY READ. scripts/ops/ai-visibility-permissions.json is the whole permission
 # list (`--setting-sources=` loads none of her own settings): nine read-only OpenSEO tools, every other
 # OpenSEO tool and every file, shell and web tool denied, the claude.ai connectors switched off.
-# `npm run validate:ai-visibility` fails the build on any other allow entry. The session prints
-# OpenSEO's credits before and after; the report refuses a run where they moved.
+# `npm run validate:claude-runs` fails the build on any other allow entry. The session prints
+# OpenSEO's credits before and after; the report refuses a run where they moved. The session's printed
+# lines are read from its stream-json event stream (the transcript step), never from its last message.
 #
 # RULE 0: this may not exit 0 having done nothing. No sentinel with a real number → NAMED STOP exit 9;
 # no site read → exit 9 from the report; a money proof missing → exit 10.
@@ -53,6 +54,10 @@ case $LOCK_RC in
   *) say "NAMED STOP [LOCK_FAILED] cannot lock $LOCK"; exit 3 ;;
 esac
 
+# The work dir holds the session's raw event stream (OpenSEO's answer text): it never outlives the run,
+# on any exit. release_lock is kept inside this trap (lib/flock.sh: a caller's own EXIT trap calls it).
+trap 'rm -rf "$WORK"; release_lock' EXIT
+
 AI_RUN="${AI_RUN_BIN:-$HOME/bin/ai-run}"
 [ -x "$AI_RUN" ] || { say "NAMED STOP [AI_RUN_MISSING] $AI_RUN is not installed (seq-bin); the next run retries."; exit 13; }
 [ -f "$PROMPT_FILE" ] || { say "NAMED STOP [NO_PROMPT_FILE] $PROMPT_FILE"; exit 5; }
@@ -60,7 +65,7 @@ AI_RUN="${AI_RUN_BIN:-$HOME/bin/ai-run}"
 case "$SETTINGS" in *[[:space:]]*) say "NAMED STOP [PERMISSIONS_PATH_SPACE] '$SETTINGS' has a space, which ai-run would split."; exit 6;; esac
 [[ "$MAX_TURNS" =~ ^[1-9][0-9]*$ ]] || { say "NAMED STOP [BAD_MAX_TURNS] AI_VISIBILITY_MAX_TURNS='$MAX_TURNS'"; exit 5; }
 ROLE="$(node "$REPO/scripts/ops/lib/ai-run.mjs" role ai_visibility.read)" || { say "NAMED STOP [NO_AI_ROLE] ai_visibility.read"; exit 11; }
-node "$REPO/scripts/validate/ai-visibility-reads-only.mjs" >> "$RUN_LOG" 2>&1 || { say "NAMED STOP [PERMISSIONS_NOT_READ_ONLY] the allow list is not the nine read tools; refusing to run."; exit 6; }
+node "$REPO/scripts/validate/claude-runs-locked.mjs" --ai-visibility >> "$RUN_LOG" 2>&1 || { say "NAMED STOP [PERMISSIONS_NOT_READ_ONLY] the allow list is not the nine read tools; refusing to run."; exit 6; }
 
 # Step 1: the context the session cannot fetch for itself (it has no file or web tools).
 (cd "$REPO" && npm run --silent vault:run -- node scripts/ops/ai-visibility-report.mjs context "$WORK/context.txt" "$WORK/state.json") 2>&1 | tee -a "$RUN_LOG"
@@ -72,10 +77,16 @@ PROMPT_TEXT="$(cat "$PROMPT_FILE")
 
 $(cat "$WORK/context.txt")"
 ENABLE_CLAUDEAI_MCP_SERVERS=false AI_RUN_CLAUDE_MODEL="$MODEL" \
-AI_RUN_CLAUDE_ARGS="--max-turns $MAX_TURNS --permission-mode dontAsk --setting-sources= --settings $SETTINGS" \
-"$AI_RUN" --role "$ROLE" --network --cwd "$HOME" --out "$RUN_LOG" -- "$PROMPT_TEXT" >> "$RUN_LOG" 2>&1
+AI_RUN_CLAUDE_ARGS="--max-turns $MAX_TURNS --permission-mode dontAsk --setting-sources= --settings $SETTINGS --output-format stream-json --verbose" \
+"$AI_RUN" --role "$ROLE" --network --cwd "$HOME" --out "$WORK/session.jsonl" -- "$PROMPT_TEXT" >> "$RUN_LOG" 2>&1
 RC=$?
 say "=== ai-run --role $ROLE exited rc=$RC ==="
+
+# THE SESSION'S OWN WORDS, FROM ITS EVENT STREAM (24 Nov 2026). In text mode `claude -p` prints only its
+# LAST message, so the site blocks printed in earlier turns never reached this log: 0 sites read on 23 and
+# 24 Nov. The stream holds every turn; this writes every assistant text block into the log, verbatim, and
+# names OPENSEO_NOT_REACHED when no OpenSEO call succeeded. The raw stream dies with $WORK.
+(cd "$REPO" && node scripts/ops/ai-visibility-report.mjs transcript "$WORK/session.jsonl") >> "$RUN_LOG" 2>&1
 
 if ! has_sentinel "$RUN_LOG"; then
   if usage_exhausted "$RUN_LOG"; then say "NAMED STOP [AI_USAGE_EXHAUSTED] the reading session is out of usage; the next run retries."; echo "OUTPUT 0 sites_read"; exit 13; fi

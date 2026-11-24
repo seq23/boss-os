@@ -1,15 +1,13 @@
 /**
- * DOES A PRIVATE WORD REACH THE GROWTH DIRECTOR'S MODEL? (22 Nov 2026, review of #546: client names and
- * personal mail addresses were in the decision prompts.) One check, run on every prompt the Monday cycle
- * builds, before any model call (run.ts), and by `npm run growth:privacy` on a brain copy.
+ * DOES A PRIVATE WORD REACH NOELLE? (22 Nov 2026, review of #546: client names and personal mail addresses
+ * were in the decision prompts.) Run on every business's rulings when her context is built
+ * (src/worker/boss/growth/noelle.ts noelleContext), before any of it leaves the Worker.
  *
- * A prompt LEAKS when it carries:
+ * Text LEAKS when it carries:
  *   - a word her brains hold ONLY inside a confidential span (a capitalised word of 3+ letters, or a
  *     mail address): it is private, so the cut missed it;
  *   - a personal mail address (gmail and the like), marked or not.
- * The prompt's own fixed words (its instructions, the playbook, the roster entry, the counts: the
- * prompt built without her rulings) are public by origin, so only what her rulings add can leak.
- * A hit names the ruling headings and a count, never the word.
+ * A hit is a count, never the word.
  *
  * FAILS CLOSED: no private word at all in the brains means a client name cannot be told from any other
  * word, so the check is UNREAD (`termCount` 0), never a pass. The caller holds the business.
@@ -50,16 +48,3 @@ export function leaksIn(text, terms, known = new Set()) {
   };
 }
 
-/**
- * The check on one built prompt. `fit` = fitDecisionPrompt with her rulings, `bare` = the same prompt
- * built without them, `rulings` = what rulingsFor gave. `where` = the headings of the ruling groups in
- * the prompt that carry the hit. `unread` = no private word is known, so nothing can be told apart.
- */
-export function promptLeak({ fit, bare, rulings, terms }) {
-  if (!termCount(terms)) return { unread: true, private: 0, mail: 0, where: [] };
-  const known = wordsOf(bare.messages.map((m) => m.content).join("\n"));
-  const hit = leaksIn(fit.messages.map((m) => m.content).join("\n"), terms, known);
-  const sent = [...(rulings?.own ?? []), ...(rulings?.shared ?? []).filter((g) => !(fit.left ?? []).includes(g.heading))];
-  const where = sent.filter((g) => { const h = leaksIn(g.body, terms, known); return h.private || h.mail; }).map((g) => g.heading);
-  return { unread: false, private: hit.private, mail: hit.mail, where };
-}

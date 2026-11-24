@@ -226,6 +226,8 @@ const STYLE = {
   th: "border:1px solid #e4dfd4;padding:6px 8px;text-align:left;vertical-align:top;background:#f6f4ef;font-weight:700",
   td: "border:1px solid #e4dfd4;padding:6px 8px;text-align:left;vertical-align:top",
   a: "color:#1d4ed8",
+  // A source stands alone on its row, so it is a tap target: ~40 px tall at phone width (23 Nov 2026).
+  source: "color:#1d4ed8;display:inline-block;padding:10px 0",
 };
 const styled = (html) => html.replace(/<(h2|h3|h4|p|ul|ol|li|table|th|td|a)(\s|>)/g, (_, t, after) => `<${t} style="${STYLE[t]}"${after}`);
 const escHtml = (s) => String(s ?? "").replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
@@ -268,11 +270,11 @@ export function researchFullEmail({ who, subject, page, url, refs = [], markdown
   // The owner layout (7 Nov 2026), "here's what you asked for" (D): line 1 says why and that she has nothing to do.
   const why = `The research you asked for is ready: ${p.title}`;
   const lead = ownerLine(why, NOTHING_TO_DO);
-  const button = `<p style="margin:22px 0 8px"><a href="${escHtml(url)}" style="display:inline-block;background:#1f1d1a;color:#ffffff;text-decoration:none;font-weight:700;padding:11px 18px;border-radius:8px">Open in Boss OS ›</a></p>`;
+  const button = `<p style="margin:22px 0 8px"><a href="${escHtml(url)}" style="display:inline-block;background:#1f1d1a;color:#ffffff;text-decoration:none;font-weight:700;padding:11px 18px;border-radius:8px;white-space:nowrap">Open in Boss OS ›</a></p>`;
   // The report usually ends with its own "What I could not confirm" section; never list the gaps twice.
   const ownGaps = /^#{1,4}\s+.*(could not|couldn.t) confirm/im.test(String(page?.markdown ?? ""));
   const gapHtml = gaps.length && !ownGaps ? `<h2 style="${STYLE.h2}">What couldn't be confirmed</h2><ul style="${STYLE.ul}">${gaps.map((g) => `<li style="${STYLE.li}">${escHtml(g)}</li>`).join("")}</ul>` : "";
-  const srcHtml = sources.length ? `<h2 style="${STYLE.h2}">Sources (${sources.length})</h2><ol style="${STYLE.ol}">${sources.map((s) => `<li style="${STYLE.li}"><a href="${escHtml(s?.url)}" style="${STYLE.a}">${escHtml(s?.title || s?.url)}</a></li>`).join("")}</ol>` : "";
+  const srcHtml = sources.length ? `<h2 style="${STYLE.h2}">Sources (${sources.length})</h2><ol style="${STYLE.ol}">${sources.map((s) => `<li style="margin:0"><a href="${escHtml(s?.url)}" style="${STYLE.source}">${escHtml(s?.title || s?.url)}</a></li>`).join("")}</ol>` : "";
   const head = `<!doctype html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"></head><body style="margin:0;padding:0;background:#f6f4ef"><div style="max-width:640px;margin:0 auto;padding:16px;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;font-size:15px;line-height:1.6;color:#1f1d1a;background:#ffffff">`
     + `<p style="margin:0 0 12px;font-size:16px;font-weight:600">${escHtml(lead)}</p>`
     + `<h1 style="font-size:23px;line-height:1.25;margin:4px 0 6px">${escHtml(p.title)}</h1>`

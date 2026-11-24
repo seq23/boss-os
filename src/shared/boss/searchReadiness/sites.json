@@ -24,13 +24,7 @@
   "support": [
    "Authority backlink network"
   ],
-  "gaps": {
-   "Whisper Almanac": {
-    "why": "A YouTube channel with no website yet: whisperalmanac.com is owned (6 Nov 2026) but has no DNS or site. It is in the grid as the channel (owner, 10 Nov 2026), made in how-we-know, and joins grid_repos with its first page.",
-    "repo": "how-we-know",
-    "handle": "@whisperalmanac"
-   }
-  }
+  "gaps": {}
  },
  "never": [
   "westpeek.",
@@ -1251,8 +1245,7 @@
     "why": "Topical equine-law scenarios and comparisons; no place-based pages today."
    },
    "search_loop": {
-    "wave": 3,
-    "menu_pages_need_approval": true
+    "wave": 3
    }
   },
   {
@@ -1339,12 +1332,15 @@
    "coverage": {
     "model": "not_local",
     "why": "A national software product; no place-based pages."
+   },
+   "search_loop": {
+    "wave": 1
    }
   },
   {
    "domain": "billionairehighperformancecoach.com",
    "repo": "sprylabs-hpc-site",
-   "category": "own_business",
+   "category": "side_business",
    "group": "divine_9",
    "business": "A Player Mode",
    "entity_parent": "spry-labs",
@@ -1446,6 +1442,33 @@
      "db": "peace-be-still",
      "sql": "SELECT COUNT(*) AS n FROM waitlist WHERE datetime(created_at) >= datetime(:since_iso)"
     }
+   }
+  },
+  {
+   "domain": "whisperalmanac.com",
+   "repo": "whisperalmanac-site",
+   "category": "side_business",
+   "group": "divine_9",
+   "business": "Whisper Almanac",
+   "entity_parent": "spry-labs",
+   "kind": "brand",
+   "roles": [],
+   "label": "Whisper Almanac (the channel's website)",
+   "channel": {
+    "handle": "@whisperalmanac",
+    "repo": "how-we-know",
+    "why": "The sleep and ASMR YouTube channel, made in how-we-know (in the grid as a channel, owner 10 Nov 2026); its website went live 23 Nov 2026 from whisperalmanac-site, so it moved from _groups.gaps into grid_repos."
+   },
+   "clarity": false,
+   "clarity_why": "the audience is on YouTube and the site has no form or sale (as How We Know, owner 25 Oct 2026)",
+   "coverage": {
+    "model": "not_local",
+    "why": "The YouTube channel's companion site; topical, no place-based pages."
+   },
+   "lead_source": {
+    "kind": "none",
+    "action": "a visitor going on to the channel",
+    "track_with": "a counted link from the site to the channel (a /go/ hop with Web Analytics)"
    }
   }
  ]

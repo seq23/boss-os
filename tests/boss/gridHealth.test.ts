@@ -28,10 +28,10 @@ describe("the registry", () => {
       if (!cell.wired) expect((cell.cannot ?? "").length, `${cell.property_key}/${cell.reader} is not wired and gives no reason`).toBeGreaterThan(40);
       else expect(cell.cannot).toBeNull();
     }
-    // A channel is not a site and says so (Whisper Almanac, owner 10 Nov 2026); properties with
-    // domains in sites.json (How We Know, the wedding sites) are wired.
-    expect(cannotReason("whisper_almanac", "uptime")).toMatch(/YouTube channel/);
-    expect(cannotReason("whisper_almanac", "gsc")).toMatch(/YouTube channel/);
+    // Properties with domains in sites.json are wired. Whisper Almanac was a channel with no site until
+    // whisperalmanac.com went live (23 Nov 2026); now its website is probed like every other.
+    expect(cannotReason("whisper_almanac", "uptime")).toBeNull();
+    expect(cannotReason("whisper_almanac", "gsc")).toBeNull();
     expect(cannotReason("wedding", "gsc")).toBeNull();
     expect(cannotReason("youtube", "uptime")).toBeNull();
     expect(cannotReason("guides_generator", "uptime")).toBeNull();
@@ -39,7 +39,7 @@ describe("the registry", () => {
 });
 
 describe("the uptime reader", () => {
-  it("records a 200 with its latency, a 5xx as attention, and a domain that did not answer — one row per domain, and the domainless properties blocked by name", async () => {
+  it("records a 200 with its latency, a 5xx as attention, and a domain that did not answer — one row per domain, Whisper Almanac's website included", async () => {
     const readings = await readUptime(fakeFetch((url) => {
       if (url.includes("approvalprep.com")) return new Response("boom", { status: 503 });
       if (url.includes("hicksconsulting.org")) throw new Error("ECONNRESET");
@@ -60,9 +60,10 @@ describe("the uptime reader", () => {
     const gone = byKey("hicks_consulting")[0]!;
     expect(gone.state).toBe("warn");
     expect(gone.summary).toMatch(/did not answer: ECONNRESET/);
-    const channel = byKey("whisper_almanac")[0]!;
-    expect(channel.state).toBe("blocked");
-    expect(channel.summary).toMatch(/YouTube channel handle/);
+    const whisper = byKey("whisper_almanac");
+    expect(whisper).toHaveLength(1);
+    expect(whisper[0]!.state).toBe("ok");
+    expect(whisper[0]!.evidence_url).toBe("https://whisperalmanac.com/");
     expect(byKey("wedding")).toHaveLength(4); // the 4 wedding sites, one row each
   });
 });

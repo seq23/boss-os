@@ -12,9 +12,16 @@ const body = Array.from({ length: 300 }, (_, i) => para(i)).join("\n");
 const clean = { title: "How to Break Into Investment Banking", subtitle: "Networking, Interviews and Your First Year", description: "Networking emails, interview answers and resumes for analysts.", ai_disclosure: { text_detail: "Extensive editing" } };
 
 describe("the Kindle quality gate", () => {
-  it("the rejected title's listing fails on unedited AI text, a stuffed subtitle and a promo word", () => {
-    const codes = qualityFindings({ ...clean, subtitle: "The Ultimate Guide to Landing a Job on Wall Street: Networking Emails, Interview Answers, Resumes and Your First Year", ai_disclosure: { text_detail: "Some sections, with minimal or no editing" } }, body).map((f: any) => f.code);
-    expect(codes).toEqual(expect.arrayContaining(["AI_TEXT_UNEDITED", "SUBTITLE_STUFFED", "PROMO_WORDS"]));
+  // The rejected subtitle began "The Ultimate Guide to Landing a Job on Wall Street: …". On 24 Nov 2026 she
+  // chose "The Ultimate Guide" titles, and Amazon's metadata rules (G201097560) bar sales-rank and promotion
+  // words, not "ultimate"; so the rejection is pinned on its other grounds, and the promo word is "Best".
+  it("the rejected title's listing fails on unedited AI text and a stuffed subtitle; 'Best' fails as a promo word", () => {
+    const rejected = { ...clean, subtitle: "The Ultimate Guide to Landing a Job on Wall Street: Networking Emails, Interview Answers, Resumes and Your First Year", ai_disclosure: { text_detail: "Some sections, with minimal or no editing" } };
+    const codes = qualityFindings(rejected, body).map((f: any) => f.code);
+    expect(codes).toEqual(expect.arrayContaining(["AI_TEXT_UNEDITED", "SUBTITLE_STUFFED"]));
+    expect(codes).not.toContain("PROMO_WORDS");
+    const best = qualityFindings({ ...rejected, subtitle: rejected.subtitle.replace("Ultimate", "Best") }, body).map((f: any) => f.code);
+    expect(best).toEqual(expect.arrayContaining(["AI_TEXT_UNEDITED", "SUBTITLE_STUFFED", "PROMO_WORDS"]));
   });
   it("a clean listing with a real body passes; thin, repeated or off-description text fails", () => {
     expect(qualityFindings(clean, body)).toEqual([]);

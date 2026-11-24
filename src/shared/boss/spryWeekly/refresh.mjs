@@ -6,6 +6,7 @@
  *
  * RULE 0: a ledger that could not be read makes the line say so, never a smaller number.
  */
+import { dayOf, wallClock } from "../schedule/clock.mjs";
 export const REFRESH_LEDGERS = [
   // scripts/automation/refresh_lane.mjs: pages keyed by full URL, `refreshed_at` on a real change.
   { repo: "local-guides-generator", path: "data/cadence/refresh_lane_ledger.json", label: "local guides" },
@@ -28,14 +29,14 @@ function asLedger(read) {
 
 /** The calendar month before `now` on her clock: { from, to, label } as YYYY-MM-DD. */
 export function lastMonth(now = Date.now()) {
-  const [y, m] = new Date(now).toLocaleDateString("en-CA", { timeZone: "America/Chicago" }).split("-").map(Number);
+  const [y, m] = dayOf(now).split("-").map(Number);
   const start = new Date(Date.UTC(y, m - 2, 1));
   const end = new Date(Date.UTC(y, m - 1, 0));
   return { from: start.toISOString().slice(0, 10), to: end.toISOString().slice(0, 10), label: start.toLocaleDateString("en-US", { month: "long", timeZone: "UTC" }) };
 }
 
 /** Is `now` in the first seven days of the month on her clock (the first Wednesday's email)? */
-export const firstWeekOfMonth = (now = Date.now()) => Number(new Date(now).toLocaleDateString("en-CA", { timeZone: "America/Chicago" }).split("-")[2]) <= 7;
+export const firstWeekOfMonth = (now = Date.now()) => wallClock(now).d <= 7;
 
 /** What one lane did in [from, to], read from its ledger's runs. Pure. */
 export function laneState(read, { from, to }) {

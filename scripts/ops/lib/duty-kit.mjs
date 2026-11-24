@@ -24,6 +24,7 @@ import { seatEnv } from "./seat-env.mjs";
 import { repairMojibake } from "../../../src/shared/boss/mail/subject.mjs";
 import { sendersFor, employeeMail, postEmployeeMail, ownerTo } from "../notify.mjs";
 import { addMorningLines } from "../../../src/shared/boss/mail/morning.mjs";
+import { lockedArgs, refusals } from "./claude-lock.mjs";
 
 export const ORIGIN = process.env.BOSS_OS_ORIGIN ?? "https://boss.sequoiataylor.com";
 export const OWNER_TO = ownerTo();
@@ -123,8 +124,10 @@ export function toMorning(section, add) {
  * permission, a DNS record — a task on Danielle's desk with what was seen. Best effort; returns the
  * reason it was not opened, or null.
  */
-export async function fixJob(api, { title, prompt }) {
-  try { await api.post("/tasks", { title: String(title).slice(0, 160), lane: "ops", employee_id: "emp_repo", input: { origin: "repair", repair_kind: "self_repair", prompt: `seq23/boss-os — ${prompt}` } }); return null; }
+// `touches` ("money" or "outreach") is said by the job that opens the fix, which knows; her morning
+// email's "Stopped" line reads it rather than guessing from the title (23 Nov 2026).
+export async function fixJob(api, { title, prompt, touches = null }) {
+  try { await api.post("/tasks", { title: String(title).slice(0, 160), lane: "ops", employee_id: "emp_repo", input: { origin: "repair", repair_kind: "self_repair", prompt: `seq23/boss-os — ${prompt}`, ...(touches ? { touches } : {}) } }); return null; }
   catch (e) { return String(e?.message ?? e); }
 }
 
@@ -207,12 +210,16 @@ export function askClaudeJson(prompt, {
   const tries = Math.max(1, Math.floor(Number(attempts) || 1));
   let last = { ok: false, why: "the claude run did not run" };
   for (let n = 1; n <= tries; n++) {
-    const r = run(bin, ["-p", full, "--model", model, "--max-turns", String(maxTurns), "--output-format", "stream-json", "--verbose"], {
+    // Locked to connector-reads-permissions.json (24 Nov 2026): her own settings default to
+    // bypassPermissions, so an unlocked run here had every tool. lib/claude-lock.mjs says why.
+    const r = run(bin, ["-p", full, "--model", model, "--max-turns", String(maxTurns), ...lockedArgs("connector-reads"), "--output-format", "stream-json", "--verbose"], {
       encoding: "utf8", timeout: timeoutMs, env: seatEnv(process.env), cwd: homedir(), maxBuffer: 32 * 1024 * 1024,
     });
     if (r.error) return { ok: false, why: `the claude CLI could not start (${r.error.code ?? r.error.message})${tries > 1 ? ` (attempt ${n} of ${tries})` : ""}` };
     const stdout = String(r.stdout ?? "");
     const census = streamCensus(stdout);
+    const denied = refusals(stdout);
+    if (denied.length) return { ok: false, why: `NAMED STOP [PERMISSION_DENIED] the run was refused ${denied.map((d) => d.tool).join(", ")} by connector-reads-permissions.json` };
     const res = r.status !== 0
       ? { ok: false, why: `the claude run exited ${r.status}${census.subtype ? ` (${census.subtype})` : ""}; ${calledWords(census.calls)}` }
       : readClaudeStream(stdout, requireTool);

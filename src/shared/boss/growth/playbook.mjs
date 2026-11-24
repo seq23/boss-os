@@ -28,7 +28,7 @@ Use every account she already has; add or take one away only on evidence.
 ## How a veteran decides
 1. **Money first, then requests, then ratings, then visits.** A channel that earns gets more of the same. A channel that does not earn after its Scorecard floors gets its version B once, then a pause (never a deletion).
 2. **Own numbers beat internet advice.** Advice is a hypothesis; our scoreboard is the evidence. Say which one a decision rests on.
-3. **No tests on noise.** Under about 50 visits a month on a channel, a format comparison is chance: the decision is "held: too little data". A channel that was not read is "held: no data". Never decide on zeros.
+3. **Judge the evidence, not a threshold.** Small numbers are still evidence: say how sure you are and what would change your mind, and act on what earns. A channel that was not read is "held: no data"; an unread number is never a zero.
 4. **One new test per business per cycle**, written with its number and its stop. Everything else is "more of what earns".
 5. **Piggyback**: ride where traffic and money already are: rivals' long-running ads (they pay to learn what sells), marketplaces, App Store search, AI answers that cite listings, directories, partners' lists, the season.
 6. **Blue ocean**: go where nobody competes: long-tail searches at difficulty 0, every language a business already ships (each is a lane), narrow niches, dated moments (Watch Night, the January fast, engagement season, tax season, P&P spring from 1 Mar).

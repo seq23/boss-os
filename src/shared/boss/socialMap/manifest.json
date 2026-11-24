@@ -594,10 +594,23 @@
       "account_email": "no account",
       "status": "live_manual",
       "posts": {
-        "by": "hand",
-        "what": "Nothing yet; a profile only (logo, cover, About from approvalprep.com)."
+        "by": "job",
+        "what": "Weekdays 09:10 CT: the next banked post in data/linkedin/posts.json, as the ApprovalPrep page, through LinkedIn's own Posts API, each ending with the self-help line. Noelle banks the posts. Dormant (posts nothing) until LinkedIn grants page API access and data/linkedin/posted.json reads access: granted.",
+        "code": [
+          {
+            "repo": "approvalprep",
+            "paths": [
+              ".github/workflows/linkedin-posts.yml",
+              "scripts/linkedin/linkedin_poster.mjs",
+              "data/linkedin/posts.json"
+            ]
+          }
+        ],
+        "jobs": [
+          "approvalprep-linkedin-posts"
+        ]
       },
-      "decision": "Created 23 Nov 2026 (company 147008522), run from her LinkedIn admin seat; a company page has no sign-in of its own. Cover and About added the same day."
+      "decision": "Page exists (organization 147008522). Her words 24 Nov 2026: \"make sure noelle is in charge of linkedin also for the apps that have a linkedin page\". Poster built in approvalprep #209; live_auto once LinkedIn grants Community Management API access."
     },
     {
       "id": "apm-pinterest",
@@ -643,10 +656,23 @@
       "account_email": "no account",
       "status": "live_manual",
       "posts": {
-        "by": "hand",
-        "what": "Nothing yet; a profile only (logo, cover, About from aplayermode.com)."
+        "by": "job",
+        "what": "Weekdays 09:20 CT: the next banked post in aplayermode/data/linkedin/posts.json, as the A Player Mode page, through LinkedIn's own Posts API, checked against A Player Mode's gate list. Noelle banks the posts. Dormant until LinkedIn grants page API access and posted.json reads access: granted.",
+        "code": [
+          {
+            "repo": "sprylabs-hpc-site",
+            "paths": [
+              ".github/workflows/aplayermode-linkedin.yml",
+              "scripts/aplayermode/linkedin_poster.mjs",
+              "aplayermode/data/linkedin/posts.json"
+            ]
+          }
+        ],
+        "jobs": [
+          "sprylabs-hpc-site-aplayermode-linkedin"
+        ]
       },
-      "decision": "Created 23 Nov 2026 (company 147023183), run from her LinkedIn admin seat; a company page has no sign-in of its own. Also the page for billionairehighperformancecoach.com (same five roles). Cover and About added the same day."
+      "decision": "Page exists (organization 147023183). Her words 24 Nov 2026: \"make sure noelle is in charge of linkedin also for the apps that have a linkedin page\". Poster built in sprylabs-hpc-site #265; live_auto once LinkedIn grants Community Management API access."
     },
     {
       "id": "spry-gumroad",
@@ -1747,6 +1773,11 @@
       "repo": "boss-os",
       "path": "scripts/ops/lib/buffer-channels.mjs",
       "why": "Reads each Buffer's channel list for the Accounts map drift check (read-only); posts nothing."
+    },
+    {
+      "repo": "boss-os",
+      "path": "scripts/ops/lib/noelle-reads.mjs",
+      "why": "Reads Buffer's queue counts (a GraphQL read) so Noelle knows what is already scheduled; it never posts. P&P posts go through the Studio's own routes."
     }
   ],
   "schedule_exempt": [

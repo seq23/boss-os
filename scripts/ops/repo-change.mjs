@@ -37,12 +37,12 @@ import { builtTodayLine, builtTodayProblem } from "../../src/shared/boss/enginee
 import { spawn, spawnSync } from "node:child_process";
 import { existsSync, mkdirSync, readFileSync, readdirSync, writeFileSync, appendFileSync, symlinkSync } from "node:fs";
 import { homedir } from "node:os";
-import { dirname, join } from "node:path";
+import { basename, dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import {
   PHASE_MODELS, PHASE_MAX_TURNS, PHASE_TIMEOUT_MIN, ASK_POLICY, TASK_KIND, EXECUTOR_SCRIPT,
   canEnterBuild, canLand, canPreview, needsPreview, isForced, changeToken, gridRepoNames, APPROVED_DEFAULTS_TEXT, PREVIEW_DEFAULTS_TEXT, FORCED_TEXT, MAX_REWORKS,
-  REGISTERED_REPOS, isRepair, planWaitsForOwner, namesPostLandStep, redChecksAction, reworkKind,
+  REGISTERED_REPOS, isRepair, planWaitsForOwner, openLoopRepairStale, loopIdOfTask, namesPostLandStep, redChecksAction, reworkKind,
 } from "../../src/shared/boss/repoChange/lane.mjs";
 import { GRID_OWNER } from "../../src/shared/boss/grid.mjs";
 import { sendersFor, employeeMail, postEmployeeMail, filesAt, FALLBACK_STOP, ownerTo } from "./notify.mjs";
@@ -51,6 +51,7 @@ import { vaultLookup, envForRepoRun } from "../lib/vault-env.mjs";
 import { servicePracticesBlock } from "../../src/shared/boss/service/practices.mjs";
 import { waitDetail, threeParts, missingSecretLine } from "../../src/shared/boss/service/waits.mjs";
 import { seatEnv } from "./lib/seat-env.mjs";
+import { lockedArgs, refusals } from "./lib/claude-lock.mjs";
 import { refsIn } from "../../src/shared/boss/mail/plain.mjs";
 import { ownerEmail } from "../../src/shared/boss/mail/ownerLayout.mjs";
 import { repairReport, plainSentence, ownerTextProblems } from "../../src/shared/boss/repoChange/repairReport.mjs";
@@ -310,9 +311,17 @@ function spawnClaude({ phase, prompt, cwd, log, model, maxTurns, timeoutMin }) {
      * could see she was done. stream-json in, one readable line per assistant paragraph, tool call
      * and tool result tail out.
      */
-    const child = spawn(CLAUDE, ["-p", prompt, "--model", model, "--max-turns", String(maxTurns), "--dangerously-skip-permissions", "--output-format", "stream-json", "--verbose"], {
-      cwd, env: seatEnv(process.env), stdio: ["ignore", "pipe", "pipe"],
+    /*
+     * LOCKED TO THE BUILDERS' LIST (24 Nov 2026). builder-permissions.json is the whole of what a
+     * plan or land phase may do (read, edit, git, gh, npm run, node, land); subagents, other Claude
+     * runs, her settings, money connectors, merges outside land, deploys and secrets are refused, and
+     * every refusal is written to the log as NAMED STOP [PERMISSION_DENIED] with its DENIED lines.
+     * `land` is found on PATH (the folder LAND lives in), so its allow rule names no home path.
+     */
+    const child = spawn(CLAUDE, ["-p", prompt, "--model", model, "--max-turns", String(maxTurns), ...lockedArgs("builder"), "--output-format", "stream-json", "--verbose"], {
+      cwd, env: { ...seatEnv(process.env), PATH: `${dirname(LAND)}:${process.env.PATH ?? ""}` }, stdio: ["ignore", "pipe", "pipe"],
     });
+    let raw = "";
     let timedOut = false;
     const timer = setTimeout(() => { timedOut = true; child.kill("SIGTERM"); setTimeout(() => child.kill("SIGKILL"), 10_000); }, timeoutMin * 60_000);
     let buf = "";
@@ -322,7 +331,7 @@ function spawnClaude({ phase, prompt, cwd, log, model, maxTurns, timeoutMin }) {
     let errTail = "";
     const noteResult = (line) => { try { const ev = JSON.parse(line); if (ev.type === "result") { resultText = String(ev.result ?? ""); isError = Boolean(ev.is_error); } } catch { /* not JSON */ } };
     child.stdout.on("data", (d) => {
-      buf += d.toString();
+      buf += d.toString(); raw += d.toString();
       let nl;
       while ((nl = buf.indexOf("\n")) >= 0) {
         const line = buf.slice(0, nl); buf = buf.slice(nl + 1);
@@ -331,7 +340,10 @@ function spawnClaude({ phase, prompt, cwd, log, model, maxTurns, timeoutMin }) {
       }
     });
     child.stderr.on("data", (d) => { appendFileSync(log, d); errTail = (errTail + d.toString()).slice(-4000); });
-    child.on("close", (rc) => { clearTimeout(timer); noteResult(buf); for (const t of transcriptLines(buf)) appendFileSync(log, t + "\n"); appendFileSync(log, `\n=== ${phase} exited rc=${rc} timedOut=${timedOut}\n`); resolve({ rc, timedOut, code: rc, out: resultText, err: errTail, isError }); });
+    child.on("close", (rc) => { clearTimeout(timer); noteResult(buf); for (const t of transcriptLines(buf)) appendFileSync(log, t + "\n"); appendFileSync(log, `\n=== ${phase} exited rc=${rc} timedOut=${timedOut}\n`);
+      const denied = refusals(raw);
+      if (denied.length) appendFileSync(log, `NAMED STOP [PERMISSION_DENIED] denied=${denied.length} — refused by builder-permissions.json\n${denied.map((x) => `DENIED ${x.tool}: ${String(x.command).replace(/\s+/g, " ").slice(0, 200)}`).join("\n")}\n`);
+      resolve({ rc, timedOut, code: rc, out: resultText, err: errTail, isError, denied: denied.length }); });
   });
 }
 
@@ -753,6 +765,30 @@ async function release(row, reason, log) {
 
 let DEVICE = "";
 
+/**
+ * A REPAIR WHOSE REASON IS GONE IS NEVER BUILT (23 Nov 2026): an open-loop repair whose loop has
+ * closed (or is no longer late enough) is superseded before any model is spawned. The loop is read
+ * once from Boss OS, with Boss OS's own Central day; the verdict is `openLoopRepairStale` (lane.mjs).
+ * An unreadable loop list never supersedes: the run goes on as before.
+ */
+async function supersededAsStale(row, log) {
+  const loopId = loopIdOfTask(row.task?.input);
+  if (row.origin !== "repair" || row.repair_kind !== "open_loop_overdue" || !loopId || row.pr_url) return false;
+  const res = await fetch(`${ORIGIN}/api/boss/open-loops`, { headers: { cookie } }).catch(() => null);
+  const json = res?.ok ? await res.json().catch(() => null) : null;
+  const loops = json?.data?.loops;
+  const today = json?.data?.today;
+  if (!Array.isArray(loops) || !today) { appendFileSync(log, `=== open loop ${loopId} not read (${res?.status ?? "no answer"}); the run goes on\n`); return false; }
+  const stale = openLoopRepairStale(row, row.task?.input, loops.find((l) => l?.id === loopId) ?? null, today);
+  if (!stale) return false;
+  const reason = `nothing left to repair: ${stale.why}`;
+  appendFileSync(log, `=== ${reason}\n`);
+  const r = await api(`/${row.id}/supersede`, { reason });
+  if (!r.ok) { say(`NAMED STOP [STALE_REPAIR_NOT_SUPERSEDED] ${r.status} ${r.error ?? ""}`); await release(row, `runner found the repair stale but could not supersede it: ${reason}`, log); return true; }
+  say(`superseded ${row.id}: ${reason}`);
+  return true;
+}
+
 async function runPhase(claim) {
   const row = claim; // the claim response is the row plus phase/model/max_turns/task
   const phase = claim.phase;
@@ -760,6 +796,9 @@ async function runPhase(claim) {
   mkdirSync(dir, { recursive: true });
   const log = join(dir, `${phase}-${new Date().toISOString().replace(/[:.]/g, "-")}.log`);
   say(`── ${row.id} ${phase} (${row.repo ?? "package"}) → ${log}`);
+
+  // An open-loop repair whose loop already closed is superseded before anything is spent.
+  if (await supersededAsStale(row, log)) return;
 
   // Belt and braces: the Worker checked, and so does the runner.
   if (phase === "build" && !canEnterBuild(row).ok) { await release(row, `runner refused build: ${canEnterBuild(row).why}`, log); return; }
@@ -876,7 +915,7 @@ async function runPhase(claim) {
     DECIDED: (row.decided ?? []).map((d) => `- ${typeof d === "string" ? d : JSON.stringify(d)}`).join("\n") || "(none)",
     PR_URL: row.pr_url ?? "", PR_NUMBER: row.pr_number ?? "", BRANCH: branch ?? "", OUT_FILE: outFile, WORK_DIR: dir,
     ASK_LIST: ASK_POLICY.ask.map((a) => `- ${a}`).join("\n"), DECIDE_LIST: ASK_POLICY.decide.map((d) => `- ${d}`).join("\n"),
-    LAND: LAND, PROOF: row.proof ? JSON.stringify(row.proof, null, 2) : "{}",
+    LAND: basename(LAND), PROOF: row.proof ? JSON.stringify(row.proof, null, 2) : "{}",
     REWORK: reworkKind(row) === "checks_red"
       ? `YES — rework ${row.rework_count}/${MAX_REWORKS}. Your pull request ${row.pr_url ?? ""} did NOT land: its checks went red. ${String(row.rework_note ?? "").slice(0, 3000)} That failure is yours to fix, in this repo, now (owner, 2 Nov 2026: "I'd rather Danielle have not asked me anything and just fixed it all"): read the failing output, find the cause, fix it at source on THIS branch, run the same checks locally, push to the SAME pull request (never a second one), and report that PR. Never skip, loosen or delete a test to get green. Do not ask the owner anything.`
       : Number(row.rework_count ?? 0) > 0

@@ -45,6 +45,7 @@ import {
 } from "./lib/duty-kit.mjs";
 import { gmailSearchLink } from "../../src/shared/boss/mail/plain.mjs";
 import { ownerEmail } from "../../src/shared/boss/mail/ownerLayout.mjs";
+import { dayOf } from "../../src/shared/boss/schedule/clock.mjs";
 
 const DRY = process.argv.includes("--dry");
 /** The one model this duty names (its duty row says the same): a short Haiku run on her Claude seat, mail headers or the gallery only. */
@@ -317,7 +318,7 @@ function readGithub(run = execFileSync) {
 
 /** Days of the month already complete in Central, and the month's length. Pure. */
 export function monthProgress(now) {
-  const day = new Intl.DateTimeFormat("en-CA", { timeZone: "America/Chicago" }).format(new Date(now));
+  const day = dayOf(now);
   const [y, m, d] = day.split("-").map(Number);
   return { first: `${y}-${String(m).padStart(2, "0")}-01`, yesterday: new Date(Date.UTC(y, m - 1, d - 1)).toISOString().slice(0, 10), daysDone: Math.max(1, d - 1), daysInMonth: new Date(Date.UTC(y, m, 0)).getUTCDate() };
 }
@@ -554,7 +555,7 @@ export function planRisk(moved, { github = null } = {}) {
       continue;
     }
     if (key === "openrouter") {
-      out.fixes.push({ title: "Paid AI calls on OpenRouter — switch them back to free", prompt: `Toni's risk watch: ${r.line} Every model call is meant to be $0 (AI cost posture). Find which job called a paid model, switch it back to a free one, and say what it was.` });
+      out.fixes.push({ title: "Paid AI calls on OpenRouter — switch them back to free", touches: "money", prompt: `Toni's risk watch: ${r.line} Every model call is meant to be $0 (AI cost posture). Find which job called a paid model, switch it back to a free one, and say what it was.` });
       out.urgent = {
         subject: "Paid AI calls are being charged — the team is on it",
         happened: r.line.replace(/\s*Paid calls are being made on credit;.*$/, "").replace(/\s*Something called a paid model\.?$/, ""),
@@ -580,7 +581,7 @@ export function planRisk(moved, { github = null } = {}) {
       continue;
     }
     if (key.startsWith("dkim:")) {
-      out.fixes.push({ title: `Publish the Google DKIM key for ${key.slice(5)}`, prompt: `Toni's risk watch: ${r.line} Publish the google._domainkey record (Google Admin → Gmail → Authenticate email, then the DNS record) and confirm live sends are allowed again.` });
+      out.fixes.push({ title: `Publish the Google DKIM key for ${key.slice(5)}`, touches: "outreach", prompt: `Toni's risk watch: ${r.line} Publish the google._domainkey record (Google Admin → Gmail → Authenticate email, then the DNS record) and confirm live sends are allowed again.` });
       continue;
     }
     if (key.startsWith("sender:")) {

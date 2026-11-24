@@ -14,16 +14,18 @@
 #                      job's stray edit can never pin the runtime to stale code again;
 #   * behind         → hard reset to origin/main (no merge, nothing of anyone's is lost: see above);
 #   * lockfile moved → npm ci, so code and node_modules always match.
+#   * installers changed → install-agent-launchd.sh runs, so a new launchd block is loaded (23 Nov 2026);
 #   * any launchd plist still pointing at ~/GitHub/boss-os → repointed and reloaded (a running job waits
 #                      for a later tick); only a repoint that fails is named.
 # Every problem is a NAMED line in the log and one line in the morning email's "notices" section.
 #
 #   BOSS_OS_RUNTIME (default ~/.boss-os/runtime)   BOSS_OS_WORKING (default ~/GitHub/boss-os)
 #   BOSS_OS_RUNTIME_SALVAGE (default ~/.boss-os/runtime-salvage)   BOSS_OS_LAUNCH_AGENTS (default ~/Library/LaunchAgents)
+#   BOSS_OS_RUNTIME_INSTALLED_MARK (default ~/.boss-os/runtime-installed: the installers' fingerprint last installed)
 #   BOSS_OS_RUNTIME_NO_NPM=1 skips npm ci; BOSS_OS_RUNTIME_NO_LAUNCHCTL=1 rewrites plists without reloading (tests only).
 #
 # Exit: 0 = runtime is on origin/main; 3 = could not reach origin (runtime left as it was, said so);
-# 4 = clone / reset / npm ci failed (NAMED STOP). The whole body is one function so a reset that
+# 4 = clone / reset / npm ci / launchd install failed (NAMED STOP). The whole body is one function so a reset that
 # rewrites this very file mid-run cannot change what bash executes.
 set -uo pipefail
 
@@ -107,6 +109,32 @@ main() {
         note "NAMED STOP [PLIST_REPOINT_FAILED] $L was moved to $RT but did not load again; run scripts/ops/install-runtime.sh"
       fi
     done
+  fi
+
+  # A launchd block merged to main reaches the Mac only when install-agent-launchd.sh runs, and nothing
+  # ran it on a pull (23 Nov 2026: com.seq.boss-ai-visibility merged, never loaded, so the Tuesday
+  # AI-answers read would not have fired). So it runs HERE, after the reset (anything stray in the
+  # runtime is already salvaged above), whenever the installers' files change: their git blob ids are
+  # the fingerprint, kept in a marker once an install succeeds. A failed install is a NAMED STOP said
+  # once per change and retried every tick; launchd-reload keeps a running or paused job as it is.
+  local MARK="${BOSS_OS_RUNTIME_INSTALLED_MARK:-$HOME/.boss-os/runtime-installed}"
+  if [ -f scripts/ops/install-agent-launchd.sh ]; then
+    local FP; FP="$(git ls-tree HEAD scripts/ops/ | grep -E $'\tscripts/ops/(install-[^/]+\\.sh|render-[^/]*plist[^/]*\\.mjs|plist-central\\.mjs)$' | git hash-object --stdin)"
+    if [ "$(cat "$MARK" 2>/dev/null)" != "$FP" ]; then
+      mkdir -p "$(dirname "$MARK")"
+      if BOSS_OS_RUNTIME="$RT" bash "$RT/scripts/ops/install-agent-launchd.sh" > "$MARK.log" 2>&1; then
+        echo "$FP" > "$MARK"; rm -f "$MARK.failed"
+        say "launchd jobs installed from ${TARGET:0:7} (the installers changed; log $MARK.log)"
+      else
+        if [ "$(cat "$MARK.failed" 2>/dev/null)" != "$FP" ]; then
+          echo "$FP" > "$MARK.failed"
+          note "NAMED STOP [RUNTIME_INSTALL_FAILED] install-agent-launchd.sh failed at ${TARGET:0:7}, so new or changed launchd jobs are not loaded; log $MARK.log (retried every 10 minutes)"
+        else
+          say "NAMED STOP [RUNTIME_INSTALL_FAILED] still failing at ${TARGET:0:7}; log $MARK.log"
+        fi
+        finish 4; return
+      fi
+    fi
   fi
 
   say "on origin/main ${TARGET:0:7}"

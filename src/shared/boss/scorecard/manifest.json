@@ -464,7 +464,6 @@
         "approvalprep-citation-os-weekly",
         "dream-wedding-builder-search-intelligence",
         "dream-wedding-builder-full-safe-autonomy",
-        "dream-wedding-builder-authority-preflight-validation",
         "local-guides-citation-velocity-daily-citation-intelligence",
         "local-guides-citation-velocity-query-evidence-refresh",
         "local-guides-citation-velocity-search-intelligence-loop",
@@ -963,12 +962,14 @@
       "owner": "Spry Labs · Sunday digest",
       "result": "Views, then subscribers",
       "jobs": [
+        "how-we-know-loop-daily-runway",
         "how-we-know-loop-demand",
         "how-we-know-loop-food-author",
         "how-we-know-loop-fri-measure",
         "how-we-know-loop-fri-publish",
         "how-we-know-loop-imagery-harvest",
         "how-we-know-loop-mon-draft",
+        "how-we-know-loop-money-author",
         "how-we-know-loop-monthly-review",
         "how-we-know-loop-quarterly-taxonomy-refresh",
         "how-we-know-loop-reach",
@@ -985,8 +986,7 @@
         "howweknow-food-resume",
         "howweknow-nightquit",
         "shorts-arm",
-        "youtube-comment-watch",
-        "how-we-know-loop-daily-runway"
+        "youtube-comment-watch"
       ],
       "start": "2026-11-01",
       "first": {
@@ -1237,7 +1237,8 @@
       "owner": "Spry Labs · Wednesday Spry Labs email",
       "result": "Waitlist sign-ups before launch, then installs and paid members after launch",
       "jobs": [
-        "pbs-library-fill"
+        "pbs-library-fill",
+        "peace-be-still-search-loop"
       ],
       "start": null,
       "startWhen": {
@@ -2253,10 +2254,11 @@
       "id": "growth-director",
       "initiative": "Growth Director",
       "business": "spry",
-      "owner": "Noelle · the Growth page and her email every two weeks",
+      "owner": "Noelle (a Claude session on your Mac, daily) · the Growth page, Notices, and her email every two weeks",
       "result": "More paid work and sales for the growth businesses, Porch & Party's Christmas requests first",
       "jobs": [
         "growth-director",
+        "growth-director-watch",
         "growth-scoreboard"
       ],
       "start": "2026-11-23",
@@ -2288,7 +2290,7 @@
         }
       },
       "versionB": {
-        "text": "Propose only: the Director queues nothing herself, and each move goes to her as one Decide card with its evidence."
+        "text": "Propose only: Noelle acts on nothing herself, and each move goes to her as one Decide card with its evidence."
       }
     },
     {
@@ -2446,6 +2448,10 @@
       "kind": "system",
       "why": "Keeps the system running or checks it; it has no customer result of its own."
     },
+    "post-land-check": {
+      "kind": "system",
+      "why": "Keeps the system running or checks it; it has no customer result of its own."
+    },
     "drive-backup": {
       "kind": "system",
       "why": "Keeps the system running or checks it; it has no customer result of its own."
@@ -2478,10 +2484,6 @@
       "kind": "excluded",
       "why": "The friends' creator studios: left out of the scorecard (your ruling, 1 Nov 2026)."
     },
-    "creator-studios-e2e": {
-      "kind": "excluded",
-      "why": "The friends' creator studios: left out of the scorecard (your ruling, 1 Nov 2026)."
-    },
     "creator-studios-golden-set": {
       "kind": "excluded",
       "why": "The friends' creator studios: left out of the scorecard (your ruling, 1 Nov 2026)."
@@ -2502,19 +2504,7 @@
       "kind": "system",
       "why": "Keeps the system running or checks it; it has no customer result of its own."
     },
-    "dailystory-monitor-ai-visual": {
-      "kind": "system",
-      "why": "Keeps the system running or checks it; it has no customer result of its own."
-    },
     "dailystory-monitor-runware-generate": {
-      "kind": "system",
-      "why": "Keeps the system running or checks it; it has no customer result of its own."
-    },
-    "dailystory-monitor-template-ab": {
-      "kind": "system",
-      "why": "Keeps the system running or checks it; it has no customer result of its own."
-    },
-    "dailystory-monitor-template-cd": {
       "kind": "system",
       "why": "Keeps the system running or checks it; it has no customer result of its own."
     },
@@ -2539,6 +2529,10 @@
       "why": "Keeps the system running or checks it; it has no customer result of its own."
     },
     "tz-watch": {
+      "kind": "system",
+      "why": "Keeps the system running or checks it; it has no customer result of its own."
+    },
+    "pr-watch": {
       "kind": "system",
       "why": "Keeps the system running or checks it; it has no customer result of its own."
     },
@@ -2929,6 +2923,38 @@
     "succession-book": {
       "kind": "system",
       "why": "Keeps the emergency book current for Scooter; it has no customer result of its own."
+    },
+    "peace-be-still-entity-backlink-watch": {
+      "kind": "system",
+      "why": "Keeps the system running or checks it; it has no customer result of its own."
+    },
+    "peace-be-still-fill-cloud": {
+      "kind": "system",
+      "why": "Keeps the system running or checks it; it has no customer result of its own."
+    },
+    "peace-be-still-search-console-daily": {
+      "kind": "system",
+      "why": "Keeps the system running or checks it; it has no customer result of its own."
+    },
+    "peace-be-still-worker-wrangler-jsonc": {
+      "kind": "system",
+      "why": "Keeps the system running or checks it; it has no customer result of its own."
+    },
+    "dailystory-ops-reports": {
+      "kind": "system",
+      "why": "Keeps the system running or checks it; it has no customer result of its own."
+    },
+    "local-guides-generator-edge-cache": {
+      "kind": "system",
+      "why": "Keeps the system running or checks it; it has no customer result of its own."
+    },
+    "approvalprep-linkedin-posts": {
+      "kind": "parked",
+      "why": "Dormant until LinkedIn grants the page API (her account action); it posts nothing until then. It gets a scorecard row (LinkedIn visits, then sales) the day it first posts."
+    },
+    "sprylabs-hpc-site-aplayermode-linkedin": {
+      "kind": "parked",
+      "why": "Dormant until LinkedIn grants the page API (her account action); it posts nothing until then. It gets a scorecard row (LinkedIn visits, then sales) the day it first posts."
     }
   },
   "scoreboard": {
@@ -3103,7 +3129,8 @@
         "reader": "revenuecat",
         "params": {
           "key": "REVENUECAT_KMP_V2_SECRET_KEY",
-          "metric": "new_customers"
+          "metric": "new_customers",
+          "storeId": "com.keepmyproof.app"
         }
       },
       {
@@ -3371,7 +3398,8 @@
         "reader": "revenuecat",
         "params": {
           "key": "REVENUECAT_PBS_V2_SECRET_KEY",
-          "metric": "new_customers"
+          "metric": "new_customers",
+          "storeId": "com.peacebestillapp.mobile"
         }
       },
       {

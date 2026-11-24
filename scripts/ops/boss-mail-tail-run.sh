@@ -35,7 +35,17 @@ case $LOCK_RC in
   *) echo "$(date -u +%Y-%m-%dT%H:%M:%SZ) NAMED STOP [LOCK_FAILED] cannot lock $FIXLOCK; no agent started" >> "$REPORT_LOG"; exit 3 ;;
 esac
 
-(cd "$REPO" && exec "$CLAUDE" -p "$(cat "$PROMPT_FILE")" --model opus --output-format stream-json --verbose --dangerously-skip-permissions) >> "$TAIL_LOG" 2>&1 &
+# LOCKED TO THE BUILDERS' LIST (24 Nov 2026). builder-permissions.json is the whole of what the tail may
+# do (git, gh, npm run, node, land; no subagents, no other Claude runs, no merge outside land, no
+# deploy, no secrets, no money connector), and the resume below runs under the same file. A refused
+# call is a NAMED STOP [PERMISSION_DENIED] in report.log. `land` is found on PATH (~/bin) so its rule
+# needs no home path in this public repo. lib/claude-lock.sh says why each flag is there.
+# shellcheck source=lib/claude-lock.sh
+. "$REPO/scripts/ops/lib/claude-lock.sh"
+export PATH="$HOME/bin:$PATH"
+CLAUDE_LOCK="$(claude_lock_args "$REPO/scripts/ops/builder-permissions.json")" || { echo "$(date -u +%Y-%m-%dT%H:%M:%SZ) NAMED STOP [NO_PERMISSIONS_FILE] no agent started" >> "$REPORT_LOG"; exit 6; }
+# shellcheck disable=SC2086  # CLAUDE_LOCK is four words by design; claude_lock_args refuses a path with a space
+(cd "$REPO" && exec "$CLAUDE" -p "$(cat "$PROMPT_FILE")" --model opus --output-format stream-json --verbose $CLAUDE_LOCK) >> "$TAIL_LOG" 2>&1 &
 AGENT=$!
 ( sleep "$CAP_SECONDS"; kill -0 "$AGENT" 2>/dev/null && { pkill -TERM -P "$AGENT" 2>/dev/null; kill "$AGENT"; echo "INCOMPLETE — stopped at the ${CAP_SECONDS}s cap" >> "$REPORT_FILE"; } ) &
 WATCHDOG=$!
@@ -61,10 +71,13 @@ if [ "$STATE" != "complete" ]; then
     echo "$(date -u +%Y-%m-%dT%H:%M:%SZ) resuming $SESSION_ID (${RESUME_CAP}s) to recover its report" >> "$REPORT_LOG"
     (cd "$REPO" && exec timeout "$RESUME_CAP" "$CLAUDE" -p \
       "Finish by writing the plain-text report to $REPORT_FILE exactly as your instructions said (first line her subject(s); second line one plain sentence on where her job ended; then the record; last line FRICTION_FIXED: <n>). If the fix is still in flight, say so there as in flight — never omit it." \
-      --resume "$SESSION_ID" --model opus --output-format stream-json --verbose --dangerously-skip-permissions) >> "$TAIL_LOG" 2>&1
+      --resume "$SESSION_ID" --model opus --output-format stream-json --verbose $CLAUDE_LOCK) >> "$TAIL_LOG" 2>&1
     STATE="$(node "$LIB" state "$REPORT_FILE" 2>/dev/null || echo missing)"
   fi
 fi
+
+DENIED="$(claude_denials "$TAIL_LOG" "$REPORT_LOG")"
+[ "$DENIED" = "0" ] || echo "$(date -u +%Y-%m-%dT%H:%M:%SZ) NAMED STOP [PERMISSION_DENIED] denied=$DENIED in $TAIL_LOG: a call was refused by builder-permissions.json (DENIED lines above; unknown = the log could not be read)" >> "$REPORT_LOG"
 
 SALVAGED_BRANCH=""
 if [ "$STATE" != "complete" ] && [ -n "$SINCE" ]; then

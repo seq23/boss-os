@@ -58,7 +58,7 @@ export const MORNING_SECTION_SPECS = Object.freeze([
   { name: "notices", label: "Notices", expect: null },
   // Mondays 06:00: the weekly Search Readiness check of the grid repo sites (scripts/ops/search-readiness-audit.mjs).
   {
-    name: "grid_repos", label: "the grid repos' search check", expect: Object.freeze(["Monday"]),
+    name: "grid_repos", label: "your sites' search check", expect: Object.freeze(["Monday"]),
     catchUp: "sites:audit -- --morning",
     catchUpLongWhy: "the weekly Search Readiness audit (sites:audit) runs long — longer than the window before the email; it is caught up after the email instead",
   },
@@ -79,8 +79,8 @@ export const MORNING_SECTION_SPECS = Object.freeze([
   // Every morning at 06:00 Central: Simone's Go? cards, one per invitation (duty_invitations, a Worker
   // duty: src/worker/boss/invitations/run.ts; owner-approved 8 Nov 2026). Written even when empty.
   { name: "invitations", label: "Invitations", expect: DAILY, catchUpWhy: "written by the Worker's invitations duty (duty_invitations); run it from Team → Duties, not a Mac script" },
-  // Every other Monday 06:00 Central: Noelle's growth report (the Growth Director's cycle,
-  // src/worker/boss/growth/run.ts, 21 Nov 2026). Fortnightly, so never "expected" on a given day.
+  // Every 14 days: Noelle's growth report, written when her run ends (recordDone in
+  // src/worker/boss/growth/noelle.ts, 23 Nov 2026). Fortnightly, so never "expected" on a given day.
   { name: "growth", label: "Growth", expect: null },
 ].map((s) => Object.freeze(s)));
 export const MORNING_SECTIONS = Object.freeze(MORNING_SECTION_SPECS.map((s) => s.name));

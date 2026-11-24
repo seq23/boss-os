@@ -34,3 +34,5 @@ export function askPlan(inv: any, today: string, now?: number | null): { show: b
 export function gmailLink(inv: any): string;
 export function cardFor(inv: any, opts: { origin: string; ask?: string; today: string }): any;
 export function outputLine(n: number): string;
+
+export declare const GO_CARD_NOTE: string;

@@ -13,54 +13,16 @@
  * matters because the interesting cases are the two days a year nobody is looking.
  */
 
-import { zonedTime, wallClock } from "../../../shared/boss/timezone";
+import { instantAt, wallClock } from "../../../shared/boss/schedule/clock.mjs";
 
 const DAY_MS = 86_400_000;
 
 /**
- * What a UTC instant reads as on a wall clock in `timeZone`.
- *
- * `Intl.DateTimeFormat` is the only correct way to do this — it carries the IANA database, so it
- * knows that America/Chicago was UTC-5 in July and UTC-6 in December without anyone maintaining a
- * table. Hand-rolling an offset is how a scheduler ends up an hour wrong in one hemisphere.
+ * The UTC instant at which the clock in `timeZone` reads `y-m-d h:min`: schedule/clock.mjs's
+ * `instantAt`, the one rule (this name is kept for its callers). A duty set in the hour the spring
+ * change skips runs just after the jump, never an hour before its time.
  */
-function wallClockIn(timeZone: string, at: number): { y: number; m: number; d: number; h: number; min: number } {
-  // From the cached zone offset — see `wallClock` in shared/boss/timezone.ts for why no formatter.
-  const w = wallClock(at, timeZone);
-  return { y: w.y, m: w.m, d: w.d, h: w.h, min: w.min };
-}
-
-/** The zone's offset from UTC at a given instant, in minutes. Positive means ahead of UTC. */
-function offsetMinutes(timeZone: string, at: number): number {
-  const w = wallClockIn(timeZone, at);
-  const asUtc = Date.UTC(w.y, w.m - 1, w.d, w.h, w.min);
-  // Rounded to the minute: `at` carries seconds the wall clock does not, and without this the
-  // remainder makes every offset a fraction and every comparison unstable.
-  return Math.round((asUtc - at) / 60_000 / 1) * 1;
-}
-
-/**
- * The UTC instant at which the clock in `timeZone` reads `y-m-d h:min`.
- *
- * Solved by iteration rather than algebra: the offset depends on the instant, and the instant
- * depends on the offset. Two passes settle it everywhere, including across a transition, because
- * the second pass uses the offset that actually applies at the answer.
- */
-export function utcForLocalTime(
-  timeZone: string,
-  y: number, m: number, d: number, h: number, min: number,
-): number {
-  /*
-   * ONE IMPLEMENTATION, TWO CALLERS. This solved the conversion itself until the Spirit page needed
-   * the same thing and got its own copy — two components each holding their own version of one
-   * rule, which is the duplication this repository names by name. They agreed, which is precisely
-   * why it would have gone unnoticed until the day they stopped.
-   *
-   * The shared one keeps the two-pass iteration and the reasoning for it. This signature stays
-   * because the scheduler's callers read naturally in this order.
-   */
-  return zonedTime(y, m, d, h, timeZone, min);
-}
+export { instantAt as utcForLocalTime };
 
 export interface DutySchedule {
   /**
@@ -90,7 +52,7 @@ export function nextDueAt(schedule: DutySchedule, after: number): number {
   const { timezone, local_hour, local_minute, cadence } = schedule;
 
   /*
-   * ONE ZONE LOOKUP PER DAY THAT CANNOT MATCH, THREE FOR ONE THAT CAN.
+   * NO ZONE LOOKUP FOR A DAY THAT CANNOT MATCH, ONE PLACEMENT FOR A DAY THAT CAN.
    *
    * This walked every day with four or five `Intl` calls — the wall clock, two offset lookups to
    * place the local time, and the weekday twice — before deciding most of them were the wrong
@@ -98,22 +60,25 @@ export function nextDueAt(schedule: DutySchedule, after: number): number {
    * thousand of those calls, and on the Workers runtime each is real CPU. The screen was being
    * killed for it. Now a day is rejected by its civil date alone: the weekday of (y, m, d) is
    * arithmetic, and the first of the month is `d === 1`. The instant is only placed for a day that
-   * could be the answer, and the answers are the same — checked against the old walk across four
-   * zones, every cadence, and every hour of a year including both transitions.
+   * could be the answer. The answers match the old walk on every ordinary day; they differ only on
+   * a clock-change day, where the old walk was wrong (below), pinned by tests/boss/centralClockCallers.test.ts.
    */
+  // Advance in CIVIL days, not 24-hour steps (24 Nov 2026 fix): on a transition day the local date
+  // changes after 23 or 25 hours, and the old `after + i * 24h` walk skipped the spring day whenever
+  // `after` fell in the last hour of the day before (a 23:15 duty that ran on 7 Mar was next due 9 Mar).
+  const start = wallClock(after, timezone);
   for (let i = 0; i < 400; i += 1) {
-    // Advance in local days, not UTC days: on a transition day the local date changes after 23 or
-    // 25 hours, and stepping by a flat 24 skips or repeats a date exactly when it matters most.
-    const probe = wallClockIn(timezone, after + i * DAY_MS);
+    const civil = new Date(Date.UTC(start.y, start.m - 1, start.d + i, 12));
+    const probe = { y: civil.getUTCFullYear(), m: civil.getUTCMonth() + 1, d: civil.getUTCDate() };
 
     if (cadence === "monthly" && probe.d !== 1) continue;
 
     // The weekday of the civil date, with no zone lookup: a date's weekday is the same everywhere.
-    const weekday = new Date(Date.UTC(probe.y, probe.m - 1, probe.d, 12)).getUTCDay();
+    const weekday = civil.getUTCDay();
     if (cadence === "weekly" && weekday !== (schedule.weekday ?? 1)) continue;
     if (cadence === "daily" && schedule.weekdays && schedule.weekdays.length > 0 && !schedule.weekdays.includes(weekday)) continue;
 
-    const candidate = utcForLocalTime(timezone, probe.y, probe.m, probe.d, local_hour, local_minute);
+    const candidate = instantAt(timezone, probe.y, probe.m, probe.d, local_hour, local_minute);
     if (candidate <= after) continue;
 
     return candidate;

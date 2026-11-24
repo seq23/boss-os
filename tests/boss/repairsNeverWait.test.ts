@@ -9,7 +9,7 @@
 import { env } from "cloudflare:test";
 import { beforeEach, describe, expect, it } from "vitest";
 import { apiJson, row } from "./helpers";
-import { canEnterBuild, claimablePhase, planWaitsForOwner, repairOriginOf, REPAIR_KINDS } from "../../src/shared/boss/repoChange/lane.mjs";
+import { canEnterBuild, claimablePhase, openLoopRepairStale, planWaitsForOwner, repairOriginOf, REPAIR_KINDS } from "../../src/shared/boss/repoChange/lane.mjs";
 
 const DEVICE = "mac-test";
 const claim = (id: string) => apiJson(`/api/repo-changes/${id}/claim`, { method: "POST", body: { device_id: DEVICE } });
@@ -98,5 +98,52 @@ describe("repairs never wait on the owner (25 Oct 2026)", () => {
     const listed = await apiJson<any>("/api/repo-changes/claimable");
     expect(JSON.stringify(listed.body.data)).not.toContain(rc.id);
     expect((await apiJson(`/api/repo-changes/${rc.id}/supersede`, { method: "POST", body: { reason: "again" } })).status).toBe(409);
+  });
+});
+
+describe("a repair whose reason is gone is never built (23 Nov 2026, olp_m7mdf4ha1pm0e40c closed hours before its repair ran)", () => {
+  const TODAY = "2026-11-23";
+  const REPAIR = { origin: "repair", repair_kind: "open_loop_overdue", pr_url: null };
+  const INPUT = { origin: "repair", repair_kind: "open_loop_overdue", loop_id: "olp_x" };
+  const loop = (over: Record<string, unknown> = {}) => ({ id: "olp_x", title: "Unsaved edits in ~/bin", status: "open", section: "not_finished", next_date: "2026-11-19", ...over });
+
+  it("a closed loop is stale, and the reason names it", () => {
+    const v = openLoopRepairStale(REPAIR, INPUT, loop({ status: "closed", closed_reason: "outcome reached" }), TODAY);
+    expect(v?.why).toMatch(/olp_x/);
+    expect(v?.why).toMatch(/closed: outcome reached/);
+  });
+  it("an open loop four days late is NOT stale: the repair still runs (the guard never swallows real work)", () => {
+    expect(openLoopRepairStale(REPAIR, INPUT, loop(), TODAY)).toBeNull();
+    expect(openLoopRepairStale(REPAIR, JSON.stringify(INPUT), loop(), TODAY)).toBeNull();
+  });
+  it("an open loop re-dated to only one day late is stale; a parked one is stale", () => {
+    expect(openLoopRepairStale(REPAIR, INPUT, loop({ next_date: "2026-11-22" }), TODAY)?.why).toMatch(/no longer more than 3 days late/);
+    expect(openLoopRepairStale(REPAIR, INPUT, loop({ section: "parked" }), TODAY)).not.toBeNull();
+  });
+  it("a missing loop is stale; the task input may arrive as the stored JSON string", () => {
+    expect(openLoopRepairStale(REPAIR, JSON.stringify(INPUT), null, TODAY)?.why).toMatch(/no longer exists/);
+  });
+  it("a change that already holds a pull request is never thrown away", () => {
+    expect(openLoopRepairStale({ ...REPAIR, pr_url: "https://github.com/seq23/boss-os/pull/9" }, INPUT, null, TODAY)).toBeNull();
+  });
+  it("no loop_id, another repair kind, or her own work: never touched", () => {
+    expect(openLoopRepairStale(REPAIR, { origin: "repair", repair_kind: "open_loop_overdue" }, null, TODAY)).toBeNull();
+    expect(openLoopRepairStale(REPAIR, "not json", null, TODAY)).toBeNull();
+    expect(openLoopRepairStale({ ...REPAIR, repair_kind: "held_mail" }, INPUT, null, TODAY)).toBeNull();
+    expect(openLoopRepairStale({ origin: "owner", repair_kind: null }, INPUT, null, TODAY)).toBeNull();
+  });
+
+  it("end to end on the real routes: the claim carries loop_id, the verdict says stale, supersede closes change and task", async () => {
+    const rc = await openTask(INPUT);
+    expect(rc.origin).toBe("repair");
+    expect(rc.repair_kind).toBe("open_loop_overdue");
+    const c = await claim(rc.id);
+    const claimed = c.body.data;
+    const v = openLoopRepairStale(claimed, claimed.task.input, loop({ status: "closed", closed_reason: "outcome reached" }), TODAY);
+    expect(v).not.toBeNull();
+    const r = await apiJson<any>(`/api/repo-changes/${rc.id}/supersede`, { method: "POST", body: { reason: `nothing left to repair: ${v!.why}` } });
+    expect(r.body.data).toEqual({ id: rc.id, phase: "done", superseded: true });
+    expect(claimablePhase(await row<any>(`SELECT * FROM repo_changes WHERE id = ?`, rc.id))).toBeNull();
+    expect((await row<any>(`SELECT status FROM tasks WHERE id = ?`, rc.task_id)).status).toBe("done");
   });
 });

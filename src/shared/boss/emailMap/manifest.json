@@ -385,21 +385,21 @@
       "id": "t2r-app-auth", "business": "time-2-read",
       "what": "App sign-in and account emails",
       "sender": "The app (no employee)", "owner": "Danielle",
-      "from": "Time-2-Read <hello@time-2-read.com> (Reply-To st@time-2-read.com)", "to": "The user",
+      "from": "Supabase Auth's own mailer (the project's email settings)", "to": "The user",
       "when": "On sign-up, sign-in or a password reset",
-      "runs": "supabase", "trigger": "Supabase auth hook (send-custom-auth-email)",
-      "pause": "Turn off the custom auth email hook in Supabase",
-      "code": [{ "repo": "dailystory", "paths": ["supabase/functions/send-custom-auth-email/index.ts"] }]
+      "runs": "supabase", "trigger": "Supabase Auth itself; the custom auth email function had no caller and was retired by dailystory #185 (23 Nov 2026)",
+      "pause": "Change the email templates or sender in Supabase's Authentication settings",
+      "code": [{ "repo": "external", "paths": [] }]
     },
     {
       "id": "t2r-app-parents", "business": "time-2-read",
-      "what": "Parent emails: consent requests, privacy and safety alerts about a child's content, activity alerts",
+      "what": "Parent emails: consent requests",
       "sender": "The app (no employee)", "owner": "Danielle",
-      "from": "Time-2-Read <hello@time-2-read.com>; Time2Read Safety <safety@time-2-read.com>; Time-2-Read Privacy <privacy@time-2-read.com>", "to": "The parent",
-      "when": "When a child signs up or something needs a parent",
-      "runs": "supabase", "trigger": "Supabase functions verify-parental-consent, send-coppa-notification, send-parental-notification, notification-service",
+      "from": "Time-2-Read <hello@time-2-read.com> (Reply-To st@time-2-read.com)", "to": "The parent",
+      "when": "When a child signs up and a parent's consent is needed",
+      "runs": "supabase", "trigger": "Supabase function verify-parental-consent (the other three parent mailers had no caller and were retired by dailystory #185, 23 Nov 2026)",
       "pause": "Remove the function's RESEND_API_KEY secret in Supabase",
-      "code": [{ "repo": "dailystory", "paths": ["supabase/functions/verify-parental-consent/index.ts", "supabase/functions/send-coppa-notification/index.ts", "supabase/functions/send-parental-notification/index.ts", "supabase/functions/notification-service/index.ts"] }]
+      "code": [{ "repo": "dailystory", "paths": ["supabase/functions/verify-parental-consent/index.ts"] }]
     },
     {
       "id": "t2r-app-feedback", "business": "time-2-read",

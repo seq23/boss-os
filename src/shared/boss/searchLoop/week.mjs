@@ -75,7 +75,25 @@ export function publishingOn(week) {
   if (state === "off") return { ok: false, why: "the search loop is switched off (mode=off)" };
   if (state === "stopped") return { ok: false, why: `the loop stopped: ${(week.notes ?? []).find((n) => /NAMED STOP/.test(n)) ?? "a named stop (see the report's notes)"}` };
   if (num(week?.published) == null) return { ok: false, why: "the report does not say how many pages were published" };
+  // "0 pages published" is a pass only when the cap was judged on real numbers (a full cap that Google
+  // results earned is the design). With searches held and the cap frozen for want of Search Console
+  // numbers, nothing can ever publish again: KMP held 70–80 searches at 0 a week (23 Nov 2026).
+  const frozen = capUnread(week);
+  if (week.published === 0 && (num(week?.held_by_cap) ?? 0) > 0 && frozen) return { ok: false, why: `0 pages published this week while ${week.held_by_cap} searches are held by a cap frozen for want of Search Console numbers (${frozen})` };
   return { ok: true, why: `${week.published} pages published this week` };
+}
+
+/**
+ * Why the cap could not be judged this week, or null when it was judged on Google numbers (or set by
+ * the site config). The report has no structured Search Console field, so this reads the engine's one
+ * fixed sentence for a held-without-data cap (seq23/search-loop src/cap.mjs nextCap):
+ *   "held at N: no Search Console numbers to judge results (<reason>); the cap never grows without data"
+ * where <reason> is "Search Console: HTTP 403 …", "Search Console has no rows for …", "not read", etc.
+ * Rule 0: a cap that cannot read its numbers is never a pass (PBS sat on an HTTP 403 for weeks, 23 Nov 2026).
+ */
+export function capUnread(week) {
+  const m = /no Search Console numbers to judge results \((.+)\); the cap never grows without data/.exec(String(week?.cap?.why ?? ""));
+  return m ? m[1].trim() : null;
 }
 
 /**
@@ -91,6 +109,8 @@ export function capOk(week) {
   if (!String(cap.why ?? "").trim()) return { ok: false, why: "the cap does not say why it is that size" };
   if (num(week?.held_by_cap) == null) return { ok: false, why: "the report does not say how many searches the cap held back" };
   if (!Array.isArray(week?.redirected) || week.redirected.some((x) => !x || !/^https?:\/\//.test(String(x.strengthen ?? "")))) return { ok: false, why: "the report does not list each same-intent search with the existing page it strengthens" };
+  const unread = capUnread(week);
+  if (unread) return { ok: false, why: `the cap is held at ${max} without Search Console numbers to judge it (${unread}), so it cannot grow with results until they come in` };
   const live = num(cap.live), room = num(cap.room);
   const r = week.redirected.length;
   return { ok: true, why: `cap ${max} live pages${live != null ? ` (${live} live${room != null ? `, room for ${room}` : ""})` : ""}: ${cap.why}; ${week.held_by_cap} held back, ${r} sent to strengthen an existing page` };

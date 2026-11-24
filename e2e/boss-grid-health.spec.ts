@@ -52,12 +52,12 @@ test.describe("Boss OS grid health", () => {
         expect((await cell.innerText()).trim().length).toBeGreaterThan(20);
       }
     }
-    // A property with no website says so by name rather than showing nothing. Since #378 (10 Nov
-    // 2026) that is Whisper Almanac, a YouTube channel with no site; `youtube` (How We Know) now has
-    // a domain, so its uptime cell is a wired reader and must NOT claim to be a channel.
-    const channel = page.getByTestId("property-health-whisper_almanac").locator("[data-reader='uptime']");
-    await expect(channel).toContainText("YouTube channel");
-    await expect(channel).toContainText("N/A");
+    // Every property now has a website, so no uptime cell may claim to be N/A. Whisper Almanac was the
+    // last channel with no site (#378, 10 Nov 2026); whisperalmanac.com went live and is a grid row
+    // since #556 (23 Nov 2026), so its uptime cell is a wired reader, never "cannot".
+    const whisper = page.getByTestId("property-health-whisper_almanac").locator("[data-reader='uptime']");
+    await expect(whisper).not.toContainText("N/A");
+    await expect(whisper).not.toHaveAttribute("data-state", "cannot");
     await expect(page.getByTestId("property-health-youtube").locator("[data-reader='uptime']")).not.toContainText("N/A");
     // A wired reader that has never run names what runs it.
     await expect(page.getByTestId("property-health-hpc").locator("[data-reader='github']")).toContainText("grid watch");

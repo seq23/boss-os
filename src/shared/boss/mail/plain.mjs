@@ -33,6 +33,7 @@
  * Message-ID (`boss_mail_refs`); her reply quotes that Message-ID and the inbound handler reads the refs
  * back from it (`refsForChain`). Nothing she sees carries a code.
  */
+import { wallClock } from "../schedule/clock.mjs";
 
 /** Words that stay in capitals: real acronyms, not shouting. */
 export const ACRONYMS = new Set([
@@ -212,9 +213,8 @@ export function clockWords(h, m) {
 export function utcClockWords(h, m, now = Date.now()) {
   const d = new Date(now);
   const at = Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), d.getUTCDate(), Number(h), Number(m));
-  const p = new Intl.DateTimeFormat("en-US", { timeZone: "America/Chicago", hour: "numeric", minute: "2-digit", hour12: false }).formatToParts(new Date(at));
-  const g = (t) => p.find((x) => x.type === t)?.value ?? "0";
-  return clockWords(Number(g("hour")) % 24, Number(g("minute")));
+  const w = wallClock(at);
+  return clockWords(w.h, w.min);
 }
 
 /** Drop any whole sentence that reads as a command to type (the one place this rule lives). */
@@ -227,7 +227,9 @@ function protect(s) {
   const keep = (m) => { kept.push(m); return `\u0000${kept.length - 1}\u0000`; };
   // `SECRET NAME=<value>` is a line she types exactly, so the key's name is kept as written.
   // A REF code ("BOS-7K2M9Q") is how her reply finds its job: kept exactly, never lower-cased as shouting.
-  const out = String(s).replace(SECRET_LINE_RE, keep).replace(URL_RE, (u) => keep(pageLinkFor(u))).replace(EMAIL_RE, keep).replace(new RegExp(REF_CODE_RE.source, "g"), keep);
+  // "NOT WORKING" is the live check's verdict word, in capitals by her rule (24 Nov 2026: the next-day check
+  // posts "'NOT WORKING' when it fails"): kept exactly, never lower-cased as shouting.
+  const out = String(s).replace(SECRET_LINE_RE, keep).replace(URL_RE, (u) => keep(pageLinkFor(u))).replace(EMAIL_RE, keep).replace(new RegExp(REF_CODE_RE.source, "g"), keep).replace(/\bNOT WORKING\b/g, keep);
   return { out, restore: (t) => t.replace(/\u0000(\d+)\u0000/g, (_, i) => kept[Number(i)]) };
 }
 
@@ -441,6 +443,9 @@ export function linkLabel(url) {
   if (/github\.com\/.+\/pull\//.test(u)) return "Open the change";
   if (/boss\.sequoiataylor\.com/.test(u)) return "Open Boss OS";
   if (/claude\.ai\/(?:code\/)?artifact/.test(u)) return "Open the page";
+  // Where it goes, never a bare domain (23 Nov 2026 live read: "Open amazon.com" under a live book).
+  if (/^https:\/\/(?:www\.)?amazon\.com\/dp\//.test(u)) return "See it on Amazon";
+  if (/^https:\/\/kdp\.amazon\.com\/(?:[a-z_A-Z]+\/)?bookshelf/.test(u)) return "Open your KDP bookshelf";
   try { return `Open ${new URL(u).hostname.replace(/^www\./, "")}`; } catch { return "Open the link"; }
 }
 /** A Gmail search for a subject: the email itself, one tap, never a bare id (rule 2, 23 Oct 2026). */
@@ -488,7 +493,15 @@ const FONT = "-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial
 /** A paragraph: size, line height and ink come from the page wrapper (one place, not every <p>). */
 const P = 'style="margin:0 0 8px"';
 const SEC = (color = C.muted) => `style="margin:18px 0 8px;font-size:12px;font-weight:700;letter-spacing:.08em;text-transform:uppercase;color:${color}"`;
-const BTN = (primary) => `style="display:inline-block;margin:0 8px 8px 0;padding:11px 14px;border-radius:8px;font-size:14px;font-weight:600;text-decoration:none;border:1px solid ${C.link};${primary ? `background:${C.link};color:#ffffff` : `background:#ffffff;color:${C.link}`}"`;
+/*
+ * Every tappable thing is a button at least ~44 px tall at phone width (23 Nov 2026 live read: "Drop
+ * for good" and "See it" were 17 px text links, one line apart). Inline links inside a sentence stay
+ * links; anything that stands alone (a row's Open / Drop, an item's link, a section's link) is a button.
+ */
+// A short label stays on one line ("Drop / for / good" stacked in a narrow cell); a long one may wrap but
+// never runs past its card (a 48-character Spirit link pushed the page to 393 px, sr_mwtg1musb3c8).
+const BTN_ONE_LINE_MAX = 28;
+const BTN = (primary, label = "") => `style="display:inline-block;max-width:100%;box-sizing:border-box;margin:0 8px 8px 0;padding:11px 14px;border-radius:8px;font-size:14px;font-weight:600;text-decoration:none;${String(label).length <= BTN_ONE_LINE_MAX ? "white-space:nowrap;" : ""}border:1px solid ${C.link};${primary ? `background:${C.link};color:#ffffff` : `background:#ffffff;color:${C.link}`}"`;
 
 function cardHtml(c, n, tone = "decide") {
   const border = tone === "decide" ? C.decideBorder : C.line;
@@ -499,7 +512,7 @@ function cardHtml(c, n, tone = "decide") {
     + (c.details.length ? `<ul style="margin:0 0 10px;padding-left:18px;font-size:13px">${c.details.map((d) => `<li>${linkify(d)}</li>`).join("")}</ul>` : "")
     + (c.draft ? `<p style="margin:0 0 4px;font-size:12px;font-weight:600;color:${C.muted}">${esc(c.draft.heading)}</p>`
       + `<div style="margin:0 0 10px;padding:10px 12px;border-left:3px solid ${C.decideBorder};background:#ffffff;white-space:pre-wrap"><!--prose-->${esc(c.draft.text)}<!--/prose--></div>` : "")
-    + (c.buttons.length ? `<div>${c.buttons.map((b, i) => `<a href="${esc(b.url)}" ${BTN(i === 0)}>${esc(b.label)}</a>`).join("")}</div>` : "")
+    + (c.buttons.length ? `<div>${c.buttons.map((b, i) => `<a href="${esc(b.url)}" ${BTN(i === 0, b.label)}>${esc(b.label)}</a>`).join("")}</div>` : "")
     + `</div>`;
 }
 
@@ -549,20 +562,27 @@ function sectionHtml(sec) {
   if (sec.rows) {
     any = true;
     const th = `style="padding:6px;text-align:left;font-size:11px;color:${C.muted};font-weight:600;border-bottom:1px solid #D9DDE3"`;
-    const td = `style="padding:7px 6px;border-bottom:1px solid #EEF0F3;vertical-align:top"`;
+    // A row's buttons sit on their own line under its text, across the full width: in a fourth column
+    // at 390 px they stacked word by word ("Drop / for / good") and squeezed the names to one word a
+    // line (ship-review sr_mwtfu3xi47nr). No media query: phone mail apps drop them.
+    const td = (last) => `style="padding:7px 6px ${last ? 7 : 2}px;${last ? "border-bottom:1px solid #EEF0F3;" : ""}vertical-align:top"`;
+    const n = sec.rows.columns.length;
     inner += `<table role="presentation" style="border-collapse:collapse;width:100%;margin:0 0 8px;font-size:13px">`
-      + `<tr>${sec.rows.columns.map((c) => `<th ${th}>${esc(c.label)}</th>`).join("")}<th ${th}></th></tr>`
-      + sec.rows.data.map((r) => `<tr>${sec.rows.columns.map((c, i) => `<td ${td}>${i === 0 ? `<b>${esc(cell(r, c.key))}</b>` : esc(cell(r, c.key))}</td>`).join("")}`
-        + `<td ${td}>${r.url ? `<a href="${esc(r.url)}">${esc(r.url_label ?? linkLabel(r.url))}</a>` : ""}${r.url2 ? `<br><a href="${esc(r.url2)}">${esc(r.url2_label ?? linkLabel(r.url2))}</a>` : ""}</td></tr>`).join("")
+      + `<tr>${sec.rows.columns.map((c) => `<th ${th}>${esc(c.label)}</th>`).join("")}</tr>`
+      + sec.rows.data.map((r) => {
+        const links = [[r.url, r.url_label], [r.url2, r.url2_label]].filter(([u]) => u);
+        return `<tr>${sec.rows.columns.map((c, i) => `<td ${td(!links.length)}>${i === 0 ? `<b>${esc(cell(r, c.key))}</b>` : esc(cell(r, c.key))}</td>`).join("")}</tr>`
+          + (links.length ? `<tr><td colspan="${n}" ${td(true)}>${links.map(([u, l]) => `<a href="${esc(u)}" ${BTN(false, l ?? linkLabel(u))}>${esc(l ?? linkLabel(u))}</a>`).join("")}</td></tr>` : "");
+      }).join("")
       + `</table>`;
   }
   if (sec.cards.length) { any = true; inner += sec.cards.map((c, i) => cardHtml(c, i + 1, "plain")).join(""); }
   if (sec.items.length) {
     any = true;
-    inner += sec.items.map((i) => `<p ${P}>${i.runs ? proseHtml(i.runs) : linkify(i.text)}${i.links.map((l) => ` <a href="${esc(l.url)}">${esc(l.label)}</a>`).join("")}</p>`).join("");
+    inner += sec.items.map((i) => `<p ${P}>${i.runs ? proseHtml(i.runs) : linkify(i.text)}</p>${i.links.length ? `<p style="margin:0 0 4px">${i.links.map((l) => `<a href="${esc(l.url)}" ${BTN(false, l.label)}>${esc(l.label)}</a>`).join("")}</p>` : ""}`).join("");
   }
   if (!any && sec.empty) { any = true; inner += `<p ${P}>${esc(sec.empty)}</p>`; }
-  if (sec.link) { any = true; inner += `<p style="margin:4px 0 0"><a href="${esc(sec.link.url)}" ${BTN(false)}>${esc(sec.link.label)}</a></p>`; }
+  if (sec.link) { any = true; inner += `<p style="margin:4px 0 0"><a href="${esc(sec.link.url)}" ${BTN(false, sec.link.label)}>${esc(sec.link.label)}</a></p>`; }
   if (sec.full) {
     any = true;
     // One prose mark around each block, not each line: the gate reads the same words, the email is lighter.
@@ -604,9 +624,9 @@ export function layoutEmail({ who, subject, happened, decide = [], needs = [], d
    * and a job that has STOPPED. In HTML a coloured block at the very top (inline styles, so Gmail
    * renders it); in text, right under line 1, each line in capitals for its title.
    */
-  const bannerList = (banners ?? []).map((b) => ({ tone: b?.tone === "coach" ? "coach" : "red", title: b?.tone === "coach" ? cleanText(b?.title ?? "") : cleanText(`🔴 ${b?.title ?? ""}`).replace(/^🔴\s*/u, ""), lines: (b?.lines ?? []).map((l) => cleanText(l)).filter(Boolean) })).filter((b) => b.title);
-  const bannerText = bannerList.flatMap((b) => ["", `${b.tone === "red" ? "🔴 " : ""}${b.title.toUpperCase()}`, ...b.lines]);
-  const bannerHtml = bannerList.map((b) => `<div style="margin:0 0 12px;padding:14px 16px;border-radius:10px;background:${b.tone === "red" ? "#b3261e" : "#1d1d1f"};color:#ffffff;border-left:8px solid ${b.tone === "red" ? "#7a0f0a" : "#d93025"}"><p style="margin:0 0 6px;font-size:17px;line-height:1.35;font-weight:700;color:#ffffff">${b.tone === "red" ? "&#128308; " : ""}${esc(b.title)}</p>${b.lines.map((l) => `<p style="margin:4px 0 0;font-size:15px;line-height:1.45;color:#ffffff">${esc(l)}</p>`).join("")}</div>`).join("");
+  const bannerList = (banners ?? []).map((b) => ({ tone: b?.tone === "coach" ? "coach" : "red", title: b?.tone === "coach" ? cleanText(b?.title ?? "") : cleanText(`🔴 ${b?.title ?? ""}`).replace(/^🔴\s*/u, ""), lines: (b?.lines ?? []).map((l) => cleanText(l)).filter(Boolean), button: cleanButtons(b?.button ? [b.button] : [])[0] ?? null })).filter((b) => b.title);
+  const bannerText = bannerList.flatMap((b) => ["", `${b.tone === "red" ? "🔴 " : ""}${b.title.toUpperCase()}`, ...b.lines, ...(b.button ? [`${b.button.label}: ${b.button.url}`] : [])]);
+  const bannerHtml = bannerList.map((b) => `<div style="margin:0 0 12px;padding:14px 16px;border-radius:10px;background:${b.tone === "red" ? "#b3261e" : "#1d1d1f"};color:#ffffff;border-left:8px solid ${b.tone === "red" ? "#7a0f0a" : "#d93025"}"><p style="margin:0 0 6px;font-size:17px;line-height:1.35;font-weight:700;color:#ffffff">${b.tone === "red" ? "&#128308; " : ""}${esc(b.title)}</p>${b.lines.map((l) => `<p style="margin:4px 0 0;font-size:15px;line-height:1.45;color:#ffffff">${esc(l)}</p>`).join("")}${b.button ? `<p style="margin:12px 0 0"><a href="${esc(b.button.url)}" style="display:inline-block;padding:11px 14px;border-radius:8px;font-size:14px;font-weight:700;text-decoration:none;white-space:nowrap;background:#ffffff;color:#b3261e">${esc(b.button.label)}</a></p>` : ""}</div>`).join("");
   const name = String(who ?? "").trim() || "Simone";
   const subj = cleanSubject(subject);
   /*

@@ -331,6 +331,18 @@
       "status": "live"
     },
     {
+      "id": "whisperalmanac",
+      "name": "Whisper Almanac",
+      "url": "https://whisperalmanac.com",
+      "domain": "whisperalmanac.com",
+      "business": "spry",
+      "repo": "whisperalmanac-site",
+      "host": "cloudflare-worker",
+      "project": "whisperalmanac-site",
+      "deploy": "wrangler deploy from main (wrangler.jsonc custom domains); its CI checks the pages",
+      "status": "live"
+    },
+    {
       "id": "peacebestillapp",
       "name": "Peace Be Still",
       "url": "https://peacebestillapp.com",

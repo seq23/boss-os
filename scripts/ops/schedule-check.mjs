@@ -15,11 +15,12 @@
  *   npm run schedule:check                 # everything
  *   npm run schedule:check -- --no-duties  # without the Boss OS API (no vault prompt)
  */
+import { execFileSync } from "node:child_process";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import {
   candidateRepos, chicagoOffset, cronProblems, disabledWorkflows, dutyProblems, installedJobs, launchdProblems,
-  missingLabels, readSchedule, repoCronFiles, repoCronFilesApi, scheduleCategoryProblems, scheduleRepoDir, shapeProblems, weekProblems,
+  missingLabels, readSchedule, unloadedLabels, repoCronFiles, repoCronFilesApi, scheduleCategoryProblems, scheduleRepoDir, shapeProblems, weekProblems,
 } from "./lib/schedule.mjs";
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..", "..");
@@ -59,6 +60,12 @@ if (!process.argv.includes("--no-duties")) {
 // ─── launchd, as installed ───────────────────────────────────────────────────
 const jobs = installedJobs();
 problems.push(...launchdProblems(m, jobs), ...missingLabels(m, jobs).map((l) => `launchd ${l} is on the Schedule and not installed on this Mac`));
+const lctl = (...a) => { try { return execFileSync("launchctl", a, { encoding: "utf8", stdio: ["ignore", "pipe", "ignore"] }); } catch { return null; } };
+for (const u of unloadedLabels(m, jobs, lctl("list"), lctl("print-disabled", `gui/${process.getuid()}`) ?? "")) {
+  problems.push(u.state === "unknown"
+    ? `launchd ${u.label}: launchctl list could not be read, so whether it is loaded is unknown`
+    : `launchd ${u.label} is installed on this Mac and launchd has not loaded it, so it never fires (bash scripts/ops/install-agent-launchd.sh)`);
+}
 checked += Object.keys(jobs).length;
 console.log(`launchd: ${Object.keys(jobs).length} jobs`);
 

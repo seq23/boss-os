@@ -104,7 +104,9 @@ export function leadVerdict({ site, read, outcome } = {}) {
 /** The red line for a site whose visitors come and nobody acts; null otherwise. */
 export function leadRedLine(site, v) {
   if (!v?.red) return null;
-  return `${site.domain}: Google sent ${num(v.clicks)} visit${v.clicks === 1 ? "" : "s"} in the last four weeks and nobody used its one action (${v.action}: 0) — people come, nobody acts.`;
+  // 23 Nov 2026 live read: "(…: 0) — people come, nobody acts" was a label, not a sentence.
+  const act = String(v.action ?? "its one action");
+  return `${site.domain}: Google sent ${num(v.clicks)} visit${v.clicks === 1 ? "" : "s"} in the last four weeks, and none of them acted. ${act.charAt(0).toUpperCase()}${act.slice(1)}: 0.`;
 }
 
 /**

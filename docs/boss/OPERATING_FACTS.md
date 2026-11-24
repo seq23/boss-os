@@ -74,6 +74,13 @@ they live in the repo, not only in someone's memory. Non-confidential. `STATUS.m
 - **Her time zone**: setting `owner_timezone` (default `America/Chicago`), `GET/PUT
   /api/boss/system/owner-timezone` `{ tz }`. Meeting prep shows times in it, the meeting's own zone
   in brackets only when different.
+- **One wall clock** (24 Nov 2026): every Central (or any zone's) conversion, from a day key and a
+  week's Monday to a duty's next run and an allowance reset, calls `src/shared/boss/schedule/clock.mjs`
+  (`wallClock`, `instantAt`, `dayOf`, `startOfDay`, `weekOf`, `zoneOffsetMs`, `formatIn`), which asks
+  `Intl` for the offset at that instant. No fixed `-05:00`/`-06:00`, `T06:00:00Z` or 24-hour step. A
+  time in the skipped spring hour runs just after the jump (02:30 is 03:30 CDT); a time in the
+  repeated fall hour runs at the first one. A worker-clocked Central cron in the 02:00 hour fails
+  `clockRowProblems`. Pinned by `tests/centralClock.test.ts` and `tests/boss/centralClockCallers.test.ts`.
 
 ## Inherited West Peek chassis code
 - **Retired 22 Nov 2026** (her yes, personal brain): the copied fund sign-in, fund screens, fund
@@ -104,7 +111,7 @@ they live in the repo, not only in someone's memory. Non-confidential. `STATUS.m
   62 snapshots, 30 MB of R2 in 15 hours).
 - Every duty names its model and cap; the budget stops scheduled duties only, never dispatched ones.
 - The Mac runs on Eastern time; launchd schedules are written in the Mac's clock, so a 07:40 plist is
-  06:40 Central. Jobs that care about the hour decide it in Central themselves.
+  06:40 Central. Jobs that care about the hour decide it in Central themselves, through `clock.mjs`.
 - **GitHub's `schedule` event is not a clock for this account** (21 Nov 2026). It is best effort, and
   from about 2026-11-17 20:40Z it fired every scheduled workflow of the account once every 6-9 hours
   (a ten-minute job ran 11 times in four days); the 21 Nov morning email was never built. Boss OS keeps

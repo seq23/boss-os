@@ -64,7 +64,12 @@ export function lpMorning(rows, now = Date.now(), { stops = [] } = {}) {
   rows = rows.filter((r) => !r.quiet);
   // A call on her calendar (owner, 15 Nov 2026): one line each, "Name — Call booked: Mon 16 Nov, 12:00 PM CT".
   const isCall = (r) => r.status === "scheduled" && Number(r.picked_start) > 0;
-  const callLines = rows.filter(isCall).sort((a, b) => Number(a.picked_start) - Number(b.picked_start))
+  /*
+   * A CALL IS NEWS ONCE BOOKED AND ONCE HELD, NEVER A WEEK LATER (23 Nov 2026 live read: "an LP
+   * — Call held: Mon 16 Nov" in Done for you seven days on: the line's words changed from booked to
+   * held, so it was new to the told-once list). Booked: any time before it. Held: the day after only.
+   */
+  const callLines = rows.filter((r) => isCall(r) && Number(r.picked_start) >= now - 36 * 3_600_000).sort((a, b) => Number(a.picked_start) - Number(b.picked_start))
     .map((r) => ({ text: `${r.name || r.address} — ${callLine(Number(r.picked_start), now)}.` }));
   rows = rows.filter((r) => !isCall(r));
   const decide = [...lpDecideItems(rows, now), ...lpNudgeItems(rows, now)];

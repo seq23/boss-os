@@ -126,7 +126,7 @@ This is on Systems → Alerts and team, which is the record. This email is only 
 if [ -d "$REPO" ]; then
   # The exit code after `| tail -1` is tail's, not the register's, so nothing reads it: the
   # register's answer is the LINE, and a line that matches nothing below is the failure case.
-  CHASE_LINE="$(cd "$REPO" && npm run --silent vault:run -- node scripts/ops/kdp-chase-open.mjs 2>&1 | tail -1)"
+  CHASE_LINE="$(cd "$REPO" && npm run --silent vault:run -- node scripts/ops/kdp-chase-open.mjs --save "$HOME/.boss-os/kdp/register.json" 2>&1 | tail -1)"
   say "register: $CHASE_LINE"
   case "$CHASE_LINE" in
     "KDP-CHASE: CLOSED"*)
@@ -195,9 +195,30 @@ say "browser: $BROWSER_LINE (rc=$BROWSER_RC)"
 say "=== KDP case watch starting ==="
 cd "$HOME" || { report_stop "NO_HOME" "the home directory is not reachable, so the run cannot start." "This is a machine fault rather than anything to do with Amazon. Check the Mac."; exit 8; }
 
-"$CLAUDE" -p "$(cat "$PROMPT_FILE")" --model "$MODEL" --dangerously-skip-permissions >> "$RUN_LOG" 2>&1
+# LOCKED TO ITS OWN LIST (24 Nov 2026). kdp-watch-permissions.json is the whole of what this run may
+# do: read the case mail, send the case email, read its own files, write determination.json, read a
+# page in Simone's own Chrome profile (unchanged). Anything else is refused, and a refusal is a named
+# stop below, never a quiet "no reply". lib/claude-lock.sh says why every flag is there.
+# shellcheck source=lib/claude-lock.sh
+. "$REPO/scripts/ops/lib/claude-lock.sh"
+if ! CLAUDE_LOCK="$(claude_lock_args "$REPO/scripts/ops/kdp-watch-permissions.json" 2>>"$RUN_LOG")"; then
+  report_stop "NO_PERMISSIONS_FILE" "the run's permissions file is missing, so Claude was not started." \
+    "Restore scripts/ops/kdp-watch-permissions.json from the repo, then run npm run kdp:check."
+  exit 13
+fi
+SID="$(uuidgen | tr '[:upper:]' '[:lower:]')"
+# shellcheck disable=SC2086  # CLAUDE_LOCK is four words by design; claude_lock_args refuses a path with a space
+"$CLAUDE" -p "$(cat "$PROMPT_FILE")" --model "$MODEL" --session-id "$SID" $CLAUDE_LOCK >> "$RUN_LOG" 2>&1
 RC=$?
 say "=== claude exited rc=$RC ==="
+
+DENIED="$(claude_denials "$SID" "$RUN_LOG")"
+if [ "$DENIED" != "0" ]; then
+  say "NAMED STOP [PERMISSION_DENIED] denied=$DENIED — a tool call was refused by kdp-watch-permissions.json (DENIED lines above)."
+  report_stop "PERMISSION_DENIED" "the run tried something its permissions file does not allow ($DENIED refused, or the run's record could not be read), so its answer is not trusted." \
+    "Read the DENIED lines in the run log; add the tool to scripts/ops/kdp-watch-permissions.json only if the prompt truly needs it, then run npm run kdp:check."
+  exit 14
+fi
 
 if ! grep -q "KDP-WATCH-COMPLETE:" "$RUN_LOG"; then
   # A revoked Gmail connector lands here: the run starts, the first tool call is refused, and it

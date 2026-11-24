@@ -22,6 +22,7 @@ export function scheduleCategoryProblems(m: any, scanned?: string[], cats?: any)
 export function dutyProblems(m: any, duties: any[]): string[];
 export function launchdProblems(m: any, jobs: Record<string, string[]>): string[];
 export function missingLabels(m: any, jobs: Record<string, string[]>): string[];
+export function unloadedLabels(m: any, jobs: Record<string, string[]>, launchctlList: string | null, disabledText?: string): { label: string; state: "not loaded" | "unknown" }[];
 export function cronProblems(m: any, repo: string, files: CronFile[], utcOffset?: number): string[];
 export function workflowDispatchTypes(yaml: string): string[];
 export function workflowEntry(file: string, text: string): CronFile | null;

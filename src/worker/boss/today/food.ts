@@ -1,6 +1,7 @@
 import type { Env } from "../env";
 import { getSettings, setSetting } from "../lib/settings";
 import { daysBetween } from "../practice/lapse";
+import { zonedTime } from "@shared/boss/timezone";
 
 /**
  * THE FOOD GUARDRAIL CHECK (15:00 row): A KETO ORDER AT A RESTAURANT, NEW EVERY DAY (owner, Today v4,
@@ -142,9 +143,12 @@ export interface FoodToday { place: string; order: string; carbs: number; why: s
 
 async function readWhere(env: Env, today: string): Promise<FoodWhere> {
   const s = await getSettings(env.DB, [HOME_CITY_KEY, AWAY_CITY_KEY, AWAY_UNTIL_KEY]).catch(() => ({} as Record<string, string>));
-  const dayStart = Date.parse(`${today}T05:00:00Z`);
+  const [ty, tm, td] = today.split("-").map(Number) as [number, number, number];
+  // Her midnight to her next midnight from the one clock: a fixed 05:00Z was 23:00 the night before in winter.
+  const dayStart = zonedTime(ty, tm, td);
+  const dayEnd = zonedTime(ty, tm, td + 1);
   const cal = await env.DB.prepare(`SELECT title, location FROM diary_entries WHERE cancelled_at IS NULL AND scheduled_at >= ? AND scheduled_at < ?`)
-    .bind(dayStart, dayStart + 86_400_000).all<{ title: string; location: string | null }>().catch(() => ({ results: [] as { title: string; location: string | null }[] }));
+    .bind(dayStart, dayEnd).all<{ title: string; location: string | null }>().catch(() => ({ results: [] as { title: string; location: string | null }[] }));
   const lines = (cal.results ?? []).flatMap((r) => [r.title, r.location ?? ""]);
   return whereToday(today, { home: s[HOME_CITY_KEY], away: s[AWAY_CITY_KEY], awayUntil: s[AWAY_UNTIL_KEY] }, cityFromCalendar(lines));
 }

@@ -1,6 +1,7 @@
 import type { Env } from "../env";
 import { daysBetween } from "../practice/lapse";
 import { ancestralHourState } from "../spirit/ancestralHour";
+import { zonedTime } from "@shared/boss/timezone";
 
 /**
  * THE COACHING CARD IS HER 1:1, AND ITS QUESTION FITS HER LIFE RIGHT NOW (owner, Today v4, 31 Oct 2026).
@@ -126,14 +127,17 @@ export function runBack(today: string, rows: Map<string, Record<string, unknown>
 /** Read the signals: counts from D1, never a name. `waiting` is the carried list's longest wait. */
 export async function coachSignals(env: Env, today: string, waiting: { days: number; lp: boolean } | null): Promise<CoachSignals> {
   const db = env.DB;
-  const dayStart = Date.parse(`${today}T05:00:00Z`);
+  const [ty, tm, td] = today.split("-").map(Number) as [number, number, number];
+  // Her midnight to her next midnight from the one clock: a fixed 05:00Z was 23:00 the night before in winter.
+  const dayStart = zonedTime(ty, tm, td);
+  const dayEnd = zonedTime(ty, tm, td + 1);
   const [daysR, engR, rosR, ancR, calR, firstR] = await db.batch([
     // Every day on record (one row a day): the runs are exact, never capped at a look-back.
     db.prepare(`SELECT id, morning_completed_at AS m, night_completed_at AS n FROM days WHERE id < ?`).bind(today),
     db.prepare(`SELECT DISTINCT day_id, kind FROM practice_engagement WHERE kind IN ('app_open', 'coach_morning', 'coach_evening') AND day_id < ?`).bind(today),
     db.prepare(`SELECT MAX(day_id) AS d FROM run_of_show WHERE block_key = 'first_wealth_block' AND done_at IS NOT NULL`),
     db.prepare(`SELECT COALESCE(SUM(minutes), 0) AS m FROM ancestor_entries WHERE month = ?`).bind(today.slice(0, 7)),
-    db.prepare(`SELECT COUNT(*) AS n FROM diary_entries WHERE cancelled_at IS NULL AND scheduled_at >= ? AND scheduled_at < ?`).bind(dayStart, dayStart + 86_400_000),
+    db.prepare(`SELECT COUNT(*) AS n FROM diary_entries WHERE cancelled_at IS NULL AND scheduled_at >= ? AND scheduled_at < ?`).bind(dayStart, dayEnd),
     // Where each record begins: engagement (opens, talks) and gates (the first day any gate closed).
     db.prepare(`SELECT (SELECT MIN(day_id) FROM practice_engagement) AS eng, (SELECT MIN(id) FROM days WHERE morning_completed_at IS NOT NULL OR midday_completed_at IS NOT NULL OR night_completed_at IS NOT NULL) AS gate`),
   ]).catch(() => [] as any[]);

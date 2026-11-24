@@ -32,8 +32,8 @@
  *
  * ─── The property-level reasons a reader cannot reach ──────────────────────
  *
- * These are facts about the grid, not about the readers. A YouTube channel with no website has no
- * domain to GET and no Search Console property. Each is written out so the card says the true
+ * These are facts about the grid, not about the readers. A YouTube channel with no website would have
+ * no domain to GET and no Search Console property (none today). Each is written out so the card says the true
  * sentence rather than an empty box.
  *
  * `.mjs` beside a `.d.mts` for the same reason `grid.mjs` is: the Worker, the Mac script and the
@@ -59,13 +59,9 @@ export const READER_RUNS_ON = {
  * Keyed by property key, then reader. The sentence is what the card prints.
  */
 export const CANNOT = {
-  // Owner, 10 Nov 2026: every other grid property now has its canonical domains recorded in
-  // sites.json, so its cells are wired. Whisper Almanac is the one with no website.
-  whisper_almanac: {
-    uptime: "No website — this property is a YouTube channel handle (@whisperalmanac); whisperalmanac.com has no DNS, so there is nothing to probe.",
-    gsc: "Not a website: a YouTube channel has no Search Console property.",
-    cloudflare: "Nothing of this property is deployed on Cloudflare; the channel is hosted by YouTube.",
-  },
+  // Owner, 10 Nov 2026: every grid property has its canonical domains recorded in sites.json, so its
+  // cells are wired. Whisper Almanac was the one with no website until whisperalmanac.com went live
+  // (23 Nov 2026, seq23/whisperalmanac-site on Cloudflare), so it is wired too and nothing is listed.
 };
 
 /**

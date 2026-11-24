@@ -16,6 +16,11 @@ empty week is a fine outcome, and a plausible fix you cannot prove is not.
 
 ---
 
+**Your commands run against a fixed allow list** (`scripts/ops/sr-fix-permissions.json`); anything
+else is refused, and every refusal turns this pass red as `NAMED STOP [PERMISSION_DENIED]`. So type
+commands the way the list names them: `~/…`, never the full home path; `cd <dir>` and then `git …`,
+never `git -C`; one command per call, no `;`, `&&` or `$( )` chains.
+
 ## 1. Find the reports
 
 Ahrefs Site Audit mail lands in **`seq.taylor@gmail.com`** from **`sa@ahrefs.com`**. Use the Gmail
@@ -219,10 +224,10 @@ Finish it on its own branch as NEVER LOSE FINISHED WORK says, and record it as `
 ## 3. Fix the CAUSE, at source, in a fresh worktree
 
 ```
-WT=$(bash ~/GitHub/boss-os/scripts/ops/audit-worktree.sh <repo> | tail -1)
+bash ~/.boss-os/runtime/scripts/ops/audit-worktree.sh <repo>
 ```
 
-This cuts `danielle/site-audit-<stamp>` off `origin/<default>` in a new worktree and symlinks the
+The last line it prints is your worktree (`$WT` below); `cd` into it. This cuts `danielle/site-audit-<stamp>` off `origin/<default>` in a new worktree and symlinks the
 repo's `node_modules`. **Work only in `$WT`. Never edit, stash, switch or commit in `~/GitHub/<repo>`
 itself** — the owner's checkout may be dirty or on another branch, and that is no longer a reason to
 stop. Record `worktree: "$WT"` on the finding row.
@@ -375,7 +380,7 @@ records the queue file and the brief ids it handed you, and the reporter sends t
 After pushing each finished repository's work, leave its worktree (`cd` elsewhere), then run:
 
 ```sh
-bash ~/GitHub/boss-os/scripts/ops/audit-worktree.sh --prune-only <repo>
+bash ~/.boss-os/runtime/scripts/ops/audit-worktree.sh --prune-only <repo>
 ```
 
 This fetches origin and removes only clean audit worktrees whose commits are all on origin,

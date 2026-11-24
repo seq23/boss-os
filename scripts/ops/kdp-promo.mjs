@@ -18,6 +18,7 @@ import { join } from "node:path";
 import { pathToFileURL } from "node:url";
 import { openProfile } from "./browser.mjs";
 import { BOOKS_DIR } from "./kdp-build.mjs";
+import { dayOf } from "../../src/shared/boss/schedule/clock.mjs";
 
 const KDP = "https://kdp.amazon.com";
 const SIGNIN = /\/ap\/(?:signin|mfa|cvf|challenge)|captcha/i;
@@ -29,7 +30,7 @@ const DRY = process.argv.includes("--dry-run");
 
 /** The promo window in Pacific dates (KDP's promotion days are midnight Pacific). Pure. */
 export function promoWindow(now, { lead = LEAD_DAYS, days = FREE_DAYS } = {}) {
-  const pt = (ms) => new Intl.DateTimeFormat("en-CA", { timeZone: "America/Los_Angeles" }).format(new Date(ms));
+  const pt = (ms) => dayOf(ms, "America/Los_Angeles");
   return { start: pt(now + lead * DAY), end: pt(now + (lead + days - 1) * DAY) };
 }
 

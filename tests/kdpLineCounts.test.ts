@@ -15,8 +15,8 @@ describe("kdp-line-counts", () => {
     // The KDP overhaul (8 Nov 2026): two new lines, and the 11 series books are on the register with
     // their true state (2 In review, 9 approved and queued behind Amazon's weekly title limit).
     expect(Object.keys(v)).toEqual(["Kindle books: ApprovalPrep", "Kindle books: Dream Wedding", "Kindle books: A Player Mode", "Kindle books: KeepMyProof", "Kindle books: Time-2-Read", "Kindle books: Industry Guides (uscisexam)", "Kindle books: Ambitious Grads"]);
-    // Ambitious Grads (owner, 9 Nov 2026): her two own career guides, approved and queued, none live yet.
-    expect(v["Kindle books: Ambitious Grads"]).toBe("2 (0 live)");
+    // Ambitious Grads (owner, 9 Nov 2026): her two own career guides, both Live (19 and 23 Nov 2026).
+    expect(v["Kindle books: Ambitious Grads"]).toBe("2 (2 live)");
     // 18 Nov 2026: The Employment Verification Letter (Live since before the register knew it) is on it.
     expect(v["Kindle books: ApprovalPrep"]).toMatch(/^7 \(\d live\)$/);
     expect(v["Kindle books: Dream Wedding"]).toMatch(/^6 \(\d live\)$/);

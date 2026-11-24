@@ -1,6 +1,5 @@
 export const KINDS: readonly string[];
 export const APART_KINDS: readonly string[];
-export const MIN_VISITS_FOR_TESTS: number;
 export const NO_TRACKING: Readonly<Record<string, readonly string[]>>;
 export const UNREAD_PREFIX: string;
 export function scoreboardProblems(manifest: any): string[];

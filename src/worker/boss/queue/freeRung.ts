@@ -26,6 +26,7 @@ import { isPlanSpent } from "../backends/spent";
 import { OPENAI_SEAT, seatsForRoutes } from "../duties/seatOrder";
 import { routeOrder, SHORT } from "../../../shared/boss/aiRoles.mjs";
 import { scanForModelAccess, privateLexicon } from "../router/modelAccess";
+import { CENTRAL, formatIn } from "../../../shared/boss/schedule/clock.mjs";
 
 const KENDRA = "emp_continuity";
 /** The queue row's note that only the hourly tick may drain it (bossMount.ts drainBossTasks). */
@@ -57,8 +58,9 @@ export function researchAskOf(task: { title?: string | null }, input: Record<str
   return (parts[0] ?? String(task.title ?? "")).trim();
 }
 
+/** "Tue, Nov 24, 3:05 PM" on the Central clock (schedule/clock.mjs). */
 export function centralTime(ms: number): string {
-  return new Intl.DateTimeFormat("en-US", { timeZone: "America/Chicago", weekday: "short", month: "short", day: "numeric", hour: "numeric", minute: "2-digit" }).format(new Date(ms));
+  return formatIn(ms, { weekday: "short", month: "short", day: "numeric", hour: "numeric", minute: "2-digit" }, CENTRAL);
 }
 
 /**

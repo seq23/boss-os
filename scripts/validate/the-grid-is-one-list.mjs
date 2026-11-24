@@ -5,8 +5,8 @@
  * ─── Her ruling, 10 Nov 2026 (spry brain, Settled decisions) ───────────────
  *
  * "The grid" is every site in `src/shared/boss/searchReadiness/sites.json` `grid_repos` (groups
- * divine_9 / support / friends) plus Whisper Almanac, a YouTube channel with no website
- * (recorded in `_groups.gaps` with its `repo` and `handle`). It replaces the 29 Aug 2026 table.
+ * divine_9 / support / friends) plus Whisper Almanac, a YouTube channel (its grid_repos row's `channel` since its site went live on
+ * 23 Nov 2026; a channel with no website sits in `_groups.gaps` with its `repo` and `handle`). It replaces the 29 Aug 2026 table.
  *
  * ─── Why a validator ───────────────────────────────────────────────────────
  *
@@ -89,7 +89,7 @@ export function check({ GRID, EXCLUDED, isExcluded, suggestingKeys, sites, gridC
     else if (!(p.repos ?? []).map(low).includes(low(c.repo))) problems.push(`${c.handle} is made in \`${c.repo}\`, but its grid property \`${p.key}\` does not carry that repo.`);
   }
   if (!channels.some((c) => low(c.handle) === "@whisperalmanac")) {
-    problems.push(`Whisper Almanac (@whisperalmanac, repo how-we-know) is not a grid channel in ${SITES_FILE}'s _groups.gaps. Her ruling (10 Nov 2026) puts it in the grid.`);
+    problems.push(`Whisper Almanac (@whisperalmanac, made in how-we-know) is not a grid channel in ${SITES_FILE} (its grid_repos row's channel, or _groups.gaps). Her ruling (10 Nov 2026) puts it in the grid.`);
   }
   for (const [d, p] of gridDomains) if (!siteDomains.has(d)) problems.push(`\`${p.key}\` carries ${d}, which is not a grid site in ${SITES_FILE}. A second list has crept back in.`);
   for (const r of gridRepos) if (!siteRepos.has(r)) problems.push(`The grid carries the repo \`${r}\`, which no grid site or channel in ${SITES_FILE} names. A repo added here starts proposing work to her.`);
@@ -189,7 +189,7 @@ async function selfTest(mod, realSites) {
     { name: "westpeek-live added as a support site", input: view(withSites((s) => s.grid_repos.push({ domain: "events.example", repo: "westpeek-live", group: "support", business: "Authority backlink network" }))), expect: 1 },
     { name: "the westpeek (no hyphen) exclusion removed", input: (() => { const v = view(clone()); v.EXCLUDED = mod.EXCLUDED.filter((e) => e.match !== "westpeek"); v.isExcluded = (r) => { const n = low(r).split("/").pop(); return v.EXCLUDED.some((e) => n.startsWith(low(e.match))); }; return v; })(), expect: 1 },
     { name: "West Peek removed from sites.json never", input: view(withSites((s) => { s.never = s.never.filter((n) => !n.startsWith("westpeek")); })), expect: 1 },
-    { name: "Whisper Almanac's handle dropped from the gaps", input: view(withSites((s) => { s._groups.gaps["Whisper Almanac"] = "no site yet"; })), expect: 1 },
+    { name: "Whisper Almanac's handle dropped from its grid row", input: view(withSites((s) => { delete s.grid_repos.find((r) => r.domain === "whisperalmanac.com").channel; })), expect: 1 },
     { name: "Whisper Almanac dropped from the grid view only", input: view(clone(), (G) => { const i = G.findIndex((p) => (p.handles ?? []).includes("@whisperalmanac")); G.splice(i, 1); }), expect: 1 },
     { name: "THE 25 OCT CASE: sites.json gives time-2-read.com no repo", input: view(withSites((s) => { s.grid_repos.find((r) => r.domain === "time-2-read.com").repo = null; })), expect: 1 },
     {

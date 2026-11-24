@@ -28,6 +28,7 @@ import { homedir } from "node:os";
 import path from "node:path";
 import { centralToLocalOffset } from "../plist-central.mjs";
 import { categoryProblems, isClientRepo, repoDir } from "./email-map.mjs";
+import { CENTRAL, zoneOffsetMs } from "../../../src/shared/boss/schedule/clock.mjs";
 
 export const DAY_NAMES = ["sun", "mon", "tue", "wed", "thu", "fri", "sat"];
 const ORDER = ["mon", "tue", "wed", "thu", "fri", "sat", "sun"];
@@ -194,11 +195,9 @@ export function cronEvents(cron, utcOffsetHours = chicagoOffset()) {
   return ev;
 }
 
-/** Chicago's offset from UTC in hours at `now` (-6 or -5). */
+/** Chicago's offset from UTC in hours at `now` (-6 or -5), read from Boss OS's one clock. */
 export function chicagoOffset(now = new Date()) {
-  const p = new Intl.DateTimeFormat("en-US", { timeZone: "America/Chicago", hour12: false, hourCycle: "h23", year: "numeric", month: "2-digit", day: "2-digit", hour: "2-digit", minute: "2-digit" }).formatToParts(now);
-  const g = (t) => Number(p.find((x) => x.type === t)?.value);
-  return Math.round((Date.UTC(g("year"), g("month") - 1, g("day"), g("hour"), g("minute")) - now.getTime()) / 3_600_000);
+  return Math.round(zoneOffsetMs(now.getTime(), CENTRAL) / 3_600_000);
 }
 
 /**
@@ -325,6 +324,21 @@ export function launchdProblems(m, jobs) {
 
 /** The labels rows name that this set of jobs does not hold. */
 export const missingLabels = (m, jobs) => [...rowsByLabel(m).keys()].filter((l) => !(l in jobs));
+
+/**
+ * The labels rows name whose plist IS installed but launchd does not hold: a file alone never fires.
+ * 23 Nov 2026: com.seq.boss-ai-visibility's plist was on disk and never loaded, and this check read
+ * only the files, so it passed. `launchctlList` is `launchctl list` output; `disabledText` is
+ * `launchctl print-disabled gui/<uid>` (her pauses are disabled on purpose and are not named).
+ * A list that could not be read is null and every installed label is unknown, never "loaded".
+ */
+export function unloadedLabels(m, jobs, launchctlList, disabledText = "") {
+  const labels = [...rowsByLabel(m).keys()].filter((l) => l in jobs);
+  if (launchctlList == null) return labels.map((l) => ({ label: l, state: "unknown" }));
+  const loaded = new Set(String(launchctlList).split("\n").map((line) => line.trim().split(/\s+/)[2]).filter(Boolean));
+  const disabled = new Set([...String(disabledText).matchAll(/"([^"]+)" => (?:disabled|true)/g)].map((x) => x[1]));
+  return labels.filter((l) => !loaded.has(l) && !disabled.has(l)).map((l) => ({ label: l, state: "not loaded" }));
+}
 
 /**
  * Crons of one repo (`[{ file, crons, dispatch? }]`) against the manifest: every scheduled file has a

@@ -18,6 +18,7 @@ import { throughOwnerDoor } from "../mail/ownerDoor";
 import type { Env } from "../env";
 import { serviceAccountFrom, mintComposeToken, type ServiceAccount } from "../wealth/gmailDraft";
 import { WORKSPACE_MAILBOXES } from "../../../shared/boss/commands/parse.mjs";
+import { CENTRAL, dayOf, instantAt } from "../../../shared/boss/schedule/clock.mjs";
 
 const TOKEN_ENDPOINT = "https://oauth2.googleapis.com/token";
 const CALENDAR = "https://www.googleapis.com/calendar/v3/calendars";
@@ -194,7 +195,9 @@ export async function awaitingReply(env: Env, mailbox: string, from: number, to:
     const me = (e.attendees ?? []).find((a: any) => a.self);
     if (!me || me.responseStatus !== "needsAction" || me.organizer) continue;
     const allDay = !e.start?.dateTime;
-    const start = allDay ? Date.parse(`${e.start?.date}T06:00:00Z`) : Date.parse(e.start.dateTime);
+    // An all-day event starts at her midnight (a fixed 06:00Z was 01:00 CDT in summer).
+    const [ay, am, ad] = String(e.start?.date ?? "").split("-").map(Number) as [number, number, number];
+    const start = allDay ? instantAt(CENTRAL, ay, am, ad) : Date.parse(e.start.dateTime);
     if (!Number.isFinite(start)) continue;
     const end = e.end?.dateTime ? Date.parse(e.end.dateTime) : null;
     events.push({
@@ -238,7 +241,7 @@ export async function putOnCalendar(env: Env, input: { mailbox: string; title: s
   Promise<{ ok: true; eventId: string } | { ok: false; why: string }> {
   const cal = await calendarFor(env, input.mailbox);
   if (!cal.ok) return cal;
-  const day = (ms: number) => new Date(ms).toLocaleDateString("en-CA", { timeZone: "America/Chicago" });
+  const day = (ms: number) => dayOf(ms);
   const body = input.allDay
     ? { summary: input.title, location: input.where ?? undefined, description: input.note, start: { date: day(input.start) }, end: { date: day(input.start + 86_400_000) } }
     : { summary: input.title, location: input.where ?? undefined, description: input.note, start: { dateTime: new Date(input.start).toISOString() }, end: { dateTime: new Date(input.end && input.end > input.start ? input.end : input.start + 3_600_000).toISOString() } };

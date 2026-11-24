@@ -235,7 +235,7 @@ fi
 if [ -z "${SR_SCOPE_REPO:-}" ] && { [ -z "${AHREFS_DIGEST:-}" ] || [ ! -s "$AHREFS_DIGEST" ]; }; then
   AHREFS_DIGEST="$OUT_DIR/ahrefs-digest.md"
   rm -f "$AHREFS_DIGEST"
-  AI_RUN_CLAUDE_MODEL="$MODEL" "$AI_RUN" --role "$DIGEST_ROLE" --out "$AHREFS_DIGEST" -- "Read seq.taylor@gmail.com through the Gmail connector for the Ahrefs Site Audit report emails of the last 8 days (from Ahrefs, subject containing Site Audit). Change nothing and fix nothing. Reply with ONLY a markdown digest: for each project, the site, the crawl date, the health score, and every issue named with its count and severity, exactly as the mail says. If there were none, reply exactly: NO AHREFS SITE AUDIT MAIL THIS WEEK." >> "$RUN_LOG" 2>&1
+  AI_RUN_CLAUDE_MODEL="$MODEL" "$AI_RUN" --role "$DIGEST_ROLE" --out "$AHREFS_DIGEST" -- "Read seq.taylor@gmail.com through the Gmail connector for every Ahrefs Site Audit email of the last 8 days. Run these searches and record each one: from:sa@ahrefs.com newer_than:8d in:anywhere, and from:ahrefs.com newer_than:8d in:anywhere. Ahrefs sends two kinds and both count: the weekly report, and one alert email per issue whose subject is '(Project) Issue name: N URLs' (for example '(Spry) 3XX redirect: 2 URLs'), which never contains the words Site Audit. Change nothing and fix nothing. Reply with ONLY a markdown digest: for each project, the site, the crawl date, the health score if given, and every issue named with its count and severity, exactly as the mail says. If there were none, reply with the line NO AHREFS SITE AUDIT MAIL THIS WEEK followed by every search you ran and how many emails each returned." >> "$RUN_LOG" 2>&1
   DIGEST_RC=$?
   if [ ! -s "$AHREFS_DIGEST" ]; then
     say "NAMED STOP [NO_DIGEST] the brain step (rc=$DIGEST_RC) wrote no Ahrefs digest; the next run retries."
@@ -261,10 +261,29 @@ fi
 SR_FIX_SETTINGS="$REPO/scripts/ops/sr-fix-permissions.json"
 [ -s "$SR_FIX_SETTINGS" ] || { say "NAMED STOP [NO_PERMISSIONS_FILE] $SR_FIX_SETTINGS is missing; the worker never runs without its allow list."; exit 6; }
 case "$SR_FIX_SETTINGS" in *[[:space:]]*) say "NAMED STOP [PERMISSIONS_PATH_SPACE] '$SR_FIX_SETTINGS' has a space, which ai-run would split."; exit 6;; esac
-AI_RUN_CLAUDE_ARGS="--max-turns $MAX_TURNS --permission-mode dontAsk --setting-sources= --settings $SR_FIX_SETTINGS" \
+# A REFUSED COMMAND IS A NAMED STOP (23 Nov 2026). dontAsk refuses quietly and the model works around
+# it, so the session is named and its transcript read after the pass (lib/permission-denials.mjs).
+# Each refusal is logged with its command; a pass that would end 0 ends 14 instead. No transcript
+# (Codex ran the pass, or Claude never started) is said, not counted as clean.
+SR_FIX_SESSION="$(node -e 'console.log(crypto.randomUUID())')"
+AI_RUN_CLAUDE_ARGS="--max-turns $MAX_TURNS --session-id $SR_FIX_SESSION --permission-mode dontAsk --setting-sources= --settings $SR_FIX_SETTINGS" \
 "$AI_RUN" --role "$REPAIR_ROLE" --network --cwd "$HOME" --out "$RUN_LOG" -- "$PROMPT_TEXT" >> "$RUN_LOG" 2>&1
 RC=$?
 say "=== ai-run --role $REPAIR_ROLE exited rc=$RC ==="
+DENIED=0
+TRANSCRIPT="$(find "$HOME/.claude/projects" -maxdepth 2 -name "$SR_FIX_SESSION.jsonl" 2>/dev/null | head -1)"
+if [ -n "$TRANSCRIPT" ]; then
+  DENIALS="$(node "$REPO/scripts/ops/lib/permission-denials.mjs" "$TRANSCRIPT" 2>&1)"
+  DENIED="$(printf '%s\n' "$DENIALS" | sed -n 's/^denied=\([0-9][0-9]*\)$/\1/p')"
+  if [ -z "$DENIED" ]; then
+    DENIED=1; say "NAMED STOP [PERMISSION_DENIED] the worker's transcript $TRANSCRIPT could not be read, so its refusals are unknown"
+  elif [ "$DENIED" -gt 0 ]; then
+    printf '%s\n' "$DENIALS" | grep '^DENIED ' | tee -a "$RUN_LOG"
+    say "NAMED STOP [PERMISSION_DENIED] the worker was refused $DENIED command(s) (DENIED lines above); add the safe ones to scripts/ops/sr-fix-permissions.json"
+  fi
+else
+  say "no Claude transcript for session $SR_FIX_SESSION (Codex ran the pass, or Claude never started); no refusals to read"
+fi
 if [ "$RC" -eq 75 ] || grep -q 'NAMED STOP \[CODEX_LIMIT\]' "$RUN_LOG"; then
   CODEX_LIMIT_LINE="$(grep -o 'NAMED STOP \[CODEX_LIMIT\].*' "$RUN_LOG" | tail -1)"
   CODEX_RESETS="$(printf '%s' "$CODEX_LIMIT_LINE" | sed -nE 's/.*resets ([0-9]{1,2}:[0-9]{2} [AaPp][Mm]).*/\1/p')"
@@ -356,6 +375,7 @@ VERDICT_RC=${PIPESTATUS[0]}
 [ $RC -ne 0 ] && exit $RC
 [ $VERDICT_RC -eq 0 ] || { say "NAMED STOP [AUDIT_PASS_RED] see the AUDIT-VERDICT lines above."; exit 12; }
 [ $REPORT_RC -eq 0 ] || exit "$REPORT_RC"
+[ "$DENIED" -eq 0 ] || exit 14
 exit 0
 }
 

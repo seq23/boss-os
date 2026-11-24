@@ -10,6 +10,7 @@ export function weekProblem(week: unknown, opts?: { now?: number; maxAgeDays?: n
 export function weekFor(weeks: any[] | null | undefined, opts: { domain: string; repo?: string | null; now?: number; maxAgeDays?: number }): { week?: any; problem?: string; none?: true };
 export function publishingOn(week: any): { ok: boolean; why: string };
 export function capOk(week: any): { ok: boolean; why: string };
+export function capUnread(week: any): string | null;
 export function checksRan(week: any): { ok: boolean; why: string };
 export function aiMeasured(week: any): { ok: boolean; why: string };
 export function loopLine(weeks: any[] | null | undefined, opts?: { actionWord?: string }): string | null;

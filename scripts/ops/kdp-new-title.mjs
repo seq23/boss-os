@@ -54,6 +54,7 @@ import { reportStall } from "./lib/stall-report.mjs";
 import { openProfile, profilePath } from "./browser.mjs";
 import { findSeriesBook, BOOKS_DIR } from "./kdp-build.mjs";
 import { gateFolder } from "./kdp-books/quality-gate.mjs";
+import { CENTRAL, dayOf } from "../../src/shared/boss/schedule/clock.mjs";
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const ORIGIN = process.env.BOSS_OS_ORIGIN ?? "https://boss.sequoiataylor.com";
@@ -245,6 +246,18 @@ export function queueOrder(approved, register) {
   const prio = new Map((register?.titles ?? []).filter((t) => Number.isFinite(t.queue_priority)).map((t) => [normTitle(t.title), t.queue_priority]));
   const at = (a) => prio.get(normTitle(a.title)) ?? Infinity;
   return (approved ?? []).map((a, i) => ({ a, i })).sort((x, y) => at(x.a) - at(y.a) || x.i - y.i).map((x) => x.a);
+}
+
+/**
+ * Pure: the register row that says this approved title is already Live, or null.
+ * 23-24 Nov 2026: "How to Get a Job in Tech" went Live on 23 Nov (Amazon's email, 09:02 CT) while the
+ * register still said APPROVED_QUEUED, so every run opened the KDP window to "put it up", found the
+ * session signed out and emailed her to sign in (22 Nov 23:32, 23 Nov 22:48 CT). A title the register
+ * holds as LIVE is settled before any browser opens: no sign-in, no Create, never a second copy.
+ */
+export function liveInRegister(approved, register) {
+  const t = normTitle(approved?.title ?? "");
+  return (register?.titles ?? []).find((r) => r.status === "LIVE" && t && normTitle(r.title ?? "") === t) ?? null;
 }
 
 export const KDP_DRAFT_CAP = 10;
@@ -998,7 +1011,7 @@ async function handOff(context, page, dir, ans) {
 
 /* ── What Simone tells her (owner, 8 Nov 2026), through her one channel: Simone's mail ──────── */
 
-const CT = "America/Chicago";
+const CT = CENTRAL;
 /** Pure: "10:15 am" in her Mac's zone, with Central in brackets when it differs. */
 export function herTime(ms, zone = Intl.DateTimeFormat().resolvedOptions().timeZone) {
   const f = (tz) => new Intl.DateTimeFormat("en-US", { timeZone: tz, hour: "numeric", minute: "2-digit", hour12: true }).format(new Date(ms)).replace(" AM", " am").replace(" PM", " pm");
@@ -1159,11 +1172,9 @@ export function kdpStallOf(r = RUN_STALL) {
   else if (r.draftCap) blocker = { noun: [`KDP's ${KDP_DRAFT_CAP}-draft limit`], why: "unfinished drafts fill every slot" };
   if (!blocker) return {};
   if (r.setAside.length === 1 && !r.runStop) waiting = Math.max(1, r.approved - 1);
-  // Amazon's sign-in check is hers alone (a picture check or a code), so the line says what moves them.
-  const fix = ["SIGNIN", "SIGNIN_NOT_DONE", "NO_PASSCODE"].includes(r.runStop)
-    ? "To move them: when the Amazon sign-in email comes, sign in to Amazon in the Chrome window it opens on your Mac. The books then go out on the next run."
-    : null;
-  return { stall: stallFrom({ job: "kdp-new-title", what, noun, waiting, moved: r.moved, blocker, fix }) };
+  // Amazon's sign-in check is hers alone (a picture check or a code): stallFrom adds her one action
+  // for "the KDP sign-in" from HER_ACTIONS, the same words the morning banner shows.
+  return { stall: stallFrom({ job: "kdp-new-title", what, noun, waiting, moved: r.moved, blocker }) };
 }
 
 /** Plain words for a stop the code named. Pure. */
@@ -1218,7 +1229,27 @@ export function routeMessage(state, kind) {
 }
 
 /** Any of the run's messages as one line for her Updates page. Pure. */
-export const asUpdate = (key, msg) => ({ key: `kdp:${key}`, from_name: "Simone", subject: msg.subject, body: [msg.layout.happened, ...(msg.layout.details ?? [])].join(" ") });
+export const asUpdate = (key, msg) => ({ key: `kdp:${key}`, from_name: "Simone", subject: msg.subject, body: [msg.layout.happened, ...sectionWords(msg.layout.sections), ...(msg.layout.details ?? [])].join(" ") });
+/** A section's words and links as plain text, so a message routed to Updates keeps its links. Pure. */
+const sectionWords = (sections) => (sections ?? []).flatMap((sec) => [
+  ...(sec.items ?? []).map((i) => [i.text, ...(i.links ?? []).map((l) => `${l.label}: ${l.url}`)].join(" ")),
+  ...(sec.link ? [`${sec.link.label}: ${sec.link.url}`] : []),
+]);
+
+/**
+ * The leftover drafts, said once and plainly (23 Nov 2026 live read: "You can delete it there … I never
+ * make another" left "there" and "another" unclear, and read as a chore under "Nothing to do"). It is
+ * optional and harmless, and its button opens the bookshelf. It never explains the pipeline (ship-review
+ * sr_mwtfuyksuvpy: "a run resumes the draft" made deleting it sound unsafe). Pure: `[]` or one section.
+ */
+export function extraDraftsSection(n, books = 1) {
+  if (!(n > 0)) return [];
+  const one = n === 1;
+  return [{ title: "Optional tidy-up", empty: null, items: [{
+    text: `Your KDP bookshelf still has ${n} unused draft${one ? "" : "s"} of ${books === 1 ? "this book" : "these books"}, left from earlier tries. ${one ? "It does" : "They do"} no harm and readers never see ${one ? "it" : "them"}. To remove ${one ? "it" : "them"}, choose Delete draft from the ⋯ menu beside ${one ? "it" : "each one"}.`,
+    links: [{ label: "Open your KDP bookshelf", url: `${KDP}/bookshelf` }],
+  }] }];
+}
 
 /** Every title that went live in this run, in ONE email. Pure. */
 export function liveMail(books) {
@@ -1226,10 +1257,9 @@ export function liveMail(books) {
   const drafts = books.reduce((n, b) => n + (b.extraDrafts ?? 0), 0);
   return {
     subject: `Kindle: ${books.length} books are live on Amazon`,
-    layout: { happened: `${books.length} of your approved Kindle books are live on Amazon: ${quoted(books.map((b) => b.title))}.`, details: [
-      ...books.map((b) => `${b.title}${b.price_usd ? `, $${Number(b.price_usd).toFixed(2)}` : ""}${b.asin ? `: https://www.amazon.com/dp/${b.asin}` : ""}`),
-      ...(drafts ? [`Your bookshelf also has ${drafts} unfinished draft${drafts === 1 ? "" : "s"} with the same titles from earlier runs. You can delete ${drafts === 1 ? "it" : "them"} there (the ⋯ menu, Delete draft); I never make another.`] : []),
-    ] },
+    // Each book's link is a button that says where it goes (23 Nov 2026 live read: "Open amazon.com").
+    layout: { happened: `${books.length} of your approved Kindle books are live on Amazon: ${quoted(books.map((b) => b.title))}.`,
+      sections: [{ title: "On Amazon", empty: null, items: books.map((b) => ({ text: `${b.title}${b.price_usd ? `, $${Number(b.price_usd).toFixed(2)}` : ""}`, links: b.asin ? [{ label: "See it on Amazon", url: `https://www.amazon.com/dp/${b.asin}` }] : [] })) }, ...extraDraftsSection(drafts, books.length)] },
     owner: { layout: "delivered", why: `${books.length} of your approved Kindle books are live.`, act: "Nothing to do" },
   };
 }
@@ -1246,11 +1276,10 @@ export function doneMail({ title, asin, price_usd, extraDrafts = 0 }) {
   return {
     subject: `Kindle: ${title} is live on Amazon`,
     // Line 1 already says the title is live; the body adds what is new (23 Nov 2026 live read: it said it twice).
-    layout: { happened: price_usd ? `It is on sale at $${Number(price_usd).toFixed(2)}.` : "It is on sale now.", details: [
-      // The link carries the ASIN; the code itself is not hers to read (23 Nov 2026 live read).
-      ...(link ? [`See the book on Amazon: ${link}`] : []),
-      ...(extraDrafts ? [`Your bookshelf also has ${extraDrafts} unfinished draft${extraDrafts === 1 ? "" : "s"} with the same title from earlier runs. You can delete ${extraDrafts === 1 ? "it" : "them"} there (the ⋯ menu, Delete draft); I never make another.`] : []),
-    ] },
+    // The link carries the ASIN; the code itself is not hers to read, and the button says where it goes
+    // (23 Nov 2026 live reads).
+    layout: { happened: price_usd ? `It is on sale at $${Number(price_usd).toFixed(2)}.` : "It is on sale now.",
+      sections: [...(link ? [{ title: "The book", empty: null, link: { label: "See it on Amazon", url: link } }] : []), ...extraDraftsSection(extraDrafts, 1)] },
     owner: { layout: "delivered", why: `Your approved Kindle book "${title}" is live.`, act: "Nothing to do" },
   };
 }
@@ -1320,7 +1349,7 @@ export function profileBusy(dir, { lstat = lstatSync, readlink = readlinkSync, a
   return Number.isFinite(pid) && pid > 0 ? alive(pid) : true;
 }
 
-const dayCT = (ms = Date.now()) => new Intl.DateTimeFormat("en-CA", { timeZone: CT }).format(new Date(ms));
+const dayCT = (ms = Date.now()) => dayOf(ms, CT);
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
 /** Simone's own sign-in on the open window: the existing kdp-signin.mjs steps, with the vault's launch env. */
@@ -1335,7 +1364,8 @@ async function main() {
   try { return await run(); } finally { await tellLive().catch((e) => console.error(`NAMED STOP [LIVE_NOT_TOLD] the live titles were not reported: ${String(e?.message ?? e).slice(0, 160)}`)); }
 }
 
-async function run() {
+/** One publish run (exported for tests/kdpLiveNeverReopened.test.ts, which drives it against a fake Boss OS). */
+export async function run() {
   const api = await boss();
   OUT.api = api;
   const spec = JSON.parse(await readFile(join(HERE, "kdp-books/keepmyproof.json"), "utf8"));
@@ -1349,6 +1379,12 @@ async function run() {
   const books = [];
   let code = 0;
   for (const a of approved) {
+    const known = liveInRegister(a, register);
+    if (known) {
+      const ok = await api.attempt(a.id, { resulting_state: "LIVE", run_outcome: "attempted", title_ref: known.title_ref ?? null, publish_attempted: false, cover_uploaded: false, amazon_message: `kdp-register.json: Live since ${known.status_as_of ?? "unknown"}` });
+      say("LIVE", `${a.title}: Live already (kdp-register.json, since ${known.status_as_of ?? "unknown"}); ${ok ? "approval marked done" : "Boss OS did not take the update, so the next run settles it again"}; nothing opened, no sign-in.`);
+      RUN_STALL.moved += 1; continue;
+    }
     const book0 = spec.books.find((b) => normTitle(b.title) === normTitle(a.title));
     // A series book (kdp-books/<line>.json `series_books`), built by kdp-build.mjs into ~/.boss-os/kdp/books/<slug>.
     const series = book0 ? null : await findSeriesBook(a.title);

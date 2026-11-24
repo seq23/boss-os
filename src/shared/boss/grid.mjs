@@ -10,8 +10,9 @@
  *
  * Owner, 10 Nov 2026 (spry brain, Settled decisions), replacing the 29 Aug 2026 table: the grid is
  * every site in `searchReadiness/sites.json` `grid_repos` (groups divine_9 / support / friends;
- * Porch & Party is a friends & clients site, owner 10 Nov 2026) PLUS Whisper Almanac, a YouTube channel with no website, recorded in that file's
- * `_groups.gaps` with its `repo` and `handle`. It is KEYED BY CANONICAL DOMAIN, not by repo name,
+ * Porch & Party is a friends & clients site, owner 10 Nov 2026) PLUS Whisper Almanac, a YouTube channel (its
+ * `channel` on its grid_repos row since its website went live on 23 Nov 2026; a channel with no website
+ * sits in `_groups.gaps` with its `repo` and `handle`). It is KEYED BY CANONICAL DOMAIN, not by repo name,
  * which is why a directory listing does not reproduce it. When she says "the grid", "the repos I care
  * about", "my repos", "the portfolio" or "portfolio-wide", she means this set and nothing else. It is
  * never re-derived from `ls ~/GitHub` and she is never asked which repos she meant.
@@ -81,7 +82,11 @@ const WHY_TIER = Object.freeze({
 
 const slug = (s) => String(s ?? "").toLowerCase().replace(/[^a-z0-9]+/g, "_").replace(/^_+|_+$/g, "");
 
-/** The grid channels: every `_groups.gaps` entry that names a repo and a handle (no website). */
+/**
+ * The grid channels: every `_groups.gaps` entry that names a repo and a handle (a channel with no
+ * website), and every grid_repos row whose `channel` names one (a channel whose website went live:
+ * Whisper Almanac, 23 Nov 2026). `repo` is where the channel is made, not the site's repo.
+ */
 export function gridChannels(sites = SITES) {
   const gaps = sites?._groups?.gaps ?? {};
   const out = [];
@@ -89,6 +94,10 @@ export function gridChannels(sites = SITES) {
     if (!g || typeof g !== "object" || !g.repo || !g.handle) continue;
     const group = Object.entries(sites._groups).find(([k, v]) => Array.isArray(v) && v.includes(business))?.[0] ?? null;
     out.push({ business, repo: g.repo, handle: g.handle, group });
+  }
+  for (const r of sites?.grid_repos ?? []) {
+    const c = r?.channel;
+    if (c && typeof c === "object" && c.repo && c.handle) out.push({ business: r.business, repo: c.repo, handle: c.handle, group: r.group ?? null });
   }
   return out;
 }

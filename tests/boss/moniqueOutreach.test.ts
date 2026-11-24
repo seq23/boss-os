@@ -432,14 +432,32 @@ describe("suppression and the unsubscribe door", () => {
     expect(await isSuppressed(env.DB, "anyone@acme.example")).toBe(true);
   });
 
-  it("the link works WITHOUT a session and suppresses at once", async () => {
+  it("a visit to the link (what a mail scanner does) shows one button and suppresses NOTHING", async () => {
+    // 24 Nov 2026: company scanners opened every link in a new email; 48 of 65 link unsubscribes came
+    // within 10 minutes of the first send (all 3 Time2Read partner contacts ~2 minutes after each).
     await addProspect("time2read", "y@acme.example", { unsub_token: "pubtoken123" });
     const ctx = createExecutionContext();
     const res = await worker.fetch(new Request("https://boss.test/api/outreach/u/pubtoken123"), env, ctx);
     await waitOnExecutionContext(ctx);
     expect(res.status).toBe(200);
-    expect(await res.text()).toContain("unsubscribed");
-    expect(await isSuppressed(env.DB, "y@acme.example")).toBe(true);
+    const html = await res.text();
+    expect(html).toMatch(/<form method="post"><button type="submit">Unsubscribe<\/button><\/form>/);
+    expect(html).not.toContain("You are unsubscribed");
+    expect(await isSuppressed(env.DB, "y@acme.example")).toBe(false);
+    const n = await env.DB.prepare(`SELECT COUNT(*) n FROM outreach_suppression`).first<{ n: number }>();
+    expect(n!.n).toBe(0);
+  });
+
+  it("the button works WITHOUT a session: its POST back to the same link suppresses at once", async () => {
+    await addProspect("time2read", "y2@acme.example", { unsub_token: "pubtoken789" });
+    const ctx = createExecutionContext();
+    const page = await worker.fetch(new Request("https://boss.test/api/outreach/u/pubtoken789"), env, ctx);
+    expect(await page.text()).toContain('<form method="post">'); // no action: posts to the URL it was served from
+    const res = await worker.fetch(new Request("https://boss.test/api/outreach/u/pubtoken789", { method: "POST", body: new URLSearchParams() }), env, ctx);
+    await waitOnExecutionContext(ctx);
+    expect(res.status).toBe(200);
+    expect(await res.text()).toContain("You are unsubscribed");
+    expect(await isSuppressed(env.DB, "y2@acme.example")).toBe(true);
   });
 
   it("one-click POST works too, and nothing else under /api/outreach is public", async () => {

@@ -48,6 +48,7 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { TOUCH_DAYS, MAX_TOUCHES } from "../../src/shared/boss/lp/plan.mjs";
+import { dayOf } from "../../src/shared/boss/schedule/clock.mjs";
 
 const MAILBOX = "sequoia@westpeek.ventures"; // the token lp-prospects.mjs mints impersonates this mailbox only
 const DIR = process.env.LP8_DIR ?? path.join(os.homedir(), ".boss-os", "lp", "8fund");
@@ -116,7 +117,7 @@ export function blockedRow({ row, day }) {
 
 /* ─── Days, Central ──────────────────────────────────────────────────────── */
 export function centralDay(ms = Date.now()) {
-  return new Intl.DateTimeFormat("en-CA", { timeZone: "America/Chicago", year: "numeric", month: "2-digit", day: "2-digit" }).format(new Date(ms));
+  return dayOf(ms);
 }
 export function daysBetween(a, b) {
   return Math.round((Date.parse(`${b}T12:00:00Z`) - Date.parse(`${a}T12:00:00Z`)) / 86_400_000);
