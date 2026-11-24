@@ -33,7 +33,7 @@ PROMPT_FILE="${NOELLE_PROMPT:-$REPO/scripts/ops/noelle-prompt.md}"
 SETTINGS="$REPO/scripts/ops/noelle-permissions.json"
 REVIEW_SETTINGS="$REPO/scripts/ops/noelle-review-permissions.json"
 MODEL="${NOELLE_MODEL:-claude-opus-5}"
-# No tools, so one turn writes the plan; two leave room for a model that thinks aloud first.
+# Her two tools (Read in her run folder, ./noelle-tools) take turns: 60 leaves room to read, check and re-check.
 MAX_TURNS="${NOELLE_MAX_TURNS:-60}"
 LOG_DIR="$HOME/Library/Logs/noelle"
 RUNS="$HOME/.boss-os/noelle/runs"
@@ -56,20 +56,35 @@ esac
 
 DUE="$(node "$REPO/scripts/ops/noelle.mjs" due "$DAY" "$NOW" "$MARK")" || { say "NAMED STOP [NOELLE_DUE_FAILED] the tick could not read today's slot"; exit 3; }
 case "$DUE" in
-  WAIT*) say "$DUE"; exit 0 ;;
-  HELD*) say "${DUE#HELD }"; exit 0 ;;  # her hold (NOELLE_START_AT): nothing is read, called or queued before it
-  RUN*) ;;
+  HELD*) say "${DUE#HELD }"; exit 0 ;;  # her hold (NOELLE_START_AT): nothing is read, called or queued before it, calls included
+  WAIT*|RUN*) ;;
   *) say "NAMED STOP [NOELLE_DUE_FAILED] $DUE"; exit 3 ;;
 esac
-read -r _ SLOT KIND TRY RESUME <<< "$DUE"
-RUN_LOG="$LOG_DIR/$DAY-${SLOT/:/}-$$.log"
-WORK="$RUNS/$DAY-${SLOT/:/}"
+# A #noelle email waiting for her goes first (growth/noelle.ts claimCall): one email, one run (slot call:<task>),
+# one reply. Her schedule's slot runs on the next tick. A failed claim never blocks the schedule.
+CALL=""
+# Calls keep her schedule's window (10:00 to 21:00 CT, the Mac day): an email at night waits for the morning.
+if [ -z "${NOELLE_NO_CALLS:-}" ] && [[ ! "$NOW" < "10:00" ]] && [[ "$NOW" < "21:00" ]]; then
+  CLAIM="$( (cd "$REPO" && npm run --silent vault:run -- node scripts/ops/noelle.mjs call-claim "$RUNS") 2>&1 | tail -1)"
+  case "$CLAIM" in
+    CALL\ *) read -r _ SLOT WORK <<< "$CLAIM"; CALL=1; KIND=daily; TRY=1; RESUME=""; MARK="$WORK/mark.json" ;;
+    NONE) ;;
+    *) say "the #noelle call check failed (the schedule carries on): $CLAIM" ;;
+  esac
+fi
+if [ -z "$CALL" ]; then
+  case "$DUE" in WAIT*) say "$DUE"; exit 0 ;; esac
+  read -r _ SLOT KIND TRY RESUME <<< "$DUE"
+  WORK="$RUNS/$DAY-${SLOT/:/}"
+fi
+RUN_LOG="$LOG_DIR/$DAY-${SLOT//:/}-$$.log"
 mkdir -p "$WORK"
 # Every end of a started run is recorded: on this Mac (the next tick reads it) and, before a plan, on Boss OS.
 stopped() { # <code> <line> <exit>
   node "$REPO/scripts/ops/noelle.mjs" mark "$MARK" stopped "$1" "$TRY"
   say "$2"
   step stop "$2" "$WORK" "$SLOT" >/dev/null || say "the stop could not be recorded on Boss OS (the 22:05 watch names a day with no run)"
+  [ -n "$CALL" ] && { step call-release "$WORK" "$2" || say "the call could not be released; the next claim returns it after 3 hours [CALL_RUN_LOST]"; }
   echo "OUTPUT 0 (stopped: $1)"
   exit "$3"
 }
@@ -85,7 +100,7 @@ ROLE="$(node "$REPO/scripts/ops/lib/ai-run.mjs" role growth.noelle)" || stopped 
 [ "$ROLE" = "brain" ] || stopped NOT_CLAUDE "NAMED STOP [NOT_CLAUDE] growth.noelle must be the brain role (Claude only), got $ROLE" 11
 node "$REPO/scripts/validate/noelle-no-tools.mjs" >> "$RUN_LOG" 2>&1 || stopped PERMISSIONS_WIDENED "NAMED STOP [PERMISSIONS_WIDENED] her session or the reviewer would have tools beyond the named list; refusing to run" 6
 
-say "=== Noelle $KIND run, slot $SLOT, try $TRY${RESUME:+ (resume)} ==="
+say "=== Noelle ${CALL:+called }$KIND run, slot $SLOT, try $TRY${RESUME:+ (resume)} ==="
 CTX_ARGS=("$WORK"); [ "$KIND" = "weekly" ] && CTX_ARGS+=(weekly)
 step context "${CTX_ARGS[@]}" || stopped NO_CONTEXT "NAMED STOP [NO_CONTEXT] the reads could not be gathered; $(grep -h 'NAMED STOP' "$RUN_LOG" | tail -1)" 13
 [ -s "$WORK/context.txt" ] || stopped NO_CONTEXT "NAMED STOP [NO_CONTEXT] the context step wrote nothing" 13
@@ -112,6 +127,7 @@ grep -q "NOELLE-PLAN-END" "$PLAN_LOG" 2>/dev/null || stopped NO_PLAN "NAMED STOP
 # acted twice. Exit 11: that slot was planned and never finished (a reboot mid-run); the Worker closed
 # it [ACT_LOST], so the day is marked stopped and a tick two hours on retries it as a new slot.
 step plan "$PLAN_LOG" "$WORK" "$SLOT"; PRC=$?
+if [ "$PRC" -eq 10 ] && [ -n "$CALL" ]; then step call-reply "$WORK" ""; exit $?; fi  # its run already ended: the reply is sent once (a second is refused)
 if [ "$PRC" -eq 10 ]; then node "$REPO/scripts/ops/noelle.mjs" mark "$MARK" done REPLAY "$TRY"; echo "OUTPUT 0 (replay of $SLOT)"; exit 0; fi
 [ "$PRC" -eq 11 ] && stopped ACT_LOST "NAMED STOP [ACT_LOST] $SLOT was planned and never finished; the retry runs as a new slot" 11
 [ "$PRC" -eq 0 ] || stopped PLAN_REFUSED "NAMED STOP [PLAN_REFUSED] rc=$PRC $(grep -h 'NAMED STOP' "$RUN_LOG" | tail -1)" "$PRC"
@@ -119,6 +135,13 @@ if [ "$PRC" -eq 10 ]; then node "$REPO/scripts/ops/noelle.mjs" mark "$MARK" done
 # act, then done ALWAYS (a stopped act still reports what it queued and what failed).
 step act "$WORK"; ARC=$?
 step done "$WORK"; DRC=$?
+if [ -n "$CALL" ]; then
+  # A call's output is its reply: what she did, from the run's own state (nothing acted is a fine answer to a question).
+  ln -sf "$RUN_LOG" "$LOG_DIR/latest.log"
+  if [ "$ARC" -eq 76 ]; then step call-release "$WORK" "NAMED STOP [CLAUDE_LIMIT] the run stopped part-way; $(node -e 'import("'"$REPO"'/scripts/ops/noelle.mjs").then(m=>console.log(m.RESUME_WORDS))')"; exit 76; fi
+  case "$ARC" in 0|14) STOPLINE="" ;; *) STOPLINE="$(grep -h 'NAMED STOP' "$RUN_LOG" | tail -1)" ;; esac
+  step call-reply "$WORK" "$STOPLINE"; exit $?
+fi
 if [ "$ARC" -eq 76 ]; then
   node "$REPO/scripts/ops/noelle.mjs" mark "$MARK" stopped CLAUDE_LIMIT "$TRY"
   say "NAMED STOP [CLAUDE_LIMIT] the run stopped part-way; $(grep -h 'OUTPUT' "$RUN_LOG" | tail -2 | tr '\n' ' ')"

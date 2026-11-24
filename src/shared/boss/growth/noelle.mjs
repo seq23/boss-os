@@ -196,11 +196,22 @@ export function slotFor(day) {
 }
 
 /** G16a: the morning line when no run row exists for a day by 22:00 Central. */
+/** A #noelle call's run is keyed `call:<task id>`: one email, one run (the slot's unique index). */
+export const CALL_SLOT = /^call:[A-Za-z0-9_-]{4,64}$/;
+export const isCallSlot = (slot) => typeof slot === "string" && CALL_SLOT.test(slot);
+/** A slot as the run row stores it: HH:MM for her schedule, call:<task id> for a call; anything else null. */
+export function slotOf(slot) {
+  if (typeof slot !== "string") return null;
+  if (/^\d{2}:\d{2}$/.test(slot)) return slot;
+  return isCallSlot(slot) ? slot : null;
+}
+/** Only her SCHEDULED run counts: a call that day never hides a missed daily run. */
 export function didNotRunLine(runs, day) {
-  return runs.some((r) => r.day === day) ? null : `Noelle did not run on ${day}: no run was recorded by 22:00 CT`;
+  return runs.some((r) => r.day === day && !isCallSlot(r.slot)) ? null : `Noelle did not run on ${day}: no run was recorded by 22:00 CT`;
 }
 /** G16b: the same named stop three days running becomes ONE line to Sequoia. */
-export function escalations(runs) {
+export function escalations(allRuns) {
+  const runs = allRuns.filter((r) => !isCallSlot(r.slot));
   const days = [...new Set(runs.map((r) => r.day))].sort().slice(-3);
   if (days.length < 3) return [];
   // "Running" means three calendar days in a row; a day with no run is NOELLE_DID_NOT_RUN's, not this.

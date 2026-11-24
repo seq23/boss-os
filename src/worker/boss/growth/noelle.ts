@@ -33,7 +33,7 @@ import { privateOnlyTerms, leaksIn, termCount } from "../../../shared/boss/growt
 import { playbookBody } from "../../../shared/boss/growth/playbook.mjs";
 import { MAX_CARDS, reportDue, reportSection } from "../../../shared/boss/growth/director.mjs";
 import {
-  checkPlan, sourceProblems, missingDecisions, readGrid, season, slotFor, callBudget, didNotRunLine, escalations, noticeLine,
+  checkPlan, slotOf, sourceProblems, missingDecisions, readGrid, season, slotFor, callBudget, didNotRunLine, escalations, noticeLine,
   WEEK_CALLS, KINDS,
 } from "../../../shared/boss/growth/noelle.mjs";
 import { appendToSection } from "../../../shared/boss/mail/morningSections.mjs";
@@ -152,7 +152,7 @@ export function planProblems(body: any): string[] {
   if (!body.plan || !Array.isArray(body.plan.actions)) p.push("no plan.actions");
   else if (body.plan.actions.length > MAX_ACTIONS) p.push(`at most ${MAX_ACTIONS} actions`);
   if (!body.reads || typeof body.reads !== "object") p.push("no reads");
-  if (typeof body.slot !== "string" || !/^\d{2}:\d{2}$/.test(body.slot)) p.push("slot is HH:MM (one plan per slot)");
+  if (!slotOf(body.slot)) p.push("slot is HH:MM, or call:<task id> for a #noelle call (one plan per slot)");
   if (JSON.stringify(body).length > 400_000) p.push("over 400 KB");
   return p;
 }
@@ -168,7 +168,7 @@ export async function recordPlan(env: Env, body: any, now = Date.now()) {
   // A prior row still 'planned' is a run that died between /plan and /done (the Mac rebooted): the Mac
   // always posts /done after act, under one lock. It is closed [ACT_LOST] and the answer says so, so the
   // Mac marks the day stopped and the 2-hour retry runs as a new slot; a lost day never reads "done".
-  const prior = await db.prepare(`SELECT id, state FROM noelle_runs WHERE day = ? AND slot = ? AND kind = ? AND state IN ('planned','done')`).bind(today, String(body.slot).slice(0, 5), body.kind).first<{ id: string; state: string }>();
+  const prior = await db.prepare(`SELECT id, state FROM noelle_runs WHERE day = ? AND slot = ? AND kind = ? AND state IN ('planned','done')`).bind(today, slotOf(body.slot), body.kind).first<{ id: string; state: string }>();
   if (prior?.state === "planned") {
     await db.prepare(`UPDATE noelle_runs SET state = 'stopped', stops = ?, line = ?, updated_at = ? WHERE id = ?`)
       .bind(JSON.stringify(["ACT_LOST"]), "NAMED STOP [ACT_LOST] planned but never finished; the retry runs as a new slot", now, prior.id).run();
@@ -180,7 +180,7 @@ export async function recordPlan(env: Env, body: any, now = Date.now()) {
   const used = await weekCalls(db, today);
   const budget = callBudget({ weekUsed: used, runUsed: 0 });
   const stops: string[] = [];
-  const slot = typeof body.slot === "string" ? body.slot.slice(0, 5) : null;
+  const slot = slotOf(body.slot);
   if (used + body.calls > WEEK_CALLS || !budget.left) {
     const stop = budget.stop ?? `NAMED STOP [WEEK_CALL_BUDGET] this run's ${body.calls} calls would pass the week's ${WEEK_CALLS}`;
     await db.prepare(`INSERT INTO noelle_runs (id, day, slot, kind, state, stops, calls, line, created_at, updated_at) VALUES (?,?,?,?,'stopped',?,?,?,?,?)`)
@@ -296,7 +296,7 @@ export async function recordDone(env: Env, body: any, now = Date.now()) {
     if (!code) throw new Error("A stopped run must name its stop code in brackets, e.g. [CLAUDE_LIMIT]");
     const id = newId("nrn");
     await db.prepare(`INSERT INTO noelle_runs (id, day, slot, kind, state, stops, calls, line, created_at, updated_at) VALUES (?,?,?,?,'stopped',?,?,?,?,?)`)
-      .bind(id, today, typeof body.slot === "string" ? body.slot.slice(0, 5) : null, body.kind === "weekly" ? "weekly" : "daily", JSON.stringify([code]), Number.isInteger(body.calls) ? body.calls : 0, stop, now, now).run();
+      .bind(id, today, slotOf(body.slot), body.kind === "weekly" ? "weekly" : "daily", JSON.stringify([code]), Number.isInteger(body.calls) ? body.calls : 0, stop, now, now).run();
     return { run: id, state: "stopped", notices: 0 };
   }
   const run = await db.prepare(`SELECT * FROM noelle_runs WHERE id = ?`).bind(String(body.run)).first<any>();
@@ -400,3 +400,90 @@ export async function noelleWatch(env: Env, now = Date.now()) {
 }
 
 export const NOELLE_KINDS = KINDS;
+
+/*
+ * ─── A #noelle EMAIL IS ONE RUN OF NOELLE AND ONE REPLY (24 Nov 2026) ───────────────────────────────
+ *
+ * Her words: "she has a schedule yes but she should be able to work when called too". An email tagged
+ * #noelle is admitted as a task on her seat (intake/inboundMail.ts); the queue parks it for her Mac
+ * (queue/consumer.ts: a cloud model asked to "do" it would answer without her tools). Her Mac's tick
+ * (scripts/ops/noelle.sh, every 30 minutes, after the hold check) claims it here, runs her full session
+ * with the email in her context under the slot `call:<task id>` (so the slot's unique index makes one
+ * email one run), then replies once: the card's output and, through afterResult, the email signed Noelle.
+ * A stopped call goes back to waiting; a usage stop costs no try and waits 2 hours; the third real stop
+ * replies with what stopped it, so an email never waits forever unseen.
+ */
+export const CALL_TRIES = 3;
+export const CALL_LIMIT_WAIT_MS = 2 * 3_600_000;
+const CALL_WHERE = `t.employee_id = '${DIRECTOR}' AND t.status = 'queued' AND json_extract(t.input, '$.source') = 'boss_inbound_mail'`;
+
+/** A claimed call whose run died (Mac asleep, reboot) and never replied or released: no other reaper sees it. */
+export const CALL_STALE_MS = 3 * 3_600_000;
+
+async function returnStaleCalls(env: Env, now: number) {
+  const stale = (await env.DB.prepare(
+    `SELECT t.id, t.attempts FROM tasks t WHERE t.employee_id = '${DIRECTOR}' AND t.status = 'running'
+       AND json_extract(t.input, '$.source') = 'boss_inbound_mail'
+       AND COALESCE((SELECT MAX(e.ts) FROM task_events e WHERE e.task_id = t.id AND e.event = 'noelle_call_claimed'), 0) < ?
+     LIMIT 20`).bind(now - CALL_STALE_MS).all<any>()).results ?? [];
+  for (const r of stale) await releaseCall(env, { task_id: String(r.id), stop: "NAMED STOP [CALL_RUN_LOST] her run on the Mac ended without a reply or a stop (asleep or restarted)" }, now);
+}
+
+export async function claimCall(env: Env, deviceId: string, now = Date.now()) {
+  const db = env.DB;
+  await returnStaleCalls(env, now);
+  const rows = (await db.prepare(
+    `SELECT t.id, t.title, t.input, t.attempts FROM tasks t WHERE ${CALL_WHERE}
+       AND NOT EXISTS (SELECT 1 FROM task_events e WHERE e.task_id = t.id AND e.event = 'noelle_call_waits' AND e.ts > ?)
+     ORDER BY t.created_at LIMIT 5`).bind(now - CALL_LIMIT_WAIT_MS).all<any>()).results ?? [];
+  for (const r of rows) {
+    const won = await db.prepare(`UPDATE tasks SET status = 'running', started_at = COALESCE(started_at, ?), attempts = attempts + 1 WHERE id = ? AND status = 'queued'`).bind(now, r.id).run();
+    if (!won.meta?.changes) continue; // another tick took it
+    await db.prepare(`INSERT INTO task_events (id, task_id, ts, event, detail) VALUES (?,?,?,'noelle_call_claimed',?)`)
+      .bind(newId("tev"), r.id, now, JSON.stringify({ device_id: deviceId.slice(0, 80), try: Number(r.attempts ?? 0) + 1 })).run();
+    let input: any = {}; try { input = JSON.parse(r.input ?? "{}"); } catch { input = {}; }
+    return { task_id: String(r.id), slot: `call:${r.id}`, title: String(r.title ?? ""), subject: String(input.subject ?? r.title ?? ""), body: String(input.body ?? "").slice(0, 20_000), try: Number(r.attempts ?? 0) + 1 };
+  }
+  return null;
+}
+
+async function callTask(db: D1Database, id: string) {
+  return db.prepare(`SELECT id, lane, title, input, attempts, employee_id, status FROM tasks WHERE id = ? AND employee_id = ?`).bind(id, DIRECTOR).first<any>();
+}
+
+/** Her answer: the card's output and, once, the email back signed Noelle. A second reply changes nothing. */
+export async function replyCall(env: Env, body: any, now = Date.now()) {
+  const id = typeof body?.task_id === "string" ? body.task_id : "";
+  const text = typeof body?.text === "string" ? body.text.trim().slice(0, 30_000) : "";
+  if (!id || !text) return { replied: false, why: "send { task_id, text }" };
+  const t = await callTask(env.DB, id);
+  if (!t) return { replied: false, why: "not a call on Noelle's seat" };
+  const won = await env.DB.prepare(`UPDATE tasks SET status = 'done', output = ?, finished_at = ? WHERE id = ? AND status = 'running'`)
+    .bind(JSON.stringify({ text, model: "Noelle (Claude, her own session)" }), now, id).run();
+  if (!won.meta?.changes) return { replied: false, why: `already ${t.status}: nothing is answered twice` };
+  await env.DB.prepare(`INSERT INTO task_events (id, task_id, ts, event, detail) VALUES (?,?,?,'completed',?)`)
+    .bind(newId("tev"), id, now, JSON.stringify({ by: "noelle_call", run: typeof body.run === "string" ? body.run.slice(0, 40) : null })).run();
+  let input: Record<string, unknown> = {}; try { input = JSON.parse(t.input ?? "{}"); } catch { input = {}; }
+  const { afterResult } = await import("../service/afterResult");
+  const after = await afterResult(env, { id, lane: t.lane, title: String(t.title), employee_id: DIRECTOR, input, attempts: Number(t.attempts ?? 0) }, text, { done: true, fromName: "Noelle" });
+  return { replied: true, emailed: after.told };
+}
+
+/** A call that stopped goes back to waiting; a usage stop costs no try; the last try replies with the stop. */
+export async function releaseCall(env: Env, body: any, now = Date.now()) {
+  const id = typeof body?.task_id === "string" ? body.task_id : "";
+  const stop = typeof body?.stop === "string" ? body.stop.slice(0, 400) : "NAMED STOP [CALL_STOPPED]";
+  const t = id ? await callTask(env.DB, id) : null;
+  if (!t || t.status !== "running") return { released: false, why: "not a running call" };
+  const limit = /\[CLAUDE_LIMIT\]|\[HELD_UNTIL\]/.test(stop);
+  if (!limit && Number(t.attempts ?? 0) >= CALL_TRIES) {
+    const r = await replyCall(env, { task_id: id, text: `I could not do this after ${CALL_TRIES} tries. What stopped me: ${stop.replace(/\s+/g, " ")}\n\nNothing was posted or changed for it. Send it again once that is fixed.\n\nNoelle` }, now);
+    return { released: false, gave_up: true, replied: r.replied };
+  }
+  await env.DB.batch([
+    env.DB.prepare(`UPDATE tasks SET status = 'queued'${limit ? ", attempts = MAX(attempts - 1, 0)" : ""} WHERE id = ? AND status = 'running'`).bind(id),
+    env.DB.prepare(`INSERT INTO task_events (id, task_id, ts, event, detail) VALUES (?,?,?,?,?)`)
+      .bind(newId("tev"), id, now, limit ? "noelle_call_waits" : "noelle_call_stopped", JSON.stringify({ stop })),
+  ]);
+  return { released: true, waits: limit };
+}

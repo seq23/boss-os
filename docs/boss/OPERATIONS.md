@@ -1009,6 +1009,18 @@ Plan artifact 8LfYgMaHj7XLVB1fJ1vYxM, gap review G1-G21. Noelle is a scheduled C
 5. Measure: 24 hours after the slot the next run reads whether each piece actually published (Buffer/Studio); a
    miss is a defect, fixed that run.
 
+**When called (24 Nov 2026).** Her words: "she has a schedule yes but she should be able to work when called too".
+An email tagged #noelle becomes a task on her seat (`emp_growth`, intake/inboundMail.ts). The queue parks it for her
+Mac (`parked_for_mac`, lane `noelle_call`, queue/consumer.ts): no cloud model answers for her. Each tick, after the
+hold check, `noelle.sh` asks `POST /noelle/call/claim`; a waiting email runs her full session first, with the email
+at the top of her context (fenced as data where she quotes others), under the slot `call:<task id>`, so the runs
+table's unique index makes one email one run. Her reply (between `NOELLE-REPLY-BEGIN`/`-END` lines) plus what the run
+actually queued goes back through `POST /noelle/call/reply`: the card's output and, once, the email signed Noelle
+(a second reply changes nothing). A stopped call goes back through `/call/release`: a `[CLAUDE_LIMIT]` or
+`[HELD_UNTIL]` stop costs no try and waits 2 hours; the third real stop replies with what stopped it. Call runs never
+count as her daily run (`didNotRunLine`, `escalations`). The hold covers calls: none is claimed before
+`NOELLE_START_AT`. Tests: `tests/boss/noelleCall.test.ts`, the call block in `tests/noelleV2.test.ts`.
+
 **Watched.** `duty_growth_director` (migration 0378) runs at 22:05 Central: no `noelle_runs` row today is NAMED STOP
 [NOELLE_DID_NOT_RUN] and one line in the next morning email; the same stop three days running is one line to
 Sequoia. A per-run and a per-week Claude-call budget end in a named stop (`WEEK_CALL_BUDGET`). Her fortnightly

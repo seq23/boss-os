@@ -40,3 +40,6 @@ export const JOB_KNOBS: any;
 export const SETTLED_NOS: any;
 export function hardStops(...args: any[]): any;
 export function settledNo(...args: any[]): any;
+export declare const CALL_SLOT: RegExp;
+export declare function isCallSlot(slot: unknown): boolean;
+export declare function slotOf(slot: unknown): string | null;
