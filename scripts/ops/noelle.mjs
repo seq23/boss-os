@@ -257,6 +257,14 @@ export function failureStep(prev, code) {
   return { next: { last: code, count }, twice: count >= 2 };
 }
 
+/**
+ * `finish <dir> <log> <slot> <kind> <denied>` → finish()'s options. The fifth argument is claude_denials' count
+ * from noelle.sh; a missing one is "unknown" (PERMISSION_DENIED), never "0", so a dropped count never passes.
+ */
+export function finishOptions([dir, , slot, kind, denied], { log, api, env = process.env }) {
+  return { dir, log, slot, kind: kind === "weekly" ? "weekly" : "daily", runId: env.NOELLE_RUN_ID, api, denied: denied ?? "unknown" };
+}
+
 export async function finish({ dir, log, slot, kind, runId, api, denied = "unknown", home = HOME_DIR(), now = Date.now() }) {
   const r = runResult(log);
   const v = deniedVerdict(runVerdict(r), r.json ? denied : "n/a");
@@ -338,7 +346,7 @@ async function main() {
   if (cmd === "persona") return cmdPersona(a);
   if (cmd === "stop") return cmdStop(a, b, c);
   if (cmd === "finish") {
-    const r = await finish({ dir: a, log: readFileSync(b, "utf8"), slot: c, kind: d === "weekly" ? "weekly" : "daily", runId: process.env.NOELLE_RUN_ID, api: bossMachine(), denied: e });
+    const r = await finish(finishOptions(process.argv.slice(3), { log: readFileSync(b, "utf8"), api: bossMachine() }));
     console.log(r.out);
     console.log(r.ok ? `OUTPUT ${r.out}` : "OUTPUT 0");
     if (!r.ok) process.exitCode = r.twice ? 6 : 5;

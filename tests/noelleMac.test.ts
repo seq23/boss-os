@@ -9,7 +9,7 @@ import { mkdtempSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 // @ts-expect-error plain .mjs script, no types
-import { NOELLE_BRAINS, readBrain, callBlock, personaText, readsText, runVerdict, runResult, failureStep, finish, tickDecision, heldUntil, untrusted, missedLine, RETRY_AFTER_MS, CLOUD_STOP, deniedVerdict, reviewerAgent } from "../scripts/ops/noelle.mjs";
+import { NOELLE_BRAINS, readBrain, callBlock, personaText, readsText, runVerdict, runResult, failureStep, finish, finishOptions, tickDecision, heldUntil, untrusted, missedLine, RETRY_AFTER_MS, CLOUD_STOP, deniedVerdict, reviewerAgent } from "../scripts/ops/noelle.mjs";
 // @ts-expect-error plain .mjs script, no types
 import { judge } from "../scripts/ops/noelle-guard.mjs";
 // @ts-expect-error plain .mjs script, no types
@@ -116,6 +116,7 @@ describe("her run is locked (#573): a refusal is a stop, and her one agent is pa
     expect(sh).toMatch(/CLAUDE_LOCK="\$\(claude_lock_args "\$NHOME\/\.claude\/settings\.json"/);
     expect(sh).toMatch(/--agents \$WORK\/agents\.json/);
     expect(sh).toMatch(/DENIED="\$\(claude_denials "\$SID"/);
+    expect(sh).toMatch(/^step finish "\$WORK" "\$SESSION_LOG" "\$SLOT" "\$KIND" "\$DENIED";/m); // the count is finish's fifth argument
     expect(sh).not.toMatch(/dangerously-skip-permissions|setting-sources project/);
   });
 });
@@ -175,6 +176,16 @@ describe("H6: the same failure twice is a named stop and a Notices line, never a
     await silent.go();
     expect(silent.sent.find((s) => s[1] === "/call/release")![2]).toMatchObject({ task_id: "t1", stop: expect.stringMatching(/CLAUDE_LIMIT/) });
     expect(CLOUD_STOP).toMatch(/^NAMED STOP \[CLOUD_ANSWER\]/);
+  });
+  it("the launcher's denied count reaches finish as given; a missing one is unknown, never 0", async () => {
+    const api = async () => ({});
+    expect(finishOptions(["/d", "/l", "14:05", "weekly", "2"], { log: "x", api, env: { NOELLE_RUN_ID: "r1" } })).toMatchObject({ dir: "/d", slot: "14:05", kind: "weekly", runId: "r1", denied: "2", log: "x" });
+    expect(finishOptions(["/d", "/l", "14:05", "daily", "0"], { log: "x", api, env: {} }).denied).toBe("0");
+    const dropped = finishOptions(["/d", "/l", "14:05", "daily"], { log: "x", api, env: {} });
+    expect(dropped.denied).toBe("unknown");
+    const home = mkdtempSync(join(tmpdir(), "noelle-home-"));
+    const r = await finish({ ...dropped, dir: join(home, "f1"), log: JSON.stringify({ result: "OUTPUT: 1 done - x", num_turns: 2, subtype: "success" }), api, home });
+    expect(r.ok).toBe(false);
   });
   it("a done run with a refused call is recorded stopped [PERMISSION_DENIED], and her reply says what stopped her", async () => {
     const home = mkdtempSync(join(tmpdir(), "noelle-home-"));
