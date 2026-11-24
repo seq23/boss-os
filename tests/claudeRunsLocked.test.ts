@@ -14,6 +14,8 @@ import { JOBS, jobProblems, scanProblems, unlockedCalls } from "../scripts/valid
 // @ts-expect-error plain .mjs
 import { lockedArgs, refusals, resultText } from "../scripts/ops/lib/claude-lock.mjs";
 // @ts-expect-error plain .mjs
+import { permissionDenials } from "../scripts/ops/lib/permission-denials.mjs";
+// @ts-expect-error plain .mjs
 import { connectorVerdict } from "../scripts/ops/credential-check.mjs";
 // @ts-expect-error plain .mjs
 import { gmailAnswer, REFUSED_ANSWER } from "../scripts/ops/kdp-signin.mjs";
@@ -39,6 +41,32 @@ describe("each job's permissions file", () => {
       }
     });
   }
+  it("noelle: Agent is allowed only while her guard runs on every Agent call", () => {
+    const job = JOBS.find((j: { name: string }) => j.name === "noelle");
+    const real = settings("noelle");
+    expect(real.permissions.allow).toContain("Agent");
+    // dontAsk refuses any path outside the cwd and these (a real locked run: ls of ~/GitHub refused)
+    expect(real.permissions.additionalDirectories).toEqual(expect.arrayContaining(["__HOME__/GitHub", "__HOME__/.claude/skills"]));
+    expect(jobProblems(real, job)).toEqual([]);
+    const s = structuredClone(real);
+    s.hooks.PreToolUse = s.hooks.PreToolUse.filter((h: { matcher: string }) => h.matcher !== "*");
+    expect(jobProblems(s, job).join("\n")).toMatch(/allows Agent without noelle-guard\.mjs/);
+    const t = structuredClone(real);
+    t.permissions.deny.push("Task"); // 24 Nov 2026: a real locked run lost the Agent tool to this
+    expect(jobProblems(t, job).join("\n")).toMatch(/denies? .*Task, which removes the Agent tool|holds Task, which removes the Agent tool/);
+    const b = structuredClone(settings("builder"));
+    b.permissions.deny = b.permissions.deny.filter((d: string) => d !== "Agent");
+    expect(jobProblems(b, JOBS.find((j: { name: string }) => j.name === "builder")).join("\n")).toMatch(/deny is missing Agent/);
+  });
+  it("a deny rule's refusal is counted, in its own wording, as well as dontAsk's", () => {
+    const line = (content: string) => JSON.stringify({ type: "assistant", message: { content: [{ type: "tool_use", id: "t1", name: "Bash", input: { command: "gh api user" } }] } }) + "\n"
+      + JSON.stringify({ type: "user", message: { content: [{ type: "tool_result", tool_use_id: "t1", is_error: true, content }] } }) + "\n";
+    expect(permissionDenials(line("Permission to use Bash with command gh api user has been denied."))).toEqual([{ tool: "Bash", command: "gh api user" }]);
+    expect(permissionDenials(line("Permission to use Bash has been denied because Claude Code is running in don't ask mode."))).toHaveLength(1);
+    expect(permissionDenials(line("Exit code 1: no such file"))).toEqual([]);
+    const twice = line("Permission to use Bash with command gh api user has been denied.");
+    expect(permissionDenials(twice + twice.split("\n")[1] + "\n")).toHaveLength(1); // the same result written twice is one refusal
+  });
   it("Rule 0: no allow list, or an empty one not marked text_only, fails", () => {
     const job = JOBS.find((j: { name: string }) => j.name === "kdp-watch");
     expect(jobProblems({ permissions: { deny: [] } }, job)[0]).toMatch(/no allow list/);

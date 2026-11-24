@@ -96,6 +96,12 @@ export const JOBS = Object.freeze([
     needs: ["Edit", "Bash(git -C:*)", "Bash(git worktree add:*)", "Bash(git commit:*)", "Bash(gh pr create:*)", "Bash(gh pr checks:*)", "Bash(npm run:*)", "Bash(land:*)"],
     mustDeny: ["Bash(claude:*)", "Bash(ai-run:*)", "Bash(gh pr merge:*)", "Bash(git push --force:*)", "Bash(wrangler deploy:*)", "Bash(gh secret:*)", "mcp__claude_ai_8Raise", "mcp__8raise"],
     hook: "command-guard.mjs" },
+  // Noelle (24 Nov 2026): builder-level tools plus one reviewer agent per PR, the Agent tool held by her guard.
+  { name: "noelle", scripts: ["scripts/ops/noelle.sh"],
+    needs: ["Agent", "Edit", "WebFetch", "Bash(noelle-tool:*)", "Bash(land-after:*)", "Bash(git worktree add:*)", "Bash(gh pr create:*)", "Bash(npm run:*)"],
+    mustDeny: ["Bash(claude:*)", "Bash(ai-run:*)", "Bash(gh pr merge:*)", "Bash(git push --force:*)", "Bash(wrangler deploy:*)", "Bash(gh secret:*)", "Bash(npm run -s vault:set:*)", "Skill",
+      "Edit(~/Work/noelle/.claude/**)", "Write(~/Work/noelle/.claude/**)", "Write(~/.claude/**)", "Edit(~/bin/**)"],
+    hook: "noelle-guard.mjs", agentGuard: "noelle-guard.mjs" },
 ]);
 const COMMON_DENY = ["Agent", "Task", "Edit(~/.claude/**)", "mcp__claude_ai_8Raise", "mcp__8raise"];
 
@@ -110,7 +116,13 @@ export function jobProblems(settings, job) {
   if (new Set(allow).size !== allow.length) out.push(`${tag}: an allow entry is repeated`);
   for (const a of allow) if (a === "Bash" || a === "*" || /^mcp__[^_]+(__)?\*?$/.test(a) || /^Bash\(\*/.test(a)) out.push(`${tag} allows ${a}: everything, not a list`);
   for (const t of job.needs) if (!allow.includes(t)) out.push(`${tag} is missing ${t}, which its prompt uses (the run would be refused)`);
-  for (const d of [...COMMON_DENY, ...(job.mustDeny ?? [])]) if (!deny.has(d)) out.push(`${tag}: deny is missing ${d}`);
+  // Agent (and Task, its old name: denying Task removes the Agent tool) is denied everywhere, except a job
+  // whose own guard runs on every Agent call (`agentGuard`): a PreToolUse hook on "*" or "Agent" that runs it. Allowing Agent without that hook fails by name.
+  const guarded = job.agentGuard && (settings.hooks?.PreToolUse ?? []).some((h) => ["*", "Agent"].includes(h.matcher) && JSON.stringify(h.hooks ?? []).includes(job.agentGuard));
+  if (job.agentGuard && !guarded) out.push(`${tag} allows Agent without ${job.agentGuard} on every Agent call`);
+  // 24 Nov 2026, a real locked run: "Task" in deny took the Agent tool away entirely, so the reviewer was never offered.
+  if (job.needs.includes("Agent") && (deny.has("Task") || deny.has("Agent"))) out.push(`${tag} needs Agent, but its deny holds ${deny.has("Task") ? "Task" : "Agent"}, which removes the Agent tool`);
+  for (const d of [...COMMON_DENY.filter((c) => !(["Agent", "Task"].includes(c) && guarded)), ...(job.mustDeny ?? [])]) if (!deny.has(d)) out.push(`${tag}: deny is missing ${d}`);
   for (const d of deny) if (allow.includes(d)) out.push(`${tag}: ${d} is both allowed and denied`);
   if (settings.permissions.defaultMode && settings.permissions.defaultMode !== "dontAsk") out.push(`${tag}: defaultMode is ${settings.permissions.defaultMode}`);
   if (job.needs.some((t) => t.startsWith("mcp__claude_ai_")) && settings.env?.ENABLE_CLAUDEAI_MCP_SERVERS === "false") out.push(`${tag} switches the claude.ai connectors off, and this job reads Gmail`);
@@ -120,7 +132,6 @@ export function jobProblems(settings, job) {
 
 /** Calls that may stay unlocked, each with its reason. `match` is text on the call's own line. */
 export const EXCEPTIONS = Object.freeze([
-  { file: "scripts/validate/noelle-no-tools.mjs", match: null, what: "skips permissions", why: "a checker: the flag is its own pattern and its self-test cases, which fail noelle; it never runs claude" },
   { file: "scripts/validate/the-repo-lane-lands-only-on-green.mjs", match: 'runner: "import { PHASE_MODELS', what: "runs claude -p without lockedArgs()", why: "a self-test fixture string standing in for repo-change.mjs; it is never spawned" },
   { file: "scripts/ops/kdp-surface.sh", match: '"$AI_RUN" --role "$AI_ROLE" --out "$RUN_LOG"', why: "ai-run brain with no AI_RUN_CLAUDE_ARGS (ai-run's default skips permissions); found beyond the 24 Nov brief, not locked in this PR (see its Not built)" },
   { file: "scripts/ops/ahrefs-audit-fix.sh", match: '--out "$AHREFS_DIGEST"', why: "the Gmail digest step: ai-run brain with no AI_RUN_CLAUDE_ARGS; found beyond the 24 Nov brief, not locked in this PR (the repair pass below it is locked)" },
@@ -216,11 +227,17 @@ function selfTest() {
     { const s = clone(real); delete s.permissions.allow; must(`${job.name} with no allow list`, jobProblems(s, job)); }
     { const s = clone(real); s.permissions.defaultMode = "bypassPermissions"; must(`${job.name} in bypass mode`, jobProblems(s, job)); }
     { const s = clone(real); s.permissions.allow = [...s.permissions.allow, "Bash"]; must(`${job.name} allowing bare Bash`, jobProblems(s, job)); }
+    if (job.agentGuard) {
+      const s = clone(real); s.hooks.PreToolUse = s.hooks.PreToolUse.filter((h) => !JSON.stringify(h).includes(job.agentGuard));
+      must(`${job.name} allowing Agent without ${job.agentGuard}`, jobProblems(s, job));
+      const t = clone(real); t.permissions.deny = [...t.permissions.deny, "Task"];
+      must(`${job.name} denying Task, which removes the Agent tool`, jobProblems(t, job));
+    }
   }
   must("an empty allow list not marked text_only", jobProblems({ permissions: { allow: [], deny: COMMON_DENY } }, { name: "x", needs: [] }));
   // The skip flag back in every locked script, and each shape of unlocked call.
   const SKIP_FLAG = "--dangerously-skip-permissions";
-  const scripts = [...new Set(JOBS.flatMap((j) => j.scripts)), "scripts/ops/ai-visibility.sh", "scripts/ops/noelle.sh", "scripts/ops/noelle.mjs"];
+  const scripts = [...new Set(JOBS.flatMap((j) => j.scripts)), "scripts/ops/ai-visibility.sh"];
   for (const f of scripts) {
     const text = readFileSync(join(ROOT, f), "utf8");
     if (scanProblems([[f, text]], []).length) { console.error(`self-test: the real ${f} fails the scan`); bad++; continue; }

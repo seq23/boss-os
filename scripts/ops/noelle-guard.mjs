@@ -2,7 +2,7 @@
 /**
  * NOELLE'S GUARD (24 Nov 2026; replaces scripts/validate/noelle-no-tools.mjs, the old tool cage). A Claude
  * Code PreToolUse hook on every tool of HER run only (her home's .claude/settings.json, written by
- * scripts/ops/noelle.sh from scripts/ops/noelle/settings.json). It is not a cage: she has builder-level tools.
+ * scripts/ops/noelle.sh from scripts/ops/noelle-permissions.json, which locks her run to builder-level tools).
  * It holds, by name, only the hard stops her brief lists, each a NAMED STOP she reads in the refusal:
  *
  *   PAID_API             a paid model or API (Anthropic, OpenAI, OpenRouter, Gemini API, Together, Groq …)

@@ -1,9 +1,11 @@
 #!/bin/bash
 # NOELLE, THE DIRECTOR OF GROWTH (24 Nov 2026, her words: "go - scheduled job that wakes up as a full agent";
 # brief ~/Work/tasks/noelle-builds-brief.md). What wakes is full Claude Code as Noelle (scripts/ops/noelle/persona.md
-# on top of the whole rules file), in her own home ~/Work/noelle, with builder tools, the skills and one fresh
-# `reviewer` per PR she opens. Her guard (scripts/ops/noelle-guard.mjs, a PreToolUse hook on every tool) holds the
-# hard stops by name; it is not a tool cage.
+# on top of the whole rules file), in her own home ~/Work/noelle, with builder-level tools, the skills (read by
+# path) and one fresh `reviewer` per PR she opens. Her run is LOCKED like every claude run a script starts (#573):
+# --permission-mode dontAsk --setting-sources= --settings <scripts/ops/noelle-permissions.json, filled in>, so none
+# of Sequoia's own settings load and a tool outside the list is refused and ends the run [PERMISSION_DENIED]. Her
+# guard (scripts/ops/noelle-guard.mjs, a PreToolUse hook on every tool) holds the hard stops by name on top.
 #
 # launchd com.seq.boss-noelle ticks every 30 minutes, 07:00-22:59 Central (mac-window ANY):
 #   - a call from Sequoia (her email to boss@ that passed the owner check, or her message on Noelle's Boss OS
@@ -26,7 +28,7 @@ main() {
 
 REPO="${BOSS_OS_REPO:-$(cd "$(dirname "$(readlink -f "${BASH_SOURCE[0]}")")/../.." && pwd)}"
 NHOME="${NOELLE_HOME:-$HOME/Work/noelle}"
-TEMPLATE="$REPO/scripts/ops/noelle/settings.json"
+TEMPLATE="$REPO/scripts/ops/noelle-permissions.json"
 GUARD="$REPO/scripts/ops/noelle-guard.mjs"
 MODEL="${NOELLE_MODEL:-claude-opus-5}"
 MAX_TURNS="${NOELLE_MAX_TURNS:-200}"
@@ -43,6 +45,7 @@ step() { (cd "$REPO" && npm run --silent vault:run -- node scripts/ops/noelle.mj
 local_step() { node "$REPO/scripts/ops/noelle.mjs" "$@" 2>&1 | tee -a "$RUN_LOG"; return "${PIPESTATUS[0]}"; }
 
 source "$(dirname "$(readlink -f "${BASH_SOURCE[0]}")")/lib/flock.sh"
+source "$(dirname "$(readlink -f "${BASH_SOURCE[0]}")")/lib/claude-lock.sh"
 LOCK_RC=0; hold_lock "$LOCK" || LOCK_RC=$?
 case $LOCK_RC in
   0) ;;
@@ -96,15 +99,14 @@ ROLE="$(node "$REPO/scripts/ops/lib/ai-run.mjs" role growth.noelle)" || stopped 
 node "$GUARD" --self-test >> "$RUN_LOG" 2>&1 || stopped GUARD_BROKEN "NAMED STOP [GUARD_BROKEN] her guard's self-test failed; she does not run without it" 6
 
 # Her home, rebuilt from the repo every run (her own run can never change these: her guard, PROTECTED).
-mkdir -p "$NHOME/.claude/agents" "$NHOME/notes" "$NHOME/tasks" "$NHOME/.run" "$NHOME/bin"
+mkdir -p "$NHOME/.claude" "$NHOME/notes" "$NHOME/tasks" "$NHOME/.run" "$NHOME/bin"
 sed -e "s#__HOME__#$HOME#g" -e "s#__REPO__#$REPO#g" "$TEMPLATE" > "$NHOME/.claude/settings.json" || stopped NO_SETTINGS "NAMED STOP [NO_SETTINGS] her settings could not be written" 6
-ln -sfn "$HOME/.claude/skills" "$NHOME/.claude/skills"
-ln -sf "$HOME/.claude/agents/reviewer.md" "$NHOME/.claude/agents/reviewer.md"
 printf '#!/bin/bash\n# Noelle'"'"'s three vault tools (brain, notice, ledger); written by scripts/ops/noelle.sh.\ncase "${1:-}" in brain|notice|ledger) ;; *) echo "usage: noelle-tool brain|notice|ledger ..."; exit 2 ;; esac\ncd %q && exec npm run --silent vault:run -- node scripts/ops/noelle.mjs "$@"\n' "$REPO" > "$NHOME/bin/noelle-tool"
 chmod 755 "$NHOME/bin/noelle-tool"
 printf '{"prs":0,"reviewers":0,"run":"%s"}' "$NOELLE_RUN_ID" > "$NHOME/.run/run.json"
 rm -f "$NHOME/.run/compacted"
 grep -q '"matcher": "\*"' "$NHOME/.claude/settings.json" || stopped NO_GUARD_HOOK "NAMED STOP [NO_GUARD_HOOK] her settings carry no guard hook" 6
+CLAUDE_LOCK="$(claude_lock_args "$NHOME/.claude/settings.json" 2>>"$RUN_LOG")" || stopped NO_PERMISSIONS_FILE "NAMED STOP [NO_PERMISSIONS_FILE] her permissions file could not be used; she never runs unlocked" 6
 
 say "=== Noelle ${CALL:+called }$KIND run, slot $SLOT, try $TRY${RESUME:+ (resume)} ==="
 step reads "$WORK" || stopped NO_READS "NAMED STOP [NO_READS] her reads could not be gathered; $(grep -h 'NAMED STOP' "$RUN_LOG" | tail -1)" 13
@@ -115,18 +117,22 @@ elif [ "$KIND" = "weekly" ]; then KICK="Your weekly run: read today's reads, yes
 else KICK="Your daily run: read today's reads, yesterday's note and HANDOFF.md, then do today's growth work and end with your OUTPUT line."; fi
 
 SESSION_LOG="$WORK/session.log"
+SID="$(uuidgen | tr 'A-Z' 'a-z')" || stopped NO_SESSION_ID "NAMED STOP [NO_SESSION_ID] uuidgen failed" 6
 export NOELLE_HOME="$NHOME" NOELLE_REPO="$REPO" PATH="$NHOME/bin:$PATH"
 ENABLE_CLAUDEAI_MCP_SERVERS=false AI_RUN_CLAUDE_MODEL="$MODEL" \
-AI_RUN_CLAUDE_ARGS="--dangerously-skip-permissions --strict-mcp-config --max-turns $MAX_TURNS --output-format json --setting-sources project,local --append-system-prompt-file $WORK/persona-full.md" \
+AI_RUN_CLAUDE_ARGS="$CLAUDE_LOCK --strict-mcp-config --session-id $SID --max-turns $MAX_TURNS --output-format json --agents $WORK/agents.json --append-system-prompt-file $WORK/persona-full.md" \
 "$AI_RUN" --role "$ROLE" --network --cwd "$NHOME" --out "$SESSION_LOG" -- "$KICK" >> "$RUN_LOG" 2>&1
 RC=$?
 say "=== her session (Claude, $MODEL) exited rc=$RC ==="
+# Every refusal by her list, counted from her own transcript: a number or "unknown" is a stop, never 0.
+DENIED="$(claude_denials "$SID" "$RUN_LOG")"
 
 if [ "$RC" -eq 76 ]; then
   # Codex stands in: the same persona and reads inline, no network (no hook guards Codex, so it cannot post).
   say "Claude is out of usage; Codex stands in"
   SESSION_LOG="$WORK/session-codex.log"
-  AI_RUN_NO_CLAUDE_FALLBACK=1 "$AI_RUN" --role worker --cwd "$NHOME" --out "$SESSION_LOG" -- "$(cat "$WORK/persona-full.md")
+  DENIED="n/a"
+  AI_RUN_CLAUDE_ARGS="$CLAUDE_LOCK" AI_RUN_NO_CLAUDE_FALLBACK=1 "$AI_RUN" --role worker --cwd "$NHOME" --out "$SESSION_LOG" -- "$(cat "$WORK/persona-full.md")
 
 You are standing in on Codex with no network: answer and plan only; nothing is posted, deployed or opened as a PR this run.
 $KICK" >> "$RUN_LOG" 2>&1
@@ -142,7 +148,7 @@ $KICK" >> "$RUN_LOG" 2>&1
   fi
 fi
 
-step finish "$WORK" "$SESSION_LOG" "$SLOT" "$KIND"; FRC=$?
+step finish "$WORK" "$SESSION_LOG" "$SLOT" "$KIND" "$DENIED"; FRC=$?
 ln -sf "$RUN_LOG" "$LOG_DIR/latest.log"
 [ -n "$CALL" ] && exit "$FRC"
 case "$FRC" in

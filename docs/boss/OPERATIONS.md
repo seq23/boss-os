@@ -984,7 +984,7 @@ The plan/accept path, the read-only lock and `noelle-tools` are gone: she reads,
 run). She works in her own worktrees, opens at most 3 PRs, launches one fresh `reviewer` per PR, lands with
 `land-after`, and hands off at ~200K context into `~/Work/noelle/HANDOFF.md`.
 
-**Her guard** (`scripts/ops/noelle-guard.mjs`, a PreToolUse hook from `scripts/ops/noelle/settings.json`; self-test
+**Her guard** (`scripts/ops/noelle-guard.mjs`, a PreToolUse hook from `scripts/ops/noelle-permissions.json`, the list her run is locked to (dontAsk, none of her own settings); self-test
 `npm run validate:noelle`) holds only the hard stops: no paid API or model, no money tools, no secret printed or on
 a command line, deploy only through `land`/`land-after`, no repo outside her businesses, no edit to Boss OS, the
 guard, the rules file or `~/bin`, one reviewer per PR, 3 PRs a run. It reads command text, so it is a guard for

@@ -12,9 +12,10 @@
  *   window <HH:MM>                        OPEN | CLOSED: a call is answered 07:00-22:59 Central (H3c)
  *   call-claim <runsDir>                  CALL <slot> <dir> | NONE (an email or a page message from Sequoia)
  *   reads <dir>                           what she reads first: <dir>/today.md (all data, marked untrusted)
- *   persona <dir>                         <dir>/persona-full.md = the rules file + her persona (+ the call);
+ *   persona <dir>                         <dir>/persona-full.md = the rules file + her persona (+ the call),
+ *                                         and <dir>/agents.json, the one reviewer agent she may launch;
  *                                         a rules file that cannot be read is NAMED STOP [RULES_UNREAD]
- *   finish <dir> <log> <slot> <kind>      her run's end: the Rule 0 verdict, /noelle/done, the reply to her
+ *   finish <dir> <log> <slot> <kind> <denied>  her run's end: the Rule 0 verdict, /noelle/done, the reply to her
  *                                         call (email or page), the same failure twice → a named stop
  *   brain <slug>                          (hers) a brain she may read, confidential parts removed (H1)
  *   notice <business> <what> <where> <https link>   (hers) one Notices line for a new thing she published
@@ -187,7 +188,33 @@ function cmdPersona(dir) {
   const call = existsSync(join(dir, "call.json")) ? JSON.parse(readFileSync(join(dir, "call.json"), "utf8")) : null;
   const text = personaText({ rules: read(process.env.NOELLE_RULES ?? join(homedir(), ".claude", "CLAUDE.md")), persona: read(PERSONA_FILE), call, dir });
   writeFileSync(join(dir, "persona-full.md"), text);
-  console.log(`OUTPUT persona written (${text.length} characters${call ? ", with her call" : ""})`);
+  // Her run loads none of Sequoia's settings (--setting-sources=), so the one agent she may launch is passed in.
+  const agents = reviewerAgent(read(process.env.NOELLE_REVIEWER ?? join(homedir(), ".claude", "agents", "reviewer.md")));
+  if (!agents) throw new Error("NAMED STOP [NO_REVIEWER] ~/.claude/agents/reviewer.md is missing or has no description and prompt");
+  writeFileSync(join(dir, "agents.json"), JSON.stringify(agents));
+  console.log(`OUTPUT persona written (${text.length} characters${call ? ", with her call" : ""}; the reviewer agent)`);
+}
+
+/** ~/.claude/agents/reviewer.md (front matter + body) as the --agents JSON her run takes, or null. */
+export function reviewerAgent(md) {
+  const m = String(md ?? "").match(/^---\n([\s\S]*?)\n---\n([\s\S]*)$/);
+  if (!m) return null;
+  const description = m[1].match(/^description:\s*(.+)$/m)?.[1]?.trim();
+  const prompt = m[2].trim();
+  return description && prompt ? { reviewer: { description, prompt } } : null;
+}
+
+/**
+ * A refused tool call is a stop, never a done run (#573's lock: dontAsk refuses quietly and the model
+ * works around it). `denied` is claude_denials' count for her Claude session: "0" keeps the verdict;
+ * a number or "unknown" (her transcript could not be read) is [PERMISSION_DENIED]. A Codex stand-in
+ * has no Claude transcript ("n/a") and keeps its verdict.
+ */
+export function deniedVerdict(v, denied) {
+  const d = String(denied ?? "unknown").trim();
+  if (d === "0" || d === "n/a") return v;
+  const line = `NAMED STOP [PERMISSION_DENIED] denied=${d}: a tool call outside noelle-permissions.json was refused${d === "unknown" ? " (or her session's record could not be read)" : ""}, so this run is not counted done`;
+  return { ok: false, code: "PERMISSION_DENIED", line, reply: v.reply };
 }
 
 // ─── Her run's end ─────────────────────────────────────────────────────────────
@@ -230,9 +257,9 @@ export function failureStep(prev, code) {
   return { next: { last: code, count }, twice: count >= 2 };
 }
 
-export async function finish({ dir, log, slot, kind, runId, api, home = HOME_DIR(), now = Date.now() }) {
+export async function finish({ dir, log, slot, kind, runId, api, denied = "unknown", home = HOME_DIR(), now = Date.now() }) {
   const r = runResult(log);
-  const v = runVerdict(r);
+  const v = deniedVerdict(runVerdict(r), r.json ? denied : "n/a");
   const state = existsSync(join(dir, "state.json")) ? JSON.parse(readFileSync(join(dir, "state.json"), "utf8")) : {};
   const call = existsSync(join(dir, "call.json")) ? JSON.parse(readFileSync(join(dir, "call.json"), "utf8")) : null;
   const failFile = join(home, ".run", "failures.json");
@@ -311,7 +338,7 @@ async function main() {
   if (cmd === "persona") return cmdPersona(a);
   if (cmd === "stop") return cmdStop(a, b, c);
   if (cmd === "finish") {
-    const r = await finish({ dir: a, log: readFileSync(b, "utf8"), slot: c, kind: d === "weekly" ? "weekly" : "daily", runId: process.env.NOELLE_RUN_ID, api: bossMachine() });
+    const r = await finish({ dir: a, log: readFileSync(b, "utf8"), slot: c, kind: d === "weekly" ? "weekly" : "daily", runId: process.env.NOELLE_RUN_ID, api: bossMachine(), denied: e });
     console.log(r.out);
     console.log(r.ok ? `OUTPUT ${r.out}` : "OUTPUT 0");
     if (!r.ok) process.exitCode = r.twice ? 6 : 5;

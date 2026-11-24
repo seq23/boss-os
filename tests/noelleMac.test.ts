@@ -9,7 +9,7 @@ import { mkdtempSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 // @ts-expect-error plain .mjs script, no types
-import { NOELLE_BRAINS, readBrain, callBlock, personaText, readsText, runVerdict, runResult, failureStep, finish, tickDecision, heldUntil, untrusted, missedLine, RETRY_AFTER_MS, CLOUD_STOP } from "../scripts/ops/noelle.mjs";
+import { NOELLE_BRAINS, readBrain, callBlock, personaText, readsText, runVerdict, runResult, failureStep, finish, tickDecision, heldUntil, untrusted, missedLine, RETRY_AFTER_MS, CLOUD_STOP, deniedVerdict, reviewerAgent } from "../scripts/ops/noelle.mjs";
 // @ts-expect-error plain .mjs script, no types
 import { judge } from "../scripts/ops/noelle-guard.mjs";
 // @ts-expect-error plain .mjs script, no types
@@ -87,6 +87,36 @@ describe("H4: only Sequoia directs her; what she forwards, quotes or reads is da
     expect(real).toMatch(/At most 3 PRs per run and 200 turns/);
     expect(real).toMatch(/Only Sequoia/);
     expect(real).toMatch(/land-after/);
+    expect(real).toMatch(/~\/\.claude\/skills\/<name>\/SKILL\.md/);
+    expect(real).toMatch(/PERMISSION_DENIED/);
+  });
+});
+
+describe("her run is locked (#573): a refusal is a stop, and her one agent is passed in", () => {
+  it("0 refusals keeps her verdict; a count or an unreadable record is PERMISSION_DENIED; Codex has none", () => {
+    const ok = runVerdict({ text: "Queued.\nOUTPUT: 6 done - queued", subtype: "success" });
+    expect(deniedVerdict(ok, "0")).toBe(ok);
+    expect(deniedVerdict(ok, "n/a")).toBe(ok);
+    expect(deniedVerdict(ok, "2")).toMatchObject({ ok: false, code: "PERMISSION_DENIED", reply: "Queued." });
+    expect(deniedVerdict(ok, "unknown")).toMatchObject({ ok: false, code: "PERMISSION_DENIED", line: expect.stringMatching(/could not be read/) });
+    expect(deniedVerdict(ok, undefined)).toMatchObject({ ok: false, code: "PERMISSION_DENIED" });
+  });
+  it("the reviewer agent file becomes --agents JSON; no front matter or no prompt is null (a named stop)", () => {
+    const md = "---\nname: reviewer\ndescription: Fresh, independent reviewer.\neffort: high\n---\nYou are a fresh reviewer.\n";
+    expect(reviewerAgent(md)).toEqual({ reviewer: { description: "Fresh, independent reviewer.", prompt: "You are a fresh reviewer." } });
+    expect(reviewerAgent("You are a reviewer.")).toBeNull();
+    expect(reviewerAgent("---\nname: reviewer\n---\nbody")).toBeNull();
+    expect(reviewerAgent("")).toBeNull();
+  });
+  it("her launcher runs ai-run only with the lock, and never links her own settings in", () => {
+    const sh = readFileSync(join(__dirname, "../scripts/ops/noelle.sh"), "utf8");
+    const calls = sh.split("\n").filter((l) => /AI_RUN_CLAUDE_ARGS=/.test(l));
+    expect(calls).toHaveLength(2);
+    for (const l of calls) expect(l).toMatch(/AI_RUN_CLAUDE_ARGS="\$CLAUDE_LOCK[ "]/);
+    expect(sh).toMatch(/CLAUDE_LOCK="\$\(claude_lock_args "\$NHOME\/\.claude\/settings\.json"/);
+    expect(sh).toMatch(/--agents \$WORK\/agents\.json/);
+    expect(sh).toMatch(/DENIED="\$\(claude_denials "\$SID"/);
+    expect(sh).not.toMatch(/dangerously-skip-permissions|setting-sources project/);
   });
 });
 
@@ -113,13 +143,13 @@ describe("H6: the same failure twice is a named stop and a Notices line, never a
     expect(failureStep(a.next, "OTHER").twice).toBe(false);
     expect(failureStep(a.next, null)).toEqual({ next: { last: null, count: 0 }, twice: false });
   });
-  const run = (dir: string, home: string, text: string, call: object | null = null) => {
+  const run = (dir: string, home: string, text: string, call: object | null = null, denied = "0") => {
     mkdirSync(dir, { recursive: true });
     writeFileSync(join(dir, "state.json"), JSON.stringify({ day: "2026-11-24", reads: { sources: {} } }));
     if (call) writeFileSync(join(dir, "call.json"), JSON.stringify(call));
     const sent: Array<[string, string, any]> = [];
     const api = async (m: string, p: string, b: any) => { sent.push([m, p, b]); return p === "/call/reply" ? { replied: true, emailed: true } : p === "/call/release" ? { waits: false } : { notices: b.twice ? 1 : 0 }; };
-    return { sent, go: () => finish({ dir, log: JSON.stringify({ result: text, num_turns: 4, subtype: "success" }), slot: "14:05", kind: "daily", runId: "noelle-2026-11-24-1405", api, home }) };
+    return { sent, go: () => finish({ dir, log: JSON.stringify({ result: text, num_turns: 4, subtype: "success" }), slot: "14:05", kind: "daily", runId: "noelle-2026-11-24-1405", api, home, denied }) };
   };
   it("a second identical stop says SAME_FAILURE_TWICE and asks the Worker for her Notices line", async () => {
     const home = mkdtempSync(join(tmpdir(), "noelle-home-"));
@@ -145,6 +175,14 @@ describe("H6: the same failure twice is a named stop and a Notices line, never a
     await silent.go();
     expect(silent.sent.find((s) => s[1] === "/call/release")![2]).toMatchObject({ task_id: "t1", stop: expect.stringMatching(/CLAUDE_LIMIT/) });
     expect(CLOUD_STOP).toMatch(/^NAMED STOP \[CLOUD_ANSWER\]/);
+  });
+  it("a done run with a refused call is recorded stopped [PERMISSION_DENIED], and her reply says what stopped her", async () => {
+    const home = mkdtempSync(join(tmpdir(), "noelle-home-"));
+    const call = { task_id: "t9", slot: "call-t9", source: "boss_page", subject: "s", body: "b" };
+    const r = run(join(home, "d1"), home, "Queued six.\nOUTPUT: 6 done - queued", call, "1");
+    expect((await r.go()).ok).toBe(false);
+    expect(r.sent.find((x) => x[1] === "/done")![2]).toMatchObject({ state: "stopped", stops: ["PERMISSION_DENIED"] });
+    expect(r.sent.find((x) => x[1] === "/call/reply")![2].text).toMatch(/What stopped me: NAMED STOP \[PERMISSION_DENIED\]/);
   });
   it("her guard caps PRs at 3 and reviewers at one per PR", () => {
     const out = execFileSync(process.execPath, [join(__dirname, "../scripts/ops/noelle-guard.mjs"), "--self-test"], { encoding: "utf8" });
