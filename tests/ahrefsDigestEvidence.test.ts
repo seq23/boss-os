@@ -57,6 +57,11 @@ it("parses the digest's SEARCHED line into a full search record", () => {
   expect(digestSearched(`${LINE}\n\n## Spry\n- 3XX redirect: 2 URLs`)).toEqual({ mailbox: "fixture-mailbox", since: "2026-11-16",
     until: "2026-11-24", messages: 33, queries: ["from:sa@ahrefs.com newer_than:8d in:anywhere", "from:ahrefs.com newer_than:8d in:anywhere"], source: "digest" });
 });
+it("reads the line when a model dresses it as markdown or adds a unit", () => {
+  for (const dressed of [`**${LINE.replace("SEARCHED:", "SEARCHED:**")}`, "`" + LINE + "`", `- ${LINE}`, `> ${LINE}`, LINE.replace("messages=33", "messages=33 emails")]) {
+    expect(digestSearched(dressed)?.messages, dressed).toBe(33);
+  }
+});
 it("a missing or half line is no record (never invented)", () => {
   expect(digestSearched("## Spry\n- 3XX")).toBeNull();
   expect(digestSearched("SEARCHED: mailbox=x since=2026-11-16 until=2026-11-24 queries=a")).toBeNull();

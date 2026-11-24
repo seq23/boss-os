@@ -109,14 +109,17 @@ export function scopeSnapshot({ queue, queueFile, repo, briefIds = [], now = Dat
  * stops as before: a missing record is never invented).
  */
 export function digestSearched(text) {
-  const line = String(text ?? "").split("\n").map((l) => l.trim()).find((l) => /^SEARCHED:/i.test(l));
+  // A model may dress the line as markdown (**SEARCHED:**, `SEARCHED: …`, - SEARCHED:, > SEARCHED:).
+  const line = String(text ?? "").split("\n")
+    .map((l) => l.replace(/[*`]/g, "").replace(/^[\s>#-]+/, "").trim())
+    .find((l) => /^SEARCHED:/i.test(l));
   if (!line) return null;
   const field = (k) => new RegExp(`\\b${k}=(.*?)(?=\\s+(?:mailbox|since|until|messages|queries)=|$)`, "i").exec(line)?.[1]?.trim() ?? "";
   const out = {
     mailbox: field("mailbox"),
     since: field("since"),
     until: field("until"),
-    messages: /^\d+$/.test(field("messages")) ? Number(field("messages")) : null,
+    messages: /^\d+/.test(field("messages")) ? Number(/^\d+/.exec(field("messages"))[0]) : null,
     queries: field("queries").split("|").map((q) => q.trim()).filter(Boolean),
     source: "digest",
   };
