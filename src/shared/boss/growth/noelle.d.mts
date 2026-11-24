@@ -47,3 +47,7 @@ export function settledNo(...args: any[]): any;
 export declare const CALL_SLOT: RegExp;
 export declare function isCallSlot(slot: unknown): boolean;
 export declare function slotOf(slot: unknown): string | null;
+export const SCHEDULE_SHOWN: number;
+export function scheduleLines(run: { day: string; reads: any } | null, opts?: { today: string; labels?: Record<string, string> }): string[];
+export { whenCT } from "./whenCT.mjs";
+export const CHANNEL_NAMES: Readonly<Record<string, string>>;

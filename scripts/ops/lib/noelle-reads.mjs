@@ -143,21 +143,33 @@ export async function readBuffer(token, { fetchImpl, now }) {
   try {
     const orgs = (await q("{ account { organizations { id } } }"))?.account?.organizations ?? [];
     if (!orgs.length) return { error: "Buffer shows no organization" };
-    const counts = {}, days = {};
+    const counts = {}, days = {}, items = {};
     for (const o of orgs) {
-      const d = await q("query($id: OrganizationId!) { posts(input: { organizationId: $id, filter: { status: [scheduled] } }, first: 100) { edges { node { dueAt channelService } } } }", { id: o.id });
+      const d = await q("query($id: OrganizationId!) { posts(input: { organizationId: $id, filter: { status: [scheduled] } }, first: 100) { edges { node { dueAt channelService text } } } }", { id: o.id });
       for (const { node } of d?.posts?.edges ?? []) {
         const ch = SERVICE[node.channelService];
         if (!ch || Date.parse(node.dueAt) < now) continue;
         counts[ch] = (counts[ch] ?? 0) + 1;
         (days[ch] ??= []).push(centralDay(Date.parse(node.dueAt)));
+        (items[ch] ??= []).push(item(new Date(Date.parse(node.dueAt)).toISOString(), node.text));
       }
     }
-    return { counts, days };
+    return { counts, days, items };
   } catch (e) {
     return { error: String(e?.message ?? e).slice(0, 120) };
   }
 }
+
+/**
+ * One queued post as the schedule shows it: when (an instant or a Central day) and the first line of its
+ * text, at most 80 characters. Text from a queue is DATA (a caption, a title), never an instruction.
+ */
+export const ITEMS_PER_CHANNEL = 14;
+export function item(at, text) {
+  const t = String(text ?? "").split(/\r?\n/).map((x) => x.trim()).find(Boolean) ?? "";
+  return { at: String(at), text: t.length > 80 ? `${t.slice(0, 79)}…` : t };
+}
+const byTime = (a, b) => (a.at < b.at ? -1 : a.at > b.at ? 1 : 0);
 
 /** A Pinterest drip queue file (variants with a release_date still to come), read from the default branch. */
 export const PIN_QUEUES = Object.freeze({
@@ -172,7 +184,7 @@ export function readPinQueue(key, { gh, today }) {
     const variants = Array.isArray(j?.variants) ? j.variants : null;
     if (!variants) return { error: `${repo}/${path} has no variants list` };
     const ahead = variants.filter((v) => typeof v?.release_date === "string" && v.release_date > today);
-    return { count: ahead.length, days: [...new Set(ahead.map((v) => v.release_date.slice(0, 10)))] };
+    return { count: ahead.length, days: [...new Set(ahead.map((v) => v.release_date.slice(0, 10)))], items: ahead.map((v) => item(v.release_date.slice(0, 10), v.title)).sort(byTime) };
   } catch (e) {
     return { error: `${repo}/${path}: ${String(e?.message ?? e).split("\n")[0].slice(0, 80)}` };
   }
@@ -205,7 +217,8 @@ export function readLinkedIn(key, { gh, today }) {
     const done = new Set(rec.posted.map((x) => x?.id));
     const waiting = posts.filter((x) => x?.id && !done.has(x.id));
     if (rec.access !== "granted") return { error: `LinkedIn has not granted the page API yet: ${waiting.length} posts written, none can post` };
-    return { count: waiting.length, days: weekdaysAfter(today, waiting.length) };
+    const days = weekdaysAfter(today, waiting.length);
+    return { count: waiting.length, days, items: waiting.map((x, i) => item(days[i], x.text)) };
   } catch (e) {
     return { error: `${repo}/${dir}: ${String(e?.message ?? e).split("\n")[0].slice(0, 80)}` };
   }
@@ -224,9 +237,9 @@ const LOOK_BACK_MS = 7 * 86_400_000;
 export async function readStudio({ d1, now }) {
   try {
     const since = new Date(now - LOOK_BACK_MS).toISOString();
-    const rows = await d1(`SELECT id, platform, scheduled_at, status, error FROM social_posts WHERE scheduled_at >= '${since}' AND status IN ('scheduled','waiting','sending','failed','held')`);
+    const rows = await d1(`SELECT id, platform, scheduled_at, status, error, caption FROM social_posts WHERE scheduled_at >= '${since}' AND status IN ('scheduled','waiting','sending','failed','held')`);
     if (!Array.isArray(rows)) return { error: "the Studio answered with no rows list" };
-    const counts = {}, days = {}, missed = [];
+    const counts = {}, days = {}, items = {}, missed = [];
     for (const r of rows) {
       const ch = SERVICE[r.platform];
       const t = Date.parse(r.scheduled_at);
@@ -235,11 +248,12 @@ export async function readStudio({ d1, now }) {
         if (r.status !== "scheduled" && r.status !== "waiting") continue;
         counts[ch] = (counts[ch] ?? 0) + 1;
         (days[ch] ??= []).push(centralDay(t));
+        (items[ch] ??= []).push(item(new Date(t).toISOString(), r.caption));
       } else if (r.status === "failed" || (r.status !== "waiting" && t < now - PUBLISH_GRACE_MS)) {
         missed.push({ id: String(r.id), channel: ch, day: centralDay(t), status: r.status, error: String(r.error ?? "").slice(0, 120) });
       }
     }
-    return { counts, days, missed };
+    return { counts, days, items, missed };
   } catch (e) {
     return { error: `the Studio's calendar: ${String(e?.message ?? e).split("\n")[0].slice(0, 100)}` };
   }
@@ -252,38 +266,40 @@ export function centralDay(ms) {
 
 /**
  * The calendar: { queues: {"biz:channel": n}, days: {"biz:channel": [day]}, unread: {"biz:channel": why},
- * missed: [Studio posts not published a day after their time] }.
+ * missed: [Studio posts not published a day after their time], items: {"biz:channel": [{at, text}]} (the
+ * first ITEMS_PER_CHANNEL queued posts, soonest first; the count in queues stays the whole queue) }.
  * Every owned channel ends in exactly one of queues or unread.
  */
 export async function readCalendar({ env, fetchImpl, gh, d1, now, today }) {
-  const queues = {}, days = {}, unread = {};
+  const queues = {}, days = {}, unread = {}, items = {};
+  const keep = (key, list) => { items[key] = [...(list ?? [])].sort(byTime).slice(0, ITEMS_PER_CHANNEL); };
   const studio = await readStudio({ d1, now });
   const missed = studio.missed ?? [];
   for (const ch of ["instagram", "tiktok", "facebook-page"]) {
     const key = `porch-and-party:${ch}`;
     if (studio.error) unread[key] = studio.error;
-    else { queues[key] = studio.counts[ch] ?? 0; days[key] = [...new Set(studio.days[ch] ?? [])].sort(); }
+    else { queues[key] = studio.counts[ch] ?? 0; days[key] = [...new Set(studio.days[ch] ?? [])].sort(); keep(key, studio.items?.[ch]); }
   }
   for (const [tokenName, biz] of Object.entries(BUFFERS)) {
     const b = await readBuffer(env[tokenName], { fetchImpl, now });
     for (const key of Object.keys(CHANNEL_OWNERS).filter((k) => k.startsWith(`${biz}:`) && !PIN_QUEUES[k] && !LINKEDIN_QUEUES[k])) {
       const ch = key.slice(biz.length + 1);
       if (b.error) unread[key] = b.error;
-      else { queues[key] = b.counts[ch] ?? 0; days[key] = [...new Set(b.days[ch] ?? [])].sort(); }
+      else { queues[key] = b.counts[ch] ?? 0; days[key] = [...new Set(b.days[ch] ?? [])].sort(); keep(key, b.items?.[ch]); }
     }
   }
   for (const key of Object.keys(PIN_QUEUES)) {
     const p = readPinQueue(key, { gh, today });
     if (p.error) unread[key] = p.error;
-    else { queues[key] = p.count; days[key] = p.days.sort(); }
+    else { queues[key] = p.count; days[key] = p.days.sort(); keep(key, p.items); }
   }
   for (const key of Object.keys(LINKEDIN_QUEUES)) {
     const l = readLinkedIn(key, { gh, today });
     if (l.error) unread[key] = l.error;
-    else { queues[key] = l.count; days[key] = l.days; }
+    else { queues[key] = l.count; days[key] = l.days; keep(key, l.items); }
   }
   for (const key of Object.keys(CHANNEL_OWNERS)) if (!(key in queues) && !(key in unread)) unread[key] = "no ledger read for this channel yet (its job keeps no readable queue)";
-  return { queues, days, unread, missed };
+  return { queues, days, unread, missed, items };
 }
 
 // ─── Everything ─────────────────────────────────────────────────────────────────

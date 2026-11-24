@@ -294,3 +294,34 @@ describe("items 3 and 4: her search-loop changes, new pages and pin refills real
     expect(actExit({ queued: [], jobs: [{ line: "NAMED STOP [PIN_REFILL] x" }] }).code).toBe(14);
   });
 });
+
+describe("item 9: the week's schedule lines", () => {
+  it("shows the 3 soonest posts, each on its own line naming its channel, and says how many more; a queue with nothing this week says when there is more later", async () => {
+    const { scheduleLines } = await import("../src/shared/boss/growth/noelle.mjs");
+    const items = Array.from({ length: 9 }, (_, i) => ({ at: `2026-12-0${1 + (i % 5)}`, text: `p${i}` }));
+    const lines = scheduleLines({ day: "2026-11-29", reads: { queues: { "a:pinterest": 9, "b:threads": 4 }, unread: {}, items: { "a:pinterest": items, "b:threads": [{ at: "2026-12-20", text: "late" }] } } }, { today: "2026-11-29", labels: { a: "Dream Wedding" } });
+    expect(lines.slice(1, 6)).toEqual([
+      "Dream Wedding · Pinterest: 9 this week",
+      "— Tue, Dec 1 · Dream Wedding · Pinterest: “p0”",
+      "— Tue, Dec 1 · Dream Wedding · Pinterest: “p5”",
+      "— Wed, Dec 2 · Dream Wedding · Pinterest: “p1”",
+      "— and 6 more Dream Wedding · Pinterest posts this week (on the Growth page)",
+    ]);
+    expect(lines[6]).toBe("b · Threads: nothing queued this week (4 queued later)");
+    expect(scheduleLines({ day: "2026-11-29", reads: {} }, { today: "2026-11-29" })).toEqual(["This week's schedule: NOT READ. The last run read no queue at all."]);
+  });
+});
+
+it("item 8: the plan carries the queued posts to the Worker", () => {
+  const items = { "a:threads": [{ at: "2026-12-01", text: "x" }] };
+  expect(factsOf({ calendar: { queues: { "a:threads": 1 }, unread: {}, items } }).items).toEqual(items);
+});
+
+it("item 9: a reel cross-posted at the same minute keeps its line on each channel through the growth section merge", async () => {
+  const { scheduleLines } = await import("../src/shared/boss/growth/noelle.mjs");
+  const { appendToSection } = await import("../src/shared/boss/mail/morningSections.mjs");
+  const reel = [{ at: "2026-12-01T00:00:00Z", text: "Porch reveal" }];
+  const lines = scheduleLines({ day: "2026-11-29", reads: { queues: { "p:instagram": 1, "p:tiktok": 1 }, unread: {}, items: { "p:instagram": reel, "p:tiktok": reel } } }, { today: "2026-11-29" });
+  const merged = appendToSection(null, "growth", { lines }, Date.parse("2026-11-30T04:05:00Z"));
+  expect((merged.lines ?? []).filter((l: any) => /Porch reveal/.test(typeof l === "string" ? l : l.text))).toHaveLength(2);
+});

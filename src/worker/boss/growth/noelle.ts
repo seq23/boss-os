@@ -33,7 +33,7 @@ import { privateOnlyTerms, leaksIn, termCount } from "../../../shared/boss/growt
 import { playbookBody } from "../../../shared/boss/growth/playbook.mjs";
 import { MAX_CARDS, reportDue, reportSection } from "../../../shared/boss/growth/director.mjs";
 import {
-  checkPlan, slotOf, sourceProblems, missingDecisions, readGrid, season, slotFor, callBudget, didNotRunLine, escalations, noticeLine,
+  checkPlan, slotOf, sourceProblems, missingDecisions, readGrid, season, slotFor, callBudget, didNotRunLine, escalations, noticeLine, scheduleLines,
   WEEK_CALLS, KINDS, MAC_KINDS,
 } from "../../../shared/boss/growth/noelle.mjs";
 import { appendToSection } from "../../../shared/boss/mail/morningSections.mjs";
@@ -60,10 +60,10 @@ export const NOTICE_STOPS = new Set(["NOTHING_ACTED", "UNDER_3_DAYS", "CHANNEL_U
 
 export async function queueView(db: D1Database, now = Date.now()) {
   const r = await db.prepare(`SELECT day, state, stops, line, reads, created_at FROM noelle_runs WHERE created_at >= ? ORDER BY created_at DESC LIMIT 1`).bind(now - 2 * DAY_MS).first<any>();
-  if (!r) return { last: null, queues: {} as Record<string, Array<{ channel: string; value: number | null; unread: string | null }>>, unread: "not read: Noelle has not run in two days" };
+  if (!r) return { last: null, queues: {} as Record<string, Array<{ channel: string; value: number | null; unread: string | null; items: Array<{ at: string; text: string }> }>>, unread: "not read: Noelle has not run in two days" };
   const reads = parse<any>(r.reads, {});
-  const out: Record<string, Array<{ channel: string; value: number | null; unread: string | null }>> = {};
-  const add = (k: string, value: number | null, unread: string | null) => { const [biz, ch] = k.split(":"); if (!biz || !ch) return; (out[biz] ??= []).push({ channel: ch, value, unread }); };
+  const out: Record<string, Array<{ channel: string; value: number | null; unread: string | null; items: Array<{ at: string; text: string }> }>> = {};
+  const add = (k: string, value: number | null, unread: string | null) => { const [biz, ch] = k.split(":"); if (!biz || !ch) return; (out[biz] ??= []).push({ channel: ch, value, unread, items: unread ? [] : ((reads.items ?? {})[k] ?? []) }); };
   for (const [k, v] of Object.entries(reads.queues ?? {})) if (!(reads.unread ?? {})[k]) add(k, Number(v), null);
   for (const [k, v] of Object.entries(reads.unread ?? {})) add(k, null, `not read: ${v}`);
   return { last: { day: r.day, state: r.state, stops: parse<string[]>(r.stops, []), line: r.line }, queues: out, unread: null };
@@ -140,7 +140,18 @@ function cleanFacts(f: any) {
   const nums = (o: any) => Object.fromEntries(Object.entries(o && typeof o === "object" ? o : {}).filter(([k, v]) => typeof k === "string" && Number.isFinite(Number(v))).map(([k, v]) => [k, Number(v)]));
   const strs = (a: any) => (Array.isArray(a) ? a.filter((x) => typeof x === "string" && x.length < 80).slice(0, 60) : []);
   const why = (o: any) => Object.fromEntries(Object.entries(o && typeof o === "object" ? o : {}).filter(([k, v]) => k.length < 80 && typeof v === "string" && v.trim()).slice(0, 80).map(([k, v]) => [k, String(v).slice(0, 160)]));
-  return { queues: nums(f?.queues), caps: nums(f?.caps), articles: nums(f?.articles), accounts: strs(f?.accounts), bufferFull: strs(f?.bufferFull), unread: why(f?.unread) };
+  return { queues: nums(f?.queues), caps: nums(f?.caps), articles: nums(f?.articles), accounts: strs(f?.accounts), bufferFull: strs(f?.bufferFull), unread: why(f?.unread), items: cleanItems(f?.items) };
+}
+
+/** Queued posts as read (item 8): per channel at most 14, each { at: a day or instant, text: ≤80 chars, one line }. */
+export function cleanItems(o: any): Record<string, Array<{ at: string; text: string }>> {
+  const out: Record<string, Array<{ at: string; text: string }>> = {};
+  for (const [k, v] of Object.entries(o && typeof o === "object" ? o : {}).slice(0, 80)) {
+    if (k.length >= 80 || !/^[a-z0-9-]+:[a-z0-9-]+$/.test(k) || !Array.isArray(v)) continue;
+    out[k] = v.filter((x: any) => typeof x?.at === "string" && /^\d{4}-\d{2}-\d{2}(T[\d:.]+Z)?$/.test(x.at))
+      .slice(0, 14).map((x: any) => ({ at: x.at, text: String(x.text ?? "").replace(/[\u0000-\u001f\u007f]+/g, " ").trim().slice(0, 80) }));
+  }
+  return out;
 }
 
 export function planProblems(body: any): string[] {
@@ -209,7 +220,7 @@ export async function recordPlan(env: Env, body: any, now = Date.now()) {
 async function planClaimed(env: Env, body: any, { runId, roster, stops, today, now }: { runId: string; roster: any[]; stops: string[]; today: string; now: number }) {
   const db = env.DB;
   const facts = cleanFacts(body.facts);
-  const { unread, ...gateFacts } = facts;
+  const { unread, items, ...gateFacts } = facts;
   const ctx = { roster, today, ...gateFacts, orderedRecent: await orderedRecent(db, now), linkedOpen: await linkedOpen(db, roster) };
   const checked = checkPlan(body.plan, ctx);
   for (const s of sourceProblems(body.reads, now)) stops.push(`NAMED STOP [${s.stop}] ${s.why}`);
@@ -278,7 +289,7 @@ async function planClaimed(env: Env, body: any, { runId, roster, stops, today, n
   const codes = [...new Set(stops.map((s) => s.match(/\[([A-Z0-9_]+)\]/)?.[1]).filter(Boolean) as string[])];
   const sources = Object.fromEntries(Object.entries(body.reads ?? {}).slice(0, 80).map(([k, v]: [string, any]) => [k.slice(0, 80), { at: v?.at ?? null, sha: v?.sha ? String(v.sha).slice(0, 40) : null, error: v?.error ? String(v.error).slice(0, 160) : null }]));
   await db.prepare(`UPDATE noelle_runs SET stops = ?, line = ?, reads = ?, notices = ?, updated_at = ? WHERE id = ?`)
-    .bind(JSON.stringify(codes), `${checked.accepted.length} accepted, ${checked.refused.length} refused, ${cards} cards`, JSON.stringify({ sources, queues: facts.queues, unread }), JSON.stringify(checked.notices.map((x: any) => x.key)), now, runId).run();
+    .bind(JSON.stringify(codes), `${checked.accepted.length} accepted, ${checked.refused.length} refused, ${cards} cards`, JSON.stringify({ sources, queues: facts.queues, unread, items }), JSON.stringify(checked.notices.map((x: any) => x.key)), now, runId).run();
   await audit(db, { actor: DIRECTOR, lane: "ops", entityType: "noelle_run", entityId: runId, action: "planned", detail: { accepted: checked.accepted.length, refused: checked.refused.map((r: any) => r.stop), stops: codes, cards } });
   // The acts the Mac carries out: only kinds with a lever there (owned jobs' targets, Studio, search-loop, outreach lists, tests).
   const toAct = checked.accepted.filter((a: any) => MAC_KINDS.includes(a.kind));
@@ -379,6 +390,8 @@ export async function noelleWatch(env: Env, now = Date.now()) {
   const lines: string[] = [];
   const missed = didNotRunLine(runs, today);
   if (missed) lines.push(missed);
+  // Item 9: Sunday's heartbeat writes the week ahead, so it is in Monday's morning email.
+  if (new Date(`${today}T12:00:00Z`).getUTCDay() === 0) lines.push(...(await weekSchedule(env, today, now)));
   for (const x of escalations(runs.filter((r) => r.day <= today))) {
     const key = `noelle:escalate:${x.stop}:${today}`;
     const have = await db.prepare(`SELECT 1 FROM boss_task_notices WHERE task_id = ? LIMIT 1`).bind(key).first();
@@ -397,6 +410,14 @@ export async function noelleWatch(env: Env, now = Date.now()) {
   }
   if (missed) throw new Error(`NAMED STOP [NOELLE_DID_NOT_RUN] ${missed}`);
   return { written: runs.filter((r) => r.day === today).length, line: `OUTPUT ${runs.filter((r) => r.day === today).length} runs today`, escalated: lines.length - (missed ? 1 : 0) };
+}
+
+/** The week ahead from the latest run (two days at most) that read queues; labels from the roster when it reads. */
+export async function weekSchedule(env: Env, today: string, now = Date.now()) {
+  const r = await env.DB.prepare(`SELECT day, reads FROM noelle_runs WHERE created_at >= ? AND reads IS NOT NULL ORDER BY created_at DESC LIMIT 1`).bind(now - 2 * DAY_MS).first<any>();
+  let labels: Record<string, string> = {};
+  try { labels = Object.fromEntries((await loadRoster(env.DB)).roster.map((e: any) => [e.key, e.label])); } catch { /* keys stand in for names */ }
+  return scheduleLines(r ? { day: r.day, reads: parse<any>(r.reads, {}) } : null, { today, labels });
 }
 
 export const NOELLE_KINDS = KINDS;

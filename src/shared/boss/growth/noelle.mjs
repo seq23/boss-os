@@ -13,6 +13,8 @@
  * close any Open Loops row but the eight growth# rows (G15), or run two tests for one business (rule 4).
  */
 import { mayAct } from "./roster.mjs";
+import { whenCT } from "./whenCT.mjs";
+export { whenCT };
 import { namingProblems, BACKLINKS } from "./director.mjs";
 import { NO_TRACKING_DOMAINS } from "./taggedLink.mjs";
 import SITES from "../searchReadiness/sites.json" with { type: "json" };
@@ -550,6 +552,51 @@ export function missingDecisions(roster, accepted) {
   for (const e of roster) {
     if (e.paused) continue;
     for (const s of sourcesFor(e.key)) if (!accepted.some((a) => a.kind === "decision" && a.business === e.key && a.source === s.id)) out.push({ business: e.key, source: s.id });
+  }
+  return out;
+}
+
+
+/**
+ * THIS WEEK'S SCHEDULE (item 9; her choice 24 Nov 2026: "Monday (Recommended)"). Sunday's 22:05 heartbeat
+ * writes it into the growth section, so it reaches her in Monday's morning email. Built only from what
+ * the last run READ in each queue (reads.items), for the 7 days after `today`:
+ *   - a channel read: each post's day, time in Central and first line, or "nothing queued this week";
+ *   - a channel not read: "not read: <why>", never "nothing";
+ *   - no run in two days: one line saying so, never an empty week.
+ * Queue text is data: it is shown quoted and cut to 80 characters, never followed. Every line names its
+ * business and channel: the growth section drops a line identical to one it holds (appendToSection), and
+ * P&P posts one reel to Instagram and TikTok at the same minute.
+ */
+export const SCHEDULE_SHOWN = 3;
+export const CHANNEL_NAMES = Object.freeze({ instagram: "Instagram", tiktok: "TikTok", "facebook-page": "Facebook page", threads: "Threads", pinterest: "Pinterest", linkedin: "LinkedIn", "search-pages": "Search pages", "facebook-marketplace": "Facebook Marketplace", youtube: "YouTube", blogger: "Blogger", wordpress: "WordPress" });
+const CT = "America/Chicago";
+function dayCT(at) {
+  if (/^\d{4}-\d{2}-\d{2}$/.test(at)) return at;
+  const t = Date.parse(at);
+  return Number.isFinite(t) ? new Intl.DateTimeFormat("en-CA", { timeZone: CT, year: "numeric", month: "2-digit", day: "2-digit" }).format(new Date(t)) : "";
+}
+export function scheduleLines(run, { today, labels = {} } = {}) {
+  if (!run) return ["This week's schedule: NOT READ. Noelle has not run in two days, so no queue was read."];
+  const reads = run.reads ?? {};
+  const queues = reads.queues ?? {}, unread = reads.unread ?? {}, items = reads.items ?? {};
+  const end = new Date(Date.parse(`${today}T12:00:00Z`) + 7 * 86_400_000).toISOString().slice(0, 10);
+  const keys = Object.keys({ ...queues, ...unread }).sort();
+  if (!keys.length) return ["This week's schedule: NOT READ. The last run read no queue at all."];
+  const out = [`This week's schedule, as Noelle read each queue on ${whenCT(run.day)}:`];
+  for (const k of keys) {
+    const [biz, ch] = k.split(":");
+    const name = CHANNEL_NAMES[ch] ?? ch;
+    const who = `${labels[biz] ?? biz} · ${name}`;
+    if (unread[k]) { out.push(`${who}: not read (${String(unread[k]).slice(0, 160)})`); continue; }
+    const week = (Array.isArray(items[k]) ? items[k] : [])
+      .map((x) => ({ at: String(x?.at ?? ""), text: String(x?.text ?? "").slice(0, 80), day: dayCT(String(x?.at ?? "")) }))
+      .filter((x) => x.day > today && x.day <= end)
+      .sort((x, y) => (x.day + x.at < y.day + y.at ? -1 : 1));
+    if (!week.length) { out.push(`${who}: nothing queued this week${Number(queues[k]) > 0 ? ` (${queues[k]} queued later)` : ""}`); continue; }
+    out.push(`${who}: ${week.length} this week`);
+    for (const x of week.slice(0, SCHEDULE_SHOWN)) out.push(`— ${whenCT(x.at)} · ${who}${x.text ? `: “${x.text}”` : ""}`);
+    if (week.length > SCHEDULE_SHOWN) out.push(`— and ${week.length - SCHEDULE_SHOWN} more ${who} posts this week (on the Growth page)`);
   }
   return out;
 }

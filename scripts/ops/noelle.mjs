@@ -405,7 +405,7 @@ const saveState = (dir, s) => writeFileSync(join(dir, "state.json"), JSON.string
 
 /** The facts only the Mac reads, in the shape the Worker's cleanFacts keeps. */
 export function factsOf(state) {
-  return { queues: state.calendar.queues, unread: state.calendar.unread, caps: state.caps ?? {}, articles: {}, accounts: [], bufferFull: [] };
+  return { queues: state.calendar.queues, unread: state.calendar.unread, items: state.calendar.items ?? {}, caps: state.caps ?? {}, articles: {}, accounts: [], bufferFull: [] };
 }
 
 async function cmdPlan(runLog, dir, slot) {

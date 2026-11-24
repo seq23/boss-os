@@ -19,7 +19,7 @@ import { setSetting } from "../../src/worker/boss/lib/settings";
 import { handleRequest } from "../../src/worker/index";
 import { dayIdInZone } from "../../src/shared/boss/timezone";
 import { READ_SOURCES, WEEK_CALLS } from "../../src/shared/boss/growth/noelle.mjs";
-import { noelleWatch, recordDone, recordPlan } from "../../src/worker/boss/growth/noelle";
+import { cleanItems, noelleWatch, recordDone, recordPlan } from "../../src/worker/boss/growth/noelle";
 import { RESUME_HANDLERS } from "../../src/worker/boss/approvals/resume";
 import type { Env } from "../../src/worker/env";
 
@@ -386,7 +386,65 @@ describe("the Growth page says 'not read' on a failed queue read (Beyond-the-lis
     const page = (await apiJson<any>("/api/growth/page")).body.data;
     const q = page.businesses.find((b: any) => b.key === "porch-and-party").queue;
     expect(q.unread).toBeNull();
-    expect(q.channels).toEqual([{ channel: "instagram", value: 0, unread: null }, { channel: "tiktok", value: null, unread: "not read: the Studio calendar did not answer" }]);
+    expect(q.channels).toEqual([{ channel: "instagram", value: 0, unread: null, items: [] }, { channel: "tiktok", value: null, unread: "not read: the Studio calendar did not answer", items: [] }]);
     expect(page.noelle).toMatchObject({ day: DAY, state: "planned" });
+  });
+});
+
+// Items 8 and 9 (24 Nov 2026): what is queued, post by post, and the week ahead in Monday's email.
+// Her choice: "Monday (Recommended)". HOW IT BREAKS: a failed read shown as an empty week; queue text
+// carried raw into her email; a Sunday-evening post (Monday in UTC) shown in the wrong week.
+describe("the queued posts and Monday's schedule", () => {
+  const SUN = Date.parse("2026-11-30T03:05:00Z"); // Sun 29 Nov 2026, 21:05 Central (the heartbeat is 22:05)
+  const SUN_DAY = dayIdInZone(SUN);
+  const growth = async () => JSON.parse((await rows(`SELECT body FROM morning_sections WHERE section = 'growth'`))[0]?.body ?? "null");
+  const run = (reads: unknown, at = SUN - 3_600_000) => env.DB.prepare(`INSERT INTO noelle_runs (id, day, slot, kind, state, stops, calls, line, reads, created_at, updated_at) VALUES ('nrn_sched', ?, '12:12', 'daily', 'done', '[]', 1, 'x', ?, ?, ?)`).bind(dayIdInZone(at), JSON.stringify(reads), at, at).run();
+
+  it("the Worker keeps at most 14 posts a channel, each one line of at most 80 characters, and drops what is not a post", () => {
+    const many = Array.from({ length: 20 }, (_, i) => ({ at: `2026-12-${String(i + 1).padStart(2, "0")}`, text: `post ${i}` }));
+    const c = cleanItems({ "porch-and-party:instagram": many, "bad key": [{ at: "2026-12-01", text: "x" }], "approvalprep:linkedin": [{ at: "soon", text: "x" }, { at: "2026-12-01T15:00:00Z", text: `line one\u0007\n${"y".repeat(200)}` }] });
+    expect(c["porch-and-party:instagram"]).toHaveLength(14);
+    expect(Object.keys(c)).toEqual(["porch-and-party:instagram", "approvalprep:linkedin"]);
+    expect(c["approvalprep:linkedin"]).toHaveLength(1);
+    expect(c["approvalprep:linkedin"]![0]!.text).not.toMatch(/[\u0000-\u001f]/);
+    expect(c["approvalprep:linkedin"]![0]!.text.length).toBeLessThanOrEqual(80);
+  });
+
+  it("a run's queued posts reach the Growth page per channel", async () => {
+    const { apiJson } = await import("./helpers");
+    await call("/noelle/plan", plan([SEASON], { facts: { queues: { "porch-and-party:instagram": 2 }, unread: {}, items: { "porch-and-party:instagram": [{ at: "2026-11-24T23:00:00Z", text: "Porch reel" }] } } }));
+    const q = (await apiJson<any>("/api/growth/page")).body.data.businesses.find((b: any) => b.key === "porch-and-party").queue;
+    expect(q.channels).toEqual([{ channel: "instagram", value: 2, unread: null, items: [{ at: "2026-11-24T23:00:00Z", text: "Porch reel" }] }]);
+  });
+
+  it("Sunday's heartbeat writes the week ahead into Monday's growth section: each post in Central, a failed read as not read", async () => {
+    await run({
+      queues: { "porch-and-party:instagram": 3, "porch-and-party:tiktok": 0 },
+      unread: { "approvalprep:linkedin": "LinkedIn has not granted the page API yet: 4 posts written, none can post" },
+      items: { "porch-and-party:instagram": [
+        { at: "2026-11-30T02:00:00Z", text: "Sunday evening in Memphis, Monday in UTC" },
+        { at: "2026-12-01T00:30:00Z", text: "Monday evening porch reel" },
+        { at: "2026-12-08T15:00:00Z", text: "next week" },
+      ] },
+    });
+    await noelleWatch(env as any, SUN);
+    const lines: string[] = (await growth()).lines.map((l: any) => (typeof l === "string" ? l : l.text));
+    const all = lines.join("\n");
+    expect(all).toMatch(/This week's schedule, as Noelle read each queue on Sun, Nov 29:/);
+    expect(lines).toContain("Porch & Party · Instagram: 1 this week");
+    expect(lines).toContain("— Mon, Nov 30, 6:30 PM · Porch & Party · Instagram: “Monday evening porch reel”");
+    expect(all).not.toMatch(/Sunday evening in Memphis|next week/);
+    expect(all).toMatch(/Porch & Party · TikTok: nothing queued this week/);
+    expect(all).toMatch(/ApprovalPrep · LinkedIn: not read \(LinkedIn has not granted/);
+    expect(SUN_DAY).toBe("2026-11-29");
+  });
+
+  it("no run in two days: Sunday's schedule says NOT READ, never an empty week; a Monday heartbeat writes no schedule", async () => {
+    await expect(noelleWatch(env as any, SUN)).rejects.toThrow(/NOELLE_DID_NOT_RUN/);
+    expect((await growth()).lines.join(" ")).toMatch(/This week's schedule: NOT READ\. Noelle has not run in two days/);
+    await env.DB.exec(`DELETE FROM morning_sections`);
+    await run({ queues: { "porch-and-party:instagram": 1 }, unread: {}, items: {} }, SUN + 86_400_000 - 3_600_000);
+    await noelleWatch(env as any, SUN + 86_400_000);
+    expect(await growth()).toBeNull();
   });
 });
