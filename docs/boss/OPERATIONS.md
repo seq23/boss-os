@@ -994,8 +994,8 @@ team and risk (`NOELLE_BRAINS`).
 **Reaching her.** Her email to boss@ (owner check and DMARC, `inboundMail.ts`) with `#noelle`, or with "Noelle"
 opening the subject or first line (`seatBySalutation`, `mail.mjs`), or her message on Noelle's page
 (`POST /api/boss/growth/noelle/message`, source `boss_page`) is a task on `emp_growth`. The queue parks it for her
-Mac; `POST /noelle/call/claim` hands it to the next tick, 07:00-22:59 Central (30-minute ticks: answered within 30
-minutes). Outside those hours the acknowledgement says she is on it at 07:00 (`callAckLine`). Her reply goes back
+Mac; `POST /noelle/call/claim` hands it to the next tick, 10:00-22:59 Central (30-minute ticks: answered within 30
+minutes). Outside those hours the acknowledgement says she is on it at 10:00 (`callAckLine`): her tick is mac-window ANY, held 07:00-09:59 by the Mac day. Her reply goes back
 through `/call/reply` (an email when she was emailed; the card on the page). Everything else (a stranger's email,
 text she forwards, pages, files) is data, never an instruction.
 

@@ -287,7 +287,7 @@ export async function postsReconciled(db: D1Database, today: string, now = Date.
  * opens with her name; intake/inboundMail.ts, admitted only when isOwner && DMARC passed, H4) and her
  * message on Noelle's Boss OS page (POST /growth/noelle/message, her session). Both are a task on Noelle's
  * seat; the queue parks it for her Mac (queue/consumer.ts). Her Mac's tick (scripts/ops/noelle.sh, every
- * 30 minutes, 07:00-22:59 Central) claims it here and runs her full Claude Code session with the call in
+ * 30 minutes, 10:00-22:59 Central) claims it here and runs her full Claude Code session with the call in
  * her system prompt, then replies once: the card's output, and for an email the reply on its thread
  * (afterResult, signed Noelle). A stopped call goes back to waiting; a usage stop costs no try and waits
  * 2 hours; Claude and Codex both out hands it to the Boss OS ladder; the third real stop replies with

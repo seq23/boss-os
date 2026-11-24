@@ -9,7 +9,7 @@
  *
  *   due <day> <HH:MM> <mark>              one launchd tick: RUN <slot> <kind> <try> [resume] | WAIT | HELD
  *   mark <mark> done|stopped [code] [try] today's record on this Mac
- *   window <HH:MM>                        OPEN | CLOSED: a call is answered 07:00-22:59 Central (H3c)
+ *   window <HH:MM>                        OPEN | CLOSED: a call is answered 10:00-22:59 Central (H3c)
  *   call-claim <runsDir>                  CALL <slot> <dir> | NONE (an email or a page message from Sequoia)
  *   reads <dir>                           what she reads first: <dir>/today.md (all data, marked untrusted)
  *   persona <dir>                         <dir>/persona-full.md = the rules file + her persona (+ the call),
@@ -78,7 +78,7 @@ export const LAST_START = "21:00";
 /** A stopped run is tried again this long after. */
 export const RETRY_AFTER_MS = 2 * 3_600_000;
 export const MAX_TRIES = 3;
-/** A call (her email or page message) is answered within 30 minutes from 07:00 to 22:59 Central (H3c). */
+/** A call (her email or page message) is answered within 30 minutes from 10:00 to 22:59 Central (H3c). */
 
 /**
  * THE START (24 Nov 2026). Her earlier hold ("dont let her run until Sat") was for the old planner; her go the

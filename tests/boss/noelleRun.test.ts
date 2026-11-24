@@ -147,7 +147,7 @@ describe("H3b: her message on Noelle's page is a call on the same claim path as 
     const { apiJson } = await import("./helpers");
     const r = await apiJson<any>("/api/growth/noelle/message", { method: "POST", body: { text: "Post the Ruth carousel this week\nand tell me when it is queued." } });
     expect(r.status).toBe(201);
-    expect(r.body.data.line).toMatch(/^Noelle (picks this up within 30 minutes|is on it at 07:00 Central)/);
+    expect(r.body.data.line).toMatch(/^Noelle (picks this up within 30 minutes|is on it at 10:00 Central)/);
     const t = await rows(`SELECT id, employee_id, title, input FROM tasks WHERE id = ?`, r.body.data.task_id);
     expect(t).toHaveLength(1);
     expect(t[0].employee_id).toBe("emp_growth");

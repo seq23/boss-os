@@ -203,7 +203,7 @@ describe("H4: only her own address with DMARC passing directs Noelle", () => {
   it("her email with Noelle in the subject routes to Noelle, and the reply says when she answers", async () => {
     const r = await receive(OWNER, "Noelle: post the carousels", "Two this week please.");
     expect(r).toMatchObject({ outcome: "ROUTED", employeeId: "emp_growth" });
-    expect(String(r.reply)).toMatch(/Noelle (picks this up within 30 minutes|is on it at 07:00 Central)/);
+    expect(String(r.reply)).toMatch(/Noelle (picks this up within 30 minutes|is on it at 10:00 Central)/);
     expect((await tasksFor(r.mailId!)).map((t) => t.employee_id)).toEqual(["emp_growth"]);
   });
 

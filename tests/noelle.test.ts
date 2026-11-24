@@ -100,19 +100,23 @@ describe("kept: slot, did-not-run, escalation, notice", () => {
   });
 });
 
-describe("H3c: answered within 30 minutes 07:00-23:00 Central, otherwise 'on it at 07:00'", () => {
-  it("the boundaries: 06:59 closed, 07:00 open, 22:59 open, 23:00 closed", () => {
-    expect([CALL_OPEN, CALL_CLOSE]).toEqual(["07:00", "23:00"]);
+describe("H3c: answered within 30 minutes 10:00-23:00 Central, otherwise 'on it at 10:00'", () => {
+  it("the boundaries: 07:00 and 09:59 closed (the Mac day holds her tick), 10:00 open, 22:59 open, 23:00 closed", () => {
+    expect([CALL_OPEN, CALL_CLOSE]).toEqual(["10:00", "23:00"]);
     expect(callWindow("06:59")).toBe(false);
-    expect(callWindow("07:00")).toBe(true);
+    expect(callWindow("07:00")).toBe(false);
+    expect(callWindow("09:59")).toBe(false);
+    expect(callWindow("10:00")).toBe(true);
     expect(callWindow("22:59")).toBe(true);
     expect(callWindow("23:00")).toBe(false);
     expect(callWindow("00:00")).toBe(false);
   });
   it("the ack line says which, and never promises 30 minutes at night", () => {
-    expect(callAckLine("07:00")).toMatch(/within 30 minutes/);
+    expect(callAckLine("10:00")).toMatch(/within 30 minutes/);
     expect(callAckLine("22:59")).toMatch(/within 30 minutes/);
-    expect(callAckLine("23:00")).toMatch(/on it at 07:00 Central/);
+    expect(callAckLine("23:00")).toMatch(/on it at 10:00 Central/);
+    expect(callAckLine("07:30")).toMatch(/on it at 10:00 Central/);
+    expect(callAckLine("09:59")).not.toMatch(/30 minutes/);
     expect(callAckLine("06:59")).not.toMatch(/30 minutes/);
   });
 });

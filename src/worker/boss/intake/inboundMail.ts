@@ -1428,7 +1428,7 @@ function headline(text: string): string {
     ...(constraintNote ? [constraintNote] : []),
     ...(notBefore && taskId ? [`Held until ${dueLine({ due_at: notBefore.at, due_words: notBefore.words })!.replace(/^due /, "")}; nothing starts before then.`] : []),
     ...(due && taskId ? [`Deadline read from your words: ${dueLine(due)}.`] : []),
-    // H3c: a call to Noelle says when she answers (within 30 minutes, or 07:00 Central outside her hours).
+    // H3c: a call to Noelle says when she answers (within 30 minutes, or 10:00 Central outside her hours).
     ...(taskId && route.seat.id === "emp_growth" ? [callAckLine(callClock(Date.now()))] : []),
   ];
   /*

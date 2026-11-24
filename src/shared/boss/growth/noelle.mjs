@@ -195,14 +195,17 @@ export function scheduleLines(run, { today, labels = {} } = {}) {
 }
 
 /**
- * H3c (brief 24 Nov 2026): a call (her email or page message) is answered within 30 minutes from 07:00 to
- * 22:59 Central; outside that she hears at once that Noelle is on it at 07:00. `hhmm` is Central "HH:MM".
+ * H3c (brief 24 Nov 2026): a call (her email or page message) is answered within 30 minutes while her Mac is
+ * awake for her tick, 10:00 to 22:59 Central; outside that she hears at once that Noelle is on it at 10:00.
+ * Not 07:00: her tick is mac-window ANY, which holds every scheduled Mac job 07:00-09:59 (the Mac day, her
+ * ruling 21 Nov 2026), so a 07:30 call is first claimed at 10:00 and "within 30 minutes" would be false.
+ * `hhmm` is Central "HH:MM".
  */
-export const CALL_OPEN = "07:00";
+export const CALL_OPEN = "10:00";
 export const CALL_CLOSE = "23:00";
 export const callWindow = (hhmm) => String(hhmm) >= CALL_OPEN && String(hhmm) < CALL_CLOSE;
 export function callAckLine(hhmm) {
   return callWindow(hhmm)
     ? "Noelle picks this up within 30 minutes and replies here."
-    : "Noelle is on it at 07:00 Central and replies here then.";
+    : "Noelle is on it at 10:00 Central and replies here then.";
 }

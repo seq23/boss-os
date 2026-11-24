@@ -7,10 +7,10 @@
 # of Sequoia's own settings load and a tool outside the list is refused and ends the run [PERMISSION_DENIED]. Her
 # guard (scripts/ops/noelle-guard.mjs, a PreToolUse hook on every tool) holds the hard stops by name on top.
 #
-# launchd com.seq.boss-noelle ticks every 30 minutes, 07:00-22:59 Central (mac-window ANY):
+# launchd com.seq.boss-noelle ticks every 30 minutes, 10:00-22:59 Central (mac-window ANY holds 07:00-09:59):
 #   - a call from Sequoia (her email to boss@ that passed the owner check, or her message on Noelle's Boss OS
-#     page) is claimed on the next tick from 07:00 to 22:59: answered within 30 minutes (H3c). Outside that the
-#     Worker has already told her "Noelle picks this up at 07:00 Central";
+#     page) is claimed on the next tick from 10:00 to 22:59: answered within 30 minutes (H3c). Outside that the
+#     Worker has already told her "Noelle is on it at 10:00 Central";
 #   - otherwise her daily run starts once at today's slot (slotFor: 10:00-20:58, Thursday after 14:00 is the
 #     weekly run), never after 21:00; a stopped run is retried two hours on, at most three times a day.
 # One run at a time (the lock); 200 turns; at ~200K context she writes her handoff and ends (her guard).

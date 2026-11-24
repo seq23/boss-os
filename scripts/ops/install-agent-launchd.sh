@@ -1276,7 +1276,7 @@ echo "Installed $AIV_LABEL — daily 12:00 Central tick (LIGHT), weekly Tuesday 
 #
 # scripts/ops/noelle.sh starts Claude Code as Noelle in ~/Work/noelle (builder tools, the rules file, skills; her
 # guard scripts/ops/noelle-guard.mjs holds the hard stops). A TICK EVERY 30 MINUTES, ANY: each tick claims a call
-# from Sequoia (07:00-22:59 Central, answered within 30 minutes) or asks `noelle.mjs due` and runs only at today's
+# from Sequoia (10:00-22:59 Central, answered within 30 minutes) or asks `noelle.mjs due` and runs only at today's
 # slot (10:00-20:58, never on the hour), or two hours after a stopped run. No duty row: the Worker's 22:05 watch
 # (duty_growth_director) names a day with no recorded run. Free ladder: Claude, then Codex (ai-run); with both
 # out, her call is answered by the Boss OS ladder (Workers AI, then Gemini).
@@ -1310,7 +1310,7 @@ cat > "$NOELLE_PLIST" <<NOELLEEOF
 NOELLEEOF
 lint_plist "$NOELLE_PLIST"
 reload_plist "$NOELLE_PLIST"
-echo "Installed $NOELLE_LABEL — a tick every 30 minutes (ANY): her calls 07:00-22:59, her run once a day at its slot."
+echo "Installed $NOELLE_LABEL — a tick every 30 minutes (ANY): her calls 10:00-22:59, her run once a day at its slot."
 
 # ─── Danielle's on-demand repo-change lane ───────────────────────────────────
 #
