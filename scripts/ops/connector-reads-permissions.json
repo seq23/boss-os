@@ -49,7 +49,6 @@
       "mcp__claude_ai_Gmail__update_draft",
       "mcp__claude_ai_Google_Calendar",
       "mcp__claude_ai_Google_Docs",
-      "mcp__claude_ai_Google_Drive",
       "mcp__claude_ai_Google_Drive__copy_file",
       "mcp__claude_ai_Google_Drive__create_file",
       "mcp__claude_ai_Google_Drive__request_access",

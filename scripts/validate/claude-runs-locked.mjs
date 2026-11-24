@@ -112,6 +112,13 @@ export function jobProblems(settings, job) {
   for (const t of job.needs) if (!allow.includes(t)) out.push(`${tag} is missing ${t}, which its prompt uses (the run would be refused)`);
   for (const d of [...COMMON_DENY, ...(job.mustDeny ?? [])]) if (!deny.has(d)) out.push(`${tag}: deny is missing ${d}`);
   for (const d of deny) if (allow.includes(d)) out.push(`${tag}: ${d} is both allowed and denied`);
+  // A server-level deny (mcp__<server> or mcp__<server>__*) matches every tool on that server, and deny wins:
+  // an allowed tool under it is refused at run time (eng check 24 Nov 2026: Simone's Drive lookups).
+  for (const d of deny) {
+    const server = /^(mcp__[^_]+(?:_[^_]+)*?)(?:__\*)?$/.exec(d)?.[1];
+    if (!server || d.slice(server.length).replace("__*", "") !== "") continue;
+    for (const a of allow) if (a !== d && a.startsWith(server + "__")) out.push(`${tag}: ${a} is allowed but the deny ${d} covers its whole server, so it is refused`);
+  }
   if (settings.permissions.defaultMode && settings.permissions.defaultMode !== "dontAsk") out.push(`${tag}: defaultMode is ${settings.permissions.defaultMode}`);
   if (job.needs.some((t) => t.startsWith("mcp__claude_ai_")) && settings.env?.ENABLE_CLAUDEAI_MCP_SERVERS === "false") out.push(`${tag} switches the claude.ai connectors off, and this job reads Gmail`);
   if (job.hook && !JSON.stringify(settings.hooks ?? {}).includes(job.hook)) out.push(`${tag}: the ${job.hook} hook is gone`);
@@ -216,6 +223,11 @@ function selfTest() {
     { const s = clone(real); delete s.permissions.allow; must(`${job.name} with no allow list`, jobProblems(s, job)); }
     { const s = clone(real); s.permissions.defaultMode = "bypassPermissions"; must(`${job.name} in bypass mode`, jobProblems(s, job)); }
     { const s = clone(real); s.permissions.allow = [...s.permissions.allow, "Bash"]; must(`${job.name} allowing bare Bash`, jobProblems(s, job)); }
+    for (const a of real.permissions.allow.filter((x) => x.startsWith("mcp__"))) {
+      const server = a.slice(0, a.lastIndexOf("__"));
+      { const s = clone(real); s.permissions.deny = [...(s.permissions.deny ?? []), server]; must(`${job.name}: deny ${server} shadowing ${a}`, jobProblems(s, job)); }
+      { const s = clone(real); s.permissions.deny = [...(s.permissions.deny ?? []), server + "__*"]; must(`${job.name}: deny ${server}__* shadowing ${a}`, jobProblems(s, job)); }
+    }
   }
   must("an empty allow list not marked text_only", jobProblems({ permissions: { allow: [], deny: COMMON_DENY } }, { name: "x", needs: [] }));
   // The skip flag back in every locked script, and each shape of unlocked call.
