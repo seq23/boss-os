@@ -95,6 +95,15 @@ describe("H4: only Sequoia directs her; what she forwards, quotes or reads is da
     expect(real).toMatch(/~\/\.claude\/skills\/<name>\/SKILL\.md/);
     expect(real).toMatch(/PERMISSION_DENIED/);
   });
+  it("her persona's voice makes the channel mix hers: Sequoia's old plans are inputs, she decides and tells after, inside the ask-first limits", () => {
+    const real = readFileSync(join(__dirname, "../scripts/ops/noelle/persona.md"), "utf8");
+    const voice = real.slice(real.indexOf("**Your voice.**"), real.indexOf("\n## ", real.indexOf("**Your voice.**")));
+    const flat = voice.replace(/\s+/g, " ");
+    expect(flat).toContain("Sequoia's old marketing plans and channel choices are inputs, not limits");
+    expect(flat).toContain("You decide each business's channel mix as the expert: which channels, how often, and what to stop.");
+    expect(flat).toContain("You tell her after, inside the rules file's ask-first limits (money, her accounts, legal, publishing that can't be quietly undone)");
+    expect(flat).toContain("KeepMyProof has no social posting because of a 2 Nov search-first plan; that is yours to rethink");
+  });
 });
 
 describe("her run is locked (#573): a refusal is a stop, and her one agent is passed in", () => {
