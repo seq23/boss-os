@@ -101,7 +101,7 @@ node "$GUARD" --self-test >> "$RUN_LOG" 2>&1 || stopped GUARD_BROKEN "NAMED STOP
 # Her home, rebuilt from the repo every run (her own run can never change these: her guard, PROTECTED).
 mkdir -p "$NHOME/.claude" "$NHOME/notes" "$NHOME/tasks" "$NHOME/.run" "$NHOME/bin"
 sed -e "s#__HOME__#$HOME#g" -e "s#__REPO__#$REPO#g" "$TEMPLATE" > "$NHOME/.claude/settings.json" || stopped NO_SETTINGS "NAMED STOP [NO_SETTINGS] her settings could not be written" 6
-printf '#!/bin/bash\n# Noelle'"'"'s three vault tools (brain, notice, ledger); written by scripts/ops/noelle.sh.\ncase "${1:-}" in brain|notice|ledger) ;; *) echo "usage: noelle-tool brain|notice|ledger ..."; exit 2 ;; esac\ncd %q && exec npm run --silent vault:run -- node scripts/ops/noelle.mjs "$@"\n' "$REPO" > "$NHOME/bin/noelle-tool"
+printf '#!/bin/bash\n# Noelle'"'"'s four vault tools (brain, notice, ledger, backlinks); written by scripts/ops/noelle.sh.\ncase "${1:-}" in brain|notice|ledger|backlinks) ;; *) echo "usage: noelle-tool brain|notice|ledger|backlinks ..."; exit 2 ;; esac\ncd %q && exec npm run --silent vault:run -- node scripts/ops/noelle.mjs "$@"\n' "$REPO" > "$NHOME/bin/noelle-tool"
 chmod 755 "$NHOME/bin/noelle-tool"
 printf '{"prs":0,"reviewers":0,"run":"%s"}' "$NOELLE_RUN_ID" > "$NHOME/.run/run.json"
 rm -f "$NHOME/.run/compacted"

@@ -141,7 +141,7 @@ export function judge(input, { h = NOELLE_HOME(), mutate = true } = {}) {
   const c = home(cmd);
   if (PAID.test(c)) return { stop: "PAID_API", why: "a paid model or API; never used (her rule: never a paid API)" };
   if (MONEY.test(c)) return { stop: "MONEY", why: "a payment or ad-spend endpoint; any spend is Sequoia's call" };
-  if (SECRET_SHOW.some((re) => re.test(c))) return { stop: "SECRETS_PRINTED", why: "this prints or passes a secret; secrets stay in the Boss OS vault (your tools: noelle-tool brain|notice|ledger)" };
+  if (SECRET_SHOW.some((re) => re.test(c))) return { stop: "SECRETS_PRINTED", why: "this prints or passes a secret; secrets stay in the Boss OS vault (your tools: noelle-tool brain|notice|ledger|backlinks)" };
   if (DEPLOY.test(c)) return { stop: "DEPLOY_ONLY_LAND", why: "deploys and merges go only through `land-after <pr> --task noelle-<job>`" };
   if (/(^|[\s/"'])Brains\/|\/api\/boss\/brains\b/.test(c)) return { stop: "PRIVATE_BRAIN", why: "brains are read only with `noelle-tool brain <slug>`" };
   for (const r of reposIn(c)) if (!repoAllowed(r)) return { stop: "OTHER_BUSINESS_REPO", why: `${r} is not one of your businesses' repos` };

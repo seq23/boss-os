@@ -8,7 +8,7 @@ import { loadRoster } from "../growth/run";
 import { AI_SITES, aiCard } from "../../../shared/boss/growth/aiAnswers.mjs";
 import { backlinkOrders } from "../../../shared/boss/growth/director.mjs";
 import { machineTokenOk } from "./openLoops";
-import { noelleContext, queueView, recordDone, recordNotice, writeLedger, claimCall, replyCall, releaseCall } from "../growth/noelle";
+import { noelleContext, queueView, recordDone, recordNotice, writeLedger, claimCall, replyCall, releaseCall, recordBacklinks } from "../growth/noelle";
 import { admitTask } from "../tasks/admit";
 import { callAckLine } from "../../../shared/boss/growth/noelle.mjs";
 import { wallClock } from "../../../shared/boss/timezone";
@@ -76,7 +76,7 @@ growthRoutes.get("/", async (c) => {
  */
 export const BACKLINK_ORDERS_PATH = "/api/growth/backlink-orders";
 /** Noelle's machine routes (her Mac's run and the posting jobs' ledger rows): the machine token only, checked in each handler below. */
-export const NOELLE_PATHS: ReadonlySet<string> = new Set(["/api/growth/noelle/context", "/api/growth/noelle/done", "/api/growth/noelle/notice", "/api/growth/noelle/ledger", "/api/growth/noelle/call/claim", "/api/growth/noelle/call/reply", "/api/growth/noelle/call/release"]);
+export const NOELLE_PATHS: ReadonlySet<string> = new Set(["/api/growth/noelle/context", "/api/growth/noelle/done", "/api/growth/noelle/notice", "/api/growth/noelle/ledger", "/api/growth/noelle/backlinks", "/api/growth/noelle/call/claim", "/api/growth/noelle/call/reply", "/api/growth/noelle/call/release"]);
 
 /**
  * The backlink orders of the newest WEEK (Noelle runs daily since 23 Nov 2026, so a week is the 7 days
@@ -114,6 +114,11 @@ growthRoutes.post("/noelle/done", async (c) => {
 growthRoutes.post("/noelle/notice", async (c) => {
   if (!(await machineTokenOk(c))) throw new AppError(401, "Locked");
   return ok(c, await recordNotice(c.env, await c.req.json<any>().catch(() => null)));
+});
+// Her backlink requests to the network: one growth_decisions row per business, read by GET /backlink-orders.
+growthRoutes.post("/noelle/backlinks", async (c) => {
+  if (!(await machineTokenOk(c))) throw new AppError(401, "Locked");
+  return ok(c, await recordBacklinks(c.env, await c.req.json<any>().catch(() => null)));
 });
 // One row (her own call) or { rows } from a posting job on the platform's confirmation (H5).
 growthRoutes.post("/noelle/ledger", async (c) => {

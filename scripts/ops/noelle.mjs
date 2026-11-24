@@ -4,7 +4,7 @@
  *
  * Noelle is Claude Code with a persona (scripts/ops/noelle/persona.md), started by scripts/ops/noelle.sh in
  * her own home (~/Work/noelle). She has builder-level tools; nothing here plans for her or gates her plan.
- * These are the few steps around her run, and the three tools she calls herself (through the vault wrapper
+ * These are the few steps around her run, and the four tools she calls herself (through the vault wrapper
  * ~/Work/noelle/bin/noelle-tool, which runs this file under `npm run vault:run`):
  *
  *   due <day> <HH:MM> <mark>              one launchd tick: RUN <slot> <kind> <try> [resume] | WAIT | HELD
@@ -20,6 +20,7 @@
  *   brain <slug>                          (hers) a brain she may read, confidential parts removed (H1)
  *   notice <business> <what> <where> <https link>   (hers) one Notices line for a new thing she published
  *   ledger <business> <channel> <kind> <item> [receipt]   (hers) one measurement-ledger row
+ *   backlinks <business> <file.json>     (hers) link requests to the backlink network, [{ topic, draft, why }]
  *
  * RULE 0. Every step prints one OUTPUT line; a step that did nothing is a NAMED STOP and a non-zero exit.
  */
@@ -308,6 +309,17 @@ async function cmdLedger(business, channel, kind, item, receipt) {
   console.log(`OUTPUT ledger ${res.written ? "row written" : res.duplicate ? "row already there" : `not written (${res.why})`}`);
 }
 
+/** `backlinks <business> <file.json>`: her link requests to the backlink network, [{ topic, draft, why }]. */
+async function cmdBacklinks(business, file) {
+  let requests = null;
+  try { requests = JSON.parse(readFileSync(file, "utf8")); } catch { requests = null; }
+  if (!business || !Array.isArray(requests) || !requests.length) throw new Error("NAMED STOP [BACKLINKS_SHAPE] backlinks <business> <file.json holding [{ topic, draft, why }]>");
+  const res = await bossMachine()("POST", "/backlinks", { business, requests });
+  for (const r of res.refused ?? []) console.log(`refused: ${r}`);
+  console.log(`OUTPUT backlinks ${res.written ? `${res.written} written` : res.duplicate ? "already there" : `none written (${res.why})`}`);
+  if (!res.written && !res.duplicate) process.exitCode = 4;
+}
+
 async function cmdCallClaim(runsDir) {
   const { call } = await bossMachine()("POST", "/call/claim", { device_id: `mac:${process.env.USER ?? "mac"}` });
   if (!call) { console.log("NONE"); return; }
@@ -355,7 +367,8 @@ async function main() {
   if (cmd === "brain") { process.stdout.write(readBrain(a)); console.log(`\nOUTPUT brain ${a} read`); return; }
   if (cmd === "notice") return cmdNotice(a, b, c, d);
   if (cmd === "ledger") return cmdLedger(a, b, c, d, e);
-  console.error("usage: noelle.mjs due|mark|window|call-claim|call-release|reads|persona|stop|finish|brain|notice|ledger …");
+  if (cmd === "backlinks") return cmdBacklinks(a, b);
+  console.error("usage: noelle.mjs due|mark|window|call-claim|call-release|reads|persona|stop|finish|brain|notice|ledger|backlinks …");
   process.exit(2);
 }
 

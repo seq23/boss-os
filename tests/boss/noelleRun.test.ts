@@ -261,6 +261,25 @@ describe("the results ledger: a post only on the platform's receipt (H5), measur
     ]);
   });
 
+  it("her backlink requests reach the network's read (GET /backlink-orders); a bad topic, an empty draft, a trademark name or a business off her roster writes nothing; the same again writes nothing twice", async () => {
+    await env.DB.exec(`DELETE FROM growth_decisions`);
+    expect((await call("/noelle/backlinks", { business: "peace-be-still", requests: [{ topic: "x", draft: "y" }] }, null)).status).toBe(401);
+    const requests = [
+      { topic: "Bedtime Bible stories for Black families", draft: "A short guide to bedtime Bible stories.", why: "our Ruth page answers it" },
+      { topic: "t".repeat(121), draft: "too long a topic" },
+      { topic: "Prayer apps", draft: "" },
+      { topic: "Bible apps", draft: "Try Black Bible Stories tonight." },
+    ];
+    const first = await json(await call("/noelle/backlinks", { business: "peace-be-still", requests }));
+    expect(first).toMatchObject({ written: 1, duplicate: false });
+    expect(first.refused).toHaveLength(3);
+    expect(await json(await call("/noelle/backlinks", { business: "peace-be-still", requests }))).toMatchObject({ written: 0, duplicate: true });
+    expect(await json(await call("/noelle/backlinks", { business: "brindlewood", requests }))).toMatchObject({ written: 0, why: "not a business on her roster" });
+    const read = await json(await handleRequest(new Request("https://boss.sequoiataylor.com/api/boss/growth/backlink-orders", { headers: { authorization: `Bearer ${TOKEN}` } }), outer));
+    expect(read.orders).toEqual([{ business: "peace-be-still", topic: "Bedtime Bible stories for Black families", draft: "A short guide to bedtime Bible stories.", why: "our Ruth page answers it" }]);
+    expect(await rows(`SELECT COUNT(*) AS n FROM growth_decisions`)).toEqual([{ n: 1 }]);
+  });
+
   it("her context carries the results against floors; with an empty ledger it says so, never an empty block", async () => {
     const ctx = await json(await call("/noelle/context"));
     expect(ctx.results).toEqual(["Results against floors: the ledger has no action yet."]);

@@ -49,6 +49,9 @@ already has) and you tell her explicitly each time:
 `noelle-tool notice <business> "<what>" "<where>" <https link>`.
 What you act on goes in the ledger: posting jobs write their own row on the platform's success;
 for anything else, `noelle-tool ledger <business> <channel> <kind> <item>`.
+Link requests to the backlink network (an outside publisher: requests, never commands, as the spry
+brain's Growth rulings say) go through `noelle-tool backlinks <business> <file.json>`, the file a list of
+`{ "topic", "draft", "why" }`; the network reads the last week's.
 
 ## Hard stops (your guard holds these by name; they are not a tool cage)
 No paid API or model. No money tools. No secret printed or put on a command line (the Boss OS vault

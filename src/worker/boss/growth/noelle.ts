@@ -35,6 +35,7 @@ import { latestReadings } from "../routes/growth";
 import { putMorningSection } from "../mail/morningSection";
 import { BOSS_ORIGIN } from "../../../shared/boss/research/page.mjs";
 import { DIRECTOR, loadRoster } from "./run";
+import { BACKLINKS, topicOf, namingProblems } from "../../../shared/boss/growth/director.mjs";
 
 const DAY_MS = 86_400_000;
 const parse = <T>(t: unknown, d: T): T => { try { return typeof t === "string" ? JSON.parse(t) : d; } catch { return d; } };
@@ -159,6 +160,42 @@ export async function recordNotice(env: Env, body: any, now = Date.now()) {
   const line = noticeLine({ label: e.label, what: body.what.slice(0, 160), where: body.where.slice(0, 80), link });
   const written = await noticeOnce(env.DB, key, line, 0, now);
   return { written, duplicate: !written, why: null };
+}
+
+/**
+ * Her backlink requests to the backlink network (an outside publisher; her ruling is in the spry brain's
+ * Growth rulings). One `growth_decisions` row per business per call, in the shape the network's read
+ * (GET /backlink-orders, `backlinkOrders`) has always taken: { kind: "ordered", item: { channel: "backlinks",
+ * topic, draft, why } }. A topic over TOPIC_MAX, an empty draft or a draft the naming guard stops is refused
+ * by name; a business off her roster writes nothing; the same requests again write nothing twice.
+ */
+export const MAX_BACKLINKS = 12;
+export async function recordBacklinks(env: Env, body: any, now = Date.now()) {
+  const { roster } = await loadRoster(env.DB);
+  const e = roster.find((x: any) => x.key === body?.business);
+  if (!e) return { written: 0, duplicate: false, refused: [], why: "not a business on her roster" };
+  const input = (Array.isArray(body?.requests) ? body.requests : []).slice(0, MAX_BACKLINKS);
+  if (!input.length) return { written: 0, duplicate: false, refused: [], why: "send requests: [{ topic, draft, why }]" };
+  const items: any[] = []; const refused: string[] = [];
+  for (const r of input) {
+    const topic = topicOf(r?.topic);
+    const draft = typeof r?.draft === "string" ? r.draft.trim().slice(0, 4000) : "";
+    const naming = draft ? namingProblems(draft) : [];
+    if (!topic || !draft || naming.length) { refused.push(`${String(r?.topic ?? "?").slice(0, 60)}: ${!topic ? "topic is 1-120 characters on one line" : !draft ? "no draft" : naming[0]}`); continue; }
+    items.push({ kind: "ordered", item: { channel: BACKLINKS, topic, draft, why: typeof r?.why === "string" ? r.why.slice(0, 300) : "" } });
+  }
+  if (!items.length) return { written: 0, duplicate: false, refused, why: "every request was refused" };
+  const day = dayIdInZone(now);
+  const actions = JSON.stringify(items);
+  const id = `gdn-${day}-${e.key}-${(await sha256hex(actions)).slice(0, 12)}`;
+  const r = await env.DB.prepare(`INSERT OR IGNORE INTO growth_decisions (id, cycle, business, label, state, decision, actions, created_at) VALUES (?,?,?,?,'decided',?,?,?)`)
+    .bind(id, day, e.key, e.label, `Noelle's backlink requests (${items.length})`, actions, now).run();
+  const written = r.meta?.changes ? items.length : 0;
+  return { written, duplicate: !written, refused, why: null };
+}
+async function sha256hex(s: string) {
+  const b = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(s));
+  return [...new Uint8Array(b)].map((x) => x.toString(16).padStart(2, "0")).join("");
 }
 
 /**
