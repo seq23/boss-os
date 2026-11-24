@@ -31,3 +31,9 @@ it("names the per-issue alert shape so the model counts it", () => {
 it("a 'nothing' answer must carry every search and its count", () => {
   expect(prompt).toMatch(/NO AHREFS SITE AUDIT MAIL THIS WEEK followed by every search you ran and how many emails each returned/);
 });
+
+it("the digest always opens with its SEARCHED record and the worker is told to carry it", () => {
+  expect(prompt).toMatch(/first line is always, even in a week with no mail, SEARCHED: mailbox=/);
+  expect(prompt).toMatch(/If there were none, keep the SEARCHED line first/);
+  expect(script).toContain("copy it into your report's");
+});
