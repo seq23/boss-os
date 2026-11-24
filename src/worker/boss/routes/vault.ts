@@ -293,7 +293,7 @@ const SNAPSHOT_TABLES = [
   "ai_answer_obs",
   "ai_answer_reads",
   "ai_misses",
-  // 0378 — Noelle's runs: a restore that lost them would let a slot already run plan and post again.
+  // 0378 — Noelle's runs: a restore that lost them would let a slot already done run and post again.
   "noelle_runs",
   // 0379 — Noelle's measurement ledger: a restore that lost it would lose every lever's 30/60-day read.
   "noelle_actions",
