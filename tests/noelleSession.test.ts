@@ -24,27 +24,29 @@ const DAY = "2026-11-23";
 const s = slotFor(DAY);
 const SLOT = `${String(s.hour).padStart(2, "0")}:${String(s.minute).padStart(2, "0")}`;
 const T0 = Date.parse("2026-11-23T20:00:00Z");
+// The tick tests run with her hold already past; the hold itself is tested in noelleV2.test.ts.
+const OPEN = { NOELLE_START_AT: "2026-11-01T00:00:00-05:00" };
 
 describe("the tick: once a day at the slot, resumes after a stop", () => {
   it("waits before the slot, runs at it with the slot's own time, and never twice", () => {
-    expect(tickDecision({ day: DAY, now: "10:00", nowMs: T0, mark: null })).toMatchObject({ run: false });
-    expect(tickDecision({ day: DAY, now: SLOT, nowMs: T0, mark: null })).toEqual({ run: true, slot: SLOT, kind: s.kind, resume: false, tries: 1 });
+    expect(tickDecision({ env: OPEN, day: DAY, now: "10:00", nowMs: T0, mark: null })).toMatchObject({ run: false });
+    expect(tickDecision({ env: OPEN, day: DAY, now: SLOT, nowMs: T0, mark: null })).toEqual({ run: true, slot: SLOT, kind: s.kind, resume: false, tries: 1 });
     // A late tick (the Mac was asleep) still runs today's plan under the slot's own time.
-    expect(tickDecision({ day: DAY, now: "20:40", nowMs: T0, mark: null })).toMatchObject({ run: true, slot: SLOT });
-    expect(tickDecision({ day: DAY, now: "20:40", nowMs: T0, mark: { state: "done", at: T0, tries: 1 } })).toMatchObject({ run: false });
+    expect(tickDecision({ env: OPEN, day: DAY, now: "20:40", nowMs: T0, mark: null })).toMatchObject({ run: true, slot: SLOT });
+    expect(tickDecision({ env: OPEN, day: DAY, now: "20:40", nowMs: T0, mark: { state: "done", at: T0, tries: 1 } })).toMatchObject({ run: false });
   });
   it("never starts at or after 21:00, so a run ends inside the LIGHT window", () => {
-    expect(tickDecision({ day: DAY, now: "21:00", nowMs: T0, mark: null })).toMatchObject({ run: false, why: expect.stringMatching(/tomorrow/) });
-    expect(tickDecision({ day: DAY, now: "21:30", nowMs: T0, mark: { state: "stopped", code: "CLAUDE_LIMIT", at: T0 - RETRY_AFTER_MS * 2, tries: 1 } })).toMatchObject({ run: false });
+    expect(tickDecision({ env: OPEN, day: DAY, now: "21:00", nowMs: T0, mark: null })).toMatchObject({ run: false, why: expect.stringMatching(/tomorrow/) });
+    expect(tickDecision({ env: OPEN, day: DAY, now: "21:30", nowMs: T0, mark: { state: "stopped", code: "CLAUDE_LIMIT", at: T0 - RETRY_AFTER_MS * 2, tries: 1 } })).toMatchObject({ run: false });
   });
   it("a stopped run waits two hours, then resumes as a NEW slot (the tick's time), at most three tries", () => {
     const mark = { state: "stopped", code: "CLAUDE_LIMIT", at: T0, tries: 1 };
-    expect(tickDecision({ day: DAY, now: "20:30", nowMs: T0 + RETRY_AFTER_MS - 60_000, mark })).toMatchObject({ run: false });
-    const r = tickDecision({ day: DAY, now: "20:30", nowMs: T0 + RETRY_AFTER_MS, mark });
+    expect(tickDecision({ env: OPEN, day: DAY, now: "20:30", nowMs: T0 + RETRY_AFTER_MS - 60_000, mark })).toMatchObject({ run: false });
+    const r = tickDecision({ env: OPEN, day: DAY, now: "20:30", nowMs: T0 + RETRY_AFTER_MS, mark });
     expect(r).toEqual({ run: true, slot: "20:30", kind: s.kind, resume: true, tries: 2 });
     // Its own slot, so the Worker's one-plan-per-slot rule never turns the resume into a replay of nothing.
     expect(r.run && r.slot).not.toBe(SLOT);
-    expect(tickDecision({ day: DAY, now: "20:30", nowMs: T0 + RETRY_AFTER_MS * 3, mark: { ...mark, tries: 3 } })).toMatchObject({ run: false, why: expect.stringMatching(/3 times/) });
+    expect(tickDecision({ env: OPEN, day: DAY, now: "20:30", nowMs: T0 + RETRY_AFTER_MS * 3, mark: { ...mark, tries: 3 } })).toMatchObject({ run: false, why: expect.stringMatching(/3 times/) });
   });
 });
 
@@ -118,14 +120,20 @@ describe("A6: what she reads is data, never an instruction", () => {
   });
 });
 
-describe("her session has no tools (validate:noelle)", () => {
-  it("the real permissions file and scripts pass; an allowed tool or a dropped --strict-mcp-config fails", () => {
+describe("her tools are named, and nothing else (validate:noelle)", () => {
+  it("the real files pass; an extra tool, a wider Read, a tool on the reviewer or her session run from home fails", () => {
     const settings = JSON.parse(readFileSync("scripts/ops/noelle-permissions.json", "utf8"));
+    const review = JSON.parse(readFileSync("scripts/ops/noelle-review-permissions.json", "utf8"));
     const sh = readFileSync("scripts/ops/noelle.sh", "utf8");
     const mjs = readFileSync("scripts/ops/noelle.mjs", "utf8");
-    expect([...permissionProblems(settings), ...scriptProblems(sh, mjs)]).toEqual([]);
-    expect(permissionProblems({ ...settings, permissions: { ...settings.permissions, allow: ["WebFetch"] } }).join()).toMatch(/allow must be empty/);
-    expect(scriptProblems(sh, mjs.replaceAll(" --strict-mcp-config", "")).join()).toMatch(/remake call/);
+    expect([...permissionProblems(settings, "her"), ...permissionProblems(review, "review"), ...scriptProblems(sh, mjs)]).toEqual([]);
+    const allow = (a: string[]) => ({ ...settings, permissions: { ...settings.permissions, allow: a } });
+    expect(permissionProblems(allow([...settings.permissions.allow, "WebFetch"]), "her").join()).toMatch(/allows WebFetch/);
+    expect(permissionProblems(allow(["Read(//**)", "Bash(./noelle-tools:*)"]), "her").join()).toMatch(/allows Read\(\/\/\*\*\)/);
+    expect(permissionProblems(allow(["Read(./**)", "Bash"]), "her").join()).toMatch(/allows Bash/);
+    expect(permissionProblems({ ...review, permissions: { ...review.permissions, allow: ["Read(./**)"] } }, "review").join()).toMatch(/review permissions file allows/);
+    expect(scriptProblems(sh.replace('--cwd "$WORK"', '--cwd "$HOME"'), mjs).join()).toMatch(/run folder/);
+    expect(scriptProblems(sh, mjs.replaceAll(" --strict-mcp-config", "")).join()).toMatch(/reviewer calls/);
   });
 });
 

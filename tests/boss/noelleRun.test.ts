@@ -97,7 +97,7 @@ const json = async (r: Response) => { const b: any = await r.json(); return b?.d
 /** Every source of the weekly read, fresh and non-empty, unless overridden. */
 const reads = (over: Record<string, unknown> = {}) => ({ ...Object.fromEntries(READ_SOURCES.map((s: { id: string }) => [s.id, { at: new Date(NOW - DAY_MS).toISOString(), sha: "abc123def456", rows: 3 }])), ...over });
 const plan = (actions: unknown[], extra: Record<string, unknown> = {}) => ({ day: DAY, slot: "14:37", kind: "daily", calls: 6, plan: { actions }, reads: reads(), facts: { articles: { approvalprep: 4 }, caps: { approvalprep: 40 } }, ...extra });
-const SEASON = { kind: "decision", business: "porch-and-party", source: "pnp-season-bookings", decision: "3 porches booked this season; sell the January takedown from 15 Dec." };
+const SEASON = { kind: "decision", business: "porch-and-party", source: "pnp-season-bookings", decision: "3 porches booked this season; sell rentals and events from 15 Dec." };
 const rows = async (sql: string, ...b: unknown[]) => ((await env.DB.prepare(sql).bind(...b).all<any>()).results ?? []);
 const cards = () => rows(`SELECT a.title FROM approvals a JOIN judgement_calls j ON j.approval_id = a.id WHERE j.resume_kind = 'growth_proposal'`);
 
@@ -140,8 +140,10 @@ describe("the Worker re-checks the plan; only accepted acts go back (A6, G1, G3,
     ]));
     expect(r.status).toBe(201);
     const out = await json(r);
-    // The Mac acts on these only: the lower cap and the job target. Never the post, spend or account.
-    expect(out.accepted.map((a: any) => [a.kind, a.business, a.change ?? a.field])).toEqual([["search-loop", "approvalprep", "cap"], ["job-target", "approvalprep", "posts_per_week"]]);
+    // The Mac acts on the lower cap only. Never the post, spend or account; and AP's Pinterest job keeps its
+    // posts per week in code, not a file, so that job target is NO_KNOB (a builder PR), never a guess.
+    expect(out.accepted.map((a: any) => [a.kind, a.business, a.change ?? a.field])).toEqual([["search-loop", "approvalprep", "cap"]]);
+    expect(out.refused.find((x: any) => x.action.kind === "job-target")?.stop).toBe("NO_KNOB");
     expect(out.accepted[0].value).toBe(30);
     const stops = out.refused.map((x: any) => x.stop);
     for (const s of ["UNKNOWN_KIND", "NEVER_SPEND", "NO_NEW_ACCOUNTS", "OWNED_BY_JOB", "CAP_RAISE_IS_HERS", "CLIENT_APPROVAL", "NOT_ON_ROSTER"]) expect(stops).toContain(s);
@@ -298,6 +300,31 @@ describe("what she changes and tells", () => {
     // A failure that names its stop keeps its code, so three days of it reach her as one line (G16b, G16c).
     expect(JSON.parse(done.stops).sort()).toEqual(["ACT_FAILED", "POST_NOT_PUBLISHED"]);
     expect((await call("/noelle/done", { run, published: pub })).status).toBe(400);
+  });
+
+  it("done: each job PR she opened and each red stop (nothing acted, under 3 days) is one Notices line, never twice", async () => {
+    const { run } = await json(await call("/noelle/plan", plan([SEASON])));
+    const jobs = [
+      { tag: "approvalprep threads ap-threads.bank", pr: "seq23/approvalprep#77", what: "add 3 reviewed posts to the bank (t61, t62, t63)" },
+      { tag: "approvalprep threads ap-threads.bank", pr: "seq23/approvalprep#77", what: "the same PR again" },
+      { tag: "detox-denver x y.z", pr: "seq23/x#1", what: "not hers" },
+      { tag: "approvalprep threads ap-threads.target", pr: "evil/repo#2", what: "a forged repo" },
+    ];
+    const failed = [
+      { kind: "alarm", why: "NAMED STOP [UNDER_3_DAYS] dream-wedding:tiktok: 1 day ahead (alarm under 3); nothing this run fixed it" },
+      { kind: "run", why: "NAMED STOP [NOTHING_ACTED] her run queued nothing and changed no job (Rule 0: a run that does nothing is red)" },
+      { kind: "job-target", why: "a plain failure, no stop code" },
+    ];
+    const r = await json(await call("/noelle/done", { run, published: [], jobs, failed }));
+    expect(r.notices).toBe(1);
+    const n = (await rows(`SELECT body FROM boss_task_notices WHERE from_name = 'Noelle' ORDER BY body`)).map((x: any) => x.body);
+    expect(n).toEqual([
+      "Noelle changed ApprovalPrep threads: add 3 reviewed posts to the bank (t61, t62, t63) (lands on green checks) https://github.com/seq23/approvalprep/pull/77",
+      "Noelle: dream-wedding:tiktok: 1 day ahead (alarm under 3); nothing this run fixed it",
+      "Noelle: her run queued nothing and changed no job (Rule 0: a run that does nothing is red)",
+    ]);
+    const done = (await rows(`SELECT stops FROM noelle_runs WHERE id = ?`, run))[0];
+    expect(JSON.parse(done.stops).sort()).toEqual(["ACT_FAILED", "NOTHING_ACTED", "UNDER_3_DAYS"]);
   });
 
   it("the 14-day report is written on the first done run, then not again inside the fortnight (G5)", async () => {

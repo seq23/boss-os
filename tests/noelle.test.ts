@@ -71,8 +71,10 @@ describe("G1: owned channels are changed through their job, never posted", () =>
     expect(r.accepted).toHaveLength(0);
     expect(r.refused[0]).toMatchObject({ stop: "OWNED_BY_JOB" });
     expect(r.refused[0].why).toMatch(/4 of 4 queued/);
-    const t = plan({ kind: "job-target", business: "peace-be-still", channel: "threads", field: "bank", value: "add five Psalm Nights lines" });
-    expect(t.accepted[0]).toMatchObject({ job: "pbs-threads" });
+    const t = plan({ kind: "job-target", business: "peace-be-still", channel: "threads", field: "bank", value: [{ type: "Psalm Night", text: "Breathe slow. You can set it down tonight." }] });
+    expect(t.accepted[0]).toMatchObject({ job: "pbs-threads", repo: "peace-be-still", file: "data/threads/posts.json", key: "posts" });
+    // A bank in words, not posts, is refused: code adds posts, never a description of them.
+    expect(plan({ kind: "job-target", business: "peace-be-still", channel: "threads", field: "bank", value: "add five Psalm Nights lines" }).refused[0].stop).toBe("BANK_SHAPE");
     expect(plan({ kind: "job-target", business: "peace-be-still", channel: "threads", field: "schedule", value: "x" }).refused[0].stop).toBe("FIELD");
   });
 });
@@ -218,7 +220,7 @@ describe("Beyond the list", () => {
     expect(plan({ kind: "decision", business: "porch-and-party", source: "grid", decision: "d" }).refused[0].stop).toBe("SEASON_FIRST");
     expect(plan({ kind: "decision", business: "porch-and-party", source: "pnp-season-bookings", decision: "d" }, { kind: "decision", business: "porch-and-party", source: "grid", decision: "d" }).accepted).toHaveLength(2);
     expect(season("2026-12-14")).toBe("christmas");
-    expect(season("2026-12-15")).toBe("takedown");
+    expect(season("2026-12-15")).toBe("winter");
     expect(season("2027-03-01")).toBe("spring");
     const late = plan({ kind: "studio-plan", business: "porch-and-party", pieces: [{ id: "p1", at: "2026-12-20 11:15", post: "reel", format: "real-montage", platforms: ["instagram"], theme: "christmas-porch", hook: "x" }] });
     expect(late.refused[0].why).toMatch(/out of season/);

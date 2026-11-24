@@ -12,10 +12,14 @@
 #   Worker re-checks every action) → act (P&P Studio: render on GitHub, a fresh reviewer per piece, one
 #   remake, queue with idem_key) → done (notices, failures, calls).
 #
-# SHE HAS NO TOOLS. scripts/ops/noelle-permissions.json is the whole permission list: allow is empty,
-# every built-in tool denied, the claude.ai connectors off, no plugin; `--setting-sources=` loads none of
-# her own settings and `--strict-mcp-config` loads no MCP server. `npm run validate:noelle` fails the
-# build on any change to that. Her only output is a JSON plan between two sentinels.
+# HER TOOLS ARE NAMED, NOTHING ELSE (24 Nov 2026, "u made her an agent and have the intelligence of you").
+# scripts/ops/noelle-permissions.json allows exactly Read inside her run folder (her context, the rulings
+# files) and `./noelle-tools` (queue, bank, check: read and check only, scripts/ops/noelle-tools.mjs); every
+# other built-in is denied, the claude.ai connectors are off, no plugin; `--setting-sources=` loads none of
+# her own settings and `--strict-mcp-config` loads no MCP server. The bank reviewer and the remake run with
+# scripts/ops/noelle-review-permissions.json, which allows nothing. `npm run validate:noelle` fails the
+# build on any change to either. Her output is still one JSON plan between two sentinels; every write
+# happens after her session, in `act`, on what the Worker accepted.
 #
 # RULE 0: every path prints an OUTPUT line or a NAMED STOP; nothing done is never exit 0, except a tick
 # that is not due (WAIT), which says why.
@@ -27,9 +31,10 @@ main() {
 REPO="${BOSS_OS_REPO:-$(cd "$(dirname "$(readlink -f "${BASH_SOURCE[0]}")")/../.." && pwd)}"
 PROMPT_FILE="${NOELLE_PROMPT:-$REPO/scripts/ops/noelle-prompt.md}"
 SETTINGS="$REPO/scripts/ops/noelle-permissions.json"
+REVIEW_SETTINGS="$REPO/scripts/ops/noelle-review-permissions.json"
 MODEL="${NOELLE_MODEL:-claude-opus-5}"
 # No tools, so one turn writes the plan; two leave room for a model that thinks aloud first.
-MAX_TURNS="${NOELLE_MAX_TURNS:-2}"
+MAX_TURNS="${NOELLE_MAX_TURNS:-60}"
 LOG_DIR="$HOME/Library/Logs/noelle"
 RUNS="$HOME/.boss-os/noelle/runs"
 LOCK="$LOG_DIR/.lock.flock"
@@ -52,6 +57,7 @@ esac
 DUE="$(node "$REPO/scripts/ops/noelle.mjs" due "$DAY" "$NOW" "$MARK")" || { say "NAMED STOP [NOELLE_DUE_FAILED] the tick could not read today's slot"; exit 3; }
 case "$DUE" in
   WAIT*) say "$DUE"; exit 0 ;;
+  HELD*) say "${DUE#HELD }"; exit 0 ;;  # her hold (NOELLE_START_AT): nothing is read, called or queued before it
   RUN*) ;;
   *) say "NAMED STOP [NOELLE_DUE_FAILED] $DUE"; exit 3 ;;
 esac
@@ -71,27 +77,29 @@ stopped() { # <code> <line> <exit>
 AI_RUN="${AI_RUN_BIN:-$HOME/bin/ai-run}"
 [ -x "$AI_RUN" ] || stopped AI_RUN_MISSING "NAMED STOP [AI_RUN_MISSING] $AI_RUN is not installed (seq-bin)" 13
 [ -f "$PROMPT_FILE" ] || stopped NO_PROMPT_FILE "NAMED STOP [NO_PROMPT_FILE] $PROMPT_FILE" 5
-[ -s "$SETTINGS" ] || stopped NO_PERMISSIONS_FILE "NAMED STOP [NO_PERMISSIONS_FILE] her session never runs without its empty allow list" 6
+[ -s "$SETTINGS" ] || stopped NO_PERMISSIONS_FILE "NAMED STOP [NO_PERMISSIONS_FILE] her session never runs without its named allow list" 6
+[ -s "$REVIEW_SETTINGS" ] || stopped NO_PERMISSIONS_FILE "NAMED STOP [NO_PERMISSIONS_FILE] the reviewer never runs without its empty allow list" 6
 case "$SETTINGS" in *[[:space:]]*) stopped PERMISSIONS_PATH_SPACE "NAMED STOP [PERMISSIONS_PATH_SPACE] '$SETTINGS' has a space, which ai-run would split" 6;; esac
 [[ "$MAX_TURNS" =~ ^[1-9][0-9]*$ ]] || stopped BAD_MAX_TURNS "NAMED STOP [BAD_MAX_TURNS] NOELLE_MAX_TURNS='$MAX_TURNS'" 5
 ROLE="$(node "$REPO/scripts/ops/lib/ai-run.mjs" role growth.noelle)" || stopped NO_AI_ROLE "NAMED STOP [NO_AI_ROLE] growth.noelle" 11
 [ "$ROLE" = "brain" ] || stopped NOT_CLAUDE "NAMED STOP [NOT_CLAUDE] growth.noelle must be the brain role (Claude only), got $ROLE" 11
-node "$REPO/scripts/validate/noelle-no-tools.mjs" >> "$RUN_LOG" 2>&1 || stopped PERMISSIONS_NOT_EMPTY "NAMED STOP [PERMISSIONS_NOT_EMPTY] her session would have tools; refusing to run" 6
+node "$REPO/scripts/validate/noelle-no-tools.mjs" >> "$RUN_LOG" 2>&1 || stopped PERMISSIONS_WIDENED "NAMED STOP [PERMISSIONS_WIDENED] her session or the reviewer would have tools beyond the named list; refusing to run" 6
 
 say "=== Noelle $KIND run, slot $SLOT, try $TRY${RESUME:+ (resume)} ==="
 CTX_ARGS=("$WORK"); [ "$KIND" = "weekly" ] && CTX_ARGS+=(weekly)
 step context "${CTX_ARGS[@]}" || stopped NO_CONTEXT "NAMED STOP [NO_CONTEXT] the reads could not be gathered; $(grep -h 'NAMED STOP' "$RUN_LOG" | tail -1)" 13
 [ -s "$WORK/context.txt" ] || stopped NO_CONTEXT "NAMED STOP [NO_CONTEXT] the context step wrote nothing" 13
 
-export NOELLE_AI_RUN="$AI_RUN" NOELLE_ROLE="$ROLE" NOELLE_MODEL="$MODEL" NOELLE_SETTINGS="$SETTINGS"
+export NOELLE_AI_RUN="$AI_RUN" NOELLE_ROLE="$ROLE" NOELLE_MODEL="$MODEL" NOELLE_SETTINGS="$SETTINGS" NOELLE_REVIEW_SETTINGS="$REVIEW_SETTINGS"
 PROMPT_TEXT="$(cat "$PROMPT_FILE")
 
 $(cat "$WORK/context.txt")"
 PLAN_LOG="$WORK/plan.log"
-cd "$HOME" || stopped NO_HOME "NAMED STOP [NO_HOME]" 8
+[ -x "$WORK/noelle-tools" ] || stopped NO_TOOLS "NAMED STOP [NO_TOOLS] the context step did not write her ./noelle-tools" 13
+cd "$WORK" || stopped NO_WORK "NAMED STOP [NO_WORK]" 8
 ENABLE_CLAUDEAI_MCP_SERVERS=false AI_RUN_CLAUDE_MODEL="$MODEL" \
 AI_RUN_CLAUDE_ARGS="--max-turns $MAX_TURNS --permission-mode dontAsk --setting-sources= --settings $SETTINGS --strict-mcp-config" \
-"$AI_RUN" --role "$ROLE" --network --cwd "$HOME" --out "$PLAN_LOG" -- "$PROMPT_TEXT" >> "$RUN_LOG" 2>&1
+"$AI_RUN" --role "$ROLE" --network --cwd "$WORK" --out "$PLAN_LOG" -- "$PROMPT_TEXT" >> "$RUN_LOG" 2>&1
 RC=$?
 say "=== her session (ai-run --role $ROLE, $MODEL) exited rc=$RC ==="
 # ai-run turns Claude's usage notice into exit 76 on any exit code; nothing here re-reads the log for it.
@@ -118,10 +126,14 @@ if [ "$ARC" -eq 76 ]; then
 fi
 [ "$DRC" -eq 0 ] || { node "$REPO/scripts/ops/noelle.mjs" mark "$MARK" stopped DONE_FAILED "$TRY"; say "NAMED STOP [DONE_FAILED] rc=$DRC"; exit "$DRC"; }
 ln -sf "$RUN_LOG" "$LOG_DIR/latest.log"
-# 9 (nothing to render) and 12 (calendar not read) are recorded stops on the run, not a broken job. Any
-# other act failure is retried by a later tick (its queued pieces are dropped then as taken days).
+# RULE 0: only a run that queued or changed something is done. 9 (nothing to render), 12 (calendar not
+# read) and 14 (nothing acted) are red: a named stop on the card and Notices (done wrote them), and a later
+# tick tries again (its queued pieces are dropped then as taken days).
 case "$ARC" in
-  0|9|12) node "$REPO/scripts/ops/noelle.mjs" mark "$MARK" done "" "$TRY"; exit 0 ;;
+  0) node "$REPO/scripts/ops/noelle.mjs" mark "$MARK" done "" "$TRY"; exit 0 ;;
+  9) node "$REPO/scripts/ops/noelle.mjs" mark "$MARK" stopped NOTHING_TO_RENDER "$TRY"; say "NAMED STOP [NOTHING_TO_RENDER]"; exit 9 ;;
+  12) node "$REPO/scripts/ops/noelle.mjs" mark "$MARK" stopped CALENDAR_UNREAD "$TRY"; say "NAMED STOP [CALENDAR_UNREAD]"; exit 12 ;;
+  14) node "$REPO/scripts/ops/noelle.mjs" mark "$MARK" stopped NOTHING_ACTED "$TRY"; say "NAMED STOP [NOTHING_ACTED]"; exit 14 ;;
   *) node "$REPO/scripts/ops/noelle.mjs" mark "$MARK" stopped "ACT_FAILED" "$TRY"; say "NAMED STOP [ACT_FAILED] rc=$ARC"; exit "$ARC" ;;
 esac
 }

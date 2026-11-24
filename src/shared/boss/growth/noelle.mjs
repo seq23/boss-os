@@ -2,7 +2,7 @@
  * NOELLE, THE GROWTH DIRECTOR AS A CLAUDE AGENT (23 Nov 2026). Pure rules; no I/O.
  *
  * Her loop is Read → Decide → Act → Tell → Measure. The Mac run (scripts/ops/noelle.sh → noelle.mjs)
- * assembles every ledger into one context, Claude (ai-run --role brain, no tools) answers with ONE plan,
+ * assembles every ledger into one context, Claude (ai-run --role brain, her two read-and-check tools) answers with ONE plan,
  * and THIS file judges every action of that plan before anything happens. The Worker judges the same
  * plan again with the same function when the run is recorded (POST /api/boss/growth/noelle/run): the
  * caller is never trusted. Anything this file refuses can only become a card or a line to Sequoia.
@@ -15,6 +15,7 @@
 import { mayAct } from "./roster.mjs";
 import { namingProblems, BACKLINKS } from "./director.mjs";
 import { NO_TRACKING_DOMAINS } from "./taggedLink.mjs";
+import SITES from "../searchReadiness/sites.json" with { type: "json" };
 
 /** Every action kind a plan may carry. Anything else is refused UNKNOWN_KIND. */
 export const KINDS = Object.freeze([
@@ -46,6 +47,19 @@ export const CHANNEL_OWNERS = Object.freeze({
   "porch-and-party:tiktok": { job: "pnp-studio", repo: "creator-studios", max: 14 },
   "porch-and-party:facebook-page": { job: "pnp-studio", repo: "creator-studios", max: 14 },
   "porch-and-party:facebook-marketplace": { job: "pnp-marketplace", repo: "p-n-p", max: 20 },
+});
+/**
+ * Where each owned job keeps the knobs she may turn (job-target), in its own repo's file. `target` is how
+ * many posts wait in the queue; it never goes above the job's `max` (the free Buffer's slots: a paid slot is
+ * money, her call). `bank` appends reviewed posts to the job's bank (text posts only: a picture bank needs
+ * its renderer, a builder PR). A job with no entry here keeps its knobs in code: a builder PR, never hers.
+ */
+export const JOB_KNOBS = Object.freeze({
+  "pbs-threads": { file: "data/threads/posts.json", target: "days_ahead", bank: "posts", idPrefix: "pbs" },
+  "ap-threads": { file: "data/threads/posts.json", target: "days_ahead", bank: "posts", idPrefix: "t" },
+  "pbs-instagram": { file: "data/instagram/posts.json", target: "posts_ahead" },
+  "ap-brand-social": { file: "data/brand-social/plan.json", target: "per_channel_queue_max", posts_per_week: "posts_per_week" },
+  "dw-brand-social": { file: "data/brand-social/plan.json", target: "per_channel_queue_max", posts_per_week: "posts_per_week" },
 });
 /** The fields of each owned job she may change (its bank, plan or target), and nothing else. */
 export const JOB_FIELDS = Object.freeze(["bank", "posts_per_week", "topics", "target"]);
@@ -79,17 +93,18 @@ export function readGrid(roster, measures) {
   return out;
 }
 
-/** P&P's season by Central day (Beyond the list): bookings first, then takedown, then spring. */
+/** P&P's season by Central day (Beyond the list): bookings first, then winter (rentals and events: there is
+ * NO January takedown service, her ruling 23 Nov 2026), then spring. */
 export function season(day) {
   const [, m, d] = String(day).split("-").map(Number);
-  if (m === 12 && d >= 15) return "takedown";
-  if (m === 1 || m === 2) return "takedown";
+  if (m === 12 && d >= 15) return "winter";
+  if (m === 1 || m === 2) return "winter";
   if (m >= 3 && m <= 8) return "spring";
   return "christmas";
 }
 export const PIECE_THEMES = Object.freeze({
-  christmas: ["christmas-porch", "takedown", "party", "grazing", "rentals", "events", "office-party"],
-  takedown: ["takedown", "rentals", "events", "party", "grazing"],
+  christmas: ["christmas-porch", "party", "grazing", "rentals", "events", "office-party"],
+  winter: ["rentals", "events", "party", "grazing"],
   spring: ["spring-porch", "party", "grazing", "rentals", "events"],
 });
 /** Corporate Christmas outreach runs 1 Sep to 5 Dec of the same year (full dates, so January never passes). */
@@ -214,7 +229,46 @@ export function taggedLinkProblems(text) {
 export const pieceText = (p) => [p?.hook, ...(Array.isArray(p?.lines) ? p.lines : []), ...Object.values(p?.captions ?? {})].filter((x) => typeof x === "string").join("\n");
 /** Every code check a piece of copy goes through BEFORE the reviewer (G6: namingProblems on every piece). */
 export function copyProblems(text, entry) {
-  return [...namingProblems(text), ...priceProblems(text, entry), ...taggedLinkProblems(text)];
+  return [...namingProblems(text), ...priceProblems(text, entry), ...taggedLinkProblems(text), ...hardStops(text).map((h) => `[${h.stop}] ${h.why}`)];
+}
+
+/**
+ * Hard safety stops on every word she writes or asks for (code, never a prompt rule; her rulings in the
+ * brains). Each is a fixed list, never a guess at meaning: a name, a domain or a trademark.
+ *  - FUND: the fund and its LPs are never her work (risk brain; LP names never leave the private routes).
+ *  - NOT_HERS: Time-2-Read is Monique's, never in a growth post (and no children's names anywhere).
+ *  - TRADEMARK: "Connect Four" is Hasbro's; P&P says "giant four-in-a-row" (24 Nov 2026).
+ *  - LIBRARY: the 3 backlink libraries are kept separate: never named as ours, never linked from our sites.
+ */
+export const LIBRARY_DOMAINS = Object.freeze((SITES.grid_repos ?? []).flatMap((r) => Array.isArray(r?.sites) ? r.sites : [r]).filter((s) => s?.group === "support").map((s) => String(s.domain).toLowerCase()));
+const HARD_STOPS = Object.freeze([
+  { stop: "FUND", re: /\b([Ww]est\s*[Pp]eek\s*[Vv]entures|[Ll]imited\s+[Pp]artners?|LPs?|[Cc]apital\s+[Cc]all|[Ff]und\s+I{1,3})\b/, why: "the fund and its LPs are never growth work" },
+  { stop: "NOT_HERS", re: /\btime[\s-]?(2|to)[\s-]?read\b|heygetonmylevel/i, why: "Time-2-Read is Monique's, never in her work" },
+  { stop: "TRADEMARK", re: /\bconnect[\s-]*(four|4)\b/i, why: "\"Connect Four\" is a Hasbro trademark: say giant four-in-a-row" },
+  { stop: "LIBRARY", re: /authority\s+backlink\s+network/i, why: "the backlink libraries are kept separate: never named as ours" },
+]);
+export function hardStops(text) {
+  const t = String(text ?? "");
+  const out = HARD_STOPS.filter((h) => h.re.test(t)).map(({ stop, why }) => ({ stop, why }));
+  const low = t.toLowerCase();
+  const lib = LIBRARY_DOMAINS.find((d) => low.includes(d));
+  if (lib) out.push({ stop: "LIBRARY", why: `${lib} is a backlink library: never linked or named from our sites or posts` });
+  return out;
+}
+
+/**
+ * Her settled "no"s (brains, Settled decisions): an idea she has turned down is never proposed again.
+ * Checked on what she ASKS for (proposal, sequoia-line, test), never on post copy ("January takedown
+ * included" is a true line in every Christmas post).
+ */
+export const SETTLED_NOS = Object.freeze([
+  { business: "porch-and-party", stop: "SETTLED_NO", re: /takedown/i, unless: /included/i, why: "no January takedown service (her ruling 23 Nov 2026): never proposed again" },
+  { business: "*", stop: "SETTLED_NO", re: /\b(new edition|retitle|re-title)\b/i, why: "KDP titles never change and no new editions (24 Nov 2026)" },
+  { business: "*", stop: "SETTLED_NO", re: /\byoutube\b/i, why: "YouTube is out until the 26 Nov talk" },
+]);
+export function settledNo(action) {
+  const text = [action?.what, action?.why, action?.decision].filter((x) => typeof x === "string").join("\n");
+  return SETTLED_NOS.find((s) => (s.business === "*" || s.business === action?.business) && s.re.test(text) && !(s.unless && s.unless.test(text))) ?? null;
 }
 
 /** G17 + G21: the only conversion sources she may name, per business. KMP: no tags, analytics or email capture. */
@@ -255,6 +309,8 @@ export function checkPlan(plan, ctx) {
     const text = [a.draft, a.decision, a.what, a.why, a.value].filter((x) => typeof x === "string").join("\n");
     const copy = copyProblems(text, e);
     if (copy.length && a.kind !== "decision") { refuse(a, "COPY", copy.join("; ")); continue; }
+    const no = ["proposal", "sequoia-line", "test"].includes(a.kind) ? settledNo(a) : null;
+    if (no) { refuse(a, no.stop, no.why); continue; }
 
     switch (a.kind) {
       case "decision": {
@@ -309,7 +365,22 @@ export function checkPlan(plan, ctx) {
         const owner = CHANNEL_OWNERS[`${e.key}:${a.channel}`];
         if (!owner) { refuse(a, "NO_OWNER", `no scheduled job fills ${e.label}'s ${a.channel}`); continue; }
         if (!JOB_FIELDS.includes(a.field)) { refuse(a, "FIELD", `${a.field} is not a field she may change (${JOB_FIELDS.join(", ")})`); continue; }
-        accepted.push({ ...a, job: owner.job, repo: owner.repo }); break;
+        const knob = JOB_KNOBS[owner.job]?.[a.field];
+        if (!knob) { refuse(a, "NO_KNOB", `${owner.job} keeps no ${a.field} she can change in a file; that is a builder PR`, `${e.label}: ${owner.job} needs a ${a.field} knob (a builder PR)`); continue; }
+        if (a.field === "target" || a.field === "posts_per_week") {
+          const v = Number(a.value);
+          if (!Number.isInteger(v) || v < 1) { refuse(a, "VALUE", `${a.field} is a whole number of at least 1`); continue; }
+          if (a.field === "target" && v > owner.max) { refuse(a, "NEEDS_MONEY", `${owner.job} holds at most ${owner.max} waiting posts on the free Buffer; more is a paid plan`, `${e.label} ${a.channel}: ${v} posts waiting needs a paid Buffer plan (free holds ${owner.max})`); continue; }
+        }
+        if (a.field === "bank") {
+          const posts = Array.isArray(a.value) ? a.value : [];
+          const bad = posts.length < 1 || posts.length > 14 || posts.some((p) => typeof p?.text !== "string" || !p.text.trim() || p.text.length > 500);
+          if (bad) { refuse(a, "BANK_SHAPE", "a bank add is 1 to 14 posts, each { type, text } with text up to 500 characters"); continue; }
+          const copy = posts.flatMap((p) => copyProblems(p.text, e));
+          if (copy.length) { refuse(a, "COPY", copy.join("; ")); continue; }
+        }
+        if (a.field === "topics") { refuse(a, "NO_KNOB", "topics are a search-loop lever (search-loop topics-add), not a job knob"); continue; }
+        accepted.push({ ...a, job: owner.job, repo: owner.repo, file: JOB_KNOBS[owner.job].file, key: knob }); break;
       }
       case "search-loop": {
         if (!SEARCH_LOOP_CHANGES.includes(a.change)) { refuse(a, "SEARCH_LOOP_CHANGE", `${a.change} is not a search-loop lever she has (${SEARCH_LOOP_CHANGES.join(", ")}); menus, links and the engine are never hers`); continue; }
