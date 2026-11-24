@@ -247,6 +247,18 @@ export function queueOrder(approved, register) {
   return (approved ?? []).map((a, i) => ({ a, i })).sort((x, y) => at(x.a) - at(y.a) || x.i - y.i).map((x) => x.a);
 }
 
+/**
+ * Pure: the register row that says this approved title is already Live, or null.
+ * 23-24 Nov 2026: "How to Get a Job in Tech" went Live on 23 Nov (Amazon's email, 09:02 CT) while the
+ * register still said APPROVED_QUEUED, so every run opened the KDP window to "put it up", found the
+ * session signed out and emailed her to sign in (22 Nov 23:32, 23 Nov 22:48 CT). A title the register
+ * holds as LIVE is settled before any browser opens: no sign-in, no Create, never a second copy.
+ */
+export function liveInRegister(approved, register) {
+  const t = normTitle(approved?.title ?? "");
+  return (register?.titles ?? []).find((r) => r.status === "LIVE" && t && normTitle(r.title ?? "") === t) ?? null;
+}
+
 export const KDP_DRAFT_CAP = 10;
 export const PUBLISH_PER_RUN = Number(process.env.KDP_PUBLISH_PER_RUN ?? 5);
 
@@ -1351,7 +1363,8 @@ async function main() {
   try { return await run(); } finally { await tellLive().catch((e) => console.error(`NAMED STOP [LIVE_NOT_TOLD] the live titles were not reported: ${String(e?.message ?? e).slice(0, 160)}`)); }
 }
 
-async function run() {
+/** One publish run (exported for tests/kdpLiveNeverReopened.test.ts, which drives it against a fake Boss OS). */
+export async function run() {
   const api = await boss();
   OUT.api = api;
   const spec = JSON.parse(await readFile(join(HERE, "kdp-books/keepmyproof.json"), "utf8"));
@@ -1365,6 +1378,12 @@ async function run() {
   const books = [];
   let code = 0;
   for (const a of approved) {
+    const known = liveInRegister(a, register);
+    if (known) {
+      const ok = await api.attempt(a.id, { resulting_state: "LIVE", run_outcome: "attempted", title_ref: known.title_ref ?? null, publish_attempted: false, cover_uploaded: false, amazon_message: `kdp-register.json: Live since ${known.status_as_of ?? "unknown"}` });
+      say("LIVE", `${a.title}: Live already (kdp-register.json, since ${known.status_as_of ?? "unknown"}); ${ok ? "approval marked done" : "Boss OS did not take the update, so the next run settles it again"}; nothing opened, no sign-in.`);
+      RUN_STALL.moved += 1; continue;
+    }
     const book0 = spec.books.find((b) => normTitle(b.title) === normTitle(a.title));
     // A series book (kdp-books/<line>.json `series_books`), built by kdp-build.mjs into ~/.boss-os/kdp/books/<slug>.
     const series = book0 ? null : await findSeriesBook(a.title);

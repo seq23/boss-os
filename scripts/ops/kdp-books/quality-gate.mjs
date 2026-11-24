@@ -10,7 +10,14 @@
  * Amazon's grounds, as code reads them (each a named finding):
  *   AI_TEXT_UNEDITED      the AI disclosure says the text was used "with minimal or no editing"
  *   SUBTITLE_STUFFED      a subtitle over 100 characters, or one that lists 5+ topics
- *   PROMO_WORDS           "ultimate", "best", "#1", "bestselling", "complete" in the title or subtitle
+ *   PROMO_WORDS           "best", "#1", "number one", "bestselling", "complete", "definitive", "essential"
+ *                         in the title or subtitle. NOT "ultimate" (24 Nov 2026): Amazon's own Metadata
+ *                         Guidelines (kdp.amazon.com/en_US/help/topic/G201097560, read 24 Nov 2026) bar in a
+ *                         title "Reference to sales rank (e.g., "bestselling")" and "Reference to advertisements
+ *                         or promotions (e.g., "free")", and name no other word. "Ultimate" was our own guess
+ *                         after the 15 Nov rejection; she chose "The Ultimate Guide to …" for her two career
+ *                         guides (24 Nov 2026: "a one stop ultimate guide for ppl"). "Free" is not read here:
+ *                         a word list cannot tell "free" the price from "debt-free" the meaning.
  *   TITLE_TOO_LONG        title + subtitle over 200 characters (KDP's own cap)
  *   THIN                  under MIN_WORDS words of body text
  *   REPETITIVE            over 8% of paragraphs repeat another, or one sentence opening carries the book
@@ -27,7 +34,8 @@ import { pathToFileURL } from "node:url";
 
 export const MIN_WORDS = 2500;
 export const FILLER_PER_10K = 6;
-const PROMO = /\b(ultimate|best|#1|number one|bestsell\w*|complete|definitive|essential)\b/i;
+// "#1" needs its own edge: \b before "#" never matches after a space, so "The #1 Guide" slipped through.
+const PROMO = /(?<![\w#])#1(?!\d)|\b(?:best|number one|bestsell\w*|complete|definitive|essential)\b/i;
 const FILLER = /\b(in today'?s (?:fast-paced|competitive|ever-changing)\b|delve|it(?:'s| is) (?:important|worth) (?:to note|noting)|navigat\w+ the (?:complex|landscape)|in conclusion|embark on|tapestry|game[- ]changer|unlock (?:your|the) (?:full )?potential|whether you'?re a|look no further|in the realm of|a testament to)/gi;
 const STOP = new Set("the and for with your you that this from into what how are was have will can when who about their them they more most than then also just only each every over under after before which while where there here these those our out not all any its it's his her one two use used using make makes made get gets got".split(" "));
 

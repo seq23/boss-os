@@ -59,8 +59,8 @@
       "author": "S. L. Taylor",
       "publisher": "Spry Labs",
       "target": "LIVE",
-      "status": "BLOCKED",
-      "status_as_of": "2026-11-18",
+      "status": "LIVE",
+      "status_as_of": "2026-11-19",
       "line": "ambitious-grads",
       "series": "Ambitious Grads",
       "slug": "ambitious-grads-wall-street",
@@ -81,6 +81,18 @@
         "case": "52966733",
         "never_retried": true,
         "why": "A title Amazon's Content Review blocked is never resubmitted (16 Nov 2026); the queue skips it and publishes the next approved title."
+      },
+      "live": {
+        "on": "2026-11-19",
+        "kdp_select": true,
+        "source": "Amazon's Content Review passed the revised edition (Case #52966733, title ID 68826857); spry brain, Settled decisions, 19 Nov 2026.",
+        "why": "The register still said BLOCKED on 24 Nov 2026; the publish run reads LIVE here and never opens a sign-in for it."
+      },
+      "ultimate_title": {
+        "on": "2026-11-24",
+        "her_words": "the names she changed my ultimate guide books to tech and investment banking suck and don't capture the whole point of those books to be a one stop ultimate guide for ppl and they don't have to go anywhere else",
+        "chosen": "The Ultimate Guide to Wall Street | Everything You Need to Break Into Investment Banking, in One Book",
+        "not_applied": "Live: Amazon locks a published eBook's title and subtitle (KDP help G200736410). Only a new edition, a second book, changes it; never made without her yes."
       }
     },
     {
@@ -90,8 +102,8 @@
       "author": "S. L. Taylor",
       "publisher": "Spry Labs",
       "target": "LIVE",
-      "status": "APPROVED_QUEUED",
-      "status_as_of": "2026-11-09",
+      "status": "LIVE",
+      "status_as_of": "2026-11-23",
       "line": "ambitious-grads",
       "series": "Ambitious Grads",
       "slug": "ambitious-grads-silicon-valley",
@@ -105,7 +117,19 @@
         "on": "2026-11-09",
         "her_words": "lets take the open loop for nov 14 about my new kdp books ... called Ambitious grads ... i feel like we should just opportunistically post them to amazon publishing no extra landing pages etc."
       },
-      "queued_why": "Amazon's weekly limit on new Kindle titles (reached 8 Nov 2026; resets Sunday 00:00 UTC). queue_priority puts these two ahead of every other approved title (owner, 9 Nov 2026)."
+      "queued_why": "Amazon's weekly limit on new Kindle titles (reached 8 Nov 2026; resets Sunday 00:00 UTC). queue_priority puts these two ahead of every other approved title (owner, 9 Nov 2026).",
+      "live": {
+        "on": "2026-11-23",
+        "kdp_select": true,
+        "source": "Amazon's \"now live\" email, 23 Nov 2026 09:02 CT.",
+        "why": "The register still said APPROVED_QUEUED, so the publish run kept trying to put it up and emailed her to sign in (22 Nov 23:32 and 23 Nov 22:48 CT). A LIVE row is settled before any browser opens."
+      },
+      "ultimate_title": {
+        "on": "2026-11-24",
+        "her_words": "the names she changed my ultimate guide books to tech and investment banking suck and don't capture the whole point of those books to be a one stop ultimate guide for ppl and they don't have to go anywhere else",
+        "chosen": "The Ultimate Guide to Silicon Valley | Everything You Need to Get a Job in Tech, in One Book",
+        "not_applied": "Live: Amazon locks a published eBook's title and subtitle (KDP help G200736410). Only a new edition, a second book, changes it; never made without her yes."
+      }
     },
     {
       "title_ref": "A2C99P6JESFOP0",

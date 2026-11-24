@@ -21,6 +21,13 @@
  *   - Writes nothing to Amazon in her name: no email, no case, no reply. Option 1 needs none.
  *   - NO VAULT. The run that calls this (`claude -p`) has none; the browser profile is the credential.
  *
+ * A LIVE eBOOK'S TITLE AND SUBTITLE ARE LOCKED (KDP help, kdp.amazon.com/en_US/help/topic/G200736410,
+ * read 24 Nov 2026): "After publishing your book, certain book details are locked and can't be changed.
+ * To update locked details, you'll need to publish a new edition of your book." Its table marks Book
+ * Title and Subtitle ✗ for a Kindle eBook. The live page shows it: on The Credit Dispute Letter (Live,
+ * 9 Nov 2026) both are `type="hidden"` inputs. So this edits only a title Amazon has not published
+ * (Option 1 on a book review sent back); on a locked field it stops `locked_after_publish`.
+ *
  * Rule 0: every path prints exactly one `RETITLE:` line and a non-zero exit names why.
  *
  *   npm run kdp:retitle -- --ref A1EYXUFGFV7CN6 --subtitle "A Template for Documenting Family Funds Toward a Home Purchase"
@@ -99,6 +106,11 @@ export async function typeLikeAPerson(page, field, text) {
   return (await field.evaluate((el) => el.value)).trim();
 }
 
+/** Pure: is this input one KDP will not let a publisher change? `{ type, disabled, readOnly }` as the page reads them. */
+export function lockedInput(el) {
+  return !el || String(el.type ?? "").toLowerCase() === "hidden" || el.disabled === true || el.readOnly === true;
+}
+
 async function findField(page, which) {
   for (const sel of FIELD_SELECTORS[which]) {
     const el = page.locator(sel).first();
@@ -150,6 +162,8 @@ async function main() {
     const liveTitle = (await titleField.inputValue()).trim();
     if (liveTitle !== entry.title) return out("title_mismatch", `the page's title is "${liveTitle}" and the register says "${entry.title}" — refusing to edit a book that is not the one recorded.`, 9);
     const before = (await subtitleField.inputValue()).trim();
+    const lock = await subtitleField.evaluate((el) => ({ type: el.type, disabled: el.disabled, readOnly: el.readOnly })).catch(() => null);
+    if (lockedInput(lock)) return out("locked_after_publish", `"${entry.title}" is published, and Amazon locks a published eBook's subtitle (KDP help G200736410); only a new edition changes it, which is her call. Nothing was edited.`, 16);
     if (DRY_RUN) return out("dry_run", `would change the subtitle of "${entry.title}" from "${before}" to "${subtitle}"; Save and Publish deliberately not clicked.`, 0);
     const typed = await typeLikeAPerson(page, subtitleField, subtitle);
     if (typed !== subtitle) return out("value_did_not_stick", `typed "${subtitle}" into the subtitle and the field reads "${typed}" — nothing was saved.`, 14);
@@ -193,6 +207,7 @@ async function main() {
   }
 }
 
-if (import.meta.url === `file://${process.argv[1]}`) {
-  main().catch((err) => out("failed", String(err?.message ?? err).slice(0, 300), 1));
-}
+/** The whole run, every failure ending on one RETITLE: line (exported for tests/kdpRetitleStops.test.ts). */
+export const cli = () => main().catch((err) => out("failed", String(err?.message ?? err).slice(0, 300), 1));
+
+if (import.meta.url === `file://${process.argv[1]}`) cli();
