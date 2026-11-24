@@ -494,3 +494,14 @@ describe("item 11: every acted thing is on the ledger with its measure and floor
     expect(lines).toContain("Porch & Party · Instagram · studio-plan: 2 past day 30: 1 met, 1 missed");
   });
 });
+
+describe("item 6: her charter says what her rulings say (migration 0380)", () => {
+  it("she publishes new things on roster channels, owns LinkedIn for the apps, and still never spends, opens accounts or deletes", async () => {
+    const charter: string = (await env.DB.prepare(`SELECT charter FROM employees WHERE id = 'emp_growth'`).first<any>())!.charter;
+    expect(charter).toMatch(/A new format or page on a channel already on the roster is yours to publish/);
+    expect(charter).toMatch(/LinkedIn for the apps with a page/);
+    expect(charter).toMatch(/You never spend, open an account or delete\./);
+    expect(charter).not.toMatch(/anything new goes to her as a decision/i);
+    expect(charter).not.toMatch(/never spend, create an account, post/);
+  });
+});

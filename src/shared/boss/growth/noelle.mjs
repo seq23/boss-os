@@ -312,6 +312,16 @@ export const SEARCH_LOOPS = Object.freeze({
   "a-player-mode": { repo: "sprylabs-hpc-site", site: "billionairehighperformancecoach.com" },
   "peace-be-still": { repo: "peace-be-still", site: "peacebestillapp.com" },
   "porch-and-party": { repo: "p-n-p", site: "porchandparty901.com" },
+  // Item 6: the search-watch sites whose config is the shared engine's (topics, find, cap). The six vertical
+  // guide sites (local-guides-generator) build only from their own missing-guides list, so a topic there
+  // would change nothing: they are read, never given a lever.
+  "industry-guides": { repo: "local-guides-citation-velocity", site: "theindustryguides.com" },
+  horse: { repo: "horse-legal-guide-velocity", site: "horselegalguide.com" },
+  "wpp-llm": { repo: "WPP-llm", site: "virtualagency-os.com" },
+});
+/** Item 6: a Search Loop whose every change is the owner's yes. Hers to ask, never Noelle's to make. */
+export const HELD_LOOPS = Object.freeze({
+  hicks: "Hicks changes only with Sequoia's yes (repairs to published Resources posts aside)",
 });
 /**
  * Item 3: the existing Pinterest refills she may start (`gh workflow run`, on main, with NO inputs: a pin
@@ -438,6 +448,7 @@ export function checkPlan(plan, ctx) {
         accepted.push({ kind: "pin-refill", business: e.key, why: a.why ?? "", repo: pin.repo, workflow: pin.workflow }); break;
       }
       case "page-new": {
+        if (HELD_LOOPS[e.key]) { refuse(a, "OWNER_APPROVAL", HELD_LOOPS[e.key], `${e.label}: ${a.kind === "page-new" ? `a new page on "${String(a.topic ?? "").slice(0, 80)}"` : `Search Loop ${a.change} ${JSON.stringify(a.value ?? "").slice(0, 120)}`}?`); continue; }
         if (!SEARCH_LOOPS[e.key]) { refuse(a, "NO_SEARCH_LOOP", `${e.label} has no Search Loop`); continue; }
         if (!topicOk(a.topic)) { refuse(a, "TOPIC", "a new page is one search topic of 3 to 80 characters, words only"); continue; }
         const tc = copyProblems(a.topic, e);
@@ -446,6 +457,7 @@ export function checkPlan(plan, ctx) {
         accepted.push({ kind: "page-new", business: e.key, topic: a.topic.trim(), why: a.why ?? "", repo: SEARCH_LOOPS[e.key].repo }); break;
       }
       case "search-loop": {
+        if (HELD_LOOPS[e.key]) { refuse(a, "OWNER_APPROVAL", HELD_LOOPS[e.key], `${e.label}: ${a.kind === "page-new" ? `a new page on "${String(a.topic ?? "").slice(0, 80)}"` : `Search Loop ${a.change} ${JSON.stringify(a.value ?? "").slice(0, 120)}`}?`); continue; }
         if (!SEARCH_LOOPS[e.key]) { refuse(a, "NO_SEARCH_LOOP", `${e.label} has no Search Loop`); continue; }
         if (["topics-add", "topics-remove", "exclude-add"].includes(a.change)) {
           const vs = Array.isArray(a.value) ? a.value : [a.value];

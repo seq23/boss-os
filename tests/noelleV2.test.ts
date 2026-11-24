@@ -12,7 +12,7 @@ import { ALARM_DAYS, CONTEXT_MAX, REPLY_BEGIN, REPLY_END, START_AT, actExit, cal
 import * as L from "../src/shared/boss/growth/ledger.mjs";
 // @ts-expect-error — plain ESM with no declaration file
 import { checkLines, queueLines } from "../scripts/ops/noelle-tools.mjs";
-import { ACTED_KINDS, MAC_KINDS, KINDS, CHANNEL_OWNERS, JOB_KNOBS, PIN_REFILLS, SEARCH_LOOPS, checkPlan, hardStops, settledNo } from "../src/shared/boss/growth/noelle.mjs";
+import { ACTED_KINDS, MAC_KINDS, KINDS, CHANNEL_OWNERS, JOB_KNOBS, PIN_REFILLS, SEARCH_LOOPS, HELD_LOOPS, checkPlan, hardStops, settledNo } from "../src/shared/boss/growth/noelle.mjs";
 
 const SAT = Date.parse(START_AT);
 
@@ -233,6 +233,19 @@ describe("items 3 and 4: her search-loop changes, new pages and pin refills real
     expect(gate({ kind: "search-loop", business: "keepmyproof", change: "cap", value: 30 }).accepted).toHaveLength(1);
     expect(gate({ kind: "search-loop", business: "keepmyproof", change: "cap", value: 50 }).refused[0].stop).toBe("CAP_RAISE_IS_HERS");
     expect(gate({ kind: "search-loop", business: "approvalprep", change: "cap", value: 20 }).refused[0].stop).toBe("CAP_NOT_READ");
+  });
+  it("item 6: the search-watch sites with an engine config get the lever; Hicks is always her yes, as a line, never acted", () => {
+    for (const k of ["industry-guides", "horse", "wpp-llm"]) expect(SEARCH_LOOPS[k]).toBeTruthy();
+    expect(SEARCH_LOOPS.hicks).toBeUndefined();
+    const wr = [...roster, ent("horse", ["search-pages"], { tier: "search-watch" })];
+    const g2 = (...actions: object[]) => checkPlan({ actions }, { roster: wr, today: "2026-11-28", queues: {}, caps: {}, articles: {}, orderedRecent: {}, accounts: [], bufferFull: [], linkedOpen: [] });
+    expect(g2({ kind: "page-new", business: "horse", topic: "horse bill of sale tennessee" }).accepted[0].repo).toBe("horse-legal-guide-velocity");
+    const h = g2({ kind: "page-new", business: "hicks", topic: "nonprofit board minutes template" }, { kind: "search-loop", business: "hicks", change: "topics-add", value: ["grant reporting"] });
+    expect(h.accepted).toHaveLength(0);
+    expect(h.refused.map((r: any) => r.stop)).toEqual(["OWNER_APPROVAL", "OWNER_APPROVAL"]);
+    expect(h.lines).toHaveLength(2);
+    expect(h.lines[0].what).toMatch(/nonprofit board minutes template/);
+    expect(Object.keys(HELD_LOOPS)).toEqual(["hicks"]);
   });
   it("pin-refill: only the three existing refills, only where Pinterest is on the roster, once a run", () => {
     expect(gate({ kind: "pin-refill", business: "dream-wedding" }).accepted[0]).toMatchObject({ repo: "dream-wedding-builder", workflow: "pinterest-drip.yml" });
