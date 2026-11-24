@@ -194,6 +194,12 @@ describe("the Worker re-checks the plan; only accepted acts go back (A6, G1, G3,
     const retry = await json(await call("/noelle/plan", plan([SEASON])));
     expect(retry.replay).toBeUndefined();
     expect(retry.decisions).toBe(1);
+    // The retry is a new row naming the stopped run it follows, and its /done is recorded (never "No planned run").
+    expect((await rows(`SELECT retry_of FROM noelle_runs WHERE id = ?`, retry.run))[0].retry_of).toBe((await rows(`SELECT id FROM noelle_runs WHERE state = 'stopped' AND day = ?`, DAY))[0].id);
+    await recordDone(env as unknown as Parameters<typeof recordDone>[0], { run: retry.run, published: [] }, NOW + 60_000);
+    expect((await rows(`SELECT state FROM noelle_runs WHERE id = ?`, retry.run))[0].state).toBe("done");
+    // A first run of the day retries nothing.
+    expect((await rows(`SELECT retry_of FROM noelle_runs WHERE id = ?`, (await json(await call("/noelle/plan", plan([SEASON], { day: "2026-12-01" })))).run))[0]?.retry_of ?? null).toBeNull();
   });
 
   it("a second backlink inside 4 articles is refused (≤1 per 4 articles, counted over 28 days)", async () => {

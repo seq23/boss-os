@@ -200,10 +200,12 @@ export async function recordPlan(env: Env, body: any, now = Date.now()) {
       .bind(runId, today, slot, body.kind, JSON.stringify([stop.match(/\[([A-Z0-9_]+)\]/)?.[1] ?? "WEEK_CALL_BUDGET"]), body.calls, stop, now, now).run();
     return { run: runId, accepted: [], refused: [], lines: [], stops: [stop] };
   }
+  // A retry is a new row naming the stopped run it follows (the newest stopped run of this day and kind).
+  const stopped = await db.prepare(`SELECT id FROM noelle_runs WHERE day = ? AND kind = ? AND state = 'stopped' ORDER BY created_at DESC LIMIT 1`).bind(today, body.kind).first<{ id: string }>();
   // Claim the slot BEFORE any row is written: two posts racing for one slot, the second meets the unique index.
   try {
-    await db.prepare(`INSERT INTO noelle_runs (id, day, slot, kind, state, stops, calls, line, created_at, updated_at) VALUES (?,?,?,?,'planned','[]',?,'planning',?,?)`)
-      .bind(runId, today, slot, body.kind, body.calls, now, now).run();
+    await db.prepare(`INSERT INTO noelle_runs (id, day, slot, kind, state, stops, calls, line, retry_of, created_at, updated_at) VALUES (?,?,?,?,'planned','[]',?,'planning',?,?,?)`)
+      .bind(runId, today, slot, body.kind, body.calls, stopped?.id ?? null, now, now).run();
   } catch (e) {
     if (!/UNIQUE/i.test(String((e as Error)?.message ?? e))) throw e;
     const won = await db.prepare(`SELECT id FROM noelle_runs WHERE day = ? AND slot = ? AND kind = ? AND state IN ('planned','done')`).bind(today, slot, body.kind).first<{ id: string }>();
