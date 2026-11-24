@@ -19,7 +19,7 @@ import { setSetting } from "../../src/worker/boss/lib/settings";
 import { handleRequest } from "../../src/worker/index";
 import { dayIdInZone } from "../../src/shared/boss/timezone";
 import { READ_SOURCES, WEEK_CALLS } from "../../src/shared/boss/growth/noelle.mjs";
-import { noelleWatch, recordPlan } from "../../src/worker/boss/growth/noelle";
+import { noelleWatch, recordDone, recordPlan } from "../../src/worker/boss/growth/noelle";
 import { RESUME_HANDLERS } from "../../src/worker/boss/approvals/resume";
 import type { Env } from "../../src/worker/env";
 
@@ -310,6 +310,12 @@ describe("what she changes and tells", () => {
     const again = await json(await call("/noelle/plan", plan([SEASON])));
     await call("/noelle/done", { run: again.run, published: [] });
     expect((await rows(`SELECT body FROM morning_sections WHERE section = 'growth'`))[0].body).toBe("{}");
+  });
+
+  it("a run that ends after midnight still reports under the day it was planned", async () => {
+    const { run } = await json(await call("/noelle/plan", plan([SEASON])));
+    await recordDone(env as unknown as Parameters<typeof recordDone>[0], { run, published: [] }, NOW + DAY_MS);
+    expect((await rows(`SELECT body FROM morning_sections WHERE section = 'growth'`))[0]?.body).toMatch(/Growth/);
   });
 });
 
