@@ -3121,7 +3121,8 @@
         "reader": "revenuecat",
         "params": {
           "key": "REVENUECAT_KMP_V2_SECRET_KEY",
-          "metric": "new_customers"
+          "metric": "new_customers",
+          "storeId": "com.keepmyproof.app"
         }
       },
       {
@@ -3389,7 +3390,8 @@
         "reader": "revenuecat",
         "params": {
           "key": "REVENUECAT_PBS_V2_SECRET_KEY",
-          "metric": "new_customers"
+          "metric": "new_customers",
+          "storeId": "com.peacebestillapp.mobile"
         }
       },
       {
