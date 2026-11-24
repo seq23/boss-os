@@ -922,6 +922,16 @@ export function failedTaskLines(tasks, now = Date.now()) {
 
 const DONE_SOURCES = ["pnp_outreach", "bounces", "lp", "prospects", "tail", "notices", "risk", "archive"];
 const MAX_DONE = 3;
+/**
+ * Live outcome verdicts lead Done for you (her order 24 Nov 2026, "u said nothing yesterday"): seq-bin's
+ * post-land-check writes them to "notices" keyed `outcome:<repo>#<pr>:<verdict>` (scripts/ops/outcome-notice.mjs).
+ * NOT WORKING first, then NOT CHECKED, then working, so three lines never hide a failure. Pure.
+ */
+export function outcomeRank(line) {
+  const k = String(line?.key ?? "");
+  if (!k.startsWith("outcome:")) return 3;
+  return k.endsWith(":not-working") ? 0 : k.includes(":not-checked:") ? 1 : 2;
+}
 
 /** 8Raise is said only when something is wrong (owner, 24 Oct 2026: "drop the footer unless"). */
 export function eightRaiseLine(credits) {
@@ -1282,6 +1292,7 @@ export function buildDay(data, now = Date.now()) {
   const ancestral = ancestralLine(data.spirit ?? null);
   // The prospects producer's count line is in "Prospect emails" when that loaded; not said twice.
   for (const name of DONE_SOURCES.filter((n) => !(data.prospects && n === "prospects"))) for (const l of m[name]?.lines ?? []) doneRaw.push(typeof l === "string" ? { text: l, links: [] } : { links: [], ...l });
+  doneRaw.sort((a, b) => outcomeRank(a) - outcomeRank(b));
   const doneOnce = doneForYou(doneRaw, { told: new Set(data.told?.done ?? []), max: MAX_DONE });
   const done = doneOnce.all.map((l) => { const id = idFor("done", l.text); return { ...l, id, screen: itemUrl(today, id) }; }).filter((l) => !isGone(l.id));
   // A line that carries its own links inline (`runs`: the filed meeting preps, each with its "Open ›") keeps them.
