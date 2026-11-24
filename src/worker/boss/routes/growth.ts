@@ -8,7 +8,7 @@ import { loadRoster } from "../growth/run";
 import { AI_SITES, aiCard } from "../../../shared/boss/growth/aiAnswers.mjs";
 import { backlinkOrders } from "../../../shared/boss/growth/director.mjs";
 import { machineTokenOk } from "./openLoops";
-import { noelleContext, planProblems, queueView, recordPlan, recordDone } from "../growth/noelle";
+import { noelleContext, planProblems, queueView, recordPlan, recordDone, claimCall, replyCall, releaseCall } from "../growth/noelle";
 
 /**
  * THE GROWTH DIRECTOR'S RECORD (21 Nov 2026).
@@ -73,7 +73,7 @@ growthRoutes.get("/", async (c) => {
  */
 export const BACKLINK_ORDERS_PATH = "/api/growth/backlink-orders";
 /** Noelle's three routes (her Mac's run): the machine token only, checked in each handler below. */
-export const NOELLE_PATHS: ReadonlySet<string> = new Set(["/api/growth/noelle/context", "/api/growth/noelle/plan", "/api/growth/noelle/done"]);
+export const NOELLE_PATHS: ReadonlySet<string> = new Set(["/api/growth/noelle/context", "/api/growth/noelle/plan", "/api/growth/noelle/done", "/api/growth/noelle/call/claim", "/api/growth/noelle/call/reply", "/api/growth/noelle/call/release"]);
 
 /**
  * The backlink orders of the newest WEEK (Noelle runs daily since 23 Nov 2026, so a week is the 7 days
@@ -113,6 +113,21 @@ growthRoutes.post("/noelle/done", async (c) => {
   const body = await c.req.json<any>().catch(() => null);
   try { return ok(c, await recordDone(c.env, body), 201); }
   catch (e) { const m = String((e as Error)?.message ?? e); if (/NAMED STOP/.test(m)) throw e; throw badRequest("The run's end was refused", m.slice(0, 200)); }
+});
+
+// A #noelle call (growth/noelle.ts claimCall): her Mac claims one waiting email, replies once, or releases it.
+growthRoutes.post("/noelle/call/claim", async (c) => {
+  if (!(await machineTokenOk(c))) throw new AppError(401, "Locked");
+  const body = await c.req.json<any>().catch(() => ({}));
+  return ok(c, { call: await claimCall(c.env, String(body?.device_id ?? "mac")) });
+});
+growthRoutes.post("/noelle/call/reply", async (c) => {
+  if (!(await machineTokenOk(c))) throw new AppError(401, "Locked");
+  return ok(c, await replyCall(c.env, await c.req.json<any>().catch(() => null)));
+});
+growthRoutes.post("/noelle/call/release", async (c) => {
+  if (!(await machineTokenOk(c))) throw new AppError(401, "Locked");
+  return ok(c, await releaseCall(c.env, await c.req.json<any>().catch(() => null)));
 });
 
 growthRoutes.get("/backlink-orders", async (c) => {

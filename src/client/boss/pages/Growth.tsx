@@ -4,6 +4,7 @@ import { Loading } from "../components/Shell";
 import { shortDate } from "@shared/boss/scorecard/scorecard.mjs";
 import { APART_KINDS } from "@shared/boss/growth/scoreboard.mjs";
 import { ENGINE_LABEL } from "@shared/boss/growth/aiAnswers.mjs";
+import { whenCT } from "@shared/boss/growth/whenCT.mjs";
 
 /**
  * THE GROWTH PAGE (21 Nov 2026). ☰ More → Growth, /?tab=growth. Noelle, Director of Growth.
@@ -25,7 +26,7 @@ type Channel = { label: string; kind: string; value: number | null; before: numb
 type AiEngine = { engine: string; answered: number; mentioned: number; cited: number; before: { mentioned: number; cited: number } | null };
 type Ai = { host: string; state: string; why?: string; week: string | null; day?: string; prompts?: number; cited?: number; mentioned?: number;
   before?: { week: string; cited: number; mentioned: number } | null; engines?: AiEngine[] };
-type Queue = { unread: string | null; channels: { channel: string; value: number | null; unread: string | null }[] };
+type Queue = { unread: string | null; channels: { channel: string; value: number | null; unread: string | null; items?: { at: string; text: string }[] }[] };
 type Biz = {
   key: string; label: string; paused: string | null; onRoster: boolean; ai: Ai | null; queue?: Queue;
   upcoming: { todos: Todo[]; cards: Card[] };
@@ -141,7 +142,14 @@ function QueueLine({ q }: { q: Queue }) {
   if (!q.channels.length) return null;
   return (
     <ul className="schedule-list" data-testid="growth-queue">
-      {q.channels.map((c) => <li key={c.channel}>{c.channel}: {c.value == null ? (c.unread ?? "not read").replace(/^not read/, "Not read") : `${plural(c.value, "post")} queued`}</li>)}
+      {q.channels.map((c) => (
+        <li key={c.channel}>{c.channel}: {c.value == null ? (c.unread ?? "not read").replace(/^not read/, "Not read") : `${plural(c.value, "post")} queued`}
+          {c.value != null && (c.items ?? []).length > 0 && (
+            <details className="brain-expander"><summary>When each goes out ▾</summary>
+              <ul className="schedule-list" data-testid="growth-queue-items">{(c.items ?? []).map((x, i) => <li key={i}>{whenCT(x.at)}{x.text ? ` · ${x.text}` : ""}</li>)}</ul>
+              {(c.value ?? 0) > (c.items ?? []).length && <p className="brain-hint">and {(c.value ?? 0) - (c.items ?? []).length} more after these</p>}
+            </details>)}
+        </li>))}
     </ul>
   );
 }

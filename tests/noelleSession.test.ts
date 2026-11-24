@@ -12,7 +12,7 @@ import { describe, expect, it } from "vitest";
 // @ts-expect-error — plain ESM with no declaration file
 import { PHOTO_VERDICTS, RETRY_AFTER_MS, contextText, enginePlan, shelfFrom, missedLine, tickDecision, unreadTargets, untrusted } from "../scripts/ops/noelle.mjs";
 // @ts-expect-error — plain ESM with no declaration file
-import { readCalendar, readStudio } from "../scripts/ops/lib/noelle-reads.mjs";
+import { readCalendar, readStudio, readLinkedIn, weekdaysAfter } from "../scripts/ops/lib/noelle-reads.mjs";
 import { checkPlan, slotFor } from "../src/shared/boss/growth/noelle.mjs";
 import { parseRoster, growthSection } from "../src/shared/boss/growth/roster.mjs";
 import { replaceSection, skeleton } from "../src/shared/boss/brains/brain.mjs";
@@ -158,6 +158,46 @@ describe("G16c: the Studio's calendar by Central day, and what did not publish",
     for (const ch of ["instagram", "tiktok", "facebook-page"]) expect(cal.unread[`porch-and-party:${ch}`]).toMatch(/D1 timeout/);
     expect(Object.keys(cal.queues)).toEqual([]);
     expect(cal.missed).toEqual([]);
+  });
+  it("LinkedIn (her words 24 Nov: Noelle in charge): banked posts are never 'waiting' until LinkedIn grants the page API", () => {
+    const files = (access: string) => (args: string[]) => {
+      const u = args[args.length - 1] ?? "";
+      if (u.endsWith("posts.json") && !u.endsWith("posted.json")) return JSON.stringify({ days_ahead: 5, posts: [{ id: "li1", text: "a" }, { id: "li2", text: "b" }, { id: "li3", text: "c" }] });
+      return JSON.stringify({ access, posted: [{ id: "li1" }] });
+    };
+    const held = readLinkedIn("approvalprep:linkedin", { gh: files("none"), today: "2026-11-27" });
+    expect(held.error).toMatch(/not granted the page API yet: 2 posts written, none can post/);
+    const live = readLinkedIn("a-player-mode:linkedin", { gh: files("granted"), today: "2026-11-27" });
+    expect(live).toEqual({ count: 2, days: ["2026-11-30", "2026-12-01"], items: [{ at: "2026-11-30", text: "b" }, { at: "2026-12-01", text: "c" }] });
+    expect(readLinkedIn("approvalprep:linkedin", { gh: () => { throw new Error("HTTP 404"); }, today: DAY }).error).toMatch(/approvalprep\/data\/linkedin: HTTP 404/);
+    expect(weekdaysAfter("2026-11-28", 1)).toEqual(["2026-11-30"]);
+  });
+  it("an ApprovalPrep LinkedIn that Buffer does not hold is never read from Buffer as 0", async () => {
+    const buffer = async (_u: string, init: any) => new Response(JSON.stringify({ data: String(init.body).includes("organizations") ? { account: { organizations: [{ id: "o1" }] } } : { posts: { edges: [] } } }));
+    const cal = await readCalendar({ env: { BUFFER_APPROVALPREP_ACCESS_TOKEN: "x" }, fetchImpl: buffer as any, gh: () => { throw new Error("offline"); }, d1: async () => [], now: NOW, today: DAY });
+    expect(cal.queues["approvalprep:linkedin"]).toBeUndefined();
+    expect(cal.unread["approvalprep:linkedin"]).toMatch(/offline/);
+  });
+  it("item 8: every reader hands back what is queued, soonest first, 14 a channel, one line of text each", async () => {
+    const now = Date.parse("2026-11-24T18:00:00Z");
+    const caps = Array.from({ length: 16 }, (_, i) => ({ id: `s${i}`, platform: "instagram", scheduled_at: new Date(now + (16 - i) * 3_600_000).toISOString(), status: "scheduled", error: null, caption: `Porch ${16 - i}\nsecond line` }));
+    const buffer = async (_u: string, init: any) => new Response(JSON.stringify({ data: String(init.body).includes("organizations") ? { account: { organizations: [{ id: "o1" }] } } : { posts: { edges: [{ node: { dueAt: "2026-11-26T15:00:00Z", channelService: "threads", ...(/channelService text/.test(String(init.body)) ? { text: "Your report, line by line" } : {}) } }] } } }));
+    const gh = (args: string[]) => {
+      const u = args[args.length - 1] ?? "";
+      if (u.includes("pinterest")) return JSON.stringify({ variants: [{ release_date: "2026-11-27", title: "Wedding checklist" }, { release_date: "2026-11-20", title: "old" }] });
+      if (u.endsWith("posted.json")) return JSON.stringify({ access: "granted", posted: [] });
+      return JSON.stringify({ posts: [{ id: "li1", text: "A Player Mode, week one" }] });
+    };
+    const cal = await readCalendar({ env: { BUFFER_APPROVALPREP_ACCESS_TOKEN: "x" }, fetchImpl: buffer as any, gh, d1: async () => caps, now, today: "2026-11-24" });
+    const ig = cal.items["porch-and-party:instagram"];
+    expect(cal.queues["porch-and-party:instagram"]).toBe(16);
+    expect(ig).toHaveLength(14);
+    expect(ig[0].text).toBe("Porch 1");
+    expect(ig.map((x: any) => x.at)).toEqual([...ig.map((x: any) => x.at)].sort());
+    expect(cal.items["approvalprep:threads"]).toEqual([{ at: "2026-11-26T15:00:00.000Z", text: "Your report, line by line" }]);
+    expect(cal.items["dream-wedding:pinterest"]).toEqual([{ at: "2026-11-27", text: "Wedding checklist" }]);
+    expect(cal.items["a-player-mode:linkedin"]).toEqual([{ at: "2026-11-25", text: "A Player Mode, week one" }]);
+    expect(cal.items["porch-and-party:tiktok"]).toEqual([]);
   });
   it("her context shows each miss inside the calendar data", () => {
     const text = contextText({

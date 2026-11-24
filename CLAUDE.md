@@ -122,7 +122,8 @@ pinned by `tests/plainEmail.test.ts` ("the rules in CLAUDE.md"), which reads thi
    (1–3 things in bed, then reply "gate done") with a real gratitude line, and on a second missed gate
    day the never-miss-twice call-out (`neverMissTwice`) → Camille's briefing (three one-line headlines and "Read the full briefing →" to its screen — the whole briefing is never
    in the email; it waits for the report, 07:45 Central at the latest) → Done for you (≤3, nothing after them)
-   → Your open loops (her own overdue rows, five at most) → Catch up with → Porch & Party: To do for
+   → Your open loops (her own overdue rows, five at most) → 📈 Growth, from Noelle (her report, and on
+   Mondays Sunday's "This week's schedule" and results against floors; left out when empty) → Catch up with → Porch & Party: To do for
    Valerie (only when her list holds something) → sign-off → the 8Raise line only when something
    is wrong. **A block with nothing in it is left out** (owner, 13 Nov 2026): no "nothing here" lines. Every other producer writes a section file (`src/shared/boss/mail/morning.mjs`) instead of
    an email. Another email only when it cannot wait: a decision due today, money at risk, a deal moving now.

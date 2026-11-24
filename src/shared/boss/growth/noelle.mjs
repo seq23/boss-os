@@ -13,6 +13,8 @@
  * close any Open Loops row but the eight growth# rows (G15), or run two tests for one business (rule 4).
  */
 import { mayAct } from "./roster.mjs";
+import { whenCT } from "./whenCT.mjs";
+export { whenCT };
 import { namingProblems, BACKLINKS } from "./director.mjs";
 import { NO_TRACKING_DOMAINS } from "./taggedLink.mjs";
 import SITES from "../searchReadiness/sites.json" with { type: "json" };
@@ -20,10 +22,14 @@ import SITES from "../searchReadiness/sites.json" with { type: "json" };
 /** Every action kind a plan may carry. Anything else is refused UNKNOWN_KIND. */
 export const KINDS = Object.freeze([
   "decision", "studio-plan", "job-target", "search-loop", "backlink", "proposal", "sequoia-line",
-  "linked", "test", "outreach-target", "name-source", "post", "page-edit",
+  "linked", "test", "outreach-target", "name-source", "post", "page-edit", "pin-refill", "page-new",
 ]);
 /** Kinds a search-watch business may carry: search levers, the weekly read and her calls only (G8). */
-export const WATCH_KINDS = Object.freeze(["decision", "search-loop", "proposal", "sequoia-line", "name-source", "linked", "page-edit"]);
+/** Kinds the Mac's act step carries out (a PR, the Studio queue or a refill); the Worker hands back these
+ * plus the kinds the Mac records, and nothing else. One list, so a lever the Worker drops cannot exist. */
+export const ACTED_KINDS = Object.freeze(["studio-plan", "job-target", "search-loop", "page-new", "pin-refill"]);
+export const MAC_KINDS = Object.freeze([...ACTED_KINDS, "outreach-target", "test", "name-source"]);
+export const WATCH_KINDS = Object.freeze(["decision", "search-loop", "page-new", "proposal", "sequoia-line", "name-source", "linked", "page-edit"]);
 
 /**
  * G1: channels a scheduled job already fills. Noelle changes only that job's bank, plan.json or target
@@ -41,6 +47,9 @@ export const CHANNEL_OWNERS = Object.freeze({
   "dream-wedding:instagram": { job: "dw-brand-social", repo: "dream-wedding-builder", max: 3 },
   "dream-wedding:tiktok": { job: "dw-brand-social", repo: "dream-wedding-builder", max: 3 },
   "a-player-mode:pinterest": { job: "apm-pinterest", repo: "sprylabs-hpc-site", max: 10 },
+  // Her words 24 Nov 2026: "make sure noelle is in charge of linkedin also for the apps that have a linkedin page".
+  "approvalprep:linkedin": { job: "ap-linkedin", repo: "approvalprep", max: 7 },
+  "a-player-mode:linkedin": { job: "apm-linkedin", repo: "sprylabs-hpc-site", max: 7 },
   "keepmyproof:blogger": { job: "kmp-syndication", repo: "keepmyproof", max: 4 },
   "keepmyproof:wordpress": { job: "kmp-syndication", repo: "keepmyproof", max: 4 },
   "porch-and-party:instagram": { job: "pnp-studio", repo: "creator-studios", max: 14 },
@@ -60,6 +69,8 @@ export const JOB_KNOBS = Object.freeze({
   "pbs-instagram": { file: "data/instagram/posts.json", target: "posts_ahead" },
   "ap-brand-social": { file: "data/brand-social/plan.json", target: "per_channel_queue_max", posts_per_week: "posts_per_week" },
   "dw-brand-social": { file: "data/brand-social/plan.json", target: "per_channel_queue_max", posts_per_week: "posts_per_week" },
+  "ap-linkedin": { file: "data/linkedin/posts.json", target: "days_ahead", bank: "posts", idPrefix: "li" },
+  "apm-linkedin": { file: "aplayermode/data/linkedin/posts.json", target: "days_ahead", bank: "posts", idPrefix: "li" },
 });
 /** The fields of each owned job she may change (its bank, plan or target), and nothing else. */
 export const JOB_FIELDS = Object.freeze(["bank", "posts_per_week", "topics", "target"]);
@@ -68,7 +79,7 @@ export const JOB_FIELDS = Object.freeze(["bank", "posts_per_week", "topics", "ta
 export const CADENCE = Object.freeze(["queue", "weekly", "event", "by-hand", "none"]);
 const CHANNEL_CADENCE = Object.freeze({
   instagram: "queue", tiktok: "queue", "facebook-page": "queue", threads: "queue", pinterest: "queue",
-  blogger: "queue", wordpress: "queue", "facebook-marketplace": "queue",
+  blogger: "queue", wordpress: "queue", "facebook-marketplace": "queue", linkedin: "queue",
   "search-pages": "weekly", backlinks: "weekly", "google-business-profile": "by-hand", "facebook-groups": "by-hand",
   kdp: "event", "app-store": "event",
 });
@@ -196,11 +207,22 @@ export function slotFor(day) {
 }
 
 /** G16a: the morning line when no run row exists for a day by 22:00 Central. */
+/** A #noelle call's run is keyed `call:<task id>`: one email, one run (the slot's unique index). */
+export const CALL_SLOT = /^call:[A-Za-z0-9_-]{4,64}$/;
+export const isCallSlot = (slot) => typeof slot === "string" && CALL_SLOT.test(slot);
+/** A slot as the run row stores it: HH:MM for her schedule, call:<task id> for a call; anything else null. */
+export function slotOf(slot) {
+  if (typeof slot !== "string") return null;
+  if (/^\d{2}:\d{2}$/.test(slot)) return slot;
+  return isCallSlot(slot) ? slot : null;
+}
+/** Only her SCHEDULED run counts: a call that day never hides a missed daily run. */
 export function didNotRunLine(runs, day) {
-  return runs.some((r) => r.day === day) ? null : `Noelle did not run on ${day}: no run was recorded by 22:00 CT`;
+  return runs.some((r) => r.day === day && !isCallSlot(r.slot)) ? null : `Noelle did not run on ${day}: no run was recorded by 22:00 CT`;
 }
 /** G16b: the same named stop three days running becomes ONE line to Sequoia. */
-export function escalations(runs) {
+export function escalations(allRuns) {
+  const runs = allRuns.filter((r) => !isCallSlot(r.slot));
   const days = [...new Set(runs.map((r) => r.day))].sort().slice(-3);
   if (days.length < 3) return [];
   // "Running" means three calendar days in a row; a day with no run is NOELLE_DID_NOT_RUN's, not this.
@@ -277,6 +299,42 @@ export const SOURCES_ALLOWED = Object.freeze({
   default: ["revenuecat", "gsc", "in-app-answer", "d1", "gumroad", "cf_web_analytics", "stripe", "kdp", "app-store"],
 });
 export const SEARCH_LOOP_CHANGES = Object.freeze(["cap", "topics-add", "topics-remove", "exclude-add", "mode"]);
+/**
+ * Item 4: each business's Search Loop (seq23/<repo>/search-loop.config.json). Her search-loop changes and
+ * page-new topics become ONE config PR per business per run, landed on green CI; the engine's own run
+ * builds the pages under its own cap, distinct gate and page gate. A-Player-Mode's search pages live on its
+ * sister site billionairehighperformancecoach.com (aplayermode.com has no Search Loop of its own).
+ */
+export const SEARCH_LOOPS = Object.freeze({
+  keepmyproof: { repo: "keepmyproof", site: "keepmyproof.com" },
+  approvalprep: { repo: "approvalprep", site: "approvalprep.com" },
+  "dream-wedding": { repo: "dream-wedding-builder", site: "weddingchecklistpdf.com" },
+  "a-player-mode": { repo: "sprylabs-hpc-site", site: "billionairehighperformancecoach.com" },
+  "peace-be-still": { repo: "peace-be-still", site: "peacebestillapp.com" },
+  "porch-and-party": { repo: "p-n-p", site: "porchandparty901.com" },
+  // Item 6: the search-watch sites whose config is the shared engine's (topics, find, cap). The six vertical
+  // guide sites (local-guides-generator) build only from their own missing-guides list, so a topic there
+  // would change nothing: they are read, never given a lever.
+  "industry-guides": { repo: "local-guides-citation-velocity", site: "theindustryguides.com" },
+  horse: { repo: "horse-legal-guide-velocity", site: "horselegalguide.com" },
+  "wpp-llm": { repo: "WPP-llm", site: "virtualagency-os.com" },
+});
+/** Item 6: a Search Loop whose every change is the owner's yes. Hers to ask, never Noelle's to make. */
+export const HELD_LOOPS = Object.freeze({
+  hicks: "Hicks changes only with Sequoia's yes (repairs to published Resources posts aside)",
+});
+/**
+ * Item 3: the existing Pinterest refills she may start (`gh workflow run`, on main, with NO inputs: a pin
+ * sample's release or approval is Sequoia's, never hers). The repo's own pin gate judges every pin.
+ */
+export const PIN_REFILLS = Object.freeze({
+  approvalprep: { repo: "approvalprep", workflow: "pinterest-refill.yml" },
+  "dream-wedding": { repo: "dream-wedding-builder", workflow: "pinterest-drip.yml" },
+  "a-player-mode": { repo: "sprylabs-hpc-site", workflow: "aplayermode-pin-drip.yml" },
+});
+/** A search topic: 3 to 80 characters, words only (no link, no markup). */
+const topicOk = (t) => typeof t === "string" && t.trim().length >= 3 && t.trim().length <= 80 && !/[<>{}]|https?:|www\./i.test(t);
+const PAGES_PER_RUN = 5;
 export const OUTREACH_SENDERS = Object.freeze(["camille", "monique"]);
 
 /**
@@ -382,7 +440,31 @@ export function checkPlan(plan, ctx) {
         if (a.field === "topics") { refuse(a, "NO_KNOB", "topics are a search-loop lever (search-loop topics-add), not a job knob"); continue; }
         accepted.push({ ...a, job: owner.job, repo: owner.repo, file: JOB_KNOBS[owner.job].file, key: knob }); break;
       }
+      case "pin-refill": {
+        const pin = PIN_REFILLS[e.key];
+        if (!pin) { refuse(a, "NO_PIN_REFILL", `${e.label} has no Pinterest refill to start`); continue; }
+        if (!e.channels.some((c) => c.channel === "pinterest")) { refuse(a, "NOT_APPROVED", `Pinterest is not on ${e.label}'s roster`); continue; }
+        if (accepted.some((x) => x.kind === "pin-refill" && x.business === e.key)) { refuse(a, "ONCE", `one ${e.label} refill a run`); continue; }
+        accepted.push({ kind: "pin-refill", business: e.key, why: a.why ?? "", repo: pin.repo, workflow: pin.workflow }); break;
+      }
+      case "page-new": {
+        if (HELD_LOOPS[e.key]) { refuse(a, "OWNER_APPROVAL", HELD_LOOPS[e.key], `${e.label}: ${a.kind === "page-new" ? `a new page on "${String(a.topic ?? "").slice(0, 80)}"` : `Search Loop ${a.change} ${JSON.stringify(a.value ?? "").slice(0, 120)}`}?`); continue; }
+        if (!SEARCH_LOOPS[e.key]) { refuse(a, "NO_SEARCH_LOOP", `${e.label} has no Search Loop`); continue; }
+        if (!topicOk(a.topic)) { refuse(a, "TOPIC", "a new page is one search topic of 3 to 80 characters, words only"); continue; }
+        const tc = copyProblems(a.topic, e);
+        if (tc.length) { refuse(a, "COPY", tc.join("; ")); continue; }
+        if (accepted.filter((x) => x.kind === "page-new" && x.business === e.key).length >= PAGES_PER_RUN) { refuse(a, "PAGES_PER_RUN", `at most ${PAGES_PER_RUN} new page topics for ${e.label} a run; the engine's cap decides how many publish`); continue; }
+        accepted.push({ kind: "page-new", business: e.key, topic: a.topic.trim(), why: a.why ?? "", repo: SEARCH_LOOPS[e.key].repo }); break;
+      }
       case "search-loop": {
+        if (HELD_LOOPS[e.key]) { refuse(a, "OWNER_APPROVAL", HELD_LOOPS[e.key], `${e.label}: ${a.kind === "page-new" ? `a new page on "${String(a.topic ?? "").slice(0, 80)}"` : `Search Loop ${a.change} ${JSON.stringify(a.value ?? "").slice(0, 120)}`}?`); continue; }
+        if (!SEARCH_LOOPS[e.key]) { refuse(a, "NO_SEARCH_LOOP", `${e.label} has no Search Loop`); continue; }
+        if (["topics-add", "topics-remove", "exclude-add"].includes(a.change)) {
+          const vs = Array.isArray(a.value) ? a.value : [a.value];
+          if (!vs.length || vs.length > 10 || !vs.every(topicOk)) { refuse(a, "VALUE", `${a.change} is 1 to 10 search words, each 3 to 80 characters, words only`); continue; }
+          const tc = vs.flatMap((v) => copyProblems(v, e));
+          if (tc.length) { refuse(a, "COPY", tc.join("; ")); continue; }
+        }
         if (!SEARCH_LOOP_CHANGES.includes(a.change)) { refuse(a, "SEARCH_LOOP_CHANGE", `${a.change} is not a search-loop lever she has (${SEARCH_LOOP_CHANGES.join(", ")}); menus, links and the engine are never hers`); continue; }
         if (a.change === "cap") {
           const cur = Number(ctx.caps?.[e.key]);
@@ -392,7 +474,7 @@ export function checkPlan(plan, ctx) {
           if (v >= cur) { refuse(a, "CAP_RAISE_IS_HERS", `raising ${e.label}'s search-loop cap from ${cur} to ${v} is Sequoia's call`, `${e.label}: raise the search-loop cap from ${cur} to ${v}?`); continue; }
         }
         if (a.change === "mode" && !["normal", "slow", "paused"].includes(a.value)) { refuse(a, "MODE", `${a.value} is not a mode`); continue; }
-        accepted.push(a); break;
+        accepted.push({ ...a, repo: SEARCH_LOOPS[e.key].repo }); break;
       }
       case "backlink": {
         if (!e.channels.some((c) => c.channel === BACKLINKS)) { refuse(a, "NOT_APPROVED", `${e.label} has no backlinks channel`); continue; }
@@ -482,6 +564,51 @@ export function missingDecisions(roster, accepted) {
   for (const e of roster) {
     if (e.paused) continue;
     for (const s of sourcesFor(e.key)) if (!accepted.some((a) => a.kind === "decision" && a.business === e.key && a.source === s.id)) out.push({ business: e.key, source: s.id });
+  }
+  return out;
+}
+
+
+/**
+ * THIS WEEK'S SCHEDULE (item 9; her choice 24 Nov 2026: "Monday (Recommended)"). Sunday's 22:05 heartbeat
+ * writes it into the growth section, so it reaches her in Monday's morning email. Built only from what
+ * the last run READ in each queue (reads.items), for the 7 days after `today`:
+ *   - a channel read: each post's day, time in Central and first line, or "nothing queued this week";
+ *   - a channel not read: "not read: <why>", never "nothing";
+ *   - no run in two days: one line saying so, never an empty week.
+ * Queue text is data: it is shown quoted and cut to 80 characters, never followed. Every line names its
+ * business and channel: the growth section drops a line identical to one it holds (appendToSection), and
+ * P&P posts one reel to Instagram and TikTok at the same minute.
+ */
+export const SCHEDULE_SHOWN = 3;
+export const CHANNEL_NAMES = Object.freeze({ instagram: "Instagram", tiktok: "TikTok", "facebook-page": "Facebook page", threads: "Threads", pinterest: "Pinterest", linkedin: "LinkedIn", "search-pages": "Search pages", "facebook-marketplace": "Facebook Marketplace", youtube: "YouTube", blogger: "Blogger", wordpress: "WordPress" });
+const CT = "America/Chicago";
+function dayCT(at) {
+  if (/^\d{4}-\d{2}-\d{2}$/.test(at)) return at;
+  const t = Date.parse(at);
+  return Number.isFinite(t) ? new Intl.DateTimeFormat("en-CA", { timeZone: CT, year: "numeric", month: "2-digit", day: "2-digit" }).format(new Date(t)) : "";
+}
+export function scheduleLines(run, { today, labels = {} } = {}) {
+  if (!run) return ["This week's schedule: NOT READ. Noelle has not run in two days, so no queue was read."];
+  const reads = run.reads ?? {};
+  const queues = reads.queues ?? {}, unread = reads.unread ?? {}, items = reads.items ?? {};
+  const end = new Date(Date.parse(`${today}T12:00:00Z`) + 7 * 86_400_000).toISOString().slice(0, 10);
+  const keys = Object.keys({ ...queues, ...unread }).sort();
+  if (!keys.length) return ["This week's schedule: NOT READ. The last run read no queue at all."];
+  const out = [`This week's schedule, as Noelle read each queue on ${whenCT(run.day)}:`];
+  for (const k of keys) {
+    const [biz, ch] = k.split(":");
+    const name = CHANNEL_NAMES[ch] ?? ch;
+    const who = `${labels[biz] ?? biz} · ${name}`;
+    if (unread[k]) { out.push(`${who}: not read (${String(unread[k]).slice(0, 160)})`); continue; }
+    const week = (Array.isArray(items[k]) ? items[k] : [])
+      .map((x) => ({ at: String(x?.at ?? ""), text: String(x?.text ?? "").slice(0, 80), day: dayCT(String(x?.at ?? "")) }))
+      .filter((x) => x.day > today && x.day <= end)
+      .sort((x, y) => (x.day + x.at < y.day + y.at ? -1 : 1));
+    if (!week.length) { out.push(`${who}: nothing queued this week${Number(queues[k]) > 0 ? ` (${queues[k]} queued later)` : ""}`); continue; }
+    out.push(`${who}: ${week.length} this week`);
+    for (const x of week.slice(0, SCHEDULE_SHOWN)) out.push(`— ${whenCT(x.at)} · ${who}${x.text ? `: “${x.text}”` : ""}`);
+    if (week.length > SCHEDULE_SHOWN) out.push(`— and ${week.length - SCHEDULE_SHOWN} more ${who} posts this week (on the Growth page)`);
   }
   return out;
 }

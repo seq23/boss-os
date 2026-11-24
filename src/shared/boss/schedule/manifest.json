@@ -6452,6 +6452,30 @@
       }
     },
     {
+      "id": "sprylabs-hpc-site-aplayermode-linkedin",
+      "name": "LinkedIn posts",
+      "what": "Weekdays: one banked post on the A Player Mode LinkedIn page through LinkedIn's Posts API, from aplayermode/data/linkedin/posts.json (Noelle banks them). Dormant until LinkedIn grants page access.",
+      "business": "spry",
+      "brand": "A Player Mode",
+      "system": "github",
+      "slots": [
+        "mon,tue,wed,thu,fri 09:20"
+      ],
+      "emails": false,
+      "heavy": false,
+      "trigger": {
+        "repo": "sprylabs-hpc-site",
+        "file": ".github/workflows/aplayermode-linkedin.yml",
+        "crons": [
+          "20 15 * * 1-5"
+        ]
+      },
+      "output": {
+        "floor": 0,
+        "reason": "Posts 0 until LinkedIn grants page access (NAMED STOP [LINKEDIN_NO_ACCESS] in the log); then one a weekday, OUTPUT: posted N, waiting M, and an empty bank is the named stop LINKEDIN_BANK_EMPTY."
+      }
+    },
+    {
       "id": "sprylabs-hpc-site-search-measurements",
       "name": "Search measurements",
       "what": "Reads Search Console for both Spry Labs sites; the weekly report and the Spry Labs weekly read it.",
@@ -6786,6 +6810,30 @@
       "output": {
         "floor": 0,
         "reason": "Queues 0 when the next 7 evenings are already filled; it prints OUTPUT: queued N, scheduled ahead M, and 0 queued with fewer than 7 ahead and no named note is the named stop THREADS_NOTHING_QUEUED."
+      }
+    },
+    {
+      "id": "approvalprep-linkedin-posts",
+      "name": "LinkedIn posts",
+      "what": "Weekdays: one banked post on the ApprovalPrep LinkedIn page through LinkedIn's Posts API, from data/linkedin/posts.json (Noelle banks them). Dormant until LinkedIn grants page access.",
+      "business": "spry",
+      "brand": "ApprovalPrep",
+      "system": "github",
+      "slots": [
+        "mon,tue,wed,thu,fri 09:10"
+      ],
+      "emails": false,
+      "heavy": false,
+      "trigger": {
+        "repo": "approvalprep",
+        "file": ".github/workflows/linkedin-posts.yml",
+        "crons": [
+          "10 15 * * 1-5"
+        ]
+      },
+      "output": {
+        "floor": 0,
+        "reason": "Posts 0 until LinkedIn grants page access (NAMED STOP [LINKEDIN_NO_ACCESS] in the log); then one a weekday, OUTPUT: posted N, waiting M, and an empty bank is the named stop LINKEDIN_BANK_EMPTY."
       }
     },
     {

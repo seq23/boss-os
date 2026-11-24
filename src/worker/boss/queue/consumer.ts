@@ -98,6 +98,21 @@ export async function handleTask(env: Env, msg: TaskMessage): Promise<void> {
     return;
   }
 
+  /*
+   * ─── A #noelle EMAIL IS PARKED FOR NOELLE'S OWN RUN ON HER MAC (24 Nov 2026) ─────────────────────
+   * Her session has her tools (./noelle-tools: the queues, the banks, the same plan gate) and Claude only;
+   * a cloud rung asked the same thing would answer without either. Her Mac claims it within 30 minutes
+   * (growth/noelle.ts claimCall) and the reply comes back from her run (replyCall), once.
+   */
+  if (task.employee_id === "emp_growth" && parkedInput.source === "boss_inbound_mail") {
+    const seen = await env.DB.prepare(`SELECT 1 FROM task_events WHERE task_id = ? AND event = 'parked_for_mac' LIMIT 1`).bind(task.id).first();
+    if (!seen) await env.DB
+      .prepare(`INSERT INTO task_events (id, task_id, ts, event, detail) VALUES (?,?,?,'parked_for_mac',?)`)
+      .bind(newId("tev"), task.id, Date.now(), JSON.stringify({ lane: "noelle_call", why: "Noelle's own run on her Mac claims it (scripts/ops/noelle.sh); no cloud rung may answer for her" }))
+      .run();
+    return;
+  }
+
   const now = Date.now();
   await env.DB.batch([
     env.DB.prepare(`UPDATE tasks SET status = 'running', started_at = COALESCE(started_at, ?), attempts = attempts + 1 WHERE id = ?`)

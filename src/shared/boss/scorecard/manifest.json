@@ -2947,6 +2947,14 @@
     "local-guides-generator-edge-cache": {
       "kind": "system",
       "why": "Keeps the system running or checks it; it has no customer result of its own."
+    },
+    "approvalprep-linkedin-posts": {
+      "kind": "parked",
+      "why": "Dormant until LinkedIn grants the page API (her account action); it posts nothing until then. It gets a scorecard row (LinkedIn visits, then sales) the day it first posts."
+    },
+    "sprylabs-hpc-site-aplayermode-linkedin": {
+      "kind": "parked",
+      "why": "Dormant until LinkedIn grants the page API (her account action); it posts nothing until then. It gets a scorecard row (LinkedIn visits, then sales) the day it first posts."
     }
   },
   "scoreboard": {

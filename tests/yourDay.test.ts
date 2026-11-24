@@ -636,3 +636,18 @@ describe("every briefing headline has its one-tap Drop for good (item 19, 18 Nov
   });
 });
 
+
+describe("Noelle's growth section reaches the morning email (24 Nov 2026)", () => {
+  it("Sunday's 'This week's schedule' and the results against floors show on Monday; an empty section is left out", () => {
+    const growth = { section: "growth", at: stamp, title: "📈 Growth, from Noelle", lines: ["This week's schedule: Porch & Party, 3 posts, Mon 30 Nov to Wed 2 Dec.", "Results against floors: Dream Wedding 41 email sign-ups (floor 30)."], link: { label: "See every business on the Growth page", url: `${BOSS}?tab=growth` } };
+    const e = buildDay({ ...DATA, morning: { ...DATA.morning, growth } } as any, NOW);
+    expect(e.problems).toEqual([]);
+    expect(e.text).toContain("📈 Growth, from Noelle");
+    expect(e.text).toContain("This week's schedule: Porch & Party, 3 posts, Mon 30 Nov to Wed 2 Dec.");
+    expect(e.text).toContain("Results against floors: Dream Wedding 41 email sign-ups (floor 30).");
+    expect(e.text).toContain(`${BOSS}?tab=growth`);
+    expect(e.html).toMatch(/This week(&#39;|&#x27;|&rsquo;|')s schedule/);
+    const none = buildDay({ ...DATA, morning: { ...DATA.morning, growth: { ...growth, lines: [] } } } as any, NOW);
+    expect(none.text).not.toContain("Growth, from Noelle");
+  });
+});
