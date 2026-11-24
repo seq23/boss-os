@@ -34,6 +34,7 @@
 
 import { spawnSync } from "node:child_process";
 import { seatEnv } from "./lib/seat-env.mjs";
+import { lockedArgs, refusals, resultText } from "./lib/claude-lock.mjs";
 
 const ORIGIN = process.env.BOSS_OS_ORIGIN ?? "https://boss.sequoiataylor.com";
 const SUBJECT = process.env.BROKERAGE_MAILBOX ?? "staylor@spry.vc";
@@ -284,20 +285,23 @@ export function connectorStartFailure(error) {
   return { id: "cred_gmail_connector", state: "unknown", detail };
 }
 
-function probeConnector() {
-  const claude = process.env.CLAUDE_BIN ?? "claude";
-  // Under vault:run the parent carries ANTHROPIC_API_KEY; the CLI would take it over her login and
-  // disable the very connector this probes. `seatEnv` strips it — see scripts/ops/lib/seat-env.mjs.
-  const run = spawnSync(
-    claude,
-    ["-p", CONNECTOR_PROMPT, "--model", MODEL, "--dangerously-skip-permissions"],
-    { encoding: "utf8", timeout: 180_000, env: seatEnv(process.env) },
-  );
-
-  if (run.error) return connectorStartFailure(run.error);
-
-  const text = `${run.stdout ?? ""}\n${run.stderr ?? ""}`;
-  const m = /CRED-GMAIL:\s*(live|dead|unknown)/i.exec(text);
+/**
+ * THE ONE WORD, READ FROM THE RUN — AND NEVER FROM A RUN THAT WAS REFUSED A CALL (24 Nov 2026).
+ * The probe runs locked to credential-check-permissions.json (one Gmail search, nothing else). If
+ * that file ever stops allowing the search, the CLI refuses the call quietly and the model would
+ * report the refusal as "dead", sending someone to reconnect a connector that works. A refused call
+ * is therefore `unknown` with its own detail, whatever the model printed.
+ */
+export function connectorVerdict(stdout, stderr = "") {
+  const denied = refusals(stdout);
+  if (denied.length > 0) {
+    return {
+      id: "cred_gmail_connector",
+      state: "unknown",
+      detail: `The connector test was refused by its own permissions file (${denied.map((d) => d.tool).join(", ")}), so whether the connector works is unknown. NAMED STOP [PERMISSION_DENIED].`,
+    };
+  }
+  const m = /CRED-GMAIL:\s*(live|dead|unknown)/i.exec(resultText(stdout) || String(stderr ?? ""));
   if (!m) {
     /*
      * NO SENTINEL IS NOT `live`. The run died halfway, or the CLI is not signed in at all, and both
@@ -322,6 +326,21 @@ function probeConnector() {
           ? "A Gmail call through the connector was refused. Google revokes this grant whenever the account password changes, which is what happened last time."
           : "The connector test could not decide.",
   };
+}
+
+export function probeConnector() {
+  const claude = process.env.CLAUDE_BIN ?? "claude";
+  // Under vault:run the parent carries ANTHROPIC_API_KEY; the CLI would take it over her login and
+  // disable the very connector this probes. `seatEnv` strips it — see scripts/ops/lib/seat-env.mjs.
+  // Locked to its own list (lib/claude-lock.mjs); stream-json so a refused call can be seen.
+  const run = spawnSync(
+    claude,
+    ["-p", CONNECTOR_PROMPT, "--model", MODEL, ...lockedArgs("credential-check"), "--output-format", "stream-json", "--verbose"],
+    { encoding: "utf8", timeout: 180_000, env: seatEnv(process.env) },
+  );
+
+  if (run.error) return connectorStartFailure(run.error);
+  return connectorVerdict(run.stdout ?? "", run.stderr ?? "");
 }
 
 // ─── Report ─────────────────────────────────────────────────────────────────

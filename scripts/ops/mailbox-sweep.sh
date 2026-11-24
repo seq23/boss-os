@@ -94,10 +94,25 @@ rm -f "$OUT_DIR/findings.json"
 say "=== mailbox sweep starting (model $MODEL) ==="
 cd "$HOME" || { say "NAMED STOP [NO_HOME]"; exit 8; }
 
-AI_RUN_CLAUDE_MODEL="$MODEL" AI_RUN_CLAUDE_ARGS="--max-turns $MAX_TURNS --dangerously-skip-permissions" \
+# LOCKED TO ITS OWN LIST (24 Nov 2026). mailbox-sweep-permissions.json is the whole of what this run
+# may do: search and read mail (no send), read the code-name map, write findings.json, read a page in
+# Monique's own Chrome profile. A refused call is PERMISSION_DENIED below, checked BEFORE the report,
+# so a refused mailbox read can never be posted as a quiet week. lib/claude-lock.sh says why.
+# shellcheck source=lib/claude-lock.sh
+. "$REPO/scripts/ops/lib/claude-lock.sh"
+CLAUDE_LOCK="$(claude_lock_args "$REPO/scripts/ops/mailbox-sweep-permissions.json")" || { say "NAMED STOP [NO_PERMISSIONS_FILE] claude was not started."; exit 13; }
+SID="$(uuidgen | tr '[:upper:]' '[:lower:]')"
+AI_RUN_CLAUDE_MODEL="$MODEL" AI_RUN_CLAUDE_ARGS="--max-turns $MAX_TURNS --session-id $SID $CLAUDE_LOCK" \
   "$AI_RUN" --role "$AI_ROLE" --out "$RUN_LOG" < "$PROMPT_FILE"
 RC=$?
 say "=== ai-run --role $AI_ROLE exited rc=$RC ==="
+
+DENIED="$(claude_denials "$SID" "$RUN_LOG")"
+if [ "$DENIED" != "0" ]; then
+  say "NAMED STOP [PERMISSION_DENIED] denied=$DENIED — a tool call was refused by mailbox-sweep-permissions.json"
+  say "  (DENIED lines above; 'unknown' = the run's record could not be read). Nothing is reported as found or quiet."
+  exit 14
+fi
 
 if ! grep -q "MAILBOX-SWEEP-COMPLETE:" "$RUN_LOG"; then
   say "NAMED STOP [SWEEP_DID_NOT_COMPLETE] no sentinel in the log — the run started and never reached its end,"

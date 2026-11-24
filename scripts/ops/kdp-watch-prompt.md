@@ -130,14 +130,10 @@ covers exist. **They are hers to approve and nobody else's.** Her instruction: "
 this happening right away id rather see them in my inbox for approval and then approve them and have
 simone publish them."
 
-**Every run, before anything else, read `GET /api/boss/kdp` and look at `covers`.**
-
-```bash
-COOKIE=$(curl -s -D- -o/dev/null -X POST https://boss.sequoiataylor.com/api/boss/auth/unlock \
-  -H 'content-type: application/json' -d "{\"passcode\":\"$BOSS_PASSCODE\"}" \
-  | grep -i '^set-cookie' | cut -d' ' -f2 | cut -d';' -f1)
-curl -s https://boss.sequoiataylor.com/api/boss/kdp -H "cookie: $COOKIE"
-```
+**Every run, before anything else, read `GET /api/boss/kdp` and look at `covers`.** The wrapper
+has already read it for you, this run, and saved its `data` to `~/.boss-os/kdp/register.json`: read
+that file with the Read tool. Never unlock Boss OS or curl it yourself; this run's permissions file
+does not allow it, and a refused call stops the run as PERMISSION_DENIED.
 
 | `covers` | What you may do |
 |---|---|

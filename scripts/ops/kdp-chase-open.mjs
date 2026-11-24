@@ -44,6 +44,15 @@ async function main() {
     process.exit(4);
   }
   const { data } = await res.json();
+  // `--save <file>`: the register as read, for kdp-watch.sh's locked run, which may not unlock Boss
+  // OS itself (its permissions file allows no curl and no passcode). Written only when it was read.
+  const saveAt = process.argv.indexOf("--save");
+  if (saveAt > 0 && process.argv[saveAt + 1]) {
+    const { writeFileSync, mkdirSync } = await import("node:fs");
+    const { dirname } = await import("node:path");
+    mkdirSync(dirname(process.argv[saveAt + 1]), { recursive: true });
+    writeFileSync(process.argv[saveAt + 1], JSON.stringify(data ?? null, null, 2) + "\n");
+  }
   const chase = data?.chase;
   if (!chase || typeof chase.open !== "boolean") {
     console.log("KDP-CHASE: UNKNOWN — the register answered without a `chase` field; the Worker is older than this script.");

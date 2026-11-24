@@ -17,7 +17,7 @@
 # MONEY: THE SESSION CAN ONLY READ. scripts/ops/ai-visibility-permissions.json is the whole permission
 # list (`--setting-sources=` loads none of her own settings): nine read-only OpenSEO tools, every other
 # OpenSEO tool and every file, shell and web tool denied, the claude.ai connectors switched off.
-# `npm run validate:ai-visibility` fails the build on any other allow entry. The session prints
+# `npm run validate:claude-runs` fails the build on any other allow entry. The session prints
 # OpenSEO's credits before and after; the report refuses a run where they moved.
 #
 # RULE 0: this may not exit 0 having done nothing. No sentinel with a real number → NAMED STOP exit 9;
@@ -60,7 +60,7 @@ AI_RUN="${AI_RUN_BIN:-$HOME/bin/ai-run}"
 case "$SETTINGS" in *[[:space:]]*) say "NAMED STOP [PERMISSIONS_PATH_SPACE] '$SETTINGS' has a space, which ai-run would split."; exit 6;; esac
 [[ "$MAX_TURNS" =~ ^[1-9][0-9]*$ ]] || { say "NAMED STOP [BAD_MAX_TURNS] AI_VISIBILITY_MAX_TURNS='$MAX_TURNS'"; exit 5; }
 ROLE="$(node "$REPO/scripts/ops/lib/ai-run.mjs" role ai_visibility.read)" || { say "NAMED STOP [NO_AI_ROLE] ai_visibility.read"; exit 11; }
-node "$REPO/scripts/validate/ai-visibility-reads-only.mjs" >> "$RUN_LOG" 2>&1 || { say "NAMED STOP [PERMISSIONS_NOT_READ_ONLY] the allow list is not the nine read tools; refusing to run."; exit 6; }
+node "$REPO/scripts/validate/claude-runs-locked.mjs" --ai-visibility >> "$RUN_LOG" 2>&1 || { say "NAMED STOP [PERMISSIONS_NOT_READ_ONLY] the allow list is not the nine read tools; refusing to run."; exit 6; }
 
 # Step 1: the context the session cannot fetch for itself (it has no file or web tools).
 (cd "$REPO" && npm run --silent vault:run -- node scripts/ops/ai-visibility-report.mjs context "$WORK/context.txt" "$WORK/state.json") 2>&1 | tee -a "$RUN_LOG"
