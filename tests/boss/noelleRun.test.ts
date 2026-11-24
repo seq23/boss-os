@@ -122,6 +122,7 @@ beforeEach(async () => {
   await brain("porch-and-party", PNP); await brain("spry", SPRY); await brain("friends", FRIENDS); await brain("risk", RISK);
   await brain("west-peek", "## Settled decisions\n### Growth\n- 2026-11-20 — WPP-llm is watched.\n\n## Growth\n[MISSING]\n");
   await setSetting(env.DB, TOKEN_KEY, await sha256(TOKEN));
+  await setSetting(env.DB, "growth_report_last_day", DAY); // not due, unless a test says so
 });
 
 describe("the run's routes are the machine token's only; the machine token never directs her", () => {
@@ -278,6 +279,38 @@ describe("the results ledger: a post only on the platform's receipt (H5), measur
     const read = await json(await handleRequest(new Request("https://boss.sequoiataylor.com/api/boss/growth/backlink-orders", { headers: { authorization: `Bearer ${TOKEN}` } }), outer));
     expect(read.orders).toEqual([{ business: "peace-be-still", topic: "Bedtime Bible stories for Black families", draft: "A short guide to bedtime Bible stories.", why: "our Ruth page answers it" }]);
     expect(await rows(`SELECT COUNT(*) AS n FROM growth_decisions`)).toEqual([{ n: 1 }]);
+  });
+
+  it("her 14-day report is in the morning email's growth section on its day, from the record, under nothing lost; never a day early, never from a stopped run", async () => {
+    await env.DB.exec(`DELETE FROM growth_decisions`);
+    const section = async () => JSON.parse((await rows(`SELECT body FROM morning_sections WHERE section = 'growth'`))[0]?.body ?? "null");
+    await call("/noelle/ledger", post("p6", "6b04ee67"));
+    await call("/noelle/backlinks", { business: "peace-be-still", requests: [{ topic: "Bedtime Bible stories", draft: "A short guide." }] });
+    await reading(DAY, "pnp-requests", "porch-and-party", "all", 2);
+    await env.DB.prepare(`INSERT INTO morning_sections (section, job, day, body, status, created_at, updated_at) VALUES ('growth', 'duty_growth_director', ?, ?, 'fresh', ?, ?)`)
+      .bind(DAY, JSON.stringify({ section: "growth", at: new Date(NOW - 60_000).toISOString(), title: "📈 Growth, from Noelle", lines: ["Noelle did not run on 2026-11-22."], decide: [], rows: [] }), NOW, NOW).run();
+    // 12 days after the last one: not due.
+    await setSetting(env.DB, "growth_report_last_day", "2026-11-11");
+    expect((await json(await done({ id: "noelle-2026-11-23-1037-1" }))).report).toBe(false);
+    // Its day (13 days on), but the run stopped: no report.
+    await setSetting(env.DB, "growth_report_last_day", "2026-11-10");
+    expect((await json(await done({ id: "noelle-2026-11-23-1237-1", state: "stopped", stops: ["BUFFER_FULL"], line: "x" }))).report).toBe(false);
+    expect((await section()).lines).toEqual(["Noelle did not run on 2026-11-22."]);
+    // Its day and a finished run: the report, once.
+    expect((await json(await done())).report).toBe(true);
+    const s = await section();
+    expect(s.title).toBe("📈 Growth, from Noelle");
+    expect(s.lines[0]).toBe(`Nothing to do. In the 14 days to ${DAY} Noelle sent out 1 post, 1 backlink article requested.`);
+    expect(s.lines).toEqual(expect.arrayContaining([
+      "Against the floors: Porch & Party requests in the last 28 days: 2 of 4 by Dec 23; money in across the growth businesses, last 28 days: not read yet (the floor is $1,000 by Jan 22).",
+      "Porch & Party: 2 requests in 28 days; nothing new sent out.",
+      "Peace Be Still: numbers not read in 28 days; 1 post, 1 backlink article requested.",
+      "Her runs: 1 of 14 days finished; stopped: BUFFER_FULL 1×.",
+      expect.stringMatching(/^Results against floors: no action is 30 days old yet/),
+      "Noelle did not run on 2026-11-22.",
+    ]));
+    expect(await rows(`SELECT value FROM settings WHERE key = 'growth_report_last_day'`)).toEqual([{ value: DAY }]);
+    expect((await json(await done({ id: "noelle-2026-11-23-1637-1" }))).report).toBe(false);
   });
 
   it("her context carries the results against floors; with an empty ledger it says so, never an empty block", async () => {

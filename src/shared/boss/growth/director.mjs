@@ -4,7 +4,7 @@
  * is what the record and its readers share, tested by tests/growthDirector.test.ts:
  *   - the backlink orders the network reads (topicOf, backlinkOrders; GET /api/boss/growth/backlink-orders);
  *   - the naming guard run on every draft (namingProblems).
- * Her fortnightly report (reportSection) was built from the plan's decisions and went with the plan path.
+ * Her 14-day report is rebuilt on the new path from the ledger (ledger.mjs fortnightReport).
  */
 
 /**

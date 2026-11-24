@@ -141,3 +141,75 @@ export function postsWithoutRows(doc, items, { business = "", channel, since = n
   const posted = ledgerRowsFrom(doc, { business, channel, now, days, since }).filter((r) => r.channel === channel);
   return { posted: posted.length, missing: posted.filter((r) => !have.has(r.item)).map((r) => r.item) };
 }
+
+/**
+ * HER 14-DAY GROWTH REPORT (kept, coordinator decision 24 Nov 2026: "nothing people use gets taken away").
+ * Same schedule (every 14 days from the setting growth_report_last_day, due from day 13) and the same slot
+ * (the morning email's 📈 Growth section). Noelle's own run writes it when it finishes (POST /noelle/done),
+ * built from the record, never from a model's paragraph: the ledger (noelle_actions), her backlink requests
+ * (growth_decisions), her runs (noelle_runs) and the scoreboard readings. A number not read says "not read",
+ * never 0.
+ */
+export const REPORT_EVERY_DAYS = 14;
+export const REPORT_KEY = "growth_report_last_day";
+export function reportDue(lastDay, today) {
+  if (!DAY.test(String(lastDay ?? ""))) return true;
+  return (Date.parse(`${today}T12:00:00Z`) - Date.parse(`${lastDay}T12:00:00Z`)) / 86_400_000 >= REPORT_EVERY_DAYS - 1;
+}
+const WORDS = { money: (n) => `$${Math.round(n).toLocaleString("en-US")} in`, sales: (n) => `${n} ${n === 1 ? "sale" : "sales"}`, installs: (n) => `${n} ${n === 1 ? "install" : "installs"}`, requests: (n) => `${n} ${n === 1 ? "request" : "requests"}`, visits: (n) => `${n} ${n === 1 ? "visit" : "visits"}` };
+/** "2 requests, $730 in" from a scoreboard summary's totals; null when nothing was read (never 0). */
+export function numbersLine(summary) {
+  const parts = Object.entries(summary?.totals ?? {}).filter(([, v]) => v !== null && v !== undefined).map(([k, v]) => WORDS[k]?.(v)).filter(Boolean);
+  return parts.length ? parts.join(", ") : null;
+}
+/** "Porch & Party requests: 2 of 4 by 23 Dec" from the Scorecard row; "not read yet", never 0. */
+function floorLine(f, start, value, missing = []) {
+  if (!f || !DAY.test(String(start ?? ""))) return null;
+  const by = new Date(Date.parse(`${start}T12:00:00Z`) + f.by * 86_400_000).toLocaleDateString("en-US", { day: "numeric", month: "short", timeZone: "UTC" });
+  const money = (n) => `${f.unit === "$" ? "$" : ""}${Math.round(n).toLocaleString("en-US")}`;
+  if (value === null || value === undefined) return `${f.label}: not read yet (the floor is ${money(f.floor.value)} by ${by})`;
+  const gap = missing.length ? ` (${missing.join(" and ")} not read yet)` : "";
+  return `${f.label}: ${money(value)} of ${money(f.floor.value)} by ${by}${gap}`;
+}
+/** The two floor numbers: Porch & Party's requests, and money in across every business that tracks money; an unread business is NAMED, never summed as $0. */
+export function floorValues(summaries, labelOf = (k) => k) {
+  const first = summaries.find((x) => x.key === "porch-and-party")?.totals?.requests ?? null;
+  const tracked = summaries.filter((x) => x.totals && "money" in x.totals);
+  const read = tracked.filter((x) => typeof x.totals.money === "number");
+  const missing = tracked.filter((x) => typeof x.totals.money !== "number").map((x) => labelOf(x.key));
+  return { first, real: read.length ? read.reduce((a, x) => a + x.totals.money, 0) : null, realMissing: read.length ? missing : [] };
+}
+const KIND_WORDS = { post: ["post", "posts"], "pin-refill": ["pin refill", "pin refills"], "page-new": ["new page", "new pages"], "search-loop": ["Search Loop change", "Search Loop changes"], "studio-plan": ["Studio plan", "Studio plans"], "job-target": ["job target", "job targets"] };
+const counted = (n, [one, many]) => `${n} ${n === 1 ? one : many}`;
+/**
+ * The section object (morning_sections 'growth'). Line 1 says whether she must do anything (Noelle's lines
+ * waiting on her Notices), then what went out in the 14 days, the floors, one line per business, her runs'
+ * stops, and the ledger's results against floors.
+ */
+export function fortnightReport({ today, actions = [], orders = {}, runs = [], waiting = 0, summaries = [], scorecard = null, labels = {}, results = [], origin, at }) {
+  const from = addDays(today, -(REPORT_EVERY_DAYS - 1));
+  const acts = actions.filter((a) => DAY.test(String(a.day)) && a.day >= from && a.day <= today);
+  const ordered = Object.values(orders).reduce((n, v) => n + (Number(v) || 0), 0);
+  const label = (k) => labels[k] ?? summaries.find((x) => x.key === k)?.label ?? k;
+  const byKind = (rows) => Object.entries(rows.reduce((m, a) => ({ ...m, [a.kind]: (m[a.kind] ?? 0) + 1 }), {})).map(([k, n]) => counted(n, KIND_WORDS[k] ?? [k, k]));
+  const out = [...byKind(acts), ordered ? counted(ordered, ["backlink article requested", "backlink articles requested"]) : null].filter(Boolean);
+  const lines = [
+    `${waiting ? `${counted(waiting, ["line from Noelle waits", "lines from Noelle wait"])} for you on Notices.` : "Nothing to do."} ${out.length ? `In the 14 days to ${today} Noelle sent out ${out.join(", ")}.` : `Nothing new went out in the 14 days to ${today}; why, below.`}`,
+  ];
+  const fv = floorValues(summaries, label);
+  const floors = [floorLine(scorecard?.first, scorecard?.start, fv.first), floorLine(scorecard?.real, scorecard?.start, fv.real, fv.realMissing)].filter(Boolean);
+  if (floors.length) lines.push(`Against the floors: ${floors.join("; ")}.`);
+  const keys = [...new Set([...summaries.map((s) => s.key), ...acts.map((a) => a.business), ...Object.keys(orders)])].filter((k) => labels[k] || summaries.some((s) => s.key === k));
+  for (const k of keys.sort((a, b) => (label(a) < label(b) ? -1 : 1))) {
+    const did = [...byKind(acts.filter((a) => a.business === k)), orders[k] ? counted(orders[k], ["backlink article requested", "backlink articles requested"]) : null].filter(Boolean).join(", ") || "nothing new sent out";
+    lines.push(`${label(k)}: ${numbersLine(summaries.find((s) => s.key === k)) ?? "numbers not read"} in 28 days; ${did}.`);
+  }
+  const mine = runs.filter((r) => DAY.test(String(r.day)) && r.day >= from && r.day <= today);
+  const days = new Set(mine.filter((r) => r.state === "done").map((r) => r.day)).size;
+  const stops = {};
+  for (const r of mine.filter((r) => r.state !== "done")) for (const s of (Array.isArray(r.stops) ? r.stops : [])) stops[s] = (stops[s] ?? 0) + 1;
+  const stopText = Object.entries(stops).sort((a, b) => b[1] - a[1]).map(([s, n]) => `${s} ${n}×`).join(", ");
+  lines.push(`Her runs: ${days} of ${REPORT_EVERY_DAYS} days finished${stopText ? `; stopped: ${stopText}` : ""}.`);
+  lines.push(...results);
+  return { section: "growth", at: new Date(at).toISOString(), title: "📈 Growth, from Noelle", decide: [], rows: [], lines, link: { label: "See every business on the Growth page", url: `${origin}/?tab=growth` } };
+}

@@ -30,7 +30,8 @@ import { privateOnlyTerms, leaksIn, termCount } from "../../../shared/boss/growt
 import { playbookBody } from "../../../shared/boss/growth/playbook.mjs";
 import { readGrid, season, slotFor, didNotRunLine, escalations, noticeLine, scheduleLines, CHANNEL_NAMES, CHANNEL_OWNERS } from "../../../shared/boss/growth/noelle.mjs";
 import { appendToSection } from "../../../shared/boss/mail/morningSections.mjs";
-import { MAX_ACTED, cleanActed, floorsFor, measureFor, resultLines, postsWithoutRows } from "../../../shared/boss/growth/ledger.mjs";
+import { MAX_ACTED, cleanActed, floorsFor, measureFor, resultLines, postsWithoutRows, reportDue, fortnightReport, REPORT_KEY, REPORT_EVERY_DAYS } from "../../../shared/boss/growth/ledger.mjs";
+import { getSetting, setSetting } from "../lib/settings";
 import { latestReadings } from "../routes/growth";
 import { putMorningSection } from "../mail/morningSection";
 import { BOSS_ORIGIN } from "../../../shared/boss/research/page.mjs";
@@ -145,7 +146,38 @@ export async function recordDone(env: Env, body: any, now = Date.now()) {
     const code = stops[0] ?? "UNKNOWN";
     if (await noticeOnce(db, `noelle:twice:${day}:${code}`, `Noelle stopped the same way twice today (${code}); no more tries today. ${line.replace(/NAMED STOP \[[A-Z0-9_]+\]\s*/g, "").slice(0, 160)}`, 1, now)) notices++;
   }
-  return { run: id, written, state, notices };
+  // Her 14-day report (kept 24 Nov 2026): the first finished run on its day writes it; a stopped run never does.
+  const report = state === "done" && reportDue(await getSetting(db, REPORT_KEY), day) ? await writeReport(env, day, now) : false;
+  return { run: id, written, state, notices, report };
+}
+
+/**
+ * Her 14-day report into the morning email's 📈 Growth section, from the record (ledgerResults, the backlink
+ * requests, her runs, the scoreboard readings). A fresh section already there (a heartbeat line) is kept under
+ * it. A refused section is a NAMED STOP and the setting is not moved, so the next finished run tries again.
+ */
+export async function writeReport(env: Env, day: string, now: number) {
+  const db = env.DB;
+  const from = new Date(Date.parse(`${day}T12:00:00Z`) - (REPORT_EVERY_DAYS - 1) * DAY_MS).toISOString().slice(0, 10);
+  let labels: Record<string, string> = {};
+  try { labels = Object.fromEntries((await loadRoster(db)).roster.map((e: any) => [e.key, e.label])); } catch { /* keys stand in for names */ }
+  const actions = (await db.prepare(`SELECT day, kind, business, channel FROM noelle_actions WHERE day >= ? AND day <= ? LIMIT 2000`).bind(from, day).all<any>()).results ?? [];
+  const orders: Record<string, number> = {};
+  for (const r of (await db.prepare(`SELECT business, actions FROM growth_decisions WHERE created_at >= ?`).bind(now - REPORT_EVERY_DAYS * DAY_MS).all<any>()).results ?? [])
+    orders[r.business] = (orders[r.business] ?? 0) + parse<any[]>(r.actions, []).filter((a) => a?.kind === "ordered").length;
+  const runs = ((await db.prepare(`SELECT day, state, stops FROM noelle_runs WHERE day >= ? AND day <= ?`).bind(from, day).all<any>()).results ?? []).map((r) => ({ ...r, stops: parse<string[]>(r.stops, []) }));
+  const waiting = Number((await db.prepare(`SELECT COUNT(*) AS n FROM boss_task_notices WHERE from_name = 'Noelle' AND needs_her = 1 AND created_at >= ?`).bind(now - REPORT_EVERY_DAYS * DAY_MS).first<{ n: number }>())?.n ?? 0);
+  const { latest, before } = await latestReadings(db);
+  const summaries = summarize(manifest, latest, before, day);
+  const scorecard = (manifest as any).rows.find((r: any) => r.id === "growth-director") ?? null;
+  const results = await ledgerResults(db, day, labels);
+  const obj = fortnightReport({ today: day, actions, orders, runs, waiting, summaries, scorecard, labels, results, origin: BOSS_ORIGIN, at: now });
+  const prev = parse<any>((await db.prepare(`SELECT body FROM morning_sections WHERE section = 'growth' AND status = 'fresh'`).first<{ body: string }>())?.body, null);
+  const merged = prev ? { ...obj, ...appendToSection({ ...obj, at: obj.at }, "growth", { lines: prev.lines ?? [] }, now), title: obj.title, link: obj.link } : obj;
+  const bad = await putMorningSection(db, { section: "growth", job: "duty_growth_director", day, obj: merged, now });
+  if (bad.length) throw new Error(`NAMED STOP [GROWTH_REPORT_REFUSED] ${bad.join("; ")}`);
+  await setSetting(db, REPORT_KEY, day);
+  return true;
 }
 
 /** "Noelle published: …" (she MAY publish new things and tells Sequoia each time): one line per key. */
