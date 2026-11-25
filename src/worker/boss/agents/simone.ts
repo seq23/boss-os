@@ -1,6 +1,11 @@
 import type { Env } from "../env";
 import { newId } from "../lib/id";
 import { activeRoster } from "../intake/inboundMail";
+import { admitTask } from "../tasks/admit";
+import { SIMONE_ROUTING, readAssignments, routingInstructions, routingRequest, type SimoneAssignment } from "../../../shared/boss/intake/simoneRouting.mjs";
+import { readJsonObject } from "../router/types";
+import { routeCompletion } from "../router";
+import { macSeen } from "../queue/freeRung";
 import { privateLexicon, scanForModelAccess } from "../router/modelAccess";
 
 export const SIMONE = "emp_chief";
@@ -44,16 +49,17 @@ interface ClaimedTask {
   sensitivity: string | null;
 }
 
-export async function claimSimone(env: Env, now = Date.now()) {
+export async function claimSimone(env: Env, now = Date.now(), cloud = false) {
   const roster = await activeRoster(env);
   const row = await env.DB.prepare(
     `UPDATE tasks SET status = 'running', started_at = ?, attempts = COALESCE(attempts, 0) + 1
        WHERE id = (
          SELECT id FROM tasks WHERE employee_id = ? AND ${CHIEF}
            AND (status = 'queued' OR (status = 'running' AND started_at <= ?))
+           AND (? = 0 OR (json_extract(input, '$.source') = 'boss_inbound_mail' AND created_at <= ?))
          ORDER BY created_at, id LIMIT 1
        ) RETURNING id, input, attempts, model_access, sensitivity`,
-  ).bind(now, SIMONE, now - SIMONE_LEASE_MS).first<ClaimedTask>();
+  ).bind(now, SIMONE, now - SIMONE_LEASE_MS, Number(cloud), now - 30 * 60_000).first<ClaimedTask>();
   if (!row) return null;
   const message: SimoneMessage = JSON.parse(row.input);
   const access = scanForModelAccess(
@@ -105,4 +111,84 @@ export async function replySimone(env: Env, result: { id: string; lease: number;
     ).bind(JSON.stringify({ text, work: result.work }), now, result.id, SIMONE, result.lease),
   ]);
   return Boolean(writes[2]?.meta.changes);
+}
+
+/** Materialize only verbatim owner instructions, using the team’s normal permission envelopes and queue. */
+export async function handoffSimone(env: Env, request: { id: string; lease: number; assignments: unknown }) {
+  const row = await env.DB.prepare(
+    `SELECT input FROM tasks WHERE id = ? AND employee_id = ? AND ${CHIEF}
+       AND status = 'running' AND attempts = ?`,
+  ).bind(request.id, SIMONE, request.lease).first<{ input: string }>();
+  if (!row) return null;
+  const message: SimoneMessage = JSON.parse(row.input);
+  const roster = await activeRoster(env);
+  const assignments: SimoneAssignment[] | null = readAssignments(request.assignments, { message, roster });
+  if (!assignments?.length) return null;
+  const out: { name: string; id: string }[] = [];
+  for (const assignment of assignments) {
+    const seat = roster.find((employee) => employee.id === assignment.employee)!;
+    const bytes = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(JSON.stringify([seat.id, assignment.words])));
+    const key = Array.from(new Uint8Array(bytes), (byte) => byte.toString(16).padStart(2, "0")).join("");
+    const id = `${request.id}_handoff_${key}`;
+    const existing = await env.DB.prepare(`SELECT status, envelope_id FROM tasks WHERE id = ?`).bind(id)
+      .first<{ status: string; envelope_id: string | null }>();
+    if (existing) {
+      if (!existing.envelope_id) throw new Error("Simone handoff has no permission envelope");
+      if (existing.status === "queued") await env.TASKS.send({ taskId: id, lane: seat.lane });
+    } else {
+      const admitted = await admitTask(env, {
+        title: message.subject.slice(0, 180) || "Work from Simone", lane: seat.lane, employee_id: seat.id,
+        input: {
+          source: message.source, body: assignment.words, mail_id: message.mail_id,
+          from: message.from, subject: message.subject, simone_handoff: request.id,
+        },
+      }, id);
+      if (!admitted.created) throw new Error("Simone handoff could not be admitted");
+    }
+    out.push({ name: seat.name, id });
+  }
+  return out;
+}
+
+export async function finishSimoneHandoff(env: Env, request: { id: string; lease: number; assignments: unknown; text?: string; work?: string[] }) {
+  const handoffs = await handoffSimone(env, request);
+  if (!handoffs) return false;
+  const names = [...new Set(handoffs.map(({ name }) => name))];
+  const note = `I handed this to ${new Intl.ListFormat("en-US", { type: "conjunction" }).format(names)}.`;
+  return replySimone(env, {
+    ...request, text: [request.text, note].filter(Boolean).join("\n\n"),
+    work: [...(request.work ?? []), ...handoffs.map(({ id }) => id)],
+  });
+}
+
+export async function routeSimoneWhenMacIsDown(env: Env, now = Date.now(), route = routeCompletion) {
+  if (await macSeen(env, now)) return "mac_online";
+  const call = await claimSimone(env, now, true);
+  if (!call) return "idle";
+  let code = call.privateOnly ? "PRIVATE_MODEL_ONLY" : "MODEL_UNAVAILABLE";
+  try {
+    if (!call.privateOnly) {
+      const parse = (text: string) => readAssignments(readJsonObject(text)?.assignments, call);
+      const messages = [
+        { role: "system" as const, content: `${routingInstructions}\nReturn JSON with an assignments array of employee and words objects.` },
+        { role: "user" as const, content: routingRequest(call) },
+      ];
+      for (const onlyProviderId of ["prv_workers_ai", "prv_gemini"]) {
+        const result = await route(env, {
+          onlyProviderId, messages, routeId: "rt_ops_default", lane: "ops", employeeId: SIMONE,
+          taskId: call.id, intakeKind: "classification", costMode: "FREE_ONLY", freeOnly: true,
+          maxOutputTokens: 2048, json: SIMONE_ROUTING, accept: (text) => parse(text) === null ? "invalid Simone handoff" : null,
+        }).catch(() => null);
+        const assignments = result ? parse(result.text) : null;
+        if (assignments === null) continue;
+        if (assignments.length && await finishSimoneHandoff(env, { ...call, assignments })) return "handed_off";
+        code = "WAITING_FOR_MAC";
+        break;
+      }
+    }
+  } catch {
+    code = "HANDOFF_UNAVAILABLE";
+  }
+  await releaseSimone(env, call.id, call.lease, code);
+  return code;
 }

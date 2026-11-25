@@ -364,7 +364,11 @@ async function handleMail(message: BossMailMessage, env: Env, said: Said): Promi
   const to = String(message.to ?? "").toLowerCase();
   let subject = decodeHeader(message.headers.get("subject") ?? "");
   const sender = senderOf(message);
-  const dmarc = dmarcPassed(message.headers.get("authentication-results"));
+  // Email Routing prepends its own result. A sender can add later results in the same header bag.
+  const authentication = message.headers.get("authentication-results")?.split(",", 1)[0] ?? "";
+  const cloudflareChecked = /^mx\.cloudflare\.net\s*;/i.test(authentication.trim());
+  const dmarc = dmarcPassed(authentication) && (message.console === true || cloudflareChecked) &&
+    !(/;\s*spf=(?:softfail|fail)\b/i.test(authentication) && /;\s*dkim=fail\b/i.test(authentication));
   const authorised = isOwner(sender, env.BOSS_EXTRA_OWNER_SENDERS ?? "") && dmarc;
 
   /*

@@ -56,6 +56,7 @@ export const AI_ROLES = Object.freeze({
   // Owner, 13 Nov 2026: "recording can be a free model interpreting can be a more high quality model".
   // ── Noelle, the Growth Director (scripts/ops/noelle.sh: full Claude Code with her persona, 24 Nov 2026) ──
   "growth.noelle": { role: BRAIN, jobClass: "hard", why: "Noelle's run: full Claude Code as the Director of Growth in ~/Work/noelle, with builder tools, the rules file and skills, inside Claude Code's OS sandbox (scripts/ops/lib/noelle-sandbox.sh: her own paths, her hosts and a separate GitHub broker) with her guard's checks by name (scripts/ops/noelle-guard.mjs). Brains: only spry, porch-and-party, time-2-read, personal, team and risk (noelle.mjs readBrain), never brokerage or west-peek-ventures. On a Claude limit scheduled work stops and her call goes to the Boss OS answer ladder." },
+  "chief.simone_route_backup": { role: WORKER, jobClass: "short", why: "Reads Simone’s mail for colleague handoffs when Claude cannot start." },
   "chief.simone": { role: BRAIN, jobClass: "hard", why: "Runs the chief of staff session on the Mac with the owner’s message and the team roster." },
   "brain.record": { role: WORKER, jobClass: "short", why: "Saving her exact words or a measured number into a brain, read back after the save: short and checkable, so it starts on the free routes." },
   "brain.interpret": { role: BRAIN, jobClass: "hard", why: "Rewriting, merging, summarising or deciding what a ruling means: hard judgement." },

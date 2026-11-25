@@ -9,6 +9,7 @@ import { plainReply } from "./boss/intake/mailRefs";
 // The structured event spine, for the one thing in this file that writes to it: a reply that did
 // not go. Everything else here logs through the handlers it calls.
 import { logEvent } from "./boss/lib/log";
+import { routeSimoneWhenMacIsDown } from "./boss/agents/simone";
 import { isBossRoute, handleBossRequest, tapPageToBossPath, researchPageToBossPath, partnerPageToBossPath, drainBossTasks, runBossNightly, runBossDuties, runBossReaper, runBossOutreach, runBossOpenLoops, runBossEightraise, runBossKendra, toBossEnv as toBossEnvForCron } from "./bossMount";
 /** Where the West Peek fund screens and their API live now (the chassis retirement, 22 Nov 2026). */
 function json(body: unknown, init: ResponseInit = {}): Response {
@@ -332,6 +333,8 @@ export default {
     if (event?.cron === MAIL_ALARM_CRON) {
       ctx.waitUntil(runMailAlarm(toBossEnvForCron(env), now.getTime()).then(() => undefined).catch((err) => console.error("boss mail alarm failed", err)));
       ctx.waitUntil(runBossCloudClock(toBossEnvForCron(env), now.getTime()).then(() => undefined).catch((err) => console.error("boss cloud clock failed", err)));
+      ctx.waitUntil(routeSimoneWhenMacIsDown(toBossEnvForCron(env), now.getTime())
+        .catch(() => console.error("Simone’s offline mail routing could not finish")));
       return;
     }
     // The copied West Peek fund jobs (runDueJobs) no longer run here: West Peek OS runs them itself

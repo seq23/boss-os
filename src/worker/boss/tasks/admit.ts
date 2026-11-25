@@ -153,7 +153,7 @@ export async function suggestOwner(
  * Throws the same `AppError`s the route threw, so the HTTP behaviour is unchanged — they carry
  * their own status codes and are handled by the error middleware wherever they are raised.
  */
-export async function admitTask(env: Env, b: AdmitInput): Promise<AdmitResult> {
+export async function admitTask(env: Env, b: AdmitInput, stableId?: string): Promise<AdmitResult> {
   if (!b?.title) throw badRequest("A task needs a title", "Send { title, lane, input }.");
   const lane = isLane(b.lane) ? b.lane : "ops";
   const input = b.input ?? {};
@@ -422,7 +422,7 @@ export async function admitTask(env: Env, b: AdmitInput): Promise<AdmitResult> {
     }
   }
 
-  const id = newId("tsk");
+  const id = stableId ?? newId("tsk");
   const now = Date.now();
   const costMode = b.cost_mode ?? (await getSetting(env.DB, "cost_mode")) ?? "NORMAL";
   const assignment = classification.executionAssignment;
