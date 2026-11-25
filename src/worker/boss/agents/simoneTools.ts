@@ -1,5 +1,6 @@
 import type { Env } from "../env";
-import { newId } from "../lib/id";
+import { newId, sha256Hex } from "../lib/id";
+import { AppError } from "../lib/http";
 import { SIMONE, SIMONE_AVAILABLE, type SimoneMessage } from "./simone";
 import { accessCodeIn, addressesIn, confirmLine, errandIn, ERRAND_MONEY_RE, DEFAULT_MAILBOX, OWNER_TZ } from "../../../shared/boss/commands/parse.mjs";
 import { audit } from "../lib/audit";
@@ -20,6 +21,8 @@ import { commandOf } from "../../../shared/boss/mail/morningReply.mjs";
 import { morningReplyFromMail } from "../intake/morningReply";
 import { campaignFromMail } from "../outreach/campaign";
 import { steerRound } from "../service/round";
+import { appendDutyInstruction, repoInstructions, type OwnedDuty } from "../duties/ownerEdits";
+import { routeFixedDutyChange } from "../duties/editByMail";
 
 const READS = {
   morning: `SELECT day, updated_at, sent_at FROM morning_digests ORDER BY day DESC LIMIT 3`,
@@ -30,6 +33,8 @@ const READS = {
     FROM boss_commands WHERE kind = 'meeting_prep' ORDER BY updated_at DESC LIMIT 30`,
   kdp: `SELECT title_ref, label, state, updated_at FROM kdp_titles ORDER BY updated_at DESC LIMIT 30`,
   mail_tail: `SELECT id, received_at, authorised, subject, outcome, reply_state FROM boss_inbound_mail ORDER BY received_at DESC LIMIT 30`,
+  duties: `SELECT d.id, d.name, e.name AS employee, d.executor, d.suspended FROM standing_duties d
+    JOIN employees e ON e.id = d.employee_id WHERE d.removed_at IS NULL ORDER BY e.name, d.name`,
   commitments: `SELECT id, name, state, current_status FROM owned_deliverables
     WHERE employee_id = 'emp_chief' AND state IN ('open','blocked') ORDER BY updated_at DESC LIMIT 50`,
   team: `SELECT t.id, t.title, t.status, t.started_at, t.finished_at, e.name AS employee FROM tasks t
@@ -79,6 +84,52 @@ export async function simoneTool(env: Env, request: { id: string; lease: number;
   if (Object.hasOwn(READS, request.tool)) {
     const { results } = await env.DB.prepare(READS[request.tool as keyof typeof READS]).all();
     return { ok: true, rows: results } as const;
+  }
+  if (request.tool === "change_duty") {
+    const message: SimoneMessage = JSON.parse(active.input);
+    const args = typeof request.task === "string" && request.task.length <= 12_000 ? readJsonObject(request.task) : null;
+    const quote = typeof args?.quote === "string" ? args.quote.trim() : "";
+    const id = typeof args?.id === "string" ? args.id : "";
+    if (message.source === "simone_daily" || !id || id.length > 160 || quote.length < 8 ||
+        quote.length > 8000 || !message.body.includes(quote)) {
+      return { ok: false, code: "DUTY_INSTRUCTION_REQUIRED" } as const;
+    }
+    const duty = await env.DB.prepare(`SELECT * FROM standing_duties WHERE id = ? AND removed_at IS NULL`)
+      .bind(id).first<OwnedDuty>();
+    if (!duty) return { ok: false, code: "DUTY_NOT_FOUND" } as const;
+
+    const key = (await sha256Hex(JSON.stringify(["simone-duty", request.id, duty.id, quote]))).slice(0, 32);
+    if (repoInstructions(duty, now)) {
+      const saved = await appendDutyInstruction(env, duty, quote, `dv_${key}`, active.created_at, now);
+      if (!saved) return { ok: false, code: "DUTY_EDIT_NOT_SAVED" } as const;
+      return { ok: true, receipt: duty.id, state: "edited", name: duty.name, version: saved.version } as const;
+    }
+
+    const taskId = `tsk_${key}`;
+    const filed = () => env.DB.prepare(`SELECT r.id, r.github_repo, t.status FROM repo_changes r JOIN tasks t ON t.id = r.task_id
+      WHERE r.task_id = ? AND t.employee_id = 'emp_repo' AND t.envelope_id IS NOT NULL`)
+      .bind(taskId).first<{ id: string; github_repo: string | null; status: string }>();
+    let change = await filed();
+    let dispatched = false;
+    if (!change) {
+      try {
+        const admitted = await routeFixedDutyChange(env, duty, quote, {
+          source: message.source === "boss_inbound_mail" ? message.source : "boss_page",
+          mailId: message.mail_id, sender: message.from, taskId,
+        });
+        dispatched = admitted.queued;
+      } catch (error) {
+        change = await filed();
+        if (!change && error instanceof AppError && error.status === 400) {
+          return { ok: false, code: "DUTY_CHANGE_REFUSED", note: error.message } as const;
+        }
+        if (!change) throw error;
+      }
+      change ??= await filed();
+    }
+    if (!change) return { ok: false, code: "DUTY_CHANGE_NOT_FILED" } as const;
+    if (change.status === "queued" && !dispatched) await env.TASKS.send({ taskId, lane: "ops" });
+    return { ok: true, receipt: change.id, state: "handed_to_danielle", repo: change.github_repo } as const;
   }
   if (request.tool === "read_brain") {
     const slug = typeof request.task === "string" ? request.task.trim() : "";

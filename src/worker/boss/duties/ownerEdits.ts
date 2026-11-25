@@ -20,6 +20,7 @@ import {
   DUTY_PROMPT_FILES, choiceOf, choicesFor, localDate, macDueToday, scheduleFromChoice, scheduleWords, timeEditable,
 } from "../../../shared/boss/duties/ownerEdits.mjs";
 import { REPO_PROMPTS } from "../../../shared/boss/duties/repoPrompts.generated.mjs";
+import { editedInstructions } from "../../../shared/boss/duties/editByMail.mjs";
 
 export const MAX_INSTRUCTIONS = 60_000;
 export const OWNER_TZ = "America/Chicago";
@@ -96,21 +97,59 @@ export async function versionsOf(env: Env, dutyId: string): Promise<VersionRow[]
   ).bind(dutyId).all<VersionRow>()).results ?? [];
 }
 
-async function writeVersion(env: Env, d: OwnedDuty, action: string, now: number): Promise<number> {
-  const top = await env.DB.prepare(`SELECT MAX(version) AS v FROM duty_versions WHERE duty_id = ?`).bind(d.id).first<{ v: number | null }>();
-  const version = top?.v === null || top?.v === undefined ? 0 : top.v + 1;
-  await env.DB.prepare(
+function versionWrite(env: Env, d: OwnedDuty, action: string, now: number, id = newId("dv"), original?: OwnedDuty) {
+  const guard = action === "original" ? "WHERE NOT EXISTS (SELECT 1 FROM duty_versions WHERE duty_id = ?)"
+    : original ? `WHERE EXISTS (SELECT 1 FROM standing_duties WHERE id = ? AND owner_prompt IS ?
+          AND cadence = ? AND weekday IS ? AND weekdays IS ? AND local_hour = ? AND local_minute = ?
+          AND suspended = ? AND removed_at IS NULL) AND NOT EXISTS (SELECT 1 FROM duty_versions WHERE id = ?)`
+    : "";
+  const guardArgs = action === "original" ? [d.id] : original
+    ? [d.id, original.owner_prompt, original.cadence, original.weekday, original.weekdays, original.local_hour, original.local_minute, original.suspended, id]
+    : [];
+  return env.DB.prepare(
     `INSERT INTO duty_versions (id, duty_id, version, action, owner_prompt, cadence, weekday, weekdays, local_hour, local_minute, suspended, removed, created_at)
-     VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)`,
-  ).bind(newId("dv"), d.id, version, action, d.owner_prompt, d.cadence, d.weekday, d.weekdays, d.local_hour, d.local_minute,
-    d.suspended, d.removed_at ? 1 : 0, now).run();
-  return version;
+     SELECT ?, ?, COALESCE((SELECT MAX(version) + 1 FROM duty_versions WHERE duty_id = ?), 0),
+       ?, ?, ?, ?, ?, ?, ?, ?, ?, ? ${guard} RETURNING version`,
+  ).bind(id, d.id, d.id, action, d.owner_prompt, d.cadence, d.weekday, d.weekdays, d.local_hour, d.local_minute,
+    d.suspended, d.removed_at ? 1 : 0, now, ...guardArgs);
+}
+
+async function writeVersion(env: Env, d: OwnedDuty, action: string, now: number): Promise<number> {
+  const row = await versionWrite(env, d, action, now).first<{ version: number }>();
+  if (!row) throw new Error("Duty version was not saved");
+  return row.version;
 }
 
 /** Version 0 is the duty as it was before her first change, so the first Undo has somewhere to go. */
 async function ensureOriginal(env: Env, d: OwnedDuty, now: number): Promise<void> {
-  const any = await env.DB.prepare(`SELECT 1 AS x FROM duty_versions WHERE duty_id = ? LIMIT 1`).bind(d.id).first();
-  if (!any) await writeVersion(env, d, "original", now);
+  await versionWrite(env, d, "original", now).run();
+}
+
+/** Append an authenticated instruction once, preserving both concurrent edits and Undo history. */
+export async function appendDutyInstruction(env: Env, d: OwnedDuty, quote: string, operation: string, receivedAt: number, now: number) {
+  const receipt = env.DB.prepare(`SELECT version FROM duty_versions WHERE id = ? AND duty_id = ?`).bind(operation, d.id);
+  const prior = await receipt.first<{ version: number }>();
+  if (prior) return prior;
+  const repo = repoInstructions(d, now);
+  if (!repo || d.removed_at) return null;
+  const day = localDate(OWNER_TZ, receivedAt);
+  const instructions = editedInstructions(d.owner_prompt ?? repo.text, quote, day);
+  if (instructions.length > MAX_INSTRUCTIONS) return null;
+  const [,, saved] = await env.DB.batch([
+    versionWrite(env, d, "original", now),
+    versionWrite(env, { ...d, owner_prompt: instructions }, "edit", now, operation, d),
+    env.DB.prepare(`UPDATE standing_duties SET owner_prompt = ?
+      WHERE id = ? AND removed_at IS NULL AND owner_prompt IS ?
+        AND EXISTS (SELECT 1 FROM duty_versions WHERE id = ? AND duty_id = ? AND owner_prompt = ?)`)
+      .bind(instructions, d.id, d.owner_prompt, operation, d.id, instructions),
+  ]);
+  const version = await receipt.first<{ version: number }>();
+  if (!version) return null;
+  if (saved?.meta.changes) await audit(env.DB, {
+    actor: "owner", lane: d.lane, entityType: "standing_duty", entityId: d.id,
+    action: "owner_edited", detail: { changed: ["instructions"], version: version.version, simone_operation: operation },
+  });
+  return { version: version.version };
 }
 
 async function store(env: Env, d: OwnedDuty): Promise<void> {

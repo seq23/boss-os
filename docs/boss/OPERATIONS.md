@@ -328,6 +328,10 @@ outcome. Guards: `validate:duty-birth` (one writer, reached only through the app
 recorded pre-approval, the owner ↔ executor ↔ script check above the write, the mail door below the
 sender refusal, the installed-script list pinned to the installer) and `tests/boss/dutiesByEmail.test.ts`.
 
+**Change an existing duty** by telling Simone which duty and what should change. She adds a written
+instruction to the duty from its next run. Its employee page shows the change and offers Undo.
+When the steps live in code, she hands the change to Danielle and reports the handoff.
+
 ## When you hand someone something to own
 
 **Your rule, and it is now a mechanism rather than an instruction:**
