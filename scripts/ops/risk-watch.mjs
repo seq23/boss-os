@@ -76,7 +76,10 @@ export function openrouterReading(credits, prevUsage) {
   if (Number.isFinite(prevUsage) && usage - prevUsage > 0.0001) {
     // A sentence in cents she reads (23 Nov 2026 live read: "New OpenRouter spend: $0.5225 since …").
     const spent = usage - prevUsage;
-    return { key: "openrouter", state: "alert", line: `OpenRouter charged ${spent < 0.01 ? "under 1 cent" : `$${spent.toFixed(2)}`} since the last check, and $${balance.toFixed(2)} is left on the account. Something called a paid model.`, usage };
+    // Spend inside the prepaid credit she set is not an alert (owner, 25 Nov 2026: "its 0.09 cent against an
+    // openrouter credit i set ---its irrelevant tell her to stand down"). It is recorded on the quiet line only;
+    // a balance below $0 above is still an alert.
+    return { key: "openrouter", state: "ok", line: `OpenRouter used ${spent < 0.01 ? "under 1 cent" : `$${spent.toFixed(2)}`} of the prepaid credit since the last check; $${balance.toFixed(2)} is left.`, usage };
   }
   return { key: "openrouter", state: "ok", line: `OpenRouter balance $${balance.toFixed(2)}, no new spend.`, usage };
 }
