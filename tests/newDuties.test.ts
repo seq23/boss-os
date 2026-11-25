@@ -67,10 +67,10 @@ describe("quiet unless something moves", () => {
 describe("Toni's judgements", () => {
   it("OpenRouter: below $0 and any new spend alert", () => {
     expect(openrouterReading({ total_credits: 10, total_usage: 10.5 }, 10.5).state).toBe("alert");
-    expect(openrouterReading({ total_credits: 10, total_usage: 2.01 }, 2).state).toBe("alert");
+    expect(openrouterReading({ total_credits: 10, total_usage: 2.01 }, 2).state).toBe("ok"); // inside her prepaid credit: quiet (25 Nov 2026)
     // 23 Nov 2026 live read: the spend reads in cents as a sentence, never "$0.5225".
-    expect(openrouterReading({ total_credits: 10, total_usage: 2.5225 }, 2).line).toMatch(/^OpenRouter charged \$0\.52 since the last check, and \$7\.48 is left/);
-    expect(openrouterReading({ total_credits: 10, total_usage: 2.004 }, 2).line).toMatch(/charged under 1 cent/);
+    expect(openrouterReading({ total_credits: 10, total_usage: 2.5225 }, 2).line).toMatch(/^OpenRouter used \$0\.52 of the prepaid credit since the last check; \$7\.48 is left/);
+    expect(openrouterReading({ total_credits: 10, total_usage: 2.004 }, 2).line).toMatch(/used under 1 cent/);
     expect(openrouterReading({ total_credits: 10, total_usage: 2 }, 2).state).toBe("ok");
     expect(openrouterReading({}, 0).state).toBe("stop");
   });
