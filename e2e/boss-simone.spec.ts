@@ -1,13 +1,16 @@
 import { expect, test, type Locator } from "@playwright/test";
 import { expectNoSidewaysScroll, PHONE, tab, unlock } from "./support/boss";
-import { provisionLocalD1 } from "./support/provision";
+import { runSimone } from "../scripts/ops/simone.mjs";
 
 const MESSAGE = "Find three venues for Saturday and book the cheapest free one.";
-const REPLY = "I found three free venues. The park has the earliest opening.";
+const REPLY = "I found three free venues. The park opens at noon. It takes bookings by phone, so I left the time open.";
 
 test("Simone replies in both message boxes at 390 px", async ({ page }, info) => {
   await page.setViewportSize(PHONE);
   await unlock(page);
+  const provisioned = await page.request.post("/api/boss/open-loops/intake-token");
+  expect(provisioned.status()).toBe(201);
+  const { data: { token } } = await provisioned.json();
 
   async function sendAndRead(box: Locator, path: string, screenshot: string) {
     await expect(box).toBeVisible();
@@ -19,8 +22,25 @@ test("Simone replies in both message boxes at 390 px", async ({ page }, info) =>
     const { data: { taskId } } = await response.json();
     expect(taskId).toMatch(/^tsk_[a-z0-9]+$/);
     await expect(box.getByRole("status")).toContainText("Simone has your message");
-    // Local D1 stands in for the Mac seat. The app still submits and polls the real Worker routes.
-    provisionLocalD1(`UPDATE tasks SET status = 'done', output = '${JSON.stringify({ text: REPLY, work: ["fixture_web"] })}' WHERE id = '${taskId}'`);
+    const result = await runSimone({
+      api: async (method, route, body) => {
+        const receipt = await page.request.fetch(`/api/boss/simone${route}`, {
+          method, data: body, headers: { Authorization: `Bearer ${token}` },
+        });
+        expect(receipt.ok()).toBe(true);
+        return (await receipt.json()).data;
+      },
+      run: async (call) => {
+        expect(call.message.body).toBe(MESSAGE);
+        const log = [
+          { type: "assistant", message: { content: [{ type: "tool_use", id: "venue-search", name: "WebSearch" }] } },
+          { type: "user", message: { content: [{ type: "tool_result", tool_use_id: "venue-search", content: "The free park opens at noon and takes phone bookings. The free hall and the free pavilion open later." }] } },
+          { type: "result", subtype: "success", result: `${REPLY}\nOUTPUT: 1 done` },
+        ].map((entry) => JSON.stringify(entry)).join("\n");
+        return { log, successful: true };
+      },
+    });
+    expect(result).toEqual({ state: "done", id: taskId });
     await expect(box.getByRole("status")).toContainText(REPLY, { timeout: 15_000 });
     await expectNoSidewaysScroll(page);
     await page.screenshot({ path: info.outputPath(screenshot) });

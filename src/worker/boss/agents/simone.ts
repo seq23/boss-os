@@ -26,10 +26,12 @@ export interface SimoneMessage {
   to?: string;
 }
 
+export async function fileSimoneMessage(env: Env, message: SimoneMessage, key?: string, now?: number): Promise<string>;
+export async function fileSimoneMessage(env: Env, message: SimoneMessage, key: string, now: number, arrival: { objectKey: string | null }): Promise<string | null>;
 export async function fileSimoneMessage(env: Env, message: SimoneMessage, key?: string, now = Date.now(), arrival?: { objectKey: string | null }) {
   const id = key ? `tsk_${(await sha256Hex(`simone:${key}`)).slice(0, 32)}` : newId("tsk");
   const input = { ...message, agent: "simone" };
-  await env.DB.batch([
+  const [, , linked] = await env.DB.batch([
     env.DB.prepare(
       `INSERT INTO tasks (id, lane, employee_id, title, input, status, created_at, intake_kind,
          execution_assignment, risk, sensitivity, audience, cost_mode)
@@ -42,10 +44,15 @@ export async function fileSimoneMessage(env: Env, message: SimoneMessage, key?: 
     ...(arrival ? [env.DB.prepare(
       `UPDATE boss_inbound_mail SET outcome = 'SIMONE_QUEUED', why = 'Simone has the message on her work list.',
          employee_id = ?, task_id = ?, object_key = ?, reply_state = 'agent_pending'
+       WHERE id = ? AND authorised = 1 AND outcome = 'RECEIVED'
+         AND id = (SELECT json_extract(input, '$.mail_id') FROM tasks WHERE id = ?)`,
+    ).bind(SIMONE, id, arrival.objectKey, message.mail_id, id), env.DB.prepare(
+      `UPDATE boss_inbound_mail SET outcome = 'DUPLICATE', why = 'This delivery already has a Simone run.',
+         object_key = ?, reply_state = 'none_due'
        WHERE id = ? AND authorised = 1 AND outcome = 'RECEIVED'`,
-    ).bind(SIMONE, id, arrival.objectKey, message.mail_id)] : []),
+    ).bind(arrival.objectKey, message.mail_id)] : []),
   ]);
-  return id;
+  return !arrival || linked?.meta.changes ? id : null;
 }
 
 interface ClaimedTask {

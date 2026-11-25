@@ -22,6 +22,29 @@ describe("Simone's existing task queue", () => {
     expect(await row("SELECT count(*) AS n FROM boss_task_notices WHERE task_id = ?", id)).toEqual({ n: 0 });
   });
 
+  it("attaches only one reply to concurrent arrivals of the same mail", async () => {
+    const arrivals = ["iml_simone_first", "iml_simone_repeat"];
+    await env.DB.batch(arrivals.map((id) => env.DB.prepare(`INSERT INTO boss_inbound_mail
+      (id, received_at, to_addr, from_addr, dmarc_pass, authorised, subject, outcome, why, bytes, reply_state)
+      VALUES (?, 1, 'chief@example.test', 'owner@example.test', 1, 1, 'Calendar', 'RECEIVED', 'Pending', 200, 'due')`).bind(id)));
+    const results = await Promise.all(arrivals.map((mail_id) => fileSimoneMessage(env, {
+      ...request, source: "boss_inbound_mail", mail_id, from: "owner@example.test",
+    }, "same-mail", 2, { objectKey: `${mail_id}.eml` })));
+    const admitted = arrivals[results.findIndex((id) => id !== null)]!;
+    const duplicate = arrivals[results.indexOf(null)]!;
+    expect(results.filter(Boolean)).toHaveLength(1);
+    const call = (await claimSimone(env))!;
+    expect(call.message.mail_id).toBe(admitted);
+    expect(await replySimone(env, { ...call, text: "I checked your calendar.", work: ["calendar_read"] })).toBe(true);
+    expect(await row("SELECT count(*) AS n FROM boss_task_notices WHERE task_id = ?", call.id)).toEqual({ n: 1 });
+    expect(await row("SELECT outcome, reply_state, object_key FROM boss_inbound_mail WHERE id = ?", admitted)).toEqual({
+      outcome: "SIMONE_QUEUED", reply_state: "due", object_key: `${admitted}.eml`,
+    });
+    expect(await row("SELECT outcome, reply_state, object_key FROM boss_inbound_mail WHERE id = ?", duplicate)).toEqual({
+      outcome: "DUPLICATE", reply_state: "none_due", object_key: `${duplicate}.eml`,
+    });
+  });
+
   it("recovers an abandoned lease and fences a stale reply", async () => {
     const now = 100000;
     const id = await fileSimoneMessage(env, request, "recover", now);

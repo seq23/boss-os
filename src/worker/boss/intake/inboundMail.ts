@@ -751,6 +751,7 @@ async function handleMail(message: BossMailMessage, env: Env, said: Said): Promi
       context,
       mail_id: mailId, from: sender, to, message_id: messageId ?? undefined, reply_chain: chain,
     }, identity, now, { objectKey });
+    if (!taskId) return { mailId, outcome: "DUPLICATE", employeeId: null, taskId: null, reply: null, messageId };
     return { mailId, outcome: "SIMONE_QUEUED", employeeId: SIMONE, taskId, reply: null, messageId };
   }
 
