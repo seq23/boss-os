@@ -682,35 +682,6 @@ async function handleMail(message: BossMailMessage, env: Env, said: Said): Promi
    * missed. The subject is still in the haystack, because that is where she usually puts it.
    */
   const read = parsed ? await taskBodyFrom(parsed) : null;
-  /*
-   * HER VOICE NOTES ARE HER WORDS (intake/voiceNotes.ts). A recording is transcribed and joins what she
-   * typed, everywhere below; one that cannot be heard is a named stop in the reply and on the job.
-   */
-  /*
-   * AND EVERY FILE AND DRIVE LINK SHE SENT (15 Nov 2026, readFiles.ts): read before anything is decided
-   * or answered, so the Got it can say what was read and name what could not be opened.
-   */
-  const files: FilesRead = parsed ? await readEverything(env, parsed, read?.readable ?? "") : EMPTY_FILES;
-  // The parse (every file, as bytes) is let go here: what is needed below has been read out of it.
-  parsed = null;
-  const voice = { heard: files.heard, failed: files.unopened.filter((u) => u.audio) };
-  const unheard = unheardLines(voice.failed);
-  const readable = withVoiceNotes(read?.readable ?? "", voice.heard);
-  const filesBlock = filesForTask(files);
-  // The files that could not be opened, said on EVERY reply, including a lane's own answer.
-  const filesNote = gotItLines({ asks: [], files: { ...files, heard: [], read: [], zips: [] } });
-  const taskBody = [withVoiceNotes(read?.body ?? "", voice.heard), filesBlock, ...unheard].filter(Boolean).join("\n\n");
-  /*
-   * HER WORDS, NOT THE EMAIL SHE IS ANSWERING (27 Oct 2026). Every keyword reader below (routing,
-   * handoff, the hunt, triage, list edits, a close, a book guess, a deadline, "your call") reads
-   * `own`. Her "2: …" on the morning email was handed to Monique "Matched on: seller, shares" and
-   * queued a $200M seller hunt from the QUOTED deals grid. `readable` still feeds the lanes that
-   * read a whole thread on purpose and the card's stored text.
-   */
-  const own = withVoiceNotes(ownWords(read?.readable ?? ""), voice.heard);
-  // What she herself wrote: above any quote and any forward. Every door that changes something of hers reads this.
-  const her = withVoiceNotes(herWords(read?.readable ?? ""), voice.heard);
-
   if (secrets?.line && secrets.onlySecrets) {
     await finish({ outcome: "SECRET_STORED", why: secrets.line, objectKey, reply: secrets.line });
     await logEvent(env.DB, { level: "info", scope: "intake", event: "boss_mail_secret", lane: "ops", entityId: mailId, detail: { stored: secrets.stored.map((x) => x.name), refused: secrets.refused.map((x) => x.name), resumed: secrets.resumed.length } });
@@ -732,7 +703,7 @@ async function handleMail(message: BossMailMessage, env: Env, said: Said): Promi
    */
   const chainRefs = await refsForChain(env.DB, chain);
   // No thread we know: the REF code she kept in the subject (or typed) finds the job (owner, 7 Nov 2026).
-  const origin = readable ? forwardedOrigin(readable) : null;
+  const origin = read?.readable ? forwardedOrigin(read.readable) : null;
   const herSubject = herSubjectOf(subject, origin ? (origin.subject ? decodeHeader(origin.subject) : "") : null);
   const writtenByOwner = herWords(read?.readable ?? "");
   const ownerText = `${herSubject}\n${writtenByOwner}`;
@@ -751,17 +722,36 @@ async function handleMail(message: BossMailMessage, env: Env, said: Said): Promi
   const threadRefs = { ...recordedRefs, refs: [...new Set(explicitRefs)] };
   const laneTail = refTail(threadRefs.refs.filter((r) => !ownerText.toLowerCase().includes(r)));
   if (chiefMailbox && !threadRefs.refs.length && !linkedArrival && !viaConsole) {
+    // The worker can decode local text and archive the original. Simone's seat reads the
+    // message first, and any offline routing uses the same text-only context.
+    const localFiles = parsed ? await readEverything(env, parsed, "", { ai: null }) : EMPTY_FILES;
+    const context = [
+      read?.body, filesForTask(localFiles),
+      ...localFiles.unopened.filter((file) => file.audio).map(({ filename }) => `Recording attached: ${filename}.`),
+      ...(oversize ? [objectKey ? "The original message was archived without decoding." : "This message was too large to decode and the archive was unavailable."] : []),
+    ].filter(Boolean).join("\n\n");
     const identity = messageId
       ? Array.from(new Uint8Array(await crypto.subtle.digest("SHA-256", new TextEncoder().encode(`${sender}\n${messageId}`))), (b) => b.toString(16).padStart(2, "0")).join("")
       : mailId;
     const taskId = await fileSimoneMessage(env, {
       source: "boss_inbound_mail", subject: subject || "Message to Simone",
       body: [herSubject, writtenByOwner].filter(Boolean).join("\n\n"),
-      context: taskBody,
+      context,
       mail_id: mailId, from: sender, to, message_id: messageId ?? undefined, reply_chain: chain,
     }, identity, now, { objectKey });
     return { mailId, outcome: "SIMONE_QUEUED", employeeId: SIMONE, taskId, reply: null, messageId };
   }
+
+  const files: FilesRead = parsed ? await readEverything(env, parsed, read?.readable ?? "") : EMPTY_FILES;
+  parsed = null;
+  const voice = { heard: files.heard, failed: files.unopened.filter((u) => u.audio) };
+  const unheard = unheardLines(voice.failed);
+  const readable = withVoiceNotes(read?.readable ?? "", voice.heard);
+  const filesBlock = filesForTask(files);
+  const filesNote = gotItLines({ asks: [], files: { ...files, heard: [], read: [], zips: [] } });
+  const taskBody = [withVoiceNotes(read?.body ?? "", voice.heard), filesBlock, ...unheard].filter(Boolean).join("\n\n");
+  const own = withVoiceNotes(ownWords(read?.readable ?? ""), voice.heard);
+  const her = withVoiceNotes(writtenByOwner, voice.heard);
 
   const trueSubject = origin?.subject ? decodeHeader(origin.subject) : subject;
   const fileNames = [...files.heard.map((h) => h.filename), ...files.read.map((r) => r.filename), ...files.unopened.map((u) => u.filename)];

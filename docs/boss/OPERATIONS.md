@@ -980,6 +980,8 @@ Her persona is in `scripts/ops/simone/persona.md`. The existing Simone Mac poll 
 `scripts/ops/simone.mjs`, which claims one task and opens one session for it. The task includes the
 owner’s words and separate context from the original mail. A fresh run reads `owner-notes.md`,
 `HANDOFF.md`, the latest daily note, and task sheets under `~/Work/simone`.
+Fresh mail keeps its original attachment bytes and copies locally readable text into the task
+context. The Worker does not transcribe its recordings or fetch its Drive links at intake.
 
 The Simone tool socket gives the session access to the current morning, invitation, errand,
 meeting prep, Kindle, mail and team records. She can queue a free errand to a venue named in

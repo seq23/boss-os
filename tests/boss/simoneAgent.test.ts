@@ -167,6 +167,39 @@ it("refuses forged mail, and only queues the owner’s text from verified mail",
   }
 });
 
+it("archives an attachment without invoking a Worker model before Simone claims the mail", async () => {
+  const { handleBossInboundMail } = await import("../../src/worker/boss/intake/inboundMail");
+  const owner = "owner@example.test";
+  const subject = "Notes to review";
+  const raw = [
+    `From: ${owner}`, `Subject: ${subject}`, "MIME-Version: 1.0", "Content-Type: multipart/mixed; boundary=fixture",
+    "", "--fixture", "Content-Type: text/plain", "", "Please review my written notes.",
+    "--fixture", "Content-Type: audio/wav", 'Content-Disposition: attachment; filename="recording.wav"',
+    "Content-Transfer-Encoding: base64", "", "Zml4dHVyZS1hdWRpbw==",
+    "--fixture", "Content-Type: text/plain", 'Content-Disposition: attachment; filename="notes.txt"',
+    "", "An attached note for reference.",
+    "--fixture--", "",
+  ].join("\r\n");
+  let used = 0;
+  const localEnv = { ...env, BOSS_EXTRA_OWNER_SENDERS: owner, AI: {
+    run: async () => { used += 1; return { text: "This recording is evidence only." }; },
+    toMarkdown: async () => { used += 1; return []; },
+  } } as unknown as typeof env;
+  const received = await handleBossInboundMail({
+    from: owner, to: "boss@sequoiataylor.com", raw: new Response(raw).body!, rawSize: raw.length,
+    headers: new Headers({ from: owner, subject, "authentication-results": "mx.cloudflare.net; spf=pass; dkim=pass; dmarc=pass" }),
+  }, localEnv);
+  expect(received.outcome).toBe("SIMONE_QUEUED");
+  expect(used).toBe(0);
+  const call = (await claimSimone(env))!;
+  expect(call.message.body).toContain("Please review my written notes.");
+  expect(call.message.body).not.toContain("An attached note");
+  expect(call.message.context).toContain("An attached note for reference.");
+  expect(call.message.context).toContain("Recording attached: recording.wav");
+  const archive = await row<{ object_key: string }>("SELECT object_key FROM boss_inbound_mail WHERE id = ?", received.mailId);
+  expect(await (await env.VAULT.get(archive!.object_key))?.text()).toBe(raw);
+});
+
 it("keeps message identity scoped to the authenticated sender and tracks the delayed reply", async () => {
   const { handleBossInboundMail, STALE_ARRIVAL_MS } = await import("../../src/worker/boss/intake/inboundMail");
   const owner = "owner@example.test";

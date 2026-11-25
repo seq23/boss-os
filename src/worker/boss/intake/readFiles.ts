@@ -110,11 +110,12 @@ async function readOne(ai: Ai | null, f: OneFile, out: FilesRead, budget: { text
   const bytesOf = () => f.bytes ?? bytesOfBase64(f.base64 ?? "");
   try {
     if (kind === "audio") {
+      if (!ai) return void out.unopened.push({ filename: f.filename, reason: "the recording is kept with the original email", audio: true });
       if (f.size > MAX_VOICE_NOTE_BYTES) return void out.unopened.push({ filename: f.filename, reason: `${mb(f.size)} is over the ${mb(MAX_VOICE_NOTE_BYTES)} a recording can be heard at`, audio: true });
       if (budget.recordings <= 0) return void out.unopened.push({ filename: f.filename, reason: `only the first ${MAX_RECORDINGS} recordings of an email are heard`, audio: true });
       budget.recordings -= 1;
       const b64 = f.base64 ?? base64OfBytes(f.bytes!);
-      const text = (await transcribeChunk(ai ?? undefined, b64)).text.trim();
+      const text = (await transcribeChunk(ai, b64)).text.trim();
       if (text) out.heard.push({ filename: f.filename, text });
       else out.unopened.push({ filename: f.filename, reason: "the transcriber heard no words in it", audio: true });
       return;
