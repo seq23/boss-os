@@ -357,7 +357,14 @@ describe("H5, Monday: every posting path of every growth business is reconciled,
   const KMP = [{ lane: "blogger", url: "https://keepmyproof.com/executor/x/delaware", day: "2026-11-26", at: "2026-11-26T02:35:24.377Z", id: "https://keepmyproof.blogspot.com/2026/11/x-in_0711271715.html" }];
   const LI = { access: "none", posted: [] };
   const PINS = `<rss><channel><item><guid>https://www.pinterest.com/pin/1115133557773957560/</guid><pubDate>Thu, 26 Nov 2026 21:21:59 GMT</pubDate></item></channel></rss>`;
-  const wf = (posted: string) => `jobs:\n  post:\n    steps:\n      - uses: seq23/boss-os/.github/actions/ledger-rows@main\n        with:\n          file: ${posted}\n`;
+  const wf = (business: string, o: { feed?: string; posted?: string; channel?: string }) => {
+    const input = o.feed ? `feed: ${o.feed}` : `file: ${o.posted}`;
+    return [
+      "jobs:", "  post:", "    environment: reviewed-main", "    steps:",
+      "      - uses: seq23/boss-os/.github/actions/ledger-rows@main", "        with:",
+      `          business: ${business}`, `          ${input}`, ...(o.channel ? [`          channel: ${o.channel}`] : []),
+    ].join("\n");
+  };
   const unwired = "jobs:\n  post:\n    steps:\n      - run: npm run post\n";
   const ledger = (business: string, channel: string, item: string, receipt: string, at = "2026-11-27T01:00:00Z") => call("/noelle/ledger", { kind: "post", business, channel, item, receipt: { id: receipt }, at });
   const IG_FILE = "peace-be-still/main/data/instagram/posted.json";
@@ -365,9 +372,9 @@ describe("H5, Monday: every posting path of every growth business is reconciled,
   // Every path wired, each with its real-shaped receipt file.
   const allWired = (over: Record<string, unknown> = {}) => {
     const files: Record<string, unknown> = {};
-    for (const o of Object.values(CHANNEL_OWNERS) as any[]) {
+    for (const [key, o] of Object.entries(CHANNEL_OWNERS) as Array<[string, any]>) {
       if (o.noReceipt) continue;
-      files[`${o.repo}/main/.github/workflows/${o.workflow}`] = wf(o.feed ?? o.posted);
+      files[`${o.repo}/main/.github/workflows/${o.workflow}`] = wf(key.split(":")[0], o);
       files[o.feed ?? `${o.repo}/main/${o.posted}`] = o.feed ? PINS : /linkedin/.test(o.posted) ? LI : /syndication/.test(o.posted) ? KMP : /brand-social|porch-and-party-posted/.test(o.posted) ? BRAND : { posts: {} };
     }
     return fakeFetch({ ...files, [IG_FILE]: IG, [TH_FILE]: TH, ...over });
@@ -386,7 +393,9 @@ describe("H5, Monday: every posting path of every growth business is reconciled,
   });
 
   it("a workflow on main with no ledger step is named not wired yet, never passed, and the summary counts it", async () => {
-    const lines = await postsReconciled(env.DB, "2026-11-30", MON, allWired({ "approvalprep/main/.github/workflows/threads-posts.yml": unwired }));
+    const comment = wf("approvalprep", { posted: "data/threads/posted.json", channel: "threads" })
+      .split("\n").map((line) => `# ${line}`).join("\n");
+    const lines = await postsReconciled(env.DB, "2026-11-30", MON, allWired({ "approvalprep/main/.github/workflows/threads-posts.yml": `${unwired}\n${comment}` }));
     expect(lines.at(-1)).toMatch(/1 not wired yet, so not reconciled: approvalprep:threads \(approvalprep\/\.github\/workflows\/threads-posts\.yml has no ledger step\)$/);
     expect(lines.join("\n")).not.toMatch(/approvalprep threads/);
   });

@@ -20,6 +20,7 @@
  *
  * Never here: a post, a spend, an account, a delete of anyone's data.
  */
+import { parse as parseYaml } from "yaml";
 import type { Env } from "../env";
 import { newId } from "../lib/id";
 import { dayIdInZone } from "../../../shared/boss/timezone";
@@ -345,12 +346,27 @@ export async function postsReconciled(db: D1Database, today: string, now = Date.
     const wfPath = `${o.repo}/.github/workflows/${o.workflow}`;
     const wf = await read(`${RAW}/${o.repo}/main/.github/workflows/${o.workflow}`);
     if (!wf.ok) { lines.push(`${who}: not read (${wfPath}: ${wf.why})`); unread++; continue; }
-    if (!wf.body.includes(LEDGER_STEP) || !wf.body.includes(o.feed ?? o.posted)) { notWired.push(`${path} (${wfPath} has no ledger step)`); continue; }
+    let wired = false;
+    try {
+      const doc = parseYaml(wf.body) as { jobs?: Record<string, { environment?: unknown; steps?: Array<{ uses?: unknown; with?: Record<string, unknown> }> }> };
+      wired = Object.values(doc?.jobs ?? {}).some((job) => job.environment === "reviewed-main" && Array.isArray(job.steps)
+        && job.steps.some((step) => typeof step?.uses === "string" && step.uses.startsWith(LEDGER_STEP)
+          && step.with?.business === business && (o.feed ? step.with?.feed === o.feed : step.with?.file === o.posted)
+          && (!o.channel || step.with?.channel === o.channel)));
+    } catch {
+      lines.push(`${who}: not read (${wfPath}: invalid workflow YAML)`);
+      unread++;
+      continue;
+    }
+    if (!wired) { notWired.push(`${path} (${wfPath} has no ledger step)`); continue; }
     const src = o.feed ?? `${RAW}/${o.repo}/main/${o.posted}`;
     const srcName = o.feed ?? `${o.repo}/${o.posted}`;
     const got = await read(src);
     if (!got.ok) { lines.push(`${who}: not read (${srcName}: ${got.why})`); unread++; continue; }
     let doc: any = got.body;
+    if (o.feed && (!/<rss\b/i.test(got.body) || !/<channel\b/i.test(got.body))) {
+      lines.push(`${who}: not read (${srcName}: not a profile RSS feed)`); unread++; continue;
+    }
     if (!o.feed) { try { doc = JSON.parse(got.body); } catch { lines.push(`${who}: not read (${srcName}: not JSON)`); unread++; continue; } }
     if (doc && typeof doc === "object" && !Array.isArray(doc) && doc.access === "none") {
       lines.push(`${who}: no receipt yet (${srcName} says access: none; the platform has not granted the page posting API)`); named++; continue;
