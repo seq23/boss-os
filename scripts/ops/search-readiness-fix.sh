@@ -278,7 +278,8 @@ main() {
       # WHY IT FIXED NOTHING, NAMED (7 Nov 2026): "CODE<TAB>SENTENCE" from fixedNothingCause, empty
       # for a genuine stall. Open PRs still blocking -> SR_BLOCKED_BY_OPEN_PRS; every fix merged but the
       # live host not yet republished -> SR_AWAITING_HOST_PUBLISH (her Open Loops note, never a repair);
-      # a fixed PR a named land gate refused -> SR_LAND_GATE_UNMET (17 Nov 2026, NOT_CLICKED_THROUGH).
+      # a fixed PR a named land gate refused -> SR_LAND_GATE_UNMET (17 Nov 2026, NOT_CLICKED_THROUGH;
+      # 25 Nov 2026, land's review gate, which landAll names REVIEW_CLASS_MISSING / REVIEW_PASS_MISSING).
       CAUSE="$(node --input-type=module -e '
         import {readdirSync,readFileSync} from "node:fs";
         import {fixedNothingCause} from "./src/shared/boss/searchReadiness/orphanPr.mjs";

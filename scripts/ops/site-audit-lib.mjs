@@ -212,6 +212,31 @@ export function landReason(out) {
 }
 
 /*
+ * LAND'S REVIEW GATE, NAMED ON THE ROW (25 Nov 2026). ~/bin/land refused all 42 fixes of that week's
+ * run with a plain "STOPPED: PR #N needs a review (its body has no `Review class:` line …)" — no
+ * NAMED STOP — so the round read as "fixed nothing" (SR_QUEUE_STALLED). land's own words are read,
+ * never a second copy of its rule (the click-through refusal is read the same way, 17 Nov 2026):
+ *  - REVIEW_CLASS_MISSING: the body's Review class line is missing or unreasoned; the next pass's own
+ *    worker adds it (ahrefs-audit-fix-prompt.md §4);
+ *  - REVIEW_PASS_MISSING: any other review refusal (a repo not on live-repos.json, a review-required
+ *    label, something new in public): only a fresh reviewer's PASS clears it.
+ * A refusal land already named (NAMED STOP [...]) keeps its own name. Returns null when it is not a
+ * review refusal (a red check, a network blip), which stays a genuine stall.
+ */
+export function reviewGate(out, prUrl = "the PR") {
+  // eslint-disable-next-line no-control-regex
+  const text = String(out ?? "").replace(/\u001b\[[0-9;]*m/g, "");
+  if (/NAMED STOP \[[A-Z0-9_]+\]/.test(text)) return null;
+  if (/needs a review \((its body has no `Review class:` line|its `Review class: none` gives no reason)/.test(text)) {
+    return { code: "REVIEW_CLASS_MISSING", action: `Land refused ${prUrl}: its body has no reasoned \`Review class:\` line. The next Search Readiness pass adds \`Review class: none — <why>\` (or the class it is in) to the body and the runner lands it again.` };
+  }
+  if (/needs a review \(|puts something new in public|(Ship|Launch)-ready:? PASS/.test(text)) {
+    return { code: "REVIEW_PASS_MISSING", action: `Land refused ${prUrl} until a fresh reviewer (never the builder) looks at its real output and signs land's Ship-ready PASS line on the PR; then the runner lands it again.` };
+  }
+  return null;
+}
+
+/*
  * ~/bin/land GETS THE CLOUDFLARE NAMES AND NOTHING ELSE FROM THE VAULT (7 Nov 2026). The land step
  * runs under `vault:run` (ahrefs-audit-fix.sh); a land's post-merge steps run wrangler, which under
  * launchd has no login and refused ("In a non-interactive environment, it's necessary to set a
@@ -335,6 +360,9 @@ export function landAll(payload, { run = defaultRun, landBin = process.env.AUDIT
             f.land = "already_merged";
             f.land_detail = `already on main as ${sha.slice(0, 7)} (land stopped after the merge); the leftover PR is closed`;
             run("gh", ["pr", "close", f.pr_url, "--comment", `Already on main as ${sha.slice(0, 7)}: land stopped after the merge, so this leftover PR is closed. (Danielle's audit runner)`], cwd, env);
+          } else {
+            const gate = reviewGate(landed.out, f.pr_url);
+            if (gate) { f.land_detail = `NAMED STOP [${gate.code}] ${f.land_detail}`; f.suggested_action = gate.action; }
           }
         }
       }
@@ -346,7 +374,7 @@ export function landAll(payload, { run = defaultRun, landBin = process.env.AUDIT
       f.land_detail = `${f.land}: ${f.land_detail}`;
       f.land = "blocked";
     }
-    done.set(f.pr_url, { land: f.land, land_detail: f.land_detail, suggested_action: f.land === "landed" ? f.suggested_action : null });
+    done.set(f.pr_url, { land: f.land, land_detail: f.land_detail, suggested_action: f.land === "landed" || /NAMED STOP \[REVIEW_(CLASS|PASS)_MISSING\]/.test(f.land_detail) ? f.suggested_action : null });
   }
   return payload;
 }

@@ -279,6 +279,16 @@ files changed and nothing committed. So:
 - One PR per repository, however many findings it covers, from the worktree branch.
 - The PR body names the Ahrefs project, each defect with an example URL from your crawl, the cause,
   and the validators you ran.
+- **The PR body carries a `Review class:` line, on a line of its own** (25 Nov 2026: `~/bin/land`
+  refused all 42 fixes of that week's run because no body had one; land has required it since
+  23 Nov 2026). You made the diff, so you name its class, as every builder on the grid does:
+  `Review class: none — <why, 3+ words>` (for example `Review class: none — search fixes to public
+  pages, no money or private data`), or the class it is in with why: `Review class: money | children |
+  private-data | store | delete | launch — <why>`. Never write `none` for a change that touches
+  payments, children's or private data, a store listing, deleting people's data or a first launch:
+  a missing or unreasoned line is a class to land, never a guess of none. When you continue your own
+  open PR from an earlier pass and its body has no `Review class:` line, add it
+  (`gh pr edit <pr> --body-file <file>` with the whole body plus the line).
 - Then: `timeout 1800 gh pr checks <pr> --watch --fail-fast`. If a check is red, read it, fix at
   source in the worktree, push, and watch again (at most three rounds).
 - **Do not merge, do not run `land`, do not dispatch a workflow or a deploy.** After you finish, the
