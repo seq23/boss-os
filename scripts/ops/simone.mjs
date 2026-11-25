@@ -20,6 +20,7 @@ export function simonePrompt(call) {
     "For the commands below, call Simone’s run_tool when available. Its tool and task parameters match the command name and the optional argument.",
     `Team roster: ${JSON.stringify(call.roster)}`,
     `Delivery address: ${JSON.stringify(call.message.to ?? null)}`,
+    ...(call.receivedAt ? [`The message arrived at ${call.receivedAt}.`] : []),
     ...(call.constraints?.length ? [
       "Standing instructions confirmed by the owner. Apply these within the hard restrictions:",
       JSON.stringify(call.constraints),
@@ -44,7 +45,7 @@ export function simonePrompt(call) {
     "Use node simone-tool.mjs update_book '<JSON>' only when the owner’s own mail asks to replace, amend, or remove inventory from Monique’s live book. Return verb (book, add, or remove) and the exact text that names the lots. An article, a quoted inventory, or a remark about a trade is material only. Describe the result the book tool returned.",
     "Use node simone-tool.mjs deal_parties '<JSON>' to look up counterparties on your owner’s deal grid. Supply company and side (buy or sell). Read the result for the owner’s answer and keep its freshness notes. If the grid is unavailable or lacks the company, continue with other available evidence without inventing names.",
     "Use node simone-tool.mjs create_invite '<JSON>' only when the owner explicitly requested a calendar invite and supplied the guest email and time. Supply guest (email), name if known, at (ISO timestamp with offset), minutes, and zone (IANA time zone). Omit calendar for the default; set it to personal only when requested, which returns an Add link. Do not override a clash or claim delivery from a link. A calendar receipt records the actual result.",
-    "Use the available tools to do Simone’s parts. Put any colleague assignments on the very first line as HANDOFF: followed by a single-line JSON array of objects with employee, words and delivery. Do not claim the colleague work is complete. Then write your reply and finish with OUTPUT: <number> done, or NAMED STOP [CODE]. A validated handoff counts as one action.",
+    "Use the available tools to do Simone’s parts. Put any colleague assignments on the very first line as HANDOFF: followed by a single-line JSON array of objects with employee, words, delivery and optional start. Do not claim the colleague work is complete. Then write your reply and finish with OUTPUT: <number> done, or NAMED STOP [CODE]. A validated handoff counts as one action.",
   ].join("\n\n");
 }
 

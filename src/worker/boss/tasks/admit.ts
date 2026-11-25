@@ -153,7 +153,7 @@ export async function suggestOwner(
  * Throws the same `AppError`s the route threw, so the HTTP behaviour is unchanged — they carry
  * their own status codes and are handled by the error middleware wherever they are raised.
  */
-export async function admitTask(env: Env, b: AdmitInput, handoff?: { id: string; researchQuestion?: string }): Promise<AdmitResult> {
+export async function admitTask(env: Env, b: AdmitInput, handoff?: { id: string; researchQuestion?: string; chrome?: boolean }): Promise<AdmitResult> {
   if (!b?.title) throw badRequest("A task needs a title", "Send { title, lane, input }.");
   const lane = isLane(b.lane) ? b.lane : "ops";
   const input = b.input ?? {};
@@ -322,7 +322,7 @@ export async function admitTask(env: Env, b: AdmitInput, handoff?: { id: string;
   const chromeAsk = !firmScan && !change && input.chrome_job === undefined && !(input.research_page && typeof input.research_page === "object") &&
       input.delivers === undefined && input.backend_id === undefined && input.spec_module === undefined &&
       (employeeHint === null || employeeHint === CHROME_JOB_SEAT) &&
-      chromeJobIn([b.title, input.body as string | undefined].filter(Boolean).join("\n"));
+      (handoff?.chrome ?? chromeJobIn([b.title, input.body as string | undefined].filter(Boolean).join("\n")));
   if (chromeAsk) {
     const ask = String((input.body as string | undefined) ?? b.title).replace(/^\s*research(?:\s+page)?\s*[:\-–—]\s*/i, "");
     Object.assign(input as Record<string, unknown>, {

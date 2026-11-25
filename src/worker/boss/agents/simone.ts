@@ -9,6 +9,7 @@ import { macSeen } from "../queue/freeRung";
 import { FIRST_READ_SCAN_OFF, freeLadder, type Rung } from "../intake/firstRead";
 import { shortTitle } from "../../../shared/boss/intake/triage.mjs";
 import { constraintsOnRecord } from "../service/constraints";
+import { dueLine, heldDue } from "../../../shared/boss/service/dueTime.mjs";
 
 export const SIMONE = "emp_chief";
 export const SIMONE_LEASE_MS = 3 * 60 * 60_000;
@@ -63,6 +64,7 @@ interface ClaimedTask {
   id: string;
   input: string;
   attempts: number;
+  created_at: number;
 }
 
 export async function claimSimone(env: Env, now = Date.now(), cloud = false) {
@@ -74,11 +76,14 @@ export async function claimSimone(env: Env, now = Date.now(), cloud = false) {
            AND (status = 'queued' OR (status = 'running' AND started_at <= ?))
            AND (? = 0 OR (json_extract(input, '$.source') = 'boss_inbound_mail' AND created_at <= ?))
          ORDER BY attempts, created_at, id LIMIT 1
-       ) RETURNING id, input, attempts`,
+       ) RETURNING id, input, attempts, created_at`,
   ).bind(now, SIMONE, now - SIMONE_LEASE_MS, Number(cloud), now - 30 * 60_000).first<ClaimedTask>();
   if (!row) return null;
   const message: SimoneMessage = JSON.parse(row.input);
-  return { id: row.id, lease: row.attempts, message, roster, constraints, pendingHandoffs: message.simone_handoff_plan };
+  return {
+    id: row.id, lease: row.attempts, message, roster, constraints,
+    receivedAt: new Date(row.created_at).toISOString(), pendingHandoffs: message.simone_handoff_plan,
+  };
 }
 
 export async function simoneMessageStatus(env: Env, id: string) {
@@ -158,30 +163,39 @@ export async function handoffSimone(env: Env, request: { id: string; lease: numb
   const stored: SimoneMessage = JSON.parse(saved.input);
   const assignments = readAssignments(stored.simone_handoff_plan, { message, roster });
   if (!assignments?.length) return null;
-  const out: { name: string; id: string }[] = [];
+  const out: { name: string; id: string; start?: SimoneAssignment["start"] }[] = [];
   const refused: string[] = [];
   for (const assignment of assignments) {
     const seat = roster.find((employee) => employee.id === assignment.employee)!;
     const key = await sha256Hex(JSON.stringify([request.id, seat.id, assignment.words]));
     const id = `tsk_${key.slice(0, 32)}`;
+    const startAt = assignment.start ? Date.parse(assignment.start.at) : null;
     const existing = await env.DB.prepare(`SELECT status, envelope_id FROM tasks WHERE id = ?`).bind(id)
       .first<{ status: string; envelope_id: string | null }>();
     if (existing) {
       if (!existing.envelope_id) throw new Error("Simone handoff has no permission envelope");
-      if (existing.status === "queued") await env.TASKS.send({ taskId: id, lane: seat.lane });
+      if (existing.status === "queued") {
+        const delay = startAt === null ? 0 : Math.ceil((startAt - Date.now()) / 1000);
+        await env.TASKS.send({ taskId: id, lane: seat.lane }, delay > 0 ? { delaySeconds: delay } : undefined);
+      }
     } else {
       try {
         const admitted = await admitTask(env, {
           title: shortTitle(assignment.words, 80) || "Work from Simone", lane: seat.lane, employee_id: seat.id,
           cost_mode: "FREE_ONLY",
+          not_before: startAt,
           input: {
             source: message.source === "boss_inbound_mail" ? message.source : "boss_page",
             body: assignment.words, mail_id: message.mail_id,
             ...(message.context ? { untrusted_context: message.context } : {}),
             ...(assignment.delivery === "repository" ? { build_ask: true } : {}),
+            ...(assignment.start ? { not_before: assignment.start, due: heldDue(null, assignment.start) } : {}),
             from: message.from, subject: message.subject, simone_handoff: request.id,
           },
-        }, { id, ...(assignment.delivery === "research_page" ? { researchQuestion: assignment.words } : {}) });
+        }, {
+          id, chrome: assignment.delivery === "chrome",
+          ...(assignment.delivery === "research_page" ? { researchQuestion: assignment.words } : {}),
+        });
         if (!admitted.created) {
           refused.push(admitted.reason ?? `${seat.name} did not accept the request.`);
           continue;
@@ -192,7 +206,7 @@ export async function handoffSimone(env: Env, request: { id: string; lease: numb
         continue;
       }
     }
-    out.push({ name: seat.name, id });
+    out.push({ name: seat.name, id, ...(assignment.start ? { start: assignment.start } : {}) });
   }
   return { handoffs: out, refused, reply: stored.simone_handoff_reply };
 }
@@ -203,10 +217,12 @@ export async function finishSimoneHandoff(env: Env, request: { id: string; lease
   const { handoffs, refused, reply } = completed;
   const names = [...new Set(handoffs.map(({ name }) => name))];
   const note = names.length ? `I handed this to ${new Intl.ListFormat("en-US", { type: "conjunction" }).format(names)}.` : null;
+  const holds = handoffs.flatMap(({ name, start }) => start && Date.parse(start.at) > Date.now()
+    ? [`${name}’s work is held until ${dueLine({ due_at: start.at, due_words: start.words })!.replace(/^due /, "")}.`] : []);
   const work = [...(reply?.work ?? []), ...handoffs.map(({ id }) => id)];
   const stopped = !work.length && refused.length > 0;
   const replied = await replySimone(env, {
-    id: request.id, lease: request.lease, text: [reply?.text, note, ...refused].filter(Boolean).join("\n\n"),
+    id: request.id, lease: request.lease, text: [reply?.text, note, ...holds, ...refused].filter(Boolean).join("\n\n"),
     work,
     ...(stopped ? { stop: "ACTION_RESTRICTED" as const } : {}),
   });

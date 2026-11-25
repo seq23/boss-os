@@ -1,9 +1,11 @@
 export type SimoneAssignment = {
   employee: string;
   words: string;
-  delivery?: "ordinary" | "research_page" | "repository";
+  delivery?: "ordinary" | "research_page" | "repository" | "chrome";
+  start?: { at: string; words: string };
 };
 export interface RoutingCall {
+  receivedAt?: string;
   roster: { id: string; name: string; role: string; department?: string | null }[];
   message: { body: string; context?: string; to?: string };
 }

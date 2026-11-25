@@ -6,7 +6,7 @@ import { routeToSeat, seatTag, replyBody } from "../../src/shared/boss/intake/ma
 import { parseLiveBook, describeLot } from "../../src/shared/boss/intake/liveBook.mjs";
 import { storeLiveBook, currentBook, currentBookLines } from "../../src/worker/boss/capital/book";
 import { unansweredQuestionAlerts } from "../../src/worker/boss/intake/questions";
-import { claimSimone, finishSimoneHandoff, replySimone, SIMONE } from "../../src/worker/boss/agents/simone";
+import { claimSimone, finishSimoneHandoff, releaseSimone, replySimone, SIMONE } from "../../src/worker/boss/agents/simone";
 import { simoneTool } from "../../src/worker/boss/agents/simoneTools";
 
 /**
@@ -182,7 +182,8 @@ describe("an unknown tag is never guessed and never dropped", () => {
    * The same words (sanitized) must reach Camille's Chrome executor, held until Monday 9:00 Central.
    */
   it("a Chrome job for tomorrow after 9am goes to the seat in her Chrome, held until then, never a research page", async () => {
-    vi.useFakeTimers({ toFake: ["Date"] }); vi.setSystemTime(Date.parse("2026-11-01T21:01:45Z")); // Sun 1 Nov, 15:01 CT
+    const now = Date.parse("2026-11-01T21:01:45Z");
+    vi.useFakeTimers({ toFake: ["Date"] }); vi.setSystemTime(now); // Sun 1 Nov, 15:01 CT
     try {
       const res = await handleBossInboundMail(mail({
         subject: "",
@@ -190,9 +191,29 @@ describe("an unknown tag is never guessed and never dropped", () => {
           + "Task: in Pinterest, on the example account, connect the RSS feed for one board (Settings → Bulk create Pins → add feed). Pinterest refused this one today only because the feed was empty.\n\n"
           + "Done = the feed shows as connected. If Pinterest still refuses it, try again Tuesday and tell me only if it fails twice. Do not change any other Pinterest setting.",
       }), env as never);
-      expect(res.outcome).toBe("TRIAGED");
-      expect(res.employeeId).toBe("emp_research");
-      const task = await env.DB.prepare(`SELECT input FROM tasks WHERE id = ?`).bind(res.taskId).first<{ input: string }>();
+      expect(res).toMatchObject({ outcome: "SIMONE_QUEUED", employeeId: SIMONE, reply: null });
+      const call = (await claimSimone(env))!;
+      expect(call).toMatchObject({ id: res.taskId, receivedAt: "2026-11-01T21:01:45.000Z" });
+      const assignments = [{
+        employee: "emp_research", delivery: "chrome", words: call.message.body,
+        start: { at: "2026-11-02T15:00:00Z", words: "tomorrow, Monday 2 Nov, after 9am Central" },
+      }];
+      const send = vi.fn().mockResolvedValue(undefined);
+      const worker = { ...env, TASKS: { send } as unknown as typeof env.TASKS };
+      expect(await finishSimoneHandoff(worker, { ...call, assignments: [{
+        ...assignments[0], start: { ...assignments[0]!.start, words: "start right now" },
+      }] })).toEqual({ replied: false, refused: false });
+      expect(send).not.toHaveBeenCalled();
+      send.mockRejectedValueOnce(new Error("queue unavailable"));
+      await expect(finishSimoneHandoff(worker, { ...call, assignments })).rejects.toThrow("queue unavailable");
+      expect(await env.DB.prepare("SELECT COUNT(*) n FROM boss_task_notices WHERE task_id = ?").bind(call.id).first()).toEqual({ n: 0 });
+      expect(await releaseSimone(env, call.id, call.lease, "HANDOFF_UNAVAILABLE")).toBe(true);
+      const retry = (await claimSimone(env))!;
+      expect(await finishSimoneHandoff(worker, { ...retry, assignments: retry.pendingHandoffs })).toEqual({ replied: true, refused: false });
+      const { results } = await env.DB.prepare(`SELECT id, input, employee_id FROM tasks WHERE json_extract(input, '$.simone_handoff') = ?`)
+        .bind(call.id).all<{ id: string; input: string; employee_id: string }>();
+      expect(results.map(({ employee_id }) => employee_id)).toEqual(["emp_research"]);
+      const task = results[0]!;
       const input = JSON.parse(task!.input);
       expect(input.chrome_job).toBe(true);
       expect(input.research_page).toBeUndefined();
@@ -206,7 +227,10 @@ describe("an unknown tag is never guessed and never dropped", () => {
       expect(input.not_before.at).toBe("2026-11-02T15:00:00.000Z");
       expect(input.due.priority).toBe("HIGH");
       expect(Date.parse(input.due.due_at)).toBeGreaterThan(Date.parse("2026-11-02T15:00:00.000Z"));
-      expect(res.reply).toContain("Held until Mon, Nov 2");
+      const delay = Math.ceil((Date.parse(input.not_before.at) - now) / 1000);
+      expect(send.mock.calls).toEqual(Array(2).fill([{ taskId: task.id, lane: "ops" }, { delaySeconds: delay }]));
+      const reply = await env.DB.prepare("SELECT body FROM boss_task_notices WHERE task_id = ?").bind(call.id).first<{ body: string }>();
+      expect(reply?.body).toMatch(/held until Mon, Nov 2.*9:00 AM CT/);
     } finally {
       vi.useRealTimers();
     }
