@@ -177,11 +177,11 @@ describe("her sandbox, as noelle_prepare writes it", () => {
     const go = (...a: string[]) => spawnSync(b, a, { encoding: "utf8", env: { ...process.env, HOME: home } });
     expect(go("12", "--task", "noelle-x", "--repo", "seq23/peace-be-still", "--then", "rm -rf ~").stderr).toMatch(/LAND_SHAPE/);
     expect(go("12", "--task", "x", "--repo", "seq23/peace-be-still").stderr).toMatch(/LAND_SHAPE/);
-    expect(go("12", "--task", "noelle-x", "--repo", "seq23/boss-os").stderr).toMatch(/OTHER_BUSINESS_REPO/);
+    expect(go("12", "--task", "noelle-x", "--repo", "seq23/boss-os").stdout).toMatch(/OTHER_BUSINESS_REPO/);
     expect(go("12", "--task", "noelle-x", "--repo", "other/peace-be-still").stderr).toMatch(/LAND_SHAPE/);
-    const ok = go("12", "--task", "noelle-x", "--repo", "seq23/peace-be-still"); // the shape passes; ~/bin/land-after is absent in this home
-    expect(ok.stderr).not.toMatch(/LAND_SHAPE|OTHER_BUSINESS_REPO/);
-    expect(ok.status).toBe(127);
+    const unopened = go("12", "--task", "noelle-x", "--repo", "seq23/peace-be-still");
+    expect(unopened.stdout).toMatch(/PR_NOT_OWNED/);
+    expect(unopened.status).toBe(2);
     expect(spawnSync(join(home, ".boss-os/noelle/bin/noelle-tool"), ["vault:run"], { encoding: "utf8" }).status).toBe(2);
   });
 });

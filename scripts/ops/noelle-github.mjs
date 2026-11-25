@@ -24,13 +24,17 @@
  * value she gives goes in after a flag's "=", so a title like "--base main" is a title.
  */
 import { execFileSync } from "node:child_process";
-import { existsSync, lstatSync, mkdirSync, readFileSync, realpathSync, statSync, writeFileSync } from "node:fs";
+import { existsSync, lstatSync, mkdirSync, readFileSync, realpathSync, statSync, writeFileSync, unlinkSync } from "node:fs";
 import { homedir } from "node:os";
 import { join, resolve } from "node:path";
 import { pathToFileURL } from "node:url";
 import { HER_REPOS, MAX_PRS } from "./noelle-guard.mjs";
 
 export const BODY_MAX = 60000;
+export const LAND_REPOS = Object.freeze([
+  "p-n-p", "approvalprep", "aplayer-mode", "sprylabs-hpc-site", "peace-be-still",
+  "creator-studios", "dream-wedding-builder", "keepmyproof",
+]);
 export const TITLE_MAX = 256; // GitHub's own limit
 
 class Stop extends Error {
@@ -151,23 +155,59 @@ export function openPr(repo, branch, title, bodyFile, opts = {}) {
   const env = opts.env ?? process.env;
   const t = String(title ?? "");
   if (!t.trim() || t.length > TITLE_MAX || /[\0-\x1f\x7f]/.test(t)) refuse("TITLE_SHAPE", `a PR title is one line of 1 to ${TITLE_MAX} characters`);
-  const body = readHerFile(bodyFile, env);
+  const body = readHerFile(bodyFile, env).split(/\r?\n/)
+    .filter((line) => !/^[\s>*_-]*(?:ship-ready|launch-ready|owner override)\s*:/i.test(line)).join("\n");
   const gdir = opts.guardDir ?? env.NOELLE_GUARD_DIR ?? join(homedir(), ".boss-os", "noelle", "guard");
-  const st = guardState(gdir);
-  if (!st) unsure("GUARD_UNREAD", "her run's PR count could not be read; no PR was opened");
-  if ((st.prs ?? 0) >= MAX_PRS) refuse("PR_CAP", `${MAX_PRS} PRs is the most in one run; write the rest into your handoff`);
-  const run = runner(opts);
-  ghLoggedIn(run);
+  const lock = join(gdir, "open-pr.lock");
+  try { writeFileSync(lock, "", { flag: "wx" }); }
+  catch { unsure("GUARD_BUSY", "the broker cannot reserve a PR slot; try once the current request finishes"); }
+  try {
+    const st = guardState(gdir);
+    if (!st) unsure("GUARD_UNREAD", "her run's PR count could not be read; no PR was opened");
+    if ((st.prs ?? 0) >= MAX_PRS) refuse("PR_CAP", `${MAX_PRS} PRs is the most in one run; write the rest into your handoff`);
+    const run = runner(opts);
+    ghLoggedIn(run);
 
-  const made = run("gh", ["pr", "create", `--repo=seq23/${r}`, `--head=${b}`, `--title=${t}`, "--body-file=-"], { input: body });
-  const url = made.ok ? (made.out.match(/https:\/\/github\.com\/\S+/)?.[0] ?? "") : "";
-  if (!new RegExp(`^https://github\\.com/seq23/${r.replace(/[.]/g, "\\.")}/pull/\\d+$`).test(url)) unsure("NOELLE_PR_FAILED", `the PR from ${b} was not opened (${made.err || made.out.trim().slice(0, 200) || "no URL came back"})`);
-  const view = run("gh", ["pr", "view", url, "--json", "isDraft,headRefName,state"]);
-  let pr = null;
-  try { pr = JSON.parse(view.out); } catch { pr = null; }
-  if (!view.ok || !pr || pr.isDraft !== false || pr.headRefName !== b || pr.state !== "OPEN") unsure("NOELLE_PR_UNPROVEN", `${url} could not be read back as an open, non-draft PR from ${b}`);
-  writeFileSync(join(gdir, "run.json"), JSON.stringify({ ...st, prs: (st.prs ?? 0) + 1 }));
-  return url;
+    const made = run("gh", ["pr", "create", `--repo=seq23/${r}`, "--base=main", `--head=${b}`, `--title=${t}`, "--label=review-required", "--body-file=-"], { input: body });
+    const url = made.ok ? (made.out.match(/https:\/\/github\.com\/\S+/)?.[0] ?? "") : "";
+    const prefix = `https://github.com/seq23/${r}/pull/`;
+    const number = url.startsWith(prefix) ? url.slice(prefix.length) : "";
+    if (!/^[1-9]\d*$/.test(number)) unsure("NOELLE_PR_FAILED", `the PR from ${b} was not opened (${made.err || "no URL came back"})`);
+    // Count an acknowledged creation even when the read-back fails. A retry cannot open a fourth PR.
+    writeFileSync(join(gdir, "run.json"), JSON.stringify({ ...st, prs: (st.prs ?? 0) + 1 }));
+    const view = run("gh", ["pr", "view", url, "--json", "isDraft,headRefName,baseRefName,state,labels"]);
+    let pr = null;
+    try { pr = JSON.parse(view.out); } catch { pr = null; }
+    if (!view.ok || !pr || pr.isDraft !== false || pr.headRefName !== b || pr.baseRefName !== "main"
+      || pr.state !== "OPEN" || !pr.labels?.some((label) => label.name === "review-required")) {
+      unsure("NOELLE_PR_UNPROVEN", `${url} could not be confirmed open, targeting main, and labeled review-required`);
+    }
+    const owned = join(gdir, "opened", r);
+    mkdirSync(owned, { recursive: true });
+    writeFileSync(join(owned, number), b, { flag: "wx" });
+    return url;
+  } finally {
+    unlinkSync(lock);
+  }
+}
+
+/** Internal to the land-after wrapper. Only persistent broker receipts grant merge eligibility. */
+export function checkLand(repo, number, opts = {}) {
+  const r = checkRepo(repo);
+  if (!LAND_REPOS.includes(r)) refuse("PROPOSAL_ONLY_REPO", `seq23/${r} accepts proposals only`);
+  if (!/^[1-9][0-9]{0,5}$/.test(number ?? "")) refuse("LAND_SHAPE", "give the pull request number");
+  const env = opts.env ?? process.env;
+  const gdir = opts.guardDir ?? env.NOELLE_GUARD_DIR ?? join(homedir(), ".boss-os", "noelle", "guard");
+  let branch;
+  try { branch = readFileSync(join(gdir, "opened", r, number), "utf8"); }
+  catch { refuse("PR_NOT_OWNED", `the broker has no opening receipt for seq23/${r}#${number}`); }
+  const result = runner(opts)("gh", ["pr", "view", number, `--repo=seq23/${r}`, "--json", "headRefName,baseRefName,isCrossRepository,state"]);
+  let pr;
+  try { pr = JSON.parse(result.out); } catch { pr = null; }
+  if (!result.ok || !pr) unsure("NOELLE_PR_UNPROVEN", "could not confirm the pull request on GitHub");
+  if (pr.headRefName !== checkBranch(branch) || pr.baseRefName !== "main" || pr.isCrossRepository !== false || pr.state !== "OPEN") {
+    refuse("PR_NOT_OWNED", "the open PR no longer matches the broker receipt");
+  }
 }
 
 export const USAGE = "usage: noelle-tool push-branch <repo> <noelle/branch> | open-pr <repo> <noelle/branch> <title> <bodyfile>";
@@ -176,6 +216,11 @@ export const USAGE = "usage: noelle-tool push-branch <repo> <noelle/branch> | op
 export function cli(argv, opts = {}) {
   const [verb, ...a] = argv;
   try {
+    if (verb === "check-land" && a.length === 2) {
+      checkLand(a[0], a[1], opts);
+      console.log(`OUTPUT verified proposal seq23/${a[0]}#${a[1]}`);
+      return 0;
+    }
     if (verb === "push-branch" && a.length === 2) {
       const sha = pushBranch(a[0], a[1], opts);
       console.log(`OUTPUT push-branch seq23/${a[0]} ${a[1]} ${sha}`);
