@@ -3,8 +3,11 @@
  *
  * Once a week the Mac duty `ai-visibility` (scripts/ops/ai-visibility.sh) has a locked Claude session
  * read OpenSEO's weekly run for each selling site through the openseo plugin (9 read-only tools:
- * scripts/ops/ai-visibility-permissions.json). The session prints one JSON block per site; this file
- * is the ONE reading of that block, used twice so the two sides cannot disagree:
+ * scripts/ops/ai-visibility-permissions.json). The session prints one JSON block per site, over many
+ * turns; those blocks are read from the run's own event stream (`sessionTranscript`: every assistant
+ * text block, in order), never from the run's final message alone, which carries only its last turn
+ * (24 Nov 2026: two runs in a row read 0 sites because the blocks were printed in earlier turns).
+ * This file is the ONE reading of that block, used twice so the two sides cannot disagree:
  *   - on the Mac (scripts/ops/ai-visibility-report.mjs), with the site's fetched sitemap, so an OWN page
  *     is one of that site's engine question pages (A3);
  *   - in the Worker (src/worker/boss/growth/aiAnswers.ts), which stores it and never trusts the Mac's
@@ -37,6 +40,7 @@ export const STOPS = Object.freeze({
   OPENSEO_UNREACHABLE: "OpenSEO could not be reached",
   OPENSEO_CREDITS: "OpenSEO is out of credits",
   PLUGIN_NOT_LOADED: "the OpenSEO tools did not load in the reading session",
+  OPENSEO_NOT_REACHED: "the reading session never made a successful OpenSEO call, so anything it printed would be a guess",
   OPENSEO_NO_TRACKER: "OpenSEO has no answer tracker for this site",
   OPENSEO_NO_ANSWERS: "OpenSEO collected too few answers this week",
   OPENSEO_NOT_YET: "OpenSEO's newest weekly run is not in yet",
@@ -63,6 +67,56 @@ export const AI_SITES = Object.freeze({
 export const NO_LOOP_NOTE = "no search loop on this host";
 
 const DAY_MS = 86_400_000;
+
+/** An OpenSEO tool, by its plugin name (mcp__plugin_openseo_openseo__whoami and the like). */
+export const OPENSEO_TOOL_RE = /^mcp__plugin_openseo_openseo__/;
+
+/** Each line of a stream-json run, parsed; a line that is not JSON is `{ raw }` (ai-run's own NAMED STOP lines). */
+function streamEvents(stream) {
+  const out = [];
+  for (const line of String(stream ?? "").split("\n")) {
+    if (!line.trim()) continue;
+    let e;
+    try { e = JSON.parse(line); } catch { out.push({ raw: line }); continue; }
+    out.push(e && typeof e === "object" ? e : { raw: line });
+  }
+  return out;
+}
+const contentOf = (e) => (Array.isArray(e?.message?.content) ? e.message.content : []);
+
+/**
+ * Did the run's OWN events show a successful OpenSEO call? A tool_use on an OpenSEO tool whose
+ * tool_result is not an error. A model without the tool answers anyway (CONFIRMED 22 Oct 2026, the
+ * rule duty-kit.mjs `readClaudeStream` keeps), so a run that never reached OpenSEO reads nothing.
+ */
+export function openseoReached(stream) {
+  const calls = new Map();
+  for (const e of streamEvents(stream)) {
+    if (e.type === "assistant") for (const c of contentOf(e)) if (c?.type === "tool_use" && OPENSEO_TOOL_RE.test(String(c.name ?? ""))) calls.set(c.id, false);
+    if (e.type === "user") for (const c of contentOf(e)) if (c?.type === "tool_result" && calls.has(c.tool_use_id) && c.is_error !== true) calls.set(c.tool_use_id, true);
+  }
+  return [...calls.values()].some(Boolean);
+}
+
+/**
+ * The session's own printed words from its stream-json run: every ASSISTANT text block, in order,
+ * verbatim (a tool's result is never included, so a SITE-BEGIN block inside OpenSEO's data can never
+ * become a week). With no assistant text at all, the result event's text (a usage-limit notice still
+ * reaches the log). Lines that are not JSON pass through. `openseo` says whether OpenSEO was reached.
+ */
+export function sessionTranscript(stream) {
+  const events = streamEvents(stream);
+  const said = [];
+  const raw = [];
+  let result = null;
+  for (const e of events) {
+    if (e.raw !== undefined) { raw.push(e.raw); continue; }
+    if (e.type === "assistant") for (const c of contentOf(e)) if (c?.type === "text" && typeof c.text === "string") said.push(c.text);
+    if (e.type === "result" && typeof e.result === "string") result = e.result;
+  }
+  const text = said.length ? said : result ? [result] : [];
+  return { lines: [...text, ...raw].join("\n"), final: result ?? "", raw: raw.join("\n"), openseo: openseoReached(stream) };
+}
 
 /** ISO 8601 week of a moment, in UTC: "2026-W48". */
 export function isoWeek(ms) {

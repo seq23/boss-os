@@ -32,3 +32,6 @@ export function readSite(block: unknown, opts: { host: string; now?: number; pre
 export function creditsProblem(before: number, after: number): string | null;
 export function planProblem(perSite: Record<string, number>): { total: number | null; stop: string | null };
 export function aiCard(reads: any[], now?: number): any;
+export const OPENSEO_TOOL_RE: RegExp;
+export function openseoReached(stream: string): boolean;
+export function sessionTranscript(stream: string): { lines: string; final: string; raw: string; openseo: boolean };

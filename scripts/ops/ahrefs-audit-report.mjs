@@ -36,7 +36,7 @@ import { builtTodayProblem } from "../../src/shared/boss/engineering/builtToday.
 import { readFile, stat } from "node:fs/promises";
 import { join } from "node:path";
 import { mayAutoFix, whyNoAutoFix, DISPOSITIONS } from "../../src/shared/boss/siteAudit/repoPolicy.mjs";
-import { carriesAddress, searchEvidenceGap, queueEvidence, scopeSnapshot } from "../../src/shared/boss/siteAudit/evidence.mjs";
+import { carriesAddress, searchEvidenceGap, queueEvidence, scopeSnapshot, digestSearched } from "../../src/shared/boss/siteAudit/evidence.mjs";
 import { repoForDomain, domainOfRow } from "../../src/shared/boss/siteAudit/domainRepos.mjs";
 import { fillBlankFields } from "../../src/shared/boss/siteAudit/defaultActions.mjs";
 
@@ -116,6 +116,14 @@ async function main() {
       catch { scope = { queue_file: QUEUE_FILE, repo: SCOPE_REPO, item_ids: [] }; }
     }
     searched = queueEvidence({ scope, repo: SCOPE_REPO, findings });
+  }
+  // A mail pass's worker reads the digest, not Gmail: its search record is the digest's first line,
+  // taken only from a digest written within this pass's age limit (never last week's).
+  if (!SCOPE_REPO && searchEvidenceGap(searched)) {
+    try {
+      const digest = join(DIR, "ahrefs-digest.md");
+      if (Date.now() - (await stat(digest)).mtimeMs <= MAX_AGE_MS) searched = digestSearched(await readFile(digest, "utf8")) ?? searched;
+    } catch { /* no digest: the stop below says what is missing */ }
   }
   const gap = searchEvidenceGap(searched);
   if (gap) {

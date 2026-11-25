@@ -1079,12 +1079,18 @@ Overviews answered while citing the site, and how many named it. Every miss gets
   sitemap), then a locked Claude session (`ai-run --role ai_visibility.read`, `--permission-mode dontAsk
   --setting-sources= --settings scripts/ops/ai-visibility-permissions.json`) reads OpenSEO through the openseo plugin.
   It can call nine read-only tools and nothing else; `npm run validate:claude-runs` fails the build on any other
-  allow entry, and on any OpenSEO HTTP call in repo code. Then `ai-visibility-report.mjs post` checks every block
+  allow entry, and on any OpenSEO HTTP call in repo code. The session runs with `--output-format stream-json`
+  into the run's work dir, and `ai-visibility-report.mjs transcript` writes its own printed words (every assistant
+  text block, in order) into the kept log: its final message alone carries only its last turn, and on 23 and 24 Nov
+  2026 the six site blocks printed earlier were lost (0 sites read, twice). The raw stream dies with the work dir.
+  Then `ai-visibility-report.mjs post` checks every block
   (`readSite`, src/shared/boss/growth/aiAnswers.mjs) and posts the week to `POST /api/boss/growth/ai-week`.
 - **Honest stops, never a zero.** Plugin not loaded, OpenSEO unreachable, out of credits, no tracker, no answers,
   a run older than 8 days (`OPENSEO_NOT_YET`), fewer observations than prompts × engines (short read), OpenSEO's own
   summary disagreeing with the recount, bad JSON for one site: that site is "not read: <why>", the others still
-  count. Nothing read at all → `NAMED STOP [AI_ANSWERS_NOTHING_READ]`, exit 9. Credits moving between the two
+  count. A session whose own events show no successful OpenSEO call → every site `OPENSEO_NOT_REACHED` (its
+  printed blocks would be a guess). The session claiming blocks that never reached the log → `NAMED STOP
+  [SESSION_BLOCKS_LOST]` (the hand-over broke, not the sites). Nothing read at all → `NAMED STOP [AI_ANSWERS_NOTHING_READ]`, exit 9. Credits moving between the two
   `whoami` reads → exit 10. A weekly estimate over 500 credits → `NAMED STOP [OPENSEO_OVER_PLAN]` and an Open Loops
   row (cleared on the next run under plan). Each run prints `OUTPUT <n> sites_read`.
 - **Stored** (additive tables `ai_answer_obs`, `ai_answer_reads`, `ai_misses`; unique on site + week + prompt +

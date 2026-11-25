@@ -16,7 +16,9 @@
  *     switches the claude.ai connectors off for a job that reads Gmail, or is named by no script;
  *   - THE AI ANSWERS SESSION CAN ONLY READ (A2, unchanged from the old validate:ai-visibility):
  *     ai-visibility-permissions.json allows exactly the nine read-only OpenSEO tools in READ_TOOLS,
- *     denies the spending ones, and no repo code calls OpenSEO over HTTP.
+ *     denies the spending ones, and no repo code calls OpenSEO over HTTP; and ai-visibility.sh reads the
+ *     session through its event stream (stream-json to $WORK/session.jsonl, then the transcript step,
+ *     before the sentinel check), never its last message alone (24 Nov 2026, two runs read 0 sites).
  * `--ai-visibility` runs only the A2 checks (ai-visibility.sh runs that before its session).
  * `--self-test` puts the skip flag back into every locked script, removes a needed tool from every
  * job's file, and feeds the other breaks through the same checks; it fails unless each is caught.
@@ -59,6 +61,12 @@ export function scriptProblems(sh) {
   if (!/--permission-mode dontAsk --setting-sources= --settings \$SETTINGS/.test(sh)) out.push("ai-visibility.sh no longer runs the session with --permission-mode dontAsk --setting-sources= --settings $SETTINGS");
   if (!/SETTINGS="\$REPO\/scripts\/ops\/ai-visibility-permissions\.json"/.test(sh)) out.push("ai-visibility.sh's SETTINGS is not scripts/ops/ai-visibility-permissions.json");
   if (/dangerously-skip-permissions|bypassPermissions/.test(sh)) out.push("ai-visibility.sh skips permissions");
+  // THE SESSION'S BLOCKS ARE READ FROM ITS EVENT STREAM (24 Nov 2026: text mode keeps only the last
+  // message, and two runs in a row read 0 sites). The stream, sent to the work dir, then transcribed.
+  if (!/AI_RUN_CLAUDE_ARGS="[^"]*--output-format stream-json --verbose[^"]*"/.test(sh)) out.push("ai-visibility.sh's session no longer asks for its event stream (--output-format stream-json --verbose): its last message alone loses the site blocks");
+  if (!/"\$AI_RUN"[^\n]*--out "\$WORK\/session\.jsonl"/.test(sh)) out.push("ai-visibility.sh no longer sends the session's stream to $WORK/session.jsonl");
+  if (!/ai-visibility-report\.mjs transcript "\$WORK\/session\.jsonl"\) >> "\$RUN_LOG"/.test(sh)) out.push("ai-visibility.sh no longer writes the session's own words into its log (the transcript step)");
+  else if (sh.indexOf("ai-visibility-report.mjs transcript") > sh.indexOf('if ! has_sentinel "$RUN_LOG"')) out.push("ai-visibility.sh checks the sentinel before the transcript step has written it");
   return out;
 }
 
@@ -132,6 +140,13 @@ export function jobProblems(settings, job) {
   if (job.needs.includes("Agent") && (deny.has("Task") || deny.has("Agent"))) out.push(`${tag} needs Agent, but its deny holds ${deny.has("Task") ? "Task" : "Agent"}, which removes the Agent tool`);
   for (const d of [...COMMON_DENY.filter((c) => !(["Agent", "Task"].includes(c) && guarded)), ...(job.mustDeny ?? [])]) if (!deny.has(d)) out.push(`${tag}: deny is missing ${d}`);
   for (const d of deny) if (allow.includes(d)) out.push(`${tag}: ${d} is both allowed and denied`);
+  // A server-level deny (mcp__<server> or mcp__<server>__*) matches every tool on that server, and deny wins:
+  // an allowed tool under it is refused at run time (eng check 24 Nov 2026: Simone's Drive lookups).
+  for (const d of deny) {
+    const server = /^(mcp__[^_]+(?:_[^_]+)*?)(?:__\*)?$/.exec(d)?.[1];
+    if (!server || d.slice(server.length).replace("__*", "") !== "") continue;
+    for (const a of allow) if (a !== d && a.startsWith(server + "__")) out.push(`${tag}: ${a} is allowed but the deny ${d} covers its whole server, so it is refused`);
+  }
   if (settings.permissions.defaultMode && settings.permissions.defaultMode !== "dontAsk") out.push(`${tag}: defaultMode is ${settings.permissions.defaultMode}`);
   if (job.needs.some((t) => t.startsWith("mcp__claude_ai_")) && settings.env?.ENABLE_CLAUDEAI_MCP_SERVERS === "false") out.push(`${tag} switches the claude.ai connectors off, and this job reads Gmail`);
   if (job.hook && !JSON.stringify(settings.hooks ?? {}).includes(job.hook)) out.push(`${tag}: the ${job.hook} hook is gone`);
@@ -280,6 +295,14 @@ function selfTest() {
   const sh = readFileSync(join(ROOT, "scripts/ops/ai-visibility.sh"), "utf8");
   if (scriptProblems(sh).length) { console.error("self-test: the real ai-visibility.sh fails"); bad++; }
   must("ai-visibility.sh skipping permissions", scriptProblems(sh.replace("--permission-mode dontAsk", "--dangerously-skip-permissions")));
+  must("ai-visibility.sh back on text output", scriptProblems(sh.replace(" --output-format stream-json --verbose", "")));
+  must("ai-visibility.sh's stream sent to the log", scriptProblems(sh.replace('--out "$WORK/session.jsonl"', '--out "$RUN_LOG"')));
+  must("ai-visibility.sh without the transcript step", scriptProblems(sh.replace(/^.*ai-visibility-report\.mjs transcript.*$/m, "")));
+  { // the transcript step moved below the sentinel check: still present, so only the order check can catch it
+    const line = /^.*ai-visibility-report\.mjs transcript.*$/m.exec(sh)?.[0] ?? "";
+    const late = sh.replace(line + "\n", "").replace(/^say "sentinel: .*$/m, (m) => `${m}\n${line}`);
+    must("ai-visibility.sh transcribing after the sentinel check", late === sh || !line ? [] : scriptProblems(late));
+  }
   must("an OpenSEO fetch", httpProblems([["x.ts", 'fetch("https://app.openseo.so/api/x")']]));
   // Every job's file: the real one passes; each needed tool removed, Rule 0 and the bypass mode fail.
   for (const job of JOBS) {
@@ -296,6 +319,11 @@ function selfTest() {
       must(`${job.name} denying Task, which removes the Agent tool`, jobProblems(t, job));
     }
     if (job.sandbox) for (const [name, f] of SANDBOX_BREAKS) { const s = clone(real); f(s); must(`${job.name}: ${name}`, jobProblems(s, job)); }
+    for (const a of real.permissions.allow.filter((x) => x.startsWith("mcp__"))) {
+      const server = a.slice(0, a.lastIndexOf("__"));
+      { const s = clone(real); s.permissions.deny = [...(s.permissions.deny ?? []), server]; must(`${job.name}: deny ${server} shadowing ${a}`, jobProblems(s, job)); }
+      { const s = clone(real); s.permissions.deny = [...(s.permissions.deny ?? []), server + "__*"]; must(`${job.name}: deny ${server}__* shadowing ${a}`, jobProblems(s, job)); }
+    }
   }
   must("an empty allow list not marked text_only", jobProblems({ permissions: { allow: [], deny: COMMON_DENY } }, { name: "x", needs: [] }));
   // The skip flag back in every locked script, and each shape of unlocked call.

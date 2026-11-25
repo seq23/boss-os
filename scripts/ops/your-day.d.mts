@@ -79,3 +79,7 @@ export function winsFrom(o: { lpRows?: any[]; prospects?: any; deals?: number; n
 export const INVENTED_DETAIL: RegExp;
 export const MONEY_OR_OUTREACH: RegExp;
 export function teamStopsLine(tasks: any[]): string | null;
+/** Done for you order: an outcome NOT WORKING line 0, NOT CHECKED 1, working 2, any other line 3. */
+export function outcomeRank(line: unknown): number;
+export declare const isNotWorking: (l: unknown) => boolean;
+export declare function outcomeBanners(lines: unknown[] | undefined): Array<{ tone: "red"; title: string; lines: string[] }>;
