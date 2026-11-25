@@ -88,12 +88,15 @@ it("tries Workers AI then Gemini while the Mac is down and retains the mail thro
     from: "owner@example.test",
   }, undefined, 1);
   const providers: string[] = [];
-  expect(await routeSimoneWhenMacIsDown(env, 60 * 60_000, async (_env, opts) => {
-    providers.push(opts.onlyProviderId!);
-    expect(opts.freeOnly).toBe(true);
-    expect(opts.messages[1]?.content).toContain("park's opening hours");
+  const offline = (id: string) => async (prompt: string) => {
+    providers.push(id);
+    expect(prompt).toContain("park's opening hours");
     throw new Error("offline");
-  })).toBe("MODEL_UNAVAILABLE");
+  };
+  expect(await routeSimoneWhenMacIsDown(env, 60 * 60_000, [
+    { id: "prv_gemini", call: offline("prv_gemini") },
+    { id: "prv_workers_ai", workersAi: true, call: offline("prv_workers_ai") },
+  ])).toBe("MODEL_UNAVAILABLE");
   expect(providers).toEqual(["prv_workers_ai", "prv_gemini"]);
   expect(await row("SELECT status, output FROM tasks WHERE id = ?", id)).toEqual({ status: "queued", output: null });
   expect(await row("SELECT count(*) AS n FROM boss_task_notices WHERE task_id = ?", id)).toEqual({ n: 0 });
@@ -107,12 +110,13 @@ it("keeps a mixed request queued during a cloud routing fallback", async () => {
   const id = await fileSimoneMessage(env, { ...request, source: "boss_inbound_mail", body }, undefined, 1);
   const assignment = { employee: "emp_research", words, delivery: "research_page" };
   const options: string[] = [];
-  expect(await routeSimoneWhenMacIsDown(env, 60 * 60_000, async (_env, opts) => {
-    options.push(opts.onlyProviderId!);
-    const text = JSON.stringify({ assignments: [assignment], simone_work_remains: true });
-    expect(await opts.accept?.(text)).toBeNull();
-    return { text } as Awaited<ReturnType<typeof import("../../src/worker/boss/router").routeCompletion>>;
-  })).toBe("WAITING_FOR_MAC");
+  expect(await routeSimoneWhenMacIsDown(env, 60 * 60_000, [
+    { id: "prv_gemini", call: async () => { options.push("prv_gemini"); return "{}"; } },
+    { id: "prv_workers_ai", workersAi: true, call: async () => {
+      options.push("prv_workers_ai");
+      return JSON.stringify({ assignments: [assignment], simone_work_remains: true });
+    } },
+  ])).toBe("WAITING_FOR_MAC");
   expect(options).toEqual(["prv_workers_ai"]);
   expect(await row("SELECT status, output FROM tasks WHERE id = ?", id)).toEqual({ status: "queued", output: null });
   expect(await row("SELECT count(*) AS n FROM boss_task_notices WHERE task_id = ?", id)).toEqual({ n: 0 });
@@ -121,22 +125,25 @@ it("keeps a mixed request queued during a cloud routing fallback", async () => {
   expect(call.message.body).toBe(body);
 });
 
-it("keeps the name of a committed LP off both cloud providers", async () => {
+it("routes unmasked Boss OS mail through Gemini after Workers AI is unavailable", async () => {
   const { routeSimoneWhenMacIsDown } = await import("../../src/worker/boss/agents/simone");
-  const { PRIVATE_SOURCES } = await import("../../src/worker/boss/router/modelAccess");
-  expect(PRIVATE_SOURCES).toContainEqual(expect.objectContaining({ table: "prospects", column: "name", where: "committed_at IS NOT NULL" }));
-  await env.DB.prepare("INSERT INTO prospects (id, email, name, source, created_at, updated_at, committed_at) VALUES (?, ?, ?, 'fixture', 1, 1, 1)").bind("lp_simone_fixture", "lp@example.test", "Cinnamon Harbor Capital").run();
-  const id = await fileSimoneMessage(env, {
-    source: "boss_inbound_mail", subject: "Follow up", body: "Read the notes on Cinnamon Harbor Capital.",
-    from: "owner@example.test",
-  }, undefined, 1);
-  const routed: string[] = [];
-  expect(await routeSimoneWhenMacIsDown(env, 60 * 60_000, async (_env, opts) => {
-    routed.push(opts.onlyProviderId!);
-    throw new Error("Private data reached a cloud model");
-  })).toBe("PRIVATE_MODEL_ONLY");
-  expect(routed).toEqual([]);
-  expect(await claimSimone(env)).toMatchObject({ id, privateOnly: true });
+  const body = "Read the term sheet, including the pre-money valuation.";
+  const context = "A document from Cinnamon Harbor Capital.";
+  const id = await fileSimoneMessage(env, { ...request, source: "boss_inbound_mail", body, context }, undefined, 1);
+  const prompts: string[] = [];
+  expect(await routeSimoneWhenMacIsDown(env, 60 * 60_000, [
+    { id: "prv_workers_ai", workersAi: true, call: async (prompt) => { prompts.push(prompt); throw new Error("Offline"); } },
+    { id: "prv_gemini", call: async (prompt) => {
+      prompts.push(prompt);
+      return JSON.stringify({ assignments: [], simone_work_remains: true });
+    } },
+  ])).toBe("WAITING_FOR_MAC");
+  expect(prompts).toHaveLength(2);
+  expect(prompts[0]).toBe(prompts[1]);
+  expect(JSON.parse(prompts[1]!.split("\n").at(-1)!)).toMatchObject({
+    authenticated_request: body, untrusted_context: context,
+  });
+  expect(await claimSimone(env)).toMatchObject({ id, message: { body, context } });
 });
 
 it("refuses forged mail, and only queues the owner’s text from verified mail", async () => {
@@ -238,6 +245,36 @@ it("keeps message identity scoped to the authenticated sender and tracks the del
   expect(await row("SELECT reply_state, replied_at FROM boss_inbound_mail WHERE id = ?", received.mailId)).toEqual({
     reply_state: "sent", replied_at: expect.any(Number),
   });
+});
+
+it("routes an owner follow-up to a new Simone run with the prior exchange as context", async () => {
+  const { handleBossInboundMail } = await import("../../src/worker/boss/intake/inboundMail");
+  const { recordMailRefs } = await import("../../src/worker/boss/intake/mailRefs");
+  const owner = "owner@example.test";
+  const original = "<simone-first@example.test>";
+  const answer = "<simone-answer@example.test>";
+  const followup = "<simone-followup@example.test>";
+  async function deliver(subject: string, body: string, messageId: string, parent?: string) {
+    const raw = `From: ${owner}\r\nSubject: ${subject}\r\n\r\n${body}`;
+    return handleBossInboundMail({
+      from: owner, to: "simone@sequoiataylor.com", raw: new Response(raw).body!, rawSize: raw.length,
+      headers: new Headers({ from: owner, subject, "message-id": messageId, ...(parent ? { "in-reply-to": parent } : {}),
+        "authentication-results": "mx.cloudflare.net; spf=pass; dkim=pass; dmarc=pass" }),
+    }, { ...env, BOSS_EXTRA_OWNER_SENDERS: owner });
+  }
+  const first = await deliver("Opening hours", "Check the park hours for me.", original);
+  const firstCall = (await claimSimone(env))!;
+  expect(firstCall.id).toBe(first.taskId);
+  expect(await replySimone(env, { ...firstCall, text: "I found the Saturday hours.", work: ["WebSearch"] })).toBe(true);
+  expect(await recordMailRefs(env.DB, { messageId: answer, refs: [firstCall.id] })).toBe(true);
+  const next = await deliver("Re: Opening hours", "Check Sunday too.", followup, answer);
+  expect(next).toMatchObject({ outcome: "SIMONE_QUEUED", reply: null });
+  expect(next.taskId).not.toBe(first.taskId);
+  const call = (await claimSimone(env))!;
+  expect(call).toMatchObject({ id: next.taskId, message: { body: "Check Sunday too.", reply_chain: [answer] } });
+  expect(call.message.context).toContain("Check the park hours for me.");
+  expect(call.message.context).toContain("I found the Saturday hours.");
+  expect((await deliver("Re: Opening hours", "Check Sunday too.", followup, answer)).outcome).toBe("DUPLICATE");
 });
 
 it("keeps an existing command answer on its record and gives a fresh message to Simone", async () => {

@@ -1,15 +1,12 @@
 import type { Env } from "../env";
-import { newId } from "../lib/id";
+import { newId, sha256Hex } from "../lib/id";
 import { activeRoster } from "../intake/inboundMail";
 import { admitTask } from "../tasks/admit";
 import { SIMONE_ROUTING, readAssignments, readCompletedRouting, routingInstructions, routingRequest, type SimoneAssignment } from "../../../shared/boss/intake/simoneRouting.mjs";
 import { readJsonObject } from "../router/types";
-import { routeCompletion } from "../router";
 import { macSeen } from "../queue/freeRung";
-import { claimFreeSearch } from "../research/searchQuota";
-import { FIRST_READ_SERVICE } from "../intake/firstRead";
+import { FIRST_READ_SCAN_OFF, freeLadder, type Rung } from "../intake/firstRead";
 import { shortTitle } from "../../../shared/boss/intake/triage.mjs";
-import { privateLexicon, scanForModelAccess } from "../router/modelAccess";
 
 export const SIMONE = "emp_chief";
 export const SIMONE_LEASE_MS = 3 * 60 * 60_000;
@@ -30,7 +27,7 @@ export interface SimoneMessage {
 }
 
 export async function fileSimoneMessage(env: Env, message: SimoneMessage, key?: string, now = Date.now(), arrival?: { objectKey: string | null }) {
-  const id = key ? `tsk_simone_${key}` : newId("tsk");
+  const id = key ? `tsk_${(await sha256Hex(`simone:${key}`)).slice(0, 32)}` : newId("tsk");
   const input = { ...message, agent: "simone" };
   await env.DB.batch([
     env.DB.prepare(
@@ -55,8 +52,6 @@ interface ClaimedTask {
   id: string;
   input: string;
   attempts: number;
-  model_access: string | null;
-  sensitivity: string | null;
 }
 
 export async function claimSimone(env: Env, now = Date.now(), cloud = false) {
@@ -68,12 +63,11 @@ export async function claimSimone(env: Env, now = Date.now(), cloud = false) {
            AND (status = 'queued' OR (status = 'running' AND started_at <= ?))
            AND (? = 0 OR (json_extract(input, '$.source') = 'boss_inbound_mail' AND created_at <= ?))
          ORDER BY attempts, created_at, id LIMIT 1
-       ) RETURNING id, input, attempts, model_access, sensitivity`,
+       ) RETURNING id, input, attempts`,
   ).bind(now, SIMONE, now - SIMONE_LEASE_MS, Number(cloud), now - 30 * 60_000).first<ClaimedTask>();
   if (!row) return null;
   const message: SimoneMessage = JSON.parse(row.input);
-  const access = await simoneModelAccess(env, message, row);
-  return { id: row.id, lease: row.attempts, message, privateOnly: access.privateOnly, roster, pendingHandoffs: message.simone_handoff_plan };
+  return { id: row.id, lease: row.attempts, message, roster, pendingHandoffs: message.simone_handoff_plan };
 }
 
 export async function simoneMessageStatus(env: Env, id: string) {
@@ -92,13 +86,6 @@ export async function releaseSimone(env: Env, id: string, lease: number, code: s
        WHERE id = ? AND employee_id = ? AND ${CHIEF} AND status = 'running' AND attempts = ?`,
   ).bind(code, id, SIMONE, lease).run();
   return Boolean(result.meta.changes);
-}
-
-function simoneModelAccess(env: Env, message: SimoneMessage, row: Pick<ClaimedTask, "model_access" | "sensitivity">) {
-  return privateLexicon(env.DB).then((lexicon) => scanForModelAccess(
-    [{ role: "user", content: [message.subject, message.body, message.context].filter(Boolean).join("\n") }],
-    lexicon, { modelAccess: row.model_access, sensitivity: row.sensitivity },
-  ));
 }
 
 export async function replySimone(env: Env, result: { id: string; lease: number; text: string; work: string[] }, now = Date.now()) {
@@ -135,9 +122,9 @@ export async function replySimone(env: Env, result: { id: string; lease: number;
 /** Materialize only verbatim owner instructions, using the team’s normal permission envelopes and queue. */
 export async function handoffSimone(env: Env, request: { id: string; lease: number; assignments: unknown; text?: string; work?: string[] }) {
   const row = await env.DB.prepare(
-    `SELECT input, model_access, sensitivity FROM tasks WHERE id = ? AND employee_id = ? AND ${CHIEF}
+    `SELECT input FROM tasks WHERE id = ? AND employee_id = ? AND ${CHIEF}
        AND status = 'running' AND attempts = ?`,
-  ).bind(request.id, SIMONE, request.lease).first<Pick<ClaimedTask, "input" | "model_access" | "sensitivity">>();
+  ).bind(request.id, SIMONE, request.lease).first<Pick<ClaimedTask, "input">>();
   if (!row) return null;
   const message: SimoneMessage = JSON.parse(row.input);
   if (message.source === "simone_daily") return null;
@@ -154,13 +141,11 @@ export async function handoffSimone(env: Env, request: { id: string; lease: numb
   const stored: SimoneMessage = JSON.parse(saved.input);
   const assignments = readAssignments(stored.simone_handoff_plan, { message, roster });
   if (!assignments?.length) return null;
-  const access = await simoneModelAccess(env, message, row);
   const out: { name: string; id: string }[] = [];
   for (const assignment of assignments) {
     const seat = roster.find((employee) => employee.id === assignment.employee)!;
-    const bytes = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(JSON.stringify([seat.id, assignment.words])));
-    const key = Array.from(new Uint8Array(bytes), (byte) => byte.toString(16).padStart(2, "0")).join("");
-    const id = `${request.id}_handoff_${key}`;
+    const key = await sha256Hex(JSON.stringify([request.id, seat.id, assignment.words]));
+    const id = `tsk_${key.slice(0, 32)}`;
     const existing = await env.DB.prepare(`SELECT status, envelope_id FROM tasks WHERE id = ?`).bind(id)
       .first<{ status: string; envelope_id: string | null }>();
     if (existing) {
@@ -169,7 +154,6 @@ export async function handoffSimone(env: Env, request: { id: string; lease: numb
     } else {
       const admitted = await admitTask(env, {
         title: shortTitle(assignment.words, 80) || "Work from Simone", lane: seat.lane, employee_id: seat.id,
-        model_access: access.privateOnly ? access.access : undefined,
         cost_mode: "FREE_ONLY",
         input: {
           source: message.source === "boss_inbound_mail" ? message.source : "boss_page",
@@ -198,32 +182,28 @@ export async function finishSimoneHandoff(env: Env, request: { id: string; lease
   });
 }
 
-export async function routeSimoneWhenMacIsDown(env: Env, now = Date.now(), route = routeCompletion) {
+export async function routeSimoneWhenMacIsDown(env: Env, now = Date.now(), rungs?: Rung[]) {
   if (await macSeen(env, now)) return "mac_online";
   const call = await claimSimone(env, now, true);
   if (!call) return "idle";
-  let code = call.privateOnly ? "PRIVATE_MODEL_ONLY" : "MODEL_UNAVAILABLE";
+  let code = "MODEL_UNAVAILABLE";
   try {
-    if (call.pendingHandoffs?.length && await finishSimoneHandoff(env, { ...call, assignments: call.pendingHandoffs })) return "handed_off";
-    if (!call.privateOnly && !call.pendingHandoffs?.length) {
-      const parse = (text: string) => readCompletedRouting(readJsonObject(text), call);
-      const messages = [
-        { role: "system" as const, content: `${routingInstructions}\nReturn the assignments array and the simone_work_remains boolean.` },
-        { role: "user" as const, content: routingRequest(call) },
-      ];
-      for (const onlyProviderId of ["prv_workers_ai", "prv_gemini"]) {
-        if (onlyProviderId === "prv_workers_ai" && !(await claimFreeSearch(env.DB, FIRST_READ_SERVICE, now)).ok) continue;
-        const result = await route(env, {
-          onlyProviderId, messages, routeId: "rt_ops_default", lane: "ops", employeeId: SIMONE,
-          taskId: call.id, intakeKind: "classification", costMode: "FREE_ONLY", freeOnly: true,
-          maxOutputTokens: 2048, json: SIMONE_ROUTING, accept: (text) => parse(text) === null ? "invalid Simone handoff" : null,
-        }).catch(() => null);
-        const assignments = result ? parse(result.text) : null;
-        if (assignments === null) continue;
-        if (assignments.length && await finishSimoneHandoff(env, { ...call, assignments })) return "handed_off";
-        code = "WAITING_FOR_MAC";
-        break;
-      }
+    if (call.pendingHandoffs?.length) {
+      if (await finishSimoneHandoff(env, { ...call, assignments: call.pendingHandoffs })) return "handed_off";
+      code = "HANDOFF_UNAVAILABLE";
+    } else {
+      const { value: assignments } = await freeLadder(env, {
+        prompt: `${routingInstructions}\nReturn the assignments array and the simone_work_remains boolean.\n${routingRequest(call)}`,
+        json: SIMONE_ROUTING,
+        now,
+        workersFirst: true,
+        privateScanOff: FIRST_READ_SCAN_OFF,
+        read: (text) => readCompletedRouting(readJsonObject(text), call) ?? "invalid Simone handoff",
+      }, rungs);
+      if (assignments?.length) {
+        if (await finishSimoneHandoff(env, { ...call, assignments })) return "handed_off";
+        code = "HANDOFF_UNAVAILABLE";
+      } else if (assignments) code = "WAITING_FOR_MAC";
     }
   } catch {
     code = "HANDOFF_UNAVAILABLE";

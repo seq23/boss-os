@@ -721,21 +721,33 @@ async function handleMail(message: BossMailMessage, env: Env, said: Said): Promi
   if (linkedArrival?.command_id) explicitRefs.push(linkedArrival.command_id);
   const threadRefs = { ...recordedRefs, refs: [...new Set(explicitRefs)] };
   const laneTail = refTail(threadRefs.refs.filter((r) => !ownerText.toLowerCase().includes(r)));
-  if (chiefMailbox && !threadRefs.refs.length && !linkedArrival && !viaConsole) {
+  const simoneThread = chiefMailbox && !viaConsole && !linkedArrival && (chain.length || threadRefs.refs.length)
+    ? await env.DB.prepare(`SELECT json_extract(t.input, '$.body') AS request,
+         json_extract(t.output, '$.text') AS reply
+       FROM tasks t
+       JOIN boss_inbound_mail m ON m.task_id = t.id AND m.authorised = 1 AND m.outcome = 'SIMONE_QUEUED'
+       WHERE m.from_addr = ? AND (
+         m.message_id IN (SELECT value FROM json_each(?))
+         OR t.id IN (SELECT value FROM json_each(?))
+       ) AND (SELECT COUNT(*) FROM json_each(?) WHERE value <> t.id) = 0
+       ORDER BY m.received_at DESC LIMIT 1`)
+      .bind(sender, JSON.stringify(chain), JSON.stringify(threadRefs.refs), JSON.stringify(threadRefs.refs))
+      .first<{ request: string; reply: string | null }>()
+    : null;
+  if (chiefMailbox && (!threadRefs.refs.length || simoneThread) && !linkedArrival && !viaConsole) {
     // The worker can decode local text and archive the original. Simone's seat reads the
     // message first, and any offline routing uses the same text-only context.
     const localFiles = parsed ? await readEverything(env, parsed, "", { ai: null }) : EMPTY_FILES;
     const context = [
       read?.body, filesForTask(localFiles),
+      simoneThread ? `Previous exchange on this thread: ${JSON.stringify(simoneThread)}` : null,
       ...localFiles.unopened.filter((file) => file.audio).map(({ filename }) => `Recording attached: ${filename}.`),
       ...(oversize ? [objectKey ? "The original message was archived without decoding." : "This message was too large to decode and the archive was unavailable."] : []),
     ].filter(Boolean).join("\n\n");
-    const identity = messageId
-      ? Array.from(new Uint8Array(await crypto.subtle.digest("SHA-256", new TextEncoder().encode(`${sender}\n${messageId}`))), (b) => b.toString(16).padStart(2, "0")).join("")
-      : mailId;
+    const identity = messageId ? JSON.stringify([sender, messageId]) : mailId;
     const taskId = await fileSimoneMessage(env, {
       source: "boss_inbound_mail", subject: subject || "Message to Simone",
-      body: [herSubject, writtenByOwner].filter(Boolean).join("\n\n"),
+      body: [simoneThread ? "" : herSubject, writtenByOwner].filter(Boolean).join("\n\n"),
       context,
       mail_id: mailId, from: sender, to, message_id: messageId ?? undefined, reply_chain: chain,
     }, identity, now, { objectKey });

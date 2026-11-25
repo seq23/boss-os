@@ -176,7 +176,7 @@ describe("the template door after a first read (#510 F1, F2)", () => {
 });
 
 describe("the free ladder itself (#510 F3)", () => {
-  it("keeps private text off the free ladder and sends ordinary text unchanged", async () => {
+  it("private text through a direct freeLadder call never reaches a rung; a named opt-out is the only way past", async () => {
     let called = 0;
     const rung: Rung[] = [{ id: "free-test", call: async () => { called += 1; return "{}"; } }];
     const ask = { prompt: "approved, and the term sheet says pre-money is fine", json: { name: "x", schema: { type: "object" } }, read: () => ({ ok: true }) };
@@ -184,14 +184,10 @@ describe("the free ladder itself (#510 F3)", () => {
     expect(called).toBe(0);
     expect(walk.value).toBeNull();
     expect(walk.stop).toMatch(/kept off the free models/);
-    const ordinary = "Please read the opening hours for Maple Hall.";
-    const seen: string[] = [];
-    const publicRead = await freeLadder(env, { ...ask, prompt: ordinary }, [{ id: "free-test", call: async (text) => {
-      seen.push(text);
-      return "{}";
-    } }]);
-    expect(publicRead.value).toEqual({ ok: true });
-    expect(seen).toEqual([ordinary]);
+    await freeLadder(env, { ...ask, privateScanOff: "  " }, rung);
+    expect(called, "a blank opt-out is no opt-out").toBe(0);
+    await freeLadder(env, { ...ask, privateScanOff: "test: a named ruling" }, rung);
+    expect(called).toBe(1);
   });
 
   it("a private scan that cannot run fails closed: the rung is never asked", async () => {

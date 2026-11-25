@@ -991,9 +991,10 @@ calendar requests return an Add link. The team retry tool covers failed low-risk
 with an existing permission envelope.
 
 Simone's handoffs use the employee’s existing work lane, including Danielle’s repo plan and
-Camille’s research page. The cloud router leaves a request queued when Simone still has work to
-do. The owner’s mail receives a result through the normal notice drain with the original mail
-headers. Replies linked to an existing command can still act on that record, and the old runner
+Camille’s research page. When the Mac is down, the existing free intake router tries Workers AI
+then Gemini with the message text intact. It leaves a request queued when Simone still has work
+to do. Replies use the original mail headers. An owner follow-up opens its own run with the prior
+exchange as context. Replies linked to an existing command can still act on that record, and the old runner
 still drains pending records. The Simone fixture workflow captures both message surfaces and
 renders a reply using a stubbed mail transport.
 

@@ -227,7 +227,6 @@ export interface RouteRequest {
    * instead of landing a bad answer. A paid answer is never discarded here; its caller checks it.
    */
   accept?: (text: string) => string | null;
-  json?: import("./types").JsonOutput;
 }
 
 /**
@@ -1115,7 +1114,6 @@ export async function routeCompletion(env: Env, rawOpts: RouteRequest): Promise<
             maxOutputTokens: effectiveOutputTokens,
             temperature: route.temperature,
             webSearch: opts.webSearch === true,
-            json: opts.json,
             /*
              * THE ROW'S PRIVACY CLAIM, SENT TO THE VENDOR TO HONOUR — see `openrouter.ts`.
              *
