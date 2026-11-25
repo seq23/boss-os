@@ -374,7 +374,7 @@ describe("H5, Monday: every posting path of every growth business is reconciled,
     const files: Record<string, unknown> = {};
     for (const [key, o] of Object.entries(CHANNEL_OWNERS) as Array<[string, any]>) {
       if (o.noReceipt) continue;
-      files[`${o.repo}/main/.github/workflows/${o.workflow}`] = wf(key.split(":")[0], o);
+      files[`${o.repo}/main/.github/workflows/${o.workflow}`] = wf(key.slice(0, key.indexOf(":")), o);
       files[o.feed ?? `${o.repo}/main/${o.posted}`] = o.feed ? PINS : /linkedin/.test(o.posted) ? LI : /syndication/.test(o.posted) ? KMP : /brand-social|porch-and-party-posted/.test(o.posted) ? BRAND : { posts: {} };
     }
     return fakeFetch({ ...files, [IG_FILE]: IG, [TH_FILE]: TH, ...over });
