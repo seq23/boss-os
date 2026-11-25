@@ -982,11 +982,18 @@ owner’s words and separate context from the original mail. A fresh run reads `
 `HANDOFF.md`, the latest daily note, and task sheets under `~/Work/simone`.
 
 The Simone tool socket gives the session access to the current morning, invitation, errand,
-meeting prep, Kindle, mail and team records. The team retry tool covers failed low-risk internal
-work with an existing permission envelope. The owner’s mail receives a result through the normal
-notice drain with the original mail headers. The legacy command runner still drains its existing
-records. The Simone fixture workflow captures both message surfaces and renders a reply using a
-stubbed mail transport.
+meeting prep, Kindle, mail and team records. She can queue a free errand to a venue named in
+verified owner mail, or create a calendar invitation for a guest whose address the owner supplied.
+The calendar tool checks availability and reuses the same event ID when it retries. Personal
+calendar requests return an Add link. The team retry tool covers failed low-risk internal work
+with an existing permission envelope.
+
+Simone's handoffs use the employee’s existing work lane, including Danielle’s repo plan and
+Camille’s research page. The cloud router leaves a request queued when Simone still has work to
+do. The owner’s mail receives a result through the normal notice drain with the original mail
+headers. Replies linked to an existing command can still act on that record, and the old runner
+still drains pending records. The Simone fixture workflow captures both message surfaces and
+renders a reply using a stubbed mail transport.
 
 ## Noelle, the Growth Director
 

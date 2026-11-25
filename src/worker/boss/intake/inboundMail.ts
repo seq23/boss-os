@@ -729,15 +729,16 @@ async function handleMail(message: BossMailMessage, env: Env, said: Said): Promi
   // No thread we know: the REF code she kept in the subject (or typed) finds the job (owner, 7 Nov 2026).
   const origin = readable ? forwardedOrigin(readable) : null;
   const herSubject = herSubjectOf(subject, origin ? (origin.subject ? decodeHeader(origin.subject) : "") : null);
-  const ownerText = `${herSubject}\n${her}`;
+  const writtenByOwner = herWords(read?.readable ?? "");
+  const ownerText = `${herSubject}\n${writtenByOwner}`;
   const recordedRefs = chainRefs.refs.length ? chainRefs : await refsForCode(env.DB, ownerText);
   const explicitRefs = [...recordedRefs.refs, ...refsIn(ownerText)];
   const chiefMailbox = to === BOSS_INTAKE_MAILBOX || to === SIMONE_MAILBOX;
   const linkedArrival = chiefMailbox && !explicitRefs.length && chain.length
     ? await env.DB.prepare(`SELECT command_id FROM boss_inbound_mail
        WHERE message_id IN (${chain.map(() => "?").join(",")}) AND authorised = 1
-       AND outcome NOT IN ('SIMONE_QUEUED', 'DUPLICATE', 'RECEIVED')
-       AND (task_id IS NOT NULL OR command_id IS NOT NULL OR outcome = 'NEEDS_CLARITY')
+       AND (command_id IS NOT NULL OR (outcome NOT IN ('SIMONE_QUEUED', 'DUPLICATE', 'RECEIVED')
+            AND (task_id IS NOT NULL OR outcome = 'NEEDS_CLARITY')))
        ORDER BY received_at DESC LIMIT 1`)
       .bind(...chain).first<{ command_id: string | null }>()
     : null;
@@ -750,7 +751,7 @@ async function handleMail(message: BossMailMessage, env: Env, said: Said): Promi
       : mailId;
     const taskId = await fileSimoneMessage(env, {
       source: "boss_inbound_mail", subject: subject || "Message to Simone",
-      body: [herSubject, her].filter(Boolean).join("\n\n"),
+      body: [herSubject, writtenByOwner].filter(Boolean).join("\n\n"),
       context: taskBody,
       mail_id: mailId, from: sender, to, message_id: messageId ?? undefined, reply_chain: chain,
     }, identity, now, { objectKey });
@@ -872,7 +873,7 @@ async function handleMail(message: BossMailMessage, env: Env, said: Said): Promi
    * the email goes on exactly as before. src/worker/boss/commands/run.ts.
    */
   const command = readable || subject
-    ? await commandFromMail(env, { subject: chiefMailbox ? herSubject : trueSubjectOf(readable, subject), text: chiefMailbox ? her : own || readable,
+    ? await commandFromMail(env, { subject: chiefMailbox ? herSubject : trueSubjectOf(readable, subject), text: chiefMailbox ? writtenByOwner : own || readable,
       mailId, sender, refs: threadRefs.refs, now, to, linkedOnly: chiefMailbox && !viaConsole,
       ownerName: (message.headers.get("from") ?? "").replace(/<[^>]*>/g, "").replace(/^"|"$/g, "").trim() })
     : null;

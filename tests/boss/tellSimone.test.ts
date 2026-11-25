@@ -29,11 +29,13 @@ function mail(to: string, body: string, subject = "") {
 
 const DELEGATED = ["emp_repo", "emp_research", "emp_knowledge"];
 
-async function delegate(id: string, asks: string[], employees: string[]) {
+async function delegate(id: string, asks: string[], employees: string[], delivery: string[] = []) {
   const call = (await claimSimone(env))!;
   expect(call.id).toBe(id);
   expect(call.message.body).toContain(asks[0]);
-  expect(await finishSimoneHandoff(env, { id, lease: call.lease, assignments: asks.map((words, i) => ({ words, employee: employees[i] })) })).toBe(true);
+  expect(await finishSimoneHandoff(env, {
+    id, lease: call.lease, assignments: asks.map((words, i) => ({ words, employee: employees[i], delivery: delivery[i] ?? "ordinary" })),
+  })).toBe(true);
   const tasks = await all<{ title: string; employee_id: string; words: string; envelope_id: string }>(`SELECT title, employee_id,
     json_extract(input, '$.body') AS words, envelope_id FROM tasks WHERE json_extract(input, '$.simone_handoff') = ? ORDER BY rowid`, id);
   expect(tasks.map((task) => task.employee_id)).toEqual(employees);
@@ -55,12 +57,16 @@ it("both chief mailboxes and both boxes make the same three handoffs using the m
   let previous;
   for (const deliver of deliveries) {
     const id = (await deliver())!;
-    const result = await delegate(id, ASKS, DELEGATED);
+    const result = await delegate(id, ASKS, DELEGATED, ["repository", "research_page", "ordinary"]);
     expect(result[0]?.title).toMatch(/^Build a one-page landing/);
     if (previous) expect(result).toEqual(previous);
     previous = result;
   }
   expect((await row<{ n: number }>(`SELECT count(*) AS n FROM boss_task_notices WHERE kind = 'simone_result'`))?.n).toBe(2);
+  expect(await row(`SELECT count(*) AS n FROM repo_changes rc JOIN tasks t ON t.id = rc.task_id
+    WHERE json_extract(t.input, '$.simone_handoff') IS NOT NULL AND t.employee_id = 'emp_repo' AND rc.phase = 'plan'`)).toEqual({ n: 4 });
+  expect(await row(`SELECT count(*) AS n FROM research_pages rp JOIN tasks t ON t.id = rp.task_id
+    WHERE json_extract(t.input, '$.simone_handoff') IS NOT NULL AND t.employee_id = 'emp_research' AND rp.question = ?`, ASKS[1]!)).toEqual({ n: 4 });
 });
 
 it("one research ask reaches Camille through either chief mailbox, while direct mail reaches Danielle", async () => {

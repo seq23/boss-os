@@ -31,7 +31,7 @@ import { readMeaning } from "../intake/meaning";
 import { recipientLines } from "../../../shared/boss/mail/replyNeed.mjs";
 import { partiesAskIn } from "../../../shared/boss/capital/partiesAsk.mjs";
 import { partiesAnswer } from "../capital/grid";
-import { clashes, createInvite, replaceGuest, deleteInvite, sendOne } from "./google";
+import { clashes, createInvite, readInvite, replaceGuest, deleteInvite, sendOne } from "./google";
 
 export const ORIGIN = "https://boss.sequoiataylor.com";
 
@@ -78,8 +78,9 @@ const who = (spec: Json) => spec.guest_name ? `${spec.guest_name} (${spec.guest_
 // ─── Invite ────────────────────────────────────────────────────────────────
 
 /** Run an invite as far as it can go now. Returns the one line she is told. */
-async function runInvite(env: Env, row: CommandRow, now: number): Promise<string> {
+export async function runInvite(env: Env, row: CommandRow, now: number): Promise<string> {
   const spec = j(row.spec);
+  const stableEventId = typeof spec.provider_event_id === "string" ? spec.provider_event_id : undefined;
   if (spec.when_error || !spec.start) {
     await save(env, row.id, { state: "needs_time" }, now);
     return `The invite${spec.guest_name ? ` to ${spec.guest_name}` : ""}: I couldn't tell the time (${spec.when_error ?? "no time"}). Reply with the day and time, e.g. "Tuesday 10am ET".`;
@@ -97,11 +98,18 @@ async function runInvite(env: Env, row: CommandRow, now: number): Promise<string
   }
   const mailbox = spec.calendar || DEFAULT_MAILBOX;
   const end = spec.start + minutes * 60_000;
-  if (!spec.anyway) {
+  const recovered = stableEventId ? await readInvite(env, {
+    mailbox, eventId: stableEventId, start: spec.start, minutes, guest: spec.guest_email,
+  }) : null;
+  if (stableEventId && !recovered && spec.start <= now) {
+    await save(env, row.id, { state: "expired" }, now);
+    return "The proposed time has passed.";
+  }
+  if (!recovered && !spec.anyway) {
     const c = await clashes(env, mailbox, spec.start, end);
     if (!c.ok) {
       await save(env, row.id, { state: "failed", result: { why: c.why } }, now);
-      return await cantYetLine(env, row, `create invites on ${mailbox} (${c.why})`, now);
+      return stableEventId ? c.why : await cantYetLine(env, row, `create invites on ${mailbox} (${c.why})`, now);
     }
     if (c.busy.length) {
       await save(env, row.id, { state: "clash", result: { busy: c.busy } }, now);
@@ -109,10 +117,11 @@ async function runInvite(env: Env, row: CommandRow, now: number): Promise<string
       return `The invite to ${who(spec)}: ${slotText(spec.start, minutes, OWNER_TZ)} Central clashes with "${b.title}" (${slotText(b.start, Math.round((b.end - b.start) / 60_000), OWNER_TZ)}). Nothing was sent. Reply "book it anyway", or a new day and time.`;
     }
   }
-  const made = await createInvite(env, { mailbox, title: spec.title, start: spec.start, minutes, guests: [spec.guest_email], requestId: row.id });
+  const made = recovered ?? await createInvite(env, { mailbox, title: spec.title, start: spec.start, minutes,
+    guests: [spec.guest_email], requestId: row.id, eventId: stableEventId });
   if (!made.ok) {
     await save(env, row.id, { state: "failed", result: { why: made.why } }, now);
-    return await cantYetLine(env, row, `create invites on ${mailbox} (${made.why})`, now);
+    return stableEventId ? made.why : await cantYetLine(env, row, `create invites on ${mailbox} (${made.why})`, now);
   }
   await save(env, row.id, { state: "created", result: { event_id: made.eventId, meet: made.meet, link: made.htmlLink, mailbox, sent_at: now, guest: spec.guest_email } }, now);
   await audit(env.DB, { actor: "boss", lane: "ops", entityType: "boss_command", entityId: row.id, action: "invite_created", detail: { mailbox, event_id: made.eventId } });

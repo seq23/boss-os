@@ -8,6 +8,8 @@
 import { env } from "cloudflare:test";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { handleBossInboundMail } from "../../src/worker/boss/intake/inboundMail";
+import { claimSimone, replySimone } from "../../src/worker/boss/agents/simone";
+import { simoneTool } from "../../src/worker/boss/agents/simoneTools";
 import { macWork, errandSent } from "../../src/worker/boss/commands/run";
 import { setCommandFetch } from "../../src/worker/boss/commands/google";
 import { classify } from "../../src/worker/boss/intake/classify";
@@ -40,8 +42,23 @@ beforeEach(async () => {
 });
 afterEach(() => { setCommandFetch(null); Date.now = REAL_NOW; });
 
-async function sentErrand() {
+async function queueErrand() {
   const res = await say({ from: `Sequoia <${HER}>`, subject: "Dinner", body: `Book me a table for two on Thursday after 8pm: ${BIZ}` });
+  expect(res).toMatchObject({ outcome: "SIMONE_QUEUED", reply: null });
+  const call = (await claimSimone(env))!;
+  expect(call.id).toBe(res.taskId);
+  const queued = await simoneTool(env, { ...call, tool: "queue_errand" });
+  expect(queued).toMatchObject({ ok: true, receipt: expect.stringMatching(/^cmd_[a-f0-9]+$/) });
+  const answer = "I queued your reservation request. I’ll confirm once the venue answers.";
+  expect(await replySimone(env, { ...call, text: answer, work: ["queue_errand"] })).toBe(true);
+  const notice = await env.DB.prepare(`SELECT body FROM boss_task_notices WHERE task_id = ? AND kind = 'simone_result'`)
+    .bind(call.id).first<{ body: string }>();
+  expect(notice?.body).toBe(answer);
+  return res;
+}
+
+async function sentErrand() {
+  const res = await queueErrand();
   const [row] = await errands();
   await errandSent(env as never, row.id, { message_id: "em_fake1", subject: "Reservation request", text: "Hello", request: "a table for two on Thursday after 8:00 pm" });
   return { res, id: row.id as string };
@@ -49,9 +66,7 @@ async function sentErrand() {
 
 describe("her errand by email", () => {
   it("is queued for the Mac with no Send tap, and she is told it is going", async () => {
-    const res = await say({ from: `Sequoia <${HER}>`, subject: "Dinner", body: `Book me a table for two on Thursday after 8pm: ${BIZ}` });
-    expect(res.outcome).toBe("COMMAND");
-    expect(res.reply).toContain(`I'm sending your request to ${BIZ} now, as your assistant`);
+    await queueErrand();
     const rows = await errands();
     expect(rows).toHaveLength(1);
     expect(rows[0].state).toBe("queued");
@@ -68,9 +83,12 @@ describe("her errand by email", () => {
     expect(await errands()).toHaveLength(0);
   });
 
-  it("NEGATIVE: money in her words makes no errand (it is a draft for her Send instead)", async () => {
+  it("NEGATIVE: the agent refuses an errand that asks for a deposit and creates no draft", async () => {
     await say({ from: `Sequoia <${HER}>`, body: `Book me a table for two and pay the deposit: ${BIZ}` });
+    const call = (await claimSimone(env))!;
+    expect(await simoneTool(env, { ...call, tool: "queue_errand" })).toEqual({ ok: false, code: "ERRAND_NOT_AUTHORIZED" });
     expect(await errands()).toHaveLength(0);
+    expect(await env.DB.prepare("SELECT count(*) AS n FROM boss_commands").first()).toEqual({ n: 0 });
   });
 
   it("their answer is read for her, never answered: a card request becomes hers, in plain words", async () => {

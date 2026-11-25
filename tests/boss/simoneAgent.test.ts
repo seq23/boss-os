@@ -100,6 +100,27 @@ it("tries Workers AI then Gemini while the Mac is down and retains the mail thro
   expect(await claimSimone(env)).toMatchObject({ id, lease: 2 });
 });
 
+it("keeps a mixed request queued during a cloud routing fallback", async () => {
+  const { routeSimoneWhenMacIsDown } = await import("../../src/worker/boss/agents/simone");
+  const words = "Ask Camille for the opening hours.";
+  const body = `${words} Put a free planning session on my calendar, too.`;
+  const id = await fileSimoneMessage(env, { ...request, source: "boss_inbound_mail", body }, undefined, 1);
+  const assignment = { employee: "emp_research", words, delivery: "research_page" };
+  const options: string[] = [];
+  expect(await routeSimoneWhenMacIsDown(env, 60 * 60_000, async (_env, opts) => {
+    options.push(opts.onlyProviderId!);
+    const text = JSON.stringify({ assignments: [assignment], simone_work_remains: true });
+    expect(await opts.accept?.(text)).toBeNull();
+    return { text } as Awaited<ReturnType<typeof import("../../src/worker/boss/router").routeCompletion>>;
+  })).toBe("WAITING_FOR_MAC");
+  expect(options).toEqual(["prv_workers_ai"]);
+  expect(await row("SELECT status, output FROM tasks WHERE id = ?", id)).toEqual({ status: "queued", output: null });
+  expect(await row("SELECT count(*) AS n FROM boss_task_notices WHERE task_id = ?", id)).toEqual({ n: 0 });
+  expect(await row("SELECT count(*) AS n FROM tasks WHERE json_extract(input, '$.simone_handoff') = ?", id)).toEqual({ n: 0 });
+  const call = (await claimSimone(env))!;
+  expect(call.message.body).toBe(body);
+});
+
 it("keeps the name of a committed LP off both cloud providers", async () => {
   const { routeSimoneWhenMacIsDown } = await import("../../src/worker/boss/agents/simone");
   const { PRIVATE_SOURCES } = await import("../../src/worker/boss/router/modelAccess");
@@ -310,13 +331,15 @@ it("retries a committed handoff through a queue failure without changing the col
   const call = (await claimSimone(env))!;
   const assignments = [{ employee: "emp_research", words: "Ask Camille to research opening hours." }];
   const brokenQueue = { ...env, TASKS: { send: async () => { throw new Error("queue down"); } } } as unknown as typeof env;
-  await expect(finishSimoneHandoff(brokenQueue, { id, lease: call.lease, assignments })).rejects.toThrow("queue down");
+  await expect(finishSimoneHandoff(brokenQueue, { id, lease: call.lease, assignments,
+    text: "I checked the invitation.", work: ["invitations"] })).rejects.toThrow("queue down");
   expect(await releaseSimone(env, id, call.lease, "HANDOFF_UNAVAILABLE")).toBe(true);
   const retry = (await claimSimone(env))!;
   expect(retry.pendingHandoffs).toEqual(assignments);
   expect(await finishSimoneHandoff(env, { id, lease: retry.lease, assignments: [{ employee: "emp_knowledge", words: "Ask Zora to file the note." }] })).toBe(true);
   expect((await env.DB.prepare(`SELECT employee_id FROM tasks WHERE json_extract(input, '$.simone_handoff') = ?`).bind(id).all()).results)
     .toEqual([{ employee_id: "emp_research" }]);
+  expect((await row<{ output: string }>("SELECT output FROM tasks WHERE id = ?", id))?.output).toContain("I checked the invitation.");
 });
 
 it("the public Worker requires the real machine-token check before claim, tool, or reply", async () => {

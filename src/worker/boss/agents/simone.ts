@@ -2,7 +2,7 @@ import type { Env } from "../env";
 import { newId } from "../lib/id";
 import { activeRoster } from "../intake/inboundMail";
 import { admitTask } from "../tasks/admit";
-import { SIMONE_ROUTING, readAssignments, routingInstructions, routingRequest, type SimoneAssignment } from "../../../shared/boss/intake/simoneRouting.mjs";
+import { SIMONE_ROUTING, readAssignments, readCompletedRouting, routingInstructions, routingRequest, type SimoneAssignment } from "../../../shared/boss/intake/simoneRouting.mjs";
 import { readJsonObject } from "../router/types";
 import { routeCompletion } from "../router";
 import { macSeen } from "../queue/freeRung";
@@ -25,6 +25,7 @@ export interface SimoneMessage {
   message_id?: string;
   reply_chain?: string[];
   simone_handoff_plan?: SimoneAssignment[];
+  simone_handoff_reply?: { text?: string; work?: string[] };
   to?: string;
 }
 
@@ -71,10 +72,7 @@ export async function claimSimone(env: Env, now = Date.now(), cloud = false) {
   ).bind(now, SIMONE, now - SIMONE_LEASE_MS, Number(cloud), now - 30 * 60_000).first<ClaimedTask>();
   if (!row) return null;
   const message: SimoneMessage = JSON.parse(row.input);
-  const access = scanForModelAccess(
-    [{ role: "user", content: [message.subject, message.body, message.context].filter(Boolean).join("\n") }],
-    await privateLexicon(env.DB), { modelAccess: row.model_access, sensitivity: row.sensitivity },
-  );
+  const access = await simoneModelAccess(env, message, row);
   return { id: row.id, lease: row.attempts, message, privateOnly: access.privateOnly, roster, pendingHandoffs: message.simone_handoff_plan };
 }
 
@@ -94,6 +92,13 @@ export async function releaseSimone(env: Env, id: string, lease: number, code: s
        WHERE id = ? AND employee_id = ? AND ${CHIEF} AND status = 'running' AND attempts = ?`,
   ).bind(code, id, SIMONE, lease).run();
   return Boolean(result.meta.changes);
+}
+
+function simoneModelAccess(env: Env, message: SimoneMessage, row: Pick<ClaimedTask, "model_access" | "sensitivity">) {
+  return privateLexicon(env.DB).then((lexicon) => scanForModelAccess(
+    [{ role: "user", content: [message.subject, message.body, message.context].filter(Boolean).join("\n") }],
+    lexicon, { modelAccess: row.model_access, sensitivity: row.sensitivity },
+  ));
 }
 
 export async function replySimone(env: Env, result: { id: string; lease: number; text: string; work: string[] }, now = Date.now()) {
@@ -128,11 +133,11 @@ export async function replySimone(env: Env, result: { id: string; lease: number;
 }
 
 /** Materialize only verbatim owner instructions, using the team’s normal permission envelopes and queue. */
-export async function handoffSimone(env: Env, request: { id: string; lease: number; assignments: unknown }) {
+export async function handoffSimone(env: Env, request: { id: string; lease: number; assignments: unknown; text?: string; work?: string[] }) {
   const row = await env.DB.prepare(
-    `SELECT input FROM tasks WHERE id = ? AND employee_id = ? AND ${CHIEF}
+    `SELECT input, model_access, sensitivity FROM tasks WHERE id = ? AND employee_id = ? AND ${CHIEF}
        AND status = 'running' AND attempts = ?`,
-  ).bind(request.id, SIMONE, request.lease).first<{ input: string }>();
+  ).bind(request.id, SIMONE, request.lease).first<Pick<ClaimedTask, "input" | "model_access" | "sensitivity">>();
   if (!row) return null;
   const message: SimoneMessage = JSON.parse(row.input);
   if (message.source === "simone_daily") return null;
@@ -140,12 +145,16 @@ export async function handoffSimone(env: Env, request: { id: string; lease: numb
   const proposed = readAssignments(message.simone_handoff_plan ?? request.assignments, { message, roster });
   if (!proposed?.length) return null;
   const saved = await env.DB.prepare(`UPDATE tasks SET input = CASE
-      WHEN json_type(input, '$.simone_handoff_plan') IS NULL THEN json_set(input, '$.simone_handoff_plan', json(?)) ELSE input END
+      WHEN json_type(input, '$.simone_handoff_plan') IS NULL
+      THEN json_set(input, '$.simone_handoff_plan', json(?), '$.simone_handoff_reply', json(?)) ELSE input END
     WHERE id = ? AND employee_id = ? AND ${CHIEF} AND status = 'running' AND attempts = ? RETURNING input`)
-    .bind(JSON.stringify(proposed), request.id, SIMONE, request.lease).first<{ input: string }>();
+    .bind(JSON.stringify(proposed), JSON.stringify({ text: request.text, work: request.work }),
+      request.id, SIMONE, request.lease).first<{ input: string }>();
   if (!saved) return null;
-  const assignments = readAssignments((JSON.parse(saved.input) as SimoneMessage).simone_handoff_plan, { message, roster });
+  const stored: SimoneMessage = JSON.parse(saved.input);
+  const assignments = readAssignments(stored.simone_handoff_plan, { message, roster });
   if (!assignments?.length) return null;
+  const access = await simoneModelAccess(env, message, row);
   const out: { name: string; id: string }[] = [];
   for (const assignment of assignments) {
     const seat = roster.find((employee) => employee.id === assignment.employee)!;
@@ -160,28 +169,32 @@ export async function handoffSimone(env: Env, request: { id: string; lease: numb
     } else {
       const admitted = await admitTask(env, {
         title: shortTitle(assignment.words, 80) || "Work from Simone", lane: seat.lane, employee_id: seat.id,
+        model_access: access.privateOnly ? access.access : undefined,
+        cost_mode: "FREE_ONLY",
         input: {
           source: message.source === "boss_inbound_mail" ? message.source : "boss_page",
           body: assignment.words, mail_id: message.mail_id,
           ...(message.context ? { untrusted_context: message.context } : {}),
+          ...(assignment.delivery === "repository" ? { build_ask: true } : {}),
           from: message.from, subject: message.subject, simone_handoff: request.id,
         },
-      }, id);
+      }, { id, ...(assignment.delivery === "research_page" ? { researchQuestion: assignment.words } : {}) });
       if (!admitted.created) throw new Error("Simone handoff could not be admitted");
     }
     out.push({ name: seat.name, id });
   }
-  return out;
+  return { handoffs: out, reply: stored.simone_handoff_reply };
 }
 
 export async function finishSimoneHandoff(env: Env, request: { id: string; lease: number; assignments: unknown; text?: string; work?: string[] }) {
-  const handoffs = await handoffSimone(env, request);
-  if (!handoffs) return false;
+  const completed = await handoffSimone(env, request);
+  if (!completed) return false;
+  const { handoffs, reply } = completed;
   const names = [...new Set(handoffs.map(({ name }) => name))];
   const note = `I handed this to ${new Intl.ListFormat("en-US", { type: "conjunction" }).format(names)}.`;
   return replySimone(env, {
-    ...request, text: [request.text, note].filter(Boolean).join("\n\n"),
-    work: [...(request.work ?? []), ...handoffs.map(({ id }) => id)],
+    ...request, text: [reply?.text, note].filter(Boolean).join("\n\n"),
+    work: [...(reply?.work ?? []), ...handoffs.map(({ id }) => id)],
   });
 }
 
@@ -193,9 +206,9 @@ export async function routeSimoneWhenMacIsDown(env: Env, now = Date.now(), route
   try {
     if (call.pendingHandoffs?.length && await finishSimoneHandoff(env, { ...call, assignments: call.pendingHandoffs })) return "handed_off";
     if (!call.privateOnly && !call.pendingHandoffs?.length) {
-      const parse = (text: string) => readAssignments(readJsonObject(text)?.assignments, call);
+      const parse = (text: string) => readCompletedRouting(readJsonObject(text), call);
       const messages = [
-        { role: "system" as const, content: `${routingInstructions}\nReturn JSON with an assignments array of employee and words objects.` },
+        { role: "system" as const, content: `${routingInstructions}\nReturn the assignments array and the simone_work_remains boolean.` },
         { role: "user" as const, content: routingRequest(call) },
       ];
       for (const onlyProviderId of ["prv_workers_ai", "prv_gemini"]) {

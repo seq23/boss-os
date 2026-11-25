@@ -83,24 +83,27 @@ export async function clashes(env: Env, mailbox: string, start: number, end: num
   const q = new URLSearchParams({ timeMin: new Date(start).toISOString(), timeMax: new Date(end).toISOString(), singleEvents: "true", orderBy: "startTime", maxResults: "20" });
   const res = await fetchImpl(`${CALENDAR}/primary/events?${q}`, { headers: { authorization: `Bearer ${cal.token}` } });
   if (!res.ok) return { ok: false, why: `the calendar could not be read (${res.status})` };
-  const j = (await res.json().catch(() => ({}))) as { items?: Array<any> };
+  const j = (await res.json().catch(() => null)) as { items?: Array<any>; nextPageToken?: string } | null;
+  if (!j || !Array.isArray(j.items)) return { ok: false, why: "Google Calendar did not return the events for this time" };
   const busy: Busy[] = [];
-  for (const e of j.items ?? []) {
+  for (const e of j.items) {
     if (e.status === "cancelled" || e.transparency === "transparent" || !e.start?.dateTime) continue;
     const me = (e.attendees ?? []).find((a: any) => a.self);
     if (me?.responseStatus === "declined") continue;
     const s = Date.parse(e.start.dateTime); const f = Date.parse(e.end?.dateTime ?? e.start.dateTime);
     if (s < end && f > start) busy.push({ title: String(e.summary ?? "(busy)").slice(0, 120), start: s, end: f });
   }
+  if (j.nextPageToken && !busy.length) return { ok: false, why: "Google Calendar could not confirm the full time slot" };
   return { ok: true, busy };
 }
 
 /** Create the event with a Meet link and invite the guests. `sendUpdates=all` is what emails them. */
-export async function createInvite(env: Env, input: { mailbox: string; title: string; start: number; minutes: number; guests: string[]; requestId: string; description?: string }):
+export async function createInvite(env: Env, input: { mailbox: string; title: string; start: number; minutes: number; guests: string[]; requestId: string; description?: string; eventId?: string }):
   Promise<{ ok: true; eventId: string; meet: string | null; htmlLink: string | null } | { ok: false; why: string }> {
   const cal = await calendarFor(env, input.mailbox);
   if (!cal.ok) return cal;
   const body = {
+    ...(input.eventId ? { id: input.eventId } : {}),
     summary: input.title,
     description: input.description ?? "",
     start: { dateTime: new Date(input.start).toISOString() },
@@ -113,8 +116,29 @@ export async function createInvite(env: Env, input: { mailbox: string; title: st
   });
   if (!res.ok) return { ok: false, why: `Google Calendar refused the event (${res.status})` };
   const e = (await res.json().catch(() => ({}))) as any;
+  if (typeof e.id !== "string" || (input.eventId && input.eventId !== e.id)) {
+    return { ok: false, why: "Google Calendar did not confirm the event ID" };
+  }
   const meet = e.hangoutLink ?? (e.conferenceData?.entryPoints ?? []).find((p: any) => p.entryPointType === "video")?.uri ?? null;
-  return { ok: true, eventId: String(e.id), meet, htmlLink: e.htmlLink ?? null };
+  return { ok: true, eventId: e.id, meet, htmlLink: e.htmlLink ?? null };
+}
+
+/** Recover an invite the provider may have created before its receipt reached Boss OS. */
+export async function readInvite(env: Env, input: { mailbox: string; eventId: string; start: number; minutes: number; guest: string }) {
+  const cal = await calendarFor(env, input.mailbox);
+  if (!cal.ok) return cal;
+  const res = await fetchImpl(`${CALENDAR}/primary/events/${encodeURIComponent(input.eventId)}`, {
+    headers: { authorization: `Bearer ${cal.token}` },
+  });
+  if (res.status === 404) return null;
+  if (!res.ok) return { ok: false, why: `the existing invite could not be checked (${res.status})` } as const;
+  const e = (await res.json().catch(() => ({}))) as any;
+  if (e.id !== input.eventId || e.status === "cancelled" || Date.parse(e.start?.dateTime) !== input.start ||
+      Date.parse(e.end?.dateTime) !== input.start + input.minutes * 60_000 ||
+      !(e.attendees ?? []).some((attendee: any) => attendee.email?.toLowerCase() === input.guest.toLowerCase())) {
+    return { ok: false, why: "the saved calendar event does not match the invitation" } as const;
+  }
+  return { ok: true, eventId: e.id as string, meet: e.hangoutLink ?? null, htmlLink: e.htmlLink ?? null } as const;
 }
 
 /** Swap one guest for another on the SAME event (a bounced address); the new one is invited. */

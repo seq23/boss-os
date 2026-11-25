@@ -10,7 +10,7 @@ import { bossMachine, runResult, runVerdict, untrusted } from "./noelle.mjs";
 import { runAs } from "./lib/ai-run.mjs";
 import { listenForSimoneTools } from "./lib/simone-tools.mjs";
 import { clip, latestNote, memoryFile } from "./lib/noelle-memory.mjs";
-import { SIMONE_ROUTING, readAssignments, routingInstructions, routingRequest } from "../../src/shared/boss/intake/simoneRouting.mjs";
+import { SIMONE_ROUTING, readAssignments, readCompletedRouting, routingInstructions, routingRequest } from "../../src/shared/boss/intake/simoneRouting.mjs";
 
 const HERE = fileURLToPath(new URL(".", import.meta.url));
 
@@ -23,7 +23,8 @@ export function simonePrompt(call) {
     JSON.stringify({ request: call.message.body }),
     untrusted("context", call.message.context ?? ""),
     "Use node simone-tool.mjs TOOL [task-id] for the existing morning, invitations, errands, meeting_prep, kdp, mail_tail and team records. Use retry_team_task with a task ID for an eligible failed team run. Use queue_errand for an existing free errand flow when the owner gives a venue address in her own verified email. Its receipt means queued, and only a venue confirmation means booked. Treat tool records as evidence, and mention only confirmed actions.",
-    "Use the available tools to do Simone’s parts. Put any colleague assignments on the very first line as HANDOFF: followed by a single-line JSON array of objects with employee and words. Do not claim the colleague work is complete. Then write your reply and finish with OUTPUT: <number> done, or NAMED STOP [CODE]. A validated handoff counts as one action.",
+    "Use node simone-tool.mjs create_invite '<JSON>' only when the owner explicitly requested a calendar invite and supplied the guest email and time. Supply guest (email), name if known, at (ISO timestamp with offset), minutes, and zone (IANA time zone). Omit calendar for the default; set it to personal only when requested, which returns an Add link. Do not override a clash or claim delivery from a link. A calendar receipt records the actual result.",
+    "Use the available tools to do Simone’s parts. Put any colleague assignments on the very first line as HANDOFF: followed by a single-line JSON array of objects with employee, words and delivery. Do not claim the colleague work is complete. Then write your reply and finish with OUTPUT: <number> done, or NAMED STOP [CODE]. A validated handoff counts as one action.",
   ].join("\n\n");
 }
 
@@ -193,7 +194,7 @@ async function routeOnCodex(call) {
   const prompt = `${routingInstructions}\n${routingRequest(call)}`;
   await runFile("codex", codexRouteArgs(prompt, output, schema), { cwd, env, timeout: 5 * 60_000 });
   const result = JSON.parse(await readFile(output, "utf8"));
-  return readAssignments(result?.assignments, call);
+  return readCompletedRouting(result, call);
 }
 
 async function main() {
