@@ -211,6 +211,7 @@ export function callBlock(call) {
     "<<<HER-MESSAGE",
     String(call.body ?? "").replace(/HER-MESSAGE>>>/g, "HER-MESSAGE>>"),
     "HER-MESSAGE>>>",
+    ...(call.context ? [untrusted("mail-context", call.context)] : []),
     "Your final message is your reply to her (plain words: what you did, what you did not do and why, what is her call; no ids), then the OUTPUT or NAMED STOP line alone.",
   ].join("\n");
 }

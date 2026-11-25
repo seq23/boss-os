@@ -153,6 +153,7 @@ export async function handoffSimone(env: Env, request: { id: string; lease: numb
         input: {
           source: message.source === "boss_inbound_mail" ? message.source : "boss_page",
           body: assignment.words, mail_id: message.mail_id,
+          ...(message.context ? { untrusted_context: message.context } : {}),
           from: message.from, subject: message.subject, simone_handoff: request.id,
         },
       }, id);

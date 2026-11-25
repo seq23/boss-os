@@ -431,7 +431,8 @@ export async function claimCall(env: Env, deviceId: string, now = Date.now()) {
     await db.prepare(`INSERT INTO task_events (id, task_id, ts, event, detail) VALUES (?,?,?,'noelle_call_claimed',?)`)
       .bind(newId("tev"), r.id, now, JSON.stringify({ device_id: deviceId.slice(0, 80), try: Number(r.attempts ?? 0) + 1 })).run();
     let input: any = {}; try { input = JSON.parse(r.input ?? "{}"); } catch { input = {}; }
-    return { task_id: String(r.id), slot: `call:${r.id}`, source: String(input.source ?? ""), title: String(r.title ?? ""), subject: String(input.subject ?? r.title ?? ""), body: String(input.body ?? "").slice(0, 20_000), try: Number(r.attempts ?? 0) + 1 };
+    return { task_id: String(r.id), slot: `call:${r.id}`, source: String(input.source ?? ""), title: String(r.title ?? ""), subject: String(input.subject ?? r.title ?? ""), body: String(input.body ?? "").slice(0, 20_000),
+      ...(typeof input.untrusted_context === "string" ? { context: input.untrusted_context.slice(0, 20_000) } : {}), try: Number(r.attempts ?? 0) + 1 };
   }
   return null;
 }
