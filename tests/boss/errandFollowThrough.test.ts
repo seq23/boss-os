@@ -7,6 +7,8 @@
  */
 import { env } from "cloudflare:test";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { claimSimone } from "../../src/worker/boss/agents/simone";
+import { simoneTool } from "../../src/worker/boss/agents/simoneTools";
 import { handleBossInboundMail } from "../../src/worker/boss/intake/inboundMail";
 import { macWork, errandSent, commandFromMail, errandFollowedUp, errandRemindersDue, errandReminded, errandTap, getCommand } from "../../src/worker/boss/commands/run";
 import { setCommandFetch } from "../../src/worker/boss/commands/google";
@@ -42,8 +44,13 @@ beforeEach(async () => {
 afterEach(() => { setCommandFetch(null); Date.now = REAL_NOW; });
 
 async function answered() {
-  await say({ from: `Sequoia <${HER}>`, subject: "Club", body: `Get me reservations +1 Thursday night after 8pm: ${VENUE}` });
-  const id = ((await env.DB.prepare(`SELECT id FROM boss_commands WHERE kind = 'errand'`).first<any>())).id as string;
+  const arrival = await say({ from: `Sequoia <${HER}>`, subject: "Club", body: `Get me reservations +1 Thursday night after 8pm: ${VENUE}` });
+  expect(arrival).toMatchObject({ outcome: "SIMONE_QUEUED", reply: null });
+  const call = (await claimSimone(env))!;
+  expect(call.id).toBe(arrival.taskId);
+  const work = await simoneTool(env, { ...call, tool: "queue_errand" });
+  expect(work).toMatchObject({ ok: true, receipt: expect.stringMatching(/^cmd_/) });
+  const { receipt: id } = work as { receipt: string };
   await errandSent(env as never, id, { message_id: "em_fake1", subject: "Reservation request: Thursday, October 29, party of 2", text: "Hello", request: "a table for two at The Example Club on Thursday, October 29, any time after 8:00 pm" });
   await say({ from: `Jamie Rivera <${VENUE}>`, subject: "Re: Reservation request: Thursday, October 29, party of 2", body: OPTIONS_REPLY, messageId: VENUE_MESSAGE_ID });
   return id;

@@ -41,7 +41,7 @@ import { editDutyFromMail } from "../duties/editByMail";
 import { answerCommentWatchFromMail } from "../commentWatch/answer";
 import { answerKdpFromMail } from "../kdp/answer";
 import { dismissFromMail, DISMISS_REPLY_RE } from "../capital/dismiss";
-import { prospectTemplateFromMail } from "../lp/templateReply";
+import { prospectTemplateFromMail, templateIdIn } from "../lp/templateReply";
 import { decideAnswerFromMail, morningDayOf } from "../lp/decideReply";
 import { morningReplyFromMail } from "./morningReply";
 import { morningCommands } from "../../../shared/boss/mail/morningReply.mjs";
@@ -710,6 +710,12 @@ async function handleMail(message: BossMailMessage, env: Env, said: Said): Promi
   const recordedRefs = chainRefs.refs.length ? chainRefs : await refsForCode(env.DB, ownerText);
   const explicitRefs = [...recordedRefs.refs, ...refsIn(ownerText)];
   const chiefMailbox = to === BOSS_INTAKE_MAILBOX || to === SIMONE_MAILBOX;
+  // An older prospect draft can be addressed by its exact reference after thread headers are lost.
+  if (chiefMailbox && !explicitRefs.length) {
+    const templateId = templateIdIn(writtenByOwner);
+    const existing = templateId && await env.DB.prepare(`SELECT id FROM prospect_templates WHERE id = ?`).bind(templateId).first();
+    if (existing) explicitRefs.push(templateId);
+  }
   const linkedArrival = chiefMailbox && !explicitRefs.length && chain.length
     ? await env.DB.prepare(`SELECT command_id FROM boss_inbound_mail
        WHERE message_id IN (${chain.map(() => "?").join(",")}) AND authorised = 1
