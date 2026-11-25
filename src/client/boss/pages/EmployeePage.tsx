@@ -1,3 +1,4 @@
+import { TellSimone } from "../components/TellSimone";
 /**
  * ONE PAGE PER EMPLOYEE — Builder U, approved 23 Oct 2026 (mock-up board 8).
  *
@@ -66,6 +67,7 @@ export function EmployeePage({ id, onBack }: { id: string; onBack: () => void })
       {e.id === "emp_knowledge" && <WaitingOnRegister />}
 
       {e.id === "emp_growth" && <MessageNoelle onError={setError} />}
+      {e.id === "emp_chief" && <TellSimone page />}
 
       <section className="panel" data-testid="employee-tell-simone" aria-label={`Give ${e.name} a one-off task`}>
         <p className="row-title" style={{ marginTop: 0 }}>Give {e.name} a one-off task</p>

@@ -1,0 +1,77 @@
+{
+  "permissions": {
+    "defaultMode": "dontAsk",
+    "allow": [
+      "Read(~/Work/simone/**)",
+      "Edit(~/Work/simone/**)",
+      "Read(~/Brains/**)",
+      "Read(~/.claude/skills/**)",
+      "Read(~/.claude/CLAUDE.md)",
+      "Bash",
+      "WebSearch",
+      "WebFetch",
+      "mcp__claude_ai_Gmail__search_threads",
+      "mcp__claude_ai_Gmail__get_thread",
+      "mcp__claude_ai_Google_Drive__search_files",
+      "mcp__claude_ai_Google_Drive__get_file_metadata"
+    ],
+    "deny": [
+      "Bash(claude:*)",
+      "Bash(ai-run:*)",
+      "Bash(gh:*)",
+      "Bash(wrangler:*)",
+      "Edit(~/.claude/**)",
+      "Edit(~/Brains/**)",
+      "Edit(~/Work/simone/owner-notes.md)",
+      "Edit(~/Work/simone/.claude/**)",
+      "Agent",
+      "Task",
+      "Skill",
+      "SendMessage",
+      "Workflow",
+      "RemoteTrigger",
+      "CronCreate",
+      "CronDelete",
+      "ScheduleWakeup",
+      "mcp__8raise",
+      "mcp__claude-in-chrome",
+      "mcp__claude_ai_8Raise"
+    ]
+  },
+  "sandbox": {
+    "enabled": true,
+    "failIfUnavailable": true,
+    "allowUnsandboxedCommands": false,
+    "autoAllowBashIfSandboxed": true,
+    "enableWeakerNetworkIsolation": false,
+    "excludedCommands": [],
+    "filesystem": {
+      "allowWrite": [
+        "~/Work/simone",
+        "~/.boss-os/simone/runs/__RUN__"
+      ],
+      "denyWrite": [
+        "~/Work/simone/owner-notes.md",
+        "~/Work/simone/.claude"
+      ],
+      "denyRead": [
+        "~/"
+      ],
+      "allowRead": [
+        "~/Work/simone",
+        "~/.boss-os/simone/runs/__RUN__",
+        "~/Brains",
+        "~/.claude/skills",
+        "~/.claude/CLAUDE.md"
+      ]
+    },
+    "network": {
+      "allowedDomains": [
+        "github.com",
+        "api.github.com",
+        "codeload.github.com",
+        "registry.npmjs.org"
+      ]
+    }
+  }
+}

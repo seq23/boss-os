@@ -106,6 +106,7 @@ export async function handleTask(env: Env, msg: TaskMessage): Promise<void> {
    * is out of usage does her run hand it back marked noelle_cloud (releaseCall), and the
    * ladder answers it like any other task.
    */
+  if (task.employee_id === "emp_chief" && parkedInput.agent === "simone") return;
   if (task.employee_id === "emp_growth" && (parkedInput.source === "boss_inbound_mail" || parkedInput.source === "boss_page") && !parkedInput.noelle_cloud) {
     const seen = await env.DB.prepare(`SELECT 1 FROM task_events WHERE task_id = ? AND event = 'parked_for_mac' LIMIT 1`).bind(task.id).first();
     if (!seen) await env.DB

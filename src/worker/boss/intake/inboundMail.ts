@@ -1,3 +1,5 @@
+import { fileSimoneMessage, SIMONE } from "../agents/simone";
+import { SIMONE_MAILBOX } from "../../../shared/boss/intake/mail.mjs";
 import { replyAllRecipients } from "../../../shared/boss/mail/replyNeed.mjs";
 import type { Env } from "../env";
 import { refsForChain, refsForCode, chainIds, refTail } from "./mailRefs";
@@ -190,6 +192,7 @@ export async function activeRoster(env: Env): Promise<BossSeat[]> {
 }
 
 export interface BossMailMessage {
+  console?: boolean;
   from: string;
   to: string;
   headers: Headers;
@@ -385,7 +388,7 @@ async function handleMail(message: BossMailMessage, env: Env, said: Said): Promi
    * for why a replay door exists at all — and a row that claimed Cloudflare had DMARC-verified a
    * message nobody posted would be a lie in the one table whose whole job is saying what was proven.
    */
-  const viaConsole = (message.headers.get("x-boss-intake-origin") ?? "").toLowerCase() === "console";
+  const viaConsole = message.console === true;
   /*
    * ─── A QUESTION SHE CANNOT ANSWER IS A QUESTION THAT NAGS FOR EVER ────────
    *
@@ -724,6 +727,24 @@ async function handleMail(message: BossMailMessage, env: Env, said: Said): Promi
    * Monique email. Applied to D1 at once; Monique confirms in one line. When the edits are all the
    * reply said, nothing else opens; otherwise the rest of the message goes on as ordinary work.
    */
+  // Existing structured replies have their own scoped handlers. New messages to the chief
+  // are filed before any of the legacy classifiers, even when no model is available.
+  if ((to === BOSS_INTAKE_MAILBOX || to === SIMONE_MAILBOX) && !threadRefs.refs.length && !viaConsole) {
+    const subjectFromForward = forwardedOrigin(readable)?.subject ?? null;
+    const instruction = herSubjectOf(subject, subjectFromForward);
+    const identity = messageId
+      ? Array.from(new Uint8Array(await crypto.subtle.digest("SHA-256", new TextEncoder().encode(`${sender}\n${messageId}`))), (b) => b.toString(16).padStart(2, "0")).join("")
+      : mailId;
+    const taskId = await fileSimoneMessage(env, {
+      source: "boss_inbound_mail", subject: subject || "Message to Simone",
+      body: [instruction, her].filter(Boolean).join("\n\n"),
+      context: taskBody,
+      mail_id: mailId, from: sender, to, message_id: messageId ?? undefined, reply_chain: chain,
+    }, identity, now);
+    await finish({ outcome: "SIMONE_QUEUED", why: "Simone has the message on her work list.", employeeId: SIMONE, taskId, objectKey });
+    return { mailId, outcome: "SIMONE_QUEUED", employeeId: SIMONE, taskId, reply: null, messageId };
+  }
+
   const origin = readable ? forwardedOrigin(readable) : null;
   const trueSubject = origin?.subject ? decodeHeader(origin.subject) : subject;
   const fileNames = [...files.heard.map((h) => h.filename), ...files.read.map((r) => r.filename), ...files.unopened.map((u) => u.filename)];

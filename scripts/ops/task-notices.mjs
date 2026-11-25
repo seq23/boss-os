@@ -305,12 +305,16 @@ export async function sendNotice(notice, { fetchImpl = fetch, to = TO, task = nu
   // default is 1): the task read here decides, through the same rule the Worker uses.
   if (repairTask(task) && !needsHer({ kind: notice.kind, repair: true })) return ON_PAGE;
   if (notice.kind === "stopped" && neverStarted(task)) return ON_PAGE;
+  const simoneReply = notice.kind === "simone_result";
+  const input = simoneReply && typeof task?.input === "string" ? JSON.parse(task.input) : task?.input;
+  if (simoneReply && (input?.agent !== "simone" || input.source !== "boss_inbound_mail")) return "The original Simone mail task could not be read";
+  const thread = simoneReply ? [...(input.reply_chain ?? []), input.message_id] : [];
   const senders = sendersFor(notice.from_name);
   if (senders.length === 0) return "no Resend key in the environment (BOSS_OS_MAIL_KEY / BOSS_OS_FALLBACK_MAIL_KEY)";
   const prelaid = notice.kind === "stopped" ? stoppedEmail(notice, task) : (alarmNoticeEmail(notice) ?? researchDoneEmail(notice, page, senders[0]?.name));
   let last = "";
   for (const sender of senders) {
-    const res = await postEmployeeMail(sender, employeeMail(sender, { to, subject: notice.subject, text: notice.body, prelaid, owner: prelaid ? null : noticeOwner(notice) }), fetchImpl);
+    const res = await postEmployeeMail(sender, employeeMail(sender, { to: simoneReply ? input.from : to, subject: simoneReply ? `Re: ${notice.subject.replace(/^Re:\s*/i, "")}` : notice.subject, text: notice.body, thread, prelaid, owner: prelaid ? null : noticeOwner(notice) }), fetchImpl);
     if (res.ok) {
       say(`sent "${notice.subject}" from ${sender.from}`);
       if (sender.fallback) say(FALLBACK_STOP);

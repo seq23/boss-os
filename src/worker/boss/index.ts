@@ -55,6 +55,7 @@ import { taskNotices } from "./routes/taskNotices";
 import { mailRefs } from "./intake/mailRefs";
 import { mail } from "./mail/history";
 import { commands } from "./commands/routes";
+import { simone, SIMONE_MACHINE_PATHS } from "./routes/simone";
 import { service } from "./routes/service";
 import { commentWatch, COMMENT_WATCH_PATH } from "./routes/commentWatch";
 import { gridHealth } from "./routes/gridHealth";
@@ -149,7 +150,7 @@ app.use("/api/*", async (c, next) => {
   // The backlink network's read of the Director's backlink orders: the same token, checked in routes/growth.ts.
   if (c.req.path === BACKLINK_ORDERS_PATH && c.req.method === "GET") return next();
   // Noelle's run on her Mac (context, done, notice, ledger, call): the same token, checked in routes/growth.ts.
-  if (NOELLE_PATHS.has(c.req.path)) return next();
+  if (NOELLE_PATHS.has(c.req.path) || SIMONE_MACHINE_PATHS.has(c.req.path)) return next();
   return requireSession(c, next);
 });
 
@@ -159,6 +160,7 @@ app.route("/api/approvals", approvals);
 app.route("/api/employees", employees);
 app.route("/api/tasks", tasks);
 app.route("/api/intake", intake);
+app.route("/api/simone", simone);
 app.route("/api/models", models);
 app.route("/api/memory", memory);
 app.route("/api/relationships", relationships);
