@@ -112,7 +112,7 @@ const fakeFetch = (files: Record<string, unknown>): typeof fetch => (async (url:
   const v = k ? files[k] : 404;
   if (v instanceof Error) throw v;
   if (typeof v === "number") return new Response("no", { status: v });
-  return new Response(JSON.stringify(v), { status: 200 });
+  return new Response(typeof v === "string" ? v : JSON.stringify(v), { status: 200 });
 }) as typeof fetch;
 const NOTHING: typeof fetch = fakeFetch({});
 
@@ -335,7 +335,7 @@ describe("the results ledger: a post only on the platform's receipt (H5), measur
   });
 });
 
-describe("H5, Monday: every post a posting job recorded has its ledger row", () => {
+describe("H5, Monday: every posting path of every growth business is reconciled, named, or not wired", () => {
   const MON = Date.parse("2026-11-30T15:00:00Z");
   const IG = {
     posts: {
@@ -345,38 +345,90 @@ describe("H5, Monday: every post a posting job recorded has its ledger row", () 
     },
   };
   const TH = { posts: { pbs09: { runs: [{ buffer_id: "th9", queued_at: "2026-11-27T01:50:15.755Z" }] } } };
-  const ledger = (channel: string, item: string, receipt: string) => call("/noelle/ledger", { kind: "post", business: "peace-be-still", channel, item, receipt: { id: receipt }, at: "2026-11-27T01:00:00Z" });
+  // The real shapes: ApprovalPrep/Dream Wedding brand social (channel-keyed), KeepMyProof's syndication list,
+  // the LinkedIn posters before LinkedIn grants access, and a Pinterest profile feed.
+  const BRAND = { posts: { "dw-w48": { instagram: { buffer_id: "dwig1", queued_at: "2026-11-25T23:48:44.850Z" }, tiktok: { buffer_id: "dwtt1", queued_at: "2026-11-25T23:57:33.798Z" } } } };
+  const KMP = [{ lane: "blogger", url: "https://keepmyproof.com/executor/x/delaware", day: "2026-11-26", at: "2026-11-26T02:35:24.377Z", id: "https://keepmyproof.blogspot.com/2026/11/x-in_0711271715.html" }];
+  const LI = { access: "none", posted: [] };
+  const PINS = `<rss><channel><item><guid>https://www.pinterest.com/pin/1115133557773957560/</guid><pubDate>Thu, 26 Nov 2026 21:21:59 GMT</pubDate></item></channel></rss>`;
+  const wf = (posted: string) => `jobs:\n  post:\n    steps:\n      - uses: seq23/boss-os/.github/actions/ledger-rows@main\n        with:\n          file: ${posted}\n`;
+  const unwired = "jobs:\n  post:\n    steps:\n      - run: npm run post\n";
+  const ledger = (business: string, channel: string, item: string, receipt: string, at = "2026-11-27T01:00:00Z") => call("/noelle/ledger", { kind: "post", business, channel, item, receipt: { id: receipt }, at });
   const IG_FILE = "peace-be-still/main/data/instagram/posted.json";
   const TH_FILE = "peace-be-still/main/data/threads/posted.json";
+  // Every path wired, each with its real-shaped receipt file.
+  const allWired = (over: Record<string, unknown> = {}) => {
+    const files: Record<string, unknown> = {};
+    for (const o of Object.values(CHANNEL_OWNERS) as any[]) {
+      if (o.noReceipt) continue;
+      files[`${o.repo}/main/.github/workflows/${o.workflow}`] = wf(o.feed ?? o.posted);
+      files[o.feed ?? `${o.repo}/main/${o.posted}`] = o.feed ? PINS : /linkedin/.test(o.posted) ? LI : /syndication/.test(o.posted) ? KMP : /brand-social|porch-and-party-posted/.test(o.posted) ? BRAND : { posts: {} };
+    }
+    return fakeFetch({ ...files, [IG_FILE]: IG, [TH_FILE]: TH, ...over });
+  };
 
-  it("every Peace Be Still path is wired (its posted file and the day its rows begin); the rest are named as not wired", () => {
-    for (const p of ["peace-be-still:threads", "peace-be-still:instagram", "peace-be-still:facebook-page"]) expect((CHANNEL_OWNERS as any)[p]).toMatchObject({ posted: expect.stringMatching(/^data\/\w+\/posted\.json$/), ledger: "2026-11-24" });
+  it("every growth business's posting path is listed with its workflow and its receipt (a posted file, a Pinterest feed, or a named reason)", () => {
+    const keys = Object.keys(CHANNEL_OWNERS);
+    for (const p of ["approvalprep:instagram", "approvalprep:threads", "approvalprep:pinterest", "approvalprep:linkedin", "dream-wedding:instagram", "dream-wedding:tiktok", "dream-wedding:pinterest",
+      "porch-and-party:instagram", "porch-and-party:tiktok", "a-player-mode:pinterest", "a-player-mode:linkedin", "peace-be-still:instagram", "peace-be-still:threads", "keepmyproof:blogger"]) expect(keys).toContain(p);
+    for (const [p, o] of Object.entries(CHANNEL_OWNERS) as Array<[string, any]>) {
+      if (o.noReceipt) { expect(o.noReceipt.length, p).toBeGreaterThan(40); continue; }
+      expect(o.workflow, p).toMatch(/^[\w-]+\.yml$/);
+      expect(Boolean(o.posted) !== Boolean(o.feed), p).toBe(true);
+      if (o.feed) expect(o.feed, p).toMatch(/^https:\/\/www\.pinterest\.com\/\w+\/feed\.rss$/);
+    }
   });
 
-  it("a post with no row is a NAMED STOP; every row present says so; the not-wired paths are named, never passed", async () => {
-    await ledger("instagram", "p6:ig6", "ig6");
-    await ledger("facebook-page", "p6:fb6", "fb6");
-    await ledger("threads", "pbs09:th9", "th9");
-    const lines = await postsReconciled(env.DB, "2026-11-30", MON, fakeFetch({ [IG_FILE]: IG, [TH_FILE]: TH }));
+  it("a workflow on main with no ledger step is named not wired yet, never passed, and the summary counts it", async () => {
+    const lines = await postsReconciled(env.DB, "2026-11-30", MON, allWired({ "approvalprep/main/.github/workflows/threads-posts.yml": unwired }));
+    expect(lines.at(-1)).toMatch(/1 not wired yet, so not reconciled: approvalprep:threads \(approvalprep\/\.github\/workflows\/threads-posts\.yml has no ledger step\)$/);
+    expect(lines.join("\n")).not.toMatch(/approvalprep threads/);
+  });
+
+  it("every path wired: a post with no row is a NAMED STOP, rows present say so, LinkedIn with no access and Marketplace are named with their reason, 0 not wired yet", async () => {
+    await ledger("peace-be-still", "instagram", "p6:ig6", "ig6", "2026-11-26T01:54:45.119Z");
+    await ledger("peace-be-still", "facebook-page", "p6:fb6", "fb6", "2026-11-26T01:54:45.119Z");
+    await ledger("peace-be-still", "threads", "pbs09:th9", "th9", "2026-11-27T01:50:15.755Z");
+    // The test roster (the SPRY fixture) holds ApprovalPrep and Peace Be Still: the ledger refuses a business off it.
+    await ledger("approvalprep", "instagram", "dw-w48:dwig1", "dwig1", "2026-11-25T23:48:44.850Z");
+    await ledger("approvalprep", "pinterest", "pin:1115133557773957560", "1115133557773957560", "2026-11-26T21:21:59.000Z");
+    const lines = await postsReconciled(env.DB, "2026-11-30", MON, allWired());
     expect(lines).toContain("NAMED STOP [POST_NOT_LEDGERED] peace-be-still instagram: 1 of 2 posts this week have no ledger row (p7:ig7)");
     expect(lines).toContain("Posts ledger, peace-be-still facebook-page: 1 posts this week, every one has its row");
     expect(lines).toContain("Posts ledger, peace-be-still threads: 1 posts this week, every one has its row");
-    expect(lines.at(-1)).toMatch(/^Posts ledger: not wired yet, so not reconciled: .*approvalprep:threads.*porch-and-party:instagram/);
+    expect(lines).toContain("Posts ledger, approvalprep instagram: 1 posts this week, every one has its row");
+    expect(lines).toContain("Posts ledger, approvalprep pinterest: 1 posts this week, every one has its row");
+    expect(lines).toContain("NAMED STOP [POST_NOT_LEDGERED] dream-wedding tiktok: 1 of 1 posts this week have no ledger row (dw-w48:dwtt1); the path has no row at all yet");
+    expect(lines).toContain("NAMED STOP [POST_NOT_LEDGERED] keepmyproof blogger: 1 of 1 posts this week have no ledger row (delaware:x-in_0711271715); the path has no row at all yet");
+    expect(lines).toContain("Posts ledger, approvalprep linkedin: no receipt yet (approvalprep/data/linkedin/posted.json says access: none; the platform has not granted the page posting API)");
+    expect(lines).toContain("Posts ledger, keepmyproof wordpress: no post with a receipt this week");
+    expect(lines.find((l) => l.includes("facebook-marketplace"))).toMatch(/no receipt to read \(Facebook Marketplace has no posting API/);
+    expect(lines.at(-1)).toMatch(/^Posts ledger: 18 paths, 15 reconciled, 3 named without a receipt, 0 not read, 0 not wired yet$/);
   });
 
-  it("a posted file that cannot be read is 'not read', never 'every one has its row'", async () => {
-    const lines = await postsReconciled(env.DB, "2026-11-30", MON, fakeFetch({ [IG_FILE]: 503, [TH_FILE]: new Error("network down") }));
+  it("a posted file, feed or workflow that cannot be read is 'not read', never 'every one has its row'", async () => {
+    const lines = await postsReconciled(env.DB, "2026-11-30", MON, allWired({ [IG_FILE]: 503, [TH_FILE]: new Error("network down"), "https://www.pinterest.com/aplayermode/feed.rss": 403, "keepmyproof/main/.github/workflows/syndicate.yml": 500 }));
     expect(lines).toContain(`Posts ledger, peace-be-still instagram: not read (${IG_FILE.replace("/main", "")}: answered 503)`);
     expect(lines).toContain("Posts ledger, peace-be-still threads: not read (peace-be-still/data/threads/posted.json: network down)");
-    expect(lines.join("\n")).not.toMatch(/every one has its row/);
+    expect(lines).toContain("Posts ledger, a-player-mode pinterest: not read (https://www.pinterest.com/aplayermode/feed.rss: answered 403)");
+    expect(lines).toContain("Posts ledger, keepmyproof blogger: not read (keepmyproof/.github/workflows/syndicate.yml: answered 500)");
+    expect(lines.filter((l) => /peace-be-still (instagram|threads)|a-player-mode pinterest|keepmyproof blogger/.test(l)).join("\n")).not.toMatch(/every one has its row/);
+    expect(lines.at(-1)).toMatch(/, 6 not read, 0 not wired yet$/);
+  });
+
+  it("rows are judged from the path's first row: a post before the job's first ledger run is not counted against it", async () => {
+    await ledger("peace-be-still", "instagram", "p7:ig7", "ig7", "2026-11-27T01:54:45.119Z");
+    const lines = await postsReconciled(env.DB, "2026-11-30", MON, allWired());
+    expect(lines).toContain("Posts ledger, peace-be-still instagram: 1 posts this week, every one has its row");
   });
 
   it("Sunday's heartbeat carries the reconciliation into Monday's email", async () => {
     const SUN = Date.parse("2026-11-30T03:05:00Z");
     await env.DB.prepare(`INSERT INTO noelle_runs (id, day, slot, kind, state, stops, calls, line, reads, created_at, updated_at) VALUES ('noelle-sun', '2026-11-29', '12:12', 'daily', 'done', '[]', 1, 'x', '{"queues":{},"unread":{},"items":{}}', ?, ?)`).bind(SUN - 3_600_000, SUN - 3_600_000).run();
-    await noelleWatch(env as any, SUN, fakeFetch({ [IG_FILE]: IG, [TH_FILE]: TH }));
+    await noelleWatch(env as any, SUN, allWired());
     const all = JSON.parse((await rows(`SELECT body FROM morning_sections WHERE section = 'growth'`))[0].body).lines.map((l: any) => (typeof l === "string" ? l : l.text)).join("\n");
     expect(all).toMatch(/NAMED STOP \[POST_NOT_LEDGERED\] peace-be-still threads: 1 of 1 posts/);
+    expect(all).toMatch(/Posts ledger: 18 paths, .*0 not wired yet/);
   });
 });
 

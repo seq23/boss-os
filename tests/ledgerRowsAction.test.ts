@@ -49,6 +49,38 @@ describe("ledger-rows: every confirmed post sent once, every failure a named sto
     expect(r.line).toMatch(re);
   });
 
+  it("uses each platform's receipt and leaves out missing or unconfirmed receipts", async () => {
+    const at = "2026-11-25T00:00:00Z";
+    const fixtures = [
+      [ { posts: { one: { tiktok: { buffer_id: "t1", queued_at: at }, instagram: { queued_at: at } } } }, "tiktok", "t1" ],
+      [ { posted: [{ id: "internal", urn: "urn:li:share:100", at }, { id: "no-platform-id", urn: null, at }] }, "linkedin", "urn:li:share:100" ],
+      [ [{ lane: "blogger", id: "https://example.test/post-one.html", url: "https://example.test/source.html", at }], "blogger", "post-one" ],
+      [ [{ channel: "facebook", id: "studio1", at }], "facebook-page", "studio1" ],
+    ] as const;
+    for (const [doc, channel, id] of fixtures) {
+      const seen: any[] = [];
+      await sendLedgerRows(env({ LEDGER_FILE: file("receipt.json", doc), LEDGER_CHANNEL: channel }), answering(200, { written: 1, duplicate: 0 }, seen), NOW);
+      expect(JSON.parse(seen[0].init.body).rows).toEqual([expect.objectContaining({ channel, receipt: { id } })]);
+    }
+  });
+
+  it("reads a Pinterest receipt from its own RSS without sending the ledger token to Pinterest", async () => {
+    const feed = "https://www.pinterest.com/aplayermode/feed.rss";
+    const seen: any[] = [];
+    const transport = async (url: string, init: any) => {
+      if (url === feed) {
+        expect(init.headers.authorization).toBeUndefined();
+        return new Response("<rss><channel><item><guid>https://www.pinterest.com/pin/1234567/</guid><pubDate>Wed, 25 Nov 2026 00:00:00 GMT</pubDate></item></channel></rss>");
+      }
+      return answering(200, { written: 1, duplicate: 0 }, seen)(url, init);
+    };
+    const result = await sendLedgerRows(env({ LEDGER_FILE: "", LEDGER_FEED: feed }), transport as typeof fetch, NOW);
+    expect(result.code).toBe(0);
+    expect(JSON.parse(seen[0].init.body).rows[0]).toMatchObject({ channel: "pinterest", receipt: { id: "1234567" } });
+    expect((await sendLedgerRows(env({ LEDGER_FILE: "", LEDGER_FEED: "https://example.test/feed.rss" }), transport as typeof fetch, NOW)).line).toMatch(/POSTED_UNREAD/);
+    expect((await sendLedgerRows(env({ LEDGER_FILE: "", LEDGER_FEED: feed }), (async () => new Response("<html>login</html>")) as typeof fetch, NOW)).line).toMatch(/POSTED_UNREAD/);
+  });
+
   it("the action runs this script from its own checkout of boss-os", () => {
     const yml = readFileSync(join(__dirname, "../.github/actions/ledger-rows/action.yml"), "utf8");
     expect(yml).toMatch(/run: node "\$\{\{ github\.action_path \}\}\/ledger-rows\.mjs"/);

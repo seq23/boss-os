@@ -9,6 +9,7 @@ export function resultLines(rows: any[], readingsByMeasure: Record<string, any[]
 export const MEASURE_CHANNEL: Readonly<Record<string, string>>;
 export const RUN_CHANNEL: Readonly<Record<string, string>>;
 export function ledgerRowsFrom(doc: any, o: { business: string; channel?: string | null; now?: number; days?: number; since?: string | null }): Array<{ kind: "post"; business: string; channel: string; item: string; receipt: { id: string }; at: string }>;
+export function pinterestPins(xml: string): Array<{ id: string; at: string }>;
 export function postsWithoutRows(doc: any, items: string[], o: { business?: string; channel: string; since?: string | null; now?: number; days?: number }): { posted: number; missing: string[] };
 export const REPORT_EVERY_DAYS: number;
 export const REPORT_KEY: string;

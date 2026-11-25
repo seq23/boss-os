@@ -3,6 +3,7 @@ export const CADENCE: any;
 export const CALL_SLOT: any;
 export const CHANNEL_NAMES: any;
 export const CHANNEL_OWNERS: any;
+export const LEDGER_STEP: string;
 export const READ_SOURCES: any;
 export const SCHEDULE_SHOWN: any;
 export function cadenceOf(...args: any[]): any;

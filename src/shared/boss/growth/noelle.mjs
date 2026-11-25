@@ -20,31 +20,40 @@ import { CENTRAL, dayOf } from "../schedule/clock.mjs";
  * (her own PR), never by posting there by hand. "Full" is the job's own queue length (`max`).
  */
 /**
- * Every posting path she owns: the job, its repo, the most it keeps queued. H5 (24 Nov 2026): `posted` is the
- * job's own record of what the platform accepted and `ledger` the day its job started writing ledger rows
- * (.github/actions/ledger-rows); Monday reconciles those, and names every path without them as not wired.
+ * Every posting path she owns: the job, its repo, the most it keeps queued. H5 (24 Nov 2026; every growth business,
+ * the coordinator's scope change the same day): `workflow` is the posting job that calls .github/actions/ledger-rows
+ * on the platform's receipt, and the receipt it reads is `posted` (the job's own file, public on the repo's main)
+ * or `feed` (a Pinterest profile feed: the pins Pinterest took). Monday reads the workflow on main: no ledger step
+ * there → named "not wired yet", never passed. `noReceipt` names a path whose platform gives nothing to read.
  */
+const AP = "approvalprep", DW = "dream-wedding-builder", APM = "sprylabs-hpc-site", PBS = "peace-be-still";
 export const CHANNEL_OWNERS = Object.freeze({
-  "peace-be-still:threads": { job: "pbs-threads", repo: "peace-be-still", max: 4, posted: "data/threads/posted.json", ledger: "2026-11-24" },
-  "peace-be-still:instagram": { job: "pbs-instagram", repo: "peace-be-still", max: 3, posted: "data/instagram/posted.json", ledger: "2026-11-24" },
-  "peace-be-still:facebook-page": { job: "pbs-instagram", repo: "peace-be-still", max: 3, posted: "data/instagram/posted.json", ledger: "2026-11-24" },
-  "approvalprep:threads": { job: "ap-threads", repo: "approvalprep", max: 6 },
-  "approvalprep:instagram": { job: "ap-brand-social", repo: "approvalprep", max: 3 },
-  "approvalprep:pinterest": { job: "ap-pinterest", repo: "approvalprep", max: 10 },
-  "dream-wedding:pinterest": { job: "dw-pinterest", repo: "dream-wedding-builder", max: 10 },
-  "dream-wedding:instagram": { job: "dw-brand-social", repo: "dream-wedding-builder", max: 3 },
-  "dream-wedding:tiktok": { job: "dw-brand-social", repo: "dream-wedding-builder", max: 3 },
-  "a-player-mode:pinterest": { job: "apm-pinterest", repo: "sprylabs-hpc-site", max: 10 },
+  "peace-be-still:threads": { job: "pbs-threads", repo: PBS, max: 4, workflow: "threads-posts.yml", posted: "data/threads/posted.json", channel: "threads" },
+  "peace-be-still:instagram": { job: "pbs-instagram", repo: PBS, max: 3, workflow: "instagram-posts.yml", posted: "data/instagram/posted.json" },
+  "peace-be-still:facebook-page": { job: "pbs-instagram", repo: PBS, max: 3, workflow: "instagram-posts.yml", posted: "data/instagram/posted.json" },
+  "approvalprep:threads": { job: "ap-threads", repo: AP, max: 6, workflow: "threads-posts.yml", posted: "data/threads/posted.json", channel: "threads" },
+  "approvalprep:instagram": { job: "ap-brand-social", repo: AP, max: 3, workflow: "brand-social-posts.yml", posted: "data/brand-social/posted.json" },
+  "approvalprep:pinterest": { job: "ap-pinterest", repo: AP, max: 10, workflow: "pinterest-refill.yml", feed: "https://www.pinterest.com/approvalprep/feed.rss" },
+  "dream-wedding:pinterest": { job: "dw-pinterest", repo: DW, max: 10, workflow: "pinterest-drip.yml", feed: "https://www.pinterest.com/weddingchecklistpdf/feed.rss" },
+  "dream-wedding:instagram": { job: "dw-brand-social", repo: DW, max: 3, workflow: "brand-social-posts.yml", posted: "data/brand-social/posted.json" },
+  "dream-wedding:tiktok": { job: "dw-brand-social", repo: DW, max: 3, workflow: "brand-social-posts.yml", posted: "data/brand-social/posted.json" },
+  // The existing refill workflow checks the profile feed for pins Pinterest accepted.
+  "a-player-mode:pinterest": { job: "apm-pinterest", repo: APM, max: 10, workflow: "aplayermode-pin-drip.yml", feed: "https://www.pinterest.com/aplayermode/feed.rss" },
   // Her words 24 Nov 2026: "make sure noelle is in charge of linkedin also for the apps that have a linkedin page".
-  "approvalprep:linkedin": { job: "ap-linkedin", repo: "approvalprep", max: 7 },
-  "a-player-mode:linkedin": { job: "apm-linkedin", repo: "sprylabs-hpc-site", max: 7 },
-  "keepmyproof:blogger": { job: "kmp-syndication", repo: "keepmyproof", max: 4 },
-  "keepmyproof:wordpress": { job: "kmp-syndication", repo: "keepmyproof", max: 4 },
-  "porch-and-party:instagram": { job: "pnp-studio", repo: "creator-studios", max: 14 },
-  "porch-and-party:tiktok": { job: "pnp-studio", repo: "creator-studios", max: 14 },
-  "porch-and-party:facebook-page": { job: "pnp-studio", repo: "creator-studios", max: 14 },
-  "porch-and-party:facebook-marketplace": { job: "pnp-marketplace", repo: "p-n-p", max: 20 },
+  "approvalprep:linkedin": { job: "ap-linkedin", repo: AP, max: 7, workflow: "linkedin-posts.yml", posted: "data/linkedin/posted.json", channel: "linkedin" },
+  "a-player-mode:linkedin": { job: "apm-linkedin", repo: APM, max: 7, workflow: "aplayermode-linkedin.yml", posted: "aplayermode/data/linkedin/posted.json", channel: "linkedin" },
+  "keepmyproof:blogger": { job: "kmp-syndication", repo: "keepmyproof", max: 4, workflow: "syndicate.yml", posted: "data/syndication-ledger.json" },
+  "keepmyproof:wordpress": { job: "kmp-syndication", repo: "keepmyproof", max: 4, workflow: "syndicate.yml", posted: "data/syndication-ledger.json" },
+  // P&P Studio (creator-studios' sample1 Worker) posts through Buffer from its own database; a daily job copies
+  // what Buffer accepted into data/ledger/porch-and-party-posted.json and sends the rows.
+  "porch-and-party:instagram": { job: "pnp-studio", repo: "creator-studios", max: 14, workflow: "pnp-ledger.yml", posted: "data/ledger/porch-and-party-posted.json" },
+  "porch-and-party:tiktok": { job: "pnp-studio", repo: "creator-studios", max: 14, workflow: "pnp-ledger.yml", posted: "data/ledger/porch-and-party-posted.json" },
+  "porch-and-party:facebook-page": { job: "pnp-studio", repo: "creator-studios", max: 14, workflow: "pnp-ledger.yml", posted: "data/ledger/porch-and-party-posted.json" },
+  "porch-and-party:facebook-marketplace": { job: "pnp-marketplace", repo: "p-n-p", max: 20,
+    noReceipt: "Facebook Marketplace has no posting API: the Mac job (~/bin/pnp-listings.sh) renews the listings in her Chrome and gets no listing id back" },
 });
+/** The step a wired workflow carries (Monday reads the workflow on main for it). */
+export const LEDGER_STEP = "seq23/boss-os/.github/actions/ledger-rows@";
 
 /** G13: how a roster channel is judged. Only `queue` channels are judged on scheduled days. */
 export const CADENCE = Object.freeze(["queue", "weekly", "event", "by-hand", "none"]);

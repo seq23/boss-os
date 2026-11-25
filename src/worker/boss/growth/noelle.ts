@@ -28,7 +28,7 @@ import { summarize } from "../../../shared/boss/growth/scoreboard.mjs";
 import { rulingsFor } from "../../../shared/boss/growth/roster.mjs";
 import { privateOnlyTerms, leaksIn, termCount } from "../../../shared/boss/growth/privacy.mjs";
 import { playbookBody } from "../../../shared/boss/growth/playbook.mjs";
-import { readGrid, season, slotFor, didNotRunLine, escalations, noticeLine, scheduleLines, zeroQueued, CHANNEL_NAMES, CHANNEL_OWNERS } from "../../../shared/boss/growth/noelle.mjs";
+import { readGrid, season, slotFor, didNotRunLine, escalations, noticeLine, scheduleLines, zeroQueued, CHANNEL_NAMES, CHANNEL_OWNERS, LEDGER_STEP } from "../../../shared/boss/growth/noelle.mjs";
 import { appendToSection } from "../../../shared/boss/mail/morningSections.mjs";
 import { MAX_ACTED, cleanActed, floorsFor, measureFor, resultLines, postsWithoutRows, reportDue, fortnightReport, REPORT_KEY, REPORT_EVERY_DAYS } from "../../../shared/boss/growth/ledger.mjs";
 import { getSetting, setSetting } from "../lib/settings";
@@ -136,7 +136,7 @@ export async function recordDone(env: Env, body: any, now = Date.now()) {
   const stops = (Array.isArray(body.stops) ? body.stops : []).map(String).filter((s: string) => /^[A-Z0-9_]{2,40}$/.test(s)).slice(0, 8);
   if (state === "stopped" && !stops.length) throw new Error("A stopped run must name its stop code");
   const reported = String(body.line ?? "");
-  if (state === "done" && zeroQueued(reported)) throw new Error("NAMED STOP [NOTHING_DONE] a zero-queue run cannot be recorded as done");
+  if (state === "done" && zeroQueued(reported)) throw new Error("[NOTHING_DONE] a zero-queue run cannot be recorded as done");
   const line = reported.slice(0, 600);
   const turns = Number.isInteger(body.turns) && body.turns >= 0 ? Math.min(body.turns, 10_000) : 0;
   const reads = body.reads && typeof body.reads === "object" ? JSON.stringify(body.reads).slice(0, 60_000) : "{}";
@@ -316,37 +316,56 @@ export async function weekSchedule(env: Env, today: string, now = Date.now(), fe
 const RAW = "https://raw.githubusercontent.com/seq23";
 
 /**
- * H5, Monday's line: every post a posting job recorded in the last 7 days (its repo's posted file, public)
- * has its ledger row. A post with no row → NAMED STOP [POST_NOT_LEDGERED] (red); a posted file that could
- * not be read → "not read", never "all ledgered"; a path not wired to the ledger yet is named, never passed.
+ * H5, Monday's line, for every posting path she owns (CHANNEL_OWNERS): each post its job recorded in the last 7
+ * days (the posted file on the repo's main, or the Pinterest profile feed) has its ledger row. A path is judged
+ * only when its workflow on main carries the ledger step; otherwise it is named "not wired yet", never passed.
+ * A post with no row → NAMED STOP [POST_NOT_LEDGERED]; a file, feed or workflow that could not be read → "not
+ * read", never "every one has its row"; a path whose platform gives no receipt is named with its reason. Rows
+ * are judged from the day of the path's first row (a job's first ledger run sends its last 8 days).
  */
 export async function postsReconciled(db: D1Database, today: string, now = Date.now(), fetchImpl: typeof fetch = fetch) {
   const lines: string[] = [];
-  const files = new Map<string, Array<[string, any]>>();
   const notWired: string[] = [];
-  for (const [path, o] of Object.entries(CHANNEL_OWNERS) as Array<[string, any]>) {
-    if (!o.ledger) { notWired.push(path); continue; }
-    const k = `${o.repo}/${o.posted}`;
-    files.set(k, [...(files.get(k) ?? []), [path, o]]);
-  }
-  for (const [k, paths] of files) {
-    let doc: any = null; let why = "";
-    try {
-      const first = paths[0]![1];
-      const res = await fetchImpl(`${RAW}/${first.repo}/main/${first.posted}`);
-      if (res.ok) doc = await res.json(); else why = `answered ${res.status}`;
-    } catch (e) { why = String((e as Error)?.message ?? e).slice(0, 80); }
-    for (const [path, o] of paths) {
-      const [business = "", channel = ""] = path.split(":");
-      if (!doc) { lines.push(`Posts ledger, ${business} ${channel}: not read (${k}: ${why || "not JSON"})`); continue; }
-      const rows = (await db.prepare(`SELECT item FROM noelle_actions WHERE kind = 'post' AND business = ? AND channel = ? AND day >= ?`).bind(business, channel, o.ledger).all<{ item: string }>()).results ?? [];
-      const miss = postsWithoutRows(doc, rows.map((x) => x.item), { business, channel, since: o.ledger, now, days: 7 });
-      lines.push(miss.missing.length
-        ? `NAMED STOP [POST_NOT_LEDGERED] ${business} ${channel}: ${miss.missing.length} of ${miss.posted} posts this week have no ledger row (${miss.missing.slice(0, 3).join(", ")})`
-        : `Posts ledger, ${business} ${channel}: ${miss.posted} posts this week, every one has its row`);
+  const cache = new Map<string, Promise<{ ok: true; body: string } | { ok: false; why: string }>>();
+  const read = (url: string) => {
+    if (!cache.has(url)) cache.set(url, (async () => {
+      try {
+        const res = await fetchImpl(url);
+        return res.ok ? { ok: true as const, body: await res.text() } : { ok: false as const, why: `answered ${res.status}` };
+      } catch (e) { return { ok: false as const, why: String((e as Error)?.message ?? e).slice(0, 80) }; }
+    })());
+    return cache.get(url)!;
+  };
+  const entries = Object.entries(CHANNEL_OWNERS) as Array<[string, any]>;
+  let judged = 0, named = 0, unread = 0;
+  for (const [path, o] of entries) {
+    const [business = "", channel = ""] = path.split(":");
+    const who = `Posts ledger, ${business} ${channel}`;
+    if (o.noReceipt) { lines.push(`${who}: no receipt to read (${o.noReceipt})`); named++; continue; }
+    const wfPath = `${o.repo}/.github/workflows/${o.workflow}`;
+    const wf = await read(`${RAW}/${o.repo}/main/.github/workflows/${o.workflow}`);
+    if (!wf.ok) { lines.push(`${who}: not read (${wfPath}: ${wf.why})`); unread++; continue; }
+    if (!wf.body.includes(LEDGER_STEP) || !wf.body.includes(o.feed ?? o.posted)) { notWired.push(`${path} (${wfPath} has no ledger step)`); continue; }
+    const src = o.feed ?? `${RAW}/${o.repo}/main/${o.posted}`;
+    const srcName = o.feed ?? `${o.repo}/${o.posted}`;
+    const got = await read(src);
+    if (!got.ok) { lines.push(`${who}: not read (${srcName}: ${got.why})`); unread++; continue; }
+    let doc: any = got.body;
+    if (!o.feed) { try { doc = JSON.parse(got.body); } catch { lines.push(`${who}: not read (${srcName}: not JSON)`); unread++; continue; } }
+    if (doc && typeof doc === "object" && !Array.isArray(doc) && doc.access === "none") {
+      lines.push(`${who}: no receipt yet (${srcName} says access: none; the platform has not granted the page posting API)`); named++; continue;
     }
+    const rows = (await db.prepare(`SELECT item, COALESCE(post_at, day) AS first_at FROM noelle_actions WHERE kind = 'post' AND business = ? AND channel = ?`).bind(business, channel).all<{ item: string; first_at: string }>()).results ?? [];
+    const since = rows.map((x) => x.first_at).sort()[0] ?? null;
+    const miss = postsWithoutRows(doc, rows.map((x) => x.item), { business, channel, since, now, days: 7 });
+    judged++;
+    lines.push(miss.missing.length
+      ? `NAMED STOP [POST_NOT_LEDGERED] ${business} ${channel}: ${miss.missing.length} of ${miss.posted} posts this week have no ledger row (${miss.missing.slice(0, 3).join(", ")})${since ? "" : "; the path has no row at all yet"}`
+      : miss.posted ? `${who}: ${miss.posted} posts this week, every one has its row` : `${who}: no post with a receipt this week`);
   }
-  if (notWired.length) lines.push(`Posts ledger: not wired yet, so not reconciled: ${notWired.join(", ")}`);
+  lines.push(notWired.length
+    ? `Posts ledger: ${entries.length} paths, ${judged} reconciled, ${named} named without a receipt, ${unread} not read, ${notWired.length} not wired yet, so not reconciled: ${notWired.join(", ")}`
+    : `Posts ledger: ${entries.length} paths, ${judged} reconciled, ${named} named without a receipt, ${unread} not read, 0 not wired yet`);
   return lines;
 }
 

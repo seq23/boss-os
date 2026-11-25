@@ -10,8 +10,13 @@ inputs:
     description: The roster key (for example peace-be-still).
     required: true
   file:
-    description: The posted file the job writes (for example data/instagram/posted.json).
-    required: true
+    description: The posted file the job writes (for example data/instagram/posted.json). Give this or feed.
+    required: false
+    default: ""
+  feed:
+    description: For a Pinterest path, the account's profile feed (https://www.pinterest.com/<account>/feed.rss). Give this or file.
+    required: false
+    default: ""
   channel:
     description: The channel, when the file's runs do not name one (for example threads).
     required: false
@@ -31,6 +36,7 @@ runs:
       env:
         LEDGER_BUSINESS: ${{ inputs.business }}
         LEDGER_FILE: ${{ inputs.file }}
+        LEDGER_FEED: ${{ inputs.feed }}
         LEDGER_CHANNEL: ${{ inputs.channel }}
         LEDGER_TOKEN: ${{ inputs.token }}
         LEDGER_ORIGIN: ${{ inputs.origin }}

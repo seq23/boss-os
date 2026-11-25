@@ -115,24 +115,73 @@ export const RUN_CHANNEL = Object.freeze({ facebook: "facebook-page" });
 const DAY_MS = 86_400_000;
 
 /**
- * Every post a posting job recorded (`{ posts: { <id>: { runs: [{ channel?, buffer_id | id, queued_at }] } } }`,
- * written only after the platform accepted it) in the last `days` days, as ledger rows. One definition for
- * the posting jobs' writer (.github/actions/ledger-rows) and Monday's reconciliation (postsWithoutRows).
+ * Every post a posting job recorded, written only after the platform accepted it, in the last `days` days, as
+ * ledger rows. One definition for the posting jobs' writer (.github/actions/ledger-rows) and Monday's
+ * reconciliation (postsWithoutRows). The four receipt shapes the posting jobs keep (scope: every growth
+ * business, 24 Nov 2026), told apart by structure:
+ *   runs      { posts: { <id>: { runs: [{ channel?, buffer_id | id, queued_at }] } } }  Peace Be Still, ApprovalPrep Threads
+ *   channels  { posts: { <id>: { <channel>: { buffer_id, queued_at } } } }            ApprovalPrep and Dream Wedding brand social
+ *   entries   [{ lane | channel, id | urn, at }] or { posted: [...] }                 KeepMyProof syndication, the LinkedIn posters
+ *   a Pinterest profile feed (the RSS text): each <item>'s guid is the pin's id, its pubDate when Pinterest took it
+ * A receipt that is a URL (KeepMyProof's Blogger and WordPress posts) is its last path segment.
  */
 export function ledgerRowsFrom(doc, { business, channel = null, now = Date.now(), days = 8, since = null }) {
-  const from = Math.max(now - days * DAY_MS, since ? Date.parse(`${since}T00:00:00Z`) : 0);
+  const from = Math.max(now - days * DAY_MS, since ? Date.parse(since) : 0);
   const rows = [];
+  const add = (key, receiptRaw, at, ch) => {
+    const receipt = receiptOf(receiptRaw);
+    ch = RUN_CHANNEL[ch] ?? ch ?? channel;
+    if (!receipt || !ch || !(Date.parse(at) >= from)) return;
+    const item = `${String(key).replace(/[^\w.-]+/g, "").slice(0, 40)}:${receipt}`;
+    rows.push({ kind: "post", business, channel: ch, item, receipt: { id: receipt }, at: new Date(Date.parse(at)).toISOString() });
+  };
+  if (typeof doc === "string") {
+    for (const it of pinterestPins(doc)) add("pin", it.id, it.at, null);
+    return rows;
+  }
+  const entries = Array.isArray(doc) ? doc : Array.isArray(doc?.posted) ? doc.posted : null;
+  if (entries) {
+    for (const e of entries) {
+      if (!e || typeof e !== "object") continue;
+      const receipt = Object.hasOwn(e, "urn") ? e.urn : e.buffer_id ?? e.id;
+      add(e.urn ? e.id : lastSegment(e.url) || "post", receipt, String(e.at ?? e.queued_at ?? ""), e.channel ?? e.lane ?? null);
+    }
+    return rows;
+  }
   for (const [id, p] of Object.entries(doc?.posts ?? {})) {
-    for (const r of Array.isArray(p?.runs) ? p.runs : []) {
-      const receipt = String(r?.buffer_id ?? r?.id ?? "");
-      const at = String(r?.queued_at ?? "");
-      const ch = RUN_CHANNEL[r?.channel] ?? r?.channel ?? channel;
-      if (!receipt || !ch || !(Date.parse(at) >= from)) continue;
-      const item = `${String(id).replace(/[^\w.-]+/g, "").slice(0, 40)}:${receipt}`;
-      rows.push({ kind: "post", business, channel: ch, item, receipt: { id: receipt }, at: new Date(Date.parse(at)).toISOString() });
+    if (Array.isArray(p?.runs)) {
+      for (const r of p.runs) add(id, r?.buffer_id ?? r?.id, String(r?.queued_at ?? ""), r?.channel ?? null);
+      continue;
+    }
+    for (const [ch, r] of Object.entries(p ?? {})) {
+      if (r && typeof r === "object" && !Array.isArray(r)) add(id, r.buffer_id ?? r.id, String(r.queued_at ?? ""), ch);
     }
   }
   return rows;
+}
+
+const lastSegment = (u) => {
+  if (typeof u !== "string" || !/^https?:\/\//.test(u)) return "";
+  try { return new URL(u).pathname.split("/").filter(Boolean).pop()?.replace(/\.html?$/, "") ?? ""; } catch { return ""; }
+};
+/** The platform's id as the ledger keeps it (RECEIPT): a URL becomes its last path segment. */
+function receiptOf(raw) {
+  const s = String(raw ?? "").trim();
+  const v = /^https?:\/\//.test(s) ? lastSegment(s) : s;
+  return RECEIPT.test(v) ? v : "";
+}
+/**
+ * A Pinterest profile feed's pins (https://www.pinterest.com/<account>/feed.rss): the id from each item's
+ * guid (…/pin/<id>/) and its pubDate. Only those two fields are read; a feed with no item gives none.
+ */
+export function pinterestPins(xml) {
+  const out = [];
+  for (const m of String(xml).matchAll(/<item>([\s\S]*?)<\/item>/g)) {
+    const id = /<guid[^>]*>\s*https:\/\/(?:www\.)?pinterest\.com\/pin\/(\d{6,30})\/?\s*<\/guid>/.exec(m[1])?.[1];
+    const at = /<pubDate>([^<]+)<\/pubDate>/.exec(m[1])?.[1];
+    if (id && at && Number.isFinite(Date.parse(at))) out.push({ id, at: new Date(Date.parse(at)).toISOString() });
+  }
+  return out;
 }
 
 /** Monday's H5 check: the posts on (business, channel) this week whose ledger row is missing. */
