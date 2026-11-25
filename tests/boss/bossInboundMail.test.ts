@@ -6,6 +6,7 @@ import { routeToSeat, seatTag, replyBody } from "../../src/shared/boss/intake/ma
 import { parseLiveBook, describeLot } from "../../src/shared/boss/intake/liveBook.mjs";
 import { storeLiveBook, currentBook, currentBookLines } from "../../src/worker/boss/capital/book";
 import { unansweredQuestionAlerts } from "../../src/worker/boss/intake/questions";
+import { claimSimone, finishSimoneHandoff, SIMONE } from "../../src/worker/boss/agents/simone";
 
 /**
  * MAIL TO boss@sequoiataylor.com, END TO END, AGAINST REAL D1.
@@ -65,19 +66,26 @@ describe("who the mailbox answers for", () => {
 });
 
 describe("the tag routes and the sender authorises", () => {
-  it("routes #firstname to that employee, from the D1 roster", async () => {
-    const roster = await activeRoster(env as never);
-    expect(roster.length).toBeGreaterThan(0);
-    const monique = roster.find((s) => s.name === "Monique")!;
-    expect(monique).toBeTruthy();
-
-    const res = await handleBossInboundMail(mail({ subject: "#monique have a look", body: "please" }), env as never);
-    expect(res.outcome).toBe("ROUTED");
-    expect(res.employeeId).toBe(monique.id);
-    expect(res.taskId).toBeTruthy();
-
-    const task = await env.DB.prepare(`SELECT employee_id, status FROM tasks WHERE id = ?`).bind(res.taskId).first();
-    expect(task?.employee_id).toBe(monique.id);
+  it("routes the original tagged fixture and a message for each active colleague through Simone", async () => {
+    const roster = await activeRoster(env);
+    const colleagues = roster.filter((seat) => seat.id !== SIMONE);
+    expect(colleagues.some((seat) => seat.name === "Monique")).toBe(true);
+    expect(colleagues.some((seat) => seat.name === "Noelle")).toBe(true);
+    for (const seat of colleagues) {
+      const subject = `${seatTag(seat.name)} have a look`;
+      const res = await handleBossInboundMail(mail({ subject, body: "please" }), env);
+      expect(res).toMatchObject({ outcome: "SIMONE_QUEUED", employeeId: SIMONE, reply: null });
+      const call = await claimSimone(env);
+      expect(call).toMatchObject({ id: res.taskId, message: { body: `${subject}\n\nplease` } });
+      const { id, lease, message } = call!;
+      expect(await finishSimoneHandoff(env, { id, lease, assignments: [{ employee: seat.id, words: message.body }] })).toBe(true);
+      const tasks = await env.DB.prepare(`SELECT employee_id, status, envelope_id FROM tasks WHERE json_extract(input, '$.simone_handoff') = ?`)
+        .bind(id).all();
+      const status = seat.name === "Monique" ? "queued" : expect.stringMatching(/^(queued|awaiting_approval)$/);
+      expect(tasks.results).toEqual([{ employee_id: seat.id, status, envelope_id: expect.any(String) }]);
+      const notice = await env.DB.prepare("SELECT body FROM boss_task_notices WHERE task_id = ?").bind(id).first();
+      expect(notice).toEqual({ body: `I handed this to ${seat.name}.` });
+    }
   });
 
   it("REFUSES a stranger who types a perfect tag, and creates no work", async () => {

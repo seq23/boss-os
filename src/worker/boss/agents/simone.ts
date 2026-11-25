@@ -95,9 +95,10 @@ export async function releaseSimone(env: Env, id: string, lease: number, code: s
   return Boolean(result.meta.changes);
 }
 
-export async function replySimone(env: Env, result: { id: string; lease: number; text: string; work: string[] }, now = Date.now()) {
+export async function replySimone(env: Env, result: { id: string; lease: number; text: string; work: string[]; stop?: "ACTION_RESTRICTED" }, now = Date.now()) {
   const text = result.text.trim();
-  if (!text || !result.work.length || !result.work.every((item) => typeof item === "string" && item.trim())) return false;
+  const refused = result.stop === "ACTION_RESTRICTED";
+  if (!text || (!refused && !result.work.length) || !result.work.every((item) => typeof item === "string" && item.trim())) return false;
   const db = env.DB;
   const noticeId = `tnt_${result.id}_simone`;
   const current = `id = ? AND employee_id = ? AND ${CHIEF} AND status = 'running' AND attempts = ?`;
@@ -111,17 +112,18 @@ export async function replySimone(env: Env, result: { id: string; lease: number;
     ).bind(noticeId, text, now, result.id, SIMONE, result.lease),
     db.prepare(
       `INSERT INTO task_events (id, task_id, ts, event, detail)
-       SELECT ?, id, ?, 'completed', ? FROM tasks WHERE ${current}
+       SELECT ?, id, ?, ?, ? FROM tasks WHERE ${current}
        ON CONFLICT(id) DO NOTHING`,
-    ).bind(`tev_${result.id}_complete`, now, receipts, result.id, SIMONE, result.lease),
+    ).bind(`tev_${result.id}_reply`, now, refused ? "refused" : "completed", receipts, result.id, SIMONE, result.lease),
     db.prepare(
       `UPDATE boss_inbound_mail SET reply_state = 'due'
        WHERE outcome = 'SIMONE_QUEUED' AND reply_state = 'agent_pending' AND authorised = 1
          AND id = (SELECT json_extract(input, '$.mail_id') FROM tasks WHERE ${current})`,
     ).bind(result.id, SIMONE, result.lease),
     db.prepare(
-      `UPDATE tasks SET status = 'done', output = ?, finished_at = ?, error = NULL WHERE ${current}`,
-    ).bind(JSON.stringify({ text, work: result.work }), now, result.id, SIMONE, result.lease),
+      `UPDATE tasks SET status = ?, output = ?, finished_at = ?, error = ? WHERE ${current}`,
+    ).bind(refused ? "failed" : "done", JSON.stringify({ text, work: result.work }), now, result.stop ?? null,
+      result.id, SIMONE, result.lease),
   ]);
   return Boolean(writes.at(-1)?.meta.changes);
 }

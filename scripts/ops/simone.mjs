@@ -101,7 +101,11 @@ export async function runSimone({ api, run, fallback, hasCredential = () => fals
       }
     }
     if (hasCredential(verdict.reply)) code = "SECRET_OUTPUT";
-    else if (!successful || !verdict.ok || !verdict.reply) code = verdict.code ?? "RUN_FAILED";
+    else if (successful && verdict.code === "ACTION_RESTRICTED" && reply && !assignments?.length) {
+      const result = await api("POST", "/reply", { ...lease, text: reply, work, stop: verdict.code });
+      if (result.replied) return { state: "refused", id: call.id };
+      code = "RESULT_NOT_RECORDED";
+    } else if (!successful || !verdict.ok || !verdict.reply) code = verdict.code ?? "RUN_FAILED";
     else if (!work.length && !assignments?.length) code = "NOTHING_DONE";
     else {
       const result = await api("POST", "/reply", { ...lease, text: reply, work, ...(assignments.length ? { assignments } : {}) });
@@ -202,6 +206,7 @@ async function main() {
   await api("POST", "/wake", {});
   const result = await runSimone({ api, run: (call, prompt) => runAgent(call, prompt, api), fallback: routeOnCodex, hasCredential: (text) => containsCredential(text, process.env) });
   if (result.state === "done") console.log("OUTPUT: 1 Simone run recorded");
+  else if (result.state === "refused") { console.error("NAMED STOP [ACTION_RESTRICTED] Simone recorded her refusal"); process.exitCode = 1; }
   else if (result.state === "idle") console.log("WAIT no Simone message is ready");
   else { console.error(`NAMED STOP [${result.code}] Simone's work is queued to retry`); process.exitCode = 1; }
 }

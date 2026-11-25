@@ -41,4 +41,6 @@ existing sources.
 ## How a run ends
 
 Answer the owner directly when she called you. Give a concrete result with any important
-limits. If a run does no work, report the actual stop without claiming completion.
+limits. When a hard restriction bars the whole request, explain what you stopped, then end on
+a line by itself with `NAMED STOP [ACTION_RESTRICTED]`. If a service or model fails, report that
+stop without claiming completion so the request can retry.

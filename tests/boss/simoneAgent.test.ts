@@ -68,6 +68,17 @@ describe("Simone's existing task queue", () => {
     });
   });
 
+  it("records a restriction reply without marking the request completed or retrying it", async () => {
+    const id = await fileSimoneMessage(env, { ...request, body: "Use my card to pay for the sample." });
+    const { lease } = (await claimSimone(env))!;
+    const text = "I stopped before checkout. Your card wasn’t used.";
+    expect(await replySimone(env, { id, lease, text, work: [], stop: "ACTION_RESTRICTED" })).toBe(true);
+    expect((await apiJson(`/api/simone/message/${id}`)).body.data).toEqual({ status: "failed", reply: text });
+    expect(await row("SELECT status, error FROM tasks WHERE id = ?", id)).toEqual({ status: "failed", error: "ACTION_RESTRICTED" });
+    expect(await row("SELECT count(*) AS n FROM task_events WHERE task_id = ? AND event = 'completed'", id)).toEqual({ n: 0 });
+    expect(await claimSimone(env)).toBeNull();
+  });
+
   it("accepts both boxes through the session and checks decoded byte size", async () => {
     for (const [path, source] of [["/api/intake/simone", "tell_simone"], ["/api/simone/message", "boss_page"]]) {
       expect((await apiJson(path!, { method: "POST", body: { text: "" } })).status).toBe(400);

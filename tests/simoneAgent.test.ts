@@ -67,6 +67,23 @@ it("retries a model failure or result without a successful tool and sends no rep
   }
 });
 
+it("delivers a refusal without a work receipt and keeps a provider outage on retry", async () => {
+  const answer = "I stopped before checkout. Your card wasn’t used.";
+  const f = fixture({ body: "Use my card to pay for the sample.", context: "" });
+  const run = async () => ({
+    log: jsonl(result(`${answer}\nNAMED STOP [ACTION_RESTRICTED]`)), successful: true,
+  });
+  expect(await runSimone({ api: f.api, run })).toEqual({ state: "refused", id: call.id });
+  expect(f.calls[1]).toEqual({ path: "/reply", body: {
+    id: call.id, lease: call.lease, text: answer, work: [], stop: "ACTION_RESTRICTED",
+  } });
+  const down = fixture();
+  expect(await runSimone({ api: down.api, run: async () => ({
+    log: jsonl(result("The calendar is offline.\nNAMED STOP [CALENDAR_UNAVAILABLE]")), successful: true,
+  }) })).toMatchObject({ state: "retry", code: "CALENDAR_UNAVAILABLE" });
+  expect(down.calls.map(({ path }) => path)).toEqual(["/claim", "/release"]);
+});
+
 it("drops a reply containing a known secret and starts the child with isolated credentials", async () => {
   const secret = "fixture-value-only";
   expect(Object.values(childEnvironment({ BOSS_PASSCODE: secret, GH_TOKEN: secret }, "/fixture", "/settings", "/persona"))).not.toContain(secret);

@@ -14,4 +14,4 @@ export function runSimone(options: {
   run: (call: SimoneCall, prompt: string) => Promise<{ log: string; successful: boolean; receipts?: string[] }>;
   fallback?: (call: SimoneCall) => Promise<unknown[] | null>;
   hasCredential?: (text: string) => boolean;
-}): Promise<{ state: 'idle' } | { state: 'done'; id: string } | { state: 'retry'; id: string; code: string }>;
+}): Promise<{ state: 'idle' } | { state: 'done' | 'refused'; id: string } | { state: 'retry'; id: string; code: string }>;
