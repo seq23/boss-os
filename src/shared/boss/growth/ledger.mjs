@@ -249,9 +249,20 @@ export function fortnightReport({ today, actions = [], orders = {}, runs = [], w
   const floors = [floorLine(scorecard?.first, scorecard?.start, fv.first), floorLine(scorecard?.real, scorecard?.start, fv.real, fv.realMissing)].filter(Boolean);
   if (floors.length) lines.push(`Against the floors: ${floors.join("; ")}.`);
   const keys = [...new Set([...summaries.map((s) => s.key), ...acts.map((a) => a.business), ...Object.keys(orders)])].filter((k) => labels[k] || summaries.some((s) => s.key === k));
-  for (const k of keys.sort((a, b) => (label(a) < label(b) ? -1 : 1))) {
+  keys.sort((a, b) => label(a).localeCompare(label(b)));
+  const porch = keys.indexOf("porch-and-party");
+  if (porch > 0) keys.unshift(...keys.splice(porch, 1));
+  for (const k of keys) {
     const did = [...byKind(acts.filter((a) => a.business === k)), orders[k] ? counted(orders[k], ["backlink article requested", "backlink articles requested"]) : null].filter(Boolean).join(", ") || "nothing new sent out";
     lines.push(`${label(k)}: ${numbersLine(summaries.find((s) => s.key === k)) ?? "numbers not read"} in 28 days; ${did}.`);
+    if (k === "porch-and-party") {
+      const channels = [["instagram", "Instagram"], ["tiktok", "TikTok"], ["facebook-page", "Facebook"]];
+      const confirmed = channels.map(([channel, name]) => {
+        const count = acts.filter((a) => a.business === k && a.kind === "post" && a.channel === channel).length;
+        return `${name} ${count}`;
+      });
+      lines.push(`Porch & Party Studio receipts in the ledger: ${confirmed.join(", ")}.`);
+    }
   }
   const mine = runs.filter((r) => DAY.test(String(r.day)) && r.day >= from && r.day <= today);
   const days = new Set(mine.filter((r) => r.state === "done").map((r) => r.day)).size;

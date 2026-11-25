@@ -291,6 +291,11 @@ describe("the results ledger: a post only on the platform's receipt (H5), measur
     const section = async () => JSON.parse((await rows(`SELECT body FROM morning_sections WHERE section = 'growth'`))[0]?.body ?? "null");
     await call("/noelle/ledger", post("p6", "6b04ee67"));
     await call("/noelle/backlinks", { business: "peace-be-still", requests: [{ topic: "Bedtime Bible stories", draft: "A short guide." }] });
+    const accepted = await json(await call("/noelle/ledger", { rows: [
+      { kind: "post", business: "porch-and-party", channel: "instagram", item: "post:studio-fixture", receipt: { id: "studio-fixture" }, at: DAY },
+      { kind: "studio-plan", business: "porch-and-party", channel: "instagram", item: "calendar-plan-fixture", at: DAY },
+    ] }));
+    expect(accepted).toMatchObject({ written: 2, duplicate: 0, refused: [] });
     await reading(DAY, "pnp-requests", "porch-and-party", "all", 2);
     await env.DB.prepare(`INSERT INTO morning_sections (section, job, day, body, status, created_at, updated_at) VALUES ('growth', 'duty_growth_director', ?, ?, 'fresh', ?, ?)`)
       .bind(DAY, JSON.stringify({ section: "growth", at: new Date(NOW - 60_000).toISOString(), title: "📈 Growth, from Noelle", lines: ["Noelle did not run on 2026-11-22."], decide: [], rows: [] }), NOW, NOW).run();
@@ -305,10 +310,11 @@ describe("the results ledger: a post only on the platform's receipt (H5), measur
     expect((await json(await done())).report).toBe(true);
     const s = await section();
     expect(s.title).toBe("📈 Growth, from Noelle");
-    expect(s.lines[0]).toBe(`Nothing to do. In the 14 days to ${DAY} Noelle sent out 1 post, 1 backlink article requested.`);
+    expect(s.lines[0]).toBe(`Nothing to do. In the 14 days to ${DAY} Noelle sent out 2 posts, 1 Studio plan, 1 backlink article requested.`);
     expect(s.lines).toEqual(expect.arrayContaining([
       "Against the floors: Porch & Party requests in the last 28 days: 2 of 4 by Dec 23; money in across the growth businesses, last 28 days: not read yet (the floor is $1,000 by Jan 22).",
-      "Porch & Party: 2 requests in 28 days; nothing new sent out.",
+      "Porch & Party: 2 requests in 28 days; 1 post, 1 Studio plan.",
+      "Porch & Party Studio receipts in the ledger: Instagram 1, TikTok 0, Facebook 0.",
       "Peace Be Still: numbers not read in 28 days; 1 post, 1 backlink article requested.",
       "Her runs: 1 of 14 days finished; stopped: BUFFER_FULL 1×.",
       expect.stringMatching(/^Results against floors: no action is 30 days old yet/),
