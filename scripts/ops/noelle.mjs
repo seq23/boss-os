@@ -82,16 +82,16 @@ export const MAX_TRIES = 3;
 /** A call (her email or page message) is answered within 30 minutes from 10:00 to 22:59 Central (H3c). */
 
 /**
- * THE START (24 Nov 2026). Her earlier hold ("dont let her run until Sat") was for the old planner; her go the
- * same day ("go - scheduled job that wakes up as a full agent") lets the new Noelle start once this lands.
- * NOELLE_START_AT can still hold her (an ISO time with its offset); an unreadable value holds too.
+ * The owner holds scheduled and called runs until Saturday, November 28, Central.
+ * An operator can extend the hold with an ISO time, and an invalid value holds the run too.
  */
-export const START_AT = "2026-11-24T00:00:00-06:00";
+export const START_AT = "2026-11-28T00:00:00-06:00";
 export function heldUntil(nowMs, env = process.env) {
-  const raw = env.NOELLE_START_AT || START_AT;
-  const at = Date.parse(raw);
-  if (!Number.isFinite(at)) return `NAMED STOP [HELD_UNTIL] NOELLE_START_AT='${raw}' is not a time, so she stays held`;
-  return nowMs < at ? `NAMED STOP [HELD_UNTIL] she starts ${raw}; nothing ran` : null;
+  const requested = env.NOELLE_START_AT || START_AT;
+  const requestedAt = Date.parse(requested);
+  if (!Number.isFinite(requestedAt)) return `NAMED STOP [HELD_UNTIL] NOELLE_START_AT='${requested}' is not a time, so she stays held`;
+  const start = requestedAt > Date.parse(START_AT) ? requested : START_AT;
+  return nowMs < Date.parse(start) ? `NAMED STOP [HELD_UNTIL] she starts ${start}; nothing ran` : null;
 }
 
 export function tickDecision({ day, now, nowMs, mark, env = process.env }) {

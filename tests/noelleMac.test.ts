@@ -269,10 +269,10 @@ describe("H6: the same failure twice is a named stop and a Notices line, never a
   });
 });
 
-const DAY = "2026-11-23";
+const DAY = "2026-11-30";
 const s = slotFor(DAY);
 const SLOT = `${String(s.hour).padStart(2, "0")}:${String(s.minute).padStart(2, "0")}`;
-const T0 = Date.parse("2026-11-23T20:00:00Z");
+const T0 = Date.parse("2026-11-30T20:00:00Z");
 const OPEN = { NOELLE_START_AT: "2026-11-01T00:00:00-05:00" };
 
 describe("the tick: once a day at the slot, resumes after a stop", () => {
@@ -288,11 +288,13 @@ describe("the tick: once a day at the slot, resumes after a stop", () => {
     expect(tickDecision({ env: OPEN, day: DAY, now: "20:30", nowMs: T0 + RETRY_AFTER_MS, mark })).toEqual({ run: true, slot: "20:30", kind: s.kind, resume: true, tries: 2 });
     expect(tickDecision({ env: OPEN, day: DAY, now: "20:30", nowMs: T0 + RETRY_AFTER_MS * 3, mark: { ...mark, tries: 3 } })).toMatchObject({ run: false, why: expect.stringMatching(/3 times/) });
   });
-  it("an unreadable hold holds; a past one does not", () => {
+  it("holds scheduled and called runs through Friday and accepts a later operator hold", () => {
     expect(heldUntil(T0, { NOELLE_START_AT: "soon" })).toMatch(/HELD_UNTIL/);
     expect(heldUntil(T0, OPEN)).toBeNull();
-    expect(heldUntil(Date.parse("2026-11-23T00:00:00Z"), {})).toMatch(/HELD_UNTIL/);
-    expect(heldUntil(Date.parse("2026-11-24T07:00:00Z"), {})).toBeNull();
+    expect(heldUntil(Date.parse("2026-11-28T05:59:59Z"), {})).toMatch(/HELD_UNTIL/);
+    expect(heldUntil(Date.parse("2026-11-24T07:00:00Z"), OPEN)).toMatch(/HELD_UNTIL/);
+    expect(heldUntil(Date.parse("2026-11-28T06:00:00Z"), {})).toBeNull();
+    expect(heldUntil(T0, { NOELLE_START_AT: "2026-12-01T00:00:00-06:00" })).toMatch(/HELD_UNTIL/);
   });
 });
 
