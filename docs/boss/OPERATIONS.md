@@ -980,6 +980,9 @@ Her persona is in `scripts/ops/simone/persona.md`. The existing Simone Mac poll 
 `scripts/ops/simone.mjs`, which claims one task and opens one session for it. The task includes the
 owner’s words and separate context from the original mail. A fresh run reads `owner-notes.md`,
 `HANDOFF.md`, the latest daily note, and task sheets under `~/Work/simone`.
+The claim includes the owner’s saved standing instructions. A run can read the current brain
+documents, apply a requested edit in the existing brain format, save a standing instruction,
+or dismiss a match from the owner’s exact instruction and card code.
 Fresh mail keeps its original attachment bytes and copies locally readable text into the task
 context. During her run, Simone can open the archived attachments and the Drive links in the
 owner’s message. The material reader uses the arrival linked to that run. It returns file text,

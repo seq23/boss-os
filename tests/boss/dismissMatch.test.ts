@@ -9,6 +9,8 @@ import worker from "../../src/worker/boss/index";
 import { apiJson } from "./helpers";
 import { handleBossInboundMail } from "../../src/worker/boss/intake/inboundMail";
 import { dismissFromMail } from "../../src/worker/boss/capital/dismiss";
+import { claimSimone } from "../../src/worker/boss/agents/simone";
+import { simoneTool } from "../../src/worker/boss/agents/simoneTools";
 
 async function tap(path: string, method = "GET") {
   const ctx = createExecutionContext();
@@ -67,12 +69,18 @@ describe("a dismissed match stays dismissed until a new order", () => {
     expect(await listed()).toEqual([]);
   });
 
-  it("her reply \"dismiss <code>\" does the same, and opens no work", async () => {
+  it("her mail opens one Simone run, whose dismissal changes only the referenced match", async () => {
     const { body } = await push([match(4)]);
     const code = body.data.codes["b4|s4"];
     const res = await handleBossInboundMail(mail("Re: Sunday: 5 decisions", `dismiss ${code}\n\nOn Sun, Simone wrote:\n> ...`), env as never);
-    expect(res.outcome).toBe("MATCH_DISMISSED");
-    expect(res.taskId ?? null).toBeNull();
+    expect(res.outcome).toBe("SIMONE_QUEUED");
+    const run = await claimSimone(env);
+    expect(run?.id).toBe(res.taskId);
+    expect(await listed()).toEqual(["b4|s4"]);
+    const dismiss = (quote: string) => simoneTool(env, { ...run!, tool: "dismiss_match", task: JSON.stringify({ code, quote }) });
+    await expect(dismiss(`erase match ${code}`)).resolves.toEqual({ ok: false, code: "OWNER_INSTRUCTION_REQUIRED" });
+    await expect(dismiss(`dismiss ${code}`)).resolves.toMatchObject({ ok: true, receipt: code, dismissed: true });
+    await expect(dismiss(`dismiss ${code}`)).resolves.toMatchObject({ ok: true, receipt: code, dismissed: false });
     expect(await listed()).toEqual([]);
     const row = await env.DB.prepare(`SELECT via FROM capital_dismissed`).first<any>();
     expect(row.via).toBe("reply");

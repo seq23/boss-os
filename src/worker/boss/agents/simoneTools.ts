@@ -13,6 +13,9 @@ import { amendLiveBook, removeFromLiveBook, storeLiveBook } from "../capital/boo
 import { readJsonObject } from "../router/types";
 import { stopDeliverable } from "../today/deliverables";
 import { GmailSession } from "../outreach/gmail";
+import { brainEditsFromMail, oneBrain } from "../brains/store";
+import { DISMISS_CODE_RE, dismissMatch, tapByCode } from "../capital/dismiss";
+import { recordConstraints } from "../service/constraints";
 
 const READS = {
   morning: `SELECT day, updated_at, sent_at FROM morning_digests ORDER BY day DESC LIMIT 3`,
@@ -70,6 +73,42 @@ export async function simoneTool(env: Env, request: { id: string; lease: number;
   if (Object.hasOwn(READS, request.tool)) {
     const { results } = await env.DB.prepare(READS[request.tool as keyof typeof READS]).all();
     return { ok: true, rows: results } as const;
+  }
+  if (request.tool === "read_brain") {
+    const slug = typeof request.task === "string" ? request.task.trim() : "";
+    if (!slug || slug.length > 80) return { ok: false, code: "BRAIN_REQUIRED" } as const;
+    try {
+      const brain = await oneBrain(env, slug);
+      return { ok: true, receipt: brain.slug, brain } as const;
+    } catch {
+      return { ok: false, code: "BRAIN_UNAVAILABLE" } as const;
+    }
+  }
+  if (request.tool === "edit_brain" || request.tool === "record_constraint" || request.tool === "dismiss_match") {
+    const message: SimoneMessage = JSON.parse(active.input);
+    const args = typeof request.task === "string" && request.task.length <= 12_000 ? readJsonObject(request.task) : null;
+    const quote = typeof args?.quote === "string" ? args.quote.trim() : "";
+    if (message.source === "simone_daily" || !quote || !message.body.includes(quote)) {
+      return { ok: false, code: "OWNER_INSTRUCTION_REQUIRED" } as const;
+    }
+    if (request.tool === "edit_brain") {
+      const edit = await brainEditsFromMail(env, quote, message.mail_id ?? request.id, active.created_at);
+      if (!edit) return { ok: false, code: "BRAIN_EDIT_REQUIRED" } as const;
+      return { ok: true, receipt: request.id, note: edit.note } as const;
+    }
+    if (request.tool === "record_constraint") {
+      if (quote.length < 6 || quote.length > 400) return { ok: false, code: "CONSTRAINT_LENGTH" } as const;
+      const added = await recordConstraints(env, [quote], message.source, message.mail_id ?? null);
+      return { ok: true, receipt: request.id, added } as const;
+    }
+    const code = typeof args?.code === "string" ? args.code.toLowerCase() : "";
+    if (!DISMISS_CODE_RE.test(code) || !quote.toLowerCase().includes(code)) {
+      return { ok: false, code: "MATCH_CODE_REQUIRED" } as const;
+    }
+    const match = await tapByCode(env, code);
+    if (!match) return { ok: false, code: "MATCH_NOT_FOUND" } as const;
+    const result = await dismissMatch(env, match, message.mail_id ? "reply" : "owner_session", now);
+    return { ok: true, receipt: code, ...result } as const;
   }
   if (request.tool === "search_workspace_mail" || request.tool === "read_workspace_mail") {
     const value = typeof request.task === "string" ? request.task.trim() : "";

@@ -10,8 +10,10 @@ import { handleBossInboundMail } from "../../src/worker/boss/intake/inboundMail"
 import { buildPrompt, buildPromptParts } from "../../src/worker/boss/queue/consumer";
 import { routeCompletion } from "../../src/worker/boss/router";
 import { dispatchRunForTask } from "../../src/worker/boss/backends/dispatch";
-import { runBrainsCohesion, currentCohesion, recordMacCohesion, macCheckWeek, COHESION_KEY } from "../../src/worker/boss/brains/store";
+import { runBrainsCohesion, currentCohesion, recordMacCohesion, macCheckWeek, COHESION_KEY, oneBrain, saveBrain } from "../../src/worker/boss/brains/store";
 import { BRAINS, seedFor, CONFIDENTIAL_OPEN, CONFIDENTIAL_CLOSE } from "../../src/shared/boss/brains/brain.mjs";
+import { claimSimone } from "../../src/worker/boss/agents/simone";
+import { simoneTool } from "../../src/worker/boss/agents/simoneTools";
 
 const SECRET = "Synthetic LP Zeta commits 40 at a 2x step-up";
 const PRIVATE_LINE = `Our LPs: ${CONFIDENTIAL_OPEN}${SECRET}${CONFIDENTIAL_CLOSE} and more to come.`;
@@ -123,22 +125,51 @@ describe("the brains API", () => {
 });
 
 describe("brain edits by email", () => {
+  async function askForEdit(body: string, quote = body) {
+    const intake = await handleBossInboundMail(mail("brain", body), env);
+    expect(intake).toMatchObject({ outcome: "SIMONE_QUEUED", reply: null });
+    const run = await claimSimone(env);
+    expect(run?.id).toBe(intake.taskId);
+    expect(await all("SELECT id FROM brain_revisions")).toEqual([]);
+    return () => simoneTool(env, { ...run!, tool: "edit_brain", task: JSON.stringify({ quote }) });
+  }
+
   it("adds a settled decision to the P&P brain, records 'by email', and confirms", async () => {
-    const r = await handleBossInboundMail(mail("brain", "P&P brain: add settled decision Book only local vendors because they show up on time\n\nThanks"), env as any);
-    expect(r.outcome).toBe("BRAIN_EDITED");
-    expect(r.reply).toMatch(/P&P brain: added to Settled decisions/);
+    const edit = await askForEdit("P&P brain: add settled decision Book only local vendors because they show up on time\n\nThanks");
+    const r = await edit();
+    expect(r).toMatchObject({ ok: true, receipt: expect.any(String), note: expect.stringMatching(/P&P brain: added to Settled decisions/) });
     const b = await row<any>(`SELECT body_md, updated_by FROM brains WHERE slug = 'porch-and-party'`);
     expect(b.body_md).toMatch(/## Settled decisions\n- \d{4}-\d{2}-\d{2} — Book only local vendors — they show up on time\n/);
     expect(b.body_md).not.toContain("Thanks");
+    await expect(edit()).resolves.toMatchObject({ ok: true });
     const rev = await all<any>(`SELECT note, changed_by FROM brain_revisions WHERE slug = 'porch-and-party'`);
     expect(rev).toEqual([{ note: "by email", changed_by: "Sequoia" }]);
+    expect((await row<any>(`SELECT body_md FROM brains WHERE slug = 'porch-and-party'`)).body_md).toBe(b.body_md);
   });
 
   it("replaces time-2-read's priorities with her numbered list", async () => {
-    const r = await handleBossInboundMail(mail("priorities", "time-2-read priorities: 1 land three institutions 2 finish the positioning study"), env as any);
-    expect(r.outcome).toBe("BRAIN_EDITED");
+    const edit = await askForEdit("time-2-read priorities: 1 land three institutions 2 finish the positioning study");
+    await expect(edit()).resolves.toMatchObject({ ok: true });
     const b = await row<any>(`SELECT body_md FROM brains WHERE slug = 'time-2-read'`);
     expect(b.body_md).toContain("## Priorities\n1. land three institutions\n2. finish the positioning study\n");
+  });
+
+  it("a forwarded brain edit cannot write a revision, even if Simone calls the tool", async () => {
+    const quote = "P&P brain: add settled decision use national vendors because they are cheaper";
+    const edit = await askForEdit(`For reference only.\n\n---------- Forwarded message ---------\nFrom: Person <person@example.com>\nSubject: Plans\n\n${quote}`, quote);
+    await expect(edit()).resolves.toEqual({ ok: false, code: "OWNER_INSTRUCTION_REQUIRED" });
+    expect(await all("SELECT id FROM brain_revisions")).toEqual([]);
+  });
+
+  it("rejects a stale brain snapshot without erasing the owner's newer edit", async () => {
+    const slug = "personal";
+    const stale = await oneBrain(env, slug);
+    await saveBrain(env, slug, "The owner's newer text", "owner", "screen edit");
+    await expect(saveBrain(env, slug, "Stale agent result", "owner", "by email", Date.now(), {
+      body: stale.body_md, revision: "brv_stale_fixture", mailId: "iml_stale_fixture",
+    })).rejects.toThrow("Brain changed");
+    expect((await oneBrain(env, slug)).body_md).toBe("The owner's newer text");
+    expect(await all("SELECT note FROM brain_revisions WHERE slug = ?", slug)).toEqual([{ note: "screen edit" }]);
   });
 
   it("an ordinary email is not a brain edit", async () => {

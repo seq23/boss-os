@@ -2,6 +2,7 @@ export interface SimoneCall {
   id: string;
   lease: number;
   pendingHandoffs?: { employee: string; words: string }[];
+  constraints?: string[];
   roster: { id: string; name: string; role: string; department: string }[];
   message: { body: string; context?: string; source?: string };
 }

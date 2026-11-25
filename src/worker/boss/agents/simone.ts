@@ -8,6 +8,7 @@ import { readJsonObject } from "../router/types";
 import { macSeen } from "../queue/freeRung";
 import { FIRST_READ_SCAN_OFF, freeLadder, type Rung } from "../intake/firstRead";
 import { shortTitle } from "../../../shared/boss/intake/triage.mjs";
+import { constraintsOnRecord } from "../service/constraints";
 
 export const SIMONE = "emp_chief";
 export const SIMONE_LEASE_MS = 3 * 60 * 60_000;
@@ -65,7 +66,7 @@ interface ClaimedTask {
 }
 
 export async function claimSimone(env: Env, now = Date.now(), cloud = false) {
-  const roster = await activeRoster(env);
+  const [roster, constraints] = await Promise.all([activeRoster(env), constraintsOnRecord(env.DB)]);
   const row = await env.DB.prepare(
     `UPDATE tasks SET status = 'running', started_at = ?, attempts = COALESCE(attempts, 0) + 1
        WHERE id = (
@@ -77,7 +78,7 @@ export async function claimSimone(env: Env, now = Date.now(), cloud = false) {
   ).bind(now, SIMONE, now - SIMONE_LEASE_MS, Number(cloud), now - 30 * 60_000).first<ClaimedTask>();
   if (!row) return null;
   const message: SimoneMessage = JSON.parse(row.input);
-  return { id: row.id, lease: row.attempts, message, roster, pendingHandoffs: message.simone_handoff_plan };
+  return { id: row.id, lease: row.attempts, message, roster, constraints, pendingHandoffs: message.simone_handoff_plan };
 }
 
 export async function simoneMessageStatus(env: Env, id: string) {
