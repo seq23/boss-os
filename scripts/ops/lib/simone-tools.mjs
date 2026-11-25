@@ -11,7 +11,7 @@ export async function listenForSimoneTools(path, call, api, hasCredential) {
     client.on("error", () => client.destroy());
     client.on("data", (chunk) => {
       input += chunk;
-      if (Buffer.byteLength(input) > 4096) client.destroy();
+      if (Buffer.byteLength(input) > 64_000) client.destroy();
     });
     client.on("end", async () => {
       let output = { ok: false, code: "TOOL_FAILED" };

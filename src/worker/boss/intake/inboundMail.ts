@@ -342,6 +342,29 @@ async function applyBookDirective(
   return removeFromLiveBook(env, input);
 }
 
+/**
+ * The first PARAGRAPH of a refusal, as one line — not its first line.
+ *
+ * THE BUG THIS FIXES. `why` used to take `bookFailure.split("\n")[0]`, and the refusals it reads
+ * are written as wrapped prose for a mail client. On 2026-09-11 that left three arrival rows saying
+ *
+ *     "You wrote `add`, and I could not read a single lot out of what followed it — so your book is"
+ *
+ * and stopping there. The next line was "UNCHANGED and I have not opened any work for this." — the
+ * half that says what actually happened to her book. The reply she received was complete; it was
+ * the AUDIT ROW, whose entire job is saying what was proven, that ended mid-sentence and dropped
+ * the word UNCHANGED. A `why` that reads like a truncation bug cannot be used to tell a refusal
+ * from a crash.
+ *
+ * A blank line is the author's own mark for "the summary ends here", so that is the boundary.
+ */
+export function headline(text: string): string {
+  return String(text ?? "")
+    .split(/\r?\n\s*\r?\n/)[0]!          // up to the first blank line
+    .split(/\r?\n/).map((l) => l.trim()).filter(Boolean).join(" ")
+    .trim();
+}
+
 /** The Message-ID a console-typed message carries, so a reply to it has something to name. */
 export function consoleMessageId(mailId: string): string {
   return `<${mailId}@boss-os-console>`;
@@ -1404,28 +1427,6 @@ async function handleMail(message: BossMailMessage, env: Env, said: Said): Promi
     }
   }
 
-/**
- * The first PARAGRAPH of a refusal, as one line — not its first line.
- *
- * THE BUG THIS FIXES. `why` used to take `bookFailure.split("\n")[0]`, and the refusals it reads
- * are written as wrapped prose for a mail client. On 2026-09-11 that left three arrival rows saying
- *
- *     "You wrote `add`, and I could not read a single lot out of what followed it — so your book is"
- *
- * and stopping there. The next line was "UNCHANGED and I have not opened any work for this." — the
- * half that says what actually happened to her book. The reply she received was complete; it was
- * the AUDIT ROW, whose entire job is saying what was proven, that ended mid-sentence and dropped
- * the word UNCHANGED. A `why` that reads like a truncation bug cannot be used to tell a refusal
- * from a crash.
- *
- * A blank line is the author's own mark for "the summary ends here", so that is the boundary.
- */
-function headline(text: string): string {
-  return String(text ?? "")
-    .split(/\r?\n\s*\r?\n/)[0]!          // up to the first blank line
-    .split(/\r?\n/).map((l) => l.trim()).filter(Boolean).join(" ")
-    .trim();
-}
 
   // BOOK_NOT_READ is a fourth outcome beside ROUTED / DEFAULTED / AMBIGUOUS: the message arrived,
   // was hers, named a book verb, and could not be carried out. Recorded as its own fact so it is

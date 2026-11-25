@@ -749,17 +749,17 @@ export async function recordDeliverableActivity(
  */
 export async function stopDeliverable(
   env: Env,
-  args: { id: string; reason: string; via: "screen" | "mail"; mailId?: string | null; now?: number },
+  args: { id: string; reason: string; via: "screen" | "mail"; mailId?: string | null; now?: number; ifState?: "open" | "blocked" },
 ): Promise<{ from: string } | null> {
   const now = args.now ?? Date.now();
   const row = await env.DB
     .prepare(`SELECT id, state FROM owned_deliverables WHERE id = ?`).bind(args.id)
     .first<{ id: string; state: string }>();
-  if (!row) return null;
+  if (!row || (args.ifState && row.state !== args.ifState)) return null;
   const reason = String(args.reason ?? "").trim().slice(0, 500);
   if (!reason) return null;
 
-  await env.DB
+  const result = await env.DB
     .prepare(
       `UPDATE owned_deliverables
           SET state = 'killed',
@@ -773,14 +773,15 @@ export async function stopDeliverable(
               current_status_kind = 'determined',
               last_activity_at = ?,
               updated_at = ?
-        WHERE id = ?`,
+        WHERE id = ? AND (? IS NULL OR state = ?)`,
     )
     .bind(
       now, reason,
       `Stopped by you on ${new Date(now).toISOString().slice(0, 10)}${args.via === "mail" ? ", by email" : ""}: "${reason}"`,
-      now, now, now, args.id,
+      now, now, now, args.id, args.ifState ?? null, args.ifState ?? null,
     )
     .run();
+  if (!result.meta.changes) return null;
 
   await audit(env.DB, {
     actor: "owner", lane: "ops", entityType: "owned_deliverable", entityId: args.id,

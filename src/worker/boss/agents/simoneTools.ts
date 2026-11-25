@@ -7,9 +7,12 @@ import { getCommand, runInvite } from "../commands/run";
 import { mailboxAllowed } from "../commands/google";
 import { parseMail } from "../../../shared/mail/parseMail.mjs";
 import { readEverything } from "../intake/readFiles";
-import { MAX_BODY_BYTES } from "../intake/inboundMail";
+import { headline, MAX_BODY_BYTES } from "../intake/inboundMail";
 import { partiesAnswer } from "../capital/grid";
+import { amendLiveBook, removeFromLiveBook, storeLiveBook } from "../capital/book";
 import { readJsonObject } from "../router/types";
+import { stopDeliverable } from "../today/deliverables";
+import { GmailSession } from "../outreach/gmail";
 
 const READS = {
   morning: `SELECT day, updated_at, sent_at FROM morning_digests ORDER BY day DESC LIMIT 3`,
@@ -18,6 +21,8 @@ const READS = {
   meeting_prep: `SELECT id, state, updated_at FROM boss_commands WHERE kind = 'meeting_prep' ORDER BY updated_at DESC LIMIT 30`,
   kdp: `SELECT title_ref, label, state, updated_at FROM kdp_titles ORDER BY updated_at DESC LIMIT 30`,
   mail_tail: `SELECT id, received_at, authorised, subject, outcome, reply_state FROM boss_inbound_mail ORDER BY received_at DESC LIMIT 30`,
+  commitments: `SELECT id, name, state, current_status FROM owned_deliverables
+    WHERE employee_id = 'emp_chief' AND state IN ('open','blocked') ORDER BY updated_at DESC LIMIT 50`,
   team: `SELECT t.id, t.title, t.status, t.started_at, t.finished_at, e.name AS employee FROM tasks t
     JOIN employees e ON e.id = t.employee_id WHERE t.lane = 'ops' AND t.employee_id <> 'emp_chief'
       AND t.status IN ('failed','running','queued') ORDER BY t.created_at DESC LIMIT 30`,
@@ -66,6 +71,26 @@ export async function simoneTool(env: Env, request: { id: string; lease: number;
     const { results } = await env.DB.prepare(READS[request.tool as keyof typeof READS]).all();
     return { ok: true, rows: results } as const;
   }
+  if (request.tool === "search_workspace_mail" || request.tool === "read_workspace_mail") {
+    const value = typeof request.task === "string" ? request.task.trim() : "";
+    const search = request.tool === "search_workspace_mail";
+    if (!value || (search ? value.length > 300 : !/^[a-z0-9]{1,64}$/i.test(value))) {
+      return { ok: false, code: "MAIL_QUERY_REQUIRED" } as const;
+    }
+    const gmail = GmailSession.from(env);
+    if (!gmail) return { ok: false, code: "WORKSPACE_MAIL_NOT_CONNECTED" } as const;
+    try {
+      if (search) return { ok: true, receipt: "workspace_mail_search", rows: await gmail.list(value, 15) } as const;
+      const message = await gmail.read(value);
+      return { ok: true, receipt: "workspace_mail_read", message: {
+        id: message.id, threadId: message.threadId, date: message.internalDate,
+        from: message.headers.from, to: message.headers.to, subject: message.headers.subject,
+        body: message.body.slice(0, 20_000),
+      } } as const;
+    } catch {
+      return { ok: false, code: "WORKSPACE_MAIL_UNAVAILABLE" } as const;
+    }
+  }
   if (request.tool === "deal_parties") {
     const args = typeof request.task === "string" && request.task.length <= 500 ? readJsonObject(request.task) : null;
     const company = typeof args?.company === "string" ? args.company.trim() : "";
@@ -98,6 +123,60 @@ export async function simoneTool(env: Env, request: { id: string; lease: number;
     } catch {
       return { ok: false, code: "MAIL_ARCHIVE_UNAVAILABLE" } as const;
     }
+  }
+  if (request.tool === "update_book") {
+    const args = typeof request.task === "string" && request.task.length <= 60_000 ? readJsonObject(request.task) : null;
+    const message: SimoneMessage = JSON.parse(active.input);
+    const text = typeof args?.text === "string" ? args.text.trim() : "";
+    const verb = args?.verb;
+    if (message.source !== "boss_inbound_mail" || !message.mail_id || !text || !message.body.includes(text) ||
+        (verb !== "book" && verb !== "add" && verb !== "remove")) {
+      return { ok: false, code: "BOOK_INSTRUCTION_REQUIRED" } as const;
+    }
+    const original = await env.DB.prepare(`SELECT id FROM boss_inbound_mail
+      WHERE id = ? AND task_id = ? AND authorised = 1 AND outcome = 'SIMONE_QUEUED'`)
+      .bind(message.mail_id, request.id).first();
+    if (!original) return { ok: false, code: "BOOK_INSTRUCTION_REQUIRED" } as const;
+    const existing = await env.DB.prepare(`SELECT id, version FROM capital_book WHERE mail_id = ? ORDER BY version LIMIT 1`)
+      .bind(message.mail_id).first<{ id: string; version: number }>();
+    if (existing) return { ok: true, receipt: existing.id, version: existing.version, changed: false, failed: false,
+      note: `This message was filed as book version ${existing.version}.` } as const;
+    const input = { text, mailId: message.mail_id, now };
+    const result = verb === "book" ? await storeLiveBook(env, { ...input, explicit: true })
+      : verb === "add" ? await amendLiveBook(env, input) : await removeFromLiveBook(env, input);
+    if (result.failed) {
+      await env.DB.prepare(`UPDATE boss_inbound_mail SET why = ? WHERE id = ? AND task_id = ? AND authorised = 1`)
+        .bind(headline(result.note).slice(0, 1000), message.mail_id, request.id).run();
+    }
+    return { ok: true, receipt: result.bookId ?? "book_checked", ...result } as const;
+  }
+  if (request.tool === "stop_commitment") {
+    const args = typeof request.task === "string" && request.task.length <= 1000 ? readJsonObject(request.task) : null;
+    const message: SimoneMessage = JSON.parse(active.input);
+    const quote = typeof args?.quote === "string" ? args.quote.trim() : "";
+    if (message.source === "simone_daily" || !quote || quote.length > 500 || !message.body.includes(quote) ||
+        typeof args?.id !== "string" || args.id.length > 160) {
+      return { ok: false, code: "COMMITMENT_INSTRUCTION_REQUIRED" } as const;
+    }
+    if (message.source === "boss_inbound_mail") {
+      const original = message.mail_id && await env.DB.prepare(`SELECT id FROM boss_inbound_mail
+        WHERE id = ? AND task_id = ? AND authorised = 1 AND outcome = 'SIMONE_QUEUED'`)
+        .bind(message.mail_id, request.id).first();
+      if (!original) return { ok: false, code: "COMMITMENT_INSTRUCTION_REQUIRED" } as const;
+    }
+    const owned = await env.DB.prepare(`SELECT name, state, killed_reason FROM owned_deliverables
+      WHERE id = ? AND employee_id = ?`).bind(args.id, SIMONE)
+      .first<{ name: string; state: string; killed_reason: string | null }>();
+    if (owned?.state === "killed" && owned.killed_reason === quote) {
+      return { ok: true, receipt: args.id, name: owned.name, state: "killed" } as const;
+    }
+    if (owned?.state !== "open" && owned?.state !== "blocked") return { ok: false, code: "COMMITMENT_NOT_OPEN" } as const;
+    const stopped = await stopDeliverable(env, {
+      id: args.id, reason: quote, via: message.source === "boss_inbound_mail" ? "mail" : "screen",
+      mailId: message.mail_id, now, ifState: owned.state,
+    });
+    if (!stopped) return { ok: false, code: "COMMITMENT_NOT_OPEN" } as const;
+    return { ok: true, receipt: args.id, name: owned.name, state: "killed" } as const;
   }
   if (request.tool === "queue_errand" || request.tool === "create_invite") {
     const message: SimoneMessage = JSON.parse(active.input);

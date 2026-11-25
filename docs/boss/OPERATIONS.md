@@ -986,8 +986,9 @@ owner’s message. The material reader uses the arrival linked to that run. It r
 transcripts and any unread files as context.
 
 The Simone tool socket gives the session access to the current morning, invitation, errand,
-meeting prep, Kindle, mail and team records. She can look up buyers or sellers on the existing
-deal grid. She can queue a free errand to a venue named in
+meeting prep, Kindle, mail and team records. Simone can search and read the connected Workspace inbox. She can look up buyers or sellers on the existing
+deal grid, update Monique’s versioned book from authenticated owner mail, and close one of her
+own commitments on the owner’s instruction. She can queue a free errand to a venue named in
 verified owner mail, or create a calendar invitation for a guest whose address the owner supplied.
 The calendar tool checks availability and reuses the same event ID when it retries. Personal
 calendar requests return an Add link. The team retry tool covers failed low-risk internal work

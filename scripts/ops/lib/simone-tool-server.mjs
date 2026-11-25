@@ -9,7 +9,7 @@ if (!socket) process.exit(2);
 const server = new McpServer({ name: "simone", version: "1.0.0" });
 server.registerTool("run_tool", {
   description: "Read Simone’s records or carry out a supported action through the current task’s tool broker.",
-  inputSchema: { tool: z.string().min(1).max(60), task: z.string().max(3000).optional() },
+  inputSchema: { tool: z.string().min(1).max(60), task: z.string().max(60_000).optional() },
 }, async ({ tool, task }) => {
   try {
     const result = await callSimoneTool(socket, tool, task);

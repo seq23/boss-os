@@ -1,7 +1,7 @@
 import { env } from "cloudflare:test";
 import { describe, expect, it } from "vitest";
 import { claimSimone, fileSimoneMessage, releaseSimone, replySimone, SIMONE_LEASE_MS } from "../../src/worker/boss/agents/simone";
-import { apiJson, row } from "./helpers";
+import { apiJson, row, stubFetch } from "./helpers";
 
 const request = { source: "boss_page", subject: "What can move?", body: "Check the team’s work." } as const;
 
@@ -379,6 +379,62 @@ it("opens existing records through the broker and fences calls from an expired l
   }
   expect(await simoneTool(env, { id, lease, tool: "morning" })).toMatchObject({ rows: [{ day: "2026-11-25", updated_at: 2, sent_at: null }] });
   expect(await simoneTool(env, { id, lease: lease - 1, tool: "morning" })).toEqual({ ok: false, code: "STALE_SIMONE_RUN" });
+});
+
+it("searches and reads the allowed Workspace inbox through the Gmail read-only scope", async () => {
+  const { simoneTool } = await import("../../src/worker/boss/agents/simoneTools");
+  const { OUTREACH_MAILBOX } = await import("../../src/worker/boss/outreach/catalog");
+  const key = await crypto.subtle.generateKey({
+    name: "RSASSA-PKCS1-v1_5", modulusLength: 2048, publicExponent: new Uint8Array([1, 0, 1]), hash: "SHA-256",
+  }, true, ["sign", "verify"]) as CryptoKeyPair;
+  const bytes = new Uint8Array(await crypto.subtle.exportKey("pkcs8", key.privateKey));
+  const private_key = `-----BEGIN PRIVATE KEY-----\n${btoa(String.fromCharCode(...bytes))}\n-----END PRIVATE KEY-----`;
+  const mocked = { ...env, GSC_SERVICE_ACCOUNT_JSON: JSON.stringify({ client_email: "service@example.test", private_key }) };
+  const id = await fileSimoneMessage(env, { ...request, body: "Please find my earlier schedule email." });
+  const call = (await claimSimone(env))!;
+  expect(call.id).toBe(id);
+  const requested: string[] = [];
+  const restore = stubFetch(async (req) => {
+    const url = new URL(req.url);
+    requested.push(`${req.method} ${url.pathname}`);
+    if (url.hostname === "oauth2.googleapis.com") {
+      const { 1: claims } = new URLSearchParams(await req.text()).get("assertion")!.split(".");
+      expect(JSON.parse(atob(claims!.replaceAll("-", "+").replaceAll("_", "/")))).toMatchObject({
+        sub: OUTREACH_MAILBOX, scope: "https://www.googleapis.com/auth/gmail.readonly",
+      });
+      return Response.json({ access_token: "fixture-mail-token" });
+    }
+    expect(req.method).toBe("GET");
+    expect(url.hostname).toBe("gmail.googleapis.com");
+    expect(req.headers.get("authorization")).toBe("Bearer fixture-mail-token");
+    if (url.pathname.endsWith("/messages")) {
+      expect(url.searchParams.get("maxResults")).toBe("15");
+      expect(url.searchParams.get("q")).toBe("subject:schedule");
+      return Response.json({ messages: [{ id: "123abc", threadId: "456def" }] });
+    }
+    if (url.pathname.endsWith("/123abc")) return Response.json({
+      id: "123abc", threadId: "456def", internalDate: "100",
+      payload: { mimeType: "text/plain", body: { data: btoa("The meeting starts at noon.") },
+        headers: [{ name: "Subject", value: "Schedule" }, { name: "From", value: "sender@example.test" }] },
+    });
+    return new Response(null, { status: 503 });
+  });
+  try {
+    const read = (tool: string, task: string) => simoneTool(mocked, { ...call, tool, task });
+    expect(await read("search_workspace_mail", "subject:schedule")).toMatchObject({ ok: true,
+      rows: [{ id: "123abc", threadId: "456def" }] });
+    expect(await read("read_workspace_mail", "123abc")).toMatchObject({ ok: true,
+      message: { subject: "Schedule", from: "sender@example.test", body: "The meeting starts at noon." } });
+    expect(await read("read_workspace_mail", "../../messages/send")).toEqual({ ok: false, code: "MAIL_QUERY_REQUIRED" });
+    expect(await read("read_workspace_mail", "999abc")).toEqual({ ok: false, code: "WORKSPACE_MAIL_UNAVAILABLE" });
+    expect(requested).toEqual([
+      "POST /token", "GET /gmail/v1/users/me/messages",
+      "POST /token", "GET /gmail/v1/users/me/messages/123abc",
+      "POST /token", "GET /gmail/v1/users/me/messages/999abc",
+    ]);
+  } finally {
+    restore();
+  }
 });
 
 it("preserves draft, errand and reminder state, invitations, and earlier mail in place", async () => {
