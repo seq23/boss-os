@@ -104,6 +104,20 @@ export const JOBS = Object.freeze([
     needs: ["Edit", "Bash(git -C:*)", "Bash(git worktree add:*)", "Bash(git commit:*)", "Bash(gh pr create:*)", "Bash(gh pr checks:*)", "Bash(npm run:*)", "Bash(land:*)"],
     mustDeny: ["Bash(claude:*)", "Bash(ai-run:*)", "Bash(gh pr merge:*)", "Bash(git push --force:*)", "Bash(wrangler deploy:*)", "Bash(gh secret:*)", "mcp__claude_ai_8Raise", "mcp__8raise"],
     hook: "command-guard.mjs" },
+  // Noelle (24 Nov 2026; sandbox redesign the same day): builder-level tools inside Claude Code's OS sandbox with no
+  // GitHub login (gh is not allowed at all; she pushes and opens PRs through noelle-tool), her two brokers outside it, one reviewer agent per PR (the Agent tool held by her guard).
+  { name: "noelle", scripts: ["scripts/ops/noelle.sh"],
+    needs: ["Agent", "WebFetch", "Edit(~/Work/noelle/**)", "Bash(__HOME__/.boss-os/noelle/bin/noelle-tool *)", "Bash(__HOME__/.boss-os/noelle/bin/land-after *)",
+      "Bash(git:*)", "Bash(npm:*)"],
+    mustDeny: ["Bash(claude:*)", "Bash(ai-run:*)", "Bash(gh pr merge:*)", "Bash(git push --force:*)", "Bash(wrangler deploy:*)", "Bash(gh secret:*)", "Bash(npm run -s vault:set:*)", "Skill",
+      "Edit(~/Work/noelle/.claude/**)", "Edit(~/bin/**)", "Edit(~/.boss-os/**)", "Edit(~/Brains/**)"],
+    hook: "noelle-guard.mjs", agentGuard: "noelle-guard.mjs",
+    sandbox: {
+      allowWrite: ["~/Work/noelle", "~/.boss-os/noelle/runs/__RUN__"],
+      allowRead: ["~/Work/noelle", "~/.boss-os/noelle/runs/__RUN__", "~/.boss-os/noelle/gitconfig", "~/.claude/skills", "~/.claude/CLAUDE.md"],
+      domains: ["github.com", "api.github.com", "codeload.github.com", "*.githubusercontent.com", "registry.npmjs.org", "*.pages.dev", "*.workers.dev", "api.bufferapp.com", "api.buffer.com"],
+      excluded: ["__HOME__/.boss-os/noelle/bin/noelle-tool *", "__HOME__/.boss-os/noelle/bin/land-after *"],
+    } },
 ]);
 const COMMON_DENY = ["Agent", "Task", "Edit(~/.claude/**)", "mcp__claude_ai_8Raise", "mcp__8raise"];
 
@@ -118,7 +132,13 @@ export function jobProblems(settings, job) {
   if (new Set(allow).size !== allow.length) out.push(`${tag}: an allow entry is repeated`);
   for (const a of allow) if (a === "Bash" || a === "*" || /^mcp__[^_]+(__)?\*?$/.test(a) || /^Bash\(\*/.test(a)) out.push(`${tag} allows ${a}: everything, not a list`);
   for (const t of job.needs) if (!allow.includes(t)) out.push(`${tag} is missing ${t}, which its prompt uses (the run would be refused)`);
-  for (const d of [...COMMON_DENY, ...(job.mustDeny ?? [])]) if (!deny.has(d)) out.push(`${tag}: deny is missing ${d}`);
+  // Agent (and Task, its old name: denying Task removes the Agent tool) is denied everywhere, except a job
+  // whose own guard runs on every Agent call (`agentGuard`): a PreToolUse hook on "*" or "Agent" that runs it. Allowing Agent without that hook fails by name.
+  const guarded = job.agentGuard && (settings.hooks?.PreToolUse ?? []).some((h) => ["*", "Agent"].includes(h.matcher) && JSON.stringify(h.hooks ?? []).includes(job.agentGuard));
+  if (job.agentGuard && !guarded) out.push(`${tag} allows Agent without ${job.agentGuard} on every Agent call`);
+  // 24 Nov 2026, a real locked run: "Task" in deny took the Agent tool away entirely, so the reviewer was never offered.
+  if (job.needs.includes("Agent") && (deny.has("Task") || deny.has("Agent"))) out.push(`${tag} needs Agent, but its deny holds ${deny.has("Task") ? "Task" : "Agent"}, which removes the Agent tool`);
+  for (const d of [...COMMON_DENY.filter((c) => !(["Agent", "Task"].includes(c) && guarded)), ...(job.mustDeny ?? [])]) if (!deny.has(d)) out.push(`${tag}: deny is missing ${d}`);
   for (const d of deny) if (allow.includes(d)) out.push(`${tag}: ${d} is both allowed and denied`);
   // A server-level deny (mcp__<server> or mcp__<server>__*) matches every tool on that server, and deny wins:
   // an allowed tool under it is refused at run time (eng check 24 Nov 2026: Simone's Drive lookups).
@@ -130,12 +150,45 @@ export function jobProblems(settings, job) {
   if (settings.permissions.defaultMode && settings.permissions.defaultMode !== "dontAsk") out.push(`${tag}: defaultMode is ${settings.permissions.defaultMode}`);
   if (job.needs.some((t) => t.startsWith("mcp__claude_ai_")) && settings.env?.ENABLE_CLAUDEAI_MCP_SERVERS === "false") out.push(`${tag} switches the claude.ai connectors off, and this job reads Gmail`);
   if (job.hook && !JSON.stringify(settings.hooks ?? {}).includes(job.hook)) out.push(`${tag}: the ${job.hook} hook is gone`);
+  if (job.sandbox) out.push(...sandboxProblems(settings, job.sandbox).map((p) => `${tag}: ${p}`));
+  return out;
+}
+
+const same = (a, b) => Array.isArray(a) && a.length === b.length && b.every((x) => a.includes(x));
+const underRoot = (rule, roots) => roots.some((r) => rule === r || rule.startsWith(`${r}/`));
+/**
+ * A sandboxed job (Noelle's): Claude Code's OS sandbox holds every command and child, so safety is access taken
+ * away, never a pattern over what she types. Each line below is one way that access would come back.
+ */
+export function sandboxProblems(settings, spec) {
+  const sb = settings?.sandbox;
+  if (!sb || typeof sb !== "object") return ["has no sandbox block (her commands would run with Sequoia's whole Mac)"];
+  const out = [];
+  const fs = sb.filesystem ?? {}, net = sb.network ?? {};
+  if (sb.enabled !== true) out.push("sandbox.enabled is not true");
+  if (sb.failIfUnavailable !== true) out.push("sandbox.failIfUnavailable is not true (a Mac without the sandbox would run her unsandboxed)");
+  if (sb.allowUnsandboxedCommands !== false) out.push("sandbox.allowUnsandboxedCommands is not false (dangerouslyDisableSandbox would escape)");
+  if (!same(sb.excludedCommands ?? [], spec.excluded)) out.push(`sandbox.excludedCommands is not exactly her brokers (${spec.excluded.join(", ")})`);
+  if (!(fs.denyRead ?? []).includes("~/")) out.push("sandbox.filesystem.denyRead does not hold \"~/\" (the vault, ~/.config and other repos would be readable)");
+  if (!same(fs.allowWrite ?? [], spec.allowWrite)) out.push(`sandbox.filesystem.allowWrite is not exactly ${spec.allowWrite.join(", ")}`);
+  for (const r of fs.allowRead ?? []) if (!spec.allowRead.includes(r)) out.push(`sandbox.filesystem.allowRead re-opens ${r}`);
+  if (!same(net.allowedDomains ?? [], spec.domains)) out.push(`sandbox.network.allowedDomains is not exactly her hosts (${spec.domains.join(", ")})`);
+  for (const k of ["allowAllUnixSockets", "allowUnixSockets", "allowLocalBinding", "allowMachLookup"]) if (net[k] !== undefined && !(Array.isArray(net[k]) && !net[k].length) && net[k] !== false) out.push(`sandbox.network.${k} is set (a way out of the sandbox)`);
+  const allow = settings.permissions?.allow ?? [];
+  for (const t of ["Read", "Edit", "Write", "Glob", "Grep", "NotebookEdit", "MultiEdit"]) if (allow.includes(t)) out.push(`allows bare ${t}: that tool runs outside the sandbox, so it may touch only her paths`);
+  if (settings.permissions?.additionalDirectories?.length) out.push("permissions.additionalDirectories is set (it widens what her tools and sandbox may write)");
+  for (const a of allow) {
+    const m = a.match(/^(Read|Edit)\((.+)\)$/);
+    if (!m) continue;
+    const path = m[2].replace(/\/\*\*$/, "");
+    if (!underRoot(path, m[1] === "Edit" ? spec.allowWrite : spec.allowRead)) out.push(`allows ${a}, outside her sandbox's ${m[1] === "Edit" ? "write" : "read"} paths`);
+  }
+  if (settings.env?.GIT_CONFIG_NOSYSTEM !== "1" || !String(settings.env?.GIT_CONFIG_GLOBAL ?? "").endsWith("/.boss-os/noelle/gitconfig")) out.push("env does not pin her git to ~/.boss-os/noelle/gitconfig with GIT_CONFIG_NOSYSTEM=1 (Sequoia's Keychain login would push for her)");
   return out;
 }
 
 /** Calls that may stay unlocked, each with its reason. `match` is text on the call's own line. */
 export const EXCEPTIONS = Object.freeze([
-  { file: "scripts/validate/noelle-no-tools.mjs", match: null, what: "skips permissions", why: "a checker: the flag is its own pattern and its self-test cases, which fail noelle; it never runs claude" },
   { file: "scripts/validate/the-repo-lane-lands-only-on-green.mjs", match: 'runner: "import { PHASE_MODELS', what: "runs claude -p without lockedArgs()", why: "a self-test fixture string standing in for repo-change.mjs; it is never spawned" },
   { file: "scripts/ops/kdp-surface.sh", match: '"$AI_RUN" --role "$AI_ROLE" --out "$RUN_LOG"', why: "ai-run brain with no AI_RUN_CLAUDE_ARGS (ai-run's default skips permissions); found beyond the 24 Nov brief, not locked in this PR (see its Not built)" },
   { file: "scripts/ops/ahrefs-audit-fix.sh", match: '--out "$AHREFS_DIGEST"', why: "the Gmail digest step: ai-run brain with no AI_RUN_CLAUDE_ARGS; found beyond the 24 Nov brief, not locked in this PR (the repair pass below it is locked)" },
@@ -202,6 +255,26 @@ function namedBy(job, files) {
     .map((s) => `${s} does not run under ${job.name}-permissions.json`);
 }
 
+/** Each way her sandbox could be weakened; the self-test and tests/claudeRunsLocked.test.ts prove each is caught. */
+export const SANDBOX_BREAKS = Object.freeze([
+  ["the sandbox block removed", (s) => { delete s.sandbox; }],
+  ["the sandbox switched off", (s) => { s.sandbox.enabled = false; }],
+  ["running unsandboxed when the sandbox is unavailable", (s) => { s.sandbox.failIfUnavailable = false; }],
+  ["dangerouslyDisableSandbox honoured", (s) => { s.sandbox.allowUnsandboxedCommands = true; }],
+  ["an escaping excluded command", (s) => { s.sandbox.excludedCommands.push("node *"); }],
+  ["home reads re-allowed", (s) => { s.sandbox.filesystem.denyRead = []; }],
+  ["a write path added", (s) => { s.sandbox.filesystem.allowWrite.push("~/GitHub"); }],
+  ["a read path re-opened", (s) => { s.sandbox.filesystem.allowRead.push("~/.config"); }],
+  ["a model host allowed", (s) => { s.sandbox.network.allowedDomains.push("api.anthropic.com"); }],
+  ["every host allowed", (s) => { s.sandbox.network.allowedDomains = ["*"]; }],
+  ["unix sockets opened", (s) => { s.sandbox.network.allowAllUnixSockets = true; }],
+  ["bare Read allowed", (s) => { s.permissions.allow.push("Read"); }],
+  ["bare Write allowed", (s) => { s.permissions.allow.push("Write"); }],
+  ["an Edit rule outside her paths", (s) => { s.permissions.allow.push("Edit(~/GitHub/**)"); }],
+  ["additionalDirectories widened", (s) => { s.permissions.additionalDirectories = ["__HOME__/GitHub"]; }],
+  ["her git left on the system Keychain helper", (s) => { delete s.env.GIT_CONFIG_NOSYSTEM; }],
+]);
+
 function selfTest() {
   let bad = 0, caught = 0;
   const must = (name, problems) => { if (problems.length) caught++; else { console.error(`self-test: not caught: ${name}`); bad++; } };
@@ -239,6 +312,13 @@ function selfTest() {
     { const s = clone(real); delete s.permissions.allow; must(`${job.name} with no allow list`, jobProblems(s, job)); }
     { const s = clone(real); s.permissions.defaultMode = "bypassPermissions"; must(`${job.name} in bypass mode`, jobProblems(s, job)); }
     { const s = clone(real); s.permissions.allow = [...s.permissions.allow, "Bash"]; must(`${job.name} allowing bare Bash`, jobProblems(s, job)); }
+    if (job.agentGuard) {
+      const s = clone(real); s.hooks.PreToolUse = s.hooks.PreToolUse.filter((h) => !JSON.stringify(h).includes(job.agentGuard));
+      must(`${job.name} allowing Agent without ${job.agentGuard}`, jobProblems(s, job));
+      const t = clone(real); t.permissions.deny = [...t.permissions.deny, "Task"];
+      must(`${job.name} denying Task, which removes the Agent tool`, jobProblems(t, job));
+    }
+    if (job.sandbox) for (const [name, f] of SANDBOX_BREAKS) { const s = clone(real); f(s); must(`${job.name}: ${name}`, jobProblems(s, job)); }
     for (const a of real.permissions.allow.filter((x) => x.startsWith("mcp__"))) {
       const server = a.slice(0, a.lastIndexOf("__"));
       { const s = clone(real); s.permissions.deny = [...(s.permissions.deny ?? []), server]; must(`${job.name}: deny ${server} shadowing ${a}`, jobProblems(s, job)); }
@@ -248,7 +328,7 @@ function selfTest() {
   must("an empty allow list not marked text_only", jobProblems({ permissions: { allow: [], deny: COMMON_DENY } }, { name: "x", needs: [] }));
   // The skip flag back in every locked script, and each shape of unlocked call.
   const SKIP_FLAG = "--dangerously-skip-permissions";
-  const scripts = [...new Set(JOBS.flatMap((j) => j.scripts)), "scripts/ops/ai-visibility.sh", "scripts/ops/noelle.sh", "scripts/ops/noelle.mjs"];
+  const scripts = [...new Set(JOBS.flatMap((j) => j.scripts)), "scripts/ops/ai-visibility.sh"];
   for (const f of scripts) {
     const text = readFileSync(join(ROOT, f), "utf8");
     if (scanProblems([[f, text]], []).length) { console.error(`self-test: the real ${f} fails the scan`); bad++; continue; }

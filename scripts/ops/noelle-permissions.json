@@ -1,59 +1,207 @@
 {
-  "env": {
-    "ENABLE_CLAUDEAI_MCP_SERVERS": "false"
-  },
+  "_why": "NOELLE'S RUN IS SANDBOXED AND LOCKED (redesign 24 Nov 2026, the coordinator's check: safety by taking access away, never by spotting bad input). scripts/ops/noelle.sh fills __HOME__, __REPO__ and __RUN__ (her run folder's name) and writes this to ~/.boss-os/noelle/settings.json, a path she cannot write, then runs her with --permission-mode dontAsk --setting-sources= --settings <that file>. THE SANDBOX (Claude Code's own, macOS Seatbelt) holds every bash command and every child it starts: writes only in ~/Work/noelle (her clones, worktrees, notes) and her run folder; reads of the whole home denied except those two, the gitconfig her run is given, the skills and the rules file; network only to the hosts below (no model, paid-API or payment host); no command escapes it (allowUnsandboxedCommands false) except her two brokers, which trust nothing of hers. Read and Edit (Write uses Edit's rules) are allowed only on the same paths. Her guard (the '*' hook) holds only what is judged by name: one reviewer agent per PR, 3 PRs, the ~200K handoff, and no merge or push to main outside land. scripts/validate/claude-runs-locked.mjs fails the build if any of this is missing.",
   "permissions": {
+    "defaultMode": "dontAsk",
     "allow": [
-      "Read(./**)",
-      "Bash(./noelle-tools:*)"
+      "Read(~/Work/noelle/**)",
+      "Edit(~/Work/noelle/**)",
+      "Read(~/.boss-os/noelle/runs/__RUN__/**)",
+      "Edit(~/.boss-os/noelle/runs/__RUN__/**)",
+      "Read(~/.claude/skills/**)",
+      "Read(~/.claude/CLAUDE.md)",
+      "Bash(__HOME__/.boss-os/noelle/bin/noelle-tool *)",
+      "Bash(__HOME__/.boss-os/noelle/bin/land-after *)",
+      "Bash(cd:*)",
+      "Bash(ls:*)",
+      "Bash(cat:*)",
+      "Bash(head:*)",
+      "Bash(tail:*)",
+      "Bash(sed:*)",
+      "Bash(cut:*)",
+      "Bash(sort:*)",
+      "Bash(wc:*)",
+      "Bash(find:*)",
+      "Bash(rg:*)",
+      "Bash(grep:*)",
+      "Bash(jq:*)",
+      "Bash(date:*)",
+      "Bash(pwd)",
+      "Bash(echo:*)",
+      "Bash(printf:*)",
+      "Bash(test:*)",
+      "Bash(true)",
+      "Bash(diff:*)",
+      "Bash(tr:*)",
+      "Bash(uniq:*)",
+      "Bash(awk:*)",
+      "Bash(mkdir:*)",
+      "Bash(cp:*)",
+      "Bash(mv:*)",
+      "Bash(rm:*)",
+      "Bash(touch:*)",
+      "Bash(timeout:*)",
+      "Bash(sleep:*)",
+      "Bash(command -v:*)",
+      "Bash(node:*)",
+      "Bash(python3:*)",
+      "Bash(npm:*)",
+      "Bash(npx:*)",
+      "Bash(curl:*)",
+      "Bash(git:*)",
+      "Agent",
+      "WebFetch",
+      "WebSearch"
     ],
     "deny": [
-      "Agent",
-      "Artifact",
-      "ArtifactComments",
-      "ArtifactData",
-      "AskUserQuestion",
-      "BashOutput",
+      "Bash(gh pr merge:*)",
+      "Bash(git push --force:*)",
+      "Bash(git push -f:*)",
+      "Bash(git push origin main)",
+      "Bash(git push origin master)",
+      "Bash(git push origin main:*)",
+      "Bash(git push origin master:*)",
+      "Bash(git push *:main)",
+      "Bash(git push *:main *)",
+      "Bash(git push *:master)",
+      "Bash(git push *:master *)",
+      "Bash(git push *:refs/heads/main*)",
+      "Bash(git push *:refs/heads/master*)",
+      "Bash(gh api:*)",
+      "Bash(gh secret:*)",
+      "Bash(gh workflow run:*)",
+      "Bash(wrangler deploy:*)",
+      "Bash(npx wrangler:*)",
+      "Bash(npm run -s vault:set:*)",
+      "Bash(claude:*)",
+      "Bash(ai-run:*)",
+      "Edit(~/.claude/**)",
+      "Edit(~/bin/**)",
+      "Edit(~/.boss-os/**)",
+      "Edit(~/Brains/**)",
+      "Edit(~/Work/noelle/.claude/**)",
+      "Edit(~/Work/noelle/owner-notes.md)",
+      "Write(~/Work/noelle/owner-notes.md)",
+      "Skill",
+      "SendMessage",
+      "Workflow",
+      "RemoteTrigger",
       "CronCreate",
       "CronDelete",
-      "CronList",
-      "DesignSync",
-      "Edit",
-      "EnterWorktree",
-      "ExitPlanMode",
-      "ExitWorktree",
-      "KillShell",
-      "LSP",
-      "ListAgents",
-      "ListMcpResourcesTool",
-      "Monitor",
-      "NotebookEdit",
-      "PushNotification",
-      "ReadMcpResourceDirTool",
-      "ReadMcpResourceTool",
-      "RemoteTrigger",
-      "ReportFindings",
       "ScheduleWakeup",
-      "SendMessage",
-      "Skill",
-      "Task",
-      "TaskStop",
-      "TodoWrite",
-      "ToolSearch",
-      "WebFetch",
-      "WebSearch",
-      "Workflow",
-      "Write",
+      "mcp__claude-in-chrome",
       "mcp__claude_ai_8Raise",
-      "mcp__claude_ai_Claude_Docs",
+      "mcp__8raise",
       "mcp__claude_ai_Gmail",
       "mcp__claude_ai_Google_Calendar",
-      "mcp__claude_ai_Google_Docs",
       "mcp__claude_ai_Google_Drive",
+      "mcp__claude_ai_Google_Docs",
       "mcp__claude_ai_Google_Sheets",
       "mcp__claude_ai_Google_Slides",
-      "Read(~/Brains/**)"
+      "mcp__claude_ai_Claude_Docs",
+      "mcp__plugin_openseo_openseo"
+    ]
+  },
+  "sandbox": {
+    "enabled": true,
+    "failIfUnavailable": true,
+    "allowUnsandboxedCommands": false,
+    "autoAllowBashIfSandboxed": true,
+    "enableWeakerNetworkIsolation": true,
+    "excludedCommands": [
+      "__HOME__/.boss-os/noelle/bin/noelle-tool *",
+      "__HOME__/.boss-os/noelle/bin/land-after *"
     ],
-    "defaultMode": "dontAsk"
+    "filesystem": {
+      "allowWrite": [
+        "~/Work/noelle",
+        "~/.boss-os/noelle/runs/__RUN__"
+      ],
+      "denyWrite": [
+        "~/Work/noelle/.claude",
+        "~/Work/noelle/owner-notes.md"
+      ],
+      "denyRead": [
+        "~/"
+      ],
+      "allowRead": [
+        "~/Work/noelle",
+        "~/.boss-os/noelle/runs/__RUN__",
+        "~/.boss-os/noelle/gitconfig",
+        "~/.claude/skills",
+        "~/.claude/CLAUDE.md"
+      ]
+    },
+    "network": {
+      "allowedDomains": [
+        "github.com",
+        "api.github.com",
+        "codeload.github.com",
+        "*.githubusercontent.com",
+        "registry.npmjs.org",
+        "*.pages.dev",
+        "*.workers.dev",
+        "api.bufferapp.com",
+        "api.buffer.com"
+      ]
+    }
+  },
+  "hooks": {
+    "PreToolUse": [
+      {
+        "matcher": "Bash",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node __HOME__/bin/command-guard.mjs",
+            "timeout": 10
+          }
+        ]
+      },
+      {
+        "matcher": "Agent",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node __HOME__/bin/brief-gate.mjs",
+            "timeout": 10
+          }
+        ]
+      },
+      {
+        "matcher": "*",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node __REPO__/scripts/ops/noelle-guard.mjs",
+            "timeout": 10
+          }
+        ]
+      }
+    ],
+    "PreCompact": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node __REPO__/scripts/ops/noelle-guard.mjs --precompact",
+            "timeout": 10
+          }
+        ]
+      }
+    ]
+  },
+  "env": {
+    "CLAUDE_CODE_AUTO_COMPACT_WINDOW": "200000",
+    "NOELLE_HOME": "__HOME__/Work/noelle",
+    "PATH": "/opt/homebrew/bin:/usr/bin:/bin:/usr/sbin:/sbin",
+    "GIT_CONFIG_NOSYSTEM": "1",
+    "GIT_CONFIG_GLOBAL": "__HOME__/.boss-os/noelle/gitconfig",
+    "GIT_TERMINAL_PROMPT": "0",
+    "GH_CONFIG_DIR": "__HOME__/Work/noelle/.config/gh",
+    "XDG_CONFIG_HOME": "__HOME__/Work/noelle/.config",
+    "XDG_CACHE_HOME": "__HOME__/Work/noelle/.cache",
+    "npm_config_cache": "__HOME__/Work/noelle/.npm",
+    "npm_config_userconfig": "__HOME__/Work/noelle/.npmrc",
+    "NODE_USE_ENV_PROXY": "1"
   }
 }

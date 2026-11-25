@@ -54,8 +54,8 @@ export const AI_ROLES = Object.freeze({
 
   // ── Company brains ────────────────────────────────────────────────────────────────────────────
   // Owner, 13 Nov 2026: "recording can be a free model interpreting can be a more high quality model".
-  // ── Noelle, the Growth Director (scripts/ops/noelle.sh; her plan, then the remake of a failed piece) ──
-  "growth.noelle": { role: BRAIN, jobClass: "hard", why: "Noelle's daily read-decide-plan session: a veteran's growth judgement over every ledger, Claude only (private brain lines reach her), with no tools at all (noelle-permissions.json); code re-checks every action she prints." },
+  // ── Noelle, the Growth Director (scripts/ops/noelle.sh: full Claude Code with her persona, 24 Nov 2026) ──
+  "growth.noelle": { role: BRAIN, jobClass: "hard", why: "Noelle's run: full Claude Code as the Director of Growth in ~/Work/noelle, with builder tools, the rules file and skills, inside Claude Code's OS sandbox (scripts/ops/lib/noelle-sandbox.sh: her own paths, her hosts and a separate GitHub broker) with her guard's checks by name (scripts/ops/noelle-guard.mjs). Brains: only spry, porch-and-party, time-2-read, personal, team and risk (noelle.mjs readBrain), never brokerage or west-peek-ventures. On a Claude limit scheduled work stops and her call goes to the Boss OS answer ladder." },
   "brain.record": { role: WORKER, jobClass: "short", why: "Saving her exact words or a measured number into a brain, read back after the save: short and checkable, so it starts on the free routes." },
   "brain.interpret": { role: BRAIN, jobClass: "hard", why: "Rewriting, merging, summarising or deciding what a ruling means: hard judgement." },
   "brain.write": { role: BRAIN, jobClass: "hard", why: "A company-brain write that does not say whether it records or interprets is treated as interpreting: the strongest route." },

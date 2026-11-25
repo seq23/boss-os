@@ -15,12 +15,16 @@
 import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 
-const REFUSED = /^Permission to use \S+ has been denied/;
+// Two wordings: dontAsk's "Permission to use Bash has been denied because …" and a deny rule's
+// "Permission to use Bash with command gh api user has been denied." (24 Nov 2026, a real locked run:
+// the second read as 0 refusals).
+const REFUSED = /^Permission to use \S+(?: with [\s\S]*?)? has been denied/;
 
 /** The refused tool calls in a Claude Code transcript (JSONL text), as `{ tool, command }`. */
 export function permissionDenials(jsonl) {
   const uses = new Map();
   const out = [];
+  const counted = new Set(); // a transcript can carry the same tool_result twice: one refusal is one
   for (const line of String(jsonl).split("\n")) {
     if (!line.trim()) continue;
     let rec;
@@ -31,7 +35,9 @@ export function permissionDenials(jsonl) {
       if (c?.type === "tool_use") uses.set(c.id, { tool: c.name, command: c.input?.command ?? c.input?.file_path ?? JSON.stringify(c.input ?? {}) });
       if (c?.type === "tool_result" && c.is_error) {
         const text = typeof c.content === "string" ? c.content : Array.isArray(c.content) ? c.content.map((x) => x?.text ?? "").join("") : "";
-        if (REFUSED.test(text)) out.push(uses.get(c.tool_use_id) ?? { tool: text.split(" ")[3] ?? "?", command: "(call not found)" });
+        if (!REFUSED.test(text) || counted.has(c.tool_use_id)) continue;
+        counted.add(c.tool_use_id);
+        out.push(uses.get(c.tool_use_id) ?? { tool: text.split(" ")[3] ?? "?", command: "(call not found)" });
       }
     }
   }

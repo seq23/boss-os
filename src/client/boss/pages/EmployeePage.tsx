@@ -65,6 +65,8 @@ export function EmployeePage({ id, onBack }: { id: string; onBack: () => void })
 
       {e.id === "emp_knowledge" && <WaitingOnRegister />}
 
+      {e.id === "emp_growth" && <MessageNoelle onError={setError} />}
+
       <section className="panel" data-testid="employee-tell-simone" aria-label={`Give ${e.name} a one-off task`}>
         <p className="row-title" style={{ marginTop: 0 }}>Give {e.name} a one-off task</p>
         <p className="row-sub">Goes through Simone, so it lands with the right person even if it isn&apos;t {e.name}&apos;s.</p>
@@ -250,6 +252,34 @@ function RemovedRow({ duty: d, onChanged, onError }: { duty: any; onChanged: () 
         Bring {d.name.length > 30 ? "it" : d.name} back
       </button>
     </div>
+  );
+}
+
+/** H3b: Noelle is reached from her page as well as by email; her reply lands on the card. */
+function MessageNoelle({ onError }: { onError: (e: unknown) => void }) {
+  const [text, setText] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [said, setSaid] = useState<{ line: string; task: string | null } | null>(null);
+  async function send() {
+    setBusy(true); setSaid(null);
+    try { const r = await api.messageNoelle(text); setText(""); setSaid({ line: r.line, task: r.task_id }); }
+    catch (e) { onError(e); }
+    finally { setBusy(false); }
+  }
+  return (
+    <section className="panel" data-testid="employee-message-noelle" aria-label="Message Noelle">
+      <p className="row-title" style={{ marginTop: 0 }}>Message Noelle</p>
+      <label className="field">
+        <span>What do you want her to do or look at?</span>
+        <textarea rows={3} value={text} onChange={(ev) => setText(ev.target.value)} placeholder="e.g. Make this week's Peace Be Still carousels about patience" />
+      </label>
+      <button className="btn btn-primary" disabled={busy || text.trim().length < 2} onClick={send}>Send to Noelle</button>
+      {said && (
+        <div className="notice" role="status" style={{ marginTop: 10 }}>
+          {said.line}{said.task && <> <a href={taskHref(said.task)} onClick={(ev) => { ev.preventDefault(); go(taskHref(said.task!)); }}>Open it</a></>}
+        </div>
+      )}
+    </section>
   );
 }
 

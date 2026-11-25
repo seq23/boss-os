@@ -10,9 +10,11 @@ import { join } from "node:path";
 import { tmpdir } from "node:os";
 import { spawnSync } from "node:child_process";
 // @ts-expect-error plain .mjs
-import { JOBS, jobProblems, scanProblems, unlockedCalls } from "../scripts/validate/claude-runs-locked.mjs";
+import { JOBS, jobProblems, scanProblems, unlockedCalls, sandboxProblems, SANDBOX_BREAKS } from "../scripts/validate/claude-runs-locked.mjs";
 // @ts-expect-error plain .mjs
 import { lockedArgs, refusals, resultText } from "../scripts/ops/lib/claude-lock.mjs";
+// @ts-expect-error plain .mjs
+import { permissionDenials } from "../scripts/ops/lib/permission-denials.mjs";
 // @ts-expect-error plain .mjs
 import { connectorVerdict } from "../scripts/ops/credential-check.mjs";
 // @ts-expect-error plain .mjs
@@ -39,6 +41,43 @@ describe("each job's permissions file", () => {
       }
     });
   }
+  it("noelle: Agent is allowed only while her guard runs on every Agent call", () => {
+    const job = JOBS.find((j: { name: string }) => j.name === "noelle");
+    const real = settings("noelle");
+    expect(real.permissions.allow).toContain("Agent");
+    expect(real.permissions.additionalDirectories).toBeUndefined(); // her sandbox, not a widened list, sets her paths
+    expect(jobProblems(real, job)).toEqual([]);
+    const s = structuredClone(real);
+    s.hooks.PreToolUse = s.hooks.PreToolUse.filter((h: { matcher: string }) => h.matcher !== "*");
+    expect(jobProblems(s, job).join("\n")).toMatch(/allows Agent without noelle-guard\.mjs/);
+    const t = structuredClone(real);
+    t.permissions.deny.push("Task"); // 24 Nov 2026: a real locked run lost the Agent tool to this
+    expect(jobProblems(t, job).join("\n")).toMatch(/denies? .*Task, which removes the Agent tool|holds Task, which removes the Agent tool/);
+    const b = structuredClone(settings("builder"));
+    b.permissions.deny = b.permissions.deny.filter((d: string) => d !== "Agent");
+    expect(jobProblems(b, JOBS.find((j: { name: string }) => j.name === "builder")).join("\n")).toMatch(/deny is missing Agent/);
+  });
+  it("noelle: her settings without the sandbox, or with any way out of it, fail the build", () => {
+    const job = JOBS.find((j: { name: string }) => j.name === "noelle");
+    const real = settings("noelle");
+    expect(sandboxProblems(real, job.sandbox)).toEqual([]);
+    for (const [name, f] of SANDBOX_BREAKS) {
+      const s = structuredClone(real);
+      f(s);
+      expect(jobProblems(s, job).length, name).toBeGreaterThan(0);
+    }
+    const none = structuredClone(real); delete none.sandbox;
+    expect(jobProblems(none, job).join("\n")).toMatch(/has no sandbox block/);
+  });
+  it("a deny rule's refusal is counted, in its own wording, as well as dontAsk's", () => {
+    const line = (content: string) => JSON.stringify({ type: "assistant", message: { content: [{ type: "tool_use", id: "t1", name: "Bash", input: { command: "gh api user" } }] } }) + "\n"
+      + JSON.stringify({ type: "user", message: { content: [{ type: "tool_result", tool_use_id: "t1", is_error: true, content }] } }) + "\n";
+    expect(permissionDenials(line("Permission to use Bash with command gh api user has been denied."))).toEqual([{ tool: "Bash", command: "gh api user" }]);
+    expect(permissionDenials(line("Permission to use Bash has been denied because Claude Code is running in don't ask mode."))).toHaveLength(1);
+    expect(permissionDenials(line("Exit code 1: no such file"))).toEqual([]);
+    const twice = line("Permission to use Bash with command gh api user has been denied.");
+    expect(permissionDenials(twice + twice.split("\n")[1] + "\n")).toHaveLength(1); // the same result written twice is one refusal
+  });
   it("Rule 0: no allow list, or an empty one not marked text_only, fails", () => {
     const job = JOBS.find((j: { name: string }) => j.name === "kdp-watch");
     expect(jobProblems({ permissions: { deny: [] } }, job)[0]).toMatch(/no allow list/);

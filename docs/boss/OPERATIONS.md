@@ -972,64 +972,44 @@ from `READER_IDS`, a D1 query returning one number `n`, floors, version B). A so
 vault lacks shows "No number" with `NAMED STOP [KEY_MISSING]` naming the key. Dry run:
 `npm run scorecard:monday -- --dry`. Restart links are `/tap/sc…` (routes/scorecard.ts).
 
-## Noelle, the Growth Director (23 Nov 2026)
+## Noelle, the Growth Director
 
-Plan artifact 8LfYgMaHj7XLVB1fJ1vYxM, gap review G1-G21. Noelle is a scheduled Claude session on her Mac
-(`scripts/ops/noelle.sh`, launchd `com.seq.boss-noelle`, LIGHT): once a day at a slot that varies between 10:00 and
-21:59 Central and is never on the hour, and Thursday after 14:00 the weekly run. The free-model Monday cycle
-(run.ts's old cycle, `npm run growth:privacy`) is gone.
+Noelle runs as Claude Code with the persona in `scripts/ops/noelle/persona.md`. Her remit covers
+six businesses, with Porch & Party first. She decides their channel mix and builds the jobs and
+channels she chooses within the ask-first rules. The launcher holds scheduled and called runs
+until November 28, 2026 at midnight Central. After the hold, launchd ticks every 30 minutes.
+A Claude usage limit stops scheduled work and releases an owner call to the Boss OS answer ladder.
 
-**One run.** Read → Decide → Act → Tell → Measure:
-1. `GET /api/boss/growth/noelle/context` (the BOSS_OPEN_LOOPS_TOKEN machine token): the roster with tiers, her
-   rulings per business (confidential spans cut, then checked by `leaksIn`: a word her brains hold only inside a
-   span holds that business, NAMED STOP [PRIVATE_IN_PROMPT]; no private word known at all holds every business,
-   [PRIVACY_UNREAD]), the playbook, the 28-day numbers, the last runs and their stops.
-2. The Mac adds the week's sources (each with its file, sha and age; older than 8 days, missing or empty is a
-   named stop for the items it feeds), the owning jobs' queue lengths ("not read" when a queue cannot be read)
-   and the search-loop caps, then runs Claude through `ai-run --role brain` from her run folder with two tools
-   only: Read inside that folder and `./noelle-tools queue|bank|check` (the same checkPlan gate the Worker runs;
-   the exact allow list is held by `scripts/validate/noelle-no-tools.mjs`). The context is at most 60 KB, each
-   shared ruling once, or the run stops [CONTEXT_TOO_BIG]. Everything read is marked as untrusted data. Her answer is one JSON
-   plan between NOELLE-PLAN-BEGIN and NOELLE-PLAN-END.
-3. `POST /noelle/plan`: the Worker re-runs `checkPlan` (`src/shared/boss/growth/noelle.mjs`) on the plan and
-   returns only what it accepts. She changes only the owning job's bank, plan or target (G1); she may lower a
-   search-loop cap, never raise one (a raise is a card for Sequoia, G4); money, new accounts, products and prices,
-   fund or LP marketing, and a friend's live page (Hicks) are refused and become one line or card for Sequoia.
-   Decisions go to `growth_decisions` and the Growth page; the first Porch & Party decision of every run is
-   bookings this season (`SEASON_FIRST`).
-4. The Mac acts through the owning jobs only, then `POST /noelle/done`: one Notices line per NEW published thing
-   ("Noelle published: <business> <what> <where> <link>", https links only, Noelle's own pieces only), the stop
-   codes, the call count. ai-run exit 76 (Claude limit) is a clean stop, `[CLAUDE_LIMIT]`, resumed next slot.
-   A job-target is a PR on the owning repo (`target`/`posts_per_week` in its data file, or a `bank` add of 1–14
-   posts that a fresh no-tools reviewer passed), landed by `land-after`; each PR is one Notices line
-   ("Noelle changed …"). A target above the free Buffer limit is refused [NEEDS_MONEY] and becomes her call.
-   Rule 0: a run that queued nothing and opened no PR exits 14, `[NOTHING_ACTED]`, on the card and on Notices;
-   any owned channel under 3 days ahead after the run is `[UNDER_3_DAYS]` (unread: `[CHANNEL_UNREAD]`).
-   Hold: nothing runs before `NOELLE_START_AT` (Sat 28 Nov 2026 00:00 CT), `[HELD_UNTIL]`.
-5. Measure: 24 hours after the slot the next run reads whether each piece actually published (Buffer/Studio); a
-   miss is a defect, fixed that run.
+The first wake inputs are `~/Work/noelle/owner-notes.md` and `HANDOFF.md`. The scheduled wake also
+uses the latest dated note, the relevant playbooks in `plays/`, and summarized reads. A light wake
+uses the playbook for the business the owner asks about. `HANDOFF.md` records the notes read
+through date and this run's ID. A missing owner notes read or handoff rewrite records a named stop.
+`noelle-tool brain <slug>` lists headings and adding a section returns only that section. The
+allowlist is spry, porch-and-party, time-2-read, personal, team and risk.
 
-**Her levers that act (24 Nov 2026).** Besides Studio pieces and job targets: `search-loop` (topics, never-search words, mode, a LOWER page cap judged against the cap read from `data/search-loop/cap.json`) and `page-new` (a search topic put first as a priority search) become one `search-loop.config.json` PR per business per run, landed on green CI; the Search Loop's own cap, distinct gate and page gate decide what publishes (A Player Mode's pages live on billionairehighperformancecoach.com). `pin-refill` starts the existing Pinterest refill for ApprovalPrep, Dream Wedding or A Player Mode once a run, with no inputs: releasing a held pin sample stays Sequoia's. A started refill counts as acting for Rule 0; its pins are counted on her next run's queue read, never as "scheduled" here.
+The Mac launcher passes its own permission settings and OS sandbox to Claude Code.
+`noelle_prepare` creates the settings and the two brokers outside the session workspace. The
+picture validator rejects a reachable provider call, vendor host or credential. GitHub Actions
+run under separate repository and environment controls. Before a push or PR, the GitHub broker
+requires a reviewer receipt, no repository-scoped Actions secrets, a PR requirement on main,
+and exact main-only branch policies for credential-bearing environments. The Friday runbook
+in PR #574 covers the hosted canary and configuration.
 
-**When called (24 Nov 2026).** Her words: "she has a schedule yes but she should be able to work when called too".
-An email tagged #noelle becomes a task on her seat (`emp_growth`, intake/inboundMail.ts). The queue parks it for her
-Mac (`parked_for_mac`, lane `noelle_call`, queue/consumer.ts): no cloud model answers for her. Each tick, after the
-hold check, `noelle.sh` asks `POST /noelle/call/claim`; a waiting email runs her full session first, with the email
-at the top of her context (fenced as data where she quotes others), under the slot `call:<task id>`, so the runs
-table's unique index makes one email one run. Her reply (between `NOELLE-REPLY-BEGIN`/`-END` lines) plus what the run
-actually queued goes back through `POST /noelle/call/reply`: the card's output and, once, the email signed Noelle
-(a second reply changes nothing). A stopped call goes back through `/call/release`: a `[CLAUDE_LIMIT]` or
-`[HELD_UNTIL]` stop costs no try and waits 2 hours; the third real stop replies with what stopped it. Call runs never
-count as her daily run (`didNotRunLine`, `escalations`). The hold covers calls: none is claimed before
-`NOELLE_START_AT`. Tests: `tests/boss/noelleCall.test.ts`, the call block in `tests/noelleV2.test.ts`.
+The broker accepts `noelle/<name>` branches in the allowlisted repositories and labels each PR
+`review-required`. Noelle can propose changes under `.github/` once a repository passes the
+broker checks. An independent reviewer posts a current-head PASS outside her session. The
+landing broker checks the PR against its own opening receipts and limits landing to the growth
+repositories. She keeps code task sheets in `~/Work/noelle/tasks/`.
 
-**Watched.** `duty_growth_director` (migration 0378) runs at 22:05 Central: no `noelle_runs` row today is NAMED STOP
-[NOELLE_DID_NOT_RUN] and one line in the next morning email; the same stop three days running is one line to
-Sequoia. A per-run and a per-week Claude-call budget end in a named stop (`WEEK_CALL_BUDGET`). Her fortnightly
-report (`reportSection`, director.mjs) is still built from the record, never from a model's words.
-Tests: `tests/noelle.test.ts` (the gate), `tests/noelleV2.test.ts` (hold, stops, context, Rule 0, alarm, bank,
-job PRs, her tools), `tests/growthRoster.test.ts` (tiers, G8), `tests/boss/noelleRun.test.ts`
-(the routes, the record, privacy, the watch).
+Owner-verified email reaches Noelle via a `#noelle` tag, her name as a word anywhere in the subject,
+or a first line opening with her name. The same Mac claim loop answers messages from her Boss OS
+page. A call relies on the owner check at intake. Forwarded text and outside sources are data.
+
+Posting workflows use the shared `ledger-rows` action to send confirmed receipts to
+`/noelle/ledger`. Monday's reconciliation reads the workflow step and its receipt source.
+A gap in the ledger raises `POST_NOT_LEDGERED`. Unread paths and paths without a platform
+receipt get a reason. The 14-day report leads with Porch & Party's results and its Studio receipts.
+`/noelle/done` refuses zero-queue completion and records named stops for the heartbeat.
 
 ## Backlink requests (22 Nov 2026)
 
@@ -1037,7 +1017,7 @@ Her words, 22 Nov 2026: "i thought the backlink network was going to defer to th
 to assume we are not related and there is a separate cloudflare acct the director needs to know that". How the
 network works with us is her ruling in the spry brain's Settled "### Growth" group, which Noelle reads with her other
 rulings. Code keeps only the hard limits: a topic of at most `TOPIC_MAX` = 120 characters, at most one request per
-four articles a business published (`ONE_IN_FOUR`, checkPlan), the naming guard (`namingProblems`) on the draft, and
+four articles a business published (her ruling in the spry brain, read by Noelle), the naming guard (`namingProblems`) on the draft, and
 never calling the network ours. An accepted request is written on the decision as `ordered`, never an Open Loops
 to-do or a Decide card. The network reads them with `GET /api/boss/growth/backlink-orders` (the machine token;
 anything else is 401): `{ cycle, read_at, orders: [{ business, topic, draft, why }] }`, from the newest decided rows.

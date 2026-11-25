@@ -148,7 +148,7 @@ app.use("/api/*", async (c, next) => {
   if (c.req.path === AI_MISSES_PATH && c.req.method === "GET") return next();
   // The backlink network's read of the Director's backlink orders: the same token, checked in routes/growth.ts.
   if (c.req.path === BACKLINK_ORDERS_PATH && c.req.method === "GET") return next();
-  // Noelle's run on her Mac (context, plan, done): the same token, checked in routes/growth.ts.
+  // Noelle's run on her Mac (context, done, notice, ledger, call): the same token, checked in routes/growth.ts.
   if (NOELLE_PATHS.has(c.req.path)) return next();
   return requireSession(c, next);
 });

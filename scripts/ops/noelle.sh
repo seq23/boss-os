@@ -1,146 +1,75 @@
 #!/bin/bash
-# NOELLE, THE GROWTH DIRECTOR (plan artifact 8LfYgMaHj7XLVB1fJ1vYxM; brief ~/Work/tasks/noelle-rebuild-brief.md).
+# NOELLE, THE DIRECTOR OF GROWTH (24 Nov 2026, her words: "go - scheduled job that wakes up as a full agent";
+# brief ~/Work/tasks/noelle-builds-brief.md). What wakes is full Claude Code as Noelle (scripts/ops/noelle/persona.md
+# on top of the whole rules file), working in her own home ~/Work/noelle (her working directory is the run folder:
+# the sandbox refuses .git/hooks and .git/config under it, which would stop every clone), with builder-level tools, the skills (read by
+# path) and one fresh `reviewer` per PR she opens. Her run is SANDBOXED and LOCKED (redesign 24 Nov 2026: safety by
+# taking access away): --permission-mode dontAsk --setting-sources= --settings ~/.boss-os/noelle/settings.json
+# (scripts/ops/noelle-permissions.json, filled in by lib/noelle-sandbox.sh), so none of Sequoia's own settings load,
+# Claude Code's OS sandbox holds every command she runs (writes only in ~/Work/noelle and her run folder, home reads
+# denied, network only to her hosts), and her GitHub writes go through the credentialed broker. Her guard
+# (scripts/ops/noelle-guard.mjs) holds only what is judged by name: one reviewer per PR, 3 PRs, the handoff, land.
 #
-# launchd com.seq.boss-noelle ticks every 30 minutes through mac-window LIGHT (10:00-21:59 Central).
-# Each tick asks scripts/ops/noelle.mjs `due` whether to run: once a day at today's slot (slotFor: a time
-# between 10:00 and 20:58 that varies by day, never on the hour; Thursday after 14:00 is the weekly run),
-# and never starting after 21:00. A run that stopped (out of Claude credits, a read that failed) is tried
-# again by a tick two hours on, as its own slot, at most three times a day; else tomorrow's slot runs.
+# launchd com.seq.boss-noelle ticks every 30 minutes, 10:00-22:59 Central (mac-window ANY holds 07:00-09:59):
+#   - a call from Sequoia (her email to boss@ that passed the owner check, or her message on Noelle's Boss OS
+#     page) is claimed on the next tick from 10:00 to 22:59: answered within 30 minutes (H3c). Outside that the
+#     Worker has already told her "Noelle is on it at 10:00 Central";
+#   - otherwise her daily run starts once at today's slot (slotFor: 10:00-20:58, Thursday after 14:00 is the
+#     weekly run), never after 21:00; a stopped run is retried two hours on, at most three times a day.
+# One run at a time (the lock); 200 turns; at ~200K context she writes her handoff and ends (her guard).
 #
-# THE STEPS (each in noelle.mjs, each through the vault):
-#   context → her Claude session (ai-run --role brain: Claude only, never a free model) → plan (the
-#   Worker re-checks every action) → act (P&P Studio: start the render on GitHub and park the run) →
-#   collect, on each later tick (one look at the render, never a wait on the Mac; when it finished: a fresh
-#   reviewer per piece, one remake as a second render, queue with idem_key) → done (notices, failures, calls).
+# A Claude usage limit stops scheduled work and releases an owner call to the existing answer ladder.
+# The ladder answers on Workers AI or Gemini. A later scheduled tick can resume the build on Claude.
 #
-# HER TOOLS ARE NAMED, NOTHING ELSE (24 Nov 2026, "u made her an agent and have the intelligence of you").
-# scripts/ops/noelle-permissions.json allows exactly Read inside her run folder (her context, the rulings
-# files) and `./noelle-tools` (queue, bank, check: read and check only, scripts/ops/noelle-tools.mjs); every
-# other built-in is denied, the claude.ai connectors are off, no plugin; `--setting-sources=` loads none of
-# her own settings and `--strict-mcp-config` loads no MCP server. The bank reviewer and the remake run with
-# scripts/ops/noelle-review-permissions.json, which allows nothing. `npm run validate:noelle` fails the
-# build on any change to either. Her output is still one JSON plan between two sentinels; every write
-# happens after her session, in `act`, on what the Worker accepted.
-#
-# RULE 0: every path prints an OUTPUT line or a NAMED STOP; nothing done is never exit 0, except a tick
-# that is not due (WAIT), which says why.
+# RULE 0: her last line `OUTPUT: <n> done …` or `NAMED STOP [CODE]` decides (noelle.mjs finish); nothing done is
+# never exit 0, except a tick that is not due (WAIT/HELD), which says why.
 
 set -uo pipefail
 
 main() {
 
 REPO="${BOSS_OS_REPO:-$(cd "$(dirname "$(readlink -f "${BASH_SOURCE[0]}")")/../.." && pwd)}"
-PROMPT_FILE="${NOELLE_PROMPT:-$REPO/scripts/ops/noelle-prompt.md}"
-SETTINGS="$REPO/scripts/ops/noelle-permissions.json"
-REVIEW_SETTINGS="$REPO/scripts/ops/noelle-review-permissions.json"
+NHOME="${NOELLE_HOME:-$HOME/Work/noelle}"
+GUARD="$REPO/scripts/ops/noelle-guard.mjs"
 MODEL="${NOELLE_MODEL:-claude-opus-5}"
-# Her two tools (Read in her run folder, ./noelle-tools) take turns: 60 leaves room to read, check and re-check.
-MAX_TURNS="${NOELLE_MAX_TURNS:-60}"
+MAX_TURNS="${NOELLE_MAX_TURNS:-200}"
 LOG_DIR="$HOME/Library/Logs/noelle"
 RUNS="$HOME/.boss-os/noelle/runs"
-PENDING="$RUNS/rendering"
 LOCK="$LOG_DIR/.lock.flock"
 
-mkdir -p "$LOG_DIR" "$RUNS" "$PENDING"
+mkdir -p "$LOG_DIR" "$RUNS"
 DAY="${NOELLE_DAY:-$(TZ=America/Chicago date +%F)}"
 NOW="${NOELLE_NOW:-$(TZ=America/Chicago date +%H:%M)}"
 MARK="$RUNS/$DAY.json"
 say() { echo "[$(date +%H:%M:%S)] $*" | tee -a "${RUN_LOG:-$LOG_DIR/ticks.log}"; }
 step() { (cd "$REPO" && npm run --silent vault:run -- node scripts/ops/noelle.mjs "$@") 2>&1 | tee -a "$RUN_LOG"; return "${PIPESTATUS[0]}"; }
-
-# The end of a run whose act finished (now, or when a tick collected its render): done, then the mark or the
-# call's reply. Exit codes as before: 0 done; 9, 12, 14 red named stops; 76 out of Claude credits.
-finish_run() { # <act exit>
-local ARC="$1"
-step done "$WORK"; DRC=$?
-if [ -n "$CALL" ]; then
-  # A call's output is its reply: what she did, from the run's own state (nothing acted is a fine answer to a question).
-  ln -sf "$RUN_LOG" "$LOG_DIR/latest.log"
-  if [ "$ARC" -eq 76 ]; then step call-release "$WORK" "NAMED STOP [CLAUDE_LIMIT] the run stopped part-way; $(node -e 'import("'"$REPO"'/scripts/ops/noelle.mjs").then(m=>console.log(m.RESUME_WORDS))')"; exit 76; fi
-  case "$ARC" in 0|14) STOPLINE="" ;; *) STOPLINE="$(grep -h 'NAMED STOP' "$RUN_LOG" | tail -1)" ;; esac
-  step call-reply "$WORK" "$STOPLINE"; exit $?
-fi
-if [ "$ARC" -eq 76 ]; then
-  node "$REPO/scripts/ops/noelle.mjs" mark "$MARK" stopped CLAUDE_LIMIT "$TRY"
-  say "NAMED STOP [CLAUDE_LIMIT] the run stopped part-way; $(grep -h 'OUTPUT' "$RUN_LOG" | tail -2 | tr '\n' ' ')"
-  exit 76
-fi
-[ "$DRC" -eq 0 ] || { node "$REPO/scripts/ops/noelle.mjs" mark "$MARK" stopped DONE_FAILED "$TRY"; say "NAMED STOP [DONE_FAILED] rc=$DRC"; exit "$DRC"; }
-ln -sf "$RUN_LOG" "$LOG_DIR/latest.log"
-# RULE 0: only a run that queued or changed something is done. 9 (nothing to render), 12 (calendar not
-# read) and 14 (nothing acted) are red: a named stop on the card and Notices (done wrote them), and a later
-# tick tries again (its queued pieces are dropped then as taken days).
-case "$ARC" in
-  0) node "$REPO/scripts/ops/noelle.mjs" mark "$MARK" done "" "$TRY"; exit 0 ;;
-  9) node "$REPO/scripts/ops/noelle.mjs" mark "$MARK" stopped NOTHING_TO_RENDER "$TRY"; say "NAMED STOP [NOTHING_TO_RENDER]"; exit 9 ;;
-  12) node "$REPO/scripts/ops/noelle.mjs" mark "$MARK" stopped CALENDAR_UNREAD "$TRY"; say "NAMED STOP [CALENDAR_UNREAD]"; exit 12 ;;
-  14) node "$REPO/scripts/ops/noelle.mjs" mark "$MARK" stopped NOTHING_ACTED "$TRY"; say "NAMED STOP [NOTHING_ACTED]"; exit 14 ;;
-  *) node "$REPO/scripts/ops/noelle.mjs" mark "$MARK" stopped "ACT_FAILED" "$TRY"; say "NAMED STOP [ACT_FAILED] rc=$ARC"; exit "$ARC" ;;
-esac
-}
-
-# A run whose render is on GitHub: its facts in one file per run, the day marked "rendering" (the tick
-# never starts today's slot again while it renders). A call's task stays claimed (running) meanwhile.
-park() {
-  printf 'WORK=%q\nMARK=%q\nTRY=%q\nSLOT=%q\nCALL=%q\n' "$WORK" "$MARK" "$TRY" "$SLOT" "$CALL" > "$PENDING/$(basename "$WORK").env"
-  node "$REPO/scripts/ops/noelle.mjs" mark "$MARK" rendering "" "$TRY"
-  say "OUTPUT render started on GitHub; a tick collects it"
-}
-
-# ITEM 10: before anything else, each parked run's render is looked at ONCE (no wait on the Mac). Still
-# rendering (21) or its remake started (20): it stays parked. Anything else ends the run as act would have.
-collect_parked() {
-  local f ready=""
-  for f in "$PENDING"/*.env; do
-    [ -e "$f" ] || continue
-    if [ -z "$ready" ]; then
-      # The reviewer and the remake run exactly as in a started run: Claude only, the empty allow list.
-      local role; role="$(node "$REPO/scripts/ops/lib/ai-run.mjs" role growth.noelle)"
-      if [ "$role" != "brain" ] || [ ! -s "$REVIEW_SETTINGS" ] || ! node "$REPO/scripts/validate/noelle-no-tools.mjs" >/dev/null 2>&1; then
-        say "NAMED STOP [COLLECT_UNSAFE] a parked render waits: the reviewer's role or allow list is not as named"; return 0
-      fi
-      export NOELLE_AI_RUN="${AI_RUN_BIN:-$HOME/bin/ai-run}" NOELLE_ROLE="$role" NOELLE_MODEL="$MODEL" NOELLE_SETTINGS="$SETTINGS" NOELLE_REVIEW_SETTINGS="$REVIEW_SETTINGS"
-      ready=1
-    fi
-    WORK=""; MARK=""; TRY=1; SLOT=""; CALL=""
-    # shellcheck disable=SC1090
-    source "$f"
-    RUN_LOG="$LOG_DIR/$(basename "$WORK")-collect-$$.log"
-    step collect "$WORK"; local CRC=$?
-    case "$CRC" in
-      21) continue ;;
-      20) say "OUTPUT the remake render started on GitHub; a tick collects it"; continue ;;
-    esac
-    rm -f "$f"
-    ( finish_run "$CRC" )
-  done
-}
+local_step() { node "$REPO/scripts/ops/noelle.mjs" "$@" 2>&1 | tee -a "$RUN_LOG"; return "${PIPESTATUS[0]}"; }
 
 source "$(dirname "$(readlink -f "${BASH_SOURCE[0]}")")/lib/flock.sh"
+source "$(dirname "$(readlink -f "${BASH_SOURCE[0]}")")/lib/claude-lock.sh"
+source "$(dirname "$(readlink -f "${BASH_SOURCE[0]}")")/lib/noelle-sandbox.sh"
 LOCK_RC=0; hold_lock "$LOCK" || LOCK_RC=$?
 case $LOCK_RC in
   0) ;;
-  1) say "WAIT another run holds $LOCK"; exit 0 ;;
+  1) say "WAIT another Noelle run holds $LOCK (one run at a time)"; exit 0 ;;
   *) say "NAMED STOP [LOCK_FAILED] cannot lock $LOCK"; exit 3 ;;
 esac
 
-collect_parked
 DUE="$(node "$REPO/scripts/ops/noelle.mjs" due "$DAY" "$NOW" "$MARK")" || { say "NAMED STOP [NOELLE_DUE_FAILED] the tick could not read today's slot"; exit 3; }
 case "$DUE" in
-  HELD*) say "${DUE#HELD }"; exit 0 ;;  # her hold (NOELLE_START_AT): nothing is read, called or queued before it, calls included
+  HELD*) say "${DUE#HELD }"; exit 0 ;;
   WAIT*|RUN*) ;;
   *) say "NAMED STOP [NOELLE_DUE_FAILED] $DUE"; exit 3 ;;
 esac
-# A #noelle email waiting for her goes first (growth/noelle.ts claimCall): one email, one run (slot call:<task>),
-# one reply. Her schedule's slot runs on the next tick. A failed claim never blocks the schedule.
+
+# A call from Sequoia goes first: one call, one run, one reply. A failed claim never blocks the schedule.
 CALL=""
-# Calls keep her schedule's window (10:00 to 21:00 CT, the Mac day): an email at night waits for the morning.
-if [ -z "${NOELLE_NO_CALLS:-}" ] && [[ ! "$NOW" < "10:00" ]] && [[ "$NOW" < "21:00" ]]; then
+if [ -z "${NOELLE_NO_CALLS:-}" ] && [ "$(node "$REPO/scripts/ops/noelle.mjs" window "$NOW")" = "OPEN" ]; then
   CLAIM="$( (cd "$REPO" && npm run --silent vault:run -- node scripts/ops/noelle.mjs call-claim "$RUNS") 2>&1 | tail -1)"
   case "$CLAIM" in
     CALL\ *) read -r _ SLOT WORK <<< "$CLAIM"; CALL=1; KIND=daily; TRY=1; RESUME=""; MARK="$WORK/mark.json" ;;
     NONE) ;;
-    *) say "the #noelle call check failed (the schedule carries on): $CLAIM" ;;
+    *) say "the call check failed (the schedule carries on): $CLAIM" ;;
   esac
 fi
 if [ -z "$CALL" ]; then
@@ -150,11 +79,13 @@ if [ -z "$CALL" ]; then
 fi
 RUN_LOG="$LOG_DIR/$DAY-${SLOT//:/}-$$.log"
 mkdir -p "$WORK"
-# Every end of a started run is recorded: on this Mac (the next tick reads it) and, before a plan, on Boss OS.
+NOELLE_RUN_ID="noelle-${WORK##*/}-$TRY"; export NOELLE_RUN_ID
+
+# Every end of a started run is recorded: on this Mac (the next tick reads it) and on Boss OS.
 stopped() { # <code> <line> <exit>
   node "$REPO/scripts/ops/noelle.mjs" mark "$MARK" stopped "$1" "$TRY"
   say "$2"
-  step stop "$2" "$WORK" "$SLOT" >/dev/null || say "the stop could not be recorded on Boss OS (the 22:05 watch names a day with no run)"
+  step stop "$2" "$SLOT" "$KIND" >/dev/null || say "the stop could not be recorded on Boss OS (the 22:05 watch names a day with no run)"
   [ -n "$CALL" ] && { step call-release "$WORK" "$2" || say "the call could not be released; the next claim returns it after 3 hours [CALL_RUN_LOST]"; }
   echo "OUTPUT 0 (stopped: $1)"
   exit "$3"
@@ -162,52 +93,58 @@ stopped() { # <code> <line> <exit>
 
 AI_RUN="${AI_RUN_BIN:-$HOME/bin/ai-run}"
 [ -x "$AI_RUN" ] || stopped AI_RUN_MISSING "NAMED STOP [AI_RUN_MISSING] $AI_RUN is not installed (seq-bin)" 13
-[ -f "$PROMPT_FILE" ] || stopped NO_PROMPT_FILE "NAMED STOP [NO_PROMPT_FILE] $PROMPT_FILE" 5
-[ -s "$SETTINGS" ] || stopped NO_PERMISSIONS_FILE "NAMED STOP [NO_PERMISSIONS_FILE] her session never runs without its named allow list" 6
-[ -s "$REVIEW_SETTINGS" ] || stopped NO_PERMISSIONS_FILE "NAMED STOP [NO_PERMISSIONS_FILE] the reviewer never runs without its empty allow list" 6
-case "$SETTINGS" in *[[:space:]]*) stopped PERMISSIONS_PATH_SPACE "NAMED STOP [PERMISSIONS_PATH_SPACE] '$SETTINGS' has a space, which ai-run would split" 6;; esac
 [[ "$MAX_TURNS" =~ ^[1-9][0-9]*$ ]] || stopped BAD_MAX_TURNS "NAMED STOP [BAD_MAX_TURNS] NOELLE_MAX_TURNS='$MAX_TURNS'" 5
+case "$NHOME$WORK" in *[[:space:]]*) stopped PATH_SPACE "NAMED STOP [PATH_SPACE] her home or run folder has a space, which ai-run would split" 6;; esac
 ROLE="$(node "$REPO/scripts/ops/lib/ai-run.mjs" role growth.noelle)" || stopped NO_AI_ROLE "NAMED STOP [NO_AI_ROLE] growth.noelle" 11
-[ "$ROLE" = "brain" ] || stopped NOT_CLAUDE "NAMED STOP [NOT_CLAUDE] growth.noelle must be the brain role (Claude only), got $ROLE" 11
-node "$REPO/scripts/validate/noelle-no-tools.mjs" >> "$RUN_LOG" 2>&1 || stopped PERMISSIONS_WIDENED "NAMED STOP [PERMISSIONS_WIDENED] her session or the reviewer would have tools beyond the named list; refusing to run" 6
+[ "$ROLE" = "brain" ] || stopped NOT_CLAUDE "NAMED STOP [NOT_CLAUDE] growth.noelle must be the brain role (Claude), got $ROLE" 11
+# Her guard proves itself before every run: a guard that lets a hard stop through means no run.
+node "$GUARD" --self-test >> "$RUN_LOG" 2>&1 || stopped GUARD_BROKEN "NAMED STOP [GUARD_BROKEN] her guard's self-test failed; she does not run without it" 6
+
+# Her sandbox, rebuilt from the repo every run, in ~/.boss-os/noelle where her run can neither write nor read it
+# (lib/noelle-sandbox.sh): the settings with the sandbox block, her gitconfig, her two brokers and her guard's state.
+SETTINGS="$(noelle_prepare "$REPO" "$NHOME" "$WORK" "$NOELLE_RUN_ID" 2>>"$RUN_LOG")" || stopped NO_SETTINGS "NAMED STOP [NO_SETTINGS] her sandboxed settings could not be written; $(grep -h 'NAMED STOP' "$RUN_LOG" | tail -1)" 6
+CLAUDE_LOCK="$(claude_lock_args "$SETTINGS" 2>>"$RUN_LOG")" || stopped NO_PERMISSIONS_FILE "NAMED STOP [NO_PERMISSIONS_FILE] her permissions file could not be used; she never runs unlocked" 6
+# No GitHub credential reaches her run (owner, 24 Nov 2026: "u do it why do u need me for any of this?"): inside her
+# sandbox git and gh are logged out. She pushes and opens PRs only through noelle-tool push-branch / open-pr, outside it.
+unset GH_TOKEN GITHUB_TOKEN GH_ENTERPRISE_TOKEN GITHUB_ENTERPRISE_TOKEN
 
 say "=== Noelle ${CALL:+called }$KIND run, slot $SLOT, try $TRY${RESUME:+ (resume)} ==="
-CTX_ARGS=("$WORK"); [ "$KIND" = "weekly" ] && CTX_ARGS+=(weekly)
-step context "${CTX_ARGS[@]}" || stopped NO_CONTEXT "NAMED STOP [NO_CONTEXT] the reads could not be gathered; $(grep -h 'NAMED STOP' "$RUN_LOG" | tail -1)" 13
-[ -s "$WORK/context.txt" ] || stopped NO_CONTEXT "NAMED STOP [NO_CONTEXT] the context step wrote nothing" 13
-
-export NOELLE_AI_RUN="$AI_RUN" NOELLE_ROLE="$ROLE" NOELLE_MODEL="$MODEL" NOELLE_SETTINGS="$SETTINGS" NOELLE_REVIEW_SETTINGS="$REVIEW_SETTINGS"
-PROMPT_TEXT="$(cat "$PROMPT_FILE")
-
-$(cat "$WORK/context.txt")"
-PLAN_LOG="$WORK/plan.log"
-[ -x "$WORK/noelle-tools" ] || stopped NO_TOOLS "NAMED STOP [NO_TOOLS] the context step did not write her ./noelle-tools" 13
-cd "$WORK" || stopped NO_WORK "NAMED STOP [NO_WORK]" 8
-ENABLE_CLAUDEAI_MCP_SERVERS=false AI_RUN_CLAUDE_MODEL="$MODEL" \
-AI_RUN_CLAUDE_ARGS="--max-turns $MAX_TURNS --permission-mode dontAsk --setting-sources= --settings $SETTINGS --strict-mcp-config" \
-"$AI_RUN" --role "$ROLE" --network --cwd "$WORK" --out "$PLAN_LOG" -- "$PROMPT_TEXT" >> "$RUN_LOG" 2>&1
-RC=$?
-say "=== her session (ai-run --role $ROLE, $MODEL) exited rc=$RC ==="
-# ai-run turns Claude's usage notice into exit 76 on any exit code; nothing here re-reads the log for it.
-if [ "$RC" -eq 76 ]; then
-  stopped CLAUDE_LIMIT "NAMED STOP [CLAUDE_LIMIT] out of Claude credits before her plan; $(node -e 'import("'"$REPO"'/scripts/ops/noelle.mjs").then(m=>console.log(m.RESUME_WORDS))')" 76
+export NOELLE_HOME="$NHOME" NOELLE_REPO="$REPO" NOELLE_GUARD_DIR="$HOME/.boss-os/noelle/guard"
+if ! local_step persona "$WORK"; then
+  WHY="$(grep -h 'NAMED STOP' "$RUN_LOG" | tail -1)"
+  case "$WHY" in
+    *'[OWNER_NOTES_UNREAD]'*) stopped OWNER_NOTES_UNREAD "$WHY" 6 ;;
+    *) stopped NO_PERSONA "$WHY" 6 ;;
+  esac
 fi
-grep -q "NOELLE-PLAN-END" "$PLAN_LOG" 2>/dev/null || stopped NO_PLAN "NAMED STOP [NO_PLAN] her session ended (rc=$RC) without a plan between the sentinels" 9
 
-# plan: the Worker re-checks it. Exit 10 is a replay of a slot that already ran to the end: nothing is
-# acted twice. Exit 11: that slot was planned and never finished (a reboot mid-run); the Worker closed
-# it [ACT_LOST], so the day is marked stopped and a tick two hours on retries it as a new slot.
-step plan "$PLAN_LOG" "$WORK" "$SLOT"; PRC=$?
-if [ "$PRC" -eq 10 ] && [ -n "$CALL" ]; then step call-reply "$WORK" ""; exit $?; fi  # its run already ended: the reply is sent once (a second is refused)
-if [ "$PRC" -eq 10 ]; then node "$REPO/scripts/ops/noelle.mjs" mark "$MARK" done REPLAY "$TRY"; echo "OUTPUT 0 (replay of $SLOT)"; exit 0; fi
-[ "$PRC" -eq 11 ] && stopped ACT_LOST "NAMED STOP [ACT_LOST] $SLOT was planned and never finished; the retry runs as a new slot" 11
-[ "$PRC" -eq 0 ] || stopped PLAN_REFUSED "NAMED STOP [PLAN_REFUSED] rc=$PRC $(grep -h 'NAMED STOP' "$RUN_LOG" | tail -1)" "$PRC"
+if [ -n "$CALL" ]; then
+  KICK="This is a light wake. Use the owner notes, handoff and the relevant playbook, then reply and rewrite the handoff."
+else
+  step reads "$WORK" || stopped NO_READS "NAMED STOP [NO_READS] her reads could not be gathered; $(grep -h 'NAMED STOP' "$RUN_LOG" | tail -1)" 13
+  KICK="This is your $KIND run. Use the owner notes, handoff, latest note, playbooks and today's summary. Rewrite the handoff when you end."
+fi
 
-# act, then done ALWAYS (a stopped act still reports what it queued and what failed). Exit 20: the Studio
-# render was started on GitHub; the run is parked in $PENDING and a later tick collects it (item 10).
-step act "$WORK"; ARC=$?
-if [ "$ARC" -eq 20 ]; then park; exit 0; fi
-finish_run "$ARC"
+SESSION_LOG="$WORK/session.log"
+SID="$(uuidgen | tr 'A-Z' 'a-z')" || stopped NO_SESSION_ID "NAMED STOP [NO_SESSION_ID] uuidgen failed" 6
+ENABLE_CLAUDEAI_MCP_SERVERS=false AI_RUN_CLAUDE_MODEL="$MODEL" \
+AI_RUN_CLAUDE_ARGS="$CLAUDE_LOCK --strict-mcp-config --session-id $SID --max-turns $MAX_TURNS --output-format json --agents $WORK/agents.json --append-system-prompt-file $WORK/persona-full.md" \
+"$AI_RUN" --role "$ROLE" --network --cwd "$WORK" --out "$SESSION_LOG" -- "$KICK" >> "$RUN_LOG" 2>&1
+RC=$?
+say "=== her session (Claude, $MODEL) exited rc=$RC ==="
+# Every refusal by her list, counted from her own transcript: a number or "unknown" is a stop, never 0.
+DENIED="$(claude_denials "$SID" "$RUN_LOG")"
+
+FINISH_MODE=""
+[ "$RC" -ne 76 ] || FINISH_MODE="usage-limited"
+step finish "$WORK" "$SESSION_LOG" "$SLOT" "$KIND" "$DENIED" "$FINISH_MODE"; FRC=$?
+ln -sf "$RUN_LOG" "$LOG_DIR/latest.log"
+[ -n "$CALL" ] && exit "$FRC"
+case "$FRC" in
+  0) node "$REPO/scripts/ops/noelle.mjs" mark "$MARK" "done" "" "$TRY"; exit 0 ;;
+  6) node "$REPO/scripts/ops/noelle.mjs" mark "$MARK" stopped SAME_FAILURE_TWICE 3; exit 6 ;;
+  *) node "$REPO/scripts/ops/noelle.mjs" mark "$MARK" stopped RUN_STOPPED "$TRY"; exit "$FRC" ;;
+esac
 }
 
 main "$@"; exit $?

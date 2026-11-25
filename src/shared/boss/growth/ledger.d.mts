@@ -7,3 +7,13 @@ export function floorsFor(scorecard: { floor30: number; floor60: number } | null
 export function resultAt(row: any, readings: any[] | undefined, today: string, n: 30 | 60): "met" | "missed" | "not read" | "not yet";
 export function resultLines(rows: any[], readingsByMeasure: Record<string, any[]>, o: { today: string; labels?: Record<string, string>; names?: Record<string, string> }): string[];
 export const MEASURE_CHANNEL: Readonly<Record<string, string>>;
+export const RUN_CHANNEL: Readonly<Record<string, string>>;
+export function ledgerRowsFrom(doc: any, o: { business: string; channel?: string | null; now?: number; days?: number; since?: string | null }): Array<{ kind: "post"; business: string; channel: string; item: string; receipt: { id: string }; at: string }>;
+export function pinterestPins(xml: string): Array<{ id: string; at: string }>;
+export function postsWithoutRows(doc: any, items: string[], o: { business?: string; channel: string; since?: string | null; now?: number; days?: number }): { posted: number; missing: string[] };
+export const REPORT_EVERY_DAYS: number;
+export const REPORT_KEY: string;
+export function reportDue(lastDay: string | null | undefined, today: string): boolean;
+export function numbersLine(summary: any): string | null;
+export function floorValues(summaries: any[], labelOf?: (k: string) => string): { first: number | null; real: number | null; realMissing: string[] };
+export function fortnightReport(o: { today: string; actions?: any[]; orders?: Record<string, number>; runs?: any[]; waiting?: number; summaries?: any[]; scorecard?: any; labels?: Record<string, string>; results?: string[]; origin: string; at: number }): { section: string; at: string; title: string; decide: any[]; rows: any[]; lines: string[]; link: { label: string; url: string } };
