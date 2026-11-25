@@ -3,7 +3,7 @@ import { expectNoSidewaysScroll, PHONE, tab, unlock } from "./support/boss";
 import { runSimone } from "../scripts/ops/simone.mjs";
 
 const MESSAGE = "Find three venues for Saturday and book the cheapest free one.";
-const REPLY = "I found three free venues. The park opens at noon. It takes bookings by phone, so I left the time open.";
+const REPLY = "The park has a free slot at noon, and the hall and pavilion each have a free afternoon slot. The park takes reservations by phone, so I couldn’t book it.";
 
 test("Simone replies in both message boxes at 390 px", async ({ page }, info) => {
   await page.setViewportSize(PHONE);
@@ -34,7 +34,7 @@ test("Simone replies in both message boxes at 390 px", async ({ page }, info) =>
         expect(call.message.body).toBe(MESSAGE);
         const log = [
           { type: "assistant", message: { content: [{ type: "tool_use", id: "venue-search", name: "WebSearch" }] } },
-          { type: "user", message: { content: [{ type: "tool_result", tool_use_id: "venue-search", content: "The free park opens at noon and takes phone bookings. The free hall and the free pavilion open later." }] } },
+          { type: "user", message: { content: [{ type: "tool_result", tool_use_id: "venue-search", content: "The park has a free noon slot and takes phone bookings. The hall and the pavilion each have a free afternoon slot." }] } },
           { type: "result", subtype: "success", result: `${REPLY}\nOUTPUT: 1 done` },
         ].map((entry) => JSON.stringify(entry)).join("\n");
         return { log, successful: true };

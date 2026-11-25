@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import { mkdir, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { sendNotice } from "../ops/task-notices.mjs";
+import { runSimone } from "../ops/simone.mjs";
 
 const directory = process.argv[2];
 if (!directory) throw new Error("Provide an artifact directory");
@@ -10,12 +11,37 @@ const original = "<venue-request@example.test>";
 const reply = "<venue-reply@example.test>";
 const taskId = "tsk_fixturevenue";
 const providerId = "simone-fixture-reply";
+const task = { input: {
+  agent: "simone", source: "boss_inbound_mail", from: owner, to: "simone@example.test", message_id: original,
+  body: "Find me three venues for Saturday and book the cheapest free one.",
+} };
+const lease = 1;
+let recorded;
+const run = await runSimone({
+  api: async (_method, path, data) => {
+    if (path === "/claim") return { call: { id: taskId, lease, message: task.input, roster: [] } };
+    assert.equal(path, "/reply");
+    assert.equal(data.id, taskId);
+    assert.equal(data.lease, lease);
+    assert.deepEqual(data.work, ["WebSearch"]);
+    recorded = data.text;
+    return { replied: true };
+  },
+  run: async (_call, prompt) => {
+    assert.match(prompt, /book the cheapest free one/);
+    return { successful: true, log: [
+      { type: "assistant", message: { content: [{ type: "tool_use", id: "venue-search", name: "WebSearch" }] } },
+      { type: "user", message: { content: [{ type: "tool_result", tool_use_id: "venue-search",
+        content: "Maple Hall has a free noon slot and requires booking in person. Oak Room is $30 at 2 p.m. River Park is $45 at 3 p.m." }] } },
+      { type: "result", subtype: "success", result: "Maple Hall has a free Saturday slot at noon. Oak Room is $30 at 2 p.m. and River Park is $45 at 3 p.m. Maple Hall takes reservations in person, so I couldn’t book the slot.\nOUTPUT: 1 done" },
+    ].map((entry) => JSON.stringify(entry)).join("\n") };
+  },
+});
+assert.deepEqual(run, { state: "done", id: taskId });
 const notice = {
   id: "tnt_fixture", task_id: taskId, kind: "simone_result", from_name: "Simone", needs_her: 1,
-  subject: "Venues for Saturday",
-  body: "I found three free venues for Saturday. Maple Hall opens at noon, the Oak Room opens at two, and River Park opens at three. Maple Hall has a spot at noon. I left the date open on your calendar until the venue confirms.",
+  subject: "Venues for Saturday", body: recorded,
 };
-const task = { input: { agent: "simone", source: "boss_inbound_mail", from: owner, message_id: original } };
 let messages = 0;
 let payload, archived, refs;
 process.env.BOSS_OS_MAIL_KEY = "fixture-only-key";
@@ -55,8 +81,8 @@ assert.equal(archived.message_id, reply);
 assert.equal(archived.in_reply_to, original);
 assert.equal(refs.message_id, reply);
 assert.deepEqual(refs.refs, [taskId]);
-assert.match(payload.text, /Maple Hall opens at noon/);
-assert.match(payload.html, /River Park opens at three/);
+assert.match(payload.text, /Maple Hall has a free Saturday slot at noon/);
+assert.match(payload.html, /Maple Hall takes reservations in person/);
 await mkdir(directory, { recursive: true });
 await writeFile(join(directory, "simone-reply.html"), payload.html);
 console.log("Rendered one Simone reply, archived the mock delivery, and recorded its thread reference.");
