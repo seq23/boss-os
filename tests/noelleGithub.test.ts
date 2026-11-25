@@ -28,6 +28,20 @@ fs.appendFileSync(path.join(dir, "calls.jsonl"), JSON.stringify({ argv: a, input
 const has = (f) => fs.existsSync(path.join(dir, f));
 if (a[0] === "auth" && a[1] === "status") process.exit(has("logged-out") ? 1 : 0);
 if (a[0] === "auth" && a[1] === "git-credential") process.exit(0);
+if (a[0] === "api") {
+  const endpoint = a[1].split("/").slice(3).join("/");
+  const replies = {
+    "actions/secrets": { total_count: has("repo-secret") ? 1 : 0 },
+    "branches/main": { protected: !has("unprotected-main") },
+    "rules/branches/main": has("no-required-pr") ? [] : [{ type: "pull_request" }],
+    "environments?per_page=100": { total_count: 1, environments: [{ name: "reviewed-main", deployment_branch_policy: { custom_branch_policies: true, protected_branches: false } }] },
+    "environments/reviewed-main/secrets": { total_count: 1 },
+    "environments/reviewed-main/deployment-branch-policies": { total_count: 1, branch_policies: [{ type: "branch", name: has("wide-deploy") ? "*" : "main" }] },
+  };
+  if (!replies[endpoint]) process.exit(9);
+  console.log(JSON.stringify(replies[endpoint]));
+  process.exit(0);
+}
 if (a[0] === "pr" && a[1] === "create") { if (has("create-fails")) { console.error("GraphQL: could not resolve"); process.exit(1); } console.log("https://github.com/seq23/search-loop/pull/77"); process.exit(0); }
 if (a[0] === "pr" && a[1] === "view") { const head = (a.find((x) => x.startsWith("--head=")) ?? ""); const created = fs.readFileSync(path.join(dir, "calls.jsonl"), "utf8").split("\\n").filter(Boolean).map(JSON.parse).find((c) => c.argv[1] === "create"); const h = created.argv.find((x) => x.startsWith("--head=")).slice(7); console.log(JSON.stringify({ isDraft: has("draft"), headRefName: h, baseRefName: "main", state: "OPEN", isCrossRepository: false, labels: has("no-label") ? [] : [{ name: "review-required" }] })); process.exit(0); }
 process.exit(9);
@@ -41,6 +55,7 @@ function world() {
   writeFileSync(join(ghDir, "gh"), FAKE_GH); chmodSync(join(ghDir, "gh"), 0o755);
   writeFileSync(join(ghDir, "calls.jsonl"), "");
   writeFileSync(join(guard, "run.json"), JSON.stringify({ prs: 0, reviewers: 0, run: "t" }));
+  writeFileSync(join(guard, "verified-repos.json"), JSON.stringify({ repos: ["search-loop"] }));
   // "GitHub": a bare seq23/search-loop with one commit on main
   const seed = join(root, "seed");
   mkdirSync(join(seed, ".github/workflows"), { recursive: true });
@@ -121,7 +136,7 @@ describe("push-branch", () => {
     expect(w.remote("noelle/test-1124")).toBe(sha);
     expect(existsSync(marker)).toBe(false);
     expect(G(w.root, "--git-dir", evil, "for-each-ref")).toBe("");
-    expect(w.calls().map((c) => c.argv.slice(0, 2).join(" "))).toEqual(["auth status"]);
+    expect(w.calls().map((c) => c.argv[0])).toEqual(["auth", "api", "api", "api", "api", "api", "api"]);
   });
   it("never forces: history she rewrote after a push is refused and GitHub keeps what it had", () => {
     const w = world();
@@ -133,13 +148,21 @@ describe("push-branch", () => {
     expect(r.out).toMatch(/NAMED STOP \[NOELLE_PUSH_FAILED\][\s\S]*OUTPUT 0/);
     expect(w.remote("noelle/test-1124")).toBe(before);
   });
-  it("refuses a branch that changes .github/ (a workflow would run with the repo's secrets)", () => {
+  it("pushes a workflow when the reviewer has verified isolation and GitHub's protections still match", () => {
     const w = world();
     writeFileSync(join(w.clone, ".github/workflows/ci.yml"), "on: push\njobs: {}\n");
     G(w.clone, "commit", "--quiet", "-am", "workflow");
-    const r = run(["push-branch", "search-loop", "noelle/test-1124"], w.opts);
-    expect(r.code).toBe(2);
-    expect(r.out).toMatch(/NAMED STOP \[WORKFLOW_CHANGE\].*\.github\/workflows\/ci\.yml/);
+    const result = run(["push-branch", "search-loop", "noelle/test-1124"], w.opts);
+    expect(result.code).toBe(0);
+    expect(w.remote("noelle/test-1124")).toBe(G(w.clone, "rev-parse", "HEAD"));
+  });
+  it.each(["repo-secret", "wide-deploy", "unprotected-main", "no-required-pr", "no-review-receipt"])("refuses to push any code with %s", (missing) => {
+    const w = world();
+    if (missing === "no-review-receipt") writeFileSync(join(w.guard, "verified-repos.json"), JSON.stringify({ repos: [] }));
+    else writeFileSync(join(w.ghDir, missing), "");
+    const result = run(["push-branch", "search-loop", "noelle/test-1124"], w.opts);
+    expect(result.code).toBe(2);
+    expect(result.out).toMatch(/NAMED STOP \[REPO_SETTINGS\]/);
     expect(w.remote("noelle/test-1124")).toBe("");
   });
   it("a push GitHub does not show is NOELLE_PUSH_UNPROVEN, never success", () => {

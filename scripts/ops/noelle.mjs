@@ -92,6 +92,30 @@ export function readBrain(slug, { section = "", whole = false, dir = join(homedi
   throw new Error(`NAMED STOP [BRAIN_SECTION_UNREAD] ${s} has no section "${section}"`);
 }
 
+const PLAYBOOK_SEEDS = [
+  ["porch-and-party", "porch-and-party", "Growth"],
+  ["keepmyproof", "spry", "Growth/KeepMyProof"],
+  ["approvalprep", "spry", "Growth/ApprovalPrep"],
+  ["dream-wedding", "spry", "Growth/Dream Wedding"],
+  ["a-player-mode", "spry", "Growth/A Player Mode"],
+  ["peace-be-still", "spry", "Growth/Peace Be Still"],
+];
+
+/** Seed new playbooks once. The model chooses the channel mix and owns subsequent edits. */
+export function seedPlaybooks(home, read = readBrain) {
+  const plays = join(home, "plays");
+  mkdirSync(plays, { recursive: true });
+  for (const [key, brain, section] of PLAYBOOK_SEEDS) {
+    const file = join(plays, `${key}.md`);
+    if (existsSync(file)) continue;
+    const source = read(brain, { section });
+    const initial = [`# ${key}`, "## Channel mix", "## Live tests", "## Results", "## Stopped tests",
+      `## Starting inputs from ${brain} / ${section}\n${source}`].join("\n\n");
+    try { writeFileSync(file, initial + "\n", { flag: "wx" }); }
+    catch (e) { if (e?.code !== "EEXIST") throw e; }
+  }
+}
+
 // ─── When to run ───────────────────────────────────────────────────────────────
 
 /** Ticks start the daily run until 21:00 Central, so it ends inside 10:00-22:00. */
@@ -214,6 +238,7 @@ function cmdPersona(dir) {
   const read = (f) => { try { return readFileSync(f, "utf8"); } catch { return ""; } };
   const call = existsSync(join(dir, "call.json")) ? JSON.parse(readFileSync(join(dir, "call.json"), "utf8")) : null;
   const memory = wakeMemory(HOME_DIR(), { call: Boolean(call) });
+  if (!call) seedPlaybooks(HOME_DIR());
   const runId = process.env.NOELLE_RUN_ID;
   writeFileSync(join(GUARD_DIR(), "wake.json"), JSON.stringify({ runId, through: memory.through, before: memory.before }));
   const text = personaText({ memory, runId, rules: read(process.env.NOELLE_RULES ?? join(homedir(), ".claude", "CLAUDE.md")), persona: read(PERSONA_FILE).replaceAll("__HOME__", homedir()), call, dir });

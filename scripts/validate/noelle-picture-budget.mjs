@@ -4,18 +4,6 @@
  * network allowlist, and environment. A future picture lane needs a real budget
  * reservation and settlement test before it can be allowed here.
  */
-import and scripts/ path
- *     inside those, transitively) calls a picture API, and neither it nor a file it imports takes
- *     the ledger (the ledger path, the `.lock` directory, and the IMAGE_BUDGET_CAP,
- *     IMAGE_BUDGET_LEDGER_MISSING and IMAGE_BUDGET_EXPIRED stops). A free picture still goes through
- *     it, charged $0;
- *   - NOELLE_PICTURE_HOST: her sandbox may reach a picture vendor's host, or every host;
- *   - NOELLE_PICTURE_KEY: her settings hand her a vendor key by name;
- * and stops, unsure, never passing (exit 2, NAMED STOP NOELLE_PICTURE_SCOPE), when it cannot find
- * her entry points or reaches fewer than MIN_FILES scripts (Rule 0: a scan that saw nothing passes
- * nothing).
- * `--self-test` feeds each break through the same checks and fails unless each is caught.
- */
 import { readFileSync, existsSync } from "node:fs";
 import { join, dirname, normalize } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";

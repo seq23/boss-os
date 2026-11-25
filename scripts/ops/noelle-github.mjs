@@ -12,8 +12,8 @@
  *
  * What it refuses (exit 2, a NAMED STOP she reads): a repo that is not exactly one of HER_REPOS (a URL, an owner,
  * another business's repo); a branch that is not noelle/<safe segments> (main, master, refs/…, a refspec with ":",
- * a "+" force, "..", "@{", a ".lock" end); a push that changes .github/ (a workflow she pushed would run on GitHub
- * with the repo's secrets, outside her sandbox); a body file outside ~/Work/noelle and her run folder; a 4th PR in
+ * a "+" force, "..", "@{", a ".lock" end); a repository without verified Actions isolation; a body file
+ * outside ~/Work/noelle and her run folder; a 4th PR in
  * one run. What it never reports as done (exit 3): gh logged out, the network down, a rejected push, a push whose
  * sha GitHub does not show, a PR whose URL or state it cannot read back.
  *
@@ -96,6 +96,43 @@ function ghLoggedIn(run) {
   if (!r.ok) unsure("NOELLE_GH_LOGGED_OUT", `the Mac's gh login could not be confirmed (${r.err || "no answer"}); nothing was pushed or opened`);
 }
 
+/** Check the external boundary before a push or PR creates a GitHub Actions run. */
+function requireIsolation(repo, opts, run) {
+  const env = opts.env ?? process.env;
+  const guards = opts.guardDir ?? env.NOELLE_GUARD_DIR ?? join(homedir(), ".boss-os", "noelle", "guard");
+  const stop = (why) => refuse("REPO_SETTINGS", `seq23/${repo}: ${why}`);
+  let verified;
+  try { verified = JSON.parse(readFileSync(join(guards, "verified-repos.json"), "utf8")); }
+  catch { stop("the reviewer’s credential isolation receipt is missing or unreadable"); }
+  if (!Array.isArray(verified?.repos) || !verified.repos.includes(repo)) stop("the reviewer has not enabled this repository");
+  const api = (path) => {
+    const result = run("gh", ["api", `repos/seq23/${repo}/${path}`]);
+    if (!result.ok) stop(`could not verify ${path}`);
+    try { return JSON.parse(result.out); } catch { stop(`could not read ${path}`); }
+  };
+  if (api("actions/secrets").total_count !== 0) stop("repository-scoped Actions secrets must be empty");
+  if (api("branches/main").protected !== true) stop("main branch protection could not be confirmed");
+  const mainRules = api("rules/branches/main");
+  if (!Array.isArray(mainRules) || !mainRules.some((rule) => rule.type === "pull_request")) {
+    stop("the main branch must require a pull request");
+  }
+  const scan = api("environments?per_page=100");
+  const environments = scan.environments;
+  if (!Array.isArray(environments) || scan.total_count !== environments.length
+    || !environments.some(({ name }) => name === "reviewed-main")) stop("reviewed-main or the full environment list is missing");
+  for (const { name, deployment_branch_policy: policy } of environments) {
+    const path = `environments/${encodeURIComponent(name)}`;
+    const { total_count: credentials } = api(`${path}/secrets`);
+    if (!Number.isInteger(credentials) || credentials < 0) stop(`could not verify credentials in ${name}`);
+    if (name !== "reviewed-main" && credentials === 0) continue;
+    if (!policy?.custom_branch_policies || policy.protected_branches) stop(`${name} requires an exact main-only deployment branch policy`);
+    const { branch_policies: rules, total_count: count } = api(`${path}/deployment-branch-policies`);
+    if (count !== 1 || !Array.isArray(rules) || rules.length !== 1 || rules[0]?.type !== "branch" || rules[0]?.name !== "main") {
+      stop(`${name} allows something besides the main branch or its policy is incomplete`);
+    }
+  }
+}
+
 /**
  * Push her branch. opts (tests only; the wrapper never sets them): base, the GitHub URL root; mirrors, the mirror
  * folder; env, the PATH/HOME/proxy the child processes see. Returns the sha GitHub now shows.
@@ -105,6 +142,7 @@ export function pushBranch(repo, branch, opts = {}) {
   const env = opts.env ?? process.env;
   const run = runner(opts);
   ghLoggedIn(run);
+  requireIsolation(r, opts, run);
 
   const home = env.NOELLE_HOME ?? join(homedir(), "Work", "noelle");
   const reposRoot = realOr(join(home, "repos"));
@@ -133,10 +171,6 @@ export function pushBranch(repo, branch, opts = {}) {
   if (!/^[0-9a-f]{40}$/.test(sha)) unsure("NOELLE_PUSH_FAILED", `the branch ${b} could not be read back`);
   const mb = git(["merge-base", "refs/noelle/base", sha]);
   if (!mb.ok) refuse("UNRELATED_HISTORY", `${b} does not share history with seq23/${r}`);
-  const gh = git(["diff", "--name-only", mb.out.trim(), sha, "--", ".github"]);
-  if (!gh.ok) unsure("NOELLE_PUSH_FAILED", `the change could not be read (${gh.err})`);
-  if (gh.out.trim()) refuse("WORKFLOW_CHANGE", `${b} changes .github/ (${gh.out.trim().split("\n").slice(0, 3).join(", ")}): workflows run on GitHub with the repo's secrets, so Sequoia's builder changes them, not you`);
-
   const push = git(["-c", "credential.helper=", "-c", "credential.helper=!gh auth git-credential", "push", "--quiet", "--no-verify", "--porcelain", url, `refs/heads/${b}:refs/heads/${b}`]);
   if (!push.ok) unsure("NOELLE_PUSH_FAILED", `GitHub refused or did not answer the push of ${b} (${push.err}); a branch that moved on GitHub is never forced`);
   const seen = run("git", ["ls-remote", url, `refs/heads/${b}`]);
@@ -167,6 +201,7 @@ export function openPr(repo, branch, title, bodyFile, opts = {}) {
     if ((st.prs ?? 0) >= MAX_PRS) refuse("PR_CAP", `${MAX_PRS} PRs is the most in one run; write the rest into your handoff`);
     const run = runner(opts);
     ghLoggedIn(run);
+    requireIsolation(r, opts, run);
 
     const made = run("gh", ["pr", "create", `--repo=seq23/${r}`, "--base=main", `--head=${b}`, `--title=${t}`, "--label=review-required", "--body-file=-"], { input: body });
     const url = made.ok ? (made.out.match(/https:\/\/github\.com\/\S+/)?.[0] ?? "") : "";

@@ -9,7 +9,7 @@ import { mkdtempSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 // @ts-expect-error plain .mjs script, no types
-import { NOELLE_BRAINS, readBrain, callBlock, personaText, readsText, runVerdict, runResult, failureStep, finish, finishOptions, tickDecision, heldUntil, untrusted, missedLine, RETRY_AFTER_MS, CLOUD_STOP, deniedVerdict, reviewerAgent } from "../scripts/ops/noelle.mjs";
+import { NOELLE_BRAINS, readBrain, seedPlaybooks, callBlock, personaText, readsText, runVerdict, runResult, failureStep, finish, finishOptions, tickDecision, heldUntil, untrusted, missedLine, RETRY_AFTER_MS, CLOUD_STOP, deniedVerdict, reviewerAgent } from "../scripts/ops/noelle.mjs";
 // @ts-expect-error plain .mjs script, no types
 import { judge, HER_REPOS } from "../scripts/ops/noelle-guard.mjs";
 // @ts-expect-error plain .mjs script, no types
@@ -150,6 +150,23 @@ describe("Noelle's wake and handoff", () => {
       expect(judge({ tool_name: tool, tool_input: { file_path: "owner-notes.md" }, cwd: home }, { h: home })).toMatchObject({ stop: "OWNER_NOTES_READ_ONLY" });
     }
     expect(judge({ tool_name: "Edit", tool_input: { file_path: "HANDOFF.md" }, cwd: home }, { h: home })).toBeNull();
+  });
+  it("seeds six playbooks from their own Growth sections without overwriting Noelle’s edits", () => {
+    const home = memoryHome();
+    const seeds: string[] = [];
+    seedPlaybooks(home, (brain: string, { section }: { section: string }) => {
+      seeds.push(`${brain}/${section}`);
+      return `input: ${section}`;
+    });
+    expect(seeds).toEqual([
+      "porch-and-party/Growth", "spry/Growth/KeepMyProof", "spry/Growth/ApprovalPrep",
+      "spry/Growth/Dream Wedding", "spry/Growth/A Player Mode", "spry/Growth/Peace Be Still",
+    ]);
+    const play = join(home, "plays/porch-and-party.md");
+    expect(readFileSync(play, "utf8")).toContain("input: Growth");
+    writeFileSync(play, "Noelle’s outcome");
+    seedPlaybooks(home, () => { throw new Error("would reread a seeded business"); });
+    expect(readFileSync(play, "utf8")).toBe("Noelle’s outcome");
   });
   it("keeps the fixture wake under 30,000 UTF-8 bytes, with raw data available on demand", () => {
     const home = memoryHome();
