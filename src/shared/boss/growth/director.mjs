@@ -75,4 +75,3 @@ export function namingProblems(draft) {
   if (new RegExp(`black${W}bible${W}chat`, "i").test(bare)) out.push('says "Black Bible Chat" outside "Hush Harbor · Black Bible Chat & Stories"');
   return out;
 }
-
