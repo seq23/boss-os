@@ -2,11 +2,6 @@
   "permissions": {
     "defaultMode": "dontAsk",
     "allow": [
-      "Read(~/Work/simone/**)",
-      "Edit(~/Work/simone/**)",
-      "Read(~/Brains/**)",
-      "Read(~/.claude/skills/**)",
-      "Read(~/.claude/CLAUDE.md)",
       "Bash",
       "WebSearch",
       "WebFetch",
@@ -66,11 +61,9 @@
       ]
     },
     "network": {
-      "allowedDomains": [
-        "github.com",
-        "api.github.com",
-        "codeload.github.com",
-        "registry.npmjs.org"
+      "allowedDomains": [],
+      "allowUnixSockets": [
+        "__SOCKET__"
       ]
     }
   }

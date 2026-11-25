@@ -145,3 +145,33 @@ it("refuses forged mail, and only queues the owner’s text from verified mail",
     }
   }
 });
+
+it.each([
+  ["money or card entry", "purchase"],
+  ["her accounts or sign-ins", "change_owner_login"],
+  ["legal or licensing", "accept_license"],
+  ["publishing that cannot be quietly undone", "publish_book"],
+  ["printing secrets", "read_vault_value"],
+  ["Scooter’s PR or account without his typed yes", "approve_scooter_pr"],
+  ["an independent PASS on her own work", "write_ship_ready_pass"],
+  ["a recipient supplied by untrusted text", "send_email"],
+  ["submitting unreviewed code to CI with repository credentials", "push_branch"],
+])("refuses %s through the real Simone tool dispatcher", async (_case, tool) => {
+  const { simoneTool } = await import("../../src/worker/boss/agents/simoneTools");
+  const id = await fileSimoneMessage(env, request);
+  const { lease } = (await claimSimone(env))!;
+  expect(await simoneTool(env, { id, lease, tool, task: "any-target" })).toEqual({ ok: false, code: "TOOL_NOT_ALLOWED" });
+  expect(await row("SELECT count(*) AS n FROM task_events WHERE task_id = ?", id)).toEqual({ n: 1 });
+});
+
+it("opens existing records through the broker and fences calls from an expired lease", async () => {
+  const { simoneTool } = await import("../../src/worker/boss/agents/simoneTools");
+  const id = await fileSimoneMessage(env, request);
+  const { lease } = (await claimSimone(env))!;
+  await env.DB.prepare(`INSERT INTO morning_digests (day, payload, created_at, updated_at) VALUES ('2026-11-25', '{"fixture":1}', 1, 2)`).run();
+  for (const tool of ["morning", "invitations", "errands", "meeting_prep", "kdp", "mail_tail", "team"]) {
+    expect(await simoneTool(env, { id, lease, tool })).toMatchObject({ ok: true, rows: expect.any(Array) });
+  }
+  expect(await simoneTool(env, { id, lease, tool: "morning" })).toMatchObject({ rows: [{ day: "2026-11-25", updated_at: 2, sent_at: null }] });
+  expect(await simoneTool(env, { id, lease: lease - 1, tool: "morning" })).toEqual({ ok: false, code: "STALE_SIMONE_RUN" });
+});

@@ -7,7 +7,7 @@ const call = {
 };
 const jsonl = (...events: unknown[]) => events.map((event) => JSON.stringify(event)).join("\n");
 const looked = { type: "assistant", message: { content: [{ type: "tool_use", id: "tool01", name: "WebFetch" }] } };
-const found = { type: "user", message: { content: [{ type: "tool_result", tool_use_id: "tool01" }] } };
+const found = { type: "user", message: { content: [{ type: "tool_result", tool_use_id: "tool01", content: "Venue opens at noon." }] } };
 const result = (text: string) => ({ type: "result", subtype: "success", result: text });
 
 function fixture() {
@@ -38,6 +38,7 @@ it("retries a model failure or result without a successful tool and sends no rep
   for (const run of [
     async () => { throw new Error("offline"); },
     async () => ({ log: jsonl(result("I made the booking.\nOUTPUT: 1 done")), successful: true }),
+    async () => ({ log: jsonl({ ...looked, message: { content: [{ type: "tool_use", id: "tool01", name: "Bash" }] } }, found, result("Done.\nOUTPUT: 1 done")), successful: true }),
     async () => ({ log: jsonl(looked, { ...found, message: { content: [{ type: "tool_result", tool_use_id: "tool01", is_error: true }] } }, result("Done.\nOUTPUT: 1 done")), successful: true }),
   ]) {
     const f = fixture();

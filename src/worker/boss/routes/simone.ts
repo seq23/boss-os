@@ -4,10 +4,11 @@ import type { Env, Vars } from "../env";
 import { claimSimone, fileSimoneMessage, releaseSimone, replySimone, simoneMessageStatus, finishSimoneHandoff } from "../agents/simone";
 import { AppError, badRequest, notFound, ok } from "../lib/http";
 import { machineTokenOk } from "./openLoops";
+import { simoneTool } from "../agents/simoneTools";
 
 export const simone = new Hono<{ Bindings: Env; Variables: Vars }>();
 export const SIMONE_MACHINE_PATHS: ReadonlySet<string> = new Set([
-  "/api/simone/handoff", "/api/simone/claim", "/api/simone/release", "/api/simone/reply", "/api/simone/wake",
+  "/api/simone/tool", "/api/simone/handoff", "/api/simone/claim", "/api/simone/release", "/api/simone/reply", "/api/simone/wake",
 ]);
 
 export function readSimoneText(body: { text?: unknown } | null) {
@@ -46,6 +47,15 @@ simone.post("/reply", async (c) => {
       b.text.length > 20_000 || !Array.isArray(b.work) || b.work.length > 100 ||
       b.work.some((item) => typeof item !== "string" || item.length > 200)) throw badRequest("A task, lease, reply and work receipts are required.");
   return ok(c, { replied: b.assignments === undefined ? await replySimone(c.env, b) : await finishSimoneHandoff(c.env, { ...b, assignments: b.assignments }) });
+});
+
+simone.post("/tool", async (c) => {
+  if (!(await machineTokenOk(c))) throw new AppError(401, "Locked");
+  const b = await c.req.json<{ id: string; lease: number; tool: string; task?: unknown }>().catch(() => null);
+  if (!b || typeof b.id !== "string" || !Number.isSafeInteger(b.lease) || typeof b.tool !== "string" || b.tool.length > 60) {
+    throw badRequest("A Simone task, lease and tool are required.");
+  }
+  return ok(c, await simoneTool(c.env, b));
 });
 
 simone.post("/handoff", async (c) => {
