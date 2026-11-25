@@ -17,11 +17,10 @@ each ask to the employee who can do it. If you want a particular person, write t
 danielle@, camille@, monique@, zora@, toni@, imani@, kendra@ or noelle@sequoiataylor.com, or put their
 name with a # in front (#danielle). Both are optional shortcuts.
 
-**Or use the "Tell Simone" box at the top of Today** in Boss OS. It is the same as emailing
-simone@: the same split, the same people, the same reports back by email. You see who has each job
-on the screen as soon as you send.
+**Or use the "Tell Simone" box at the top of Today** or the message box on Simone’s page. Send your
+request in your own words. Simone’s reply appears where you sent it.
 
-## Three example emails
+## Example emails
 
 **1 · Build something**
 
@@ -78,10 +77,8 @@ to you as a draft for your Send instead.
 
 ## What happens after you send
 
-1. **Within a minute, a reply from Boss OS** with one line per job: who has it.
-2. **Each job reports back by email** when it is done, or when it needs a decision only you can make.
-3. **Every job you email is tailed.** A separate check on your Mac follows each one to the end,
-   fixes anything that got stuck, and Simone emails you a short report of what happened.
+Simone answers in the original thread when she has a result. If a colleague takes part of the work,
+the reply names who has it. A temporary outage keeps the request queued for another attempt.
 
 ## How to approve, change or stop
 
@@ -95,8 +92,8 @@ Reply on the same email thread. Short is fine.
 | Retry something that stopped | `try again` |
 | Drop something that stopped | `drop it` |
 
-Any other reply is read as your answer and the work continues with it. A reply always goes back to
-the job it answers; it never starts a new pile.
+Reply to the message that names the job or the decision. If you are continuing an exchange with
+Simone, she reads the earlier messages for context.
 
 When something is waiting on you, the email says what is needed in plain English and the exact reply
 that clears it.

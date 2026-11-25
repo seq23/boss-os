@@ -8,6 +8,8 @@ import { mailboxAllowed } from "../commands/google";
 import { parseMail } from "../../../shared/mail/parseMail.mjs";
 import { readEverything } from "../intake/readFiles";
 import { MAX_BODY_BYTES } from "../intake/inboundMail";
+import { partiesAnswer } from "../capital/grid";
+import { readJsonObject } from "../router/types";
 
 const READS = {
   morning: `SELECT day, updated_at, sent_at FROM morning_digests ORDER BY day DESC LIMIT 3`,
@@ -63,6 +65,21 @@ export async function simoneTool(env: Env, request: { id: string; lease: number;
   if (Object.hasOwn(READS, request.tool)) {
     const { results } = await env.DB.prepare(READS[request.tool as keyof typeof READS]).all();
     return { ok: true, rows: results } as const;
+  }
+  if (request.tool === "deal_parties") {
+    const args = typeof request.task === "string" && request.task.length <= 500 ? readJsonObject(request.task) : null;
+    const company = typeof args?.company === "string" ? args.company.trim() : "";
+    const side = args?.side;
+    if (!company || company.length > 160 || (side !== "buy" && side !== "sell")) {
+      return { ok: false, code: "DEAL_QUERY_REQUIRED" } as const;
+    }
+    try {
+      const match = await partiesAnswer(env, { company, side }, now);
+      if (!match) return { ok: false, code: "DEAL_COMPANY_NOT_ON_GRID" } as const;
+      return { ok: true, receipt: "deals_grid", ...match } as const;
+    } catch {
+      return { ok: false, code: "DEAL_GRID_UNAVAILABLE" } as const;
+    }
   }
   if (request.tool === "read_mail_material") {
     const message: SimoneMessage = JSON.parse(active.input);
