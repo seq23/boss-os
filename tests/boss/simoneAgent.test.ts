@@ -248,3 +248,34 @@ it("retries a committed handoff through a queue failure without changing the col
   expect((await env.DB.prepare(`SELECT employee_id FROM tasks WHERE json_extract(input, '$.simone_handoff') = ?`).bind(id).all()).results)
     .toEqual([{ employee_id: "emp_research" }]);
 });
+
+it("the public Worker requires the real machine-token check before claim, tool, or reply", async () => {
+  const { createExecutionContext, waitOnExecutionContext } = await import("cloudflare:test");
+  const { default: worker } = await import("../../src/worker/boss/index");
+  const { setSetting } = await import("../../src/worker/boss/lib/settings");
+  const { TOKEN_KEY } = await import("../../src/worker/boss/routes/openLoops");
+  const token = `olt_${"9".repeat(64)}`;
+  const hash = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(token));
+  await setSetting(env.DB, TOKEN_KEY, Array.from(new Uint8Array(hash), (byte) => byte.toString(16).padStart(2, "0")).join(""));
+  const id = await fileSimoneMessage(env, request);
+  async function post(path: string, authorization?: string, body?: unknown) {
+    const ctx = createExecutionContext();
+    const res = await worker.fetch(new Request(`https://boss.test/api/simone/${path}`, {
+      method: "POST", headers: { "content-type": "application/json", ...(authorization ? { authorization } : {}) },
+      body: body ? JSON.stringify(body) : undefined,
+    }), env, ctx);
+    await waitOnExecutionContext(ctx);
+    return res;
+  }
+  for (const path of ["claim", "tool", "reply", "handoff", "release", "wake"]) {
+    expect((await post(path)).status).toBe(401);
+    expect((await post(path, `Bearer olt_${"8".repeat(64)}`)).status).toBe(401);
+  }
+  expect(await row("SELECT status, attempts FROM tasks WHERE id = ?", id)).toEqual({ status: "queued", attempts: 0 });
+  const claimed = await post("claim", `Bearer ${token}`);
+  expect(claimed.status).toBe(200);
+  const { data: { call } } = await claimed.json<{ data: { call: { id: string; lease: number } } }>();
+  expect(call.id).toBe(id);
+  const forbidden = await post("tool", `Bearer ${token}`, { id, lease: call.lease, tool: "purchase" });
+  expect(await forbidden.json()).toMatchObject({ data: { ok: false, code: "TOOL_NOT_ALLOWED" } });
+});
