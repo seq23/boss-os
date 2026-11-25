@@ -6,12 +6,13 @@ export interface SimoneCall {
   message: { body: string; context?: string; source?: string };
 }
 
-export function codexRouteArgs(prompt: string, output: string, schema: string): string[];
+export function codexAgentArgs(output: string, socket: string): string[];
+export function codexWebReceipts(log: string): string[];
 export function simoneMemory(home: string): Promise<string>;
 export function childEnvironment(env: NodeJS.ProcessEnv, home: string, settings: string, promptFile: string): NodeJS.ProcessEnv;
 export function runSimone(options: {
   api: (method: string, path: string, body?: unknown) => Promise<{ call?: SimoneCall; replied?: boolean; refused?: boolean; released?: boolean }>;
   run: (call: SimoneCall, prompt: string) => Promise<{ log: string; successful: boolean; receipts?: string[] }>;
-  fallback?: (call: SimoneCall) => Promise<unknown[] | null>;
+  fallback?: (call: SimoneCall, prompt: string) => Promise<{ log: string; successful: boolean; receipts?: string[] }>;
   hasCredential?: (text: string) => boolean;
 }): Promise<{ state: 'idle' } | { state: 'done' | 'refused'; id: string } | { state: 'retry'; id: string; code: string }>;

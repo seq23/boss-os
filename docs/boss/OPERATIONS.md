@@ -993,7 +993,8 @@ calendar requests return an Add link. The team retry tool covers failed low-risk
 with an existing permission envelope.
 
 Simone's handoffs use the employee’s existing work lane, including Danielle’s repo plan and
-Camille’s research page. When the Mac is down, the existing free intake router tries Workers AI
+Camille’s research page. If Claude cannot start or exits before doing work, Codex can use the same
+scoped tools through the local broker. When the Mac is down, the existing free intake router tries Workers AI
 then Gemini with the message text intact. It leaves a request queued when Simone still has work
 to do. Replies use the original mail headers. An owner follow-up opens its own run with the prior
 exchange as context. When the owner has taken a task over, a reply stays on that task. Replies linked to an existing command can still act on that record, and the old runner

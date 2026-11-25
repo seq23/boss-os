@@ -10,7 +10,7 @@ const looked = { type: "assistant", message: { content: [{ type: "tool_use", id:
 const found = { type: "user", message: { content: [{ type: "tool_result", tool_use_id: "tool01", content: "Venue opens at noon." }] } };
 const result = (text: string) => ({ type: "result", subtype: "success", result: text });
 
-function fixture(message = call.message) {
+function fixture(message: typeof call.message & { source?: string } = call.message) {
   const calls: { path: string; body: unknown }[] = [];
   return {
     calls,
@@ -87,14 +87,16 @@ it("delivers a refusal without a work receipt and keeps a provider outage on ret
 it("reports a permanent handoff refusal without counting it as completed work", async () => {
   const message = { body: "Ask Danielle to update a site.", context: "", source: "boss_inbound_mail" };
   const assignment = { employee: "emp_repo", words: message.body, delivery: "repository" };
+  const roster = [{ id: "emp_repo", name: "Danielle", role: "Repository lead", department: "Technology" }];
   const run = async () => ({ log: "", successful: false });
   const paths: string[] = [];
   const api = async (_method: string, path: string) => {
     paths.push(path);
-    return path === "/claim" ? { call: { ...call, message } } : { replied: true, refused: true };
+    return path === "/claim" ? { call: { ...call, message, roster } } : { replied: true, refused: true };
   };
-  expect(await runSimone({ api, run, fallback: async () => [assignment] })).toEqual({ state: "refused", id: call.id });
-  expect(paths).toEqual(["/claim", "/handoff"]);
+  const fallback = async () => ({ log: jsonl(result(`HANDOFF: ${JSON.stringify([assignment])}\nOUTPUT: 1 done`)), successful: true });
+  expect(await runSimone({ api, run, fallback })).toEqual({ state: "refused", id: call.id });
+  expect(paths).toEqual(["/claim", "/reply"]);
 });
 
 it("drops a reply containing a known secret and starts the child with isolated credentials", async () => {
@@ -158,15 +160,71 @@ it("KDP watch passes the job’s locked args to Claude and allows only the case 
   ] });
 });
 
-it("the Codex mail reader uses a fresh session with shell, app, web and user settings disabled", async () => {
-  const { codexRouteArgs } = await import("../scripts/ops/simone.mjs");
-  const args = codexRouteArgs("untrusted fixture input", "/fixture/result", "/fixture/schema");
+it("opens a fresh Codex fallback with its own broker, cached search and isolated command access", async () => {
+  const { codexAgentArgs } = await import("../scripts/ops/simone.mjs");
+  const args = codexAgentArgs("/fixture/result", "/fixture/tools.sock");
   expect(args).toContain("--ignore-user-config");
   expect(args).toContain("--ephemeral");
-  expect(args).toContain('web_search="disabled"');
+  expect(args).toContain('web_search="cached"');
   expect(args).toContain('default_permissions="simone"');
   expect(args).toContain('permissions.simone.filesystem.":minimal"="read"');
   expect(args).toContain("permissions.simone.network.enabled=false");
+  expect(args).toContain("mcp_servers.simone.required=true");
+  expect(args.some((arg) => arg.startsWith("mcp_servers.simone.args=") && arg.includes('"/fixture/tools.sock"'))).toBe(true);
   expect(args.flatMap((arg, i) => arg === "--disable" ? [args[i + 1]] : [])).toEqual(["shell_tool", "apps"]);
-  expect(args.slice(-2)).toEqual(["--", "untrusted fixture input"]);
+  expect(args.slice(-2)).toEqual(["--", "-"]);
+});
+
+it("finishes a page request with a Codex tool receipt after Claude becomes unavailable", async () => {
+  const f = fixture({ ...call.message, source: "tell_simone" });
+  const fallback = async (_call: unknown, prompt: string) => {
+    expect(prompt).toContain("Look through the options.");
+    const { codexWebReceipts } = await import("../scripts/ops/simone.mjs");
+    const search = { id: "x", type: "web_search", action: { type: "search", query: "sample park hours" } };
+    const receipts = codexWebReceipts(jsonl(
+      { type: "item.started", item: { ...search, id: "unfinished" } },
+      { type: "item.completed", item: search },
+    ));
+    expect(receipts).toEqual(["WebSearch"]);
+    return { log: jsonl(result("I checked the park hours.\nOUTPUT: 1 done")), successful: true, receipts };
+  };
+  expect(await runSimone({ api: f.api, run: async () => { throw Error("Claude offline"); }, fallback })).toEqual({ state: "done", id: call.id });
+  expect(f.calls[1]).toEqual({ path: "/reply", body: {
+    id: call.id, lease: call.lease, work: ["WebSearch"], text: "I checked the park hours.",
+  } });
+});
+
+it("passes only the tool and its input from MCP and keeps the claimed lease in the trusted parent", async () => {
+  const { Client } = await import("@modelcontextprotocol/sdk/client/index.js");
+  const { StdioClientTransport } = await import("@modelcontextprotocol/sdk/client/stdio.js");
+  const { mkdtemp, rm } = await import("node:fs/promises");
+  const { join } = await import("node:path");
+  const { tmpdir } = await import("node:os");
+  const { listenForSimoneTools } = await import("../scripts/ops/lib/simone-tools.mjs");
+  const home = await mkdtemp(join(tmpdir(), "simone-mcp-"));
+  const socket = join(home, "tool.sock");
+  const attempts: unknown[] = [];
+  const broker = await listenForSimoneTools(socket, call, async (_method: string, path: string, body: { tool: string }) => {
+    attempts.push({ path, body });
+    return body.tool === "morning" ? { ok: true, rows: [{ day: "2026-11-25" }] } : { ok: false, code: "TOOL_NOT_ALLOWED" };
+  }, () => false);
+  const client = new Client({ name: "fixture", version: "1.0.0" });
+  try {
+    await client.connect(new StdioClientTransport({
+      command: process.execPath, args: ["scripts/ops/lib/simone-tool-server.mjs", socket],
+    }));
+    expect((await client.listTools()).tools.map(({ name }) => name)).toEqual(["run_tool"]);
+    expect(await client.callTool({ name: "run_tool", arguments: { tool: "morning", id: "injected", lease: 100 } })).toMatchObject({
+      isError: false, content: [{ type: "text", text: '{"ok":true,"rows":[{"day":"2026-11-25"}]}' }],
+    });
+    expect(attempts[0]).toEqual({ path: "/tool", body: { tool: "morning", task: undefined, id: call.id, lease: call.lease } });
+    expect(await client.callTool({ name: "run_tool", arguments: { tool: "send_to_outside_address" } })).toMatchObject({
+      isError: true, content: [{ type: "text", text: '{"ok":false,"code":"TOOL_NOT_ALLOWED"}' }],
+    });
+    expect(broker.receipts).toEqual(["morning"]);
+  } finally {
+    await client.close();
+    await broker.close();
+    await rm(home, { recursive: true, force: true });
+  }
 });
