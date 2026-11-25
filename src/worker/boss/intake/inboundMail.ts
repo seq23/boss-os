@@ -544,6 +544,11 @@ async function handleMail(message: BossMailMessage, env: Env, said: Said): Promi
       return { mailId, outcome: "ADMITTED_MAIL", employeeId: null, taskId: null, reply: null };
     }
     await env.DB.prepare(`UPDATE boss_inbound_mail SET command_id = ?, thread_id = ? WHERE id = ?`).bind(errand.id, errand.id, mailId).run();
+    if (!dmarc) {
+      await finish({ outcome: "ERRAND_UNVERIFIED", why: "The venue address could not be verified. The message is available in the mail history.",
+        employeeId: SIMONE, objectKey: externalKey });
+      return { mailId, outcome: "ERRAND_UNVERIFIED", employeeId: SIMONE, taskId: null, reply: null };
+    }
     // Everyone on their message stays on Simone's answer, minus us and her (owner, 2 Nov 2026).
     const all = replyAllRecipients({ from: message.headers.get("from"), to: message.headers.get("to"), cc: message.headers.get("cc"), "reply-to": message.headers.get("reply-to") });
     const copied = [...all.to, ...all.cc].filter((x) => !isOwner(extractAddress(x) ?? x, env.BOSS_EXTRA_OWNER_SENDERS ?? ""));

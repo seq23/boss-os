@@ -16,7 +16,6 @@
  *              again. NOTHING GOES TO A THIRD PARTY UNTIL SHE TAPS SEND OR REPLIES "send" — the only
  *              path to `sendOne` is `sendApprovedEmail`, which reads the row's `approved` state.
  *   repo     → Danielle's existing repo-change lane (admitTask on emp_repo, by GitHub address). Never inline.
- *   cant_yet → one line, and a Danielle job to add the ability. Never silence, never a bare "can't".
  */
 import type { Env } from "../env";
 import { todoEditsIn, matchTodo } from "../../../shared/boss/waiting/register.mjs";
@@ -468,9 +467,6 @@ export async function commandFromMail(env: Env, input: { subject: string; text: 
       await save(env, row.id, { state: "queued" }, now);
       await audit(env.DB, { actor: "owner", lane: "ops", entityType: "boss_command", entityId: row.id, action: "errand_approved_by_her_email", detail: { to: spec.to, mail_id: input.mailId } });
       lines.push(`I'm sending your request to ${spec.to} now, as your assistant, from my own address. I'll watch for their answer and tell you what they said. Reply "cancel" in the next few minutes to stop it.`);
-    } else if (c.kind === "cant_yet") {
-      lines.push(await cantYetLine(env, row, spec.what, now));
-      await save(env, row.id, { state: "handed" }, now);
     }
   }
   await audit(env.DB, { actor: "boss", lane: "ops", entityType: "inbound_mail", entityId: input.mailId, action: "commands", detail: { commands: found.map((c, i) => ({ id: ids[i], kind: c.kind })) } });

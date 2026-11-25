@@ -259,14 +259,6 @@ export function emailAskIn(clause) {
   };
 }
 
-/** Things a Claude session could do with her tools that Simone has no executor for yet. */
-export const CANT_YET = Object.freeze([
-  Object.freeze({ re: /\b(?:[Tt]ext|SMS|sms|[Ii]?[Mm]essage|[Ww]hats[Aa]pp)\s+(?:him|her|them|[A-Z][a-z]+)\b/, what: "send a text message" }),
-  Object.freeze({ re: /\b(?:[Cc]all|[Pp]hone|[Rr]ing)\s+(?:him|her|them|[A-Z][a-z]+)\s+(?:for me|and|to|about)\b/, what: "make a phone call" }),
-  Object.freeze({ re: /\b(?:mail|post|ship)\s+(?:a|the)\s+(?:letter|package|parcel|card)\b/i, what: "post a letter or a package" }),
-  Object.freeze({ re: /\b(?:post|publish)\s+(?:this|it|a\s+post)\s+(?:on|to)\s+(?:instagram|tiktok|linkedin|facebook|x|twitter)\b/i, what: "post on social media" }),
-]);
-
 /** One email → its clauses. Sentences, then ", and <verb>" / "; " joins split apart. */
 export function clausesIn(text) {
   return String(text ?? "")
@@ -331,9 +323,6 @@ export function commandsIn({ subject = "", text = "", now = Date.now(), sender =
       spec: { ...e, from_mailbox: mailboxFor(whole), brand, code: out[repoRef ?? -1]?.spec?.code ?? CODE_RE.exec(c)?.[1] ?? null, ask: body.slice(0, 4000), recipient_name: look?.name ?? e.name ?? null },
     });
     break;
-  }
-  if (out.length === 0) {
-    for (const k of CANT_YET) if (k.re.test(body)) { add({ kind: "cant_yet", spec: { what: k.what, ask: body.slice(0, 2000) } }); break; }
   }
   return out;
 }

@@ -124,6 +124,19 @@ describe("her errand by email", () => {
     expect(notice.morning.line).toContain("it's booked");
   });
 
+  it("keeps an unauthenticated venue reply without treating it as a confirmation", async () => {
+    const { id } = await sentErrand();
+    const res = await say({ from: BIZ, subject: "Re: Reservation request", dmarc: "mx.cloudflare.net; dmarc=fail",
+      body: "You're all set for two at 8:30pm Thursday. See you then." });
+    expect(res).toMatchObject({ outcome: "ERRAND_UNVERIFIED", reply: null });
+    expect(await env.DB.prepare(`SELECT state, notice_state FROM boss_commands WHERE id = ?`).bind(id).first())
+      .toEqual({ state: "sent", notice_state: "none" });
+    const original = await env.DB.prepare(`SELECT object_key FROM boss_inbound_mail WHERE id = ?`).bind(res.mailId)
+      .first<{ object_key: string }>();
+    expect(original?.object_key).toBeTruthy();
+    expect(await (await env.VAULT.get(original!.object_key))?.text()).toContain("You're all set for two");
+  });
+
   it("NEGATIVE: mail from any other domain is not their answer and is refused as before", async () => {
     await sentErrand();
     const res = await say({ from: "host@other.example.test", body: "You're all set." });

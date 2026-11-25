@@ -8,7 +8,7 @@ import { badRequest, conflict } from "../lib/http";
 import { getSetting } from "../lib/settings";
 import { isLane } from "../../../shared/boss/lanes";
 import { classify, KIND_TO_DEPARTMENT, type Classification } from "../intake/classify";
-import { buildEnvelope } from "../intake/envelope";
+import { prepareEnvelope } from "../intake/envelope";
 import { startedBySystem } from "../../../shared/boss/mail/noticeGate.mjs";
 
 /**
@@ -442,7 +442,8 @@ export async function admitTask(env: Env, b: AdmitInput, handoff?: { id: string;
                  assignment === "AI_EXECUTE_WITH_NOTICE";
   const status = queued ? "queued" : "awaiting_approval";
 
-  await env.DB.batch([
+  const { envelope, insert: insertEnvelope } = await prepareEnvelope(env.DB, { taskId: id, lane, employeeId, classification, costMode });
+  const writes = [
     env.DB.prepare(
       `INSERT INTO tasks (id, lane, employee_id, title, input, status, created_at,
                           intake_kind, template_id, execution_assignment, risk, sensitivity,
@@ -463,23 +464,21 @@ export async function admitTask(env: Env, b: AdmitInput, handoff?: { id: string;
       ? [env.DB.prepare(`INSERT INTO task_events (id, task_id, ts, event, detail) VALUES (?,?,?,'intake_overruled',?)`)
           .bind(newId("tev"), id, now, JSON.stringify({ reason: "Started by Boss OS: a word in its own text does not park it", was: overruled }))]
       : []),
-  ]);
+  ];
 
   if (firmScan && scanId) {
-    await env.DB
+    writes.push(env.DB
       .prepare(
         `INSERT INTO ask_scans (id, task_id, instruction, find_text, ask_text, state, requested_at, updated_at)
          VALUES (?,?,?,?,?,'queued',?,?)`,
       )
-      .bind(scanId, id, firmScan.raw, firmScan.find, firmScan.ask, now, now)
-      .run();
+      .bind(scanId, id, firmScan.raw, firmScan.find, firmScan.ask, now, now));
   }
 
   if (researchAsk && researchId) {
-    await env.DB
+    writes.push(env.DB
       .prepare(`INSERT INTO research_pages (id, task_id, question, state, requested_at, updated_at) VALUES (?,?,?,'queued',?,?)`)
-      .bind(researchId, id, researchAsk.question, now, now)
-      .run();
+      .bind(researchId, id, researchAsk.question, now, now));
   }
 
   if (change && changeId) {
@@ -491,7 +490,7 @@ export async function admitTask(env: Env, b: AdmitInput, handoff?: { id: string;
      */
     const repair = typeof input.mail_id === "string" ? { origin: "owner", repair_kind: null } : repairOriginOf(input);
     const preBy = change.pre_approved_phrase ? (typeof input.from === "string" ? input.from : "console") : null;
-    await env.DB
+    writes.push(env.DB
       .prepare(
         `INSERT INTO repo_changes (id, task_id, mail_id, repo, property_key, drive_folder, drive_url, instruction, phase,
                                    pre_approved_phrase, pre_approved_by, force_phrase, created_at, updated_at, github_repo, origin, repair_kind)
@@ -507,36 +506,27 @@ export async function admitTask(env: Env, b: AdmitInput, handoff?: { id: string;
          * is her request and keeps its approval email.
          */
         repair.origin, repair.repair_kind,
-      )
-      .run();
+      ));
     /*
      * R24 (docs/SERVICE_RULES.md): a repo she named by its GitHub address that is not on the grid is
      * REGISTERED here, beside the grid, and the job proceeds. The named exclusions were refused above.
      */
     if (change.registered && change.repo && change.github_repo) {
-      await env.DB
+      writes.push(env.DB
         .prepare(`INSERT INTO boss_repo_registry (name, github_repo, mail_id, registered_at) VALUES (?,?,?,?) ON CONFLICT(name) DO NOTHING`)
-        .bind(change.repo, change.github_repo, typeof input.mail_id === "string" ? input.mail_id : null, now)
-        .run();
+        .bind(change.repo, change.github_repo, typeof input.mail_id === "string" ? input.mail_id : null, now));
     }
     if (change.pre_approved_phrase) {
-      await env.DB.prepare(`INSERT INTO task_events (id, task_id, ts, event, detail) VALUES (?,?,?,'repo_change_pre_approved',?)`)
-        .bind(newId("tev"), id, now, JSON.stringify({ repo_change_id: changeId, phrase: change.pre_approved_phrase, by: preBy, force_phrase: change.force_phrase }))
-        .run();
-      await logEvent(env.DB, { level: "warn", scope: "intake", event: "repo_change_pre_approved", lane, entityId: changeId, detail: { phrase: change.pre_approved_phrase, by: preBy, force_phrase: change.force_phrase, repo: change.repo } });
+      writes.push(env.DB.prepare(`INSERT INTO task_events (id, task_id, ts, event, detail) VALUES (?,?,?,'repo_change_pre_approved',?)`)
+        .bind(newId("tev"), id, now, JSON.stringify({ repo_change_id: changeId, phrase: change.pre_approved_phrase, by: preBy, force_phrase: change.force_phrase })));
     }
   }
 
-  const envelope = await buildEnvelope(env.DB, { taskId: id, lane, employeeId, classification, costMode });
-  await env.DB.prepare(`UPDATE tasks SET envelope_id = ? WHERE id = ?`).bind(envelope.id, id).run();
-
-  if (queued) {
-    const delayMs = b.not_before && b.not_before > now ? b.not_before - now : 0;
-    await env.TASKS.send({ taskId: id, lane }, delayMs ? { delaySeconds: Math.ceil(delayMs / 1000) } : undefined);
-  } else {
+  writes.push(insertEnvelope, env.DB.prepare(`UPDATE tasks SET envelope_id = ? WHERE id = ?`).bind(envelope.id, id));
+  if (!queued) {
     // USER_ONLY, HUMAN_CONTRACTOR, and DEFER surface as a decision, not a run.
     const aprId = newId("apr");
-    await env.DB.batch([
+    writes.push(
       env.DB.prepare(
         `INSERT INTO approvals (id, lane, title, summary, kind, origin_type, origin_id, risk, payload, status, requested_at, expires_at)
          VALUES (?,?,?,?,'manual','tasks',?,?,?,'pending',?,?)`,
@@ -547,7 +537,19 @@ export async function admitTask(env: Env, b: AdmitInput, handoff?: { id: string;
         now + 7 * 24 * 60 * 60 * 1000,
       ),
       env.DB.prepare(`UPDATE tasks SET approval_id = ? WHERE id = ?`).bind(aprId, id),
-    ]);
+    );
+  }
+
+  // A Queue retry can find the complete admission. A D1 failure rolls it all back.
+  await env.DB.batch(writes);
+  if (queued) {
+    const delayMs = b.not_before && b.not_before > now ? b.not_before - now : 0;
+    await env.TASKS.send({ taskId: id, lane }, delayMs ? { delaySeconds: Math.ceil(delayMs / 1000) } : undefined);
+  }
+  if (changeId && change?.pre_approved_phrase) {
+    const by = typeof input.from === "string" ? input.from : "console";
+    await logEvent(env.DB, { level: "warn", scope: "intake", event: "repo_change_pre_approved", lane, entityId: changeId,
+      detail: { phrase: change.pre_approved_phrase, by, force_phrase: change.force_phrase, repo: change.repo } });
   }
 
   await audit(env.DB, {

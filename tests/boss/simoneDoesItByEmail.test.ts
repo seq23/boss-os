@@ -14,6 +14,7 @@ import { claimSimone, replySimone } from "../../src/worker/boss/agents/simone";
 import { simoneTool } from "../../src/worker/boss/agents/simoneTools";
 import { recordMailRefs } from "../../src/worker/boss/intake/mailRefs";
 import { setCommandFetch } from "../../src/worker/boss/commands/google";
+import { commandsIn } from "../../src/shared/boss/commands/parse.mjs";
 import { layoutEmail, plainProblems } from "../../src/shared/boss/mail/plain.mjs";
 
 const NOW = Date.parse("2026-10-25T17:00:00Z"); // a Sunday, noon Central
@@ -363,13 +364,17 @@ describe("3. time-2-read codes with no rebuild", () => {
   });
 });
 
-describe("4. what Simone cannot do yet, and what is not hers", () => {
-  it("a can't-yet is one line and a Danielle job, never silence", async () => {
-    const { res } = await say("Text Jordan that I'm running ten minutes late.");
-    expect(res.reply).toMatch(/I can't send a text message yet\. Danielle has a job to add it/);
-    const [row] = await commandsOfKind("cant_yet");
-    const task = await env.DB.prepare(`SELECT employee_id FROM tasks WHERE id = ?`).bind(row.task_id).first<any>();
-    expect(task.employee_id).toBe("emp_repo");
+describe("4. free-form requests and other desks", () => {
+  it("a request outside the existing tools opens no job to add a channel", async () => {
+    const body = "Text Jordan that I'm running ten minutes late.";
+    expect(commandsIn({ text: body })).toEqual([]);
+    const { res } = await say(body);
+    expect(res).toMatchObject({ outcome: "SIMONE_QUEUED", employeeId: "emp_chief", reply: null });
+    const call = (await claimSimone(env))!;
+    expect(call).toMatchObject({ id: res.taskId, message: { body } });
+    expect(await simoneTool(env, { ...call, tool: "send_text" })).toEqual({ ok: false, code: "TOOL_NOT_ALLOWED" });
+    expect(await env.DB.prepare("SELECT count(*) AS n FROM boss_commands").first()).toEqual({ n: 0 });
+    expect(await env.DB.prepare("SELECT count(*) AS n FROM tasks WHERE employee_id = 'emp_repo'").first()).toEqual({ n: 0 });
   });
 
   it("NEGATIVE: mail tagged for another desk, or to another employee's address, is that desk's", async () => {

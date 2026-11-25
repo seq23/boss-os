@@ -342,6 +342,26 @@ it("retries a committed handoff through a queue failure without changing the col
   expect((await row<{ output: string }>("SELECT output FROM tasks WHERE id = ?", id))?.output).toContain("I checked the invitation.");
 });
 
+it("rolls back a half-written research handoff if D1 refuses its permission envelope", async () => {
+  const { finishSimoneHandoff } = await import("../../src/worker/boss/agents/simone");
+  const body = "Ask Camille when the park opens.";
+  const id = await fileSimoneMessage(env, { ...request, body });
+  const call = (await claimSimone(env))!;
+  const assignments = [{ employee: "emp_research", words: body, delivery: "research_page" }];
+  await env.DB.prepare(`CREATE TRIGGER fixture_envelope_unavailable BEFORE INSERT ON permission_envelopes
+    BEGIN SELECT RAISE(ABORT, 'fixture envelope unavailable'); END`).run();
+  await expect(finishSimoneHandoff(env, { id, lease: call.lease, assignments })).rejects.toThrow("fixture envelope unavailable");
+  expect(await row("SELECT count(*) AS n FROM research_pages WHERE question = ?", body)).toEqual({ n: 0 });
+  expect(await row("SELECT count(*) AS n FROM tasks WHERE json_extract(input, '$.simone_handoff') = ?", id)).toEqual({ n: 0 });
+  expect(await releaseSimone(env, id, call.lease, "HANDOFF_UNAVAILABLE")).toBe(true);
+  await env.DB.prepare("DROP TRIGGER fixture_envelope_unavailable").run();
+  const retry = (await claimSimone(env))!;
+  expect(retry.pendingHandoffs).toEqual(assignments);
+  expect(await finishSimoneHandoff(env, { id, lease: retry.lease, assignments })).toBe(true);
+  expect(await row(`SELECT count(*) AS n FROM research_pages rp JOIN tasks t ON t.id = rp.task_id
+    JOIN permission_envelopes pe ON pe.id = t.envelope_id WHERE rp.question = ?`, body)).toEqual({ n: 1 });
+});
+
 it("the public Worker requires the real machine-token check before claim, tool, or reply", async () => {
   const { createExecutionContext, waitOnExecutionContext } = await import("cloudflare:test");
   const { default: worker } = await import("../../src/worker/boss/index");

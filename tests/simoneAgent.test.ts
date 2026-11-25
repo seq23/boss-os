@@ -10,13 +10,13 @@ const looked = { type: "assistant", message: { content: [{ type: "tool_use", id:
 const found = { type: "user", message: { content: [{ type: "tool_result", tool_use_id: "tool01", content: "Venue opens at noon." }] } };
 const result = (text: string) => ({ type: "result", subtype: "success", result: text });
 
-function fixture() {
+function fixture(message = call.message) {
   const calls: { path: string; body: unknown }[] = [];
   return {
     calls,
     api: async (_method: string, path: string, body: unknown) => {
       calls.push({ path, body });
-      if (path === "/claim") return { call };
+      if (path === "/claim") return { call: { ...call, message } };
       if (path === "/reply") return { replied: true };
       return { released: true };
     },
@@ -32,6 +32,26 @@ it("keeps forwarded data outside the authenticated request and records a tool-ba
   };
   expect(await runSimone({ api: f.api, run })).toMatchObject({ state: "done" });
   expect(f.calls[1]).toEqual({ path: "/reply", body: { id: call.id, lease: call.lease, text: "I checked the opening hours.", work: ["WebFetch"] } });
+});
+
+it("answers a venue request with the completed research when a verified booking is unavailable", async () => {
+  const request = "Find me three venues for Saturday and book the cheapest free one.";
+  const f = fixture({ body: request, context: "" });
+  const look = { type: "assistant", message: { content: [{ type: "tool_use", id: "search", name: "WebSearch" }] } };
+  const results = { type: "user", message: { content: [{ type: "tool_result", tool_use_id: "search", content: [
+    "Harbor Hall lists a free Saturday slot and requires booking in person.",
+    "Maple Room lists a $30 Saturday slot.",
+    "Juniper House lists a $45 Saturday slot.",
+  ] }] } };
+  const answer = "I found three Saturday options. Harbor Hall is free, Maple Room is $30, and Juniper House is $45. Harbor Hall only takes reservations in person. I couldn’t reserve it.";
+  expect(await runSimone({ api: f.api, run: async (_call, prompt) => {
+    expect(prompt).toContain(request);
+    return { log: jsonl(look, results, result(`${answer}\nOUTPUT: 1 done`)), successful: true };
+  } })).toMatchObject({ state: "done" });
+  expect(f.calls).toEqual([
+    { path: "/claim", body: undefined },
+    { path: "/reply", body: { id: call.id, lease: call.lease, text: answer, work: ["WebSearch"] } },
+  ]);
 });
 
 it("retries a model failure or result without a successful tool and sends no reply", async () => {

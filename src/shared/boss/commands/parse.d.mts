@@ -21,9 +21,8 @@ export function inviteIn(text: string, now?: number): Record<string, any> | null
 export function lookupIn(text: string): { name: string; relation: string | null; hints: string[]; drive: boolean; gmail: boolean } | null;
 export function repoAskIn(clause: string): { github_repo: string; product: string; instruction: string; code: string | null } | null;
 export function emailAskIn(clause: string): { to: string | null; pronoun: string | null; name: string | null; purpose: string } | null;
-export const CANT_YET: ReadonlyArray<{ re: RegExp; what: string }>;
 export function clausesIn(text: string): string[];
-export interface Command { ref: number; waits_on: number[]; kind: "invite" | "lookup" | "email" | "repo" | "access_code" | "cant_yet" | "errand"; spec: Record<string, any> }
+export interface Command { ref: number; waits_on: number[]; kind: "invite" | "lookup" | "email" | "repo" | "access_code" | "errand"; spec: Record<string, any> }
 export function commandsIn(i?: { subject?: string; text?: string; now?: number; sender?: string }): Command[];
 export function ownWords(text: string): string;
 export function commandReplyIn(text: string, now?: number): Record<string, any> | null;
