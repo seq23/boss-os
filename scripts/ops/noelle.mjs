@@ -15,7 +15,7 @@
  *   persona <dir>                         <dir>/persona-full.md = the rules file + her persona (+ the call),
  *                                         and <dir>/agents.json, the one reviewer agent she may launch;
  *                                         a rules file that cannot be read is NAMED STOP [RULES_UNREAD]
- *   finish <dir> <log> <slot> <kind> <denied>  her run's end: the Rule 0 verdict, /noelle/done, the reply to her
+ *   finish <dir> <log> <slot> <kind> <denied> [usage-limited]  her run's end: the Rule 0 verdict, /noelle/done, the reply to her
  *                                         call (email or page), the same failure twice → a named stop
  *   brain <slug> [<section>|--whole]      (hers) headings, one section, or an explicitly requested whole brain
  *   notice <business> <what> <where> <https link>   (hers) one Notices line for a new thing she published
@@ -312,19 +312,21 @@ export function failureStep(prev, code) {
 }
 
 /**
- * `finish <dir> <log> <slot> <kind> <denied>` → finish()'s options. The fifth argument is claude_denials' count
+ * `finish <dir> <log> <slot> <kind> <denied> [usage-limited]` → finish()'s options. The fifth argument is claude_denials' count
  * from noelle.sh; a missing one is "unknown" (PERMISSION_DENIED), never "0", so a dropped count never passes.
  */
-export function finishOptions([dir, , slot, kind, denied], { log, api, env = process.env }) {
-  return { dir, log, slot, kind: kind === "weekly" ? "weekly" : "daily", runId: env.NOELLE_RUN_ID, api, denied: denied ?? "unknown" };
+export function finishOptions([dir, , slot, kind, denied, mode], { log, api, env = process.env }) {
+  return { dir, log, slot, kind: kind === "weekly" ? "weekly" : "daily", runId: env.NOELLE_RUN_ID, api, denied: denied ?? "unknown", limited: mode === "usage-limited" };
 }
 
-export async function finish({ dir, log, slot, kind, runId, api, denied = "unknown", home = HOME_DIR(), wake = null, now = Date.now() }) {
+export async function finish({ dir, log, slot, kind, runId, api, denied = "unknown", home = HOME_DIR(), wake = null, limited = false, now = Date.now() }) {
   const r = runResult(log);
   const result = r.json ? runVerdict(r) : {
     ok: false, code: "NO_CLAUDE_RESULT", line: "NAMED STOP [NO_CLAUDE_RESULT] the Claude session returned no result", reply: "",
   };
-  let v = deniedVerdict(result, denied);
+  let v = limited
+    ? { ok: false, code: "CLAUDE_LIMIT", line: "NAMED STOP [CLAUDE_LIMIT] Claude is out of usage", reply: "" }
+    : deniedVerdict(result, denied);
   const memoryStop = handoffStop(home, wake?.runId === runId ? wake : null, runId);
   if (memoryStop) {
     const why = memoryStop === "OWNER_NOTES_UNREAD" ? "the start-of-run owner notes read was not recorded" : "rewrite HANDOFF.md with this run and the owner notes date before ending";
@@ -341,9 +343,12 @@ export async function finish({ dir, log, slot, kind, runId, api, denied = "unkno
   const line = f.twice ? `NAMED STOP [SAME_FAILURE_TWICE] ${v.code} twice in a row; no more tries today, and Notices has it for Sequoia. ${v.line}` : v.line;
   const done = await api("POST", "/done", { id: runId, day: state.day, slot: call ? call.slot : slot, kind, state: v.ok ? "done" : "stopped", stops, turns: r.turns, line: line.slice(0, 600), reads: state.reads ?? null, twice: f.twice });
   let said = "";
-  if (call) {
+  if (call && limited) {
+    const release = await api("POST", "/call/release", { task_id: call.task_id, stop: CLOUD_STOP });
+    said = release.cloud ? " call released to the Boss OS answer ladder" : " answer ladder release was not confirmed";
+  } else if (call) {
     if (v.reply) {
-      const text = `${v.reply}${v.ok ? "" : `\n\n(What stopped me: ${v.line})`}${""}\n\nNoelle`;
+      const text = `${v.reply}${v.ok ? "" : `\n\n(What stopped me: ${v.line})`}\n\nNoelle`;
       const res = await api("POST", "/call/reply", { task_id: call.task_id, run: runId, text });
       said = res.replied ? ` reply sent${res.emailed ? " (emailed)" : " (on her page)"}` : ` reply not sent (${res.why})`;
     } else {
@@ -426,7 +431,7 @@ async function main() {
   if (cmd === "finish") {
     let wake = null;
     try { wake = JSON.parse(readFileSync(join(GUARD_DIR(), "wake.json"), "utf8")); } catch { /* finish records an unread wake */ }
-    const r = await finish({ ...finishOptions(process.argv.slice(3), { log: readFileSync(b, "utf8"), api: bossMachine() }), wake });
+    const r = await finish({ ...finishOptions(process.argv.slice(3), { log: existsSync(b) ? readFileSync(b, "utf8") : "", api: bossMachine() }), wake });
     console.log(r.out);
     console.log(r.ok ? `OUTPUT ${r.out}` : "OUTPUT 0");
     if (!r.ok) process.exitCode = r.twice ? 6 : 5;

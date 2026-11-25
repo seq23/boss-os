@@ -213,7 +213,7 @@ describe("her run is locked (#573): a refusal is a stop, and her one agent is pa
     expect(sh).toMatch(/"\$AI_RUN" --role "\$ROLE" --network --cwd "\$WORK" /);
     expect(sh).toMatch(/--agents \$WORK\/agents\.json/);
     expect(sh).toMatch(/DENIED="\$\(claude_denials "\$SID"/);
-    expect(sh).toMatch(/^step finish "\$WORK" "\$SESSION_LOG" "\$SLOT" "\$KIND" "\$DENIED";/m); // the count is finish's fifth argument
+    expect(sh).toMatch(/^step finish "\$WORK" "\$SESSION_LOG" "\$SLOT" "\$KIND" "\$DENIED" "\$FINISH_MODE";/m); // the count is finish's fifth argument
     expect(sh).not.toMatch(/dangerously-skip-permissions|setting-sources project|PATH="\$NHOME\/bin/);
     // no GitHub credential reaches her run: she pushes and opens PRs only through noelle-tool (tests/noelleGithub.test.ts)
     expect(sh).toMatch(/^unset GH_TOKEN GITHUB_TOKEN /m);
@@ -266,20 +266,38 @@ describe("her sandbox, as noelle_prepare writes it", () => {
 });
 
 describe("Claude usage fallback", () => {
-  it.each([
-    ["1", "step call-release /fixture cloud", 76],
-    ["", "stopped CLAUDE_LIMIT", 76],
-  ])("releases only a call to the answer ladder (CALL=%s)", (call, expected, status) => {
-    const launcher = readFileSync(join(__dirname, "../scripts/ops/noelle.sh"), "utf8");
-    const branch = launcher.slice(launcher.indexOf('if [ "$RC" -eq 76 ]; then'), launcher.indexOf('\nstep finish'));
-    const fixture = `RC=76; CALL="$1"; WORK=/fixture
-step() { echo "step $*"; }
-stopped() { echo "stopped $*"; exit "$3"; }
-`;
-    const result = spawnSync("/bin/bash", ["-c", fixture + branch, "fixture", call], { encoding: "utf8" });
-    expect(result.status).toBe(status);
-    expect(result.stdout).toContain(expected);
-    expect(result.stderr).toBe("");
+  it("records the missing handoff before handing a limited call to the answer ladder", async () => {
+    const home = mkdtempSync(join(tmpdir(), "noelle-limited-"));
+    mkdirSync(join(home, "notes"));
+    writeFileSync(join(home, "owner-notes.md"), "## 2026-11-24\nFixture");
+    writeFileSync(join(home, "call.json"), JSON.stringify({ task_id: "fixture-call", slot: "call-fixture" }));
+    const runId = "noelle-fixture-1";
+    const wake = { ...wakeMemory(home, { call: true }), runId };
+    const calls: Array<[string, Record<string, unknown>]> = [];
+    const api = async (_m: string, p: string, b: Record<string, unknown>) => {
+      calls.push([p, b]);
+      return p === "/call/release" ? { cloud: true } : {};
+    };
+    const result = await finish({ dir: home, home, log: "", api, slot: "12:00", kind: "daily", runId, wake, limited: true });
+    expect(result).toMatchObject({ ok: false, code: "HANDOFF_NOT_WRITTEN" });
+    expect(calls).toEqual([
+      ["/done", expect.objectContaining({ state: "stopped", stops: ["HANDOFF_NOT_WRITTEN"] })],
+      ["/call/release", { task_id: "fixture-call", stop: CLOUD_STOP }],
+    ]);
+  });
+
+  it("a scheduled usage limit stops the work and does not queue a cloud reply", async () => {
+    const home = mkdtempSync(join(tmpdir(), "noelle-limited-"));
+    mkdirSync(join(home, "notes"));
+    writeFileSync(join(home, "owner-notes.md"), "## 2026-11-24\nFixture");
+    const runId = "noelle-fixture-1";
+    const wake = { ...wakeMemory(home), runId };
+    writeFileSync(join(home, "HANDOFF.md"), "Run: noelle-fixture-1\nowner-notes read through 2026-11-24");
+    const calls: string[] = [];
+    const api = async (_m: string, p: string) => { calls.push(p); return {}; };
+    const result = await finish({ dir: home, home, log: "", api, slot: "12:00", kind: "daily", runId, wake, limited: true });
+    expect(result).toMatchObject({ ok: false, code: "CLAUDE_LIMIT" });
+    expect(calls).toEqual(["/done"]);
   });
 });
 
@@ -350,7 +368,7 @@ describe("H6: the same failure twice is a named stop and a Notices line, never a
   it("the launcher's denied count reaches finish as given; a missing one is unknown, never 0", async () => {
     const api = async () => ({});
     expect(finishOptions(["/d", "/l", "14:05", "weekly", "2"], { log: "x", api, env: { NOELLE_RUN_ID: "r1" } })).toMatchObject({ dir: "/d", slot: "14:05", kind: "weekly", runId: "r1", denied: "2", log: "x" });
-    expect(finishOptions(["/d", "/l", "14:05", "daily", "0"], { log: "x", api, env: {} }).denied).toBe("0");
+    expect(finishOptions(["/d", "/l", "14:05", "daily", "0", "usage-limited"], { log: "x", api, env: {} })).toMatchObject({ denied: "0", limited: true });
     const dropped = finishOptions(["/d", "/l", "14:05", "daily"], { log: "x", api, env: {} });
     expect(dropped.denied).toBe("unknown");
     const home = mkdtempSync(join(tmpdir(), "noelle-home-"));

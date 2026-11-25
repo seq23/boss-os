@@ -135,16 +135,9 @@ say "=== her session (Claude, $MODEL) exited rc=$RC ==="
 # Every refusal by her list, counted from her own transcript: a number or "unknown" is a stop, never 0.
 DENIED="$(claude_denials "$SID" "$RUN_LOG")"
 
-if [ "$RC" -eq 76 ]; then
-  if [ -n "$CALL" ]; then
-    step call-release "$WORK" cloud || stopped CLAUDE_LIMIT "NAMED STOP [CLAUDE_LIMIT] could not hand the call to the Boss OS answer ladder" 76
-    echo "OUTPUT 0 (Claude usage limit: the Boss OS ladder answers her call)"
-    exit 76
-  fi
-  stopped CLAUDE_LIMIT "NAMED STOP [CLAUDE_LIMIT] Claude is out of usage; the next tick can resume after the retry window" 76
-fi
-
-step finish "$WORK" "$SESSION_LOG" "$SLOT" "$KIND" "$DENIED"; FRC=$?
+FINISH_MODE=""
+[ "$RC" -ne 76 ] || FINISH_MODE="usage-limited"
+step finish "$WORK" "$SESSION_LOG" "$SLOT" "$KIND" "$DENIED" "$FINISH_MODE"; FRC=$?
 ln -sf "$RUN_LOG" "$LOG_DIR/latest.log"
 [ -n "$CALL" ] && exit "$FRC"
 case "$FRC" in
