@@ -987,6 +987,8 @@ morning gate completion or mark a company public. Simone can route an explicit T
 partner request to Monique’s existing campaign workflow.
 When a meeting prep is waiting for its purpose, Simone can record the owner’s direction on
 the existing prep. The current Mac tick picks up any queued prep.
+Time2Read trial-code requests use the existing Mac runner. The tool reports a queued request,
+and the runner records the result after it checks the code table.
 Fresh mail keeps its original attachment bytes and copies locally readable text into the task
 context. During her run, Simone can open the archived attachments and the Drive links in the
 owner’s message. The material reader uses the arrival linked to that run. It returns file text,

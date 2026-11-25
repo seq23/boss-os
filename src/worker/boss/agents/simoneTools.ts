@@ -1,7 +1,7 @@
 import type { Env } from "../env";
 import { newId } from "../lib/id";
 import { SIMONE, SIMONE_AVAILABLE, type SimoneMessage } from "./simone";
-import { addressesIn, confirmLine, errandIn, ERRAND_MONEY_RE, DEFAULT_MAILBOX, OWNER_TZ } from "../../../shared/boss/commands/parse.mjs";
+import { accessCodeIn, addressesIn, confirmLine, errandIn, ERRAND_MONEY_RE, DEFAULT_MAILBOX, OWNER_TZ } from "../../../shared/boss/commands/parse.mjs";
 import { audit } from "../lib/audit";
 import { answerMeetingPrep, getCommand, runInvite } from "../commands/run";
 import { mailboxAllowed } from "../commands/google";
@@ -37,14 +37,14 @@ const READS = {
       AND t.status IN ('failed','running','queued') ORDER BY t.created_at DESC LIMIT 30`,
 } as const;
 
-async function fileCommand(env: Env, kind: "errand" | "invite", task: string, mail: string | null, spec: Record<string, unknown>, now: number) {
+async function fileCommand(env: Env, kind: "access_code" | "errand" | "invite", task: string, mail: string | null, spec: Record<string, unknown>, now: number) {
   const hash = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(`${kind}:${task}`));
   const key = Array.from(new Uint8Array(hash).slice(0, 16), (byte) => byte.toString(16).padStart(2, "0")).join("");
   const id = `cmd_${key}`;
   const [write] = await env.DB.batch([
     env.DB.prepare(`INSERT INTO boss_commands (id, mail_id, kind, state, spec, created_at, updated_at)
       VALUES (?, ?, ?, ?, ?, ?, ?) ON CONFLICT(id) DO NOTHING`)
-      .bind(id, mail, kind, kind === "errand" ? "queued" : "new",
+      .bind(id, mail, kind, kind === "invite" ? "new" : "queued",
         JSON.stringify(kind === "invite" ? { ...spec, provider_event_id: key } : spec), now, now),
     ...(mail ? [env.DB.prepare(`UPDATE boss_inbound_mail SET command_id = ? WHERE id = ? AND task_id = ? AND authorised = 1`)
       .bind(id, mail, task)] : []),
@@ -106,7 +106,7 @@ export async function simoneTool(env: Env, request: { id: string; lease: number;
   }
   if (request.tool === "edit_brain" || request.tool === "record_constraint" ||
       request.tool === "dismiss_match" || request.tool === "apply_morning_reply" ||
-      request.tool === "direct_meeting_prep" || request.tool === "steer_thread") {
+      request.tool === "direct_meeting_prep" || request.tool === "steer_thread" || request.tool === "time2read_access_code") {
     const message: SimoneMessage = JSON.parse(active.input);
     const args = typeof request.task === "string" && request.task.length <= 12_000 ? readJsonObject(request.task) : null;
     const quote = typeof args?.quote === "string" ? args.quote.trim() : "";
@@ -122,6 +122,20 @@ export async function simoneTool(env: Env, request: { id: string; lease: number;
       if (quote.length < 6 || quote.length > 400) return { ok: false, code: "CONSTRAINT_LENGTH" } as const;
       const added = await recordConstraints(env, [quote], message.source, message.mail_id ?? null);
       return { ok: true, receipt: request.id, added } as const;
+    }
+    if (request.tool === "time2read_access_code") {
+      const spec = accessCodeIn(quote);
+      if (!spec || spec.op !== args?.action || spec.error ||
+          (message.source === "boss_inbound_mail" && !message.mail_id)) {
+        return { ok: false, code: "ACCESS_CODE_DETAILS_REQUIRED" } as const;
+      }
+      const command = await fileCommand(env, "access_code", request.id, message.mail_id ?? null, spec, now);
+      const filed = await getCommand(env, command.id);
+      const actual = filed && readJsonObject(filed.spec);
+      if (actual?.op !== spec.op || actual.code !== spec.code || actual.trial_days !== spec.trial_days || actual.label !== spec.label) {
+        return { ok: false, code: "ACCESS_CODE_ALREADY_FILED" } as const;
+      }
+      return { ok: true, receipt: command.id, state: filed?.state, code: spec.code } as const;
     }
     if (request.tool === "steer_thread") {
       const decision = args?.action;

@@ -8,9 +8,9 @@
  */
 import { env } from "cloudflare:test";
 import { afterEach, beforeAll, beforeEach, describe, expect, it } from "vitest";
-import { api } from "./helpers";
+import { api, apiJson } from "./helpers";
 import { handleBossInboundMail } from "../../src/worker/boss/intake/inboundMail";
-import { claimSimone, replySimone } from "../../src/worker/boss/agents/simone";
+import { claimSimone, finishSimoneHandoff, replySimone } from "../../src/worker/boss/agents/simone";
 import { simoneTool } from "../../src/worker/boss/agents/simoneTools";
 import { recordMailRefs } from "../../src/worker/boss/intake/mailRefs";
 import { setCommandFetch } from "../../src/worker/boss/commands/google";
@@ -74,6 +74,11 @@ async function say(body: string, o: { from?: string; dmarc?: string; to?: string
   const messageId = `<m-${Math.random().toString(36).slice(2)}@mail.gmail.com>`;
   const res = await handleBossInboundMail(mail({ ...o, body, messageId }) as never, env as never);
   return { res, messageId };
+}
+async function keptConsoleRequest(body: string) {
+  const response = await apiJson("/api/intake/mail", { method: "POST", body: { body } });
+  expect(response.status).toBe(201);
+  return { res: response.body.data, messageId: response.body.data.messageId as string };
 }
 /** Her reply on the thread of an email that carried `cmdId` (the refs record the reply path writes). */
 async function replyTo(prev: { messageId: string }, cmdId: string, body: string) {
@@ -229,12 +234,12 @@ describe("1. a calendar invite by email", () => {
   });
 });
 
-describe("2. find a person, make a code, email them — never to a guessed address, never without her Send", () => {
+describe("2. existing lookup and draft records still respect the owner's Send gate", () => {
   const ASK = "Find my cousin Rowan's email; it's one of the addresses shared on the Smith family reunion Drive files. "
     + "Create a time-2-read code TESTCODE15 for a 15-day trial, and email her the code with a short explainer of what time-2-read is, its features and how it compares with others.";
 
   it("the whole arc", async () => {
-    const first = await say(ASK);
+    const first = await keptConsoleRequest(ASK);
     expect(first.res.outcome).toBe("COMMAND");
     expect(first.res.reply).toMatch(/Finding Rowan's email/);
     expect(first.res.reply).toMatch(/Making the time-2-read code TESTCODE15: a 15-day trial/);
@@ -307,7 +312,7 @@ describe("2. find a person, make a code, email them — never to a guessed addre
   });
 
   it("Change and Try again redraft; 'send' by reply is the same Send; a used link has done its job", async () => {
-    const first = await say("Email them@example.com a short thank-you note for the intro.");
+    const first = await keptConsoleRequest("Email them@example.com a short thank-you note for the intro.");
     const [email] = await commandsOfKind("email");
     expect(email.state).toBe("drafting");
     await api(`/api/commands/${email.id}/draft`, { method: "POST", body: { subject: "Thank you", text: "Thank you!\n\nSequoia" } });
@@ -329,31 +334,48 @@ describe("2. find a person, make a code, email them — never to a guessed addre
   });
 
   it("repo work that is more than a row goes to Danielle's repo-change lane, never inline", async () => {
-    const { res } = await say("Fix the time-2-read signup page footer so the links work.");
-    expect(res.reply).toMatch(/Danielle has the time-2-read change/);
-    const [repo] = await commandsOfKind("repo");
-    expect(repo.task_id).toBeTruthy();
-    const task = await env.DB.prepare(`SELECT employee_id, input FROM tasks WHERE id = ?`).bind(repo.task_id).first<any>();
+    const words = "Fix the time-2-read signup page footer so the links work.";
+    const { res } = await say(words);
+    expect(res).toMatchObject({ outcome: "SIMONE_QUEUED", reply: null });
+    const call = await claimSimone(env);
+    expect(call?.id).toBe(res.taskId);
+    expect(await finishSimoneHandoff(env, { ...call!, assignments: [{ employee: "emp_repo", words, delivery: "repository" }] }))
+      .toEqual({ replied: true, refused: false });
+    expect(await commandsOfKind("repo")).toEqual([]);
+    const task = await env.DB.prepare(`SELECT employee_id, input FROM tasks WHERE json_extract(input, '$.simone_handoff') = ?`).bind(res.taskId).first<any>();
     expect(task.employee_id).toBe("emp_repo");
     expect(JSON.parse(task.input).repo_change.github_repo).toBe("seq23/dailystory");
   });
 });
 
 describe("3. time-2-read codes with no rebuild", () => {
-  it("make / count / turn off each become one queued code command and a plain line", async () => {
-    const make = await say("make a time-2-read code TEACHERS30 for 30 days for the teachers group");
-    expect(make.res.reply).toMatch(/Making the time-2-read code TEACHERS30: a 30-day trial for teachers group\. No rebuild/);
-    const count = await say("How many used FIXTURE15?");
-    expect(count.res.reply).toMatch(/Counting who has used FIXTURE15/);
-    const off = await say("Turn off code OLDCODE9");
-    expect(off.res.reply).toMatch(/Turning off the time-2-read code OLDCODE9/);
+  async function requestCode(action: string, quote: string) {
+    const { res } = await say(quote);
+    expect(res).toMatchObject({ outcome: "SIMONE_QUEUED", reply: null });
+    const call = await claimSimone(env);
+    expect(call?.id).toBe(res.taskId);
+    const args = (words: string) => ({ ...call!, tool: "time2read_access_code", task: JSON.stringify({ action, quote: words }) });
+    await expect(simoneTool(env, args("Turn off code OTHER15"))).resolves.toEqual({ ok: false, code: "OWNER_INSTRUCTION_REQUIRED" });
+    const wrongAction = action === "off" ? "create" : "off";
+    await expect(simoneTool(env, { ...args(quote), task: JSON.stringify({ action: wrongAction, quote }) }))
+      .resolves.toEqual({ ok: false, code: "ACCESS_CODE_DETAILS_REQUIRED" });
+    const result = await simoneTool(env, args(quote));
+    expect(result).toMatchObject({ ok: true, receipt: expect.any(String), state: "queued" });
+    await expect(simoneTool(env, args(quote))).resolves.toEqual(result);
+    return result;
+  }
+
+  it("make / count / turn off each become one queued operation on the existing runner", async () => {
+    await expect(requestCode("create", "make a time-2-read code TEACHERS30 for 30 days for the teachers group")).resolves.toMatchObject({ code: "TEACHERS30" });
+    await expect(requestCode("count", "How many used FIXTURE15?")).resolves.toMatchObject({ code: "FIXTURE15" });
+    await expect(requestCode("off", "Turn off code OLDCODE9")).resolves.toMatchObject({ code: "OLDCODE9" });
     const specs = (await commandsOfKind("access_code")).map((r) => JSON.parse(r.spec));
     expect(specs.map((s) => [s.op, s.code])).toEqual([["create", "TEACHERS30"], ["count", "FIXTURE15"], ["off", "OLDCODE9"]]);
     expect(specs[0]).toMatchObject({ trial_days: 30, label: "teachers group" });
   });
 
   it("no key on the Mac → the code still gets made, by Danielle, as a one-line migration", async () => {
-    await say("make a time-2-read code TEACHERS30 for 30 days for the teachers group");
+    await requestCode("create", "make a time-2-read code TEACHERS30 for 30 days for the teachers group");
     const [row] = await commandsOfKind("access_code");
     await api(`/api/commands/${row.id}/failed`, { method: "POST", body: { why: "time-2-read's Supabase service key is not in the vault" } });
     const after = await command(row.id);
