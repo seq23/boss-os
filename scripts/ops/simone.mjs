@@ -75,6 +75,12 @@ export async function runSimone({ api, run, fallback, hasCredential = () => fals
   const lease = { id: call.id, lease: call.lease };
   let code = "RUN_FAILED";
   try {
+    if (call.pendingHandoffs?.length) {
+      const result = await api("POST", "/handoff", { ...lease, assignments: call.pendingHandoffs });
+      if (result.replied) return { state: "done", id: call.id };
+      await api("POST", "/release", { ...lease, code: "HANDOFF_UNAVAILABLE" });
+      return { state: "retry", code: "HANDOFF_UNAVAILABLE", id: call.id };
+    }
     const { log, successful, receipts = [] } = await run(call, simonePrompt(call)).catch(() => ({ log: "", successful: false, receipts: [] }));
     const verdict = runVerdict(runResult(log));
     const work = [...completedTools(log), ...receipts].slice(0, 100);

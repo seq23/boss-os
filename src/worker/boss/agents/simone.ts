@@ -24,6 +24,7 @@ export interface SimoneMessage {
   from?: string;
   message_id?: string;
   reply_chain?: string[];
+  simone_handoff_plan?: SimoneAssignment[];
   to?: string;
 }
 
@@ -69,7 +70,7 @@ export async function claimSimone(env: Env, now = Date.now(), cloud = false) {
     [{ role: "user", content: [message.subject, message.body, message.context].filter(Boolean).join("\n") }],
     await privateLexicon(env.DB), { modelAccess: row.model_access, sensitivity: row.sensitivity },
   );
-  return { id: row.id, lease: row.attempts, message, privateOnly: access.privateOnly, roster };
+  return { id: row.id, lease: row.attempts, message, privateOnly: access.privateOnly, roster, pendingHandoffs: message.simone_handoff_plan };
 }
 
 export async function simoneMessageStatus(env: Env, id: string) {
@@ -126,7 +127,14 @@ export async function handoffSimone(env: Env, request: { id: string; lease: numb
   const message: SimoneMessage = JSON.parse(row.input);
   if (message.source === "simone_daily") return null;
   const roster = await activeRoster(env);
-  const assignments: SimoneAssignment[] | null = readAssignments(request.assignments, { message, roster });
+  const proposed = readAssignments(message.simone_handoff_plan ?? request.assignments, { message, roster });
+  if (!proposed?.length) return null;
+  const saved = await env.DB.prepare(`UPDATE tasks SET input = CASE
+      WHEN json_type(input, '$.simone_handoff_plan') IS NULL THEN json_set(input, '$.simone_handoff_plan', json(?)) ELSE input END
+    WHERE id = ? AND employee_id = ? AND ${CHIEF} AND status = 'running' AND attempts = ? RETURNING input`)
+    .bind(JSON.stringify(proposed), request.id, SIMONE, request.lease).first<{ input: string }>();
+  if (!saved) return null;
+  const assignments = readAssignments((JSON.parse(saved.input) as SimoneMessage).simone_handoff_plan, { message, roster });
   if (!assignments?.length) return null;
   const out: { name: string; id: string }[] = [];
   for (const assignment of assignments) {
@@ -172,7 +180,8 @@ export async function routeSimoneWhenMacIsDown(env: Env, now = Date.now(), route
   if (!call) return "idle";
   let code = call.privateOnly ? "PRIVATE_MODEL_ONLY" : "MODEL_UNAVAILABLE";
   try {
-    if (!call.privateOnly) {
+    if (call.pendingHandoffs?.length && await finishSimoneHandoff(env, { ...call, assignments: call.pendingHandoffs })) return "handed_off";
+    if (!call.privateOnly && !call.pendingHandoffs?.length) {
       const parse = (text: string) => readAssignments(readJsonObject(text)?.assignments, call);
       const messages = [
         { role: "system" as const, content: `${routingInstructions}\nReturn JSON with an assignments array of employee and words objects.` },

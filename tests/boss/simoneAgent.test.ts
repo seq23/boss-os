@@ -232,3 +232,19 @@ it("queues a free errand in the existing table once, and refuses a card or forwa
   expect(await simoneTool(env, run)).toEqual(first);
   expect(await row(`SELECT COUNT(*) AS n FROM boss_commands WHERE kind = 'errand' AND json_extract(spec, '$.to') = 'venue@example.test'`)).toEqual({ n: 1 });
 });
+
+it("retries a committed handoff through a queue failure without changing the colleague or duplicating the job", async () => {
+  const { finishSimoneHandoff } = await import("../../src/worker/boss/agents/simone");
+  const body = "Ask Camille to research opening hours. Ask Zora to file the note.";
+  const id = await fileSimoneMessage(env, { ...request, body });
+  const call = (await claimSimone(env))!;
+  const assignments = [{ employee: "emp_research", words: "Ask Camille to research opening hours." }];
+  const brokenQueue = { ...env, TASKS: { send: async () => { throw new Error("queue down"); } } } as unknown as typeof env;
+  await expect(finishSimoneHandoff(brokenQueue, { id, lease: call.lease, assignments })).rejects.toThrow("queue down");
+  expect(await releaseSimone(env, id, call.lease, "HANDOFF_UNAVAILABLE")).toBe(true);
+  const retry = (await claimSimone(env))!;
+  expect(retry.pendingHandoffs).toEqual(assignments);
+  expect(await finishSimoneHandoff(env, { id, lease: retry.lease, assignments: [{ employee: "emp_knowledge", words: "Ask Zora to file the note." }] })).toBe(true);
+  expect((await env.DB.prepare(`SELECT employee_id FROM tasks WHERE json_extract(input, '$.simone_handoff') = ?`).bind(id).all()).results)
+    .toEqual([{ employee_id: "emp_research" }]);
+});

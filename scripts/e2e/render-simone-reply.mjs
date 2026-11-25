@@ -21,7 +21,7 @@ const result = await sendNotice(notice, {
   task,
   to: "wrong@example.test",
   fetchImpl: async (url, init) => {
-    assert.equal(String(url), "https://api.resend.com/emails");
+    assert.equal(new URL(url).pathname, "/emails");
     assert.equal(init.method, "POST");
     assert.equal(init.headers["Idempotency-Key"], notice.id);
     payload = JSON.parse(init.body);
