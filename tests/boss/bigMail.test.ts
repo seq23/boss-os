@@ -1,6 +1,8 @@
 import { env } from "cloudflare:test";
 import { describe, expect, it, beforeEach } from "vitest";
 import { handleBossInboundMail, INLINE_READ_ATTEMPTS, STALE_ARRIVAL_MS, MAX_BODY_BYTES } from "../../src/worker/boss/intake/inboundMail";
+import { claimSimone } from "../../src/worker/boss/agents/simone";
+import { simoneTool } from "../../src/worker/boss/agents/simoneTools";
 import { readEverything, driveIdsIn } from "../../src/worker/boss/intake/readFiles";
 import { asksIn, gotItLines, fileLabel } from "../../src/worker/boss/intake/gotIt";
 import { runMailAlarm } from "../../src/worker/boss/intake/mailAlarm";
@@ -106,46 +108,64 @@ beforeEach(async () => {
 });
 
 describe("a big email is read whole, then answered", () => {
-  it("12 MB: split once, the recording as base64 text, every file's words on the job, the Got it names her asks and the picture", async () => {
+  it("keeps a 12 MB email and reads every available part when Simone calls the material tool", async () => {
     const raw = bigEmail(12 * 1024 * 1024);
     expect(raw.length).toBeGreaterThan(12 * 1024 * 1024);
     expect(raw.length).toBeLessThan(MAX_BODY_BYTES);
     const seen: Array<{ model: string; audioType: string }> = [];
+    const fixtureEnv = hearingEnv(seen) as never;
     const splits = mimeParseCount.n;
-    const res = await handleBossInboundMail(mail(raw, "<big-12@mail.gmail.com>"), hearingEnv(seen) as never);
-    expect(mimeParseCount.n - splits, "the files are read from ONE parse of the message").toBe(1);
-    const heard = seen.filter((x) => /whisper/.test(x.model));
-    expect(heard.length).toBe(1);
-    expect(heard[0]!.audioType, "Whisper is handed the base64 text, never a byte array the binding would JSON-serialise").toBe("string");
-    expect(res.taskId).toBeTruthy();
+    const res = await handleBossInboundMail(mail(raw, "<big-12@mail.gmail.com>"), fixtureEnv);
+    expect(res).toMatchObject({ outcome: "SIMONE_QUEUED", reply: null });
+    expect(mimeParseCount.n - splits).toBe(1);
+    expect(seen).toEqual([]);
 
-    const body = JSON.parse((await row<any>(`SELECT input FROM tasks WHERE id = ?`, res.taskId))!.input).body as string;
-    expect(body).toContain("Please read the deck");
-    expect(body).toContain("Also book the venue for forty people.");
-    expect(body).toContain("risk three is hiring");
-    expect(body).toContain("Use the navy logo on dark pages.");
-    expect(body).not.toMatch(/was not read here/);
-
-    const reply = res.reply!;
-    expect(reply).toContain('"Please read the deck and tell me what the three risks are."');
-    expect(reply).toContain('"Send a short summary to Monique by Friday."');
-    expect(reply).toMatch(/What I read: .*New Recording 7\.m4a \(your voice note\).*deck\.pdf.*assets\.zip \(2 files inside\)/);
-    expect(reply).toMatch(/What I could not open \(2\):/);
-    expect(reply).toContain("IMG 0001.jpg: a picture");
-    expect(reply).toContain("logo.png (in assets.zip): a picture");
-    const arrival = await row<any>(`SELECT outcome, attempt, reply_text FROM boss_inbound_mail WHERE id = ?`, res.mailId);
-    expect(arrival.attempt).toBe(1);
-    expect(arrival.reply_text, "the reply is kept while it is due, so a stopped send is resent").toContain("What I read");
+    const call = (await claimSimone(fixtureEnv))!;
+    expect(call.id).toBe(res.taskId);
+    expect(call.message.body).toContain(WORDS);
+    expect(call.message.body).not.toContain("Also book the venue");
+    const output = await simoneTool(fixtureEnv, { ...call, tool: "read_mail_material" });
+    expect(mimeParseCount.n - splits).toBe(2);
+    expect(seen.filter((x) => /whisper/.test(x.model))).toEqual([{ model: expect.stringMatching(/whisper/), audioType: "string" }]);
+    expect(output).toMatchObject({
+      ok: true, receipt: res.mailId,
+      material: {
+        heard: [{ filename: "New Recording 7.m4a", text: "Also book the venue for forty people." }],
+        read: expect.arrayContaining([
+          expect.objectContaining({ filename: "deck.pdf", text: expect.stringContaining("risk three is hiring") }),
+          expect.objectContaining({ text: expect.stringContaining("Use the navy logo on dark pages.") }),
+        ]),
+        zips: [{ filename: "assets.zip", files: 2 }],
+        unopened: expect.arrayContaining([
+          expect.objectContaining({ filename: "IMG_0001.jpg", reason: expect.stringContaining("a picture") }),
+          expect.objectContaining({ filename: "logo.png (in assets.zip)", reason: expect.stringContaining("a picture") }),
+        ]),
+      },
+    });
+    expect(await row(`SELECT attempt, reply_state, reply_text FROM boss_inbound_mail WHERE id = ?`, res.mailId))
+      .toEqual({ attempt: 1, reply_state: "agent_pending", reply_text: null });
   });
 
-  it("a recording that cannot be heard and a file nothing reads are both named, never silent", async () => {
+  it("names unread files and leaves failed archive reads without a receipt", async () => {
     const raw = bigEmail(64 * 1024);
     const deaf = Object.create(env);
     deaf.AI = undefined;
     const res = await handleBossInboundMail(mail(raw, "<big-deaf@mail.gmail.com>"), deaf as never);
-    expect(res.reply).toContain("NAMED STOP [VOICE_NOTE_NOT_TRANSCRIBED]");
-    expect(res.reply).toContain("deck.pdf: the document reader is not connected on this Worker");
+    const call = (await claimSimone(env))!;
+    expect(await simoneTool(deaf, { ...call, tool: "read_mail_material" })).toMatchObject({
+      ok: true,
+      material: { unopened: expect.arrayContaining([
+        expect.objectContaining({ filename: "New Recording 7.m4a", audio: true }),
+        expect.objectContaining({ filename: "deck.pdf", reason: expect.stringContaining("document reader is not connected") }),
+      ]) },
+    });
+    const absent = Object.create(deaf);
+    absent.VAULT = { get: async () => { throw new Error("fixture storage unavailable"); } };
+    expect(await simoneTool(absent, { ...call, tool: "read_mail_material" })).toEqual({ ok: false, code: "MAIL_ARCHIVE_UNAVAILABLE" });
+    expect(await row(`SELECT reply_text, reply_state FROM boss_inbound_mail WHERE id = ?`, res.mailId))
+      .toEqual({ reply_text: null, reply_state: "agent_pending" });
   });
+
 });
 
 describe("a Drive link is her material too", () => {
@@ -313,8 +333,10 @@ describe("a forged or broken message (postal-mime, eng sweep row 9)", () => {
     expect(res.mailId).toBeTruthy();
     const kept = await row<{ id: string }>("SELECT id FROM boss_inbound_mail WHERE id = ?", res.mailId);
     expect(kept?.id).toBe(res.mailId);
-    expect(res.reply ?? "").toContain("could not be taken apart");
-    expect(res.reply ?? "").not.toMatch(/EMAX|Error|undefined/);
+    expect(res.reply).toBeNull();
+    const context = (await claimSimone(env))?.message.context;
+    expect(context).toContain("could not be taken apart");
+    expect(context).not.toMatch(/EMAX|Error|undefined/);
   });
 
   it("a PDF typed application/octet-stream is still taken as her file, bytes intact", async () => {

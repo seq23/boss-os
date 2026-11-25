@@ -237,6 +237,16 @@ it("archives an attachment without invoking a Worker model before Simone claims 
   expect(call.message.body).not.toContain("An attached note");
   expect(call.message.context).toContain("An attached note for reference.");
   expect(call.message.context).toContain("Recording attached: recording.wav");
+  const { simoneTool } = await import("../../src/worker/boss/agents/simoneTools");
+  expect(await simoneTool(localEnv, { ...call, lease: call.lease + 1, tool: "read_mail_material" }))
+    .toEqual({ ok: false, code: "STALE_SIMONE_RUN" });
+  expect(used).toBe(0);
+  expect(await simoneTool(localEnv, { ...call, tool: "read_mail_material", task: "fake-archive.eml" }))
+    .toMatchObject({ ok: true, receipt: received.mailId, material: {
+      heard: [{ filename: "recording.wav", text: "This recording is evidence only." }],
+      read: [{ filename: "notes.txt", text: "An attached note for reference." }],
+    } });
+  expect(used).toBe(1);
   const archive = await row<{ object_key: string }>("SELECT object_key FROM boss_inbound_mail WHERE id = ?", received.mailId);
   expect(await (await env.VAULT.get(archive!.object_key))?.text()).toBe(raw);
 });

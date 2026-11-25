@@ -16,15 +16,15 @@ export interface TakenOver { id: string; title: string; input: Record<string, an
 const parse = (s: string | null) => { try { return JSON.parse(s ?? "{}") ?? {}; } catch { return {}; } };
 
 /** A taken-over job her reply's thread names (the References chain against the emails that opened jobs), or null. */
-export async function takenOverJob(env: Env, chain: readonly string[]): Promise<TakenOver | null> {
+export async function takenOverJob(env: Env, chain: readonly string[], sender?: string): Promise<TakenOver | null> {
   if (!chain.length) return null;
   const marks = chain.map(() => "?").join(",");
   const rows = (await env.DB.prepare(
     `SELECT t.id, t.title, t.input FROM tasks t
        JOIN boss_inbound_mail m ON json_extract(t.input, '$.mail_id') = m.id
-      WHERE m.message_id IN (${marks}) AND t.status NOT IN ('done', 'cancelled')
+      WHERE m.message_id IN (${marks}) AND m.authorised = 1 AND (? IS NULL OR m.from_addr = ?) AND t.status NOT IN ('done', 'cancelled')
       ORDER BY t.created_at DESC LIMIT 20`,
-  ).bind(...chain).all<{ id: string; title: string; input: string | null }>()).results ?? [];
+  ).bind(...chain, sender ?? null, sender ?? null).all<{ id: string; title: string; input: string | null }>()).results ?? [];
   for (const r of rows) {
     const input = parse(r.input);
     if (input.taken_over) return { id: r.id, title: r.title, input };

@@ -11,6 +11,7 @@ import { shortTitle } from "../../../shared/boss/intake/triage.mjs";
 
 export const SIMONE = "emp_chief";
 export const SIMONE_LEASE_MS = 3 * 60 * 60_000;
+export const SIMONE_AVAILABLE = "json_extract(input, '$.taken_over') IS NULL AND json_extract(input, '$.held_by_her') IS NULL";
 const CHIEF = "CASE WHEN json_valid(input) THEN json_extract(input, '$.agent') END = 'simone'";
 
 export interface SimoneMessage {
@@ -19,6 +20,7 @@ export interface SimoneMessage {
   body: string;
   context?: string;
   mail_id?: string;
+  has_mail_material?: boolean;
   from?: string;
   message_id?: string;
   reply_chain?: string[];
@@ -67,7 +69,7 @@ export async function claimSimone(env: Env, now = Date.now(), cloud = false) {
   const row = await env.DB.prepare(
     `UPDATE tasks SET status = 'running', started_at = ?, attempts = COALESCE(attempts, 0) + 1
        WHERE id = (
-         SELECT id FROM tasks WHERE employee_id = ? AND ${CHIEF}
+         SELECT id FROM tasks WHERE employee_id = ? AND ${CHIEF} AND ${SIMONE_AVAILABLE}
            AND (status = 'queued' OR (status = 'running' AND started_at <= ?))
            AND (? = 0 OR (json_extract(input, '$.source') = 'boss_inbound_mail' AND created_at <= ?))
          ORDER BY attempts, created_at, id LIMIT 1
@@ -102,7 +104,7 @@ export async function replySimone(env: Env, result: { id: string; lease: number;
   if (!text || (!refused && !result.work.length) || !result.work.every((item) => typeof item === "string" && item.trim())) return false;
   const db = env.DB;
   const noticeId = `tnt_${result.id}_simone`;
-  const current = `id = ? AND employee_id = ? AND ${CHIEF} AND status = 'running' AND attempts = ?`;
+  const current = `id = ? AND employee_id = ? AND ${CHIEF} AND ${SIMONE_AVAILABLE} AND status = 'running' AND attempts = ?`;
   const receipts = JSON.stringify(result.work);
   const writes = await db.batch([
     db.prepare(
@@ -133,7 +135,7 @@ export async function replySimone(env: Env, result: { id: string; lease: number;
 export async function handoffSimone(env: Env, request: { id: string; lease: number; assignments: unknown; text?: string; work?: string[] }) {
   const row = await env.DB.prepare(
     `SELECT input FROM tasks WHERE id = ? AND employee_id = ? AND ${CHIEF}
-       AND status = 'running' AND attempts = ?`,
+       AND ${SIMONE_AVAILABLE} AND status = 'running' AND attempts = ?`,
   ).bind(request.id, SIMONE, request.lease).first<Pick<ClaimedTask, "input">>();
   if (!row) return null;
   const message: SimoneMessage = JSON.parse(row.input);
@@ -144,7 +146,7 @@ export async function handoffSimone(env: Env, request: { id: string; lease: numb
   const saved = await env.DB.prepare(`UPDATE tasks SET input = CASE
       WHEN json_type(input, '$.simone_handoff_plan') IS NULL
       THEN json_set(input, '$.simone_handoff_plan', json(?), '$.simone_handoff_reply', json(?)) ELSE input END
-    WHERE id = ? AND employee_id = ? AND ${CHIEF} AND status = 'running' AND attempts = ? RETURNING input`)
+    WHERE id = ? AND employee_id = ? AND ${CHIEF} AND ${SIMONE_AVAILABLE} AND status = 'running' AND attempts = ? RETURNING input`)
     .bind(JSON.stringify(proposed), JSON.stringify({ text: request.text, work: request.work }),
       request.id, SIMONE, request.lease).first<{ input: string }>();
   if (!saved) return null;

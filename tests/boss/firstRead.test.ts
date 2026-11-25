@@ -299,7 +299,9 @@ describe("a reply on a job she took over in a session", () => {
     expect((await all<any>(`SELECT id FROM tasks`)).length, "no new job").toBe(before);
     const input = JSON.parse((await row<any>(`SELECT input FROM tasks WHERE id = ?`, opened.taskId))!.input);
     expect(input.body).toContain("Use the green logo.");
-    // And the queue leaves it alone.
+    // Neither the Simone claimant nor the shared task consumer can take her job.
+    const { claimSimone } = await import("../../src/worker/boss/agents/simone");
+    expect(await claimSimone(env)).toBeNull();
     await handleTask(env as never, { taskId: opened.taskId!, lane: "ops" } as never);
     expect((await all<any>(`SELECT event FROM task_events WHERE task_id = ? AND event = 'skipped_taken_over'`, opened.taskId)).length).toBe(1);
   });

@@ -981,7 +981,9 @@ Her persona is in `scripts/ops/simone/persona.md`. The existing Simone Mac poll 
 owner’s words and separate context from the original mail. A fresh run reads `owner-notes.md`,
 `HANDOFF.md`, the latest daily note, and task sheets under `~/Work/simone`.
 Fresh mail keeps its original attachment bytes and copies locally readable text into the task
-context. The Worker does not transcribe its recordings or fetch its Drive links at intake.
+context. During her run, Simone can open the archived attachments and the Drive links in the
+owner’s message. The material reader uses the arrival linked to that run. It returns file text,
+transcripts and any unread files as context.
 
 The Simone tool socket gives the session access to the current morning, invitation, errand,
 meeting prep, Kindle, mail and team records. She can queue a free errand to a venue named in
@@ -994,7 +996,7 @@ Simone's handoffs use the employee’s existing work lane, including Danielle’
 Camille’s research page. When the Mac is down, the existing free intake router tries Workers AI
 then Gemini with the message text intact. It leaves a request queued when Simone still has work
 to do. Replies use the original mail headers. An owner follow-up opens its own run with the prior
-exchange as context. Replies linked to an existing command can still act on that record, and the old runner
+exchange as context. When the owner has taken a task over, a reply stays on that task. Replies linked to an existing command can still act on that record, and the old runner
 still drains pending records. The Simone fixture workflow captures both message surfaces and
 renders a reply using a stubbed mail transport.
 

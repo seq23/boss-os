@@ -20,7 +20,7 @@ import { handoffFor, seatInDepartment, huntRequestIn } from "../../../shared/bos
 import { campaignFromMail } from "../outreach/campaign";
 import { steerRound } from "../service/round";
 import { unheardLines, withVoiceNotes } from "./voiceNotes";
-import { readEverything, EMPTY_FILES, type FilesRead } from "./readFiles";
+import { driveIdsIn, readEverything, EMPTY_FILES, type FilesRead } from "./readFiles";
 import { asksIn, gotItLines, filesForTask } from "./gotIt";
 import { firstRead, briefForTask, unclearLines, type FirstRead } from "./firstRead";
 import { takenOverJob, addToTakenOver, takenOverReply } from "../service/takeover";
@@ -727,6 +727,17 @@ async function handleMail(message: BossMailMessage, env: Env, said: Said): Promi
   }
   const threadRefs = { ...recordedRefs, refs: [...new Set(explicitRefs)] };
   const laneTail = refTail(threadRefs.refs.filter((r) => !ownerText.toLowerCase().includes(r)));
+  // A thread explicitly held by the owner is still her work. Keep the reply with that task
+  // before opening a new Simone run. Only the authenticated words above the quote are appended.
+  if (chiefMailbox && writtenByOwner) {
+    const held = await takenOverJob(env, chain, sender);
+    if (held) {
+      await addToTakenOver(env, held, { own: writtenByOwner, mailId, now });
+      const reply = takenOverReply(held);
+      await finish({ outcome: "TAKEN_OVER_NOTED", why: reply, taskId: held.id, employeeId: SIMONE, objectKey, reply });
+      return { mailId, outcome: "TAKEN_OVER_NOTED", employeeId: SIMONE, taskId: held.id, reply, messageId, signer: "Simone" };
+    }
+  }
   const simoneThread = chiefMailbox && !viaConsole && !linkedArrival && (chain.length || threadRefs.refs.length)
     ? await env.DB.prepare(`SELECT json_extract(t.input, '$.body') AS request,
          json_extract(t.output, '$.text') AS reply
@@ -744,6 +755,7 @@ async function handleMail(message: BossMailMessage, env: Env, said: Said): Promi
     // The worker can decode local text and archive the original. Simone's seat reads the
     // message first, and any offline routing uses the same text-only context.
     const localFiles = parsed ? await readEverything(env, parsed, "", { ai: null }) : EMPTY_FILES;
+    const hasMailMaterial = Boolean(parsed?.mail?.attachments.length || driveIdsIn(writtenByOwner));
     const context = [
       read?.body, filesForTask(localFiles),
       simoneThread ? `Previous exchange on this thread: ${JSON.stringify(simoneThread)}` : null,
@@ -754,7 +766,7 @@ async function handleMail(message: BossMailMessage, env: Env, said: Said): Promi
     const taskId = await fileSimoneMessage(env, {
       source: "boss_inbound_mail", subject: subject || "Message to Simone",
       body: [simoneThread ? "" : herSubject, writtenByOwner].filter(Boolean).join("\n\n"),
-      context,
+      context, has_mail_material: hasMailMaterial,
       mail_id: mailId, from: sender, to, message_id: messageId ?? undefined, reply_chain: chain,
     }, identity, now, { objectKey });
     if (!taskId) return { mailId, outcome: "DUPLICATE", employeeId: null, taskId: null, reply: null, messageId };

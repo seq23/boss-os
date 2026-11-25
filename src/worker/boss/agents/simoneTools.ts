@@ -1,10 +1,13 @@
 import type { Env } from "../env";
 import { newId } from "../lib/id";
-import { SIMONE, type SimoneMessage } from "./simone";
+import { SIMONE, SIMONE_AVAILABLE, type SimoneMessage } from "./simone";
 import { addressesIn, confirmLine, errandIn, ERRAND_MONEY_RE, DEFAULT_MAILBOX, OWNER_TZ } from "../../../shared/boss/commands/parse.mjs";
 import { audit } from "../lib/audit";
 import { getCommand, runInvite } from "../commands/run";
 import { mailboxAllowed } from "../commands/google";
+import { parseMail } from "../../../shared/mail/parseMail.mjs";
+import { readEverything } from "../intake/readFiles";
+import { MAX_BODY_BYTES } from "../intake/inboundMail";
 
 const READS = {
   morning: `SELECT day, updated_at, sent_at FROM morning_digests ORDER BY day DESC LIMIT 3`,
@@ -53,12 +56,31 @@ function inviteSpec(value: unknown, ownerText: string) {
 
 export async function simoneTool(env: Env, request: { id: string; lease: number; tool: string; task?: unknown }, now = Date.now()) {
   const active = await env.DB.prepare(`SELECT id, input, created_at FROM tasks WHERE id = ? AND employee_id = ? AND status = 'running'
-    AND attempts = ? AND CASE WHEN json_valid(input) THEN json_extract(input, '$.agent') END = 'simone'`)
+    AND attempts = ? AND CASE WHEN json_valid(input) THEN json_extract(input, '$.agent') END = 'simone'
+    AND ${SIMONE_AVAILABLE}`)
     .bind(request.id, SIMONE, request.lease).first<{ id: string; input: string; created_at: number }>();
   if (!active) return { ok: false, code: "STALE_SIMONE_RUN" } as const;
   if (Object.hasOwn(READS, request.tool)) {
     const { results } = await env.DB.prepare(READS[request.tool as keyof typeof READS]).all();
     return { ok: true, rows: results } as const;
+  }
+  if (request.tool === "read_mail_material") {
+    const message: SimoneMessage = JSON.parse(active.input);
+    if (message.source !== "boss_inbound_mail" || !message.mail_id || !message.has_mail_material) {
+      return { ok: false, code: "MAIL_MATERIAL_NOT_AVAILABLE" } as const;
+    }
+    const arrival = await env.DB.prepare(`SELECT object_key FROM boss_inbound_mail
+      WHERE id = ? AND task_id = ? AND authorised = 1 AND outcome = 'SIMONE_QUEUED'`)
+      .bind(message.mail_id, request.id).first<{ object_key: string | null }>();
+    if (!arrival?.object_key) return { ok: false, code: "MAIL_ARCHIVE_UNAVAILABLE" } as const;
+    try {
+      const archive = await env.VAULT.get(arrival.object_key);
+      if (!archive || archive.size > MAX_BODY_BYTES) return { ok: false, code: "MAIL_ARCHIVE_UNAVAILABLE" } as const;
+      const material = await readEverything(env, await parseMail(await archive.text()), message.body);
+      return { ok: true, material, ...(material.read.length || material.heard.length ? { receipt: message.mail_id } : {}) } as const;
+    } catch {
+      return { ok: false, code: "MAIL_ARCHIVE_UNAVAILABLE" } as const;
+    }
   }
   if (request.tool === "queue_errand" || request.tool === "create_invite") {
     const message: SimoneMessage = JSON.parse(active.input);
