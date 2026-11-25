@@ -122,7 +122,7 @@ export async function replySimone(env: Env, result: { id: string; lease: number;
     ).bind(result.id, SIMONE, result.lease),
     db.prepare(
       `UPDATE tasks SET status = ?, output = ?, finished_at = ?, error = ? WHERE ${current}`,
-    ).bind(refused ? "failed" : "done", JSON.stringify({ text, work: result.work }), now, result.stop ?? null,
+    ).bind(refused ? "cancelled" : "done", JSON.stringify({ text, work: result.work }), now, result.stop ?? null,
       result.id, SIMONE, result.lease),
   ]);
   return Boolean(writes.at(-1)?.meta.changes);

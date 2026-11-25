@@ -73,8 +73,8 @@ describe("Simone's existing task queue", () => {
     const { lease } = (await claimSimone(env))!;
     const text = "I stopped before checkout. Your card wasn’t used.";
     expect(await replySimone(env, { id, lease, text, work: [], stop: "ACTION_RESTRICTED" })).toBe(true);
-    expect((await apiJson(`/api/simone/message/${id}`)).body.data).toEqual({ status: "failed", reply: text });
-    expect(await row("SELECT status, error FROM tasks WHERE id = ?", id)).toEqual({ status: "failed", error: "ACTION_RESTRICTED" });
+    expect((await apiJson(`/api/simone/message/${id}`)).body.data).toEqual({ status: "cancelled", reply: text });
+    expect(await row("SELECT status, error FROM tasks WHERE id = ?", id)).toEqual({ status: "cancelled", error: "ACTION_RESTRICTED" });
     expect(await row("SELECT count(*) AS n FROM task_events WHERE task_id = ? AND event = 'completed'", id)).toEqual({ n: 0 });
     expect(await claimSimone(env)).toBeNull();
   });
