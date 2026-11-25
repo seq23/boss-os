@@ -659,19 +659,32 @@ describe("route this to whomever should handle this", () => {
   });
 
   it("TURNS HER SENTENCE INTO A HUNT the script can actually run", async () => {
+    const words = "find me a seller of $1B+ OpenAI";
     const res = await handleBossInboundMail(
-      mail({ subject: "#monique", body: "find me a seller of $1B+ OpenAI" }), env as never);
-    expect(res.taskId).toBeTruthy();
-    const task = await env.DB.prepare(`SELECT input FROM tasks WHERE id = ?`).bind(res.taskId)
-      .first<{ input: string }>();
-    // Exactly the argument list `buyer-hunt.mjs` takes. No model was asked what she meant.
+      mail({ subject: "#monique", body: words }), env);
+    expect(res.outcome).toBe("SIMONE_QUEUED");
+    const call = (await claimSimone(env))!;
+    expect(call.id).toBe(res.taskId);
+    const hunt = { asset: "OpenAI", size: "$1B+", side: "sell" };
+    const assignment = { employee: "emp_relationship", words, hunt };
+    for (const unsupported of [{ ...hunt, asset: "Another issuer" }, { ...hunt, size: "$2B+" }]) {
+      expect(await finishSimoneHandoff(env, { ...call, assignments: [{ ...assignment, hunt: unsupported }] }))
+        .toEqual({ replied: false, refused: false });
+    }
+    expect(await finishSimoneHandoff(env, { ...call, assignments: [assignment] })).toEqual({ replied: true, refused: false });
+    const task = await env.DB.prepare(`SELECT input FROM tasks WHERE json_extract(input, '$.simone_handoff') = ? AND employee_id = 'emp_relationship'`)
+      .bind(call.id).first<{ input: string }>();
     expect(JSON.parse(task!.input).hunt).toEqual({ asset: "OpenAI", size_usd: 1_000_000_000, side: "sell" });
   });
 
   it("does NOT invent a hunt when she did not name a size", async () => {
-    const res = await handleBossInboundMail(
-      mail({ subject: "#monique", body: "find a seller of OpenAI shares sometime" }), env as never);
-    const task = await env.DB.prepare(`SELECT input FROM tasks WHERE id = ?`).bind(res.taskId)
+    const words = "find a seller of OpenAI shares sometime";
+    const res = await handleBossInboundMail(mail({ subject: "#monique", body: words }), env);
+    const call = (await claimSimone(env))!;
+    expect(call.id).toBe(res.taskId);
+    expect(await finishSimoneHandoff(env, { ...call, assignments: [{ employee: "emp_relationship", words }] }))
+      .toEqual({ replied: true, refused: false });
+    const task = await env.DB.prepare(`SELECT input FROM tasks WHERE json_extract(input, '$.simone_handoff') = ? AND employee_id = 'emp_relationship'`).bind(call.id)
       .first<{ input: string }>();
     expect(JSON.parse(task!.input).hunt).toBeUndefined();
   });
@@ -703,14 +716,16 @@ describe("a message too big for the old cap", () => {
     expect(m.rawSize).toBeLessThan(MAX_BODY_BYTES);
 
     const res = await handleBossInboundMail(m, env as never);
-    expect(res.outcome).toBe("ROUTED");
-    expect(res.taskId).toBeTruthy();
-
-    const task = await env.DB.prepare(`SELECT input FROM tasks WHERE id = ?`).bind(res.taskId)
-      .first<{ input: string }>();
-    const body = String(JSON.parse(task!.input).body ?? "");
+    expect(res).toMatchObject({ outcome: "SIMONE_QUEUED", employeeId: SIMONE, reply: null });
+    const call = (await claimSimone(env))!;
+    expect(call.id).toBe(res.taskId);
+    const { body } = call.message;
     expect(body).toContain(HER_INSTRUCTION);
     expect(body).not.toMatch(/was not read here/);
+    expect(body.length).toBeLessThan(m.rawSize);
+    const arrival = await env.DB.prepare("SELECT object_key FROM boss_inbound_mail WHERE id = ?")
+      .bind(res.mailId).first<{ object_key: string }>();
+    expect((await env.VAULT.head(arrival!.object_key))?.size).toBe(m.rawSize);
   });
 
   it("AND A GENUINELY OVERSIZE MESSAGE STILL OPENS A CARD — unread is not empty", async () => {
@@ -720,16 +735,15 @@ describe("a message too big for the old cap", () => {
     expect(m.rawSize).toBeGreaterThan(MAX_BODY_BYTES);
 
     const res = await handleBossInboundMail(m, env as never);
-    expect(res.outcome).not.toBe("NEEDS_CLARITY");
-    // THE ASSERTION THAT WOULD HAVE CAUGHT IT: a task_id, always.
-    expect(res.taskId).toBeTruthy();
-
-    const task = await env.DB.prepare(`SELECT input, employee_id FROM tasks WHERE id = ?`)
-      .bind(res.taskId).first<{ input: string; employee_id: string }>();
-    const input = JSON.parse(task!.input);
-    // The card says what happened and where the whole of it is, rather than asking her a question.
-    expect(String(input.body)).toMatch(/was not read here/);
-    expect(String(input.raw_message ?? "")).toMatch(/^boss-inbound-mail\//);
+    expect(res).toMatchObject({ outcome: "SIMONE_QUEUED", employeeId: SIMONE, reply: null });
+    const call = (await claimSimone(env))!;
+    expect(call.id).toBe(res.taskId);
+    expect(call.message.body).toBe("#simone");
+    expect(call.message.context).toContain("The original message was archived without decoding.");
+    const arrival = await env.DB.prepare("SELECT object_key FROM boss_inbound_mail WHERE id = ?")
+      .bind(res.mailId).first<{ object_key: string }>();
+    expect(arrival?.object_key).toMatch(/^boss-inbound-mail\//);
+    expect((await env.VAULT.head(arrival!.object_key))?.size).toBe(m.rawSize);
   });
 });
 
@@ -974,66 +988,93 @@ describe("Simone triages untagged mail (owner, 22 Oct 2026: \"i should not have 
   });
 
   it("the live proof emails of 22 Oct 2026, exactly: the repo keeps no trailing period, the question is research", async () => {
-    const build = await handleBossInboundMail(mail({ subject: "sample studio 3 landing page", body: "Build a one-page studio-style landing page for sample studio 3 (slug sample3) in seq23/creator-studios. This is a test: preview only, do not land it. Your call on the design." }), env as never);
-    expect(build.employeeId).toBe("emp_repo");
-    expect(await one<any>(`SELECT repo, github_repo FROM repo_changes WHERE task_id = ?`, build.taskId)).toMatchObject({ repo: "creator-studios", github_repo: "seq23/creator-studios" });
-    const q = await handleBossInboundMail(mail({ subject: "static site hosting", body: "What are the three cheapest ways to host a static website with a custom domain, and what does each cost per month?" }), env as never);
-    expect(q.employeeId).toBe("emp_research");
+    const build = await handoffExample("sample studio 3 landing page",
+      "Build a one-page studio-style landing page for sample studio 3 (slug sample3) in seq23/creator-studios. This is a test: preview only, do not land it. Your call on the design.",
+      "emp_repo", "repository");
+    expect(await one<any>(`SELECT repo, github_repo FROM repo_changes WHERE task_id = ?`, build.id)).toMatchObject({ repo: "creator-studios", github_repo: "seq23/creator-studios" });
+    const q = await handoffExample("static site hosting",
+      "What are the three cheapest ways to host a static website with a custom domain, and what does each cost per month?",
+      "emp_research", "research_page");
     // Camille's seat takes research only; a one_off kind here is what failed it on arrival.
-    expect((await one<any>(`SELECT intake_kind FROM tasks WHERE id = ?`, q.taskId)).intake_kind).toBe("research");
+    expect(q.intake_kind).toBe("research");
     // …and the Mac runner refuses an envelope with no absolute repo_path and no allowed_paths.
-    const req = JSON.parse((await one<any>(`SELECT input FROM tasks WHERE id = ?`, q.taskId)).input).requested;
+    const req = JSON.parse(q.input).requested;
     expect(req.repo_path).toMatch(/^\//);
     expect(req.allowed_paths).toEqual([req.repo_path]);
     expect(req.web_tools).toContain("WebSearch");
   });
 
   it("a build that names no repo is still Danielle's repo change (the plan finds the repo)", async () => {
-    const res = await handleBossInboundMail(mail({ subject: "studio", body: "Build a one-page studio-style landing for a sample studio" }), env as never);
-    expect(res.outcome).toBe("TRIAGED");
-    expect(res.employeeId).toBe("emp_repo");
-    const rc = await one<any>(`SELECT repo, phase FROM repo_changes WHERE task_id = ?`, res.taskId);
+    const job = await handoffExample("studio", "Build a one-page studio-style landing for a sample studio", "emp_repo", "repository");
+    const rc = await one<any>(`SELECT repo, phase FROM repo_changes WHERE task_id = ?`, job.id);
     expect(rc).toMatchObject({ repo: null, phase: "plan" });
   });
 
   it("\"your call\" anywhere in the email pre-approves the build", async () => {
-    const res = await handleBossInboundMail(mail({ subject: "studio", body: "Build a landing page in seq23/creator-studios. Your call on everything." }), env as never);
-    const rc = await one<any>(`SELECT pre_approved_phrase FROM repo_changes WHERE task_id = ?`, res.taskId);
+    const job = await handoffExample("studio", "Build a landing page in seq23/creator-studios. Your call on everything.", "emp_repo", "repository");
+    const rc = await one<any>(`SELECT pre_approved_phrase FROM repo_changes WHERE task_id = ?`, job.id);
     expect(rc?.pre_approved_phrase).toBe("your call");
   });
 
   it("a reply on the thread goes back to the job it answers, not to a new pile", async () => {
-    const first = await handleBossInboundMail(mail({ subject: "hosting question", body: "What are the cheapest ways to host a static site?", messageId: "<q1@mail.gmail.com>" }), env as never);
-    expect(first.employeeId).toBe("emp_research");
-    // While the job is still queued, her reply joins it (one round, one reply: service/round.ts).
+    const question = "What are the cheapest ways to host a static site?";
+    const first = await handleBossInboundMail(mail({ subject: "hosting question", body: question, messageId: "<q1@mail.gmail.com>" }), env);
+    expect(first.outcome).toBe("SIMONE_QUEUED");
+    const handoff = (await claimSimone(env))!;
+    expect(await finishSimoneHandoff(env, { ...handoff, assignments: [{ employee: "emp_research", words: question, delivery: "research_page" }] }))
+      .toEqual({ replied: true, refused: false });
+    const job = await one<{ id: string }>(`SELECT id FROM tasks WHERE json_extract(input, '$.simone_handoff') = ?`, handoff.id);
+    expect(job?.id).toBeTruthy();
+    const more = "also include what each costs per month";
     const joined = await handleBossInboundMail(mail({
-      subject: "Re: hosting question", body: "also include what each costs per month",
+      subject: "Re: hosting question", body: more,
       inReplyTo: "<reply-q1@boss>", references: "<q1@mail.gmail.com> <reply-q1@boss>",
-    }), env as never);
-    expect(joined.outcome).toBe("STEERED");
-    expect(joined.taskId).toBe(first.taskId);
-    expect(joined.reply).not.toContain(first.taskId!);
-    const body = await one<any>(`SELECT json_extract(input, '$.body') AS b FROM tasks WHERE id = ?`, first.taskId);
-    expect(body.b).toContain("also include what each costs per month");
+    }), env);
+    const amend = (await claimSimone(env))!;
+    expect(amend).toMatchObject({ id: joined.taskId, message: { thread_jobs: [{ id: job!.id, employee: "emp_research", status: "queued" }] } });
+    const changed = await simoneTool(env, { ...amend, tool: "steer_thread", task: JSON.stringify({ action: "amend", quote: more }) });
+    expect(changed).toMatchObject({ ok: true, receipt: job!.id, outcome: "STEERED" });
+    const body = await one<{ b: string }>(`SELECT json_extract(input, '$.body') AS b FROM tasks WHERE id = ?`, job!.id);
+    expect(body?.b).toContain(more);
+    expect(await one("SELECT count(*) AS n FROM tasks WHERE employee_id = 'emp_research'")).toEqual({ n: 1 });
+    expect(await replySimone(env, { ...amend, work: [job!.id], text: "I added the monthly cost to Camille’s research." })).toBe(true);
 
     // Once the job has finished and answered, a reply goes back to that job's desk as a follow-up.
-    await env.DB.prepare(`UPDATE tasks SET status = 'done' WHERE id = ?`).bind(first.taskId).run();
+    await env.DB.prepare(`UPDATE tasks SET status = 'done' WHERE id = ?`).bind(job!.id).run();
+    const compare = "now compare the two cheapest";
     const reply = await handleBossInboundMail(mail({
-      subject: "Re: hosting question", body: "now compare the two cheapest",
+      subject: "Re: hosting question", body: compare,
       inReplyTo: "<reply-q1@boss>", references: "<q1@mail.gmail.com> <reply-q1@boss>",
-    }), env as never);
-    expect(reply.outcome).toBe("FOLLOWED_UP");
-    expect(reply.employeeId).toBe("emp_research");
-    expect(reply.reply).toContain("Camille has your reply — it went to the job it answers, not a new pile.");
-    // Her screen never shows a task code (6 Nov 2026 live read).
-    expect(reply.reply).not.toContain(first.taskId!);
-    const t = await one<any>(`SELECT json_extract(input, '$.follows_task') AS f FROM tasks WHERE id = ?`, reply.taskId);
-    expect(t.f).toBe(first.taskId);
+    }), env);
+    const follow = (await claimSimone(env))!;
+    expect(follow).toMatchObject({ id: reply.taskId, message: { thread_jobs: [{ id: job!.id, employee: "emp_research", status: "done" }] } });
+    const assignment = { employee: "emp_research", words: compare, delivery: "research_page", follows: job!.id };
+    expect(await finishSimoneHandoff(env, { ...follow, assignments: [{ ...assignment, follows: first.taskId }] }))
+      .toEqual({ replied: false, refused: false });
+    expect(await finishSimoneHandoff(env, { ...follow, assignments: [assignment] })).toEqual({ replied: true, refused: false });
+    expect(await one(`SELECT json_extract(input, '$.follows_task') AS f FROM tasks WHERE json_extract(input, '$.simone_handoff') = ?`, follow.id))
+      .toEqual({ f: job!.id });
+    const notice = await one<{ body: string }>("SELECT body FROM boss_task_notices WHERE task_id = ?", follow.id);
+    expect(notice?.body).toContain("Camille");
+    expect(notice?.body).not.toContain(job!.id);
   });
 
   it("a tag she types still wins — the triage never overrides her", async () => {
-    const res = await handleBossInboundMail(mail({ subject: "#zora", body: "Build a one-page landing for a sample studio in seq23/creator-studios" }), env as never);
-    expect(res.outcome).toBe("ROUTED");
-    expect(res.employeeId).toBe("emp_knowledge");
+    const job = await handoffExample("#zora", "Build a one-page landing for a sample studio in seq23/creator-studios", "emp_knowledge", "ordinary");
+    expect(await one("SELECT count(*) AS n FROM repo_changes WHERE task_id = ?", job.id)).toEqual({ n: 0 });
   });
+
+  async function handoffExample(subject: string, words: string, employee: string, delivery: string) {
+    const arrival = await handleBossInboundMail(mail({ subject, body: words }), env);
+    expect(arrival).toMatchObject({ outcome: "SIMONE_QUEUED", reply: null });
+    const call = (await claimSimone(env))!;
+    expect(call).toMatchObject({ id: arrival.taskId, message: { body: expect.stringContaining(words) } });
+    expect(await finishSimoneHandoff(env, { ...call, assignments: [{ employee, words, delivery }] }))
+      .toEqual({ replied: true, refused: false });
+    const job = await one<{ id: string; input: string; intake_kind: string; employee_id: string }>(
+      `SELECT id, input, intake_kind, employee_id FROM tasks WHERE json_extract(input, '$.simone_handoff') = ?`, call.id,
+    );
+    expect(job?.employee_id).toBe(employee);
+    return job!;
+  }
 });

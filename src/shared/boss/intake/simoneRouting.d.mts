@@ -3,11 +3,16 @@ export type SimoneAssignment = {
   words: string;
   delivery?: "ordinary" | "research_page" | "repository" | "chrome";
   start?: { at: string; words: string };
+  hunt?: { asset: string; size: string; side: "buy" | "sell" };
+  follows?: string;
 };
 export interface RoutingCall {
   receivedAt?: string;
   roster: { id: string; name: string; role: string; department?: string | null }[];
-  message: { body: string; context?: string; to?: string };
+  message: {
+    body: string; context?: string; to?: string;
+    thread_jobs?: Array<{ id: string; employee: string; title: string; status: string }>;
+  };
 }
 export const SIMONE_ROUTING: { name: string; schema: Record<string, unknown> };
 export const routingInstructions: string;

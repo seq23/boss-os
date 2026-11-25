@@ -281,9 +281,9 @@ for me."_ The whole page, with examples: [HOW_TO_GIVE_BOSS_OS_WORK_BY_EMAIL.md](
 - **Simone reads the request.** For new mail to boss@ or simone@, her Mac claims the stored message
   and runs her Claude Code session. She can reply with a result or hand parts to colleagues from
   the active team. The Tell Simone box and Simone’s page show the reply on the same surface.
-- When Claude cannot start, Codex can read a mail handoff. The Worker checks for the Mac heartbeat
-  before trying Workers AI and then Gemini for mail routing. Requests with committed LP names or
-  deal terms stay on the Mac. When every reader is unavailable, the message stays queued.
+- When Claude cannot start, Codex can use Simone’s tools. The Worker checks for the Mac heartbeat
+  before trying Workers AI and then Gemini for mail routing. Both receive the Boss OS request text
+  as written. When every reader is unavailable, the message stays queued.
 - **name@sequoiataylor.com** reaches the employee’s existing mailbox. Approval and errand replies
   that identify an existing record still go to that record.
 - **Replies are permission:** `approved` / `changes: …` / `stop` on the thread; `your call` in the
@@ -295,33 +295,12 @@ for me."_ The whole page, with examples: [HOW_TO_GIVE_BOSS_OS_WORK_BY_EMAIL.md](
 
 ## How to give an employee a duty
 
-_21 September 2026. "is there a lane for me to ask for a new duty to my Boss OS agents? i still dont
-know how to create a job for them."_ There is now, and it is three steps.
+Open **Team → Duties → Add a duty**. Preview shows the owner, schedule, executor, delivery route,
+estimated cost and any reason the duty cannot run. Approve the draft on its Inbox card to put it
+on the schedule.
 
-**1 · Email it.** To `boss@sequoiataylor.com`, from one of your addresses, subject or first line
-`#<seat> new duty`, then the duty in your words:
-
-```
-To:      boss@sequoiataylor.com
-Subject: #monique new duty
-Body:    every friday, check the LP replies sheet and tell me who went quiet
-```
-
-`#simone new duty monique …` lets the Chief of Staff route it. The same box is on **Team → Duties**
-("Add a duty"), with a Preview that shows the draft before anything exists.
-
-**2 · Read the draft.** The employee (or Simone) replies with the whole thing — name, owner, cadence
-with the concrete slot and why that hour (it avoids the briefing and the Mac's other jobs), executor
-and why (an agent, or a job on your Mac — anything touching your accounts has to be the Mac), model
-tier, delivery route, cost against the $25 ceiling, the prompt she will run from, and **every
-refusal verbatim**. A duty that cannot run — a script your Mac does not have, a delivery route that
-does not exist — comes back as a `NAMED STOP` and is not created. The same draft is a card in your
-Inbox.
-
-**3 · Reply `approved`.** One word on the thread creates it and the reply names the first run.
-`changes: make it daily at 3pm` redrafts with your text as overrides. `no` withdraws it. Put
-**`your call`** in the ORIGINAL request and it is created without waiting, recorded as pre-approved
-with that phrase. Approve on the Inbox card does exactly what `approved` by mail does.
+You can still act on an existing emailed duty draft. Reply `approved` on its thread to create it,
+`changes: make it daily at 3pm` to revise it, or `no` to withdraw it.
 
 Every duty appears on **Team → Duties** with its cadence, executor, last run, next run and last
 outcome. Guards: `validate:duty-birth` (one writer, reached only through the approval loop or a

@@ -1,4 +1,4 @@
-import { fileSimoneMessage, SIMONE } from "../agents/simone";
+import { fileSimoneMessage, SIMONE, type SimoneMessage } from "../agents/simone";
 import { replyAllRecipients } from "../../../shared/boss/mail/replyNeed.mjs";
 import { refsIn } from "../../../shared/boss/mail/plain.mjs";
 import type { Env } from "../env";
@@ -768,7 +768,7 @@ async function handleMail(message: BossMailMessage, env: Env, said: Said): Promi
     }
   }
   const simoneThread = chiefMailbox && !viaConsole && !linkedArrival && (chain.length || threadRefs.refs.length)
-    ? await env.DB.prepare(`SELECT json_extract(t.input, '$.body') AS request,
+    ? await env.DB.prepare(`SELECT t.id, json_extract(t.input, '$.body') AS request,
          json_extract(t.output, '$.text') AS reply
        FROM tasks t
        JOIN boss_inbound_mail m ON m.task_id = t.id AND m.authorised = 1 AND m.outcome = 'SIMONE_QUEUED'
@@ -778,13 +778,16 @@ async function handleMail(message: BossMailMessage, env: Env, said: Said): Promi
        ) AND (SELECT COUNT(*) FROM json_each(?) WHERE value <> t.id) = 0
        ORDER BY m.received_at DESC LIMIT 1`)
       .bind(sender, JSON.stringify(chain), JSON.stringify(threadRefs.refs), JSON.stringify(threadRefs.refs))
-      .first<{ request: string; reply: string | null }>()
+      .first<{ id: string; request: string; reply: string | null }>()
     : null;
   if (chiefMailbox && (!threadRefs.refs.length || simoneThread) && !linkedArrival && !viaConsole) {
     // The worker can decode local text and archive the original. Simone's seat reads the
     // message first, and any offline routing uses the same text-only context.
     const localFiles = parsed ? await readEverything(env, parsed, "", { ai: null }) : EMPTY_FILES;
     const hasMailMaterial = Boolean(parsed?.mail?.attachments.length || driveIdsIn(writtenByOwner));
+    const threadJobs = simoneThread ? (await env.DB.prepare(`SELECT id, employee_id AS employee, title, status FROM tasks
+      WHERE json_extract(input, '$.simone_handoff') = ? ORDER BY created_at, id LIMIT 12`)
+      .bind(simoneThread.id).all<NonNullable<SimoneMessage["thread_jobs"]>[number]>()).results : [];
     const context = [
       read?.body, filesForTask(localFiles),
       simoneThread ? `Previous exchange on this thread: ${JSON.stringify(simoneThread)}` : null,
@@ -796,6 +799,7 @@ async function handleMail(message: BossMailMessage, env: Env, said: Said): Promi
       source: "boss_inbound_mail", subject: subject || "Message to Simone",
       body: [simoneThread ? "" : herSubject, writtenByOwner].filter(Boolean).join("\n\n"),
       context, has_mail_material: hasMailMaterial,
+      ...(threadJobs.length ? { thread_jobs: threadJobs } : {}),
       mail_id: mailId, from: sender, to, message_id: messageId ?? undefined, reply_chain: chain,
     }, identity, now, { objectKey });
     if (!taskId) return { mailId, outcome: "DUPLICATE", employeeId: null, taskId: null, reply: null, messageId };

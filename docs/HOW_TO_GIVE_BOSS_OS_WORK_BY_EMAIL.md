@@ -1,13 +1,9 @@
 # How to give Boss OS work by email
 
-_22 October 2026; simone@ and the Tell Simone box added 26 October 2026. A test (`tests/emailHowTo.test.ts`) reads this page: the address, the example
-emails and who they reach, the reply words and the secret line are checked against the code, so the
-page cannot drift from what the mailbox does._
-
 ## The address
 
-**boss@sequoiataylor.com**, from one of your own addresses: seq.taylor@gmail.com,
-sequoiataylor@icloud.com or staylor@spry.vc. Mail from anyone else is recorded and refused.
+Write to **boss@sequoiataylor.com** from one of your approved addresses. Only authenticated owner
+mail can start work.
 
 **simone@sequoiataylor.com does exactly the same thing as boss@.** Use whichever you like: it is one
 front door.
@@ -43,16 +39,17 @@ Body:    What are the three cheapest ways to host a static site with a custom do
 
 Goes to: **Camille** (research). You get a research page with sources.
 
-**3 · Give someone a standing duty**
+**3 · Change a standing duty**
 
 ```
 To:      boss@sequoiataylor.com
-Subject: new duty
-Body:    every friday, research what changed in the private markets this week and send me a short summary. your call
+Subject: studio recount
+Body:    For the standing studio recount, include the attic frames from now on.
 ```
 
-Goes to: **Camille**, as a duty that runs every Friday. Without "your call" you get the draft first
-and reply "approved".
+Goes to: **Simone**. She updates the duty’s written instructions. You can undo the edit on the
+employee’s page. If its steps live in code, Danielle gets the change. Use **Team → Duties → Add a
+duty** to set up a new recurring job.
 
 One email can carry several jobs. A numbered list with a build, a question and a call to schedule
 becomes three jobs on three desks, and the reply says who has which.
@@ -71,9 +68,8 @@ Subject: Dinner Thursday
 Body:    Book me a table for two Thursday after 8pm: reservations@thebistro.example
 ```
 
-She never guesses an address, never pays, and never gives a card: if they ask for a card or a
-deposit, she tells you it needs you. Anything with money in it, or fund, LP or trading work, comes
-to you as a draft for your Send instead.
+She uses the address you give her. If the business asks for a card or a deposit, she stops that
+part and tells you what the business requested.
 
 ## What happens after you send
 

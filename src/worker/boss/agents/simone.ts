@@ -10,6 +10,7 @@ import { FIRST_READ_SCAN_OFF, freeLadder, type Rung } from "../intake/firstRead"
 import { shortTitle } from "../../../shared/boss/intake/triage.mjs";
 import { constraintsOnRecord } from "../service/constraints";
 import { dueLine, heldDue } from "../../../shared/boss/service/dueTime.mjs";
+import { sizeUsdIn } from "../../../shared/boss/intake/handoff.mjs";
 
 export const SIMONE = "emp_chief";
 export const SIMONE_LEASE_MS = 3 * 60 * 60_000;
@@ -28,6 +29,7 @@ export interface SimoneMessage {
   reply_chain?: string[];
   simone_handoff_plan?: SimoneAssignment[];
   simone_handoff_reply?: { text?: string; work?: string[] };
+  thread_jobs?: Array<{ id: string; employee: string; title: string; status: string }>;
   to?: string;
 }
 
@@ -170,6 +172,9 @@ export async function handoffSimone(env: Env, request: { id: string; lease: numb
     const key = await sha256Hex(JSON.stringify([request.id, seat.id, assignment.words]));
     const id = `tsk_${key.slice(0, 32)}`;
     const startAt = assignment.start ? Date.parse(assignment.start.at) : null;
+    const hunt = assignment.hunt && {
+      asset: assignment.hunt.asset, size_usd: sizeUsdIn(assignment.hunt.size), side: assignment.hunt.side,
+    };
     const existing = await env.DB.prepare(`SELECT status, envelope_id FROM tasks WHERE id = ?`).bind(id)
       .first<{ status: string; envelope_id: string | null }>();
     if (existing) {
@@ -190,6 +195,8 @@ export async function handoffSimone(env: Env, request: { id: string; lease: numb
             ...(message.context ? { untrusted_context: message.context } : {}),
             ...(assignment.delivery === "repository" ? { build_ask: true } : {}),
             ...(assignment.start ? { not_before: assignment.start, due: heldDue(null, assignment.start) } : {}),
+            ...(hunt ? { hunt } : {}),
+            ...(assignment.follows ? { follows_task: assignment.follows } : {}),
             from: message.from, subject: message.subject, simone_handoff: request.id,
           },
         }, {
