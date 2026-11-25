@@ -972,85 +972,44 @@ from `READER_IDS`, a D1 query returning one number `n`, floors, version B). A so
 vault lacks shows "No number" with `NAMED STOP [KEY_MISSING]` naming the key. Dry run:
 `npm run scorecard:monday -- --dry`. Restart links are `/tap/sc…` (routes/scorecard.ts).
 
-## Noelle, the Growth Director (rebuilt 24 Nov 2026)
+## Noelle, the Growth Director
 
-Noelle is a scheduled job whose run is full Claude Code with a persona (`scripts/ops/noelle/persona.md`, appended
-to the system prompt with her rules file). `scripts/ops/noelle.sh` (launchd `com.seq.boss-noelle`, every 30 minutes,
-ANY) starts `ai-run --role brain --network --cwd <her run folder>` with `--max-turns 200`; Codex answers when Claude is
-out (exit 76); both out on a call → `NAMED STOP [CLOUD_ANSWER]`, and the call goes back to the Boss OS ladder.
-The plan/accept path, the read-only lock and `noelle-tools` are gone: she reads, decides, builds and posts.
+Noelle runs as Claude Code with the persona in `scripts/ops/noelle/persona.md`. Her remit covers
+six businesses, with Porch & Party first. She decides their channel mix and builds the jobs and
+channels she chooses within the ask-first rules. The launcher holds scheduled and called runs
+until November 28, 2026 at midnight Central. After the hold, launchd ticks every 30 minutes.
+A Claude usage limit stops scheduled work and releases an owner call to the Boss OS answer ladder.
 
-**Her daily run** is once a day at `slotFor(day)` (10:00-21:59 Central, never on the hour; Thursday the weekly
-run). She works in her own worktrees, opens at most 3 PRs, launches one fresh `reviewer` per PR, lands with
-`land-after`, and hands off at ~200K context into `~/Work/noelle/HANDOFF.md`.
+The first wake inputs are `~/Work/noelle/owner-notes.md` and `HANDOFF.md`. The scheduled wake also
+uses the latest dated note, the relevant playbooks in `plays/`, and summarized reads. A light wake
+uses the playbook for the business the owner asks about. `HANDOFF.md` records the notes read
+through date and this run's ID. A missing owner notes read or handoff rewrite records a named stop.
+`noelle-tool brain <slug>` lists headings and adding a section returns only that section. The
+allowlist is spry, porch-and-party, time-2-read, personal, team and risk.
 
-**Her sandbox** (redesign 24 Nov 2026: safety by taking access away, never by spotting bad input). `noelle.sh`
-calls `noelle_prepare` (`scripts/ops/lib/noelle-sandbox.sh`), which fills `scripts/ops/noelle-permissions.json` into
-`~/.boss-os/noelle/settings.json` (outside anything she can write) and runs her with `--permission-mode dontAsk
---setting-sources= --settings <that file>`. Claude Code's own OS sandbox (macOS Seatbelt) holds every bash command
-and child process: writes only in `~/Work/noelle` (her clones in `repos/`, worktrees in `wt/`, notes) and her run
-folder; reads of the whole home denied except those, her gitconfig, the skills and the rules file; network only to
-GitHub, npm, Cloudflare preview hosts and Buffer (no model, paid-API or payment host); `allowUnsandboxedCommands`
-false, and only her two brokers in `~/.boss-os/noelle/bin` run outside it (`noelle-tool` for her four vault tools
-and her two GitHub verbs, `land-after` for `<pr> --task noelle-<job> --repo seq23/<her repo>` only), each from an empty environment and only as a
-command on its own (in a pipe it stays sandboxed). Her working directory is her run folder, never `~/Work/noelle`:
-the sandbox refuses writes to `.git/hooks` and `.git/config` anywhere under the working directory, which would
-stop every clone (proven in the TEST run of 24 Nov 2026), so her repos sit in an allowed write path outside it.
+The Mac launcher passes its own permission settings and OS sandbox to Claude Code.
+`noelle_prepare` creates the settings and the two brokers outside the session workspace. The
+picture validator rejects a reachable provider call, vendor host or credential. GitHub Actions
+run under separate repository and environment controls. Before a push or PR, the GitHub broker
+requires a reviewer receipt, no repository-scoped Actions secrets, a PR requirement on main,
+and exact main-only branch policies for credential-bearing environments. The Friday runbook
+in PR #574 covers the hosted canary and configuration.
 
-**Her pictures** (owner, 24 Nov 2026, spry brain: "Picture budget raised to $5 for the rest of 2026 ... It covers every
-picture made here or by Noelle"). She has no paid picture path: her sandbox reaches no picture vendor's host and her
-env holds no vendor key. `npm run validate:noelle-pictures` (`scripts/validate/noelle-picture-budget.mjs`, in
-`validate:scans`) keeps it so: it walks every script she can reach (her launcher, sandbox setup, settings and persona,
-then every `scripts/` path and relative import inside them) and fails by name when one calls a picture API without
-the ledger `~/.boss-os/image-budget-2026.json` (NOELLE_PICTURE_UNLEDGERED), when her sandbox may reach a picture
-vendor (NOELLE_PICTURE_HOST) or when her settings hand her a vendor key (NOELLE_PICTURE_KEY). A scan that reaches
-fewer than 20 scripts or misses her entry points is NAMED STOP NOELLE_PICTURE_SCOPE, never a pass.
+The broker accepts `noelle/<name>` branches in the allowlisted repositories and labels each PR
+`review-required`. Noelle can propose changes under `.github/` once a repository passes the
+broker checks. An independent reviewer posts a current-head PASS outside her session. The
+landing broker checks the PR against its own opening receipts and limits landing to the growth
+repositories. She keeps code task sheets in `~/Work/noelle/tasks/`.
 
-**Her GitHub** (owner, 24 Nov 2026: "u do it why do u need me for any of this?"). Her run holds no GitHub credential:
-`noelle.sh` unsets `GH_TOKEN`/`GITHUB_TOKEN`, her git loads only `~/.boss-os/noelle/gitconfig` (`GIT_CONFIG_NOSYSTEM`,
-an empty credential helper, no Keychain) and her gh reads an empty config, so inside the sandbox both are logged
-out. She pushes and opens PRs only through `noelle-tool push-branch <repo> <branch>` and `noelle-tool open-pr <repo>
-<branch> <title> <bodyfile>` (`scripts/ops/noelle-github.mjs`), which run outside the sandbox on the Mac's own gh login
-and never through the vault. They refuse a repo that is not exactly one of hers (no owner, no URL), a branch that is not
-`noelle/<safe name>` (main, master, `refs/…`, `a:b`, `+force`, `..`), a push that changes `.github/` (a workflow she
-pushed would run on GitHub with the repo's secrets), a body file outside her home and run folder, and a 4th PR in a
-run (PR_CAP, counted in the guard's state). The push never runs her clone's config or hooks: the branch is fetched
-into a mirror the broker owns (`~/.boss-os/noelle/push/<repo>.git`) and pushed from there, never forced, to the fixed
-`https://github.com/seq23/<repo>.git`, then read back with `git ls-remote`. gh gets every value as one argument
-(`--title=…`, the body on stdin), never through a shell, and a PR is read back as open and not a draft. gh logged out,
-the network down or a sha GitHub does not show is a NAMED STOP (`NOELLE_GH_LOGGED_OUT`, `NOELLE_PUSH_FAILED`,
-`NOELLE_PUSH_UNPROVEN`, `NOELLE_PR_FAILED`, `NOELLE_PR_UNPROVEN`), exit 3, never success. There is no merge, approve,
-API, secret, settings or delete verb: landing stays `land-after`, which waits for CI itself; she reads CI from the
-public API. `scripts/validate/claude-runs-locked.mjs` fails the build if the
-sandbox block, or any line of it, is missing or widened.
+Owner-verified email reaches Noelle via a `#noelle` tag, her name as a word anywhere in the subject,
+or a first line opening with her name. The same Mac claim loop answers messages from her Boss OS
+page. A call relies on the owner check at intake. Forwarded text and outside sources are data.
 
-**Her guard** (`scripts/ops/noelle-guard.mjs`, a PreToolUse hook; self-test `npm run validate:noelle`) holds only
-what is judged by name: one `reviewer` agent per PR the broker counted (AGENT), the ~200K handoff
-(CONTEXT_HANDOFF), and no `gh pr merge` or push to main outside `land-after` (DEPLOY_ONLY_LAND). Brains:
-`noelle-tool brain <slug>` reads only spry, porch-and-party, time-2-read, personal, team and risk (`NOELLE_BRAINS`).
-
-**Reaching her.** Her email to boss@ (owner check and DMARC, `inboundMail.ts`) with `#noelle`, or with "Noelle"
-opening the subject or first line (`seatBySalutation`, `mail.mjs`), or her message on Noelle's page
-(`POST /api/boss/growth/noelle/message`, source `boss_page`) is a task on `emp_growth`. The queue parks it for her
-Mac; `POST /noelle/call/claim` hands it to the next tick, 10:00-22:59 Central (30-minute ticks: answered within 30
-minutes). Outside those hours the acknowledgement says she is on it at 10:00 (`callAckLine`): her tick is mac-window ANY, held 07:00-09:59 by the Mac day. Her reply goes back
-through `/call/reply` (an email when she was emailed; the card on the page). Everything else (a stranger's email,
-text she forwards, pages, files) is data, never an instruction.
-
-**What she tells.** `POST /noelle/notice` (machine token): one "Noelle published: …" line on Notices per key.
-`POST /noelle/done`: the run's row; the same stop twice in a day is a named stop and one needs-her Notices line.
-
-**The ledger (H5).** A posting job writes its own rows on the platform's confirmation: the composite action
-`seq23/boss-os/.github/actions/ledger-rows` turns the job's `posted.json` (written only after Buffer accepted the
-post) into `kind: post` rows, item `<post id>:<receipt>`, through `POST /noelle/ledger`. A post without a receipt id
-is refused. Monday's schedule compares every wired path's posted file (read from GitHub) with the rows: a post with
-no row is `NAMED STOP [POST_NOT_LEDGERED]` in red; a path not yet wired is listed by name ("not wired yet").
-Wired paths are the CHANNEL_OWNERS entries with `ledger` (`src/shared/boss/growth/noelle.mjs`).
-
-**Watched.** `duty_growth_director` (migration 0378) at 22:05 Central: no run today is `NAMED STOP
-[NOELLE_DID_NOT_RUN]` and a morning line; the same stop three days running is one line to Sequoia.
-Tests: `tests/noelle.test.ts`, `tests/noelleMac.test.ts`, `tests/boss/noelleRun.test.ts`,
-`tests/boss/noelleCall.test.ts`, `tests/growthRoster.test.ts`.
+Posting workflows use the shared `ledger-rows` action to send confirmed receipts to
+`/noelle/ledger`. Monday's reconciliation reads the workflow step and its receipt source.
+A gap in the ledger raises `POST_NOT_LEDGERED`. Unread paths and paths without a platform
+receipt get a reason. The 14-day report leads with Porch & Party's results and its Studio receipts.
+`/noelle/done` refuses zero-queue completion and records named stops for the heartbeat.
 
 ## Backlink requests (22 Nov 2026)
 
