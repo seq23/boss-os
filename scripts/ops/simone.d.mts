@@ -10,7 +10,7 @@ export function codexRouteArgs(prompt: string, output: string, schema: string): 
 export function simoneMemory(home: string): Promise<string>;
 export function childEnvironment(env: NodeJS.ProcessEnv, home: string, settings: string, promptFile: string): NodeJS.ProcessEnv;
 export function runSimone(options: {
-  api: (method: string, path: string, body?: unknown) => Promise<{ call?: SimoneCall; replied?: boolean; released?: boolean }>;
+  api: (method: string, path: string, body?: unknown) => Promise<{ call?: SimoneCall; replied?: boolean; refused?: boolean; released?: boolean }>;
   run: (call: SimoneCall, prompt: string) => Promise<{ log: string; successful: boolean; receipts?: string[] }>;
   fallback?: (call: SimoneCall) => Promise<unknown[] | null>;
   hasCredential?: (text: string) => boolean;

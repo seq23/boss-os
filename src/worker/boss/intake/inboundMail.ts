@@ -35,7 +35,7 @@ import { listEditsFromMail, listChangeWords } from "../capital/grid"; // boss fi
 import { brainEditsFromMail } from "../brains/store";
 import { parseBrainEdits } from "../../../shared/boss/brains/brain.mjs";
 import { stopDeliverable } from "../today/deliverables";
-import { answerFromMail } from "../repoChange/answer";
+import { answerFromMail, changeFromReplyChain } from "../repoChange/answer";
 import { answerDutyFromMail, newDutyFromMail } from "../duties/mailLane";
 import { editDutyFromMail } from "../duties/editByMail";
 import { answerCommentWatchFromMail } from "../commentWatch/answer";
@@ -719,6 +719,12 @@ async function handleMail(message: BossMailMessage, env: Env, said: Said): Promi
       .bind(...chain).first<{ command_id: string | null }>()
     : null;
   if (linkedArrival?.command_id) explicitRefs.push(linkedArrival.command_id);
+  // The author’s original mail can be the only reference her client keeps. An existing repo
+  // thread still reaches its own approval/redo door after Simone hands the work to Danielle.
+  if (chiefMailbox && !explicitRefs.length && chain.length) {
+    const change = await changeFromReplyChain(env, chain, sender);
+    if (change) explicitRefs.push(change.id);
+  }
   const threadRefs = { ...recordedRefs, refs: [...new Set(explicitRefs)] };
   const laneTail = refTail(threadRefs.refs.filter((r) => !ownerText.toLowerCase().includes(r)));
   const simoneThread = chiefMailbox && !viaConsole && !linkedArrival && (chain.length || threadRefs.refs.length)

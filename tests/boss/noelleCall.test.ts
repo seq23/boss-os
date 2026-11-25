@@ -208,7 +208,7 @@ describe("H4: only her own address with DMARC passing directs Noelle", () => {
     expect(chiefCall.id).toBe(r.taskId);
     expect(await finishSimoneHandoff(env, {
       ...chiefCall, assignments: [{ employee: "emp_growth", words: chiefCall.message.body }],
-    })).toBe(true);
+    })).toEqual({ replied: true, refused: false });
     const task = (await tasksFor(r.mailId!)).find((row) => row.employee_id === "emp_growth");
     expect(task).toBeDefined();
     expect(await claimCall(env, "fixture-mac")).toMatchObject({ task_id: task.id, body: "Noelle: post the carousels\n\nTwo this week please." });
@@ -232,7 +232,7 @@ describe("H4: only her own address with DMARC passing directs Noelle", () => {
     const chief = (await claimSimone(env))!;
     expect(await finishSimoneHandoff(env, {
       ...chief, assignments: [{ employee: "emp_growth", words: "Noelle, have a look at this." }],
-    })).toBe(true);
+    })).toEqual({ replied: true, refused: false });
     const task = (await tasksFor(r.mailId!)).find((row) => row.employee_id === "emp_growth");
     expect(task).toBeDefined();
     const input = JSON.parse(task.input);

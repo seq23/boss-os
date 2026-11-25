@@ -78,7 +78,7 @@ describe("the tag routes and the sender authorises", () => {
       const call = await claimSimone(env);
       expect(call).toMatchObject({ id: res.taskId, message: { body: `${subject}\n\nplease` } });
       const { id, lease, message } = call!;
-      expect(await finishSimoneHandoff(env, { id, lease, assignments: [{ employee: seat.id, words: message.body }] })).toBe(true);
+      expect(await finishSimoneHandoff(env, { id, lease, assignments: [{ employee: seat.id, words: message.body }] })).toEqual({ replied: true, refused: false });
       const tasks = await env.DB.prepare(`SELECT employee_id, status, envelope_id FROM tasks WHERE json_extract(input, '$.simone_handoff') = ?`)
         .bind(id).all();
       const status = seat.name === "Monique" ? "queued" : expect.stringMatching(/^(queued|awaiting_approval)$/);

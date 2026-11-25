@@ -47,7 +47,9 @@ simone.post("/reply", async (c) => {
       b.text.length > 20_000 || !Array.isArray(b.work) || b.work.length > 100 ||
       (b.stop !== undefined && (b.stop !== "ACTION_RESTRICTED" || b.assignments !== undefined)) ||
       b.work.some((item) => typeof item !== "string" || item.length > 200)) throw badRequest("A task, lease, reply and work receipts are required.");
-  return ok(c, { replied: b.assignments === undefined ? await replySimone(c.env, b) : await finishSimoneHandoff(c.env, { ...b, assignments: b.assignments }) });
+  return ok(c, b.assignments === undefined
+    ? { replied: await replySimone(c.env, b) }
+    : await finishSimoneHandoff(c.env, { ...b, assignments: b.assignments }));
 });
 
 simone.post("/tool", async (c) => {
@@ -63,7 +65,7 @@ simone.post("/handoff", async (c) => {
   if (!(await machineTokenOk(c))) throw new AppError(401, "Locked");
   const b = await c.req.json<{ id: string; lease: number; assignments: unknown }>().catch(() => null);
   if (!b || typeof b.id !== "string" || !Number.isSafeInteger(b.lease)) throw badRequest("A Simone task and lease are required.");
-  return ok(c, { replied: await finishSimoneHandoff(c.env, b) });
+  return ok(c, await finishSimoneHandoff(c.env, b));
 });
 
 simone.post("/wake", async (c) => {

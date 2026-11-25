@@ -84,6 +84,19 @@ it("delivers a refusal without a work receipt and keeps a provider outage on ret
   expect(down.calls.map(({ path }) => path)).toEqual(["/claim", "/release"]);
 });
 
+it("reports a permanent handoff refusal without counting it as completed work", async () => {
+  const message = { body: "Ask Danielle to update a site.", context: "", source: "boss_inbound_mail" };
+  const assignment = { employee: "emp_repo", words: message.body, delivery: "repository" };
+  const run = async () => ({ log: "", successful: false });
+  const paths: string[] = [];
+  const api = async (_method: string, path: string) => {
+    paths.push(path);
+    return path === "/claim" ? { call: { ...call, message } } : { replied: true, refused: true };
+  };
+  expect(await runSimone({ api, run, fallback: async () => [assignment] })).toEqual({ state: "refused", id: call.id });
+  expect(paths).toEqual(["/claim", "/handoff"]);
+});
+
 it("drops a reply containing a known secret and starts the child with isolated credentials", async () => {
   const secret = "fixture-value-only";
   expect(Object.values(childEnvironment({ BOSS_PASSCODE: secret, GH_TOKEN: secret }, "/fixture", "/settings", "/persona"))).not.toContain(secret);

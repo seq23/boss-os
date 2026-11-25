@@ -78,7 +78,7 @@ export async function runSimone({ api, run, fallback, hasCredential = () => fals
   try {
     if (call.pendingHandoffs?.length) {
       const result = await api("POST", "/handoff", { ...lease, assignments: call.pendingHandoffs });
-      if (result.replied) return { state: "done", id: call.id };
+      if (result.replied) return { state: result.refused ? "refused" : "done", id: call.id };
       await api("POST", "/release", { ...lease, code: "HANDOFF_UNAVAILABLE" });
       return { state: "retry", code: "HANDOFF_UNAVAILABLE", id: call.id };
     }
@@ -97,7 +97,7 @@ export async function runSimone({ api, run, fallback, hasCredential = () => fals
       assignments = await fallback(call);
       if (assignments?.length) {
         const delivered = await api("POST", "/handoff", { ...lease, assignments });
-        if (delivered.replied) return { state: "done", id: call.id };
+        if (delivered.replied) return { state: delivered.refused ? "refused" : "done", id: call.id };
       }
     }
     if (hasCredential(verdict.reply)) code = "SECRET_OUTPUT";
@@ -109,7 +109,7 @@ export async function runSimone({ api, run, fallback, hasCredential = () => fals
     else if (!work.length && !assignments?.length) code = "NOTHING_DONE";
     else {
       const result = await api("POST", "/reply", { ...lease, text: reply, work, ...(assignments.length ? { assignments } : {}) });
-      if (result.replied) return { state: "done", id: call.id };
+      if (result.replied) return { state: result.refused ? "refused" : "done", id: call.id };
       code = "RESULT_NOT_RECORDED";
     }
   } catch {

@@ -106,8 +106,8 @@ it("routes authentic requests to colleagues using real intake and refuses pasted
     { employee: danielle.id, words: "Ask Danielle to fix the broken menu." },
     { employee: camille.id, words: "Ask Camille to research three venues." },
   ];
-  expect(await finishSimoneHandoff(env, { id, lease, assignments })).toBe(true);
-  expect(await finishSimoneHandoff(env, { id, lease, assignments })).toBe(false);
+  expect(await finishSimoneHandoff(env, { id, lease, assignments })).toEqual({ replied: true, refused: false });
+  expect(await finishSimoneHandoff(env, { id, lease, assignments })).toEqual({ replied: false, refused: false });
   const tasks = (await env.DB.prepare(`SELECT employee_id, json_extract(input, '$.body') AS body, envelope_id FROM tasks
     WHERE json_extract(input, '$.simone_handoff') = ? ORDER BY employee_id`).bind(id).all()).results;
   expect(tasks).toEqual(assignments.sort((a, b) => a.employee.localeCompare(b.employee)).map((entry) => ({
@@ -440,7 +440,7 @@ it("retries a committed handoff through a queue failure without changing the col
   expect(await releaseSimone(env, id, call.lease, "HANDOFF_UNAVAILABLE")).toBe(true);
   const retry = (await claimSimone(env))!;
   expect(retry.pendingHandoffs).toEqual(assignments);
-  expect(await finishSimoneHandoff(env, { id, lease: retry.lease, assignments: [{ employee: "emp_knowledge", words: "Ask Zora to file the note." }] })).toBe(true);
+  expect(await finishSimoneHandoff(env, { id, lease: retry.lease, assignments: [{ employee: "emp_knowledge", words: "Ask Zora to file the note." }] })).toEqual({ replied: true, refused: false });
   expect((await env.DB.prepare(`SELECT employee_id FROM tasks WHERE json_extract(input, '$.simone_handoff') = ?`).bind(id).all()).results)
     .toEqual([{ employee_id: "emp_research" }]);
   expect((await row<{ output: string }>("SELECT output FROM tasks WHERE id = ?", id))?.output).toContain("I checked the invitation.");
@@ -461,7 +461,7 @@ it("rolls back a half-written research handoff if D1 refuses its permission enve
   await env.DB.prepare("DROP TRIGGER fixture_envelope_unavailable").run();
   const retry = (await claimSimone(env))!;
   expect(retry.pendingHandoffs).toEqual(assignments);
-  expect(await finishSimoneHandoff(env, { id, lease: retry.lease, assignments })).toBe(true);
+  expect(await finishSimoneHandoff(env, { id, lease: retry.lease, assignments })).toEqual({ replied: true, refused: false });
   expect(await row(`SELECT count(*) AS n FROM research_pages rp JOIN tasks t ON t.id = rp.task_id
     JOIN permission_envelopes pe ON pe.id = t.envelope_id WHERE rp.question = ?`, body)).toEqual({ n: 1 });
 });

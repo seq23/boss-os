@@ -1,5 +1,6 @@
 import type { Env } from "../env";
 import { newId, sha256Hex } from "../lib/id";
+import { AppError } from "../lib/http";
 import { activeRoster } from "../intake/inboundMail";
 import { admitTask } from "../tasks/admit";
 import { SIMONE_ROUTING, readAssignments, readCompletedRouting, routingInstructions, routingRequest, type SimoneAssignment } from "../../../shared/boss/intake/simoneRouting.mjs";
@@ -151,6 +152,7 @@ export async function handoffSimone(env: Env, request: { id: string; lease: numb
   const assignments = readAssignments(stored.simone_handoff_plan, { message, roster });
   if (!assignments?.length) return null;
   const out: { name: string; id: string }[] = [];
+  const refused: string[] = [];
   for (const assignment of assignments) {
     const seat = roster.find((employee) => employee.id === assignment.employee)!;
     const key = await sha256Hex(JSON.stringify([request.id, seat.id, assignment.words]));
@@ -161,34 +163,47 @@ export async function handoffSimone(env: Env, request: { id: string; lease: numb
       if (!existing.envelope_id) throw new Error("Simone handoff has no permission envelope");
       if (existing.status === "queued") await env.TASKS.send({ taskId: id, lane: seat.lane });
     } else {
-      const admitted = await admitTask(env, {
-        title: shortTitle(assignment.words, 80) || "Work from Simone", lane: seat.lane, employee_id: seat.id,
-        cost_mode: "FREE_ONLY",
-        input: {
-          source: message.source === "boss_inbound_mail" ? message.source : "boss_page",
-          body: assignment.words, mail_id: message.mail_id,
-          ...(message.context ? { untrusted_context: message.context } : {}),
-          ...(assignment.delivery === "repository" ? { build_ask: true } : {}),
-          from: message.from, subject: message.subject, simone_handoff: request.id,
-        },
-      }, { id, ...(assignment.delivery === "research_page" ? { researchQuestion: assignment.words } : {}) });
-      if (!admitted.created) throw new Error("Simone handoff could not be admitted");
+      try {
+        const admitted = await admitTask(env, {
+          title: shortTitle(assignment.words, 80) || "Work from Simone", lane: seat.lane, employee_id: seat.id,
+          cost_mode: "FREE_ONLY",
+          input: {
+            source: message.source === "boss_inbound_mail" ? message.source : "boss_page",
+            body: assignment.words, mail_id: message.mail_id,
+            ...(message.context ? { untrusted_context: message.context } : {}),
+            ...(assignment.delivery === "repository" ? { build_ask: true } : {}),
+            from: message.from, subject: message.subject, simone_handoff: request.id,
+          },
+        }, { id, ...(assignment.delivery === "research_page" ? { researchQuestion: assignment.words } : {}) });
+        if (!admitted.created) {
+          refused.push(admitted.reason ?? `${seat.name} did not accept the request.`);
+          continue;
+        }
+      } catch (error) {
+        if (!(error instanceof AppError) || error.status !== 400) throw error;
+        refused.push(error.message);
+        continue;
+      }
     }
     out.push({ name: seat.name, id });
   }
-  return { handoffs: out, reply: stored.simone_handoff_reply };
+  return { handoffs: out, refused, reply: stored.simone_handoff_reply };
 }
 
 export async function finishSimoneHandoff(env: Env, request: { id: string; lease: number; assignments: unknown; text?: string; work?: string[] }) {
   const completed = await handoffSimone(env, request);
-  if (!completed) return false;
-  const { handoffs, reply } = completed;
+  if (!completed) return { replied: false, refused: false };
+  const { handoffs, refused, reply } = completed;
   const names = [...new Set(handoffs.map(({ name }) => name))];
-  const note = `I handed this to ${new Intl.ListFormat("en-US", { type: "conjunction" }).format(names)}.`;
-  return replySimone(env, {
-    ...request, text: [reply?.text, note].filter(Boolean).join("\n\n"),
-    work: [...(reply?.work ?? []), ...handoffs.map(({ id }) => id)],
+  const note = names.length ? `I handed this to ${new Intl.ListFormat("en-US", { type: "conjunction" }).format(names)}.` : null;
+  const work = [...(reply?.work ?? []), ...handoffs.map(({ id }) => id)];
+  const stopped = !work.length && refused.length > 0;
+  const replied = await replySimone(env, {
+    id: request.id, lease: request.lease, text: [reply?.text, note, ...refused].filter(Boolean).join("\n\n"),
+    work,
+    ...(stopped ? { stop: "ACTION_RESTRICTED" as const } : {}),
   });
+  return { replied, refused: replied && stopped };
 }
 
 export async function routeSimoneWhenMacIsDown(env: Env, now = Date.now(), rungs?: Rung[]) {
@@ -198,7 +213,8 @@ export async function routeSimoneWhenMacIsDown(env: Env, now = Date.now(), rungs
   let code = "MODEL_UNAVAILABLE";
   try {
     if (call.pendingHandoffs?.length) {
-      if (await finishSimoneHandoff(env, { ...call, assignments: call.pendingHandoffs })) return "handed_off";
+      const result = await finishSimoneHandoff(env, { ...call, assignments: call.pendingHandoffs });
+      if (result.replied) return result.refused ? "refused" : "handed_off";
       code = "HANDOFF_UNAVAILABLE";
     } else {
       const { value: assignments } = await freeLadder(env, {
@@ -210,7 +226,8 @@ export async function routeSimoneWhenMacIsDown(env: Env, now = Date.now(), rungs
         read: (text) => readCompletedRouting(readJsonObject(text), call) ?? "invalid Simone handoff",
       }, rungs);
       if (assignments?.length) {
-        if (await finishSimoneHandoff(env, { ...call, assignments })) return "handed_off";
+        const result = await finishSimoneHandoff(env, { ...call, assignments });
+        if (result.replied) return result.refused ? "refused" : "handed_off";
         code = "HANDOFF_UNAVAILABLE";
       } else if (assignments) code = "WAITING_FOR_MAC";
     }

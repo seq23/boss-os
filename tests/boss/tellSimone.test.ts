@@ -35,7 +35,7 @@ async function delegate(id: string, asks: string[], employees: string[], deliver
   expect(call.message.body).toContain(asks[0]);
   expect(await finishSimoneHandoff(env, {
     id, lease: call.lease, assignments: asks.map((words, i) => ({ words, employee: employees[i], delivery: delivery[i] ?? "ordinary" })),
-  })).toBe(true);
+  })).toEqual({ replied: true, refused: false });
   const tasks = await all<{ title: string; employee_id: string; words: string; envelope_id: string }>(`SELECT title, employee_id,
     json_extract(input, '$.body') AS words, envelope_id FROM tasks WHERE json_extract(input, '$.simone_handoff') = ? ORDER BY rowid`, id);
   expect(tasks.map((task) => task.employee_id)).toEqual(employees);
