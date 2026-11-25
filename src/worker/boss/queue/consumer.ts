@@ -103,7 +103,7 @@ export async function handleTask(env: Env, msg: TaskMessage): Promise<void> {
    * Her email to boss@ or her message on Noelle's page. Noelle is Claude Code with her tools; a cloud rung
    * asked the same thing would answer without them. Her Mac claims it within 30 minutes
    * (growth/noelle.ts claimCall) and the reply comes back from her run (replyCall), once. Only when Claude
-   * and Codex are both out of usage does her run hand it back marked noelle_cloud (releaseCall), and the
+   * is out of usage does her run hand it back marked noelle_cloud (releaseCall), and the
    * ladder answers it like any other task.
    */
   if (task.employee_id === "emp_growth" && (parkedInput.source === "boss_inbound_mail" || parkedInput.source === "boss_page") && !parkedInput.noelle_cloud) {

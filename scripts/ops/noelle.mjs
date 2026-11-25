@@ -237,19 +237,18 @@ export function reviewerAgent(md) {
 /**
  * A refused tool call is a stop, never a done run (#573's lock: dontAsk refuses quietly and the model
  * works around it). `denied` is claude_denials' count for her Claude session: "0" keeps the verdict;
- * a number or "unknown" (her transcript could not be read) is [PERMISSION_DENIED]. A Codex stand-in
- * has no Claude transcript ("n/a") and keeps its verdict.
+ * a number or "unknown" (her transcript could not be read) is [PERMISSION_DENIED]. Only the Claude session supplies a refusal count.
  */
 export function deniedVerdict(v, denied) {
   const d = String(denied ?? "unknown").trim();
-  if (d === "0" || d === "n/a") return v;
+  if (d === "0") return v;
   const line = `NAMED STOP [PERMISSION_DENIED] denied=${d}: a tool call outside noelle-permissions.json was refused${d === "unknown" ? " (or her session's record could not be read)" : ""}, so this run is not counted done`;
   return { ok: false, code: "PERMISSION_DENIED", line, reply: v.reply };
 }
 
 // ─── Her run's end ─────────────────────────────────────────────────────────────
 
-/** Claude's --output-format json result (the last JSON line with `result`), or a Codex run's plain text. */
+/** Claude's --output-format json result (the last JSON line with `result`), or an unrecognized log. */
 export function runResult(log) {
   const lines = String(log ?? "").split("\n").reverse();
   for (const l of lines) {
@@ -297,7 +296,10 @@ export function finishOptions([dir, , slot, kind, denied], { log, api, env = pro
 
 export async function finish({ dir, log, slot, kind, runId, api, denied = "unknown", home = HOME_DIR(), wake = null, now = Date.now() }) {
   const r = runResult(log);
-  let v = deniedVerdict(runVerdict(r), denied);
+  const result = r.json ? runVerdict(r) : {
+    ok: false, code: "NO_CLAUDE_RESULT", line: "NAMED STOP [NO_CLAUDE_RESULT] the Claude session returned no result", reply: "",
+  };
+  let v = deniedVerdict(result, denied);
   const memoryStop = handoffStop(home, wake?.runId === runId ? wake : null, runId);
   if (memoryStop) {
     const why = memoryStop === "OWNER_NOTES_UNREAD" ? "the start-of-run owner notes read was not recorded" : "rewrite HANDOFF.md with this run and the owner notes date before ending";
@@ -316,7 +318,7 @@ export async function finish({ dir, log, slot, kind, runId, api, denied = "unkno
   let said = "";
   if (call) {
     if (v.reply) {
-      const text = `${v.reply}${v.ok ? "" : `\n\n(What stopped me: ${v.line})`}${r.json ? "" : "\n\n(Codex stood in for me: Claude was out of usage. Anything that needs a build waits for my next Claude run.)"}\n\nNoelle`;
+      const text = `${v.reply}${v.ok ? "" : `\n\n(What stopped me: ${v.line})`}${""}\n\nNoelle`;
       const res = await api("POST", "/call/reply", { task_id: call.task_id, run: runId, text });
       said = res.replied ? ` reply sent${res.emailed ? " (emailed)" : " (on her page)"}` : ` reply not sent (${res.why})`;
     } else {
@@ -369,11 +371,11 @@ async function cmdCallClaim(runsDir) {
 }
 
 /**
- * Claude and Codex both out (ai-run 76, then Codex 75 or 69): her call goes to the Worker's own ladder
+ * Claude out of usage (ai-run 76): her call goes to the Worker's own ladder
  * (router/backends: Workers AI, then Gemini; her ruling 24 Nov 2026: "THERE IS NOTHING IN BOSS OS THAT NEEDS
  * MASKING FROM GEMINI"). A scheduled run has no cloud stand-in: it stops [CLAUDE_LIMIT] and retries.
  */
-export const CLOUD_STOP = "NAMED STOP [CLOUD_ANSWER] Claude and Codex are both out of usage; the Boss OS ladder answers this one";
+export const CLOUD_STOP = "NAMED STOP [CLOUD_ANSWER] Claude is out of usage; the Boss OS ladder answers this one";
 async function cmdCallRelease(dir, stopLine) {
   if (stopLine === "cloud") stopLine = CLOUD_STOP;
   const call = JSON.parse(readFileSync(join(dir, "call.json"), "utf8"));

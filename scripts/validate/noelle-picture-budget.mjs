@@ -1,18 +1,10 @@
 #!/usr/bin/env node
 /**
- * `npm run validate:noelle-pictures`: NOELLE MAKES NO PICTURE THAT THE BUDGET LEDGER DOES NOT COUNT.
- * Her 24 Nov 2026 ruling (spry brain): "Picture budget raised to $5 for the rest of 2026 ... It
- * covers every picture made here or by Noelle". The ledger is ~/.boss-os/image-budget-2026.json
- * ({cap_usd, through, spent_usd, log[]}); the one paid lane that uses it today is p-n-p
- * scripts/generators/build_service_ai_images.mjs (lock dir `<ledger>.lock`, refuse before the call
- * when spent + estimate > cap, charge the real cost, NAMED STOP on a missing, unreadable or expired
- * ledger).
- *
- * Noelle has NO picture path today: her sandbox reaches only the hosts in
- * scripts/ops/noelle-permissions.json, her env holds no vendor key, and no script she can reach
- * calls a picture API. This validator keeps it that way, and fails by name when:
- *   - NOELLE_PICTURE_UNLEDGERED: a script she can reach (every scripts/ path named by her launcher,
- *     her sandbox setup, her settings or her persona, then every relative import and scripts/ path
+ * Noelle's build session has no paid picture lane. Check its reachable provider calls,
+ * network allowlist, and environment. A future picture lane needs a real budget
+ * reservation and settlement test before it can be allowed here.
+ */
+import and scripts/ path
  *     inside those, transitively) calls a picture API, and neither it nor a file it imports takes
  *     the ledger (the ledger path, the `.lock` directory, and the IMAGE_BUDGET_CAP,
  *     IMAGE_BUDGET_LEDGER_MISSING and IMAGE_BUDGET_EXPIRED stops). A free picture still goes through
@@ -42,7 +34,6 @@ export const PICTURE_CALL = new RegExp([
   String.raw`recraft\.ai`, String.raw`api\.bfl\.(ai|ml)`, String.raw`api\.together\.(xyz|ai)/v1/images`, String.raw`leonardo\.ai`,
   String.raw`api\.(dev\.)?runwayml\.com`, String.raw`@cf/(black-forest-labs|stabilityai|bytedance|lykon|runwayml|leonardo)/`,
 ].join("|"), "i");
-const LEDGER_SHAPE = [/image-budget-2026\.json/, /\.lock\b/, /IMAGE_BUDGET_CAP/, /IMAGE_BUDGET_LEDGER_MISSING/, /IMAGE_BUDGET_EXPIRED/];
 export const PICTURE_HOSTS = /(^|\.)(openai\.com|replicate\.com|fal\.run|fal\.ai|fal\.media|stability\.ai|ideogram\.ai|recraft\.ai|bfl\.ai|bfl\.ml|together\.xyz|together\.ai|leonardo\.ai|runwayml\.com|googleapis\.com|api\.cloudflare\.com)$/i;
 const PICTURE_KEY = /OPENAI|REPLICATE|FAL_|STABILITY|IDEOGRAM|RECRAFT|BFL_|TOGETHER|LEONARDO|RUNWAY|GEMINI|GOOGLE_API|GOOGLE_GENAI|CLOUDFLARE_API|CF_API/i;
 
@@ -68,20 +59,14 @@ export function reach(read, seeds = SEEDS) {
   return files;
 }
 
-function importsOf(f, text) {
-  return [...text.matchAll(/(?:\bfrom\s*|\bimport\s*\(?\s*)["'](\.{1,2}\/[^"']+)["']/g)].map((m) => normalize(join(dirname(f), m[1])));
-}
-
 /** Breaks found, each "NAME detail". */
 export function judge(files, settings) {
   const out = [];
-  const hasLedger = (t) => LEDGER_SHAPE.every((re) => re.test(t));
   for (const [f, text] of files) {
     if (/\.md$/.test(f)) continue; // her persona and docs are read for the paths they name, never run
     const line = text.split("\n").find((l) => PICTURE_CALL.test(l));
     if (!line) continue;
-    const near = [text, ...importsOf(f, text).flatMap((p) => [files.get(p), files.get(p + ".mjs"), files.get(p + ".js")]).filter(Boolean)];
-    if (!near.some(hasLedger)) out.push(`NOELLE_PICTURE_UNLEDGERED ${f} makes a picture without the budget ledger: ${line.trim().slice(0, 120)}`);
+    out.push(`NOELLE_PICTURE_UNLEDGERED ${f} reaches a picture provider without an enabled, tested budget lane`);
   }
   const hosts = settings?.sandbox?.network?.allowedDomains ?? [];
   for (const h of hosts) {
@@ -112,7 +97,7 @@ function realRun() {
   const breaks = judge(files, settings);
   for (const b of breaks) console.error(b);
   if (breaks.length) { console.log(`OUTPUT noelle-pictures ${breaks.length} break(s)`); return 1; }
-  console.log(`OUTPUT noelle-pictures 0 picture paths without the ledger in ${files.size} scripts she can reach; ${settings.sandbox.network.allowedDomains.length} hosts, none a picture vendor`);
+  console.log(`OUTPUT noelle-pictures 0 picture provider paths in ${files.size} scripts she can reach; ${settings.sandbox.network.allowedDomains.length} hosts, none a picture vendor`);
   return 0;
 }
 
@@ -128,7 +113,8 @@ function selfTest() {
     ["a Gemini picture model", withFile("scripts/ops/lib/x.mjs", `const model = "gemini-2.5-flash-image";\n`), settings],
     ["a Workers AI picture model", withFile("scripts/ops/lib/x.mjs", `env.AI.run("@cf/black-forest-labs/flux-1-schnell", {});\n`), settings],
     ["a Replicate call", withFile("scripts/ops/lib/x.mjs", `fetch("https://api.replicate.com/v1/predictions")\n`), settings],
-    ["the ledger half-built (no expiry stop)", withFile("scripts/ops/lib/x.mjs", `fetch("https://api.openai.com/v1/images/edits");\n` + LEDGERED.replace(`new Stop("IMAGE_BUDGET_EXPIRED");`, "")), settings],
+    ["a provider call decorated with the budget wording is refused", withFile("scripts/ops/lib/x.mjs", `fetch("https://api.openai.com/v1/images/edits");\n` + LEDGERED), settings],
+    ["an unrelated import containing the budget wording is refused", withFile("scripts/ops/lib/x.mjs", `import "./budget.mjs";\nfetch("https://api.openai.com/v1/images/generations");\n`, { "scripts/ops/lib/budget.mjs": LEDGERED }), settings],
     ["a picture vendor host in her sandbox", real, Object.assign(clone(), {}), (s) => s.sandbox.network.allowedDomains.push("api.openai.com")],
     ["Google's API host in her sandbox", real, clone(), (s) => s.sandbox.network.allowedDomains.push("generativelanguage.googleapis.com")],
     ["every host in her sandbox", real, clone(), (s) => { s.sandbox.network.allowedDomains = ["*"]; }],
@@ -136,8 +122,6 @@ function selfTest() {
   ];
   const good = [
     ["the real scripts", real, settings],
-    ["a picture call that takes the ledger itself", withFile("scripts/ops/lib/x.mjs", `fetch("https://api.openai.com/v1/images/generations");\n` + LEDGERED), settings],
-    ["a picture call whose import takes the ledger", withFile("scripts/ops/lib/x.mjs", `import { charge } from "./budget.mjs";\nfetch("https://api.openai.com/v1/images/generations");\n`, { "scripts/ops/lib/budget.mjs": LEDGERED }), settings],
     ["a page's robots meta (no picture made)", withFile("scripts/ops/lib/x.mjs", `const meta = "max-image-preview:large";\n`), settings],
   ];
   let failed = 0, caught = 0;

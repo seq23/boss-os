@@ -380,7 +380,7 @@ export async function postsReconciled(db: D1Database, today: string, now = Date.
  * 30 minutes, 10:00-22:59 Central) claims it here and runs her full Claude Code session with the call in
  * her system prompt, then replies once: the card's output, and for an email the reply on its thread
  * (afterResult, signed Noelle). A stopped call goes back to waiting; a usage stop costs no try and waits
- * 2 hours; Claude and Codex both out hands it to the Boss OS ladder; the third real stop replies with
+ * 2 hours; a Claude usage limit hands it to the Boss OS ladder; the third real stop replies with
  * what stopped it, so a call never waits forever unseen.
  */
 export const CALL_TRIES = 3;
@@ -448,7 +448,7 @@ export async function releaseCall(env: Env, body: any, now = Date.now()) {
   const stop = typeof body?.stop === "string" ? body.stop.slice(0, 400) : "NAMED STOP [CALL_STOPPED]";
   const t = id ? await callTask(env.DB, id) : null;
   if (!t || t.status !== "running") return { released: false, why: "not a running call" };
-  // Claude and Codex both out of usage: the Boss OS ladder (Workers AI, then Gemini) answers this call
+  // Claude usage limit: the Boss OS ladder (Workers AI, then Gemini) answers this call
   // (coordinator ruling 24 Nov 2026, the full chain, unmasked). Marked so the Mac never claims it again.
   if (/\[CLOUD_ANSWER\]/.test(stop)) {
     let input: Record<string, unknown> = {}; try { input = JSON.parse(t.input ?? "{}"); } catch { input = {}; }

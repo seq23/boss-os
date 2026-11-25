@@ -7,7 +7,7 @@
 # taking access away): --permission-mode dontAsk --setting-sources= --settings ~/.boss-os/noelle/settings.json
 # (scripts/ops/noelle-permissions.json, filled in by lib/noelle-sandbox.sh), so none of Sequoia's own settings load,
 # Claude Code's OS sandbox holds every command she runs (writes only in ~/Work/noelle and her run folder, home reads
-# denied, network only to her hosts), and her GitHub access is her own scoped token. Her guard
+# denied, network only to her hosts), and her GitHub writes go through the credentialed broker. Her guard
 # (scripts/ops/noelle-guard.mjs) holds only what is judged by name: one reviewer per PR, 3 PRs, the handoff, land.
 #
 # launchd com.seq.boss-noelle ticks every 30 minutes, 10:00-22:59 Central (mac-window ANY holds 07:00-09:59):
@@ -18,9 +18,8 @@
 #     weekly run), never after 21:00; a stopped run is retried two hours on, at most three times a day.
 # One run at a time (the lock); 200 turns; at ~200K context she writes her handoff and ends (her guard).
 #
-# On a Claude usage limit (ai-run exit 76) Codex stands in (no network: it answers and plans, it does not post).
-# With Codex out too, her call goes to the Boss OS ladder (Workers AI, then Gemini; her ruling 24 Nov 2026) and a
-# scheduled run stops [CLAUDE_LIMIT] and retries.
+# A Claude usage limit stops scheduled work and releases an owner call to the existing answer ladder.
+# The ladder answers on Workers AI or Gemini. A later scheduled tick can resume the build on Claude.
 #
 # RULE 0: her last line `OUTPUT: <n> done …` or `NAMED STOP [CODE]` decides (noelle.mjs finish); nothing done is
 # never exit 0, except a tick that is not due (WAIT/HELD), which says why.
@@ -137,24 +136,12 @@ say "=== her session (Claude, $MODEL) exited rc=$RC ==="
 DENIED="$(claude_denials "$SID" "$RUN_LOG")"
 
 if [ "$RC" -eq 76 ]; then
-  # Codex stands in: the same persona and reads inline, no network (no hook guards Codex, so it cannot post).
-  say "Claude is out of usage; Codex stands in"
-  SESSION_LOG="$WORK/session-codex.log"
-  DENIED="n/a"
-  AI_RUN_CLAUDE_ARGS="$CLAUDE_LOCK" AI_RUN_NO_CLAUDE_FALLBACK=1 "$AI_RUN" --role worker --cwd "$NHOME" --out "$SESSION_LOG" -- "$(cat "$WORK/persona-full.md")
-
-You are standing in on Codex with no network: answer and plan only; nothing is posted, deployed or opened as a PR this run.
-$KICK" >> "$RUN_LOG" 2>&1
-  CRC=$?
-  say "=== Codex exited rc=$CRC ==="
-  if [ "$CRC" -eq 75 ] || [ "$CRC" -eq 69 ]; then
-    if [ -n "$CALL" ]; then
-      step call-release "$WORK" cloud || say "the call could not be handed to the Boss OS ladder; the next claim returns it after 3 hours [CALL_RUN_LOST]"
-      echo "OUTPUT 0 (Claude and Codex out: the Boss OS ladder answers her call)"
-      exit 76
-    fi
-    stopped CLAUDE_LIMIT "NAMED STOP [CLAUDE_LIMIT] Claude and Codex are both out of usage; a tick two hours on retries" 76
+  if [ -n "$CALL" ]; then
+    step call-release "$WORK" cloud || stopped CLAUDE_LIMIT "NAMED STOP [CLAUDE_LIMIT] could not hand the call to the Boss OS answer ladder" 76
+    echo "OUTPUT 0 (Claude usage limit: the Boss OS ladder answers her call)"
+    exit 76
   fi
+  stopped CLAUDE_LIMIT "NAMED STOP [CLAUDE_LIMIT] Claude is out of usage; the next tick can resume after the retry window" 76
 fi
 
 step finish "$WORK" "$SESSION_LOG" "$SLOT" "$KIND" "$DENIED"; FRC=$?

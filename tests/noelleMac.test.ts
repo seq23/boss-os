@@ -169,10 +169,10 @@ describe("Noelle's wake and handoff", () => {
 });
 
 describe("her run is locked (#573): a refusal is a stop, and her one agent is passed in", () => {
-  it("0 refusals keeps her verdict; a count or an unreadable record is PERMISSION_DENIED; Codex has none", () => {
+  it("0 refusals keeps her verdict; a count or an unreadable record is PERMISSION_DENIED", () => {
     const ok = runVerdict({ text: "Queued.\nOUTPUT: 6 done - queued", subtype: "success" });
     expect(deniedVerdict(ok, "0")).toBe(ok);
-    expect(deniedVerdict(ok, "n/a")).toBe(ok);
+    expect(deniedVerdict(ok, "n/a")).toMatchObject({ ok: false, code: "PERMISSION_DENIED" });
     expect(deniedVerdict(ok, "2")).toMatchObject({ ok: false, code: "PERMISSION_DENIED", reply: "Queued." });
     expect(deniedVerdict(ok, "unknown")).toMatchObject({ ok: false, code: "PERMISSION_DENIED", line: expect.stringMatching(/could not be read/) });
     expect(deniedVerdict(ok, undefined)).toMatchObject({ ok: false, code: "PERMISSION_DENIED" });
@@ -187,7 +187,7 @@ describe("her run is locked (#573): a refusal is a stop, and her one agent is pa
   it("her launcher runs ai-run only with the lock, on the sandboxed settings her run cannot write", () => {
     const sh = readFileSync(join(__dirname, "../scripts/ops/noelle.sh"), "utf8");
     const calls = sh.split("\n").filter((l) => /AI_RUN_CLAUDE_ARGS=/.test(l));
-    expect(calls).toHaveLength(2);
+    expect(calls).toHaveLength(1);
     for (const l of calls) expect(l).toMatch(/AI_RUN_CLAUDE_ARGS="\$CLAUDE_LOCK[ "]/);
     expect(sh).toMatch(/SETTINGS="\$\(noelle_prepare "\$REPO" "\$NHOME" "\$WORK"/);
     expect(sh).toMatch(/CLAUDE_LOCK="\$\(claude_lock_args "\$SETTINGS"/);
@@ -248,6 +248,24 @@ describe("her sandbox, as noelle_prepare writes it", () => {
   });
 });
 
+describe("Claude usage fallback", () => {
+  it.each([
+    ["1", "step call-release /fixture cloud", 76],
+    ["", "stopped CLAUDE_LIMIT", 76],
+  ])("releases only a call to the answer ladder (CALL=%s)", (call, expected, status) => {
+    const launcher = readFileSync(join(__dirname, "../scripts/ops/noelle.sh"), "utf8");
+    const branch = launcher.slice(launcher.indexOf('if [ "$RC" -eq 76 ]; then'), launcher.indexOf('\nstep finish'));
+    const fixture = `RC=76; CALL="$1"; WORK=/fixture
+step() { echo "step $*"; }
+stopped() { echo "stopped $*"; exit "$3"; }
+`;
+    const result = spawnSync("/bin/bash", ["-c", fixture + branch, "fixture", call], { encoding: "utf8" });
+    expect(result.status).toBe(status);
+    expect(result.stdout).toContain(expected);
+    expect(result.stderr).toBe("");
+  });
+});
+
 describe("Rule 0 on her own last line", () => {
   it("OUTPUT n done passes with the reply above it; 0 done, no line, or the turn cap is red", () => {
     expect(runVerdict({ text: "I queued 6 carousels.\nOUTPUT: 6 done - 6 PBS carousels queued", subtype: "success" })).toMatchObject({ ok: true, reply: "I queued 6 carousels." });
@@ -260,7 +278,7 @@ describe("Rule 0 on her own last line", () => {
   it.each(["OUTPUT: 1 done - queued: 0", "OUTPUT: 3 done - 0 pieces queued", "OUTPUT: 2 done - 0 posts queued"])("refuses a done counter when the queue is zero: %s", (text) => {
     expect(runVerdict({ text, subtype: "success" })).toMatchObject({ ok: false, code: "NOTHING_DONE" });
   });
-  it("reads Claude's JSON result line; a Codex run is plain text", () => {
+  it("reads Claude's JSON result line and identifies an unrecognized plain log", () => {
     expect(runResult('noise\n{"type":"result","subtype":"success","num_turns":12,"result":"hi\\nOUTPUT: 1 done"}\n')).toMatchObject({ text: "hi\nOUTPUT: 1 done", turns: 12, json: true });
     expect(runResult("OUTPUT: 1 done")).toMatchObject({ json: false, text: "OUTPUT: 1 done" });
   });
