@@ -146,6 +146,76 @@ it("refuses forged mail, and only queues the owner’s text from verified mail",
   }
 });
 
+it("keeps message identity scoped to the authenticated sender and tracks the delayed reply", async () => {
+  const { handleBossInboundMail, STALE_ARRIVAL_MS } = await import("../../src/worker/boss/intake/inboundMail");
+  const owner = "owner@example.test";
+  const subject = "Review my scheduling notes";
+  const messageId = "<duplicate-fixture@example.test>";
+  const checked = "mx.cloudflare.net; spf=pass; dkim=pass; dmarc=pass";
+  async function deliver(from: string, authentication: string, header = true) {
+    const raw = `Subject: ${subject}\r\n\r\nPlease check my notes.`;
+    return handleBossInboundMail({
+      from, to: "simone@sequoiataylor.com", raw: new Response(raw).body!, rawSize: raw.length,
+      headers: new Headers({
+        ...(header ? { from } : {}), subject, "message-id": messageId, "authentication-results": authentication,
+      }),
+    }, { ...env, BOSS_EXTRA_OWNER_SENDERS: owner });
+  }
+  expect((await deliver(owner, checked, false)).outcome).toBe("REFUSED_SENDER");
+  expect((await deliver("other@example.test", checked)).outcome).toBe("REFUSED_SENDER");
+  expect((await deliver(owner, "mx.cloudflare.net; dmarc=fail")).outcome).toBe("REFUSED_SENDER");
+  const received = await deliver(owner, checked);
+  expect(received.outcome).toBe("SIMONE_QUEUED");
+  expect(await row("SELECT authorised, task_id, reply_state FROM boss_inbound_mail WHERE id = ?", received.mailId)).toEqual({
+    authorised: 1, task_id: received.taskId, reply_state: "agent_pending",
+  });
+  expect((await deliver(owner, checked)).outcome).toBe("DUPLICATE");
+  const call = (await claimSimone(env))!;
+  expect(call.id).toBe(received.taskId);
+  expect(await replySimone(env, { ...call, text: "I reviewed your notes.", work: ["calendar_read"] })).toBe(true);
+  expect(await row("SELECT reply_state FROM boss_inbound_mail WHERE id = ?", received.mailId)).toEqual({ reply_state: "due" });
+  // Exercise the old redelivery path against a legacy reply which was ready before a crash.
+  await env.DB.prepare(`UPDATE boss_inbound_mail SET received_at = ?, reply_text = 'A private answer' WHERE id = ?`)
+    .bind(Date.now() - STALE_ARRIVAL_MS - 1000, received.mailId).run();
+  expect(await deliver("new-sender@example.test", checked)).toMatchObject({ outcome: "REFUSED_SENDER", reply: null });
+  expect(await deliver(owner, "mx.cloudflare.net; dmarc=fail")).toMatchObject({ outcome: "REFUSED_SENDER", reply: null });
+  const marked = await apiJson(`/api/task-notices/tnt_${call.id}_simone/sent`, { method: "POST", body: { from: "Simone" } });
+  expect(marked.status).toBe(200);
+  expect(await row("SELECT reply_state, replied_at FROM boss_inbound_mail WHERE id = ?", received.mailId)).toEqual({
+    reply_state: "sent", replied_at: expect.any(Number),
+  });
+});
+
+it("keeps an existing command answer on its record and gives a fresh message to Simone", async () => {
+  const { handleBossInboundMail } = await import("../../src/worker/boss/intake/inboundMail");
+  const owner = "owner@example.test";
+  const original = "<historical-command@example.test>";
+  await env.DB.batch([
+    env.DB.prepare(`INSERT INTO boss_commands (id, kind, state, spec, created_at, updated_at)
+       VALUES ('cmd_legacyinvite', 'invite', 'needs_time', '{"guest_name":"A fixture guest"}', 1, 1)`),
+    env.DB.prepare(`INSERT INTO boss_inbound_mail
+      (id, received_at, to_addr, from_addr, dmarc_pass, authorised, subject, outcome, why, bytes, command_id, message_id)
+      VALUES ('iml_legacyinvite', 1, 'simone@sequoiataylor.com', ?, 1, 1, 'Invite', 'COMMAND', 'Preserved invitation', 200, 'cmd_legacyinvite', ?)`)
+      .bind(owner, original),
+  ]);
+  async function deliver(body: string, parent: string) {
+    const raw = `From: ${owner}\r\nSubject: Re: Invite\r\n\r\n${body}`;
+    return handleBossInboundMail({
+      from: owner, to: "simone@sequoiataylor.com", raw: new Response(raw).body!, rawSize: raw.length,
+      headers: new Headers({ from: owner, subject: "Re: Invite", "in-reply-to": parent,
+        "authentication-results": "mx.cloudflare.net; spf=pass; dkim=pass; dmarc=pass" }),
+    }, { ...env, BOSS_EXTRA_OWNER_SENDERS: owner });
+  }
+  const followUp = await deliver("Cancel", original);
+  expect(followUp.outcome).toBe("COMMAND_REPLY");
+  expect(await row("SELECT state FROM boss_commands WHERE id = 'cmd_legacyinvite'")).toEqual({ state: "cancelled" });
+
+  const fresh = await deliver("Find another time.", "<unknown-message@example.test>");
+  expect(fresh.outcome).toBe("SIMONE_QUEUED");
+  expect(await claimSimone(env)).toMatchObject({ id: fresh.taskId, message: { body: expect.stringContaining("Find another time.") } });
+  expect(await row("SELECT count(*) AS n FROM boss_commands")).toEqual({ n: 1 });
+});
+
 it.each([
   ["money or card entry", "purchase"],
   ["her accounts or sign-ins", "change_owner_login"],

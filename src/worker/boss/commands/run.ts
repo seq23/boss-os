@@ -365,7 +365,7 @@ function commandTitle(kind: string, spec: Json): string {
  * The intake's door into this file. A reply on a command's thread answers that command; a new email
  * with commands in it creates them. Null means "not a command" and the ordinary triage takes it.
  */
-export async function commandFromMail(env: Env, input: { subject: string; text: string; mailId: string; sender: string; refs: string[]; now: number; to?: string; ownerName?: string }): Promise<CommandMailResult | null> {
+export async function commandFromMail(env: Env, input: { subject: string; text: string; mailId: string; sender: string; refs: string[]; now: number; to?: string; ownerName?: string; linkedOnly?: boolean }): Promise<CommandMailResult | null> {
   const cmdRefs = input.refs.filter((r) => r.startsWith("cmd_"));
   if (cmdRefs.length) {
     const rows: CommandRow[] = [];
@@ -375,6 +375,7 @@ export async function commandFromMail(env: Env, input: { subject: string; text: 
       if (reply) return { reply, outcome: "COMMAND_REPLY", commandIds: rows.map((r) => r.id), taskId: null };
     }
   }
+  if (input.linkedOnly) return null;
   /*
    * HER CHOICE OF DESK WINS. Mail to another employee's own address, a #tag for anyone but Simone,
    * or a reply on another lane's thread is that desk's, exactly as before; only mail to Simone or

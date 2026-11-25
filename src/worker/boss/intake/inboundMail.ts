@@ -1,6 +1,6 @@
 import { fileSimoneMessage, SIMONE } from "../agents/simone";
-import { SIMONE_MAILBOX } from "../../../shared/boss/intake/mail.mjs";
 import { replyAllRecipients } from "../../../shared/boss/mail/replyNeed.mjs";
+import { refsIn } from "../../../shared/boss/mail/plain.mjs";
 import type { Env } from "../env";
 import { refsForChain, refsForCode, chainIds, refTail } from "./mailRefs";
 import { newId } from "../lib/id";
@@ -8,7 +8,7 @@ import { audit } from "../lib/audit";
 import { logEvent } from "../lib/log";
 import { admitTask } from "../tasks/admit";
 import {
-  BOSS_INTAKE_MAILBOX, BOSS_INTAKE_DOMAIN,
+  BOSS_INTAKE_MAILBOX, BOSS_INTAKE_DOMAIN, SIMONE_MAILBOX,
   dmarcPassed, extractAddress, isOwner,
   replyBody, routeToSeat, seatTag, strippedSubject,
   type BossRoute, type BossSeat,
@@ -369,7 +369,8 @@ async function handleMail(message: BossMailMessage, env: Env, said: Said): Promi
   const cloudflareChecked = /^mx\.cloudflare\.net\s*;/i.test(authentication.trim());
   const dmarc = dmarcPassed(authentication) && (message.console === true || cloudflareChecked) &&
     !(/;\s*spf=(?:softfail|fail)\b/i.test(authentication) && /;\s*dkim=fail\b/i.test(authentication));
-  const authorised = isOwner(sender, env.BOSS_EXTRA_OWNER_SENDERS ?? "") && dmarc;
+  const ownerHeader = extractAddress(message.headers.get("from"));
+  const authorised = ownerHeader !== null && isOwner(ownerHeader, env.BOSS_EXTRA_OWNER_SENDERS ?? "") && dmarc;
 
   /*
    * ─── THE ARRIVAL IS RECORDED FIRST, AND THE OUTCOME IS FILLED IN AFTER ────
@@ -443,12 +444,16 @@ async function handleMail(message: BossMailMessage, env: Env, said: Said): Promi
    *     is answered, and a NAMED STOP goes in her notices.
    */
   let attempt = 1;
-  if (messageId && !viaConsole) {
-    const earlier = (await env.DB.prepare(`SELECT id, outcome, reply_state, reply_text, received_at, employee_id FROM boss_inbound_mail WHERE message_id = ? ORDER BY received_at`)
-      .bind(messageId).all<{ id: string; outcome: string; reply_state: string | null; reply_text: string | null; received_at: number; employee_id: string | null }>()).results ?? [];
+  if (messageId && !viaConsole && dmarc) {
+    // A Message-ID can be chosen by the sender. An unrelated or unverified message cannot
+    // claim it on the owner's behalf or recover a reply that was addressed to the owner.
+    const earlier = (await env.DB.prepare(`SELECT id, outcome, reply_state, reply_text, received_at, employee_id
+      FROM boss_inbound_mail WHERE message_id = ? AND from_addr = ? AND dmarc_pass = 1 AND authorised = ?
+      ORDER BY received_at`)
+      .bind(messageId, sender, Number(authorised)).all<{ id: string; outcome: string; reply_state: string | null; reply_text: string | null; received_at: number; employee_id: string | null }>()).results ?? [];
     const seen = earlier.find((r) => r.outcome !== "RECEIVED" && r.outcome !== "DUPLICATE");
     if (seen) {
-      const unsent = seen.reply_state === "due" && Boolean(seen.reply_text) && now - seen.received_at > STALE_ARRIVAL_MS;
+      const unsent = authorised && seen.reply_state === "due" && Boolean(seen.reply_text) && now - seen.received_at > STALE_ARRIVAL_MS;
       await env.DB.prepare(
         `INSERT INTO boss_inbound_mail (id, received_at, to_addr, from_addr, dmarc_pass, authorised, subject, outcome, why, bytes, message_id, reply_state, reply_text)
          VALUES (?,?,?,?,?,?,?,'DUPLICATE',?,?,?,?,?)`,
@@ -720,39 +725,40 @@ async function handleMail(message: BossMailMessage, env: Env, said: Said): Promi
    * it is read here and handed to every lane below as the bracketed tail their readers already
    * accept. A code she typed or kept in the subject still wins: it is already in the text.
    */
-  const chainRefs = await refsForChain(env.DB, chainIds(message.headers.get("references"), message.headers.get("in-reply-to")));
+  const chainRefs = await refsForChain(env.DB, chain);
   // No thread we know: the REF code she kept in the subject (or typed) finds the job (owner, 7 Nov 2026).
-  const threadRefs = chainRefs.refs.length ? chainRefs : await refsForCode(env.DB, `${herSubjectOf(subject, forwardedOrigin(readable)?.subject ?? null)}\n${her}`);
-  const laneTail = refTail(threadRefs.refs.filter((r) => !`${subject}\n${readable}`.toLowerCase().includes(r)));
-  /*
-   * ─── boss fix D: HER RAINMAKER AND DO-NOT-SUGGEST LISTS, IN HER OWN WORDS (23 Oct 2026) ───
-   *
-   * "X at Y is Rainmaker" / "take X off the Rainmaker list" / "stop suggesting X", replying to any
-   * Monique email. Applied to D1 at once; Monique confirms in one line. When the edits are all the
-   * reply said, nothing else opens; otherwise the rest of the message goes on as ordinary work.
-   */
-  // Existing structured replies have their own scoped handlers. New messages to the chief
-  // are filed before any of the legacy classifiers, even when no model is available.
-  if ((to === BOSS_INTAKE_MAILBOX || to === SIMONE_MAILBOX) && !threadRefs.refs.length && !viaConsole) {
-    const subjectFromForward = forwardedOrigin(readable)?.subject ?? null;
-    const instruction = herSubjectOf(subject, subjectFromForward);
+  const origin = readable ? forwardedOrigin(readable) : null;
+  const herSubject = herSubjectOf(subject, origin ? (origin.subject ? decodeHeader(origin.subject) : "") : null);
+  const ownerText = `${herSubject}\n${her}`;
+  const recordedRefs = chainRefs.refs.length ? chainRefs : await refsForCode(env.DB, ownerText);
+  const explicitRefs = [...recordedRefs.refs, ...refsIn(ownerText)];
+  const chiefMailbox = to === BOSS_INTAKE_MAILBOX || to === SIMONE_MAILBOX;
+  const linkedArrival = chiefMailbox && !explicitRefs.length && chain.length
+    ? await env.DB.prepare(`SELECT command_id FROM boss_inbound_mail
+       WHERE message_id IN (${chain.map(() => "?").join(",")}) AND authorised = 1
+       AND outcome NOT IN ('SIMONE_QUEUED', 'DUPLICATE', 'RECEIVED')
+       AND (task_id IS NOT NULL OR command_id IS NOT NULL OR outcome = 'NEEDS_CLARITY')
+       ORDER BY received_at DESC LIMIT 1`)
+      .bind(...chain).first<{ command_id: string | null }>()
+    : null;
+  if (linkedArrival?.command_id) explicitRefs.push(linkedArrival.command_id);
+  const threadRefs = { ...recordedRefs, refs: [...new Set(explicitRefs)] };
+  const laneTail = refTail(threadRefs.refs.filter((r) => !ownerText.toLowerCase().includes(r)));
+  if (chiefMailbox && !threadRefs.refs.length && !linkedArrival && !viaConsole) {
     const identity = messageId
       ? Array.from(new Uint8Array(await crypto.subtle.digest("SHA-256", new TextEncoder().encode(`${sender}\n${messageId}`))), (b) => b.toString(16).padStart(2, "0")).join("")
       : mailId;
     const taskId = await fileSimoneMessage(env, {
       source: "boss_inbound_mail", subject: subject || "Message to Simone",
-      body: [instruction, her].filter(Boolean).join("\n\n"),
+      body: [herSubject, her].filter(Boolean).join("\n\n"),
       context: taskBody,
       mail_id: mailId, from: sender, to, message_id: messageId ?? undefined, reply_chain: chain,
-    }, identity, now);
-    await finish({ outcome: "SIMONE_QUEUED", why: "Simone has the message on her work list.", employeeId: SIMONE, taskId, objectKey });
+    }, identity, now, { objectKey });
     return { mailId, outcome: "SIMONE_QUEUED", employeeId: SIMONE, taskId, reply: null, messageId };
   }
 
-  const origin = readable ? forwardedOrigin(readable) : null;
   const trueSubject = origin?.subject ? decodeHeader(origin.subject) : subject;
   const fileNames = [...files.heard.map((h) => h.filename), ...files.read.map((r) => r.filename), ...files.unopened.map((u) => u.filename)];
-  const herSubject = herSubjectOf(subject, origin ? (origin.subject ? decodeHeader(origin.subject) : "") : null);
   const isReply = isReplyMessage({
     subject, inReplyTo: message.headers.get("in-reply-to"), references: message.headers.get("references"),
   });
@@ -866,7 +872,9 @@ async function handleMail(message: BossMailMessage, env: Env, said: Said): Promi
    * the email goes on exactly as before. src/worker/boss/commands/run.ts.
    */
   const command = readable || subject
-    ? await commandFromMail(env, { subject: trueSubjectOf(readable, subject), text: own || readable, mailId, sender, refs: threadRefs.refs, now, to, ownerName: (message.headers.get("from") ?? "").replace(/<[^>]*>/g, "").replace(/^"|"$/g, "").trim() })
+    ? await commandFromMail(env, { subject: chiefMailbox ? herSubject : trueSubjectOf(readable, subject), text: chiefMailbox ? her : own || readable,
+      mailId, sender, refs: threadRefs.refs, now, to, linkedOnly: chiefMailbox && !viaConsole,
+      ownerName: (message.headers.get("from") ?? "").replace(/<[^>]*>/g, "").replace(/^"|"$/g, "").trim() })
     : null;
   if (command) {
     if (command.commandIds.length === 1) await env.DB.prepare(`UPDATE boss_inbound_mail SET command_id = ?, thread_id = ? WHERE id = ?`).bind(command.commandIds[0], command.commandIds[0], mailId).run();

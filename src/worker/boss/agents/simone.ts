@@ -28,7 +28,7 @@ export interface SimoneMessage {
   to?: string;
 }
 
-export async function fileSimoneMessage(env: Env, message: SimoneMessage, key?: string, now = Date.now()) {
+export async function fileSimoneMessage(env: Env, message: SimoneMessage, key?: string, now = Date.now(), arrival?: { objectKey: string | null }) {
   const id = key ? `tsk_simone_${key}` : newId("tsk");
   const input = { ...message, agent: "simone" };
   await env.DB.batch([
@@ -41,6 +41,11 @@ export async function fileSimoneMessage(env: Env, message: SimoneMessage, key?: 
     env.DB.prepare(
       `INSERT INTO task_events (id, task_id, ts, event) VALUES (?, ?, ?, 'intake') ON CONFLICT(id) DO NOTHING`,
     ).bind(`tev_${id}_intake`, id, now),
+    ...(arrival ? [env.DB.prepare(
+      `UPDATE boss_inbound_mail SET outcome = 'SIMONE_QUEUED', why = 'Simone has the message on her work list.',
+         employee_id = ?, task_id = ?, object_key = ?, reply_state = 'agent_pending'
+       WHERE id = ? AND authorised = 1 AND outcome = 'RECEIVED'`,
+    ).bind(SIMONE, id, arrival.objectKey, message.mail_id)] : []),
   ]);
   return id;
 }
@@ -111,10 +116,15 @@ export async function replySimone(env: Env, result: { id: string; lease: number;
        ON CONFLICT(id) DO NOTHING`,
     ).bind(`tev_${result.id}_complete`, now, receipts, result.id, SIMONE, result.lease),
     db.prepare(
+      `UPDATE boss_inbound_mail SET reply_state = 'due'
+       WHERE outcome = 'SIMONE_QUEUED' AND reply_state = 'agent_pending' AND authorised = 1
+         AND id = (SELECT json_extract(input, '$.mail_id') FROM tasks WHERE ${current})`,
+    ).bind(result.id, SIMONE, result.lease),
+    db.prepare(
       `UPDATE tasks SET status = 'done', output = ?, finished_at = ?, error = NULL WHERE ${current}`,
     ).bind(JSON.stringify({ text, work: result.work }), now, result.id, SIMONE, result.lease),
   ]);
-  return Boolean(writes[2]?.meta.changes);
+  return Boolean(writes.at(-1)?.meta.changes);
 }
 
 /** Materialize only verbatim owner instructions, using the team’s normal permission envelopes and queue. */
