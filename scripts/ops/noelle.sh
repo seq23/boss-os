@@ -110,16 +110,24 @@ CLAUDE_LOCK="$(claude_lock_args "$SETTINGS" 2>>"$RUN_LOG")" || stopped NO_PERMIS
 unset GH_TOKEN GITHUB_TOKEN GH_ENTERPRISE_TOKEN GITHUB_ENTERPRISE_TOKEN
 
 say "=== Noelle ${CALL:+called }$KIND run, slot $SLOT, try $TRY${RESUME:+ (resume)} ==="
-step reads "$WORK" || stopped NO_READS "NAMED STOP [NO_READS] her reads could not be gathered; $(grep -h 'NAMED STOP' "$RUN_LOG" | tail -1)" 13
-local_step persona "$WORK" || stopped NO_PERSONA "$(grep -h 'NAMED STOP' "$RUN_LOG" | tail -1)" 6
+export NOELLE_HOME="$NHOME" NOELLE_REPO="$REPO" NOELLE_GUARD_DIR="$HOME/.boss-os/noelle/guard"
+if ! local_step persona "$WORK"; then
+  WHY="$(grep -h 'NAMED STOP' "$RUN_LOG" | tail -1)"
+  case "$WHY" in
+    *'[OWNER_NOTES_UNREAD]'*) stopped OWNER_NOTES_UNREAD "$WHY" 6 ;;
+    *) stopped NO_PERSONA "$WHY" 6 ;;
+  esac
+fi
 
-if [ -n "$CALL" ]; then KICK="Sequoia called you (the call is in your system prompt). Answer it first, then end with your reply to her and your OUTPUT line."
-elif [ "$KIND" = "weekly" ]; then KICK="Your weekly run: read today's reads, yesterday's note and HANDOFF.md, look back at the week's ledger, then do the week's growth work and end with your OUTPUT line."
-else KICK="Your daily run: read today's reads, yesterday's note and HANDOFF.md, then do today's growth work and end with your OUTPUT line."; fi
+if [ -n "$CALL" ]; then
+  KICK="This is a light wake. Use the owner notes, handoff and the relevant playbook, then reply and rewrite the handoff."
+else
+  step reads "$WORK" || stopped NO_READS "NAMED STOP [NO_READS] her reads could not be gathered; $(grep -h 'NAMED STOP' "$RUN_LOG" | tail -1)" 13
+  KICK="This is your $KIND run. Use the owner notes, handoff, latest note, playbooks and today's summary. Rewrite the handoff when you end."
+fi
 
 SESSION_LOG="$WORK/session.log"
 SID="$(uuidgen | tr 'A-Z' 'a-z')" || stopped NO_SESSION_ID "NAMED STOP [NO_SESSION_ID] uuidgen failed" 6
-export NOELLE_HOME="$NHOME" NOELLE_REPO="$REPO" NOELLE_GUARD_DIR="$HOME/.boss-os/noelle/guard"
 ENABLE_CLAUDEAI_MCP_SERVERS=false AI_RUN_CLAUDE_MODEL="$MODEL" \
 AI_RUN_CLAUDE_ARGS="$CLAUDE_LOCK --strict-mcp-config --session-id $SID --max-turns $MAX_TURNS --output-format json --agents $WORK/agents.json --append-system-prompt-file $WORK/persona-full.md" \
 "$AI_RUN" --role "$ROLE" --network --cwd "$WORK" --out "$SESSION_LOG" -- "$KICK" >> "$RUN_LOG" 2>&1

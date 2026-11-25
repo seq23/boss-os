@@ -26,7 +26,7 @@ noelle_prepare() {
   [ "$nhome" = "$HOME/Work/noelle" ] || { echo "NAMED STOP [NOELLE_HOME_MOVED] her sandbox is written for ~/Work/noelle, not $nhome" >&2; return 6; }
   case "$work" in "$runs"/*) run="${work#"$runs"/}" ;; *) echo "NAMED STOP [RUN_FOLDER] $work is not under $runs" >&2; return 6 ;; esac
   [[ "$run" =~ ^[A-Za-z0-9._-]+$ ]] || { echo "NAMED STOP [RUN_FOLDER] run folder name '$run'" >&2; return 6; }
-  mkdir -p "$nhome/notes" "$nhome/tasks" "$nhome/repos" "$nhome/wt" "$nhome/.config/gh" "$lock/bin" "$lock/guard" "$work" || return 6
+  mkdir -p "$nhome/notes" "$nhome/tasks" "$nhome/plays" "$nhome/repos" "$nhome/wt" "$nhome/.config/gh" "$lock/bin" "$lock/guard" "$work" || return 6
 
   sed -e "s#__HOME__#$HOME#g" -e "s#__REPO__#$repo#g" -e "s#__RUN__#$run#g" "$repo/scripts/ops/noelle-permissions.json" > "$lock/settings.json.tmp" || return 6
   node -e 'const s=JSON.parse(require("fs").readFileSync(process.argv[1],"utf8")); if(!s.sandbox||s.sandbox.enabled!==true) process.exit(1)' "$lock/settings.json.tmp" \

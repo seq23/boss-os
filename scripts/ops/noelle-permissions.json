@@ -79,6 +79,8 @@
       "Edit(~/.boss-os/**)",
       "Edit(~/Brains/**)",
       "Edit(~/Work/noelle/.claude/**)",
+      "Edit(~/Work/noelle/owner-notes.md)",
+      "Write(~/Work/noelle/owner-notes.md)",
       "Skill",
       "SendMessage",
       "Workflow",
@@ -115,7 +117,8 @@
         "~/.boss-os/noelle/runs/__RUN__"
       ],
       "denyWrite": [
-        "~/Work/noelle/.claude"
+        "~/Work/noelle/.claude",
+        "~/Work/noelle/owner-notes.md"
       ],
       "denyRead": [
         "~/"

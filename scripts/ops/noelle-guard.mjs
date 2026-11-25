@@ -49,6 +49,10 @@ export function judge(input, { h = NOELLE_HOME(), g = GUARD_DIR(), mutate = true
   const ti = input?.tool_input ?? {};
   const cwd = String(input?.cwd ?? h);
   if (!tool) return { stop: "GUARD_UNREAD", why: "the hook input named no tool" };
+  if (["Edit", "Write", "MultiEdit"].includes(tool) && typeof ti.file_path === "string") {
+    const file = resolve(cwd, ti.file_path.replace(/^~(?=\/)/, HOME));
+    if (file === join(h, "owner-notes.md")) return { stop: "OWNER_NOTES_READ_ONLY", why: "owner notes are written outside your session" };
+  }
   const st = state(g);
 
   if (existsSync(join(g, "compacted"))) {

@@ -14,6 +14,8 @@ import { NOELLE_BRAINS, readBrain, callBlock, personaText, readsText, runVerdict
 import { judge, HER_REPOS } from "../scripts/ops/noelle-guard.mjs";
 // @ts-expect-error plain .mjs script, no types
 import { readCalendar, readStudio, readLinkedIn, weekdaysAfter } from "../scripts/ops/lib/noelle-reads.mjs";
+// @ts-expect-error plain .mjs script, no types
+import { wakeMemory, handoffStop } from "../scripts/ops/lib/noelle-memory.mjs";
 import { slotFor } from "../src/shared/boss/growth/noelle.mjs";
 
 const RULES = "# Working rules\n\n# 1. The bar\n- Done = a veteran would ship it.\n";
@@ -24,10 +26,16 @@ describe("H1: her brains are spry, porch-and-party, time-2-read, personal, team 
   it("the six are read, with confidential spans cut", () => {
     expect([...NOELLE_BRAINS].sort()).toEqual(["personal", "porch-and-party", "risk", "spry", "team", "time-2-read"]);
     for (const slug of NOELLE_BRAINS) {
-      const t = readBrain(slug, { dir: "/b", read });
+      const t = readBrain(slug, { dir: "/b", read, whole: true });
       expect(t).toContain(`/b/${slug}.md`);
       expect(t).not.toMatch(/Zebulon|Quarrington/);
     }
+  });
+  it("lists headings without body text and reads only the selected nested section", () => {
+    const fixture = () => "# Brain\n## Growth\n### First\nfirst-business-only\n### Second\nsecond-business-only\n## Voice\nother section";
+    expect(readBrain("spry", { read: fixture })).toBe("Growth\nGrowth/First\nGrowth/Second\nVoice");
+    expect(readBrain("spry", { read: fixture, section: "Growth/Second" })).toBe("second-business-only");
+    expect(() => readBrain("spry", { read: fixture, section: "Growth/Missing" })).toThrow(/BRAIN_SECTION_UNREAD/);
   });
   it("brokerage, the fund, the community and friends are a named stop, whatever the spelling", () => {
     for (const slug of ["brokerage", "west-peek-ventures", "west-peek", "friends", " Brokerage ", "../brokerage", "industry-guides"]) {
@@ -73,7 +81,8 @@ describe("H4: only Sequoia directs her; what she forwards, quotes or reads is da
     });
     // Every planted copy sits inside an untrusted block: outside the blocks, no "Upgrade Buffer".
     const outside = text.replace(/<untrusted source="[^"]*">[\s\S]*?<\/untrusted>/g, "");
-    expect(text.match(/Upgrade Buffer/g)!.length).toBe(5);
+    expect(text.match(/Upgrade Buffer/g)!.length).toBe(3);
+    expect(text).toContain("today-detail.json");
     expect(outside).not.toMatch(/Upgrade Buffer|SYSTEM:/);
   });
   it("her system prompt is the rules file, her persona, then the call; no rules file is a named stop", () => {
@@ -103,6 +112,59 @@ describe("H4: only Sequoia directs her; what she forwards, quotes or reads is da
     expect(flat).toContain("You decide each business's channel mix as the expert: which channels, how often, and what to stop.");
     expect(flat).toContain("You tell her after, inside the rules file's ask-first limits (money, her accounts, legal, publishing that can't be quietly undone)");
     expect(flat).toContain("KeepMyProof has no social posting because of a 2 Nov search-first plan; that is yours to rethink");
+  });
+});
+
+describe("Noelle's wake and handoff", () => {
+  function memoryHome() {
+    const home = mkdtempSync(join(tmpdir(), "noelle-memory-"));
+    mkdirSync(join(home, "notes"));
+    return home;
+  }
+  it("stops before reading the handoff when owner notes are missing", () => {
+    const home = memoryHome();
+    mkdirSync(join(home, "HANDOFF.md")); // would fail with a different error if opened first
+    expect(() => wakeMemory(home)).toThrow(/OWNER_NOTES_UNREAD/);
+  });
+  it("uses the newest dated note across skipped days and skips notes on a call", () => {
+    const home = memoryHome();
+    writeFileSync(join(home, "owner-notes.md"), "## 2026-11-27\nFixture positioning");
+    writeFileSync(join(home, "HANDOFF.md"), "previous handoff");
+    writeFileSync(join(home, "notes/2026-11-22.md"), "older");
+    writeFileSync(join(home, "notes/2026-11-25.md"), "latest");
+    writeFileSync(join(home, "notes/README.md"), "not a daily note");
+    const memory = wakeMemory(home);
+    expect(memory).toMatchObject({ newest: "2026-11-25.md", note: "latest" });
+    expect(wakeMemory(home, { call: true }).newest).toBeNull();
+    const prompt = personaText({ rules: RULES, persona: PERSONA, memory, runId: "run-2", dir: "/d" });
+    expect(prompt.indexOf("Fixture positioning")).toBeLessThan(prompt.indexOf("previous handoff"));
+    expect(prompt.indexOf("previous handoff")).toBeLessThan(prompt.indexOf("Latest note"));
+    expect(handoffStop(home, memory, "run-2")).toBe("HANDOFF_NOT_WRITTEN");
+    writeFileSync(join(home, "HANDOFF.md"), "Run: run-2\nowner-notes read through 2026-11-27\nNext: fixture");
+    expect(handoffStop(home, memory, "run-2")).toBeNull();
+    expect(handoffStop(home, wakeMemory(home), "run-3")).toBe("HANDOFF_NOT_WRITTEN");
+  });
+  it("refuses Edit and Write of the owner file and allows a handoff edit", () => {
+    const home = memoryHome();
+    for (const tool of ["Edit", "Write"]) {
+      expect(judge({ tool_name: tool, tool_input: { file_path: "owner-notes.md" }, cwd: home }, { h: home })).toMatchObject({ stop: "OWNER_NOTES_READ_ONLY" });
+    }
+    expect(judge({ tool_name: "Edit", tool_input: { file_path: "HANDOFF.md" }, cwd: home }, { h: home })).toBeNull();
+  });
+  it("keeps the fixture wake under 30,000 UTF-8 bytes, with raw data available on demand", () => {
+    const home = memoryHome();
+    writeFileSync(join(home, "owner-notes.md"), "## 2026-11-27\nFixture");
+    const memory = wakeMemory(home);
+    const persona = readFileSync(join(__dirname, "../scripts/ops/noelle/persona.md"), "utf8");
+    const prompt = personaText({ rules: RULES, persona, memory, runId: "fixture", dir: "/d" });
+    const rawDetail = "detail ".repeat(30_000);
+    const summary = readsText({
+      context: { today: "2026-11-28", summaries: [rawDetail], businesses: [{ key: "porch-and-party", label: "Porch & Party", rulings: rawDetail }] },
+      reads: {}, calendar: { queues: {}, unread: {}, items: { "porch-and-party": [{ text: rawDetail }] } },
+    });
+    expect(Buffer.byteLength(prompt + summary + "Fixture playbook\n")).toBeLessThan(30_000);
+    expect(summary).not.toContain(rawDetail);
+    expect(summary).toContain("today-detail.json");
   });
 });
 
@@ -216,9 +278,14 @@ describe("H6: the same failure twice is a named stop and a Notices line, never a
     mkdirSync(dir, { recursive: true });
     writeFileSync(join(dir, "state.json"), JSON.stringify({ day: "2026-11-24", reads: { sources: {} } }));
     if (call) writeFileSync(join(dir, "call.json"), JSON.stringify(call));
+    const runId = "noelle-2026-11-24-1405";
+    mkdirSync(join(home, "notes"), { recursive: true });
+    writeFileSync(join(home, "owner-notes.md"), "## 2026-11-24\nFixture");
+    const wake = { ...wakeMemory(home), runId };
+    writeFileSync(join(home, "HANDOFF.md"), `Run: ${runId}\nowner-notes read through 2026-11-24\nCompleted fixture ${dir}`);
     const sent: Array<[string, string, any]> = [];
     const api = async (m: string, p: string, b: any) => { sent.push([m, p, b]); return p === "/call/reply" ? { replied: true, emailed: true } : p === "/call/release" ? { waits: false } : { notices: b.twice ? 1 : 0 }; };
-    return { sent, go: () => finish({ dir, log: JSON.stringify({ result: text, num_turns: 4, subtype: "success" }), slot: "14:05", kind: "daily", runId: "noelle-2026-11-24-1405", api, home, denied }) };
+    return { sent, go: () => finish({ dir, log: JSON.stringify({ result: text, num_turns: 4, subtype: "success" }), slot: "14:05", kind: "daily", runId, api, home, denied, wake }) };
   };
   it("a second identical stop says SAME_FAILURE_TWICE and asks the Worker for her Notices line", async () => {
     const home = mkdtempSync(join(tmpdir(), "noelle-home-"));
