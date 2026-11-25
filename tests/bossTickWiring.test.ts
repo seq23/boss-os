@@ -23,11 +23,12 @@ describe("the Worker's scheduled() handler", () => {
       "runBossOpenLoops(",
       "runBossKendra(",
       "runBossNightly(",
+      "routeSimoneWhenMacIsDown(",
     ];
     for (const call of lanes) {
       expect(handler, `scheduled() no longer calls ${call}`).toContain(call);
     }
-    // The 8 hourly lanes plus the */5 tick's mail alarm and cloud clock: exactly one waitUntil each.
+    // Each listed lane gets one waitUntil. The mail alarm and cloud clock get one each as well.
     expect((handler.match(/ctx\.waitUntil\(/g) ?? []).length).toBe(lanes.length + 2);
   });
 

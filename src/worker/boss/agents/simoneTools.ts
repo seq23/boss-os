@@ -1,6 +1,8 @@
 import type { Env } from "../env";
 import { newId } from "../lib/id";
-import { SIMONE } from "./simone";
+import { SIMONE, type SimoneMessage } from "./simone";
+import { errandIn } from "../../../shared/boss/commands/parse.mjs";
+import { audit } from "../lib/audit";
 
 const READS = {
   morning: `SELECT day, updated_at, sent_at FROM morning_digests ORDER BY day DESC LIMIT 3`,
@@ -15,12 +17,30 @@ const READS = {
 } as const;
 
 export async function simoneTool(env: Env, request: { id: string; lease: number; tool: string; task?: unknown }, now = Date.now()) {
-  const active = await env.DB.prepare(`SELECT id FROM tasks WHERE id = ? AND employee_id = ? AND status = 'running'
-    AND attempts = ? AND json_extract(input, '$.agent') = 'simone'`).bind(request.id, SIMONE, request.lease).first();
+  const active = await env.DB.prepare(`SELECT id, input FROM tasks WHERE id = ? AND employee_id = ? AND status = 'running'
+    AND attempts = ? AND CASE WHEN json_valid(input) THEN json_extract(input, '$.agent') END = 'simone'`).bind(request.id, SIMONE, request.lease).first<{ id: string; input: string }>();
   if (!active) return { ok: false, code: "STALE_SIMONE_RUN" } as const;
   if (Object.hasOwn(READS, request.tool)) {
     const { results } = await env.DB.prepare(READS[request.tool as keyof typeof READS]).all();
     return { ok: true, rows: results } as const;
+  }
+  if (request.tool === "queue_errand") {
+    const message: SimoneMessage = JSON.parse(active.input);
+    const original = message.source === "boss_inbound_mail" && message.mail_id
+      ? await env.DB.prepare(`SELECT from_addr FROM boss_inbound_mail WHERE id = ? AND authorised = 1 AND task_id = ?`)
+        .bind(message.mail_id, request.id).first<{ from_addr: string }>()
+      : null;
+    const spec = original && errandIn({ sender: original.from_addr, text: message.body });
+    if (!spec) return { ok: false, code: "ERRAND_NOT_AUTHORIZED" } as const;
+    const command = `cmd_${request.id.replace(/^tsk_/, "")}_errand`;
+    const write = await env.DB.prepare(`INSERT INTO boss_commands (id, mail_id, kind, state, spec, created_at, updated_at)
+      VALUES (?, ?, 'errand', 'queued', ?, ?, ?) ON CONFLICT(id) DO NOTHING`)
+      .bind(command, message.mail_id, JSON.stringify({ ...spec, owner_email: original.from_addr }), now, now).run();
+    if (write.meta.changes) await audit(env.DB, {
+      actor: "owner", lane: "ops", entityType: "boss_command", entityId: command, action: "errand_approved_by_her_email",
+      detail: { mail_id: message.mail_id, simone_run: request.id },
+    });
+    return { ok: true, receipt: command } as const;
   }
   if (request.tool !== "retry_team_task") return { ok: false, code: "TOOL_NOT_ALLOWED" } as const;
   if (typeof request.task !== "string" || request.task.length > 160) return { ok: false, code: "TASK_REQUIRED" } as const;

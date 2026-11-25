@@ -94,7 +94,7 @@ export function TellSimone({ focus = false, onOpenRecentWork, page = false }: { 
         </>
       ) : (
         <div className="tell-simone-done" role="status">
-          <p className="tell-simone-ok">{finished ? "Simone replied" : "Simone has your message"}</p>
+          <p className="tell-simone-ok">{result?.reply ? "Simone replied" : finished ? "This message stopped before Simone could reply" : "Simone has your message"}</p>
           {result?.reply && <p className="tell-simone-reply" style={{ whiteSpace: "pre-wrap" }}>{result.reply}</p>}
           <div className="btn-row tell-simone-btns">
             {finished && <button className="btn" onClick={again}>Tell Simone something else</button>}

@@ -17,7 +17,7 @@ export function employeeMail(
     thread?: string[];
   },
 ): { from: string; to: string[]; reply_to: string; subject: string; text: string; html: string; headers?: Record<string, string>; attachments?: Array<{ filename: string; content: string }> };
-export function postEmployeeMail(sender: EmployeeSender, payload: ReturnType<typeof employeeMail>, fetchImpl?: typeof fetch, opts?: { context?: string | null; seen?: Set<string> }): Promise<Response>;
+export function postEmployeeMail(sender: EmployeeSender, payload: ReturnType<typeof employeeMail>, fetchImpl?: typeof fetch, opts?: { context?: string | null; seen?: Set<string>; idempotencyKey?: string | null }): Promise<Response>;
 /** The door on what would be sent: every repair made, what is still wrong, and whether it must go anyway. */
 export function throughTheDoor(sender: Partial<EmployeeSender> | null, payload: Record<string, any>): { payload: Record<string, any>; repaired: string[]; problems: string[]; mustGo: boolean };
 /** Her address, from BOSS_NOTIFY_TO (the vault or a cloud run's secret); never written in this repo. */

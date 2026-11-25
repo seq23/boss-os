@@ -6,11 +6,14 @@ import { SIMONE_ROUTING, readAssignments, routingInstructions, routingRequest, t
 import { readJsonObject } from "../router/types";
 import { routeCompletion } from "../router";
 import { macSeen } from "../queue/freeRung";
+import { claimFreeSearch } from "../research/searchQuota";
+import { FIRST_READ_SERVICE } from "../intake/firstRead";
+import { shortTitle } from "../../../shared/boss/intake/triage.mjs";
 import { privateLexicon, scanForModelAccess } from "../router/modelAccess";
 
 export const SIMONE = "emp_chief";
 export const SIMONE_LEASE_MS = 3 * 60 * 60_000;
-const CHIEF = "json_extract(input, '$.agent') = 'simone'";
+const CHIEF = "CASE WHEN json_valid(input) THEN json_extract(input, '$.agent') END = 'simone'";
 
 export interface SimoneMessage {
   source: "boss_inbound_mail" | "tell_simone" | "boss_page" | "simone_daily";
@@ -57,7 +60,7 @@ export async function claimSimone(env: Env, now = Date.now(), cloud = false) {
          SELECT id FROM tasks WHERE employee_id = ? AND ${CHIEF}
            AND (status = 'queued' OR (status = 'running' AND started_at <= ?))
            AND (? = 0 OR (json_extract(input, '$.source') = 'boss_inbound_mail' AND created_at <= ?))
-         ORDER BY created_at, id LIMIT 1
+         ORDER BY attempts, created_at, id LIMIT 1
        ) RETURNING id, input, attempts, model_access, sensitivity`,
   ).bind(now, SIMONE, now - SIMONE_LEASE_MS, Number(cloud), now - 30 * 60_000).first<ClaimedTask>();
   if (!row) return null;
@@ -121,6 +124,7 @@ export async function handoffSimone(env: Env, request: { id: string; lease: numb
   ).bind(request.id, SIMONE, request.lease).first<{ input: string }>();
   if (!row) return null;
   const message: SimoneMessage = JSON.parse(row.input);
+  if (message.source === "simone_daily") return null;
   const roster = await activeRoster(env);
   const assignments: SimoneAssignment[] | null = readAssignments(request.assignments, { message, roster });
   if (!assignments?.length) return null;
@@ -137,9 +141,10 @@ export async function handoffSimone(env: Env, request: { id: string; lease: numb
       if (existing.status === "queued") await env.TASKS.send({ taskId: id, lane: seat.lane });
     } else {
       const admitted = await admitTask(env, {
-        title: message.subject.slice(0, 180) || "Work from Simone", lane: seat.lane, employee_id: seat.id,
+        title: shortTitle(assignment.words, 80) || "Work from Simone", lane: seat.lane, employee_id: seat.id,
         input: {
-          source: message.source, body: assignment.words, mail_id: message.mail_id,
+          source: message.source === "boss_inbound_mail" ? message.source : "boss_page",
+          body: assignment.words, mail_id: message.mail_id,
           from: message.from, subject: message.subject, simone_handoff: request.id,
         },
       }, id);
@@ -174,6 +179,7 @@ export async function routeSimoneWhenMacIsDown(env: Env, now = Date.now(), route
         { role: "user" as const, content: routingRequest(call) },
       ];
       for (const onlyProviderId of ["prv_workers_ai", "prv_gemini"]) {
+        if (onlyProviderId === "prv_workers_ai" && !(await claimFreeSearch(env.DB, FIRST_READ_SERVICE, now)).ok) continue;
         const result = await route(env, {
           onlyProviderId, messages, routeId: "rt_ops_default", lane: "ops", employeeId: SIMONE,
           taskId: call.id, intakeKind: "classification", costMode: "FREE_ONLY", freeOnly: true,

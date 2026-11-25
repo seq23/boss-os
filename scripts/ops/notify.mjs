@@ -353,7 +353,7 @@ export function throughTheDoor(sender, payload) {
   };
 }
 
-export async function postEmployeeMail(sender, payload, fetchImpl = fetch, { context = null, seen = runSeen() } = {}) {
+export async function postEmployeeMail(sender, payload, fetchImpl = fetch, { context = null, seen = runSeen(), idempotencyKey = null } = {}) {
   if (!(Array.isArray(payload?.to) ? payload.to : [payload?.to]).some((a) => String(a ?? "").trim())) {
     console.error(NO_OWNER_ADDRESS);
     return new Response(JSON.stringify({ message: NO_OWNER_ADDRESS }), { status: 422, headers: { "content-type": "application/json" } });
@@ -365,7 +365,7 @@ export async function postEmployeeMail(sender, payload, fetchImpl = fetch, { con
   if (door.problems.length) await holdMail(sender, door.payload, door.problems, fetchImpl, { sentAnyway: true });
   if (door.repaired.length) console.error(`REPAIRED "${payload?.subject}" before sending: ${door.repaired.join("; ")}`);
   // ONE EMAIL PER EVENT IN A RUN: a second email about the same event is not sent, and says so.
-  const event = eventKey(door.payload);
+  const event = idempotencyKey ?? eventKey(door.payload);
   if (seen.has(event)) {
     console.error(`NOT SENT TWICE "${door.payload.subject}": this run already emailed her about it.`);
     return new Response(JSON.stringify({ id: null, duplicate: true }), { status: 200, headers: { "content-type": "application/json" } });
@@ -374,7 +374,7 @@ export async function postEmployeeMail(sender, payload, fetchImpl = fetch, { con
   payload = { ...door.payload, text: String(door.payload.text ?? "").replace(/\u2063/g, "") };
   const res = await fetchImpl(RESEND, {
     method: "POST",
-    headers: { "content-type": "application/json", authorization: `Bearer ${sender.key}` },
+    headers: { "content-type": "application/json", authorization: `Bearer ${sender.key}`, ...(idempotencyKey ? { "Idempotency-Key": idempotencyKey } : {}) },
     body: JSON.stringify(payload),
   });
   if (res.ok) {

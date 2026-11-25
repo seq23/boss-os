@@ -15,11 +15,8 @@
  *     `FIRST_READ_DAILY_CAP` reads a day (claimed in D1 before the call: NAMED STOP
  *     [FIRST_READ_FREE_CAP] at the cap, never paid past it), then no first read at all: the rules
  *     read her email exactly as before. Never a Claude or Codex seat, never a paid API.
- *   · IT IS NOT BLOCKED BY THE PRIVATE-TERM CHECK. Her ruling, 15 Nov 2026: Boss OS ignores the
- *     private-email rules (they are West Peek OS's; LP names in Boss OS are prospects). So this calls
- *     the free adapters directly instead of going through `routeCompletion`, whose content scan would
- *     move an email naming a prospect off every free route. The repo-level "no LP names in the repo"
- *     checks are untouched: nothing here writes to the repo.
+ *   · The shared private scan holds committed LP names, deal terms and unknown classifications off
+ *     both free providers. Ordinary prospect names can still be read in the original text.
  *   · INSIDE THE WORKER, NO WAIT. One bounded pass in the same run that answers her
  *     (`FIRST_READ_BUDGET_MS` in all), so the Got it can list the brief's asks and questions.
  */
@@ -430,24 +427,21 @@ export interface Ladder<T> { value: T | null; reader: string | null; tried: stri
  * PRIVATE TEXT NEVER REACHES A FREE RUNG, BY DEFAULT (private-data-routing; fresh review of #510, F3). Every
  * rung may train on what it reads, so a prompt the router's own content scan would hold to a private
  * model is not sent at all: the ladder answers nothing and its stop says why, and the caller's keywords
- * read it. A lexicon that cannot be built counts as a hit (fail closed). A caller turns the scan off only
- * by naming the ruling that lets it (`privateScanOff`); the first read is the one that does.
+ * read it. A lexicon that cannot be built counts as a hit (fail closed).
  */
 export async function freeLadder<T>(
   env: Env,
-  input: { prompt: string; json: JsonOutput; read: (text: string) => T | string; budgetMs?: number; now?: number; dry?: boolean; onlyRung?: string | null; privateScanOff?: string },
+  input: { prompt: string; json: JsonOutput; read: (text: string) => T | string; budgetMs?: number; now?: number; dry?: boolean; onlyRung?: string | null },
   rungs?: Rung[],
 ): Promise<Ladder<T>> {
   const now = input.now ?? Date.now();
   const budget = input.budgetMs ?? FIRST_READ_BUDGET_MS;
   const out: Ladder<T> = { value: null, reader: null, tried: [], stop: null };
   const { prompt, json } = input;
-  if (!input.privateScanOff?.trim()) {
-    const scan = await privateLexicon(env.DB)
-      .then((lex) => scanForModelAccess([{ role: "user", content: prompt }], lex))
-      .catch(() => ({ privateOnly: true, kinds: ["the private scan could not run"] }));
-    if (scan.privateOnly) { out.stop = `kept off the free models: ${scan.kinds.join(", ")}`; return out; }
-  }
+  const scan = await privateLexicon(env.DB)
+    .then((lex) => scanForModelAccess([{ role: "user", content: prompt }], lex))
+    .catch(() => ({ privateOnly: true, kinds: ["the private scan could not run"] }));
+  if (scan.privateOnly) { out.stop = `kept off the free models: ${scan.kinds.join(", ")}`; return out; }
   const started = Date.now();
   let ladder: Rung[];
   try { ladder = rungs ?? rungsOverride ?? await freeRungs(env); } catch { ladder = []; }
@@ -527,9 +521,6 @@ export async function freeLadder<T>(
   return out;
 }
 
-/** Why the first read alone skips the private scan: her ruling, quoted in this file's header ("IT IS NOT BLOCKED BY THE PRIVATE-TERM CHECK"). */
-export const FIRST_READ_SCAN_OFF = "owner ruling 15 Nov 2026: Boss OS ignores the private-email rules for its own first read (LP names here are prospects); see firstRead.ts header";
-
 /** Walk the free ladder once for the brief. `dry` reads without claiming a Workers AI slot. Never throws. */
 export async function firstRead(
   env: Env,
@@ -540,7 +531,6 @@ export async function firstRead(
   const files = input.files ?? [];
   const walk = await freeLadder(env, {
     prompt: briefPrompt({ subject: input.subject, words: input.words, files, checks: input.checks }), json: BRIEF_JSON, now: input.now, dry: input.dry, onlyRung: input.onlyRung,
-    privateScanOff: FIRST_READ_SCAN_OFF,
     read: (text) => {
       const brief = readBrief(text, input.words, files, input.checks?.length ?? 0, input.checkWords ?? input.words);
       if (typeof brief === "string") return brief;

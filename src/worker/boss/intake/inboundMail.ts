@@ -722,7 +722,7 @@ async function handleMail(message: BossMailMessage, env: Env, said: Said): Promi
    */
   const chainRefs = await refsForChain(env.DB, chainIds(message.headers.get("references"), message.headers.get("in-reply-to")));
   // No thread we know: the REF code she kept in the subject (or typed) finds the job (owner, 7 Nov 2026).
-  const threadRefs = chainRefs.refs.length ? chainRefs : await refsForCode(env.DB, `${subject}\n${readable}`);
+  const threadRefs = chainRefs.refs.length ? chainRefs : await refsForCode(env.DB, `${herSubjectOf(subject, forwardedOrigin(readable)?.subject ?? null)}\n${her}`);
   const laneTail = refTail(threadRefs.refs.filter((r) => !`${subject}\n${readable}`.toLowerCase().includes(r)));
   /*
    * ─── boss fix D: HER RAINMAKER AND DO-NOT-SUGGEST LISTS, IN HER OWN WORDS (23 Oct 2026) ───

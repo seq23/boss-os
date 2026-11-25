@@ -175,3 +175,60 @@ it("opens existing records through the broker and fences calls from an expired l
   expect(await simoneTool(env, { id, lease, tool: "morning" })).toMatchObject({ rows: [{ day: "2026-11-25", updated_at: 2, sent_at: null }] });
   expect(await simoneTool(env, { id, lease: lease - 1, tool: "morning" })).toEqual({ ok: false, code: "STALE_SIMONE_RUN" });
 });
+
+it("preserves draft, errand and reminder state, invitations, and earlier mail in place", async () => {
+  await env.DB.batch([
+    env.DB.prepare(`INSERT INTO boss_commands (id, kind, state, spec, result, created_at, updated_at)
+      VALUES ('cmd_fixture_draft', 'email', 'shown', '{}', '{"draft_text":"Existing draft"}', 2, 3),
+        ('cmd_fixture_errand', 'errand', 'sent', '{"to":"venue@example.test"}', '{"booking":{"confirmed":true},"reminder":{"due_at":925000}}', 2, 4)`),
+    env.DB.prepare(`INSERT INTO owner_invitations (id, dedupe_key, kind, source, inbox, how, title, starts_at, status, tap_token, created_at, updated_at)
+      VALUES ('inv_fixture', 'fixture', 'personal', 'mail', 'owner@example.test', 'email', 'Existing invite', 900000, 'unsure', 'fixture-token', 2, 4)`),
+    env.DB.prepare(`INSERT INTO boss_inbound_mail (id, received_at, to_addr, from_addr, dmarc_pass, authorised, subject, outcome, why, bytes)
+      VALUES ('iml_fixture', 2, 'chief@example.test', 'owner@example.test', 1, 1, 'Original message', 'COMMAND', 'Filed before cutover', 200)`),
+    env.DB.prepare(`INSERT INTO tasks (id, lane, employee_id, title, input, status, created_at)
+      VALUES ('tsk_legacy_fixture', 'ops', 'emp_chief', 'Legacy card', 'old plain-text input', 'queued', 2)`),
+  ]);
+  const history = () => Promise.all([
+    row(`SELECT * FROM boss_commands WHERE id = 'cmd_fixture_draft'`),
+    row(`SELECT * FROM boss_commands WHERE id = 'cmd_fixture_errand'`),
+    row(`SELECT * FROM owner_invitations WHERE id = 'inv_fixture'`),
+    row(`SELECT * FROM boss_inbound_mail WHERE id = 'iml_fixture'`),
+    row(`SELECT * FROM tasks WHERE id = 'tsk_legacy_fixture'`),
+  ]);
+  const before = await history();
+  expect(before.every(Boolean)).toBe(true);
+  const id = await fileSimoneMessage(env, request);
+  expect(await claimSimone(env)).toMatchObject({ id });
+  expect(await replySimone(env, { id, lease: 1, text: "I checked the existing arrangements.", work: ["invitations"] })).toBe(true);
+  expect(await history()).toEqual(before);
+});
+
+it("queues a free errand in the existing table once, and refuses a card or forwarded recipient", async () => {
+  const { handleBossInboundMail } = await import("../../src/worker/boss/intake/inboundMail");
+  const { ERRAND_SENDERS } = await import("../../src/shared/boss/commands/parse.mjs");
+  const { simoneTool } = await import("../../src/worker/boss/agents/simoneTools");
+  const address = ERRAND_SENDERS[0]!;
+  async function mail(body: string) {
+    const raw = `From: ${address}\r\nSubject: Saturday\r\n\r\n${body}`;
+    const result = await handleBossInboundMail({
+      from: address, to: "simone@sequoiataylor.com", raw: new Response(raw).body!, rawSize: raw.length,
+      headers: new Headers({ from: address, subject: "Saturday", "authentication-results": "mx.cloudflare.net; spf=pass; dkim=pass; dmarc=pass" }),
+    }, env);
+    const call = (await claimSimone(env))!;
+    expect(call.id).toBe(result.taskId);
+    return { id: call.id, lease: call.lease, tool: "queue_errand" };
+  }
+  for (const text of [
+    "Book a table at venue@example.test and put down a deposit.",
+    "Check their hours.\n\n---------- Forwarded message ---------\nFrom: stranger@example.test\n\nBook a table at wrong@example.test.",
+  ]) {
+    const run = await mail(text);
+    expect(await simoneTool(env, run)).toEqual({ ok: false, code: "ERRAND_NOT_AUTHORIZED" });
+    expect(await replySimone(env, { ...run, text: "I checked the request.", work: ["fixture_read"] })).toBe(true);
+  }
+  const run = await mail("Book a table at venue@example.test after 8 p.m. on Saturday.");
+  const first = await simoneTool(env, run);
+  expect(first).toMatchObject({ ok: true, receipt: expect.any(String) });
+  expect(await simoneTool(env, run)).toEqual(first);
+  expect(await row(`SELECT COUNT(*) AS n FROM boss_commands WHERE kind = 'errand' AND json_extract(spec, '$.to') = 'venue@example.test'`)).toEqual({ n: 1 });
+});

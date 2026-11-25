@@ -5,6 +5,7 @@ export interface SimoneCall {
   message: { body: string; context?: string; source?: string };
 }
 
+export function codexRouteArgs(prompt: string, output: string, schema: string): string[];
 export function simoneMemory(home: string): Promise<string>;
 export function childEnvironment(env: NodeJS.ProcessEnv, home: string, settings: string, promptFile: string): NodeJS.ProcessEnv;
 export function runSimone(options: {

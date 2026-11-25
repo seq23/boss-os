@@ -2,11 +2,13 @@ export const SIMONE_ROUTING = {
   name: "simone_mail_routing",
   schema: {
     type: "object",
+    additionalProperties: false,
     properties: {
       assignments: {
         type: "array",
         items: {
           type: "object",
+          additionalProperties: false,
           properties: { employee: { type: "string" }, words: { type: "string" } },
           required: ["employee", "words"],
         },

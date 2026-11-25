@@ -278,12 +278,14 @@ email" and "i should not have to put an employee name, my main assistant should 
 for me."_ The whole page, with examples: [HOW_TO_GIVE_BOSS_OS_WORK_BY_EMAIL.md](../HOW_TO_GIVE_BOSS_OS_WORK_BY_EMAIL.md).
 
 - **Write to `boss@sequoiataylor.com`** from one of your addresses, in your own words. No tag needed.
-- **Simone triages it** (`src/shared/boss/intake/triage.mjs`): splits the email into its asks and gives
-  each to the seat that can execute it — Danielle builds and repo changes (any repo you name; one not
-  yet registered is registered as a step of the job), Camille research pages, Monique outreach, Simone
-  scheduling, Zora records, Toni risk, Imani practice, Kendra tools. No clear fit goes to the closest
-  seat and the reply says so; nothing bounces back to you. The reply is one line per job.
-- **name@sequoiataylor.com** (all eight) and `#name` still reach that person directly.
+- **Simone reads the request.** For new mail to boss@ or simone@, her Mac claims the stored message
+  and runs her Claude Code session. She can reply with a result or hand parts to colleagues from
+  the active team. The Tell Simone box and Simone’s page show the reply on the same surface.
+- When Claude cannot start, Codex can read a mail handoff. The Worker checks for the Mac heartbeat
+  before trying Workers AI and then Gemini for mail routing. Requests with committed LP names or
+  deal terms stay on the Mac. When every reader is unavailable, the message stays queued.
+- **name@sequoiataylor.com** reaches the employee’s existing mailbox. Approval and errand replies
+  that identify an existing record still go to that record.
 - **Replies are permission:** `approved` / `changes: …` / `stop` on the thread; `your call` in the
   first email pre-approves. A reply goes back to the job it answers (`jobThisAnswers`), never a new pile.
 - **Secrets:** `SECRET VENDOR_API_KEY=value` on its own line; stored encrypted, scrubbed from the mail.
@@ -971,6 +973,20 @@ initiative, add a row to `src/shared/boss/scorecard/manifest.json` in the same P
 from `READER_IDS`, a D1 query returning one number `n`, floors, version B). A source needing a key the
 vault lacks shows "No number" with `NAMED STOP [KEY_MISSING]` naming the key. Dry run:
 `npm run scorecard:monday -- --dry`. Restart links are `/tap/sc…` (routes/scorecard.ts).
+
+## Simone, the Chief of Staff
+
+Her persona is in `scripts/ops/simone/persona.md`. The existing Simone Mac poll runs
+`scripts/ops/simone.mjs`, which claims one task and opens one session for it. The task includes the
+owner’s words and separate context from the original mail. A fresh run reads `owner-notes.md`,
+`HANDOFF.md`, the latest daily note, and task sheets under `~/Work/simone`.
+
+The Simone tool socket gives the session access to the current morning, invitation, errand,
+meeting prep, Kindle, mail and team records. The team retry tool covers failed low-risk internal
+work with an existing permission envelope. The owner’s mail receives a result through the normal
+notice drain with the original mail headers. The legacy command runner still drains its existing
+records. The Simone fixture workflow captures both message surfaces and renders a reply using a
+stubbed mail transport.
 
 ## Noelle, the Growth Director
 

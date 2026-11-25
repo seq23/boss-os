@@ -107,3 +107,16 @@ it("KDP watch passes the job’s locked args to Claude and allows only the case 
     "Bash(npm run browser:read:*)",
   ] });
 });
+
+it("the Codex mail reader uses a fresh session with shell, app, web and user settings disabled", async () => {
+  const { codexRouteArgs } = await import("../scripts/ops/simone.mjs");
+  const args = codexRouteArgs("untrusted fixture input", "/fixture/result", "/fixture/schema");
+  expect(args).toContain("--ignore-user-config");
+  expect(args).toContain("--ephemeral");
+  expect(args).toContain('web_search="disabled"');
+  expect(args).toContain('default_permissions="simone"');
+  expect(args).toContain('permissions.simone.filesystem.":minimal"="read"');
+  expect(args).toContain("permissions.simone.network.enabled=false");
+  expect(args.flatMap((arg, i) => arg === "--disable" ? [args[i + 1]] : [])).toEqual(["shell_tool", "apps"]);
+  expect(args.slice(-2)).toEqual(["--", "untrusted fixture input"]);
+});
