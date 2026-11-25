@@ -16,6 +16,9 @@ import { GmailSession } from "../outreach/gmail";
 import { brainEditsFromMail, oneBrain } from "../brains/store";
 import { DISMISS_CODE_RE, dismissMatch, tapByCode } from "../capital/dismiss";
 import { recordConstraints } from "../service/constraints";
+import { commandOf } from "../../../shared/boss/mail/morningReply.mjs";
+import { morningReplyFromMail } from "../intake/morningReply";
+import { campaignFromMail } from "../outreach/campaign";
 
 const READS = {
   morning: `SELECT day, updated_at, sent_at FROM morning_digests ORDER BY day DESC LIMIT 3`,
@@ -84,7 +87,22 @@ export async function simoneTool(env: Env, request: { id: string; lease: number;
       return { ok: false, code: "BRAIN_UNAVAILABLE" } as const;
     }
   }
-  if (request.tool === "edit_brain" || request.tool === "record_constraint" || request.tool === "dismiss_match") {
+  if (request.tool === "route_partner_campaign") {
+    const message: SimoneMessage = JSON.parse(active.input);
+    const words = typeof request.task === "string" ? request.task.trim() : "";
+    if (message.source !== "boss_inbound_mail" || !message.mail_id || !words || words.length > 60_000 ||
+        !message.body.includes(words)) {
+      return { ok: false, code: "CAMPAIGN_INSTRUCTION_REQUIRED" } as const;
+    }
+    const result = await campaignFromMail(env, {
+      text: words, subject: "", mailId: message.mail_id, messageId: message.message_id ?? null, now,
+    });
+    if (!result) return { ok: false, code: "CAMPAIGN_INSTRUCTION_REQUIRED" } as const;
+    if (result.outcome === "CAMPAIGN_REFUSED") return { ok: false, code: "CAMPAIGN_REFUSED", note: result.reply } as const;
+    return { ok: true, receipt: result.campaignId ?? message.mail_id, outcome: result.outcome, note: result.reply } as const;
+  }
+  if (request.tool === "edit_brain" || request.tool === "record_constraint" ||
+      request.tool === "dismiss_match" || request.tool === "apply_morning_reply") {
     const message: SimoneMessage = JSON.parse(active.input);
     const args = typeof request.task === "string" && request.task.length <= 12_000 ? readJsonObject(request.task) : null;
     const quote = typeof args?.quote === "string" ? args.quote.trim() : "";
@@ -100,6 +118,18 @@ export async function simoneTool(env: Env, request: { id: string; lease: number;
       if (quote.length < 6 || quote.length > 400) return { ok: false, code: "CONSTRAINT_LENGTH" } as const;
       const added = await recordConstraints(env, [quote], message.source, message.mail_id ?? null);
       return { ok: true, receipt: request.id, added } as const;
+    }
+    if (request.tool === "apply_morning_reply") {
+      const command = commandOf(quote);
+      if ((command?.kind !== "public" && command?.kind !== "gate") || command.kind !== args?.kind || !message.mail_id) {
+        return { ok: false, code: "MORNING_INSTRUCTION_REQUIRED" } as const;
+      }
+      const result = await morningReplyFromMail(env, {
+        text: quote, refs: [], mailId: message.mail_id, now: active.created_at,
+        read: { reply: null, answers: [], commands: [{ kind: command.kind, text: quote, n: null }] },
+      });
+      if (!result?.acted) return { ok: false, code: "MORNING_MESSAGE_REQUIRED" } as const;
+      return { ok: true, receipt: request.id, note: result.note } as const;
     }
     const code = typeof args?.code === "string" ? args.code.toLowerCase() : "";
     if (!DISMISS_CODE_RE.test(code) || !quote.toLowerCase().includes(code)) {

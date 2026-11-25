@@ -982,7 +982,9 @@ owner’s words and separate context from the original mail. A fresh run reads `
 `HANDOFF.md`, the latest daily note, and task sheets under `~/Work/simone`.
 The claim includes the owner’s saved standing instructions. A run can read the current brain
 documents, apply a requested edit in the existing brain format, save a standing instruction,
-or dismiss a match from the owner’s exact instruction and card code.
+or dismiss a match from the owner’s exact instruction and card code. Fresh mail can report
+morning gate completion or mark a company public. Simone can route an explicit Time2Read
+partner request to Monique’s existing campaign workflow.
 Fresh mail keeps its original attachment bytes and copies locally readable text into the task
 context. During her run, Simone can open the archived attachments and the Drive links in the
 owner’s message. The material reader uses the arrival linked to that run. It returns file text,

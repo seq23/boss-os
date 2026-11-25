@@ -2,6 +2,8 @@ import { env } from "cloudflare:test";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import worker from "../../src/worker/boss/index";
 import { handleBossInboundMail } from "../../src/worker/boss/intake/inboundMail";
+import { claimSimone, replySimone } from "../../src/worker/boss/agents/simone";
+import { simoneTool } from "../../src/worker/boss/agents/simoneTools";
 import { BOSS_INTAKE_MAILBOX } from "../../src/shared/boss/intake/mail.mjs";
 import { advancePartnerOrgs, campaignResearched, campaignVerified, holdOrgs, macCampaignWork, researchFound, staggerHold, stopCompany } from "../../src/worker/boss/outreach/campaign";
 import { processReplies } from "../../src/worker/boss/outreach/engine";
@@ -10,7 +12,7 @@ import { businessByKey, PARTNERS_KEY } from "../../src/worker/boss/outreach/cata
 import { composeEmail } from "../../src/worker/boss/outreach/compose";
 import { outboundProblems } from "../../src/shared/boss/t2rGroups/rules.mjs";
 import { pageProblems } from "../../src/shared/boss/outreach/campaign.mjs";
-import { all, row, stubFetch } from "./helpers";
+import { all, apiJson, row, stubFetch } from "./helpers";
 
 /**
  * "IF I EMAILED THIS TO BOSS@ I NEED THEM TO TAKE THIS AND DO IT END 2 END" (owner, 8 Nov 2026).
@@ -73,17 +75,30 @@ async function outOfAddresses(id: string, first: string) {
   }
 }
 
+async function requestCampaign(body: string) {
+  const r = await handleBossInboundMail(mail(body), env);
+  expect(r).toMatchObject({ outcome: "SIMONE_QUEUED", reply: null });
+  const call = await claimSimone(env);
+  expect(call?.id).toBe(r.taskId);
+  const route = (words = call!.message.body.trim()) =>
+    simoneTool(env, { ...call!, tool: "route_partner_campaign", task: words });
+  return { r, call: call!, route };
+}
+
 async function campaignFromHer() {
-  const r = await handleBossInboundMail(mail(HER_REQUEST) as never, env as never);
+  const { r, call, route } = await requestCampaign(HER_REQUEST);
+  const effect = await route();
+  expect(effect).toMatchObject({ ok: true, outcome: "CAMPAIGN" });
+  if (!effect.ok || !effect.note || !effect.receipt) throw new Error("Campaign not accepted");
+  expect(await replySimone(env, { ...call, text: effect.note, work: [effect.receipt] })).toBe(true);
   const c = await row<any>(`SELECT * FROM outreach_campaigns WHERE mail_id = ?`, r.mailId);
-  return { r, c, spec: c ? JSON.parse(c.spec) : null };
+  return { r, c, spec: c ? JSON.parse(c.spec) : null, effect };
 }
 
 describe("her drip-campaign email becomes a campaign, end to end", () => {
-  it("Monique takes it by rule: all three people sequenced (the president last), the PO inbox skipped, no desk triaged, no card", async () => {
-    const { r, c, spec } = await campaignFromHer();
-    expect(r.outcome).toBe("CAMPAIGN");
-    expect(r.signer).toBe("Monique");
+  it("Simone routes it to Monique: all three people sequenced, the PO inbox skipped, and no approval card", async () => {
+    const { r, c, spec, effect } = await campaignFromHer();
+    expect(effect.note).toContain("Monique here.");
     expect(c).not.toBeNull();
     expect(c.business_key).toBe(PARTNERS_KEY);
     expect(c.org_name).toBe("Acmelearn");
@@ -95,11 +110,24 @@ describe("her drip-campaign email becomes a campaign, end to end", () => {
     ]);
     expect(spec.contacts.filter((x: any) => x.role !== "send")).toEqual([]);
     expect(spec.skipped.map((x: any) => x.email)).toEqual(["purchaseorders@acmelearn.example"]);
-    // Nobody else got the work: no task was opened on any desk for this email.
-    expect(await all(`SELECT id FROM tasks WHERE json_extract(input, '$.mail_id') = ?`, r.mailId)).toHaveLength(0);
-    expect(r.reply).toMatch(/email 2: https:\/\/boss\.sequoiataylor\.com\/p\/[A-Za-z0-9_-]{16,}/);
+    expect(await all(`SELECT id, employee_id, status FROM tasks WHERE json_extract(input, '$.mail_id') = ?`, r.mailId))
+      .toEqual([{ id: r.taskId, employee_id: "emp_chief", status: "done" }]);
+    expect(effect.note).toMatch(/email 2: https:\/\/boss\.sequoiataylor\.com\/p\/[A-Za-z0-9_-]{16,}/);
+    expect(spec.thread).toEqual([r.messageId]);
     // No approval card for a partner campaign: all four emails go automatically (owner, 8 Nov 2026).
     expect(await row(`SELECT 1 AS x FROM judgement_calls WHERE resume_kind = 'outreach_copy' AND json_extract(resume_detail, '$.business_key') = ?`, PARTNERS_KEY)).toBeNull();
+  });
+
+  it("does not start a campaign from forwarded words, and starts only one when tools retry", async () => {
+    const forward = await requestCampaign(`For reference.\n\n---------- Forwarded message ---------\nFrom: Person <person@example.test>\nSubject: Partnership\n\n${HER_REQUEST}`);
+    await expect(forward.route(HER_REQUEST)).resolves.toEqual({ ok: false, code: "CAMPAIGN_INSTRUCTION_REQUIRED" });
+    expect(await all("SELECT id FROM outreach_campaigns")).toEqual([]);
+    const { route, r } = await requestCampaign(HER_REQUEST);
+    const results = await Promise.all([route(), route()]);
+    expect(results[0]).toMatchObject({ ok: true, outcome: "CAMPAIGN" });
+    expect(results[1]).toMatchObject(results[0]);
+    expect(await all("SELECT id FROM outreach_campaigns WHERE mail_id = ?", r.mailId)).toHaveLength(1);
+    expect(await all("SELECT id FROM outreach_partner_orgs")).toHaveLength(1);
   });
 
   it("all three are sequenced one at a time, seven days apart; four emails each with no card; a reply stops everyone", async () => {
@@ -251,10 +279,9 @@ describe("the HeyGetOnMyLevel line shows only while its level check really works
 
 describe("a request typed in from her session gets the same receipt, as Monique's own email", () => {
   it("the receipt is owed at once; the done reply joins its thread", async () => {
-    const m = mail(HER_REQUEST, "Acmelearn drip");
-    m.headers.set("x-boss-intake-origin", "console");
-    m.headers.set("authentication-results", "boss-os-console; dmarc=pass (owner session, not SMTP)");
-    const r = await handleBossInboundMail(m as never, env as never);
+    const response = await apiJson("/api/intake/mail", { method: "POST", body: { subject: "Acmelearn drip", body: HER_REQUEST } });
+    expect(response.status).toBe(201);
+    const r = response.body.data;
     expect(r.outcome).toBe("CAMPAIGN");
     const c = await row<any>(`SELECT * FROM outreach_campaigns WHERE mail_id = ?`, r.mailId);
     const receipt = JSON.parse(c.notice);
@@ -354,16 +381,16 @@ describe("the next organisation starts only when the live campaign ends", () => 
 
   it("her 'hold these orgs for later, after X' email holds them in her order", async () => {
     await campaignFromHer();
-    const r = await handleBossInboundMail(mail("Time2Read: hold these orgs for later, after Acmelearn:\n1. Second Org\n2. The Good and the Third\n- Fourth Org") as never, env as never);
-    expect(r.outcome).toBe("ORGS_HELD");
+    const { route } = await requestCampaign("Time2Read: hold these orgs for later, after Acmelearn:\n1. Second Org\n2. The Good and the Third\n- Fourth Org");
+    await expect(route()).resolves.toMatchObject({ ok: true, outcome: "ORGS_HELD" });
     const order = await all<any>(`SELECT org_name, state FROM outreach_partner_orgs WHERE business_key = ? ORDER BY position`, PARTNERS_KEY);
     expect(order.map((o) => o.org_name)).toEqual(["Acmelearn", "Second Org", "The Good and the Third", "Fourth Org"]);
   });
 
   it("a semicolon list keeps a name that has commas in it whole", async () => {
     await campaignFromHer();
-    const r = await handleBossInboundMail(mail("For Time2Read partnerships, hold these organizations for later, after Acmelearn, in this order: Second Org; Abeka Two; Secular, Eclectic, Academic (SEA) Homeschoolers.") as never, env as never);
-    expect(r.outcome).toBe("ORGS_HELD");
+    const { route } = await requestCampaign("For Time2Read partnerships, hold these organizations for later, after Acmelearn, in this order: Second Org; Abeka Two; Secular, Eclectic, Academic (SEA) Homeschoolers.");
+    await expect(route()).resolves.toMatchObject({ ok: true, outcome: "ORGS_HELD" });
     const order = await all<any>(`SELECT org_name FROM outreach_partner_orgs WHERE business_key = ? ORDER BY position`, PARTNERS_KEY);
     expect(order.map((o) => o.org_name)).toEqual(["Acmelearn", "Second Org", "Abeka Two", "Secular, Eclectic, Academic (SEA) Homeschoolers"]);
   });
