@@ -14,6 +14,8 @@ import { apiJson, insertTask, row } from "./helpers";
 import { handleBossInboundMail } from "../../src/worker/boss/intake/inboundMail";
 import { plainReply, refsForChain } from "../../src/worker/boss/intake/mailRefs";
 import { plainProblems } from "../../src/shared/boss/mail/plain.mjs";
+import { claimSimone, finishSimoneHandoff } from "../../src/worker/boss/agents/simone";
+import { fileDraft } from "../../src/worker/boss/duties/mailLane";
 
 const FOLDER = "https://drive.google.com/drive/folders/1AbCdEfGhIjKlMnOpQrStUv";
 const DEVICE = "mac-thread-test";
@@ -38,8 +40,15 @@ beforeEach(async () => {
 
 describe("Danielle's plan: her one-word reply finds the change by its thread", () => {
   async function planned() {
-    const res = await handleBossInboundMail(mail({ subject: "#danielle refresh", body: `Update WPP-llm from ${FOLDER}. New hero.` }) as never, env as never);
-    const rc = await row<any>(`SELECT id FROM repo_changes WHERE task_id = ?`, res.taskId);
+    const body = `Update WPP-llm from ${FOLDER}. New hero.`;
+    const res = await handleBossInboundMail(mail({ subject: "#danielle refresh", body }), env);
+    expect(res.outcome).toBe("SIMONE_QUEUED");
+    const call = await claimSimone(env);
+    expect(call?.id).toBe(res.taskId);
+    expect(await finishSimoneHandoff(env, { ...call!, assignments: [{ employee: "emp_repo", words: body, delivery: "repository" }] }))
+      .toEqual({ replied: true, refused: false });
+    const rc = await row<any>(`SELECT c.id FROM repo_changes c JOIN tasks t ON c.task_id = t.id
+      WHERE json_extract(t.input, '$.simone_handoff') = ?`, res.taskId);
     await apiJson(`/api/repo-changes/${rc.id}/claim`, { method: "POST", body: { device_id: DEVICE } });
     await apiJson(`/api/repo-changes/${rc.id}/plan`, { method: "POST", body: { device_id: DEVICE, plan_text: "# Plan", decided: [], asks: [], publish_ready: true, ask_message_id: "re_thread_1" } });
     return rc.id as string;
@@ -89,18 +98,19 @@ describe("a stopped task: \"try again\" on the notice's thread runs it again", (
 });
 
 describe("the Worker's own reply: the code moves from the text to her thread", () => {
-  it("a duty draft's reply is plain, and its code is recorded against her request's Message-ID", async () => {
+  it("a kept duty draft's reply is plain, and its code is recorded against her request's Message-ID", async () => {
     const messageId = `<req-${Math.random().toString(36).slice(2)}@mail.gmail.com>`;
-    const res = await handleBossInboundMail(mail({ subject: "#camille new duty", body: "every friday, write me a short report on what changed in the private markets this week", messageId }) as never, env as never);
-    expect(res.outcome).toBe("DUTY_DRAFTED");
-    expect(res.messageId).toBe(messageId);
-    expect(res.signer).toBe("Camille");
-    const laid = await plainReply(env.DB, { text: res.reply!, subject: "Re: #camille new duty", signer: res.signer, messageId: res.messageId, from: "boss@sequoiataylor.com" });
+    const draft = await fileDraft(env, {
+      employeeId: "emp_research", phrase: "every friday, write me a short report on what changed in the private markets this week",
+      door: "mail", messageId, signer: { id: "emp_research", name: "Camille" }, sender: "owner@example.test", now: Date.now(),
+    });
+    expect(draft.state).toBe("drafted");
+    const laid = await plainReply(env.DB, { text: draft.letter, subject: "Re: #camille new duty", signer: "Camille", messageId, from: "boss@sequoiataylor.com" });
     expect(plainProblems(laid)).toEqual([]);
     expect(laid.text).not.toMatch(/dd_/);
     expect(laid.text.trim().endsWith("— Camille")).toBe(true);
-    const draft = await row<any>(`SELECT id FROM duty_drafts ORDER BY created_at DESC LIMIT 1`);
-    expect((await refsForChain(env.DB, [messageId])).refs).toEqual([draft.id]);
+    expect(await row(`SELECT request_message_id FROM duty_drafts WHERE id = ?`, draft.draftId)).toEqual({ request_message_id: messageId });
+    expect((await refsForChain(env.DB, [messageId])).refs).toEqual([draft.draftId]);
   });
 
   it("a reply to a Boss OS email carries that email's text to the employee, so \"move the KDP item to Monday\" has its list", async () => {

@@ -3,7 +3,7 @@ import { newId } from "../lib/id";
 import { SIMONE, SIMONE_AVAILABLE, type SimoneMessage } from "./simone";
 import { addressesIn, confirmLine, errandIn, ERRAND_MONEY_RE, DEFAULT_MAILBOX, OWNER_TZ } from "../../../shared/boss/commands/parse.mjs";
 import { audit } from "../lib/audit";
-import { getCommand, runInvite } from "../commands/run";
+import { answerMeetingPrep, getCommand, runInvite } from "../commands/run";
 import { mailboxAllowed } from "../commands/google";
 import { parseMail } from "../../../shared/mail/parseMail.mjs";
 import { readEverything } from "../intake/readFiles";
@@ -19,12 +19,15 @@ import { recordConstraints } from "../service/constraints";
 import { commandOf } from "../../../shared/boss/mail/morningReply.mjs";
 import { morningReplyFromMail } from "../intake/morningReply";
 import { campaignFromMail } from "../outreach/campaign";
+import { steerRound } from "../service/round";
 
 const READS = {
   morning: `SELECT day, updated_at, sent_at FROM morning_digests ORDER BY day DESC LIMIT 3`,
   invitations: `SELECT id, title, starts_at, ends_at, status FROM owner_invitations ORDER BY starts_at DESC LIMIT 30`,
   errands: `SELECT id, state, updated_at FROM boss_commands WHERE kind = 'errand' ORDER BY updated_at DESC LIMIT 30`,
-  meeting_prep: `SELECT id, state, updated_at FROM boss_commands WHERE kind = 'meeting_prep' ORDER BY updated_at DESC LIMIT 30`,
+  meeting_prep: `SELECT id, state, updated_at, json_extract(spec, '$.who') AS attendee,
+    json_extract(spec, '$.event.title') AS title, json_extract(spec, '$.event.start') AS start
+    FROM boss_commands WHERE kind = 'meeting_prep' ORDER BY updated_at DESC LIMIT 30`,
   kdp: `SELECT title_ref, label, state, updated_at FROM kdp_titles ORDER BY updated_at DESC LIMIT 30`,
   mail_tail: `SELECT id, received_at, authorised, subject, outcome, reply_state FROM boss_inbound_mail ORDER BY received_at DESC LIMIT 30`,
   commitments: `SELECT id, name, state, current_status FROM owned_deliverables
@@ -102,7 +105,8 @@ export async function simoneTool(env: Env, request: { id: string; lease: number;
     return { ok: true, receipt: result.campaignId ?? message.mail_id, outcome: result.outcome, note: result.reply } as const;
   }
   if (request.tool === "edit_brain" || request.tool === "record_constraint" ||
-      request.tool === "dismiss_match" || request.tool === "apply_morning_reply") {
+      request.tool === "dismiss_match" || request.tool === "apply_morning_reply" ||
+      request.tool === "direct_meeting_prep" || request.tool === "steer_thread") {
     const message: SimoneMessage = JSON.parse(active.input);
     const args = typeof request.task === "string" && request.task.length <= 12_000 ? readJsonObject(request.task) : null;
     const quote = typeof args?.quote === "string" ? args.quote.trim() : "";
@@ -118,6 +122,29 @@ export async function simoneTool(env: Env, request: { id: string; lease: number;
       if (quote.length < 6 || quote.length > 400) return { ok: false, code: "CONSTRAINT_LENGTH" } as const;
       const added = await recordConstraints(env, [quote], message.source, message.mail_id ?? null);
       return { ok: true, receipt: request.id, added } as const;
+    }
+    if (request.tool === "steer_thread") {
+      const decision = args?.action;
+      if ((decision !== "hold" && decision !== "resume" && decision !== "amend") ||
+          message.source !== "boss_inbound_mail" || !message.mail_id || !message.from || !message.reply_chain?.length) {
+        return { ok: false, code: "THREAD_INSTRUCTION_REQUIRED" } as const;
+      }
+      const result = await steerRound(env, {
+        chain: message.reply_chain, owner: message.from, decision, own: quote, mailId: message.mail_id, now,
+      });
+      if (!result || result.outcome === "JOIN") return { ok: false, code: "THREAD_WORK_NOT_FOUND" } as const;
+      return { ok: true, receipt: result.taskId, note: result.note, outcome: result.outcome } as const;
+    }
+    if (request.tool === "direct_meeting_prep") {
+      const action = args?.action;
+      const id = typeof args?.id === "string" ? args.id : "";
+      if ((action !== "purpose" && action !== "personal") || !id || id.length > 160 || quote.length > 2000) {
+        return { ok: false, code: "PREP_DIRECTION_REQUIRED" } as const;
+      }
+      const prep = await getCommand(env, id);
+      const note = prep && await answerMeetingPrep(env, prep, action, quote, now, true);
+      if (!note) return { ok: false, code: "PREP_NOT_WAITING" } as const;
+      return { ok: true, receipt: id, note } as const;
     }
     if (request.tool === "apply_morning_reply") {
       const command = commandOf(quote);

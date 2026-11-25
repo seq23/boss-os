@@ -105,7 +105,11 @@ export async function replySimone(env: Env, result: { id: string; lease: number;
   if (!text || (!refused && !result.work.length) || !result.work.every((item) => typeof item === "string" && item.trim())) return false;
   const db = env.DB;
   const noticeId = `tnt_${result.id}_simone`;
-  const current = `id = ? AND employee_id = ? AND ${CHIEF} AND ${SIMONE_AVAILABLE} AND status = 'running' AND attempts = ?`;
+  const leased = `id = ? AND employee_id = ? AND ${CHIEF} AND ${SIMONE_AVAILABLE} AND status = 'running' AND attempts = ?`;
+  const newer = await db.prepare(`UPDATE tasks SET input = json_remove(input, '$.steer_pending'), status = 'queued', started_at = NULL
+    WHERE ${leased} AND json_extract(input, '$.steer_pending') = 1`).bind(result.id, SIMONE, result.lease).run();
+  if (newer.meta.changes) return false;
+  const current = `${leased} AND json_extract(input, '$.steer_pending') IS NULL`;
   const receipts = JSON.stringify(result.work);
   const writes = await db.batch([
     db.prepare(

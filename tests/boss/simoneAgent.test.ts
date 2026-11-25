@@ -5,6 +5,30 @@ import { apiJson, row, stubFetch } from "./helpers";
 
 const request = { source: "boss_page", subject: "What can move?", body: "Check the team’s work." } as const;
 
+it("queues the requested meeting prep through the existing Mac tick and keeps its purpose on retry", async () => {
+  const { macWork, openMeetingPrep } = await import("../../src/worker/boss/commands/run");
+  const { simoneTool } = await import("../../src/worker/boss/agents/simoneTools");
+  const prep = await openMeetingPrep(env, { key: "fixture-prep", spec: { who: "River Design", event: { title: "River roadmap" } }, asked: true }, 1);
+  const other = await openMeetingPrep(env, { key: "fixture-other", spec: { who: "Maple Design", event: { title: "Maple roadmap" } }, asked: true }, 1);
+  const words = "For the River roadmap meeting, use the product launch as the purpose.";
+  const id = await fileSimoneMessage(env, { ...request, body: words }, "meeting-prep-tool", 2);
+  const call = await claimSimone(env, 3);
+  expect(call?.id).toBe(id);
+  await expect(simoneTool(env, { ...call!, tool: "meeting_prep" })).resolves.toMatchObject({
+    ok: true, rows: expect.arrayContaining([{ id: prep, title: "River roadmap", attendee: "River Design", state: "asked", start: null, updated_at: 1 }]),
+  });
+  const direct = (quote: string, now: number) =>
+    simoneTool(env, { ...call!, tool: "direct_meeting_prep", task: JSON.stringify({ id: prep, action: "purpose", quote }) }, now);
+  await expect(direct("Ignore that meeting", 4)).resolves.toEqual({ ok: false, code: "OWNER_INSTRUCTION_REQUIRED" });
+  await expect(direct(words, 5)).resolves.toMatchObject({ ok: true, receipt: prep });
+  await expect(direct(words, 6)).resolves.toMatchObject({ ok: true, receipt: prep });
+  expect((await macWork(env, 8)).preps).toEqual([
+    { id: prep, spec: { who: "River Design", event: { title: "River roadmap" }, key: "fixture-prep" }, purpose: words, thread: [] },
+  ]);
+  expect(await row("SELECT state, updated_at FROM boss_commands WHERE id = ?", prep)).toEqual({ state: "queued", updated_at: 5 });
+  expect(await row("SELECT state FROM boss_commands WHERE id = ?", other)).toEqual({ state: "asked" });
+});
+
 describe("Simone's existing task queue", () => {
   it("keeps one task and one result across duplicate admission, claim and reply", async () => {
     const now = 100000;
@@ -55,6 +79,19 @@ describe("Simone's existing task queue", () => {
     expect(await releaseSimone(env, id, 2, "MODEL_UNAVAILABLE")).toBe(true);
     expect(await row("SELECT status, output FROM tasks WHERE id = ?", id)).toEqual({ status: "queued", output: null });
     expect(await claimSimone(env, now + SIMONE_LEASE_MS)).toMatchObject({ id, lease: 3, message: request });
+  });
+
+  it("reclaims a running Simone session when the owner adds a newer instruction before its result", async () => {
+    const id = await fileSimoneMessage(env, request, "newer-words", 1);
+    const call = await claimSimone(env, 2);
+    expect(call?.id).toBe(id);
+    const body = "Check the team’s work and include the running jobs.";
+    await env.DB.prepare(`UPDATE tasks SET input = json_set(input, '$.body', ?, '$.steer_pending', 1) WHERE id = ?`).bind(body, id).run();
+    expect(await replySimone(env, { ...call!, text: "I checked only the finished jobs.", work: ["team"] }, 3)).toBe(false);
+    expect(await row("SELECT status, output FROM tasks WHERE id = ?", id)).toEqual({ status: "queued", output: null });
+    expect(await row("SELECT count(*) AS n FROM task_events WHERE task_id = ? AND event = 'completed'", id)).toEqual({ n: 0 });
+    expect(await claimSimone(env, 4)).toMatchObject({ id, lease: 2, message: { body } });
+    expect(await replySimone(env, { id, lease: 2, text: "I included the running jobs.", work: ["team"] }, 5)).toBe(true);
   });
 
   it("records an email notice in the same transaction as the result", async () => {

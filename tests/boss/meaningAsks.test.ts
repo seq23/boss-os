@@ -216,9 +216,9 @@ describe("one read per email (#514 review)", () => {
     const from = "owner-test@example.test";
     const runtime = { ...env, BOSS_EXTRA_OWNER_SENDERS: from } as Env;
     const raw = `From: ${from}\r\nSubject: ${subject}\r\nContent-Type: text/plain; charset=UTF-8\r\n\r\n${body.replace(/\n/g, "\r\n")}`;
-    const headers = new Headers({ from, subject, "authentication-results": "mx.example.test; spf=pass; dkim=pass; dmarc=pass", "message-id": `<${id}@example.test>` });
+    const headers = new Headers({ from, subject, "authentication-results": "mx.cloudflare.net; spf=pass; dkim=pass; dmarc=pass", "message-id": `<${id}@example.test>` });
     const result = await handleBossInboundMail({ from, to: BOSS_INTAKE_MAILBOX, headers, raw: new Response(raw).body!, rawSize: new TextEncoder().encode(raw).length } as never, runtime);
-    expect(result.mailId).toBeTruthy();
+    expect(result).toMatchObject({ outcome: "SIMONE_QUEUED", reply: null, mailId: expect.any(String) });
     return result;
   };
   const prompt = async () => (await row<{ owner_prompt: string | null }>(`SELECT owner_prompt FROM standing_duties WHERE id = '${WRITTEN}'`))!.owner_prompt;
@@ -241,7 +241,8 @@ describe("one read per email (#514 review)", () => {
     expect(result.taskId, "the forward is ordinary work").toBeTruthy();
     // The hold rides on the admitted task's input (and the queue delay admitTask takes from it).
     const input = JSON.parse((await row<{ input: string }>(`SELECT input FROM tasks WHERE id = '${result.taskId}'`))!.input);
-    expect(input.body, "the forward's words are still the work").toContain("after 3pm");
+    expect(input.body).toBe("FYI");
+    expect(input.context, "the original wording is available as context").toContain("after 3pm");
     expect(input.not_before ?? null, "\"after 3pm\" was the forwarded sender's").toBeNull();
   });
 

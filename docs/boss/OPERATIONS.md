@@ -985,6 +985,8 @@ documents, apply a requested edit in the existing brain format, save a standing 
 or dismiss a match from the owner’s exact instruction and card code. Fresh mail can report
 morning gate completion or mark a company public. Simone can route an explicit Time2Read
 partner request to Monique’s existing campaign workflow.
+When a meeting prep is waiting for its purpose, Simone can record the owner’s direction on
+the existing prep. The current Mac tick picks up any queued prep.
 Fresh mail keeps its original attachment bytes and copies locally readable text into the task
 context. During her run, Simone can open the archived attachments and the Drive links in the
 owner’s message. The material reader uses the arrival linked to that run. It returns file text,
@@ -1004,7 +1006,8 @@ Camille’s research page. If Claude cannot start or exits before doing work, Co
 scoped tools through the local broker. When the Mac is down, the existing free intake router tries Workers AI
 then Gemini with the message text intact. It leaves a request queued when Simone still has work
 to do. Replies use the original mail headers. An owner follow-up opens its own run with the prior
-exchange as context. When the owner has taken a task over, a reply stays on that task. Replies linked to an existing command can still act on that record, and the old runner
+exchange as context. Simone can hold, resume or amend the work on that thread. When the owner
+has taken a task over, a reply stays on that task. Replies linked to an existing command can still act on that record, and the old runner
 still drains pending records. The Simone fixture workflow captures both message surfaces and
 renders a reply using a stubbed mail transport.
 

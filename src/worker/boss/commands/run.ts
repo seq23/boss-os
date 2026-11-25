@@ -45,14 +45,17 @@ const j = (s: string | null | undefined): Json => { try { return JSON.parse(s ||
 export async function getCommand(env: Env, id: string): Promise<CommandRow | null> {
   return (await env.DB.prepare(`SELECT * FROM boss_commands WHERE id = ?`).bind(id).first<CommandRow>()) ?? null;
 }
-async function save(env: Env, id: string, patch: { state?: string; spec?: Json; result?: Json; waits_on?: string | null; task_id?: string | null; change_id?: string | null; tap_token?: string | null }, now = Date.now()) {
+async function save(env: Env, id: string, patch: { state?: string; spec?: Json; result?: Json; waits_on?: string | null; task_id?: string | null; change_id?: string | null; tap_token?: string | null }, now = Date.now(),
+  expected?: Pick<CommandRow, "updated_at" | "state">) {
   const sets: string[] = []; const vals: unknown[] = [];
   for (const [k, v] of Object.entries(patch)) {
     if (v === undefined) continue;
     sets.push(`${k} = ?`); vals.push(k === "spec" || k === "result" ? JSON.stringify(v) : v);
   }
   sets.push("updated_at = ?"); vals.push(now);
-  await env.DB.prepare(`UPDATE boss_commands SET ${sets.join(", ")} WHERE id = ?`).bind(...vals, id).run();
+  const update = await env.DB.prepare(`UPDATE boss_commands SET ${sets.join(", ")} WHERE id = ?${expected ? " AND updated_at = ? AND state = ?" : ""}`)
+    .bind(...vals, id, ...(expected ? [expected.updated_at, expected.state] : [])).run();
+  return Boolean(update.meta.changes);
 }
 
 /** A plain email the Mac owes her (the Worker can only answer HER mail; anything later goes from the Mac). */
@@ -507,7 +510,10 @@ function waitingFor(row: CommandRow): string {
 
 async function answerOne(env: Env, row: CommandRow, said: Json, now: number): Promise<string | null> {
   const spec = j(row.spec); const result = j(row.result);
-  if (row.kind === "meeting_prep") return answerMeetingPrep(env, row, said, now);
+  if (row.kind === "meeting_prep") {
+    const words = String(said.raw ?? said.note ?? "").trim();
+    return answerMeetingPrep(env, row, ignoreReplyIn(words) ? "personal" : said.verb === "cancel" ? "cancel" : "purpose", words, now);
+  }
   if (row.kind === "errand") return answerErrand(env, row, said, String(said.raw ?? ""), now);
   if (row.kind === "email") {
     if (said.verb === "send") return approveAndSend(env, row, now);
@@ -949,24 +955,33 @@ export async function openMeetingPrep(env: Env, input: { key: string; spec: Json
   return id;
 }
 
-async function answerMeetingPrep(env: Env, row: CommandRow, said: Json, now: number): Promise<string | null> {
+export async function answerMeetingPrep(env: Env, row: CommandRow, action: "personal" | "cancel" | "purpose", words: string, now: number,
+  fromAgent = false): Promise<string | null> {
+  if (row.kind !== "meeting_prep" || !words) return null;
   const spec = j(row.spec); const result = j(row.result);
+  const purpose = words.slice(0, 2000);
+  const waiting = `I have the purpose for ${spec.who ?? "the meeting"}. The prep is queued.`;
+  const personal = "Got it, that one's personal. No prep, and I won't ask about it again.";
+  if (fromAgent && row.state !== "asked") {
+    if (action === "purpose" && row.state === "queued" && result.purpose === purpose) return waiting;
+    if (action === "personal" && row.state === "cancelled" && result.personal) return personal;
+    return null;
+  }
+  const expected = fromAgent ? row : undefined;
   // "Ignore, it's just a brunch" is an answer, never the meeting's purpose (owner, 1 Nov 2026): the
   // prep is cancelled and the event's series and title are remembered as hers, so it is never asked again.
-  if (ignoreReplyIn(String(said.raw ?? said.note ?? ""))) {
-    await save(env, row.id, { state: "cancelled", result: { ...result, personal: true, ignored_at: now } }, now);
+  if (action === "personal") {
+    if (!await save(env, row.id, { state: "cancelled", result: { ...result, personal: true, ignored_at: now } }, now, expected)) return null;
     await audit(env.DB, { actor: "owner", lane: "ops", entityType: "boss_command", entityId: row.id, action: "meeting_prep_ignored", detail: { key: spec.key ?? null } });
-    return "Got it, that one's personal. No prep, and I won't ask about it again.";
+    return personal;
   }
-  if (said.verb === "cancel") {
-    await save(env, row.id, { state: "cancelled" }, now);
+  if (action === "cancel") {
+    if (!await save(env, row.id, { state: "cancelled" }, now, expected)) return null;
     return "OK, I'll leave this meeting's prep as it is.";
   }
-  const words = String(said.raw ?? said.note ?? "").trim();
-  if (!words) return null;
-  await save(env, row.id, { state: "queued", result: { ...result, purpose: words.slice(0, 2000), answered_at: now } }, now);
+  if (!await save(env, row.id, { state: "queued", result: { ...result, purpose, answered_at: now } }, now, expected)) return null;
   await audit(env.DB, { actor: "owner", lane: "ops", entityType: "boss_command", entityId: row.id, action: "meeting_prep_purpose", detail: { key: spec.key ?? null } });
-  return `Thanks. I'm writing your prep for ${spec.who ?? "the meeting"} with that now. It comes back to you in this thread before the meeting.`;
+  return fromAgent ? waiting : `Thanks. I'm writing your prep for ${spec.who ?? "the meeting"} with that now. It comes back to you in this thread before the meeting.`;
 }
 
 /** What her "ignore" replies remembered: the series (the event's own id) and the title of each. */
