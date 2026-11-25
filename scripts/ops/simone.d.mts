@@ -5,6 +5,7 @@ export interface SimoneCall {
   message: { body: string; context?: string; source?: string };
 }
 
+export function simoneMemory(home: string): Promise<string>;
 export function childEnvironment(env: NodeJS.ProcessEnv, home: string, settings: string, promptFile: string): NodeJS.ProcessEnv;
 export function runSimone(options: {
   api: (method: string, path: string, body?: unknown) => Promise<{ call?: SimoneCall; replied?: boolean; released?: boolean }>;
