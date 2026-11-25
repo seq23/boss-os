@@ -171,6 +171,11 @@ describe("the run's end: one row per run, a stopped run names its stop, the same
     expect(await rows(`SELECT id FROM noelle_runs`)).toEqual([]);
   });
 
+  it("refuses a machine request marking a zero-queue run as done and writes no row", async () => {
+    expect((await done({ line: "OUTPUT run fixture done: 0 pieces queued, 0 notices, 1 Claude calls" })).status).toBe(400);
+    expect(await rows("SELECT id FROM noelle_runs")).toEqual([]);
+  });
+
   it("a done run is one row; the same id again writes nothing", async () => {
     const a = await json(await done());
     expect(a).toMatchObject({ run: "noelle-2026-11-23-1437-1", written: true, state: "done" });

@@ -28,7 +28,7 @@ import { summarize } from "../../../shared/boss/growth/scoreboard.mjs";
 import { rulingsFor } from "../../../shared/boss/growth/roster.mjs";
 import { privateOnlyTerms, leaksIn, termCount } from "../../../shared/boss/growth/privacy.mjs";
 import { playbookBody } from "../../../shared/boss/growth/playbook.mjs";
-import { readGrid, season, slotFor, didNotRunLine, escalations, noticeLine, scheduleLines, CHANNEL_NAMES, CHANNEL_OWNERS } from "../../../shared/boss/growth/noelle.mjs";
+import { readGrid, season, slotFor, didNotRunLine, escalations, noticeLine, scheduleLines, zeroQueued, CHANNEL_NAMES, CHANNEL_OWNERS } from "../../../shared/boss/growth/noelle.mjs";
 import { appendToSection } from "../../../shared/boss/mail/morningSections.mjs";
 import { MAX_ACTED, cleanActed, floorsFor, measureFor, resultLines, postsWithoutRows, reportDue, fortnightReport, REPORT_KEY, REPORT_EVERY_DAYS } from "../../../shared/boss/growth/ledger.mjs";
 import { getSetting, setSetting } from "../lib/settings";
@@ -135,7 +135,9 @@ export async function recordDone(env: Env, body: any, now = Date.now()) {
   const state = body.state === "done" ? "done" : "stopped";
   const stops = (Array.isArray(body.stops) ? body.stops : []).map(String).filter((s: string) => /^[A-Z0-9_]{2,40}$/.test(s)).slice(0, 8);
   if (state === "stopped" && !stops.length) throw new Error("A stopped run must name its stop code");
-  const line = String(body.line ?? "").slice(0, 600);
+  const reported = String(body.line ?? "");
+  if (state === "done" && zeroQueued(reported)) throw new Error("NAMED STOP [NOTHING_DONE] a zero-queue run cannot be recorded as done");
+  const line = reported.slice(0, 600);
   const turns = Number.isInteger(body.turns) && body.turns >= 0 ? Math.min(body.turns, 10_000) : 0;
   const reads = body.reads && typeof body.reads === "object" ? JSON.stringify(body.reads).slice(0, 60_000) : "{}";
   const r = await db.prepare(`INSERT OR IGNORE INTO noelle_runs (id, day, slot, kind, state, stops, calls, line, reads, created_at, updated_at) VALUES (?,?,?,?,?,?,?,?,?,?,?)`)

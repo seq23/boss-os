@@ -195,6 +195,9 @@ describe("Rule 0 on her own last line", () => {
     expect(runVerdict({ text: "x\nNAMED STOP [BUFFER_FULL] queue at cap", subtype: "success" })).toMatchObject({ ok: false, code: "BUFFER_FULL", reply: "x" });
     expect(runVerdict({ text: "OUTPUT: 3 done", subtype: "error_max_turns" })).toMatchObject({ ok: false, code: "TURN_CAP" });
   });
+  it.each(["OUTPUT: 1 done - queued: 0", "OUTPUT: 3 done - 0 pieces queued", "OUTPUT: 2 done - 0 posts queued"])("refuses a done counter when the queue is zero: %s", (text) => {
+    expect(runVerdict({ text, subtype: "success" })).toMatchObject({ ok: false, code: "NOTHING_DONE" });
+  });
   it("reads Claude's JSON result line; a Codex run is plain text", () => {
     expect(runResult('noise\n{"type":"result","subtype":"success","num_turns":12,"result":"hi\\nOUTPUT: 1 done"}\n')).toMatchObject({ text: "hi\nOUTPUT: 1 done", turns: 12, json: true });
     expect(runResult("OUTPUT: 1 done")).toMatchObject({ json: false, text: "OUTPUT: 1 done" });

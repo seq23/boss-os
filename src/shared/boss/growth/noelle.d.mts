@@ -20,3 +20,4 @@ export const CALL_CLOSE: string;
 export function callWindow(hhmm: string): boolean;
 export function callAckLine(hhmm: string): string;
 export { whenCT } from "./whenCT.mjs";
+export function zeroQueued(line: string): boolean;

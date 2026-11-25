@@ -7,6 +7,12 @@
  */
 import { whenCT } from "./whenCT.mjs";
 export { whenCT };
+
+/** Recognize the counter on the current OUTPUT line and the previous queue runner's receipt line. */
+export function zeroQueued(line) {
+  return /\bOUTPUT:?\s+0\s+done\b|\bqueued(?:\s+posts?)?\s*[:=]?\s*0\b|\b0\s+(?:(?:pieces|posts)\s+)?queued\b/i.test(String(line ?? ""));
+}
+
 import { CENTRAL, dayOf } from "../schedule/clock.mjs";
 
 /**

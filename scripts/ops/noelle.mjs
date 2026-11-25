@@ -29,7 +29,7 @@ import { createHash } from "node:crypto";
 import { homedir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
-import { slotFor, callWindow } from "../../src/shared/boss/growth/noelle.mjs";
+import { slotFor, callWindow, zeroQueued } from "../../src/shared/boss/growth/noelle.mjs";
 export { callWindow };
 import { LEDGER_KINDS } from "../../src/shared/boss/growth/ledger.mjs";
 import { stripConfidential } from "../../src/shared/boss/brains/brain.mjs";
@@ -247,7 +247,7 @@ export function runVerdict({ text, subtype }) {
   if (stop) return { ok: false, code: stop[1], line: last.slice(0, 400), reply };
   const n = last.match(/^OUTPUT:\s*(\d+)\s+done\b/);
   if (!n) return { ok: false, code: "NO_OUTPUT_LINE", line: `NAMED STOP [NO_OUTPUT_LINE] her last line does not say "OUTPUT: <n> done": ${last.slice(0, 200)}`, reply };
-  if (Number(n[1]) === 0) return { ok: false, code: "NOTHING_DONE", line: `NAMED STOP [NOTHING_DONE] ${last.slice(0, 300)}`, reply };
+  if (zeroQueued(last)) return { ok: false, code: "NOTHING_DONE", line: `NAMED STOP [NOTHING_DONE] ${last.slice(0, 300)}`, reply };
   return { ok: true, code: null, line: last.slice(0, 400), reply };
 }
 
