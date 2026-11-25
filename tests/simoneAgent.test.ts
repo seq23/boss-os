@@ -83,3 +83,27 @@ it("loads the owner’s notes, latest handoff and task sheets fresh for each run
     await rm(home, { recursive: true, force: true });
   }
 });
+
+it("KDP watch passes the job’s locked args to Claude and allows only the case tools", async () => {
+  const { readFile } = await import("node:fs/promises");
+  const { execFileSync } = await import("node:child_process");
+  const [watch, options] = await Promise.all([
+    readFile("scripts/ops/kdp-watch.sh", "utf8"), readFile("scripts/ops/kdp-watch-permissions.json", "utf8"),
+  ]);
+  const start = watch.split("\n").find((line) => line.startsWith('"$CLAUDE" -p'));
+  expect(start).toContain('"${CLAUDE_ARGS[@]}"');
+  expect(watch).toContain('read -r -a CLAUDE_ARGS <<< "$CLAUDE_LOCK"');
+  expect(watch).toContain('claude_lock_args "$REPO/scripts/ops/kdp-watch-permissions.json"');
+  expect(start).not.toMatch(/dangerously-skip-permissions|bypassPermissions/);
+  const args = execFileSync("bash", ["-c", '. scripts/ops/lib/claude-lock.sh && claude_lock_args "$1"', "fixture", "scripts/ops/kdp-watch-permissions.json"], { encoding: "utf8" });
+  expect(args.split(" ")).toEqual(["--permission-mode", "dontAsk", "--setting-sources=", "--settings", "scripts/ops/kdp-watch-permissions.json"]);
+  expect(JSON.parse(options).permissions).toMatchObject({ defaultMode: "dontAsk", allow: [
+    "mcp__claude_ai_Gmail__search_threads",
+    "mcp__claude_ai_Gmail__get_thread",
+    "mcp__claude_ai_Gmail__send_message",
+    "Read(~/.boss-os/kdp/**)",
+    "Edit(~/.boss-os/kdp/determination.json)",
+    "Bash(cd ~/.boss-os/runtime)",
+    "Bash(npm run browser:read:*)",
+  ] });
+});

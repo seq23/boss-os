@@ -197,7 +197,7 @@ export const EXCEPTIONS = Object.freeze([
   { file: "scripts/ops/lib/ai-run.mjs", match: null, why: "runAs hands work to ai-run's worker role (Codex); a Claude fallback there takes ai-run's default; not locked in this PR" },
 ]);
 
-const LOCK_SH = /\$CLAUDE_LOCK\b|--permission-mode dontAsk --setting-sources= --settings \S/;
+const LOCK_SH = /(?:\$CLAUDE_LOCK\b|"\$\{CLAUDE_ARGS\[@\]\}")|--permission-mode dontAsk --setting-sources= --settings \S/;
 const SKIP = /dangerously-skip-permissions|bypassPermissions/;
 const isComment = (t, sh) => (sh ? /^\s*#/.test(t) : /^\s*(\/\/|\*|\/\*)/.test(t));
 
@@ -332,7 +332,7 @@ function selfTest() {
   for (const f of scripts) {
     const text = readFileSync(join(ROOT, f), "utf8");
     if (scanProblems([[f, text]], []).length) { console.error(`self-test: the real ${f} fails the scan`); bad++; continue; }
-    const broken = text.replace(/\$CLAUDE_LOCK\b/g, SKIP_FLAG).replace(/\.\.\.lockedArgs\("[^"]+"\)/g, `"${SKIP_FLAG}"`).replace(/--permission-mode dontAsk --setting-sources= --settings/g, SKIP_FLAG)
+    const broken = text.replace(/(?:\$CLAUDE_LOCK\b|"\$\{CLAUDE_ARGS\[@\]\}")/g, SKIP_FLAG).replace(/\.\.\.lockedArgs\("[^"]+"\)/g, `"${SKIP_FLAG}"`).replace(/--permission-mode dontAsk --setting-sources= --settings/g, SKIP_FLAG)
       .replace(/"--permission-mode", "dontAsk"/g, `"${SKIP_FLAG}"`);
     must(`the skip flag back in ${f}`, broken === text ? [] : scanProblems([[f, broken]], []));
   }
