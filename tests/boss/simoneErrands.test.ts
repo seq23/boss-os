@@ -13,6 +13,7 @@ import { simoneTool } from "../../src/worker/boss/agents/simoneTools";
 import { macWork, errandSent } from "../../src/worker/boss/commands/run";
 import { setCommandFetch } from "../../src/worker/boss/commands/google";
 import { classify } from "../../src/worker/boss/intake/classify";
+import { recordSentMail } from "../../src/worker/boss/mail/history";
 import { ERRAND_SENDERS } from "../../src/shared/boss/commands/parse.mjs";
 import { layoutEmail, plainProblems } from "../../src/shared/boss/mail/plain.mjs";
 
@@ -20,13 +21,17 @@ const HER = ERRAND_SENDERS[0]!;
 const BIZ = "reservations@club.example.test";
 const NOW = Date.parse("2026-10-26T15:00:00Z");
 const REQUEST = "a table for two on Thursday, October 29 after 8:00 pm";
+const REQUEST_MESSAGE_ID = "<request-1@example.test>";
+const CONFIRMATION = "You're all set for two at 8:30pm Thursday. See you then.";
 
-function mail(o: { from: string; body: string; subject?: string; to?: string; dmarc?: string }) {
+function mail(o: { from: string; body: string; subject?: string; to?: string; dmarc?: string; inReplyTo?: string; references?: string }) {
   const headers = new Headers({
     from: o.from, subject: o.subject ?? "",
     "authentication-results": o.dmarc ?? "mx.cloudflare.net; spf=pass; dkim=pass; dmarc=pass",
     "message-id": `<${Math.random().toString(36).slice(2)}@mail.example.test>`,
   });
+  if (o.inReplyTo) headers.set("in-reply-to", o.inReplyTo);
+  if (o.references) headers.set("references", o.references);
   const raw = `From: ${o.from}\r\nSubject: ${o.subject ?? ""}\r\nContent-Type: text/plain\r\n\r\n${o.body}`;
   return { from: o.from.replace(/.*<|>.*/g, ""), to: o.to ?? "simone@sequoiataylor.com", headers, raw: new Response(raw).body!, rawSize: new TextEncoder().encode(raw).length };
 }
@@ -61,10 +66,15 @@ async function queueErrand() {
   return res;
 }
 
-async function sentErrand() {
+async function sentErrand(messageId = REQUEST_MESSAGE_ID) {
   const res = await queueErrand();
-  const [row] = await errands();
-  await errandSent(env as never, row.id, { message_id: "em_fake1", subject: "Reservation request", text: "Hello", request: REQUEST });
+  const row = (await errands()).find((entry) => entry.mail_id === res.mailId);
+  const providerId = `em_${row.id}`;
+  await recordSentMail(env, {
+    provider_id: providerId, message_id: messageId, command_id: row.id,
+    from: "simone@example.test", to: BIZ, subject: "Reservation request", text: "Hello",
+  });
+  await errandSent(env, row.id, { message_id: providerId, subject: "Reservation request", text: "Hello", request: REQUEST });
   return { res, id: row.id as string };
 }
 
@@ -100,7 +110,7 @@ describe("her errand by email", () => {
 
   it("their answer is read for her, never answered: a card request becomes hers, in plain words", async () => {
     const { id } = await sentErrand();
-    const res = await say({ from: `Host <host@club.example.test>`, subject: "Re: Reservation request", body: "We can hold a table at 8:30. We will need a credit card to secure the booking." });
+    const res = await say({ from: `Host <host@club.example.test>`, subject: "Re: Reservation request", inReplyTo: REQUEST_MESSAGE_ID, body: "We can hold a table at 8:30. We will need a credit card to secure the booking." });
     expect(res.outcome).toBe("ERRAND_REPLY");
     expect(res.reply).toBeNull();
     const row = await env.DB.prepare(`SELECT * FROM boss_commands WHERE id = ?`).bind(id).first<any>();
@@ -125,7 +135,7 @@ describe("her errand by email", () => {
 
   it("a confirmation is a morning line that needs nothing", async () => {
     const { id } = await sentErrand();
-    await say({ from: BIZ, subject: "Re: Reservation request", body: "You're all set for two at 8:30pm Thursday. See you then." });
+    await say({ from: BIZ, subject: "Re: Reservation request", inReplyTo: REQUEST_MESSAGE_ID, body: CONFIRMATION });
     const row = (await env.DB.prepare(`SELECT state, result, notice FROM boss_commands WHERE id = ?`).bind(id)
       .first<{ state: string; result: string; notice: string }>())!;
     expect(row.state).toBe("booked");
@@ -137,7 +147,7 @@ describe("her errand by email", () => {
 
   it("keeps a venue confirmation with a fee out of the booked state for a free-only request", async () => {
     const { id } = await sentErrand();
-    await say({ from: BIZ, subject: "Re: Reservation request", body: "You're all set for two at 8:30pm Thursday. The cover is $30 per person." });
+    await say({ from: BIZ, subject: "Re: Reservation request", inReplyTo: REQUEST_MESSAGE_ID, body: "You're all set for two at 8:30pm Thursday. The cover is $30 per person." });
     const row = (await env.DB.prepare(`SELECT state, result, notice FROM boss_commands WHERE id = ?`).bind(id)
       .first<{ state: string; result: string; notice: string }>())!;
     expect(row.state).toBe("replied");
@@ -146,17 +156,48 @@ describe("her errand by email", () => {
     expect(JSON.parse(row.notice).subject).not.toBe("Your request is booked");
   });
 
-  it("keeps an unauthenticated venue reply without treating it as a confirmation", async () => {
+  it("keeps venue mail without accepting failed DMARC, a missing From, or console replay", async () => {
     const { id } = await sentErrand();
-    const res = await say({ from: BIZ, subject: "Re: Reservation request", dmarc: "mx.cloudflare.net; dmarc=fail",
-      body: "You're all set for two at 8:30pm Thursday. See you then." });
-    expect(res).toMatchObject({ outcome: "ERRAND_UNVERIFIED", reply: null });
-    expect(await env.DB.prepare(`SELECT state, notice_state FROM boss_commands WHERE id = ?`).bind(id).first())
-      .toEqual({ state: "sent", notice_state: "none" });
-    const original = await env.DB.prepare(`SELECT object_key FROM boss_inbound_mail WHERE id = ?`).bind(res.mailId)
-      .first<{ object_key: string }>();
-    expect(original?.object_key).toBeTruthy();
-    expect(await (await env.VAULT.get(original!.object_key))?.text()).toContain("You're all set for two");
+    const build = (dmarc?: string) => mail({ from: BIZ, subject: "Re: Reservation request", inReplyTo: REQUEST_MESSAGE_ID,
+      dmarc, body: CONFIRMATION });
+    const missingFrom = build();
+    missingFrom.headers.delete("from");
+    for (const incoming of [build("mx.cloudflare.net; dmarc=fail"), missingFrom, { ...build(), console: true }]) {
+      const res = await handleBossInboundMail(incoming, env);
+      expect(res).toMatchObject({ outcome: "ERRAND_UNVERIFIED", reply: null });
+      expect(await env.DB.prepare(`SELECT state, notice_state FROM boss_commands WHERE id = ?`).bind(id).first())
+        .toEqual({ state: "sent", notice_state: "none" });
+      const original = await env.DB.prepare(`SELECT object_key FROM boss_inbound_mail WHERE id = ?`).bind(res.mailId)
+        .first<{ object_key: string }>();
+      expect(await (await env.VAULT.get(original!.object_key))?.text()).toContain(CONFIRMATION);
+    }
+  });
+
+  it("keeps unrelated venue mail and follows the archived thread even with another live booking at the same venue", async () => {
+    const first = await sentErrand();
+    const status = (id: string) => env.DB.prepare("SELECT state, notice_state FROM boss_commands WHERE id = ?").bind(id).first();
+    await recordSentMail(env, {
+      message_id: "<owner-notice@example.test>", command_id: first.id,
+      from: "simone@example.test", to: "owner@example.test", subject: "Request sent", text: "Fixture owner notice",
+    });
+    for (const inReplyTo of [undefined, "<other-thread@example.test>", "<owner-notice@example.test>"]) {
+      const unrelated = await say({ from: BIZ, subject: "Re: Reservation request", inReplyTo, body: CONFIRMATION });
+      expect(unrelated).toMatchObject({ outcome: "REFUSED_SENDER", reply: null });
+      const row = await env.DB.prepare("SELECT command_id, object_key FROM boss_inbound_mail WHERE id = ?").bind(unrelated.mailId)
+        .first<{ command_id: string | null; object_key: string }>();
+      expect(row?.command_id).toBeNull();
+      expect(await (await env.VAULT.get(row!.object_key))?.text()).toContain(CONFIRMATION);
+      expect(await status(first.id)).toEqual({ state: "sent", notice_state: "none" });
+    }
+
+    const second = await sentErrand("<request-2@example.test>");
+    const wrongSender = await say({ from: "host@other.example.test", inReplyTo: REQUEST_MESSAGE_ID, body: CONFIRMATION });
+    expect(wrongSender.outcome).toBe("REFUSED_SENDER");
+    const rightThread = await say({ from: BIZ, subject: "Re: Reservation request", body: CONFIRMATION,
+      references: REQUEST_MESSAGE_ID, inReplyTo: "<later-message@example.test>" });
+    expect(rightThread.outcome).toBe("ERRAND_REPLY");
+    expect(await status(first.id)).toEqual({ state: "booked", notice_state: "due" });
+    expect(await status(second.id)).toEqual({ state: "sent", notice_state: "none" });
   });
 
   it("NEGATIVE: mail from any other domain is not their answer and is refused as before", async () => {

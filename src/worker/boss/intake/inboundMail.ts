@@ -392,8 +392,8 @@ async function handleMail(message: BossMailMessage, env: Env, said: Said): Promi
   const cloudflareChecked = /^mx\.cloudflare\.net\s*;/i.test(authentication.trim());
   const dmarc = dmarcPassed(authentication) && (message.console === true || cloudflareChecked) &&
     !(/;\s*spf=(?:softfail|fail)\b/i.test(authentication) && /;\s*dkim=fail\b/i.test(authentication));
-  const ownerHeader = extractAddress(message.headers.get("from"));
-  const authorised = ownerHeader !== null && isOwner(ownerHeader, env.BOSS_EXTRA_OWNER_SENDERS ?? "") && dmarc;
+  const headerFrom = extractAddress(message.headers.get("from"));
+  const authorised = headerFrom !== null && isOwner(headerFrom, env.BOSS_EXTRA_OWNER_SENDERS ?? "") && dmarc;
 
   /*
    * ─── THE ARRIVAL IS RECORDED FIRST, AND THE OUTCOME IS FILLED IN AFTER ────
@@ -545,7 +545,9 @@ async function handleMail(message: BossMailMessage, env: Env, said: Said): Promi
   const externalBytes = !isOwner(sender, env.BOSS_EXTRA_OWNER_SENDERS ?? "") && message.rawSize <= MAX_BODY_BYTES ? await new Response(message.raw).arrayBuffer() : null;
   const externalRaw = externalBytes === null ? null : new TextDecoder().decode(externalBytes);
   const externalText = externalRaw === null ? "" : (await readableText(externalRaw, { full: true })).text;
-  const errand = !isOwner(sender, env.BOSS_EXTRA_OWNER_SENDERS ?? "") ? await openErrandFor(env, sender, now, { subject, text: externalText }) : null;
+  const errand = !isOwner(sender, env.BOSS_EXTRA_OWNER_SENDERS ?? "") ? await openErrandFor(env, sender, now, {
+    subject, text: externalText, references: chainIds(message.headers.get("references"), message.headers.get("in-reply-to")),
+  }) : null;
   const externalKey = `boss-inbound-mail/${new Date(now).toISOString().slice(0, 10)}/${mailId}.eml`;
   const keepExternal = async () => {
     if (externalRaw !== null) await env.VAULT.put(externalKey, externalBytes!, { httpMetadata: { contentType: "message/rfc822" } });
@@ -567,7 +569,7 @@ async function handleMail(message: BossMailMessage, env: Env, said: Said): Promi
       return { mailId, outcome: "ADMITTED_MAIL", employeeId: null, taskId: null, reply: null };
     }
     await env.DB.prepare(`UPDATE boss_inbound_mail SET command_id = ?, thread_id = ? WHERE id = ?`).bind(errand.id, errand.id, mailId).run();
-    if (!dmarc) {
+    if (!dmarc || !headerFrom || viaConsole) {
       await finish({ outcome: "ERRAND_UNVERIFIED", why: "The venue address could not be verified. The message is available in the mail history.",
         employeeId: SIMONE, objectKey: externalKey });
       return { mailId, outcome: "ERRAND_UNVERIFIED", employeeId: SIMONE, taskId: null, reply: null };

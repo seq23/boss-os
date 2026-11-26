@@ -664,23 +664,43 @@ const FREE_MAIL_RE = /@(?:gmail|googlemail|yahoo|outlook|hotmail|icloud|me|mac|a
 const ERRAND_LIVE = ["sent", "replied", "follow_up", "booked", "needs_card", "cancel_sent"];
 
 /**
- * The sent errand a stranger's email answers: from the address Simone wrote to, or — for a business
- * domain — anyone at that domain (the club's host answers for reservations@). Null when it answers none.
+ * Match the original sent mail before considering sender-based routing for older errands.
+ * A free reservation needs a reply to a tracked send and an address at the venue.
  */
-export async function openErrandFor(env: Env, sender: string, now = Date.now(), message: { subject?: string; text?: string } = {}): Promise<CommandRow | null> {
+export async function openErrandFor(env: Env, sender: string, now = Date.now(), message: {
+  subject?: string; text?: string; references?: string[];
+} = {}): Promise<CommandRow | null> {
   const from = String(sender ?? "").trim().toLowerCase();
   if (!from.includes("@")) return null;
   const { results } = await env.DB.prepare(
-    `SELECT c.*, m.from_addr AS owner_email FROM boss_commands c LEFT JOIN boss_inbound_mail m ON m.id = c.mail_id WHERE c.kind = 'errand' AND c.state IN (${ERRAND_LIVE.map(() => "?").join(",")}) AND c.updated_at > ? ORDER BY c.updated_at DESC LIMIT 50`,
-  ).bind(...ERRAND_LIVE, now - ERRAND_WATCH_MS).all<CommandRow & { owner_email: string | null }>();
+    `SELECT c.*, m.from_addr AS owner_email, CASE WHEN json_extract(c.spec, '$.free_only') = 1 THEN EXISTS (
+        SELECT 1 FROM boss_sent_mail s WHERE s.command_id = c.id AND s.delivery_state = 'sent'
+          AND s.message_id IN (SELECT value FROM json_each(?))
+          AND (s.id = json_extract(c.result, '$.message_id') OR s.id IN (
+            SELECT json_extract(value, '$.message_id') FROM json_each(c.result, '$.follow_ups')
+          ))
+      ) ELSE 0 END AS thread_match
+      FROM boss_commands c LEFT JOIN boss_inbound_mail m ON m.id = c.mail_id
+      WHERE c.kind = 'errand' AND c.state IN (${ERRAND_LIVE.map(() => "?").join(",")}) AND c.updated_at > ?
+      ORDER BY thread_match DESC, c.updated_at DESC LIMIT 50`,
+  ).bind(JSON.stringify(message.references ?? []), ...ERRAND_LIVE, now - ERRAND_WATCH_MS)
+    .all<CommandRow & { owner_email: string | null; thread_match: number }>();
+  const threaded: CommandRow[] = [];
   const matches: CommandRow[] = [];
   const venues: CommandRow[] = []; const owners: CommandRow[] = [];
   for (const r of results ?? []) {
-    const to = String(j(r.spec).to ?? "").toLowerCase();
+    const spec = j(r.spec);
+    const to = String(spec.to ?? "").toLowerCase();
     if (!to) continue;
-    if (to === from || (!FREE_MAIL_RE.test(to) && from.endsWith(`@${to.split("@")[1]}`))) matches.push(r);
+    const venueSender = to === from || (!FREE_MAIL_RE.test(to) && from.endsWith(`@${to.split("@")[1]}`));
+    if (r.thread_match) {
+      if (venueSender) threaded.push(r);
+      continue;
+    }
+    if (spec.free_only === true) continue;
+    if (venueSender) matches.push(r);
     else if (isBookingPlatform(from)) {
-      const spec = j(r.spec); const result = j(r.result);
+      const result = j(r.result);
       const venue = String(result.request ?? spec.ask ?? "").match(/\bat\s+(.+?)\s+on\b/i)?.[1];
       const domainName = to.split("@")[1]?.split(".")[0];
       const ownerName = String(result.text ?? "").match(/assistant to\s+([^\r\n]+)/i)?.[1];
@@ -693,7 +713,8 @@ export async function openErrandFor(env: Env, sender: string, now = Date.now(), 
       else if (names(ownerNames)) owners.push(r);
     }
   }
-  // A named venue resolves two live errands for the same owner; her name alone never guesses.
+  // A known thread from the wrong sender must not fall back to a different errand.
+  if (results.some((r) => r.thread_match)) return threaded.length === 1 ? threaded[0]! : null;
   const best = matches.length ? matches : venues.length ? venues : owners;
   return best.length === 1 ? best[0]! : null;
 }
