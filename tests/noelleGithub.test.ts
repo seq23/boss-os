@@ -344,7 +344,7 @@ describe("her broker wrapper, as noelle_prepare writes it", () => {
     for (const v of ["merge", "approve", "api", "delete", "secret", "settings", "pr", "vault:run"]) {
       const r = spawnSync(tool, [v, "x"], { encoding: "utf8", env });
       expect(r.status).toBe(2);
-      expect(r.stderr).toBe("usage: noelle-tool brain|notice|ledger|backlinks|search-console|push-branch|open-pr ...\n"); // the wrapper's own refusal, before any tool runs
+      expect(r.stderr).toBe("usage: noelle-tool brain|notice|ledger|backlinks|search-console|post-results|push-branch|open-pr ...\n"); // the wrapper's own refusal, before any tool runs
     }
     const r = spawnSync(tool, ["push-branch", "boss-os", "noelle/x"], { encoding: "utf8", env });
     expect(r.stdout).toMatch(/NAMED STOP \[OTHER_BUSINESS_REPO\]/);
