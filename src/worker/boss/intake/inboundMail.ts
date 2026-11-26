@@ -10,7 +10,7 @@ import { admitTask } from "../tasks/admit";
 import {
   BOSS_INTAKE_MAILBOX, BOSS_INTAKE_DOMAIN,
   dmarcPassed, extractAddress, isOwner,
-  replyBody, routeToSeat, seatTag, strippedSubject,
+  replyBody, routeToSeat, seatByAddress, seatTag, strippedSubject,
   type BossRoute, type BossSeat,
 } from "../../../shared/boss/intake/mail.mjs";
 import { parseLiveBook, readBookDirective } from "../../../shared/boss/intake/liveBook.mjs";
@@ -803,7 +803,10 @@ async function handleMail(message: BossMailMessage, env: Env, said: Said): Promi
       .bind(sender, JSON.stringify(chain), JSON.stringify(threadRefs.refs), JSON.stringify(threadRefs.refs))
       .first<{ id: string; request: string; reply: string | null }>()
     : null;
-  if ((!threadRefs.refs.length || simoneThread) && !linkedArrival) {
+  // Direct list edits still use the same list writer and first-read check as replies
+  // to an existing record. Other direct messages carry their delivery address to Simone.
+  const directListEdit = seatByAddress(to, roster)?.id === "emp_relationship" && parseListEdits(writtenByOwner).length > 0;
+  if ((!threadRefs.refs.length || simoneThread) && !linkedArrival && !directListEdit) {
     // The worker can decode local text and archive the original. Simone's seat reads the
     // message first, and any offline routing uses the same text-only context.
     const localFiles = parsed ? await readEverything(env, parsed, "", { ai: null }) : EMPTY_FILES;

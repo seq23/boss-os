@@ -287,7 +287,8 @@ for me."_ The whole page, with examples: [HOW_TO_GIVE_BOSS_OS_WORK_BY_EMAIL.md](
   before trying Workers AI and then Gemini for mail routing. Both receive the Boss OS request text
   as written. When every reader is unavailable, the message stays queued.
 - **name@sequoiataylor.com** tells Simone whom you are writing to. Approval and errand replies
-  that identify an existing record still go to that record.
+  that identify an existing record still go to that record. Direct list edits to Monique keep
+  their existing reply handler.
 - **Replies are permission:** `approved` / `changes: …` / `stop` on the thread; `your call` in the
   first email pre-approves. A reply goes back to the job it answers (`jobThisAnswers`), never a new pile.
 - **Secrets:** `SECRET VENDOR_API_KEY=value` on its own line; stored encrypted, scrubbed from the mail.

@@ -12,6 +12,7 @@ You do not need to name anybody. Simone (Chief of Staff) reads it, splits it int
 each ask to the employee who can do it. If you want a particular person, write to them directly:
 danielle@, camille@, monique@, zora@, toni@, imani@, kendra@ or noelle@sequoiataylor.com, or put their
 name with a # in front (#danielle). Simone reads both as part of your request.
+Send edits to your deal lists directly to Monique. She confirms the changes on the thread.
 
 **Or use the "Tell Simone" box at the top of Today** or the message box on Simone’s page. Send your
 request in your own words. Simone’s reply appears where you sent it.

@@ -69,16 +69,19 @@ it("both chief mailboxes and both boxes make the same three handoffs using the m
     WHERE json_extract(t.input, '$.simone_handoff') IS NOT NULL AND t.employee_id = 'emp_research' AND rp.question = ?`, ASKS[1]!)).toEqual({ n: 4 });
 });
 
-it("one research ask reaches Camille through either chief mailbox, while direct mail reaches Danielle", async () => {
+it("Simone hands the research ask to Camille and preserves a direct address to Danielle", async () => {
   for (const target of [BOSS_INTAKE_MAILBOX, SIMONE_MAILBOX]) {
     const res = await mail(target, ASKS[1]!, "Hosting");
     expect(res.outcome).toBe("SIMONE_QUEUED");
     expect(res.reply).toBeNull();
     await delegate(res.taskId!, [ASKS[1]!], ["emp_research"]);
   }
-  const direct = await mail("danielle@sequoiataylor.com", "Please look at the Q3 numbers");
-  expect(direct.outcome).toBe("ROUTED");
-  expect(direct.employeeId).toBe("emp_repo");
+  const to = "danielle@sequoiataylor.com";
+  const words = "Please look at the Q3 numbers";
+  const direct = await mail(to, words);
+  expect(direct).toMatchObject({ outcome: "SIMONE_QUEUED", reply: null });
+  expect(JSON.parse((await row<{ input: string }>("SELECT input FROM tasks WHERE id = ?", direct.taskId))!.input)).toMatchObject({ to, body: words });
+  await delegate(direct.taskId!, [words], ["emp_repo"]);
   const tagged = await mail(BOSS_INTAKE_MAILBOX, "#camille please look at the Q3 numbers");
   await delegate(tagged.taskId!, ["#camille please look at the Q3 numbers"], ["emp_research"]);
 });
