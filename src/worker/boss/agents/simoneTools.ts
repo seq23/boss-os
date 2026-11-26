@@ -396,6 +396,21 @@ export async function simoneTool(env: Env, request: { id: string; lease: number;
     const result = await dismissMatch(env, match, message.mail_id ? "reply" : "owner_session", now);
     return { ok: true, receipt: code, ...result } as const;
   }
+  if (request.tool === "read_personal_mail" || request.tool === "read_personal_drive") {
+    const message: SimoneMessage = JSON.parse(active.input);
+    const quote = typeof request.task === "string" ? request.task : "";
+    const trustedScreen = message.source === "boss_page" || message.source === "tell_simone";
+    const verifiedMail = message.source === "boss_inbound_mail" && message.mail_id &&
+      await env.DB.prepare(`SELECT id FROM boss_inbound_mail
+        WHERE id = ? AND task_id = ? AND authorised = 1 AND outcome = 'SIMONE_QUEUED'`)
+        .bind(message.mail_id, request.id).first();
+    if ((!trustedScreen && !verifiedMail) || quote.trim().length < 8 || quote.length > 2000 ||
+        message.body.length > 12_000 || !message.body.includes(quote)) {
+      return { ok: false, code: "PERSONAL_READ_INSTRUCTION_REQUIRED" } as const;
+    }
+    // Only the Mac holds the personal connector. Authorization itself is never a work receipt.
+    return { ok: true, query: message.body } as const;
+  }
   if (request.tool === "search_workspace_mail" || request.tool === "read_workspace_mail") {
     const value = typeof request.task === "string" ? request.task.trim() : "";
     const search = request.tool === "search_workspace_mail";

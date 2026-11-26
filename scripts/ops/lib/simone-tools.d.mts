@@ -1,3 +1,5 @@
+import type { SpawnSyncOptionsWithStringEncoding, SpawnSyncReturns } from "node:child_process";
+
 export function listenForSimoneTools(
   path: string,
   call: { id: string; lease: number },
@@ -6,6 +8,8 @@ export function listenForSimoneTools(
     receipt?: string;
     rows?: unknown[];
     code?: string;
+    query?: string;
   }>,
   hasCredential: (text: string) => boolean,
+  runConnector?: (bin: string, args: string[], options: SpawnSyncOptionsWithStringEncoding) => Partial<SpawnSyncReturns<string>>,
 ): Promise<{ receipts: string[]; close: () => Promise<void> }>;
