@@ -45,6 +45,12 @@ export function paperbackState(lines) {
 }
 
 /** The KDP item-set id of a Kindle title, from the bookshelf's own markup (needed by "+ Create paperback"). Pure. */
+/** The one paperback draft id on a bookshelf page searched to one title, or null when none or several. Pure. */
+export function paperbackDraftId(html) {
+  const ids = new Set([...String(html ?? "").matchAll(/title-setup\/paperback\/([A-Z0-9]{8,})\/(?:details|content|pricing)/g)].map((m) => m[1]));
+  return ids.size === 1 ? [...ids][0] : null;
+}
+
 export function itemSetFor(html, titleId) {
   const s = String(html);
   const a = new RegExp(`digitalTitleId&quot;:&quot;${titleId}&quot;[^>]{0,400}?itemSetId&quot;:&quot;(\\w+)`).exec(s);
@@ -94,8 +100,13 @@ async function content(page, b) {
     await clickOne(page, "free KDP ISBN", FREE_ISBN);
     await clickOne(page, "Assign ISBN", [(p) => p.getByRole("button", { name: /^\s*Assign ISBN\s*$/i })]);
     await page.waitForTimeout(2500);
-    const confirm = page.locator('.a-popover[aria-hidden="false"]').last().getByRole("button", { name: /Assign ISBN/i });
-    if (await confirm.count().catch(() => 0)) { await confirm.click(); await page.waitForTimeout(5000); }
+    // 25 Nov 2026 (live): the "Free KDP ISBN" confirm box is not an .a-popover; its own Assign ISBN button
+    // stayed unpressed and covered the upload. Press the last VISIBLE Assign ISBN, which is the box's.
+    const btns = page.getByRole("button", { name: /^\s*Assign ISBN\s*$/i });
+    for (let i = (await btns.count().catch(() => 0)) - 1; i >= 0; i -= 1) {
+      if (await btns.nth(i).isVisible().catch(() => false)) { await btns.nth(i).click().catch(() => {}); await page.waitForTimeout(5000); break; }
+    }
+    if ((await isbnSection(page, { timeout: 15_000 })) !== "assigned") { const shot = await snapshot(page, dir, "stop-paperback-isbn"); throw stop("ISBN_NOT_ASSIGNED", `the free KDP ISBN was not assigned. Page kept at ${shot}.`); }
   }
   for (const [name, re] of [["black and white interior on white paper", /Black (&|and) white interior.*white paper/i], ["no bleed", /^\s*No Bleed\s*$/i], ["matte cover", /^\s*Matte\s*$/i]]) {
     const el = await first(page, [(p) => p.getByLabel(re), (p) => p.getByText(re)]);
@@ -111,17 +122,19 @@ async function content(page, b) {
     if (await ok.count().catch(() => 0)) await ok.first().click();
     await page.waitForTimeout(1500);
   }
-  await upload(page, "manuscript", ['input[type="file"][id*="interior"]', 'input[type="file"][name*="interior"]', "#data-print-book-publisher-interior-file-upload-AjaxInput"], join(dir, "interior.pdf"), dir);
+  // 25 Nov 2026 (live): the new-look Content page names neither file box; they differ only by what they accept.
+  await upload(page, "manuscript", ['input[type="file"][id*="interior"]', 'input[type="file"][name*="interior"]', "#data-print-book-publisher-interior-file-upload-AjaxInput", 'input[type="file"][accept*=".docx"]'], join(dir, "interior.pdf"), dir);
   const own = await first(page, [(p) => p.getByLabel(/Upload a cover you already have/i), (p) => p.getByText(/Upload a cover you already have/i)]);
   if (own) await own.click().catch(() => {});
-  await upload(page, "cover", ['input[type="file"][id*="cover"]', 'input[type="file"][name*="cover"]', "#data-print-book-publisher-cover-file-upload-AjaxInput"], join(dir, "paperback-cover.pdf"), dir);
+  await upload(page, "cover", ['input[type="file"][id*="cover"]', 'input[type="file"][name*="cover"]', "#data-print-book-publisher-cover-file-upload-AjaxInput", 'input[type="file"][accept=".pdf"]'], join(dir, "paperback-cover.pdf"), dir);
   await aiDisclosure(page, aiAnswers({}, listing), { write: true });
   await confirmAiAnswers(page);
+  // 25 Nov 2026 (live): "Preparing your files" ran past 8 minutes on Parallel Parenting; 20 is the wait.
   // The previewer: KDP will not move on until the printed book is approved in it.
   await clickOne(page, "Launch Previewer", [(p) => p.getByRole("button", { name: /Launch Previewer/i }), "#print-preview-confirm-button"]);
   const approve = page.getByRole("button", { name: /^\s*Approve\s*$/i }).first();
-  await approve.waitFor({ timeout: 8 * 60_000 }).catch(() => {});
-  if (!(await approve.count().catch(() => 0))) { const shot = await snapshot(page, dir, "stop-paperback-previewer"); throw stop("PREVIEWER", `the print previewer offered no Approve within 8 minutes. Page kept at ${shot}.`, 9); }
+  await approve.waitFor({ timeout: 20 * 60_000 }).catch(() => {});
+  if (!(await approve.count().catch(() => 0))) { const shot = await snapshot(page, dir, "stop-paperback-previewer"); throw stop("PREVIEWER", `the print previewer offered no Approve within 20 minutes. Page kept at ${shot}.`, 9); }
   const issues = (await page.locator(".issue, .a-alert-error .a-alert-content").allInnerTexts().catch(() => [])).join(" ").trim();
   if (issues) console.log(`previewer notes: ${issues.slice(0, 300)}`);
   await approve.click();
@@ -172,7 +185,21 @@ export async function run({ only = flag("slug") } = {}) {
         if (!row) { console.log(`KDP-PAPERBACK: ${b.slug} — waiting: its Kindle edition is not on the bookshelf yet.`); continue; }
         const st = paperbackState(row.lines);
         if (st && st !== "DRAFT") { await writeFile(join(b.dir, "paperback.json"), JSON.stringify({ at: new Date().toISOString(), state: st, kindle_ref: row.id }, null, 2) + "\n"); console.log(`KDP-PAPERBACK: ${b.slug} — ${st}`); if (st !== "BLOCKED") n += 1; continue; }
-        if (st === "DRAFT") throw stop("PAPERBACK_DRAFT_EXISTS", `a paperback draft already exists for "${b.listing.title}"; it is resumed by hand from the bookshelf (never a second one).`, 1);
+        if (st === "DRAFT") {
+          // 25 Nov 2026 (owner: "fucking finish it"): a draft is picked up at its content step, never a second one.
+          const draft = paperbackDraftId(row.html);
+          if (!draft) throw stop("PAPERBACK_DRAFT_EXISTS", `a paperback draft exists for "${b.listing.title}" but its link could not be read; nothing new was started.`, 1);
+          await go(page, `${KDP}/en_US/title-setup/paperback/${draft}/content`);
+          await page.waitForTimeout(4000);
+          await content(page, b);
+          const published = await pricing(page, b);
+          const after = published ? await shelfRow(page, b.listing.title) : null;
+          const state = after ? paperbackState(after.lines) ?? "NOT_FOUND" : "DRY_RUN";
+          await writeFile(join(b.dir, "paperback.json"), JSON.stringify({ at: new Date().toISOString(), state, kindle_ref: row.id, draft }, null, 2) + "\n");
+          console.log(`KDP-PAPERBACK: ${b.slug} — ${state} (picked up the existing draft)`);
+          if (["IN_REVIEW", "PUBLISHING", "LIVE"].includes(state)) n += 1;
+          continue;
+        }
         const item = itemSetFor(row.html, row.id);
         if (!item) throw stop("NO_ITEM_SET", `the bookshelf did not show the format link for "${b.listing.title}".`);
         await go(page, `${KDP}/action/dualbookshelf.addprintformat/title-setup/paperback/new/details?existing=${row.id}&item=${item}`);
