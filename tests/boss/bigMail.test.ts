@@ -257,7 +257,7 @@ describe("no Got it after five minutes is one alarm", () => {
 });
 
 describe("the dry run reads everything and writes nothing", () => {
-  it("returns the Got it as it would go, and every table is unchanged", async () => {
+  it("shows the intake queue and attachment diagnostics without opening work or generating a reply", async () => {
     const count = async () => Promise.all(["boss_inbound_mail", "tasks", "boss_task_notices", "boss_mail_refs", "audit_log"].map(async (t) => Number((await row<any>(`SELECT COUNT(*) AS n FROM ${t}`))!.n)));
     const before = await count();
     const res = await apiJson<any>("/api/intake/mail/dry-run", { method: "POST", body: { raw: bigEmail(256 * 1024) } });
@@ -266,7 +266,8 @@ describe("the dry run reads everything and writes nothing", () => {
     expect(d.dry_run).toBe(true);
     expect(d.asks).toEqual(["Please read the deck and tell me what the three risks are.", "Send a short summary to Monique by Friday."]);
     expect(d.files.unopened.map((u: any) => u.filename)).toContain("IMG_0001.jpg");
-    expect(d.got_it.text).toContain("What you asked, in your words");
+    expect(d.would_route_to).toEqual(["Simone"]);
+    expect(d).not.toHaveProperty("reply_text");
     expect(await count()).toEqual(before);
   });
 });

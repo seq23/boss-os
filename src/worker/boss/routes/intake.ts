@@ -326,8 +326,8 @@ intake.post("/mail", async (c) => {
  * `POST /api/intake/mail/dry-run` — READ A KEPT EMAIL, WRITE NOTHING (15 Nov 2026).
  *
  * `{ mail_id }` reads the email kept for that arrival row from R2; `{ raw }` reads a message posted
- * whole; `rung` (optional) walks only the free rung whose id contains it. Returns what the mailbox would read (her words, every file, voice note and Drive link), who
- * would get the work, and the Got it as it would be sent. Writes nothing and sends nothing
+ * whole; `rung` (optional) walks only the free rung whose id contains it. Returns the intake queue and a diagnostic
+ * read of the request and attachments. Writes nothing and sends nothing
  * (intake/dryRun.ts). Same authorisation as `/mail`: the session gate in front of `/api/*`.
  */
 intake.post("/mail/dry-run", async (c) => {
