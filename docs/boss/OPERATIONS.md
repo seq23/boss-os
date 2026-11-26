@@ -990,6 +990,13 @@ through date and this run's ID. A missing owner notes read or handoff rewrite re
 `noelle-tool brain <slug>` lists headings and adding a section returns only that section. The
 allowlist is spry, porch-and-party, time-2-read, personal, team and risk.
 
+Noelle uses Claude Code's `WebSearch` and `WebFetch` for public research. The `search-console
+<business> <domain>` broker command reads up to 50 query/page pairs from the last 28 finalized days
+for one property belonging to the named business. It uses the existing vault-backed Search Console
+service account with Google's read-only scope. Scheduled runs can also read dated OpenSEO rival and
+citation domains from the six selling sites' existing `ai_misses` records in `today-detail.json`.
+OpenSEO collection and project changes stay outside Noelle's session.
+
 The Mac launcher passes its own permission settings and OS sandbox to Claude Code.
 `noelle_prepare` creates the settings and the two brokers outside the session workspace. The
 picture validator rejects a reachable provider call, vendor host or credential. GitHub Actions

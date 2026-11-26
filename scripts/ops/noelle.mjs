@@ -21,6 +21,7 @@
  *   notice <business> <what> <where> <https link>   (hers) one Notices line for a new thing she published
  *   ledger <business> <channel> <kind> <item> [receipt]   (hers) one measurement-ledger row
  *   backlinks <business> <file.json>     (hers) link requests to the backlink network, [{ topic, draft, why }]
+ *   search-console <business> <domain>   (hers) read one grid property's recent query/page performance
  *
  * RULE 0. Every step prints one OUTPUT line; a step that did nothing is a NAMED STOP and a non-zero exit.
  */
@@ -445,7 +446,14 @@ async function main() {
   if (cmd === "notice") return cmdNotice(a, b, c, d);
   if (cmd === "ledger") return cmdLedger(a, b, c, d, e);
   if (cmd === "backlinks") return cmdBacklinks(a, b);
-  console.error("usage: noelle.mjs due|mark|window|call-claim|call-release|reads|persona|stop|finish|brain|notice|ledger|backlinks …");
+  if (cmd === "search-console" && a && b && !c) {
+    const { readSearchConsole } = await import("./lib/noelle-reads.mjs");
+    const result = await readSearchConsole(a, b);
+    console.log(untrusted("search-console", JSON.stringify(result)));
+    console.log(`OUTPUT Search Console read ${result.domain}: ${result.rows.length} rows`);
+    return;
+  }
+  console.error("usage: noelle.mjs due|mark|window|call-claim|call-release|reads|persona|stop|finish|brain|notice|ledger|backlinks|search-console …");
   process.exit(2);
 }
 

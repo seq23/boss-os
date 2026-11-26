@@ -16,6 +16,8 @@ import { homedir } from "node:os";
 import { join } from "node:path";
 import { CHANNEL_OWNERS, READ_SOURCES } from "../../../src/shared/boss/growth/noelle.mjs";
 import { dayOf } from "../../../src/shared/boss/schedule/clock.mjs";
+import { outcomeWindows } from "../../../src/shared/boss/searchReadiness/search-outcomes.mjs";
+import { googleAccess, macContext, NamedStop } from "./scorecard-readers.mjs";
 
 export const OWNER = "seq23";
 
@@ -32,6 +34,40 @@ export const REPOS = Object.freeze({
   hicks: ["hicks-consulting-canonical"],
   horse: ["horse-legal-guide-velocity"],
 });
+
+/** One site's top Search Console query/page pairs, using the existing vault-backed service account. */
+export async function readSearchConsole(business, domain, {
+  ctx = macContext(),
+  sites = JSON.parse(readFileSync(new URL("../../../src/shared/boss/searchReadiness/sites.json", import.meta.url), "utf8")).grid_repos,
+} = {}) {
+  const repos = Object.hasOwn(REPOS, business) ? REPOS[business] : [];
+  if (!sites.some((site) => site.domain === domain && repos.includes(site.repo))) {
+    throw new NamedStop("GSC_OUTSIDE_BUSINESS", "use a grid domain belonging to the named business");
+  }
+
+  try {
+    const token = await googleAccess(ctx, "https://www.googleapis.com/auth/webmasters.readonly");
+    if (!token) throw new Error("missing Google token");
+    const headers = { authorization: `Bearer ${token}`, "content-type": "application/json" };
+    const { start, end } = outcomeWindows(ctx.now).current;
+    const body = JSON.stringify({ startDate: start, endDate: end, dimensions: ["query", "page"], rowLimit: 50 });
+    const properties = [`sc-domain:${domain}`, `https://${domain}/`, `https://www.${domain}/`];
+    for (const property of properties) {
+      const res = await ctx.fetch(`https://www.googleapis.com/webmasters/v3/sites/${encodeURIComponent(property)}/searchAnalytics/query`, {
+        method: "POST", headers, body, redirect: "error",
+      });
+      if (res.status === 403 || res.status === 404) continue;
+      if (!res.ok) throw new Error("Search Analytics refused the read");
+      const data = await res.json();
+      if (!data?.responseAggregationType) throw new Error("missing Search Analytics response");
+      const rows = (data.rows ?? []).map(({ keys: [query, page], clicks, impressions, ctr, position }) => ({ query, page, clicks, impressions, ctr, position }));
+      return { business, domain, property, start, end, rows };
+    }
+  } catch {
+    throw new NamedStop("GSC_UNREADABLE", `couldn’t check Search Console for ${domain}`);
+  }
+  throw new NamedStop("GSC_NO_PROPERTY", `couldn’t check Search Console for ${domain}: no matching property was readable`);
+}
 
 /**
  * Sources that are a scheduled GitHub job: the newest successful run is the read (its head sha is the

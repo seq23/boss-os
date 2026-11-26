@@ -448,6 +448,17 @@ describe("H5, Monday: every posting path of every growth business is reconciled,
 });
 
 describe("privacy before any prompt (G8)", () => {
+  it("returns dated OpenSEO rivals and sources for the selling site and excludes client rows", async () => {
+    const insert = env.DB.prepare(`INSERT INTO ai_misses (id, site, prompt_id, prompt, lane, first_missed_week, last_missed_week, rivals, cited_sources, updated_at)
+      VALUES (?, ?, ?, ?, 'own', '2026-11-17', '2026-11-24', ?, ?, ?)`);
+    await env.DB.batch([
+      insert.bind("owner-record", "approvalprep.com", "p1", "owner test question", '["rival.example"]', '["source.example"]', NOW),
+      insert.bind("client-record", "hicksconsulting.org", "p2", "client test question", '["client-rival.example"]', '["client-source.example"]', NOW),
+    ]);
+    const ctx = await json(await call("/noelle/context"));
+    expect(ctx.aiMisses).toMatchObject([{ id: "owner-record", last_missed_week: "2026-11-24", rivals: ["rival.example"], cited_sources: ["source.example"] }]);
+  });
+
   it("all four growth brains load; a friends owner's name and a P&P customer never reach the context", async () => {
     const ctx = await json(await call("/noelle/context"));
     expect(ctx.businesses.map((b: any) => b.key).sort()).toEqual(["approvalprep", "hicks", "peace-be-still", "porch-and-party"]);

@@ -98,6 +98,7 @@
       "mcp__claude_ai_Google_Sheets",
       "mcp__claude_ai_Google_Slides",
       "mcp__claude_ai_Claude_Docs",
+      "mcp__openseo",
       "mcp__plugin_openseo_openseo"
     ]
   },

@@ -3,8 +3,9 @@
  * her readers. H1 (her brains only), H4 (only Sequoia directs her; everything else is data), H6 (the same
  * failure twice is a named stop; turn cap; PR cap) and Rule 0 on her own last line. Each fails without its fix.
  */
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { execFileSync, spawnSync } from "node:child_process";
+import { generateKeyPairSync } from "node:crypto";
 import { mkdtempSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -13,7 +14,7 @@ import { NOELLE_BRAINS, readBrain, seedPlaybooks, callBlock, personaText, readsT
 // @ts-expect-error plain .mjs script, no types
 import { judge, HER_REPOS } from "../scripts/ops/noelle-guard.mjs";
 // @ts-expect-error plain .mjs script, no types
-import { readCalendar, readStudio, readLinkedIn, weekdaysAfter } from "../scripts/ops/lib/noelle-reads.mjs";
+import { readCalendar, readSearchConsole, readStudio, readLinkedIn, weekdaysAfter } from "../scripts/ops/lib/noelle-reads.mjs";
 // @ts-expect-error plain .mjs script, no types
 import { wakeMemory, handoffStop } from "../scripts/ops/lib/noelle-memory.mjs";
 import { slotFor } from "../src/shared/boss/growth/noelle.mjs";
@@ -225,6 +226,8 @@ describe("her run is locked (#573): a refusal is a stop, and her one agent is pa
     // so a cwd of ~/Work/noelle stops every clone (the TEST run of 24 Nov 2026: git init "Operation not permitted")
     expect(sh).toMatch(/"\$AI_RUN" --role "\$ROLE" --network --cwd "\$WORK" /);
     expect(sh).toMatch(/--agents \$WORK\/agents\.json/);
+    expect(sh).toMatch(/--strict-mcp-config/);
+    expect(sh).not.toMatch(/--mcp-config\s/);
     expect(sh).toMatch(/DENIED="\$\(claude_denials "\$SID"/);
     expect(sh).toMatch(/^step finish "\$WORK" "\$SESSION_LOG" "\$SLOT" "\$KIND" "\$DENIED" "\$FINISH_MODE";/m); // the count is finish's fifth argument
     expect(sh).not.toMatch(/dangerously-skip-permissions|setting-sources project|PATH="\$NHOME\/bin/);
@@ -275,6 +278,50 @@ describe("her sandbox, as noelle_prepare writes it", () => {
     expect(unopened.stdout).toMatch(/PR_NOT_OWNED/);
     expect(unopened.status).toBe(2);
     expect(spawnSync(join(home, ".boss-os/noelle/bin/noelle-tool"), ["vault:run"], { encoding: "utf8" }).status).toBe(2);
+  });
+  it("the research broker refuses write and paid tool requests", () => {
+    const { home } = prep();
+    const broker = join(home, ".boss-os/noelle/bin/noelle-tool");
+    for (const args of [["search-console", "approvalprep", "approvalprep.com", "submit-sitemap"], ["get_serp_results", "gift wrapping"]]) {
+      const r = spawnSync(broker, args, { encoding: "utf8" });
+      expect(r.status).toBe(2);
+      expect(r.stderr).toContain("usage: noelle-tool");
+    }
+  });
+});
+
+describe("Noelle's Search Console research read", () => {
+  const ctx = (fetch: (url: string, init: RequestInit) => Promise<Response>) => {
+    const { privateKey } = generateKeyPairSync("rsa", { modulusLength: 2048, privateKeyEncoding: { type: "pkcs8", format: "pem" }, publicKeyEncoding: { type: "spki", format: "pem" } });
+    return { env: { GSC_SERVICE_ACCOUNT_JSON: JSON.stringify({ client_email: "fixture@example.test", private_key: privateKey }) }, now: Date.parse("2026-11-26T18:00:00Z"), fetch };
+  };
+  it("asks Google only for one named site's finalized query and page rows with a read-only token", async () => {
+    const fetch = vi.fn(async (url: string, init: RequestInit) => {
+      if (url === "https://oauth2.googleapis.com/token") {
+        const jwt = (init.body as URLSearchParams).get("assertion")!;
+        expect(JSON.parse(Buffer.from(jwt.split(".")[1], "base64url").toString()).scope).toBe("https://www.googleapis.com/auth/webmasters.readonly");
+        return Response.json({ access_token: "fixture-token" });
+      }
+      expect(init.method).toBe("POST");
+      expect(JSON.parse(String(init.body))).toEqual({ startDate: "2026-10-27", endDate: "2026-11-23", dimensions: ["query", "page"], rowLimit: 50 });
+      if (url.includes("sc-domain")) return new Response(null, { status: 403 });
+      return Response.json({ responseAggregationType: "byPage", rows: [{ keys: ["example query", "https://approvalprep.com/example"], clicks: 3, impressions: 9, ctr: 1 / 3, position: 2 }] });
+    });
+    const result = await readSearchConsole("approvalprep", "approvalprep.com", { ctx: ctx(fetch) });
+    expect(fetch.mock.calls.map(([url]) => url)).toEqual([
+      "https://oauth2.googleapis.com/token",
+      "https://www.googleapis.com/webmasters/v3/sites/sc-domain%3Aapprovalprep.com/searchAnalytics/query",
+      "https://www.googleapis.com/webmasters/v3/sites/https%3A%2F%2Fapprovalprep.com%2F/searchAnalytics/query",
+    ]);
+    expect(result).toMatchObject({ business: "approvalprep", property: "https://approvalprep.com/", rows: [{ query: "example query", page: "https://approvalprep.com/example", clicks: 3 }] });
+  });
+  it("refuses a client domain for an owner business before fetching and marks an outage unconfirmed", async () => {
+    const fetch = vi.fn().mockRejectedValue(new Error("provider unavailable"));
+    const options = { ctx: ctx(fetch) };
+    await expect(readSearchConsole("approvalprep", "hicksconsulting.org", options)).rejects.toMatchObject({ code: "GSC_OUTSIDE_BUSINESS" });
+    expect(fetch).not.toHaveBeenCalled();
+    await expect(readSearchConsole("hicks", "hicksconsulting.org", options)).rejects.toMatchObject({ code: "GSC_UNREADABLE" });
+    expect(fetch).toHaveBeenCalledTimes(1);
   });
 });
 
