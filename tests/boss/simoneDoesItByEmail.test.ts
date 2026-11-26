@@ -72,9 +72,9 @@ function fakeGoogle(): typeof fetch {
       const min = Date.parse(params.get("timeMin")!);
       const max = Date.parse(params.get("timeMax")!);
       const saved = [...events.values()].filter((event) => {
-        const start = event.start as { dateTime: string } | undefined;
-        const end = event.end as { dateTime: string } | undefined;
-        return Date.parse(start?.dateTime ?? "") < max && Date.parse(end?.dateTime ?? "") > min;
+        const start = event.start as { dateTime?: string; date?: string } | undefined;
+        const end = event.end as { dateTime?: string; date?: string } | undefined;
+        return Date.parse(start?.dateTime ?? start?.date ?? "") < max && Date.parse(end?.dateTime ?? end?.date ?? "") > min;
       });
       const items = page === 0 ? [...busy, ...saved] : calendarPages[page - 1];
       if (!items) return new Response(null, { status: 503 });
@@ -442,6 +442,56 @@ describe("Simone reschedules a Workspace block", () => {
     expect(await move()).toEqual({ ok: false, code: "CALENDAR_UNAVAILABLE" });
     expect(moves()).toEqual([]);
     expect(events.get(original.id)).toEqual(original);
+  });
+
+  const allDay = { ...original, start: { date: "2026-10-27" }, end: { date: "2026-10-29" } };
+
+  it("moves an all-day block across the clock change and recovers the same two dates after a lost response", async () => {
+    const quote = "Move the all-day Quarterly planning block from October 27 to October 31.";
+    const edit = await editRequest(quote);
+    events.set(allDay.id, structuredClone(allDay));
+    const timed = { ...original, id: "same-title", start: { dateTime: "2026-10-27T00:00:00Z" }, end: { dateTime: "2026-10-27T12:00:00Z" } };
+    events.set(timed.id, timed);
+    const input = { quote, title: allDay.summary, from: allDay.start.date, to: "2026-10-31" };
+    loseMoveReceipt = true;
+    expect(await edit(input)).toEqual({ ok: false, code: "CALENDAR_UNAVAILABLE" });
+    expect(await edit(input)).toMatchObject({ ok: true, receipt: allDay.id, title: allDay.summary, date: "2026-10-31", through: "2026-11-01" });
+    expect(moves()).toHaveLength(1);
+    expect(moves()[0]?.ifMatch).toBe(allDay.etag);
+    expect(events.get(allDay.id)).toMatchObject({ ...allDay, etag: '"moved"', start: { date: "2026-10-31" }, end: { date: "2026-11-02" } });
+    expect(events.get(timed.id)).toEqual(timed);
+    expect(sends()).toEqual([]);
+  });
+
+  it("can rename and extend a private all-day block, using an inclusive last date", async () => {
+    const quote = "Rename all-day Quarterly planning to Budget review and extend it through October 30.";
+    const edit = await editRequest(quote);
+    events.set(allDay.id, structuredClone(allDay));
+    const input = { quote, title: allDay.summary, from: allDay.start.date, newTitle: "Budget review", through: "2026-10-30" };
+    expect(await edit(input)).toMatchObject({ ok: true, receipt: allDay.id, title: "Budget review", date: "2026-10-27", through: "2026-10-30" });
+    expect(moves()).toHaveLength(1);
+    const patch = JSON.parse(moves()[0]!.body!);
+    expect(Object.keys(patch).sort()).toEqual(["end", "extendedProperties", "summary"]);
+    expect(events.get(allDay.id)).toMatchObject({ ...allDay, etag: '"moved"', summary: "Budget review", end: { date: "2026-10-31" } });
+  });
+
+  it("rejects mixed and malformed dates and will not move a shared all-day event", async () => {
+    const quote = "Move the all-day Quarterly planning block from October 27 to October 31.";
+    const edit = await editRequest(quote);
+    const input = { quote, title: allDay.summary, from: allDay.start.date, to: "2026-10-31" };
+    for (const bad of [
+      { ...input, to: "2026-10-31T00:00:00Z" },
+      { ...input, to: "2027-02-30" },
+      { ...input, through: "2026-10-30" },
+      { ...input, minutes: 30 },
+      { ...args, quote, through: "2026-10-31" },
+    ]) expect(await edit(bad)).toEqual({ ok: false, code: "CALENDAR_BLOCK_TIME_REQUIRED" });
+    expect(calls).toEqual([]);
+    const shared = { ...allDay, attendees: [{ email: "guest@example.test" }] };
+    events.set(allDay.id, shared);
+    expect(await edit(input)).toEqual({ ok: false, code: "CALENDAR_BLOCK_NOT_EDITABLE" });
+    expect(moves()).toEqual([]);
+    expect(events.get(allDay.id)).toEqual(shared);
   });
 });
 

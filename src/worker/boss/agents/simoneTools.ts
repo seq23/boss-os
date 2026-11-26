@@ -121,7 +121,7 @@ export async function simoneTool(env: Env, request: { id: string; lease: number;
     const message: SimoneMessage = JSON.parse(active.input);
     const args = typeof request.task === "string" && request.task.length <= 2500 ? readJsonObject(request.task) : null;
     const editing = request.tool === "edit_calendar_block";
-    const allowedFields = editing ? ["quote", "title", "from", "to", "newTitle", "minutes", "calendar"]
+    const allowedFields = editing ? ["quote", "title", "from", "to", "newTitle", "minutes", "through", "calendar"]
       : ["quote", "title", "at", "minutes", "date", "through", "calendar"];
     const calendar = args?.calendar ?? DEFAULT_MAILBOX;
     const quote = args?.quote;
@@ -143,26 +143,42 @@ export async function simoneTool(env: Env, request: { id: string; lease: number;
     }
     const mailbox = calendar.toLowerCase();
     if (editing) {
-      const { from, to = from, newTitle = title, minutes } = args;
+      const { from, to = from, newTitle = title, minutes, through } = args;
       if (typeof newTitle !== "string" || !newTitle.trim() || newTitle !== newTitle.trim() ||
           newTitle.length > 120 || !quote.includes(newTitle)) {
         return { ok: false, code: "CALENDAR_BLOCK_NOT_AUTHORIZED" } as const;
       }
-      if (typeof from !== "string" || !OFFSET_TIMESTAMP.test(from) || typeof to !== "string" || !OFFSET_TIMESTAMP.test(to) ||
-          (minutes !== undefined && (typeof minutes !== "number" || !Number.isInteger(minutes) || minutes < 1 || minutes > 1440))) {
-        return { ok: false, code: "CALENDAR_BLOCK_TIME_REQUIRED" } as const;
-      }
+      if (typeof from !== "string" || typeof to !== "string") return { ok: false, code: "CALENDAR_BLOCK_TIME_REQUIRED" } as const;
+      const allDay = dateOnly(from);
       const oldStart = Date.parse(from);
       const newStart = Date.parse(to);
-      if (!(oldStart > active.created_at && newStart > active.created_at) ||
-          (oldStart === newStart && title === newTitle && minutes === undefined)) {
+      let duration: number | undefined;
+      if (allDay) {
+        const today = dayOf(active.created_at, OWNER_TZ);
+        if (!dateOnly(to) || from < today || to < today || minutes !== undefined ||
+            (through !== undefined && (!dateOnly(through) || through < to))) {
+          return { ok: false, code: "CALENDAR_BLOCK_TIME_REQUIRED" } as const;
+        }
+        if (typeof through === "string") duration = Date.parse(through) - newStart + 86_400_000;
+      } else if (!OFFSET_TIMESTAMP.test(from) || !OFFSET_TIMESTAMP.test(to) || through !== undefined ||
+          !(oldStart > active.created_at && newStart > active.created_at) ||
+          (minutes !== undefined && (typeof minutes !== "number" || !Number.isInteger(minutes) || minutes < 1 || minutes > 1440))) {
+        return { ok: false, code: "CALENDAR_BLOCK_TIME_REQUIRED" } as const;
+      } else if (typeof minutes === "number") {
+        duration = minutes * 60_000;
+      }
+      if (oldStart === newStart && title === newTitle && duration === undefined) {
         return { ok: false, code: "CALENDAR_BLOCK_TIME_REQUIRED" } as const;
       }
-      const requestKey = await sha256Hex(JSON.stringify([request.id, mailbox, title, oldStart, newStart, newTitle, minutes]));
+      // Keep the key for timed edits so a retry after an update can recover its existing provider receipt.
+      const key = allDay ? [request.id, mailbox, title, from, to, newTitle, through]
+        : [request.id, mailbox, title, oldStart, newStart, newTitle, minutes];
+      const requestKey = await sha256Hex(JSON.stringify(key));
       try {
-        const result = await editCalendarBlock(env, { mailbox, title, from: oldStart, to: newStart, newTitle, minutes, requestKey });
-        if (result.ok) return { ok: true, receipt: result.eventId, title: result.title, start: newStart, end: result.end, calendar: mailbox } as const;
-        return { ok: false, code: result.code } as const;
+        const result = await editCalendarBlock(env, { mailbox, title, allDay, from: oldStart, to: newStart, newTitle, duration, requestKey });
+        if (!result.ok) return { ok: false, code: result.code } as const;
+        const time = allDay ? { date: to, through: dayOf(result.end, "UTC", -1) } : { start: newStart, end: result.end };
+        return { ok: true, receipt: result.eventId, title: result.title, ...time, calendar: mailbox } as const;
       } catch {
         return { ok: false, code: "CALENDAR_UNAVAILABLE" } as const;
       }
