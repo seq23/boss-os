@@ -11,6 +11,7 @@ import { runAs } from "./lib/ai-run.mjs";
 import { listenForSimoneTools } from "./lib/simone-tools.mjs";
 import { clip, latestNote, memoryFile } from "./lib/noelle-memory.mjs";
 import { readAssignments, routingInstructions } from "../../src/shared/boss/intake/simoneRouting.mjs";
+import { containsCredential } from "../../src/shared/boss/service/secretLines.mjs";
 
 const HERE = fileURLToPath(new URL(".", import.meta.url));
 
@@ -89,13 +90,6 @@ export function childEnvironment(env, home, settings, promptFile) {
     AI_RUN_NO_CLAUDE_FALLBACK: "1",
     AI_RUN_CLAUDE_ARGS: `--permission-mode dontAsk --setting-sources= --settings ${settings} --strict-mcp-config --tools Bash,WebSearch,WebFetch --max-turns 100 --output-format stream-json --verbose --append-system-prompt-file ${promptFile}`,
   };
-}
-
-function containsCredential(text, env) {
-  return Object.entries(env).some(([name, value]) =>
-    /(?:PASSCODE|PASSWORD|SECRET|TOKEN|API_KEY|MAIL_KEY|SERVICE_ROLE_KEY)$/.test(name) &&
-    typeof value === "string" && value.length >= 8 && text.includes(value),
-  );
 }
 
 const failedRun = () => ({ log: "", successful: false, receipts: [] });

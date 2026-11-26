@@ -3,10 +3,7 @@ import { newId, sha256Hex } from "../lib/id";
 import { AppError } from "../lib/http";
 import { activeRoster } from "../intake/inboundMail";
 import { admitTask } from "../tasks/admit";
-import { SIMONE_ROUTING, readAssignments, readCompletedRouting, routingInstructions, routingRequest, type SimoneAssignment } from "../../../shared/boss/intake/simoneRouting.mjs";
-import { readJsonObject } from "../router/types";
-import { macSeen } from "../queue/freeRung";
-import { FIRST_READ_SCAN_OFF, freeLadder, type Rung } from "../intake/firstRead";
+import { readAssignments, type SimoneAssignment } from "../../../shared/boss/intake/simoneRouting.mjs";
 import { shortTitle } from "../../../shared/boss/intake/triage.mjs";
 import { constraintsOnRecord } from "../service/constraints";
 import { dueLine, heldDue } from "../../../shared/boss/service/dueTime.mjs";
@@ -76,7 +73,7 @@ export async function claimSimone(env: Env, now = Date.now(), cloud = false) {
        WHERE id = (
          SELECT id FROM tasks WHERE employee_id = ? AND ${CHIEF} AND ${SIMONE_AVAILABLE}
            AND (status = 'queued' OR (status = 'running' AND started_at <= ?))
-           AND (? = 0 OR (json_extract(input, '$.source') = 'boss_inbound_mail' AND created_at <= ?))
+           AND (? = 0 OR (json_extract(input, '$.source') IN ('boss_inbound_mail', 'tell_simone', 'boss_page') AND created_at <= ?))
          ORDER BY attempts, created_at, id LIMIT 1
        ) RETURNING id, input, attempts, created_at`,
   ).bind(now, SIMONE, now - SIMONE_LEASE_MS, Number(cloud), now - 30 * 60_000).first<ClaimedTask>();
@@ -234,36 +231,4 @@ export async function finishSimoneHandoff(env: Env, request: { id: string; lease
     ...(stopped ? { stop: "ACTION_RESTRICTED" as const } : {}),
   });
   return { replied, refused: replied && stopped };
-}
-
-export async function routeSimoneWhenMacIsDown(env: Env, now = Date.now(), rungs?: Rung[]) {
-  if (await macSeen(env, now)) return "mac_online";
-  const call = await claimSimone(env, now, true);
-  if (!call) return "idle";
-  let code = "MODEL_UNAVAILABLE";
-  try {
-    if (call.pendingHandoffs?.length) {
-      const result = await finishSimoneHandoff(env, { ...call, assignments: call.pendingHandoffs });
-      if (result.replied) return result.refused ? "refused" : "handed_off";
-      code = "HANDOFF_UNAVAILABLE";
-    } else {
-      const { value: assignments } = await freeLadder(env, {
-        prompt: `${routingInstructions}\nReturn the assignments array and the simone_work_remains boolean.\n${routingRequest(call)}`,
-        json: SIMONE_ROUTING,
-        now,
-        workersFirst: true,
-        privateScanOff: FIRST_READ_SCAN_OFF,
-        read: (text) => readCompletedRouting(readJsonObject(text), call) ?? "invalid Simone handoff",
-      }, rungs);
-      if (assignments?.length) {
-        const result = await finishSimoneHandoff(env, { ...call, assignments });
-        if (result.replied) return result.refused ? "refused" : "handed_off";
-        code = "HANDOFF_UNAVAILABLE";
-      } else if (assignments) code = "WAITING_FOR_MAC";
-    }
-  } catch {
-    code = "HANDOFF_UNAVAILABLE";
-  }
-  await releaseSimone(env, call.id, call.lease, code);
-  return code;
 }

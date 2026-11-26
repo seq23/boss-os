@@ -14,8 +14,7 @@ export interface RoutingCall {
     thread_jobs?: Array<{ id: string; employee: string; title: string; status: string }>;
   };
 }
-export const SIMONE_ROUTING: { name: string; schema: Record<string, unknown> };
+export const SIMONE_ROUTING: { name: string; schema: { type: string; additionalProperties: boolean; properties: Record<string, unknown>; required: string[] } };
 export const routingInstructions: string;
 export function routingRequest(call: RoutingCall): string;
 export function readAssignments(value: unknown, call: RoutingCall): SimoneAssignment[] | null;
-export function readCompletedRouting(value: unknown, call: RoutingCall): SimoneAssignment[] | null;

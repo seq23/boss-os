@@ -26,7 +26,7 @@ import { appendDutyInstruction, repoInstructions, type OwnedDuty } from "../duti
 import { routeFixedDutyChange } from "../duties/editByMail";
 import { dayOf } from "../../../shared/boss/schedule/clock.mjs";
 
-const READS = {
+export const SIMONE_RECORD_READS = {
   morning: `SELECT day, updated_at, sent_at FROM morning_digests ORDER BY day DESC LIMIT 3`,
   invitations: `SELECT id, title, starts_at, ends_at, status FROM owner_invitations ORDER BY starts_at DESC LIMIT 30`,
   errands: `SELECT id, state, updated_at FROM boss_commands WHERE kind = 'errand' ORDER BY updated_at DESC LIMIT 30`,
@@ -93,8 +93,8 @@ export async function simoneTool(env: Env, request: { id: string; lease: number;
   const active = await env.DB.prepare(`SELECT id, input, created_at FROM tasks WHERE ${activeRun}`)
     .bind(...lease).first<{ id: string; input: string; created_at: number }>();
   if (!active) return { ok: false, code: "STALE_SIMONE_RUN" } as const;
-  if (Object.hasOwn(READS, request.tool)) {
-    const { results } = await env.DB.prepare(READS[request.tool as keyof typeof READS]).all();
+  if (Object.hasOwn(SIMONE_RECORD_READS, request.tool)) {
+    const { results } = await env.DB.prepare(SIMONE_RECORD_READS[request.tool as keyof typeof SIMONE_RECORD_READS]).all();
     return { ok: true, rows: results } as const;
   }
   if (request.tool === "calendar_busy") {

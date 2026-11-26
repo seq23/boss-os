@@ -119,9 +119,3 @@ export function readAssignments(value, call) {
   }
   return assignments;
 }
-
-export function readCompletedRouting(value, call) {
-  const assignments = readAssignments(value?.assignments, call);
-  if (assignments === null || typeof value.simone_work_remains !== "boolean") return null;
-  return value.simone_work_remains ? [] : assignments;
-}

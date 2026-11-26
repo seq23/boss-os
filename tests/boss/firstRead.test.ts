@@ -1,7 +1,8 @@
 import { env } from "cloudflare:test";
 import { describe, expect, it, beforeEach, afterEach } from "vitest";
 import { handleBossInboundMail } from "../../src/worker/boss/intake/inboundMail";
-import { claimSimone, routeSimoneWhenMacIsDown, SIMONE_LEASE_MS } from "../../src/worker/boss/agents/simone";
+import { claimSimone, SIMONE_LEASE_MS } from "../../src/worker/boss/agents/simone";
+import { routeSimoneWhenMacIsDown } from "../../src/worker/boss/agents/simoneFallback";
 import { quotaUntil, QUOTA_KIND, BRIEF_SCHEMA, briefPrompt } from "../../src/worker/boss/intake/firstRead";
 import { freeDayStartedAt } from "../../src/worker/boss/router/experience";
 import { firstRead, freeRungs, parseBrief, readBrief, setFirstReadRungs, unclearLines, FIRST_READ_DAILY_CAP, FIRST_READ_SERVICE, type Rung } from "../../src/worker/boss/intake/firstRead";
