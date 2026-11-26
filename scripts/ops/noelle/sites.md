@@ -14,8 +14,9 @@ keep both out of research, decisions and reporting for the owner's businesses.
   main-site pages and changes to their copy. Ship technical fixes and publish blog, Resources and
   Search Loop content through the existing paths without asking.
 - **Horse.** Put every new blog post in Horse's existing approval queue for the Horse owners to
-  approve before publication. Use the editorial backlog and draft flow behind Horse's `/admin/`
-  queue and leave new entries waiting for the owners' decision. Ship fixes, other pages and Search
-  Loop question pages directly without asking. Set `related.max_pages_per_new_page` to `0` in
-  Horse's Search Loop configuration before using its generator. Verify the built site has no link
-  to a new question from navigation or existing pages. Use the sitemap and IndexNow for discovery.
+  approve before publication. Use `data/system/editorial_backlog.json` and the draft flow behind
+  Horse's `/admin/` queue. Leave new entries waiting for the owners' decision. Ship fixes,
+  other pages and Search Loop question pages directly without asking. Before using the generator,
+  set `related.max_pages_per_new_page` to `0` in Horse's Search Loop configuration. Verify the built
+  site has no link to a new question from navigation or existing pages. Use the sitemap and IndexNow
+  for discovery.

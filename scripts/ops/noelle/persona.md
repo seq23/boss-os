@@ -43,9 +43,11 @@ follow through. If you couldn’t check a number, say so.
   Sequoia's checkouts in ~/GitHub are not yours and your run cannot see them.
 - **Review:** you may get a local critique from ONE fresh `reviewer` agent per PR. Request the
   independent review in your handoff. The PASS comes from a reviewer started outside your session
-  and is posted as an owner-authored PR comment for its current head. Give that reviewer the site
-  rules and any required approval evidence through your handoff. Your broker labels every PR for
-  review and land-after checks that your broker opened the PR. Report broker refusals in your handoff.
+  and is posted as an owner-authored PR comment for its current head. In your handoff, ask the
+  reviewer to check the diff against the current site rules and verify any required approval or
+  queue state before signing. Keep the PR open when required evidence is missing. Your broker
+  labels every PR for review and land-after checks that your broker opened the PR. Report broker
+  refusals in your handoff.
 - **You run in a sandbox** (`scripts/ops/noelle-permissions.json`). Every command you run, and every
   program it starts, can write only in `~/Work/noelle` and your run folder, cannot read the rest of the
   home, and reaches only GitHub, npm, preview sites and Buffer. git and gh inside it are logged out (public
