@@ -21,12 +21,13 @@ import type { Env } from "../env";
 import { todoEditsIn, matchTodo } from "../../../shared/boss/waiting/register.mjs";
 import { ignoreReplyIn } from "../../../shared/boss/meetingPrep/prep.mjs";
 import { newId } from "../lib/id";
-import { audit } from "../lib/audit";
+import { audit, auditOfPrevious } from "../lib/audit";
 import { admitTask } from "../tasks/admit";
 import {
   commandsIn, commandReplyIn, ownWords, readErrandReply, errandKeywordMeaning, errandAnswerIn, errandFollowUpText, errandCancelText, followUpProblems, partyIn, errandDateIn, bookingAt, bookingWhen, reminderDueAt, ERRAND_TZ, errandReplyNotice, confirmLine, renderUrl, slotText, zoneLabel, OWNER_TZ, DEFAULT_MAILBOX, codeLines, ACCESS_CODE_SHAPE,
 } from "../../../shared/boss/commands/parse.mjs";
 import { readMeaning } from "../intake/meaning";
+import { readableText } from "../../../shared/boss/intake/messageBody.mjs";
 import { recipientLines } from "../../../shared/boss/mail/replyNeed.mjs";
 import { partiesAskIn } from "../../../shared/boss/capital/partiesAsk.mjs";
 import { partiesAnswer } from "../capital/grid";
@@ -597,6 +598,7 @@ export async function cancelCommand(env: Env, id: string, now = Date.now()): Pro
 
 /** What the Mac has to do now, and any held email whose repo job has landed is sent first. */
 export async function macWork(env: Env, now = Date.now()) {
+  await replayErrandReplies(env, now);
   const held = await env.DB.prepare(`SELECT id FROM boss_commands WHERE kind = 'email' AND state = 'held'`).all<{ id: string }>();
   for (const h of held.results ?? []) {
     const row = (await getCommand(env, h.id))!;
@@ -662,6 +664,45 @@ const FREE_MAIL_RE = /@(?:gmail|googlemail|yahoo|outlook|hotmail|icloud|me|mac|a
 
 /** Every state in which an errand still has a live thread with the business. */
 const ERRAND_LIVE = ["sent", "replied", "follow_up", "booked", "needs_card", "cancel_sent"];
+const ERRAND_LIVE_SLOTS = ERRAND_LIVE.map(() => "?").join(",");
+const TRACKED_ERRAND_SEND = `s.command_id = c.id AND s.delivery_state = 'sent'
+  AND (s.id = json_extract(c.result, '$.message_id') OR s.id IN (
+    SELECT json_extract(value, '$.message_id') FROM json_each(c.result, '$.follow_ups')
+  ))`;
+
+/** Read already archived replies once their outbound receipt and errand both have been recorded. */
+async function replayErrandReplies(env: Env, now: number) {
+  const { results } = await env.DB.prepare(`SELECT m.id, m.message_id, m.from_addr, m.subject, m.object_key, m.errand_reply, m.received_at
+    FROM boss_inbound_mail m
+    WHERE m.errand_reply IS NOT NULL AND m.received_at > ?
+      AND m.authorised = 0 AND m.dmarc_pass = 1
+      AND EXISTS (SELECT 1 FROM json_each(m.errand_reply, '$.references') ref
+        JOIN boss_sent_mail s ON s.message_id = ref.value
+        JOIN boss_commands c ON c.id = s.command_id
+        WHERE c.kind = 'errand' AND c.state IN (${ERRAND_LIVE_SLOTS}) AND c.updated_at > ?
+          AND json_extract(c.spec, '$.free_only') = 1 AND ${TRACKED_ERRAND_SEND})
+    ORDER BY m.received_at, m.id LIMIT 10`)
+    .bind(now - ERRAND_WATCH_MS, ...ERRAND_LIVE, now - ERRAND_WATCH_MS)
+    .all<{ id: string; message_id: string | null; from_addr: string; subject: string; object_key: string; errand_reply: string; received_at: number }>();
+  for (const mail of results) {
+    try {
+      const { references, copied } = JSON.parse(mail.errand_reply) as { references: string[]; copied: string[] };
+      const errand = await openErrandFor(env, mail.from_addr, now, { references });
+      if (!errand || j(errand.spec).free_only !== true) {
+        // A known send with a conflicting venue or errand never becomes a confirmation.
+        await env.DB.prepare(`UPDATE boss_inbound_mail SET errand_reply = NULL WHERE id = ?`).bind(mail.id).run();
+        continue;
+      }
+      const archived = await env.VAULT.get(mail.object_key);
+      if (!archived) continue;
+      const { text } = await readableText(await archived.text(), { full: true });
+      await errandReplied(env, errand, { from: mail.from_addr, subject: mail.subject, text, copied,
+        dmarc: true, messageId: mail.message_id, mailId: mail.id }, mail.received_at);
+    } catch {
+      console.warn("An archived errand reply is waiting to be read.");
+    }
+  }
+}
 
 /**
  * Match the original sent mail before considering sender-based routing for older errands.
@@ -674,14 +715,11 @@ export async function openErrandFor(env: Env, sender: string, now = Date.now(), 
   if (!from.includes("@")) return null;
   const { results } = await env.DB.prepare(
     `SELECT c.*, m.from_addr AS owner_email, CASE WHEN json_extract(c.spec, '$.free_only') = 1 THEN EXISTS (
-        SELECT 1 FROM boss_sent_mail s WHERE s.command_id = c.id AND s.delivery_state = 'sent'
-          AND s.message_id IN (SELECT value FROM json_each(?))
-          AND (s.id = json_extract(c.result, '$.message_id') OR s.id IN (
-            SELECT json_extract(value, '$.message_id') FROM json_each(c.result, '$.follow_ups')
-          ))
+        SELECT 1 FROM boss_sent_mail s WHERE s.message_id IN (SELECT value FROM json_each(?))
+          AND ${TRACKED_ERRAND_SEND}
       ) ELSE 0 END AS thread_match
       FROM boss_commands c LEFT JOIN boss_inbound_mail m ON m.id = c.mail_id
-      WHERE c.kind = 'errand' AND c.state IN (${ERRAND_LIVE.map(() => "?").join(",")}) AND c.updated_at > ?
+      WHERE c.kind = 'errand' AND c.state IN (${ERRAND_LIVE_SLOTS}) AND c.updated_at > ?
       ORDER BY thread_match DESC, c.updated_at DESC LIMIT 50`,
   ).bind(JSON.stringify(message.references ?? []), ...ERRAND_LIVE, now - ERRAND_WATCH_MS)
     .all<CommandRow & { owner_email: string | null; thread_match: number }>();
@@ -771,31 +809,49 @@ export async function readErrandMeaning(env: Env, text: string, to: string | und
   return m.by === "model" ? readErrandReply(text, to, subject, m.value) : keyword;
 }
 
-export async function errandReplied(env: Env, row: CommandRow, reply: { from: string; subject: string; text: string; dmarc: boolean; messageId?: string | null; mailId?: string; copied?: string[] }, now = Date.now()): Promise<void> {
-  if (row.state === "done") return;
+export async function errandReplied(env: Env, row: CommandRow, reply: { from: string; subject: string; text: string; dmarc: boolean; messageId?: string | null; mailId?: string; copied?: string[] }, now = Date.now()): Promise<boolean> {
+  if (row.state === "done") return false;
   const spec = j(row.spec); const result = j(row.result);
+  const previous = result.replies ?? [];
+  if (reply.mailId && previous.some((r: Json) => r.mail_id === reply.mailId)) return true;
+  const link = (reason: string, requireCommandUpdate = false) => env.DB.prepare(`UPDATE boss_inbound_mail SET outcome = 'ERRAND_REPLY',
+    employee_id = 'emp_chief', command_id = ?, thread_id = ?, errand_reply = NULL, why = ? WHERE id = ? AND (? = 0 OR changes() = 1)`)
+    .bind(row.id, row.id, reason, reply.mailId ?? null, Number(requireCommandUpdate));
+  // An earlier reply can arrive before its receipt is visible while a newer one takes the live path.
+  if (reply.mailId && previous.some((r: Json) => r.at > now)) {
+    await link(`Earlier answer to Simone's request ${row.id}, kept in its thread.`).run();
+    return true;
+  }
   const read = await readErrandMeaning(env, reply.text || reply.subject, spec.to, reply.subject, reply.mailId ?? null);
   const offer = read.offer;
   // Full originals live in R2; keep this operational preview bounded as a thread grows.
-  const replies = [...(result.replies ?? []), { at: now, from: reply.from, subject: reply.subject.slice(0, 300), text: reply.text.slice(0, 8000), mail_id: reply.mailId ?? null, kind: read.kind, dmarc: reply.dmarc, message_id: reply.messageId ?? null }];
+  const replies = [...previous, { at: now, from: reply.from, subject: reply.subject.slice(0, 300), text: reply.text.slice(0, 8000), mail_id: reply.mailId ?? null, kind: read.kind, dmarc: reply.dmarc, message_id: reply.messageId ?? null }];
   // Her answer goes to everyone on their latest message (owner, 2 Nov 2026): the business, plus whoever they copied.
   const toAddr = String(spec.to ?? "").toLowerCase();
   const cc = (reply.copied ?? []).filter((x) => !String(x).toLowerCase().includes(`<${toAddr}>`) && String(x).toLowerCase() !== toAddr).slice(0, 10);
   const thread = { cc, message_id: reply.messageId ?? result.thread?.message_id ?? null, subject: /^re:/i.test(reply.subject) ? reply.subject.slice(0, 200) : `Re: ${String(result.subject ?? reply.subject).slice(0, 196)}`, greet: offer.greet ?? result.thread?.greet ?? null };
   const asked = String(result.request ?? spec.ask ?? "").slice(0, 300);
   const unproven = reply.dmarc ? [] : ["Their email could not be fully proven to come from them, so check it before acting on it."];
+  const record = async (state: string, next: Json, token: string | null, notice: Notice, action: string, detail: Json) => {
+    const write = env.DB.prepare(`UPDATE boss_commands SET state = ?, result = ?, tap_token = ?, notice = ?,
+      notice_state = 'due', updated_at = ? WHERE id = ? AND state = ? AND updated_at = ? AND result = ?`)
+      .bind(state, JSON.stringify(next), token, JSON.stringify(notice), Date.now(), row.id, row.state, row.updated_at, row.result);
+    const log = auditOfPrevious(env.DB, { actor: "system", lane: "ops", entityType: "boss_command", entityId: row.id, action, detail }, "rows", { onlyIfChanged: true });
+    const statements = [write, log];
+    // The audit statement inserts one row only when the command update won its race.
+    if (reply.mailId) statements.push(link(`Their answer to Simone's request ${row.id}, told to you plainly.`, true));
+    const [saved] = await env.DB.batch(statements);
+    return saved?.meta.changes === 1;
+  };
 
   // Their answer to Simone's cancellation.
   if (row.state === "cancel_sent") {
     const done = /\bcancel(?:l?ed|lation)\b/i.test(offer.text) && !/\?/.test(offer.text);
-    await save(env, row.id, { state: done ? "cancelled" : "cancel_sent", result: { ...result, replies, thread } }, now);
-    await owe(env, row.id, {
+    return record(done ? "cancelled" : "cancel_sent", { ...result, replies, thread }, row.tap_token, {
       subject: done ? "Cancelled: they confirmed it" : "They answered about the cancellation",
       happened: done ? `${spec.to} confirmed the cancellation.` : `${spec.to} answered Simone's cancellation.`,
       details: [`What they said: ${read.what_they_said}`, ...(done ? [] : [`What you need to do: ${read.what_you_do}`]), ...unproven],
-    });
-    await audit(env.DB, { actor: "system", lane: "ops", entityType: "boss_command", entityId: row.id, action: "errand_cancel_answered", detail: { done, from: reply.from } });
-    return;
+    }, "errand_cancel_answered", { done, from: reply.from });
   }
 
   // A confirmation of one time: the booking is real, and its reminder is set 28 hours before.
@@ -813,12 +869,7 @@ export async function errandReplied(env: Env, row: CommandRow, reply: { from: st
   const kind = confirmsPending ? "confirmed" : read.kind;
   const rules = { rules: offer.rules.length ? offer.rules : (result.rules ?? []), cancel_rule: offer.cancel_rule.length ? offer.cancel_rule : (result.cancel_rule ?? []) };
   const decideOpen = kind === "decide" && !confirmed;
-  await save(env, row.id, {
-    state: read.kind === "card" ? "needs_card" : confirmed ? "booked" : "replied",
-    result: { ...result, replies, thread, ...rules, booking: confirmed ? booking : (booking ?? null), decide_open: decideOpen, offer: { options: offer.options, needs: offer.needs, rules: offer.rules, cancel_rule: offer.cancel_rule, greet: offer.greet } },
-  }, now);
-  const fresh = (await getCommand(env, row.id))!;
-  const token = kind === "decide" || confirmed ? await ensureTap(env, fresh, now) : null;
+  const token = kind === "decide" || confirmed ? row.tap_token ?? tapToken() : null;
   const notice = errandReplyNotice({
     to: spec.to, asked, read, kind, confirmed, booking, decideOpen, unproven,
     commandId: row.id, commandUrl: `${ORIGIN}/?command=${encodeURIComponent(row.id)}`,
@@ -828,8 +879,10 @@ export async function errandReplied(env: Env, row: CommandRow, reply: { from: st
   });
   // Who her answer goes to, shown to her (owner, 2 Nov 2026): the business, and whoever they copied.
   if (decideOpen && cc.length && Array.isArray((notice as any).details)) (notice as any).details.push("Your answer goes to everyone on their email:", ...recipientLines({ to: [spec.to], cc }));
-  await owe(env, row.id, notice);
-  await audit(env.DB, { actor: "system", lane: "ops", entityType: "boss_command", entityId: row.id, action: "errand_answered", detail: { kind, confirmed, from: reply.from, dmarc: reply.dmarc } });
+  return record(read.kind === "card" ? "needs_card" : confirmed ? "booked" : "replied", {
+    ...result, replies, thread, ...rules, booking: confirmed ? booking : (booking ?? null), decide_open: decideOpen,
+    offer: { options: offer.options, needs: offer.needs, rules: offer.rules, cancel_rule: offer.cancel_rule, greet: offer.greet },
+  }, token ?? row.tap_token, notice, "errand_answered", { kind, confirmed, from: reply.from, dmarc: reply.dmarc });
 }
 
 /**

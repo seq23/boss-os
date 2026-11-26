@@ -219,6 +219,66 @@ describe("her errand by email", () => {
     expect(await env.DB.prepare("SELECT state FROM boss_commands WHERE id = ?").bind(id).first()).toEqual({ state: "booked" });
   });
 
+  it("replays one verified early venue reply when the receipt and archive both become available", async () => {
+    const { id } = await sentErrand(null);
+    const arrival = (from: string, dmarc?: string) => mail({ from, subject: "Re: Reservation request",
+      references: REQUEST_MESSAGE_ID, inReplyTo: "<later@example.test>", body: CONFIRMATION, dmarc });
+    const anonymous = arrival(BIZ);
+    anonymous.headers.delete("from");
+    const early = await handleBossInboundMail(arrival(BIZ), env);
+    const refused = await Promise.all([
+      handleBossInboundMail(arrival("host@other.example.test"), env),
+      handleBossInboundMail(arrival(BIZ, "mx.cloudflare.net; dmarc=fail"), env),
+      handleBossInboundMail(anonymous, env),
+      handleBossInboundMail({ ...arrival(BIZ), console: true }, env),
+    ]);
+    const readMail = (mailId: string) => env.DB.prepare("SELECT outcome, command_id, object_key FROM boss_inbound_mail WHERE id = ?")
+      .bind(mailId).first<{ outcome: string; command_id: string | null; object_key: string }>();
+    const status = () => env.DB.prepare("SELECT state, notice_state, result FROM boss_commands WHERE id = ?").bind(id)
+      .first<{ state: string; notice_state: string; result: string }>();
+    const original = (await readMail(early.mailId))!;
+    expect(original).toMatchObject({ outcome: "REFUSED_SENDER", command_id: null });
+    expect(await (await env.VAULT.get(original.object_key))?.text()).toContain(CONFIRMATION);
+    expect((await macWork(env)).notices.some((n) => n.id === id)).toBe(false);
+    const providerId = `em_${id}`;
+    await recordSentMail(env, { provider_id: providerId, message_id: REQUEST_MESSAGE_ID, command_id: id,
+      from: "simone@example.test", to: BIZ, subject: "Reservation request", text: "Hello" });
+    const unavailable = { ...env, VAULT: { ...env.VAULT, get: async () => { throw new Error("Fixture archive outage"); } } };
+    expect((await macWork(unavailable)).notices.some((n) => n.id === id)).toBe(false);
+    expect(await status()).toMatchObject({ state: "sent", notice_state: "none" });
+    expect(await readMail(early.mailId)).toEqual(original);
+    await Promise.all([macWork(env), macWork(env)]);
+    const recovered = await macWork(env);
+    expect(recovered.notices.filter((n) => n.id === id)).toMatchObject([{ notice: { subject: "Your request is booked" } }]);
+    expect(await readMail(early.mailId)).toEqual({ ...original, outcome: "ERRAND_REPLY", command_id: id });
+    expect(await status()).toMatchObject({ state: "booked", notice_state: "due" });
+    expect(JSON.parse((await status())!.result).replies).toMatchObject([{ mail_id: early.mailId }]);
+    expect(await env.DB.prepare("SELECT COUNT(*) AS n FROM audit_log WHERE entity_id = ? AND action = 'errand_answered'")
+      .bind(id).first()).toEqual({ n: 1 });
+    for (const message of refused) {
+      const row = (await readMail(message.mailId))!;
+      expect(row).toMatchObject({ outcome: "REFUSED_SENDER", command_id: null });
+      expect(await (await env.VAULT.get(row.object_key))?.text()).toContain(CONFIRMATION);
+    }
+    expect(gmail.filter((url) => url.includes("/messages/send"))).toEqual([]);
+  });
+
+  it("keeps an earlier venue reply in the thread without changing the newer booking", async () => {
+    const { id } = await sentErrand(null);
+    const old = await say({ from: BIZ, inReplyTo: REQUEST_MESSAGE_ID, body: "We will need a credit card to secure the booking." });
+    await recordSentMail(env, { provider_id: `em_${id}`, message_id: REQUEST_MESSAGE_ID, command_id: id,
+      from: "simone@example.test", to: BIZ, subject: "Reservation request", text: "Hello" });
+    await say({ from: BIZ, inReplyTo: REQUEST_MESSAGE_ID, body: CONFIRMATION });
+    const snapshot = () => env.DB.prepare("SELECT state, result, notice FROM boss_commands WHERE id = ?").bind(id)
+      .first<{ state: string }>();
+    const booked = await snapshot();
+    expect(booked?.state).toBe("booked");
+    await macWork(env);
+    expect(await snapshot()).toEqual(booked);
+    expect(await env.DB.prepare("SELECT outcome, command_id, thread_id FROM boss_inbound_mail WHERE id = ?")
+      .bind(old.mailId).first()).toEqual({ outcome: "ERRAND_REPLY", command_id: id, thread_id: id });
+  });
+
   it("NEGATIVE: mail from any other domain is not their answer and is refused as before", async () => {
     await sentErrand();
     const res = await say({ from: "host@other.example.test", body: "You're all set." });

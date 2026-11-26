@@ -542,12 +542,20 @@ async function handleMail(message: BossMailMessage, env: Env, said: Said): Promi
    * and only HER reply sends anything back, in their thread (src/worker/boss/commands/run.ts
    * errandReplied, answerErrand).
    */
-  const externalBytes = !isOwner(sender, env.BOSS_EXTRA_OWNER_SENDERS ?? "") && message.rawSize <= MAX_BODY_BYTES ? await new Response(message.raw).arrayBuffer() : null;
+  const externalSender = !isOwner(sender, env.BOSS_EXTRA_OWNER_SENDERS ?? "");
+  const externalBytes = externalSender && message.rawSize <= MAX_BODY_BYTES ? await new Response(message.raw).arrayBuffer() : null;
   const externalRaw = externalBytes === null ? null : new TextDecoder().decode(externalBytes);
   const externalText = externalRaw === null ? "" : (await readableText(externalRaw, { full: true })).text;
-  const errand = !isOwner(sender, env.BOSS_EXTRA_OWNER_SENDERS ?? "") ? await openErrandFor(env, sender, now, {
-    subject, text: externalText, references: chainIds(message.headers.get("references"), message.headers.get("in-reply-to")),
+  const errand = externalSender ? await openErrandFor(env, sender, now, {
+    subject, text: externalText, references: chain,
   }) : null;
+  const verifiedVenue = externalSender && dmarc && headerFrom && !viaConsole;
+  const copied = verifiedVenue && (errand || chain.length) ? (() => {
+    const all = replyAllRecipients({ from: message.headers.get("from"), to: message.headers.get("to"), cc: message.headers.get("cc"), "reply-to": message.headers.get("reply-to") });
+    return [...all.to, ...all.cc].filter((x) => !isOwner(extractAddress(x) ?? x, env.BOSS_EXTRA_OWNER_SENDERS ?? ""));
+  })() : [];
+  const errandReply = verifiedVenue && externalRaw !== null && chain.length
+    ? JSON.stringify({ references: chain.filter((id) => id.length <= 400), copied: copied.slice(0, 11) }) : null;
   const externalKey = `boss-inbound-mail/${new Date(now).toISOString().slice(0, 10)}/${mailId}.eml`;
   const keepExternal = async () => {
     if (externalRaw !== null) await env.VAULT.put(externalKey, externalBytes!, { httpMetadata: { contentType: "message/rfc822" } });
@@ -557,29 +565,26 @@ async function handleMail(message: BossMailMessage, env: Env, said: Said): Promi
       await env.VAULT.put(externalKey, sized.readable, { httpMetadata: { contentType: "message/rfc822" } });
       await pumped;
     }
-    await env.DB.prepare(`UPDATE boss_inbound_mail SET object_key = ? WHERE id = ?`).bind(externalKey, mailId).run();
+    await env.DB.prepare(`UPDATE boss_inbound_mail SET object_key = ?, errand_reply = ? WHERE id = ?`).bind(externalKey, errandReply, mailId).run();
   };
   const admitted = !authorised && !errand ? await env.DB.prepare(`SELECT address FROM boss_mail_senders WHERE address = ?`).bind(sender).first() : null;
   if (errand || admitted) {
     const text = externalText || "This email is too large to show here. Tap View the original email to read it.";
-    await recordArrival("ERRAND_REPLY", `From ${sender}, answering a request Simone sent for you. Read and told to you; nothing was run or sent back.`);
+    await recordArrival(errand ? "ERRAND_REPLY_PENDING" : "ADMITTED_MAIL", errand
+      ? "The message is being kept and checked against the errand's thread."
+      : "Owner let this sender in for reading; nothing was run or sent.");
     await keepExternal();
     if (!errand) {
-      await finish({ outcome: "ADMITTED_MAIL", why: "Owner let this sender in for reading; nothing was run or sent.", objectKey: externalKey, reply: null });
       return { mailId, outcome: "ADMITTED_MAIL", employeeId: null, taskId: null, reply: null };
     }
-    await env.DB.prepare(`UPDATE boss_inbound_mail SET command_id = ?, thread_id = ? WHERE id = ?`).bind(errand.id, errand.id, mailId).run();
-    if (!dmarc || !headerFrom || viaConsole) {
+    if (!verifiedVenue) {
+      await env.DB.prepare(`UPDATE boss_inbound_mail SET command_id = ?, thread_id = ? WHERE id = ?`).bind(errand.id, errand.id, mailId).run();
       await finish({ outcome: "ERRAND_UNVERIFIED", why: "The venue address could not be verified. The message is available in the mail history.",
         employeeId: SIMONE, objectKey: externalKey });
       return { mailId, outcome: "ERRAND_UNVERIFIED", employeeId: SIMONE, taskId: null, reply: null };
     }
-    // Everyone on their message stays on Simone's answer, minus us and her (owner, 2 Nov 2026).
-    const all = replyAllRecipients({ from: message.headers.get("from"), to: message.headers.get("to"), cc: message.headers.get("cc"), "reply-to": message.headers.get("reply-to") });
-    const copied = [...all.to, ...all.cc].filter((x) => !isOwner(extractAddress(x) ?? x, env.BOSS_EXTRA_OWNER_SENDERS ?? ""));
-    await errandReplied(env, errand, { from: sender, subject, text, dmarc, messageId, mailId, copied }, now);
-    await finish({ outcome: "ERRAND_REPLY", why: `Their answer to Simone's request ${errand.id}, told to you plainly.`, employeeId: "emp_chief", objectKey: externalKey, reply: null });
-    return { mailId, outcome: "ERRAND_REPLY", employeeId: "emp_chief", taskId: null, reply: null };
+    const recorded = await errandReplied(env, errand, { from: sender, subject, text, dmarc, messageId, mailId, copied }, now);
+    return { mailId, outcome: recorded ? "ERRAND_REPLY" : "ERRAND_REPLY_PENDING", employeeId: SIMONE, taskId: null, reply: null };
   }
 
   if (!authorised) {
