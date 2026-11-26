@@ -204,7 +204,7 @@ export async function driveToken(env: Env, fetchImpl: typeof fetch): Promise<str
   return t;
 }
 
-export async function searchWorkspaceDrive(env: Env, title: string, pageToken?: string) {
+export async function searchWorkspaceDrive(env: Env, title: string, pageToken?: string, fetchImpl: typeof fetch = fetch) {
   const literal = title.replaceAll("\\", "\\\\").replaceAll("'", "\\'");
   const params = new URLSearchParams({
     q: `trashed = false and name contains '${literal}'`,
@@ -214,8 +214,8 @@ export async function searchWorkspaceDrive(env: Env, title: string, pageToken?: 
     fields: "files(id,name,mimeType,webViewLink),nextPageToken,incompleteSearch",
   });
   if (pageToken) params.set("pageToken", pageToken);
-  const token = await driveToken(env, fetch);
-  const response = await fetch(`${DRIVE_FILES}?${params}`, {
+  const token = await driveToken(env, fetchImpl);
+  const response = await fetchImpl(`${DRIVE_FILES}?${params}`, {
     headers: { authorization: `Bearer ${token}` }, redirect: "manual",
   });
   if (!response.ok) throw new Error("Drive could not complete the search");
