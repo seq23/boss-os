@@ -21,7 +21,7 @@ import { setSetting } from "../../src/worker/boss/lib/settings";
 import { handleRequest } from "../../src/worker/index";
 import { dayIdInZone } from "../../src/shared/boss/timezone";
 import { CHANNEL_OWNERS } from "../../src/shared/boss/growth/noelle.mjs";
-import { noelleWatch, postsReconciled } from "../../src/worker/boss/growth/noelle";
+import { noelleContext, noelleWatch, postsReconciled } from "../../src/worker/boss/growth/noelle";
 import type { Env } from "../../src/worker/env";
 
 const NOW = Date.parse("2026-11-23T20:00:00Z"); // Mon 23 Nov 2026, 14:00 Central
@@ -163,6 +163,16 @@ describe("H3b: her message on Noelle's page is a call on the same claim path as 
 });
 
 describe("the run's end: one row per run, a stopped run names its stop, the same failure twice tells her once", () => {
+  it("carries a completed weekly review through the month and clears it for the next month", async () => {
+    const insert = env.DB.prepare(`INSERT INTO noelle_runs (id, day, slot, kind, state, stops, calls, line, reads, created_at, updated_at)
+      VALUES (?, ?, '14:37', 'weekly', ?, '[]', 1, ?, '{}', ?, ?)`);
+    await insert.bind("noelle-incomplete-month", "2026-11-05", "stopped", "NAMED STOP [MONTHLY_REVIEW_INCOMPLETE] no bet was reviewed", NOW, NOW).run();
+    expect((await noelleContext(env, NOW)).monthlyReviewDone).toBeNull();
+    await insert.bind("noelle-completed-month", "2026-11-12", "done", "OUTPUT monthly review 2026-11: 2 bets reviewed.", NOW, NOW).run();
+    expect((await noelleContext(env, NOW)).monthlyReviewDone).toBe("2026-11");
+    expect((await noelleContext(env, NOW + 10 * DAY_MS)).monthlyReviewDone).toBeNull();
+  });
+
   it("a bad id or a stopped run with no stop code is a 400 and records nothing", async () => {
     expect((await done({ id: "not-hers" })).status).toBe(400);
     expect((await done({ id: undefined })).status).toBe(400);

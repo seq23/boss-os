@@ -22,6 +22,7 @@
  *   ledger <business> <channel> <kind> <item> [receipt]   (hers) one measurement-ledger row
  *   backlinks <business> <file.json>     (hers) link requests to the backlink network, [{ topic, draft, why }]
  *   search-console <business> <domain>   (hers) read one grid property's recent query/page performance
+ *   post-results <business> <id>        (hers) read metrics for one verified Buffer post receipt
  *
  * RULE 0. Every step prints one OUTPUT line; a step that did nothing is a NAMED STOP and a non-zero exit.
  */
@@ -35,7 +36,7 @@ export { callWindow };
 import { LEDGER_KINDS } from "../../src/shared/boss/growth/ledger.mjs";
 import { parseSections, sectionBody, stripConfidential } from "../../src/shared/boss/brains/brain.mjs";
 import { ORIGIN } from "./lib/duty-kit.mjs";
-import { clip, wakeMemory, handoffStop } from "./lib/noelle-memory.mjs";
+import { clip, wakeMemory, handoffStop, monthlyReview } from "./lib/noelle-memory.mjs";
 import { GUARD_DIR } from "./noelle-guard.mjs";
 
 const HERE = dirname(fileURLToPath(import.meta.url));
@@ -191,14 +192,22 @@ export function readsText({ context, reads, calendar }) {
 
 async function cmdReads(dir) {
   mkdirSync(dir, { recursive: true });
-  const { collectReads } = await import("./lib/noelle-reads.mjs");
+  const { collectReads, REPOS } = await import("./lib/noelle-reads.mjs");
   const { d1Query, macContext, readMetric } = await import("./lib/scorecard-readers.mjs");
   const { fetchLoopWeeks } = await import("./lib/search-loop-week.mjs");
   const context = await bossMachine()("GET", "/context");
   const now = Date.now();
   const mctx = macContext({ now });
   const { reads, calendar } = await collectReads({ context, env: process.env, fetchImpl: fetch, gh: mctx.gh, now, readMetric, metricCtx: mctx, fetchLoopWeeks, d1: (sql) => d1Query(mctx, "creator-studios-sample1-db", sql) });
-  writeFileSync(join(dir, "today.md"), readsText({ context, reads, calendar }));
+  const monthly = slotFor(context.today).kind === "weekly" && context.monthlyReviewDone !== context.today.slice(0, 7)
+    ? { day: context.today, businesses: Object.keys(REPOS) } : null;
+  if (monthly) {
+    const wakePath = join(GUARD_DIR(), "wake.json");
+    const wake = JSON.parse(readFileSync(wakePath, "utf8"));
+    writeFileSync(wakePath, JSON.stringify({ ...wake, monthly }));
+  }
+  const reviewBrief = monthly ? `## Monthly review due\n\nUse the monthly review instructions in your persona. Date: ${monthly.day}. Businesses: ${monthly.businesses.join(", ")}.` : "";
+  writeFileSync(join(dir, "today.md"), [reviewBrief, readsText({ context, reads, calendar })].filter(Boolean).join("\n\n"));
   writeFileSync(join(dir, "today-detail.json"), JSON.stringify({ context, reads, calendar }, null, 2));
   writeFileSync(join(dir, "state.json"), JSON.stringify({ day: context.today, reads: { sources: reads, queues: calendar.queues, unread: calendar.unread, items: calendar.items ?? {} } }, null, 2));
   const unread = Object.values(reads).filter((r) => r.error).length;
@@ -320,11 +329,11 @@ export function failureStep(prev, code) {
  * `finish <dir> <log> <slot> <kind> <denied> [usage-limited]` → finish()'s options. The fifth argument is claude_denials' count
  * from noelle.sh; a missing one is "unknown" (PERMISSION_DENIED), never "0", so a dropped count never passes.
  */
-export function finishOptions([dir, , slot, kind, denied, mode], { log, api, env = process.env }) {
-  return { dir, log, slot, kind: kind === "weekly" ? "weekly" : "daily", runId: env.NOELLE_RUN_ID, api, denied: denied ?? "unknown", limited: mode === "usage-limited" };
+export function finishOptions([dir, , slot, kind, denied, mode, transcriptFile], { log, api, env = process.env }) {
+  return { dir, log, slot, kind: kind === "weekly" ? "weekly" : "daily", runId: env.NOELLE_RUN_ID, api, denied: denied ?? "unknown", limited: mode === "usage-limited", transcriptFile };
 }
 
-export async function finish({ dir, log, slot, kind, runId, api, denied = "unknown", home = HOME_DIR(), wake = null, limited = false, now = Date.now() }) {
+export async function finish({ dir, log, slot, kind, runId, api, denied = "unknown", home = HOME_DIR(), wake = null, limited = false, transcriptFile }) {
   const r = runResult(log);
   const result = r.json ? runVerdict(r) : {
     ok: false, code: "NO_CLAUDE_RESULT", line: "NAMED STOP [NO_CLAUDE_RESULT] the Claude session returned no result", reply: "",
@@ -339,6 +348,17 @@ export async function finish({ dir, log, slot, kind, runId, api, denied = "unkno
   }
   const state = existsSync(join(dir, "state.json")) ? JSON.parse(readFileSync(join(dir, "state.json"), "utf8")) : {};
   const call = existsSync(join(dir, "call.json")) ? JSON.parse(readFileSync(join(dir, "call.json"), "utf8")) : null;
+  let reads = state.reads ?? null;
+  if (v.ok && !call && wake?.monthly) {
+    const review = monthlyReview(dir, wake.monthly, runId, transcriptFile, join(dirname(GUARD_DIR()), "bin", "noelle-tool"));
+    if (review.why) {
+      v = { ...v, ok: false, code: "MONTHLY_REVIEW_INCOMPLETE", line: `NAMED STOP [MONTHLY_REVIEW_INCOMPLETE] ${review.why}` };
+    } else {
+      const { monthlyReview: _untrusted, ...priorReads } = reads ?? {};
+      reads = { monthlyReview: review, ...priorReads };
+      v.line = `OUTPUT monthly review ${review.month}: ${review.reviewed} bets reviewed. ${v.line}`;
+    }
+  }
   const failFile = join(home, ".run", "failures.json");
   let prev = null; try { prev = JSON.parse(readFileSync(failFile, "utf8")); } catch { prev = null; }
   const f = failureStep(prev, v.ok ? null : v.code);
@@ -346,7 +366,7 @@ export async function finish({ dir, log, slot, kind, runId, api, denied = "unkno
   writeFileSync(failFile, JSON.stringify(f.next));
   const stops = v.ok ? [] : [v.code, ...(f.twice ? ["SAME_FAILURE_TWICE"] : [])];
   const line = f.twice ? `NAMED STOP [SAME_FAILURE_TWICE] ${v.code} twice in a row; no more tries today, and Notices has it for Sequoia. ${v.line}` : v.line;
-  const done = await api("POST", "/done", { id: runId, day: state.day, slot: call ? call.slot : slot, kind, state: v.ok ? "done" : "stopped", stops, turns: r.turns, line: line.slice(0, 600), reads: state.reads ?? null, twice: f.twice });
+  const done = await api("POST", "/done", { id: runId, day: wake?.monthly?.day ?? state.day, slot: call ? call.slot : slot, kind, state: v.ok ? "done" : "stopped", stops, turns: r.turns, line: line.slice(0, 600), reads, twice: f.twice });
   let said = "";
   if (call && limited) {
     const release = await api("POST", "/call/release", { task_id: call.task_id, stop: CLOUD_STOP });
@@ -446,14 +466,14 @@ async function main() {
   if (cmd === "notice") return cmdNotice(a, b, c, d);
   if (cmd === "ledger") return cmdLedger(a, b, c, d, e);
   if (cmd === "backlinks") return cmdBacklinks(a, b);
-  if (cmd === "search-console" && a && b && !c) {
-    const { readSearchConsole } = await import("./lib/noelle-reads.mjs");
-    const result = await readSearchConsole(a, b);
-    console.log(untrusted("search-console", JSON.stringify(result)));
-    console.log(`OUTPUT Search Console read ${result.domain}: ${result.rows.length} rows`);
+  if (["search-console", "post-results"].includes(cmd) && a && b && !c) {
+    const { readSearchConsole, readPostResults } = await import("./lib/noelle-reads.mjs");
+    const result = cmd === "search-console" ? await readSearchConsole(a, b) : await readPostResults(a, b);
+    console.log(untrusted(cmd, JSON.stringify(result)));
+    console.log(cmd === "search-console" ? `OUTPUT Search Console read ${result.domain}: ${result.rows.length} rows` : `OUTPUT Buffer post metrics read ${result.id}`);
     return;
   }
-  console.error("usage: noelle.mjs due|mark|window|call-claim|call-release|reads|persona|stop|finish|brain|notice|ledger|backlinks|search-console …");
+  console.error("usage: noelle.mjs due|mark|window|call-claim|call-release|reads|persona|stop|finish|brain|notice|ledger|backlinks|search-console|post-results …");
   process.exit(2);
 }
 

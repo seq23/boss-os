@@ -133,11 +133,13 @@ AI_RUN_CLAUDE_ARGS="$CLAUDE_LOCK --strict-mcp-config --session-id $SID --max-tur
 RC=$?
 say "=== her session (Claude, $MODEL) exited rc=$RC ==="
 # Every refusal by her list, counted from her own transcript: a number or "unknown" is a stop, never 0.
-DENIED="$(claude_denials "$SID" "$RUN_LOG")"
+TRANSCRIPT="$(claude_transcript "$SID")"
+DENIED=unknown
+[ -z "$TRANSCRIPT" ] || DENIED="$(claude_denials "$TRANSCRIPT" "$RUN_LOG")"
 
 FINISH_MODE=""
 [ "$RC" -ne 76 ] || FINISH_MODE="usage-limited"
-step finish "$WORK" "$SESSION_LOG" "$SLOT" "$KIND" "$DENIED" "$FINISH_MODE"; FRC=$?
+step finish "$WORK" "$SESSION_LOG" "$SLOT" "$KIND" "$DENIED" "$FINISH_MODE" "$TRANSCRIPT"; FRC=$?
 ln -sf "$RUN_LOG" "$LOG_DIR/latest.log"
 [ -n "$CALL" ] && exit "$FRC"
 case "$FRC" in

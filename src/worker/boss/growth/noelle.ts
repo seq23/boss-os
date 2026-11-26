@@ -102,11 +102,14 @@ export async function noelleContext(env: Env, now = Date.now()) {
   });
   const measures = summaries.flatMap((s: any) => (s.channels ?? []).map((c: any) => ({ business: s.key, channel: c.channel, language: c.language, value: c.value, unread: c.unread })));
   const runs = await recentRuns(db, today);
+  const month = today.slice(0, 7);
+  const monthly = await db.prepare(`SELECT 1 FROM noelle_runs WHERE day BETWEEN ? AND ? AND kind = 'weekly'
+    AND state = 'done' AND line LIKE ? LIMIT 1`).bind(`${month}-01`, today, `OUTPUT monthly review ${month}:%`).first();
   const { results: misses } = await db.prepare(`SELECT id, site, prompt, lane, fix_attempts, todo_key, last_missed_week, rivals, cited_sources
     FROM ai_misses WHERE fixed_week IS NULL AND site IN (SELECT value FROM json_each(?))
     ORDER BY site, last_missed_week DESC, first_missed_week LIMIT 120`).bind(JSON.stringify(Object.keys(AI_SITES))).all();
   return {
-    today, season: season(today), slot: slotFor(today),
+    today, season: season(today), slot: slotFor(today), monthlyReviewDone: monthly ? month : null,
     businesses, problems, summaries, grid: readGrid(roster, measures), linkedOpen: await linkedOpen(db, roster),
     runs: runs.slice(0, 10).map((r) => ({ day: r.day, kind: r.kind, state: r.state, stops: r.stops, line: r.line })),
     aiMisses: misses.map((miss) => ({ ...miss, rivals: parse<string[]>(miss.rivals, []), cited_sources: parse<string[]>(miss.cited_sources, []) })),

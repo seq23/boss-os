@@ -997,6 +997,14 @@ service account with Google's read-only scope. Scheduled runs can also read date
 citation domains from the six selling sites' existing `ai_misses` records in `today-detail.json`.
 OpenSEO collection and project changes stay outside Noelle's session.
 
+On a Thursday wake, Noelle refreshes each business's niche research and reviews live bets if the
+run ledger has no completed review for the current Central month. `post-results <business> <id>`
+reads the metrics for a Buffer post from its business's verified posting receipts. Search Console
+rows cover individual pages. The launcher checks the review against the current Claude transcript
+for fetched sources and item reads. A complete review writes each bet's decision and available
+attributed sales to the existing run ledger. Client outcomes stay in the client playbooks. A stop
+leaves the review due at the next weekly wake.
+
 The Mac launcher passes its own permission settings and OS sandbox to Claude Code.
 `noelle_prepare` creates the settings and the two brokers outside the session workspace. The
 picture validator rejects a reachable provider call, vendor host or credential. GitHub Actions

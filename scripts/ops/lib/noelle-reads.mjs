@@ -15,6 +15,7 @@ import { existsSync, readFileSync, statSync, readdirSync } from "node:fs";
 import { homedir } from "node:os";
 import { join } from "node:path";
 import { CHANNEL_OWNERS, READ_SOURCES } from "../../../src/shared/boss/growth/noelle.mjs";
+import { ledgerRowsFrom } from "../../../src/shared/boss/growth/ledger.mjs";
 import { dayOf } from "../../../src/shared/boss/schedule/clock.mjs";
 import { outcomeWindows } from "../../../src/shared/boss/searchReadiness/search-outcomes.mjs";
 import { googleAccess, macContext, NamedStop } from "./scorecard-readers.mjs";
@@ -165,18 +166,24 @@ export const BUFFERS = Object.freeze({
   BUFFER_APPROVALPREP_ACCESS_TOKEN: "approvalprep",
   BUFFER_BRANDS_ACCESS_TOKEN: "dream-wedding",
 });
+// The Accounts map lists this existing key for Studio posts. Its queue is still read through Studio.
+const POST_BUFFERS = { ...BUFFERS, BUFFER_ACCESS_TOKEN: "porch-and-party" };
 const SERVICE = { facebook: "facebook-page", instagram: "instagram", threads: "threads", tiktok: "tiktok", pinterest: "pinterest" };
 
 /** Scheduled Buffer posts for one key: { counts: {channel: n}, days: {channel: [YYYY-MM-DD]} } or { error }. */
-export async function readBuffer(token, { fetchImpl, now }) {
-  if (!token) return { error: "its Buffer key is not in the vault run" };
-  const q = async (query, variables) => {
-    const r = await fetchImpl("https://api.buffer.com", { method: "POST", headers: { "content-type": "application/json", authorization: `Bearer ${token}` }, body: JSON.stringify({ query, variables }), signal: AbortSignal.timeout(20_000) });
+function bufferQuery(token, fetchImpl) {
+  return async (query, variables) => {
+    const r = await fetchImpl("https://api.buffer.com", { method: "POST", headers: { "content-type": "application/json", authorization: `Bearer ${token}` }, body: JSON.stringify({ query, variables }), redirect: "error", signal: AbortSignal.timeout(20_000) });
     if (!r.ok) throw new Error(`Buffer answered ${r.status}`);
     const j = await r.json();
     if (j?.errors?.length) throw new Error(`Buffer: ${String(j.errors[0]?.message ?? "error").slice(0, 80)}`);
     return j.data;
   };
+}
+
+export async function readBuffer(token, { fetchImpl, now }) {
+  if (!token) return { error: "its Buffer key is not in the vault run" };
+  const q = bufferQuery(token, fetchImpl);
   try {
     const orgs = (await q("{ account { organizations { id } } }"))?.account?.organizations ?? [];
     if (!orgs.length) return { error: "Buffer shows no organization" };
@@ -194,6 +201,35 @@ export async function readBuffer(token, { fetchImpl, now }) {
     return { counts, days, items };
   } catch (e) {
     return { error: String(e?.message ?? e).slice(0, 120) };
+  }
+}
+
+/** Read a single Buffer receipt using the account already used for the business's calendar. */
+export async function readPostResults(business, id, { env = process.env, fetchImpl = fetch } = {}) {
+  const key = Object.keys(POST_BUFFERS).find((key) => POST_BUFFERS[key] === business);
+  if (!key || !/^[\w-]{1,80}$/.test(id ?? "")) throw new NamedStop("POST_RESULTS_SCOPE", "use a receipt for a business with an existing Buffer account");
+  if (!env[key]) throw new NamedStop("POST_RESULTS_UNREAD", `couldn’t check Buffer for ${business}: its existing key was unavailable`);
+  const ledgers = new Map(Object.entries(CHANNEL_OWNERS)
+    .filter(([path, entry]) => path.startsWith(`${business}:`) && entry.posted)
+    .map(([, entry]) => [`${entry.repo}/main/${entry.posted}`, entry.channel]));
+  const receipts = await Promise.allSettled([...ledgers].map(async ([path, channel]) => {
+    const res = await fetchImpl(`https://raw.githubusercontent.com/${OWNER}/${path}`, { redirect: "error", signal: AbortSignal.timeout(20_000) });
+    if (!res.ok) throw new Error("posting ledger unreadable");
+    const rows = ledgerRowsFrom(await res.json(), { business, channel, days: 730 });
+    return rows.some((row) => row.receipt.id === id);
+  }));
+  if (!receipts.some((result) => result.status === "fulfilled" && result.value)) {
+    throw new NamedStop("POST_RESULTS_UNVERIFIED", `couldn’t confirm ${id} in ${business}’s posting receipts`);
+  }
+  try {
+    const q = bufferQuery(env[key], fetchImpl);
+    const { post } = await q("query($id: PostId!) { post(input: { id: $id }) { id sentAt metricsUpdatedAt metrics { type value } } }", { id });
+    if (post?.id !== id || !post.sentAt || !Number.isFinite(Date.parse(post.metricsUpdatedAt)) || !post.metrics?.length) throw new Error("no metrics");
+    const metrics = Object.fromEntries(post.metrics.filter(({ value }) => Number.isFinite(value)).map(({ type, value }) => [type, value]));
+    if (!Object.keys(metrics).length) throw new Error("no numeric metrics");
+    return { business, id, sentAt: post.sentAt, updatedAt: post.metricsUpdatedAt, metrics };
+  } catch {
+    throw new NamedStop("POST_RESULTS_UNREAD", `couldn’t check Buffer metrics for ${business}/${id}`);
   }
 }
 

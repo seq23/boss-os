@@ -12,9 +12,9 @@ import { join } from "node:path";
 // @ts-expect-error plain .mjs script, no types
 import { NOELLE_BRAINS, readBrain, seedPlaybooks, callBlock, personaText, readsText, runVerdict, runResult, failureStep, finish, finishOptions, tickDecision, heldUntil, untrusted, missedLine, RETRY_AFTER_MS, CLOUD_STOP, deniedVerdict, reviewerAgent } from "../scripts/ops/noelle.mjs";
 // @ts-expect-error plain .mjs script, no types
-import { judge, HER_REPOS } from "../scripts/ops/noelle-guard.mjs";
+import { GUARD_DIR, judge, HER_REPOS } from "../scripts/ops/noelle-guard.mjs";
 // @ts-expect-error plain .mjs script, no types
-import { readCalendar, readSearchConsole, readStudio, readLinkedIn, weekdaysAfter } from "../scripts/ops/lib/noelle-reads.mjs";
+import { readCalendar, readPostResults, readSearchConsole, readStudio, readLinkedIn, weekdaysAfter } from "../scripts/ops/lib/noelle-reads.mjs";
 // @ts-expect-error plain .mjs script, no types
 import { wakeMemory, handoffStop } from "../scripts/ops/lib/noelle-memory.mjs";
 import { slotFor } from "../src/shared/boss/growth/noelle.mjs";
@@ -230,8 +230,9 @@ describe("her run is locked (#573): a refusal is a stop, and her one agent is pa
     expect(sh).toMatch(/--agents \$WORK\/agents\.json/);
     expect(sh).toMatch(/--strict-mcp-config/);
     expect(sh).not.toMatch(/--mcp-config\s/);
-    expect(sh).toMatch(/DENIED="\$\(claude_denials "\$SID"/);
-    expect(sh).toMatch(/^step finish "\$WORK" "\$SESSION_LOG" "\$SLOT" "\$KIND" "\$DENIED" "\$FINISH_MODE";/m); // the count is finish's fifth argument
+    expect(sh).toMatch(/TRANSCRIPT="\$\(claude_transcript "\$SID"\)"/);
+    expect(sh).toMatch(/DENIED="\$\(claude_denials "\$TRANSCRIPT"/);
+    expect(sh).toMatch(/^step finish "\$WORK" "\$SESSION_LOG" "\$SLOT" "\$KIND" "\$DENIED" "\$FINISH_MODE" "\$TRANSCRIPT";/m);
     expect(sh).not.toMatch(/dangerously-skip-permissions|setting-sources project|PATH="\$NHOME\/bin/);
     // no GitHub credential reaches her run: she pushes and opens PRs only through noelle-tool (tests/noelleGithub.test.ts)
     expect(sh).toMatch(/^unset GH_TOKEN GITHUB_TOKEN /m);
@@ -284,11 +285,39 @@ describe("her sandbox, as noelle_prepare writes it", () => {
   it("the research broker refuses write and paid tool requests", () => {
     const { home } = prep();
     const broker = join(home, ".boss-os/noelle/bin/noelle-tool");
-    for (const args of [["search-console", "approvalprep", "approvalprep.com", "submit-sitemap"], ["get_serp_results", "gift wrapping"]]) {
+    for (const args of [["search-console", "approvalprep", "approvalprep.com", "submit-sitemap"], ["post-results", "approvalprep", "post-id", "delete"], ["get_serp_results", "gift wrapping"]]) {
       const r = spawnSync(broker, args, { encoding: "utf8" });
       expect(r.status).toBe(2);
       expect(r.stderr).toContain("usage: noelle-tool");
     }
+  });
+});
+
+describe("Noelle's per-post research read", () => {
+  const env = { BUFFER_PEACEBESTILL_ACCESS_TOKEN: "fixture" };
+  const at = new Date().toISOString();
+  const ledger = { posts: { "fixture-post": { runs: [{ channel: "instagram", buffer_id: "post-id", queued_at: at }] } } };
+  it("matches the business receipt and reads one published post without captions or writes", async () => {
+    const fetchImpl = vi.fn(async (url: string, init: RequestInit) => {
+      if (url.startsWith("https://raw.githubusercontent.com/seq23/peace-be-still/main/data/")) {
+        expect(init.headers).toBeUndefined();
+        return Response.json(ledger);
+      }
+      const { query, variables } = JSON.parse(String(init.body));
+      expect(url).toBe("https://api.buffer.com");
+      expect(query).toMatch(/^query\(.*?\).*?post\(/);
+      expect(query).not.toMatch(/mutation|\btext\b/);
+      expect(variables).toEqual({ id: "post-id" });
+      return Response.json({ data: { post: { id: "post-id", sentAt: at, metricsUpdatedAt: at, metrics: [{ type: "views", value: 23 }, { type: "saves", value: 4 }] } } });
+    });
+    await expect(readPostResults("peace-be-still", "post-id", { env, fetchImpl })).resolves.toEqual({ business: "peace-be-still", id: "post-id", sentAt: at, updatedAt: at, metrics: { views: 23, saves: 4 } });
+  });
+  it("refuses foreign receipts before contacting Buffer and reports unavailable metrics", async () => {
+    const fetchImpl = vi.fn(async (url: string) => url.startsWith("https://raw.githubusercontent.com/") ? Response.json(ledger) : new Response(null, { status: 503 }));
+    await expect(readPostResults("hicks", "post-id", { env, fetchImpl })).rejects.toMatchObject({ code: "POST_RESULTS_SCOPE" });
+    await expect(readPostResults("peace-be-still", "foreign-id", { env, fetchImpl })).rejects.toMatchObject({ code: "POST_RESULTS_UNVERIFIED" });
+    expect(fetchImpl.mock.calls.every(([url]) => url.startsWith("https://raw.githubusercontent.com/"))).toBe(true);
+    await expect(readPostResults("peace-be-still", "post-id", { env, fetchImpl })).rejects.toMatchObject({ code: "POST_RESULTS_UNREAD" });
   });
 });
 
@@ -378,6 +407,62 @@ describe("Rule 0 on her own last line", () => {
   it("reads Claude's JSON result line and identifies an unrecognized plain log", () => {
     expect(runResult('noise\n{"type":"result","subtype":"success","num_turns":12,"result":"hi\\nOUTPUT: 1 done"}\n')).toMatchObject({ text: "hi\nOUTPUT: 1 done", turns: 12, json: true });
     expect(runResult("OUTPUT: 1 done")).toMatchObject({ json: false, text: "OUTPUT: 1 done" });
+  });
+});
+
+describe("monthly review on the existing weekly finish path", () => {
+  function reviewRun() {
+    const dir = mkdtempSync(join(tmpdir(), "noelle-monthly-"));
+    const runId = "noelle-2026-12-03-1405-1";
+    const day = "2026-12-03";
+    const url = "https://winner.example/research";
+    const page = "https://horselegalguide.com/questions/example/";
+    const transcriptFile = join(dir, "transcript.jsonl");
+    const broker = join(GUARD_DIR(), "../bin/noelle-tool");
+    const trace = (id: string, name: string, input: object, content: string) => [
+      { message: { content: [{ type: "tool_use", id, name, input }] } },
+      { message: { content: [{ type: "tool_result", tool_use_id: id, content }] } },
+    ];
+    const fetched = trace("source", "WebFetch", { url }, "Source evidence");
+    const post = trace("post", "Bash", { command: `${broker} post-results peace-be-still post-id` }, `${untrusted("post-results", JSON.stringify({ business: "peace-be-still", id: "post-id", metrics: { views: 23 } }))}\nOUTPUT Buffer post metrics read post-id`);
+    const search = trace("page", "Bash", { command: `${broker} search-console horse horselegalguide.com` }, `${untrusted("search-console", JSON.stringify({ business: "horse", domain: "horselegalguide.com", rows: [{ page, clicks: 0 }] }))}\nOUTPUT Search Console read horselegalguide.com: 1 rows`);
+    const record = { run: runId, businesses: {
+      "peace-be-still": { sources: [{ url, readOn: day }], bets: [{ id: "dramas", stopRule: "Stop after 30 days without tracked sales", decision: "double", items: ["post-id"], sales: 2 }] },
+      horse: { sources: [{ url, readOn: day }], bets: [{ id: "search-pages", stopRule: "Stop if search clicks stay at zero", decision: "stop", items: [page] }] },
+    } };
+    mkdirSync(join(dir, "notes"));
+    writeFileSync(join(dir, "owner-notes.md"), `## ${day}\nFixture`);
+    const wake = { ...wakeMemory(dir), runId, monthly: { day, businesses: ["peace-be-still", "horse"] } };
+    writeFileSync(join(dir, "HANDOFF.md"), `Run: ${runId}\nowner-notes read through ${day}`);
+    const api = vi.fn(async (_method, _path, _body) => ({}));
+    const finishReview = (report: object, transcript = [...fetched, ...post, ...search]) => {
+      writeFileSync(transcriptFile, transcript.map((entry) => JSON.stringify(entry)).join("\n"));
+      writeFileSync(join(dir, "monthly-review.json"), JSON.stringify(report));
+      return finish({ dir, home: dir, denied: "0", runId, wake, transcriptFile, api, slot: "14:05", kind: "weekly", log: JSON.stringify({ result: "OUTPUT: 1 done - reviewed bets" }) });
+    };
+    return { api, record, finishReview, post, search };
+  }
+
+  it("records the reviewed selling bet and tracked sales in the run ledger while keeping the client outcome local", async () => {
+    const { api, record, finishReview } = reviewRun();
+    await expect(finishReview(record)).resolves.toMatchObject({ ok: true });
+    expect(api).toHaveBeenCalledWith("POST", "/done", expect.objectContaining({ day: "2026-12-03", state: "done", line: expect.stringMatching(/^OUTPUT monthly review 2026-12:/), reads: { monthlyReview: { month: "2026-12", reviewed: 2, outcomes: { "peace-be-still": [{ id: "dramas", decision: "double", sales: 2 }] } } } }));
+  });
+
+  it("records a stop for unfetched or undated research, no bets, and a bet missing its stop rule or item read", async () => {
+    const { record, finishReview, post, search } = reviewRun();
+    const cases = [
+      { edit: (r: typeof record) => r, transcript: [...post, ...search], why: "needs a source fetched" },
+      { edit: (r: typeof record) => { r.businesses.horse.sources[0]!.readOn = ""; }, why: "needs a source fetched" },
+      { edit: (r: typeof record) => { r.businesses.horse.bets = []; r.businesses["peace-be-still"].bets = []; }, why: "no bet was reviewed" },
+      { edit: (r: typeof record) => { r.businesses.horse.bets[0]!.stopRule = ""; }, why: "stop rule or decision" },
+      { edit: (r: typeof record) => { r.businesses.horse.bets[0]!.items = ["post-id"]; }, why: "needs a per-post or per-page result" },
+    ];
+    for (const { edit, transcript, why } of cases) {
+      const attempt = structuredClone(record);
+      edit(attempt);
+      await expect(finishReview(attempt, transcript)).resolves.toMatchObject({ ok: false, code: "MONTHLY_REVIEW_INCOMPLETE", out: expect.stringContaining(why) });
+    }
   });
 });
 
