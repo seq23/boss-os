@@ -128,10 +128,13 @@ export async function replySimone(env: Env, result: { id: string; lease: number;
        ON CONFLICT(id) DO NOTHING`,
     ).bind(`tev_${result.id}_reply`, now, refused ? "refused" : "completed", receipts, result.id, SIMONE, result.lease),
     db.prepare(
-      `UPDATE boss_inbound_mail SET reply_state = 'due'
+      `UPDATE boss_inbound_mail SET reply_state = (
+         SELECT CASE json_extract(input, '$.source') WHEN 'boss_page' THEN 'shown_on_screen' ELSE 'due' END
+         FROM tasks WHERE id = ?
+       )
        WHERE outcome = 'SIMONE_QUEUED' AND reply_state = 'agent_pending' AND authorised = 1
          AND id = (SELECT json_extract(input, '$.mail_id') FROM tasks WHERE ${current})`,
-    ).bind(result.id, SIMONE, result.lease),
+    ).bind(result.id, result.id, SIMONE, result.lease),
     db.prepare(
       `UPDATE tasks SET status = ?, output = ?, finished_at = ?, error = ? WHERE ${current}`,
     ).bind(refused ? "cancelled" : "done", JSON.stringify({ text, work: result.work }), now, result.stop ?? null,

@@ -5,7 +5,7 @@
  * ─── The lane this guards ───────────────────────────────────────────────────
  *
  * 21 Sep 2026: "is there a lane for me to ask for a new duty to my Boss OS agents?" Now there is —
- * `#<seat> new duty …` by mail, or Team → Duties — and a duty row can be created from a sentence.
+ * Team → Duties — and a duty row can be created from a sentence.
  * A row that can be created from a sentence can be created wrongly: no owner, no model, a script
  * her Mac does not have, a delivery key nothing handles. Each is a duty that fires on time and
  * does nothing — "runs but inert", the defect this repository produces most.
@@ -23,8 +23,8 @@
  *      by mail both decide that same judgement call) and the mail lane's pre-approval branch,
  *      which must pass `via: "pre_approved"` WITH the phrase. `create.ts` refuses a pre-approval
  *      that carries no phrase.
- *   4. BELOW THE REFUSAL. In `intake/inboundMail.ts`, both duty-lane calls sit after the
- *      `if (!authorised)` return, so a stranger who knows a token cannot draft or approve.
+ *   4. BELOW THE REFUSAL. An email reply to a saved duty draft is handled after
+ *      `if (!authorised)`, so a stranger who knows a token cannot approve.
  *   5. THE MANIFEST IS THE INSTALLER. `INSTALLED_LOCAL_JOBS` in the shared lane equals the set of
  *      scripts `install-agent-launchd.sh` wraps in `duty-run.sh`. The Worker cannot read the Mac's
  *      disk; this is how it knows what exists there, and two lists with no link is the defect.
@@ -145,8 +145,9 @@ export function problemsIn(files, installerText, laneManifest) {
     if (!/state: FiledDraft\["state"\] = draft\.refusals\.length > 0 \? "refused" : input\.preApproved \? "created" : "drafted"/.test(mailLane.text)) {
       problems.push(`${MAIL_LANE}: the pre-approved state must be decided from input.preApproved (the ORIGINAL request) and refusals first.`);
     }
-    if (!/const req = dutyRequestIn\(input\.subject, input\.text, input\.roster\)/.test(mailLane.text) || !/preApproved: req\.preApproved/.test(mailLane.text)) {
-      problems.push(`${MAIL_LANE}: the pre-approval must be read by dutyRequestIn from the request mail itself.`);
+    const screen = code(files["src/worker/boss/routes/employees.ts"] ?? "");
+    if (!/preApproved: preApprovalIn\(phrase\)/.test(screen)) {
+      problems.push("The screen must read pre-approval from the original request.");
     }
     // A later message must not pre-approve: the reply path files with preApproved: null.
     const answer = mailLane.text.indexOf("export async function answerDutyFromMail");
@@ -159,11 +160,10 @@ export function problemsIn(files, installerText, laneManifest) {
   if (!inbound) problems.push(`${INBOUND} is missing.`);
   else {
     const refusal = inbound.indexOf("if (!authorised)");
-    for (const fn of ["answerDutyFromMail(", "newDutyFromMail("]) {
-      const at = inbound.indexOf(`await ${fn}`);
-      if (at === -1) problems.push(`${INBOUND} never calls ${fn} — the mail door is not wired.`);
-      else if (refusal === -1 || at < refusal) problems.push(`${INBOUND} calls ${fn} ABOVE the sender refusal; a stranger could draft or approve a duty.`);
-    }
+    const at = inbound.indexOf("await answerDutyFromMail(");
+    if (at === -1) problems.push(`${INBOUND} never calls answerDutyFromMail — saved replies cannot be worked.`);
+    else if (refusal === -1 || at < refusal) problems.push(`${INBOUND} calls answerDutyFromMail ABOVE the sender refusal.`);
+    if (/\bawait (?:newDutyFromMail|fileDraft)\(/.test(inbound)) problems.push(`${INBOUND} creates a new duty draft from raw mail.`);
   }
 
   // 5. The manifest is the installer.
@@ -244,7 +244,8 @@ function selfTest() {
   expectFail("the pre-approval branch drops the phrase", { ...files, [MAIL_LANE]: files[MAIL_LANE].replace("phrase: input.preApproved,", "phrase: null,") }, undefined, undefined, /does not carry the pre-approval phrase/);
   expectFail("a reply carrying a pre-approval", { ...files, [MAIL_LANE]: files[MAIL_LANE].replace("tag: row.tag, routedBy: signer.id !== seat.id ? signer : null, preApproved: null,", "tag: row.tag, routedBy: signer.id !== seat.id ? signer : null, preApproved: readDutyReply(input.text).text,") }, undefined, undefined, /a reply may not carry a pre-approval/);
   expectFail("the mail door above the refusal", { ...files, [INBOUND]: files[INBOUND].replace("if (!authorised) {", "if (false) {").replace(/const dutyAnswer = planAnswer \? null : await answerDutyFromMail\(/, "const dutyAnswer = planAnswer ? null : await answerDutyFromMail(") }, undefined, undefined, /never calls|ABOVE the sender refusal/);
-  expectFail("the mail door unwired", { ...files, [INBOUND]: files[INBOUND].replace("await newDutyFromMail(", "await nothing(") }, undefined, undefined, /never calls newDutyFromMail/);
+  expectFail("the mail door unwired", { ...files, [INBOUND]: files[INBOUND].replace("await answerDutyFromMail(", "await nothing(") }, undefined, undefined, /never calls answerDutyFromMail/);
+  expectFail("raw mail creates a draft", { ...files, [INBOUND]: files[INBOUND] + "\nawait fileDraft(env, input);" }, undefined, undefined, /creates a new duty draft from raw mail/);
   expectFail("a script installed but not in the manifest", files, `${installer}\n<string>bash $REPO/scripts/ops/duty-run.sh brand-new.sh -- bash brand-new.sh</string>`, undefined, /installs brand-new\.sh and INSTALLED_LOCAL_JOBS/);
   expectFail("a manifest entry the installer does not know", files, undefined, [...lane.INSTALLED_LOCAL_JOBS, "phantom.sh"], /lists phantom\.sh/);
   expectFail("an installer with no duties (Rule 0)", files, "# nothing", undefined, /RULE 0/);
@@ -295,5 +296,5 @@ if (problems.length || rules.length) {
 }
 console.log(
   `validate:duty-birth: ${writers} writer (${CREATE}), ${callers} roads to it (approval loop + recorded pre-approval), ` +
-  `both mail-door calls below the sender refusal, ${installed} installed local jobs pinned to the installer, ${FIXTURES.length} rule fixtures pass.`,
+  `saved-duty replies below the sender refusal, ${installed} installed local jobs pinned to the installer, ${FIXTURES.length} rule fixtures pass.`,
 );

@@ -278,13 +278,15 @@ email" and "i should not have to put an employee name, my main assistant should 
 for me."_ The whole page, with examples: [HOW_TO_GIVE_BOSS_OS_WORK_BY_EMAIL.md](../HOW_TO_GIVE_BOSS_OS_WORK_BY_EMAIL.md).
 
 - **Write to `boss@sequoiataylor.com`** from one of your addresses, in your own words. No tag needed.
-- **Simone reads the request.** For new mail to boss@ or simone@, her Mac claims the stored message
+- **Simone reads the request.** For new mail to a Boss OS address, her Mac claims the stored message
   and runs her Claude Code session. She can reply with a result or hand parts to colleagues from
   the active team. The Tell Simone box and Simone’s page show the reply on the same surface.
+  The authenticated intake console queues new requests the same way and exposes the result at
+  `GET /api/boss/simone/message/<task ID>`.
 - When Claude cannot start, Codex can use Simone’s tools. The Worker checks for the Mac heartbeat
   before trying Workers AI and then Gemini for mail routing. Both receive the Boss OS request text
   as written. When every reader is unavailable, the message stays queued.
-- **name@sequoiataylor.com** reaches the employee’s existing mailbox. Approval and errand replies
+- **name@sequoiataylor.com** tells Simone whom you are writing to. Approval and errand replies
   that identify an existing record still go to that record.
 - **Replies are permission:** `approved` / `changes: …` / `stop` on the thread; `your call` in the
   first email pre-approves. A reply goes back to the job it answers (`jobThisAnswers`), never a new pile.

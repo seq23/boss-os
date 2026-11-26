@@ -1,22 +1,4 @@
-/**
- * SIMONE DOES IT BY EMAIL — THE WORKER HALF.
- *
- * Owner, 25 Oct 2026: whatever a Claude session could do with her tools, an email from her to Simone
- * (or boss@) does too, with no employee named. This is the existing intake extended, not a second
- * one: `handleBossInboundMail` calls `commandFromMail` after the secret door and the block answers,
- * before the lanes and triage; when it returns null (nothing here is a command) the email goes on to
- * the ordinary triage exactly as before.
- *
- *   invite   → clash check, then the event with a Meet link on her Workspace calendar, confirmed in
- *              one plain line; her personal Gmail calendar gets a one-tap "Add to my calendar" link.
- *              A bounce (seen by the Mac) asks for the right address; the reply updates THE SAME event.
- *   lookup   → her own Drive and Gmail, searched on her Mac seat (scripts/ops/simone-commands.mjs);
- *              candidates come back with evidence, and she picks when more than one is plausible.
- *   email    → drafted in her voice on the Mac, shown to her word for word with Send / Change / Try
- *              again. NOTHING GOES TO A THIRD PARTY UNTIL SHE TAPS SEND OR REPLIES "send" — the only
- *              path to `sendOne` is `sendApprovedEmail`, which reads the row's `approved` state.
- *   repo     → Danielle's existing repo-change lane (admitTask on emp_repo, by GitHub address). Never inline.
- */
+/** Run existing Simone records and handle replies to those records. New requests go through the agent. */
 import type { Env } from "../env";
 import { todoEditsIn, matchTodo } from "../../../shared/boss/waiting/register.mjs";
 import { ignoreReplyIn } from "../../../shared/boss/meetingPrep/prep.mjs";
@@ -24,13 +6,11 @@ import { newId } from "../lib/id";
 import { audit, auditOfPrevious } from "../lib/audit";
 import { admitTask } from "../tasks/admit";
 import {
-  commandsIn, commandReplyIn, ownWords, readErrandReply, errandKeywordMeaning, errandAnswerIn, errandFollowUpText, errandCancelText, followUpProblems, partyIn, errandDateIn, bookingAt, bookingWhen, reminderDueAt, ERRAND_TZ, errandReplyNotice, confirmLine, renderUrl, slotText, zoneLabel, OWNER_TZ, DEFAULT_MAILBOX, codeLines, ACCESS_CODE_SHAPE,
+  commandReplyIn, ownWords, readErrandReply, errandKeywordMeaning, errandAnswerIn, errandFollowUpText, errandCancelText, followUpProblems, partyIn, errandDateIn, bookingAt, bookingWhen, reminderDueAt, ERRAND_TZ, errandReplyNotice, confirmLine, renderUrl, slotText, zoneLabel, OWNER_TZ, DEFAULT_MAILBOX, codeLines, ACCESS_CODE_SHAPE,
 } from "../../../shared/boss/commands/parse.mjs";
 import { readMeaning } from "../intake/meaning";
 import { readableText } from "../../../shared/boss/intake/messageBody.mjs";
 import { recipientLines } from "../../../shared/boss/mail/replyNeed.mjs";
-import { partiesAskIn } from "../../../shared/boss/capital/partiesAsk.mjs";
-import { partiesAnswer } from "../capital/grid";
 import { clashes, createInvite, readInvite, replaceGuest, deleteInvite, sendOne } from "./google";
 
 export const ORIGIN = "https://boss.sequoiataylor.com";
@@ -353,52 +333,18 @@ async function cantYetLine(env: Env, row: CommandRow, what: string, now: number)
 
 // ─── From her email ────────────────────────────────────────────────────────
 
-export interface CommandMailResult {
-  reply: string; outcome: "COMMAND" | "COMMAND_REPLY"; commandIds: string[]; taskId: string | null;
-  /** The intake's "why" line, when the ids alone say nothing (an answer with no command row). */
-  why?: string;
-  /** One row per command for the handoff screen: what it is and who has it (Simone, or Danielle for repo work). */
-  jobs?: Array<{ title: string; employeeId: string; employee: string; taskId: string | null; duty: false; failure: null }>;
-}
-
-/** A command's short title for the handoff list. */
-function commandTitle(kind: string, spec: Json): string {
-  if (kind === "lookup") return `Find ${spec.name ?? "their"}'s email`;
-  if (kind === "invite") return `Invite ${spec.guest_name ?? spec.guest_email ?? "a guest"}`;
-  if (kind === "repo") return `${spec.product}: ${String(spec.instruction ?? "").slice(0, 50)}`;
-  if (kind === "access_code") return `Access code${spec.code ? ` ${spec.code}` : ""}`;
-  if (kind === "email") return `Email to ${spec.recipient_name ?? spec.to ?? "them"}`;
-  if (kind === "errand") return `Request to ${spec.to}`;
-  if (kind === "meeting_prep") return `Meeting prep: ${spec.who ?? "a meeting"}`;
-  return String(spec.what ?? kind).slice(0, 60);
-}
-
-/**
- * The intake's door into this file. A reply on a command's thread answers that command; a new email
- * with commands in it creates them. Null means "not a command" and the ordinary triage takes it.
- */
-export async function commandFromMail(env: Env, input: { subject: string; text: string; mailId: string; sender: string; refs: string[]; now: number; to?: string; ownerName?: string; linkedOnly?: boolean }): Promise<CommandMailResult | null> {
+/** Handle a reply to a saved command or a list edit on the morning email. */
+export async function commandFromMail(env: Env, input: { text: string; refs: string[]; now: number }): Promise<{ reply: string; commandIds: string[] } | null> {
   const cmdRefs = input.refs.filter((r) => r.startsWith("cmd_"));
   if (cmdRefs.length) {
     const rows: CommandRow[] = [];
     for (const id of cmdRefs) { const r = await getCommand(env, id); if (r) rows.push(r); }
     if (rows.length) {
       const reply = await answerCommands(env, rows, input.text, input.now);
-      if (reply) return { reply, outcome: "COMMAND_REPLY", commandIds: rows.map((r) => r.id), taskId: null };
+      if (reply) return { reply, commandIds: rows.map((r) => r.id) };
     }
   }
-  if (input.linkedOnly) return null;
-  /*
-   * HER CHOICE OF DESK WINS. Mail to another employee's own address, a #tag for anyone but Simone,
-   * or a reply on another lane's thread is that desk's, exactly as before; only mail to Simone or
-   * boss@ with no other desk named is read for commands.
-   */
-  const local = String(input.to ?? "boss@").split("@")[0]!.toLowerCase();
-  if (!["boss", "simone"].includes(local)) return null;
-  const tags = (`${input.subject}\n${input.text}`.match(/(?:^|\s)#([a-z][a-z0-9_-]*)/gi) ?? []).map((t) => t.trim().slice(1).toLowerCase());
-  if (tags.some((t) => t !== "simone")) return null;
-  // HER OWN LIST, EDITED BY REPLY (owner, 26 Oct 2026): "add: X" / "done: X" to Simone, including a
-  // reply to the morning email, changes "Yours this week" (waiting_on rows she owns) and nothing else.
+  if (!input.refs.some((ref) => ref.startsWith("yd_"))) return null;
   const edits = todoEditsIn(input.text);
   const open = edits.add.length || edits.done.length
     ? (await env.DB.prepare(`SELECT id, kind, what, state FROM waiting_on WHERE kind = 'her_todo' AND state = 'open'`).all<any>()).results ?? []
@@ -415,73 +361,9 @@ export async function commandFromMail(env: Env, input: { subject: string; text: 
       const hit = matchTodo(open, words);
       if (hit) { await env.DB.prepare(`UPDATE waiting_on SET state = 'done', updated_at = ? WHERE id = ?`).bind(input.now, hit.id).run(); said.push(`Done and off your list: ${hit.what}.`); }
     }
-    return { reply: said.join("\n"), outcome: "COMMAND_REPLY", commandIds: [], taskId: null };
+    return { reply: said.join("\n"), commandIds: [] };
   }
-  if (input.refs.some((r) => !r.startsWith("cmd_"))) return null;
-  /*
-   * "FIND ALL BUYERS OF <COMPANY>" IS A READ OF HER DEAL GRID (5 Nov 2026). It went to a cloud model
-   * with no way into her inbox and failed. The grid is her inbox's deal emails, people and addresses
-   * kept, so Simone answers it in the reply. A company the grid never names goes to the triage.
-   */
-  const partiesAsk = partiesAskIn(input.text) ?? partiesAskIn(input.subject);
-  if (partiesAsk) {
-    const answer = await partiesAnswer(env, partiesAsk, input.now);
-    if (answer) {
-      await audit(env.DB, { actor: "boss", lane: "ops", entityType: "inbound_mail", entityId: input.mailId, action: "deal_parties_answered", detail: { side: partiesAsk.side, count: answer.count } });
-      return {
-        reply: answer.reply, outcome: "COMMAND", commandIds: [], taskId: null,
-        why: `Simone answered it from the deals grid: ${answer.count} ${partiesAsk.side === "buy" ? "buy" : "sell"} order(s).`,
-        jobs: [{ title: `${partiesAsk.side === "buy" ? "Buyers" : "Sellers"} of ${partiesAsk.company}`, employeeId: "emp_chief", employee: "Simone", taskId: null, duty: false, failure: null }],
-      };
-    }
-  }
-  const found = commandsIn({ subject: input.subject, text: input.text, now: input.now, sender: input.sender });
-  if (found.length === 0) return null;
-
-  const ids = found.map(() => newId("cmd"));
-  const now = input.now;
-  for (const [i, c] of found.entries()) {
-    if (c.kind === "errand") { c.spec.owner_email = input.sender; if (input.ownerName) c.spec.owner_name = input.ownerName; }
-    await env.DB.prepare(`INSERT INTO boss_commands (id, mail_id, kind, state, spec, waits_on, created_at, updated_at) VALUES (?,?,?,?,?,?,?,?)`)
-      .bind(ids[i], input.mailId, c.kind, "new", JSON.stringify(c.spec), c.waits_on.map((r: number) => ids[r]).join(",") || null, now, now).run();
-  }
-  const lines: string[] = [];
-  let taskId: string | null = null;
-  for (const [i, c] of found.entries()) {
-    const row = (await getCommand(env, ids[i]!))!;
-    const spec = c.spec as Json;
-    if (c.kind === "lookup") {
-      await save(env, row.id, { state: "queued" }, now);
-      lines.push(`Finding ${spec.name}'s email in your ${spec.drive ? "Drive files' sharing lists and your " : ""}Gmail${spec.hints?.length ? ` (starting with "${spec.hints[0]}")` : ""}. I'll show you what I find and how I know, and I never use a guessed address.`);
-    } else if (c.kind === "invite") {
-      lines.push(await runInvite(env, row, now));
-    } else if (c.kind === "repo") {
-      const d = await danielle(env, { title: `${spec.product}: ${spec.instruction}`, body: `${spec.github_repo} (${spec.product}): ${spec.instruction}`, mailId: input.mailId, sender: input.sender });
-      await save(env, row.id, { state: d.taskId ? "handed" : "failed", task_id: d.taskId, change_id: d.changeId, result: d.why ? { why: d.why } : {} }, now);
-      taskId ??= d.taskId;
-      lines.push(d.taskId ? `Danielle has the ${spec.product} change (${spec.instruction}). Her plan comes to you by email, and I'll tell you when it's live.` : `Danielle's job for the ${spec.product} change could not be opened (${d.why}). It's logged and I'm on it.`);
-    } else if (c.kind === "access_code") {
-      lines.push(await queueCode(env, row, spec, now));
-    } else if (c.kind === "email") {
-      const ready = Boolean(spec.to);
-      await save(env, row.id, { state: ready ? "drafting" : "waiting" }, now);
-      lines.push(`The email to ${spec.recipient_name ?? spec.to ?? "them"}: I'll draft it in your voice ${ready ? "now" : "once I have the address"} and show it to you word for word with Send / Change / Try again. Nothing goes until you tap Send.`);
-    } else if (c.kind === "errand") {
-      // Her email is the approval (owner, 26 Oct 2026): it goes on the Mac's next tick, no Send tap.
-      await save(env, row.id, { state: "queued" }, now);
-      await audit(env.DB, { actor: "owner", lane: "ops", entityType: "boss_command", entityId: row.id, action: "errand_approved_by_her_email", detail: { to: spec.to, mail_id: input.mailId } });
-      lines.push(`I'm sending your request to ${spec.to} now, as your assistant, from my own address. I'll watch for their answer and tell you what they said. Reply "cancel" in the next few minutes to stop it.`);
-    }
-  }
-  await audit(env.DB, { actor: "boss", lane: "ops", entityType: "inbound_mail", entityId: input.mailId, action: "commands", detail: { commands: found.map((c, i) => ({ id: ids[i], kind: c.kind })) } });
-  const refs = ids.map((id) => `[${id}]`).join(" ");
-  const reply = lines.length === 1 ? `${lines[0]} ${refs}` : `On it. Here's each part:\n${lines.map((l) => `- ${l}`).join("\n")}\n${refs}`;
-  const jobs = found.map((c) => ({
-    title: commandTitle(c.kind, c.spec as Json),
-    employeeId: c.kind === "repo" ? "emp_repo" : "emp_chief", employee: c.kind === "repo" ? "Danielle" : "Simone",
-    taskId: null, duty: false as const, failure: null,
-  }));
-  return { reply, outcome: "COMMAND", commandIds: ids, taskId, jobs };
+  return null;
 }
 
 /** Her reply on a command's thread. The newest open command it can apply to takes it. */

@@ -11,7 +11,7 @@ front door.
 You do not need to name anybody. Simone (Chief of Staff) reads it, splits it into its asks, and gives
 each ask to the employee who can do it. If you want a particular person, write to them directly:
 danielle@, camille@, monique@, zora@, toni@, imani@, kendra@ or noelle@sequoiataylor.com, or put their
-name with a # in front (#danielle). Both are optional shortcuts.
+name with a # in front (#danielle). Simone reads both as part of your request.
 
 **Or use the "Tell Simone" box at the top of Today** or the message box on Simone’s page. Send your
 request in your own words. Simone’s reply appears where you sent it.
@@ -75,6 +75,7 @@ part and tells you what the business requested.
 
 Simone answers in the original thread when she has a result. If a colleague takes part of the work,
 the reply names who has it. A temporary outage keeps the request queued for another attempt.
+The Tell Simone box and Simone’s page show the result where you asked.
 
 ## How to approve, change or stop
 
@@ -88,7 +89,8 @@ Reply on the same email thread. Short is fine.
 | Retry something that stopped | `try again` |
 | Drop something that stopped | `drop it` |
 
-Reply to the message that names the job or the decision. If you are continuing an exchange with
+Reply to the message that names the job or the decision. Approval and draft replies already in
+flight still reach their original record. If you are continuing an exchange with
 Simone, she reads the earlier messages for context.
 
 When something is waiting on you, the email says what is needed in plain English and the exact reply

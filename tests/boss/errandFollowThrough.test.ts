@@ -37,7 +37,7 @@ function mail(o: { from: string; body: string; subject?: string; messageId?: str
 const say = (o: Parameters<typeof mail>[0]) => handleBossInboundMail(mail(o) as never, env as never);
 const row = async (id: string) => (await getCommand(env as never, id))!;
 const result = async (id: string) => JSON.parse((await row(id)).result);
-const herReply = (id: string, text: string) => commandFromMail(env as never, { subject: "Re: Your request needs you", text, mailId: "m_her", sender: HER, refs: [id], now: Date.now() });
+const herReply = (id: string, text: string) => commandFromMail(env as never, { text, refs: [id], now: Date.now() });
 const REAL_NOW = Date.now;
 
 beforeEach(async () => {

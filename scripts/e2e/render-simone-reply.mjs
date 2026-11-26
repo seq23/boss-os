@@ -81,6 +81,8 @@ assert.equal(archived.message_id, reply);
 assert.equal(archived.in_reply_to, original);
 assert.equal(refs.message_id, reply);
 assert.deepEqual(refs.refs, [taskId]);
+assert.doesNotMatch(payload.text.split("\n")[0], /Nothing to do/i);
+assert.match(payload.text, /Reply here to follow up/);
 assert.match(payload.text, /Maple Hall has a free Saturday slot at noon/);
 assert.match(payload.html, /Maple Hall takes reservations in person/);
 await mkdir(directory, { recursive: true });

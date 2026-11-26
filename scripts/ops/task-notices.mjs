@@ -251,6 +251,7 @@ export function noticeOwner(notice) {
   const hers = ["could_not_do", "missing_secret", "drive_empty"].includes(kind);
   const why = legacyParts({ who: notice?.from_name ?? "Simone", subject: notice?.subject ?? "", text: String(notice?.body ?? "") }).happened;
   const ref = /^tsk_[a-z0-9]+$/i.test(String(notice?.task_id ?? "")) ? String(notice.task_id).toLowerCase() : null;
+  if (kind === "simone_result") return { layout, why, ref, act: "Reply here to follow up" };
   return hers ? { layout, why, ref, act: "Reply to this email with what it needs; your reply goes straight back to the job" } : { layout, why, ref };
 }
 

@@ -402,12 +402,13 @@ export async function simoneTool(env: Env, request: { id: string; lease: number;
   if (request.tool === "route_partner_campaign") {
     const message: SimoneMessage = JSON.parse(active.input);
     const words = typeof request.task === "string" ? request.task.trim() : "";
-    if (message.source !== "boss_inbound_mail" || !message.mail_id || !words || words.length > 60_000 ||
+    const viaConsole = message.source === "boss_page";
+    if ((!viaConsole && message.source !== "boss_inbound_mail") || !message.mail_id || !words || words.length > 60_000 ||
         !message.body.includes(words)) {
       return { ok: false, code: "CAMPAIGN_INSTRUCTION_REQUIRED" } as const;
     }
     const result = await campaignFromMail(env, {
-      text: words, subject: "", mailId: message.mail_id, messageId: message.message_id ?? null, now,
+      text: words, subject: viaConsole ? message.subject : "", mailId: message.mail_id, messageId: message.message_id ?? null, now, viaConsole,
     });
     if (!result) return { ok: false, code: "CAMPAIGN_INSTRUCTION_REQUIRED" } as const;
     if (result.outcome === "CAMPAIGN_REFUSED") return { ok: false, code: "CAMPAIGN_REFUSED", note: result.reply } as const;

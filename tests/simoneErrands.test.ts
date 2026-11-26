@@ -8,7 +8,7 @@
  * sender are NOT errands. Fixtures only (example.test); no real business or address appears here.
  */
 import { describe, expect, it, vi } from "vitest";
-import { ERRAND_SENDERS, errandIn, errandRefusal, errandText, errandProblems, readErrandReply, commandsIn } from "../src/shared/boss/commands/parse.mjs";
+import { ERRAND_SENDERS, errandIn, errandRefusal, errandText, errandProblems, readErrandReply } from "../src/shared/boss/commands/parse.mjs";
 import { errandMail, errandPayloadProblems, postErrandMail, ERRAND_FROM, ERRAND_REPLY_TO } from "../scripts/ops/notify.mjs";
 import { buildErrand, errandPrompt } from "../scripts/ops/simone-commands.mjs";
 
@@ -19,8 +19,6 @@ describe("which emails are errands", () => {
   it("her own booking request to a business address she gave is an errand, and the whole email", () => {
     expect(errandIn({ sender: HER, text: ASK })).toEqual({ to: "reservations@club.example.test", ask: ASK });
     expect(errandIn({ sender: `Sequoia <${HER}>`, subject: "Dinner", text: "Book me a table for two Thursday after 8pm: hello@bistro.example.test" })?.to).toBe("hello@bistro.example.test");
-    const found = commandsIn({ sender: HER, text: ASK, now: Date.parse("2026-10-26T15:00:00Z") });
-    expect(found.map((c) => c.kind)).toEqual(["errand"]);
   });
 
   it("NEGATIVE: a guessed address (none in her words), two addresses, or her own address is not an errand", () => {
@@ -44,8 +42,6 @@ describe("which emails are errands", () => {
   it("NEGATIVE: the same words from any other sender, even another of her own addresses, are not an errand", () => {
     expect(errandRefusal({ sender: "someone@example.test", text: ASK })).toBe("not from her own address");
     expect(errandRefusal({ sender: "", text: ASK })).toBe("not from her own address");
-    expect(commandsIn({ sender: "someone@example.test", text: ASK }).map((c) => c.kind)).not.toContain("errand");
-    expect(commandsIn({ text: ASK }).map((c) => c.kind)).not.toContain("errand");
   });
 
   it("NEGATIVE: an email that asks for no booking is not an errand", () => {

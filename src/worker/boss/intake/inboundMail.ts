@@ -8,7 +8,7 @@ import { audit } from "../lib/audit";
 import { logEvent } from "../lib/log";
 import { admitTask } from "../tasks/admit";
 import {
-  BOSS_INTAKE_MAILBOX, BOSS_INTAKE_DOMAIN, SIMONE_MAILBOX,
+  BOSS_INTAKE_MAILBOX, BOSS_INTAKE_DOMAIN,
   dmarcPassed, extractAddress, isOwner,
   replyBody, routeToSeat, seatTag, strippedSubject,
   type BossRoute, type BossSeat,
@@ -36,7 +36,7 @@ import { brainEditsFromMail } from "../brains/store";
 import { parseBrainEdits } from "../../../shared/boss/brains/brain.mjs";
 import { stopDeliverable } from "../today/deliverables";
 import { answerFromMail, changeFromReplyChain } from "../repoChange/answer";
-import { answerDutyFromMail, newDutyFromMail } from "../duties/mailLane";
+import { answerDutyFromMail } from "../duties/mailLane";
 import { editDutyFromMail } from "../duties/editByMail";
 import { answerCommentWatchFromMail } from "../commentWatch/answer";
 import { answerKdpFromMail } from "../kdp/answer";
@@ -738,16 +738,29 @@ async function handleMail(message: BossMailMessage, env: Env, said: Said): Promi
   const writtenByOwner = herWords(read?.readable ?? "");
   const ownerText = `${herSubject}\n${writtenByOwner}`;
   const recordedRefs = chainRefs.refs.length ? chainRefs : await refsForCode(env.DB, ownerText);
-  const explicitRefs = [...recordedRefs.refs, ...refsIn(ownerText)];
-  const chiefMailbox = to === BOSS_INTAKE_MAILBOX || to === SIMONE_MAILBOX;
+  const typedRefs = refsIn(ownerText);
+  // A code in a new request can be something she wants Simone to look up. Only a
+  // recorded code can route an answer around Simone to an existing reply handler.
+  const knownRefs = typedRefs.length
+    ? (await env.DB.prepare(`WITH requested(id) AS (SELECT value FROM json_each(?))
+        SELECT id FROM requested r WHERE
+           EXISTS (SELECT 1 FROM tasks WHERE id = r.id)
+        OR EXISTS (SELECT 1 FROM repo_changes WHERE id = r.id)
+        OR EXISTS (SELECT 1 FROM duty_drafts WHERE id = r.id)
+        OR EXISTS (SELECT 1 FROM boss_commands WHERE id = r.id)
+        OR EXISTS (SELECT 1 FROM comment_watch_digests WHERE id = r.id)
+        OR EXISTS (SELECT 1 FROM kdp_mail_log WHERE id = r.id)`)
+      .bind(JSON.stringify(typedRefs)).all<{ id: string }>()).results.map(({ id }) => id)
+    : typedRefs;
+  const explicitRefs = [...recordedRefs.refs, ...knownRefs];
   // An older prospect draft can be addressed by its exact reference after thread headers are lost.
-  if (chiefMailbox && !explicitRefs.length) {
+  if (!explicitRefs.length) {
     const templateId = templateIdIn(writtenByOwner);
     const existing = templateId && await env.DB.prepare(`SELECT id FROM prospect_templates WHERE id = ?`).bind(templateId).first();
     if (existing) explicitRefs.push(templateId);
   }
   // Older duty replies can carry only the original request's Message-ID, with no visible draft code.
-  const linkedArrival = chiefMailbox && !explicitRefs.length && chain.length
+  const linkedArrival = !explicitRefs.length && chain.length
     ? await env.DB.prepare(`SELECT command_id FROM boss_inbound_mail
        WHERE message_id IN (${chain.map(() => "?").join(",")}) AND authorised = 1
        AND (command_id IS NOT NULL
@@ -760,7 +773,7 @@ async function handleMail(message: BossMailMessage, env: Env, said: Said): Promi
   if (linkedArrival?.command_id) explicitRefs.push(linkedArrival.command_id);
   // The author’s original mail can be the only reference her client keeps. An existing repo
   // thread still reaches its own approval/redo door after Simone hands the work to Danielle.
-  if (chiefMailbox && !explicitRefs.length && chain.length) {
+  if (!explicitRefs.length && chain.length) {
     const change = await changeFromReplyChain(env, chain, sender);
     if (change) explicitRefs.push(change.id);
   }
@@ -768,7 +781,7 @@ async function handleMail(message: BossMailMessage, env: Env, said: Said): Promi
   const laneTail = refTail(threadRefs.refs.filter((r) => !ownerText.toLowerCase().includes(r)));
   // A thread explicitly held by the owner is still her work. Keep the reply with that task
   // before opening a new Simone run. Only the authenticated words above the quote are appended.
-  if (chiefMailbox && writtenByOwner) {
+  if (writtenByOwner) {
     const held = await takenOverJob(env, chain, sender);
     if (held) {
       await addToTakenOver(env, held, { own: writtenByOwner, mailId, now });
@@ -777,7 +790,7 @@ async function handleMail(message: BossMailMessage, env: Env, said: Said): Promi
       return { mailId, outcome: "TAKEN_OVER_NOTED", employeeId: SIMONE, taskId: held.id, reply, messageId, signer: "Simone" };
     }
   }
-  const simoneThread = chiefMailbox && !viaConsole && !linkedArrival && (chain.length || threadRefs.refs.length)
+  const simoneThread = !linkedArrival && (chain.length || threadRefs.refs.length)
     ? await env.DB.prepare(`SELECT t.id, json_extract(t.input, '$.body') AS request,
          json_extract(t.output, '$.text') AS reply
        FROM tasks t
@@ -790,7 +803,7 @@ async function handleMail(message: BossMailMessage, env: Env, said: Said): Promi
       .bind(sender, JSON.stringify(chain), JSON.stringify(threadRefs.refs), JSON.stringify(threadRefs.refs))
       .first<{ id: string; request: string; reply: string | null }>()
     : null;
-  if (chiefMailbox && (!threadRefs.refs.length || simoneThread) && !linkedArrival && !viaConsole) {
+  if ((!threadRefs.refs.length || simoneThread) && !linkedArrival) {
     // The worker can decode local text and archive the original. Simone's seat reads the
     // message first, and any offline routing uses the same text-only context.
     const localFiles = parsed ? await readEverything(env, parsed, "", { ai: null }) : EMPTY_FILES;
@@ -806,7 +819,7 @@ async function handleMail(message: BossMailMessage, env: Env, said: Said): Promi
     ].filter(Boolean).join("\n\n");
     const identity = messageId ? JSON.stringify([sender, messageId]) : mailId;
     const taskId = await fileSimoneMessage(env, {
-      source: "boss_inbound_mail", subject: subject || "Message to Simone",
+      source: viaConsole ? "boss_page" : "boss_inbound_mail", subject: subject || "Message to Simone",
       body: [simoneThread ? "" : herSubject, writtenByOwner].filter(Boolean).join("\n\n"),
       context, has_mail_material: hasMailMaterial,
       ...(threadJobs.length ? { thread_jobs: threadJobs } : {}),
@@ -934,25 +947,15 @@ async function handleMail(message: BossMailMessage, env: Env, said: Said): Promi
     return { mailId, outcome: campaign.outcome, employeeId: "emp_relationship", taskId: null, reply: campaignReply, messageId, signer: "Monique" };
   }
 
-  // R19 — a line she marks `Always:` / `Never:` / `Standing rule:` / `Constraint:` is registered once and rides on every run.
-  /*
-   * SIMONE DOES IT (owner, 25 Oct 2026). An invite, a contact lookup, an email to a person on her
-   * word, repo work for Danielle, or a reply on one of those threads: done here, before the lanes
-   * and the triage, and answered in plain lines. Null when the email asks for none of these, and
-   * the email goes on exactly as before. src/worker/boss/commands/run.ts.
-   */
-  const command = readable || subject
-    ? await commandFromMail(env, { subject: chiefMailbox ? herSubject : trueSubjectOf(readable, subject), text: chiefMailbox ? writtenByOwner : own || readable,
-      mailId, sender, refs: threadRefs.refs, now, to, linkedOnly: chiefMailbox && !viaConsole,
-      ownerName: (message.headers.get("from") ?? "").replace(/<[^>]*>/g, "").replace(/^"|"$/g, "").trim() })
-    : null;
+  const command = await commandFromMail(env, { text: writtenByOwner, refs: threadRefs.refs, now });
   if (command) {
     if (command.commandIds.length === 1) await env.DB.prepare(`UPDATE boss_inbound_mail SET command_id = ?, thread_id = ? WHERE id = ?`).bind(command.commandIds[0], command.commandIds[0], mailId).run();
     const commandReply = [command.reply, ...(filesNote.length ? ["", ...filesNote] : []), ...(secrets?.line ? ["", secrets.line] : [])].join("\n");
-    await finish({ outcome: command.outcome, why: command.why ?? `Simone did it: ${command.commandIds.join(", ")}`, taskId: command.taskId, employeeId: "emp_chief", objectKey, reply: commandReply });
-    return { mailId, outcome: command.outcome, employeeId: "emp_chief", taskId: command.taskId, reply: commandReply, messageId, signer: "Simone", jobs: command.jobs ?? [] };
+    await finish({ outcome: "COMMAND_REPLY", why: command.reply, employeeId: SIMONE, objectKey, reply: commandReply });
+    return { mailId, outcome: "COMMAND_REPLY", employeeId: SIMONE, taskId: null, reply: commandReply, messageId, signer: "Simone" };
   }
 
+  // R19 — a standing instruction rides on every run.
   const constraints = standingConstraintsIn(own);
   const constraintsAdded = constraints.length ? await recordConstraints(env, constraints, "email", mailId) : 0;
   const constraintNote = constraints.length
@@ -1177,39 +1180,21 @@ async function handleMail(message: BossMailMessage, env: Env, said: Said): Promi
     ? (await dismissFromMail(env, herOwn, now, replyDecision, mailId)) ?? (await prospectTemplateFromMail(env, herOwn, now, morningDayOf(threadRefs.refs), mailId, replyDecision))
     : null;
 
-  /*
-   * ─── "#<SEAT> NEW DUTY …" IS A DRAFT, AND HER REPLY TO IT IS THE APPROVAL ──
-   *
-   * 21 Sep 2026: "is there a lane for me to ask for a new duty to my Boss OS agents?" There was a
-   * drafter and an Inbox card and nothing invoked either. Now the verb drafts through `author.ts`,
-   * files the SAME `duty_created` judgement call the Inbox shows, and the reply she gets IS the
-   * draft — every field with its reason, every refusal verbatim, and one line to answer with.
-   * `approved` on the thread decides that judgement call through `approvals/decide.ts`, the Inbox
-   * button's exact path; `changes: …` redrafts; `your call` in the original request creates it
-   * at once with the phrase on the record. A request that cannot run comes back as a NAMED STOP
-   * and creates nothing.
-   *
-   * BELOW THE REFUSAL, DELIBERATELY, like the plan answer above it: a draft a stranger could
-   * approve by knowing a token would make the schedule a door anyone could open.
-   * `validate:duty-birth` pins that both calls sit after the `!authorised` return.
-   */
+  // Replies can still decide a saved duty draft through the Inbox approval record.
   const dutyAnswer = planAnswer || commentAnswer || kdpAnswer || dismissAnswer ? null : await answerDutyFromMail(env, {
     roster, subject: trueSubject + laneTail, text: readable, mailId, now, sender, read: replyDecision?.reply ?? null,
     inReplyTo: message.headers.get("in-reply-to"), references: message.headers.get("references"),
-  });
-  const dutyRequest = planAnswer || commentAnswer || kdpAnswer || dismissAnswer || dutyAnswer ? null : await newDutyFromMail(env, {
-    roster, subject: trueSubject, text: readable, mailId, messageId, now, sender,
   });
   /*
    * HER RULING ON A DUTY SHE ALREADY HAS (1 Nov 2026): "change Camille's Marketplace listings duty …"
    * changes THAT duty (its instructions, or the code that runs it), never a research page that says
    * "done" over nothing. Below the refusal for the same reason as the two doors above.
    */
-  const dutyEdit = planAnswer || commentAnswer || kdpAnswer || dismissAnswer || dutyAnswer || dutyRequest ? null : reading.duty ? await editDutyFromMail(env, {
+  const dutyEdit = planAnswer || commentAnswer || kdpAnswer || dismissAnswer || dutyAnswer ? null : reading.duty ? await editDutyFromMail(env, {
     // Her own words only: a pure forward's text is someone else's (#514 review).
     roster, subject: herSubject, text: her, mailId, now, sender, found: reading.duty, shared: reading.dutyAt ? await reading.dutyAt() : undefined,
   }) : null;
-  const dutyNote = dutyAnswer ?? dutyRequest ?? dutyEdit;
+  const dutyNote = dutyAnswer ?? dutyEdit;
 
   let question = bookFailure || closedNote || planAnswer || commentAnswer || kdpAnswer || dismissAnswer || dutyNote ? null : clarificationFor({
     subject: trueSubject, body: readable, department: route.seat.department ?? "",
@@ -1565,10 +1550,8 @@ async function handleMail(message: BossMailMessage, env: Env, said: Said): Promi
   const nameOf = (id: string | null) => roster.find((s) => s.id === id)?.name ?? route.seat.name ?? "Simone";
   const jobs: HandoffJob[] = triageTasks.length
     ? triageTasks.map((t) => ({ title: shortTitle(t.job.ask), employeeId: t.job.seat.id, employee: t.job.seat.name, taskId: t.taskId, duty: false, failure: t.failure }))
-    : dutyNote && (dutyNote.outcome === "DUTY_CREATED" || dutyNote.outcome === "DUTY_DRAFTED")
-      ? [{ title: shortTitle(readable || trueSubject), employeeId: dutyNote.employeeId, employee: nameOf(dutyNote.employeeId), taskId: null, duty: true, failure: null }]
-      : dutyEdit?.outcome === "DUTY_CHANGE_ROUTED"
-        ? [{ title: shortTitle(readable || trueSubject), employeeId: dutyEdit.employeeId, employee: nameOf(dutyEdit.employeeId), taskId: dutyEdit.taskId, duty: false, failure: null }]
+    : dutyEdit?.outcome === "DUTY_CHANGE_ROUTED"
+      ? [{ title: shortTitle(readable || trueSubject), employeeId: dutyEdit.employeeId, employee: nameOf(dutyEdit.employeeId), taskId: dutyEdit.taskId, duty: false, failure: null }]
       : taskId || (admitFailure && !question && !filedByVerb)
         ? [{ title: shortTitle(strippedSubject(trueSubject) || readable), employeeId: route.seat.id, employee: route.seat.name, taskId, duty: false, failure: taskId ? null : admitFailure }]
         : [];

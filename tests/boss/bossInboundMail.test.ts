@@ -126,7 +126,7 @@ describe("the tag routes and the sender authorises", () => {
 });
 
 describe("the address she wrote to is a tag she did not have to type", () => {
-  it("an untagged reply to danielle@ routes to Danielle; a typed tag still wins; boss@ still defaults", async () => {
+  it("passes a direct delivery address to Simone and files the handoff for its recipient", async () => {
     const roster = await activeRoster(env as never);
     const danielle = roster.find((s) => s.name === "Danielle")!;
     const simone = roster.find((s) => s.name === "Simone")!;
@@ -135,10 +135,16 @@ describe("the address she wrote to is a tag she did not have to type", () => {
     expect(routeToSeat("#simone take this", roster, "danielle@sequoiataylor.com")!.seat.id).toBe(simone.id);
     expect(routeToSeat("approved", roster, "boss@sequoiataylor.com")!.outcome).toBe("DEFAULTED");
     expect(routeToSeat("approved", roster, "nobody@sequoiataylor.com")!.outcome).toBe("DEFAULTED");
-    // Through the real handler: her one-word reply to Danielle's address is Danielle's, not the Chief of Staff's.
-    const res = await handleBossInboundMail(mail({ to: "danielle@sequoiataylor.com", subject: "Re: plan for WPP-llm", body: "approved" }), env as never);
-    expect(res.employeeId).toBe(danielle.id);
-    expect(res.outcome).toBe("ROUTED");
+    const to = "danielle@sequoiataylor.com";
+    const body = "Fix the gallery link in the code.";
+    const res = await handleBossInboundMail(mail({ to, body }), env);
+    expect(res).toMatchObject({ outcome: "SIMONE_QUEUED", reply: null });
+    const call = (await claimSimone(env))!;
+    expect(call).toMatchObject({ id: res.taskId, message: { to, body } });
+    expect(await finishSimoneHandoff(env, { ...call, assignments: [{ employee: danielle.id, words: body }] }))
+      .toEqual({ replied: true, refused: false });
+    expect(await env.DB.prepare(`SELECT employee_id FROM tasks WHERE json_extract(input, '$.simone_handoff') = ?`)
+      .bind(call.id).first()).toEqual({ employee_id: danielle.id });
   });
 });
 
@@ -499,23 +505,14 @@ describe("she says what she means", () => {
  * a routed message, a model, and a confident paragraph about an imaginary meeting checklist.
  */
 describe("questions already recorded before Simone's intake", () => {
-  const DATABRICKS_MESSAGE = "#Monique - Please add searching for buyers of Databricks to the weekly list";
-  const existingQuestion = (opts: Parameters<typeof mail>[0] = {}) =>
-    handleBossInboundMail({ ...mail({ subject: "#Monique", body: DATABRICKS_MESSAGE, ...opts }), console: true }, env);
-
-  it("asks about HER message rather than generating from it, and opens no task", async () => {
-    const res = await existingQuestion();
-    expect(res.outcome).toBe("NEEDS_CLARITY");
-    expect(res.taskId).toBeNull();
-    // SPECIFIC: it says what it understood, what it could not, and what to send back.
-    expect(res.reply).toContain("Databricks");
-    expect(res.reply).toContain(DATABRICKS_MESSAGE);
-    expect(res.reply).toMatch(/size TBD/);
-    const row = await env.DB.prepare(`SELECT outcome, answered_at FROM boss_inbound_mail WHERE id = ?`)
-      .bind(res.mailId).first<{ outcome: string; answered_at: number | null }>();
-    expect(row?.outcome).toBe("NEEDS_CLARITY");
-    expect(row?.answered_at).toBeNull();
-  });
+  async function existingQuestion({ subject = "#Monique", messageId }: { subject?: string; messageId?: string } = {}) {
+    const mailId = "iml_fixture_question";
+    await env.DB.prepare(`INSERT INTO boss_inbound_mail
+      (id, received_at, to_addr, from_addr, dmarc_pass, authorised, subject, employee_id, outcome, why, message_id, reply_state)
+      VALUES (?, ?, ?, ?, 1, 1, ?, 'emp_relationship', 'NEEDS_CLARITY', ?, ?, 'shown_on_screen')`)
+      .bind(mailId, Date.now(), mail({}).to, mail({}).from, subject, "What size should Monique look for?", messageId ?? `<${mailId}@boss-os-console>`).run();
+    return { mailId };
+  }
 
   it("an ordinary instruction is worked, and is never questioned", async () => {
     const words = "can you follow up with the $50M guy tomorrow";
@@ -530,7 +527,6 @@ describe("questions already recorded before Simone's intake", () => {
 
   it("A REPLY NEVER TRIGGERS A SECOND QUESTION, and closes the first", async () => {
     const asked = await existingQuestion({ messageId: "<q1@mail.gmail.com>" });
-    expect(asked.outcome).toBe("NEEDS_CLARITY");
 
     // Her answer: short, and short is exactly what rule 2 would otherwise ask about again.
     const answer = await handleBossInboundMail(mail({
@@ -550,25 +546,11 @@ describe("questions already recorded before Simone's intake", () => {
 
   it("an unanswered question becomes visible on Today, and not before it is stale", async () => {
     const asked = await existingQuestion();
-    expect(asked.outcome).toBe("NEEDS_CLARITY");
     expect(await unansweredQuestionAlerts(env as never, Date.now())).toEqual([]);
     const stale = await unansweredQuestionAlerts(env as never, Date.now() + 4 * 86_400_000);
     expect(stale.length).toBe(1);
     expect(stale[0]!.severity).toBe("high");
     expect(stale[0]!.text).toMatch(/waiting on you/i);
-  });
-
-  /**
-   * THE QUESTION SHE COULD NOT ANSWER. `iml_m297nsjanp50ygzr` was typed into Boss OS on 11
-   * September, carried no Message-ID, and sat on Today at HIGH saying "reply to that email" about
-   * an email that did not exist. A console message now mints its own id, and the answer route
-   * replies to it by the same path an emailed reply takes.
-   */
-  it("a question typed into the console carries a Message-ID a reply can name", async () => {
-    const asked = await existingQuestion();
-    expect(asked.outcome).toBe("NEEDS_CLARITY");
-    const row = await env.DB.prepare(`SELECT message_id FROM boss_inbound_mail WHERE id = ?`).bind(asked.mailId).first<{ message_id: string }>();
-    expect(row?.message_id).toBe(`<${asked.mailId}@boss-os-console>`);
   });
 
   it("ANSWERED FROM TODAY: the answer closes the question and becomes work by the reply path", async () => {
@@ -590,8 +572,7 @@ describe("questions already recorded before Simone's intake", () => {
 
   it("WITHDRAWN FROM TODAY: the reason is recorded and no work is opened", async () => {
     const { apiJson } = await import("./helpers");
-    const asked = await existingQuestion({ subject: "#simone", body: "" });
-    expect(asked.outcome).toBe("NEEDS_CLARITY");
+    const asked = await existingQuestion({ subject: "#simone" });
     const before = await env.DB.prepare(`SELECT COUNT(*) AS n FROM tasks`).first<{ n: number }>();
 
     const r = await apiJson(`/api/intake/questions/${asked.mailId}/answer`, { method: "POST", body: { withdraw: "Already done on 12 September, in a session rather than by reply." } });
@@ -910,16 +891,24 @@ describe("please close out the kdp upload issue", () => {
  * the whole defect was a column that could be read three ways.
  */
 describe("a reply that was never due says so, and is never counted as a failure", () => {
-  const consoleMail = (body: string) => ({ ...mail({ subject: "#simone", body }), console: true });
-
-  it("she typed it here, so the answer went back on screen — not a failed reply", async () => {
-    const res = await handleBossInboundMail(consoleMail("#simone what is on for Wednesday?"), env as never);
-    expect(res.reply).toBeTruthy();
-    const row = await env.DB
-      .prepare(`SELECT reply_state, replied_at FROM boss_inbound_mail WHERE id = ?`).bind(res.mailId).first<any>();
-    expect(row.reply_state).toBe("shown_on_screen");
-    // And `replied_at` stays null, which is exactly why it could never carry this fact by itself.
-    expect(row.replied_at).toBeNull();
+  it("queues a console request and publishes its result on the page without an SMTP notice", async () => {
+    const { apiJson } = await import("./helpers");
+    const body = "Email reader@example.test when you finish looking up cmd_nonexistent.";
+    const res = await apiJson("/api/intake/mail", { method: "POST", body: { body } });
+    expect(res.status).toBe(201);
+    expect(res.body.data).toMatchObject({ outcome: "SIMONE_QUEUED", reply: null });
+    const { mailId, taskId } = res.body.data;
+    const status = () => apiJson(`/api/simone/message/${taskId}`);
+    expect((await status()).body.data).toEqual({ status: "queued", reply: null });
+    const call = (await claimSimone(env))!;
+    expect(call).toMatchObject({ id: taskId, message: { body, source: "boss_page" } });
+    expect(await env.DB.prepare("SELECT id FROM boss_commands WHERE mail_id = ?").bind(mailId).first()).toBeNull();
+    const reply = "I found no record for that code.";
+    expect(await replySimone(env, { ...call, text: reply, work: ["record lookup"] })).toBe(true);
+    expect((await status()).body.data).toEqual({ status: "done", reply });
+    expect(await env.DB.prepare(`SELECT reply_state, replied_at, message_id FROM boss_inbound_mail WHERE id = ?`).bind(mailId).first())
+      .toEqual({ reply_state: "shown_on_screen", replied_at: null, message_id: `<${mailId}@boss-os-console>` });
+    expect(await env.DB.prepare("SELECT id FROM boss_task_notices WHERE task_id = ?").bind(taskId).first()).toBeNull();
   });
 
   it("marks an SMTP reply due only after Simone records work and a reply", async () => {

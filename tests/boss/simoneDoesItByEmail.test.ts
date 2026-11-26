@@ -17,7 +17,6 @@ import { setCommandFetch } from "../../src/worker/boss/commands/google";
 import { sha256Hex } from "../../src/worker/boss/lib/id";
 import { setSetting } from "../../src/worker/boss/lib/settings";
 import { TOKEN_KEY } from "../../src/worker/boss/routes/openLoops";
-import { commandsIn } from "../../src/shared/boss/commands/parse.mjs";
 import { layoutEmail, plainProblems } from "../../src/shared/boss/mail/plain.mjs";
 
 const NOW = Date.parse("2026-10-25T17:00:00Z"); // a Sunday, noon Central
@@ -141,10 +140,9 @@ async function say(body: string, o: { from?: string; dmarc?: string; to?: string
   const res = await handleBossInboundMail(mail({ ...o, body, messageId }) as never, env as never);
   return { res, messageId };
 }
-async function keptConsoleRequest(body: string) {
-  const response = await apiJson("/api/intake/mail", { method: "POST", body: { body } });
-  expect(response.status).toBe(201);
-  return { res: response.body.data, messageId: response.body.data.messageId as string };
+async function savedCommand(id: string, kind: string, state: string, spec: object, waitsOn: string | null = null) {
+  await env.DB.prepare(`INSERT INTO boss_commands (id, kind, state, spec, waits_on, created_at, updated_at)
+    VALUES (?, ?, ?, ?, ?, ?, ?)`).bind(id, kind, state, JSON.stringify(spec), waitsOn, NOW, NOW).run();
 }
 /** Her reply on the thread of an email that carried `cmdId` (the refs record the reply path writes). */
 async function replyTo(prev: { messageId: string }, cmdId: string, body: string) {
@@ -832,15 +830,11 @@ describe("1. a calendar invite by email", () => {
 });
 
 describe("2. existing lookup and draft records still respect the owner's Send gate", () => {
-  const ASK = "Find my cousin Rowan's email; it's one of the addresses shared on the Smith family reunion Drive files. "
-    + "Create a time-2-read code TESTCODE15 for a 15-day trial, and email her the code with a short explainer of what time-2-read is, its features and how it compares with others.";
-
-  it("the whole arc", async () => {
-    const first = await keptConsoleRequest(ASK);
-    expect(first.res.outcome).toBe("COMMAND");
-    expect(first.res.reply).toMatch(/Finding Rowan's email/);
-    expect(first.res.reply).toMatch(/Making the time-2-read code TESTCODE15: a 15-day trial/);
-    expect(first.res.reply).toMatch(/Nothing goes until you tap Send/);
+  it("still completes a saved lookup, code and draft after the owner explicitly sends it", async () => {
+    const first = { messageId: "<old-lookup@example.test>" };
+    await savedCommand("cmd_lookup", "lookup", "queued", { name: "Rowan", drive: true, hints: ["Smith family reunion"] });
+    await savedCommand("cmd_code", "access_code", "queued", { op: "create", code: "TESTCODE15", trial_days: 15 });
+    await savedCommand("cmd_email", "email", "waiting", { recipient_name: "Rowan", from_mailbox: "st@time-2-read.com" }, "cmd_lookup,cmd_code");
     const [lookup] = await commandsOfKind("lookup");
     const [code] = await commandsOfKind("access_code");
     const [email] = await commandsOfKind("email");
@@ -909,7 +903,8 @@ describe("2. existing lookup and draft records still respect the owner's Send ga
   });
 
   it("Change and Try again redraft; 'send' by reply is the same Send; a used link has done its job", async () => {
-    const first = await keptConsoleRequest("Email them@example.com a short thank-you note for the intro.");
+    const first = { messageId: "<old-draft@example.test>" };
+    await savedCommand("cmd_email", "email", "drafting", { to: "them@example.com", from_mailbox: "sequoia@westpeek.ventures" });
     const [email] = await commandsOfKind("email");
     expect(email.state).toBe("drafting");
     await api(`/api/commands/${email.id}/draft`, { method: "POST", body: { subject: "Thank you", text: "Thank you!\n\nSequoia" } });
@@ -986,7 +981,6 @@ describe("3. time-2-read codes with no rebuild", () => {
 describe("4. free-form requests and other desks", () => {
   it("a request outside the existing tools opens no job to add a channel", async () => {
     const body = "Text Jordan that I'm running ten minutes late.";
-    expect(commandsIn({ text: body })).toEqual([]);
     const { res } = await say(body);
     expect(res).toMatchObject({ outcome: "SIMONE_QUEUED", employeeId: "emp_chief", reply: null });
     const call = (await claimSimone(env))!;

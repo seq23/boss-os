@@ -9,7 +9,7 @@
 import { readFileSync, existsSync } from "node:fs";
 import { describe, expect, it } from "vitest";
 import {
-  commandsIn, whenIn, minutesIn, commandReplyIn, accessCodeIn, ACCESS_CODE_SHAPE, renderUrl, confirmLine, lookupIn, ownWords,
+  whenIn, minutesIn, commandReplyIn, accessCodeIn, ACCESS_CODE_SHAPE, renderUrl, confirmLine, ownWords,
 } from "../src/shared/boss/commands/parse.mjs";
 import { codeCalls, runCode, lookupPrompt, draftPrompt, noticeArgs, SUPABASE_KEY_NAME } from "../scripts/ops/simone-commands.mjs";
 import { mailGate, employeeMail } from "../scripts/ops/notify.mjs";
@@ -48,28 +48,7 @@ describe("time words", () => {
   });
 });
 
-describe("the asks in one email", () => {
-  it("the two real shapes", () => {
-    const inv = commandsIn({ text: "Send a calendar invite to Avery at Example Law for Tuesday this week 10am ET, a@example.com.", now: NOW });
-    expect(inv.map((c) => c.kind)).toEqual(["invite"]);
-    expect(inv[0]!.spec).toMatchObject({ guest_email: "a@example.com", guest_name: "Avery", org: "Example Law", minutes: 30, tz: "America/New_York" });
-    const three = commandsIn({ text: "Find my cousin Rowan's email; it's one of the addresses shared on the Smith family reunion Drive files. Create a time-2-read code TESTCODE15 for a 15-day trial, and email her the code with a short explainer.", now: NOW });
-    expect(three.map((c) => [c.kind, c.waits_on])).toEqual([["lookup", []], ["access_code", []], ["email", [0, 1]]]);
-    expect(three[0]!.spec).toMatchObject({ name: "Rowan", relation: "cousin", hints: ["Smith family reunion"] });
-    expect(three[2]!.spec).toMatchObject({ to: null, pronoun: "her", from_mailbox: "st@time-2-read.com", code: "TESTCODE15", recipient_name: "Rowan" });
-  });
-  it("the calendar's brand comes from her words, never from an address (live proof, 25 Oct 2026)", () => {
-    expect(commandsIn({ text: "Send a calendar invite to Avery for Oct 31 at 6am CT, avery@time-2-read.com", now: NOW })[0]!.spec.calendar).toBe("sequoia@westpeek.ventures");
-    expect(commandsIn({ text: "Send a time-2-read calendar invite to Avery for Oct 31 at 6am CT, a@example.com", now: NOW })[0]!.spec.calendar).toBe("st@time-2-read.com");
-  });
-  it("an invite with no address finds it first", () => {
-    const c = commandsIn({ text: "Schedule a call with Avery Example tomorrow at 2pm", now: NOW });
-    expect(c.map((x) => [x.kind, x.waits_on])).toEqual([["lookup", []], ["invite", [0]]]);
-  });
-  it("NEGATIVE: ordinary mail is no command", () => {
-    for (const t of ["What are the cheapest ways to host a static site?", "Please archive these receipts", "every friday, write me a report"]) expect(commandsIn({ text: t, now: NOW })).toEqual([]);
-    expect(lookupIn("find the receipts")).toBeNull();
-  });
+describe("replies to saved commands", () => {
   it("her replies, and the quoted email below them is never read", () => {
     expect(commandReplyIn("send", NOW)).toEqual({ verb: "send" });
     expect(commandReplyIn("2", NOW)).toEqual({ verb: "pick", n: 2 });

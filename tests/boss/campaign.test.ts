@@ -282,7 +282,12 @@ describe("a request typed in from her session gets the same receipt, as Monique'
     const response = await apiJson("/api/intake/mail", { method: "POST", body: { subject: "Acmelearn drip", body: HER_REQUEST } });
     expect(response.status).toBe(201);
     const r = response.body.data;
-    expect(r.outcome).toBe("CAMPAIGN");
+    expect(r).toMatchObject({ outcome: "SIMONE_QUEUED", reply: null });
+    const call = (await claimSimone(env))!;
+    expect(call.id).toBe(r.taskId);
+    expect(await row("SELECT id FROM outreach_campaigns WHERE mail_id = ?", r.mailId)).toBeNull();
+    const tool = await simoneTool(env, { ...call, tool: "route_partner_campaign", task: HER_REQUEST });
+    expect(tool).toMatchObject({ ok: true, outcome: "CAMPAIGN" });
     const c = await row<any>(`SELECT * FROM outreach_campaigns WHERE mail_id = ?`, r.mailId);
     const receipt = JSON.parse(c.notice);
     expect(c.notice_state).toBe("due");

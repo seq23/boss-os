@@ -108,7 +108,7 @@ it.each([false, true])("a card never confirms a pending or previously confirmed 
 it.each(["N: I'll handle it", "1: I'll handle it", "dismiss", "I'm handling it myself"])("%s stands down without contacting the venue", async (text) => {
   await seed("cmd_self", { state: "follow_up", result: { pending: { text: "A queued answer", purpose: "answer" }, decide_open: true } });
   await env.DB.prepare(`UPDATE boss_commands SET notice = '{}', notice_state = 'due' WHERE id = 'cmd_self'`).run();
-  const answer = await commandFromMail(env as never, { mailId: "owner_reply", sender: "owner@example.test", subject: "Re: errand", text, refs: ["cmd_self"], now: NOW });
+  const answer = await commandFromMail(env as never, { text, refs: ["cmd_self"], now: NOW });
   expect(answer?.reply).toContain("Owner is handling this herself");
   expect((await getCommand(env as never, "cmd_self"))!.state).toBe("done");
   const work = await macWork(env as never);
