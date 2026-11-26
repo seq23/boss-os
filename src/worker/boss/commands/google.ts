@@ -76,35 +76,125 @@ async function calendarFor(env: Env, mailbox: string): Promise<Cal> {
 
 export interface Busy { title: string; start: number; end: number }
 
+interface CalendarEvent {
+  id?: string;
+  etag?: string;
+  eventType?: string;
+  status?: string;
+  summary?: string;
+  transparency?: string;
+  start?: { dateTime?: string };
+  end?: { dateTime?: string };
+  organizer?: { self?: boolean };
+  attendees?: Array<{ self?: boolean; responseStatus?: string }>;
+  attendeesOmitted?: boolean;
+  recurrence?: string[];
+  recurringEventId?: string;
+  extendedProperties?: { private?: Record<string, string> };
+}
+
+const EVENTS = `${CALENDAR}/primary/events`;
+
+async function listCalendarEvents(token: string, query: URLSearchParams) {
+  const events: CalendarEvent[] = [];
+  const seenTokens = new Set<string>();
+  query.set("maxResults", "50");
+  query.set("fields", "nextPageToken,items(id,etag,eventType,status,summary,transparency,start,end,organizer/self,attendees(self,responseStatus),attendeesOmitted,recurrence,recurringEventId,extendedProperties/private)");
+  for (let page = 0; page < 5; page++) {
+    const res = await fetchImpl(`${EVENTS}?${query}`, { headers: { authorization: `Bearer ${token}` } });
+    if (!res.ok) return { ok: false, why: `the calendar could not be read (${res.status})` } as const;
+    const result = (await res.json().catch(() => null)) as { items?: CalendarEvent[]; nextPageToken?: string } | null;
+    if (!result || !Array.isArray(result.items)) return { ok: false, why: "Google Calendar did not return the events for this time" } as const;
+    events.push(...result.items);
+    const nextPage = result.nextPageToken;
+    if (!nextPage) return { ok: true, events } as const;
+    if (seenTokens.has(nextPage)) break;
+    seenTokens.add(nextPage);
+    query.set("pageToken", nextPage);
+  }
+  return { ok: false, why: "Google Calendar could not confirm all matching events" } as const;
+}
+
+function calendarWindow(start: number, end: number) {
+  return new URLSearchParams({
+    timeMin: new Date(start).toISOString(), timeMax: new Date(end).toISOString(), singleEvents: "true", orderBy: "startTime",
+  });
+}
+
 /** What is already on the calendar inside [start, end). Declined, free and cancelled events do not clash. */
 export async function clashes(env: Env, mailbox: string, start: number, end: number): Promise<{ ok: true; busy: Busy[] } | { ok: false; why: string }> {
   const cal = await calendarFor(env, mailbox);
   if (!cal.ok) return cal;
-  const q = new URLSearchParams({ timeMin: new Date(start).toISOString(), timeMax: new Date(end).toISOString(), singleEvents: "true", orderBy: "startTime", maxResults: "50" });
+  const listed = await listCalendarEvents(cal.token, calendarWindow(start, end));
+  if (!listed.ok) return listed;
   const busy: Busy[] = [];
-  const seenTokens = new Set<string>();
-  for (let page = 0; page < 5; page++) {
-    const res = await fetchImpl(`${CALENDAR}/primary/events?${q}`, { headers: { authorization: `Bearer ${cal.token}` } });
-    if (!res.ok) return { ok: false, why: `the calendar could not be read (${res.status})` };
-    const result = (await res.json().catch(() => null)) as { items?: Array<any>; nextPageToken?: string } | null;
-    if (!result || !Array.isArray(result.items)) return { ok: false, why: "Google Calendar did not return the events for this time" };
-    for (const event of result.items) {
-      if (event.status === "cancelled" || event.transparency === "transparent" || !event.start?.dateTime) continue;
-      const self = (event.attendees ?? []).find((attendee: any) => attendee.self);
-      if (self?.responseStatus === "declined") continue;
-      const eventStart = Date.parse(event.start.dateTime);
-      const eventEnd = Date.parse(event.end?.dateTime ?? event.start.dateTime);
-      if (eventStart < end && eventEnd > start) {
-        busy.push({ title: String(event.summary ?? "(busy)").slice(0, 120), start: eventStart, end: eventEnd });
-      }
+  for (const event of listed.events) {
+    if (event.status === "cancelled" || event.transparency === "transparent" || !event.start?.dateTime) continue;
+    if (event.attendees?.find((attendee) => attendee.self)?.responseStatus === "declined") continue;
+    const eventStart = Date.parse(event.start.dateTime);
+    const eventEnd = Date.parse(event.end?.dateTime ?? event.start.dateTime);
+    if (eventStart < end && eventEnd > start) {
+      busy.push({ title: String(event.summary ?? "(busy)").slice(0, 120), start: eventStart, end: eventEnd });
     }
-    const nextPage = result.nextPageToken;
-    if (!nextPage) return { ok: true, busy };
-    if (seenTokens.has(nextPage)) break;
-    seenTokens.add(nextPage);
-    q.set("pageToken", nextPage);
   }
-  return { ok: false, why: "Google Calendar could not confirm the full time slot" };
+  return { ok: true, busy };
+}
+
+function personalTimedEvent(event: CalendarEvent): event is CalendarEvent & { id: string; etag: string } {
+  return Boolean(event.id && event.etag && event.status === "confirmed" && event.eventType === "default" &&
+    event.organizer?.self === true && !event.attendeesOmitted && !event.attendees?.length &&
+    !event.recurrence?.length && !event.recurringEventId);
+}
+
+/** Move one exact private block and preserve its duration, details and reminders. */
+export async function moveCalendarBlock(env: Env, input: {
+  mailbox: string; title: string; from: number; to: number; requestKey: string;
+}) {
+  const cal = await calendarFor(env, input.mailbox);
+  if (!cal.ok) return { ok: false, code: "CALENDAR_UNAVAILABLE" } as const;
+  const marker = "bossSimoneMove";
+  const endMarker = "bossSimoneMoveEnd";
+  const receipt = (event: CalendarEvent, expectedId?: string) => {
+    const properties = event.extendedProperties?.private;
+    const end = Date.parse(event.end?.dateTime ?? "");
+    if (personalTimedEvent(event) && (!expectedId || event.id === expectedId) && event.summary === input.title &&
+        Date.parse(event.start?.dateTime ?? "") === input.to && end > input.to &&
+        properties?.[marker] === input.requestKey && properties[endMarker] === String(end)) {
+      return { ok: true, eventId: event.id, end } as const;
+    }
+    return { ok: false, code: "CALENDAR_BLOCK_CHANGED" } as const;
+  };
+
+  const recovered = await listCalendarEvents(cal.token, new URLSearchParams({
+    privateExtendedProperty: `${marker}=${input.requestKey}`,
+  }));
+  if (!recovered.ok) return { ok: false, code: "CALENDAR_UNAVAILABLE" } as const;
+  if (recovered.events.length === 1) return receipt(recovered.events[0]!);
+  if (recovered.events.length > 1) return { ok: false, code: "CALENDAR_BLOCK_AMBIGUOUS" } as const;
+
+  const listed = await listCalendarEvents(cal.token, calendarWindow(input.from, input.from + 1000));
+  if (!listed.ok) return { ok: false, code: "CALENDAR_UNAVAILABLE" } as const;
+  const matches = listed.events.filter((event) => event.status !== "cancelled" && event.summary === input.title &&
+    Date.parse(event.start?.dateTime ?? "") === input.from);
+  if (matches.length > 1) return { ok: false, code: "CALENDAR_BLOCK_AMBIGUOUS" } as const;
+  const event = matches[0];
+  if (!event) return { ok: false, code: "CALENDAR_BLOCK_NOT_FOUND" } as const;
+  const duration = Date.parse(event.end?.dateTime ?? "") - input.from;
+  if (!personalTimedEvent(event) || !(duration > 0)) return { ok: false, code: "CALENDAR_BLOCK_NOT_EDITABLE" } as const;
+
+  const end = input.to + duration;
+  const res = await fetchImpl(`${EVENTS}/${encodeURIComponent(event.id)}?sendUpdates=none`, {
+    method: "PATCH",
+    headers: { authorization: `Bearer ${cal.token}`, "content-type": "application/json", "if-match": event.etag },
+    body: JSON.stringify({
+      start: { dateTime: new Date(input.to).toISOString() }, end: { dateTime: new Date(end).toISOString() },
+      extendedProperties: { private: { [marker]: input.requestKey, [endMarker]: String(end) } },
+    }),
+  });
+  if (res.status === 404 || res.status === 410 || res.status === 412) return { ok: false, code: "CALENDAR_BLOCK_CHANGED" } as const;
+  if (!res.ok) return { ok: false, code: "CALENDAR_UNAVAILABLE" } as const;
+  const saved = await res.json().catch(() => null) as CalendarEvent | null;
+  return saved ? receipt(saved, event.id) : { ok: false, code: "CALENDAR_UNAVAILABLE" } as const;
 }
 
 /** Create the event with a Meet link and invite the guests. `sendUpdates=all` is what emails them. */

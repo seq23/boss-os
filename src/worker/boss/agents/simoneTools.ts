@@ -5,7 +5,7 @@ import { SIMONE, SIMONE_AVAILABLE, type SimoneMessage } from "./simone";
 import { accessCodeIn, addressesIn, confirmLine, errandIn, ERRAND_MONEY_RE, DEFAULT_MAILBOX, OWNER_TZ } from "../../../shared/boss/commands/parse.mjs";
 import { audit } from "../lib/audit";
 import { answerMeetingPrep, getCommand, runInvite } from "../commands/run";
-import { clashes, mailboxAllowed, putOnCalendar } from "../commands/google";
+import { clashes, mailboxAllowed, moveCalendarBlock, putOnCalendar } from "../commands/google";
 import { parseMail } from "../../../shared/mail/parseMail.mjs";
 import { readEverything } from "../intake/readFiles";
 import { headline, MAX_BODY_BYTES } from "../intake/inboundMail";
@@ -110,13 +110,15 @@ export async function simoneTool(env: Env, request: { id: string; lease: number;
       return { ok: false, code: "CALENDAR_UNAVAILABLE" } as const;
     }
   }
-  if (request.tool === "block_calendar") {
+  if (request.tool === "block_calendar" || request.tool === "move_calendar_block") {
     const message: SimoneMessage = JSON.parse(active.input);
     const args = typeof request.task === "string" && request.task.length <= 2500 ? readJsonObject(request.task) : null;
+    const moving = request.tool === "move_calendar_block";
+    const allowedFields = moving ? ["quote", "title", "from", "to", "calendar"] : ["quote", "title", "at", "minutes", "calendar"];
     const calendar = args?.calendar ?? DEFAULT_MAILBOX;
     const quote = args?.quote;
     const title = typeof args?.title === "string" ? args.title.trim() : "";
-    if (!args || Object.keys(args).some((key) => !["quote", "title", "at", "minutes", "calendar"].includes(key)) ||
+    if (!args || Object.keys(args).some((key) => !allowedFields.includes(key)) ||
         typeof quote !== "string" || quote.length < 8 || !message.body.includes(quote) ||
         !title || title.length > 120 || !quote.includes(title) ||
         typeof calendar !== "string" || !mailboxAllowed(calendar) ||
@@ -131,6 +133,26 @@ export async function simoneTool(env: Env, request: { id: string; lease: number;
     } else if (message.source !== "boss_page" && message.source !== "tell_simone") {
       return { ok: false, code: "CALENDAR_BLOCK_NOT_AUTHORIZED" } as const;
     }
+    const mailbox = calendar.toLowerCase();
+    if (moving) {
+      const { from, to } = args;
+      if (typeof from !== "string" || !OFFSET_TIMESTAMP.test(from) || typeof to !== "string" || !OFFSET_TIMESTAMP.test(to)) {
+        return { ok: false, code: "CALENDAR_BLOCK_TIME_REQUIRED" } as const;
+      }
+      const oldStart = Date.parse(from);
+      const newStart = Date.parse(to);
+      if (!(oldStart > active.created_at && newStart > active.created_at) || oldStart === newStart) {
+        return { ok: false, code: "CALENDAR_BLOCK_TIME_REQUIRED" } as const;
+      }
+      const requestKey = await sha256Hex(JSON.stringify([request.id, mailbox, title, oldStart, newStart]));
+      try {
+        const result = await moveCalendarBlock(env, { mailbox, title, from: oldStart, to: newStart, requestKey });
+        if (result.ok) return { ok: true, receipt: result.eventId, title, start: newStart, end: result.end, calendar: mailbox } as const;
+        return { ok: false, code: result.code } as const;
+      } catch {
+        return { ok: false, code: "CALENDAR_UNAVAILABLE" } as const;
+      }
+    }
     const { at, minutes } = args;
     if (typeof at !== "string" || !OFFSET_TIMESTAMP.test(at) ||
         typeof minutes !== "number" || !Number.isInteger(minutes) || minutes < 1 || minutes > 1440) {
@@ -139,7 +161,6 @@ export async function simoneTool(env: Env, request: { id: string; lease: number;
     const start = Date.parse(at);
     if (!Number.isFinite(start) || start <= active.created_at) return { ok: false, code: "CALENDAR_BLOCK_TIME_REQUIRED" } as const;
     const end = start + minutes * 60_000;
-    const mailbox = calendar.toLowerCase();
     const eventId = (await sha256Hex(JSON.stringify(["simone-calendar-block", request.id, mailbox, title, start, end]))).slice(0, 32);
     try {
       const result = await putOnCalendar(env, { mailbox, eventId, title, start, end, allDay: false, where: null, note: "" });

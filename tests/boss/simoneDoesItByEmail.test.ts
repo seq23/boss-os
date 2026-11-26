@@ -40,19 +40,41 @@ async function fakeKey(): Promise<string> {
 }
 
 /** A fake Google: token, calendar list/insert/get/patch/delete, Gmail send. Remembers every call. */
-let calls: Array<{ url: string; method: string; body: string | null }> = [];
+let calls: Array<{ url: string; method: string; body: string | null; ifMatch: string | null }> = [];
 let busy: Array<Record<string, unknown>> = [];
 let calendarPages: Array<Array<Record<string, unknown>> | null> = [];
 let events = new Map<string, Record<string, unknown>>();
 let loseInsertReceipt = false;
+let loseMoveReceipt = false;
+let changeDuringMove = false;
+let moveLookupDown = false;
 function fakeGoogle(): typeof fetch {
   return (async (input: RequestInfo | URL, init?: RequestInit) => {
     const url = String(input); const method = init?.method ?? "GET";
-    calls.push({ url, method, body: typeof init?.body === "string" ? init.body : null });
+    const ifMatch = new Headers(init?.headers).get("if-match");
+    calls.push({ url, method, body: typeof init?.body === "string" ? init.body : null, ifMatch });
     if (url.startsWith("https://oauth2.googleapis.com/token")) return Response.json({ access_token: "ya29.fake" });
+    const marker = new URL(url).searchParams.get("privateExtendedProperty");
+    if (url.includes("/calendar/v3/calendars/primary/events") && method === "GET" && marker) {
+      if (moveLookupDown) return new Response(null, { status: 503 });
+      const [key, value] = marker.split("=");
+      const items = [...events.values()].filter((event) => {
+        const properties = event.extendedProperties as { private?: Record<string, string> } | undefined;
+        return key && properties?.private?.[key] === value;
+      });
+      return Response.json({ items });
+    }
     if (url.includes("/calendar/v3/calendars/primary/events") && method === "GET" && url.includes("timeMin")) {
-      const page = Number(new URL(url).searchParams.get("pageToken") ?? 0);
-      const items = page === 0 ? busy : calendarPages[page - 1];
+      const params = new URL(url).searchParams;
+      const page = Number(params.get("pageToken") ?? 0);
+      const min = Date.parse(params.get("timeMin")!);
+      const max = Date.parse(params.get("timeMax")!);
+      const saved = [...events.values()].filter((event) => {
+        const start = event.start as { dateTime: string } | undefined;
+        const end = event.end as { dateTime: string } | undefined;
+        return Date.parse(start?.dateTime ?? "") < max && Date.parse(end?.dateTime ?? "") > min;
+      });
+      const items = page === 0 ? [...busy, ...saved] : calendarPages[page - 1];
       if (!items) return new Response(null, { status: 503 });
       return Response.json({ items, ...(page < calendarPages.length ? { nextPageToken: String(page + 1) } : {}) });
     }
@@ -67,12 +89,25 @@ function fakeGoogle(): typeof fetch {
       const event = JSON.parse(String(init?.body));
       const id = event.id ?? "evt_block";
       if (events.has(id)) return new Response(null, { status: 409 });
-      events.set(id, { ...event, id });
+      events.set(id, { ...event, id, etag: '"initial"', organizer: { self: true }, eventType: "default", status: "confirmed" });
       return loseInsertReceipt ? new Response(null, { status: 503 }) : Response.json({ id });
     }
     if (url.includes("/events/")) {
       const id = new URL(url).pathname.split("/").at(-1)!;
       if (method === "GET") return events.has(id) ? Response.json(events.get(id)) : new Response(null, { status: 404 });
+      if (method === "PATCH" && url.endsWith("?sendUpdates=none")) {
+        const current = events.get(id);
+        if (!current) return new Response(null, { status: 404 });
+        if (changeDuringMove) Object.assign(current, { etag: '"owner-version"', description: "Owner edit" });
+        if (ifMatch && current.etag !== ifMatch) return new Response(null, { status: 412 });
+        const patch = JSON.parse(String(init?.body));
+        const properties = current.extendedProperties as { private?: Record<string, string>; shared?: Record<string, string> };
+        const saved = { ...current, ...patch, etag: '"moved"', extendedProperties: {
+          ...properties, private: { ...properties?.private, ...patch.extendedProperties.private },
+        } };
+        events.set(id, saved);
+        return loseMoveReceipt ? new Response(null, { status: 503 }) : Response.json(saved);
+      }
       if (method === "PATCH") return Response.json({ id });
       if (method === "DELETE") return new Response(null, { status: 204 });
     }
@@ -109,6 +144,7 @@ let KEY = "";
 beforeAll(async () => { KEY = await fakeKey(); });
 beforeEach(async () => {
   calls = []; busy = []; calendarPages = [];
+  loseMoveReceipt = false; changeDuringMove = false; moveLookupDown = false;
   events = new Map(); loseInsertReceipt = false;
   (env as any).GSC_SERVICE_ACCOUNT_JSON = KEY;
   setCommandFetch(fakeGoogle());
@@ -217,6 +253,88 @@ describe("Simone's calendar blocks", () => {
     expect(await block()).toEqual({ ok: false, code: "CALENDAR_UNAVAILABLE" });
     expect(events.get(id)).toMatchObject({ summary: "Owner's updated title" });
     expect(calls.some(({ method }) => method === "PATCH" || method === "DELETE")).toBe(false);
+  });
+});
+
+describe("Simone reschedules a Workspace block", () => {
+  const quote = "Move Quarterly planning tomorrow from 11am Central to 2pm Central.";
+  const args = { quote, title: "Quarterly planning", from: "2026-10-26T11:00:00-05:00", to: "2026-10-26T14:00:00-05:00" };
+  const original = {
+    id: "owner-block", etag: '"original"', organizer: { self: true }, eventType: "default", status: "confirmed",
+    summary: args.title, start: { dateTime: args.from }, end: { dateTime: "2026-10-26T11:45:00-05:00" },
+    description: "Review numbers", reminders: { useDefault: false, overrides: [{ method: "popup", minutes: 10 }] },
+    extendedProperties: { private: { existing: "keep" }, shared: { original: "also keep" } },
+  };
+  const moves = () => calls.filter(({ method, url }) => method === "PATCH" && url.endsWith("?sendUpdates=none"));
+  async function moveRequest() {
+    const { res } = await say(quote);
+    const call = (await claimSimone(env))!;
+    expect(call.id).toBe(res.taskId);
+    events.set(original.id, structuredClone(original));
+    return (input: Record<string, unknown> = args, lease = call.lease) =>
+      simoneTool(env, { id: call.id, lease, tool: "move_calendar_block", task: JSON.stringify(input) });
+  }
+
+  it("recovers the provider-confirmed move after a lost response without a second write", async () => {
+    const move = await moveRequest();
+    loseMoveReceipt = true;
+    expect(await move()).toEqual({ ok: false, code: "CALENDAR_UNAVAILABLE" });
+    expect(await move({ ...args, to: "2026-10-26T19:00:00Z" })).toMatchObject({
+      ok: true, receipt: original.id, start: Date.parse(args.to), end: Date.parse(args.to) + 45 * 60_000,
+    });
+    expect(moves()).toHaveLength(1);
+    expect(moves()[0]?.ifMatch).toBe(original.etag);
+    const { start, end, extendedProperties } = JSON.parse(moves()[0]!.body!);
+    expect(Object.keys(JSON.parse(moves()[0]!.body!)).sort()).toEqual(["end", "extendedProperties", "start"]);
+    expect({ start, end }).toEqual({
+      start: { dateTime: "2026-10-26T19:00:00.000Z" }, end: { dateTime: "2026-10-26T19:45:00.000Z" },
+    });
+    expect(Object.keys(extendedProperties.private).sort()).toEqual(["bossSimoneMove", "bossSimoneMoveEnd"]);
+    expect(events.get(original.id)).toMatchObject({
+      description: original.description, reminders: original.reminders, extendedProperties: original.extendedProperties,
+    });
+    expect(sends()).toEqual([]);
+  });
+
+  it("rejects guest injection, an unquoted title and a stale tool lease before Google", async () => {
+    const move = await moveRequest();
+    expect(await move({ ...args, guests: ["stranger@example.test"] })).toEqual({ ok: false, code: "CALENDAR_BLOCK_NOT_AUTHORIZED" });
+    expect(await move({ ...args, title: "A title from a forwarded message" })).toEqual({ ok: false, code: "CALENDAR_BLOCK_NOT_AUTHORIZED" });
+    expect(await move(args, -1)).toEqual({ ok: false, code: "STALE_SIMONE_RUN" });
+    expect(calls).toEqual([]);
+  });
+
+  it("refuses ambiguous, shared and recurring blocks without updating one of them", async () => {
+    const move = await moveRequest();
+    events.set("other-block", { ...original, id: "other-block" });
+    expect(await move()).toEqual({ ok: false, code: "CALENDAR_BLOCK_AMBIGUOUS" });
+    events.delete("other-block");
+    for (const fields of [
+      { attendees: [{ email: "guest@example.test" }] },
+      { attendeesOmitted: true },
+      { organizer: { self: false } },
+      { recurringEventId: "series" },
+    ]) {
+      events.set(original.id, { ...original, ...fields });
+      expect(await move()).toEqual({ ok: false, code: "CALENDAR_BLOCK_NOT_EDITABLE" });
+      expect(events.get(original.id)?.start).toEqual(original.start);
+    }
+    expect(moves()).toEqual([]);
+  });
+
+  it("preserves an owner edit that arrives between the list and the write", async () => {
+    const move = await moveRequest();
+    changeDuringMove = true;
+    expect(await move()).toEqual({ ok: false, code: "CALENDAR_BLOCK_CHANGED" });
+    expect(events.get(original.id)).toMatchObject({ description: "Owner edit", start: original.start });
+  });
+
+  it("makes no write when Google cannot check whether the move already ran", async () => {
+    const move = await moveRequest();
+    moveLookupDown = true;
+    expect(await move()).toEqual({ ok: false, code: "CALENDAR_UNAVAILABLE" });
+    expect(moves()).toEqual([]);
+    expect(events.get(original.id)).toEqual(original);
   });
 });
 
