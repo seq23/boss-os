@@ -5,7 +5,7 @@ import { SIMONE, SIMONE_AVAILABLE, type SimoneMessage } from "./simone";
 import { accessCodeIn, addressesIn, confirmLine, errandIn, ERRAND_MONEY_RE, DEFAULT_MAILBOX, OWNER_TZ } from "../../../shared/boss/commands/parse.mjs";
 import { audit } from "../lib/audit";
 import { answerMeetingPrep, getCommand, runInvite } from "../commands/run";
-import { clashes, editCalendarBlock, mailboxAllowed, putOnCalendar } from "../commands/google";
+import { clashes, editCalendarBlock, mailboxAllowed, putOnCalendar, type CalendarBlockPeriod } from "../commands/google";
 import { parseMail } from "../../../shared/mail/parseMail.mjs";
 import { readEverything, readWorkspaceDriveFile, searchWorkspaceDrive } from "../intake/readFiles";
 import { headline, MAX_BODY_BYTES } from "../intake/inboundMail";
@@ -23,6 +23,7 @@ import { campaignFromMail } from "../outreach/campaign";
 import { steerRound } from "../service/round";
 import { appendDutyInstruction, repoInstructions, type OwnedDuty } from "../duties/ownerEdits";
 import { routeFixedDutyChange } from "../duties/editByMail";
+import { dayOf } from "../../../shared/boss/schedule/clock.mjs";
 
 const READS = {
   morning: `SELECT day, updated_at, sent_at FROM morning_digests ORDER BY day DESC LIMIT 3`,
@@ -43,6 +44,12 @@ const READS = {
 } as const;
 
 const OFFSET_TIMESTAMP = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d{3})?(?:Z|[+-]\d{2}:\d{2})$/;
+
+function dateOnly(value: unknown): value is string {
+  if (typeof value !== "string" || !/^\d{4}-\d{2}-\d{2}$/.test(value)) return false;
+  const instant = Date.parse(value);
+  return Number.isFinite(instant) && dayOf(instant, "UTC") === value;
+}
 
 async function fileCommand(env: Env, kind: "access_code" | "errand" | "invite", task: string, mail: string | null, spec: Record<string, unknown>, now: number) {
   const hash = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(`${kind}:${task}`));
@@ -115,7 +122,7 @@ export async function simoneTool(env: Env, request: { id: string; lease: number;
     const args = typeof request.task === "string" && request.task.length <= 2500 ? readJsonObject(request.task) : null;
     const editing = request.tool === "edit_calendar_block";
     const allowedFields = editing ? ["quote", "title", "from", "to", "newTitle", "minutes", "calendar"]
-      : ["quote", "title", "at", "minutes", "calendar"];
+      : ["quote", "title", "at", "minutes", "date", "through", "calendar"];
     const calendar = args?.calendar ?? DEFAULT_MAILBOX;
     const quote = args?.quote;
     const title = typeof args?.title === "string" ? args.title.trim() : "";
@@ -161,17 +168,34 @@ export async function simoneTool(env: Env, request: { id: string; lease: number;
       }
     }
     const { at, minutes } = args;
-    if (typeof at !== "string" || !OFFSET_TIMESTAMP.test(at) ||
-        typeof minutes !== "number" || !Number.isInteger(minutes) || minutes < 1 || minutes > 1440) {
-      return { ok: false, code: "CALENDAR_BLOCK_TIME_REQUIRED" } as const;
+    let period: CalendarBlockPeriod;
+    if ("date" in args || "through" in args) {
+      const { date, through = date } = args;
+      if (!dateOnly(date) || !dateOnly(through) || date < dayOf(active.created_at, OWNER_TZ) ||
+          through < date || at !== undefined || minutes !== undefined) {
+        return { ok: false, code: "CALENDAR_BLOCK_TIME_REQUIRED" } as const;
+      }
+      const end = dayOf(Date.parse(through), "UTC", 1);
+      if (!dateOnly(end)) return { ok: false, code: "CALENDAR_BLOCK_TIME_REQUIRED" } as const;
+      period = { allDay: true, start: date, end };
+    } else {
+      if (typeof at !== "string" || !OFFSET_TIMESTAMP.test(at) ||
+          typeof minutes !== "number" || !Number.isInteger(minutes) || minutes < 1 || minutes > 1440) {
+        return { ok: false, code: "CALENDAR_BLOCK_TIME_REQUIRED" } as const;
+      }
+      const start = Date.parse(at);
+      if (!Number.isFinite(start) || start <= active.created_at) return { ok: false, code: "CALENDAR_BLOCK_TIME_REQUIRED" } as const;
+      period = { allDay: false, start, end: start + minutes * 60_000 };
     }
-    const start = Date.parse(at);
-    if (!Number.isFinite(start) || start <= active.created_at) return { ok: false, code: "CALENDAR_BLOCK_TIME_REQUIRED" } as const;
-    const end = start + minutes * 60_000;
-    const eventId = (await sha256Hex(JSON.stringify(["simone-calendar-block", request.id, mailbox, title, start, end]))).slice(0, 32);
+    const eventId = (await sha256Hex(JSON.stringify(["simone-calendar-block", request.id, mailbox, title, period.start, period.end]))).slice(0, 32);
     try {
-      const result = await putOnCalendar(env, { mailbox, eventId, title, start, end, allDay: false, where: null, note: "" });
-      if (result.ok) return { ok: true, receipt: result.eventId, title, start, end, calendar: mailbox } as const;
+      const result = await putOnCalendar(env, { mailbox, eventId, title, ...period, where: null, note: "" });
+      if (result.ok) {
+        const time = period.allDay
+          ? { date: period.start, through: dayOf(Date.parse(period.end), "UTC", -1) }
+          : { start: period.start, end: period.end };
+        return { ok: true, receipt: result.eventId, title, ...time, calendar: mailbox } as const;
+      }
     } catch { /* A write or readback failure has no completion receipt. */ }
     return { ok: false, code: "CALENDAR_UNAVAILABLE" } as const;
   }

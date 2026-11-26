@@ -43,8 +43,10 @@ async function fakeKey(): Promise<string> {
 let calls: Array<{ url: string; method: string; body: string | null; ifMatch: string | null }> = [];
 let busy: Array<Record<string, unknown>> = [];
 let calendarPages: Array<Array<Record<string, unknown>> | null> = [];
+let calendarTimeZone: string | undefined;
 let events = new Map<string, Record<string, unknown>>();
 let loseInsertReceipt = false;
+let insertResponseOverride: Record<string, unknown> = {};
 let loseMoveReceipt = false;
 let changeDuringMove = false;
 let moveLookupDown = false;
@@ -76,7 +78,7 @@ function fakeGoogle(): typeof fetch {
       });
       const items = page === 0 ? [...busy, ...saved] : calendarPages[page - 1];
       if (!items) return new Response(null, { status: 503 });
-      return Response.json({ items, ...(page < calendarPages.length ? { nextPageToken: String(page + 1) } : {}) });
+      return Response.json({ items, timeZone: calendarTimeZone, ...(page < calendarPages.length ? { nextPageToken: String(page + 1) } : {}) });
     }
     if (url.includes("/calendar/v3/calendars/primary/events?conferenceDataVersion=1") && method === "POST") {
       const event = JSON.parse(String(init?.body));
@@ -89,8 +91,9 @@ function fakeGoogle(): typeof fetch {
       const event = JSON.parse(String(init?.body));
       const id = event.id ?? "evt_block";
       if (events.has(id)) return new Response(null, { status: 409 });
-      events.set(id, { ...event, id, etag: '"initial"', organizer: { self: true }, eventType: "default", status: "confirmed" });
-      return loseInsertReceipt ? new Response(null, { status: 503 }) : Response.json({ id });
+      const saved = { ...event, id, etag: '"initial"', organizer: { self: true }, eventType: "default", status: "confirmed" };
+      events.set(id, saved);
+      return loseInsertReceipt ? new Response(null, { status: 503 }) : Response.json({ ...saved, ...insertResponseOverride });
     }
     if (url.includes("/events/")) {
       const id = new URL(url).pathname.split("/").at(-1)!;
@@ -143,9 +146,9 @@ const commandsOfKind = async (kind: string) => ((await env.DB.prepare(`SELECT * 
 let KEY = "";
 beforeAll(async () => { KEY = await fakeKey(); });
 beforeEach(async () => {
-  calls = []; busy = []; calendarPages = [];
+  calls = []; busy = []; calendarPages = []; calendarTimeZone = "America/Chicago";
   loseMoveReceipt = false; changeDuringMove = false; moveLookupDown = false;
-  events = new Map(); loseInsertReceipt = false;
+  events = new Map(); loseInsertReceipt = false; insertResponseOverride = {};
   (env as any).GSC_SERVICE_ACCOUNT_JSON = KEY;
   setCommandFetch(fakeGoogle());
   Date.now = (() => { let t = NOW; return () => (t += 1000); })();
@@ -253,6 +256,76 @@ describe("Simone's calendar blocks", () => {
     expect(await block()).toEqual({ ok: false, code: "CALENDAR_UNAVAILABLE" });
     expect(events.get(id)).toMatchObject({ summary: "Owner's updated title" });
     expect(calls.some(({ method }) => method === "PATCH" || method === "DELETE")).toBe(false);
+  });
+});
+
+describe("Simone's all-day Workspace blocks", () => {
+  const quote = "Put Budget retreat on my calendar all day October 31 through November 1.";
+  const args = { quote, title: "Budget retreat", date: "2026-10-31", through: "2026-11-01" };
+
+  async function allDayRequest() {
+    const { res } = await say(quote);
+    const call = (await claimSimone(env))!;
+    expect(call.id).toBe(res.taskId);
+    return (input: Record<string, unknown> = args) =>
+      simoneTool(env, { ...call, tool: "block_calendar", task: JSON.stringify(input) });
+  }
+
+  it("recovers a guest-free all-day range through the clock change after the insert receipt is lost", async () => {
+    const block = await allDayRequest();
+    loseInsertReceipt = true;
+    expect(await block()).toEqual({ ok: false, code: "CALENDAR_UNAVAILABLE" });
+    const [receipt] = events.keys();
+    expect(await block()).toMatchObject({ ok: true, receipt, title: args.title, date: args.date, through: args.through });
+    expect(events.size).toBe(1);
+    expect(blockInserts().map(({ body }) => JSON.parse(body!))).toEqual(Array(2).fill({
+      id: receipt, summary: args.title, description: "", start: { date: "2026-10-31" }, end: { date: "2026-11-02" },
+    }));
+    expect(calls.filter(({ method, url }) => method === "GET" && url.endsWith(`/events/${receipt}`))).toHaveLength(1);
+    expect(sends()).toEqual([]);
+  });
+
+  it("refuses malformed dates, reversed ranges and dates mixed with timed fields before contacting Google", async () => {
+    const block = await allDayRequest();
+    for (const input of [
+      { ...args, date: "2027-02-30", through: "2027-03-03" },
+      { ...args, date: "2026-10-24" },
+      { ...args, through: "2026-10-30" },
+      { ...args, at: "2026-10-31T11:00:00-05:00" },
+      { ...args, minutes: 45 },
+    ]) expect(await block(input)).toEqual({ ok: false, code: "CALENDAR_BLOCK_TIME_REQUIRED" });
+    expect(await block({ ...args, attendees: ["stranger@example.test"] }))
+      .toEqual({ ok: false, code: "CALENDAR_BLOCK_NOT_AUTHORIZED" });
+    expect(calls).toEqual([]);
+  });
+
+  it("withholds a receipt when Google returns the wrong date and verifies the saved single day on retry", async () => {
+    const block = await allDayRequest();
+    const { through: _lastDay, ...singleDay } = args;
+    insertResponseOverride = { end: { date: "2026-11-02" } };
+    expect(await block(singleDay)).toEqual({ ok: false, code: "CALENDAR_UNAVAILABLE" });
+    const [receipt] = events.keys();
+    expect(await block(singleDay)).toMatchObject({ ok: true, receipt, date: args.date, through: args.date });
+    expect(events.get(receipt!)).toMatchObject({ start: { date: "2026-10-31" }, end: { date: "2026-11-01" } });
+    expect(events.size).toBe(1);
+  });
+
+  it("reads busy all-day events in the provider calendar zone and leaves availability unknown without it", async () => {
+    const { res } = await say("See what is on my calendar for November 1.");
+    const call = (await claimSimone(env))!;
+    expect(call.id).toBe(res.taskId);
+    const read = () => simoneTool(env, { ...call, tool: "calendar_busy", task: JSON.stringify({
+      from: "2026-11-01T00:00:00-04:00", to: "2026-11-02T00:00:00-05:00",
+    }) });
+    const day = { start: { date: "2026-11-01" }, end: { date: "2026-11-02" } };
+    busy = [{ ...day, summary: "Budget retreat" }, { ...day, summary: "FYI", transparency: "transparent" }];
+    calendarTimeZone = "America/New_York";
+    expect(await read()).toEqual({ ok: true, receipt: "calendar_busy", busy: [{
+      title: "Budget retreat", start: Date.parse("2026-11-01T04:00:00Z"), end: Date.parse("2026-11-02T05:00:00Z"),
+    }] });
+    calendarTimeZone = undefined;
+    expect(await read()).toEqual({ ok: false, code: "CALENDAR_UNAVAILABLE" });
+    expect(blockInserts()).toEqual([]);
   });
 });
 
