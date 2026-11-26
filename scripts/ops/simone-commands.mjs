@@ -153,7 +153,7 @@ export function noticeArgs(id, notice, to = OWNER_TO, { layout = null } = {}) {
 }
 
 async function main() {
-  await flushSentMail();
+  await flushSentMail(fetch, undefined, { errandKey: process.env.BOSS_OS_MAIL_KEY });
   const api = await bossApi();
   const work = await api.post("/commands/tick");
   let did = 0;

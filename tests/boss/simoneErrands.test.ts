@@ -66,12 +66,12 @@ async function queueErrand() {
   return res;
 }
 
-async function sentErrand(messageId = REQUEST_MESSAGE_ID) {
+async function sentErrand(messageId: string | null = REQUEST_MESSAGE_ID) {
   const res = await queueErrand();
   const row = (await errands()).find((entry) => entry.mail_id === res.mailId);
   const providerId = `em_${row.id}`;
   await recordSentMail(env, {
-    provider_id: providerId, message_id: messageId, command_id: row.id,
+    provider_id: providerId, message_id: messageId ?? providerId, command_id: row.id,
     from: "simone@example.test", to: BIZ, subject: "Reservation request", text: "Hello",
   });
   await errandSent(env, row.id, { message_id: providerId, subject: "Reservation request", text: "Hello", request: REQUEST });
@@ -198,6 +198,25 @@ describe("her errand by email", () => {
     expect(rightThread.outcome).toBe("ERRAND_REPLY");
     expect(await status(first.id)).toEqual({ state: "booked", notice_state: "due" });
     expect(await status(second.id)).toEqual({ state: "sent", notice_state: "none" });
+  });
+
+  it("promotes the accepted receipt in place once the provider supplies its Message-ID", async () => {
+    const { id } = await sentErrand(null);
+    const providerId = `em_${id}`;
+    const lookup = () => env.DB.prepare("SELECT id, message_id, object_key, sent_at, thread_id FROM boss_sent_mail WHERE id = ?")
+      .bind(providerId).first<{ object_key: string }>();
+    const before = await lookup();
+    expect(before).toMatchObject({ message_id: providerId });
+    const mail = { provider_id: providerId, command_id: id, from: "simone@example.test", to: BIZ,
+      subject: "Reservation request", text: "Hello" };
+    await recordSentMail(env, { ...mail, message_id: REQUEST_MESSAGE_ID });
+    await recordSentMail(env, { ...mail, message_id: providerId });
+    await recordSentMail(env, { ...mail, message_id: "<different@example.test>" });
+    expect(await lookup()).toEqual({ ...before, message_id: REQUEST_MESSAGE_ID });
+    expect(await env.DB.prepare("SELECT COUNT(*) AS n FROM boss_sent_mail WHERE command_id = ?").bind(id).first()).toEqual({ n: 1 });
+    expect(await (await env.VAULT.get(before!.object_key))?.text()).toContain("Hello");
+    expect(await say({ from: BIZ, inReplyTo: REQUEST_MESSAGE_ID, body: CONFIRMATION })).toMatchObject({ outcome: "ERRAND_REPLY", reply: null });
+    expect(await env.DB.prepare("SELECT state FROM boss_commands WHERE id = ?").bind(id).first()).toEqual({ state: "booked" });
   });
 
   it("NEGATIVE: mail from any other domain is not their answer and is refused as before", async () => {
