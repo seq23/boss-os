@@ -418,15 +418,19 @@ it("opens existing records through the broker and fences calls from an expired l
   expect(await simoneTool(env, { id, lease: lease - 1, tool: "morning" })).toEqual({ ok: false, code: "STALE_SIMONE_RUN" });
 });
 
-it("searches and reads the allowed Workspace inbox through the Gmail read-only scope", async () => {
-  const { simoneTool } = await import("../../src/worker/boss/agents/simoneTools");
-  const { OUTREACH_MAILBOX } = await import("../../src/worker/boss/outreach/catalog");
+async function googleFixtureEnv() {
   const key = await crypto.subtle.generateKey({
     name: "RSASSA-PKCS1-v1_5", modulusLength: 2048, publicExponent: new Uint8Array([1, 0, 1]), hash: "SHA-256",
   }, true, ["sign", "verify"]) as CryptoKeyPair;
   const bytes = new Uint8Array(await crypto.subtle.exportKey("pkcs8", key.privateKey));
   const private_key = `-----BEGIN PRIVATE KEY-----\n${btoa(String.fromCharCode(...bytes))}\n-----END PRIVATE KEY-----`;
-  const mocked = { ...env, GSC_SERVICE_ACCOUNT_JSON: JSON.stringify({ client_email: "service@example.test", private_key }) };
+  return { ...env, GSC_SERVICE_ACCOUNT_JSON: JSON.stringify({ client_email: "service@example.test", private_key }) };
+}
+
+it("searches and reads the allowed Workspace inbox through the Gmail read-only scope", async () => {
+  const { simoneTool } = await import("../../src/worker/boss/agents/simoneTools");
+  const { OUTREACH_MAILBOX } = await import("../../src/worker/boss/outreach/catalog");
+  const mocked = await googleFixtureEnv();
   const id = await fileSimoneMessage(env, { ...request, body: "Please find my earlier schedule email." });
   const call = (await claimSimone(env))!;
   expect(call.id).toBe(id);
@@ -469,6 +473,89 @@ it("searches and reads the allowed Workspace inbox through the Gmail read-only s
       "POST /token", "GET /gmail/v1/users/me/messages/123abc",
       "POST /token", "GET /gmail/v1/users/me/messages/999abc",
     ]);
+  } finally {
+    restore();
+  }
+});
+
+it("finds and reads a Workspace document through a leased Simone task with read-only Drive authorization", async () => {
+  const { simoneTool } = await import("../../src/worker/boss/agents/simoneTools");
+  const { DRIVE_FILE_MAX_BYTES } = await import("../../src/worker/boss/intake/readFiles");
+  const { DEFAULT_MAILBOX } = await import("../../src/shared/boss/commands/parse.mjs");
+  const mocked = await googleFixtureEnv();
+  const title = "Avery's \\ launch plan";
+  const id = await fileSimoneMessage(env, { ...request, body: `Find and summarize ${title} on Drive.` });
+  const call = (await claimSimone(env))!;
+  expect(call.id).toBe(id);
+  const file = { id: "fixture_drive_doc_ID00", name: title, mimeType: "application/vnd.google-apps.document",
+    webViewLink: "https://docs.google.com/document/d/fixture_drive_doc_ID00/edit" };
+  const calls: string[] = [];
+  let cancelDownload = false;
+  const restore = stubFetch(async (req) => {
+    const url = new URL(req.url);
+    calls.push(`${req.method} ${url.pathname}`);
+    expect(req.redirect).toBe("manual");
+    if (url.hostname === "oauth2.googleapis.com") {
+      const { 1: claims } = new URLSearchParams(await req.text()).get("assertion")!.split(".");
+      expect(JSON.parse(atob(claims!.replaceAll("-", "+").replaceAll("_", "/")))).toMatchObject({
+        sub: DEFAULT_MAILBOX, scope: "https://www.googleapis.com/auth/drive.readonly",
+      });
+      return Response.json({ access_token: "fixture-drive-token" });
+    }
+    expect(req.method).toBe("GET");
+    expect(url.hostname).toBe("www.googleapis.com");
+    expect(req.headers.get("authorization")).toBe("Bearer fixture-drive-token");
+    if (url.pathname === "/drive/v3/files") {
+      expect(url.searchParams.get("q")).toBe("trashed = false and name contains 'Avery\\'s \\\\ launch plan'");
+      expect(url.searchParams.get("corpora")).toBe("user");
+      expect(url.searchParams.get("pageSize")).toBe("15");
+      const next = url.searchParams.get("pageToken");
+      if (next === "page-2") return Response.json({ files: [file] });
+      if (next === "outage") return Response.json({ files: [file], detail: "fixture-drive-token" }, { status: 503 });
+      if (next === "redirect") return Response.redirect("https://outside.example.test/capture", 307);
+      if (next === "incomplete") return Response.json({ files: [], incompleteSearch: true });
+      return Response.json({ files: [], nextPageToken: "page-2" });
+    }
+    if (url.pathname.endsWith(`/${file.id}`)) return Response.json(file);
+    if (url.pathname.endsWith(`/${file.id}/export`)) {
+      expect(url.searchParams.get("mimeType")).toBe("text/plain");
+      return new Response("The launch moved to Monday.");
+    }
+    if (url.pathname.endsWith("/fixture_drive_large00")) {
+      if (url.searchParams.get("alt") !== "media") return Response.json({ mimeType: "text/plain", name: "large.txt", size: "1" });
+      return new Response(new ReadableStream<Uint8Array>({
+        start(controller) { controller.enqueue(new Uint8Array(DRIVE_FILE_MAX_BYTES + 1)); },
+        cancel() { cancelDownload = true; },
+      }));
+    }
+    return new Response(null, { status: 503 });
+  });
+  const search = (pageToken?: string, lease = call.lease) => simoneTool(mocked, {
+    ...call, lease, tool: "search_workspace_drive", task: JSON.stringify({ title, pageToken }),
+  });
+  const read = (fileId: string) => simoneTool(mocked, {
+    ...call, tool: "read_workspace_drive", task: JSON.stringify({ id: fileId }),
+  });
+  try {
+    expect(await search(undefined, call.lease + 1)).toEqual({ ok: false, code: "STALE_SIMONE_RUN" });
+    expect(await read("../../permissions/create")).toEqual({ ok: false, code: "DRIVE_QUERY_REQUIRED" });
+    expect(calls).toEqual([]);
+    expect(await search()).toEqual({ ok: true, rows: [], nextPageToken: "page-2", incompleteSearch: false });
+    expect(await search("page-2")).toMatchObject({ ok: true, receipt: "workspace_drive_search", rows: [file], nextPageToken: null });
+    expect(await search("incomplete")).toEqual({ ok: true, rows: [], nextPageToken: null, incompleteSearch: true });
+    expect(await search("outage")).toEqual({ ok: false, code: "WORKSPACE_DRIVE_UNAVAILABLE" });
+    expect(await search("redirect")).toEqual({ ok: false, code: "WORKSPACE_DRIVE_UNAVAILABLE" });
+    expect(await read("fixture_drive_unknown0")).toMatchObject({ ok: false, code: "WORKSPACE_DRIVE_UNREAD" });
+    expect(await read(file.id)).toMatchObject({
+      ok: true, receipt: "workspace_drive_read", files: { read: [{ filename: title, text: "The launch moved to Monday." }] },
+    });
+    expect(await read("fixture_drive_large00")).toMatchObject({
+      ok: false, code: "WORKSPACE_DRIVE_UNREAD",
+      unopened: [{ filename: "large.txt", reason: expect.stringContaining("Drive returned more than") }],
+    });
+    expect(cancelDownload).toBe(true);
+    expect(await replySimone(env, { ...call, text: "The launch moved to Monday.", work: ["read_workspace_drive"] })).toBe(true);
+    expect((await apiJson(`/api/simone/message/${id}`)).body.data).toEqual({ status: "done", reply: "The launch moved to Monday." });
   } finally {
     restore();
   }

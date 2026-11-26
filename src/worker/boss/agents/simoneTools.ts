@@ -7,7 +7,7 @@ import { audit } from "../lib/audit";
 import { answerMeetingPrep, getCommand, runInvite } from "../commands/run";
 import { clashes, mailboxAllowed, moveCalendarBlock, putOnCalendar } from "../commands/google";
 import { parseMail } from "../../../shared/mail/parseMail.mjs";
-import { readEverything } from "../intake/readFiles";
+import { readEverything, readWorkspaceDriveFile, searchWorkspaceDrive } from "../intake/readFiles";
 import { headline, MAX_BODY_BYTES } from "../intake/inboundMail";
 import { partiesAnswer } from "../capital/grid";
 import { amendLiveBook, removeFromLiveBook, storeLiveBook } from "../capital/book";
@@ -333,6 +333,31 @@ export async function simoneTool(env: Env, request: { id: string; lease: number;
       } } as const;
     } catch {
       return { ok: false, code: "WORKSPACE_MAIL_UNAVAILABLE" } as const;
+    }
+  }
+  if (request.tool === "search_workspace_drive" || request.tool === "read_workspace_drive") {
+    const args = typeof request.task === "string" && request.task.length <= 3000 ? readJsonObject(request.task) : null;
+    const search = request.tool === "search_workspace_drive";
+    const title = typeof args?.title === "string" ? args.title.trim() : "";
+    const pageToken = args?.pageToken;
+    const id = typeof args?.id === "string" ? args.id : "";
+    if (search ? (!title || title.length > 150 || /[\x00-\x1f]/.test(title) ||
+        (pageToken !== undefined && (typeof pageToken !== "string" || !pageToken || pageToken.length > 2048))) :
+        !/^[a-zA-Z0-9_-]{10,150}$/.test(id)) {
+      return { ok: false, code: "DRIVE_QUERY_REQUIRED" } as const;
+    }
+    if (!env.GSC_SERVICE_ACCOUNT_JSON) return { ok: false, code: "WORKSPACE_DRIVE_NOT_CONNECTED" } as const;
+    try {
+      if (search) {
+        const page = await searchWorkspaceDrive(env, title, typeof pageToken === "string" ? pageToken : undefined);
+        if (!page.rows.length && (page.incompleteSearch || page.nextPageToken)) return { ok: true, ...page } as const;
+        return { ok: true, receipt: "workspace_drive_search", ...page } as const;
+      }
+      const files = await readWorkspaceDriveFile(env, id);
+      if (!files.read.length) return { ok: false, code: "WORKSPACE_DRIVE_UNREAD", unopened: files.unopened } as const;
+      return { ok: true, receipt: "workspace_drive_read", files } as const;
+    } catch {
+      return { ok: false, code: "WORKSPACE_DRIVE_UNAVAILABLE" } as const;
     }
   }
   if (request.tool === "deal_parties") {
