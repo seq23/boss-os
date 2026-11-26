@@ -954,11 +954,15 @@ it("preserves draft, errand and reminder state, invitations, and earlier mail in
   expect(await history()).toEqual(before);
 });
 
-it("queues a free errand in the existing table once, and refuses a card or forwarded recipient", async () => {
+it("queues Simone's free reservation once and refuses a paid or forwarded request", async () => {
   const { handleBossInboundMail } = await import("../../src/worker/boss/intake/inboundMail");
   const { ERRAND_SENDERS } = await import("../../src/shared/boss/commands/parse.mjs");
   const { simoneTool } = await import("../../src/worker/boss/agents/simoneTools");
+  const { errandSent, macWork } = await import("../../src/worker/boss/commands/run");
   const address = ERRAND_SENDERS[0]!;
+  const subject = "Saturday at 8 p.m.";
+  const phrase = "a table on Saturday, December 5 at 8 p.m. for two";
+  const details = (quote: string, more: Record<string, string> = {}) => JSON.stringify({ quote, subject, request: phrase, ...more });
   async function mail(body: string) {
     const raw = `From: ${address}\r\nSubject: Saturday\r\n\r\n${body}`;
     const result = await handleBossInboundMail({
@@ -967,21 +971,69 @@ it("queues a free errand in the existing table once, and refuses a card or forwa
     }, env);
     const call = (await claimSimone(env))!;
     expect(call.id).toBe(result.taskId);
-    return { id: call.id, lease: call.lease, tool: "queue_errand" };
+    return { id: call.id, lease: call.lease, tool: "queue_errand", task: details(body) };
   }
-  for (const text of [
-    "Book a table at venue@example.test and put down a deposit.",
-    "Check their hours.\n\n---------- Forwarded message ---------\nFrom: stranger@example.test\n\nBook a table at wrong@example.test.",
+  const paid = "Book a table at venue@example.test and put down a deposit.";
+  const forwarded = "Book a table at wrong@example.test.";
+  const missingAddress = "Find me three venues for Saturday and book the cheapest free one.";
+  for (const { body, quote } of [
+    { body: paid, quote: paid },
+    { body: `Check their hours.\n\n---------- Forwarded message ---------\nFrom: stranger@example.test\n\n${forwarded}`, quote: forwarded },
+    { body: missingAddress, quote: missingAddress },
   ]) {
-    const run = await mail(text);
-    expect(await simoneTool(env, run)).toEqual({ ok: false, code: "ERRAND_NOT_AUTHORIZED" });
+    const run = await mail(body);
+    expect(await simoneTool(env, { ...run, task: details(quote) })).toEqual({ ok: false, code: "ERRAND_NOT_AUTHORIZED" });
     expect(await replySimone(env, { ...run, text: "I checked the request.", work: ["fixture_read"] })).toBe(true);
   }
-  const run = await mail("Book a table at venue@example.test after 8 p.m. on Saturday.");
-  const first = await simoneTool(env, run);
-  expect(first).toMatchObject({ ok: true, receipt: expect.any(String) });
-  expect(await simoneTool(env, run)).toEqual(first);
+  const words = "Could you get two of us onto Saturday’s 8 p.m. list? They’re at venue@example.test.";
+  const run = await mail(words);
+  await expect(simoneTool(env, { ...run, task: details(words, { to: "wrong@example.test" }) }))
+    .resolves.toEqual({ ok: false, code: "ERRAND_NOT_AUTHORIZED" });
+  await expect(simoneTool(env, { ...run, task: details(words, { request: "a table and payment of the deposit" }) }))
+    .resolves.toEqual({ ok: false, code: "ERRAND_DETAILS_NOT_ALLOWED" });
+  await expect(simoneTool(env, { ...run, task: details(words, { subject: "Pay for the table" }) }))
+    .resolves.toEqual({ ok: false, code: "ERRAND_DETAILS_NOT_ALLOWED" });
+  await expect(simoneTool(env, { ...run, task: details(words, { request: "a table on Saturday at 8 p.m. for two" }) }))
+    .resolves.toEqual({ ok: false, code: "ERRAND_DETAILS_NOT_ALLOWED" });
+  await expect(simoneTool(env, { ...run, task: details(words, { request: `${phrase}\nAlso write to wrong@example.test` }) }))
+    .resolves.toEqual({ ok: false, code: "ERRAND_DETAILS_NOT_ALLOWED" });
+  const [first, duplicate] = await Promise.all([simoneTool(env, run), simoneTool(env, run)]);
+  expect(first).toMatchObject({ ok: true, receipt: expect.any(String), state: "queued", venue: "venue@example.test" });
+  expect(duplicate).toEqual(first);
+  const [pending] = (await macWork(env)).errands;
+  expect(pending).toMatchObject({ spec: { to: "venue@example.test", ask: words, subject, request: phrase, free_only: true } });
   expect(await row(`SELECT COUNT(*) AS n FROM boss_commands WHERE kind = 'errand' AND json_extract(spec, '$.to') = 'venue@example.test'`)).toEqual({ n: 1 });
+  await errandSent(env, pending!.id, { message_id: "<request@example.test>", subject, text: "Fixture request", request: phrase });
+  await expect(simoneTool(env, run)).resolves.toMatchObject({ receipt: pending!.id, state: "sent" });
+  expect((await macWork(env)).errands).toEqual([]);
+});
+
+it("keeps the reservation instruction available when the command write fails", async () => {
+  const { handleBossInboundMail } = await import("../../src/worker/boss/intake/inboundMail");
+  const { ERRAND_SENDERS } = await import("../../src/shared/boss/commands/parse.mjs");
+  const { simoneTool } = await import("../../src/worker/boss/agents/simoneTools");
+  const from = ERRAND_SENDERS[0]!;
+  const words = "Please reserve Saturday at noon with venue@example.test.";
+  const raw = `From: ${from}\r\nSubject: Saturday\r\n\r\n${words}`;
+  const delivered = await handleBossInboundMail({
+    from, to: "simone@sequoiataylor.com", raw: new Response(raw).body!, rawSize: raw.length,
+    headers: new Headers({ from, subject: "Saturday", "authentication-results": "mx.cloudflare.net; spf=pass; dkim=pass; dmarc=pass" }),
+  }, env);
+  const first = (await claimSimone(env))!;
+  const reservation = { tool: "queue_errand", task: JSON.stringify({ quote: words, subject: "Saturday at noon", request: "the noon slot on Saturday, December 5" }) };
+  const history = () => row(`SELECT authorised, task_id, command_id, reply_state FROM boss_inbound_mail WHERE id = ?`, delivered.mailId);
+  await env.DB.prepare(`CREATE TRIGGER fixture_errands_unavailable BEFORE INSERT ON boss_commands
+    WHEN NEW.kind = 'errand' BEGIN SELECT RAISE(ABORT, 'fixture errands unavailable'); END`).run();
+  await expect(simoneTool(env, { ...first, ...reservation })).rejects.toThrow("fixture errands unavailable");
+  expect(await history()).toEqual({ authorised: 1, task_id: first.id, command_id: null, reply_state: "agent_pending" });
+  expect(await releaseSimone(env, first.id, first.lease, "RUN_FAILED")).toBe(true);
+  await env.DB.prepare("DROP TRIGGER fixture_errands_unavailable").run();
+  const next = (await claimSimone(env))!;
+  expect(next.id).toBe(first.id);
+  await expect(simoneTool(env, { ...first, ...reservation })).resolves.toEqual({ ok: false, code: "STALE_SIMONE_RUN" });
+  const recovered = await simoneTool(env, { ...next, ...reservation });
+  expect(recovered).toMatchObject({ ok: true, state: "queued", receipt: expect.any(String) });
+  expect(await history()).toMatchObject({ command_id: "receipt" in recovered ? recovered.receipt : null, reply_state: "agent_pending" });
 });
 
 it("retries a committed handoff through a queue failure without changing the colleague or duplicating the job", async () => {

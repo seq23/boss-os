@@ -19,6 +19,7 @@ import { layoutEmail, plainProblems } from "../../src/shared/boss/mail/plain.mjs
 const HER = ERRAND_SENDERS[0]!;
 const BIZ = "reservations@club.example.test";
 const NOW = Date.parse("2026-10-26T15:00:00Z");
+const REQUEST = "a table for two on Thursday, October 29 after 8:00 pm";
 
 function mail(o: { from: string; body: string; subject?: string; to?: string; dmarc?: string }) {
   const headers = new Headers({
@@ -43,12 +44,15 @@ beforeEach(async () => {
 afterEach(() => { setCommandFetch(null); Date.now = REAL_NOW; });
 
 async function queueErrand() {
-  const res = await say({ from: `Sequoia <${HER}>`, subject: "Dinner", body: `Book me a table for two on Thursday after 8pm: ${BIZ}` });
+  const quote = `Book me a table for two on Thursday after 8pm: ${BIZ}`;
+  const res = await say({ from: `Sequoia <${HER}>`, subject: "Dinner", body: quote });
   expect(res).toMatchObject({ outcome: "SIMONE_QUEUED", reply: null });
   const call = (await claimSimone(env))!;
   expect(call.id).toBe(res.taskId);
-  const queued = await simoneTool(env, { ...call, tool: "queue_errand" });
-  expect(queued).toMatchObject({ ok: true, receipt: expect.stringMatching(/^cmd_[a-f0-9]+$/) });
+  const queued = await simoneTool(env, { ...call, tool: "queue_errand", task: JSON.stringify({
+    quote, subject: "Reservation request", request: REQUEST,
+  }) });
+  expect(queued).toMatchObject({ ok: true, receipt: expect.stringMatching(/^cmd_[a-f0-9]+$/), state: "queued", venue: BIZ });
   const answer = "I queued your reservation request. I’ll confirm once the venue answers.";
   expect(await replySimone(env, { ...call, text: answer, work: ["queue_errand"] })).toBe(true);
   const notice = await env.DB.prepare(`SELECT body FROM boss_task_notices WHERE task_id = ? AND kind = 'simone_result'`)
@@ -60,7 +64,7 @@ async function queueErrand() {
 async function sentErrand() {
   const res = await queueErrand();
   const [row] = await errands();
-  await errandSent(env as never, row.id, { message_id: "em_fake1", subject: "Reservation request", text: "Hello", request: "a table for two on Thursday after 8:00 pm" });
+  await errandSent(env as never, row.id, { message_id: "em_fake1", subject: "Reservation request", text: "Hello", request: REQUEST });
   return { res, id: row.id as string };
 }
 
@@ -84,9 +88,12 @@ describe("her errand by email", () => {
   });
 
   it("NEGATIVE: the agent refuses an errand that asks for a deposit and creates no draft", async () => {
-    await say({ from: `Sequoia <${HER}>`, body: `Book me a table for two and pay the deposit: ${BIZ}` });
+    const quote = `Book me a table for two and pay the deposit: ${BIZ}`;
+    await say({ from: `Sequoia <${HER}>`, body: quote });
     const call = (await claimSimone(env))!;
-    expect(await simoneTool(env, { ...call, tool: "queue_errand" })).toEqual({ ok: false, code: "ERRAND_NOT_AUTHORIZED" });
+    expect(await simoneTool(env, { ...call, tool: "queue_errand", task: JSON.stringify({
+      quote, subject: "Reservation request", request: "a table for two on Thursday",
+    }) })).toEqual({ ok: false, code: "ERRAND_NOT_AUTHORIZED" });
     expect(await errands()).toHaveLength(0);
     expect(await env.DB.prepare("SELECT count(*) AS n FROM boss_commands").first()).toEqual({ n: 0 });
   });
@@ -102,7 +109,7 @@ describe("her errand by email", () => {
     expect(row.notice_state).toBe("due");
     const notice = JSON.parse(row.notice);
     expect(notice.subject).toBe("Your request needs you: they want a card");
-    expect(notice.details[0]).toBe("What I asked for: a table for two on Thursday after 8:00 pm");
+    expect(notice.details[0]).toBe(`What I asked for: ${REQUEST}`);
     expect(notice.details[1]).toMatch(/^What they said: We can hold a table at 8:30/);
     expect(notice.details[2]).toMatch(/^What you need to do: .*Only you can give that/);
     expect(notice.morning.decide.buttons[0].url).toBe(`mailto:${BIZ}`);
@@ -119,9 +126,24 @@ describe("her errand by email", () => {
   it("a confirmation is a morning line that needs nothing", async () => {
     const { id } = await sentErrand();
     await say({ from: BIZ, subject: "Re: Reservation request", body: "You're all set for two at 8:30pm Thursday. See you then." });
-    const notice = JSON.parse((await env.DB.prepare(`SELECT notice FROM boss_commands WHERE id = ?`).bind(id).first<any>()).notice);
+    const row = (await env.DB.prepare(`SELECT state, result, notice FROM boss_commands WHERE id = ?`).bind(id)
+      .first<{ state: string; result: string; notice: string }>())!;
+    expect(row.state).toBe("booked");
+    expect(JSON.parse(row.result).booking).toMatchObject({ confirmed: true, at: expect.any(Number) });
+    const notice = JSON.parse(row.notice);
     expect(notice.subject).toBe("Your request is booked");
     expect(notice.morning.line).toContain("it's booked");
+  });
+
+  it("keeps a venue confirmation with a fee out of the booked state for a free-only request", async () => {
+    const { id } = await sentErrand();
+    await say({ from: BIZ, subject: "Re: Reservation request", body: "You're all set for two at 8:30pm Thursday. The cover is $30 per person." });
+    const row = (await env.DB.prepare(`SELECT state, result, notice FROM boss_commands WHERE id = ?`).bind(id)
+      .first<{ state: string; result: string; notice: string }>())!;
+    expect(row.state).toBe("replied");
+    expect(JSON.parse(row.result).booking).toBeNull();
+    expect(JSON.parse(row.notice).details.join("\n")).toContain("$30 per person");
+    expect(JSON.parse(row.notice).subject).not.toBe("Your request is booked");
   });
 
   it("keeps an unauthenticated venue reply without treating it as a confirmation", async () => {

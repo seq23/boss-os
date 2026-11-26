@@ -126,10 +126,10 @@ export function errandPrompt(spec, now = Date.now()) {
 }
 
 /** The errand that goes, from the model's phrase: `{ subject, request, text, problems }`. Pure. */
-export function buildErrand(json) {
+export function buildErrand(json, { freeOnly = false } = {}) {
   const subject = String(json?.subject ?? "").trim();
   const request = String(json?.request ?? "").trim().replace(/^to request\s+/i, "");
-  return { subject, request, text: errandText(request), problems: errandProblems({ subject, request }) };
+  return { subject, request, text: errandText(request, { freeOnly }), problems: errandProblems({ subject, request }) };
 }
 
 /**
@@ -181,8 +181,11 @@ async function main() {
   }
 
   for (const e of work.errands ?? []) {
-    const r = askClaudeJson(errandPrompt(e.spec), { model: "sonnet", maxTurns: 3, timeoutMs: 180_000 });
-    const built = r.ok ? buildErrand(r.json) : null;
+    const freeOnly = e.spec.free_only === true;
+    // Only earlier records need to be turned into a request phrase by the Mac tick.
+    const r = freeOnly ? { ok: true, json: e.spec }
+      : askClaudeJson(errandPrompt(e.spec), { model: "sonnet", maxTurns: 3, timeoutMs: 180_000 });
+    const built = r.ok ? buildErrand(r.json, { freeOnly }) : null;
     if (!built || built.problems.length) {
       await api.post(`/commands/${e.id}/failed`, { why: built ? `the request was not fit to send (${built.problems.join("; ")})` : (r.why ?? "no request came back") });
       failures.push(e.id); continue;

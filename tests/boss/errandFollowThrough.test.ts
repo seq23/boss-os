@@ -44,11 +44,14 @@ beforeEach(async () => {
 afterEach(() => { setCommandFetch(null); Date.now = REAL_NOW; });
 
 async function answered() {
-  const arrival = await say({ from: `Sequoia <${HER}>`, subject: "Club", body: `Get me reservations +1 Thursday night after 8pm: ${VENUE}` });
+  const quote = `Get me reservations +1 Thursday night after 8pm: ${VENUE}`;
+  const arrival = await say({ from: `Sequoia <${HER}>`, subject: "Club", body: quote });
   expect(arrival).toMatchObject({ outcome: "SIMONE_QUEUED", reply: null });
   const call = (await claimSimone(env))!;
   expect(call.id).toBe(arrival.taskId);
-  const work = await simoneTool(env, { ...call, tool: "queue_errand" });
+  const work = await simoneTool(env, { ...call, tool: "queue_errand", task: JSON.stringify({
+    quote, subject: "Reservation request", request: "a table for two at The Example Club on Thursday, October 29, any time after 8:00 pm",
+  }) });
   expect(work).toMatchObject({ ok: true, receipt: expect.stringMatching(/^cmd_/) });
   const { receipt: id } = work as { receipt: string };
   await errandSent(env as never, id, { message_id: "em_fake1", subject: "Reservation request: Thursday, October 29, party of 2", text: "Hello", request: "a table for two at The Example Club on Thursday, October 29, any time after 8:00 pm" });

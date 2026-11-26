@@ -2,7 +2,7 @@ import type { Env } from "../env";
 import { newId, sha256Hex } from "../lib/id";
 import { AppError } from "../lib/http";
 import { SIMONE, SIMONE_AVAILABLE, type SimoneMessage } from "./simone";
-import { accessCodeIn, addressesIn, confirmLine, errandIn, ERRAND_MONEY_RE, DEFAULT_MAILBOX, OWNER_TZ } from "../../../shared/boss/commands/parse.mjs";
+import { accessCodeIn, addressesIn, confirmLine, errandDateIn, errandProblems, freeErrandRecipient, ERRAND_MONEY_RE, DEFAULT_MAILBOX, OWNER_TZ } from "../../../shared/boss/commands/parse.mjs";
 import { audit } from "../lib/audit";
 import { answerMeetingPrep, getCommand, runInvite } from "../commands/run";
 import { calendarAgenda, cancelCalendarBlock, clashes, editCalendarBlock, mailboxAllowed, putOnCalendar, type CalendarBlockPeriod,
@@ -578,19 +578,33 @@ export async function simoneTool(env: Env, request: { id: string; lease: number;
   if (request.tool === "queue_errand" || request.tool === "create_invite") {
     const message: SimoneMessage = JSON.parse(active.input);
     const original = message.source === "boss_inbound_mail" && message.mail_id
-      ? await env.DB.prepare(`SELECT from_addr FROM boss_inbound_mail WHERE id = ? AND authorised = 1 AND task_id = ?`)
+      ? await env.DB.prepare(`SELECT from_addr FROM boss_inbound_mail WHERE id = ? AND authorised = 1 AND task_id = ? AND outcome = 'SIMONE_QUEUED'`)
         .bind(message.mail_id, request.id).first<{ from_addr: string }>()
       : null;
     if (request.tool === "queue_errand") {
-      const spec = original && errandIn({ sender: original.from_addr, text: message.body });
-      if (!spec) return { ok: false, code: "ERRAND_NOT_AUTHORIZED" } as const;
+      const args = typeof request.task === "string" && request.task.length <= 3000 ? readJsonObject(request.task) : null;
+      const quote = args?.quote;
+      const subject = args?.subject;
+      const phrase = args?.request;
+      const to = original && typeof quote === "string" && quote.length <= 2000 && message.body.includes(quote)
+        ? freeErrandRecipient(original.from_addr, quote) : null;
+      if (!original || !to || Object.keys(args ?? {}).some((key) => !["quote", "subject", "request"].includes(key))) {
+        return { ok: false, code: "ERRAND_NOT_AUTHORIZED" } as const;
+      }
+      if (typeof subject !== "string" || subject.length > 100 || typeof phrase !== "string" ||
+          /[\r\n]/.test(subject + phrase) || errandProblems({ subject, request: phrase }).length ||
+          !errandDateIn(phrase, active.created_at) || ERRAND_MONEY_RE.test(subject) ||
+          containsCredential(`${subject}\n${phrase}`, env)) {
+        return { ok: false, code: "ERRAND_DETAILS_NOT_ALLOWED" } as const;
+      }
       const command = await fileCommand(env, "errand", request.id, message.mail_id!,
-        { ...spec, owner_email: original.from_addr }, now);
+        { to, ask: quote, owner_email: original.from_addr, subject: subject.trim(), request: phrase.trim(), free_only: true }, now);
       if (command.created) await audit(env.DB, {
         actor: "owner", lane: "ops", entityType: "boss_command", entityId: command.id, action: "errand_approved_by_her_email",
         detail: { mail_id: message.mail_id, simone_run: request.id },
       });
-      return { ok: true, receipt: command.id } as const;
+      const stored = (await getCommand(env, command.id))!;
+      return { ok: true, receipt: command.id, state: stored.state, venue: JSON.parse(stored.spec).to } as const;
     }
     const namedByOwner = original || message.source === "boss_page" || message.source === "tell_simone";
     if (!namedByOwner || ERRAND_MONEY_RE.test(message.body)) return { ok: false, code: "INVITE_NOT_AUTHORIZED" } as const;

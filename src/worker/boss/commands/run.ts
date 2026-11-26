@@ -781,14 +781,15 @@ export async function errandReplied(env: Env, row: CommandRow, reply: { from: st
   const date = errandDateIn(errandWords(spec, result), result.sent_at ?? row.created_at, ERRAND_TZ);
   const one = offer.options.length === 1 ? offer.options[0] : null;
   const pending = result.booking && !result.booking.confirmed ? result.booking : null;
-  const confirmsPending = read.kind !== "card" && pending && offer.confirms && !offer.asks && (!one || one.time === pending.time);
+  const legacyConfirmation = spec.free_only !== true && read.kind !== "card" && offer.confirms && !offer.asks;
+  const confirmsPending = legacyConfirmation && pending && (!one || one.time === pending.time);
   let booking = result.booking ?? null;
   if (read.kind === "confirmed" && one && date) booking = { ...(bookingAt(date, one, ERRAND_TZ) ?? {}), label: one.label, confirmed: true };
   else if (confirmsPending) booking = { ...pending, confirmed: true };
-  else if (read.kind !== "card" && offer.confirms && one && date && !offer.asks) booking = { ...(bookingAt(date, one, ERRAND_TZ) ?? {}), label: one.label, confirmed: true };
+  else if (legacyConfirmation && one && date) booking = { ...(bookingAt(date, one, ERRAND_TZ) ?? {}), label: one.label, confirmed: true };
   if (read.kind === "card" && booking) booking = { ...booking, confirmed: false };
-  const confirmed = read.kind !== "card" && Boolean(booking?.confirmed) && (read.kind === "confirmed" || confirmsPending || (offer.confirms && !offer.asks));
-  const kind = confirmsPending && read.kind !== "card" && !offer.asks ? "confirmed" : read.kind;
+  const confirmed = Boolean(booking?.confirmed) && (read.kind === "confirmed" || legacyConfirmation);
+  const kind = confirmsPending ? "confirmed" : read.kind;
   const rules = { rules: offer.rules.length ? offer.rules : (result.rules ?? []), cancel_rule: offer.cancel_rule.length ? offer.cancel_rule : (result.cancel_rule ?? []) };
   const decideOpen = kind === "decide" && !confirmed;
   await save(env, row.id, {

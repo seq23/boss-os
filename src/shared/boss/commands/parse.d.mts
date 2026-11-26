@@ -34,7 +34,8 @@ export const ERRAND_SENDERS: readonly string[];
 export const ERRAND_MONEY_RE: RegExp;
 export function errandRefusal(i?: { sender?: string; subject?: string; text?: string }): string | null;
 export function errandIn(i?: { sender?: string; subject?: string; text?: string }): { to: string; ask: string } | null;
-export function errandText(request: string): string;
+export function freeErrandRecipient(sender: string, quote: string): string | null;
+export function errandText(request: string, options?: { freeOnly?: boolean }): string;
 export function errandProblems(i?: { subject?: string; request?: string }): string[];
 export interface ErrandOption { key: string; time: string; label: string | null; fee: string | null }
 export interface ErrandOffer { text: string; greet: string | null; needs: string[]; rules: string[]; cancel_rule: string[]; asks: boolean; confirms: boolean; options: ErrandOption[]; fees: string[]; unavailable: boolean; policy: boolean }

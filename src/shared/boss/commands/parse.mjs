@@ -446,6 +446,10 @@ export function errandRefusal({ sender = "", subject = "", text = "" } = {}) {
   if (!ERRAND_SENDERS.includes(s)) return "not from her own address";
   const words = `${subject ?? ""}\n${text ?? ""}`;
   if (!ERRAND_ASK_RE.test(words)) return "not a booking or request";
+  return errandBoundary(words);
+}
+
+function errandBoundary(words) {
   const all = [...new Set((words.match(EMAIL_RE) ?? []).map((a) => a.replace(/[.,;:]+$/, "").toLowerCase()))];
   const outside = addressesIn(words);
   if (all.some((a) => ERRAND_NEVER_DOMAIN_RE.test(a))) return "a West Peek or spry.vc address";
@@ -456,6 +460,12 @@ export function errandRefusal({ sender = "", subject = "", text = "" } = {}) {
   return null;
 }
 
+/** The agent reads intent. The recipient still has to come from the owner's own verified words. */
+export function freeErrandRecipient(sender, quote) {
+  if (!ERRAND_SENDERS.includes(sender.toLowerCase()) || errandBoundary(quote)) return null;
+  return addressesIn(quote)[0] ?? null;
+}
+
 /** `{ to, ask }` for an errand Simone may send on her word, or null. */
 export function errandIn({ sender = "", subject = "", text = "" } = {}) {
   if (errandRefusal({ sender, subject, text })) return null;
@@ -464,11 +474,14 @@ export function errandIn({ sender = "", subject = "", text = "" } = {}) {
 }
 
 /** The request Simone sends, word for word. `request` is one phrase ("a table for two on Thursday, October 29, any time after 8:00 pm"). */
-export function errandText(request) {
+export function errandText(request, { freeOnly = false } = {}) {
+  const terms = freeOnly
+    ? "Please confirm only if there’s no charge, deposit, card requirement, or cancellation fee."
+    : "Please let me know what's available and anything you need to confirm.";
   return [
     "Hello,",
     "",
-    `I'm writing on behalf of Sequoia Taylor to request ${String(request ?? "").trim().replace(/[.\s]+$/, "")}. Please let me know what's available and anything you need to confirm.`,
+    `I'm writing on behalf of Sequoia Taylor to request ${String(request ?? "").trim().replace(/[.\s]+$/, "")}. ${terms}`,
     "",
     "Thank you,",
     "Simone",

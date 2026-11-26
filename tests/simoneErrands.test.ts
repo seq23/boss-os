@@ -62,6 +62,13 @@ describe("the letter that goes", () => {
     expect(good.problems).toEqual([]);
   });
 
+  it("requests confirmation of the agent's chosen slot only on free, cardless terms", () => {
+    const chosen = { subject: "Saturday at noon", request: "the noon slot on Saturday for two" };
+    const result = buildErrand(chosen, { freeOnly: true });
+    expect(result.problems).toEqual([]);
+    expect(result.text).toContain("the noon slot on Saturday for two. Please confirm only if there’s no charge, deposit, card requirement, or cancellation fee.");
+  });
+
   it("NEGATIVE: a phrase that mentions AI, money, a card number, a link or an address is refused before sending", () => {
     expect(errandProblems({ subject: "x", request: "a table booked by our AI assistant" })).toContain("it mentions AI");
     expect(errandProblems({ subject: "x", request: "a table, and we will pay a deposit" })).toContain("it mentions money");
