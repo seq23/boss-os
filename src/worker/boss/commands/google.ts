@@ -271,18 +271,34 @@ export async function answerInvite(env: Env, input: { mailbox: string; uid: stri
 }
 
 /** Put an event on her own calendar with no guests: nobody is emailed (sendUpdates=none). */
-export async function putOnCalendar(env: Env, input: { mailbox: string; title: string; start: number; end: number | null; allDay: boolean; where: string | null; note: string }):
+export async function putOnCalendar(env: Env, input: { mailbox: string; title: string; start: number; end: number | null; allDay: boolean; where: string | null; note: string; eventId?: string }):
   Promise<{ ok: true; eventId: string } | { ok: false; why: string }> {
   const cal = await calendarFor(env, input.mailbox);
   if (!cal.ok) return cal;
-  const day = (ms: number) => dayOf(ms);
+  const end = input.end && input.end > input.start ? input.end : input.start + 3_600_000;
   const body = input.allDay
-    ? { summary: input.title, location: input.where ?? undefined, description: input.note, start: { date: day(input.start) }, end: { date: day(input.start + 86_400_000) } }
-    : { summary: input.title, location: input.where ?? undefined, description: input.note, start: { dateTime: new Date(input.start).toISOString() }, end: { dateTime: new Date(input.end && input.end > input.start ? input.end : input.start + 3_600_000).toISOString() } };
-  const res = await fetchImpl(`${CALENDAR}/primary/events?sendUpdates=none`, {
-    method: "POST", headers: { authorization: `Bearer ${cal.token}`, "content-type": "application/json" }, body: JSON.stringify(body),
+    ? { summary: input.title, location: input.where ?? undefined, description: input.note, start: { date: dayOf(input.start) }, end: { date: dayOf(input.start + 86_400_000) } }
+    : { summary: input.title, location: input.where ?? undefined, description: input.note, start: { dateTime: new Date(input.start).toISOString() }, end: { dateTime: new Date(end).toISOString() } };
+  const url = `${CALENDAR}/primary/events`;
+  const headers = { authorization: `Bearer ${cal.token}`, "content-type": "application/json" };
+  let res = await fetchImpl(`${url}?sendUpdates=none`, {
+    method: "POST", headers, body: JSON.stringify({ ...body, id: input.eventId }),
   });
+  const duplicateId = res.status === 409 ? input.eventId : undefined;
+  if (duplicateId) res = await fetchImpl(`${url}/${encodeURIComponent(duplicateId)}`, { headers });
   if (!res.ok) return { ok: false, why: `Google Calendar refused the event (${res.status})` };
-  const e = (await res.json().catch(() => ({}))) as any;
-  return { ok: true, eventId: String(e.id ?? "") };
+  const event = (await res.json().catch(() => null)) as {
+    id?: string; status?: string; summary?: string; attendees?: unknown[];
+    start?: { date?: string; dateTime?: string }; end?: { date?: string; dateTime?: string };
+  } | null;
+  if (typeof event?.id !== "string" || !event.id || (input.eventId && event.id !== input.eventId)) {
+    return { ok: false, why: "Google Calendar did not confirm the event ID" };
+  }
+  if (duplicateId && (event.status === "cancelled" || event.attendees?.length || event.summary !== input.title ||
+      (input.allDay
+        ? event.start?.date !== body.start.date || event.end?.date !== body.end.date
+        : Date.parse(event.start?.dateTime ?? "") !== input.start || Date.parse(event.end?.dateTime ?? "") !== end))) {
+    return { ok: false, why: "The saved calendar event does not match the requested block" };
+  }
+  return { ok: true, eventId: event.id };
 }

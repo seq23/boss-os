@@ -5,7 +5,7 @@ import { SIMONE, SIMONE_AVAILABLE, type SimoneMessage } from "./simone";
 import { accessCodeIn, addressesIn, confirmLine, errandIn, ERRAND_MONEY_RE, DEFAULT_MAILBOX, OWNER_TZ } from "../../../shared/boss/commands/parse.mjs";
 import { audit } from "../lib/audit";
 import { answerMeetingPrep, getCommand, runInvite } from "../commands/run";
-import { clashes, mailboxAllowed } from "../commands/google";
+import { clashes, mailboxAllowed, putOnCalendar } from "../commands/google";
 import { parseMail } from "../../../shared/mail/parseMail.mjs";
 import { readEverything } from "../intake/readFiles";
 import { headline, MAX_BODY_BYTES } from "../intake/inboundMail";
@@ -109,6 +109,43 @@ export async function simoneTool(env: Env, request: { id: string; lease: number;
     } catch {
       return { ok: false, code: "CALENDAR_UNAVAILABLE" } as const;
     }
+  }
+  if (request.tool === "block_calendar") {
+    const message: SimoneMessage = JSON.parse(active.input);
+    const args = typeof request.task === "string" && request.task.length <= 2500 ? readJsonObject(request.task) : null;
+    const calendar = args?.calendar ?? DEFAULT_MAILBOX;
+    const quote = args?.quote;
+    const title = typeof args?.title === "string" ? args.title.trim() : "";
+    if (!args || Object.keys(args).some((key) => !["quote", "title", "at", "minutes", "calendar"].includes(key)) ||
+        typeof quote !== "string" || quote.length < 8 || !message.body.includes(quote) ||
+        !title || title.length > 120 || !quote.includes(title) ||
+        typeof calendar !== "string" || !mailboxAllowed(calendar) ||
+        (calendar !== DEFAULT_MAILBOX && !addressesIn(quote).includes(calendar.toLowerCase()))) {
+      return { ok: false, code: "CALENDAR_BLOCK_NOT_AUTHORIZED" } as const;
+    }
+    if (message.source === "boss_inbound_mail") {
+      const original = message.mail_id && await env.DB.prepare(`SELECT id FROM boss_inbound_mail
+        WHERE id = ? AND task_id = ? AND authorised = 1 AND outcome = 'SIMONE_QUEUED'`)
+        .bind(message.mail_id, request.id).first();
+      if (!original) return { ok: false, code: "CALENDAR_BLOCK_NOT_AUTHORIZED" } as const;
+    } else if (message.source !== "boss_page" && message.source !== "tell_simone") {
+      return { ok: false, code: "CALENDAR_BLOCK_NOT_AUTHORIZED" } as const;
+    }
+    const { at, minutes } = args;
+    if (typeof at !== "string" || !OFFSET_TIMESTAMP.test(at) ||
+        typeof minutes !== "number" || !Number.isInteger(minutes) || minutes < 1 || minutes > 1440) {
+      return { ok: false, code: "CALENDAR_BLOCK_TIME_REQUIRED" } as const;
+    }
+    const start = Date.parse(at);
+    if (!Number.isFinite(start) || start <= active.created_at) return { ok: false, code: "CALENDAR_BLOCK_TIME_REQUIRED" } as const;
+    const end = start + minutes * 60_000;
+    const mailbox = calendar.toLowerCase();
+    const eventId = (await sha256Hex(JSON.stringify(["simone-calendar-block", request.id, mailbox, title, start, end]))).slice(0, 32);
+    try {
+      const result = await putOnCalendar(env, { mailbox, eventId, title, start, end, allDay: false, where: null, note: "" });
+      if (result.ok) return { ok: true, receipt: result.eventId, title, start, end, calendar: mailbox } as const;
+    } catch { /* A write or readback failure has no completion receipt. */ }
+    return { ok: false, code: "CALENDAR_UNAVAILABLE" } as const;
   }
   if (request.tool === "change_duty") {
     const message: SimoneMessage = JSON.parse(active.input);
