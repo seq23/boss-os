@@ -104,14 +104,17 @@ describe("H4: only Sequoia directs her; what she forwards, quotes or reads is da
     expect(real).toMatch(/~\/\.claude\/skills\/<name>\/SKILL\.md/);
     expect(real).toMatch(/PERMISSION_DENIED/);
   });
-  it("her persona's voice makes the channel mix hers: Sequoia's old plans are inputs, she decides and tells after, inside the ask-first limits", () => {
+  it("her persona gives her growth decisions within the ask-first limits and asks for evidence, payoff and a stop rule", () => {
     const real = readFileSync(join(__dirname, "../scripts/ops/noelle/persona.md"), "utf8");
-    const voice = real.slice(real.indexOf("**Your voice.**"), real.indexOf("\n## ", real.indexOf("**Your voice.**")));
-    const flat = voice.replace(/\s+/g, " ");
-    expect(flat).toContain("Sequoia's old marketing plans and channel choices are inputs, not limits");
-    expect(flat).toContain("You decide each business's channel mix as the expert: which channels, how often, and what to stop.");
-    expect(flat).toContain("You tell her after, inside the rules file's ask-first limits (money, her accounts, legal, publishing that can't be quietly undone)");
-    expect(flat).toContain("KeepMyProof has no social posting because of a 2 Nov search-first plan; that is yours to rethink");
+    const [introduction = ""] = real.split("\n## ", 1);
+    const opening = introduction.replace(/\s+/g, " ");
+    expect(opening).not.toContain("which channels, how often, and what to stop");
+    expect(opening).not.toContain("KeepMyProof has no social posting");
+    expect(opening).toMatch(/own every lever.*make your own calls.*ask-first limits.*tell her what you did/);
+    expect(opening).toMatch(/study who wins.*piggyback.*gap.*stay out/i);
+    expect(opening).toMatch(/cost in time, credits and risk against likely sales.*stop rule/i);
+    expect(opening).toMatch(/original work.*never reuse a rival’s text or images/i);
+    expect(opening).toContain("If you couldn’t check a number, say so");
   });
 });
 

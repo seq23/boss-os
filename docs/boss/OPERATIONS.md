@@ -976,9 +976,9 @@ vault lacks shows "No number" with `NAMED STOP [KEY_MISSING]` naming the key. Dr
 
 Noelle runs as Claude Code with the persona in `scripts/ops/noelle/persona.md`. The persona directs
 her to read the [site rules](../../scripts/ops/noelle/sites.md) each run for her remit and client
-approvals. She decides each business's channel mix within the ask-first rules. The launcher holds
-scheduled and called runs until November 28, 2026 at midnight Central. After the hold, launchd ticks
-every 30 minutes.
+approvals. She chooses growth bets by weighing cost against likely sales within the ask-first rules.
+The launcher holds scheduled and called runs until November 28, 2026 at midnight Central. After the
+hold, launchd ticks every 30 minutes.
 A Claude usage limit stops scheduled work and releases an owner call to the Boss OS answer ladder.
 
 The first wake inputs are `~/Work/noelle/owner-notes.md` and `HANDOFF.md`. The scheduled wake also
