@@ -677,6 +677,113 @@ it("opens existing records through the broker and fences calls from an expired l
   expect(await simoneTool(env, { id, lease: lease - 1, tool: "morning" })).toEqual({ ok: false, code: "STALE_SIMONE_RUN" });
 });
 
+it("inspects an exact team task from its runner, PR checks, and existing stale alarm", async () => {
+  const { simoneTool } = await import("../../src/worker/boss/agents/simoneTools");
+  const id = await fileSimoneMessage(env, { ...request, body: "Find out what stopped the menu fix." });
+  const { lease } = (await claimSimone(env))!;
+  const task = "tsk_fixture_menu";
+  const repair = "tsk_fixture_menu_repair";
+  await env.DB.batch([
+    env.DB.prepare(`INSERT INTO tasks (id, lane, employee_id, title, status, created_at, input)
+      VALUES (?, 'ops', 'emp_research', 'Menu fix', 'running', 1, '{"prompt":"private raw input"}'),
+             (?, 'ops', 'emp_research', 'Check the runner', 'queued', 9, NULL)`).bind(task, repair),
+    env.DB.prepare(`INSERT INTO backend_runs (id, task_id, backend_id, requested, status, started_at, claimed_at, finished_at)
+      VALUES ('br_fixture_old', ?, 'bk_claude_code', 'older runner', 'failed', 2, 3, 4),
+             ('br_fixture_current', ?, 'bk_codex', 'private runner prompt', 'running', 5, 6, NULL)`).bind(task, task),
+    env.DB.prepare(`INSERT INTO repo_changes (id, task_id, repo, instruction, phase, pr_url, checks_state, created_at, updated_at)
+      VALUES ('rc_fixture_menu', ?, 'fixture-repo', 'private repo instructions', 'landing',
+              'https://example.test/pull/1', 'pending', 1, 7)`).bind(task),
+    env.DB.prepare(`INSERT INTO task_events (id, task_id, ts, event, detail)
+      VALUES ('tev_fixture_start', ?, 2, 'started', NULL),
+             ('tev_fixture_parked', ?, 8, 'repo_change_claimed', '{"note":"private raw event"}')`).bind(task, task),
+    env.DB.prepare(`INSERT INTO system_alarms (id, alarm_key, kind, subject_id, text, status, first_at, last_at, task_id)
+      VALUES ('alm_fixture_menu', 'task:tsk_fixture_menu', 'stale_task', ?, 'Private raw alarm', 'open', 9, 10, ?)`).bind(task, repair),
+  ]);
+  const inspect = (target: string) => simoneTool(env, { id, lease, tool: "team_task", task: target });
+  const result = await inspect(task);
+  expect(result).toMatchObject({
+    ok: true, receipt: task, task: {
+      id: task, status: "running", backend_id: "bk_codex", runner_status: "running", runner_claimed_at: 6,
+      repo_phase: "landing", pr_url: "https://example.test/pull/1", checks_state: "pending",
+      stale_checked_at: 10, repair_task_id: repair, repair_status: "queued",
+    },
+    events: [{ ts: 8, event: "repo_change_claimed" }, { ts: 2, event: "started" }],
+  });
+  expect(JSON.stringify(result)).not.toMatch(/private|older runner/i);
+  expect(await inspect(id)).toEqual({ ok: false, code: "TEAM_TASK_NOT_FOUND" });
+  expect(await inspect(task + "' OR 1=1 --")).toEqual({ ok: false, code: "TEAM_TASK_NOT_FOUND" });
+  expect(await simoneTool(env, { id, lease, tool: "retry_team_task", task })).toEqual({ ok: false, code: "TASK_NOT_RETRYABLE" });
+
+  const credential = "fixture-broker-private-value";
+  await env.DB.prepare("UPDATE tasks SET error = ? WHERE id = ?").bind(credential, task).run();
+  expect(await simoneTool({ ...env, BOSS_PASSCODE: credential }, { id, lease, tool: "team_task", task }))
+    .toEqual({ ok: false, code: "SECRET_OUTPUT" });
+});
+
+it("preserves the stopped team record during a queue outage and retries it once after recovery", async () => {
+  const { simoneTool } = await import("../../src/worker/boss/agents/simoneTools");
+  const id = await fileSimoneMessage(env, { ...request, body: "Get the schedule research moving again." });
+  const { lease } = (await claimSimone(env))!;
+  const task = "tsk_fixture_schedule";
+  const error = "The research source was unavailable";
+  const input = '{"prompt":"Check the Saturday schedule"}';
+  await env.DB.prepare(`INSERT INTO tasks (id, lane, employee_id, title, input, status, created_at, started_at, finished_at,
+    error, attempts, risk, audience, execution_assignment, intake_kind, envelope_id)
+    VALUES (?, 'ops', 'emp_research', 'Schedule research', ?, 'failed', 1, 2, 3,
+      ?, 1, 'low', 'internal', 'AI_EXECUTE_WITH_NOTICE', 'research', 'env_fixture')`).bind(task, input, error).run();
+  const queued: unknown[] = [];
+  let unavailable = true;
+  const worker = { ...env, TASKS: { send: async (message: unknown) => {
+    if (unavailable) throw new Error("fixture queue outage");
+    queued.push(message);
+  } } } as unknown as typeof env;
+  const retry = () => simoneTool(worker, { id, lease, tool: "retry_team_task", task });
+  const status = () => row("SELECT status, error, finished_at, input, attempts FROM tasks WHERE id = ?", task);
+  const stopped = await status();
+  expect(await retry()).toEqual({ ok: false, code: "QUEUE_UNAVAILABLE" });
+  expect(await status()).toEqual(stopped);
+  expect(await row("SELECT count(*) AS n FROM task_events WHERE task_id = ?", task)).toEqual({ n: 0 });
+
+  unavailable = false;
+  const outcomes = await Promise.all([retry(), retry()]);
+  expect(outcomes).toEqual(expect.arrayContaining([
+    { ok: true, receipt: task },
+    { ok: false, code: "TASK_NOT_RETRYABLE" },
+  ]));
+  expect(queued).toEqual([{ taskId: task, lane: "ops" }]);
+  expect(await status()).toEqual({ status: "queued", error: null, finished_at: null, input, attempts: 1 });
+  expect(await row("SELECT count(*) AS n FROM task_events WHERE task_id = ? AND event = 'requeued'", task)).toEqual({ n: 1 });
+});
+
+it("refuses to retry held, taken-over, repository or runner-held team work", async () => {
+  const { simoneTool } = await import("../../src/worker/boss/agents/simoneTools");
+  const id = await fileSimoneMessage(env, request);
+  const { lease } = (await claimSimone(env))!;
+  const tasks = {
+    tsk_fixture_held: '{"held_by_her":true}',
+    tsk_fixture_mine: '{"taken_over":true}',
+    tsk_fixture_repo: "{}",
+    tsk_fixture_running: "{}",
+  };
+  await env.DB.batch(Object.entries(tasks).map(([task, input]) => env.DB.prepare(`INSERT INTO tasks
+    (id, lane, employee_id, title, input, status, created_at, error, attempts, risk, audience, execution_assignment, intake_kind, envelope_id)
+    VALUES (?, 'ops', 'emp_research', 'Follow up', ?, 'failed', 1, 'Stopped', 1, 'low', 'internal',
+      'AI_EXECUTE_WITH_NOTICE', 'research', 'env_fixture')`).bind(task, input)));
+  await env.DB.batch([
+    env.DB.prepare(`INSERT INTO backend_runs (id, task_id, backend_id, requested, status, started_at)
+      VALUES ('br_fixture_awaiting', 'tsk_fixture_running', 'bk_codex', 'Still running', 'running', 2)`),
+    env.DB.prepare(`INSERT INTO repo_changes (id, task_id, repo, instruction, phase, created_at, updated_at)
+      VALUES ('rc_fixture_stop', 'tsk_fixture_repo', 'fixture-repo', 'Keep the approvals', 'failed', 1, 2)`),
+  ]);
+  const queued: unknown[] = [];
+  const worker = { ...env, TASKS: { send: async (message: unknown) => { queued.push(message); } } } as unknown as typeof env;
+  for (const task of Object.keys(tasks)) {
+    expect(await simoneTool(worker, { id, lease, tool: "retry_team_task", task })).toEqual({ ok: false, code: "TASK_NOT_RETRYABLE" });
+    expect(await row("SELECT status, error FROM tasks WHERE id = ?", task)).toEqual({ status: "failed", error: "Stopped" });
+  }
+  expect(queued).toEqual([]);
+});
+
 async function googleFixtureEnv() {
   const key = await crypto.subtle.generateKey({
     name: "RSASSA-PKCS1-v1_5", modulusLength: 2048, publicExponent: new Uint8Array([1, 0, 1]), hash: "SHA-256",

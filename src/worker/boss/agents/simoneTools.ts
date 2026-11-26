@@ -26,6 +26,7 @@ import { appendDutyInstruction, repoInstructions, type OwnedDuty } from "../duti
 import { routeFixedDutyChange } from "../duties/editByMail";
 import { dayOf } from "../../../shared/boss/schedule/clock.mjs";
 import { readKdpCaseChecks, readKdpPublishAttempts } from "../kdp/history";
+import { containsCredential } from "../../../shared/boss/service/secretLines.mjs";
 
 export const SIMONE_RECORD_READS = {
   morning: `SELECT day, updated_at, sent_at FROM morning_digests ORDER BY day DESC LIMIT 3`,
@@ -100,6 +101,30 @@ export async function simoneTool(env: Env, request: { id: string; lease: number;
     const read = SIMONE_RECORD_READS[request.tool as keyof typeof SIMONE_RECORD_READS];
     const rows = typeof read === "string" ? (await env.DB.prepare(read).all()).results : await read(env.DB);
     return { ok: true, rows } as const;
+  }
+  if (request.tool === "team_task") {
+    if (typeof request.task !== "string" || !request.task || request.task.length > 160) {
+      return { ok: false, code: "TASK_REQUIRED" } as const;
+    }
+    const task = await env.DB.prepare(`SELECT t.id, t.title, t.status, t.attempts, e.name AS employee,
+        t.error, t.started_at, t.finished_at, r.backend_id, r.status AS runner_status,
+        r.claimed_at AS runner_claimed_at, r.finished_at AS runner_finished_at,
+        c.repo, c.phase AS repo_phase, c.pr_url, c.checks_state, c.failure AS repo_failure,
+        a.last_at AS stale_checked_at, a.task_id AS repair_task_id, repair.status AS repair_status
+      FROM tasks t JOIN employees e ON e.id = t.employee_id
+      LEFT JOIN backend_runs r ON r.id = (SELECT id FROM backend_runs WHERE task_id = t.id ORDER BY started_at DESC, id DESC LIMIT 1)
+      LEFT JOIN repo_changes c ON c.task_id = t.id
+      LEFT JOIN system_alarms a ON a.alarm_key = 'task:' || t.id AND a.status = 'open' AND t.status = 'running'
+      LEFT JOIN tasks repair ON repair.id = a.task_id
+      WHERE t.id = ? AND t.lane = 'ops' AND t.employee_id <> ?`)
+      .bind(request.task, SIMONE).first<{ error: string | null; repo_failure: string | null }>();
+    if (!task) return { ok: false, code: "TEAM_TASK_NOT_FOUND" } as const;
+    const { results: events } = await env.DB.prepare(`SELECT ts, event FROM task_events
+      WHERE task_id = ? ORDER BY ts DESC, id DESC LIMIT 10`).bind(request.task).all();
+    if (containsCredential(JSON.stringify({ task, events }), env)) return { ok: false, code: "SECRET_OUTPUT" } as const;
+    return { ok: true, receipt: request.task, task: {
+      ...task, error: task.error?.slice(0, 600) ?? null, repo_failure: task.repo_failure?.slice(0, 600) ?? null,
+    }, events } as const;
   }
   if (request.tool === "calendar_busy") {
     const args = typeof request.task === "string" && request.task.length <= 500 ? readJsonObject(request.task) : null;
@@ -598,20 +623,28 @@ export async function simoneTool(env: Env, request: { id: string; lease: number;
     return { ok: false, code, line } as const;
   }
   if (request.tool !== "retry_team_task") return { ok: false, code: "TOOL_NOT_ALLOWED" } as const;
-  if (typeof request.task !== "string" || request.task.length > 160) return { ok: false, code: "TASK_REQUIRED" } as const;
-  // Keep approvals, repo lanes and external effects out of the repair tool. There is no generic API proxy.
+  if (typeof request.task !== "string" || !request.task || request.task.length > 160) return { ok: false, code: "TASK_REQUIRED" } as const;
+  const failed = await env.DB.prepare(`SELECT attempts, error, finished_at FROM tasks WHERE id = ? AND status = 'failed'`)
+    .bind(request.task).first<{ attempts: number; error: string | null; finished_at: number | null }>();
+  if (!failed) return { ok: false, code: "TASK_NOT_RETRYABLE" } as const;
+  // A person’s hold, a still-open runner or a repo change needs its own workflow.
   const changed = await env.DB.prepare(`UPDATE tasks SET status = 'queued', error = NULL, finished_at = NULL
     WHERE id = ? AND status = 'failed' AND lane = 'ops' AND employee_id <> ? AND risk = 'low' AND audience = 'internal'
       AND execution_assignment = 'AI_EXECUTE_WITH_NOTICE' AND intake_kind IN ('research','one_off') AND envelope_id IS NOT NULL
-      AND attempts < 3
+      AND attempts < 3 AND attempts = ? AND error IS ? AND finished_at IS ?
+      AND (input IS NULL OR CASE WHEN json_valid(input)
+        THEN NOT COALESCE(json_extract(input, '$.held_by_her'), 0) AND NOT COALESCE(json_extract(input, '$.taken_over'), 0)
+        ELSE 0 END)
       AND NOT EXISTS (SELECT 1 FROM repo_changes WHERE task_id = tasks.id)
-    RETURNING id, lane`).bind(request.task, SIMONE).first<{ id: string; lane: string }>();
+      AND NOT EXISTS (SELECT 1 FROM backend_runs WHERE task_id = tasks.id AND finished_at IS NULL)
+    RETURNING id, lane`).bind(request.task, SIMONE, failed.attempts, failed.error, failed.finished_at).first<{ id: string; lane: string }>();
   if (!changed) return { ok: false, code: "TASK_NOT_RETRYABLE" } as const;
   try {
     await env.TASKS.send({ taskId: changed.id, lane: changed.lane });
   } catch {
-    await env.DB.prepare(`UPDATE tasks SET status = 'failed', error = 'QUEUE_UNAVAILABLE', finished_at = ?
-      WHERE id = ? AND status = 'queued'`).bind(now, changed.id).run();
+    await env.DB.prepare(`UPDATE tasks SET status = 'failed', error = ?, finished_at = ?
+      WHERE id = ? AND status = 'queued' AND attempts = ? AND error IS NULL AND finished_at IS NULL`)
+      .bind(failed.error, failed.finished_at, changed.id, failed.attempts).run();
     return { ok: false, code: "QUEUE_UNAVAILABLE" } as const;
   }
   await env.DB.prepare(`INSERT INTO task_events (id, task_id, ts, event, detail) VALUES (?,?,?,'requeued',?)`)
