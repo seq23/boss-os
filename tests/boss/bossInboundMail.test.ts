@@ -893,7 +893,7 @@ describe("please close out the kdp upload issue", () => {
 describe("a reply that was never due says so, and is never counted as a failure", () => {
   it("queues a console request and publishes its result on the page without an SMTP notice", async () => {
     const { apiJson } = await import("./helpers");
-    const body = "Email reader@example.test when you finish looking up cmd_nonexistent.";
+    const body = "Email reader@example.test when you finish looking up cmd_nonexistent. Check https://docs.google.com/document/d/1FixtureDocAAAAAAAAAAAAAAAAAAAAAA/edit.";
     const res = await apiJson("/api/intake/mail", { method: "POST", body: { body } });
     expect(res.status).toBe(201);
     expect(res.body.data).toMatchObject({ outcome: "SIMONE_QUEUED", reply: null });
@@ -901,8 +901,16 @@ describe("a reply that was never due says so, and is never counted as a failure"
     const status = () => apiJson(`/api/simone/message/${taskId}`);
     expect((await status()).body.data).toEqual({ status: "queued", reply: null });
     const call = (await claimSimone(env))!;
-    expect(call).toMatchObject({ id: taskId, message: { body, source: "boss_page" } });
+    expect(call).toMatchObject({ id: taskId, message: { body, source: "boss_inbound_mail", console: true, has_mail_material: true } });
     expect(await env.DB.prepare("SELECT id FROM boss_commands WHERE mail_id = ?").bind(mailId).first()).toBeNull();
+    const withoutDrive = Object.create(env);
+    withoutDrive.GSC_SERVICE_ACCOUNT_JSON = undefined;
+    expect(await simoneTool(withoutDrive, { ...call, tool: "read_mail_material" })).toMatchObject({
+      ok: true, material: { read: [], unopened: [{
+        filename: expect.stringContaining("1Fixture"),
+        reason: expect.stringContaining("Drive could not be reached"),
+      }] },
+    });
     const reply = "I found no record for that code.";
     expect(await replySimone(env, { ...call, text: reply, work: ["record lookup"] })).toBe(true);
     expect((await status()).body.data).toEqual({ status: "done", reply });

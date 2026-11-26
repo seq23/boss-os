@@ -819,7 +819,8 @@ async function handleMail(message: BossMailMessage, env: Env, said: Said): Promi
     ].filter(Boolean).join("\n\n");
     const identity = messageId ? JSON.stringify([sender, messageId]) : mailId;
     const taskId = await fileSimoneMessage(env, {
-      source: viaConsole ? "boss_page" : "boss_inbound_mail", subject: subject || "Message to Simone",
+      source: "boss_inbound_mail", subject: subject || "Message to Simone",
+      ...(viaConsole ? { console: true } : {}),
       body: [simoneThread ? "" : herSubject, writtenByOwner].filter(Boolean).join("\n\n"),
       context, has_mail_material: hasMailMaterial,
       ...(threadJobs.length ? { thread_jobs: threadJobs } : {}),

@@ -402,8 +402,8 @@ export async function simoneTool(env: Env, request: { id: string; lease: number;
   if (request.tool === "route_partner_campaign") {
     const message: SimoneMessage = JSON.parse(active.input);
     const words = typeof request.task === "string" ? request.task.trim() : "";
-    const viaConsole = message.source === "boss_page";
-    if ((!viaConsole && message.source !== "boss_inbound_mail") || !message.mail_id || !words || words.length > 60_000 ||
+    const viaConsole = message.console === true;
+    if (message.source !== "boss_inbound_mail" || !message.mail_id || !words || words.length > 60_000 ||
         !message.body.includes(words)) {
       return { ok: false, code: "CAMPAIGN_INSTRUCTION_REQUIRED" } as const;
     }

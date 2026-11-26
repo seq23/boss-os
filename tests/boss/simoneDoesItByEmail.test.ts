@@ -17,6 +17,7 @@ import { setCommandFetch } from "../../src/worker/boss/commands/google";
 import { sha256Hex } from "../../src/worker/boss/lib/id";
 import { setSetting } from "../../src/worker/boss/lib/settings";
 import { TOKEN_KEY } from "../../src/worker/boss/routes/openLoops";
+import { DEFAULT_MAILBOX, WORKSPACE_MAILBOXES } from "../../src/shared/boss/commands/parse.mjs";
 import { layoutEmail, plainProblems } from "../../src/shared/boss/mail/plain.mjs";
 
 const NOW = Date.parse("2026-10-25T17:00:00Z"); // a Sunday, noon Central
@@ -834,7 +835,7 @@ describe("2. existing lookup and draft records still respect the owner's Send ga
     const first = { messageId: "<old-lookup@example.test>" };
     await savedCommand("cmd_lookup", "lookup", "queued", { name: "Rowan", drive: true, hints: ["Smith family reunion"] });
     await savedCommand("cmd_code", "access_code", "queued", { op: "create", code: "TESTCODE15", trial_days: 15 });
-    await savedCommand("cmd_email", "email", "waiting", { recipient_name: "Rowan", from_mailbox: "st@time-2-read.com" }, "cmd_lookup,cmd_code");
+    await savedCommand("cmd_email", "email", "waiting", { recipient_name: "Rowan", from_mailbox: WORKSPACE_MAILBOXES[1] }, "cmd_lookup,cmd_code");
     const [lookup] = await commandsOfKind("lookup");
     const [code] = await commandsOfKind("access_code");
     const [email] = await commandsOfKind("email");
@@ -904,7 +905,7 @@ describe("2. existing lookup and draft records still respect the owner's Send ga
 
   it("Change and Try again redraft; 'send' by reply is the same Send; a used link has done its job", async () => {
     const first = { messageId: "<old-draft@example.test>" };
-    await savedCommand("cmd_email", "email", "drafting", { to: "them@example.com", from_mailbox: "sequoia@westpeek.ventures" });
+    await savedCommand("cmd_email", "email", "drafting", { to: "them@example.com", from_mailbox: DEFAULT_MAILBOX });
     const [email] = await commandsOfKind("email");
     expect(email.state).toBe("drafting");
     await api(`/api/commands/${email.id}/draft`, { method: "POST", body: { subject: "Thank you", text: "Thank you!\n\nSequoia" } });

@@ -20,6 +20,7 @@ export interface SimoneMessage {
   body: string;
   context?: string;
   mail_id?: string;
+  console?: true;
   has_mail_material?: boolean;
   from?: string;
   message_id?: string;
@@ -88,7 +89,7 @@ export async function claimSimone(env: Env, now = Date.now(), cloud = false) {
 export async function simoneMessageStatus(env: Env, id: string) {
   const row = await env.DB.prepare(
     `SELECT status, output FROM tasks WHERE id = ? AND employee_id = ? AND ${CHIEF}
-       AND json_extract(input, '$.source') IN ('tell_simone', 'boss_page')`,
+       AND (json_extract(input, '$.source') IN ('tell_simone', 'boss_page') OR json_extract(input, '$.console') = 1)`,
   ).bind(id, SIMONE).first<{ status: string; output: string | null }>();
   if (!row) return null;
   const result = row.output ? JSON.parse(row.output) : null;
@@ -120,6 +121,7 @@ export async function replySimone(env: Env, result: { id: string; lease: number;
       `INSERT INTO boss_task_notices (id, task_id, lane, from_name, kind, subject, body, created_at, needs_her)
        SELECT ?, id, lane, 'Simone', 'simone_result', json_extract(input, '$.subject'), ?, ?, 1
        FROM tasks WHERE ${current} AND json_extract(input, '$.source') = 'boss_inbound_mail'
+         AND json_extract(input, '$.console') IS NULL
        ON CONFLICT(id) DO NOTHING`,
     ).bind(noticeId, text, now, result.id, SIMONE, result.lease),
     db.prepare(
@@ -129,7 +131,7 @@ export async function replySimone(env: Env, result: { id: string; lease: number;
     ).bind(`tev_${result.id}_reply`, now, refused ? "refused" : "completed", receipts, result.id, SIMONE, result.lease),
     db.prepare(
       `UPDATE boss_inbound_mail SET reply_state = (
-         SELECT CASE json_extract(input, '$.source') WHEN 'boss_page' THEN 'shown_on_screen' ELSE 'due' END
+         SELECT CASE WHEN json_extract(input, '$.console') = 1 THEN 'shown_on_screen' ELSE 'due' END
          FROM tasks WHERE id = ?
        )
        WHERE outcome = 'SIMONE_QUEUED' AND reply_state = 'agent_pending' AND authorised = 1
