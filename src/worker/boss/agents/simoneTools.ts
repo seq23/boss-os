@@ -22,7 +22,7 @@ import { commandOf } from "../../../shared/boss/mail/morningReply.mjs";
 import { morningReplyFromMail } from "../intake/morningReply";
 import { campaignFromMail } from "../outreach/campaign";
 import { steerRound } from "../service/round";
-import { appendDutyInstruction, repoInstructions, type OwnedDuty } from "../duties/ownerEdits";
+import { appendDutyInstruction, repoInstructions, saveDutyPause, type OwnedDuty } from "../duties/ownerEdits";
 import { routeFixedDutyChange } from "../duties/editByMail";
 import { dayOf } from "../../../shared/boss/schedule/clock.mjs";
 import { readKdpCaseChecks, readKdpPublishAttempts } from "../kdp/history";
@@ -39,7 +39,7 @@ export const SIMONE_RECORD_READS = {
   kdp_watch: readKdpCaseChecks,
   kdp_publish_attempts: (db: D1Database) => readKdpPublishAttempts(db, 12),
   mail_tail: `SELECT id, received_at, authorised, subject, outcome, reply_state FROM boss_inbound_mail ORDER BY received_at DESC LIMIT 30`,
-  duties: `SELECT d.id, d.name, e.name AS employee, d.executor, d.suspended FROM standing_duties d
+  duties: `SELECT d.id, d.name, e.name AS employee, d.executor, d.suspended, d.last_outcome, d.last_outcome_at FROM standing_duties d
     JOIN employees e ON e.id = d.employee_id WHERE d.removed_at IS NULL ORDER BY e.name, d.name`,
   commitments: `SELECT id, name, state, current_status FROM owned_deliverables
     WHERE employee_id = 'emp_chief' AND state IN ('open','blocked') ORDER BY updated_at DESC LIMIT 50`,
@@ -97,6 +97,41 @@ export async function simoneTool(env: Env, request: { id: string; lease: number;
   const active = await env.DB.prepare(`SELECT id, input, created_at FROM tasks WHERE ${activeRun}`)
     .bind(...lease).first<{ id: string; input: string; created_at: number }>();
   if (!active) return { ok: false, code: "STALE_SIMONE_RUN" } as const;
+  if (request.tool === "pause_failed_duty") {
+    const args = typeof request.task === "string" && request.task.length <= 500 ? readJsonObject(request.task) : null;
+    const id = args?.id;
+    const failureAt = args?.failed_at;
+    if (typeof id !== "string" || !id || id.length > 160 ||
+        typeof failureAt !== "number" || !Number.isSafeInteger(failureAt) || failureAt <= 0 || failureAt > now ||
+        Object.keys(args ?? {}).some((key) => key !== "id" && key !== "failed_at")) {
+      return { ok: false, code: "DUTY_FAILURE_REQUIRED" } as const;
+    }
+    const operation = `dv_simone_pause_${await sha256Hex(JSON.stringify([request.id, id, failureAt]))}`;
+    const duty = await env.DB.prepare(`SELECT * FROM standing_duties
+      WHERE id = ? AND lane = 'ops' AND employee_id <> ? AND removed_at IS NULL`)
+      .bind(id, SIMONE).first<OwnedDuty>();
+    if (!duty || containsCredential(duty.name, env)) return { ok: false, code: "DUTY_NOT_PAUSABLE" } as const;
+    const liveRun = `${activeRun} AND json_extract(input, '$.steer_pending') IS NULL`;
+    const saved = duty.suspended ? null : await saveDutyPause(env, duty, true, now, {
+      operation, run: request.id, failureAt,
+      check: {
+        sql: `EXISTS (SELECT 1 FROM tasks WHERE ${liveRun})
+          AND EXISTS (SELECT 1 FROM standing_duties
+            WHERE id = ? AND lane = 'ops' AND employee_id <> ? AND suspended = 0
+              AND last_outcome = 'failed' AND last_outcome_at = ?)
+          AND NOT EXISTS (SELECT 1 FROM duty_versions
+            WHERE duty_id = ? AND action IN ('resume', 'undo') AND suspended = 0 AND created_at >= ?)`,
+        args: [...lease, id, SIMONE, failureAt, id, failureAt],
+      },
+    });
+    const version = saved ?? await env.DB.prepare(`SELECT v.version FROM standing_duties d
+        JOIN duty_versions v ON v.duty_id = d.id
+      WHERE d.id = ? AND d.removed_at IS NULL AND d.suspended = 1 AND v.id = ?
+        AND v.version = (SELECT MAX(version) FROM duty_versions WHERE duty_id = d.id)
+        AND EXISTS (SELECT 1 FROM tasks WHERE ${liveRun})`).bind(id, operation, ...lease).first<number>("version");
+    if (version === null) return { ok: false, code: "DUTY_NOT_PAUSABLE" } as const;
+    return { ok: true, receipt: operation, duty: id, name: duty.name, state: "paused", version } as const;
+  }
   if (Object.hasOwn(SIMONE_RECORD_READS, request.tool)) {
     const read = SIMONE_RECORD_READS[request.tool as keyof typeof SIMONE_RECORD_READS];
     const rows = typeof read === "string" ? (await env.DB.prepare(read).all()).results : await read(env.DB);

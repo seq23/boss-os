@@ -11,8 +11,8 @@
  */
 import type { Env } from "../env";
 import { newId } from "../lib/id";
-import { audit } from "../lib/audit";
-import { badRequest, notFound } from "../lib/http";
+import { audit, auditOfPrevious } from "../lib/audit";
+import { badRequest, conflict, notFound } from "../lib/http";
 import { EARLY_RUN_GRACE_MS, isDue, nextDueAt, type DutySchedule } from "./cadence";
 import { effectiveNextDue } from "./clock";
 import { composeBriefingPrompt, ctDayLabel } from "./briefingSpec";
@@ -97,21 +97,24 @@ export async function versionsOf(env: Env, dutyId: string): Promise<VersionRow[]
   ).bind(dutyId).all<VersionRow>()).results ?? [];
 }
 
-function versionWrite(env: Env, d: OwnedDuty, action: string, now: number, id = newId("dv"), original?: OwnedDuty) {
-  const guard = action === "original" ? "WHERE NOT EXISTS (SELECT 1 FROM duty_versions WHERE duty_id = ?)"
-    : original ? `WHERE EXISTS (SELECT 1 FROM standing_duties WHERE id = ? AND owner_prompt IS ?
+interface DutyWriteGuard { sql: string; args: unknown[] }
+
+function versionWrite(env: Env, d: OwnedDuty, action: string, now: number, id = newId("dv"), original?: OwnedDuty, check?: DutyWriteGuard) {
+  const baseline = action === "original" ? "NOT EXISTS (SELECT 1 FROM duty_versions WHERE duty_id = ?)" : null;
+  const snapshot = original ? `EXISTS (SELECT 1 FROM standing_duties WHERE id = ? AND owner_prompt IS ?
           AND cadence = ? AND weekday IS ? AND weekdays IS ? AND local_hour = ? AND local_minute = ?
           AND suspended = ? AND removed_at IS NULL) AND NOT EXISTS (SELECT 1 FROM duty_versions WHERE id = ?)`
-    : "";
-  const guardArgs = action === "original" ? [d.id] : original
+    : null;
+  const snapshotArgs = original
     ? [d.id, original.owner_prompt, original.cadence, original.weekday, original.weekdays, original.local_hour, original.local_minute, original.suspended, id]
     : [];
+  const conditions = [baseline, snapshot, check?.sql].filter(Boolean).join(" AND ");
   return env.DB.prepare(
     `INSERT INTO duty_versions (id, duty_id, version, action, owner_prompt, cadence, weekday, weekdays, local_hour, local_minute, suspended, removed, created_at)
      SELECT ?, ?, COALESCE((SELECT MAX(version) + 1 FROM duty_versions WHERE duty_id = ?), 0),
-       ?, ?, ?, ?, ?, ?, ?, ?, ?, ? ${guard} RETURNING version`,
+       ?, ?, ?, ?, ?, ?, ?, ?, ?, ? ${conditions ? `WHERE ${conditions}` : ""} RETURNING version`,
   ).bind(id, d.id, d.id, action, d.owner_prompt, d.cadence, d.weekday, d.weekdays, d.local_hour, d.local_minute,
-    d.suspended, d.removed_at ? 1 : 0, now, ...guardArgs);
+    d.suspended, d.removed_at ? 1 : 0, now, ...(baseline ? [d.id] : []), ...snapshotArgs, ...(check?.args ?? []));
 }
 
 async function writeVersion(env: Env, d: OwnedDuty, action: string, now: number): Promise<number> {
@@ -251,13 +254,42 @@ export async function pauseDuty(env: Env, id: string, paused: boolean, now = Dat
   const d = await loadDuty(env, id);
   if (d.removed_at) throw badRequest("This duty was removed", "Undo the removal to bring it back.");
   if (Boolean(d.suspended) === paused) return { duty_id: id, paused, version: null as number | null };
-  await ensureOriginal(env, d, now);
+  const version = await saveDutyPause(env, d, paused, now);
+  if (version === null) {
+    const current = await loadDuty(env, id);
+    if (current.removed_at || Boolean(current.suspended) !== paused) {
+      throw conflict("The duty changed while you were editing it", "Reload the duty and try again.");
+    }
+  }
+  return { duty_id: id, paused, version };
+}
+
+/** Save the pause, Undo history and audit together. Automatic pauses also require the caller's current run and failure. */
+export async function saveDutyPause(env: Env, d: OwnedDuty, paused: boolean, now: number, repair?: {
+  operation: string; run: string; failureAt: number; check: DutyWriteGuard;
+}): Promise<number | null> {
   const next: OwnedDuty = { ...d, suspended: paused ? 1 : 0 };
   if (!paused) next.next_due_at = nextDueAt(scheduleOf(next), now);
-  await store(env, next);
-  const version = await writeVersion(env, next, paused ? "pause" : "resume", now);
-  await audit(env.DB, { actor: "owner", lane: d.lane, entityType: "standing_duty", entityId: id, action: paused ? "owner_paused" : "owner_resumed", detail: { version } });
-  return { duty_id: id, paused, version };
+  const operation = repair?.operation ?? newId("dv");
+  const current = {
+    sql: `EXISTS (SELECT 1 FROM standing_duties WHERE id = ? AND next_due_at = ?)
+      ${repair ? `AND (${repair.check.sql})` : ""}`,
+    args: [d.id, d.next_due_at, ...(repair?.check.args ?? [])],
+  };
+  const [, saved] = await env.DB.batch<{ version: number }>([
+    versionWrite(env, d, "original", now, undefined, d, current),
+    versionWrite(env, next, paused ? "pause" : "resume", now, operation, d, current),
+    env.DB.prepare(`UPDATE standing_duties SET suspended = ?, suspended_reason = ?, next_due_at = ?
+      WHERE id = ? AND changes() = 1`)
+      .bind(next.suspended, repair ? "Paused by Simone after a failed run" : paused ? "Paused on the employee page" : null,
+        next.next_due_at, d.id),
+    auditOfPrevious(env.DB, {
+      actor: repair ? "emp_chief" : "owner", lane: d.lane, entityType: "standing_duty", entityId: d.id,
+      action: repair ? "simone_paused_failed_duty" : paused ? "owner_paused" : "owner_resumed",
+      detail: { operation, ...(repair && { run: repair.run, failure_at: repair.failureAt }) },
+    }, "rows", { onlyIfChanged: true }),
+  ]);
+  return saved?.results[0]?.version ?? null;
 }
 
 /** Remove, after she confirmed. The row, its runs and its versions stay; Undo brings it back. */
