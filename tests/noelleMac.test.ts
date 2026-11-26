@@ -154,19 +154,29 @@ describe("Noelle's wake and handoff", () => {
     }
     expect(judge({ tool_name: "Edit", tool_input: { file_path: "HANDOFF.md" }, cwd: home }, { h: home })).toBeNull();
   });
-  it("seeds six playbooks from their own Growth sections without overwriting Noelle’s edits", () => {
+  it("seeds six playbooks with empty research and bet fields, and preserves Noelle’s edits", () => {
     const home = memoryHome();
+    const playbooks = [
+      ["porch-and-party", "porch-and-party", "Growth"],
+      ["keepmyproof", "spry", "Growth/KeepMyProof"],
+      ["approvalprep", "spry", "Growth/ApprovalPrep"],
+      ["dream-wedding", "spry", "Growth/Dream Wedding"],
+      ["a-player-mode", "spry", "Growth/A Player Mode"],
+      ["peace-be-still", "spry", "Growth/Peace Be Still"],
+    ];
     const seeds: string[] = [];
     seedPlaybooks(home, (brain: string, { section }: { section: string }) => {
       seeds.push(`${brain}/${section}`);
       return `input: ${section}`;
     });
-    expect(seeds).toEqual([
-      "porch-and-party/Growth", "spry/Growth/KeepMyProof", "spry/Growth/ApprovalPrep",
-      "spry/Growth/Dream Wedding", "spry/Growth/A Player Mode", "spry/Growth/Peace Be Still",
-    ]);
+    expect(seeds).toEqual(playbooks.map(([, brain, section]) => `${brain}/${section}`));
+    for (const [business, , section] of playbooks) {
+      const content = readFileSync(join(home, "plays", `${business}.md`), "utf8");
+      expect(content).toContain("## Niche read\n\n- Who wins and why:\n- Underserved gaps:\n- Sources and dates:\n\n");
+      expect(content).toContain("## Bets\n\n- Bet:\n- Why:\n- Cost:\n- Expected effect:\n- Stop rule:\n- Result or reason declined:\n\n");
+      expect(content).toContain(`input: ${section}\n`);
+    }
     const play = join(home, "plays/porch-and-party.md");
-    expect(readFileSync(play, "utf8")).toContain("input: Growth");
     writeFileSync(play, "Noelle’s outcome");
     seedPlaybooks(home, () => { throw new Error("would reread a seeded business"); });
     expect(readFileSync(play, "utf8")).toBe("Noelle’s outcome");

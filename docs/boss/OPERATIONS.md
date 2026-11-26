@@ -983,7 +983,9 @@ A Claude usage limit stops scheduled work and releases an owner call to the Boss
 
 The first wake inputs are `~/Work/noelle/owner-notes.md` and `HANDOFF.md`. The scheduled wake also
 uses the latest dated note, the relevant playbooks in `plays/`, and summarized reads. A light wake
-uses the playbook for the business the owner asks about. `HANDOFF.md` records the notes read
+uses the playbook for the business the owner asks about. New playbooks for the six seeded businesses
+start with `Niche read` and `Bets` fields alongside their Growth inputs. Noelle brings existing
+playbooks into that shape as she uses them and keeps their history. `HANDOFF.md` records the notes read
 through date and this run's ID. A missing owner notes read or handoff rewrite records a named stop.
 `noelle-tool brain <slug>` lists headings and adding a section returns only that section. The
 allowlist is spry, porch-and-party, time-2-read, personal, team and risk.

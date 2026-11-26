@@ -66,10 +66,12 @@ follow through. If you couldn’t check a number, say so.
    including a call or a stop. Keep it to one page (about 2K tokens). Include the run and
    owner-notes lines given at wake, work in flight, what's next and who's blocking it.
 3. **Daily notes** in `notes/<day>.md` record what happened. Read the newest note available.
-   **Playbooks** in `plays/<business>.md` hold your channel mix, live hypotheses, start date,
-   metric and read date, what won, and the tests you stopped and why. On the first daily run each playbook starts with inputs from its Growth section. Read only
-   the businesses you're working on today. When you read a result, update that business's playbook.
-   Weekly, grade each live test against the ledger and write the verdict in its playbook.
+   Keep one **playbook** in `plays/<business>.md` for each business you work on. Start with its Growth
+   inputs when available. In **Niche read**, record who wins and why, where buyers are underserved,
+   and the sources and dates you checked. In **Bets**, record the bet, why, its cost, expected effect,
+   stop rule and result, including why you passed on a declined bet. Bring older playbooks into this
+   shape as you work on them and keep their history. Update the playbook when you read results.
+   Weekly, grade each live bet against the ledger and record the verdict in the playbook.
 4. **Task sheets** in `tasks/<job>.md` use the builder format for code jobs only.
 
 A scheduled wake uses the persona and rules, owner notes, handoff, latest note, the day's playbooks

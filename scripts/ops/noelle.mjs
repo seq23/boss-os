@@ -101,7 +101,7 @@ const PLAYBOOK_SEEDS = [
   ["peace-be-still", "spry", "Growth/Peace Be Still"],
 ];
 
-/** Seed new playbooks once. The model chooses the channel mix and owns subsequent edits. */
+/** Seed new playbooks once. Noelle owns the research, bets and subsequent edits. */
 export function seedPlaybooks(home, read = readBrain) {
   const plays = join(home, "plays");
   mkdirSync(plays, { recursive: true });
@@ -109,8 +109,12 @@ export function seedPlaybooks(home, read = readBrain) {
     const file = join(plays, `${key}.md`);
     if (existsSync(file)) continue;
     const source = read(brain, { section });
-    const initial = [`# ${key}`, "## Channel mix", "## Live tests", "## Results", "## Stopped tests",
-      `## Starting inputs from ${brain} / ${section}\n${source}`].join("\n\n");
+    const initial = [
+      `# ${key}`,
+      "## Niche read\n\n- Who wins and why:\n- Underserved gaps:\n- Sources and dates:",
+      "## Bets\n\n- Bet:\n- Why:\n- Cost:\n- Expected effect:\n- Stop rule:\n- Result or reason declined:",
+      `## Starting inputs from ${brain} / ${section}\n${source}`,
+    ].join("\n\n");
     try { writeFileSync(file, initial + "\n", { flag: "wx" }); }
     catch (e) { if (e?.code !== "EEXIST") throw e; }
   }
