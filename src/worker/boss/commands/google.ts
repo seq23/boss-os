@@ -134,28 +134,43 @@ function calendarMidnight(date: string | undefined, zone: string | undefined) {
   }
 }
 
-/** What is already on the calendar inside [start, end). Declined, free and cancelled events do not clash. */
-export async function clashes(env: Env, mailbox: string, start: number, end: number): Promise<{ ok: true; busy: Busy[] } | { ok: false; why: string }> {
+type CalendarEntry = Busy & { dates: { start: string; endExclusive: string } | null; busy: boolean };
+
+export async function calendarAgenda(env: Env, mailbox: string, start: number, end: number, includeFree = true) {
   const cal = await calendarFor(env, mailbox);
   if (!cal.ok) return cal;
   const listed = await listCalendarEvents(cal.token, calendarWindow(start, end));
   if (!listed.ok) return listed;
-  const busy: Busy[] = [];
+  const events: CalendarEntry[] = [];
   for (const event of listed.events) {
-    if (event.status === "cancelled" || event.transparency === "transparent") continue;
+    if (event.status === "cancelled") continue;
     if (event.attendees?.find((attendee) => attendee.self)?.responseStatus === "declined") continue;
-    let eventStart = Date.parse(event.start?.dateTime ?? "");
-    let eventEnd = Date.parse(event.end?.dateTime ?? event.start?.dateTime ?? "");
-    if (event.start?.date) {
-      eventStart = calendarMidnight(event.start.date, listed.timeZone);
-      eventEnd = calendarMidnight(event.end?.date, listed.timeZone);
-      if (!(eventEnd > eventStart)) return { ok: false, why: "Google Calendar did not confirm the all-day event window" };
+    const busy = event.transparency !== "transparent";
+    if (!includeFree && !busy) continue;
+    const startDate = event.start?.date;
+    const endDate = event.end?.date;
+    const eventStart = startDate ? calendarMidnight(startDate, listed.timeZone) : Date.parse(event.start?.dateTime ?? "");
+    const eventEnd = startDate ? calendarMidnight(endDate, listed.timeZone) : Date.parse(event.end?.dateTime ?? event.start?.dateTime ?? "");
+    if ((startDate || includeFree) && !(eventEnd > eventStart)) {
+      return { ok: false, why: "Google Calendar did not confirm an event's time" } as const;
     }
     if (eventStart < end && eventEnd > start) {
-      busy.push({ title: String(event.summary ?? "(busy)").slice(0, 120), start: eventStart, end: eventEnd });
+      events.push({
+        title: String(event.summary ?? (includeFree ? "(untitled event)" : "(busy)")).slice(0, 120),
+        start: eventStart, end: eventEnd,
+        dates: startDate && endDate ? { start: startDate, endExclusive: endDate } : null,
+        busy,
+      });
     }
   }
-  return { ok: true, busy };
+  return { ok: true, events, timeZone: listed.timeZone ?? null } as const;
+}
+
+/** Declined, free and cancelled events do not clash. */
+export async function clashes(env: Env, mailbox: string, start: number, end: number): Promise<{ ok: true; busy: Busy[] } | { ok: false; why: string }> {
+  const result = await calendarAgenda(env, mailbox, start, end, false);
+  if (!result.ok) return result;
+  return { ok: true, busy: result.events.map(({ title, start, end }) => ({ title, start, end })) };
 }
 
 function personalCalendarBlock(event: CalendarEvent): event is CalendarEvent & { id: string; etag: string } {

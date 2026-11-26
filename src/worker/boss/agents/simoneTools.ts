@@ -5,7 +5,7 @@ import { SIMONE, SIMONE_AVAILABLE, type SimoneMessage } from "./simone";
 import { accessCodeIn, addressesIn, confirmLine, errandIn, ERRAND_MONEY_RE, DEFAULT_MAILBOX, OWNER_TZ } from "../../../shared/boss/commands/parse.mjs";
 import { audit } from "../lib/audit";
 import { answerMeetingPrep, getCommand, runInvite } from "../commands/run";
-import { cancelCalendarBlock, clashes, editCalendarBlock, mailboxAllowed, putOnCalendar, type CalendarBlockPeriod,
+import { calendarAgenda, cancelCalendarBlock, clashes, editCalendarBlock, mailboxAllowed, putOnCalendar, type CalendarBlockPeriod,
   type CalendarBlockVersion } from "../commands/google";
 import { parseMail } from "../../../shared/mail/parseMail.mjs";
 import { readEverything, readWorkspaceDriveFile, searchWorkspaceDrive } from "../intake/readFiles";
@@ -126,12 +126,13 @@ export async function simoneTool(env: Env, request: { id: string; lease: number;
       ...task, error: task.error?.slice(0, 600) ?? null, repo_failure: task.repo_failure?.slice(0, 600) ?? null,
     }, events } as const;
   }
-  if (request.tool === "calendar_busy") {
+  if (request.tool === "calendar_busy" || request.tool === "calendar_agenda") {
     const args = typeof request.task === "string" && request.task.length <= 500 ? readJsonObject(request.task) : null;
     const calendar = args?.calendar ?? DEFAULT_MAILBOX;
     const from = args?.from;
     const to = args?.to;
-    if (typeof calendar !== "string" || !mailboxAllowed(calendar) ||
+    if (!args || (request.tool === "calendar_agenda" && Object.keys(args).some((key) => !["from", "to", "calendar"].includes(key))) ||
+        typeof calendar !== "string" || !mailboxAllowed(calendar) ||
         typeof from !== "string" || !OFFSET_TIMESTAMP.test(from) ||
         typeof to !== "string" || !OFFSET_TIMESTAMP.test(to)) {
       return { ok: false, code: "CALENDAR_WINDOW_REQUIRED" } as const;
@@ -142,9 +143,11 @@ export async function simoneTool(env: Env, request: { id: string; lease: number;
       return { ok: false, code: "CALENDAR_WINDOW_REQUIRED" } as const;
     }
     try {
-      const result = await clashes(env, calendar.toLowerCase(), start, end);
+      const read = request.tool === "calendar_agenda" ? calendarAgenda : clashes;
+      const result = await read(env, calendar.toLowerCase(), start, end);
       if (!result.ok) return { ok: false, code: "CALENDAR_UNAVAILABLE" } as const;
-      return { ok: true, receipt: "calendar_busy", busy: result.busy } as const;
+      if (containsCredential(JSON.stringify(result), env)) return { ok: false, code: "SECRET_OUTPUT" } as const;
+      return { ...result, receipt: request.tool } as const;
     } catch {
       return { ok: false, code: "CALENDAR_UNAVAILABLE" } as const;
     }
