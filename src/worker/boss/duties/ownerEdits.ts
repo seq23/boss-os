@@ -264,13 +264,19 @@ export async function pauseDuty(env: Env, id: string, paused: boolean, now = Dat
   return { duty_id: id, paused, version };
 }
 
-/** Save the pause, Undo history and audit together. Automatic pauses also require the caller's current run and failure. */
+export const SIMONE_DUTY_PAUSE_REASON = "Paused by Simone after a failed run";
+
+/** Save the schedule change, Undo history and audit in one transaction. */
 export async function saveDutyPause(env: Env, d: OwnedDuty, paused: boolean, now: number, repair?: {
-  operation: string; run: string; failureAt: number; check: DutyWriteGuard;
+  operation: string; run: string; outcomeAt: number; check: DutyWriteGuard;
 }): Promise<number | null> {
   const next: OwnedDuty = { ...d, suspended: paused ? 1 : 0 };
   if (!paused) next.next_due_at = nextDueAt(scheduleOf(next), now);
   const operation = repair?.operation ?? newId("dv");
+  const reason = paused ? (repair ? SIMONE_DUTY_PAUSE_REASON : "Paused on the employee page") : null;
+  const action = repair ? (paused ? "simone_paused_failed_duty" : "simone_resumed_recovered_duty")
+    : (paused ? "owner_paused" : "owner_resumed");
+  const timestampKey = paused ? "failure_at" : "recovery_at";
   const current = {
     sql: `EXISTS (SELECT 1 FROM standing_duties WHERE id = ? AND next_due_at = ?)
       ${repair ? `AND (${repair.check.sql})` : ""}`,
@@ -281,12 +287,11 @@ export async function saveDutyPause(env: Env, d: OwnedDuty, paused: boolean, now
     versionWrite(env, next, paused ? "pause" : "resume", now, operation, d, current),
     env.DB.prepare(`UPDATE standing_duties SET suspended = ?, suspended_reason = ?, next_due_at = ?
       WHERE id = ? AND changes() = 1`)
-      .bind(next.suspended, repair ? "Paused by Simone after a failed run" : paused ? "Paused on the employee page" : null,
-        next.next_due_at, d.id),
+      .bind(next.suspended, reason, next.next_due_at, d.id),
     auditOfPrevious(env.DB, {
       actor: repair ? "emp_chief" : "owner", lane: d.lane, entityType: "standing_duty", entityId: d.id,
-      action: repair ? "simone_paused_failed_duty" : paused ? "owner_paused" : "owner_resumed",
-      detail: { operation, ...(repair && { run: repair.run, failure_at: repair.failureAt }) },
+      action,
+      detail: { operation, ...(repair && { run: repair.run, [timestampKey]: repair.outcomeAt }) },
     }, "rows", { onlyIfChanged: true }),
   ]);
   return saved?.results[0]?.version ?? null;

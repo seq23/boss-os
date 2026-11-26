@@ -22,7 +22,7 @@ import { commandOf } from "../../../shared/boss/mail/morningReply.mjs";
 import { morningReplyFromMail } from "../intake/morningReply";
 import { campaignFromMail } from "../outreach/campaign";
 import { steerRound } from "../service/round";
-import { appendDutyInstruction, repoInstructions, saveDutyPause, type OwnedDuty } from "../duties/ownerEdits";
+import { appendDutyInstruction, repoInstructions, saveDutyPause, SIMONE_DUTY_PAUSE_REASON, type OwnedDuty } from "../duties/ownerEdits";
 import { routeFixedDutyChange } from "../duties/editByMail";
 import { dayOf } from "../../../shared/boss/schedule/clock.mjs";
 import { readKdpCaseChecks, readKdpPublishAttempts } from "../kdp/history";
@@ -39,8 +39,10 @@ export const SIMONE_RECORD_READS = {
   kdp_watch: readKdpCaseChecks,
   kdp_publish_attempts: (db: D1Database) => readKdpPublishAttempts(db, 12),
   mail_tail: `SELECT id, received_at, authorised, subject, outcome, reply_state FROM boss_inbound_mail ORDER BY received_at DESC LIMIT 30`,
-  duties: `SELECT d.id, d.name, e.name AS employee, d.executor, d.suspended, d.last_outcome, d.last_outcome_at FROM standing_duties d
-    JOIN employees e ON e.id = d.employee_id WHERE d.removed_at IS NULL ORDER BY e.name, d.name`,
+  duties: (db: D1Database) => db.prepare(`SELECT d.id, d.name, e.name AS employee, d.executor, d.suspended,
+    d.suspended_reason IS ? AS paused_by_simone, d.last_outcome, d.last_outcome_at FROM standing_duties d
+    JOIN employees e ON e.id = d.employee_id WHERE d.removed_at IS NULL ORDER BY e.name, d.name`)
+    .bind(SIMONE_DUTY_PAUSE_REASON).all().then(({ results }) => results),
   commitments: `SELECT id, name, state, current_status FROM owned_deliverables
     WHERE employee_id = 'emp_chief' AND state IN ('open','blocked') ORDER BY updated_at DESC LIMIT 50`,
   team: `SELECT t.id, t.title, t.status, t.started_at, t.finished_at, e.name AS employee FROM tasks t
@@ -97,40 +99,52 @@ export async function simoneTool(env: Env, request: { id: string; lease: number;
   const active = await env.DB.prepare(`SELECT id, input, created_at FROM tasks WHERE ${activeRun}`)
     .bind(...lease).first<{ id: string; input: string; created_at: number }>();
   if (!active) return { ok: false, code: "STALE_SIMONE_RUN" } as const;
-  if (request.tool === "pause_failed_duty") {
+  if (request.tool === "pause_failed_duty" || request.tool === "resume_recovered_duty") {
+    const paused = request.tool === "pause_failed_duty";
+    const timestampKey = paused ? "failed_at" : "recovered_at";
+    const invalid = paused ? "DUTY_FAILURE_REQUIRED" : "DUTY_RECOVERY_REQUIRED";
+    const refused = paused ? "DUTY_NOT_PAUSABLE" : "DUTY_NOT_RESUMABLE";
     const args = typeof request.task === "string" && request.task.length <= 500 ? readJsonObject(request.task) : null;
     const id = args?.id;
-    const failureAt = args?.failed_at;
+    const outcomeAt = args?.[timestampKey];
     if (typeof id !== "string" || !id || id.length > 160 ||
-        typeof failureAt !== "number" || !Number.isSafeInteger(failureAt) || failureAt <= 0 || failureAt > now ||
-        Object.keys(args ?? {}).some((key) => key !== "id" && key !== "failed_at")) {
-      return { ok: false, code: "DUTY_FAILURE_REQUIRED" } as const;
+        typeof outcomeAt !== "number" || !Number.isSafeInteger(outcomeAt) || outcomeAt <= 0 || outcomeAt > now ||
+        Object.keys(args ?? {}).some((key) => key !== "id" && key !== timestampKey)) {
+      return { ok: false, code: invalid } as const;
     }
-    const operation = `dv_simone_pause_${await sha256Hex(JSON.stringify([request.id, id, failureAt]))}`;
+    const operation = `dv_simone_${paused ? "pause" : "resume"}_${await sha256Hex(JSON.stringify([request.id, id, outcomeAt]))}`;
     const duty = await env.DB.prepare(`SELECT * FROM standing_duties
       WHERE id = ? AND lane = 'ops' AND employee_id <> ? AND removed_at IS NULL`)
       .bind(id, SIMONE).first<OwnedDuty>();
-    if (!duty || containsCredential(duty.name, env)) return { ok: false, code: "DUTY_NOT_PAUSABLE" } as const;
+    if (!duty || containsCredential(duty.name, env)) return { ok: false, code: refused } as const;
     const liveRun = `${activeRun} AND json_extract(input, '$.steer_pending') IS NULL`;
-    const saved = duty.suspended ? null : await saveDutyPause(env, duty, true, now, {
-      operation, run: request.id, failureAt,
+    const changeAllowed = paused ? {
+      sql: `NOT EXISTS (SELECT 1 FROM duty_versions
+        WHERE duty_id = ? AND action IN ('resume', 'undo') AND suspended = 0 AND created_at >= ?)`,
+      args: [id, outcomeAt],
+    } : {
+      sql: `EXISTS (SELECT 1 FROM standing_duties WHERE id = ? AND suspended_reason = ?)
+        AND EXISTS (SELECT 1 FROM duty_versions WHERE duty_id = ? AND action = 'pause'
+          AND created_at < ? AND version = (SELECT MAX(version) FROM duty_versions WHERE duty_id = ?))`,
+      args: [id, SIMONE_DUTY_PAUSE_REASON, id, outcomeAt, id],
+    };
+    const saved = Boolean(duty.suspended) === paused ? null : await saveDutyPause(env, duty, paused, now, {
+      operation, run: request.id, outcomeAt,
       check: {
         sql: `EXISTS (SELECT 1 FROM tasks WHERE ${liveRun})
           AND EXISTS (SELECT 1 FROM standing_duties
-            WHERE id = ? AND lane = 'ops' AND employee_id <> ? AND suspended = 0
-              AND last_outcome = 'failed' AND last_outcome_at = ?)
-          AND NOT EXISTS (SELECT 1 FROM duty_versions
-            WHERE duty_id = ? AND action IN ('resume', 'undo') AND suspended = 0 AND created_at >= ?)`,
-        args: [...lease, id, SIMONE, failureAt, id, failureAt],
+            WHERE id = ? AND lane = 'ops' AND employee_id <> ? AND last_outcome = ? AND last_outcome_at = ?)
+          AND ${changeAllowed.sql}`,
+        args: [...lease, id, SIMONE, paused ? "failed" : "ok", outcomeAt, ...changeAllowed.args],
       },
     });
     const version = saved ?? await env.DB.prepare(`SELECT v.version FROM standing_duties d
         JOIN duty_versions v ON v.duty_id = d.id
-      WHERE d.id = ? AND d.removed_at IS NULL AND d.suspended = 1 AND v.id = ?
+      WHERE d.id = ? AND d.removed_at IS NULL AND d.suspended = ? AND v.id = ?
         AND v.version = (SELECT MAX(version) FROM duty_versions WHERE duty_id = d.id)
-        AND EXISTS (SELECT 1 FROM tasks WHERE ${liveRun})`).bind(id, operation, ...lease).first<number>("version");
-    if (version === null) return { ok: false, code: "DUTY_NOT_PAUSABLE" } as const;
-    return { ok: true, receipt: operation, duty: id, name: duty.name, state: "paused", version } as const;
+        AND EXISTS (SELECT 1 FROM tasks WHERE ${liveRun})`).bind(id, Number(paused), operation, ...lease).first<number>("version");
+    if (version === null) return { ok: false, code: refused } as const;
+    return { ok: true, receipt: operation, duty: id, name: duty.name, state: paused ? "paused" : "scheduled", version } as const;
   }
   if (Object.hasOwn(SIMONE_RECORD_READS, request.tool)) {
     const read = SIMONE_RECORD_READS[request.tool as keyof typeof SIMONE_RECORD_READS];

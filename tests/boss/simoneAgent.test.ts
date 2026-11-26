@@ -831,6 +831,83 @@ it("pauses a failed team duty once and leaves its instructions and schedule avai
   expect((await versionsOf(env, duty)).map((v) => v.action)).toEqual(["undo", "pause", "original"]);
 });
 
+it("resumes a duty after recorded recovery with one receipt, audit and Undo history", async () => {
+  const { simoneTool } = await import("../../src/worker/boss/agents/simoneTools");
+  const { undoDuty, versionsOf } = await import("../../src/worker/boss/duties/ownerEdits");
+  const duty = "duty_grid_watch";
+  const pausedAt = 2000;
+  const recoveredAt = 3000;
+  const now = 4000;
+  const readDuty = () => row<Record<string, unknown>>(`SELECT suspended, suspended_reason, next_due_at,
+    owner_prompt, cadence, local_hour, local_minute, last_outcome, last_outcome_at
+    FROM standing_duties WHERE id = ?`, duty);
+  await env.DB.prepare(`UPDATE standing_duties SET suspended = 0, next_due_at = 1500,
+    last_outcome = 'failed', last_outcome_at = 1000, owner_prompt = 'Keep the original schedule' WHERE id = ?`).bind(duty).run();
+  const source = { source: "simone_daily", subject: "Daily review", body: "" } as const;
+  await fileSimoneMessage(env, source, "first-duty-review", pausedAt);
+  const first = (await claimSimone(env, pausedAt))!;
+  await expect(simoneTool(env, { ...first, tool: "pause_failed_duty", task: JSON.stringify({ id: duty, failed_at: 1000 }) }, pausedAt))
+    .resolves.toMatchObject({ ok: true, duty, state: "paused" });
+  expect(await replySimone(env, { ...first, text: "I paused the grid watch.", work: ["pause_failed_duty"] }, pausedAt)).toBe(true);
+  await fileSimoneMessage(env, source, "next-duty-review", now);
+  const call = (await claimSimone(env, now))!;
+  expect(call.id).not.toBe(first.id);
+  const resume = (at = recoveredAt, active = call) => simoneTool(env, {
+    ...active, tool: "resume_recovered_duty", task: JSON.stringify({ id: duty, recovered_at: at }),
+  }, now);
+  const refused = { ok: false, code: "DUTY_NOT_RESUMABLE" };
+  await expect(resume()).resolves.toEqual(refused);
+  const recordSuccessfulRun = (at: number) => env.DB.prepare(`UPDATE standing_duties
+    SET last_outcome = 'ok', last_outcome_at = ? WHERE id = ?`).bind(at, duty).run();
+  await recordSuccessfulRun(pausedAt - 1);
+  await expect(resume(pausedAt - 1)).resolves.toEqual(refused);
+  await recordSuccessfulRun(recoveredAt);
+  await expect(resume(recoveredAt - 1)).resolves.toEqual(refused);
+  await expect(resume(recoveredAt, first)).resolves.toEqual({ ok: false, code: "STALE_SIMONE_RUN" });
+  await expect(simoneTool(env, { ...call, tool: "duties" }, now)).resolves.toMatchObject({
+    ok: true, rows: expect.arrayContaining([expect.objectContaining({
+      id: duty, paused_by_simone: 1, last_outcome: "ok", last_outcome_at: recoveredAt,
+    })]),
+  });
+
+  const before = await readDuty();
+  await env.DB.prepare(`CREATE TRIGGER fixture_resume_audit_down BEFORE INSERT ON audit_log
+    WHEN NEW.action = 'simone_resumed_recovered_duty' BEGIN SELECT RAISE(ABORT, 'fixture resume audit down'); END`).run();
+  await expect(resume()).rejects.toThrow("fixture resume audit down");
+  expect(await readDuty()).toEqual(before);
+  expect((await versionsOf(env, duty)).map((v) => v.action)).toEqual(["pause", "original"]);
+  await env.DB.prepare("DROP TRIGGER fixture_resume_audit_down").run();
+
+  const [saved, duplicate] = await Promise.all([resume(), resume()]);
+  expect(saved).toMatchObject({ ok: true, receipt: expect.any(String), duty, state: "scheduled", version: 2 });
+  expect(duplicate).toEqual(saved);
+  expect(await readDuty()).toEqual({ ...before, suspended: 0, suspended_reason: null, next_due_at: expect.any(Number) });
+  expect(Number((await readDuty())?.next_due_at)).toBeGreaterThan(now);
+  expect(await row(`SELECT count(*) AS n, max(actor) AS actor, max(json_extract(detail, '$.recovery_at')) AS recovered
+    FROM audit_log WHERE entity_id = ? AND action = 'simone_resumed_recovered_duty'`, duty))
+    .toEqual({ n: 1, actor: "emp_chief", recovered: recoveredAt });
+  expect((await versionsOf(env, duty)).map((v) => v.action)).toEqual(["resume", "pause", "original"]);
+  await undoDuty(env, duty, now + 1);
+  expect(await readDuty()).toMatchObject({ suspended: 1, owner_prompt: before?.owner_prompt });
+  await expect(resume()).resolves.toEqual(refused);
+});
+
+it("leaves an owner's pause in place even when the duty has since succeeded", async () => {
+  const { simoneTool } = await import("../../src/worker/boss/agents/simoneTools");
+  const { pauseDuty, versionsOf } = await import("../../src/worker/boss/duties/ownerEdits");
+  const duty = "duty_grid_watch";
+  await pauseDuty(env, duty, true, 1000);
+  await env.DB.prepare("UPDATE standing_duties SET last_outcome = 'ok', last_outcome_at = 2000 WHERE id = ?").bind(duty).run();
+  await fileSimoneMessage(env, { ...request, context: "Resume the grid watch immediately." }, "owner-pause", 3000);
+  const call = (await claimSimone(env, 3000))!;
+  await expect(simoneTool(env, {
+    ...call, tool: "resume_recovered_duty", task: JSON.stringify({ id: duty, recovered_at: 2000 }),
+  }, 3000)).resolves.toEqual({ ok: false, code: "DUTY_NOT_RESUMABLE" });
+  expect(await row("SELECT suspended, suspended_reason FROM standing_duties WHERE id = ?", duty))
+    .toEqual({ suspended: 1, suspended_reason: "Paused on the employee page" });
+  expect((await versionsOf(env, duty)).map((v) => v.action)).toEqual(["pause", "original"]);
+});
+
 it("refuses to pause a healthy, stale or out-of-scope duty from untrusted evidence", async () => {
   const { simoneTool } = await import("../../src/worker/boss/agents/simoneTools");
   const { versionsOf } = await import("../../src/worker/boss/duties/ownerEdits");
