@@ -1006,10 +1006,11 @@ and exact main-only branch policies for credential-bearing environments. The Fri
 in PR #574 covers the hosted canary and configuration.
 
 The broker accepts `noelle/<name>` branches in the allowlisted repositories and labels each PR
-`review-required`. Noelle can propose changes under `.github/` once a repository passes the
-broker checks. An independent reviewer posts a current-head PASS outside her session. The
-landing broker checks the PR against its own opening receipts and limits landing to the growth
-repositories. She keeps code task sheets in `~/Work/noelle/tasks/`.
+`review-required`. Noelle can edit workflows under `.github/` once a repository passes the
+broker checks. The reviewer applies the site rules to the PR and checks the approval evidence in
+the handoff before posting a current-head PASS outside her session. The landing broker uses the
+same repository allowlist and checks the PR against its opening receipt. She keeps code task
+sheets in `~/Work/noelle/tasks/` and manages growth work in her playbooks and handoff.
 
 Owner-verified email reaches Noelle via a `#noelle` tag, her name as a word anywhere in the subject,
 or a first line opening with her name. The same Mac claim loop answers messages from her Boss OS

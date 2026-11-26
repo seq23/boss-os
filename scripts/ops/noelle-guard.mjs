@@ -25,7 +25,7 @@ const HOME = homedir();
 export const NOELLE_HOME = () => process.env.NOELLE_HOME ?? join(HOME, "Work", "noelle");
 export const GUARD_DIR = () => process.env.NOELLE_GUARD_DIR ?? join(HOME, ".boss-os", "noelle", "guard");
 
-/** Her businesses' repos (Full and search-watch; brief 24 Nov 2026): her broker's and land-after's only repos. */
+/** The hard repository limit for the broker and land-after. Remit and approvals live in noelle/sites.md. */
 export const HER_REPOS = Object.freeze([
   "p-n-p", "approvalprep", "aplayer-mode", "sprylabs-hpc-site", "peace-be-still", "creator-studios",
   "dream-wedding-builder", "keepmyproof", "search-loop",

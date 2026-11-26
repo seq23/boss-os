@@ -13,6 +13,8 @@ import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 // @ts-expect-error plain .mjs script, no types
 import { checkBranch, checkRepo, pushBranch, openPr, checkLand, cli } from "../scripts/ops/noelle-github.mjs";
+// @ts-expect-error plain .mjs script, no types
+import { HER_REPOS } from "../scripts/ops/noelle-guard.mjs";
 
 const REPO = join(__dirname, "..");
 const SYS_PATH = [dirname(process.execPath), "/opt/homebrew/bin", "/usr/local/bin", "/usr/bin", "/bin"].join(":");
@@ -253,20 +255,26 @@ describe("open-pr", () => {
     expect(r.out).toMatch(/NOELLE_PR_UNPROVEN/);
     expect(existsSync(join(w.guard, "opened/search-loop/77"))).toBe(false);
   });
-  it("checks persistent opening receipts and refuses all proposal-only repositories", () => {
+  it("accepts matching opening receipts throughout the repository allowlist", () => {
     const w = world();
-    expect(() => checkLand("peace-be-still", "77", w.opts)).toThrow(/PR_NOT_OWNED/);
     expect(run(["open-pr", "search-loop", "noelle/test-1124", "TEST", body(w, "test")], w.opts).code).toBe(0);
-    for (const repo of ["hicks-consulting-canonical", "horse-legal-guide-velocity", "WPP-llm", "local-guides-generator", "search-loop"]) {
+    expect(() => checkLand("search-loop", "77", w.opts)).not.toThrow();
+    for (const repo of HER_REPOS.filter((repo: string) => repo !== "search-loop")) {
       mkdirSync(join(w.guard, "opened", repo), { recursive: true });
       writeFileSync(join(w.guard, "opened", repo, "77"), "noelle/test-1124");
-      expect(() => checkLand(repo, "77", w.opts)).toThrow(/PROPOSAL_ONLY_REPO/);
+      expect(() => checkLand(repo, "77", w.opts)).not.toThrow();
     }
-    mkdirSync(join(w.guard, "opened/peace-be-still"), { recursive: true });
-    writeFileSync(join(w.guard, "opened/peace-be-still/77"), "noelle/test-1124");
-    expect(() => checkLand("peace-be-still", "77", w.opts)).not.toThrow();
-    writeFileSync(join(w.guard, "opened/peace-be-still/77"), "noelle/different");
-    expect(() => checkLand("peace-be-still", "77", w.opts)).toThrow(/PR_NOT_OWNED/);
+  });
+  it("refuses landing attempts outside the allowlist or without a matching receipt", () => {
+    const w = world();
+    expect(run(["open-pr", "search-loop", "noelle/test-1124", "TEST", body(w, "test")], w.opts).code).toBe(0);
+    expect(() => checkLand("hicks-consulting-canonical", "77", w.opts)).toThrow(/PR_NOT_OWNED/);
+    for (const [repo, branch] of [["boss-os", "noelle/test-1124"], ["horse-legal-guide-velocity", "noelle/different"]]) {
+      mkdirSync(join(w.guard, "opened", repo), { recursive: true });
+      writeFileSync(join(w.guard, "opened", repo, "77"), branch);
+    }
+    expect(() => checkLand("boss-os", "77", w.opts)).toThrow(/OTHER_BUSINESS_REPO/);
+    expect(() => checkLand("horse-legal-guide-velocity", "77", w.opts)).toThrow(/PR_NOT_OWNED/);
   });
   it("gh logged out or gh failing: NAMED STOP, exit 3, nothing counted", () => {
     const w = world();
