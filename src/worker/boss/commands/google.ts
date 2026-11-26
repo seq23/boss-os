@@ -83,8 +83,8 @@ interface CalendarEvent {
   status?: string;
   summary?: string;
   transparency?: string;
-  start?: { dateTime?: string };
-  end?: { dateTime?: string };
+  start?: { dateTime?: string; timeZone?: string };
+  end?: { dateTime?: string; timeZone?: string };
   organizer?: { self?: boolean };
   attendees?: Array<{ self?: boolean; responseStatus?: string }>;
   attendeesOmitted?: boolean;
@@ -146,9 +146,9 @@ function personalTimedEvent(event: CalendarEvent): event is CalendarEvent & { id
     !event.recurrence?.length && !event.recurringEventId);
 }
 
-/** Move one exact private block and preserve its duration, details and reminders. */
-export async function moveCalendarBlock(env: Env, input: {
-  mailbox: string; title: string; from: number; to: number; requestKey: string;
+/** Edit one exact private block, leaving fields outside the requested changes in place. */
+export async function editCalendarBlock(env: Env, input: {
+  mailbox: string; title: string; from: number; to: number; newTitle: string; minutes?: number; requestKey: string;
 }) {
   const cal = await calendarFor(env, input.mailbox);
   if (!cal.ok) return { ok: false, code: "CALENDAR_UNAVAILABLE" } as const;
@@ -157,10 +157,11 @@ export async function moveCalendarBlock(env: Env, input: {
   const receipt = (event: CalendarEvent, expectedId?: string) => {
     const properties = event.extendedProperties?.private;
     const end = Date.parse(event.end?.dateTime ?? "");
-    if (personalTimedEvent(event) && (!expectedId || event.id === expectedId) && event.summary === input.title &&
+    if (personalTimedEvent(event) && (!expectedId || event.id === expectedId) && event.summary === input.newTitle &&
         Date.parse(event.start?.dateTime ?? "") === input.to && end > input.to &&
+        (input.minutes === undefined || end - input.to === input.minutes * 60_000) &&
         properties?.[marker] === input.requestKey && properties[endMarker] === String(end)) {
-      return { ok: true, eventId: event.id, end } as const;
+      return { ok: true, eventId: event.id, title: event.summary, end } as const;
     }
     return { ok: false, code: "CALENDAR_BLOCK_CHANGED" } as const;
   };
@@ -179,15 +180,21 @@ export async function moveCalendarBlock(env: Env, input: {
   if (matches.length > 1) return { ok: false, code: "CALENDAR_BLOCK_AMBIGUOUS" } as const;
   const event = matches[0];
   if (!event) return { ok: false, code: "CALENDAR_BLOCK_NOT_FOUND" } as const;
-  const duration = Date.parse(event.end?.dateTime ?? "") - input.from;
+  const oldEnd = Date.parse(event.end?.dateTime ?? "");
+  const duration = oldEnd - input.from;
   if (!personalTimedEvent(event) || !(duration > 0)) return { ok: false, code: "CALENDAR_BLOCK_NOT_EDITABLE" } as const;
 
-  const end = input.to + duration;
+  const end = input.to + (input.minutes === undefined ? duration : input.minutes * 60_000);
+  if (input.title === input.newTitle && input.from === input.to && oldEnd === end) {
+    return { ok: false, code: "CALENDAR_BLOCK_UNCHANGED" } as const;
+  }
   const res = await fetchImpl(`${EVENTS}/${encodeURIComponent(event.id)}?sendUpdates=none`, {
     method: "PATCH",
     headers: { authorization: `Bearer ${cal.token}`, "content-type": "application/json", "if-match": event.etag },
     body: JSON.stringify({
-      start: { dateTime: new Date(input.to).toISOString() }, end: { dateTime: new Date(end).toISOString() },
+      ...(input.title !== input.newTitle ? { summary: input.newTitle } : {}),
+      ...(input.from !== input.to ? { start: { ...event.start, dateTime: new Date(input.to).toISOString() } } : {}),
+      ...(oldEnd !== end ? { end: { ...event.end, dateTime: new Date(end).toISOString() } } : {}),
       extendedProperties: { private: { [marker]: input.requestKey, [endMarker]: String(end) } },
     }),
   });

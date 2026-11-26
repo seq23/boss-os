@@ -5,7 +5,7 @@ import { SIMONE, SIMONE_AVAILABLE, type SimoneMessage } from "./simone";
 import { accessCodeIn, addressesIn, confirmLine, errandIn, ERRAND_MONEY_RE, DEFAULT_MAILBOX, OWNER_TZ } from "../../../shared/boss/commands/parse.mjs";
 import { audit } from "../lib/audit";
 import { answerMeetingPrep, getCommand, runInvite } from "../commands/run";
-import { clashes, mailboxAllowed, moveCalendarBlock, putOnCalendar } from "../commands/google";
+import { clashes, editCalendarBlock, mailboxAllowed, putOnCalendar } from "../commands/google";
 import { parseMail } from "../../../shared/mail/parseMail.mjs";
 import { readEverything, readWorkspaceDriveFile, searchWorkspaceDrive } from "../intake/readFiles";
 import { headline, MAX_BODY_BYTES } from "../intake/inboundMail";
@@ -110,11 +110,12 @@ export async function simoneTool(env: Env, request: { id: string; lease: number;
       return { ok: false, code: "CALENDAR_UNAVAILABLE" } as const;
     }
   }
-  if (request.tool === "block_calendar" || request.tool === "move_calendar_block") {
+  if (request.tool === "block_calendar" || request.tool === "edit_calendar_block") {
     const message: SimoneMessage = JSON.parse(active.input);
     const args = typeof request.task === "string" && request.task.length <= 2500 ? readJsonObject(request.task) : null;
-    const moving = request.tool === "move_calendar_block";
-    const allowedFields = moving ? ["quote", "title", "from", "to", "calendar"] : ["quote", "title", "at", "minutes", "calendar"];
+    const editing = request.tool === "edit_calendar_block";
+    const allowedFields = editing ? ["quote", "title", "from", "to", "newTitle", "minutes", "calendar"]
+      : ["quote", "title", "at", "minutes", "calendar"];
     const calendar = args?.calendar ?? DEFAULT_MAILBOX;
     const quote = args?.quote;
     const title = typeof args?.title === "string" ? args.title.trim() : "";
@@ -134,20 +135,26 @@ export async function simoneTool(env: Env, request: { id: string; lease: number;
       return { ok: false, code: "CALENDAR_BLOCK_NOT_AUTHORIZED" } as const;
     }
     const mailbox = calendar.toLowerCase();
-    if (moving) {
-      const { from, to } = args;
-      if (typeof from !== "string" || !OFFSET_TIMESTAMP.test(from) || typeof to !== "string" || !OFFSET_TIMESTAMP.test(to)) {
+    if (editing) {
+      const { from, to = from, newTitle = title, minutes } = args;
+      if (typeof newTitle !== "string" || !newTitle.trim() || newTitle !== newTitle.trim() ||
+          newTitle.length > 120 || !quote.includes(newTitle)) {
+        return { ok: false, code: "CALENDAR_BLOCK_NOT_AUTHORIZED" } as const;
+      }
+      if (typeof from !== "string" || !OFFSET_TIMESTAMP.test(from) || typeof to !== "string" || !OFFSET_TIMESTAMP.test(to) ||
+          (minutes !== undefined && (typeof minutes !== "number" || !Number.isInteger(minutes) || minutes < 1 || minutes > 1440))) {
         return { ok: false, code: "CALENDAR_BLOCK_TIME_REQUIRED" } as const;
       }
       const oldStart = Date.parse(from);
       const newStart = Date.parse(to);
-      if (!(oldStart > active.created_at && newStart > active.created_at) || oldStart === newStart) {
+      if (!(oldStart > active.created_at && newStart > active.created_at) ||
+          (oldStart === newStart && title === newTitle && minutes === undefined)) {
         return { ok: false, code: "CALENDAR_BLOCK_TIME_REQUIRED" } as const;
       }
-      const requestKey = await sha256Hex(JSON.stringify([request.id, mailbox, title, oldStart, newStart]));
+      const requestKey = await sha256Hex(JSON.stringify([request.id, mailbox, title, oldStart, newStart, newTitle, minutes]));
       try {
-        const result = await moveCalendarBlock(env, { mailbox, title, from: oldStart, to: newStart, requestKey });
-        if (result.ok) return { ok: true, receipt: result.eventId, title, start: newStart, end: result.end, calendar: mailbox } as const;
+        const result = await editCalendarBlock(env, { mailbox, title, from: oldStart, to: newStart, newTitle, minutes, requestKey });
+        if (result.ok) return { ok: true, receipt: result.eventId, title: result.title, start: newStart, end: result.end, calendar: mailbox } as const;
         return { ok: false, code: result.code } as const;
       } catch {
         return { ok: false, code: "CALENDAR_UNAVAILABLE" } as const;

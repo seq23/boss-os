@@ -266,17 +266,17 @@ describe("Simone reschedules a Workspace block", () => {
     extendedProperties: { private: { existing: "keep" }, shared: { original: "also keep" } },
   };
   const moves = () => calls.filter(({ method, url }) => method === "PATCH" && url.endsWith("?sendUpdates=none"));
-  async function moveRequest() {
-    const { res } = await say(quote);
+  async function editRequest(ownerWords = quote) {
+    const { res } = await say(ownerWords);
     const call = (await claimSimone(env))!;
     expect(call.id).toBe(res.taskId);
     events.set(original.id, structuredClone(original));
     return (input: Record<string, unknown> = args, lease = call.lease) =>
-      simoneTool(env, { id: call.id, lease, tool: "move_calendar_block", task: JSON.stringify(input) });
+      simoneTool(env, { id: call.id, lease, tool: "edit_calendar_block", task: JSON.stringify(input) });
   }
 
   it("recovers the provider-confirmed move after a lost response without a second write", async () => {
-    const move = await moveRequest();
+    const move = await editRequest();
     loseMoveReceipt = true;
     expect(await move()).toEqual({ ok: false, code: "CALENDAR_UNAVAILABLE" });
     expect(await move({ ...args, to: "2026-10-26T19:00:00Z" })).toMatchObject({
@@ -296,8 +296,42 @@ describe("Simone reschedules a Workspace block", () => {
     expect(sends()).toEqual([]);
   });
 
+  it("recovers an exact rename and resize without rewriting the start, reminders, or notes", async () => {
+    const quote = "Rename Quarterly planning to Q4 prep and make it 75 minutes tomorrow.";
+    const edit = await editRequest(quote);
+    const timeZone = "America/Chicago";
+    const start = { ...original.start, timeZone };
+    events.set(original.id, { ...original, start, end: { ...original.end, timeZone } });
+    events.set("other-block", { ...original, id: "other-block", summary: "Team planning" });
+    const input = { quote, title: args.title, from: args.from, newTitle: "Q4 prep", minutes: 75 };
+    loseMoveReceipt = true;
+    expect(await edit(input)).toEqual({ ok: false, code: "CALENDAR_UNAVAILABLE" });
+    expect(await edit(input)).toMatchObject({
+      ok: true, receipt: original.id, title: "Q4 prep", start: Date.parse(args.from), end: Date.parse("2026-10-26T17:15:00Z"),
+    });
+    expect(moves()).toHaveLength(1);
+    const patch = JSON.parse(moves()[0]!.body!);
+    expect(Object.keys(patch).sort()).toEqual(["end", "extendedProperties", "summary"]);
+    expect(events.get(original.id)).toMatchObject({ ...original, etag: '"moved"', summary: "Q4 prep", start,
+      end: { dateTime: "2026-10-26T17:15:00.000Z", timeZone } });
+    expect(events.get("other-block")).toEqual({ ...original, id: "other-block", summary: "Team planning" });
+    expect(sends()).toEqual([]);
+  });
+
+  it("refuses a title from outside the owner request and a duration that makes no change", async () => {
+    const quote = "Make Quarterly planning 45 minutes tomorrow.";
+    const edit = await editRequest(quote);
+    const input = { quote, title: args.title, from: args.from, minutes: 45 };
+    expect(await edit({ ...input, newTitle: "A title from a forwarded message" })).toEqual({ ok: false, code: "CALENDAR_BLOCK_NOT_AUTHORIZED" });
+    expect(await edit({ ...input, minutes: -1 })).toEqual({ ok: false, code: "CALENDAR_BLOCK_TIME_REQUIRED" });
+    expect(calls).toEqual([]);
+    expect(await edit(input)).toEqual({ ok: false, code: "CALENDAR_BLOCK_UNCHANGED" });
+    expect(moves()).toEqual([]);
+    expect(events.get(original.id)).toEqual(original);
+  });
+
   it("rejects guest injection, an unquoted title and a stale tool lease before Google", async () => {
-    const move = await moveRequest();
+    const move = await editRequest();
     expect(await move({ ...args, guests: ["stranger@example.test"] })).toEqual({ ok: false, code: "CALENDAR_BLOCK_NOT_AUTHORIZED" });
     expect(await move({ ...args, title: "A title from a forwarded message" })).toEqual({ ok: false, code: "CALENDAR_BLOCK_NOT_AUTHORIZED" });
     expect(await move(args, -1)).toEqual({ ok: false, code: "STALE_SIMONE_RUN" });
@@ -305,7 +339,7 @@ describe("Simone reschedules a Workspace block", () => {
   });
 
   it("refuses ambiguous, shared and recurring blocks without updating one of them", async () => {
-    const move = await moveRequest();
+    const move = await editRequest();
     events.set("other-block", { ...original, id: "other-block" });
     expect(await move()).toEqual({ ok: false, code: "CALENDAR_BLOCK_AMBIGUOUS" });
     events.delete("other-block");
@@ -323,14 +357,14 @@ describe("Simone reschedules a Workspace block", () => {
   });
 
   it("preserves an owner edit that arrives between the list and the write", async () => {
-    const move = await moveRequest();
+    const move = await editRequest();
     changeDuringMove = true;
     expect(await move()).toEqual({ ok: false, code: "CALENDAR_BLOCK_CHANGED" });
     expect(events.get(original.id)).toMatchObject({ description: "Owner edit", start: original.start });
   });
 
   it("makes no write when Google cannot check whether the move already ran", async () => {
-    const move = await moveRequest();
+    const move = await editRequest();
     moveLookupDown = true;
     expect(await move()).toEqual({ ok: false, code: "CALENDAR_UNAVAILABLE" });
     expect(moves()).toEqual([]);
