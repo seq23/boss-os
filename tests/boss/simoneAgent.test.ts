@@ -252,6 +252,62 @@ describe("Simone's cloud record answers", () => {
     }
   });
 
+  it("reports Kindle watcher and publisher stops from their own records and retries a failed read", async () => {
+    await env.DB.batch([
+      env.DB.prepare(`INSERT INTO kdp_case_checks (id, checked_at, sentinel, determination, run_outcome, created_at)
+        VALUES ('old-check', 10, 'no-reply', 'No support reply', 'determined', 10),
+          ('latest-check', 20, 'no-reply', NULL, 'could-not-run', 20)`),
+      env.DB.prepare(`INSERT INTO kdp_publish_attempts (id, attempted_at, title_ref, publish_attempted, resulting_state,
+        run_outcome, stop_code, created_at) VALUES ('old-attempt', 11, 'fixture-book', 1, 'IN_REVIEW', 'attempted', NULL, 11),
+          ('latest-attempt', 21, NULL, 0, NULL, 'could-not-run', 'PROFILE_IN_USE', 21)`),
+    ]);
+    const text = "What happened on the latest Kindle support check and publishing run?";
+    const intake = await apiJson("/api/simone/message", { method: "POST", body: { text } });
+    expect(intake.status).toBe(201);
+    const id = intake.body.data.taskId as string;
+    const now = Date.now() + 31 * 60_000;
+    const provider = {
+      id: "prv_workers_ai", workersAi: true,
+      call: async (_prompt: string, _signal: AbortSignal, schema?: { name: string }) => {
+        expect(schema?.name).toBe("simone_mail_routing");
+        return JSON.stringify({ assignments: [], reads: ["kdp_watch", "kdp_publish_attempts"], simone_work_remains: false });
+      },
+    };
+    const unavailable = new Proxy(env.DB, {
+      get(db, property) {
+        if (property === "prepare") return (sql: string) => {
+          if (sql.includes("FROM kdp_case_checks")) throw new Error("Fixture D1 read failed");
+          return db.prepare(sql);
+        };
+        const member = Reflect.get(db, property);
+        return typeof member === "function" ? member.bind(db) : member;
+      },
+    });
+    expect(await routeSimoneWhenMacIsDown({ ...env, DB: unavailable }, now, [provider])).toBe("RECORDS_UNAVAILABLE");
+    expect(await row("SELECT status, output FROM tasks WHERE id = ?", id)).toEqual({ status: "queued", output: null });
+
+    const reply = "The last support check couldn’t run. The publishing run stopped because the Kindle browser profile was in use. The book was in review when the previous attempt checked it.";
+    expect(await routeSimoneWhenMacIsDown(env, now + 1, [{
+      ...provider,
+      call: async (prompt, signal, schema) => {
+        if (schema?.name !== "simone_record_reply") return provider.call(prompt, signal, schema);
+        expect(JSON.parse(prompt.split("\n").at(-1)!).records).toMatchObject([
+          { tool: "kdp_watch", rows: [
+            { id: "latest-check", checked_at: 20, run_outcome: "could-not-run" },
+            { id: "old-check", checked_at: 10, run_outcome: "determined" },
+          ] },
+          { tool: "kdp_publish_attempts", rows: [
+            { id: "latest-attempt", run_outcome: "could-not-run", stop_code: "PROFILE_IN_USE", resulting_state: null },
+            { id: "old-attempt", title_ref: "fixture-book", resulting_state: "IN_REVIEW" },
+          ] },
+        ]);
+        return JSON.stringify({ complete: true, text: reply });
+      },
+    }])).toBe("answered");
+    expect((await apiJson(`/api/simone/message/${id}`)).body.data).toEqual({ status: "done", reply });
+    expect(await row("SELECT COUNT(*) AS n FROM kdp_publish_attempts")).toEqual({ n: 2 });
+  });
+
   it("answers the record question and hands off the separate owner instruction", async () => {
     await morningRecord();
     const words = "Ask Camille to check the park hours.";

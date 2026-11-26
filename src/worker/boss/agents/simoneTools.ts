@@ -25,6 +25,7 @@ import { steerRound } from "../service/round";
 import { appendDutyInstruction, repoInstructions, type OwnedDuty } from "../duties/ownerEdits";
 import { routeFixedDutyChange } from "../duties/editByMail";
 import { dayOf } from "../../../shared/boss/schedule/clock.mjs";
+import { readKdpCaseChecks, readKdpPublishAttempts } from "../kdp/history";
 
 export const SIMONE_RECORD_READS = {
   morning: `SELECT day, updated_at, sent_at FROM morning_digests ORDER BY day DESC LIMIT 3`,
@@ -34,6 +35,8 @@ export const SIMONE_RECORD_READS = {
     json_extract(spec, '$.event.title') AS title, json_extract(spec, '$.event.start') AS start
     FROM boss_commands WHERE kind = 'meeting_prep' ORDER BY updated_at DESC LIMIT 30`,
   kdp: `SELECT title_ref, label, state, updated_at FROM kdp_titles ORDER BY updated_at DESC LIMIT 30`,
+  kdp_watch: readKdpCaseChecks,
+  kdp_publish_attempts: (db: D1Database) => readKdpPublishAttempts(db, 12),
   mail_tail: `SELECT id, received_at, authorised, subject, outcome, reply_state FROM boss_inbound_mail ORDER BY received_at DESC LIMIT 30`,
   duties: `SELECT d.id, d.name, e.name AS employee, d.executor, d.suspended FROM standing_duties d
     JOIN employees e ON e.id = d.employee_id WHERE d.removed_at IS NULL ORDER BY e.name, d.name`,
@@ -94,8 +97,9 @@ export async function simoneTool(env: Env, request: { id: string; lease: number;
     .bind(...lease).first<{ id: string; input: string; created_at: number }>();
   if (!active) return { ok: false, code: "STALE_SIMONE_RUN" } as const;
   if (Object.hasOwn(SIMONE_RECORD_READS, request.tool)) {
-    const { results } = await env.DB.prepare(SIMONE_RECORD_READS[request.tool as keyof typeof SIMONE_RECORD_READS]).all();
-    return { ok: true, rows: results } as const;
+    const read = SIMONE_RECORD_READS[request.tool as keyof typeof SIMONE_RECORD_READS];
+    const rows = typeof read === "string" ? (await env.DB.prepare(read).all()).results : await read(env.DB);
+    return { ok: true, rows } as const;
   }
   if (request.tool === "calendar_busy") {
     const args = typeof request.task === "string" && request.task.length <= 500 ? readJsonObject(request.task) : null;

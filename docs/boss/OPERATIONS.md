@@ -985,6 +985,8 @@ verified owner mail, or create a calendar invitation for a guest whose address t
 The calendar tool checks availability and reuses the same event ID when it retries. Personal
 calendar requests return an Add link. The team retry tool covers failed low-risk internal work
 with an existing permission envelope.
+Kindle status uses separate records for support checks, publishing attempts and title states.
+Simone can report when a run could not start and whether an attempt left a title in review or live.
 
 Simone's handoffs use the employee’s existing work lane, including Danielle’s repo plan and
 Camille’s research page. If Claude cannot start or exits before doing work, Codex can use the same
