@@ -739,11 +739,14 @@ async function handleMail(message: BossMailMessage, env: Env, said: Said): Promi
     const existing = templateId && await env.DB.prepare(`SELECT id FROM prospect_templates WHERE id = ?`).bind(templateId).first();
     if (existing) explicitRefs.push(templateId);
   }
+  // Older duty replies can carry only the original request's Message-ID, with no visible draft code.
   const linkedArrival = chiefMailbox && !explicitRefs.length && chain.length
     ? await env.DB.prepare(`SELECT command_id FROM boss_inbound_mail
        WHERE message_id IN (${chain.map(() => "?").join(",")}) AND authorised = 1
-       AND (command_id IS NOT NULL OR (outcome NOT IN ('SIMONE_QUEUED', 'DUPLICATE', 'RECEIVED')
-            AND (task_id IS NOT NULL OR outcome = 'NEEDS_CLARITY')))
+       AND (command_id IS NOT NULL
+         OR (outcome NOT IN ('SIMONE_QUEUED', 'DUPLICATE', 'RECEIVED') AND (task_id IS NOT NULL OR outcome = 'NEEDS_CLARITY'))
+         OR EXISTS (SELECT 1 FROM duty_drafts d WHERE d.mail_id = boss_inbound_mail.id
+           AND d.request_message_id = boss_inbound_mail.message_id))
        ORDER BY received_at DESC LIMIT 1`)
       .bind(...chain).first<{ command_id: string | null }>()
     : null;

@@ -42,6 +42,7 @@ async function fakeKey(): Promise<string> {
 /** A fake Google: token, calendar list/insert/get/patch/delete, Gmail send. Remembers every call. */
 let calls: Array<{ url: string; method: string; body: string | null }> = [];
 let busy: Array<Record<string, unknown>> = [];
+let calendarPages: Array<Array<Record<string, unknown>> | null> = [];
 let events = new Map<string, Record<string, unknown>>();
 let loseInsertReceipt = false;
 function fakeGoogle(): typeof fetch {
@@ -49,7 +50,12 @@ function fakeGoogle(): typeof fetch {
     const url = String(input); const method = init?.method ?? "GET";
     calls.push({ url, method, body: typeof init?.body === "string" ? init.body : null });
     if (url.startsWith("https://oauth2.googleapis.com/token")) return Response.json({ access_token: "ya29.fake" });
-    if (url.includes("/calendar/v3/calendars/primary/events") && method === "GET" && url.includes("timeMin")) return Response.json({ items: busy });
+    if (url.includes("/calendar/v3/calendars/primary/events") && method === "GET" && url.includes("timeMin")) {
+      const page = Number(new URL(url).searchParams.get("pageToken") ?? 0);
+      const items = page === 0 ? busy : calendarPages[page - 1];
+      if (!items) return new Response(null, { status: 503 });
+      return Response.json({ items, ...(page < calendarPages.length ? { nextPageToken: String(page + 1) } : {}) });
+    }
     if (url.includes("/calendar/v3/calendars/primary/events?conferenceDataVersion=1") && method === "POST") {
       const event = JSON.parse(String(init?.body));
       const id = event.id ?? "evt_fake1";
@@ -94,7 +100,7 @@ const commandsOfKind = async (kind: string) => ((await env.DB.prepare(`SELECT * 
 let KEY = "";
 beforeAll(async () => { KEY = await fakeKey(); });
 beforeEach(async () => {
-  calls = []; busy = [];
+  calls = []; busy = []; calendarPages = [];
   events = new Map(); loseInsertReceipt = false;
   (env as any).GSC_SERVICE_ACCOUNT_JSON = KEY;
   setCommandFetch(fakeGoogle());
@@ -104,6 +110,49 @@ beforeEach(async () => {
 });
 afterEach(() => { setCommandFetch(null); delete (env as any).GSC_SERVICE_ACCOUNT_JSON; Date.now = REAL_NOW; });
 const REAL_NOW = Date.now;
+
+it("reads timed Workspace meetings across pages and treats an unavailable page as unknown", async () => {
+  const { res } = await say("Tell me which meetings are on my Workspace calendar tomorrow.");
+  const call = (await claimSimone(env))!;
+  expect(call.id).toBe(res.taskId);
+  const from = "2026-10-26T00:00:00-05:00";
+  const to = "2026-10-27T00:00:00-05:00";
+  const start = "2026-10-26T14:00:00Z";
+  const end = "2026-10-26T14:30:00Z";
+  busy = [
+    { summary: "Design walkthrough", start: { dateTime: start }, end: { dateTime: end } },
+    { summary: "Cancelled example", status: "cancelled", start: { dateTime: start }, end: { dateTime: end } },
+  ];
+  const read = (calendar?: string) => simoneTool(env, { ...call, tool: "calendar_busy", task: JSON.stringify({ from, to, calendar }) });
+  expect(await read("outsider@example.test")).toEqual({ ok: false, code: "CALENDAR_WINDOW_REQUIRED" });
+  expect(await simoneTool(env, { ...call, tool: "calendar_busy", task: JSON.stringify({ from, to: "2026-11-11T00:00:00-06:00" }) }))
+    .toEqual({ ok: false, code: "CALENDAR_WINDOW_REQUIRED" });
+  expect(await simoneTool(env, { ...call, lease: call.lease + 1, tool: "calendar_busy", task: JSON.stringify({ from, to }) }))
+    .toEqual({ ok: false, code: "STALE_SIMONE_RUN" });
+  expect(calls).toEqual([]);
+  const secondStart = "2026-10-26T19:00:00Z";
+  const secondEnd = "2026-10-26T19:30:00Z";
+  calendarPages = [[{ summary: "Review", start: { dateTime: secondStart }, end: { dateTime: secondEnd } }]];
+  expect(await read()).toEqual({ ok: true, receipt: "calendar_busy", busy: [
+    { title: "Design walkthrough", start: Date.parse(start), end: Date.parse(end) },
+    { title: "Review", start: Date.parse(secondStart), end: Date.parse(secondEnd) },
+  ] });
+  const first = new URL(calls[1]!.url);
+  const second = new URL(calls[2]!.url);
+  expect(first.searchParams.get("timeMin")).toBe("2026-10-26T05:00:00.000Z");
+  expect(first.searchParams.get("timeMax")).toBe("2026-10-27T05:00:00.000Z");
+  expect(second.searchParams.get("pageToken")).toBe("1");
+  second.searchParams.delete("pageToken");
+  expect(second.href).toBe(first.href);
+  calendarPages = [null];
+  expect(await read()).toEqual({ ok: false, code: "CALENDAR_UNAVAILABLE" });
+  expect(calls.map(({ url, method }) => [new URL(url).hostname, method])).toEqual([
+    ["oauth2.googleapis.com", "POST"], ["www.googleapis.com", "GET"], ["www.googleapis.com", "GET"],
+    ["oauth2.googleapis.com", "POST"], ["www.googleapis.com", "GET"], ["www.googleapis.com", "GET"],
+  ]);
+  expect(inserts()).toEqual([]);
+  expect(sends()).toEqual([]);
+});
 
 describe("1. a calendar invite by email", () => {
   const ASK = "Send a calendar invite to Avery at Example Law for Tuesday this week 10am ET, guest@example.com.";

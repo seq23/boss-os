@@ -80,21 +80,31 @@ export interface Busy { title: string; start: number; end: number }
 export async function clashes(env: Env, mailbox: string, start: number, end: number): Promise<{ ok: true; busy: Busy[] } | { ok: false; why: string }> {
   const cal = await calendarFor(env, mailbox);
   if (!cal.ok) return cal;
-  const q = new URLSearchParams({ timeMin: new Date(start).toISOString(), timeMax: new Date(end).toISOString(), singleEvents: "true", orderBy: "startTime", maxResults: "20" });
-  const res = await fetchImpl(`${CALENDAR}/primary/events?${q}`, { headers: { authorization: `Bearer ${cal.token}` } });
-  if (!res.ok) return { ok: false, why: `the calendar could not be read (${res.status})` };
-  const j = (await res.json().catch(() => null)) as { items?: Array<any>; nextPageToken?: string } | null;
-  if (!j || !Array.isArray(j.items)) return { ok: false, why: "Google Calendar did not return the events for this time" };
+  const q = new URLSearchParams({ timeMin: new Date(start).toISOString(), timeMax: new Date(end).toISOString(), singleEvents: "true", orderBy: "startTime", maxResults: "50" });
   const busy: Busy[] = [];
-  for (const e of j.items) {
-    if (e.status === "cancelled" || e.transparency === "transparent" || !e.start?.dateTime) continue;
-    const me = (e.attendees ?? []).find((a: any) => a.self);
-    if (me?.responseStatus === "declined") continue;
-    const s = Date.parse(e.start.dateTime); const f = Date.parse(e.end?.dateTime ?? e.start.dateTime);
-    if (s < end && f > start) busy.push({ title: String(e.summary ?? "(busy)").slice(0, 120), start: s, end: f });
+  const seenTokens = new Set<string>();
+  for (let page = 0; page < 5; page++) {
+    const res = await fetchImpl(`${CALENDAR}/primary/events?${q}`, { headers: { authorization: `Bearer ${cal.token}` } });
+    if (!res.ok) return { ok: false, why: `the calendar could not be read (${res.status})` };
+    const result = (await res.json().catch(() => null)) as { items?: Array<any>; nextPageToken?: string } | null;
+    if (!result || !Array.isArray(result.items)) return { ok: false, why: "Google Calendar did not return the events for this time" };
+    for (const event of result.items) {
+      if (event.status === "cancelled" || event.transparency === "transparent" || !event.start?.dateTime) continue;
+      const self = (event.attendees ?? []).find((attendee: any) => attendee.self);
+      if (self?.responseStatus === "declined") continue;
+      const eventStart = Date.parse(event.start.dateTime);
+      const eventEnd = Date.parse(event.end?.dateTime ?? event.start.dateTime);
+      if (eventStart < end && eventEnd > start) {
+        busy.push({ title: String(event.summary ?? "(busy)").slice(0, 120), start: eventStart, end: eventEnd });
+      }
+    }
+    const nextPage = result.nextPageToken;
+    if (!nextPage) return { ok: true, busy };
+    if (seenTokens.has(nextPage)) break;
+    seenTokens.add(nextPage);
+    q.set("pageToken", nextPage);
   }
-  if (j.nextPageToken && !busy.length) return { ok: false, why: "Google Calendar could not confirm the full time slot" };
-  return { ok: true, busy };
+  return { ok: false, why: "Google Calendar could not confirm the full time slot" };
 }
 
 /** Create the event with a Meet link and invite the guests. `sendUpdates=all` is what emails them. */

@@ -5,7 +5,7 @@ import { SIMONE, SIMONE_AVAILABLE, type SimoneMessage } from "./simone";
 import { accessCodeIn, addressesIn, confirmLine, errandIn, ERRAND_MONEY_RE, DEFAULT_MAILBOX, OWNER_TZ } from "../../../shared/boss/commands/parse.mjs";
 import { audit } from "../lib/audit";
 import { answerMeetingPrep, getCommand, runInvite } from "../commands/run";
-import { mailboxAllowed } from "../commands/google";
+import { clashes, mailboxAllowed } from "../commands/google";
 import { parseMail } from "../../../shared/mail/parseMail.mjs";
 import { readEverything } from "../intake/readFiles";
 import { headline, MAX_BODY_BYTES } from "../intake/inboundMail";
@@ -42,6 +42,8 @@ const READS = {
       AND t.status IN ('failed','running','queued') ORDER BY t.created_at DESC LIMIT 30`,
 } as const;
 
+const OFFSET_TIMESTAMP = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d{3})?(?:Z|[+-]\d{2}:\d{2})$/;
+
 async function fileCommand(env: Env, kind: "access_code" | "errand" | "invite", task: string, mail: string | null, spec: Record<string, unknown>, now: number) {
   const hash = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(`${kind}:${task}`));
   const key = Array.from(new Uint8Array(hash).slice(0, 16), (byte) => byte.toString(16).padStart(2, "0")).join("");
@@ -62,7 +64,7 @@ function inviteSpec(value: unknown, ownerText: string) {
     if (typeof value !== "string" || value.length > 2000) return null;
     const { guest, name, at, minutes, zone, calendar = DEFAULT_MAILBOX } = JSON.parse(value);
     if (typeof guest !== "string" || !addressesIn(ownerText).includes(guest.toLowerCase())) return null;
-    if (typeof at !== "string" || !/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d{3})?(?:Z|[+-]\d{2}:\d{2})$/.test(at)) return null;
+    if (typeof at !== "string" || !OFFSET_TIMESTAMP.test(at)) return null;
     const start = Date.parse(at);
     if (!Number.isFinite(start) || !Number.isInteger(minutes) || minutes < 1 || minutes > 480) return null;
     if (typeof calendar !== "string" || (calendar !== "personal" && !mailboxAllowed(calendar))) return null;
@@ -84,6 +86,29 @@ export async function simoneTool(env: Env, request: { id: string; lease: number;
   if (Object.hasOwn(READS, request.tool)) {
     const { results } = await env.DB.prepare(READS[request.tool as keyof typeof READS]).all();
     return { ok: true, rows: results } as const;
+  }
+  if (request.tool === "calendar_busy") {
+    const args = typeof request.task === "string" && request.task.length <= 500 ? readJsonObject(request.task) : null;
+    const calendar = args?.calendar ?? DEFAULT_MAILBOX;
+    const from = args?.from;
+    const to = args?.to;
+    if (typeof calendar !== "string" || !mailboxAllowed(calendar) ||
+        typeof from !== "string" || !OFFSET_TIMESTAMP.test(from) ||
+        typeof to !== "string" || !OFFSET_TIMESTAMP.test(to)) {
+      return { ok: false, code: "CALENDAR_WINDOW_REQUIRED" } as const;
+    }
+    const start = Date.parse(from);
+    const end = Date.parse(to);
+    if (!Number.isFinite(start) || !Number.isFinite(end) || end <= start || end - start > 14 * 86_400_000) {
+      return { ok: false, code: "CALENDAR_WINDOW_REQUIRED" } as const;
+    }
+    try {
+      const result = await clashes(env, calendar.toLowerCase(), start, end);
+      if (!result.ok) return { ok: false, code: "CALENDAR_UNAVAILABLE" } as const;
+      return { ok: true, receipt: "calendar_busy", busy: result.busy } as const;
+    } catch {
+      return { ok: false, code: "CALENDAR_UNAVAILABLE" } as const;
+    }
   }
   if (request.tool === "change_duty") {
     const message: SimoneMessage = JSON.parse(active.input);

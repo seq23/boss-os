@@ -14,6 +14,7 @@ import { env } from "cloudflare:test";
 import { beforeEach, describe, expect, it } from "vitest";
 import { apiJson, row } from "./helpers";
 import { handleBossInboundMail } from "../../src/worker/boss/intake/inboundMail";
+import { claimSimone, finishSimoneHandoff } from "../../src/worker/boss/agents/simone";
 import { dutyRequestIn, readDutyReply, pickSlot, overridesFrom, dutyProblems, INSTALLED_LOCAL_JOBS, draftTokenIn } from "../../src/shared/boss/duties/lane.mjs";
 import { DELIVERABLE_KEYS } from "../../src/worker/boss/duties/author";
 
@@ -40,10 +41,10 @@ const LOCAL_PHRASE = "every friday, read my inbox and tell me which LPs went qui
 
 const dutyCount = async () => (await row<any>(`SELECT COUNT(*) AS n FROM standing_duties WHERE json_extract(task_input, '$.provenance') IS NOT NULL`)).n as number;
 
-/** Her request, then the thread her client would build on the reply. */
+/** Create the pre-cutover draft via the retained console intake, then reply through SMTP. */
 async function request(subject: string, body: string) {
   const messageId = `<req-${Math.random().toString(36).slice(2)}@mail.gmail.com>`;
-  const res = await handleBossInboundMail(mail({ subject, body, messageId }), env as never);
+  const res = await handleBossInboundMail({ ...mail({ subject, body, messageId }), console: true }, env);
   return { res, messageId, thread: { inReplyTo: `<reply-${messageId.slice(1)}`, references: `${messageId} <reply-${messageId.slice(1)}` } };
 }
 
@@ -369,21 +370,28 @@ describe("the mail door", () => {
   });
 
   it("the verb with no seat, or no words, is answered and nothing is drafted or admitted", async () => {
-    const nobody = await handleBossInboundMail(mail({ subject: "#nobody new duty", body: AGENT_PHRASE }), env as never);
+    const { res: nobody } = await request("#nobody new duty", AGENT_PHRASE);
     expect(nobody.outcome).toBe("DUTY_NOT_UNDERSTOOD");
     expect(nobody.reply).toMatch(/no employee with the tag #nobody/);
     expect(nobody.taskId).toBeNull();
-    const empty = await handleBossInboundMail(mail({ subject: "#camille new duty", body: "" }), env as never);
+    const { res: empty } = await request("#camille new duty", "");
     expect(empty.outcome).toBe("DUTY_NOT_UNDERSTOOD");
     expect(empty.reply).toMatch(/did not say what it is/);
     expect(empty.taskId).toBeNull();
     expect((await row<any>(`SELECT COUNT(*) AS n FROM duty_drafts`)).n).toBe(0);
   });
 
-  it("an ordinary #camille instruction is ordinary work, exactly as before", async () => {
-    const res = await handleBossInboundMail(mail({ subject: "#camille question", body: "Which of my properties grew fastest this month?" }), env as never);
-    expect(res.outcome).toBe("ROUTED");
-    expect(res.taskId).toBeTruthy();
+  it("an ordinary #camille instruction reaches Camille through Simone without opening a duty draft", async () => {
+    const words = "Which of my properties grew fastest this month?";
+    const res = await handleBossInboundMail(mail({ subject: "#camille question", body: words }), env);
+    expect(res).toMatchObject({ outcome: "SIMONE_QUEUED", reply: null });
+    const call = (await claimSimone(env))!;
+    expect(call.id).toBe(res.taskId);
+    expect(await finishSimoneHandoff(env, { ...call, assignments: [{ employee: "emp_research", words, delivery: "research_page" }] }))
+      .toEqual({ replied: true, refused: false });
+    expect(await row(`SELECT employee_id, json_extract(input, '$.body') AS body FROM tasks
+      WHERE json_extract(input, '$.simone_handoff') = ?`, call.id))
+      .toEqual({ employee_id: "emp_research", body: words });
     expect((await row<any>(`SELECT COUNT(*) AS n FROM duty_drafts`)).n).toBe(0);
   });
 });

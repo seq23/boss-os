@@ -1,5 +1,5 @@
 import { expect, it } from "vitest";
-import { childEnvironment, runSimone } from "../scripts/ops/simone.mjs";
+import { childEnvironment, runSimone, type SimoneCall } from "../scripts/ops/simone.mjs";
 
 const call = {
   id: "tsk_fixture", lease: 2, roster: [],
@@ -10,13 +10,13 @@ const looked = { type: "assistant", message: { content: [{ type: "tool_use", id:
 const found = { type: "user", message: { content: [{ type: "tool_result", tool_use_id: "tool01", content: "Venue opens at noon." }] } };
 const result = (text: string) => ({ type: "result", subtype: "success", result: text });
 
-function fixture(message: typeof call.message & { source?: string } = call.message) {
+function fixture(message: SimoneCall["message"] = call.message, roster: SimoneCall["roster"] = []) {
   const calls: { path: string; body: unknown }[] = [];
   return {
     calls,
     api: async (_method: string, path: string, body: unknown) => {
       calls.push({ path, body });
-      if (path === "/claim") return { call: { ...call, message } };
+      if (path === "/claim") return { call: { ...call, message, roster } };
       if (path === "/reply") return { replied: true };
       return { released: true };
     },
@@ -82,6 +82,23 @@ it("delivers a refusal without a work receipt and keeps a provider outage on ret
     log: jsonl(result("The calendar is offline.\nNAMED STOP [CALENDAR_UNAVAILABLE]")), successful: true,
   }) })).toMatchObject({ state: "retry", code: "CALENDAR_UNAVAILABLE" });
   expect(down.calls.map(({ path }) => path)).toEqual(["/claim", "/release"]);
+});
+
+it("records a free research handoff when the same request also asks Simone to pay", async () => {
+  const words = "Ask Camille to research free venue options.";
+  const f = fixture({ body: `${words} Use my card if anything needs a deposit.`, context: "" },
+    [{ id: "emp_research", name: "Camille", role: "Research", department: "Research" }]);
+  const assignments = [{ employee: "emp_research", words, delivery: "research_page" }];
+  const text = "I didn’t use your card or pay a deposit.";
+  const run = async () => ({
+    log: jsonl(result(`HANDOFF: ${JSON.stringify(assignments)}\n${text}\nNAMED STOP [ACTION_RESTRICTED]`)),
+    successful: true,
+  });
+  expect(await runSimone({ api: f.api, run })).toEqual({ state: "done", id: call.id });
+  expect(f.calls).toEqual([
+    { path: "/claim", body: undefined },
+    { path: "/reply", body: { id: call.id, lease: call.lease, text, work: [], assignments } },
+  ]);
 });
 
 it("reports a permanent handoff refusal without counting it as completed work", async () => {
