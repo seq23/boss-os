@@ -269,7 +269,10 @@ describe("open-pr", () => {
     const w = world();
     expect(run(["open-pr", "search-loop", "noelle/test-1124", "TEST", body(w, "test")], w.opts).code).toBe(0);
     expect(() => checkLand("hicks-consulting-canonical", "77", w.opts)).toThrow(/PR_NOT_OWNED/);
-    for (const [repo, branch] of [["boss-os", "noelle/test-1124"], ["horse-legal-guide-velocity", "noelle/different"]]) {
+    for (const [repo, branch] of [
+      ["boss-os", "noelle/test-1124"],
+      ["horse-legal-guide-velocity", "noelle/different"],
+    ] as const) {
       mkdirSync(join(w.guard, "opened", repo), { recursive: true });
       writeFileSync(join(w.guard, "opened", repo, "77"), branch);
     }
