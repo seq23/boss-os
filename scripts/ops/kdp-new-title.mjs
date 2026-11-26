@@ -326,7 +326,8 @@ export function uploadStatus(doc, kind, inputSel, beforeSrcs = []) {
     return true;
   };
   const text = (el) => String(el.textContent ?? "").replace(/\s+/g, " ").trim();
-  const okRe = kind === "cover" ? /cover\b[^.!]{0,80}uploaded successfully/i : /manuscript\b[^!]{0,200}uploaded successfully/i;
+  // 25 Nov 2026 (live): "Cover \"paperback-cover.pdf\" uploaded successfully!" holds a dot in the file name.
+  const okRe = kind === "cover" ? /cover\b[^!]{0,120}uploaded successfully/i : /manuscript\b[^!]{0,200}uploaded successfully/i;
   const word = kind === "cover" ? /cover/i : /manuscript|e-?book file|interior/i;
   const input = doc.querySelector(inputSel);
   // The upload's own section: the input's nearest ancestor holding a heading-ish mention of it.
@@ -340,7 +341,11 @@ export function uploadStatus(doc, kind, inputSel, beforeSrcs = []) {
   // "It looks like you've uploaded a new manuscript or book cover … I confirm that my answers are
   // accurate" is KDP asking to re-confirm the AI answers after a new file (8 Nov 2026), not a refusal.
   const reconfirm = /uploaded a new manuscript or book cover|confirm that my answers are accurate/i;
-  const errs = [...doc.querySelectorAll(".a-alert-error, .a-color-error, [role='alert']")].filter((el) => shown(el) && text(el) && !reconfirm.test(text(el)) && (section.contains(el) || word.test(text(el))));
+  // 25 Nov 2026 (live): the new-look Content page marks EVERY notice role="alert" (its "new look"
+  // banner, "Your book has been assigned a free KDP ISBN"), so a bare role="alert" counts only when it
+  // names this upload; Amazon's error classes keep the section rule.
+  const isErr = (el) => el.matches(".a-alert-error, .a-color-error") ? (section.contains(el) || word.test(text(el))) : word.test(text(el)) && !okRe.test(text(el));
+  const errs = [...doc.querySelectorAll(".a-alert-error, .a-color-error, [role='alert']")].filter((el) => shown(el) && text(el) && !reconfirm.test(text(el)) && isErr(el));
   if (errs.length) return { state: "refused", via: "error", text: errs.map(text).join(" ").slice(0, 400) };
   const busy = [...section.querySelectorAll("*")].some((el) => shown(el) && /^(uploading|processing|converting)\b/i.test(text(el)) && el.children.length === 0);
   if (busy) return { state: "working", via: null, text: "" };
@@ -769,7 +774,51 @@ export function aiState(doc) {
 }
 
 /** Sets the AI answers (Yes, texts, images, translations, tool names) and reads them back. */
+/**
+ * 25 Nov 2026 (live probe): Amazon's new-look Content page asks the AI question as a radio group
+ * (name="has-ai-content"), three drop-downs (Texts, Images, Translations, in that order) and a tool box
+ * whose placeholder is "e.g. ChatGPT". Each answer is chosen as a person would and read back.
+ */
+export async function aiDisclosureNewLook(page, ans, { write }) {
+  const q = page.locator(".generative-ai-questionnaire").first();
+  const yes = q.locator('input[type="radio"][name="has-ai-content"][value="yes"]').first();
+  const no = q.locator('input[type="radio"][name="has-ai-content"][value="no"]').first();
+  if (!write) return { found: true, yes: await yes.isChecked().catch(() => false) };
+  if (!ans.used) { await no.check({ force: true }); return { found: true, yes: false }; }
+  await yes.check({ force: true });
+  await page.waitForTimeout(1500);
+  const combos = q.getByRole("combobox");
+  const want = [ans.texts, ans.images, ans.translations];
+  if ((await combos.count()) < 3) throw stop("AI_DISCLOSURE_NOT_FOUND", "the new AI question did not show its three answers after Yes; nothing was published.");
+  for (let i = 0; i < 3; i += 1) {
+    const c = combos.nth(i);
+    if ((await c.innerText().catch(() => "")).trim() === want[i]) continue;
+    await c.scrollIntoViewIfNeeded().catch(() => {});
+    await c.click();
+    await page.waitForTimeout(800);
+    await page.getByRole("option", { name: want[i], exact: true }).first().click().catch(() => {});
+    await page.waitForTimeout(600);
+    const got = (await c.innerText().catch(() => "")).trim();
+    if (got !== want[i]) throw stop("AI_DISCLOSURE_NOT_SET", `the AI answer "${want[i]}" did not stay chosen (shows "${got}"); nothing was published.`);
+  }
+  // Each answered section (Texts, Images, Translations) asks for its own tool; its first box is the one.
+  for (let i = 0; i < 3; i += 1) {
+    if (want[i] === "None") continue;
+    const tool = combos.nth(i).locator('xpath=ancestor::div[.//input[@type="text"]][1]').locator('input[type="text"]:not([disabled])').first();
+    if (!(await tool.count())) throw stop("AI_DISCLOSURE_NOT_SET", `the AI tool box for answer ${i + 1} did not appear; nothing was published.`);
+    if (!(await tool.inputValue().catch(() => ""))) {
+      await tool.scrollIntoViewIfNeeded().catch(() => {});
+      await tool.click();
+      await tool.pressSequentially(ans.tools, { delay: 30 });
+      await tool.press("Tab").catch(() => {});
+    }
+    if (!(await tool.inputValue().catch(() => ""))) throw stop("AI_DISCLOSURE_NOT_SET", `the AI tool box would not take "${ans.tools}"; nothing was published.`);
+  }
+  return { found: true, yes: true };
+}
+
 export async function aiDisclosure(page, ans, { write }) {
+  if (await page.locator('.generative-ai-questionnaire input[name="has-ai-content"]').count().catch(() => 0)) return aiDisclosureNewLook(page, ans, { write });
   const read = () => page.evaluate(`(${aiState})(document)`);
   let st = await read();
   if (!st.found) throw stop("AI_DISCLOSURE_NOT_FOUND", "the AI-generated content question is not on the content step; nothing was published.");

@@ -55,6 +55,17 @@ describe("uploadStatus — the cover upload on KDP's content step", () => {
   it("while Amazon says Uploading, a thumbnail is not yet success", () => {
     expect(uploadStatus(doc(coverSection({ busy: true, thumb: "https://kdp.amazon.com/thumb/abc.jpg" })), "cover", INPUT, before).state).toBe("working");
   });
+  it("the paperback cover's message names a file with a dot in it and is still success (25 Nov 2026)", () => {
+    const page = doc(`<div><h3>Book Cover</h3><input type="file" accept=".pdf">
+      <div role="alert" class="a-alert-content">Cover "paperback-cover.pdf" uploaded successfully!</div><span>Processing your file...</span></div>`);
+    expect(uploadStatus(page, "cover", 'input[type="file"][accept=".pdf"]', []).state).toBe("done");
+  });
+  it("the new-look page's notices (role=alert) are not a refusal of the manuscript (25 Nov 2026)", () => {
+    const page = doc(`<div id="root"><div role="alert">The Content page has a new look. All features and settings remain the same.</div>
+      <div role="alert">Your book has been assigned a free KDP ISBN:</div>
+      <div><h3>Manuscript</h3><input type="file" accept=".docx,.pdf"></div></div>`);
+    expect(uploadStatus(page, "manuscript", 'input[type="file"][accept*=".docx"]', []).state).not.toBe("refused");
+  });
   it("a shown error is Amazon's refusal, in Amazon's words", () => {
     const r = uploadStatus(doc(coverSection({ err: "Your cover image is too small." })), "cover", INPUT, before);
     expect(r).toMatchObject({ state: "refused" });
