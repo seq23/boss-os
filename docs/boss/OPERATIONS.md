@@ -974,10 +974,11 @@ vault lacks shows "No number" with `NAMED STOP [KEY_MISSING]` naming the key. Dr
 
 ## Noelle, the Growth Director
 
-Noelle runs as Claude Code with the persona in `scripts/ops/noelle/persona.md`. Her remit covers
-six businesses, with Porch & Party first. She decides their channel mix and builds the jobs and
-channels she chooses within the ask-first rules. The launcher holds scheduled and called runs
-until November 28, 2026 at midnight Central. After the hold, launchd ticks every 30 minutes.
+Noelle runs as Claude Code with the persona in `scripts/ops/noelle/persona.md`. The persona directs
+her to read the [site rules](../../scripts/ops/noelle/sites.md) each run for her remit and client
+approvals. She decides each business's channel mix within the ask-first rules. The launcher holds
+scheduled and called runs until November 28, 2026 at midnight Central. After the hold, launchd ticks
+every 30 minutes.
 A Claude usage limit stops scheduled work and releases an owner call to the Boss OS answer ladder.
 
 The first wake inputs are `~/Work/noelle/owner-notes.md` and `HANDOFF.md`. The scheduled wake also
