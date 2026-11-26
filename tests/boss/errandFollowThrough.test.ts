@@ -12,20 +12,25 @@ import { simoneTool } from "../../src/worker/boss/agents/simoneTools";
 import { handleBossInboundMail } from "../../src/worker/boss/intake/inboundMail";
 import { macWork, errandSent, commandFromMail, errandFollowedUp, errandRemindersDue, errandReminded, errandTap, getCommand } from "../../src/worker/boss/commands/run";
 import { setCommandFetch } from "../../src/worker/boss/commands/google";
+import { recordSentMail } from "../../src/worker/boss/mail/history";
 import { ERRAND_SENDERS } from "../../src/shared/boss/commands/parse.mjs";
 import { layoutEmail, plainProblems } from "../../src/shared/boss/mail/plain.mjs";
 import { OPTIONS_REPLY, VENUE, VENUE_MESSAGE_ID, PHONE } from "../fixtures/errandReplyOptions.mjs";
 
 const HER = ERRAND_SENDERS[0]!;
 const NOW = Date.parse("2026-10-26T20:00:00Z");
+const REQUEST_ID = "<fixture-request@example.test>";
+const FOLLOW_UP_ID = "<fixture-follow-up@example.test>";
+const CANCELLATION_ID = "<fixture-cancellation@example.test>";
 const DUE = Date.parse("2026-10-28T23:00:00Z"); // Wednesday 7:00 pm New York time
 
-function mail(o: { from: string; body: string; subject?: string; messageId?: string }) {
+function mail(o: { from: string; body: string; subject?: string; messageId?: string; inReplyTo?: string }) {
   const headers = new Headers({
     from: o.from, subject: o.subject ?? "",
     "authentication-results": "mx.cloudflare.net; spf=pass; dkim=pass; dmarc=pass",
     "message-id": o.messageId ?? `<${Math.random().toString(36).slice(2)}@mail.example.test>`,
   });
+  if (o.inReplyTo) headers.set("in-reply-to", o.inReplyTo);
   const raw = `From: ${o.from}\r\nSubject: ${o.subject ?? ""}\r\nContent-Type: text/plain\r\n\r\n${o.body}`;
   return { from: o.from.replace(/.*<|>.*/g, ""), to: "simone@sequoiataylor.com", headers, raw: new Response(raw).body!, rawSize: new TextEncoder().encode(raw).length };
 }
@@ -43,6 +48,13 @@ beforeEach(async () => {
 });
 afterEach(() => { setCommandFetch(null); Date.now = REAL_NOW; });
 
+async function archiveReceipt(commandId: string, providerId: string, messageId: string) {
+  await recordSentMail(env, {
+    command_id: commandId, provider_id: providerId, message_id: messageId,
+    from: "simone@example.test", to: VENUE, subject: "Reservation request", text: "Fixture reservation request",
+  });
+}
+
 async function answered() {
   const quote = `Get me reservations +1 Thursday night after 8pm: ${VENUE}`;
   const arrival = await say({ from: `Sequoia <${HER}>`, subject: "Club", body: quote });
@@ -54,8 +66,9 @@ async function answered() {
   }) });
   expect(work).toMatchObject({ ok: true, receipt: expect.stringMatching(/^cmd_/) });
   const { receipt: id } = work as { receipt: string };
+  await archiveReceipt(id, "em_fake1", REQUEST_ID);
   await errandSent(env as never, id, { message_id: "em_fake1", subject: "Reservation request: Thursday, October 29, party of 2", text: "Hello", request: "a table for two at The Example Club on Thursday, October 29, any time after 8:00 pm" });
-  await say({ from: `Jamie Rivera <${VENUE}>`, subject: "Re: Reservation request: Thursday, October 29, party of 2", body: OPTIONS_REPLY, messageId: VENUE_MESSAGE_ID });
+  await say({ from: `Jamie Rivera <${VENUE}>`, subject: "Re: Reservation request: Thursday, October 29, party of 2", body: OPTIONS_REPLY, messageId: VENUE_MESSAGE_ID, inReplyTo: REQUEST_ID });
   return id;
 }
 
@@ -108,6 +121,7 @@ describe("'do you still want to go?' 28 hours before", () => {
   async function chosen() {
     const id = await answered();
     await herReply(id, `11pm, my number is ${PHONE}`);
+    await archiveReceipt(id, "em_fake2", FOLLOW_UP_ID);
     await errandFollowedUp(env as never, id, { message_id: "em_fake2" });
     return id;
   }
@@ -128,7 +142,7 @@ describe("'do you still want to go?' 28 hours before", () => {
   });
   it("says confirmed once the venue confirms the one time", async () => {
     const id = await chosen();
-    await say({ from: VENUE, subject: "Re: Reservation request", body: "Your reservation is confirmed for 11:00 pm on Thursday, October 29. We look forward to welcoming you." });
+    await say({ from: VENUE, subject: "Re: Reservation request", inReplyTo: FOLLOW_UP_ID, body: "Your reservation is confirmed for 11:00 pm on Thursday, October 29. We look forward to welcoming you." });
     const r = await row(id);
     expect(r.state).toBe("booked");
     expect(JSON.parse(r.notice!).subject).toBe("Your request is booked");
@@ -144,12 +158,13 @@ describe("'do you still want to go?' 28 hours before", () => {
     const [f] = (await macWork(env as never)).errand_follow_ups;
     expect(f).toMatchObject({ purpose: "cancel", in_reply_to: VENUE_MESSAGE_ID });
     expect(f!.text).toContain("please cancel the reservation for the 11:00 pm DJ set on Thursday, October 29, party of 2.");
+    await archiveReceipt(id, "em_fake3", CANCELLATION_ID);
     await errandFollowedUp(env as never, id, { message_id: "em_fake3" });
     const r = await row(id);
     expect(r.state).toBe("cancel_sent");
     expect(JSON.parse(r.notice!).subject).toBe("Cancelling your booking");
     expect(await errandRemindersDue(env as never, DUE)).toHaveLength(0);
-    await say({ from: VENUE, subject: "Re: Reservation request", body: "Your reservation has been cancelled." });
+    await say({ from: VENUE, subject: "Re: Reservation request", inReplyTo: CANCELLATION_ID, body: "Your reservation has been cancelled." });
     expect((await row(id)).state).toBe("cancelled");
   });
 });
