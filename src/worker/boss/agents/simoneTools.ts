@@ -5,7 +5,8 @@ import { SIMONE, SIMONE_AVAILABLE, type SimoneMessage } from "./simone";
 import { accessCodeIn, addressesIn, confirmLine, errandIn, ERRAND_MONEY_RE, DEFAULT_MAILBOX, OWNER_TZ } from "../../../shared/boss/commands/parse.mjs";
 import { audit } from "../lib/audit";
 import { answerMeetingPrep, getCommand, runInvite } from "../commands/run";
-import { clashes, editCalendarBlock, mailboxAllowed, putOnCalendar, type CalendarBlockPeriod } from "../commands/google";
+import { cancelCalendarBlock, clashes, editCalendarBlock, mailboxAllowed, putOnCalendar, type CalendarBlockPeriod,
+  type CalendarBlockVersion } from "../commands/google";
 import { parseMail } from "../../../shared/mail/parseMail.mjs";
 import { readEverything, readWorkspaceDriveFile, searchWorkspaceDrive } from "../intake/readFiles";
 import { headline, MAX_BODY_BYTES } from "../intake/inboundMail";
@@ -85,10 +86,12 @@ function inviteSpec(value: unknown, ownerText: string) {
 }
 
 export async function simoneTool(env: Env, request: { id: string; lease: number; tool: string; task?: unknown }, now = Date.now()) {
-  const active = await env.DB.prepare(`SELECT id, input, created_at FROM tasks WHERE id = ? AND employee_id = ? AND status = 'running'
+  const activeRun = `tasks.id = ? AND employee_id = ? AND status = 'running'
     AND attempts = ? AND CASE WHEN json_valid(input) THEN json_extract(input, '$.agent') END = 'simone'
-    AND ${SIMONE_AVAILABLE}`)
-    .bind(request.id, SIMONE, request.lease).first<{ id: string; input: string; created_at: number }>();
+    AND ${SIMONE_AVAILABLE}`;
+  const lease = [request.id, SIMONE, request.lease] as const;
+  const active = await env.DB.prepare(`SELECT id, input, created_at FROM tasks WHERE ${activeRun}`)
+    .bind(...lease).first<{ id: string; input: string; created_at: number }>();
   if (!active) return { ok: false, code: "STALE_SIMONE_RUN" } as const;
   if (Object.hasOwn(READS, request.tool)) {
     const { results } = await env.DB.prepare(READS[request.tool as keyof typeof READS]).all();
@@ -117,11 +120,13 @@ export async function simoneTool(env: Env, request: { id: string; lease: number;
       return { ok: false, code: "CALENDAR_UNAVAILABLE" } as const;
     }
   }
-  if (request.tool === "block_calendar" || request.tool === "edit_calendar_block") {
+  if (request.tool === "block_calendar" || request.tool === "edit_calendar_block" || request.tool === "cancel_calendar_block") {
     const message: SimoneMessage = JSON.parse(active.input);
     const args = typeof request.task === "string" && request.task.length <= 2500 ? readJsonObject(request.task) : null;
     const editing = request.tool === "edit_calendar_block";
+    const cancelling = request.tool === "cancel_calendar_block";
     const allowedFields = editing ? ["quote", "title", "from", "to", "newTitle", "minutes", "through", "calendar"]
+      : cancelling ? ["quote", "title", "from", "calendar"]
       : ["quote", "title", "at", "minutes", "date", "through", "calendar"];
     const calendar = args?.calendar ?? DEFAULT_MAILBOX;
     const quote = args?.quote;
@@ -142,6 +147,35 @@ export async function simoneTool(env: Env, request: { id: string; lease: number;
       return { ok: false, code: "CALENDAR_BLOCK_NOT_AUTHORIZED" } as const;
     }
     const mailbox = calendar.toLowerCase();
+    if (cancelling) {
+      const { from } = args;
+      const allDay = dateOnly(from);
+      const start = typeof from === "string" ? Date.parse(from) : NaN;
+      const valid = allDay ? from >= dayOf(active.created_at, OWNER_TZ)
+        : typeof from === "string" && OFFSET_TIMESTAMP.test(from) && start > active.created_at;
+      if (!valid) return { ok: false, code: "CALENDAR_BLOCK_TIME_REQUIRED" } as const;
+      const key = `tev_calendar_cancel_${await sha256Hex(JSON.stringify([request.id, mailbox, title, allDay, start]))}`;
+      try {
+        const saved = await env.DB.prepare("SELECT detail FROM task_events WHERE id = ?").bind(key).first<string>("detail");
+        const previous = saved ? JSON.parse(saved) as CalendarBlockVersion : null;
+        const result = await cancelCalendarBlock(env, { mailbox, title, allDay, from: start }, previous, async (target) => {
+          // Record the original provider version before deletion. A retry may have a new lease but keeps this target.
+          const [, pinned] = await env.DB.batch<{ detail: string }>([
+            env.DB.prepare(`INSERT INTO task_events (id, task_id, ts, event, detail)
+              SELECT ?, tasks.id, ?, 'calendar_cancel_target', ? FROM tasks WHERE ${activeRun} ON CONFLICT(id) DO NOTHING`)
+              .bind(key, now, JSON.stringify(target), ...lease),
+            env.DB.prepare(`SELECT task_events.detail FROM tasks JOIN task_events ON task_events.task_id = tasks.id
+              WHERE task_events.id = ? AND ${activeRun}`).bind(key, ...lease),
+          ]);
+          return pinned?.results[0] ? JSON.parse(pinned.results[0].detail) as CalendarBlockVersion : null;
+        });
+        if (!result.ok) return result;
+        return { ok: true, receipt: result.eventId, title, calendar: mailbox, state: "cancelled",
+          ...(allDay ? { date: from } : { start }) } as const;
+      } catch {
+        return { ok: false, code: "CALENDAR_UNAVAILABLE" } as const;
+      }
+    }
     if (editing) {
       const { from, to = from, newTitle = title, minutes, through } = args;
       if (typeof newTitle !== "string" || !newTitle.trim() || newTitle !== newTitle.trim() ||

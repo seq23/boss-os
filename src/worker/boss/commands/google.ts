@@ -172,9 +172,32 @@ function blockTime(value: CalendarEvent["start"], allDay: boolean) {
   return Number.isFinite(instant) && dayOf(instant, "UTC") === value.date ? instant : NaN;
 }
 
+interface CalendarBlockTarget {
+  mailbox: string;
+  title: string;
+  allDay: boolean;
+  from: number;
+}
+
+async function findCalendarBlock(token: string, input: CalendarBlockTarget) {
+  // Include the full range of calendar-zone offsets for a date-only event, then match its exact date.
+  const day = 86_400_000;
+  const query = input.allDay ? calendarWindow(input.from - day, input.from + day) : calendarWindow(input.from, input.from + 1000);
+  const listed = await listCalendarEvents(token, query);
+  if (!listed.ok) return { ok: false, code: "CALENDAR_UNAVAILABLE" } as const;
+  const matches = listed.events.filter((event) => event.status !== "cancelled" && event.summary === input.title &&
+    blockTime(event.start, input.allDay) === input.from);
+  if (matches.length > 1) return { ok: false, code: "CALENDAR_BLOCK_AMBIGUOUS" } as const;
+  const event = matches[0];
+  if (!event) return { ok: false, code: "CALENDAR_BLOCK_NOT_FOUND" } as const;
+  const end = blockTime(event.end, input.allDay);
+  if (!personalCalendarBlock(event) || !(end > input.from)) return { ok: false, code: "CALENDAR_BLOCK_NOT_EDITABLE" } as const;
+  return { ok: true, event, end } as const;
+}
+
 /** Edit one exact private block, leaving fields outside the requested changes in place. */
-export async function editCalendarBlock(env: Env, input: {
-  mailbox: string; title: string; allDay: boolean; from: number; to: number; newTitle: string; duration?: number; requestKey: string;
+export async function editCalendarBlock(env: Env, input: CalendarBlockTarget & {
+  to: number; newTitle: string; duration?: number; requestKey: string;
 }) {
   const cal = await calendarFor(env, input.mailbox);
   if (!cal.ok) return { ok: false, code: "CALENDAR_UNAVAILABLE" } as const;
@@ -199,22 +222,11 @@ export async function editCalendarBlock(env: Env, input: {
   if (recovered.events.length === 1) return receipt(recovered.events[0]!);
   if (recovered.events.length > 1) return { ok: false, code: "CALENDAR_BLOCK_AMBIGUOUS" } as const;
 
-  // Google filters all-day events in the calendar's zone. Include both sides of UTC midnight,
-  // then match the exact date in the event, independent of the calendar's offset.
-  const day = 86_400_000;
-  const query = input.allDay ? calendarWindow(input.from - day, input.from + day) : calendarWindow(input.from, input.from + 1000);
-  const listed = await listCalendarEvents(cal.token, query);
-  if (!listed.ok) return { ok: false, code: "CALENDAR_UNAVAILABLE" } as const;
-  const matches = listed.events.filter((event) => event.status !== "cancelled" && event.summary === input.title &&
-    blockTime(event.start, input.allDay) === input.from);
-  if (matches.length > 1) return { ok: false, code: "CALENDAR_BLOCK_AMBIGUOUS" } as const;
-  const event = matches[0];
-  if (!event) return { ok: false, code: "CALENDAR_BLOCK_NOT_FOUND" } as const;
-  const oldEnd = blockTime(event.end, input.allDay);
-  const duration = oldEnd - input.from;
-  if (!personalCalendarBlock(event) || !(duration > 0)) return { ok: false, code: "CALENDAR_BLOCK_NOT_EDITABLE" } as const;
+  const found = await findCalendarBlock(cal.token, input);
+  if (!found.ok) return found;
+  const { event, end: oldEnd } = found;
 
-  const end = input.to + (input.duration ?? duration);
+  const end = input.to + (input.duration ?? (oldEnd - input.from));
   if (input.title === input.newTitle && input.from === input.to && oldEnd === end) {
     return { ok: false, code: "CALENDAR_BLOCK_UNCHANGED" } as const;
   }
@@ -233,6 +245,28 @@ export async function editCalendarBlock(env: Env, input: {
   if (!res.ok) return { ok: false, code: "CALENDAR_UNAVAILABLE" } as const;
   const saved = await res.json().catch(() => null) as CalendarEvent | null;
   return saved ? receipt(saved, event.id) : { ok: false, code: "CALENDAR_UNAVAILABLE" } as const;
+}
+
+export type CalendarBlockVersion = { id: string; etag: string };
+
+/** Remove only the originally selected version, even if a retry finds a replacement at that time. */
+export async function cancelCalendarBlock(env: Env, input: CalendarBlockTarget, previous: CalendarBlockVersion | null,
+  pin: (version: CalendarBlockVersion) => Promise<CalendarBlockVersion | null>) {
+  const cal = await calendarFor(env, input.mailbox);
+  if (!cal.ok) return { ok: false, code: "CALENDAR_UNAVAILABLE" } as const;
+  let target = previous;
+  if (!target) {
+    const found = await findCalendarBlock(cal.token, input);
+    if (!found.ok) return found;
+    target = { id: found.event.id, etag: found.event.etag };
+  }
+  const current = await pin(target);
+  if (!current) return { ok: false, code: "STALE_SIMONE_RUN" } as const;
+  if (!/^"[^"\r\n]+"$/.test(current.etag)) return { ok: false, code: "CALENDAR_BLOCK_NOT_EDITABLE" } as const;
+  const res = await deleteCalendarEvent(cal.token, current.id, current.etag);
+  if (res.status === 204 || res.status === 410) return { ok: true, eventId: current.id } as const;
+  if (res.status === 404 || res.status === 412) return { ok: false, code: "CALENDAR_BLOCK_CHANGED" } as const;
+  return { ok: false, code: "CALENDAR_UNAVAILABLE" } as const;
 }
 
 /** Create the event with a Meet link and invite the guests. `sendUpdates=all` is what emails them. */
@@ -299,8 +333,15 @@ export async function replaceGuest(env: Env, input: { mailbox: string; eventId: 
 export async function deleteInvite(env: Env, input: { mailbox: string; eventId: string }): Promise<{ ok: true } | { ok: false; why: string }> {
   const cal = await calendarFor(env, input.mailbox);
   if (!cal.ok) return cal;
-  const res = await fetchImpl(`${CALENDAR}/primary/events/${encodeURIComponent(input.eventId)}?sendUpdates=none`, { method: "DELETE", headers: { authorization: `Bearer ${cal.token}` } });
+  const res = await deleteCalendarEvent(cal.token, input.eventId);
   return res.ok || res.status === 410 ? { ok: true } : { ok: false, why: `Google Calendar refused the delete (${res.status})` };
+}
+
+function deleteCalendarEvent(token: string, eventId: string, etag?: string) {
+  return fetchImpl(`${EVENTS}/${encodeURIComponent(eventId)}?sendUpdates=none`, {
+    method: "DELETE",
+    headers: { authorization: `Bearer ${token}`, ...(etag ? { "if-match": etag } : {}) },
+  });
 }
 
 function mime(input: { from: string; to: string; subject: string; text: string; inReplyTo?: string | null }): string {
