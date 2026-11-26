@@ -670,6 +670,26 @@ const TRACKED_ERRAND_SEND = `s.command_id = c.id AND s.delivery_state = 'sent'
     SELECT json_extract(value, '$.message_id') FROM json_each(c.result, '$.follow_ups')
   ))`;
 
+/** A reusable contact answered an archived request from this owner at the exact address we wrote to. */
+export async function verifiedBookingChannels(env: Env, owner: string, now: number, id: string | null = null) {
+  const { results } = await env.DB.prepare(`SELECT c.id, json_extract(c.spec, '$.to') AS recipient,
+      json_extract(c.result, '$.subject') AS subject, json_extract(c.result, '$.request') AS request
+    FROM boss_commands c JOIN boss_inbound_mail original ON original.id = c.mail_id
+    WHERE c.kind = 'errand' AND json_extract(c.spec, '$.free_only') = 1
+      AND original.from_addr = ?1 AND original.authorised = 1 AND original.dmarc_pass = 1
+      AND (?2 IS NULL OR c.id = ?2)
+      AND EXISTS (SELECT 1 FROM json_each(c.result, '$.replies') reply
+        JOIN boss_inbound_mail m ON m.id = json_extract(reply.value, '$.mail_id')
+        WHERE m.command_id = c.id AND m.outcome = 'ERRAND_REPLY' AND m.dmarc_pass = 1
+          AND m.from_addr = json_extract(c.spec, '$.to') AND m.received_at >= ?3 AND m.received_at < ?4
+          AND json_extract(reply.value, '$.kind') = 'confirmed')
+      AND EXISTS (SELECT 1 FROM boss_sent_mail s WHERE ${TRACKED_ERRAND_SEND}
+        AND s.to_addr = json_extract(c.spec, '$.to'))
+    ORDER BY c.updated_at DESC, c.id LIMIT 30`).bind(owner, id, now - 90 * 86_400_000, now)
+    .all<{ id: string; recipient: string; subject: string; request: string }>();
+  return results;
+}
+
 /** Read already archived replies once their outbound receipt and errand both have been recorded. */
 async function replayErrandReplies(env: Env, now: number) {
   const { results } = await env.DB.prepare(`SELECT m.id, m.message_id, m.from_addr, m.subject, m.object_key, m.errand_reply, m.received_at

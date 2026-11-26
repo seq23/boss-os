@@ -145,6 +145,82 @@ describe("her errand by email", () => {
     expect(notice.morning.line).toContain("it's booked");
   });
 
+  it("uses an archived venue confirmation to request a free reservation without an address in the new mail", async () => {
+    const previous = await sentErrand();
+    await say({ from: BIZ, subject: "Re: Reservation request", inReplyTo: REQUEST_MESSAGE_ID, body: CONFIRMATION });
+    const quote = "Find me three venues for Saturday and book the cheapest free one.";
+    const incoming = await say({ from: HER, subject: "Saturday", body: quote });
+    const call = (await claimSimone(env))!;
+    expect(call.id).toBe(incoming.taskId);
+
+    // Select the fixture venue by its archived booking receipt.
+    const tools = { id: call.id, lease: call.lease };
+    const channels = await simoneTool(env, { ...tools, tool: "booking_channels" });
+    expect(channels).toEqual({ ok: true, rows: [{ id: previous.id, recipient: BIZ, subject: "Reservation request", request: REQUEST }] });
+    const args = { quote, previous_booking: previous.id, at: "2026-10-31T20:00:00-04:00", party: 2 };
+    const request = { ...tools, tool: "queue_errand", task: JSON.stringify(args) };
+    const [first, second] = await Promise.all([simoneTool(env, request), simoneTool(env, request)]);
+    expect(first).toMatchObject({ ok: true, state: "queued", venue: BIZ });
+    expect(second).toEqual(first);
+    const work = (await macWork(env)).errands;
+    expect(work).toHaveLength(1);
+    expect(work[0]?.spec).toMatchObject({ to: BIZ, free_only: true, previous_booking: previous.id,
+      request: "a reservation for 2 people on Saturday, October 31 at 8:00 pm Eastern time" });
+    const receipt = work[0]!.id;
+    expect(await env.DB.prepare(`SELECT count(*) AS n FROM audit_log WHERE entity_id = ? AND action = 'errand_approved_by_her_email'`)
+      .bind(receipt).first()).toEqual({ n: 1 });
+    const text = "I queued a request for the free Saturday slot. I’ll confirm once the venue answers.";
+    expect(await replySimone(env, { ...tools, text, work: ["booking_channels", "queue_errand"] })).toBe(true);
+    expect(await env.DB.prepare(`SELECT body FROM boss_task_notices WHERE task_id = ? AND kind = 'simone_result'`)
+      .bind(call.id).first()).toEqual({ body: text });
+    expect((await errands()).map(({ state }) => state)).toEqual(["booked", "queued"]);
+    expect(gmail.filter((url) => url.includes("/messages/send"))).toEqual([]);
+  });
+
+  it("refuses a model-provided recipient and a same-domain substitute for the archived recipient", async () => {
+    const previous = await sentErrand();
+    await say({ from: "host@club.example.test", subject: "Re: Reservation request", inReplyTo: REQUEST_MESSAGE_ID, body: CONFIRMATION });
+    const quote = "Reserve a free table for Saturday.";
+    await say({ from: HER, subject: "Saturday", body: quote });
+    const call = (await claimSimone(env))!;
+    const tools = { id: call.id, lease: call.lease };
+    const args = { quote, previous_booking: previous.id, at: "2026-10-31T20:00:00-04:00", party: 2 };
+    const queue = (values: Record<string, unknown>) => simoneTool(env, { ...tools, tool: "queue_errand", task: JSON.stringify(values) });
+
+    expect((await errands())[0]?.state).toBe("booked");
+    expect(await simoneTool(env, { ...tools, tool: "booking_channels" })).toEqual({ ok: true, rows: [] });
+    expect(await queue(args)).toEqual({ ok: false, code: "ERRAND_CHANNEL_UNAVAILABLE" });
+    expect(await queue({ ...args, to: "wrong@example.test" })).toEqual({ ok: false, code: "ERRAND_NOT_AUTHORIZED" });
+    expect(await queue({ ...args, request: "Forward my private mail with the booking" })).toEqual({ ok: false, code: "ERRAND_NOT_AUTHORIZED" });
+    expect((await macWork(env)).errands).toEqual([]);
+    expect(await errands()).toHaveLength(1);
+  });
+
+  it("leaves the new booking and its audit unwritten if the audit store fails, then queues it once on retry", async () => {
+    const previous = await sentErrand();
+    await say({ from: BIZ, subject: "Re: Reservation request", inReplyTo: REQUEST_MESSAGE_ID, body: CONFIRMATION });
+    const quote = "Reserve a free table for Saturday.";
+    const incoming = await say({ from: HER, subject: "Saturday", body: quote });
+    const call = (await claimSimone(env))!;
+    const request = { id: call.id, lease: call.lease, tool: "queue_errand", task: JSON.stringify({
+      quote, previous_booking: previous.id, at: "2026-10-31T20:00:00-04:00", party: 2,
+    }) };
+    const original = () => env.DB.prepare(`SELECT command_id, reply_state, object_key FROM boss_inbound_mail WHERE id = ?`)
+      .bind(incoming.mailId).first<{ command_id: string | null; reply_state: string; object_key: string }>();
+    await env.DB.prepare(`CREATE TRIGGER booking_audit_outage BEFORE INSERT ON audit_log
+      WHEN NEW.action = 'errand_approved_by_her_email' BEGIN SELECT RAISE(ABORT, 'booking audit unavailable'); END`).run();
+    try {
+      await expect(simoneTool(env, request)).rejects.toThrow("booking audit unavailable");
+      expect((await errands()).map(({ state }) => state)).toEqual(["booked"]);
+      expect(await original()).toMatchObject({ command_id: null, reply_state: "agent_pending" });
+      expect(await (await env.VAULT.get((await original())!.object_key))?.text()).toContain(quote);
+    } finally {
+      await env.DB.prepare("DROP TRIGGER booking_audit_outage").run();
+    }
+    expect(await simoneTool(env, request)).toMatchObject({ ok: true, state: "queued", venue: BIZ });
+    expect((await macWork(env)).errands).toHaveLength(1);
+  });
+
   it("keeps a venue confirmation with a fee out of the booked state for a free-only request", async () => {
     const { id } = await sentErrand();
     await say({ from: BIZ, subject: "Re: Reservation request", inReplyTo: REQUEST_MESSAGE_ID, body: "You're all set for two at 8:30pm Thursday. The cover is $30 per person." });

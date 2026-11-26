@@ -2,9 +2,9 @@ import type { Env } from "../env";
 import { newId, sha256Hex } from "../lib/id";
 import { AppError } from "../lib/http";
 import { SIMONE, SIMONE_AVAILABLE, type SimoneMessage } from "./simone";
-import { accessCodeIn, addressesIn, confirmLine, errandDateIn, errandProblems, freeErrandRecipient, ERRAND_MONEY_RE, DEFAULT_MAILBOX, OWNER_TZ } from "../../../shared/boss/commands/parse.mjs";
-import { audit } from "../lib/audit";
-import { answerMeetingPrep, getCommand, runInvite } from "../commands/run";
+import { accessCodeIn, addressesIn, bookingWhen, confirmLine, errandDateIn, errandProblems, freeErrandRecipient, ERRAND_MONEY_RE, DEFAULT_MAILBOX, OWNER_TZ } from "../../../shared/boss/commands/parse.mjs";
+import { audit, auditOfPrevious } from "../lib/audit";
+import { answerMeetingPrep, getCommand, runInvite, verifiedBookingChannels } from "../commands/run";
 import { calendarAgenda, cancelCalendarBlock, clashes, editCalendarBlock, mailboxAllowed, putOnCalendar, type CalendarBlockPeriod,
   type CalendarBlockVersion } from "../commands/google";
 import { parseMail } from "../../../shared/mail/parseMail.mjs";
@@ -27,6 +27,7 @@ import { routeFixedDutyChange } from "../duties/editByMail";
 import { dayOf } from "../../../shared/boss/schedule/clock.mjs";
 import { readKdpCaseChecks, readKdpPublishAttempts } from "../kdp/history";
 import { containsCredential } from "../../../shared/boss/service/secretLines.mjs";
+import { quoteStands } from "../../../shared/boss/text/wholeSentence.mjs";
 
 export const SIMONE_RECORD_READS = {
   morning: `SELECT day, updated_at, sent_at FROM morning_digests ORDER BY day DESC LIMIT 3`,
@@ -51,6 +52,9 @@ export const SIMONE_RECORD_READS = {
 } as const;
 
 const OFFSET_TIMESTAMP = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d{3})?(?:Z|[+-]\d{2}:\d{2})$/;
+const SIMONE_LIVE_RUN = `tasks.id = ? AND employee_id = ? AND status = 'running'
+  AND attempts = ? AND CASE WHEN json_valid(input) THEN json_extract(input, '$.agent') END = 'simone'
+  AND ${SIMONE_AVAILABLE}`;
 
 function dateOnly(value: unknown): value is string {
   if (typeof value !== "string" || !/^\d{4}-\d{2}-\d{2}$/.test(value)) return false;
@@ -58,19 +62,30 @@ function dateOnly(value: unknown): value is string {
   return Number.isFinite(instant) && dayOf(instant, "UTC") === value;
 }
 
-async function fileCommand(env: Env, kind: "access_code" | "errand" | "invite", task: string, mail: string | null, spec: Record<string, unknown>, now: number) {
+async function fileCommand(env: Env, kind: "access_code" | "errand" | "invite", task: string, mail: string | null,
+  spec: Record<string, unknown>, now: number, errandLease?: number) {
   const hash = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(`${kind}:${task}`));
   const key = Array.from(new Uint8Array(hash).slice(0, 16), (byte) => byte.toString(16).padStart(2, "0")).join("");
   const id = `cmd_${key}`;
-  const [write] = await env.DB.batch([
+  const errandGuard = errandLease === undefined ? "" : `WHERE EXISTS (SELECT 1 FROM tasks WHERE ${SIMONE_LIVE_RUN})
+    AND EXISTS (SELECT 1 FROM boss_inbound_mail WHERE id = ? AND task_id = ? AND authorised = 1
+      AND dmarc_pass = 1 AND outcome = 'SIMONE_QUEUED')`;
+  await env.DB.batch([
     env.DB.prepare(`INSERT INTO boss_commands (id, mail_id, kind, state, spec, created_at, updated_at)
-      VALUES (?, ?, ?, ?, ?, ?, ?) ON CONFLICT(id) DO NOTHING`)
+      SELECT ?, ?, ?, ?, ?, ?, ? ${errandGuard} ON CONFLICT(id) DO NOTHING`)
       .bind(id, mail, kind, kind === "invite" ? "new" : "queued",
-        JSON.stringify(kind === "invite" ? { ...spec, provider_event_id: key } : spec), now, now),
-    ...(mail ? [env.DB.prepare(`UPDATE boss_inbound_mail SET command_id = ? WHERE id = ? AND task_id = ? AND authorised = 1`)
-      .bind(id, mail, task)] : []),
+        JSON.stringify(kind === "invite" ? { ...spec, provider_event_id: key } : spec), now, now,
+        ...(errandLease === undefined ? [] : [task, SIMONE, errandLease, mail, task])),
+    ...(errandLease === undefined ? [] : [auditOfPrevious(env.DB, {
+      actor: "owner", lane: "ops", entityType: "boss_command", entityId: id, action: "errand_approved_by_her_email",
+      detail: { mail_id: mail, simone_run: task, previous_booking: spec.previous_booking },
+    }, "rows", { onlyIfChanged: true })]),
+    ...(mail ? [env.DB.prepare(`UPDATE boss_inbound_mail SET command_id = ? WHERE id = ? AND task_id = ? AND authorised = 1
+      AND EXISTS (SELECT 1 FROM boss_commands WHERE id = ?)
+      ${errandLease === undefined ? "" : `AND EXISTS (SELECT 1 FROM tasks WHERE ${SIMONE_LIVE_RUN})`}`)
+      .bind(id, mail, task, id, ...(errandLease === undefined ? [] : [task, SIMONE, errandLease]))] : []),
   ]);
-  return { id, created: Boolean(write?.meta.changes) };
+  return { id };
 }
 
 function inviteSpec(value: unknown, ownerText: string) {
@@ -92,9 +107,7 @@ function inviteSpec(value: unknown, ownerText: string) {
 }
 
 export async function simoneTool(env: Env, request: { id: string; lease: number; tool: string; task?: unknown }, now = Date.now()) {
-  const activeRun = `tasks.id = ? AND employee_id = ? AND status = 'running'
-    AND attempts = ? AND CASE WHEN json_valid(input) THEN json_extract(input, '$.agent') END = 'simone'
-    AND ${SIMONE_AVAILABLE}`;
+  const activeRun = SIMONE_LIVE_RUN;
   const lease = [request.id, SIMONE, request.lease] as const;
   const active = await env.DB.prepare(`SELECT id, input, created_at FROM tasks WHERE ${activeRun}`)
     .bind(...lease).first<{ id: string; input: string; created_at: number }>();
@@ -624,22 +637,50 @@ export async function simoneTool(env: Env, request: { id: string; lease: number;
     if (!stopped) return { ok: false, code: "COMMITMENT_NOT_OPEN" } as const;
     return { ok: true, receipt: args.id, name: owned.name, state: "killed" } as const;
   }
-  if (request.tool === "queue_errand" || request.tool === "create_invite") {
+  if (request.tool === "booking_channels" || request.tool === "queue_errand" || request.tool === "create_invite") {
     const message: SimoneMessage = JSON.parse(active.input);
     const original = message.source === "boss_inbound_mail" && message.mail_id
-      ? await env.DB.prepare(`SELECT from_addr FROM boss_inbound_mail WHERE id = ? AND authorised = 1 AND task_id = ? AND outcome = 'SIMONE_QUEUED'`)
+      ? await env.DB.prepare(`SELECT from_addr FROM boss_inbound_mail WHERE id = ? AND authorised = 1 AND dmarc_pass = 1
+          AND task_id = ? AND outcome = 'SIMONE_QUEUED'`)
         .bind(message.mail_id, request.id).first<{ from_addr: string }>()
       : null;
+    if (request.tool === "booking_channels") {
+      if (!original) return { ok: false, code: "ERRAND_NOT_AUTHORIZED" } as const;
+      const rows = await verifiedBookingChannels(env, original.from_addr, now);
+      return { ok: true, rows } as const;
+    }
     if (request.tool === "queue_errand") {
       const args = typeof request.task === "string" && request.task.length <= 3000 ? readJsonObject(request.task) : null;
       const quote = args?.quote;
-      const subject = args?.subject;
-      const phrase = args?.request;
-      const to = original && typeof quote === "string" && quote.length <= 2000 && message.body.includes(quote)
-        ? freeErrandRecipient(original.from_addr, quote) : null;
-      if (!original || !to || Object.keys(args ?? {}).some((key) => !["quote", "subject", "request"].includes(key))) {
+      if (!original || typeof quote !== "string" || !quote.trim() || quote.length > 2000 || !message.body.includes(quote)) {
         return { ok: false, code: "ERRAND_NOT_AUTHORIZED" } as const;
       }
+      const previous = args?.previous_booking;
+      let recipient: string | null = null;
+      let subject = args?.subject;
+      let phrase = args?.request;
+      if (previous !== undefined) {
+        if (typeof previous !== "string" || !/^cmd_[a-z0-9_-]{1,155}$/.test(previous) ||
+            Object.keys(args ?? {}).some((key) => !["quote", "previous_booking", "at", "party"].includes(key)) ||
+            !quoteStands(message.body, quote, ["NEGATES", "REPORTS"])) {
+          return { ok: false, code: "ERRAND_NOT_AUTHORIZED" } as const;
+        }
+        const at = typeof args?.at === "string" && OFFSET_TIMESTAMP.test(args.at) ? Date.parse(args.at) : NaN;
+        const party = args?.party;
+        if (!Number.isFinite(at) || at <= now || at >= now + 365 * 86_400_000 ||
+            typeof party !== "number" || !Number.isSafeInteger(party) || party < 1 || party > 99) {
+          return { ok: false, code: "ERRAND_DETAILS_NOT_ALLOWED" } as const;
+        }
+        const [channel] = await verifiedBookingChannels(env, original.from_addr, now, previous);
+        if (!channel) return { ok: false, code: "ERRAND_CHANNEL_UNAVAILABLE" } as const;
+        recipient = channel.recipient;
+        subject = "Reservation request";
+        phrase = `a reservation for ${party} ${party === 1 ? "person" : "people"} on ${bookingWhen(at)} Eastern time`;
+      } else if (Object.keys(args ?? {}).some((key) => !["quote", "subject", "request"].includes(key))) {
+        return { ok: false, code: "ERRAND_NOT_AUTHORIZED" } as const;
+      }
+      const to = freeErrandRecipient(original.from_addr, quote, recipient);
+      if (!to) return { ok: false, code: "ERRAND_NOT_AUTHORIZED" } as const;
       if (typeof subject !== "string" || subject.length > 100 || typeof phrase !== "string" ||
           /[\r\n]/.test(subject + phrase) || errandProblems({ subject, request: phrase }).length ||
           !errandDateIn(phrase, active.created_at) || ERRAND_MONEY_RE.test(subject) ||
@@ -647,12 +688,10 @@ export async function simoneTool(env: Env, request: { id: string; lease: number;
         return { ok: false, code: "ERRAND_DETAILS_NOT_ALLOWED" } as const;
       }
       const command = await fileCommand(env, "errand", request.id, message.mail_id!,
-        { to, ask: quote, owner_email: original.from_addr, subject: subject.trim(), request: phrase.trim(), free_only: true }, now);
-      if (command.created) await audit(env.DB, {
-        actor: "owner", lane: "ops", entityType: "boss_command", entityId: command.id, action: "errand_approved_by_her_email",
-        detail: { mail_id: message.mail_id, simone_run: request.id },
-      });
-      const stored = (await getCommand(env, command.id))!;
+        { to, ask: quote, owner_email: original.from_addr, subject: subject.trim(), request: phrase.trim(), free_only: true,
+          previous_booking: previous }, now, request.lease);
+      const stored = await getCommand(env, command.id);
+      if (!stored) return { ok: false, code: "STALE_SIMONE_RUN" } as const;
       return { ok: true, receipt: command.id, state: stored.state, venue: JSON.parse(stored.spec).to } as const;
     }
     const namedByOwner = original || message.source === "boss_page" || message.source === "tell_simone";

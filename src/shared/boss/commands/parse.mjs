@@ -449,21 +449,22 @@ export function errandRefusal({ sender = "", subject = "", text = "" } = {}) {
   return errandBoundary(words);
 }
 
-function errandBoundary(words) {
+function errandBoundary(words, verifiedRecipient = null) {
   const all = [...new Set((words.match(EMAIL_RE) ?? []).map((a) => a.replace(/[.,;:]+$/, "").toLowerCase()))];
   const outside = addressesIn(words);
-  if (all.some((a) => ERRAND_NEVER_DOMAIN_RE.test(a))) return "a West Peek or spry.vc address";
-  if (outside.length === 0) return "no business address in her words (never guessed)";
+  if ([...all, verifiedRecipient ?? ""].some((a) => ERRAND_NEVER_DOMAIN_RE.test(a))) return "a West Peek or spry.vc address";
+  if (verifiedRecipient && (all.length > 0 || !addressesIn(verifiedRecipient).includes(verifiedRecipient))) return "no single authorized business address";
+  if (!verifiedRecipient && outside.length === 0) return "no business address in her words (never guessed)";
   if (outside.length > 1) return "more than one address";
   if (ERRAND_MONEY_RE.test(words)) return "money is involved";
   if (ERRAND_NEVER_RE.test(words)) return "fund, trading or LP work";
   return null;
 }
 
-/** The agent reads intent. The recipient still has to come from the owner's own verified words. */
-export function freeErrandRecipient(sender, quote) {
-  if (!ERRAND_SENDERS.includes(sender.toLowerCase()) || errandBoundary(quote)) return null;
-  return addressesIn(quote)[0] ?? null;
+/** The agent reads intent. Code checks the address from the owner's words or an archived booking. */
+export function freeErrandRecipient(sender, quote, verifiedRecipient = null) {
+  if (!ERRAND_SENDERS.includes(sender.toLowerCase()) || errandBoundary(quote, verifiedRecipient)) return null;
+  return verifiedRecipient ?? addressesIn(quote)[0] ?? null;
 }
 
 /** `{ to, ask }` for an errand Simone may send on her word, or null. */
