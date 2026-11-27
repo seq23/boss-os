@@ -28,7 +28,12 @@ export async function recordSentMail(env: Env, mail: SentMail): Promise<void> {
   const employee = !mail.employee_id ? await env.DB.prepare(`SELECT id FROM employees WHERE lower(name) = ? LIMIT 1`).bind((extractAddress(mail.employee_address ?? mail.from) ?? "").split("@")[0]).first<{ id: string }>() : null;
   await env.VAULT.put(key, JSON.stringify({ text: mail.text, html: mail.html ?? null, raw: mail.raw ?? null }), { httpMetadata: { contentType: "application/json" } });
   await env.DB.prepare(`INSERT INTO boss_sent_mail (id, message_id, sent_at, delivery_state, from_addr, to_addr, employee_id, subject, object_key, thread_id, in_reply_to, command_id, layout)
-    VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?) ON CONFLICT(message_id) DO NOTHING`).bind(
+    VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)
+    ON CONFLICT(id) DO UPDATE SET message_id = excluded.message_id,
+      thread_id = CASE WHEN boss_sent_mail.thread_id = boss_sent_mail.id THEN excluded.thread_id ELSE boss_sent_mail.thread_id END
+      WHERE boss_sent_mail.message_id = boss_sent_mail.id AND excluded.message_id <> excluded.id
+        AND boss_sent_mail.delivery_state = 'sent' AND excluded.delivery_state = 'sent'
+    ON CONFLICT(message_id) DO NOTHING`).bind(
     id, mail.message_id, mail.sent_at ?? Date.now(), mail.delivery_state ?? "sent", extractAddress(mail.from), mail.to, mail.employee_id ?? employee?.id ?? null, mail.subject, key,
     command?.id ?? parent?.thread_id ?? mail.thread_id ?? mail.in_reply_to ?? id, mail.in_reply_to ?? null, command?.id ?? null,
     mail.layout ? layoutOf(mail.layout) : null,

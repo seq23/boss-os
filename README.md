@@ -2,7 +2,8 @@
 
 Sequoia's own operating system: her AI employees, duties, approvals, brains, coaching and the
 side businesses' running work. One Cloudflare Worker serving a React app and an API over a D1
-database, live at **boss.sequoiataylor.com**.
+database, live at **boss.sequoiataylor.com**. Simone is your Chief of Staff. She runs your day
+and is in charge of everything Boss OS runs.
 
 **Authority:** [`CLAUDE.md`](CLAUDE.md) (rules for anyone working here), [`STATUS.md`](STATUS.md)
 (what is built and what is deliberately not) and [`docs/boss/`](docs/boss/), starting with

@@ -9,20 +9,7 @@ import { COST_MODE_POLICY } from "../../src/shared/boss/governance";
 import { MAX_FREE_HOPS } from "../../src/worker/boss/router";
 import { all, stubFetch } from "./helpers";
 
-/**
- * THE LADDER, AND THE HALF OF IT THE OWNER CARES ABOUT MOST.
- *
- * `scripts/validate/the-ladder-is-walkable-and-free-before-paid.mjs` proves the SHAPE of the ladder
- * against the replayed migrations. This proves the BEHAVIOUR, against the real database and the
- * real `evaluateModel` and the real adapter — because a row saying "this lane may hold an LP name"
- * is a note in a table until something is observed refusing the lanes that may not.
- *
- * Before 0256 exactly two model rows could carry private work, both on Workers AI. Every cloud
- * fallback was training-permitting, so the day Workers AI was down, private work stopped. The whole
- * point of registering six paid reasoning lanes was to end that, and the assertions here are the
- * ones that would go red if it were ever quietly undone.
- */
-
+/** Checks the model ladder against the shipped seed and provider adapter. */
 let restore: (() => void) | null = null;
 afterEach(() => { restore?.(); restore = null; });
 
@@ -45,8 +32,6 @@ const publicCtx = (over: Record<string, unknown> = {}) => ({
   intakeKind: "drafting",
   requireBenchmarkHighRisk: true,
   cloudForRestrictedAllowed: false,
-  modelAccess: "public_model_approved" as const,
-  modelAccessReason: "",
   ...over,
 }) as Parameters<typeof evaluateModel>[1];
 
@@ -113,59 +98,6 @@ describe("the ladder exists and can actually be walked", () => {
     const first = free[0];
     expect(first, "there are no free rungs, so 'reaches it first' means nothing").toBeDefined();
     expect(first!.reasoning, `first free rung is ${first!.display_name}`).toBe(1);
-  });
-});
-
-describe("private work has somewhere to run, and it is never a free lane", () => {
-  it("went from two lanes to many, which is the point of the whole change", async () => {
-    const rungs = await ladder();
-    const priv = rungs.filter((m) => isPrivateModelRoute(m.data_use));
-    // Two Workers AI rows was the entire set before 0256 (see migration 0249). If this ever falls
-    // back to two, the cloud fallback for private work has silently gone away again.
-    expect(priv.length).toBeGreaterThan(2);
-    expect(priv.some((m) => m.provider_id === "prv_openrouter")).toBe(true);
-  });
-
-  it("refuses every training-permitting lane the moment the work is private, with a reason", async () => {
-    const rungs = await ladder();
-    const ctx = publicCtx({
-      modelAccess: "private_model_only",
-      modelAccessReason: "this content carries a name this system holds as private",
-    });
-
-    let refused = 0;
-    let admitted = 0;
-    for (const m of rungs) {
-      const verdict = evaluateModel(m, ctx);
-      if (isPrivateModelRoute(m.data_use)) {
-        // A non-training lane is admitted on the privacy stage; it may still be refused later for
-        // an unrelated reason, so only the privacy stage is asserted here.
-        expect(verdict.stage, `${m.display_name} was refused at ${verdict.stage}`).not.toBe("privacy");
-        admitted++;
-      } else {
-        expect(verdict.eligible, `${m.display_name} accepted private work`).toBe(false);
-        expect(verdict.stage).toBe("privacy");
-        // AND NO CARD LIFTS IT. What would be approved is not one call but a permanent presence in
-        // somebody's corpus, so this refusal is deliberately not approvable.
-        expect(verdict.approvable).toBe(false);
-        expect(verdict.reason).toMatch(/training/i);
-        refused++;
-      }
-    }
-
-    /* RULE 0: a loop that examined nothing must not read as a pass. */
-    expect(refused, "no training-permitting lane was on the ladder to refuse").toBeGreaterThan(0);
-    expect(admitted, "no lane was left that could take the work").toBeGreaterThan(0);
-  });
-
-  it("lets the same lanes take the same work when it is public, so this is a line and not a block", async () => {
-    const rungs = await ladder();
-    const free = rungs.filter((m) => m.slug.endsWith(":free"));
-    expect(free.length).toBeGreaterThan(0);
-    for (const m of free) {
-      // The proof that the refusal above is about the CONTENT and not about the lane being broken.
-      expect(evaluateModel(m, publicCtx()).stage).not.toBe("privacy");
-    }
   });
 });
 

@@ -1,27 +1,24 @@
 # How to give Boss OS work by email
 
-_22 October 2026; simone@ and the Tell Simone box added 26 October 2026. A test (`tests/emailHowTo.test.ts`) reads this page: the address, the example
-emails and who they reach, the reply words and the secret line are checked against the code, so the
-page cannot drift from what the mailbox does._
-
 ## The address
 
-**boss@sequoiataylor.com**, from one of your own addresses: seq.taylor@gmail.com,
-sequoiataylor@icloud.com or staylor@spry.vc. Mail from anyone else is recorded and refused.
+Write to **boss@sequoiataylor.com** from one of your approved addresses. Only authenticated owner
+mail can start work.
 
 **simone@sequoiataylor.com does exactly the same thing as boss@.** Use whichever you like: it is one
 front door.
 
-You do not need to name anybody. Simone (Chief of Staff) reads it, splits it into its asks, and gives
-each ask to the employee who can do it. If you want a particular person, write to them directly:
+Simone is your Chief of Staff. She runs your day and is in charge of everything Boss OS runs.
+Write to her in your own words. She handles the work or gets it to the colleague who owns it.
+If you want a particular person, write to them directly:
 danielle@, camille@, monique@, zora@, toni@, imani@, kendra@ or noelle@sequoiataylor.com, or put their
-name with a # in front (#danielle). Both are optional shortcuts.
+name with a # in front (#danielle). Simone reads both as part of your request.
+Send edits to your deal lists directly to Monique. She confirms the changes on the thread.
 
-**Or use the "Tell Simone" box at the top of Today** in Boss OS. It is the same as emailing
-simone@: the same split, the same people, the same reports back by email. You see who has each job
-on the screen as soon as you send.
+**Or use the "Tell Simone" box at the top of Today** or the message box on Simone’s page. Send your
+request in your own words. Simone’s reply appears where you sent it.
 
-## Three example emails
+## Example emails
 
 **1 · Build something**
 
@@ -44,16 +41,17 @@ Body:    What are the three cheapest ways to host a static site with a custom do
 
 Goes to: **Camille** (research). You get a research page with sources.
 
-**3 · Give someone a standing duty**
+**3 · Change a standing duty**
 
 ```
 To:      boss@sequoiataylor.com
-Subject: new duty
-Body:    every friday, research what changed in the private markets this week and send me a short summary. your call
+Subject: studio recount
+Body:    For the standing studio recount, include the attic frames from now on.
 ```
 
-Goes to: **Camille**, as a duty that runs every Friday. Without "your call" you get the draft first
-and reply "approved".
+Goes to: **Simone**. She updates the duty’s written instructions. You can undo the edit on the
+employee’s page. If its steps live in code, Danielle gets the change. Use **Team → Duties → Add a
+duty** to set up a new recurring job.
 
 One email can carry several jobs. A numbered list with a build, a question and a call to schedule
 becomes three jobs on three desks, and the reply says who has which.
@@ -62,9 +60,9 @@ becomes three jobs on three desks, and the reply says who has which.
 
 Ask Simone to book or request something from a business (a restaurant, a club, a salon, a venue, an
 appointment) and **give the business's email address in the same email**. Your email is the
-approval: she sends the request as your assistant straight away, signed "Simone, Assistant to Sequoia
-Taylor", from simone@ (you are not copied). She watches for their answer and tells you, in your
-morning email, What I asked for, What they said, and What you need to do, if anything.
+approval. She sends the request on your behalf, signed “Simone, Chief of Staff to Sequoia Taylor”.
+She follows the venue’s reply and tells you in your morning email what she asked for, what they said,
+and what you need to do, if anything.
 
 ```
 To:      simone@sequoiataylor.com
@@ -72,16 +70,14 @@ Subject: Dinner Thursday
 Body:    Book me a table for two Thursday after 8pm: reservations@thebistro.example
 ```
 
-She never guesses an address, never pays, and never gives a card: if they ask for a card or a
-deposit, she tells you it needs you. Anything with money in it, or fund, LP or trading work, comes
-to you as a draft for your Send instead.
+She uses the address you give her. If the business asks for a card or a deposit, she stops that
+part and tells you what the business requested.
 
 ## What happens after you send
 
-1. **Within a minute, a reply from Boss OS** with one line per job: who has it.
-2. **Each job reports back by email** when it is done, or when it needs a decision only you can make.
-3. **Every job you email is tailed.** A separate check on your Mac follows each one to the end,
-   fixes anything that got stuck, and Simone emails you a short report of what happened.
+Simone answers in the original thread when she has a result. If a colleague takes part of the work,
+the reply names who has it. A temporary outage keeps the request queued for another attempt.
+The Tell Simone box and Simone’s page show the result where you asked.
 
 ## How to approve, change or stop
 
@@ -95,8 +91,9 @@ Reply on the same email thread. Short is fine.
 | Retry something that stopped | `try again` |
 | Drop something that stopped | `drop it` |
 
-Any other reply is read as your answer and the work continues with it. A reply always goes back to
-the job it answers; it never starts a new pile.
+Reply to the message that names the job or the decision. Approval and draft replies already in
+flight still reach their original record. If you are continuing an exchange with
+Simone, she reads the earlier messages for context.
 
 When something is waiting on you, the email says what is needed in plain English and the exact reply
 that clears it.

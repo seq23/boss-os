@@ -8,7 +8,7 @@ import { badRequest, conflict } from "../lib/http";
 import { getSetting } from "../lib/settings";
 import { isLane } from "../../../shared/boss/lanes";
 import { classify, KIND_TO_DEPARTMENT, type Classification } from "../intake/classify";
-import { buildEnvelope } from "../intake/envelope";
+import { prepareEnvelope } from "../intake/envelope";
 import { startedBySystem } from "../../../shared/boss/mail/noticeGate.mjs";
 
 /**
@@ -45,7 +45,7 @@ export interface AdmitInput {
   risk?: string | null;
   sensitivity?: string | null;
   /**
-   * `public_model_approved` or `private_model_only`. WHICH MODELS MAY SEE THE INPUT.
+   * Compatibility field for existing work-card readers.
    * Omitted means the classifier decides; see `intake/classify.ts`.
    */
   model_access?: string | null;
@@ -96,28 +96,14 @@ export function overruledGuess(a: {
   return startedBySystem(a.input);
 }
 
-/**
- * THE PRIVACY AXES OF AN OVERRULED GUESS. Pure; the one reading admit and the hourly sweep
- * (routes/approvals.ts) share.
- *
- * 16 Nov 2026: the monthly quality read was released from intake's USER_ONLY guess (15 Nov) and then
- * refused by every seat for an hour at a time: the row still carried the guess's `restricted`
- * sensitivity, and `restricted` asks for a sensitive-routing card (backends/guard.ts
- * `restricted_needs_routing_card`) that nothing raises for work Boss OS started itself. The two axes
- * are treated differently on purpose:
- * - `sensitivity` is RE-DERIVED from the real text (a declared sensitivity still wins, through
- *   classify). The trading word rule's `restricted` was part of the guess being overruled.
- * - `modelAccess` stays TIGHTEN-ONLY: `private_model_only` if either reading says so. It is the
- *   non-liftable guard (router/policy.ts) that keeps private text off every free and training route,
- *   and the real prompt earns it on its own account (fund terms), so nothing private is loosened.
- */
+/** Recompute both fields when a guessed task kind was overruled. */
 export function overruledAxes(
   was: { modelAccess: string | null | undefined },
   redone: { sensitivity: Classification["sensitivity"]; modelAccess: Classification["modelAccess"] },
 ): { sensitivity: Classification["sensitivity"]; modelAccess: Classification["modelAccess"] } {
   return {
     sensitivity: redone.sensitivity,
-    modelAccess: was.modelAccess === "private_model_only" ? "private_model_only" : redone.modelAccess,
+    modelAccess: redone.modelAccess,
   };
 }
 
@@ -153,7 +139,7 @@ export async function suggestOwner(
  * Throws the same `AppError`s the route threw, so the HTTP behaviour is unchanged — they carry
  * their own status codes and are handled by the error middleware wherever they are raised.
  */
-export async function admitTask(env: Env, b: AdmitInput): Promise<AdmitResult> {
+export async function admitTask(env: Env, b: AdmitInput, handoff?: { id: string; researchQuestion?: string; chrome?: boolean }): Promise<AdmitResult> {
   if (!b?.title) throw badRequest("A task needs a title", "Send { title, lane, input }.");
   const lane = isLane(b.lane) ? b.lane : "ops";
   const input = b.input ?? {};
@@ -251,7 +237,7 @@ export async function admitTask(env: Env, b: AdmitInput): Promise<AdmitResult> {
     classification = {
       ...classification,
       intakeKind: brief.kind,
-      modelAccess: byRead.modelAccess === "private_model_only" ? "private_model_only" : classification.modelAccess,
+      modelAccess: classification.modelAccess,
       risk: riskAllows(classification.risk, byRead.risk) ? classification.risk : byRead.risk,
       executionAssignment: byRead.executionAssignment === "USER_ONLY" ? "USER_ONLY" : classification.executionAssignment,
       reason: `${classification.reason} Kind read from her words: ${brief.kind}.`,
@@ -322,7 +308,7 @@ export async function admitTask(env: Env, b: AdmitInput): Promise<AdmitResult> {
   const chromeAsk = !firmScan && !change && input.chrome_job === undefined && !(input.research_page && typeof input.research_page === "object") &&
       input.delivers === undefined && input.backend_id === undefined && input.spec_module === undefined &&
       (employeeHint === null || employeeHint === CHROME_JOB_SEAT) &&
-      chromeJobIn([b.title, input.body as string | undefined].filter(Boolean).join("\n"));
+      (handoff?.chrome ?? chromeJobIn([b.title, input.body as string | undefined].filter(Boolean).join("\n")));
   if (chromeAsk) {
     const ask = String((input.body as string | undefined) ?? b.title).replace(/^\s*research(?:\s+page)?\s*[:\-–—]\s*/i, "");
     Object.assign(input as Record<string, unknown>, {
@@ -350,7 +336,9 @@ export async function admitTask(env: Env, b: AdmitInput): Promise<AdmitResult> {
   const researchAsk = !firmScan && !change && !(input.research_page && typeof input.research_page === "object") &&
       input.delivers === undefined && input.backend_id === undefined && input.spec_module === undefined &&
       (employeeHint === null || employeeHint === RESEARCH_PAGE_SEAT)
-    ? parseResearchPage([b.title, input.body as string | undefined])
+    ? handoff?.researchQuestion
+      ? { question: handoff.researchQuestion.slice(0, 2000) }
+      : parseResearchPage([b.title, input.body as string | undefined])
     : null;
   const researchId = researchAsk ? newId("rpg") : null;
   if (researchAsk && researchId) {
@@ -422,7 +410,7 @@ export async function admitTask(env: Env, b: AdmitInput): Promise<AdmitResult> {
     }
   }
 
-  const id = newId("tsk");
+  const id = handoff?.id ?? newId("tsk");
   const now = Date.now();
   const costMode = b.cost_mode ?? (await getSetting(env.DB, "cost_mode")) ?? "NORMAL";
   const assignment = classification.executionAssignment;
@@ -440,7 +428,8 @@ export async function admitTask(env: Env, b: AdmitInput): Promise<AdmitResult> {
                  assignment === "AI_EXECUTE_WITH_NOTICE";
   const status = queued ? "queued" : "awaiting_approval";
 
-  await env.DB.batch([
+  const { envelope, insert: insertEnvelope } = await prepareEnvelope(env.DB, { taskId: id, lane, employeeId, classification, costMode });
+  const writes = [
     env.DB.prepare(
       `INSERT INTO tasks (id, lane, employee_id, title, input, status, created_at,
                           intake_kind, template_id, execution_assignment, risk, sensitivity,
@@ -461,23 +450,21 @@ export async function admitTask(env: Env, b: AdmitInput): Promise<AdmitResult> {
       ? [env.DB.prepare(`INSERT INTO task_events (id, task_id, ts, event, detail) VALUES (?,?,?,'intake_overruled',?)`)
           .bind(newId("tev"), id, now, JSON.stringify({ reason: "Started by Boss OS: a word in its own text does not park it", was: overruled }))]
       : []),
-  ]);
+  ];
 
   if (firmScan && scanId) {
-    await env.DB
+    writes.push(env.DB
       .prepare(
         `INSERT INTO ask_scans (id, task_id, instruction, find_text, ask_text, state, requested_at, updated_at)
          VALUES (?,?,?,?,?,'queued',?,?)`,
       )
-      .bind(scanId, id, firmScan.raw, firmScan.find, firmScan.ask, now, now)
-      .run();
+      .bind(scanId, id, firmScan.raw, firmScan.find, firmScan.ask, now, now));
   }
 
   if (researchAsk && researchId) {
-    await env.DB
+    writes.push(env.DB
       .prepare(`INSERT INTO research_pages (id, task_id, question, state, requested_at, updated_at) VALUES (?,?,?,'queued',?,?)`)
-      .bind(researchId, id, researchAsk.question, now, now)
-      .run();
+      .bind(researchId, id, researchAsk.question, now, now));
   }
 
   if (change && changeId) {
@@ -489,7 +476,7 @@ export async function admitTask(env: Env, b: AdmitInput): Promise<AdmitResult> {
      */
     const repair = typeof input.mail_id === "string" ? { origin: "owner", repair_kind: null } : repairOriginOf(input);
     const preBy = change.pre_approved_phrase ? (typeof input.from === "string" ? input.from : "console") : null;
-    await env.DB
+    writes.push(env.DB
       .prepare(
         `INSERT INTO repo_changes (id, task_id, mail_id, repo, property_key, drive_folder, drive_url, instruction, phase,
                                    pre_approved_phrase, pre_approved_by, force_phrase, created_at, updated_at, github_repo, origin, repair_kind)
@@ -505,36 +492,27 @@ export async function admitTask(env: Env, b: AdmitInput): Promise<AdmitResult> {
          * is her request and keeps its approval email.
          */
         repair.origin, repair.repair_kind,
-      )
-      .run();
+      ));
     /*
      * R24 (docs/SERVICE_RULES.md): a repo she named by its GitHub address that is not on the grid is
      * REGISTERED here, beside the grid, and the job proceeds. The named exclusions were refused above.
      */
     if (change.registered && change.repo && change.github_repo) {
-      await env.DB
+      writes.push(env.DB
         .prepare(`INSERT INTO boss_repo_registry (name, github_repo, mail_id, registered_at) VALUES (?,?,?,?) ON CONFLICT(name) DO NOTHING`)
-        .bind(change.repo, change.github_repo, typeof input.mail_id === "string" ? input.mail_id : null, now)
-        .run();
+        .bind(change.repo, change.github_repo, typeof input.mail_id === "string" ? input.mail_id : null, now));
     }
     if (change.pre_approved_phrase) {
-      await env.DB.prepare(`INSERT INTO task_events (id, task_id, ts, event, detail) VALUES (?,?,?,'repo_change_pre_approved',?)`)
-        .bind(newId("tev"), id, now, JSON.stringify({ repo_change_id: changeId, phrase: change.pre_approved_phrase, by: preBy, force_phrase: change.force_phrase }))
-        .run();
-      await logEvent(env.DB, { level: "warn", scope: "intake", event: "repo_change_pre_approved", lane, entityId: changeId, detail: { phrase: change.pre_approved_phrase, by: preBy, force_phrase: change.force_phrase, repo: change.repo } });
+      writes.push(env.DB.prepare(`INSERT INTO task_events (id, task_id, ts, event, detail) VALUES (?,?,?,'repo_change_pre_approved',?)`)
+        .bind(newId("tev"), id, now, JSON.stringify({ repo_change_id: changeId, phrase: change.pre_approved_phrase, by: preBy, force_phrase: change.force_phrase })));
     }
   }
 
-  const envelope = await buildEnvelope(env.DB, { taskId: id, lane, employeeId, classification, costMode });
-  await env.DB.prepare(`UPDATE tasks SET envelope_id = ? WHERE id = ?`).bind(envelope.id, id).run();
-
-  if (queued) {
-    const delayMs = b.not_before && b.not_before > now ? b.not_before - now : 0;
-    await env.TASKS.send({ taskId: id, lane }, delayMs ? { delaySeconds: Math.ceil(delayMs / 1000) } : undefined);
-  } else {
+  writes.push(insertEnvelope, env.DB.prepare(`UPDATE tasks SET envelope_id = ? WHERE id = ?`).bind(envelope.id, id));
+  if (!queued) {
     // USER_ONLY, HUMAN_CONTRACTOR, and DEFER surface as a decision, not a run.
     const aprId = newId("apr");
-    await env.DB.batch([
+    writes.push(
       env.DB.prepare(
         `INSERT INTO approvals (id, lane, title, summary, kind, origin_type, origin_id, risk, payload, status, requested_at, expires_at)
          VALUES (?,?,?,?,'manual','tasks',?,?,?,'pending',?,?)`,
@@ -545,7 +523,19 @@ export async function admitTask(env: Env, b: AdmitInput): Promise<AdmitResult> {
         now + 7 * 24 * 60 * 60 * 1000,
       ),
       env.DB.prepare(`UPDATE tasks SET approval_id = ? WHERE id = ?`).bind(aprId, id),
-    ]);
+    );
+  }
+
+  // A Queue retry can find the complete admission. A D1 failure rolls it all back.
+  await env.DB.batch(writes);
+  if (queued) {
+    const delayMs = b.not_before && b.not_before > now ? b.not_before - now : 0;
+    await env.TASKS.send({ taskId: id, lane }, delayMs ? { delaySeconds: Math.ceil(delayMs / 1000) } : undefined);
+  }
+  if (changeId && change?.pre_approved_phrase) {
+    const by = typeof input.from === "string" ? input.from : "console";
+    await logEvent(env.DB, { level: "warn", scope: "intake", event: "repo_change_pre_approved", lane, entityId: changeId,
+      detail: { phrase: change.pre_approved_phrase, by, force_phrase: change.force_phrase, repo: change.repo } });
   }
 
   await audit(env.DB, {

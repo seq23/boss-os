@@ -109,6 +109,11 @@ Owner, 24 Oct 2026. In code in `src/shared/boss/deals/match.mjs` (size, price, a
    replies and deal drafts never say "buyer"; a prospect email never names Anthropic (it alludes:
    `NEVER_NAMED`, `src/shared/boss/lp/plan.mjs`). Pinned by `tests/outboundWords.test.ts`.
 
+## Simone’s role
+
+Simone is Chief of Staff. She runs your day and is in charge of everything Boss OS runs.
+Her standing role is in [her persona](scripts/ops/simone/persona.md).
+
 ## Emails to her
 
 Owner, 23 Oct 2026 (inbox review: nine Boss OS emails in two days, none useful). Enforced in code and
@@ -611,7 +616,9 @@ Owner-approved plan, 8 Nov 2026. Rules in `src/shared/boss/invitations/invitatio
    comes back exactly once (3 days before, or the day after under 3 days away). **An ask counts only when its
    morning email went** (13 Nov 2026, `uncountUnsentAsks`): a card on a morning email that was never sent is
    asked again the next morning.
-5. **A free model reads a personal email's subject and first 800 characters only**; Spry Ventures mail
-   and LP names only a no-training route; none answering → the prose rules. Nothing of a body is stored.
+5. **A free model reads an eligible email's subject and first 800 characters only**, Spry Ventures mail
+   included (nothing in Boss OS is masked, her ruling 24 Nov 2026). A model outage uses the prose rules.
+   No message body is stored. A place she switched Off on Simone's accounts page is not read, and the
+   section says so; the sick-day switch never stops this duty.
 6. **Rule 0**: `OUTPUT n invitations`; an inbox it cannot read is NAMED STOP [INVITES_MAILBOX_UNREAD]:
    a line in her email, the duty marked failed, one fix job a day.

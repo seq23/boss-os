@@ -207,8 +207,8 @@ if ! CLAUDE_LOCK="$(claude_lock_args "$REPO/scripts/ops/kdp-watch-permissions.js
   exit 13
 fi
 SID="$(uuidgen | tr '[:upper:]' '[:lower:]')"
-# shellcheck disable=SC2086  # CLAUDE_LOCK is four words by design; claude_lock_args refuses a path with a space
-"$CLAUDE" -p "$(cat "$PROMPT_FILE")" --model "$MODEL" --session-id "$SID" $CLAUDE_LOCK >> "$RUN_LOG" 2>&1
+read -r -a CLAUDE_ARGS <<< "$CLAUDE_LOCK"
+"$CLAUDE" -p "$(cat "$PROMPT_FILE")" --model "$MODEL" --session-id "$SID" "${CLAUDE_ARGS[@]}" >> "$RUN_LOG" 2>&1
 RC=$?
 say "=== claude exited rc=$RC ==="
 

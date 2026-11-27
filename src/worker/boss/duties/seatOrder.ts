@@ -20,26 +20,9 @@ export function orderSeats(ladder: string[], openaiFirst: boolean): string[] {
 
 export const isOn = (v: string | null | undefined) => v === "on" || v === "true";
 
-/**
- * AN LP OR DEAL-TERMS DRAFT RUNS ON THE CLAUDE SEAT ONLY (owner, Today v4, 31 Oct 2026): never Codex /
- * ChatGPT, never a free or training route, never a cloud rung. A task marks itself with
- * `input.confidential_draft = true` (or `input.draft_kind` "lp_reply" / "deal_terms"); its ladder is cut
- * to Claude's seat, the "OpenAI first" switch cannot reorder it, and the cloud fallback is off. A ladder
- * without Claude's seat becomes EMPTY: the task fails closed, it is never moved to another seat.
- */
-export const CONFIDENTIAL_DRAFT_KINDS = ["lp_reply", "lp_scheduling", "deal_terms"] as const;
-/**
- * OWNER RULING, 4 Nov 2026: an LP reply or scheduling draft is confidential only for an LP who has
- * COMMITTED (`lp_committed: true` on the task, from `committed_at`); a prospect's reply is
- * public-model-approved. Deal terms are always confidential, and so is anything marked so outright.
- */
-export function isConfidentialDraft(input: { confidential_draft?: unknown; draft_kind?: unknown; lp_committed?: unknown } | null | undefined): boolean {
-  const kind = String(input?.draft_kind ?? "");
-  if (input?.confidential_draft === true || kind === "deal_terms") return true;
-  return (kind === "lp_reply" || kind === "lp_scheduling") && input?.lp_committed === true;
-}
-export function confidentialLadder(ladder: string[]): string[] {
-  return ladder.filter((x) => x === CLAUDE_SEAT);
+/** Chrome tasks require the local browser-capable seat. */
+export function chromeLadder(ladder: string[]): string[] {
+  return ladder.filter((seat) => seat === CLAUDE_SEAT);
 }
 
 /*

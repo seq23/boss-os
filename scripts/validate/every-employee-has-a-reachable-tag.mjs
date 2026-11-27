@@ -272,7 +272,7 @@ if (process.argv.includes("--self-test")) {
       .replace("const roster = await activeRoster(env);", 'const roster = await activeRoster(env);\n  const authorised = isOwner(sender, env.BOSS_EXTRA_OWNER_SENDERS ?? "") && dmarc;') ?? null,
   ), true);
   expect("a handler where the TAG grants entry", authorisationIsTheSender(
-    realHandler?.replace('const authorised = isOwner(sender, env.BOSS_EXTRA_OWNER_SENDERS ?? "") && dmarc;', "const authorised = isOwner(sender) || tag === '#monique';") ?? null,
+    realHandler?.replace(/const authorised = [^;]+;/, "const authorised = isOwner(sender) || tag === '#monique';") ?? null,
   ), true);
 
   if (failed) { console.error(`EMPLOYEE TAG SELF-TEST FAILED (${failed})`); process.exit(1); }

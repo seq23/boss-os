@@ -8,6 +8,9 @@
     "PERPLEXITY_API_KEY",
     "OPENROUTER_API_KEY",
     "BOSS_PASSCODE",
+    "BOSS_SIMONE_GOOGLE_CLIENT_ID",
+    "BOSS_SIMONE_GOOGLE_CLIENT_SECRET",
+    "BOSS_SIMONE_PERSONAL_GOOGLE_ACCOUNT",
     "BOSS_EXTRA_OWNER_SENDERS",
     "BOSS_OS_MAIL_KEY",
     "CF_ACCESS_CLIENT_ID",
@@ -21,6 +24,9 @@
     "GITHUB_SEQ23_PAT"
   ],
   "optional_secret_names": [
+    "BOSS_SIMONE_GOOGLE_CLIENT_ID",
+    "BOSS_SIMONE_GOOGLE_CLIENT_SECRET",
+    "BOSS_SIMONE_PERSONAL_GOOGLE_ACCOUNT",
     "BOSS_EXTRA_OWNER_SENDERS"
   ],
   "not_synced": {
@@ -300,6 +306,9 @@
     "WPL_TURNSTILE_SITE_KEY": "westpeek.live's own Turnstile form keys. Not read by the Boss OS Worker (no reference under src/worker or in wrangler.toml, checked 23 Nov 2026)."
   },
   "synced_reasons": {
+    "BOSS_SIMONE_GOOGLE_CLIENT_ID": "OAuth client for connecting Simone’s Google accounts.",
+    "BOSS_SIMONE_GOOGLE_CLIENT_SECRET": "The matching server-side OAuth secret for Simone’s Google account consent.",
+    "BOSS_SIMONE_PERSONAL_GOOGLE_ACCOUNT": "The account bound to Simone’s existing personal Google connector. Used to enforce the same account switch on that connector.",
     "GSC_SERVICE_ACCOUNT_JSON": "Moved from not_synced on 19 Sep 2026. Owner: \"it should never send — the green button should be to create the draft.\" The Worker creates a Gmail DRAFT in her own mailbox on her press (src/worker/boss/wealth/gmailDraft.ts), which needs the gsc-bot service account under the gmail.compose scope she granted the same day. One scope, one endpoint (drafts.create); spry-vc-never-sends.mjs and the-inbox-draft-never-sends.mjs fail the build if a send scope or send endpoint appears on that path. Until this is synced the card prints the NAMED STOP \"the Worker holds no Google key\".",
     "BOSS_OS_SECRET_HANDOFF_KEY": "Added 6 Oct 2026 (docs/SERVICE_RULES.md R3). The AES-256 key the Worker encrypts a key she emails as `SECRET NAME=value` under, until her Mac moves it into the vault. Without it on the Worker the secret door fails closed.",
     "BRAVE_SEARCH_API_KEY": "Added 5 Nov 2026 (owner: Brave Search, the second meeting-research route). Read only by src/worker/effects/braveSearchClient.ts, at most 20 searches a day; without it the route is skipped and research moves to the guest's own pages.",

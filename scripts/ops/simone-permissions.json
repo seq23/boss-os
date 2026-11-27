@@ -1,0 +1,66 @@
+{
+  "permissions": {
+    "defaultMode": "dontAsk",
+    "allow": [
+      "Bash",
+      "WebSearch"
+    ],
+    "deny": [
+      "WebFetch",
+      "Bash(claude:*)",
+      "Bash(ai-run:*)",
+      "Bash(gh:*)",
+      "Bash(wrangler:*)",
+      "Edit(~/.claude/**)",
+      "Edit(~/Brains/**)",
+      "Edit(~/Work/simone/owner-notes.md)",
+      "Edit(~/Work/simone/.claude/**)",
+      "Agent",
+      "Task",
+      "Skill",
+      "SendMessage",
+      "Workflow",
+      "RemoteTrigger",
+      "CronCreate",
+      "CronDelete",
+      "ScheduleWakeup",
+      "mcp__8raise",
+      "mcp__claude-in-chrome",
+      "mcp__claude_ai_8Raise"
+    ]
+  },
+  "sandbox": {
+    "enabled": true,
+    "failIfUnavailable": true,
+    "allowUnsandboxedCommands": false,
+    "autoAllowBashIfSandboxed": true,
+    "enableWeakerNetworkIsolation": false,
+    "excludedCommands": [],
+    "filesystem": {
+      "allowWrite": [
+        "~/Work/simone",
+        "~/.boss-os/simone/runs/__RUN__"
+      ],
+      "denyWrite": [
+        "~/Work/simone/owner-notes.md",
+        "~/Work/simone/.claude"
+      ],
+      "denyRead": [
+        "~/"
+      ],
+      "allowRead": [
+        "~/Work/simone",
+        "~/.boss-os/simone/runs/__RUN__",
+        "~/Brains",
+        "~/.claude/skills",
+        "~/.claude/CLAUDE.md"
+      ]
+    },
+    "network": {
+      "allowedDomains": [],
+      "allowUnixSockets": [
+        "__SOCKET__"
+      ]
+    }
+  }
+}

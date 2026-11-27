@@ -35,6 +35,16 @@ describe("booking platforms only join an identifiable errand", () => {
     expect((await openErrandFor(env as never, `booking@${domain}`, Date.now(), { text: "Dear Alex, please finish this booking." }))?.id).toBe("cmd_mail1");
     expect(await openErrandFor(env as never, `booking@${domain}`, Date.now(), { text: "A different venue needs a card" })).toBeNull();
   });
+  it.each(["Assistant to", "Chief of Staff to"])("can identify a booking from the archived %s signature", async (title) => {
+    await seed("cmd_signed", {
+      spec: { owner_name: null },
+      result: { text: `Thanks,\nSimone\n${title} Alex Example` },
+    });
+    const found = await openErrandFor(env as never, "booking@resy.com", Date.now(), {
+      text: "Dear Alex Example, please confirm your booking.",
+    });
+    expect(found?.id).toBe("cmd_signed");
+  });
   it("refuses lookalike domains, arbitrary senders, expired threads and ambiguous owner matches", async () => {
     await seed();
     expect(await openErrandFor(env as never, "booking@sevenrooms.com.evil.test", Date.now(), { text: CARD })).toBeNull();
@@ -74,6 +84,18 @@ it("archives the full raw errand email and quotes exact words, link and expiry i
   expect(page.body.data.received[0].body).toContain("Extra terms. ".repeat(799));
 });
 
+it("keeps a venue message with forged authentication without changing its booking", async () => {
+  await seed();
+  const { raw, message } = incoming("booking@sevenrooms.com", CARD);
+  message.headers.set("authentication-results", "mx.example.test; dmarc=pass");
+  const held = await handleBossInboundMail(message as never, env as never);
+  expect(held).toMatchObject({ outcome: "ERRAND_UNVERIFIED", reply: null });
+  expect((await getCommand(env as never, "cmd_mail1"))?.state).toBe("sent");
+  const storage = await env.DB.prepare("SELECT object_key FROM boss_inbound_mail WHERE id = ?").bind(held.mailId)
+    .first<{ object_key: string }>();
+  expect(await (await env.VAULT.get(storage!.object_key))?.text()).toBe(raw);
+});
+
 it("keeps HTML-only card URLs that used to disappear when tags were stripped", async () => {
   await seed();
   const { message } = incoming("booking@sevenrooms.com", '<p>The Lantern Room: Credit Card required. Only charged for a no-show.</p><a href="https://secure.sevenrooms.com/card/fake-token?x=1&amp;y=2">Give your card</a><p>Expires October 28 at noon.</p>', "Card required", true);
@@ -97,7 +119,7 @@ it.each([false, true])("a card never confirms a pending or previously confirmed 
 it.each(["N: I'll handle it", "1: I'll handle it", "dismiss", "I'm handling it myself"])("%s stands down without contacting the venue", async (text) => {
   await seed("cmd_self", { state: "follow_up", result: { pending: { text: "A queued answer", purpose: "answer" }, decide_open: true } });
   await env.DB.prepare(`UPDATE boss_commands SET notice = '{}', notice_state = 'due' WHERE id = 'cmd_self'`).run();
-  const answer = await commandFromMail(env as never, { mailId: "owner_reply", sender: "owner@example.test", subject: "Re: errand", text, refs: ["cmd_self"], now: NOW });
+  const answer = await commandFromMail(env as never, { text, refs: ["cmd_self"], now: NOW });
   expect(answer?.reply).toContain("Owner is handling this herself");
   expect((await getCommand(env as never, "cmd_self"))!.state).toBe("done");
   const work = await macWork(env as never);

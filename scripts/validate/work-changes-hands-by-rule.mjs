@@ -300,7 +300,7 @@ export function noThirdWayToMoveWork(files) {
   for (const [rel, source] of files) {
     scanned += 1;
     if (allowed.has(rel)) continue;
-    if (/UPDATE\s+tasks\s+SET[^;]{0,200}employee_id\s*=/is.test(source)) {
+    if (/UPDATE\s+tasks\s+SET\b(?:(?!\bWHERE\b|[;`])[\s\S])*?\bemployee_id\s*=/i.test(source)) {
       bad.push(`${rel} reassigns tasks.employee_id outside the two audited paths, so work can move with no record.`);
     }
   }
@@ -386,6 +386,9 @@ if (process.argv.includes("--self-test")) {
   expect("a third file quietly reassigning work", noThirdWayToMoveWork([
     ["src/worker/boss/somewhere/else.ts", "await db.prepare(`UPDATE tasks SET employee_id = ? WHERE id = ?`).run();"],
   ]), true);
+  expect("employee_id used as a row filter is not an assignment", noThirdWayToMoveWork([
+    ["src/worker/boss/somewhere/else.ts", "db.prepare(`UPDATE tasks SET status = ? WHERE employee_id = ?`)"],
+  ]), false);
   expect("a scan that scanned nothing", noThirdWayToMoveWork([]), true);
   expect("an intake that could not be read", theCodeDoesIt(null, apiSource, mergeSource), true);
 

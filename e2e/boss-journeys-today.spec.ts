@@ -283,7 +283,7 @@ for (const vp of [PHONE, LAPTOP]) {
       if (vp.name === "phone") await expectNoSidewaysScroll(page);
     });
 
-    test("✎ Tell Simone floats on every tab, opens a sheet, hands off the job, and closes back where she was", async ({ page }) => {
+    test("✎ Tell Simone floats on every tab, opens a sheet, takes the message, and closes back where she was", async ({ page }) => {
       await unlock(page);
       await tab(page, "Capital");
       const fab = page.getByTestId("tell-simone-fab");
@@ -294,7 +294,7 @@ for (const vp of [PHONE, LAPTOP]) {
       await expect(box.locator("textarea")).toBeFocused();
       await box.locator("textarea").fill("What are the three cheapest ways to host a static site with a custom domain? E2E");
       await box.getByRole("button", { name: "Send to Simone" }).click();
-      await expect(box).toContainText(/✓ Simone has it: 1 job/, { timeout: 15_000 });
+      await expect(box).toContainText("Simone has your message", { timeout: 15_000 });
       await page.getByTestId("tell-sheet").getByTestId("sheet-close").click();
       await expect(page.getByTestId("tell-sheet")).toHaveCount(0);
       await expect(page.getByRole("navigation", { name: "Sections" }).getByRole("button", { name: "Capital", exact: true })).toHaveAttribute("aria-current", "page");

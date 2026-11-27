@@ -33,9 +33,44 @@ describe("the Worker's scheduled() handler", () => {
       expect(hourly, `the hourly tick no longer calls ${call}`).toContain(call);
     }
     expect((hourly.match(/ctx\.waitUntil\(/g) ?? []).length).toBe(lanes.length);
-    // The */5 tick: the mail alarm, the cloud clock, and the work mover (duty clock then drain): one waitUntil each.
+    // The */5 tick: the mail alarm, the cloud clock, Simone's cloud fallback, and the work mover (duty clock
+    // then drain): one waitUntil each.
     expect(fiveStart).toBeGreaterThan(-1);
-    expect((five.match(/ctx\.waitUntil\(/g) ?? []).length).toBe(3);
+    expect(five).toContain("routeSimoneWhenMacIsDown(");
+    expect((five.match(/ctx\.waitUntil\(/g) ?? []).length).toBe(4);
+  });
+
+  /*
+   * The owner's stop switch ("stop everything") on the reworked tick (#586 merged into #582, 27 Nov 2026).
+   * Only the "no Got it yet" alarm runs while she has stopped operations, so she still hears that mail
+   * went unanswered; nothing that moves work (cloud clock, Simone's fallback, duty clock, drain) and no
+   * hourly lane starts before the stop is read.
+   */
+  it("reads the owner's stop before anything that moves work, on both ticks", () => {
+    const guard = "if (!(await operatingStopped(env.WP_OS_DB))) {";
+    const fiveStop = five.indexOf(guard);
+    expect(fiveStop, "the five-minute tick no longer reads the owner's stop").toBeGreaterThan(-1);
+    expect(five.indexOf("runMailAlarm(")).toBeLessThan(fiveStop);
+    // The block the guard opens, brace-matched, so a call moved after its closing brace is caught.
+    let depth = 0;
+    let close = -1;
+    for (let i = fiveStop + guard.length - 1; i < five.length; i++) {
+      if (five[i] === "{") depth++;
+      if (five[i] === "}" && --depth === 0) { close = i; break; }
+    }
+    const held = five.slice(fiveStop, close);
+    expect(close, "the owner's stop block never closes").toBeGreaterThan(fiveStop);
+    for (const call of ["runBossCloudClock(", "routeSimoneWhenMacIsDown(", "runBossDutyClock(", "drainBossTasks("]) {
+      expect(held, `${call} runs outside the owner's stop`).toContain(call);
+    }
+    expect(five.slice(close), "work runs after the owner's stop block").not.toMatch(/ctx\.waitUntil\(/);
+    const hourlyStop = hourly.indexOf("if (await operatingStopped(env.WP_OS_DB)) return;");
+    expect(hourlyStop, "the hourly tick no longer reads the owner's stop").toBeGreaterThan(-1);
+    expect(hourly.indexOf("ctx.waitUntil(")).toBeGreaterThan(hourlyStop);
+    // The drain that a request triggers checks the stop itself (bossMount drainBossTasks).
+    const mount = readFileSync("src/worker/bossMount.ts", "utf8");
+    const drain = mount.slice(mount.indexOf("export async function drainBossTasks("));
+    expect(drain.slice(0, drain.indexOf("\n}\n"))).toMatch(/if \(await operatingStopped\(db\)\) return \{ ran: 0, failed: 0, dead: 0 \};/);
   });
 
   /*

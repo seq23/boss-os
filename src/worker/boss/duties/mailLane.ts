@@ -30,8 +30,8 @@ import { clockWords, cleanText } from "../../../shared/boss/mail/plain.mjs";
  *
  * ─── Below the sender refusal, always ─────────────────────────────────────
  *
- * Both entry points are called from the authorised region of `handleBossInboundMail`, after
- * `if (!authorised) return`. A draft that a stranger could approve by knowing a token would make
+ * The reply handler is called from the authorised region of `handleBossInboundMail`.
+ * A draft that a stranger could approve by knowing a token would make
  * the schedule a door anyone could open; the validator pins the call's position.
  */
 
@@ -214,56 +214,12 @@ export async function fileDraft(env: Env, input: {
   };
 }
 
-// ─── The mail door: a request ────────────────────────────────────────────────
-
 export interface MailLaneResult {
   draftId: string | null;
   note: string;
-  outcome: "DUTY_DRAFTED" | "DUTY_REFUSED" | "DUTY_CREATED" | "DUTY_ANSWERED" | "DUTY_NOT_UNDERSTOOD";
+  outcome: "DUTY_ANSWERED";
   employeeId: string | null;
 }
-
-/**
- * `#<seat> new duty …` — read, drafted, filed, and answered with the draft. Null when the verb is
- * absent, so the ordinary path is untouched. When the verb is present the message STOPS here: a
- * duty request is the whole job, and handing the same words to a model afterwards is how a
- * paragraph about "handling a superior" lands in her approval queue.
- */
-export async function newDutyFromMail(env: Env, input: {
-  roster: LaneSeat[]; subject: string; text: string; mailId: string; messageId: string | null; now: number; sender: string;
-}): Promise<MailLaneResult | null> {
-  const req = dutyRequestIn(input.subject, input.text, input.roster);
-  if (!req) return null;
-  if ("error" in req) {
-    return {
-      draftId: null, employeeId: null, outcome: "DUTY_NOT_UNDERSTOOD",
-      note: `${req.error} Nothing was drafted. The seats are ${input.roster.map((s) => `#${s.name.toLowerCase()}`).join(", ")}; write \`#<seat> new duty\` and the duty in your words.`,
-    };
-  }
-  if (!req.phrase || req.phrase.trim().length < 8) {
-    return {
-      draftId: null, employeeId: req.seat.id, outcome: "DUTY_NOT_UNDERSTOOD",
-      note: `You asked for a new duty for ${req.seat.name} and did not say what it is. Nothing was drafted. Reply with the duty in your words — "every friday, check the LP replies sheet and tell me who went quiet" is enough.`,
-    };
-  }
-
-  const filed = await fileDraft(env, {
-    employeeId: req.seat.id, phrase: req.phrase, door: "mail", mailId: input.mailId, messageId: input.messageId,
-    tag: req.tag, routedBy: req.routedBy, preApproved: req.preApproved, sender: input.sender, now: input.now,
-    signer: req.routedBy ?? req.seat,
-  });
-  await audit(env.DB, {
-    actor: "boss", lane: "ops", entityType: "duty_draft", entityId: filed.draftId,
-    action: filed.state === "created" ? "created_pre_approved" : filed.state, detail: { employee_id: req.seat.id, mail_id: input.mailId, tag: req.tag, pre_approved: req.preApproved },
-  });
-  return {
-    draftId: filed.draftId, employeeId: req.seat.id,
-    outcome: filed.state === "created" ? "DUTY_CREATED" : filed.state === "refused" ? "DUTY_REFUSED" : "DUTY_DRAFTED",
-    note: filed.letter,
-  };
-}
-
-// ─── The mail door: her reply ────────────────────────────────────────────────
 
 interface DraftRow {
   id: string; employee_id: string; routed_by: string | null; tag: string | null; phrase: string; state: string;

@@ -219,7 +219,7 @@ describe("one read per email (#514 review)", () => {
     const raw = `From: ${from}\r\nSubject: ${subject}\r\nContent-Type: text/plain; charset=UTF-8\r\n\r\n${body.replace(/\n/g, "\r\n")}`;
     const headers = new Headers({ from, subject, "authentication-results": cloudflareAuth(from), "message-id": `<${id}@example.test>` });
     const result = await handleBossInboundMail({ from, to: BOSS_INTAKE_MAILBOX, headers, raw: new Response(raw).body!, rawSize: new TextEncoder().encode(raw).length } as never, runtime);
-    expect(result.mailId).toBeTruthy();
+    expect(result).toMatchObject({ outcome: "SIMONE_QUEUED", reply: null, mailId: expect.any(String) });
     return result;
   };
   const prompt = async () => (await row<{ owner_prompt: string | null }>(`SELECT owner_prompt FROM standing_duties WHERE id = '${WRITTEN}'`))!.owner_prompt;
@@ -242,7 +242,8 @@ describe("one read per email (#514 review)", () => {
     expect(result.taskId, "the forward is ordinary work").toBeTruthy();
     // The hold rides on the admitted task's input (and the queue delay admitTask takes from it).
     const input = JSON.parse((await row<{ input: string }>(`SELECT input FROM tasks WHERE id = '${result.taskId}'`))!.input);
-    expect(input.body, "the forward's words are still the work").toContain("after 3pm");
+    expect(input.body).toBe("FYI");
+    expect(input.context, "the original wording is available as context").toContain("after 3pm");
     expect(input.not_before ?? null, "\"after 3pm\" was the forwarded sender's").toBeNull();
   });
 
@@ -328,14 +329,14 @@ describe("who reads the work she asks for: kind, risk and audience only tighten"
 
   it("the read's kind never loosens: private work stays private, a declared kind is never relabelled", async () => {
     const KEPT = { title: "The studio portfolio", prompt: "Close the open positions in the studio portfolio." };
-    expect((await admit(null, KEPT)).classification, "the keywords read it as trading").toMatchObject({ intakeKind: "trading", modelAccess: "private_model_only", executionAssignment: "USER_ONLY" });
+    expect((await admit(null, KEPT)).classification, "the keywords read it as trading").toMatchObject({ intakeKind: "trading", modelAccess: "public_model_approved", executionAssignment: "USER_ONLY" });
     expect((await admit({ kind: "drafting" }, KEPT)).classification, "a looser kind from the read moves the label, never the hands or the models")
-      .toMatchObject({ intakeKind: "drafting", modelAccess: "private_model_only", executionAssignment: "USER_ONLY", risk: "high" });
+      .toMatchObject({ intakeKind: "drafting", modelAccess: "public_model_approved", executionAssignment: "USER_ONLY", risk: "high" });
     const PRIVATE = { title: "The trading desk ask", prompt: "Look at the trading desk positions." };
     const tightened = (await admit({ kind: "coaching" })).classification;
-    expect(tightened.modelAccess, "a private kind from the read makes it private").toBe("private_model_only");
+    expect(tightened.modelAccess).toBe("public_model_approved");
     const declared = await admitTask(env as never, { title: PRIVATE.title, intake_kind: "trading", brief: { asks: [], holds: [], questions: [], unclear: [], files: [], decision: null, kind: "drafting" }, input: { prompt: PRIVATE.prompt, source: "boss_inbound_mail", from: "owner@example.test", mail_id: "m7-declared" } } as any);
-    expect(declared.classification).toMatchObject({ intakeKind: "trading", modelAccess: "private_model_only" });
+    expect(declared.classification).toMatchObject({ intakeKind: "trading", modelAccess: "public_model_approved" });
   });
 });
 

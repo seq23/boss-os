@@ -46,6 +46,7 @@
 
 import type { D1Database } from "@cloudflare/workers-types";
 import { newId } from "../lib/id";
+import { routeIsBilled } from "../backends/guard";
 import { logEvent } from "../lib/log";
 import { startOfDay } from "../../../shared/boss/schedule/clock.mjs";
 
@@ -455,6 +456,24 @@ export async function freeMemory(db: D1Database, taskKind: string | null | undef
     // An unreadable log is no memory: every candidate is tried in the shipped order.
   }
   return out;
+}
+
+/** Models whose actual outcomes justify a free route for a reviewed draft. */
+export async function reviewedFreeDrafts(db: D1Database, kind: string) {
+  const [history, memory, models] = await Promise.all([
+    experienceFor(db, kind),
+    freeMemory(db, kind),
+    db.prepare(`SELECT m.id, m.slug, m.display_name, m.provider_id FROM models m
+      JOIN providers p ON p.id = m.provider_id
+      WHERE m.enabled = 1 AND p.enabled = 1 AND m.provider_id IN ('prv_workers_ai', 'prv_gemini')`)
+      .all<{ id: string; slug: string; display_name: string; provider_id: string }>(),
+  ]);
+  return models.results.flatMap((model) => {
+    const record = history.get(model.id);
+    const backend = model.provider_id === "prv_workers_ai" ? "bk_workers_ai" : "bk_gemini";
+    return record?.verdict === "proven" && !memory.failedTwice.has(model.id) && !routeIsBilled(backend, model.slug)
+      ? [{ model, record }] : [];
+  }).sort((a, b) => b.record.successShare - a.record.successShare || b.record.runs - a.record.runs || a.model.id.localeCompare(b.model.id));
 }
 
 /*

@@ -1,7 +1,8 @@
 import { env } from "cloudflare:test";
 import { describe, expect, it, beforeEach, afterEach } from "vitest";
 import { handleBossInboundMail } from "../../src/worker/boss/intake/inboundMail";
-import { layReply, questionsAskedIn } from "../../src/worker/boss/intake/mailRefs";
+import { claimSimone, SIMONE_LEASE_MS } from "../../src/worker/boss/agents/simone";
+import { routeSimoneWhenMacIsDown } from "../../src/worker/boss/agents/simoneFallback";
 import { quotaUntil, QUOTA_KIND, BRIEF_SCHEMA, briefPrompt } from "../../src/worker/boss/intake/firstRead";
 import { freeDayStartedAt } from "../../src/worker/boss/router/experience";
 import { firstRead, freeRungs, parseBrief, readBrief, setFirstReadRungs, unclearLines, FIRST_READ_DAILY_CAP, FIRST_READ_SERVICE, type Rung } from "../../src/worker/boss/intake/firstRead";
@@ -19,8 +20,8 @@ import { herWords } from "../../src/shared/boss/intake/messageBody.mjs";
  *     cap, never paid), then the rules; never a Claude or OpenAI route;
  *   · a prospect's name in her email reaches the free reader (her ruling: Boss OS ignores the
  *     private-email rules);
- *   · every unclear item is asked, numbered, in the ONE Got it of the email that raised it; a new
- *     email asks again; a redelivery asks nothing; more than five become best readings, all listed;
+ *   · fresh chief mail preserves every word for Simone’s agent session; a redelivery has one run,
+ *     and an outage keeps the request queued without a speculative reply;
  *   · a reply on a job she took over in a session is added to it and answered "being handled".
  */
 
@@ -234,55 +235,54 @@ describe("the ladder is free, and only free", () => {
   });
 });
 
-describe("every unclear item is asked, numbered, in the Got it of the email that raised it", () => {
-  const unclearAnswer = (items: string[]) => () => answer({ asks: ["Plan the dinner."], unclear: items.map((w) => ({ words: w, question: "what exactly do you mean", best: "the obvious one" })) });
-
-  it("3 items: one reply, 3 numbered questions quoting her; the brief is on the job; build goes on", async () => {
+describe("fresh chief mail keeps the request for Simone to resolve in one session", () => {
+  it("preserves all three constraints, deduplicates redelivery, and keeps a later request separate", async () => {
     const items = ["Use the usual place.", "Invite the regulars.", "Keep it to the normal budget."];
-    setFirstReadRungs([rung("free-a", unclearAnswer(items))]);
-    const res = await handleBossInboundMail(mail({ subject: "#simone dinner", body: `Plan the dinner. ${items.join(" ")}`, messageId: "<fr-3@mail.gmail.com>" }), env as never);
-    expect(res.taskId, "the work is filed meanwhile, not held for the answers").toBeTruthy();
-    const reply = res.reply!;
-    expect(reply).toContain("3 things I need from you (reply by number");
-    items.forEach((w, i) => expect(reply).toContain(`  ${i + 1}. You wrote "${w}": what exactly do you mean?`));
-    const input = JSON.parse((await row<any>(`SELECT input FROM tasks WHERE id = ?`, res.taskId))!.input);
-    expect(input.first_read.unclear.map((u: any) => u.words)).toEqual(items);
-    expect(input.first_read.reader).toBe("free-a");
-    expect(input.body).toContain("ask every unclear item, numbered, in one email; never merge, drop or guess");
+    const body = `Plan the dinner. ${items.join(" ")}`;
+    const input = { subject: "#simone dinner", body, messageId: "<fr-3@mail.gmail.com>" };
+    const prompts: string[] = [];
+    setFirstReadRungs([rung("free-a", ask(body), prompts)]);
+    const res = await handleBossInboundMail(mail(input), env);
+    expect(res).toMatchObject({ outcome: "SIMONE_QUEUED", reply: null });
+    const call = await claimSimone(env);
+    expect(call).toMatchObject({ id: res.taskId, message: { body: `${input.subject}\n\n${body}` } });
 
-    // Line 1 says she has something to answer, never "Nothing to do" above her questions.
-    expect(questionsAskedIn(reply)).toBe(3);
-    const first = layReply({ text: reply, subject: "Re: dinner", signer: "Simone" }).text.split("\n").find((l) => l.trim())!;
-    expect(first).toContain("3 things for you to answer below");
-    expect(first).not.toContain("Nothing to do");
-    expect(first).not.toContain("Nothing for you to do");
+    const again = await handleBossInboundMail(mail(input), env);
+    expect(again).toMatchObject({ outcome: "DUPLICATE", reply: null, taskId: null });
 
-    // The same email delivered again: no second email.
-    const again = await handleBossInboundMail(mail({ subject: "#simone dinner", body: `Plan the dinner. ${items.join(" ")}`, messageId: "<fr-3@mail.gmail.com>" }), env as never);
-    expect(again.outcome).toBe("DUPLICATE");
-    expect(again.reply).toBeNull();
-
-    // A new email of hers with new items: its own Got it asks them.
-    setFirstReadRungs([rung("free-a", unclearAnswer(["Bring the usual wine."]))]);
-    const next = await handleBossInboundMail(mail({ subject: "#simone wine", body: "Plan the dinner. Bring the usual wine.", messageId: "<fr-4@mail.gmail.com>" }), env as never);
-    expect(next.reply).toContain('One thing I need from you');
-    expect(next.reply).toContain('1. You wrote "Bring the usual wine."');
+    const nextBody = "Plan the dinner. Bring the usual wine.";
+    const next = await handleBossInboundMail(mail({ subject: "#simone wine", body: nextBody, messageId: "<fr-4@mail.gmail.com>" }), env);
+    expect(next).toMatchObject({ outcome: "SIMONE_QUEUED", reply: null });
+    expect(next.taskId).not.toBe(res.taskId);
+    const nextCall = await claimSimone(env);
+    expect(nextCall).toMatchObject({ id: next.taskId, message: { body: `#simone wine\n\n${nextBody}` } });
+    expect(prompts).toEqual([]);
+    expect(await all("SELECT task_id FROM boss_task_notices WHERE task_id IN (?, ?)", res.taskId, next.taskId)).toEqual([]);
   });
 
-  it("6 items: said plainly that it reads several ways, a best reading for each, all 6 listed", async () => {
+  it("passes all six uncertain details to Simone in the original order", async () => {
     const items = ["Use the usual place.", "Invite the regulars.", "Keep it to the normal budget.", "Book the usual time.", "Order the usual menu.", "Send the usual invite."];
-    setFirstReadRungs([rung("free-a", unclearAnswer(items))]);
-    const res = await handleBossInboundMail(mail({ subject: "#simone dinner six", body: `Plan the dinner. ${items.join(" ")}`, messageId: "<fr-6@mail.gmail.com>" }), env as never);
-    expect(res.reply).toContain("Your email reads several ways in 6 places");
-    items.forEach((w, i) => expect(res.reply).toContain(`  ${i + 1}. "${w}": I read it as the obvious one.`));
-    expect(unclearLines(items.map((w) => ({ words: w, missing: "m", best: null }))).length).toBe(7);
+    const body = `Plan the dinner. ${items.join(" ")}`;
+    const res = await handleBossInboundMail(mail({ subject: "#simone dinner six", body, messageId: "<fr-6@mail.gmail.com>" }), env);
+    expect(res).toMatchObject({ outcome: "SIMONE_QUEUED", reply: null });
+    expect(await claimSimone(env)).toMatchObject({ id: res.taskId, message: { body: `#simone dinner six\n\n${body}` } });
+    expect(unclearLines(items.map((words) => ({ words, missing: "m", best: null })))).toHaveLength(7);
   });
 
-  it("no free model answers: no first read, the rules read it, and the Got it still lists her asks", async () => {
-    setFirstReadRungs([]);
-    const res = await handleBossInboundMail(mail({ subject: "#simone venues", body: "Find three venues in Memphis for forty people.", messageId: "<fr-none@mail.gmail.com>" }), env as never);
-    expect(res.taskId).toBeTruthy();
-    expect(res.reply).toContain('"Find three venues in Memphis for forty people."');
+  it("when both free models fail, keeps the original request queued and records no reply", async () => {
+    const body = "Find three venues in Memphis for forty people.";
+    const res = await handleBossInboundMail(mail({ subject: "#simone venues", body, messageId: "<fr-none@mail.gmail.com>" }), env);
+    expect(res).toMatchObject({ outcome: "SIMONE_QUEUED", reply: null });
+    const attempts: string[] = [];
+    const offline = (id: string, workersAi = false): Rung => ({
+      id, workersAi, call: async () => { attempts.push(id); throw new Error("Fixture provider offline"); },
+    });
+    const now = Date.now() + SIMONE_LEASE_MS;
+    expect(await routeSimoneWhenMacIsDown(env, now, [offline("prv_workers_ai", true), offline("prv_gemini")])).toBe("MODEL_UNAVAILABLE");
+    expect(attempts).toEqual(["prv_workers_ai", "prv_gemini"]);
+    expect(await row("SELECT status, output FROM tasks WHERE id = ?", res.taskId)).toEqual({ status: "queued", output: null });
+    expect(await all("SELECT task_id FROM boss_task_notices WHERE task_id = ?", res.taskId)).toEqual([]);
+    expect(await claimSimone(env, now + 1)).toMatchObject({ id: res.taskId, message: { body: `#simone venues\n\n${body}` } });
   });
 });
 
@@ -299,7 +299,9 @@ describe("a reply on a job she took over in a session", () => {
     expect((await all<any>(`SELECT id FROM tasks`)).length, "no new job").toBe(before);
     const input = JSON.parse((await row<any>(`SELECT input FROM tasks WHERE id = ?`, opened.taskId))!.input);
     expect(input.body).toContain("Use the green logo.");
-    // And the queue leaves it alone.
+    // Neither the Simone claimant nor the shared task consumer can take her job.
+    const { claimSimone } = await import("../../src/worker/boss/agents/simone");
+    expect(await claimSimone(env)).toBeNull();
     await handleTask(env as never, { taskId: opened.taskId!, lane: "ops" } as never);
     expect((await all<any>(`SELECT event FROM task_events WHERE task_id = ? AND event = 'skipped_taken_over'`, opened.taskId)).length).toBe(1);
   });
@@ -346,15 +348,17 @@ describe("every free rung gets a turn (15 Nov 2026 production dry run: Workers A
   });
 });
 
-describe("the Got it's line 1 says plainly whether she must do anything", () => {
-  it("a triaged email with nothing unclear: \"Got it. Nothing for you to do: <seat> has started.\"", async () => {
-    const ask = "Schedule a call with the designer next Tuesday";
-    setFirstReadRungs([rung("free-a", answer({ asks: [ask, { words: "Ava Example (VP, Growth): Best use: research, website build, outreach.", from: "pasted" }] }))]);
-    const res = await handleBossInboundMail(mail({ subject: "designer", body: `${ask}\n\nAva Example (VP, Growth): Best use: research, website build, outreach.`, messageId: "<l1-a@mail.gmail.com>" }), env as never);
-    expect(res.outcome).toBe("TRIAGED");
-    const first = layReply({ text: res.reply!, subject: "Re: designer", signer: "Simone" }).text.split("\n")[0];
-    expect(first).toBe("Got it. Nothing for you to do: Simone has started.");
-    const tasks = await all<any>(`SELECT employee_id FROM tasks WHERE json_extract(input, '$.mail_id') = ?`, res.mailId);
-    expect(tasks.map((t: any) => t.employee_id), "the pasted line opened no job of its own").toEqual(["emp_chief"]);
-  });
+it("gives a designer request to Simone without opening another job for forwarded text", async () => {
+  const ask = "Schedule a call with the designer next Tuesday";
+  const pasted = "Ava Example (VP, Growth): Best use: research, website build, outreach.";
+  const res = await handleBossInboundMail(mail({
+    subject: "designer",
+    body: `${ask}\n\n---------- Forwarded message ---------\nFrom: Sample <sample@example.test>\nSubject: Contact\n\n${pasted}`,
+    messageId: "<l1-a@mail.gmail.com>",
+  }), env);
+  expect(res).toMatchObject({ outcome: "SIMONE_QUEUED", reply: null });
+  const call = await claimSimone(env);
+  expect(call).toMatchObject({ id: res.taskId, message: { body: `designer\n\n${ask}`, context: expect.stringContaining(pasted) } });
+  expect(await all("SELECT employee_id FROM tasks WHERE json_extract(input, '$.mail_id') = ?", res.mailId)).toEqual([{ employee_id: "emp_chief" }]);
+  expect(await all("SELECT task_id FROM boss_task_notices WHERE task_id = ?", res.taskId)).toEqual([]);
 });

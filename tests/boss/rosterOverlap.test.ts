@@ -16,8 +16,7 @@ import { apiJson } from "./helpers";
  * ones asserting that real, distinct employees who happen to sit together do NOT trip it. A
  * detector that flags everything is as useless as one that flags nothing.
  *
- * The charters below are the real ones, verbatim from migration 0325 (charters match the work). Paraphrasing them would
- * make this suite a test of my paraphrase rather than of the roster the owner actually has.
+ * Simone’s charter comes from the migrated roster. The others are verbatim from migration 0325.
  */
 
 /*
@@ -30,8 +29,11 @@ import { apiJson } from "./helpers";
  * source, the other reports on the world refusing to state anything unsourced. Both are about
  * evidence, and they are still two jobs. That pair is now the test that matters.
  */
-const SIMONE =
-  "You are the front door. Read everything she sends (boss@, simone@, the Tell Simone box), split it into asks and hand each one to the employee, template or duty that already fits; never invent a new employee when one already covers the work. Send her one morning email at 6:40 Central and fold the team's notices into it. Run her errands and bookings, signed as her assistant, with a \"still want to go?\" note 28 hours before. Prepare each call the evening before. Put the approved Kindle books up. Draft the recommendation, never the decision; bring anything that costs money up to the checkout and stop.";
+async function simoneCharter(): Promise<string> {
+  const simone = await env.DB.prepare("SELECT charter FROM employees WHERE id = 'emp_chief'").first<{ charter: string }>();
+  expect(simone?.charter).toBeTruthy();
+  return simone!.charter;
+}
 const KENDRA =
   "Keep the system running and rebuildable. Check every property is up each morning, keep the Mac's disk from filling, and scout tools worth knowing about. Decide where work runs - honouring privacy class, benchmark status, risk ceiling, cost mode and budget - and record every decision including the refusals. Verify snapshots, run restore drills, and make sure tomorrow resumes instead of starting over.";
 const ZORA =
@@ -61,14 +63,13 @@ describe("charter overlap — what 'covers the same ground' actually means", () 
       expect(charterSimilarity(ZORA, CAMILLE)).toBeLessThan(SAME_GROUND);
     });
 
-    it("does NOT call Simone and Kendra the same job", () => {
-      // Both speak about routing work. One routes it to a PERSON, the other to a MODEL.
-      expect(charterSimilarity(SIMONE, KENDRA)).toBeLessThan(SAME_GROUND);
+    it("does NOT call Simone and Kendra the same job", async () => {
+      expect(charterSimilarity(await simoneCharter(), KENDRA)).toBeLessThan(SAME_GROUND);
     });
 
-    it("reports nothing at all for the live roster", () => {
+    it("reports nothing at all for the roster fixture", async () => {
       const roster = [
-        member({ name: "Simone", charter: SIMONE, department: "Office of the Principal" }),
+        member({ name: "Simone", charter: await simoneCharter(), department: "Office of the Principal" }),
         member({ name: "Camille", charter: CAMILLE, department: "Research" }),
         member({ name: "Danielle", charter: DANIELLE, department: "Engineering" }),
         member({ name: "Zora", charter: ZORA, department: "Records" }),

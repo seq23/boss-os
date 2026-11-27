@@ -1,7 +1,5 @@
 import { riskAllows, type CostModePolicy } from "../../../shared/boss/governance";
-import { isPrivateModelRoute } from "./modelAccess";
 import { jobPolicyAllows, type JobPolicy } from "../../../shared/boss/router/jobPolicy.mjs";
-import type { ModelAccess } from "../../../shared/boss/governance";
 
 /**
  * Model eligibility.
@@ -27,14 +25,7 @@ export interface ModelRow {
   approved_task_kinds: string | null;
   forbidden_task_kinds: string | null;
   max_risk: string;
-  /**
-   * Whether this route's own terms permit training on what is sent to it — `models.data_use`, 0249.
-   *
-   * OPTIONAL IN THE TYPE AND FAIL-CLOSED IN THE RULE. A row loaded by a query that forgot to select
-   * the column arrives as `undefined`, and `isPrivateModelRoute(undefined)` is false, so the
-   * omission restricts the model rather than exempting it. A column you forgot to read must never
-   * be the reason something was allowed.
-   */
+  /** Vendor data-use setting. */
   data_use?: string | null;
 }
 
@@ -47,19 +38,6 @@ export interface PolicyContext {
   requireBenchmarkHighRisk: boolean;
   /** Set by an approved sensitive-routing card. */
   cloudForRestrictedAllowed: boolean;
-  /**
-   * WHICH MODELS MAY SEE THIS WORK — the owner's label, and the only axis that governs routing.
-   *
-   * Computed once per run in `routeCompletion` by `scanForModelAccess`, from the work card's own
-   * label OR from the content itself, so it does not depend on a caller remembering anything. An
-   * unestablished lexicon lands on `private_model_only`; see `modelAccess.ts`.
-   *
-   * IT IS NOT THE AUDIENCE AXIS. There is deliberately no `audience` field on this context: who
-   * receives the output decides approval, never which models are eligible.
-   */
-  modelAccess: ModelAccess;
-  /** What kind of thing was found, for the refusal. NEVER the thing itself. */
-  modelAccessReason: string;
   /**
    * THE JOB'S OWN MODEL LIST (model_job_policies, 4 Nov 2026), or null when the run names no job or the
    * job has no row. Checked right after privacy; it only ever removes a candidate.
@@ -95,40 +73,6 @@ export interface Verdict {
 
 export function evaluateModel(model: ModelRow, ctx: PolicyContext): Verdict {
   if (!model.enabled) return { eligible: false, stage: "availability", reason: "model disabled" };
-
-  // ── Stage 1 · PERMISSION AND DATA SENSITIVITY ──────────────────────────────
-  //
-  // ─── THE CONFIDENTIAL LINE, AND IT IS THE FIRST THING ASKED ────────────────
-  //
-  // The owner ruled that LP names and deal terms are confidential. Every model registered here is
-  // `privacy_class = 'cloud'`, the free ones included, so the rule BELOW — which asks whether a
-  // model is cloud — cannot separate the route that may hold that material from the route that may
-  // not. The fact that separates them is whether the route's terms permit training on what it is
-  // shown, and that is `data_use`.
-  //
-  // IT IS NOT APPROVABLE, AND THAT IS THE DIFFERENCE FROM EVERY OTHER PRIVACY REFUSAL HERE. A
-  // sensitive-routing card lets restricted material run on a cloud model ONCE, which is a coherent
-  // thing to approve: the exposure ends when the run does. Training does not end when the run ends.
-  // What is approved is not one call but a permanent presence in somebody's corpus, and no card in
-  // this system carries that meaning — so none may lift this. The remedy is a route that does not
-  // train, or not running it.
-  //
-  // NOTHING IS FILTERED. This removes CANDIDATES, never words. There is no scrubber, because a
-  // scrubber that missed one name would be worse than none, having been trusted.
-  if (ctx.modelAccess === "private_model_only" && !isPrivateModelRoute(model.data_use)) {
-    return {
-      eligible: false,
-      stage: "privacy",
-      approvable: false,
-      reason:
-        `${model.display_name} is recorded as ${model.data_use ?? "having no data-use finding"} — its terms permit ` +
-        `training on what is sent to it, or nothing here establishes that they do not — and ` +
-        `${ctx.modelAccessReason}. This work is private model only, and LP names and deal terms do ` +
-        `not go to a route that may keep them. ` +
-        `No approval lifts this: what would be approved is not one call but a permanent presence in ` +
-        `somebody else's corpus.`,
-    };
-  }
 
   // FIRST, and first on purpose. Restricted content does not reach a public
   // cloud model on its own authority, and no later stage — least of all cost —

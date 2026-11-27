@@ -5,12 +5,11 @@
  *
  *   1. READ, read-only. New mail since the last run in every inbox Boss OS already reads through the
  *      service account (West Peek, Time-2-Read, and Spry Ventures — read-only, never written), narrowed
- *      by a Gmail search, plus the invites still "awaiting reply" on her Workspace calendars. Headers,
+ *      by a Gmail search, plus the invites still "awaiting reply" on her Workspace calendars; a place the
+ *      owner switched Off on Simone's accounts page is left out and the section says so. Headers,
  *      the .ics part and the first 800 characters only; nothing of the body is stored.
- *   2. SORT, with the pure rules (src/shared/boss/invitations/invitations.mjs). A personal email is read
- *      by a FREE model (subject + 800 characters); Spry Ventures mail and anything naming a committed LP
- *      reach only a route that does not train (private_model_only; the router's own LP scan raises the
- *      rest). No model answering → the prose rules decide; nothing is guessed.
+ *   2. SORT. The free model reads eligible subjects and the first 800 characters, Spry Ventures mail
+ *      included (nothing in Boss OS is masked, her ruling 24 Nov 2026). When no model answers the rules decide.
  *   3. ONE ROW PER INVITATION (owner_invitations), deduped by calendar UID or sender + day + title.
  *   4. THE CARDS: the "invitations" morning section, so each card is in Simone's email and on Today.
  *
@@ -21,6 +20,7 @@
  * RULE 0: `OUTPUT n invitations` every run; an inbox it cannot read is NAMED STOP
  * [INVITES_MAILBOX_UNREAD] — a plain line in her email, the duty marked failed, one fix job a day.
  */
+import { simoneAccountSwitchedOn } from "../agents/simoneAccounts";
 import { putMorningSection } from "../mail/morningSection";
 import type { Env } from "../env";
 import { newId } from "../lib/id";
@@ -46,15 +46,14 @@ const MAX_MODEL_READS = 15;
 // ─── The model seam (tests swap in a fake; production asks the router for a free route) ─────────
 
 export type ModelReading = { invitation: boolean; title?: string | null; date?: string | null; time?: string | null; where?: string | null; asks_answer?: boolean } | null;
-type Reader = (env: Env, input: { subject: string; excerpt: string; today: string; privateOnly: boolean }) => Promise<ModelReading>;
+type Reader = (env: Env, input: { subject: string; excerpt: string; today: string }) => Promise<ModelReading>;
 
 const routerReader: Reader = async (env, input) => {
   const { routeCompletion } = await import("../router");
   try {
     const r = await routeCompletion(env, {
       routeId: "rt_ops_default", lane: "ops", intakeKind: "drafting", risk: "low", employeeId: "emp_chief",
-      sensitivity: input.privateOnly ? "restricted" : "private", freeOnly: true,
-      modelAccess: input.privateOnly ? "private_model_only" : null,
+      freeOnly: true,
       messages: [
         { role: "system", content: 'You decide whether an email personally invites the reader to an event (a dinner, party, gathering, coffee, celebration). Answer with JSON only: {"invitation": true|false, "title": "short event name", "date": "YYYY-MM-DD" or null, "time": "HH:MM" 24-hour Central or null, "where": "place" or null, "asks_answer": true|false}. A newsletter, a webinar sent to a list, a ticket receipt, a sales pitch or a meeting someone already set is false.' },
         { role: "user", content: `Today is ${input.today}.\nSubject: ${input.subject}\n\n${input.excerpt}` },
@@ -83,7 +82,7 @@ function pemToDer(pem: string): ArrayBuffer {
   return out.buffer;
 }
 /** A gmail.readonly token for ONE named inbox from the list. No write scope exists in this file. */
-async function readToken(creds: ServiceAccount, inbox: string, fetchImpl: typeof fetch): Promise<string> {
+export async function readToken(creds: ServiceAccount, inbox: string, fetchImpl: typeof fetch): Promise<string> {
   if (!INVITE_INBOXES.some((b) => b.address === inbox)) throw new Error(`${inbox} is not an inbox Boss OS reads`);
   const iat = Math.floor(Date.now() / 1000);
   const header = b64url(JSON.stringify({ alg: "RS256", typ: "JWT" }));
@@ -216,12 +215,20 @@ export async function runInvitations(env: Env, now = Date.now(), fetchImpl: type
   const read: Record<string, number> = {};
   const skipped: Record<string, number> = {};
   const skip = (why: string) => { skipped[why] = (skipped[why] ?? 0) + 1; };
+  // A place the owner switched Off on Simone's accounts page: not read, and said so in the section.
+  const off = new Set<string>();
+  const switchedOn = async (box: (typeof INVITE_INBOXES)[number], what: string) => {
+    if (await simoneAccountSwitchedOn(env, box.address)) return true;
+    off.add(what);
+    return false;
+  };
   let found = 0;
   let modelReads = 0;
 
   // 1a. Her calendars: invites still waiting for her answer.
   for (const box of INVITE_INBOXES.filter((b) => b.writable)) {
     if (!creds) break;
+    if (!await switchedOn(box, box.label.replace(/^your /, "").replace(/ inbox$/, " calendar"))) continue;
     const r = await awaitingReply(env, box.address, now, now + 60 * 86_400_000);
     if (!r.ok) { unread.push(`${box.label.replace(/^your /, "")} calendar (${r.why})`); continue; }
     for (const e of r.events) {
@@ -236,13 +243,15 @@ export async function runInvitations(env: Env, now = Date.now(), fetchImpl: type
 
   // 1b. Every inbox, new mail since the last run.
   for (const box of INVITE_INBOXES) {
+    if (!await switchedOn(box, box.label.replace(/^your /, ""))) continue;
     const key = `invitations_read_through:${box.address}`;
     const since = Number(await getSetting(env.DB, key)) || now - FIRST_LOOKBACK_DAYS * 86_400_000;
     try {
       if (!creds) throw new Error("the Google key is not on the Worker");
       const token = await readToken(creds, box.address, fetchImpl);
       const get = async (path: string) => {
-        const res = await fetchImpl(`${GMAIL}${path}`, { headers: { authorization: `Bearer ${token}` } });
+        if (!await simoneAccountSwitchedOn(env, box.address)) throw new Error("switched off on Simone’s accounts page during the read");
+        const res = await fetchImpl(`${GMAIL}${path}`, { headers: { authorization: `Bearer ${token}` }, redirect: "manual" });
         if (!res.ok) throw new Error(`Gmail answered ${res.status}`);
         return res.json() as Promise<any>;
       };
@@ -255,7 +264,7 @@ export async function runInvitations(env: Env, now = Date.now(), fetchImpl: type
         const personal = !msg.ics && !platformOf(msg.fromAddress) && !notInvitation(msg);
         if (personal && modelReads < MAX_MODEL_READS) {
           modelReads++;
-          model = await readerImpl(env, { subject: msg.subject, excerpt: msg.excerpt, today, privateOnly: !box.writable });
+          model = await readerImpl(env, { subject: msg.subject, excerpt: msg.excerpt, today });
         }
         const r = readInvitation(msg, { now, model });
         if (!r.invitation) { skip(r.why ?? "not an invitation"); continue; }
@@ -300,6 +309,9 @@ export async function runInvitations(env: Env, now = Date.now(), fetchImpl: type
   const lines = unread.length
     ? [`⚠ Simone could not read ${unread.length === 1 ? "one place" : `${unread.length} places`} for invitations this morning (${unread.map((u) => u.replace(/\s*\(.*\)$/, "")).join(", ")}), so an invitation there may be missing. The team is fixing it.`]
     : [];
+  if (off.size) {
+    lines.push(`Simone did not look for invitations in ${[...off].join(", ")}: you switched ${off.size === 1 ? "it" : "them"} Off on her accounts page.`);
+  }
   const obj = { section: SECTION, at: new Date(now).toISOString(), title: "Invitations", decide, rows: [], lines };
   const problems = await putMorningSection(env.DB, { section: SECTION, job: "duty_invitations", day: today, obj, now });
   if (problems.length) throw new Error(`NAMED STOP [INVITES_SECTION_REFUSED] ${problems.join("; ")}`);
