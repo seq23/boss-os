@@ -52,7 +52,12 @@ describe("the briefing duty, due now", () => {
     await tick("*/5 * * * *");
     const duty = await row<any>(`SELECT next_due_at, last_run_at FROM standing_duties WHERE id = 'duty_exec_intel'`);
     expect(duty.last_run_at, "the five-minute tick did not materialise the due duty").toBeGreaterThanOrEqual(t0 - 1000);
-    expect(duty.next_due_at).toBeGreaterThan(t0 + 12 * H);
+    // Advanced to the NEXT 04:00 Central slot, whatever time of day the suite runs (27 Nov 2026: the old
+    // "more than 12 hours on" failed every afternoon after 16:00 Central, when the next 04:00 is closer).
+    expect(duty.next_due_at).toBeGreaterThan(t0);
+    expect(duty.next_due_at).toBeLessThanOrEqual(t0 + 25 * H);
+    const central = new Intl.DateTimeFormat("en-US", { timeZone: "America/Chicago", hour: "2-digit", minute: "2-digit", hourCycle: "h23" }).format(duty.next_due_at);
+    expect(central).toBe("04:00");
 
     const run = await row<any>(
       `SELECT r.backend_id, r.status, r.claimed_at, r.task_id FROM backend_runs r JOIN tasks t ON t.id = r.task_id
