@@ -43,6 +43,36 @@ describe("every accepted Mac email reaches history", () => {
     expect(await postErrandMail(payload, fetcher, { key: "fake-key", commandId: "cmd_fixture" })).toEqual({ ok: true, id: "accepted-fixture" });
     expect(sent.find((r) => r.url.endsWith("/mail/sent"))?.body).toMatchObject({ command_id: "cmd_fixture", text: "Please hold a table.", in_reply_to: "<venue@example.test>" });
   });
+  it("recovers an errand's late Message-ID and retries its archive without resending", async () => {
+    const payload = errandMail({ to: "venue@example.test", subject: "A table", text: "Please hold a table." });
+    const first = transport();
+    const metadataUrl = "https://api.resend.com/emails/accepted-fixture";
+    const failingMetadata = vi.fn(async (url: Parameters<typeof fetch>[0], init?: RequestInit) =>
+      String(url) === metadataUrl ? new Response(null, { status: 503 }) : first.fetcher(url, init));
+    expect(await postErrandMail(payload, failingMetadata, { key: "fake-key", commandId: "cmd_fixture" }))
+      .toEqual({ ok: true, id: "accepted-fixture" });
+    expect(first.sent.find((r) => r.url.endsWith("/mail/sent"))?.body).toMatchObject({ message_id: "accepted-fixture" });
+    expect(readdirSync(dir)).toHaveLength(1);
+
+    const missing = transport();
+    await flushSentMail(async (url, init) => String(url) === metadataUrl
+      ? Response.json({ message_id: "accepted-fixture" }) : missing.fetcher(url, init), dir, { errandKey: "fake-key" });
+    expect(missing.sent.filter((r) => r.url.endsWith("/mail/sent"))).toEqual([]);
+    expect(readdirSync(dir)).toHaveLength(1);
+
+    const broken = transport({ refuseArchive: true });
+    const retained = await flushSentMail(async (url, init) => String(url) === metadataUrl
+      ? Response.json({ message_id: "<late@example.test>" }) : broken.fetcher(url, init), dir, { errandKey: "fake-key" });
+    expect(retained).toBe(false);
+    expect(readdirSync(dir)).toHaveLength(1);
+    const restored = transport();
+    expect(await flushSentMail(restored.fetcher, dir, { errandKey: "fake-key" })).toBe(true);
+    expect(restored.sent).toEqual([expect.objectContaining({ url: expect.stringMatching(/\/mail\/sent$/), body: expect.objectContaining({
+      provider_id: "accepted-fixture", message_id: "<late@example.test>", command_id: "cmd_fixture", text: payload.text,
+    }) })]);
+    expect([first, missing, broken, restored].flatMap((t) => t.sent).filter((r) => r.url === "https://api.resend.com/emails")).toHaveLength(1);
+    expect(readdirSync(dir)).toEqual([]);
+  });
   it("keeps a durable private copy through an archive outage; retry saves it without resending", async () => {
     const broken = transport({ refuseArchive: true });
     const payload = employeeMail(sender, { to: "owner@example.test", subject: "Your update", text: "Here is the whole update.", owner: { layout: "note", why: "Your weekly update" } });

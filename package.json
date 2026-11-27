@@ -6,7 +6,7 @@
     "node": ">=24",
     "npm": ">=11"
   },
-  "description": "Boss OS \u2014 Sequoia's own operating system (boss.sequoiataylor.com).",
+  "description": "Boss OS — Sequoia's own operating system (boss.sequoiataylor.com).",
   "type": "module",
   "scripts": {
     "backup:local": "node scripts/backup/backup.mjs",
@@ -271,6 +271,7 @@
   },
   "dependencies": {
     "@cloudflare/puppeteer": "^1.3.0",
+    "@modelcontextprotocol/sdk": "1.32.2",
     "hono": "^4.6.14",
     "postal-mime": "4.2.0",
     "react": "^18.3.1",

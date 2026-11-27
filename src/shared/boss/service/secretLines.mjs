@@ -16,6 +16,15 @@ export const SECRET_REDACTED = "[secret redacted]";
 /** The Worker secret that encrypts a hand-off. Vendor-prefixed; never a reserved name. */
 export const SECRET_HANDOFF_KEY_NAME = "BOSS_OS_SECRET_HANDOFF_KEY";
 
+/** Detect an exact runtime credential in plain text or a serialized model request. */
+export function containsCredential(text, env) {
+  return Object.entries(env).some(([name, value]) =>
+    /(?:PASSCODE|PASSWORD|SECRET|TOKEN|API_KEY|MAIL_KEY|SERVICE_ROLE_KEY)$/.test(name) &&
+    typeof value === "string" && value.length >= 8 &&
+    (text.includes(value) || text.includes(JSON.stringify(value).slice(1, -1))),
+  );
+}
+
 /** Names no email may set: what a process, a loader or her seat reads for itself, and this door's own key. */
 export const RESERVED_SECRET_NAMES = new Set([
   "ANTHROPIC_API_KEY", "ANTHROPIC_BASE_URL", "ANTHROPIC_AUTH_TOKEN", "PATH", "HOME", "SHELL", "USER",

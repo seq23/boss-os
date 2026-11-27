@@ -1,6 +1,6 @@
 import type { Env } from "../env";
-import { newId } from "../lib/id";
-import { audit } from "../lib/audit";
+import { newId, sha256Hex } from "../lib/id";
+import { audit, auditOfPrevious } from "../lib/audit";
 import { getSetting, setSetting } from "../lib/settings";
 import { notFound } from "../lib/http";
 import { dayIdInZone, wallClock } from "../../../shared/boss/timezone";
@@ -46,15 +46,28 @@ export function listEntry(b: BrainRow, now = Date.now()) {
 }
 
 /** Write the whole document and its revision in one batch. */
-export async function saveBrain(env: Env, asked: string, body: string, by: string, note: string, now = Date.now()) {
+export async function saveBrain(env: Env, asked: string, body: string, by: string, note: string, now = Date.now(),
+  expected?: { body: string; revision: string; mailId: string }) {
   const { slug } = await oneBrain(env, asked);
-  const id = newId("brv");
-  await env.DB.batch([
-    env.DB.prepare(`UPDATE brains SET body_md = ?, updated_at = ?, updated_by = ? WHERE slug = ?`).bind(body, now, by, slug),
-    env.DB.prepare(`INSERT INTO brain_revisions (id, slug, body_md, changed_at, changed_by, note) VALUES (?,?,?,?,?,?)`)
-      .bind(id, slug, body, now, by, note),
+  const id = expected?.revision ?? newId("brv");
+  const [written] = await env.DB.batch([
+    env.DB.prepare(`UPDATE brains SET body_md = ?, updated_at = ?, updated_by = ? WHERE slug = ?
+      AND (? IS NULL OR (body_md = ? AND NOT EXISTS (SELECT 1 FROM brain_revisions WHERE id = ?)))`)
+      .bind(body, now, by, slug, expected?.body ?? null, expected?.body ?? null, id),
+    env.DB.prepare(`INSERT INTO brain_revisions (id, slug, body_md, changed_at, changed_by, note)
+      SELECT ?, ?, ?, ?, ?, ? WHERE changes() = 1`).bind(id, slug, body, now, by, note),
+    auditOfPrevious(env.DB, {
+      actor: by, lane: "ops", entityType: "brain", entityId: slug, action: "brain_edited", detail: { revision: id, note },
+    }, "revisions", { onlyIfChanged: true }),
+    ...(expected ? [auditOfPrevious(env.DB, {
+      actor: "owner", lane: "ops", entityType: "inbound_mail", entityId: expected.mailId,
+      action: "brain_edited_by_email", detail: { slugs: [slug], revision: id },
+    }, "edits", { onlyIfChanged: true })] : []),
   ]);
-  await audit(env.DB, { actor: by, lane: "ops", entityType: "brain", entityId: slug, action: "brain_edited", detail: { revision: id, note } });
+  if (!written?.meta.changes) {
+    if (expected && await env.DB.prepare(`SELECT id FROM brain_revisions WHERE id = ? AND slug = ?`).bind(id, slug).first()) return id;
+    throw new Error("Brain changed while the edit was being saved");
+  }
   return id;
 }
 
@@ -112,11 +125,11 @@ export async function brainEditsFromMail(env: Env, text: string, mailId: string,
     const brain = await oneBrain(env, slug);
     let md = brain.body_md;
     for (const e of list) md = applyEdit(md, e, today);
-    await saveBrain(env, slug, md, "Sequoia", "by email", now);
+    const revision = `brv_${(await sha256Hex(JSON.stringify([mailId, slug, text]))).slice(0, 32)}`;
+    await saveBrain(env, slug, md, "Sequoia", "by email", now, { body: brain.body_md, revision, mailId });
     const what = list.map((e) => e.op === "set_number" ? `${e.metric} is now ${e.value}` : e.op === "add" ? `added to ${e.section}` : `${e.section} now reads as you wrote it`);
     said.push(`${shortName(brain)} brain: ${what.join(", ")}. It now has ${plural(missingCount(md), "gap")} to fill.`);
   }
-  await audit(env.DB, { actor: "owner", lane: "ops", entityType: "inbound_mail", entityId: mailId, action: "brain_edited_by_email", detail: { slugs: [...bySlug.keys()] } });
   return { note: ["Done. I updated the brain:", ...said].join("\n"), edits };
 }
 

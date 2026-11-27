@@ -1,3 +1,5 @@
+import { fileSimoneMessage } from "../agents/simone";
+import { readSimoneText } from "./simone";
 import { Hono } from "hono";
 import type { Env, Vars } from "../env";
 import { newId } from "../lib/id";
@@ -283,7 +285,7 @@ intake.get("/workloads", async (c) => {
  *
  * ─── AND THE ROW SAYS WHICH IT WAS ──────────────────────────────────────────
  *
- * `x-boss-intake-origin: console` makes the handler record "typed into Boss OS from her own
+ * `{ via: "console" }` (an argument, never a header a sender could write) makes the handler record "typed into Boss OS from her own
  * authenticated session, not received over SMTP" on the arrival row and in the audit trail. The one
  * thing this must never do is leave a row that looks like a DMARC-verified delivery that never
  * happened, in the table whose entire purpose is saying what was actually proven.
@@ -299,22 +301,16 @@ intake.post("/mail", async (c) => {
   const from = BOSS_INTAKE_SENDERS[0]!;
   const raw = `From: ${from}\r\nTo: ${BOSS_INTAKE_MAILBOX}\r\nSubject: ${subject}\r\n\r\n${body}`;
   const result = await handleBossInboundMail({
+    console: true,
     from,
     to: BOSS_INTAKE_MAILBOX,
     headers: new Headers({
       from,
       subject,
-      "x-boss-intake-origin": "console",
-      /*
-       * The authentication that actually happened, named as what it is. The owner was verified by
-       * the session gate in front of this route, not by Cloudflare's DMARC evaluation, and the
-       * string says so rather than impersonating a delivery.
-       */
-      "authentication-results": "boss-os-console; dmarc=pass (owner session, not SMTP)",
     }),
     raw: new Response(raw).body!,
     rawSize: new TextEncoder().encode(raw).length,
-  }, c.env);
+  }, c.env, { via: "console" });
 
   return ok(c, result, 201);
 });
@@ -323,8 +319,8 @@ intake.post("/mail", async (c) => {
  * `POST /api/intake/mail/dry-run` — READ A KEPT EMAIL, WRITE NOTHING (15 Nov 2026).
  *
  * `{ mail_id }` reads the email kept for that arrival row from R2; `{ raw }` reads a message posted
- * whole; `rung` (optional) walks only the free rung whose id contains it. Returns what the mailbox would read (her words, every file, voice note and Drive link), who
- * would get the work, and the Got it as it would be sent. Writes nothing and sends nothing
+ * whole; `rung` (optional) walks only the free rung whose id contains it. Returns the intake queue and a diagnostic
+ * read of the request and attachments. Writes nothing and sends nothing
  * (intake/dryRun.ts). Same authorisation as `/mail`: the session gate in front of `/api/*`.
  */
 intake.post("/mail/dry-run", async (c) => {
@@ -346,40 +342,10 @@ intake.post("/mail/dry-run", async (c) => {
   return ok(c, { object_key: key, ...(await dryReadMessage(c.env, raw, { rung: typeof b?.rung === "string" ? b.rung : null })) });
 });
 
-/**
- * `POST /api/intake/simone` — THE "TELL SIMONE" BOX ON TODAY (owner, 26 Oct 2026).
- *
- * "Same as emailing simone@sequoiataylor.com", and it is: the text becomes a message to simone@
- * from her own address and goes through `handleBossInboundMail`, the one intake. Simone splits it
- * into its asks and hands each to the seat that can do it, the jobs carry `source:
- * boss_inbound_mail` so the tail follows them like any emailed job, and the answer is the same
- * per-job handoff the reply email is built from. No routing here; there is nothing to drift.
- * `tests/boss/tellSimone.test.ts` sends the same text both ways and requires the same jobs.
- *
- * No subject: the box has none, and an email with none is read the same way (the ask is the title).
- * Same authorisation as `/mail` above: the session gate in front of `/api/*`, sender fixed to hers.
- */
+// Tell Simone uses the same task and result as her employee page.
 intake.post("/simone", async (c) => {
-  const b = await c.req.json<{ text?: string }>().catch(() => null);
-  const text = String(b?.text ?? "");
-  if (!text.trim()) {
-    throw badRequest("Nothing to hand over", "Type the task, question or duty first, the way you would write it in an email.");
-  }
-  const from = BOSS_INTAKE_SENDERS[0]!;
-  const raw = `From: ${from}\r\nTo: ${SIMONE_MAILBOX}\r\nSubject: \r\n\r\n${text}`;
-  const result = await handleBossInboundMail({
-    from,
-    to: SIMONE_MAILBOX,
-    headers: new Headers({
-      from,
-      subject: "",
-      "x-boss-intake-origin": "console",
-      "authentication-results": "boss-os-console; dmarc=pass (owner session, not SMTP)",
-    }),
-    raw: new Response(raw).body!,
-    rawSize: new TextEncoder().encode(raw).length,
-  }, c.env);
-  return ok(c, { mailId: result.mailId, outcome: result.outcome, jobs: result.jobs ?? [], reply: result.reply }, 201);
+  const body = readSimoneText(await c.req.json<{ text?: string }>().catch(() => null));
+  return ok(c, { taskId: await fileSimoneMessage(c.env, { source: "tell_simone", subject: "Tell Simone", body }) }, 201);
 });
 
 /**
@@ -452,6 +418,7 @@ intake.post("/questions/:id/answer", async (c) => {
   const subject = /^\s*re\s*:/i.test(q.subject ?? "") ? String(q.subject) : `Re: ${q.subject ?? ""}`.trim();
   const raw = `From: ${from}\r\nTo: ${BOSS_INTAKE_MAILBOX}\r\nSubject: ${subject}\r\nIn-Reply-To: ${inReplyTo}\r\n\r\n${answer}`;
   const result = await handleBossInboundMail({
+    console: true,
     from,
     to: BOSS_INTAKE_MAILBOX,
     headers: new Headers({
@@ -459,12 +426,10 @@ intake.post("/questions/:id/answer", async (c) => {
       subject,
       "in-reply-to": inReplyTo,
       references: inReplyTo,
-      "x-boss-intake-origin": "console",
-      "authentication-results": "boss-os-console; dmarc=pass (owner session, not SMTP)",
     }),
     raw: new Response(raw).body!,
     rawSize: new TextEncoder().encode(raw).length,
-  }, c.env);
+  }, c.env, { via: "console" });
 
   const closed = await c.env.DB
     .prepare(`SELECT answered_at FROM boss_inbound_mail WHERE id = ?`).bind(id)

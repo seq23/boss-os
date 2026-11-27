@@ -13,7 +13,8 @@
  * while the two are being reconciled, and every Boss route keeps the path its own tests use.
  */
 import type { Env } from "./env";
-import bossApp, { runScheduled as runBossNightly, runDuties as runBossDuties, runReaper as runBossReaper, runOutreach as runBossOutreach, runOpenLoops as runBossOpenLoops, runEightraise as runBossEightraise, runKendra as runBossKendra } from "./boss/index";
+import bossApp, { runScheduled as runBossNightly, runDuties as runBossDuties, runDutyClock as runBossDutyClock, runReaper as runBossReaper, runOutreach as runBossOutreach, runOpenLoops as runBossOpenLoops, runEightraise as runBossEightraise, runKendra as runBossKendra } from "./boss/index";
+import { OPERATIONS_ENABLED, operatingStopped } from "./boss/lib/operatingStop";
 import type { Env as BossEnv, TaskMessage } from "./boss/env";
 import { handleTask, handleDeadLetter } from "./boss/queue/consumer";
 
@@ -101,6 +102,9 @@ export function toBossEnv(env: Env): BossEnv {
     GSC_SERVICE_ACCOUNT_JSON: env.GSC_SERVICE_ACCOUNT_JSON,
     // R3: the secret door's key. Omitted here, the door would be declared and fail closed forever.
     BOSS_OS_SECRET_HANDOFF_KEY: env.BOSS_OS_SECRET_HANDOFF_KEY,
+    BOSS_SIMONE_GOOGLE_CLIENT_ID: env.BOSS_SIMONE_GOOGLE_CLIENT_ID,
+    BOSS_SIMONE_GOOGLE_CLIENT_SECRET: env.BOSS_SIMONE_GOOGLE_CLIENT_SECRET,
+    BOSS_SIMONE_PERSONAL_GOOGLE_ACCOUNT: env.BOSS_SIMONE_PERSONAL_GOOGLE_ACCOUNT,
     /*
      * THE TWO FRONTIER KEYS (26 Oct 2026). Set on the Worker since 17 Sep and never passed through
      * here, so Boss OS's Anthropic and OpenAI backends were "enabled" with no key they could reach,
@@ -227,6 +231,7 @@ export async function drainBossTasks(
 ): Promise<{ ran: number; failed: number; dead: number; reaped?: number }> {
   const bossEnv = toBossEnv(env);
   const db = env.WP_OS_DB;
+  if (await operatingStopped(db)) return { ran: 0, failed: 0, dead: 0 };
   const reaped = await reapOrphanedRuns(bossEnv, db, now.getTime());
   /*
    * ─── A HUNT IS NOT A DRAFTING JOB, AND THE MODEL MUST NOT EAT IT ──────────
@@ -285,7 +290,7 @@ export async function drainBossTasks(
      * zero rows changed and moves on.
      */
     const claimed = await db
-      .prepare(`UPDATE boss_task_queue SET state = 'running' WHERE id = ? AND state = 'pending'`)
+      .prepare(`UPDATE boss_task_queue SET state = 'running' WHERE id = ? AND state = 'pending' AND ${OPERATIONS_ENABLED}`)
       .bind(row.id)
       .run();
     if (!claimed.meta || claimed.meta.changes === 0) continue;
@@ -323,4 +328,4 @@ export async function drainBossTasks(
   return { ran, failed, dead, ...(reaped ? { reaped } : {}) };
 }
 
-export { runBossNightly, runBossDuties, runBossReaper, runBossOutreach, runBossOpenLoops, runBossEightraise, runBossKendra };
+export { runBossNightly, runBossDuties, runBossDutyClock, runBossReaper, runBossOutreach, runBossOpenLoops, runBossEightraise, runBossKendra };

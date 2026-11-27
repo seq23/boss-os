@@ -1,6 +1,14 @@
 import { env } from "cloudflare:test";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { handleTask } from "../../src/worker/boss/queue/consumer";
+import { claimSimone, fileSimoneMessage } from "../../src/worker/boss/agents/simone";
+import { simoneTool } from "../../src/worker/boss/agents/simoneTools";
+import { storeOperatingReport } from "../../src/worker/boss/agents/simoneOperations";
+import { dayIdInZone } from "../../src/shared/boss/timezone";
+import { buildEnvelope } from "../../src/worker/boss/intake/envelope";
+import { classify } from "../../src/worker/boss/intake/classify";
+import { recordOutcome } from "../../src/worker/boss/router/experience";
+import { GEMINI_HOST } from "../../src/worker/boss/router/backends";
 import { routeCompletion } from "../../src/worker/boss/router";
 import { routeCounts, routeCountsLine } from "../../src/worker/boss/router/routeCounts";
 import { runCapabilityCadence } from "../../src/worker/boss/routes/capability";
@@ -27,11 +35,8 @@ beforeEach(async () => { await seats(); });
 afterEach(async () => { restore?.(); restore = null; await seats(); });
 
 describe("the table: class × tier, and nothing names a model", () => {
-  it("is her grid, and the free tier is on no private row", () => {
-    expect(ROUTE_TABLE.public).toEqual({ hard: ["claude", "codex"], clear_brief: ["codex", "claude"], short: ["free", "codex", "claude"] });
-    expect(ROUTE_TABLE.private).toEqual({ hard: ["claude"], clear_brief: ["claude", "codex"], short: ["claude", "codex"] });
-    for (const routes of Object.values(ROUTE_TABLE.private)) expect(routes).not.toContain("free");
-    expect(routeOrder({ jobClass: "hard", privateWork: true }).end).toBe("wait_for_claude");
+  it("routes by required ability without a content lane", () => {
+    expect(ROUTE_TABLE).toEqual({ hard: ["claude", "codex"], clear_brief: ["codex", "claude"], short: ["free", "codex", "claude"] });
     expect(JSON.stringify(ROUTE_TABLE)).not.toMatch(/opus|sonnet|haiku|gpt|gemini|llama/i);
   });
 
@@ -45,12 +50,12 @@ describe("the table: class × tier, and nothing names a model", () => {
     expect(jobClassOf({ intakeKind: "recurring_duty", delivers: "executive_reports" })).toBe("hard");
     expect(jobClassOf({ intakeKind: "research", delivers: "executive_reports" })).toBe("hard");
     expect(jobClassOf({ intakeKind: "research", delivers: "tool_suggestions" })).toBe("short");
-    for (const flag of ["repair", "repoChange", "confidentialDraft", "chromeJob"]) expect(jobClassOf({ intakeKind: "research", [flag]: true })).toBe("hard");
+    for (const flag of ["repair", "repoChange", "chromeJob"]) expect(jobClassOf({ intakeKind: "research", [flag]: true })).toBe("hard");
     // The free tier is for short work only: a public job with no class never falls to it.
-    expect(afterCodexLimit({ sensitivity: "public" })).toBe("claude_seat");
-    expect(afterCodexLimit({ sensitivity: "public", jobClass: "clear_brief" })).toBe("claude_seat");
-    expect(afterCodexLimit({ sensitivity: "public", jobClass: "short" })).toBe("free_rung");
-    expect(afterCodexLimit({ sensitivity: "public", jobClass: "short", confidential: true })).toBe("claude_seat");
+    expect(afterCodexLimit()).toBe("claude_seat");
+    expect(afterCodexLimit({ jobClass: "clear_brief" })).toBe("claude_seat");
+    expect(afterCodexLimit({ jobClass: "short" })).toBe("free_rung");
+    expect(afterCodexLimit({ jobClass: jobClassOf({ intakeKind: "research", repoChange: true }) })).toBe("claude_seat");
   });
 
   it("a brain edit: recording is short, interpreting (or not saying which) is hard", () => {
@@ -60,96 +65,15 @@ describe("the table: class × tier, and nothing names a model", () => {
     expect(jobClassFor("brain.record")).toBe("short");
     expect(jobClassFor("brain.interpret")).toBe("hard");
     expect(jobClassFor("brain.write")).toBe("hard");
-    // Privacy on top: a private recording still has no free route.
-    expect(routeOrder({ jobClass: jobClassFor("brain.record"), privateWork: true }).routes).toEqual(["claude", "codex"]);
   });
 
   it("a demoted tier is dropped only while a stronger one is left", () => {
     expect(routeOrder({ jobClass: "clear_brief", demoted: ["codex"] }).routes).toEqual(["claude"]);
     expect(routeOrder({ jobClass: "short", demoted: ["codex"] }).routes).toEqual(["free", "claude"]);
-    expect(routeOrder({ jobClass: "hard", privateWork: true, demoted: ["claude"] }).routes).toEqual(["claude"]);
+    expect(routeOrder({ jobClass: "hard", demoted: ["claude"] }).routes).toEqual(["claude", "codex"]);
   });
 });
 
-describe("private work: Claude, then Codex as the backup, never a free route", () => {
-  const privateTask = (over: Record<string, unknown> = {}, input: Record<string, unknown> = {}) => insertTask({
-    status: "queued", title: "A private job", intake_kind: "recurring_duty", sensitivity: "public",
-    input: JSON.stringify({ backend_ladder: ["bk_codex", "bk_claude_code"], prompt: DEAL, ...input }), ...over,
-  });
-
-  it("private clear-brief work goes to Claude's seat first", async () => {
-    const taskId = await privateTask();
-    await handleTask(env as any, { taskId, lane: "ops" });
-    const runs = await runsOn(taskId);
-    expect(runs.map((r) => r.backend_id)).toEqual(["bk_claude_code"]);
-    expect(JSON.parse(runs[0].requested).backend_ladder).toEqual(["bk_claude_code", "bk_codex"]);
-    expect(JSON.parse(runs[0].requested).job_class).toBe("clear_brief");
-  });
-
-  it("private clear-brief work reaches Codex when Claude is unavailable, and no cloud route is asked", async () => {
-    await spend("bk_claude_code");
-    const taskId = await privateTask();
-    const hosts: string[] = [];
-    restore = stubFetch((req) => { hosts.push(new URL(req.url).hostname); return completionResponse("must not be reached"); });
-    await handleTask(withKeys() as any, { taskId, lane: "ops" });
-    expect((await runsOn(taskId)).map((r) => r.backend_id)).toEqual(["bk_codex"]);
-    expect(hosts).toEqual([]);
-    expect(await cloudAsked(taskId)).toHaveLength(0);
-  });
-
-  it("private short work (a research ask) reaches Codex the same way", async () => {
-    await spend("bk_claude_code");
-    const taskId = await privateTask({ intake_kind: "research" }, { cloud_fallback: true });
-    await handleTask(env as any, { taskId, lane: "ops" });
-    expect((await runsOn(taskId)).map((r) => r.backend_id)).toEqual(["bk_codex"]);
-    expect(await cloudAsked(taskId)).toHaveLength(0);
-  });
-
-  it("private work never reaches a free route whatever fails: both seats out, cloud fallback asked for, every key present", async () => {
-    await spend("bk_claude_code");
-    await spend("bk_codex");
-    for (const kind of ["recurring_duty", "research", "decision_support"]) {
-      const taskId = await privateTask({ intake_kind: kind }, { cloud_fallback: true, mail_id: "iml_test_hers", from: "owner@example.test" });
-      const hosts: string[] = [];
-      restore = stubFetch((req) => { hosts.push(new URL(req.url).hostname); return completionResponse("must not be reached"); });
-      await handleTask(withKeys() as any, { taskId, lane: "ops" });
-      restore(); restore = null;
-      expect(hosts, `${kind}: a request left the Worker`).toEqual([]);
-      expect(await cloudAsked(taskId), `${kind}: a cloud route was asked`).toHaveLength(0);
-      expect(await runsOn(taskId), `${kind}: a run was parked on a spent seat`).toHaveLength(0);
-      expect(await all<any>(`SELECT 1 FROM usage_ledger WHERE task_id = ?`, taskId), `${kind}: a model was called`).toHaveLength(0);
-      expect(["failed", "queued"]).toContain((await row<any>(`SELECT status FROM tasks WHERE id = ?`, taskId))!.status);
-    }
-  });
-
-  it("private hard work waits for Claude by name, where she can see it, and never reaches Codex", async () => {
-    const resetAt = Date.now() + 57 * 60_000;
-    await spend("bk_claude_code", resetAt);
-    // Asked for by her, a decision: hard. Codex's seat is free and on the duty's own ladder.
-    const taskId = await privateTask({ intake_kind: "decision_support" }, { mail_id: "iml_test_hers", from: "owner@example.test" });
-    await handleTask(env as any, { taskId, lane: "ops" });
-    expect(await all<any>(`SELECT 1 FROM backend_runs WHERE task_id = ? AND backend_id = 'bk_codex'`, taskId), "private hard work reached Codex").toHaveLength(0);
-    expect(await cloudAsked(taskId)).toHaveLength(0);
-    expect((await row<any>(`SELECT status FROM tasks WHERE id = ?`, taskId))!.status).toBe("queued");
-    const stop = JSON.parse((await row<any>(`SELECT detail FROM task_events WHERE task_id = ? AND event = 'named_stop' ORDER BY ts DESC LIMIT 1`, taskId))!.detail);
-    expect(stop.code).toBe("WAITING_FOR_CLAUDE");
-    expect(stop.resume_at).toBe(resetAt);
-    expect(await all<any>(`SELECT kind FROM boss_task_notices WHERE task_id = ?`, taskId)).toEqual([{ kind: "stop:WAITING_FOR_CLAUDE" }]);
-  });
-
-  it("NEGATIVE: the same hard work that is not private does go to Codex when Claude is out", async () => {
-    await spend("bk_claude_code");
-    const taskId = await insertTask({
-      status: "queued", title: "A public decision", intake_kind: "decision_support", sensitivity: "public",
-      input: JSON.stringify({ backend_ladder: ["bk_codex", "bk_claude_code"], prompt: "In two sentences, say which of two lighthouses is taller." }),
-    });
-    await handleTask(env as any, { taskId, lane: "ops" });
-    const runs = await runsOn(taskId);
-    expect(runs.map((r) => r.backend_id)).toEqual(["bk_codex"]);
-    // Hard work asks the strongest route first: Claude's seat leads the ladder the run carries.
-    expect(JSON.parse(runs[0].requested).backend_ladder).toEqual(["bk_claude_code", "bk_codex"]);
-  });
-});
 
 describe("a route that fails the same kind of job twice in a row stops getting it", () => {
   const codexRan = (jobClass: string, status: "succeeded" | "failed", at: number) => env.DB
@@ -193,6 +117,75 @@ describe("a route that fails the same kind of job twice in a row stops getting i
     await handleTask(env as any, { taskId: back, lane: "ops" });
     expect((await runsOn(back)).map((r) => r.backend_id)).toEqual(["bk_codex"]);
   });
+});
+
+it("moves a checked draft to its proven free model, then returns it to the seat and includes both reasons in Simone’s daily note", async () => {
+  const employee = await row<{ id: string }>("SELECT id FROM employees WHERE lane = 'ops' AND id <> 'emp_chief' AND lifecycle = 'active' AND status = 'active' ORDER BY id LIMIT 1");
+  expect(employee).toBeTruthy();
+  const managed = employee!.id;
+  const kind = "drafting";
+  const modelId = "mdl_gemini_38_flash_free";
+  const dispatch = async (reviewed = true, intakeKind = kind) => {
+    const title = "Summarise the workshop notes";
+    const input = JSON.stringify({ backend_ladder: ["bk_claude_code", "bk_codex"], job_key: "summarise", prompt: "Summarise these notes for internal review." });
+    const taskId = await insertTask({ title, input, status: "queued", employee_id: managed, intake_kind: intakeKind });
+    if (reviewed) {
+      const envelope = await buildEnvelope(env.DB, {
+        taskId, lane: "ops", employeeId: managed, costMode: "NORMAL",
+        classification: { ...classify({ title, intakeKind }), executionAssignment: "AI_DRAFT" },
+      });
+      await env.DB.prepare("UPDATE tasks SET envelope_id = ?, audience = 'internal' WHERE id = ?").bind(envelope.id, taskId).run();
+    }
+    await handleTask(withKeys(), { taskId, lane: "ops" });
+    return taskId;
+  };
+  await env.DB.prepare("DELETE FROM model_job_outcome WHERE task_kind = ?").bind(kind).run();
+  for (let n = 0; n < 5; n++) {
+    expect(await recordOutcome(env.DB, { taskKind: kind, modelId, outcome: "succeeded", source: n < 2 ? "human" : "benchmark" })).toBe(true);
+  }
+  await fileSimoneMessage(env, { source: "simone_daily", subject: "Routing fixture", body: "Review measured draft routing." });
+  const simone = (await claimSimone(env))!;
+  const choose = (task: Record<string, string>) => simoneTool(env, { id: simone.id, lease: simone.lease, tool: "model_routing", task: JSON.stringify(task) });
+  expect(await choose({ employee: "emp_chief", kind, model: modelId })).toMatchObject({ ok: false, code: "MANAGED_AGENT_REQUIRED" });
+  expect(await choose({ employee: managed, kind, model: "mdl_gemini_25_flash_free" })).toMatchObject({ ok: false, code: "FREE_MODEL_NOT_PROVEN" });
+  expect(await choose({ employee: managed, kind })).toMatchObject({ ok: true, models: [{ id: modelId }] });
+  expect(await choose({ employee: managed, kind, model: modelId })).toMatchObject({ ok: true, changed: true });
+  expect(await choose({ employee: managed, kind, model: modelId })).toMatchObject({ ok: true, changed: false });
+
+  let calls = 0;
+  restore = stubFetch((req) => {
+    expect(req.url.startsWith(GEMINI_HOST + "/models/gemini-3.8-flash:")).toBe(true);
+    calls++;
+    return Response.json({ candidates: [{ content: { parts: [{ text: "The workshop meets Thursday." }] } }], usageMetadata: { promptTokenCount: 10, candidatesTokenCount: 10 } });
+  });
+  const first = await dispatch();
+  expect(calls).toBe(1);
+  expect(await runsOn(first)).toEqual([]);
+  expect(await row("SELECT chosen_model_id FROM routing_decisions WHERE task_id = ?", first)).toEqual({ chosen_model_id: modelId });
+  expect(await row("SELECT status FROM tasks WHERE id = ?", first)).toEqual({ status: "awaiting_approval" });
+
+  const unchecked = await dispatch(false);
+  const judgement = await dispatch(true, "decision_support");
+  expect(await runsOn(unchecked)).toHaveLength(1);
+  expect((await runsOn(judgement)).map((r) => r.backend_id)).toEqual(["bk_claude_code"]);
+
+  for (let n = 0; n < 2; n++) {
+    expect(await recordOutcome(env.DB, { taskKind: kind, modelId, outcome: "rejected", source: "router" })).toBe(true);
+  }
+  const back = await dispatch();
+  expect(await runsOn(back)).toHaveLength(1);
+  expect(await cloudAsked(back)).toEqual([]);
+  expect(await choose({ employee: managed, kind })).toMatchObject({ ok: true, current: "subscription", models: [] });
+  expect(calls).toBe(1);
+
+  const now = Date.now();
+  await storeOperatingReport(env, { day: dayIdInZone(now), rows: [{ id: "fixture", name: "Fixture", kind: "duty",
+    aim: "Verify delivery", evidence: "Verified fixture", coverage: "listed", state: "verified" }], issues: [], proposal: null }, now);
+  const moves = await row<{ body: string }>("SELECT body FROM morning_sections WHERE section = 'operations'");
+  expect(JSON.parse(moves!.body).lines).toEqual([
+    expect.stringMatching(/Simone moved .* to .* after 5 of 5 measured outputs passed/),
+    expect.stringMatching(/moved to a subscription seat because recent checked results no longer support a free route/),
+  ]);
 });
 
 describe("the free tier finds a model that can do the job, and remembers it", () => {

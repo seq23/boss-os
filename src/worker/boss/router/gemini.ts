@@ -29,7 +29,7 @@ export function generationConfig(slug: string, maxOutputTokens: number, temperat
  *
  * THE FREE TIER TRAINS ON WHAT IT IS SENT. Google's terms let it use free-tier prompts to improve its
  * products, so every row here is `data_use = 'TRAINS_ON_PROMPTS'` (migration 0338) and `policy.ts`
- * refuses it any private-model-only work before this file runs. A call that still asks for no
+ * honors a route’s declared vendor settings. A call that asks for no
  * training is refused here too: this route cannot honour it, so it fails closed.
  *
  * GROUNDING WITH GOOGLE SEARCH. `webSearch` adds the `google_search` tool; the pages the answer was

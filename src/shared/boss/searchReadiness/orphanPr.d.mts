@@ -6,3 +6,4 @@ export const NEEDS_WORKER: readonly string[];
 export function clientApprovalHold(site: any, proof: any): string;
 export function mergedOnMain(pr: any, commits: Array<{ sha: string; subject: string }>): string | null;
 export const GATE_LANDS: readonly string[];
+export function rowStop(row: any): { kind: 'skip' | 'gate' | 'open' | 'merged' | 'landed' | 'unexplained'; code?: string; line?: string };

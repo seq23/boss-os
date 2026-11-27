@@ -1,22 +1,4 @@
-/**
- * SIMONE DOES IT BY EMAIL — THE GRAMMAR.
- *
- * Owner, 25 Oct 2026, angry: she had to ask a Claude session for two things she should have been
- * able to email Simone about. "Send a calendar invite to <person> at <firm> for Tuesday this week
- * 10am ET, <address>", and "find my cousin's email (it's on the family reunion Drive files), have a
- * trial code made for time-2-read, and email her the code with a short explainer".
- *
- * So an email to boss@ (or simone@) from her is read here for the things Simone can DO, not just
- * file: a calendar invite, a contact lookup, an email to a person on her behalf, repo work for
- * Danielle, and — for anything she cannot do yet — a one-line "can't yet" that opens a Danielle job
- * to add it. Pure and deterministic: no model is asked to read her email, so the same words always
- * do the same thing. The Worker half is src/worker/boss/commands/; the Mac half (her own Drive and
- * Gmail, the drafting, bounce checks) is scripts/ops/simone-commands.mjs.
- *
- * NOTHING HERE SENDS ANYTHING. It returns what was asked; the Worker decides what runs.
- */
-
-import { splitAsks } from "../intake/triage.mjs";
+/** Structured data and reply helpers for invitations, access codes, and errands. */
 import { civilIn, instantAt } from "../ownerTime.mjs";
 
 export const OWNER_TZ = "America/Chicago";
@@ -39,8 +21,7 @@ export function zoneLabel(tz) {
 /**
  * WHICH GOOGLE MAILBOX ACTS. Only Workspace mailboxes can be driven through the delegation (probed
  * 25 Oct 2026: calendar.events and gmail.compose are granted on both of these; sequoiataylor.com has
- * no Workspace mailbox, and her personal Gmail can never be delegated). A brand named in the email
- * picks its own mailbox; otherwise West Peek's, which is the calendar she runs her meetings on.
+ * no Workspace mailbox, and her personal Gmail can never be delegated).
  * spry.vc is never here: it is read-only by rule (validate:spry-vc-never-sends).
  */
 export const DEFAULT_MAILBOX = "sequoia@westpeek.ventures";
@@ -48,16 +29,6 @@ export const BRAND_MAILBOXES = Object.freeze([
   Object.freeze({ re: /\btime[- ]?2[- ]?read\b|\btime to read\b|\bdailystory\b/i, mailbox: "st@time-2-read.com", brand: "time-2-read" }),
 ]);
 export const WORKSPACE_MAILBOXES = Object.freeze([DEFAULT_MAILBOX, ...BRAND_MAILBOXES.map((b) => b.mailbox)]);
-export function mailboxFor(text) {
-  // The brand is in her WORDS, never in an address she wrote (live proof, 25 Oct 2026: a guest at
-  // st@time-2-read.com put a plain invite on the time-2-read calendar).
-  const words = String(text ?? "").replace(/[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}/g, " ");
-  for (const b of BRAND_MAILBOXES) if (b.re.test(words)) return b.mailbox;
-  return DEFAULT_MAILBOX;
-}
-/** "on my personal calendar" / "my gmail calendar": the one calendar no delegation can write. */
-export const PERSONAL_CALENDAR_RE = /\b(?:personal|gmail|own)\s+calendar\b|\bcalendar\b[^.\n]{0,20}\bgmail\b/i;
-
 /** Her products whose code lives in a repo not named after them. Danielle's lane reads the GitHub address. */
 export const PRODUCT_REPOS = Object.freeze([
   Object.freeze({ re: /\btime[- ]?2[- ]?read\b|\btime to read\b/i, product: "time-2-read", github_repo: "seq23/dailystory" }),
@@ -190,154 +161,6 @@ export function renderUrl({ title, start, minutes, guests = [], details = "" }) 
   return `https://calendar.google.com/calendar/render?${q.toString()}`;
 }
 
-// ─── The asks ──────────────────────────────────────────────────────────────
-
-const NAME = "([A-Z][a-z'’-]+(?:\\s+[A-Z][a-z'’-]+)?)";
-const INVITE_RE = /\b(?:calendar\s+)?invite\b|\b(?:schedule|book|set\s+up|put)\b[^.\n]{0,40}\b(?:call|meeting|meet|zoom|chat)\b/i;
-
-/** "Send a calendar invite to <Name> at <Org> for <when>, <address>" → the invite, or null. */
-export function inviteIn(text, now = Date.now()) {
-  const t = String(text ?? "");
-  if (!INVITE_RE.test(t)) return null;
-  // Someone else's address first; one of her own only when it is the only one written (a hold on her
-  // own calendar, or the live proof's invite to her own brand mailbox).
-  const own = (String(t).match(EMAIL_RE) ?? []).map((x) => x.replace(/[.,;:]+$/, "").toLowerCase()).filter((x) => !/@sequoiataylor\.com$/i.test(x));
-  const guest = addressesIn(t)[0] ?? own[0] ?? null;
-  const nm = new RegExp(`\\b(?:invite|meeting|call|chat|meet)\\s+(?:to|with|for)\\s+${NAME}`).exec(t)
-    ?? new RegExp(`\\binvite\\s+${NAME}`).exec(t);
-  const guestName = nm && !DAYS.some((d) => nm[1].toLowerCase().startsWith(d.slice(0, 3)) && nm[1].length <= 9) ? nm[1] : null;
-  const org = /\bat\s+([A-Z][\w&'.-]*(?:\s+[A-Z][\w&'.-]*){0,3})/.exec(t)?.[1] ?? null;
-  const when = whenIn(t, now);
-  const personal = PERSONAL_CALENDAR_RE.test(t);
-  const title = `${guestName ?? (guest ? guest.split("@")[0] : "Call")}${org ? ` (${org})` : ""} / Sequoia`;
-  return {
-    guest_email: guest, guest_name: guestName, org, title,
-    ...(when.error ? { when_error: when.error } : { start: when.start, minutes: when.minutes, tz: when.tz, said: when.said }),
-    calendar: personal ? "personal" : mailboxFor(t),
-  };
-}
-
-const RELATION = "(?:cousin|aunt|uncle|friend|sister|brother|niece|nephew|colleague|client|neighbou?r|godmother|godfather|mother|father|mom|dad)";
-/** "Find my cousin <Name>'s email" / "look up <Name>'s address" → `{ name, relation, hints }`, or null. */
-export function lookupIn(text) {
-  const t = String(text ?? "");
-  const m = new RegExp(`\\b(?:find|look\\s+up|get|dig\\s+up|track\\s+down)\\s+(?:me\\s+)?(?:my\\s+|the\\s+)?(?:(${RELATION})\\s+)?${NAME}(?:['’]s)?\\s+(?:e-?mail|email address|address|contact)`, "i").exec(t)
-    ?? new RegExp(`\\bwhat(?:'s| is)\\s+(?:my\\s+)?(?:(${RELATION})\\s+)?${NAME}['’]s\\s+e-?mail`, "i").exec(t);
-  if (!m) return null;
-  const name = m[2].replace(/['’]s$/, "");
-  const hints = [];
-  const h = /\b(?:on|in|from)\s+(?:the\s+|my\s+|our\s+)?([A-Za-z0-9][^.\n,;]{2,60}?)\s+(?:google\s+)?(?:drive\s+)?(?:files?|docs?|documents?|sheets?|spreadsheets?|folders?)\b/i.exec(t);
-  if (h) hints.push(h[1].replace(/\s+drive$/i, "").trim());
-  return { name, relation: m[1]?.toLowerCase() ?? null, hints, drive: /\bdrive\b/i.test(t) || hints.length > 0, gmail: true };
-}
-
-const BUILD_RE = /\b(create|add|make|set\s+up|generate|build|change|fix|update|launch)\b/i;
-const CODE_RE = /\b([A-Z][A-Z0-9]{4,})\b/;
-/** Repo work for one of her products → `{ github_repo, product, instruction, code }`, or null. */
-export function repoAskIn(clause) {
-  const t = String(clause ?? "");
-  const p = PRODUCT_REPOS.find((r) => r.re.test(t));
-  if (!p || !BUILD_RE.test(t)) return null;
-  if (/^\s*(?:and\s+)?(?:then\s+)?(?:e-?mail|write to|send)\b/i.test(t)) return null;
-  return { github_repo: p.github_repo, product: p.product, instruction: t.trim(), code: CODE_RE.exec(t)?.[1] ?? null };
-}
-
-const EMAIL_ASK_RE = /\b(?:[Ee]-?mail|[Ww]rite\s+to|[Ss]end\s+(?:an?\s+)?(?:email|note|message)\s+to)\s+(her|him|them|[A-Z][a-z'’-]+|[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,})\b/;
-/** "email her the code with a short explainer…" → `{ to, pronoun, name, purpose }`, or null. */
-export function emailAskIn(clause) {
-  const t = String(clause ?? "");
-  if (INVITE_RE.test(t) && /\binvite\b/i.test(t)) return null;
-  const m = EMAIL_ASK_RE.exec(t);
-  if (!m) return null;
-  const who = m[1];
-  if (/^(?:me|myself|simone|boss)$/i.test(who)) return null;
-  const to = who.includes("@") ? who.toLowerCase() : addressesIn(t)[0] ?? null;
-  return {
-    to, pronoun: /^(her|him|them)$/i.test(who) ? who.toLowerCase() : null,
-    name: !who.includes("@") && !/^(her|him|them)$/i.test(who) ? who : null,
-    purpose: t.slice(m.index).trim(),
-  };
-}
-
-/** Things a Claude session could do with her tools that Simone has no executor for yet. */
-export const CANT_YET = Object.freeze([
-  Object.freeze({ re: /\b(?:[Tt]ext|SMS|sms|[Ii]?[Mm]essage|[Ww]hats[Aa]pp)\s+(?:him|her|them|[A-Z][a-z]+)\b/, what: "send a text message" }),
-  Object.freeze({ re: /\b(?:[Cc]all|[Pp]hone|[Rr]ing)\s+(?:him|her|them|[A-Z][a-z]+)\s+(?:for me|and|to|about)\b/, what: "make a phone call" }),
-  Object.freeze({ re: /\b(?:mail|post|ship)\s+(?:a|the)\s+(?:letter|package|parcel|card)\b/i, what: "post a letter or a package" }),
-  Object.freeze({ re: /\b(?:post|publish)\s+(?:this|it|a\s+post)\s+(?:on|to)\s+(?:instagram|tiktok|linkedin|facebook|x|twitter)\b/i, what: "post on social media" }),
-]);
-
-/** One email → its clauses. Sentences, then ", and <verb>" / "; " joins split apart. */
-export function clausesIn(text) {
-  return String(text ?? "")
-    .split(/(?<=[.!?])\s+|\n+|;\s+/)
-    .flatMap((s) => s.split(/,?\s+(?:and\s+)?then\s+(?=(?:e-?mail|send|create|find|invite|schedule|book|write)\b)|,\s*and\s+(?=(?:e-?mail|send|create|find|invite|schedule|book|write|make|add)\b)/i))
-    .map((s) => s.trim()).filter(Boolean);
-}
-
-/**
- * Everything Simone can do in one email, in order, with what waits on what. `ref` is the command's
- * place in the list; `waits_on` names refs. Empty when the email asks for none of these, and then
- * the ordinary triage takes it.
- */
-export function commandsIn({ subject = "", text = "", now = Date.now(), sender = "" } = {}) {
-  const body = String(text ?? "").trim() || String(subject ?? "").trim();
-  // An errand (a booking or request to a business she named, from her own Gmail) is the whole email.
-  const errand = sender ? errandIn({ sender, subject, text: body }) : null;
-  if (errand) return [{ ref: 0, waits_on: [], kind: "errand", spec: errand }];
-  const out = [];
-  const add = (c) => { const ref = out.length; out.push({ ref, waits_on: [], ...c }); return ref; };
-  const whole = `${subject}\n${body}`;
-
-  // A list of separate asks in which any one is not a command stays with the triage, whole, exactly as
-  // before (22 Oct 2026: one email, several desks). Only an email that is ALL commands is Simone's here.
-  const listed = splitAsks(body).parts;
-  if (listed.length > 1 && listed.some((p) => commandsIn({ text: p, now }).length === 0)) return [];
-  let invite = inviteIn(body, now) ?? (INVITE_RE.test(subject) ? inviteIn(whole, now) : null);
-  // "a call with the designer next Tuesday": no address and no time is a note for her day, not an invite.
-  if (invite && !invite.guest_email && invite.when_error) invite = null;
-  const clauses = clausesIn(body);
-  let lookupRef = null;
-  const look = lookupIn(body);
-  if (look) lookupRef = add({ kind: "lookup", spec: look });
-
-  if (invite) {
-    const waits = [];
-    if (!invite.guest_email && invite.guest_name && lookupRef === null) {
-      lookupRef = add({ kind: "lookup", spec: { name: invite.guest_name, relation: null, hints: invite.org ? [invite.org] : [], drive: false, gmail: true } });
-    }
-    if (!invite.guest_email && lookupRef !== null) waits.push(lookupRef);
-    add({ kind: "invite", spec: invite, waits_on: waits });
-  }
-
-  let repoRef = null;
-  for (const c of clauses) {
-    // A code for time-2-read is a row, not a rebuild: Simone adds it herself. Anything bigger is Danielle's.
-    const code = accessCodeIn(c);
-    if (code && repoRef === null) { repoRef = add({ kind: "access_code", spec: { ...code, product: "time-2-read" } }); continue; }
-    const r = repoAskIn(c);
-    if (r && repoRef === null) repoRef = add({ kind: "repo", spec: r });
-  }
-  for (const c of clauses) {
-    const e = invite ? null : emailAskIn(c);
-    if (!e) continue;
-    const waits = [];
-    if (!e.to && lookupRef === null && e.name) lookupRef = add({ kind: "lookup", spec: { name: e.name, relation: null, hints: [], drive: false, gmail: true } });
-    if (!e.to && lookupRef !== null) waits.push(lookupRef);
-    if (repoRef !== null) waits.push(repoRef);
-    const brand = PRODUCT_REPOS.find((p) => p.re.test(whole))?.product ?? null;
-    add({
-      kind: "email", waits_on: waits,
-      spec: { ...e, from_mailbox: mailboxFor(whole), brand, code: out[repoRef ?? -1]?.spec?.code ?? CODE_RE.exec(c)?.[1] ?? null, ask: body.slice(0, 4000), recipient_name: look?.name ?? e.name ?? null },
-    });
-    break;
-  }
-  if (out.length === 0) {
-    for (const k of CANT_YET) if (k.re.test(body)) { add({ kind: "cant_yet", spec: { what: k.what, ask: body.slice(0, 2000) } }); break; }
-  }
-  return out;
-}
-
 // ─── time-2-read access codes, with no rebuild ─────────────────────────────
 
 /**
@@ -457,14 +280,25 @@ export function errandRefusal({ sender = "", subject = "", text = "" } = {}) {
   if (!ERRAND_SENDERS.includes(s)) return "not from her own address";
   const words = `${subject ?? ""}\n${text ?? ""}`;
   if (!ERRAND_ASK_RE.test(words)) return "not a booking or request";
+  return errandBoundary(words);
+}
+
+function errandBoundary(words, verifiedRecipient = null) {
   const all = [...new Set((words.match(EMAIL_RE) ?? []).map((a) => a.replace(/[.,;:]+$/, "").toLowerCase()))];
   const outside = addressesIn(words);
-  if (all.some((a) => ERRAND_NEVER_DOMAIN_RE.test(a))) return "a West Peek or spry.vc address";
-  if (outside.length === 0) return "no business address in her words (never guessed)";
+  if ([...all, verifiedRecipient ?? ""].some((a) => ERRAND_NEVER_DOMAIN_RE.test(a))) return "a West Peek or spry.vc address";
+  if (verifiedRecipient && (all.length > 0 || !addressesIn(verifiedRecipient).includes(verifiedRecipient))) return "no single authorized business address";
+  if (!verifiedRecipient && outside.length === 0) return "no business address in her words (never guessed)";
   if (outside.length > 1) return "more than one address";
   if (ERRAND_MONEY_RE.test(words)) return "money is involved";
   if (ERRAND_NEVER_RE.test(words)) return "fund, trading or LP work";
   return null;
+}
+
+/** The agent reads intent. Code checks the address from the owner's words or an archived booking. */
+export function freeErrandRecipient(sender, quote, verifiedRecipient = null) {
+  if (!ERRAND_SENDERS.includes(sender.toLowerCase()) || errandBoundary(quote, verifiedRecipient)) return null;
+  return verifiedRecipient ?? addressesIn(quote)[0] ?? null;
 }
 
 /** `{ to, ask }` for an errand Simone may send on her word, or null. */
@@ -474,16 +308,26 @@ export function errandIn({ sender = "", subject = "", text = "" } = {}) {
   return { to: addressesIn(words)[0], ask: words.slice(0, 2000) };
 }
 
+const ERRAND_TITLE = "Chief of Staff to Sequoia Taylor";
+const SIGN = ["Thank you,", "Simone", ERRAND_TITLE];
+const LEGACY_ERRAND_SIGNATURE = /(^|\n)(Simone\r?\n)Assistant to Sequoia Taylor\s*$/;
+
+/** Update the signature on a follow-up queued before the title changed. */
+export function refreshErrandSignature(text) {
+  return String(text ?? "").replace(LEGACY_ERRAND_SIGNATURE, `$1$2${ERRAND_TITLE}`);
+}
+
 /** The request Simone sends, word for word. `request` is one phrase ("a table for two on Thursday, October 29, any time after 8:00 pm"). */
-export function errandText(request) {
+export function errandText(request, { freeOnly = false } = {}) {
+  const terms = freeOnly
+    ? "Please confirm only if there’s no charge, deposit, card requirement, or cancellation fee."
+    : "Please let me know what's available and anything you need to confirm.";
   return [
     "Hello,",
     "",
-    `I'm writing on behalf of Sequoia Taylor to request ${String(request ?? "").trim().replace(/[.\s]+$/, "")}. Please let me know what's available and anything you need to confirm.`,
+    `I'm writing on behalf of Sequoia Taylor to request ${String(request ?? "").trim().replace(/[.\s]+$/, "")}. ${terms}`,
     "",
-    "Thank you,",
-    "Simone",
-    "Assistant to Sequoia Taylor",
+    ...SIGN,
   ].join("\n");
 }
 
@@ -795,7 +639,6 @@ export function errandReplyNotice({ to, asked, read, kind, confirmed, booking, d
   };
 }
 
-const SIGN = ["Thank you,", "Simone", "Assistant to Sequoia Taylor"];
 /** What Simone notes back about their rules: "Noted on the dress code and the 24-hour cancellation policy." */
 function notedLine(offer) {
   const bits = [];
@@ -833,6 +676,6 @@ export function followUpProblems(text) {
   if (CARD_WORDS_RE.test(t) || CARD_DIGITS_RE.test(t.replace(PHONE_RE, ""))) p.push("it carries card details");
   if (/\b(?:AI|artificial intelligence|bot|automated|language model|Claude)\b/.test(t)) p.push("it mentions AI");
   if (/https?:\/\//.test(t)) p.push("it carries a link");
-  if (!/Assistant to Sequoia Taylor\s*$/.test(t.trim())) p.push("it is not signed by Simone");
+  if (!t.replaceAll("\r\n", "\n").trimEnd().endsWith(`\nSimone\n${ERRAND_TITLE}`)) p.push("it is not signed by Simone");
   return p;
 }

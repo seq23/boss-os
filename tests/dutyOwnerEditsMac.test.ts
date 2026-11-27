@@ -45,11 +45,11 @@ describe("duty-brief: what a Mac job does with the owner's word", () => {
     expect(plan({ ok: true, data: brief({ owner_schedule: false, due: false }) }).code).toBe(0);
     expect(plan({ ok: true, data: brief({ owner_schedule: false, due: false }) }, { onlyIfDue: true }).code).toBe(10);
   });
-  it("unreachable is a failure under --only-if-due, and a named note otherwise — never a quiet skip", () => {
+  it("refuses work when it cannot check the owner's stop switch", () => {
     expect(plan({ ok: false, why: "down" }, { onlyIfDue: true }).code).toBe(6);
     const p = plan({ ok: false, why: "down" });
-    expect(p.code).toBe(0);
-    expect(p.lines[0]).toMatch(/^NOTE \[BRIEF_UNREACHABLE\]/);
+    expect(p.code).toBe(6);
+    expect(p.lines[0]).toMatch(/^NAMED STOP \[DUE_UNKNOWN\]/);
   });
 });
 

@@ -36,27 +36,15 @@ export function replayedWorld(dir = join(ROOT, "migrations")) {
 export async function ladder() {
   registerTsResolve();
   const mod = await import(new URL("../../src/worker/boss/duties/briefingLadder.ts", import.meta.url).href);
-  const spec = await import(new URL("../../src/worker/boss/duties/briefingSpec.ts", import.meta.url).href);
-  const access = await import(new URL("../../src/worker/boss/router/modelAccess.ts", import.meta.url).href);
   const world = replayedWorld();
-  /*
-   * THE ROUTER'S OWN SCAN, ON THE PROMPT THE RUN IS HANDED. Names come from production rows this
-   * script cannot read, so the lexicon here holds none — the verdict below rests on the deal-term
-   * patterns alone, which is the part of the scan the briefing's own wording trips.
-   */
-  const prompt = spec.composeBriefingPrompt({ dayLabel: spec.ctDayLabel(Date.now()), hasMarketData: true });
-  const lexicon = { established: true, names: [], note: "replayed world: no private names available here" };
-  const verdict = access.scanForModelAccess([{ role: "user", content: prompt }], lexicon, { modelAccess: "public_model_approved" });
-  const privacy = { private_model_only: verdict.access === "private_model_only", why: verdict.reason };
-  return { candidates: mod.orderBriefingCandidates(world, Date.now(), privacy), duty: world.duty, render: mod.renderLadder, privacy };
+  return { candidates: mod.orderBriefingCandidates(world), duty: world.duty, render: mod.renderLadder };
 }
 
 if (import.meta.url === `file://${process.argv[1]}`) {
-  const { candidates, duty, render, privacy } = await ladder();
-  if (process.argv.includes("--json")) { console.log(JSON.stringify({ privacy, candidates }, null, 2)); }
+  const { candidates, duty, render } = await ladder();
+  if (process.argv.includes("--json")) { console.log(JSON.stringify({ candidates }, null, 2)); }
   else {
     console.log(`duty_exec_intel.task_input.backend_ladder = ${JSON.stringify(duty?.backend_ladder ?? null)}; cloud_fallback = ${JSON.stringify(duty?.cloud_fallback ?? null)}`);
-    console.log(`router privacy verdict on the briefing's prompt: ${privacy.private_model_only ? "PRIVATE MODEL ONLY — " + privacy.why : "public"}`);
     console.log(render(candidates));
   }
   if (candidates.length === 0) { console.error("NAMED STOP: no candidates at all."); process.exit(1); }

@@ -15,7 +15,7 @@ export function timeEditable(duty: { executor?: string | null }): boolean;
 export function localDate(timeZone: string, at: number): string;
 export function macDueToday(d: { next_due_at: number | null; timezone: string }, now: number): boolean;
 export interface DutyBrief {
-  duty_id: string; paused: boolean; removed: boolean; owner_schedule: boolean; due: boolean; reason: string;
+  duty_id: string; paused: boolean; removed: boolean; owner_schedule: boolean; due: boolean; reason: string; operating_stop?: boolean;
   instructions: string | null; version: number | null;
 }
 export function briefDecision(brief: DutyBrief, opts?: { onlyIfDue?: boolean }): { run: boolean; code: 0 | 10; line: string; instructions?: string | null };

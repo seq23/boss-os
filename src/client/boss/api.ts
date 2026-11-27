@@ -18,11 +18,18 @@ export interface RewriteProgress {
   sentence: string | null;
 }
 
-/** What "Tell Simone" answers: the per-job handoff, the same rows her email reply is built from. */
-export interface TellSimoneResult {
-  mailId: string;
-  outcome: string;
-  jobs: { title: string; employeeId: string | null; employee: string; taskId: string | null; duty: boolean; failure: string | null }[];
+export interface SimoneGoogleAccount {
+  address: string;
+  enabled: boolean;
+  /** "mail": only its inbox waits for her sick-day email; "all": the whole account does. */
+  restricted: "mail" | "all" | null;
+  until: number | null;
+  canDisconnect: boolean;
+  disconnecting: boolean;
+}
+
+export interface SimoneMessageResult {
+  status: string;
   reply: string | null;
 }
 
@@ -295,8 +302,17 @@ export const api = {
    * the question no longer needs one and opens nothing. A question typed into Boss OS had no email
    * to reply to, so until this the alert asked her to use a door that did not exist.
    */
-  /** The "Tell Simone" box on Today: the same intake as an email to simone@ (POST /api/intake/simone). */
-  tellSimone: (text: string) => call<TellSimoneResult>("/intake/simone", post("", { text })),
+  tellSimone: (text: string) => call<{ taskId: string }>("/intake/simone", post("", { text })),
+  messageSimone: (text: string) => call<{ taskId: string }>("/simone/message", post("", { text })),
+  simoneMessage: (id: string) => call<SimoneMessageResult>(`/simone/message/${encodeURIComponent(id)}`),
+  simoneAccounts: () => call<{ accounts: SimoneGoogleAccount[] }>("/simone/accounts"),
+  connectSimoneAccount: () => call<{ url: string }>("/simone/accounts/connect", post("", {})),
+  switchSimoneAccount: (address: string, enabled: boolean) =>
+    call<{ accounts: SimoneGoogleAccount[] }>("/simone/accounts/switch", post("", { address, enabled })),
+  disconnectSimoneAccount: (address: string) =>
+    call<{ accounts: SimoneGoogleAccount[] }>("/simone/accounts/disconnect", post("", { address })),
+  simoneStop: () => call<{ stopped: boolean }>("/simone/stop"),
+  setSimoneStop: (stopped: boolean) => call<{ stopped: boolean }>("/simone/stop", post("", { stopped })),
 
   answerQuestion: (id: string, body: { answer?: string; withdraw?: string }) =>
     call<{ answered_at: number | null; opened_work: boolean; note: string }>(`/intake/questions/${encodeURIComponent(id)}/answer`, post("", body)),

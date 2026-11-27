@@ -6,7 +6,7 @@ const day = /\b\d{4}-\d{2}-\d{2}\b/;
 export const clip = (s, chars) => String(s ?? "").slice(0, chars);
 export const fingerprint = (text) => createHash("sha256").update(text).digest("hex");
 
-function memoryFile(file, required = false) {
+export function memoryFile(file, required = false) {
   try {
     const info = lstatSync(file);
     if (!info.isFile() || info.nlink !== 1) throw new Error("expected a regular, unlinked file");

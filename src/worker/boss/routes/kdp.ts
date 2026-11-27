@@ -37,6 +37,7 @@ import { nextDueAt } from "../duties/cadence";
 import { advance } from "./duties";
 import { recordDeliverableActivity } from "../today/deliverables";
 import { checkAssignment, ownerAskIsATask } from "../../../shared/boss/duties/executors.mjs";
+import { readKdpCaseChecks, readKdpPublishAttempts } from "../kdp/history";
 
 export const kdp = new Hono<{ Bindings: Env; Variables: Vars }>();
 
@@ -233,11 +234,7 @@ kdp.get("/", async (c) => {
       `SELECT title_ref, label, state, note, state_changed_at, went_live_at
          FROM kdp_titles ORDER BY state, title_ref`,
     ).all(),
-    c.env.DB.prepare(
-      `SELECT id, checked_at, sentinel, determination, next_action, needs_owner,
-              days_since_support, nudges_unanswered, threads_seen, source, run_outcome
-         FROM kdp_case_checks ORDER BY checked_at DESC LIMIT 12`,
-    ).all(),
+    readKdpCaseChecks(c.env.DB),
     c.env.DB.prepare(
       `SELECT id, name, employee_id, next_due_at, last_run_at, suspended, executor
          FROM standing_duties WHERE id = ?`,
@@ -251,7 +248,7 @@ kdp.get("/", async (c) => {
   ]);
 
   const rows = (titles.results ?? []) as any[];
-  const history = (checks.results ?? []) as any[];
+  const history = checks;
   const latest = history[0] ?? null;
 
   /*
@@ -1247,14 +1244,7 @@ kdp.post("/publish", async (c) => {
 
 /** What was tried on each book, newest first, with Amazon's own words for anything that refused. */
 kdp.get("/publish", async (c) => {
-  const rows = await c.env.DB
-    .prepare(
-      `SELECT id, attempted_at, judgement_id, title_ref, cover_uploaded, publish_attempted,
-              resulting_state, amazon_message, run_outcome, stop_code, source
-         FROM kdp_publish_attempts ORDER BY attempted_at DESC LIMIT 60`,
-    )
-    .all<any>();
-  return ok(c, { attempts: rows.results ?? [] });
+  return ok(c, { attempts: await readKdpPublishAttempts(c.env.DB, 60) });
 });
 
 /**

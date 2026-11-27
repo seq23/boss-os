@@ -5,6 +5,11 @@ lives in Boss OS: ☰ More → Open Loops (`/?tab=loops`), the API under `/api/b
 section in Simone's morning email. Code: `src/worker/boss/routes/openLoops.ts`,
 `src/shared/boss/openLoops/openLoops.mjs`, page `src/client/boss/pages/OpenLoops.tsx`.
 
+Sections: **Not finished** (the main list, counted and chased), **Landed, waiting on proof**
+(`section: "proving"` with `proof_pr: "owner/repo#123"`, 27 Nov 2026: a fix that landed and waits only on
+that PR's next-day live check; folded, never counted as open or late; `~/bin/post-land-check` closes it on
+PASS and returns it to Not finished marked NOT WORKING on FAIL) and **Parked ideas** (no dates, no chasing).
+
 A repo whose gate stops by name (`NAMED STOP [CODE] …`) can make each stop a row there, so a stop
 nobody is looking at still gets chased, and the row closes itself the day the stop clears.
 

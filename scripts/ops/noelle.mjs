@@ -48,11 +48,11 @@ export function untrusted(source, text) {
   return `<untrusted source="${String(source).replace(/[^a-z0-9:._-]/gi, "-")}">\n${body}\n</untrusted>`;
 }
 
-export function bossMachine(fetchImpl = fetch, env = process.env) {
+export function bossMachine(fetchImpl = fetch, env = process.env, prefix = "/growth/noelle") {
   const tok = env.BOSS_OPEN_LOOPS_TOKEN;
   if (!tok) throw new Error("NAMED STOP [NO_MACHINE_TOKEN] run through the vault: npm run vault:run -- node …");
   return async (method, path, body) => {
-    const r = await fetchImpl(`${ORIGIN}/api/boss/growth/noelle${path}`, { method, headers: { authorization: `Bearer ${tok}`, ...(body ? { "content-type": "application/json" } : {}) }, ...(body ? { body: JSON.stringify(body) } : {}) });
+    const r = await fetchImpl(`${ORIGIN}/api/boss${prefix}${path}`, { method, headers: { authorization: `Bearer ${tok}`, ...(body ? { "content-type": "application/json" } : {}) }, ...(body ? { body: JSON.stringify(body) } : {}) });
     const j = await r.json().catch(() => ({}));
     if (!r.ok) throw new Error(`${/NAMED STOP/.test(JSON.stringify(j)) ? "" : "NAMED STOP [BOSS_REFUSED] "}${method} ${path} → ${r.status} ${JSON.stringify(j?.error ?? j).slice(0, 300)}`);
     return j?.data ?? j;
@@ -225,6 +225,7 @@ export function callBlock(call) {
     "<<<HER-MESSAGE",
     String(call.body ?? "").replace(/HER-MESSAGE>>>/g, "HER-MESSAGE>>"),
     "HER-MESSAGE>>>",
+    ...(call.context ? [untrusted("mail-context", call.context)] : []),
     "Your final message is your reply to her (plain words: what you did, what you did not do and why, what is her call; no ids), then the OUTPUT or NAMED STOP line alone.",
   ].join("\n");
 }

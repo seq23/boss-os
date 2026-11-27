@@ -22,6 +22,10 @@ export const BRAINS = Object.freeze([
   { slug: "porch-and-party", title: "Porch & Party 901" },
   { slug: "time-2-read", title: "Time-2-Read — a Spry Labs company" },
   { slug: "spry", title: "Spry Labs — the umbrella for every side business" },
+  // We Keep You Spry (owner, 27 Nov 2026): her private AI enablement business, the one where clients
+  // pay her. Its commercial plan, backlog and security notes live here, not in the public seq23/WKYS repo.
+  // Public name "We Keep You Spry" (WKYS), never "SPRY" alone (Spry Labs and Spry Ventures are others).
+  { slug: "wkys", title: "We Keep You Spry (WKYS)" },
   { slug: "friends", title: "Friends' businesses" },
   // Not a business (coordinator, 31 Oct 2026): Boss OS itself, Spirit, gates, coaching, her schedule.
   { slug: "personal", title: "Personal" },
@@ -347,7 +351,7 @@ export function stripConfidential(text) {
  * Each employee reads the brain(s) of the business(es) they serve, at the top of every job prompt.
  * "all" means every BUSINESS brain, summarised (Company, Priorities, Settled decisions); Simone
  * also reads "personal" (her own life and Boss OS itself), so hers is "all+personal". From the roster
- * (STATUS.md, migration 0175/0192): Simone is chief of staff to everything; Camille runs the
+ * (STATUS.md, migration 0384): Simone runs her day and is in charge of everything Boss OS runs. Camille runs the
  * Porch & Party briefing and Marketplace; Monique runs the brokerage and the fund's LP replies, the
  * outreach for time-2-read (its groups and institutions, owner 31 Oct 2026) and for Spry Labs (the
  * Industry Guides and the side businesses), and her TLC/Rooms-related jobs read the community brain
@@ -443,6 +447,7 @@ const BRAIN_ALIASES = [
   // Spry Labs took in the Industry Guides (retired brain, 1 Nov 2026).
   [/^(spry|spry ?labs|industry ?guides|guides|the ?industry ?guides|industry-guides)$/, "spry"],
   [/^(spry ?ventures|spry\.?vc|brokerage|the ?brokerage|secondaries|the ?desk)$/, "brokerage"],
+  [/^(wkys|we ?keep ?you ?spry|wekeepyouspry(\.com)?)$/, "wkys"],
   [/^(friends|friends'? ?businesses)$/, "friends"],
   [/^(personal|boss ?os)$/, "personal"],
   [/^(who'?s ?who)$/, "team"],

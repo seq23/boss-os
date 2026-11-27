@@ -93,7 +93,7 @@ function ghLoggedIn(run) {
 }
 
 /** Check the external boundary before a push or PR creates a GitHub Actions run. */
-function requireIsolation(repo, opts, run) {
+export function requireIsolation(repo, opts, run) {
   const env = opts.env ?? process.env;
   const guards = opts.guardDir ?? env.NOELLE_GUARD_DIR ?? join(homedir(), ".boss-os", "noelle", "guard");
   const stop = (why) => refuse("REPO_SETTINGS", `seq23/${repo}: ${why}`);

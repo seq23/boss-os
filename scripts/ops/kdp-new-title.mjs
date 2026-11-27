@@ -20,8 +20,8 @@
  * ─── Sign-in: Simone first, then her hands in the window ──────────────────
  * Amazon asks for a fresh sign-in on every title-setup page (`ap/signin?max_auth_age=0`). Attended
  * runs leave it to the person at the Mac. Nothing ever solves a picture check. The
- * unattended run sends her a heads-up HEADS_UP_LEAD_MS before it opens Chrome; when Amazon asks for a
- * sign-in, Simone signs in once herself with the existing kdp-signin.mjs steps (her ruling 8 Nov 2026);
+ * unattended run opens Chrome as soon as it has read the bookshelf, with no note and no wait first
+ * (her words 25 Nov 2026: "this rule is stupid, its useless"); when Amazon asks for a sign-in, Simone signs in once herself with the existing kdp-signin.mjs steps (her ruling 8 Nov 2026);
  * when that fails, Amazon shows a picture check, or anything else stops it, the window STAYS OPEN on that step, she is emailed at once with
  * the one thing to do there, and the run waits for her up to HANDOFF_MS: a sign-in done → it carries
  * on; a book she finished by hand → seen on the bookshelf, recorded, "done". Otherwise one
@@ -38,7 +38,7 @@
  *   npm run kdp:new-title                       # every approved new title, visible, she is present
  *   npm run kdp:new-title -- --title "The Co-Parenting Log"
  *   npm run kdp:new-title -- --dry-run          # everything except Publish (a KDP draft is left)
- *   … --unattended                              # kdp-publish.sh's daily slot: heads-up, emails, bounded waits
+ *   … --unattended                              # kdp-publish.sh's slot: Chrome at once, emails, bounded waits
  *
  * Output: `KDP-NEW-TITLE: <state> — <detail>` per book and one census line `OUTPUT <n> kindle-titles-submitted`.
  * Exit 0 every approved title is In review or Live (or none approved) · 1 a field or step missing (named)
@@ -61,8 +61,6 @@ const ORIGIN = process.env.BOSS_OS_ORIGIN ?? "https://boss.sequoiataylor.com";
 const DRAFTS = process.env.KMP_KDP_DIR ?? join(process.env.HOME ?? ".", ".boss-os/kdp/keepmyproof");
 const KDP = "https://kdp.amazon.com/en_US";
 const SIGNIN_WAIT_MS = Number(process.env.KDP_SIGNIN_WINDOW_MS ?? 10 * 60_000);
-/** How long before the unattended run opens Chrome she is told it will (owner, 8 Nov 2026). One constant. */
-export const HEADS_UP_LEAD_MS = Number(process.env.KDP_HEADS_UP_LEAD_MS ?? 30 * 60_000);
 /** How long an unattended stop keeps the window open for her before one "still waiting" note. One constant. */
 export const HANDOFF_MS = Number(process.env.KDP_HANDOFF_MS ?? 2 * 60 * 60_000);
 const WATCH_EVERY_MS = 60_000;
@@ -1061,11 +1059,6 @@ async function handOff(context, page, dir, ans) {
 /* ── What Simone tells her (owner, 8 Nov 2026), through her one channel: Simone's mail ──────── */
 
 const CT = CENTRAL;
-/** Pure: "10:15 am" in her Mac's zone, with Central in brackets when it differs. */
-export function herTime(ms, zone = Intl.DateTimeFormat().resolvedOptions().timeZone) {
-  const f = (tz) => new Intl.DateTimeFormat("en-US", { timeZone: tz, hour: "numeric", minute: "2-digit", hour12: true }).format(new Date(ms)).replace(" AM", " am").replace(" PM", " pm");
-  return zone === CT ? f(CT) : `${f(zone)} (${f(CT)} Central)`;
-}
 const list = (xs) => (xs.length < 2 ? xs.join("") : `${xs.slice(0, -1).join(", ")} and ${xs.at(-1)}`);
 const quoted = (ts) => list(ts.map((t) => `"${t}"`));
 
@@ -1078,22 +1071,6 @@ export function oneThing(code) {
     BLOCKED: "Open the book on your Kindle bookshelf and read Amazon's message there; reply to this email with what it says and I take it from there.",
     SHELF_UNREADABLE: "Look at the book on your Kindle bookshelf in that window. If it is a draft, press Continue setup and finish it; if it is In review or Live, nothing to do.",
   }[code] ?? finish;
-}
-
-/** Heads-up, sent HEADS_UP_LEAD_MS before Chrome opens. Pure. */
-export function headsUpMail({ titles, startAt, zone }) {
-  const when = herTime(startAt, zone);
-  const what = titles.length === 1 ? `put ${quoted(titles)} on Kindle` : `put ${titles.length} books on Kindle: ${quoted(titles)}`;
-  return {
-    subject: `Kindle: at ${when.split(" (")[0]} I open Chrome to ${titles.length === 1 ? `publish ${titles[0]}` : `publish ${titles.length} books`}`,
-    // 23 Nov 2026 live read: "Nothing to do now; keep the Mac awake" asked and denied in one line, and
-    // the keep-awake ask came twice. The ask is the line; the times are hers.
-    layout: { happened: `At ${when} a Chrome window for Amazon KDP will open on your Mac and I will ${what}. You approved ${titles.length === 1 ? "it" : "them"}.`, details: [
-      "If Amazon asks for a sign-in, I sign in for you; I only need you if Amazon shows a picture check, and then I email you at once.",
-      "When the run is done I send one email with the Amazon links.",
-    ] },
-    owner: { layout: "note", why: `At ${when.split(" (")[0]} I will put your approved Kindle book${titles.length === 1 ? "" : "s"} up on Amazon.`, act: "Keep the Mac awake and on for about 20 minutes from then" },
-  };
 }
 
 /** A stop: what happened, that the window is open, the one thing to do there. Pure. */
@@ -1266,13 +1243,12 @@ export function stillWaitingMail({ title, code, id = null }) {
 }
 
 /**
- * ONE EMAIL PER RUN (owner, 13 Nov 2026: "one event, one email"). A run used to send a heads-up, a
+ * ONE EMAIL PER RUN (owner, 13 Nov 2026: "one event, one email"). A run used to send a
  * stop, a "still waiting" and one "is live" per title. Now `routeMessage` lets exactly one email
  * out: the stop when she must act at the window, else the titles that went live, in one email
  * (`liveMail`). Everything else in the run is a line on her Updates page (`asUpdate`). Pure.
  */
 export function routeMessage(state, kind) {
-  if (kind === "headsup") return "update";      // nothing for her to do: never an email
   if (state.emailed) return "update";           // the run's one email has gone
   return "email";
 }
@@ -1342,7 +1318,7 @@ export function waitingLoop({ title, folder, cleared = false, day }) {
     repo: "seq23/boss-os", stop: `KDP_NEW_TITLE_${String(folder).toUpperCase().replace(/[^A-Z0-9]+/g, "_")}`, owner: "sequoia", business: "spry",
     title: `"${title}" is waiting to go up on Kindle`,
     finish_line: `"${title}" shows In review or Live on the Kindle bookshelf`,
-    next_step: "Simone tries again every morning with a heads-up first; sign in when Amazon asks. This closes itself when the bookshelf shows it.",
+    next_step: "Simone tries again on the next Kindle run and opens Chrome at once; sign in when Amazon asks. This closes itself when the bookshelf shows it.",
     next_date: day,
     ...(cleared ? { cleared: true } : {}),
   };
@@ -1538,15 +1514,8 @@ export async function run() {
   }
   if (!todo.length) { console.log(`OUTPUT ${submitted} kindle-titles-submitted`); return code; }
 
-  // 2. HEADS-UP, then the window (unattended); attended runs start now.
-  if (UNATTENDED) {
-    const startAt = Date.now() + HEADS_UP_LEAD_MS;
-    await tell(`headsup:${dayCT()}:${todo.map((b) => b.a.id).join(",")}`, headsUpMail({ titles: todo.map((b) => b.book.title), startAt }), { kind: "headsup" });
-    console.log(`heads-up on her Updates page; Chrome opens at ${herTime(startAt)}.`);
-    await sleep(HEADS_UP_LEAD_MS);
-    if (profileBusy(profile)) { RUN_STALL.runStop = "PROFILE_IN_USE"; console.error("NAMED STOP [PROFILE_IN_USE] the KDP Chrome window was opened by someone during the heads-up; nothing typed. The next run tries again."); console.log(`OUTPUT ${submitted} kindle-titles-submitted`); return 5; }
-  }
-
+  // 2. THE WINDOW, AT ONCE (her words 25 Nov 2026 on the old note-then-wait: "this rule is stupid,
+  // its useless"). No note, no wait: attended and unattended runs alike open Chrome now.
   // KDP_HEADLESS=1: nothing opens on her screen (her coordinator, 8 Nov 2026, while she works in Chrome).
   let context, page, closed = false;
   const open = async () => {
@@ -1566,7 +1535,7 @@ export async function run() {
       });
       const report = { title_ref: null, cover_uploaded: false, publish_attempted: false, resulting_state: null, run_outcome: "attempted", stop_code: null, amazon_message: null };
       try {
-        // Read again right before acting: she may have finished it by hand during the heads-up.
+        // Read again right before acting: the headless read may have missed it.
         const p0 = plan(book.title, await bookshelf(page, book.title));
         if (await settle(b, p0)) continue;
         if (p0.action === "unknown") throw stop("SHELF_UNREADABLE", `"${book.title}" is on the bookshelf but its state could not be read; nothing was created.`);

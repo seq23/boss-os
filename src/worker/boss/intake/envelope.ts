@@ -25,24 +25,19 @@ export interface Envelope {
   created_at: number;
 }
 
+type EnvelopeInput = {
+  taskId: string;
+  lane: string;
+  employeeId: string | null;
+  classification: Classification;
+  costMode: string;
+};
+
 /**
- * Builds the authority a single task run may exercise.
- *
- * Everything outward-facing defaults to denied. Nothing in this function can
- * grant external send, repo write, provider mutation, or financial action —
- * those stay false and are only ever exercised by an approved payload, which is
- * a separate decision made by a human in the Approval Inbox.
+ * Prepare the authority a single task run may exercise. Outward actions default to denied
+ * and can only be exercised by an approved payload from the Approval Inbox.
  */
-export async function buildEnvelope(
-  db: D1Database,
-  args: {
-    taskId: string;
-    lane: string;
-    employeeId: string | null;
-    classification: Classification;
-    costMode: string;
-  },
-): Promise<Envelope> {
+export async function prepareEnvelope(db: D1Database, args: EnvelopeInput) {
   const policy = costPolicy(args.costMode);
   const now = Date.now();
 
@@ -90,7 +85,7 @@ export async function buildEnvelope(
     created_at: now,
   };
 
-  await db
+  const insert = db
     .prepare(
       `INSERT INTO permission_envelopes
          (id, task_id, lane, employee_id, execution_assignment, cost_mode, budget_micros,
@@ -108,9 +103,14 @@ export async function buildEnvelope(
       envelope.provider_mutation_allowed, envelope.financial_action_allowed,
       envelope.approval_required, envelope.evidence_required, envelope.rollback_required,
       envelope.cloud_for_restricted_allowed, envelope.expires_at, envelope.created_at,
-    )
-    .run();
+    );
 
+  return { envelope, insert };
+}
+
+export async function buildEnvelope(db: D1Database, args: EnvelopeInput): Promise<Envelope> {
+  const { envelope, insert } = await prepareEnvelope(db, args);
+  await insert.run();
   return envelope;
 }
 

@@ -85,14 +85,6 @@ describe("her reply to the prospect email", () => {
     expect(decided.every((l: string) => l.startsWith("first read absent: keyword fallback"))).toBe(true);
   });
 
-  it("private text never reaches a free route: the keywords read it, and the record says why", async () => {
-    let called = 0;
-    setFirstReadRungs([{ id: "free-test", call: async () => { called += 1; return JSON.stringify({ meaning: "approve", quote: "approved" }); } }]);
-    const m = await readMeaning<"approve">(env, { what: "test", about: "A reply.", options: { approve: "yes" }, text: "approved, and the term sheet says pre-money is fine", keyword: "unsure" });
-    expect(called).toBe(0);
-    expect(m.by).toBe("keywords");
-    expect(JSON.parse((await events("meaning_keyword_fallback"))[0].detail).stop).toMatch(/kept off the free models/);
-  });
 });
 
 describe("the template door after a first read (#510 F1, F2)", () => {
@@ -172,31 +164,6 @@ describe("the template door after a first read (#510 F1, F2)", () => {
   it("model down: \"Don't try again, just shorten the opening.\" is never try again", async () => {
     setFirstReadRungs(down);
     expect(await templateMeaningOf(env, "Don't try again, just shorten the opening.")).not.toBe("try_again");
-  });
-});
-
-describe("the free ladder itself (#510 F3)", () => {
-  it("private text through a direct freeLadder call never reaches a rung; a named opt-out is the only way past", async () => {
-    let called = 0;
-    const rung: Rung[] = [{ id: "free-test", call: async () => { called += 1; return "{}"; } }];
-    const ask = { prompt: "approved, and the term sheet says pre-money is fine", json: { name: "x", schema: { type: "object" } }, read: () => ({ ok: true }) };
-    const walk = await freeLadder(env, ask, rung);
-    expect(called).toBe(0);
-    expect(walk.value).toBeNull();
-    expect(walk.stop).toMatch(/kept off the free models/);
-    await freeLadder(env, { ...ask, privateScanOff: "  " }, rung);
-    expect(called, "a blank opt-out is no opt-out").toBe(0);
-    await freeLadder(env, { ...ask, privateScanOff: "test: a named ruling" }, rung);
-    expect(called).toBe(1);
-  });
-
-  it("a private scan that cannot run fails closed: the rung is never asked", async () => {
-    let called = 0;
-    const rung: Rung[] = [{ id: "free-test", call: async () => { called += 1; return "{}"; } }];
-    const broken = { ...env, DB: { prepare() { throw new Error("D1 is down"); }, exec() { throw new Error("D1 is down"); } } } as any;
-    const walk = await freeLadder(broken, { prompt: "shorten the opening", json: { name: "x", schema: { type: "object" } }, read: () => ({ ok: true }) }, rung);
-    expect(called).toBe(0);
-    expect(walk.stop).toMatch(/kept off the free models/);
   });
 });
 

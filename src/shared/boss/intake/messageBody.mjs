@@ -224,8 +224,8 @@ export function ownWords(text) {
   return (m ? t.slice(0, m.index) : t).trim();
 }
 
-/** Where a forwarded message starts: Gmail's "---------- Forwarded message ---------", Apple Mail's "Begin forwarded message:". */
-export const FORWARD_START = /\n[ \t]*-{2,}[ \t]*Forwarded message|\n[ \t]*Begin forwarded message:?/i;
+/** Forward boundaries in Gmail, Apple Mail and Outlook. */
+export const FORWARD_START = /\n[ \t]*-{2,}[ \t]*Forwarded message|\n[ \t]*Begin forwarded message:?|\n[ \t]*From:[^\n]+\n[ \t]*(?:Sent|Date):[^\n]+/i;
 
 /**
  * WHAT SHE HERSELF WROTE (#514 re-check, 22 Nov 2026): `ownWords` cut again at a forward. `ownWords` keeps a

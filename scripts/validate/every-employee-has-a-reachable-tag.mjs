@@ -44,7 +44,7 @@ import { join, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
 import { DatabaseSync } from "node:sqlite";
 import {
-  BOSS_DEFAULT_ROUTE_ROLE, BOSS_INTAKE_SENDERS, dmarcPassed, isOwner,
+  BOSS_DEFAULT_ROUTE_ROLE, BOSS_INTAKE_SENDERS, authenticationVerdict, isOwner,
   replyBody, routeToSeat, seatTag,
 } from "../../src/shared/boss/intake/mail.mjs";
 
@@ -154,13 +154,15 @@ export function authorisationIsTheSender(handlerSource) {
   if (!BOSS_INTAKE_SENDERS.every((a) => isOwner(a, ""))) bad.push("isOwner() rejects an address on its own allowlist.");
   if (!isOwner("work@example.com", " , WORK@EXAMPLE.COM , ")) bad.push("isOwner() rejects a configured owner address.");
   if (isOwner("attacker@example.com", "work@example.com")) bad.push("isOwner() accepts an unconfigured address.");
-  if (dmarcPassed(null)) bad.push("dmarcPassed() treated a MISSING Authentication-Results header as a pass — an unchecked message would be trusted.");
-  if (dmarcPassed("spf=pass; dkim=pass")) bad.push("dmarcPassed() accepted SPF and DKIM without DMARC — those authenticate the envelope, not the From: header the allowlist trusts.");
-  if (dmarcPassed("dmarc=fail")) bad.push("dmarcPassed() accepted an explicit dmarc=fail.");
-  if (!dmarcPassed("mx.example.com; spf=pass; dkim=pass; dmarc=pass header.from=gmail.com")) {
-    bad.push("dmarcPassed() rejected a genuine passing header.");
-  }
-
+  const ok = (h, from = "seq.taylor@gmail.com") => authenticationVerdict(h, from).passed;
+  const GENUINE = "mx.cloudflare.net; dkim=pass header.d=gmail.com header.s=20260707 header.b=AbCd; dmarc=pass header.from=gmail.com policy.dmarc=none; spf=pass (mx.cloudflare.net: domain of seq.taylor@gmail.com designates 2607:f8b0::1 as permitted sender) smtp.mailfrom=seq.taylor@gmail.com; arc=none";
+  if (ok(null)) bad.push("authenticationVerdict() treated a MISSING Authentication-Results header as a pass — an unchecked message would be trusted.");
+  if (ok("mx.cloudflare.net; spf=pass; dkim=pass")) bad.push("authenticationVerdict() accepted SPF and DKIM without DMARC — those authenticate the envelope, not the From: header the allowlist trusts.");
+  if (ok("mx.cloudflare.net; dmarc=fail header.from=gmail.com")) bad.push("authenticationVerdict() accepted an explicit dmarc=fail.");
+  if (ok("mx.example.com; dmarc=pass header.from=gmail.com")) bad.push("authenticationVerdict() believed a verdict not written by Cloudflare — any sender can write that header.");
+  if (ok("mx.cloudflare.net; dmarc=fail header.from=gmail.com, x; dmarc=pass header.from=gmail.com")) bad.push("authenticationVerdict() read a sender's added Authentication-Results after Cloudflare's real dmarc=fail.");
+  if (ok(GENUINE, "seq.taylor@evil.example")) bad.push("authenticationVerdict() accepted DMARC for a domain that is not the sender's.");
+  if (!ok(GENUINE)) bad.push("authenticationVerdict() rejected a genuine passing header in Cloudflare's real shape.");
   if (handlerSource === null) return [...bad, `${HANDLER} could not be read, so the order of the checks is unverified.`];
 
   // Order: the sender is settled before the roster is even read.
@@ -270,7 +272,7 @@ if (process.argv.includes("--self-test")) {
       .replace("const roster = await activeRoster(env);", 'const roster = await activeRoster(env);\n  const authorised = isOwner(sender, env.BOSS_EXTRA_OWNER_SENDERS ?? "") && dmarc;') ?? null,
   ), true);
   expect("a handler where the TAG grants entry", authorisationIsTheSender(
-    realHandler?.replace('const authorised = isOwner(sender, env.BOSS_EXTRA_OWNER_SENDERS ?? "") && dmarc;', "const authorised = isOwner(sender) || tag === '#monique';") ?? null,
+    realHandler?.replace(/const authorised = [^;]+;/, "const authorised = isOwner(sender) || tag === '#monique';") ?? null,
   ), true);
 
   if (failed) { console.error(`EMPLOYEE TAG SELF-TEST FAILED (${failed})`); process.exit(1); }

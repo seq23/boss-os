@@ -17,9 +17,7 @@ import { inviteGate, sendInvite } from "./schedule";
  *   Change it    her words replace the held draft in the same thread (`holdThreadReply`) and come
  *                back to her word for word; one more tap on Send as is sends them. Nothing else sends.
  *
- * NOTHING HERE WRITES WITH A MODEL. LP replies are fixed templates or her own words, so no LP name or
- * deal term ever reaches a route (the router refuses `confidentialDraft` outright, and a Mac task
- * carrying one runs on the Claude seat only: duties/seatOrder.ts).
+ * This path uses fixed templates or the owner's exact words.
  */
 
 export async function lpRow(env: Env, id: string): Promise<any | null> {

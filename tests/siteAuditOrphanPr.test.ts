@@ -241,3 +241,77 @@ it('fixedNothingCause: a named land gate on a fixed PR is SR_LAND_GATE_UNMET; no
   expect(cause([{ ...f, pr_url: undefined, land: 'held_owner_approval' }]).code).toBe('');
   expect(cause([{ ...f, land: 'held_owner_approval' }, { disposition: 'surfaced' }]).code).toBe('');
 });
+
+/*
+ * 25 NOV 2026: ~/bin/land refused all 42 of the run's green fixes with a plain "STOPPED: PR #N needs
+ * a review (its body has no `Review class:` line …)", no NAMED STOP, and the round read as "fixed
+ * nothing". The REAL landAll now names land's review gate on the row from land's own words.
+ */
+import { rowStop } from '../src/shared/boss/searchReadiness/orphanPr.mjs';
+// @ts-expect-error Node-only ops module has no declaration.
+import { reviewGate } from '../scripts/ops/site-audit-lib.mjs';
+const NO_CLASS = "\u001b[31mSTOPPED: PR #10 needs a review (its body has no `Review class:` line (add `Review class: none — <why>`, or the class: money, children, private-data, store, delete, launch)) and changes what people see (public/404.html public/_headers): add as a PR comment by the repo's owner account the line  Ship-ready: PASS — <fresh reviewer> looked at <the real output> at abc1234; Engineering: PASS\u001b[0m";
+const NOT_LAUNCHED = "STOPPED: PR #43 needs a review (search-loop has not launched (not on seq-bin's live-repos.json: new until launched; a landed Launch-ready PASS adds it)) and changes code (engine/run.mjs): add as a PR comment by the repo's owner account the line  Ship-ready: PASS — <fresh reviewer> looked at <the diff> at abc; Engineering: PASS";
+function landWith(out: string, extra: { merged?: boolean } = {}) {
+  const pr = 'https://github.com/seq23/whisperalmanac-site/pull/10';
+  const calls: string[] = [];
+  const payload: any = { findings: [
+    { repo: 'whisperalmanac-site', disposition: 'fixed_pr', pr_url: pr, headline: 'a9', suggested_action: 'the fix' },
+    { repo: 'whisperalmanac-site', disposition: 'fixed_pr', pr_url: pr, headline: 'b2', suggested_action: 'the fix' },
+  ] };
+  landAll(payload, { sites: [{ repo: 'whisperalmanac-site', domain: 'whisperalmanac.com' }], parked: () => false, approvedSites: [], landBin: '/test/land', run: (cmd: string, args: string[]) => {
+    calls.push([cmd, ...args].join(' '));
+    if (args.includes('/test/land')) return { status: 1, out };
+    if (cmd === 'gh' && args.includes('state')) return { status: 0, out: extra.merged ? 'MERGED' : 'OPEN' };
+    if (cmd === 'gh' && args[0] === 'pr' && args[1] === 'view') return { status: 0, out: JSON.stringify({ number: 10, headRefOid: 'abc1234', baseRefName: 'main' }) };
+    if (cmd === 'gh' && args[0] === 'api') return { status: 0, out: '[]' };
+    return { status: 0, out: '' };
+  } });
+  return { rows: payload.findings, lands: calls.filter(c => c.includes('/test/land')).length, cts: calls.filter(c => c.includes('clickthrough.mjs')).length };
+}
+it("25 Nov: land's missing-Review-class refusal is named REVIEW_CLASS_MISSING on every row of the PR; one land, no click-through", () => {
+  const r = landWith(NO_CLASS);
+  expect(r.lands).toBe(1);
+  expect(r.cts).toBe(0);
+  for (const row of r.rows) {
+    expect(row.land).toBe('land_refused');
+    expect(row.land_detail).toMatch(/^NAMED STOP \[REVIEW_CLASS_MISSING\] STOPPED: PR #10 needs a review \(its body has no `Review class:` line/);
+    expect(row.suggested_action).toContain('Review class: none');
+    expect(rowStop(row)).toEqual({ kind: 'gate', code: 'REVIEW_CLASS_MISSING' });
+  }
+  expect(cause(r.rows)).toEqual({ code: 'SR_LAND_GATE_UNMET', sentence: 'https://github.com/seq23/whisperalmanac-site/pull/10 refused by REVIEW_CLASS_MISSING' });
+});
+it("25 Nov: a review refusal that is not the body line (a repo not launched) is REVIEW_PASS_MISSING; an unreasoned none is CLASS_MISSING", () => {
+  const r = landWith(NOT_LAUNCHED);
+  expect(r.rows[0].land_detail).toMatch(/^NAMED STOP \[REVIEW_PASS_MISSING\] /);
+  expect(r.rows[1].suggested_action).toContain('fresh reviewer');
+  expect(cause(r.rows).sentence).toContain('refused by REVIEW_PASS_MISSING');
+  expect(reviewGate('STOPPED: PR #1 needs a review (its `Review class: none` gives no reason (3+ words after the dash)) and changes code (a.mjs)')?.code).toBe('REVIEW_CLASS_MISSING');
+  expect(reviewGate("STOPPED: PR #1 puts something new in public (public/logo.svg): add as a PR comment … Launch-ready: PASS — <fresh reviewer>")?.code).toBe('REVIEW_PASS_MISSING');
+});
+it('NEGATIVE: a refusal that is not a review (red check, network blip), one land already named, or a merged PR keeps its own outcome', () => {
+  for (const out of ['STOPPED: checks are not green on PR #10 (validate failed)', 'error: could not resolve host: api.github.com']) {
+    const r = landWith(out);
+    expect(r.rows[0].land).toBe('land_refused');
+    expect(r.rows[0].land_detail).not.toContain('NAMED STOP');
+    expect(r.rows[0].suggested_action).toBe('the fix');
+    expect(cause(r.rows).code).toBe('');
+  }
+  expect(reviewGate('STOPPED: PR #1 needs a review (NAMED STOP [LIVE_REPOS_UNREAD] x could not be read)')).toBeNull();
+  const m = landWith(NO_CLASS, { merged: true });
+  expect(m.rows[0]).toMatchObject({ land: 'merged_deploy_failed' });
+  expect(m.rows[0].land_detail).not.toContain('REVIEW_CLASS_MISSING');
+});
+it('the rebuilt reduction: a policy row with no PR is not evidence; an unexplained row keeps the stall', () => {
+  const pr = 'https://github.com/seq23/approvalprep/pull/9';
+  const gate = { repo: 'approvalprep', disposition: 'fixed_pr', pr_url: pr, land: 'land_refused', land_detail: 'NAMED STOP [REVIEW_CLASS_MISSING] x' };
+  const policy = { repo: 'dailystory', disposition: 'in_flight', land: 'blocked', land_detail: 'refused_policy' };
+  expect(rowStop(policy)).toEqual({ kind: 'skip' });
+  expect(cause([gate, policy, policy]).code).toBe('SR_LAND_GATE_UNMET');
+  // NEGATIVE: only policy rows is no cause; an in-flight row with no PR blocked for another reason is unexplained.
+  expect(cause([policy]).code).toBe('');
+  expect(cause([gate, { ...policy, land_detail: 'checks_red' }]).code).toBe('');
+  // A fixed PR that landed with nothing gated is not a stop this names.
+  expect(cause([{ ...gate, land: 'landed' }]).code).toBe('');
+  expect(cause([{ ...gate, land: 'landed' }, { ...gate, disposition: 'in_flight', land: 'blocked', land_detail: 'draft_left_behind' }]).code).toBe('');
+});

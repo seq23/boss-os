@@ -64,6 +64,9 @@ export interface Env {
   BOSS_EXTRA_OWNER_SENDERS?: string;
   /** R3 (docs/SERVICE_RULES.md): the Worker secret that encrypts a key she emails. Set from the vault. */
   BOSS_OS_SECRET_HANDOFF_KEY?: string;
+  BOSS_SIMONE_GOOGLE_CLIENT_ID?: string;
+  BOSS_SIMONE_GOOGLE_CLIENT_SECRET?: string;
+  BOSS_SIMONE_PERSONAL_GOOGLE_ACCOUNT?: string;
   BOSS_OS_VERSION?: string;
   BOSS_DEFAULT_PROVIDER?: string;
 }

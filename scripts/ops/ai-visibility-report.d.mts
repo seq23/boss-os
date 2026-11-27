@@ -5,5 +5,7 @@ export function buildContext(o?: Record<string, unknown>): Promise<{ state: Reco
 export const NOT_REACHED_LINE: string;
 export function transcriptText(stream: string): string;
 export function parseRun(log: string): any;
-export function entriesFrom(run: any, state: Record<string, any>, now?: number): any[];
-export function post(logFile: string, stateFile: string, o?: { api?: { post: (path: string, body: unknown) => Promise<any> } }): Promise<number>;
+export function entriesFrom(run: any, state: Record<string, any>, now?: number, stash?: any[] | null): any[];
+export function readStash(file: string | null): any[] | null;
+export function post(logFile: string, stateFile: string, o?: { api?: { post: (path: string, body: unknown) => Promise<any> }; stashFile?: string | null }): Promise<number>;
+export function sessionTokens(stream: string): string;
