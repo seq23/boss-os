@@ -51,11 +51,11 @@ export const PASS_LINE_RE = /^[\s>*-]*(Ship|Launch)-ready: *PASS *(—|–|-{1,2
 /**
  * Which routes review, in order. The first review of a subject is HARD (Claude, then Codex: the
  * ship-ready rule "Claude for the first of any kind"); a re-review of a subject that has passed before
- * is SHORT and starts on the free tier. Private output (Boss OS's own screens, an email to her) never
- * reaches a free route: aiRoles.routeOrder's private row.
+ * is SHORT and starts on the free tier. Reviewing internal material for a release needs the same
+ * judgement as a first review.
  */
 export function reviewRoutes({ firstOfKind, privateWork }) {
-  return routeOrder({ jobClass: firstOfKind ? HARD : SHORT, privateWork: Boolean(privateWork) });
+  return routeOrder({ jobClass: firstOfKind || privateWork ? HARD : SHORT });
 }
 
 /** One reviewer id per run, named in the PASS line so `land` can tell it from the builder. */

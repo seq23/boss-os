@@ -1,7 +1,5 @@
 import { orderCandidates, vendorFamily } from "@shared/boss/router/candidateOrder.mjs";
 import { isPlanSpent, untilWords } from "../backends/spent";
-import { isPrivateModelRoute, privateLexicon, scanForModelAccess, type PrivateLexicon } from "../router/modelAccess";
-import { BRIEFING_PROMPT_VERSION, repoAuthoredBriefingText } from "./briefingSpec";
 
 /**
  * THE LADDER THE EXECUTIVE BRIEFING WALKS: HER TWO $0 SEATS, THEN THE FREE RUNGS, THEN PAID.
@@ -124,16 +122,6 @@ const FREE_SLUG = /:free$/;
 export function orderBriefingCandidates(
   rows: { backends: BackendRow[]; models: ModelRow[] },
   now = Date.now(),
-  /**
-   * THE ROUTER'S OWN PRIVACY VERDICT ON THE BRIEFING'S PROMPT, when the caller has it. The router
-   * scans every outgoing prompt for LP names and deal material and, on a hit, refuses every
-   * training-permitting lane — and NOTHING A CALLER DECLARES CAN LOWER THAT VERDICT (see
-   * `scanForModelAccess`). Measured 19 Sep 2026: the briefing's prompt carries "commitment",
-   * "valuation", "allocation" and rate wording, the scan reads that as deal material, and the six
-   * `:free` OpenRouter rungs are refused for it. So the printed ladder marks them refused rather
-   * than letting a list say "free rung next" about a rung the walk will never reach.
-   */
-  privacy?: { private_model_only: boolean; why: string } | null,
 ): Candidate[] {
   const out: Candidate[] = [];
   const monthStart = Date.UTC(new Date(now).getUTCFullYear(), new Date(now).getUTCMonth(), 1);
@@ -167,9 +155,7 @@ export function orderBriefingCandidates(
     const free = FREE_SLUG.test(m.slug) || m.provider_id === "prv_workers_ai";
     const backend = m.backend_id ?? (m.provider_id === "prv_workers_ai" ? "bk_workers_ai" : m.provider_id === "prv_openrouter" ? "bk_openrouter" : m.provider_id);
     const b = rows.backends.find((x) => x.id === backend);
-    const trains = isPrivateModelRoute(m.data_use) === false; // a route that is NOT non-training may keep the prompt
-    const refusedForContent = Boolean(privacy?.private_model_only) && trains;
-    const eligible = Boolean(b && b.status === "enabled") && !refusedForContent;
+    const eligible = Boolean(b && b.status === "enabled");
     out.push({
       position: out.length + 1,
       kind: free ? "free_rung" : "paid_rung",
@@ -180,9 +166,7 @@ export function orderBriefingCandidates(
       eligible,
       why: !b || b.status !== "enabled"
         ? `backend ${backend} is ${b?.status ?? "missing"}`
-        : refusedForContent
-          ? `training-permitting (${m.data_use}); the router refuses it for this content — ${privacy?.why}`
-          : free ? "free rung, walked by the cloud router if both seats refuse" : `paid rung${trains ? "" : ", non-training"}; the last resort`,
+        : free ? "free rung, walked by the cloud router if both seats refuse" : "paid rung; the last resort",
     });
   }
   // Her "nothing paid" rule (24 Oct 2026): below the two seats nothing is reachable for the
@@ -193,25 +177,15 @@ export function orderBriefingCandidates(
   return out;
 }
 
-/** The router's verdict on a prompt, for the ladder printout. */
-export async function briefingPrivacyVerdict(db: D1Database, prompt: string, lexicon?: PrivateLexicon): Promise<{ private_model_only: boolean; why: string }> {
-  const lex = lexicon ?? (await privateLexicon(db));
-  // The same exemption the consumer applies: the composed spec is this repository's own text.
-  const own = repoAuthoredBriefingText({ spec_module: "executive_briefing", prompt_version: BRIEFING_PROMPT_VERSION, prompt }, Date.now());
-  const v = scanForModelAccess([{ role: "user", content: prompt }], lex, { modelAccess: "public_model_approved", repoAuthoredText: own });
-  return { private_model_only: v.access === "private_model_only", why: v.reason };
-}
-
-/** The same list, read from D1; with a prompt, the router's privacy verdict is applied to the rungs. */
-export async function resolveBriefingCandidates(db: D1Database, now = Date.now(), prompt?: string | null): Promise<Candidate[]> {
+/** The same list, read from D1. */
+export async function resolveBriefingCandidates(db: D1Database, now = Date.now()): Promise<Candidate[]> {
   const backends = (await db.prepare(`SELECT id, status, class, monthly_ceiling_micros, spent_micros, window_started_at, exhausted_until, exhausted_reason FROM execution_backends`).all<BackendRow>()).results ?? [];
   const models = (await db.prepare(
     `SELECT m.id, m.provider_id, m.slug, m.display_name, m.capability_tier, m.enabled,
             m.in_micros_1k, m.out_micros_1k, m.ladder_rung, m.data_use, p.enabled AS provider_enabled
        FROM models m JOIN providers p ON p.id = m.provider_id`,
   ).all<ModelRow>()).results ?? [];
-  const privacy = prompt ? await briefingPrivacyVerdict(db, prompt) : null;
-  return orderBriefingCandidates({ backends, models }, now, privacy);
+  return orderBriefingCandidates({ backends, models }, now);
 }
 
 /** One line per rung, for a terminal or a PR body. */
@@ -221,24 +195,7 @@ export function renderLadder(candidates: Candidate[]): string {
     .join("\n");
 }
 
-/**
- * WHAT THE BRIEFING DECLARES ABOUT ITSELF, SO THE ROUTER DOES NOT HAVE TO GUESS.
- *
- * Measured on 19 Sep 2026, in the first test of the cloud fall-through: intake read the briefing's
- * prompt, matched "trading", "spend" and "private_terms" on its wording, and classified the task
- * `risk: high, model_access: private_model_only`. The cloud router then refused every free rung
- * at privacy (they train on prompts) and every paid rung at capability (cleared to low risk) —
- * "No model on this route satisfied policy: 7 of 14 refused". The ladder below the seats was
- * unreachable, by a guess.
- *
- * The briefing is PUBLIC-MARKET RESEARCH. Its prompt carries no LP name, no deal term and no
- * instruction to spend or send anything; the report is read by her and acted on by nobody in this
- * system. So the duty declares the three axes rather than leaving them to a word match — the same
- * rule PR #22 wrote down: a guessed sensitivity may not decide where work runs. A DECLARED one may.
- *
- * `public_model_approved` is what lets a `:free` rung take it; the LP-name rule the router enforces
- * for genuinely private work is untouched and still refuses those lanes for tasks that carry one.
- */
+/** The briefing is public-market research. The duty declares its kind, risk and recipient. */
 export const BRIEFING_CLASSIFICATION = {
   risk: "low",
   sensitivity: "public",

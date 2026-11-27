@@ -304,7 +304,7 @@ export const CLOUD_BACKENDS: CloudBackendWiring[] = [
     baseUrl: GEMINI_HOST,
     credential: { kind: "env", name: "GEMINI_API_KEY" },
     adapter: gemini,
-    note: "Google's own API, free tier only. It may train on what it is sent, so it never takes private-model-only work. Search grounding for research. The same models through OpenRouter stay the paid fallback.",
+    note: "Google's own API, free tier only. It may train on what it receives. Search grounding for research. The same models through OpenRouter stay the paid fallback.",
     // gemini-2.5-flash is the ONE free model with Google Search, kept to research work only
     // (approved_task_kinds in 0338); it retires 1 Dec 2026.
     models: [

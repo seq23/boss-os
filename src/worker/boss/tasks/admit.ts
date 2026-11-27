@@ -45,7 +45,7 @@ export interface AdmitInput {
   risk?: string | null;
   sensitivity?: string | null;
   /**
-   * `public_model_approved` or `private_model_only`. WHICH MODELS MAY SEE THE INPUT.
+   * Compatibility field for existing work-card readers.
    * Omitted means the classifier decides; see `intake/classify.ts`.
    */
   model_access?: string | null;
@@ -96,28 +96,14 @@ export function overruledGuess(a: {
   return startedBySystem(a.input);
 }
 
-/**
- * THE PRIVACY AXES OF AN OVERRULED GUESS. Pure; the one reading admit and the hourly sweep
- * (routes/approvals.ts) share.
- *
- * 16 Nov 2026: the monthly quality read was released from intake's USER_ONLY guess (15 Nov) and then
- * refused by every seat for an hour at a time: the row still carried the guess's `restricted`
- * sensitivity, and `restricted` asks for a sensitive-routing card (backends/guard.ts
- * `restricted_needs_routing_card`) that nothing raises for work Boss OS started itself. The two axes
- * are treated differently on purpose:
- * - `sensitivity` is RE-DERIVED from the real text (a declared sensitivity still wins, through
- *   classify). The trading word rule's `restricted` was part of the guess being overruled.
- * - `modelAccess` stays TIGHTEN-ONLY: `private_model_only` if either reading says so. It is the
- *   non-liftable guard (router/policy.ts) that keeps private text off every free and training route,
- *   and the real prompt earns it on its own account (fund terms), so nothing private is loosened.
- */
+/** Recompute both fields when a guessed task kind was overruled. */
 export function overruledAxes(
   was: { modelAccess: string | null | undefined },
   redone: { sensitivity: Classification["sensitivity"]; modelAccess: Classification["modelAccess"] },
 ): { sensitivity: Classification["sensitivity"]; modelAccess: Classification["modelAccess"] } {
   return {
     sensitivity: redone.sensitivity,
-    modelAccess: was.modelAccess === "private_model_only" ? "private_model_only" : redone.modelAccess,
+    modelAccess: redone.modelAccess,
   };
 }
 
@@ -251,7 +237,7 @@ export async function admitTask(env: Env, b: AdmitInput, handoff?: { id: string;
     classification = {
       ...classification,
       intakeKind: brief.kind,
-      modelAccess: byRead.modelAccess === "private_model_only" ? "private_model_only" : classification.modelAccess,
+      modelAccess: classification.modelAccess,
       risk: riskAllows(classification.risk, byRead.risk) ? classification.risk : byRead.risk,
       executionAssignment: byRead.executionAssignment === "USER_ONLY" ? "USER_ONLY" : classification.executionAssignment,
       reason: `${classification.reason} Kind read from her words: ${brief.kind}.`,

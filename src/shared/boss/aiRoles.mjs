@@ -41,13 +41,11 @@ export const AI_ROLES = Object.freeze({
 
   // ── Mail readers on her Mac (claude.ai Gmail connector; Codex cannot reach it) ────────────────
   "kdp_surface": { role: BRAIN, why: "Reads Amazon's KDP mail through the claude.ai Gmail connector and classifies it for her: reading and summarising, no edits; Codex cannot reach the connector." },
-  "mailbox_sweep": { role: BRAIN, why: "Reads her whole mailbox, which carries confidential LP and deal text: Claude seat only (private-data-routing), and Codex cannot reach the connector." },
+  "mailbox_sweep": { role: BRAIN, why: "Reads her mailbox through the Gmail connector on the Claude seat, where the connector is available." },
 
   // ── The agent queue (com.seq.boss-agent*): duties parked for her Mac's seats ──────────────────
   "agent_queue.default": { role: WORKER, why: "An employee's duty run is hands-on work: Codex's seat goes first on every ladder that has it." },
   "agent_queue.chrome_job": { role: BRAIN, why: "Runs in her Chrome through Claude in Chrome; Codex has no browser (1 Nov 2026)." },
-  "agent_queue.private_prompt": { role: BRAIN, why: "A seat prompt the privacy screen flags (LP, investor or deal terms, a private name, children's data, an unreadable lexicon) never reaches a free or cloud route, fail closed. It walks the private row of ROUTE_TABLE below: Claude's seat first, Codex's as the backup for short and clear-brief work, Claude's seat only for hard work (owner, 13 Nov 2026)." },
-  "agent_queue.confidential_draft": { role: BRAIN, why: "LP and deal-terms drafts run on the Claude seat only (private-data-routing, 31 Oct 2026)." },
 
   // ── The weekly AI answers read (duty_ai_visibility → scripts/ops/ai-visibility.sh) ─────────────
   "ai_visibility.read": { role: BRAIN, jobClass: "short", why: "Reads OpenSEO's weekly AI answers through the openseo Claude plugin, which only a Claude session loads, locked to 9 read-only tools (ai-visibility-permissions.json); code recomputes every count it returns." },
@@ -62,29 +60,7 @@ export const AI_ROLES = Object.freeze({
   "brain.write": { role: BRAIN, jobClass: "hard", why: "A company-brain write that does not say whether it records or interprets is treated as interpreting: the strongest route." },
 });
 
-/*
- * ─── JOB CLASS × ROUTE TIER: THE ONE TABLE (owner, 13 Nov 2026, "ok yes execute this") ─────────────
- *
- * Her words: "all private stuff can go through codex i need a backup to claude", "its more about model
- * ability too", and "there needs to be no standing rule about any … model". So nothing here names a
- * model. A job has a CLASS (how hard it is), a route has a TIER (free / Codex / Claude), and the order
- * per class is this data. Which concrete model answers inside a tier is the tier's own business: the
- * free tier ranks its candidates from the run log (router/experience.ts `freeMemory`), a seat runs
- * whatever its own invocation config says.
- *
- *   HARD        hard judgement and long builds: writes code that lands, decides, merges, reviews,
- *               repairs, touches money, interprets a brain, or reaches her or a customer unchecked.
- *   CLEAR_BRIEF well-specified work: housekeeping, docs, test lists, bulk edits with a clear brief.
- *   SHORT       short and checkable: sorting, summaries, first drafts, routine searches, read-only
- *               lists something else checks, recording her words or a number into a brain.
- *
- * PRIVATE (committed LP names, deal terms, private brain sections, anything the privacy screen marks):
- * the free tier is never on the list, and that is the privacy rule, not an ability rule; it is decided
- * by the route's recorded data use (router/policy.ts, stage 1) and nothing here can lift it. Private
- * HARD work has one route and WAITS for it by name; it is never moved to Codex.
- *
- * A job with no class is HARD: an unknown fails toward the stronger route.
- */
+/** Route tiers follow the required ability. Unclassified work uses the most capable seats. */
 export const HARD = "hard";
 export const CLEAR_BRIEF = "clear_brief";
 export const SHORT = "short";
@@ -97,20 +73,10 @@ export const FREE = "free";
 export const ROUTE_TIERS = Object.freeze([FREE, CODEX, CLAUDE]);
 
 export const ROUTE_TABLE = Object.freeze({
-  public: Object.freeze({
-    [HARD]: Object.freeze([CLAUDE, CODEX]),
-    [CLEAR_BRIEF]: Object.freeze([CODEX, CLAUDE]),
-    [SHORT]: Object.freeze([FREE, CODEX, CLAUDE]),
-  }),
-  private: Object.freeze({
-    [HARD]: Object.freeze([CLAUDE]),
-    [CLEAR_BRIEF]: Object.freeze([CLAUDE, CODEX]),
-    [SHORT]: Object.freeze([CLAUDE, CODEX]),
-  }),
+  [HARD]: Object.freeze([CLAUDE, CODEX]),
+  [CLEAR_BRIEF]: Object.freeze([CODEX, CLAUDE]),
+  [SHORT]: Object.freeze([FREE, CODEX, CLAUDE]),
 });
-
-/** How a walk ends when every route on it is out: private HARD work waits for its one route. */
-export const WAIT_FOR_CLAUDE = "wait_for_claude";
 export const NAMED_STOP = "named_stop";
 
 /**
@@ -118,14 +84,14 @@ export const NAMED_STOP = "named_stop";
  * failed this class twice in a row (seatOrder.ts `seatFailedTwice`): each is dropped only while a
  * STRONGER tier is still on the list, so the job moves up a rung and a list is never emptied.
  */
-export function routeOrder({ jobClass, privateWork = false, demoted = [] } = {}) {
+export function routeOrder({ jobClass, demoted = [] } = {}) {
   const cls = JOB_CLASSES.includes(jobClass) ? jobClass : HARD;
-  let routes = [...ROUTE_TABLE[privateWork ? "private" : "public"][cls]];
+  let routes = [...ROUTE_TABLE[cls]];
   for (const tier of demoted) {
     const stronger = routes.some((r) => ROUTE_TIERS.indexOf(r) > ROUTE_TIERS.indexOf(tier));
     if (stronger) routes = routes.filter((r) => r !== tier);
   }
-  return { jobClass: cls, routes, end: privateWork && cls === HARD ? WAIT_FOR_CLAUDE : NAMED_STOP };
+  return { jobClass: cls, routes, end: NAMED_STOP };
 }
 
 /** Intake kinds that are short and checkable. */
@@ -153,8 +119,8 @@ export const HARD_DELIVERS = Object.freeze(["executive_reports", "quality_reads"
  * `brainEdit`: "record" (her exact words or a measured number, read back after the save) is SHORT;
  * any other brain edit is interpreting, and HARD.
  */
-export function jobClassOf({ intakeKind = null, repair = false, repoChange = false, confidentialDraft = false, chromeJob = false, brainEdit = null, delivers = null } = {}) {
-  if (repair || repoChange || confidentialDraft || chromeJob) return HARD;
+export function jobClassOf({ intakeKind = null, repair = false, repoChange = false, chromeJob = false, brainEdit = null, delivers = null } = {}) {
+  if (repair || repoChange || chromeJob) return HARD;
   if (typeof delivers === "string" && HARD_DELIVERS.includes(delivers)) return HARD;
   if (brainEdit != null && brainEdit !== false) return brainEdit === "record" ? SHORT : HARD;
   if (SHORT_KINDS.has(intakeKind)) return SHORT;
@@ -167,39 +133,9 @@ export function jobClassFor(key) {
   return AI_ROLES[key]?.jobClass ?? HARD;
 }
 
-/**
- * AFTER A CODEX LIMIT: ALL FREE TIERS FIRST, THEN HER SUBSCRIPTION SEATS, NEVER A WAIT WHILE A LATER
- * RUNG CAN RUN (owner, 6 Nov 2026, replacing the 3 Nov "public work → free rung, never Claude; the rest
- * waits"): "it started with all free tiers and if they were all out then it uses an allowance on the
- * paid models i have subscriptions to". And (CLAUDE.md, her yes 6 Nov 2026): "A Codex usage limit
- * hands the work to Claude, then the free routes; it never waits for the reset."
- *
- * The chain, read by src/worker/boss/queue/consumer.ts (at dispatch) and routes/backends.ts (a limit
- * mid-run), with the free rungs in src/worker/boss/queue/freeRung.ts:
- *   1. Gemini free (research: with Google Search grounding)
- *   2. OpenRouter `:free` models (max price 0; any reported cost stops the call). Research hands them
- *      Brave Search results, the repo's $0 search source; with no Brave key rung 2 is skipped by name
- *      ("no free search source for OpenRouter"). OpenRouter's web plugin costs money: never used.
- *   3. Codex's seat, if it is not spent
- *   4. the Claude seat (bk_claude_code on her Mac), only when her Mac was seen recently and the seat
- *      is not marked spent
- *   5. NAMED STOP with the reset
- * Never a paid API.
- *
- * "free_rung": SHORT work (ROUTE_TABLE below) DECLARED public, or cleared for public models on its
- *   card (and not an LP/deal draft, not a Chrome job) walks the whole chain from rung 1.
- * "claude_seat": everything else (confidential, LP, deal, children's, private) never touches a free
- *   rung (private-data-routing: fail closed) and goes to the Claude seat; it waits only when no
- *   Claude seat can take it.
- */
-export function afterCodexLimit({ sensitivity, modelAccess = null, confidential = false, chromeJob = false, jobClass = HARD } = {}) {
-  // The free tier is on the list for SHORT work only (ROUTE_TABLE); a job with no class is HARD.
-  if (jobClass !== SHORT) return "claude_seat";
-  // Public = declared public, OR cleared for public models on its card (owner, 6 Nov 2026: the
-  // deep research for Valerie was "public_model_approved" and sat waiting four days for Codex). The
-  // router's privacy screen still reads every prompt and keeps private text off the free rung.
-  const isPublic = sensitivity === "public" || modelAccess === "public_model_approved";
-  return isPublic && !confidential && !chromeJob ? "free_rung" : "claude_seat";
+/** Only short, checkable work can move to a free rung. */
+export function afterCodexLimit({ jobClass = HARD } = {}) {
+  return jobClass === SHORT ? "free_rung" : "claude_seat";
 }
 
 /** The role for a job key. An unknown key is a programming error, so it throws rather than guesses. */

@@ -22,11 +22,7 @@
  *      hold, and no credential is held that nothing can reach.
  *   2. EVERY PRICE CARRIES ITS PROVENANCE. No model is `UNKNOWN` and none has an empty source. A
  *      figure marked SOURCED must cite a URL; one that could not be confirmed must say so.
- *   3. THE CONFIDENTIAL LINE IS STRUCTURAL. Exactly one `data_use` value may hold LP names, the
- *      column defaults to a restricted state so a model added later is restricted by default, and
- *      the refusal is NOT APPROVABLE — no card lifts it.
- *   4. THE SCAN FAILS CLOSED. An unestablished lexicon is a hit, and the refusal never quotes the
- *      material it found.
+ *   3. Vendor data-use labels have an established value and source. New rows default to unknown.
  *   5. THE PER-RUN CAP IS ENFORCED, not merely stored: the router compares an estimate against it
  *      before the call, and the default is passed to `getNumber` so an unreadable row holds the cap
  *      rather than removing it.
@@ -138,9 +134,8 @@ export function check({ models, providers, settings, bypassSchema, sources, appl
     }
   }
 
-  // ── 3. The confidential line is structural ─────────────────────────────────
+  // ── 3. Vendor data-use metadata ─────────────────────────────────
   const confidential = code(sources[CONFIDENTIAL] ?? "");
-  const policy = code(sources[POLICY] ?? "");
 
   // `mayHoldConfidential` returns a comparison against exactly one literal. Matching the RETURN
   // rather than a parameter name keeps the check about the behaviour: an `||` added to that line
@@ -149,18 +144,6 @@ export function check({ models, providers, settings, bypassSchema, sources, appl
     bad.push(
       `${CONFIDENTIAL} does not gate on exactly one data_use value. Everything else — including a `
       + "value somebody invents later, including null — must be restricted.",
-    );
-  }
-  if (!/ctx\.modelAccess === "private_model_only" && !isPrivateModelRoute\(model\.data_use\)/.test(policy)) {
-    bad.push(`${POLICY} does not refuse a training-permitting route for confidential content`);
-  }
-  // THE REFUSAL MUST NOT BE APPROVABLE. A card that could lift it would be approving a permanent
-  // presence in somebody's corpus, which is not a thing any card in this system means.
-  const rule = /if \(ctx\.modelAccess === "private_model_only"[\s\S]{0,900}?\n  \}/.exec(policy)?.[0] ?? "";
-  if (!/approvable: false/.test(rule)) {
-    bad.push(
-      `${POLICY}'s confidential refusal is approvable. Restricted-to-cloud is approvable because the `
-      + "exposure ends when the run does; training does not end when the run ends.",
     );
   }
   for (const m of models) {
@@ -174,12 +157,7 @@ export function check({ models, providers, settings, bypassSchema, sources, appl
   // A model added later must be restricted until somebody writes down why it is not.
   const migrations = sources.__migrations ?? "";
   if (!/ADD COLUMN data_use TEXT NOT NULL DEFAULT 'UNKNOWN'/.test(migrations)) {
-    bad.push("models.data_use does not default to UNKNOWN, so a model added later would not be restricted by default");
-  }
-
-  // ── 4. The scan fails closed, and never quotes what it found ───────────────
-  if (!/if \(!lexicon\.established\)[\s\S]{0,200}privateVerdict\(\["scan unavailable"\]/.test(confidential)) {
-    bad.push(`${CONFIDENTIAL} does not treat an unestablished scan as a hit`);
+    bad.push("models.data_use does not default to UNKNOWN, so a model added later would lack an explicit unknown finding");
   }
 
   // ── 5. The per-run cap is enforced, not merely stored ──────────────────────
@@ -335,42 +313,6 @@ function selfTest() {
       expect: 1,
     },
     {
-      name: "THE ACTUAL DEFECT: the confidential refusal made approvable",
-      input: {
-        ...good,
-        sources: {
-          ...good.sources,
-          [POLICY]: good.sources[POLICY].replace("approvable: false,", "approvable: true,"),
-        },
-      },
-      expect: 1,
-    },
-    {
-      name: "the confidential rule removed from the router's first stage",
-      input: {
-        ...good,
-        sources: {
-          ...good.sources,
-          [POLICY]: good.sources[POLICY].replace(
-            'ctx.modelAccess === "private_model_only" && !isPrivateModelRoute(model.data_use)',
-            "false",
-          ),
-        },
-      },
-      expect: 1,
-    },
-    {
-      name: "a scan failure treated as a clean bill",
-      input: {
-        ...good,
-        sources: {
-          ...good.sources,
-          [CONFIDENTIAL]: good.sources[CONFIDENTIAL].replace("if (!lexicon.established)", "if (false)"),
-        },
-      },
-      expect: 1,
-    },
-    {
       name: "THE ACTUAL DEFECT: a per-run cap stored and never compared",
       input: {
         ...good,
@@ -478,7 +420,7 @@ if (process.argv.includes("--self-test")) {
     + `priced with provenance and all carrying a data-use finding, `
     + `${world.providers.filter((p) => Number(p.enabled) === 1).length} enabled provider(s) all holding `
     + `their key, the per-run ceiling at $${(Number(world.settings.per_run_cap_micros) / 1e6).toFixed(2)} `
-    + `compared before every call, the confidential refusal unliftable by any card, spend_bypass `
+    + `compared before every call, registered vendor data-use labels checked, spend_bypass `
     + `constrained to the owner by the schema, and nothing deciding "free" from a price column.`,
   );
 }

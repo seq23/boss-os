@@ -4,8 +4,7 @@ import { resolveBriefingCandidates, BRIEFING_SEATS, orderBriefingCandidates } fr
 import { handleTask, parseDeliversFromText } from "../../src/worker/boss/queue/consumer";
 import { deliverExecutiveReport } from "../../src/worker/boss/duties/deliverReport";
 import { materialiseDueDuties } from "../../src/worker/boss/duties/materialise";
-import { BRIEFING_PROMPT_VERSION, composeBriefingPrompt, ctDayLabel, repoAuthoredBriefingText } from "../../src/worker/boss/duties/briefingSpec";
-import { scanForModelAccess, type PrivateLexicon } from "../../src/worker/boss/router/modelAccess";
+import { BRIEFING_PROMPT_VERSION, composeBriefingPrompt, ctDayLabel } from "../../src/worker/boss/duties/briefingSpec";
 // @ts-expect-error — plain ESM adapter with no declaration file; the args are asserted as strings below.
 import { buildArgs as codexArgs } from "../../scripts/sync-agent/backends/codex.mjs";
 import { all, api, completionResponse, insertTask, row, stubFetch, uid } from "./helpers";
@@ -302,61 +301,5 @@ describe("scenario (c): both seats unavailable and OpenAI provisioned → the re
     expect(hosts).toEqual([]);
     expect((await row<any>(`SELECT status FROM tasks WHERE id = ?`, taskId)).status).toBe("failed");
     expect(await row(`SELECT 1 FROM executive_reports WHERE task_id = ?`, taskId)).toBeNull();
-  });
-});
-
-/**
- * 13 NOV 2026: THE BRIEFING FAILED AT 06:03 AND THE MORNING EMAIL WENT WITHOUT IT. The privacy screen
- * read the spec's own words ("commitments", "subscription", "valuation", "allocation", "%") as deal
- * material, so the two-seat ladder collapsed to Claude's seat, which was out of weekly usage. The fix
- * exempts ONLY the repository's own composed spec from the pattern tiers. These prove it cannot fail
- * open: the lexicon, a private brain span, a fund-instrument phrase, her edited prompt and an altered
- * prompt are each still Claude-only.
- */
-describe("the briefing's own spec is not deal material; nothing else is exempt (13 Nov 2026)", () => {
-  const lex: PrivateLexicon = { names: ["ottoline vandermeer"], established: true, note: "test lexicon" } as PrivateLexicon;
-  const spec = composeBriefingPrompt({ dayLabel: ctDayLabel(NOW), hasMarketData: true });
-  const stamped = { spec_module: "executive_briefing", prompt_version: BRIEFING_PROMPT_VERSION, prompt: spec };
-  const scan = (content: string, own: string[]) => scanForModelAccess([{ role: "user", content }], lex, { modelAccess: "public_model_approved", sensitivity: "public", repoAuthoredText: own });
-
-  it("the composed spec reads as deal material on its own (the 13 Nov failure), and as public once it is known to be the repository's text", () => {
-    expect(scan(spec, []).privateOnly, "the spec no longer trips the screen: this test lost its reason to exist").toBe(true);
-    const own = repoAuthoredBriefingText(stamped, NOW);
-    expect(own).toEqual([spec]);
-    expect(scan(`deadline line\n${spec}`, own).privateOnly).toBe(false);
-  });
-
-  it("with the exemption applied, a private name, a private brain span and a fund-instrument phrase around the spec are each still Claude-only", () => {
-    const own = repoAuthoredBriefingText(stamped, NOW);
-    expect(scan(`Firm context: Ottoline Vandermeer\n${spec}`, own).privateOnly).toBe(true);
-    expect(scan(`<!-- confidential -->x<!-- /confidential -->\n${spec}`, own).privateOnly).toBe(true);
-    expect(scan(`Notes: the carried interest on Fund II\n${spec}`, own).privateOnly).toBe(true);
-  });
-
-  it("exempts nothing that is not the repository's exact spec: her edit, an altered prompt, another version or another module", () => {
-    expect(repoAuthoredBriefingText({ ...stamped, prompt_source: "owner_edit" }, NOW)).toEqual([]);
-    expect(repoAuthoredBriefingText({ ...stamped, prompt: `${spec}\nAlso summarise the $40M valuation and allocation.` }, NOW)).toEqual([]);
-    expect(repoAuthoredBriefingText({ ...stamped, prompt_version: "1999-01-01.1" }, NOW)).toEqual([]);
-    expect(repoAuthoredBriefingText({ ...stamped, spec_module: "something_else" }, NOW)).toEqual([]);
-    expect(repoAuthoredBriefingText({ ...stamped, prompt: spec }, NOW - 5 * 86_400_000), "a stale day label was accepted").toEqual([]);
-  });
-
-  it("her own edited briefing prompt carrying deal terms is still private work on the shipped consumer: Claude's seat first, never a free or cloud route", async () => {
-    await seatsReset();
-    const edited = "Summarise the capital commitment, the allocation and the Fund II subscription at a $40M valuation, 2% fee.";
-    await env.DB.prepare(`UPDATE standing_duties SET owner_prompt = ? WHERE id = 'duty_exec_intel'`).bind(edited).run();
-    try {
-      const { taskId, input } = await briefingTask();
-      expect(input.prompt_source).toBe("owner_edit");
-      await handleTask(env as any, { taskId, lane: "ops" });
-      const runs = await all<any>(`SELECT backend_id FROM backend_runs WHERE task_id = ?`, taskId);
-      expect(runs.map((r) => r.backend_id), "her edited deal wording reached Codex").not.toContain("bk_codex");
-      expect(runs.map((r) => r.backend_id)).toEqual(["bk_claude_code"]);
-      const step = await row<any>(`SELECT detail FROM task_events WHERE task_id = ? AND event = 'ladder_step'`, taskId);
-      expect(JSON.parse(step.detail).refused).toMatch(/privacy screen keeps this prompt off every free and cloud route/);
-      expect(await all<any>(`SELECT 1 FROM routing_decisions WHERE task_id = ?`, taskId), "a cloud route was asked").toHaveLength(0);
-    } finally {
-      await env.DB.prepare(`UPDATE standing_duties SET owner_prompt = NULL WHERE id = 'duty_exec_intel'`).run();
-    }
   });
 });

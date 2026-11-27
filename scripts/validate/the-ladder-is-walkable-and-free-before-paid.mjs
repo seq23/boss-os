@@ -256,7 +256,7 @@ export function theOrderIsFreeBeforePaid({ models }, order = orderCandidates) {
  * Private work went from ONE eligible lane to nine. That is only true if the rows say so AND the
  * adapter makes the claim enforceable, so both halves are asserted.
  * ═══════════════════════════════════════════════════════════════════════════ */
-export function privateWorkHasLanesAndFreeOnesAreNotAmongThem({ models }, adapterSource) {
+export function vendorDataUseIsHonored({ models }, adapterSource) {
   const bad = [];
   const ladder = rungs(models);
   if (ladder.length === 0) return ["there is no ladder, so nothing was checked about which lanes may hold an LP name."];
@@ -464,7 +464,7 @@ if (process.argv.includes("--self-test")) {
   expect("every rung is reachable in the live cost mode", everyRungIsReachable(world, tiers), false);
   expect("the hop limits reach the bottom of the ladder", theHopLimitsReachTheBottom(world, freeHops, fallbackHops), false);
   expect("the shipped comparator puts free before paid", theOrderIsFreeBeforePaid(world), false);
-  expect("private work has lanes and no free one is among them", privateWorkHasLanesAndFreeOnesAreNotAmongThem(world, adapterSource), false);
+  expect("vendor data-use labels match the adapter", vendorDataUseIsHonored(world, adapterSource), false);
   expect("the router drives the privacy flag from the row", theRouterDrivesTheFlagFromTheRow(routerSource), false);
   expect("a dead lane is off the ladder and says why", aDeadLaneIsOffTheLadderAndSaysWhy(world), false);
   expect("the backend is enabled with a figure of its own", theBackendIsEnabledWithACap(world), false);
@@ -509,26 +509,26 @@ if (process.argv.includes("--self-test")) {
   }), true);
 
   // The confidential line broken: a free lane marked private-capable.
-  expect("a :free lane marked NO_TRAINING_CONTRACTUAL", privateWorkHasLanesAndFreeOnesAreNotAmongThem({
+  expect("a :free lane marked NO_TRAINING_CONTRACTUAL", vendorDataUseIsHonored({
     ...world,
     models: world.models.map((m) => (m.id === "mdl_or_nemotron_ultra_free" ? { ...m, data_use: "NO_TRAINING_CONTRACTUAL" } : m)),
   }, adapterSource), true);
 
   // No private lane at all — the empty-set case that a naive check would pass.
-  expect("a world where nothing may hold an LP name", privateWorkHasLanesAndFreeOnesAreNotAmongThem({
+  expect("a world with no registered non-training backend", vendorDataUseIsHonored({
     ...world, models: world.models.map((m) => ({ ...m, data_use: "TRAINS_ON_PROMPTS" })),
   }, adapterSource), true);
 
   // The adapter stops asking the vendor to honour the claim.
   expect("an adapter that no longer sends data_collection deny",
-    privateWorkHasLanesAndFreeOnesAreNotAmongThem(world, adapterSource?.replace(/data_collection: "deny"/g, "x: 1") ?? null), true);
-  expect("an adapter that could not be read", privateWorkHasLanesAndFreeOnesAreNotAmongThem(world, null), true);
+    vendorDataUseIsHonored(world, adapterSource?.replace(/data_collection: "deny"/g, "x: 1") ?? null), true);
+  expect("an adapter that could not be read", vendorDataUseIsHonored(world, null), true);
 
   // The router keying the flag off the caller's label instead of the row.
   expect("a router that keys the flag off the caller's label",
     theRouterDrivesTheFlagFromTheRow(routerSource?.replace(
       "requireNoTraining: isPrivateModelRoute(model.data_use)",
-      'requireNoTraining: ctx.modelAccess === "private_model_only"') ?? null), true);
+      'requireNoTraining: false') ?? null), true);
   expect("a router that stopped selecting ladder_rung",
     theRouterDrivesTheFlagFromTheRow(routerSource?.replace(/m\.reasoning, m\.ladder_rung,\n/g, "") ?? null), true);
 
@@ -602,7 +602,7 @@ const problems = [
   ...everyRungIsReachable(world, tiers),
   ...theHopLimitsReachTheBottom(world, freeHops, fallbackHops),
   ...theOrderIsFreeBeforePaid(world),
-  ...privateWorkHasLanesAndFreeOnesAreNotAmongThem(world, adapterSource),
+  ...vendorDataUseIsHonored(world, adapterSource),
   ...theRouterDrivesTheFlagFromTheRow(routerSource),
   ...aDeadLaneIsOffTheLadderAndSaysWhy(world),
   ...theBackendIsEnabledWithACap(world),

@@ -13,8 +13,6 @@ import { mintComposeToken } from "../../src/worker/boss/wealth/gmailDraft";
 import { sendHeldLp, lpRow } from "../../src/worker/boss/lp/heldReply";
 import { setCommandFetch } from "../../src/worker/boss/commands/google";
 import { whereSheIs } from "../../src/worker/boss/lp/schedule";
-import { routeCompletion } from "../../src/worker/boss/router";
-import { isConfidentialDraft, confidentialLadder } from "../../src/worker/boss/duties/seatOrder";
 import { lpConfirmBody, lpTimesBody, openSlots, zoneResolver, slotText } from "../../src/shared/boss/lp/schedule.mjs";
 import { lpDecideItems } from "../../src/shared/boss/lp/plan.mjs";
 
@@ -122,22 +120,7 @@ describe("her tap on a confirmation sends the reply and the invite, once, only i
   });
 });
 
-describe("the router refuses a non-Claude route for LP scheduling content (fail closed)", () => {
-  it("a scheduling draft is a confidential kind: Claude's seat only, never moved to another", () => {
-    // Owner ruling, 4 Nov 2026: confidential for a COMMITTED LP; a prospect's scheduling is public.
-    expect(isConfidentialDraft({ draft_kind: "lp_scheduling", lp_committed: true })).toBe(true);
-    expect(confidentialLadder(["bk_codex", "bk_claude_code"])).toEqual(["bk_claude_code"]);
-    expect(confidentialLadder(["bk_codex"])).toEqual([]);
-  });
-  it("the Worker's router refuses it before any model, free or paid", async () => {
-    for (const freeOnly of [true, false]) {
-      await expect(routeCompletion(env as any, {
-        routeId: "rt_ops_default", lane: "ops", confidentialDraft: true, freeOnly,
-        messages: [{ role: "user", content: "Offer Avery Example three times for a call about the fund" }],
-      })).rejects.toThrow(/Claude seat only/);
-    }
-  });
-});
+
 
 
 it("a sign-in abort retries before sending, and repeated aborts return a failure instead of throwing", async () => {

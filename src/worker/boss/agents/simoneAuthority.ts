@@ -5,3 +5,5 @@ export const SIMONE_TOOL_STEPS = 100;
 // managed roster through the same lifecycle as every other seat. The trading lane stays separate.
 export const SIMONE_MANAGED_SEATS = `SELECT id FROM employees WHERE lane = 'ops' AND id <> '${SIMONE}'
   AND lifecycle IN ('active', 'provisional') AND status IN ('active', 'paused')`;
+
+export const simoneRoutePreference = (employee: string, kind: string) => `simone_route_preference:${employee}:${kind}`;

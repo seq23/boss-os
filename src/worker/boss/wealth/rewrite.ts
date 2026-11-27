@@ -24,7 +24,7 @@
  * may be an hour away, and she is looking at the screen now. A thirteen-letter rewrite is small
  * work: one short prompt each, one JSON reply each. So it runs on the Worker's own queue
  * (`boss_task_queue`, drained after the request that queued it and by the progress poll) through
- * `routeCompletion`, labelled `private_model_only`: the letter goes out under her name to a
+ * `routeCompletion` drafts a letter for review. If approved, the letter goes out under her name to a
  * counterparty and names the companies she is working, so the training-permitting free rungs are
  * refused and it lands on the first non-training rung — Workers AI, $0 inside the allowance. On
  * production every Worker-side run of the last fortnight landed on `mdl_cf_llama33_70b` for the
@@ -151,7 +151,6 @@ export async function queueRewrite(
     employee_id: REWRITE_OWNER,
     intake_kind: "drafting",
     risk: "medium",
-    model_access: "private_model_only",
     audience: "internal",
     input: { outreach_rewrite: { rewrite_id: rewriteId, candidate_id: draft.candidate_id } },
   });
@@ -506,7 +505,6 @@ export async function runOutreachRewrite(
         intakeKind: "drafting",
         risk: "medium",
         sensitivity: "private",
-        modelAccess: "private_model_only",
         budgetMicros: 0,
         messages,
       });

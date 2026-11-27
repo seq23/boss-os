@@ -1,5 +1,5 @@
 import type { Env } from "../env";
-import { FIRST_READ_SCAN_OFF, freeLadder, type Rung } from "../intake/firstRead";
+import { freeLadder, type Rung } from "../intake/firstRead";
 import { macSeen } from "../queue/freeRung";
 import { readJsonObject } from "../router/types";
 import { SIMONE_ROUTING, readAssignments, routingInstructions, routingRequest, simoneRole } from "../../../shared/boss/intake/simoneRouting.mjs";
@@ -36,7 +36,7 @@ async function runCloudCall(env: Env, call: CloudCall, now: number, rungs?: Rung
     return result.replied ? (result.refused ? "refused" : "handed_off") : "HANDOFF_UNAVAILABLE";
   }
 
-  const router = { now, workersFirst: true, privateScanOff: FIRST_READ_SCAN_OFF };
+  const router = { now, workersFirst: true };
   const request = routingRequest(call);
   if (containsCredential(request, env)) return "CREDENTIAL_IN_REQUEST";
   const { value: plan } = await freeLadder(env, {

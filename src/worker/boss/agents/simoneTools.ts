@@ -30,7 +30,10 @@ import { containsCredential } from "../../../shared/boss/service/secretLines.mjs
 import { quoteStands } from "../../../shared/boss/text/wholeSentence.mjs";
 import { OPERATIONS_ENABLED, operatingStopped } from "../lib/operatingStop";
 import { operatingReport } from "./simoneOperations";
-import { SIMONE_MANAGED_SEATS, SIMONE_TOOL_STEPS } from "./simoneAuthority";
+import { reviewedFreeDrafts } from "../router/experience";
+import { isIntakeKind } from "../../../shared/boss/governance";
+import { jobClassOf, SHORT } from "../../../shared/boss/aiRoles.mjs";
+import { SIMONE_MANAGED_SEATS, SIMONE_TOOL_STEPS, simoneRoutePreference } from "./simoneAuthority";
 
 export const SIMONE_RECORD_READS = {
   morning: `SELECT day, updated_at, sent_at FROM morning_digests ORDER BY day DESC LIMIT 3`,
@@ -169,6 +172,49 @@ export async function simoneTool(env: Env, request: { id: string; lease: number;
         AND EXISTS (SELECT 1 FROM tasks WHERE ${liveRun})`).bind(id, Number(paused), operation, ...lease).first<number>("version");
     if (version === null) return { ok: false, code: refused } as const;
     return { ok: true, receipt: operation, duty: id, name: duty.name, state: paused ? "paused" : "scheduled", version } as const;
+  }
+  if (request.tool === "model_routing") {
+    const args = typeof request.task === "string" && request.task.length <= 500 ? readJsonObject(request.task) : null;
+    const employeeId = args?.employee;
+    const kind = args?.kind;
+    const choice = args?.model;
+    if (typeof employeeId !== "string" || !isIntakeKind(kind) || kind === "research" ||
+        jobClassOf({ intakeKind: kind }) !== SHORT ||
+        (choice !== undefined && typeof choice !== "string") ||
+        Object.keys(args ?? {}).some((key) => !["employee", "kind", "model"].includes(key))) {
+      return { ok: false, code: "REVIEWED_DRAFT_SCOPE_REQUIRED" } as const;
+    }
+    const employeeName = await env.DB.prepare(`SELECT name FROM employees WHERE id = ? AND id IN (${SIMONE_MANAGED_SEATS})`)
+      .bind(employeeId).first<string>("name");
+    if (!employeeName) return { ok: false, code: "MANAGED_AGENT_REQUIRED" } as const;
+    const candidates = await reviewedFreeDrafts(env.DB, kind);
+    const key = simoneRoutePreference(employeeId, kind);
+    if (choice === undefined) {
+      return { ok: true, current: await env.DB.prepare("SELECT value FROM settings WHERE key = ?").bind(key).first<string>("value") ?? "subscription",
+        models: candidates.map(({ model, record }) => ({ id: model.id, name: model.display_name, outcomes: record.sentence })) } as const;
+    }
+    const match = candidates.find(({ model }) => model.id === choice);
+    if (choice !== "subscription" && !match) return { ok: false, code: "FREE_MODEL_NOT_PROVEN" } as const;
+    const line = match
+      ? `Simone moved ${employeeName}'s reviewed ${kind} work to ${match.model.display_name} after ${match.record.succeeded} of ${match.record.runs} measured outputs passed.`
+      : `Simone returned ${employeeName}'s reviewed ${kind} work to a subscription seat.`;
+    const [written] = await env.DB.batch([
+      env.DB.prepare(`INSERT INTO settings (key, value, updated_at)
+        SELECT ?, ?, ? WHERE EXISTS (SELECT 1 FROM tasks WHERE ${activeRun} AND json_extract(input, '$.steer_pending') IS NULL)
+          AND EXISTS (SELECT 1 FROM employees WHERE id = ? AND id IN (${SIMONE_MANAGED_SEATS}))
+        ON CONFLICT(key) DO UPDATE SET value = excluded.value, updated_at = excluded.updated_at WHERE value <> excluded.value`)
+        .bind(key, choice, now, ...lease, employeeId),
+      env.DB.prepare(`INSERT INTO task_events (id, task_id, ts, event, detail)
+        SELECT ?, ?, ?, 'simone_route_changed', ? WHERE changes() > 0`)
+        .bind(newId("tev"), request.id, now, JSON.stringify({ line })),
+    ]);
+    if (!written?.meta.changes) {
+      const current = await env.DB.prepare(`SELECT value FROM settings WHERE key = ?
+        AND EXISTS (SELECT 1 FROM tasks WHERE ${activeRun} AND json_extract(input, '$.steer_pending') IS NULL)`)
+        .bind(key, ...lease).first<string>("value");
+      if (current !== choice) return { ok: false, code: "STALE_ROUTING_CHANGE" } as const;
+    }
+    return { ok: true, receipt: "model_routing", changed: Boolean(written?.meta.changes), selected: choice } as const;
   }
   if (request.tool === "operations") {
     const page = request.task == null ? 0 : Number(request.task);

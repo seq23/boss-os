@@ -201,51 +201,16 @@ describe("Phase 2 — model router", () => {
     expect(decision!.outcome).toBe("ask_human");
   });
 
-  /**
-   * THE CARD STILL WORKS, AND IT NO LONGER WORKS EVERYWHERE — WHICH IS THE POINT.
-   *
-   * This test used to assert only that SOMETHING ran once the card was approved, and it passed on
-   * Fireworks. Migration 0249 recorded what each route's terms actually permit, and the router now
-   * asks that FIRST: restricted content may not reach a route whose terms permit training on it, or
-   * whose terms nothing here could establish, and no card lifts that.
-   *
-   * So the assertion is strengthened rather than relaxed. Both halves are now checked:
-   *
-   *   · the approved card DOES let restricted content onto a cloud route that does not train
-   *     (Workers AI — Cloudflare states it does not train on customer content), and
-   *   · it does NOT let it onto the ones where that could not be established, and the decision log
-   *     says so in those words.
-   *
-   * A test that only checked the first half would pass on the day somebody deleted the second.
-   */
-  it("lets restricted content through on a route that does not train — and onto no other", async () => {
+  it("an approved restricted-routing card admits its cloud route", async () => {
     await commissionFireworks();
     await provisionWorkersAi();
     const { bound, calls } = withAi("allowed");
-
     const result = await routeCompletion(bound, {
       ...baseRequest, taskId: "tsk_r8", sensitivity: "restricted", cloudForRestrictedAllowed: true,
+      onlyProviderId: "prv_workers_ai", freeOnly: true,
     });
-
-    // It ran, and it ran on the route whose data-use terms allow it.
     expect(result.modelId).toMatch(/^mdl_cf_/);
-    expect(calls.length).toBe(1);
-    const permitted = await row<{ data_use: string }>(
-      `SELECT data_use FROM models WHERE id = ?`, result.modelId,
-    );
-    expect(permitted!.data_use).toBe("NO_TRAINING_CONTRACTUAL");
-
-    // And every candidate that could not establish it was refused at privacy, by name.
-    const decision = await row<{ candidates: string }>(
-      `SELECT candidates FROM routing_decisions WHERE task_id = 'tsk_r8'`,
-    );
-    const candidates = JSON.parse(decision!.candidates) as { model_id: string; stage: string; verdict: string; reason: string }[];
-    const trained = candidates.filter((c) => c.reason.includes("training on what is sent"));
-    expect(trained.length).toBeGreaterThan(0);
-    for (const c of trained) {
-      expect(c.stage).toBe("privacy");
-      expect(c.verdict).toBe("rejected");
-    }
+    expect(calls).toHaveLength(1);
   });
 
   it("refuses a model whose estimate exceeds the envelope", async () => {

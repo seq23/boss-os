@@ -69,8 +69,12 @@ export async function storeOperatingReport(env: Env, input: unknown, now = Date.
     ...(actionable.length > 3 ? [`The inventory has ${actionable.length} warnings in all.`] : []),
     ...report.issues.filter((line) => line.endsWith("no proof yet.")).slice(0, 1),
   ];
+  const previous = await readReport(env.DB);
+  const moves = await env.DB.prepare(`SELECT json_extract(detail, '$.line') AS line FROM task_events
+    WHERE event = 'simone_route_changed' AND ts > ? AND ts <= ? ORDER BY ts, id`)
+    .bind(previous?.observedAt ?? now - 86_400_000, now).all<{ line: string }>();
   const note = { section: "operations", at: new Date(now).toISOString(), title: "Simone’s operating check",
-    lines: [...summary, ...(report.proposal ? [report.proposal] : [])],
+    lines: [...summary, ...moves.results.map(({ line }) => line), ...(report.proposal ? [report.proposal] : [])],
     link: { label: "See the operating inventory", url: `${BOSS_ORIGIN}/api/boss/simone/operations` },
   };
   const key = `simone-operations-${report.day}`;

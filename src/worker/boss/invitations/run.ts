@@ -7,10 +7,8 @@
  *      service account (West Peek, Time-2-Read, and Spry Ventures — read-only, never written), narrowed
  *      by a Gmail search, plus the invites still "awaiting reply" on her Workspace calendars. Headers,
  *      the .ics part and the first 800 characters only; nothing of the body is stored.
- *   2. SORT, with the pure rules (src/shared/boss/invitations/invitations.mjs). A personal email is read
- *      by a FREE model (subject + 800 characters); Spry Ventures mail and anything naming a committed LP
- *      reach only a route that does not train (private_model_only; the router's own LP scan raises the
- *      rest). No model answering → the prose rules decide; nothing is guessed.
+ *   2. SORT. The free model reads eligible subjects and the first 800 characters. Read-only
+ *      brokerage mail uses the existing prose rules. When no model answers those rules decide.
  *   3. ONE ROW PER INVITATION (owner_invitations), deduped by calendar UID or sender + day + title.
  *   4. THE CARDS: the "invitations" morning section, so each card is in Simone's email and on Today.
  *
@@ -49,12 +47,12 @@ export type ModelReading = { invitation: boolean; title?: string | null; date?: 
 type Reader = (env: Env, input: { subject: string; excerpt: string; today: string; privateOnly: boolean }) => Promise<ModelReading>;
 
 const routerReader: Reader = async (env, input) => {
+  if (input.privateOnly) return null;
   const { routeCompletion } = await import("../router");
   try {
     const r = await routeCompletion(env, {
       routeId: "rt_ops_default", lane: "ops", intakeKind: "drafting", risk: "low", employeeId: "emp_chief",
-      sensitivity: input.privateOnly ? "restricted" : "private", freeOnly: true,
-      modelAccess: input.privateOnly ? "private_model_only" : null,
+      freeOnly: true,
       messages: [
         { role: "system", content: 'You decide whether an email personally invites the reader to an event (a dinner, party, gathering, coffee, celebration). Answer with JSON only: {"invitation": true|false, "title": "short event name", "date": "YYYY-MM-DD" or null, "time": "HH:MM" 24-hour Central or null, "where": "place" or null, "asks_answer": true|false}. A newsletter, a webinar sent to a list, a ticket receipt, a sales pitch or a meeting someone already set is false.' },
         { role: "user", content: `Today is ${input.today}.\nSubject: ${input.subject}\n\n${input.excerpt}` },

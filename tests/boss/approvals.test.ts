@@ -270,7 +270,7 @@ describe("Phase 1 — expiry sweep", () => {
     const task = (id: string) => row(`SELECT status, approval_id, intake_kind, execution_assignment, risk, sensitivity, model_access FROM tasks WHERE id = ?`, id);
     const apr = (id: string) => row(`SELECT status, decided_by, execution_status FROM approvals WHERE id = ?`, id);
     // 16 Nov 2026: the guess's `restricted` is re-read; model access stays private (tighten-only).
-    expect(await task(duty.taskId)).toMatchObject({ status: "queued", approval_id: null, intake_kind: "recurring_duty", sensitivity: "internal", model_access: "private_model_only" });
+    expect(await task(duty.taskId)).toMatchObject({ status: "queued", approval_id: null, intake_kind: "recurring_duty", sensitivity: "internal", model_access: "public_model_approved" });
     expect((await task(duty.taskId))!.execution_assignment).not.toBe("USER_ONLY");
     expect(await apr(duty.aprId)).toMatchObject({ status: "approved", decided_by: "system", execution_status: "executed" });
     expect((await all(`SELECT event FROM task_events WHERE task_id = ?`, duty.taskId)).map((e) => e.event)).toEqual(expect.arrayContaining(["intake_overruled", "requeued"]));
@@ -305,7 +305,7 @@ describe("Phase 1 — expiry sweep", () => {
     await runExpirySweep(env);
 
     const t = (id: string) => row(`SELECT status, sensitivity, model_access, risk FROM tasks WHERE id = ?`, id);
-    expect(await t(stuck)).toMatchObject({ status: "queued", sensitivity: "internal", model_access: "private_model_only" });
+    expect(await t(stuck)).toMatchObject({ status: "queued", sensitivity: "internal", model_access: "public_model_approved" });
     for (const kept of [declared, hers, trading, neverOverruled]) expect((await t(kept))!.sensitivity).toBe("restricted");
     const overruledEvents = async () => (await all(`SELECT 1 FROM task_events WHERE task_id = ? AND event = 'intake_overruled'`, stuck)).length;
     expect(await overruledEvents()).toBe(2);
