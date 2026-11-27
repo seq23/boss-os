@@ -99,7 +99,6 @@ export const JOBS = Object.freeze([
   { name: "kdp-signin", scripts: ["scripts/ops/kdp-signin.mjs"], needs: [G + "search_threads", G + "get_thread"] },
   { name: "connector-reads", scripts: ["scripts/ops/lib/duty-kit.mjs"],
     needs: [G + "search_threads", G + "get_thread", D + "search_files", D + "get_file_metadata", D + "get_file_permissions"] },
-  { name: "text-only", scripts: ["scripts/ops/interest-extract.mjs"], needs: [], textOnly: true },
   { name: "builder", scripts: ["scripts/ops/repo-change.mjs", "scripts/ops/boss-mail-tail-run.sh"],
     needs: ["Edit", "Bash(git -C:*)", "Bash(git worktree add:*)", "Bash(git commit:*)", "Bash(gh pr create:*)", "Bash(gh pr checks:*)", "Bash(npm run:*)", "Bash(land:*)"],
     mustDeny: ["Bash(claude:*)", "Bash(ai-run:*)", "Bash(gh pr merge:*)", "Bash(git push --force:*)", "Bash(wrangler deploy:*)", "Bash(gh secret:*)", "mcp__claude_ai_8Raise", "mcp__8raise"],

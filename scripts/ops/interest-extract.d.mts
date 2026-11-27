@@ -1,9 +1,14 @@
-/** Loose types so tests can import this node script; the script itself is the authority. */
+type Reader = typeof import("../../src/worker/boss/router/freeModel.ts").readWorkerSource;
+export function extractCandidates(options?: {
+  directory?: string;
+  read?: (input: Parameters<Reader>[0]) => ReturnType<Reader>;
+  loadThread?: (id: string) => Promise<any[]>;
+  prompt?: string;
+  identity?: any;
+  limit?: number;
+}): Promise<{ status: "complete" | "unavailable" | "allowance-exhausted"; checked: number; added: number; remaining: boolean }>;
 export const loadWrong: any;
 export function senderOf(...args: any[]): any;
-export function markHers(...args: any[]): any;
-export function structuredOrder(...args: any[]): any;
-export function parseRows(...args: any[]): any;
+export function normalise(...args: any[]): any;
 export function admissible(...args: any[]): any;
 export function reviewSet(...args: any[]): any;
-export function namesRecipient(...args: any[]): boolean;

@@ -93,3 +93,24 @@ describe("the worker reading router", () => {
     expect(fetch).toHaveBeenCalledTimes(4);
   });
 });
+
+it("keeps grounded public research on the dedicated free search route and requires provider citations", async () => {
+  const fetch = vi.fn<typeof globalThis.fetch>()
+    .mockResolvedValueOnce(Response.json(googleAnswer))
+    .mockResolvedValueOnce(Response.json({
+      candidates: [{
+        ...googleAnswer.candidates[0],
+        groundingMetadata: { groundingChunks: [{ web: { uri: "https://fixture.example/press", title: "Public source fixture" } }] },
+      }],
+    }));
+  vi.stubGlobal("fetch", fetch);
+  const research = { ...input, json: undefined, source: "Example Robotics", webSearch: true } as const;
+  await expect(readWorkerSource(research, credentials)).resolves.toEqual({ status: "unavailable" });
+  await expect(readWorkerSource(research, credentials)).resolves.toMatchObject({
+    status: "ok", provider: "gemini", sources: [{ url: "https://fixture.example/press" }],
+  });
+  await expect(readWorkerSource({ ...research, worker: "toni" }, credentials)).resolves.toEqual({ status: "refused" });
+  expect(fetch).toHaveBeenCalledTimes(2);
+  expect(fetch.mock.calls.every(([url, options]) => String(url).includes("generativelanguage.googleapis.com")
+    && JSON.parse(String(options?.body)).tools[0].google_search)).toBe(true);
+});

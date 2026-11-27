@@ -6,6 +6,19 @@ import os from "node:os";
 
 const FILTER = "scripts/ops/interest-ledger.mjs";
 const EXTRACTOR = "scripts/ops/interest-extract.mjs";
+const MONIQUE_DEAL_READERS = [
+  FILTER, EXTRACTOR, "scripts/ops/interest-grid.mjs", "scripts/ops/interest-match.mjs",
+  "scripts/ops/ledger-hunt.mjs", "scripts/ops/filing-hunt.mjs", "scripts/ops/buyer-hunt.mjs",
+  "scripts/ops/seller-hunt.mjs", "scripts/ops/lp-buyer-crossmatch.mjs",
+  "scripts/ops/lib/side-hunt.mjs", "scripts/ops/lib/deal-reading.mjs",
+];
+
+function checkFreeReader(file, source) {
+  if (/\b(?:claude-\w|gpt-\w|codex-\w)|\b(?:spawn|spawnSync|execFile|execFileSync)\s*\(\s*["'](?:claude|codex)["']|\b(?:claudeCodeExecutor|codexExecutor)\b/i.test(source)) {
+    return [`${file}: deal reading uses a provider outside the shared free router`];
+  }
+  return [];
+}
 
 function checkScan(src) {
   const bad = [];
@@ -25,7 +38,10 @@ function checkScan(src) {
 function checkExtract(extractSrc) {
   const bad = [];
   if (/gmail\.googleapis\.com|auth\/gmail/.test(extractSrc)) {
-    bad.push(`${EXTRACTOR}: extraction must only read the candidate files the scan wrote`);
+    bad.push(`${EXTRACTOR}: legacy extraction must reload through the scan’s read-only Gmail adapter`);
+  }
+  if (!/readWorkerSource/.test(extractSrc) || /structuredOrder|runClaude|decideSide|isRelayedNote/.test(extractSrc)) {
+    bad.push(`${EXTRACTOR}: extraction must read all candidates via the shared model before deciding interest`);
   }
   if (!/NAMED STOP \[EXTRACTION_NEVER_RAN\]/.test(extractSrc)) {
     bad.push(`${EXTRACTOR}: report a named stop when every extract batch fails`);
@@ -47,8 +63,14 @@ function checkExtract(extractSrc) {
 
 const scan = readFileSync(new URL(`../../${FILTER}`, import.meta.url), "utf8");
 const extract = readFileSync(new URL(`../../${EXTRACTOR}`, import.meta.url), "utf8");
-const bad = [...checkScan(scan), ...checkExtract(extract)];
+const bad = [
+  ...checkScan(scan), ...checkExtract(extract),
+  ...MONIQUE_DEAL_READERS.flatMap((file) => checkFreeReader(file, readFileSync(new URL(`../../${file}`, import.meta.url), "utf8"))),
+];
 if (process.argv.includes("--self-test")) {
+  for (const example of ['spawn("claude", args)', 'const model = "gpt-4.1";', "await claudeCodeExecutor(input)"]) {
+    if (!checkFreeReader(EXTRACTOR, example).length) bad.push("A paid route passed its deal reader guard");
+  }
   for (const [check, changed] of [
     [checkScan, scan.replaceAll("readWorkerSource", "readSomewhereElse")],
     [checkScan, scan.replace("r.status === 403", "false")],
@@ -56,6 +78,7 @@ if (process.argv.includes("--self-test")) {
     [checkScan, scan.replaceAll("TOKEN_MAX_AGE_MS", "tokenAge")],
     [checkScan, scan + "\nfunction shapeReason() {}"],
     [checkScan, scan + "\nfs.rmSync(batchDir);"],
+    [checkExtract, extract + "\nfunction structuredOrder() {}"],
     [checkExtract, extract + '\nfetch("https://gmail.googleapis.com/x");'],
     [checkExtract, extract.replaceAll("no quote from the message", "ok")],
     [checkExtract, extract.replaceAll("NOTHING_CHECKABLE", "done")],

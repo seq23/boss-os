@@ -102,7 +102,7 @@ describe("the scan over scripts/", () => {
       expect(unlockedCalls(f, text)).toEqual([]);
       expect(unlockedCalls(f, text.replace(/\$CLAUDE_LOCK\b/g, SKIP)).length).toBeGreaterThan(0);
     }
-    for (const f of ["scripts/ops/credential-check.mjs", "scripts/ops/kdp-signin.mjs", "scripts/ops/repo-change.mjs", "scripts/ops/lib/duty-kit.mjs", "scripts/ops/interest-extract.mjs"]) {
+    for (const f of ["scripts/ops/credential-check.mjs", "scripts/ops/kdp-signin.mjs", "scripts/ops/repo-change.mjs", "scripts/ops/lib/duty-kit.mjs"]) {
       const text = readFileSync(join(ROOT, f), "utf8");
       expect(unlockedCalls(f, text)).toEqual([]);
       expect(unlockedCalls(f, text.replace(/\.\.\.lockedArgs\("[^"]+"\)/g, `"${SKIP}"`)).length).toBeGreaterThan(0);

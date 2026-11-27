@@ -109,15 +109,59 @@ async function api(url, tries = 8) {
   return null;
 }
 
-function readState(file) {
+export function readState(file) {
   try { return JSON.parse(fs.readFileSync(file, "utf8")); }
   catch (error) { if (error.code === "ENOENT") return {}; throw error; }
 }
 
-function writeJson(file, data) {
+export function writeJson(file, data) {
   const tmp = `${file}.${crypto.randomUUID()}.tmp`;
   fs.writeFileSync(tmp, JSON.stringify(data), { mode: 0o600, flag: "wx" });
   fs.renameSync(tmp, file);
+}
+
+async function readBrokerageThread(api, threadId, targets) {
+  const raw = await api(`${GMAIL}/threads/${encodeURIComponent(threadId)}?format=full`);
+  if (!Array.isArray(raw?.messages) || targets.some((id) => !raw.messages.some((message) => message.id === id))) {
+    throw new Error("Gmail thread did not include every listed target");
+  }
+  const thread = [];
+  for (const message of raw.messages) {
+    if (!message.payload) throw new Error("Gmail omitted a message payload");
+    const body = await gmailPayloadText(message.payload, async (attachmentId) => {
+      const attachment = await api(`${GMAIL}/messages/${encodeURIComponent(message.id)}/attachments/${encodeURIComponent(attachmentId)}`);
+      if (!attachment?.data) throw new Error("Gmail omitted a readable MIME part");
+      return attachment.data;
+    });
+    thread.push({ id: message.id, at: Number(message.internalDate), headers: headerMap(message), body });
+  }
+  if (thread.some((message) => !message.id || !Number.isFinite(message.at))) throw new Error("Gmail omitted a thread message ID or date");
+  return thread;
+}
+
+export async function reloadBrokerageThread(messageId) {
+  CREDS ??= JSON.parse(process.env.GSC_SERVICE_ACCOUNT_JSON ?? "null");
+  if (!CREDS) throw new Error("NAMED STOP [NO_SERVICE_ACCOUNT] The saved batch requires its Gmail thread.");
+  const message = await api(`${GMAIL}/messages/${encodeURIComponent(messageId)}?format=minimal`);
+  if (!message?.threadId) throw new Error("Gmail did not return the candidate thread ID");
+  return readBrokerageThread(api, message.threadId, [messageId]);
+}
+
+export function candidateFromMessage(message, thread, mailbox = MAILBOX) {
+  const { from: author, to, cc, subject } = message.headers;
+  const from = addressIn(author);
+  return {
+    source_message: message.id,
+    date: new Date(message.at).toISOString().slice(0, 10),
+    from,
+    from_name: (String(author).match(/^\s*"?([^"<]{2,60}?)"?\s*</) ?? ["", ""])[1].trim(),
+    to: String(to ?? "").split(",").map(addressIn).filter(Boolean),
+    cc: String(cc ?? "").split(",").map(addressIn).filter(Boolean),
+    outbound: from === mailbox.toLowerCase(),
+    subject: subject ?? "",
+    excerpt: message.body.slice(0, EXCERPT_BOUND),
+    thread,
+  };
 }
 
 function sinceInstant(date) {
@@ -190,21 +234,7 @@ export async function scanBrokerage({ directory, mailbox, api, read, now = Date.
   for (const [threadId, ids] of threads) {
     const remaining = ids.filter((id) => !completed.has(id));
     if (remaining.length) {
-      const raw = await api(`${GMAIL}/threads/${encodeURIComponent(threadId)}?format=full`);
-      if (!Array.isArray(raw?.messages) || remaining.some((id) => !raw.messages.some((message) => message.id === id))) {
-        throw new Error("Gmail thread did not include every listed target");
-      }
-      const thread = [];
-      for (const message of raw.messages) {
-        if (!message.payload) throw new Error("Gmail omitted a message payload");
-        const body = await gmailPayloadText(message.payload, async (attachmentId) => {
-          const attachment = await api(`${GMAIL}/messages/${encodeURIComponent(message.id)}/attachments/${encodeURIComponent(attachmentId)}`);
-          if (!attachment?.data) throw new Error("Gmail omitted a readable MIME part");
-          return attachment.data;
-        });
-        thread.push({ id: message.id, at: Number(message.internalDate), headers: headerMap(message), body });
-      }
-      if (thread.some((message) => !message.id || !Number.isFinite(message.at))) throw new Error("Gmail omitted a thread message ID or date");
+      const thread = await readBrokerageThread(api, threadId, remaining);
       const targets = remaining.filter((id) => {
         const { at } = thread.find((message) => message.id === id);
         return at >= active.start && at < active.end;
@@ -230,22 +260,8 @@ export async function scanBrokerage({ directory, mailbox, api, read, now = Date.
           status = result.status === "allowance-exhausted" ? result.status : "unavailable";
           break;
         }
-        const batch = thread.filter((message) => decisions[message.id] === "candidate").map((message) => {
-          const { from: author, to, cc, subject } = message.headers;
-          const from = addressIn(author);
-          return {
-            source_message: message.id,
-            date: new Date(message.at).toISOString().slice(0, 10),
-            from,
-            from_name: (String(author).match(/^\s*"?([^"<]{2,60}?)"?\s*</) ?? ["", ""])[1].trim(),
-            to: String(to ?? "").split(",").map(addressIn).filter(Boolean),
-            cc: String(cc ?? "").split(",").map(addressIn).filter(Boolean),
-            outbound: from === mailbox.toLowerCase(),
-            subject: subject ?? "",
-            excerpt: message.body.slice(0, EXCERPT_BOUND),
-            thread,
-          };
-        });
+        const batch = thread.filter((message) => decisions[message.id] === "candidate")
+          .map((message) => candidateFromMessage(message, thread, mailbox));
         if (batch.length) {
           const key = crypto.createHash("sha256").update(JSON.stringify(batch.map((message) => message.source_message).sort())).digest("hex");
           const file = path.join(batchDir, `thread-${key}.json`);

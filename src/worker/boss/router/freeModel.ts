@@ -1,6 +1,6 @@
 import { ATTEMPT_DEADLINE_MS } from "./deadlines.ts";
 import { gemini, GEMINI_HOST, GEMINI_WORKER_READ_MODEL } from "./gemini.ts";
-import { ProviderCallError, readJsonObject, type JsonOutput } from "./types.ts";
+import { ProviderCallError, readJsonObject, type CompletionResult, type JsonOutput } from "./types.ts";
 import { workersAi, WORKERS_AI_READ_MODEL } from "./workersAi.ts";
 
 const WORKERS = ["monique", "toni", "danielle", "zora", "camille", "kendra", "imani"] as const;
@@ -20,16 +20,18 @@ interface WorkerReading {
   source: string;
   maxOutputTokens: number;
   json?: JsonOutput;
+  /** Grounded public research sends an issuer query and returns the provider's own citations. */
+  webSearch?: true;
   accept?: (text: string) => boolean;
 }
 
 export type WorkerReadingResult =
-  | { status: "ok"; provider: ReaderProvider; text: string; inTokens: number; outTokens: number }
+  | ({ status: "ok"; provider: ReaderProvider } & CompletionResult)
   | { status: "allowance-exhausted"; provider: ReaderProvider }
   | { status: "unavailable" }
   | { status: "refused" };
 
-const readingFields = new Set(["worker", "instruction", "source", "maxOutputTokens", "json", "accept"]);
+const readingFields = new Set(["worker", "instruction", "source", "maxOutputTokens", "json", "webSearch", "accept"]);
 
 /** Boss OS router entry for scheduled worker reading. Jobs supply the worker and the source.
  * Runtime credentials alone control provider availability. A daily limit ends the run's read
@@ -41,6 +43,7 @@ export async function readWorkerSource(
 ): Promise<WorkerReadingResult> {
   if (!WORKERS.includes(input.worker) || Object.keys(input).some((key) => !readingFields.has(key))
     || !Number.isSafeInteger(input.maxOutputTokens) || input.maxOutputTokens < 1
+    || (input.webSearch !== undefined && (input.webSearch !== true || input.worker !== "monique"))
     || typeof input.instruction !== "string" || typeof input.source !== "string") {
     return { status: "refused" };
   }
@@ -51,7 +54,7 @@ export async function readWorkerSource(
   const order: ReaderProvider[] = input.worker === "monique" ? ["gemini", "workers-ai"] : ["workers-ai", "gemini"];
 
   for (const provider of order) {
-    if (provider === "gemini" ? !googleKey : !account || !cloudflareKey) continue;
+    if (provider === "gemini" ? !googleKey : input.webSearch || !account || !cloudflareKey) continue;
     const adapter = provider === "gemini" ? gemini : workersAi;
     const modelSlug = provider === "gemini" ? GEMINI_WORKER_READ_MODEL : WORKERS_AI_READ_MODEL;
     const context = provider === "gemini"
@@ -72,8 +75,9 @@ export async function readWorkerSource(
         temperature: 0,
         signal: AbortSignal.timeout(ATTEMPT_DEADLINE_MS),
         json: input.json,
+        webSearch: input.webSearch,
       }, context);
-      if (!answer.text.trim() || (input.json && !readJsonObject(answer.text))) continue;
+      if ((input.webSearch && !answer.sources?.length) || !answer.text.trim() || (input.json && !readJsonObject(answer.text))) continue;
       if (input.accept && !input.accept(answer.text)) continue;
       return { status: "ok", provider, ...answer };
     } catch (error) {

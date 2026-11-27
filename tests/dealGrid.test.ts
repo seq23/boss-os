@@ -8,11 +8,10 @@ import os from "node:os";
 import path from "node:path";
 import {
   buildGrid, gridRow, priceWords, sizeWords, structureWords, fromWords, firmOf, gmailUrl, isHerAddress,
-  isHers, mentionsHer, moniqueFound, morningDeals, otherSides, prospectSellRows, LOOKBACK_DAYS,
+  isHers, moniqueFound, morningDeals, otherSides, prospectSellRows, LOOKBACK_DAYS,
 } from "../scripts/ops/interest-grid.mjs";
-import { structuredOrder, markHers } from "../scripts/ops/interest-extract.mjs";
 import { standingMatches, assignedSearch, revivals } from "../scripts/ops/interest-match.mjs";
-import { positionFromXml, genInfoFromXml, allHolders, partialFill, recordFound } from "../scripts/ops/filing-hunt.mjs";
+import { positionsFromXml, genInfoFromXml, allHolders, partialFill, recordFound } from "../scripts/ops/filing-hunt.mjs";
 import { parseListEdits, withinLookback, pairAllowed } from "../src/shared/boss/capital/partyLists.mjs";
 
 const NOW = Date.parse("2026-10-23T12:00:00Z");
@@ -28,35 +27,22 @@ const row = (o: Record<string, unknown>) => ({
 });
 
 describe("her own name and addresses are never a counterparty (rule 5)", () => {
-  it("catches her display name, her addresses, and her firm address by local part", () => {
+  it("recognizes exact addresses and uses the model’s attribution for new rows", () => {
     expect(isHerAddress("owner@example-own.com", ID)).toBe(true);
     expect(isHerAddress("owner@rainmakersecurities.com", ID)).toBe(true);
     expect(isHerAddress("owner@stranger.com", ID)).toBe(false);
-    expect(mentionsHer("Unnamed buyer of Sequoia Taylor", ID)).toBe(true);
-    expect(isHers(row({ principal: "unnamed client of Sequoia Taylor", from: "x@y.com" }), ID)).toBe(true);
+    expect(isHers(row({ hers: true, from: "x@y.com" }), ID)).toBe(true);
+    expect(isHers(row({ hers: false, relayed: true, from: "owner@example-own.com" }), ID)).toBe(false);
   });
 
   it("the grid shows her rows as Yours from You, never as a broker", () => {
-    const g = gridRow(row({ principal: "Unnamed buyer of Sequoia Taylor" }), { identity: ID, lists: NO_LISTS });
+    const g = gridRow(row({ principal: "your client", hers: true }), { identity: ID, lists: NO_LISTS });
     expect(g.side).toBe("yours");
     expect(g.from_text).toBe("You");
     expect(g.parties).toBe("");
   });
 
-  it("her rrlist@ order posting becomes a Yours row with 'your client' as principal", () => {
-    const r = structuredOrder({
-      source_message: "s1", date: day(0), subject: "Sell Order: Acme Robotics | $ 25.00 M @ $ 12.00",
-      from: "owner@rainmakersecurities.com", from_name: "Sequoia Taylor", to: ["rrlist@rainmakersecurities.com"], cc: [], outbound: false,
-    });
-    expect(r?.hers).toBe(true);
-    expect(r?.principal).toBe("your client");
-    expect(r?.to_rrlist).toBe(true);
-  });
 
-  it("a colleague's posting is not hers", () => {
-    const r = markHers({ principal: "unnamed client of Colleague" }, { from: "colleague@rainmakersecurities.com", from_name: "Colleague", to: ["rrlist@rainmakersecurities.com"] });
-    expect(r.hers).toBeUndefined();
-  });
 });
 
 describe("a role mailbox is a team, never a person (26 Oct 2026)", () => {
@@ -76,20 +62,8 @@ describe("a role mailbox is a team, never a person (26 Oct 2026)", () => {
   });
 });
 
-describe("her own ask never labels the person she asked (26 Oct 2026)", () => {
-  const id = { names: ["Sequoia Taylor"], addresses: ["staylor@spry.vc"] };
-  const msg = { source_message: "m-out", outbound: true, from: "staylor@spry.vc", from_name: "Sequoia Taylor", to: ["Desk <desk@bancoejemplo.example>"] };
-  it("an outbound row naming a recipient as the seller's rep is her question, kept off the grid", () => {
-    const r = markHers({ asset: "Acme AI", side: "sell", principal: "Banco Ejemplo", intermediated_by: "Banco Ejemplo (seller rep)", source_message: "m-out", date: "2026-10-20" }, msg, id);
-    expect(r).toMatchObject({ to_recipient: true, hers: false });
-    const grid = buildGrid([r], { identity: id, lists: { same_firm: [], do_not_suggest: [] }, now: Date.parse("2026-10-26") });
-    expect(grid).toEqual([]);
-  });
-  it("an outbound row about someone who is not a recipient is unchanged (her own supply stays Yours)", () => {
-    const r = markHers({ asset: "Acme AI", side: "sell", principal: "your client", source_message: "m-out" }, msg, id);
-    expect(r.to_recipient).toBeUndefined();
-    expect(r.hers).toBe(true);
-  });
+it("keeps a previously flagged recipient-only row off the grid", () => {
+  expect(buildGrid([row({ to_recipient: true })], { identity: ID, lists: NO_LISTS, now: NOW })).toEqual([]);
 });
 
 describe("prices and sizes are sane or '—' (rule 5)", () => {
@@ -108,7 +82,7 @@ describe("prices and sizes are sane or '—' (rule 5)", () => {
   });
 
   it("reads structure and fees the email states", () => {
-    expect(structureWords({ quote: "Terms 8/0/5, SPV, preferred" })).toBe("8/0/5 · SPV · preferred");
+    expect(structureWords({ structure_text: "8/0/5 · SPV · preferred" })).toBe("8/0/5 · SPV · preferred");
     expect(structureWords({ quote: "nothing here" })).toBe("—");
   });
 
@@ -218,7 +192,7 @@ describe("N-PORT: every holder named, partial fills summed (rule 7)", () => {
     <fundInfo><totAssets>1000000000</totAssets></fundInfo><invstOrSecs><invstOrSec><name>Acme Robotics Inc</name><title>Series F Preferred</title><valUSD>${val}</valUSD><pctVal>1.2</pctVal></invstOrSec></invstOrSecs></edgarSubmission>`;
 
   it("parses the position and the registrant (the missing assetKey import made every filing unreadable)", () => {
-    expect(positionFromXml(xml("Fund A", 120e6), "Acme Robotics")?.valUSD).toBe(120e6);
+    expect(positionsFromXml(xml("Fund A", 120e6))[0]?.valUSD).toBe(120e6);
     expect(genInfoFromXml(xml("Fund A &amp; Co", 1))).toMatchObject({ fund: "Fund A & Co", as_of: "2026-06-30", phone: "555-0100" });
   });
 
@@ -226,6 +200,11 @@ describe("N-PORT: every holder named, partial fills summed (rule 7)", () => {
     const vals: Record<string, number> = { a: 120e6, b: 64e6, c: 2e6 };
     const res = await allHolders("Acme Robotics", {
       fresh: true,
+      cacheDirectory: fs.mkdtempSync(path.join(os.tmpdir(), "filing-cache-")),
+      readModel: async ({ source }: { source: string }) => {
+        expect(JSON.parse(source).filing).toContain("<edgarSubmission>");
+        return { status: "ok", text: '{"indexes":[0]}' };
+      },
       read: async () => ({ filings: Object.keys(vals).map((k) => ({ cik: k, filer: k, accession: k, url: `https://www.sec.gov/${k}`, filed: "2026-07-01" })), total: 3 }),
       fetchXml: async (u: string) => xml(`Fund ${u.slice(-1).toUpperCase()}`, vals[u.slice(-1)] ?? 0),
     });

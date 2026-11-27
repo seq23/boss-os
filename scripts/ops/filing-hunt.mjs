@@ -65,13 +65,10 @@ import path from "node:path";
 import os from "node:os";
 import { advFirms, advPeople } from "./lib/adv.mjs";
 import { loadContacts, reachFor } from "./lib/reach.mjs";
-/*
- * IMPORTED, BECAUSE IT WAS NEVER DEFINED HERE (found 23 Oct 2026). `positionFromXml` called
- * `assetKey` with no import, threw a ReferenceError inside the `try` that wraps every filing read,
- * and the catch swallowed it — so every N-PORT filing was "unreadable" and every hunt reported no
- * holder. Pinned by tests/boss/dealGrid.test.ts.
- */
-import { assetKey } from "./interest-match.mjs";
+import { issuerKey as assetKey, readDealObject, readMonique, stopReading } from "./lib/deal-reading.mjs";
+import { readState, writeJson } from "./interest-ledger.mjs";
+import { readJsonObject } from "../../src/worker/boss/router/types.ts";
+import { htmlToText } from "../../src/shared/boss/intake/messageBody.mjs";
 
 /** SEC Fair Access requires a descriptive agent with a contact address. It is a condition, not a nicety. */
 const USER_AGENT = process.env.SEC_USER_AGENT ?? "Boss OS capital research (seq.taylor@gmail.com)";
@@ -116,7 +113,7 @@ export async function sec(url) {
   const wait = lastSecCall + SEC_GAP_MS - Date.now();
   if (wait > 0) await sleep(wait);
   lastSecCall = Date.now();
-  const r = await fetch(url, { headers: { "user-agent": USER_AGENT, accept: "application/json, text/xml, */*" } });
+  const r = await fetch(url, { headers: { "user-agent": USER_AGENT, accept: "application/json, text/xml, */*" }, signal: AbortSignal.timeout(30_000) });
   if (!r.ok) throw new Error(`SEC ${r.status} for ${url}`);
   return r;
 }
@@ -150,8 +147,9 @@ export async function ftsFilings(asset, form, { lookbackDays = FILING_LOOKBACK_D
   for (let from = 0; from < max; from += 100) {
     const url = `${FTS}?${new URLSearchParams({ q: `"${asset}"`, forms: form, startdt, enddt, from: String(from) })}`;
     const j = await (await sec(url)).json();
-    total = j?.hits?.total?.value ?? total;
-    const page = filingsFromHits(j?.hits?.hits);
+    if (!Array.isArray(j?.hits?.hits)) throw new Error("SEC search response did not contain a page");
+    total = j.hits.total?.value ?? total;
+    const page = filingsFromHits(j.hits.hits);
     for (const f of page) if (!byAcc.has(f.accession)) byAcc.set(f.accession, f);
     if (page.length < 100 || from + 100 >= total) break;
   }
@@ -159,21 +157,56 @@ export async function ftsFilings(asset, form, { lookbackDays = FILING_LOOKBACK_D
   return { filings: filings.slice(0, max), total, capped: total > max };
 }
 
-/** Recent N-PORT filings whose text names this issuer — all of them. */
-export async function nportFilings(asset) {
-  return ftsFilings(asset, "NPORT-P");
+async function filingsForIssuer(asset, form, { aliases, ...options } = {}) {
+  const names = aliases ?? (await readDealObject({
+    name: "filing_search_names",
+    instruction: `Give up to six documented legal names, former names or tickers for the issuer
+that could appear in regulatory filings. Skip uncertain names and names for merely similar companies.`,
+    source: { asset },
+    schema: { type: "object", required: ["aliases"],
+      properties: { aliases: { type: "array", items: { type: "string" } } } },
+    validate: ({ aliases }) => Array.isArray(aliases) && aliases.length <= 6
+      && aliases.every((name) => typeof name === "string" && name.trim() && name.length <= 160 && !name.includes('"')),
+  })).aliases;
+  const filings = new Map();
+  let capped = false;
+  for (const name of new Set([asset, ...names])) {
+    const result = await ftsFilings(name, form, options);
+    for (const filing of result.filings) filings.set(filing.accession, filing);
+    capped ||= result.capped;
+  }
+  return { filings: [...filings.values()], total: filings.size, capped };
 }
 
-/**
- * SPV VEHICLES FOR THIS COMPANY, FROM FREE SEC FORM D DATA. A Form D whose text names the issuer is
- * very often a single-purpose vehicle raised to hold it — each one has a manager who either holds the
- * paper or is raising to buy it. Named with the filing link; nothing is inferred beyond the filing.
- */
+export async function nportFilings(asset) {
+  return filingsForIssuer(asset, "NPORT-P");
+}
+
 export async function formDVehicles(asset, { lookbackDays = 730 } = {}) {
-  const { filings, total } = await ftsFilings(asset, "D", { lookbackDays, max: 300 });
+  const file = path.join(CACHE_DIR, `${cacheKey(asset)}-form-d-${lookbackDays}.json`);
+  const { state, cached } = await loadFilingScan(file, () => filingsForIssuer(asset, "D", { lookbackDays, max: 300 }));
+  if (cached) return cached;
+  const { filings, total, capped } = state.found;
+  if (capped) throw new Error("SEC Form D search is incomplete");
   const byFiler = new Map();
-  for (const f of filings) if (f.filer && !byFiler.has(f.filer)) byFiler.set(f.filer, f);
-  return { vehicles: [...byFiler.values()].map((f) => ({ fund: f.filer, filed: f.filed, filing_url: f.url.replace(/[^/]+$/, "") })), total };
+  for (const f of filings) {
+    const related = await assessFiling(file, state, f, async () => {
+      const xml = await (await sec(f.url)).text();
+      if (!xml?.trim()) throw new Error("SEC returned an empty Form D");
+      const result = await readDealObject({
+        name: "filing_vehicle",
+        instruction: `Read the full Form D. Is this filer a vehicle for the requested issuer?
+Require evidence in the filing. A mention or similar name alone is insufficient.`,
+        source: { asset, filing: xml },
+        schema: { type: "object", required: ["related"], properties: { related: { type: "boolean" } } },
+        validate: ({ related }) => typeof related === "boolean",
+      });
+      return result.related;
+    });
+    if (related && f.filer && !byFiler.has(f.filer)) byFiler.set(f.filer, f);
+  }
+  const result = { vehicles: [...byFiler.values()].map((f) => ({ fund: f.filer, filed: f.filed, filing_url: f.url.replace(/[^/]+$/, "") })), total };
+  return completeFilingScan(file, result);
 }
 
 export const unescapeXml = (v) => (v == null ? v : String(v).replace(/&amp;/g, "&").replace(/&apos;|&#39;/g, "'")
@@ -184,12 +217,12 @@ export const unescapeXml = (v) => (v == null ? v : String(v).replace(/&amp;/g, "
  * email it; now they write `~/.boss-os/capital/found.json`, per company, and `npm run capital:grid`
  * turns it into the "Monique found" lines and the Holders tab. Named holders only, ranked by size.
  */
-export function recordFound(asset, { holders = [], spvs = [], press = [] } = {}, file = null) {
+export function recordFound(asset, { holders = [], spvs = [], press } = {}, file = null) {
   const DIR = process.env.BOSS_OS_CAPITAL_DIR ?? path.join(os.homedir(), ".boss-os", "capital");
   const target = file ?? path.join(DIR, "found.json");
-  let all = { companies: {} };
-  try { all = JSON.parse(fs.readFileSync(target, "utf8")); } catch { /* first */ }
+  const all = readState(target);
   all.companies ??= {};
+  const prior = all.companies[assetKey(asset)];
   all.companies[assetKey(asset)] = {
     company: String(asset),
     updated_at: new Date().toISOString(),
@@ -198,10 +231,11 @@ export function recordFound(asset, { holders = [], spvs = [], press = [] } = {},
       as_of: h.as_of ?? h.filed ?? null, filing_url: h.url, contact: h.contact ?? null,
     })),
     spvs,
-    press: press.filter((l) => l?.name && l?.source_url),
+    press: [...new Map([...(prior?.press ?? []), ...(press ?? [])].filter((lead) => lead?.name && lead?.source_url)
+      .map((lead) => [`${lead.name}|${lead.source_url}`, lead])).values()],
   };
   fs.mkdirSync(path.dirname(target), { recursive: true });
-  fs.writeFileSync(target, JSON.stringify({ updated_at: new Date().toISOString(), companies: all.companies }, null, 2));
+  writeJson(target, { updated_at: new Date().toISOString(), companies: all.companies });
   return all.companies[assetKey(asset)];
 }
 
@@ -227,22 +261,35 @@ export function genInfoFromXml(xml) {
  * conversation. So the XML is read for the matched holding's `valUSD` and the fund's `totAssets`,
  * and where either cannot be read it is reported as unknown rather than estimated.
  */
-export function positionFromXml(xml, asset) {
-  const key = assetKey(asset);
+export function positionsFromXml(xml) {
   const totAssets = Number(/<totAssets>\s*([0-9.]+)\s*<\/totAssets>/i.exec(xml)?.[1] ?? NaN);
-  let best = null;
-  for (const m of xml.matchAll(/<invstOrSec>([\s\S]*?)<\/invstOrSec>/gi)) {
-    const block = m[1];
-    const name = /<name>([\s\S]*?)<\/name>/i.exec(block)?.[1]?.trim() ?? "";
-    const title = /<title>([\s\S]*?)<\/title>/i.exec(block)?.[1]?.trim() ?? "";
-    if (!assetKey(name).includes(key) && !assetKey(title).includes(key)) continue;
-    const val = Number(/<valUSD>\s*(-?[0-9.]+)\s*<\/valUSD>/i.exec(block)?.[1] ?? NaN);
-    const pct = Number(/<pctVal>\s*(-?[0-9.]+)\s*<\/pctVal>/i.exec(block)?.[1] ?? NaN);
-    if (!best || (Number.isFinite(val) && val > (best.valUSD ?? -1))) {
-      best = { holding: name || title, valUSD: Number.isFinite(val) ? val : null, pctVal: Number.isFinite(pct) ? pct : null };
-    }
-  }
-  return best ? { ...best, totAssets: Number.isFinite(totAssets) ? totAssets : null } : null;
+  return [...xml.matchAll(/<invstOrSec>([\s\S]*?)<\/invstOrSec>/gi)].map(([, block]) => {
+    const field = (tag) => new RegExp(`<${tag}>([\\s\\S]*?)<\/${tag}>`, "i").exec(block)?.[1]?.trim() ?? "";
+    const amount = (tag) => field(tag) && Number.isFinite(Number(field(tag))) ? Number(field(tag)) : null;
+    return {
+      holding: unescapeXml(field("name") || field("title")),
+      valUSD: amount("valUSD"), pctVal: amount("pctVal"),
+      totAssets: Number.isFinite(totAssets) ? totAssets : null,
+    };
+  });
+}
+
+async function positionInFiling(xml, asset, read) {
+  const positions = positionsFromXml(xml);
+  const { indexes } = await readDealObject({
+    name: "filing_positions",
+    instruction: `Read the filing. Return the zero-based indexes of invstOrSec positions whose
+underlying issuer is the requested asset, including a holding vehicle only when the filing
+establishes that exposure. Index every invstOrSec in filing order, including nonmatches.
+A mention without an actual position does not establish a holding; return [] when none match.`,
+    source: { asset, filing: xml },
+    schema: { type: "object", required: ["indexes"],
+      properties: { indexes: { type: "array", items: { type: "integer" } } } },
+    validate: ({ indexes }) => Array.isArray(indexes) && new Set(indexes).size === indexes.length
+      && indexes.every((i) => Number.isSafeInteger(i) && i >= 0 && i < positions.length),
+    read,
+  });
+  return indexes.map((index) => positions[index]).sort((a, b) => (b.valUSD ?? 0) - (a.valUSD ?? 0))[0];
 }
 
 /**
@@ -316,37 +363,62 @@ const cacheKey = (asset) => assetKey(asset).replace(/[^a-z0-9]+/g, "-").slice(0,
  * the as-of date, the filing and the registrant's phone. Latest filing per fund. Size-independent, so
  * it is cached per name; `fromFilings` applies the block size afterwards.
  */
-export async function allHolders(asset, { fresh = false, read = nportFilings, fetchXml = async (u) => (await sec(u)).text() } = {}) {
-  const file = path.join(CACHE_DIR, `${cacheKey(asset)}.json`);
-  if (!fresh) {
-    try {
-      const c = JSON.parse(fs.readFileSync(file, "utf8"));
-      if (Date.now() - c.at < CACHE_TTL_MS) return c.result;
-    } catch { /* no cache */ }
+async function loadFilingScan(file, list, fresh = false) {
+  let state = fresh ? {} : readState(file);
+  if (state.result && state.version === 2 && Date.now() - state.at < CACHE_TTL_MS) {
+    return { cached: state.result };
   }
-  const found = await read(asset);
+  if (state.version !== 2 || state.result) {
+    state = { version: 2, at: Date.now(), found: await list(), assessed: {} };
+    fs.mkdirSync(path.dirname(file), { recursive: true, mode: 0o700 });
+    writeJson(file, state);
+  }
+  return { state };
+}
+
+async function assessFiling(file, state, filing, assess) {
+  if (!Object.hasOwn(state.assessed, filing.url)) {
+    state.assessed[filing.url] = await assess();
+    writeJson(file, state);
+  }
+  return state.assessed[filing.url];
+}
+
+function completeFilingScan(file, result) {
+  writeJson(file, { version: 2, at: Date.now(), result });
+  return result;
+}
+
+export async function allHolders(asset, {
+  fresh = false, read = nportFilings, fetchXml = async (url) => (await sec(url)).text(),
+  readModel, cacheDirectory = CACHE_DIR,
+} = {}) {
+  const file = path.join(cacheDirectory, `${cacheKey(asset)}.json`);
+  const { state, cached } = await loadFilingScan(file, () => read(asset), fresh);
+  if (cached) return cached;
   const byFund = new Map();
-  let readable = 0;
-  for (const f of found.filings) {
-    let xml;
-    try { xml = await fetchXml(f.url); } catch { continue; } // one unreadable filing must not end the hunt
-    readable += 1;
-    const position = positionFromXml(xml, asset);
-    if (!position) continue;
-    const g = genInfoFromXml(xml);
-    const key = g.series_id ?? `${f.cik}|${g.fund ?? f.filer}`;
+  const { found } = state;
+  for (const filing of found.filings) {
+    const match = await assessFiling(file, state, filing, async () => {
+      const xml = await fetchXml(filing.url);
+      if (!/<edgarSubmission[\s>]/i.test(xml)) throw new Error("SEC returned an unreadable filing; the hunt is incomplete");
+      const position = await positionInFiling(xml, asset, readModel);
+      return position ? { position, registrant: genInfoFromXml(xml) } : null;
+    });
+    if (!match) continue;
+    const { position, registrant } = match;
+    const key = registrant.series_id ?? `${filing.cik}|${registrant.fund ?? filing.filer}`;
     const prior = byFund.get(key);
-    if (prior && String(prior.as_of ?? prior.filed) >= String(g.as_of ?? f.filed)) continue;
+    if (prior && String(prior.as_of ?? prior.filed) >= String(registrant.as_of ?? filing.filed)) continue;
     byFund.set(key, {
-      ...f, ...position,
-      holding: unescapeXml(position.holding), fund: g.fund ?? f.filer, manager: g.manager ?? f.filer, as_of: g.as_of ?? f.filed,
-      contact: [g.phone, g.city].filter(Boolean).join(" · ") || null,
+      ...filing, ...position, fund: registrant.fund ?? filing.filer,
+      manager: registrant.manager ?? filing.filer, as_of: registrant.as_of ?? filing.filed,
+      contact: [registrant.phone, registrant.city].filter(Boolean).join(" · ") || null,
     });
   }
   const holders = [...byFund.values()].sort((a, b) => (b.valUSD ?? 0) - (a.valUSD ?? 0));
-  const result = { holders, scanned: readable, listed: found.filings.length, total: found.total, capped: Boolean(found.capped) };
-  try { fs.mkdirSync(CACHE_DIR, { recursive: true }); fs.writeFileSync(file, JSON.stringify({ at: Date.now(), result })); } catch { /* cache is a convenience */ }
-  return result;
+  const result = { holders, scanned: found.filings.length, listed: found.filings.length, total: found.total, capped: Boolean(found.capped) };
+  return completeFilingScan(file, result);
 }
 
 /** Partial fills summed: what the top holders hold between them, against the block. */
@@ -496,94 +568,70 @@ export function renderFilings(lines, lot, filings, contacts, SIDE) {
  */
 export async function researchLot(asset, size, SIDE = "buy", { offline = false } = {}) {
   const filings = await fromFilings(asset, size, SIDE);
-  for (const h of (filings.holders ?? []).slice(0, ADV_TOP)) {
+  if (filings.note || filings.capped) return { ...filings, note: filings.note ?? "SEC N-PORT search is incomplete" };
+  for (const h of filings.holders.slice(0, ADV_TOP)) {
     h.adv = await peopleFor(h.filer, { offline });
   }
-  try { filings.spvs = (await formDVehicles(asset)).vehicles; } catch { filings.spvs = []; }
+  try {
+    filings.spvs = (await formDVehicles(asset)).vehicles;
+  } catch (error) {
+    return { ...filings, note: String(error.message) };
+  }
   return filings;
 }
 
-// ─── Press and podcast mentions ───────────────────────────────────────────────
-
-/**
- * THE ONE SOURCE FILINGS AND FORM ADV CANNOT SEE: SOMEBODY SAYING IT OUT LOUD.
- *
- * A fund's N-PORT mark is a dollar figure with no story behind it. A press release naming who led a
- * round, or a podcast guest describing a position they hold, is the same fact in the world's own
- * words — and it is the one piece of `interest-ledger-hunt`'s brief filings and ADV cannot reach: no
- * SEC form requires a fund to say why it holds something or when it said so out loud.
- *
- * NO NEW SPEND LANE. This calls `claudeCodeExecutor` directly, in-process — the same adapter every
- * `agent_executed` duty already uses, authenticating as the owner's own Claude Code session (macOS
- * keychain, never an API key). There is no Worker round trip and nothing crosses to D1: the prompt,
- * the search, and the result all stay on this machine, exactly like the filings half.
- *
- * A FINDING WITH NO URL IS NOT A FINDING. Same discipline as `assignedSearch`'s "no quote, no hit"
- * and `reachFor`'s "no source, no line" — dropped before it is ever rendered.
- *
- * ─── THE LINKEDIN LINE, AND WHY IT IS SAFE HERE AND NOT ON THE ADV HALF ────
- *
- * Her words, 25 Sep 2026: "why the fuck can u not just search linkedin and give me the linkedin
- * account of the person". For a press/podcast lead the answer is: it can, and does. Once a name is
- * already identified by a dated, quoted article, ONE further public web search for that specific
- * name plus organisation is enough to surface their actual profile URL from a search engine's own
- * index — nothing here logs into LinkedIn, fetches the page, or automates a browser against it. The
- * same boundary as the composed search link: no credential, no session, no scrape. This is not
- * offered for `filing-hunt.mjs`'s OWN Form ADV people (`peopleFor`/`reachFor`) on purpose — a name
- * off a regulatory filing has no independent corroboration, and a search engine confidently
- * returning the WRONG "John Smith at Blue Chip Capital" is exactly the Forge Global Holdings mistake
- * in a new costume. A press/podcast finding already carries a citation identifying the specific
- * person; that is what makes one further targeted search safe to trust.
- *
- * `spawnImpl` IS INJECTED, the same convention `claudeCodeExecutor` itself uses, defaulting to the
- * real process. A test passes a fake, so this whole function is exercised without spending anything
- * or invoking the CLI.
- */
-export async function pressPodcastLeads(asset, size, side, { model, maxSeconds = 180, spawnImpl } = {}) {
-  const { claudeCodeExecutor } = await import("../sync-agent/backends/claudeCode.mjs");
-  const { mkdtempSync } = await import("node:fs");
-  const cwd = mkdtempSync(path.join(os.tmpdir(), "ledger-hunt-"));
-  const verb = side === "sell" ? "holding, dealing in, or having secondary-market exposure to" : "wanting to buy or add to a position in";
-  const prompt = [
-    `Search press releases, news coverage, and podcast transcripts or show notes — NOT SEC filings —`,
-    `for named funds, family offices, or individuals who have PUBLICLY, ON THE RECORD, discussed`,
-    `${verb} "${asset}" shares${size ? ` at a scale near ${money(size)}` : ""}.`,
-    ``,
-    `For EVERY finding, give: a name, an organisation, a one-sentence quote or close paraphrase of`,
-    `what they said, a working source URL for that quote, whether it is press or podcast, and a`,
-    `published date if you can find one. A finding with no working URL must be dropped, not printed —`,
-    `an invented citation is worse than no finding at all.`,
-    ``,
-    `THEN, for each named person only (not organisations), do ONE further web search — their name plus`,
-    `their organisation — to see if a LinkedIn profile URL for that specific person appears in the`,
-    `search results. Do not log in to LinkedIn, fetch a LinkedIn page, or automate a browser against`,
-    `it — a plain web search only. Include the URL ONLY if a search result plainly names this exact`,
-    `person at this exact organisation — never a same-name person elsewhere, and never a URL you`,
-    `constructed by guessing a pattern. If you are not sure it is the same person, leave it out; a`,
-    `wrong profile handed to her as a fact is worse than no profile at all.`,
-    ``,
-    `Write your findings as JSON to ./delivers.json, nothing else in that file:`,
-    `{"status":"complete","leads":[{"name":"...","org":"...","role":"...","evidence_quote":"...","source_url":"...","kind":"press"|"podcast","published_date":"...","linkedin_url":"..."}]}`,
-    `Omit linkedin_url entirely (not an empty string) where you found no confident match.`,
-    ``,
-    `If you find nothing that clears this bar, write {"status":"complete","leads":[]} — that is a`,
-    `valid, complete answer. Coming back empty is fine. A guess dressed up as a finding is not.`,
-  ].join("\n");
-  const result = await claudeCodeExecutor(
-    { envelope: { web_tools: ["WebSearch", "WebFetch"], model, max_seconds: maxSeconds }, prompt, cwd },
-    { spawnImpl },
-  );
-  const leads = (result.delivers?.leads ?? []).filter((l) => l && l.source_url)
-    // A linkedin_url must actually look like one — a hallucinated non-URL string is dropped rather
-    // than printed as though it were a link she could click.
-    .map((l) => (l.linkedin_url && /^https?:\/\/([a-z]{2,3}\.)?linkedin\.com\//i.test(l.linkedin_url)
-      ? l : { ...l, linkedin_url: undefined }));
-  return {
-    leads,
-    note: result.error
-      ? `the search could not complete: ${result.error}`
-      : leads.length ? null : "searched; nothing cleared the bar (a name with no working source URL is dropped, not printed)",
-  };
+/** Find named holders through public sources cited by the free provider. */
+export async function pressPodcastLeads(asset, side, {
+  read = readMonique,
+  readPage = async (url) => (await import("./pnp-corporate-outreach.mjs")).fetchPublic(url),
+} = {}) {
+  const result = await read({
+    worker: "monique", webSearch: true, maxOutputTokens: 1800,
+    instruction: `Research public press and podcast coverage for the named issuer. For the requested
+side, find funds or people publicly documented as holding stock (sell) or interested in buying (buy).
+Return a JSON object with a leads array. Each item needs a name, org, role, evidence_quote,
+kind (press or podcast), published_date if known and a unique evidence clause grounded in a source
+the provider cites. Return a complete empty array if the search finds no relevant lead.`,
+    source: JSON.stringify({ asset, side }),
+  });
+  if (result.status !== "ok" || !result.sources?.length) stopReading(result.status);
+  const answer = readJsonObject(result.text);
+  if (!Array.isArray(answer?.leads)) stopReading("unavailable");
+  const cited = answer.leads.map((row) => {
+    if (!row || typeof row.name !== "string" || !row.name.trim()
+      || typeof row.evidence_quote !== "string" || !row.evidence_quote.trim()
+      || !["press", "podcast"].includes(row.kind)) stopReading("unavailable");
+    const clause = JSON.stringify(row.evidence_quote).slice(1, -1);
+    const at = result.text.indexOf(clause);
+    if (at < 0) stopReading("unavailable");
+    const start = Buffer.byteLength(result.text.slice(0, at), "utf8");
+    const cite = result.supports?.find((support) => support.start <= start && start < support.end);
+    const url = result.sources[cite?.sources[0]]?.url;
+    if (!url) stopReading("unavailable");
+    return { name: row.name, org: row.org, role: row.role, evidence_quote: row.evidence_quote,
+      kind: row.kind, published_date: row.published_date, source_url: url };
+  });
+  const pages = new Map();
+  const leads = [];
+  for (const row of cited) {
+    if (!pages.has(row.source_url)) {
+      const page = await readPage(row.source_url);
+      if (!page?.trim()) throw new Error("NAMED STOP [PRESS_SOURCE_UNREADABLE] The cited page could not be read.");
+      pages.set(row.source_url, htmlToText(page));
+    }
+    const { supported } = await readDealObject({
+      name: "public_holding_evidence",
+      instruction: `Read the entire published source. Is this specific claim about the named party
+and issuer supported for the requested side? Return true only if this page supports the claim.
+A similar name or a past investment by another party is insufficient.`,
+      source: { asset, side, claim: row, page: pages.get(row.source_url) },
+      schema: { type: "object", required: ["supported"], properties: { supported: { type: "boolean" } } },
+      validate: ({ supported }) => typeof supported === "boolean",
+      read,
+    });
+    if (supported) leads.push(row);
+  }
+  return { leads, note: null };
 }
 
 /**
@@ -660,6 +708,7 @@ async function main() {
   for (const lot of lots) {
     lines.push(`${String(lot.asset).toUpperCase()}`);
     const filings = await researchLot(lot.asset, lot.size_usd ?? 0, SIDE);
+    if (filings.note) throw new Error(filings.note);
     candidates += filings.holders?.length ?? 0;
     renderFilings(lines, lot, filings, contacts, SIDE);
     lines.push("");
