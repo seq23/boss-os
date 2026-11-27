@@ -92,12 +92,12 @@ lint_plist() {
 # that receives ONE item on a normal morning. That is the same shape as the 96x/day runaway this
 # system already replaced once, and the owner called it out before it ever ran.
 #
-# THE REPORT DUTY FIRES AT 06:00 CENTRAL (migration 0257), and the 06:05 slot claims it. It used to
-# say 06:30, and the comment here used to say "the first three slots cover it" — which was never
-# true: the Worker's cron is hourly on the hour, so a 06:30 duty fired at 07:00, the 06:35 and 06:50
-# slots found nothing, the 07:10 slot claimed it, and the report landed at 07:18–07:25 every single
-# day (CONFIRMED against fourteen days of backend_runs). 06:00 is on the tick, 06:05 claims it, and a
-# 20–25 minute run is on her screen before seven. The 06:35, 06:50 and 07:10 slots are the retries.
+# THE REPORT DUTY FIRES AT 04:00 CENTRAL (migration 0373, the Mac's day, 21 Nov 2026), and the 04:05 slot
+# claims it; 04:35 and 05:05 are the retries, so the report is on her screen long before 06:30. The 04:05
+# claim finds the run because the Worker's FIVE-MINUTE tick runs the duty clock and drains the queue
+# (27 Nov 2026, src/worker/index.ts). Until then both rode the hourly tick, and the history repeats: in
+# October a 06:30 duty fired at 07:00 and the report landed at 07:18-07:25 every day (CONFIRMED against
+# fourteen days of backend_runs); on 27 Nov the report missed the 07:45 morning email.
 # The midday and evening slots catch anything dispatched by hand during the day. A run dispatched at
 # 15:00 waits until 18:35 rather than for ever, and `npm run vault:run -- node
 # scripts/sync-agent/agent.mjs work-once` claims it immediately if she does not want to wait.
@@ -166,13 +166,16 @@ reload_plist "$PLIST"
 #
 # "why is there a 18:35 check? if i press the button to run on demand?" — the Run-now button queues a task in the
 # cloud and this Mac has to ask for it. The six fixed slots above are when WORK APPEARS on its own schedule; a run
-# she asks for by hand appears at any minute, so this job asks every five minutes in the waking day (06:00 to 22:00,
-# decided inside agent-claim.sh). It first PEEKS (one read, nothing fetched); only when a run is waiting does it refresh the
+# she asks for by hand appears at any minute, so this job asks every five minutes at the hours her Mac's day allows
+# (its Schedule row's class, ANY: every hour but 07:00-10:00, decided by mac-window on the plist, from the one table in
+# src/shared/boss/schedule/clock.mjs). It covers 04:00 on purpose: it is the safety net under the briefing's three
+# morning slots (27 Nov 2026: as LIGHT it could not run before 10:00, and the report missed the morning email). It
+# first PEEKS (one read, nothing fetched); only when a run is waiting does it refresh the
 # sky and market files, as the fixed chain does before every claim, and claim. The mail, calendar and notice steps stay on the
 # fixed slots.
 #
 # WHY THIS IS NOT THE RUNAWAY THE COMMENT ABOVE WARNS ABOUT. That was a cron that wrote a snapshot on every tick
-# (migration 0172). An idle check here is one unlock and one read, writes nothing and fetches nothing from any feed, it is bounded to the waking day, and
+# (migration 0172). An idle check here is one unlock and one read, writes nothing and fetches nothing from any feed, it keeps her Mac's rest (07:00-10:00), and
 # agent-claim.sh takes a lock shared with the fixed job so two agents never run at once. `StartInterval`, not
 # `StartCalendarInterval`: the slot list the screen names (MAC_CLAIM_SLOTS_CT) is the fixed job's and stays so.
 POLL_LABEL="com.seq.boss-agent-poll"
