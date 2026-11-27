@@ -48,10 +48,13 @@ they live in the repo, not only in someone's memory. Non-confidential. `STATUS.m
   `model_job_outcome` and returns the work to a subscription seat when results drop or the free
   model cannot finish. Simone can choose a free route again after its evidence qualifies. The daily operating note lists
   each change and the reason. The move records use `settings` and `task_events`.
-- **Worker reading** uses `readWorkerSource` in `src/worker/boss/router/freeModel.ts` from Node or the Worker.
+- **Free worker reading** enters through `readWorkerSource` in `src/worker/boss/router/freeModel.ts` from Node or the Worker.
   Monique starts with Gemini and the other workers start with Workers AI. A provider error can move a
   read to the other provider. A provider's daily quota response returns `allowance-exhausted` so the job
   can stop at its current item. Jobs pass their instructions and the complete source in distinct roles.
+  The client calls `recordRead`, when supplied, only after a usable answer. The CI model boundary checks
+  imports and calls in the worker-job directories. `scripts/validate/worker-model-exceptions.json`
+  names the existing exceptions and the permitted occurrences.
   The route reads `BOSS_WORKER_GEMINI_FREE_KEY` for a Gemini project with billing disabled and
   `BOSS_WORKER_CF_FREE_ACCOUNT_ID` plus `BOSS_WORKER_CF_FREE_TOKEN` for an account on the Workers Free
   plan. Verify those plans before provisioning the vault keys and keep billing disabled on both.

@@ -46,9 +46,11 @@ import {
 import { gmailSearchLink } from "../../src/shared/boss/mail/plain.mjs";
 import { ownerEmail } from "../../src/shared/boss/mail/ownerLayout.mjs";
 import { dayOf } from "../../src/shared/boss/schedule/clock.mjs";
+import { readWorkerSource } from "../../src/worker/boss/router/freeModel.ts";
+import { readJsonObject } from "../../src/worker/boss/router/types.ts";
 
 const DRY = process.argv.includes("--dry");
-/** The one model this duty names (its duty row says the same): a short Haiku run on her Claude seat, mail headers or the gallery only. */
+/** Retained for the personal Gmail connector until its source can be read directly. */
 export const MODEL = "claude-haiku-4-5-20251001";
 const DAY = 86_400_000;
 
@@ -410,6 +412,36 @@ export const CHARGE_QUERY = '(newer_than:2d subject:(receipt OR invoice OR "paym
 // them as "personal" and nothing reads that kind.
 const KIND_RULE = 'kind is one of "receipt" (a business service took money or issued an invoice), "payment_failed" (a business service could not charge a card or payment, or an account is past due or suspended for non-payment), "renewal" (a business service will charge soon), "personal" (a household or personal bill or card: phone or internet carrier, utilities, personal credit cards, bank, rent, insurance, personal shopping), "other" (none of these, e.g. a job listing). Business services are the software, hosting, domains, AI, payment and marketing tools her companies use';
 
+export async function readChargeKinds(hits, read = readWorkerSource) {
+  const source = hits.map((m) => ({ id: m.id, from_domain: fromDomain(m.from), date: m.date, subject: m.subject }));
+  const kinds = ["receipt", "payment_failed", "renewal", "personal", "other"];
+  const expected = new Set(source.map((m) => m.id));
+  const readAll = (text) => {
+    const notices = readJsonObject(text)?.notices;
+    if (!Array.isArray(notices) || notices.length !== expected.size
+      || new Set(notices.map((m) => m?.id)).size !== expected.size
+      || notices.some((m) => !expected.has(m?.id) || !kinds.includes(m?.kind))) return null;
+    return new Map(notices.map((m) => [m.id, m.kind]));
+  };
+  const result = await read({
+    worker: "toni",
+    instruction: `Read the sender domain, date and subject for each email. ${KIND_RULE}. Return every input ID exactly once in notices.`,
+    source: JSON.stringify(source),
+    maxOutputTokens: 2048,
+    json: { name: "charge_notices", schema: { type: "object", required: ["notices"], properties: {
+      notices: { type: "array", items: { type: "object", required: ["id", "kind"], properties: {
+        id: { type: "string" }, kind: { type: "string", enum: kinds },
+      } } },
+    } } },
+    accept: (text) => readAll(text) !== null,
+  }, process.env);
+  const classified = result.status === "ok" ? readAll(result.text) : null;
+  if (!classified) throw new Error(result.status === "allowance-exhausted"
+    ? "NAMED STOP [FREE_ALLOWANCE_EXHAUSTED] Billing mail will be read again next run"
+    : "The free reader did not classify every billing notice");
+  return source.map((m) => ({ ...m, kind: classified.get(m.id) }));
+}
+
 /** A charge notice's reading: failed payments are gathered by vendor later; the rest are notices. Pure. */
 export function chargeReading(m, where) {
   return { key: `charge:${String(m.id).slice(0, 40)}`, state: "notice", line: `Charge notice ${m.date ?? ""}: ${m.from_domain ?? "unknown"} — "${String(m.subject ?? "").slice(0, 120)}" (${where}).` };
@@ -430,15 +462,7 @@ async function readChargesSpry() {
     const token = await googleToken("https://www.googleapis.com/auth/gmail.readonly", "staylor@spry.vc");
     const hits = await gmailHeaders(token, CHARGE_QUERY, 25);
     if (!hits.length) return noticeReadings([], "spry.vc mailbox", "charges:spry");
-    // Metadata only (sender domain, subject, date): the model reads what each one is.
-    const a = askClaudeJson(
-      `Each line is one email's sender domain, date and subject. ${KIND_RULE}. Reply with ONLY a JSON array, one object per line, in order: {"id":"<id>","kind":"<kind>"}.\n` +
-      hits.map((m) => `${m.id}\t${fromDomain(m.from)}\t${m.date}\t${m.subject}`).join("\n"),
-      { model: MODEL, maxTurns: 1 },
-    );
-    if (!a.ok || !Array.isArray(a.json)) return [{ key: "charges:spry", state: "stop", line: `The spry.vc charge notices could not be read: ${a.ok ? "the answer was not a list" : a.why}.` }];
-    const kinds = new Map(a.json.map((x) => [String(x?.id), x?.kind]));
-    return noticeReadings(hits.map((m) => ({ id: m.id, from_domain: fromDomain(m.from), subject: m.subject, date: m.date, kind: kinds.get(m.id) ?? "other" })), "spry.vc mailbox", "charges:spry");
+    return noticeReadings(await readChargeKinds(hits), "spry.vc mailbox", "charges:spry");
   } catch (e) {
     return [{ key: "charges:spry", state: "stop", line: `The spry.vc mailbox could not be read for charge notices (${String(e?.message ?? e).slice(0, 120)}).` }];
   }

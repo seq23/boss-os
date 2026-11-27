@@ -1,5 +1,6 @@
 /** Types for risk-watch.mjs. See that file. */
-import type { Reading } from "./lib/duty-kit.mjs";
+import type { readWorkerSource } from "../../src/worker/boss/router/freeModel.ts";
+import type { gmailHeaders, Reading } from "./lib/duty-kit.mjs";
 export const THRESHOLDS: Readonly<Record<string, number>>;
 export function openrouterReading(credits: unknown, prevUsage: number): Reading & { usage?: number };
 export function rdapExpiry(rdap: unknown): number | null;
@@ -23,6 +24,7 @@ export function workersAiReading(byDay: Record<string, number> | null): Reading;
 export function stripeReading(label: string, x: { payouts: Array<{ status?: string; amount?: number; failure_message?: string }> | null; account: { payouts_enabled?: boolean; requirements?: { disabled_reason?: string } } | null }): Reading;
 export function billingProblemReadings(notices: Notice[]): BillingReading[];
 export function noticeReadings(notices: Notice[], where: string, sourceKey: string, now?: number): BillingReading[];
+export function readChargeKinds(hits: Awaited<ReturnType<typeof gmailHeaders>>, read?: typeof readWorkerSource): Promise<Notice[]>;
 export function chargeReading(m: Notice, where: string): Reading;
 export function dayWords(day: string | undefined): string;
 export function vendorName(domain: string): string;

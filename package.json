@@ -37,7 +37,7 @@
     "validate:migrations-keep-data": "node scripts/validate/migrations-keep-their-data.mjs && node scripts/validate/migrations-keep-their-data.mjs --self-test",
     "validate:brains": "node scripts/validate/brains.mjs && node scripts/validate/brains.mjs --self-test",
     "validate": "npm run validate:scans && npm run typecheck && npm run test",
-    "validate:ai-boundary": "node scripts/validate/no-direct-provider-calls.mjs && node scripts/validate/no-direct-provider-calls.mjs --self-test",
+    "validate:ai-boundary": "node scripts/validate/no-direct-provider-calls.mjs && node scripts/validate/no-direct-provider-calls.mjs --self-test && node scripts/validate/worker-model-boundary.mjs && node scripts/validate/worker-model-boundary.mjs --self-test",
     "validate:api-screens": "node scripts/validate/api-has-a-screen.mjs && node scripts/validate/api-has-a-screen.mjs --self-test",
     "validate:authority": "node scripts/validate/no-unauthorized-effects.mjs && node scripts/validate/no-unauthorized-effects.mjs --self-test",
     "validate:classification": "node scripts/validate/data-classification.mjs",

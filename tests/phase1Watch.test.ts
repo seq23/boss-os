@@ -8,9 +8,9 @@
 import { mkdtempSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
-  billingProblemReadings, cloudflareUsageReading, workersAiReading, githubUsageReading, monthProgress, noticeReadings, planRisk, stripeReading,
+  billingProblemReadings, cloudflareUsageReading, workersAiReading, githubUsageReading, monthProgress, noticeReadings, planRisk, readChargeKinds, stripeReading,
 } from "../scripts/ops/risk-watch.mjs";
 import { lineProblems } from "../src/shared/boss/mail/plain.mjs";
 import { morningSectionProblems } from "../src/shared/boss/mail/morning.mjs";
@@ -21,6 +21,21 @@ const NOW = Date.parse("2026-11-20T14:00:00Z");
 const GH_FAIL = (id: string, date: string) => ({ id, from_domain: "github.com", subject: "[GitHub] We had a problem billing your account", date, kind: "payment_failed", vendor: "GitHub", detail: "The card was declined for the seq23 account, attempt 3 of 3." });
 
 describe("billing watch: a failed payment surfaces as one plain Decide item", () => {
+  it("reads business billing candidates through Toni's free route and joins answers by ID", async () => {
+    const hit = { id: "m1", from: "alerts@vendor.example", date: "2026-11-20", subject: "Action required on your account" };
+    const read = vi.fn(async () => ({ status: "ok", provider: "workers-ai", text: '{"notices":[{"id":"m1","kind":"payment_failed"}]}', inTokens: 1, outTokens: 1 } as const));
+    await expect(readChargeKinds([hit], read)).resolves.toEqual([{
+      id: "m1", from_domain: "vendor.example", date: "2026-11-20", subject: "Action required on your account", kind: "payment_failed",
+    }]);
+    expect(read).toHaveBeenCalledWith(expect.objectContaining({ worker: "toni", source: expect.stringContaining(hit.subject) }), expect.anything());
+  });
+
+  it("rejects incomplete billing answers instead of treating omitted IDs as other mail", async () => {
+    const hits = [{ id: "m1", from: "alerts@vendor.example", date: "2026-11-20", subject: "Action required" }];
+    const read = async () => ({ status: "ok", provider: "workers-ai", text: '{"notices":[]}', inTokens: 1, outTokens: 1 } as const);
+    await expect(readChargeKinds(hits, read)).rejects.toThrow("did not classify every billing notice");
+  });
+
   const github = githubUsageReading({ usageItems: [{ grossAmount: 600, discountAmount: 600, netAmount: 0 }, { grossAmount: 41.75, discountAmount: 41.75, netAmount: 0 }] });
 
   it("GitHub's metered use covered by discounts reads ok, with the amounts", () => {

@@ -82,15 +82,21 @@ describe("the worker reading router", () => {
       .mockImplementationOnce(unavailable)
       .mockResolvedValueOnce(Response.json({ success: true, result: { response: "no JSON" } }));
     vi.stubGlobal("fetch", fetch);
+    const recordRead = vi.fn();
 
-    await expect(readWorkerSource(input, credentials))
+    await expect(readWorkerSource(input, credentials, recordRead))
       .resolves.toEqual({ status: "allowance-exhausted", provider: "gemini" });
     expect(fetch).toHaveBeenCalledTimes(1);
-    await expect(readWorkerSource({ ...input, worker: "kendra" }, credentials))
+    await expect(readWorkerSource({ ...input, worker: "kendra" }, credentials, recordRead))
       .resolves.toEqual({ status: "allowance-exhausted", provider: "workers-ai" });
     expect(fetch).toHaveBeenCalledTimes(2);
-    await expect(readWorkerSource(input, credentials)).resolves.toEqual({ status: "unavailable" });
+    await expect(readWorkerSource(input, credentials, recordRead)).resolves.toEqual({ status: "unavailable" });
     expect(fetch).toHaveBeenCalledTimes(4);
+    expect(recordRead).not.toHaveBeenCalled();
+    fetch.mockResolvedValueOnce(Response.json(googleAnswer));
+    await expect(readWorkerSource(input, credentials, recordRead)).resolves.toMatchObject({ status: "ok" });
+    expect(recordRead).toHaveBeenCalledTimes(1);
+    expect(recordRead).toHaveBeenCalledWith(expect.objectContaining({ status: "ok" }));
   });
 });
 
