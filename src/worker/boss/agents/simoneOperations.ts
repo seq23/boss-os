@@ -7,6 +7,7 @@ import { dayIdInZone } from "../../../shared/boss/timezone";
 import type { Env } from "../env";
 import { AppError, badRequest } from "../lib/http";
 import { OPERATIONS_ENABLED, operatingStopped } from "../lib/operatingStop";
+import { workerEvidence } from "./workerEvidence";
 
 export const SIMONE_OPERATIONS_SETTING = "simone_operations";
 const text = (max: number) => z.string().trim().min(1).max(max);
@@ -29,7 +30,7 @@ async function readReport(db: D1Database) {
   return row ? { ...JSON.parse(row.value) as Report, observedAt: row.updated_at } : null;
 }
 
-export async function operatingInputs(db: D1Database, now = Date.now()) {
+export async function operatingInputs(db: D1Database, now = Date.now(), includeWorkerEvidence = true) {
   const day = dayIdInZone(now);
   if (await operatingStopped(db)) return { day, stopped: true };
   const saved = await readReport(db);
@@ -43,7 +44,8 @@ export async function operatingInputs(db: D1Database, now = Date.now()) {
       FROM standing_duties d JOIN employees e ON e.id = d.employee_id
       WHERE d.lane = 'ops' AND d.removed_at IS NULL AND e.lifecycle IN ('active','provisional')`),
   ]);
-  return { day, agents: agents?.results, duties: duties?.results, mailboxes: [
+  return { day, agents: agents?.results, duties: duties?.results,
+    workerEvidence: includeWorkerEvidence ? await workerEvidence(db, now) : undefined, mailboxes: [
     { id: "boss-intake", name: BOSS_INTAKE_MAILBOX, handler: "the Boss OS mail handler" },
     { id: "simone-intake", name: SIMONE_MAILBOX, handler: "the Boss OS mail handler" },
     ...BRAND_MAILBOXES.map(({ brand }) => ({ id: brand, name: brand + " Workspace inbox", handler: "the Workspace intake and account readers" })),

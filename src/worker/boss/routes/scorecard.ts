@@ -8,6 +8,7 @@ import { pauseDuty } from "../duties/ownerEdits";
 import scorecard from "../../../shared/boss/scorecard/manifest.json";
 import schedule from "../../../shared/boss/schedule/manifest.json";
 import { STATES, centralDay, pauseTargets } from "../../../shared/boss/scorecard/scorecard.mjs";
+import { operatingReport } from "../agents/simoneOperations";
 
 /**
  * THE SCORECARD'S RECORD (owner ruling, 1 Nov 2026: "nothing runs unmeasured").
@@ -79,7 +80,10 @@ scorecardRoutes.get("/", async (c) => {
           note: daily.reason?.replace(/^MONIQUE DAILY CHECK: /, "").replace(/^NAMED STOP \[[A-Z_]+\]\s*/, "") || "The brokerage coverage check did not report a verdict." }
       : { day: today, status: "pending", note: "Today's brokerage coverage check has yet to report." },
   };
-  return ok(c, { state, strays, dailyChecks });
+  const operations = await operatingReport(c.env.DB).catch(() => null);
+  const workerChecks = operations?.rows.filter((row) => row.kind === "schedule" && row.id.startsWith("worker-check:"))
+    .map(({ id, name, state, evidence }) => ({ id, name, state, evidence })) ?? [];
+  return ok(c, { state, strays, dailyChecks, workerChecks });
 });
 
 scorecardRoutes.post("/run", async (c) => {

@@ -12,6 +12,8 @@ import { citedIn, isScanned, uncovered } from "./email-map.mjs";
 import { gmailHeaders } from "./duty-kit.mjs";
 import { googleAccess, macContext, readMetric } from "./scorecard-readers.mjs";
 import { localConfig, senderClient } from "../pnp-corporate-outreach.mjs";
+import { readSiteAudit, workerChecks } from "./worker-checks.mjs";
+import { dayOf } from "../../../src/shared/boss/schedule/clock.mjs";
 
 const ROOT = fileURLToPath(new URL("../../../", import.meta.url));
 const readJson = async (file) => JSON.parse(await readFile(join(ROOT, "src/shared/boss", file), "utf8"));
@@ -137,6 +139,7 @@ export async function checkOperations({ schedule, scorecard, senders, sites, inp
     const find = duty && !dutyMap.has(duty) ? "not_running" : strays.has(`schedule:${row.id}`) ? "unlisted" : "listed";
     add("schedule", row.id, row.name, initiative?.result ?? row.what, find, row.id === CAMPAIGN ? await campaign : noProof());
   }
+  rows.push(...workerChecks(schedule, inputs, launchd));
   for (const s of senders.rows) add("sender", s.id, s.sender + " · " + s.id, s.what, "listed",
     s.id === CAMPAIGN ? await campaign : noProof());
   for (const path of senderDrift) add("sender", path, path, "Find the sender’s recipient and expected delivery.", "unlisted");
@@ -167,8 +170,9 @@ export async function checkOperations({ schedule, scorecard, senders, sites, inp
   for (const row of rows) {
     if (row.coverage === "unlisted") issues.push(`NOT WORKING: ${row.name} — present in code or launchd, missing from the expected list.`);
     if (row.coverage === "not_running") issues.push(`NOT WORKING: ${row.name} — listed, but the configured trigger or active duty is missing.`);
-    if (!["missing", "unknown"].includes(row.state) || reported.has(row.evidence)) continue;
-    reported.add(row.evidence);
+    const issueKey = row.id.startsWith("worker-check:") ? row.id : row.evidence;
+    if (!["missing", "unknown"].includes(row.state) || reported.has(issueKey)) continue;
+    reported.add(issueKey);
     issues.push(`${row.state === "missing" ? "NOT WORKING" : "COULDN'T CHECK"}: ${row.name} — ${row.evidence}`);
   }
   const needsProof = rows.filter((r) => r.coverage !== "paused" && r.state === "no_proof").length;
@@ -187,9 +191,32 @@ async function readLaunchd() {
   };
   const [list, disabled] = await Promise.all([launch("list"), launch("print-disabled", `gui/${process.getuid?.()}`)]);
   const configured = new Set();
-  try { await stat(dir); for (const label of Object.keys(installedPlists(dir, LAUNCHD))) configured.add(label); } catch { /* The loaded list is read independently. */ }
+  const activity = {};
+  try {
+    await stat(dir);
+    const paths = new Map();
+    for (const [label, xml] of Object.entries(installedPlists(dir))) {
+      configured.add(label);
+      for (const [, value] of xml.matchAll(/<key>Standard(?:Out|Error)Path<\/key>\s*<string>([^<]+)<\/string>/g)) {
+        const path = value.replaceAll("&amp;", "&");
+        const labels = paths.get(path) ?? new Set();
+        labels.add(label);
+        paths.set(path, labels);
+      }
+    }
+    for (const [path, labels] of paths) {
+      if (labels.size !== 1) continue;
+      const label = [...labels][0];
+      const log = await stat(path).catch(() => null);
+      if (log?.isFile() && log.size > 0) {
+        const day = dayOf(log.mtimeMs);
+        (activity[label] ??= new Set()).add(day);
+      }
+    }
+  } catch { /* Installed files and the loaded list are independent evidence. */ }
   return {
     configured,
+    activity,
     loaded: list === null ? null : new Set(list.split("\n").map((line) => line.trim().split(/\s+/)[2]).filter((label) => LAUNCHD.test(label ?? ""))),
     disabled: disabled === null ? null : new Set([...disabled.matchAll(/"([^"]+)" => (?:disabled|true)/g)].map((match) => match[1])),
   };
@@ -276,6 +303,7 @@ export async function runOperationsCheck(api, { env = process.env, fetchImpl = f
   ]);
   const code = await readBossCode(senders);
   for (const label of code.labels) launchd.configured.add(label);
+  if (input.workerEvidence) input.workerEvidence.siteAudit = await readSiteAudit(input.workerEvidence.day, readiness, env);
 
   const timeout = AbortSignal.timeout(45_000);
   const boundedFetch = (url, init) => fetchImpl(url, { ...init, signal: AbortSignal.any([timeout, AbortSignal.timeout(7_000)]) });

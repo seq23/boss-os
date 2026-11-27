@@ -203,6 +203,14 @@ the vault’s `PNP_OUTREACH_PROOF_MAILBOX` setting. The sender status feed suppl
 arrival time. An empty mailbox search in that window shows a missing copy. A positive match stays
 unconfirmed until the feed supplies the original Message-ID.
 
+The Schedule manifest's `workerJobs` names the accountable Boss OS worker and how to read evidence
+for each in-scope scheduled job. Simone's existing daily check judges the previous Central day.
+Scorecard shows the same rows under Daily worker checks. Missing count sources or run receipts show
+“couldn't check.” The source of record for each supported reading is the duty's task cohort, the
+Grid and its property readings, or the Search Readiness target list and saved audit. Plumbing uses
+dated run receipts or activity in the job's own launchd log. The existing Deals grid, campaign and
+Noelle checks keep their own evidence. The CI gate checks tracked job definitions and duty migrations.
+
 ### Output floors and Kendra's alarms (6 Nov 2026)
 Owner, 5 Nov 2026: stop "green but did nothing" (P&P outreach ran green 2-5 Nov and sent 0; Wynn's
 owner emails failed 236 times 2-6 Nov; a task read "running" for hours on a spent seat).
