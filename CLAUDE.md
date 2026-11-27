@@ -358,10 +358,10 @@ site. Pinned by `tests/searchReadiness.test.ts`, which reads this section:
 Owner, 31 Oct 2026 ("time to work"). One definition, `src/shared/boss/brains/brain.mjs`; stored in D1
 (`brains`, `brain_revisions`, migration 0323); pinned by `tests/brains.test.ts` (which reads this
 section), `tests/boss/brains.test.ts` and `npm run validate:brains`:
-1. **Ten brains.** Seven businesses, in scoreboard order (`brokerage` — Spry Ventures (spry.vc), the
+1. **Eleven brains.** Eight businesses, in scoreboard order (`brokerage` — Spry Ventures (spry.vc), the
    brokerage, priority 1 — `west-peek-ventures` — the fund ONLY — `west-peek` — the community: Rooms,
    TLC, westpeek.live, the join site — `porch-and-party`, `time-2-read` — a Spry Labs company — `spry` —
-   Spry Labs, the umbrella for every side business, holding the Industry Guides — `friends`), `personal`
+   Spry Labs, the umbrella for every side business, holding the Industry Guides — `wkys` — We Keep You Spry (WKYS), her private AI enablement business (27 Nov 2026, migration 0382), holding the commercial plan, backlog and security notes kept out of the public seq23/WKYS repo — `friends`), `personal`
    (Boss OS itself, Spirit, gates, coaching, her schedule), `risk` ("don't get sued", 1 Nov 2026,
    migration 0329: numbered rules R-AREA-NN for every site and project she touches, each naming where it
    is enforced or "judgment"; a plain document with no confidential data, so any model may read it; Toni

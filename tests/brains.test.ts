@@ -22,18 +22,18 @@ describe("the rules in CLAUDE.md are the rules in code", () => {
     expect(section).toContain("<!-- confidential -->…<!-- /confidential -->");
     expect(B.CONFIDENTIAL_OPEN).toBe("<!-- confidential -->");
     expect(B.CONFIDENTIAL_CLOSE).toBe("<!-- /confidential -->");
-    expect(B.BRAINS).toHaveLength(10);
+    expect(B.BRAINS).toHaveLength(11);
     expect(B.BRAIN_SLUGS).not.toContain("west-peek-events");
     expect(B.BRAIN_SLUGS).not.toContain("westpeek-live");
   });
 });
 
 describe("the restructure (owner, 1 Nov 2026)", () => {
-  it("has exactly ten slugs: eight brains, the risk rules and the team doc, in scoreboard order", () => {
+  it("has exactly eleven slugs: nine brains, the risk rules and the team doc, in scoreboard order", () => {
     expect([...B.BRAIN_SLUGS]).toEqual([
-      "brokerage", "west-peek-ventures", "west-peek", "porch-and-party", "time-2-read", "spry", "friends", "personal", "risk", "team",
+      "brokerage", "west-peek-ventures", "west-peek", "porch-and-party", "time-2-read", "spry", "wkys", "friends", "personal", "risk", "team",
     ]);
-    expect([...B.BUSINESS_SLUGS]).toEqual(["brokerage", "west-peek-ventures", "west-peek", "porch-and-party", "time-2-read", "spry", "friends"]);
+    expect([...B.BUSINESS_SLUGS]).toEqual(["brokerage", "west-peek-ventures", "west-peek", "porch-and-party", "time-2-read", "spry", "wkys", "friends"]);
     expect(B.BRAIN_SLUGS).not.toContain("industry-guides");
   });
   it("carries the approved titles", () => {
@@ -43,6 +43,8 @@ describe("the restructure (owner, 1 Nov 2026)", () => {
     expect(t["west-peek"]).toBe("West Peek — the community");
     expect(t.spry).toBe("Spry Labs — the umbrella for every side business");
     expect(t["time-2-read"]).toBe("Time-2-Read — a Spry Labs company");
+    // Owner, 27 Nov 2026: the public name is "We Keep You Spry" (WKYS), never "SPRY" alone.
+    expect(t.wkys).toBe("We Keep You Spry (WKYS)");
   });
   it("industry-guides is retired into spry: the alias resolves, live slugs resolve to themselves", () => {
     expect(B.RETIRED_BRAINS).toEqual({ "industry-guides": "spry" });
@@ -127,6 +129,10 @@ describe("edits in her words", () => {
     expect(B.brainSlugFor("P&P")).toBe("porch-and-party");
     expect(B.brainSlugFor("pnp")).toBe("porch-and-party");
     expect(B.brainSlugFor("time-2-read")).toBe("time-2-read");
+    expect(B.brainSlugFor("WKYS")).toBe("wkys");
+    expect(B.brainSlugFor("We Keep You Spry")).toBe("wkys");
+    expect(B.brainSlugFor("wekeepyouspry.com")).toBe("wkys");
+    expect(B.brainSlugFor("spry")).toBe("spry");
     // Restructure 1 Nov 2026: TLC, Rooms and westpeek.live are the community; the fund is the fund.
     expect(B.brainSlugFor("TLC")).toBe("west-peek");
     expect(B.brainSlugFor("Rooms")).toBe("west-peek");
