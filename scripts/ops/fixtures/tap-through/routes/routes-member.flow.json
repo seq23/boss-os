@@ -1,0 +1,26 @@
+{
+  "app": "Fixture routes app (member storage for /vault)",
+  "journeys": [
+    {
+      "name": "home-to-plans",
+      "start": "/",
+      "steps": [
+        {
+          "see": "Routes fixture"
+        },
+        {
+          "tap": "Open plans",
+          "then": "Plans"
+        },
+        {
+          "sweep": true
+        }
+      ]
+    }
+  ],
+  "route_storage_for": {
+    "/vault": {
+      "fixture-member": "yes"
+    }
+  }
+}
