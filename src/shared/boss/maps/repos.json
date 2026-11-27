@@ -364,7 +364,8 @@
         "com.seq.scooter-watch-digest",
         "com.seq.shorts-arm",
         "com.seq.pr-watch",
-        "com.seq.agent-search-guard"
+        "com.seq.agent-search-guard",
+        "com.seq.skill-check"
       ]
     }
   ]

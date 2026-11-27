@@ -1674,6 +1674,29 @@
       "macWindow": "LIGHT"
     },
     {
+      "id": "skill-check",
+      "name": "Weekly skill firing test",
+      "what": "Runs 80 sample asks through claude -p and records whether the right one of the 20 most-used skills loads; a misfire opens one seq-bin issue for a person to fix the description.",
+      "business": "personal",
+      "brand": "Repos",
+      "system": "mac",
+      "slots": [
+        "sun 23:00"
+      ],
+      "emails": false,
+      "heavy": true,
+      "trigger": {
+        "launchd": [
+          "com.seq.skill-check"
+        ]
+      },
+      "output": {
+        "floor": 1,
+        "reason": "Zero asks run is a FAIL (exit 2); a usage limit or sign-out is COULDNT-CHECK, never a pass."
+      },
+      "macWindow": "HEAVY"
+    },
+    {
       "id": "ci-sweep-resume",
       "name": "CI sweep resume",
       "what": "Resumes a sweep the Mac's sleep interrupted.",
