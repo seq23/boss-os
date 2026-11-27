@@ -2343,7 +2343,8 @@
       "owner": "Boss OS · Growth Director (the AI answers card on Growth, read every Tuesday)",
       "result": "Buyers who ask an AI before choosing are pointed to her sites: buyer questions where an AI answer cites one of the six sites",
       "jobs": [
-        "ai-visibility"
+        "ai-visibility",
+        "chatgpt-searches"
       ],
       "start": "2026-11-24",
       "first": {
