@@ -1,11 +1,14 @@
 {
+  "_why": "The sr-fix worker's whole permission list (ahrefs-audit-fix.sh runs claude -p --permission-mode dontAsk --setting-sources= --settings <this file> from $HOME). What a rule lets through is decided by Claude Code, so scripts/ops/sr-fix-permissions-probe.mjs proves it with one real dontAsk session against throwaway fixtures, and tests/srFixPermissions.test.ts fails when that proof is older than this file. Edit and Write reach only ~/GitHub/.wt-danielle-* and the pass folder ~/.boss-os/site-audit (its scratch is <pass folder>/tmp). A * in the middle of a rule spans spaces, so each wildcard allow is closed by a deny (rm takes one path; a push takes no second refspec, + or force) and git -C has no rule at all. Redirects into files are refused by dontAsk whatever the rules say. node and python3 run code, so her command guard rides here as the backstop.",
   "permissions": {
     "allow": [
       "Read",
       "Glob",
       "Grep",
-      "Edit",
-      "Write",
+      "Edit(~/GitHub/.wt-danielle-*/**)",
+      "Write(~/GitHub/.wt-danielle-*/**)",
+      "Edit(~/.boss-os/site-audit/**)",
+      "Write(~/.boss-os/site-audit/**)",
       "Bash(cd:*)",
       "Bash(ls:*)",
       "Bash(cat:*)",
@@ -67,7 +70,21 @@
       "Bash(curl -sL:*)",
       "Bash(gh run list:*)",
       "Bash(gh run view:*)",
-      "Bash(gh pr diff:*)"
+      "Bash(gh pr diff:*)",
+      "Bash(npm test)",
+      "Bash(npm test *)",
+      "Bash(npx vitest run *)",
+      "Bash(git rm -q -- *)",
+      "Bash(git mv *)",
+      "Bash(rm ~/GitHub/.wt-danielle-*)",
+      "Bash(git reset --hard origin/danielle/site-audit-*)",
+      "Bash(git reset --hard FETCH_HEAD)",
+      "Bash(git push origin HEAD:danielle/site-audit-*)",
+      "Bash(git push origin HEAD:refs/heads/danielle/site-audit-*)",
+      "Bash(git push -q -u origin HEAD)",
+      "Bash(gh pr close *)",
+      "Bash(gh issue list *)",
+      "Bash(gh issue view *)"
     ],
     "deny": [
       "Bash(git push --force:*)",
@@ -98,7 +115,18 @@
       "Bash(git push *:refs/heads/master*)",
       "Bash(wrangler:*)",
       "Bash(npx wrangler:*)",
-      "mcp__claude-in-chrome"
+      "mcp__claude-in-chrome",
+      "Bash(rm * *)",
+      "Bash(rm *..*)",
+      "Bash(git push * main)",
+      "Bash(git push * main *)",
+      "Bash(git push * master)",
+      "Bash(git push * master *)",
+      "Bash(git push * --force*)",
+      "Bash(git push * -f*)",
+      "Bash(git push * +*)",
+      "Read(~/.ssh/**)",
+      "Edit(~/.ssh/**)"
     ]
   },
   "hooks": {

@@ -65,9 +65,13 @@ it("the repair call carries --max-turns (default 250, override honoured); a bad 
 it("sr-fix's permissions: every allow rule is one well-formed rule, and pushes to main, force pushes and merges are denied", () => {
   const p = JSON.parse(readFileSync("scripts/ops/sr-fix-permissions.json", "utf8")).permissions;
   for (const r of [...p.allow, ...p.deny]) {
-    expect(r, r).toMatch(/^(Read|Glob|Grep|Edit|Write|mcp__[a-z-]+|Bash\([^()]+\))$/);
-    if (p.allow.includes(r)) expect(r.replace(/:\*\)$/, ")"), `${r} mixes * with :*`).not.toMatch(/\*.*\)$|,/);
+    expect(r, r).toMatch(/^((Read|Glob|Grep|Edit|Write)(\(~\/[^()\s]+\))?|mcp__[a-z-]+|Bash\([^()]+\))$/);
+    // 27 Nov 2026: a wildcard anywhere is real CLI syntax now (proven by sr-fix-permissions-probe.mjs); mixing it
+    // with the legacy trailing :* is not, and a comma is two rules in one string.
+    if (p.allow.includes(r)) expect(r.endsWith(":*)") ? r.slice(0, -3) : r, `${r} mixes * with :*, or holds a comma`).not.toMatch(r.endsWith(":*)") ? /\*|,/ : /,/);
   }
+  // Edit and Write reach only the worker's worktrees and its own pass folder (a bare Edit/Write could empty any file of hers).
+  expect(p.allow.filter((r: string) => /^(Edit|Write)/.test(r)).sort()).toEqual(["Edit(~/.boss-os/site-audit/**)", "Edit(~/GitHub/.wt-danielle-*/**)", "Write(~/.boss-os/site-audit/**)", "Write(~/GitHub/.wt-danielle-*/**)"]);
   const prefix = (rule: string) => rule.replace(/^Bash\(/, "").replace(/(:\*)?\)$/, "");
   const denied = (cmd: string) => p.deny.some((r: string) => cmd.startsWith(prefix(r)));
   for (const cmd of ["git push origin HEAD:main", "git push origin HEAD:refs/heads/main", "gh api -X POST repos/x/y/merges", "npx wrangler r2 bucket delete x", "wrangler d1 execute db --remote", "git push --force origin x", "git push origin HEAD --force", "gh pr merge 12 --squash", "wrangler deploy", "rm -rf /", "gh secret set X"]) {

@@ -169,6 +169,16 @@ say "parked (off limits too): $(node -e 'import("'"$REPO"'/scripts/ops/lib/repo-
 # like this week's, and "nothing was written" is then unambiguous on disk as well as in the reporter.
 rm -f "$OUT_DIR/findings.json" "$OUT_DIR/scope.json"
 
+# THE WORKER'S OWN SCRATCH FOLDER (27 Nov 2026). The prompt sent crawls to /tmp, which is outside the worker's
+# folders, so every jq, grep, rg and head on its own crawl files was refused (24-25 Nov: 20+ refusals, six
+# PERMISSION_DENIED stops, nothing landed). Its scratch is $OUT_DIR/tmp, inside the pass's own folder, emptied
+# here so one pass never reads another's crawl. The prompt names it as `~/…` (the form the list matches) and,
+# for `git show --output=`, whose `~` the shell never expands, by its full path.
+SR_TMP="$OUT_DIR/tmp"
+rm -rf "${OUT_DIR:?}/tmp" && mkdir "$SR_TMP" && chmod 700 "$SR_TMP" || { say "NAMED STOP [NO_SCRATCH] could not empty and make $SR_TMP"; exit 8; }
+SR_TMP_TILDE="$SR_TMP"
+case "$SR_TMP" in "$HOME"/*) SR_TMP_TILDE="~${SR_TMP#"$HOME"}";; esac
+
 # A QUEUE PASS'S EVIDENCE IS WRITTEN BEFORE IT STARTS (26 Oct 2026). It reads no mailbox, so what it
 # looked at is the queue and the briefs it was handed. The reporter sends this snapshot as `searched`
 # (evidence.mjs `queueEvidence`), so the evidence never depends on how the model worded its own.
@@ -184,7 +194,7 @@ cd "$HOME" || { say "NAMED STOP [NO_HOME]"; exit 8; }
 # worktree helper and the IN_FLIGHT check; on 16 Oct the owner's checkout there was on a docs branch
 # without those scripts, so the run would have called files that did not exist. Rewritten to the
 # checkout this runner was started from, which is the one that has them.
-PROMPT_TEXT="$(sed "s#~/GitHub/boss-os#$REPO#g" "$PROMPT_FILE" | sed "s#~/.boss-os/site-audit/findings.json#$OUT_DIR/findings.json#g")"
+PROMPT_TEXT="$(sed "s#~/GitHub/boss-os#$REPO#g" "$PROMPT_FILE" | sed "s#~/.boss-os/site-audit/findings.json#$OUT_DIR/findings.json#g" | sed -e "s#<scratch-abs>#$SR_TMP#g" -e "s#<scratch>#$SR_TMP_TILDE#g")"
 # ─── ONE REPO OF THE SEARCH READINESS QUEUE, WHEN THE DAILY QUEUE RUN ASKS (25 Oct 2026) ─────────
 # scripts/ops/search-readiness-fix.sh works the whole queue one repository at a time so no single
 # pass runs out of turns half way through 242 briefs. SR_SCOPE_REPO narrows THIS pass to section 1b,
@@ -271,6 +281,10 @@ fi
 # user, project and local files would all add their allow rules: her signed-in Chrome, `wrangler r2 *`,
 # any `git push`). Probed 22 Nov 2026: `wrangler r2 bucket list --help` ran without it, was refused with it.
 # Her command guard rides in the file itself, as the backstop for `node` and `python3`, which are code.
+# WHAT THE LIST LETS THROUGH IS PROVEN, NOT ASSUMED (27 Nov 2026): the 24-25 Nov passes were refused 28+ in-scope
+# commands that a hand-built matcher called allowed. `node scripts/ops/sr-fix-permissions-probe.mjs` runs one real
+# dontAsk session with these exact flags against throwaway fixtures; tests/srFixPermissions.test.ts reads its result
+# and goes red when the file changes without a fresh probe.
 SR_FIX_SETTINGS="$REPO/scripts/ops/sr-fix-permissions.json"
 [ -s "$SR_FIX_SETTINGS" ] || { say "NAMED STOP [NO_PERMISSIONS_FILE] $SR_FIX_SETTINGS is missing; the worker never runs without its allow list."; exit 6; }
 case "$SR_FIX_SETTINGS" in *[[:space:]]*) say "NAMED STOP [PERMISSIONS_PATH_SPACE] '$SR_FIX_SETTINGS' has a space, which ai-run would split."; exit 6;; esac
@@ -287,7 +301,7 @@ SR_FIX_SESSION="$(node -e 'console.log(crypto.randomUUID())')"
 SR_FIX_TOOLS="$(node -e 'const a=JSON.parse(require("fs").readFileSync(process.argv[1],"utf8")).permissions.allow;console.log([...new Set(a.map(r=>r.replace(/\(.*$/,"")))].filter(t=>/^[A-Z][A-Za-z]+$/.test(t)).join(","))' "$SR_FIX_SETTINGS" 2>/dev/null)"
 case "$SR_FIX_TOOLS" in *Bash*) ;; *) say "NAMED STOP [NO_TOOL_LIST] could not read the worker's tools from $SR_FIX_SETTINGS (got '$SR_FIX_TOOLS')."; exit 6;; esac
 AI_RUN_CLAUDE_ARGS="--max-turns $MAX_TURNS --session-id $SR_FIX_SESSION --tools $SR_FIX_TOOLS --permission-mode dontAsk --setting-sources= --settings $SR_FIX_SETTINGS" \
-"$AI_RUN" --role "$REPAIR_ROLE" --network --cwd "$HOME" --out "$RUN_LOG" -- "$PROMPT_TEXT" >> "$RUN_LOG" 2>&1
+TMPDIR="$SR_TMP" "$AI_RUN" --role "$REPAIR_ROLE" --network --cwd "$HOME" --out "$RUN_LOG" -- "$PROMPT_TEXT" >> "$RUN_LOG" 2>&1
 RC=$?
 say "=== ai-run --role $REPAIR_ROLE exited rc=$RC ==="
 DENIED=0
