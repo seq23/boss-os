@@ -114,7 +114,7 @@ it("refuses legacy Google calls after an owner switches them off and refuses the
 it("accepts temporary access only from direct, authenticated owner mail, read by a model, and expires it without a job", async () => {
   const owner = "owner@example.test";
   const scoped = { ...env, BOSS_EXTRA_OWNER_SENDERS: owner, AI: undefined };
-  const checked = "mx.cloudflare.net; spf=pass; dkim=pass; dmarc=pass";
+  const checked = "mx.cloudflare.net; spf=pass; dkim=pass; dmarc=pass header.from=example.test";
   // Her words as she would type them: no address syntax, no ISO time (#582 review finding 4).
   const words = "I'm sick, cover West Peek mail till Friday";
   const NOW = Date.parse("2026-11-30T15:00:00Z"); // Monday 9:00 AM CT
@@ -135,7 +135,7 @@ it("accepts temporary access only from direct, authenticated owner mail, read by
     expect((await deliver(words, "peer@example.test")).outcome).not.toBe("OWNER_GOOGLE_ACCESS");
     expect((await deliver(`> ${words}`)).outcome).not.toBe("OWNER_GOOGLE_ACCESS");
     expect((await deliver(words, owner, "Fwd: Boss OS")).outcome).not.toBe("OWNER_GOOGLE_ACCESS");
-    expect((await deliver(words, owner, "Boss OS", "mx.cloudflare.net; spf=pass; dmarc=pass")).outcome).not.toBe("OWNER_GOOGLE_ACCESS");
+    expect((await deliver(words, owner, "Boss OS", "mx.cloudflare.net; spf=pass; dmarc=pass header.from=example.test")).outcome).not.toBe("OWNER_GOOGLE_ACCESS");
     expect(reads).toEqual([]);
     await expect(simoneAccountGate(scoped, DEFAULT_MAILBOX, "mail", NOW)).resolves.toBeNull();
 

@@ -16,6 +16,7 @@ import { recordSentMail } from "../../src/worker/boss/mail/history";
 import { ERRAND_SENDERS } from "../../src/shared/boss/commands/parse.mjs";
 import { layoutEmail, plainProblems } from "../../src/shared/boss/mail/plain.mjs";
 import { OPTIONS_REPLY, VENUE, VENUE_MESSAGE_ID, PHONE } from "../fixtures/errandReplyOptions.mjs";
+import { cloudflareAuth } from "./cloudflareAuth";
 
 const HER = ERRAND_SENDERS[0]!;
 const NOW = Date.parse("2026-10-26T20:00:00Z");
@@ -27,7 +28,7 @@ const DUE = Date.parse("2026-10-28T23:00:00Z"); // Wednesday 7:00 pm New York ti
 function mail(o: { from: string; body: string; subject?: string; messageId?: string; inReplyTo?: string }) {
   const headers = new Headers({
     from: o.from, subject: o.subject ?? "",
-    "authentication-results": "mx.cloudflare.net; spf=pass; dkim=pass; dmarc=pass",
+    "authentication-results": cloudflareAuth(o.from),
     "message-id": o.messageId ?? `<${Math.random().toString(36).slice(2)}@mail.example.test>`,
   });
   if (o.inReplyTo) headers.set("in-reply-to", o.inReplyTo);

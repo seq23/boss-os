@@ -12,7 +12,7 @@ import { operatingStopCommand, setOperatingStop, STOP_CONFIRM_WORDS } from "../l
 import { admitTask } from "../tasks/admit";
 import {
   BOSS_INTAKE_MAILBOX, BOSS_INTAKE_DOMAIN,
-  dmarcPassed, extractAddress, isOwner,
+  authenticationVerdict, extractAddress, isOwner,
   replyBody, routeToSeat, seatByAddress, seatTag, strippedSubject,
   type BossRoute, type BossSeat,
 } from "../../../shared/boss/intake/mail.mjs";
@@ -268,7 +268,12 @@ export function forwardedOrigin(raw: string): { from: string | null; subject: st
 
 /** Who really sent this, from headers only — never from body text. */
 function senderOf(message: BossMailMessage): string {
-  return extractAddress(message.headers.get("from")) ?? String(message.from ?? "").toLowerCase();
+  const header = message.headers.get("from");
+  // A From line that is there but cannot be read as ONE sender is nobody, never the envelope: the
+  // envelope fallback would let a crafted two-address From pass as whoever the envelope names.
+  if (header && header.trim()) return extractAddress(header) ?? "";
+  // No From line at all: the envelope finds an errand, but proves nothing (`fromLine` below).
+  return String(message.from ?? "").toLowerCase();
 }
 
 /**
@@ -378,25 +383,42 @@ export const FALLBACK_LINE = "No model could read this email just now (down, or 
 type Said = { fellBack: boolean };
 const toldFallback = (reply: string, said: Said) => (said.fellBack && !reply.includes(FALLBACK_LINE) ? `${reply}\n\n${FALLBACK_LINE}` : reply);
 
-export async function handleBossInboundMail(message: BossMailMessage, env: Env): Promise<BossMailResult> {
+/**
+ * Where a message came from, said by the CALLER, never by the message. `console` is passed only by
+ * the `/api/boss/intake/*` routes, which sit behind her session; the `email()` entrypoint passes
+ * nothing, so no header a sender writes can make a message count as typed by her.
+ */
+export interface BossMailOrigin { via?: "console" }
+
+export async function handleBossInboundMail(message: BossMailMessage, env: Env, origin: BossMailOrigin = {}): Promise<BossMailResult> {
   const said: Said = { fellBack: false };
-  const result = await handleMail(message, env, said);
+  const result = await handleMail(message, env, said, origin.via === "console");
   return result.reply ? { ...result, reply: toldFallback(result.reply, said) } : result;
 }
 
-async function handleMail(message: BossMailMessage, env: Env, said: Said): Promise<BossMailResult> {
+async function handleMail(message: BossMailMessage, env: Env, said: Said, viaConsole: boolean): Promise<BossMailResult> {
   const mailId = newId("iml");
   const now = Date.now();
   const to = String(message.to ?? "").toLowerCase();
   let subject = decodeHeader(message.headers.get("subject") ?? "");
   const sender = senderOf(message);
-  // Email Routing prepends its own result. A sender can add later results in the same header bag.
+  /*
+   * PROVEN BY CLOUDFLARE'S OWN VERDICT, OR BY HER SESSION. Mail counts only when the receiving
+   * server's Authentication-Results says DMARC passed for the sender's own domain
+   * (`authenticationVerdict`); a sender's added header is never read. A message she typed in Boss OS
+   * is proven by the session gate in front of the route that passed `via: "console"`.
+   */
+  const verdict = viaConsole ? { passed: true, reason: "" } : authenticationVerdict(message.headers.get("authentication-results"), sender);
+  // DMARC "pass" beside both SPF and DKIM failing is not a verdict Cloudflare writes; refuse it (kept from main).
+  const firstAuth = message.headers.get("authentication-results")?.split(",", 1)[0] ?? "";
+  const dmarc = verdict.passed && (viaConsole ||
+    !(/;\s*spf=(?:softfail|fail)\b/i.test(firstAuth) && /;\s*dkim=fail\b/i.test(firstAuth)));
+  // DMARC aligns to the From line, never the envelope: with no From line nobody is proven.
+  const fromLine = Boolean(message.headers.get("from")?.trim());
+  const authorised = fromLine && isOwner(sender, env.BOSS_EXTRA_OWNER_SENDERS ?? "") && dmarc;
+  // Email Routing prepends its own result; the operating-stop check below reads it too.
   const authentication = message.headers.get("authentication-results")?.split(",", 1)[0] ?? "";
   const cloudflareChecked = /^mx\.cloudflare\.net\s*;/i.test(authentication.trim());
-  const dmarc = dmarcPassed(authentication) && (message.console === true || cloudflareChecked) &&
-    !(/;\s*spf=(?:softfail|fail)\b/i.test(authentication) && /;\s*dkim=fail\b/i.test(authentication));
-  const headerFrom = extractAddress(message.headers.get("from"));
-  const authorised = headerFrom !== null && isOwner(headerFrom, env.BOSS_EXTRA_OWNER_SENDERS ?? "") && dmarc;
 
   /*
    * ─── THE ARRIVAL IS RECORDED FIRST, AND THE OUTCOME IS FILLED IN AFTER ────
@@ -418,8 +440,9 @@ async function handleMail(message: BossMailMessage, env: Env, said: Said): Promi
    * /api/intake/mail` runs this exact handler from her own authenticated session — see that route
    * for why a replay door exists at all — and a row that claimed Cloudflare had DMARC-verified a
    * message nobody posted would be a lie in the one table whose whole job is saying what was proven.
+   * `viaConsole` is the route's argument (`handleBossInboundMail(…, { via: "console" })`), never a
+   * header: a header is text any sender can write (27 Nov 2026).
    */
-  const viaConsole = message.console === true;
   /*
    * ─── A QUESTION SHE CANNOT ANSWER IS A QUESTION THAT NAGS FOR EVER ────────
    *
@@ -552,7 +575,7 @@ async function handleMail(message: BossMailMessage, env: Env, said: Said): Promi
   const errand = externalSender ? await openErrandFor(env, sender, now, {
     subject, text: externalText, references: chain,
   }) : null;
-  const verifiedVenue = externalSender && dmarc && headerFrom && !viaConsole;
+  const verifiedVenue = externalSender && dmarc && fromLine && sender !== "" && !viaConsole;
   const copied = verifiedVenue && (errand || chain.length) ? (() => {
     const all = replyAllRecipients({ from: message.headers.get("from"), to: message.headers.get("to"), cc: message.headers.get("cc"), "reply-to": message.headers.get("reply-to") });
     return [...all.to, ...all.cc].filter((x) => !isOwner(extractAddress(x) ?? x, env.BOSS_EXTRA_OWNER_SENDERS ?? ""));
@@ -592,8 +615,8 @@ async function handleMail(message: BossMailMessage, env: Env, said: Said): Promi
 
   if (!authorised) {
     const why = isOwner(sender, env.BOSS_EXTRA_OWNER_SENDERS ?? "")
-      ? `From ${sender}, which is one of yours, but DMARC did not pass — so the address was not proven and nothing was run.`
-      : `From ${sender}, which is not one of your addresses. Recorded and refused.`;
+      ? `From ${sender}, which is one of yours, but DMARC did not pass (${verdict.reason}) — so the address was not proven and nothing was run.`
+      : sender ? `From ${sender}, which is not one of your addresses. Recorded and refused.` : "Its From line names more than one address or cannot be read as one sender. Recorded and refused.";
     await recordArrival("REFUSED_SENDER", why);
     // Keeping mail is not authority to execute its contents or to answer its sender.
     await keepExternal();

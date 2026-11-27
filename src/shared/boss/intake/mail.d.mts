@@ -44,7 +44,8 @@ export declare function seatByAddress(to: string | null | undefined, roster: rea
 export declare function replyBody(route: BossRoute, roster: readonly BossSeat[], subject: string): string;
 export declare function extractAddress(header: string | null | undefined): string | null;
 export declare function strippedSubject(subject: string): string;
-export declare function dmarcPassed(authResults: string | null | undefined): boolean;
+export declare const TRUSTED_AUTHSERV_ID: "mx.cloudflare.net";
+export declare function authenticationVerdict(authResults: string | null | undefined, fromAddress: string | null | undefined): { passed: boolean; reason: string };
 export declare function isOwner(address: string | null | undefined, extraOwnerSenders?: string): boolean;
 export const SALUTATION_SEATS: readonly string[];
 export function seatBySalutation(text: string, roster: BossSeat[]): BossSeat | null;

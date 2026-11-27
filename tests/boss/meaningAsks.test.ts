@@ -17,6 +17,7 @@ import { herWords, ownWords } from "../../src/shared/boss/intake/messageBody.mjs
 import { checksOf } from "../../src/worker/boss/intake/firstRead";
 import { editDutyFromMail } from "../../src/worker/boss/duties/editByMail";
 import { admitTask } from "../../src/worker/boss/tasks/admit";
+import { cloudflareAuth } from "./cloudflareAuth";
 
 /** The first read's answer: every numbered check gets `meaning` (quoting `quote` when it asks), plus brief fields. */
 const reads = (checks: Array<{ meaning: string; quote?: string }>, extra: Record<string, unknown> = {}, calls?: { n: number }): Rung[] => [{
@@ -216,7 +217,7 @@ describe("one read per email (#514 review)", () => {
     const from = "owner-test@example.test";
     const runtime = { ...env, BOSS_EXTRA_OWNER_SENDERS: from } as Env;
     const raw = `From: ${from}\r\nSubject: ${subject}\r\nContent-Type: text/plain; charset=UTF-8\r\n\r\n${body.replace(/\n/g, "\r\n")}`;
-    const headers = new Headers({ from, subject, "authentication-results": "mx.cloudflare.net; spf=pass; dkim=pass; dmarc=pass", "message-id": `<${id}@example.test>` });
+    const headers = new Headers({ from, subject, "authentication-results": cloudflareAuth(from), "message-id": `<${id}@example.test>` });
     const result = await handleBossInboundMail({ from, to: BOSS_INTAKE_MAILBOX, headers, raw: new Response(raw).body!, rawSize: new TextEncoder().encode(raw).length } as never, runtime);
     expect(result).toMatchObject({ outcome: "SIMONE_QUEUED", reply: null, mailId: expect.any(String) });
     return result;

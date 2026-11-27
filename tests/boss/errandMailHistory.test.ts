@@ -7,6 +7,7 @@ import { mailHistory, recordSentMail, replyWithHistory, stageSentMail } from "..
 import { BOSS_INTAKE_MAILBOX } from "../../src/shared/boss/intake/mail.mjs";
 import { readErrandReply, errandReplyNotice, ERRAND_SENDERS } from "../../src/shared/boss/commands/parse.mjs";
 import { layoutEmail, plainProblems } from "../../src/shared/boss/mail/plain.mjs";
+import { cloudflareAuth } from "./cloudflareAuth";
 
 const NOW = Date.parse("2026-10-27T12:00:00Z");
 const VENUE = "reservations@lantern.example.test";
@@ -19,7 +20,7 @@ async function seed(id = "cmd_mail1", over: Record<string, unknown> = {}) {
 let incomingCount = 0;
 function incoming(from: string, text: string, subject = "The Lantern Room", html = false) {
   const raw = `From: ${from}\r\nSubject: ${subject}\r\nContent-Type: text/${html ? "html" : "plain"}; charset=utf-8\r\n\r\n${text}`;
-  const headers = new Headers({ from, subject, "message-id": `<card${++incomingCount}@platform.example.test>`, "authentication-results": "mx.cloudflare.net; spf=pass; dkim=pass; dmarc=pass" });
+  const headers = new Headers({ from, subject, "message-id": `<card${++incomingCount}@platform.example.test>`, "authentication-results": cloudflareAuth(from) });
   return { raw, message: { from, to: BOSS_INTAKE_MAILBOX, headers, raw: new Response(raw).body!, rawSize: new TextEncoder().encode(raw).length } };
 }
 beforeEach(async () => {
