@@ -6,8 +6,9 @@ import { refsForChain, refsForCode, chainIds, refTail } from "./mailRefs";
 import { newId } from "../lib/id";
 import { audit } from "../lib/audit";
 import { logEvent } from "../lib/log";
-import { enableSickDay, simoneSickDayCommand } from "../agents/simoneAccounts";
-import { operatingStopCommand, setOperatingStop } from "../lib/operatingStop";
+import { enableSickDay } from "../agents/simoneAccounts";
+import { readSickDayAsk } from "../agents/simoneSickDay";
+import { operatingStopCommand, setOperatingStop, STOP_CONFIRM_WORDS } from "../lib/operatingStop";
 import { admitTask } from "../tasks/admit";
 import {
   BOSS_INTAKE_MAILBOX, BOSS_INTAKE_DOMAIN,
@@ -742,17 +743,21 @@ async function handleMail(message: BossMailMessage, env: Env, said: Said): Promi
     /;\s*dkim\s*=\s*pass\b/i.test(authentication) && /;\s*spf\s*=\s*pass\b/i.test(authentication);
   const operatingStop = directVerified ? operatingStopCommand(writtenByOwner) : null;
   if (operatingStop !== null) {
-    const stopped = await setOperatingStop(env.DB, operatingStop, now);
-    const acknowledgement = stopped ? "Boss OS operations are paused." : "Boss OS operations can resume.";
+    const stopped = operatingStop === "confirm" ? null : await setOperatingStop(env.DB, operatingStop, now);
+    const acknowledgement = stopped === null
+      ? `Nothing is paused yet. Reply “${STOP_CONFIRM_WORDS}” to pause every agent and job in Boss OS, your morning email included, until you say resume.`
+      : stopped ? "Boss OS operations are paused." : "Boss OS operations can resume.";
     await finish({ outcome: "OWNER_OPERATING_STOP", why: acknowledgement, objectKey, reply: acknowledgement });
     return { mailId, outcome: "OWNER_OPERATING_STOP", employeeId: null, taskId: null, reply: acknowledgement, messageId, signer: "Simone" };
   }
-  const sickDay = directVerified ? simoneSickDayCommand(writtenByOwner, now) : null;
-  if (sickDay) {
-    const { address, until } = sickDay;
-    if (until !== null) await enableSickDay(env, { address, until }, now);
-    const acknowledgement = until === null ? "Choose an end time within seven days."
-      : `Simone has temporary access to ${address} until ${new Date(until).toISOString()}.`;
+  // A model reads whether her own direct words ask Simone to cover spry.vc or West Peek mail, and until
+  // when; code keeps the fixed inbox list, the seven-day cap and the checks in `directVerified`.
+  const sickDay = directVerified ? await readSickDayAsk(env, writtenByOwner, now) : { kind: "none" as const };
+  if (sickDay.kind === "grant") await enableSickDay(env, { address: sickDay.address, until: sickDay.until }, now);
+  // An email that is only the cover ask is answered here; one that asks for more goes on to Simone,
+  // who now has the inbox for what it asks (her ruling, 25 Nov 2026).
+  if (sickDay.kind !== "none" && !sickDay.alsoAsks) {
+    const acknowledgement = sickDay.reply;
     await finish({ outcome: "OWNER_GOOGLE_ACCESS", why: acknowledgement, objectKey, reply: acknowledgement });
     return { mailId, outcome: "OWNER_GOOGLE_ACCESS", employeeId: null, taskId: null, reply: acknowledgement, messageId, signer: "Simone" };
   }

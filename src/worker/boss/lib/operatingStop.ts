@@ -9,9 +9,17 @@ export async function operatingStopped(db: D1Database): Promise<boolean> {
   return row?.enabled !== 1;
 }
 
-export function operatingStopCommand(words: string): boolean | null {
-  switch (words.trim().toLowerCase()) {
-    case "stop everything": return true;
+/**
+ * Her exact control words, read by code so the stop works during a model outage. "stop everything"
+ * only asks her to confirm (#582 review finding 7: a stop pauses all of Boss OS, morning email
+ * included); her reply "yes, stop everything" stops; "resume" resumes at once.
+ */
+export const STOP_CONFIRM_WORDS = "yes, stop everything";
+export function operatingStopCommand(words: string): boolean | "confirm" | null {
+  switch (words.trim().toLowerCase().replace(/[.!]+$/, "")) {
+    case "stop everything": return "confirm";
+    case "yes, stop everything":
+    case "yes stop everything": return true;
     case "resume": return false;
     default: return null;
   }

@@ -293,7 +293,7 @@ export async function simoneTool(env: Env, request: { id: string; lease: number;
     if (!Number.isFinite(start) || !Number.isFinite(end) || end <= start || end - start > 14 * 86_400_000) {
       return { ok: false, code: "CALENDAR_WINDOW_REQUIRED" } as const;
     }
-    if (!await simoneAccountGate(env, calendar.toLowerCase(), now)) return { ok: false, code: "GOOGLE_ACCOUNT_OFF" } as const;
+    if (!await simoneAccountGate(env, calendar.toLowerCase(), "calendar", now)) return { ok: false, code: "GOOGLE_ACCOUNT_OFF" } as const;
     try {
       const read = request.tool === "calendar_agenda" ? calendarAgenda : clashes;
       const result = await read(env, calendar.toLowerCase(), start, end);
@@ -331,7 +331,7 @@ export async function simoneTool(env: Env, request: { id: string; lease: number;
       return { ok: false, code: "CALENDAR_BLOCK_NOT_AUTHORIZED" } as const;
     }
     const mailbox = calendar.toLowerCase();
-    if (!await simoneAccountGate(env, mailbox, now)) return { ok: false, code: "GOOGLE_ACCOUNT_OFF" } as const;
+    if (!await simoneAccountGate(env, mailbox, "calendar", now)) return { ok: false, code: "GOOGLE_ACCOUNT_OFF" } as const;
     if (cancelling) {
       const { from } = args;
       const allDay = dateOnly(from);
@@ -594,7 +594,7 @@ export async function simoneTool(env: Env, request: { id: string; lease: number;
         message.body.length > 12_000 || !message.body.includes(quote)) {
       return { ok: false, code: "PERSONAL_READ_INSTRUCTION_REQUIRED" } as const;
     }
-    if (!await simoneAccountGate(env, env.BOSS_SIMONE_PERSONAL_GOOGLE_ACCOUNT?.toLowerCase() ?? null, now)) {
+    if (!await simoneAccountGate(env, env.BOSS_SIMONE_PERSONAL_GOOGLE_ACCOUNT?.toLowerCase() ?? null, request.tool === "read_personal_mail" ? "mail" : "drive", now)) {
       return { ok: false, code: "GOOGLE_ACCOUNT_OFF" } as const;
     }
     // Only the Mac holds the personal connector. Authorization itself is never a work receipt.
@@ -606,7 +606,7 @@ export async function simoneTool(env: Env, request: { id: string; lease: number;
     if (!value || (search ? value.length > 300 : !/^[a-z0-9]{1,64}$/i.test(value))) {
       return { ok: false, code: "MAIL_QUERY_REQUIRED" } as const;
     }
-    if (!await simoneAccountGate(env, OUTREACH_MAILBOX, now)) return { ok: false, code: "GOOGLE_ACCOUNT_OFF" } as const;
+    if (!await simoneAccountGate(env, OUTREACH_MAILBOX, "mail", now)) return { ok: false, code: "GOOGLE_ACCOUNT_OFF" } as const;
     const gmail = GmailSession.from(env);
     if (!gmail) return { ok: false, code: "WORKSPACE_MAIL_NOT_CONNECTED" } as const;
     try {
@@ -632,7 +632,7 @@ export async function simoneTool(env: Env, request: { id: string; lease: number;
         !/^[a-zA-Z0-9_-]{10,150}$/.test(id)) {
       return { ok: false, code: "DRIVE_QUERY_REQUIRED" } as const;
     }
-    if (!await simoneAccountGate(env, DEFAULT_MAILBOX, now)) return { ok: false, code: "GOOGLE_ACCOUNT_OFF" } as const;
+    if (!await simoneAccountGate(env, DEFAULT_MAILBOX, "drive", now)) return { ok: false, code: "GOOGLE_ACCOUNT_OFF" } as const;
     if (!env.GSC_SERVICE_ACCOUNT_JSON) return { ok: false, code: "WORKSPACE_DRIVE_NOT_CONNECTED" } as const;
     try {
       if (search) {
@@ -674,7 +674,7 @@ export async function simoneTool(env: Env, request: { id: string; lease: number;
     try {
       const archive = await env.VAULT.get(arrival.object_key);
       if (!archive || archive.size > MAX_BODY_BYTES) return { ok: false, code: "MAIL_ARCHIVE_UNAVAILABLE" } as const;
-      const driveAllowed = Boolean(await simoneAccountGate(env, DEFAULT_MAILBOX, now));
+      const driveAllowed = Boolean(await simoneAccountGate(env, DEFAULT_MAILBOX, "drive", now));
       const material = await readEverything(env, await parseMail(await archive.text()), message.body, { driveAllowed });
       return { ok: true, material, ...(material.read.length || material.heard.length ? { receipt: message.mail_id } : {}) } as const;
     } catch {
@@ -796,7 +796,7 @@ export async function simoneTool(env: Env, request: { id: string; lease: number;
     if (!namedByOwner || ERRAND_MONEY_RE.test(message.body)) return { ok: false, code: "INVITE_NOT_AUTHORIZED" } as const;
     const spec = inviteSpec(request.task, message.body);
     if (!spec || spec.start <= active.created_at) return { ok: false, code: "INVITE_DETAILS_MISSING" } as const;
-    if (spec.calendar !== "personal" && !await simoneAccountGate(env, spec.calendar.toLowerCase(), now)) {
+    if (spec.calendar !== "personal" && !await simoneAccountGate(env, spec.calendar.toLowerCase(), "calendar", now)) {
       return { ok: false, code: "GOOGLE_ACCOUNT_OFF" } as const;
     }
     const command = await fileCommand(env, "invite", request.id, message.mail_id ?? null, spec, now);

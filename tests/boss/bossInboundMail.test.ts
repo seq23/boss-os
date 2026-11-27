@@ -903,21 +903,23 @@ describe("a reply that was never due says so, and is never counted as a failure"
     const call = (await claimSimone(env))!;
     expect(call).toMatchObject({ id: taskId, message: { body, source: "boss_inbound_mail", console: true, has_mail_material: true } });
     expect(await env.DB.prepare("SELECT id FROM boss_commands WHERE mail_id = ?").bind(mailId).first()).toBeNull();
-    const { enableSickDay } = await import("../../src/worker/boss/agents/simoneAccounts");
+    const { switchSimoneAccount } = await import("../../src/worker/boss/agents/simoneAccounts");
     const { DEFAULT_MAILBOX } = await import("../../src/shared/boss/commands/parse.mjs");
     const withoutDrive = Object.create(env);
     withoutDrive.GSC_SERVICE_ACCOUNT_JSON = undefined;
     const openMail = () => simoneTool(withoutDrive, { ...call, tool: "read_mail_material" });
-    expect(await openMail()).toMatchObject({
-      ok: true, material: { read: [], unopened: [{ reason: "Workspace Drive access is off" }] },
-    });
-    const now = Date.now();
-    await enableSickDay(env, { address: DEFAULT_MAILBOX, until: now + 3_600_000 }, now);
+    // The default production state (no sick-day email, nothing switched): her West Peek Drive link is
+    // tried, and an unreachable Drive is said so, never "access is off" (#582 review finding 1).
     expect(await openMail()).toMatchObject({
       ok: true, material: { read: [], unopened: [{
         filename: expect.stringContaining("1Fixture"),
         reason: expect.stringContaining("Drive could not be reached"),
       }] },
+    });
+    // Only her own Off on Simone's accounts page turns the Drive read off.
+    await switchSimoneAccount(env, DEFAULT_MAILBOX, false, Date.now());
+    expect(await openMail()).toMatchObject({
+      ok: true, material: { read: [], unopened: [{ reason: "Workspace Drive access is off" }] },
     });
     const reply = "I found no record for that code.";
     expect(await replySimone(env, { ...call, text: reply, work: ["record lookup"] })).toBe(true);

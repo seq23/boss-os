@@ -80,13 +80,23 @@ export function completedTools(log) {
       const name = names.get(block.tool_use_id);
       names.delete(block.tool_use_id);
       const content = typeof block.content === "string" ? block.content : JSON.stringify(block.content ?? []);
-      if (!block.is_error && content.trim().length > 2 && ["WebSearch", "WebFetch"].includes(name)) {
+      if (!block.is_error && content.trim().length > 2 && name === "WebSearch") {
         receipts.push(name);
       }
     }
   }
   return receipts.slice(0, 100);
 }
+
+/*
+ * NO OPEN FETCH WHILE SHE READS MAIL AND DRIVE (security.md check 15; #582 review, 27 Nov 2026). An
+ * injected email could ask her to fetch https://x/?d=<her subjects> and carry owner data out in the URL.
+ * Simone's run reads her mail, Drive, Docs and Sheets, so it has no tool that reaches an arbitrary URL:
+ * WebFetch is not offered and is denied in simone-permissions.json, Bash has no network (sandbox, no
+ * allowed domains), and the Codex fallback has cached search only with its network off. Web search
+ * stays: its query goes to the search provider, never to a host the mail names.
+ */
+export const SIMONE_TOOLS = Object.freeze(["Bash", "WebSearch"]);
 
 export function childEnvironment(env, home, settings, promptFile) {
   return {
@@ -99,7 +109,7 @@ export function childEnvironment(env, home, settings, promptFile) {
     GIT_TERMINAL_PROMPT: "0",
     CLAUDE_CODE_SUBPROCESS_ENV_SCRUB: "1",
     AI_RUN_NO_CLAUDE_FALLBACK: "1",
-    AI_RUN_CLAUDE_ARGS: `--permission-mode dontAsk --setting-sources= --settings ${settings} --strict-mcp-config --tools Bash,WebSearch,WebFetch --max-turns 100 --output-format stream-json --verbose --append-system-prompt-file ${promptFile}`,
+    AI_RUN_CLAUDE_ARGS: `--permission-mode dontAsk --setting-sources= --settings ${settings} --strict-mcp-config --tools ${SIMONE_TOOLS.join(",")} --max-turns 100 --output-format stream-json --verbose --append-system-prompt-file ${promptFile}`,
   };
 }
 

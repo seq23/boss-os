@@ -158,15 +158,21 @@ function SimoneAccounts() {
           <div className="row-main">
             <div className="row-title" style={{ overflowWrap: "anywhere" }}>{account.address}</div>
             {account.disconnecting && <div className="row-sub">Google revocation pending</div>}
-            {!account.disconnecting && account.restricted && (
+            {!account.disconnecting && account.restricted === "mail" && (
               <div className="row-sub">
-                {account.until ? `Temporary access until ${when(account.until)}` : "Temporary access by verified email"}
+                {account.until ? `Calendar and Drive on. Mail on until ${when(account.until)}`
+                  : "Calendar and Drive on. Mail only when you email Simone to cover it"}
+              </div>
+            )}
+            {!account.disconnecting && account.restricted === "all" && (
+              <div className="row-sub">
+                {account.until ? `On until ${when(account.until)}` : "Off until you email Simone to cover it"}
               </div>
             )}
           </div>
           <button className="btn btn-small" role="switch" aria-checked={account.enabled}
             aria-label={`Simone access to ${account.address}`}
-            disabled={busy || account.disconnecting || (account.restricted && !account.enabled)}
+            disabled={busy || account.disconnecting || (account.restricted === "all" && !account.enabled)}
             onClick={() => void change(() => api.switchSimoneAccount(account.address, !account.enabled))}>
             {account.enabled ? "On" : "Off"}
           </button>

@@ -3,10 +3,10 @@
     "defaultMode": "dontAsk",
     "allow": [
       "Bash",
-      "WebSearch",
-      "WebFetch"
+      "WebSearch"
     ],
     "deny": [
+      "WebFetch",
       "Bash(claude:*)",
       "Bash(ai-run:*)",
       "Bash(gh:*)",

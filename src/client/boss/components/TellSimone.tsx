@@ -14,6 +14,8 @@ export function TellSimone({ focus = false, onOpenRecentWork, page = false }: { 
   const [failed, setFailed] = useState<string | null>(null);
   const [stopped, setStopped] = useState<boolean | null>(null);
   const [changingStop, setChangingStop] = useState(false);
+  // "Stop everything" pauses all of Boss OS, so it takes a second tap (#582 review finding 7).
+  const [confirmingStop, setConfirmingStop] = useState(false);
   const [stopError, setStopError] = useState<string | null>(null);
   const box = useRef<HTMLTextAreaElement>(null);
   const section = useRef<HTMLElement>(null);
@@ -39,6 +41,7 @@ export function TellSimone({ focus = false, onOpenRecentWork, page = false }: { 
   async function changeStop(next: boolean) {
     setChangingStop(true);
     setStopError(null);
+    setConfirmingStop(false);
     try {
       const state = await api.setSimoneStop(next);
       setStopped(state.stopped);
@@ -95,9 +98,20 @@ export function TellSimone({ focus = false, onOpenRecentWork, page = false }: { 
       <h2 className="tell-simone-h">{label}</h2>
       {page && stopped !== null && (
         <div className="btn-row tell-simone-btns">
-          <button type="button" className="btn" disabled={changingStop} onClick={() => void changeStop(!stopped)}>
-            {stopped ? "Resume Boss OS operations" : "Stop everything"}
-          </button>
+          {stopped || !confirmingStop ? (
+            <button type="button" className="btn" disabled={changingStop}
+              onClick={() => (stopped ? void changeStop(false) : setConfirmingStop(true))}>
+              {stopped ? "Resume Boss OS operations" : "Stop everything"}
+            </button>
+          ) : (
+            <>
+              <span role="status">This pauses every agent and job in Boss OS, your morning email included, until you resume.</span>
+              <button type="button" className="btn" data-testid="confirm-stop" disabled={changingStop} onClick={() => void changeStop(true)}>
+                Yes, stop everything
+              </button>
+              <button type="button" className="btn" disabled={changingStop} onClick={() => setConfirmingStop(false)}>Cancel</button>
+            </>
+          )}
           {stopped && <span role="status">Boss OS operations are paused.</span>}
         </div>
       )}

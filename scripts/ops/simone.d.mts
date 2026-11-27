@@ -9,7 +9,9 @@ export interface SimoneCall {
 
 export function codexAgentArgs(output: string, socket: string): string[];
 export function codexWebReceipts(log: string): string[];
+export function completedTools(log: string): string[];
 export function simoneMemory(home: string): Promise<string>;
+export const SIMONE_TOOLS: readonly string[];
 export function childEnvironment(env: NodeJS.ProcessEnv, home: string, settings: string, promptFile: string): NodeJS.ProcessEnv;
 export function runSimone(options: {
   api: (method: string, path: string, body?: unknown) => Promise<{ call?: SimoneCall; replied?: boolean; refused?: boolean; released?: boolean }>;

@@ -67,10 +67,21 @@ test("Simone replies in both message boxes at 390 px", async ({ page }, info) =>
   await account.click();
   await expect(account).toHaveAttribute("aria-checked", "true");
 
-  await box.getByRole("button", { name: "Stop everything" }).click();
+  // One tap only asks: nothing pauses until "Yes, stop everything" (#582 review finding 7).
+  const stopButton = box.getByRole("button", { name: "Stop everything", exact: true });
+  await stopButton.click();
+  await expect(box.getByText(/This pauses every agent and job in Boss OS/)).toBeVisible();
+  await expect(box.getByText("Boss OS operations are paused.")).toHaveCount(0);
+  await expectNoSidewaysScroll(page);
+  await capture("simone-stop-confirm-390.png");
+  await box.getByRole("button", { name: "Cancel", exact: true }).click();
+  await expect(stopButton).toBeEnabled();
+  expect((await (await page.request.get("/api/boss/simone/stop")).json()).data.stopped).toBe(false);
+  await stopButton.click();
+  await box.getByRole("button", { name: "Yes, stop everything", exact: true }).click();
   await expect(box.getByText("Boss OS operations are paused.")).toBeVisible();
   await expectNoSidewaysScroll(page);
   await capture("simone-stop-390.png");
   await box.getByRole("button", { name: "Resume Boss OS operations" }).click();
-  await expect(box.getByRole("button", { name: "Stop everything" })).toBeEnabled();
+  await expect(box.getByRole("button", { name: "Stop everything", exact: true })).toBeEnabled();
 });

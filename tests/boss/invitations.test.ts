@@ -10,9 +10,8 @@ import { createExecutionContext, env, waitOnExecutionContext } from "cloudflare:
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import worker from "../../src/worker/boss/index";
 import { setCommandFetch } from "../../src/worker/boss/commands/google";
-import { enableSickDay } from "../../src/worker/boss/agents/simoneAccounts";
-import { DEFAULT_MAILBOX } from "../../src/shared/boss/commands/parse.mjs";
 import { runInvitations, setInviteModel } from "../../src/worker/boss/invitations/run";
+import { switchSimoneAccount } from "../../src/worker/boss/agents/simoneAccounts";
 import { addDays, centralDay, INVITE_INBOXES } from "../../src/shared/boss/invitations/invitations.mjs";
 import { HOME_TZ, instantAt } from "../../src/shared/boss/ownerTime.mjs";
 
@@ -105,7 +104,6 @@ beforeEach(async () => {
   (env as any).GSC_SERVICE_ACCOUNT_JSON = JSON.stringify({ client_email: "bot@example.iam.gserviceaccount.com", private_key: await pem() });
   setInviteModel(async () => ({ invitation: true, title: "Dinner at Dana's", date: "2026-11-21", time: "19:00", where: "Dana's house", asks_answer: true }));
   Date.now = () => NOW;
-  await enableSickDay(env, { address: DEFAULT_MAILBOX, until: NOW + 7 * 86_400_000 }, NOW);
 });
 afterEach(() => { setCommandFetch(null); setInviteModel(null); Date.now = REAL_NOW; });
 
@@ -136,7 +134,31 @@ describe("the morning pass", () => {
     const g = fakeGoogle({ failGmail: true }); setCommandFetch(g.f);
     await expect(runInvitations(env as any, NOW, g.f)).rejects.toThrow(/NAMED STOP \[INVITES_MAILBOX_UNREAD\].*OUTPUT \d+ invitations/);
     const s = await section();
-    expect(s.lines.join(" ")).toMatch(/could not read 2 places for invitations/);
+    expect(s.lines.join(" ")).toMatch(/could not read 3 places for invitations/);
+  });
+
+  /*
+   * #582 review finding 1 (27 Nov 2026): Simone's sick-day switch had put the West Peek and Spry inboxes
+   * and her West Peek calendar out of this duty by default, with no line. The default (no sick-day email,
+   * nothing switched) is the test above: all three inboxes and both calendars are read. Only the owner's
+   * own Off on Simone's accounts page leaves one out, and the section says so without failing the duty.
+   */
+  it("an inbox she switched Off on Simone's page is not read, and the section names it", async () => {
+    await switchSimoneAccount(env as any, INVITE_INBOXES[0]!.address, false, NOW - 1);
+    const g = fakeGoogle(); setCommandFetch(g.f);
+    const r = await runInvitations(env as any, NOW, g.f);
+    expect(Object.keys(r.read).sort()).toEqual(INVITE_INBOXES.slice(1).map((b) => b.address).sort());
+    expect(g.calls.some((c) => c.url.includes(encodeURIComponent(INVITE_INBOXES[0]!.address)))).toBe(false);
+    expect(r.unread).toEqual([]);
+    const s = await section();
+    expect(s.lines.join(" ")).toMatch(/did not look for invitations in West Peek calendar, West Peek inbox: you switched them Off on her accounts page/);
+  });
+
+  it("by default every inbox, the Spry one included, is read: no sick-day email is needed", async () => {
+    const g = fakeGoogle(); setCommandFetch(g.f);
+    const r = await runInvitations(env as any, NOW, g.f);
+    expect(Object.keys(r.read).sort()).toEqual(INVITE_INBOXES.map((b) => b.address).sort());
+    expect((await section()).lines).toEqual([]);
   });
 });
 

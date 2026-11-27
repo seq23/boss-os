@@ -26,7 +26,17 @@ it("pauses both Simone claim paths and leased tools from authenticated owner mai
   expect((await deliver("stop everything", owner, "mx.cloudflare.net; dmarc=pass; spf=pass")).outcome).not.toBe("OWNER_OPERATING_STOP");
   expect((await deliver("For reference:\r\n\r\n> stop everything")).outcome).not.toBe("OWNER_OPERATING_STOP");
   expect((await apiJson("/api/simone/stop")).body.data.stopped).toBe(false);
-  await expect(deliver("stop everything")).resolves.toMatchObject({ outcome: "OWNER_OPERATING_STOP" });
+  // The first "stop everything" only asks her to confirm (#582 review finding 7): nothing is paused yet.
+  const asked = await deliver("stop everything");
+  expect(asked).toMatchObject({ outcome: "OWNER_OPERATING_STOP" });
+  expect(asked.reply).toMatch(/Nothing is paused yet\. Reply “yes, stop everything”/);
+  expect((await apiJson("/api/simone/stop")).body.data.stopped).toBe(false);
+  // A quoted or forged confirmation never stops.
+  expect((await deliver("> yes, stop everything")).outcome).not.toBe("OWNER_OPERATING_STOP");
+  expect((await deliver("yes, stop everything", "peer@example.test")).outcome).toBe("REFUSED_SENDER");
+  expect((await apiJson("/api/simone/stop")).body.data.stopped).toBe(false);
+  await expect(deliver("Yes, stop everything.")).resolves.toMatchObject({ outcome: "OWNER_OPERATING_STOP", reply: expect.stringContaining("paused") });
+  expect((await apiJson("/api/simone/stop")).body.data.stopped).toBe(true);
   await expect(claimSimone(env)).resolves.toBeNull();
   await expect(claimSimone(env, Date.now(), true)).resolves.toBeNull();
   await expect(simoneTool(env, { ...lease, tool: "team" })).resolves.toEqual({ ok: false, code: "OWNER_STOPPED_OPERATIONS" });
@@ -1072,10 +1082,8 @@ it("finds and reads a Workspace document through a leased Simone task with read-
   const { simoneTool } = await import("../../src/worker/boss/agents/simoneTools");
   const { DRIVE_FILE_MAX_BYTES } = await import("../../src/worker/boss/intake/readFiles");
   const { DEFAULT_MAILBOX } = await import("../../src/shared/boss/commands/parse.mjs");
+  // The default production state: no sick-day email. Her West Peek Drive is on (#582 review finding 1).
   const mocked = await googleFixtureEnv();
-  const { enableSickDay } = await import("../../src/worker/boss/agents/simoneAccounts");
-  const now = Date.now();
-  await enableSickDay(mocked, { address: DEFAULT_MAILBOX, until: now + 86_400_000 }, now);
   const title = "Avery's \\ launch plan";
   const id = await fileSimoneMessage(env, { ...request, body: `Find and summarize ${title} on Drive.` });
   const call = (await claimSimone(env))!;

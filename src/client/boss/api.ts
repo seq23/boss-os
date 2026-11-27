@@ -21,7 +21,8 @@ export interface RewriteProgress {
 export interface SimoneGoogleAccount {
   address: string;
   enabled: boolean;
-  restricted: boolean;
+  /** "mail": only its inbox waits for her sick-day email; "all": the whole account does. */
+  restricted: "mail" | "all" | null;
   until: number | null;
   canDisconnect: boolean;
   disconnecting: boolean;
