@@ -295,6 +295,8 @@ export const api = {
   tellSimone: (text: string) => call<{ taskId: string }>("/intake/simone", post("", { text })),
   messageSimone: (text: string) => call<{ taskId: string }>("/simone/message", post("", { text })),
   simoneMessage: (id: string) => call<SimoneMessageResult>(`/simone/message/${encodeURIComponent(id)}`),
+  simoneStop: () => call<{ stopped: boolean }>("/simone/stop"),
+  setSimoneStop: (stopped: boolean) => call<{ stopped: boolean }>("/simone/stop", post("", { stopped })),
 
   answerQuestion: (id: string, body: { answer?: string; withdraw?: string }) =>
     call<{ answered_at: number | null; opened_work: boolean; note: string }>(`/intake/questions/${encodeURIComponent(id)}/answer`, post("", body)),

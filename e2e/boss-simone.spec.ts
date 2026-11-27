@@ -54,5 +54,12 @@ test("Simone replies in both message boxes at 390 px", async ({ page }, info) =>
   await expect(page.getByTestId("employee-page").locator(".charter")).toHaveText(
     "Chief of Staff: runs your day and is in charge of everything Boss OS runs",
   );
-  await sendAndRead(page.getByTestId("employee-message-simone"), "/api/boss/simone/message", "simone-page-390.png");
+  const box = page.getByTestId("employee-message-simone");
+  await sendAndRead(box, "/api/boss/simone/message", "simone-page-390.png");
+  await box.getByRole("button", { name: "Stop everything" }).click();
+  await expect(box.getByText("Boss OS operations are paused.")).toBeVisible();
+  await expectNoSidewaysScroll(page);
+  await page.screenshot({ path: info.outputPath("simone-stop-390.png") });
+  await box.getByRole("button", { name: "Resume Boss OS operations" }).click();
+  await expect(box.getByRole("button", { name: "Stop everything" })).toBeEnabled();
 });

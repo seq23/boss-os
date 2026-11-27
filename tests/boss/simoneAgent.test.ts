@@ -2,9 +2,63 @@ import { env } from "cloudflare:test";
 import { describe, expect, it } from "vitest";
 import { claimSimone, fileSimoneMessage, releaseSimone, replySimone, SIMONE_LEASE_MS } from "../../src/worker/boss/agents/simone";
 import { routeSimoneWhenMacIsDown } from "../../src/worker/boss/agents/simoneFallback";
+import { SIMONE_TOOL_STEPS } from "../../src/worker/boss/agents/simoneAuthority";
 import { apiJson, row, stubFetch } from "./helpers";
 
 const request = { source: "boss_page", subject: "What can move?", body: "Check the team’s work." } as const;
+
+it("pauses both Simone claim paths and leased tools from authenticated owner mail without a model", async () => {
+  const { handleBossInboundMail } = await import("../../src/worker/boss/intake/inboundMail");
+  const { simoneTool } = await import("../../src/worker/boss/agents/simoneTools");
+  const { dutyBrief } = await import("../../src/worker/boss/duties/ownerEdits");
+  const owner = "owner@example.test";
+  const checked = "mx.cloudflare.net; spf=pass; dkim=pass; dmarc=pass";
+  const scoped = { ...env, BOSS_EXTRA_OWNER_SENDERS: owner, AI: undefined };
+  function deliver(body: string, from = owner, authentication = checked) {
+    const raw = `Subject: Boss OS\r\n\r\n${body}`;
+    return handleBossInboundMail({ from, to: "simone@example.test", raw: new Response(raw).body!, rawSize: raw.length,
+      headers: new Headers({ from, subject: "Boss OS", "authentication-results": authentication }) }, scoped);
+  }
+  const first = await fileSimoneMessage(env, request, "before-stop", 1);
+  const lease = (await claimSimone(env, 2))!;
+  expect(lease.id).toBe(first);
+  await expect(deliver("stop everything", "peer@example.test")).resolves.toMatchObject({ outcome: "REFUSED_SENDER" });
+  expect((await deliver("stop everything", owner, "mx.cloudflare.net; dmarc=pass; spf=pass")).outcome).not.toBe("OWNER_OPERATING_STOP");
+  expect((await deliver("For reference:\r\n\r\n> stop everything")).outcome).not.toBe("OWNER_OPERATING_STOP");
+  expect((await apiJson("/api/simone/stop")).body.data.stopped).toBe(false);
+  await expect(deliver("stop everything")).resolves.toMatchObject({ outcome: "OWNER_OPERATING_STOP" });
+  await expect(claimSimone(env)).resolves.toBeNull();
+  await expect(claimSimone(env, Date.now(), true)).resolves.toBeNull();
+  await expect(simoneTool(env, { ...lease, tool: "team" })).resolves.toEqual({ ok: false, code: "OWNER_STOPPED_OPERATIONS" });
+  await expect(dutyBrief(env, "lp-daily.mjs")).resolves.toMatchObject({ operating_stop: true, due: false });
+  await expect(apiJson("/api/backends/claim", { method: "POST", body: { device_id: "fixture" } })).resolves.toMatchObject({ body: { data: { run: null } } });
+  await expect(apiJson("/api/system/settings/owner_operating_stop", { method: "PUT", body: { value: "running" } })).resolves.toMatchObject({ status: 400 });
+  await expect(deliver("resume")).resolves.toMatchObject({ outcome: "OWNER_OPERATING_STOP" });
+  await expect(claimSimone(env)).resolves.not.toBeNull();
+  await expect(row("SELECT count(*) AS n FROM audit_log WHERE action IN ('operations_stopped','operations_resumed')")).resolves.toEqual({ n: 2 });
+});
+
+it("spends the last tool step once across concurrent requests and records a terminal cap", async () => {
+  const { simoneTool } = await import("../../src/worker/boss/agents/simoneTools");
+  const id = await fileSimoneMessage(env, request, "step-cap", 1);
+  const call = (await claimSimone(env, 2))!;
+  await env.DB.prepare(`UPDATE tasks SET input = json_set(input, '$.simone_tool_steps', ?) WHERE id = ?`)
+    .bind(SIMONE_TOOL_STEPS - 1, id).run();
+  const results = await Promise.all([simoneTool(env, { ...call, tool: "team" }), simoneTool(env, { ...call, tool: "team" })]);
+  expect(results.filter((result) => result.ok)).toHaveLength(1);
+  expect(results).toContainEqual({ ok: false, code: "SIMONE_STEP_CAP" });
+  expect(await releaseSimone(env, id, call.lease, "RUN_FAILED")).toBe(true);
+  await expect(row("SELECT status, error FROM tasks WHERE id = ?", id)).resolves.toEqual({ status: "failed", error: "SIMONE_STEP_CAP" });
+  await expect(claimSimone(env, 3)).resolves.toBeNull();
+});
+
+it("refuses a runtime credential before filing Simone’s reply", async () => {
+  const id = await fileSimoneMessage(env, request, "private-reply", 1);
+  const call = (await claimSimone(env, 2))!;
+  const fixture = crypto.randomUUID();
+  await expect(replySimone({ ...env, BOSS_PASSCODE: fixture }, { ...call, text: fixture, work: ["team"] }, 3)).resolves.toBe(false);
+  await expect(row("SELECT status, output FROM tasks WHERE id = ?", id)).resolves.toEqual({ status: "running", output: null });
+});
 
 it("queues the requested meeting prep through the existing Mac tick and keeps its purpose on retry", async () => {
   const { macWork, openMeetingPrep } = await import("../../src/worker/boss/commands/run");
@@ -939,6 +993,11 @@ it("refuses to pause a healthy, stale or out-of-scope duty from untrusted eviden
   await env.DB.prepare(`UPDATE standing_duties SET lane = ? WHERE id = ?`).bind(otherLane, duty).run();
   await expect(pause(duty, failed + 10)).resolves.toEqual(refused);
   await env.DB.prepare(`UPDATE standing_duties SET lane = 'ops' WHERE id = ?`).bind(duty).run();
+  const seat = (await row("SELECT employee_id FROM standing_duties WHERE id = ?", duty))?.employee_id;
+  expect(seat).toBeTruthy();
+  await env.DB.prepare(`UPDATE employees SET status = 'retired' WHERE id = ?`).bind(seat).run();
+  await expect(pause(duty, failed + 10)).resolves.toEqual(refused);
+  await env.DB.prepare(`UPDATE employees SET status = 'active' WHERE id = ?`).bind(seat).run();
   await env.DB.prepare(`UPDATE standing_duties SET suspended = 1, suspended_reason = 'Held by the owner' WHERE id = ?`).bind(duty).run();
   await expect(pause(duty, failed + 10)).resolves.toEqual(refused);
   expect(await state(duty)).toEqual({ suspended: 1, removed_at: null });

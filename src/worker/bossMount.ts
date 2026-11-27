@@ -14,6 +14,7 @@
  */
 import type { Env } from "./env";
 import bossApp, { runScheduled as runBossNightly, runDuties as runBossDuties, runReaper as runBossReaper, runOutreach as runBossOutreach, runOpenLoops as runBossOpenLoops, runEightraise as runBossEightraise, runKendra as runBossKendra } from "./boss/index";
+import { OPERATIONS_ENABLED, operatingStopped } from "./boss/lib/operatingStop";
 import type { Env as BossEnv, TaskMessage } from "./boss/env";
 import { handleTask, handleDeadLetter } from "./boss/queue/consumer";
 
@@ -227,6 +228,7 @@ export async function drainBossTasks(
 ): Promise<{ ran: number; failed: number; dead: number; reaped?: number }> {
   const bossEnv = toBossEnv(env);
   const db = env.WP_OS_DB;
+  if (await operatingStopped(db)) return { ran: 0, failed: 0, dead: 0 };
   const reaped = await reapOrphanedRuns(bossEnv, db, now.getTime());
   /*
    * ─── A HUNT IS NOT A DRAFTING JOB, AND THE MODEL MUST NOT EAT IT ──────────
@@ -285,7 +287,7 @@ export async function drainBossTasks(
      * zero rows changed and moves on.
      */
     const claimed = await db
-      .prepare(`UPDATE boss_task_queue SET state = 'running' WHERE id = ? AND state = 'pending'`)
+      .prepare(`UPDATE boss_task_queue SET state = 'running' WHERE id = ? AND state = 'pending' AND ${OPERATIONS_ENABLED}`)
       .bind(row.id)
       .run();
     if (!claimed.meta || claimed.meta.changes === 0) continue;

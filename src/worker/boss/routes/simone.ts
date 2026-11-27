@@ -5,6 +5,8 @@ import { claimSimone, fileSimoneMessage, releaseSimone, replySimone, simoneMessa
 import { AppError, badRequest, notFound, ok } from "../lib/http";
 import { machineTokenOk } from "./openLoops";
 import { simoneTool } from "../agents/simoneTools";
+import { operatingStopped, setOperatingStop } from "../lib/operatingStop";
+import { containsCredential } from "../../../shared/boss/service/secretLines.mjs";
 
 export const simone = new Hono<{ Bindings: Env; Variables: Vars }>();
 export const SIMONE_MACHINE_PATHS: ReadonlySet<string> = new Set([
@@ -16,6 +18,14 @@ export function readSimoneText(body: { text?: unknown } | null) {
   if (new TextEncoder().encode(body.text).length > 60_000) throw badRequest("This message is longer than Simone's message box can hold.");
   return body.text.trim();
 }
+
+simone.get("/stop", async (c) => ok(c, { stopped: await operatingStopped(c.env.DB) }));
+
+simone.post("/stop", async (c) => {
+  const body = await c.req.json<{ stopped?: unknown }>().catch(() => null);
+  if (typeof body?.stopped !== "boolean") throw badRequest("Choose stop or resume.");
+  return ok(c, { stopped: await setOperatingStop(c.env.DB, body.stopped, Date.now()) });
+});
 
 simone.post("/message", async (c) => {
   const body = readSimoneText(await c.req.json<{ text?: string }>().catch(() => null));
@@ -58,7 +68,10 @@ simone.post("/tool", async (c) => {
   if (!b || typeof b.id !== "string" || !Number.isSafeInteger(b.lease) || typeof b.tool !== "string" || b.tool.length > 60) {
     throw badRequest("A Simone task, lease and tool are required.");
   }
-  return ok(c, await simoneTool(c.env, b));
+  const result = await simoneTool(c.env, b);
+  if (containsCredential(JSON.stringify(result), c.env)) return ok(c, { ok: false, code: "SECRET_OUTPUT" });
+  if (result.ok && await operatingStopped(c.env.DB)) return ok(c, { ok: false, code: "OWNER_STOPPED_OPERATIONS" });
+  return ok(c, result);
 });
 
 simone.post("/handoff", async (c) => {

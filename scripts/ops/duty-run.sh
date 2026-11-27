@@ -94,16 +94,13 @@ echo "[$(date +%H:%M:%S)] duty-run: $LOCAL_JOB" | tee -a "$RUN_LOG"
 # THE OWNER'S WORD, ASKED EVERY RUN (Builder U, 23 Oct 2026). duty-brief.mjs reads
 # /api/duties/brief/<job>: paused or removed on the employee page → named skip; days she changed (or
 # --only-if-due) and not due → named skip; her own instructions → BOSS_DUTY_PROMPT_FILE, which each
-# prompt-file script reads before its repo default. Unreachable with --only-if-due is a failure (6);
-# without it the job runs as it always did, on the repo's instructions, and the log says so.
+# prompt-file script reads before its repo default. An unreadable brief fails because the owner's
+# stop switch could be on.
 BRIEF_OUT="$LOG_DIR/$LOCAL_JOB-brief-$$.md"
 rm -f "$BRIEF_OUT"
 if [ ! -d "$REPO" ]; then
-  if [ "$ONLY_IF_DUE" -eq 1 ]; then
-    echo "NAMED STOP [NO_REPO] $REPO — cannot ask whether $LOCAL_JOB is due, so nothing was run." | tee -a "$RUN_LOG" >&2
-    exit 2
-  fi
-  echo "NOTE [NO_REPO] $REPO — the owner's settings for $LOCAL_JOB could not be read; running as set up." | tee -a "$RUN_LOG"
+  echo "NAMED STOP [NO_REPO] $REPO — could not read the owner's settings for $LOCAL_JOB." | tee -a "$RUN_LOG" >&2
+  exit 2
 else
   ( cd "$REPO" && LOCAL_JOB="$LOCAL_JOB" ONLY_IF_DUE="$ONLY_IF_DUE" BRIEF_OUT="$BRIEF_OUT" \
     npm run --silent vault:run -- node scripts/ops/duty-brief.mjs >> "$RUN_LOG" 2>&1 )
@@ -125,7 +122,7 @@ if [ -s "$BRIEF_OUT" ]; then
   export BOSS_DUTY_PROMPT_FILE="$BRIEF_OUT"
 fi
 
-"$@" > >(tee -a "$RUN_LOG") 2>&1
+"$@" 2>&1 | tee -a "$RUN_LOG"
 RC=${PIPESTATUS[0]}
 FINISHED_AT=$(( $(date +%s) * 1000 ))
 

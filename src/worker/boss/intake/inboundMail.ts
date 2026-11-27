@@ -6,6 +6,7 @@ import { refsForChain, refsForCode, chainIds, refTail } from "./mailRefs";
 import { newId } from "../lib/id";
 import { audit } from "../lib/audit";
 import { logEvent } from "../lib/log";
+import { operatingStopCommand, setOperatingStop } from "../lib/operatingStop";
 import { admitTask } from "../tasks/admit";
 import {
   BOSS_INTAKE_MAILBOX, BOSS_INTAKE_DOMAIN,
@@ -736,6 +737,14 @@ async function handleMail(message: BossMailMessage, env: Env, said: Said): Promi
   const origin = read?.readable ? forwardedOrigin(read.readable) : null;
   const herSubject = herSubjectOf(subject, origin ? (origin.subject ? decodeHeader(origin.subject) : "") : null);
   const writtenByOwner = herWords(read?.readable ?? "");
+  const operatingStop = origin || /^(?:fw|fwd)\s*:/i.test(subject) ? null : operatingStopCommand(writtenByOwner);
+  if (operatingStop !== null && !viaConsole && cloudflareChecked &&
+      /;\s*dkim\s*=\s*pass\b/i.test(authentication) && /;\s*spf\s*=\s*pass\b/i.test(authentication)) {
+    const stopped = await setOperatingStop(env.DB, operatingStop, now);
+    const acknowledgement = stopped ? "Boss OS operations are paused." : "Boss OS operations can resume.";
+    await finish({ outcome: "OWNER_OPERATING_STOP", why: acknowledgement, objectKey, reply: acknowledgement });
+    return { mailId, outcome: "OWNER_OPERATING_STOP", employeeId: null, taskId: null, reply: acknowledgement, messageId, signer: "Simone" };
+  }
   const ownerText = `${herSubject}\n${writtenByOwner}`;
   const recordedRefs = chainRefs.refs.length ? chainRefs : await refsForCode(env.DB, ownerText);
   const typedRefs = refsIn(ownerText);

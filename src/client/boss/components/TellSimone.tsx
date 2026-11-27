@@ -12,6 +12,9 @@ export function TellSimone({ focus = false, onOpenRecentWork, page = false }: { 
   const storageKey = page ? "simone-page-message" : "tell-simone-message";
   const finished = result?.status === "done" || result?.status === "failed" || result?.status === "cancelled";
   const [failed, setFailed] = useState<string | null>(null);
+  const [stopped, setStopped] = useState<boolean | null>(null);
+  const [changingStop, setChangingStop] = useState(false);
+  const [stopError, setStopError] = useState<string | null>(null);
   const box = useRef<HTMLTextAreaElement>(null);
   const section = useRef<HTMLElement>(null);
 
@@ -21,6 +24,31 @@ export function TellSimone({ focus = false, onOpenRecentWork, page = false }: { 
     section.current?.scrollIntoView({ block: "start" });
     box.current?.focus();
   }, [focus]);
+
+  useEffect(() => {
+    if (!page) return;
+    let active = true;
+    api.simoneStop().then(({ stopped }) => {
+      if (active) setStopped(stopped);
+    }).catch(() => {
+      if (active) setStopError("Couldn’t read the stop switch.");
+    });
+    return () => { active = false; };
+  }, [page]);
+
+  async function changeStop(next: boolean) {
+    setChangingStop(true);
+    setStopError(null);
+    try {
+      const state = await api.setSimoneStop(next);
+      setStopped(state.stopped);
+    } catch {
+      setStopped(null);
+      setStopError("Couldn’t verify the stop switch. Reload to check its current state.");
+    } finally {
+      setChangingStop(false);
+    }
+  }
 
   useEffect(() => {
     if (!taskId || finished) return;
@@ -65,6 +93,15 @@ export function TellSimone({ focus = false, onOpenRecentWork, page = false }: { 
   return (
     <section ref={section} id={page ? undefined : TELL_SIMONE_ID} className="panel tell-simone" data-testid={page ? "employee-message-simone" : "tell-simone"} aria-label={label}>
       <h2 className="tell-simone-h">{label}</h2>
+      {page && stopped !== null && (
+        <div className="btn-row tell-simone-btns">
+          <button type="button" className="btn" disabled={changingStop} onClick={() => void changeStop(!stopped)}>
+            {stopped ? "Resume Boss OS operations" : "Stop everything"}
+          </button>
+          {stopped && <span role="status">Boss OS operations are paused.</span>}
+        </div>
+      )}
+      {stopError && <p role="alert">{stopError}</p>}
       {!taskId ? (
         <>
           <p className="row-sub tell-simone-hint">What can Simone take care of for you?</p>

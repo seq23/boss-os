@@ -21,6 +21,7 @@
 import { Hono } from "hono";
 import type { Env, Vars } from "../env";
 import { ok, badRequest, conflict, notFound } from "../lib/http";
+import { OPERATIONS_ENABLED, operatingStopped } from "../lib/operatingStop";
 import { audit } from "../lib/audit";
 import { logEvent } from "../lib/log";
 import { repoChangeById, taskEvent, describePhase, safeList, recordForce, retryRow, type RepoChangeRow } from "../repoChange/answer";
@@ -75,6 +76,7 @@ repoChanges.get("/", async (c) => {
  * say WHY nothing rather than just "nothing".
  */
 repoChanges.get("/claimable", async (c) => {
+  if (await operatingStopped(c.env.DB)) return ok(c, { claimable: [], waiting: [], reason: "Boss OS operations are paused by the owner." });
   const rows = await c.env.DB
     .prepare(`SELECT * FROM repo_changes WHERE phase IN ('plan','build','preview','previewing','landing','land') ORDER BY created_at`)
     .all<RepoChangeRow>();
@@ -99,6 +101,7 @@ repoChanges.get("/:id", async (c) => {
 
 /** THE CLAIM. One live run per task; the phase must be runnable by the row's own state. */
 repoChanges.post("/:id/claim", async (c) => {
+  if (await operatingStopped(c.env.DB)) throw conflict("Boss OS operations are paused by the owner.");
   const b = await c.req.json<any>().catch(() => null);
   const device = text(b?.device_id, 120);
   if (!device) throw badRequest("A claim needs a device", "Send { device_id }.");
@@ -117,7 +120,8 @@ repoChanges.post("/:id/claim", async (c) => {
     throw conflict(`${row.id} cannot run now: ${why}`, "Only plan, an answered build, an unsent preview, and a green (and, if previewed, approved) land may be claimed.");
   }
   const claimed = await c.env.DB
-    .prepare(`UPDATE repo_changes SET claimed_at = ?, claimed_by = ?, claimed_phase = ?, updated_at = ? WHERE id = ? AND (claimed_at IS NULL OR claimed_at < ?)`)
+    .prepare(`UPDATE repo_changes SET claimed_at = ?, claimed_by = ?, claimed_phase = ?, updated_at = ?
+      WHERE id = ? AND (claimed_at IS NULL OR claimed_at < ?) AND ${OPERATIONS_ENABLED}`)
     .bind(now, device, phase, now, row.id, now - CLAIM_LEASE_MS)
     .run();
   if (!claimed.meta.changes) throw conflict(`${row.id} was claimed by another run a moment ago`, "Try the next tick.");

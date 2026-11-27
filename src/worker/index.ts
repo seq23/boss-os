@@ -9,6 +9,7 @@ import { plainReply } from "./boss/intake/mailRefs";
 // The structured event spine, for the one thing in this file that writes to it: a reply that did
 // not go. Everything else here logs through the handlers it calls.
 import { logEvent } from "./boss/lib/log";
+import { operatingStopped } from "./boss/lib/operatingStop";
 import { routeSimoneWhenMacIsDown } from "./boss/agents/simoneFallback";
 import { isBossRoute, handleBossRequest, tapPageToBossPath, researchPageToBossPath, partnerPageToBossPath, drainBossTasks, runBossNightly, runBossDuties, runBossReaper, runBossOutreach, runBossOpenLoops, runBossEightraise, runBossKendra, toBossEnv as toBossEnvForCron } from "./bossMount";
 /** Where the West Peek fund screens and their API live now (the chassis retirement, 22 Nov 2026). */
@@ -332,11 +333,13 @@ export default {
     // cannot swallow the other (wrangler.toml [triggers]).
     if (event?.cron === MAIL_ALARM_CRON) {
       ctx.waitUntil(runMailAlarm(toBossEnvForCron(env), now.getTime()).then(() => undefined).catch((err) => console.error("boss mail alarm failed", err)));
+      if (await operatingStopped(env.WP_OS_DB)) return;
       ctx.waitUntil(runBossCloudClock(toBossEnvForCron(env), now.getTime()).then(() => undefined).catch((err) => console.error("boss cloud clock failed", err)));
       ctx.waitUntil(routeSimoneWhenMacIsDown(toBossEnvForCron(env), now.getTime())
         .catch(() => console.error("Simone’s cloud fallback could not finish")));
       return;
     }
+    if (await operatingStopped(env.WP_OS_DB)) return;
     // The copied West Peek fund jobs (runDueJobs) no longer run here: West Peek OS runs them itself
     // and the pause migration in #531 switched off diagnostics_sweep, deck_reading and network_sync
     // (chassis retirement, her yes 22 Nov 2026).

@@ -28,6 +28,8 @@ import { dayOf } from "../../../shared/boss/schedule/clock.mjs";
 import { readKdpCaseChecks, readKdpPublishAttempts } from "../kdp/history";
 import { containsCredential } from "../../../shared/boss/service/secretLines.mjs";
 import { quoteStands } from "../../../shared/boss/text/wholeSentence.mjs";
+import { OPERATIONS_ENABLED, operatingStopped } from "../lib/operatingStop";
+import { SIMONE_MANAGED_SEATS, SIMONE_TOOL_STEPS } from "./simoneAuthority";
 
 export const SIMONE_RECORD_READS = {
   morning: `SELECT day, updated_at, sent_at FROM morning_digests ORDER BY day DESC LIMIT 3`,
@@ -54,7 +56,7 @@ export const SIMONE_RECORD_READS = {
 const OFFSET_TIMESTAMP = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d{3})?(?:Z|[+-]\d{2}:\d{2})$/;
 const SIMONE_LIVE_RUN = `tasks.id = ? AND employee_id = ? AND status = 'running'
   AND attempts = ? AND CASE WHEN json_valid(input) THEN json_extract(input, '$.agent') END = 'simone'
-  AND ${SIMONE_AVAILABLE}`;
+  AND ${SIMONE_AVAILABLE} AND ${OPERATIONS_ENABLED}`;
 
 function dateOnly(value: unknown): value is string {
   if (typeof value !== "string" || !/^\d{4}-\d{2}-\d{2}$/.test(value)) return false;
@@ -107,11 +109,19 @@ function inviteSpec(value: unknown, ownerText: string) {
 }
 
 export async function simoneTool(env: Env, request: { id: string; lease: number; tool: string; task?: unknown }, now = Date.now()) {
+  if (await operatingStopped(env.DB)) return { ok: false, code: "OWNER_STOPPED_OPERATIONS" } as const;
   const activeRun = SIMONE_LIVE_RUN;
   const lease = [request.id, SIMONE, request.lease] as const;
-  const active = await env.DB.prepare(`SELECT id, input, created_at FROM tasks WHERE ${activeRun}`)
-    .bind(...lease).first<{ id: string; input: string; created_at: number }>();
-  if (!active) return { ok: false, code: "STALE_SIMONE_RUN" } as const;
+  const active = await env.DB.prepare(`UPDATE tasks SET input = json_set(input, '$.simone_tool_steps',
+      COALESCE(json_extract(input, '$.simone_tool_steps'), 0) + 1)
+    WHERE ${activeRun} AND COALESCE(json_extract(input, '$.simone_tool_steps'), 0) < ?
+    RETURNING id, input, created_at`)
+    .bind(...lease, SIMONE_TOOL_STEPS).first<{ id: string; input: string; created_at: number }>();
+  if (!active) {
+    const exhausted = await env.DB.prepare(`SELECT 1 FROM tasks WHERE ${activeRun}
+      AND json_extract(input, '$.simone_tool_steps') >= ?`).bind(...lease, SIMONE_TOOL_STEPS).first();
+    return { ok: false, code: exhausted ? "SIMONE_STEP_CAP" : "STALE_SIMONE_RUN" } as const;
+  }
   if (request.tool === "pause_failed_duty" || request.tool === "resume_recovered_duty") {
     const paused = request.tool === "pause_failed_duty";
     const timestampKey = paused ? "failed_at" : "recovered_at";
@@ -127,8 +137,8 @@ export async function simoneTool(env: Env, request: { id: string; lease: number;
     }
     const operation = `dv_simone_${paused ? "pause" : "resume"}_${await sha256Hex(JSON.stringify([request.id, id, outcomeAt]))}`;
     const duty = await env.DB.prepare(`SELECT * FROM standing_duties
-      WHERE id = ? AND lane = 'ops' AND employee_id <> ? AND removed_at IS NULL`)
-      .bind(id, SIMONE).first<OwnedDuty>();
+      WHERE id = ? AND lane = 'ops' AND employee_id IN (${SIMONE_MANAGED_SEATS}) AND removed_at IS NULL`)
+      .bind(id).first<OwnedDuty>();
     if (!duty || containsCredential(duty.name, env)) return { ok: false, code: refused } as const;
     const liveRun = `${activeRun} AND json_extract(input, '$.steer_pending') IS NULL`;
     const changeAllowed = paused ? {
@@ -146,9 +156,9 @@ export async function simoneTool(env: Env, request: { id: string; lease: number;
       check: {
         sql: `EXISTS (SELECT 1 FROM tasks WHERE ${liveRun})
           AND EXISTS (SELECT 1 FROM standing_duties
-            WHERE id = ? AND lane = 'ops' AND employee_id <> ? AND last_outcome = ? AND last_outcome_at = ?)
+            WHERE id = ? AND lane = 'ops' AND employee_id IN (${SIMONE_MANAGED_SEATS}) AND last_outcome = ? AND last_outcome_at = ?)
           AND ${changeAllowed.sql}`,
-        args: [...lease, id, SIMONE, paused ? "failed" : "ok", outcomeAt, ...changeAllowed.args],
+        args: [...lease, id, paused ? "failed" : "ok", outcomeAt, ...changeAllowed.args],
       },
     });
     const version = saved ?? await env.DB.prepare(`SELECT v.version FROM standing_duties d

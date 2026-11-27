@@ -12,6 +12,7 @@
 import type { Env } from "../env";
 import { newId } from "../lib/id";
 import { audit, auditOfPrevious } from "../lib/audit";
+import { operatingStopped } from "../lib/operatingStop";
 import { badRequest, conflict, notFound } from "../lib/http";
 import { EARLY_RUN_GRACE_MS, isDue, nextDueAt, type DutySchedule } from "./cadence";
 import { effectiveNextDue } from "./clock";
@@ -315,6 +316,9 @@ export async function removeDuty(env: Env, id: string, confirmed: boolean, now =
  * script name, exactly like /due and /ran, so no second list exists.
  */
 export async function dutyBrief(env: Env, localJob: string, now = Date.now()) {
+  if (await operatingStopped(env.DB)) return { duty_id: localJob, local_job: localJob, operating_stop: true,
+    paused: true, removed: false, owner_schedule: false, due: false, next_due_at: null,
+    reason: "Boss OS operations are paused by the owner.", instructions: null, version: null };
   const rows = (await env.DB.prepare(
     `SELECT * FROM standing_duties WHERE json_extract(task_input, '$.local_job') = ?`,
   ).bind(localJob).all<OwnedDuty>()).results ?? [];

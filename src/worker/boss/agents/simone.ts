@@ -8,8 +8,11 @@ import { shortTitle } from "../../../shared/boss/intake/triage.mjs";
 import { constraintsOnRecord } from "../service/constraints";
 import { dueLine, heldDue } from "../../../shared/boss/service/dueTime.mjs";
 import { sizeUsdIn } from "../../../shared/boss/intake/handoff.mjs";
+import { containsCredential } from "../../../shared/boss/service/secretLines.mjs";
+import { OPERATIONS_ENABLED, operatingStopped } from "../lib/operatingStop";
+import { SIMONE, SIMONE_TOOL_STEPS } from "./simoneAuthority";
+export { SIMONE } from "./simoneAuthority";
 
-export const SIMONE = "emp_chief";
 export const SIMONE_LEASE_MS = 3 * 60 * 60_000;
 export const SIMONE_AVAILABLE = "json_extract(input, '$.taken_over') IS NULL AND json_extract(input, '$.held_by_her') IS NULL";
 const CHIEF = "CASE WHEN json_valid(input) THEN json_extract(input, '$.agent') END = 'simone'";
@@ -68,12 +71,14 @@ interface ClaimedTask {
 }
 
 export async function claimSimone(env: Env, now = Date.now(), cloud = false) {
+  if (await operatingStopped(env.DB)) return null;
   const [roster, constraints] = await Promise.all([activeRoster(env), constraintsOnRecord(env.DB)]);
   const row = await env.DB.prepare(
-    `UPDATE tasks SET status = 'running', started_at = ?, attempts = COALESCE(attempts, 0) + 1
+    `UPDATE tasks SET status = 'running', started_at = ?, attempts = COALESCE(attempts, 0) + 1,
+       input = json_set(input, '$.simone_tool_steps', 0)
        WHERE id = (
          SELECT id FROM tasks WHERE employee_id = ? AND ${CHIEF} AND ${SIMONE_AVAILABLE}
-           AND (status = 'queued' OR (status = 'running' AND started_at <= ?))
+           AND (status = 'queued' OR (status = 'running' AND started_at <= ?)) AND ${OPERATIONS_ENABLED}
            AND (? = 0 OR (json_extract(input, '$.source') IN ('boss_inbound_mail', 'tell_simone', 'boss_page') AND created_at <= ?))
          ORDER BY attempts, created_at, id LIMIT 1
        ) RETURNING id, input, attempts, created_at`,
@@ -98,9 +103,10 @@ export async function simoneMessageStatus(env: Env, id: string) {
 
 export async function releaseSimone(env: Env, id: string, lease: number, code: string) {
   const result = await env.DB.prepare(
-    `UPDATE tasks SET status = 'queued', started_at = NULL, error = ?
+    `UPDATE tasks SET status = CASE WHEN json_extract(input, '$.simone_tool_steps') >= ? THEN 'failed' ELSE 'queued' END,
+       started_at = NULL, error = CASE WHEN json_extract(input, '$.simone_tool_steps') >= ? THEN 'SIMONE_STEP_CAP' ELSE ? END
        WHERE id = ? AND employee_id = ? AND ${CHIEF} AND status = 'running' AND attempts = ?`,
-  ).bind(code, id, SIMONE, lease).run();
+  ).bind(SIMONE_TOOL_STEPS, SIMONE_TOOL_STEPS, code, id, SIMONE, lease).run();
   return Boolean(result.meta.changes);
 }
 
@@ -108,13 +114,14 @@ export async function replySimone(env: Env, result: { id: string; lease: number;
   const text = result.text.trim();
   const refused = result.stop === "ACTION_RESTRICTED";
   if (!text || (!refused && !result.work.length) || !result.work.every((item) => typeof item === "string" && item.trim())) return false;
+  if (containsCredential(JSON.stringify(result), env)) return false;
   const db = env.DB;
   const noticeId = `tnt_${result.id}_simone`;
   const leased = `id = ? AND employee_id = ? AND ${CHIEF} AND ${SIMONE_AVAILABLE} AND status = 'running' AND attempts = ?`;
   const newer = await db.prepare(`UPDATE tasks SET input = json_remove(input, '$.steer_pending'), status = 'queued', started_at = NULL
     WHERE ${leased} AND json_extract(input, '$.steer_pending') = 1`).bind(result.id, SIMONE, result.lease).run();
   if (newer.meta.changes) return false;
-  const current = `${leased} AND json_extract(input, '$.steer_pending') IS NULL`;
+  const current = `${leased} AND json_extract(input, '$.steer_pending') IS NULL AND ${OPERATIONS_ENABLED}`;
   const receipts = JSON.stringify(result.work);
   const writes = await db.batch([
     db.prepare(
@@ -149,7 +156,7 @@ export async function replySimone(env: Env, result: { id: string; lease: number;
 export async function handoffSimone(env: Env, request: { id: string; lease: number; assignments: unknown; text?: string; work?: string[] }) {
   const row = await env.DB.prepare(
     `SELECT input FROM tasks WHERE id = ? AND employee_id = ? AND ${CHIEF}
-       AND ${SIMONE_AVAILABLE} AND status = 'running' AND attempts = ?`,
+       AND ${SIMONE_AVAILABLE} AND status = 'running' AND attempts = ? AND ${OPERATIONS_ENABLED}`,
   ).bind(request.id, SIMONE, request.lease).first<Pick<ClaimedTask, "input">>();
   if (!row) return null;
   const message: SimoneMessage = JSON.parse(row.input);
@@ -160,7 +167,8 @@ export async function handoffSimone(env: Env, request: { id: string; lease: numb
   const saved = await env.DB.prepare(`UPDATE tasks SET input = CASE
       WHEN json_type(input, '$.simone_handoff_plan') IS NULL
       THEN json_set(input, '$.simone_handoff_plan', json(?), '$.simone_handoff_reply', json(?)) ELSE input END
-    WHERE id = ? AND employee_id = ? AND ${CHIEF} AND ${SIMONE_AVAILABLE} AND status = 'running' AND attempts = ? RETURNING input`)
+    WHERE id = ? AND employee_id = ? AND ${CHIEF} AND ${SIMONE_AVAILABLE} AND status = 'running' AND attempts = ?
+      AND ${OPERATIONS_ENABLED} RETURNING input`)
     .bind(JSON.stringify(proposed), JSON.stringify({ text: request.text, work: request.work }),
       request.id, SIMONE, request.lease).first<{ input: string }>();
   if (!saved) return null;
