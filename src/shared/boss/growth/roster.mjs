@@ -36,23 +36,29 @@ import { sectionBody, hasConfidential, stripConfidential } from "../brains/brain
 
 export const GROWTH_BRAINS = Object.freeze(["porch-and-party", "spry", "friends", "west-peek"]);
 /**
- * G8 (23 Nov 2026): the friends' sites (Hicks, Horse) and WPP-llm are read for SEARCH-WATCH only.
- * Their brains carry owners' and members' names, so their Growth section is read with every
- * confidential span cut (never refused whole), and every entry there is search-watch whatever it says.
+ * PRIVATE-CUT BRAINS (G8, 23 Nov 2026). The friends' and West Peek brains carry owners' and members' names, so their
+ * Growth section is read with every confidential span cut (never refused whole).
  */
-export const WATCH_ONLY_BRAINS = Object.freeze(["friends", "west-peek"]);
-export const TIERS = Object.freeze(["full", "search-watch"]);
-export const FIELDS = Object.freeze(["key", "tier", "buyer", "offer", "money number", "channels", "languages", "voice", "design skill", "limits", "season", "linked to-dos", "paused"]);
+export const PRIVATE_CUT_BRAINS = Object.freeze(["friends", "west-peek"]);
+/**
+ * THE TIER IS SET HERE, NEVER BY A BRAIN LINE (her rulings, 23 and 25 Nov 2026; the site rules in
+ * scripts/ops/noelle/sites.md). Hicks and Horse (every friends-brain entry) are client sites grown through search
+ * only, no social posts: "search".
+ * Every other business, Industry Guides and WPP-llm included, is "full" like the six. Nothing is a watch or a
+ * proposal tier any more. A `tier:` line left in a brain is "not a roster field", a named problem to delete.
+ */
+export const TIERS = Object.freeze(["full", "search"]);
+export const FIELDS = Object.freeze(["key", "buyer", "offer", "money number", "channels", "languages", "voice", "design skill", "limits", "season", "linked to-dos", "paused"]);
 export const REQUIRED = Object.freeze(["key", "buyer", "offer", "money number", "channels", "languages", "limits"]);
-/** What each tier must state. A search-watch entry is judged on its search levers only. */
-export const REQUIRED_BY_TIER = Object.freeze({ full: REQUIRED, "search-watch": Object.freeze(["key", "channels"]) });
+/** What each tier must state. A client (search) entry is judged on its search levers only. */
+export const REQUIRED_BY_TIER = Object.freeze({ full: REQUIRED, search: Object.freeze(["key", "channels"]) });
 export const SPEND_ACTIONS = Object.freeze(["ad", "boost", "paid-tool", "paid-model", "purchase", "subscription", "promotion"]);
 export const NEVER_ACTIONS = Object.freeze({ "create-account": "NO_NEW_ACCOUNTS", "retire-account": "PROPOSE_ONLY", "delete-post": "PROPOSE_ONLY", "retire-pipeline": "PROPOSE_ONLY" });
 
 /** The Growth section of one brain, or a named refusal. Only the growth brains are ever read. */
 export function growthSection(slug, md) {
   if (!GROWTH_BRAINS.includes(slug)) throw Object.assign(new Error(`NAMED STOP [NOT_A_GROWTH_BRAIN] the Director never reads the ${slug} brain.`), { code: "NOT_A_GROWTH_BRAIN" });
-  if (WATCH_ONLY_BRAINS.includes(slug)) {
+  if (PRIVATE_CUT_BRAINS.includes(slug)) {
     // Cut first, then read: no owner or member name in a private span ever reaches a prompt.
     const cut = sectionBody(stripConfidential(md), "Growth");
     return cut == null || !cut.trim() || cut.trim() === "[MISSING]" ? null : cut;
@@ -90,8 +96,8 @@ export function parseRoster(body, brain) {
   return out.map(({ label, brain: b, fields, unknown }) => {
     const pausedText = fields.paused ?? "no";
     const paused = /^(no|false|-)?$/i.test(pausedText.trim()) ? null : pausedText;
-    const said = String(fields.tier ?? "full").trim().toLowerCase();
-    const tier = WATCH_ONLY_BRAINS.includes(b) ? "search-watch" : said;
+    // Every friends entry is a client site, and a client key is one wherever it is listed.
+    const tier = b === "friends" || CLIENT_KEYS.includes(fields.key) ? "search" : "full";
     return {
       label, brain: b, key: fields.key ?? null, tier, buyer: fields.buyer ?? null, offer: fields.offer ?? null, money: fields["money number"] ?? null,
       channels: parseChannels(fields.channels), languages: list(fields.languages).map((l) => l.toLowerCase()), voice: fields.voice ?? null,
@@ -102,8 +108,7 @@ export function parseRoster(body, brain) {
       linkedNotes: Object.fromEntries([...(fields["linked to-dos"] ?? "").matchAll(/(olp_[a-z0-9]+)\s*\(([^)]+)\)/g)].map((m) => [m[1], m[2].trim()])),
       paused,
       problems: [
-        ...(TIERS.includes(tier) ? REQUIRED_BY_TIER[tier] : REQUIRED).filter((k) => !fields[k]).map((k) => `${label}: no ${k}`),
-        ...(TIERS.includes(tier) ? [] : [`${label}: tier "${tier}" is not one of ${TIERS.join(", ")}`]),
+        ...REQUIRED_BY_TIER[tier].filter((k) => !fields[k]).map((k) => `${label}: no ${k}`),
         ...unknown.map((k) => `${label}: "${k}" is not a roster field (one of ${FIELDS.join(", ")})`),
         ...(fields.key && seen.get(fields.key) > 1 ? [`${label}: key ${fields.key} is listed twice`] : []),
       ],
@@ -145,10 +150,10 @@ export function mayAct(roster, { business, channel, format, action = "post" }, c
   if (mine.length > 1 || e.problems.length) return { ok: false, stop: "ROSTER_BROKEN", why: mine.length > 1 ? `${business} is listed twice in the roster` : e.problems.join("; ") };
   if (e.paused) return { ok: false, stop: "PAUSED", why: `${e.label} is paused: ${e.paused}` };
   if (action === "propose") return { ok: true };
-  if (action === "page-edit") return CLIENT_KEYS.includes(e.key) ? { ok: false, stop: "CLIENT_APPROVAL", why: `${e.label}'s live pages change only with their owner's yes: a proposal card` } : { ok: false, stop: "NO_LEVER", why: "live pages change through sr-fix or the search loop, never a run-time edit" };
+  if (action === "page-edit") return { ok: false, stop: "NO_LEVER", why: "live pages change through a reviewed PR (client sites under scripts/ops/noelle/sites.md), sr-fix or the search loop, never a run-time edit" };
   if (action === "wire") return e.key === "keepmyproof" ? { ok: false, stop: "KMP_PRIVACY", why: "KeepMyProof conversions are RevenueCat, Search Console and the in-app answer only: no tags, analytics or email capture" } : { ok: false, stop: "NO_LEVER", why: "wiring is a builder PR, never a run-time act: she names the source" };
   if (action !== "post") return { ok: false, stop: "UNKNOWN_ACTION", why: `no action called ${action}` };
-  if (e.tier === "search-watch") return { ok: false, stop: "WATCH_TIER", why: `${e.label} is search-watch: search levers and her calls only` };
+  if (e.tier === "search") return { ok: false, stop: "SEARCH_ONLY", why: `${e.label} is a client site grown through search only: no social posts` };
   const ch = String(channel ?? "").toLowerCase();
   const c = e.channels.find((x) => x.channel === ch);
   if (c) {

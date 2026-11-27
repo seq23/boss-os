@@ -57,6 +57,14 @@ describe("each job's permissions file", () => {
     b.permissions.deny = b.permissions.deny.filter((d: string) => d !== "Agent");
     expect(jobProblems(b, JOBS.find((j: { name: string }) => j.name === "builder")).join("\n")).toMatch(/deny is missing Agent/);
   });
+  it("noelle: public research rejects permissions that open paid tools, writes or shell egress", () => {
+    const job = JOBS.find((j: { name: string }) => j.name === "noelle");
+    for (const tool of ["mcp__openseo__get_serp_results", "mcp__openseo__save_keywords", "WebFetch(domain:*)"]) {
+      const changed = settings("noelle");
+      changed.permissions.allow.push(tool);
+      expect(sandboxProblems(changed, job.sandbox).join("\n")).toContain(tool);
+    }
+  });
   it("noelle: her settings without the sandbox, or with any way out of it, fail the build", () => {
     const job = JOBS.find((j: { name: string }) => j.name === "noelle");
     const real = settings("noelle");
