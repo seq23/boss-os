@@ -1025,7 +1025,7 @@ through date and this run's ID. A missing owner notes read or handoff rewrite re
 `noelle-tool brain <slug>` lists headings and adding a section returns only that section. The
 allowlist is spry, porch-and-party, time-2-read, personal, team and risk.
 
-Noelle uses Claude Code's `WebSearch` and `WebFetch` for public research. The `search-console
+Noelle uses Claude Code's `WebSearch` for public research and `WebFetch` on her named hosts only. The `search-console
 <business> <domain>` broker command reads up to 50 query/page pairs from the last 28 finalized days
 for one property belonging to the named business. It uses the existing vault-backed Search Console
 service account with Google's read-only scope. Scheduled runs can also read dated OpenSEO rival and
@@ -1041,7 +1041,12 @@ run ledger. Attributed sales are recorded as `not read`: neither broker read ret
 figure in Noelle's own review file is never recorded. Client outcomes stay in the client playbooks. A stop
 leaves the review due at the next weekly wake.
 
-The Mac launcher passes its own permission settings and OS sandbox to Claude Code.
+The Mac launcher passes its own permission settings and OS sandbox to Claude Code. Her commands
+and WebFetch reach only the hosts named in `scripts/ops/noelle-permissions.json` (GitHub, npm, Boss
+OS and her own sites and previews, by exact name); `scripts/validate/claude-runs-locked.mjs`
+derives that list from the sites map and fails the build on any other host, a bare WebFetch or a
+public wildcard such as `*.workers.dev`. Reads of the shared temp folders (`/tmp`, `/private/tmp`,
+`/private/var/folders`) are denied, and her temp lives in her own run folder and home.
 `noelle_prepare` creates the settings and the two brokers outside the session workspace. The
 picture validator rejects a reachable provider call, vendor host or credential. GitHub Actions
 run under separate repository and environment controls. Before a push or PR, the GitHub broker

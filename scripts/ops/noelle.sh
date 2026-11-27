@@ -6,8 +6,9 @@
 # path) and one fresh `reviewer` per PR she opens. Her run is SANDBOXED and LOCKED (redesign 24 Nov 2026: safety by
 # taking access away): --permission-mode dontAsk --setting-sources= --settings ~/.boss-os/noelle/settings.json
 # (scripts/ops/noelle-permissions.json, filled in by lib/noelle-sandbox.sh), so none of Sequoia's own settings load,
-# Claude Code's OS sandbox holds every command she runs (writes only in ~/Work/noelle and her run folder, home reads
-# denied, network only to her hosts), and her GitHub writes go through the credentialed broker. Her guard
+# Claude Code's OS sandbox holds every command she runs (writes only in ~/Work/noelle and her run folder, home and
+# shared temp reads denied, network and WebFetch only to her own named hosts), and her GitHub writes go through the
+# credentialed broker. Her guard
 # (scripts/ops/noelle-guard.mjs) holds only what is judged by name: one reviewer per PR, 3 PRs, the handoff, land.
 #
 # launchd com.seq.boss-noelle ticks every 30 minutes, 10:00-22:59 Central (mac-window ANY holds 07:00-09:59):
@@ -125,9 +126,21 @@ else
   KICK="This is your $KIND run. Use the owner notes, handoff, latest note, playbooks and today's summary. Rewrite the handoff when you end."
 fi
 
+# Her temp is hers (the #574 review's S2, 27 Nov 2026): her sandbox denies reads of /tmp, /private/tmp and
+# /private/var/folders (other sessions' scratch, ai-run's raw outputs). Claude Code itself and ai-run get TMPDIR in her
+# run folder; Claude Code's temp root (CLAUDE_CODE_TMPDIR) is her home, so her commands' $TMPDIR is
+# ~/Work/noelle/claude-<uid> (seen in the locked TEST run of 27 Nov 2026). Claude Code keeps <root>/claude-<uid> to
+# 44 bytes and past that falls back, silently, to the shared /tmp/claude-<uid>: that is a stop, never a quiet fallback.
+NTMP="$WORK/tmp"
+mkdir -p -m 700 "$NTMP" || stopped NO_TMPDIR "NAMED STOP [NO_TMPDIR] her run folder's tmp could not be made" 6
+CC_TMP_ROOT="$NHOME/claude-$(id -u)"
+[ "${#CC_TMP_ROOT}" -le 44 ] || stopped TMPDIR_TOO_LONG "NAMED STOP [TMPDIR_TOO_LONG] $CC_TMP_ROOT is ${#CC_TMP_ROOT} bytes; past 44 Claude Code puts her temp in the shared /tmp" 6
+
 SESSION_LOG="$WORK/session.log"
 SID="$(uuidgen | tr 'A-Z' 'a-z')" || stopped NO_SESSION_ID "NAMED STOP [NO_SESSION_ID] uuidgen failed" 6
-ENABLE_CLAUDEAI_MCP_SERVERS=false AI_RUN_CLAUDE_MODEL="$MODEL" \
+# AI_RUN_NO_CREDIT=1 (N1 of the same review): a usage limit is CLAUDE_LIMIT (rc 76, the answer ladder below), never a
+# rerun on the API credit, whose run holds ANTHROPIC_API_KEY in its environment and so in her session.
+AI_RUN_NO_CREDIT=1 TMPDIR="$NTMP" CLAUDE_CODE_TMPDIR="$NHOME" ENABLE_CLAUDEAI_MCP_SERVERS=false AI_RUN_CLAUDE_MODEL="$MODEL" \
 AI_RUN_CLAUDE_ARGS="$CLAUDE_LOCK --strict-mcp-config --session-id $SID --max-turns $MAX_TURNS --output-format json --agents $WORK/agents.json --append-system-prompt-file $WORK/persona-full.md" \
 "$AI_RUN" --role "$ROLE" --network --cwd "$WORK" --out "$SESSION_LOG" -- "$KICK" >> "$RUN_LOG" 2>&1
 RC=$?

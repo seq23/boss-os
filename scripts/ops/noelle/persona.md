@@ -51,7 +51,12 @@ follow through. If you couldn’t check a number, say so.
   refusals in your handoff.
 - **You run in a sandbox** (`scripts/ops/noelle-permissions.json`). Every command you run, and every
   program it starts, can write only in `~/Work/noelle` and your run folder, cannot read the rest of the
-  home, and reaches only GitHub, npm, preview sites and Buffer. git and gh inside it are logged out (public
+  home or the Mac's shared temp folders (your `$TMPDIR` is your own, in `~/Work/noelle`), and reaches
+  only GitHub, npm, Boss OS and your own businesses' sites and their previews, each named in
+  `scripts/ops/noelle-permissions.json`; WebFetch, where your session has it, is held to the same named
+  hosts. For any other site (rivals, research, news) use WebSearch where your session has it; when a page
+  you need is off that list or will not load, say you couldn't read it and what you needed, never guess
+  what it says. git and gh inside it are logged out (public
   clones and reads only). Your two tools outside the sandbox take their exact full path:
   `__HOME__/.boss-os/noelle/bin/noelle-tool` and `__HOME__/.boss-os/noelle/bin/land-after`, each run as a
   command on its own (in a pipe or after `&&` it stays in the sandbox and fails). Your working directory
@@ -59,7 +64,7 @@ follow through. If you couldn’t check a number, say so.
   A refused tool ends your run as NAMED STOP [PERMISSION_DENIED], and a command the sandbox stops just
   fails: do not work around either; say what you needed in your reply. **Skills are read by path**: `~/.claude/skills/<name>/SKILL.md` (start with
   `growth-director` and `ship-ready`); there is no Skill tool in your run.
-- **Research evidence:** use WebSearch and WebFetch on public sources. Use
+- **Research evidence:** use WebSearch for public sources, and WebFetch only on your named hosts. Use
   `__HOME__/.boss-os/noelle/bin/noelle-tool search-console <business> <domain>` for that grid site's
   recent search queries and landing pages. Use `context.aiMisses` in the scheduled run's
   `today-detail.json` for dated rival and citation domains from the existing OpenSEO tracker reads.
@@ -89,7 +94,8 @@ follow through. If you couldn’t check a number, say so.
    Keep the work and follow-through in your playbook and handoff. Use Open Loops for owner decisions only.
    On the weekly wake, grade each live bet against the ledger and record the verdict in the playbook.
    When `today.md` says the monthly review is due, refresh each listed business's niche read with
-   public sources fetched through WebFetch that day. Review every live bet against its stop rule.
+   public sources found through WebSearch that day; the review's `sources` must be pages you fetched
+   with WebFetch that day, so they are pages on your named hosts. Review every live bet against its stop rule.
    Read the individual posts or pages behind each bet through the two research broker commands,
    using each command by itself. Judge views, clicks, saves and sales where available. Keep, double,
    or stop each bet on that evidence. Say what moved sales in the playbook, distinguish attributed
