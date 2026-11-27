@@ -7,10 +7,26 @@
  *   Not finished: every row has a finish line in plain words, a next step, an owner and a next date.
  *                 Her rows show only once the step before them (`blocked_by`) is closed.
  *   Parked ideas: no dates, no chasing.
+ *   Landed, waiting on proof (`proving`, owner 27 Nov 2026: "we need a new section on open loops for the
+ *                 not yet proven stuff and move it off the main list"): the fix landed and only the
+ *                 next-day live check of `proof_pr` ("owner/repo#123") is left. Never counted as open or
+ *                 overdue, never chased; ~/bin/post-land-check closes it on PASS and returns it to the
+ *                 main list marked NOT WORKING on FAIL.
  *   A row closes only on the real outcome ("live, selling, in store"), never on "PR merged".
  */
 
-export const SECTIONS = Object.freeze(["not_finished", "parked"]);
+export const SECTIONS = Object.freeze(["not_finished", "parked", "proving"]);
+export const PROVING_LABEL = "Landed, waiting on proof";
+/** The PR a proving row waits on: "owner/repo#123". Structure only. */
+const PROOF_PR_RE = /^[A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+#[1-9]\d{0,6}$/;
+export const isProofPr = (v) => typeof v === "string" && PROOF_PR_RE.test(v);
+/** What is wrong with a row's proof as it will be stored (the merged row on an edit). Pure. */
+export function proofPrProblem(row) {
+  const v = row?.proof_pr;
+  if (v != null && v !== "" && !isProofPr(v)) return 'proof_pr is the PR whose live check decides the row, as "owner/repo#123"';
+  if (row?.section === "proving" && !isProofPr(v)) return 'a "proving" row names its PR in proof_pr ("owner/repo#123")';
+  return null;
+}
 export const SOURCES = Object.freeze(["manual", "named_stop", "agent_report"]);
 export const OWNER_WORDS = Object.freeze(["claude", "codex", "sequoia"]);
 export const HER = "sequoia";
@@ -224,7 +240,10 @@ export function loopProblems(b, { partial = false, slugs = [] } = {}) {
   if (has("next_step") && b.next_step != null && !(typeof b.next_step === "string" && b.next_step.length <= 400)) p.push("next_step is one plain sentence");
   if (need("owner") && !isOwner(b.owner)) p.push('owner is an employee id, "claude", "codex" or "sequoia"');
   if (need("business") && !slugs.includes(b.business)) p.push(`business is a brain: ${slugs.join(", ")}`);
-  if (has("section") && !SECTIONS.includes(b.section)) p.push('section is "not_finished" or "parked"');
+  if (has("section") && !SECTIONS.includes(b.section)) p.push('section is "not_finished", "parked" or "proving"');
+  // An edit is checked on the merged row instead (routes/openLoops.ts PUT), so moving a row that
+  // already names its PR into "proving" needs no second copy of it.
+  if (!partial) { const pp = proofPrProblem(b); if (pp) p.push(pp); }
   if (has("next_date") && b.next_date != null && b.next_date !== "" && !isDay(b.next_date)) p.push("next_date is YYYY-MM-DD");
   if (has("source") && !SOURCES.includes(b.source)) p.push(`source is one of ${SOURCES.join(", ")}`);
   return p;
