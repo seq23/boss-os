@@ -15,8 +15,7 @@ describe("the Worker's scheduled() handler", () => {
 
   // The five-minute branch (`if (event?.cron === MAIL_ALARM_CRON) { … return; }`) and the hourly rest.
   const fiveStart = handler.indexOf("if (event?.cron === MAIL_ALARM_CRON)");
-  // The branch's own closing `return;` (six-space indent), not the owner-stop early return inside it.
-  const fiveEnd = handler.indexOf("\n      return;\n", fiveStart);
+  const fiveEnd = handler.indexOf("return;", fiveStart);
   const five = handler.slice(fiveStart, fiveEnd);
   const hourly = handler.slice(fiveEnd);
 
@@ -48,15 +47,24 @@ describe("the Worker's scheduled() handler", () => {
    * hourly lane starts before the stop is read.
    */
   it("reads the owner's stop before anything that moves work, on both ticks", () => {
-    const STOP = "if (await operatingStopped(env.WP_OS_DB)) return;";
-    const fiveStop = five.indexOf(STOP);
+    const guard = "if (!(await operatingStopped(env.WP_OS_DB))) {";
+    const fiveStop = five.indexOf(guard);
     expect(fiveStop, "the five-minute tick no longer reads the owner's stop").toBeGreaterThan(-1);
     expect(five.indexOf("runMailAlarm(")).toBeLessThan(fiveStop);
-    for (const call of ["runBossCloudClock(", "routeSimoneWhenMacIsDown(", "runBossDutyClock(", "drainBossTasks("]) {
-      expect(five.indexOf(call), `${call} is missing from the five-minute tick`).toBeGreaterThan(-1);
-      expect(five.indexOf(call), `${call} runs before the owner's stop is read`).toBeGreaterThan(fiveStop);
+    // The block the guard opens, brace-matched, so a call moved after its closing brace is caught.
+    let depth = 0;
+    let close = -1;
+    for (let i = fiveStop + guard.length - 1; i < five.length; i++) {
+      if (five[i] === "{") depth++;
+      if (five[i] === "}" && --depth === 0) { close = i; break; }
     }
-    const hourlyStop = hourly.indexOf(STOP);
+    const held = five.slice(fiveStop, close);
+    expect(close, "the owner's stop block never closes").toBeGreaterThan(fiveStop);
+    for (const call of ["runBossCloudClock(", "routeSimoneWhenMacIsDown(", "runBossDutyClock(", "drainBossTasks("]) {
+      expect(held, `${call} runs outside the owner's stop`).toContain(call);
+    }
+    expect(five.slice(close), "work runs after the owner's stop block").not.toMatch(/ctx\.waitUntil\(/);
+    const hourlyStop = hourly.indexOf("if (await operatingStopped(env.WP_OS_DB)) return;");
     expect(hourlyStop, "the hourly tick no longer reads the owner's stop").toBeGreaterThan(-1);
     expect(hourly.indexOf("ctx.waitUntil(")).toBeGreaterThan(hourlyStop);
     // The drain that a request triggers checks the stop itself (bossMount drainBossTasks).

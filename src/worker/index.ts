@@ -341,20 +341,22 @@ export default {
      */
     if (event?.cron === MAIL_ALARM_CRON) {
       ctx.waitUntil(runMailAlarm(toBossEnvForCron(env), now.getTime()).then(() => undefined).catch((err) => console.error("boss mail alarm failed", err)));
-      if (await operatingStopped(env.WP_OS_DB)) return;
-      ctx.waitUntil(runBossCloudClock(toBossEnvForCron(env), now.getTime()).then(() => undefined).catch((err) => console.error("boss cloud clock failed", err)));
-      ctx.waitUntil(routeSimoneWhenMacIsDown(toBossEnvForCron(env), now.getTime())
-        .catch(() => console.error("Simone’s cloud fallback could not finish")));
-      ctx.waitUntil(
-        runBossDutyClock(toBossEnvForCron(env), now.getTime())
-          .then((r) => { if (r.fired.length) console.log("boss duties materialised", JSON.stringify(r.fired)); })
-          .catch((err) => console.error("boss duties failed", err))
-          // The drain reads the clock when it starts, never the tick's: a task enqueued a moment ago is
-          // visible from its own enqueue time, which is after `now`.
-          .then(() => drainBossTasks(env, new Date()))
-          .then((r) => { if (r.ran || r.failed || r.dead) console.log("boss task drain", JSON.stringify(r)); })
-          .catch((err) => console.error("boss task drain failed", err)),
-      );
+      // The owner's stop ("stop everything") holds everything below; only the alarm above still runs.
+      if (!(await operatingStopped(env.WP_OS_DB))) {
+        ctx.waitUntil(runBossCloudClock(toBossEnvForCron(env), now.getTime()).then(() => undefined).catch((err) => console.error("boss cloud clock failed", err)));
+        ctx.waitUntil(routeSimoneWhenMacIsDown(toBossEnvForCron(env), now.getTime())
+          .catch(() => console.error("Simone’s cloud fallback could not finish")));
+        ctx.waitUntil(
+          runBossDutyClock(toBossEnvForCron(env), now.getTime())
+            .then((r) => { if (r.fired.length) console.log("boss duties materialised", JSON.stringify(r.fired)); })
+            .catch((err) => console.error("boss duties failed", err))
+            // The drain reads the clock when it starts, never the tick's: a task enqueued a moment ago is
+            // visible from its own enqueue time, which is after `now`.
+            .then(() => drainBossTasks(env, new Date()))
+            .then((r) => { if (r.ran || r.failed || r.dead) console.log("boss task drain", JSON.stringify(r)); })
+            .catch((err) => console.error("boss task drain failed", err)),
+        );
+      }
       return;
     }
     if (await operatingStopped(env.WP_OS_DB)) return;
