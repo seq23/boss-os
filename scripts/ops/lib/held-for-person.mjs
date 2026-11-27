@@ -27,6 +27,10 @@ export function holdForPerson(store, id, detail) {
   if (store.uncertain) delete store.uncertain[id];
 }
 
+/** A Gmail link that opens the message itself in the named mailbox (never a bare id). Pure. */
+export const messageLink = (mailbox, id) =>
+  `https://mail.google.com/mail/u/${encodeURIComponent(mailbox)}/#all/${encodeURIComponent(String(id))}`;
+
 /** The morning line that names the items held this run, one Gmail link each. Null when none. Pure. */
 export function heldLine(what, links) {
   if (!links.length) return null;

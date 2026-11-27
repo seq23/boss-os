@@ -474,9 +474,9 @@ export async function readProspectReplies(addresses, sinceYmd, { token = content
 /** Names the LP replies held this run in her morning email, one Gmail link each. */
 export async function nameLpHeld(ids, { add } = {}) {
   if (!ids?.length) return;
-  const { heldLine } = await import("./lib/held-for-person.mjs");
+  const { heldLine, messageLink } = await import("./lib/held-for-person.mjs");
   const write = add ?? (await import("../../src/shared/boss/mail/morning.mjs")).addMorningLines;
-  write("notices", { lines: [heldLine("LP replies", ids.map((id) => `https://mail.google.com/mail/u/${encodeURIComponent(MAILBOX)}/#all/${encodeURIComponent(id)}`))] });
+  write("notices", { lines: [heldLine("LP replies", ids.map((id) => messageLink(MAILBOX, id)))] });
   console.log(`NOTE [LP_REPLY_HELD] ${ids.length} LP repl${ids.length === 1 ? "y" : "ies"} held for her in the morning email after three uncertain reads; the sender gets no drip and no draft.`);
 }
 
