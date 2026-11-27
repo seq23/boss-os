@@ -139,9 +139,24 @@ async function readBrokerageThread(api, threadId, targets) {
   return thread;
 }
 
-export async function reloadBrokerageThread(messageId) {
+function brokerageCredentials() {
   CREDS ??= JSON.parse(process.env.GSC_SERVICE_ACCOUNT_JSON ?? "null");
-  if (!CREDS) throw new Error("NAMED STOP [NO_SERVICE_ACCOUNT] The saved batch requires its Gmail thread.");
+  if (!CREDS) throw new Error("NAMED STOP [NO_SERVICE_ACCOUNT] The brokerage mailbox is unreadable.");
+}
+
+export async function brokerageTargets(start, end) {
+  brokerageCredentials();
+  const threads = await listThreadTargets(api, `in:anywhere -in:drafts -in:chats after:${Math.max(0, Math.floor(start / 1000) - 1)} before:${Math.ceil(end / 1000)}`);
+  return threads.flatMap(([threadId, ids]) => ids.map((id) => ({ id, threadId })));
+}
+
+export async function brokerageThread(threadId, messageId) {
+  brokerageCredentials();
+  return readBrokerageThread(api, threadId, [messageId]);
+}
+
+export async function reloadBrokerageThread(messageId) {
+  brokerageCredentials();
   const message = await api(`${GMAIL}/messages/${encodeURIComponent(messageId)}?format=minimal`);
   if (!message?.threadId) throw new Error("Gmail did not return the candidate thread ID");
   return readBrokerageThread(api, message.threadId, [messageId]);

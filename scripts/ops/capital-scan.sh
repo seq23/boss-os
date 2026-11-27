@@ -5,6 +5,7 @@ script_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 source "$script_dir/lib/flock.sh"
 job=interest-ledger.mjs
 case "${1:-}" in
+  --grid) job=interest-grid.mjs; shift ;;
   --extract) job=interest-extract.mjs; shift ;;
   --ledger-hunt) job=ledger-hunt.mjs; shift ;;
   --buyer-hunt) job=buyer-hunt.mjs; shift ;;

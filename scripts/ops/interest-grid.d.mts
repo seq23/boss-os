@@ -63,3 +63,5 @@ export function sharePriceWords(text: unknown): string;
 export function realMatch(m: any): boolean;
 export function likelyHolderLines(a: any): { text: string; links: any[]; deal: string }[];
 export const MAX_HOLDER_FIRMS: number;
+
+export function countMissingGridInterests(expected: any[], delivered: unknown): number | null;

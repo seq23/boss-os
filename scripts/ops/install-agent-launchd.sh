@@ -326,7 +326,7 @@ cat > "$CAPITAL_PLIST" <<CAPEOF
   <array>
     <string>/bin/bash</string>
     <string>-lc</string>
-    <string>cd $REPO &amp;&amp; npm run --silent capital:chain -- --start \$\$; cd $REPO &amp;&amp; npm run --silent capital:scan; cd $REPO &amp;&amp; bash $REPO/scripts/ops/duty-run.sh interest-extract.mjs -- npm run --silent capital:extract; cd $REPO &amp;&amp; bash $REPO/scripts/ops/duty-run.sh ledger-hunt.mjs -- npm run --silent capital:ledger-hunt -- --send; cd $REPO &amp;&amp; bash $REPO/scripts/ops/duty-run.sh interest-grid.mjs -- npm run --silent capital:grid; cd $REPO &amp;&amp; npm run --silent capital:match -- --send --pointer; cd $REPO &amp;&amp; npm run --silent capital:chain -- --done</string>
+    <string>cd $REPO &amp;&amp; npm run --silent capital:chain -- --start \$\$; cd $REPO &amp;&amp; npm run --silent capital:scan; cd $REPO &amp;&amp; bash $REPO/scripts/ops/duty-run.sh interest-extract.mjs -- npm run --silent capital:extract; cd $REPO &amp;&amp; bash $REPO/scripts/ops/duty-run.sh ledger-hunt.mjs -- npm run --silent capital:ledger-hunt -- --send; cd $REPO &amp;&amp; bash $REPO/scripts/ops/duty-run.sh interest-grid.mjs -- npm run --silent capital:grid -- --daily-check; cd $REPO &amp;&amp; npm run --silent capital:match -- --send --pointer; cd $REPO &amp;&amp; npm run --silent capital:chain -- --done</string>
   </array>
   <key>StartCalendarInterval</key>
   <array>

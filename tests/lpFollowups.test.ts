@@ -67,7 +67,8 @@ describe("follow-ups: never sends or calls a model provider directly", () => {
     it(`${f} reaches no model host and spawns no CLI`, () => {
       const s = src(f);
       expect(s).not.toMatch(/api\.anthropic\.com|api\.openai\.com|generativelanguage\.googleapis\.com|openrouter\.ai/i);
-      expect(s).not.toMatch(/spawn(Sync)?\(|child_process|routeCompletion|\/router\//);
+      expect(s).not.toMatch(/spawn(Sync)?\(|child_process|routeCompletion|\/router\/(?!freeModel\.ts|types\.ts)/);
+      if (f === "lp-positive.mjs") expect(s).toContain("readWorkerSource");
     });
   }
   it("lp-followups.mjs writes drafts and calls no send endpoint", () => {

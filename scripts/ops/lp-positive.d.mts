@@ -11,19 +11,26 @@ export interface Positive {
   said?: string;
 }
 
-export type Screened =
-  | { drop: true; address: string; reason: string }
-  | { drop: false; address: string; name: string; bucket: Bucket; why: string; text: string; evidence: "quoted" | "thread" };
-
+type Reader = typeof import("../../src/worker/boss/router/freeModel.ts").readWorkerSource;
+type Reading = (input: Parameters<Reader>[0]) => ReturnType<Reader>;
+type Message = { id: string; headers: Record<string, string>; body: string; internalDate: number; hardBounces?: string[] };
+type Status = "complete" | "unavailable" | "allowance-exhausted";
+type Verdict = { id: string; address: string; threadId: string; at: number; name: string; disposition: string; excerpt?: string; side?: string; resumeOn?: string | null; bounced?: string[] };
+export type LpReplyScan = { status: Status; records: Verdict[]; unread: { id: string; address: string }[] };
+type Options = {
+  token: string; query: string; known?: Set<string>; receipts?: Record<string, Verdict>;
+  list?: (token: string, query: string) => Promise<ReadonlyArray<readonly [string, Set<string>]>>;
+  load?: (threadId: string, token: string) => Promise<Message[]>;
+  read?: Reading;
+};
+export function readLpReply(target: Message, thread: Message[], options?: { read?: Reading; mailbox?: string; knownSender?: boolean }): Promise<{ status: string; disposition?: string; excerpt?: string; side?: string; resumeOn?: string | null }>;
+export function scanLpReplies(options: Options): Promise<LpReplyScan>;
+export function readProspectReplies(addresses: string[], sinceYmd: string, options?: { token?: () => Promise<string>; receipts?: Record<string, Verdict>; scan?: (input: Options) => Promise<LpReplyScan> }): Promise<Map<string, { kind: string; side?: string; resumeOn?: string | null }>>;
 export function decodedBody(raw: string): string;
 export function readableText(raw: string): string;
 export function withoutSignature(text: string): string;
 export function messageWords(id: string, opts?: { quoted?: boolean; token?: string | null }): Promise<{ text: string | null; at: number | null; thread: string | null; subject: string } | null>;
 export function sentWordsTo(emails: string[], opts?: { max?: number }): Promise<any[]>;
-export function screenMessage(
-  raw: string,
-  opts: { mailbox?: string; sentByUs: (messageId: string) => Promise<boolean> | boolean },
-): Promise<Screened>;
 export function reconcileList(
   existing: Positive[],
   run: { found: Map<string, Positive>; accepted: Set<string>; rejected: Map<string, string> },

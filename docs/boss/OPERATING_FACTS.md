@@ -72,6 +72,13 @@ they live in the repo, not only in someone's memory. Non-confidential. `STATUS.m
   repeated fall hour runs at the first one. A worker-clocked Central cron in the 02:00 hour fails
   `clockRowProblems`. Pinned by `tests/centralClock.test.ts` and `tests/boss/centralClockCallers.test.ts`.
 
+Monique's LP reply list and outcome reconciliation use full Gmail threads. An unread or uncertain
+reply holds automated outreach while the reader retries. A dated deferral closes the current sequence
+and keeps its requested date; only a permanent request or a complaint becomes a permanent opt-out.
+The scheduled Deals grid run re-reads the brokerage source from the previous Central day and checks
+its interests against the stored grid. The Scorecard uses that duty's existing run row. The October
+re-read uses the extraction checkpoint to resume and appends interests without changing earlier rows.
+
 ## Inherited West Peek chassis code
 - **Retired 22 Nov 2026** (her yes, personal brain): the copied fund sign-in, fund screens, fund
   routes, jobs and mail handler are gone. An old fund page on a non-Boss host shows a "moved" page;

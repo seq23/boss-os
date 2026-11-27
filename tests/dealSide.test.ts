@@ -141,3 +141,70 @@ it("renders every expected buy and sell from a month of synthetic brokerage thre
   const grid = buildGrid(files.load("ledger.json").interests, { identity, lists: {}, now });
   expect(grid.map((row: any) => `${row.source_message}|${row.company}|${row.direction}`).sort()).toEqual(expected.sort());
 });
+
+it("checks the real source window against the pushed grid and carries a missing interest onto the next push", async () => {
+  const { reviewBrokerage } = await import("../scripts/ops/interest-extract.mjs");
+  const { countMissingGridInterests } = await import("../scripts/ops/interest-grid.mjs");
+  const files = fixture([]);
+  const crossing = Date.parse("2026-11-02T12:00:00Z");
+  const start = Date.parse("2026-11-01T05:00:00Z");
+  const end = Date.parse("2026-11-02T06:00:00Z");
+  const before = { ...offer, id: "before", at: start - 1 };
+  const target = { ...reply, at: start };
+  const after = { ...offer, id: "after", at: end };
+  const mail = [before, target, after];
+  const list = vi.fn(async () => mail.map(({ id }) => ({ id, threadId: "thread" })));
+  const load = vi.fn(async () => mail);
+  const read = vi.fn<Read>().mockResolvedValue(ok([deal(target, { side: "buy" })]));
+  const options = { directory: files.directory, kind: "daily" as const, now: crossing, identity, list, load, read };
+  const visible = (rows: any[]) => buildGrid(rows, { identity, lists: {}, now: crossing });
+  expect(await reviewBrokerage({ ...options, compare: async () => null })).toMatchObject({ status: "unavailable", checked: 1 });
+  expect(files.load("extract-checkpoint.json").reviews.daily).not.toHaveProperty("complete");
+  expect(await reviewBrokerage({
+    ...options, compare: async (rows) => countMissingGridInterests(visible(rows), []),
+  })).toMatchObject({ status: "missing", checked: 1, found: 1, missing: 1, added: 1 });
+  expect(list.mock.calls).toEqual([[start, end]]);
+  expect(load).toHaveBeenCalledOnce();
+  expect(read).toHaveBeenCalledOnce();
+  expect(countMissingGridInterests(visible(files.load("ledger.json").interests), visible(files.load("ledger.json").interests))).toBe(0);
+});
+
+it("reports an empty model result on a nonempty day while a confirmed empty source passes", async () => {
+  const { reviewBrokerage } = await import("../scripts/ops/interest-extract.mjs");
+  const read = vi.fn<Read>().mockResolvedValue(ok([]));
+  const compare = vi.fn(async () => 0);
+  const one = { ...offer, at: Date.parse("2026-11-25T12:00:00Z") };
+  const input = { kind: "daily" as const, now, identity, read, compare, load: async () => [one] };
+  expect(await reviewBrokerage({
+    ...input, directory: fixture([]).directory, list: async () => [{ id: one.id, threadId: "thread" }],
+  })).toMatchObject({ status: "unverified-empty", checked: 1 });
+  expect(await reviewBrokerage({ ...input, directory: fixture([]).directory, list: async () => [] }))
+    .toMatchObject({ status: "complete", checked: 0 });
+  expect(read).toHaveBeenCalledOnce();
+});
+
+it("starts the October re-read at Central midnight, only appends missing issuers, and resumes an unread message", async () => {
+  const { reviewBrokerage } = await import("../scripts/ops/interest-extract.mjs");
+  const start = Date.parse("2026-10-01T05:00:00Z");
+  const before = { ...offer, id: "before", at: start - 1 };
+  const first = { ...offer, at: start };
+  const second = { ...reply, at: start + 1000 };
+  const files = fixture([]);
+  const prior = { source_message: first.id, asset: " Juniper Robotics ", side: "sell", size_usd: 1, original: true };
+  const ledger = path.join(files.directory, "ledger.json");
+  fs.writeFileSync(ledger, JSON.stringify({ interests: [prior] }));
+  const list = vi.fn(async () => [before, first, second].map(({ id }) => ({ id, threadId: "thread" })));
+  const read = vi.fn<Read>()
+    .mockResolvedValueOnce(ok([deal(first), deal(first, { asset: "Cedar Research" }), deal(first, { asset: "Alder Works", side: "buy" })]))
+    .mockResolvedValueOnce({ status: "allowance-exhausted", provider: "gemini" })
+    .mockResolvedValueOnce(ok([deal(second, { side: "buy" })]));
+  const input = { kind: "history" as const, directory: files.directory, identity, read, list, load: async () => [before, first, second] };
+  expect(await reviewBrokerage({ ...input, now })).toMatchObject({ status: "allowance-exhausted", added: 2, checked: 1 });
+  expect(files.load("extract-checkpoint.json").reviews.history).toMatchObject({ start, next: 2, outside: 1 });
+  expect(files.load("ledger.json").interests[0]).toEqual(prior);
+  expect(await reviewBrokerage({ ...input, now })).toMatchObject({ status: "pending", added: 0 });
+  expect(await reviewBrokerage({ ...input, now: now + 86_400_000 })).toMatchObject({ status: "complete", added: 1, checked: 2 });
+  expect(list).toHaveBeenCalledOnce();
+  expect(read.mock.calls.map(([call]) => JSON.parse(call.source).targetMessageId)).toEqual([first.id, second.id, second.id]);
+  expect(files.load("ledger.json").interests).toMatchObject([prior, { asset: "Cedar Research" }, { asset: "Alder Works" }, { asset: "Juniper Robotics", side: "buy" }]);
+});

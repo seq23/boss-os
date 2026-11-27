@@ -17,7 +17,7 @@ import { STATES, centralDay, pauseTargets } from "../../../shared/boss/scorecard
  * written by the Monday run on her Mac (scripts/ops/scorecard-monday.mjs) and read by the Scorecard
  * page (☰ More → Scorecard).
  *
- *   GET  /         { state, strays }          state null when no run has been recorded
+ *   GET  /         { state, strays, dailyChecks }          state null when no run has been recorded
  *   POST /run      the Monday run's results (refused when a row is unknown or a value is not a number)
  *   POST /strays   Kendra's monthly sweep: things running with no row get a default row here
  *   POST /restarted  the Mac switched a restarted row's workflows back on
@@ -66,7 +66,19 @@ scorecardRoutes.get("/", async (c) => {
   const raw = await getSetting(c.env.DB, STRAYS_KEY);
   let strays: unknown[] = [];
   try { strays = raw ? JSON.parse(raw).items ?? [] : []; } catch { strays = []; }
-  return ok(c, { state, strays });
+  const daily = await c.env.DB.prepare(
+    `SELECT finished_at, outcome, reason FROM duty_runs
+      WHERE duty_id = ? AND source = 'launchd' ORDER BY finished_at DESC LIMIT 1`,
+  ).bind("duty_deal_grid").first<{ finished_at: number; outcome: string; reason: string | null }>();
+  const today = centralDay();
+  const checked = daily?.outcome === "ok" && daily.reason?.startsWith("MONIQUE DAILY CHECK: ");
+  const dailyChecks = {
+    "brokerage-deal-matches": daily && centralDay(daily.finished_at) === today
+      ? { day: today, status: checked ? "checked" : "needs-review",
+          note: daily.reason?.replace(/^MONIQUE DAILY CHECK: /, "") ?? "The brokerage coverage check did not report a verdict." }
+      : { day: today, status: "pending", note: "Today's brokerage coverage check has yet to report." },
+  };
+  return ok(c, { state, strays, dailyChecks });
 });
 
 scorecardRoutes.post("/run", async (c) => {

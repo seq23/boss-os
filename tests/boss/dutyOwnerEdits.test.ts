@@ -194,3 +194,17 @@ describe("the pages read real D1", () => {
     expect(r.status).toBe(400);
   });
 });
+
+it("shows Monique's coverage verdict from the same existing duty run on the Scorecard", async () => {
+  const onScorecard = async () => (await apiJson("/api/scorecard")).body.data.dailyChecks["brokerage-deal-matches"];
+  const record = (outcome: string, reason: string) => apiJson("/api/duties/ran", { method: "POST", body: {
+    local_job: "interest-grid.mjs", source: "launchd", outcome, reason, started_at: Date.now() - 10,
+    output_count: 17, output_metric: "grid rows",
+  } });
+  const stop = "NAMED STOP [MONIQUE_DAILY_CHECK] Couldn't check the full brokerage day; the free allowance ran out.";
+  expect((await record("failed", stop)).status).toBe(201);
+  expect(await onScorecard()).toMatchObject({ status: "needs-review", note: stop });
+  const check = "MONIQUE DAILY CHECK: 4 brokerage messages read; 2 interests checked against the Deals grid.";
+  expect((await record("ok", check)).status).toBe(201);
+  expect(await onScorecard()).toMatchObject({ status: "checked", note: check.replace("MONIQUE DAILY CHECK: ", "") });
+});

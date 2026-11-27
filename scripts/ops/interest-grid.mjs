@@ -257,6 +257,14 @@ export function gridRow(r, { identity, lists, mailbox = MAILBOX }) {
  * The grid: inside the lookback, not struck as wrong, nobody on her do-not-suggest list, one row per
  * deal (the same company, side, size and sender on one day is one deal however many mails said it).
  */
+const gridInterestKey = (g) => JSON.stringify([g.company.toLowerCase(), g.side, g.direction, g.size_text, g.from_text, g.received_on]);
+
+export function countMissingGridInterests(expected, delivered) {
+  if (!Array.isArray(delivered)) return null;
+  const keys = new Set(delivered.map(gridInterestKey));
+  return expected.filter((row) => !keys.has(gridInterestKey(row))).length;
+}
+
 export function buildGrid(interests, { identity, lists, senders = {}, wrong = new Set(), now = Date.now(), mailbox = MAILBOX, archive = false }) {
   const out = new Map();
   for (const raw of interests) {
@@ -269,7 +277,7 @@ export function buildGrid(interests, { identity, lists, senders = {}, wrong = ne
     const r = { ...(senders[raw.source_message] ?? {}), ...raw };
     if (isDoNotSuggest(r, lists)) continue;
     const g = gridRow(r, { identity, lists, mailbox });
-    const key = `${g.company.toLowerCase()}|${g.side}|${g.direction}|${g.size_text}|${g.from_text}|${g.received_on}`;
+    const key = gridInterestKey(g);
     if (!out.has(key)) out.set(key, g);
   }
   return [...out.values()].sort((a, b) => b.received_on.localeCompare(a.received_on) || (b.size_usd ?? 0) - (a.size_usd ?? 0));
@@ -877,6 +885,35 @@ async function main() {
   const end = gridRunEnd({ reached: !!session, grid: gridPush, matches: matchesPush });
   for (const stop of end.stops) console.error(stop);
   console.log(end.output);
+  if (process.argv.includes("--daily-check")) {
+    const { reviewBrokerage } = await import("./interest-extract.mjs");
+    const verify = await reviewBrokerage({
+      kind: "daily", identity,
+      compare: async (interests) => {
+        if (!pushed || !session) return null;
+        const actual = await session.get("/capital/deals");
+        const delivered = actual?.data?.rows ?? actual?.rows;
+        return countMissingGridInterests(buildGrid(interests, { identity, lists, senders, wrong }), delivered);
+      },
+    }).catch(() => ({ status: "unavailable" }));
+    if (verify.status !== "complete") {
+      const detail = verify.status === "missing" ? `${verify.missing} grid interest(s) missing; ${verify.added} added to the ledger for the next push.`
+        : verify.status === "unverified-empty" ? `Couldn't verify zero interests across ${verify.checked} brokerage messages.`
+        : verify.status === "allowance-exhausted" ? "Couldn't check the full brokerage day; the free allowance ran out and unread mail will retry."
+        : "Couldn't check brokerage coverage; Gmail, the model or the Deals grid was unreadable.";
+      console.error(`NAMED STOP [MONIQUE_DAILY_CHECK] ${detail}`);
+      process.exitCode = end.exitCode || 10;
+      return;
+    }
+    console.log(`MONIQUE DAILY CHECK: ${verify.checked} brokerage messages read; ${verify.found} interests checked against the Deals grid.`);
+    const history = await reviewBrokerage({ kind: "history", identity }).catch(() => ({ status: "unavailable" }));
+    if (!["complete", "pending"].includes(history.status)) {
+      console.error(`NAMED STOP [MONIQUE_REREAD] ${history.status}; the 1 October re-read will resume with unread mail.`);
+      process.exitCode = end.exitCode || 10;
+      return;
+    }
+    console.log(`MONIQUE OCTOBER RE-READ: ${history.status}; ${history.checked} messages checked, ${history.added} interests appended this run.`);
+  }
   process.exitCode = end.exitCode;
 }
 

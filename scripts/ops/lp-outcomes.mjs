@@ -28,13 +28,9 @@
  * This impersonates sequoia@westpeek.ventures directly through domain-wide delegation. The mailbox
  * is named in the JWT, so it cannot silently become a different one.
  *
- * ─── Attribution by address set, not by parsing bounce formats ──────────────
- *
- * A delivery-status notification can be formatted a dozen ways and every provider does it
- * differently; a parser for them is a parser you maintain forever. So this does not parse them. It
- * takes the addresses the Sent Log already knows about and searches each raw message for any of
- * them. A bounce contains the address it failed for no matter which provider wrote it. The
- * known-address set is the schema, and it comes from the spreadsheet itself.
+ * The shared LP reader gives the model full Gmail threads. The Sent Log supplies exact sender
+ * addresses, and delivery status uses the coded DSN fields. Unread replies stay pending and hold
+ * outreach while the next run retries them. Only a confirmed permanent request goes to Blocked.
  *
  * ─── DRY RUN BY DEFAULT ─────────────────────────────────────────────────────
  *
@@ -43,15 +39,15 @@
  *
  * ─── RULE 0 ─────────────────────────────────────────────────────────────────
  *
- * It may not exit 0 having done nothing. Zero sent rows, or zero inbound messages, is a non-zero
- * exit with a named reason — because a run that found nothing and a run that could not look are
- * otherwise indistinguishable, and one of them is a broken campaign.
+ * Missing Sent Log data or an incomplete mailbox read stops with a named reason. A fully read
+ * mailbox can have no new outcomes.
  */
 
 import crypto from "node:crypto";
 import fs from "node:fs";
 import path from "node:path";
 import os from "node:os";
+import { lpReceipts, scanLpReplies } from "./lp-positive.mjs";
 import { sendersFor, employeeMail, postEmployeeMail, ownerTo } from "./notify.mjs";
 
 const SOURCE_ID = process.env.LP_SOURCE_SHEET ?? "1Riww0SiaLb_vxHjUpruSdkNemBEndcQrDQgu7Ly9rRA";
@@ -141,10 +137,7 @@ async function sheetValues(token, range, id = SOURCE_ID) {
  * you. The cost of a false negative is emailing somebody who asked twice to stop. Not symmetric, so
  * this errs toward suppression and says so on the row.
  */
-const OPT_OUT = /\b(unsubscribe|remove me|take me off|opt.?out|stop (emailing|contacting)|do not (contact|email)|no longer (wish|want)|please stop|not interested)\b/i;
-const AUTO = /\b(out of (the )?office|automatic reply|auto.?reply|autoresponder|on (annual )?leave|vacation (auto)?reply|thank you for (your|contacting))\b/i;
-const BOUNCE_FROM = /(mailer-daemon|postmaster|no-?reply.*(delivery|bounce)|mail delivery (subsystem|system))/i;
-const BOUNCE_SUBJ = /(delivery status notification|undelivered mail|delivery has failed|returned mail|failure notice|address not found|mail delivery failed)/i;
+
 
 /**
  * SHE IS TOLD, IN THE PLACE SHE ACTUALLY LOOKS, THAT AN EMAIL WAS SENT.
@@ -311,6 +304,39 @@ async function emailHer({ optedOut, replied, bounced }) {
   return false;
 }
 
+async function appendSheetRows(sheetTok, tab, values) {
+  if (values.length === 0) return;
+  const res = await fetch(
+    `https://sheets.googleapis.com/v4/spreadsheets/${SOURCE_ID}/values/${encodeURIComponent(`${tab}!A1`)}:append?valueInputOption=RAW&insertDataOption=INSERT_ROWS`,
+    {
+      method: "POST",
+      headers: { authorization: `Bearer ${sheetTok}`, "content-type": "application/json" },
+      body: JSON.stringify({ values }),
+    },
+  );
+  if (!res.ok) throw new Error(`append to ${tab} failed (${res.status}): ${(await res.text()).slice(0, 240)}`);
+  console.log(`Appended ${values.length} row(s) to "${tab}".`);
+}
+
+export function summarizeLpOutcomes(scan, known) {
+  const outcome = new Map();
+  const pending = new Set(scan.unread.map(({ address }) => address).filter((address) => known.has(address)));
+  const note = (address, kind, record) => {
+    if (!known.has(address)) return;
+    const result = outcome.get(address) ?? { bounced: 0, replied: 0, optedOut: 0, when: null, resumeOn: null };
+    result[kind] += 1;
+    result.when = new Date(record.at).toISOString().slice(0, 10);
+    if (record.disposition === "later") result.resumeOn = record.resumeOn;
+    outcome.set(address, result);
+  };
+  for (const record of scan.records) {
+    const { address, disposition, bounced } = record;
+    if (disposition === "bounce") for (const recipient of bounced) note(recipient, "bounced", record);
+    else if (disposition !== "unrelated") note(address, ["opt_out", "complaint"].includes(disposition) ? "optedOut" : "replied", record);
+  }
+  return { outcome, pending };
+}
+
 async function main() {
   if (EMAIL_ONLY) {
     const file = path.join(OUT_DIR, "outcomes.json");
@@ -361,100 +387,18 @@ async function main() {
   }
   console.log(`${SENT_TAB}: ${data.length} sent rows, ${byAddress.size} distinct addresses.`);
 
-  // ─── Everything that came back ─────────────────────────────────────────────
-  const q = `after:${SINCE} in:anywhere -from:${MAILBOX}`;
-  const ids = [];
-  let page;
-  do {
-    const j = await api(
-      `https://gmail.googleapis.com/gmail/v1/users/me/messages?maxResults=500&q=${encodeURIComponent(q)}`
-        + (page ? `&pageToken=${page}` : ""),
-      mailTok,
-    );
-    for (const m of j.messages ?? []) ids.push(m.id);
-    page = j.nextPageToken;
-  } while (page && ids.length < 4000);
-
-  if (ids.length === 0) {
-    console.error(`NAMED STOP [NO_INBOUND] the mailbox returned zero messages for "${q}".`);
-    console.error("  571 emails went out. Zero inbound is not a quiet campaign, it is a broken read.");
-    process.exit(6);
-  }
-  console.log(`Mailbox ${MAILBOX}: ${ids.length} inbound message(s) since ${SINCE}.`);
-
-  /** address -> { bounced, replied, optedOut, when } */
-  const outcome = new Map();
-  const note = (addr, kind, when) => {
-    const cur = outcome.get(addr) ?? { bounced: 0, replied: 0, optedOut: 0, when: null };
-    cur[kind] += 1;
-    if (when && (!cur.when || when > cur.when)) cur.when = when;
-    outcome.set(addr, cur);
-  };
-
-  const addresses = [...byAddress.keys()];
-  let scanned = 0;
-  let unattributed = 0;
-
-  for (const id of ids) {
-    const msg = await api(
-      `https://gmail.googleapis.com/gmail/v1/users/me/messages/${id}?format=raw`,
-      mailTok,
-    ).catch(() => null);
-    if (!msg?.raw) continue;
-    scanned += 1;
-    // 200KB is well past where a bounce report or a reply body ends, and bounds a mailbox that
-    // contains the occasional multi-megabyte deck.
-    const body = Buffer.from(msg.raw, "base64").toString("utf8").slice(0, 200_000);
-    const lower = body.toLowerCase();
-    const when = new Date(Number(msg.internalDate ?? Date.now())).toISOString().slice(0, 10);
-
-    /**
-     * THE BODY, SEPARATED FROM THE HEADERS AND FROM THE QUOTED ORIGINAL.
-     *
-     * Two ways this gets the wrong answer if it is skipped. First, the first few kilobytes of a raw
-     * message are almost entirely headers, so a regex over "the start of the message" is a regex
-     * over Received: lines and never reaches a word the sender wrote. Second, a reply quotes the
-     * email it is replying to — and Twin's own footer is inside that quote. Matching opt-out wording
-     * against the quoted original would mark every single person who ever replied as having asked to
-     * be removed.
-     *
-     * So: drop the headers, decode quoted-printable enough to rejoin words split across soft line
-     * breaks, cut at the first attribution line, and drop any line that is quoted. What is left is
-     * what this person actually typed.
-     */
-    const afterHeaders = body.replace(/^[\s\S]*?\r?\n\r?\n/, "");
-    const decoded = afterHeaders
-      .replace(/=\r?\n/g, "")
-      .replace(/=([0-9A-F]{2})/gi, (_, h) => String.fromCharCode(parseInt(h, 16)));
-    const written = decoded
-      .split(/\r?\n/)
-      .filter((l) => !/^\s*>/.test(l))
-      .join("\n")
-      .split(/^\s*(on .{0,80}wrote:|-+\s*original message\s*-+|from:\s)/im)[0]
-      .slice(0, 8000)
-      .toLowerCase();
-
-    const fromLine = (body.match(/^From:.*$/mi) ?? [""])[0];
-    const subjLine = (body.match(/^Subject:.*$/mi) ?? [""])[0];
-    const isBounce = BOUNCE_FROM.test(fromLine) || BOUNCE_SUBJ.test(subjLine);
-
-    // Which of the known LP addresses does this message concern? A bounce names the address it
-    // failed for; a reply comes FROM it. Both are found the same way.
-    const hits = addresses.filter((a) => lower.includes(a));
-    if (hits.length === 0) { unattributed += 1; continue; }
-
-    for (const addr of hits) {
-      if (isBounce) { note(addr, "bounced", when); continue; }
-      // A reply must plausibly be FROM that person, not merely mention them — otherwise one
-      // forwarded thread would mark twenty people as having replied.
-      if (!fromLine.toLowerCase().includes(addr)) continue;
-      if (AUTO.test(subjLine) || AUTO.test(written)) { note(addr, "replied", when); continue; }
-      if (OPT_OUT.test(written)) note(addr, "optedOut", when);
-      else note(addr, "replied", when);
-    }
-  }
-
-  console.log(`Scanned ${scanned} message(s); ${unattributed} matched no address on the Sent Log.`);
+  const priorFile = path.join(OUT_DIR, "outcomes.json");
+  const prior = fs.existsSync(priorFile) ? JSON.parse(fs.readFileSync(priorFile, "utf8")) : {};
+  const scan = await scanLpReplies({
+    token: mailTok,
+    query: `after:${SINCE} in:anywhere -in:drafts -in:chats -from:${MAILBOX}`,
+    known: new Set(byAddress.keys()),
+    receipts: { ...lpReceipts(), ...prior.receipts },
+  });
+  const { outcome, pending } = summarizeLpOutcomes(scan, new Set(byAddress.keys()));
+  const receipts = Object.fromEntries(scan.records.map((row) => [row.id, { ...row, excerpt: "" }]));
+  const scanned = scan.records.length + scan.unread.length;
+  console.log(`LP outcomes: ${scan.records.length} read, ${scan.unread.length} unread.`);
 
   // ─── Turn outcomes into cell values ────────────────────────────────────────
   //
@@ -470,7 +414,7 @@ async function main() {
     const o = outcome.get(addr);
     const want = o ? statusFor(o) : null;
     const have = String(data[i][COL_STATUS] ?? "").trim();
-    if (!want || want === have) { tally.unchanged += 1; continue; }
+    if (!want || want === have || have === "opted-out") { tally.unchanged += 1; continue; }
     tally[want] += 1;
     updates.push({ range: `${SENT_TAB}!J${i + 2}`, values: [[want]] });
   }
@@ -525,10 +469,11 @@ async function main() {
   const replyRows = await sheetValues(sheetTok, `${REPLY_TAB}!A1:F2000`);
   const alreadyQueued = new Set(replyRows.map((r) => String(r[0] ?? "").trim().toLowerCase()).filter(Boolean));
 
-  const replyAppend = replied.filter(([a]) => !alreadyQueued.has(a)).map(([a, o]) => {
+  const replyAppend = [...replied, ...[...pending].filter((a) => !outcome.get(a)?.replied && !outcome.get(a)?.optedOut).map((a) => [a, null])]
+    .filter(([a]) => !alreadyQueued.has(a)).map(([a, o]) => {
     const idx = (byAddress.get(a) ?? [])[0];
     const r = idx == null ? [] : data[idx];
-    return [a, `${r[1] ?? ""} ${r[2] ?? ""}`.trim(), r[3] ?? "", o.when ?? "", `${o.replied} reply/replies read from the mailbox`, "new"];
+    return [a, `${r[1] ?? ""} ${r[2] ?? ""}`.trim(), r[3] ?? "", o?.when ?? "", o ? `${o.replied} reply/replies read from the mailbox` : "Reply unread; hold outreach", "new"];
   });
 
   /*
@@ -551,7 +496,7 @@ async function main() {
     const o = outcome.get(addr);
     const want = o ? statusFor(o) : null;
     const have = String(destRows[i][COL_STATUS] ?? "").trim();
-    if (!want || want === have) continue;
+    if (!want || want === have || have === "opted-out") continue;
     destTally[want] += 1;
     destUpdates.push({ range: `${DEST_TAB}!J${i + 1}`, values: [[want]] });
   }
@@ -570,6 +515,13 @@ async function main() {
     console.log("");
     console.log("Re-run with --commit to write.");
     return;
+  }
+
+  // Hold repliers before publishing any completed outcomes. Twin reads this queue at send time.
+  if (replyAppend.length) await appendSheetRows(sheetTok, REPLY_TAB, replyAppend);
+  if (scan.status !== "complete") {
+    fs.writeFileSync(priorFile, JSON.stringify({ ...prior, receipts }, null, 2), { mode: 0o600 });
+    throw new Error(`NAMED STOP [LP_REPLY_UNREAD] ${scan.status}; pending replies will retry.`);
   }
 
   if (updates.length > 0) {
@@ -599,21 +551,7 @@ async function main() {
   }
 
 
-  const append = async (tab, values) => {
-    if (values.length === 0) return;
-    const res = await fetch(
-      `https://sheets.googleapis.com/v4/spreadsheets/${SOURCE_ID}/values/${encodeURIComponent(`${tab}!A1`)}:append?valueInputOption=RAW&insertDataOption=INSERT_ROWS`,
-      {
-        method: "POST",
-        headers: { authorization: `Bearer ${sheetTok}`, "content-type": "application/json" },
-        body: JSON.stringify({ values }),
-      },
-    );
-    if (!res.ok) throw new Error(`append to ${tab} failed (${res.status}): ${(await res.text()).slice(0, 240)}`);
-    console.log(`Appended ${values.length} row(s) to "${tab}".`);
-  };
-  await append(BLOCKED_TAB, blockAppend);
-  await append(REPLY_TAB, replyAppend);
+  await appendSheetRows(sheetTok, BLOCKED_TAB, blockAppend);
 
   if (toAdd.length > 0) {
     fs.appendFileSync(suppressPath, `${toAdd.join("\n")}\n`, "utf8");
@@ -630,6 +568,7 @@ async function main() {
     path.join(OUT_DIR, "outcomes.json"),
     JSON.stringify({
       generated_at: new Date().toISOString(),
+      receipts,
       sent_rows: data.length,
       scanned,
       tally,

@@ -139,7 +139,11 @@ fi
 
 if [ "$RC" -eq 0 ]; then
   OUTCOME="ok"
+  # The deal-grid duty records its daily readback on the same run row the Scorecard reads.
   REASON=""
+  if [ "$LOCAL_JOB" = "interest-grid.mjs" ]; then
+    REASON="$(grep '^MONIQUE DAILY CHECK: ' "$RUN_LOG" | tail -1)"
+  fi
 else
   OUTCOME="failed"
   # THE LAST THING IT PRINTED, which is what makes a red row actionable rather than merely red.

@@ -6,7 +6,9 @@ import { outputLine } from "../../src/shared/boss/alarms/rules.mjs";
 import { readWorkerSource } from "../../src/worker/boss/router/freeModel.ts";
 import { readJsonObject } from "../../src/worker/boss/router/types.ts";
 import { loadIdentity, RRLIST } from "./interest-grid.mjs";
-import { candidateFromMessage, readState, reloadBrokerageThread, writeJson } from "./interest-ledger.mjs";
+import { CENTRAL, dayOf, instantAt, startOfDay } from "../../src/shared/boss/schedule/clock.mjs";
+import { issuerKey } from "./lib/deal-reading.mjs";
+import { brokerageTargets, brokerageThread, candidateFromMessage, readState, reloadBrokerageThread, writeJson } from "./interest-ledger.mjs";
 
 const DIR = process.env.BOSS_OS_CAPITAL_DIR ?? path.join(os.homedir(), ".boss-os", "capital");
 const LEDGER = path.join(DIR, "ledger.json");
@@ -181,6 +183,93 @@ export async function extractCandidates({
     fs.unlinkSync(batchFile);
   }
   return { status: "complete", checked, added, remaining: fs.readdirSync(batches).some((file) => file.endsWith(".json")) };
+}
+
+const historicalStart = instantAt(CENTRAL, 2026, 10, 1);
+const sourceKey = (row) => JSON.stringify([row.source_message, row.side, issuerKey(row.asset)]);
+
+/** Independent verification of every target, with a resumable snapshot in the extraction checkpoint. */
+export async function reviewBrokerage({
+  directory = DIR, kind, now = Date.now(), list = brokerageTargets, load = brokerageThread,
+  read = (input) => readWorkerSource(input, process.env), prompt = fs.readFileSync(PROMPT, "utf8"),
+  identity = loadIdentity(), compare,
+}) {
+  const checkpointFile = path.join(directory, "extract-checkpoint.json");
+  const checkpoint = readState(checkpointFile);
+  const reviews = checkpoint.reviews ?? {};
+  const today = dayOf(now);
+  let review = reviews[kind];
+  if (kind === "history" && review?.complete) return { status: "complete", checked: review.census, added: 0 };
+  if (kind === "history" && review?.attempted === today) return { status: "pending", checked: review.next - review.outside, added: 0 };
+  if (kind === "daily" && review?.recorded === today) {
+    // The prior read is still valid for this day. No second model call on retries.
+    return review.verdict;
+  }
+  const dayStart = startOfDay(now);
+  if (!review || (kind === "daily" && review.complete && review.end < dayStart)) {
+    const day = dayOf(now, CENTRAL, -1).split("-").map(Number);
+    const start = kind === "history" ? historicalStart : review?.end ?? instantAt(CENTRAL, ...day);
+    if (start >= dayStart) return { status: "pending", checked: 0, added: 0 };
+    review = { start, end: dayStart, targets: await list(start, dayStart), rows: [], outside: 0, next: 0 };
+  }
+  const save = () => writeJson(checkpointFile, { ...checkpoint, reviews: { ...reviews, [kind]: review } });
+  if (kind === "history") review.attempted = today;
+  save();
+  const ledgerFile = path.join(directory, "ledger.json");
+  const ledger = readState(ledgerFile);
+  const known = new Set((ledger.interests ?? []).filter((row) => row.asset).map(sourceKey));
+  const append = (rows) => {
+    const fresh = [];
+    for (const row of rows) {
+      const key = sourceKey(row);
+      if (known.has(key)) continue;
+      known.add(key);
+      fresh.push(row);
+    }
+    if (fresh.length) {
+      ledger.interests = [...(ledger.interests ?? []), ...fresh];
+      writeJson(ledgerFile, { ...ledger, updated_at: new Date(now).toISOString() });
+    }
+    return fresh.length;
+  };
+
+  let added = 0;
+  const limit = kind === "history" ? Math.min(review.next + 10, review.targets.length) : review.targets.length;
+  let threadId, thread;
+  while (review.next < limit) {
+    const target = review.targets[review.next];
+    if (target.threadId !== threadId) {
+      thread = await load(target.threadId, target.id);
+      threadId = target.threadId;
+    }
+    const message = thread.find(({ id }) => id === target.id);
+    if (!message || !Number.isFinite(message.at)) throw new Error("Gmail omitted a brokerage review target");
+    if (message.at < review.start || message.at >= review.end) review.outside += 1;
+    else {
+      const result = await readInterest(candidateFromMessage(message, thread), { read, prompt, identity });
+      if (result.status !== "complete") return { status: result.status, checked: review.next - review.outside, added };
+      if (kind === "history") added += append(result.rows);
+      else review.rows.push(...result.rows);
+    }
+    review.next += 1;
+    save();
+  }
+  const checked = review.next - review.outside;
+  if (review.next < review.targets.length) return { status: "pending", checked, added };
+  if (kind === "history") {
+    review = { complete: true, census: checked, start: review.start, end: review.end };
+    save();
+    return { status: "complete", checked, added };
+  }
+
+  const missing = await compare(review.rows);
+  if (!Number.isSafeInteger(missing) || missing < 0) return { status: "unavailable", checked, added };
+  const status = missing ? "missing" : checked && !review.rows.length ? "unverified-empty" : "complete";
+  if (missing) added += append(review.rows);
+  const verdict = { status, checked, found: review.rows.length, missing, added, through: dayOf(review.end) };
+  review = { complete: true, end: review.end, recorded: today, verdict };
+  save();
+  return verdict;
 }
 
 const CONF_ORDER = { high: 0, medium: 1, low: 2 };

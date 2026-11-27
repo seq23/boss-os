@@ -12,3 +12,11 @@ export function senderOf(...args: any[]): any;
 export function normalise(...args: any[]): any;
 export function admissible(...args: any[]): any;
 export function reviewSet(...args: any[]): any;
+
+export function reviewBrokerage(options: {
+  directory?: string; kind: "daily" | "history"; now?: number;
+  list?: (start: number, end: number) => Promise<{ id: string; threadId: string }[]>;
+  load?: (threadId: string, id: string) => Promise<any[]>;
+  read?: (input: Parameters<Reader>[0]) => ReturnType<Reader>; prompt?: string; identity?: any;
+  compare?: (rows: any[]) => Promise<number | null>;
+}): Promise<{ status: string; checked: number; added: number; found?: number; missing?: number }>;
