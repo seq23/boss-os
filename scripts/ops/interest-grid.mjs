@@ -896,8 +896,11 @@ async function main() {
         return countMissingGridInterests(buildGrid(interests, { identity, lists, senders, wrong }), delivered);
       },
     }).catch(() => ({ status: "unavailable" }));
+    const { nameHeld } = await import("./interest-extract.mjs");
+    await nameHeld(verify.held_now, "brokerage emails from yesterday's check");
     if (verify.status !== "complete") {
       const detail = verify.status === "missing" ? `${verify.missing} grid interest(s) missing; ${verify.added} added to the ledger for the next push.`
+        : verify.status === "held" ? `${verify.held === 1 ? "One brokerage email" : `${verify.held} brokerage emails`} could not be read after three tries, so ${verify.held === 1 ? "it is" : "they are"} held for you in the morning email; the other ${verify.checked - verify.held} were checked against the Deals grid.`
         : verify.status === "unverified-empty" ? `Couldn't verify zero interests across ${verify.checked} brokerage messages.`
         : verify.status === "allowance-exhausted" ? "Couldn't check the full brokerage day; the free allowance ran out and unread mail will retry."
         : "Couldn't check brokerage coverage; Gmail, the model or the Deals grid was unreadable.";
@@ -907,6 +910,7 @@ async function main() {
     }
     console.log(`MONIQUE DAILY CHECK: ${verify.checked} brokerage messages read; ${verify.found} interests checked against the Deals grid.`);
     const history = await reviewBrokerage({ kind: "history", identity }).catch(() => ({ status: "unavailable" }));
+    await nameHeld(history.held_now, "brokerage emails from the October re-read");
     if (!["complete", "pending"].includes(history.status)) {
       console.error(`NAMED STOP [MONIQUE_REREAD] ${history.status}; the 1 October re-read will resume with unread mail.`);
       process.exitCode = end.exitCode || 10;

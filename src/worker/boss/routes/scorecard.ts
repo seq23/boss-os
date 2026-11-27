@@ -75,7 +75,8 @@ scorecardRoutes.get("/", async (c) => {
   const dailyChecks = {
     "brokerage-deal-matches": daily && centralDay(daily.finished_at) === today
       ? { day: today, status: checked ? "checked" : "needs-review",
-          note: daily.reason?.replace(/^MONIQUE DAILY CHECK: /, "") ?? "The brokerage coverage check did not report a verdict." }
+          // Her words only: the log's verdict prefix and stop code stay in the log.
+          note: daily.reason?.replace(/^MONIQUE DAILY CHECK: /, "").replace(/^NAMED STOP \[[A-Z_]+\]\s*/, "") || "The brokerage coverage check did not report a verdict." }
       : { day: today, status: "pending", note: "Today's brokerage coverage check has yet to report." },
   };
   return ok(c, { state, strays, dailyChecks });

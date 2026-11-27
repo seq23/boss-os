@@ -14,5 +14,7 @@ export function scanBrokerage(options: {
   census: number;
   kept: number;
   dropped: number;
+  held: number;
   never_read: number;
+  held_now: string[];
 }>;

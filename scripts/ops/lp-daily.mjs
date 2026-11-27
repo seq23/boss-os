@@ -109,8 +109,8 @@ export function writeMorning(section, obj) {
 
 async function main() {
   const dry = process.argv.includes("--dry");
-  const { refreshPositive } = await import("./lp-positive.mjs");
-  const { people, seenAddresses, status } = await refreshPositive();
+  const { refreshPositive, LP_READS_PER_RUN } = await import("./lp-positive.mjs");
+  const { people, seenAddresses, status, heldNow, counts } = await refreshPositive();
   // Every reply and opt-out on the drip's Reply Queue before its ~07:30 run (1 Nov 2026): a call-ask
   // read on Friday was otherwise only queued by Tuesday's lp-outcomes, and got the final email Sunday.
   // A failed queue write remains a named stop for the existing duty.
@@ -120,9 +120,20 @@ async function main() {
       await syncReplies({ seenAddresses, people, commit: !dry });
     }
   } catch (e) { if (!dry) throw e; console.log(`note: ${e.message}`); }
-  if (status !== "complete") {
-    throw new Error(`NAMED STOP [LP_REPLY_UNREAD] ${status}; no LP drafts were created and unread replies will retry.`);
+  /*
+   * A PARTIAL READ NO LONGER STOPS EVERY DRAFT (27 Nov 2026, review F6 of #583). The first run met a
+   * backlog of 1,333 unread messages; reading them all at the free per-minute limit would hold every
+   * draft for days. Now the read is capped per run (newest first), drafts go to everyone whose replies
+   * are all read, and a sender with any unread or held reply gets nothing until it is read. The run
+   * still ends on the named stop below, after the drafts, so the gap is never a pass.
+   */
+  const waiting = new Set([...seenAddresses].filter(([, value]) => value?.bucket === "unread").map(([address]) => address));
+  if (heldNow?.length && !dry) {
+    const { nameLpHeld } = await import("./lp-positive.mjs");
+    await nameLpHeld(heldNow);
   }
+  const unreadStop = status === "complete" ? null
+    : `NAMED STOP [LP_REPLY_UNREAD] ${status}; ${counts?.unread ?? waiting.size} LP message(s) not read yet, so ${waiting.size} sender(s) get no draft until they are; the rest were drafted and unread replies will retry.`;
   const api = await bossApi();
   // Bounces first, before any system sends from the mailbox today (Twin ~07:30, Monique 09:30):
   // a hard-bounced address goes on Twin's Reply Queue and Boss OS suppression (lp-bounces.mjs).
@@ -176,14 +187,16 @@ async function main() {
   // Where she is (Boss OS's "where I am until") and the times each LP was last offered: the held reply
   // offers times in her zone that day, and a pick of one of them becomes a one-tap confirmation + invite.
   const offered = Object.fromEntries((prior.rows ?? []).filter((r) => r.offered_slots).map((r) => [r.address, r.offered_slots]));
-  const fu = await followUps(people, { skipped, where: prior.where ?? null, offered, calls });
+  const fu = await followUps(people, { skipped, where: prior.where ?? null, offered, calls, unread: waiting });
   const rows = fu.rows;
   const after = await api.post("/lp/replies", { rows });
+  if (unreadStop) stops.push(`${waiting.size} LP sender(s) wait for Monique to read their replies (the free allowance reads up to ${LP_READS_PER_RUN} a morning, newest first); they get no draft and no drip until then.`);
   const file = writeMorning("lp", lpMorning(after.rows ?? [], Date.now(), { stops }));
   for (const s of fu.stops) console.log(`note: ${s}`);
-  console.log(`LP-DAILY-COMPLETE: ${rows.length} on the tracker; morning section at ${file}`);
+  console.log(`LP-DAILY-${unreadStop ? "PARTIAL" : "COMPLETE"}: ${rows.length} on the tracker; morning section at ${file}`);
   // The census duty-run.sh records as what this run produced (`OUTPUT <n> <metric>`).
   console.log(`OUTPUT ${rows.length} LP replies on the tracker`);
+  if (unreadStop) throw new Error(unreadStop);
 }
 
 if (import.meta.url === `file://${process.argv[1]}`) {

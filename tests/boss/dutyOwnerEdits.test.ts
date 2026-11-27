@@ -203,7 +203,7 @@ it("shows Monique's coverage verdict from the same existing duty run on the Scor
   } });
   const stop = "NAMED STOP [MONIQUE_DAILY_CHECK] Couldn't check the full brokerage day; the free allowance ran out.";
   expect((await record("failed", stop)).status).toBe(201);
-  expect(await onScorecard()).toMatchObject({ status: "needs-review", note: stop });
+  expect(await onScorecard()).toMatchObject({ status: "needs-review", note: "Couldn't check the full brokerage day; the free allowance ran out." });
   const check = "MONIQUE DAILY CHECK: 4 brokerage messages read; 2 interests checked against the Deals grid.";
   expect((await record("ok", check)).status).toBe(201);
   expect(await onScorecard()).toMatchObject({ status: "checked", note: check.replace("MONIQUE DAILY CHECK: ", "") });

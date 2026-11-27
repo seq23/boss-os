@@ -394,11 +394,18 @@ async function main() {
     query: `after:${SINCE} in:anywhere -in:drafts -in:chats -from:${MAILBOX}`,
     known: new Set(byAddress.keys()),
     receipts: { ...lpReceipts(), ...prior.receipts },
+    // Three uncertain reads hold a reply for her as a receipt, so one reply never blocks the Blocked
+    // tab and suppress.txt for everyone (review F4). A held sender counts as replied: the drip stops.
+    uncertain: prior.uncertain,
   });
   const { outcome, pending } = summarizeLpOutcomes(scan, new Set(byAddress.keys()));
   const receipts = Object.fromEntries(scan.records.map((row) => [row.id, { ...row, excerpt: "" }]));
   const scanned = scan.records.length + scan.unread.length;
   console.log(`LP outcomes: ${scan.records.length} read, ${scan.unread.length} unread.`);
+  if (scan.held_now.length && COMMIT) {
+    const { nameLpHeld } = await import("./lp-positive.mjs");
+    nameLpHeld(scan.held_now);
+  }
 
   // ─── Turn outcomes into cell values ────────────────────────────────────────
   //
@@ -520,7 +527,7 @@ async function main() {
   // Hold repliers before publishing any completed outcomes. Twin reads this queue at send time.
   if (replyAppend.length) await appendSheetRows(sheetTok, REPLY_TAB, replyAppend);
   if (scan.status !== "complete") {
-    fs.writeFileSync(priorFile, JSON.stringify({ ...prior, receipts }, null, 2), { mode: 0o600 });
+    fs.writeFileSync(priorFile, JSON.stringify({ ...prior, receipts, uncertain: scan.uncertain }, null, 2), { mode: 0o600 });
     throw new Error(`NAMED STOP [LP_REPLY_UNREAD] ${scan.status}; pending replies will retry.`);
   }
 
@@ -569,6 +576,7 @@ async function main() {
     JSON.stringify({
       generated_at: new Date().toISOString(),
       receipts,
+      uncertain: scan.uncertain,
       sent_rows: data.length,
       scanned,
       tally,

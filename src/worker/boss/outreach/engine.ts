@@ -93,6 +93,8 @@ export interface TickResult {
   lists: { slice: string | null; crawled: number; admitted: number; directories?: { read: string[]; prospects: number; candidates: number } };
   payouts: unknown;
   stop?: string;
+  /** Replies the model could not read this tick: only their addresses (and partner campaigns) are held. */
+  held?: { replies: number; addresses: number; why: string };
   /** NAMED STOPs this tick: a route-ready business refused in the sending window for a missing precondition. */
   stops: Record<string, string>;
   /** The bounce agent this tick (bounceFix.ts): replacements found and bounced addresses dropped. */
@@ -146,13 +148,19 @@ export async function runOutreachTick(env: Env, now = Date.now(), fetchImpl: typ
   const out: TickResult = { replies: 0, paused: [], routesProven: [], sent: 0, refused: {}, stops: {}, lists: { slice: null, crawled: 0, admitted: 0 }, payouts: null };
   const settings = await readSettings(db);
   const mailbox = GmailSession.from(env, fetchImpl);
+  let hold: ReplyHold = emptyHold();
 
   if (!mailbox) {
     out.stop = "NAMED STOP: the Worker holds no Google key (GSC_SERVICE_ACCOUNT_JSON), so outreach can neither read replies nor send.";
   } else {
     try {
-      out.replies = await processReplies(env, mailbox, now);
+      const read = await processReplies(env, mailbox, now);
+      out.replies = read.handled;
+      hold = read.held;
+      if (hold.replies) out.held = { replies: hold.replies, addresses: hold.emails.size, why: hold.why };
+      await recordHold(db, hold, now);
     } catch (err) {
+      // Gmail itself could not be read, so no reply is known to be safe: every send waits.
       out.refused.replies = (err as Error).message;
     }
   }
@@ -213,7 +221,7 @@ export async function runOutreachTick(env: Env, now = Date.now(), fetchImpl: typ
     for (const b of BUSINESSES) {
       let r: SendOutcome;
       try {
-        r = await sendForBusiness(env, mailbox, b, settings, now, out.refused, fetchImpl);
+        r = await sendForBusiness(env, mailbox, b, settings, now, out.refused, fetchImpl, hold);
       } catch (err) {
         out.refused[b.key] = (err as Error).message;
         r = { sent: 0, stop: (err as Error).message };
@@ -496,7 +504,7 @@ interface SendOutcome { sent: number; stop: string | null }
 
 async function sendForBusiness(
   env: Env, mailbox: GmailSession, b: Business, settings: OutreachSettings, now: number, refused: Record<string, string>,
-  fetchImpl: typeof fetch,
+  fetchImpl: typeof fetch, replyHold: ReplyHold = emptyHold(),
 ): Promise<SendOutcome> {
   const db = env.DB;
   const st = await domainState(db, b.key, now);
@@ -549,11 +557,14 @@ async function sendForBusiness(
       WHERE business_key = ? AND source != 'test_recipient'
         AND ((state = 'new' AND step = 0) OR (state = 'in_sequence' AND next_due_at <= ?))
       ORDER BY step DESC, created_at LIMIT ?`,
-  ).bind(b.key, now, n).all<any>();
+  ).bind(b.key, now, n + replyHold.prospects).all<any>();
 
   let sent = 0;
   const last = lastStepOf(b, pitch);
   for (const p of due.results ?? []) {
+    if (sent >= n) break;
+    // A reply from this address (or anyone on its partner campaign) is still unread: nothing goes to it.
+    if (isHeld(replyHold, p)) continue;
     if (p.step === 0 && newLeft <= 0) continue;
     if (await isSuppressed(db, p.email)) {
       await db.prepare(`UPDATE outreach_prospects SET state = 'suppressed', next_due_at = NULL, updated_at = ? WHERE id = ?`).bind(now, p.id).run();
@@ -627,7 +638,7 @@ async function sendForBusiness(
  * Read what came back: replies in threads outreach started, and bounce notices. Nothing else in the
  * mailbox is fetched.
  */
-export async function processReplies(env: Env, mailbox: GmailSession, now: number): Promise<number> {
+export async function processReplies(env: Env, mailbox: GmailSession, now: number): Promise<{ handled: number; held: ReplyHold }> {
   const db = env.DB;
   const threads = await db.prepare(
     `SELECT id, business_key, email, thread_id, state, campaign_id FROM outreach_prospects WHERE thread_id IS NOT NULL`,
@@ -640,10 +651,13 @@ export async function processReplies(env: Env, mailbox: GmailSession, now: numbe
     ...(await mailbox.list("from:(mailer-daemon OR postmaster) -in:drafts", 500)),
   ];
   let handled = 0;
+  const held = emptyHold();
   const unique = new Map(candidates.map((candidate) => [candidate.id, candidate]));
   for (const c of [...unique.values()].reverse()) {
     if (alreadyRead.has(c.id)) continue;
     let prospect = byThread.get(c.threadId) ?? null;
+    // Once the free allowance is spent, the rest of this tick's replies wait unread without a call.
+    if (prospect && held.why === "allowance-exhausted") { holdReply(held, prospect, "allowance-exhausted"); continue; }
     const thread = prospect ? await mailbox.readThread(c.threadId) : [await mailbox.read(c.id)];
     const msg = thread.find((message) => message.id === c.id);
     if (!msg) throw new Error("Outreach could not check replies: Gmail omitted a listed reply.");
@@ -656,7 +670,8 @@ export async function processReplies(env: Env, mailbox: GmailSession, now: numbe
       // Orphan messages in the delivery-notice search must carry a DSN field to affect outreach.
       if (!prospect) continue;
       const result = await classifyReply(msg, thread, env);
-      if (result.status !== "ok") throw new Error(`Outreach could not check replies: ${result.status}.`);
+      // Unread, unrecorded and retried next tick; only this address (and its partner campaign) waits.
+      if (result.status !== "ok") { holdReply(held, prospect, result.status); continue; }
       meaning = result.meaning;
     }
     const cls: ReplyClass = meaning?.classification ?? "bounce";
@@ -696,7 +711,50 @@ export async function processReplies(env: Env, mailbox: GmailSession, now: numbe
       (meaning?.excerpt ?? "").slice(0, 300), approvalId, msg.internalDate || now, meaning?.replyNeed ?? null).run();
     handled += 1;
   }
-  return handled;
+  return { handled, held };
+}
+
+/**
+ * ONE UNREAD REPLY HOLDS ONLY ITS OWN ADDRESS (27 Nov 2026, review F3 of #583). A reply the model could
+ * not read stays unrecorded, so the next tick reads it again; until then nothing is sent to that address
+ * in any business, nor to anyone on its partner campaign (a reply there stops the whole company). Every
+ * other send goes on. Gmail itself unreadable is different: no reply is known, so every send waits.
+ */
+export interface ReplyHold { emails: Set<string>; campaigns: Set<string>; replies: number; prospects: number; why: string }
+const emptyHold = (): ReplyHold => ({ emails: new Set(), campaigns: new Set(), replies: 0, prospects: 0, why: "" });
+
+function holdReply(held: ReplyHold, prospect: { email: string; campaign_id?: string | null }, why: string) {
+  held.replies += 1;
+  held.emails.add(normaliseEmail(prospect.email));
+  if (prospect.campaign_id) held.campaigns.add(prospect.campaign_id);
+  held.prospects = held.emails.size + held.campaigns.size;
+  if (held.why !== "allowance-exhausted") held.why = why;
+}
+
+const isHeld = (held: ReplyHold, p: { email: string; campaign_id?: string | null }) =>
+  held.emails.has(normaliseEmail(p.email)) || Boolean(p.campaign_id && held.campaigns.has(p.campaign_id));
+
+/** The hold, written where Today reads it (outreachStops.ts); counts only, never an address. Cleared at 0. */
+export const HOLD_KEY = "replies_held";
+async function recordHold(db: D1Database, held: ReplyHold, now: number) {
+  if (!held.replies) {
+    await db.prepare(`DELETE FROM outreach_settings WHERE key = ?`).bind(HOLD_KEY).run();
+    return;
+  }
+  const value = JSON.stringify({ replies: held.replies, addresses: held.emails.size, why: held.why });
+  await db.prepare(
+    `INSERT INTO outreach_settings (key, value, updated_at) VALUES (?, ?, ?)
+     ON CONFLICT(key) DO UPDATE SET value = excluded.value, updated_at = excluded.updated_at`,
+  ).bind(HOLD_KEY, value, now).run();
+  await logEvent(db, { level: "warn", scope: "outreach", event: "replies_held", detail: { replies: held.replies, addresses: held.emails.size, why: held.why } }).catch(() => {});
+}
+
+/** The Today line for a hold: how many replies and addresses wait, and why. Pure. */
+export function holdText(value: { replies: number; addresses: number; why: string }): string {
+  const cause = value.why === "allowance-exhausted" ? "the free model allowance is spent for today" : "the free model could not read them";
+  return `Monique's outreach: ${value.replies} ${value.replies === 1 ? "reply" : "replies"} could not be read (${cause}). ` +
+    `Nothing is sent to those ${value.addresses} ${value.addresses === 1 ? "address" : "addresses"} until each is read; every other send goes on. ` +
+    "They are read again on every outreach run.";
 }
 
 async function act(env: Env, cls: ReplyClass, p: any, from: string, now: number) {
@@ -736,7 +794,7 @@ async function raiseInterested(env: Env, p: any, from: string, meaning: ReplyMea
   const raised = await raiseJudgementCall(env, {
     title: `${b.brand}: ${p.org_name ?? from} is interested`,
     question:
-      `${p.org_name ?? from} (${from}) replied to Monique's outreach for ${b.brand}:\n\n"${meaning.excerpt.slice(0, 500)}"\n\n` +
+      `${p.org_name ?? from} (${from}) replied to Monique's outreach for ${b.brand}:\n\n${quoteOf(meaning.excerpt, 500)}\n\n` +
       `Suggested next step: ${b.nextStep}\n\nApprove and the reply below goes to your drafts in ${"st@time-2-read.com"}, to everyone on their email:\n${recipientLines(recipients).join("\n")}\n\n${reply}`,
     resumeKind: "outreach_interested",
     employeeId: "emp_relationship",
@@ -746,6 +804,9 @@ async function raiseInterested(env: Env, p: any, from: string, meaning: ReplyMea
   }, now);
   return raised.approvalId;
 }
+
+/** The writer's own words for a card, or a plain line when no quote could be checked against the mail. */
+const quoteOf = (words: string, max: number) => words ? `"${words.slice(0, max)}"` : "(No short quote could be checked against the mail; the full reply is in the thread.)";
 
 /**
  * A TIME-2-READ GROUP WROTE BACK (owner, 31 Oct 2026). Every real reply goes to her as one Decide
@@ -771,7 +832,7 @@ async function raiseGroupReply(
   const raised = await raise(env, {
     title: price ? `Time2Read groups: ${p.org_name ?? from} asked the price` : `Time2Read groups: ${p.org_name ?? from} replied`,
     question:
-      `${p.org_name ?? from} (${from}), a ${g?.kind ?? "group"} Monique wrote to, replied:\n\n"${words.slice(0, 500)}"\n\n` +
+      `${p.org_name ?? from} (${from}), a ${g?.kind ?? "group"} Monique wrote to, replied:\n\n${quoteOf(words, 500)}\n\n` +
       `Their code: ${code ?? "none yet"} (${used}).${totals ? ` All groups so far: ${totals.line}.` : ""}\n\n` +
       (price ? `${suggestion} Monique never quotes a price; this is yours to set.\n\n` : "") +
       `Approve and the reply below goes to your drafts in st@time-2-read.com, to everyone on their email:\n${recipientLines(recipients).join("\n")}\n\n${reply}`,
@@ -800,7 +861,7 @@ async function raisePartnerReply(
   const raised = await raise(env, {
     title: price ? `${b.brand} partnership: ${p.org_name} asked the price` : `${b.brand} partnership: ${p.org_name} replied`,
     question:
-      `${who} (${from}) replied to the ${b.brand} partnership emails:\n\n"${words.slice(0, 600)}"\n\n` +
+      `${who} (${from}) replied to the ${b.brand} partnership emails:\n\n${quoteOf(words, 600)}\n\n` +
       `Every email to ${p.org_name} has stopped. ` +
       (price ? "They asked about price: that is yours to set; Monique never quotes one. " : "") +
       `Approve and the draft below goes to your drafts in ${b.sender}, to everyone on their email, for you to finish:\n${recipientLines(recipients).join("\n")}\n\n${reply}`,

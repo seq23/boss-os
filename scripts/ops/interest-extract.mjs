@@ -8,6 +8,7 @@ import { readJsonObject } from "../../src/worker/boss/router/types.ts";
 import { loadIdentity, RRLIST } from "./interest-grid.mjs";
 import { CENTRAL, dayOf, instantAt, startOfDay } from "../../src/shared/boss/schedule/clock.mjs";
 import { issuerKey } from "./lib/deal-reading.mjs";
+import { heldLine, holdForPerson, stillUncertain } from "./lib/held-for-person.mjs";
 import { brokerageTargets, brokerageThread, candidateFromMessage, readState, reloadBrokerageThread, writeJson } from "./interest-ledger.mjs";
 
 const DIR = process.env.BOSS_OS_CAPITAL_DIR ?? path.join(os.homedir(), ".boss-os", "capital");
@@ -134,7 +135,8 @@ If you cannot complete the reading, return {"status":"uncertain","rows":[]}.`,
   });
   const rows = result.status === "ok" ? extractionFrom(result.text, msg, current, identity) : null;
   if (rows) return { status: "complete", rows: rows.map((row) => normalise(row, msg)) };
-  return { status: result.status === "allowance-exhausted" ? result.status : "unavailable", rows: [] };
+  // "uncertain": a model read it and could not decide (or broke the shape); counted toward a hold.
+  return { status: result.status === "allowance-exhausted" ? result.status : result.status === "ok" || result.status === "uncertain" ? "uncertain" : "unavailable", rows: [] };
 }
 
 const rowKey = (r) => JSON.stringify([r.source_message, r.side, r.asset.toLowerCase(), r.size_usd ?? r.size_shares ?? null]);
@@ -156,6 +158,8 @@ export async function extractCandidates({
   const merged = new Map((ledger.interests ?? []).map((row) => [rowKey(row), row]));
   let checked = 0;
   let added = 0;
+  let status = "complete";
+  const heldNow = [];
 
   for (const file of files) {
     const batchFile = path.join(batches, file);
@@ -164,10 +168,23 @@ export async function extractCandidates({
     if (!Array.isArray(messages) || !messages.length || messages.some((msg) => !msg?.source_message)) {
       throw new Error("Candidate batch has no readable message IDs");
     }
+    let unresolved = 0;
     for (const msg of messages) {
-      if (done.has(msg.source_message)) continue;
+      if (done.has(msg.source_message) || checkpoint.held?.[msg.source_message]) continue;
       const result = await readInterest(msg, { read, loadThread, prompt, identity });
-      if (result.status !== "complete") return { status: result.status, checked, added, remaining: true };
+      if (result.status === "uncertain") {
+        // Read past it; on the third run it is held for her, never marked done (review F4).
+        if (stillUncertain(checkpoint, msg.source_message)) {
+          holdForPerson(checkpoint, msg.source_message, { held_at: Date.now() });
+          heldNow.push(msg.source_message);
+        } else {
+          unresolved += 1;
+          status = "unavailable";
+        }
+        writeJson(checkpointFile, { ...checkpoint, messages: [...done] });
+        continue;
+      }
+      if (result.status !== "complete") return { status: result.status, checked, added, remaining: true, held_now: heldNow };
       const previousSize = merged.size;
       for (const row of result.rows) {
         if (!merged.has(rowKey(row))) merged.set(rowKey(row), row);
@@ -180,9 +197,19 @@ export async function extractCandidates({
       writeJson(checkpointFile, { ...checkpoint, messages: [...done] });
       checked += 1;
     }
-    fs.unlinkSync(batchFile);
+    // A batch goes only once every message in it is recorded or held for her.
+    if (!unresolved) fs.unlinkSync(batchFile);
   }
-  return { status: "complete", checked, added, remaining: fs.readdirSync(batches).some((file) => file.endsWith(".json")) };
+  return { status, checked, added, remaining: fs.readdirSync(batches).some((file) => file.endsWith(".json")), held_now: heldNow };
+}
+
+/** Names the messages held this run in her morning email, one Gmail link each (held-for-person.mjs). */
+export async function nameHeld(ids, what, { add } = {}) {
+  if (!ids?.length) return;
+  const { gmailUrl } = await import("./interest-grid.mjs");
+  const write = add ?? (await import("../../src/shared/boss/mail/morning.mjs")).addMorningLines;
+  write("notices", { lines: [heldLine(what, ids.map((id) => gmailUrl(id)))] });
+  console.log(`NOTE [HELD_FOR_HER] ${ids.length} ${what} held for her in the morning email after three uncertain reads.`);
 }
 
 const historicalStart = instantAt(CENTRAL, 2026, 10, 1);
@@ -202,8 +229,9 @@ export async function reviewBrokerage({
   if (kind === "history" && review?.complete) return { status: "complete", checked: review.census, added: 0 };
   if (kind === "history" && review?.attempted === today) return { status: "pending", checked: review.next - review.outside, added: 0 };
   if (kind === "daily" && review?.recorded === today) {
-    // The prior read is still valid for this day. No second model call on retries.
-    return review.verdict;
+    // The prior read is still valid for this day. No second model call on retries, and the held
+    // messages were already named in this morning's email.
+    return { ...review.verdict, held_now: [] };
   }
   const dayStart = startOfDay(now);
   if (!review || (kind === "daily" && review.complete && review.end < dayStart)) {
@@ -234,6 +262,7 @@ export async function reviewBrokerage({
   };
 
   let added = 0;
+  const heldNow = [];
   const limit = kind === "history" ? Math.min(review.next + 10, review.targets.length) : review.targets.length;
   let threadId, thread;
   while (review.next < limit) {
@@ -247,26 +276,36 @@ export async function reviewBrokerage({
     if (message.at < review.start || message.at >= review.end) review.outside += 1;
     else {
       const result = await readInterest(candidateFromMessage(message, thread), { read, prompt, identity });
-      if (result.status !== "complete") return { status: result.status, checked: review.next - review.outside, added };
-      if (kind === "history") added += append(result.rows);
+      if (result.status === "uncertain" && stillUncertain(review, target.id)) {
+        // The third uncertain run holds it for her and the check reads the next message (review F4).
+        holdForPerson(review, target.id, { threadId: target.threadId, held_at: now });
+        // Kept on record past this review, apart from the extract's own holds.
+        checkpoint.review_held = { ...(checkpoint.review_held ?? {}), [target.id]: { ...review.held[target.id], review: kind } };
+        heldNow.push(target.id);
+      } else if (result.status !== "complete") {
+        save();
+        return { status: result.status === "uncertain" ? "unavailable" : result.status, checked: review.next - review.outside, added, held_now: heldNow };
+      } else if (kind === "history") added += append(result.rows);
       else review.rows.push(...result.rows);
     }
     review.next += 1;
     save();
   }
   const checked = review.next - review.outside;
-  if (review.next < review.targets.length) return { status: "pending", checked, added };
+  const held = Object.keys(review.held ?? {}).length;
+  if (review.next < review.targets.length) return { status: "pending", checked, added, held_now: heldNow };
   if (kind === "history") {
-    review = { complete: true, census: checked, start: review.start, end: review.end };
+    review = { complete: true, census: checked, start: review.start, end: review.end, ...(review.held ? { held: review.held } : {}) };
     save();
-    return { status: "complete", checked, added };
+    return { status: "complete", checked, added, held_now: heldNow };
   }
 
   const missing = await compare(review.rows);
   if (!Number.isSafeInteger(missing) || missing < 0) return { status: "unavailable", checked, added };
-  const status = missing ? "missing" : checked && !review.rows.length ? "unverified-empty" : "complete";
+  // Held messages were not checked against the grid, so a person must look: never a plain pass.
+  const status = missing ? "missing" : held ? "held" : checked - held && !review.rows.length ? "unverified-empty" : "complete";
   if (missing) added += append(review.rows);
-  const verdict = { status, checked, found: review.rows.length, missing, added, through: dayOf(review.end) };
+  const verdict = { status, checked, found: review.rows.length, missing, added, held, held_now: heldNow, through: dayOf(review.end) };
   review = { complete: true, end: review.end, recorded: today, verdict };
   save();
   return verdict;
@@ -381,6 +420,7 @@ async function main() {
 
   const result = await extractCandidates({ limit: Number(argOf("limit") ?? 0) });
   console.log(outputLine(result.checked, "interests read"));
+  await nameHeld(result.held_now, "deal emails");
   if (result.status !== "complete") {
     console.error(result.status === "allowance-exhausted"
       ? "NAMED STOP [FREE_ALLOWANCE_EXHAUSTED] Remaining candidate mail will be retried next run."

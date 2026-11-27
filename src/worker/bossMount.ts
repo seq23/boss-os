@@ -116,9 +116,9 @@ export function toBossEnv(env: Env): BossEnv {
     // OpenRouter too, the same seam's same gap (bk_openrouter enabled 17 Sep with its own cap).
     OPENROUTER_API_KEY: env.OPENROUTER_API_KEY,
     GEMINI_API_KEY: env.GEMINI_API_KEY,
-    BOSS_WORKER_GEMINI_FREE_KEY: env.BOSS_WORKER_GEMINI_FREE_KEY,
-    BOSS_WORKER_CF_FREE_ACCOUNT_ID: env.BOSS_WORKER_CF_FREE_ACCOUNT_ID,
-    BOSS_WORKER_CF_FREE_TOKEN: env.BOSS_WORKER_CF_FREE_TOKEN,
+    // Worker reading (freeModel.ts): the second Cloudflare account's Workers AI, never the main account.
+    CF2_ACCOUNT_ID: env.CF2_ACCOUNT_ID,
+    CF2_WORKERS_AI_TOKEN: env.CF2_WORKERS_AI_TOKEN,
     BRAVE_SEARCH_API_KEY: env.BRAVE_SEARCH_API_KEY,
     // Boss OS's own clock (21 Nov 2026): GitHub's schedule event stopped being a clock.
     GITHUB_SEQ23_PAT: env.GITHUB_SEQ23_PAT,
