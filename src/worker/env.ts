@@ -1,5 +1,7 @@
+import type { WorkerReadingCredentials } from "./boss/router/freeModel";
+
 /** Worker environment bindings. Names must match wrangler.toml. */
-export interface Env {
+export interface Env extends WorkerReadingCredentials {
   /** D1 — relational operational truth. */
   WP_OS_DB: D1Database;
   /** R2 — governed binary documents/artifacts only. Optional at runtime; absence degrades cleanly. */

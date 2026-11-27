@@ -7,7 +7,6 @@ export const gmailUrl: any;
 export const publicRow: any;
 export function loadIdentity(...args: any[]): any;
 export function isHerAddress(...args: any[]): any;
-export function mentionsHer(...args: any[]): any;
 export function isHers(...args: any[]): any;
 export function moneyWords(...args: any[]): any;
 export function priceWords(...args: any[]): any;
@@ -64,3 +63,5 @@ export function sharePriceWords(text: unknown): string;
 export function realMatch(m: any): boolean;
 export function likelyHolderLines(a: any): { text: string; links: any[]; deal: string }[];
 export const MAX_HOLDER_FIRMS: number;
+
+export function countMissingGridInterests(expected: any[], delivered: unknown): number | null;

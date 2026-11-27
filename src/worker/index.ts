@@ -384,7 +384,8 @@ export default {
     // Monique's outreach: replies, brakes, sends inside the cap and window, list building.
     ctx.waitUntil(
       runBossOutreach(toBossEnvForCron(env), now.getTime()).then((r) => {
-        console.log("boss outreach tick", JSON.stringify({ sent: r.sent, replies: r.replies, paused: r.paused, stop: r.stop ?? null }));
+        // Counts and business keys only: a held reply's address never reaches the log.
+        console.log("boss outreach tick", JSON.stringify({ sent: r.sent, replies: r.replies, paused: r.paused, stop: r.stop ?? null, held: r.held ?? null, refused: Object.keys(r.refused) }));
       }).catch((err) => {
         console.error("boss outreach failed", err);
       }),

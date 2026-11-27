@@ -6,7 +6,7 @@
  *   06:15 Central, duty_lp_daily, before Simone's 06:40 morning email reads ~/.boss-os/morning/lp.json.
  *
  * 1. Read sequoia@westpeek.ventures through the delegation (lp-positive.mjs → refreshPositive): every
- *    reply to the outreach since July, screened, the positive ones kept. The first run IS the backfill.
+ *    reply since July is read with its whole thread; the interested replies are kept.
  * 2. For each: already answered by her (sent mail)? replied again? passed or skipped? Otherwise one
  *    reply held as a draft in their thread (lp-followups.mjs → followUps). Nothing is sent here.
  * 3. Post the tracker rows to Boss OS (names stay in D1, never a log) and get back each row's tap token.
@@ -15,7 +15,7 @@
  * REPLACES lp-replies.sh, which read this mailbox through the claude.ai Gmail connector — bound to
  * her PERSONAL account — and reported "A=0" every morning while 50+ messages arrived (23 Oct 2026).
  *
- * LP names never reach a model: the reply is a fixed template (plan.mjs lpReplyBody).
+ * The free reader decides what the message says. The held answer uses the fixed LP template.
  *
  *   npm run lp:daily            (through the vault: BOSS_PASSCODE + GSC_SERVICE_ACCOUNT_JSON)
  *   npm run lp:daily -- --dry   (reads and drafts nothing; prints counts and the morning file only)
@@ -109,6 +109,31 @@ export function writeMorning(section, obj) {
 
 async function main() {
   const dry = process.argv.includes("--dry");
+  const { refreshPositive, LP_READS_PER_RUN } = await import("./lp-positive.mjs");
+  const { people, seenAddresses, status, heldNow, counts } = await refreshPositive();
+  // Every reply and opt-out on the drip's Reply Queue before its ~07:30 run (1 Nov 2026): a call-ask
+  // read on Friday was otherwise only queued by Tuesday's lp-outcomes, and got the final email Sunday.
+  // A failed queue write remains a named stop for the existing duty.
+  try {
+    const { syncReplies } = await import("./lp-bounces.mjs");
+    if (people.length || [...seenAddresses.values()].some(({ bucket }) => bucket !== "auto")) {
+      await syncReplies({ seenAddresses, people, commit: !dry });
+    }
+  } catch (e) { if (!dry) throw e; console.log(`note: ${e.message}`); }
+  /*
+   * A PARTIAL READ NO LONGER STOPS EVERY DRAFT (27 Nov 2026, review F6 of #583). The first run met a
+   * backlog of 1,333 unread messages; reading them all at the free per-minute limit would hold every
+   * draft for days. Now the read is capped per run (newest first), drafts go to everyone whose replies
+   * are all read, and a sender with any unread or held reply gets nothing until it is read. The run
+   * still ends on the named stop below, after the drafts, so the gap is never a pass.
+   */
+  const waiting = new Set([...seenAddresses].filter(([, value]) => value?.bucket === "unread").map(([address]) => address));
+  if (heldNow?.length && !dry) {
+    const { nameLpHeld } = await import("./lp-positive.mjs");
+    await nameLpHeld(heldNow);
+  }
+  const unreadStop = status === "complete" ? null
+    : `NAMED STOP [LP_REPLY_UNREAD] ${status}; ${counts?.unread ?? waiting.size} LP message(s) not read yet, so ${waiting.size} sender(s) get no draft until they are; the rest were drafted and unread replies will retry.`;
   const api = await bossApi();
   // Bounces first, before any system sends from the mailbox today (Twin ~07:30, Monique 09:30):
   // a hard-bounced address goes on Twin's Reply Queue and Boss OS suppression (lp-bounces.mjs).
@@ -118,15 +143,6 @@ async function main() {
   } catch (e) { console.log(`note: ${e.message}`); }
   const prior = await api.get("/lp/replies");
   const skipped = new Set((prior.rows ?? []).filter((r) => r.status === "skipped").map((r) => r.address));
-  const { refreshPositive } = await import("./lp-positive.mjs");
-  const { people, seenAddresses } = await refreshPositive();
-  // Every reply and opt-out on the drip's Reply Queue before its ~07:30 run (1 Nov 2026): a call-ask
-  // read on Friday was otherwise only queued by Tuesday's lp-outcomes, and got the final email Sunday.
-  // A failure here is loud in the log and never blocks the held replies below.
-  try {
-    const { syncReplies } = await import("./lp-bounces.mjs");
-    await syncReplies({ seenAddresses, people, commit: !dry });
-  } catch (e) { console.log(`note: ${e.message}`); }
   // Calls on her West Peek calendar, past and upcoming (owner, 15 Nov 2026). Unreadable → a NAMED STOP line.
   const now = Date.now();
   let calls = new Map();
@@ -171,14 +187,16 @@ async function main() {
   // Where she is (Boss OS's "where I am until") and the times each LP was last offered: the held reply
   // offers times in her zone that day, and a pick of one of them becomes a one-tap confirmation + invite.
   const offered = Object.fromEntries((prior.rows ?? []).filter((r) => r.offered_slots).map((r) => [r.address, r.offered_slots]));
-  const fu = await followUps(people, { skipped, where: prior.where ?? null, offered, calls });
+  const fu = await followUps(people, { skipped, where: prior.where ?? null, offered, calls, unread: waiting });
   const rows = fu.rows;
   const after = await api.post("/lp/replies", { rows });
+  if (unreadStop) stops.push(`${waiting.size} LP sender(s) wait for Monique to read their replies (the free allowance reads up to ${LP_READS_PER_RUN} a morning, newest first); they get no draft and no drip until then.`);
   const file = writeMorning("lp", lpMorning(after.rows ?? [], Date.now(), { stops }));
   for (const s of fu.stops) console.log(`note: ${s}`);
-  console.log(`LP-DAILY-COMPLETE: ${rows.length} on the tracker; morning section at ${file}`);
+  console.log(`LP-DAILY-${unreadStop ? "PARTIAL" : "COMPLETE"}: ${rows.length} on the tracker; morning section at ${file}`);
   // The census duty-run.sh records as what this run produced (`OUTPUT <n> <metric>`).
   console.log(`OUTPUT ${rows.length} LP replies on the tracker`);
+  if (unreadStop) throw new Error(unreadStop);
 }
 
 if (import.meta.url === `file://${process.argv[1]}`) {

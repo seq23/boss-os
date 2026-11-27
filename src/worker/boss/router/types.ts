@@ -101,6 +101,8 @@ export interface AdapterContext {
   baseUrl: string;
   apiKey?: string;
   ai?: WorkersAiBinding;
+  /** Dedicated Cloudflare Workers Free account for the worker-job REST transport. */
+  workersFreeAccountId?: string;
 }
 
 /**
@@ -125,13 +127,16 @@ export interface WorkersAiBinding {
  * becomes a retry storm with a bill attached.
  */
 export class ProviderCallError extends Error {
-  constructor(
-    message: string,
-    public status: number | null,
-    public retryable: boolean,
-  ) {
+  status: number | null;
+  retryable: boolean;
+  allowanceExhausted: boolean;
+
+  constructor(message: string, status: number | null, retryable: boolean, allowanceExhausted = false) {
     super(message);
     this.name = "ProviderCallError";
+    this.status = status;
+    this.retryable = retryable;
+    this.allowanceExhausted = allowanceExhausted;
   }
 }
 

@@ -28,6 +28,7 @@
  */
 
 import fs from "node:fs";
+import { issuerKey, resolveIssuers } from "./lib/deal-reading.mjs";
 import { isRoleMailbox, roleWords } from "../../src/shared/boss/people/role.mjs";
 import path from "node:path";
 import os from "node:os";
@@ -87,26 +88,11 @@ export function isHerAddress(addr, id) {
   return mine.has(localPart(a)) && myDomains.has(domainOf(a));
 }
 
-/** Does this text name her — by display name or by one of her addresses? */
-export function mentionsHer(text, id) {
-  const t = String(text ?? "");
-  if (!t) return false;
-  if (id.names.some((n) => new RegExp(`\\b${n.replace(/\s+/g, "\\s+")}\\b`, "i").test(t))) return true;
-  return (t.toLowerCase().match(/[a-z0-9._%+-]+@[a-z0-9.-]+\.[a-z]{2,}/g) ?? []).some((a) => isHerAddress(a, id));
-}
-
-/**
- * Is this ledger row hers? She wrote it (sender), she is named as the principal or as the one
- * representing the client ("unnamed client of Sequoia Taylor"), or it went to rrlist@ from her.
- */
+/** Current rows carry the model's attribution. Older rows can still identify an exact sender. */
 export function isHers(row, id) {
-  if (row.hers === true) return true;
-  // A note she passed on is the broker's order, however it reached the ledger (25 Oct 2026).
-  if (row.hers === false && row.relayed === true) return false;
-  if (isHerAddress(row.from, id) || mentionsHer(row.from_name, id)) return true;
-  if (isHerAddress(row.principal_email, id) || mentionsHer(row.principal, id)) return true;
-  if (isHerAddress(row.intermediated_by, id) || mentionsHer(row.intermediated_by, id)) return true;
-  return false;
+  if (typeof row.hers === "boolean") return row.hers;
+  if (row.relayed) return false;
+  return [row.from, row.principal_email, row.intermediated_by].some((address) => isHerAddress(address, id));
 }
 
 // ─── What a row says, in plain words ─────────────────────────────────────────
@@ -159,6 +145,16 @@ export function priceWords(text) {
   return s.length <= 48 ? s.replace(/\s+/g, " ") : "—";
 }
 
+function priceForRow(row) {
+  if (row.price_kind === undefined) return priceWords(row.price_text);
+  const amount = row.price_usd;
+  if (row.price_kind === "share" && amount > 0 && amount <= MAX_SHARE_PRICE) {
+    return `$${amount.toLocaleString("en-US", { maximumFractionDigits: 2 })} a share`;
+  }
+  if (row.price_kind === "valuation" && amount > 0 && amount <= MAX_VALUATION) return `${moneyWords(amount)} valuation`;
+  return "—";
+}
+
 export function sizeWords(row) {
   const usd = Number(row.size_usd) || 0;
   if (usd > MAX_BLOCK) return "—";
@@ -170,17 +166,7 @@ export function sizeWords(row) {
 
 /** Fees and structure the email states: "8/0/5", SPV, direct, forward, share class, layer. */
 export function structureWords(row) {
-  if (row.structure_text) return String(row.structure_text).slice(0, 60);
-  const q = `${row.quote ?? ""} ${row.price_text ?? ""}`;
-  const bits = [];
-  const fee = /\b\d{1,2}\/\d{1,2}\/\d{1,2}\b/.exec(q)?.[0];
-  if (fee) bits.push(fee);
-  for (const [re, w] of [[/\bSPV\b/i, "SPV"], [/\bdirect\b/i, "direct"], [/\bforward\b/i, "forward"],
-    [/\bpreferred\b/i, "preferred"], [/\bcommon\b/i, "common"], [/\bL[12]\b/, (m) => m], [/\bLP swap\b/i, "LP swap"]]) {
-    const m = re.exec(q);
-    if (m) bits.push(typeof w === "function" ? w(m[0]) : w);
-  }
-  return bits.length ? [...new Set(bits)].join(" · ") : "—";
+  return String(row.structure_text ?? "").slice(0, 60) || "—";
 }
 
 const FREE_MAIL = new Set(["gmail.com", "yahoo.com", "outlook.com", "hotmail.com", "icloud.com", "me.com", "aol.com", "proton.me", "protonmail.com"]);
@@ -203,8 +189,6 @@ export function firmOf(addr) {
 const nameFromAddress = (a) => localPart(a).split(/[._-]/).filter((p) => p.length > 1)
   .map((p) => p.charAt(0).toUpperCase() + p.slice(1)).join(" ");
 
-const unnamed = (p) => !p || /\b(unnamed|undisclosed|anonymous|a client|client of|buyer|seller)\b/i.test(String(p));
-
 /** Who it came from, as person and firm. Her own rows say "You". */
 export function fromWords(row, hers) {
   if (hers) return "You";
@@ -221,14 +205,14 @@ export function fromWords(row, hers) {
     const viaName = (viaEmail ? nameFromAddress(viaEmail) : via) || "";
     const viaFirm = viaEmail ? firmOf(viaEmail) : "";
     const viaWords = [viaName, viaFirm && viaFirm.toLowerCase() !== viaName.toLowerCase() ? `(${viaFirm})` : ""].filter(Boolean).join(" ");
-    if (principal && !unnamed(principal)) return viaWords ? `${principal}, through ${viaWords}` : principal;
+    if (principal && row.principal_named !== false && (row.principal_named === true || row.principal_email)) return viaWords ? `${principal}, through ${viaWords}` : principal;
     return viaWords ? `${viaWords}, for a client` : "From a note you passed on";
   }
   const addr = row.from && !row.outbound ? row.from : (row.intermediated_by || row.principal_email || "");
   const firm = firmOf(addr || row.principal_email);
   // A role mailbox is a team, never a person (26 Oct 2026: "Operations, Rainmaker").
   if (isRoleMailbox(addr, row.from_name)) return roleWords(addr, row.from_name, firm);
-  const person = row.from_name || (unnamed(row.principal) ? "" : String(row.principal)) || (addr ? nameFromAddress(addr) : "");
+  const person = row.from_name || (row.principal_named === false ? "" : String(row.principal ?? "")) || (addr ? nameFromAddress(addr) : "");
   const out = [person, firm].filter(Boolean);
   if (out.length === 2 && out[0].toLowerCase().includes(out[1].toLowerCase())) return out[0];
   return out.join(", ") || "—";
@@ -257,7 +241,7 @@ export function gridRow(r, { identity, lists, mailbox = MAILBOX }) {
     direction: r.side,
     size_usd: Number(r.size_usd) > 0 && Number(r.size_usd) <= MAX_BLOCK ? Number(r.size_usd) : null,
     size_text: sizeWords(r),
-    price_text: priceWords(r.price_text),
+    price_text: priceForRow(r),
     structure_text: structureWords(r),
     from_text: fromWords(r, hers),
     rainmaker: hers || isSameFirm(r, lists) ? 1 : 0,
@@ -273,6 +257,14 @@ export function gridRow(r, { identity, lists, mailbox = MAILBOX }) {
  * The grid: inside the lookback, not struck as wrong, nobody on her do-not-suggest list, one row per
  * deal (the same company, side, size and sender on one day is one deal however many mails said it).
  */
+const gridInterestKey = (g) => JSON.stringify([g.company.toLowerCase(), g.side, g.direction, g.size_text, g.from_text, g.received_on]);
+
+export function countMissingGridInterests(expected, delivered) {
+  if (!Array.isArray(delivered)) return null;
+  const keys = new Set(delivered.map(gridInterestKey));
+  return expected.filter((row) => !keys.has(gridInterestKey(row))).length;
+}
+
 export function buildGrid(interests, { identity, lists, senders = {}, wrong = new Set(), now = Date.now(), mailbox = MAILBOX, archive = false }) {
   const out = new Map();
   for (const raw of interests) {
@@ -285,26 +277,10 @@ export function buildGrid(interests, { identity, lists, senders = {}, wrong = ne
     const r = { ...(senders[raw.source_message] ?? {}), ...raw };
     if (isDoNotSuggest(r, lists)) continue;
     const g = gridRow(r, { identity, lists, mailbox });
-    const key = `${g.company.toLowerCase()}|${g.side}|${g.direction}|${g.size_text}|${g.from_text}|${g.received_on}`;
+    const key = gridInterestKey(g);
     if (!out.has(key)) out.set(key, g);
   }
-  return oneSidePerOrder([...out.values()]).sort((a, b) => b.received_on.localeCompare(a.received_on) || (b.size_usd ?? 0) - (a.size_usd ?? 0));
-}
-
-const STATES_A_SIZE = /\$\s?\d|\d\s?(m|mm|bn|b|k)\b|\d+\s?(million|billion)/i;
-
-/**
- * ONE ORDER IS ONE SIDE (26 Oct 2026). A seller's offer and a broker's "I'll take both to my buyers"
- * in the same thread were read as a Sell AND a Buy of the same size at the same price, so the morning
- * listed Kalshi $6M and Stripe $3.5M from one sender on both sides. A row on the other side of an
- * order from the same email, at the same size, whose own words state no size, is a relay of that
- * order — not a second order — and is left out of the grid (the ledger keeps it: nothing is deleted).
- */
-export function oneSidePerOrder(rows) {
-  const quoteOf = (g) => String(g._row?.quote ?? "");
-  return rows.filter((g) => !rows.some((o) => o !== g && o.source_message && o.source_message === g.source_message
-    && String(o.company).toLowerCase() === String(g.company).toLowerCase() && o.direction !== g.direction
-    && o.size_usd !== null && o.size_usd === g.size_usd && STATES_A_SIZE.test(quoteOf(o)) && !STATES_A_SIZE.test(quoteOf(g))));
+  return [...out.values()].sort((a, b) => b.received_on.localeCompare(a.received_on) || (b.size_usd ?? 0) - (a.size_usd ?? 0));
 }
 
 /**
@@ -344,20 +320,20 @@ export function prospectSellRows(prospects, lists) {
  * HER BOOK, IF SHE SENT ONE, IS AN OPTIONAL EXTRA ON THE GRID (owner, 26 Oct 2026: "Yes, inbox only";
  * see lib/her-lots.mjs). Inbox rows win; a book line adds only what the inbox does not show.
  */
-export function bookGridRows(mirror, grid = []) {
+export function bookGridRows(mirror, grid = [], issuer = (asset) => asset) {
   if (!mirror?.book || !Array.isArray(mirror.lines)) return [];
-  const have = new Set(grid.filter((g) => g.side === "yours").map((g) => `${String(g.company).toLowerCase()}|${g.direction}`));
+  const have = new Set(grid.filter((g) => g.side === "yours").map((g) => `${issuerKey(g.issuer ?? g.company)}|${g.direction}`));
   const day = new Date(Number(mirror.book.received_at) || 0).toISOString().slice(0, 10);
   const out = [];
   for (const l of mirror.lines) {
     const company = String(l.asset ?? "").trim();
     const direction = l.side === "buy" ? "buy" : "sell";
-    if (!company || have.has(`${company.toLowerCase()}|${direction}`)) continue;
-    have.add(`${company.toLowerCase()}|${direction}`);
+    if (!company || have.has(`${issuerKey(issuer(company))}|${direction}`)) continue;
+    have.add(`${issuerKey(issuer(company))}|${direction}`);
     const size = Number(l.size_usd) > 0 ? Number(l.size_usd) : null;
     out.push({
       id: createHash("sha256").update(`book|${company.toLowerCase()}|${direction}|${size ?? ""}`).digest("hex").slice(0, 24),
-      company, side: "yours", direction,
+      company, issuer: issuer(company), side: "yours", direction,
       size_usd: size, size_text: String(l.size_text ?? "") || (size ? moneyWords(size) : "—"),
       price_text: "—", structure_text: "—", from_text: "Your book", rainmaker: 1, received_on: day,
       email_url: null, parties: "", source_message: null, source: "book",
@@ -369,7 +345,7 @@ export function bookGridRows(mirror, grid = []) {
 
 /** The grid row as D1 stores it and the page shows it. */
 export const publicRow = (g) => {
-  const { _row, source_message, ...rest } = g;
+  const { _row, source_message, issuer, ...rest } = g;
   return rest;
 };
 
@@ -393,7 +369,7 @@ export function otherSides(grid, lists, { cap = 3, tolerance = DEFAULT_TOLERANCE
   const found = [];
   for (const g of grid) {
     const wantSide = g.direction === "buy" ? "sell" : "buy";
-    const hits = grid.filter((o) => o !== g && o.company.toLowerCase() === g.company.toLowerCase()
+    const hits = grid.filter((o) => o !== g && issuerKey(o.issuer ?? o.company) === issuerKey(g.issuer ?? g.company)
       && o.direction === wantSide && o.from_text !== g.from_text && o.from_text !== "—"
       && !(o.side === "yours" && g.side === "yours")
       && pairAllowed(g._row, o._row, lists, { aIsHers: g.side === "yours", bIsHers: o.side === "yours" }));
@@ -450,7 +426,7 @@ export function pairDrafts(buyer, seller) {
 /** One match, as the email, Today and the Matches screen show it. Pure. */
 export function matchView(buyer, seller, rank, { isNew = false, now = Date.now() } = {}) {
   const side = (g) => ({
-    who: whoOf(g), email: g.side === "yours" ? null : replyAddress(g), size: g.size_text, price: g.price_text,
+    who: whoOf(g), named: g.side === "yours" || (g.from_text !== "—" && g._row?.principal_named !== false), email: g.side === "yours" ? null : replyAddress(g), size: g.size_text, price: g.price_text,
     received_on: g.received_on, age: ageWords(g.received_on, now), email_url: g.email_url ?? null, rainmaker: g.rainmaker === 1,
   });
   const drafts = pairDrafts(buyer, seller);
@@ -469,7 +445,7 @@ export function matchView(buyer, seller, rank, { isNew = false, now = Date.now()
 /** Who a side is, for counting a pair once: her own deals are one party; anyone else is their address. */
 export const partyOf = (g) => (g.side === "yours" ? "yours" : String(g._row?.from ?? g.from_text ?? "").trim().toLowerCase());
 /** One buyer and one seller on one company: the unit a match is counted in (case never splits a company). */
-export const pairKeyOf = (buyer, seller) => `${String(buyer.company).trim().toLowerCase()}|${partyOf(buyer)}|${partyOf(seller)}`;
+export const pairKeyOf = (buyer, seller) => `${String(buyer.issuer ?? buyer.company).trim().toLowerCase()}|${partyOf(buyer)}|${partyOf(seller)}`;
 
 /**
  * Every allowed buy↔sell pair in the grid, ONCE EACH, ranked as `rankMatches` ranks.
@@ -623,10 +599,12 @@ export function gridMatches(within, { dismissed = new Set(), max = MAX_EMAIL_MAT
 export const MAX_HOLDER_FIRMS = 3;
 export function likelyHolderLines({ newRows = [], grid = [], found = {}, lists = {}, contacts = null, reach = reachFor }) {
   const out = [];
-  const sells = new Set((grid ?? []).filter((g) => g.side === "sell" || (g.side === "yours" && /sell/i.test(String(g.direction ?? "")))).map((g) => String(g.company).toLowerCase()));
-  const wanted = [...new Set((newRows ?? []).filter((g) => g.side === "buy").map((g) => g.company))].filter((c) => !sells.has(String(c).toLowerCase()));
-  for (const company of wanted) {
-    const holders = (found[String(company).toLowerCase()]?.holders ?? []).filter((h) => !isDoNotSuggest({ principal: h.fund, from_text: h.manager }, lists));
+  const key = (row) => issuerKey(row.issuer ?? row.company);
+  const sells = new Set(grid.filter((row) => row.direction === "sell").map(key));
+  const wanted = new Map(newRows.filter((row) => row.side === "buy" && !sells.has(key(row)))
+    .map((row) => [key(row), row.company]));
+  for (const [issuer, company] of wanted) {
+    const holders = ((found[issuer] ?? found[String(company).toLowerCase()])?.holders ?? []).filter((h) => !isDoNotSuggest({ principal: h.fund, from_text: h.manager }, lists));
     const firms = [];
     for (const h of holders) {
       const firm = String(h.manager || h.fund || "").trim();
@@ -647,9 +625,9 @@ export function likelyHolderLines({ newRows = [], grid = [], found = {}, lists =
  * person on each side, sizes that fit (whole or a real part), and both prices known and close. Every
  * other match stays on the Matches screen. Pure.
  */
-const namedSide = (who) => { const w = String(who ?? "").trim(); return Boolean(w) && w !== "—" && !/^(?:unnamed|undisclosed|anonymous|a client|someone)\b/i.test(w); };
+const namedSide = (side) => side?.named === true && Boolean(side.who);
 export function realMatch(m) {
-  return namedSide(m?.seller?.who) && namedSide(m?.buyer?.who) && ["good", "part"].includes(m?.fit?.size) && ["good", "part"].includes(m?.fit?.price);
+  return namedSide(m?.seller) && namedSide(m?.buyer) && ["good", "part"].includes(m?.fit?.size) && ["good", "part"].includes(m?.fit?.price);
 }
 
 /** One grid row: company | seller → buyer | fit | Open ›; other matches on the company said in words. */
@@ -671,8 +649,8 @@ export function gridRowOf(m) {
  */
 export function moniqueFound({ newRows, grid, lists, found = {}, now = Date.now(), firstSeen: _firstSeen = null, dismissed = new Set(), publicNames = PUBLIC_SEED, contacts = null, reach = reachFor }) {
   // A public company is not a live deal (owner, 18 Nov 2026): no match on it anywhere, closed "now public".
-  newRows = newRows.filter((g) => !isPublicCompany(g.company, publicNames));
-  grid = (grid ?? []).filter((g) => !isPublicCompany(g.company, publicNames));
+  newRows = newRows.filter((g) => !isPublicCompany(g.issuer ?? g.company, publicNames) && !isPublicCompany(g.company, publicNames));
+  grid = (grid ?? []).filter((g) => !isPublicCompany(g.issuer ?? g.company, publicNames) && !isPublicCompany(g.company, publicNames));
   const newIds = new Set(newRows.map((g) => g.id));
   const all = allMatches(grid, lists, { newIds, now }).filter((m) => !dismissed.has(`${m.pair}#${m.sig}`));
   const within = all.filter((m) => !m.old && (m.gap === null || m.gap <= DEFAULT_TOLERANCE));
@@ -684,8 +662,8 @@ export function moniqueFound({ newRows, grid, lists, found = {}, now = Date.now(
   const outward = [];
   const rows = [];
   for (const g of newRows) {
-    const holders = (found[g.company.toLowerCase()]?.holders ?? []).filter((h) => !isDoNotSuggest({ principal: h.fund, from_text: h.manager }, lists));
-    const press = (found[g.company.toLowerCase()]?.press ?? []).filter((l) => !isDoNotSuggest({ principal: l.name, from_text: l.org }, lists));
+    const holders = ((found[issuerKey(g.issuer ?? g.company)] ?? found[g.company.toLowerCase()])?.holders ?? []).filter((h) => !isDoNotSuggest({ principal: h.fund, from_text: h.manager }, lists));
+    const press = ((found[issuerKey(g.issuer ?? g.company)] ?? found[g.company.toLowerCase()])?.press ?? []).filter((l) => !isDoNotSuggest({ principal: l.name, from_text: l.org }, lists));
     if (holdersLine(g, holders) || press.length) outward.push(g.company);
     for (const h of holders.slice(0, 5)) rows.push({ company: g.company, fund: h.fund, manager: h.manager ?? "—", value: moneyWords(h.value_usd), as_of: h.as_of ?? "—", url: h.filing_url });
   }
@@ -825,12 +803,13 @@ async function main() {
   const senders = readJson(path.join(DIR, "senders.json"), { senders: {} }).senders ?? {};
   const wrong = new Set(readJson(path.join(DIR, "wrong.json"), { rows: [] }).rows ?? []);
   const grid = buildGrid(ledger.interests, { identity, lists, senders, wrong });
-  // Sellers who answered her prospect emails (Builder L) join the grid as Sell rows.
   const prospects = readJson(path.join(MORNING_DIR, "prospects.json"), null);
   const fromProspects = prospectSellRows(prospects, lists).filter((p) => withinLookback(p.received_on));
   grid.push(...fromProspects.filter((p) => !grid.some((g) => g.id === p.id)));
-  // Her emailed book, when there is one, adds what the inbox does not show. Never required.
-  grid.push(...bookGridRows(readJson(path.join(DIR, "book.json"), null), grid));
+  const book = readJson(path.join(DIR, "book.json"), null);
+  const issuer = await resolveIssuers([...grid.map((row) => row.company), ...(book?.lines ?? []).map((row) => row.asset)]);
+  for (const row of grid) row.issuer = issuer(row.company);
+  grid.push(...bookGridRows(book, grid, issuer));
   grid.sort((a, b) => b.received_on.localeCompare(a.received_on) || (b.size_usd ?? 0) - (a.size_usd ?? 0));
 
   const seenFile = path.join(DIR, "grid-seen.json");
@@ -844,7 +823,7 @@ async function main() {
   // The one list of companies now public (Boss OS setting + the seed); unread → the seed alone.
   const pub = session ? await session.get("/capital/public").catch(() => null) : null;
   const publicNames = publicList(pub?.data?.companies ?? null);
-  const deals = morningDeals(newRows.filter((g) => !isPublicCompany(g.company, publicNames)), grid.length);
+  const deals = morningDeals(newRows.filter((g) => !isPublicCompany(g.issuer ?? g.company, publicNames) && !isPublicCompany(g.company, publicNames)), grid.length);
   // Monique's memory of when each buyer/seller pair was first seen, so "new matches" means new.
   const firstSeenFile = path.join(DIR, "matches-first-seen.json");
   const firstSeen = readJson(firstSeenFile, null)?.pairs ?? null;
@@ -867,7 +846,6 @@ async function main() {
   writeMorning("deals", deals);
   const { matches, ...moniqueSection } = monique;
   writeMorning("monique_found", moniqueSection);
-  fs.writeFileSync(firstSeenFile, JSON.stringify({ updated_at: new Date(nowMs).toISOString(), pairs: nextSeen }));
 
   let gridPush = null;
   let matchesPush = null;
@@ -888,7 +866,7 @@ async function main() {
    * window, minus anyone on her do-not-suggest list. Replaced per company on each push.
    */
   if (session && pushed) {
-    const live = new Set(grid.map((g) => g.company.toLowerCase()));
+    const live = new Set(grid.flatMap((g) => [issuerKey(g.issuer ?? g.company), g.company.toLowerCase()]));
     for (const [k, c] of Object.entries(found)) {
       if (!live.has(k)) continue;
       const holders = (c.holders ?? []).filter((h) => !isDoNotSuggest({ principal: h.fund, from_text: h.manager }, lists))
@@ -899,11 +877,47 @@ async function main() {
       if (!res?.ok) console.error(`  holders for ${c.company} NOT pushed [${res?.status ?? "no response"}]`);
     }
   }
-  if (!KEEP_SEEN) fs.writeFileSync(seenFile, JSON.stringify({ updated_at: new Date().toISOString(), ids: grid.map((g) => g.id) }, null, 2));
+  if (pushed && matchesPush?.ok) {
+    fs.writeFileSync(firstSeenFile, JSON.stringify({ updated_at: new Date(nowMs).toISOString(), pairs: nextSeen }));
+  }
+  if (!KEEP_SEEN && pushed && matchesPush?.ok) fs.writeFileSync(seenFile, JSON.stringify({ updated_at: new Date().toISOString(), ids: grid.map((g) => g.id) }, null, 2));
   console.log(`CAPITAL-GRID-COMPLETE: ${grid.length} row(s), ${newRows.length} new, morning sections written${pushed ? ", Deals page updated" : ""}${KEEP_SEEN ? " (--keep-seen: grid-seen.json untouched)" : ""}.`);
   const end = gridRunEnd({ reached: !!session, grid: gridPush, matches: matchesPush });
   for (const stop of end.stops) console.error(stop);
   console.log(end.output);
+  if (process.argv.includes("--daily-check")) {
+    const { reviewBrokerage } = await import("./interest-extract.mjs");
+    const verify = await reviewBrokerage({
+      kind: "daily", identity,
+      compare: async (interests) => {
+        if (!pushed || !session) return null;
+        const actual = await session.get("/capital/deals");
+        const delivered = actual?.data?.rows ?? actual?.rows;
+        return countMissingGridInterests(buildGrid(interests, { identity, lists, senders, wrong }), delivered);
+      },
+    }).catch(() => ({ status: "unavailable" }));
+    const { nameHeld } = await import("./interest-extract.mjs");
+    await nameHeld(verify.held_now, "brokerage emails from yesterday's check");
+    if (verify.status !== "complete") {
+      const detail = verify.status === "missing" ? `${verify.missing} grid interest(s) missing; ${verify.added} added to the ledger for the next push.`
+        : verify.status === "held" ? `${verify.held === 1 ? "One brokerage email" : `${verify.held} brokerage emails`} could not be read after three tries, so ${verify.held === 1 ? "it is" : "they are"} held for you in the morning email; the other ${verify.checked - verify.held} were checked against the Deals grid.`
+        : verify.status === "unverified-empty" ? `Couldn't verify zero interests across ${verify.checked} brokerage messages.`
+        : verify.status === "allowance-exhausted" ? "Couldn't check the full brokerage day; the free allowance ran out and unread mail will retry."
+        : "Couldn't check brokerage coverage; Gmail, the model or the Deals grid was unreadable.";
+      console.error(`NAMED STOP [MONIQUE_DAILY_CHECK] ${detail}`);
+      process.exitCode = end.exitCode || 10;
+      return;
+    }
+    console.log(`MONIQUE DAILY CHECK: ${verify.checked} brokerage messages read; ${verify.found} interests checked against the Deals grid.`);
+    const history = await reviewBrokerage({ kind: "history", identity }).catch(() => ({ status: "unavailable" }));
+    await nameHeld(history.held_now, "brokerage emails from the October re-read");
+    if (!["complete", "pending"].includes(history.status)) {
+      console.error(`NAMED STOP [MONIQUE_REREAD] ${history.status}; the 1 October re-read will resume with unread mail.`);
+      process.exitCode = end.exitCode || 10;
+      return;
+    }
+    console.log(`MONIQUE OCTOBER RE-READ: ${history.status}; ${history.checked} messages checked, ${history.added} interests appended this run.`);
+  }
   process.exitCode = end.exitCode;
 }
 

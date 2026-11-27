@@ -33,14 +33,8 @@
  * file, and `validate:gmail` (DRAFT_WRITERS) fails the build if one appears. Sending happens only
  * when she taps "Send as is" (src/worker/boss/routes/lpTap.ts), which sends this very draft.
  *
- * ─── NO MODEL SEES A NAME ──────────────────────────────────────────────────
- * LP names and deal terms are confidential. The draft is a FIXED TEMPLATE filled in code — first
- * name, times — and no model route is called, free or paid (CONFIRMED 22 Oct 2026: lp-positive.mjs
- * and this file contain no model host and spawn no CLI). Fail closed: if a template field cannot be
- * filled, the draft is written without it rather than handed to anything that writes prose.
- *
- * Names and addresses stay on her Mac (`~/.boss-os/lp/followups.json`) and in mail to her own inbox.
- * The console prints counts only.
+ * The worker model reads the complete reply thread and decides whether it needs an answer.
+ * Draft text still comes from fixed templates and the console prints counts only.
  */
 import crypto from "node:crypto";
 import fs from "node:fs";
@@ -53,7 +47,9 @@ import {
 } from "../../src/shared/boss/lp/schedule.mjs";
 import { herBusyAndZone } from "./lp-calendar.mjs";
 import { CENTRAL, instantAt } from "../../src/shared/boss/schedule/clock.mjs";
-import { replyNeed, replyAllRecipients } from "../../src/shared/boss/mail/replyNeed.mjs";
+import { replyAllRecipients } from "../../src/shared/boss/mail/replyNeed.mjs";
+import { classifyReply } from "../../src/worker/boss/outreach/classify.ts";
+import { lpReplyThread } from "./lp-positive.mjs";
 import { encodeSubject, replySubject, repairMojibake } from "../../src/shared/boss/mail/subject.mjs";
 
 const MAILBOX = process.env.LP_MAILBOX ?? "sequoia@westpeek.ventures";
@@ -122,22 +118,21 @@ export function draftBody({ name, bucket, slots }) {
 
 export const hashOf = (s) => crypto.createHash("sha256").update(String(s)).digest("hex").slice(0, 16);
 
-/**
- * DOES THIS PERSON'S MESSAGE NEED A REPLY? (owner, 2 Nov 2026: "Every email doesn't need a fucking
- * reply"; "Make sure this is the case for boss os - Simone too"). The FIRST decision for both drafts
- * this file makes, the first reply and the reply to someone who wrote again. A message that passes the
- * note on, loops someone in, says they are reviewing or will get back, says thanks, is an auto-reply or
- * is only for information gets NO draft: the row is "waiting" (the thread waits on them) and any
- * unedited draft this file held for it is taken back out of her Drafts. Pure.
- * NO WORDS READ, NO NEW DRAFT (owner, 13 Nov 2026: a templated reply was still being made for a
- * message nobody had read, so a pass-along got "happy to find a time"). The caller reads their words
- * from the thread when the list kept none; when even that fails, a draft already held stays as it is
- * and none is made: the row shows as not answered, never as answered with words that may not fit.
- */
-export function lpReplyDecision(words) {
-  if (!String(words ?? "").trim()) return { draft: false, kind: "unread", why: "their words could not be read, so no reply is written for them" };
-  const need = replyNeed(words);
-  return { draft: need.needed, kind: need.kind, why: need.why };
+/** Use the full thread and the selected inbox message to decide whether to show a draft. */
+async function lpReplyDecision(th, token) {
+  if (!th?.threadId || !th.id) return { status: "unavailable" };
+  try {
+    const thread = await lpReplyThread(th.threadId, token);
+    const target = thread.find(({ id }) => id === th.id);
+    if (!target) return { status: "unavailable" };
+    const result = await classifyReply(target, thread, process.env);
+    if (result.status !== "ok") return result;
+    const { meaning } = result;
+    const kind = ["auto_reply", "unsubscribe", "complaint"].includes(meaning.classification) ? meaning.classification : meaning.replyNeed;
+    return { status: "ok", draft: kind === "asks" || kind === "invites", kind, excerpt: meaning.excerpt, body: target.body };
+  } catch {
+    return { status: "unavailable" };
+  }
 }
 
 /** Oldest first, with days waiting. Pure. */
@@ -186,10 +181,6 @@ async function draftWords(messageId) {
   if (!messageId) return null;
   try { const { messageWords } = await import("./lp-positive.mjs"); return (await messageWords(messageId, { quoted: true }))?.text ?? null; } catch { return null; }
 }
-async function latestWords(messageId) {
-  try { const { messageWords } = await import("./lp-positive.mjs"); return (await messageWords(messageId))?.text?.slice(0, 600) ?? null; } catch { return null; }
-}
-
 async function threadOf(tok, address) {
   const [m] = await search(tok, `from:${address} to:${MAILBOX}`, 1);
   if (!m) return null;
@@ -315,7 +306,7 @@ async function againDraft(draftTok, state, p, th, now, plan) {
  * `where` is Boss OS's "where I am until" (`away_city`, `away_until`); `offered` maps an address to
  * the times her last reply offered (D1's `offered_slots`), for a Mac whose state file is fresh.
  */
-export async function followUps(people, { now = Date.now(), skipped = new Set(), where = null, offered = {}, calls = new Map() } = {}) {
+export async function followUps(people, { now = Date.now(), skipped = new Set(), where = null, offered = {}, calls = new Map(), unread = new Set() } = {}) {
   const creds = JSON.parse(process.env.GSC_SERVICE_ACCOUNT_JSON ?? "null");
   if (!creds) throw new Error("NAMED STOP [NO_SERVICE_ACCOUNT] GSC_SERVICE_ACCOUNT_JSON is not in the vault run");
   const read = await token(creds, READ_SCOPE);
@@ -333,6 +324,13 @@ export async function followUps(people, { now = Date.now(), skipped = new Set(),
   state.offered = state.offered ?? {};
   const rows = [];
   const counts = { sent: 0, replied_again: 0, scheduled: 0, skipped: 0, drafted: 0, not_answered: 0, made: 0, refreshed: 0, kept: 0 };
+  let allowanceExhausted = false;
+  async function decide(th) {
+    const result = allowanceExhausted ? { status: "allowance-exhausted" } : await lpReplyDecision(th, read);
+    if (result.status === "allowance-exhausted") allowanceExhausted = true;
+    if (result.status !== "ok") counts.unread = (counts.unread ?? 0) + 1;
+    return result;
+  }
   for (const p of people) {
     const after = gdate(p.first_seen);
     const th = await threadOf(read, p.address);
@@ -356,6 +354,12 @@ export async function followUps(people, { now = Date.now(), skipped = new Set(),
       rows.push({ ...base, status: "scheduled", picked_start: booked.start, picked_zone: "America/Chicago" });
       continue;
     }
+    // A sender with a reply not yet read (or held for her) stays on the tracker and gets no draft (review F6).
+    if (unread.has(String(p.address).toLowerCase())) {
+      counts.not_answered += 1;
+      rows.push({ ...base, status: "not_answered", waiting_why: "unread" });
+      continue;
+    }
     const [mine] = await search(read, `in:sent from:${MAILBOX} to:${p.address} after:${after}`);
     if (mine) {
       const meta = await call(read, `${GMAIL}/messages/${mine.id}?format=metadata&metadataHeaders=Date`);
@@ -365,19 +369,13 @@ export async function followUps(people, { now = Date.now(), skipped = new Set(),
       if (status === "replied_again" && (await search(read, `in:scheduled to:${p.address}`).catch(() => [])).length) status = "scheduled";
       counts[status] = (counts[status] ?? 0) + 1;
       delete state.drafts[p.address];
-      // What they said after her reply, in their own words: the morning email's one line for it.
-      const lastReplyText = status === "replied_again" && th?.id ? await latestWords(th.id) : null;
-      // Their message with her quoted offer under it: where the times she offered are read from.
-      const lastReplyQuoted = status === "replied_again" && th?.id ? await draftWords(th.id) : null;
-      // EVERY WAITING REPLY HAS A READY DRAFT (Today v4): one held in their thread for their new message,
-      // redrafted when they write again. A fixed template; nothing is sent here.
-      // Does their new message need a reply at all? A hand-off, "we'll review", a thank-you: no draft.
-      const need = status === "replied_again" ? lpReplyDecision(lastReplyText) : null;
-      if (need && need.kind === "unread") {
-        // Their new message could not be read: no reply is written for it; any reply already held stays.
-        rows.push({ ...base, status, sent_at: sentAt, last_reply_text: null });
+      const need = status === "replied_again" ? await decide(th) : null;
+      if (need && need.status !== "ok") {
+        rows.push({ ...base, status, sent_at: sentAt, last_reply_text: null, waiting_why: need.status });
         continue;
       }
+      const lastReplyText = need?.excerpt ?? null;
+      const lastReplyQuoted = need?.body ?? null;
       if (need && !need.draft) {
         status = "waiting";
         counts.waiting = (counts.waiting ?? 0) + 1;
@@ -405,10 +403,13 @@ export async function followUps(people, { now = Date.now(), skipped = new Set(),
       rows.push({ ...base, status: "skipped" });
       continue;
     }
-    // Does their reply need one from her at all? A hand-off, "we'll review", a thank-you: no draft.
-    // Their words as the list kept them, else read from their thread now.
-    const need = lpReplyDecision(p.said || (th?.id ? await latestWords(th.id) : null));
-    if (!need.draft && need.kind !== "unread") {
+    const need = await decide(th);
+    if (need.status !== "ok") {
+      counts.not_answered += 1;
+      rows.push({ ...base, status: "not_answered", waiting_why: need.status });
+      continue;
+    }
+    if (!need.draft) {
       counts.waiting = (counts.waiting ?? 0) + 1;
       if (draftTok) await dropOwnDraft(draftTok, state.drafts[p.address]);
       delete state.drafts[p.address];
@@ -423,7 +424,7 @@ export async function followUps(people, { now = Date.now(), skipped = new Set(),
       const unedited = existing && existing.message?.id === had?.message_id;
       // A kept draft is shown as it stands in Gmail NOW, word for word, pinned to its message id: the
       // tap sends it only if that id has not changed since the email showed it (owner, 24 Oct 2026).
-      if (existing && (!need.draft || !(stale && unedited))) { counts.kept += 1; held = { id: had.id, message_id: existing.message?.id ?? had.message_id, hash: had.hash, body: await draftWords(existing.message?.id ?? had.message_id) }; }
+      if (existing && !(stale && unedited)) { counts.kept += 1; held = { id: had.id, message_id: existing.message?.id ?? had.message_id, hash: had.hash, body: await draftWords(existing.message?.id ?? had.message_id) }; }
       else if (need.draft) {
         const body = draftBody({ name: p.name, bucket: p.bucket, slots });
         const message = { raw: rawDraft({ ...draftRecipients(p.address, th), subject: th?.subject ?? "", inReplyTo: th?.messageId, body }), ...(th?.threadId ? { threadId: th.threadId } : {}) };
@@ -444,6 +445,9 @@ export async function followUps(people, { now = Date.now(), skipped = new Set(),
     rows.push({ ...base, status, draft_id: held?.id ?? null, draft_message_id: held?.message_id ?? null, body_hash: held?.hash ?? null, draft_body: held?.body ?? null,
       offered_slots: offeredHere ? JSON.stringify(offeredHere) : null, picked_start: null, picked_zone: null });
   }
+  if (counts.unread) stops.push(allowanceExhausted
+    ? `Free allowance exhausted. ${counts.unread} LP reply thread(s) still need checking.`
+    : `Couldn't check ${counts.unread} LP reply thread(s).`);
   state.updated_at = new Date(now).toISOString();
   fs.mkdirSync(OUT_DIR, { recursive: true });
   fs.writeFileSync(STATE, JSON.stringify(state, null, 2), "utf8");

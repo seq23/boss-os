@@ -122,7 +122,7 @@ describe("the grammar, pure", () => {
     expect(readDutyReply("changes: make it daily at 3pm").text).toBe("make it daily at 3pm");
     expect(readDutyReply("no, not this one").mode).toBe("held");
     expect(readDutyReply("what does this cost?").mode).toBe("other");
-    expect(overridesFrom("make it daily at 3pm on the better model")).toMatchObject({ cadence: "daily", local_hour: 15, local_minute: 0, model: "claude-sonnet-4-5-20250929" });
+    expect(overridesFrom("make it daily at 3pm on the better model")).toEqual({ cadence: "daily", local_hour: 15, local_minute: 0 });
   });
   it("the slot avoids her busy hours and the hours already taken, and says why", () => {
     const s = pickSlot([{ local_hour: 8, cadence: "daily", name: "Something at eight" }], { cadence: "weekly", weekday: 5 });
@@ -250,13 +250,13 @@ describe("the mail door", () => {
 
   it("`changes: …` redrafts with her text as overrides, withdraws the earlier card, and the new draft waits on her", async () => {
     const { thread } = await request("#camille new duty", AGENT_PHRASE);
-    const first = await row<any>(`SELECT id, approval_id FROM duty_drafts`);
+    const first = await row<any>(`SELECT id, approval_id, draft_json FROM duty_drafts`);
 
     const res = await handleBossInboundMail(mail({ subject: "Re: #camille new duty", body: "changes: make it daily at 3pm on the better model", ...thread }), env as never);
     expect(res.outcome).toBe("DUTY_ANSWERED");
     expect(res.reply).toMatch(/^Redrafted with your changes/);
     expect(res.reply).toMatch(/When:\s+every day at 3 pm/);
-    expect(res.reply).toMatch(/Thinking:\s+the stronger model/);
+    expect(res.reply).toMatch(/Thinking:\s+the quick model/);
     expect(res.reply).toMatch(/Reply approved to set it up/);
 
     const rows = (await env.DB.prepare(`SELECT id, state, supersedes, draft_json FROM duty_drafts ORDER BY created_at`).all<any>()).results!;
@@ -267,7 +267,7 @@ describe("the mail door", () => {
     const d = JSON.parse(rows[1].draft_json);
     expect(d.cadence).toBe("daily");
     expect(d.local_hour).toBe(15);
-    expect(d.model).toContain("sonnet");
+    expect(d.model).toBe(JSON.parse(first.draft_json).model);
     expect(d.task_prompt).toMatch(/Changes: make it daily at 3pm/);
     // The first card is out of her Inbox; the second is in it.
     expect((await row<any>(`SELECT status FROM approvals WHERE id = ?`, first.approval_id)).status).toBe("rejected");

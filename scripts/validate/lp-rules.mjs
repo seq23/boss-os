@@ -42,7 +42,7 @@ const OWNED = [
   "scripts/ops/lp8-drip.mjs",
 ];
 
-export function check({ template, lpBody, installer, tapSrc, eightSrc, files, deskSrc = "", engineSrc = "", P = plan, L8 = lp8drip }) {
+export function check({ template, lpBody, installer, tapSrc, eightSrc, files, deskSrc = "", engineSrc = "", replySrc = read("scripts/ops/lp-positive.mjs"), P = plan, L8 = lp8drip }) {
   const bad = [];
   let examined = 0;
   const names = [{ name: "Alpha" }, { name: "Beta" }, { name: "Gamma" }];
@@ -100,7 +100,7 @@ export function check({ template, lpBody, installer, tapSrc, eightSrc, files, de
     P.renderProspect({ subject: template.subject, body: template.body, follow_up: template.follow_up }, { first: "Alex", names, touch: 3 });
     bad.push("email 3 renders from a template without words she approved for it");
   } catch { /* refused: right */ }
-  if (!P.PROSPECT_COMPLAINT?.test("Stop spamming me") || P.PROSPECT_COMPLAINT.test("Thanks, not for us right now")) bad.push("a spam complaint in a reply is not told apart from a polite no");
+  if (!/\["complaint", "opt_out"\]\.includes\(r\.disposition\) \? r\.disposition/.test(replySrc)) bad.push("a spam complaint in a reply is not told apart from a polite no");
   if (!/complaintStop\(/.test(deskSrc) || !/reason = 'complaint' AND source = 'prospects'/.test(deskSrc)) bad.push("desk.ts: a spam complaint does not pause the whole prospect sequence");
   if (!/hasTouchWords\(words, touch\)/.test(deskSrc)) bad.push("desk.ts: emails 3 and 4 are not held for words she approved");
   if (!/laterWordsApproved\(env, b, step, pitch, now\)/.test(engineSrc)) bad.push("engine.ts: the guides' emails 3 and 4 are not held for her approved words");
@@ -172,7 +172,7 @@ if (process.argv.includes("--self-test")) {
     ["the one-list drip names a size", { L8: { ...lp8drip, TEMPLATES: lp8drip.TEMPLATES.map((t, i) => (i === 0 ? t.replace("venture fund", "$25M venture fund") : t)) } }, /fund size or an amount/],
     ["the one-list drip names terms", { L8: { ...lp8drip, TEMPLATES: lp8drip.TEMPLATES.map((t, i) => (i === 1 ? t.replace("Bringing", "With a 2% management fee, bringing") : t)) } }, /names terms/],
     ["the one-list drip leaves a placeholder", { L8: { ...lp8drip, render: (n, a) => ({ ...lp8drip.render(n, a), body: "Hi {first}" }) } }, /unfilled placeholder/],
-    ["a complaint read as a polite no", { P: { ...plan, PROSPECT_COMPLAINT: /$^/ } }, /spam complaint in a reply/],
+    ["a complaint read as a polite no", { replySrc: read("scripts/ops/lp-positive.mjs").replace('["complaint", "opt_out"].includes(r.disposition) ? r.disposition', "false") }, /spam complaint in a reply/],
     ["the complaint pause removed", { deskSrc: read("src/worker/boss/lp/desk.ts").replaceAll("complaintStop(", "String(") }, /does not pause the whole/],
     ["emails 3 and 4 not held", { deskSrc: read("src/worker/boss/lp/desk.ts").replace("hasTouchWords(words, touch)", "true") }, /not held for words she approved/],
     ["the guides' emails 3 and 4 not held", { engineSrc: read("src/worker/boss/outreach/engine.ts").replace("laterWordsApproved(env, b, step, pitch, now)", "Promise.resolve(\"approved\")") }, /guides' emails 3 and 4/],

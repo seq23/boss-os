@@ -1,4 +1,6 @@
-export interface Env {
+import type { WorkerReadingCredentials } from "./router/freeModel";
+
+export interface Env extends WorkerReadingCredentials {
   DB: D1Database;
   VAULT: R2Bucket;
   SESSIONS: KVNamespace;

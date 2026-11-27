@@ -1,391 +1,74 @@
-/**
- * THE LEDGER ITSELF — candidate messages in, structured interests out.
- *
- * ─── Why this is a separate script from the one that reads the mail ─────────
- *
- * `interest-ledger.mjs` calls Gmail and sends nothing to any model. THIS FILE CALLS A MODEL AND
- * NEVER TOUCHES GMAIL. That split is not tidiness: it is what lets the Gmail-side script carry the
- * same invariant every other named content exception in `validate:gmail` carries, so widening the
- * class of thing this repository may do to her mailbox stays a deliberate act rather than a side
- * effect of adding a feature. `validate:gmail` asserts both halves — that one never gains a model
- * call, and that the other never gains a Gmail call.
- *
- * ─── THE MODEL IS NAMED, AND IT IS THE CHEAP ONE ───────────────────────────
- *
- * Haiku. Deciding whether a message contains an asset, a side and a size is CLASSIFICATION, not
- * judgement — the judgement is in the matching, and only the assigned buyer search gets a better
- * brain. `claude -p` with no `--model` runs the most expensive model available; that defect made a
- * single briefing cost $3.88 once, and this runs over tens of thousands of messages.
- *
- * IT RUNS THROUGH HER OWN CLAUDE CODE SESSION, exactly as `kdp-watch.sh` and `mailbox-sweep.sh` do,
- * rather than through a keyed API. Two reasons, and the second is the load-bearing one: there is no
- * `ANTHROPIC_API_KEY` in the vault (a credential gate only she can clear), and this is live
- * transaction data at a FINRA-registered broker-dealer — routing it through an aggregator to save
- * her a step would put a party she never chose between her mailbox and the model.
- *
- * ─── The structured-order fast path, which costs nothing ───────────────────
- *
- * Rainmaker's own order system sends "Sell Order: ByteDance | $ 350.00 M @ $ 590,000 M". The asset,
- * the side and the size are in the SUBJECT LINE, in a fixed machine-written format. Parsing those
- * needs no model, cannot hallucinate, and is more accurate than one.
- *
- * THIS IS NOT A COMPANY LIST IN DISGUISE. It keys off the format of a SENDING SYSTEM, not off a
- * roster of company names, so a company nobody has typed anywhere still comes through it the day it
- * first appears. That distinction is the whole reason there is no name list in this feature: a fixed
- * list is guaranteed to miss next quarter's name, and a missed name is a SILENT miss.
- *
- * ─── The ledger is added to, never trimmed ─────────────────────────────────
- *
- * `~/.boss-os/capital/ledger.json` accumulates by `source_message`. An interest that fell off
- * because a later scan windowed differently is a counterparty she loses with no way to know it
- * happened — the same defect the LP running list exists to prevent.
- *
- * NOTHING HERE REACHES THE CLOUD. Named counterparties, assets and sizes stay on this machine.
- *
- *   npm run capital:extract
- *   npm run capital:extract -- --limit 20      # first 20 batches, for a look
- */
-
-import { spawn } from "node:child_process";
-import { seatEnv } from "./lib/seat-env.mjs";
+/** Read saved candidate threads and append evidence-backed interests to the existing ledger. */
 import fs from "node:fs";
 import path from "node:path";
 import os from "node:os";
-import { createHash } from "node:crypto";
-import { loadIdentity, isHers, RRLIST } from "./interest-grid.mjs";
-import { decideSide, isRelayedNote } from "../../src/shared/boss/deals/side.mjs";
 import { outputLine } from "../../src/shared/boss/alarms/rules.mjs";
-import { lockedArgs } from "./lib/claude-lock.mjs";
+import { readWorkerSource } from "../../src/worker/boss/router/freeModel.ts";
+import { readJsonObject } from "../../src/worker/boss/router/types.ts";
+import { loadIdentity, RRLIST } from "./interest-grid.mjs";
+import { CENTRAL, dayOf, instantAt, startOfDay } from "../../src/shared/boss/schedule/clock.mjs";
+import { issuerKey } from "./lib/deal-reading.mjs";
+import { heldLine, holdForPerson, stillUncertain } from "./lib/held-for-person.mjs";
+import { brokerageTargets, brokerageThread, candidateFromMessage, readState, reloadBrokerageThread, writeJson } from "./interest-ledger.mjs";
 
 const DIR = process.env.BOSS_OS_CAPITAL_DIR ?? path.join(os.homedir(), ".boss-os", "capital");
-const BATCH_DIR = path.join(DIR, "candidates");
 const LEDGER = path.join(DIR, "ledger.json");
-const CHECKPOINT = path.join(DIR, "extract-checkpoint.json");
-
-/*
- * RESUMABLE, BECAUSE A CRASH AT 87% USED TO COST 87%.
- *
- * Every extracted row lived in memory until the very last statement of the run, and the
- * ledger was written once at the end. So a crash threw away the whole run: on
- * 2026-09-10 this failed twice on the same backfill - once on `fetch failed`, once on
- * `spawn ENOEXEC` at batch 1,251 of 1,442 - and each retry started again at zero. The
- * transient failures were survivable; losing five hours of work to them was not.
- *
- * A batch is identified by the MESSAGES IN IT, not by its index. Index is not stable:
- * re-run the scan, or filter one message differently, and batch 900 is a different batch.
- * Hashing the source ids means a completed batch stays completed across runs, and a
- * batch whose contents changed is correctly treated as new work.
- *
- * Rows are flushed into the ledger as they are produced. That is safe without any new
- * reconciliation because the merge below is already keyed and additive - "added to,
- * never trimmed" - so writing the same row twice is a no-op, and a crash mid-flush
- * leaves a ledger that is short, never wrong.
- */
-const batchKey = (batch) => createHash("sha256")
-  .update(batch.map((m) => m.source_message).join("|"))
-  .digest("hex")
-  .slice(0, 16);
-
-function readCheckpoint() {
-  try {
-    const j = JSON.parse(fs.readFileSync(CHECKPOINT, "utf8"));
-    return new Set(Array.isArray(j.done) ? j.done : []);
-  } catch { return new Set(); }
-}
-
-/*
- * One writer at a time. CONCURRENCY workers finish batches in parallel, and two
- * simultaneous read-modify-write cycles over the same two files would lose one of them.
- * The chain is the mutex: each flush waits on the previous one.
- */
-let flushChain = Promise.resolve();
-function flush(rows, key, done) {
-  flushChain = flushChain.then(() => {
-    fs.mkdirSync(DIR, { recursive: true });
-    if (rows.length) {
-      const prior = fs.existsSync(LEDGER) ? JSON.parse(fs.readFileSync(LEDGER, "utf8")) : { interests: [] };
-      const k = (r) => `${r.source_message}|${r.side}|${r.asset.toLowerCase()}|${r.size_usd ?? r.size_shares}`;
-      const merged = new Map((prior.interests ?? []).map((r) => [k(r), r]));
-      for (const r of rows) if (!merged.has(k(r))) merged.set(k(r), r);
-      const interests = [...merged.values()].sort((a, b) => String(b.date).localeCompare(String(a.date)));
-      fs.writeFileSync(LEDGER, JSON.stringify({ ...prior, updated_at: new Date().toISOString(), interests }, null, 2), "utf8");
-    }
-    done.add(key);
-    fs.writeFileSync(CHECKPOINT, JSON.stringify({ updated_at: new Date().toISOString(), done: [...done] }, null, 2), "utf8");
-  }).catch((e) => { console.error("checkpoint flush failed:", e.message); });
-  return flushChain;
-}
-const PROMPT = process.env.CAPITAL_PROMPT ?? process.env.BOSS_DUTY_PROMPT_FILE // her edit on the employee page (duty-run.sh)
-  ?? path.join(path.dirname(new URL(import.meta.url).pathname), "interest-extract-prompt.md");
-
-/** Haiku. Classification, not judgement. Named here and in the duty row, and reconciled by validate:duty-delivery. */
-const MODEL = process.env.CAPITAL_MODEL ?? "claude-haiku-4-5";
-const CONCURRENCY = Number(process.env.CAPITAL_EXTRACT_CONCURRENCY ?? 10);
-/** A batch that has not answered in this long is hung, not slow. Killed, unbanked, retried next run. */
-const TIMEOUT_MS = Number(process.env.CAPITAL_EXTRACT_TIMEOUT_MS ?? 240_000);
+const WRONG_FILE = path.join(DIR, "wrong.json");
+const PROMPT = process.env.CAPITAL_PROMPT ?? process.env.BOSS_DUTY_PROMPT_FILE
+  ?? new URL("./interest-extract-prompt.md", import.meta.url);
 const ARGS = process.argv.slice(2);
-const argOf = (n) => { const i = ARGS.indexOf(`--${n}`); return i === -1 ? null : ARGS[i + 1] ?? null; };
-const LIMIT = Number(argOf("limit") ?? 0);
-
-const FIRM = "rainmakersecurities.com";
-/**
- * SHE IS NEVER THE PRINCIPAL IN HER OWN LEDGER, and the first live review set showed why this has to
- * be enforced here rather than asked for in the prompt. One row read `principal: Sequoia Taylor
- * <staylor@spry.vc>` on a sell of OpenAI — her own outbound mail relaying somebody else's block.
- * Left in, the matcher would eventually recommend that she call herself, or count her as a
- * counterparty at size she does not hold.
- */
-
-/*
- * ─── BUT HER OWN SUPPLY IS NOT A COUNTERPARTY, AND IT IS NOT NOTHING EITHER (23 Oct 2026) ───
- *
- * The rule above stopped her being matched against herself by DROPPING her rows. Her inbox review
- * showed the cost: "Unnamed buyer of Sequoia Taylor" still reached her (her display name and her
- * firm address were never in that regex), and the rows that were caught vanished — yet what she
- * posts to rrlist@ is exactly her own supply and demand. So a row that is hers is KEPT, marked
- * `hers: true` with "your client" as the principal, and becomes a "Yours" row on the grid. It is
- * never a counterparty: `isHers` (interest-grid.mjs) reads her name, her addresses, her firm
- * address by local part, and `~/.boss-os/capital/self.json` on her Mac.
- */
-const IDENTITY = loadIdentity();
-
-/** Who sent the message, kept on every row so the grid can say "from" and "Yours" without Gmail. */
-export function senderOf(msg) {
-  const to = [...(msg?.to ?? []), ...(msg?.cc ?? [])].map((a) => String(a).toLowerCase());
-  return {
-    from: String(msg?.from ?? "").toLowerCase() || null,
-    from_name: msg?.from_name || null,
-    to_rrlist: to.includes(RRLIST),
-    outbound: Boolean(msg?.outbound),
-  };
-}
-
-const stem = (d) => String(d ?? "").toLowerCase().split("@").pop().replace(/^www\./, "").split(".").slice(0, -1).join("").replace(/[^a-z0-9]/g, "");
-const squash = (t) => String(t ?? "").toLowerCase().replace(/[^a-z0-9]/g, "");
-/** Does the row's principal or intermediary name one of the people her outbound email went to? */
-export function namesRecipient(row, msg, identity = IDENTITY) {
-  const recips = [...(msg?.to ?? []), ...(msg?.cc ?? [])].map((a) => String(a).toLowerCase().match(/[^\s<>"]+@[^\s<>"]+/)?.[0] ?? "")
-    .filter((a) => a && a !== RRLIST && !a.endsWith(`@${FIRM}`) && !isHers({ from: a }, identity));
-  if (!recips.length) return false;
-  const named = [row.principal_email, row.intermediated_by, row.principal].filter(Boolean).map(String);
-  return recips.some((a) => {
-    const st = stem(a);
-    return named.some((n) => n.toLowerCase().includes(a) || (st.length >= 4 && squash(n).includes(st)));
-  });
-}
-
-/**
- * A row that is hers: "your client" as principal, `hers: true`, and nobody of hers as intermediary.
- *
- * "YOURS" MEANS SHE IS THE PRINCIPAL'S DIRECT REP, NEVER "SHE SENT THE EMAIL" (owner, 25 Oct 2026).
- * Her outbound mail that passes on somebody else's note — a broker's "He's got a $1 billion Anthropic
- * block…" forwarded with "Can u find this seller rep" — is THAT broker's order: `hers: false`, the
- * principal the note names, and it never reads "Yours". The model says so with `relayed: true`;
- * `isRelayedNote` catches it from the message even when the model does not. The Rainmaker rule
- * stands: nobody at her firm is ever the principal (`admissible`).
- */
-export function markHers(row, msg, identity = IDENTITY) {
-  const sender = senderOf(msg);
-  const withSender = { ...row, ...sender };
-  // HER OWN ASK NEVER LABELS THE PERSON SHE ASKED (26 Oct 2026). She wrote to a Spanish merchant
-  // bank as a possible bank for buyers, and the grid listed that bank as an Anthropic seller rep.
-  // An outbound row whose principal or intermediary is a recipient of her email is her question to
-  // them, not their order: kept in the ledger, `to_recipient: true`, never on the grid.
-  if (sender.outbound && namesRecipient(row, msg, identity)) return { ...withSender, hers: false, relayed: false, to_recipient: true };
-  if (row.relayed === true || isRelayedNote(msg)) {
-    const principal = isHers({ principal: row.principal, principal_email: row.principal_email }, identity) || /^your client$/i.test(String(row.principal ?? "").trim())
-      ? `unnamed ${row.side === "sell" ? "seller" : row.side === "buy" ? "buyer" : "party"} in a note passed to you`
-      : row.principal;
-    return { ...withSender, relayed: true, hers: false, principal, principal_email: isHers({ principal_email: row.principal_email }, identity) ? null : row.principal_email ?? null };
-  }
-  if (!isHers(withSender, identity) && !(sender.outbound && sender.to_rrlist)) return withSender;
-  return { ...withSender, hers: true, principal: "your client", principal_email: null, intermediated_by: null };
-}
-
-/**
- * ─── HOW THIS IS ACTUALLY VERIFIED, AND WHY IT IS NOT RECALL ───────────────
- *
- * The first version of this file carried a list of five past transactions and refused to run until
- * she supplied them — recall against her own book, the same check that caught a 10-of-12 failure in
- * the LP scan. IT WAS BUILT ON AN ASSUMPTION NOBODY CHECKED, and she corrected it:
- *
- *   "i havent done any deals in a while thats the whole point of having this agent help me drum up
- *    business"
- *
- * There is no book of closed trades to reconcile against, so recall is not a test that exists here.
- *
- * PRECISION IS, AND IT IS THE ONE THAT MATTERS MORE ANYWAY. A wrong row eventually becomes a phone
- * call to somebody about stock they never wanted, which costs credibility in a market where
- * everybody knows everybody — one bad call outweighs ten missed matches. So the acceptance test is:
- * twenty-five rows, highest confidence first, each with THE SENTENCE OUT OF THE MESSAGE that
- * produced it, and she says which are wrong.
- *
- * THE QUOTE IS WHAT MAKES IT A TEST RATHER THAN A MATTER OF TRUST. Without it she is being asked to
- * agree with a summary of a message she cannot see. With it, twenty rows take a few minutes and the
- * errors show their own pattern — over-reading vague language, mistaking a co-broker for a
- * principal, catching a discussion about a company rather than an interest in its stock.
- *
- *   npm run capital:review                       # the review set
- *   npm run capital:review -- --wrong <id>       # that row was wrong: struck, and counted
- */
+const argOf = (name) => ARGS.includes(`--${name}`) ? ARGS[ARGS.indexOf(`--${name}`) + 1] : null;
 const REVIEW = ARGS.includes("--review");
 const WRONG = argOf("wrong");
 const REVIEW_SIZE = Number(process.env.CAPITAL_REVIEW_SIZE ?? 25);
-const WRONG_FILE = path.join(DIR, "wrong.json");
-const SENDERS_FILE = path.join(DIR, "senders.json");
 
-// ─── The structured-order fast path ──────────────────────────────────────────
-
-const UNIT = { k: 1e3, m: 1e6, mm: 1e6, b: 1e9, bn: 1e9, million: 1e6, billion: 1e9, thousand: 1e3 };
-const dollars = (n, unit) => Number(String(n).replace(/,/g, "")) * (UNIT[String(unit ?? "").toLowerCase()] ?? 1);
-
-/**
- * "Sell Order: ByteDance | $ 350.00 M @ $ 590,000 M" — the firm's order management system.
- * Returns a row, or null when the subject is not one of those.
- */
-export function structuredOrder(msg) {
-  const m = /^\s*(buy|sell)\s+order:\s*([^|]+?)\s*\|\s*\$\s*([\d,.]+)\s*([kmb]{1,2})?\s*(?:@\s*(.+))?$/i
-    .exec(msg.subject ?? "");
-  if (!m) return null;
-  const [, side, asset, amount, unit, price] = m;
-  const from = String(msg.from ?? "").toLowerCase();
-  const internal = from.endsWith(`@${FIRM}`);
-  return markHers({
-    principal: internal ? `unnamed client of ${msg.from_name || from}` : (msg.from_name || from),
-    principal_email: internal ? null : from,
-    side: side.toLowerCase(),
-    asset: asset.trim(),
-    size_usd: dollars(amount, unit),
-    size_shares: null,
-    size_text: `$${amount}${unit ? unit.toUpperCase() : ""}`,
-    price_text: price ? price.trim().slice(0, 60) : null,
-    quote: String(msg.subject ?? "").slice(0, 220),
-    /*
-     * A LIVE ORDER IS PERISHABLE BY DEFINITION. It fills, or the mark moves, or the mandate closes.
-     * Calling it durable would put a filled block in front of her a year later as if it were still
-     * open, which is the wrong-match cost this whole design is built to avoid.
-     */
-    durability: "wants_now",
-    // High without a model: a machine wrote this subject in a fixed format and nothing was inferred.
-    confidence: "high",
-    intermediated_by: internal ? from : null,
-    evidence: "firm order-system posting, asset side and size all in the subject",
-    source_message: msg.source_message,
-    date: msg.date,
-    via: "order_system",
-  }, msg);
+export function senderOf(msg) {
+  const to = [...(msg.to ?? []), ...(msg.cc ?? [])].map((a) => String(a).toLowerCase());
+  return {
+    from: String(msg.from ?? "").toLowerCase() || null,
+    from_name: msg.from_name || null,
+    to_rrlist: to.includes(RRLIST),
+    outbound: Boolean(msg.outbound),
+  };
 }
 
-// ─── The model pass ──────────────────────────────────────────────────────────
+const clean = (text) => String(text ?? "").replace(/\s+/g, " ").trim();
+const positive = (value) => value === null || (Number.isFinite(value) && value > 0);
 
-/*
- * THE TIMEOUT FIRED AND NOTHING WAS LISTENING TO IT.
- *
- * This already killed the child after 240s, and the 24-month backfill still hung for
- * SEVENTEEN HOURS AND FIFTY-SIX MINUTES at 0.0% CPU on 2026-09-11, blocked in exactly
- * this function. The kill was not the problem; the resolve was.
- *
- * The promise settled only on `close`, and node fires `close` when the process has
- * exited AND every stdio pipe is closed. `claude` spawns its own children, and they
- * inherit these pipes. SIGKILL to the parent leaves a grandchild holding stdout open,
- * so `close` never arrives, the promise never settles, and the worker waits forever -
- * with the timer already discharged and nothing left to rescue it. A retry wrapper
- * cannot help: the process never exits, so it never gets to retry.
- *
- * So the timeout now RESOLVES, rather than only killing, and `settle` makes the first
- * outcome win whichever arrives. A hung batch is reported failed, goes unbanked, and is
- * retried by the next run - which is what the checkpoint is for. The child is killed
- * with a process-group kill first so grandchildren go with it, falling back to the
- * direct kill if the group is unavailable.
- */
-function runClaude(input) {
-  return new Promise((resolve) => {
-    const child = spawn("claude", ["-p", "--model", MODEL, "--max-turns", "1", ...lockedArgs("text-only")], { // locked: no tool at all (lib/claude-lock.mjs)
-      cwd: os.homedir(),
-      stdio: ["pipe", "pipe", "pipe"],
-      env: seatEnv(process.env), // her seat, never an API key — scripts/ops/lib/seat-env.mjs
-      detached: true, // its own process group, so the kill below reaches grandchildren
-    });
-    let out = "", err = "", settled = false;
-    const settle = (v) => { if (settled) return; settled = true; clearTimeout(timer); resolve(v); };
-    const timer = setTimeout(() => {
-      try { process.kill(-child.pid, "SIGKILL"); } catch { try { child.kill("SIGKILL"); } catch { /* gone */ } }
-      settle({ ok: false, out: "", err: `timed out after ${TIMEOUT_MS / 1000}s and was killed` });
-    }, TIMEOUT_MS);
-    child.stdout.on("data", (d) => { out += d; });
-    child.stderr.on("data", (d) => { err += d; });
-    child.on("error", () => settle({ ok: false, out: "", err: "claude not on PATH" }));
-    child.on("close", (code) => settle({ ok: code === 0, out, err }));
-    child.stdin.end(input);
-  });
-}
-
-/** The JSON array out of a reply that may be fenced, prefaced, or both. */
-export function parseRows(text) {
-  const fenced = /```(?:json)?\s*([\s\S]*?)```/.exec(text);
-  const body = fenced ? fenced[1] : text;
-  const start = body.indexOf("[");
-  const end = body.lastIndexOf("]");
-  if (start === -1 || end <= start) return null;
-  try {
-    const rows = JSON.parse(body.slice(start, end + 1));
-    return Array.isArray(rows) ? rows : null;
-  } catch { return null; }
-}
-
-/**
- * Every rule the ledger will not bend, applied to whatever the model returned.
- *
- * A MODEL THAT INVENTS A ROW IS THE MOST EXPENSIVE FAILURE THIS SYSTEM HAS, because the row will
- * eventually become a phone call to someone about stock they never wanted. So a row that does not
- * carry an asset, a side and a size is dropped rather than repaired, and the firm rule is enforced
- * here rather than trusted to the prompt.
- */
-export function admissible(row, msg) {
-  if (!row || typeof row !== "object") return "not an object";
-  if (!row.asset || typeof row.asset !== "string" || row.asset.trim().length < 2) return "no asset";
-  // A side the model could not place is kept UNSET with its reason, never guessed (25 Oct 2026).
-  if (row.side !== "buy" && row.side !== "sell" && !String(row.side_note ?? "").trim()) return "no side";
-  const usd = Number(row.size_usd) || 0;
-  const shares = Number(row.size_shares) || 0;
-  if (usd <= 0 && shares <= 0) return "no size";
-  if (!row.principal || String(row.principal).trim().length < 2) return "no principal";
-  /*
-   * NOBODY AT HER OWN FIRM IS EVER THE PRINCIPAL. A co-broker's interest is real and belongs in the
-   * ledger — as their CLIENT's interest, with the co-broker in `intermediated_by`. Silently
-   * swallowing the route would lose the half of a co-brokered deal that makes it a deal.
-   */
-  const pe = String(row.principal_email ?? "").toLowerCase();
-  if (pe.endsWith(`@${FIRM}`)) return "principal is at her own firm";
-  // Her own rows are no longer refused here: `markHers` turns them into "Yours" rows (23 Oct 2026).
-  if (/@|^https?:/i.test(String(row.asset))) return "asset is an address or a link";
-  if (row.confidence && !["high", "medium", "low"].includes(row.confidence)) return "bad confidence";
-  if (row.source_message && msg && row.source_message !== msg.source_message) return "source id does not match";
-  /*
-   * A ROW WITHOUT THE SENTENCE THAT PRODUCED IT IS AN UNCHECKABLE ROW, and an uncheckable ledger is
-   * one she has to take on trust. Recall against her own book is not available here — she has not
-   * closed a deal in a while, which is the whole reason this exists — so PRECISION judged on real
-   * sentences is the only acceptance test there is. No quote, no row.
-   */
-  if (!row.quote || String(row.quote).trim().length < 8) return "no quote from the message";
+export function admissible(row, msg, source) {
+  if (!row || typeof row !== "object" || row.source_message !== msg.source_message) return "source id does not match";
+  if (!positive(row.price_usd) || !["share", "valuation", null].includes(row.price_kind)
+    || ((row.price_usd === null) !== (row.price_kind === null))) return "invalid price";
+  if (typeof row.asset !== "string" || !row.asset.trim() || /@|^https?:/i.test(row.asset)) return "invalid asset";
+  if (row.side !== "buy" && row.side !== "sell" && !(row.side === null && clean(row.side_note))) return "no side";
+  if (![row.size_usd, row.size_shares].every(positive)) return "invalid size";
+  if (typeof row.principal !== "string" || !row.principal.trim()) return "no principal";
+  if (String(row.principal_email ?? "").toLowerCase().endsWith("@rainmakersecurities.com")) return "principal is at her own firm";
+  if (!["high", "medium", "low"].includes(row.confidence)) return "bad confidence";
+  if (![row.hers, row.relayed, row.principal_named].every((value) => typeof value === "boolean")
+    || (row.hers && row.relayed)) return "invalid party";
+  const quote = clean(row.quote);
+  if (!quote || quote.length > 220
+    || ![source?.body, source?.headers?.subject].some((text) => clean(text).includes(quote))) return "no quote from the message";
   return null;
 }
 
-/**
- * WHO HOLDS OR OFFERS THE BLOCK DECIDES THE SIDE (owner, 25 Oct 2026): `decideSide`
- * (src/shared/boss/deals/side.mjs) overrules a "buy" whose own sentence says the block is on offer,
- * and keeps a side the model could not place UNSET with the reason. Never a default buy.
- */
-export const normalise = (row, msg) => markHers({
-  principal: String(row.principal).trim().slice(0, 160),
+export const normalise = (row, msg) => ({
+  ...senderOf(msg),
+  principal: row.hers ? "your client" : row.principal.trim(),
   principal_email: row.principal_email ? String(row.principal_email).toLowerCase().slice(0, 160) : null,
-  ...decideSide(row),
+  side: row.side,
+  side_note: row.side_note ?? null,
+  hers: row.hers === true,
+  principal_named: row.principal_named === true,
   relayed: row.relayed === true,
   asset: String(row.asset).trim().slice(0, 80),
   size_usd: Number(row.size_usd) || null,
   size_shares: Number(row.size_shares) || null,
   size_text: String(row.size_text ?? "").slice(0, 60) || null,
   price_text: row.price_text ? String(row.price_text).slice(0, 60) : null,
+  price_usd: row.price_usd ?? null,
+  price_kind: row.price_kind ?? null,
   durability: row.durability === "transacted" ? "transacted" : "wants_now",
   confidence: row.confidence ?? "low",
   intermediated_by: row.intermediated_by ? String(row.intermediated_by).toLowerCase().slice(0, 160) : null,
@@ -397,7 +80,236 @@ export const normalise = (row, msg) => markHers({
   date: msg.date,
   via: "model",
   structure_text: row.structure_text ? String(row.structure_text).slice(0, 60) : null,
-}, msg);
+});
+
+const nullable = (type) => ({ type: [type, "null"] });
+const properties = {
+  source_message: { type: "string" }, asset: { type: "string" },
+  side: { type: ["string", "null"], enum: ["buy", "sell", null] }, side_note: nullable("string"),
+  principal: { type: "string" }, principal_email: nullable("string"), principal_named: { type: "boolean" },
+  hers: { type: "boolean" }, relayed: { type: "boolean" }, intermediated_by: nullable("string"),
+  size_usd: nullable("number"), size_shares: nullable("number"), size_text: nullable("string"),
+  price_text: nullable("string"), price_usd: nullable("number"),
+  price_kind: { type: ["string", "null"], enum: ["share", "valuation", null] }, structure_text: nullable("string"),
+  durability: { type: "string", enum: ["transacted", "wants_now"] },
+  confidence: { type: "string", enum: ["high", "medium", "low"] },
+  quote: { type: "string" }, evidence: { type: "string" },
+};
+const schema = {
+  type: "object", required: ["status", "rows"],
+  properties: {
+    status: { type: "string", enum: ["complete", "uncertain"] },
+    rows: { type: "array", items: { type: "object", properties, required: Object.keys(properties) } },
+  },
+};
+
+function extractionFrom(text, msg, source, identity) {
+  const answer = readJsonObject(text);
+  if (answer?.status !== "complete" || !Array.isArray(answer.rows)
+    || answer.rows.some((row) => admissible(row, msg, source)
+      || identity.addresses.includes(String(row.principal_email ?? "").trim().toLowerCase()))) return null;
+  return answer.rows;
+}
+
+async function readInterest(msg, { read, loadThread, prompt, identity }) {
+  const thread = msg.thread ?? await loadThread(msg.source_message);
+  const current = thread?.find((item) => item.id === msg.source_message);
+  if (!current || typeof current.body !== "string") throw new Error("The candidate has no readable full message");
+  const result = await read({
+    worker: "monique",
+    instruction: `${prompt}
+
+Read the full thread. Only extract what the target message newly expresses or confirms.
+Use the other messages to resolve references and interpret short replies. Keep all quoted material in view.
+The identity record describes the owner. Report separately whether she directly represents this party
+(hers), whether she relays someone else's words (relayed), and whether the principal is named (principal_named).
+Use the underlying issuer's established name when the message identifies it through a ticker or vehicle.
+Treat direct interest in a named issuer as interest even if they do not state size or price.
+One row per issuer and side. Preserve a verbatim quote from the target body or subject.
+Return {"status":"complete","rows":[...]} after reading it, including an empty rows list for no interest.
+If you cannot complete the reading, return {"status":"uncertain","rows":[]}.`,
+    source: JSON.stringify({ targetMessageId: msg.source_message, identity, thread }),
+    maxOutputTokens: 4096,
+    json: { name: "deal_interest", schema },
+    accept: (text) => extractionFrom(text, msg, current, identity) !== null,
+  });
+  const rows = result.status === "ok" ? extractionFrom(result.text, msg, current, identity) : null;
+  if (rows) return { status: "complete", rows: rows.map((row) => normalise(row, msg)) };
+  // "uncertain": a model read it and could not decide (or broke the shape); counted toward a hold.
+  return { status: result.status === "allowance-exhausted" ? result.status : result.status === "ok" || result.status === "uncertain" ? "uncertain" : "unavailable", rows: [] };
+}
+
+const rowKey = (r) => JSON.stringify([r.source_message, r.side, r.asset.toLowerCase(), r.size_usd ?? r.size_shares ?? null]);
+
+/** The caller holds the existing scan lock. The ledger write precedes its receipt and batch removal. */
+export async function extractCandidates({
+  directory = DIR, read = (input) => readWorkerSource(input, process.env), loadThread = reloadBrokerageThread,
+  prompt = fs.readFileSync(PROMPT, "utf8"), identity = loadIdentity(), limit = 0,
+} = {}) {
+  const batches = path.join(directory, "candidates");
+  fs.mkdirSync(batches, { recursive: true, mode: 0o700 });
+  let files = fs.readdirSync(batches).filter((file) => file.endsWith(".json")).sort();
+  if (limit > 0) files = files.slice(0, limit);
+  const ledgerFile = path.join(directory, "ledger.json");
+  const ledger = readState(ledgerFile);
+  const checkpointFile = path.join(directory, "extract-checkpoint.json");
+  const checkpoint = readState(checkpointFile);
+  const done = new Set(checkpoint.messages ?? []);
+  const merged = new Map((ledger.interests ?? []).map((row) => [rowKey(row), row]));
+  let checked = 0;
+  let added = 0;
+  let status = "complete";
+  const heldNow = [];
+
+  for (const file of files) {
+    const batchFile = path.join(batches, file);
+    const batch = JSON.parse(fs.readFileSync(batchFile, "utf8"));
+    const messages = Array.isArray(batch) ? batch : batch.messages;
+    if (!Array.isArray(messages) || !messages.length || messages.some((msg) => !msg?.source_message)) {
+      throw new Error("Candidate batch has no readable message IDs");
+    }
+    let unresolved = 0;
+    for (const msg of messages) {
+      if (done.has(msg.source_message) || checkpoint.held?.[msg.source_message]) continue;
+      const result = await readInterest(msg, { read, loadThread, prompt, identity });
+      if (result.status === "uncertain") {
+        // Read past it; on the third run it is held for her, never marked done (review F4).
+        if (stillUncertain(checkpoint, msg.source_message)) {
+          holdForPerson(checkpoint, msg.source_message, { held_at: Date.now() });
+          heldNow.push(msg.source_message);
+        } else {
+          unresolved += 1;
+          status = "unavailable";
+        }
+        writeJson(checkpointFile, { ...checkpoint, messages: [...done] });
+        continue;
+      }
+      if (result.status !== "complete") return { status: result.status, checked, added, remaining: true, held_now: heldNow };
+      const previousSize = merged.size;
+      for (const row of result.rows) {
+        if (!merged.has(rowKey(row))) merged.set(rowKey(row), row);
+      }
+      if (merged.size !== previousSize) {
+        writeJson(ledgerFile, { ...ledger, updated_at: new Date().toISOString(), interests: [...merged.values()] });
+        added += merged.size - previousSize;
+      }
+      done.add(msg.source_message);
+      writeJson(checkpointFile, { ...checkpoint, messages: [...done] });
+      checked += 1;
+    }
+    // A batch goes only once every message in it is recorded or held for her.
+    if (!unresolved) fs.unlinkSync(batchFile);
+  }
+  return { status, checked, added, remaining: fs.readdirSync(batches).some((file) => file.endsWith(".json")), held_now: heldNow };
+}
+
+/** Names the messages held this run in her morning email, one Gmail link each (held-for-person.mjs). */
+export async function nameHeld(ids, what, { add } = {}) {
+  if (!ids?.length) return;
+  const { gmailUrl } = await import("./interest-grid.mjs");
+  const write = add ?? (await import("../../src/shared/boss/mail/morning.mjs")).addMorningLines;
+  write("notices", { lines: [heldLine(what, ids.map((id) => gmailUrl(id)))] });
+  console.log(`NOTE [HELD_FOR_HER] ${ids.length} ${what} held for her in the morning email after three uncertain reads.`);
+}
+
+const historicalStart = instantAt(CENTRAL, 2026, 10, 1);
+const sourceKey = (row) => JSON.stringify([row.source_message, row.side, issuerKey(row.asset)]);
+
+/** Independent verification of every target, with a resumable snapshot in the extraction checkpoint. */
+export async function reviewBrokerage({
+  directory = DIR, kind, now = Date.now(), list = brokerageTargets, load = brokerageThread,
+  read = (input) => readWorkerSource(input, process.env), prompt = fs.readFileSync(PROMPT, "utf8"),
+  identity = loadIdentity(), compare,
+}) {
+  const checkpointFile = path.join(directory, "extract-checkpoint.json");
+  const checkpoint = readState(checkpointFile);
+  const reviews = checkpoint.reviews ?? {};
+  const today = dayOf(now);
+  let review = reviews[kind];
+  if (kind === "history" && review?.complete) return { status: "complete", checked: review.census, added: 0 };
+  if (kind === "history" && review?.attempted === today) return { status: "pending", checked: review.next - review.outside, added: 0 };
+  if (kind === "daily" && review?.recorded === today) {
+    // The prior read is still valid for this day. No second model call on retries, and the held
+    // messages were already named in this morning's email.
+    return { ...review.verdict, held_now: [] };
+  }
+  const dayStart = startOfDay(now);
+  if (!review || (kind === "daily" && review.complete && review.end < dayStart)) {
+    const day = dayOf(now, CENTRAL, -1).split("-").map(Number);
+    const start = kind === "history" ? historicalStart : review?.end ?? instantAt(CENTRAL, ...day);
+    if (start >= dayStart) return { status: "pending", checked: 0, added: 0 };
+    review = { start, end: dayStart, targets: await list(start, dayStart), rows: [], outside: 0, next: 0 };
+  }
+  const save = () => writeJson(checkpointFile, { ...checkpoint, reviews: { ...reviews, [kind]: review } });
+  if (kind === "history") review.attempted = today;
+  save();
+  const ledgerFile = path.join(directory, "ledger.json");
+  const ledger = readState(ledgerFile);
+  const known = new Set((ledger.interests ?? []).filter((row) => row.asset).map(sourceKey));
+  const append = (rows) => {
+    const fresh = [];
+    for (const row of rows) {
+      const key = sourceKey(row);
+      if (known.has(key)) continue;
+      known.add(key);
+      fresh.push(row);
+    }
+    if (fresh.length) {
+      ledger.interests = [...(ledger.interests ?? []), ...fresh];
+      writeJson(ledgerFile, { ...ledger, updated_at: new Date(now).toISOString() });
+    }
+    return fresh.length;
+  };
+
+  let added = 0;
+  const heldNow = [];
+  const limit = kind === "history" ? Math.min(review.next + 10, review.targets.length) : review.targets.length;
+  let threadId, thread;
+  while (review.next < limit) {
+    const target = review.targets[review.next];
+    if (target.threadId !== threadId) {
+      thread = await load(target.threadId, target.id);
+      threadId = target.threadId;
+    }
+    const message = thread.find(({ id }) => id === target.id);
+    if (!message || !Number.isFinite(message.at)) throw new Error("Gmail omitted a brokerage review target");
+    if (message.at < review.start || message.at >= review.end) review.outside += 1;
+    else {
+      const result = await readInterest(candidateFromMessage(message, thread), { read, prompt, identity });
+      if (result.status === "uncertain" && stillUncertain(review, target.id)) {
+        // The third uncertain run holds it for her and the check reads the next message (review F4).
+        holdForPerson(review, target.id, { threadId: target.threadId, held_at: now });
+        // Kept on record past this review, apart from the extract's own holds.
+        checkpoint.review_held = { ...(checkpoint.review_held ?? {}), [target.id]: { ...review.held[target.id], review: kind } };
+        heldNow.push(target.id);
+      } else if (result.status !== "complete") {
+        save();
+        return { status: result.status === "uncertain" ? "unavailable" : result.status, checked: review.next - review.outside, added, held_now: heldNow };
+      } else if (kind === "history") added += append(result.rows);
+      else review.rows.push(...result.rows);
+    }
+    review.next += 1;
+    save();
+  }
+  const checked = review.next - review.outside;
+  const held = Object.keys(review.held ?? {}).length;
+  if (review.next < review.targets.length) return { status: "pending", checked, added, held_now: heldNow };
+  if (kind === "history") {
+    review = { complete: true, census: checked, start: review.start, end: review.end, ...(review.held ? { held: review.held } : {}) };
+    save();
+    return { status: "complete", checked, added, held_now: heldNow };
+  }
+
+  const missing = await compare(review.rows);
+  if (!Number.isSafeInteger(missing) || missing < 0) return { status: "unavailable", checked, added };
+  // Held messages were not checked against the grid, so a person must look: never a plain pass.
+  const status = missing ? "missing" : held ? "held" : checked - held && !review.rows.length ? "unverified-empty" : "complete";
+  if (missing) added += append(review.rows);
+  const verdict = { status, checked, found: review.rows.length, missing, added, held, held_now: heldNow, through: dayOf(review.end) };
+  review = { complete: true, end: review.end, recorded: today, verdict };
+  save();
+  return verdict;
+}
 
 const CONF_ORDER = { high: 0, medium: 1, low: 2 };
 
@@ -431,43 +343,42 @@ function strike(id) {
   console.log(`  The list is ${WRONG_FILE}; delete a line to undo it.`);
 }
 
-/**
- * RE-CHECK THE LEDGER AGAINST THE SIDE AND "YOURS" RULES (owner, 25 Oct 2026), without the model:
- * every row's side through `decideSide`, every outbound row through `markHers` with its message.
- * Pure over (interests, messages by id); `--recheck` writes the result and prints each change.
- */
-export function recheckRows(interests, messagesById, identity = IDENTITY) {
-  const changes = [];
-  const rows = interests.map((r) => {
-    if (r.via !== "model") return r;
-    const msg = messagesById.get(r.source_message) ?? { source_message: r.source_message, outbound: r.outbound, from: r.from, from_name: r.from_name, to: [], excerpt: "" };
-    const side = decideSide(r);
-    let next = { ...r, ...side };
-    if (r.outbound) next = markHers({ ...next, hers: undefined }, msg, identity);
-    const changed = ["side", "hers", "principal", "relayed", "to_recipient"].filter((k) => (next[k] ?? null) !== (r[k] ?? null));
-    if (changed.length) changes.push({ source_message: r.source_message, asset: r.asset, before: Object.fromEntries(changed.map((k) => [k, r[k] ?? null])), after: Object.fromEntries(changed.map((k) => [k, next[k] ?? null])) });
-    return next;
-  });
-  return { rows, changes };
-}
-
-function recheck() {
-  const ledger = JSON.parse(fs.readFileSync(LEDGER, "utf8"));
-  const byId = new Map();
-  for (const f of fs.existsSync(BATCH_DIR) ? fs.readdirSync(BATCH_DIR) : []) {
-    try { const b = JSON.parse(fs.readFileSync(path.join(BATCH_DIR, f), "utf8")); for (const m of Array.isArray(b) ? b : b.messages ?? []) byId.set(m.source_message, m); } catch { /* a bad batch file is skipped */ }
+async function recheck() {
+  const ledger = readState(LEDGER);
+  const interests = ledger.interests ?? [];
+  if (!interests.length) throw new Error("No ledger to recheck");
+  const ids = new Set(interests.filter((row) => row.via === "model").map((row) => row.source_message));
+  const reread = new Map();
+  const dependencies = { read: (input) => readWorkerSource(input, process.env), loadThread: reloadBrokerageThread,
+    prompt: fs.readFileSync(PROMPT, "utf8"), identity: loadIdentity() };
+  for (const id of ids) {
+    const thread = await reloadBrokerageThread(id);
+    const source = thread.find((message) => message.id === id);
+    const result = await readInterest(candidateFromMessage(source, thread), dependencies);
+    if (result.status !== "complete") return result.status;
+    reread.set(id, result.rows);
   }
-  const { rows, changes } = recheckRows(ledger.interests ?? [], byId);
-  for (const c of changes) console.log(`[${c.source_message}] ${c.asset}: ${JSON.stringify(c.before)} -> ${JSON.stringify(c.after)}`);
-  if (!changes.length) { console.log(`recheck: ${rows.length} row(s), nothing to correct.`); return; }
-  fs.writeFileSync(LEDGER, JSON.stringify({ ...ledger, interests: rows, rechecked_at: new Date().toISOString() }, null, 2), "utf8");
-  console.log(`recheck: ${changes.length} row(s) corrected in ${LEDGER}. Run npm run capital:grid to rebuild the matches.`);
+  const rows = interests.map((row) => {
+    const found = (reread.get(row.source_message) ?? []).filter((candidate) =>
+      candidate.asset.toLowerCase() === row.asset.toLowerCase()
+      && (candidate.size_usd ?? candidate.size_shares) === (row.size_usd ?? row.size_shares));
+    return found.length === 1 ? { ...row, ...found[0] } : row;
+  });
+  writeJson(LEDGER, { ...ledger, rechecked_at: new Date().toISOString(), interests: rows });
+  console.log(`CAPITAL-RECHECK-COMPLETE: ${ids.size} source message(s) re-read, ${rows.length} ledger interest(s).`);
+  return "complete";
 }
 
 async function main() {
   if (WRONG) { strike(WRONG); return; }
-  if (ARGS.includes("--recheck")) { recheck(); return; }
-
+  if (ARGS.includes("--recheck")) {
+    const status = await recheck();
+    if (status !== "complete") {
+      console.error(`NAMED STOP [CAPITAL_RECHECK_UNREAD] ${status}; the prior ledger is preserved.`);
+      process.exitCode = 9;
+    }
+    return;
+  }
   if (REVIEW) {
     if (!fs.existsSync(LEDGER)) {
       console.error(`NAMED STOP [NO_LEDGER] ${LEDGER} does not exist. Build it first: npm run capital:extract`);
@@ -492,7 +403,7 @@ async function main() {
     console.log("Read the sentence. If it does not say what the row says, the row is wrong:");
     console.log("  npm run capital:review -- --wrong <id>\n");
     for (const r of set) {
-      console.log(`[${r.source_message}]  ${r.date}  ${r.side.toUpperCase()}  ${r.asset}  ${r.size_text ?? ""}  (${r.confidence})`);
+      console.log(`[${r.source_message}]  ${r.date}  ${String(r.side ?? "unclear").toUpperCase()}  ${r.asset}  ${r.size_text ?? ""}  (${r.confidence})`);
       console.log(`   principal:  ${r.principal}${r.principal_email ? ` <${r.principal_email}>` : ""}`);
       if (r.intermediated_by) console.log(`   via:        ${r.intermediated_by}`);
       console.log(`   said:       "${r.quote}"`);
@@ -507,150 +418,22 @@ async function main() {
     return;
   }
 
-  if (!fs.existsSync(BATCH_DIR)) {
-    console.error(`NAMED STOP [NO_CANDIDATES] ${BATCH_DIR} does not exist.`);
-    console.error("  Run the scan first: npm run capital:scan -- --backfill");
-    process.exit(5);
+  const result = await extractCandidates({ limit: Number(argOf("limit") ?? 0) });
+  console.log(outputLine(result.checked, "interests read"));
+  await nameHeld(result.held_now, "deal emails");
+  if (result.status !== "complete") {
+    console.error(result.status === "allowance-exhausted"
+      ? "NAMED STOP [FREE_ALLOWANCE_EXHAUSTED] Remaining candidate mail will be retried next run."
+      : "NAMED STOP [EXTRACTION_NEVER_RAN] A candidate could not be read; its batch is retained for the next run.");
+    process.exitCode = 9;
+    return;
   }
-  let files = fs.readdirSync(BATCH_DIR).filter((f) => f.endsWith(".json")).sort();
-  if (files.length === 0) {
-    console.error(`NAMED STOP [NO_CANDIDATES] ${BATCH_DIR} is empty. The scan kept nothing, which is`);
-    console.error("  its own named stop — read the scan's output rather than this one.");
-    process.exit(5);
-  }
-  if (LIMIT > 0) files = files.slice(0, LIMIT);
-
-  const prompt = fs.readFileSync(PROMPT, "utf8");
-
-  // The fast path first, so the model is never paid to read what a fixed format already answers.
-  const rows = [];
-  const forModel = [];
-  let messages = 0;
-  /*
-   * WHO SENT EACH CANDIDATE, KEPT. The ledger row never carried its sender, so the grid could not
-   * say who a deal came from and could not tell her own rrlist@ posts from anybody else's. Read from
-   * the candidate batches (no Gmail call here), merged into `senders.json`, added to and never trimmed.
-   */
-  const senders = (() => { try { return JSON.parse(fs.readFileSync(SENDERS_FILE, "utf8")).senders ?? {}; } catch { return {}; } })();
-  for (const f of files) {
-    for (const msg of JSON.parse(fs.readFileSync(path.join(BATCH_DIR, f), "utf8"))) {
-      messages += 1;
-      senders[msg.source_message] = senderOf(msg);
-      const fast = structuredOrder(msg);
-      if (fast) { rows.push(fast); continue; }
-      forModel.push(msg);
-    }
-  }
-  fs.mkdirSync(DIR, { recursive: true });
-  fs.writeFileSync(SENDERS_FILE, JSON.stringify({ updated_at: new Date().toISOString(), senders }), "utf8");
-  console.log(`${messages} candidate message(s): ${rows.length} answered by the order-system format,`
-    + ` ${forModel.length} going to ${MODEL}.`);
-
-  const batches = [];
-  for (let i = 0; i < forModel.length; i += 20) batches.push(forModel.slice(i, i + 20));
-
-  // Resume: drop batches whose exact message set has already been extracted and banked.
-  const doneKeys = readCheckpoint();
-  const all = batches.length;
-  const pending = batches.filter((b) => !doneKeys.has(batchKey(b)));
-  const skipped = all - pending.length;
-  if (skipped) {
-    console.log(`resuming: ${skipped} of ${all} batch(es) already banked from an earlier run; ${pending.length} to go.`);
-  } else if (doneKeys.size) {
-    console.log(`checkpoint holds ${doneKeys.size} batch(es) from an earlier run, none matching this batching; starting fresh.`);
-  }
-
-  let done = 0, failed = 0, rejected = 0;
-  const rejectReasons = {};
-  const it = pending[Symbol.iterator]();
-  await Promise.all(Array.from({ length: CONCURRENCY }, async () => {
-    for (;;) {
-      const next = it.next();
-      if (next.done) return;
-      const batch = next.value;
-      const payload = batch.map((m) => [
-        `--- MESSAGE id=${m.source_message} date=${m.date} direction=${m.outbound ? "she wrote" : "they wrote"}`,
-        `from: ${m.from}${m.from_name ? ` (${m.from_name})` : ""}`,
-        `to: ${m.to.join(", ")}`,
-        `subject: ${m.subject}`,
-        "",
-        m.excerpt.slice(0, 4000),
-      ].join("\n")).join("\n\n");
-
-      const res = await runClaude(`${prompt}\n\n=== BATCH OF ${batch.length} MESSAGES ===\n\n${payload}`);
-      done += 1;
-      process.stdout.write(`  batch ${done}/${pending.length}\r`);
-      /*
-       * A FAILED BATCH IS NOT CHECKPOINTED. It gets retried on the next run, which is
-       * the whole point - banking a failure as done would make a transient `fetch
-       * failed` permanently silent data loss.
-       */
-      if (!res.ok) { failed += 1; continue; }
-      const parsed = parseRows(res.out);
-      if (!parsed) { failed += 1; continue; }
-      const banked = [];
-      const byId = new Map(batch.map((m) => [m.source_message, m]));
-      for (const r of parsed) {
-        const msg = byId.get(r.source_message);
-        if (!msg) { rejected += 1; rejectReasons["source id not in this batch"] = (rejectReasons["source id not in this batch"] ?? 0) + 1; continue; }
-        const why = admissible(r, msg);
-        if (why) { rejected += 1; rejectReasons[why] = (rejectReasons[why] ?? 0) + 1; continue; }
-        const row = normalise(r, msg);
-        rows.push(row);
-        banked.push(row);
-      }
-      // Banked before the next batch starts. A crash now costs this batch, not the run.
-      await flush(banked, batchKey(batch), doneKeys);
-    }
-  }));
-  await flushChain;
-
-  /*
-   * RULE 0. A run where every batch failed has extracted nothing and must not look like a market
-   * with nothing in it. Those two facts are opposite and the screen shows them identically.
-   */
-  /*
-   * Counted against PENDING, not against every batch ever. On a resumed run most batches
-   * are already banked and never execute; comparing failures to the full count would let
-   * a run where every executed batch failed slip past this stop, which is the exact
-   * "broken run that looks like an empty market" it exists to catch. A resumed run with
-   * nothing pending is not a failure - there was nothing to do.
-   */
-  if (pending.length > 0 && failed === pending.length) {
-    console.error(`\nNAMED STOP [EXTRACTION_NEVER_RAN] all ${pending.length} pending batch(es) failed.`);
-    console.error(`  ${MODEL} was not reachable, or every reply was unparseable. This is a broken run,`);
-    console.error("  not an empty market. Check that `claude` is on PATH and signed in.");
-    process.exit(9);
-  }
-
-  // ─── Added to, never trimmed ──────────────────────────────────────────────
-  fs.mkdirSync(DIR, { recursive: true });
-  const prior = fs.existsSync(LEDGER) ? JSON.parse(fs.readFileSync(LEDGER, "utf8")) : { interests: [] };
-  const key = (r) => `${r.source_message}|${r.side}|${r.asset.toLowerCase()}|${r.size_usd ?? r.size_shares}`;
-  const merged = new Map((prior.interests ?? []).map((r) => [key(r), r]));
-  let added = 0;
-  for (const r of rows) if (!merged.has(key(r))) { merged.set(key(r), r); added += 1; }
-  const interests = [...merged.values()].sort((a, b) => String(b.date).localeCompare(String(a.date)));
-
-  fs.writeFileSync(LEDGER, JSON.stringify({
-    updated_at: new Date().toISOString(),
-    model: MODEL,
-    interests,
-  }, null, 2), "utf8");
-
-  const principals = new Set(interests.map((r) => (r.principal_email ?? r.principal).toLowerCase()));
-  const assets = new Set(interests.map((r) => r.asset.toLowerCase()));
-  console.log(`\n${interests.length} interest(s) in the ledger (${added} new this run) — `
-    + `${principals.size} distinct principal(s), ${assets.size} distinct asset(s).`);
-  console.log(`  buy ${interests.filter((r) => r.side === "buy").length}  |  sell ${interests.filter((r) => r.side === "sell").length}`);
-  console.log(`  ${failed} batch(es) failed, ${rejected} model row(s) refused as inadmissible.`);
-  for (const [why, n] of Object.entries(rejectReasons).sort((a, b) => b[1] - a[1])) {
-    console.log(`      ${String(n).padStart(5)}  ${why}`);
-  }
-  console.log(`CAPITAL-EXTRACT-COMPLETE: ${interests.length} interest(s), ${principals.size} principal(s)`);
-  console.log(outputLine(interests.length, "interests read"));
+  console.log(`CAPITAL-EXTRACT-COMPLETE: ${result.checked} candidate(s) read, ${result.added} new interest(s).`);
 }
 
 if (import.meta.url === `file://${process.argv[1]}`) {
-  main().catch((err) => { console.error(`CAPITAL EXTRACT FAILED: ${err?.stack ?? err}`); process.exit(1); });
+  main().catch(() => {
+    console.error("NAMED STOP [CAPITAL_EXTRACT_FAILED] Extraction could not finish. Unread candidate batches were retained.");
+    process.exitCode = 1;
+  });
 }

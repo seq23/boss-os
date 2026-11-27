@@ -92,11 +92,12 @@ export function twinReplyQueueRows({ sentRows, hard, queued = new Set() }) {
  * Zero replies in is a NAMED STOP, not an empty success: the mailbox holds dozens of replies, so a
  * read that hands over none is a broken read. (All of them already queued → zero rows is correct.)
  */
-export const REPLY_BUCKETS = new Set(["call", "warm", "negative", "departed", "other"]);
+export const REPLY_BUCKETS = new Set(["call", "warm", "negative", "departed", "other", "unread"]);
 const REPLY_NOTE = {
   call: "Replied asking for a call: stop the drip; she answers and schedules it.",
   warm: "Replied with interest: stop the drip; she answers in person.",
-  negative: "Declined or asked to be removed: stop the drip and never email again.",
+  negative: "Declined, deferred or asked to be removed: stop this sequence.",
+  unread: "Reply unread: hold outreach until the mailbox can be read.",
   departed: "Replied that the person has left the firm: stop the drip.",
   other: "Replied: stop the drip; she answers in person.",
 };
@@ -112,7 +113,7 @@ export function twinReplyQueueFromReplies({ sentRows, replies, queued = new Set(
   const seen = new Set(queued);
   for (const [raw, r] of usable) {
     const a = String(raw).trim().toLowerCase();
-    if (seen.has(a)) continue;
+    if (seen.has(a) || (r.bucket === "unread" && !byAddress.has(a))) continue;
     seen.add(a);
     const s = byAddress.get(a);
     rows.push([

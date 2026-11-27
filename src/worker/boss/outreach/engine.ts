@@ -30,7 +30,7 @@ import { BUSINESSES, MAX_FOLLOW_UPS, TEST_RECIPIENTS, businessByKey, outreachSta
 import {
   BOUNCE_WINDOW_MS, DAY_MS, chicagoParts, dailyCap, inSendWindow, pauseReason, refusal, sendsThisTick, type Sending,
 } from "./brakes";
-import { bouncedAddress, classifyReply, ownWords, type ReplyClass } from "./classify";
+import { bouncedAddress, classifyReply, type ReplyClass, type ReplyMeaning } from "./classify";
 import { composeEmail, signatureFor } from "./compose";
 import { mailAuthRefusal } from "./mailauth";
 import { GmailSession, addressOf } from "./gmail";
@@ -41,8 +41,8 @@ import { ensurePartner, runMonthlyPayouts } from "./referrals";
 import { SEAT_OPEN, isSeatHolder, pitchFor, readSeat, type Pitch, type Seat } from "./seat";
 import { feedScoreboard, groupSendGate, queueReady, summary as groupSummary } from "./groups";
 import { advancePartnerOrgs, campaignBounced, pageUrl, refreshBonusProbe, retryHeldCampaigns, staggerHold, stopCompany } from "./campaign";
-import { GROUPS_KEY, groupSizeIn, suggestedPrice, wantsPrice } from "../../../shared/boss/t2rGroups/rules.mjs";
-import { recipientLines, replyAllRecipients, replyNeed } from "../../../shared/boss/mail/replyNeed.mjs";
+import { GROUPS_KEY, suggestedPrice } from "../../../shared/boss/t2rGroups/rules.mjs";
+import { recipientLines, replyAllRecipients } from "../../../shared/boss/mail/replyNeed.mjs";
 
 type Recipients = { to: string[]; cc: string[] };
 
@@ -93,6 +93,8 @@ export interface TickResult {
   lists: { slice: string | null; crawled: number; admitted: number; directories?: { read: string[]; prospects: number; candidates: number } };
   payouts: unknown;
   stop?: string;
+  /** Replies the model could not read this tick: only their addresses (and partner campaigns) are held. */
+  held?: { replies: number; addresses: number; why: string };
   /** NAMED STOPs this tick: a route-ready business refused in the sending window for a missing precondition. */
   stops: Record<string, string>;
   /** The bounce agent this tick (bounceFix.ts): replacements found and bounced addresses dropped. */
@@ -146,13 +148,19 @@ export async function runOutreachTick(env: Env, now = Date.now(), fetchImpl: typ
   const out: TickResult = { replies: 0, paused: [], routesProven: [], sent: 0, refused: {}, stops: {}, lists: { slice: null, crawled: 0, admitted: 0 }, payouts: null };
   const settings = await readSettings(db);
   const mailbox = GmailSession.from(env, fetchImpl);
+  let hold: ReplyHold = emptyHold();
 
   if (!mailbox) {
     out.stop = "NAMED STOP: the Worker holds no Google key (GSC_SERVICE_ACCOUNT_JSON), so outreach can neither read replies nor send.";
   } else {
     try {
-      out.replies = await processReplies(env, mailbox, now);
+      const read = await processReplies(env, mailbox, now);
+      out.replies = read.handled;
+      hold = read.held;
+      if (hold.replies) out.held = { replies: hold.replies, addresses: hold.emails.size, why: hold.why };
+      await recordHold(db, hold, now);
     } catch (err) {
+      // Gmail itself could not be read, so no reply is known to be safe: every send waits.
       out.refused.replies = (err as Error).message;
     }
   }
@@ -204,7 +212,7 @@ export async function runOutreachTick(env: Env, now = Date.now(), fetchImpl: typ
     out.refused.partnerOrgs = (err as Error).message;
   }
 
-  if (mailbox && !settings.killSwitch && settings.sending !== "off") {
+  if (mailbox && !out.refused.replies && !settings.killSwitch && settings.sending !== "off") {
     try {
       out.routesProven = await proveRoutes(env, mailbox, now);
     } catch (err) {
@@ -213,7 +221,7 @@ export async function runOutreachTick(env: Env, now = Date.now(), fetchImpl: typ
     for (const b of BUSINESSES) {
       let r: SendOutcome;
       try {
-        r = await sendForBusiness(env, mailbox, b, settings, now, out.refused, fetchImpl);
+        r = await sendForBusiness(env, mailbox, b, settings, now, out.refused, fetchImpl, hold);
       } catch (err) {
         out.refused[b.key] = (err as Error).message;
         r = { sent: 0, stop: (err as Error).message };
@@ -496,7 +504,7 @@ interface SendOutcome { sent: number; stop: string | null }
 
 async function sendForBusiness(
   env: Env, mailbox: GmailSession, b: Business, settings: OutreachSettings, now: number, refused: Record<string, string>,
-  fetchImpl: typeof fetch,
+  fetchImpl: typeof fetch, replyHold: ReplyHold = emptyHold(),
 ): Promise<SendOutcome> {
   const db = env.DB;
   const st = await domainState(db, b.key, now);
@@ -549,11 +557,14 @@ async function sendForBusiness(
       WHERE business_key = ? AND source != 'test_recipient'
         AND ((state = 'new' AND step = 0) OR (state = 'in_sequence' AND next_due_at <= ?))
       ORDER BY step DESC, created_at LIMIT ?`,
-  ).bind(b.key, now, n).all<any>();
+  ).bind(b.key, now, n + replyHold.prospects).all<any>();
 
   let sent = 0;
   const last = lastStepOf(b, pitch);
   for (const p of due.results ?? []) {
+    if (sent >= n) break;
+    // A reply from this address (or anyone on its partner campaign) is still unread: nothing goes to it.
+    if (isHeld(replyHold, p)) continue;
     if (p.step === 0 && newLeft <= 0) continue;
     if (await isSuppressed(db, p.email)) {
       await db.prepare(`UPDATE outreach_prospects SET state = 'suppressed', next_due_at = NULL, updated_at = ? WHERE id = ?`).bind(now, p.id).run();
@@ -627,27 +638,46 @@ async function sendForBusiness(
  * Read what came back: replies in threads outreach started, and bounce notices. Nothing else in the
  * mailbox is fetched.
  */
-export async function processReplies(env: Env, mailbox: GmailSession, now: number): Promise<number> {
+export async function processReplies(env: Env, mailbox: GmailSession, now: number): Promise<{ handled: number; held: ReplyHold }> {
   const db = env.DB;
   const threads = await db.prepare(
-    `SELECT id, business_key, email, thread_id, state, campaign_id FROM outreach_prospects WHERE thread_id IS NOT NULL AND updated_at >= ?`,
-  ).bind(now - 60 * DAY_MS).all<any>();
+    `SELECT id, business_key, email, thread_id, state, campaign_id FROM outreach_prospects WHERE thread_id IS NOT NULL`,
+  ).all<any>();
   const byThread = new Map((threads.results ?? []).map((p) => [p.thread_id, p]));
+  const processed = await db.prepare(`SELECT gmail_message_id FROM outreach_replies`).all<{ gmail_message_id: string }>();
+  const alreadyRead = new Set((processed.results ?? []).map(({ gmail_message_id }) => gmail_message_id));
   const candidates = [
-    ...(await mailbox.list("in:inbox newer_than:7d -from:me", 100)).filter((m) => byThread.has(m.threadId)),
-    ...(await mailbox.list("from:(mailer-daemon OR postmaster) newer_than:7d", 50)),
+    ...(await mailbox.list("in:anywhere -in:drafts -in:chats -in:sent -from:me", 500)).filter((m) => byThread.has(m.threadId)),
+    ...(await mailbox.list("from:(mailer-daemon OR postmaster) -in:drafts", 500)),
   ];
   let handled = 0;
-  for (const c of candidates) {
-    const seen = await db.prepare(`SELECT id FROM outreach_replies WHERE gmail_message_id = ?`).bind(c.id).first();
-    if (seen) continue;
-    const msg = await mailbox.read(c.id);
+  const held = emptyHold();
+  const unique = new Map(candidates.map((candidate) => [candidate.id, candidate]));
+  for (const c of [...unique.values()].reverse()) {
+    if (alreadyRead.has(c.id)) continue;
+    let prospect = byThread.get(c.threadId) ?? null;
+    // Once the free allowance is spent, the rest of this tick's replies wait unread without a call.
+    if (prospect && held.why === "allowance-exhausted") { holdReply(held, prospect, "allowance-exhausted"); continue; }
+    const thread = prospect ? await mailbox.readThread(c.threadId) : [await mailbox.read(c.id)];
+    const msg = thread.find((message) => message.id === c.id);
+    if (!msg) throw new Error("Outreach could not check replies: Gmail omitted a listed reply.");
     const from = addressOf(msg.headers["from"] ?? "");
-    const cls = classifyReply({ from, subject: msg.headers["subject"] ?? "", body: msg.body, headers: msg.headers });
-    let prospect = byThread.get(msg.threadId) ?? null;
+    // Do not treat a DSN quoted inside a conversation as a bounce.
+    const failedRecipient = msg.headers["content-type"]?.toLowerCase().includes("report-type=delivery-status")
+      || msg.headers["x-failed-recipients"] ? bouncedAddress(msg.body, msg.headers) : null;
+    let meaning: ReplyMeaning | null = null;
+    if (!failedRecipient) {
+      // Orphan messages in the delivery-notice search must carry a DSN field to affect outreach.
+      if (!prospect) continue;
+      const result = await classifyReply(msg, thread, env);
+      // Unread, unrecorded and retried next tick; only this address (and its partner campaign) waits.
+      if (result.status !== "ok") { holdReply(held, prospect, result.status); continue; }
+      meaning = result.meaning;
+    }
+    const cls: ReplyClass = meaning?.classification ?? "bounce";
     let subject = from;
     if (cls === "bounce") {
-      const failed = bouncedAddress(msg.body, msg.headers) ?? prospect?.email ?? null;
+      const failed = failedRecipient ?? prospect?.email ?? null;
       if (failed) {
         prospect = prospect ?? (await db.prepare(`SELECT * FROM outreach_prospects WHERE email = ? ORDER BY updated_at DESC LIMIT 1`).bind(failed).first<any>());
         subject = failed;
@@ -663,35 +693,71 @@ export async function processReplies(env: Env, mailbox: GmailSession, now: numbe
         if (!(prospect && normaliseEmail(failed) === normaliseEmail(prospect.email) && await campaignBounced(env, prospect, now))) await recordBounce(db, prospect, failed, now);
       }
     } else if (prospect) {
-      await act(env, cls, prospect, from, msg, now);
+      await act(env, cls, prospect, from, now);
     }
     if (!prospect && cls !== "bounce") continue;
-    // Time-2-Read groups: a question about the price or paying goes to her whatever else it said.
-    const groupPrice = prospect?.business_key === GROUPS_KEY && cls !== "bounce" && cls !== "auto_reply" && cls !== "unsubscribe" && cls !== "complaint" && wantsPrice(ownWords(msg.body));
-    /*
-     * DOES IT NEED A REPLY? (owner, 2 Nov 2026: "Every email doesn't need a fucking reply".) Asked
-     * FIRST: a reply that passes it on, loops someone in, says they are reviewing or will get back, a
-     * thank-you, an auto-reply or an FYI gets no card and no draft. The sequence already stopped on
-     * their reply (`act`), so nothing more goes; the reply row records why (`reply_need`).
-     */
-    const need = cls === "bounce" ? null : replyNeed(msg.body, { subject: msg.headers["subject"] ?? "", headers: msg.headers });
     const biz = prospect ? businessByKey(prospect.business_key) : null;
     const recipients: Recipients = replyAllRecipients(msg.headers, { ours: biz ? [biz.domain, biz.sender] : [] });
-    if (!recipients.to.length) recipients.to.push(from);
-    // A partner campaign (owner, 8 Nov 2026): ANY human reply goes to her, whatever it said.
-    const partnerReply = Boolean(biz?.partner) && cls !== "bounce" && cls !== "auto_reply";
-    const approvalId = prospect && (partnerReply || ((cls === "interested" || groupPrice) && need?.needed)) ? await raiseInterested(env, prospect, from, msg, now, recipients) : null;
+    // Partner campaigns surface any human reply except when the address asks us to stop.
+    const canReply = cls !== "auto_reply" && cls !== "unsubscribe" && cls !== "complaint";
+    const groupPrice = biz?.key === GROUPS_KEY && meaning?.asksPrice;
+    const needsReply = meaning?.replyNeed === "asks" || meaning?.replyNeed === "invites";
+    const approvalId = prospect && meaning && canReply && recipients.to.length && (biz?.partner || ((cls === "interested" || groupPrice) && needsReply))
+      ? await raiseInterested(env, prospect, from, meaning, now, recipients) : null;
     await db.prepare(
       `INSERT INTO outreach_replies (id, gmail_message_id, business_key, prospect_id, from_email, classification, excerpt, approval_id, received_at, reply_need)
        VALUES (?,?,?,?,?,?,?,?,?,?) ON CONFLICT(gmail_message_id) DO NOTHING`,
     ).bind(newId("orp"), c.id, prospect?.business_key ?? null, prospect?.id ?? null, subject, cls,
-      ownWords(msg.body).slice(0, 300), approvalId, msg.internalDate || now, need ? need.kind : null).run();
+      (meaning?.excerpt ?? "").slice(0, 300), approvalId, msg.internalDate || now, meaning?.replyNeed ?? null).run();
     handled += 1;
   }
-  return handled;
+  return { handled, held };
 }
 
-async function act(env: Env, cls: ReplyClass, p: any, from: string, msg: { body: string }, now: number) {
+/**
+ * ONE UNREAD REPLY HOLDS ONLY ITS OWN ADDRESS (27 Nov 2026, review F3 of #583). A reply the model could
+ * not read stays unrecorded, so the next tick reads it again; until then nothing is sent to that address
+ * in any business, nor to anyone on its partner campaign (a reply there stops the whole company). Every
+ * other send goes on. Gmail itself unreadable is different: no reply is known, so every send waits.
+ */
+export interface ReplyHold { emails: Set<string>; campaigns: Set<string>; replies: number; prospects: number; why: string }
+const emptyHold = (): ReplyHold => ({ emails: new Set(), campaigns: new Set(), replies: 0, prospects: 0, why: "" });
+
+function holdReply(held: ReplyHold, prospect: { email: string; campaign_id?: string | null }, why: string) {
+  held.replies += 1;
+  held.emails.add(normaliseEmail(prospect.email));
+  if (prospect.campaign_id) held.campaigns.add(prospect.campaign_id);
+  held.prospects = held.emails.size + held.campaigns.size;
+  if (held.why !== "allowance-exhausted") held.why = why;
+}
+
+const isHeld = (held: ReplyHold, p: { email: string; campaign_id?: string | null }) =>
+  held.emails.has(normaliseEmail(p.email)) || Boolean(p.campaign_id && held.campaigns.has(p.campaign_id));
+
+/** The hold, written where Today reads it (outreachStops.ts); counts only, never an address. Cleared at 0. */
+export const HOLD_KEY = "replies_held";
+async function recordHold(db: D1Database, held: ReplyHold, now: number) {
+  if (!held.replies) {
+    await db.prepare(`DELETE FROM outreach_settings WHERE key = ?`).bind(HOLD_KEY).run();
+    return;
+  }
+  const value = JSON.stringify({ replies: held.replies, addresses: held.emails.size, why: held.why });
+  await db.prepare(
+    `INSERT INTO outreach_settings (key, value, updated_at) VALUES (?, ?, ?)
+     ON CONFLICT(key) DO UPDATE SET value = excluded.value, updated_at = excluded.updated_at`,
+  ).bind(HOLD_KEY, value, now).run();
+  await logEvent(db, { level: "warn", scope: "outreach", event: "replies_held", detail: { replies: held.replies, addresses: held.emails.size, why: held.why } }).catch(() => {});
+}
+
+/** The Today line for a hold: how many replies and addresses wait, and why. Pure. */
+export function holdText(value: { replies: number; addresses: number; why: string }): string {
+  const cause = value.why === "allowance-exhausted" ? "the free model allowance is spent for today" : "the free model could not read them";
+  return `Monique's outreach: ${value.replies} ${value.replies === 1 ? "reply" : "replies"} could not be read (${cause}). ` +
+    `Nothing is sent to those ${value.addresses} ${value.addresses === 1 ? "address" : "addresses"} until each is read; every other send goes on. ` +
+    "They are read again on every outreach run.";
+}
+
+async function act(env: Env, cls: ReplyClass, p: any, from: string, now: number) {
   const db = env.DB;
   if (cls === "auto_reply") return;
   // Stop on ANY human reply: the sequence never follows up on someone who wrote back.
@@ -708,12 +774,12 @@ async function act(env: Env, cls: ReplyClass, p: any, from: string, msg: { body:
   }
 }
 
-async function raiseInterested(env: Env, p: any, from: string, msg: { body: string }, now: number, recipients: Recipients): Promise<string | null> {
+async function raiseInterested(env: Env, p: any, from: string, meaning: ReplyMeaning, now: number, recipients: Recipients): Promise<string | null> {
   const b = businessByKey(p.business_key);
   if (!b) return null;
   const { raiseJudgementCall } = await import("../approvals/raise");
-  if (b.key === GROUPS_KEY) return raiseGroupReply(env, b, p, from, msg, now, raiseJudgementCall, recipients);
-  if (b.partner) return raisePartnerReply(env, b, p, from, msg, now, raiseJudgementCall, recipients);
+  if (b.key === GROUPS_KEY) return raiseGroupReply(env, b, p, from, meaning, now, raiseJudgementCall, recipients);
+  if (b.partner) return raisePartnerReply(env, b, p, from, meaning, now, raiseJudgementCall, recipients);
   let code: string | null = null;
   if (b.kind === "affiliate") code = (await ensurePartner(env.DB, b, p, now)).code;
   const link = code ? `${b.offerUrl}?ref=${code}` : b.offerUrl;
@@ -728,7 +794,7 @@ async function raiseInterested(env: Env, p: any, from: string, msg: { body: stri
   const raised = await raiseJudgementCall(env, {
     title: `${b.brand}: ${p.org_name ?? from} is interested`,
     question:
-      `${p.org_name ?? from} (${from}) replied to Monique's outreach for ${b.brand}:\n\n"${ownWords(msg.body).slice(0, 500)}"\n\n` +
+      `${p.org_name ?? from} (${from}) replied to Monique's outreach for ${b.brand}:\n\n${quoteOf(meaning.excerpt, 500)}\n\n` +
       `Suggested next step: ${b.nextStep}\n\nApprove and the reply below goes to your drafts in ${"st@time-2-read.com"}, to everyone on their email:\n${recipientLines(recipients).join("\n")}\n\n${reply}`,
     resumeKind: "outreach_interested",
     employeeId: "emp_relationship",
@@ -739,21 +805,24 @@ async function raiseInterested(env: Env, p: any, from: string, msg: { body: stri
   return raised.approvalId;
 }
 
+/** The writer's own words for a card, or a plain line when no quote could be checked against the mail. */
+const quoteOf = (words: string, max: number) => words ? `"${words.slice(0, max)}"` : "(No short quote could be checked against the mail; the full reply is in the thread.)";
+
 /**
  * A TIME-2-READ GROUP WROTE BACK (owner, 31 Oct 2026). Every real reply goes to her as one Decide
  * card. A reply about the price or paying carries a SUGGESTED price for her — Monique never quotes:
  * nothing is sent until she approves, and the approved words go to her drafts, not to them.
  */
 async function raiseGroupReply(
-  env: Env, b: Business, p: any, from: string, msg: { body: string }, now: number,
+  env: Env, b: Business, p: any, from: string, meaning: ReplyMeaning, now: number,
   raise: typeof import("../approvals/raise").raiseJudgementCall,
   recipients: Recipients = { to: [from], cc: [] },
 ): Promise<string | null> {
-  const words = ownWords(msg.body);
+  const words = meaning.excerpt;
   const g = await env.DB.prepare(`SELECT code, tier, kind, checkouts_started, signups FROM t2r_groups WHERE prospect_id = ?`).bind(p.id).first<any>();
   const code = g?.code ?? null;
-  const price = wantsPrice(words);
-  const size = groupSizeIn(words);
+  const price = meaning.asksPrice;
+  const size = meaning.groupSize;
   const suggestion = suggestedPrice(size);
   const used = g?.checkouts_started === null || g?.checkouts_started === undefined ? "not tracked yet" : `${g.checkouts_started} started, ${g.signups ?? 0} signed up`;
   const reply = price
@@ -763,7 +832,7 @@ async function raiseGroupReply(
   const raised = await raise(env, {
     title: price ? `Time2Read groups: ${p.org_name ?? from} asked the price` : `Time2Read groups: ${p.org_name ?? from} replied`,
     question:
-      `${p.org_name ?? from} (${from}), a ${g?.kind ?? "group"} Monique wrote to, replied:\n\n"${words.slice(0, 500)}"\n\n` +
+      `${p.org_name ?? from} (${from}), a ${g?.kind ?? "group"} Monique wrote to, replied:\n\n${quoteOf(words, 500)}\n\n` +
       `Their code: ${code ?? "none yet"} (${used}).${totals ? ` All groups so far: ${totals.line}.` : ""}\n\n` +
       (price ? `${suggestion} Monique never quotes a price; this is yours to set.\n\n` : "") +
       `Approve and the reply below goes to your drafts in st@time-2-read.com, to everyone on their email:\n${recipientLines(recipients).join("\n")}\n\n${reply}`,
@@ -782,17 +851,17 @@ async function raiseGroupReply(
  * draft that goes to her drafts on approval names no number.
  */
 async function raisePartnerReply(
-  env: Env, b: Business, p: any, from: string, msg: { body: string }, now: number,
+  env: Env, b: Business, p: any, from: string, meaning: ReplyMeaning, now: number,
   raise: typeof import("../approvals/raise").raiseJudgementCall, recipients: Recipients,
 ): Promise<string | null> {
-  const words = ownWords(msg.body);
-  const price = wantsPrice(words);
+  const words = meaning.excerpt;
+  const price = meaning.asksPrice;
   const who = p.contact_first ? `${p.contact_first}${p.contact_title ? ` (${p.contact_title})` : ""} at ${p.org_name}` : (p.org_name ?? from);
   const reply = `Hi ${p.contact_first ?? "there"},\n\nThank you for getting back to me. ${price ? "On pricing: " : ""}[your answer here]\n\n${signatureFor(b)}`;
   const raised = await raise(env, {
     title: price ? `${b.brand} partnership: ${p.org_name} asked the price` : `${b.brand} partnership: ${p.org_name} replied`,
     question:
-      `${who} (${from}) replied to the ${b.brand} partnership emails:\n\n"${words.slice(0, 600)}"\n\n` +
+      `${who} (${from}) replied to the ${b.brand} partnership emails:\n\n${quoteOf(words, 600)}\n\n` +
       `Every email to ${p.org_name} has stopped. ` +
       (price ? "They asked about price: that is yours to set; Monique never quotes one. " : "") +
       `Approve and the draft below goes to your drafts in ${b.sender}, to everyone on their email, for you to finish:\n${recipientLines(recipients).join("\n")}\n\n${reply}`,

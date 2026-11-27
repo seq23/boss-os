@@ -62,7 +62,8 @@ import fs from "node:fs";
 import path from "node:path";
 import os from "node:os";
 import { parseLiveBook, describeLot } from "../../src/shared/boss/intake/liveBook.mjs";
-import { assignedSearch, assetKey, atHerBrokerage } from "./interest-match.mjs";
+import { resolveIssuers } from "./lib/deal-reading.mjs";
+import { assignedSearch, assetKey, atHerBrokerage, keyOfInterest } from "./interest-match.mjs";
 import { namesOnce, sendAsEmployee, ownerTo } from "./notify.mjs";
 import { loadContacts, reachFor } from "./lib/reach.mjs";
 import { researchLot, renderFilings, renderReach, recordFound } from "./filing-hunt.mjs";
@@ -178,16 +179,12 @@ export function usableInbox({ ledger = LEDGER } = {}) {
   return { rows, suppressed, error: null };
 }
 
-function fromHerInbox(asset, size, side = SIDE) {
-  if (!fs.existsSync(LEDGER)) return { hits: [], note: "the ledger does not exist — run npm run capital:scan" };
-  const { interests = [] } = JSON.parse(fs.readFileSync(LEDGER, "utf8"));
-  const wrong = new Set(loadJson(WRONG_FILE, "rows"));
-  const suppressed = new Set(loadJson(SUPPRESS, "people"));
-  const usable = interests.filter((r) => !wrong.has(r.source_message) && !atHerBrokerage(r));
-  const hits = assignedSearch(usable, asset, side, size || 0, suppressed)
-    // Precision bar: a candidate with no sentence behind it is not a candidate.
-    .filter((h) => h.row?.quote || h.row?.evidence);
-  return { hits, considered: usable.filter((r) => assetKey(r.asset) === assetKey(asset)).length };
+function fromHerInbox(inbox, lot, side) {
+  if (inbox.error) return { hits: [], note: inbox.error };
+  const issuer = lot.issuer ?? lot.asset;
+  const hits = assignedSearch(inbox.rows, issuer, side, lot.size_usd ?? 0, inbox.suppressed)
+    .filter((hit) => hit.row?.quote || hit.row?.evidence);
+  return { hits, considered: inbox.rows.filter((row) => keyOfInterest(row) === assetKey(issuer)).length };
 }
 
 // ─── Source 2: the filings, which are DANIELLE'S half ────────────────────────
@@ -272,16 +269,22 @@ async function main(SIDE = "buy") {
    */
   const contacts = loadContacts();
 
+  const inbox = usableInbox();
+  if (inbox.error) throw new Error(inbox.error);
+  const issuer = await resolveIssuers([...priced.map((lot) => lot.asset), ...inbox.rows.map((row) => row.asset)]);
+  const resolved = { ...inbox, rows: inbox.rows.map((row) => ({ ...row, issuer: issuer(row.asset) })) };
   const sections = [];
   // Her newest orders first; an order past the ~6-month lookback is not hunted (lib/side-hunt.mjs).
-  for (const lot of orderLots(priced)) {
-    const inbox = fromHerInbox(lot.asset, lot.size_usd, SIDE);
+  for (const order of orderLots(priced)) {
+    const lot = { ...order, issuer: issuer(order.asset) };
+    const matches = fromHerInbox(resolved, lot, SIDE);
     /*
      * DANIELLE'S HALF, RUN INSIDE MONIQUE'S REQUEST. `researchLot` does the N-PORT read, the capacity
      * arithmetic, the Form ADV lookup and the contact discovery. One ask, both halves, one email.
      */
-    const filings = await researchLot(lot.asset, lot.size_usd, SIDE);
-    sections.push({ lot, inbox, filings, count: inbox.hits.length + (filings.holders?.length ?? 0) });
+    const filings = await researchLot(lot.issuer, lot.size_usd, SIDE);
+    if (filings.note) throw new Error(filings.note);
+    sections.push({ lot, inbox: matches, filings, count: matches.hits.length + (filings.holders?.length ?? 0) });
   }
 
   const total = sections.reduce((n, s) => n + s.count, 0);
@@ -310,8 +313,8 @@ async function main(SIDE = "buy") {
   console.log(body);
 
   if (EMAIL) {
-    if (SEND) for (const sec of sections) recordFound(sec.lot.asset, { holders: sec.filings.holders ?? [], spvs: sec.filings.spvs ?? [] });
-    return weeklyEmail(SIDE, sections);
+    if (SEND) for (const sec of sections) recordFound(sec.lot.issuer ?? sec.lot.asset, { holders: sec.filings.holders ?? [], spvs: sec.filings.spvs ?? [] });
+    return weeklyEmail(SIDE, sections, resolved);
   }
 
   if (!SEND) { console.log("\nRe-run with --send to keep it for the morning email."); return; }
@@ -320,7 +323,7 @@ async function main(SIDE = "buy") {
    * reach her as "Monique found" in the morning email and on the Deals page (npm run capital:grid).
    * A hunt she asked for by email (`--from-boss`) still lands its full result on her card.
    */
-  for (const sec of sections) recordFound(sec.lot.asset, { holders: sec.filings.holders ?? [], spvs: sec.filings.spvs ?? [] });
+  for (const sec of sections) recordFound(sec.lot.issuer ?? sec.lot.asset, { holders: sec.filings.holders ?? [], spvs: sec.filings.spvs ?? [] });
   console.log(`\nKept for the morning email: ${namesOnce(priced.map((p) => p.asset))}.`);
 }
 
@@ -365,7 +368,7 @@ async function fromBoss() {
   for (const t of rows) {
     let input = {};
     try { input = typeof t.input === "string" ? JSON.parse(t.input) : (t.input ?? {}); } catch { /* a task with unreadable input is not a hunt */ }
-    if (input?.hunt?.asset && input.hunt.size_usd && input.hunt.side) queued.push({ task: t, hunt: input.hunt });
+    if (input?.hunt?.asset && ["buy", "sell"].includes(input.hunt.side)) queued.push({ task: t, hunt: input.hunt });
   }
   if (queued.length === 0) {
     console.error("NAMED STOP [NO_HUNT_QUEUED] no open task carries a hunt request.");
@@ -376,13 +379,14 @@ async function fromBoss() {
   console.log(`${queued.length} queued hunt(s) from her own mail.\n`);
   for (const { task, hunt } of queued) {
     console.log(`── ${task.id}: ${hunt.side === "sell" ? "sellers" : "buyers"} of ${hunt.asset} at ${money(hunt.size_usd)}`);
-    const args = [process.argv[1], "--asset", hunt.asset, "--size", String(hunt.size_usd), "--side", hunt.side, ...(SEND ? ["--send"] : [])];
+    const args = [process.argv[1], "--asset", hunt.asset, "--size", String(hunt.size_usd ?? 0), "--side", hunt.side, ...(SEND ? ["--send"] : [])];
     const { spawnSync } = await import("node:child_process");
     const run = spawnSync(process.execPath, args, { encoding: "utf8", env: process.env });
     process.stdout.write(run.stdout ?? "");
     if (run.status !== 0) {
       console.error(`  the hunt for ${hunt.asset} exited ${run.status}. ${((run.stderr ?? "").trim().split("\n").pop() ?? "")}`);
-      continue;
+      process.exitCode = 8;
+      break;
     }
     /*
      * ─── A DRY RUN MUST NOT CONSUME HER REQUEST ───────────────────────────────
@@ -423,7 +427,7 @@ async function fromBoss() {
 /**
  * THE ONE WEEKLY EMAIL, BOTH SOURCES IN IT (owner, 1 Nov 2026). Monique sends it to her once:
  * Tuesday for buyers, Thursday for sellers. Both computations ran above; only the output merges.
- * Nothing in it is a Decide item (the ⭐ rule), nobody is contacted, nothing calls a model.
+ * Nothing in it is a Decide item (the ⭐ rule), nobody is contacted, issuer names are resolved before comparing orders.
  *
  * RULE 0: a source that failed is written into its own section, the email still goes, and the run
  * then exits 3 so the duty row goes red for the part that did not run.
@@ -437,8 +441,8 @@ export function huntsFor(side, sections, inbox = usableInbox()) {
   }));
 }
 
-async function weeklyEmail(side, sections) {
-  const mail = buildHuntEmail({ side, hunts: huntsFor(side, sections) });
+async function weeklyEmail(side, sections, inbox) {
+  const mail = buildHuntEmail({ side, hunts: huntsFor(side, sections, inbox) });
   const to = ownerTo();
   if (!mail.found) {
     // Nothing found this week (or she has nothing on this side): no email. A source that failed is

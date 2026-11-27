@@ -21,16 +21,18 @@ type Stray = { key: string; name: string; where: string; found: string; note: st
 const SC = manifest as any;
 const NEEDS = new Set(["Trying version B", "Paused", "No number"]);
 const TONE: Record<string, string> = { "On track": "scorecard-ok", "Too early": "scorecard-early", "Trying version B": "scorecard-gold", Paused: "scorecard-gold", "No number": "scorecard-red" };
+type DailyCheck = { day: string; status: string; note: string };
+
 const plural = (n: number, w: string) => `${n} ${w}${n === 1 ? "" : "s"}`;
 
 export function Scorecard() {
-  const [data, setData] = useState<{ state: { at: number; week: string; rows: Record<string, RowState> } | null; strays: Stray[] } | undefined>(undefined);
+  const [data, setData] = useState<{ state: { at: number; week: string; rows: Record<string, RowState> } | null; strays: Stray[]; dailyChecks?: Record<string, DailyCheck> } | undefined>(undefined);
   const [failed, setFailed] = useState(false);
   useEffect(() => { api.scorecard().then(setData).catch(() => { setFailed(true); setData({ state: null, strays: [] }); }); }, []);
   if (data === undefined) return <Loading />;
   const rows = data.state?.rows ?? {};
   const states = SC.rows.map((r: any) => rows[r.id]?.state ?? "Not read yet");
-  const look = states.filter((s: string) => NEEDS.has(s)).length + data.strays.length;
+  const look = states.filter((s: string) => NEEDS.has(s)).length + data.strays.length + Object.values(data.dailyChecks ?? {}).filter((check) => check.status === "needs-review").length;
   const friends = ((sites as any).grid_repos ?? []).filter((s: any) => s.category === "client");
   return (
     <div className="brains" data-testid="scorecard">
@@ -43,7 +45,7 @@ export function Scorecard() {
       {groupByBusiness(SC).map((g) => (
         <section key={g.key} className="scorecard-business" data-testid={`scorecard-business-${g.key}`}>
           <h2 className="email-map-business-name">{g.label}</h2>
-          <div className="brain-cards">{g.rows.map((r: any) => <Card key={r.id} row={r} st={rows[r.id]} />)}</div>
+          <div className="brain-cards">{g.rows.map((r: any) => <Card key={r.id} row={r} st={rows[r.id]} daily={data.dailyChecks?.[r.id]} />)}</div>
         </section>
       ))}
       {data.strays.length > 0 && (
@@ -73,7 +75,7 @@ function Spark({ values }: { values: Array<number | null> }) {
   return <svg className="scorecard-spark" width={w} height={h} viewBox={`0 0 ${w} ${h}`} aria-label="Eight-week trend"><polyline points={pts} fill="none" stroke="currentColor" strokeWidth="1.5" /></svg>;
 }
 
-function Card({ row, st }: { row: any; st?: RowState }) {
+function Card({ row, st, daily }: { row: any; st?: RowState; daily?: DailyCheck }) {
   const state = st?.state ?? "Not read yet";
   const last = st?.record?.history?.at(-1);
   const start = st?.record?.start ?? row.start;
@@ -87,6 +89,7 @@ function Card({ row, st }: { row: any; st?: RowState }) {
       <span className={`scorecard-state ${TONE[state] ?? "scorecard-early"}`}>{state}</span>
       <span className="brain-card-line">{last ? `This week: ${valueWords(m, value)} ${m.label}` : "Not read yet"} · floor {floorWords(m)}{start ? ` by ${shortDate(floorDate(m.by, start))}` : ""}</span>
       <Spark values={trend(st?.record, judging)} />
+      {daily && <span className={daily.status === "needs-review" ? "brain-card-line scorecard-red" : "brain-card-line"}>{daily.note}</span>}
       {st?.note ? <span className="brain-card-line">{st.note}</span> : null}
       {st?.next ? <span className="email-map-runs">Next check {shortDate(st.next)}</span> : null}
       {state === "Paused" && st?.record?.restartToken ? <a className="brain-card-open" href={`/tap/${st.record.restartToken}`}>Restart it ›</a> : null}

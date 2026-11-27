@@ -367,8 +367,6 @@ export const MIN_TOUCH_GAP_DAYS = CADENCE.MIN_TOUCH_GAP_DAYS;
 export const TOUCH_FIELD = Object.freeze({ 1: "body", 2: "follow_up", 3: "follow_up_2", 4: "follow_up_3" });
 /** Does this (approved) template hold words for touch n? Touches 3 and 4 need her approved words. */
 export const hasTouchWords = (t, n) => Boolean(t && TOUCH_FIELD[n] && String(t[TOUCH_FIELD[n]] ?? "").trim());
-/** A reply that is a spam complaint (the outreach engine's words, outreach/classify.ts). */
-export const PROSPECT_COMPLAINT = /\bspam(ming)?\b|report(ed|ing)? (you|this)|harass|\billegal\b|how did you get (my|this) (email|address)|reported as junk|cease and desist/i;
 export const FEATURED_MIN = 3;
 export const FEATURED_MAX = 5;
 export const FEATURE_FRESH_DAYS = 30;
@@ -790,14 +788,6 @@ export function staleFeatured(featured, supply, now = Date.now()) {
     const age = fresh.get(String(f.name).toLowerCase());
     return age === undefined || age > FEATURE_STALE_DAYS;
   }).map((f) => f.name);
-}
-
-/** Which side a prospect's reply puts them on: Buyer / Seller / Both / Unknown. */
-export function sideFromReply(text) {
-  const t = String(text ?? "");
-  const sell = /\b(sell(ing)?|trim(ming)?|liquidity|offload|exit (some|part)|have (some )?(shares|stock|a position))\b/i.test(t);
-  const buy = /\b(buy(ing)?|add(ing)? to|looking for (exposure|allocation)|acquire|interested in (adding|getting into))\b/i.test(t);
-  return sell && buy ? "both" : sell ? "seller" : buy ? "buyer" : "unknown";
 }
 
 /** Her plain-words edits to the names list: "add X", "drop Y", "never feature Z". */

@@ -48,6 +48,16 @@ they live in the repo, not only in someone's memory. Non-confidential. `STATUS.m
   `model_job_outcome` and returns the work to a subscription seat when results drop or the free
   model cannot finish. Simone can choose a free route again after its evidence qualifies. The daily operating note lists
   each change and the reason. The move records use `settings` and `task_events`.
+- **Worker reading** uses `readWorkerSource` in `src/worker/boss/router/freeModel.ts` from Node or the Worker.
+  Monique starts with Gemini and the other workers start with Workers AI. A provider error or a spent
+  day on one lane moves the read to the other lane; a per-minute limit is waited out once (at most 60 s).
+  When no lane answers, a spent day returns `allowance-exhausted` and anything else `unavailable`, and the
+  job keeps that item unread. Jobs pass their instructions and the complete source in distinct roles.
+  Credentials (ruling of 27 Nov 2026, existing vault names only): Gemini reads `GEMINI_API_KEY` (Google
+  answers it with FreeTier quota ids, so it cannot bill); Workers AI reads `CF2_ACCOUNT_ID` plus
+  `CF2_WORKERS_AI_TOKEN`, the second Cloudflare account, which has no Workers Paid plan and stops itself
+  at 10,000 neurons a day. Never the main account: the Worker's `AI` binding is not read, and a CF2 id
+  equal to `CLOUDFLARE_ACCOUNT_ID` turns the Workers AI lane off. A lane with missing credentials is skipped.
 - **Boss OS model access** (owner, 24–26 Nov 2026): ordinary deal and LP wording travels intact to
   eligible models. The router and the intake ladder cut sections marked confidential in brain text.
   The recipient still determines outward approval. The router still applies capability, an explicit
@@ -63,6 +73,19 @@ they live in the repo, not only in someone's memory. Non-confidential. `STATUS.m
   time in the skipped spring hour runs just after the jump (02:30 is 03:30 CDT); a time in the
   repeated fall hour runs at the first one. A worker-clocked Central cron in the 02:00 hour fails
   `clockRowProblems`. Pinned by `tests/centralClock.test.ts` and `tests/boss/centralClockCallers.test.ts`.
+
+Monique's LP reply list and outcome reconciliation use full Gmail threads, read newest first, at most
+`LP_READS_PER_RUN` (200) model reads a morning. A sender with an unread reply gets no draft and no drip
+while the reader retries; everyone whose replies are read is drafted as usual, and the run still ends on
+`NAMED STOP [LP_REPLY_UNREAD]`. In the Worker's outreach tick an unread reply holds only its own address
+(and its partner campaign) and is on Today as a count; Gmail itself unreadable holds every send. A reply,
+deal email or grid-check message the model calls uncertain on three runs is held for her: kept unread,
+never marked done, named with its Gmail link in the morning email's notices
+(`scripts/ops/lib/held-for-person.mjs`), and the job reads the next one. An outage never counts toward that. A dated deferral closes the current sequence
+and keeps its requested date; only a permanent request or a complaint becomes a permanent opt-out.
+The scheduled Deals grid run re-reads the brokerage source from the previous Central day and checks
+its interests against the stored grid. The Scorecard uses that duty's existing run row. The October
+re-read uses the extraction checkpoint to resume and appends interests without changing earlier rows.
 
 ## Inherited West Peek chassis code
 - **Retired 22 Nov 2026** (her yes, personal brain): the copied fund sign-in, fund screens, fund

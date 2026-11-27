@@ -10,7 +10,7 @@ export function nportFilings(...args: any[]): any;
 export function formDVehicles(...args: any[]): any;
 export function recordFound(...args: any[]): any;
 export function genInfoFromXml(...args: any[]): any;
-export function positionFromXml(...args: any[]): any;
+export function positionsFromXml(...args: any[]): any;
 export function capacity(...args: any[]): any;
 export function supply(...args: any[]): any;
 export function allHolders(...args: any[]): any;
