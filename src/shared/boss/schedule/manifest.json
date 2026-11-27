@@ -1691,8 +1691,9 @@
         ]
       },
       "output": {
+        "metric": "skill asks checked",
         "floor": 1,
-        "reason": "Zero asks run is a FAIL (exit 2); a usage limit or sign-out is COULDNT-CHECK, never a pass."
+        "runs": 1
       },
       "macWindow": "HEAVY"
     },
