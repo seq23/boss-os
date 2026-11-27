@@ -73,7 +73,9 @@ export async function readSickDayAsk(env: Env, words: string, now: number): Prom
   if (!SICK_DAY_MAILBOXES.includes(address)) return { kind: "none" };
   // Anything else she asked goes on to Simone; only a model sure it is the whole email answers it here.
   const alsoAsks = reading.also !== false;
-  const named = typeof reading.until === "string" && reading.until ? Date.parse(reading.until) : null;
+  // An end with no offset would be read as UTC, hours off in her zone: refused, never guessed (27 Nov 2026).
+  const untilText = typeof reading.until === "string" ? reading.until.trim() : "";
+  const named = untilText ? (/(?:Z|[+-]\d{2}:?\d{2})$/i.test(untilText) ? Date.parse(untilText) : NaN) : null;
   const until = named ?? now + SICK_DAY_DEFAULT_MS;
   if (!Number.isFinite(until) || until <= now || until > now + SICK_DAY_MAX_MS) {
     return { kind: "refuse", address, alsoAsks,

@@ -842,6 +842,9 @@ async function handleMail(message: BossMailMessage, env: Env, said: Said): Promi
     const context = [
       read?.body, filesForTask(localFiles),
       simoneThread ? `Previous exchange on this thread: ${JSON.stringify(simoneThread)}` : null,
+      // Her email asked for inbox cover AND more: Simone tells her what happened to the cover ask
+      // (a refusal past seven days was dropped before, 27 Nov 2026 recheck).
+      sickDay.kind !== "none" ? `Inbox cover asked in this email: ${sickDay.reply} Tell her this in your reply.` : null,
       ...localFiles.unopened.filter((file) => file.audio).map(({ filename }) => `Recording attached: ${filename}.`),
       ...(oversize ? [objectKey ? "The original message was archived without decoding." : "This message was too large to decode and the archive was unavailable."] : []),
     ].filter(Boolean).join("\n\n");
