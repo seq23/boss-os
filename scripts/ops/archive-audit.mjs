@@ -2,7 +2,7 @@
 /**
  * ZORA'S FRIDAY ARCHIVE AUDIT (owner, 22 Oct 2026).
  *
- * duty_archive_audit (migration 0288), Fridays 08:40 CT on her Mac through duty-run.sh. Two jobs:
+ * duty_archive_audit (migration 0288), Fridays 10:35 CT on her Mac through duty-run.sh. Two jobs:
  *
  *   1. NOTHING GOES STALE QUIETLY. The living documents are checked against the code or the live data
  *      they describe; anything 14+ days stale is FIXED when the fix belongs to a lane that can make it

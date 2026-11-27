@@ -1733,7 +1733,7 @@ echo "Installed $CRED_LABEL — daily 03:40 Central, reporting to duty_credentia
 # (OpenRouter, bills, renewals) and mail health (bounces, complaints, unsubscribes, DKIM), and weekly
 # reads for outside locks. Each is WRAPPED IN duty-run.sh so its run reaches its duty row
 # (duty_archive_audit, duty_risk_watch, duty_outside_locks, migration 0288). Toni's duties are in the
-# ops lane; her trading lane is untouched. 08:20 and 08:40: after the briefing, clear of 09:00.
+# ops lane; her trading lane is untouched. The risk watch and archive audit run at 10:35 Central. Outside locks runs Fridays at 11:35.
 ARCHIVE_LABEL="com.seq.boss-archive-audit"
 ARCHIVE_PLIST="$HOME/Library/LaunchAgents/$ARCHIVE_LABEL.plist"
 

@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 /**
  * THE PRACTICE EMAILS (owner, 31 Oct 2026). Rides the errand-reminders tick (every 10 minutes,
- * 06:00–23:00, launchd com.seq.boss-errand-reminders) rather than a scheduler of its own.
+ * dispatched by the Boss OS Worker through GitHub Actions job-errand-reminders.yml) rather than a scheduler of its own.
  *
  * Boss OS decides what is due and claims it, so nothing goes twice (`POST /practice/nudges/due`,
  * src/worker/boss/practice/lapse.ts):

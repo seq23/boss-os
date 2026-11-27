@@ -1,5 +1,5 @@
 #!/bin/bash
-# Simone's hands on her Mac (scripts/ops/simone-commands.mjs): every 10 minutes, 06:00–23:00 Central.
+# Simone's hands on her Mac (scripts/ops/simone-commands.mjs): every 10 minutes, 06:00–06:20 and 10:00–23:50 Central.
 # Lookups through her own Drive and Gmail, drafts in her voice, bounce checks, and the plain notices
 # the Worker laid out. Never sends to a third party: every email to a person waits for her Send.
 # Called by install-agent-launchd.sh; safe to run on its own.
@@ -44,4 +44,4 @@ node "$REPO/scripts/ops/plist-central.mjs" "$PLIST" || { echo "NAMED STOP [PLIST
 plutil -lint "$PLIST" >/dev/null
 "${LAUNCHD_RELOAD:-$HOME/bin/launchd-reload}" "$PLIST" || exit 1   # the one reload (seq-bin): pauses kept, old schedule on failure
 launchctl print "gui/$(id -u)/$LABEL" >/dev/null 2>&1 || { echo "NOT INSTALLED: $LABEL"; exit 1; }
-echo "Installed $LABEL — every 10 minutes 06:00–23:00 Central (simone-commands.mjs)."
+echo "Installed $LABEL — every 10 minutes 06:00–06:20 and 10:00–23:50 Central (simone-commands.mjs)."
