@@ -104,6 +104,8 @@ node "$GUARD" --self-test >> "$RUN_LOG" 2>&1 || stopped GUARD_BROKEN "NAMED STOP
 # Her sandbox, rebuilt from the repo every run, in ~/.boss-os/noelle where her run can neither write nor read it
 # (lib/noelle-sandbox.sh): the settings with the sandbox block, her gitconfig, her two brokers and her guard's state.
 SETTINGS="$(noelle_prepare "$REPO" "$NHOME" "$WORK" "$NOELLE_RUN_ID" 2>>"$RUN_LOG")" || stopped NO_SETTINGS "NAMED STOP [NO_SETTINGS] her sandboxed settings could not be written; $(grep -h 'NAMED STOP' "$RUN_LOG" | tail -1)" 6
+# The live proof (Outcome of the #574 safety fix): what her rendered settings hold, one line in her run log.
+say "$(node -e 'const s=JSON.parse(require("fs").readFileSync(process.argv[1],"utf8")), a=s.permissions.allow, d=s.sandbox.filesystem.denyRead; console.log(`her sandbox: ${s.sandbox.network.allowedDomains.length} named hosts, WebFetch ${a.includes("WebFetch") ? "BARE (every host)" : `${a.filter((x) => x.startsWith("WebFetch(domain:")).length} named hosts`}, temp reads denied: ${["/tmp", "/private/tmp", "/private/var/folders"].every((p) => d.includes(p))}`)' "$SETTINGS" 2>&1)"
 CLAUDE_LOCK="$(claude_lock_args "$SETTINGS" 2>>"$RUN_LOG")" || stopped NO_PERMISSIONS_FILE "NAMED STOP [NO_PERMISSIONS_FILE] her permissions file could not be used; she never runs unlocked" 6
 # No GitHub credential reaches her run (owner, 24 Nov 2026: "u do it why do u need me for any of this?"): inside her
 # sandbox git and gh are logged out. She pushes and opens PRs only through noelle-tool push-branch / open-pr, outside it.

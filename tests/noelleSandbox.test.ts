@@ -99,6 +99,11 @@ describe("S2: her sandbox cannot read the shared temp folders, and her temp is h
     expect(sh.indexOf("NAMED STOP [TMPDIR_TOO_LONG]")).toBeGreaterThan(0);
     expect(sh.indexOf("NAMED STOP [TMPDIR_TOO_LONG]")).toBeLessThan(sh.indexOf(run));
     expect(noelleLaunchProblems(sh.replaceAll('TMPDIR="$NTMP" ', "")).join("\n")).toMatch(/TMPDIR to her run folder/);
+    // her run log names what her rendered settings hold (the PR's Outcome reads this line)
+    const line = sh.split("\n").find((l) => l.startsWith('say "$(node -e') && l.includes("her sandbox:")) ?? "";
+    const home = mkdtempSync(join(tmpdir(), "noelle-line-"));
+    const r = spawnSync("bash", ["-c", `say() { echo "$*"; }\nSETTINGS="$1"\n${line}`, "x", join(ROOT, "scripts/ops/noelle-permissions.json")], { encoding: "utf8", env: { ...process.env, HOME: home } });
+    expect(r.stdout).toMatch(/^her sandbox: \d+ named hosts, WebFetch \d+ named hosts, temp reads denied: true$/m);
     expect(noelleLaunchProblems(sh.replaceAll('CLAUDE_CODE_TMPDIR="$NHOME" ', "")).join("\n")).toMatch(/CLAUDE_CODE_TMPDIR/);
   });
   it("the 44-byte check stops a long temp root before her session, with its name", () => {
