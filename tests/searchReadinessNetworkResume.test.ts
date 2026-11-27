@@ -14,6 +14,8 @@ import { FAKE_AI_RUN } from "./fakeAiRun";
 import { rmSync, mkdtempSync, mkdirSync, writeFileSync, readFileSync, utimesSync, copyFileSync, existsSync, chmodSync } from "node:fs";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
+// @ts-expect-error Node-only ops module has no declaration.
+import { landAll } from "../scripts/ops/site-audit-lib.mjs";
 
 /** A fake network and gh. `down` = how many probes fail first ("forever" for all). */
 function fakeBin(home: string) {
@@ -325,6 +327,54 @@ describe("search-readiness-fix.sh waits out the network and resumes by itself", 
 
   it("NEGATIVE: a fixed PR refused with no named gate (a red check) is still a genuine stall, SR_QUEUE_STALLED", () => {
     const t = runnerTree({ plans: [DETOX], findings: [{ ...refused("e6"), land: "checks_red", land_detail: "validate failed" }] });
+    const r = t.run();
+    expect(r.rc, r.out).toBe(0);
+    expect(r.out).toContain("NAMED STOP [SR_QUEUE_STALLED]");
+    expect(r.out).not.toContain("SR_LAND_GATE_UNMET");
+  }, 60000);
+
+  /*
+   * 25 NOV 2026: every one of the run's 42 fixes was green and ~/bin/land refused each with a plain
+   * "STOPPED: PR #N needs a review (its body has no `Review class:` line …)", no NAMED STOP; three
+   * dailystory rows were in flight with no PR (refused_policy). The run said "round 2 fixed nothing" /
+   * SR_QUEUE_STALLED. The rows here are what the REAL landAll now writes for land's real refusal, fed
+   * through the REAL runner.
+   */
+  const NOV25 = "QUEUE total=4 workable=4 protected=0 no_repo=0\nCHUNK whisperalmanac-site 4 sr-whisperalmanac.com-a9,sr-whisperalmanac.com-b2";
+  const LAND_SAYS = "\u001b[31mSTOPPED: PR #10 needs a review (its body has no `Review class:` line (add `Review class: none — <why>`, or the class: money, children, private-data, store, delete, launch)) and changes what people see (public/404.html public/_headers): add as a PR comment by the repo's owner account the line  Ship-ready: PASS — <fresh reviewer> looked at <the real output> at abc1234; Engineering: PASS\u001b[0m";
+  const nov25Rows = () => {
+    const pr = "https://github.com/seq23/whisperalmanac-site/pull/10";
+    const payload: any = { findings: [
+      { repo: "whisperalmanac-site", disposition: "fixed_pr", headline: "a9: /site.webmanifest answered 404", pr_url: pr },
+      { repo: "whisperalmanac-site", disposition: "fixed_pr", headline: "b2: meta descriptions over 160", pr_url: pr },
+    ] };
+    landAll(payload, { sites: [{ repo: "whisperalmanac-site", domain: "whisperalmanac.com" }], parked: () => false, approvedSites: [], landBin: "/test/land", run: (cmd: string, args: string[]) => {
+      if (args.includes("/test/land")) return { status: 1, out: LAND_SAYS };
+      if (cmd === "gh" && args.includes("state")) return { status: 0, out: "OPEN" };
+      if (cmd === "gh" && args[0] === "pr" && args[1] === "view") return { status: 0, out: JSON.stringify({ number: 10, headRefOid: "abc1234", baseRefName: "main" }) };
+      if (cmd === "gh" && args[0] === "api") return { status: 0, out: "[]" };
+      return { status: 0, out: "" };
+    } });
+    const policy = (id: string) => ({ repo: "dailystory", domain: "time-2-read.com", brief_id: id, disposition: "in_flight", headline: "IN_FLIGHT: e6: Lovable still serves the Clarity loader", land: "blocked", land_detail: "refused_policy" });
+    return [...payload.findings, policy("sr-time-2-read.com-e6"), policy("sr-time-2-read.com-e9"), policy("sr-time-2-read.com-i8"), { disposition: "none", headline: "nothing to do" }];
+  };
+
+  it("25 Nov run reproduced (42 fixes refused by land's review gate, 3 policy rows with no PR): SR_LAND_GATE_UNMET names the PR and REVIEW_CLASS_MISSING, never \"fixed nothing\"", () => {
+    const rows = nov25Rows();
+    expect(rows[0]).toMatchObject({ land: "land_refused", land_detail: expect.stringMatching(/^NAMED STOP \[REVIEW_CLASS_MISSING\] STOPPED: PR #10 needs a review/) });
+    const t = runnerTree({ plans: [NOV25], findings: rows });
+    const r = t.run();
+    expect(r.rc, r.out).toBe(0);
+    expect(r.out).toContain("NAMED STOP [SR_LAND_GATE_UNMET] 4 workable briefs left (https://github.com/seq23/whisperalmanac-site/pull/10 refused by REVIEW_CLASS_MISSING");
+    expect(r.out).not.toContain("fixed nothing");
+    expect(r.out).not.toContain("SR_QUEUE_STALLED");
+    expect(t.read("reported").trim()).toBe("SR_LAND_GATE_UNMET");
+  }, 60000);
+
+  it("NEGATIVE: the same round with a fixed row that has no PR is still a genuine stall, SR_QUEUE_STALLED", () => {
+    const rows = nov25Rows();
+    rows.push({ repo: "whisperalmanac-site", disposition: "fixed_pr", headline: "b6: no PR", land: "land_refused", land_detail: "NAMED STOP [REVIEW_CLASS_MISSING] x" } as any);
+    const t = runnerTree({ plans: [NOV25], findings: rows });
     const r = t.run();
     expect(r.rc, r.out).toBe(0);
     expect(r.out).toContain("NAMED STOP [SR_QUEUE_STALLED]");

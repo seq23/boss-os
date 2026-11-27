@@ -41,7 +41,7 @@ describe("the brains API", () => {
     expect(r.status).toBe(200);
     const list = r.body.data.brains;
     expect(list.map((b: any) => b.slug)).toEqual(BRAINS.map((b) => b.slug));
-    expect(list).toHaveLength(10);
+    expect(list).toHaveLength(11);
     expect(list.slice(0, 3).map((b: any) => b.slug)).toEqual(["brokerage", "west-peek-ventures", "west-peek"]);
     const pnp = list.find((b: any) => b.slug === "porch-and-party");
     expect(pnp).toMatchObject({ title: "Porch & Party 901", missing_count: 8, stale: false });
@@ -124,7 +124,7 @@ describe("the brains API", () => {
     expect(rows.some((r: any) => r.slug === "personal" || r.slug === "team")).toBe(false);
     // One row set per live business brain, in order (restructure 1 Nov 2026): the community is new,
     // the retired industry-guides is not scored.
-    expect([...new Set(rows.map((r: any) => r.slug))]).toEqual(["brokerage", "west-peek-ventures", "west-peek", "porch-and-party", "time-2-read", "spry", "friends"]);
+    expect([...new Set(rows.map((r: any) => r.slug))]).toEqual(["brokerage", "west-peek-ventures", "west-peek", "porch-and-party", "time-2-read", "spry", "wkys", "friends"]);
   });
 
   it("industry-guides is retired into spry: GET and PUT resolve to spry, its history is kept, the list never shows it", async () => {
@@ -304,14 +304,14 @@ describe("the Monday check rides the hourly tick", () => {
   it("runs once on a Monday, skips other days, and says why", async () => {
     expect(await runBrainsCohesion(env as any, TUESDAY)).toEqual({ ran: false, reason: "not_monday" });
     const first = await runBrainsCohesion(env as any, MONDAY);
-    expect(first).toMatchObject({ ran: true, week: "2026-11-02", brains: 10 });
+    expect(first).toMatchObject({ ran: true, week: "2026-11-02", brains: 11 });
     expect(await runBrainsCohesion(env as any, MONDAY + 3_600_000)).toEqual({ ran: false, reason: "done_this_week" });
   });
 
   it("one plain line: stale and gaps, or all fresh — never red", async () => {
     await env.DB.prepare(`UPDATE brains SET updated_at = ? WHERE slug = 'porch-and-party'`).bind(MONDAY - 94 * 86_400_000).run();
     const r = await currentCohesion(env as any, MONDAY);
-    expect(r.brains_line).toBe("Brains: P&P brain not updated in 94 days · 64 gaps across 8 brains");
+    expect(r.brains_line).toBe("Brains: P&P brain not updated in 94 days · 72 gaps across 9 brains");
     // Rule 0: no Mac record this week — the one line says so, and still carries the stale brain.
     expect(r.line).toMatch(/^Cohesion: the Mac's weekly check did not run this week.*; P&P brain not updated in 94 days$/);
     await env.DB.prepare(`UPDATE brains SET body_md = '# x', updated_at = ?`).bind(MONDAY).run();

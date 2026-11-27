@@ -60,7 +60,32 @@ const FILES = {
   agent: "scripts/sync-agent/agent.mjs",
   codex: "scripts/sync-agent/backends/codex.mjs",
   ladderModule: "src/worker/boss/duties/briefingLadder.ts",
+  tick: "src/worker/index.ts",
 };
+
+/**
+ * THE 04:05 SLOT HAS A PARKED RUN TO CLAIM ONLY IF THE FIVE-MINUTE TICK MOVES WORK (27 Nov 2026: Camille's
+ * briefing missed the 07:45 morning email). The duty clock and the drain rode the hourly tick while the
+ * five-minute branch returned before them. Read off `scheduled()`: inside the `MAIL_ALARM_CRON` branch, before
+ * its `return`, the duty clock runs and THEN the drain, chained, and the hourly part does neither. Pure.
+ */
+export function tickProblems(src) {
+  const out = [];
+  const handler = src.slice(src.indexOf("async scheduled("));
+  const start = handler.indexOf("if (event?.cron === MAIL_ALARM_CRON)");
+  if (start === -1) return ["scheduled() has no five-minute branch (MAIL_ALARM_CRON), so a due duty waits for the hourly tick."];
+  const end = handler.indexOf("return;", start);
+  const five = handler.slice(start, end === -1 ? undefined : end);
+  const hourly = end === -1 ? "" : handler.slice(end);
+  const clock = five.indexOf("runBossDutyClock(");
+  const drain = five.indexOf("drainBossTasks(");
+  if (clock === -1) out.push("The five-minute tick does not run the duty clock: the 04:00 briefing becomes a task only on the hour.");
+  if (drain === -1) out.push("The five-minute tick does not drain the queue: the 04:00 briefing is not parked on a seat when the 04:05 slot asks.");
+  if (clock !== -1 && drain !== -1 && !/\.then\(\(\) => \s*$/.test(five.slice(clock, drain).replace(/\/\/[^\n]*\n/g, ""))) out.push("The five-minute tick does not drain AFTER the duty clock (chained): a duty due on this tick waits for the next one.");
+  if (drain !== -1 && /drainBossTasks\(env, now\)/.test(five)) out.push("The five-minute drain reads the tick's start time: a task enqueued a moment later is not yet visible to it.");
+  if (/runBossDutyClock\(|materialiseDueDuties\(/.test(hourly)) out.push("The hourly tick also materialises duties: two ticks at :00 would race on a duty's clock.");
+  return out;
+}
 
 /** The newest live fixture pair in the folder. */
 export function newestFixture(dir) {
@@ -274,6 +299,7 @@ export async function check({ spec, fixture, prompt, files, deliveredAt, ladder,
   // The claim step is the shared wrapper since 1 Oct 2026 (it takes the lock the five-minute poll also takes); it runs `agent.mjs work-once`.
   const chain = /market-snapshot\.mjs;[\s\S]*?scripts\/ops\/agent-claim\.sh/.test(F.launchd);
   if (!chain) problems.push("The launchd chain does not run the market snapshot before the claim.");
+  problems.push(...tickProblems(F.tick));
   if (!/<key>Hour<\/key><integer>4<\/integer><key>Minute<\/key><integer>5<\/integer>/.test(F.launchd)) problems.push("The launchd job has no 04:05 slot to claim the 04:00 duty (the Mac's day, 21 Nov 2026: done by 06:30 with room to spare).");
   /*
    * THE RETRY TIME THE SCREEN NAMES IS THE TIME THE MAC ACTUALLY LOOKS. `MAC_CLAIM_SLOTS_CT` in
@@ -340,6 +366,10 @@ async function selfTest() {
     { name: "a launchd chain without the market snapshot is caught", input: { ...good, files: { ...good.files, launchd: good.files.launchd.replace(/node scripts\/ops\/market-snapshot\.mjs;/g, "") } }, expect: 1 },
     { name: "a materialiser that stopped composing from the module is caught", input: { ...good, files: { ...good.files, materialise: good.files.materialise.replace("prompt: composeBriefingPrompt(", "prompt: oldPrompt(") } }, expect: 1 },
     { name: "a retry slot on the screen that the Mac does not have is caught", input: { ...good, files: { ...good.files, today: good.files.today.replace("{ h: 4, m: 5 }", "{ h: 4, m: 15 }") } }, expect: 1 },
+    { name: "a five-minute tick that returns before the drain (the 27 Nov shape) is caught", input: { ...good, files: { ...good.files, tick: good.files.tick.replace(/\n\s*\.then\(\(\) => drainBossTasks\(env, new Date\(\)\)\)[^\n]*\n[^\n]*\n[^\n]*/, "") } }, expect: 1 },
+    { name: "a five-minute tick with no duty clock is caught", input: { ...good, files: { ...good.files, tick: good.files.tick.replace("runBossDutyClock(toBossEnvForCron(env), now.getTime())", "Promise.resolve({ fired: [] })") } }, expect: 1 },
+    { name: "a five-minute drain on the tick's stale clock is caught", input: { ...good, files: { ...good.files, tick: good.files.tick.replace("drainBossTasks(env, new Date())", "drainBossTasks(env, now)") } }, expect: 1 },
+    { name: "an hourly tick that materialises duties again is caught", input: { ...good, files: { ...good.files, tick: good.files.tick.replace("runBossDuties(toBossEnvForCron(env), now.getTime())", "runBossDutyClock(toBossEnvForCron(env), now.getTime())") } }, expect: 1 },
     { name: "a delivery that stopped re-queuing a failed morning is caught", input: { ...good, files: { ...good.files, deliver: good.files.deliver.replace(/retryFailedBriefing\(/g, "noRetry(") } }, expect: 1 },
     { name: "the standard cut to three headlines fails the floor", input: { ...good, standards: { ...good.standards, standard: (() => { const f = clone(good.standards.standard); const t = f.sections.find((x) => x.key === "top_5_headlines"); t.items = t.items.slice(0, 3); return f; })() } }, expect: 1 },
     { name: "the standard cut to fifteen sources fails the floor", input: { ...good, standards: { ...good.standards, standard: { ...good.standards.standard, sources: good.standards.standard.sources.slice(0, 15) } } }, expect: 1 },

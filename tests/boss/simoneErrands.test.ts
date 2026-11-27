@@ -16,6 +16,7 @@ import { classify } from "../../src/worker/boss/intake/classify";
 import { recordSentMail } from "../../src/worker/boss/mail/history";
 import { ERRAND_SENDERS } from "../../src/shared/boss/commands/parse.mjs";
 import { layoutEmail, plainProblems } from "../../src/shared/boss/mail/plain.mjs";
+import { cloudflareAuth } from "./cloudflareAuth";
 
 const HER = ERRAND_SENDERS[0]!;
 const BIZ = "reservations@club.example.test";
@@ -27,7 +28,7 @@ const CONFIRMATION = "You're all set for two at 8:30pm Thursday. See you then.";
 function mail(o: { from: string; body: string; subject?: string; to?: string; dmarc?: string; inReplyTo?: string; references?: string }) {
   const headers = new Headers({
     from: o.from, subject: o.subject ?? "",
-    "authentication-results": o.dmarc ?? "mx.cloudflare.net; spf=pass; dkim=pass; dmarc=pass",
+    "authentication-results": o.dmarc ?? cloudflareAuth(o.from),
     "message-id": `<${Math.random().toString(36).slice(2)}@mail.example.test>`,
   });
   if (o.inReplyTo) headers.set("in-reply-to", o.inReplyTo);
@@ -238,8 +239,9 @@ describe("her errand by email", () => {
       dmarc, body: CONFIRMATION });
     const missingFrom = build();
     missingFrom.headers.delete("from");
-    for (const incoming of [build("mx.cloudflare.net; dmarc=fail"), missingFrom, { ...build(), console: true }]) {
-      const res = await handleBossInboundMail(incoming, env);
+    // A console replay is the route's own `{ via: "console" }`; a `console` field on the message proves nothing.
+    for (const [incoming, origin] of [[build("mx.cloudflare.net; dmarc=fail"), {}], [missingFrom, {}], [build(), { via: "console" as const }]] as const) {
+      const res = await handleBossInboundMail(incoming, env, origin);
       expect(res).toMatchObject({ outcome: "ERRAND_UNVERIFIED", reply: null });
       expect(await env.DB.prepare(`SELECT state, notice_state FROM boss_commands WHERE id = ?`).bind(id).first())
         .toEqual({ state: "sent", notice_state: "none" });
@@ -306,7 +308,7 @@ describe("her errand by email", () => {
       handleBossInboundMail(arrival("host@other.example.test"), env),
       handleBossInboundMail(arrival(BIZ, "mx.cloudflare.net; dmarc=fail"), env),
       handleBossInboundMail(anonymous, env),
-      handleBossInboundMail({ ...arrival(BIZ), console: true }, env),
+      handleBossInboundMail(arrival(BIZ), env, { via: "console" }),
     ]);
     const readMail = (mailId: string) => env.DB.prepare("SELECT outcome, command_id, object_key FROM boss_inbound_mail WHERE id = ?")
       .bind(mailId).first<{ outcome: string; command_id: string | null; object_key: string }>();

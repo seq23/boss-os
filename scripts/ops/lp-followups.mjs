@@ -306,7 +306,7 @@ async function againDraft(draftTok, state, p, th, now, plan) {
  * `where` is Boss OS's "where I am until" (`away_city`, `away_until`); `offered` maps an address to
  * the times her last reply offered (D1's `offered_slots`), for a Mac whose state file is fresh.
  */
-export async function followUps(people, { now = Date.now(), skipped = new Set(), where = null, offered = {}, calls = new Map() } = {}) {
+export async function followUps(people, { now = Date.now(), skipped = new Set(), where = null, offered = {}, calls = new Map(), unread = new Set() } = {}) {
   const creds = JSON.parse(process.env.GSC_SERVICE_ACCOUNT_JSON ?? "null");
   if (!creds) throw new Error("NAMED STOP [NO_SERVICE_ACCOUNT] GSC_SERVICE_ACCOUNT_JSON is not in the vault run");
   const read = await token(creds, READ_SCOPE);
@@ -352,6 +352,12 @@ export async function followUps(people, { now = Date.now(), skipped = new Set(),
       delete state.drafts[p.address];
       delete state.again?.[p.address];
       rows.push({ ...base, status: "scheduled", picked_start: booked.start, picked_zone: "America/Chicago" });
+      continue;
+    }
+    // A sender with a reply not yet read (or held for her) stays on the tracker and gets no draft (review F6).
+    if (unread.has(String(p.address).toLowerCase())) {
+      counts.not_answered += 1;
+      rows.push({ ...base, status: "not_answered", waiting_why: "unread" });
       continue;
     }
     const [mine] = await search(read, `in:sent from:${MAILBOX} to:${p.address} after:${after}`);

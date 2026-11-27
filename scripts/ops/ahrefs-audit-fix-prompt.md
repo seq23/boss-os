@@ -21,6 +21,11 @@ else is refused, and every refusal turns this pass red as `NAMED STOP [PERMISSIO
 commands the way the list names them: `~/…`, never the full home path; `cd <dir>` and then `git …`,
 never `git -C`; one command per call, no `;`, `&&` or `$( )` chains.
 
+**Every turn re-reads this whole session, so the number of turns is what this pass costs.** When calls
+do not depend on each other, make them in ONE message: the files and greps you need to understand a
+template, the live pages you want to fetch, several Edits to one file. Read a file once, in full or in
+the ranges you need, rather than in many small slices.
+
 ## 1. Find the reports
 
 Ahrefs Site Audit mail lands in **`seq.taylor@gmail.com`** from **`sa@ahrefs.com`**. Use the Gmail
@@ -77,7 +82,9 @@ link — leave those alone unless a GET in a real browser UA also fails.
 
 Every defect your crawl confirms in a fixable repository is yours to fix, whatever the mail's
 headline said. Put the crawl's `pages_crawled`, `sitemap_total` and `counts` on the finding row as
-`crawl` — the runner turns a `surfaced` or `fixed_pr` row with no crawl behind it RED (`NOT_CRAWLED`).
+`crawl` when you crawled; otherwise give every row its `domain` and the runner crawls it after you finish
+(`site-audit-lib.mjs finish`), so never crawl only to fill that field. A `surfaced` or `fixed_pr` row the
+runner cannot crawl either is RED (`NOT_CRAWLED`).
 
 ### A CRAWL THAT FAILED: READ WHY, THEN PROBE FROM OUTSIDE
 
@@ -110,7 +117,7 @@ the mail's. A count from an email is not evidence; a 404 your crawl hit is.
 Owner, 25 Oct 2026: her Search Readiness Checklist enforces itself on every grid repo site. Every
 Monday `npm run sites:audit` checks each site and writes one brief per failure to
 **`~/.boss-os/search-readiness/fix-queue.json`** (`npm run sites:fix-queue` prints it). Read it every
-run. Each brief names the `domain`, the `repo`, the checklist `item_id` and `item_title`, the
+run (a scoped pass gets its briefs in YOUR PASS PACKET instead, read by code). Each brief names the `domain`, the `repo`, the checklist `item_id` and `item_title`, the
 `failure`, the `missing_urls` (for hyperlocal coverage: every town, neighborhood, hospital or
 service × town page the site's coverage manifest says must exist) and the `evidence`.
 
@@ -206,7 +213,9 @@ any more** (owner, 16 Oct 2026): fix it like any other repo — in a worktree, a
 
 ### IN_FLIGHT: never duplicate work already open
 
-Other agents fix these sites too. Before fixing, ask:
+Other agents fix these sites too. A scoped pass's packet lists the repo's open work (every open PR with
+the files it changes, every pushed branch with commits of its own and no merged or closed PR): read it and
+decide. Otherwise, or when the packet says UNREAD, ask before fixing:
 
 ```
 node ~/GitHub/boss-os/scripts/ops/site-audit-lib.mjs inflight <repo> <term> [<term>...]
@@ -279,6 +288,16 @@ files changed and nothing committed. So:
 - One PR per repository, however many findings it covers, from the worktree branch.
 - The PR body names the Ahrefs project, each defect with an example URL from your crawl, the cause,
   and the validators you ran.
+- **The PR body carries a `Review class:` line, on a line of its own** (25 Nov 2026: `~/bin/land`
+  refused all 42 fixes of that week's run because no body had one; land has required it since
+  23 Nov 2026). You made the diff, so you name its class, as every builder on the grid does:
+  `Review class: none — <why, 3+ words>` (for example `Review class: none — search fixes to public
+  pages, no money or private data`), or the class it is in with why: `Review class: money | children |
+  private-data | store | delete | launch — <why>`. Never write `none` for a change that touches
+  payments, children's or private data, a store listing, deleting people's data or a first launch:
+  a missing or unreasoned line is a class to land, never a guess of none. When you continue your own
+  open PR from an earlier pass and its body has no `Review class:` line, add it
+  (`gh pr edit <pr> --body-file <file>` with the whole body plus the line).
 - Then: `timeout 1800 gh pr checks <pr> --watch --fail-fast`. If a check is red, read it, fix at
   source in the worktree, push, and watch again (at most three rounds).
 - **Do not merge, do not run `land`, do not dispatch a workflow or a deploy.** After you finish, the
@@ -375,16 +394,11 @@ records the queue file and the brief ids it handed you, and the reporter sends t
 
 ---
 
-## 6. Clean up and finish with the sentinel
+## 6. Finish with the sentinel
 
-After pushing each finished repository's work, leave its worktree (`cd` elsewhere), then run:
-
-```sh
-bash ~/.boss-os/runtime/scripts/ops/audit-worktree.sh --prune-only <repo>
-```
-
-This fetches origin and removes only clean audit worktrees whose commits are all on origin,
-along with their audit branches. Dirty worktrees and unpushed commits are kept and reported.
+Leave your worktrees where they are: the runner lands from them, and the next `audit-worktree.sh` cut
+in that repository removes the clean ones whose commits are all on origin (dirty or unpushed ones are
+kept and reported).
 
 Print this as the last line, exactly:
 

@@ -4,14 +4,15 @@ import { BOSS_INTAKE_MAILBOX, BOSS_INTAKE_SENDERS, SIMONE_MAILBOX, seatTag } fro
 import { activeRoster, handleBossInboundMail } from "../../src/worker/boss/intake/inboundMail";
 import { claimSimone, finishSimoneHandoff } from "../../src/worker/boss/agents/simone";
 import type { Env } from "../../src/worker/boss/env";
+import { cloudflareAuth } from "./cloudflareAuth";
 
 describe.each([BOSS_INTAKE_MAILBOX, SIMONE_MAILBOX])("extra owners writing to %s", (to) => {
-  async function receive(from: string, extra?: string, auth: string | null = "dmarc=pass") {
+  async function receive(from: string, extra?: string, auth: string | null = cloudflareAuth(from)) {
     const runtime = { ...env, BOSS_EXTRA_OWNER_SENDERS: extra } as Env;
     const seat = (await activeRoster(runtime)).find((s) => s.role !== "Chief of Staff")!;
     const body = `hey, could you look into this when you can? ${seatTag(seat.name)} draft a short summary please`;
-    const headers = new Headers({ from, subject: "a quick ask", "x-boss-intake-origin": "console" });
-    if (auth !== null) headers.set("authentication-results", `mx.cloudflare.net; ${auth}`);
+    const headers = new Headers({ from, subject: "a quick ask" });
+    if (auth !== null) headers.set("authentication-results", auth);
     const raw = `From: ${from}\r\nSubject: a quick ask\r\n\r\n${body}`;
     const result = await handleBossInboundMail({
       from, to, headers, raw: new Response(raw).body!, rawSize: new TextEncoder().encode(raw).length,
@@ -40,13 +41,13 @@ describe.each([BOSS_INTAKE_MAILBOX, SIMONE_MAILBOX])("extra owners writing to %s
   });
 
   it.each([
-    ["unknown@example.com", "work@example.com", "dmarc=pass"],
-    ["work@example.com", "work@example.com", "dmarc=fail"],
-    ["work@example.com", "work@example.com", "spf=pass; dkim=pass"],
+    ["unknown@example.com", "work@example.com", cloudflareAuth("unknown@example.com")],
+    ["work@example.com", "work@example.com", cloudflareAuth("work@example.com", "fail")],
+    ["work@example.com", "work@example.com", "mx.cloudflare.net; spf=pass; dkim=pass"],
     ["work@example.com", "work@example.com", null],
-    ["work@example.com", undefined, "dmarc=pass"],
-    ["work@example.com", "", "dmarc=pass"],
-    ["work@example.com", " , , ", "dmarc=pass"],
+    ["work@example.com", undefined, cloudflareAuth("work@example.com")],
+    ["work@example.com", "", cloudflareAuth("work@example.com")],
+    ["work@example.com", " , , ", cloudflareAuth("work@example.com")],
   ])("refuses %s with extras %s and auth %s", async (from, extra, auth) => {
     const { result, arrival } = await receive(from!, extra, auth!);
     expect(result).toMatchObject({ outcome: "REFUSED_SENDER", taskId: null, reply: null });

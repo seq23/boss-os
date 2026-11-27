@@ -997,20 +997,44 @@ renders a reply using a stubbed mail transport.
 
 ## Noelle, the Growth Director
 
-Noelle runs as Claude Code with the persona in `scripts/ops/noelle/persona.md`. Her remit covers
-six businesses, with Porch & Party first. She decides their channel mix and builds the jobs and
-channels she chooses within the ask-first rules. The launcher holds scheduled and called runs
-until November 28, 2026 at midnight Central. After the hold, launchd ticks every 30 minutes.
+Noelle runs as Claude Code with the persona in `scripts/ops/noelle/persona.md`. The persona directs
+her to read the [site rules](../../scripts/ops/noelle/sites.md) each run for her remit and client
+approvals. She chooses growth bets by weighing cost against likely sales within the ask-first rules.
+The launcher holds scheduled and called runs until November 28, 2026 at midnight Central. After the
+hold, launchd ticks every 30 minutes.
 A Claude usage limit stops scheduled work and releases an owner call to the Boss OS answer ladder.
 
 The first wake inputs are `~/Work/noelle/owner-notes.md` and `HANDOFF.md`. The scheduled wake also
 uses the latest dated note, the relevant playbooks in `plays/`, and summarized reads. A light wake
-uses the playbook for the business the owner asks about. `HANDOFF.md` records the notes read
+uses the playbook for the business the owner asks about. New playbooks for the six seeded businesses
+start with `Niche read` and `Bets` fields alongside their Growth inputs. Noelle brings existing
+playbooks into that shape as she uses them and keeps their history. `HANDOFF.md` records the notes read
 through date and this run's ID. A missing owner notes read or handoff rewrite records a named stop.
 `noelle-tool brain <slug>` lists headings and adding a section returns only that section. The
 allowlist is spry, porch-and-party, time-2-read, personal, team and risk.
 
-The Mac launcher passes its own permission settings and OS sandbox to Claude Code.
+Noelle uses Claude Code's `WebSearch` for public research and `WebFetch` on her named hosts only. The `search-console
+<business> <domain>` broker command reads up to 50 query/page pairs from the last 28 finalized days
+for one property belonging to the named business. It uses the existing vault-backed Search Console
+service account with Google's read-only scope. Scheduled runs can also read dated OpenSEO rival and
+citation domains from the six selling sites' existing `ai_misses` records in `today-detail.json`.
+OpenSEO collection and project changes stay outside Noelle's session.
+
+On a Thursday wake, Noelle refreshes each business's niche research and reviews live bets if the
+run ledger has no completed review for the current Central month. `post-results <business> <id>`
+reads the metrics for a Buffer post from its business's verified posting receipts. Search Console
+rows cover individual pages. The launcher checks the review against the current Claude transcript
+for fetched sources and item reads. A complete review writes each bet's decision to the existing
+run ledger. Attributed sales are recorded as `not read`: neither broker read returns sales, and a
+figure in Noelle's own review file is never recorded. Client outcomes stay in the client playbooks. A stop
+leaves the review due at the next weekly wake.
+
+The Mac launcher passes its own permission settings and OS sandbox to Claude Code. Her commands
+and WebFetch reach only the hosts named in `scripts/ops/noelle-permissions.json` (GitHub, npm, Boss
+OS and her own sites and previews, by exact name); `scripts/validate/claude-runs-locked.mjs`
+derives that list from the sites map and fails the build on any other host, a bare WebFetch or a
+public wildcard such as `*.workers.dev`. Reads of the shared temp folders (`/tmp`, `/private/tmp`,
+`/private/var/folders`) are denied, and her temp lives in her own run folder and home.
 `noelle_prepare` creates the settings and the two brokers outside the session workspace. The
 picture validator rejects a reachable provider call, vendor host or credential. GitHub Actions
 run under separate repository and environment controls. Before a push or PR, the GitHub broker
@@ -1019,10 +1043,16 @@ and exact main-only branch policies for credential-bearing environments. The Fri
 in PR #574 covers the hosted canary and configuration.
 
 The broker accepts `noelle/<name>` branches in the allowlisted repositories and labels each PR
-`review-required`. Noelle can propose changes under `.github/` once a repository passes the
-broker checks. An independent reviewer posts a current-head PASS outside her session. The
-landing broker checks the PR against its own opening receipts and limits landing to the growth
-repositories. She keeps code task sheets in `~/Work/noelle/tasks/`.
+`review-required`. Noelle can edit workflows under `.github/` once a repository passes the
+broker checks. On the two client sites (`hicks-consulting-canonical`, `horse-legal-guide-velocity`)
+the broker appends a fixed footer, `CLIENT_FOOTERS` in `scripts/ops/noelle-guard.mjs`, whatever her
+body says. It tells the reviewer to apply the site rules. Hicks main-site pages and copy need
+Sequoia's own yes, cited from her owner-checked Boss OS message or email (call ID) or from
+`~/Work/noelle/owner-notes.md`, which Noelle's permissions deny her writing. The reviewer checks it
+there, never in Noelle's handoff. Horse's new posts and hand-made pages wait in the Horse owners'
+queue. The reviewer posts a current-head PASS outside her session. The landing broker uses the
+same repository allowlist and checks the PR against its opening receipt. She keeps code task
+sheets in `~/Work/noelle/tasks/` and manages growth work in her playbooks and handoff.
 
 Owner-verified email reaches Noelle via a `#noelle` tag, her name as a word anywhere in the subject,
 or a first line opening with her name. The same Mac claim loop answers messages from her Boss OS
@@ -1065,7 +1095,14 @@ Overviews answered while citing the site, and how many named it. Every miss gets
   into the run's work dir, and `ai-visibility-report.mjs transcript` writes its own printed words (every assistant
   text block, in order) into the kept log: its final message alone carries only its last turn, and on 23 and 24 Nov
   2026 the six site blocks printed earlier were lost (0 sites read, twice). The raw stream dies with the work dir.
-  Then `ai-visibility-report.mjs post` checks every block
+  **Code reads, the model judges (27 Nov 2026).** The permissions file's one PostToolUse hook
+  (`scripts/ops/ai-visibility-hook.mjs`) runs after every OpenSEO call: it keeps the raw reply in the run's work dir
+  (`openseo.jsonl`, the stash, gone with it) and hands the session a digest of what its next step needs
+  (`scripts/ops/lib/ai-visibility-digest.mjs`). The session prints only each site's lanes; the post step builds the
+  week itself (tracker, run, OpenSEO's summary, every observation) from the stash with `weekFromStash`. Measured on
+  recorded weeks: about a tenth of the input tokens a run (3.5M before), and the week exact where the model's hand
+  copy had broken on the sixth site. A stash that is missing or short is a named stop (`OPENSEO_STASH_UNREAD`,
+  `OPENSEO_SHORT_READ`), never the session's numbers. Then `ai-visibility-report.mjs post` checks every block
   (`readSite`, src/shared/boss/growth/aiAnswers.mjs) and posts the week to `POST /api/boss/growth/ai-week`.
 - **Honest stops, never a zero.** Plugin not loaded, OpenSEO unreachable, out of credits, no tracker, no answers,
   a run older than 8 days (`OPENSEO_NOT_YET`), fewer observations than prompts × engines (short read), OpenSEO's own

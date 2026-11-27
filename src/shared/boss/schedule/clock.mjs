@@ -267,3 +267,50 @@ export function nextRunWords(slots, nowMs) {
   const w = wallClock(next);
   return `${["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"][w.dow]} ${w.d} ${MONTH_WORDS[w.m - 1]}, ${clock12(`${w.h}:${w.min}`)} CT`;
 }
+
+// ─── THE MAC'S DAY (her ruling 21 Nov 2026, Central, every day) ──────────────────────────────────
+//
+// THE ONE DEFINITION of when her Mac looks for work (27 Nov 2026, Camille's briefing late for the
+// morning email). It was written four times — the Schedule's classes, an hour guard inside
+// agent-claim.sh (06:00-22:00), POLL_WINDOW in alarms/rules.mjs (also 06:00-22:00) and the sentence
+// Today shows her — and since 21 Nov none of them agreed: the poll's row said LIGHT (10:00-21:59), so
+// the five-minute safety net could not run at 04:00, when the briefing comes due, and Kendra's
+// parked-run alarm could not count a wait before 06:00. Every reader now asks this table:
+// plist-central.mjs (the classes mac-window is given), mac-day-check.mjs (the plists proven against
+// it), the alarm's hours and Today's sentence. seq-bin's `mac-window` enforces the same table at run
+// time; validate:agent-poll holds the poll's class to the hour the briefing duty is due.
+//
+// Minutes of the Central day, half-open [from, to). HEAVY may start until 06:30 and is stopped at
+// 06:55, so a slot AT 06:55 is still inside it.
+export const MAC_REST = Object.freeze([7 * 60, 10 * 60]);
+export const MAC_WINDOWS = Object.freeze({
+  HEAVY: Object.freeze([Object.freeze([22 * 60, 24 * 60]), Object.freeze([0, 6 * 60 + 56])]),
+  MORNING: Object.freeze([Object.freeze([0, MAC_REST[0]]), Object.freeze([MAC_REST[1], 24 * 60])]),
+  LIGHT: Object.freeze([Object.freeze([MAC_REST[1], 22 * 60])]),
+  ANY: Object.freeze([Object.freeze([0, MAC_REST[0]]), Object.freeze([MAC_REST[1], 24 * 60])]),
+});
+/** Every morning job is done by 06:30 with twice its worst runtime to spare. */
+export const MORNING_DONE = 6 * 60 + 30;
+/**
+ * The five-minute poll's class (`com.seq.boss-agent-poll`): an any-hour claimer, so a run parked at
+ * 04:00 is claimed at 04:05, never at 10:15. The Schedule row must say the same (validate:agent-poll).
+ */
+export const MAC_POLL_CLASS = "ANY";
+
+/** Does her Mac run a job of class `cls` at minute `mins` of the Central day? Unknown class: no. Pure. */
+export function macLooksAt(cls, mins) {
+  const w = MAC_WINDOWS[cls];
+  if (!w) return false;
+  const m = ((Math.floor(Number(mins)) % 1440) + 1440) % 1440;
+  return w.some(([a, b]) => m >= a && m < b);
+}
+
+/** A class's hours in words, last minute inclusive: "10:00 to 21:59", "22:00 to 06:55", "at any hour but 07:00 to 10:00". Pure. */
+export function macWindowWords(cls) {
+  const w = MAC_WINDOWS[cls];
+  if (!w) return "never";
+  const t = (m) => `${pad(Math.floor((m % 1440) / 60))}:${pad(m % 60)}`;
+  if (w.length === 2 && w[0][0] === 0 && w[1][1] === 1440) return `at any hour but ${t(w[0][1])} to ${t(w[1][0])}`;
+  if (w.length === 2 && w[0][1] === 1440 && w[1][0] === 0) return `${t(w[0][0])} to ${t(w[1][1] - 1)}`;
+  return w.map(([a, b]) => `${t(a)} to ${t(b - 1)}`).join(" and ");
+}

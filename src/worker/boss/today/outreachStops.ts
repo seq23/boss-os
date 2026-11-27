@@ -1,6 +1,6 @@
 import type { Env } from "../env";
 import { businessByKey } from "../outreach/catalog";
-import { outreachStopText } from "../outreach/engine";
+import { HOLD_KEY, holdText, outreachStopText } from "../outreach/engine";
 
 /**
  * A ROUTE-READY OUTREACH BUSINESS THAT SENDS NOTHING IS ON TODAY (16 Oct 2026).
@@ -27,6 +27,16 @@ export async function outreachStopAlerts(env: Env): Promise<OutreachStopAlert[]>
     const b = businessByKey(r.business_key);
     if (!b) continue;
     out.push({ severity: "high", text: outreachStopText(b, r.stop_reason), source_type: "outreach", source_id: b.key });
+  }
+  // Replies the model could not read hold their own addresses (engine.ts recordHold): counts only.
+  const held = await env.DB.prepare(`SELECT value FROM outreach_settings WHERE key = ?`).bind(HOLD_KEY).first<{ value: string }>();
+  if (held) {
+    let value: { replies: number; addresses: number; why: string } | null = null;
+    try { value = JSON.parse(held.value); } catch { /* an unreadable hold is still a hold */ }
+    out.push({
+      severity: "high", source_type: "outreach", source_id: HOLD_KEY,
+      text: value && Number.isSafeInteger(value.replies) ? holdText(value) : "Monique's outreach is holding replies it could not read; the count is unreadable.",
+    });
   }
   return out;
 }

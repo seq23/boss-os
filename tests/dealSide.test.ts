@@ -101,8 +101,36 @@ describe("brokerage interest extraction through the full-thread reader", () => {
       const read: Read = async () => ok([row]);
       expect(await extractCandidates({ directory: files.directory, identity, read })).toMatchObject({ status: "unavailable", checked: 0 });
       expect(fs.readdirSync(files.folder)).toEqual(["0.json"]);
-      expect(fs.existsSync(path.join(files.directory, "extract-checkpoint.json"))).toBe(false);
+      // No receipt: the message is not recorded as read, and nothing reached the ledger.
+      expect(files.load("extract-checkpoint.json").messages ?? []).not.toContain(reply.id);
+      expect(fs.existsSync(path.join(files.directory, "ledger.json"))).toBe(false);
     }
+  });
+
+  it("reads past a message the model keeps calling uncertain and holds it for her on the third run (review F4)", async () => {
+    const files = fixture([[candidate(reply), candidate(offer)]]);
+    const read = vi.fn<Read>(async (input) => JSON.parse(input.source).targetMessageId === reply.id
+      ? { status: "uncertain" } : ok([deal(offer)]));
+    const run = () => extractCandidates({ directory: files.directory, identity, read });
+    // Runs 1 and 2: the next message is read and recorded; the batch stays for the uncertain one.
+    expect(await run()).toMatchObject({ status: "unavailable", checked: 1, added: 1, held_now: [] });
+    expect(await run()).toMatchObject({ status: "unavailable", checked: 0, held_now: [] });
+    expect(fs.readdirSync(files.folder)).toEqual(["0.json"]);
+    // Run 3: held for her, never recorded as read, and the batch is done.
+    expect(await run()).toMatchObject({ status: "complete", held_now: [reply.id] });
+    const checkpoint = files.load("extract-checkpoint.json");
+    expect(checkpoint.messages).toEqual([offer.id]);
+    expect(checkpoint.held).toMatchObject({ [reply.id]: { runs: 3 } });
+    expect(fs.readdirSync(files.folder)).toEqual([]);
+    expect(read.mock.calls.filter(([input]) => JSON.parse(input.source).targetMessageId === reply.id)).toHaveLength(3);
+    // The held message is named in her morning email with its Gmail link.
+    const { nameHeld } = await import("../scripts/ops/interest-extract.mjs");
+    const add = vi.fn();
+    await nameHeld(checkpoint.held ? Object.keys(checkpoint.held) : [], "deal emails", { add });
+    expect(add.mock.calls[0]).toEqual(["notices", { lines: [expect.objectContaining({
+      text: expect.stringMatching(/^Deal emails: 1 could not be read after 3 tries, so it is held for you/),
+      links: [{ label: "Open the email", url: expect.stringContaining(`#all/${reply.id}`) }],
+    })] }]);
   });
 });
 
@@ -181,6 +209,28 @@ it("reports an empty model result on a nonempty day while a confirmed empty sour
   expect(await reviewBrokerage({ ...input, directory: fixture([]).directory, list: async () => [] }))
     .toMatchObject({ status: "complete", checked: 0 });
   expect(read).toHaveBeenCalledOnce();
+});
+
+it("the daily check holds a message the model keeps calling uncertain, says so, and reads the next (review F4)", async () => {
+  const { reviewBrokerage } = await import("../scripts/ops/interest-extract.mjs");
+  const files = fixture([]);
+  const poison = { ...reply, at: Date.parse("2026-11-25T12:00:00Z") };
+  const next = { ...offer, at: Date.parse("2026-11-25T13:00:00Z") };
+  const read = vi.fn<Read>(async (input) => JSON.parse(input.source).targetMessageId === poison.id
+    ? { status: "uncertain" } : ok([deal(next)]));
+  const input = {
+    kind: "daily" as const, directory: files.directory, identity, read, compare: async () => 0,
+    list: async () => [poison, next].map(({ id }) => ({ id, threadId: "thread" })), load: async () => [poison, next],
+  };
+  // Two runs stop at it, as an unread item; the third holds it and checks the rest of the day.
+  expect(await reviewBrokerage({ ...input, now })).toMatchObject({ status: "unavailable" });
+  expect(await reviewBrokerage({ ...input, now: now + 3_600_000 })).toMatchObject({ status: "unavailable" });
+  const verdict = await reviewBrokerage({ ...input, now: now + 7_200_000 });
+  expect(verdict).toMatchObject({ status: "held", held: 1, found: 1, missing: 0, held_now: [poison.id] });
+  expect(files.load("extract-checkpoint.json").review_held).toMatchObject({ [poison.id]: { threadId: "thread", runs: 3, review: "daily" } });
+  // A retry the same day returns the verdict without naming the held message twice.
+  expect(await reviewBrokerage({ ...input, now: now + 7_300_000 })).toMatchObject({ status: "held", held_now: [] });
+  expect(read.mock.calls.map(([call]) => JSON.parse(call.source).targetMessageId)).toEqual([poison.id, poison.id, poison.id, next.id]);
 });
 
 it("starts the October re-read at Central midnight, only appends missing issuers, and resumes an unread message", async () => {

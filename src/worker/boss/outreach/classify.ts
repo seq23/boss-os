@@ -1,5 +1,6 @@
 import { readWorkerSource, type WorkerReadingCredentials } from "../router/freeModel.ts";
 import { readJsonObject } from "../router/types.ts";
+import { quotedFrom } from "../../../shared/boss/mail/verbatim.mjs";
 interface ReplyMessage {
   id: string;
   headers: Record<string, string>;
@@ -41,9 +42,10 @@ function readingOf(text: string, target: ReplyMessage): ReplyMeaning | null {
   const classification = classifications.find((value) => value === row.classification);
   const replyNeed = replyKinds.find((value) => value === row.replyNeed);
   if (!classification || !replyNeed || typeof excerpt !== "string" || excerpt.length > 600
-    || !target.body.includes(excerpt) || typeof asksPrice !== "boolean"
+    || typeof asksPrice !== "boolean"
     || (groupSize !== null && (typeof groupSize !== "number" || !Number.isSafeInteger(groupSize) || groupSize < 1))) return null;
-  return { classification, replyNeed, excerpt, asksPrice, groupSize };
+  // The excerpt is display only: a quote not in the mail becomes "", never a failed read.
+  return { classification, replyNeed, excerpt: quotedFrom(target.body, excerpt), asksPrice, groupSize };
 }
 
 export async function classifyReply(target: ReplyMessage, thread: ReplyMessage[], credentials: WorkerReadingCredentials): Promise<ReplyResult> {

@@ -30,6 +30,7 @@ import path from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { centralToLocalOffset, macWindows, ONE_SHOT } from "./plist-central.mjs";
 import { installedPlists, plistEvents, slotTimes } from "./lib/schedule.mjs";
+import { MAC_REST, MORNING_DONE, macLooksAt, macWindowWords } from "../../src/shared/boss/schedule/clock.mjs";
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..", "..");
 // Her jobs, plus West Peek OS's local-jobs claimer (it runs `claude -p` builds on this Mac, so it keeps her day:
@@ -39,9 +40,8 @@ export const FAMILIES = /^(com\.seq\.|com\.howweknow\.|ventures\.westpeek\.os\.l
 // Jobs her rules leave exactly as they are (21 Nov 2026: "dont ... put the pause back"): the 00:05 tool that
 // ends her pauses is not rewritten, so it carries no guard and no row. Its slots are still checked.
 export const LEFT_AS_IS = new Set(["com.seq.resume-paused-jobs"]);
-const REST = [7 * 60, 10 * 60];
-const HEAVY_END = 6 * 60 + 55;
-const MORNING_DONE = 6 * 60 + 30;
+// The Mac's day is the one table in src/shared/boss/schedule/clock.mjs (MAC_WINDOWS), never restated here.
+const REST = MAC_REST;
 const hhmm = (m) => `${String(Math.floor(m / 60)).padStart(2, "0")}:${String(m % 60).padStart(2, "0")}`;
 
 /** One plist's calendar slots in Central: [{ mins, dow?, dom? }] (the Schedule's own reader; an hourly slot is 24). Pure. */
@@ -93,8 +93,7 @@ export function macDayProblems(jobs, manifest, { shift = 0, from = new Date("202
     for (const s of slots) {
       const at = `${label} ${s.dow != null ? `wd${s.dow} ` : ""}${s.dom != null ? `day${s.dom} ` : ""}${hhmm(s.mins)}`;
       if (s.mins >= REST[0] && s.mins < REST[1]) problems.push(`${at}: inside 07:00-09:59, when the Mac is off`);
-      if (c === "HEAVY" && !(s.mins >= 22 * 60 || s.mins <= HEAVY_END)) problems.push(`${at}: a HEAVY job outside 22:00-06:55`);
-      if (c === "LIGHT" && !(s.mins >= 10 * 60 && s.mins < 22 * 60)) problems.push(`${at}: a LIGHT job outside 10:00-21:59`);
+      if ((c === "HEAVY" || c === "LIGHT") && !macLooksAt(c, s.mins)) problems.push(`${at}: a ${c} job outside ${macWindowWords(c).replace(" to ", "-")}`);
       if (c === "MORNING" && s.mins < REST[0]) {
         const w = worst.get(label);
         if (w == null) problems.push(`${at}: a MORNING job with no measured worst runtime (worstMin on its row)`);

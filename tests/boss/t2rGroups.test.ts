@@ -265,7 +265,7 @@ describe("replies: real ones to her, a price question with a suggested price, Mo
         groupSize: 30, asksPrice: true, excerpt: "We have about 30 families. How much would it be after the trial?" }) }] },
     }] }));
     try {
-      await runOutreachTick({ ...tickEnv(), BOSS_WORKER_GEMINI_FREE_KEY: "fixture" }, TUESDAY_10AM + HOUR, replyGmail.fetchImpl);
+      await runOutreachTick({ ...tickEnv(), GEMINI_API_KEY: "fixture" }, TUESDAY_10AM + HOUR, replyGmail.fetchImpl);
     } finally { model.mockRestore(); }
     expect(replyGmail.sends).toHaveLength(0);
     const r = await row<any>(`SELECT approval_id FROM outreach_replies WHERE gmail_message_id = 'rp1'`);

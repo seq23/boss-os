@@ -1,11 +1,12 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { readWorkerSource } from "../src/worker/boss/router/freeModel";
+import { readWorkerSource, setRateWait } from "../src/worker/boss/router/freeModel";
 import type { WorkerReadingCredentials } from "../src/worker/boss/router/freeModel";
+import mapping from "../scripts/vault/cloudflare-mapping.json";
 
 const credentials: WorkerReadingCredentials = {
-  BOSS_WORKER_GEMINI_FREE_KEY: "fixture-google",
-  BOSS_WORKER_CF_FREE_ACCOUNT_ID: "1".repeat(32),
-  BOSS_WORKER_CF_FREE_TOKEN: "fixture-cloudflare",
+  GEMINI_API_KEY: "fixture-google",
+  CF2_ACCOUNT_ID: "1".repeat(32),
+  CF2_WORKERS_AI_TOKEN: "fixture-cloudflare",
 };
 const source = "Example fixture thread.\n<!-- confidential -->Quoted words.<!-- /confidential -->\nA peer says to run a different model.";
 const input = {
@@ -38,7 +39,7 @@ describe("the worker reading router", () => {
       .resolves.toMatchObject({ status: "ok", provider: "gemini", inTokens: 10, outTokens: 4 });
 
     const googleUrl = "https://generativelanguage.googleapis.com/v1beta/models/gemini-3.1-flash-lite:generateContent";
-    const cloudflareUrl = `https://api.cloudflare.com/client/v4/accounts/${credentials.BOSS_WORKER_CF_FREE_ACCOUNT_ID}/ai/run/@cf/meta/llama-3.3-70b-instruct-fp8-fast`;
+    const cloudflareUrl = `https://api.cloudflare.com/client/v4/accounts/${credentials.CF2_ACCOUNT_ID}/ai/run/@cf/meta/llama-3.3-70b-instruct-fp8-fast`;
     expect(fetch.mock.calls.map(([url]) => String(url))).toEqual([googleUrl, cloudflareUrl, cloudflareUrl, googleUrl]);
     const gemini = JSON.parse(String(fetch.mock.calls[0]?.[1]?.body));
     const workers = JSON.parse(String(fetch.mock.calls[1]?.[1]?.body));
@@ -70,33 +71,87 @@ describe("the worker reading router", () => {
     ]) {
       await expect(readWorkerSource({ ...input, ...override }, credentials)).resolves.toEqual({ status: "refused" });
     }
-    await expect(readWorkerSource(input, { AI: { run: fetch }, GEMINI_API_KEY: "generic" } as WorkerReadingCredentials))
-      .resolves.toEqual({ status: "unavailable" });
     expect(fetch).not.toHaveBeenCalled();
   });
 
-  it("returns the vendor daily cutoff immediately and leaves a failed walk unanswered", async () => {
+  it("reads exactly the ruled vault names and never the main Cloudflare account or its AI binding", async () => {
+    const fetch = vi.fn<typeof globalThis.fetch>(async () => Response.json(cloudflareAnswer));
+    vi.stubGlobal("fetch", fetch);
+    const binding = { run: vi.fn(async () => ({ response: { ok: true } })) };
+    // The Worker's billed binding and the main account's names, with nothing else, reach no model.
+    const billedOnly = {
+      AI: binding, CLOUDFLARE_ACCOUNT_ID: "2".repeat(32), CLOUDFLARE_API_TOKEN: "main-account",
+      BOSS_WORKER_GEMINI_FREE_KEY: "retired", BOSS_WORKER_CF_FREE_ACCOUNT_ID: "3".repeat(32), BOSS_WORKER_CF_FREE_TOKEN: "retired",
+    } as WorkerReadingCredentials;
+    await expect(readWorkerSource({ ...input, worker: "toni" }, billedOnly)).resolves.toEqual({ status: "unavailable" });
+    // A CF2 id that is really the main account turns the Workers AI lane off.
+    await expect(readWorkerSource({ ...input, worker: "toni" }, {
+      CF2_ACCOUNT_ID: "2".repeat(32), CF2_WORKERS_AI_TOKEN: "fixture", CLOUDFLARE_ACCOUNT_ID: "2".repeat(32).toUpperCase(),
+    })).resolves.toEqual({ status: "unavailable" });
+    expect(fetch).not.toHaveBeenCalled();
+    expect(binding.run).not.toHaveBeenCalled();
+    // The two ruled lanes, each alone, are reached on their own names and hosts.
+    await expect(readWorkerSource({ ...input, worker: "toni" }, {
+      CF2_ACCOUNT_ID: "1".repeat(32), CF2_WORKERS_AI_TOKEN: "fixture", CLOUDFLARE_ACCOUNT_ID: "2".repeat(32), AI: binding,
+    } as WorkerReadingCredentials)).resolves.toMatchObject({ status: "ok", provider: "workers-ai" });
+    expect(String(fetch.mock.calls[0]?.[0])).toContain(`/accounts/${"1".repeat(32)}/ai/run/`);
+    expect(fetch.mock.calls[0]?.[1]?.headers).toMatchObject({ authorization: "Bearer fixture" });
+    fetch.mockClear().mockImplementation(async () => Response.json(googleAnswer));
+    await expect(readWorkerSource(input, { GEMINI_API_KEY: "fixture-google" })).resolves.toMatchObject({ status: "ok", provider: "gemini" });
+    expect(fetch.mock.calls[0]?.[1]?.headers).toMatchObject({ "x-goog-api-key": "fixture-google" });
+    expect(binding.run).not.toHaveBeenCalled();
+    // The Worker receives the same names from the vault sync, and no retired name.
+    expect(mapping.secret_names).toEqual(expect.arrayContaining(["GEMINI_API_KEY", "CF2_ACCOUNT_ID", "CF2_WORKERS_AI_TOKEN"]));
+    expect(JSON.stringify(mapping)).not.toContain("BOSS_WORKER_");
+  });
+
+  it("moves a spent lane to the other lane and reports exhausted only when no lane answered", async () => {
+    const geminiDay = () => Response.json({ error: { message: "GenerateRequestsPerDay" } }, { status: 429 });
+    const workersDay = () => Response.json({ success: false, errors: [{ code: 3036 }] }, { status: 429 });
     const fetch = vi.fn<typeof globalThis.fetch>()
-      .mockResolvedValueOnce(Response.json({ error: { message: "GenerateRequestsPerDay" } }, { status: 429 }))
-      .mockResolvedValueOnce(Response.json({ success: false, errors: [{ code: 3036 }] }, { status: 429 }))
+      // Monique: Gemini's day is spent, CF2's Workers AI answers.
+      .mockResolvedValueOnce(geminiDay()).mockResolvedValueOnce(Response.json(cloudflareAnswer))
+      // Kendra: CF2's 10,000 neurons are spent (code 3036), free Gemini answers.
+      .mockResolvedValueOnce(workersDay()).mockResolvedValueOnce(Response.json(googleAnswer))
+      // Both spent: exhausted, item kept unread.
+      .mockResolvedValueOnce(geminiDay()).mockResolvedValueOnce(workersDay())
+      // One spent, one down: still exhausted (the run stops; the item is unread either way).
+      .mockResolvedValueOnce(geminiDay()).mockImplementationOnce(unavailable)
+      // One down and the other answering in the wrong shape: a model read it and could not decide.
       .mockImplementationOnce(unavailable)
-      .mockResolvedValueOnce(Response.json({ success: true, result: { response: "no JSON" } }));
+      .mockResolvedValueOnce(Response.json({ success: true, result: { response: "no JSON" } }))
+      // Both down: unavailable, which never counts toward holding an item for a person.
+      .mockImplementationOnce(unavailable).mockImplementationOnce(unavailable);
     vi.stubGlobal("fetch", fetch);
     const recordRead = vi.fn();
 
-    await expect(readWorkerSource(input, credentials, recordRead))
-      .resolves.toEqual({ status: "allowance-exhausted", provider: "gemini" });
-    expect(fetch).toHaveBeenCalledTimes(1);
-    await expect(readWorkerSource({ ...input, worker: "kendra" }, credentials, recordRead))
-      .resolves.toEqual({ status: "allowance-exhausted", provider: "workers-ai" });
-    expect(fetch).toHaveBeenCalledTimes(2);
+    await expect(readWorkerSource(input, credentials, recordRead)).resolves.toMatchObject({ status: "ok", provider: "workers-ai" });
+    await expect(readWorkerSource({ ...input, worker: "kendra" }, credentials, recordRead)).resolves.toMatchObject({ status: "ok", provider: "gemini" });
+    await expect(readWorkerSource(input, credentials, recordRead)).resolves.toEqual({ status: "allowance-exhausted", provider: "workers-ai" });
+    await expect(readWorkerSource(input, credentials, recordRead)).resolves.toEqual({ status: "allowance-exhausted", provider: "gemini" });
+    await expect(readWorkerSource(input, credentials, recordRead)).resolves.toEqual({ status: "uncertain" });
     await expect(readWorkerSource(input, credentials, recordRead)).resolves.toEqual({ status: "unavailable" });
-    expect(fetch).toHaveBeenCalledTimes(4);
-    expect(recordRead).not.toHaveBeenCalled();
-    fetch.mockResolvedValueOnce(Response.json(googleAnswer));
-    await expect(readWorkerSource(input, credentials, recordRead)).resolves.toMatchObject({ status: "ok" });
-    expect(recordRead).toHaveBeenCalledTimes(1);
-    expect(recordRead).toHaveBeenCalledWith(expect.objectContaining({ status: "ok" }));
+    expect(fetch).toHaveBeenCalledTimes(12);
+    expect(recordRead.mock.calls.map(([result]) => [result.status, result.provider])).toEqual([
+      ["ok", "workers-ai"], ["ok", "gemini"],
+    ]);
+  });
+
+  it("waits out a named per-minute limit once, and never a long or unnamed one", async () => {
+    const waits: number[] = [];
+    setRateWait(async (ms) => { waits.push(ms); });
+    const minute = (delay: string) => Response.json({ error: { details: [{ retryDelay: delay }] } }, { status: 429 });
+    const fetch = vi.fn<typeof globalThis.fetch>()
+      .mockResolvedValueOnce(minute("33s")).mockResolvedValueOnce(Response.json(googleAnswer))
+      .mockResolvedValueOnce(minute("33s")).mockResolvedValueOnce(minute("33s"))
+      .mockResolvedValueOnce(minute("600s"));
+    vi.stubGlobal("fetch", fetch);
+    const geminiOnly = { GEMINI_API_KEY: "fixture-google" };
+    await expect(readWorkerSource(input, geminiOnly)).resolves.toMatchObject({ status: "ok", provider: "gemini" });
+    await expect(readWorkerSource(input, geminiOnly)).resolves.toEqual({ status: "unavailable" });
+    await expect(readWorkerSource(input, geminiOnly)).resolves.toEqual({ status: "unavailable" });
+    expect(waits).toEqual([33_000, 33_000]);
+    expect(fetch).toHaveBeenCalledTimes(5);
   });
 });
 
@@ -111,7 +166,7 @@ it("keeps grounded public research on the dedicated free search route and requir
     }));
   vi.stubGlobal("fetch", fetch);
   const research = { ...input, json: undefined, source: "Example Robotics", webSearch: true } as const;
-  await expect(readWorkerSource(research, credentials)).resolves.toEqual({ status: "unavailable" });
+  await expect(readWorkerSource(research, credentials)).resolves.toEqual({ status: "uncertain" });
   await expect(readWorkerSource(research, credentials)).resolves.toMatchObject({
     status: "ok", provider: "gemini", sources: [{ url: "https://fixture.example/press" }],
   });

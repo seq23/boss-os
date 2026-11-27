@@ -26,6 +26,7 @@
 import { readFileSync, readdirSync, statSync } from "node:fs";
 import { join, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
+import { HER_REPOS } from "../ops/noelle-guard.mjs";
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), "..", "..");
 const P = "mcp__plugin_openseo_openseo__";
@@ -53,11 +54,35 @@ export function permissionProblems(settings) {
   if (settings.env?.ENABLE_CLAUDEAI_MCP_SERVERS !== "false") out.push("env ENABLE_CLAUDEAI_MCP_SERVERS is not \"false\" (her claude.ai connectors would load)");
   if (settings.enabledPlugins?.["openseo@openseo"] !== true) out.push("the openseo plugin is not enabled in the file (the session would read nothing)");
   if (settings.permissions.defaultMode && settings.permissions.defaultMode !== "dontAsk") out.push(`defaultMode is ${settings.permissions.defaultMode}`);
+  out.push(...hookProblems(settings.hooks));
+  return out;
+}
+
+/**
+ * THE ONE HOOK (27 Nov 2026): code of ours reads every OpenSEO result (scripts/ops/ai-visibility-hook.mjs)
+ * and hands the session a digest. Exactly one PostToolUse entry, matching the OpenSEO plugin's tools only,
+ * running exactly that file through $AI_VISIBILITY_HOOK (set by ai-visibility.sh). No other hook event:
+ * a hook is a command run on her Mac, so a second one is a second door.
+ */
+export const HOOK_COMMAND = 'node "$AI_VISIBILITY_HOOK"';
+export const HOOK_MATCHER = "mcp__plugin_openseo_openseo__.*";
+export function hookProblems(hooks) {
+  if (!hooks || typeof hooks !== "object") return ["the permissions file has no hooks (the OpenSEO results would reach the session whole and code would build no week)"];
+  const out = [];
+  for (const ev of Object.keys(hooks)) if (ev !== "PostToolUse") out.push(`a ${ev} hook is set (only the PostToolUse digest hook may run)`);
+  const post = hooks.PostToolUse;
+  if (!Array.isArray(post) || post.length !== 1) return [...out, "PostToolUse must hold exactly one entry"];
+  if (post[0]?.matcher !== HOOK_MATCHER) out.push(`the hook's matcher is ${JSON.stringify(post[0]?.matcher)}, not the OpenSEO tools only`);
+  const cmds = post[0]?.hooks;
+  if (!Array.isArray(cmds) || cmds.length !== 1 || cmds[0]?.type !== "command" || cmds[0]?.command !== HOOK_COMMAND) out.push(`the hook must run exactly ${HOOK_COMMAND}`);
   return out;
 }
 
 export function scriptProblems(sh) {
   const out = [];
+  if (!/^HOOK="\$REPO\/scripts\/ops\/ai-visibility-hook\.mjs"$/m.test(sh)) out.push("ai-visibility.sh's HOOK is not scripts/ops/ai-visibility-hook.mjs");
+  if (!/AI_VISIBILITY_HOOK="\$HOOK" AI_VISIBILITY_STASH="\$WORK\/openseo\.jsonl"/.test(sh)) out.push("ai-visibility.sh no longer hands the session its hook and the stash in $WORK");
+  if (!/ai-visibility-report\.mjs post "\$RUN_LOG" "\$WORK\/state\.json" "\$WORK\/openseo\.jsonl"/.test(sh)) out.push("ai-visibility.sh's post step no longer reads the stash");
   if (!/--permission-mode dontAsk --setting-sources= --settings \$SETTINGS/.test(sh)) out.push("ai-visibility.sh no longer runs the session with --permission-mode dontAsk --setting-sources= --settings $SETTINGS");
   if (!/SETTINGS="\$REPO\/scripts\/ops\/ai-visibility-permissions\.json"/.test(sh)) out.push("ai-visibility.sh's SETTINGS is not scripts/ops/ai-visibility-permissions.json");
   if (/dangerously-skip-permissions|bypassPermissions/.test(sh)) out.push("ai-visibility.sh skips permissions");
@@ -87,6 +112,56 @@ function codeFiles(dir, out = []) {
 
 // ─── Every claude run locked ─────────────────────────────────────────────────────────────────────
 
+// ─── Noelle's hosts: her own sites, by exact name (the #574 review's S1, 27 Nov 2026) ──────────────────────
+// WebFetch runs outside her sandbox and a GET carries data in its URL, so the host list IS the control: no bare
+// WebFetch, no public wildcard (anyone can register a *.pages.dev or *.workers.dev host). The list is derived here from
+// the sites map (src/shared/boss/maps/sites.json) for the repos she grows (noelle-guard.mjs HER_REPOS), so
+// scripts/ops/noelle-permissions.json must name exactly these hosts: a site she gains fails the build until it is added,
+// and a host nobody owns of hers can never be added. Research beyond them is WebSearch (a search query, no host of hers).
+const NOELLE_INFRA = Object.freeze([
+  "github.com", "api.github.com", "codeload.github.com", "*.githubusercontent.com", // public clones and CI reads
+  "registry.npmjs.org", // npm installs
+  "boss.sequoiataylor.com", // Boss OS's own Worker, by exact name (never *.sequoiataylor.com)
+]);
+/** The Industry Guides hub: hers to read (search watch), not in HER_REPOS, so she cannot change it. */
+const NOELLE_READ_ONLY_REPOS = Object.freeze(["local-guides-citation-velocity"]);
+/**
+ * Pages projects whose <project>.pages.dev name is not proven hers: wpp-llm.pages.dev did not resolve on 27 Nov 2026
+ * (each other project's name served her own site or redirected to it), so a stranger might hold or claim it.
+ */
+const NOELLE_UNPROVEN_PAGES = Object.freeze(["wpp-llm"]);
+/** Her Cloudflare account's workers.dev subdomain: only that account can deploy under it, but each Worker is named. */
+const NOELLE_WORKERS_SUB = "seq-taylor.workers.dev";
+/** Hosts anyone can register a name under: a wildcard over one of these lets a stranger receive her data. */
+export const SHARED_HOSTS = Object.freeze(["pages.dev", "workers.dev", "wordpress.com", "blogspot.com", "github.io", "netlify.app",
+  "vercel.app", "web.app", "firebaseapp.com", "herokuapp.com", "trycloudflare.com", "ngrok.io", "ngrok-free.app", "onrender.com", "fly.dev"]);
+/** Shared temp folders: other sessions' scratch (west-peek-os included), ai-run's raw outputs, macOS $TMPDIR (/var/folders/..). */
+export const NOELLE_TEMP_ROOTS = Object.freeze(["/tmp", "/private/tmp", "/var/folders", "/private/var/folders", "/Volumes"]);
+
+export function noelleHosts(map = JSON.parse(readFileSync(join(ROOT, "src/shared/boss/maps/sites.json"), "utf8"))) {
+  const repos = new Set([...HER_REPOS, ...NOELLE_READ_ONLY_REPOS]);
+  const out = new Set(NOELLE_INFRA);
+  for (const r of map.rows ?? []) {
+    if (!repos.has(r.repo) || r.status !== "live") continue;
+    if (r.domain) { out.add(r.domain); out.add(`*.${r.domain}`); }
+    if (r.host === "cloudflare-pages" && r.project) { if (NOELLE_UNPROVEN_PAGES.includes(r.project)) continue; out.add(`${r.project}.pages.dev`); out.add(`*.${r.project}.pages.dev`); } // branch previews
+    else if (r.host === "cloudflare-worker" && r.project) out.add(`${r.project}.${NOELLE_WORKERS_SUB}`);
+    else if (["wordpress-com", "blogger"].includes(r.host) && /^[a-z0-9-]+\.(wordpress\.com|blogspot\.com)$/.test(r.project ?? "")) out.add(r.project);
+  }
+  return [...out].sort();
+}
+
+/** Whether a host list lets `host` through: an exact name, or `*.x` for a name under x (as Claude Code matches both). */
+export function hostAllowed(list, host) {
+  return list.some((d) => d === "*" || d === host || (d.startsWith("*.") && host.endsWith(d.slice(1))));
+}
+/** Her WebFetch hosts, from `WebFetch(domain:…)` rules; a bare WebFetch is every host. */
+export function webFetchHosts(settings) {
+  const allow = settings?.permissions?.allow ?? [];
+  if (allow.includes("WebFetch")) return ["*"];
+  return allow.map((a) => /^WebFetch\(domain:(.+)\)$/.exec(a)?.[1]).filter(Boolean);
+}
+
 const G = "mcp__claude_ai_Gmail__";
 const D = "mcp__claude_ai_Google_Drive__";
 /** Each job's own file and what its prompt uses (read from the prompt; removing one must fail). */
@@ -106,15 +181,17 @@ export const JOBS = Object.freeze([
   // Noelle (24 Nov 2026; sandbox redesign the same day): builder-level tools inside Claude Code's OS sandbox with no
   // GitHub login (gh is not allowed at all; she pushes and opens PRs through noelle-tool), her two brokers outside it, one reviewer agent per PR (the Agent tool held by her guard).
   { name: "noelle", scripts: ["scripts/ops/noelle.sh"],
-    needs: ["Agent", "WebFetch", "Edit(~/Work/noelle/**)", "Bash(__HOME__/.boss-os/noelle/bin/noelle-tool *)", "Bash(__HOME__/.boss-os/noelle/bin/land-after *)",
+    needs: ["Agent", "WebSearch", "Edit(~/Work/noelle/**)", "Bash(__HOME__/.boss-os/noelle/bin/noelle-tool *)", "Bash(__HOME__/.boss-os/noelle/bin/land-after *)",
       "Bash(git:*)", "Bash(npm:*)"],
     mustDeny: ["Bash(claude:*)", "Bash(ai-run:*)", "Bash(gh pr merge:*)", "Bash(git push --force:*)", "Bash(wrangler deploy:*)", "Bash(gh secret:*)", "Bash(npm run -s vault:set:*)", "Skill",
-      "Edit(~/Work/noelle/.claude/**)", "Edit(~/bin/**)", "Edit(~/.boss-os/**)", "Edit(~/Brains/**)"],
+      "Edit(~/Work/noelle/.claude/**)", "Edit(~/bin/**)", "Edit(~/.boss-os/**)", "Edit(~/Brains/**)",
+      "mcp__openseo", "mcp__plugin_openseo_openseo"],
     hook: "noelle-guard.mjs", agentGuard: "noelle-guard.mjs",
     sandbox: {
       allowWrite: ["~/Work/noelle", "~/.boss-os/noelle/runs/__RUN__"],
       allowRead: ["~/Work/noelle", "~/.boss-os/noelle/runs/__RUN__", "~/.boss-os/noelle/gitconfig", "~/.claude/skills", "~/.claude/CLAUDE.md"],
-      domains: ["github.com", "api.github.com", "codeload.github.com", "*.githubusercontent.com", "registry.npmjs.org", "*.pages.dev", "*.workers.dev", "api.bufferapp.com", "api.buffer.com"],
+      domains: noelleHosts(),
+      tempRoots: NOELLE_TEMP_ROOTS,
       excluded: ["__HOME__/.boss-os/noelle/bin/noelle-tool *", "__HOME__/.boss-os/noelle/bin/land-after *"],
     } },
 ]);
@@ -171,9 +248,26 @@ export function sandboxProblems(settings, spec) {
   if (!(fs.denyRead ?? []).includes("~/")) out.push("sandbox.filesystem.denyRead does not hold \"~/\" (the vault, ~/.config and other repos would be readable)");
   if (!same(fs.allowWrite ?? [], spec.allowWrite)) out.push(`sandbox.filesystem.allowWrite is not exactly ${spec.allowWrite.join(", ")}`);
   for (const r of fs.allowRead ?? []) if (!spec.allowRead.includes(r)) out.push(`sandbox.filesystem.allowRead re-opens ${r}`);
-  if (!same(net.allowedDomains ?? [], spec.domains)) out.push(`sandbox.network.allowedDomains is not exactly her hosts (${spec.domains.join(", ")})`);
+  const hostDiff = (got) => `extra: ${got.filter((h) => !spec.domains.includes(h)).join(", ") || "none"}; missing: ${spec.domains.filter((h) => !got.includes(h)).join(", ") || "none"}`;
+  if (!same(net.allowedDomains ?? [], spec.domains)) out.push(`sandbox.network.allowedDomains is not exactly her hosts (${hostDiff(net.allowedDomains ?? [])})`);
+  const denyRead = fs.denyRead ?? [];
+  for (const p of spec.tempRoots ?? []) if (!denyRead.includes(p)) out.push(`sandbox.filesystem.denyRead does not hold ${p} (other sessions' temp files, west-peek-os's among them, would be readable)`);
+  // WebFetch runs outside the sandbox: only its own domain rules hold it, and a GET's URL carries data (S1, 27 Nov 2026).
+  const allowList = settings.permissions?.allow ?? [];
+  if (allowList.includes("WebFetch")) out.push("allows bare WebFetch: every domain, and a GET's URL can carry her data to it");
+  for (const a of allowList) if (/^WebFetch\(/.test(a) && !/^WebFetch\(domain:[^()\s]+\)$/.test(a)) out.push(`allows ${a}: WebFetch is allowed only as WebFetch(domain:<her host>)`);
+  const fetchHosts = allowList.includes("WebFetch") ? [] : webFetchHosts(settings); // bare WebFetch is reported above
+  if (!allowList.includes("WebFetch") && !same(fetchHosts, spec.domains)) out.push(`WebFetch's domains are not exactly her hosts (${hostDiff(fetchHosts)})`);
+  const open = (h) => h === "*" || SHARED_HOSTS.some((s) => h === `*.${s}` || h === s);
+  for (const h of net.allowedDomains ?? []) if (open(h)) out.push(`allows ${h}: anyone can register a host there, so her data could reach a stranger`);
+  for (const h of fetchHosts) if (open(h)) out.push(`allows WebFetch(domain:${h}): anyone can register a host there, so her data could reach a stranger`);
   for (const k of ["allowAllUnixSockets", "allowUnixSockets", "allowLocalBinding", "allowMachLookup"]) if (net[k] !== undefined && !(Array.isArray(net[k]) && !net[k].length) && net[k] !== false) out.push(`sandbox.network.${k} is set (a way out of the sandbox)`);
   const allow = settings.permissions?.allow ?? [];
+  for (const rule of allow) {
+    // WebFetch(domain:…) rules also open those hosts to her commands; they are held above to exactly her sandbox hosts,
+    // so they can widen nothing, and a bare WebFetch (every host) is the failure (#574 review S1, 27 Nov 2026).
+    if (rule.startsWith("mcp__")) out.push(`${rule} exposes a connector directly; use the existing read paths`);
+  }
   for (const t of ["Read", "Edit", "Write", "Glob", "Grep", "NotebookEdit", "MultiEdit"]) if (allow.includes(t)) out.push(`allows bare ${t}: that tool runs outside the sandbox, so it may touch only her paths`);
   if (settings.permissions?.additionalDirectories?.length) out.push("permissions.additionalDirectories is set (it widens what her tools and sandbox may write)");
   for (const a of allow) {
@@ -183,6 +277,25 @@ export function sandboxProblems(settings, spec) {
     if (!underRoot(path, m[1] === "Edit" ? spec.allowWrite : spec.allowRead)) out.push(`allows ${a}, outside her sandbox's ${m[1] === "Edit" ? "write" : "read"} paths`);
   }
   if (settings.env?.GIT_CONFIG_NOSYSTEM !== "1" || !String(settings.env?.GIT_CONFIG_GLOBAL ?? "").endsWith("/.boss-os/noelle/gitconfig")) out.push("env does not pin her git to ~/.boss-os/noelle/gitconfig with GIT_CONFIG_NOSYSTEM=1 (Sequoia's Keychain login would push for her)");
+  return out;
+}
+
+/**
+ * Her launcher's run line (the #574 review's S2 and N1, 27 Nov 2026). Her session's temp is hers: TMPDIR in her run
+ * folder, and Claude Code's own temp root (CLAUDE_CODE_TMPDIR) in her home, which must stay short: past 44 bytes for
+ * <root>/claude-<uid> Claude Code silently puts her commands' temp back in the shared /tmp/claude-<uid>, beside every
+ * other session's. And a usage limit is the named stop (AI_RUN_NO_CREDIT=1), never a rerun on the API credit, whose
+ * run carries ANTHROPIC_API_KEY into her session.
+ */
+export function noelleLaunchProblems(sh) {
+  const run = sh.split("\n").find((l) => /AI_RUN_CLAUDE_MODEL=/.test(l)) ?? "";
+  const out = [];
+  if (!run) return ["noelle.sh: her ai-run line is gone (nothing checked is not a pass)"];
+  if (!/(^|\s)AI_RUN_NO_CREDIT=1\s/.test(run)) out.push("noelle.sh: her ai-run line does not set AI_RUN_NO_CREDIT=1 (a usage limit would rerun her on the API credit, with the key in her session)");
+  if (!/(^|\s)TMPDIR="\$NTMP"\s/.test(run)) out.push("noelle.sh: her ai-run line does not set TMPDIR to her run folder's tmp ($NTMP)");
+  if (!/(^|\s)CLAUDE_CODE_TMPDIR="\$NHOME"\s/.test(run)) out.push("noelle.sh: her ai-run line does not set CLAUDE_CODE_TMPDIR to her home (Claude Code would keep her temp in the shared /tmp/claude-<uid>)");
+  if (!/^NTMP="\$WORK\/tmp"/m.test(sh)) out.push("noelle.sh: NTMP is not her run folder's tmp");
+  if (!/NAMED STOP \[TMPDIR_TOO_LONG\]/.test(sh)) out.push("noelle.sh: no TMPDIR_TOO_LONG stop (a long temp root falls back to the shared /tmp/claude-<uid> without a word)");
   return out;
 }
 
@@ -267,6 +380,15 @@ export const SANDBOX_BREAKS = Object.freeze([
   ["a model host allowed", (s) => { s.sandbox.network.allowedDomains.push("api.anthropic.com"); }],
   ["every host allowed", (s) => { s.sandbox.network.allowedDomains = ["*"]; }],
   ["unix sockets opened", (s) => { s.sandbox.network.allowAllUnixSockets = true; }],
+  ["bare WebFetch allowed (every domain)", (s) => { s.permissions.allow = s.permissions.allow.filter((a) => !a.startsWith("WebFetch(")); s.permissions.allow.push("WebFetch"); }],
+  ["bare WebFetch added beside her domains", (s) => { s.permissions.allow.push("WebFetch"); }],
+  ["WebFetch to a public wildcard", (s) => { s.permissions.allow.push("WebFetch(domain:*.workers.dev)"); }],
+  ["WebFetch to an unlisted host", (s) => { s.permissions.allow.push("WebFetch(domain:evil.example)"); }],
+  ["WebFetch to every host by wildcard", (s) => { s.permissions.allow.push("WebFetch(domain:*)"); }],
+  ["a public wildcard host (*.pages.dev)", (s) => { s.sandbox.network.allowedDomains.push("*.pages.dev"); }],
+  ["a public wildcard host (*.workers.dev)", (s) => { s.sandbox.network.allowedDomains.push("*.workers.dev"); }],
+  ["a stranger's workers.dev host", (s) => { s.sandbox.network.allowedDomains.push("x.attacker.workers.dev"); }],
+  ...NOELLE_TEMP_ROOTS.map((p) => [`temp reads re-allowed (${p})`, (s) => { s.sandbox.filesystem.denyRead = s.sandbox.filesystem.denyRead.filter((d) => d !== p); }]),
   ["bare Read allowed", (s) => { s.permissions.allow.push("Read"); }],
   ["bare Write allowed", (s) => { s.permissions.allow.push("Write"); }],
   ["an Edit rule outside her paths", (s) => { s.permissions.allow.push("Edit(~/GitHub/**)"); }],
@@ -289,11 +411,17 @@ function selfTest() {
     ["connectors on", (s) => { s.env.ENABLE_CLAUDEAI_MCP_SERVERS = "true"; }],
     ["no allow list", (s) => { delete s.permissions.allow; }],
     ["plugin off", (s) => { s.enabledPlugins["openseo@openseo"] = false; }],
+    ["no hook", (s) => { delete s.hooks; }],
+    ["a second hook event", (s) => { s.hooks.PreToolUse = s.hooks.PostToolUse; }],
+    ["the hook on every tool", (s) => { s.hooks.PostToolUse[0].matcher = ".*"; }],
+    ["the hook running another command", (s) => { s.hooks.PostToolUse[0].hooks[0].command = "bash -c 'curl x'"; }],
   ]) { const s = clone(good); f(s); must(`ai-visibility: ${name}`, permissionProblems(s)); }
   if (permissionProblems(good).length) { console.error("self-test: the real ai-visibility file fails"); bad++; }
   const sh = readFileSync(join(ROOT, "scripts/ops/ai-visibility.sh"), "utf8");
   if (scriptProblems(sh).length) { console.error("self-test: the real ai-visibility.sh fails"); bad++; }
   must("ai-visibility.sh skipping permissions", scriptProblems(sh.replace("--permission-mode dontAsk", "--dangerously-skip-permissions")));
+  must("ai-visibility.sh's hook pointed elsewhere", scriptProblems(sh.replace('HOOK="$REPO/scripts/ops/ai-visibility-hook.mjs"', 'HOOK="/tmp/x.mjs"')));
+  must("ai-visibility.sh's post step without the stash", scriptProblems(sh.replace(' "$WORK/openseo.jsonl")', ")")));
   must("ai-visibility.sh back on text output", scriptProblems(sh.replace(" --output-format stream-json --verbose", "")));
   must("ai-visibility.sh's stream sent to the log", scriptProblems(sh.replace('--out "$WORK/session.jsonl"', '--out "$RUN_LOG"')));
   must("ai-visibility.sh without the transcript step", scriptProblems(sh.replace(/^.*ai-visibility-report\.mjs transcript.*$/m, "")));
@@ -323,6 +451,14 @@ function selfTest() {
       { const s = clone(real); s.permissions.deny = [...(s.permissions.deny ?? []), server]; must(`${job.name}: deny ${server} shadowing ${a}`, jobProblems(s, job)); }
       { const s = clone(real); s.permissions.deny = [...(s.permissions.deny ?? []), server + "__*"]; must(`${job.name}: deny ${server}__* shadowing ${a}`, jobProblems(s, job)); }
     }
+  }
+  { // her launcher: the real one passes; each fix taken back is caught
+    const nsh = readFileSync(join(ROOT, "scripts/ops/noelle.sh"), "utf8");
+    if (noelleLaunchProblems(nsh).length) { console.error(`self-test: the real noelle.sh fails: ${noelleLaunchProblems(nsh).join("; ")}`); bad++; }
+    must("noelle.sh rerunning on the API credit", noelleLaunchProblems(nsh.replaceAll("AI_RUN_NO_CREDIT=1 ", "")));
+    must("noelle.sh with her TMPDIR back on the Mac's", noelleLaunchProblems(nsh.replaceAll('TMPDIR="$NTMP" ', "")));
+    must("noelle.sh with Claude Code's temp root back in /tmp", noelleLaunchProblems(nsh.replaceAll('CLAUDE_CODE_TMPDIR="$NHOME" ', "")));
+    must("noelle.sh without the TMPDIR_TOO_LONG stop", noelleLaunchProblems(nsh.replace(/NAMED STOP \[TMPDIR_TOO_LONG\]/g, "")));
   }
   must("an empty allow list not marked text_only", jobProblems({ permissions: { allow: [], deny: COMMON_DENY } }, { name: "x", needs: [] }));
   // The skip flag back in every locked script, and each shape of unlocked call.
@@ -362,6 +498,7 @@ function main() {
     const s = settingsOf(job.name);
     problems.push(...(s ? jobProblems(s, job) : [`scripts/ops/${job.name}-permissions.json is missing or not JSON`]), ...namedBy(job, scriptFiles));
   }
+  problems.push(...noelleLaunchProblems(readFileSync(join(ROOT, "scripts/ops/noelle.sh"), "utf8")));
   console.log(`Unlocked by name (${EXCEPTIONS.length}):`);
   for (const e of EXCEPTIONS) console.log(`  - ${e.file}${e.match ? ` [${e.match}]` : ""}: ${e.why}`);
   if (problems.length) { for (const p of problems) console.error(`✗ ${p}`); process.exit(1); }

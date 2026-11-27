@@ -48,18 +48,19 @@ they live in the repo, not only in someone's memory. Non-confidential. `STATUS.m
   `model_job_outcome` and returns the work to a subscription seat when results drop or the free
   model cannot finish. Simone can choose a free route again after its evidence qualifies. The daily operating note lists
   each change and the reason. The move records use `settings` and `task_events`.
-- **Free worker reading** enters through `readWorkerSource` in `src/worker/boss/router/freeModel.ts` from Node or the Worker.
-  Monique starts with Gemini and the other workers start with Workers AI. A provider error can move a
-  read to the other provider. A provider's daily quota response returns `allowance-exhausted` so the job
-  can stop at its current item. The client places instructions and supplied source material in distinct
-  roles. Toni’s current billing call supplies the retrieved business-mail headers.
-  The client calls `recordRead`, when supplied, only after a usable answer. The CI model boundary checks
-  imports and calls in the worker-job directories. `scripts/validate/worker-model-exceptions.json`
-  names the existing exceptions and the permitted occurrences.
-  The route reads `BOSS_WORKER_GEMINI_FREE_KEY` for a Gemini project with billing disabled and
-  `BOSS_WORKER_CF_FREE_ACCOUNT_ID` plus `BOSS_WORKER_CF_FREE_TOKEN` for an account on the Workers Free
-  plan. Verify those plans before provisioning the vault keys and keep billing disabled on both.
-  A provider with missing credentials is skipped. With both unavailable the caller receives `unavailable`.
+- **Worker reading** uses `readWorkerSource` in `src/worker/boss/router/freeModel.ts` from Node or the Worker.
+  Monique starts with Gemini and the other workers start with Workers AI. A provider error or a spent
+  day on one lane moves the read to the other lane; a per-minute limit is waited out once (at most 60 s).
+  When no lane answers, a spent day returns `allowance-exhausted` and anything else `unavailable`, and the
+  job keeps that item unread. Jobs pass their instructions and the complete source in distinct roles.
+  Credentials (ruling of 27 Nov 2026, existing vault names only): Gemini reads `GEMINI_API_KEY` (Google
+  answers it with FreeTier quota ids, so it cannot bill); Workers AI reads `CF2_ACCOUNT_ID` plus
+  `CF2_WORKERS_AI_TOKEN`, the second Cloudflare account, which has no Workers Paid plan and stops itself
+  at 10,000 neurons a day. Never the main account: the Worker's `AI` binding is not read, and a CF2 id
+  equal to `CLOUDFLARE_ACCOUNT_ID` turns the Workers AI lane off. A lane with missing credentials is skipped.
+  The client calls a supplied `recordRead` only after a usable answer. Toni's billing reader supplies
+  the business-mail headers it retrieved. The CI model boundary checks imports and calls in the worker-job
+  directories and reads the named exceptions from `scripts/validate/worker-model-exceptions.json`.
 - **Boss OS model access** (owner, 24–26 Nov 2026): ordinary deal and LP wording travels intact to
   eligible models. The router and the intake ladder cut sections marked confidential in brain text.
   The recipient still determines outward approval. The router still applies capability, an explicit
@@ -76,8 +77,14 @@ they live in the repo, not only in someone's memory. Non-confidential. `STATUS.m
   repeated fall hour runs at the first one. A worker-clocked Central cron in the 02:00 hour fails
   `clockRowProblems`. Pinned by `tests/centralClock.test.ts` and `tests/boss/centralClockCallers.test.ts`.
 
-Monique's LP reply list and outcome reconciliation use full Gmail threads. An unread or uncertain
-reply holds automated outreach while the reader retries. A dated deferral closes the current sequence
+Monique's LP reply list and outcome reconciliation use full Gmail threads, read newest first, at most
+`LP_READS_PER_RUN` (200) model reads a morning. A sender with an unread reply gets no draft and no drip
+while the reader retries; everyone whose replies are read is drafted as usual, and the run still ends on
+`NAMED STOP [LP_REPLY_UNREAD]`. In the Worker's outreach tick an unread reply holds only its own address
+(and its partner campaign) and is on Today as a count; Gmail itself unreadable holds every send. A reply,
+deal email or grid-check message the model calls uncertain on three runs is held for her: kept unread,
+never marked done, named with its Gmail link in the morning email's notices
+(`scripts/ops/lib/held-for-person.mjs`), and the job reads the next one. An outage never counts toward that. A dated deferral closes the current sequence
 and keeps its requested date; only a permanent request or a complaint becomes a permanent opt-out.
 The scheduled Deals grid run re-reads the brokerage source from the previous Central day and checks
 its interests against the stored grid. The Scorecard uses that duty's existing run row. The October

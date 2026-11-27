@@ -13,7 +13,6 @@ import { handleBossInboundMail } from "../../src/worker/boss/intake/inboundMail"
 import { claimSimone, finishSimoneHandoff, replySimone } from "../../src/worker/boss/agents/simone";
 import { simoneTool } from "../../src/worker/boss/agents/simoneTools";
 import { recordMailRefs } from "../../src/worker/boss/intake/mailRefs";
-import { enableSickDay } from "../../src/worker/boss/agents/simoneAccounts";
 import { setCommandFetch } from "../../src/worker/boss/commands/google";
 import { sha256Hex } from "../../src/worker/boss/lib/id";
 import { setSetting } from "../../src/worker/boss/lib/settings";
@@ -167,7 +166,7 @@ beforeEach(async () => {
   (env as any).GSC_SERVICE_ACCOUNT_JSON = KEY;
   setCommandFetch(fakeGoogle());
   env.BOSS_SIMONE_PERSONAL_GOOGLE_ACCOUNT = "personal@example.test";
-  await enableSickDay(env, { address: DEFAULT_MAILBOX, until: NOW + 86_400_000 }, NOW);
+  // No sick-day grant: every calendar test here runs in the default production state (#582 review finding 1).
   Date.now = (() => { let t = NOW; return () => (t += 1000); })();
   await env.DB.exec("DELETE FROM boss_commands");
   await env.DB.exec("DELETE FROM boss_inbound_mail");

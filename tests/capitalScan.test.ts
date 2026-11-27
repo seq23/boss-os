@@ -86,6 +86,30 @@ describe("capital:scan", () => {
     expect(read.mock.calls.map(([input]) => JSON.parse(input.source).targetMessageIds)).toEqual([["first"], ["later"], ["later"], ["later"]]);
   });
 
+  it("reads past a thread the model keeps calling uncertain, then holds it for her on the third run (review F4)", async () => {
+    fs.writeFileSync(path.join(directory, "scan-state.json"), JSON.stringify({ last_scanned_at: NOW - 60_000 }));
+    const api = vi.fn(async (url: string) => {
+      if (url.includes("/messages?")) return { messages: [{ id: "next", threadId: "next" }, { id: "poison", threadId: "poison" }] };
+      const id = new URL(url).pathname.split("/").at(-1)!;
+      return { messages: [apiMessage(id, "Synthetic write-up.")] };
+    });
+    const read = vi.fn<Parameters<typeof scanBrokerage>[0]["read"]>(async (input) =>
+      JSON.parse(input.source).targetMessageIds[0] === "poison" ? { status: "uncertain" as const } : hit({ next: "candidate" }));
+    const run = (now: number) => scanBrokerage({ directory, mailbox: MAILBOX, api, read, now });
+    // Runs 1 and 2: the thread after the uncertain one is read; the window stays open for the uncertain one.
+    expect(await run(NOW)).toMatchObject({ status: "unavailable", kept: 1, held: 0, never_read: 1, held_now: [] });
+    expect(state().active.completed).toEqual({ next: "candidate" });
+    expect(await run(NOW + 3_600_000)).toMatchObject({ status: "unavailable", kept: 1, held: 0, never_read: 1 });
+    // Run 3: held for her, never marked read or done, and the window closes so tomorrow's mail is read.
+    expect(await run(NOW + 7_200_000)).toMatchObject({ status: "complete", kept: 1, held: 1, dropped: 0, never_read: 0, held_now: ["poison"] });
+    expect(state()).toMatchObject({ last_scanned_at: NOW, held: { poison: { threadId: "poison", runs: 3 } } });
+    expect(read.mock.calls.filter(([input]) => JSON.parse(input.source).targetMessageIds[0] === "poison")).toHaveLength(3);
+    // An outage never counts toward the hold: it stops the run as before.
+    read.mockResolvedValue({ status: "unavailable" });
+    fs.writeFileSync(path.join(directory, "scan-state.json"), JSON.stringify({ last_scanned_at: NOW - 60_000 }));
+    for (let i = 0; i < 4; i++) expect(await run(NOW + i)).toMatchObject({ status: "unavailable", held: 0 });
+  });
+
   it("keeps an incomplete Gmail listing open and accepts a confirmed empty window", async () => {
     const api = vi.fn(async (url: string) => {
       return new URL(url).searchParams.has("pageToken") ? null : { nextPageToken: "missing-page" };

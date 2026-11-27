@@ -24,7 +24,7 @@ beforeAll(() => {
   const { privateKey } = crypto.generateKeyPairSync("rsa", { modulusLength: 2048 });
   process.env.BOSS_OS_LP_DIR = dir;
   process.env.LP_MAILBOX = "owner@fund.example";
-  process.env.BOSS_WORKER_GEMINI_FREE_KEY = "fixture";
+  process.env.GEMINI_API_KEY = "fixture";
   process.env.GSC_SERVICE_ACCOUNT_JSON = JSON.stringify({
     client_email: "robot@project.example", private_key: privateKey.export({ type: "pkcs8", format: "pem" }),
   });
@@ -103,4 +103,16 @@ it("uses the full reply thread to decide whether to draft, and holds the thread 
   ] });
   expect(ready.rows[0]).toMatchObject({ status: "drafted", draft_id: "draft-fixture" });
   expect(draftWrites).toBe(1);
+});
+
+it("drafts for a fully read sender while one with an unread reply stays on the tracker undrafted (review F6)", async () => {
+  const { followUps } = await import("../scripts/ops/lp-followups.mjs");
+  modelFails = false;
+  const before = draftWrites;
+  const replies = [{ address: "new@other.example", name: "Casey", bucket: "warm", first_seen: "2026-11-16" }];
+  const waiting = await followUps(replies, { now: NOW, unread: new Set(["new@other.example"]) });
+  expect(waiting.rows).toEqual([expect.objectContaining({ address: "new@other.example", status: "not_answered", waiting_why: "unread" })]);
+  expect(draftWrites).toBe(before);
+  const read = await followUps(replies, { now: NOW, unread: new Set(["someone-else@other.example"]) });
+  expect(read.rows[0]).toMatchObject({ status: "drafted" });
 });

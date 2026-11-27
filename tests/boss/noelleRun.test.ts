@@ -21,7 +21,7 @@ import { setSetting } from "../../src/worker/boss/lib/settings";
 import { handleRequest } from "../../src/worker/index";
 import { dayIdInZone } from "../../src/shared/boss/timezone";
 import { CHANNEL_OWNERS } from "../../src/shared/boss/growth/noelle.mjs";
-import { noelleWatch, postsReconciled } from "../../src/worker/boss/growth/noelle";
+import { noelleContext, noelleWatch, postsReconciled } from "../../src/worker/boss/growth/noelle";
 import type { Env } from "../../src/worker/env";
 
 const NOW = Date.parse("2026-11-23T20:00:00Z"); // Mon 23 Nov 2026, 14:00 Central
@@ -163,6 +163,16 @@ describe("H3b: her message on Noelle's page is a call on the same claim path as 
 });
 
 describe("the run's end: one row per run, a stopped run names its stop, the same failure twice tells her once", () => {
+  it("carries a completed weekly review through the month and clears it for the next month", async () => {
+    const insert = env.DB.prepare(`INSERT INTO noelle_runs (id, day, slot, kind, state, stops, calls, line, reads, created_at, updated_at)
+      VALUES (?, ?, '14:37', 'weekly', ?, '[]', 1, ?, '{}', ?, ?)`);
+    await insert.bind("noelle-incomplete-month", "2026-11-05", "stopped", "NAMED STOP [MONTHLY_REVIEW_INCOMPLETE] no bet was reviewed", NOW, NOW).run();
+    expect((await noelleContext(env, NOW)).monthlyReviewDone).toBeNull();
+    await insert.bind("noelle-completed-month", "2026-11-12", "done", "OUTPUT monthly review 2026-11: 2 bets reviewed.", NOW, NOW).run();
+    expect((await noelleContext(env, NOW)).monthlyReviewDone).toBe("2026-11");
+    expect((await noelleContext(env, NOW + 10 * DAY_MS)).monthlyReviewDone).toBeNull();
+  });
+
   it("a bad id or a stopped run with no stop code is a 400 and records nothing", async () => {
     expect((await done({ id: "not-hers" })).status).toBe(400);
     expect((await done({ id: undefined })).status).toBe(400);
@@ -232,7 +242,7 @@ describe("a Notices line per publish: on her roster, keyed, https only, once", (
 
   it("off her roster, without what/where, or a key not her business's is refused; an http link is never carried", async () => {
     expect((await json(await notice({ business: "brindlewood" }))).written).toBe(false);
-    expect((await json(await notice({ business: "hicks", key: "noelle:hicks:x" }))).written).toBe(true); // search-watch is on the roster
+    expect((await json(await notice({ business: "hicks", key: "noelle:hicks:x" }))).written).toBe(true); // a client site is on the roster
     expect((await json(await notice({ what: "" }))).why).toMatch(/what and where/);
     expect((await json(await notice({ key: "noelle:approvalprep:x" }))).why).toMatch(/noelle:peace-be-still:/);
     await notice({ key: "noelle:peace-be-still:http", link: "http://evil.example/x" });
@@ -448,10 +458,21 @@ describe("H5, Monday: every posting path of every growth business is reconciled,
 });
 
 describe("privacy before any prompt (G8)", () => {
+  it("returns dated OpenSEO rivals and sources for the selling site and excludes client rows", async () => {
+    const insert = env.DB.prepare(`INSERT INTO ai_misses (id, site, prompt_id, prompt, lane, first_missed_week, last_missed_week, rivals, cited_sources, updated_at)
+      VALUES (?, ?, ?, ?, 'own', '2026-11-17', '2026-11-24', ?, ?, ?)`);
+    await env.DB.batch([
+      insert.bind("owner-record", "approvalprep.com", "p1", "owner test question", '["rival.example"]', '["source.example"]', NOW),
+      insert.bind("client-record", "hicksconsulting.org", "p2", "client test question", '["client-rival.example"]', '["client-source.example"]', NOW),
+    ]);
+    const ctx = await json(await call("/noelle/context"));
+    expect(ctx.aiMisses).toMatchObject([{ id: "owner-record", last_missed_week: "2026-11-24", rivals: ["rival.example"], cited_sources: ["source.example"] }]);
+  });
+
   it("all four growth brains load; a friends owner's name and a P&P customer never reach the context", async () => {
     const ctx = await json(await call("/noelle/context"));
     expect(ctx.businesses.map((b: any) => b.key).sort()).toEqual(["approvalprep", "hicks", "peace-be-still", "porch-and-party"]);
-    expect(ctx.businesses.find((b: any) => b.key === "hicks").tier).toBe("search-watch");
+    expect(ctx.businesses.find((b: any) => b.key === "hicks").tier).toBe("search");
     expect(JSON.stringify(ctx)).not.toMatch(/Zebulon|Quarrington|Brindlewood/);
     expect(ctx.businesses.every((b: any) => b.held === null)).toBe(true);
   });

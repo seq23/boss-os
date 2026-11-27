@@ -12,6 +12,7 @@ import { gmailPayloadText } from "../../src/shared/boss/mail/gmailPayload.mjs";
 import { CENTRAL, instantAt } from "../../src/shared/boss/schedule/clock.mjs";
 import { readWorkerSource } from "../../src/worker/boss/router/freeModel.ts";
 import { readJsonObject } from "../../src/worker/boss/router/types.ts";
+import { holdForPerson, stillUncertain } from "./lib/held-for-person.mjs";
 
 /**
  * THE MAILBOX IS A NAMED CONSTANT AND IT IS PUT IN THE JWT's `sub` CLAIM, so it cannot silently
@@ -245,9 +246,12 @@ export async function scanBrokerage({ directory, mailbox, api, read, now = Date.
   for (const [, ids] of threads) census += ids.length;
   let kept = 0;
   let dropped = 0;
+  let held = 0;
+  const heldNow = [];
   let status = "complete";
   for (const [threadId, ids] of threads) {
     const remaining = ids.filter((id) => !completed.has(id));
+    let skipped = false;
     if (remaining.length) {
       const thread = await readBrokerageThread(api, threadId, remaining);
       const targets = remaining.filter((id) => {
@@ -271,37 +275,53 @@ export async function scanBrokerage({ directory, mailbox, api, read, now = Date.
           accept: (text) => Boolean(decisionsOf(text, targets)),
         });
         const decisions = result.status === "ok" ? decisionsOf(result.text, targets) : null;
-        if (!decisions) {
+        if (!decisions && result.status !== "uncertain") {
           status = result.status === "allowance-exhausted" ? result.status : "unavailable";
           break;
         }
-        const batch = thread.filter((message) => decisions[message.id] === "candidate")
+        if (!decisions) {
+          // A model read it and could not decide: the window stays open and the next thread is read.
+          // On the third such run the thread is held for her, unread and never marked done (review F4).
+          if (stillUncertain(active, threadId)) {
+            for (const id of targets) {
+              completed.set(id, "held");
+              holdForPerson(state, id, { threadId, held_at: now });
+              heldNow.push(id);
+            }
+          } else {
+            status = "unavailable";
+            skipped = true;
+          }
+        }
+        const batch = !decisions ? [] : thread.filter((message) => decisions[message.id] === "candidate")
           .map((message) => candidateFromMessage(message, thread, mailbox));
         if (batch.length) {
           const key = crypto.createHash("sha256").update(JSON.stringify(batch.map((message) => message.source_message).sort())).digest("hex");
           const file = path.join(batchDir, `thread-${key}.json`);
           if (!fs.existsSync(file)) writeJson(file, batch);
         }
-        for (const id of targets) completed.set(id, decisions[id]);
+        if (decisions) for (const id of targets) completed.set(id, decisions[id]);
       }
-      for (const id of remaining) if (!completed.has(id)) completed.set(id, "outside_window");
+      if (!skipped) for (const id of remaining) if (!completed.has(id)) completed.set(id, "outside_window");
       active.completed = Object.fromEntries(completed);
       writeJson(stateFile, { ...state, active });
     }
     for (const id of ids) {
-      if (completed.get(id) === "candidate") kept += 1;
-      else dropped += 1;
+      const verdict = completed.get(id);
+      if (verdict === "candidate") kept += 1;
+      else if (verdict === "held") held += 1;
+      else if (verdict) dropped += 1;
     }
   }
   const report = {
     status, scanned_at: new Date(now).toISOString(), window: { start: active.start, end: active.end },
-    census, kept, dropped, never_read: census - kept - dropped,
+    census, kept, dropped, held, never_read: census - kept - dropped - held, held_now: heldNow,
     drops: { no_new_interest_or_outside_window: dropped },
   };
   writeJson(scanFile, report);
   if (status === "complete") {
     writeJson(stateFile, { last_scanned_at: active.manual && (state.last_scanned_at ?? state.last_scanned_date)
-      ? (state.last_scanned_at ?? sinceInstant(state.last_scanned_date)) : active.end });
+      ? (state.last_scanned_at ?? sinceInstant(state.last_scanned_date)) : active.end, ...(state.held ? { held: state.held } : {}) });
   }
   return report;
 }
@@ -351,7 +371,11 @@ async function main() {
     since: SINCE, backfill: BACKFILL,
   });
   console.log(`OUTPUT ${result.kept + result.dropped} brokerage messages assessed`);
-  console.log(`CAPITAL-SCAN ${result.status}: ${result.kept} candidate(s), ${result.dropped} other, ${result.never_read} unread of ${result.census}.`);
+  console.log(`CAPITAL-SCAN ${result.status}: ${result.kept} candidate(s), ${result.dropped} other, ${result.held} held for her, ${result.never_read} unread of ${result.census}.`);
+  if (result.held_now.length) {
+    const { nameHeld } = await import("./interest-extract.mjs");
+    await nameHeld(result.held_now, "brokerage emails");
+  }
   if (result.status !== "complete") {
     console.error(result.status === "allowance-exhausted"
       ? "NAMED STOP [FREE_ALLOWANCE_EXHAUSTED] The open window will resume on the next scan."

@@ -191,21 +191,32 @@ PROMPT_TEXT="$(sed "s#~/GitHub/boss-os#$REPO#g" "$PROMPT_FILE" | sed "s#~/.boss-
 # that repo's briefs only; everything else in the prompt (off-limits list, worktrees, validators,
 # land) still applies. Protected briefs are skipped here: they are fixed only on their own.
 if [ -n "${SR_SCOPE_REPO:-}" ]; then
+  SCOPE_IDS_NOTE=""
+  [ -n "${SR_SCOPE_BRIEFS:-}" ] && SCOPE_IDS_NOTE=" (only the ids this pass was handed; the rest of this repo's briefs go to the next pass)"
   PROMPT_TEXT="$PROMPT_TEXT
 
 ## THIS PASS IS SCOPED (daily Search Readiness queue run)
 
-Work ONLY section 1b, and ONLY the briefs in ~/.boss-os/search-readiness/fix-queue.json whose
-\`repo\` is \`$SR_SCOPE_REPO\`. Do not read the Ahrefs mail this pass. Fix EVERY such brief that is not
+Work ONLY section 1b, and ONLY the briefs in YOUR PASS PACKET below: code read them from
+~/.boss-os/search-readiness/fix-queue.json for \`repo\` \`$SR_SCOPE_REPO\`$SCOPE_IDS_NOTE, mapped each domain to its
+repository and listed the repo's open work, so you start at the fix. Do not read the Ahrefs mail this pass. Fix EVERY such brief that is not
 \`protected\` — batch them into as few PRs as the repo's own validators allow, and get each green.
 Skip any brief with \`protected\` set; record it as off_limits with the reason (it is fixed only on its own pass). Record every brief in
-findings.json as section 1b says. End with the usual completion sentinel."
-  if [ -n "${SR_SCOPE_BRIEFS:-}" ]; then
-    PROMPT_TEXT="$PROMPT_TEXT
-Narrower still: work ONLY the briefs whose \`id\` is one of: $SR_SCOPE_BRIEFS. The rest of this repo's
-briefs go to the next pass. Open the PR and get it green before you finish, so nothing is lost."
+findings.json as section 1b says. Open the PR and get it green before you finish, so nothing is lost. End with the usual completion sentinel."
+  # THE PASS PACKET (27 Nov 2026, ahrefs-code-tools): the queue read, repo-for and the open-work read are
+  # code, made here, instead of the model's first turns (site-audit-lib.mjs passPacket). A queue that
+  # cannot be read stops the pass (a queue pass never runs without its briefs); open work GitHub would
+  # not give is said as UNREAD in the packet, and the model checks in-flight itself.
+  PACKET="$(node "$REPO/scripts/ops/site-audit-lib.mjs" packet "$SR_SCOPE_REPO" "${SR_SCOPE_BRIEFS:-}" 2>>"$RUN_LOG")"
+  PACKET_RC=$?
+  if [ "$PACKET_RC" -ne 0 ] || ! printf '%s\n' "$PACKET" | grep -q '^## YOUR PASS PACKET'; then
+    say "$(printf '%s\n' "$PACKET" | grep -m1 'NAMED STOP' || echo "NAMED STOP [NO_PASS_PACKET] site-audit-lib.mjs packet exited $PACKET_RC without a packet")"
+    exit 11
   fi
-  say "scoped pass: Search Readiness queue, repo $SR_SCOPE_REPO"
+  PROMPT_TEXT="$PROMPT_TEXT
+
+$PACKET"
+  say "scoped pass: Search Readiness queue, repo $SR_SCOPE_REPO ($(printf '%s\n' "$PACKET" | sed -n 's/^BRIEFS (\([0-9]*\),.*/\1/p') briefs in the packet)"
   # OUR OWN OPEN PRs GO FIRST (9 Nov 2026). A draft left at a turn limit, or a green PR main has moved
   # past, used to be recorded in_flight by every later pass and skipped: the draft waited on the next
   # pass and the next pass waited on the draft (p-n-p #179, LGG #161/#166, LGCV #272, 4-6 days). The
@@ -268,13 +279,21 @@ case "$SR_FIX_SETTINGS" in *[[:space:]]*) say "NAMED STOP [PERMISSIONS_PATH_SPAC
 # Each refusal is logged with its command; a pass that would end 0 ends 14 instead. No transcript
 # (Codex ran the pass, or Claude never started) is said, not counted as clean.
 SR_FIX_SESSION="$(node -e 'console.log(crypto.randomUUID())')"
-AI_RUN_CLAUDE_ARGS="--max-turns $MAX_TURNS --session-id $SR_FIX_SESSION --permission-mode dontAsk --setting-sources= --settings $SR_FIX_SETTINGS" \
+# ONLY THE TOOLS THE ALLOW LIST NAMES ARE LOADED (27 Nov 2026, ahrefs-code-tools). Every other built-in tool
+# (Agent, Monitor, WebFetch, cron, worktree, notebook…) was refused by dontAsk anyway, yet its schema rode in
+# every turn: measured on this exact launch, 19,943 input tokens before the prompt with all of them, 9,021
+# with --tools. A pass re-reads that on each of its ~58 turns. Read from sr-fix-permissions.json, so the
+# loaded tools and the allowed ones are one list.
+SR_FIX_TOOLS="$(node -e 'const a=JSON.parse(require("fs").readFileSync(process.argv[1],"utf8")).permissions.allow;console.log([...new Set(a.map(r=>r.replace(/\(.*$/,"")))].filter(t=>/^[A-Z][A-Za-z]+$/.test(t)).join(","))' "$SR_FIX_SETTINGS" 2>/dev/null)"
+case "$SR_FIX_TOOLS" in *Bash*) ;; *) say "NAMED STOP [NO_TOOL_LIST] could not read the worker's tools from $SR_FIX_SETTINGS (got '$SR_FIX_TOOLS')."; exit 6;; esac
+AI_RUN_CLAUDE_ARGS="--max-turns $MAX_TURNS --session-id $SR_FIX_SESSION --tools $SR_FIX_TOOLS --permission-mode dontAsk --setting-sources= --settings $SR_FIX_SETTINGS" \
 "$AI_RUN" --role "$REPAIR_ROLE" --network --cwd "$HOME" --out "$RUN_LOG" -- "$PROMPT_TEXT" >> "$RUN_LOG" 2>&1
 RC=$?
 say "=== ai-run --role $REPAIR_ROLE exited rc=$RC ==="
 DENIED=0
 TRANSCRIPT="$(find "$HOME/.claude/projects" -maxdepth 2 -name "$SR_FIX_SESSION.jsonl" 2>/dev/null | head -1)"
 if [ -n "$TRANSCRIPT" ]; then
+  say "$(node "$REPO/scripts/ops/site-audit-lib.mjs" tokens "$TRANSCRIPT" 2>&1 | tail -1)"
   DENIALS="$(node "$REPO/scripts/ops/lib/permission-denials.mjs" "$TRANSCRIPT" 2>&1)"
   DENIED="$(printf '%s\n' "$DENIALS" | sed -n 's/^denied=\([0-9][0-9]*\)$/\1/p')"
   if [ -z "$DENIED" ]; then
@@ -351,6 +370,13 @@ fi
 
 say "sentinel: $(grep -oE 'AHREFS-AUDIT-COMPLETE: projects=[0-9].*' "$RUN_LOG" | tail -1)"
 ln -sf "$RUN_LOG" "$LOG_DIR/latest.log"
+
+# THE RUNNER CRAWLS WHAT THE ROWS CLAIM (27 Nov 2026, ahrefs-code-tools). The model used to crawl each site
+# after its PR only to copy pages_crawled onto the row, then parse the file, at the most expensive turns of
+# the pass. Code does it now, once per domain, for every surfaced or fixed_pr row with no crawl yet; a crawl
+# that fails or reads no sitemap leaves the row uncrawled and the verdict below RED (NOT_CRAWLED).
+node "$REPO/scripts/ops/site-audit-lib.mjs" finish "$OUT_DIR/findings.json" 2>&1 | tee -a "$RUN_LOG"
+[ "${PIPESTATUS[0]}" -eq 0 ] || say "NAMED STOP [FINISH_FAILED] the runner's crawl step failed; rows without a crawl stay NOT_CRAWLED."
 
 # LAND EVERY FIX. Deterministic, not left to the model: checks to green, then ~/bin/land.
 # Under the vault (7 Nov 2026): a land's post-merge steps run wrangler (p-n-p's D1 check, boss-os's

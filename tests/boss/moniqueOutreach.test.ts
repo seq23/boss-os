@@ -157,7 +157,7 @@ async function readyWithAddress(key: string) {
 }
 
 async function tickEnv() {
-  return { ...env, BOSS_WORKER_GEMINI_FREE_KEY: "fixture", GSC_SERVICE_ACCOUNT_JSON: await fakeServiceAccount() } as any;
+  return { ...env, GEMINI_API_KEY: "fixture", GSC_SERVICE_ACCOUNT_JSON: await fakeServiceAccount() } as any;
 }
 
 describe("the brakes, as pure functions", () => {
@@ -690,22 +690,54 @@ describe("the tick", () => {
     expect(g.sends).toHaveLength(0);
   });
 
-  it("holds sends and keeps the unclassified reply unread until the model recovers", async () => {
+  it("an unread reply holds only its own address, visibly, and is read again once the model recovers (review F3)", async () => {
     await readyWithAddress("time2read");
     await addProspect("time2read", "hold@school.example", { state: "in_sequence", step: 1, thread_id: "th-hold", next_due_at: TUESDAY_10AM });
+    await addProspect("time2read", "other@school2.example", { state: "in_sequence", step: 1, thread_id: "th-other", next_due_at: TUESDAY_10AM });
     const mail = fakeGmail({ inbound: [
       { id: "hold-reply", threadId: "th-hold", from: "hold@school.example", subject: "Re: x", body: "Please take us off this list." },
     ] });
     const failed = modelReplies(null);
     const stopped = await runOutreachTick(await tickEnv(), TUESDAY_10AM, mail.fetchImpl);
-    expect(stopped.refused.replies).toMatch(/unavailable/);
-    expect(mail.sends).toHaveLength(0);
+    // Only the unread reply's address waits; the other prospect's next email goes out.
+    expect(stopped.refused.replies).toBeUndefined();
+    expect(stopped.held).toEqual({ replies: 1, addresses: 1, why: "unavailable" });
+    expect(mail.sends.filter(({ to }) => to === "hold@school.example")).toHaveLength(0);
+    expect(mail.sends.filter(({ to }) => to === "other@school2.example")).toHaveLength(1);
     expect(await row(`SELECT 1 FROM outreach_replies WHERE gmail_message_id = 'hold-reply'`)).toBeNull();
+    // The hold is on Today, as counts, with no address in it.
+    const { outreachStopAlerts } = await import("../../src/worker/boss/today/outreachStops");
+    const alerts = (await outreachStopAlerts(env as any)).filter((a) => a.source_id === "replies_held");
+    expect(alerts).toHaveLength(1);
+    expect(alerts[0]!.text).toMatch(/1 reply could not be read .*Nothing is sent to those 1 address/);
+    expect(alerts[0]!.text).not.toMatch(/@/);
     failed.mockRestore();
     modelReplies({ "hold-reply": { classification: "unsubscribe", replyNeed: "nothing_asked" } });
-    await runOutreachTick(await tickEnv(), TUESDAY_10AM + DAY_MS * 8, mail.fetchImpl);
+    const recovered = await runOutreachTick(await tickEnv(), TUESDAY_10AM + DAY_MS * 8, mail.fetchImpl);
+    expect(recovered.held).toBeUndefined();
     expect(await isSuppressed(env.DB, "hold@school.example")).toBe(true);
     expect(mail.sends.filter(({ to }) => to === "hold@school.example")).toHaveLength(0);
+    expect((await outreachStopAlerts(env as any)).filter((a) => a.source_id === "replies_held")).toHaveLength(0);
+  });
+
+  it("a hard-wrapped CRLF reply is read when the model quotes it across the wrap (review F2)", async () => {
+    await readyWithAddress("time2read");
+    await addProspect("time2read", "wrap@school.example", { state: "in_sequence", step: 1, thread_id: "th-wrap", next_due_at: TUESDAY_10AM });
+    const body = "Yes, we would like to talk next\r\nmonth about the reading\r\nprogramme for our families.\r\n\r\nOn Tue, Monique wrote:\r\n> Would a call help?";
+    // The model quotes across both wraps with single spaces, as models do.
+    modelReplies({ "wrap-reply": { classification: "interested", replyNeed: "invites", excerpt: "Yes, we would like to talk next month about the reading programme for our families." } });
+    const mail = fakeGmail({ inbound: [{ id: "wrap-reply", threadId: "th-wrap", from: "wrap@school.example", subject: "Re: x", body }] });
+    const r = await runOutreachTick(await tickEnv(), TUESDAY_10AM, mail.fetchImpl);
+    expect(r.held).toBeUndefined();
+    const reply = await row<any>(`SELECT classification, excerpt, approval_id FROM outreach_replies WHERE gmail_message_id = 'wrap-reply'`);
+    expect(reply).toMatchObject({ classification: "interested", excerpt: "Yes, we would like to talk next month about the reading programme for our families." });
+    expect(reply.approval_id).toBeTruthy();
+    // A quote that is not in the mail is dropped to "", never a failed read.
+    await addProspect("time2read", "made@school.example", { state: "in_sequence", step: 1, thread_id: "th-made", next_due_at: TUESDAY_10AM });
+    modelReplies({ "made-reply": { classification: "not_now", replyNeed: "nothing_asked", excerpt: "Words the writer never wrote." } });
+    const made = fakeGmail({ inbound: [{ id: "made-reply", threadId: "th-made", from: "made@school.example", subject: "Re: x", body: "Not this term,\r\nthank you." }] });
+    expect((await runOutreachTick(await tickEnv(), TUESDAY_10AM + 3_600_000, made.fetchImpl)).held).toBeUndefined();
+    expect(await row<any>(`SELECT classification, excerpt FROM outreach_replies WHERE gmail_message_id = 'made-reply'`)).toEqual({ classification: "not_now", excerpt: "" });
   });
 
   it("a reply that only passes it on gets no card; one that asks and copies someone new keeps them on Cc (owner, 2 Nov 2026)", async () => {

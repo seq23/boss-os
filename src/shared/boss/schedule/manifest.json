@@ -618,7 +618,7 @@
     {
       "id": "agent-poll",
       "name": "Agent poll",
-      "what": "Checks every few minutes for work queued for the Mac.",
+      "what": "Checks every five minutes, at any hour but 07:00-10:00, for work queued for the Mac (the briefing at 04:00 included).",
       "business": "personal",
       "brand": "Boss OS",
       "system": "mac",
@@ -636,7 +636,7 @@
         "floor": 0,
         "reason": "A check: its result is pass or fail, and a fail is already its own red run."
       },
-      "macWindow": "LIGHT"
+      "macWindow": "ANY"
     },
     {
       "id": "aplayer-mode-services-api-wrangler-jsonc",
@@ -1649,6 +1649,54 @@
         "reason": "Housekeeping: a disk with nothing leaked needs nothing removed; the OUTPUT line still reports free space."
       },
       "macWindow": "LIGHT"
+    },
+    {
+      "id": "agent-search-guard",
+      "name": "Search for Agents money guard",
+      "what": "Reads the account's AI Search usage; switches Search for Agents off on the one trial site at 80% of a free allowance, or after two days unable to read it, with a Notices line.",
+      "business": "personal",
+      "brand": "Repos",
+      "system": "mac",
+      "slots": [
+        "daily 10:30"
+      ],
+      "emails": false,
+      "heavy": false,
+      "trigger": {
+        "launchd": [
+          "com.seq.agent-search-guard"
+        ]
+      },
+      "output": {
+        "floor": 0,
+        "reason": "Check-only: a day under the limit changes nothing; the OUTPUT line still says whether the usage was read, and an unread day is COULDNT-CHECK, never under."
+      },
+      "macWindow": "LIGHT"
+    },
+    {
+      "id": "chatgpt-searches",
+      "name": "ChatGPT hidden searches",
+      "what": "Each night asks the week's buyer questions for the sites due that night in ChatGPT Temporary Chats (her Chrome), records the searches ChatGPT ran, what it read and cited and whether her site showed up, and sends each site's gaps to its search pages as new searches; a limit or sign-out moves the rest to the next night.",
+      "business": "spry",
+      "brand": "Spry Labs",
+      "system": "mac",
+      "slots": [
+        "daily 22:00"
+      ],
+      "emails": false,
+      "heavy": false,
+      "trigger": {
+        "launchd": [
+          "com.seq.chatgpt-searches"
+        ]
+      },
+      "output": {
+        "metric": "questions_checked",
+        "floor": 1,
+        "runs": 2,
+        "reason": "A night with sites due that checks 0 questions is FAIL (exit 1) or COULDNT-CHECK with its reason (exit 75), each a Notices line; a night with nothing left due says so."
+      },
+      "macWindow": "HEAVY"
     },
     {
       "id": "ci-sweep-resume",
@@ -3127,7 +3175,7 @@
     {
       "id": "kdp-publish",
       "name": "Kindle: publish",
-      "what": "Reads each book's sales and Kindle Unlimited pages, puts approved Kindle books up on Amazon and follows them to Live; heads-up email first, an email when one is live or stops.",
+      "what": "Reads each book's sales and Kindle Unlimited pages, puts approved Kindle books up on Amazon and follows them to Live; Chrome opens at once with no note first, an email when one is live or stops.",
       "business": "spry",
       "brand": "KDP books",
       "system": "mac",
@@ -5109,7 +5157,7 @@
     {
       "id": "growth-director",
       "name": "Noelle: Director of Growth (Claude Code)",
-      "what": "Noelle, the Director of Growth: full Claude Code with her persona on your Mac, in ~/Work/noelle. Once a day at a slot between 10:00 and 20:58 (never on the hour; Thursdays after 14:00 her weekly look back) she reads the growth ledgers and queues, builds and posts her businesses' growth work through her own PRs (a fresh reviewer per PR, landed with land-after), and posts one Notices line per new thing she publishes. Your email to boss@ naming her, or your message on her Boss OS page, is answered within 30 minutes from 10:00 to 22:59 (outside that: \"Noelle is on it at 10:00 Central\"). Never spends, opens an account or uses a paid API (her guard).",
+      "what": "Noelle, the Director of Growth: full Claude Code with her persona on your Mac, in ~/Work/noelle. Once a day at a slot between 10:00 and 20:58 (never on the hour; Thursdays after 14:00 her weekly look back) she reads the growth ledgers and queues, builds and posts her businesses' growth work through her own PRs (a fresh reviewer per PR, landed with land-after), and posts one Notices line per new thing she publishes. The weekly wake also refreshes niche research and reviews live bets when that month's review is due. Your email to boss@ naming her, or your message on her Boss OS page, is answered within 30 minutes from 10:00 to 22:59 (outside that: \"Noelle is on it at 10:00 Central\"). Never spends, opens an account or uses a paid API (her guard).",
       "business": "spry",
       "brand": "Spry Labs",
       "system": "mac",

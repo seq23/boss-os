@@ -19,10 +19,15 @@
  *       only its final message (so a usage-limit notice still reaches the log): its blocks are never read.
  *       The raw stream (OpenSEO's answer text) dies with the work dir; the log keeps the session's words.
  *
- *   node ai-visibility-report.mjs post <run.log> <state.json>
- *       After it. Reads the session's SITE-BEGIN/SITE-END blocks, checks each against that site's own
- *       pages (readSite with the sitemap: an OWN page is one of the site's engine pages, A3), and posts
- *       the week to POST /api/boss/growth/ai-week, where every count is recomputed again.
+ *   node ai-visibility-report.mjs post <run.log> <state.json> <openseo.jsonl>
+ *       After it. Reads the session's SITE-BEGIN/SITE-END blocks (each site's LANES, or its stop) and
+ *       the stash of OpenSEO's raw results that the session's PostToolUse hook kept
+ *       (scripts/ops/ai-visibility-hook.mjs). The week itself (tracker, run, OpenSEO's own summary,
+ *       every observation) is built by CODE from the stash (`weekFromStash`), never copied by the model
+ *       (27 Nov 2026: the model's hand copy broke on the sixth site on 24 and 26 Nov). Each site is then
+ *       checked against its own pages (readSite with the sitemap: an OWN page is one of the site's
+ *       engine pages, A3) and the week posted to POST /api/boss/growth/ai-week, where every count is
+ *       recomputed again. No stash → every site NAMED STOP [OPENSEO_STASH_UNREAD], never a guess.
  *
  * MONEY (A8). The session prints OpenSEO's credits before and after: they must be equal (the duty only
  * reads) or it is NAMED STOP [OPENSEO_CREDITS_MOVED]; unread is [OPENSEO_CREDITS_UNREAD], never "fine".
@@ -39,6 +44,7 @@ import { AI_SITES, STOPS, creditsProblem, pageOnHost, planProblem, prefixOk, rea
 import { strengthenedOf, weekFor } from "../../src/shared/boss/searchLoop/week.mjs";
 import { fetchLoopWeeks } from "./lib/search-loop-week.mjs";
 import { bossApi } from "./lib/duty-kit.mjs";
+import { stashRows, weekFromStash } from "./lib/ai-visibility-digest.mjs";
 import { outputLine } from "../../src/shared/boss/alarms/rules.mjs";
 
 const OWNER = "seq23";
@@ -126,6 +132,22 @@ export function transcriptText(stream) {
   return [NOT_REACHED_LINE, t.final, t.raw].filter((x) => x && x.trim()).join("\n");
 }
 
+/**
+ * What the session cost, from its own result event: `SESSION-TOKENS input=<n> output=<n> turns=<n>` (input = fresh +
+ * cache read + cache write, every turn). The outcome check reads this line; a stream with no result event says
+ * `SESSION-TOKENS unread`, never 0.
+ */
+export function sessionTokens(stream) {
+  let u = null, turns = null;
+  for (const line of String(stream ?? "").split("\n")) {
+    let e; try { e = JSON.parse(line); } catch { continue; }
+    if (e?.type === "result" && e.usage) { u = e.usage; turns = e.num_turns ?? null; }
+  }
+  if (!u) return "SESSION-TOKENS unread (the session's stream has no result event)";
+  const input = (u.input_tokens ?? 0) + (u.cache_read_input_tokens ?? 0) + (u.cache_creation_input_tokens ?? 0);
+  return `SESSION-TOKENS input=${input} output=${u.output_tokens ?? 0} turns=${turns ?? "unread"}`;
+}
+
 /** The session's log, read: each site's block (parsed JSON or a parse failure), credits, estimates. */
 export function parseRun(log) {
   const text = String(log ?? "");
@@ -148,8 +170,12 @@ export function parseRun(log) {
   };
 }
 
-/** The week's entries for POST ai-week: the Mac's own check of each block, then the block as read. */
-export function entriesFrom(run, state, now = Date.now()) {
+/**
+ * The week's entries for POST ai-week: the Mac's own check of each block, then the block as read.
+ * `stash` is the hook's rows (null when the stash could not be read): the block's week comes from it,
+ * and only the session's lanes come from the session.
+ */
+export function entriesFrom(run, state, now = Date.now(), stash = null) {
   const out = [];
   for (const host of Object.keys(AI_SITES)) {
     const s = state[host] ?? { stop: "SITE_MISSING" };
@@ -160,6 +186,10 @@ export function entriesFrom(run, state, now = Date.now()) {
     if (b.stop) { out.push({ host, stop: b.stop }); continue; }
     if (b.block?.stop) { out.push({ host, stop: STOPS[b.block.stop] ? b.block.stop : "OPENSEO_BAD_REPLY" }); continue; }
     if (s.stop) { out.push({ host, stop: s.stop }); continue; }
+    if (!Array.isArray(stash)) { out.push({ host, stop: "OPENSEO_STASH_UNREAD" }); continue; }
+    const week = weekFromStash(stash, host);
+    if (week.stop) { out.push({ host, stop: week.stop, why: week.why }); continue; }
+    b.block = { ...week.block, lanes: Array.isArray(b.block.lanes) ? b.block.lanes : [] };
     const pages = { engine: new Set(s.engine), all: new Set([...s.engine, ...s.other]) };
     const r = readSite(b.block, { host, now, prefix: s.prefix, pages });
     if (r.status === "not_read") { out.push({ host, stop: r.stop, why: r.why }); continue; }
@@ -174,11 +204,21 @@ export function entriesFrom(run, state, now = Date.now()) {
   return out;
 }
 
+/** The stash file's rows, or null (printed as a NAMED STOP) when it is missing, unreadable or empty. */
+export function readStash(file) {
+  let text;
+  try { text = readFileSync(file, "utf8"); } catch { console.log(`NAMED STOP [OPENSEO_STASH_UNREAD] ${STOPS.OPENSEO_STASH_UNREAD} (${file ?? "no path"} could not be read)`); return null; }
+  const { rows, bad } = stashRows(text);
+  if (bad) console.log(`note: ${bad} line(s) of the OpenSEO stash did not parse and were not read`);
+  if (!rows.length) { console.log(`NAMED STOP [OPENSEO_STASH_UNREAD] ${STOPS.OPENSEO_STASH_UNREAD} (the stash is empty)`); return null; }
+  return rows;
+}
+
 /** The `post` step; returns the exit code (0, 9 nothing read, 10 a money proof missing). `api` is for tests. */
-export async function post(logFile, stateFile, { api } = {}) {
+export async function post(logFile, stateFile, { api, stashFile = null } = {}) {
   const run = parseRun(readFileSync(logFile, "utf8"));
   const state = JSON.parse(readFileSync(stateFile, "utf8"));
-  const entries = entriesFrom(run, state);
+  const entries = entriesFrom(run, state, Date.now(), readStash(stashFile));
   const boss = api ?? await bossApi();
   const res = await boss.post("/growth/ai-week", { sites: entries.map(({ host, block, stop, prefix, strengthened }) => ({ host, block, stop, prefix, strengthened })) });
   let rc = 0;
@@ -221,15 +261,16 @@ async function main(argv) {
     for (const s of Object.values(state)) console.log(`CONTEXT ${s.host}: ${s.stop ? `NAMED STOP [${s.stop}]` : `${s.engine.length} engine pages, ${s.other.length} other`}, ${s.strengthened.length} strengthened${s.notes.length ? `; ${s.notes.join("; ")}` : ""}`);
     return 0;
   }
-  if (cmd === "post") return post(a, b);
+  if (cmd === "post") return post(a, b, { stashFile: argv[3] ?? null });
   if (cmd === "transcript") {
     let stream;
     try { stream = readFileSync(a, "utf8"); } catch { console.log(`NAMED STOP [SESSION_STREAM_UNREAD] the session's event stream ${a} could not be read`); return 9; }
     const text = transcriptText(stream);
     if (text) console.log(text);
+    console.log(sessionTokens(stream));
     return 0;
   }
-  console.error("usage: ai-visibility-report.mjs context <context.txt> <state.json> | transcript <session.jsonl> | post <run.log> <state.json>");
+  console.error("usage: ai-visibility-report.mjs context <context.txt> <state.json> | transcript <session.jsonl> | post <run.log> <state.json> <openseo.jsonl>");
   return 2;
 }
 
