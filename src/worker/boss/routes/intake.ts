@@ -283,7 +283,7 @@ intake.get("/workloads", async (c) => {
  *
  * ─── AND THE ROW SAYS WHICH IT WAS ──────────────────────────────────────────
  *
- * `x-boss-intake-origin: console` makes the handler record "typed into Boss OS from her own
+ * `{ via: "console" }` (an argument, never a header a sender could write) makes the handler record "typed into Boss OS from her own
  * authenticated session, not received over SMTP" on the arrival row and in the audit trail. The one
  * thing this must never do is leave a row that looks like a DMARC-verified delivery that never
  * happened, in the table whose entire purpose is saying what was actually proven.
@@ -304,17 +304,10 @@ intake.post("/mail", async (c) => {
     headers: new Headers({
       from,
       subject,
-      "x-boss-intake-origin": "console",
-      /*
-       * The authentication that actually happened, named as what it is. The owner was verified by
-       * the session gate in front of this route, not by Cloudflare's DMARC evaluation, and the
-       * string says so rather than impersonating a delivery.
-       */
-      "authentication-results": "boss-os-console; dmarc=pass (owner session, not SMTP)",
     }),
     raw: new Response(raw).body!,
     rawSize: new TextEncoder().encode(raw).length,
-  }, c.env);
+  }, c.env, { via: "console" });
 
   return ok(c, result, 201);
 });
@@ -373,12 +366,10 @@ intake.post("/simone", async (c) => {
     headers: new Headers({
       from,
       subject: "",
-      "x-boss-intake-origin": "console",
-      "authentication-results": "boss-os-console; dmarc=pass (owner session, not SMTP)",
     }),
     raw: new Response(raw).body!,
     rawSize: new TextEncoder().encode(raw).length,
-  }, c.env);
+  }, c.env, { via: "console" });
   return ok(c, { mailId: result.mailId, outcome: result.outcome, jobs: result.jobs ?? [], reply: result.reply }, 201);
 });
 
@@ -459,12 +450,10 @@ intake.post("/questions/:id/answer", async (c) => {
       subject,
       "in-reply-to": inReplyTo,
       references: inReplyTo,
-      "x-boss-intake-origin": "console",
-      "authentication-results": "boss-os-console; dmarc=pass (owner session, not SMTP)",
     }),
     raw: new Response(raw).body!,
     rawSize: new TextEncoder().encode(raw).length,
-  }, c.env);
+  }, c.env, { via: "console" });
 
   const closed = await c.env.DB
     .prepare(`SELECT answered_at FROM boss_inbound_mail WHERE id = ?`).bind(id)

@@ -7,7 +7,7 @@ import { logEvent } from "../lib/log";
 import { admitTask } from "../tasks/admit";
 import {
   BOSS_INTAKE_MAILBOX, BOSS_INTAKE_DOMAIN,
-  dmarcPassed, extractAddress, isOwner,
+  authenticationVerdict, extractAddress, isOwner,
   replyBody, routeToSeat, seatTag, strippedSubject,
   type BossRoute, type BossSeat,
 } from "../../../shared/boss/intake/mail.mjs";
@@ -349,19 +349,33 @@ export const FALLBACK_LINE = "No model could read this email just now (down, or 
 type Said = { fellBack: boolean };
 const toldFallback = (reply: string, said: Said) => (said.fellBack && !reply.includes(FALLBACK_LINE) ? `${reply}\n\n${FALLBACK_LINE}` : reply);
 
-export async function handleBossInboundMail(message: BossMailMessage, env: Env): Promise<BossMailResult> {
+/**
+ * Where a message came from, said by the CALLER, never by the message. `console` is passed only by
+ * the `/api/boss/intake/*` routes, which sit behind her session; the `email()` entrypoint passes
+ * nothing, so no header a sender writes can make a message count as typed by her.
+ */
+export interface BossMailOrigin { via?: "console" }
+
+export async function handleBossInboundMail(message: BossMailMessage, env: Env, origin: BossMailOrigin = {}): Promise<BossMailResult> {
   const said: Said = { fellBack: false };
-  const result = await handleMail(message, env, said);
+  const result = await handleMail(message, env, said, origin.via === "console");
   return result.reply ? { ...result, reply: toldFallback(result.reply, said) } : result;
 }
 
-async function handleMail(message: BossMailMessage, env: Env, said: Said): Promise<BossMailResult> {
+async function handleMail(message: BossMailMessage, env: Env, said: Said, viaConsole: boolean): Promise<BossMailResult> {
   const mailId = newId("iml");
   const now = Date.now();
   const to = String(message.to ?? "").toLowerCase();
   let subject = decodeHeader(message.headers.get("subject") ?? "");
   const sender = senderOf(message);
-  const dmarc = dmarcPassed(message.headers.get("authentication-results"));
+  /*
+   * PROVEN BY CLOUDFLARE'S OWN VERDICT, OR BY HER SESSION. Mail counts only when the receiving
+   * server's Authentication-Results says DMARC passed for the sender's own domain
+   * (`authenticationVerdict`); a sender's added header is never read. A message she typed in Boss OS
+   * is proven by the session gate in front of the route that passed `via: "console"`.
+   */
+  const verdict = viaConsole ? { passed: true, reason: "" } : authenticationVerdict(message.headers.get("authentication-results"), sender);
+  const dmarc = verdict.passed;
   const authorised = isOwner(sender, env.BOSS_EXTRA_OWNER_SENDERS ?? "") && dmarc;
 
   /*
@@ -384,8 +398,9 @@ async function handleMail(message: BossMailMessage, env: Env, said: Said): Promi
    * /api/intake/mail` runs this exact handler from her own authenticated session — see that route
    * for why a replay door exists at all — and a row that claimed Cloudflare had DMARC-verified a
    * message nobody posted would be a lie in the one table whose whole job is saying what was proven.
+   * `viaConsole` is the route's argument (`handleBossInboundMail(…, { via: "console" })`), never a
+   * header: a header is text any sender can write (27 Nov 2026).
    */
-  const viaConsole = (message.headers.get("x-boss-intake-origin") ?? "").toLowerCase() === "console";
   /*
    * ─── A QUESTION SHE CANNOT ANSWER IS A QUESTION THAT NAGS FOR EVER ────────
    *
@@ -542,7 +557,7 @@ async function handleMail(message: BossMailMessage, env: Env, said: Said): Promi
 
   if (!authorised) {
     const why = isOwner(sender, env.BOSS_EXTRA_OWNER_SENDERS ?? "")
-      ? `From ${sender}, which is one of yours, but DMARC did not pass — so the address was not proven and nothing was run.`
+      ? `From ${sender}, which is one of yours, but DMARC did not pass (${verdict.reason}) — so the address was not proven and nothing was run.`
       : `From ${sender}, which is not one of your addresses. Recorded and refused.`;
     await recordArrival("REFUSED_SENDER", why);
     // Keeping mail is not authority to execute its contents or to answer its sender.

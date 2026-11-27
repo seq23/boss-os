@@ -17,6 +17,7 @@ import { applyListEdit, listEditsFromMail } from "../../src/worker/boss/capital/
 import { COMMAND_KINDS, COMMENT_ACTIONS, COMMENT_ACTION_TABLE, READ_MODES, CHECK_MEANINGS } from "../../src/shared/boss/intake/intents.mjs";
 import { REPLY_FORMS, parseReply } from "../../src/shared/boss/commentWatch/lane.mjs";
 import type { Env } from "../../src/worker/boss/env";
+import { cloudflareAuth } from "./cloudflareAuth";
 
 const OWNER = "owner-test@example.test";
 const runtime = { ...env, BOSS_EXTRA_OWNER_SENDERS: OWNER } as Env;
@@ -33,7 +34,7 @@ const send = (body: string, o: { from?: string; dmarc?: string; subject?: string
   const from = o.from ?? OWNER;
   const subject = o.subject ?? "Re: your morning";
   const raw = `From: ${from}\r\nSubject: ${subject}\r\nIn-Reply-To: <yd_20261122@boss.example.test>\r\nContent-Type: text/plain; charset=UTF-8\r\n\r\n${body.replace(/\n/g, "\r\n")}`;
-  const headers = new Headers({ from, subject, "in-reply-to": "<yd_20261122@boss.example.test>", "authentication-results": `mx.example.test; spf=pass; dkim=pass; ${o.dmarc ?? "dmarc=pass"}`, "message-id": `<m${Math.random()}@example.test>` });
+  const headers = new Headers({ from, subject, "in-reply-to": "<yd_20261122@boss.example.test>", "authentication-results": o.dmarc ?? cloudflareAuth(from), "message-id": `<m${Math.random()}@example.test>` });
   return handleBossInboundMail({ from, to: BOSS_INTAKE_MAILBOX, headers, raw: new Response(raw).body!, rawSize: new TextEncoder().encode(raw).length } as never, runtime);
 };
 const isPublic = async () => (await publicCompanies(env as never)).some((r: any) => /examplecorp/i.test(r.company));
@@ -47,7 +48,7 @@ afterEach(() => setFirstReadRungs(null));
 
 describe("abuse: the sender is checked by code, and only her own words decide", () => {
   it("a forged From (her address, DMARC fails) is refused before any model reads it; nothing is marked", async () => {
-    const r = await send("Examplecorp is public", { dmarc: "dmarc=fail" });
+    const r = await send("Examplecorp is public", { dmarc: cloudflareAuth(OWNER, "fail") });
     expect(r.outcome).toBe("REFUSED_SENDER");
     expect(calls.n).toBe(0);
     expect(await isPublic()).toBe(false);

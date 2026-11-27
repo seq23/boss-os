@@ -293,16 +293,72 @@ export function strippedSubject(subject) {
  * anybody can type; `seq.taylor@gmail.com` is trivial to forge, and an allowlist checked against a
  * forgeable header is not a control, it is a comment.
  *
- * Cloudflare Email Routing runs SPF, DKIM and DMARC before delivery and states the outcome in
- * `Authentication-Results`. This requires DMARC to have PASSED — not merely to be present, and not
- * SPF alone, because SPF authenticates the envelope and it is the `From:` header this system trusts.
- * `dmarc=pass` is the one result that binds the two together.
+ * Cloudflare Email Routing runs SPF, DKIM and DMARC before delivery and PREPENDS its verdict as
+ * `Authentication-Results`. Two things are required, and both come from that one verdict only:
+ *   1 · DMARC PASSED (not merely present, not SPF alone: `dmarc=pass` is the one result that binds the
+ *       authenticated identity to the `From:` header this system trusts);
+ *   2 · DMARC passed FOR THE SENDER'S OWN DOMAIN (`header.from` equals the domain of the address
+ *       `isOwner` is asked about). Without this, `"<seq.taylor@gmail.com>" <x@evil.example>` reads as
+ *       hers while DMARC passed for evil.example.
+ *
+ * NOT ANY HEADER THE SENDER COULD ADD (27 Nov 2026 audit, critical). `Authentication-Results` is an
+ * ordinary header: a sender can put `Authentication-Results: x; dmarc=pass` in the mail they compose.
+ * `Headers.get()` joins it after Cloudflare's real one, so the old bare `/dmarc=pass/` matched the
+ * forged half of the string. The trust rules below are copied from West Peek OS, which met this
+ * attack first: exactly one verdict from `mx.cloudflare.net`, it must be the first one, and only its
+ * own segment is read.
+ * Copied from: west-peek-os src/shared/intake/partnerAuthority.ts @ 096eec743ac2204fce8845686d18a51e0a6630ff
+ * (TRUSTED_AUTHSERV_ID and authenticationVerdict's resolver checks). Stricter here: quoted strings are
+ * removed as well as comments, and EVERY dmarc result in that segment must pass for this domain, so
+ * text a sender gets into Cloudflare's own line (a quoted envelope address) can add a result but can
+ * never hide Cloudflare's real `dmarc=fail`.
  *
  * ABSENT IS A FAIL. A missing header means nothing checked it, which is exactly the state a
- * forgery arrives in.
+ * forgery arrives in. Every refusal carries its reason in words.
  */
-export function dmarcPassed(authResults) {
-  return /\bdmarc\s*=\s*pass\b/i.test(String(authResults ?? ""));
+export const TRUSTED_AUTHSERV_ID = "mx.cloudflare.net";
+
+const refusedVerdict = (reason) => ({ passed: false, reason });
+
+export function authenticationVerdict(authResults, fromAddress) {
+  const header = String(authResults ?? "").trim();
+  if (!header) {
+    return refusedVerdict("it carries no Authentication-Results from the receiving server, so nothing about its sender is proven");
+  }
+  // Comments (nested ones too) and quoted strings are not verdicts: drop them before reading anything.
+  let plain = header.replace(/"(?:[^"\\]|\\.)*"/g, " ");
+  for (let i = 0; i < 8; i += 1) {
+    const next = plain.replace(/\([^()]*\)/g, " ");
+    if (next === plain) break;
+    plain = next;
+  }
+  const lower = plain.toLowerCase();
+  const claims = lower.split(TRUSTED_AUTHSERV_ID).length - 1;
+  if (claims === 0) {
+    return refusedVerdict(`its Authentication-Results was not written by ${TRUSTED_AUTHSERV_ID}, so the verdict in it is the sender's own claim`);
+  }
+  if (claims > 1) {
+    return refusedVerdict(`it carries more than one Authentication-Results claiming to be ${TRUSTED_AUTHSERV_ID}, which only happens when somebody forges one`);
+  }
+  if (!lower.trimStart().startsWith(`${TRUSTED_AUTHSERV_ID};`)) {
+    return refusedVerdict(`the verdict from ${TRUSTED_AUTHSERV_ID} is not the first in the header, so it is not the one the receiving server wrote`);
+  }
+  // Only the receiving server's own segment: anything after the first comma is another header's.
+  const segment = lower.split(",")[0];
+  const fromDomain = String(fromAddress ?? "").includes("@") ? String(fromAddress).slice(String(fromAddress).lastIndexOf("@") + 1).trim().toLowerCase() : "";
+  const results = [...segment.matchAll(/(?:^|[;\s])dmarc\s*=\s*([a-z]+)([^;]*)/g)].map((m) => ({
+    result: m[1],
+    headerFrom: /header\.from\s*=\s*([^\s;]+)/.exec(m[2] ?? "")?.[1] ?? null,
+  }));
+  if (results.length === 0) return refusedVerdict(`${TRUSTED_AUTHSERV_ID} reported no DMARC result`);
+  const notPass = results.find((r) => r.result !== "pass");
+  if (notPass) return refusedVerdict(`DMARC ${notPass.result}: the sender's domain did not vouch for it`);
+  if (!fromDomain) return refusedVerdict("its sender address could not be read");
+  const misaligned = results.find((r) => r.headerFrom !== fromDomain);
+  if (misaligned) {
+    return refusedVerdict(`DMARC passed for ${misaligned.headerFrom ?? "an unnamed domain"}, not for ${fromDomain}, the domain of the address it claims`);
+  }
+  return { passed: true, reason: "" };
 }
 
 /**

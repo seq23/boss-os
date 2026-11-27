@@ -13,6 +13,7 @@ import { setCommandFetch } from "../../src/worker/boss/commands/google";
 import { classify } from "../../src/worker/boss/intake/classify";
 import { ERRAND_SENDERS } from "../../src/shared/boss/commands/parse.mjs";
 import { layoutEmail, plainProblems } from "../../src/shared/boss/mail/plain.mjs";
+import { cloudflareAuth } from "./cloudflareAuth";
 
 const HER = ERRAND_SENDERS[0]!;
 const BIZ = "reservations@club.example.test";
@@ -21,7 +22,7 @@ const NOW = Date.parse("2026-10-26T15:00:00Z");
 function mail(o: { from: string; body: string; subject?: string; to?: string; dmarc?: string }) {
   const headers = new Headers({
     from: o.from, subject: o.subject ?? "",
-    "authentication-results": o.dmarc ?? "mx.cloudflare.net; spf=pass; dkim=pass; dmarc=pass",
+    "authentication-results": o.dmarc ?? cloudflareAuth(o.from),
     "message-id": `<${Math.random().toString(36).slice(2)}@mail.example.test>`,
   });
   const raw = `From: ${o.from}\r\nSubject: ${o.subject ?? ""}\r\nContent-Type: text/plain\r\n\r\n${o.body}`;

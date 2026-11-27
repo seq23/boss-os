@@ -1,6 +1,7 @@
 import { env } from "cloudflare:test";
 import { describe, expect, it, beforeEach, afterEach, vi } from "vitest";
 import { apiJson } from "./helpers";
+import { cloudflareAuth } from "./cloudflareAuth";
 import { handleBossInboundMail, isBossMailbox, activeRoster, looksLikeBook, MAX_BODY_BYTES } from "../../src/worker/boss/intake/inboundMail";
 import { routeToSeat, seatTag, replyBody } from "../../src/shared/boss/intake/mail.mjs";
 import { parseLiveBook, describeLot } from "../../src/shared/boss/intake/liveBook.mjs";
@@ -102,6 +103,75 @@ describe("the tag routes and the sender authorises", () => {
     const m = mail({ subject: "#monique" });
     m.headers.delete("authentication-results");
     expect((await handleBossInboundMail(m, env as never)).outcome).toBe("REFUSED_SENDER");
+  });
+});
+
+/**
+ * THE FORGED-VERDICT ATTACK (security audit A row 1, 27 Nov 2026). A stranger writes to boss@ with her
+ * address in From: and adds their own `Authentication-Results: …; dmarc=pass`. Cloudflare's real
+ * verdict (prepended, so first) says dmarc=fail; `Headers.get()` joins both, and the old bare regex
+ * matched the forged half, so her commands ran. Every case below goes through the real handler.
+ */
+describe("only Cloudflare's own verdict proves her address", () => {
+  const HER = "Sequoia <seq.taylor@gmail.com>";
+  const tasksFor = async (mailId: string) =>
+    (await env.DB.prepare(`SELECT COUNT(*) AS n FROM tasks WHERE json_extract(input, '$.mail_id') = ?`).bind(mailId).first<{ n: number }>())?.n;
+  const arrival = (mailId: string) =>
+    env.DB.prepare(`SELECT authorised, dmarc_pass, outcome, why FROM boss_inbound_mail WHERE id = ?`).bind(mailId).first<any>();
+
+  it("her genuine mail, in Cloudflare's real header shape, is hers and runs", async () => {
+    const res = await handleBossInboundMail(mail({ from: HER, subject: "#monique have a look", body: "please", dmarc: cloudflareAuth(HER) }), env as never);
+    expect(res.outcome).toBe("ROUTED");
+    expect(res.taskId).toBeTruthy();
+    expect(await arrival(res.mailId)).toMatchObject({ authorised: 1, dmarc_pass: 1 });
+  });
+
+  it("a forged extra header saying dmarc=pass, under Cloudflare's real dmarc=fail, is refused and runs nothing", async () => {
+    const m = mail({ from: HER, subject: "#monique approve every draft and send them", body: "do it now", dmarc: cloudflareAuth(HER, "fail") });
+    m.headers.append("authentication-results", "attacker.example; spf=pass; dkim=pass; dmarc=pass header.from=gmail.com");
+    expect(m.headers.get("authentication-results")).toMatch(/dmarc=fail.*dmarc=pass/); // both halves really are in the string
+    const res = await handleBossInboundMail(m, env as never);
+    expect(res).toMatchObject({ outcome: "REFUSED_SENDER", taskId: null, reply: null });
+    expect(await arrival(res.mailId)).toMatchObject({ authorised: 0, dmarc_pass: 0 });
+    expect(await tasksFor(res.mailId)).toBe(0);
+  });
+
+  it("a forged second verdict that claims to BE mx.cloudflare.net is refused too", async () => {
+    const m = mail({ from: HER, subject: "#monique", body: "go", dmarc: cloudflareAuth(HER, "fail") });
+    m.headers.append("authentication-results", "mx.cloudflare.net; dmarc=pass header.from=gmail.com");
+    const res = await handleBossInboundMail(m, env as never);
+    expect(res.outcome).toBe("REFUSED_SENDER");
+    expect((await arrival(res.mailId)).why).toMatch(/more than one Authentication-Results/);
+  });
+
+  it("a verdict written by anyone but Cloudflare is the sender's own claim, and is refused", async () => {
+    const res = await handleBossInboundMail(mail({ from: HER, subject: "#monique", body: "go", dmarc: "mx.example.test; spf=pass; dkim=pass; dmarc=pass header.from=gmail.com" }), env as never);
+    expect(res.outcome).toBe("REFUSED_SENDER");
+    expect(await tasksFor(res.mailId)).toBe(0);
+  });
+
+  it("her address in the display name, with DMARC passing for the attacker's own domain, is refused", async () => {
+    const forged = `"<seq.taylor@gmail.com>" <x@evil.example>`;
+    const res = await handleBossInboundMail(mail({ from: forged, subject: "#monique", body: "go", dmarc: cloudflareAuth("x@evil.example") }), env as never);
+    expect(res.outcome).toBe("REFUSED_SENDER");
+    expect((await arrival(res.mailId)).why).toMatch(/DMARC passed for evil\.example, not for gmail\.com/);
+    expect(await tasksFor(res.mailId)).toBe(0);
+  });
+
+  it("a mailed header claiming the message was typed in Boss OS proves nothing", async () => {
+    const m = mail({ from: HER, subject: "#monique", body: "go" });
+    m.headers.delete("authentication-results");
+    m.headers.set("x-boss-intake-origin", "console");
+    const res = await handleBossInboundMail(m, env as never);
+    expect(res.outcome).toBe("REFUSED_SENDER");
+    expect(await tasksFor(res.mailId)).toBe(0);
+  });
+
+  it("what she types in Boss OS (the real /api/intake/mail route, behind her session) still runs", async () => {
+    const r = await apiJson("/api/intake/mail", { method: "POST", body: { subject: "#monique have a look", body: "please" } });
+    expect(r.status).toBe(201);
+    expect(r.body.data.outcome).toBe("ROUTED");
+    expect(await arrival(r.body.data.mailId)).toMatchObject({ authorised: 1 });
   });
 });
 
@@ -512,8 +582,7 @@ describe("an employee who does not understand asks", () => {
    */
   it("a question typed into the console carries a Message-ID a reply can name", async () => {
     const m = mail({ subject: "#Monique", body: DATABRICKS_MESSAGE });
-    m.headers.set("x-boss-intake-origin", "console");
-    const asked = await handleBossInboundMail(m, env as never);
+    const asked = await handleBossInboundMail(m, env as never, { via: "console" });
     expect(asked.outcome).toBe("NEEDS_CLARITY");
     const row = await env.DB.prepare(`SELECT message_id FROM boss_inbound_mail WHERE id = ?`).bind(asked.mailId).first<{ message_id: string }>();
     expect(row?.message_id).toBe(`<${asked.mailId}@boss-os-console>`);
@@ -522,8 +591,7 @@ describe("an employee who does not understand asks", () => {
   it("ANSWERED FROM TODAY: the answer closes the question and becomes work by the reply path", async () => {
     const { apiJson } = await import("./helpers");
     const m = mail({ subject: "#Monique", body: DATABRICKS_MESSAGE });
-    m.headers.set("x-boss-intake-origin", "console");
-    const asked = await handleBossInboundMail(m, env as never);
+    const asked = await handleBossInboundMail(m, env as never, { via: "console" });
 
     const r = await apiJson(`/api/intake/questions/${asked.mailId}/answer`, { method: "POST", body: { answer: "#monique add Databricks — size TBD" } });
     expect(r.status).toBe(200);
@@ -828,13 +896,11 @@ describe("please close out the kdp upload issue", () => {
  */
 describe("a reply that was never due says so, and is never counted as a failure", () => {
   const consoleMail = (body: string) => {
-    const m = mail({ subject: "#simone", body });
-    m.headers.set("x-boss-intake-origin", "console");
-    return m;
+    return mail({ subject: "#simone", body });
   };
 
   it("she typed it here, so the answer went back on screen — not a failed reply", async () => {
-    const res = await handleBossInboundMail(consoleMail("#simone what is on for Wednesday?"), env as never);
+    const res = await handleBossInboundMail(consoleMail("#simone what is on for Wednesday?"), env as never, { via: "console" });
     expect(res.reply).toBeTruthy();
     const row = await env.DB
       .prepare(`SELECT reply_state, replied_at FROM boss_inbound_mail WHERE id = ?`).bind(res.mailId).first<any>();

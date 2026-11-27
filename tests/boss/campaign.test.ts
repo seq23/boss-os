@@ -252,9 +252,8 @@ describe("the HeyGetOnMyLevel line shows only while its level check really works
 describe("a request typed in from her session gets the same receipt, as Monique's own email", () => {
   it("the receipt is owed at once; the done reply joins its thread", async () => {
     const m = mail(HER_REQUEST, "Acmelearn drip");
-    m.headers.set("x-boss-intake-origin", "console");
-    m.headers.set("authentication-results", "boss-os-console; dmarc=pass (owner session, not SMTP)");
-    const r = await handleBossInboundMail(m as never, env as never);
+    m.headers.delete("authentication-results");
+    const r = await handleBossInboundMail(m as never, env as never, { via: "console" });
     expect(r.outcome).toBe("CAMPAIGN");
     const c = await row<any>(`SELECT * FROM outreach_campaigns WHERE mail_id = ?`, r.mailId);
     const receipt = JSON.parse(c.notice);
