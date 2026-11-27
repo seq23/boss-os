@@ -61,6 +61,7 @@ describe("S1: her commands and WebFetch reach only her named hosts", () => {
     const breaks: [string, (s: any) => void, RegExp][] = [
       ["bare WebFetch", (s) => s.permissions.allow.push("WebFetch"), /bare WebFetch/],
       ["WebFetch *.workers.dev", (s) => s.permissions.allow.push("WebFetch(domain:*.workers.dev)"), /anyone can register/],
+      ["WebFetch every host by wildcard", (s) => s.permissions.allow.push("WebFetch(domain:*)"), /allows WebFetch\(domain:\*\): anyone can register/],
       ["WebFetch unlisted", (s) => s.permissions.allow.push("WebFetch(domain:evil.example)"), /WebFetch's domains are not exactly her hosts \(extra: evil\.example/],
       ["WebFetch a path rule", (s) => s.permissions.allow.push("WebFetch(https://evil.example/*)"), /allowed only as WebFetch\(domain:/],
       ["curl *.pages.dev", (s) => s.sandbox.network.allowedDomains.push("*.pages.dev"), /anyone can register/],

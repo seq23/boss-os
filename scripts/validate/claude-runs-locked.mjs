@@ -257,11 +257,11 @@ export function sandboxProblems(settings, spec) {
   const allowList = settings.permissions?.allow ?? [];
   if (allowList.includes("WebFetch")) out.push("allows bare WebFetch: every domain, and a GET's URL can carry her data to it");
   for (const a of allowList) if (/^WebFetch\(/.test(a) && !/^WebFetch\(domain:[^()\s]+\)$/.test(a)) out.push(`allows ${a}: WebFetch is allowed only as WebFetch(domain:<her host>)`);
-  const fetchHosts = webFetchHosts(settings).filter((h) => h !== "*");
+  const fetchHosts = allowList.includes("WebFetch") ? [] : webFetchHosts(settings); // bare WebFetch is reported above
   if (!allowList.includes("WebFetch") && !same(fetchHosts, spec.domains)) out.push(`WebFetch's domains are not exactly her hosts (${hostDiff(fetchHosts)})`);
-  for (const h of [...(net.allowedDomains ?? []), ...fetchHosts]) {
-    if (h === "*" || SHARED_HOSTS.some((s) => h === `*.${s}` || h === s)) out.push(`allows ${h}: anyone can register a host there, so her data could reach a stranger`);
-  }
+  const open = (h) => h === "*" || SHARED_HOSTS.some((s) => h === `*.${s}` || h === s);
+  for (const h of net.allowedDomains ?? []) if (open(h)) out.push(`allows ${h}: anyone can register a host there, so her data could reach a stranger`);
+  for (const h of fetchHosts) if (open(h)) out.push(`allows WebFetch(domain:${h}): anyone can register a host there, so her data could reach a stranger`);
   for (const k of ["allowAllUnixSockets", "allowUnixSockets", "allowLocalBinding", "allowMachLookup"]) if (net[k] !== undefined && !(Array.isArray(net[k]) && !net[k].length) && net[k] !== false) out.push(`sandbox.network.${k} is set (a way out of the sandbox)`);
   const allow = settings.permissions?.allow ?? [];
   for (const rule of allow) {
@@ -385,6 +385,7 @@ export const SANDBOX_BREAKS = Object.freeze([
   ["bare WebFetch added beside her domains", (s) => { s.permissions.allow.push("WebFetch"); }],
   ["WebFetch to a public wildcard", (s) => { s.permissions.allow.push("WebFetch(domain:*.workers.dev)"); }],
   ["WebFetch to an unlisted host", (s) => { s.permissions.allow.push("WebFetch(domain:evil.example)"); }],
+  ["WebFetch to every host by wildcard", (s) => { s.permissions.allow.push("WebFetch(domain:*)"); }],
   ["a public wildcard host (*.pages.dev)", (s) => { s.sandbox.network.allowedDomains.push("*.pages.dev"); }],
   ["a public wildcard host (*.workers.dev)", (s) => { s.sandbox.network.allowedDomains.push("*.workers.dev"); }],
   ["a stranger's workers.dev host", (s) => { s.sandbox.network.allowedDomains.push("x.attacker.workers.dev"); }],
