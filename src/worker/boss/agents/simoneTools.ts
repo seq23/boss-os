@@ -29,6 +29,7 @@ import { readKdpCaseChecks, readKdpPublishAttempts } from "../kdp/history";
 import { containsCredential } from "../../../shared/boss/service/secretLines.mjs";
 import { quoteStands } from "../../../shared/boss/text/wholeSentence.mjs";
 import { OPERATIONS_ENABLED, operatingStopped } from "../lib/operatingStop";
+import { operatingReport } from "./simoneOperations";
 import { SIMONE_MANAGED_SEATS, SIMONE_TOOL_STEPS } from "./simoneAuthority";
 
 export const SIMONE_RECORD_READS = {
@@ -168,6 +169,18 @@ export async function simoneTool(env: Env, request: { id: string; lease: number;
         AND EXISTS (SELECT 1 FROM tasks WHERE ${liveRun})`).bind(id, Number(paused), operation, ...lease).first<number>("version");
     if (version === null) return { ok: false, code: refused } as const;
     return { ok: true, receipt: operation, duty: id, name: duty.name, state: paused ? "paused" : "scheduled", version } as const;
+  }
+  if (request.tool === "operations") {
+    const page = request.task == null ? 0 : Number(request.task);
+    if (!Number.isSafeInteger(page) || page < 0 || page >= 100) {
+      return { ok: false, code: "OPERATIONS_PAGE_REQUIRED" } as const;
+    }
+    const report = await operatingReport(env.DB, now);
+    if (!report) return { ok: false, code: "OPERATIONS_NOT_CHECKED_TODAY" } as const;
+    const start = page * 20;
+    return { ok: true, receipt: "operations", day: report.day, total: report.rows.length,
+      issues: page === 0 ? report.issues.slice(0, 12) : [], issueCount: report.issues.length, proposal: report.proposal,
+      rows: report.rows.slice(start, start + 20), nextPage: start + 20 < report.rows.length ? page + 1 : null } as const;
   }
   if (Object.hasOwn(SIMONE_RECORD_READS, request.tool)) {
     const read = SIMONE_RECORD_READS[request.tool as keyof typeof SIMONE_RECORD_READS];

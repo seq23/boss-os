@@ -1,15 +1,18 @@
 import { dayIdInZone } from "../../../shared/boss/timezone";
 import { Hono } from "hono";
+import { bodyLimit } from "hono/body-limit";
 import type { Env, Vars } from "../env";
 import { claimSimone, fileSimoneMessage, releaseSimone, replySimone, simoneMessageStatus, finishSimoneHandoff } from "../agents/simone";
 import { AppError, badRequest, notFound, ok } from "../lib/http";
 import { machineTokenOk } from "./openLoops";
 import { simoneTool } from "../agents/simoneTools";
 import { operatingStopped, setOperatingStop } from "../lib/operatingStop";
+import { operatingInputs, operatingReport, storeOperatingReport } from "../agents/simoneOperations";
 import { containsCredential } from "../../../shared/boss/service/secretLines.mjs";
 
 export const simone = new Hono<{ Bindings: Env; Variables: Vars }>();
 export const SIMONE_MACHINE_PATHS: ReadonlySet<string> = new Set([
+  "/api/simone/operations/inputs", "/api/simone/operations/report",
   "/api/simone/tool", "/api/simone/handoff", "/api/simone/claim", "/api/simone/release", "/api/simone/reply", "/api/simone/wake",
 ]);
 
@@ -81,11 +84,32 @@ simone.post("/handoff", async (c) => {
   return ok(c, await finishSimoneHandoff(c.env, b));
 });
 
+simone.get("/operations", async (c) => {
+  const report = await operatingReport(c.env.DB);
+  if (!report) throw new AppError(503, "Couldn't check: Simone has no operating inventory for today.");
+  return ok(c, report);
+});
+
+simone.get("/operations/inputs", async (c) => {
+  if (!(await machineTokenOk(c))) throw new AppError(401, "Locked");
+  return ok(c, await operatingInputs(c.env.DB));
+});
+
+simone.post("/operations/report",
+  async (c, next) => {
+    if (!(await machineTokenOk(c))) throw new AppError(401, "Locked");
+    await next();
+  },
+  bodyLimit({ maxSize: 850_000, onError: () => { throw new AppError(413, "The operating report is too large."); } }),
+  async (c) => ok(c, await storeOperatingReport(c.env, await c.req.json<unknown>().catch(() => null))),
+);
+
 simone.post("/wake", async (c) => {
   if (!(await machineTokenOk(c))) throw new AppError(401, "Locked");
+  if (await operatingStopped(c.env.DB)) return ok(c, { stopped: true });
   const day = dayIdInZone(Date.now());
   return ok(c, { taskId: await fileSimoneMessage(c.env, {
     source: "simone_daily", subject: "Simone’s daily work",
-    body: "Read your handoff and check the team’s work. Move along something that is ready or stuck and keep a record of what you did.",
+    body: "Read the operating inventory and its receiving-end evidence. Inspect the misses you can address with your existing tools, act where you have authority, and record what changed. Keep any unreadable or unproven result open.",
   }, day.replaceAll("-", "")) });
 });

@@ -180,6 +180,21 @@ It now retries sign-in once (before any Gmail send), then returns a structured f
 held-reply path records. The send itself is never blindly retried. This reproduces the reported
 error in a test; production traces for the two reported requests were not available locally.
 
+### Simone’s operating inventory
+
+Simone’s first operating wake of the Central day builds the inventory from the employee and duty
+registries, Schedule, Scorecard, Email Map, Sites Map, tracked job definitions, and available
+scheduler state. The owner can open `/api/boss/simone/operations` after signing in. Simone reads the
+same snapshot with her leased `operations` tool. The latest snapshot is in `settings`. Warnings go to
+Updates that day and to the existing morning note. A duplicate wake keeps the first complete write.
+
+An installed trigger and a delivered result have separate readings. An unreadable source stays open.
+Scorecard numbers belong to their initiatives, and an individual item without a receiving-end reader
+says “no proof yet.” The office-outreach check requires the approved receiving Workspace mailbox in
+the vault’s `PNP_OUTREACH_PROOF_MAILBOX` setting. The sender status feed supplies a sender and an
+arrival time. An empty mailbox search in that window shows a missing copy. A positive match stays
+unconfirmed until the feed supplies the original Message-ID.
+
 ### Output floors and Kendra's alarms (6 Nov 2026)
 Owner, 5 Nov 2026: stop "green but did nothing" (P&P outreach ran green 2-5 Nov and sent 0; Wynn's
 owner emails failed 236 times 2-6 Nov; a task read "running" for hours on a spent seat).
