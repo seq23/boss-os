@@ -85,9 +85,18 @@ export function queueEvidence({ scope, repo, findings = [] }) {
 }
 
 /** The scope snapshot: which briefs of the queue this pass was handed. Pure, so the test can call it. */
-export function scopeSnapshot({ queue, queueFile, repo, briefIds = [], now = Date.now() }) {
+/**
+ * THE BRIEFS A SCOPED PASS WAS HANDED: the queue's briefs for `repo`, narrowed to `briefIds` when any
+ * are named. One selection, read by the evidence snapshot below and by the pass packet the model works
+ * from (site-audit-lib.mjs `passPacket`), so the two can never disagree about what the pass was given.
+ */
+export function scopeBriefs(queue, repo, briefIds = []) {
   const forRepo = (queue?.briefs ?? []).filter((b) => b.repo === repo);
-  const wanted = briefIds.length ? forRepo.filter((b) => briefIds.includes(b.id)) : forRepo;
+  return { forRepo, wanted: briefIds.length ? forRepo.filter((b) => briefIds.includes(b.id)) : forRepo };
+}
+
+export function scopeSnapshot({ queue, queueFile, repo, briefIds = [], now = Date.now() }) {
+  const { forRepo, wanted } = scopeBriefs(queue, repo, briefIds);
   return {
     mode: "queue",
     queue_file: queueFile,
