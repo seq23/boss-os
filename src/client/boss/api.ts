@@ -18,6 +18,15 @@ export interface RewriteProgress {
   sentence: string | null;
 }
 
+export interface SimoneGoogleAccount {
+  address: string;
+  enabled: boolean;
+  restricted: boolean;
+  until: number | null;
+  canDisconnect: boolean;
+  disconnecting: boolean;
+}
+
 export interface SimoneMessageResult {
   status: string;
   reply: string | null;
@@ -295,6 +304,12 @@ export const api = {
   tellSimone: (text: string) => call<{ taskId: string }>("/intake/simone", post("", { text })),
   messageSimone: (text: string) => call<{ taskId: string }>("/simone/message", post("", { text })),
   simoneMessage: (id: string) => call<SimoneMessageResult>(`/simone/message/${encodeURIComponent(id)}`),
+  simoneAccounts: () => call<{ accounts: SimoneGoogleAccount[] }>("/simone/accounts"),
+  connectSimoneAccount: () => call<{ url: string }>("/simone/accounts/connect", post("", {})),
+  switchSimoneAccount: (address: string, enabled: boolean) =>
+    call<{ accounts: SimoneGoogleAccount[] }>("/simone/accounts/switch", post("", { address, enabled })),
+  disconnectSimoneAccount: (address: string) =>
+    call<{ accounts: SimoneGoogleAccount[] }>("/simone/accounts/disconnect", post("", { address })),
   simoneStop: () => call<{ stopped: boolean }>("/simone/stop"),
   setSimoneStop: (stopped: boolean) => call<{ stopped: boolean }>("/simone/stop", post("", { stopped })),
 

@@ -1073,6 +1073,9 @@ it("finds and reads a Workspace document through a leased Simone task with read-
   const { DRIVE_FILE_MAX_BYTES } = await import("../../src/worker/boss/intake/readFiles");
   const { DEFAULT_MAILBOX } = await import("../../src/shared/boss/commands/parse.mjs");
   const mocked = await googleFixtureEnv();
+  const { enableSickDay } = await import("../../src/worker/boss/agents/simoneAccounts");
+  const now = Date.now();
+  await enableSickDay(mocked, { address: DEFAULT_MAILBOX, until: now + 86_400_000 }, now);
   const title = "Avery's \\ launch plan";
   const id = await fileSimoneMessage(env, { ...request, body: `Find and summarize ${title} on Drive.` });
   const call = (await claimSimone(env))!;

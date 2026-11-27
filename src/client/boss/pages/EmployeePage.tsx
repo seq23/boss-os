@@ -14,7 +14,7 @@ import { TellSimone } from "../components/TellSimone";
  * After any action the page stays on the same duty, open, and says what happened under it.
  */
 import { useEffect, useState } from "react";
-import { api } from "../api";
+import { api, type SimoneGoogleAccount } from "../api";
 import { Empty, Loading } from "../components/Shell";
 import { ErrorNotice } from "../components/Notice";
 import { go, tellSimoneHref, commandHref, taskHref } from "../nav";
@@ -67,7 +67,7 @@ export function EmployeePage({ id, onBack }: { id: string; onBack: () => void })
       {e.id === "emp_knowledge" && <WaitingOnRegister />}
 
       {e.id === "emp_growth" && <MessageNoelle onError={setError} />}
-      {e.id === "emp_chief" && <TellSimone page />}
+      {e.id === "emp_chief" && <><TellSimone page /><SimoneAccounts /></>}
 
       <section className="panel" data-testid="employee-tell-simone" aria-label={`Give ${e.name} a one-off task`}>
         <p className="row-title" style={{ marginTop: 0 }}>Give {e.name} a one-off task</p>
@@ -102,6 +102,82 @@ export function EmployeePage({ id, onBack }: { id: string; onBack: () => void })
       )}
       {back}
     </div>
+  );
+}
+
+function SimoneAccounts() {
+  const [accounts, setAccounts] = useState<SimoneGoogleAccount[]>();
+  const [error, setError] = useState<unknown>(null);
+  const [busy, setBusy] = useState(false);
+  const [notice, setNotice] = useState("");
+  useEffect(() => {
+    const location = new URL(window.location.href);
+    const result = location.searchParams.get("google");
+    if (result) {
+      setNotice(result === "connected" ? "Google account connected." : "Couldn’t connect this account. Try again.");
+      location.searchParams.delete("google");
+      window.history.replaceState(window.history.state, "", location);
+    }
+    api.simoneAccounts().then(({ accounts }) => setAccounts(accounts)).catch(setError);
+  }, []);
+
+  async function change(action: () => Promise<{ accounts: SimoneGoogleAccount[] }>) {
+    setBusy(true);
+    setError(null);
+    setNotice("");
+    try {
+      setAccounts((await action()).accounts);
+    } catch (err) {
+      setError(err);
+      await api.simoneAccounts().then(({ accounts }) => setAccounts(accounts)).catch(() => {});
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function connect() {
+    setBusy(true);
+    setError(null);
+    setNotice("");
+    try {
+      window.location.assign((await api.connectSimoneAccount()).url);
+    } catch (err) {
+      setError(err);
+      setBusy(false);
+    }
+  }
+
+  return (
+    <section className="panel" aria-labelledby="simone-accounts">
+      <h3 id="simone-accounts">Simone’s Google accounts</h3>
+      <ErrorNotice error={error} onDismiss={() => setError(null)} />
+      {notice && <p role="status">{notice}</p>}
+      {!accounts && !error && <Loading />}
+      {accounts?.map((account) => (
+        <div className="row" key={account.address}>
+          <div className="row-main">
+            <div className="row-title">{account.address}</div>
+            <div className="row-sub">
+              {account.disconnecting ? "Off · Google revocation pending"
+                : account.until ? `Temporary access until ${when(account.until)}`
+                : account.restricted ? "Temporary access by verified email"
+                : account.enabled ? "On" : "Off"}
+            </div>
+          </div>
+          <button className="btn btn-small" role="switch" aria-checked={account.enabled}
+            aria-label={`Simone access to ${account.address}`}
+            disabled={busy || account.disconnecting || (account.restricted && !account.enabled)}
+            onClick={() => void change(() => api.switchSimoneAccount(account.address, !account.enabled))}>
+            {account.enabled ? "On" : "Off"}
+          </button>
+          {account.canDisconnect && <button className="btn btn-small" disabled={busy}
+            onClick={() => void change(() => api.disconnectSimoneAccount(account.address))}>
+            {account.disconnecting ? "Retry disconnect" : "Disconnect"}
+          </button>}
+        </div>
+      ))}
+      <button className="btn" disabled={busy} onClick={() => void connect()}>Connect a Google account</button>
+    </section>
   );
 }
 

@@ -66,7 +66,7 @@ async function calendarToken(creds: ServiceAccount, mailbox: string): Promise<{ 
 }
 
 type Cal = { ok: true; token: string; mailbox: string } | { ok: false; why: string };
-async function calendarFor(env: Env, mailbox: string): Promise<Cal> {
+export async function calendarFor(env: Env, mailbox: string): Promise<Cal> {
   if (!mailboxAllowed(mailbox)) return { ok: false, why: `${mailbox} is not a Workspace calendar Simone may write` };
   const creds = serviceAccountFrom(env);
   if (!creds) return { ok: false, why: "the Google key is not on the Worker" };

@@ -10,6 +10,9 @@ import { createExecutionContext, env, waitOnExecutionContext } from "cloudflare:
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import worker from "../../src/worker/boss/index";
 import { setCommandFetch } from "../../src/worker/boss/commands/google";
+import { enableSickDay } from "../../src/worker/boss/agents/simoneAccounts";
+import { BROKERAGE_MAILBOX } from "../../src/worker/boss/wealth/gmailDraft";
+import { DEFAULT_MAILBOX } from "../../src/shared/boss/commands/parse.mjs";
 import { runInvitations, setInviteModel } from "../../src/worker/boss/invitations/run";
 import { addDays, centralDay, INVITE_INBOXES } from "../../src/shared/boss/invitations/invitations.mjs";
 import { HOME_TZ, instantAt } from "../../src/shared/boss/ownerTime.mjs";
@@ -103,6 +106,9 @@ beforeEach(async () => {
   (env as any).GSC_SERVICE_ACCOUNT_JSON = JSON.stringify({ client_email: "bot@example.iam.gserviceaccount.com", private_key: await pem() });
   setInviteModel(async () => ({ invitation: true, title: "Dinner at Dana's", date: "2026-11-21", time: "19:00", where: "Dana's house", asks_answer: true }));
   Date.now = () => NOW;
+  for (const address of [DEFAULT_MAILBOX, BROKERAGE_MAILBOX]) {
+    await enableSickDay(env, { address, until: NOW + 7 * 86_400_000 }, NOW);
+  }
 });
 afterEach(() => { setCommandFetch(null); setInviteModel(null); Date.now = REAL_NOW; });
 

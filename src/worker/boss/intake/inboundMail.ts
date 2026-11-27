@@ -6,6 +6,7 @@ import { refsForChain, refsForCode, chainIds, refTail } from "./mailRefs";
 import { newId } from "../lib/id";
 import { audit } from "../lib/audit";
 import { logEvent } from "../lib/log";
+import { enableSickDay, simoneSickDayCommand } from "../agents/simoneAccounts";
 import { operatingStopCommand, setOperatingStop } from "../lib/operatingStop";
 import { admitTask } from "../tasks/admit";
 import {
@@ -737,13 +738,23 @@ async function handleMail(message: BossMailMessage, env: Env, said: Said): Promi
   const origin = read?.readable ? forwardedOrigin(read.readable) : null;
   const herSubject = herSubjectOf(subject, origin ? (origin.subject ? decodeHeader(origin.subject) : "") : null);
   const writtenByOwner = herWords(read?.readable ?? "");
-  const operatingStop = origin || /^(?:fw|fwd)\s*:/i.test(subject) ? null : operatingStopCommand(writtenByOwner);
-  if (operatingStop !== null && !viaConsole && cloudflareChecked &&
-      /;\s*dkim\s*=\s*pass\b/i.test(authentication) && /;\s*spf\s*=\s*pass\b/i.test(authentication)) {
+  const directVerified = !origin && !/^(?:fw|fwd)\s*:/i.test(subject) && !viaConsole && cloudflareChecked &&
+    /;\s*dkim\s*=\s*pass\b/i.test(authentication) && /;\s*spf\s*=\s*pass\b/i.test(authentication);
+  const operatingStop = directVerified ? operatingStopCommand(writtenByOwner) : null;
+  if (operatingStop !== null) {
     const stopped = await setOperatingStop(env.DB, operatingStop, now);
     const acknowledgement = stopped ? "Boss OS operations are paused." : "Boss OS operations can resume.";
     await finish({ outcome: "OWNER_OPERATING_STOP", why: acknowledgement, objectKey, reply: acknowledgement });
     return { mailId, outcome: "OWNER_OPERATING_STOP", employeeId: null, taskId: null, reply: acknowledgement, messageId, signer: "Simone" };
+  }
+  const sickDay = directVerified ? simoneSickDayCommand(writtenByOwner, now) : null;
+  if (sickDay) {
+    const { address, until } = sickDay;
+    if (until !== null) await enableSickDay(env, { address, until }, now);
+    const acknowledgement = until === null ? "Choose an end time within seven days."
+      : `Simone has temporary access to ${address} until ${new Date(until).toISOString()}.`;
+    await finish({ outcome: "OWNER_GOOGLE_ACCESS", why: acknowledgement, objectKey, reply: acknowledgement });
+    return { mailId, outcome: "OWNER_GOOGLE_ACCESS", employeeId: null, taskId: null, reply: acknowledgement, messageId, signer: "Simone" };
   }
   const ownerText = `${herSubject}\n${writtenByOwner}`;
   const recordedRefs = chainRefs.refs.length ? chainRefs : await refsForCode(env.DB, ownerText);

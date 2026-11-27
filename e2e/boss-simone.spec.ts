@@ -56,6 +56,15 @@ test("Simone replies in both message boxes at 390 px", async ({ page }, info) =>
   );
   const box = page.getByTestId("employee-message-simone");
   await sendAndRead(box, "/api/boss/simone/message", "simone-page-390.png");
+  const account = page.getByRole("switch", { name: /time-2-read/ });
+  await expect(account).toHaveAttribute("aria-checked", "true");
+  await account.click();
+  await expect(account).toHaveAttribute("aria-checked", "false");
+  await expectNoSidewaysScroll(page);
+  await page.screenshot({ path: info.outputPath("simone-accounts-390.png") });
+  await account.click();
+  await expect(account).toHaveAttribute("aria-checked", "true");
+
   await box.getByRole("button", { name: "Stop everything" }).click();
   await expect(box.getByText("Boss OS operations are paused.")).toBeVisible();
   await expectNoSidewaysScroll(page);

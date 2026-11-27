@@ -102,6 +102,9 @@ export function toBossEnv(env: Env): BossEnv {
     GSC_SERVICE_ACCOUNT_JSON: env.GSC_SERVICE_ACCOUNT_JSON,
     // R3: the secret door's key. Omitted here, the door would be declared and fail closed forever.
     BOSS_OS_SECRET_HANDOFF_KEY: env.BOSS_OS_SECRET_HANDOFF_KEY,
+    BOSS_SIMONE_GOOGLE_CLIENT_ID: env.BOSS_SIMONE_GOOGLE_CLIENT_ID,
+    BOSS_SIMONE_GOOGLE_CLIENT_SECRET: env.BOSS_SIMONE_GOOGLE_CLIENT_SECRET,
+    BOSS_SIMONE_PERSONAL_GOOGLE_ACCOUNT: env.BOSS_SIMONE_PERSONAL_GOOGLE_ACCOUNT,
     /*
      * THE TWO FRONTIER KEYS (26 Oct 2026). Set on the Worker since 17 Sep and never passed through
      * here, so Boss OS's Anthropic and OpenAI backends were "enabled" with no key they could reach,

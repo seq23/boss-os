@@ -314,14 +314,18 @@ export async function runOperationsCheck(api, { env = process.env, fetchImpl = f
       return result(read.raw >= metric.floor.value ? "verified" : "missing", `${metric.label}: ${read.raw} (target ${metric.floor.value}).`);
     },
     readOutreach: async () => {
-      const state = await api("GET", "/operations/inputs");
-      if (state.stopped || state.day !== input.day) return unknown("Owner mailbox read was paused.");
       const mailbox = env.PNP_OUTREACH_PROOF_MAILBOX?.trim().toLowerCase();
       if (!BRAND_MAILBOXES.some((brand) => brand.mailbox === mailbox)) return unknown("Couldn't check the owner's receiving mailbox; its approved connection is unavailable.");
+      const gate = async () => {
+        const state = await api("GET", "/operations/inputs?google_account=" + encodeURIComponent(mailbox));
+        return state.day === input.day && state.googleEnabled === true && !state.stopped;
+      };
+      if (!await gate()) return unknown("Owner mailbox access is off.");
       const status = await senderClient(localConfig(env), boundedFetch).status();
       let token;
       return outreachReceipt(status, async (query) => {
         token ??= await googleAccess(ctx, "https://www.googleapis.com/auth/gmail.readonly", mailbox);
+        if (!await gate()) throw new Error("Owner mailbox access is off");
         return gmailHeaders(token, query, 1, boundedFetch);
       });
     },

@@ -5,6 +5,7 @@ import type { Env, Vars } from "../env";
 import { claimSimone, fileSimoneMessage, releaseSimone, replySimone, simoneMessageStatus, finishSimoneHandoff } from "../agents/simone";
 import { AppError, badRequest, notFound, ok } from "../lib/http";
 import { machineTokenOk } from "./openLoops";
+import { connectSimoneGoogle, disconnectSimoneGoogle, simoneAccountGate, simoneAccounts, startSimoneGoogle, switchSimoneAccount } from "../agents/simoneAccounts";
 import { simoneTool } from "../agents/simoneTools";
 import { operatingStopped, setOperatingStop } from "../lib/operatingStop";
 import { operatingInputs, operatingReport, storeOperatingReport } from "../agents/simoneOperations";
@@ -21,6 +22,41 @@ export function readSimoneText(body: { text?: unknown } | null) {
   if (new TextEncoder().encode(body.text).length > 60_000) throw badRequest("This message is longer than Simone's message box can hold.");
   return body.text.trim();
 }
+
+simone.get("/accounts", async (c) => {
+  c.header("Cache-Control", "no-store");
+  return ok(c, { accounts: await simoneAccounts(c.env) });
+});
+
+simone.post("/accounts/connect", async (c) => {
+  c.header("Cache-Control", "no-store");
+  return ok(c, { url: await startSimoneGoogle(c.env, c.get("session").id) });
+});
+
+simone.get("/accounts/callback", async (c) => {
+  c.header("Cache-Control", "no-store");
+  c.header("Referrer-Policy", "no-referrer");
+  const employee = "/?employee=emp_chief&google=";
+  try {
+    await connectSimoneGoogle(c.env, c.get("session").id, c.req.query("state") ?? "", c.req.query("code") ?? "");
+    return c.redirect(employee + "connected");
+  } catch {
+    return c.redirect(employee + "error");
+  }
+});
+
+simone.post("/accounts/switch", async (c) => {
+  const body = await c.req.json<{ address?: unknown; enabled?: unknown }>().catch(() => null);
+  if (typeof body?.enabled !== "boolean") throw badRequest("Choose on or off.");
+  await switchSimoneAccount(c.env, body.address, body.enabled);
+  return ok(c, { accounts: await simoneAccounts(c.env) });
+});
+
+simone.post("/accounts/disconnect", async (c) => {
+  const body = await c.req.json<{ address?: unknown }>().catch(() => null);
+  await disconnectSimoneGoogle(c.env, body?.address);
+  return ok(c, { accounts: await simoneAccounts(c.env) });
+});
 
 simone.get("/stop", async (c) => ok(c, { stopped: await operatingStopped(c.env.DB) }));
 
@@ -92,7 +128,12 @@ simone.get("/operations", async (c) => {
 
 simone.get("/operations/inputs", async (c) => {
   if (!(await machineTokenOk(c))) throw new AppError(401, "Locked");
-  return ok(c, await operatingInputs(c.env.DB));
+  const inputs = await operatingInputs(c.env.DB);
+  const address = c.req.query("google_account");
+  if (address !== undefined) {
+    return ok(c, { ...inputs, googleEnabled: Boolean(await simoneAccountGate(c.env, address.toLowerCase())) });
+  }
+  return ok(c, inputs);
 });
 
 simone.post("/operations/report",

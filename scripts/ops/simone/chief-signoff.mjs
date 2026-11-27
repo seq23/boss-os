@@ -2,21 +2,22 @@ import { execFileSync } from "node:child_process";
 import { readFileSync } from "node:fs";
 import { pathToFileURL } from "node:url";
 
-const SIMONE_TRAILER = "Simone <simone@sequoiataylor.com>";
+export const SIMONE_TRAILER = "Simone <simone@sequoiataylor.com>";
 const MANAGED_BRANCH = /^(?:noelle|danielle)\/|^work\/rc-/;
 const PROTECTED_PATHS = [
   /^(?:\.github\/|(?:docs\/)?CODEOWNERS$)/,
+  /^scripts\/(?:validate\/no-unauthorized-effects\.mjs|vault\/cloudflare-mapping\.json)$/,
   /^scripts\/ops\/(?:simone\/|simone(?:-permissions\.json|\.mjs)$|lib\/simone-|noelle-github\.mjs$|duty-(?:run\.sh|brief\.mjs)$)/,
-  /^src\/shared\/boss\/(?:intake\/(?:mail|messageBody)\.|commands\/parse\.|duties\/ownerEdits\.)/,
-  /^src\/worker\/(?:index|bossMount)\.ts$/,
-  /^src\/worker\/boss\/(?:index\.ts$|agents\/simone|intake\/inboundMail\.ts$|lib\/operatingStop\.ts$)/,
+  /^src\/shared\/boss\/(?:intake\/(?:mail|messageBody)\.|commands\/parse\.|duties\/ownerEdits\.|invitations\/invitations\.)/,
+  /^src\/worker\/(?:index|bossMount|env)\.ts$/,
+  /^src\/worker\/boss\/(?:(?:index|env)\.ts$|agents\/simone|intake\/(?:inboundMail|readFiles)\.ts$|invitations\/run\.ts$|lib\/operatingStop\.ts$)/,
   /^src\/worker\/boss\/(?:commands\/(?:google|routes)|duties\/ownerEdits|routes\/(?:simone|system|backends|repoChanges|growth))\.ts$/,
-  /^src\/client\/boss\/(?:api\.ts|components\/TellSimone\.tsx)$/,
+  /^src\/client\/boss\/(?:api\.ts|components\/TellSimone\.tsx|pages\/EmployeePage\.tsx)$/,
   /^tests\/(?:boss\/)?(?:simone|chief)/,
 ];
 const PASS_LINE = /^[\s>*-]*(?:Ship-ready|Launch-ready):\s*PASS\b.*$/gim;
 
-function hasChiefTrailer(message) {
+export function hasChiefTrailer(message) {
   // Match the parsed Git trailer block. A mention in the commit body cannot satisfy this check.
   const trailers = execFileSync("git", ["interpret-trailers", "--parse"], { input: message, encoding: "utf8" });
   return trailers.split("\n").some((line) => line.toLowerCase() === `co-authored-by: ${SIMONE_TRAILER}`.toLowerCase());
@@ -28,7 +29,7 @@ export function chiefSignoff({ head, branch, messages, paths, ownerText }) {
   const stamps = messages.map(hasChiefTrailer);
   const commissioned = simoneBranch || stamps.some(Boolean);
   if (simoneBranch && !stamps.every(Boolean)) return "SIMONE_TRAILER_REQUIRED";
-  if ((commissioned || MANAGED_BRANCH.test(branch)) && paths.some((path) => PROTECTED_PATHS.some((rule) => rule.test(path)))) {
+  if ((commissioned || MANAGED_BRANCH.test(branch)) && paths.some(protectedChiefPath)) {
     return "PROTECTED_PATH";
   }
   const pass = ownerText.flatMap((body) => [...body.matchAll(PASS_LINE)].map(([line]) => line));
@@ -39,6 +40,10 @@ export function chiefSignoff({ head, branch, messages, paths, ownerText }) {
     return "SIMONE_APPROVAL_RECORD_REQUIRED";
   }
   return null;
+}
+
+export function protectedChiefPath(path) {
+  return PROTECTED_PATHS.some((rule) => rule.test(path));
 }
 
 function inspectPull(number, repo, base) {

@@ -1,6 +1,7 @@
 import { spawnSync } from "node:child_process";
 import { createServer } from "node:net";
 import { homedir } from "node:os";
+import { simoneGitHub } from "../simone/github.mjs";
 import { askClaudeJson } from "./duty-kit.mjs";
 
 const PERSONAL_READS = {
@@ -58,8 +59,13 @@ export async function listenForSimoneTools(path, call, api, hasCredential, runCo
       try {
         const { tool, task } = JSON.parse(input);
         if (typeof tool !== "string") throw new Error("Missing tool name");
-        const request = () => api("POST", "/tool", { id: call.id, lease: call.lease, tool, task });
+        const request = () => api("POST", "/tool", {
+          id: call.id, lease: call.lease, tool, ...(tool === "github" ? {} : { task }),
+        });
         let result = await (tool === "read_mail_material" ? (mailMaterial ??= request()) : request());
+        if (result.ok && tool === "github") {
+          result = await simoneGitHub(call, task, hasCredential, { recheck: async () => (await request()).ok });
+        }
         if (result.ok && Object.hasOwn(PERSONAL_READS, tool)) {
           result = typeof result.query !== "string" ? { ok: false, code: "PERSONAL_READ_INSTRUCTION_REQUIRED" }
             : hasCredential(result.query) ? { ok: false, code: "SECRET_OUTPUT" }

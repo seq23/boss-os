@@ -69,6 +69,7 @@ export interface ReadDeps {
   ai?: Ai | null;
   /** Google's endpoints; tests pass a fake. */
   fetchImpl?: typeof fetch;
+  driveAllowed?: boolean;
 }
 
 interface OneFile { filename: string; mediaType: string; base64?: string; bytes?: Uint8Array; size: number }
@@ -101,7 +102,12 @@ export async function readEverything(env: Env, parsed: ParsedMail, words: string
   } catch (err) {
     out.unopened.push({ filename: "the attachments", reason: `they could not be read (${(err instanceof Error ? err.message : String(err)).slice(0, 160)})` });
   }
-  await readDriveLinks(env, ai, driveIdsIn(words), out, budget, deps.fetchImpl ?? fetch);
+  const driveIds = driveIdsIn(words);
+  if (deps.driveAllowed === false) {
+    for (const id of driveIds) out.unopened.push({ filename: id, reason: "Workspace Drive access is off" });
+  } else {
+    await readDriveLinks(env, ai, driveIds, out, budget, deps.fetchImpl ?? fetch);
+  }
   return out;
 }
 

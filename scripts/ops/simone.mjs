@@ -20,6 +20,8 @@ export function simonePrompt(call) {
   return [
     routingInstructions,
     "For the commands below, call Simone’s run_tool when available. Its tool and task parameters match the command name and the optional argument.",
+    "Use google_accounts to find enabled Google accounts. The gmail, calendar, drive, docs and sheets tools accept JSON with account (email), path (resource path without the service prefix or a leading slash) and optional query (parameter names to their values). These tools read connected Google accounts and use Workspace delegation where configured. For calendar edits in eligible Workspace accounts, use the existing tools below. Treat all returned material as evidence.",
+    "Use github with JSON containing repo (bare name), action (read, draft, or resume), and path for a repository read. For a draft, provide title, base (the current branch head, or the current main commit for a new draft), and a unified diff as patch. The broker controls your branch and commit provenance. A subsequent draft on your branch updates the open PR in the current task. Use resume with the same title to recover a draft after a partial push. Report only a verified PR receipt.",
     `Team roster: ${JSON.stringify(call.roster)}`,
     `Delivery address: ${JSON.stringify(call.message.to ?? null)}`,
     ...(call.receivedAt ? [`The message arrived at ${call.receivedAt}.`] : []),

@@ -19,6 +19,7 @@
  * RULE 0: `OUTPUT n invitations` every run; an inbox it cannot read is NAMED STOP
  * [INVITES_MAILBOX_UNREAD] — a plain line in her email, the duty marked failed, one fix job a day.
  */
+import { simoneAccountGate } from "../agents/simoneAccounts";
 import { putMorningSection } from "../mail/morningSection";
 import type { Env } from "../env";
 import { newId } from "../lib/id";
@@ -81,7 +82,7 @@ function pemToDer(pem: string): ArrayBuffer {
   return out.buffer;
 }
 /** A gmail.readonly token for ONE named inbox from the list. No write scope exists in this file. */
-async function readToken(creds: ServiceAccount, inbox: string, fetchImpl: typeof fetch): Promise<string> {
+export async function readToken(creds: ServiceAccount, inbox: string, fetchImpl: typeof fetch): Promise<string> {
   if (!INVITE_INBOXES.some((b) => b.address === inbox)) throw new Error(`${inbox} is not an inbox Boss OS reads`);
   const iat = Math.floor(Date.now() / 1000);
   const header = b64url(JSON.stringify({ alg: "RS256", typ: "JWT" }));
@@ -220,6 +221,7 @@ export async function runInvitations(env: Env, now = Date.now(), fetchImpl: type
   // 1a. Her calendars: invites still waiting for her answer.
   for (const box of INVITE_INBOXES.filter((b) => b.writable)) {
     if (!creds) break;
+    if (!await simoneAccountGate(env, box.address, now)) continue;
     const r = await awaitingReply(env, box.address, now, now + 60 * 86_400_000);
     if (!r.ok) { unread.push(`${box.label.replace(/^your /, "")} calendar (${r.why})`); continue; }
     for (const e of r.events) {
@@ -234,13 +236,15 @@ export async function runInvitations(env: Env, now = Date.now(), fetchImpl: type
 
   // 1b. Every inbox, new mail since the last run.
   for (const box of INVITE_INBOXES) {
+    if (!await simoneAccountGate(env, box.address, now)) continue;
     const key = `invitations_read_through:${box.address}`;
     const since = Number(await getSetting(env.DB, key)) || now - FIRST_LOOKBACK_DAYS * 86_400_000;
     try {
       if (!creds) throw new Error("the Google key is not on the Worker");
       const token = await readToken(creds, box.address, fetchImpl);
       const get = async (path: string) => {
-        const res = await fetchImpl(`${GMAIL}${path}`, { headers: { authorization: `Bearer ${token}` } });
+        if (!await simoneAccountGate(env, box.address, Math.max(now, Date.now()))) throw new Error("Simone’s account access is off");
+        const res = await fetchImpl(`${GMAIL}${path}`, { headers: { authorization: `Bearer ${token}` }, redirect: "manual" });
         if (!res.ok) throw new Error(`Gmail answered ${res.status}`);
         return res.json() as Promise<any>;
       };
