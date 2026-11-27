@@ -2608,6 +2608,10 @@
       "kind": "system",
       "why": "Keeps the system running or checks it; it has no customer result of its own."
     },
+    "agent-search-guard": {
+      "kind": "system",
+      "why": "A money guard: it checks AI Search usage and can only switch the trial site off; it has no customer result of its own."
+    },
     "mac-cleanup": {
       "kind": "system",
       "why": "Keeps the system running or checks it; it has no customer result of its own."

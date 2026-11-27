@@ -1651,6 +1651,29 @@
       "macWindow": "LIGHT"
     },
     {
+      "id": "agent-search-guard",
+      "name": "Search for Agents money guard",
+      "what": "Reads the account's AI Search usage; switches Search for Agents off on the one trial site at 80% of a free allowance, or after two days unable to read it, with a Notices line.",
+      "business": "personal",
+      "brand": "Repos",
+      "system": "mac",
+      "slots": [
+        "daily 10:30"
+      ],
+      "emails": false,
+      "heavy": false,
+      "trigger": {
+        "launchd": [
+          "com.seq.agent-search-guard"
+        ]
+      },
+      "output": {
+        "floor": 0,
+        "reason": "Check-only: a day under the limit changes nothing; the OUTPUT line still says whether the usage was read, and an unread day is COULDNT-CHECK, never under."
+      },
+      "macWindow": "LIGHT"
+    },
+    {
       "id": "ci-sweep-resume",
       "name": "CI sweep resume",
       "what": "Resumes a sweep the Mac's sleep interrupted.",
