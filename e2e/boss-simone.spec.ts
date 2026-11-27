@@ -7,6 +7,8 @@ const REPLY = "The park has a free slot at noon, and the hall and pavilion each 
 
 test("Simone replies in both message boxes at 390 px", async ({ page }, info) => {
   await page.setViewportSize(PHONE);
+  const mailboxLabels = page.getByRole("region", { name: "Simone’s Google accounts" }).locator(".row-title");
+  const capture = (name: string) => page.screenshot({ path: info.outputPath(name), mask: [mailboxLabels] });
   await unlock(page);
   const provisioned = await page.request.post("/api/boss/open-loops/intake-token");
   expect(provisioned.status()).toBe(201);
@@ -43,7 +45,7 @@ test("Simone replies in both message boxes at 390 px", async ({ page }, info) =>
     expect(result).toEqual({ state: "done", id: taskId });
     await expect(box.getByRole("status")).toContainText(REPLY, { timeout: 15_000 });
     await expectNoSidewaysScroll(page);
-    await page.screenshot({ path: info.outputPath(screenshot) });
+    await capture(screenshot);
   }
 
   await page.getByTestId("tell-simone-fab").click();
@@ -61,14 +63,14 @@ test("Simone replies in both message boxes at 390 px", async ({ page }, info) =>
   await account.click();
   await expect(account).toHaveAttribute("aria-checked", "false");
   await expectNoSidewaysScroll(page);
-  await page.screenshot({ path: info.outputPath("simone-accounts-390.png") });
+  await capture("simone-accounts-390.png");
   await account.click();
   await expect(account).toHaveAttribute("aria-checked", "true");
 
   await box.getByRole("button", { name: "Stop everything" }).click();
   await expect(box.getByText("Boss OS operations are paused.")).toBeVisible();
   await expectNoSidewaysScroll(page);
-  await page.screenshot({ path: info.outputPath("simone-stop-390.png") });
+  await capture("simone-stop-390.png");
   await box.getByRole("button", { name: "Resume Boss OS operations" }).click();
   await expect(box.getByRole("button", { name: "Stop everything" })).toBeEnabled();
 });
