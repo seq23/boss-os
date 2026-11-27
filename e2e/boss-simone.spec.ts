@@ -7,6 +7,10 @@ const REPLY = "The park has a free slot at noon, and the hall and pavilion each 
 
 test("Simone replies in both message boxes at 390 px", async ({ page }, info) => {
   await page.setViewportSize(PHONE);
+  // Any console error on the way through fails the journey (the Clicked through line says "console clean").
+  const errors: string[] = [];
+  page.on("console", (m) => { if (m.type() === "error") errors.push(m.text()); });
+  page.on("pageerror", (e) => errors.push(String(e)));
   const mailboxLabels = page.getByRole("region", { name: "Simone’s Google accounts" }).locator(".row-title");
   const capture = (name: string) => page.screenshot({ path: info.outputPath(name), mask: [mailboxLabels], maskColor: "#eadbd0" });
   await unlock(page);
@@ -84,4 +88,5 @@ test("Simone replies in both message boxes at 390 px", async ({ page }, info) =>
   await capture("simone-stop-390.png");
   await box.getByRole("button", { name: "Resume Boss OS operations" }).click();
   await expect(box.getByRole("button", { name: "Stop everything", exact: true })).toBeEnabled();
+  expect(errors, "console errors on the Simone journey").toEqual([]);
 });

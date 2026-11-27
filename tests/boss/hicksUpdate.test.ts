@@ -5,7 +5,7 @@
  * name or address appears here.
  */
 import { createExecutionContext, env, waitOnExecutionContext } from "cloudflare:test";
-import { beforeEach, describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import worker from "../../src/worker/boss/index";
 import { apiJson } from "./helpers";
 import { runHicksUpdate } from "../../src/worker/boss/clients/hicksUpdate";
@@ -63,6 +63,8 @@ beforeEach(async () => {
   await env.DB.exec("DELETE FROM client_update_drafts WHERE quarter = '2027-02'; UPDATE client_update_carryover SET used_at = NULL, used_in = NULL;");
   (env as any).GSC_SERVICE_ACCOUNT_JSON = JSON.stringify({ client_email: "bot@example.iam.gserviceaccount.com", private_key: await pem() });
 });
+// Cleared after each test: the Boss suites share one runtime, so a key left on `env` leaks into other files.
+afterEach(() => { delete (env as any).GSC_SERVICE_ACCOUNT_JSON; });
 
 describe("it never sends without her approval", () => {
   it("the tick drafts once and parks it pending; no mail endpoint is ever called; GET never approves; Approve opens HER Gmail", async () => {

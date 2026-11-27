@@ -105,7 +105,9 @@ beforeEach(async () => {
   setInviteModel(async () => ({ invitation: true, title: "Dinner at Dana's", date: "2026-11-21", time: "19:00", where: "Dana's house", asks_answer: true }));
   Date.now = () => NOW;
 });
-afterEach(() => { setCommandFetch(null); setInviteModel(null); Date.now = REAL_NOW; });
+// The Google key is cleared after each test: the Boss suites share one runtime, and a key left on `env`
+// changed buyerOutreach's "no Google key" case when the shards were re-cut (27 Nov 2026).
+afterEach(() => { setCommandFetch(null); setInviteModel(null); Date.now = REAL_NOW; delete (env as any).GSC_SERVICE_ACCOUNT_JSON; });
 
 describe("the morning pass", () => {
   it("one card per invitation, each kind, deduped across inboxes and the calendar; not-invitations are left out", async () => {
