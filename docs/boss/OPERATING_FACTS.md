@@ -57,7 +57,7 @@ they live in the repo, not only in someone's memory. Non-confidential. `STATUS.m
   answers it with FreeTier quota ids, so it cannot bill); Workers AI reads `CF2_ACCOUNT_ID` plus
   `CF2_WORKERS_AI_TOKEN`, the second Cloudflare account, which has no Workers Paid plan and stops itself
   at 10,000 neurons a day. Never the main account: the Worker's `AI` binding is not read, and a CF2 id
-  equal to `CLOUDFLARE_ACCOUNT_ID` turns the Workers AI lane off. A lane with missing credentials is skipped.
+  matching the main account ID turns the Workers AI lane off. A lane with missing credentials is skipped.
   The client calls a supplied `recordRead` only after a usable answer. Toni's billing reader supplies
   the business-mail headers it retrieved. The CI model boundary checks imports and calls in the worker-job
   directories and reads the named exceptions from `scripts/validate/worker-model-exceptions.json`.

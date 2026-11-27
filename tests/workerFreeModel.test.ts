@@ -1,5 +1,6 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { readWorkerSource, setRateWait } from "../src/worker/boss/router/freeModel";
+import { MAIN_CLOUDFLARE_ACCOUNT_ID, readWorkerSource, setRateWait } from "../src/worker/boss/router/freeModel";
+import { toBossEnv } from "../src/worker/bossMount";
 import type { WorkerReadingCredentials } from "../src/worker/boss/router/freeModel";
 import mapping from "../scripts/vault/cloudflare-mapping.json";
 
@@ -103,6 +104,24 @@ describe("the worker reading router", () => {
     // The Worker receives the same names from the vault sync, and no retired name.
     expect(mapping.secret_names).toEqual(expect.arrayContaining(["GEMINI_API_KEY", "CF2_ACCOUNT_ID", "CF2_WORKERS_AI_TOKEN"]));
     expect(JSON.stringify(mapping)).not.toContain("BOSS_WORKER_");
+  });
+
+  it("refuses the main Cloudflare account on the Worker, where no CLOUDFLARE_ACCOUNT_ID is passed", async () => {
+    const fetch = vi.fn<typeof globalThis.fetch>(async () => Response.json(cloudflareAnswer));
+    vi.stubGlobal("fetch", fetch);
+    // The Worker's real seam: toBossEnv carries CF2_* and never CLOUDFLARE_ACCOUNT_ID.
+    const onWorker = (id: string) => toBossEnv({
+      WP_OS_DB: {}, WP_OS_DOCUMENTS: {}, WP_OS_KV: {}, CF2_ACCOUNT_ID: id, CF2_WORKERS_AI_TOKEN: "fixture",
+    } as never) as unknown as WorkerReadingCredentials;
+    expect(onWorker(MAIN_CLOUDFLARE_ACCOUNT_ID).CLOUDFLARE_ACCOUNT_ID).toBeUndefined();
+    for (const id of [MAIN_CLOUDFLARE_ACCOUNT_ID, ` ${MAIN_CLOUDFLARE_ACCOUNT_ID.toUpperCase()} `]) {
+      await expect(readWorkerSource({ ...input, worker: "toni" }, onWorker(id))).resolves.toEqual({ status: "unavailable" });
+    }
+    expect(fetch).not.toHaveBeenCalled();
+    // The second account itself is still read on the Worker.
+    await expect(readWorkerSource({ ...input, worker: "toni" }, onWorker("1".repeat(32))))
+      .resolves.toMatchObject({ status: "ok", provider: "workers-ai" });
+    expect(String(fetch.mock.calls[0]?.[0])).toContain(`/accounts/${"1".repeat(32)}/ai/run/`);
   });
 
   it("moves a spent lane to the other lane and reports exhausted only when no lane answered", async () => {

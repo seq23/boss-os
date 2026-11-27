@@ -7,3 +7,8 @@ export function outcomeCounts(lists: Lists): Counts;
 export function worthEmailing(counts: Counts, last: Partial<Counts> | null): boolean;
 export function outcomesOwner(optedOut: number, replied: number, bounced: number): { layout: "note"; why: string; act: string };
 export function outcomesMail(counts: Counts): { subject: string; layout: { happened: string; details: string[] }; owner: ReturnType<typeof outcomesOwner> };
+export function readOutcomeReplies(options: Parameters<typeof import("./lp-positive.mjs").scanLpReplies>[0], deps?: { scan?: typeof import("./lp-positive.mjs").scanLpReplies; limit?: number }): Promise<LpReplyScan>;
+export function holdThenName(
+  ids: { held?: string[]; unnamed?: string[] },
+  deps: { save: (unnamed: string[]) => void; name?: (ids: string[]) => Promise<void> },
+): Promise<string[]>;
