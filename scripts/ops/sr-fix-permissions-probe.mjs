@@ -30,6 +30,7 @@ import { homedir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { permissionDenials } from "./lib/permission-denials.mjs";
+import { lockedArgs } from "./lib/claude-lock.mjs"; // the four lock flags; the last (the file) is the one under test
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const REPO = resolve(HERE, "../..");
@@ -195,7 +196,7 @@ function main(argv) {
   const env = { ...process.env };
   delete env.ANTHROPIC_API_KEY; // her plan, never the API key (ai-run does the same)
   env.TMPDIR = f.SC; // as ahrefs-audit-fix.sh hands the worker its scratch folder
-  const run = spawnSync(claude, ["-p", "--model", process.env.SR_PROBE_MODEL || "opus", "--max-turns", "80", "--session-id", sid, "--tools", tools, "--permission-mode", "dontAsk", "--setting-sources=", "--settings", settings],
+  const run = spawnSync(claude, ["-p", "--model", process.env.SR_PROBE_MODEL || "opus", "--max-turns", "80", "--session-id", sid, "--tools", tools, ...lockedArgs("sr-fix").slice(0, -1), settings],
     { cwd: HOME, input: prompt(list, S), encoding: "utf8", env, timeout: 15 * 60 * 1000 });
   const transcript = join(HOME, ".claude/projects", HOME.replace(/[^A-Za-z0-9]/g, "-"), `${sid}.jsonl`);
   let jsonl;
