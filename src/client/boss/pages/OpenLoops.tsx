@@ -139,7 +139,7 @@ function Proving({ loop, onChanged }: { loop: Loop; onChanged: () => void }) {
     <div className="brain-card email-map-card" data-testid={`proving-loop-${loop.id}`}>
       <span className="email-map-what">{loop.title}</span>
       <span className="brain-card-line">Finish line: {loop.finish_line}</span>
-      <span className="email-map-runs">Waiting on {m ? <a href={`https://github.com/${m[1]}/pull/${m[2]}`} target="_blank" rel="noreferrer">{loop.proof_pr}</a> : loop.proof_pr}</span>
+      <span className="email-map-runs">Waiting on {m ? <a className="t-link" href={`https://github.com/${m[1]}/pull/${m[2]}`} target="_blank" rel="noreferrer">{loop.proof_pr}</a> : loop.proof_pr}</span>
       <div className="t-actions">
         <button className="done-btn" onClick={() => api.updateOpenLoop(loop.id, { section: "not_finished" }).then(onChanged).catch((e) => setErr(e?.message ?? "That did not save."))}>↑ Bring back</button>
       </div>
