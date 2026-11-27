@@ -369,14 +369,21 @@ async function listLpTargets(token, query) {
 export async function scanLpReplies({ token, query, known = null, receipts = {}, list = listLpTargets, load = lpReplyThread, read }) {
   const records = [];
   const unread = [];
+  const receiptOf = (id) => {
+    if (!Object.hasOwn(receipts, id)) return null;
+    const receipt = receipts[id];
+    // A mailbox-wide read may lack the Sent Log evidence a sender now has.
+    if (known?.has(receipt.address) && receipt.disposition === "unrelated" && !receipt.knownSender) return null;
+    return receipt;
+  };
   let status = "complete";
   for (const [threadId, ids] of await list(token, query)) {
     let thread;
-    if ([...ids].some((id) => !Object.hasOwn(receipts, id))) {
+    if ([...ids].some((id) => !receiptOf(id))) {
       try { thread = await load(threadId, token); } catch { status = status === "allowance-exhausted" ? status : "unavailable"; }
     }
     for (const id of ids) {
-      const saved = Object.hasOwn(receipts, id) ? receipts[id] : null;
+      const saved = receiptOf(id);
       if (saved) { records.push(saved); continue; }
       const target = thread?.find((entry) => entry.id === id);
       const from = target?.headers.from ?? "";
@@ -387,7 +394,7 @@ export async function scanLpReplies({ token, query, known = null, receipts = {},
         continue;
       }
       const base = {
-        id, address, threadId, at: target.internalDate,
+        id, address, threadId, at: target.internalDate, knownSender: known?.has(address) ?? false,
         name: (from.match(/^\s*"?([^"<@]{2,60}?)"?\s*</) ?? ["", ""])[1].trim(),
       };
       if (target.hardBounces?.length) {
@@ -397,7 +404,7 @@ export async function scanLpReplies({ token, query, known = null, receipts = {},
       if (known && !known.has(address)) continue;
       let result = { status };
       if (status !== "allowance-exhausted") {
-        try { result = await readLpReply(target, thread, { knownSender: Boolean(known), read }); }
+        try { result = await readLpReply(target, thread, { knownSender: base.knownSender, read }); }
         catch { result = { status: "unavailable" }; }
       }
       if (result.status !== "ok") {

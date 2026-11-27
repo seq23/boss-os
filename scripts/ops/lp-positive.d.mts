@@ -15,7 +15,7 @@ type Reader = typeof import("../../src/worker/boss/router/freeModel.ts").readWor
 type Reading = (input: Parameters<Reader>[0]) => ReturnType<Reader>;
 type Message = { id: string; headers: Record<string, string>; body: string; internalDate: number; hardBounces?: string[] };
 type Status = "complete" | "unavailable" | "allowance-exhausted";
-type Verdict = { id: string; address: string; threadId: string; at: number; name: string; disposition: string; excerpt?: string; side?: string; resumeOn?: string | null; bounced?: string[] };
+type Verdict = { id: string; address: string; threadId: string; at: number; name: string; knownSender?: boolean; disposition: string; excerpt?: string; side?: string; resumeOn?: string | null; bounced?: string[] };
 export type LpReplyScan = { status: Status; records: Verdict[]; unread: { id: string; address: string }[] };
 type Options = {
   token: string; query: string; known?: Set<string>; receipts?: Record<string, Verdict>;

@@ -51,6 +51,24 @@ describe("LP reply reads", () => {
     expect(read).toHaveBeenCalledTimes(3);
   });
 
+  it("rechecks a mailbox-wide unrelated verdict when the send log identifies the requester", async () => {
+    const target = reply("standalone", "Please stop sending me the fundraising emails.");
+    const read = vi.fn(async (input: { source: string }) => {
+      expect(JSON.parse(input.source).knownSender).toBe(true);
+      return ok("opt_out", target.body);
+    });
+    const scan = await scanLpReplies({
+      token: "fixture", query: "fixture", known: new Set([address]),
+      list: async () => [["standalone", new Set([target.id])]],
+      load: async () => [target], read,
+      receipts: {
+        [target.id]: { id: target.id, address, name: "", threadId: "standalone", at: day, disposition: "unrelated" },
+      },
+    });
+    expect(scan.records).toMatchObject([{ address, disposition: "opt_out" }]);
+    expect(read).toHaveBeenCalledOnce();
+  });
+
   it("records a snooze as a reply that stops the drip and only a clear removal as permanent", async () => {
     const later = reply("later", "Not interested right now, try next year.");
     const otherAddress = "remove@investor.test";
