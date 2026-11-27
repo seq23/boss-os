@@ -1693,6 +1693,7 @@
       "output": {
         "metric": "questions_checked",
         "floor": 1,
+        "runs": 2,
         "reason": "A night with sites due that checks 0 questions is FAIL (exit 1) or COULDNT-CHECK with its reason (exit 75), each a Notices line; a night with nothing left due says so."
       },
       "macWindow": "HEAVY"
