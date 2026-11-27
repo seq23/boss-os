@@ -262,7 +262,11 @@ export function forwardedOrigin(raw: string): { from: string | null; subject: st
 
 /** Who really sent this, from headers only — never from body text. */
 function senderOf(message: BossMailMessage): string {
-  return extractAddress(message.headers.get("from")) ?? String(message.from ?? "").toLowerCase();
+  const header = message.headers.get("from");
+  // A From line that is there but cannot be read as ONE sender is nobody, never the envelope: the
+  // envelope fallback would let a crafted two-address From pass as whoever the envelope names.
+  if (header && header.trim()) return extractAddress(header) ?? "";
+  return String(message.from ?? "").toLowerCase();
 }
 
 /**
@@ -558,7 +562,7 @@ async function handleMail(message: BossMailMessage, env: Env, said: Said, viaCon
   if (!authorised) {
     const why = isOwner(sender, env.BOSS_EXTRA_OWNER_SENDERS ?? "")
       ? `From ${sender}, which is one of yours, but DMARC did not pass (${verdict.reason}) — so the address was not proven and nothing was run.`
-      : `From ${sender}, which is not one of your addresses. Recorded and refused.`;
+      : sender ? `From ${sender}, which is not one of your addresses. Recorded and refused.` : "Its From line names more than one address or cannot be read as one sender. Recorded and refused.";
     await recordArrival("REFUSED_SENDER", why);
     // Keeping mail is not authority to execute its contents or to answer its sender.
     await keepExternal();

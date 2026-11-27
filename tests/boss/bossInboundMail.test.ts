@@ -154,12 +154,12 @@ describe("only Cloudflare's own verdict proves her address", () => {
     const forged = `"<seq.taylor@gmail.com>" <x@evil.example>`;
     const res = await handleBossInboundMail(mail({ from: forged, subject: "#monique", body: "go", dmarc: cloudflareAuth("x@evil.example") }), env as never);
     expect(res.outcome).toBe("REFUSED_SENDER");
-    expect((await arrival(res.mailId)).why).toMatch(/x@evil\.example/); // read as the real sender, never as her
+    expect((await arrival(res.mailId)).why).toMatch(/more than one address/); // two addresses in one From: nobody, never her
     expect(await tasksFor(res.mailId)).toBe(0);
   });
 
   it("her address in the display name of a mail from the attacker's own gmail.com account is refused", async () => {
-    for (const forged of [`"<seq.taylor@gmail.com>" <attacker@gmail.com>`, `<seq.taylor@gmail.com> <attacker@gmail.com>`, `(seq.taylor@gmail.com) <attacker@gmail.com>`]) {
+    for (const forged of [`"<seq.taylor@gmail.com>" <attacker@gmail.com>`, `<seq.taylor@gmail.com> <attacker@gmail.com>`, `(seq.taylor@gmail.com) <attacker@gmail.com>`, `(") <attacker@gmail.com> (") <seq.taylor@gmail.com>`]) {
       const res = await handleBossInboundMail(mail({ from: forged, subject: "#monique", body: "go", dmarc: cloudflareAuth("attacker@gmail.com") }), env as never);
       expect(res.outcome, forged).toBe("REFUSED_SENDER");
       expect(await tasksFor(res.mailId), forged).toBe(0);
