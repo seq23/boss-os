@@ -38,6 +38,11 @@ on:
         required: false
         default: main
         type: string
+      label:
+        description: Names the artifact tap-through-<label>. A caller that runs two flow files in one run (each flow holds at most 40 steps) gives each call its own label, or the second upload fails on the same name
+        required: false
+        default: ''
+        type: string
   workflow_dispatch:
     inputs:
       target:
