@@ -108,7 +108,8 @@ const CONTENT_EXCEPTIONS = new Map([
     why: "Toni's failed-payment and account-restriction notices can only be recognized reliably from their full threads.",
     invariants: [
       [(src) => /const READONLY = "https:\/\/www\.googleapis\.com\/auth\/gmail\.readonly"/.test(src)
-        && /googleToken\(READONLY, "[^"]+@spry\.vc"\)/.test(src)
+        && /const BROKERAGE = INVITE_INBOXES\.find\(.*!writable && address\.endsWith\("@spry\.vc"\)/.test(src)
+        && /googleToken\(READONLY, BROKERAGE,/.test(src)
         && /grant\.scope !== READONLY/.test(src),
       "the business mailbox is pinned and both token paths require Gmail read-only access"],
       [(src) => /endpoint\.origin !== "https:\/\/gmail\.googleapis\.com" \|\| !GMAIL_READ_PATH\.test\(endpoint\.pathname\)/.test(src)
@@ -608,6 +609,6 @@ console.log(
   `GMAIL SCAN PASSED: ${callers.length} Gmail caller(s) in scripts/ops. ` +
   `${metadataOnly.length} request headers only (${metadataOnly.join(", ")}); ` +
   `${callers.length - metadataOnly.length} named content exception(s) still narrow; ` +
-  "and the two local jobs that read mail contents — Simone's KDP case watch and Monique's mailbox " +
+  "and the two connector-based jobs — Simone's KDP case watch and Monique's mailbox " +
   "sweep — do so only inside the local run, never through this repository.",
 );

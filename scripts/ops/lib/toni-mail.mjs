@@ -1,3 +1,4 @@
+import { INVITE_INBOXES } from "../../../src/shared/boss/invitations/invitations.mjs";
 import { dayOf } from "../../../src/shared/boss/schedule/clock.mjs";
 import { readWorkerSource } from "../../../src/worker/boss/router/freeModel.ts";
 import { readJsonObject } from "../../../src/worker/boss/router/types.ts";
@@ -6,17 +7,31 @@ import { fromDomain, googleToken, movedReadings, stateMap } from "./duty-kit.mjs
 
 const DAY = 86_400_000;
 const READONLY = "https://www.googleapis.com/auth/gmail.readonly";
+const BROKERAGE = INVITE_INBOXES.find(({ address, writable }) => !writable && address.endsWith("@spry.vc"))?.address;
+const GOOGLE_TOKEN_ENDPOINT = "https://oauth2.googleapis.com/token";
 const MAILBOXES = [
-  { id: "spry", label: "spry.vc mailbox", token: () => googleToken(READONLY, "staylor@spry.vc") },
+  { id: "spry", label: "spry.vc mailbox", token: businessToken },
   { id: "personal", label: "personal Gmail", token: personalToken },
 ];
+
+async function businessToken() {
+  if (!BROKERAGE) throw new Error("The read-only business mailbox is missing from the account map");
+  try {
+    return await googleToken(READONLY, BROKERAGE, (url, init) => {
+      if (url !== GOOGLE_TOKEN_ENDPOINT) throw new Error("Google OAuth endpoint refused");
+      return fetch(url, { ...init, redirect: "error", signal: AbortSignal.timeout(20_000) });
+    });
+  } catch {
+    throw new Error("The business Gmail service account could not obtain read-only access");
+  }
+}
 
 export async function personalToken({ env = process.env, fetchImpl = fetch } = {}) {
   const { TONI_GMAIL_CLIENT_ID, TONI_GMAIL_CLIENT_SECRET, TONI_GMAIL_REFRESH_TOKEN } = env;
   if (!TONI_GMAIL_CLIENT_ID || !TONI_GMAIL_CLIENT_SECRET || !TONI_GMAIL_REFRESH_TOKEN) {
     throw new Error("NAMED STOP [TONI_PERSONAL_GMAIL_GRANT] Personal Gmail read-only authorization is missing");
   }
-  const response = await fetchImpl("https://oauth2.googleapis.com/token", {
+  const response = await fetchImpl(GOOGLE_TOKEN_ENDPOINT, {
     method: "POST",
     redirect: "error",
     signal: AbortSignal.timeout(20_000),

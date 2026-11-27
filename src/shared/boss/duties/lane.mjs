@@ -35,6 +35,7 @@
  * here is a change everywhere at once.
  */
 
+import schedule from "../schedule/manifest.json" with { type: "json" };
 import { seatTag } from "../intake/mail.mjs";
 import { seatForAsk } from "../intake/triage.mjs";
 import { readReply, APPROVAL_WORDS, PRE_APPROVAL_PHRASES, preApprovalIn } from "../repoChange/lane.mjs";
@@ -368,4 +369,10 @@ export function overridesFrom(text) {
   const script = scriptIn(t);
   if (script) { out.local_job = script; out.executor = "local_job"; }
   return out;
+}
+
+
+/** Scheduled Mac duties whose reader chooses the free route instead of a stored agent model. */
+export function usesFixedFreeReader(dutyId) {
+  return schedule.rows.some((row) => row.trigger?.duty === dutyId && schedule.workerJobs[row.id]?.freeReader === true);
 }

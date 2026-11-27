@@ -88,6 +88,7 @@
 import { readFileSync, readdirSync, existsSync } from "node:fs";
 import { join, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
+import { usesFixedFreeReader } from "../../src/shared/boss/duties/lane.mjs";
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), "..", "..");
 const read = (p) => readFileSync(join(ROOT, p), "utf8");
@@ -372,7 +373,8 @@ function scan() {
     const readerCode = readerName && existsSync(join(ROOT, READERS))
       ? read(READERS).split("\n").filter((line) => !/^\s*(#|\/\/|\*|\/\*)/.test(line)).join("\n")
       : jobName ? workerJobCode(jobName) : null;
-    const fixedFreeReader = FIXED_FREE_LOCAL_READERS.get(jobScript);
+    const fixedFreeReader = FIXED_FREE_LOCAL_READERS.get(jobScript)
+      ?? (usesFixedFreeReader(duty.id) ? /\b(?:readWorkerSource|readToniMail)\(/ : null);
     if (fixedFreeReader && !fixedFreeReader.test(jobCode)) {
       problems.push(`${duty.id}: ${jobScript} lost its required call into the fixed free reading route.`);
     }

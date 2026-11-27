@@ -1,5 +1,6 @@
 import { expect, test, type Locator } from "@playwright/test";
 import { expectNoSidewaysScroll, PHONE, tab, unlock } from "./support/boss";
+import { dayIdInZone } from "../src/shared/boss/timezone";
 import { runSimone } from "../scripts/ops/simone.mjs";
 
 const MESSAGE = "Find three venues for Saturday and book the cheapest free one.";
@@ -89,4 +90,36 @@ test("Simone replies in both message boxes at 390 px", async ({ page }, info) =>
   await box.getByRole("button", { name: "Resume Boss OS operations" }).click();
   await expect(box.getByRole("button", { name: "Stop everything", exact: true })).toBeEnabled();
   expect(errors, "console errors on the Simone journey").toEqual([]);
+});
+
+test("the Scorecard opens daily worker checks at 390 px", async ({ page }, info) => {
+  await page.setViewportSize(PHONE);
+  const errors: string[] = [];
+  page.on("console", (message) => { if (message.type() === "error") errors.push(message.text()); });
+  page.on("pageerror", (error) => errors.push(String(error)));
+  await unlock(page);
+  const roster = await page.request.get("/api/boss/employees/roster");
+  expect(roster.ok()).toBe(true);
+  const { data } = await roster.json();
+  const toni = data.roster.find((employee: { id: string }) => employee.id === "emp_risk");
+  expect(toni.duties).toEqual(expect.arrayContaining(["duty_risk_watch", "duty_outside_locks"].map((id) =>
+    expect.objectContaining({ id, model: "shared-free", model_warning: null, estimated_per_month_usd: 0 }))));
+  const { data: { token } } = await (await page.request.post("/api/boss/open-loops/intake-token")).json();
+  const evidence = "The billing mailbox couldn't be checked.";
+  const row = { id: "worker-check:risk-watch", name: "Risk watch", kind: "schedule", aim: "Read the billing mailbox",
+    state: "unknown", coverage: "listed", evidence };
+  const report = await page.request.post("/api/boss/simone/operations/report", {
+    headers: { Authorization: `Bearer ${token}` },
+    data: { day: dayIdInZone(Date.now()), issues: [], proposal: null, rows: [row] },
+  });
+  expect(report.ok()).toBe(true);
+  const nav = page.getByRole("navigation", { name: "Sections" });
+  await nav.getByRole("button", { name: "☰ More", exact: true }).click();
+  await nav.getByRole("button", { name: "Scorecard", exact: true }).click();
+  const scorecard = page.getByTestId("scorecard");
+  await scorecard.getByText("Daily worker checks · 1 need a look").click();
+  await expect(scorecard.getByText(evidence)).toBeVisible();
+  await expectNoSidewaysScroll(page);
+  await page.screenshot({ path: info.outputPath("worker-scorecard-390.png") });
+  expect(errors, "console errors on the Scorecard journey").toEqual([]);
 });
