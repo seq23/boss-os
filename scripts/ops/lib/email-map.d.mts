@@ -9,6 +9,7 @@ export function sends(source: string): boolean;
 export function citedIn(manifest: EmailMapManifest, repo: string): Set<string>;
 export function uncovered(files: Array<{ file: string; source: string }>, manifest: EmailMapManifest, repo: string): string[];
 export function addressProblems(manifest: { rows: unknown[] }): string[];
+export const NAME_MAX: number;
 export function shapeProblems(manifest: EmailMapManifest): string[];
 export function repoDir(repo: string, root: string): string | null;
 export function checkOtherRepos(manifest: EmailMapManifest, root: string, opts?: { scanSenders?: boolean; alsoScan?: string[] }): { checked: string[]; missingRepos: string[]; problems: string[] };

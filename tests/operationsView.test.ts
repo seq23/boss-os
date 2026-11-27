@@ -95,6 +95,15 @@ describe("next run and pause, read from the map's own words", () => {
     expect(nextRunFrom(row({ trigger: "Pages Function on form submit", runsWhere: "Cloudflare on event" }), NOW)).toEqual({ at: null, label: "on event" });
   });
 
+  it("a line on the 1st and on Mondays runs on whichever comes first, and a folded line says what it rides in", () => {
+    // Ship review, 27 Nov 2026: Brains read "on event" beside "The 1st and Mondays".
+    const brains = { trigger: "Part of Simone’s morning email, from 06:40 Central on the 1st and on Mon", runsWhere: "Folded into morning email" };
+    expect(nextRunFrom(row(brains), Date.UTC(2026, 10, 27, 20, 0)).at).toBe(Date.UTC(2026, 10, 30, 12, 40)); // Fri 27 Nov → Mon 30 Nov
+    expect(nextRunFrom(row(brains), Date.UTC(2026, 10, 30, 20, 0)).at).toBe(Date.UTC(2026, 11, 1, 12, 40)); // Mon 30 Nov afternoon → Tue 1 Dec
+    expect(nextRunFrom(row({ trigger: "Part of Simone’s morning email", runsWhere: "Folded into morning email" }), NOW)).toEqual({ at: null, label: "with the morning email" });
+    expect(nextRunFrom(row({ trigger: "Measured weekly", runsWhere: "Folded into Spry Labs weekly" }), NOW)).toEqual({ at: null, label: "with the Spry Labs weekly" });
+  });
+
   it("a pause control only where a real switch exists", () => {
     expect(pauseControl(row({ id: "monique-outreach" })).kind).toBe("action");
     expect(pauseControl(row({ pause: "launchctl bootout gui/501/com.seq.boss-people" }))).toEqual({ kind: "command", label: "switch", command: "launchctl bootout gui/501/com.seq.boss-people" });

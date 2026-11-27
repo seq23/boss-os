@@ -82,7 +82,11 @@ employees.get("/roster", async (c) => {
        * A DUTY WITH NO MODEL NAMED INHERITS THE MOST EXPENSIVE ONE AVAILABLE. That is what made a
        * single briefing cost $3.88, and it is invisible unless something says it out loud.
        */
-      model_warning: model ? null : "This duty names no model, so it runs the most expensive one available.",
+      // Only an agent run uses a model: a Mac script or the Worker's own code never calls one, so "no
+      // model named" there is not a fault (ship review, 27 Nov 2026: Zora's Mac-script duty showed it).
+      model_warning: model || d.executor === "local_job" || d.executor === "worker"
+        ? null
+        : "This duty names no model, so it runs the most expensive one available.",
       local_job: localJob,
       delivers,
       estimated_per_run_usd: perRun,

@@ -105,6 +105,8 @@ export function categoryProblems(manifest, _scannedRepos = [], cats = readRepoCa
  */
 export const HER_OWN_MAILBOX = /^(Your|You)\b|\bsequoia@|^st@time-2-read\.com|^The address the person wrote to|^The inbox the invitation came to|^The Gmail account behind/i;
 export const CODE_WORDS = /wrangler|\bdeploy|launchctl|\.toml\b|RESEND_API_KEY|\bsecret\b|\bgh workflow|\bnpm\b/i;
+/** A card title fits on one or two lines at 390px. */
+export const NAME_MAX = 40;
 export function shapeProblems(manifest) {
   const keys = new Set(manifest.businesses.map((b) => b.key));
   const runs = new Set(Object.keys(manifest.runs));
@@ -113,9 +115,12 @@ export function shapeProblems(manifest) {
   for (const r of manifest.rows) {
     if (ids.has(r.id)) out.push(`${r.id}: duplicate id`);
     ids.add(r.id);
-    for (const f of ["id", "business", "what", "sender", "owner", "from", "to", "when", "runs", "trigger", "pause"]) {
+    for (const f of ["id", "business", "name", "what", "sender", "owner", "from", "to", "when", "runs", "trigger", "pause"]) {
       if (typeof r[f] !== "string" || !r[f].trim()) out.push(`${r.id ?? "(no id)"}: ${f} is empty`);
     }
+    // The card's title is a short name; the long description sits under it (ship review, 27 Nov 2026:
+    // a 7-line title filled the phone before its meta line appeared).
+    if (typeof r.name === "string" && r.name.length > NAME_MAX) out.push(`${r.id}: name is ${r.name.length} characters (at most ${NAME_MAX}); put the rest in "what"`);
     if (!keys.has(r.business)) out.push(`${r.id}: business ${r.business} is not one of the map's businesses`);
     if (!runs.has(r.runs)) out.push(`${r.id}: runs ${r.runs} is not a known place`);
     if (!Array.isArray(r.code) || r.code.length === 0) out.push(`${r.id}: no code entry`);

@@ -595,6 +595,8 @@ describe("the Email Map page's manifest covers every sender", () => {
     expect(uncovered([{ file: "tests/x.test.ts", source: "sendAsEmployee(" }], manifest, "boss-os")).toEqual([]);
     expect(addressProblems({ rows: [{ to: "someone@gmail.com" }] })).toHaveLength(1);
     expect(shapeProblems({ ...manifest, rows: [...manifest.rows, { ...manifest.rows[0]!, pause: "" }] }).length).toBeGreaterThan(0);
+    expect(shapeProblems({ ...manifest, rows: [...manifest.rows, { ...manifest.rows[0]!, id: "probe-noname", name: "" }] }).join(" ")).toMatch(/probe-noname: name is empty/);
+    expect(shapeProblems({ ...manifest, rows: [...manifest.rows, { ...manifest.rows[0]!, id: "probe-long", name: "x".repeat(41) }] }).join(" ")).toMatch(/probe-long: name is \d+ characters/);
     // A sender from her own mailbox that does not say so would be filed under "leave on" in the Succession Book.
     const fromHer = { ...manifest.rows[0]!, id: "probe-her", from: "Your personal Gmail", as_her: undefined };
     expect(shapeProblems({ ...manifest, rows: [...manifest.rows, fromHer] }).join(" ")).toMatch(/probe-her: sends from her own mailbox/);

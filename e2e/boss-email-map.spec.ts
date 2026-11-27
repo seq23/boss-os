@@ -19,7 +19,7 @@ for (const vp of [PHONE, LAPTOP]) {
       await tab(page, "Email Map");
       const map = page.getByTestId("email-map");
       // The count comes from the manifest it renders, never a typed number (8 Nov 2026: a new business made "7" stale and main red).
-      await expect(map.getByText(new RegExp(`automated emails across ${manifest.businesses.length} businesses`))).toBeVisible();
+      await expect(map.getByText(new RegExp(`${manifest.rows.length} automated emails listed across ${manifest.businesses.length} businesses`))).toBeVisible();
       await expect(map.locator("details.email-map-business")).toHaveCount(manifest.businesses.length);
       await expect(map.locator(".email-map-card")).toHaveCount(manifest.rows.length);
       await expectNoSidewaysScroll(page);
@@ -39,7 +39,7 @@ for (const vp of [PHONE, LAPTOP]) {
       await tab(page, "Team");
       await tab(page, "Email Map");
       await expect(page.getByTestId("back-to-today")).toBeInViewport();
-      await expect(map.getByText(/automated emails across/)).toBeInViewport();
+      await expect(map.getByText(/automated emails listed across/)).toBeInViewport();
     });
   });
 }
