@@ -15,10 +15,11 @@
 import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 
-// Two wordings: dontAsk's "Permission to use Bash has been denied because …" and a deny rule's
+// Three wordings: dontAsk's "Permission to use Bash has been denied because …", a deny rule's
 // "Permission to use Bash with command gh api user has been denied." (24 Nov 2026, a real locked run:
-// the second read as 0 refusals).
-const REFUSED = /^Permission to use \S+(?: with [\s\S]*?)? has been denied/;
+// the second read as 0 refusals), and a Read/Edit deny rule's "<tool_use_error>File is in a directory that
+// is denied by your permission settings." (27 Nov 2026, sr-fix-permissions-probe: Read of ~/.ssh read as 0).
+const REFUSED = /^(?:<tool_use_error>)?(?:Permission to use \S+(?: with [\s\S]*?)? has been denied|File is in a directory that is denied by your permission settings)/;
 
 /** The refused tool calls in a Claude Code transcript (JSONL text), as `{ tool, command }`. */
 export function permissionDenials(jsonl) {
