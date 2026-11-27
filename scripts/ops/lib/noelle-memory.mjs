@@ -122,8 +122,10 @@ export function monthlyReview(dir, plan, runId, transcriptFile, tool) {
         return { why: `${business}/${bet.id} needs a per-post or per-page result read on this run` };
       }
       ids.add(bet.id);
-      const sales = Number.isSafeInteger(bet.sales) && bet.sales >= 0 ? bet.sales : null;
-      results.push({ id: bet.id, decision: bet.decision, sales });
+      // Attributed sales come only from a read the launcher can check. None of her readers returns per-post sales
+      // (Buffer metrics and Search Console rows carry none), so the ledger says "not read"; a figure she typed into
+      // her own review file is never recorded.
+      results.push({ id: bet.id, decision: bet.decision, sales: "not read" });
     }
     reviewed += results.length;
     // Client results stay in each client's playbook. The owner's rollup carries only her own businesses.

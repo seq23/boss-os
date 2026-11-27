@@ -1,7 +1,7 @@
 export const GROWTH_BRAINS: readonly string[];
 export const FIELDS: readonly string[];
 export const REQUIRED: readonly string[];
-export const WATCH_ONLY_BRAINS: readonly string[];
+export const PRIVATE_CUT_BRAINS: readonly string[];
 export const TIERS: readonly string[];
 export const REQUIRED_BY_TIER: Readonly<Record<string, readonly string[]>>;
 export const CLIENT_KEYS: readonly string[];

@@ -443,10 +443,11 @@ describe("monthly review on the existing weekly finish path", () => {
     return { api, record, finishReview, post, search };
   }
 
-  it("records the reviewed selling bet and tracked sales in the run ledger while keeping the client outcome local", async () => {
+  it("records the reviewed selling bet in the run ledger with sales not read, never her typed figure, and keeps the client outcome local", async () => {
     const { api, record, finishReview } = reviewRun();
     await expect(finishReview(record)).resolves.toMatchObject({ ok: true });
-    expect(api).toHaveBeenCalledWith("POST", "/done", expect.objectContaining({ day: "2026-12-03", state: "done", line: expect.stringMatching(/^OUTPUT monthly review 2026-12:/), reads: { monthlyReview: { month: "2026-12", reviewed: 2, outcomes: { "peace-be-still": [{ id: "dramas", decision: "double", sales: 2 }] } } } }));
+    expect(api).toHaveBeenCalledWith("POST", "/done", expect.objectContaining({ day: "2026-12-03", state: "done", line: expect.stringMatching(/^OUTPUT monthly review 2026-12:/), reads: { monthlyReview: { month: "2026-12", reviewed: 2, outcomes: { "peace-be-still": [{ id: "dramas", decision: "double", sales: "not read" }] } } } }));
+    expect(JSON.stringify(api.mock.calls)).not.toMatch(/"sales":\s*2/);
   });
 
   it("records a stop for unfetched or undated research, no bets, and a bet missing its stop rule or item read", async () => {

@@ -56,8 +56,13 @@ const roster = [
 ];
 
 describe("kept: roster, cadence, read grid, season", () => {
-  it("a friends entry is search-watch and its private span never reaches the roster", () => {
-    expect(roster.find((e) => e.key === "hicks")!.tier).toBe("search-watch");
+  it("a friends entry is a search-only client site, a selling business is full whatever its brain line says, and a private span never reaches the roster", () => {
+    expect(roster.find((e) => e.key === "hicks")!.tier).toBe("search");
+    expect(roster.filter((e) => e.key !== "hicks").every((e) => e.tier === "full")).toBe(true);
+    const ig = parseRoster("### Industry Guides\n- key: industry-guides\n- tier: search-watch\n- channels: search-pages [guide]\n", "spry")[0]!;
+    expect(ig.tier).toBe("full");
+    expect(ig.problems).toContain('Industry Guides: "tier" is not a roster field (one of key, buyer, offer, money number, channels, languages, voice, design skill, limits, season, linked to-dos, paused)');
+    expect(parseRoster("### Horse\n- key: horse\n- channels: search-pages [guide]\n", "spry")[0]!.tier).toBe("search");
     expect(JSON.stringify(roster)).not.toMatch(/Zebulon|Quarterfield/);
   });
   it("cadence classes; a measure with no reading is 'not read', never 0; client sites are not in the grid", () => {

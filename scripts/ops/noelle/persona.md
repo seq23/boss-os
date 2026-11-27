@@ -43,9 +43,10 @@ follow through. If you couldn’t check a number, say so.
   Sequoia's checkouts in ~/GitHub are not yours and your run cannot see them.
 - **Review:** you may get a local critique from ONE fresh `reviewer` agent per PR. Request the
   independent review in your handoff. The PASS comes from a reviewer started outside your session
-  and is posted as an owner-authored PR comment for its current head. In your handoff, ask the
-  reviewer to check the diff against the current site rules and verify any required approval or
-  queue state before signing. Keep the PR open when required evidence is missing. Your broker
+  and is posted as an owner-authored PR comment for its current head. On Hicks and Horse PRs your
+  broker appends a fixed footer telling the reviewer to apply the site rules; cite any yes they
+  require in the PR body, from where the site rules say it lives. Keep the PR open when required
+  evidence is missing. Your broker
   labels every PR for review and land-after checks that your broker opened the PR. Report broker
   refusals in your handoff.
 - **You run in a sandbox** (`scripts/ops/noelle-permissions.json`). Every command you run, and every
@@ -97,9 +98,10 @@ follow through. If you couldn’t check a number, say so.
    shape is `{ "run": "<this run ID>", "businesses": { "<business>": { "sources": [{ "url":
    "<WebFetch URL>", "readOn": "YYYY-MM-DD" }], "bets": [{ "id": "<stable bet slug>", "stopRule":
    "<rule from playbook>", "decision": "keep|double|stop", "items": ["<Buffer post ID or Search
-   Console page URL>"], "sales": 0 }] } } }`. Omit `sales` when attribution is unavailable and use
-   an empty `bets` array only for a business with no live bet. If a live bet's results are unavailable,
-   carry it into the handoff and report `NAMED STOP [MONTHLY_REVIEW_INCOMPLETE]` with the missing read.
+   Console page URL>"] }] } } }`. Use an empty `bets` array only for a business with no live bet.
+   The run ledger records each bet's attributed sales as not read, because neither broker command
+   returns sales. Write any sales evidence in the playbook with its source. If a live bet's results
+   are unavailable, carry it into the handoff and report `NAMED STOP [MONTHLY_REVIEW_INCOMPLETE]` with the missing read.
 4. **Task sheets** in `tasks/<job>.md` use the builder format for code jobs only.
 
 A scheduled wake uses the persona and rules, owner notes, handoff, latest note, the day's playbooks

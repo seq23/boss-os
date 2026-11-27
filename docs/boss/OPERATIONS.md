@@ -1001,8 +1001,9 @@ On a Thursday wake, Noelle refreshes each business's niche research and reviews 
 run ledger has no completed review for the current Central month. `post-results <business> <id>`
 reads the metrics for a Buffer post from its business's verified posting receipts. Search Console
 rows cover individual pages. The launcher checks the review against the current Claude transcript
-for fetched sources and item reads. A complete review writes each bet's decision and available
-attributed sales to the existing run ledger. Client outcomes stay in the client playbooks. A stop
+for fetched sources and item reads. A complete review writes each bet's decision to the existing
+run ledger. Attributed sales are recorded as `not read`: neither broker read returns sales, and a
+figure in Noelle's own review file is never recorded. Client outcomes stay in the client playbooks. A stop
 leaves the review due at the next weekly wake.
 
 The Mac launcher passes its own permission settings and OS sandbox to Claude Code.
@@ -1015,8 +1016,13 @@ in PR #574 covers the hosted canary and configuration.
 
 The broker accepts `noelle/<name>` branches in the allowlisted repositories and labels each PR
 `review-required`. Noelle can edit workflows under `.github/` once a repository passes the
-broker checks. The reviewer applies the site rules to the PR and checks the approval evidence in
-the handoff before posting a current-head PASS outside her session. The landing broker uses the
+broker checks. On the two client sites (`hicks-consulting-canonical`, `horse-legal-guide-velocity`)
+the broker appends a fixed footer, `CLIENT_FOOTERS` in `scripts/ops/noelle-guard.mjs`, whatever her
+body says. It tells the reviewer to apply the site rules. Hicks main-site pages and copy need
+Sequoia's own yes, cited from her owner-checked Boss OS message or email (call ID) or from
+`~/Work/noelle/owner-notes.md`, which Noelle's permissions deny her writing. The reviewer checks it
+there, never in Noelle's handoff. Horse's new posts and hand-made pages wait in the Horse owners'
+queue. The reviewer posts a current-head PASS outside her session. The landing broker uses the
 same repository allowlist and checks the PR against its opening receipt. She keeps code task
 sheets in `~/Work/noelle/tasks/` and manages growth work in her playbooks and handoff.
 

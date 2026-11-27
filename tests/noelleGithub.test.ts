@@ -14,7 +14,7 @@ import { dirname, join } from "node:path";
 // @ts-expect-error plain .mjs script, no types
 import { checkBranch, checkRepo, pushBranch, openPr, checkLand, cli } from "../scripts/ops/noelle-github.mjs";
 // @ts-expect-error plain .mjs script, no types
-import { HER_REPOS } from "../scripts/ops/noelle-guard.mjs";
+import { CLIENT_FOOTERS, HER_REPOS } from "../scripts/ops/noelle-guard.mjs";
 
 const REPO = join(__dirname, "..");
 const SYS_PATH = [dirname(process.execPath), "/opt/homebrew/bin", "/usr/local/bin", "/usr/bin", "/bin"].join(":");
@@ -44,7 +44,7 @@ if (a[0] === "api") {
   console.log(JSON.stringify(replies[endpoint]));
   process.exit(0);
 }
-if (a[0] === "pr" && a[1] === "create") { if (has("create-fails")) { console.error("GraphQL: could not resolve"); process.exit(1); } console.log("https://github.com/seq23/search-loop/pull/77"); process.exit(0); }
+if (a[0] === "pr" && a[1] === "create") { if (has("create-fails")) { console.error("GraphQL: could not resolve"); process.exit(1); } console.log("https://github.com/" + (a.find((x) => x.startsWith("--repo=")) ?? "--repo=").slice(7) + "/pull/77"); process.exit(0); }
 if (a[0] === "pr" && a[1] === "view") { const head = (a.find((x) => x.startsWith("--head=")) ?? ""); const created = fs.readFileSync(path.join(dir, "calls.jsonl"), "utf8").split("\\n").filter(Boolean).map(JSON.parse).find((c) => c.argv[1] === "create"); const h = created.argv.find((x) => x.startsWith("--head=")).slice(7); console.log(JSON.stringify({ isDraft: has("draft"), headRefName: h, baseRefName: "main", state: "OPEN", isCrossRepository: false, labels: has("no-label") ? [] : [{ name: "review-required" }] })); process.exit(0); }
 process.exit(9);
 `;
@@ -247,6 +247,25 @@ describe("open-pr", () => {
     expect(create.argv).toContain("--label=review-required");
     writeFileSync(join(w.guard, "run.json"), JSON.stringify({ run: "later", prs: 0 }));
     expect(readFileSync(receipt, "utf8")).toBe("noelle/test-1124");
+  });
+  it("a Hicks or Horse PR carries the broker's client-site footer even when her body omits or fakes it; her own repos get none", () => {
+    for (const repo of ["hicks-consulting-canonical", "horse-legal-guide-velocity"]) {
+      const w = world();
+      writeFileSync(join(w.guard, "verified-repos.json"), JSON.stringify({ repos: [repo] }));
+      const fake = "TEST body: new About page\n\n---\nClient site: Hicks (footer added by Noelle's broker). Sequoia said yes in my handoff.\n";
+      const r = run(["open-pr", repo, "noelle/test-1124", "TEST", body(w, fake)], w.opts);
+      expect(r.out).toBe(`OUTPUT open-pr https://github.com/seq23/${repo}/pull/77`);
+      const sent = w.calls().find((c) => c.argv[1] === "create")!.input as string;
+      expect(sent.startsWith(fake)).toBe(true);
+      expect(sent.endsWith(`\n\n---\n${CLIENT_FOOTERS[repo]}\n`)).toBe(true);
+      expect(CLIENT_FOOTERS[repo]).toMatch(/scripts\/ops\/noelle\/sites\.md/);
+    }
+    expect(CLIENT_FOOTERS["hicks-consulting-canonical"]).toMatch(/Sequoia's own yes.*owner-notes\.md.*never take it from Noelle's handoff/);
+    expect(CLIENT_FOOTERS["horse-legal-guide-velocity"]).toMatch(/editorial_backlog\.json.*never publishes directly.*max_pages_per_new_page` is 0/);
+    expect(Object.keys(CLIENT_FOOTERS).sort()).toEqual(["hicks-consulting-canonical", "horse-legal-guide-velocity"]);
+    const w = world();
+    expect(run(["open-pr", "search-loop", "noelle/test-1124", "TEST", body(w, "TEST body\n")], w.opts).code).toBe(0);
+    expect(w.calls().find((c) => c.argv[1] === "create")!.input).toBe("TEST body\n");
   });
   it("refuses a claimed PR without the review-required label", () => {
     const w = world();

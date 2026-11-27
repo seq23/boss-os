@@ -242,7 +242,7 @@ describe("a Notices line per publish: on her roster, keyed, https only, once", (
 
   it("off her roster, without what/where, or a key not her business's is refused; an http link is never carried", async () => {
     expect((await json(await notice({ business: "brindlewood" }))).written).toBe(false);
-    expect((await json(await notice({ business: "hicks", key: "noelle:hicks:x" }))).written).toBe(true); // search-watch is on the roster
+    expect((await json(await notice({ business: "hicks", key: "noelle:hicks:x" }))).written).toBe(true); // a client site is on the roster
     expect((await json(await notice({ what: "" }))).why).toMatch(/what and where/);
     expect((await json(await notice({ key: "noelle:approvalprep:x" }))).why).toMatch(/noelle:peace-be-still:/);
     await notice({ key: "noelle:peace-be-still:http", link: "http://evil.example/x" });
@@ -472,7 +472,7 @@ describe("privacy before any prompt (G8)", () => {
   it("all four growth brains load; a friends owner's name and a P&P customer never reach the context", async () => {
     const ctx = await json(await call("/noelle/context"));
     expect(ctx.businesses.map((b: any) => b.key).sort()).toEqual(["approvalprep", "hicks", "peace-be-still", "porch-and-party"]);
-    expect(ctx.businesses.find((b: any) => b.key === "hicks").tier).toBe("search-watch");
+    expect(ctx.businesses.find((b: any) => b.key === "hicks").tier).toBe("search");
     expect(JSON.stringify(ctx)).not.toMatch(/Zebulon|Quarrington|Brindlewood/);
     expect(ctx.businesses.every((b: any) => b.held === null)).toBe(true);
   });

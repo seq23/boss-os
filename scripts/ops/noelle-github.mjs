@@ -28,7 +28,7 @@ import { existsSync, lstatSync, mkdirSync, readFileSync, realpathSync, statSync,
 import { homedir } from "node:os";
 import { join, resolve } from "node:path";
 import { pathToFileURL } from "node:url";
-import { HER_REPOS, MAX_PRS } from "./noelle-guard.mjs";
+import { CLIENT_FOOTERS, HER_REPOS, MAX_PRS } from "./noelle-guard.mjs";
 
 export const BODY_MAX = 60000;
 export const TITLE_MAX = 256; // GitHub's own limit
@@ -186,7 +186,9 @@ export function openPr(repo, branch, title, bodyFile, opts = {}) {
   const t = String(title ?? "");
   if (!t.trim() || t.length > TITLE_MAX || /[\0-\x1f\x7f]/.test(t)) refuse("TITLE_SHAPE", `a PR title is one line of 1 to ${TITLE_MAX} characters`);
   const body = readHerFile(bodyFile, env).split(/\r?\n/)
-    .filter((line) => !/^[\s>*_-]*(?:ship-ready|launch-ready|owner override)\s*:/i.test(line)).join("\n");
+    .filter((line) => !/^[\s>*_-]*(?:ship-ready|launch-ready|owner override)\s*:/i.test(line)).join("\n")
+    // A client site's rule reaches every reviewer by code, never by Noelle's own words (sites.md, "Client sites").
+    + (Object.hasOwn(CLIENT_FOOTERS, r) ? `\n\n---\n${CLIENT_FOOTERS[r]}\n` : "");
   const gdir = opts.guardDir ?? env.NOELLE_GUARD_DIR ?? join(homedir(), ".boss-os", "noelle", "guard");
   const lock = join(gdir, "open-pr.lock");
   try { writeFileSync(lock, "", { flag: "wx" }); }
