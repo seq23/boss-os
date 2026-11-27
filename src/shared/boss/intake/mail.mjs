@@ -1,3 +1,4 @@
+import { addressParser } from "postal-mime";
 /**
  * BOSS OS'S OWN INBOX. `boss@sequoiataylor.com`, and nothing to do with West Peek.
  *
@@ -267,24 +268,22 @@ export function replyBody(route, roster, subject) {
 /** The bare address out of a `From:` header, which may be `Name <a@b.c>` or just `a@b.c`. */
 export function extractAddress(header) {
   if (!header) return null;
-  // A real From line names one sender, so it holds exactly one "@". Any second "@" ANYWHERE (in a name,
-  // a comment, a quote, `"x"@d`, `x @ d`, `x(c)@d`) means it cannot be read as one sender: refused before
-  // any parsing (27 Nov 2026 rechecks: `(") <attacker@gmail.com> (") <her@gmail.com>` and its variants).
-  if ((String(header).match(/@/g) ?? []).length > 1) return null;
-  // The display name and comments are free text the sender types: `"<seq.taylor@gmail.com>" <x@gmail.com>`
-  // must read as x@gmail.com, never as her (27 Nov 2026 review). Drop quoted strings and comments first.
-  let plain = String(header).replace(/"(?:[^"\\]|\\.)*"/g, " ");
-  for (let i = 0; i < 8; i += 1) {
-    const next = plain.replace(/\([^()]*\)/g, " ");
-    if (next === plain) break;
-    plain = next;
-  }
-  if (/["()]/.test(plain)) return null; // unbalanced quotes or comments: not a header we can read
-  const angled = plain.match(/<[^<>]*>/g) ?? [];
-  if (angled.length > 1) return null; // more than one address in one From: refuse, never pick one
-  if (!angled.length && /[<>]/.test(plain)) return null;
-  const candidate = (angled.length ? angled[0].slice(1, -1) : plain).trim();
-  return /^[^\s@,;<>]+@[^\s@,;<>]+\.[^\s@,;<>]+$/.test(candidate) ? candidate.toLowerCase() : null;
+  const raw = String(header);
+  // A real From line names one sender, so it holds exactly one "@"; anything else is nobody.
+  if ((raw.match(/@/g) ?? []).length !== 1) return null;
+  // THE MAIL STANDARD'S READING, NOT OURS ALONE (27 Nov 2026, four review rounds): postal-mime's RFC 5322
+  // parser decides what the address is, and our own simple reading must agree with it. Quotes, comments and
+  // display names a sender types (`"attacker"seq.taylor@gmail.com` reads as attackerseq.taylor@gmail.com)
+  // can never make the line read as her, because any disagreement is refused.
+  let parsed;
+  try { parsed = addressParser(raw); } catch { return null; }
+  if (!Array.isArray(parsed) || parsed.length !== 1 || parsed[0].group || typeof parsed[0].address !== "string") return null;
+  const standard = parsed[0].address.trim().toLowerCase();
+  if (!/^[a-z0-9._%+'-]+@[a-z0-9-]+(\.[a-z0-9-]+)+$/.test(standard)) return null;
+  const angled = raw.match(/<([^<>]*)>/g) ?? [];
+  if (angled.length > 1) return null;
+  const ours = (angled.length ? angled[0].slice(1, -1) : raw).trim().toLowerCase();
+  return ours === standard ? standard : null;
 }
 
 /**
