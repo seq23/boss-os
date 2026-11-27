@@ -267,9 +267,20 @@ export function replyBody(route, roster, subject) {
 /** The bare address out of a `From:` header, which may be `Name <a@b.c>` or just `a@b.c`. */
 export function extractAddress(header) {
   if (!header) return null;
-  const angled = /<([^>]+)>/.exec(header);
-  const candidate = (angled ? angled[1] : header).trim();
-  return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(candidate) ? candidate.toLowerCase() : null;
+  // The display name and comments are free text the sender types: `"<seq.taylor@gmail.com>" <x@gmail.com>`
+  // must read as x@gmail.com, never as her (27 Nov 2026 review). Drop quoted strings and comments first.
+  let plain = String(header).replace(/"(?:[^"\\]|\\.)*"/g, " ");
+  for (let i = 0; i < 8; i += 1) {
+    const next = plain.replace(/\([^()]*\)/g, " ");
+    if (next === plain) break;
+    plain = next;
+  }
+  if (/["()]/.test(plain)) return null; // unbalanced quotes or comments: not a header we can read
+  const angled = plain.match(/<[^<>]*>/g) ?? [];
+  if (angled.length > 1) return null; // more than one address in one From: refuse, never pick one
+  if (!angled.length && /[<>]/.test(plain)) return null;
+  const candidate = (angled.length ? angled[0].slice(1, -1) : plain).trim();
+  return /^[^\s@,;<>]+@[^\s@,;<>]+\.[^\s@,;<>]+$/.test(candidate) ? candidate.toLowerCase() : null;
 }
 
 /**
