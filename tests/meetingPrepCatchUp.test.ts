@@ -16,6 +16,8 @@ const loops = [
   { title: "Same row twice", status: "closed", closed_at: Date.parse("2026-11-04T12:00:00Z"), closed_reason: "duplicate of x" },
   { title: "KET app", status: "open", created_at: Date.parse("2026-11-05T12:00:00Z"), next_date: "2026-11-06", section: "not_finished" },
   { title: "Parked idea", status: "open", created_at: Date.parse("2026-11-05T12:00:00Z"), next_date: "2026-11-06", section: "parked" },
+  // Landed, waiting on proof (27 Nov 2026): not coming work; the next-day live check decides it.
+  { title: "Landed idea form", status: "open", created_at: Date.parse("2026-10-01T12:00:00Z"), next_date: "2026-11-06", section: "proving", proof_pr: "seq23/seq-bin#198" },
 ];
 
 describe("a meeting with Scooter is a catch-up", () => {
@@ -49,6 +51,7 @@ describe("a meeting with Scooter is a catch-up", () => {
     expect(r.started).toEqual(["KET app", "Parked idea"]);
     expect(r.coming.join(" ")).toContain("KET app");
     expect(r.coming.join(" ")).not.toContain("Parked idea");
+    expect(r.coming.join(" ")).not.toContain("Landed idea form");
     expect(r.decided).toEqual(["Spry Labs: KET launches with all 6 series"]);
     expect(JSON.stringify(r)).not.toContain("Secret LP term");
   });
