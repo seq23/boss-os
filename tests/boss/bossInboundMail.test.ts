@@ -903,9 +903,17 @@ describe("a reply that was never due says so, and is never counted as a failure"
     const call = (await claimSimone(env))!;
     expect(call).toMatchObject({ id: taskId, message: { body, source: "boss_inbound_mail", console: true, has_mail_material: true } });
     expect(await env.DB.prepare("SELECT id FROM boss_commands WHERE mail_id = ?").bind(mailId).first()).toBeNull();
+    const { enableSickDay } = await import("../../src/worker/boss/agents/simoneAccounts");
+    const { DEFAULT_MAILBOX } = await import("../../src/shared/boss/commands/parse.mjs");
     const withoutDrive = Object.create(env);
     withoutDrive.GSC_SERVICE_ACCOUNT_JSON = undefined;
-    expect(await simoneTool(withoutDrive, { ...call, tool: "read_mail_material" })).toMatchObject({
+    const openMail = () => simoneTool(withoutDrive, { ...call, tool: "read_mail_material" });
+    expect(await openMail()).toMatchObject({
+      ok: true, material: { read: [], unopened: [{ reason: "Workspace Drive access is off" }] },
+    });
+    const now = Date.now();
+    await enableSickDay(env, { address: DEFAULT_MAILBOX, until: now + 3_600_000 }, now);
+    expect(await openMail()).toMatchObject({
       ok: true, material: { read: [], unopened: [{
         filename: expect.stringContaining("1Fixture"),
         reason: expect.stringContaining("Drive could not be reached"),
