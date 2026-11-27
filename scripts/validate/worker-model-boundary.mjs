@@ -6,14 +6,14 @@ import ts from "typescript";
 
 const root = fileURLToPath(new URL("../..", import.meta.url));
 const jobDirs = [
-  "scripts/ops", "scripts/brains", "scripts/lib", "scripts/sync-agent",
+  "scripts/ops", "scripts/brains", "scripts/lib", "scripts/outreach", "scripts/sync-agent",
   "src/worker/boss/capital", "src/worker/boss/cron", "src/worker/boss/duties",
-  "src/worker/boss/health", "src/worker/boss/outreach", "src/worker/boss/practice",
-  "src/shared/boss/capital", "src/shared/boss/duties", "src/shared/boss/outreach",
+  "src/worker/boss/health", "src/worker/boss/lp", "src/worker/boss/outreach", "src/worker/boss/practice",
+  "src/shared/boss/capital", "src/shared/boss/duties", "src/shared/boss/lp", "src/shared/boss/outreach",
 ];
 const boundaryFile = new URL("./worker-model-exceptions.json", import.meta.url);
-const modelSdk = /^(?:openai|ollama|@anthropic-ai\/sdk|@google\/(?:genai|generative-ai)|@openrouter\/sdk|@ai-sdk\/[^/]+|@aws-sdk\/client-bedrock-runtime)(?:\/|$)/;
-const routerImport = /(?:^|\/)router(?:\/(?:index|route|anthropic|openai|gemini|workersAi|fireworks|openrouter)(?:\.[cm]?[jt]s)?)?$/;
+const modelSdk = /^(?:ai|openai|ollama|@anthropic-ai\/sdk|@google\/(?:genai|generative-ai)|@google-cloud\/vertexai|@openrouter\/sdk|@ai-sdk\/[^/]+|@aws-sdk\/client-bedrock-runtime)(?:\/|$)/;
+const routerImport = /(?:^|\/)router(?:\/(?:index|route|backends|anthropic|openai|gemini|workersAi|fireworks|openrouter)(?:\.[cm]?[jt]s)?)?$/;
 const modelEndpoint = /(?:https?:\/\/|^)(?:api\.(?:openai\.com|anthropic\.com|perplexity\.ai|fireworks\.ai)|generativelanguage\.googleapis\.com|openrouter\.ai)(?:[/:]|$)|\/ai\/run(?:\/|$)/i;
 const providerRequest = (url) => modelEndpoint.test(url) && !/\/api\/v1\/credits(?:[?#]|$)/.test(url);
 const cli = /(?:^|\/)(?:claude|codex|ai-run)(?:\.exe)?$/;
@@ -25,6 +25,13 @@ function jsEdges(file, code) {
   const literal = (node) => node && (ts.isStringLiteralLike(node) || ts.isTemplateExpression(node))
     ? (ts.isTemplateExpression(node) ? node.head.text + node.templateSpans.map((span) => span.literal.text).join("") : node.text)
     : "";
+  const access = (node) => {
+    if (ts.isPropertyAccessExpression(node)) return `${access(node.expression)}.${node.name.text}`;
+    if (ts.isElementAccessExpression(node) && ts.isStringLiteralLike(node.argumentExpression)) {
+      return `${access(node.expression)}.${node.argumentExpression.text}`;
+    }
+    return node.getText(parsed);
+  };
   const command = (node) => {
     const value = literal(node);
     return cli.test(value) || /^(?:claude|codex|ai-run)\s/.test(value)
@@ -57,7 +64,7 @@ function jsEdges(file, code) {
     if ((ts.isImportDeclaration(node) && !node.importClause?.isTypeOnly)
       || (ts.isExportDeclaration(node) && !node.isTypeOnly)) importEdge(literal(node.moduleSpecifier));
     if (ts.isCallExpression(node) || ts.isNewExpression(node)) {
-      const target = node.expression.getText(parsed);
+      const target = access(node.expression);
       const arg = node.arguments?.[0];
       if (target === "import" || target === "require") importEdge(literal(arg));
       if (childProcessCall.test(target.split(".").at(-1))) {
@@ -124,16 +131,18 @@ if (process.argv.includes("--self-test")) {
   const violations = [
     [".ts", 'import Service from "@google/genai"'],
     [".mjs", 'await import("../router/gemini.ts")'],
-    [".mjs", 'spawn("claude", ["-p", instruction])'],
-    [".mjs", 'const seat = process.env.SEAT ?? "claude"; spawn(seat, ["-p", instruction])'],
+    [".ts", 'import { WIRING_BY_PROVIDER } from "../router/backends"'],
+    [".mjs", 'spawn("claude", ["--print", instruction])'],
+    [".mjs", 'const seat = process.env.SEAT ?? "claude"; spawn(seat, ["--print", instruction])'],
     [".mjs", 'await env.AI.run(slug, payload)'],
+    [".mjs", 'await env["AI"]["run"](slug, payload)'],
     [".mjs", 'await fetch("https://api.openai.com/v1/responses")'],
     [".sh", 'echo "$input" | /opt/local/bin/codex exec'],
     [".sh", 'SEAT="$seat" "$AI_RUN" --role brain'],
   ];
   if (check("worker.ts", clean).length || check("logger.sh", 'echo "For troubleshooting; claude is optional"').length
       || violations.some(([ext, code]) => !check("worker" + ext, code).length)
-      || !check("worker.mjs", 'spawn("claude", []); spawn("claude", ["-p", prompt]);', ["command claude"]).length) {
+      || !check("worker.mjs", 'spawn("claude", []); spawn("claude", ["--print", prompt]);', ["command claude"]).length) {
     throw new Error("Worker model boundary fixtures failed");
   }
   console.log("Worker model boundary fixtures passed");

@@ -51,7 +51,8 @@ they live in the repo, not only in someone's memory. Non-confidential. `STATUS.m
 - **Free worker reading** enters through `readWorkerSource` in `src/worker/boss/router/freeModel.ts` from Node or the Worker.
   Monique starts with Gemini and the other workers start with Workers AI. A provider error can move a
   read to the other provider. A provider's daily quota response returns `allowance-exhausted` so the job
-  can stop at its current item. Jobs pass their instructions and the complete source in distinct roles.
+  can stop at its current item. The client places instructions and supplied source material in distinct
+  roles. Toni’s current billing call supplies the retrieved business-mail headers.
   The client calls `recordRead`, when supplied, only after a usable answer. The CI model boundary checks
   imports and calls in the worker-job directories. `scripts/validate/worker-model-exceptions.json`
   names the existing exceptions and the permitted occurrences.
