@@ -21,6 +21,23 @@ else is refused, and every refusal turns this pass red as `NAMED STOP [PERMISSIO
 commands the way the list names them: `~/…`, never the full home path; `cd <dir>` and then `git …`,
 never `git -C`; one command per call, no `;`, `&&` or `$( )` chains.
 
+**Your scratch folder is `<scratch>`** (emptied at the start of every pass; `$TMPDIR` points at it). Put every
+crawl, fetched page, log and helper script there, never in `/tmp` (outside your folders, so `jq`, `grep`,
+`rg` and `head` on it are refused). Commands the list allows, in the form it allows them (proven by
+`scripts/ops/sr-fix-permissions-probe.mjs`):
+- **No `>` into a file, ever**: dontAsk refuses every redirect. Save main's copy with
+  `git show --output=<scratch-abs>/<name> origin/main:<path>`, a live page with `curl -sS <url> -o <scratch>/<name>`,
+  anything else with the Write tool; read a long log through a pipe (`npm test 2>&1 | tail -80`).
+- **A helper script** is a file you Write into `<scratch>`, then `node <scratch>/<file>` or
+  `python3 <scratch>/<file>`; no heredocs into files and no `VAR=value` prefixes (write the variable into the script).
+- **Tests**: `npm test`, `npx vitest run <file>`, `npm run <script>`.
+- **Deleting**: a tracked file with `git rm -q -- <path>` (no `-f`, no `-r`); an untracked file in your worktree with
+  `rm ~/GitHub/.wt-danielle-<…>/<path>`, one file per call, its full `~/` path. Nothing else is deleted.
+- **Your own branch**: `git reset --hard origin/danielle/site-audit-<stamp>` or `git reset --hard FETCH_HEAD`;
+  push with `git push origin HEAD:danielle/site-audit-<stamp>` or `git push -u origin HEAD`. Never `-f`, `+` or `main`.
+- **A PR body is a file**: Write it into `<scratch>` and pass `--body-file`, never `--body "…"` (backticks in it are refused).
+- **Another worktree's state**: `cd` into it, then `git status --short`; `git -C` is refused.
+
 **Every turn re-reads this whole session, so the number of turns is what this pass costs.** When calls
 do not depend on each other, make them in ONE message: the files and greps you need to understand a
 template, the live pages you want to fetch, several Edits to one file. Read a file once, in full or in
@@ -68,7 +85,7 @@ UI access"** — that sentence is what the 15 and 16 Oct passes wrote nine times
 The mail tells you WHICH SITE and roughly WHAT CLASS. For every flagged site, crawl it yourself:
 
 ```
-python3 ~/GitHub/boss-os/scripts/ops/site-crawl.py crawl <domain> --out /tmp/crawl-<domain>.json
+python3 ~/GitHub/boss-os/scripts/ops/site-crawl.py crawl <domain> --out <scratch>/crawl-<domain>.json
 ```
 
 It reads the sitemap (cap 400 pages), checks every `<a href>`, canonical, hreflang and `<img src>`
@@ -98,7 +115,7 @@ runner cannot crawl either is RED (`NOT_CRAWLED`).
    `AHREFS_CRAWL_CREDITS:`, and still crawl the site yourself so its real state is known.
 2. Otherwise run the outside probe:
    ```
-   python3 ~/GitHub/boss-os/scripts/ops/site-crawl.py probe <domain> --out /tmp/probe-<domain>.json
+   python3 ~/GitHub/boss-os/scripts/ops/site-crawl.py probe <domain> --out <scratch>/probe-<domain>.json
    ```
    It checks DNS, TLS, the start URL's redirects, Cloudflare challenge pages, robots.txt for
    AhrefsBot and AhrefsSiteAudit and the status those agents get. Its `verdict`:
