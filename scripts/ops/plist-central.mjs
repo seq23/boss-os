@@ -13,7 +13,7 @@
 import fs from "node:fs";
 import os from "node:os";
 import { pathToFileURL } from "node:url";
-import { CENTRAL, zoneOffsetMs } from "../../src/shared/boss/schedule/clock.mjs";
+import { CENTRAL, MAC_WINDOWS, zoneOffsetMs } from "../../src/shared/boss/schedule/clock.mjs";
 
 /**
  * Hours to add to a Central hour to get the Mac's local hour (both zones' DST included).
@@ -68,13 +68,13 @@ export function shiftPlist(text, offset) {
 
 /**
  * THE MAC'S DAY (her ruling 21 Nov 2026, Central, every day): every job's command runs behind seq-bin's
- * `mac-window`, with the class its Schedule row names (`macWindow`: HEAVY 22:00-06:30 and stopped at
- * 06:55, MORNING and ANY never 07:00-09:59, LIGHT 10:00-21:59). Written here because every installer
+ * `mac-window`, with the class its Schedule row names (`macWindow`). The classes and their hours are the
+ * one table in src/shared/boss/schedule/clock.mjs (MAC_WINDOWS), never restated here. Written here because every installer
  * (boss-os, seq-bin, how-we-know) already passes each plist through this file before launchd reads it,
  * so a new job cannot be installed without its window. A job woken outside its window waits (one
  * pending record, then mac-window catch-up starts it once). Interval and KeepAlive jobs get --no-wait.
  */
-export const MAC_CLASSES = ["HEAVY", "MORNING", "LIGHT", "ANY"];
+export const MAC_CLASSES = Object.keys(MAC_WINDOWS);
 export const ONE_SHOT = /-once$|\.oneshot\./;
 
 /** label -> class from the Schedule manifest's mac rows (`macWindow`, a class or { label: class }). Pure. */

@@ -7,6 +7,7 @@ import { claimSimone, fileSimoneMessage } from "../../src/worker/boss/agents/sim
 import { simoneTool } from "../../src/worker/boss/agents/simoneTools";
 import { connectSimoneGoogle, disconnectSimoneGoogle, enableSickDay, simoneAccountGate, simoneAccounts, startSimoneGoogle } from "../../src/worker/boss/agents/simoneAccounts";
 import { handleBossInboundMail } from "../../src/worker/boss/intake/inboundMail";
+import { readSickDayAsk, setSickDayReader, type SickDayReading } from "../../src/worker/boss/agents/simoneSickDay";
 import { apiJson, stubFetch } from "./helpers";
 
 const account = "fixture-owner@example.test";
@@ -55,7 +56,7 @@ it("binds OAuth consent to one owner session and gates every Google service befo
     expect(requests).toHaveLength(0);
     await connectSimoneGoogle(scoped, session, state, "code");
     await expect(connectSimoneGoogle(scoped, session, state, "code")).rejects.toThrow("expired");
-    const active = await simoneAccountGate(scoped, account);
+    const active = await simoneAccountGate(scoped, account, "mail");
     if (active?.source !== "oauth") throw new Error("OAuth account missing");
     const vaultKey = `simone/google/${active.tokenRef}`;
     expect(await (await env.VAULT.get(vaultKey))!.text()).not.toContain(refresh);
@@ -85,11 +86,11 @@ it("binds OAuth consent to one owner session and gates every Google service befo
     expect(requests).toHaveLength(start);
     await expect(apiJson("/api/simone/accounts/switch", { method: "POST", body: { address: account, enabled: true } }))
       .resolves.toMatchObject({ status: 200 });
-    expect(await simoneAccountGate(scoped, account)).toEqual(active);
+    expect(await simoneAccountGate(scoped, account, "mail")).toEqual(active);
 
     outage = true;
     await expect(disconnectSimoneGoogle(scoped, account)).rejects.toThrow("revocation is pending");
-    expect(await simoneAccountGate(scoped, account)).toBeNull();
+    expect(await simoneAccountGate(scoped, account, "mail")).toBeNull();
     expect(await env.VAULT.head(vaultKey)).not.toBeNull();
     outage = false;
     await disconnectSimoneGoogle(scoped, account);
@@ -110,26 +111,128 @@ it("refuses legacy Google calls after an owner switches them off and refuses the
     .toMatchObject({ status: 400 });
 });
 
-it("accepts temporary access only from direct, authenticated owner mail and expires it without a job", async () => {
+it("accepts temporary access only from direct, authenticated owner mail, read by a model, and expires it without a job", async () => {
   const owner = "owner@example.test";
   const scoped = { ...env, BOSS_EXTRA_OWNER_SENDERS: owner, AI: undefined };
-  const checked = "mx.cloudflare.net; spf=pass; dkim=pass; dmarc=pass";
-  const words = `cover ${DEFAULT_MAILBOX}`;
+  const checked = "mx.cloudflare.net; spf=pass; dkim=pass; dmarc=pass header.from=example.test";
+  // Her words as she would type them: no address syntax, no ISO time (#582 review finding 4).
+  const words = "I'm sick, cover West Peek mail till Friday";
+  const NOW = Date.parse("2026-11-30T15:00:00Z"); // Monday 9:00 AM CT
+  const FRIDAY_5PM = "2026-12-04T17:00:00-06:00";
+  const reads: string[] = [];
+  let answer: SickDayReading = { cover: true, mailbox: DEFAULT_MAILBOX, until: FRIDAY_5PM, also: false };
+  setSickDayReader(async (_env, input) => { reads.push(input.words); return answer; });
   function deliver(body: string, from = owner, subject = "Boss OS", authentication = checked) {
     const raw = `From: ${from}\r\nSubject: ${subject}\r\n\r\n${body}`;
     return handleBossInboundMail({ from, to: "simone@example.test", raw: new Response(raw).body!, rawSize: raw.length,
       headers: new Headers({ from, subject, "authentication-results": authentication }) }, scoped);
   }
-  await expect(simoneAccountGate(scoped, DEFAULT_MAILBOX)).resolves.toBeNull();
-  expect((await deliver(words, "peer@example.test")).outcome).not.toBe("OWNER_GOOGLE_ACCESS");
-  expect((await deliver(`> ${words}`)).outcome).not.toBe("OWNER_GOOGLE_ACCESS");
-  expect((await deliver(words, owner, "Fwd: Boss OS")).outcome).not.toBe("OWNER_GOOGLE_ACCESS");
-  expect((await deliver(words, owner, "Boss OS", "mx.cloudflare.net; spf=pass; dmarc=pass")).outcome).not.toBe("OWNER_GOOGLE_ACCESS");
-  await expect(simoneAccountGate(scoped, DEFAULT_MAILBOX)).resolves.toBeNull();
-  await expect(deliver(words)).resolves.toMatchObject({ outcome: "OWNER_GOOGLE_ACCESS" });
-  const temporary = (await simoneAccounts(scoped)).find(({ address }) => address === DEFAULT_MAILBOX)!;
-  expect(temporary.enabled).toBe(true);
-  await expect(simoneAccountGate(scoped, DEFAULT_MAILBOX, temporary.until!)).resolves.toBeNull();
+  const realNow = Date.now;
+  Date.now = () => NOW;
+  try {
+    await expect(simoneAccountGate(scoped, DEFAULT_MAILBOX, "mail", NOW)).resolves.toBeNull();
+    // Forged, quoted, forwarded or DKIM-less mail never reaches the reader, so nothing switches on.
+    expect((await deliver(words, "peer@example.test")).outcome).not.toBe("OWNER_GOOGLE_ACCESS");
+    expect((await deliver(`> ${words}`)).outcome).not.toBe("OWNER_GOOGLE_ACCESS");
+    expect((await deliver(words, owner, "Fwd: Boss OS")).outcome).not.toBe("OWNER_GOOGLE_ACCESS");
+    expect((await deliver(words, owner, "Boss OS", "mx.cloudflare.net; spf=pass; dmarc=pass header.from=example.test")).outcome).not.toBe("OWNER_GOOGLE_ACCESS");
+    expect(reads).toEqual([]);
+    await expect(simoneAccountGate(scoped, DEFAULT_MAILBOX, "mail", NOW)).resolves.toBeNull();
+
+    // The model is down or unsure: nothing is switched on and her mail goes on to Simone.
+    answer = null;
+    expect((await deliver(words)).outcome).not.toBe("OWNER_GOOGLE_ACCESS");
+    // The model names an inbox that is not on the fixed list: refused by code.
+    answer = { cover: true, mailbox: "attacker@example.test", until: null };
+    expect((await deliver(words)).outcome).not.toBe("OWNER_GOOGLE_ACCESS");
+    // An end more than seven days away: refused, said in her zone, nothing switched on.
+    answer = { cover: true, mailbox: DEFAULT_MAILBOX, until: "2026-12-08T17:00:00-06:00", also: false };
+    const tooLong = await deliver(words);
+    expect(tooLong).toMatchObject({ outcome: "OWNER_GOOGLE_ACCESS" });
+    expect(tooLong.reply).toMatch(/not switched on .*within seven days \(by Monday, December 7, 9:00 AM CT\)/);
+    await expect(simoneAccountGate(scoped, DEFAULT_MAILBOX, "mail", NOW)).resolves.toBeNull();
+    expect(reads.length).toBe(3);
+    reads.length = 0;
+
+    // A cover ask with another request in it is switched on and still goes on to Simone, never swallowed.
+    answer = { cover: true, mailbox: DEFAULT_MAILBOX, until: FRIDAY_5PM };
+    const withTask = await deliver(`${words}, and find the Acme reply in there`);
+    expect(withTask.outcome).toBe("SIMONE_QUEUED");
+    expect(await simoneAccountGate(scoped, DEFAULT_MAILBOX, "mail", NOW)).not.toBeNull();
+    await env.DB.prepare("DELETE FROM settings WHERE key = ?").bind("simone_google:until:" + DEFAULT_MAILBOX).run();
+    await expect(simoneAccountGate(scoped, DEFAULT_MAILBOX, "mail", NOW)).resolves.toBeNull();
+
+    answer = { cover: true, mailbox: DEFAULT_MAILBOX, until: FRIDAY_5PM, also: false };
+    const granted = await deliver(words);
+    expect(granted).toMatchObject({ outcome: "OWNER_GOOGLE_ACCESS" });
+    expect(granted.reply).toBe(`Simone can read ${DEFAULT_MAILBOX} until Friday, December 4, 5:00 PM CT. It switches off by itself then.`);
+    expect(granted.reply).not.toMatch(/\d{4}-\d\d-\d\dT|Z\b|UTC/);
+    const temporary = (await simoneAccounts(scoped, NOW)).find(({ address }) => address === DEFAULT_MAILBOX)!;
+    expect(temporary).toMatchObject({ enabled: true, until: Date.parse(FRIDAY_5PM), restricted: "mail" });
+    expect(await simoneAccountGate(scoped, DEFAULT_MAILBOX, "mail", NOW)).not.toBeNull();
+    await expect(simoneAccountGate(scoped, DEFAULT_MAILBOX, "mail", temporary.until!)).resolves.toBeNull();
+  } finally {
+    Date.now = realNow;
+    setSickDayReader(null);
+  }
+});
+
+it("with no end named, the switch lasts 72 hours", async () => {
+  const NOW = Date.parse("2026-11-30T15:00:00Z");
+  setSickDayReader(async () => ({ cover: true, mailbox: BROKERAGE_MAILBOX, until: null }));
+  try {
+    await expect(readSickDayAsk(env, "cover spry for me", NOW)).resolves.toMatchObject({
+      kind: "grant", address: BROKERAGE_MAILBOX, until: NOW + 3 * 86_400_000,
+      reply: expect.stringContaining("Thursday, December 3, 9:00 AM CT"),
+    });
+    setSickDayReader(async () => ({ cover: false }));
+    await expect(readSickDayAsk(env, "how is the spry inbox?", NOW)).resolves.toEqual({ kind: "none" });
+    setSickDayReader(async () => { throw new Error("model down"); });
+    await expect(readSickDayAsk(env, "cover spry for me", NOW)).resolves.toEqual({ kind: "none" });
+  } finally {
+    setSickDayReader(null);
+  }
+});
+
+it("an end with no time zone is refused, never read as UTC (27 Nov 2026 recheck)", async () => {
+  const NOW = Date.parse("2026-11-30T15:00:00Z");
+  setSickDayReader(async () => ({ cover: true, mailbox: BROKERAGE_MAILBOX, until: "2026-12-02T17:00:00" }));
+  try {
+    await expect(readSickDayAsk(env, "cover spry until wednesday 5pm", NOW)).resolves.toMatchObject({ kind: "refuse", address: BROKERAGE_MAILBOX });
+    setSickDayReader(async () => ({ cover: true, mailbox: BROKERAGE_MAILBOX, until: "2026-12-02T17:00:00-06:00" }));
+    await expect(readSickDayAsk(env, "cover spry until wednesday 5pm", NOW)).resolves.toMatchObject({ kind: "grant", until: Date.parse("2026-12-02T23:00:00Z") });
+  } finally {
+    setSickDayReader(null);
+  }
+});
+
+/*
+ * #582 review finding 1 (27 Nov 2026): THE DEFAULT PRODUCTION STATE, no sick-day email and nothing
+ * switched. Only MAIL in the two restricted inboxes waits for her email; her West Peek calendar and Drive
+ * (her only Workspace calendar, #577's calendar tools and Drive reads) are on; the brokerage account is
+ * off whole (read on the Mac only).
+ */
+it("by default her West Peek calendar and Drive are on, and only its mail waits for her sick-day email", async () => {
+  for (const use of ["calendar", "drive", "docs", "sheets"] as const) {
+    await expect(simoneAccountGate(env, DEFAULT_MAILBOX, use)).resolves.toEqual({ source: "delegation" });
+    await expect(simoneAccountGate(env, BROKERAGE_MAILBOX, use)).resolves.toBeNull();
+  }
+  await expect(simoneAccountGate(env, DEFAULT_MAILBOX, "mail")).resolves.toBeNull();
+  await expect(simoneAccountGate(env, BROKERAGE_MAILBOX, "mail")).resolves.toBeNull();
+  await expect(simoneAccountGate(env, OUTREACH_MAILBOX, "mail")).resolves.toEqual({ source: "delegation" });
+  const rows = await simoneAccounts(env);
+  expect(rows.find(({ address }) => address === DEFAULT_MAILBOX)).toMatchObject({ enabled: true, restricted: "mail", until: null });
+  expect(rows.find(({ address }) => address === BROKERAGE_MAILBOX)).toMatchObject({ enabled: false, restricted: "all" });
+  // The page can switch her West Peek calendar and Drive off and on again; never the brokerage account on.
+  await expect(apiJson("/api/simone/accounts/switch", { method: "POST", body: { address: DEFAULT_MAILBOX, enabled: false } }))
+    .resolves.toMatchObject({ status: 200 });
+  await expect(simoneAccountGate(env, DEFAULT_MAILBOX, "calendar")).resolves.toBeNull();
+  await expect(apiJson("/api/simone/accounts/switch", { method: "POST", body: { address: DEFAULT_MAILBOX, enabled: true } }))
+    .resolves.toMatchObject({ status: 200 });
+  await expect(simoneAccountGate(env, DEFAULT_MAILBOX, "calendar")).resolves.toEqual({ source: "delegation" });
+  await expect(simoneAccountGate(env, DEFAULT_MAILBOX, "mail")).resolves.toBeNull();
+  await expect(apiJson("/api/simone/accounts/switch", { method: "POST", body: { address: BROKERAGE_MAILBOX, enabled: true } }))
+    .resolves.toMatchObject({ status: 403 });
 });
 
 it("delegates an enabled brokerage Gmail read to the Mac without a Worker provider call", async () => {

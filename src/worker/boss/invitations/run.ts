@@ -4,11 +4,12 @@
  * (materialise.ts → `worker_job: "invitations"`). One pass:
  *
  *   1. READ, read-only. New mail since the last run in every inbox Boss OS already reads through the
- *      service account when Simone’s switch allows them (West Peek and Time-2-Read), narrowed
- *      by a Gmail search, plus the invites still "awaiting reply" on her Workspace calendars. Headers,
+ *      service account (West Peek, Time-2-Read, and Spry Ventures — read-only, never written), narrowed
+ *      by a Gmail search, plus the invites still "awaiting reply" on her Workspace calendars; a place the
+ *      owner switched Off on Simone's accounts page is left out and the section says so. Headers,
  *      the .ics part and the first 800 characters only; nothing of the body is stored.
- *   2. SORT. The free model reads eligible subjects and the first 800 characters.
- *      When no model answers the invitation rules decide.
+ *   2. SORT. The free model reads eligible subjects and the first 800 characters, Spry Ventures mail
+ *      included (nothing in Boss OS is masked, her ruling 24 Nov 2026). When no model answers the rules decide.
  *   3. ONE ROW PER INVITATION (owner_invitations), deduped by calendar UID or sender + day + title.
  *   4. THE CARDS: the "invitations" morning section, so each card is in Simone's email and on Today.
  *
@@ -19,7 +20,7 @@
  * RULE 0: `OUTPUT n invitations` every run; an inbox it cannot read is NAMED STOP
  * [INVITES_MAILBOX_UNREAD] — a plain line in her email, the duty marked failed, one fix job a day.
  */
-import { simoneAccountGate } from "../agents/simoneAccounts";
+import { simoneAccountSwitchedOn } from "../agents/simoneAccounts";
 import { putMorningSection } from "../mail/morningSection";
 import type { Env } from "../env";
 import { newId } from "../lib/id";
@@ -214,13 +215,20 @@ export async function runInvitations(env: Env, now = Date.now(), fetchImpl: type
   const read: Record<string, number> = {};
   const skipped: Record<string, number> = {};
   const skip = (why: string) => { skipped[why] = (skipped[why] ?? 0) + 1; };
+  // A place the owner switched Off on Simone's accounts page: not read, and said so in the section.
+  const off = new Set<string>();
+  const switchedOn = async (box: (typeof INVITE_INBOXES)[number], what: string) => {
+    if (await simoneAccountSwitchedOn(env, box.address)) return true;
+    off.add(what);
+    return false;
+  };
   let found = 0;
   let modelReads = 0;
 
   // 1a. Her calendars: invites still waiting for her answer.
   for (const box of INVITE_INBOXES.filter((b) => b.writable)) {
     if (!creds) break;
-    if (!await simoneAccountGate(env, box.address, now)) continue;
+    if (!await switchedOn(box, box.label.replace(/^your /, "").replace(/ inbox$/, " calendar"))) continue;
     const r = await awaitingReply(env, box.address, now, now + 60 * 86_400_000);
     if (!r.ok) { unread.push(`${box.label.replace(/^your /, "")} calendar (${r.why})`); continue; }
     for (const e of r.events) {
@@ -234,15 +242,15 @@ export async function runInvitations(env: Env, now = Date.now(), fetchImpl: type
   }
 
   // 1b. Every inbox, new mail since the last run.
-  for (const box of INVITE_INBOXES.filter((b) => b.writable)) {
-    if (!await simoneAccountGate(env, box.address, now)) continue;
+  for (const box of INVITE_INBOXES) {
+    if (!await switchedOn(box, box.label.replace(/^your /, ""))) continue;
     const key = `invitations_read_through:${box.address}`;
     const since = Number(await getSetting(env.DB, key)) || now - FIRST_LOOKBACK_DAYS * 86_400_000;
     try {
       if (!creds) throw new Error("the Google key is not on the Worker");
       const token = await readToken(creds, box.address, fetchImpl);
       const get = async (path: string) => {
-        if (!await simoneAccountGate(env, box.address, Math.max(now, Date.now()))) throw new Error("Simone’s account access is off");
+        if (!await simoneAccountSwitchedOn(env, box.address)) throw new Error("switched off on Simone’s accounts page during the read");
         const res = await fetchImpl(`${GMAIL}${path}`, { headers: { authorization: `Bearer ${token}` }, redirect: "manual" });
         if (!res.ok) throw new Error(`Gmail answered ${res.status}`);
         return res.json() as Promise<any>;
@@ -261,7 +269,7 @@ export async function runInvitations(env: Env, now = Date.now(), fetchImpl: type
         const r = readInvitation(msg, { now, model });
         if (!r.invitation) { skip(r.why ?? "not an invitation"); continue; }
         // Already answered on her calendar (a mailed invite she accepted in Google Calendar) is not a card.
-        if (r.invitation.kind === "calendar" && r.invitation.uid) {
+        if (r.invitation.kind === "calendar" && r.invitation.uid && box.writable) {
           const a = await selfAnswer(env, box.address, r.invitation.uid);
           if (a.ok && a.status && a.status !== "needsAction") { skip("already answered"); continue; }
           if (a.ok && a.eventId) r.invitation.eventId = a.eventId;
@@ -301,6 +309,9 @@ export async function runInvitations(env: Env, now = Date.now(), fetchImpl: type
   const lines = unread.length
     ? [`⚠ Simone could not read ${unread.length === 1 ? "one place" : `${unread.length} places`} for invitations this morning (${unread.map((u) => u.replace(/\s*\(.*\)$/, "")).join(", ")}), so an invitation there may be missing. The team is fixing it.`]
     : [];
+  if (off.size) {
+    lines.push(`Simone did not look for invitations in ${[...off].join(", ")}: you switched ${off.size === 1 ? "it" : "them"} Off on her accounts page.`);
+  }
   const obj = { section: SECTION, at: new Date(now).toISOString(), title: "Invitations", decide, rows: [], lines };
   const problems = await putMorningSection(env.DB, { section: SECTION, job: "duty_invitations", day: today, obj, now });
   if (problems.length) throw new Error(`NAMED STOP [INVITES_SECTION_REFUSED] ${problems.join("; ")}`);

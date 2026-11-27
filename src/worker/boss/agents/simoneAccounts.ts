@@ -16,8 +16,23 @@ const TOKEN = "https://oauth2.googleapis.com/token";
 const REVOKE = "https://oauth2.googleapis.com/revoke";
 const DAY = 86_400_000;
 const REDIRECT = BOSS_ORIGIN + "/api/boss/simone/accounts/callback";
+/*
+ * THE SICK-DAY SWITCH (her rulings 25 Nov 2026): Simone reads and sends MAIL in these two inboxes only
+ * while the owner's own email has switched them on for a set time. Her West Peek calendar and Drive are
+ * not inboxes and stay on by default, as #577 built them (the review of #582, 27 Nov 2026, finding 1).
+ * The brokerage account is read on the Mac only, so every Google service of it waits for the switch.
+ */
 const RESTRICTED = INVITE_INBOXES.filter(({ address, writable }) => address === DEFAULT_MAILBOX || !writable)
   .map(({ address }) => address);
+/** The only inboxes the owner's sick-day email can switch on (simoneSickDay.ts reads her words). */
+export const SICK_DAY_MAILBOXES: readonly string[] = Object.freeze([...RESTRICTED]);
+const RESTRICTED_ALL = INVITE_INBOXES.filter(({ writable }) => !writable).map(({ address }) => address);
+/** What Simone is about to touch in an account: its mail, or one of its other Google services. */
+export type SimoneAccountUse = "mail" | "calendar" | "drive" | "docs" | "sheets";
+/** Whether this use of this account waits for the owner's sick-day email. */
+export function needsSickDay(address: string, use: SimoneAccountUse) {
+  return RESTRICTED_ALL.includes(address) || (use === "mail" && RESTRICTED.includes(address));
+}
 const SCOPES = ["openid", "email", ...["gmail.readonly", "calendar.readonly", "drive.readonly"]
   .map((scope) => "https://www.googleapis.com/auth/" + scope)];
 
@@ -36,11 +51,11 @@ async function setting<T>(db: D1Database, key: string) {
   return row ? JSON.parse(row.value) as T : null;
 }
 
-export async function simoneAccountGate(env: Env, address: string | null, now = Date.now()) {
+export async function simoneAccountGate(env: Env, address: string | null, use: SimoneAccountUse, now = Date.now()) {
   if (!address || await operatingStopped(env.DB)) return null;
   const stored = await setting<GoogleAccount>(env.DB, await accountKey(address));
   if (stored && (!stored.enabled || stored.disconnecting)) return null;
-  if (RESTRICTED.includes(address)) {
+  if (needsSickDay(address, use)) {
     const until = await setting<number>(env.DB, SICK_DAY + address);
     if (!Number.isSafeInteger(until) || until! <= now) return null;
   }
@@ -48,6 +63,16 @@ export async function simoneAccountGate(env: Env, address: string | null, now = 
   if (delegated(address)) return { source: "delegation" } as const;
   if (address === canonicalAddress(env.BOSS_SIMONE_PERSONAL_GOOGLE_ACCOUNT)) return { source: "personal" } as const;
   return null;
+}
+
+/**
+ * The owner's own On/Off for this account on Simone's page, without the sick-day rule. Only for the
+ * header-only invitations duty, which read every one of these inboxes before the switch existed
+ * (migration 0359, live on main): turning it Off there stops that read too; nothing else turns it off.
+ */
+export async function simoneAccountSwitchedOn(env: Env, address: string) {
+  const stored = await setting<GoogleAccount>(env.DB, await accountKey(address));
+  return !stored || (stored.enabled && !stored.disconnecting);
 }
 
 export async function simoneAccounts(env: Env, now = Date.now()) {
@@ -64,11 +89,14 @@ export async function simoneAccounts(env: Env, now = Date.now()) {
   }
   return Promise.all([...known.values()].map(async ({ address, enabled, tokenRef, disconnecting }) => {
     const restricted = RESTRICTED.includes(address);
+    const whole = RESTRICTED_ALL.includes(address);
     const until = restricted ? await setting<number>(env.DB, SICK_DAY + address) : null;
     return {
-      address, enabled: enabled && !disconnecting && (!restricted || (until ?? 0) > now),
+      address, enabled: enabled && !disconnecting && (!whole || (until ?? 0) > now),
       until: enabled && (until ?? 0) > now ? until : null,
-      restricted, disconnecting: disconnecting === true, canDisconnect: Boolean(tokenRef),
+      // "mail": only its inbox waits for her sick-day email; "all": the whole account does.
+      restricted: restricted ? (whole ? "all" : "mail") as "all" | "mail" : null,
+      disconnecting: disconnecting === true, canDisconnect: Boolean(tokenRef),
     };
   }));
 }
@@ -76,7 +104,7 @@ export async function simoneAccounts(env: Env, now = Date.now()) {
 export async function switchSimoneAccount(env: Env, value: unknown, enabled: boolean, now = Date.now()) {
   const address = canonicalAddress(value);
   if (!address) throw new AppError(400, "Choose a Google account.");
-  if (enabled && RESTRICTED.includes(address)) throw new AppError(403, "Use your authenticated email to start temporary access.");
+  if (enabled && RESTRICTED_ALL.includes(address)) throw new AppError(403, "Use your authenticated email to start temporary access.");
   const key = await accountKey(address);
   const known = delegated(address) || address === canonicalAddress(env.BOSS_SIMONE_PERSONAL_GOOGLE_ACCOUNT);
   const result = known
@@ -88,16 +116,6 @@ export async function switchSimoneAccount(env: Env, value: unknown, enabled: boo
       WHERE key = ? AND json_type(value, '$.tokenRef') = 'text' AND json_extract(value, '$.disconnecting') IS NOT 1`)
       .bind(JSON.stringify(enabled), now, key).run();
   if (!result.meta.changes) throw new AppError(409, "This Google account is not connected.");
-}
-
-export function simoneSickDayCommand(words: string, now: number) {
-  const match = /^cover (\S+?)(?: until (\d{4}-\d\d-\d\dT\d\d:\d\d(?::\d\d)?(?:Z|[+-]\d\d:\d\d)))?$/i.exec(words.trim());
-  if (!match) return null;
-  const name = match[1]!.toLowerCase();
-  const address = RESTRICTED.find((known) => known === name || known.split("@")[1] === name);
-  if (!address) return null;
-  const until = match[2] ? Date.parse(match[2]) : now + 3 * DAY;
-  return { address, until: until > now && until <= now + 7 * DAY ? until : null };
 }
 
 export async function enableSickDay(env: Env, { address, until }: { address: string; until: number }, now: number) {
@@ -287,7 +305,8 @@ export async function simoneWorkspace(env: Env, service: keyof typeof WORKSPACE_
     }
   }
   try {
-    const account = await simoneAccountGate(env, address, now);
+    const use: SimoneAccountUse = service === "gmail" ? "mail" : service;
+    const account = await simoneAccountGate(env, address, use, now);
     if (!account) return refusal("GOOGLE_ACCOUNT_OFF");
     if (address === BROKERAGE_MAILBOX) {
       return service === "gmail"
@@ -298,7 +317,7 @@ export async function simoneWorkspace(env: Env, service: keyof typeof WORKSPACE_
     const oauth = account.source === "oauth" ? await oauthAccess(env, address, account.tokenRef) : null;
     const access = account.source === "delegation" ? await delegatedAccess(env, address, service) : oauth?.access;
     if (!access) return refusal("GOOGLE_SIGN_IN_UNAVAILABLE");
-    const current = await simoneAccountGate(env, address);
+    const current = await simoneAccountGate(env, address, use);
     if (current?.source !== account.source || (current.source === "oauth" && current.tokenRef !== account.tokenRef)) {
       return refusal("GOOGLE_ACCOUNT_OFF");
     }
@@ -319,7 +338,7 @@ export async function simoneWorkspace(env: Env, service: keyof typeof WORKSPACE_
       text += decoder.decode(value, { stream: true });
     }
     text += decoder.decode();
-    const after = await simoneAccountGate(env, address);
+    const after = await simoneAccountGate(env, address, use);
     if (after?.source !== account.source || (after.source === "oauth" && after.tokenRef !== account.tokenRef)) {
       return refusal("GOOGLE_ACCOUNT_OFF");
     }

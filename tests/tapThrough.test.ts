@@ -141,3 +141,15 @@ describe("ship-review --kind tap-through", () => {
     expect(p).toMatch(/SURFACE: app-screen/);
   });
 });
+
+// A caller whose journeys pass MAX_STEPS splits them into flow files and calls the workflow once per file in one
+// run (Peace Be Still, 27 Nov 2026: 70 steps, main red on FLOW_INVALID). Each call needs its own artifact name, or
+// the second upload fails on the first one's name, so `label` must be a workflow_call input that names it.
+describe("one run can tap two flow files", () => {
+  it("workflow_call takes a label, and the artifact is named by it", () => {
+    const wf = readFileSync(".github/workflows/tap-through.yml", "utf8");
+    const call = wf.slice(wf.indexOf("  workflow_call:"), wf.indexOf("  workflow_dispatch:"));
+    expect(call).toMatch(/\n {6}label:\n(?: {8}.+\n)*? {8}type: string/);
+    expect(wf).toMatch(/name: tap-through-\$\{\{ inputs\.label \|\| github\.run_id \}\}/);
+  });
+});

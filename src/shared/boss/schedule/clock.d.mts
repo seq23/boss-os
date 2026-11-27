@@ -21,3 +21,10 @@ export declare function clockRowProblems(manifest: unknown, repo?: string): stri
 export declare function slotWords(slot: string): string;
 export declare function nextSlotAt(slot: string, nowMs: number): number | null;
 export declare function nextRunWords(slots: string[] | null | undefined, nowMs: number): string | null;
+export declare const MAC_REST: readonly [number, number];
+export type MacClass = "HEAVY" | "MORNING" | "LIGHT" | "ANY";
+export declare const MAC_WINDOWS: Readonly<Record<MacClass, ReadonlyArray<readonly [number, number]>>>;
+export declare const MORNING_DONE: number;
+export declare const MAC_POLL_CLASS: MacClass;
+export declare function macLooksAt(cls: string, mins: number): boolean;
+export declare function macWindowWords(cls: string): string;

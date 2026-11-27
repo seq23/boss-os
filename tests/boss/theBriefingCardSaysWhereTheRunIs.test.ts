@@ -33,6 +33,10 @@ describe("briefingRunLine, every state", () => {
     expect(line).toMatch(/^Queued at 2:05 PM\. Your Mac has not picked it up yet/);
     expect(line).toMatch(/next scheduled check is \d\d:\d\d Central/);
     expect(line).toMatch(/within five minutes if the polling job is installed/);
+    // The poll's hours come from the one definition (schedule/clock.mjs), never a copy: it looks at 04:00, when the
+    // briefing is due (27 Nov 2026; the sentence said "daytime, 06:00 to 22:00" while the poll ran 10:00-21:59).
+    expect(line).toMatch(/it looks at any hour but 07:00 to 10:00\)\.$/);
+    expect(line).not.toMatch(/06:00 to 22:00/);
     expect(line).not.toMatch(/working on it/);
   });
 

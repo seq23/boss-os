@@ -27,6 +27,7 @@ import { BOSS_INTAKE_MAILBOX } from "../../src/shared/boss/intake/mail.mjs";
 import { handleBossInboundMail } from "../../src/worker/boss/intake/inboundMail";
 import { claimSimone, finishSimoneHandoff } from "../../src/worker/boss/agents/simone";
 import type { Env } from "../../src/worker/env";
+import { cloudflareAuth } from "./cloudflareAuth";
 
 const TOKEN = `olt_${"c7".repeat(32)}`;
 const outer = {
@@ -193,8 +194,8 @@ describe("H3b: her page message is claimed on the same path; a call handed to th
 
 describe("H4: only her own address with DMARC passing directs Noelle", () => {
   const OWNER = "owner@example.test";
-  const receive = async (from: string, subject: string, body: string, auth = "dmarc=pass") => {
-    const headers = new Headers({ from, subject, "x-boss-intake-origin": "console", "authentication-results": `mx.cloudflare.net; spf=pass; dkim=pass; ${auth}` });
+  const receive = async (from: string, subject: string, body: string, auth = cloudflareAuth(from)) => {
+    const headers = new Headers({ from, subject, "authentication-results": auth });
     const raw = `From: ${from}\r\nSubject: ${subject}\r\n\r\n${body}`;
     return handleBossInboundMail({ from, to: BOSS_INTAKE_MAILBOX, headers, raw: new Response(raw).body!, rawSize: new TextEncoder().encode(raw).length },
       { ...env, BOSS_EXTRA_OWNER_SENDERS: OWNER } as any);
@@ -221,7 +222,7 @@ describe("H4: only her own address with DMARC passing directs Noelle", () => {
   });
 
   it("her address with DMARC failing is refused and opens no task", async () => {
-    const r = await receive(OWNER, "Noelle: post X", "post X", "dmarc=fail");
+    const r = await receive(OWNER, "Noelle: post X", "post X", cloudflareAuth(OWNER, "fail"));
     expect(r).toMatchObject({ outcome: "REFUSED_SENDER", taskId: null });
     expect(await tasksFor(r.mailId!)).toEqual([]);
   });

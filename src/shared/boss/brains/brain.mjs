@@ -22,6 +22,10 @@ export const BRAINS = Object.freeze([
   { slug: "porch-and-party", title: "Porch & Party 901" },
   { slug: "time-2-read", title: "Time-2-Read — a Spry Labs company" },
   { slug: "spry", title: "Spry Labs — the umbrella for every side business" },
+  // We Keep You Spry (owner, 27 Nov 2026): her private AI enablement business, the one where clients
+  // pay her. Its commercial plan, backlog and security notes live here, not in the public seq23/WKYS repo.
+  // Public name "We Keep You Spry" (WKYS), never "SPRY" alone (Spry Labs and Spry Ventures are others).
+  { slug: "wkys", title: "We Keep You Spry (WKYS)" },
   { slug: "friends", title: "Friends' businesses" },
   // Not a business (coordinator, 31 Oct 2026): Boss OS itself, Spirit, gates, coaching, her schedule.
   { slug: "personal", title: "Personal" },
@@ -443,6 +447,7 @@ const BRAIN_ALIASES = [
   // Spry Labs took in the Industry Guides (retired brain, 1 Nov 2026).
   [/^(spry|spry ?labs|industry ?guides|guides|the ?industry ?guides|industry-guides)$/, "spry"],
   [/^(spry ?ventures|spry\.?vc|brokerage|the ?brokerage|secondaries|the ?desk)$/, "brokerage"],
+  [/^(wkys|we ?keep ?you ?spry|wekeepyouspry(\.com)?)$/, "wkys"],
   [/^(friends|friends'? ?businesses)$/, "friends"],
   [/^(personal|boss ?os)$/, "personal"],
   [/^(who'?s ?who)$/, "team"],

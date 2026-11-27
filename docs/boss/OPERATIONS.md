@@ -1065,7 +1065,14 @@ Overviews answered while citing the site, and how many named it. Every miss gets
   into the run's work dir, and `ai-visibility-report.mjs transcript` writes its own printed words (every assistant
   text block, in order) into the kept log: its final message alone carries only its last turn, and on 23 and 24 Nov
   2026 the six site blocks printed earlier were lost (0 sites read, twice). The raw stream dies with the work dir.
-  Then `ai-visibility-report.mjs post` checks every block
+  **Code reads, the model judges (27 Nov 2026).** The permissions file's one PostToolUse hook
+  (`scripts/ops/ai-visibility-hook.mjs`) runs after every OpenSEO call: it keeps the raw reply in the run's work dir
+  (`openseo.jsonl`, the stash, gone with it) and hands the session a digest of what its next step needs
+  (`scripts/ops/lib/ai-visibility-digest.mjs`). The session prints only each site's lanes; the post step builds the
+  week itself (tracker, run, OpenSEO's summary, every observation) from the stash with `weekFromStash`. Measured on
+  recorded weeks: about a tenth of the input tokens a run (3.5M before), and the week exact where the model's hand
+  copy had broken on the sixth site. A stash that is missing or short is a named stop (`OPENSEO_STASH_UNREAD`,
+  `OPENSEO_SHORT_READ`), never the session's numbers. Then `ai-visibility-report.mjs post` checks every block
   (`readSite`, src/shared/boss/growth/aiAnswers.mjs) and posts the week to `POST /api/boss/growth/ai-week`.
 - **Honest stops, never a zero.** Plugin not loaded, OpenSEO unreachable, out of credits, no tracker, no answers,
   a run older than 8 days (`OPENSEO_NOT_YET`), fewer observations than prompts × engines (short read), OpenSEO's own

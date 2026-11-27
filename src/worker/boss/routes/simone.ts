@@ -131,7 +131,7 @@ simone.get("/operations/inputs", async (c) => {
   const inputs = await operatingInputs(c.env.DB);
   const address = c.req.query("google_account");
   if (address !== undefined) {
-    return ok(c, { ...inputs, googleEnabled: Boolean(await simoneAccountGate(c.env, address.toLowerCase())) });
+    return ok(c, { ...inputs, googleEnabled: Boolean(await simoneAccountGate(c.env, address.toLowerCase(), "mail")) });
   }
   return ok(c, inputs);
 });

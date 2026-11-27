@@ -73,7 +73,7 @@ it("uses real Git to draft then update a chief PR, requires verified repository 
     const messages = git(["--git-dir", remote, "log", "--format=%B%x00", `${main}..${branch}`]).split("\0").filter((value) => value.trim());
     expect(messages).toHaveLength(2);
     expect(messages.every((message) => message.includes("Co-Authored-By: Simone <simone@sequoiataylor.com>"))).toBe(true);
-    expect(chiefSignoff({ head: second.head!, branch, messages, paths: ["hello.txt"], ownerText: [] })).toBeNull();
+    expect(chiefSignoff({ head: second.head!, branch, messages, paths: ["hello.txt"] })).toBeNull();
     await expect(invoke(draft)).resolves.toMatchObject({ ok: false, code: "GITHUB_HEAD_CHANGED" });
   } finally {
     rmSync(root, { recursive: true, force: true });

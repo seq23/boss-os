@@ -1,10 +1,13 @@
 /** Types for the pure Open Loops rules. See openLoops.mjs. */
 export interface Loop {
   id: string; title: string; finish_line: string; next_step: string | null; owner: string; next_date: string | null;
-  business: string; section: "not_finished" | "parked"; status: "open" | "closed"; closed_reason: string | null; closed_at: number | null;
-  source: string; source_key: string | null; blocked_by: string | null; repair_for: string | null; created_at: number; updated_at: number;
+  business: string; section: "not_finished" | "parked" | "proving"; status: "open" | "closed"; closed_reason: string | null; closed_at: number | null;
+  source: string; source_key: string | null; blocked_by: string | null; repair_for: string | null; proof_pr?: string | null; created_at: number; updated_at: number;
 }
 export const SECTIONS: readonly string[];
+export const PROVING_LABEL: string;
+export function isProofPr(v: unknown): boolean;
+export function proofPrProblem(row: Record<string, unknown> | null | undefined): string | null;
 export const SOURCES: readonly string[];
 export const OWNER_WORDS: readonly string[];
 export const HER: string;

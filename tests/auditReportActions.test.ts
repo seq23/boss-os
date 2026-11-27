@@ -199,4 +199,14 @@ describe("Rule 0: a Codex summary becomes a delivered report", () => {
     expect(prompt).toContain("Every finding must include a non-blank `suggested_action`");
     for (const disposition of DISPOSITIONS) expect(prompt).toContain(`\`${disposition}\``);
   });
+  it("25 Nov 2026: the prompt has the builder write land's `Review class:` line in every PR body (§4), and add it to its own open PR", () => {
+    const prompt = readFileSync("scripts/ops/ahrefs-audit-fix-prompt.md", "utf8");
+    const s4 = prompt.slice(prompt.indexOf("## 4. Open the pull request"), prompt.indexOf("## 5. Write the findings file"));
+    expect(s4.length).toBeGreaterThan(100);
+    expect(s4).toContain("The PR body carries a `Review class:` line");
+    expect(s4).toContain("`Review class: none — <why, 3+ words>`");
+    // The classes are land's own (~/bin/land REVIEW_CLASSES), never a narrower list.
+    for (const c of ["money", "children", "private-data", "store", "delete", "launch"]) expect(s4).toContain(c);
+    expect(s4).toMatch(/gh pr edit <pr>/);
+  });
 });

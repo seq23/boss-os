@@ -363,10 +363,10 @@ site. Pinned by `tests/searchReadiness.test.ts`, which reads this section:
 Owner, 31 Oct 2026 ("time to work"). One definition, `src/shared/boss/brains/brain.mjs`; stored in D1
 (`brains`, `brain_revisions`, migration 0323); pinned by `tests/brains.test.ts` (which reads this
 section), `tests/boss/brains.test.ts` and `npm run validate:brains`:
-1. **Ten brains.** Seven businesses, in scoreboard order (`brokerage` — Spry Ventures (spry.vc), the
+1. **Eleven brains.** Eight businesses, in scoreboard order (`brokerage` — Spry Ventures (spry.vc), the
    brokerage, priority 1 — `west-peek-ventures` — the fund ONLY — `west-peek` — the community: Rooms,
    TLC, westpeek.live, the join site — `porch-and-party`, `time-2-read` — a Spry Labs company — `spry` —
-   Spry Labs, the umbrella for every side business, holding the Industry Guides — `friends`), `personal`
+   Spry Labs, the umbrella for every side business, holding the Industry Guides — `wkys` — We Keep You Spry (WKYS), her private AI enablement business (27 Nov 2026, migration 0382), holding the commercial plan, backlog and security notes kept out of the public seq23/WKYS repo — `friends`), `personal`
    (Boss OS itself, Spirit, gates, coaching, her schedule), `risk` ("don't get sued", 1 Nov 2026,
    migration 0329: numbered rules R-AREA-NN for every site and project she touches, each naming where it
    is enforced or "judgment"; a plain document with no confidential data, so any model may read it; Toni
@@ -616,7 +616,9 @@ Owner-approved plan, 8 Nov 2026. Rules in `src/shared/boss/invitations/invitatio
    comes back exactly once (3 days before, or the day after under 3 days away). **An ask counts only when its
    morning email went** (13 Nov 2026, `uncountUnsentAsks`): a card on a morning email that was never sent is
    asked again the next morning.
-5. **A free model reads an eligible email's subject and first 800 characters only.** Read-only brokerage
-   mail goes through the prose rules. A model outage also uses those rules. No message body is stored.
+5. **A free model reads an eligible email's subject and first 800 characters only**, Spry Ventures mail
+   included (nothing in Boss OS is masked, her ruling 24 Nov 2026). A model outage uses the prose rules.
+   No message body is stored. A place she switched Off on Simone's accounts page is not read, and the
+   section says so; the sick-day switch never stops this duty.
 6. **Rule 0**: `OUTPUT n invitations`; an inbox it cannot read is NAMED STOP [INVITES_MAILBOX_UNREAD]:
    a line in her email, the duty marked failed, one fix job a day.

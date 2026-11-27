@@ -846,7 +846,7 @@ export function roundupFrom({ loops = [], brains = [], since, now = Date.now() }
     .sort((a, b) => b.created_at - a.created_at).map((l) => clip(l.title, 140));
   const weekOut = dayOfCt(now + 7 * DAY_MS);
   const today = dayOfCt(now);
-  const coming = loops.filter((l) => l.status === "open" && l.section !== "parked" && l.next_date && l.next_date >= today && l.next_date <= weekOut)
+  const coming = loops.filter((l) => l.status === "open" && l.section === "not_finished" && l.next_date && l.next_date >= today && l.next_date <= weekOut)
     .sort((a, b) => String(a.next_date).localeCompare(String(b.next_date))).map((l) => `${shortDate(Date.parse(`${l.next_date}T17:00:00Z`))}: ${clip(l.title, 120)}`);
   const decided = [];
   for (const b of brains) {

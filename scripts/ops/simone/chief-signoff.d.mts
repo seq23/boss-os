@@ -3,5 +3,7 @@ export function chiefSignoff(pr: {
   branch: string;
   messages: string[];
   paths: string[];
-  ownerText: string[];
+  body?: string;
+  comments?: string[];
 }): string | null;
+export const SIGNOFF_NEEDS: Readonly<Record<string, string>>;

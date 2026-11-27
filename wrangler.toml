@@ -149,15 +149,18 @@ BOSS_SESSION_SECRET = "local-dev-session-secret-not-a-real-credential"
 # is actually on this wire, and the daily maintenance still lands exactly at 03:00 UTC because the
 # first hourly tick at or after the documented hour IS 03:00.
 #
-# WHAT THE FREQUENT TICK WAS FOR, and why an hour costs nothing: draining `boss_task_queue`. Boss
-# OS's employee work used Cloudflare Queues in the artifact; here it waits in D1 and drains on this
-# tick. Submitting a task now ALSO drains it immediately (see bossMount.ts), so the tick is a
-# safety net for work that was enqueued by something other than a request - a retry with a delay,
-# a task queued while the Worker was mid-deploy - rather than the only thing that moves the queue.
+# WHAT THE FREQUENT TICK WAS FOR: draining `boss_task_queue`. Boss OS's employee work used
+# Cloudflare Queues in the artifact; here it waits in D1. Submitting a task ALSO drains it
+# immediately (see bossMount.ts). An hour was thought to cost nothing, and it did not for work no
+# request enqueues: a standing duty coming due (27 Nov 2026, the 04:00 briefing). So the drain runs
+# on the five-minute tick below, right after the duty clock, and no longer on the hourly one.
 #
-# THE FIVE-MINUTE TICK (15 Nov 2026) runs ONE thing: the "no Got it after five minutes" alarm
-# (src/worker/boss/intake/mailAlarm.ts). `scheduled` reads `event.cron` and returns after it, so the
-# hourly work above still runs once an hour and never twelve times.
+# THE FIVE-MINUTE TICK (15 Nov 2026) runs the "no Got it after five minutes" alarm
+# (src/worker/boss/intake/mailAlarm.ts), Boss OS's own clock for its GitHub jobs (21 Nov 2026) and,
+# since 27 Nov 2026, the work mover: the duty clock and then the queue drain, so a duty due at 04:00
+# is a run parked for her Mac by the 04:05 claim (Camille's briefing had missed the 07:45 morning
+# email). `scheduled` reads `event.cron` and returns after them, so the hourly chores still run once
+# an hour and never twelve times, and the duty clock runs on this tick only.
 [triggers]
 crons = ["0 * * * *", "*/5 * * * *"]
 

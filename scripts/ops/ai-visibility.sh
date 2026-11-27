@@ -21,6 +21,12 @@
 # OpenSEO's credits before and after; the report refuses a run where they moved. The session's printed
 # lines are read from its stream-json event stream (the transcript step), never from its last message.
 #
+# CODE READS, THE MODEL JUDGES (27 Nov 2026, measured: 3.5M input tokens a run, 82% of them OpenSEO's raw
+# results carried turn after turn). The permissions file's one hook, scripts/ops/ai-visibility-hook.mjs, runs
+# after every OpenSEO call: it keeps the raw result in $WORK/openseo.jsonl (the stash, gone with $WORK) and
+# hands the session a digest of what its next step needs. The post step builds the week from the stash
+# (scripts/ops/lib/ai-visibility-digest.mjs); the session prints only each site's lanes.
+#
 # RULE 0: this may not exit 0 having done nothing. No sentinel with a real number → NAMED STOP exit 9;
 # no site read → exit 9 from the report; a money proof missing → exit 10.
 
@@ -33,7 +39,7 @@ PROMPT_FILE="${AI_VISIBILITY_PROMPT:-$REPO/scripts/ops/ai-visibility-prompt.md}"
 SETTINGS="$REPO/scripts/ops/ai-visibility-permissions.json"
 # The model is named (the BRAIN step's model, as every Claude duty): a judgement over answers, not a build.
 MODEL="${AI_VISIBILITY_MODEL:-claude-opus-5}"
-# Six sites × (tracker, estimate, run, results pages, sources) plus two whoami calls.
+# Six sites × (tracker, estimate, results pages, sources pages) plus two whoami calls.
 MAX_TURNS="${AI_VISIBILITY_MAX_TURNS:-120}"
 LOG_DIR="$HOME/Library/Logs/ai-visibility"
 LOCK="$LOG_DIR/.lock.flock"
@@ -61,6 +67,8 @@ trap 'rm -rf "$WORK"; release_lock' EXIT
 AI_RUN="${AI_RUN_BIN:-$HOME/bin/ai-run}"
 [ -x "$AI_RUN" ] || { say "NAMED STOP [AI_RUN_MISSING] $AI_RUN is not installed (seq-bin); the next run retries."; exit 13; }
 [ -f "$PROMPT_FILE" ] || { say "NAMED STOP [NO_PROMPT_FILE] $PROMPT_FILE"; exit 5; }
+HOOK="$REPO/scripts/ops/ai-visibility-hook.mjs"
+[ -f "$HOOK" ] || { say "NAMED STOP [NO_HOOK] $HOOK is missing; the session never runs without the code that reads its results."; exit 6; }
 [ -s "$SETTINGS" ] || { say "NAMED STOP [NO_PERMISSIONS_FILE] $SETTINGS is missing; the session never runs without its allow list."; exit 6; }
 case "$SETTINGS" in *[[:space:]]*) say "NAMED STOP [PERMISSIONS_PATH_SPACE] '$SETTINGS' has a space, which ai-run would split."; exit 6;; esac
 [[ "$MAX_TURNS" =~ ^[1-9][0-9]*$ ]] || { say "NAMED STOP [BAD_MAX_TURNS] AI_VISIBILITY_MAX_TURNS='$MAX_TURNS'"; exit 5; }
@@ -76,6 +84,8 @@ cd "$HOME" || { say "NAMED STOP [NO_HOME]"; exit 8; }
 PROMPT_TEXT="$(cat "$PROMPT_FILE")
 
 $(cat "$WORK/context.txt")"
+: > "$WORK/openseo.jsonl"
+AI_VISIBILITY_HOOK="$HOOK" AI_VISIBILITY_STASH="$WORK/openseo.jsonl" \
 ENABLE_CLAUDEAI_MCP_SERVERS=false AI_RUN_CLAUDE_MODEL="$MODEL" \
 AI_RUN_CLAUDE_ARGS="--max-turns $MAX_TURNS --permission-mode dontAsk --setting-sources= --settings $SETTINGS --output-format stream-json --verbose" \
 "$AI_RUN" --role "$ROLE" --network --cwd "$HOME" --out "$WORK/session.jsonl" -- "$PROMPT_TEXT" >> "$RUN_LOG" 2>&1
@@ -98,7 +108,7 @@ say "sentinel: $(grep -oE 'AI-VISIBILITY-COMPLETE: sites=[0-9]+' "$RUN_LOG" | ta
 ln -sf "$RUN_LOG" "$LOG_DIR/latest.log"
 
 # Step 2: code reads the blocks, checks them against each site's own pages and posts the week.
-(cd "$REPO" && npm run --silent vault:run -- node scripts/ops/ai-visibility-report.mjs post "$RUN_LOG" "$WORK/state.json") 2>&1 | tee -a "$RUN_LOG"
+(cd "$REPO" && npm run --silent vault:run -- node scripts/ops/ai-visibility-report.mjs post "$RUN_LOG" "$WORK/state.json" "$WORK/openseo.jsonl") 2>&1 | tee -a "$RUN_LOG"
 REPORT_RC=${PIPESTATUS[0]}
 rm -rf "$WORK"
 [ "$REPORT_RC" -eq 0 ] || { say "NAMED STOP [AI_VISIBILITY_REPORT] rc=$REPORT_RC — see the NAMED STOP lines above."; exit "$REPORT_RC"; }

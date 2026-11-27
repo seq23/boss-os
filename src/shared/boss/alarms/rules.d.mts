@@ -22,7 +22,6 @@ export declare const STALE_ABSOLUTE_MS: number;
 export declare const USUAL_MIN_SAMPLES: number;
 export declare const STALE_FLOOR_MS: number;
 export declare function usualDuration(durations: number[]): number | null;
-export declare const POLL_WINDOW: readonly [number, number];
 export declare const NEVER_CLAIMED_POLLING_MS: number;
 export declare function pollingHoursMs(from: number, to: number): number;
 export interface StaleVerdict {

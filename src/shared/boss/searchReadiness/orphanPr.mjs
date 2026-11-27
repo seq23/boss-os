@@ -99,61 +99,64 @@ export function blockedStopSentence(rows) {
 const PR_URL = /^https:\/\/github\.com\/[^/]+\/[^/]+\/pull\/\d+$/;
 const DONE_LANDS = ['already_merged', 'landed'];
 
-/**
- * WHY A ROUND FIXED NOTHING (7 Nov 2026). Round 3 of that day's run held two briefs on heygetonmylevel,
- * both fixed by MERGED pull requests that Lovable had not yet published (a hand Share -> Publish), and
- * the run called it "fixed nothing" / SR_QUEUE_STALLED, opening a repair Danielle can never finish.
- * Returns { code, sentence }:
- *  - every row in flight and at least one still blocked by an open PR -> SR_BLOCKED_BY_OPEN_PRS;
- *  - every row in flight and every PR merged or landed -> SR_AWAITING_HOST_PUBLISH (the fix is on
- *    main; the live host has not rebuilt);
- *  - a fixed PR that a named land gate refused (17 Nov 2026, see landGateCause) -> SR_LAND_GATE_UNMET;
- *  - anything else -> { code: '', sentence: '' }, so a genuine stall stays SR_QUEUE_STALLED.
- */
-export function fixedNothingCause(rows) {
-  rows = rows.filter(r => r.disposition !== 'none');
-  const none = { code: '', sentence: '' };
-  if (rows.some(r => r.disposition === 'fixed_pr')) return landGateCause(rows);
-  if (!rows.length || rows.some(r => r.disposition !== 'in_flight' || !PR_URL.test(r.pr_url ?? ''))) return none;
-  if (rows.some(r => r.land === 'blocked')) {
-    const blockers = blockerLines(rows).join('; ');
-    return blockers ? { code: 'SR_BLOCKED_BY_OPEN_PRS', sentence: blockers } : none;
-  }
-  if (rows.every(r => DONE_LANDS.includes(r.land))) {
-    const prs = [...new Set(rows.map(r => r.pr_url))];
-    const repos = [...new Set(rows.map(r => String(r.repo ?? '').split('/').pop()).filter(Boolean))];
-    return {
-      code: 'SR_AWAITING_HOST_PUBLISH',
-      sentence: `the fixes are merged (${prs.join(', ')}) but the live site has not been republished${repos.length ? ` (${repos.join(', ')})` : ''}`,
-    };
-  }
-  return none;
-}
-
 /** The land outcomes that are a named gate refusing a finished fix, never a stall. */
 export const GATE_LANDS = Object.freeze(['land_refused', 'clickthrough_failed', 'held_owner_approval', 'held_client_approval']);
 // eslint-disable-next-line no-control-regex
 const ANSI = /\u001b\[[0-9;]*m/g;
-const gateOf = (r) => {
-  const detail = String(r.land_detail ?? '').replace(ANSI, '');
-  if (r.land === 'land_refused') return /NAMED STOP \[([A-Z0-9_]+)\]/.exec(detail)?.[1] ?? '';
-  return GATE_LANDS.includes(r.land) ? (/NAMED STOP \[([A-Z0-9_]+)\]/.exec(detail)?.[1] ?? r.land) : '';
-};
+const namedStop = (detail) => /NAMED STOP \[([A-Z0-9_]+)\]/.exec(String(detail ?? '').replace(ANSI, ''))?.[1] ?? '';
 
 /**
- * A ROUND THAT FIXED NOTHING BECAUSE A LAND GATE REFUSED (17 Nov 2026). detoxdenver.org's PR #18 was
- * fixed, green and refused by ~/bin/land with NAMED STOP [NOT_CLICKED_THROUGH] in all three rounds; the
- * rows were `fixed_pr` + `land_refused`, which the in_flight-only reading above never classified, so
- * the run printed "round 3 fixed nothing" / SR_QUEUE_STALLED. Every row a PR (fixed or in flight), at
- * least one fixed PR refused by a NAMED gate, and every other fixed PR landed or gated -> the gate and
- * the PR are named. A land_refused with no named stop (a red check, a network blip) is not a gate.
+ * THE STOP ONE ROW RECORDS (rebuilt 25 Nov 2026). Each row carries the stop written where it happened:
+ * landAll writes every land outcome (`land`, and a NAMED STOP in `land_detail` for land's gates,
+ * including its review gate: REVIEW_CLASS_MISSING / REVIEW_PASS_MISSING), orphanVerdict the reason an
+ * open PR is blocked, policy a row it refused before any PR existed. This reads that record; it never
+ * guesses from the round's shape. Kinds:
+ *  - 'skip'    the lane refused it by policy and there is no PR: nothing to land, so no evidence;
+ *  - 'gate'    a finished fix a named land gate refused (`code` names it; a land_refused counts only
+ *              when land's refusal was named: a red check or a network blip is not a gate);
+ *  - 'open'    an in-flight PR still open and blocked (`line` says by what);
+ *  - 'merged'  an in-flight PR already merged or landed (the fix is on main);
+ *  - 'landed'  a PR this round fixed and landed;
+ *  - 'unexplained' anything else, which keeps the round a genuine stall.
  */
-function landGateCause(rows) {
+export function rowStop(r) {
+  const hasPr = PR_URL.test(r.pr_url ?? '');
+  if (r.disposition === 'in_flight' && !hasPr && r.land === 'blocked' && /^refused_policy/.test(String(r.land_detail ?? ''))) return { kind: 'skip' };
+  if (!['fixed_pr', 'in_flight'].includes(r.disposition) || !hasPr) return { kind: 'unexplained' };
+  if (r.disposition === 'fixed_pr') {
+    if (DONE_LANDS.includes(r.land)) return { kind: 'landed' };
+    const code = GATE_LANDS.includes(r.land) ? (namedStop(r.land_detail) || (r.land === 'land_refused' ? '' : r.land)) : '';
+    return code ? { kind: 'gate', code } : { kind: 'unexplained' };
+  }
+  if (DONE_LANDS.includes(r.land)) return { kind: 'merged' };
+  if (r.land === 'blocked') return { kind: 'open', line: `${r.pr_url}: ${r.land_detail ?? 'unverified PR'}` };
+  return { kind: 'unexplained' };
+}
+
+/**
+ * WHY A ROUND FIXED NOTHING: one reduction over each row's own stop (rowStop). Rebuilt 25 Nov 2026
+ * after four shape-guarded branches (5, 7, 9, 17 Nov) each had to be taught the next case and the
+ * 25 Nov round (42 fixes refused by land's review gate, 3 policy rows with no PR) fell through all
+ * of them to "fixed nothing". Returns { code, sentence }:
+ *  - any row unexplained, or no row left -> { code: '', sentence: '' }: a genuine SR_QUEUE_STALLED;
+ *  - a gate refused a finished fix (every other row landed, merged or open) -> SR_LAND_GATE_UNMET,
+ *    each PR and its gate named (17 Nov detoxdenver NOT_CLICKED_THROUGH; 25 Nov REVIEW_CLASS_MISSING);
+ *  - a fixed PR landed and nothing gated -> '' (the land worked; why the brief stayed is not a stop);
+ *  - an open PR blocked (the rest merged) -> SR_BLOCKED_BY_OPEN_PRS (9 Nov);
+ *  - every PR merged -> SR_AWAITING_HOST_PUBLISH (7 Nov: Lovable had not republished heygetonmylevel).
+ */
+export function fixedNothingCause(rows) {
   const none = { code: '', sentence: '' };
-  if (rows.some(r => !['fixed_pr', 'in_flight'].includes(r.disposition) || !PR_URL.test(r.pr_url ?? ''))) return none;
-  const fixed = rows.filter(r => r.disposition === 'fixed_pr');
-  const gated = fixed.filter(r => gateOf(r));
-  if (!gated.length || fixed.some(r => !gateOf(r) && !DONE_LANDS.includes(r.land))) return none;
-  const lines = [...new Set(gated.map(r => `${r.pr_url} refused by ${gateOf(r)}`))];
-  return { code: 'SR_LAND_GATE_UNMET', sentence: lines.join('; ') };
+  const stops = rows.filter(r => r.disposition !== 'none').map(r => ({ r, s: rowStop(r) })).filter(x => x.s.kind !== 'skip');
+  if (!stops.length || stops.some(x => x.s.kind === 'unexplained')) return none;
+  const of = (kind) => stops.filter(x => x.s.kind === kind);
+  if (of('gate').length) return { code: 'SR_LAND_GATE_UNMET', sentence: [...new Set(of('gate').map(x => `${x.r.pr_url} refused by ${x.s.code}`))].join('; ') };
+  if (of('landed').length) return none;
+  if (of('open').length) return { code: 'SR_BLOCKED_BY_OPEN_PRS', sentence: [...new Set(of('open').map(x => x.s.line))].join('; ') };
+  const prs = [...new Set(stops.map(x => x.r.pr_url))];
+  const repos = [...new Set(stops.map(x => String(x.r.repo ?? '').split('/').pop()).filter(Boolean))];
+  return {
+    code: 'SR_AWAITING_HOST_PUBLISH',
+    sentence: `the fixes are merged (${prs.join(', ')}) but the live site has not been republished${repos.length ? ` (${repos.join(', ')})` : ''}`,
+  };
 }

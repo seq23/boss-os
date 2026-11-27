@@ -16,6 +16,7 @@ import { WIRING_BY_BACKEND } from "../router/backends";
 // One statement of which tiers a vendor gives away, shared with the router and the guard.
 import { routeIsBilled } from "../backends/guard";
 import { dayIdInZone, wallClock, zonedTime } from "../../../shared/boss/timezone";
+import { MAC_POLL_CLASS, macWindowWords } from "../../../shared/boss/schedule/clock.mjs";
 import { auditFindingAlerts } from "../../../shared/boss/siteAudit/todayAlerts.mjs";
 import { ok, badRequest, notFound, conflict } from "../lib/http";
 import { runPromotionSweep } from "./memory";
@@ -356,7 +357,7 @@ export function briefingRunLine(
   if (!run || !run.task_status) return null;
   const queuedAt = run.task_created_at;
   const queuedWords = queuedAt ? ` at ${clockWords(queuedAt)}` : "";
-  const waitingOnMac = `Queued${queuedWords}. Your Mac has not picked it up yet. Its next scheduled check is ${nextClaimSlot(now)}, or within five minutes if the polling job is installed (daytime, 06:00 to 22:00).`;
+  const waitingOnMac = `Queued${queuedWords}. Your Mac has not picked it up yet. Its next scheduled check is ${nextClaimSlot(now)}, or within five minutes if the polling job is installed (it looks ${macWindowWords(MAC_POLL_CLASS)}).`;
   switch (run.task_status) {
     case "queued":
       // Created, and the queue has not started it: it is not on anyone's Mac yet.
