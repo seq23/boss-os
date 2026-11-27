@@ -13,9 +13,14 @@ describe("the Worker's scheduled() handler", () => {
   const src = readFileSync("src/worker/index.ts", "utf8");
   const handler = src.slice(src.indexOf("async scheduled("), src.indexOf("} satisfies ExportedHandler"));
 
+  // The five-minute branch (`if (event?.cron === MAIL_ALARM_CRON) { … return; }`) and the hourly rest.
+  const fiveStart = handler.indexOf("if (event?.cron === MAIL_ALARM_CRON)");
+  const fiveEnd = handler.indexOf("return;", fiveStart);
+  const five = handler.slice(fiveStart, fiveEnd);
+  const hourly = handler.slice(fiveEnd);
+
   it("runs every Boss lane, each in its own waitUntil", () => {
     const lanes = [
-      "drainBossTasks(",
       "runBossDuties(",
       "runBossReaper(",
       "runBossOutreach(",
@@ -25,10 +30,35 @@ describe("the Worker's scheduled() handler", () => {
       "runBossNightly(",
     ];
     for (const call of lanes) {
-      expect(handler, `scheduled() no longer calls ${call}`).toContain(call);
+      expect(hourly, `the hourly tick no longer calls ${call}`).toContain(call);
     }
-    // The 8 hourly lanes plus the */5 tick's mail alarm and cloud clock: exactly one waitUntil each.
-    expect((handler.match(/ctx\.waitUntil\(/g) ?? []).length).toBe(lanes.length + 2);
+    expect((hourly.match(/ctx\.waitUntil\(/g) ?? []).length).toBe(lanes.length);
+    // The */5 tick: the mail alarm, the cloud clock, and the work mover (duty clock then drain): one waitUntil each.
+    expect(fiveStart).toBeGreaterThan(-1);
+    expect((five.match(/ctx\.waitUntil\(/g) ?? []).length).toBe(3);
+  });
+
+  /*
+   * 27 Nov 2026: Camille's briefing was late for the morning email. The duty clock and the queue drain rode the
+   * HOURLY tick while the five-minute tick returned before them, so a duty due at 04:00 was a task that no seat had
+   * been handed when her Mac's 04:05 slot asked, and a duty due off the hour waited up to 59 minutes to exist.
+   */
+  it("moves work on the five-minute tick: the duty clock, then the drain, in that order", () => {
+    const clock = five.indexOf("runBossDutyClock(");
+    const drain = five.indexOf("drainBossTasks(");
+    expect(clock, "the five-minute tick does not run the duty clock").toBeGreaterThan(-1);
+    expect(drain, "the five-minute tick does not drain the queue").toBeGreaterThan(-1);
+    expect(clock).toBeLessThan(drain);
+    // Chained, so a duty that comes due on this tick is drained on this tick (two waitUntils would race).
+    expect(five.slice(clock, drain)).toMatch(/\.then\(\(\) => $/m);
+  });
+
+  it("and only there: the hourly tick neither materialises duties nor drains, so two ticks at :00 never race a duty's clock", () => {
+    expect(hourly).not.toContain("runBossDutyClock(");
+    expect(hourly).not.toContain("drainBossTasks(");
+    const boss = readFileSync("src/worker/boss/index.ts", "utf8");
+    const runDuties = boss.slice(boss.indexOf("export async function runDuties("), boss.indexOf("export async function runDutyClock("));
+    expect(runDuties).not.toContain("materialiseDueDuties(");
   });
 
   it("no longer runs the copied West Peek fund jobs (chassis retirement, 22 Nov 2026)", () => {

@@ -438,7 +438,7 @@ export async function runScheduled(env: Env, now = Date.now()): Promise<CronOutc
  * ITS OWN waitUntil AT THE CALL SITE, so a failure here cannot swallow the task drain or the daily
  * maintenance, and neither of them can swallow this.
  */
-export async function runDuties(env: Env, now = Date.now()) {
+export async function runDuties(env: Env, now = Date.now()): Promise<void> {
   /*
    * THE REWRITES SHE IS OWED RIDE THE SAME TICK. A letter sent back with a note is queued work
    * whether or not anybody opens the app; the tick is the safety net for a rewrite queued while
@@ -455,6 +455,17 @@ export async function runDuties(env: Env, now = Date.now()) {
   await runHicksUpdate(env, now).catch((err) => logEvent(env.DB, {
     level: "warn", scope: "cron", event: "hicks_update_failed", detail: { message: err instanceof Error ? err.message : String(err) },
   }).catch(() => {}));
+}
+
+/**
+ * THE DUTY CLOCK, ON THE FIVE-MINUTE TICK (27 Nov 2026, Camille's briefing late for the morning email).
+ * It rode the hourly tick, so a duty due at 04:00 became a task at 04:00 but reached her Mac only when the
+ * queue next drained, and a duty due at 05:55 waited 59 minutes merely to become a task. It now runs on
+ * the five-minute tick, which also fires at :00, ONLY there: two ticks materialising the same duty at
+ * the same instant would race on its clock. The rewrites, the brains check and Hicks stay hourly
+ * (`runDuties` above).
+ */
+export async function runDutyClock(env: Env, now = Date.now()) {
   return materialiseDueDuties(env, now);
 }
 

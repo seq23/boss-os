@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 /**
- * THE MAC ASKS FOR WORK EVERY FIVE MINUTES IN THE WAKING DAY, AND NEVER RUNS TWO AGENTS AT ONCE (1 Oct 2026).
+ * THE MAC ASKS FOR WORK EVERY FIVE MINUTES AT THE HOURS HER MAC'S DAY ALLOWS, AND NEVER RUNS TWO AGENTS AT ONCE (1 Oct 2026).
  *
  * "why is there a 18:35 check? if i press the button to run on demand?" The Run-now button queues a task in the cloud and the
  * Mac has to ask for it; it asked six times a day. The installer now also writes `com.seq.boss-agent-poll`, which runs
@@ -12,28 +12,73 @@
  *      or Codex session on the same Mac while the first works is the failure); a holder that dies, even by kill -9, frees
  *      it (at once when it ends normally, within a second when killed); a child the run leaves behind never holds it; and the lock never trusts the `mkdir` binary, which is
  *      not atomic on the ubuntu-26.04 runners (uutils; main red 21 Nov 2026, run 44989669473).
- *   2. IT STAYS IN THE WAKING DAY. Outside 06:00-22:00 the poll does nothing; the fixed job is not restricted.
+ *   2. ITS HOURS ARE HER MAC'S DAY, WRITTEN ONCE (27 Nov 2026, Camille's briefing late for the morning email). The wrapper
+ *      carries no hour rule of its own (it acts at 03:00, 04:00, 06:00 and 23:00 alike, under a stubbed clock); `mac-window`
+ *      on the plist is the one gate, at the class the poll's Schedule row names. That class must be MAC_POLL_CLASS
+ *      (src/shared/boss/schedule/clock.mjs) and must cover the minute `duty_exec_intel` is due, read from the migrations:
+ *      as LIGHT (10:00-21:59) beside the wrapper's own 06:00-22:00, neither covered the 04:00 briefing, so the safety net
+ *      under its three morning slots never ran and the report missed the 07:45 email.
  *   3. IT PEEKS BEFORE IT DOES ANYTHING COSTLY, AND THE BRIEFING'S DATA IS FRESH BEFORE THE CLAIM (review of #61). An idle poll is one
  *      read and fetches nothing from any feed; when a run is waiting it refreshes SKY.json and MARKETS.json (unless written in the
  *      last ten minutes) and only then claims, as the fixed-time chain does.
  *
- * It also pins the installer text: the poll's plist exists with StartInterval 300 and the waking-hours flag, the fixed job
+ * It also pins the installer text: the poll's plist exists with StartInterval 300 and the poll flag, the fixed job
  * reaches the claim through the wrapper (never raw `agent.mjs work-once`, which would bypass the lock), and the slot list the
  * screen names (the fixed job's StartCalendarInterval) is untouched.
  *
  *   node scripts/validate/the-agent-polls-without-overlap.mjs
  *   node scripts/validate/the-agent-polls-without-overlap.mjs --self-test
  */
-import { readFileSync, mkdtempSync, writeFileSync, mkdirSync, existsSync, rmSync, chmodSync, utimesSync, statSync } from "node:fs";
+import { readFileSync, readdirSync, mkdtempSync, writeFileSync, mkdirSync, existsSync, rmSync, chmodSync, utimesSync, statSync } from "node:fs";
 import { spawnSync, spawn } from "node:child_process";
 import { tmpdir } from "node:os";
 import { join, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
+import { MAC_POLL_CLASS, macLooksAt, macWindowWords } from "../../src/shared/boss/schedule/clock.mjs";
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), "..", "..");
 const INSTALLER = "scripts/ops/install-agent-launchd.sh";
 const WRAPPER = "scripts/ops/agent-claim.sh";
 const LIB = "scripts/ops/lib/flock.sh";
+const MANIFEST = "src/shared/boss/schedule/manifest.json";
+const MIGRATIONS = "migrations";
+
+/** The Central minute `duty_exec_intel` is due, from the LAST migration that sets it (null when none does). Pure. */
+export function briefingDueMinute(migrations) {
+  let at = null;
+  for (const [, sql] of [...migrations].sort(([a], [b]) => a.localeCompare(b))) {
+    for (const m of sql.matchAll(/UPDATE\s+standing_duties\s+SET\s+([^;]*?)\bWHERE\s+id\s*=\s*'duty_exec_intel'/gi)) {
+      const h = /\blocal_hour\s*=\s*(\d+)/i.exec(m[1]);
+      const mi = /\blocal_minute\s*=\s*(\d+)/i.exec(m[1]);
+      if (h) at = Number(h[1]) * 60 + (mi ? Number(mi[1]) : 0);
+    }
+  }
+  return at;
+}
+
+/** The poll's Schedule class is the one definition's, and it covers the minute the briefing comes due. Pure. */
+export function scheduleProblems(manifest, dueMinute) {
+  const out = [];
+  const row = (manifest?.rows ?? []).find((r) => r.id === "agent-poll");
+  if (!row) return ["The Schedule has no agent-poll row, so mac-window gives the poll no class."];
+  const cls = typeof row.macWindow === "string" ? row.macWindow : row.macWindow?.["com.seq.boss-agent-poll"];
+  if (cls !== MAC_POLL_CLASS) out.push(`The poll's Schedule class is ${cls ?? "missing"}; the one definition (clock.mjs MAC_POLL_CLASS) says ${MAC_POLL_CLASS}, so mac-window and the alarm would count different hours.`);
+  if (dueMinute == null) out.push("No migration sets the hour duty_exec_intel is due, so the poll's hours cannot be checked against it.");
+  else if (!macLooksAt(cls, dueMinute) || !macLooksAt(cls, dueMinute + 5)) {
+    const hm = `${String(Math.floor(dueMinute / 60)).padStart(2, "0")}:${String(dueMinute % 60).padStart(2, "0")}`;
+    out.push(`The poll (class ${cls}, ${macWindowWords(cls)}) does not run at ${hm}, when the briefing duty comes due: the safety net under its morning slots is off.`);
+  }
+  return out;
+}
+
+/** The wrapper decides no hours of its own: no clock read for an hour, no override for one. Pure. */
+export function wrapperTextProblems(text) {
+  const out = [];
+  if (/\bdate\b[^\n]*%H|CLAIM_HOUR/.test(text.split("\n").filter((l) => !/^\s*#/.test(l)).join("\n"))) {
+    out.push("agent-claim.sh carries its own hour rule again; mac-window on the plist is the one gate (clock.mjs MAC_WINDOWS).");
+  }
+  return out;
+}
 
 /** Problems in the installer's text. */
 export function installerProblems(text) {
@@ -68,7 +113,7 @@ function stubEnv(root) {
   // file the kernel is executing fails with ETXTBSY on Linux (12 Oct 2026, CI run 38282874761 on c4bcdea:
   // "ETXTBSY: text file is busy, open '/tmp/boss-claim-…/bin/npm'"). The stub's text depends only on the
   // root, so the first write is the only one needed.
-  if (existsSync(join(bin, "npm")) && existsSync(join(bin, "node"))) return out;
+  if (existsSync(join(bin, "npm")) && existsSync(join(bin, "node")) && existsSync(join(bin, "date"))) return out;
   // `npm` stands in for `npm run --silent vault:run -- node scripts/...` (peek, work-once, sky-snapshot), `node` for the market snapshot.
   // Every call is logged in order. `peek` answers STUB_PEEK_RC (0 = something is waiting); `work-once` holds until the TEST
   // releases it (STUB_RELEASE) or for STUB_HOLD seconds, and with STUB_LINGER leaves a background child behind.
@@ -104,8 +149,14 @@ exit 0
 echo "node $*" >> "${log}"
 exit 0
 `);
+  // A clock the test sets (STUB_HOUR answers `date +%H`), so an hour rule planted in the wrapper is caught at any real hour.
+  writeFileSync(join(bin, "date"), `#!/bin/bash
+if [ "$*" = "+%H" ] && [ -n "\${STUB_HOUR:-}" ]; then echo "\${STUB_HOUR}"; exit 0; fi
+exec /bin/date "$@"
+`);
   chmodSync(join(bin, "npm"), 0o755);
   chmodSync(join(bin, "node"), 0o755);
+  chmodSync(join(bin, "date"), 0o755);
   return out;
 }
 const calls = (log) => (existsSync(log) ? readFileSync(log, "utf8").split("\n").filter(Boolean) : []);
@@ -169,25 +220,27 @@ export async function wrapperProblems(wrapperPath) {
     for (let i = 0; i < 200 && claimsIn(logOf(root)) < n; i++) await new Promise((r) => setTimeout(r, 50));
   };
 
-  // 1. The poll only runs in the waking day: 06:00 in, 22:00 out; "08" is not read as octal. Peek answers "waiting" here.
-  for (const [hour, expected] of [["03", 0], ["05", 0], ["06", 1], ["08", 1], ["14", 1], ["21", 1], ["22", 0], ["23", 0]]) {
+  // 1. The poll acts at every hour it is woken: its hours are mac-window's on the plist, never the wrapper's. 04:00 is the
+  // briefing's hour; "08" is not read as octal. Peek answers "waiting" here.
+  for (const hour of ["03", "04", "05", "06", "08", "14", "22", "23"]) {
     const root = fresh();
-    runWrapper(wrapperPath, root, ["--poll"], { BOSS_OS_CLAIM_HOUR: hour });
+    runWrapper(wrapperPath, root, ["--poll"], { STUB_HOUR: hour });
     const n = claimsIn(logOf(root));
-    if (n !== expected) out.push(`--poll at hour ${hour}: expected ${expected} claim(s), saw ${n}.`);
+    if (n !== 1) out.push(`--poll woken at hour ${hour}: expected 1 claim, saw ${n} (an hour rule in the wrapper would leave the briefing unclaimed).`);
     rmSync(root, { recursive: true, force: true });
   }
+  out.push(...wrapperTextProblems(readFileSync(wrapperPath, "utf8")));
 
   // 2. The fixed-time call claims at ANY hour, and does NOT peek or refresh (its own chain already did). A finished run
   // releases the lock: the next call claims too.
   {
     const root = fresh();
-    const first = runWrapper(wrapperPath, root, [], { BOSS_OS_CLAIM_HOUR: "03" });
+    const first = runWrapper(wrapperPath, root, [], { STUB_HOUR: "03" });
     const c = calls(logOf(root));
     if (claimsIn(logOf(root)) !== 1) out.push(`The fixed-time call at 03:00 should claim once, saw ${claimsIn(logOf(root))}.`);
     if (first.status !== 0) out.push(`A normal fixed-time claim exited ${first.status}: ${first.stderr.trim()}`);
     if (c.some((l) => /peek|sky-snapshot|market-snapshot/.test(l))) out.push("The fixed-time call peeked or refreshed the data; its own chain does that.");
-    runWrapper(wrapperPath, root, [], { BOSS_OS_CLAIM_HOUR: "03" });
+    runWrapper(wrapperPath, root, [], { STUB_HOUR: "03" });
     if (claimsIn(logOf(root)) !== 2) out.push("The lock was not released after a normal run: the next call could not claim.");
     rmSync(root, { recursive: true, force: true });
   }
@@ -195,7 +248,7 @@ export async function wrapperProblems(wrapperPath) {
   // 3. IDLE POLL: peek says nothing is waiting (4), an old Worker (5), or an error (1): no refresh, no claim, no feed fetch.
   for (const rc of ["4", "5", "1"]) {
     const root = fresh();
-    runWrapper(wrapperPath, root, ["--poll"], { BOSS_OS_CLAIM_HOUR: "14", STUB_PEEK_RC: rc });
+    runWrapper(wrapperPath, root, ["--poll"], { STUB_HOUR: "14", STUB_PEEK_RC: rc });
     const c = calls(logOf(root));
     if (claimsIn(logOf(root)) !== 0) out.push(`A poll whose peek exited ${rc} still claimed.`);
     if (c.some((l) => /sky-snapshot|market-snapshot/.test(l))) out.push(`A poll whose peek exited ${rc} still fetched from a feed.`);
@@ -206,7 +259,7 @@ export async function wrapperProblems(wrapperPath) {
   // 4. WORK WAITING: refresh sky and market BEFORE the claim (review of #61), in that order.
   {
     const root = fresh();
-    runWrapper(wrapperPath, root, ["--poll"], { BOSS_OS_CLAIM_HOUR: "06", STUB_PEEK_RC: "0" });
+    runWrapper(wrapperPath, root, ["--poll"], { STUB_HOUR: "06", STUB_PEEK_RC: "0" });
     const c = calls(logOf(root));
     const at = (re) => c.findIndex((l) => re.test(l));
     const peek = at(/agent\.mjs peek/), sky = at(/sky-snapshot/), market = at(/market-snapshot/), claim = at(/agent\.mjs work-once/);
@@ -221,7 +274,7 @@ export async function wrapperProblems(wrapperPath) {
     const ws = join(root, "reports");
     touchAgo(join(ws, "SKY.json"), 2);
     touchAgo(join(ws, "MARKETS.json"), 2);
-    runWrapper(wrapperPath, root, ["--poll"], { BOSS_OS_CLAIM_HOUR: "14", STUB_PEEK_RC: "0" });
+    runWrapper(wrapperPath, root, ["--poll"], { STUB_HOUR: "14", STUB_PEEK_RC: "0" });
     const c = calls(logOf(root));
     if (c.some((l) => /sky-snapshot|market-snapshot/.test(l))) out.push("Data written two minutes ago was refetched.");
     if (claimsIn(logOf(root)) !== 1) out.push("A poll with fresh data and work waiting did not claim.");
@@ -229,7 +282,7 @@ export async function wrapperProblems(wrapperPath) {
     const root2 = fresh();
     touchAgo(join(root2, "reports", "SKY.json"), 30);
     touchAgo(join(root2, "reports", "MARKETS.json"), 30);
-    runWrapper(wrapperPath, root2, ["--poll"], { BOSS_OS_CLAIM_HOUR: "14", STUB_PEEK_RC: "0" });
+    runWrapper(wrapperPath, root2, ["--poll"], { STUB_HOUR: "14", STUB_PEEK_RC: "0" });
     const c2 = calls(logOf(root2));
     if (!c2.some((l) => /sky-snapshot/.test(l)) || !c2.some((l) => /market-snapshot/.test(l))) out.push("Data written thirty minutes ago was not refreshed before the claim.");
     rmSync(root2, { recursive: true, force: true });
@@ -245,12 +298,12 @@ export async function wrapperProblems(wrapperPath) {
     const firstClosed = new Promise((r) => first.on("close", r));
     // Wait until `first` has RECORDED its claim, so the second tick below provably runs inside the hold.
     await waitForClaims(root, 1);
-    const second = runWrapper(wrapperPath, root, ["--poll"], { BOSS_OS_CLAIM_HOUR: "14" });
+    const second = runWrapper(wrapperPath, root, ["--poll"], { STUB_HOUR: "14" });
     if (claimsIn(logOf(root)) !== 1) out.push(`While one claim was running, a second tick started another: ${claimsIn(logOf(root))} claims recorded (expected 1).`);
     if (second.status !== 0) out.push(`A tick that finds a live holder should exit 0 silently, exited ${second.status}.`);
     writeFileSync(release, "");
     await firstClosed;
-    runWrapper(wrapperPath, root, ["--poll"], { BOSS_OS_CLAIM_HOUR: "14" });
+    runWrapper(wrapperPath, root, ["--poll"], { STUB_HOUR: "14" });
     if (claimsIn(logOf(root)) !== 2) out.push("The lock was not released when the holder finished: the next tick could not claim.");
     rmSync(root, { recursive: true, force: true });
   }
@@ -267,7 +320,7 @@ export async function wrapperProblems(wrapperPath) {
     try { process.kill(-first.pid, "SIGKILL"); } catch { /* already gone */ }
     await firstClosed;
     rmSync(join(homeOf(root), "stub-running"), { force: true }); // the killed stub's own marker, not the wrapper's
-    runWrapper(wrapperPath, root, ["--poll"], { BOSS_OS_CLAIM_HOUR: "14" });
+    runWrapper(wrapperPath, root, ["--poll"], { STUB_HOUR: "14" });
     if (claimsIn(logOf(root)) !== 2) out.push(`A holder killed mid-claim (kill -9) still held the next tick out: ${claimsIn(logOf(root))} claims (expected 2).`);
     rmSync(root, { recursive: true, force: true });
   }
@@ -278,7 +331,7 @@ export async function wrapperProblems(wrapperPath) {
   ]) {
     const root = fresh();
     setup(homeOf(root));
-    runWrapper(wrapperPath, root, ["--poll"], { BOSS_OS_CLAIM_HOUR: "14" });
+    runWrapper(wrapperPath, root, ["--poll"], { STUB_HOUR: "14" });
     if (claimsIn(logOf(root)) !== 1) out.push(`${label[0].toUpperCase()}${label.slice(1)} blocked the claim.`);
     rmSync(root, { recursive: true, force: true });
   }
@@ -296,7 +349,7 @@ export async function wrapperProblems(wrapperPath) {
     // The holder holds until the other seven have exited (or 45 s), so no contender, however late a loaded runner
     // starts it, can find the claim already finished: a second claim then means the lock failed.
     const release = join(root, "release");
-    const procs = Array.from({ length: 8 }, () => spawn("bash", [wrapperPath, "--poll"], { env: envFor(root, { BOSS_OS_CLAIM_HOUR: "14", STUB_RELEASE: release, ...extra }), stdio: "ignore" }));
+    const procs = Array.from({ length: 8 }, () => spawn("bash", [wrapperPath, "--poll"], { env: envFor(root, { STUB_HOUR: "14", STUB_RELEASE: release, ...extra }), stdio: "ignore" }));
     let closed = 0;
     // The cap only ends a broken run. If it fires, a tick that starts AFTER the first claim finished may claim once more:
     // that is the lock working (main runs 43693209796 and 43780957679, 15 Nov 2026). Such claims are marked AFTER_RELEASE
@@ -323,7 +376,7 @@ export async function wrapperProblems(wrapperPath) {
     const root = fresh();
     const linger = join(root, "linger.pid");
     runWrapper(wrapperPath, root, [], { STUB_LINGER: linger });
-    runWrapper(wrapperPath, root, ["--poll"], { BOSS_OS_CLAIM_HOUR: "14" });
+    runWrapper(wrapperPath, root, ["--poll"], { STUB_HOUR: "14" });
     if (claimsIn(logOf(root)) !== 2) out.push("A background child the run left behind held the lock: the next tick could not claim (the lock must not be inherited).");
     try { process.kill(Number(readFileSync(linger, "utf8").trim()), "SIGKILL"); } catch { /* already gone */ }
     rmSync(root, { recursive: true, force: true });
@@ -351,7 +404,7 @@ esac
     const first = spawn("bash", [wrapperPath], { env: envFor(root, { PATH, STUB_RELEASE: release }), stdio: "ignore" });
     const firstClosed = new Promise((r) => first.on("close", r));
     await waitForClaims(root, 1);
-    runWrapper(wrapperPath, root, ["--poll"], { PATH, BOSS_OS_CLAIM_HOUR: "14" });
+    runWrapper(wrapperPath, root, ["--poll"], { PATH, STUB_HOUR: "14" });
     writeFileSync(release, "");
     await firstClosed;
     if (calls(logOf(root)).includes("OVERLAP") || claimsIn(logOf(root)) !== 1) out.push(`On ${process.platform}, a live holder was taken over when the wall clock stepped: ${claimsIn(logOf(root))} claims (expected 1).`);
@@ -380,6 +433,12 @@ esac
     }
   }
   return out;
+}
+
+/** Every migration's [name, sql]. */
+function migrationFiles() {
+  const dir = join(ROOT, MIGRATIONS);
+  return readdirSync(dir).filter((f) => f.endsWith(".sql")).map((f) => [f, readFileSync(join(dir, f), "utf8")]);
 }
 
 const selfTest = process.argv.includes("--self-test");
@@ -418,7 +477,26 @@ if (selfTest) {
   const realProblems = await wrapperProblems(join(ROOT, WRAPPER));
   for (const p of realProblems) console.error(`  real wrapper: ${p}`);
   check("the real wrapper behaves", realProblems.length === 0);
-  check("a wrapper with no hour guard is caught", (await plant("noguard", (t) => t.replace('if [ "$hour" -lt 6 ] || [ "$hour" -ge 22 ]; then', "if false; then"))).length > 0);
+  // THE 27 NOV 2026 SHAPE: the wrapper's own 06:00-22:00 guard, a second copy of the Mac's day that left 04:00 unpolled.
+  const OLD_GUARD = 'if [ "$mode" = "poll" ]; then\n  hour="${STUB_HOUR:-$(date +%H)}"\n  hour=$((10#$hour))\n  if [ "$hour" -lt 6 ] || [ "$hour" -ge 22 ]; then\n    exit 0\n  fi\nfi\n\nLOCK_FILE=';
+  const withGuard = (t) => t.replace("\nLOCK_FILE=", `\n${OLD_GUARD}`);
+  check("a wrapper with its own hour guard again (the 27 Nov shape) is caught", (await plant("ownhours", withGuard)).length > 0);
+  check("…and caught by behaviour at 04:00, not only by its text", (await plant("ownhours2", (t) => withGuard(t).replace('${STUB_HOUR:-$(date +%H)}', '$(date +%H)'))).some((p) => /hour 04/.test(p)));
+  check("a wrapper hour rule with no clock read (an override only) is caught by its text", wrapperTextProblems('[ -n "${BOSS_OS_CLAIM_HOUR:-}" ] && exit 0').length > 0);
+  check("the real wrapper's text carries no hour rule", wrapperTextProblems(wrapperText).length === 0);
+
+  const manifest = JSON.parse(readFileSync(join(ROOT, MANIFEST), "utf8"));
+  const due = briefingDueMinute(migrationFiles());
+  check("the briefing's due minute is read from the migrations (04:00 since 0373)", due === 4 * 60);
+  check("the real Schedule row is clean", scheduleProblems(manifest, due).length === 0);
+  const withPoll = (cls) => ({ rows: manifest.rows.map((r) => (r.id === "agent-poll" ? { ...r, macWindow: cls } : r)) });
+  check("a poll row back on LIGHT (the 21 Nov shape) is caught", scheduleProblems(withPoll("LIGHT"), due).length > 0);
+  check("a poll row on HEAVY is caught (not the one definition's class)", scheduleProblems(withPoll("HEAVY"), due).length > 0);
+  check("a poll with no Schedule row is caught", scheduleProblems({ rows: manifest.rows.filter((r) => r.id !== "agent-poll") }, due).length > 0);
+  check("a briefing moved into her Mac's rest (08:00) is caught", scheduleProblems(manifest, 8 * 60).length > 0);
+  check("a briefing due at 06:58, whose +5 min claim falls in the rest, is caught", scheduleProblems(manifest, 6 * 60 + 58).length > 0);
+  check("no migration naming the briefing's hour is caught", scheduleProblems(manifest, briefingDueMinute([["0001.sql", "SELECT 1;"]])).length > 0);
+  check("the last migration wins", briefingDueMinute([["0257.sql", "UPDATE standing_duties SET local_hour = 6, local_minute = 0 WHERE id = 'duty_exec_intel';"], ["0373.sql", "UPDATE standing_duties SET local_hour = 4, local_minute = 0, next_due_at = 1 WHERE id = 'duty_exec_intel';"]]) === 240);
   check("a wrapper with no lock is caught", (await plant("nolock", (t) => t.replace(TAKE, "LOCK_RC=0"))).length > 0);
   // THE 21 NOV 2026 LOCK: a directory made with the `mkdir` binary, released by a trap. Correct only where that binary is
   // atomic, so it must fail here on every machine, her Mac included (the non-atomic mkdir case), and on a kill -9.
@@ -442,6 +520,7 @@ if (selfTest) {
 } else {
   const problems = [
     ...installerProblems(readFileSync(join(ROOT, INSTALLER), "utf8")),
+    ...scheduleProblems(JSON.parse(readFileSync(join(ROOT, MANIFEST), "utf8")), briefingDueMinute(migrationFiles())),
     ...(existsSync(join(ROOT, WRAPPER)) ? await wrapperProblems(join(ROOT, WRAPPER)) : [`${WRAPPER} does not exist.`]),
   ];
   if (problems.length) {
@@ -449,5 +528,5 @@ if (selfTest) {
     for (const p of problems) console.error(`  - ${p}`);
     process.exit(1);
   }
-  console.log("the-agent-polls-without-overlap: the poll is five minutes, waking day only, through one lock-taking wrapper the fixed-time job shares; a live holder blocks, a dead one (even kill -9) frees it, no child inherits it, and eight racers claim once even with a non-atomic mkdir. OK.");
+  console.log("the-agent-polls-without-overlap: the poll is five minutes, at its Schedule class's hours (covering the 04:00 briefing), with no hour rule of its own, through one lock-taking wrapper the fixed-time job shares; a live holder blocks, a dead one (even kill -9) frees it, no child inherits it, and eight racers claim once even with a non-atomic mkdir. OK.");
 }

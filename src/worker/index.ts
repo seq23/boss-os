@@ -9,7 +9,7 @@ import { plainReply } from "./boss/intake/mailRefs";
 // The structured event spine, for the one thing in this file that writes to it: a reply that did
 // not go. Everything else here logs through the handlers it calls.
 import { logEvent } from "./boss/lib/log";
-import { isBossRoute, handleBossRequest, tapPageToBossPath, researchPageToBossPath, partnerPageToBossPath, drainBossTasks, runBossNightly, runBossDuties, runBossReaper, runBossOutreach, runBossOpenLoops, runBossEightraise, runBossKendra, toBossEnv as toBossEnvForCron } from "./bossMount";
+import { isBossRoute, handleBossRequest, tapPageToBossPath, researchPageToBossPath, partnerPageToBossPath, drainBossTasks, runBossNightly, runBossDuties, runBossDutyClock, runBossReaper, runBossOutreach, runBossOpenLoops, runBossEightraise, runBossKendra, toBossEnv as toBossEnvForCron } from "./bossMount";
 /** Where the West Peek fund screens and their API live now (the chassis retirement, 22 Nov 2026). */
 function json(body: unknown, init: ResponseInit = {}): Response {
   const headers = new Headers(init.headers);
@@ -326,38 +326,42 @@ export default {
 
   async scheduled(event: ScheduledController, env: Env, ctx: ExecutionContext): Promise<void> {
     const now = new Date();
-    // THE FIVE-MINUTE TICK runs the "no Got it yet" alarm and Boss OS's own clock for its GitHub jobs
-    // (21 Nov 2026: GitHub's schedule event stopped being a clock), each in its own waitUntil so one
-    // cannot swallow the other (wrangler.toml [triggers]).
+    /*
+     * THE FIVE-MINUTE TICK is the one tick that MOVES WORK (27 Nov 2026, Camille's briefing late for the
+     * morning email): the duty clock and then the queue drain, so a duty due at 04:00 is a run parked for
+     * her Mac at 04:00 and claimed at the 04:05 slot. Both rode the hourly tick, so a due duty waited up to
+     * an hour to become a task and a task waited for the next drain to reach a seat. In ONE waitUntil and
+     * in that order on purpose: a duty that comes due on this tick is drained on this tick, and the drain
+     * still runs when the clock fails. Only here: this tick fires at :00 too, and two ticks materialising
+     * the same duty at once would race on its clock. Beside them, each in its own waitUntil, the "no Got it
+     * yet" alarm and Boss OS's own clock for its GitHub jobs (21 Nov 2026: GitHub's schedule event stopped
+     * being a clock). wrangler.toml [triggers].
+     */
     if (event?.cron === MAIL_ALARM_CRON) {
       ctx.waitUntil(runMailAlarm(toBossEnvForCron(env), now.getTime()).then(() => undefined).catch((err) => console.error("boss mail alarm failed", err)));
       ctx.waitUntil(runBossCloudClock(toBossEnvForCron(env), now.getTime()).then(() => undefined).catch((err) => console.error("boss cloud clock failed", err)));
+      ctx.waitUntil(
+        runBossDutyClock(toBossEnvForCron(env), now.getTime())
+          .then((r) => { if (r.fired.length) console.log("boss duties materialised", JSON.stringify(r.fired)); })
+          .catch((err) => console.error("boss duties failed", err))
+          // The drain reads the clock when it starts, never the tick's: a task enqueued a moment ago is
+          // visible from its own enqueue time, which is after `now`.
+          .then(() => drainBossTasks(env, new Date()))
+          .then((r) => { if (r.ran || r.failed || r.dead) console.log("boss task drain", JSON.stringify(r)); })
+          .catch((err) => console.error("boss task drain failed", err)),
+      );
       return;
     }
     // The copied West Peek fund jobs (runDueJobs) no longer run here: West Peek OS runs them itself
     // and the pause migration in #531 switched off diagnostics_sweep, deck_reading and network_sync
     // (chassis retirement, her yes 22 Nov 2026).
-    // Boss OS's employee work used Cloudflare Queues; here it waits in D1 and drains on this same
-    // tick. Each lane below is its own waitUntil so a failure in one cannot swallow another.
+    // THE HOURLY TICK keeps the chores that need no five-minute clock. Each lane below is its own
+    // waitUntil so a failure in one cannot swallow another. Boss OS's employee work waits in D1 and is
+    // drained on the five-minute tick above (and after every request that queues it).
+    // The rewrites she is owed, the weekly brains check and Hicks's quarterly update (runDuties).
     ctx.waitUntil(
-      drainBossTasks(env, now)
-        .then((r) => {
-          if (r.ran || r.failed || r.dead) console.log("boss task drain", JSON.stringify(r));
-        })
-        .catch((err) => {
-          console.error("boss task drain failed", err);
-        }),
-    );
-    /*
-     * EVERY TICK, unlike the maintenance run below. A standing duty may be due at any hour — the
-     * owner's Executive Intelligence Report is due at 06:30 America/Chicago — and a check that only
-     * ran with the 03:00 UTC maintenance would find it due a full day late. See runDuties.
-     */
-    ctx.waitUntil(
-      runBossDuties(toBossEnvForCron(env), now.getTime()).then((r) => {
-        if (r.fired.length) console.log("boss duties materialised", JSON.stringify(r.fired));
-      }).catch((err) => {
-        console.error("boss duties failed", err);
+      runBossDuties(toBossEnvForCron(env), now.getTime()).catch((err) => {
+        console.error("boss hourly chores failed", err);
       }),
     );
     // A run a machine claimed and never reported is failed here, on the hour, rather than left

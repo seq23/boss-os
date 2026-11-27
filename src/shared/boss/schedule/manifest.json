@@ -618,7 +618,7 @@
     {
       "id": "agent-poll",
       "name": "Agent poll",
-      "what": "Checks every few minutes for work queued for the Mac.",
+      "what": "Checks every five minutes, at any hour but 07:00-10:00, for work queued for the Mac (the briefing at 04:00 included).",
       "business": "personal",
       "brand": "Boss OS",
       "system": "mac",
@@ -636,7 +636,7 @@
         "floor": 0,
         "reason": "A check: its result is pass or fail, and a fail is already its own red run."
       },
-      "macWindow": "LIGHT"
+      "macWindow": "ANY"
     },
     {
       "id": "aplayer-mode-services-api-wrangler-jsonc",
