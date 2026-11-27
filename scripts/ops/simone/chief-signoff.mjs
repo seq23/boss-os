@@ -6,7 +6,7 @@ export const SIMONE_TRAILER = "Simone <simone@sequoiataylor.com>";
 const MANAGED_BRANCH = /^(?:noelle|danielle)\/|^work\/rc-/;
 const PROTECTED_PATHS = [
   /^(?:\.github\/|(?:docs\/)?CODEOWNERS$)/,
-  /^scripts\/(?:validate\/no-unauthorized-effects\.mjs|vault\/cloudflare-mapping\.json)$/,
+  /^scripts\/(?:validate\/(?:gmail-metadata-only|no-unauthorized-effects)\.mjs|vault\/cloudflare-mapping\.json)$/,
   /^scripts\/ops\/(?:simone\/|simone(?:-permissions\.json|\.mjs)$|lib\/simone-|noelle-github\.mjs$|duty-(?:run\.sh|brief\.mjs)$)/,
   /^src\/shared\/boss\/(?:intake\/(?:mail|messageBody)\.|commands\/parse\.|duties\/ownerEdits\.|invitations\/invitations\.)/,
   /^src\/worker\/(?:index|bossMount|env)\.ts$/,

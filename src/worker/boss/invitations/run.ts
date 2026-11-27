@@ -4,11 +4,11 @@
  * (materialise.ts → `worker_job: "invitations"`). One pass:
  *
  *   1. READ, read-only. New mail since the last run in every inbox Boss OS already reads through the
- *      service account (West Peek, Time-2-Read, and Spry Ventures — read-only, never written), narrowed
+ *      service account when Simone’s switch allows them (West Peek and Time-2-Read), narrowed
  *      by a Gmail search, plus the invites still "awaiting reply" on her Workspace calendars. Headers,
  *      the .ics part and the first 800 characters only; nothing of the body is stored.
- *   2. SORT. The free model reads eligible subjects and the first 800 characters. Read-only
- *      brokerage mail uses the existing prose rules. When no model answers those rules decide.
+ *   2. SORT. The free model reads eligible subjects and the first 800 characters.
+ *      When no model answers the invitation rules decide.
  *   3. ONE ROW PER INVITATION (owner_invitations), deduped by calendar UID or sender + day + title.
  *   4. THE CARDS: the "invitations" morning section, so each card is in Simone's email and on Today.
  *
@@ -45,10 +45,9 @@ const MAX_MODEL_READS = 15;
 // ─── The model seam (tests swap in a fake; production asks the router for a free route) ─────────
 
 export type ModelReading = { invitation: boolean; title?: string | null; date?: string | null; time?: string | null; where?: string | null; asks_answer?: boolean } | null;
-type Reader = (env: Env, input: { subject: string; excerpt: string; today: string; privateOnly: boolean }) => Promise<ModelReading>;
+type Reader = (env: Env, input: { subject: string; excerpt: string; today: string }) => Promise<ModelReading>;
 
 const routerReader: Reader = async (env, input) => {
-  if (input.privateOnly) return null;
   const { routeCompletion } = await import("../router");
   try {
     const r = await routeCompletion(env, {
@@ -235,7 +234,7 @@ export async function runInvitations(env: Env, now = Date.now(), fetchImpl: type
   }
 
   // 1b. Every inbox, new mail since the last run.
-  for (const box of INVITE_INBOXES) {
+  for (const box of INVITE_INBOXES.filter((b) => b.writable)) {
     if (!await simoneAccountGate(env, box.address, now)) continue;
     const key = `invitations_read_through:${box.address}`;
     const since = Number(await getSetting(env.DB, key)) || now - FIRST_LOOKBACK_DAYS * 86_400_000;
@@ -257,12 +256,12 @@ export async function runInvitations(env: Env, now = Date.now(), fetchImpl: type
         const personal = !msg.ics && !platformOf(msg.fromAddress) && !notInvitation(msg);
         if (personal && modelReads < MAX_MODEL_READS) {
           modelReads++;
-          model = await readerImpl(env, { subject: msg.subject, excerpt: msg.excerpt, today, privateOnly: !box.writable });
+          model = await readerImpl(env, { subject: msg.subject, excerpt: msg.excerpt, today });
         }
         const r = readInvitation(msg, { now, model });
         if (!r.invitation) { skip(r.why ?? "not an invitation"); continue; }
         // Already answered on her calendar (a mailed invite she accepted in Google Calendar) is not a card.
-        if (r.invitation.kind === "calendar" && r.invitation.uid && box.writable) {
+        if (r.invitation.kind === "calendar" && r.invitation.uid) {
           const a = await selfAnswer(env, box.address, r.invitation.uid);
           if (a.ok && a.status && a.status !== "needsAction") { skip("already answered"); continue; }
           if (a.ok && a.eventId) r.invitation.eventId = a.eventId;

@@ -1,3 +1,5 @@
+import { generateKeyPairSync } from "node:crypto";
+import { readBrokerageGoogle } from "../scripts/ops/lib/simone-tools.mjs";
 import { expect, it, vi } from "vitest";
 import { childEnvironment, runSimone, type SimoneCall } from "../scripts/ops/simone.mjs";
 
@@ -343,4 +345,32 @@ it("uses the shared locked personal connector, discards a secret and retries whe
     await broker.close();
     await rm(dir, { recursive: true, force: true });
   }
+});
+
+it("reads the brokerage inbox from the Mac with a read-only delegated token and rechecks the account switch", async () => {
+  const { privateKey } = generateKeyPairSync("rsa", { modulusLength: 2048 });
+  const seen: string[] = [];
+  const ctx = {
+    now: Date.now(),
+    env: { GSC_SERVICE_ACCOUNT_JSON: JSON.stringify({
+      client_email: "fixture@example.test", private_key: privateKey.export({ type: "pkcs8", format: "pem" }).toString(),
+    }) },
+    fetch: (async (input, init) => {
+      const url = new URL(String(input));
+      seen.push((init?.method ?? "GET") + " " + url.hostname);
+      expect(init?.redirect).toBe("manual");
+      if (url.hostname === "oauth2.googleapis.com") {
+        const claim = (init!.body as URLSearchParams).get("assertion")!.split(".")[1];
+        expect(JSON.parse(Buffer.from(claim!, "base64url").toString()).scope).toBe("https://www.googleapis.com/auth/gmail.readonly");
+        return Response.json({ access_token: "fixture-google-access" });
+      }
+      expect(new Headers(init?.headers).get("authorization")).toBe("Bearer fixture-google-access");
+      return Response.json({ messages: [{ id: "test-message" }] });
+    }) as typeof fetch,
+  };
+  const path = "/gmail/v1/users/me/messages";
+  await expect(readBrokerageGoogle(path, () => false, ctx)).resolves.toEqual({ ok: false, code: "GOOGLE_ACCOUNT_OFF" });
+  expect(seen).toEqual(["POST oauth2.googleapis.com"]);
+  await expect(readBrokerageGoogle(path, () => true, ctx)).resolves.toMatchObject({ ok: true, evidence: expect.stringContaining("test-message") });
+  expect(seen.slice(-2)).toEqual(["POST oauth2.googleapis.com", "GET gmail.googleapis.com"]);
 });

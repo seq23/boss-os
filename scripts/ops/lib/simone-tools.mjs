@@ -2,6 +2,8 @@ import { spawnSync } from "node:child_process";
 import { createServer } from "node:net";
 import { homedir } from "node:os";
 import { simoneGitHub } from "../simone/github.mjs";
+import { googleAccess, macContext } from "./scorecard-readers.mjs";
+import { INVITE_INBOXES } from "../../../src/shared/boss/invitations/invitations.mjs";
 import { askClaudeJson } from "./duty-kit.mjs";
 
 const PERSONAL_READS = {
@@ -41,6 +43,38 @@ function readPersonalGoogle(tool, query, runConnector) {
     : { ok: false, code: "PERSONAL_GOOGLE_UNAVAILABLE" };
 }
 
+const BROKERAGE = INVITE_INBOXES.find(({ writable }) => !writable).address;
+const GMAIL_API = "https://gmail.googleapis.com";
+
+export async function readBrokerageGoogle(path, recheck, ctx = macContext()) {
+  const refused = (code) => ({ ok: false, code });
+  if (typeof path !== "string" || !path.startsWith("/gmail/v1/users/me/")) return refused("GOOGLE_REQUEST_REQUIRED");
+  const url = new URL(path, GMAIL_API);
+  if (url.origin !== GMAIL_API || !url.pathname.startsWith("/gmail/v1/users/me/")) return refused("GOOGLE_REQUEST_REQUIRED");
+  const boundedFetch = (url, init = {}) => ctx.fetch(url, { ...init, redirect: "manual", signal: AbortSignal.timeout(15_000) });
+  try {
+    const token = await googleAccess({ ...ctx, fetch: boundedFetch }, "https://www.googleapis.com/auth/gmail.readonly", BROKERAGE);
+    if (!token) return refused("GOOGLE_SIGN_IN_UNAVAILABLE");
+    if (!await recheck()) return refused("GOOGLE_ACCOUNT_OFF");
+    const response = await boundedFetch(url, { headers: { Authorization: "Bearer " + token } });
+    if (!response.ok || !response.body) return refused("GOOGLE_COULD_NOT_CHECK");
+    const decoder = new TextDecoder();
+    let size = 0;
+    let evidence = "";
+    for await (const part of response.body) {
+      size += part.byteLength;
+      if (size > 240_000) return refused("GOOGLE_NARROW_THE_READ");
+      evidence += decoder.decode(part, { stream: true });
+    }
+    evidence += decoder.decode();
+    if (!await recheck()) return refused("GOOGLE_ACCOUNT_OFF");
+    if (evidence.includes(token)) return refused("SECRET_OUTPUT");
+    return { ok: true, receipt: "gmail", evidence };
+  } catch {
+    return refused("GOOGLE_COULD_NOT_CHECK");
+  }
+}
+
 /** The model supplies a tool name and optional task id. Only the trusted parent attaches the lease. */
 export async function listenForSimoneTools(path, call, api, hasCredential, runConnector = spawnSync) {
   const receipts = [];
@@ -65,6 +99,13 @@ export async function listenForSimoneTools(path, call, api, hasCredential, runCo
         let result = await (tool === "read_mail_material" ? (mailMaterial ??= request()) : request());
         if (result.ok && tool === "github") {
           result = await simoneGitHub(call, task, hasCredential, { recheck: async () => (await request()).ok });
+        }
+        if (result.ok && result.brokerageRead && tool === "gmail") {
+          const path = result.brokerageRead;
+          result = await readBrokerageGoogle(path, async () => {
+            const current = await request();
+            return current.ok && current.brokerageRead === path;
+          });
         }
         if (result.ok && Object.hasOwn(PERSONAL_READS, tool)) {
           result = typeof result.query !== "string" ? { ok: false, code: "PERSONAL_READ_INSTRUCTION_REQUIRED" }

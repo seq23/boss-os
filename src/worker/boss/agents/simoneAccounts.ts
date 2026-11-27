@@ -5,6 +5,7 @@ import type { Env } from "../env";
 import { AppError } from "../lib/http";
 import { sha256Hex } from "../lib/id";
 import { operatingStopped } from "../lib/operatingStop";
+import { BROKERAGE_MAILBOX } from "../wealth/gmailDraft";
 import { decryptSecret, encryptSecret, secretDoorConfigured } from "../service/secretHandoff";
 
 export const GOOGLE_ACCOUNT_PREFIX = "simone_google:";
@@ -162,6 +163,7 @@ export async function connectSimoneGoogle(env: Env, session: string, state: stri
   const profile = identity.ok ? await identity.json<{ email?: string; email_verified?: boolean }>() : null;
   const address = profile?.email_verified === true ? canonicalAddress(profile.email) : null;
   if (!address) throw new AppError(502, "Google did not confirm the account address.");
+  if (address === BROKERAGE_MAILBOX) throw new AppError(403, "The brokerage inbox uses Mac delegation.");
   const granted = new Set(token.scope?.split(" "));
   if (!SCOPES.slice(2).every((scope) => granted.has(scope))) throw new AppError(409, "Allow all five Google services to finish connecting.");
   const acct = await accountKey(address);
@@ -287,6 +289,11 @@ export async function simoneWorkspace(env: Env, service: keyof typeof WORKSPACE_
   try {
     const account = await simoneAccountGate(env, address, now);
     if (!account) return refusal("GOOGLE_ACCOUNT_OFF");
+    if (address === BROKERAGE_MAILBOX) {
+      return service === "gmail"
+        ? { ok: true, brokerageRead: url.pathname + url.search } as const
+        : refusal("BROKERAGE_MAC_READ_REQUIRED");
+    }
     if (account.source === "personal") return refusal("GOOGLE_OAUTH_CONNECTION_REQUIRED");
     const oauth = account.source === "oauth" ? await oauthAccess(env, address, account.tokenRef) : null;
     const access = account.source === "delegation" ? await delegatedAccess(env, address, service) : oauth?.access;

@@ -156,13 +156,13 @@ function SimoneAccounts() {
       {accounts?.map((account) => (
         <div className="row" key={account.address}>
           <div className="row-main">
-            <div className="row-title">{account.address}</div>
-            <div className="row-sub">
-              {account.disconnecting ? "Off · Google revocation pending"
-                : account.until ? `Temporary access until ${when(account.until)}`
-                : account.restricted ? "Temporary access by verified email"
-                : account.enabled ? "On" : "Off"}
-            </div>
+            <div className="row-title" style={{ overflowWrap: "anywhere" }}>{account.address}</div>
+            {account.disconnecting && <div className="row-sub">Google revocation pending</div>}
+            {!account.disconnecting && account.restricted && (
+              <div className="row-sub">
+                {account.until ? `Temporary access until ${when(account.until)}` : "Temporary access by verified email"}
+              </div>
+            )}
           </div>
           <button className="btn btn-small" role="switch" aria-checked={account.enabled}
             aria-label={`Simone access to ${account.address}`}

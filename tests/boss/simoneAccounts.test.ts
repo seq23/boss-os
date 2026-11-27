@@ -1,10 +1,11 @@
 import { env } from "cloudflare:test";
 import { expect, it } from "vitest";
 import { DEFAULT_MAILBOX } from "../../src/shared/boss/commands/parse.mjs";
+import { BROKERAGE_MAILBOX } from "../../src/worker/boss/wealth/gmailDraft";
 import { OUTREACH_MAILBOX } from "../../src/worker/boss/outreach/catalog";
 import { claimSimone, fileSimoneMessage } from "../../src/worker/boss/agents/simone";
 import { simoneTool } from "../../src/worker/boss/agents/simoneTools";
-import { connectSimoneGoogle, disconnectSimoneGoogle, simoneAccountGate, simoneAccounts, startSimoneGoogle } from "../../src/worker/boss/agents/simoneAccounts";
+import { connectSimoneGoogle, disconnectSimoneGoogle, enableSickDay, simoneAccountGate, simoneAccounts, startSimoneGoogle } from "../../src/worker/boss/agents/simoneAccounts";
 import { handleBossInboundMail } from "../../src/worker/boss/intake/inboundMail";
 import { apiJson, stubFetch } from "./helpers";
 
@@ -129,4 +130,23 @@ it("accepts temporary access only from direct, authenticated owner mail and expi
   const temporary = (await simoneAccounts(scoped)).find(({ address }) => address === DEFAULT_MAILBOX)!;
   expect(temporary.enabled).toBe(true);
   await expect(simoneAccountGate(scoped, DEFAULT_MAILBOX, temporary.until!)).resolves.toBeNull();
+});
+
+it("delegates an enabled brokerage Gmail read to the Mac without a Worker provider call", async () => {
+  await fileSimoneMessage(env, { source: "boss_page", subject: "Fixture", body: "Check the brokerage inbox." });
+  const call = (await claimSimone(env))!;
+  const request = { ...call, tool: "gmail", task: JSON.stringify({ account: BROKERAGE_MAILBOX, path: "messages", query: { q: "newer_than:1d" } }) };
+  const attempts: string[] = [];
+  const restore = stubFetch((req) => { attempts.push(req.url); throw new Error("Worker provider call"); });
+  try {
+    await expect(simoneTool(env, request)).resolves.toEqual({ ok: false, code: "GOOGLE_ACCOUNT_OFF" });
+    const now = Date.now();
+    await enableSickDay(env, { address: BROKERAGE_MAILBOX, until: now + 3_600_000 }, now);
+    await expect(simoneTool(env, request)).resolves.toEqual({
+      ok: true, brokerageRead: "/gmail/v1/users/me/messages?q=newer_than%3A1d",
+    });
+    expect(attempts).toEqual([]);
+  } finally {
+    restore();
+  }
 });

@@ -8,7 +8,7 @@ const REPLY = "The park has a free slot at noon, and the hall and pavilion each 
 test("Simone replies in both message boxes at 390 px", async ({ page }, info) => {
   await page.setViewportSize(PHONE);
   const mailboxLabels = page.getByRole("region", { name: "Simone’s Google accounts" }).locator(".row-title");
-  const capture = (name: string) => page.screenshot({ path: info.outputPath(name), mask: [mailboxLabels] });
+  const capture = (name: string) => page.screenshot({ path: info.outputPath(name), mask: [mailboxLabels], maskColor: "#eadbd0" });
   await unlock(page);
   const provisioned = await page.request.post("/api/boss/open-loops/intake-token");
   expect(provisioned.status()).toBe(201);
