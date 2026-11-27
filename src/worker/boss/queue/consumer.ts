@@ -368,8 +368,9 @@ export async function handleTask(env: Env, msg: TaskMessage): Promise<void> {
     ? ((input.requested as any).model_by_backend as Record<string, string | null>)
     : null;
 
-  for (const backendId of draft ? [] : ladder) {
-    if (codexToFreeRung) break; // Codex is out: public work goes to the $0 free rung below, never Claude.
+  for (const backendId of ladder) {
+    // A completed draft enters the approval flow. A spent Codex seat sends eligible work to the free rung.
+    if (draft || codexToFreeRung) break;
     const requested = typeof input.requested === "object" && input.requested ? { ...(input.requested as Record<string, unknown>) } : {};
     /*
      * EACH SEAT GETS ITS OWN MODEL. A single `requested.model` carried a Claude model id to whichever

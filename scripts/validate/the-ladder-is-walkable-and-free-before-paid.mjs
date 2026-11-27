@@ -251,34 +251,32 @@ export function theOrderIsFreeBeforePaid({ models }, order = orderCandidates) {
 }
 
 /* ═══════════════════════════════════════════════════════════════════════════
- * RULE 4 — THE CONFIDENTIAL LINE. THE BIGGEST THING 0256 CHANGED.
+ * RULE 4 — VENDOR DATA USE.
  *
- * Private work went from ONE eligible lane to nine. That is only true if the rows say so AND the
- * adapter makes the claim enforceable, so both halves are asserted.
+ * A contractual non-training label must match the adapter's request to the vendor.
  * ═══════════════════════════════════════════════════════════════════════════ */
 export function vendorDataUseIsHonored({ models }, adapterSource) {
   const bad = [];
   const ladder = rungs(models);
-  if (ladder.length === 0) return ["there is no ladder, so nothing was checked about which lanes may hold an LP name."];
+  if (ladder.length === 0) return ["there is no ladder, so no vendor data-use settings were checked."];
 
   const priv = ladder.filter((m) => m.data_use === "NO_TRAINING_CONTRACTUAL");
 
   /* RULE 0 for this rule: an empty private set would pass a naive "no free lane is private" check. */
   if (priv.length === 0) {
     bad.push(
-      "no lane on the ladder is recorded NO_TRAINING_CONTRACTUAL, so LP names and deal terms have " +
-      "nowhere to run at all. This rule would otherwise pass over an empty set.",
+      "no lane on the ladder is recorded NO_TRAINING_CONTRACTUAL, so no vendor request was checked.",
     );
   }
 
-  /* THE LINE ITSELF. A `:free` lane may never be marked private-capable. */
+  /* The OpenRouter `:free` tier does not honor a request for contractual non-training. */
   for (const m of priv) {
     if (String(m.slug ?? "").endsWith(":free")) {
       bad.push(
         `${m.display_name} is a :free route AND is marked NO_TRAINING_CONTRACTUAL. A free endpoint is ` +
         "free because the provider keeps the prompt; OpenRouter itself refuses these under " +
         'data_collection="deny" with "No endpoints found matching your data policy (Free model ' +
-        'training)". LP names and deal terms must not be able to reach it.',
+        'training)". Use the data-use label the endpoint supports.',
       );
     }
   }
@@ -625,7 +623,7 @@ const dead = world.models.filter((m) => String(m.provider_id) === "prv_openroute
 console.log(
   `LADDER OK — ${ladder.length} rung(s) walkable in ${LIVE_COST_MODE}: ${free.length} free then ${paid.length} paid, ` +
   `cheapest first. ${free.filter((m) => Number(m.reasoning) === 1).length} free reasoning lane(s), the first of them ` +
-  `${free[0].display_name}. ${priv.length} lane(s) may hold an LP name, none of them :free, each asking the vendor to ` +
+  `${free[0].display_name}. ${priv.length} lane(s) declare contractual non-training and ask the vendor to ` +
   `honour it per request. ${dead.length} probed lane(s) registered disabled with their refusals. ` +
   `Hops: ${freeHops} free, ${fallbackHops} paid.`,
 );
