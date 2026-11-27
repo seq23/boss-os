@@ -166,7 +166,7 @@ function SimoneAccounts() {
             )}
             {!account.disconnecting && account.restricted === "all" && (
               <div className="row-sub">
-                {account.until ? `On until ${when(account.until)}` : "Off until you email Simone to cover it"}
+                {account.until ? `On until ${when(account.until)}` : "Mail off until you email Simone to cover it; invitations are still read"}
               </div>
             )}
           </div>

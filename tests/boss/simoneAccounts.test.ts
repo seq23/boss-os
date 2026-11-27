@@ -194,6 +194,18 @@ it("with no end named, the switch lasts 72 hours", async () => {
   }
 });
 
+it("an end with no time zone is refused, never read as UTC (27 Nov 2026 recheck)", async () => {
+  const NOW = Date.parse("2026-11-30T15:00:00Z");
+  setSickDayReader(async () => ({ cover: true, mailbox: BROKERAGE_MAILBOX, until: "2026-12-02T17:00:00" }));
+  try {
+    await expect(readSickDayAsk(env, "cover spry until wednesday 5pm", NOW)).resolves.toMatchObject({ kind: "refuse", address: BROKERAGE_MAILBOX });
+    setSickDayReader(async () => ({ cover: true, mailbox: BROKERAGE_MAILBOX, until: "2026-12-02T17:00:00-06:00" }));
+    await expect(readSickDayAsk(env, "cover spry until wednesday 5pm", NOW)).resolves.toMatchObject({ kind: "grant", until: Date.parse("2026-12-02T23:00:00Z") });
+  } finally {
+    setSickDayReader(null);
+  }
+});
+
 /*
  * #582 review finding 1 (27 Nov 2026): THE DEFAULT PRODUCTION STATE, no sick-day email and nothing
  * switched. Only MAIL in the two restricted inboxes waits for her email; her West Peek calendar and Drive
