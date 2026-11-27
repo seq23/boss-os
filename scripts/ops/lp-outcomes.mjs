@@ -47,7 +47,7 @@ import crypto from "node:crypto";
 import fs from "node:fs";
 import path from "node:path";
 import os from "node:os";
-import { lpReceipts, scanLpReplies } from "./lp-positive.mjs";
+import { LP_READS_PER_RUN, lpReceipts, nameLpHeld, scanLpReplies } from "./lp-positive.mjs";
 import { sendersFor, employeeMail, postEmployeeMail, ownerTo } from "./notify.mjs";
 
 const SOURCE_ID = process.env.LP_SOURCE_SHEET ?? "1Riww0SiaLb_vxHjUpruSdkNemBEndcQrDQgu7Ly9rRA";
@@ -318,6 +318,30 @@ async function appendSheetRows(sheetTok, tab, values) {
   console.log(`Appended ${values.length} row(s) to "${tab}".`);
 }
 
+/**
+ * One run's LP reply read, with the same per-run cap on model reads as lp-daily's 200-a-morning
+ * backlog cap (follow-up 3 of #583). Past it the rest stay unread, the status is "capped", their
+ * senders are queued as "Reply unread; hold outreach", and the next run reads them.
+ */
+export function readOutcomeReplies(options, { scan = scanLpReplies, limit = LP_READS_PER_RUN } = {}) {
+  return scan({ ...options, limit });
+}
+
+/**
+ * HOLD FIRST, THEN NAME (follow-up 1 of #583). `save(ids)` writes the held receipts with the ids still
+ * marked unnamed; only after it succeeds is the reply named in her morning email. A failed save throws
+ * before anything is named, so the reply is read again next run: never named-but-not-held. A failed
+ * name throws with the ids still saved as unnamed, and the next run names them (`unnamed`).
+ */
+export async function holdThenName({ held = [], unnamed = [] }, { save, name = nameLpHeld }) {
+  const ids = [...new Set([...unnamed, ...held])];
+  if (!ids.length) return [];
+  save(ids);
+  await name(ids);
+  save([]);
+  return ids;
+}
+
 export function summarizeLpOutcomes(scan, known) {
   const outcome = new Map();
   const pending = new Set(scan.unread.map(({ address }) => address).filter((address) => known.has(address)));
@@ -389,7 +413,7 @@ async function main() {
 
   const priorFile = path.join(OUT_DIR, "outcomes.json");
   const prior = fs.existsSync(priorFile) ? JSON.parse(fs.readFileSync(priorFile, "utf8")) : {};
-  const scan = await scanLpReplies({
+  const scan = await readOutcomeReplies({
     token: mailTok,
     query: `after:${SINCE} in:anywhere -in:drafts -in:chats -from:${MAILBOX}`,
     known: new Set(byAddress.keys()),
@@ -402,9 +426,15 @@ async function main() {
   const receipts = Object.fromEntries(scan.records.map((row) => [row.id, { ...row, excerpt: "" }]));
   const scanned = scan.records.length + scan.unread.length;
   console.log(`LP outcomes: ${scan.records.length} read, ${scan.unread.length} unread.`);
-  if (scan.held_now.length && COMMIT) {
-    const { nameLpHeld } = await import("./lp-positive.mjs");
-    nameLpHeld(scan.held_now);
+  let unnamedHeld = prior.unnamed_held ?? [];
+  if (COMMIT) {
+    await holdThenName({ held: scan.held_now, unnamed: unnamedHeld }, {
+      save: (ids) => {
+        fs.mkdirSync(OUT_DIR, { recursive: true });
+        fs.writeFileSync(priorFile, JSON.stringify({ ...prior, receipts, uncertain: scan.uncertain, unnamed_held: ids }, null, 2), { mode: 0o600 });
+        unnamedHeld = ids;
+      },
+    });
   }
 
   // ─── Turn outcomes into cell values ────────────────────────────────────────
@@ -527,7 +557,7 @@ async function main() {
   // Hold repliers before publishing any completed outcomes. Twin reads this queue at send time.
   if (replyAppend.length) await appendSheetRows(sheetTok, REPLY_TAB, replyAppend);
   if (scan.status !== "complete") {
-    fs.writeFileSync(priorFile, JSON.stringify({ ...prior, receipts, uncertain: scan.uncertain }, null, 2), { mode: 0o600 });
+    fs.writeFileSync(priorFile, JSON.stringify({ ...prior, receipts, uncertain: scan.uncertain, unnamed_held: unnamedHeld }, null, 2), { mode: 0o600 });
     throw new Error(`NAMED STOP [LP_REPLY_UNREAD] ${scan.status}; pending replies will retry.`);
   }
 
@@ -577,6 +607,7 @@ async function main() {
       generated_at: new Date().toISOString(),
       receipts,
       uncertain: scan.uncertain,
+      unnamed_held: unnamedHeld,
       sent_rows: data.length,
       scanned,
       tally,
