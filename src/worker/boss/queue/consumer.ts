@@ -298,7 +298,7 @@ export async function handleTask(env: Env, msg: TaskMessage): Promise<void> {
   }
   // A duty can require a local runner. A Chrome job requires its browser-enabled seat.
   const seatsOnly = input.cloud_fallback === false;
-  const publicFreeRung = !seatsOnly &&
+  const publicFreeRung = !seatsOnly && (researchWork || input.delivers === undefined) &&
     afterCodexLimit({ jobClass }) === "free_rung";
   // Owner, 6 Nov 2026: "A Codex usage limit hands the work to Claude … it never waits for the reset."
   // The Claude seat takes it when her Mac is there to claim it; otherwise it waits on Codex's seat.

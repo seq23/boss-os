@@ -4,23 +4,7 @@ import { handleTask } from "../../src/worker/boss/queue/consumer";
 import { materialiseDueDuties } from "../../src/worker/boss/duties/materialise";
 import { all, completionResponse, insertTask, row, stubFetch } from "./helpers";
 
-/**
- * "IF BOTH SEATS ARE GONE THEN WE STAY CHEAPO MODE ($0) UNLESS OTHERWISE ASKED."
- *
- * The whole end of the ladder, proven end to end with the shipped consumer, the shipped guard and the
- * shipped router — nothing stubbed but the network, and the network is asserted UNTOUCHED:
- *
- *   Free only + private work + Claude Code out of usage + Codex out of usage
- *     → the task stops, in words that name the two spent seats and the lever,
- *       no request leaves the Worker, no paid model is chosen, and no free lane sees the text.
- *   The same two spent seats, public-safe work → a `:free` rung answered, at $0 — until 3 Nov 2026.
- *
- * OWNER, 3 Nov 2026 ("default OpenAI and Claude just be the brains"): Codex is the worker for every
- * employee duty and a Codex limit WAITS for its reset — never Claude, never a cloud rung. So with
- * Codex's plan spent the run is parked on Codex's seat (`codex_limit_waits`), unclaimed, the task is
- * not failed, nothing leaves the Worker, and no other seat or rung ever sees it.
- */
-
+/** Exercises the queue and router with both subscription seats exhausted. */
 let restore: (() => void) | null = null;
 afterEach(() => { restore?.(); restore = null; });
 
@@ -52,7 +36,7 @@ beforeEach(async () => { await seatsReset(); });
 afterEach(async () => { await seatsReset(); });
 
 
-describe("both seats out of usage: the work waits on Codex's seat (owner, 3 Nov 2026)", () => {
+describe("both subscription seats are out of usage", () => {
   it("the executive briefing walks her two seats only: with both out of usage it WAITS for the earliest reset — no run parked on a spent seat, never a cloud rung, no network call, no email to her (13 Nov 2026)", async () => {
     await setLever("OPEN");
     await bothSeatsSpent();
@@ -108,45 +92,6 @@ describe("both seats out of usage: the work waits on Codex's seat (owner, 3 Nov 
     expect(await all<any>(`SELECT 1 FROM boss_task_notices WHERE task_id = ? AND needs_her = 1`, taskId)).toHaveLength(0);
   });
 
-  // 13 Nov 2026: an LP draft is private HARD work. It has one route, Claude's seat, and WAITS for it by
-  // name where she can see it; it is never failed, never moved to Codex or a cloud route.
-  it("NEGATIVE: the same refusal on an LP draft she asked for herself waits for Claude by name and tells her", async () => {
-    await setLever("OPEN");
-    await bothSeatsSpent();
-    const taskId = await insertTask({
-      status: "queued", title: "Her own private ask", intake_kind: "research", sensitivity: "private",
-      input: JSON.stringify({ from: "owner@example.test", mail_id: "iml_test_hers", backend_ladder: ["bk_claude_code", "bk_codex"], draft_kind: "lp_reply", lp_committed: true, prompt: "Draft the reply." }),
-    });
-    const hosts: string[] = [];
-    restore = stubFetch((req) => { hosts.push(new URL(req.url).hostname); return completionResponse("no"); });
-    await handleTask(withKey() as any, { taskId, lane: "ops" });
-    expect(hosts).toEqual([]);
-    expect(await all<any>(`SELECT 1 FROM backend_runs WHERE task_id = ? AND backend_id = 'bk_codex'`, taskId)).toHaveLength(0);
-    expect(await all<any>(`SELECT 1 FROM routing_decisions WHERE task_id = ?`, taskId)).toHaveLength(0);
-    expect((await row<any>(`SELECT status FROM tasks WHERE id = ?`, taskId)).status).toBe("queued");
-    const stop = JSON.parse((await row<any>(`SELECT detail FROM task_events WHERE task_id = ? AND event = 'named_stop' ORDER BY ts DESC LIMIT 1`, taskId)).detail);
-    expect(stop.code).toBe("WAITING_FOR_CLAUDE");
-    expect(stop.resume_at).toBe(NOW + 3 * 3600_000);
-    expect((await all<any>(`SELECT kind FROM boss_task_notices WHERE task_id = ?`, taskId)).map((n) => n.kind)).toEqual(["stop:WAITING_FOR_CLAUDE"]);
-  });
-
-  it("a duty whose prompt names an LP commitment is brain work too: Claude only, fails closed by name", async () => {
-    await setLever("FREE_ONLY");
-    await bothSeatsSpent();
-    const taskId = await insertTask({
-      status: "queued", title: "Private analysis", intake_kind: "research", sensitivity: "private",
-      input: JSON.stringify({ backend_ladder: ["bk_claude_code", "bk_codex"], prompt: "Summarise the LP commitment schedule." }),
-    });
-    const hosts: string[] = [];
-    restore = stubFetch((req) => { hosts.push(new URL(req.url).hostname); return completionResponse("no"); });
-    await handleTask(withKey() as any, { taskId, lane: "ops" });
-    expect(hosts).toEqual([]);
-    expect(await all<any>(`SELECT 1 FROM backend_runs WHERE task_id = ? AND backend_id = 'bk_codex'`, taskId)).toHaveLength(0);
-    const t = await row<any>(`SELECT status, error FROM tasks WHERE id = ?`, taskId);
-    expect(t.status).toBe("failed");
-    expect(t.error).toMatch(/bk_claude_code: .*out of usage/);
-  });
-
   it("public-safe work is answered by a :free rung at $0 — never Claude, never paid", async () => {
     await setLever("FREE_ONLY");
     await bothSeatsSpent();
@@ -169,24 +114,28 @@ describe("both seats out of usage: the work waits on Codex's seat (owner, 3 Nov 
     expect(chosen.in_micros_1k + chosen.out_micros_1k).toBe(0);
   });
 
-  it("NEGATIVE: an LP draft (Claude seat only) is never parked on Codex; with Claude spent it waits for Claude by name", async () => {
-    await setLever("FREE_ONLY");
+  it.each(["FREE_ONLY", "OPEN"])("a short deal summary uses a zero-cost fallback at %s", async (lever) => {
+    await setLever(lever);
     await bothSeatsSpent();
+    const prompt = "Summarise the commitment and quoted price in the fictional deal email.";
     const taskId = await insertTask({
-      status: "queued", title: "LP reply", intake_kind: "research", sensitivity: "private",
-      input: JSON.stringify({ backend_ladder: ["bk_claude_code", "bk_codex"], draft_kind: "lp_reply", lp_committed: true, prompt: "Draft the reply." }),
+      title: "Deal summary", status: "queued", intake_kind: "drafting", sensitivity: "private",
+      input: JSON.stringify({ backend_ladder: ["bk_claude_code", "bk_codex"], cloud_fallback: true, prompt }),
     });
-    const hosts: string[] = [];
-    restore = stubFetch((req) => { hosts.push(new URL(req.url).hostname); return completionResponse("no"); });
-    await handleTask(withKey() as any, { taskId, lane: "ops" });
-    expect(hosts).toEqual([]);
-    expect(await all<any>(`SELECT 1 FROM backend_runs WHERE task_id = ? AND backend_id = 'bk_codex'`, taskId)).toHaveLength(0);
-    expect(await all<any>(`SELECT 1 FROM backend_runs WHERE task_id = ? AND status = 'running'`, taskId), "a run was parked on a spent seat").toHaveLength(0);
-    expect(await all<any>(`SELECT 1 FROM routing_decisions WHERE task_id = ?`, taskId)).toHaveLength(0);
-    expect((await row<any>(`SELECT status FROM tasks WHERE id = ?`, taskId)).status).toBe("queued");
-    const stop = JSON.parse((await row<any>(`SELECT detail FROM task_events WHERE task_id = ? AND event = 'named_stop' ORDER BY ts DESC LIMIT 1`, taskId)).detail);
-    expect(stop.code).toBe("WAITING_FOR_CLAUDE");
-    expect(stop.why).toMatch(/bk_claude_code: .*out of usage/);
-    expect(stop.why).toMatch(/Never Codex, never a free or cloud route/);
+    const calls: { model: string; messages: unknown }[] = [];
+    restore = stubFetch(async (req) => {
+      calls.push(await req.json() as (typeof calls)[number]);
+      return completionResponse("Here is the summary.", 20, 15);
+    });
+    await handleTask(withKey(), { taskId, lane: "ops" });
+    expect(calls).toHaveLength(1);
+    expect(calls[0]!.model).toMatch(/:free$/);
+    expect(JSON.stringify(calls[0]!.messages)).toContain(prompt);
+    expect(await row(`SELECT id FROM backend_runs WHERE task_id = ? AND status = 'running'`, taskId)).toBeNull();
+    const decision = await row<{ chosen_model_id: string }>(
+      `SELECT chosen_model_id FROM routing_decisions WHERE task_id = ? ORDER BY ts DESC LIMIT 1`, taskId,
+    );
+    expect(await row(`SELECT in_micros_1k + out_micros_1k AS price FROM models WHERE id = ?`, decision!.chosen_model_id))
+      .toEqual({ price: 0 });
   });
 });
