@@ -1,38 +1,4 @@
-/**
- * WHAT MAKES A MESSAGE NOT A PERSON WRITING TO HER — ONE MODULE, TWO MAILBOX READERS.
- *
- * ─── Why this file exists ─────────────────────────────────────────────────────
- *
- * `interest-ledger.mjs` has filtered bulk structurally since it was written: every legitimate
- * marketing send sets `List-Unsubscribe`, a person does not, and the same goes for `List-Id`,
- * `Precedence: bulk`, `Auto-Submitted`, no-reply senders and out-of-office subjects. These are facts
- * about the message, not guesses about its wording.
- *
- * `lp-positive.mjs` had none of that. It read every inbound message in the LP mailbox, decoded the
- * body and asked whether it contained "book a call". A Google Cloud sales drip contains "book a
- * meeting". A vendor selling a raise-capital programme contains "set up a call". A school's
- * autoresponder contains "keep in touch". Monique's OWN monthly email contains every positive
- * phrase there is, because it quotes them. On 5 October 2026 seven of the thirteen names on her
- * running list were those: a drip, a vendor, two newsletters, an autoresponder, and two of our own
- * system addresses — bucketed as LPs who want a call.
- *
- * THE FIX IS NOT A SECOND COPY OF THE FILTER. The repository's whole history is second copies
- * drifting from first ones, so the structural filter moved HERE and both readers import it. A
- * header that marks bulk for the brokerage mailbox marks bulk for the LP mailbox; there is one
- * definition and one place to strengthen it.
- *
- * ─── Three questions, in order, and why each is structural ───────────────────
- *
- *   1. `bulkReason(headers)`   — is this a list, a machine, a bounce or an autoresponder?
- *   2. `ownDomainReason(addr)` — is this one of our own addresses? System mail is never an LP.
- *   3. `replyEvidence(...)`    — is this a REPLY to something we sent? A message that neither
- *                                threads onto our mail (In-Reply-To / References) nor quotes it
- *                                is not a reply, however friendly its wording.
- *
- * Nothing here calls Gmail, reads a file, or sends anything anywhere. Every function is pure over
- * strings and header maps so the tests can feed it synthetic messages and `validate:gmail` can
- * confirm the readers that import it still ask for nothing more than they did.
- */
+/** Existing LP-positive structural screening. Brokerage scan decisions use the worker router. */
 
 /** Our own sending domains. A message FROM any of these is system mail, never a counterparty. */
 export const OUR_DOMAINS = Object.freeze(["westpeek.ventures", "sequoiataylor.com", "joinwestpeek.com"]);

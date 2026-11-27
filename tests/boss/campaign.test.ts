@@ -415,7 +415,7 @@ describe("research first, then guess, and keep guessing", () => {
   const bounceFor = (to: string) => ({
     list: async (q: string) => (q.includes("mailer-daemon") ? [{ id: `bounce-${to}`, threadId: `th-bounce-${to}` }] : []),
     read: async (id: string) => ({ id, threadId: `th-bounce-${to}`, labelIds: [], internalDate: MON_10AM_CT,
-      headers: { from: "Mail Delivery Subsystem <mailer-daemon@googlemail.com>", subject: "Delivery Status Notification (Failure)" }, body: `Final-Recipient: rfc822; ${to}` }),
+      headers: { from: "Mail Delivery Subsystem <mailer-daemon@googlemail.com>", subject: "Delivery Status Notification (Failure)", "x-failed-recipients": to }, body: `Final-Recipient: rfc822; ${to}` }),
   });
   /** Her three, researched (nothing found unless given), every address valid: all live. */
   async function liveCampaign(found: Array<{ name: string; email: string; source_url: string }> = []) {

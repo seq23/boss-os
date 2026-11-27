@@ -160,10 +160,9 @@ jobs:
       - name: The inbox draft never sends
         run: npm run validate:inbox-draft
 
-      # A filter over 104,241 messages whose discard is one number is a filter nobody can audit, and
-      # an unauditable filter loses deals silently. Every message ends in a named bucket, a 100%
-      # discard is a named stop, and a company name entering the filter fails the build.
-      - name: The filter says what it dropped
+      # Brokerage mail is considered only after the full-thread reader decides. Unread mail and
+      # saved candidates keep their own accounting for the next scan and extraction.
+      - name: Brokerage scan accounting
         run: npm run validate:filter-accounts
 
       # A stale block is not live inventory. `transacted` is a durable fact about a PERSON - it is

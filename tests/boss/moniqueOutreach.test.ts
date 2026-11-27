@@ -1,9 +1,9 @@
 import { createExecutionContext, env, waitOnExecutionContext } from "cloudflare:test";
-import { beforeEach, describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import worker from "../../src/worker/boss/index";
 import { apiJson, row } from "./helpers";
 import { dailyCap, pauseReason, refusal, DAY_MS } from "../../src/worker/boss/outreach/brakes";
-import { bouncedAddress, classifyReply } from "../../src/worker/boss/outreach/classify";
+import { bouncedAddress, type ReplyMeaning } from "../../src/worker/boss/outreach/classify";
 import { composeEmail, footerCompany, UMBRELLA_COMPANY, UMBRELLA_CONTACT } from "../../src/worker/boss/outreach/compose";
 import { isSuppressed, suppress, isBusinessEmail } from "../../src/worker/boss/outreach/suppression";
 import {
@@ -92,11 +92,14 @@ function fakeGmail(opts: { sendAs?: string[]; inbound?: Inbound[]; dns?: Record<
       return Response.json({ messages: list.map((m) => ({ id: m.id, threadId: m.threadId })) });
     }
     if (url.includes("format=full")) {
-      const id = /messages\/([^?]+)/.exec(url)?.[1] ?? "";
-      const m = (opts.inbound ?? []).find((x) => x.id === id)!;
-      const headers = [{ name: "From", value: m.from }, { name: "Subject", value: m.subject }, ...Object.entries(m.headers ?? {}).map(([name, value]) => ({ name, value }))];
-      const data = btoa(unescape(encodeURIComponent(m.body))).replace(/\+/g, "-").replace(/\//g, "_");
-      return Response.json({ id: m.id, threadId: m.threadId, internalDate: String(TUESDAY_10AM), payload: { mimeType: "text/plain", headers, body: { data } } });
+      const [, kind, id] = /\/(messages|threads)\/([^?]+)/.exec(url) ?? [];
+      const raw = (m: Inbound) => {
+        const headers = [{ name: "From", value: m.from }, { name: "Subject", value: m.subject }, ...Object.entries(m.headers ?? {}).map(([name, value]) => ({ name, value }))];
+        const data = btoa(unescape(encodeURIComponent(m.body))).replace(/\+/g, "-").replace(/\//g, "_");
+        return { id: m.id, threadId: m.threadId, internalDate: String(TUESDAY_10AM), payload: { mimeType: "text/plain", headers, body: { data } } };
+      };
+      if (kind === "threads") return Response.json({ messages: (opts.inbound ?? []).filter((x) => x.threadId === id).map(raw) });
+      return Response.json(raw((opts.inbound ?? []).find((x) => x.id === id)!));
     }
     // Lists: no public listing and no website in these tests.
     if (url.includes("overpass") || url.includes("interpreter")) return Response.json({ elements: [] });
@@ -104,6 +107,19 @@ function fakeGmail(opts: { sendAs?: string[]; inbound?: Inbound[]; dns?: Record<
   }) as typeof fetch;
   return { fetchImpl, sends };
 }
+
+function modelReplies(replies: Record<string, Partial<ReplyMeaning>> | null) {
+  return vi.spyOn(globalThis, "fetch").mockImplementation(async (url, init) => {
+    expect(String(url)).toContain("generativelanguage.googleapis.com");
+    if (!replies) return new Response("unavailable", { status: 503 });
+    const request = JSON.parse(String(init?.body));
+    const source = JSON.parse(request.contents[0].parts[0].text);
+    const target = source.thread.find((message: { id: string }) => message.id === source.targetMessageId);
+    const meaning = { excerpt: target.body, groupSize: null, asksPrice: false, ...replies[target.id] };
+    return Response.json({ candidates: [{ content: { parts: [{ text: JSON.stringify(meaning) }] } }] });
+  });
+}
+afterEach(() => vi.restoreAllMocks());
 
 const T2R = businessByKey("time2read")!;
 
@@ -141,7 +157,7 @@ async function readyWithAddress(key: string) {
 }
 
 async function tickEnv() {
-  return { ...env, GSC_SERVICE_ACCOUNT_JSON: await fakeServiceAccount() } as any;
+  return { ...env, BOSS_WORKER_GEMINI_FREE_KEY: "fixture", GSC_SERVICE_ACCOUNT_JSON: await fakeServiceAccount() } as any;
 }
 
 describe("the brakes, as pure functions", () => {
@@ -225,32 +241,7 @@ describe("the brakes, as pure functions", () => {
   });
 });
 
-describe("what a reply means", () => {
-  const c = (body: string, subject = "Re: A reading partnership", from = "a@acme.example", headers?: Record<string, string>) =>
-    classifyReply({ from, subject, body, headers });
-
-  it("reads each class", () => {
-    expect(c("Yes, tell me more about the code")).toBe("interested");
-    expect(c("Please remove me from your list")).toBe("unsubscribe");
-    expect(c("Unsubscribe")).toBe("unsubscribe");
-    expect(c("This is spam. How did you get my email?")).toBe("complaint");
-    expect(c("I'm not the right person for this, try our director")).toBe("wrong_person");
-    expect(c("Not right now, maybe next quarter")).toBe("not_now");
-    expect(c("I am out of the office until Monday")).toBe("auto_reply");
-    expect(c("anything", "Re: x", "a@acme.example", { "auto-submitted": "auto-replied" })).toBe("auto_reply");
-    expect(c("The email wasn't delivered", "Delivery Status Notification (Failure)", "mailer-daemon@googlemail.com")).toBe("bounce");
-  });
-
-  it("never reads 'not interested' as interest, and puts stopping before everything", () => {
-    expect(c("Not interested, thanks")).toBe("not_now");
-    expect(c("Yes — please stop emailing us")).toBe("unsubscribe");
-    expect(c("Interested? No. This is spam.")).toBe("complaint");
-  });
-
-  it("reads only the person's own words, not the quoted original", () => {
-    expect(c("Sounds great!\n\nOn Tue, Oct 13, 2026 at 10:00 AM Time2Read wrote:\n> Unsubscribe with one click")).toBe("interested");
-  });
-
+describe("delivery-status fields", () => {
   it("finds the failed address in a bounce", () => {
     expect(bouncedAddress("Final-Recipient: rfc822; gone@acme.example\nAction: failed")).toBe("gone@acme.example");
     expect(bouncedAddress("", { "x-failed-recipients": "Gone@Acme.example" })).toBe("gone@acme.example");
@@ -681,9 +672,10 @@ describe("the tick", () => {
     await addProspect("time2read", "stop@school.example", { state: "in_sequence", step: 1, thread_id: "th-stop", next_due_at: TUESDAY_10AM });
     await addProspect("time2read", "yes@school.example", { state: "in_sequence", step: 1, thread_id: "th-yes", next_due_at: TUESDAY_10AM });
     await env.DB.prepare(`UPDATE outreach_settings SET value = 'on' WHERE key = 'kill_switch'`).run();
+    modelReplies({ r1: { classification: "unsubscribe", replyNeed: "nothing_asked" }, r2: { classification: "interested", replyNeed: "invites", excerpt: "Yes, let’s talk next month." } });
     const g = fakeGmail({ inbound: [
       { id: "r1", threadId: "th-stop", from: "Stop <stop@school.example>", subject: "Re: x", body: "Please take us off your list." },
-      { id: "r2", threadId: "th-yes", from: "Yes <yes@school.example>", subject: "Re: x", body: "Yes, send us the code!" },
+      { id: "r2", threadId: "th-yes", from: "Yes <yes@school.example>", subject: "Re: x", body: "Yes, let’s talk next month.\n> Quote: please stop emailing me." },
     ] });
     const r = await runOutreachTick(await tickEnv(), TUESDAY_10AM, g.fetchImpl);
     expect(r.replies).toBe(2);
@@ -698,10 +690,29 @@ describe("the tick", () => {
     expect(g.sends).toHaveLength(0);
   });
 
+  it("holds sends and keeps the unclassified reply unread until the model recovers", async () => {
+    await readyWithAddress("time2read");
+    await addProspect("time2read", "hold@school.example", { state: "in_sequence", step: 1, thread_id: "th-hold", next_due_at: TUESDAY_10AM });
+    const mail = fakeGmail({ inbound: [
+      { id: "hold-reply", threadId: "th-hold", from: "hold@school.example", subject: "Re: x", body: "Please take us off this list." },
+    ] });
+    const failed = modelReplies(null);
+    const stopped = await runOutreachTick(await tickEnv(), TUESDAY_10AM, mail.fetchImpl);
+    expect(stopped.refused.replies).toMatch(/unavailable/);
+    expect(mail.sends).toHaveLength(0);
+    expect(await row(`SELECT 1 FROM outreach_replies WHERE gmail_message_id = 'hold-reply'`)).toBeNull();
+    failed.mockRestore();
+    modelReplies({ "hold-reply": { classification: "unsubscribe", replyNeed: "nothing_asked" } });
+    await runOutreachTick(await tickEnv(), TUESDAY_10AM + DAY_MS * 8, mail.fetchImpl);
+    expect(await isSuppressed(env.DB, "hold@school.example")).toBe(true);
+    expect(mail.sends.filter(({ to }) => to === "hold@school.example")).toHaveLength(0);
+  });
+
   it("a reply that only passes it on gets no card; one that asks and copies someone new keeps them on Cc (owner, 2 Nov 2026)", async () => {
     await readyWithAddress("time2read");
     await addProspect("time2read", "pass@school.example", { state: "in_sequence", step: 1, thread_id: "th-pass", next_due_at: TUESDAY_10AM });
     await addProspect("time2read", "ask@school.example", { state: "in_sequence", step: 1, thread_id: "th-ask", next_due_at: TUESDAY_10AM });
+    modelReplies({ p1: { classification: "not_now", replyNeed: "pass_along" }, a1: { classification: "interested", replyNeed: "asks" } });
     const g = fakeGmail({ inbound: [
       { id: "p1", threadId: "th-pass", from: "Pat <pass@school.example>", subject: "Re: x", body: "Sounds interesting, I've forwarded this to our reading team. They'll be in touch." },
       { id: "a1", threadId: "th-ask", from: "Ash <ask@school.example>", subject: "Re: x", body: "Yes, interested! Can you send the code? Copying our librarian.",
@@ -727,6 +738,7 @@ describe("the tick", () => {
     await readyWithAddress("time2read");
     await addProspect("time2read", "angry@school.example", { state: "in_sequence", step: 1, thread_id: "th-angry" });
     await env.DB.prepare(`INSERT INTO outreach_sends (id, business_key, prospect_id, to_email, step, is_test, status, sent_at) VALUES ('s1','time2read','opr_time2read_angry@school.example','angry@school.example',0,0,'sent',?)`).bind(TUESDAY_10AM - DAY_MS).run();
+    modelReplies({ c1: { classification: "complaint", replyNeed: "nothing_asked" } });
     const g = fakeGmail({ inbound: [{ id: "c1", threadId: "th-angry", from: "angry@school.example", subject: "Re: x", body: "Stop spamming me, reported." }] });
     await runOutreachTick(await tickEnv(), TUESDAY_10AM, g.fetchImpl);
     const st = await row<any>(`SELECT paused_at, pause_reason FROM outreach_domain_state WHERE business_key = 'time2read'`);
@@ -740,7 +752,7 @@ describe("the tick", () => {
     await readyWithAddress("time2read");
     await addProspect("time2read", "gone@school.example", { state: "in_sequence", step: 1, thread_id: "th-gone" });
     await env.DB.prepare(`INSERT INTO outreach_sends (id, business_key, prospect_id, to_email, step, is_test, status, sent_at) VALUES ('s2','time2read','opr_time2read_gone@school.example','gone@school.example',0,0,'sent',?)`).bind(TUESDAY_10AM - DAY_MS).run();
-    const g = fakeGmail({ inbound: [{ id: "b1", threadId: "th-gone", from: "Mail Delivery Subsystem <mailer-daemon@googlemail.com>", subject: "Delivery Status Notification (Failure)", body: "Final-Recipient: rfc822; gone@school.example" }] });
+    const g = fakeGmail({ inbound: [{ id: "b1", threadId: "th-gone", from: "Mail Delivery Subsystem <mailer-daemon@googlemail.com>", subject: "Delivery Status Notification (Failure)", body: "Final-Recipient: rfc822; gone@school.example", headers: { "X-Failed-Recipients": "gone@school.example" } }] });
     await runOutreachTick(await tickEnv(), TUESDAY_10AM, g.fetchImpl);
     expect(await isSuppressed(env.DB, "gone@school.example")).toBe(true);
     expect((await row<any>(`SELECT status FROM outreach_sends WHERE id = 's2'`)).status).toBe("bounced");
@@ -754,7 +766,7 @@ describe("the tick", () => {
       await addProspect("time2read", `gone${n}@school.example`, { state: "in_sequence", step: 1, thread_id: `th-gone${n}` });
       await env.DB.prepare(`INSERT INTO outreach_sends (id, business_key, prospect_id, to_email, step, is_test, status, sent_at) VALUES (?,'time2read',?,?,0,0,'sent',?)`).bind(`sb${n}`, `opr_time2read_gone${n}@school.example`, `gone${n}@school.example`, TUESDAY_10AM - DAY_MS).run();
     }
-    const g = fakeGmail({ inbound: [1, 2, 3].map((n) => ({ id: `bb${n}`, threadId: `th-gone${n}`, from: "Mail Delivery Subsystem <mailer-daemon@googlemail.com>", subject: "Delivery Status Notification (Failure)", body: `Final-Recipient: rfc822; gone${n}@school.example` })) });
+    const g = fakeGmail({ inbound: [1, 2, 3].map((n) => ({ id: `bb${n}`, threadId: `th-gone${n}`, from: "Mail Delivery Subsystem <mailer-daemon@googlemail.com>", subject: "Delivery Status Notification (Failure)", body: `Final-Recipient: rfc822; gone${n}@school.example`, headers: { "X-Failed-Recipients": `gone${n}@school.example` } })) });
     await runOutreachTick(await tickEnv(), TUESDAY_10AM, g.fetchImpl);
     const st = await row<any>(`SELECT paused_at, pause_reason FROM outreach_domain_state WHERE business_key = 'time2read'`);
     expect(st.paused_at).toBeTruthy();

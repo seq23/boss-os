@@ -584,36 +584,24 @@ match on prose, so the work was turning the mailbox into a ledger with a shape:
 
 That produces no screen and no button, which is exactly why it was ninety per cent of the job.
 
-**Three scripts, and the split between them is the safety story.**
-
-| | |
+| Script | Work |
 |---|---|
-| `interest-ledger.mjs` | Reads the mailbox. **Sends nothing to any model.** Two filter stages, and it reports what it discarded by named reason |
-| `interest-extract.mjs` | Turns candidates into ledger rows through **Haiku**. **Never touches Gmail** |
-| `interest-match.mjs` | Crosses the two sides. Reads only the ledger |
+| `interest-ledger.mjs` | Reads complete brokerage threads on the Mac. The worker router tries free Gemini first and Workers AI second. The model decides which messages add interest. |
+| `interest-extract.mjs` | Turns saved candidates into ledger rows. It does not access Gmail. |
+| `interest-match.mjs` | Crosses the two sides from the ledger. |
 
-**The filter throws away bulk structurally, not by guessing.** `List-Unsubscribe` is a header every
-legitimate marketing sender sets and no person writing to you ever does; the same for `Precedence`,
-`Auto-Submitted`, no-reply senders and out-of-office subjects. Those are facts about a message. Only
-then does it ask for the shape of a trade: a **size** — dollars **or a share count**, because "I
-have 40k shares of X available" is exactly the inbound supply you want and contains no dollars — and
-a **side**.
-
-**There is no list of company names anywhere in it, deliberately.** A fixed list of SpaceX,
-ByteDance and Stripe would raise precision this week and start missing next quarter's name for ever,
-silently. Money plus side vocabulary catches companies nobody typed into a config, and after one
-pass the ledger itself becomes the name source. `validate:filter-accounts` fails the build if a
-company name ever enters the filter's code.
+The scan lists message IDs using the date window, reads each complete thread, and identifies the target
+messages for the model. The model can use quoted context to interpret a short reply. Candidate batches
+remain on disk if extraction fails. Allowance exhaustion or an unread thread holds the scan window
+open for the next run.
 
 **Nobody at Rainmaker is ever the principal, and their name is kept anyway.** A co-broker writing
 "my client wants SpaceX at this mark" is genuine market interest that arrived through a route — so
 their client is the principal and the co-broker goes in `intermediated_by`. In a co-brokered deal
 the route *is* the deal.
 
-**Compliance mail is not classified at all.** The test is never "is this compliance" — it is "does
-this contain an asset, a side and a size". Compliance and internal chatter produce no interest, so
-nothing about them is stored or summarised. Read to decide, keep only what qualifies, discard the
-rest.
+Compliance notices and internal chatter can be read as thread context. The scan saves a candidate only
+when a target adds new, renewed, relayed or accepted buy or sell interest.
 
 **The matching inverts the filter's bias.** The filter is generous because a dropped message is a
 deal you never learn you missed. The matcher is strict because **one bad call outweighs ten missed
@@ -736,7 +724,7 @@ npm run canon:sync                # store the docs/boss/ documents in the vault,
 npm run kdp:check                 # run Simone's KDP watch now, instead of waiting for Mon/Wed/Fri
 npm run mailbox:sweep             # run Monique's mailbox sweep now, instead of waiting for Sunday
 npm run capital:scan -- --backfill    # read the whole spry.vc history into candidate messages
-npm run capital:scan                  # ...or only what has arrived since the last scan
+npm run capital:scan                  # resume the open window or start from the last completed scan
 npm run capital:extract               # candidates into the interest ledger (Haiku, on this Mac)
 npm run capital:review                # 25 rows with the sentence behind each — the acceptance test
 npm run capital:review -- --wrong <id>   # that row was wrong: struck everywhere, and counted
@@ -768,7 +756,7 @@ These exist because each of them caught something real.
 |---|---|
 | `validate:reachable` | Is every built thing reachable from her day? |
 | `validate:no-spry-sender` | Can anything in here send mail *as* the brokerage mailbox? It must never be able to |
-| `validate:filter-accounts` | Does the mailbox filter say what it threw away, and has a company name crept into it? |
+| `validate:filter-accounts` | Do brokerage scan counts balance and does the scan preserve candidate batches? |
 | `validate:classification` | Does every Boss table have a residency, and every policy row a table? |
 | `validate:gmail` | Does every Gmail caller still request only headers — and is the one content exception still narrow? |
 | `validate:duty-delivery` | Does every duty's output have a handler, a table, and a way to her? For a **local job**, does a route write the table and does a script actually POST to it? |

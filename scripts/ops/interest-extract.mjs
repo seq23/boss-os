@@ -3,12 +3,10 @@
  *
  * ─── Why this is a separate script from the one that reads the mail ─────────
  *
- * `interest-ledger.mjs` calls Gmail and sends nothing to any model. THIS FILE CALLS A MODEL AND
- * NEVER TOUCHES GMAIL. That split is not tidiness: it is what lets the Gmail-side script carry the
- * same invariant every other named content exception in `validate:gmail` carries, so widening the
- * class of thing this repository may do to her mailbox stays a deliberate act rather than a side
- * effect of adding a feature. `validate:gmail` asserts both halves — that one never gains a model
- * call, and that the other never gains a Gmail call.
+ * `interest-ledger.mjs` lists Gmail mail on the Mac and uses the shared free-model reader to find
+ * candidate interests in complete threads. This extractor reads the saved candidate files.
+ * `validate:gmail` pins the scan to read-only mail access and `validate:filter-accounts` keeps
+ * Gmail out of the extractor.
  *
  * ─── THE MODEL IS NAMED, AND IT IS THE CHEAP ONE ───────────────────────────
  *

@@ -1,84 +1,17 @@
-/**
- * THE INTEREST LEDGER — the market that is already in her mailbox, made structured.
+/** Read brokerage mail on the Mac, classify complete threads, and keep candidates for extraction.
  *
- * ─── What this is for ───────────────────────────────────────────────────────
- *
- * She brokers late-stage private secondaries at Rainmaker Securities. Supply and demand both arrive
- * in `staylor@spry.vc` and nothing connects them: somebody wanted SpaceX in March, somebody is
- * selling it this week, and the two facts sit four hundred messages apart in a mailbox of 104,241.
- *
- * THE MONITORING IS INCIDENTAL. THE MATCHING IS THE PRODUCT. And you cannot match on prose, so what
- * this produces is a structured ledger — principal, side, asset, size, date, confidence, the
- * co-broker who surfaced it, and the message it came from. Once that exists the matching is
- * arithmetic. Until it exists there is no product at all.
- *
- * ─── THIS FILE READS. IT DOES NOT DECIDE. ───────────────────────────────────
- *
- * The split between this script and `interest-extract.mjs` is deliberate and is the reason this one
- * can carry the same invariants its neighbours in `validate:gmail` carry. THIS FILE SENDS NOTHING TO
- * ANY MODEL. It reads the mailbox, applies a structural filter and a shape filter, and writes the
- * survivors to candidate batches on her Mac. `interest-extract.mjs` reads those batches and never
- * touches Gmail. Neither half can become the other, and each is checked for it.
- *
- * ─── The filter: two stages, and the order matters ──────────────────────────
- *
- * STAGE 1 THROWS AWAY BULK STRUCTURALLY, not by guessing at wording. The most reliable marker of a
- * marketing send is a HEADER: every legitimate bulk sender sets `List-Unsubscribe`, and a person
- * writing to her does not. Same for `List-Id`, `Precedence: bulk`, `Auto-Submitted`, no-reply
- * senders and out-of-office subjects. These are facts about the message, not judgements about it,
- * and they are read from headers alone — this stage never asks for a body. The function itself
- * is `bulkReason` in `mail-bulk.mjs`, shared with the LP reader (5 Oct 2026); it is re-exported here.
- *
- * STAGE 2 REQUIRES THE SHAPE OF A TRADE: a SIZE and a SIDE.
- *   · SIZE is a dollar figure OR A SHARE COUNT. The share count is not an embellishment — "I have
- *     40k shares of X available" is exactly the inbound supply she wants and contains no dollars.
- *   · SIDE is the vocabulary of a secondary: buy, sell, shares, stock, secondary, block, allocation,
- *     tender, bid, ask.
- *
- * THERE IS NO LIST OF COMPANY NAMES ANYWHERE IN THIS FILE, and that is a design decision rather than
- * an omission. SpaceX, ByteDance, Stripe, Anthropic — a fixed list is guaranteed to miss next
- * quarter's name, and a missed name is a SILENT miss, which is the failure mode that has cost this
- * owner most. Money-plus-side-words catches companies nobody typed into a config. After one pass the
- * ledger itself becomes the name source, which sharpens later runs without the filter ever having
- * depended on it.
- *
- * ─── FILTER LOOSE, CLASSIFY TIGHT ──────────────────────────────────────────
- *
- * The pre-filter is nearly free, so borderline messages are let through and the model decides. A
- * regex tuned for precision silently drops real deals — that is exactly how a mailbox containing
- * "Happy to connect in the coming weeks" once reported zero positive replies. So the shape test is
- * generous, and the accounting below is what makes that safe: every message is accounted for by a
- * NAMED REASON, and the counts are printed.
- *
- * RULE 0, AND ITS SHARPEST EDGE. A discard rate near 100% is a bug wearing the costume of
- * efficiency. If this examines a mailbox with messages in it and keeps nothing, it exits non-zero
- * and says so, rather than reporting a clean sweep of an empty result.
- *
- * ─── What it writes, and where ─────────────────────────────────────────────
- *
- * `~/.boss-os/capital/` on her Mac. NOTHING GOES TO THE CLOUD. This is live transaction data at a
- * FINRA-registered broker-dealer and it is materially more sensitive than anything else in this
- * system: named counterparties, assets and sizes never reach the Boss OS database, not code-named
- * and not counted. The sync endpoint refuses any payload containing an `@` and that guard is not
- * bent here — it is simply not in this path.
- *
- * ─── NEVER SEND FROM spry.vc ───────────────────────────────────────────────
- *
- * Her instruction: "monique can read spry.vc she just cant send from it". No send scope was ever
- * granted and spry.vc is not verified in either Resend account, so it is already true by
- * construction — and `validate:no-spry-sender` fails the build if it ever stops being, because a
- * rule that lives only in someone's memory is a rule with a six-month expiry.
- *
- *   npm run capital:scan                     # incremental — since the last scan
- *   npm run capital:scan -- --backfill       # the whole history, however far back
- *   npm run capital:scan -- --since 2025/01/01
+ * npm run capital:scan                    # resume the current window, or start after the last one
+ * npm run capital:scan -- --backfill      # start with the whole mailbox history
+ * npm run capital:scan -- --since 2026/10/01
  */
-
 import crypto from "node:crypto";
 import fs from "node:fs";
 import path from "node:path";
 import os from "node:os";
-import { bulkReason } from "./mail-bulk.mjs";
+import { gmailPayloadText } from "../../src/shared/boss/mail/gmailPayload.mjs";
+import { CENTRAL, instantAt } from "../../src/shared/boss/schedule/clock.mjs";
+import { readWorkerSource } from "../../src/worker/boss/router/freeModel.ts";
+import { readJsonObject } from "../../src/worker/boss/router/types.ts";
 
 /**
  * THE MAILBOX IS A NAMED CONSTANT AND IT IS PUT IN THE JWT's `sub` CLAIM, so it cannot silently
@@ -90,9 +23,6 @@ const MAILBOX = process.env.BROKERAGE_MAILBOX ?? "staylor@spry.vc";
 const SCOPE = "https://www.googleapis.com/auth/gmail.readonly";
 
 const DIR = process.env.BOSS_OS_CAPITAL_DIR ?? path.join(os.homedir(), ".boss-os", "capital");
-const BATCH_DIR = path.join(DIR, "candidates");
-const SCAN_FILE = path.join(DIR, "scan.json");
-const STATE_FILE = path.join(DIR, "scan-state.json");
 
 const ARGS = process.argv.slice(2);
 const argOf = (n) => { const i = ARGS.indexOf(`--${n}`); return i === -1 ? null : (ARGS[i + 1] ?? null); };
@@ -103,15 +33,8 @@ const SENDERS_BACKFILL = ARGS.includes("--senders");
 const RRLIST = (process.env.RRLIST_ADDRESS ?? "rrlist@rainmakersecurities.com").toLowerCase();
 const SINCE = argOf("since");
 const CONCURRENCY = Number(process.env.CAPITAL_CONCURRENCY ?? 8);
-const MAX_FETCH = Number(process.env.CAPITAL_MAX_FETCH ?? 200_000);
-const BATCH_SIZE = Number(process.env.CAPITAL_BATCH_SIZE ?? 12);
-
-/** How much of one message is ever held in memory. A pitch deck must not be read whole. */
-const BODY_BOUND = 200_000;
-/** How much of one message is ever written to a candidate batch. */
-const EXCERPT_BOUND = 6_000;
-
-// ─── Google, impersonating the named mailbox ─────────────────────────────────
+const EXCERPT_BOUND = 6_000; // Existing extractors read this field; the complete thread is also saved.
+const GMAIL = "https://gmail.googleapis.com/gmail/v1/users/me";
 
 const b64url = (b) => Buffer.from(b).toString("base64").replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
 
@@ -131,100 +54,13 @@ async function accessToken(creds) {
       assertion: `${header}.${claims}.${b64url(signer.sign(creds.private_key))}`,
     }),
   });
-  if (!res.ok) throw new Error(`token exchange failed (${res.status}): ${(await res.text()).slice(0, 300)}`);
+  if (!res.ok) throw new Error(`token exchange failed (${res.status})`);
   return (await res.json()).access_token;
 }
 
-// ─── The two stages, as pure functions so the validator's self-test can reach them ───
-
-/**
- * STAGE 1 — structural bulk — LIVES IN `mail-bulk.mjs` AND IS SHARED WITH `lp-positive.mjs`.
- *
- * It was defined here first. On 5 October 2026 the LP reader was found bucketing a Google Cloud
- * sales drip and two newsletters as LPs who want a call, because it had no structural filter at
- * all. The fix moved this function out rather than copying it: one definition, two readers, and
- * one place to strengthen it. Re-exported so nothing that imports it from here changes.
- */
-export { bulkReason };
-
-/**
- * SIZE — a dollar figure OR a share count.
- *
- * The share count is half of this test, not a nicety. "I have 40k shares of X available" is inbound
- * supply with no dollars in it anywhere, and a money-only filter loses every one of them.
- */
-export const SIZE_RE = new RegExp(
-  [
-    // $250M, $2.5bn, $1,200,000, USD 40m
-    String.raw`(?:\$|\busd\b|\beur\b|\bgbp\b)\s?\d[\d,]*(?:\.\d+)?\s?(?:k|m|mm|bn|b|million|billion|thousand)?`,
-    // 40k shares, 500,000 shares, 1.2m shares, 12,000 sh
-    String.raw`\b\d[\d,]*(?:\.\d+)?\s?(?:k|m|mm|bn|b|million|billion|thousand)?\s*(?:shares?|sh\b|units?)`,
-    // "up to 2bn of", "$250m block" written as "250mm of"
-    String.raw`\b\d[\d,]*(?:\.\d+)?\s?(?:mm|bn|million|billion)\b`,
-  ].join("|"),
-  "i",
+const headerMap = (msg) => Object.fromEntries(
+  (msg?.payload?.headers ?? []).map(({ name, value }) => [name.toLowerCase(), value ?? ""]),
 );
-
-/** SIDE — the vocabulary of a secondary. Not company names: those are what we are trying to learn. */
-export const SIDE_RE =
-  /\b(buy(?:er|ers|ing|side)?|sell(?:er|ers|ing|side)?|shares?|stock|secondar(?:y|ies)|block|allocation|alloc\b|tender|bid|ask|offer|indication of interest|\bIOI\b|SPV|forward(?: contract)?|cap table|common|preferred|mandate|inventory|available|supply|demand)\b/i;
-
-/**
- * STAGE 2 — the shape of a trade. Returns a named reason for a drop, or null to keep.
- *
- * DELIBERATELY GENEROUS. A borderline message costs a fraction of a cent at the model; a dropped one
- * costs a deal she never learns she missed. Precision is the matcher's job, not the filter's.
- */
-export function shapeReason(text) {
-  const t = text.slice(0, 20_000);
-  const hasSize = SIZE_RE.test(t);
-  const hasSide = SIDE_RE.test(t);
-  if (!hasSize && !hasSide) return "shape_no_size_no_side";
-  if (!hasSize) return "shape_no_size";
-  if (!hasSide) return "shape_no_side";
-  return null;
-}
-
-// ─── Reading a message ───────────────────────────────────────────────────────
-
-const headerMap = (msg) => {
-  const out = {};
-  for (const h of msg?.payload?.headers ?? []) out[h.name.toLowerCase()] = h.value ?? "";
-  return out;
-};
-
-/** The readable text of a MIME tree, preferring text/plain, honouring the part's own encoding. */
-export function textOf(payload, depth = 0) {
-  if (!payload || depth > 8) return "";
-  const mime = payload.mimeType ?? "";
-  if (payload.body?.data && /^text\/(plain|html)/.test(mime)) {
-    const raw = Buffer.from(payload.body.data.replace(/-/g, "+").replace(/_/g, "/"), "base64")
-      .toString("utf8").slice(0, BODY_BOUND);
-    return mime.includes("html")
-      ? raw.replace(/<style[\s\S]*?<\/style>/gi, " ").replace(/<script[\s\S]*?<\/script>/gi, " ")
-          .replace(/<[^>]+>/g, " ").replace(/&nbsp;/g, " ").replace(/&amp;/g, "&")
-      : raw;
-  }
-  const parts = payload.parts ?? [];
-  const plain = parts.filter((p) => (p.mimeType ?? "").startsWith("text/plain"));
-  const chosen = plain.length ? plain : parts;
-  return chosen.map((p) => textOf(p, depth + 1)).join("\n").slice(0, BODY_BOUND);
-}
-
-/**
- * Her own quoted mail, removed before the shape test.
- *
- * Every reply carries her previous message underneath it. A thread where she once wrote "$250m of
- * SpaceX" would then match the shape test for ever, on every reply, including "thanks" — and the
- * ledger would fill with interests nobody expressed.
- */
-export function withoutQuoted(text) {
-  return text
-    .split(/\r?\n/).filter((l) => !/^\s*>/.test(l)).join("\n")
-    .split(/^\s*(on .{0,120}wrote:|-+\s*original message\s*-+|from:\s.*sent:\s)/im)[0]
-    .replace(/[ \t]+/g, " ")
-    .trim();
-}
 
 const addressIn = (raw) => (String(raw).match(/[\w.+'-]+@[\w.-]+\.\w+/) ?? [""])[0].toLowerCase();
 
@@ -242,40 +78,7 @@ async function pooled(items, limit, worker) {
   await Promise.all(runners);
 }
 
-/**
- * ─── 403 IS A RATE LIMIT HERE, AND TREATING IT AS A REFUSAL LOST 57% OF THE MAILBOX ────
- *
- * The first full backfill reported 4,432 candidates out of 104,240 and a tidy 95.75% discard. It was
- * not a filter result. `header_fetch_failed: 43,323` and `body_fetch_failed: 16,128` — FIFTY-NINE
- * THOUSAND MESSAGES WERE NEVER READ AT ALL, because Gmail signals a per-user rate limit as **403
- * `userRateLimitExceeded`**, not 429, and this gave up on any 403 immediately.
- *
- * Nothing crashed and nothing looked wrong. The only reason it was visible is that every message had
- * to end in a NAMED bucket, so "we could not read it" could not hide inside "we decided against it".
- * That is the entire argument for the itemised discard.
- *
- * So: 403 and 429 both back off, the backoff is long enough for a real rate limit rather than a
- * blip, and the two failure kinds are counted apart from the decisions — a message that was never
- * read is not a message that was filtered, and the run refuses to finish if too many were lost.
- */
-/**
- * ─── THE TOKEN EXPIRES AFTER AN HOUR AND THIS RUN TAKES LONGER THAN THAT ────
- *
- * The second honest full run lost 10,483 bodies and RECLAIMED ZERO of them on a slow retry. A
- * transient rate limit does not behave like that — a slow retry an hour later recovers nearly all of
- * it. Something permanent had happened, and it had: the service-account JWT is minted with
- * `exp: now + 3600`, the header pass alone takes about fifty minutes, and the body pass runs after
- * it. THE CREDENTIAL DIED MID-RUN. Google answers 401, which this treated as a refusal and gave up
- * on instantly, and the failures were then reported as if the messages had been considered.
- *
- * The 403 backoff added earlier was a real fix for a real problem and it was not this problem. Both
- * are handled now, apart, because they are different facts: 403 is "slow down", 401 is "you are no
- * longer who you were".
- *
- * So the token is a LIVING THING rather than a value captured at the start — re-minted before it can
- * expire, and re-minted immediately on a 401 rather than after a wait, because waiting does not make
- * a dead credential alive.
- */
+// Gmail mails can take more than an hour to read. Refresh expired credentials and retry throttles.
 let CREDS = null;
 let TOKEN = { value: null, mintedAt: 0 };
 /** Well inside Google's hour, so a long body pass never straddles the expiry. */
@@ -288,7 +91,7 @@ async function liveToken(force = false) {
   return TOKEN.value;
 }
 
-async function api(url, _unused, tries = 8) {
+async function api(url, tries = 8) {
   for (let i = 0; i < tries; i += 1) {
     const r = await fetch(url, { headers: { authorization: `Bearer ${await liveToken()}` } });
     if (r.ok) return r.json();
@@ -306,36 +109,170 @@ async function api(url, _unused, tries = 8) {
   return null;
 }
 
-async function listIds(token, q, cap) {
-  const ids = [];
-  let page;
-  do {
-    const j = await api(
-      `https://gmail.googleapis.com/gmail/v1/users/me/messages?maxResults=500&q=${encodeURIComponent(q)}`
-      + (page ? `&pageToken=${page}` : ""), token);
-    if (!j) break;
-    for (const m of j.messages ?? []) ids.push(m.id);
-    page = j.nextPageToken;
-  } while (page && ids.length < cap);
-  return ids;
+function readState(file) {
+  try { return JSON.parse(fs.readFileSync(file, "utf8")); }
+  catch (error) { if (error.code === "ENOENT") return {}; throw error; }
 }
 
-// ─── The run ─────────────────────────────────────────────────────────────────
+function writeJson(file, data) {
+  const tmp = `${file}.${crypto.randomUUID()}.tmp`;
+  fs.writeFileSync(tmp, JSON.stringify(data), { mode: 0o600, flag: "wx" });
+  fs.renameSync(tmp, file);
+}
 
-/**
- * The Gmail-side half of stage 2, run in Gmail's own index so that 104,241 messages do not have to
- * be fetched to discover that most of them are not about a trade.
- *
- * IT IS THE LOOSE HALF ON PURPOSE — side vocabulary only, no company names, no money (Gmail's index
- * does not tokenise `$`). The tight half runs locally over the body, where a share count is legible.
- * The count it discards is reported as its own named reason, because a filter whose largest drop is
- * invisible is a filter nobody can audit.
- */
-const GMAIL_SHAPE =
-  '{secondary secondaries block allocation tender bid ask shares stock SPV "cap table" indication buyer seller buying selling mandate}';
+function sinceInstant(date) {
+  const [year, month, day] = date.split(/[-/]/).map(Number);
+  const utc = new Date(Date.UTC(year, month - 1, day));
+  if (!/^\d{4}[-/]\d{2}[-/]\d{2}$/.test(date) || utc.getUTCMonth() + 1 !== month || utc.getUTCDate() !== day) {
+    throw new Error("Pass --since YYYY/MM/DD");
+  }
+  return instantAt(CENTRAL, year, month, day);
+}
 
-function loadState() {
-  try { return JSON.parse(fs.readFileSync(STATE_FILE, "utf8")); } catch { return {}; }
+async function listThreadTargets(api, query) {
+  const threads = new Map();
+  let page;
+  do {
+    const params = new URLSearchParams({ q: query, maxResults: "500" });
+    if (page) params.set("pageToken", page);
+    const result = await api(`${GMAIL}/messages?${params}`);
+    if (!result) throw new Error("Gmail listing was incomplete");
+    for (const message of result.messages ?? []) {
+      if (!message.threadId || !message.id) throw new Error("Gmail omitted a message identifier");
+      if (!threads.has(message.threadId)) threads.set(message.threadId, new Set());
+      threads.get(message.threadId).add(message.id);
+    }
+    page = result.nextPageToken;
+  } while (page);
+  return [...threads].reverse().map(([thread, ids]) => [thread, [...ids]]);
+}
+
+const INSTRUCTION = `Read this brokerage thread. Give one decision per target message ID. Prior messages
+and quoted or forwarded text can identify the company and terms a target is responding to. Classify
+what the target itself adds. Only classify "candidate" for a new, renewed, relayed or accepted buy
+or sell interest in a private company, including short replies whose meaning comes from the thread.
+Look for interest even without a stated size or standard terminology. Bulk headers and sender
+identities do not disqualify it. Be careful with quoted text: a thank-you that merely repeats an old
+interest is not a fresh interest. Use "other" for a clear non-match and "uncertain" when you cannot
+decide. Return JSON mapping each target ID to candidate, other or uncertain, with no extra keys.`;
+
+function decisionsOf(text, ids) {
+  const decisions = readJsonObject(text);
+  if (!decisions || Object.keys(decisions).length !== ids.length) return null;
+  return ids.every((id) => ["candidate", "other"].includes(decisions[id])) ? decisions : null;
+}
+
+export async function scanBrokerage({ directory, mailbox, api, read, now = Date.now(), since, backfill }) {
+  const batchDir = path.join(directory, "candidates");
+  const stateFile = path.join(directory, "scan-state.json");
+  const scanFile = path.join(directory, "scan.json");
+  fs.mkdirSync(batchDir, { recursive: true, mode: 0o700 });
+  const state = readState(stateFile);
+  const start = since ? sinceInstant(since)
+    : backfill ? 0 : state.last_scanned_at ?? (state.last_scanned_date ? sinceInstant(state.last_scanned_date) : 0);
+  // Keep both ends fixed even when the next attempt runs on another day. Record completed message
+  // IDs inside that window, so a quota stop doesn't make tomorrow reread today's completed work.
+  const active = state.active ?? { start, end: Math.floor(now / 1000) * 1000, manual: Boolean(since || backfill), completed: {} };
+  if (active.start > active.end) throw new Error("The scan begins after its end");
+  if (!state.active) writeJson(stateFile, { ...state, active });
+  const query = `in:anywhere -in:drafts -in:chats after:${Math.max(0, active.start / 1000 - 1)} before:${active.end / 1000}`;
+  if (!active.targets) {
+    active.targets = await listThreadTargets(api, query);
+    writeJson(stateFile, { ...state, active });
+  }
+  const threads = active.targets;
+  const completed = new Map(Object.entries(active.completed));
+  let census = 0;
+  for (const [, ids] of threads) census += ids.length;
+  let kept = 0;
+  let dropped = 0;
+  let status = "complete";
+  for (const [threadId, ids] of threads) {
+    const remaining = ids.filter((id) => !completed.has(id));
+    if (remaining.length) {
+      const raw = await api(`${GMAIL}/threads/${encodeURIComponent(threadId)}?format=full`);
+      if (!Array.isArray(raw?.messages) || remaining.some((id) => !raw.messages.some((message) => message.id === id))) {
+        throw new Error("Gmail thread did not include every listed target");
+      }
+      const thread = [];
+      for (const message of raw.messages) {
+        if (!message.payload) throw new Error("Gmail omitted a message payload");
+        const body = await gmailPayloadText(message.payload, async (attachmentId) => {
+          const attachment = await api(`${GMAIL}/messages/${encodeURIComponent(message.id)}/attachments/${encodeURIComponent(attachmentId)}`);
+          if (!attachment?.data) throw new Error("Gmail omitted a readable MIME part");
+          return attachment.data;
+        });
+        thread.push({ id: message.id, at: Number(message.internalDate), headers: headerMap(message), body });
+      }
+      if (thread.some((message) => !message.id || !Number.isFinite(message.at))) throw new Error("Gmail omitted a thread message ID or date");
+      const targets = remaining.filter((id) => {
+        const { at } = thread.find((message) => message.id === id);
+        return at >= active.start && at < active.end;
+      });
+      if (targets.length) {
+        const result = await read({
+          worker: "monique",
+          instruction: INSTRUCTION,
+          source: JSON.stringify({ targetMessageIds: targets, thread }),
+          maxOutputTokens: 4096,
+          json: {
+            name: "deal_mail_decisions",
+            schema: {
+              type: "object",
+              properties: Object.fromEntries(targets.map((id) => [id, { type: "string", enum: ["candidate", "other", "uncertain"] }])),
+              required: targets,
+            },
+          },
+          accept: (text) => Boolean(decisionsOf(text, targets)),
+        });
+        const decisions = result.status === "ok" ? decisionsOf(result.text, targets) : null;
+        if (!decisions) {
+          status = result.status === "allowance-exhausted" ? result.status : "unavailable";
+          break;
+        }
+        const batch = thread.filter((message) => decisions[message.id] === "candidate").map((message) => {
+          const { from: author, to, cc, subject } = message.headers;
+          const from = addressIn(author);
+          return {
+            source_message: message.id,
+            date: new Date(message.at).toISOString().slice(0, 10),
+            from,
+            from_name: (String(author).match(/^\s*"?([^"<]{2,60}?)"?\s*</) ?? ["", ""])[1].trim(),
+            to: String(to ?? "").split(",").map(addressIn).filter(Boolean),
+            cc: String(cc ?? "").split(",").map(addressIn).filter(Boolean),
+            outbound: from === mailbox.toLowerCase(),
+            subject: subject ?? "",
+            excerpt: message.body.slice(0, EXCERPT_BOUND),
+            thread,
+          };
+        });
+        if (batch.length) {
+          const key = crypto.createHash("sha256").update(JSON.stringify(batch.map((message) => message.source_message).sort())).digest("hex");
+          const file = path.join(batchDir, `thread-${key}.json`);
+          if (!fs.existsSync(file)) writeJson(file, batch);
+        }
+        for (const id of targets) completed.set(id, decisions[id]);
+      }
+      for (const id of remaining) if (!completed.has(id)) completed.set(id, "outside_window");
+      active.completed = Object.fromEntries(completed);
+      writeJson(stateFile, { ...state, active });
+    }
+    for (const id of ids) {
+      if (completed.get(id) === "candidate") kept += 1;
+      else dropped += 1;
+    }
+  }
+  const report = {
+    status, scanned_at: new Date(now).toISOString(), window: { start: active.start, end: active.end },
+    census, kept, dropped, never_read: census - kept - dropped,
+    drops: { no_new_interest_or_outside_window: dropped },
+  };
+  writeJson(scanFile, report);
+  if (status === "complete") {
+    writeJson(stateFile, { last_scanned_at: active.manual && (state.last_scanned_at ?? state.last_scanned_date)
+      ? (state.last_scanned_at ?? sinceInstant(state.last_scanned_date)) : active.end });
+  }
+  return report;
 }
 
 /**
@@ -376,202 +313,22 @@ async function main() {
     process.exit(4);
   }
   CREDS = JSON.parse(raw);
-  const token = await liveToken();
   if (SENDERS_BACKFILL) { await backfillSenders(); return; }
-
-  const state = loadState();
-  const since = SINCE ?? (BACKFILL ? null : state.last_scanned_date ?? null);
-  const window = since ? `after:${since}` : "";
-  const scope = `in:anywhere -in:chats -in:drafts ${window}`.trim();
-
-  console.log(`Mailbox ${MAILBOX} — ${since ? `since ${since}` : "the whole history"}.`);
-
-  // ─── Stage 0: the census. Everything the window contains, before any judgement. ───
-  const census = (await listIds(token, scope, MAX_FETCH)).length;
-  if (census === 0) {
-    console.error(`NAMED STOP [EMPTY_CENSUS] "${scope}" returned no messages at all.`);
-    console.error("  A mailbox of 104,241 messages does not become empty. This is a broken read —");
-    console.error("  a revoked delegation, a changed address, or a malformed query — not a quiet week.");
-    process.exit(6);
-  }
-
-  // ─── Stage A: side vocabulary, in Gmail's index ───
-  /*
-   * PLUS EVERYTHING ADDRESSED TO RRLIST@, whatever its words. Her own posts there ("Applied Intuition
-   * supply") are her supply and demand and may carry none of the vocabulary below; the shape test in
-   * stage 2 still applies to them. A union, so nothing is counted twice.
-   */
-  const vocab = await listIds(token, `${scope} ${GMAIL_SHAPE}`, MAX_FETCH);
-  const rrlist = await listIds(token, `${scope} {to:${RRLIST} cc:${RRLIST}}`, MAX_FETCH);
-  const candidateIds = [...new Set([...vocab, ...rrlist])];
-  const drops = { gmail_no_trade_vocabulary: census - candidateIds.length };
-  /*
-   * COUNTED APART FROM THE DECISIONS, because they are a different fact. A drop is "this message was
-   * read and it is not a trade". An unread is "this message was never seen", and folding the second
-   * into the first is how 59,451 lost messages once looked like an efficient filter.
-   */
-  const unread = {};
-  console.log(`census ${census}  →  ${candidateIds.length} carry secondary-market vocabulary`);
-
-  // ─── Stage 1: structural bulk, from HEADERS ONLY. This pass never asks for a body. ───
-  const survivors = [];
-  let headerFailures = 0;
-  const HDRS = ["From", "To", "Cc", "Date", "Subject", "List-Unsubscribe", "List-Id",
-                "Precedence", "Auto-Submitted", "X-Autoreply", "X-Autorespond", "Message-Id"];
-  const metaUrl = (id) =>
-    `https://gmail.googleapis.com/gmail/v1/users/me/messages/${id}?format=metadata&`
-    + HDRS.map((h) => `metadataHeaders=${h}`).join("&");
-
-  let seen = 0;
-  await pooled(candidateIds, CONCURRENCY, async (id) => {
-    const msg = await api(metaUrl(id), token);
-    seen += 1;
-    if (seen % 2000 === 0) process.stdout.write(`  headers ${seen}/${candidateIds.length}\r`);
-    if (!msg) { headerFailures += 1; return; }
-    const h = headerMap(msg);
-    const reason = bulkReason(h);
-    if (reason) { drops[reason] = (drops[reason] ?? 0) + 1; return; }
-    survivors.push({ id, h, ts: Number(msg.internalDate ?? 0) });
+  const result = await scanBrokerage({
+    directory: DIR, mailbox: MAILBOX, api,
+    read: (input) => readWorkerSource(input, process.env),
+    since: SINCE, backfill: BACKFILL,
   });
-  if (headerFailures) unread.header_fetch_failed = headerFailures;
-  console.log(`\nstage 1 (headers only, structural): ${survivors.length} of ${candidateIds.length} are not bulk`);
-
-  // ─── Stage 2: the shape of a trade, over the decoded body ───
-  const kept = [];
-  const missed = [];
-  let done = 0;
-  const readOne = async (s) => {
-    const msg = await api(`https://gmail.googleapis.com/gmail/v1/users/me/messages/${s.id}?format=full`, token);
-    done += 1;
-    if (done % 1000 === 0) process.stdout.write(`  bodies ${done}/${survivors.length}\r`);
-    if (!msg) { missed.push(s); return; }
-    const body = withoutQuoted(textOf(msg.payload));
-    const subject = s.h.subject ?? "";
-    const reason = shapeReason(`${subject}\n${body}`);
-    if (reason) { drops[reason] = (drops[reason] ?? 0) + 1; return; }
-    const from = addressIn(s.h.from);
-    kept.push({
-      // The Gmail id is the source of record. It says nothing to anyone who cannot already read the
-      // mailbox, and it lets her open the real thread on this machine in one click.
-      source_message: s.id,
-      date: new Date(s.ts || Date.now()).toISOString().slice(0, 10),
-      from,
-      from_name: (String(s.h.from).match(/^\s*"?([^"<]{2,60}?)"?\s*</) ?? ["", ""])[1].trim(),
-      to: String(s.h.to ?? "").split(",").map(addressIn).filter(Boolean).slice(0, 8),
-      cc: String(s.h.cc ?? "").split(",").map(addressIn).filter(Boolean).slice(0, 8),
-      outbound: from === MAILBOX.toLowerCase(),
-      subject: subject.slice(0, 200),
-      excerpt: body.slice(0, EXCERPT_BOUND),
-    });
-  };
-  await pooled(survivors, CONCURRENCY, readOne);
-
-  /*
-   * ─── THE RECLAIM PASS, AND WHY IT IS NOT JUST A LONGER RETRY ────────────
-   *
-   * The first honest full run read 59,079 of 64,503 bodies and refused to finish, because 5.2% of
-   * the mailbox had never been read and that is not a filter result. The failures were not permanent
-   * — they were a per-user rate limit during the busiest stretch of the run, and Gmail signals that
-   * as a 403.
-   *
-   * Telling her to lower the concurrency and re-scan 104,241 messages to recover 5% of them is the
-   * wrong answer: it costs fifty minutes to fix five. So the misses are collected and read again at
-   * a crawl once the burst is over, and only what fails THAT is counted as never read. The 1% stop
-   * below still stands and is what makes this a repair rather than a way of hiding the problem.
-   */
-  if (missed.length) {
-    console.log(`\nreclaiming ${missed.length} message(s) that hit a rate limit, slowly`);
-    const retry = missed.splice(0, missed.length);
-    let n = 0;
-    await pooled(retry, 2, async (s) => {
-      await readOne(s);
-      n += 1;
-      if (n % 500 === 0) process.stdout.write(`  reclaim ${n}/${retry.length}\r`);
-    });
-    /*
-     * COUNTED FROM WHAT `missed` HOLDS AFTERWARDS, not from arithmetic inside the loop. The first
-     * version compared the array length before and after each call while two workers pushed to it
-     * concurrently, which is a race that reports a number nobody computed.
-     */
-    console.log(`  reclaimed ${retry.length - missed.length} of ${retry.length}`);
-    if (missed.length) unread.body_fetch_failed = missed.length;
+  console.log(`OUTPUT ${result.kept + result.dropped} brokerage messages assessed`);
+  console.log(`CAPITAL-SCAN ${result.status}: ${result.kept} candidate(s), ${result.dropped} other, ${result.never_read} unread of ${result.census}.`);
+  if (result.status !== "complete") {
+    console.error(result.status === "allowance-exhausted"
+      ? "NAMED STOP [FREE_ALLOWANCE_EXHAUSTED] The open window will resume on the next scan."
+      : "NAMED STOP [CAPITAL_SCAN_UNREAD] The open window will resume on the next scan.");
+    process.exitCode = 10;
   }
-
-  // ─── The accounting. Every message ends in exactly one named bucket. ───
-  const dropped = Object.values(drops).reduce((a, b) => a + b, 0);
-  const neverRead = Object.values(unread).reduce((a, b) => a + b, 0);
-  const pct = ((dropped / census) * 100).toFixed(2);
-  console.log(`\nstage 2 (size AND side, over the body): ${kept.length} candidate interest(s)\n`);
-  console.log(`WHAT THE FILTER DISCARDED — ${dropped} of ${census} (${pct}%)`);
-  for (const [reason, n] of Object.entries(drops).sort((a, b) => b[1] - a[1])) {
-    console.log(`  ${String(n).padStart(7)}  ${reason}`);
-  }
-  console.log(`  ${String(kept.length).padStart(7)}  KEPT — passed to extraction`);
-  if (neverRead) {
-    console.log("\nNEVER READ AT ALL — not a filter decision:");
-    for (const [reason, n] of Object.entries(unread)) console.log(`  ${String(n).padStart(7)}  ${reason}`);
-  }
-  if (dropped + neverRead + kept.length !== census) {
-    console.error(`\nNAMED STOP [UNACCOUNTED] ${census - dropped - neverRead - kept.length} message(s) are in no bucket.`);
-    console.error("  A filter that cannot say where every message went cannot be audited, and an");
-    console.error("  unaudited filter is how a real deal disappears without anyone noticing.");
-    process.exit(7);
-  }
-
-  /*
-   * A MESSAGE THAT WAS NEVER READ IS NOT A MESSAGE THAT WAS FILTERED, and a run that lost a
-   * meaningful share of the mailbox to rate limits has not scanned the mailbox. One per cent is the
-   * line: below it the ledger is materially complete, above it the answer is a guess wearing a
-   * count. This is a hard stop rather than a warning because the run that produced 59,451 unread
-   * messages printed a perfectly confident summary and exited 0.
-   */
-  const unreadPct = (neverRead / census) * 100;
-  if (unreadPct > 1) {
-    console.error(`\nNAMED STOP [MAILBOX_NOT_FULLY_READ] ${neverRead} message(s) — ${unreadPct.toFixed(2)}% — were never read.`);
-    console.error("  Gmail signals a per-user rate limit as 403, and a fetch that gave up is not a filter");
-    console.error("  decision. Lower CAPITAL_CONCURRENCY and re-run; the candidates already written are");
-    console.error("  a partial read and must not be mistaken for the market.");
-    process.exit(10);
-  }
-
-  /*
-   * RULE 0, ITS SHARPEST EDGE. A discard rate at or near 100% is a bug wearing the costume of
-   * efficiency: it looks like a clean, fast run and it is a mailbox that was never read.
-   */
-  if (kept.length === 0) {
-    console.error("\nNAMED STOP [FILTER_DISCARDED_EVERYTHING] the filter kept nothing out of "
-      + `${census} message(s).`);
-    console.error("  This is a broken filter, not an empty market. The reasons above say which stage");
-    console.error("  ate everything. Do not soften the model's threshold to compensate — fix the stage.");
-    process.exit(8);
-  }
-
-  // ─── Written locally, in batches, and nowhere else ───
-  fs.rmSync(BATCH_DIR, { recursive: true, force: true });
-  fs.mkdirSync(BATCH_DIR, { recursive: true });
-  kept.sort((a, b) => a.date.localeCompare(b.date));
-  let batches = 0;
-  for (let i = 0; i < kept.length; i += BATCH_SIZE) {
-    const name = `batch-${String(batches).padStart(5, "0")}.json`;
-    fs.writeFileSync(path.join(BATCH_DIR, name), JSON.stringify(kept.slice(i, i + BATCH_SIZE)), "utf8");
-    batches += 1;
-  }
-
-  const today = new Date().toISOString().slice(0, 10).replace(/-/g, "/");
-  fs.writeFileSync(SCAN_FILE, JSON.stringify({
-    scanned_at: new Date().toISOString(),
-    mailbox: MAILBOX,
-    window: since ? `after:${since}` : "the whole history",
-    census, kept: kept.length, dropped, never_read: neverRead, discard_pct: Number(pct), drops, unread, batches,
-  }, null, 2), "utf8");
-  fs.writeFileSync(STATE_FILE, JSON.stringify({
-    last_scanned_date: today, last_census: census, last_kept: kept.length,
-  }, null, 2), "utf8");
-
-  console.log(`\n${batches} batch(es) in ${BATCH_DIR}. Nothing was sent anywhere.`);
-  console.log(`CAPITAL-SCAN-COMPLETE: ${kept.length} candidate(s) from ${census} message(s), ${pct}% discarded`);
 }
 
 if (import.meta.url === `file://${process.argv[1]}`) {
-  main().catch((err) => { console.error(`CAPITAL SCAN FAILED: ${err?.stack ?? err}`); process.exit(1); });
+  main().catch((err) => { console.error(`NAMED STOP [CAPITAL_SCAN_UNREAD] Could not check: ${err?.message ?? err}`); process.exitCode = 1; });
 }

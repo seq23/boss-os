@@ -62,7 +62,7 @@ describe("follow-ups: the draft is a fixed template", () => {
   });
 });
 
-describe("follow-ups: never sends, and no model sees a name (fail closed)", () => {
+describe("follow-ups: never sends or calls a model provider directly", () => {
   for (const f of ["lp-followups.mjs", "lp-positive.mjs", "lp-daily.mjs", "lp-prospects.mjs", "lp-catchups.mjs"]) {
     it(`${f} reaches no model host and spawns no CLI`, () => {
       const s = src(f);

@@ -162,7 +162,7 @@
     "validate:no-dead-meter": "node scripts/validate/no-meter-that-cannot-move.mjs && node scripts/validate/no-meter-that-cannot-move.mjs --self-test",
     "validate:one-cause": "node scripts/validate/one-cause-one-message.mjs && node scripts/validate/one-cause-one-message.mjs --self-test",
     "validate:identity-local": "node scripts/validate/identity-stays-local.mjs && node scripts/validate/identity-stays-local.mjs --self-test",
-    "capital:scan": "node scripts/vault/vault.mjs run -- node scripts/ops/interest-ledger.mjs",
+    "capital:scan": "node scripts/vault/vault.mjs run -- bash scripts/ops/capital-scan.sh",
     "capital:extract": "node scripts/ops/interest-extract.mjs",
     "capital:match": "node scripts/vault/vault.mjs run -- node scripts/ops/interest-match.mjs",
     "validate:no-spry-sender": "node scripts/validate/spry-vc-never-sends.mjs && node scripts/validate/spry-vc-never-sends.mjs --self-test",

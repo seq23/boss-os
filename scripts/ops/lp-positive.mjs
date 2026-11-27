@@ -49,7 +49,7 @@
  *
  * So three structural questions now run before any wording is read — is it bulk, is it our own
  * domain, is it a reply to our outreach (threads onto a message we sent, or quotes the mailbox) —
- * shared with the brokerage reader in `mail-bulk.mjs` rather than copied. And each run RECLASSIFIES
+ * defined in `mail-bulk.mjs`. And each run RECLASSIFIES
  * the running list against them: an entry the filter rejects is removed and the removal is printed
  * with its reason. "Never drops anyone" protects LPs from windowing, not drips from scrutiny.
  *
@@ -62,6 +62,7 @@
  *   npm run lp:positive              # scan, update the running list, print it
  */
 
+import { gmailPayloadText } from "../../src/shared/boss/mail/gmailPayload.mjs";
 import crypto from "node:crypto";
 import fs from "node:fs";
 import path from "node:path";
@@ -389,6 +390,22 @@ export async function messageWords(id, { quoted = false, token = null } = {}) {
   // The mailbox it really went from, read off its own From header (24 Oct 2026: the Prospects screen shows it).
   const from = (addressIn(head.from ?? "") || "").toLowerCase() || null;
   return { text: words.slice(0, 6000) || null, at: Number(msg.internalDate ?? 0) || null, thread: msg.threadId ?? null, subject: head.subject ?? "", from };
+}
+/** Complete decoded messages from the same read-only mailbox used by the LP reader. */
+export async function lpReplyThread(id, tok) {
+  const base = "https://gmail.googleapis.com/gmail/v1/users/me";
+  const thread = await api(`${base}/threads/${encodeURIComponent(id)}?format=full`, tok);
+  if (!Array.isArray(thread?.messages)) throw new Error("Gmail did not return the LP thread");
+  return Promise.all(thread.messages.map(async (message) => {
+    if (!message.id || !message.payload) throw new Error("Gmail omitted a message or its payload");
+    const headers = Object.fromEntries((message.payload.headers ?? []).map(({ name, value }) => [name.toLowerCase(), value ?? ""]));
+    const body = await gmailPayloadText(message.payload, async (attachmentId) => {
+      const attachment = await api(`${base}/messages/${encodeURIComponent(message.id)}/attachments/${encodeURIComponent(attachmentId)}`, tok);
+      if (!attachment?.data) throw new Error("Gmail omitted a readable MIME part");
+      return attachment.data;
+    });
+    return { id: message.id, headers, body, internalDate: Number(message.internalDate) };
+  }));
 }
 export async function sentWordsTo(emails, { max = 3 } = {}) {
   const tok = await contentToken();

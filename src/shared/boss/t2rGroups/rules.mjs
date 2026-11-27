@@ -70,13 +70,6 @@ export function outboundProblems(text) {
 
 // ─── Replies ────────────────────────────────────────────────────────────────
 
-const WANTS_PRICE = /\bhow much\b|\bpric(?:e|es|ing)\b|\bcosts?\b|\bfees?\b|\brates?\b|\bquote\b|\binvoice\b|\bbudget\b|\bpurchase\b|\bbuy\b|\bpay(?:ing|ment)?\b|\bsubscri(?:be|ption)\b|\blicen[cs]e\b|\bper (?:student|family|child|seat)\b|\bafter the (?:trial|15 days)\b/i;
-
-/** A reply that asks what it costs, or wants to pay. Goes to her with a suggested price. Pure. */
-export function wantsPrice(words) {
-  return WANTS_PRICE.test(String(words ?? ""));
-}
-
 /**
  * THE PRICE SHE IS SHOWN, NEVER SENT BY MONIQUE. A suggestion for her to accept, change or ignore,
  * from the list price (brain: $12.99/month, $99/year) and the size of the group when they said it.
@@ -87,12 +80,6 @@ export function suggestedPrice(groupSize = null) {
   if (Number.isFinite(n) && n >= 25) return `Suggested: $6.99 per family a month (or $69 a year) for ${n} families, billed to the group — about half the list price for a group this size.`;
   if (Number.isFinite(n) && n >= 5) return `Suggested: $8.99 per family a month (or $79 a year) for ${n} families, billed to the group — about 30% under the list price.`;
   return "Suggested: $8.99 per family a month (or $79 a year) for groups of five or more families, billed to the group — about 30% under the $12.99 list price.";
-}
-
-/** "We have about 40 families" → 40. Null when they did not say. Pure. */
-export function groupSizeIn(words) {
-  const m = /\b(\d{1,4})\s+(?:families|kids|children|students|members|readers|learners|kiddos)\b/i.exec(String(words ?? ""));
-  return m ? Number(m[1]) : null;
 }
 
 // ─── Prospects ──────────────────────────────────────────────────────────────

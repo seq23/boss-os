@@ -1,5 +1,5 @@
 import { createExecutionContext, env } from "cloudflare:test";
-import { beforeEach, describe, expect, it } from "vitest";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 import worker from "../../src/worker/boss/index";
 import { apiJson, row } from "./helpers";
 import { DAY_MS } from "../../src/worker/boss/outreach/brakes";
@@ -64,6 +64,14 @@ function fakeGmail(inbound: Inbound[] = []) {
     if (url.includes("/messages?")) {
       const q = decodeURIComponent(/q=([^&]+)/.exec(url)?.[1] ?? "");
       return Response.json({ messages: q.includes("mailer-daemon") ? [] : inbound.map((m) => ({ id: m.id, threadId: m.threadId })) });
+    }
+    if (url.includes("/threads/")) {
+      const id = /threads\/([^?]+)/.exec(url)?.[1];
+      const messages = await Promise.all(inbound.filter((m) => m.threadId === id).map(async (m) => {
+        const response = await fetchImpl(`https://gmail.googleapis.com/gmail/v1/users/me/messages/${m.id}?format=full`);
+        return response.json();
+      }));
+      return Response.json({ messages });
     }
     if (url.includes("format=full")) {
       const id = /messages\/([^?]+)/.exec(url)?.[1] ?? "";
@@ -252,7 +260,13 @@ describe("replies: real ones to her, a price question with a suggested price, Mo
     await runOutreachTick(tickEnv(), TUESDAY_10AM, g.fetchImpl);
     const p = await row<any>(`SELECT thread_id FROM outreach_prospects WHERE business_key = ? AND email = ?`, G, group(1).email);
     const replyGmail = fakeGmail([{ id: "rp1", threadId: p.thread_id, from: `Co-op <${group(1).email}>`, subject: "Re: x", body: "We have about 30 families. How much would it be after the trial?" }]);
-    await runOutreachTick(tickEnv(), TUESDAY_10AM + HOUR, replyGmail.fetchImpl);
+    const model = vi.spyOn(globalThis, "fetch").mockImplementation(async () => Response.json({ candidates: [{
+      content: { parts: [{ text: JSON.stringify({ classification: "interested", replyNeed: "asks",
+        groupSize: 30, asksPrice: true, excerpt: "We have about 30 families. How much would it be after the trial?" }) }] },
+    }] }));
+    try {
+      await runOutreachTick({ ...tickEnv(), BOSS_WORKER_GEMINI_FREE_KEY: "fixture" }, TUESDAY_10AM + HOUR, replyGmail.fetchImpl);
+    } finally { model.mockRestore(); }
     expect(replyGmail.sends).toHaveLength(0);
     const r = await row<any>(`SELECT approval_id FROM outreach_replies WHERE gmail_message_id = 'rp1'`);
     const a = await row<any>(`SELECT title, summary FROM approvals WHERE id = ?`, r.approval_id);

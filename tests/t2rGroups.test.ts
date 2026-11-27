@@ -67,11 +67,7 @@ describe("outbound words: the guard fails what it must", () => {
 });
 
 describe("replies: a price question goes to her, with a suggestion", () => {
-  it("knows a price question, reads the group's size, and suggests — never sends", () => {
-    for (const q of ["How much is it after the trial?", "What's the pricing for 40 families?", "Can we pay as a group?", "Do you offer a license for our library?"]) expect(R.wantsPrice(q), q).toBe(true);
-    for (const q of ["Thanks, we'll share the code!", "Is it for ages 5-8?"]) expect(R.wantsPrice(q), q).toBe(false);
-    expect(R.groupSizeIn("We have about 40 families")).toBe(40);
-    expect(R.groupSizeIn("Thanks!")).toBeNull();
+  it("calculates the suggested price from the group size", () => {
     expect(R.suggestedPrice(40)).toMatch(/^Suggested: \$6\.99 per family a month/);
     expect(R.suggestedPrice(10)).toMatch(/^Suggested: \$8\.99 per family a month/);
     expect(R.suggestedPrice(null)).toMatch(/five or more families/);

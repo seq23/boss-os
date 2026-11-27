@@ -1,7 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { reconcileList, screenMessage } from "../scripts/ops/lp-positive.mjs";
 import * as bulk from "../scripts/ops/mail-bulk.mjs";
-import * as ledger from "../scripts/ops/interest-ledger.mjs";
 
 /**
  * THE LP POSITIVE LIST ADMITS ONLY REPLIES TO OUR OUTREACH.
@@ -170,10 +169,6 @@ describe("the LP positive screen admits only replies to our outreach", () => {
       }
     });
   }
-
-  it("the structural filter is ONE module: the ledger and the LP reader share the same function", () => {
-    expect(ledger.bulkReason).toBe(bulk.bulkReason);
-  });
 
   it("a quoted address counts as reply evidence only in quoting position, not in an unsubscribe link", () => {
     expect(bulk.quotesMailbox(`Unsubscribe: https://x.test/u?email=${MAILBOX}`, MAILBOX)).toBe(false);
