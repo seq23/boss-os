@@ -14,7 +14,7 @@ In order, each step ending in a named stop rather than failing silently:
 | 1 | `kdp-units.mjs` | Reads units, free units and Kindle Unlimited pages for each title over the last 60 days from the KDP reports, and writes them to `~/.boss-os/kdp/units.json` |
 | 2 | `kdp-publish.mjs` | The old cover batch (it ends quietly) |
 | 3 | `kdp-series.mjs` | Makes sure each line's Amazon series exists (it creates one at most once) |
-| 4 | `kdp-new-title.mjs --unattended` | Publishes the approved titles: heads-up email, Kindle details (series included), EPUB, cover, AI answers, KDP Select, price, then Publish, and follows each title to Live |
+| 4 | `kdp-new-title.mjs --unattended` | Publishes the approved titles: opens Chrome at once (no note, no wait), Kindle details (series included), EPUB, cover, AI answers, KDP Select, price, then Publish, and follows each title to Live |
 | 5a | `kdp-update-live.mjs` | Applies `existing-books.json` to the live titles, each version of a row once (titles In review wait for the next Monday) |
 | 5 | `kdp-paperback.mjs` | Puts up the paperback for each book whose Kindle edition is on the bookshelf |
 | 6 | `kdp-promo.mjs` | Schedules the 5 free days for each new book once it is Live in Select |

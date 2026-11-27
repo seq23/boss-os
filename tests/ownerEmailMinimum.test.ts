@@ -37,7 +37,7 @@ import { peopleOwner } from "../scripts/ops/people-worth-a-call.mjs";
 // @ts-expect-error — plain ESM with no declaration file
 import { askEmail, chaseEmail } from "../scripts/ops/kdp-surface-report.mjs";
 // @ts-expect-error — plain ESM with no declaration file
-import { headsUpMail, stopMail, stillWaitingMail, doneMail, liveMail, withLive } from "../scripts/ops/kdp-new-title.mjs";
+import { stopMail, stillWaitingMail, doneMail, liveMail, withLive } from "../scripts/ops/kdp-new-title.mjs";
 import { digestEmail, confirmationEmail } from "../src/shared/boss/commentWatch/lane.mjs";
 import { approvalNotice, composeDraft } from "../src/shared/boss/clients/hicksUpdate.mjs";
 import { composeSpryWeekly } from "../src/shared/boss/spryWeekly/compose.mjs";
@@ -132,9 +132,8 @@ function cases(): Case[] {
   add("scripts/ops/kdp-surface-report.mjs", "Simone", "Kindle stop only she can clear (Note)", mail("Simone", kstop));
   add("scripts/ops/kdp-surface-report.mjs", "Simone", "Kindle chase (A)", mail("Simone", chaseEmail({ id: "kml_m5guard0011", title_ref: "T1", due_at: NOW + 3 * 86_400_000, note: "The subtitle still waits.", owner_ask: "Approve the new subtitle." }, reg)));
 
-  // Simone's Kindle publishing run: heads-up, a stop (sign-in and a step), still waiting, live.
+  // Simone's Kindle publishing run: a stop (sign-in and a step), still waiting, live.
   const kmail = (m: any) => mail("Simone", { subject: m.subject, layout: m.layout, owner: m.owner });
-  add("scripts/ops/kdp-new-title.mjs", "Simone", "Kindle heads-up (Note)", kmail(headsUpMail({ titles: ["A Synthetic Book"], startAt: NOW + 1_800_000, zone: "America/Chicago" })));
   add("scripts/ops/kdp-new-title.mjs", "Simone", "Kindle sign-in needed (Note)", kmail(stopMail({ title: "A Synthetic Book", code: "SIGNIN", id: "jc_m5guard0013" })));
   add("scripts/ops/kdp-new-title.mjs", "Simone", "Kindle step stopped (Note)", kmail(stopMail({ title: "A Synthetic Book", code: "CATEGORIES_NOT_SET", id: "jc_m5guard0014" })));
   add("scripts/ops/kdp-new-title.mjs", "Simone", "Kindle still waiting (Note)", kmail(stillWaitingMail({ title: "A Synthetic Book", code: "SIGNIN", id: "jc_m5guard0015" })));
